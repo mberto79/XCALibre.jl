@@ -10,9 +10,9 @@ struct Linear end
 struct Constant end
 
 
+# function generalDiscretise!(type, ϕ, J)
 function generalDiscretise!(type, ϕ, J)
     A = ϕ.equation.A
-    tA = ϕ.tempEquation.A
     mesh = ϕ.mesh
     cells = mesh.cells
     faces = mesh.faces
@@ -25,15 +25,20 @@ function generalDiscretise!(type, ϕ, J)
             nID = cell.neighbours[fi]
             c1 = face.ownerCells[1]
             c2 = face.ownerCells[2]
-            aP!(type, A, J, face, cID)
+            # aP!(type, A, J, face, cID)
             if c1 != c2 
-            aN!(type, A, J, face, cID, nID)
+            # aN!(type, A, J, face, cID, nID)
             end
         end
         # b!()
     end
     tA .= A
     nothing
+end
+
+struct Equation{I,F} <: AbstractEquation
+    A::SparseMatrixCSC{F, I}
+    b::Vector{F}
 end
 
 struct ScalarField{I,F} <: AbstractField

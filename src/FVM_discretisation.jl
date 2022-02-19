@@ -1,8 +1,13 @@
 # Discretisation schemes and equation terms (types)
 export Linear, Constant, Source, ScalarField, Equation, discretise!,
-aP!, aN!, b!,
+aP!, aN!, b!, Δ, @defineEqn, @discretise, Mesh, apply_boundary_conditions!, clear!, clearAll!, solve!
 
-Δ, @defineEqn, @discretise, Mesh, apply_boundary_conditions!, clear!, clearAll!, solve!
+abstract type AbstractTerm end
+abstract type AbstractSource end
+abstract type AbstractEquation end
+struct Linear end
+struct Constant end
+
 
 function generalDiscretise!(type, ϕ, J)
     A = ϕ.equation.A

@@ -19,7 +19,8 @@ GC.gc()
 # f = plot(mesh.nodes, :coords; labels=true)
 # plot!(f, mesh.cells, :centre; labels=true)
 
-@time temp = Δ{Linear}(k,ϕ) + Δ{Linear}(0.0,ϕ)
+@time temp =
+ Δ{Linear}(k,ϕ) + Δ{Linear}(0.0,ϕ)
 temp.A.nzval
 ϕ.equation.A.nzval
 @time apply_boundary_conditions!(ϕ, k, 300, 100)

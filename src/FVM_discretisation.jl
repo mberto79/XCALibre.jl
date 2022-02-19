@@ -1,118 +1,44 @@
 # Discretisation schemes and equation terms (types)
 export Linear, Constant, Source, ScalarField, Equation, discretise!,
 aP!, aN!, b!,
-Δ, @defineEqn, @discretise, Mesh, apply_boundary_conditions!, clear!, clearAll!, solve!
+Δ, @defineEqn, @discretise, Mesh, apply_boundary_conditions!, clear!, solve!
 
-function generalDiscretise!(type, ϕ, J)
-    A = ϕ.equation.A
-    tA = ϕ.tempEquation.A
-    mesh = ϕ.mesh
-    cells = mesh.cells
-    faces = mesh.faces
-    nCells = length(cells)
-    for cID ∈ 1:nCells
-        cell = cells[cID]
-        for fi ∈ eachindex(cell.facesID)
-            fID = cell.facesID[fi]
-            face = faces[fID]
-            nID = cell.neighbours[fi]
-            c1 = face.ownerCells[1]
-            c2 = face.ownerCells[2]
-            aP!(type, A, J, face, cID)
-            if c1 != c2 
-            aN!(type, A, J, face, cID, nID)
-            end
-        end
-        # b!()
-    end
-    tA .= A
-    nothing
+struct ScalarField{I,F}
+    values::Vector{F}
+    mesh::Mesh{I,F}
 end
+# ScalarField(mesh::Mesh) = begin
+#     nothing
+# end
 
-abstract type AbstractField end
 abstract type AbstractTerm end
 abstract type AbstractSource end
 abstract type AbstractEquation end
 struct Linear end
 struct Constant end
 
-struct Equation{I,F} <: AbstractEquation
-    # ϕ::ScalarField{I,F}
-    # A::Union{Matrix{F},SparseMatrixCSC{F, I}}
-    A::SparseMatrixCSC{F, I}
-    b::Vector{F}
+struct Δ{T,I,F} <: AbstractTerm 
+    # Γ::Union{Float32,Float64,Int32,Int64}
+    Γ::F 
+    ϕ::ScalarField{I,F}
+    distretisation::T
+    label::Symbol
 end
-
-struct TempEquation{I,F} <: AbstractEquation
-    # ϕ::ScalarField{I,F}
-    # A::Union{Matrix{F},SparseMatrixCSC{F, I}}
-    A::SparseMatrixCSC{F, I}
-    b::Vector{F}
+function Δ{Linear}(Γ, ϕ::ScalarField) 
+    Δ(Γ, ϕ, Linear(), :Laplacian)
 end
-# function Equation(ϕ) 
-#     nCells = length(ϕ.mesh.cells)
-#     I, J, V = sparse_matrix_connectivity(ϕ.mesh)
-#     Equation(sparse(I,J,V), zeros(nCells))
-# end
-
-struct ScalarField{I,F} <: AbstractField
-    values::Vector{F}
-    mesh::Mesh{I,F}
-    equation::Equation{I,F}
-    tempEquation::TempEquation{I,F}
-end
-ScalarField(mesh::Mesh) = begin
-    nCells = length(mesh.cells)
-    I, J, V = sparse_matrix_connectivity(mesh)
-    eqn = Equation(sparse(I,J,V), zeros(nCells))
-    tEqn = TempEquation(sparse(I,J,V), zeros(nCells))
-    ScalarField(zeros(nCells), mesh, eqn, tEqn)
-end
-
-struct Δ{T} <: AbstractTerm end
-
-function Δ{Linear}(Γ, ϕ::ScalarField{I,F}) where {I,F} 
-    type = Δ{Linear}()
-    clear!(ϕ.equation)
-    generalDiscretise!(type, ϕ, Γ)
-    # temp = ϕ.tempEquation
-    temp = TempEquation(ϕ.equation.A, ϕ.equation.b)
-    # temp.A .= ϕ.equation.A
-    # temp.b .= ϕ.equation.b
-    return temp
-end
-@inline aP!(::Δ{Linear}, A, Γ, face, cID) = begin
-    A[cID, cID] += (Γ * face.area * norm(face.normal)) / face.delta
+@inline aP!(A, term::Δ{Linear}, face, cID) = begin
+    A[cID, cID] += (term.Γ * face.area * norm(face.normal)) / face.delta
     nothing
 end
-@inline  aN!(::Δ{Linear}, A, Γ, face, cID, nID) = begin
-    A[cID, nID] = -(Γ * face.area * norm(face.normal)) / face.delta
+@inline  aN!(A, term::Δ{Linear}, face, cID, nID) = begin
+    A[cID, nID] += -(term.Γ * face.area * norm(face.normal)) / face.delta
     nothing
 end
-@inline  b!(::Δ{Linear}, b, Γ, face, cID) = begin
-    b[cID] = 0.0
+@inline  b!(b, term::Δ{Linear}, face, cID) = begin
+    b[cID] += 0.0
     nothing
 end
-
-# struct Δ{T,I,F} <: AbstractTerm 
-#     # Γ::Union{Float32,Float64,Int32,Int64}
-#     Γ::F 
-#     ϕ::ScalarField{I,F}
-#     distretisation::T
-#     label::Symbol
-# end
-# @inline aP!(A, term::Δ{Linear}, face, cID) = begin
-#     A[cID, cID] += (term.Γ * face.area * norm(face.normal)) / face.delta
-#     nothing
-# end
-# @inline  aN!(A, term::Δ{Linear}, face, cID, nID) = begin
-#     A[cID, nID] += -(term.Γ * face.area * norm(face.normal)) / face.delta
-#     nothing
-# end
-# @inline  b!(b, term::Δ{Linear}, face, cID) = begin
-#     b[cID] += 0.0
-#     nothing
-# end
 
 struct Source{T} <: AbstractSource
     ϕ::I where I <: Integer
@@ -150,33 +76,28 @@ function sparse_matrix_connectivity(mesh::Mesh)
     return I, J, V
 end
 
-# Operator overloads
-# struct Model{I<:Integer}
-#     terms::Vector{AbstractTerm}
-#     sources::Vector{AbstractSource}
-#     sign::Vector{I}
-# end
-# Base.:(==)(a::AbstractTerm, b::AbstractSource) = Model(AbstractTerm[a],AbstractSource[b],[1])
-# Base.:(==)(a::Vector{AbstractTerm}, b::AbstractSource) = Model(a, [b], [1])
-# Base.:(+)(a::AbstractTerm, b::AbstractTerm) = AbstractTerm[a,b]
-# Base.:(+)(a::Vector{AbstractTerm}, b::AbstractTerm) = push!(a, b)
+struct Equation{I,F} <: AbstractEquation
+    ϕ::ScalarField{I,F}
+    # A::Union{Matrix{F},SparseMatrixCSC{F, I}}
+    A::SparseMatrixCSC{F, I}
+    b::Vector{F}
+end
+function Equation(ϕ) 
+    ncells = length(ϕ.mesh.cells)
+    I, J, V = sparse_matrix_connectivity(ϕ.mesh)
+    Equation(ϕ, sparse(I,J,V), zeros(ncells))
+end
 
+# Operator overloads
+struct Model{I<:Integer}
+    terms::Vector{AbstractTerm}
+    sources::Vector{AbstractSource}
+    sign::Vector{I}
+end
 Base.:(==)(a::AbstractTerm, b::AbstractSource) = Model(AbstractTerm[a],AbstractSource[b],[1])
 Base.:(==)(a::Vector{AbstractTerm}, b::AbstractSource) = Model(a, [b], [1])
-Base.:(+)(a::TempEquation, b::TempEquation) = begin
-    for i ∈ eachindex(b.A.nzval)
-    b.A.nzval[i] += a.A.nzval[i]
-    end
-    return b
-end
-Base.:(-)(a::AbstractField, b::AbstractField) = begin
-    for i ∈ eachindex(a.equation.A.nzval)
-        a.equation.A.nzval[i] = a.equation.A.nzval[i] - (b.equation.A.nzval[i])
-    end
-    return a
-end
-
-# Base.:(+)(a::Vector{AbstractTerm}, b::AbstractTerm) = push!(a, b)
+Base.:(+)(a::AbstractTerm, b::AbstractTerm) = AbstractTerm[a,b]
+Base.:(+)(a::Vector{AbstractTerm}, b::AbstractTerm) = push!(a, b)
 
 # Macros and functions
 
@@ -248,9 +169,9 @@ end  # end quote
 end
 
 function apply_boundary_conditions!(
-    ϕ::ScalarField{I,F}, k, leftBC, rightBC) where {I <: Integer, F}
-    b = ϕ.equation.b
-    mesh = ϕ.mesh
+    eqn::AbstractEquation, k, leftBC, rightBC) # where {I <: Integer, F}
+    b = eqn.b
+    mesh = eqn.ϕ.mesh
     nCells = length(b)
     faces = mesh.faces
     b[1] = k*faces[1].area*norm(faces[1].normal)/faces[1].delta*leftBC
@@ -258,27 +179,15 @@ function apply_boundary_conditions!(
     nothing
 end
 
-function clear!(equation::Equation{I,F}) where {I,F}
-    equation.A.nzval .= 0.0
-    equation.b .= 0.0
+function clear!(eqn::AbstractEquation) # where {I,F}
+    eqn.A.nzval .= 0.0
+    eqn.b .= 0.0
     nothing
 end
 
-function clear!(ϕ::ScalarField{I,F}) where {I,F}
-    ϕ.values .= 0.0
-    nothing
-end
-
-function clearAll!(ϕ::ScalarField{I,F}) where {I,F}
-    ϕ.values .= 0.0
-    ϕ.equation.A.nzval .= 0.0
-    ϕ.equation.b .= 0.0
-    nothing
-end
-
-function solve!(ϕ::ScalarField{I,F}) where {I,F}
-    ϕ.values .= ϕ.equation.A\ϕ.equation.b
-    nothing
+function solve!(eqn::AbstractEquation)
+    eqn.ϕ.values .= eqn.A\eqn.b
+    return eqn
 end
 
 #### SOME TESTS WITH KRYLOV.JL

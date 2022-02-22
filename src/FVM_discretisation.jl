@@ -1,6 +1,6 @@
 # Discretisation schemes and equation terms (types)
 export Linear, Constant, Source, ScalarField, Equation, discretise!,
-aP!, aN!, b!, Δ, @defineEqn, @discretise, Mesh, apply_boundary_conditions!, clear!, clearAll!, solve!
+aP!, aN!, b!, Δ, @defineEqn, @discretise, Mesh, apply_boundary_conditions!, clear!, clearAll!, solve!, generalDiscretise!, sparse_matrix_connectivity, Laplacian, SteadyDiffusion
 
 abstract type AbstractTerm end
 abstract type AbstractField end
@@ -10,9 +10,73 @@ struct Linear end
 struct Constant end
 
 
+
+
+# struct Equation{I<:Integer,F<:AbstractFloat} <: AbstractEquation
+#     A::SparseMatrixCSC{F, I}
+#     b::Vector{F}
+# end
+
+struct Equation <: AbstractEquation
+    A::SparseMatrixCSC{Float64, Int64}
+    b::Vector{Float64}
+end
+
+struct ScalarField <: AbstractField
+    values::Vector{Float64}
+    mesh::Mesh
+    equation::Equation
+end
+ScalarField(mesh::Mesh) = begin
+    nCells = length(mesh.cells)
+    I, J, V = sparse_matrix_connectivity(mesh)
+    eqn = Equation(sparse(I,J,V), zeros(nCells))
+    ScalarField(zeros(nCells), mesh, eqn)
+end
+
+struct Δ{T} <: AbstractTerm end
+struct aP!{T} end
+struct aN!{T} end
+struct b!{T} end
+
+@inline aP!{Linear}(A, term, face, cID) = begin
+    A[cID, cID] += (term.Γ * face.area * norm(face.normal)) / face.delta
+    nothing
+end
+@inline  aN!{Linear}(A, term, face, cID, nID) = begin
+    A[cID, nID] = -(term.Γ * face.area * norm(face.normal)) / face.delta
+    nothing
+end
+@inline  b!{Linear}(b, term, cID) = begin
+    b[cID] = 0.0
+    nothing
+end
+struct Source{T} <: AbstractSource
+    ϕ::I where I <: Integer
+    type::T
+    label::Symbol
+end
+Source{Constant}(ϕ) = Source{Constant}(ϕ, Constant(), :ConstantSource)
+
+struct Laplacian{T} <: AbstractTerm 
+    Γ::Float64
+    ϕ::ScalarField
+    distretisation::T
+end
+Laplacian{Linear}(Γ, ϕ) = Laplacian(Γ, ϕ, Linear())
+
+struct SteadyDiffusion{T}
+    laplacian::Laplacian{T}
+    sign::Vector{Int64}
+    equation::Equation
+end
+
 # function generalDiscretise!(type, ϕ, J)
-function generalDiscretise!(type, ϕ, J)
+function generalDiscretise!(model::SteadyDiffusion{T}, aP!, aN!, b!) where {T}
+    laplacian = model.laplacian
+    ϕ = laplacian.ϕ
     A = ϕ.equation.A
+    b = ϕ.equation.b
     mesh = ϕ.mesh
     cells = mesh.cells
     faces = mesh.faces
@@ -25,61 +89,15 @@ function generalDiscretise!(type, ϕ, J)
             nID = cell.neighbours[fi]
             c1 = face.ownerCells[1]
             c2 = face.ownerCells[2]
-            # aP!(type, A, J, face, cID)
+            aP!(A, laplacian, face, cID)
             if c1 != c2 
-            # aN!(type, A, J, face, cID, nID)
+            aN!(A, laplacian, face, cID, nID)
             end
         end
-        # b!()
+        b!(b, laplacian, cID)
     end
-    tA .= A
     nothing
 end
-
-struct Equation{I,F} <: AbstractEquation
-    A::SparseMatrixCSC{F, I}
-    b::Vector{F}
-end
-
-struct ScalarField{I,F} <: AbstractField
-    values::Vector{F}
-    mesh::Mesh{I,F}
-    equation::Equation{I,F}
-end
-ScalarField(mesh::Mesh) = begin
-    nCells = length(mesh.cells)
-    I, J, V = sparse_matrix_connectivity(mesh)
-    eqn = Equation(sparse(I,J,V), zeros(nCells))
-    ScalarField(zeros(nCells), mesh, eqn)
-end
-
-struct Δ{T} <: AbstractTerm end
-
-function Δ{Linear}(Γ, ϕ::ScalarField{I,F}) where {I,F} 
-    type = Δ{Linear}()
-    clear!(ϕ.equation)
-    generalDiscretise!(type, ϕ, Γ)
-    return temp
-end
-@inline aP!(::Δ{Linear}, A, Γ, face, cID) = begin
-    A[cID, cID] += (Γ * face.area * norm(face.normal)) / face.delta
-    nothing
-end
-@inline  aN!(::Δ{Linear}, A, Γ, face, cID, nID) = begin
-    A[cID, nID] = -(Γ * face.area * norm(face.normal)) / face.delta
-    nothing
-end
-@inline  b!(::Δ{Linear}, b, Γ, face, cID) = begin
-    b[cID] = 0.0
-    nothing
-end
-struct Source{T} <: AbstractSource
-    ϕ::I where I <: Integer
-    type::T
-    label::Symbol
-end
-Source{Constant}(ϕ) = Source{Constant}(ϕ, Constant(), :ConstantSource)
-
 
 function sparse_matrix_connectivity(mesh::Mesh)
     cells = mesh.cells
@@ -203,7 +221,7 @@ end
 # end
 
 function apply_boundary_conditions!(
-    ϕ::ScalarField{I,F}, k, leftBC, rightBC) where {I <: Integer, F}
+    ϕ::ScalarField, k, leftBC, rightBC)
     b = ϕ.equation.b
     mesh = ϕ.mesh
     nCells = length(b)
@@ -213,25 +231,25 @@ function apply_boundary_conditions!(
     nothing
 end
 
-function clear!(equation::Equation{I,F}) where {I,F}
+function clear!(equation::Equation) 
     equation.A.nzval .= 0.0
     equation.b .= 0.0
     nothing
 end
 
-function clear!(ϕ::ScalarField{I,F}) where {I,F}
+function clear!(ϕ::ScalarField) 
     ϕ.values .= 0.0
     nothing
 end
 
-function clearAll!(ϕ::ScalarField{I,F}) where {I,F}
+function clearAll!(ϕ::ScalarField)
     ϕ.values .= 0.0
     ϕ.equation.A.nzval .= 0.0
     ϕ.equation.b .= 0.0
     nothing
 end
 
-function solve!(ϕ::ScalarField{I,F}) where {I,F}
+function solve!(ϕ::ScalarField)
     ϕ.values .= ϕ.equation.A\ϕ.equation.b
     nothing
 end

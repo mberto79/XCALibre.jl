@@ -1,8 +1,14 @@
-struct SteadyDiffusion{T,I,F}
-    laplacian::Laplacian{T}
-    sign::Vector{Int64}
-    equation::Equation{I,F}
-end
+# export Laplacian, SteadyDiffusion
 
-struct Laplacian{T}
-    ϕ::ScalarField{}
+# struct Laplacian{T,I,F} <: AbstractTerm 
+#     Γ::F 
+#     ϕ::ScalarField{I,F}
+#     distretisation::T
+# end
+# Laplacian{Linear}(Γ, ϕ) = Laplacian(Γ, ϕ, Linear())
+
+# struct SteadyDiffusion{T,I,F}
+#     laplacian::Laplacian{T}
+#     sign::Vector{I}
+#     equation::Equation
+# end

@@ -40,8 +40,8 @@ struct Cell{I,F}
     volume::F
 end
 
-struct Mesh{I,F}
-    cells::Vector{Cell{I,F}}
-    faces::Vector{Face{I,F}}
-    nodes::Vector{Node{F}}
+struct Mesh
+    cells::Vector{Cell{Int64,Float64}}
+    faces::Vector{Face{Int64,Float64}}
+    nodes::Vector{Node{Float64}}
 end

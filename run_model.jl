@@ -15,7 +15,6 @@ k = 5.0
 GC.gc()
 @time mesh = generate_mesh_1D(x0, xL, h, nCells)
 @time ϕ = ScalarField(mesh)
-isbits(ϕ)
 GC.gc()
 # f = plot(mesh.nodes, :coords; labels=true)
 # plot!(f, mesh.cells, :centre; labels=true)
@@ -23,7 +22,7 @@ GC.gc()
 term1 = Laplacian{Linear}(k, ϕ)
 source1 = 0.0
 @time ϕModel = SteadyDiffusion(term1, source1)
-isbits(ϕModel)
+
 @time generalDiscretise!(ϕModel, aP!{Linear}, aN!{Linear}, b!{Linear})
 @code_warntype generalDiscretise!(ϕModel, aP!{Linear}, aN!{Linear}, b!{Linear})
 @time apply_boundary_conditions!(ϕ, k, 300, 100)

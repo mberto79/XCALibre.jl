@@ -67,7 +67,7 @@ struct Source{T}
     sign::Vector{Int64}
 end
 
-cells = Int(10)
+cells = Int(10) 
 phi = ones(cells)
 phiSource =  zeros(cells)
 J1 = 0.5
@@ -75,7 +75,8 @@ J2 = Float64[1.0,2.0,3.0,4.0]
 sign = [1]
 
 term1 = Laplacian{Linear}(J1, phi,[1])
-term2 = VariableLaplacian{Limited}(J2, phi, [1])
+term2 = Laplacian{Limited}(J1, phi, [1])
+# term2 = VariableLaplacian{Limited}(J2, phi, [1])
 src1 = Source{Constant}(phiSource, [1])
 
 phiTerms = SteadyDiffusion(
@@ -127,9 +128,8 @@ function test_fn(A::Vector{Float64}, obj::SteadyDiffusion10)
     # terms.term2
     # sources.source1
     for i ∈ 1:length(A)
-        for ti ∈ 1:length(terms)
-            A[i] += terms[ti].J
-        end
+            A[i] += terms.term1.J
+            A[i] += terms.term2.J
     end
     # println(terms)
     # println(sources)
@@ -158,40 +158,39 @@ t = Base.remove_linenums!( quote
     end
 end)
 
-ts = [:term1, :term2]
-types = [:T2, :T2]
-orig = :(NamedTuple{(:term1, :term2), Tuple{T1, T2}})
-tup = Expr(:curly, :Tuple, types...)
-tup0 = Expr(:curly, :Tuple)
-push!(tup0.args, :T2)
-ter0 = Expr(:tuple)
-push!(ter0.args, QuoteNode(:HERE))
-ter = Expr(:tuple, QuoteNode(:test0), QuoteNode(:test1))
-interp = :(NamedTuple{$ter, $tup})
 
 macro model_builder_tuple(modelName::String, terms::Integer, sources::Integer)
     name = Symbol(modelName)
 
     param_types = []
+    fieldsnames = []
     
     terms_tuple = Expr(:tuple)
+    constructor_terms = Expr(:tuple)
     terms_types = Expr(:curly, :Tuple)
     for t ∈ 1:(terms)
         tt = Symbol("T$t") |> esc
+        ts = Symbol("term$t")
         push!(param_types, tt)
         push!(terms_types.args, tt)
-        push!(terms_tuple.args, QuoteNode(Symbol("term$t")))
+        push!(fieldsnames, ts)
+        push!(constructor_terms.args, :($ts=$ts))
+        push!(terms_tuple.args, QuoteNode(ts))
         # push!(fields, Expr(:(::), Symbol("term$t"), tt))
         
     end
     
     sources_tuple = Expr(:tuple)
+    constructor_sources = Expr(:tuple)
     sources_types = Expr(:curly, :Tuple)
     for s ∈ 1:(sources)
         ss = Symbol("S$s") |> esc
+        src_symbol = Symbol("source$s")
         push!(param_types, ss)
         push!(sources_types.args, ss)
-        push!(sources_tuple.args, QuoteNode(Symbol("source$s")))
+        push!(fieldsnames, src_symbol)
+        push!(constructor_sources.args, :($src_symbol=$src_symbol))
+        push!(sources_tuple.args, QuoteNode(src_symbol))
         # push!(fields, Expr(:(::), Symbol("src$s"), ss))
     end
 
@@ -202,17 +201,35 @@ macro model_builder_tuple(modelName::String, terms::Integer, sources::Integer)
         :struct, false, Expr(:curly, name, param_types...),
         Expr(:block, terms, sources)
         ))
-    return structBody
+
+    func = :(function $(name)($(fieldsnames...))
+        begin
+        $(name)(($(constructor_terms)),$(constructor_sources))
+        end
+    end) |> esc
+    out = quote begin
+        $structBody
+        $func
+    end end
+    return  out #structBody, func
 end
 
-@macroexpand(@model_builder_tuple "SteadyDiffusion10" 2 1)
+@macroexpand(@model_builder_tuple "SteadyDiffusion" 4 4)
 
-@model_builder_tuple "SteadyDiffusion10" 2 1
+@model_builder_tuple "SteadyDiffusion15" 4 4
 
-model =SteadyDiffusion10((term1=term1,term2=term1), (source1=src1,))
+model =SteadyDiffusion10((term1=term1,term2=term2), (source1=src1,))
+model =SteadyDiffusion10(term1, term1, term1, src1)
+model =SteadyDiffusion15(term1, term2, term1,  term2, src1, src1, src1, src1)
 model.terms[2]
-a = zeros(Int(50e6))
+a = zeros(Int(100))
 
 @time test_fn(a, model)
 @code_warntype test_fn(a, model)
 a
+
+t = :((term1=term1, term2=t2,))
+
+ti = Symbol("term1")
+
+tt = :($ti=$ti)

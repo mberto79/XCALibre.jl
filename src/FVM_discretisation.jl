@@ -1,6 +1,6 @@
 # Discretisation schemes and equation terms (types)
 export Linear, Constant, Source, ScalarField, Equation, discretise!,
-aP!, aN!, b!, Δ, @defineEqn, @discretise, Mesh, apply_boundary_conditions!, clear!, clearAll!, solve!, generalDiscretise!, sparse_matrix_connectivity, Laplacian, SteadyDiffusion
+aP!, aN!, b!, Δ, @defineEqn, @discretise, Mesh, apply_boundary_conditions!, clear!, clearAll!, solve!, generalDiscretise!, sparse_matrix_connectivity, Laplacian
 
 abstract type AbstractTerm end
 abstract type AbstractField end
@@ -8,14 +8,6 @@ abstract type AbstractSource end
 abstract type AbstractEquation end
 struct Linear end
 struct Constant end
-
-
-
-
-# struct Equation{I<:Integer,F<:AbstractFloat} <: AbstractEquation
-#     A::SparseMatrixCSC{F, I}
-#     b::Vector{F}
-# end
 
 struct Equation <: AbstractEquation
     A::SparseMatrixCSC{Float64, Int64}
@@ -64,12 +56,6 @@ struct Laplacian{T} <: AbstractTerm
     distretisation::T
 end
 Laplacian{Linear}(Γ, ϕ) = Laplacian(Γ, ϕ, Linear())
-
-struct SteadyDiffusion{T}
-    laplacian::Laplacian{T}
-    sign::Vector{Int64}
-    equation::Equation
-end
 
 # function generalDiscretise!(type, ϕ, J)
 function generalDiscretise!(model::SteadyDiffusion{T}, aP!, aN!, b!) where {T}

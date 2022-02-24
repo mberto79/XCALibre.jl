@@ -15,6 +15,9 @@ template = Base.remove_linenums!(
 
 macro model_builder(modelName::String, terms::Integer, sources::Integer)
     name = Symbol(modelName)
+    NT = Symbol(:NT) |> esc
+    NS = Symbol(:NS) |> esc
+
 
     parametricTypes = []
     fields = []
@@ -33,14 +36,15 @@ macro model_builder(modelName::String, terms::Integer, sources::Integer)
     end
 
     structBody = Expr(:block, Expr(
-        :struct, false, Expr(:curly, name, parametricTypes...),
+        :struct, false, Expr(:curly, name, NT, NS, parametricTypes...),
         Expr(:block, fields...)
         ))
     return structBody
 end
 
-@model_builder "SteadyDiffusion2" 2 1
-SteadyDiffusion2(1,2,3)
+@macroexpand(@model_builder "SteadyDiffusion" 2 1)
+
+@model_builder "SteadyDiffusion1" 2 1
 
 struct Linear end
 struct Limited end
@@ -52,69 +56,27 @@ struct Laplacian{T}
     sign::Vector{Int64}
 end
 
-struct Source1{T}
+struct Source{T}
     phi::Vector{Float64}
     sign::Vector{Int64}
 end
 
-cells = Int(50e6)
+cells = Int(10)
 phi = ones(cells)
 phiSource =  zeros(cells)
 J1 = 0.5
 J2 = 2.0
 sign = [1]
 
-model = Model0(
+term1 = Laplacian{Linear}(J1, phi,[1])
+term2 = Laplacian{Limited}(J2, phi, [1])
+source1 = Source{Constant}(phiSource, [1])
+
+phiModel = SteadyDiffusion1{2,1}(
     Laplacian{Linear}(J1, phi,[1]),
     Laplacian{Limited}(J2, phi, [1]),
-    Source1{Constant}(phiSource, [1])
+    Source{Constant}(phiSource, [1])
 )
-
-
-function discretise!(A, model::Model0)
-    terms = (model.term1, model.term2)
-    for term in terms
-        for i ∈ eachindex(A)
-            A[i] += term.J
-        end
-    end
-end
-
-terms = (Laplacian{Linear}(J1, phi,[1]), Laplacian{Limited}(J2, phi, [1]))
-function discretise_tuple!(A, terms)
-    for term in terms
-        for i ∈ eachindex(A)
-            A[i] += term.J
-        end
-    end
-end
-
-function discretise_fused!(A, model::Model0)
-    # terms = (model.term1, model.term2)
-    # for term in terms
-    for i ∈ eachindex(A)
-        A[i] += model.term1.J
-        A[i] += model.term2.J
-    end
-    # end
-end
-
-GC.gc()
-A = Float64[1:cells;]
-@time discretise!(A,model)
-A = Float64[1:cells;]
-@time discretise_tuple!(A, terms)
-A = Float64[1:cells;]
-@time discretise_fused!(A,model)
-A = Float64[1:cells;]
-@time discretise_macro!(A, model)
-A = Float64[1:cells;]
-A = nothing
-
-A
-
-terms = (Laplacian{Linear}(J1, phi,[1]), Laplacian{Limited}(J2, phi, [1]))
-typeof(terms)
 
 macro discretise_macro(ex)
     model = esc(ex)
@@ -140,3 +102,20 @@ discretise_macro! = @discretise_macro model
 A
 A = Float64[1:cells;]
 A
+
+struct Test0{NT, NS, T1,S1}
+    term::T1
+    source::S1
+end
+
+struct Test7{T1,T2,S1}
+    terms::NamedTuple{(:term1, :term2), Tuple{T1,T2}}
+    sources::NamedTuple{(:source1), Tuple{S1}}
+end
+
+obj = Test7((term1=term1,term2=term2), (source1=source1))
+
+function test_fn(obj.terms, obj.sources)
+    nothing
+end
+

@@ -3,7 +3,7 @@ using SparseArrays
 using Krylov
 
 using FVM_1D
-revise(FVM_1D)
+# revise(FVM_1D)
 # plotly()
 
 nCells = Int(10)
@@ -20,7 +20,9 @@ GC.gc()
 # f = plot(mesh.nodes, :coords; labels=true)
 # plot!(f, mesh.cells, :centre; labels=true)
 
-@time ϕModel = SteadyDiffusion{Linear}(Laplacian{Linear}(k, ϕ), [1], ϕ.equation)
+term1 = Laplacian{Linear}(k, ϕ)
+source1 = 0.0
+@time ϕModel = SteadyDiffusion(term1, source1)
 isbits(ϕModel)
 @time generalDiscretise!(ϕModel, aP!{Linear}, aN!{Linear}, b!{Linear})
 @code_warntype generalDiscretise!(ϕModel, aP!{Linear}, aN!{Linear}, b!{Linear})

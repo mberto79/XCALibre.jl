@@ -70,7 +70,7 @@ sign = [1]
 
 term1 = Laplacian{Linear}(J1, phi,[1])
 term2 = Laplacian{Limited}(J2, phi, [1])
-source1 = Source{Constant}(phiSource, [1])
+src1 = Source{Constant}(phiSource, [1])
 
 phiModel = SteadyDiffusion1{2,1}(
     Laplacian{Linear}(J1, phi,[1]),
@@ -108,14 +108,36 @@ struct Test0{NT, NS, T1,S1}
     source::S1
 end
 
-struct Test7{T1,T2,S1}
-    terms::NamedTuple{(:term1, :term2), Tuple{T1,T2}}
-    sources::NamedTuple{(:source1), Tuple{S1}}
+struct Test6{T1,T2,S1}
+    terms::NamedTuple{(:term1, :term2,), Tuple{T1,T2}}
+    sources::NamedTuple{(:s1,), Tuple{S1}}
 end
 
-obj = Test7((term1=term1,term2=term2), (source1=source1))
+obj = Test6((term1=term1,term2=term2), (s1=src1,))
 
-function test_fn(obj.terms, obj.sources)
+function test_fn(obj)
+    terms, sources = obj.terms, obj.sources
+    terms.term1
+    terms.term2
+    sources.s1
+    # println(terms)
+    # println(sources)
     nothing
 end
 
+@time test_fn(obj)
+@code_warntype test_fn(obj)
+
+t = Base.remove_linenums!( quote
+    struct Test6{T1,T2,S1}
+        terms::NamedTuple{(:term1, :term2,), Tuple{T1,T2}}
+        sources::NamedTuple{(:s1,), Tuple{S1}}
+    end
+end)
+
+ts = [:term1, :term2]
+types = [:T2, :T2]
+orig = :(NamedTuple{(:term1, :term2), Tuple{T1, T2}})
+tup = Expr(:curly, :Tuple, types...)
+ter = Expr(:tuple, QuoteNode(:test0), QuoteNode(:test1))
+interp = :(NamedTuple{$ter, $tup})

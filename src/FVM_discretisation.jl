@@ -1,6 +1,53 @@
 # Discretisation schemes and equation terms (types)
-export Linear, Constant, Source, ScalarField, Equation, discretise!,
-aP!, aN!, b!, Δ, @defineEqn, @discretise, Mesh, apply_boundary_conditions!, clear!, clearAll!, solve!, generalDiscretise!, sparse_matrix_connectivity, Laplacian
+export @discretise
+export ScalarField, Equation
+export Laplacian, Divergence, Source
+export Linear, Constant
+export aP!, aN!, b!
+export apply_boundary_conditions!, clear!, clearAll!, solve!
+
+# # Macros and functions
+
+macro discretise(Model_type, nTerms::Integer, nSources::Integer)
+    aP = Expr(:block)
+    aN = Expr(:block)
+    b  = Expr(:block)
+    for t ∈ 1:nTerms
+        push!(aP.args, :(aP!(model.terms.$(Symbol("term$t")), A, face, cID)))
+        push!(aN.args, :(aN!(model.terms.$(Symbol("term$t")), A, face, cID, nID)))
+        push!(b.args, :(b!(model.terms.$(Symbol("term$t")), b, cID)))
+    end 
+    
+    quote 
+        function discretise!(model::$Model_type, equation)
+            mesh = model.terms.term1.ϕ.mesh
+            cells = mesh.cells
+            faces = mesh.faces
+            A = equation.A
+            b = equation.b
+            @inbounds for cID ∈ eachindex(cells)
+                cell = cells[cID]
+                A[cID,cID] = zero(0.0)
+                @inbounds for fi ∈ eachindex(cell.facesID)
+                    fID = cell.facesID[fi]
+                    face = faces[fID]
+                    nID = cell.neighbours[fi]
+                    c1 = face.ownerCells[1]
+                    c2 = face.ownerCells[2]
+                    $aP
+                    if c1 != c2 
+                        A[cID,nID] = zero(0.0)
+                        $aN                    
+                    end
+                end
+                b[cID] = zero(0.0)
+                $b
+            end
+            nothing
+        end # end function
+    end |> esc # end quote and escape!
+end # end macro
+
 
 abstract type AbstractTerm end
 abstract type AbstractField end
@@ -13,75 +60,65 @@ struct Equation <: AbstractEquation
     A::SparseMatrixCSC{Float64, Int64}
     b::Vector{Float64}
 end
+Equation(mesh::Mesh) = begin
+    nCells = length(mesh.cells)
+    I, J, V = sparse_matrix_connectivity(mesh)
+    Equation(sparse(I,J,V), zeros(nCells))
+end
 
 struct ScalarField <: AbstractField
     values::Vector{Float64}
     mesh::Mesh
     equation::Equation
 end
-ScalarField(mesh::Mesh) = begin
+ScalarField(mesh::Mesh, equation::Equation) = begin
     nCells = length(mesh.cells)
-    I, J, V = sparse_matrix_connectivity(mesh)
-    eqn = Equation(sparse(I,J,V), zeros(nCells))
-    ScalarField(zeros(nCells), mesh, eqn)
+    ScalarField(zeros(nCells), mesh, equation)
 end
 
-struct Δ{T} <: AbstractTerm end
-struct aP!{T} end
-struct aN!{T} end
-struct b!{T} end
-
-@inline aP!{Linear}(A, term, face, cID) = begin
-    A[cID, cID] += (term.Γ * face.area * norm(face.normal)) / face.delta
-    nothing
-end
-@inline  aN!{Linear}(A, term, face, cID, nID) = begin
-    A[cID, nID] = -(term.Γ * face.area * norm(face.normal)) / face.delta
-    nothing
-end
-@inline  b!{Linear}(b, term, cID) = begin
-    b[cID] = 0.0
-    nothing
-end
+### OPERATORS AND SCHEMES
 struct Source{T} <: AbstractSource
-    ϕ::I where I <: Integer
+    ϕ::Float64
     type::T
     label::Symbol
 end
 Source{Constant}(ϕ) = Source{Constant}(ϕ, Constant(), :ConstantSource)
 
 struct Laplacian{T} <: AbstractTerm 
-    Γ::Float64
+    J::Float64
     ϕ::ScalarField
-    distretisation::T
+    sign::Vector{Int64}
 end
-Laplacian{Linear}(Γ, ϕ) = Laplacian(Γ, ϕ, Linear())
+Laplacian{Linear}(J, ϕ) = Laplacian{Linear}(J, ϕ, [1])
+@inline aP!(term::Laplacian{Linear}, A, face, cID) = begin
+    A[cID, cID] += term.sign[1]*((term.J * face.area * norm(face.normal))/face.delta)
+    nothing
+end
+@inline aN!(term::Laplacian{Linear}, A, face, cID, nID) = begin
+    A[cID, nID] = -term.sign[1]*(term.J * face.area * norm(face.normal))/face.delta
+    nothing
+end
+@inline b!(term::Laplacian{Linear}, b, cID) = begin
+    b[cID] = 0.0
+    nothing
+end
 
-# function generalDiscretise!(type, ϕ, J)
-function generalDiscretise!(model::SteadyDiffusion{T}, aP!, aN!, b!) where {T}
-    laplacian = model.laplacian
-    ϕ = laplacian.ϕ
-    A = ϕ.equation.A
-    b = ϕ.equation.b
-    mesh = ϕ.mesh
-    cells = mesh.cells
-    faces = mesh.faces
-    nCells = length(cells)
-    for cID ∈ 1:nCells
-        cell = cells[cID]
-        for fi ∈ eachindex(cell.facesID)
-            fID = cell.facesID[fi]
-            face = faces[fID]
-            nID = cell.neighbours[fi]
-            c1 = face.ownerCells[1]
-            c2 = face.ownerCells[2]
-            aP!(A, laplacian, face, cID)
-            if c1 != c2 
-            aN!(A, laplacian, face, cID, nID)
-            end
-        end
-        b!(b, laplacian, cID)
-    end
+struct Divergence{T} <: AbstractTerm 
+    J::SVector{3, Float64}
+    ϕ::ScalarField
+    sign::Vector{Int64}
+end
+Divergence{Linear}(J, ϕ) = Divergence{Linear}(J, ϕ, [1])
+@inline aP!(term::Divergence{Linear}, A, face, cID) = begin
+    A[cID, cID] += (term.J * face.area * norm(face.normal)) / face.delta
+    nothing
+end
+@inline aN!(term::Divergence{Linear}, A, face, cID, nID) = begin
+    A[cID, nID] = -(term.J * face.area * norm(face.normal)) / face.delta
+    nothing
+end
+@inline b!(term::Divergence{Linear}, b, cID) = begin
+    b[cID] = 0.0
     nothing
 end
 
@@ -113,103 +150,9 @@ function sparse_matrix_connectivity(mesh::Mesh)
     return I, J, V
 end
 
-# Operator overloads
-# struct Model{I<:Integer}
-#     terms::Vector{AbstractTerm}
-#     sources::Vector{AbstractSource}
-#     sign::Vector{I}
-# end
-
-# Base.:(==)(a::AbstractTerm, b::AbstractSource) = Model(AbstractTerm[a],AbstractSource[b],[1])
-# Base.:(==)(a::Vector{AbstractTerm}, b::AbstractSource) = Model(a, [b], [1])
-# Base.:(+)(a::TempEquation, b::TempEquation) = begin
-#     for i ∈ eachindex(b.A.nzval)
-#     b.A.nzval[i] += a.A.nzval[i]
-#     end
-#     return b
-# end
-# Base.:(-)(a::AbstractField, b::AbstractField) = begin
-#     for i ∈ eachindex(a.equation.A.nzval)
-#         a.equation.A.nzval[i] = a.equation.A.nzval[i] - (b.equation.A.nzval[i])
-#     end
-#     return a
-# end
-
-# # Base.:(+)(a::Vector{AbstractTerm}, b::AbstractTerm) = push!(a, b)
-
-# # Macros and functions
-
-# macro defineEqn(eqn)
-#     nothing
-# end # end macro
-
-# macro discretise(eqn_expr)
-# eqn = esc(eqn_expr)
-# # terms = :((term1))
-# quote
-#     terms = [:(term1)]
-
-#     # terms = $(eqn).terms
-#     # collect_expr = Symbol[]
-#     # for term ∈ terms
-#     #     push!(collect_expr, term.arg)
-#     # end
-#     # args = Expr(:tuple, collect_expr...)
-    
-#     func = Base.remove_linenums!(:(
-#         # function discretise!(eqn::AbstractEquation, $args )
-#         function discretise!(eqn::AbstractEquation, term1 )
-#         begin
-#             mesh = eqn.ϕ.mesh
-#             cells = mesh.cells
-#             faces = mesh.faces
-#             nCells = length(cells)
-#             A = eqn.A
-#         end
-#         for cID ∈ 1:nCells
-#             cell = cells[cID]
-#             for fi ∈ eachindex(cell.facesID)
-#                 fID = cell.facesID[fi]
-#                 face = faces[fID]
-#                 nID = cell.neighbours[fi]
-#                 c1 = face.ownerCells[1]
-#                 c2 = face.ownerCells[2]
-#                 # discretisation code here
-#             end
-#         end
-#         nothing
-#     end))
-
-#     notBoundaryBranch = Base.remove_linenums!(:(if c1 != c2 end))
-
-#     # aP = :(A[cID, cID] += Γ*face.area*norm(face.normal)/face.delta)
-#     # aN = :(A[cID, neighbour] += -Γ*face.area*norm(face.normal)/face.delta)
-
-#     for term ∈ terms
-#         push!(
-#             func.args[2].args[2].args[2].args[2].args[2].args,
-#             # term.aP
-#             :(aP!(A, $term, face, cID))
-#             )
-
-#         push!(
-#             notBoundaryBranch.args[2].args,
-#             # term.aN
-#             :(aN!(A, $term, face, cID, nID))
-#             )
-#     end
-#     push!(
-#         func.args[2].args[2].args[2].args[2].args[2].args,
-#         notBoundaryBranch)
-#     println(func)
-#     eval(func)
-# end  # end quote
-# end
-
 function apply_boundary_conditions!(
-    ϕ::ScalarField, k, leftBC, rightBC)
-    b = ϕ.equation.b
-    mesh = ϕ.mesh
+    equation::Equation, mesh::Mesh, k, leftBC, rightBC)
+    b = equation.b
     nCells = length(b)
     faces = mesh.faces
     b[1] = k*faces[1].area*norm(faces[1].normal)/faces[1].delta*leftBC

@@ -1,3 +1,5 @@
+export discretise!
+
 macro build_model(modelName::String, terms::Integer, sources::Integer)
     name = Symbol(modelName)
 
@@ -53,3 +55,4 @@ end
 # Model definitions
 @build_model "SteadyDiffusion" 1 1
 export SteadyDiffusion
+@discretise SteadyDiffusion 1 1

@@ -1,51 +1,3 @@
-struct Model0{T1,T2,S1}
-    term1::T1 
-    term2::T2 
-    source1::S1
-end
-
-template = Base.remove_linenums!(
-    quote 
-        struct MODEL{T1,T2,S1}
-            a::T1
-            b::T2
-            c::S1
-        end
-    end)
-
-macro model_builder(modelName::String, terms::Integer, sources::Integer)
-    name = Symbol(modelName)
-    NT = Symbol(:NT) |> esc
-    NS = Symbol(:NS) |> esc
-
-
-    parametricTypes = []
-    fields = []
-    
-    for t ∈ 1:(terms)
-        tt = Symbol("T$t") |> esc
-        push!(parametricTypes, tt)
-        push!(fields, Expr(:(::), Symbol("term$t"), tt))
-        
-    end
-    
-    for s ∈ 1:(sources)
-        ss = Symbol("S$s") |> esc
-        push!(parametricTypes, ss)
-        push!(fields, Expr(:(::), Symbol("src$s"), ss))
-    end
-
-    structBody = Expr(:block, Expr(
-        :struct, false, Expr(:curly, name, parametricTypes...),
-        Expr(:block, fields...)
-        ))
-    return structBody
-end
-
-@macroexpand(@model_builder "SteadyDiffusion" 2 1)
-
-@model_builder "SteadyDiffusion" 2 1
-
 struct Linear end
 struct Limited end
 struct Constant end
@@ -79,12 +31,6 @@ term2 = Laplacian{Limited}(J1, phi, [1])
 # term2 = VariableLaplacian{Limited}(J2, phi, [1])
 src1 = Source{Constant}(phiSource, [1])
 
-phiTerms = SteadyDiffusion(
-    Laplacian{Linear}(J1, phi,[1]),
-    VariableLaplacian{Limited}(J2, phi, [1]),
-    Source{Constant}(phiSource, [1])
-)
-
 macro discretise_macro(ex)
     model = esc(ex)
     name = esc(:discretise_fn)
@@ -98,7 +44,7 @@ macro discretise_macro(ex)
     forLoop = :(for i ∈ eachindex(A); $insert; end)
     quote
     return function $name($A, $model::Model0)
-        $forLoop
+        $(esc(forLoop))
     end
     end
 end
@@ -109,54 +55,6 @@ discretise_macro! = @discretise_macro model
 A
 A = Float64[1:cells;]
 A
-
-struct Model{T1,T2,S1}
-    terms::NamedTuple{(:term1, :term2,), Tuple{T1,T2}}
-    sources::NamedTuple{(:s1,), Tuple{S1}}
-end
-
-phiTuple = Model((term1=term1,term2=term2), (s1=src1,))
-
-phiTuple.terms[2].J .= 2
-phiModel.term2.J .= 2
-
-phiTuple
-
-function test_fn(A::Vector{Float64}, obj::SteadyDiffusion10)
-    terms, sources = obj.terms, obj.sources
-    # terms.term1
-    # terms.term2
-    # sources.source1
-    for i ∈ 1:length(A)
-            A[i] += terms.term1.J
-            A[i] += terms.term2.J
-    end
-    # println(terms)
-    # println(sources)
-    nothing
-end
-
-
-function test_fn(obj::SteadyDiffusion)
-    t1 = obj.term1
-    t2 = obj.term2
-    s1 = obj.source1
-    
-    nothing
-end
-
-@time test_fn(phiTuple)
-@code_warntype test_fn(phiTuple)
-
-@time test_fn(phiModel)
-@code_warntype test_fn(phiModel)
-
-t = Base.remove_linenums!( quote
-    struct Test6{T1,T2,S1}
-        terms::NamedTuple{(:term1, :term2,), Tuple{T1,T2}}
-        sources::NamedTuple{(:s1,), Tuple{S1}}
-    end
-end)
 
 
 macro model_builder_tuple(modelName::String, terms::Integer, sources::Integer)
@@ -214,22 +112,68 @@ macro model_builder_tuple(modelName::String, terms::Integer, sources::Integer)
     return  out #structBody, func
 end
 
-@macroexpand(@model_builder_tuple "SteadyDiffusion" 4 4)
+@macroexpand(@model_builder_tuple "SteadyDiffusion" 1 1)
 
-@model_builder_tuple "SteadyDiffusion15" 4 4
+@model_builder_tuple "SteadyDiffusion" 2 1
 
-model =SteadyDiffusion10((term1=term1,term2=term2), (source1=src1,))
-model =SteadyDiffusion10(term1, term1, term1, src1)
-model =SteadyDiffusion15(term1, term2, term1,  term2, src1, src1, src1, src1)
-model.terms[2]
-a = zeros(Int(100))
+model1 =SteadyDiffusion(term1, term1, src1)
 
-@time test_fn(a, model)
-@code_warntype test_fn(a, model)
-a
+macro discretise(eqn_expr)
+    eqn = esc(eqn_expr)
+    # terms = :((term1))
+    terms = [:(term1)]
 
-t = :((term1=term1, term2=t2,))
+    # terms = $(eqn).terms
+    # collect_expr = Symbol[]
+    # for term ∈ terms
+    #     push!(collect_expr, term.arg)
+    # end
+    # args = Expr(:tuple, collect_expr...)
+    
+    
 
-ti = Symbol("term1")
+    notBoundaryBranch = Base.remove_linenums!(:(if c1 != c2 end))
 
-tt = :($ti=$ti)
+    # aP = :(A[cID, cID] += Γ*face.area*norm(face.normal)/face.delta)
+    # aN = :(A[cID, neighbour] += -Γ*face.area*norm(face.normal)/face.delta)
+
+    for term ∈ terms
+        push!(
+            func.args[2].args[2].args[2].args[2].args[2].args,
+            # term.aP
+            :(aP!(A, $term, face, cID))
+            )
+
+        push!(
+            notBoundaryBranch.args[2].args,
+            # term.aN
+            :(aN!(A, $term, face, cID, nID))
+            )
+    end
+    push!(
+        func.args[2].args[2].args[2].args[2].args[2].args,
+        notBoundaryBranch)
+    quote
+        function discretise!(model, eqn)
+            begin
+                mesh = model.terms.term1.ϕ.mesh
+                cells = mesh.cells
+                faces = mesh.faces
+                nCells = length(cells)
+                A = eqn.A
+            end
+            for cID ∈ 1:nCells
+                cell = cells[cID]
+                for fi ∈ eachindex(cell.facesID)
+                    fID = cell.facesID[fi]
+                    face = faces[fID]
+                    nID = cell.neighbours[fi]
+                    c1 = face.ownerCells[1]
+                    c2 = face.ownerCells[2]
+                    # discretisation code here
+                end
+            end
+            nothing
+        end # end Function
+    end  # end quote
+    end

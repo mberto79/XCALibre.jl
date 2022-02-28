@@ -3,7 +3,7 @@ using Plots
 using FVM_1D
 # plotly()
 
-nCells = Int(10)
+nCells = Int(50)
 x0 = 0.0
 xL = 2.0
 h = 0.5
@@ -28,7 +28,7 @@ source1 = 0.0
 ϕ.values
 
 
-term1 = Divergence{Linear}([10, 0.1, 0.0], ϕ)
+term1 = Divergence{Linear}([5.0, 0.1, 0.0], ϕ)
 term2 = Laplacian{Linear}(5.0, ϕ); term2.sign[1] = -1
 source1 = 0.0
 @time ϕModel = SteadyConvectionDiffusion(term1,term2, source1)
@@ -40,4 +40,4 @@ source1 = 0.0
 phi = push!([], 300.0, ϕ.values..., 100.0)
 x(mesh) = [mesh.cells[i].centre[1] for i ∈ 1:length(mesh.cells)]
 xcoords = push!([], x0, x(mesh)..., xL)
-plot(xcoords, phi, label="ϕ", legend=:bottomleft)
+scatter(xcoords, phi, label="ϕ", legend=:bottomleft)

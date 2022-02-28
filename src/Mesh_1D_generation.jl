@@ -48,13 +48,20 @@ function Cell_1D(
     for fID ∈ facesID
         push!(neighbours, (faces[fID].ownerCells .!= i) ⋅ faces[fID].ownerCells)
     end
+    if i == 1
+        nsign = [-1, -1]
+    elseif i == length(elements)
+        nsign = [-1, -1]
+    else
+        nsign = [-1, 1]
+    end
     cellLength = norm(faces[facesID[2]].centre - faces[facesID[1]].centre)
     volume = faces[facesID[1]].area * cellLength
     return Cell(
         element.nodesID,
         facesID,
         neighbours,
-        [-1, 1], # nsign
+        nsign, #[-1, 1], # nsign
         element.centre,
         volume
     )

@@ -13,9 +13,15 @@ macro discretise(Model_type, nTerms::Integer, nSources::Integer)
     aN! = Expr(:block)
     b!  = Expr(:block)
     for t ∈ 1:nTerms
-        push!(aP!.args, :(aP!(model.terms.$(Symbol("term$t")), A, face, cID)))
-        push!(aN!.args, :(aN!(model.terms.$(Symbol("term$t")), A, face, cID, nID)))
-        push!(b!.args, :(b!(model.terms.$(Symbol("term$t")), b, cID)))
+        push!(aP!.args, :(aP!(
+            model.terms.$(Symbol("term$t")), A, cell, face, nsign, cID)
+            ))
+        push!(aN!.args, :(aN!(
+            model.terms.$(Symbol("term$t")), A, cell, face, nsign, cID, nID)
+            ))
+        push!(b!.args, :(
+            b!(model.terms.$(Symbol("term$t")), b, cell, cID)
+            ))
     end 
     
     quote 
@@ -30,13 +36,14 @@ macro discretise(Model_type, nTerms::Integer, nSources::Integer)
                 A[cID,cID] = zero(0.0)
                 @inbounds for fi ∈ eachindex(cell.facesID)
                     fID = cell.facesID[fi]
+                    nsign = cell.nsign[fi]
                     face = faces[fID]
                     nID = cell.neighbours[fi]
                     c1 = face.ownerCells[1]
                     c2 = face.ownerCells[2]
-                    $aP!
                     if c1 != c2 
                         A[cID,nID] = zero(0.0)
+                        $aP!
                         $aN!                    
                     end
                 end
@@ -90,15 +97,15 @@ struct Laplacian{T} <: AbstractTerm
     sign::Vector{Int64}
 end
 Laplacian{Linear}(J, ϕ) = Laplacian{Linear}(J, ϕ, [1])
-@inline aP!(term::Laplacian{Linear}, A, face, cID) = begin
-    A[cID, cID] += term.sign[1]*(term.J * face.area * norm(face.normal))/face.delta
+@inline aP!(term::Laplacian{Linear}, A, cell, face, nsign, cID) = begin
+    A[cID, cID] += term.sign[1]*(-term.J * face.area)/face.delta
     nothing
 end
-@inline aN!(term::Laplacian{Linear}, A, face, cID, nID) = begin
-    A[cID, nID] += term.sign[1]*(-term.J * face.area * norm(face.normal))/face.delta
+@inline aN!(term::Laplacian{Linear}, A, cell, face, nsign, cID, nID) = begin
+    A[cID, nID] += term.sign[1]*(term.J * face.area)/face.delta
     nothing
 end
-@inline b!(term::Laplacian{Linear}, b, cID) = begin
+@inline b!(term::Laplacian{Linear}, b, cell, cID) = begin
     b[cID] = 0.0
     nothing
 end
@@ -109,15 +116,15 @@ struct Divergence{T} <: AbstractTerm
     sign::Vector{Int64}
 end
 Divergence{Linear}(J, ϕ) = Divergence{Linear}(J, ϕ, [1])
-@inline aP!(term::Divergence{Linear}, A, face, cID) = begin
-    A[cID, cID] += term.sign[1]*(term.J ⋅ face.normal * face.area)/2.0
+@inline aP!(term::Divergence{Linear}, A, cell, face, nsign, cID) = begin
+    A[cID, cID] += term.sign[1]*(term.J⋅face.normal*nsign*face.area)/2.0
     nothing
 end
-@inline aN!(term::Divergence{Linear}, A, face, cID, nID) = begin
-    A[cID, nID] += term.sign[1]*(term.J ⋅ face.normal * face.area)/2.0
+@inline aN!(term::Divergence{Linear}, A, cell, face, nsign, cID, nID) = begin
+    A[cID, nID] += term.sign[1]*(term.J⋅face.normal*nsign*face.area)/2.0
     nothing
 end
-@inline b!(term::Divergence{Linear}, b, cID) = begin
+@inline b!(term::Divergence{Linear}, b, cell, cID) = begin
     b[cID] = 0.0
     nothing
 end
@@ -150,19 +157,45 @@ function sparse_matrix_connectivity(mesh::Mesh)
     return I, J, V
 end
 
+function face_properties(mesh::Mesh, facei::Integer)
+    faces = mesh.faces
+    area = faces[facei].area
+    delta = faces[facei].delta
+    normal = faces[facei].normal
+    nsign = mesh.cells[faces[facei].ownerCells[1]].nsign[1]
+    return area, delta, normal, nsign
+end
+
 function apply_boundary_conditions!(
-    equation::Equation, mesh::Mesh, k, U, leftBC, rightBC)
+    equation::Equation, mesh::Mesh, model, leftBC, rightBC)
+    # equation::Equation, mesh::Mesh, k, U, leftBC, rightBC)
     A = equation.A
     b = equation.b
     nCells = length(b)
-    faces = mesh.faces
-    b[1] = -k*faces[1].area*norm(faces[1].normal)/faces[1].delta*leftBC
-    b[nCells] = -k*faces[nCells+1].area*norm(faces[nCells+1].normal)/faces[nCells+1].delta*rightBC
-    b[1] += (U ⋅ faces[1].normal * faces[1].area * leftBC)
-    # A[1,1] -= (U ⋅ faces[1].normal * faces[1].area)/2.0
-    b[nCells] += (U ⋅ faces[nCells+1].normal * faces[nCells+1].area * rightBC)
-    # A[nCells,nCells] -= (U ⋅ faces[nCells+1].normal * faces[nCells+1].area)/2.0
+    begin
+        J = model.terms.term1.J
+        sgn = model.terms.term1.sign[1]
 
+        area, delta, normal, nsign = face_properties(mesh, 1)
+        b[1] += sgn*(J⋅(area*normal*nsign))*leftBC
+
+        area, delta, normal, nsign = face_properties(mesh, nCells+1)
+        b[nCells] += sgn*(J⋅(area*normal*nsign))*rightBC
+    end
+    
+    begin
+        J = model.terms.term2.J
+        sgn = model.terms.term2.sign[1]
+
+        area, delta, normal, nsign = face_properties(mesh, 1)
+        b[1] += sgn*(-J*area/delta*leftBC)
+        A[1,1] += sgn*(-J*area/delta)
+
+        area, delta, normal, nsign = face_properties(mesh, nCells+1)
+        b[nCells] += sgn*(-J*area/delta*rightBC)
+        A[nCells,nCells] += sgn*(-J*area/delta)
+
+    end
     nothing
 end
 

@@ -56,3 +56,7 @@ end
 @build_model "SteadyDiffusion" 1 1
 export SteadyDiffusion
 @discretise SteadyDiffusion 1 1
+
+@build_model "SteadyConvectionDiffusion" 2 1
+export SteadyConvectionDiffusion
+@discretise SteadyConvectionDiffusion 2 1

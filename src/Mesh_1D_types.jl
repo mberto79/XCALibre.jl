@@ -4,7 +4,8 @@ struct UnitVectors
     i::SVector{3, Float64}
     j::SVector{3, Float64}
     k::SVector{3, Float64}
-    UnitVectors() = new(SVector(1.0,0.0,0.0), SVector(0.0,1.0,0.0), SVector(0.0,0.0,1.0))
+    UnitVectors() = new(
+        SVector(1.0,0.0,0.0), SVector(0.0,1.0,0.0), SVector(0.0,0.0,1.0))
 end
 
 struct Node{F}

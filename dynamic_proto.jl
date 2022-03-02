@@ -12,6 +12,11 @@ struct Edge{F<:AbstractFloat}
     p2::Point{F}
 end
 
+struct Element{I<:Integer,F<:AbstractFloat}
+    nodesID::SVector{4,I}
+    centre::SVector{3,F}
+end
+
 struct Block{I<:Integer,F<:AbstractFloat}
     p1::Point{F}
     p2::Point{F} 
@@ -20,23 +25,32 @@ struct Block{I<:Integer,F<:AbstractFloat}
     nx::I
     ny::I
     nodes::Vector{Point{F}}
+    elements::Vector{Element{I,F}}
 end
 Block(p1::Point{F},p2::Point{F},p3::Point{F},p4::Point{F},nx::I,ny::I) where {I,F} = begin
-    Block(p1, p2, p3, p4, nx, ny, fill(Point(0.0, 0.0, 0.0), (nx+1)*(ny+1)))
+    Block(
+        p1, p2, p3, p4, nx, ny, 
+        fill(Point(0.0, 0.0, 0.0), (nx+1)*(ny+1)),
+        fill(Element(SVector{4, I}(0,0,0,0), SVector{3, F}(0.0,0.0,0.0)), (nx)*(ny)))
 end
 
-function plot(p::Point)
-    scatter([p.coords[1]], [p.coords[2]], color=:blue, legend=false)
+function plot(p::Point; colour=:blue)
+    scatter([p.coords[1]], [p.coords[2]], color=colour, legend=false)
 end
 
-function plot!(fig, p::Point)
-    scatter!(fig, [p.coords[1]], [p.coords[2]], color=:blue, legend=false)
+function plot!(fig, p::Point; colour=:blue)
+    scatter!(fig, [p.coords[1]], [p.coords[2]], color=colour, legend=false)
 end
 
-function plot(vec::Vector{Point{F}}) where F<:AbstractFloat
-    fig = scatter([vec[1].coords[1]], [vec[1].coords[2]], color=:blue, legend=false)
+function plot(vec::Vector{Point{F}}; colour=:blue) where F<:AbstractFloat
+    fig = scatter(
+        [vec[1].coords[1]], [vec[1].coords[2]], 
+        color=colour, legend=false, markersize=3 #, axis_ratio=:equal
+        )
     for i ∈ 2:length(vec)
-        scatter!(fig, [vec[i].coords[1]], [vec[i].coords[2]], color=:blue)
+        scatter!(
+            fig, [vec[i].coords[1]], [vec[i].coords[2]], 
+            color=colour, markersize=3)
     end
     fig
 end
@@ -48,13 +62,7 @@ function plot!(fig, vec::Vector{Point{F}}; colour=:blue) where F<:AbstractFloat
     fig
 end
 
-p1 = Point(0.0,0.0,0.0)
-p2 = Point(1.0,1.0,0.0)
-p3 = Point(9.0,1.0,0.0)
-p4 = Point(10.0,0.3,0.0)
 
-@time block = Block(p1, p4, p2, p3, 12, 8)
-# Allocate array for all points
 
 function process!(block::Block{I,F}) where {I,F}
     nx = block.nx; ny = block.ny
@@ -70,12 +78,6 @@ function process!(block::Block{I,F}) where {I,F}
     nothing
 end
 
-@time process!(block)
-fig = plot(block.nodes)
-plot!(fig, pts2)
-
-
-point_index = 1
 function discretise_edge!(
     # points::Vector{Point{F}}, point_index::Integer, e::Edge{F}, ncells::Integer
     points::Vector{Point{F}}, node_idx::Integer, p1::Point{F}, p2::Point{F}, ncells::Integer
@@ -97,29 +99,72 @@ function discretise_edge!(
     end
     return node_idx
 end
-point_index = 1
-e1 = Edge(p1,p2)
-@time point_index = discretise_edge(points, point_index, e1, ycells)
 
-e2 = Edge(p4,p3)
-@time point_index = discretise_edge(points, point_index, e2, ycells)
-
-e3 = Edge(p2,p3)
-@time points3 = discretise_edge(e3,div)
-
-e4 = Edge(p1,p4)
-@time points4 = discretise_edge(e4,div)
-
-fig = plot(p1)
-fig = plot!(fig , p3)
-plot!(fig, points, colour=:red)
-
-
-struct Patch0{F<:AbstractFloat}
-    name::Symbol
-    edge::Edge{F}
+function collect_elements!(block::Block)
+    element_i = 0
+    node_i = 0
+    for y_i ∈ 1:block.ny
+        for x_i ∈ 1:block.nx
+            element_i += 1
+            node_i += 1
+            block.elements[element_i] = Element(
+                SVector{4, Int64}(node_i,node_i+1,node_i+(block.nx+1),node_i+(block.nx+1)+1), 
+                SVector{3, Float64}(0.0,0.0,0.0)
+            )
+            
+        end
+        node_i += 1
+    end
 end
 
-inlet = Patch0(:inlet, Edge(p2,p1))
+function centre!(block::Block{I,F}) where {I,F}
+    for i ∈ eachindex(block.elements)
+        sum =  SVector{3, F}(0.0,0.0,0.0)
+        for id ∈ block.elements[i].nodesID
+            sum += block.nodes[id].coords
+        end
+        centre = sum/4
+        block.elements[i] = Element(block.elements[i].nodesID, centre)
+    end
+end
 
-inlet.edge == e1
+p1 = Point(0.0,0.0,0.0)
+p2 = Point(1.0,1.0,0.0)
+p3 = Point(9.0,1.0,0.0)
+p4 = Point(10.0,0.0,0.0)
+
+@time block = Block(p1, p4, p2, p3, 40, 30)
+@time process!(block)
+
+@time collect_elements!(block)
+@time centre!(block)
+
+block.elements[1]
+fig = plot(block.nodes[1])
+plot!(fig, block.nodes[1], colour=:red)
+plot!(fig, block.nodes[2], colour=:red)
+plot!(fig, block.nodes[42], colour=:red)
+plot!(fig, block.nodes[43], colour=:red)
+
+fig = plot(block.nodes)
+
+struct Patch0{I}
+    name::Symbol
+    ID::I
+end
+
+struct Boundary{I}
+    ID::I
+    facesID::I
+    nodesID::I
+    cellsID::I
+end
+
+
+e1 = Edge(p1,p2)
+e2 = Edge(p2,p1)
+e3 = Edge(p1,p2)
+
+Base.:(==)(e1::Edge{F}, e2::Edge{F}) where F = begin
+    a = 2
+end

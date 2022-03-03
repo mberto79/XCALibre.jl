@@ -63,3 +63,44 @@ a
 @time points_y1 = fill(Point(0.0,0.0,0.0), 500, 4000)
 
 using FVM_1D.Mesh2D
+using FVM_1D.Plotting
+
+
+p1 = Point(0.0,0.0,0.0)
+p2 = Point(1.0,0.0,0.0)
+p3 = Point(1.5,0.0,0.0)
+p4 = Point(0.0,1.0,0.0)
+p5 = Point(0.8,0.8,0.0)
+p6 = Point(1.5,0.7,0.0)
+points = [p1,p2,p3,p4,p5,p6]
+# Edges in x-direction
+e1 = Edge(p1,p2,3)
+e2 = Edge(p2,p3,3)
+e3 = Edge(p4,p5,3)
+e4 = Edge(p5,p6,3)
+
+# Edges in y-direction
+e5 = Edge(p1,p4,2)
+e6 = Edge(p2,p5,2)
+e7 = Edge(p3,p6,2)
+edges = [e1,e2,e3,e4,e5,e6,e7]
+
+fig = plot([p1, p2, p3, p4, p5, p6])
+plot!(fig, [e1, e2, e3, e4, e5,e6,e7])
+
+b1 = LinearBlock(e1,e3,e5,e6,3,2)
+b2 = LinearBlock(e2,e4,e7,e7,3,2)
+blocks = [b1,b2]
+multiblock = build_multiblock!(blocks)
+
+patch1 = Patch(:inlet, 1, [5])
+patch2 = Patch(:outlet, 2, [7])
+patch3 = Patch(:bottom, 3, [1,2])
+patch4 = Patch(:top, 4, [3,4])
+
+patches = [patch1, patch2, patch3, patch4]
+
+fig = plot(patch1.edges)
+plot!(fig, patch2.edges)
+plot!(fig, patch3.edges)
+plot!(fig, patch4.edges) 

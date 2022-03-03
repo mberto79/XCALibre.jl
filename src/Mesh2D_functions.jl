@@ -1,5 +1,5 @@
 # export process!, discretise_edge!, collect_elements!, centre!
-export build_multiblock!, is_boundary!
+export tag_as_boundary!, tag_boundaries!, build_multiblock
 
 # function process!(block::Block{I,F}) where {I,F}
 #     nx = block.nx; ny = block.ny
@@ -65,21 +65,48 @@ export build_multiblock!, is_boundary!
 #     end
 # end
 
-function build_multiblock!(blocks::Vector{LinearBlock{I,F}}) where {I,F}
+function tag_as_boundary!(edge::Edge{I}) where I
+    Edge(edge.p1, edge.p2, edge.n, true, edge.nodesID)
+end
+
+function tag_as_boundary!(point::Point{F}) where F
+    Point(point.coords, true)
+end
+
+function tag_boundaries!(domain::MeshDefinition{I,F}) where {I,F}
+    patches = domain.patches; edges = domain.edges; points = domain.points
+    for patch ∈ patches
+        for id ∈ patch.edgesID
+            edges[id] = tag_as_boundary!(edges[id])
+            points[edges[id].p1] = tag_as_boundary!(points[edges[id].p1])
+            points[edges[id].p2] = tag_as_boundary!(points[edges[id].p2])
+        end
+    end
+end
+
+function build_multiblock(domain::MeshDefinition{I,F}) where {I,F}
     # Calculate total number of cells and nodes
     n_cells = zero(I)
     n_nodes = zero(I)
-    for block ∈ blocks
-        ncells += block.nx*block.ny
-        npoints += (block.nx + 1)*(block.ny + 1)
+    for block ∈ domain.blocks
+        n_cells += block.nx*block.ny
+        n_nodes += (block.nx + 1)*(block.ny + 1)
     end
-    elements = fill(zero(F), n_cells)
-    nodes = fill(zero(F), n_nodes)
-    return elements, nodes
+    for edge ∈ domain.edges
+        if !edge.boundary
+            n_nodes -= (edge.n + 1)
+        end
+    end
+    elements = fill(Element(zero(I), zero(F)), n_cells)
+    nodes = fill(Node(zero(F)), n_nodes)
+    return MultiBlock(domain, elements, nodes)
 end
 
-function is_boundary!(
-    patches::Vector{Patch{I}}, edges::Vector{Edge{I,F}}
-    ) where {I,F}
+function generate_boundary_nodes!()
     nothing
 end
+
+function generate_internal_nodes!()
+    nothing
+end
+

@@ -1,5 +1,6 @@
 # export process!, discretise_edge!, collect_elements!, centre!
 export tag_as_boundary!, tag_boundaries!, build_multiblock
+export generate_boundary_nodes!
 
 # function process!(block::Block{I,F}) where {I,F}
 #     nx = block.nx; ny = block.ny
@@ -70,7 +71,7 @@ function tag_as_boundary!(edge::Edge{I}) where I
 end
 
 function tag_as_boundary!(point::Point{F}) where F
-    Point(point.coords, true)
+    Point(point.coords, true, false)
 end
 
 function tag_boundaries!(domain::MeshDefinition{I,F}) where {I,F}
@@ -102,8 +103,49 @@ function build_multiblock(domain::MeshDefinition{I,F}) where {I,F}
     return MultiBlock(domain, elements, nodes)
 end
 
-function generate_boundary_nodes!()
-    nothing
+function nodes_on_edge!(
+    multiblock::MultiBlock{I,F}, edgeID::Integer, counter::Integer
+    ) where {I,F}
+    edge = multiblock.definition.edges[edgeID]
+    ncells = edge.n
+    p1 = multiblock.definition.points[edge.p1]
+    p2 = multiblock.definition.points[edge.p2]
+    d = p2.coords - p1.coords
+    d_mag = norm(d)
+    e1 = d/d_mag
+    spacing = d_mag/ncells
+
+    if !p1.processed
+        multiblock.nodes[counter] = Node(p1.coords)
+        multiblock.definition.points[edge.p1] = Point(p1.coords, true, true)
+        counter += 1
+    end
+
+    # j = 1
+    for j ∈ 1:(ncells-1)
+        multiblock.nodes[counter] = Node(spacing*e1*j + p1.coords)
+        # j += 1
+        counter += 1
+    end
+
+    if !p2.processed
+        multiblock.nodes[counter] = Node(p2.coords)
+        p2 = multiblock.definition.points[edge.p2] = Point(p2.coords, true, true)
+        counter += 1
+    end
+    return counter
+end
+
+function generate_boundary_nodes!(
+    multiblock::MultiBlock{I,F}, counter::Integer) where {I,F}
+    # block = multiblock.definition.blocks[1]
+    edges = multiblock.definition.edges
+    # patch = multiblock.definition.patches[1]
+    for patch ∈ multiblock.definition.patches
+        for edgeID ∈ patch.edgesID
+            counter = nodes_on_edge!(multiblock, edgeID, counter)
+        end
+    end
 end
 
 function generate_internal_nodes!()

@@ -1,13 +1,19 @@
+export AbstractPoint
 export Point, Edge, Element, Block, Patch, MeshDefinition, Node, MultiBlock
 
-struct Point{F<:AbstractFloat}
+abstract type AbstractPoint end
+
+struct Point{F<:AbstractFloat} <:AbstractPoint
     coords::SVector{3,F}
     boundary::Bool
+    processed::Bool
 end
-Point(x::F, y::F, z::F) where F<:AbstractFloat = Point(SVector{3, F}(x,y,z), false)
+Point(x::F, y::F, z::F) where F<:AbstractFloat = begin 
+    Point(SVector{3, F}(x,y,z), false, false)
+end
 Point(zero::F) where F<:AbstractFloat = Point(zero,zero,zero)
 
-struct Node{F<:AbstractFloat}
+struct Node{F<:AbstractFloat} <:AbstractPoint
     coords::SVector{3,F}
 end
 Node(x::F, y::F, z::F) where F<:AbstractFloat = Node(SVector{3, F}(x,y,z))

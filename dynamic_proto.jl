@@ -65,6 +65,7 @@ a
 using FVM_1D.Mesh2D
 using FVM_1D.Plotting
 
+function define_mesh()
 p1 = Point(0.0,0.0,0.0)
 p2 = Point(1.0,0.0,0.0)
 p3 = Point(1.5,0.0,0.0)
@@ -74,10 +75,10 @@ p6 = Point(1.5,0.7,0.0)
 points = [p1,p2,p3,p4,p5,p6]
 
 # Edges in x-direction
-e1 = Edge(1,2,3)
+e1 = Edge(1,2,5)
 e2 = Edge(2,3,3)
-e3 = Edge(4,5,2)
-e4 = Edge(5,6,2)
+e3 = Edge(4,5,5)
+e4 = Edge(5,6,3)
 
 # Edges in y-direction
 e5 = Edge(1,4,2)
@@ -85,8 +86,8 @@ e6 = Edge(2,5,2)
 e7 = Edge(3,6,2)
 edges = [e1,e2,e3,e4,e5,e6,e7]
 
-b1 = Block(1,3,5,6,3,2)
-b2 = Block(2,4,6,7,2,2)
+b1 = Block(1,3,5,6,5,2)
+b2 = Block(2,4,6,7,3,2)
 blocks = [b1,b2]
 
 patch1 = Patch(:inlet, 1, [5])
@@ -95,15 +96,14 @@ patch3 = Patch(:bottom, 3, [1,2])
 patch4 = Patch(:top, 4, [3,4])
 patches = [patch1, patch2, patch3, patch4]
 
-domain = MeshDefinition(points, edges, patches, blocks)
+return MeshDefinition(points, edges, patches, blocks)
+end
 
+@time domain = define_mesh()
 tag_boundaries!(domain)
 @time multiblock = build_multiblock(domain)
+@time generate_boundary_nodes!(multiblock, 1)
 
-fig = plot([p1, p2, p3, p4, p5, p6])
-plot!(fig, [e1, e2, e3, e4, e5,e6,e7])
 
-fig = plot(patch1.edges)
-plot!(fig, patch2.edges)
-plot!(fig, patch3.edges)
-plot!(fig, patch4.edges) 
+fig = plot(multiblock.nodes)
+plot!(fig, multiblock.definition.points, colour=:red)

@@ -7,9 +7,10 @@ struct Point{F<:AbstractFloat} <:AbstractPoint
     coords::SVector{3,F}
     boundary::Bool
     processed::Bool
+    ID::Int64 # Temp definition. Need to make parametric i.e. I (changing all signatures!)
 end
 Point(x::F, y::F, z::F) where F<:AbstractFloat = begin 
-    Point(SVector{3, F}(x,y,z), false, false)
+    Point(SVector{3, F}(x,y,z), false, false, 0)
 end
 Point(zero::F) where F<:AbstractFloat = Point(zero,zero,zero)
 

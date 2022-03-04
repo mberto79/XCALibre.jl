@@ -1,77 +1,12 @@
 # export process!, discretise_edge!, collect_elements!, centre!
-export tag_as_boundary!, tag_boundaries!, build_multiblock
-export generate_boundary_nodes!
-
-# function process!(block::Block{I,F}) where {I,F}
-#     nx = block.nx; ny = block.ny
-#     points_y1 = fill(Point(0.0,0.0,0.0), ny+1)
-#     points_y2 = fill(Point(0.0,0.0,0.0), ny+1)
-#     discretise_edge!(points_y1, 1, block.p1, block.p3, ny)
-#     discretise_edge!(points_y2, 1, block.p2, block.p4, ny)
-#     nodei = 1
-#     for i ∈ eachindex(points_y1)
-#         nodei_curr = discretise_edge!(block.nodes, nodei, points_y1[i], points_y2[i], nx)
-#         nodei = nodei_curr
-#     end
-#     nothing
-# end
-
-# function discretise_edge!(
-#     # points::Vector{Point{F}}, point_index::Integer, e::Edge{F}, ncells::Integer
-#     points::Vector{Point{F}}, node_idx::Integer, p1::Point{F}, p2::Point{F}, ncells::Integer
-#     ) where F<:AbstractFloat
-#     nsegments = ncells - 1
-#     d = p2.coords - p1.coords
-#     d_mag = norm(d)
-#     e1 = d/d_mag
-#     spacing = d_mag/ncells
-
-#     points[node_idx] = p1
-#     points[node_idx + nsegments + 1] = p2
-
-#     j = 1
-#     for pointi ∈ (node_idx+1):(node_idx + ncells)
-#         points[pointi] = Point(spacing*e1*(j) + p1.coords)
-#         j += 1
-#         node_idx = pointi + 1
-#     end
-#     return node_idx
-# end
-
-# function collect_elements!(block::Block)
-#     element_i = 0
-#     node_i = 0
-#     for y_i ∈ 1:block.ny
-#         for x_i ∈ 1:block.nx
-#             element_i += 1
-#             node_i += 1
-#             block.elements[element_i] = Element(
-#                 SVector{4, Int64}(node_i,node_i+1,node_i+(block.nx+1),node_i+(block.nx+1)+1), 
-#                 SVector{3, Float64}(0.0,0.0,0.0)
-#             )
-            
-#         end
-#         node_i += 1
-#     end
-# end
-
-# function centre!(block::Block{I,F}) where {I,F}
-#     for i ∈ eachindex(block.elements)
-#         sum =  SVector{3, F}(0.0,0.0,0.0)
-#         for id ∈ block.elements[i].nodesID
-#             sum += block.nodes[id].coords
-#         end
-#         centre = sum/4
-#         block.elements[i] = Element(block.elements[i].nodesID, centre)
-#     end
-# end
+export build_multiblock, tag_boundaries!, generate_boundary_nodes!, generate_internal_edge_nodes!, find_blocks_with_same_edge, generate_internal_nodes!
 
 function tag_as_boundary!(edge::Edge{I}) where I
     Edge(edge.p1, edge.p2, edge.n, true, edge.nodesID)
 end
 
 function tag_as_boundary!(point::Point{F}) where F
-    Point(point.coords, true, false)
+    Point(point.coords, true, false, 0)
 end
 
 function tag_boundaries!(domain::MeshDefinition{I,F}) where {I,F}
@@ -103,75 +38,149 @@ function build_multiblock(domain::MeshDefinition{I,F}) where {I,F}
     return MultiBlock(domain, elements, nodes)
 end
 
-function nodes_on_edge!(
-    multiblock::MultiBlock{I,F}, edgeID::Integer, counter::Integer
-    ) where {I,F}
-    edge = multiblock.definition.edges[edgeID]
-    ncells = edge.n
-    p1 = multiblock.definition.points[edge.p1]
-    p2 = multiblock.definition.points[edge.p2]
+function linear_distribution(p1, p2, ncells, j)
     d = p2.coords - p1.coords
     d_mag = norm(d)
     e1 = d/d_mag
     spacing = d_mag/ncells
+    return spacing*e1*j + p1.coords
+end
 
-    if !p1.processed
-        multiblock.nodes[counter] = Node(p1.coords)
-        multiblock.definition.points[edge.p1] = Point(p1.coords, true, true)
-        counter += 1
-    end
-
-    # j = 1
-    for j ∈ 1:(ncells-1)
-        multiblock.nodes[counter] = Node(spacing*e1*j + p1.coords)
-        # j += 1
-        counter += 1
-    end
-
-    if !p2.processed
-        multiblock.nodes[counter] = Node(p2.coords)
-        p2 = multiblock.definition.points[edge.p2] = Point(p2.coords, true, true)
+function nodes_on_boundary_edge!(
+    multiblock::MultiBlock{I,F}, edgeID::I, counter::I) where {I,F}
+    edge = multiblock.definition.edges[edgeID]
+    ncells = edge.n
+    p1 = multiblock.definition.points[edge.p1]
+    p2 = multiblock.definition.points[edge.p2]
+    for j ∈ 2:(ncells)
+        multiblock.nodes[counter] = Node(linear_distribution(p1, p2, ncells, j-1))
+        nodes_to_multiple_block_matrix!(multiblock, edgeID, counter, j)
         counter += 1
     end
     return counter
 end
 
-function update_block_matrix!(
-    multiblock::MultiBlock{I,F}, edgeID::Integer, counter::Integer
-    ) where {I,F}
-    edge = multiblock.definition.edges[edgeID]
-    ncells = edge.n
+function nodes_to_multiple_block_matrix!(
+    multiblock::MultiBlock{I,F}, edgeID::I, counter::I, node_index::I) where {I,F}
     for block ∈ multiblock.definition.blocks
+        rows, cols = size(block.nodesID)
         if block.edge_x1 == edgeID
-            @views block.nodesID[:,1] = [i for i ∈ counter:(counter + ncells)]
-            println("Here")
+            block.nodesID[node_index,1] = counter
+            # return
         end
         if block.edge_x2 == edgeID
-            nothing
+            block.nodesID[node_index,cols] = counter
+            # return
         end
         if block.edge_y1 == edgeID
-            nothing
+            block.nodesID[1,node_index] = counter
+            # return
         end
         if block.edge_y2 == edgeID
-            nothing
+            block.nodesID[rows,node_index] = counter
+            # return
         end
     end
 end
 
-function generate_boundary_nodes!(
-    multiblock::MultiBlock{I,F}, counter::Integer) where {I,F}
-    # block = multiblock.definition.blocks[1]
-    edges = multiblock.definition.edges
-    # patch = multiblock.definition.patches[1]
+function nodes_to_single_block_matrix!(
+    multiblock::MultiBlock{I,F}, blockID::I, edgeID::I, counter::I, node_index::I
+    ) where {I,F}
+    block = multiblock.definition.blocks[blockID]
+
+    rows, cols = size(block.nodesID)
+    if block.edge_x1 == edgeID
+        block.nodesID[node_index,1] = counter
+        # return
+    end
+    if block.edge_x2 == edgeID
+        block.nodesID[node_index,cols] = counter
+        # return
+    end
+    if block.edge_y1 == edgeID
+        block.nodesID[1,node_index] = counter
+        # return
+    end
+    if block.edge_y2 == edgeID
+        block.nodesID[rows,node_index] = counter
+        # return
+    end
+end
+
+function generate_boundary_nodes!(multiblock::MultiBlock{I,F}) where {I,F}
+    counter = 1
     for patch ∈ multiblock.definition.patches
         for edgeID ∈ patch.edgesID
-            counter = nodes_on_edge!(multiblock, edgeID, counter)
-            update_block_matrix!(multiblock, edgeID, counter)
+            edge = multiblock.definition.edges[edgeID]
+            p1 = multiblock.definition.points[edge.p1]
+            p2 = multiblock.definition.points[edge.p2]
+            if p1.processed
+                nodes_to_multiple_block_matrix!(multiblock, edgeID, p1.ID, 1) 
+            end
+            if p2.processed
+                nodes_to_multiple_block_matrix!(multiblock, edgeID, p2.ID, edge.n + 1) 
+            end
+            if !p1.processed
+                multiblock.nodes[counter] = Node(p1.coords)
+                multiblock.definition.points[edge.p1] = Point(
+                    p1.coords, true, true, counter)
+                nodes_to_multiple_block_matrix!(multiblock, edgeID, counter, 1) 
+                counter += 1
+            end
+            if !p2.processed
+                multiblock.nodes[counter] = Node(p2.coords)
+                multiblock.definition.points[edge.p2] = Point(
+                    p2.coords, true, true, counter)
+                nodes_to_multiple_block_matrix!(multiblock, edgeID, counter, edge.n + 1) 
+                counter += 1
+            end
         end
     end
+    for patch ∈ multiblock.definition.patches
+        for edgeID ∈ patch.edgesID
+            counter = nodes_on_boundary_edge!(multiblock, edgeID, counter)
+        end
+    end
+    return counter
 end
 
-function generate_internal_nodes!()
-    nothing
+function generate_internal_edge_nodes!(multiblock::MultiBlock{I,F}, counter::I) where {I,F}
+    for edgeID ∈ eachindex(multiblock.definition.edges)
+        if !multiblock.definition.edges[edgeID].boundary
+            counter = nodes_on_internal_edge!(multiblock, edgeID, counter)
+        end
+    end
+    counter
+end
+
+function nodes_on_internal_edge!(multiblock, edgeID, counter)
+    edge = multiblock.definition.edges[edgeID]
+    ncells = edge.n
+    p1 = multiblock.definition.points[edge.p1]
+    p2 = multiblock.definition.points[edge.p2]
+    for j ∈ 2:(ncells)
+        multiblock.nodes[counter] = Node(linear_distribution(p1, p2, ncells, j-1))
+        nodes_to_multiple_block_matrix!(multiblock, edgeID, counter, j)
+        counter += 1
+    end
+    return counter
+end
+
+function generate_internal_nodes!(multiblock::MultiBlock{I,F}, counter::I) where {I,F}
+    for block ∈ multiblock.definition.blocks
+        ncells = block.nx
+        y1_idx = @view block.nodesID[1,:]
+        y2_idx = @view block.nodesID[ncells+1,:]
+        
+        for i ∈ 2:(length(y1_idx) - 1)
+            p1 = multiblock.nodes[y1_idx[i]]
+            p2 = multiblock.nodes[y2_idx[i]]
+            for j ∈ 2:(ncells)
+                multiblock.nodes[counter] = Node(linear_distribution(p1, p2, ncells, j-1))
+                # nodes_to_multiple_block_matrix!(multiblock, edgeID, counter, j)
+                counter += 1
+            end
+        end
+    end # block loop
 end
 

@@ -5,11 +5,17 @@ using Plots
 export plot, plot!
 
 function plot(p::AbstractPoint; colour=:blue) #where F
-    Plots.scatter([p.coords[1]], [p.coords[2]], color=colour, legend=false)
+    Plots.scatter(
+        [p.coords[1]], [p.coords[2]], 
+        color=colour, legend=false, markersize=3
+        )
 end
 
 function plot!(fig, p::AbstractPoint; colour=:blue) #where F
-    Plots.scatter!(fig, [p.coords[1]], [p.coords[2]], color=colour, legend=false)
+    Plots.scatter!(
+        fig, [p.coords[1]], [p.coords[2]], 
+        color=colour, legend=false, markersize=3
+        )
 end
 
 function plot(vec::Vector{<:AbstractPoint}; colour=:blue) #where F
@@ -20,14 +26,17 @@ function plot(vec::Vector{<:AbstractPoint}; colour=:blue) #where F
     for i ∈ 2:length(vec)
         Plots.scatter!(
             fig, [vec[i].coords[1]], [vec[i].coords[2]], 
-            color=colour, markersize=3)
+            color=colour, markersize=3
+            )
     end
     fig
 end
 
 function plot!(fig, vec::Vector{<:AbstractPoint}; colour=:blue) #where F
     for i ∈ 1:length(vec)
-        Plots.scatter!(fig, [vec[i].coords[1]], [vec[i].coords[2]], color=colour)
+        Plots.scatter!(
+            fig, [vec[i].coords[1]], [vec[i].coords[2]], 
+            color=colour, markersize=3)
     end
     fig
 end

@@ -3,69 +3,17 @@ using StaticArrays
 using LinearAlgebra
 
 using FVM_1D.Mesh2D
-
-p1 = Point(0.0,0.0,0.0)
-p2 = Point(1.0,1.0,0.0)
-p3 = Point(9.0,1.0,0.0)
-p4 = Point(10.0,0.0,0.0)
-
-@time block = Block(p1, p4, p2, p3, 40, 30)
-@time process!(block)
-
-@time collect_elements!(block)
-@time centre!(block)
-
-block.elements[1]
-fig = plot(block.nodes[1])
-plot!(fig, block.nodes[1], colour=:red)
-plot!(fig, block.nodes[2], colour=:red)
-plot!(fig, block.nodes[42], colour=:red)
-plot!(fig, block.nodes[43], colour=:red)
-
-fig = plot(block.nodes)
-
-struct Patch0{I}
-    name::Symbol
-    ID::I
-end
-
-struct Boundary{I}
-    ID::I
-    facesID::I
-    nodesID::I
-    cellsID::I
-end
-
-e1 = Edge(p1,p2)
-e2 = Edge(p2,p1)
-e3 = Edge(p1,p2)
-e4 = Edge(p1,p3)
-
-Base.:(==)(e1::Edge{F}, e2::Edge{F}) where F = begin
-    if e1 === e2
-        return true
-    else
-        e_temp = Edge(e2.p2, e2.p1)
-        if e1 === e_temp
-            return true
-        end
-    end
-    return false
-end
-
-@time e1 == e4
-
-@time a = [1 2 3; 4 5 6; 7 8 9]
-@time a[1,1] = 11
-a
-@time b = vec(a)
-
-@time points_y1 = fill(Point(0.0,0.0,0.0), 500, 4000)
-
-using FVM_1D.Mesh2D
 using FVM_1D.Plotting
 
-function define_mesh()
+n_vertical      = 2
+n_horizontal1   = 5
+n_horizontal2   = 3
+
+n_vertical      = 200
+n_horizontal1   = 1000
+n_horizontal2   = 8000
+
+function define_mesh(n_vertical, n_horizontal1, n_horizontal2)
     p1 = Point(0.0,0.0,0.0)
     p2 = Point(1.0,0.0,0.0)
     p3 = Point(1.5,0.0,0.0)
@@ -75,9 +23,6 @@ function define_mesh()
     points = [p1,p2,p3,p4,p5,p6]
 
     # Edges in x-direction
-    n_vertical = 2
-    n_horizontal1 = 5
-    n_horizontal2 = 3
     e1 = Edge(1,2,n_horizontal1)
     e2 = Edge(2,3,n_horizontal2)
     e3 = Edge(4,5,n_horizontal1)
@@ -102,20 +47,22 @@ function define_mesh()
     return MeshDefinition(points, edges, patches, blocks)   
 end
 
-function generate()
-    domain = define_mesh()
+function generate(n_vertical, n_horizontal1, n_horizontal2)
+    domain = define_mesh(n_vertical, n_horizontal1, n_horizontal2)
     tag_boundaries!(domain)
     multiblock = build_multiblock(domain)
     counter = generate_boundary_nodes!(multiblock)
     counter = generate_internal_edge_nodes!(multiblock, counter)
     generate_internal_nodes!(multiblock, counter)
+    build_elements!(multiblock)
     return multiblock
 end
 
-@time multiblock = generate()
-
-
+multiblock = nothing
+@time multiblock = generate(n_vertical, n_horizontal1, n_horizontal2)
+c = centres(multiblock.elements)
 
 fig = plot(multiblock.nodes)
+plot!(fig, c)
 plot!(fig, multiblock.definition.points, colour=:red)
 plot!(fig, multiblock.nodes, colour=:red)

@@ -87,24 +87,7 @@ function nodes_to_single_block_matrix!(
     multiblock::MultiBlock{I,F}, blockID::I, edgeID::I, counter::I, node_index::I
     ) where {I,F}
     block = multiblock.definition.blocks[blockID]
-
-    rows, cols = size(block.nodesID)
-    if block.edge_x1 == edgeID
-        block.nodesID[node_index,1] = counter
-        # return
-    end
-    if block.edge_x2 == edgeID
-        block.nodesID[node_index,cols] = counter
-        # return
-    end
-    if block.edge_y1 == edgeID
-        block.nodesID[1,node_index] = counter
-        # return
-    end
-    if block.edge_y2 == edgeID
-        block.nodesID[rows,node_index] = counter
-        # return
-    end
+    block.nodesID[node_index,edgeID] = counter
 end
 
 function generate_boundary_nodes!(multiblock::MultiBlock{I,F}) where {I,F}
@@ -167,7 +150,8 @@ function nodes_on_internal_edge!(multiblock, edgeID, counter)
 end
 
 function generate_internal_nodes!(multiblock::MultiBlock{I,F}, counter::I) where {I,F}
-    for block ∈ multiblock.definition.blocks
+    for blockID ∈ eachindex(multiblock.definition.blocks)
+        block = multiblock.definition.blocks[blockID]
         ncells = block.nx
         y1_idx = @view block.nodesID[1,:]
         y2_idx = @view block.nodesID[ncells+1,:]
@@ -177,7 +161,7 @@ function generate_internal_nodes!(multiblock::MultiBlock{I,F}, counter::I) where
             p2 = multiblock.nodes[y2_idx[i]]
             for j ∈ 2:(ncells)
                 multiblock.nodes[counter] = Node(linear_distribution(p1, p2, ncells, j-1))
-                # nodes_to_multiple_block_matrix!(multiblock, edgeID, counter, j)
+                nodes_to_single_block_matrix!(multiblock, blockID, i, counter, j)
                 counter += 1
             end
         end

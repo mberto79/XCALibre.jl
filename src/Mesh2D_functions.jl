@@ -136,6 +136,28 @@ function nodes_on_edge!(
     return counter
 end
 
+function update_block_matrix!(
+    multiblock::MultiBlock{I,F}, edgeID::Integer, counter::Integer
+    ) where {I,F}
+    edge = multiblock.definition.edges[edgeID]
+    ncells = edge.n
+    for block ∈ multiblock.definition.blocks
+        if block.edge_x1 == edgeID
+            @views block.nodesID[:,1] = [i for i ∈ counter:(counter + ncells)]
+            println("Here")
+        end
+        if block.edge_x2 == edgeID
+            nothing
+        end
+        if block.edge_y1 == edgeID
+            nothing
+        end
+        if block.edge_y2 == edgeID
+            nothing
+        end
+    end
+end
+
 function generate_boundary_nodes!(
     multiblock::MultiBlock{I,F}, counter::Integer) where {I,F}
     # block = multiblock.definition.blocks[1]
@@ -144,6 +166,7 @@ function generate_boundary_nodes!(
     for patch ∈ multiblock.definition.patches
         for edgeID ∈ patch.edgesID
             counter = nodes_on_edge!(multiblock, edgeID, counter)
+            update_block_matrix!(multiblock, edgeID, counter)
         end
     end
 end

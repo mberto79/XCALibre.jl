@@ -99,10 +99,15 @@ patches = [patch1, patch2, patch3, patch4]
 return MeshDefinition(points, edges, patches, blocks)
 end
 
-@time domain = define_mesh()
+function generate()
+domain = define_mesh()
 tag_boundaries!(domain)
-@time multiblock = build_multiblock(domain)
-@time generate_boundary_nodes!(multiblock, 1)
+multiblock = build_multiblock(domain)
+generate_boundary_nodes!(multiblock, 1)
+return multiblock
+end
+
+@time multiblock = generate()
 
 
 fig = plot(multiblock.nodes)

@@ -1,6 +1,5 @@
 using LinearAlgebra
 using StaticArrays
-using Plots
 
 import FVM_1D
 using FVM_1D.Plotting
@@ -17,7 +16,7 @@ function linear_distribution(p1, p2, ncells, j)
     return spacing*e1*j + p1.coords
 end
 
-nx, ny = 50, 15
+nx, ny = 50, 60
 
 p1 = Point(SVector(0.0, 0.0))
 p2 = Point(SVector(1.0, 0.0))
@@ -39,7 +38,7 @@ function internal_nodes(e3::Vector{Point{I,F}}, e4::Vector{Point{I,F}}, nx, ny
     end
     edges
 end
-e3[1]
+
 inner_nodes = internal_nodes(e3,e4,nx,ny)
 
 y_matrix = zeros(nx+1,ny+1)
@@ -62,10 +61,10 @@ x_matrix[end,:] = x.(e4)
 
 boundaryPoints = [e1; e2; e3; e4]
 fig = plot(boundaryPoints)
-fig = plot(ec)
+fig = plot!(fig, ec; colour=:red)
 plot([ec; inner_nodes...; e2]; colour=:red)
 
-for step_number = 1:1000
+for step_number = 1:10000
     y_matrix = step(y_matrix)
     x_matrix = step(x_matrix)
     # display(y_matrix)
@@ -73,7 +72,6 @@ end
 update_nodes!(inner_nodes, x_matrix, :x)
 update_nodes!(inner_nodes, y_matrix, :y)
 plot([ec; inner_nodes...; e2; e3; e4]; colour=:red)
-gr()
 
 function update_nodes!(inner_nodes, y_matrix, axis::Symbol) where {I,F}
     nx, ny = size(y_matrix)
@@ -87,7 +85,6 @@ function update_nodes!(inner_nodes, y_matrix, axis::Symbol) where {I,F}
                 nodes[j] = Point(SVector(nodes[j].coords[1],y_matrix[j+1,i+1]))
             end
         end
-        println(i)
     end
 end
 

@@ -4,14 +4,14 @@ using FVM_1D.Mesh2D
 using Plots
 export plot, plot!
 
-function plot(p::AbstractPoint; colour=:blue) #where F
+function plot(p::P; colour=:blue) where P<:AbstractPoint
     Plots.scatter(
         [p.coords[1]], [p.coords[2]], 
         color=colour, legend=false, markersize=3
         )
 end
 
-function plot!(fig, p::AbstractPoint; colour=:blue) #where F
+function plot!(fig, p::P; colour=:blue) where P<:AbstractPoint
     Plots.scatter!(
         fig, [p.coords[1]], [p.coords[2]], 
         color=colour, legend=false, markersize=3

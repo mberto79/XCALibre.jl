@@ -9,9 +9,9 @@ n_vertical      = 2
 n_horizontal1   = 5
 n_horizontal2   = 3
 
-n_vertical      = 200
-n_horizontal1   = 1000
-n_horizontal2   = 8000
+# n_vertical      = 200
+# n_horizontal1   = 1000
+# n_horizontal2   = 8000
 
 function define_mesh(n_vertical, n_horizontal1, n_horizontal2)
     p1 = Point(0.0,0.0,0.0)
@@ -63,6 +63,5 @@ multiblock = nothing
 c = centres(multiblock.elements)
 
 fig = plot(multiblock.nodes)
-plot!(fig, c)
+plot!(fig, c; colour=:red)
 plot!(fig, multiblock.definition.points, colour=:red)
-plot!(fig, multiblock.nodes, colour=:red)

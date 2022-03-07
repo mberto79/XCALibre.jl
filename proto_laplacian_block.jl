@@ -16,7 +16,7 @@ function linear_distribution(p1, p2, ncells, j)
     return spacing*e1*j + p1.coords
 end
 
-nx, ny = 50, 60
+nx, ny = 50, 40
 
 p1 = Point(SVector(0.0, 0.0))
 p2 = Point(SVector(1.0, 0.0))
@@ -64,7 +64,7 @@ fig = plot(boundaryPoints)
 fig = plot!(fig, ec; colour=:red)
 plot([ec; inner_nodes...; e2]; colour=:red)
 
-for step_number = 1:10000
+for step_number = 1:1000
     y_matrix = step(y_matrix)
     x_matrix = step(x_matrix)
     # display(y_matrix)

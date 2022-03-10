@@ -65,3 +65,5 @@ c = centres(multiblock.elements)
 fig = plot(multiblock.nodes)
 plot!(fig, c; colour=:red)
 plot!(fig, multiblock.definition.points, colour=:red)
+
+mesh2d

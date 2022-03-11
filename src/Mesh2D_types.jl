@@ -8,22 +8,21 @@ struct Point{F<:AbstractFloat} <:AbstractPoint
     coords::SVector{3,F}
     boundary::Bool
 end
-Point(x::F, y::F, z::F) where F<:AbstractFloat = begin 
-    Point(SVector{3, F}(x,y,z), false)
-end
+Point(coords::SVector{3,F}) where F<:AbstractFloat = Point(coords, false)
+Point(x::F, y::F, z::F) where F<:AbstractFloat = Point(SVector{3, F}(x,y,z), false)
 Point(zero::F) where F<:AbstractFloat = Point(zero,zero,zero)
 
 struct Edge{I<:Integer,F}
     points::Vector{Point{F}}
     pointsID::Vector{I}
-    npoints::I
+    ncells::I
     boundary::Bool
 end
 Edge(p1::I, p2::I, ncells::I) where {I} = begin
     pointsID = fill(zero(I), ncells+1)
     pointsID[1]      = p1
     pointsID[end]    = p2
-    Edge(pointsID, ncells, false)
+    Edge(points, pointsID, ncells, false)
 end
 # Edge(f) = (p1,p2,ncells) -> f(Edge(p1,p2,ncells))
 

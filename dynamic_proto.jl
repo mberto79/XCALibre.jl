@@ -47,6 +47,6 @@ patches = [patch1, patch2, patch3, patch4]
 @time counter = generate_interface_faces!(counter, builder, mesh_info)
 @time generate_internal_faces!(counter, builder, mesh_info)
 
-fig = plot(builder.points, colour=:cyan)
-plot!(fig, centre.(builder.elements), colour=:red)
-plot!(fig, centre.(builder.faces), colour=:black)
+scatter(builder.points, colour=:blue)
+scatter!(builder.faces, color=:black)
+scatter!(builder.elements, color=:red)

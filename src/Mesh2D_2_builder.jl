@@ -6,9 +6,8 @@ export generate_boundary_faces!, generate_interface_faces!, generate_internal_fa
 function generate_internal_faces!(
     facei::I, mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}
     ) where {I,F}
-    blocks = builder.blocks
-    nodes = mesh.nodes
-    faces = mesh.faces
+    (; blocks) = builder
+    (; nodes, faces) = mesh
     for block ∈ blocks
         nx, ny = block.nx, block.ny
         nodesID = block.nodesID
@@ -43,10 +42,8 @@ end
 function generate_interface_faces!(
     facei::I, mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}
     ) where {I,F}
-    blocks = builder.blocks
-    edges = builder.edges
-    nodes = mesh.nodes
-    faces = mesh.faces
+    (; edges, blocks) = builder
+    (; nodes, faces) = mesh
     blockPair = fill(Block(zero(I)), 2)
     edgeIndexPair = zeros(I,2)
     for (edgeID, edge) ∈ enumerate(edges)
@@ -87,11 +84,8 @@ end
 function generate_boundary_faces!(
     mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}
     ) where {I,F}
-    blocks = builder.blocks
-    patches = builder.patches
-    edges = builder.edges
-    nodes = mesh.nodes
-    faces = mesh.faces
+    (; edges, patches, blocks) = builder
+    (; nodes, faces) = mesh
     facei = one(I)
     for patch ∈ patches
         for edgeID ∈ patch.edgesID
@@ -142,9 +136,8 @@ end
 function generate_elements!(
     mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}
     ) where {I,F}
-    blocks = builder.blocks
-    nodes = mesh.nodes
-    cells = mesh.cells
+    (; blocks) = builder
+    (; nodes, cells) = mesh
     celli = zero(I)
     for block ∈ blocks
         nx, ny = block.nx, block.ny
@@ -181,9 +174,7 @@ function generate_inner_points!(
     mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}
     ) where {I,F}
     points_count = total_edge_points(builder)
-    points = builder.points
-    edges = builder.edges
-    blocks = builder.blocks
+    (; points, edges, blocks) = builder
     for block ∈ blocks
         edgeID1 = block.edgesID[3] 
         edgeID2 = block.edgesID[4] 
@@ -217,8 +208,7 @@ function preallocate_mesh(builder::MeshBuilder2D{I,F}) where {I,F}
 end
 
 function total_faces(builder::MeshBuilder2D{I,F}) where{I,F}
-    blocks = builder.blocks
-    edges = builder.edges
+    (; blocks, edges) = builder
     nfaces = zero(I)
     for block ∈ blocks
         nx = block.nx
@@ -236,8 +226,7 @@ function total_faces(builder::MeshBuilder2D{I,F}) where{I,F}
 end
 
 function tag_boundary_edges(builder::MeshBuilder2D{I,F}) where{I,F}
-    patches = builder.patches
-    edges = builder.edges
+    (; patches, edges) = builder
     for patch ∈ patches
         for ID ∈ patch.edgesID
             edge = edges[ID]
@@ -245,11 +234,6 @@ function tag_boundary_edges(builder::MeshBuilder2D{I,F}) where{I,F}
         end
     end
 end
-
-# function tag_as_boundary(edge::Edge{I}) where I
-#     # Edge(edge.nodesID, edge.ncells, true)
-#     @set edge.boundary = true
-# end
 
 function total_edge_points(builder::MeshBuilder2D{I,F}) where {I,F}
     length(builder.points)

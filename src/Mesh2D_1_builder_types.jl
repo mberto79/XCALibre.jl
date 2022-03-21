@@ -14,7 +14,6 @@ struct Patch{I<:Integer}
     edgesID::Vector{I}
 end
 
-
 struct Block{I<:Integer}
     edgesID::SVector{4,I}
     nx::I
@@ -39,9 +38,3 @@ struct MeshBuilder2D{I<:Integer,F<:AbstractFloat}
     patches::Vector{Patch{I}}
     blocks::Vector{Block{I}}
 end
-
-# struct MeshBuilder2D{I<:Integer,F<:AbstractFloat}
-#     points::Vector{Node{F}}
-#     elements::Vector{Cell{I,F}}
-#     faces::Vector{Face2D{I,F}}
-# end

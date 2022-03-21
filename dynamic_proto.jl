@@ -39,14 +39,30 @@ patch3 = Patch(:bottom, [1,2])
 patch4 = Patch(:top,    [3,4])
 patches = [patch1, patch2, patch3, patch4]
 
-@time mesh_info = Wireframe(points, edges, patches, blocks)
-@time builder = preallocate_meshbuilder(mesh_info)
-@time generate_inner_points!(builder, mesh_info)
-@time generate_elements!(builder, mesh_info)
-@time counter = generate_boundary_faces!(builder, mesh_info)
-@time counter = generate_interface_faces!(counter, builder, mesh_info)
-@time generate_internal_faces!(counter, builder, mesh_info)
+# @time builder = Wireframe(points, edges, patches, blocks)
+# @time mesh = preallocate_meshbuilder(builder)
+# @time generate_inner_points!(mesh, builder)
+# @time generate_elements!(mesh, builder)
+# @time counter = generate_boundary_faces!(mesh, builder)
+# @time counter = generate_interface_faces!(counter, mesh, builder)
+# @time generate_internal_faces!(counter, mesh, builder)
 
-scatter(builder.points, colour=:blue)
-scatter!(builder.faces, color=:black)
-scatter!(builder.elements, color=:red)
+builder = MeshBuilder2D(points, edges, patches, blocks)
+
+function build(builder)
+    mesh = preallocate_mesh(builder)
+    generate_inner_points!(mesh, builder)
+    generate_elements!(mesh, builder)
+    counter = generate_boundary_faces!(mesh, builder)
+    counter = generate_interface_faces!(counter, mesh, builder)
+    generate_internal_faces!(counter, mesh, builder)
+    mesh
+end
+
+GC.gc()
+@time mesh = build(builder)
+
+
+scatter(mesh.nodes, colour=:blue)
+scatter!(mesh.faces, color=:black)
+scatter!(mesh.cells, color=:red)

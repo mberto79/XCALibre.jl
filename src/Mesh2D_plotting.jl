@@ -4,18 +4,18 @@ using FVM_1D.Mesh2D
 using RecipesBase
 export plotRecipe
 
-@recipe function plotRecipe(point::AbstractPoint)
+@recipe function plotRecipe(point::Node{F}) where F
     xlabel --> "x [m]"
     ylabel --> "y [m]"
     legend --> false
     [point.coords[1]], [point.coords[2]]
 end
 
-x(point::AbstractPoint) = point.coords[1]
-y(point::AbstractPoint) = point.coords[2]
-z(point::AbstractPoint) = point.coords[3]
+x(n::Node{F}) where F = n.coords[1]
+y(n::Node{F}) where F = n.coords[2]
+z(n::Node{F}) where F = n.coords[3]
 
-@recipe function plotRecipe(points::Vector{P}) where P<:AbstractPoint
+@recipe function plotRecipe(points::Vector{Node{F}}) where F
     xlabel --> "x [m]"
     ylabel --> "y [m]"
     legend --> false
@@ -42,7 +42,7 @@ end
     x.(f), y.(f)
 end
 
-@recipe function plotRecipe(f::Element{I,F}) where {I,F}
+@recipe function plotRecipe(f::Cell{I,F}) where {I,F}
     xlabel --> "x [m]"
     ylabel --> "y [m]"
     legend --> false
@@ -50,7 +50,7 @@ end
 end
 
 # @recipe function plotRecipe(f::Vector{Face2D{I,F}}) where {I,F}
-    @recipe function plotRecipe(f::Vector{Element{I,F}}) where {I,F}
+    @recipe function plotRecipe(f::Vector{Cell{I,F}}) where {I,F}
     xlabel --> "x [m]"
     ylabel --> "y [m]"
     legend --> false

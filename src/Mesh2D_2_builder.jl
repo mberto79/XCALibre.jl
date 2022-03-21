@@ -1,0 +1,341 @@
+export line!, quad
+export centre
+export preallocate_mesh, generate_inner_points!, generate_elements!
+export generate_boundary_faces!, generate_interface_faces!, generate_internal_faces!
+
+function generate_internal_faces!(
+    facei::I, mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}
+    ) where {I,F}
+    blocks = builder.blocks
+    nodes = mesh.nodes
+    faces = mesh.faces
+    for block ∈ blocks
+        nx, ny = block.nx, block.ny
+        nodesID = block.nodesID
+        for yi = 1:ny-1
+            for xi = 1:nx
+                p1_ID = nodesID[xi,yi+1]
+                p2_ID = nodesID[xi+1,yi+1]
+                centre = geometric_centre(nodes, SVector{2,I}(p1_ID,p2_ID))
+                face = faces[facei]
+                face = @set face.nodesID = SVector{2,I}(p1_ID, p2_ID)
+                faces[facei] = @set face.centre =  centre
+                block.facesID_NS[xi,yi+1] = facei
+                facei += 1
+            end
+        end
+        for xi = 1:nx-1
+            for yi = 1:ny
+                p1_ID = nodesID[xi+1,yi]
+                p2_ID = nodesID[xi+1,yi+1]
+                centre = geometric_centre(nodes, SVector{2,I}(p1_ID,p2_ID))
+                face = faces[facei]
+                face = @set face.nodesID = SVector{2,I}(p1_ID, p2_ID)
+                faces[facei] = @set face.centre =  centre
+                block.facesID_EW[xi+1,yi] = facei
+                facei += 1
+            end
+        end
+    end
+    facei
+end
+
+function generate_interface_faces!(
+    facei::I, mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}
+    ) where {I,F}
+    blocks = builder.blocks
+    edges = builder.edges
+    nodes = mesh.nodes
+    faces = mesh.faces
+    blockPair = fill(Block(zero(I)), 2)
+    edgeIndexPair = zeros(I,2)
+    for (edgeID, edge) ∈ enumerate(edges)
+        if !edge.boundary
+            find_edge_in_blocks!(blockPair, edgeIndexPair, blocks, edgeID)
+            nodesID = edge.nodesID
+            for pointi ∈ 1:(length(nodesID) - 1)
+                p1_ID = nodesID[pointi]
+                p2_ID = nodesID[pointi+1]
+                centre = geometric_centre(nodes, SVector{2,I}(p1_ID,p2_ID))
+                face = faces[facei]
+                face = @set face.nodesID = SVector{2,I}(p1_ID, p2_ID)
+                faces[facei] = @set face.centre =  centre
+                for (i, block) ∈ enumerate(blockPair)
+                    index_to_block_edge!(block, edgeIndexPair[i], pointi, facei)
+                end
+                facei += 1
+            end
+
+        end
+    end
+    facei
+end
+
+function find_edge_in_blocks!(blockPair, edgeIndexPair, blocks, edgeID::I) where I
+    counter = zero(I)
+    for block ∈ blocks
+        for edgei ∈ eachindex(block.edgesID)
+            if block.edgesID[edgei] == edgeID
+                counter += 1
+                blockPair[counter] = block
+                edgeIndexPair[counter] = edgei
+            end
+        end
+    end
+end
+
+function generate_boundary_faces!(
+    mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}
+    ) where {I,F}
+    blocks = builder.blocks
+    patches = builder.patches
+    edges = builder.edges
+    nodes = mesh.nodes
+    faces = mesh.faces
+    facei = one(I)
+    for patch ∈ patches
+        for edgeID ∈ patch.edgesID
+            block, edgei = locate_boundary_in_blocks(blocks, edgeID)
+            nodesID = edges[edgeID].nodesID
+            for pointi ∈ 1:(length(nodesID) - 1)
+                p1_ID = nodesID[pointi]
+                p2_ID = nodesID[pointi+1]
+                centre = geometric_centre(nodes, SVector{2,I}(p1_ID,p2_ID))
+                face = faces[facei]
+                face = @set face.nodesID = SVector{2,I}(p1_ID, p2_ID)
+                faces[facei] = @set face.centre =  centre
+                index_to_block_edge!(block, edgei, pointi, facei)
+                facei += 1
+            end
+        end
+    end
+    facei
+end
+
+function index_to_block_edge!(block, edgei, pointi::I, facei::I) where I
+        if edgei == 1
+            block.facesID_NS[pointi,1] = facei
+        elseif edgei == 2
+            block.facesID_NS[pointi,end] = facei
+        elseif edgei == 3
+            block.facesID_EW[1, pointi] = facei
+        elseif edgei == 4
+            block.facesID_EW[end, pointi] = facei
+        end
+end
+
+function locate_boundary_in_blocks(blocks::Vector{Block{I}}, edgeID::I) where I<:Integer
+    for block ∈ blocks
+        for edgei ∈ eachindex(block.edgesID)
+            if block.edgesID[edgei] == edgeID
+                return block, edgei
+            end
+        end
+    end
+    nothing
+end
+
+function centre(cell)
+    Node(cell.centre)
+end
+
+function generate_elements!(
+    mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}
+    ) where {I,F}
+    blocks = builder.blocks
+    nodes = mesh.nodes
+    cells = mesh.cells
+    celli = zero(I)
+    for block ∈ blocks
+        nx, ny = block.nx, block.ny
+        nodesID = block.nodesID
+        for yi ∈ 1:ny
+            for xi ∈ 1:nx
+                celli += 1
+                n1 = nodesID[xi,yi]
+                n2 = nodesID[xi+1,yi]
+                n3 = nodesID[xi+1,yi+1]
+                n4 = nodesID[xi,yi+1]
+                nodeList = SVector{4, I}(n1,n2,n3,n4)
+                centre = geometric_centre(nodes, nodeList)
+                block.elementsID[xi,yi] = celli
+                cell = cells[celli]
+                cell = @set cell.nodesID = nodeList
+                cell = @set cell.centre = centre
+                cells[celli] = cell
+                # cells[celli] = cell(nodeList, centre)
+            end
+        end
+    end
+end
+
+function geometric_centre(nodes::Vector{Node{F}}, nodeList::SVector{N, I}) where {I,F,N}
+    sum = SVector{3, F}(0.0,0.0,0.0)
+        for ID ∈ nodeList
+            sum += nodes[ID].coords
+        end
+    return sum/(length(nodeList))
+end
+
+function generate_inner_points!(
+    mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}
+    ) where {I,F}
+    points_count = total_edge_points(builder)
+    points = builder.points
+    edges = builder.edges
+    blocks = builder.blocks
+    for block ∈ blocks
+        edgeID1 = block.edgesID[3] 
+        edgeID2 = block.edgesID[4] 
+        edge_y1 = edges[edgeID1] # "y-dir" edge 1
+        edge_y2 = edges[edgeID2] # "y-dir" edge 2
+        for yi ∈ 2:block.ny
+            pID1 = edge_y1.nodesID[yi]
+            pID2 = edge_y2.nodesID[yi]
+            p1 = points[pID1]
+            p2 = points[pID2]
+            spacing, normal = linear_distribution(p1, p2, block.nx)
+            for xi ∈ 2:block.nx
+                points_count += 1
+                mesh.nodes[points_count] = Node(p1.coords + spacing*normal*(xi-1))
+                block.nodesID[xi, yi] = points_count
+            end
+        end
+    end
+end
+
+function preallocate_mesh(builder::MeshBuilder2D{I,F}) where {I,F}
+    nodes = fill(Node(zero(F)), total_points(builder))
+    cells = fill(Cell(I, F), total_elements(builder))
+    tag_boundary_edges(builder)
+    faces = fill(Face2D(I,F), total_faces(builder))
+    # Copy existing edge points to new points vector
+    for i ∈ eachindex(builder.points)
+        nodes[i] = builder.points[i]
+    end
+    Mesh2(cells, faces, nodes)
+end
+
+function total_faces(builder::MeshBuilder2D{I,F}) where{I,F}
+    blocks = builder.blocks
+    edges = builder.edges
+    nfaces = zero(I)
+    for block ∈ blocks
+        nx = block.nx
+        ny = block.ny
+        faces_NS = (nx)*(ny+1)
+        faces_EW = (ny+1)*(nx)
+        nfaces += faces_NS + faces_EW
+    end
+    for edge ∈ edges # find internal edges and remove from total
+        if !edge.boundary
+            nfaces -= 2*edge.ncells
+        end
+    end
+    nfaces
+end
+
+function tag_boundary_edges(builder::MeshBuilder2D{I,F}) where{I,F}
+    patches = builder.patches
+    edges = builder.edges
+    for patch ∈ patches
+        for ID ∈ patch.edgesID
+            edge = edges[ID]
+            edges[ID] = @set edge.boundary = true
+        end
+    end
+end
+
+# function tag_as_boundary(edge::Edge{I}) where I
+#     # Edge(edge.nodesID, edge.ncells, true)
+#     @set edge.boundary = true
+# end
+
+function total_edge_points(builder::MeshBuilder2D{I,F}) where {I,F}
+    length(builder.points)
+end
+
+function total_points(builder::MeshBuilder2D{I,F}) where {I,F}
+    edge_points = total_edge_points(builder)
+    inner_points = zero(I)
+    for block ∈ builder.blocks
+        inner_points += block.inner_points
+    end
+    edge_points + inner_points
+end
+
+function total_elements(builder::MeshBuilder2D{I,F}) where {I,F}
+    total_elements = zero(I)
+    for block ∈ builder.blocks
+        total_elements += block.nx*block.ny
+    end
+    total_elements
+end
+
+function line!(pts::Vector{Node{F}}, p1_index::I, p2_index::I, ncells::I) where {I,F}
+    nodesID = fill(zero(I), ncells+1)
+    nodesID[1] = p1_index
+    nodesID[end] = p2_index
+
+    p1 = pts[p1_index]
+    p2 = pts[p2_index]
+    spacing, normal = linear_distribution(p1, p2, ncells)
+    for j ∈ 2:ncells
+        push!(pts, Node(p1.coords + spacing*normal*(j-1)))
+        nodesID[j] = length(pts)
+    end
+    return Edge(nodesID, ncells, false)
+end
+
+function linear_distribution(p1::Node{F}, p2::Node{F}, ncells::I) where {I,F}
+    d = p2.coords - p1.coords
+    d_mag = norm(d)
+    normal = d/d_mag
+    spacing = d_mag/ncells
+    spacing, normal
+end
+
+function quad(edges::Vector{Edge{I}}, edgesID::Vector{I}) where {I,F}
+    IDs = SVector{4,I}(edgesID)
+    nx = edges[IDs[1]].ncells
+    ny = edges[IDs[3]].ncells
+    nodesID =  zeros(I, nx+1, ny+1) # Matrix to hold pointID information
+    nodesID[:,1]      = edges[IDs[1]].nodesID
+    nodesID[:,end]    = edges[IDs[2]].nodesID
+    nodesID[1,:]      = edges[IDs[3]].nodesID
+    nodesID[end,:]    = edges[IDs[4]].nodesID
+    elementsID = zeros(I, nx, ny)
+    facesID_NS = zeros(I, nx, ny+1)
+    facesID_EW = zeros(I, nx+1, ny)
+    inner_points = (nx+1-2)*(ny+1-2)
+    Block(IDs, nx, ny, nodesID, elementsID, facesID_NS, facesID_EW, inner_points, true)
+end
+
+# function curve(pts::Vector{Node{F}}, p1_index::I, p2_index::I, ncells::I) where {I,F}
+#     nodesID = fill(zero(I), ncells+1)
+#     # points = fill(Node(zero(F)), ncells-1)
+#     nodesID[1] = p1_index
+#     nodesID[end] = p2_index
+
+#     p1 = pts[p1_index]
+#     p2 = pts[p2_index]
+
+#     # points[1] = p1; points[end] = p2
+
+#     d = p2.coords - p1.coords
+#     d_mag = norm(d)
+#     e1 = d/d_mag
+#     spacing = d_mag/ncells
+#     for j ∈ 2:ncells
+#     # for j ∈ eachindex(points)
+#         # points[j] = Node(spacing*e1*j + p1.coords)
+#         push!(pts, Node(p1.coords +
+#             [spacing*e1*(j-1),
+#             # spacing*e1[2]*(j-1),
+#             spacing*e1[2]*(j-1) + 0.25*sin(pi*spacing*e1[1]*(j-1)),
+#             spacing*e1[3]*(j-1)]))
+#         nodesID[j] = length(pts)
+
+#     end
+#     return Edge(nodesID, ncells, false)
+# end

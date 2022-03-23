@@ -1,5 +1,5 @@
 export UnitVectors
-export Node, Face2D, Cell
+export Node, Face2D, Boundary, Cell
 
 struct UnitVectors
     i::SVector{3, Float64}
@@ -35,6 +35,16 @@ Face2D(I,F) = begin
     Face2D(vec_2I, vec_2I, vec_3F, vec_3F, zf, zf)
 end
 
+struct Boundary{I}
+    # name::Symbol
+    ID::I
+    nodesID::Vector{I}
+    facesID::Vector{I}
+    cellsID::Vector{I}
+end
+# Boundary(I) = Boundary(:init, I[], I[],I[])
+Boundary(ID::I) where I = Boundary(ID, I[], I[],I[])
+
 struct Cell{I,F}
     nodesID::SVector{4, I}
     facesID::SVector{4, I}
@@ -45,16 +55,15 @@ struct Cell{I,F}
 end
 Cell(I,F) = begin
     zi = zero(I); zf = zero(F)
+    vec_4I_std = zeros(I,4)
     vec_4I = SVector{4,I}(zi,zi,zi,zi)
     vec_3F = SVector{3,F}(zf,zf,zf)
-    Cell(vec_4I, vec_4I, I[], vec_4I, vec_3F, zf)
+    Cell(vec_4I, vec_4I, vec_4I_std, vec_4I, vec_3F, zf)
 end
-# Cell(zi::I, zf::F) where {I,F}= begin
-#     Cell(SVector{4, I}(zi,zi,zi,zi), SVector{3, F}(zf,zf,zf))
-# end
 
 struct Mesh2{I,F}
     cells::Vector{Cell{I,F}}
     faces::Vector{Face2D{I,F}}
+    boundaries::Vector{Boundary{I}}
     nodes::Vector{Node{F}}
 end

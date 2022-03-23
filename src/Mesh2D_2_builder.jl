@@ -2,6 +2,7 @@ export line!, quad
 export centre
 export preallocate_mesh, generate_inner_points!, generate_elements!
 export generate_boundary_faces!, generate_interface_faces!, generate_internal_faces!
+export find_edge_in_blocks!
 
 function generate_internal_faces!(
     facei::I, mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}
@@ -85,23 +86,29 @@ function generate_boundary_faces!(
     mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}
     ) where {I,F}
     (; edges, patches, blocks) = builder
-    (; nodes, faces) = mesh
+    (; nodes, faces, boundaries) = mesh
     facei = one(I)
-    for patch ∈ patches
+    for patchi ∈ eachindex(patches)
+        patch = patches[patchi]
+        i = 1
         for edgeID ∈ patch.edgesID
             block, edgei = locate_boundary_in_blocks(blocks, edgeID)
             nodesID = edges[edgeID].nodesID
             for pointi ∈ 1:(length(nodesID) - 1)
                 p1_ID = nodesID[pointi]
                 p2_ID = nodesID[pointi+1]
+                # push!(boundary.nodesID, p1_ID)
                 centre = geometric_centre(nodes, SVector{2,I}(p1_ID,p2_ID))
                 face = faces[facei]
                 face = @set face.nodesID = SVector{2,I}(p1_ID, p2_ID)
                 faces[facei] = @set face.centre =  centre
                 index_to_block_edge!(block, edgei, pointi, facei)
+                boundaries[patchi].facesID[i] = facei
                 facei += 1
+                i += 1
             end
         end
+        # boundaries[patchi] = @set boundary.name = patch.name
     end
     facei
 end
@@ -196,15 +203,36 @@ function generate_inner_points!(
 end
 
 function preallocate_mesh(builder::MeshBuilder2D{I,F}) where {I,F}
-    nodes = fill(Node(zero(F)), total_points(builder))
-    cells = fill(Cell(I, F), total_elements(builder))
+    nodes = [Node(zero(F)) for _ ∈ 1:total_points(builder)]
+    cells = [Cell(I, F) for _ ∈ 1:total_elements(builder)]
     tag_boundary_edges(builder)
-    faces = fill(Face2D(I,F), total_faces(builder))
+    faces = [Face2D(I,F) for _ ∈ 1:total_faces(builder)]
+    boundaries = preallocate_boundaries(builder)
     # Copy existing edge points to new points vector
     for i ∈ eachindex(builder.points)
         nodes[i] = builder.points[i]
     end
-    Mesh2(cells, faces, nodes)
+    Mesh2(cells, faces, boundaries, nodes)
+end
+
+function preallocate_boundaries(builder::MeshBuilder2D{I,F}) where {I,F}
+    (; edges, patches) = builder
+    boundaries = Boundary{I}[]
+    for patchi ∈ eachindex(patches)
+        patch = patches[patchi]
+        ncells = zero(I)
+        for edgeID ∈ patch.edgesID
+            ncells += edges[edgeID].ncells
+        end
+        nfaces = ncells
+        nnodes = ncells + 1
+        push!(
+            boundaries, 
+            Boundary(
+                patchi, zeros(I, nnodes), zeros(I, nfaces), zeros(I,ncells)
+                ))
+    end
+    boundaries
 end
 
 function total_faces(builder::MeshBuilder2D{I,F}) where{I,F}
@@ -284,10 +312,10 @@ function quad(edges::Vector{Edge{I}}, edgesID::Vector{I}) where {I,F}
     nx = edges[IDs[1]].ncells
     ny = edges[IDs[3]].ncells
     nodesID =  zeros(I, nx+1, ny+1) # Matrix to hold pointID information
-    nodesID[:,1]      = edges[IDs[1]].nodesID
-    nodesID[:,end]    = edges[IDs[2]].nodesID
-    nodesID[1,:]      = edges[IDs[3]].nodesID
-    nodesID[end,:]    = edges[IDs[4]].nodesID
+    @. nodesID[:,1]      = edges[IDs[1]].nodesID
+    @. nodesID[:,end]    = edges[IDs[2]].nodesID
+    @. nodesID[1,:]      = edges[IDs[3]].nodesID
+    @. nodesID[end,:]    = edges[IDs[4]].nodesID
     elementsID = zeros(I, nx, ny)
     facesID_NS = zeros(I, nx, ny+1)
     facesID_EW = zeros(I, nx+1, ny)

@@ -1,9 +1,16 @@
-export assign_cellsID_to_boundary_faces!, assign_cellsID_to_boundaries!
-export assign_nodesID_to_boundaries!
-export assign_cellsID_to_baffle_faces!
-export assign_cellsID_to_internal_faces!
-export assign_facesID_to_cells!
-export assign_neighbours_to_cells!
+export connect!
+
+function connect!(mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}) where {I,F}
+    assign_cellsID_to_boundary_faces!(mesh, builder)
+    assign_cellsID_to_boundaries!(mesh, builder)
+    assign_nodesID_to_boundaries!(mesh, builder)
+    assign_cellsID_to_baffle_faces!(mesh, builder)
+    assign_cellsID_to_internal_faces!(mesh, builder)
+    assign_facesID_to_cells!(mesh, builder)
+    assign_neighbours_to_cells!(mesh, builder)
+    builder = nothing
+    mesh
+end
 
 function assign_cellsID_to_boundary_faces!(
     mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}) where {I,F}

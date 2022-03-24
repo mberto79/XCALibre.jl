@@ -1,8 +1,16 @@
 export line!, quad
-export centre
-export preallocate_mesh, generate_inner_points!, generate_elements!
-export generate_boundary_faces!, generate_interface_faces!, generate_internal_faces!
+export build!
 export find_edge_in_blocks!
+
+function build!(builder::MeshBuilder2D{I,F}) where {I,F}
+    mesh = preallocate_mesh(builder)
+    generate_inner_points!(mesh, builder)
+    generate_elements!(mesh, builder)
+    counter = generate_boundary_faces!(mesh, builder)
+    counter = generate_interface_faces!(counter, mesh, builder)
+    generate_internal_faces!(counter, mesh, builder)
+    mesh, builder
+end
 
 function generate_internal_faces!(
     facei::I, mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}
@@ -136,9 +144,9 @@ function locate_boundary_in_blocks(blocks::Vector{Block{I}}, edgeID::I) where I<
     nothing
 end
 
-function centre(cell)
-    Node(cell.centre)
-end
+# function centre(cell)
+#     Node(cell.centre)
+# end
 
 function generate_elements!(
     mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}
@@ -163,18 +171,9 @@ function generate_elements!(
                 cell = @set cell.nodesID = nodeList
                 cell = @set cell.centre = centre
                 cells[celli] = cell
-                # cells[celli] = cell(nodeList, centre)
             end
         end
     end
-end
-
-function geometric_centre(nodes::Vector{Node{F}}, nodeList::SVector{N, I}) where {I,F,N}
-    sum = SVector{3, F}(0.0,0.0,0.0)
-        for ID ∈ nodeList
-            sum += nodes[ID].coords
-        end
-    return sum/(length(nodeList))
 end
 
 function generate_inner_points!(

@@ -40,33 +40,12 @@ patches = [patch1, patch2, patch3, patch4]
 
 builder = MeshBuilder2D(points, edges, patches, blocks)
 
-function build!(builder)
-    mesh = preallocate_mesh(builder)
-    generate_inner_points!(mesh, builder)
-    generate_elements!(mesh, builder)
-    counter = generate_boundary_faces!(mesh, builder)
-    counter = generate_interface_faces!(counter, mesh, builder)
-    generate_internal_faces!(counter, mesh, builder)
-    mesh, builder
-end
-
-function connect!(mesh, builder)
-    assign_cellsID_to_boundary_faces!(mesh, builder)
-    assign_cellsID_to_boundaries!(mesh, builder)
-    assign_nodesID_to_boundaries!(mesh, builder)
-    assign_cellsID_to_baffle_faces!(mesh, builder)
-    assign_cellsID_to_internal_faces!(mesh, builder)
-    assign_facesID_to_cells!(mesh, builder)
-    assign_neighbours_to_cells!(mesh, builder)
-    mesh
-end
-
 GC.gc()
 @time mesh, builder = build!(builder)
 @time mesh  = connect!(mesh, builder)
+println("Number of cells: ", length(mesh.cells))
 
 scatter(mesh.nodes, colour=:blue)
 scatter!(mesh.faces, color=:black)
 scatter!(mesh.cells, color=:red)
-
 scatter!(mesh.cells[27], color=:yellow)

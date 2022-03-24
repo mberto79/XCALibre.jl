@@ -38,14 +38,6 @@ patch3 = Patch(:bottom, [1,2])
 patch4 = Patch(:top,    [3,4])
 patches = [patch1, patch2, patch3, patch4]
 
-# @time builder = Wireframe(points, edges, patches, blocks)
-# @time mesh = preallocate_meshbuilder(builder)
-# @time generate_inner_points!(mesh, builder)
-# @time generate_elements!(mesh, builder)
-# @time counter = generate_boundary_faces!(mesh, builder)
-# @time counter = generate_interface_faces!(counter, mesh, builder)
-# @time generate_internal_faces!(counter, mesh, builder)
-
 builder = MeshBuilder2D(points, edges, patches, blocks)
 
 function build!(builder)

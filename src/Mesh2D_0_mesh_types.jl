@@ -36,14 +36,12 @@ Face2D(I,F) = begin
 end
 
 struct Boundary{I}
-    # name::Symbol
-    ID::I
+    name::Symbol
     nodesID::Vector{I}
     facesID::Vector{I}
     cellsID::Vector{I}
 end
-# Boundary(I) = Boundary(:init, I[], I[],I[])
-Boundary(ID::I) where I = Boundary(ID, I[], I[],I[])
+Boundary(ID::I) where I = Boundary(:init, I[], I[],I[])
 
 struct Cell{I,F}
     nodesID::SVector{4, I}

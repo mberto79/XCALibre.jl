@@ -68,3 +68,5 @@ GC.gc()
 scatter(mesh.nodes, colour=:blue)
 scatter!(mesh.faces, color=:black)
 scatter!(mesh.cells, color=:red)
+
+scatter!(mesh.cells[27], color=:yellow)

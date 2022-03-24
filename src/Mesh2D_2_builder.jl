@@ -229,7 +229,7 @@ function preallocate_boundaries(builder::MeshBuilder2D{I,F}) where {I,F}
         push!(
             boundaries, 
             Boundary(
-                patchi, zeros(I, nnodes), zeros(I, nfaces), zeros(I,ncells)
+                patch.name, zeros(I, nnodes), zeros(I, nfaces), zeros(I,ncells)
                 ))
     end
     boundaries

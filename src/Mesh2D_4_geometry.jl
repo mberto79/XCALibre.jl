@@ -7,3 +7,18 @@ function geometric_centre(nodes::Vector{Node{F}}, nodeList::SVector{N, I}) where
         end
     return sum/(length(nodeList))
 end
+
+#= 
+For faces need the following
+
+normal::SVector{3, F}
+area::F
+delta::F
+=#
+
+#= 
+For cells need the following
+
+nsign::SVector{4, I}
+volume::F
+=#

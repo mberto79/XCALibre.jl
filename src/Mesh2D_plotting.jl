@@ -26,12 +26,35 @@ x(f) = f.centre[1]
 y(f) = f.centre[2]
 z(f) = f.centre[3]
 
+x(n::Node{F}) where F = n.coords[1]
+y(n::Node{F}) where F = n.coords[2]
+z(n::Node{F}) where F = n.coords[3]
 
-@recipe function plotRecipe(f::Face2D{I,F}) where {I,F}
+
+# @recipe function plotRecipe(f::Face2D{I,F}) where {I,F}
+#     xlabel --> "x [m]"
+#     ylabel --> "y [m]"
+#     legend --> false
+#     [x(f)], [y(f)]
+# end
+
+@recipe function plotRecipe(nodes::Vector{Node{F}}, faces::Vector{Face2D{I,F}}) where {I,F}
     xlabel --> "x [m]"
     ylabel --> "y [m]"
     legend --> false
-    [x(f)], [y(f)]
+    x_vec = zeros(F, length(faces)+1)
+    y_vec = zeros(F, length(faces)+1)
+    for i ∈ eachindex(faces)
+        nodesID = faces[i].nodesID
+        n1 = nodes[nodesID[1]]
+        n2 = nodes[nodesID[2]]
+        x_vec[i]    = x(n1)
+        y_vec[i]    = y(n1)
+        x_vec[i+1]  = x(n2)
+        y_vec[i+1]  = y(n2)
+    end
+    # [p1[1], p2[1]], [p1[2], p2[2]]
+    x_vec, y_vec
 end
 
 # @recipe function plotRecipe(f::Vector{Face2D{I,F}}) where {I,F}

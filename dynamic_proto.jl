@@ -45,7 +45,10 @@ GC.gc()
 @time mesh  = connect!(mesh, builder)
 println("Number of cells: ", length(mesh.cells))
 
+@time face_properties!(mesh)
+
 scatter(mesh.nodes, colour=:blue)
-scatter!(mesh.faces, color=:black)
-scatter!(mesh.cells, color=:red)
-scatter!(mesh.cells[27], color=:yellow)
+scatter!(centre2D.(mesh.faces), color=:black)
+scatter!(centre2D.(mesh.cells), color=:red)
+
+plot!(mesh.nodes, mesh.faces)

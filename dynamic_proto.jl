@@ -12,7 +12,8 @@ p1 = Point(0.0,0.0,0.0)
 p2 = Point(1.0,0.0,0.0)
 p3 = Point(1.5,0.0,0.0)
 p4 = Point(0.0,1.0,0.0)
-p5 = Point(0.8,0.8,0.0)
+# p5 = Point(0.8,0.8,0.0)
+p5 = Point(1.0,1.0,0.0)
 p6 = Point(1.5,0.7,0.0)
 points = [p1,p2,p3,p4,p5,p6]
 
@@ -42,7 +43,7 @@ builder = MeshBuilder2D(points, edges, patches, blocks)
 
 GC.gc()
 @time mesh, builder = build!(builder)
-@time mesh  = connect!(mesh, builder)
+@time mesh = connect!(mesh, builder)
 println("Number of cells: ", length(mesh.cells))
 
 @time face_properties!(mesh)
@@ -50,5 +51,3 @@ println("Number of cells: ", length(mesh.cells))
 scatter(mesh.nodes, colour=:blue)
 scatter!(centre2D.(mesh.faces), color=:black)
 scatter!(centre2D.(mesh.cells), color=:red)
-
-plot!(mesh.nodes, mesh.faces)

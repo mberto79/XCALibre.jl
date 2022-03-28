@@ -216,9 +216,7 @@ end
 
 function preallocate_boundaries(builder::MeshBuilder2D{I,F}) where {I,F}
     (; edges, patches) = builder
-    # boundaries = Boundary{I}[]
-    zf = zero(F)
-    boundaries = Boundary{I,F}[]
+    boundaries = Boundary{I}[]
     for patchi ∈ eachindex(patches)
         patch = patches[patchi]
         ncells = zero(I)
@@ -230,9 +228,7 @@ function preallocate_boundaries(builder::MeshBuilder2D{I,F}) where {I,F}
         push!(
             boundaries, 
             Boundary(
-                patch.name, 
-                zeros(I, nnodes), zeros(I, nfaces), zeros(I,ncells),
-                SVector{3,F}(zf,zf,zf)
+                patch.name, zeros(I, nnodes), zeros(I, nfaces), zeros(I,ncells)
                 ))
     end
     boundaries

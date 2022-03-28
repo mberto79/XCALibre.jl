@@ -4,10 +4,10 @@ function connect!(mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}) where {I,F}
     assign_cellsID_to_boundary_faces!(mesh, builder)
     assign_cellsID_to_boundaries!(mesh, builder)
     assign_nodesID_to_boundaries!(mesh, builder)
-    assign_cellsID_to_baffle_faces!(mesh, builder)
+    assign_cellsID_to_baffle_faces!(mesh, builder) # to do: remove allocations
     assign_cellsID_to_internal_faces!(mesh, builder)
-    assign_facesID_to_cells!(mesh, builder)
-    assign_neighbours_to_cells!(mesh, builder)
+    assign_facesID_to_cells!(mesh, builder) # allocations due to growing facesID vec
+    assign_neighbours_to_cells!(mesh, builder) # allocations to grow "neighbours"
     builder = nothing
     mesh
 end
@@ -28,14 +28,14 @@ function assign_cellsID_to_boundary_faces!(
     for block ∈ blocks
         (; elementsID, facesID_NS, facesID_EW) = block
         for access ∈ ((1, 1), (block.ny+1, block.ny)) # to index facesID_NS matrix
-            for (row, faceID) ∈ enumerate(facesID_NS[:,access[1]])
+            for (row, faceID) ∈ enumerate(@view facesID_NS[:,access[1]])
                 face = faces[faceID]
                 elementi = elementsID[row,access[2]]
                 faces[faceID] = @set face.ownerCells = SVector(elementi, elementi)
             end
         end
         for access ∈ ((1, 1), (block.nx+1, block.nx)) # to index facesID_EW matrix
-            for (col, faceID) ∈ enumerate(facesID_EW[access[1],:])
+            for (col, faceID) ∈ enumerate(@view facesID_EW[access[1],:])
                 face = faces[faceID]
                 elementi = elementsID[access[2], col]
                 faces[faceID] = @set face.ownerCells = SVector(elementi, elementi)
@@ -142,7 +142,6 @@ function assign_facesID_to_cells!(
                     end
                 end
                 SENW .= zero(I)
-                # cells[cellID] = @set cell.facesID = SVector(south, east, north, west)
             end
         end
     end

@@ -36,12 +36,12 @@ Face2D(I,F) = begin
     Face2D(vec_2I, vec_2I, vec_3F, vec_3F, zf, zf, zf)
 end
 
-struct Boundary{I,F}
+struct Boundary{I}
     name::Symbol
     nodesID::Vector{I}
     facesID::Vector{I}
     cellsID::Vector{I}
-    normal::SVector{3, F}
+    # normal::SVector{3, F}
 end
 # Boundary(ID::I) where I = Boundary(:init, I[], I[],I[])
 # Boundary(I,F) = begin
@@ -73,6 +73,6 @@ end
 struct Mesh2{I,F}
     cells::Vector{Cell{I,F}}
     faces::Vector{Face2D{I,F}}
-    boundaries::Vector{Boundary{I,F}}
+    boundaries::Vector{Boundary{I}}
     nodes::Vector{Node{F}}
 end

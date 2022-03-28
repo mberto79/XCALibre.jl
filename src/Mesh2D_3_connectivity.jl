@@ -1,4 +1,6 @@
 export connect!
+export total_boundary_faces
+
 
 function connect!(mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}) where {I,F}
     assign_cellsID_to_boundary_faces!(mesh, builder)

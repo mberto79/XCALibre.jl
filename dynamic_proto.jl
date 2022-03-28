@@ -46,11 +46,30 @@ GC.gc()
 @time mesh = connect!(mesh, builder)
 println("Number of cells: ", length(mesh.cells))
 
-@time face_properties!(mesh)
+@time internal_face_properties!(mesh)
+@time boundary_face_properties!(mesh)
 
 scatter(mesh.nodes, colour=:black)
 scatter!(centre2d.(mesh.faces), color=:blue)
 scatter!(centre2d.(mesh.cells), color=:red)
+fig = plot_mesh!(mesh)
+
+
+# for boundary ∈ mesh.boundaries
+#     for ID ∈ boundary.facesID
+#         face = mesh.faces[ID]
+#         normal = 0.1*face.normal
+#         centre = centre2d(face)
+#         fig = quiver!(fig, centre..., quiver=([normal[1]], [normal[2]]), color=:green)
+#     end
+# end
+# @show fig
+for face ∈ mesh.faces
+    normal = 0.1*face.normal
+    centre = centre2d(face)
+    fig = quiver!(fig, centre..., quiver=([normal[1]], [normal[2]]), color=:green)
+end
+@show fig
 
 # fig = scatter()
 # for (nodei, node) ∈ enumerate(mesh.nodes)

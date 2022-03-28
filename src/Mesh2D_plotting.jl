@@ -2,7 +2,7 @@ module Plotting
 
 using FVM_1D.Mesh2D
 using RecipesBase
-export plotRecipe
+export plotRecipe, plot_mesh
 
 @recipe function plotRecipe(point::Node{F}) where F
     xlabel --> "x [m]"
@@ -69,11 +69,29 @@ end
 end
 
 # @recipe function plotRecipe(f::Vector{Face2D{I,F}}) where {I,F}
-    @recipe function plotRecipe(f::Vector{Cell{I,F}}) where {I,F}
+@recipe function plotRecipe(f::Vector{Cell{I,F}}) where {I,F}
     xlabel --> "x [m]"
     ylabel --> "y [m]"
     legend --> false
     x.(f), y.(f)
 end
 
+@userplot plot_mesh
+@recipe function plotRecipe(m::plot_mesh)
+    (; nodes, faces) = m.args[1]
+    for face ∈ faces
+        nodesID = face.nodesID
+        p1 = nodes[nodesID[1]].coords
+        p2 = nodes[nodesID[2]].coords
+        x = [p1[1], p2[1]]
+        y = [p1[2], p2[2]]
+        @series begin
+            seriestype := :line
+            color := :blue
+            legend := false
+            x, y
+        end
+    end
 end
+
+end # end module

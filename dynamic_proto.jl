@@ -40,12 +40,7 @@ patch4 = Patch(:top,    [3,4])
 patches = [patch1, patch2, patch3, patch4]
 
 builder = MeshBuilder2D(points, edges, patches, blocks)
-
-GC.gc()
-@time mesh = build!(builder)
-@time connect!(mesh, builder)
-@time geometry!(mesh)
-println("Number of cells: ", length(mesh.cells))
+mesh = generate!(builder)
 
 scatter(mesh.nodes, colour=:black)
 scatter!(centre2d.(mesh.faces), color=:blue)

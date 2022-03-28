@@ -42,12 +42,10 @@ patches = [patch1, patch2, patch3, patch4]
 builder = MeshBuilder2D(points, edges, patches, blocks)
 
 GC.gc()
-@time mesh, builder = build!(builder)
-@time mesh = connect!(mesh, builder)
+@time mesh = build!(builder)
+@time connect!(mesh, builder)
+@time geometry!(mesh)
 println("Number of cells: ", length(mesh.cells))
-
-@time internal_face_properties!(mesh)
-@time boundary_face_properties!(mesh)
 
 scatter(mesh.nodes, colour=:black)
 scatter!(centre2d.(mesh.faces), color=:blue)
@@ -71,20 +69,17 @@ for face ∈ mesh.faces
 end
 @show fig
 
-# fig = scatter()
 # for (nodei, node) ∈ enumerate(mesh.nodes)
 #     centre = [node.coords[1]], [node.coords[2]]
 #     fig = annotate!(fig, centre[1],centre[2], text("$(nodei)", :black, 8))
 # end
-
 # for (facei, face) ∈ enumerate(mesh.faces)
 #     centre = centre2d(face)
 #     fig = annotate!(fig, centre[1],centre[2], text("$(facei)", :blue, 10))
 # end
 
-# for (celli, cell) ∈ enumerate(mesh.cells)
-#     centre = centre2d(cell)
-#     fig = annotate!(fig, centre[1],centre[2], text("$(celli)", :red, 10))
-# end
-
-# plot!(fig, xlim=(0,1.5))
+for (celli, cell) ∈ enumerate(mesh.cells)
+    centre = centre2d(cell)
+    fig = annotate!(fig, centre[1],centre[2], text("$(celli)", :red, 10))
+end
+@show fig

@@ -9,7 +9,7 @@ function build!(builder::MeshBuilder2D{I,F}) where {I,F}
     counter = generate_boundary_faces!(mesh, builder)
     counter = generate_interface_faces!(counter, mesh, builder)
     generate_internal_faces!(counter, mesh, builder)
-    mesh, builder
+    mesh
 end
 
 function generate_internal_faces!(

@@ -1,8 +1,6 @@
+export geometry!
 export centre2d
 export geometric_centre
-export internal_face_properties!, boundary_face_properties!
-
-
 
 function centre2d(face::Face2D{I,F}) where {I,F}
     c = face.centre
@@ -22,14 +20,15 @@ function geometric_centre(nodes::Vector{Node{F}}, nodeList::SVector{N, I}) where
     return sum/(length(nodeList))
 end
 
-#= 
-For faces need the following
+function geometry!(mesh::Mesh2{I,F}) where {I,F}
+    internal_face_properties!(mesh)
+    boundary_face_properties!(mesh)
+    cell_properties!(mesh)
+    correct_boundary_cell_volumes!(mesh)
+    nothing
+end
 
-normal::SVector{3, F}
-area::F
-delta::F
-=#
-
+# Calculate face properties: area, normal, delta (internal faces)
 function internal_face_properties!(mesh::Mesh2{I,F}) where {I,F}
     (; nodes, faces, cells) = mesh
     nbfaces = total_boundary_faces(mesh)
@@ -60,6 +59,7 @@ function internal_face_properties!(mesh::Mesh2{I,F}) where {I,F}
     end
 end
 
+# Calculate face properties: area, normal, delta (boundary faces)
 function boundary_face_properties!(mesh::Mesh2{I,F}) where {I,F}
     (; boundaries, nodes, faces, cells) = mesh
     for boundary ∈ boundaries
@@ -98,3 +98,48 @@ For cells need the following
 nsign::SVector{4, I}
 volume::F
 =#
+
+function cell_properties!(mesh::Mesh2{I,F}) where {I,F}
+    (; nodes, faces, cells) = mesh
+    for celli ∈ eachindex(cells)
+        cell = cells[celli]
+        (; centre, nsign, facesID) = cell
+        volume = zero(F)
+        # loop over faces: check normals and calculate volume
+        for i ∈ eachindex(facesID)
+            ID = facesID[i]
+            face = faces[ID]
+            fcentre = face.centre
+            fnormal = face.normal
+            farea = face.area
+            d_cf = fcentre - centre # x_f : face location from cell centre
+            fnsign = zero(I)
+            if d_cf⋅fnormal > zero(F) # normal direction check
+                fnsign = one(I)
+            else
+                fnsign = -one(I)
+            end
+            push!(nsign, fnsign)
+            volume += (d_cf ⋅ fnormal*fnsign)*farea
+            cells[celli] = @set cell.volume = 0.5*volume
+        end
+    end
+end
+
+function correct_boundary_cell_volumes!(mesh::Mesh2{I,F}) where {I,F}
+    (; boundaries, faces, cells) = mesh
+    for boundary ∈ boundaries
+        (; cellsID, facesID) = boundary
+        for i ∈ eachindex(cellsID)
+            cell = cells[cellsID[i]]
+            centre = cell.centre
+            face = faces[facesID[i]]
+            fcentre = face.centre
+            fnormal = face.normal
+            farea = face.area
+            d_cf = fcentre - centre
+            volume = cell.volume + 0.5*(d_cf ⋅ fnormal)*farea
+            cells[cellsID[i]] = @set cell.volume = volume
+        end
+    end
+end

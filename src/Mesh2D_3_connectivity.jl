@@ -11,7 +11,8 @@ function connect!(mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}) where {I,F}
     assign_facesID_to_cells!(mesh, builder) # allocations due to growing facesID vec
     assign_neighbours_to_cells!(mesh, builder) # allocations to grow "neighbours"
     builder = nothing
-    mesh
+    # mesh
+    nothing
 end
 
 function total_boundary_faces(mesh::Mesh2{I,F}) where {I,F}

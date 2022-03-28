@@ -1,15 +1,15 @@
-export centre2D, centre3D
+export centre2d
 export geometric_centre
 export face_properties!
 
-function centre2D(obj)
-    c = obj.centre
+function centre2d(face::Face2D{I,F}) where {I,F}
+    c = face.centre
     [c[1]], [c[2]]
 end
 
-function centre3D(obj)
-    c = obj.centre
-    [c[1]], [c[2]], [c[3]]
+function centre2d(cell::Cell{I,F}) where {I,F}
+    c = cell.centre
+    [c[1]], [c[2]]
 end
 
 function geometric_centre(nodes::Vector{Node{F}}, nodeList::SVector{N, I}) where {I,F,N}

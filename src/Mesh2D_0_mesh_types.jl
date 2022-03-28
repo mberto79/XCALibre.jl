@@ -36,33 +36,43 @@ Face2D(I,F) = begin
     Face2D(vec_2I, vec_2I, vec_3F, vec_3F, zf, zf, zf)
 end
 
-struct Boundary{I}
+struct Boundary{I,F}
     name::Symbol
     nodesID::Vector{I}
     facesID::Vector{I}
     cellsID::Vector{I}
+    normal::SVector{3, F}
 end
-Boundary(ID::I) where I = Boundary(:init, I[], I[],I[])
+# Boundary(ID::I) where I = Boundary(:init, I[], I[],I[])
+# Boundary(I,F) = begin
+#     zf = zero(F)
+#     Boundary(:init, I[], I[],I[], SVector{3,F}(zf,zf,zf))
+# end
 
 struct Cell{I,F}
     nodesID::SVector{4, I}
-    facesID::SVector{4, I}
+    # facesID::SVector{4, I}
+    facesID::Vector{I}
     neighbours::Vector{I}
-    nsign::SVector{4, I}
+    # nsign::SVector{4, I}
+    nsign::Vector{I}
     centre::SVector{3, F}
     volume::F
 end
 Cell(I,F) = begin
     zi = zero(I); zf = zero(F)
-    vec_4I_std = zeros(I,4)
-    vec_4I = SVector{4,I}(zi,zi,zi,zi)
-    vec_3F = SVector{3,F}(zf,zf,zf)
-    Cell(vec_4I, vec_4I, vec_4I_std, vec_4I, vec_3F, zf)
+    # vec_I_std = zeros(I,4)
+    vecI_faceID = I[]
+    vecI_neighbours = I[]
+    vecI_nsign = I[]
+    vec4I = SVector{4,I}(zi,zi,zi,zi)
+    vec3F = SVector{3,F}(zf,zf,zf)
+    Cell(vec4I, vecI_faceID, vecI_neighbours, vecI_nsign, vec3F, zf)
 end
 
 struct Mesh2{I,F}
     cells::Vector{Cell{I,F}}
     faces::Vector{Face2D{I,F}}
-    boundaries::Vector{Boundary{I}}
+    boundaries::Vector{Boundary{I,F}}
     nodes::Vector{Node{F}}
 end

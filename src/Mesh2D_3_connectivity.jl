@@ -12,10 +12,19 @@ function connect!(mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}) where {I,F}
     mesh
 end
 
+function total_boundary_faces(mesh::Mesh2{I,F}) where {I,F}
+    (; boundaries) = mesh
+    nbfaces = zero(I)
+    for boundary ∈ boundaries
+        nbfaces += length(boundary.facesID)
+    end
+    nbfaces
+end
+
 function assign_cellsID_to_boundary_faces!(
     mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}) where {I,F}
-    (; blocks, patches) = builder
-    (; faces, boundaries) = mesh
+    (; blocks) = builder
+    (; faces) = mesh
     for block ∈ blocks
         (; elementsID, facesID_NS, facesID_EW) = block
         for access ∈ ((1, 1), (block.ny+1, block.ny)) # to index facesID_NS matrix
@@ -115,17 +124,25 @@ function assign_facesID_to_cells!(
     mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}) where {I,F}
     (; blocks) = builder
     (; cells) = mesh
+    nbfaces = total_boundary_faces(mesh)
+    SENW = zeros(I,4) # hold faceID for south, east, north and west faces
     for block ∈ blocks
         (; elementsID, facesID_NS, facesID_EW, nx, ny) = block
         for j ∈ 1:ny
             for i ∈ 1:nx
                 cellID = elementsID[i,j]
-                cell = cells[cellID]
-                south = facesID_NS[i,j]
-                east  = facesID_EW[i+1,j]
-                north = facesID_NS[i,j+1]
-                west  = facesID_EW[i,j]
-                cells[cellID] = @set cell.facesID = SVector(south, east, north, west)
+                # cell = cells[cellID]
+                SENW[1] = facesID_NS[i,j]
+                SENW[2] = facesID_EW[i+1,j]
+                SENW[3] = facesID_NS[i,j+1]
+                SENW[4] = facesID_EW[i,j]
+                for ID ∈ SENW
+                    if ID > nbfaces
+                        push!(cells[cellID].facesID, ID)
+                    end
+                end
+                SENW .= zero(I)
+                # cells[cellID] = @set cell.facesID = SVector(south, east, north, west)
             end
         end
     end
@@ -135,10 +152,12 @@ function assign_neighbours_to_cells!(
     mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}) where {I,F}
     (; cells, faces) = mesh
     for (cellID, cell) ∈ enumerate(cells)
-        for (facei, faceID) ∈ enumerate(cell.facesID)
+        # for (facei, faceID) ∈ enumerate(cell.facesID)
+        for faceID ∈ cell.facesID
             face = faces[faceID]
             ownerCells = face.ownerCells
-            cells[cellID].neighbours[facei] = (ownerCells .!= cellID) ⋅ ownerCells
+            # cells[cellID].neighbours[facei] = (ownerCells .!= cellID) ⋅ ownerCells
+            push!(cells[cellID].neighbours, (ownerCells .!= cellID) ⋅ ownerCells)
         end
     end
 end

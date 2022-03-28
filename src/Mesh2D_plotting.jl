@@ -11,10 +11,6 @@ export plotRecipe
     [point.coords[1]], [point.coords[2]]
 end
 
-x(n::Node{F}) where F = n.coords[1]
-y(n::Node{F}) where F = n.coords[2]
-z(n::Node{F}) where F = n.coords[3]
-
 @recipe function plotRecipe(points::Vector{Node{F}}) where F
     xlabel --> "x [m]"
     ylabel --> "y [m]"

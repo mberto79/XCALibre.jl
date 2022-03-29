@@ -1,5 +1,5 @@
 export UnitVectors
-export Node, Face2D, Boundary, Cell
+export Node, Face2D, Boundary, Cell, Mesh2
 
 struct UnitVectors
     i::SVector{3, Float64}

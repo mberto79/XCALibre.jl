@@ -13,4 +13,6 @@ using LinearAlgebra
 include("Mesh2D.jl")
 include("Mesh2D_plotting.jl")
 
+include("Discretise.jl")
+
 end # module

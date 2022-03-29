@@ -1,12 +1,11 @@
 using Plots
-using StaticArrays
 
 using FVM_1D.Mesh2D
 using FVM_1D.Plotting
 
-n_vertical      = 3
-n_horizontal1   = 5
-n_horizontal2   = 4
+n_vertical      = 30
+n_horizontal1   = 50
+n_horizontal2   = 40
 
 p1 = Point(0.0,0.0,0.0)
 p2 = Point(1.0,0.0,0.0)
@@ -41,6 +40,27 @@ patches = [patch1, patch2, patch3, patch4]
 
 builder = MeshBuilder2D(points, edges, patches, blocks)
 mesh = generate!(builder)
+
+using FVM_1D.Discretise
+
+J = 1.0
+phi = [i for i ∈ 1:100]
+
+term1 = Laplacian{Linear}(J, phi)
+
+@time model = Laplacian{Linear}(J, phi)
+
+@time equation = Equation(mesh)
+
+@code_warntype discretise!(equation, model, mesh)
+
+@time apply_boundary_conditions!(equation, mesh, model,J, 100, 50, 100, 100)
+
+phi = equation.A\equation.b
+x(mesh) = [mesh.cells[i].centre[1] for i ∈ 1:length(mesh.cells)]
+y(mesh) = [mesh.cells[i].centre[2] for i ∈ 1:length(mesh.cells)]
+plotly()
+scatter(x(mesh), y(mesh), phi, color=:red)
 
 scatter(mesh.nodes, colour=:black)
 scatter!(centre2d.(mesh.faces), color=:blue)

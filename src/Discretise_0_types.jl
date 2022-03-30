@@ -18,7 +18,10 @@ struct Linear <: AbstractScheme end
 struct Upwind <: AbstractScheme end
 
 # Types 
-struct Discretisation{F1,F2,F3}
+struct Discretisation{F,T,I,F1,F2,F3}
+    phi::F
+    terms::Vector{T}
+    signs::Vector{I}
     ap!::F1
     an!::F2 
     b!::F3 
@@ -62,10 +65,10 @@ function sparse_matrix_connectivity(mesh::Mesh2{I,F}) where{I,F}
     return i, j, v
 end
 
-# struct ScalarField{I,F}
-#     values::Vector{F}
-#     mesh::Mesh2{I,F}
-# end
+struct ScalarField{I,F}
+    values::Vector{F}
+    mesh::Mesh2{I,F}
+end
 
 # struct Equation{F}
 #     A::SparseCSC

@@ -46,17 +46,87 @@ using FVM_1D.Discretise
 J = 1.0
 phi = [i for i ∈ 1:100]
 
-term1 = Laplacian{Linear}(J, phi)
-
-@time model = Laplacian{Linear}(J, phi)
+m = Laplacian{Linear}(J, phi) + Laplacian{Linear}(J, phi) == 0.0
+@time model = Laplacian{Linear}(J, phi) == 0.0
 
 @time equation = Equation(mesh)
 
-@code_warntype discretise!(equation, model, mesh)
+@time discretise!(equation, model, mesh)
 
 @time apply_boundary_conditions!(equation, mesh, model,J, 100, 50, 100, 100)
 
 phi = equation.A\equation.b
+
+function dirichlet(::Laplacian{Linear}, tsign, value)
+    b_ap(cell, face) = tsign*(-J*face.area/face.delta)        # A[cellID,cellID] 
+    b_b(cell, face)  = tsign*(-J*face.area/face.delta*value)  # b[cellID]
+    b_ap, b_b
+end
+
+phiBCs = (
+    (dirichlet, :inlet, 100),
+    (dirichlet, :outlet, 50),
+    (dirichlet, :bottom, 100),
+    (dirichlet, :top, 100)
+)
+
+function process(mesh, operator, type, name, value)
+    (; boundaries) = mesh
+    aps = []
+    bs = []
+    for i ∈ eachindex(boundaries)
+        if boundaries[i].name == name
+            ap, b = type(operator(), 1, value)
+            push!(aps,ap)
+            push!(bs,b)
+            return ap, b
+        end
+    end
+    
+end
+process(mesh,operator, args) = process(mesh, operator, args...)
+
+process(mesh, Laplacian{Linear}, phiBCs[1])
+f11, f21 = dirichlet(Laplacian{Linear}(), 1, 10)
+f12, f22 = dirichlet(Laplacian{Linear}(), 1, 20)
+
+f_1(args...) = f11(args...) + f12(args...)
+f_2(args...) = f21(args...) + f22(args...)
+
+f_1(mesh.cells[1], mesh.faces[1])
+f_2(mesh.cells[1], mesh.faces[1])
+
+for (faceID, cellID) ∈ zip(facesID, cellsID)
+    (; area, delta) = faces[faceID]
+    A[cellID,cellID] += (-J*area/delta)
+    b[cellID] += (-J*area/delta*left)
+end
+
+dispatch(Laplacian{Linear}())
+
+macro define_boundaries(model)
+    m = model |> eval
+    B_ap = Expr(:block)
+    B_b = Expr(:block)
+    for i ∈ eachindex(m.terms)
+        push!(B_ap.args, :(B_aP!(
+            model.terms.$(Symbol("term$t")), A, cell, face, nsign, cID)
+            ))
+        push!(B_b.args, :(B_b!(
+            model.terms.$(Symbol("term$t")), A, cell, face, nsign, cID, nID)
+            ))
+    end 
+    quote
+    function update!(m)
+        println(m.terms[1])
+    end
+    end |> esc
+end
+
+@define_boundaries m
+update!(m)
+m
+
 x(mesh) = [mesh.cells[i].centre[1] for i ∈ 1:length(mesh.cells)]
 y(mesh) = [mesh.cells[i].centre[2] for i ∈ 1:length(mesh.cells)]
 plotly()

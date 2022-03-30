@@ -2,13 +2,8 @@ export discretise!
 export apply_boundary_conditions!
 
 function discretise!(equation::Equation{I,F}, model, mesh::Mesh2{I,F}) where {I,F}
-    # mesh = model.terms.term1.ϕ.mesh
     (; faces, cells) = mesh
-    # cells = mesh.cells
-    # faces = mesh.faces
     (; A, b) = equation
-    # A = equation.A
-    # b = equation.b
     @inbounds for cID ∈ eachindex(cells)
         cell = cells[cID]
         A[cID,cID] = zero(0.0)
@@ -16,19 +11,13 @@ function discretise!(equation::Equation{I,F}, model, mesh::Mesh2{I,F}) where {I,
             fID = cell.facesID[fi]
             nsign = cell.nsign[fi]
             face = faces[fID]
-            nID = cell.neighbours[fi]
-            # c1 = face.ownerCells[1]
-            # c2 = face.ownerCells[2]
-            # if c1 != c2 
-                A[cID,nID] = zero(0.0)
-                # $aP!
-                # $aN!     
-                A[cID,cID] += model.ap!(cell, face, nsign, cID)               
-                A[cID,nID] += model.an!(cell, face, nsign, cID, nID)               
-            # end
+            nID = cell.neighbours[fi]   
+            A[cID,cID] += model.ap!(cell, face, nsign, cID) 
+            # Asign neighbour coefficient
+            A[cID,nID] = zero(0.0)
+            A[cID,nID] += model.an!(cell, face, nsign, cID, nID)               
         end
         b[cID] = zero(0.0)
-        # $b!
         b[cID] = model.b!(cell, cID)
     end
 end # end function

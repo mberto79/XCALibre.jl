@@ -1,31 +1,58 @@
+export AbstractField, AbstractScalarField, AbstractSource
 export AbstractOperators, AbstractLaplacian, AbstractDivergence 
 export AbstractScheme 
 export AbstractLaplacian, AbstractDivergence 
 export Laplacian, Divergence
-export Linear, Upwind 
-export Discretisation, Equation 
+export Constant, Linear, Upwind 
+export ScalarField
+export Equation 
+# export Discretisation, Equation 
 
-abstract type AbstractOperators end
-abstract type AbstractLaplacian <: AbstractOperators end
-abstract type AbstractDivergence <: AbstractOperators end
-abstract type AbstractScheme end
-
-struct Laplacian{T<:AbstractScheme} <: AbstractLaplacian end
-struct Divergence{T<:AbstractScheme} <: AbstractDivergence end
+abstract type AbstractField end
+abstract type AbstractScalarField <: AbstractField end
+abstract type AbstractSource <: AbstractField end
+abstract type AbstractOperator end
+abstract type AbstractLaplacian <: AbstractOperator end
+abstract type AbstractDivergence <: AbstractOperator end
 
 # Supported discretisation schemes
+abstract type AbstractScheme end
+struct Constant <: AbstractScheme end
 struct Linear <: AbstractScheme end
 struct Upwind <: AbstractScheme end
 
-# Types 
-struct Discretisation{F,T,I,F1,F2,F3}
-    phi::F
-    terms::Vector{T}
-    signs::Vector{I}
-    ap!::F1
-    an!::F2 
-    b!::F3 
+# Fields
+struct ScalarField{I,F} <: AbstractScalarField
+    values::Vector{F}
+    mesh::Mesh2{I,F}
 end
+ScalarField(mesh::Mesh2{I,F}) where {I,F} =begin
+    ncells  = length(mesh.cells)
+    ScalarField(zeros(F,ncells), mesh)
+end
+
+# Supported operators
+struct Laplacian{T<:AbstractScheme} <: AbstractLaplacian
+    J::Float64
+    phi::ScalarField
+    sign::Vector{Int64}
+end
+
+struct Divergence{T<:AbstractScheme} <: AbstractDivergence
+    J::SVector{3, Float64}
+    phi::ScalarField
+    sign::Vector{Int64}
+end
+
+# Types 
+# struct Discretisation{F,T,I,F1,F2,F3}
+#     phi::F
+#     terms::Vector{T}
+#     signs::Vector{I}
+#     ap!::F1
+#     an!::F2 
+#     b!::F3 
+# end
 
 struct Equation{I,F}
     A::SparseMatrixCSC{F,I}
@@ -64,13 +91,3 @@ function sparse_matrix_connectivity(mesh::Mesh2{I,F}) where{I,F}
     v = zeros(F, length(i))
     return i, j, v
 end
-
-struct ScalarField{I,F}
-    values::Vector{F}
-    mesh::Mesh2{I,F}
-end
-
-# struct Equation{F}
-#     A::SparseCSC
-#     b 
-# end

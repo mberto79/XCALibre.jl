@@ -1,3 +1,5 @@
+using FVM_1D.Discretise
+
 export discretise!
 
 macro build_model(modelName::String, terms::Integer, sources::Integer)

@@ -64,7 +64,7 @@ update_boundaries!(equation, mesh, phiModel, phiBCs)
 phi.values .= equation.A\equation.b
 
 J = 1.0
-U = [1.5, 0.0, 0.0]
+U = [2.0, 0.0, 0.0]
 phiModel = SteadyConvectionDiffusion(
     Divergence{Linear}(U, phi), 
     Laplacian{Linear}(J, phi), 

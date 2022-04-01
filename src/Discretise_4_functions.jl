@@ -1,5 +1,5 @@
 export apply_boundary_conditions!, boundary_conditions!, assign_boundary_conditions!
-export generate_boundary_conditions!k
+export generate_boundary_conditions!, update_boundaries!
 export dirichlet
 
 function apply_boundary_conditions!(
@@ -67,9 +67,10 @@ function assign_boundary_conditions!(
             faceID = facesID[i]
             cellID = cellsID[i]
             face = faces[faceID]; cell = cells[cellID]
-            bap!, bb! = dirichlet(term, cell, face, value)
-            A[cellID,cellID] += bap!
-            b[cellID] += bb!
+            # ap!, b! = 
+            dirichlet(term, A, b, cellID, cell, face, value)
+            # A[cellID,cellID] += ap!
+            # b[cellID] += b!
         end 
     end
 end
@@ -77,23 +78,60 @@ end
 function generate_boundary_conditions!(
     equation::Equation{I,F}, mesh::Mesh2{I,F},model, BCs) where {I,F}
 
-    expand = unpack(BCs)
-    quote
+    nBCs = length(BCs)
+    nterms = length(model.terms)
+
+    expand_BCs = Expr[]
+    for i ∈ 1:nBCs
+        boundary_conditions = :($(Symbol(:boundary,i)) = BCs[$i])
+        push!(expand_BCs, boundary_conditions)
+    end
+    expand_terms = Expr[]
+    for i ∈ 1:nterms
+        model_terms = :($(Symbol(:term,i)) = model.terms.$(Symbol(:term,i)))
+        push!(expand_terms, model_terms)
+    end
+
+    assignment_loops = Expr[] #Expr(:block)
+    # expand_function_call = Expr[]#Expr(:block)
+    for bci ∈ 1:nBCs
+        assign_loop = quote
+            bID = boundary_index(mesh, $(Symbol(:boundary, bci))[2])
+            (; facesID, cellsID) = boundaries[bID]
+            @inbounds for i ∈ eachindex(cellsID)
+                faceID = facesID[i]
+                cellID = cellsID[i]
+                face = faces[faceID]; cell = cells[cellID]
+                # $(expand_function_call...)
+            end
+        end |> Base.remove_linenums!
+
+        for ti ∈ 1:nterms
+            term = Symbol(:term,ti)
+            function_call = :( $(Symbol(:boundary, bci))[1](
+                $term, A, b, cellID, cell, face, $(Symbol(:boundary, bci))[3]
+                )
+            )
+            push!(assign_loop.args[3].args[3].args[2].args, function_call)
+        end
+        push!(assignment_loops, assign_loop)
+    end
+
+    func_template = quote 
         function update_boundaries!(
             equation::Equation{I,F}, mesh::Mesh2{I,F},model, BCs) where {I,F}
-            $expand
+            (; boundaries, faces, cells) = mesh
+            (; A, b) = equation
+            $(expand_BCs...)
+            $(expand_terms...)
         end
-    end
-end
+    end |> Base.remove_linenums!
 
-function unpack(BCs)
-    n = length(BCs)
-    expand = Expr(:block)
-    for i ∈ 1:n
-        term = :($(Symbol(:b,i)) = BCs[$i])
-        push!(expand.args, term)
+    for assignment_loop ∈ assignment_loops
+        push!(func_template.args[1].args[2].args, assignment_loop.args...)
     end
-    return expand
+
+    func_template |> eval
 end
 
 

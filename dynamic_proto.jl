@@ -3,9 +3,9 @@ using Plots
 using FVM_1D.Mesh2D
 using FVM_1D.Plotting
 
-n_vertical      = 30
-n_horizontal1   = 50
-n_horizontal2   = 40
+n_vertical      = 300
+n_horizontal1   = 500
+n_horizontal2   = 400
 
 p1 = Point(0.0,0.0,0.0)
 p2 = Point(1.0,0.0,0.0)
@@ -46,9 +46,9 @@ using FVM_1D.Models
 
 phiBCs = (
     (dirichlet, :inlet, 100),
-    (sin, :outlet, 50),
-    (cos, :bottom, 100),
-    (tan, :top, 100)
+    (neumann, :outlet, 50),
+    (dirichlet, :bottom, 100),
+    (dirichlet, :top, 100)
 )
 
 J = 1.0
@@ -59,8 +59,12 @@ equation = Equation(mesh)
 
 @time phiModel = SteadyDiffusion(Laplacian{Linear}(J, phi), 0.0)
 phiModel.terms.term1.sign[1] = 1
+@time generate_boundary_conditions!(equation, mesh, phiModel, phiBCs)
 @time discretise!(equation, phiModel, mesh)
 @time apply_boundary_conditions!(equation, mesh, phiModel, J, 100, 50, 100, 100)
+# @code_warntype apply_boundary_conditions!(equation, mesh, phiModel, J, 100, 50, 100, 100)
+@time update_boundaries!(equation, mesh, phiModel, phiBCs)
+@code_warntype update_boundaries!(equation, mesh, phiModel, phiBCs)
 @time boundary_conditions!(equation, mesh,J, phiBCs)
 # @code_warntype boundary_conditions!(equation, mesh,J, phiBCs)
 @time assign_boundary_conditions!(equation, mesh, phiModel, phiBCs)
@@ -68,31 +72,6 @@ phiModel.terms.term1.sign[1] = 1
 
 @time phi.values .= equation.A\equation.b
 
-boundary(phiBCs)
-
-function unpack(phiBCs)
-    n = length(phiBCs)
-    expand = Expr(:block)
-    for i ∈ 1:n
-        term = :($(Symbol(:b,i)) = BCs[$i])
-        push!(expand.args, term)
-    end
-    return expand
-end
-
-
-function test(phiBCs)
-    quote
-        function apply_BCs!(BCs)
-            $(unpack(phiBCs))
-            return b1, b2, b3, b4
-        end
-    end |> eval
-end
-
-test(phiBCs)
-
-apply_BCs!(phiBCs)[2]
 
 x(mesh) = [mesh.cells[i].centre[1] for i ∈ 1:length(mesh.cells)]
 y(mesh) = [mesh.cells[i].centre[2] for i ∈ 1:length(mesh.cells)]

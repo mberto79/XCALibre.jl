@@ -42,51 +42,67 @@ builder = MeshBuilder2D(points, edges, patches, blocks)
 mesh = generate!(builder)
 
 using FVM_1D.Discretise
+using FVM_1D.Models
 
 phiBCs = (
     (dirichlet, :inlet, 100),
-    (dirichlet, :outlet, 50),
-    (dirichlet, :bottom, 100),
-    (dirichlet, :top, 100)
+    (sin, :outlet, 50),
+    (cos, :bottom, 100),
+    (tan, :top, 100)
 )
 
 J = 1.0
-phi = [i for i ∈ 1:100]
-
 phi = ScalarField(mesh)
 
-@time equation = Equation(mesh)
-
-@time apply_boundary_conditions!(equation, mesh, model,J, 100, 50, 100, 100)
-
-@time phi = equation.A\equation.b
-
-SteadyDiffusion(Laplacian{Linear}(J,),)
+equation = Equation(mesh)
 
 
-macro test(args...)
-    quote
-        println("length: ", length($args))
-        for arg ∈ $args
-            println(arg)
-        end
+@time phiModel = SteadyDiffusion(Laplacian{Linear}(J, phi), 0.0)
+phiModel.terms.term1.sign[1] = 1
+@time discretise!(equation, phiModel, mesh)
+@time apply_boundary_conditions!(equation, mesh, phiModel, J, 100, 50, 100, 100)
+@time boundary_conditions!(equation, mesh,J, phiBCs)
+# @code_warntype boundary_conditions!(equation, mesh,J, phiBCs)
+@time assign_boundary_conditions!(equation, mesh, phiModel, phiBCs)
+# @code_warntype assign_boundary_conditions!(equation, mesh, phiModel, phiBCs)
+
+@time phi.values .= equation.A\equation.b
+
+boundary(phiBCs)
+
+function unpack(phiBCs)
+    n = length(phiBCs)
+    expand = Expr(:block)
+    for i ∈ 1:n
+        term = :($(Symbol(:b,i)) = BCs[$i])
+        push!(expand.args, term)
     end
+    return expand
 end
 
-@test  Laplacian{Linear}(j,phi) :+ 6 :equal source(0) #= 
-=# :build sin
 
+function test(phiBCs)
+    quote
+        function apply_BCs!(BCs)
+            $(unpack(phiBCs))
+            return b1, b2, b3, b4
+        end
+    end |> eval
+end
+
+test(phiBCs)
+
+apply_BCs!(phiBCs)[2]
 
 x(mesh) = [mesh.cells[i].centre[1] for i ∈ 1:length(mesh.cells)]
 y(mesh) = [mesh.cells[i].centre[2] for i ∈ 1:length(mesh.cells)]
 plotly()
-scatter(x(mesh), y(mesh), phi, color=:red)
+scatter(x(mesh), y(mesh), phi.values, color=:red)
 
 scatter(mesh.nodes, colour=:black)
 scatter!(centre2d.(mesh.faces), color=:blue)
 scatter!(centre2d.(mesh.cells), color=:red)
 fig = plot_mesh!(mesh)
-
 
 # for boundary ∈ mesh.boundaries
 #     for ID ∈ boundary.facesID

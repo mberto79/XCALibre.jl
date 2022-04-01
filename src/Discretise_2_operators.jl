@@ -1,4 +1,5 @@
 export Laplacian, Divergence
+export aP!, aN!, b!
 
 ### OPERATORS AND SCHEMES
 struct Source{T} <: AbstractSource

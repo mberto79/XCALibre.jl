@@ -1,8 +1,8 @@
 module FVM_1D
 
-using StaticArrays
-using SparseArrays
-using LinearAlgebra
+# using StaticArrays
+# using SparseArrays
+# using LinearAlgebra
 # using Krylov
 
 # include("Fields.jl")
@@ -11,8 +11,7 @@ using LinearAlgebra
 
 include("Mesh2D.jl")
 include("Mesh2D_plotting.jl")
-
 include("Discretise.jl")
-include("Models_builder.jl")
+include("Models.jl")
 
 end # module

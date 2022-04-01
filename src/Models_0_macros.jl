@@ -1,6 +1,4 @@
-using FVM_1D.Discretise
-
-export discretise!
+export @build_model
 
 macro build_model(modelName::String, terms::Integer, sources::Integer)
     name = Symbol(modelName)
@@ -51,14 +49,5 @@ macro build_model(modelName::String, terms::Integer, sources::Integer)
         $structBody
         $func
     end end
-    return  out #structBody, func
+    return  out # struct definition and constructor function (using named tuples)
 end
-
-# Model definitions
-@build_model "SteadyDiffusion" 1 1
-export SteadyDiffusion
-@discretise SteadyDiffusion 1 1
-
-@build_model "SteadyConvectionDiffusion" 2 1
-export SteadyConvectionDiffusion
-@discretise SteadyConvectionDiffusion 2 1

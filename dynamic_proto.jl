@@ -3,9 +3,9 @@ using Plots
 using FVM_1D.Mesh2D
 using FVM_1D.Plotting
 
-n_vertical      = 300
-n_horizontal1   = 500
-n_horizontal2   = 400
+n_vertical      = 30
+n_horizontal1   = 50
+n_horizontal2   = 40
 
 p1 = Point(0.0,0.0,0.0)
 p2 = Point(1.0,0.0,0.0)
@@ -59,17 +59,11 @@ equation = Equation(mesh)
 
 @time phiModel = SteadyDiffusion(Laplacian{Linear}(J, phi), 0.0)
 phiModel.terms.term1.sign[1] = 1
-@time generate_boundary_conditions!(equation, mesh, phiModel, phiBCs)
-@time discretise!(equation, phiModel, mesh)
-@time apply_boundary_conditions!(equation, mesh, phiModel, J, 100, 50, 100, 100)
-# @code_warntype apply_boundary_conditions!(equation, mesh, phiModel, J, 100, 50, 100, 100)
-@time update_boundaries!(equation, mesh, phiModel, phiBCs)
-@code_warntype update_boundaries!(equation, mesh, phiModel, phiBCs)
-@time boundary_conditions!(equation, mesh,J, phiBCs)
-# @code_warntype boundary_conditions!(equation, mesh,J, phiBCs)
-@time assign_boundary_conditions!(equation, mesh, phiModel, phiBCs)
-# @code_warntype assign_boundary_conditions!(equation, mesh, phiModel, phiBCs)
 
+@time generate_boundary_conditions!(mesh, phiModel, phiBCs)
+
+@time discretise!(equation, phiModel, mesh)
+@time update_boundaries!(equation, mesh, phiModel, phiBCs)
 @time phi.values .= equation.A\equation.b
 
 

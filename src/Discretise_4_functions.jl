@@ -1,86 +1,9 @@
-export apply_boundary_conditions!, boundary_conditions!, assign_boundary_conditions!
 export generate_boundary_conditions!, update_boundaries!
-export dirichlet
 
-function apply_boundary_conditions!(
-    equation::Equation{I,F}, mesh::Mesh2{I,F}, model,
-    J, left, right, bottom, top) where {I,F}
-    (; boundaries, faces, cells) = mesh
-    (; A, b) = equation
-    for boundary ∈ boundaries
-        (; facesID, cellsID) = boundary
-        if boundary.name == :inlet 
-            for (faceID, cellID) ∈ zip(facesID, cellsID)
-                (; area, delta) = faces[faceID]
-                A[cellID,cellID] += (-J*area/delta)
-                b[cellID] += (-J*area/delta*left)
-            end
-        elseif boundary.name == :outlet 
-            for (faceID, cellID) ∈ zip(facesID, cellsID)
-                (; area, delta) = faces[faceID]
-                A[cellID,cellID] += (-J*area/delta)
-                b[cellID] += (-J*area/delta*right)
-            end 
-        elseif boundary.name == :bottom 
-            for (faceID, cellID) ∈ zip(facesID, cellsID)
-                (; area, delta) = faces[faceID]
-                A[cellID,cellID] += (-J*area/delta)
-                b[cellID] += (-J*area/delta*bottom)
-            end
-        elseif boundary.name == :top 
-            for (faceID, cellID) ∈ zip(facesID, cellsID)
-                (; area, delta) = faces[faceID]
-                A[cellID,cellID] += (-J*area/delta)
-                b[cellID] += (-J*area/delta*top)
-            end
-        end
-    end
-end
-
-function boundary_conditions!(
-    equation::Equation{I,F} , mesh::Mesh2{I,F}, J, BCs) where {I,F}
-    (; boundaries, faces, cells) = mesh
-    (; A, b) = equation
-    for BC ∈ BCs
-        bID = boundary_index(mesh, BC[2])
-        (; facesID, cellsID) = boundaries[bID]
-        for (faceID, cellID) ∈ zip(facesID, cellsID)
-            (; area, delta) = faces[faceID]
-            A[cellID,cellID] += (-J*area/delta)
-            b[cellID] += (-J*area/delta*BC[3])
-        end
-    end
-end
-
-function assign_boundary_conditions!(
-    equation::Equation{I,F}, mesh::Mesh2{I,F},model, BCs) where {I,F}
-    (; boundaries, faces, cells) = mesh
-    (; A, b) = equation
-    term = model.terms.term1
-    for BC ∈ BCs 
-        name = BC[2]
-        value = BC[3]
-        bID = boundary_index(mesh, name)
-        (; facesID, cellsID) = boundaries[bID]
-        # @time for (faceID, cellID) ∈ zip(facesID, cellsID)
-        for i ∈ eachindex(cellsID)
-            faceID = facesID[i]
-            cellID = cellsID[i]
-            face = faces[faceID]; cell = cells[cellID]
-            # ap!, b! = 
-            dirichlet(term, A, b, cellID, cell, face, value)
-            # A[cellID,cellID] += ap!
-            # b[cellID] += b!
-        end 
-    end
-end
-
-function generate_boundary_conditions!(
-    equation::Equation{I,F}, mesh::Mesh2{I,F},model, BCs) where {I,F}
-
+function generate_boundary_conditions!(mesh::Mesh2{I,F}, model, BCs) where {I,F}
     nBCs = length(BCs)
     nterms = length(model.terms)
-
+    indices = get_boundary_indices(mesh, BCs)
     expand_BCs = Expr[]
     for i ∈ 1:nBCs
         boundary_conditions = :($(Symbol(:boundary,i)) = BCs[$i])
@@ -92,17 +15,14 @@ function generate_boundary_conditions!(
         push!(expand_terms, model_terms)
     end
 
-    assignment_loops = Expr[] #Expr(:block)
-    # expand_function_call = Expr[]#Expr(:block)
+    assignment_loops = Expr[]
     for bci ∈ 1:nBCs
         assign_loop = quote
-            bID = boundary_index(mesh, $(Symbol(:boundary, bci))[2])
-            (; facesID, cellsID) = boundaries[bID]
+            (; facesID, cellsID) = boundaries[$(indices[bci])]
             @inbounds for i ∈ eachindex(cellsID)
                 faceID = facesID[i]
                 cellID = cellsID[i]
                 face = faces[faceID]; cell = cells[cellID]
-                # $(expand_function_call...)
             end
         end |> Base.remove_linenums!
 
@@ -112,7 +32,7 @@ function generate_boundary_conditions!(
                 $term, A, b, cellID, cell, face, $(Symbol(:boundary, bci))[3]
                 )
             )
-            push!(assign_loop.args[3].args[3].args[2].args, function_call)
+            push!(assign_loop.args[2].args[3].args[2].args, function_call)
         end
         push!(assignment_loops, assign_loop)
     end
@@ -134,6 +54,16 @@ function generate_boundary_conditions!(
     func_template |> eval
 end
 
+function get_boundary_indices(mesh::Mesh2{I,F}, BCs) where {I,F}
+    BC_indices = I[]
+    for BC ∈ BCs
+        name = BC[2]
+        index = boundary_index(mesh, name)
+        push!(BC_indices, index)
+        println("Boundary ", name, "\t", "found at index ", index)
+    end
+    BC_indices
+end
 
 function boundary_index(mesh::Mesh2{I,F}, name::Symbol) where {I,F}
     (; boundaries) = mesh

@@ -47,8 +47,8 @@ using FVM_1D.Models
 phiBCs = (
     (dirichlet, :inlet, 100),
     (dirichlet, :outlet, 50),
-    (dirichlet, :bottom, 100),
-    (dirichlet, :top, 100)
+    (neumann, :bottom, 0),
+    (neumann, :top, 0)
 )
 
 phi = ScalarField(mesh)
@@ -57,6 +57,19 @@ equation = Equation(mesh)
 J = 1.0
 phiModel = SteadyDiffusion(Laplacian{Linear}(J, phi), 0.0)
 phiModel.terms.term1.sign[1] = 1
+generate_boundary_conditions!(mesh, phiModel, phiBCs)
+
+discretise!(equation, phiModel, mesh)
+update_boundaries!(equation, mesh, phiModel, phiBCs)
+phi.values .= equation.A\equation.b
+
+J = 1.0
+U = [1.5, 0.0, 0.0]
+phiModel = SteadyConvectionDiffusion(
+    Divergence{Linear}(U, phi), 
+    Laplacian{Linear}(J, phi), 
+    0.0)
+phiModel.terms.term2.sign[1] = -1
 generate_boundary_conditions!(mesh, phiModel, phiBCs)
 
 discretise!(equation, phiModel, mesh)

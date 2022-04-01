@@ -1,5 +1,6 @@
 module Discretise
 
+using LinearAlgebra
 using SparseArrays
 using StaticArrays
 

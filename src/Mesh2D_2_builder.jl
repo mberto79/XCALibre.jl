@@ -53,7 +53,7 @@ function generate_interface_faces!(
     ) where {I,F}
     (; edges, blocks) = builder
     (; nodes, faces) = mesh
-    blockPair = fill(Block(zero(I)), 2)
+    blockPair = [Block(zero(I)) for _ ∈ 1:2] #fill(Block(zero(I)), 2)
     edgeIndexPair = zeros(I,2)
     for (edgeID, edge) ∈ enumerate(edges)
         if !edge.boundary
@@ -241,12 +241,12 @@ function total_faces(builder::MeshBuilder2D{I,F}) where{I,F}
         nx = block.nx
         ny = block.ny
         faces_NS = (nx)*(ny+1)
-        faces_EW = (ny+1)*(nx)
-        nfaces += faces_NS + faces_EW
+        faces_EW = (nx+1)*(ny)
+        nfaces += faces_NS + faces_EW # (nx+1)*(ny+1)
     end
     for edge ∈ edges # find internal edges and remove from total
         if !edge.boundary
-            nfaces -= 2*edge.ncells
+            nfaces -= edge.ncells
         end
     end
     nfaces

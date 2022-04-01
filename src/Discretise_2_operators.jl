@@ -24,7 +24,6 @@ end
     nothing
 end
 
-
 Divergence{Linear}(J, phi) = Divergence{Linear}(J, phi, [1])
 @inline aP!(term::Divergence{Linear}, A, cell, face, nsign, cID) = begin
     A[cID, cID] += term.sign[1]*(term.J⋅face.normal*nsign*face.area)/2.0

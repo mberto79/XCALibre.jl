@@ -3,9 +3,9 @@ using Plots
 using FVM_1D.Mesh2D
 using FVM_1D.Plotting
 
-n_vertical      = 30
-n_horizontal1   = 50
-n_horizontal2   = 40
+n_vertical      = 10
+n_horizontal1   = 15
+n_horizontal2   = 12
 
 p1 = Point(0.0,0.0,0.0)
 p2 = Point(1.0,0.0,0.0)
@@ -46,26 +46,22 @@ using FVM_1D.Models
 
 phiBCs = (
     (dirichlet, :inlet, 100),
-    (neumann, :outlet, 50),
+    (dirichlet, :outlet, 50),
     (dirichlet, :bottom, 100),
     (dirichlet, :top, 100)
 )
 
-J = 1.0
 phi = ScalarField(mesh)
-
 equation = Equation(mesh)
 
-
-@time phiModel = SteadyDiffusion(Laplacian{Linear}(J, phi), 0.0)
+J = 1.0
+phiModel = SteadyDiffusion(Laplacian{Linear}(J, phi), 0.0)
 phiModel.terms.term1.sign[1] = 1
+generate_boundary_conditions!(mesh, phiModel, phiBCs)
 
-@time generate_boundary_conditions!(mesh, phiModel, phiBCs)
-
-@time discretise!(equation, phiModel, mesh)
-@time update_boundaries!(equation, mesh, phiModel, phiBCs)
-@time phi.values .= equation.A\equation.b
-
+discretise!(equation, phiModel, mesh)
+update_boundaries!(equation, mesh, phiModel, phiBCs)
+phi.values .= equation.A\equation.b
 
 x(mesh) = [mesh.cells[i].centre[1] for i ∈ 1:length(mesh.cells)]
 y(mesh) = [mesh.cells[i].centre[2] for i ∈ 1:length(mesh.cells)]

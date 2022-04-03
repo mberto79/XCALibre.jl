@@ -1,5 +1,6 @@
 export Laplacian, Divergence
 export aP!, aN!, b!
+export scheme!, scheme_source!
 
 ### OPERATORS AND SCHEMES
 struct Source{T} <: AbstractSource
@@ -36,6 +37,25 @@ end
 @inline b!(term::Divergence{Linear}, b, cell, cID) = begin
     b[cID] = 0.0
     nothing
+end
+
+# Implementation as single functions
+@inline function scheme!(term::Laplacian{Linear}, A, cell, face, ns, cID, nID)
+    ap = term.sign[1]*(-term.J * face.area)/face.delta
+    A[cID, cID] += ap
+    A[cID, nID] += -ap
+end
+@inline scheme_source!(term::Laplacian{Linear}, b, cell, cID) = begin
+    b[cID] += 0
+end
+
+@inline function scheme!(term::Divergence{Linear}, A, cell, face, ns, cID, nID)
+    ap = term.sign[1]*(term.J⋅face.normal*ns*face.area)/2.0
+    A[cID, cID] += ap
+    A[cID, nID] += ap
+end
+@inline scheme_source!(term::Divergence{Linear}, b, cell, cID) = begin
+    b[cID] += 0.0
 end
 
 # function Laplacian{Linear}(J, phi)

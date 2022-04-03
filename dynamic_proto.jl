@@ -72,8 +72,12 @@ phiModel = SteadyConvectionDiffusion(
 phiModel.terms.term2.sign[1] = -1
 generate_boundary_conditions!(mesh, phiModel, phiBCs)
 
-discretise!(equation, phiModel, mesh)
-update_boundaries!(equation, mesh, phiModel, phiBCs)
+@time discretise!(equation, phiModel, mesh)
+@time update_boundaries!(equation, mesh, phiModel, phiBCs)
+phi.values .= equation.A\equation.b
+
+@time discretise2!(equation, phiModel, mesh)
+@time update_boundaries!(equation, mesh, phiModel, phiBCs)
 phi.values .= equation.A\equation.b
 
 x(mesh) = [mesh.cells[i].centre[1] for i ∈ 1:length(mesh.cells)]

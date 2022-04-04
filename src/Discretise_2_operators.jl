@@ -66,13 +66,12 @@ end
     term::Laplacian{Linear}, A, b, face, cells, fID, cID1, cID2
     )
     ap = term.sign[1]*(-term.J * face.area)/face.delta
-    # A[cID, cID] += ap
-    # A[cID, nID] += -ap
 
     # cell1
     A[cID1,cID1] += ap
     A[cID1,cID2] += -ap
     # b[cID1] += zero(0.0)
+
     # cell2
     A[cID2,cID2] += ap
     A[cID2,cID1] += -ap
@@ -83,8 +82,6 @@ end
     term::Divergence{Linear}, A, b, face, cells, fID, cID1, cID2
     )
     ap = term.sign[1]*(term.J⋅face.normal*face.area)*0.5
-    # A[cID, cID] += ap
-    # A[cID, nID] += ap
 
     # cell1
     # fi = findfirst(isequal(fID), cell1.facesID)
@@ -92,6 +89,7 @@ end
     A[cID1,cID1] += ap
     A[cID1,cID2] += ap
     # b[cID1] += 0.0 #zero(0.0)
+
     # cell2
     # fi = findfirst(isequal(fID), cell2.facesID)
     # nsign = -1.0 #cell2.nsign[fi]
@@ -103,28 +101,22 @@ end
 
 @inline function scheme4!(term::Laplacian{Linear}, nzval, cell, face, ns, cIndex, nIndex)
     ap = term.sign[1]*(-term.J * face.area)/face.delta
-
     nzval[cIndex] += ap
     nzval[nIndex] += -ap
-
-    # A[cID, cID] += ap
-    # A[cID, nID] += -ap
     nothing
 end
 @inline scheme_source4!(term::Laplacian{Linear}, b, cell, cID) = begin
-    b[cID] += 0.0; nothing
+    # b[cID] += 0.0
+    nothing
 end
 
 @inline function scheme4!(term::Divergence{Linear}, nzval, cell, face, ns, cIndex, nIndex)
-    ap = term.sign[1]*(term.J⋅face.normal*ns*face.area)/2.0
-
+    ap = term.sign[1]*(term.J⋅face.normal*ns*face.area*0.5) # need to implement weights
     nzval[cIndex] += ap
     nzval[nIndex] += ap
-
-    # A[cID, cID] += ap
-    # A[cID, nID] += ap
     nothing
 end
 @inline scheme_source4!(term::Divergence{Linear}, b, cell, cID) = begin
-    b[cID] += 0.0; nothing
+    # b[cID] += 0.0
+    nothing
 end

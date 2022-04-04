@@ -3,9 +3,9 @@ using Plots
 using FVM_1D.Mesh2D
 using FVM_1D.Plotting
 
-n_vertical      = 20 #200 0.35
-n_horizontal1   = 20 #300
-n_horizontal2   = 20 #400
+n_vertical      = 200 #200
+n_horizontal1   = 200 #300
+n_horizontal2   = 200 #400
 
 p1 = Point(0.0,0.0,0.0)
 p2 = Point(1.0,0.0,0.0)
@@ -54,6 +54,8 @@ phiBCs = (
 phi = ScalarField(mesh)
 equation = Equation(mesh)
 
+
+
 J = 1.0
 phiModel = SteadyDiffusion(Laplacian{Linear}(J, phi), 0.0)
 phiModel.terms.term1.sign[1] = 1
@@ -84,15 +86,21 @@ phi.values .= equation.A\equation.b
 @time update_boundaries!(equation, mesh, phiModel, phiBCs)
 @time phi.values .= equation.A\equation.b
 
-@discretise4 SteadyConvectionDiffusion 2 1
 @time discretise4!(equation, phiModel, mesh)
 @time update_boundaries!(equation, mesh, phiModel, phiBCs)
 @time phi.values .= equation.A\equation.b
 
+using FVM_1D.Solvers
+
+@time system = solver(equation)
+@time solver!(system, equation, phi; iterations=85, rtol=1e-8)
+@time phi.values .= equation.A\equation.b
+phi.values .= 100.0
+
 
 x(mesh) = [mesh.cells[i].centre[1] for i ∈ 1:length(mesh.cells)]
 y(mesh) = [mesh.cells[i].centre[2] for i ∈ 1:length(mesh.cells)]
-plotly()
+gr()
 scatter(x(mesh), y(mesh), phi.values, color=:red)
 
 scatter(mesh.nodes, colour=:black)

@@ -57,14 +57,13 @@ end
 struct Equation{Ti,Tf}
     A::SparseMatrixCSC{Tf,Ti}
     b::Vector{Tf}
-    I::Vector{Ti}
-    J::Vector{Ti}
-    vals::Vector{Tf}
+    R::Vector{Tf}
+    Fx::Vector{Tf}
 end
 Equation(mesh::Mesh2{Ti,Tf}) where {Ti,Tf} = begin
     nCells = length(mesh.cells)
     i, j, v = sparse_matrix_connectivity(mesh)
-    Equation(sparse(i, j, v), zeros(Tf, nCells), i, j, zeros(Tf, length(v)))
+    Equation(sparse(i, j, v), zeros(Tf, nCells), zeros(Tf, nCells), zeros(Tf, nCells))
 end
 
 function sparse_matrix_connectivity(mesh::Mesh2{I,F}) where{I,F}

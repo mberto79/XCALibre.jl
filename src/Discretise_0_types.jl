@@ -54,14 +54,17 @@ end
 #     b!::F3 
 # end
 
-struct Equation{I,F}
-    A::SparseMatrixCSC{F,I}
-    b::Vector{F}
+struct Equation{Ti,Tf}
+    A::SparseMatrixCSC{Tf,Ti}
+    b::Vector{Tf}
+    I::Vector{Ti}
+    J::Vector{Ti}
+    vals::Vector{Tf}
 end
-Equation(mesh::Mesh2{I,F}) where {I,F} = begin
+Equation(mesh::Mesh2{Ti,Tf}) where {Ti,Tf} = begin
     nCells = length(mesh.cells)
     i, j, v = sparse_matrix_connectivity(mesh)
-    Equation(sparse(i, j, v), zeros(nCells))
+    Equation(sparse(i, j, v), zeros(Tf, nCells), i, j, zeros(Tf, length(v)))
 end
 
 function sparse_matrix_connectivity(mesh::Mesh2{I,F}) where{I,F}
@@ -72,14 +75,16 @@ function sparse_matrix_connectivity(mesh::Mesh2{I,F}) where{I,F}
     j = I[]
     for cID = 1:nCells   
         cell = cells[cID]
+        push!(i, cID)
+        push!(j, cID)
         for fi ∈ eachindex(cell.facesID)
             fID = cell.facesID[fi]
             face = faces[fID]
             neighbour = cell.neighbours[fi]
             # c1 = face.ownerCells[1]
             # c2 = face.ownerCells[2]
-            push!(i, cID)
-            push!(j, cID)
+            # push!(i, cID)
+            # push!(j, cID)
             # A[cID, cID] += ...
             # if c1 != c2
                 # A[cID, neighbour] += ...

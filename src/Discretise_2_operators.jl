@@ -2,6 +2,8 @@ export Laplacian, Divergence
 export aP!, aN!, b!
 export scheme!, scheme_source!
 export scheme3!
+export scheme4!, scheme_source4!
+
 
 ### OPERATORS AND SCHEMES
 struct Source{T} <: AbstractSource
@@ -97,4 +99,32 @@ end
     A[cID2,cID2] += ap2
     A[cID2,cID1] += ap2
     # b[cID2] += 0.0 #zero(0.0)
+end
+
+@inline function scheme4!(term::Laplacian{Linear}, nzval, cell, face, ns, cIndex, nIndex)
+    ap = term.sign[1]*(-term.J * face.area)/face.delta
+
+    nzval[cIndex] += ap
+    nzval[nIndex] += -ap
+
+    # A[cID, cID] += ap
+    # A[cID, nID] += -ap
+    nothing
+end
+@inline scheme_source4!(term::Laplacian{Linear}, b, cell, cID) = begin
+    b[cID] += 0.0; nothing
+end
+
+@inline function scheme4!(term::Divergence{Linear}, nzval, cell, face, ns, cIndex, nIndex)
+    ap = term.sign[1]*(term.J⋅face.normal*ns*face.area)/2.0
+
+    nzval[cIndex] += ap
+    nzval[nIndex] += ap
+
+    # A[cID, cID] += ap
+    # A[cID, nID] += ap
+    nothing
+end
+@inline scheme_source4!(term::Divergence{Linear}, b, cell, cID) = begin
+    b[cID] += 0.0; nothing
 end

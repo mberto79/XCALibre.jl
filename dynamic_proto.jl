@@ -98,7 +98,7 @@ scatter(x(mesh), y(mesh), phi.values, color=:red)
 scatter(mesh.nodes, colour=:black)
 scatter!(centre2d.(mesh.faces), color=:blue)
 scatter!(centre2d.(mesh.cells), color=:red)
-fig = plot_mesh!(mesh)
+plot_mesh!(mesh)
 
 # for boundary ∈ mesh.boundaries
 #     for ID ∈ boundary.facesID

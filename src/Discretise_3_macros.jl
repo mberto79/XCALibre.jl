@@ -143,16 +143,19 @@ macro discretise4(Model_type, nTerms::Integer, nSources::Integer)
             (; faces, cells) = mesh
             (; A, b) = equation
             (; rowval, colptr, nzval) = A
-            A.nzval .= 0.0
+            fz = zero(0.0)
+            @inbounds for i ∈ eachindex(nzval)
+                nzval[i] = fz
+            end
             @inbounds for cID ∈ eachindex(cells)
                 cell = cells[cID]
                 (; facesID, nsign, neighbours) = cell
-                # A[cID,cID] = zero(0.0)
                 @inbounds for fi ∈ eachindex(cell.facesID)
                     fID = cell.facesID[fi]
                     ns = cell.nsign[fi] # normal sign
                     face = faces[fID]
                     nID = cell.neighbours[fi]
+
                     start = colptr[cID]
                     offset = findfirst(isequal(cID),@view rowval[start:end]) - 1
                     cIndex = start + offset
@@ -165,8 +168,6 @@ macro discretise4(Model_type, nTerms::Integer, nSources::Integer)
                 b[cID] = zero(0.0)
                 $(assignment_block_2...)
             end
-            # temp = sparse(I, J, vals)
-            # A.nzval .= temp.nzval
             nothing
         end # end function
     end |> esc # end quote and escape!

@@ -1,5 +1,6 @@
 export discretise!
 export discretise2!
+export discretise3!
 
 # Model definitions
 @build_model "SteadyDiffusion" 1 1 # generates struct and constructor (named tutple)
@@ -11,3 +12,4 @@ export SteadyDiffusion
 export SteadyConvectionDiffusion
 @discretise SteadyConvectionDiffusion 2 1
 @discretise2 SteadyConvectionDiffusion 2 1
+@discretise3 SteadyConvectionDiffusion 2 1

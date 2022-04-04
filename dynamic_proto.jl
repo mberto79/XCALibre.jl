@@ -3,9 +3,9 @@ using Plots
 using FVM_1D.Mesh2D
 using FVM_1D.Plotting
 
-n_vertical      = 10
-n_horizontal1   = 15
-n_horizontal2   = 12
+n_vertical      = 200
+n_horizontal1   = 300
+n_horizontal2   = 400
 
 p1 = Point(0.0,0.0,0.0)
 p2 = Point(1.0,0.0,0.0)
@@ -73,12 +73,17 @@ phiModel.terms.term2.sign[1] = -1
 generate_boundary_conditions!(mesh, phiModel, phiBCs)
 
 @time discretise!(equation, phiModel, mesh)
-@time update_boundaries!(equation, mesh, phiModel, phiBCs)
+update_boundaries!(equation, mesh, phiModel, phiBCs)
 phi.values .= equation.A\equation.b
 
 @time discretise2!(equation, phiModel, mesh)
-@time update_boundaries!(equation, mesh, phiModel, phiBCs)
+update_boundaries!(equation, mesh, phiModel, phiBCs)
 phi.values .= equation.A\equation.b
+
+@time discretise3!(equation, phiModel, mesh)
+# @code_warntype discretise3!(equation, phiModel, mesh)
+@time update_boundaries!(equation, mesh, phiModel, phiBCs)
+@time phi.values .= equation.A\equation.b
 
 x(mesh) = [mesh.cells[i].centre[1] for i ∈ 1:length(mesh.cells)]
 y(mesh) = [mesh.cells[i].centre[2] for i ∈ 1:length(mesh.cells)]

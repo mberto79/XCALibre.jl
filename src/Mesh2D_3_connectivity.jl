@@ -18,7 +18,7 @@ end
 function total_boundary_faces(mesh::Mesh2{I,F}) where {I,F}
     (; boundaries) = mesh
     nbfaces = zero(I)
-    for boundary ∈ boundaries
+    @inbounds for boundary ∈ boundaries
         nbfaces += length(boundary.facesID)
     end
     nbfaces

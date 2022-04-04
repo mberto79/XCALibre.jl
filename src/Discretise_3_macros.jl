@@ -1,5 +1,6 @@
 export @discretise
 export @discretise2
+export @discretise3
 
 macro discretise(Model_type, nTerms::Integer, nSources::Integer)
     aP! = Expr(:block)
@@ -78,6 +79,41 @@ macro discretise2(Model_type, nTerms::Integer, nSources::Integer)
                 $(assignment_block_2...)
             end
             nothing
+        end # end function
+    end |> esc # end quote and escape!
+    return func
+end # end macro
+
+macro discretise3(Model_type, nTerms::Integer, nSources::Integer)
+    assignment_block = [] #Expr(:block)
+    for t ∈ 1:nTerms
+        term = Symbol("term$t")
+        function_call = :(
+            scheme3!(model.terms.$term, A, b, face, cells, fID, cID1, cID2)
+            )
+        push!(assignment_block, function_call)
+    end 
+    
+    func = quote 
+        function discretise3!(equation, model::$Model_type, mesh)
+            (; faces, cells) = mesh
+            (; A, b) = equation
+            @inbounds for i ∈ eachindex(A.nzval)
+                A.nzval[i] = 0.0
+            end
+            @inbounds for i ∈ eachindex(b)
+                b[i] = 0.0
+            end
+            bfaces = total_boundary_faces(mesh)
+            start = bfaces + 1
+            finish = length(faces)
+            @inbounds for fID ∈ start:finish
+                face = faces[fID]
+                (; ownerCells) = face
+                cID1 = ownerCells[1]
+                cID2 = ownerCells[2]
+                $(assignment_block...)
+            end
         end # end function
     end |> esc # end quote and escape!
     return func

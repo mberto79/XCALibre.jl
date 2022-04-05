@@ -4,18 +4,21 @@ export solver!, solver
 # M=I, N=I, atol::T=√eps(T), rtol::T=√eps(T),
 # itmax::Int=0, verbose::Int=0, history::Bool=false)
 
-function solver!(solver, equation, phi; iterations=100, kwargs...)
+function solver!(solver, equation, phi, opA; iterations=100, kwargs...)
     (; A, b, R, Fx) = equation
     (; values) = phi
-    F = ilu(A, τ = 0.05)
-    n = length(b)
-    bl = false
-    opM = LinearOperator(Float64, n, n, bl, bl, (y, v) -> forward_substitution!(y, F, v))
-    opN = LinearOperator(Float64, n, n, bl, bl, (y, v) -> backward_substitution!(y, F, v))
-    # opP = LinearOperator(Float64, n, n, false, false, (y, v) -> ldiv!(y, F, v))
+    # F = ilu(A, τ = 0.05)
+    # n = length(b)
+    # bl = false
+    # opM = LinearOperator(Float64, n, n, bl, bl, (y, v) -> forward_substitution!(y, F, v))
+    # opN = LinearOperator(Float64, n, n, bl, bl, (y, v) -> backward_substitution!(y, F, v))
+    # # opP = LinearOperator(Float64, n, n, false, false, (y, v) -> ldiv!(y, F, v))
+    # A_op = LinearOperator(equation.A)
     for iteration ∈ 1:iterations
-        R .= b .- mul!(Fx, A, values)
-        solve!(solver, A, R; itmax=1, M=opM, N=opN, kwargs...)
+        # R .= b .- mul!(Fx, A, values)
+        R .= b .- mul!(Fx, opA, phi.values)
+        # solve!(solver, A, R; itmax=1, M=opM, N=opN, kwargs...)
+        solve!(solver, A, R; itmax=1, kwargs...)
         values .+= solution(solver)
     end
     # solve!(solver, A, b; itmax=iterations, kwargs...)

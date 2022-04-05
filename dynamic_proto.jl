@@ -1,4 +1,6 @@
 using Plots
+using LinearOperators
+using LinearAlgebra
 
 using FVM_1D.Mesh2D
 using FVM_1D.Plotting
@@ -54,8 +56,6 @@ phiBCs = (
 phi = ScalarField(mesh)
 equation = Equation(mesh)
 
-
-
 J = 1.0
 phiModel = SteadyDiffusion(Laplacian{Linear}(J, phi), 0.0)
 phiModel.terms.term1.sign[1] = 1
@@ -90,18 +90,39 @@ phi.values .= equation.A\equation.b
 @time update_boundaries!(equation, mesh, phiModel, phiBCs)
 @time phi.values .= equation.A\equation.b
 
+
+(; A, b, R, Fx) = equation
+
 using FVM_1D.Solvers
+# using Krylov
+using IncompleteLU
+using LinearOperators
+using LinearAlgebra
 
 @time system = solver(equation)
-@time solver!(system, equation, phi; iterations=85, rtol=1e-8)
+F = ilu(A, τ = 0.05)
+n = length(b)
+bl = false
+opM = LinearOperator(Float64, n, n, bl, bl, (y, v) -> forward_substitution!(y, F, v))
+opN = LinearOperator(Float64, n, n, bl, bl, (y, v) -> backward_substitution!(y, F, v))
+opP = LinearOperator(Float64, n, n, false, false, (y, v) -> ldiv!(Fx, F, v))
+opA = LinearOperator(equation.A)
+
+function run_solver(system, equation, phi, opA, opM, opN, opP)
+    solver!(system, equation, phi, opA; iterations=120, rtol=1e-2, M=opP)#, N=opN)
+end
+
+@time run_solver(system, equation, phi, opA, opM, opN, opP)
 @time phi.values .= equation.A\equation.b
 phi.values .= 100.0
+phi.values
 
 
 x(mesh) = [mesh.cells[i].centre[1] for i ∈ 1:length(mesh.cells)]
 y(mesh) = [mesh.cells[i].centre[2] for i ∈ 1:length(mesh.cells)]
-gr()
-scatter(x(mesh), y(mesh), phi.values, color=:red)
+gr(size=(400,400))
+scatter(x(mesh), y(mesh), phi.values, markerstrokewidth=0, zcolor=phi.values, camera=(45,55))
+# camera(0,90)
 
 scatter(mesh.nodes, colour=:black)
 scatter!(centre2d.(mesh.faces), color=:blue)

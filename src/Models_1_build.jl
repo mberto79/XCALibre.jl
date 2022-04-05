@@ -8,6 +8,7 @@ export discretise4!
 export SteadyDiffusion
 @discretise SteadyDiffusion 1 1 # custom discretisation function
 @discretise2 SteadyDiffusion 1 1 # custom discretisation function
+@discretise4 SteadyDiffusion 1 1
 
 @build_model "SteadyConvectionDiffusion" 2 1
 export SteadyConvectionDiffusion

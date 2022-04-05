@@ -5,7 +5,7 @@ using LinearAlgebra
 using FVM_1D.Mesh2D
 using FVM_1D.Plotting
 
-n_vertical      = 200 #200
+n_vertical      = 20000 #200
 n_horizontal1   = 200 #300
 n_horizontal2   = 200 #400
 
@@ -61,7 +61,7 @@ phiModel = SteadyDiffusion(Laplacian{Linear}(J, phi), 0.0)
 phiModel.terms.term1.sign[1] = 1
 generate_boundary_conditions!(mesh, phiModel, phiBCs)
 
-discretise!(equation, phiModel, mesh)
+@time discretise4!(equation, phiModel, mesh)
 update_boundaries!(equation, mesh, phiModel, phiBCs)
 phi.values .= equation.A\equation.b
 
@@ -91,29 +91,28 @@ phi.values .= equation.A\equation.b
 @time phi.values .= equation.A\equation.b
 
 
-(; A, b, R, Fx) = equation
 
 using FVM_1D.Solvers
-# using Krylov
+using Krylov
 using IncompleteLU
 using LinearOperators
 using LinearAlgebra
 
-@time system = solver(equation)
-F = ilu(A, τ = 0.05)
+@time system = set_solver(equation, GmresSolver)
+# @time system = set_solver(equation, BicgstabSolver)
+(; A, b, R, Fx) = equation
+@time F = ilu(A, τ = 0.005)
 n = length(b)
 bl = false
 opM = LinearOperator(Float64, n, n, bl, bl, (y, v) -> forward_substitution!(y, F, v))
 opN = LinearOperator(Float64, n, n, bl, bl, (y, v) -> backward_substitution!(y, F, v))
-opP = LinearOperator(Float64, n, n, false, false, (y, v) -> ldiv!(Fx, F, v))
+opP = LinearOperator(Float64, n, n, bl, bl, (y, v) -> ldiv!(y, F, v))
 opA = LinearOperator(equation.A)
 
-function run_solver(system, equation, phi, opA, opM, opN, opP)
-    solver!(system, equation, phi, opA; iterations=120, rtol=1e-2, M=opP)#, N=opN)
-end
-
-@time run_solver(system, equation, phi, opA, opM, opN, opP)
+@time run!(system, equation,phi; M=opP, history=true)
 @time phi.values .= equation.A\equation.b
+@time R .= b .- mul!(Fx, opA, phi.values)
+println("Residual: ", norm(R))
 phi.values .= 100.0
 phi.values
 

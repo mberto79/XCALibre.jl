@@ -5,9 +5,9 @@ using LinearAlgebra
 using FVM_1D.Mesh2D
 using FVM_1D.Plotting
 
-n_vertical      = 20000 #200
-n_horizontal1   = 200 #300
-n_horizontal2   = 200 #400
+n_vertical      = 20 #200
+n_horizontal1   = 20 #300
+n_horizontal2   = 20 #400
 
 p1 = Point(0.0,0.0,0.0)
 p2 = Point(1.0,0.0,0.0)
@@ -48,9 +48,11 @@ using FVM_1D.Models
 
 phiBCs = (
     (dirichlet, :inlet, 100),
-    (dirichlet, :outlet, 50),
-    (neumann, :bottom, 0),
-    (neumann, :top, 0)
+    (dirichlet, :outlet, 50.0),
+    # (neumann, :bottom, 0),
+    # (neumann, :top, 0)
+    (dirichlet, :bottom, 100),
+    (dirichlet, :top, 100)
 )
 
 phi = ScalarField(mesh)
@@ -61,7 +63,7 @@ phiModel = SteadyDiffusion(Laplacian{Linear}(J, phi), 0.0)
 phiModel.terms.term1.sign[1] = 1
 generate_boundary_conditions!(mesh, phiModel, phiBCs)
 
-@time discretise4!(equation, phiModel, mesh)
+@time discretise!(equation, phiModel, mesh)
 update_boundaries!(equation, mesh, phiModel, phiBCs)
 phi.values .= equation.A\equation.b
 

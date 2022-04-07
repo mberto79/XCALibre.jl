@@ -1,8 +1,6 @@
 using LinearOperators
 using LinearAlgebra
 
-iter_A(x) = [ -2x[1] + x[2]; x[1:end-2] - 2x[2:end-1] + x[3:end] ; -2x[end] + x[end-1] ]
-
 function customfunc1!(res, v, α, β::T; mesh) where T
     (; faces, cells) = mesh
     res .= 0.0
@@ -62,6 +60,91 @@ face_based!(res, v, α, β::T) where T = begin
     face_based1!(res, v, 1.0, 0.0; mesh=mesh)
 end
 
+
+function flux!(J, mesh) where T
+    (; faces, cells) = mesh
+    start = total_boundary_faces(mesh) + 1
+    finish = length(faces)
+    @inbounds @simd for i ∈  eachindex(J)
+        J[i] = 0.0
+    end
+    @inbounds for fID ∈ start:finish
+        face = faces[fID]
+        (; delta, area) = face
+        J[fID] =  -1.0*area/delta
+    end
+end
+
+function fluxC!(JC, equation) where T
+    (; A) = equation
+    @inbounds @simd for i ∈  eachindex(JC)
+        JC[i] = 0.0
+    end
+    @inbounds for i ∈ eachindex(equation.b)
+        JC[i] =  A[i,i]
+    end
+end
+
+# face-based calculation (pre-allocated)
+function face_flux1!(res, v, α, β::T; mesh, JF) where T
+    (; faces, cells) = mesh
+    start = total_boundary_faces(mesh) + 1
+    finish = length(faces)
+    @inbounds @simd for i ∈  eachindex(res)
+        res[i] = 0.0
+    end
+    @inbounds for fID ∈ start:finish
+        face = faces[fID]
+        (; ownerCells, normal, delta, area) = face
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        ap =  JF[fID]
+        an = -ap
+        res[cID1] += ap*v[cID1]
+        res[cID1] += an*v[cID2]
+        res[cID2] += ap*v[cID2]
+        res[cID2] += an*v[cID1]
+    end
+end
+face_flux!(res, v, α, β::T) where T = begin
+    face_flux1!(res, v, 1.0, 0.0; mesh=mesh, JF=JF)
+end
+
+# face-based calculation (pre-allocated)
+function face_fluxC1!(res, v, α, β::T; mesh, JF, JC) where T
+    (; faces, cells) = mesh
+    start = total_boundary_faces(mesh) + 1
+    finish = length(faces)
+    @inbounds @simd for i ∈  eachindex(res)
+        res[i] = 0.0
+    end
+    @inbounds for fID ∈ start:finish
+        face = faces[fID]
+        (; ownerCells, normal, delta, area) = face
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        ac = JC[fID]
+        ap =  JF[fID]
+        an = -ap
+        res[cID1] = ac*v[cID1]
+        res[cID1] += an*v[cID2]
+        res[cID2] = ac*v[cID2]
+        res[cID2] += an*v[cID1]
+    end
+end
+face_fluxC!(res, v, α, β::T) where T = begin
+    face_fluxC1!(res, v, 1.0, 0.0; mesh=mesh, JF=JF, JC=JC)
+end
+
+
+JF = zeros(length(mesh.faces))
+flux!(JF, mesh)
+JF
+
+JC = zeros(length(mesh.cells))
+fluxC!(JC, equation)
+JC
+
 ncells = length(mesh.cells)
 opA = LinearOperator(
     Float64, ncells, ncells, false, false, 
@@ -73,6 +156,16 @@ opAf = LinearOperator(
     face_based!, nothing, nothing
     )
 
+opAflux = LinearOperator(
+    Float64, length(mesh.cells), length(mesh.cells), false, false,
+    face_flux!, nothing, nothing
+)
+
+opAfluxC = LinearOperator(
+    Float64, length(mesh.cells), length(mesh.cells), false, false,
+    face_fluxC!, nothing, nothing
+)
+
 has_args5(opA)
 
 opAm = LinearOperator(equation.A)
@@ -81,16 +174,18 @@ vector = 2.0.*rand(length(mesh.cells))
 out1 = zeros(length(mesh.cells))
 out2 = zeros(length(mesh.cells))
 out3 = zeros(length(mesh.cells))
+out4 = zeros(length(mesh.cells))
 @time mul!(out1, equation.A, vector)
-@time mul!(out2, opA, vector)
-@time mul!(out3, opAf, vector)
-@time mul!(out3, opAA, vector)
+@time mul!(out2, opAfluxC, vector)
+@time mul!(out3, opAflux, vector)
+@time mul!(out4, opAf, vector)
 
 
 test(out3, opAA, vector)
 
 out1./out2
 out1./out3
+out2./out3
 
 phi = ScalarField(mesh)
 equation = Equation(mesh)

@@ -5,9 +5,9 @@ using LinearAlgebra
 using FVM_1D.Mesh2D
 using FVM_1D.Plotting
 
-n_vertical      = 20 #200
-n_horizontal1   = 20 #300
-n_horizontal2   = 20 #400
+n_vertical      = 200 #200
+n_horizontal1   = 200 #300
+n_horizontal2   = 200 #400
 
 p1 = Point(0.0,0.0,0.0)
 p2 = Point(1.0,0.0,0.0)

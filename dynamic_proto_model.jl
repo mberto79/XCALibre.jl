@@ -95,15 +95,16 @@ function face_flux1!(res, v, α, β::T; mesh, JF) where T
     end
     @inbounds for fID ∈ start:finish
         face = faces[fID]
-        (; ownerCells, normal, delta, area) = face
+        (; ownerCells) = face
         cID1 = ownerCells[1]
         cID2 = ownerCells[2]
         ap =  JF[fID]
         an = -ap
-        res[cID1] += ap*v[cID1]
-        res[cID1] += an*v[cID2]
-        res[cID2] += ap*v[cID2]
-        res[cID2] += an*v[cID1]
+        res[cID1] = 2.5 + fID
+        # res[cID1] += ap*v[cID1]
+        # res[cID1] += an*v[cID2]
+        # res[cID2] += ap*v[cID2]
+        # res[cID2] += an*v[cID1]
     end
 end
 face_flux!(res, v, α, β::T) where T = begin
@@ -136,7 +137,6 @@ face_fluxC!(res, v, α, β::T) where T = begin
     face_fluxC1!(res, v, 1.0, 0.0; mesh=mesh, JF=JF, JC=JC)
 end
 
-
 JF = zeros(length(mesh.faces))
 flux!(JF, mesh)
 JF
@@ -152,7 +152,7 @@ opA = LinearOperator(
     )
 
 opAf = LinearOperator(
-    Float64, length(mesh.cells), length(mesh.cells), false, false,
+ Float64, length(mesh.cells), length(mesh.cells), false, false,
     face_based!, nothing, nothing
     )
 
@@ -176,9 +176,10 @@ out2 = zeros(length(mesh.cells))
 out3 = zeros(length(mesh.cells))
 out4 = zeros(length(mesh.cells))
 @time mul!(out1, equation.A, vector)
-@time mul!(out2, opAfluxC, vector)
+@time mul!(out2, opAf, vector)
 @time mul!(out3, opAflux, vector)
-@time mul!(out4, opAf, vector)
+@code_warntype mul!(out3, opAflux, vector)
+@time mul!(out4, opAfluxC, vector)
 
 
 test(out3, opAA, vector)
@@ -186,6 +187,7 @@ test(out3, opAA, vector)
 out1./out2
 out1./out3
 out2./out3
+out4
 
 phi = ScalarField(mesh)
 equation = Equation(mesh)

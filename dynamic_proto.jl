@@ -5,55 +5,60 @@ using LinearAlgebra
 using FVM_1D.Mesh2D
 using FVM_1D.Plotting
 
-n_vertical      = 200 #200
-n_horizontal1   = 200 #300
-n_horizontal2   = 200 #400
+function generate_mesh()
+    n_vertical      = 10000 #200
+    n_horizontal1   = 200 #300
+    n_horizontal2   = 200 #400
 
-p1 = Point(0.0,0.0,0.0)
-p2 = Point(1.0,0.0,0.0)
-p3 = Point(1.5,0.0,0.0)
-p4 = Point(0.0,1.0,0.0)
-# p5 = Point(0.8,0.8,0.0)
-p5 = Point(1.0,1.0,0.0)
-p6 = Point(1.5,0.7,0.0)
-points = [p1,p2,p3,p4,p5,p6]
+    p1 = Point(0.0,0.0,0.0)
+    p2 = Point(1.0,0.0,0.0)
+    p3 = Point(1.5,0.0,0.0)
+    p4 = Point(0.0,1.0,0.0)
+    # p5 = Point(0.8,0.8,0.0)
+    p5 = Point(1.0,1.0,0.0)
+    p6 = Point(1.5,0.7,0.0)
+    points = [p1,p2,p3,p4,p5,p6]
 
-# Edges in x-direction
-e1 = line!(points,1,2,n_horizontal1)
-e2 = line!(points,2,3,n_horizontal2)
-e3 = line!(points,4,5,n_horizontal1)
-e4 = line!(points,5,6,n_horizontal2)
+    # Edges in x-direction
+    e1 = line!(points,1,2,n_horizontal1)
+    e2 = line!(points,2,3,n_horizontal2)
+    e3 = line!(points,4,5,n_horizontal1)
+    e4 = line!(points,5,6,n_horizontal2)
 
-# Edges in y-direction
-e5 = line!(points,1,4,n_vertical)
-e6 = line!(points,2,5,n_vertical)
-e7 = line!(points,3,6,n_vertical)
-edges = [e1,e2,e3,e4,e5,e6,e7]
+    # Edges in y-direction
+    e5 = line!(points,1,4,n_vertical)
+    e6 = line!(points,2,5,n_vertical)
+    e7 = line!(points,3,6,n_vertical)
+    edges = [e1,e2,e3,e4,e5,e6,e7]
 
-b1 = quad(edges, [1,3,5,6])
-b2 = quad(edges, [2,4,6,7])
-blocks = [b1,b2]
+    b1 = quad(edges, [1,3,5,6])
+    b2 = quad(edges, [2,4,6,7])
+    blocks = [b1,b2]
 
-patch1 = Patch(:inlet,  [5])
-patch2 = Patch(:outlet, [7])
-patch3 = Patch(:bottom, [1,2])
-patch4 = Patch(:top,    [3,4])
-patches = [patch1, patch2, patch3, patch4]
+    patch1 = Patch(:inlet,  [5])
+    patch2 = Patch(:outlet, [7])
+    patch3 = Patch(:bottom, [1,2])
+    patch4 = Patch(:top,    [3,4])
+    patches = [patch1, patch2, patch3, patch4]
 
-builder = MeshBuilder2D(points, edges, patches, blocks)
-mesh = generate!(builder)
+    builder = MeshBuilder2D(points, edges, patches, blocks)
+    mesh = generate!(builder)
+    return mesh
+end
 
 using FVM_1D.Discretise
 using FVM_1D.Models
 
 phiBCs = (
-    (dirichlet, :inlet, 100),
-    (dirichlet, :outlet, 50.0),
-    # (neumann, :bottom, 0),
-    # (neumann, :top, 0)
-    (dirichlet, :bottom, 100),
-    (dirichlet, :top, 100)
-)
+        (dirichlet, :inlet, 100),
+        (dirichlet, :outlet, 50.0),
+        # (neumann, :bottom, 0),
+        # (neumann, :top, 0)
+        (dirichlet, :bottom, 100),
+        (dirichlet, :top, 100)
+    )
+
+mesh = generate_mesh()
 
 phi = ScalarField(mesh)
 equation = Equation(mesh)
@@ -100,8 +105,8 @@ using IncompleteLU
 using LinearOperators
 using LinearAlgebra
 
-@time system = set_solver(equation, GmresSolver)
-# @time system = set_solver(equation, BicgstabSolver)
+# @time system = set_solver(equation, GmresSolver)
+@time system = set_solver(equation, BicgstabSolver)
 (; A, b, R, Fx) = equation
 @time F = ilu(A, τ = 0.005)
 n = length(b)
@@ -111,7 +116,7 @@ opN = LinearOperator(Float64, n, n, bl, bl, (y, v) -> backward_substitution!(y, 
 opP = LinearOperator(Float64, n, n, bl, bl, (y, v) -> ldiv!(y, F, v))
 opA = LinearOperator(equation.A)
 
-@time run!(system, equation,phi; M=opP, history=true)
+@time run!(system, equation, phi; M=opP)#, history=true)
 @time phi.values .= equation.A\equation.b
 @time R .= b .- mul!(Fx, opA, phi.values)
 println("Residual: ", norm(R))

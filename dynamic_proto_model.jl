@@ -1,7 +1,21 @@
 using LinearOperators
 using LinearAlgebra
 
-function customfunc1!(res, v, α, β::T; mesh) where T
+mesh = generate_mesh()
+
+phiBCs = (
+        (dirichlet, :inlet, 100),
+        (dirichlet, :outlet, 50.0),
+        # (neumann, :bottom, 0),
+        # (neumann, :top, 0)
+        (dirichlet, :bottom, 100),
+        (dirichlet, :top, 100)
+    )
+
+phi = ScalarField(mesh)
+equation = Equation(mesh)
+
+function cell_based1!(res, v, α, β::T; mesh) where T
     (; faces, cells) = mesh
     res .= 0.0
     ap = 0.0
@@ -21,18 +35,8 @@ function customfunc1!(res, v, α, β::T; mesh) where T
         ap = 0.0
     end
 end
-customfunc2!(res, v, α, β::T) where T = begin
-    customfunc1!(res, v, 1.0, 0.0; mesh=mesh)
-end
-function tcustomfunc!(res, w, α, β::T) where T
-    if β == zero(T)
-        res[1] = w[1] * α
-        res[2] =  (w[1] + w[2]) * α
-    else
-        res[1] = w[1] * α + res[1] * β
-        res[2] =  (w[1] + w[2]) * α + res[2] * β
-    end
-    nothing
+cell_based!(res, v, α, β::T) where T = begin
+    cell_based1!(res, v, 1.0, 0.0; mesh=mesh)
 end
 
 # face-based calculation
@@ -148,7 +152,7 @@ JC
 ncells = length(mesh.cells)
 opA = LinearOperator(
     Float64, ncells, ncells, false, false, 
-    customfunc2!, nothing, nothing
+    cell_based!, nothing, nothing
     )
 
 opAf = LinearOperator(
@@ -168,18 +172,19 @@ opAfluxC = LinearOperator(
 
 has_args5(opA)
 
-opAm = LinearOperator(equation.A)
+@time opAm = LinearOperator(equation.A)
+
+@time At = transpose(equation.A)
 
 vector = 2.0.*rand(length(mesh.cells))
 out1 = zeros(length(mesh.cells))
 out2 = zeros(length(mesh.cells))
 out3 = zeros(length(mesh.cells))
 out4 = zeros(length(mesh.cells))
-@time mul!(out1, equation.A, vector)
+@time mul!(out1, opAm, vector)
 @time mul!(out2, opAf, vector)
 @time mul!(out3, opAflux, vector)
-@code_warntype mul!(out3, opAflux, vector)
-@time mul!(out4, opAfluxC, vector)
+@time mul!(out4, equation.A, vector)
 
 
 test(out3, opAA, vector)

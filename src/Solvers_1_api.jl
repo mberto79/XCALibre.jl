@@ -11,9 +11,12 @@ function run!(
 
     (; A, b, R, Fx) = equation
     opA = LinearOperator(A)
-    R .= b .- mul!(Fx, opA, phi.values)
+    Fx .= zero(Tv)
+    mul!(Fx, opA, phi.values)
+    R .= b .- Fx
     solve!(solver, opA, R; itmax=itmax, atol=atol, rtol=rtol, kwargs...)
     phi.values .+= solution(solver)
+    nothing
 end
 
 function set_solver(equation::Equation{I,F}, solver) where {I,F}

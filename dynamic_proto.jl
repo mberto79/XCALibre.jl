@@ -6,9 +6,9 @@ using FVM_1D.Mesh2D
 using FVM_1D.Plotting
 
 function generate_mesh()
-    n_vertical      = 10000 #200
-    n_horizontal1   = 200 #300
-    n_horizontal2   = 200 #400
+    n_vertical      = 20 #200
+    n_horizontal1   = 20 #300
+    n_horizontal2   = 20 #400
 
     p1 = Point(0.0,0.0,0.0)
     p2 = Point(1.0,0.0,0.0)
@@ -64,7 +64,7 @@ phi = ScalarField(mesh)
 equation = Equation(mesh)
 
 J = 1.0
-phiModel = SteadyDiffusion(Laplacian{Linear}(J, phi), 0.0)
+phiModel = Diffusion(Laplacian{Linear}(J, phi), 0.0)
 phiModel.terms.term1.sign[1] = 1
 generate_boundary_conditions!(mesh, phiModel, phiBCs)
 
@@ -74,7 +74,7 @@ phi.values .= equation.A\equation.b
 
 J = 1.0
 U = [2.0, 0.0, 0.0]
-phiModel = SteadyConvectionDiffusion(
+phiModel = ConvectionDiffusion(
     Divergence{Linear}(U, phi), 
     Laplacian{Linear}(J, phi), 
     0.0)
@@ -83,20 +83,7 @@ generate_boundary_conditions!(mesh, phiModel, phiBCs)
 
 @time discretise!(equation, phiModel, mesh)
 update_boundaries!(equation, mesh, phiModel, phiBCs)
-phi.values .= equation.A\equation.b
-
-@time discretise2!(equation, phiModel, mesh)
-update_boundaries!(equation, mesh, phiModel, phiBCs)
-phi.values .= equation.A\equation.b
-
-@time discretise3!(equation, phiModel, mesh)
-@time update_boundaries!(equation, mesh, phiModel, phiBCs)
 @time phi.values .= equation.A\equation.b
-
-@time discretise4!(equation, phiModel, mesh)
-@time update_boundaries!(equation, mesh, phiModel, phiBCs)
-@time phi.values .= equation.A\equation.b
-
 
 
 using FVM_1D.Solvers
@@ -108,26 +95,20 @@ using LinearAlgebra
 # @time system = set_solver(equation, GmresSolver)
 @time system = set_solver(equation, BicgstabSolver)
 (; A, b, R, Fx) = equation
-@time F = ilu(A, τ = 0.005)
-n = length(b)
-bl = false
-opM = LinearOperator(Float64, n, n, bl, bl, (y, v) -> forward_substitution!(y, F, v))
-opN = LinearOperator(Float64, n, n, bl, bl, (y, v) -> backward_substitution!(y, F, v))
-opP = LinearOperator(Float64, n, n, bl, bl, (y, v) -> ldiv!(y, F, v))
+
 opA = LinearOperator(equation.A)
 
-@time run!(system, equation, phi; M=opP)#, history=true)
-@time phi.values .= equation.A\equation.b
+@time run!(system, equation, phi)#, history=true)
 @time R .= b .- mul!(Fx, opA, phi.values)
 println("Residual: ", norm(R))
 phi.values .= 100.0
 phi.values
 
-
 x(mesh) = [mesh.cells[i].centre[1] for i ∈ 1:length(mesh.cells)]
 y(mesh) = [mesh.cells[i].centre[2] for i ∈ 1:length(mesh.cells)]
-gr(size=(400,400))
-scatter(x(mesh), y(mesh), phi.values, markerstrokewidth=0, zcolor=phi.values, camera=(45,55))
+# gr(size=(400,400), camera=(45,55))
+plotly(size=(400,400), markersize=2, markerstrokewidth=1)
+scatter(x(mesh), y(mesh), phi.values, zcolor=phi.values)
 # camera(0,90)
 
 scatter(mesh.nodes, colour=:black)

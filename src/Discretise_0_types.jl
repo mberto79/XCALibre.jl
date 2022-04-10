@@ -68,28 +68,17 @@ end
 
 function sparse_matrix_connectivity(mesh::Mesh2{I,F}) where{I,F}
     cells = mesh.cells
-    faces = mesh.faces
     nCells = length(cells)
     i = I[]
     j = I[]
     for cID = 1:nCells   
         cell = cells[cID]
-        push!(i, cID)
-        push!(j, cID)
+        push!(i, cID) # diagonal row index
+        push!(j, cID) # diagonal column index
         for fi ∈ eachindex(cell.facesID)
-            fID = cell.facesID[fi]
-            face = faces[fID]
             neighbour = cell.neighbours[fi]
-            # c1 = face.ownerCells[1]
-            # c2 = face.ownerCells[2]
-            # push!(i, cID)
-            # push!(j, cID)
-            # A[cID, cID] += ...
-            # if c1 != c2
-                # A[cID, neighbour] += ...
-                push!(i, cID)
-                push!(j, neighbour)
-            # end
+            push!(i, cID) # cell index (row)
+            push!(j, neighbour) # neighbour index (column)
         end
     end
     v = zeros(F, length(i))

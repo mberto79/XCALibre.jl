@@ -6,6 +6,7 @@ export scheme4!, scheme_source4!
 
 
 ### OPERATORS AND SCHEMES
+
 struct Source{T} <: AbstractSource
     phi::Float64
     type::T
@@ -14,7 +15,10 @@ end
 Source{Constant}(phi) = Source{Constant}(phi, Constant(), :ConstantSource)
 
 
+### LAPLACIAN
+
 Laplacian{Linear}(J, phi) = Laplacian{Linear}(J, phi, [1])
+
 @inline function scheme!(term::Laplacian{Linear}, nzval, cell, face, ns, cIndex, nIndex)
     ap = term.sign[1]*(-term.J * face.area)/face.delta
     nzval[cIndex] += ap
@@ -25,6 +29,9 @@ end
     # b[cID] += 0.0
     nothing
 end
+
+
+### DIVERGENCE
 
 Divergence{Linear}(J, phi) = Divergence{Linear}(J, phi, [1])
 @inline function scheme!(term::Divergence{Linear}, nzval, cell, face, ns, cIndex, nIndex)

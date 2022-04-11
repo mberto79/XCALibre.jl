@@ -52,7 +52,8 @@ function internal_face_properties!(mesh::Mesh2{I,F}) where {I,F}
         d_1f = cf - c1 # distance vector from cell1 to face centre
         d_f2 = c2 - cf # distance vector from face centre to cell2
         d_12 = c2 - c1 # distance vector from cell1 to cell2
-        delta = abs(d_12⋅normal) # abs just in case is -ve
+        # delta = abs(d_12⋅normal) # abs just in case is -ve (face-normal distance)
+        delta = norm(d_12) # abs just in case is -ve (exact distance)
         weight = abs((d_1f⋅normal)/(d_1f⋅normal + d_f2⋅normal)) 
         face = @set face.delta = delta
         faces[facei] = @set face.weight = weight
@@ -81,7 +82,8 @@ function boundary_face_properties!(mesh::Mesh2{I,F}) where {I,F}
             if d_cf⋅normal < zero(F)
                 normal = -1*normal
             end
-            delta = abs(d_cf⋅normal)
+            # delta = abs(d_cf⋅normal) # face-normal distance
+            delta = norm(d_cf) # exact distance
             # assign values to face
             face = @set face.area = area
             face = @set face.normal = normal

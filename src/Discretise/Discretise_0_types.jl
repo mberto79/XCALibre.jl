@@ -4,7 +4,7 @@ export AbstractScheme
 export AbstractLaplacian, AbstractDivergence 
 export Laplacian, Divergence
 export Constant, Linear, Upwind 
-export ScalarField
+export ScalarField, FaceScalarField
 export Equation 
 # export Discretisation, Equation 
 
@@ -29,6 +29,15 @@ end
 ScalarField(mesh::Mesh2{I,F}) where {I,F} =begin
     ncells  = length(mesh.cells)
     ScalarField(zeros(F,ncells), mesh)
+end
+
+struct FaceScalarField{I,F} <: AbstractScalarField
+    values::Vector{F}
+    mesh::Mesh2{I,F}
+end
+FaceScalarField(mesh::Mesh2{I,F}) where {I,F} =begin
+    nfaces  = length(mesh.faces)
+    FaceScalarField(zeros(F,nfaces), mesh)
 end
 
 # Supported operators

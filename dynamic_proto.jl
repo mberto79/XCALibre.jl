@@ -5,6 +5,7 @@ using LinearAlgebra
 using FVM_1D.Mesh2D
 using FVM_1D.Plotting
 using FVM_1D.Discretise
+using FVM_1D.Calculate
 using FVM_1D.Models
 using FVM_1D.Solvers
 
@@ -87,11 +88,34 @@ residual(equation)
 phi.values .= 100.0
 phi.values
 
+phif = FaceScalarField(mesh)
+source = Grad{Linear}(phif)
+interpolate!(get_scheme(source), phif, phi)
+
+distribution(f,phi) = begin
+    for i ∈ eachindex(phi.values)
+        centre = mesh.cells[i].centre
+        x = centre[1]
+        y = centre[2]
+        phi.values[i] = f(2*x)
+    end
+end 
+
+distribution(sin, phi)
+
+@time grad = grad!(source, phi)
+
 x(mesh) = [mesh.cells[i].centre[1] for i ∈ 1:length(mesh.cells)]
 y(mesh) = [mesh.cells[i].centre[2] for i ∈ 1:length(mesh.cells)]
+xg(grad) = [grad[i][1] for i ∈ 1:length(grad)]
+yg(grad) = [grad[i][2] for i ∈ 1:length(grad)]
+xf(mesh) = [mesh.faces[i].centre[1] for i ∈ 1:length(mesh.faces)]
+yf(mesh) = [mesh.faces[i].centre[2] for i ∈ 1:length(mesh.faces)]
 # gr(size=(400,400), camera=(45,55))
-plotly(size=(400,400), markersize=2, markerstrokewidth=1)
+plotly(size=(400,400), markersize=1.5, markerstrokewidth=1)
 scatter(x(mesh), y(mesh), phi.values, zcolor=phi.values)
+scatter!(x(mesh), y(mesh), xg(grad), zcolor=xg(grad))
+scatter!(xf(mesh), yf(mesh), phif.values, color=:black)
 
 scatter(mesh.nodes, colour=:black)
 scatter!(centre2d.(mesh.faces), color=:blue)

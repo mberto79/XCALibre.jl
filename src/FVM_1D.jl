@@ -1,19 +1,10 @@
 module FVM_1D
 
-# using StaticArrays
-# using SparseArrays
-# using LinearAlgebra
-# using Krylov
-
-# include("Fields.jl")
-# include("FVM_discretisation.jl")
-# include("prototying.jl")
-
-include("Mesh2D/Mesh2D.jl")
-include("Mesh2D/Mesh2D_plotting.jl")
-include("Discretise.jl")
-include("Models.jl")
-include("Calculate.jl")
-include("Solvers.jl")
+include("Mesh/Mesh2D.jl")
+include("Mesh/Mesh2D_plotting.jl")
+include("Discretise/Discretise.jl")
+include("Model/Models.jl")
+include("Calculate/Calculate.jl")
+include("Solve/Solvers.jl")
 
 end # module

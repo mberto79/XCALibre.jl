@@ -4,6 +4,11 @@ using LinearAlgebra
 
 using FVM_1D.Mesh2D
 using FVM_1D.Plotting
+using FVM_1D.Discretise
+using FVM_1D.Models
+using FVM_1D.Solvers
+
+using Krylov
 
 function generate_mesh()
     n_vertical      = 20 #200
@@ -17,7 +22,7 @@ function generate_mesh()
     # p5 = Point(0.8,0.8,0.0)
     p5 = Point(1.0,1.0,0.0)
     p6 = Point(1.5,0.7,0.0)
-    points = [p1,p2,p3,p4,p5,p6]
+    points = [p1, p2, p3, p4, p5, p6]
 
     # Edges in x-direction
     e1 = line!(points,1,2,n_horizontal1)
@@ -29,11 +34,11 @@ function generate_mesh()
     e5 = line!(points,1,4,n_vertical)
     e6 = line!(points,2,5,n_vertical)
     e7 = line!(points,3,6,n_vertical)
-    edges = [e1,e2,e3,e4,e5,e6,e7]
+    edges = [e1, e2, e3, e4, e5, e6, e7]
 
     b1 = quad(edges, [1,3,5,6])
     b2 = quad(edges, [2,4,6,7])
-    blocks = [b1,b2]
+    blocks = [b1, b2]
 
     patch1 = Patch(:inlet,  [5])
     patch2 = Patch(:outlet, [7])
@@ -46,61 +51,39 @@ function generate_mesh()
     return mesh
 end
 
-using FVM_1D.Discretise
-using FVM_1D.Models
+function create_model!(::Type{ConvectionDiffusion}, U, J, phi)
+    model = ConvectionDiffusion(
+        Divergence{Linear}(U, phi),
+        Laplacian{Linear}(J, phi),
+        0.0
+        )
+    model.terms.term2.sign[1] = -1
+    return model
+end
 
 phiBCs = (
-        (dirichlet, :inlet, 100),
-        (dirichlet, :outlet, 50.0),
-        # (neumann, :bottom, 0),
-        # (neumann, :top, 0)
-        (dirichlet, :bottom, 100),
-        (dirichlet, :top, 100)
+    (dirichlet, :inlet, 100),
+    (dirichlet, :outlet, 50.0),
+    # (neumann, :bottom, 0),
+    # (neumann, :top, 0)
+    (dirichlet, :bottom, 100),
+    (dirichlet, :top, 100)
     )
 
 mesh = generate_mesh()
-
 phi = ScalarField(mesh)
 equation = Equation(mesh)
-
-J = 1.0
-phiModel = Diffusion(Laplacian{Linear}(J, phi), 0.0)
-phiModel.terms.term1.sign[1] = 1
+phiModel = create_model!(ConvectionDiffusion, [2.0, 0.0, 0.0], 1.0, phi)
 generate_boundary_conditions!(mesh, phiModel, phiBCs)
 
 @time discretise!(equation, phiModel, mesh)
 update_boundaries!(equation, mesh, phiModel, phiBCs)
-phi.values .= equation.A\equation.b
-
-J = 1.0
-U = [2.0, 0.0, 0.0]
-phiModel = ConvectionDiffusion(
-    Divergence{Linear}(U, phi), 
-    Laplacian{Linear}(J, phi), 
-    0.0)
-phiModel.terms.term2.sign[1] = -1
-generate_boundary_conditions!(mesh, phiModel, phiBCs)
-
-@time discretise!(equation, phiModel, mesh)
-update_boundaries!(equation, mesh, phiModel, phiBCs)
-@time phi.values .= equation.A\equation.b
-
-
-using FVM_1D.Solvers
-using Krylov
-using IncompleteLU
-using LinearOperators
-using LinearAlgebra
 
 # @time system = set_solver(equation, GmresSolver)
-@time system = set_solver(equation, BicgstabSolver)
-(; A, b, R, Fx) = equation
-
-opA = LinearOperator(equation.A)
+system = set_solver(equation, BicgstabSolver)
 
 @time run!(system, equation, phi)#, history=true)
-@time R .= b .- mul!(Fx, opA, phi.values)
-println("Residual: ", norm(R))
+residual(equation)
 phi.values .= 100.0
 phi.values
 
@@ -109,7 +92,6 @@ y(mesh) = [mesh.cells[i].centre[2] for i ∈ 1:length(mesh.cells)]
 # gr(size=(400,400), camera=(45,55))
 plotly(size=(400,400), markersize=2, markerstrokewidth=1)
 scatter(x(mesh), y(mesh), phi.values, zcolor=phi.values)
-# camera(0,90)
 
 scatter(mesh.nodes, colour=:black)
 scatter!(centre2d.(mesh.faces), color=:blue)

@@ -86,10 +86,12 @@ system = set_solver(equation, BicgstabSolver)
 phi.values .= 100.0
 @time run!(system, equation, phi)#, history=true)
 residual(equation)
+# @time phi.values .= equation.A\equation.b
 phi.values
 
 phif = FaceScalarField(mesh)
 source = Grad{Linear}(mesh)
+source_corr = Grad{Linear}(mesh, 4)
 @time interpolate!(get_scheme(source), phif, phi)
 
 distribution(f,phi) = begin
@@ -103,7 +105,8 @@ end
 
 distribution(sin, phi)
 
-@time grad = grad!(source, phif, phi)
+@time grad!(source, phif, phi)
+@time grad!(source_corr, phif, phi)
 
 x(mesh) = [mesh.cells[i].centre[1] for i ∈ 1:length(mesh.cells)]
 y(mesh) = [mesh.cells[i].centre[2] for i ∈ 1:length(mesh.cells)]
@@ -112,8 +115,8 @@ yf(mesh) = [mesh.faces[i].centre[2] for i ∈ 1:length(mesh.faces)]
 # gr(size=(400,400), camera=(45,55))
 plotly(size=(400,400), markersize=1.5, markerstrokewidth=1)
 scatter(x(mesh), y(mesh), phi.values, zcolor=phi.values)
-scatter!(x(mesh), y(mesh), source.x, zcolor=source.x)
-scatter!(xf(mesh), yf(mesh), phif.values, color=:black)
+scatter(xf(mesh), yf(mesh), phif.values, color=:green)
+scatter(x(mesh), y(mesh), source_corr.x, color=:blue)
 
 scatter(mesh.nodes, colour=:black)
 scatter!(centre2d.(mesh.faces), color=:blue)

@@ -108,6 +108,10 @@ distribution(sin, phi)
 @time grad!(source, phif, phi)
 @time grad!(source_corr, phif, phi)
 
+gradf = FaceVectorField(mesh)
+
+interpolate!(get_scheme(source), gradf, source)
+
 x(mesh) = [mesh.cells[i].centre[1] for i ∈ 1:length(mesh.cells)]
 y(mesh) = [mesh.cells[i].centre[2] for i ∈ 1:length(mesh.cells)]
 xf(mesh) = [mesh.faces[i].centre[1] for i ∈ 1:length(mesh.faces)]
@@ -115,8 +119,8 @@ yf(mesh) = [mesh.faces[i].centre[2] for i ∈ 1:length(mesh.faces)]
 # gr(size=(400,400), camera=(45,55))
 plotly(size=(400,400), markersize=1.5, markerstrokewidth=1)
 scatter(x(mesh), y(mesh), phi.values, zcolor=phi.values)
-scatter(xf(mesh), yf(mesh), phif.values, color=:green)
-scatter(x(mesh), y(mesh), source_corr.x, color=:blue)
+scatter!(xf(mesh), yf(mesh), gradf.x, color=:green)
+scatter(x(mesh), y(mesh), source.x, color=:blue)
 
 scatter(mesh.nodes, colour=:black)
 scatter!(centre2d.(mesh.faces), color=:blue)

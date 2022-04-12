@@ -5,11 +5,13 @@ export AbstractLaplacian, AbstractDivergence
 export Laplacian, Divergence
 export Constant, Linear, Upwind 
 export ScalarField, FaceScalarField
+export VectorField, FaceVectorField
 export Equation 
 # export Discretisation, Equation 
 
 abstract type AbstractField end
 abstract type AbstractScalarField <: AbstractField end
+abstract type AbstractVectorField <: AbstractField end
 abstract type AbstractSource <: AbstractField end
 abstract type AbstractOperator end
 abstract type AbstractLaplacian <: AbstractOperator end
@@ -40,6 +42,30 @@ FaceScalarField(mesh::Mesh2{I,F}) where {I,F} =begin
     FaceScalarField(zeros(F,nfaces), mesh)
 end
 
+struct VectorField{I,F} <: AbstractVectorField
+    x::Vector{F}
+    y::Vector{F}
+    z::Vector{F}
+    mesh::Mesh2{I,F}
+end
+VectorField(mesh::Mesh2{I,F}) where {I,F} = begin
+    ncells = length(mesh.cells)
+    VectorField(zeros(F, ncells), zeros(F, ncells), zeros(F, ncells), mesh)
+end
+
+struct FaceVectorField{I,F} <: AbstractVectorField
+    x::Vector{F}
+    y::Vector{F}
+    z::Vector{F}
+    mesh::Mesh2{I,F}
+end
+FaceVectorField(mesh::Mesh2{I,F}) where {I,F} = begin
+    nfaces = length(mesh.faces)
+    VectorField(zeros(F, nfaces), zeros(F, nfaces), zeros(F, nfaces), mesh)
+end
+
+(v::AbstractVectorField)(i::Integer) = SVector{3, typeof(v.x[1])}(v.x[i], v.y[i], v.z[i])
+
 # Supported operators
 struct Laplacian{T<:AbstractScheme} <: AbstractLaplacian
     J::Float64
@@ -52,16 +78,6 @@ struct Divergence{T<:AbstractScheme} <: AbstractDivergence
     phi::ScalarField
     sign::Vector{Int64}
 end
-
-# Types 
-# struct Discretisation{F,T,I,F1,F2,F3}
-#     phi::F
-#     terms::Vector{T}
-#     signs::Vector{I}
-#     ap!::F1
-#     an!::F2 
-#     b!::F3 
-# end
 
 struct Equation{Ti,Tf}
     A::SparseMatrixCSC{Tf,Ti}

@@ -14,7 +14,7 @@ function interpolate!(::Type{Linear}, phif, phi)
         c1_c2 = c2 - c1
         q = (c1_f⋅c1_c2)/(c1_c2⋅c1_c2)
         f_prime = c1 - q*(c1 - c2)
-        w = norm( (c2 - f_prime)/(c2 - c1) )
+        w = norm(c2 - f_prime)/norm(c2 - c1)
         phi1 = values[cID1]
         phi2 = values[cID2]
         phif.values[fi] = w*phi1 + (1.0 - w)*phi2

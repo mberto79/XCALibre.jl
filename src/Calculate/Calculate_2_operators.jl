@@ -7,10 +7,12 @@ function grad!(grad::Grad{Linear,I,F}, phif, phi) where {I,F}
     green_gauss!(grad, phif)
     # correct phif field 
     if grad.correct
+        phif0 = copy(phif.values)
         for i ∈ 1:grad.correctors
-            correct_interpolation!(get_scheme(grad), phif, grad)
+            correct_interpolation!(get_scheme(grad), phif, grad, phif0)
             green_gauss!(grad, phif)
         end
+        phif0 = nothing
     end
 end
 

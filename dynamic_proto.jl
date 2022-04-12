@@ -13,7 +13,7 @@ using Krylov
 
 function generate_mesh()
     n_vertical      = 20 #200
-    n_horizontal1   = 20 #300
+    n_horizontal1   = 25 #300
     n_horizontal2   = 20 #400
 
     p1 = Point(0.0,0.0,0.0)
@@ -91,7 +91,7 @@ phi.values
 
 phif = FaceScalarField(mesh)
 source = Grad{Linear}(mesh)
-source_corr = Grad{Linear}(mesh, 4)
+source_corr = Grad{Linear}(mesh, 2)
 @time interpolate!(get_scheme(source), phif, phi)
 
 distribution(f,phi) = begin
@@ -119,8 +119,12 @@ yf(mesh) = [mesh.faces[i].centre[2] for i ∈ 1:length(mesh.faces)]
 # gr(size=(400,400), camera=(45,55))
 plotly(size=(400,400), markersize=1.5, markerstrokewidth=1)
 scatter(x(mesh), y(mesh), phi.values, zcolor=phi.values)
-scatter!(xf(mesh), yf(mesh), gradf.x, color=:green)
-scatter(x(mesh), y(mesh), source.x, color=:blue)
+scatter!(xf(mesh), yf(mesh), phif.values, color=:green)
+scatter!(x(mesh), y(mesh), source_corr.x, color=:blue)
+scatter!(x(mesh), y(mesh), source.x, color=:red)
+f(x,y) = 2*cos(2x)
+surface(x(mesh), y(mesh), f)
+
 
 scatter(mesh.nodes, colour=:black)
 scatter!(centre2d.(mesh.faces), color=:blue)

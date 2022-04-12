@@ -9,7 +9,7 @@ function interpolate!(::Type{Linear}, phif::FaceScalarField{I,F}, phi) where {I,
     (; cells, faces) = mesh
     for fi ∈ start:length(faces)
         (; ownerCells) = faces[fi]
-        w = weight(Linear, cells, faces, fi)
+        w, df = weight(Linear, cells, faces, fi)
         cID1 = ownerCells[1]
         cID2 = ownerCells[2]
         phi1 = values[cID1]
@@ -25,22 +25,19 @@ function interpolate!(::Type{Linear}, phif::FaceScalarField{I,F}, phi) where {I,
 end
 
 function correct_interpolation!(
-    ::Type{Linear}, phif::FaceScalarField{I,F}, grad) where {I,F}
+    ::Type{Linear}, phif::FaceScalarField{I,F}, grad, phif0) where {I,F}
     mesh = phif.mesh
     start = total_boundary_faces(mesh) + 1
     (; cells, faces) = mesh
     for fi ∈ start:length(faces)
-        (; ownerCells, centre, area, normal) = faces[fi]
-        w = weight(Linear, cells, faces, fi)
+        (; ownerCells) = faces[fi]
+        w, df = weight(Linear, cells, faces, fi)
         cID1 = ownerCells[1]
         cID2 = ownerCells[2]
-        c1 = cells[cID1].centre
-        c2 = cells[cID2].centre
-        c1_f = centre - c1
-        c2_f = centre - c2
         grad1 = grad(cID1)
         grad2 = grad(cID2)
-        phif.values[fi] += w*grad1⋅c1_f + (1.0 - w)*grad2⋅c2_f
+        grad_ave = w*grad1 + (1.0 - w)*grad2
+        phif.values[fi] = phif0[fi] + grad_ave⋅df
     end
 end
 
@@ -53,7 +50,7 @@ function interpolate!(::Type{Linear}, gradf, grad)
     start = nbfaces + 1
     for fi ∈ start:length(faces)
         (; ownerCells) = faces[fi]
-        w = weight(Linear, cells, faces, fi)
+        w, df = weight(Linear, cells, faces, fi)
         cID1 = ownerCells[1]
         cID2 = ownerCells[2]
         grad1 = grad(cID1)
@@ -80,7 +77,7 @@ function correct_interpolation!(::Type{Linear}, gradf, grad)
     (; cells, faces) = mesh
     for fi ∈ start:length(faces)
         (; ownerCells, centre, area, normal) = faces[fi]
-        w = weight(Linear, cells, faces, fi)
+        w, df = weight(Linear, cells, faces, fi)
         cID1 = ownerCells[1]
         cID2 = ownerCells[2]
         c1 = cells[cID1].centre
@@ -89,7 +86,8 @@ function correct_interpolation!(::Type{Linear}, gradf, grad)
         c2_f = centre - c2
         grad1 = grad(cID1)
         grad2 = grad(cID2)
-        phif.values[fi] += w*grad1⋅c1_f + (1.0 - w)*grad2⋅c2_f
+        grad_ave = w*grad1 + (1.0 - w)*grad2
+        phif.values[fi] += grad_ave⋅df
     end
 end
 
@@ -106,5 +104,6 @@ function weight(::Type{Linear}, cells, faces, fi)
     q = (c1_f⋅c1_c2)/(c1_c2⋅c1_c2)
     f_prime = c1 - q*(c1 - c2)
     w = norm(c2 - f_prime)/norm(c2 - c1)
-    return w
+    df = centre - f_prime
+    return w, df
 end

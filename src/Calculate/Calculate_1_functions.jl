@@ -107,11 +107,11 @@ function correct!(eqn::Equation{I,F}, term, non_flux::FaceScalarField{I,F}) wher
     for ci ∈ eachindex(cells)
         #cell stuff
         cell = cells[ci]
-        (; facesID) = cell
+        (; facesID, nsign) = cell
         for fi ∈ eachindex(facesID)
             # face stuff
             fID = facesID[fi]
-            b[ci] -= sign*J*non_flux.values[fID]
+            b[ci] += -sign*J*non_flux.values[fID]*nsign[fi]
         end
     end
 end

@@ -20,8 +20,8 @@ function generate_mesh()
     p2 = Point(1.0,0.0,0.0)
     p3 = Point(1.5,0.0,0.0)
     p4 = Point(0.0,1.0,0.0)
-    # p5 = Point(0.8,0.8,0.0)
-    p5 = Point(1.0,1.0,0.0)
+    p5 = Point(0.8,0.8,0.0)
+    # p5 = Point(1.0,1.0,0.0)
     p6 = Point(1.5,0.7,0.0)
     points = [p1, p2, p3, p4, p5, p6]
 
@@ -63,8 +63,8 @@ function create_model!(::Type{ConvectionDiffusion}, U, J, phi)
 end
 
 phiBCs = (
-    (dirichlet, :inlet, 100),
-    (dirichlet, :outlet, 50.0),
+    (dirichlet, :inlet, 10.0),
+    (dirichlet, :outlet, 2.0),
     (neumann, :bottom, 0),
     (neumann, :top, 0)
     # (dirichlet, :bottom, 100),
@@ -75,7 +75,7 @@ mesh = generate_mesh()
 phi = ScalarField(mesh)
 phi1 = ScalarField(mesh)
 equation = Equation(mesh)
-phiModel = create_model!(ConvectionDiffusion, [2.0, 0.0, 0.0], 1.0, phi)
+phiModel = create_model!(ConvectionDiffusion, [4.0, 0.0, 0.0], 1.0, phi)
 generate_boundary_conditions!(mesh, phiModel, phiBCs)
 
 @time discretise!(equation, phiModel, mesh)
@@ -93,8 +93,8 @@ residual(equation)
 phi.values
 
 phif = FaceScalarField(mesh)
-source = Grad{Linear}(phi1)
-source_corr = Grad{Linear}(phi1, 1)
+gradPhi = Grad{Linear}(phi1)
+gradPhi_corr = Grad{Linear}(phi1, 1)
 gradf = FaceVectorField(mesh)
 
 
@@ -102,12 +102,15 @@ gradf = FaceVectorField(mesh)
 term = phiModel.terms.term2
 @time correct!(equation, term, phif)
 
+for 1:2
+    nothing
+end
 # gr(size=(400,400), camera=(45,55))
-plotly(size=(400,400), markersize=1.5, markerstrokewidth=1)
+plotly(size=(400,400), markersize=1, markerstrokewidth=1)
 scatter(x(mesh), y(mesh), phi.values, zcolor=phi.values)
 scatter!(x(mesh), y(mesh), phi1.values, color=:green)
-scatter!(xf(mesh), yf(mesh), phif.values, color=:green)
-scatter!(x(mesh), y(mesh), source_corr.x, color=:blue)
+scatter(xf(mesh), yf(mesh), phif.values, color=:green)
+scatter(x(mesh), y(mesh), equation.b, color=:blue)
 scatter!(xf(mesh), yf(mesh), gradf.x, color=:red)
 f(x,y) = 2*cos(2x)
 surface(xf(mesh), yf(mesh), f)

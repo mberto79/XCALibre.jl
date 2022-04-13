@@ -91,7 +91,7 @@ phi.values
 
 phif = FaceScalarField(mesh)
 source = Grad{Linear}(mesh)
-source_corr = Grad{Linear}(mesh, 2)
+source_corr = Grad{Linear}(mesh, 1)
 @time interpolate!(get_scheme(source), phif, phi)
 
 distribution(f,phi) = begin
@@ -110,7 +110,7 @@ distribution(sin, phi)
 
 gradf = FaceVectorField(mesh)
 
-interpolate!(get_scheme(source), gradf, source)
+interpolate!(get_scheme(source), gradf, source_corr)
 
 x(mesh) = [mesh.cells[i].centre[1] for i ∈ 1:length(mesh.cells)]
 y(mesh) = [mesh.cells[i].centre[2] for i ∈ 1:length(mesh.cells)]
@@ -121,9 +121,9 @@ plotly(size=(400,400), markersize=1.5, markerstrokewidth=1)
 scatter(x(mesh), y(mesh), phi.values, zcolor=phi.values)
 scatter!(xf(mesh), yf(mesh), phif.values, color=:green)
 scatter!(x(mesh), y(mesh), source_corr.x, color=:blue)
-scatter!(x(mesh), y(mesh), source.x, color=:red)
+scatter!(xf(mesh), yf(mesh), gradf.x, color=:red)
 f(x,y) = 2*cos(2x)
-surface(x(mesh), y(mesh), f)
+surface(xf(mesh), yf(mesh), f)
 
 
 scatter(mesh.nodes, colour=:black)

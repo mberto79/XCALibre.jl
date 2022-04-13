@@ -71,23 +71,27 @@ function interpolate!(::Type{Linear}, gradf, grad)
     end
 end
 
-function correct_interpolation!(::Type{Linear}, gradf, grad)
-    mesh = phif.mesh
+function correct_interpolation!(::Type{Linear}, gradf, grad, phi)
+    mesh = grad.mesh
+    values = phi.values
     start = total_boundary_faces(mesh) + 1
     (; cells, faces) = mesh
     for fi ∈ start:length(faces)
-        (; ownerCells, centre, area, normal) = faces[fi]
+        (; ownerCells, delta) = faces[fi]
         w, df = weight(Linear, cells, faces, fi)
         cID1 = ownerCells[1]
         cID2 = ownerCells[2]
         c1 = cells[cID1].centre
         c2 = cells[cID2].centre
-        c1_f = centre - c1
-        c2_f = centre - c2
+        distance = c2 - c1
+        d = distance/delta
         grad1 = grad(cID1)
         grad2 = grad(cID2)
         grad_ave = w*grad1 + (1.0 - w)*grad2
-        phif.values[fi] += grad_ave⋅df
+        grad_corr = grad_ave + ((values[cID2] - values[cID1])/delta - (grad_ave⋅d))*d
+        phif.x[fi] = grad_corr[1]
+        phif.y[fi] = grad_corr[2]
+        phif.z[fi] = grad_corr[3]
     end
 end
 

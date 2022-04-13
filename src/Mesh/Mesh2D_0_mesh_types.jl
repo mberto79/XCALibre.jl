@@ -25,6 +25,7 @@ struct Face2D{I,F}
     ownerCells::SVector{2,I}
     centre::SVector{3, F}
     normal::SVector{3, F}
+    e::SVector{3, F}
     area::F
     delta::F
     weight::F
@@ -33,7 +34,7 @@ Face2D(I,F) = begin
     zi = zero(I); zf = zero(F)
     vec_2I = SVector{2,I}(zi,zi)
     vec_3F = SVector{3,F}(zf,zf,zf)
-    Face2D(vec_2I, vec_2I, vec_3F, vec_3F, zf, zf, zf)
+    Face2D(vec_2I, vec_2I, vec_3F, vec_3F, vec_3F, zf, zf, zf)
 end
 
 struct Boundary{I}

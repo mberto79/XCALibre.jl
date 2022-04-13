@@ -112,10 +112,6 @@ gradf = FaceVectorField(mesh)
 
 interpolate!(get_scheme(source), gradf, source_corr)
 
-x(mesh) = [mesh.cells[i].centre[1] for i ∈ 1:length(mesh.cells)]
-y(mesh) = [mesh.cells[i].centre[2] for i ∈ 1:length(mesh.cells)]
-xf(mesh) = [mesh.faces[i].centre[1] for i ∈ 1:length(mesh.faces)]
-yf(mesh) = [mesh.faces[i].centre[2] for i ∈ 1:length(mesh.faces)]
 # gr(size=(400,400), camera=(45,55))
 plotly(size=(400,400), markersize=1.5, markerstrokewidth=1)
 scatter(x(mesh), y(mesh), phi.values, zcolor=phi.values)

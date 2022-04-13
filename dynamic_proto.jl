@@ -65,14 +65,15 @@ end
 phiBCs = (
     (dirichlet, :inlet, 100),
     (dirichlet, :outlet, 50.0),
-    # (neumann, :bottom, 0),
-    # (neumann, :top, 0)
-    (dirichlet, :bottom, 100),
-    (dirichlet, :top, 100)
+    (neumann, :bottom, 0),
+    (neumann, :top, 0)
+    # (dirichlet, :bottom, 100),
+    # (dirichlet, :top, 100)
     )
 
 mesh = generate_mesh()
 phi = ScalarField(mesh)
+phi1 = ScalarField(mesh)
 equation = Equation(mesh)
 phiModel = create_model!(ConvectionDiffusion, [2.0, 0.0, 0.0], 1.0, phi)
 generate_boundary_conditions!(mesh, phiModel, phiBCs)
@@ -84,37 +85,27 @@ update_boundaries!(equation, mesh, phiModel, phiBCs)
 system = set_solver(equation, BicgstabSolver)
 
 phi.values .= 100.0
+phi1.values .= 100.0
 @time run!(system, equation, phi)#, history=true)
+@time run!(system, equation, phi1)#, history=true)
 residual(equation)
 # @time phi.values .= equation.A\equation.b
 phi.values
 
 phif = FaceScalarField(mesh)
-source = Grad{Linear}(mesh)
-source_corr = Grad{Linear}(mesh, 1)
-@time interpolate!(get_scheme(source), phif, phi)
-
-distribution(f,phi) = begin
-    for i ∈ eachindex(phi.values)
-        centre = mesh.cells[i].centre
-        x = centre[1]
-        y = centre[2]
-        phi.values[i] = f(2x)
-    end
-end 
-
-distribution(sin, phi)
-
-@time grad!(source, phif, phi)
-@time grad!(source_corr, phif, phi)
-
+source = Grad{Linear}(phi1)
+source_corr = Grad{Linear}(phi1, 1)
 gradf = FaceVectorField(mesh)
 
-interpolate!(get_scheme(source), gradf, source_corr)
+
+@time nonorthogonal_correction!(source, gradf, phif)
+term = phiModel.terms.term2
+@time correct!(equation, term, phif)
 
 # gr(size=(400,400), camera=(45,55))
 plotly(size=(400,400), markersize=1.5, markerstrokewidth=1)
 scatter(x(mesh), y(mesh), phi.values, zcolor=phi.values)
+scatter!(x(mesh), y(mesh), phi1.values, color=:green)
 scatter!(xf(mesh), yf(mesh), phif.values, color=:green)
 scatter!(x(mesh), y(mesh), source_corr.x, color=:blue)
 scatter!(xf(mesh), yf(mesh), gradf.x, color=:red)

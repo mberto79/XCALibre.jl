@@ -1,4 +1,5 @@
 export interpolate!
+export nonorthogonal_correction!, correct!
 
 # Scalar face interpolation
 
@@ -95,7 +96,48 @@ function correct_interpolation!(::Type{Linear}, gradf, grad, phi)
     end
 end
 
-# Weight functions
+### Non-orthogonality correction (Laplacian terms)
+
+function correct!(eqn::Equation{I,F}, term, non_flux::FaceScalarField{I,F}) where {I,F}
+    sign = term.sign[1]
+    J = term.J
+    mesh = non_flux.mesh
+    cells = mesh.cells
+    (; b) = eqn 
+    for ci ∈ eachindex(cells)
+        #cell stuff
+        cell = cells[ci]
+        (; facesID) = cell
+        for fi ∈ eachindex(facesID)
+            # face stuff
+            fID = facesID[fi]
+            b[ci] -= sign*J*non_flux.values[fID]
+        end
+    end
+end
+
+function nonorthogonal_correction!(
+    tgrad::Grad{S,I,F}, gradf::FaceVectorField{I,F}, phif::FaceScalarField{I,F}
+    ) where {S,I,F}
+    (; phi) = tgrad
+    grad!(tgrad, phif, phi)
+    interpolate!(get_scheme(tgrad), gradf, tgrad)
+    nonorthogonal_flux!(phif, gradf)
+end
+
+# CAREFUL: overwriting phif to store face flux correction (NOT the interpolation of phi)
+function nonorthogonal_flux!(phif::FaceScalarField{I,F}, gradf) where{I,F} 
+    (; mesh, x, y, z) = gradf
+    (; faces, cells) = mesh
+    for fi ∈ eachindex(faces)
+        face = faces[fi]
+        (; area, normal, e) = face
+        T = (normal-e)*area
+        phif.values[fi] = gradf(fi)⋅T
+    end
+end
+
+### Weight functions
 
 function weight(::Type{Linear}, cells, faces, fi)
     (; ownerCells, centre) = faces[fi]

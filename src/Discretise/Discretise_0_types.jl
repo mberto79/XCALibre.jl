@@ -61,7 +61,7 @@ struct FaceVectorField{I,F} <: AbstractVectorField
 end
 FaceVectorField(mesh::Mesh2{I,F}) where {I,F} = begin
     nfaces = length(mesh.faces)
-    VectorField(zeros(F, nfaces), zeros(F, nfaces), zeros(F, nfaces), mesh)
+    FaceVectorField(zeros(F, nfaces), zeros(F, nfaces), zeros(F, nfaces), mesh)
 end
 
 (v::AbstractVectorField)(i::Integer) = SVector{3, typeof(v.x[1])}(v.x[i], v.y[i], v.z[i])

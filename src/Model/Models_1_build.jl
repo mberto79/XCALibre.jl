@@ -1,7 +1,4 @@
 export discretise!
-export discretise2!
-export discretise3!
-export discretise4!
 
 # Model definitions
 @build_model "Diffusion" 1 1 # generates struct and constructor (named tutple)

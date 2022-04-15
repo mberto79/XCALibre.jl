@@ -86,10 +86,12 @@ function boundary_face_properties!(mesh::Mesh2{I,F}) where {I,F}
             end
             # delta = abs(d_cf⋅normal) # face-normal distance
             delta = norm(d_cf) # exact distance
+            e = d_cf/delta
             # assign values to face
             face = @set face.area = area
             face = @set face.normal = normal
             face = @set face.delta = delta
+            face = @set face.e = e
             face = @set face.weight = one(F)
             faces[ID] = face
         end

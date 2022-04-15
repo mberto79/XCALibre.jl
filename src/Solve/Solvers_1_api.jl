@@ -1,4 +1,5 @@
 export run!, set_solver, residual
+export update_residual!, update_solution!
 
 function set_solver(equation::Equation{I,F}, solver) where {I,F}
     solver(equation.A, equation.R)

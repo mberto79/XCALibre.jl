@@ -23,6 +23,12 @@ function interpolate!(::Type{Linear}, phif::FaceScalarField{I,F}, phi) where {I,
         c1 = ownerCells[1]
         phif.values[i] = values[c1]
     end
+    for i ∈ 1:2
+    bc_val = [1.0, 0.0]
+    first = mesh.boundaries[i].facesID[1]
+    last = mesh.boundaries[i].facesID[2]
+    phif.values[first:last] .= bc_val[i]
+    end
 end
 
 function correct_interpolation!(
@@ -90,9 +96,9 @@ function correct_interpolation!(::Type{Linear}, gradf, grad, phi)
         grad2 = grad(cID2)
         grad_ave = w*grad1 + (1.0 - w)*grad2
         grad_corr = grad_ave + ((values[cID2] - values[cID1])/delta - (grad_ave⋅d))*d
-        phif.x[fi] = grad_corr[1]
-        phif.y[fi] = grad_corr[2]
-        phif.z[fi] = grad_corr[3]
+        gradf.x[fi] = grad_corr[1]
+        gradf.y[fi] = grad_corr[2]
+        gradf.z[fi] = grad_corr[3]
     end
 end
 
@@ -102,7 +108,7 @@ function correct!(eqn::Equation{I,F}, term, non_flux::FaceScalarField{I,F}) wher
     sign = term.sign[1]
     J = term.J
     mesh = non_flux.mesh
-    cells = mesh.cells
+    (; faces, cells) = mesh
     (; b) = eqn 
     for ci ∈ eachindex(cells)
         #cell stuff
@@ -112,6 +118,16 @@ function correct!(eqn::Equation{I,F}, term, non_flux::FaceScalarField{I,F}) wher
             # face stuff
             fID = facesID[fi]
             b[ci] += -sign*J*non_flux.values[fID]*nsign[fi]
+        end
+    end
+    nbfaces = total_boundary_faces(mesh)
+    for i ∈ 1:2
+        cellsID = mesh.boundaries[i].cellsID
+        facesID = mesh.boundaries[i].facesID
+        for fi ∈ eachindex(facesID)
+            fID = facesID[fi]
+            cID = cellsID[fi]
+            b[cID] += -sign*J*non_flux.values[fID]
         end
     end
 end
@@ -129,6 +145,8 @@ end
 function nonorthogonal_flux!(phif::FaceScalarField{I,F}, gradf) where{I,F} 
     (; mesh, x, y, z) = gradf
     (; faces, cells) = mesh
+    # start = total_boundary_faces(mesh) + 1
+    # for fi ∈ start:length(faces)
     for fi ∈ eachindex(faces)
         face = faces[fi]
         (; area, normal, e) = face

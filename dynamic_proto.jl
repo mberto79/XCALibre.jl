@@ -52,7 +52,7 @@ function generate_mesh()
     return mesh
 end
 
-function create_model!(::Type{ConvectionDiffusion}, U, J, phi)
+function create_model(::Type{ConvectionDiffusion}, U, J, phi)
     model = ConvectionDiffusion(
         Divergence{Linear}(U, phi),
         Laplacian{Linear}(J, phi),
@@ -62,9 +62,17 @@ function create_model!(::Type{ConvectionDiffusion}, U, J, phi)
     return model
 end
 
+function create_model(::Type{Diffusion}, J, phi)
+    model = Diffusion(
+        Laplacian{Linear}(J, phi),
+        0.0
+        )
+    return model
+end
+
 phiBCs = (
-    (dirichlet, :inlet, 10.0),
-    (dirichlet, :outlet, 2.0),
+    (dirichlet, :inlet, 1.0),
+    (dirichlet, :outlet, 0.0),
     (neumann, :bottom, 0),
     (neumann, :top, 0)
     # (dirichlet, :bottom, 100),
@@ -75,7 +83,8 @@ mesh = generate_mesh()
 phi = ScalarField(mesh)
 phi1 = ScalarField(mesh)
 equation = Equation(mesh)
-phiModel = create_model!(ConvectionDiffusion, [4.0, 0.0, 0.0], 1.0, phi)
+phiModel = create_model(ConvectionDiffusion, [4.0, 0.0, 0.0], 1.0, phi)
+phiModel = create_model(Diffusion, 1.0, phi)
 generate_boundary_conditions!(mesh, phiModel, phiBCs)
 
 @time discretise!(equation, phiModel, mesh)
@@ -84,8 +93,8 @@ update_boundaries!(equation, mesh, phiModel, phiBCs)
 # @time system = set_solver(equation, GmresSolver)
 system = set_solver(equation, BicgstabSolver)
 
-phi.values .= 100.0
-phi1.values .= 100.0
+# phi.values .= 100.0
+# phi1.values .= 100.0
 @time run!(system, equation, phi)#, history=true)
 @time run!(system, equation, phi1)#, history=true)
 residual(equation)
@@ -94,16 +103,40 @@ phi.values
 
 phif = FaceScalarField(mesh)
 gradPhi = Grad{Linear}(phi1)
-gradPhi_corr = Grad{Linear}(phi1, 1)
+# gradPhic = Grad{Linear}(phi1, 1)
+gradPhic = Grad{Linear}(phi1)
 gradf = FaceVectorField(mesh)
 
 
-@time nonorthogonal_correction!(source, gradf, phif)
-term = phiModel.terms.term2
+@time nonorthogonal_correction!(gradPhic, gradf, phif)
+term = phiModel.terms.term1
 @time correct!(equation, term, phif)
 
-for 1:2
-    nothing
+using IncompleteLU
+
+discretise!(equation, phiModel, mesh)
+update_boundaries!(equation, mesh, phiModel, phiBCs)
+F = ilu(equation.A, τ = 0.005)
+# Definition of linear operators to reduce allocations during iterations
+m = equation.A.m; n = m
+opP = LinearOperator(Float64, m, n, false, false, (y, v) -> ldiv!(y, F, v))
+opA = LinearOperator(equation.A)
+update_residual!(opA, equation, phi1)
+for i ∈ 1:3
+    
+    # Solving in residual form (allowing to provide an initial guess)
+    solve!(system, opA, equation.R; M=opP, itmax=500, atol=1e-8, rtol=1e-3)
+    update_solution!(phi1, system) # adds solution to initial guess
+    update_residual!(opA, equation, phi1)
+    discretise!(equation, phiModel, mesh)
+    update_boundaries!(equation, mesh, phiModel, phiBCs)
+    gradf.x .= 0.0
+    gradf.y .= 0.0
+    gradf.z .= 0.0
+    phif.values .= 0.0
+    nonorthogonal_correction!(gradPhic, gradf, phif)
+    term = phiModel.terms.term1
+    correct!(equation, term, phif)
 end
 # gr(size=(400,400), camera=(45,55))
 plotly(size=(400,400), markersize=1, markerstrokewidth=1)

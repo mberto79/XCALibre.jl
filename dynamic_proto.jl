@@ -70,14 +70,12 @@ function create_model(::Type{Diffusion}, J, phi)
     return model
 end
 
-phiBCs = (
-    (dirichlet, :inlet, 1.0),
-    (dirichlet, :outlet, 0.0),
-    (neumann, :bottom, 0),
-    (neumann, :top, 0)
-    # (dirichlet, :bottom, 100),
-    # (dirichlet, :top, 100)
-    )
+BCs = (
+    Dirichlet(:inlet, 100.0),
+    Dirichlet(:outlet, 0.0),
+    Neumann(:bottom, 0.0),
+    Neumann(:top, 0.0)
+)
 
 mesh = generate_mesh()
 phi = ScalarField(mesh)
@@ -85,10 +83,10 @@ phi1 = ScalarField(mesh)
 equation = Equation(mesh)
 phiModel = create_model(ConvectionDiffusion, [4.0, 0.0, 0.0], 1.0, phi)
 phiModel = create_model(Diffusion, 1.0, phi)
-generate_boundary_conditions!(mesh, phiModel, phiBCs)
+generate_boundary_conditions!(mesh, phiModel, BCs)
 
 @time discretise!(equation, phiModel, mesh)
-update_boundaries!(equation, mesh, phiModel, phiBCs)
+@time update_boundaries!(equation, mesh, phiModel, BCs)
 
 # @time system = set_solver(equation, GmresSolver)
 system = set_solver(equation, BicgstabSolver)
@@ -102,48 +100,52 @@ residual(equation)
 phi.values
 
 phif = FaceScalarField(mesh)
-gradPhi = Grad{Linear}(phi1)
-# gradPhic = Grad{Linear}(phi1, 1)
-gradPhic = Grad{Linear}(phi1)
+
+@time interpolate!(Linear, phif, phi, BCs)
+@code_warntype interpolate!(Linear, phif, phi, BCs)
+
+gradPhi = Grad{Linear}(phi)
+gradPhi = Grad{Linear}(phi,2)
+
+
+grad!(gradPhi, phif, phi, BCs)
+
 gradf = FaceVectorField(mesh)
+interpolate!(Linear, gradf, gradPhi, BCs)
+correct_interpolation!(Linear, gradf, gradPhi, phi)
 
+# using IncompleteLU
 
-@time nonorthogonal_correction!(gradPhic, gradf, phif)
-term = phiModel.terms.term1
-@time correct!(equation, term, phif)
-
-using IncompleteLU
-
-discretise!(equation, phiModel, mesh)
-update_boundaries!(equation, mesh, phiModel, phiBCs)
-F = ilu(equation.A, τ = 0.005)
-# Definition of linear operators to reduce allocations during iterations
-m = equation.A.m; n = m
-opP = LinearOperator(Float64, m, n, false, false, (y, v) -> ldiv!(y, F, v))
-opA = LinearOperator(equation.A)
-update_residual!(opA, equation, phi1)
-for i ∈ 1:3
+# discretise!(equation, phiModel, mesh)
+# update_boundaries!(equation, mesh, phiModel, phiBCs)
+# F = ilu(equation.A, τ = 0.005)
+# # Definition of linear operators to reduce allocations during iterations
+# m = equation.A.m; n = m
+# opP = LinearOperator(Float64, m, n, false, false, (y, v) -> ldiv!(y, F, v))
+# opA = LinearOperator(equation.A)
+# update_residual!(opA, equation, phi1)
+# for i ∈ 1:3
     
-    # Solving in residual form (allowing to provide an initial guess)
-    solve!(system, opA, equation.R; M=opP, itmax=500, atol=1e-8, rtol=1e-3)
-    update_solution!(phi1, system) # adds solution to initial guess
-    update_residual!(opA, equation, phi1)
-    discretise!(equation, phiModel, mesh)
-    update_boundaries!(equation, mesh, phiModel, phiBCs)
-    gradf.x .= 0.0
-    gradf.y .= 0.0
-    gradf.z .= 0.0
-    phif.values .= 0.0
-    nonorthogonal_correction!(gradPhic, gradf, phif)
-    term = phiModel.terms.term1
-    correct!(equation, term, phif)
-end
+#     # Solving in residual form (allowing to provide an initial guess)
+#     solve!(system, opA, equation.R; M=opP, itmax=500, atol=1e-8, rtol=1e-3)
+#     update_solution!(phi1, system) # adds solution to initial guess
+#     update_residual!(opA, equation, phi1)
+#     discretise!(equation, phiModel, mesh)
+#     update_boundaries!(equation, mesh, phiModel, phiBCs)
+#     gradf.x .= 0.0
+#     gradf.y .= 0.0
+#     gradf.z .= 0.0
+#     phif.values .= 0.0
+#     nonorthogonal_correction!(gradPhic, gradf, phif)
+#     term = phiModel.terms.term1
+#     correct!(equation, term, phif)
+# end
 # gr(size=(400,400), camera=(45,55))
 plotly(size=(400,400), markersize=1, markerstrokewidth=1)
 scatter(x(mesh), y(mesh), phi.values, zcolor=phi.values)
 scatter!(x(mesh), y(mesh), phi1.values, color=:green)
-scatter(xf(mesh), yf(mesh), phif.values, color=:green)
-scatter(x(mesh), y(mesh), equation.b, color=:blue)
+scatter!(xf(mesh), yf(mesh), phif.values, color=:green)
+scatter(x(mesh), y(mesh), gradPhi.x, color=:blue)
 scatter!(xf(mesh), yf(mesh), gradf.x, color=:red)
 f(x,y) = 2*cos(2x)
 surface(xf(mesh), yf(mesh), f)

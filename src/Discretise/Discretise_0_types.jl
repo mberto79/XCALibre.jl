@@ -7,6 +7,8 @@ export Constant, Linear, Upwind
 export ScalarField, FaceScalarField
 export VectorField, FaceVectorField
 export Equation 
+export AbstractBoundary, AbstractDirichlet, AbstractNeumann
+export Dirichlet, Neumann 
 # export Discretisation, Equation 
 
 abstract type AbstractField end
@@ -108,4 +110,19 @@ function sparse_matrix_connectivity(mesh::Mesh2{I,F}) where{I,F}
     end
     v = zeros(F, length(i))
     return i, j, v
+end
+
+# Supported boundary conditions 
+abstract type AbstractBoundary end
+abstract type AbstractDirichlet <: AbstractBoundary end
+abstract type AbstractNeumann <: AbstractBoundary end
+
+struct Dirichlet{F}
+    name::Symbol 
+    value::F 
+end
+
+struct Neumann{F}
+    name::Symbol 
+    value::F 
 end

@@ -1,4 +1,5 @@
 export generate_boundary_conditions!, update_boundaries!
+export boundary_index
 
 function generate_boundary_conditions!(mesh::Mesh2{I,F}, model, BCs) where {I,F}
     nBCs = length(BCs)
@@ -28,8 +29,8 @@ function generate_boundary_conditions!(mesh::Mesh2{I,F}, model, BCs) where {I,F}
 
         for ti ∈ 1:nterms
             term = Symbol(:term,ti)
-            function_call = :( $(Symbol(:boundary, bci))[1](
-                $term, A, b, cellID, cell, face, $(Symbol(:boundary, bci))[3]
+            function_call = :( $(Symbol(:boundary, bci))(
+                $term, A, b, cellID, cell, face
                 )
             )
             push!(assign_loop.args[2].args[3].args[2].args, function_call)
@@ -57,7 +58,7 @@ end
 function get_boundary_indices(mesh::Mesh2{I,F}, BCs) where {I,F}
     BC_indices = I[]
     for BC ∈ BCs
-        name = BC[2]
+        name = BC.name
         index = boundary_index(mesh, name)
         push!(BC_indices, index)
         println("Boundary ", name, "\t", "found at index ", index)

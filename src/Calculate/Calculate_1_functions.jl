@@ -113,7 +113,7 @@ function correct_boundary!(
         normal = faces[fID].normal
         cID = face.ownerCells[1]
         grad_cell = grad(cID)
-        grad_boundary =   grad_cell # needs sorting out!
+        grad_boundary =   grad_cell - (grad_cell⋅normal)*normal # needs sorting out!
         x[fID] = grad_boundary[1]
         y[fID] = grad_boundary[2]
         z[fID] = grad_boundary[3]
@@ -163,23 +163,25 @@ function correct!(eqn::Equation{I,F}, term, non_flux::FaceScalarField{I,F}) wher
         end
     end
     nbfaces = total_boundary_faces(mesh)
-    for i ∈ 1:2
-        cellsID = mesh.boundaries[i].cellsID
-        facesID = mesh.boundaries[i].facesID
-        for fi ∈ eachindex(facesID)
-            fID = facesID[fi]
-            cID = cellsID[fi]
-            b[cID] += -sign*J*non_flux.values[fID]
-        end
+    for fi ∈ 1:nbfaces
+        # cellsID = mesh.boundaries[i].cellsID
+        # facesID = mesh.boundaries[i].facesID
+        # for fi ∈ eachindex(facesID)
+        face = faces[fi]
+        cID = face.ownerCells[1]
+            # fID = facesID[i]
+            # cID = cellsID[i]
+            b[cID] += -sign*J*non_flux.values[fi]
+        # end
     end
 end
 
 function nonorthogonal_correction!(
-    tgrad::Grad{S,I,F}, gradf::FaceVectorField{I,F}, phif::FaceScalarField{I,F}
+    tgrad::Grad{S,I,F}, gradf::FaceVectorField{I,F}, phif::FaceScalarField{I,F}, BCs
     ) where {S,I,F}
     (; phi) = tgrad
-    grad!(tgrad, phif, phi)
-    interpolate!(get_scheme(tgrad), gradf, tgrad)
+    grad!(tgrad, phif, phi, BCs)
+    interpolate!(get_scheme(tgrad), gradf, tgrad, BCs)
     nonorthogonal_flux!(phif, gradf)
 end
 

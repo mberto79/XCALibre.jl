@@ -104,48 +104,48 @@ phif = FaceScalarField(mesh)
 @time interpolate!(Linear, phif, phi, BCs)
 @code_warntype interpolate!(Linear, phif, phi, BCs)
 
-gradPhi = Grad{Linear}(phi)
-gradPhi = Grad{Linear}(phi,2)
+phi1 = ScalarField(mesh)
+gradPhi = Grad{Linear}(phi1)
+gradPhi = Grad{Linear}(phi1,2)
 
 
-grad!(gradPhi, phif, phi, BCs)
+grad!(gradPhi, phif, phi1, BCs)
 
 gradf = FaceVectorField(mesh)
 interpolate!(Linear, gradf, gradPhi, BCs)
-correct_interpolation!(Linear, gradf, gradPhi, phi)
+correct_interpolation!(Linear, gradf, gradPhi, phi1)
 
-# using IncompleteLU
 
-# discretise!(equation, phiModel, mesh)
-# update_boundaries!(equation, mesh, phiModel, phiBCs)
-# F = ilu(equation.A, τ = 0.005)
-# # Definition of linear operators to reduce allocations during iterations
-# m = equation.A.m; n = m
-# opP = LinearOperator(Float64, m, n, false, false, (y, v) -> ldiv!(y, F, v))
-# opA = LinearOperator(equation.A)
-# update_residual!(opA, equation, phi1)
-# for i ∈ 1:3
+using IncompleteLU
+system = set_solver(equation, BicgstabSolver)
+discretise!(equation, phiModel, mesh)
+update_boundaries!(equation, mesh, phiModel, BCs)
+F = ilu(equation.A, τ = 0.005)
+# Definition of linear operators to reduce allocations during iterations
+m = equation.A.m; n = m
+opP = LinearOperator(Float64, m, n, false, false, (y, v) -> ldiv!(y, F, v))
+opA = LinearOperator(equation.A)
+update_residual!(opA, equation, phi1)
+for i ∈ 1:3
     
-#     # Solving in residual form (allowing to provide an initial guess)
-#     solve!(system, opA, equation.R; M=opP, itmax=500, atol=1e-8, rtol=1e-3)
-#     update_solution!(phi1, system) # adds solution to initial guess
-#     update_residual!(opA, equation, phi1)
-#     discretise!(equation, phiModel, mesh)
-#     update_boundaries!(equation, mesh, phiModel, phiBCs)
-#     gradf.x .= 0.0
-#     gradf.y .= 0.0
-#     gradf.z .= 0.0
-#     phif.values .= 0.0
-#     nonorthogonal_correction!(gradPhic, gradf, phif)
-#     term = phiModel.terms.term1
-#     correct!(equation, term, phif)
-# end
-# gr(size=(400,400), camera=(45,55))
+    # Solving in residual form (allowing to provide an initial guess)
+    solve!(system, opA, equation.R; M=opP, itmax=500, atol=1e-8, rtol=1e-3)
+    update_solution!(phi1, system) # adds solution to initial guess
+    update_residual!(opA, equation, phi1)
+    discretise!(equation, phiModel, mesh)
+    update_boundaries!(equation, mesh, phiModel, BCs)
+    nonorthogonal_correction!(gradPhi, gradf, phif, BCs)
+    term = phiModel.terms.term1
+    correct!(equation, term, phif)
+    phif.values .= 0.0
+end
+gr(size=(400,400), camera=(45,55))
 plotly(size=(400,400), markersize=1, markerstrokewidth=1)
 scatter(x(mesh), y(mesh), phi.values, zcolor=phi.values)
-scatter!(x(mesh), y(mesh), phi1.values, color=:green)
+scatter!(x(mesh), y(mesh), phi1.values, color=:red)
 scatter!(xf(mesh), yf(mesh), phif.values, color=:green)
 scatter(x(mesh), y(mesh), gradPhi.x, color=:blue)
+scatter(x(mesh), y(mesh), gradPhi.x, color=:green)
 scatter!(xf(mesh), yf(mesh), gradf.x, color=:red)
 f(x,y) = 2*cos(2x)
 surface(xf(mesh), yf(mesh), f)
@@ -155,16 +155,17 @@ scatter(mesh.nodes, colour=:black)
 scatter!(centre2d.(mesh.faces), color=:blue)
 scatter!(centre2d.(mesh.cells), color=:red)
 plot_mesh!(mesh)
+fig = plot_mesh!(mesh)
 
-# for boundary ∈ mesh.boundaries
-#     for ID ∈ boundary.facesID
-#         face = mesh.faces[ID]
-#         normal = 0.1*face.normal
-#         centre = centre2d(face)
-#         fig = quiver!(fig, centre..., quiver=([normal[1]], [normal[2]]), color=:green)
-#     end
-# end
-# @show fig
+for boundary ∈ mesh.boundaries
+    for ID ∈ boundary.facesID
+        face = mesh.faces[ID]
+        normal = 0.1*face.normal
+        centre = centre2d(face)
+        fig = quiver!(fig, centre..., quiver=([normal[1]], [normal[2]]), color=:green)
+    end
+end
+@show fig
 for face ∈ mesh.faces
     normal = 0.1*face.normal
     centre = centre2d(face)

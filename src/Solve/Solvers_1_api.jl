@@ -7,7 +7,7 @@ end
 
 function run!(
     solver, equation::Equation{Ti,Tf}, phi; 
-    atol=1e-8, rtol=1e-3, itmax=500, kwargs...
+    atol=1e-12, rtol=1e-3, itmax=500, kwargs...
     ) where {Ti,Tf}
     (; A) = equation
     F = ilu(A, τ = 0.005)
@@ -19,7 +19,7 @@ function run!(
     update_residual!(opA, equation, phi)
     # Solving in residual form (allowing to provide an initial guess)
     solve!(solver, opA, equation.R; M=opP, itmax=itmax, atol=atol, rtol=rtol, kwargs...)
-    update_solution!(phi, solver) # adds solution to initial guess
+    update_solution!(phi, solver; alpha=1.0) # adds solution to initial guess
     update_residual!(opA, equation, phi)
     nothing
 end
@@ -31,11 +31,11 @@ function update_residual!(opA, equation, phi::ScalarField{Ti,Tf}) where {Ti,Tf}
     nothing
 end
 
-@inline function update_solution!(phi, solver)
+@inline function update_solution!(phi, solver; alpha=0.3)
     val = phi.values
     sol = solution(solver)
     @inbounds for i ∈ eachindex(val)
-        val[i] += sol[i]
+        val[i] += sol[i]*alpha # relax solution
     end
 end
 

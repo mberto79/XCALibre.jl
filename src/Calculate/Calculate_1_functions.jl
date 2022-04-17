@@ -80,6 +80,7 @@ function interpolate!(::Type{Linear}, gradf::FaceVectorField{I,F}, grad, BCs) wh
         y[fi] = gradi[2]
         z[fi] = gradi[3]
     end
+    correct_interpolation!(Linear, gradf, grad, grad.phi)
     # boundary faces
     for BC ∈ BCs
         bi = boundary_index(mesh, BC.name)
@@ -98,6 +99,7 @@ function correct_boundary!( # Another way is to use the boundary value and geome
         cID = face.ownerCells[1]
         grad_cell = grad(cID)
         grad_boundary = grad_cell #.*normal .+ grad_cell
+        # grad_boundary = ((BC.value - grad.phi.values[fID])/face.delta)*normal
         x[fID] = grad_boundary[1]
         y[fID] = grad_boundary[2]
         z[fID] = grad_boundary[3]
@@ -126,17 +128,20 @@ function correct_interpolation!(::Type{Linear}, gradf, grad, phi)
     start = total_boundary_faces(mesh) + 1
     (; cells, faces) = mesh
     for fi ∈ start:length(faces)
-        (; ownerCells, delta) = faces[fi]
+    # for fi ∈ 1:length(faces)
+        (; ownerCells, delta, e) = faces[fi]
         w, df = weight(Linear, cells, faces, fi)
         cID1 = ownerCells[1]
         cID2 = ownerCells[2]
-        c1 = cells[cID1].centre
-        c2 = cells[cID2].centre
-        distance = c2 - c1
-        d = distance/delta
-        grad1 = grad(cID1)
-        grad2 = grad(cID2)
-        grad_ave = w*grad1 + (1.0 - w)*grad2
+        # c1 = cells[cID1].centre
+        # c2 = cells[cID2].centre
+        # distance = c2 - c1
+        # d = distance/delta
+        d = e
+        # grad1 = grad(cID1)
+        # grad2 = grad(cID2)
+        # grad_ave = w*grad1 + (1.0 - w)*grad2
+        grad_ave = gradf(fi)
         grad_corr = grad_ave + ((values[cID2] - values[cID1])/delta - (grad_ave⋅d))*d
         gradf.x[fi] = grad_corr[1]
         gradf.y[fi] = grad_corr[2]
@@ -164,15 +169,9 @@ function correct!(eqn::Equation{I,F}, term, non_flux::FaceScalarField{I,F}) wher
     end
     nbfaces = total_boundary_faces(mesh)
     for fi ∈ 1:nbfaces
-        # cellsID = mesh.boundaries[i].cellsID
-        # facesID = mesh.boundaries[i].facesID
-        # for fi ∈ eachindex(facesID)
         face = faces[fi]
         cID = face.ownerCells[1]
-            # fID = facesID[i]
-            # cID = cellsID[i]
-            b[cID] += -sign*J*non_flux.values[fi]
-        # end
+        b[cID] += -sign*J*non_flux.values[fi]
     end
 end
 

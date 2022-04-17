@@ -20,8 +20,8 @@ function generate_mesh()
     p2 = Point(1.0,0.0,0.0)
     p3 = Point(1.5,0.0,0.0)
     p4 = Point(0.0,1.0,0.0)
-    p5 = Point(0.8,0.8,0.0)
-    # p5 = Point(1.0,1.0,0.0)
+    # p5 = Point(0.8,0.8,0.0)
+    p5 = Point(1.0,1.0,0.0)
     p6 = Point(1.5,0.7,0.0)
     points = [p1, p2, p3, p4, p5, p6]
 
@@ -75,6 +75,8 @@ BCs = (
     Dirichlet(:outlet, 0.0),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0)
+    # Dirichlet(:bottom, 50.0),
+    # Dirichlet(:top, 50.0)
 )
 
 mesh = generate_mesh()
@@ -101,7 +103,7 @@ phi.values
 
 phif = FaceScalarField(mesh)
 
-@time interpolate!(Linear, phif, phi, BCs)
+@time interpolate!(Linear, phif, phi1, BCs)
 @code_warntype interpolate!(Linear, phif, phi, BCs)
 
 phi1 = ScalarField(mesh)
@@ -125,30 +127,36 @@ F = ilu(equation.A, τ = 0.005)
 m = equation.A.m; n = m
 opP = LinearOperator(Float64, m, n, false, false, (y, v) -> ldiv!(y, F, v))
 opA = LinearOperator(equation.A)
+phi1.values .= 0.0
 update_residual!(opA, equation, phi1)
-for i ∈ 1:3
-    
+@time for i ∈ 1:50
     # Solving in residual form (allowing to provide an initial guess)
-    solve!(system, opA, equation.R; M=opP, itmax=500, atol=1e-8, rtol=1e-3)
+    solve!(system, opA, equation.R; M=opP, itmax=10, atol=1e-12, rtol=1e-3)
     update_solution!(phi1, system) # adds solution to initial guess
-    update_residual!(opA, equation, phi1)
+    nonorthogonal_correction!(gradPhi, gradf, phif, BCs)
+    
     discretise!(equation, phiModel, mesh)
     update_boundaries!(equation, mesh, phiModel, BCs)
-    nonorthogonal_correction!(gradPhi, gradf, phif, BCs)
-    term = phiModel.terms.term1
-    correct!(equation, term, phif)
-    phif.values .= 0.0
+    # if i%10 == 0
+        term = phiModel.terms.term1
+        correct!(equation, term, phif)
+    # end
+    update_residual!(opA, equation, phi1)
+    residual(equation)
 end
-gr(size=(400,400), camera=(45,55))
+residual(equation)
+
+# gr(size=(400,400), camera=(45,55))
 plotly(size=(400,400), markersize=1, markerstrokewidth=1)
-scatter(x(mesh), y(mesh), phi.values, zcolor=phi.values)
-scatter!(x(mesh), y(mesh), phi1.values, color=:red)
-scatter!(xf(mesh), yf(mesh), phif.values, color=:green)
+scatter(x(mesh), y(mesh), equation.b, color=:blue)
+scatter!(x(mesh), y(mesh), phi.values, color=:blue)
+scatter!(x(mesh), y(mesh), phi1.values, color=:green)
+scatter(xf(mesh), yf(mesh), phif.values, color=:green)
 scatter(x(mesh), y(mesh), gradPhi.x, color=:blue)
 scatter(x(mesh), y(mesh), gradPhi.x, color=:green)
 scatter!(xf(mesh), yf(mesh), gradf.x, color=:red)
-f(x,y) = 2*cos(2x)
-surface(xf(mesh), yf(mesh), f)
+f(x,y) = 100 + (0.0 - 100)/(1.5 - 0.0)*x
+surface(x(mesh), y(mesh), f)
 
 
 scatter(mesh.nodes, colour=:black)

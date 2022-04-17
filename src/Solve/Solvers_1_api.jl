@@ -31,7 +31,7 @@ function update_residual!(opA, equation, phi::ScalarField{Ti,Tf}) where {Ti,Tf}
     nothing
 end
 
-@inline function update_solution!(phi, solver; alpha=0.3)
+@inline function update_solution!(phi, solver; alpha=0.4)
     val = phi.values
     sol = solution(solver)
     @inbounds for i ∈ eachindex(val)

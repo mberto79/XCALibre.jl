@@ -17,12 +17,15 @@ function generate_mesh()
     n_horizontal2   = 20 #400
 
     p1 = Point(0.0,0.0,0.0)
-    p2 = Point(1.0,0.0,0.0)
-    p3 = Point(1.5,0.0,0.0)
+    p2 = Point(1.0,0.2,0.0)
+    # p2 = Point(1.0,0.0,0.0)
+    p3 = Point(1.5,0.2,0.0)
+    # p3 = Point(1.5,0.0,0.0)
     p4 = Point(0.0,1.0,0.0)
-    # p5 = Point(0.8,0.8,0.0)
-    p5 = Point(1.0,1.0,0.0)
-    p6 = Point(1.5,0.7,0.0)
+    p5 = Point(1.0,0.8,0.0)
+    # p5 = Point(1.0,1.0,0.0)
+    p6 = Point(1.5,0.8,0.0)
+    # p6 = Point(1.5,0.7,0.0)
     points = [p1, p2, p3, p4, p5, p6]
 
     # Edges in x-direction
@@ -81,7 +84,6 @@ BCs = (
 
 mesh = generate_mesh()
 phi = ScalarField(mesh)
-phi1 = ScalarField(mesh)
 equation = Equation(mesh)
 phiModel = create_model(ConvectionDiffusion, [4.0, 0.0, 0.0], 1.0, phi)
 phiModel = create_model(Diffusion, 1.0, phi)
@@ -93,30 +95,15 @@ generate_boundary_conditions!(mesh, phiModel, BCs)
 # @time system = set_solver(equation, GmresSolver)
 system = set_solver(equation, BicgstabSolver)
 
-# phi.values .= 100.0
-# phi1.values .= 100.0
 @time run!(system, equation, phi)#, history=true)
-@time run!(system, equation, phi1)#, history=true)
 residual(equation)
-# @time phi.values .= equation.A\equation.b
-phi.values
-
-phif = FaceScalarField(mesh)
-
-@time interpolate!(Linear, phif, phi1, BCs)
-@code_warntype interpolate!(Linear, phif, phi, BCs)
 
 phi1 = ScalarField(mesh)
+phif = FaceScalarField(mesh)
+gradf = FaceVectorField(mesh)
+
 gradPhi = Grad{Linear}(phi1)
 gradPhi = Grad{Linear}(phi1,2)
-
-
-grad!(gradPhi, phif, phi1, BCs)
-
-gradf = FaceVectorField(mesh)
-interpolate!(Linear, gradf, gradPhi, BCs)
-correct_interpolation!(Linear, gradf, gradPhi, phi1)
-
 
 using IncompleteLU
 system = set_solver(equation, BicgstabSolver)
@@ -131,7 +118,7 @@ phi1.values .= 0.0
 update_residual!(opA, equation, phi1)
 @time for i ∈ 1:50
     # Solving in residual form (allowing to provide an initial guess)
-    solve!(system, opA, equation.R; M=opP, itmax=10, atol=1e-12, rtol=1e-3)
+    solve!(system, opA, equation.R; M=opP, itmax=5, atol=1e-12, rtol=1e-3)
     update_solution!(phi1, system) # adds solution to initial guess
     nonorthogonal_correction!(gradPhi, gradf, phif, BCs)
     
@@ -142,13 +129,12 @@ update_residual!(opA, equation, phi1)
         correct!(equation, term, phif)
     # end
     update_residual!(opA, equation, phi1)
-    residual(equation)
+    # residual(equation)
 end
 residual(equation)
 
 # gr(size=(400,400), camera=(45,55))
 plotly(size=(400,400), markersize=1, markerstrokewidth=1)
-scatter(x(mesh), y(mesh), equation.b, color=:blue)
 scatter!(x(mesh), y(mesh), phi.values, color=:blue)
 scatter!(x(mesh), y(mesh), phi1.values, color=:green)
 scatter(xf(mesh), yf(mesh), phif.values, color=:green)

@@ -80,7 +80,7 @@ function interpolate!(::Type{Linear}, gradf::FaceVectorField{I,F}, grad, BCs) wh
         y[fi] = gradi[2]
         z[fi] = gradi[3]
     end
-    correct_interpolation!(Linear, gradf, grad, grad.phi)
+    correct_interpolation!(Linear, gradf, grad)
     # boundary faces
     for BC ∈ BCs
         bi = boundary_index(mesh, BC.name)
@@ -122,9 +122,9 @@ function correct_boundary!(
     end
 end
 
-function correct_interpolation!(::Type{Linear}, gradf, grad, phi)
+function correct_interpolation!(::Type{Linear}, gradf, grad)
     mesh = grad.mesh
-    values = phi.values
+    values = grad.phi.values
     start = total_boundary_faces(mesh) + 1
     (; cells, faces) = mesh
     for fi ∈ start:length(faces)

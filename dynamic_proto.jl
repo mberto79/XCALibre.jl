@@ -135,14 +135,14 @@ residual(equation)
 
 # gr(size=(400,400), camera=(45,55))
 plotly(size=(400,400), markersize=1, markerstrokewidth=1)
+f(x,y) = 100 + (0.0 - 100)/(1.5 - 0.0)*x
+surface(x(mesh), y(mesh), f)
 scatter!(x(mesh), y(mesh), phi.values, color=:blue)
 scatter!(x(mesh), y(mesh), phi1.values, color=:green)
 scatter(xf(mesh), yf(mesh), phif.values, color=:green)
 scatter(x(mesh), y(mesh), gradPhi.x, color=:blue)
 scatter(x(mesh), y(mesh), gradPhi.x, color=:green)
 scatter!(xf(mesh), yf(mesh), gradf.x, color=:red)
-f(x,y) = 100 + (0.0 - 100)/(1.5 - 0.0)*x
-surface(x(mesh), y(mesh), f)
 
 
 scatter(mesh.nodes, colour=:black)

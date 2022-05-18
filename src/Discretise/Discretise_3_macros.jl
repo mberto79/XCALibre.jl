@@ -32,7 +32,7 @@ macro discretise(Model_type, nTerms::Integer, nSources::Integer)
             @inbounds for cID ∈ eachindex(cells)
                 cell = cells[cID]
                 (; facesID, nsign, neighbours) = cell
-                @inbounds for fi ∈ eachindex(cell.facesID)
+                @inbounds for fi ∈ eachindex(facesID)
                     fID = cell.facesID[fi]
                     ns = cell.nsign[fi] # normal sign
                     face = faces[fID]

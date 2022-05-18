@@ -1,4 +1,4 @@
-export run!, set_solver, residual
+export run!, set_solver, residual, residual_print
 export update_residual!, update_solution!
 
 function set_solver(equation::Equation{I,F}, solver) where {I,F}
@@ -7,7 +7,7 @@ end
 
 function run!(
     solver, equation::Equation{Ti,Tf}, phi; 
-    atol=1e-12, rtol=1e-3, itmax=500, kwargs...
+    atol=1e-12, rtol=1e-4, itmax=500, kwargs...
     ) where {Ti,Tf}
     (; A) = equation
     F = ilu(A, τ = 0.005)
@@ -26,10 +26,19 @@ end
 
 function update_residual!(opA, equation, phi::ScalarField{Ti,Tf}) where {Ti,Tf}
     (; b, R, Fx) = equation
-    Fx .= zero(Tf)
-    R .= b .- mul!(Fx, opA, phi.values)
+    # Fx .= zero(Tf)
+    mul!(Fx, opA, phi.values)
+    R .= b .- Fx 
     nothing
 end
+
+# function update_residual!(opA, equation, solver) where {Ti,Tf}
+#     (; b, R, Fx) = equation
+#     # Fx .= zero(Tf)
+#     mul!(Fx, opA, solver.x)
+#     R .= b .- Fx 
+#     nothing
+# end
 
 @inline function update_solution!(phi, solver; alpha=0.4)
     val = phi.values
@@ -40,5 +49,9 @@ end
 end
 
 function residual(equation::Equation{Ti,Tf}) where {Ti,Tf}
+    norm(equation.R)
+end
+
+function residual_print(equation::Equation{Ti,Tf}) where {Ti,Tf}
     println("Residual: ", norm(equation.R))
 end

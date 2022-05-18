@@ -12,9 +12,13 @@ using FVM_1D.Solvers
 using Krylov
 
 function generate_mesh()
-    n_vertical      = 20 #200
-    n_horizontal1   = 25 #300
-    n_horizontal2   = 20 #400
+    n_vertical      = 400 #20 #400
+    n_horizontal1   = 500 #25 #500
+    n_horizontal2   = 400 #20 #800
+
+    # n_vertical      = 20 #400
+    # n_horizontal1   = 25 #500
+    # n_horizontal2   = 20 #800
 
     p1 = Point(0.0,0.0,0.0)
     p2 = Point(1.0,0.2,0.0)
@@ -95,17 +99,53 @@ generate_boundary_conditions!(mesh, phiModel, BCs)
 # @time system = set_solver(equation, GmresSolver)
 system = set_solver(equation, BicgstabSolver)
 
-@time run!(system, equation, phi)#, history=true)
+@time run!(system, equation, phi; itmax=2000)#, history=true)
+# update_residual!(opA, equation, phi)
+update_residual!(opA, equation, phi)
+residual(equation)
+
+using IncompleteLU
+(; A) = equation
+(; m, n) = A
+F = ilu(A, τ = 0.005)
+
+# Definition of linear operators to reduce allocations during iterations
+opP = LinearOperator(Float64, A.m, A.n, false, false, (y, v) -> ldiv!(y, F, v))
+opA = LinearOperator(A)
+phi.values .= 0.0
+system.x .= 0.0
+α = 0.4
+@time for i ∈ 1:500
+
+    # Solving in residual form (allowing to provide an initial guess)
+    # update_residual!(opA, equation, phi)
+    # solve!(system, opA, equation.R; M=opP, itmax=100, atol=1e-12, rtol=1e-3)
+    solve!(system, opA, equation.b, system.x; M=opP, itmax=10, atol=1e-12, rtol=1e-3)
+    phi.values .= (1.0 - α).*phi.values .+ α.*system.x
+    # update_solution!(phi, system; alpha=1.0) # adds solution to initial guess
+
+    update_residual!(opA, equation, phi)
+    if residual(equation) <= 1e-6
+        # update_residual!(opA, equation, phi)
+        residual_print(equation)
+        println("Converged in ", i, " iterations")
+        break
+    end
+end
+phi.values .= system.x # A: 30.42s (1.79k), opA = 30.39s (1.39k), opA(free) = 32.59 (969)
+update_residual!(opA, equation, phi)
 residual(equation)
 
 phi1 = ScalarField(mesh)
+phiModel = create_model(Diffusion, 1.0, phi1)
+generate_boundary_conditions!(mesh, phiModel, BCs)
+
 phif = FaceScalarField(mesh)
 gradf = FaceVectorField(mesh)
 
 gradPhi = Grad{Linear}(phi1)
 gradPhi = Grad{Linear}(phi1,2)
 
-using IncompleteLU
 system = set_solver(equation, BicgstabSolver)
 discretise!(equation, phiModel, mesh)
 update_boundaries!(equation, mesh, phiModel, BCs)
@@ -115,23 +155,42 @@ m = equation.A.m; n = m
 opP = LinearOperator(Float64, m, n, false, false, (y, v) -> ldiv!(y, F, v))
 opA = LinearOperator(equation.A)
 phi1.values .= 0.0
+# update_residual!(opA, equation, phi1)
+discretise!(equation, phiModel, mesh)
+update_boundaries!(equation, mesh, phiModel, BCs)
 update_residual!(opA, equation, phi1)
-@time for i ∈ 1:50
+system.x .= 0.0
+phi1.values .= 0.0
+α = 0.6
+@time for i ∈ 1:100 #50
     # Solving in residual form (allowing to provide an initial guess)
-    solve!(system, opA, equation.R; M=opP, itmax=5, atol=1e-12, rtol=1e-3)
-    update_solution!(phi1, system) # adds solution to initial guess
-    nonorthogonal_correction!(gradPhi, gradf, phif, BCs)
+    # solve!(system, opA, equation.R; M=opP, itmax=5, atol=1e-12, rtol=1e-3)
+    # system.x .= phi1.values
     
+    # warm_start!(system, phi1.values)
+    solve!(system, opA, equation.b, phi1.values; M=opP, itmax=20, atol=1e-12, rtol=1e-3)
+    phi1.values .= (1.0 - α).*phi1.values .+ α.*system.x
+    
+    # update_solution!(phi1, system) # adds solution to initial guess
+    # update_residual!(opA, equation, phi1)
+    
+    nonorthogonal_correction!(gradPhi, gradf, phif, BCs)
+
     discretise!(equation, phiModel, mesh)
     update_boundaries!(equation, mesh, phiModel, BCs)
-    # if i%10 == 0
-        term = phiModel.terms.term1
-        correct!(equation, term, phif)
-    # end
+    term = phiModel.terms.term1
+    correct!(equation, term, phif)
+
     update_residual!(opA, equation, phi1)
-    # residual(equation)
+    if residual(equation) <= 1e-6
+        residual_print(equation)
+        println("Converged in ", i, " iterations")
+        break
+    end
 end
+update_residual!(opA, equation, phi1)
 residual(equation)
+phi1.values .= system.x
 
 # gr(size=(400,400), camera=(45,55))
 plotly(size=(400,400), markersize=1, markerstrokewidth=1)

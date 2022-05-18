@@ -290,37 +290,22 @@ opA = Af
 phi.values .= 0.0
 # update_residual!(opA, equation, phi1)
 bc_explicit!(b, phiModel.terms.term1, BCs)
-update_residual!(opA, equation, phi1)
+update_residual!(equation, opA, phi)
 system.x .= 0.0
 phi.values .= 0.0
-α = 0.4
-function r!(equation, opA, b, phi)
-    (; R, Fx) = equation
-    mul!(Fx, opA, phi.values)
-    for i ∈ eachindex(R)
-        @inbounds R[i] = b[i] - Fx[i]
-    end
-end
 
-@time for i ∈ 1:100
-    solve!(system, opA, b, phi.values; M=opP, itmax=10, atol=1e-12, rtol=1e-3)
-    phi.values .= (1.0 - α).*phi.values .+ α.*system.x
-    # nonorthogonal_correction!(gradPhi, gradf, phif, BCs)
-    # discretise!(equation, phiModel, mesh)
-    # bc_explicit!(b, phiModel.terms.term1, BCs)
-    # term = phiModel.terms.term1
-    # correct!(b, term, phif)
-    # update_residual!(opA, equation, phi)
-    # equation.R .= b .- equation.Fx 
-    r!(equation, opA, b, phi)
-    # if residual(equation) <= 1e-6
-    if norm(equation.R) <= 1e-6
+@time for i ∈ 1:500
+    solve!(system, opA, equation.b, phi.values; M=opP, itmax=100, atol=1e-12, rtol=1e-2)
+    relax!(phi, system, 1.0)
+    update_residual!(equation, opA, phi)
+    if residual(equation) <= 1e-6
         residual_print(equation)
         println("Converged in ", i, " iterations")
         break
     end
 end
-update_residual!(opA, equation, phi)
+
+update_residual!(equation, opA, phi)
 mul!(equation.Fx, opA, phi.values)
 equation.R .= b .- equation.Fx 
 norm(equation.R)

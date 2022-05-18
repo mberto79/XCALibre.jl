@@ -98,43 +98,11 @@ generate_boundary_conditions!(mesh, phiModel, BCs)
 
 # @time system = set_solver(equation, GmresSolver)
 system = set_solver(equation, BicgstabSolver)
-
-@time run!(system, equation, phi; itmax=2000)#, history=true)
-# update_residual!(opA, equation, phi)
-update_residual!(opA, equation, phi)
-residual(equation)
-
-using IncompleteLU
-(; A) = equation
-(; m, n) = A
-F = ilu(A, τ = 0.005)
-
-# Definition of linear operators to reduce allocations during iterations
-opP = LinearOperator(Float64, A.m, A.n, false, false, (y, v) -> ldiv!(y, F, v))
-opA = LinearOperator(A)
 phi.values .= 0.0
 system.x .= 0.0
-α = 0.4
-@time for i ∈ 1:500
+@time run!(system, equation, phi)
 
-    # Solving in residual form (allowing to provide an initial guess)
-    # update_residual!(opA, equation, phi)
-    # solve!(system, opA, equation.R; M=opP, itmax=100, atol=1e-12, rtol=1e-3)
-    solve!(system, opA, equation.b, system.x; M=opP, itmax=10, atol=1e-12, rtol=1e-3)
-    phi.values .= (1.0 - α).*phi.values .+ α.*system.x
-    # update_solution!(phi, system; alpha=1.0) # adds solution to initial guess
-
-    update_residual!(opA, equation, phi)
-    if residual(equation) <= 1e-6
-        # update_residual!(opA, equation, phi)
-        residual_print(equation)
-        println("Converged in ", i, " iterations")
-        break
-    end
-end
-phi.values .= system.x # A: 30.42s (1.79k), opA = 30.39s (1.39k), opA(free) = 32.59 (969)
-update_residual!(opA, equation, phi)
-residual(equation)
+### Non-orthogonal correction
 
 phi1 = ScalarField(mesh)
 phiModel = create_model(Diffusion, 1.0, phi1)

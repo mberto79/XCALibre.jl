@@ -1,50 +1,55 @@
 export run!, set_solver, residual, residual_print
-export update_residual!, update_solution!
+export relax!, update_residual!, update_solution!
 
 function set_solver(equation::Equation{I,F}, solver) where {I,F}
     solver(equation.A, equation.R)
 end
 
 function run!(
-    solver, equation::Equation{Ti,Tf}, phi; 
-    atol=1e-12, rtol=1e-4, itmax=500, kwargs...
+    solver, equation::Equation{Ti,Tf}, phi; iterations=100, tol=1e-6, alpha=1.0,
+    atol=1e-12, rtol=1e-2, itmax=100, kwargs...
     ) where {Ti,Tf}
-    (; A) = equation
+    (; A, b) = equation
+    (; values) = phi
     F = ilu(A, τ = 0.005)
     
     # Definition of linear operators to reduce allocations during iterations
     opP = LinearOperator(Float64, A.m, A.n, false, false, (y, v) -> ldiv!(y, F, v))
     opA = LinearOperator(A)
 
-    update_residual!(opA, equation, phi)
-    # Solving in residual form (allowing to provide an initial guess)
-    solve!(solver, opA, equation.R; M=opP, itmax=itmax, atol=atol, rtol=rtol, kwargs...)
-    update_solution!(phi, solver; alpha=1.0) # adds solution to initial guess
-    update_residual!(opA, equation, phi)
-    nothing
+    @inbounds for i ∈ 1:iterations
+        solve!(
+            solver, opA, b, values; 
+            M=opP, itmax=itmax, atol=atol, rtol=rtol, kwargs...
+            )
+        relax!(phi, solver, alpha)
+        update_residual!(equation, opA, phi)
+        if residual(equation) <= tol
+            residual_print(equation)
+            println("Converged in ", i, " iterations")
+            break
+        end
+    end
 end
 
-function update_residual!(opA, equation, phi::ScalarField{Ti,Tf}) where {Ti,Tf}
+@inline function relax!(phi, solver, α)
+    # phi.values .= (1.0 - α).*phi.values .+ α.*solver.x
+    values = phi.values
+    x = solver.x
+    @inbounds for i ∈ eachindex(values)
+        values[i] = (1.0 - α)*values[i] + α*x[i]
+    end
+end
+
+@inline function update_solution!(phi, solver)
+    relax!(phi, solver, 1.0)
+end
+
+@inline function update_residual!(equation, opA, phi::ScalarField{Ti,Tf}) where {Ti,Tf}
     (; b, R, Fx) = equation
-    # Fx .= zero(Tf)
     mul!(Fx, opA, phi.values)
-    R .= b .- Fx 
-    nothing
-end
-
-# function update_residual!(opA, equation, solver) where {Ti,Tf}
-#     (; b, R, Fx) = equation
-#     # Fx .= zero(Tf)
-#     mul!(Fx, opA, solver.x)
-#     R .= b .- Fx 
-#     nothing
-# end
-
-@inline function update_solution!(phi, solver; alpha=0.4)
-    val = phi.values
-    sol = solution(solver)
-    @inbounds for i ∈ eachindex(val)
-        val[i] += sol[i]*alpha # relax solution
+    @inbounds for i ∈ eachindex(R)
+        R[i] = b[i] - Fx[i]
     end
 end
 

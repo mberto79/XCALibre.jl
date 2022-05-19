@@ -1,5 +1,6 @@
 export SolverSetup
-export run!, residual, residual_print
+export run!
+export residual, residual_print
 export relax!, update_residual!, update_solution!
 export clear!
 
@@ -24,7 +25,7 @@ SolverSetup(
     SolverSetup(solver, iterations, tolerance, relax, itmax, atol, rtol)
 end
 
-function run!(
+function run_old!(
     equation::Equation{Ti,Tf}, phiModel, BCs, setup; correct_term=nothing
     ) where {Ti,Tf}
     discretise!(equation, phiModel)
@@ -69,6 +70,65 @@ function run!(
             break
         end
         residual_print(equation)
+    end
+    if correct_term !== nothing 
+        bb      = nothing
+        gradPhi = nothing
+        phif    = nothing
+        gradf   = nothing
+    end
+end
+
+function run!(
+    equation::Equation{Ti,Tf}, phiModel, BCs, setup; correct_term=nothing
+    ) where {Ti,Tf}
+    discretise!(equation, phiModel)
+    update_boundaries!(equation, phiModel, BCs)
+
+    (; solver, iterations, tolerance, relax, itmax, atol, rtol) = setup
+    (; A, b, R, Fx) = equation
+    (; phi) = phiModel.terms.term1
+    (; values, mesh) = phi
+
+    solver_alloc = solver(A, b)
+    F = ilu(A, τ = 0.001)
+    
+    # Definition of linear operators to reduce allocations during iterations
+    opP = LinearOperator(Float64, A.m, A.n, false, false, (y, v) -> ldiv!(y, F, v))
+    opA = LinearOperator(A)
+
+    if correct_term !== nothing 
+        bb      = copy(b)
+        gradPhi = Grad{Linear}(phi,2)
+        phif    = FaceScalarField(mesh)
+        gradf   = FaceVectorField(mesh)
+    end
+
+    mul!(Fx, opA, values)
+    R .= b .- Fx
+
+    @inbounds for i ∈ 1:iterations
+        solve!(
+            solver_alloc, opA, R; 
+            M=opP, itmax=itmax, atol=atol, rtol=rtol
+            )
+        values .+= relax.*solver_alloc.x
+
+        if correct_term !== nothing
+            nonorthogonal_correction!(gradPhi, gradf, phif, BCs)
+            b .= bb
+            correct!(equation, correct_term, phif)
+        end
+
+        mul!(Fx, opA, values)
+        R .= b .- Fx
+        res = norm(R)/norm(b)
+        if res <= tolerance
+            println("Residual: ", res)
+            println("Converged in ", i, " iterations")
+            break
+        end
+        println("Residual: ", res)
     end
     if correct_term !== nothing 
         bb      = nothing

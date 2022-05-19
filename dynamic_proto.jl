@@ -12,13 +12,13 @@ using FVM_1D.Solvers
 using Krylov
 
 function generate_mesh()
-    # n_vertical      = 400 #20 #400
-    # n_horizontal1   = 500 #25 #500
-    # n_horizontal2   = 400 #20 #800
+    n_vertical      = 400 #20 #400
+    n_horizontal1   = 500 #25 #500
+    n_horizontal2   = 400 #20 #800
 
-    n_vertical      = 20 #400
-    n_horizontal1   = 25 #500
-    n_horizontal2   = 20 #800
+    # n_vertical      = 20 #400
+    # n_horizontal1   = 25 #500
+    # n_horizontal2   = 20 #800
 
     p1 = Point(0.0,0.0,0.0)
     p2 = Point(1.0,0.2,0.0)
@@ -86,8 +86,22 @@ BCs = (
     # Dirichlet(:top, 50.0)
 )
 
+using JLD2
+
 mesh = generate_mesh()
+
+jldopen("data/mesh.jld2", "w") do file
+    file["mesh"] = mesh
+end
+mesh = load("data/mesh.jld2", "mesh")
+
 phi = ScalarField(mesh)
+jldopen("data/fields.jld2", "w") do file
+    file["phi"] = phi
+end
+fields = load("data/fields.jld2")
+fields["phi"]
+
 equation = Equation(mesh)
 phiModel = create_model(ConvectionDiffusion, [4.0, 0.0, 0.0], 1.0, phi)
 # phiModel = create_model(Diffusion, 1.0, phi)
@@ -97,7 +111,8 @@ setup = SolverSetup(
     iterations  = 100,
     solver      = GmresSolver,
     tolerance   = 1e-6,
-    relax       = 1.0
+    relax       = 1.0,
+    itmax       = 100
     )
 
 clear!(phi)
@@ -106,6 +121,13 @@ clear!(phi)
 ### Non-orthogonal correction
 
 phi1 = ScalarField(mesh)
+
+jldopen("data/fields.jld2", "w") do file
+    file["phi1"] = phi1
+end
+fields = load("data/fields.jld2")
+fields["phi1"]
+
 phiModel = create_model(ConvectionDiffusion, [4.0, 0.0, 0.0], 1.0, phi1)
 # phiModel = create_model(Diffusion, 1.0, phi1)
 generate_boundary_conditions!(mesh, phiModel, BCs)
@@ -114,12 +136,14 @@ setup = SolverSetup(
     iterations  = 100,
     solver      = GmresSolver,
     tolerance   = 1e-6,
-    relax       = 0.6
+    relax       = 0.6,
+    itmax       = 100
     )
 
-clear!(phi1)
-# term = phiModel.terms.term1 # For pure diffusion
+GC.gc()
 term = phiModel.terms.term2 # For convection-diffusion model
+# term = phiModel.terms.term1 # For pure diffusion
+clear!(phi1)
 @time run!(equation, phiModel, BCs, setup, correct_term=term)
 
 

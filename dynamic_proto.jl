@@ -12,13 +12,13 @@ using FVM_1D.Solvers
 using Krylov
 
 function generate_mesh()
-    n_vertical      = 400 #20 #400
-    n_horizontal1   = 500 #25 #500
-    n_horizontal2   = 400 #20 #800
+    # n_vertical      = 400 #20 #400
+    # n_horizontal1   = 500 #25 #500
+    # n_horizontal2   = 400 #20 #800
 
-    # n_vertical      = 20 #400
-    # n_horizontal1   = 25 #500
-    # n_horizontal2   = 20 #800
+    n_vertical      = 20 #400
+    n_horizontal1   = 25 #500
+    n_horizontal2   = 20 #800
 
     p1 = Point(0.0,0.0,0.0)
     p2 = Point(1.0,0.2,0.0)
@@ -90,82 +90,45 @@ mesh = generate_mesh()
 phi = ScalarField(mesh)
 equation = Equation(mesh)
 phiModel = create_model(ConvectionDiffusion, [4.0, 0.0, 0.0], 1.0, phi)
-phiModel = create_model(Diffusion, 1.0, phi)
+# phiModel = create_model(Diffusion, 1.0, phi)
 generate_boundary_conditions!(mesh, phiModel, BCs)
 
-@time discretise!(equation, phiModel, mesh)
-@time update_boundaries!(equation, mesh, phiModel, BCs)
+setup = SolverSetup(
+    iterations  = 100,
+    solver      = GmresSolver,
+    tolerance   = 1e-6,
+    relax       = 1.0
+    )
 
-# @time system = set_solver(equation, GmresSolver)
-system = set_solver(equation, BicgstabSolver)
-phi.values .= 0.0
-system.x .= 0.0
-@time run!(system, equation, phi)
+clear!(phi)
+@time run!(equation, phiModel, BCs, setup)
 
 ### Non-orthogonal correction
 
 phi1 = ScalarField(mesh)
-phiModel = create_model(Diffusion, 1.0, phi1)
+phiModel = create_model(ConvectionDiffusion, [4.0, 0.0, 0.0], 1.0, phi1)
+# phiModel = create_model(Diffusion, 1.0, phi1)
 generate_boundary_conditions!(mesh, phiModel, BCs)
 
-phif = FaceScalarField(mesh)
-gradf = FaceVectorField(mesh)
+setup = SolverSetup(
+    iterations  = 100,
+    solver      = GmresSolver,
+    tolerance   = 1e-6,
+    relax       = 0.6
+    )
 
-gradPhi = Grad{Linear}(phi1)
-gradPhi = Grad{Linear}(phi1,2)
+clear!(phi1)
+# term = phiModel.terms.term1 # For pure diffusion
+term = phiModel.terms.term2 # For convection-diffusion model
+@time run!(equation, phiModel, BCs, setup, correct_term=term)
 
-system = set_solver(equation, BicgstabSolver)
-discretise!(equation, phiModel, mesh)
-update_boundaries!(equation, mesh, phiModel, BCs)
-F = ilu(equation.A, τ = 0.005)
-# Definition of linear operators to reduce allocations during iterations
-m = equation.A.m; n = m
-opP = LinearOperator(Float64, m, n, false, false, (y, v) -> ldiv!(y, F, v))
-opA = LinearOperator(equation.A)
-phi1.values .= 0.0
-# update_residual!(opA, equation, phi1)
-discretise!(equation, phiModel, mesh)
-update_boundaries!(equation, mesh, phiModel, BCs)
-update_residual!(opA, equation, phi1)
-system.x .= 0.0
-phi1.values .= 0.0
-α = 0.6
-@time for i ∈ 1:100 #50
-    # Solving in residual form (allowing to provide an initial guess)
-    # solve!(system, opA, equation.R; M=opP, itmax=5, atol=1e-12, rtol=1e-3)
-    # system.x .= phi1.values
-    
-    # warm_start!(system, phi1.values)
-    solve!(system, opA, equation.b, phi1.values; M=opP, itmax=20, atol=1e-12, rtol=1e-3)
-    phi1.values .= (1.0 - α).*phi1.values .+ α.*system.x
-    
-    # update_solution!(phi1, system) # adds solution to initial guess
-    # update_residual!(opA, equation, phi1)
-    
-    nonorthogonal_correction!(gradPhi, gradf, phif, BCs)
-
-    discretise!(equation, phiModel, mesh)
-    update_boundaries!(equation, mesh, phiModel, BCs)
-    term = phiModel.terms.term1
-    correct!(equation, term, phif)
-
-    update_residual!(opA, equation, phi1)
-    if residual(equation) <= 1e-6
-        residual_print(equation)
-        println("Converged in ", i, " iterations")
-        break
-    end
-end
-update_residual!(opA, equation, phi1)
-residual(equation)
-phi1.values .= system.x
 
 # gr(size=(400,400), camera=(45,55))
 plotly(size=(400,400), markersize=1, markerstrokewidth=1)
 f(x,y) = 100 + (0.0 - 100)/(1.5 - 0.0)*x
 surface(x(mesh), y(mesh), f)
-scatter!(x(mesh), y(mesh), phi.values, color=:blue)
-scatter!(x(mesh), y(mesh), phi1.values, color=:green)
+scatter(x(mesh), y(mesh), phi.values, color=:blue)
+scatter!(x(mesh), y(mesh), phi1.values, color=:red)
 scatter(xf(mesh), yf(mesh), phif.values, color=:green)
 scatter(x(mesh), y(mesh), gradPhi.x, color=:blue)
 scatter(x(mesh), y(mesh), gradPhi.x, color=:green)

@@ -21,9 +21,9 @@ macro discretise(Model_type, nTerms::Integer, nSources::Integer)
     end 
     
     func = quote 
-        function discretise!(equation, model::$Model_type, mesh)
+        function discretise!(equation, model::$Model_type)
+            (; A, b, mesh) = equation
             (; faces, cells) = mesh
-            (; A, b) = equation
             (; rowval, colptr, nzval) = A
             fz = zero(0.0)
             @inbounds for i ∈ eachindex(nzval)

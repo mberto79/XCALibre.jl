@@ -86,11 +86,18 @@ struct Equation{Ti,Tf}
     b::Vector{Tf}
     R::Vector{Tf}
     Fx::Vector{Tf}
+    mesh::Mesh2{Ti,Tf}
 end
 Equation(mesh::Mesh2{Ti,Tf}) where {Ti,Tf} = begin
     nCells = length(mesh.cells)
     i, j, v = sparse_matrix_connectivity(mesh)
-    Equation(sparse(i, j, v), zeros(Tf, nCells), zeros(Tf, nCells), zeros(Tf, nCells))
+    Equation(
+        sparse(i, j, v), 
+        zeros(Tf, nCells), 
+        zeros(Tf, nCells), 
+        zeros(Tf, nCells), 
+        mesh
+        )
 end
 
 function sparse_matrix_connectivity(mesh::Mesh2{I,F}) where{I,F}

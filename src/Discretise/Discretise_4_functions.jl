@@ -40,9 +40,9 @@ function generate_boundary_conditions!(mesh::Mesh2{I,F}, model, BCs) where {I,F}
 
     func_template = quote 
         function update_boundaries!(
-            equation::Equation{I,F}, mesh::Mesh2{I,F},model, BCs) where {I,F}
+            equation::Equation{I,F}, model, BCs) where {I,F}
+            (; A, b, mesh) = equation
             (; boundaries, faces, cells) = mesh
-            (; A, b) = equation
             $(expand_BCs...)
             $(expand_terms...)
         end

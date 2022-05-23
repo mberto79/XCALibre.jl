@@ -118,6 +118,18 @@ setup = SolverSetup(
 clear!(phi)
 @time run!(equation, phiModel, BCs, setup)
 
+(; A, b, R, Fx) = equation
+
+@time Diagonal(A)
+@time @view A[diagind(A)]
+@time Diagonal(A[diagind(A)])
+@time Diagonal(@view A[diagind(A)])
+
+
+@time C = A .- Diagonal(@view A[diagind(A)])
+
+@time S = sum(C*I, dims=2)
+
 ### Non-orthogonal correction
 
 phi1 = ScalarField(mesh)

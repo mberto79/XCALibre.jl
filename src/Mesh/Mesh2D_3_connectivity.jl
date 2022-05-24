@@ -59,7 +59,6 @@ function assign_cellsID_to_baffle_faces!(
         if !edge.boundary
             find_edge_in_blocks!(blockPair, edgeIndexPair, blocks, edgei)
             if edgeIndexPair == [3, 4]
-                println("Case 1")
                 facesID = @view blockPair[1].facesID_EW[1,:]
                 ownersID1 = @view blockPair[1].elementsID[1,:]      # edge #3 -> 1
                 ownersID2 = @view blockPair[2].elementsID[end,:]    # edge #4 -> end
@@ -69,7 +68,6 @@ function assign_cellsID_to_baffle_faces!(
                 end
             end
             if edgeIndexPair == [4, 3]
-                println("Case 2")
                 facesID = @view blockPair[1].facesID_EW[end,:]
                 ownersID1 = @view blockPair[1].elementsID[end,:]  # edge #4 -> end
                 ownersID2 = @view blockPair[2].elementsID[1,:]    # edge #3 -> 1
@@ -79,7 +77,6 @@ function assign_cellsID_to_baffle_faces!(
                 end
             end
             if edgeIndexPair == [1, 2]
-                println("Case 3")
                 facesID = @view blockPair[1].facesID_NS[:,1]
                 ownersID1 = @view blockPair[1].elementsID[:,1]      # edge #1 -> 1
                 ownersID2 = @view blockPair[2].elementsID[:,end]    # edge #2 -> end
@@ -89,7 +86,6 @@ function assign_cellsID_to_baffle_faces!(
                 end
             end
             if edgeIndexPair == [2, 1]
-                println("Case 4")
                 facesID = @view blockPair[1].facesID_NS[:,end]
                 ownersID1 = @view blockPair[1].elementsID[:,end]    # edge #2 -> end
                 ownersID2 = @view blockPair[2].elementsID[:,1]      # edge #1 -> 1
@@ -98,7 +94,6 @@ function assign_cellsID_to_baffle_faces!(
                     faces[ID] = @set face.ownerCells = SVector(ownersID1[i], ownersID2[i])
                 end
             end
-            #### to be completed for permulations and edges aligned horizontally!!!
         end
     end
 end

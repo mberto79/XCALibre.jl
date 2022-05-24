@@ -52,15 +52,47 @@ function assign_cellsID_to_baffle_faces!(
     nothing
     (; blocks, edges) = builder
     (; faces) = mesh
-    blockPair = fill(Block(zero(I)), 2)
+    # blockPair = fill(Block(zero(I)), 2)
+    blockPair = [Block(zero(I)) for _ ∈ 1:2]
     edgeIndexPair = zeros(I,2)
     for (edgei, edge) ∈ enumerate(edges)
         if !edge.boundary
             find_edge_in_blocks!(blockPair, edgeIndexPair, blocks, edgei)
+            if edgeIndexPair == [3, 4]
+                println("Case 1")
+                facesID = @view blockPair[1].facesID_EW[1,:]
+                ownersID1 = @view blockPair[1].elementsID[1,:]      # edge #3 -> 1
+                ownersID2 = @view blockPair[2].elementsID[end,:]    # edge #4 -> end
+                for (i, ID) ∈ enumerate(facesID)
+                    face = faces[ID]
+                    faces[ID] = @set face.ownerCells = SVector(ownersID1[i], ownersID2[i])
+                end
+            end
             if edgeIndexPair == [4, 3]
+                println("Case 2")
                 facesID = @view blockPair[1].facesID_EW[end,:]
                 ownersID1 = @view blockPair[1].elementsID[end,:]  # edge #4 -> end
                 ownersID2 = @view blockPair[2].elementsID[1,:]    # edge #3 -> 1
+                for (i, ID) ∈ enumerate(facesID)
+                    face = faces[ID]
+                    faces[ID] = @set face.ownerCells = SVector(ownersID1[i], ownersID2[i])
+                end
+            end
+            if edgeIndexPair == [1, 2]
+                println("Case 3")
+                facesID = @view blockPair[1].facesID_NS[:,1]
+                ownersID1 = @view blockPair[1].elementsID[:,1]      # edge #1 -> 1
+                ownersID2 = @view blockPair[2].elementsID[:,end]    # edge #2 -> end
+                for (i, ID) ∈ enumerate(facesID)
+                    face = faces[ID]
+                    faces[ID] = @set face.ownerCells = SVector(ownersID1[i], ownersID2[i])
+                end
+            end
+            if edgeIndexPair == [2, 1]
+                println("Case 4")
+                facesID = @view blockPair[1].facesID_NS[:,end]
+                ownersID1 = @view blockPair[1].elementsID[:,end]    # edge #2 -> end
+                ownersID2 = @view blockPair[2].elementsID[:,1]      # edge #1 -> 1
                 for (i, ID) ∈ enumerate(facesID)
                     face = faces[ID]
                     faces[ID] = @set face.ownerCells = SVector(ownersID1[i], ownersID2[i])

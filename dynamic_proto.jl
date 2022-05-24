@@ -12,13 +12,13 @@ using FVM_1D.Solvers
 using Krylov
 
 function generate_mesh()
-    n_vertical      = 400 #20 #400
-    n_horizontal1   = 500 #25 #500
-    n_horizontal2   = 400 #20 #800
+    # n_vertical      = 400 #20 #400
+    # n_horizontal1   = 500 #25 #500
+    # n_horizontal2   = 400 #20 #800
 
-    # n_vertical      = 20 #400
-    # n_horizontal1   = 25 #500
-    # n_horizontal2   = 20 #800
+    n_vertical      = 20 #400
+    n_horizontal1   = 25 #500
+    n_horizontal2   = 20 #800
 
     p1 = Point(0.0,0.0,0.0)
     p2 = Point(1.0,0.2,0.0)

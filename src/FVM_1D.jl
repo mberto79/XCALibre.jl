@@ -6,5 +6,6 @@ include("Discretise/Discretise.jl")
 include("Model/Models.jl")
 include("Calculate/Calculate.jl")
 include("Solve/Solvers.jl")
+include("VTK/VTK.jl")
 
 end # module

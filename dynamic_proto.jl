@@ -8,6 +8,7 @@ using FVM_1D.Discretise
 using FVM_1D.Calculate
 using FVM_1D.Models
 using FVM_1D.Solvers
+using FVM_1D.VTK
 
 using Krylov
 
@@ -89,13 +90,14 @@ BCs = (
 using JLD2
 
 mesh = generate_mesh()
+phi = ScalarField(mesh)
+write_vtk(mesh)
 
 jldopen("data/mesh.jld2", "w") do file
     file["mesh"] = mesh
 end
 mesh = load("data/mesh.jld2", "mesh")
 
-phi = ScalarField(mesh)
 jldopen("data/fields.jld2", "w") do file
     file["phi"] = phi
 end

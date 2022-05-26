@@ -91,7 +91,6 @@ using JLD2
 
 mesh = generate_mesh()
 phi = ScalarField(mesh)
-write_vtk(mesh)
 
 jldopen("data/mesh.jld2", "w") do file
     file["mesh"] = mesh
@@ -119,6 +118,7 @@ setup = SolverSetup(
 
 clear!(phi)
 @time run!(equation, phiModel, BCs, setup)
+write_vtk(mesh, phi)
 
 (; A, b, R, Fx) = equation
 

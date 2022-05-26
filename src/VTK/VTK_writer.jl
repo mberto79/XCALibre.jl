@@ -1,6 +1,6 @@
 export write_vtk
 
-function write_vtk(mesh) #, Ux, Uy, Uz, p)
+function write_vtk(mesh, scalarField) #, Ux, Uy, Uz, p)
     # UxNodes = FVM.NodeScalarField(Ux)
     # UyNodes = FVM.NodeScalarField(Uy)
     # UzNodes = FVM.NodeScalarField(Uz)
@@ -48,6 +48,12 @@ function write_vtk(mesh) #, Ux, Uy, Uz, p)
                 type = "7"
             end
             println(io, type)
+        end
+        write(io, "CELL_DATA $(nCells)\n")
+        write(io, "SCALARS phi float 1\n")
+        write(io, "LOOKUP_TABLE CellColors\n")
+        for value ∈ scalarField.values
+            println(io, value)
         end
         # write(io, "POINT_DATA $(nPoints)\n")
         # write(io, "SCALARS p double 1\n")

@@ -16,22 +16,23 @@ function grad!(grad::Grad{Linear,I,F}, phif, phi, BCs) where {I,F}
     end
 end
 
-# function grad!(grad::Grad{Corrected,I,F}, phif, phi) where {I,F}
-#     interpolate!(get_scheme(grad), phif, phi)
-#     green_gauss!(grad, phif)
-#     # correct phif field 
-#     if grad.correct
-#         phif0 = copy(phif.values) # it would be nice to find a way to avoid this!
-#         for i ∈ 1:grad.correctors
-#             correct_interpolation!(get_scheme(grad), phif, grad, phif0)
-#             green_gauss!(grad, phif)
-#         end
-#         phif0 = nothing
-#     end
-# end
-
-function div!()
-    nothing
+function div!(div::ScalarField{I,F}, Uf, U, BCs) where {I,F}
+    interpolate!(Linear, Uf::FaceVectorField{I,F}, U, BCs)
+    # need to include logic to correct the interpolation
+    div_vals = div.values
+    phif_vals = phif.values
+    (; mesh, values) = div
+    (; cells, faces) = mesh
+    for ci ∈ eachindex(cells)
+        (; facesID, nsign, volume) = cells[ci]
+        res = SVector{3,F}(0.0,0.0,0.0)
+        for fi ∈ eachindex(facesID)
+            fID = facesID[fi]
+            (; area, normal) = faces[fID]
+            values += phif_vals[fID]⋅(area*normal*nsign[fi])
+        end
+        values /= volume
+    end
 end
 
 function green_gauss!(grad::Grad{S,I,F}, phif) where {S,I,F}

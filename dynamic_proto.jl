@@ -120,16 +120,17 @@ clear!(phi)
 @time run!(equation, phiModel, BCs, setup)
 write_vtk(mesh, phi)
 
-(; A, b, R, Fx) = equation
+divPhi = ScalarField(mesh)
+U = VectorField #### HEREE!!!
+Uf = FaceVectorField(mesh)
+div!(divPhi, phif, phi, BCs) # input here should an an object of type Div
 
+(; A, b, R, Fx) = equation
 @time Diagonal(A)
 @time @view A[diagind(A)]
 @time Diagonal(A[diagind(A)])
 @time Diagonal(@view A[diagind(A)])
-
-
 @time C = A .- Diagonal(@view A[diagind(A)])
-
 @time S = sum(C*I, dims=2)
 
 ### Non-orthogonal correction

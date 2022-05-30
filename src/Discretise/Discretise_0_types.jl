@@ -127,6 +127,22 @@ abstract type AbstractNeumann <: AbstractBoundary end
 struct Dirichlet{F}
     name::Symbol 
     value::F 
+    function Dirichlet(name, value::T) where {T}
+        if T <: Number
+            return new{eltype(value)}(name, value)
+        elseif T <: Vector
+            if length(value) == 3 
+                nvalue = SVector{3, eltype(value)}(value)
+                return new{typeof(nvalue)}(name, nvalue)
+            else
+                println("Only vectors with three components can be used")
+                return 
+            end
+        else
+            println("The value provided should be a scalar or a vector")
+            return
+        end
+    end
 end
 
 struct Neumann{F}

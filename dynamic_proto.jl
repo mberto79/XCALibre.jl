@@ -87,6 +87,15 @@ BCs = (
     # Dirichlet(:top, 50.0)
 )
 
+UBCs = (
+    Dirichlet(:inlet, [1.0, 0.0, 0.0]),
+    Neumann(:outlet, 0.0),
+    Dirichlet(:bottom, [0.0, 0.0, 0.0]),
+    Dirichlet(:top, [0.0, 0.0, 0.0])
+    # Dirichlet(:bottom, 50.0),
+    # Dirichlet(:top, 50.0)
+)
+
 using JLD2
 
 mesh = generate_mesh()
@@ -120,10 +129,10 @@ clear!(phi)
 @time run!(equation, phiModel, BCs, setup)
 write_vtk(mesh, phi)
 
-divPhi = ScalarField(mesh)
-U = VectorField #### HEREE!!!
+divU = ScalarField(mesh)
+U = VectorField(mesh) #### HEREE!!!
 Uf = FaceVectorField(mesh)
-div!(divPhi, phif, phi, BCs) # input here should an an object of type Div
+div!(divU, Uf, U, BCs) # input here should an an object of type Div
 
 (; A, b, R, Fx) = equation
 @time Diagonal(A)

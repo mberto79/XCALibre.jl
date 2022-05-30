@@ -17,19 +17,19 @@ function grad!(grad::Grad{Linear,I,F}, phif, phi, BCs) where {I,F}
 end
 
 function div!(div::ScalarField{I,F}, Uf, U, BCs) where {I,F}
-    interpolate!(Linear, Uf::FaceVectorField{I,F}, U, BCs)
+    interpolate!(Uf, U, BCs)
     # need to include logic to correct the interpolation
-    div_vals = div.values
-    phif_vals = phif.values
+    # div_vals = div.values
+    # Uf_vals = Uf.values
     (; mesh, values) = div
     (; cells, faces) = mesh
     for ci ∈ eachindex(cells)
         (; facesID, nsign, volume) = cells[ci]
-        res = SVector{3,F}(0.0,0.0,0.0)
+        # res = SVector{3,F}(0.0,0.0,0.0)
         for fi ∈ eachindex(facesID)
             fID = facesID[fi]
             (; area, normal) = faces[fID]
-            values += phif_vals[fID]⋅(area*normal*nsign[fi])
+            values += Uf(fID)⋅(area*normal*nsign[fi])
         end
         values /= volume
     end

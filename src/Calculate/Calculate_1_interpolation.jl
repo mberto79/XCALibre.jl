@@ -147,3 +147,31 @@ function correct_interpolation!(::Type{Linear}, gradf, grad)
         gradf.z[fi] = grad_corr[3]
     end
 end
+
+# Vector face interpolation
+
+function interpolate!(gradf::FaceVectorField{I,F}, grad::VectorField{I,F}, BCs) where {I,F}
+    (; mesh, x, y, z) = gradf
+    (; cells, faces) = mesh
+    nbfaces = total_boundary_faces(mesh)
+    start = nbfaces + 1
+    for fi ∈ start:length(faces)
+        (; ownerCells) = faces[fi]
+        w, df = weight(Linear, cells, faces, fi)
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        grad1 = grad(cID1)
+        grad2 = grad(cID2)
+        gradi = w*grad1 + (1.0 - w)*grad2
+        x[fi] = gradi[1]
+        y[fi] = gradi[2]
+        z[fi] = gradi[3]
+    end
+    # correct_interpolation!(Linear, gradf, grad)
+    # boundary faces
+    for BC ∈ BCs
+        bi = boundary_index(mesh, BC.name)
+        boundary = mesh.boundaries[bi]
+        correct_boundary!(BC, gradf, grad, boundary, faces)
+    end
+end

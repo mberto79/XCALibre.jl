@@ -69,14 +69,14 @@ end
 (v::AbstractVectorField)(i::Integer) = SVector{3, typeof(v.x[1])}(v.x[i], v.y[i], v.z[i])
 
 # Supported operators
-struct Laplacian{T<:AbstractScheme} <: AbstractLaplacian
-    J::Float64
+struct Laplacian{S<:AbstractScheme, T} <: AbstractLaplacian
+    J::T # either Float64 or Vector{Float64}
     phi::ScalarField
     sign::Vector{Int64}
 end
 
-struct Divergence{T<:AbstractScheme} <: AbstractDivergence
-    J::SVector{3, Float64}
+struct Divergence{S<:AbstractScheme, T} <: AbstractDivergence
+    J::T # SVector{3, Float64} or Vector{SVector{3, Float64}}
     phi::ScalarField
     sign::Vector{Int64}
 end

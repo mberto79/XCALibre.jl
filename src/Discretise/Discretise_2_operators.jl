@@ -17,15 +17,20 @@ Source{Constant}(phi) = Source{Constant}(phi, Constant(), :ConstantSource)
 
 ### LAPLACIAN
 
-Laplacian{Linear}(J, phi) = Laplacian{Linear}(J, phi, [1])
+Laplacian{Linear}(J::Float64, phi) = begin
+    Laplacian{Linear, Float64}(J, phi, [1])
+end
 
-@inline function scheme!(term::Laplacian{Linear}, nzval, cell, face, ns, cIndex, nIndex)
+@inline function scheme!(
+    term::Laplacian{Linear, Float64}, nzval, cell, face, ns, cIndex, nIndex
+    )
     ap = term.sign[1]*(-term.J * face.area)/face.delta
     nzval[cIndex] += ap
     nzval[nIndex] += -ap
     nothing
 end
-@inline scheme_source!(term::Laplacian{Linear}, b, cell, cID) = begin
+@inline scheme_source!(
+    term::Laplacian{Linear, Float64}, b, cell, cID) = begin
     # b[cID] += 0.0
     nothing
 end
@@ -33,14 +38,20 @@ end
 
 ### DIVERGENCE
 
-Divergence{Linear}(J, phi) = Divergence{Linear}(J, phi, [1])
-@inline function scheme!(term::Divergence{Linear}, nzval, cell, face, ns, cIndex, nIndex)
+Divergence{Linear}(J::Vector{Float64}, phi) = begin
+    J_static = SVector{3, Float64}(J)
+    Divergence{Linear, SVector{3, Float64}}(J_static, phi, [1])
+end
+
+@inline function scheme!(
+    term::Divergence{Linear, SVector{3, Float64}}, nzval, cell, face, ns, cIndex, nIndex
+    )
     ap = term.sign[1]*(term.J⋅face.normal*ns*face.area*0.5) # need to implement weights
     nzval[cIndex] += ap
     nzval[nIndex] += ap
     nothing
 end
-@inline scheme_source!(term::Divergence{Linear}, b, cell, cID) = begin
+@inline scheme_source!(term::Divergence{Linear, SVector{3, Float64}}, b, cell, cID) = begin
     # b[cID] += 0.0
     nothing
 end

@@ -29,15 +29,15 @@ function div!(div::ScalarField{I,F}, Uf, U, BCs) where {I,F}
         for fi ∈ eachindex(facesID)
             fID = facesID[fi]
             (; area, normal) = faces[fID]
-            values += Uf(fID)⋅(area*normal*nsign[fi])
+            values[ci] += Uf(fID)⋅(area*normal*nsign[fi])
         end
-        values /= volume
+        values[ci] /= volume
     end
 end
 
 function green_gauss!(grad::Grad{S,I,F}, phif) where {S,I,F}
     (; x, y, z) = grad
-    (; mesh) = phif
+    (; mesh, values) = phif
     (; cells, faces) = mesh
     for ci ∈ eachindex(cells)
         (; facesID, nsign, volume) = cells[ci]
@@ -45,7 +45,7 @@ function green_gauss!(grad::Grad{S,I,F}, phif) where {S,I,F}
         for fi ∈ eachindex(facesID)
             fID = facesID[fi]
             (; area, normal) = faces[fID]
-            res += phif.values[fID]*(area*normal*nsign[fi])
+            res += values[fID]*(area*normal*nsign[fi])
         end
         res /= volume
         x[ci] = res[1]

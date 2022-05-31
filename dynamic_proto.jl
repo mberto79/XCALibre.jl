@@ -132,7 +132,9 @@ write_vtk(mesh, phi)
 divU = ScalarField(mesh)
 U = VectorField(mesh) #### HEREE!!!
 Uf = FaceVectorField(mesh)
-div!(divU, Uf, U, BCs) # input here should an an object of type Div
+@time div!(divU, Uf, U, BCs) # input here should an an object of type Div
+
+
 
 (; A, b, R, Fx) = equation
 @time Diagonal(A)

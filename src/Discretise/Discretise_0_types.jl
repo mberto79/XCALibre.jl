@@ -9,6 +9,8 @@ export VectorField, FaceVectorField
 export Equation 
 export AbstractBoundary, AbstractDirichlet, AbstractNeumann
 export Dirichlet, Neumann 
+export initialise!
+
 # export Discretisation, Equation 
 
 abstract type AbstractField end
@@ -19,13 +21,15 @@ abstract type AbstractOperator end
 abstract type AbstractLaplacian <: AbstractOperator end
 abstract type AbstractDivergence <: AbstractOperator end
 
-# Supported discretisation schemes
+# SUPPORTED DISCRETISATION SCHEMES 
+
 abstract type AbstractScheme end
 struct Constant <: AbstractScheme end
 struct Linear <: AbstractScheme end
 struct Upwind <: AbstractScheme end
 
-# Fields
+# FIELDS 
+
 struct ScalarField{I,F} <: AbstractScalarField
     values::Vector{F}
     mesh::Mesh2{I,F}
@@ -66,9 +70,24 @@ FaceVectorField(mesh::Mesh2{I,F}) where {I,F} = begin
     FaceVectorField(zeros(F, nfaces), zeros(F, nfaces), zeros(F, nfaces), mesh)
 end
 
-(v::AbstractVectorField)(i::Integer) = SVector{3, typeof(v.x[1])}(v.x[i], v.y[i], v.z[i])
+(v::AbstractVectorField)(i::Integer) = SVector{3, eltype(v.x)}(v.x[i], v.y[i], v.z[i])
 
-# Supported operators
+function initialise!(v::AbstractVectorField, vec::Vector{T}) where T
+    n = length(vec)
+    if T !== eltype(v.x)
+        throw("Vectors are not the same type: $(eltype(v.x)) is not $T")
+    elseif n == 3
+        v.x .= vec[1]
+        v.y .= vec[2]
+        v.z .= vec[3]
+    else
+        throw("Vectors should have 3 components")
+    end
+    nothing
+end
+
+# OPERATORS
+
 struct Laplacian{S<:AbstractScheme, T} <: AbstractLaplacian
     J::T # either Float64 or Vector{Float64}
     phi::ScalarField
@@ -119,7 +138,8 @@ function sparse_matrix_connectivity(mesh::Mesh2{I,F}) where{I,F}
     return i, j, v
 end
 
-# Supported boundary conditions 
+# SUPPORTED BOUNDARY CONDITIONS 
+
 abstract type AbstractBoundary end
 abstract type AbstractDirichlet <: AbstractBoundary end
 abstract type AbstractNeumann <: AbstractBoundary end
@@ -135,12 +155,10 @@ struct Dirichlet{F}
                 nvalue = SVector{3, eltype(value)}(value)
                 return new{typeof(nvalue)}(name, nvalue)
             else
-                println("Only vectors with three components can be used")
-                return 
+                throw("Only vectors with three components can be used")
             end
         else
-            println("The value provided should be a scalar or a vector")
-            return
+            throw("The value provided should be a scalar or a vector")
         end
     end
 end

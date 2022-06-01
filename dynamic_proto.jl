@@ -132,8 +132,12 @@ write_vtk(mesh, phi)
 divU = ScalarField(mesh)
 U = VectorField(mesh) #### HEREE!!!
 Uf = FaceVectorField(mesh)
+Divergence{Linear}(Uf, phi)
 @time div!(divU, Uf, U, BCs) # input here should an an object of type Div
 
+@time initialise!(Uf, [21.0, 5, 0])
+Uf(30)
+phiModel = create_model(ConvectionDiffusion, Uf, 1.0, phi)
 
 
 (; A, b, R, Fx) = equation

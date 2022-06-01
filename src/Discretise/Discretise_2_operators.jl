@@ -22,7 +22,7 @@ Laplacian{Linear}(J::Float64, phi) = begin
 end
 
 @inline function scheme!(
-    term::Laplacian{Linear, Float64}, nzval, cell, face, ns, cIndex, nIndex
+    term::Laplacian{Linear, Float64}, nzval, cell, face,  cellN, ns, cIndex, nIndex
     )
     ap = term.sign[1]*(-term.J * face.area)/face.delta
     nzval[cIndex] += ap
@@ -44,11 +44,15 @@ Divergence{Linear}(J::Vector{Float64}, phi) = begin
 end
 
 @inline function scheme!(
-    term::Divergence{Linear, SVector{3, Float64}}, nzval, cell, face, ns, cIndex, nIndex
+    term::Divergence{Linear, SVector{3, Float64}}, nzval, cell, face, cellN, ns, cIndex, nIndex
     )
-    ap = term.sign[1]*(term.J⋅face.normal*ns*face.area*0.5) # need to implement weights
-    nzval[cIndex] += ap
-    nzval[nIndex] += ap
+    xf = face.centre
+    xC = cell.centre
+    xN = cellN.centre
+    w = norm(xf - xC)/norm(xN - xC)
+    ap = term.sign[1]*(term.J⋅face.normal*ns*face.area) # need to implement weights
+    nzval[cIndex] += ap*(1.0 - w)
+    nzval[nIndex] += ap*w
     nothing
 end
 @inline scheme_source!(term::Divergence{Linear, SVector{3, Float64}}, b, cell, cID) = begin

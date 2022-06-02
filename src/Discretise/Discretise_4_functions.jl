@@ -30,7 +30,7 @@ function generate_boundary_conditions!(mesh::Mesh2{I,F}, model, BCs) where {I,F}
         for ti ∈ 1:nterms
             term = Symbol(:term,ti)
             function_call = :( $(Symbol(:boundary, bci))(
-                $term, A, b, cellID, cell, face
+                $term, A, b, cellID, cell, face, faceID
                 )
             )
             push!(assign_loop.args[2].args[3].args[2].args, function_call)

@@ -1,10 +1,13 @@
 export grad!, div! 
+export source!
 
+function source!(grad::Grad{Linear,I,F}, phif, phi, BCs; source=true) where {I,F}
+    grad!(grad, phif, phi, BCs; source=source)
+end
 
-
-function grad!(grad::Grad{Linear,I,F}, phif, phi, BCs) where {I,F}
+function grad!(grad::Grad{Linear,I,F}, phif, phi, BCs; source=false) where {I,F}
     interpolate!(get_scheme(grad), phif, phi, BCs)
-    green_gauss!(grad, phif)
+    green_gauss!(grad, phif; source)
     # correct phif field 
     if grad.correct
         phif0 = copy(phif.values) # it would be nice to find a way to avoid this!
@@ -35,7 +38,7 @@ function div!(div::ScalarField{I,F}, Uf, U, BCs) where {I,F}
     end
 end
 
-function green_gauss!(grad::Grad{S,I,F}, phif) where {S,I,F}
+function green_gauss!(grad::Grad{S,I,F}, phif; source=false) where {S,I,F}
     (; x, y, z) = grad
     (; mesh, values) = phif
     (; cells, faces) = mesh
@@ -47,7 +50,9 @@ function green_gauss!(grad::Grad{S,I,F}, phif) where {S,I,F}
             (; area, normal) = faces[fID]
             res += values[fID]*(area*normal*nsign[fi])
         end
-        res /= volume
+        if !source
+            res /= volume
+        end
         x[ci] = res[1]
         y[ci] = res[2]
         z[ci] = res[3]
@@ -59,7 +64,10 @@ function green_gauss!(grad::Grad{S,I,F}, phif) where {S,I,F}
         (; ownerCells, area, normal) = face
         cID = ownerCells[1] 
         (; volume) = cells[cID]
-        res = phif.values[i]*(area*normal)/volume
+        res = phif.values[i]*(area*normal)
+        if !source
+            res /= volume
+        end
         x[cID] += res[1]
         y[cID] += res[2]
         z[cID] += res[3]

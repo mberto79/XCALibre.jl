@@ -84,6 +84,7 @@ function run!(
     ) where {Ti,Tf}
     discretise!(equation, phiModel)
     update_boundaries!(equation, phiModel, BCs)
+    equation.b .+= phiModel.sources.source1
 
     (; solver, iterations, tolerance, relax, itmax, atol, rtol) = setup
     (; A, b, R, Fx) = equation

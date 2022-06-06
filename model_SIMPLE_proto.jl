@@ -109,57 +109,75 @@ setup = SolverSetup(
 
 mesh = generate_mesh()
 U = VectorField(mesh)
-divU = ScalarField(mesh)
-Uf = FaceVectorField(mesh); initialise!(Uf, velocity)
+Uf = FaceVectorField(mesh)
+Uf.x .= velocity[1]; Uf.y .= velocity[2]
+Hv = VectorField(mesh)
+divHv = Div(Hv)
 ux = ScalarField(mesh)
 uy = ScalarField(mesh)
 
 p = ScalarField(mesh)
 set!(p, x, y) = begin
-    inlet_value = 2
+    inlet_value = 0.0 #2
     p.values .= inlet_value .- inlet_value*x
 end
 set!(p, x(mesh), y(mesh))
 pf = FaceScalarField(mesh)
 ∇p = Grad{Linear}(p)
+
+
 source!(∇p, pf, p, pBCs)
 
-momentum_eqn = Equation(mesh)
-momentum_x = create_model(ConvectionDiffusion, Uf, nu, ux, -∇p.x)
-generate_boundary_conditions!(mesh, momentum_x, uxBCs)
+x_momentum_eqn = Equation(mesh)
+x_momentum_model = create_model(ConvectionDiffusion, Uf, nu, ux, -∇p.x)
+generate_boundary_conditions!(mesh, x_momentum_model, uxBCs)
+discretise!(x_momentum_eqn, x_momentum_model)
+update_boundaries!(x_momentum_eqn, x_momentum_model, uxBCs)
 clear!(ux)
-@time run!(momentum_eqn, momentum_x, uxBCs, setup)
+@time run!(x_momentum_eqn, x_momentum_model, uxBCs, setup)
 write_vtk(mesh, ux)
 
-momentum_eqn = Equation(mesh)
-momentum_y = create_model(ConvectionDiffusion, Uf, nu, uy, -∇p.y)
-generate_boundary_conditions!(mesh, momentum_y, uyBCs)
+y_momentum_eqn = Equation(mesh)
+y_momentum_model = create_model(ConvectionDiffusion, Uf, nu, uy, -∇p.y)
+generate_boundary_conditions!(mesh, y_momentum_model, uyBCs)
+discretise!(y_momentum_eqn, y_momentum_model)
+update_boundaries!(y_momentum_eqn, y_momentum_model, uyBCs)
 clear!(uy)
-@time run!(momentum_eqn, momentum_y, uyBCs, setup)
+@time run!(y_momentum_eqn, y_momentum_model, uyBCs, setup)
 write_vtk(mesh, uy)
 
-U.x .= ux.values
-U.y .= uy.values
-@time div!(divU, Uf, U, UBCs) 
+U.x .= ux.values; U.y .= uy.values # make U.x a reference to ux.values etc.
 
-D = @view A[diagind(A)]
-rD = ScalarField(mesh)
-rD.values .= 1.0./D
-pressure_correction = create_model(Diffusion, rD, p, divU.values.*rD)
+@time H!(Hv, U, x_momentum_eqn, y_momentum_eqn)
+@time div!(divHv, UBCs) 
+
+pressure_eqn = Equation(mesh)
+pressure_correction = create_model(Diffusion, 1.0, p, divHv.values)
+generate_boundary_conditions!(mesh, pressure_correction, pBCs)
+discretise!(pressure_eqn, pressure_correction)
+update_boundaries!(pressure_eqn, pressure_correction, pBCs)
+clear!(p)
+@time run!(pressure_eqn, pressure_correction, pBCs, setup)
+write_vtk(mesh, p)
+
+grad!(∇p, pf, p, pBCs)
+U.x .= Hv.x .- ∇p.x
+U.y .= Hv.y .- ∇p.y
+
+ux.values .= U.x
+uy.values .= U.y
+write_vtk(mesh, ux)
+write_vtk(mesh, uy)
+
+interpolate!(Uf, U, UBCs)
 
 
-(; A, b, R, Fx) = momentum_eqn
-@time Diagonal(A)
-@time D = @view A[diagind(A)]
-@time Diagonal(A[diagind(A)])
-@time Diagonal(@view A[diagind(A)])
-@time C = A .- Diagonal(@view A[diagind(A)])
-@time S = sum(C*I, dims=2)
 
 plotly(size=(400,400), markersize=1, markerstrokewidth=1)
 scatter(x(mesh), y(mesh), ux.values, color=:red)
-scatter(x(mesh), y(mesh), uy.values, color=:red)
-scatter(x(mesh), y(mesh), divU.values, color=:red)
+scatter!(x(mesh), y(mesh), U.y, color=:green)
+scatter(x(mesh), y(mesh), divHv.values, color=:red)
+scatter(x(mesh), y(mesh), Hv.x, color=:green)
 scatter(x(mesh), y(mesh), p.values, color=:red)
-scatter(xf(mesh), yf(mesh), pf.values, color=:red)
+scatter(xf(mesh), yf(mesh), divHv.face_vector.x, color=:red)
 scatter(x(mesh), y(mesh), ∇p.x, color=:green)

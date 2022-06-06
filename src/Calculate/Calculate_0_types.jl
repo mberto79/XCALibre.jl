@@ -1,5 +1,7 @@
+export Grad, Div
 export get_scheme
-export Grad 
+
+# Gradient explicit operator
 
 struct Grad{S<:AbstractScheme, I, F}
     phi::ScalarField{I,F}
@@ -31,3 +33,18 @@ Grad{S}(phi::ScalarField{I,F}, correctors::I) where {S,I,F} = begin
 end
 get_scheme(term::Grad{S,I,F}) where {S,I,F} = S
 (grad::Grad{S,I,F})(i::I) where {S,I,F} = SVector{3,F}(grad.x[i], grad.y[i], grad.z[i])
+
+# Divergence explicit operator
+
+struct Div{I,F}
+    vector::VectorField{I,F}
+    face_vector::FaceVectorField{I,F}
+    values::Vector{F}
+    mesh::Mesh2{I,F}
+end
+Div(vector::VectorField{I,F}) where {I,F}= begin
+    mesh = vector.mesh
+    face_vector = FaceVectorField(mesh)
+    values = zeros(F, length(mesh.cells))
+    Div{I,F}(vector, face_vector, values, mesh)
+end

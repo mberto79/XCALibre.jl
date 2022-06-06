@@ -96,6 +96,14 @@ UBCs = (
     # Dirichlet(:top, 50.0)
 )
 
+setup = SolverSetup(
+    iterations  = 100,
+    solver      = GmresSolver,
+    tolerance   = 1e-6,
+    relax       = 1.0,
+    itmax       = 100
+    )
+
 using JLD2
 
 mesh = generate_mesh()
@@ -117,13 +125,8 @@ phiModel = create_model(ConvectionDiffusion, [4.0, 0.0, 0.0], 1.0, phi)
 # phiModel = create_model(Diffusion, 1.0, phi)
 generate_boundary_conditions!(mesh, phiModel, BCs)
 
-setup = SolverSetup(
-    iterations  = 100,
-    solver      = GmresSolver,
-    tolerance   = 1e-6,
-    relax       = 1.0,
-    itmax       = 100
-    )
+discretise!(equation, phiModel)
+update_boundaries!(equation, phiModel, BCs)
 
 clear!(phi)
 @time run!(equation, phiModel, BCs, setup)

@@ -19,22 +19,27 @@ function grad!(grad::Grad{Linear,I,F}, phif, phi, BCs; source=false) where {I,F}
     end
 end
 
-function div!(div::ScalarField{I,F}, Uf, U, BCs) where {I,F}
-    interpolate!(Uf, U, BCs)
-    # need to include logic to correct the interpolation
-    # div_vals = div.values
-    # Uf_vals = Uf.values
-    (; mesh, values) = div
+function div!(div::Div{I,F}, BCs) where {I,F}
+    (; mesh, values, vector, face_vector) = div
     (; cells, faces) = mesh
+    interpolate!(face_vector, vector, BCs)
+
     for ci ∈ eachindex(cells)
         (; facesID, nsign, volume) = cells[ci]
-        # res = SVector{3,F}(0.0,0.0,0.0)
         for fi ∈ eachindex(facesID)
             fID = facesID[fi]
             (; area, normal) = faces[fID]
-            values[ci] += Uf(fID)⋅(area*normal*nsign[fi])
+            values[ci] += face_vector(fID)⋅(area*normal*nsign[fi])
         end
-        values[ci] /= volume
+    end
+    # Add boundary faces contribution
+    nbfaces = total_boundary_faces(mesh)
+    for i ∈ 1:nbfaces
+        face = faces[i]
+        (; ownerCells, area, normal) = face
+        cID = ownerCells[1] 
+        # Boundary normals are correct by definition
+        values[cID] += face_vector(i)⋅(area*normal) 
     end
 end
 

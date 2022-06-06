@@ -1,5 +1,6 @@
 export generate_boundary_conditions!, update_boundaries!
 export boundary_index
+export H!
 
 function generate_boundary_conditions!(mesh::Mesh2{I,F}, model, BCs) where {I,F}
     nBCs = length(BCs)
@@ -75,27 +76,19 @@ function boundary_index(mesh::Mesh2{I,F}, name::Symbol) where {I,F}
     end
 end
 
-# # begin
-# #     J = model.terms.term1.J
-# #     sgn = model.terms.term1.sign[1]
+function H!(Hv::VectorField, v::VectorField{I,F}, xeqn, yeqn) where {I,F}
+    (; x, y, z) = Hv 
+    Ax = xeqn.A;  Ay = yeqn.A
+    bx = xeqn.b; by = yeqn.b; bz = zeros(length(bx))
 
-# #     area, delta, normal, nsign = face_properties(mesh, 1)
-# #     b[1] += sgn*(J⋅(area*normal*nsign))*leftBC
+    D = @view Ax[diagind(Ax)]
+    Di = Diagonal(D)
 
-# #     area, delta, normal, nsign = face_properties(mesh, nCells+1)
-# #     b[nCells] += sgn*(J⋅(area*normal*nsign))*rightBC
-# # end
+    B = [bx by bz]
 
-# # begin
-# #     J = model.terms.term2.J
-# #     sgn = model.terms.term2.sign[1]
-
-# #     area, delta, normal, nsign = face_properties(mesh, 1)
-# #     b[1] += sgn*(-J*area/delta*leftBC)
-# #     A[1,1] += sgn*(-J*area/delta)
-
-# #     area, delta, normal, nsign = face_properties(mesh, nCells+1)
-# #     b[nCells] += sgn*(-J*area/delta*rightBC)
-# #     A[nCells,nCells] += sgn*(-J*area/delta)
-
-# # end
+    H = ( B .- (Ax .- Di) * [v.x v.y bz] )./D
+    x .= @view H[:,1]
+    y .= @view H[:,2]
+    z .= @view H[:,3]
+    nothing
+end

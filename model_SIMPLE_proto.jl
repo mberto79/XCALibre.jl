@@ -148,11 +148,12 @@ write_vtk(mesh, uy)
 
 U.x .= ux.values; U.y .= uy.values # make U.x a reference to ux.values etc.
 
+D = @view x_momentum_eqn.A[diagind(x_momentum_eqn.A)]
 @time H!(Hv, U, x_momentum_eqn, y_momentum_eqn)
 @time div!(divHv, UBCs) 
 
 pressure_eqn = Equation(mesh)
-pressure_correction = create_model(Diffusion, 1.0, p, divHv.values)
+pressure_correction = create_model(Diffusion, 1.0, p, divHv.values.*D)
 generate_boundary_conditions!(mesh, pressure_correction, pBCs)
 discretise!(pressure_eqn, pressure_correction)
 update_boundaries!(pressure_eqn, pressure_correction, pBCs)
@@ -161,8 +162,8 @@ clear!(p)
 write_vtk(mesh, p)
 
 grad!(∇p, pf, p, pBCs)
-U.x .= Hv.x .- ∇p.x
-U.y .= Hv.y .- ∇p.y
+U.x .= Hv.x .- ∇p.x./(D)
+U.y .= Hv.y .- ∇p.y./(D)
 
 ux.values .= U.x
 uy.values .= U.y

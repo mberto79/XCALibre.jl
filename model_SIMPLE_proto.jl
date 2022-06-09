@@ -153,7 +153,7 @@ D = @view x_momentum_eqn.A[diagind(x_momentum_eqn.A)]
 @time div!(divHv, UBCs) 
 
 pressure_eqn = Equation(mesh)
-pressure_correction = create_model(Diffusion, 1.0, p, divHv.values.*D)
+pressure_correction = create_model(Diffusion, 1.0, p, divHv.values) #.*D)
 generate_boundary_conditions!(mesh, pressure_correction, pBCs)
 discretise!(pressure_eqn, pressure_correction)
 update_boundaries!(pressure_eqn, pressure_correction, pBCs)
@@ -171,8 +171,6 @@ write_vtk(mesh, ux)
 write_vtk(mesh, uy)
 
 interpolate!(Uf, U, UBCs)
-
-
 
 plotly(size=(400,400), markersize=1, markerstrokewidth=1)
 scatter(x(mesh), y(mesh), ux.values, color=:red)

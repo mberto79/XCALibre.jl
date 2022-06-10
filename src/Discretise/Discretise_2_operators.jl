@@ -15,14 +15,14 @@ end
 Source{Constant}(phi) = Source{Constant}(phi, Constant(), :ConstantSource)
 
 
-### LAPLACIAN
+### LAPLACIAN (constant scalar)
 
-Laplacian{Linear}(J::Float64, phi) = begin
+Laplacian{Linear}(J::T, phi) where T<:AbstractFloat = begin
     Laplacian{Linear, Float64}(J, phi, [1])
 end
 
 @inline function scheme!(
-    term::Laplacian{Linear, Float64}, nzval, cell, face,  cellN, ns, cIndex, nIndex, fIndex
+    term::Laplacian{Linear, Float64}, nzval, cell, face,  cellN, ns, cIndex, nIndex, fID
     )
     ap = term.sign[1]*(-term.J * face.area)/face.delta
     nzval[cIndex] += ap
@@ -35,6 +35,26 @@ end
     nothing
 end
 
+### LAPLACIAN (non-uniform scalar field)
+
+Laplacian{Linear}(J::T, phi) where T<:FaceScalarField = begin
+    Laplacian{Linear, T}(J, phi, [1])
+end
+
+@inline function scheme!(
+    term::Laplacian{Linear, T}, nzval, cell, face,  cellN, ns, cIndex, nIndex, fID
+    ) where T<:FaceScalarField
+    ap = term.sign[1]*(-term.J(fID) * face.area)/face.delta
+    nzval[cIndex] += ap
+    nzval[nIndex] += -ap
+    nothing
+end
+@inline scheme_source!(
+    term::Laplacian{Linear, T}, b, cell, cID
+    ) where T<:FaceScalarField= begin
+    # b[cID] += 0.0
+    nothing
+end
 
 ### DIVERGENCE (Constant vector field)
 
@@ -44,7 +64,7 @@ Divergence{Linear}(J::Vector{Float64}, phi) = begin
 end
 
 @inline function scheme!(
-    term::Divergence{Linear, SVector{3, Float64}}, nzval, cell, face, cellN, ns, cIndex, nIndex, fIndex
+    term::Divergence{Linear, SVector{3, Float64}}, nzval, cell, face, cellN, ns, cIndex, nIndex, fID
     )
     xf = face.centre
     xC = cell.centre

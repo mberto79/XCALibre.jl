@@ -122,7 +122,14 @@ function run!(
 
         mul!(Fx, opA, values)
         R .= b .- Fx
-        res = norm(R)/norm(b)
+        res = 0.0
+        normB = norm(b) 
+        normR = norm(R)
+        if normB == zero(eltype(b))
+            res = 1.0
+        else
+            res = normR/normB
+        end
         if res <= tolerance
             println("Residual: ", res)
             println("Converged in ", i, " iterations")

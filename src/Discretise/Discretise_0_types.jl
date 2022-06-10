@@ -48,6 +48,8 @@ FaceScalarField(mesh::Mesh2{I,F}) where {I,F} =begin
     FaceScalarField(zeros(F,nfaces), mesh)
 end
 
+(s::AbstractScalarField)(i::Integer) = s.values[i]
+
 struct VectorField{I,F} <: AbstractVectorField
     x::Vector{F}
     y::Vector{F}

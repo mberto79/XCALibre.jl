@@ -172,6 +172,59 @@ function interpolate!(gradf::FaceVectorField{I,F}, grad::VectorField{I,F}, BCs) 
     for BC ∈ BCs
         bi = boundary_index(mesh, BC.name)
         boundary = mesh.boundaries[bi]
-        correct_boundary!(BC, gradf, grad, boundary, faces)
+        correct_boundary_generic!(BC, gradf, grad, boundary, faces)
+    end
+end
+
+function correct_boundary_generic!( 
+    BC::Dirichlet, 
+    Uf::FaceVectorField{I,F}, 
+    U::VectorField{I,F},
+    boundary, 
+    faces) where {I,F}
+
+    (; mesh, x, y, z) = Uf
+    (; facesID) = boundary
+    for fID ∈ facesID
+        x[fID] = BC.value[1]
+        y[fID] = BC.value[2]
+        z[fID] = BC.value[3]
+    end
+end
+
+function correct_boundary_generic!( 
+    BC::Neumann, 
+    Uf::FaceVectorField{I,F}, 
+    U::VectorField{I,F},
+    boundary, 
+    faces) where {I,F}
+
+    (; mesh, x, y, z) = Uf
+    (; facesID) = boundary
+    
+    for fID ∈ facesID
+        face = faces[fID]
+        # normal = faces[fID].normal
+        cID = face.ownerCells[1]
+        U_cell = U(cID)
+        # Line below needs sorting out for general user-defined gradients
+        # now only works for zero gradient
+        # U_boundary =   U_cell - (U_cell⋅normal)*normal
+        x[fID] = U_cell[1]
+        y[fID] = U_cell[2]
+        z[fID] = U_cell[3]
+    end
+end
+
+function interpolate!(phif::FaceScalarField, phi::ScalarField)
+    vals = phi.values 
+    fvals = phif.values
+    mesh = phi.mesh 
+    faces = mesh.faces
+    for fi ∈ eachindex(faces)
+        (; weight, ownerCells) = faces[fi]
+        phi1 = vals[ownerCells[1]]
+        phi2 = vals[ownerCells[2]]
+        fvals[fi] = weight*phi1 + (1.0 - weight)*phi2
     end
 end

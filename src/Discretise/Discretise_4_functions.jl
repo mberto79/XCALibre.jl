@@ -86,7 +86,7 @@ function H!(Hv::VectorField, v::VectorField{I,F}, xeqn, yeqn) where {I,F}
 
     B = [bx by bz]
 
-    H = ( B .- (Ax .- Di) * [v.x v.y bz] ) #./D
+    H = ( B .- (Ax .- Di) * [v.x v.y bz] )./D
     x .= @view H[:,1]
     y .= @view H[:,2]
     z .= @view H[:,3]

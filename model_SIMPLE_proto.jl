@@ -149,10 +149,13 @@ clear!(p)
 # ux0 = zeros(length(ux.values))
 # uy0 = zeros(length(ux.values))
 p0 = zeros(length(p.values))
-
-# for i ∈ 1:50
+cvols = volumes(mesh)
+for i ∈ 1:10
 
 source!(∇p, pf, p, pBCs)
+# grad!(∇p, pf, p, pBCs)
+∇p.x .*= -1.0
+∇p.y .*= -1.0
 
 discretise!(x_momentum_eqn, x_momentum_model)
 generate_boundary_conditions!(mesh, x_momentum_model, uxBCs)
@@ -179,6 +182,7 @@ rD.values .= 1.0./D
 interpolate!(rDf, rD)
 @time H!(Hv, U, x_momentum_eqn, y_momentum_eqn)
 @time div!(divHv, UBCs) 
+# divHv.values .*= cvols
 
 discretise!(pressure_eqn, pressure_correction)
 generate_boundary_conditions!(mesh, pressure_correction, pBCs)
@@ -187,23 +191,30 @@ update_boundaries!(pressure_eqn, pressure_correction, pBCs)
 write_vtk(mesh, p)
 
 β = 0.2
-# p.values .= β*p.values + (1.0 - β)*p0
-# p0 .= p.values
-D
-# p.values .*= D
+p.values .= β*p.values + (1.0 - β)*p0
+p0 .= p.values
+
 grad!(∇p, pf, p, pBCs) # something off with gradient calculation!
-ux.values .= Hv.x .- ∇p.x.*rD.values
-uy.values .= Hv.y .- ∇p.y.*rD.values #./(D)
-D
+# ux.values .= Hv.x .- ∇p.x.*rD.values
+# uy.values .= Hv.y .- ∇p.y.*rD.values #./(D)
+
+U.x .= Hv.x .- ∇p.x.*rD.values
+U.y .= Hv.y .- ∇p.y.*rD.values #./(D)
+interpolate!(Uf, U, UBCs)
+
+# U.x .= ux.values
+# U.y .= uy.values
 
 # ux.values .= U.x
 # uy.values .= U.y
 
-U.x .= ux.values
-U.y .= uy.values
-interpolate!(Uf, U, UBCs)
+# clear!(ux)
+# clear!(uy)
+
 
 end
+# ux.values .= U.x
+# uy.values .= U.y
 write_vtk(mesh, ux)
 write_vtk(mesh, uy)
 
@@ -213,6 +224,7 @@ scatter(x(mesh), y(mesh), ux.values, color=:red)
 scatter(x(mesh), y(mesh), U.x, color=:green)
 scatter(x(mesh), y(mesh), U.y, color=:green)
 scatter(x(mesh), y(mesh), divHv.values, color=:red)
+scatter(x(mesh), y(mesh), rD.values, color=:red)
 scatter(x(mesh), y(mesh), Hv.x./D, color=:green)
 scatter(x(mesh), y(mesh), ∇p.x, color=:green)
 scatter!(x(mesh), y(mesh), p.values, color=:blue)
@@ -221,3 +233,13 @@ scatter(xf(mesh), yf(mesh), Uf.x, color=:red)
 scatter(xf(mesh), yf(mesh), Uf.y, color=:red)
 scatter(xf(mesh), yf(mesh), pf.values, color=:red)
 scatter(xf(mesh), yf(mesh), rDf.values, color=:red)
+
+
+function volumes(mesh)
+    (; cells) = mesh
+    vols = Float64[]
+    for cell ∈ cells 
+        push!(vols, cell.volume)
+    end
+    vols
+end

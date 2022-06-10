@@ -70,8 +70,10 @@ end
 @inline (bc::Neumann)(
     term::Divergence{Linear, FaceVectorField{I,F}}, A, b, cellID, cell, face, fID
     ) where {I,F} = begin
+    phi = term.phi 
+    values = phi.values
     ap = term.sign[1]*(term.J(fID)⋅face.normal*face.area)
-    A[cellID,cellID] += ap*1.0 # 2.0*ap
-    b[cellID] += -ap*0.0
+    A[cellID,cellID] += 0.5*ap # 2.0*ap
+    b[cellID] += -ap*values[cellID]*0.5
     nothing
 end

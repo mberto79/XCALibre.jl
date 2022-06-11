@@ -135,7 +135,7 @@ function run!(
             println("Converged in ", i, " iterations")
             break
         end
-        println("Residual: ", res)
+        # println("Residual: ", res)
     end
     if correct_term !== nothing 
         bb      = nothing

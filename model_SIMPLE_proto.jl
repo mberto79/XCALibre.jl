@@ -17,13 +17,13 @@ function generate_mesh()
     # n_horizontal1   = 500 #25 #500
     # n_horizontal2   = 400 #20 #800
 
-    n_vertical      = 40 #400
-    n_horizontal    = 80 #500
+    n_vertical      = 20 #400
+    n_horizontal    = 50 #500
 
     p1 = Point(0.0,0.0,0.0)
-    p2 = Point(1.0,0.0,0.0)
-    p3 = Point(0.0,0.5,0.0)
-    p4 = Point(1.0,0.5,0.0)
+    p2 = Point(0.5,0.0,0.0)
+    p3 = Point(0.0,0.1,0.0)
+    p4 = Point(0.5,0.1,0.0)
     points = [p1, p2, p3, p4]
 
     # Edges in x-direction
@@ -67,9 +67,9 @@ function create_model(::Type{Diffusion}, J, phi, S)
     return model
 end
 
-velocity = [0.1, 0.0, 0.0]
-nu = 0.1
-Re = velocity[1]*0.5/nu
+velocity = [0.5, 0.0, 0.0]
+nu = 0.01
+Re = velocity[1]*0.1/nu
 
 UBCs = ( 
     Dirichlet(:inlet, velocity),
@@ -103,10 +103,10 @@ pBCs = (
 setup = SolverSetup(
     iterations  = 100,
     solver      = GmresSolver,
-    tolerance   = 1e-6,
-    relax       = 0.3,
+    tolerance   = 1e-5,
+    relax       = 0.9,
     itmax       = 100,
-    rtol        = 1e-2
+    rtol        = 1e-3
 )
 
 mesh = generate_mesh()
@@ -146,11 +146,13 @@ clear!(ux)
 clear!(uy)
 clear!(p)
 
-# ux0 = zeros(length(ux.values))
-# uy0 = zeros(length(ux.values))
+ux0 = zeros(length(ux.values))
+ux0 .= velocity[1]
+uy0 = zeros(length(ux.values))
+uy0 .= velocity[2]
 p0 = zeros(length(p.values))
-cvols = volumes(mesh)
-for i ∈ 1:10
+# cvols = volumes(mesh)
+for i ∈ 1:50
 
 source!(∇p, pf, p, pBCs)
 # grad!(∇p, pf, p, pBCs)
@@ -160,13 +162,13 @@ source!(∇p, pf, p, pBCs)
 discretise!(x_momentum_eqn, x_momentum_model)
 generate_boundary_conditions!(mesh, x_momentum_model, uxBCs)
 update_boundaries!(x_momentum_eqn, x_momentum_model, uxBCs)
-@time run!(x_momentum_eqn, x_momentum_model, uxBCs, setup)
+run!(x_momentum_eqn, x_momentum_model, uxBCs, setup)
 write_vtk(mesh, ux)
 
 discretise!(y_momentum_eqn, y_momentum_model)
 generate_boundary_conditions!(mesh, y_momentum_model, uyBCs)
 update_boundaries!(y_momentum_eqn, y_momentum_model, uyBCs)
-@time run!(y_momentum_eqn, y_momentum_model, uyBCs, setup)
+run!(y_momentum_eqn, y_momentum_model, uyBCs, setup)
 write_vtk(mesh, uy)
 
 # α = 0.2
@@ -180,27 +182,34 @@ U.y .= uy.values
 D = @view x_momentum_eqn.A[diagind(x_momentum_eqn.A)]
 rD.values .= 1.0./D
 interpolate!(rDf, rD)
-@time H!(Hv, U, x_momentum_eqn, y_momentum_eqn)
-@time div!(divHv, UBCs) 
+x_momentum_eqn.b .-= ∇p.x
+y_momentum_eqn.b .-= ∇p.y
+H!(Hv, U, x_momentum_eqn, y_momentum_eqn)
+div!(divHv, UBCs) 
 # divHv.values .*= cvols
 
 discretise!(pressure_eqn, pressure_correction)
 generate_boundary_conditions!(mesh, pressure_correction, pBCs)
 update_boundaries!(pressure_eqn, pressure_correction, pBCs)
-@time run!(pressure_eqn, pressure_correction, pBCs, setup)
+run!(pressure_eqn, pressure_correction, pBCs, setup)
 write_vtk(mesh, p)
 
-β = 0.2
+β = 0.4
 p.values .= β*p.values + (1.0 - β)*p0
 p0 .= p.values
 
-grad!(∇p, pf, p, pBCs) # something off with gradient calculation!
+source!(∇p, pf, p, pBCs) # something off with gradient calculation!
 # ux.values .= Hv.x .- ∇p.x.*rD.values
 # uy.values .= Hv.y .- ∇p.y.*rD.values #./(D)
 
 U.x .= Hv.x .- ∇p.x.*rD.values
 U.y .= Hv.y .- ∇p.y.*rD.values #./(D)
 interpolate!(Uf, U, UBCs)
+
+# a = 0.3
+# ux.values .= a*U.x + (1.0 - a)ux0
+# uy.values .= a*U.y + (1.0 - a)uy0
+# ux0 .= ux.values; uy0 .= uy.values
 
 # U.x .= ux.values
 # U.y .= uy.values
@@ -221,17 +230,29 @@ write_vtk(mesh, uy)
 
 plotly(size=(400,400), markersize=1, markerstrokewidth=1)
 scatter(x(mesh), y(mesh), ux.values, color=:red)
+scatter(x(mesh), y(mesh), uy.values, color=:red)
+
+scatter(x(mesh), y(mesh), Hv.x, color=:green)
+scatter(x(mesh), y(mesh), Hv.y, color=:green)
+scatter(x(mesh), y(mesh), divHv.values, color=:red)
+scatter(x(mesh), y(mesh), divHv.vector.x, color=:red)
+scatter(x(mesh), y(mesh), divHv.vector.y, color=:red)
+scatter(xf(mesh), yf(mesh), divHv.face_vector.x, color=:red)
+scatter(xf(mesh), yf(mesh), divHv.face_vector.y, color=:red)
+
+scatter(x(mesh), y(mesh), p.values, color=:blue)
+scatter(xf(mesh), yf(mesh), pf.values, color=:red)
+
+scatter(x(mesh), y(mesh), ∇p.x, color=:green)
+scatter(x(mesh), y(mesh), ∇p.y, color=:green)
+
 scatter(x(mesh), y(mesh), U.x, color=:green)
 scatter(x(mesh), y(mesh), U.y, color=:green)
-scatter(x(mesh), y(mesh), divHv.values, color=:red)
-scatter(x(mesh), y(mesh), rD.values, color=:red)
-scatter(x(mesh), y(mesh), Hv.x./D, color=:green)
-scatter(x(mesh), y(mesh), ∇p.x, color=:green)
-scatter!(x(mesh), y(mesh), p.values, color=:blue)
-scatter(xf(mesh), yf(mesh), divHv.face_vector.x, color=:red)
 scatter(xf(mesh), yf(mesh), Uf.x, color=:red)
 scatter(xf(mesh), yf(mesh), Uf.y, color=:red)
-scatter(xf(mesh), yf(mesh), pf.values, color=:red)
+
+scatter(x(mesh), y(mesh), D, color=:red)
+scatter(x(mesh), y(mesh), rD.values, color=:red)
 scatter(xf(mesh), yf(mesh), rDf.values, color=:red)
 
 

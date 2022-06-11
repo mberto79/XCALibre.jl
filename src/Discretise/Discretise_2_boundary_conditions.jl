@@ -14,8 +14,10 @@ end
 @inline (bc::Neumann)(
     term::Laplacian{Linear, T}, A, b, cellID, cell, face, fID
     ) where T<:AbstractFloat = begin
+    phi = term.phi 
+    values = phi.values
     A[cellID,cellID] += 0.0*term.sign[1]*(-term.J*face.area/face.delta)
-    b[cellID] += 0.0*term.sign[1]*(-term.J*face.area/face.delta*bc.value)
+    b[cellID] += 0.0*term.sign[1]*(-term.J*face.area/face.delta*values[cellID])
     nothing
 end
 
@@ -33,8 +35,10 @@ end
 @inline (bc::Neumann)(
     term::Laplacian{Linear, T}, A, b, cellID, cell, face, fID
     ) where T<:AbstractScalarField = begin
+    phi = term.phi 
+    values = phi.values
     A[cellID,cellID] += 0.0*term.sign[1]*(-term.J(fID)*face.area/face.delta)
-    b[cellID] += 0.0*term.sign[1]*(-term.J(fID)*face.area/face.delta*bc.value)
+    b[cellID] += 0.0*term.sign[1]*(-term.J(fID)*face.area/face.delta*values[cellID])
     nothing
 end
 
@@ -52,8 +56,8 @@ end
     term::Divergence{Linear, SVector{3, Float64}}, A, b, cellID, cell, face, fID
     ) = begin
     ap = term.sign[1]*(term.J⋅face.normal*face.area)
-    A[cellID,cellID] += ap*1.0 # 2.0*ap
-    b[cellID] += -ap*0.0
+    A[cellID,cellID] += ap*0.5 # 2.0*ap
+    b[cellID] += -ap*0.5
     nothing
 end
 

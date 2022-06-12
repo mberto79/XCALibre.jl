@@ -126,17 +126,14 @@ pf = FaceScalarField(mesh)
 
 x_momentum_eqn = Equation(mesh)
 x_momentum_model = create_model(ConvectionDiffusion, Uf, nu, ux, ∇p.x)
-# ux_boundary_update! = generate_boundary_conditions!(mesh, x_momentum_model, uxBCs)
 generate_boundary_conditions!(:ux_boundary_update!, mesh, x_momentum_model, uxBCs)
 
 y_momentum_eqn = Equation(mesh)
 y_momentum_model = create_model(ConvectionDiffusion, Uf, nu, uy, ∇p.y)
-# uy_boundary_update! = generate_boundary_conditions!(mesh, y_momentum_model, uyBCs)
 generate_boundary_conditions!(:uy_boundary_update!, mesh, y_momentum_model, uyBCs)
 
 pressure_eqn = Equation(mesh)
 pressure_correction = create_model(Diffusion, rDf, p, divHv.values) #.*D)
-# p_boundary_update! = generate_boundary_conditions!(mesh, pressure_correction, pBCs)
 generate_boundary_conditions!(:p_boundary_update!, mesh, pressure_correction, pBCs)
 
 set!(p, x, y) = begin
@@ -158,26 +155,20 @@ ux0 .= velocity[1]
 uy0 = zeros(length(ux.values))
 uy0 .= velocity[2]
 p0 = zeros(length(p.values))
-# cvols = volumes(mesh)
 for i ∈ 1:500
 
 println("Iteration ", i)
 
 source!(∇p, pf, p, pBCs)
-# grad!(∇p, pf, p, pBCs)
 ∇p.x .*= -1.0
 ∇p.y .*= -1.0
 
 discretise!(x_momentum_eqn, x_momentum_model)
-# generate_boundary_conditions!(mesh, x_momentum_model, uxBCs)
-# update_boundaries!(x_momentum_eqn, x_momentum_model, uxBCs)
 Discretise.ux_boundary_update!(x_momentum_eqn, x_momentum_model, uxBCs)
 run!(x_momentum_eqn, x_momentum_model, uxBCs, setup)
 # write_vtk(mesh, ux)
 
 discretise!(y_momentum_eqn, y_momentum_model)
-# generate_boundary_conditions!(mesh, y_momentum_model, uyBCs)
-# update_boundaries!(y_momentum_eqn, y_momentum_model, uyBCs)
 Discretise.uy_boundary_update!(y_momentum_eqn, y_momentum_model, uyBCs)
 run!(y_momentum_eqn, y_momentum_model, uyBCs, setup)
 # write_vtk(mesh, uy)
@@ -197,11 +188,8 @@ x_momentum_eqn.b .-= ∇p.x
 y_momentum_eqn.b .-= ∇p.y
 H!(Hv, U, x_momentum_eqn, y_momentum_eqn)
 div!(divHv, UBCs) 
-# divHv.values .*= cvols
 
 discretise!(pressure_eqn, pressure_correction)
-# generate_boundary_conditions!(mesh, pressure_correction, pBCs)
-# update_boundaries!(pressure_eqn, pressure_correction, pBCs)
 Discretise.p_boundary_update!(pressure_eqn, pressure_correction, pBCs)
 run!(pressure_eqn, pressure_correction, pBCs, setup)
 # write_vtk(mesh, p)
@@ -210,12 +198,10 @@ run!(pressure_eqn, pressure_correction, pBCs, setup)
 p.values .= β*p.values + (1.0 - β)*p0
 p0 .= p.values
 
-source!(∇p, pf, p, pBCs) # something off with gradient calculation!
-# ux.values .= Hv.x .- ∇p.x.*rD.values
-# uy.values .= Hv.y .- ∇p.y.*rD.values #./(D)
+source!(∇p, pf, p, pBCs) 
 
 U.x .= Hv.x .- ∇p.x.*rD.values
-U.y .= Hv.y .- ∇p.y.*rD.values #./(D)
+U.y .= Hv.y .- ∇p.y.*rD.values
 interpolate!(Uf, U, UBCs)
 
 # a = 0.3
@@ -228,10 +214,6 @@ interpolate!(Uf, U, UBCs)
 
 # ux.values .= U.x
 # uy.values .= U.y
-
-# clear!(ux)
-# clear!(uy)
-
 
 end
 # ux.values .= U.x

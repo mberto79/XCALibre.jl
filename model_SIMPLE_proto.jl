@@ -104,7 +104,8 @@ pBCs = (
 setup = SolverSetup(
     iterations  = 100,
     solver      = GmresSolver,
-    tolerance   = 1e-5,
+    tolerance   = 1e-6,
+    # tolerance   = 1e-01,
     relax       = 0.9,
     itmax       = 100,
     rtol        = 1e-3
@@ -113,10 +114,13 @@ setup = SolverSetup(
 mesh = generate_mesh()
 U = VectorField(mesh)
 Uf = FaceVectorField(mesh)
-Hv = VectorField(mesh)
-divHv = Div(Hv)
+
 ux = ScalarField(mesh)
 uy = ScalarField(mesh)
+
+Hv = VectorField(mesh)
+divHv = Div(Hv)
+
 rD = ScalarField(mesh)
 rDf = FaceScalarField(mesh)
 
@@ -155,7 +159,11 @@ ux0 .= velocity[1]
 uy0 = zeros(length(ux.values))
 uy0 .= velocity[2]
 p0 = zeros(length(p.values))
-for i ∈ 1:500
+B = zeros(length(mesh.cells),3)
+V = zeros(length(mesh.cells),3)
+H = zeros(length(mesh.cells),3)
+
+@time for i ∈ 1:20
 
 println("Iteration ", i)
 
@@ -186,7 +194,7 @@ rD.values .= 1.0./D
 interpolate!(rDf, rD)
 x_momentum_eqn.b .-= ∇p.x
 y_momentum_eqn.b .-= ∇p.y
-H!(Hv, U, x_momentum_eqn, y_momentum_eqn)
+H!(Hv, U, x_momentum_eqn, y_momentum_eqn, B, V, H)
 div!(divHv, UBCs) 
 
 discretise!(pressure_eqn, pressure_correction)
@@ -204,22 +212,13 @@ U.x .= Hv.x .- ∇p.x.*rD.values
 U.y .= Hv.y .- ∇p.y.*rD.values
 interpolate!(Uf, U, UBCs)
 
-# a = 0.3
-# ux.values .= a*U.x + (1.0 - a)ux0
-# uy.values .= a*U.y + (1.0 - a)uy0
-# ux0 .= ux.values; uy0 .= uy.values
-
-# U.x .= ux.values
-# U.y .= uy.values
-
 # ux.values .= U.x
 # uy.values .= U.y
 
-end
-# ux.values .= U.x
-# uy.values .= U.y
+end # 4.6s, 4.4s
 write_vtk(mesh, ux)
 write_vtk(mesh, uy)
+write_vtk(mesh, p)
 
 
 plotly(size=(400,400), markersize=1, markerstrokewidth=1)
@@ -248,13 +247,3 @@ scatter(xf(mesh), yf(mesh), Uf.y, color=:red)
 scatter(x(mesh), y(mesh), D, color=:red)
 scatter(x(mesh), y(mesh), rD.values, color=:red)
 scatter(xf(mesh), yf(mesh), rDf.values, color=:red)
-
-
-function volumes(mesh)
-    (; cells) = mesh
-    vols = Float64[]
-    for cell ∈ cells 
-        push!(vols, cell.volume)
-    end
-    vols
-end

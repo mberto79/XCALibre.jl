@@ -77,17 +77,25 @@ function boundary_index(mesh::Mesh2{I,F}, name::Symbol) where {I,F}
     end
 end
 
-function H!(Hv::VectorField, v::VectorField{I,F}, xeqn, yeqn) where {I,F}
+function H!(Hv::VectorField, v::VectorField{I,F}, xeqn, yeqn, B, V, H) where {I,F}
     (; x, y, z) = Hv 
     Ax = xeqn.A;  Ay = yeqn.A
-    bx = xeqn.b; by = yeqn.b; bz = zeros(length(bx))
+    bx = xeqn.b; by = yeqn.b; # bz = zeros(length(bx))
 
     D = @view Ax[diagind(Ax)]
     Di = Diagonal(D)
 
-    B = [bx by bz]
+    # B = [bx by bz]
+    B[:,1] .= bx
+    B[:,2] .= by 
+    # B[:,3] .= bz
 
-    H = ( B .- (Ax .- Di) * [v.x v.y bz] )./D
+    V[:,1] .= v.x
+    V[:,2] .= v.y
+
+    # H = ( B .- (Ax .- Di) * V )./D
+    H .= ( B .- (Ax .- Di) * V )./D
+    
     x .= @view H[:,1]
     y .= @view H[:,2]
     z .= @view H[:,3]

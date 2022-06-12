@@ -13,12 +13,11 @@ using FVM_1D.VTK
 using Krylov
 
 function generate_mesh()
-    # n_vertical      = 400 #20 #400
-    # n_horizontal1   = 500 #25 #500
-    # n_horizontal2   = 400 #20 #800
+    # n_vertical      = 20 
+    # n_horizontal    = 100 
 
-    n_vertical      = 20 #400
-    n_horizontal    = 50 #500
+    n_vertical      = 40 
+    n_horizontal    = 200 
 
     p1 = Point(0.0,0.0,0.0)
     p2 = Point(0.5,0.0,0.0)
@@ -75,22 +74,24 @@ UBCs = (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:bottom, [0.0, 0.0, 0.0]),
-    Dirichlet(:top, [0.0, 0.0, 0.0])
+    # Dirichlet(:top, [0.0, 0.0, 0.0])
+    Neumann(:top, 0.0)
 )
 
 uxBCs = (
     Dirichlet(:inlet, velocity[1]),
     Neumann(:outlet, 0.0),
-    # Dirichlet(:outlet, 0.0),
     Dirichlet(:bottom, 0.0),
-    Dirichlet(:top, 0.0)
+    # Dirichlet(:top, 0.0)
+    Neumann(:top, 0.0)
 )
 
 uyBCs = (
     Dirichlet(:inlet, velocity[2]),
     Neumann(:outlet, 0.0),
     Dirichlet(:bottom, 0.0),
-    Dirichlet(:top, 0.0)
+    # Dirichlet(:top, 0.0)
+    Neumann(:top, 0.0)
 )
 
 pBCs = (
@@ -125,12 +126,18 @@ pf = FaceScalarField(mesh)
 
 x_momentum_eqn = Equation(mesh)
 x_momentum_model = create_model(ConvectionDiffusion, Uf, nu, ux, ∇p.x)
+# ux_boundary_update! = generate_boundary_conditions!(mesh, x_momentum_model, uxBCs)
+generate_boundary_conditions!(:ux_boundary_update!, mesh, x_momentum_model, uxBCs)
 
 y_momentum_eqn = Equation(mesh)
 y_momentum_model = create_model(ConvectionDiffusion, Uf, nu, uy, ∇p.y)
+# uy_boundary_update! = generate_boundary_conditions!(mesh, y_momentum_model, uyBCs)
+generate_boundary_conditions!(:uy_boundary_update!, mesh, y_momentum_model, uyBCs)
 
 pressure_eqn = Equation(mesh)
 pressure_correction = create_model(Diffusion, rDf, p, divHv.values) #.*D)
+# p_boundary_update! = generate_boundary_conditions!(mesh, pressure_correction, pBCs)
+generate_boundary_conditions!(:p_boundary_update!, mesh, pressure_correction, pBCs)
 
 set!(p, x, y) = begin
     # inlet_value = 0.0 #2
@@ -152,7 +159,9 @@ uy0 = zeros(length(ux.values))
 uy0 .= velocity[2]
 p0 = zeros(length(p.values))
 # cvols = volumes(mesh)
-for i ∈ 1:50
+for i ∈ 1:500
+
+println("Iteration ", i)
 
 source!(∇p, pf, p, pBCs)
 # grad!(∇p, pf, p, pBCs)
@@ -160,16 +169,18 @@ source!(∇p, pf, p, pBCs)
 ∇p.y .*= -1.0
 
 discretise!(x_momentum_eqn, x_momentum_model)
-generate_boundary_conditions!(mesh, x_momentum_model, uxBCs)
-update_boundaries!(x_momentum_eqn, x_momentum_model, uxBCs)
+# generate_boundary_conditions!(mesh, x_momentum_model, uxBCs)
+# update_boundaries!(x_momentum_eqn, x_momentum_model, uxBCs)
+Discretise.ux_boundary_update!(x_momentum_eqn, x_momentum_model, uxBCs)
 run!(x_momentum_eqn, x_momentum_model, uxBCs, setup)
-write_vtk(mesh, ux)
+# write_vtk(mesh, ux)
 
 discretise!(y_momentum_eqn, y_momentum_model)
-generate_boundary_conditions!(mesh, y_momentum_model, uyBCs)
-update_boundaries!(y_momentum_eqn, y_momentum_model, uyBCs)
+# generate_boundary_conditions!(mesh, y_momentum_model, uyBCs)
+# update_boundaries!(y_momentum_eqn, y_momentum_model, uyBCs)
+Discretise.uy_boundary_update!(y_momentum_eqn, y_momentum_model, uyBCs)
 run!(y_momentum_eqn, y_momentum_model, uyBCs, setup)
-write_vtk(mesh, uy)
+# write_vtk(mesh, uy)
 
 # α = 0.2
 # U.x .= α*ux.values + (1.0 - α)*U.x
@@ -189,10 +200,11 @@ div!(divHv, UBCs)
 # divHv.values .*= cvols
 
 discretise!(pressure_eqn, pressure_correction)
-generate_boundary_conditions!(mesh, pressure_correction, pBCs)
-update_boundaries!(pressure_eqn, pressure_correction, pBCs)
+# generate_boundary_conditions!(mesh, pressure_correction, pBCs)
+# update_boundaries!(pressure_eqn, pressure_correction, pBCs)
+Discretise.p_boundary_update!(pressure_eqn, pressure_correction, pBCs)
 run!(pressure_eqn, pressure_correction, pBCs, setup)
-write_vtk(mesh, p)
+# write_vtk(mesh, p)
 
 β = 0.4
 p.values .= β*p.values + (1.0 - β)*p0
@@ -241,7 +253,7 @@ scatter(xf(mesh), yf(mesh), divHv.face_vector.x, color=:red)
 scatter(xf(mesh), yf(mesh), divHv.face_vector.y, color=:red)
 
 scatter(x(mesh), y(mesh), p.values, color=:blue)
-scatter(xf(mesh), yf(mesh), pf.values, color=:red)
+scatter!(xf(mesh), yf(mesh), pf.values, color=:red)
 
 scatter(x(mesh), y(mesh), ∇p.x, color=:green)
 scatter(x(mesh), y(mesh), ∇p.y, color=:green)

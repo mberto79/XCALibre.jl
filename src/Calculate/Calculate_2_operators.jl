@@ -7,6 +7,7 @@ end
 
 function grad!(grad::Grad{Linear,I,F}, phif, phi, BCs; source=false) where {I,F}
     interpolate!(get_scheme(grad), phif, phi, BCs)
+    # interpolate!(phif, phi)
     green_gauss!(grad, phif; source)
     # correct phif field 
     if grad.correct
@@ -69,7 +70,7 @@ function green_gauss!(grad::Grad{S,I,F}, phif; source=false) where {S,I,F}
         (; ownerCells, area, normal) = face
         cID = ownerCells[1] 
         (; volume) = cells[cID]
-        res = phif.values[i]*(area*normal)
+        res = values[i]*(area*normal)
         if !source
             res /= volume
         end

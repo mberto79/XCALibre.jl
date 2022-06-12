@@ -2,7 +2,7 @@ export generate_boundary_conditions!, update_boundaries!
 export boundary_index
 export H!
 
-function generate_boundary_conditions!(mesh::Mesh2{I,F}, model, BCs) where {I,F}
+function generate_boundary_conditions!(name, mesh::Mesh2{I,F}, model, BCs) where {I,F}
     nBCs = length(BCs)
     nterms = length(model.terms)
     indices = get_boundary_indices(mesh, BCs)
@@ -40,7 +40,8 @@ function generate_boundary_conditions!(mesh::Mesh2{I,F}, model, BCs) where {I,F}
     end
 
     func_template = quote 
-        function update_boundaries!(
+        # function update_boundaries!(
+        function $name(
             equation::Equation{I,F}, model, BCs) where {I,F}
             (; A, b, mesh) = equation
             (; boundaries, faces, cells) = mesh

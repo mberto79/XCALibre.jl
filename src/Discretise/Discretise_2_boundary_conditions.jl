@@ -56,8 +56,8 @@ end
     term::Divergence{Linear, SVector{3, Float64}}, A, b, cellID, cell, face, fID
     ) = begin
     ap = term.sign[1]*(term.J⋅face.normal*face.area)
-    A[cellID,cellID] += ap*0.5 # 2.0*ap
-    b[cellID] += -ap*0.5
+    A[cellID,cellID] += ap # 2.0*ap
+    b[cellID] += 0.0*-ap*0.5
     nothing
 end
 
@@ -77,7 +77,7 @@ end
     phi = term.phi 
     values = phi.values
     ap = term.sign[1]*(term.J(fID)⋅face.normal*face.area)
-    A[cellID,cellID] += 0.5*ap # 2.0*ap
-    b[cellID] += -ap*values[cellID]*0.5
+    A[cellID,cellID] += ap # 2.0*ap
+    b[cellID] += 0*-ap*values[cellID]*0.5
     nothing
 end

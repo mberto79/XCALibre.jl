@@ -9,7 +9,8 @@ function interpolate!(::Type{Linear}, phif::FaceScalarField{I,F}, phi, BCs) wher
     (; cells, faces, boundaries) = mesh
     for fi ∈ start:length(faces)
         (; ownerCells) = faces[fi]
-        w, df = weight(Linear, cells, faces, fi)
+        # w, df = weight(Linear, cells, faces, fi) # need to check is correct
+        w = 0.5
         cID1 = ownerCells[1]
         cID2 = ownerCells[2]
         phi1 = values[cID1]
@@ -26,7 +27,7 @@ end
 
 function correct_boundary!(
     BC::Dirichlet, phif::FaceScalarField{I,F}, phi, boundary, faces) where {I,F}
-    (;facesID, cellsID) = boundary
+    (; facesID, cellsID) = boundary
     for fID ∈ facesID
         phif.values[fID] = BC.value 
     end
@@ -39,7 +40,7 @@ function correct_boundary!(
         fID = facesID[fi]
         cID = cellsID[fi]
         (; normal, e, delta) = faces[fID]
-        phif.values[fID] = phi.values[cID] + BC.value*delta*(normal⋅e)
+        phif.values[fID] = phi.values[cID] #+ BC.value*delta*(normal⋅e)
     end
 end
 

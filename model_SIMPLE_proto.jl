@@ -182,7 +182,7 @@ H = zeros(length(mesh.cells),3)
 ############################
 #############################
 
-@time for i ∈ 1:200
+@time for i ∈ 1:10
 
 println("Iteration ", i)
 
@@ -241,8 +241,8 @@ function explicit_relaxation!(phi, phi0, alpha)
 end
 
 function correct_velocity!(U, ∇p, rD)
-    @. U.x = Hv.x - ∇p.x #*rD.values
-    @. U.y = Hv.y - ∇p.y #*rD.values
+    @. U.x = Hv.x - ∇p.x*rD.values
+    @. U.y = Hv.y - ∇p.y*rD.values
     nothing
 end
 

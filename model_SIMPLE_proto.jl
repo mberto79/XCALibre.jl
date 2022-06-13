@@ -103,22 +103,22 @@ pBCs = (
 
 setup = SolverSetup(
     iterations  = 100,
-    solver      = GmresSolver,
+    solver      = BicgstabSolver,
     tolerance   = 1e-6,
     # tolerance   = 1e-01,
     relax       = 1.0,
     itmax       = 100,
-    rtol        = 1e-3
+    rtol        = 1e-4
 )
 
 setup_p = SolverSetup(
     iterations  = 100,
-    solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
+    solver      = BicgstabSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
     tolerance   = 1e-6,
     # tolerance   = 1e-01,
     relax       = 1.0,
     itmax       = 100,
-    rtol        = 1e-3
+    rtol        = 1e-4
 )
 
 #SymmlqSolver, MinresSolver - did not work!
@@ -182,7 +182,7 @@ H = zeros(length(mesh.cells),3)
 ############################
 #############################
 
-@time for i ∈ 1:20
+@time for i ∈ 1:200
 
 println("Iteration ", i)
 
@@ -214,7 +214,7 @@ Discretise.p_boundary_update!(pressure_eqn, pressure_correction, pBCs)
 println("Solving pressure correction")
 run!(pressure_eqn, pressure_correction, pBCs, setup_p, precondition=true)
 
-explicit_relaxation!(p, p0, 0.4)
+explicit_relaxation!(p, p0, 0.3)
 
 source!(∇p, pf, p, pBCs) 
 
@@ -241,8 +241,8 @@ function explicit_relaxation!(phi, phi0, alpha)
 end
 
 function correct_velocity!(U, ∇p, rD)
-    @. U.x = Hv.x - ∇p.x*rD.values
-    @. U.y = Hv.y - ∇p.y*rD.values
+    @. U.x = Hv.x - ∇p.x #*rD.values
+    @. U.y = Hv.y - ∇p.y #*rD.values
     nothing
 end
 

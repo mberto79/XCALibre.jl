@@ -94,8 +94,8 @@ function run!(
     solver_alloc = solver(A, b)
 
     if precondition
-        F = ilu(A, τ = 0.001)
-        # F = ilu0(A)
+        # F = ilu(A, τ = 0.001)
+        F = ilu0(A)
         # Definition of linear operators to reduce allocations during iterations
         opP = LinearOperator(Float64, A.m, A.n, false, false, (y, v) -> ldiv!(y, F, v))
     else

@@ -66,7 +66,7 @@ function create_model(::Type{Diffusion}, J, phi, S)
     return model
 end
 
-velocity = [0.5, 0.0, 0.0]
+velocity = [1.0, 0.0, 0.0]
 nu = 0.001
 Re = velocity[1]*0.1/nu
 
@@ -182,7 +182,7 @@ H = zeros(length(mesh.cells),3)
 ############################
 #############################
 
-@time for i ∈ 1:10
+@time for i ∈ 1:200
 
 println("Iteration ", i)
 
@@ -214,7 +214,7 @@ Discretise.p_boundary_update!(pressure_eqn, pressure_correction, pBCs)
 println("Solving pressure correction")
 run!(pressure_eqn, pressure_correction, pBCs, setup_p, precondition=true)
 
-explicit_relaxation!(p, p0, 0.3)
+explicit_relaxation!(p, p0, 0.4)
 
 source!(∇p, pf, p, pBCs) 
 
@@ -267,8 +267,8 @@ scatter(x(mesh), y(mesh), Hv.y, color=:green)
 scatter(x(mesh), y(mesh), divHv.values, color=:red)
 scatter(x(mesh), y(mesh), divHv.vector.x, color=:red)
 scatter(x(mesh), y(mesh), divHv.vector.y, color=:red)
-scatter(xf(mesh), yf(mesh), divHv.face_vector.x, color=:red)
-scatter(xf(mesh), yf(mesh), divHv.face_vector.y, color=:red)
+scatter!(xf(mesh), yf(mesh), divHv.face_vector.x, color=:blue)
+scatter(xf(mesh), yf(mesh), divHv.face_vector.y, color=:blue)
 
 scatter(x(mesh), y(mesh), p.values, color=:blue)
 scatter!(xf(mesh), yf(mesh), pf.values, color=:red)
@@ -281,6 +281,5 @@ scatter(x(mesh), y(mesh), U.y, color=:green)
 scatter(xf(mesh), yf(mesh), Uf.x, color=:red)
 scatter(xf(mesh), yf(mesh), Uf.y, color=:red)
 
-scatter(x(mesh), y(mesh), D, color=:red)
 scatter(x(mesh), y(mesh), rD.values, color=:red)
 scatter(xf(mesh), yf(mesh), rDf.values, color=:red)

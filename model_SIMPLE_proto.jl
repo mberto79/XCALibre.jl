@@ -67,31 +67,31 @@ function create_model(::Type{Diffusion}, J, phi, S)
 end
 
 velocity = [0.5, 0.0, 0.0]
-nu = 0.01
+nu = 0.001
 Re = velocity[1]*0.1/nu
 
 UBCs = ( 
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:bottom, [0.0, 0.0, 0.0]),
-    # Dirichlet(:top, [0.0, 0.0, 0.0])
-    Neumann(:top, 0.0)
+    Dirichlet(:top, [0.0, 0.0, 0.0])
+    # Neumann(:top, 0.0)
 )
 
 uxBCs = (
     Dirichlet(:inlet, velocity[1]),
     Neumann(:outlet, 0.0),
     Dirichlet(:bottom, 0.0),
-    # Dirichlet(:top, 0.0)
-    Neumann(:top, 0.0)
+    Dirichlet(:top, 0.0)
+    # Neumann(:top, 0.0)
 )
 
 uyBCs = (
     Dirichlet(:inlet, velocity[2]),
     Neumann(:outlet, 0.0),
     Dirichlet(:bottom, 0.0),
-    # Dirichlet(:top, 0.0)
-    Neumann(:top, 0.0)
+    Dirichlet(:top, 0.0)
+    # Neumann(:top, 0.0)
 )
 
 pBCs = (
@@ -106,17 +106,33 @@ setup = SolverSetup(
     solver      = GmresSolver,
     tolerance   = 1e-6,
     # tolerance   = 1e-01,
-    relax       = 0.9,
+    relax       = 1.0,
     itmax       = 100,
     rtol        = 1e-3
 )
 
+setup_p = SolverSetup(
+    iterations  = 100,
+    solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
+    tolerance   = 1e-6,
+    # tolerance   = 1e-01,
+    relax       = 1.0,
+    itmax       = 100,
+    rtol        = 1e-3
+)
+
+#SymmlqSolver, MinresSolver - did not work!
+
 mesh = generate_mesh()
-U = VectorField(mesh)
-Uf = FaceVectorField(mesh)
 
 ux = ScalarField(mesh)
 uy = ScalarField(mesh)
+
+U = VectorField(mesh)
+# U = VectorField(ux.values, uy.values, zeros(eltype(ux.values), length(ux.values)), mesh)
+Uf = FaceVectorField(mesh)
+
+
 
 Hv = VectorField(mesh)
 divHv = Div(Hv)
@@ -163,63 +179,84 @@ B = zeros(length(mesh.cells),3)
 V = zeros(length(mesh.cells),3)
 H = zeros(length(mesh.cells),3)
 
+############################
+#############################
+
 @time for i ∈ 1:20
 
 println("Iteration ", i)
 
 source!(∇p, pf, p, pBCs)
-∇p.x .*= -1.0
-∇p.y .*= -1.0
+negative_vector_source!(∇p)
+# ∇p.x .*= -1.0
+# ∇p.y .*= -1.0
 
 discretise!(x_momentum_eqn, x_momentum_model)
 Discretise.ux_boundary_update!(x_momentum_eqn, x_momentum_model, uxBCs)
+println("Solving x-momentum")
 run!(x_momentum_eqn, x_momentum_model, uxBCs, setup)
-# write_vtk(mesh, ux)
 
 discretise!(y_momentum_eqn, y_momentum_model)
 Discretise.uy_boundary_update!(y_momentum_eqn, y_momentum_model, uyBCs)
+println("Solving y-momentum")
 run!(y_momentum_eqn, y_momentum_model, uyBCs, setup)
-# write_vtk(mesh, uy)
 
-# α = 0.2
-# U.x .= α*ux.values + (1.0 - α)*U.x
-# U.y .= α*uy.values + (1.0 - α)*U.y# make U.x a reference to ux.values etc.
-
-U.x .= ux.values
-U.y .= uy.values
-
-
-D = @view x_momentum_eqn.A[diagind(x_momentum_eqn.A)]
-rD.values .= 1.0./D
+inverse_diagonal!(rD, x_momentum_eqn)
 interpolate!(rDf, rD)
-x_momentum_eqn.b .-= ∇p.x
-y_momentum_eqn.b .-= ∇p.y
+remove_pressure_source!(x_momentum_eqn, y_momentum_eqn)
+@. U.x = ux.values 
+@. U.y = uy.values
 H!(Hv, U, x_momentum_eqn, y_momentum_eqn, B, V, H)
 div!(divHv, UBCs) 
 
 discretise!(pressure_eqn, pressure_correction)
 Discretise.p_boundary_update!(pressure_eqn, pressure_correction, pBCs)
-run!(pressure_eqn, pressure_correction, pBCs, setup)
-# write_vtk(mesh, p)
+println("Solving pressure correction")
+run!(pressure_eqn, pressure_correction, pBCs, setup_p, precondition=true)
 
-β = 0.4
-p.values .= β*p.values + (1.0 - β)*p0
-p0 .= p.values
+explicit_relaxation!(p, p0, 0.4)
 
 source!(∇p, pf, p, pBCs) 
 
-U.x .= Hv.x .- ∇p.x.*rD.values
-U.y .= Hv.y .- ∇p.y.*rD.values
+correct_velocity!(U, ∇p, rD)
 interpolate!(Uf, U, UBCs)
-
-# ux.values .= U.x
-# uy.values .= U.y
+@. ux.values = U.x
+@. uy.values = U.y
 
 end # 4.6s, 4.4s
 write_vtk(mesh, ux)
 write_vtk(mesh, uy)
 write_vtk(mesh, p)
 
+function inverse_diagonal!(rD::ScalarField, eqn)
+    D = @view eqn.A[diagind(eqn.A)]
+    rD.values .= 1.0./D
+    nothing
+end
+
+function explicit_relaxation!(phi, phi0, alpha)
+    @. phi.values = alpha*phi.values + (1.0 - alpha)*phi0
+    @. phi0 = phi.values
+    nothing
+end
+
+function correct_velocity!(U, ∇p, rD)
+    @. U.x = Hv.x - ∇p.x*rD.values
+    @. U.y = Hv.y - ∇p.y*rD.values
+    nothing
+end
+
+function negative_vector_source!(∇p)
+    ∇p.x .*= -1.0
+    ∇p.y .*= -1.0
+    nothing
+end
+
+function remove_pressure_source!(x_momentum_eqn, y_momentum_eqn)
+    @. x_momentum_eqn.b -= ∇p.x
+    @. y_momentum_eqn.b -= ∇p.y
+    nothing
+end
 
 plotly(size=(400,400), markersize=1, markerstrokewidth=1)
 scatter(x(mesh), y(mesh), ux.values, color=:red)

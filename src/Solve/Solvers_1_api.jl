@@ -80,7 +80,7 @@ function run_old!(
 end
 
 function run!(
-    equation::Equation{Ti,Tf}, phiModel, BCs, setup; correct_term=nothing
+    equation::Equation{Ti,Tf}, phiModel, BCs, setup; correct_term=nothing, precondition=true
     ) where {Ti,Tf}
     
     equation.b .+= phiModel.sources.source1
@@ -90,12 +90,17 @@ function run!(
     (; phi) = phiModel.terms.term1
     (; values, mesh) = phi
 
-    solver_alloc = solver(A, b)
-    F = ilu(A, τ = 0.001)
-    
-    # Definition of linear operators to reduce allocations during iterations
-    opP = LinearOperator(Float64, A.m, A.n, false, false, (y, v) -> ldiv!(y, F, v))
     opA = LinearOperator(A)
+    solver_alloc = solver(A, b)
+
+    if precondition
+        F = ilu(A, τ = 0.001)
+        # F = ilu0(A)
+        # Definition of linear operators to reduce allocations during iterations
+        opP = LinearOperator(Float64, A.m, A.n, false, false, (y, v) -> ldiv!(y, F, v))
+    else
+        opP = I
+    end
 
     if correct_term !== nothing 
         bb      = copy(b)
@@ -131,8 +136,8 @@ function run!(
             res = normR/normB
         end
         if res <= tolerance
-            println("Residual: ", res)
-            println("Converged in ", i, " iterations")
+            println("Converged in ", i, " iterations. ", "Residual: ", res)
+            println("")
             break
         end
         # println("Residual: ", res)

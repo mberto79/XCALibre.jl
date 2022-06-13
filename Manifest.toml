@@ -264,6 +264,12 @@ git-tree-sha1 = "129acf094d168394e80ee1dc4bc06ec835e510a3"
 uuid = "2e76f6c2-a576-52d4-95c1-20adfe4de566"
 version = "2.8.1+1"
 
+[[deps.ILUZero]]
+deps = ["LinearAlgebra", "SparseArrays"]
+git-tree-sha1 = "b007cfc7f9bee9a958992d2301e9c5b63f332a90"
+uuid = "88f59080-6952-5380-9ea5-54057fb9a43f"
+version = "0.2.0"
+
 [[deps.IncompleteLU]]
 deps = ["LinearAlgebra", "SparseArrays"]
 git-tree-sha1 = "a22b92ffedeb499383720dfedcd473deb9608b62"

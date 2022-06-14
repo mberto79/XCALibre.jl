@@ -11,6 +11,8 @@ using FVM_1D.Solvers
 using FVM_1D.VTK
 
 using Krylov
+using ILUZero
+using IncompleteLU
 
 function generate_mesh()
     # n_vertical      = 20 
@@ -67,7 +69,7 @@ function create_model(::Type{Diffusion}, J, phi, S)
 end
 
 velocity = [1.0, 0.0, 0.0]
-nu = 0.001
+nu = 1e-3
 Re = velocity[1]*0.1/nu
 
 UBCs = ( 
@@ -103,22 +105,22 @@ pBCs = (
 
 setup = SolverSetup(
     iterations  = 100,
-    solver      = BicgstabSolver,
-    tolerance   = 1e-6,
+    solver      = GmresSolver,
+    tolerance   = 1e-8,
     # tolerance   = 1e-01,
     relax       = 1.0,
     itmax       = 100,
-    rtol        = 1e-4
+    rtol        = 1e-6
 )
 
 setup_p = SolverSetup(
     iterations  = 100,
-    solver      = BicgstabSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
-    tolerance   = 1e-6,
+    solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
+    tolerance   = 1e-8,
     # tolerance   = 1e-01,
     relax       = 1.0,
     itmax       = 100,
-    rtol        = 1e-4
+    rtol        = 1e-6
 )
 
 #SymmlqSolver, MinresSolver - did not work!
@@ -143,6 +145,7 @@ rDf = FaceScalarField(mesh)
 p = ScalarField(mesh)
 pf = FaceScalarField(mesh)
 ∇p = Grad{Linear}(p)
+∇pf = FaceVectorField(mesh)
 
 x_momentum_eqn = Equation(mesh)
 x_momentum_model = create_model(ConvectionDiffusion, Uf, nu, ux, ∇p.x)
@@ -164,6 +167,7 @@ end
 
 set!(p, x(mesh), y(mesh))
 U.x .= velocity[1]; U.y .= velocity[2]
+ux.values .= velocity[1]; uy.values .= velocity[2]
 interpolate!(Uf, U, UBCs)
 
 clear!(ux)
@@ -178,37 +182,37 @@ p0 = zeros(length(p.values))
 B = zeros(length(mesh.cells),3)
 V = zeros(length(mesh.cells),3)
 H = zeros(length(mesh.cells),3)
-
+Fm = ilu(x_momentum_eqn.A, τ = 0.05) #ilu0(x_momentum_eqn.A)
+Fp = ilu(pressure_eqn.A, τ = 0.05) #ilu0(pressure_eqn.A)
 vols = volumes(mesh)
 ############################
-#############################
+############################
 
-@time for i ∈ 1:2000
+@time for i ∈ 1:100
 
 println("Iteration ", i)
 
 source!(∇p, pf, p, pBCs)
 negative_vector_source!(∇p)
-# ∇p.x .*= -1.0
-# ∇p.y .*= -1.0
 
 discretise!(x_momentum_eqn, x_momentum_model)
 Discretise.ux_boundary_update!(x_momentum_eqn, x_momentum_model, uxBCs)
 println("Solving x-momentum")
-run!(x_momentum_eqn, x_momentum_model, uxBCs, setup)
+Fm = ilu(x_momentum_eqn.A)
+run!(x_momentum_eqn, x_momentum_model, uxBCs, setup, F=Fm)
 
 discretise!(y_momentum_eqn, y_momentum_model)
 Discretise.uy_boundary_update!(y_momentum_eqn, y_momentum_model, uyBCs)
 println("Solving y-momentum")
-run!(y_momentum_eqn, y_momentum_model, uyBCs, setup)
+run!(y_momentum_eqn, y_momentum_model, uyBCs, setup, F=Fm)
 
-alpha = 0.4
+alpha = 0.9
 @. U.x = alpha*ux.values + (1.0 - alpha)*U.x
 @. U.y = alpha*uy.values + (1.0 - alpha)*U.y
 
 inverse_diagonal!(rD, x_momentum_eqn)
 interpolate!(rDf, rD)
-remove_pressure_source!(x_momentum_eqn, y_momentum_eqn)
+remove_pressure_source!(x_momentum_eqn, y_momentum_eqn, ∇p)
 H!(Hv, U, x_momentum_eqn, y_momentum_eqn, B, V, H)
 div!(divHv, UBCs) 
 # divHv.values .*= vols
@@ -216,16 +220,17 @@ div!(divHv, UBCs)
 discretise!(pressure_eqn, pressure_correction)
 Discretise.p_boundary_update!(pressure_eqn, pressure_correction, pBCs)
 println("Solving pressure correction")
-run!(pressure_eqn, pressure_correction, pBCs, setup_p, precondition=true)
+Fp = ilu(pressure_eqn.A, τ = 0.1)
+run!(pressure_eqn, pressure_correction, pBCs, setup_p, F=Fp)
 
-explicit_relaxation!(p, p0, 0.4)
+explicit_relaxation!(p, p0, 0.001)
 
 source!(∇p, pf, p, pBCs) 
 # grad!(∇p, pf, p, pBCs) 
 # negative_vector_source!(∇p)
 
-# correct_velocity!(U, ∇p, rD)
-correct_velocity!(ux, uy, ∇p, rD)
+correct_velocity!(U, Hv, ∇p, rD)
+# correct_velocity!(ux, uy, Hv, ∇p, rD)
 interpolate!(Uf, U, UBCs)
 # @. ux.values = U.x
 # @. uy.values = U.y
@@ -237,6 +242,25 @@ write_vtk(mesh, p)
 
 volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 
+function correct_boundary_Hvf!(Hvf, ux, uy, ∇pf, UBCs)
+    mesh = ux.mesh
+    for BC ∈ UBCs
+        if typeof(BC) <: Neumann
+            bi = boundary_index(mesh, BC.name)
+            boundary = mesh.boundaries[bi]
+            correct_flux_boundary!(BC, phif, phi, boundary, faces)
+        end
+    end
+end
+
+function correct_flux_boundary!(
+    BC::Neumann, phif::FaceScalarField{I,F}, phi, boundary, faces) where {I,F}
+    (; facesID, cellsID) = boundary
+    for fID ∈ facesID
+        phif.values[fID] = BC.value 
+    end
+end
+
 function inverse_diagonal!(rD::ScalarField, eqn)
     D = @view eqn.A[diagind(eqn.A)]
     rD.values .= 1.0./D
@@ -244,20 +268,20 @@ function inverse_diagonal!(rD::ScalarField, eqn)
 end
 
 function explicit_relaxation!(phi, phi0, alpha)
-    @. phi.values = alpha*phi.values + (1.0 - alpha)*phi0
+    @. phi.values = phi.values + alpha*(phi.values - phi0)
     @. phi0 = phi.values
     nothing
 end
 
-function correct_velocity!(U, ∇p, rD)
+function correct_velocity!(U, Hv, ∇p, rD)
     @. U.x = Hv.x - ∇p.x*rD.values
     @. U.y = Hv.y - ∇p.y*rD.values
     nothing
 end
 
-function correct_velocity!(ux, uy, ∇p, rD)
-    @. ux.values = Hv.x - ∇p.x #*rD.values
-    @. uy.values = Hv.y - ∇p.y #*rD.values
+function correct_velocity!(ux, uy, Hv, ∇p, rD)
+    @. ux.values = Hv.x - ∇p.x*rD.values
+    @. uy.values = Hv.y - ∇p.y*rD.values
     # @. ux.values = (Hv.x - ∇p.x)*rD.values
     # @. uy.values = (Hv.y - ∇p.y)*rD.values
     nothing
@@ -269,7 +293,7 @@ function negative_vector_source!(∇p)
     nothing
 end
 
-function remove_pressure_source!(x_momentum_eqn, y_momentum_eqn)
+function remove_pressure_source!(x_momentum_eqn, y_momentum_eqn, ∇p)
     @. x_momentum_eqn.b -= ∇p.x
     @. y_momentum_eqn.b -= ∇p.y
     nothing
@@ -280,11 +304,13 @@ scatter(x(mesh), y(mesh), ux.values, color=:red)
 scatter(x(mesh), y(mesh), uy.values, color=:red)
 
 scatter(x(mesh), y(mesh), Hv.x, color=:green)
+scatter(x(mesh), y(mesh), U.x + ∇p.x.*rD.values, color=:blue)
+
 scatter(x(mesh), y(mesh), Hv.y, color=:green)
 scatter(x(mesh), y(mesh), divHv.values, color=:red)
 scatter(x(mesh), y(mesh), divHv.vector.x, color=:red)
 scatter(x(mesh), y(mesh), divHv.vector.y, color=:red)
-scatter!(xf(mesh), yf(mesh), divHv.face_vector.x, color=:blue)
+scatter(xf(mesh), yf(mesh), divHv.face_vector.x, color=:blue)
 scatter(xf(mesh), yf(mesh), divHv.face_vector.y, color=:blue)
 
 scatter(x(mesh), y(mesh), p.values, color=:blue)

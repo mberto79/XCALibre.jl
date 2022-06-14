@@ -80,7 +80,8 @@ function run_old!(
 end
 
 function run!(
-    equation::Equation{Ti,Tf}, phiModel, BCs, setup; correct_term=nothing, precondition=true
+    equation::Equation{Ti,Tf}, phiModel, BCs, setup; 
+    correct_term=nothing, precondition=true, F=nothing
     ) where {Ti,Tf}
     
     equation.b .+= phiModel.sources.source1
@@ -95,7 +96,10 @@ function run!(
 
     if precondition
         # F = ilu(A, τ = 0.001)
-        F = ilu0(A)
+        # if F === nothing
+        #     F = ilu0(A)
+        # end
+        # ilu0!(F, A)
         # Definition of linear operators to reduce allocations during iterations
         opP = LinearOperator(Float64, A.m, A.n, false, false, (y, v) -> ldiv!(y, F, v))
     else
@@ -155,7 +159,8 @@ end
     values = phi.values
     x = solver.x
     @inbounds for i ∈ eachindex(values)
-        values[i] = (1.0 - α)*values[i] + α*x[i]
+        # values[i] = (1.0 - α)*values[i] + α*x[i]
+        values[i] = values[i] + α(values[i] - x[i])
     end
 end
 

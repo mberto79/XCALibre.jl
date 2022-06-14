@@ -78,12 +78,32 @@ function boundary_index(mesh::Mesh2{I,F}, name::Symbol) where {I,F}
 end
 
 function H!(Hv::VectorField, v::VectorField{I,F}, xeqn, yeqn, B, V, H) where {I,F}
-    (; x, y, z) = Hv 
+    (; x, y, z, mesh) = Hv 
+    (; cells, faces) = mesh
     Ax = xeqn.A;  Ay = yeqn.A
     bx = xeqn.b; by = yeqn.b; # bz = zeros(length(bx))
 
     D = @view Ax[diagind(Ax)]
     Di = Diagonal(D)
+
+    
+    for cID ∈ eachindex(cells)
+        sumx = zero(T)
+        sumy = zero(T)
+        cell = cells[cID]
+        (; neighbours) = cell
+        ap = Ax[cID, cID]
+        for nID ∈ neighbours
+            sumx += Ax[cID,nID]*v.x[nID]
+            sumy += Ax[cID,nID]*v.x[nID]
+        end
+        x[cID] = sumx 
+        y[cID] = sumy
+        z[cID] = zero(F)m
+    end
+    x[i] = 
+    y[i] =
+    z[i] = zero(F)
 
     # B = [bx by bz]
     B[:,1] .= bx
@@ -94,7 +114,7 @@ function H!(Hv::VectorField, v::VectorField{I,F}, xeqn, yeqn, B, V, H) where {I,
     V[:,2] .= v.y
 
     # H = ( B .- (Ax .- Di) * V )./D
-    H .= ( B .- (Ax .- Di) * V )./D
+    H .= ( B .- (Ax .- Di) * V ) #./D
     
     x .= @view H[:,1]
     y .= @view H[:,2]

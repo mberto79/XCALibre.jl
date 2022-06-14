@@ -179,10 +179,11 @@ B = zeros(length(mesh.cells),3)
 V = zeros(length(mesh.cells),3)
 H = zeros(length(mesh.cells),3)
 
+vols = volumes(mesh)
 ############################
 #############################
 
-@time for i ∈ 1:200
+@time for i ∈ 1:2000
 
 println("Iteration ", i)
 
@@ -201,13 +202,16 @@ Discretise.uy_boundary_update!(y_momentum_eqn, y_momentum_model, uyBCs)
 println("Solving y-momentum")
 run!(y_momentum_eqn, y_momentum_model, uyBCs, setup)
 
+alpha = 0.4
+@. U.x = alpha*ux.values + (1.0 - alpha)*U.x
+@. U.y = alpha*uy.values + (1.0 - alpha)*U.y
+
 inverse_diagonal!(rD, x_momentum_eqn)
 interpolate!(rDf, rD)
 remove_pressure_source!(x_momentum_eqn, y_momentum_eqn)
-@. U.x = ux.values 
-@. U.y = uy.values
 H!(Hv, U, x_momentum_eqn, y_momentum_eqn, B, V, H)
 div!(divHv, UBCs) 
+# divHv.values .*= vols
 
 discretise!(pressure_eqn, pressure_correction)
 Discretise.p_boundary_update!(pressure_eqn, pressure_correction, pBCs)
@@ -217,16 +221,21 @@ run!(pressure_eqn, pressure_correction, pBCs, setup_p, precondition=true)
 explicit_relaxation!(p, p0, 0.4)
 
 source!(∇p, pf, p, pBCs) 
+# grad!(∇p, pf, p, pBCs) 
+# negative_vector_source!(∇p)
 
-correct_velocity!(U, ∇p, rD)
+# correct_velocity!(U, ∇p, rD)
+correct_velocity!(ux, uy, ∇p, rD)
 interpolate!(Uf, U, UBCs)
-@. ux.values = U.x
-@. uy.values = U.y
+# @. ux.values = U.x
+# @. uy.values = U.y
 
 end # 4.6s, 4.4s
 write_vtk(mesh, ux)
 write_vtk(mesh, uy)
 write_vtk(mesh, p)
+
+volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 
 function inverse_diagonal!(rD::ScalarField, eqn)
     D = @view eqn.A[diagind(eqn.A)]
@@ -243,6 +252,14 @@ end
 function correct_velocity!(U, ∇p, rD)
     @. U.x = Hv.x - ∇p.x*rD.values
     @. U.y = Hv.y - ∇p.y*rD.values
+    nothing
+end
+
+function correct_velocity!(ux, uy, ∇p, rD)
+    @. ux.values = Hv.x - ∇p.x #*rD.values
+    @. uy.values = Hv.y - ∇p.y #*rD.values
+    # @. ux.values = (Hv.x - ∇p.x)*rD.values
+    # @. uy.values = (Hv.y - ∇p.y)*rD.values
     nothing
 end
 

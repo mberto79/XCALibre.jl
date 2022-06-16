@@ -122,6 +122,7 @@ p = ScalarField(mesh)
 
     U = VectorField(mesh)
     Uf = FaceVectorField(mesh)
+    mdot = ScalarField(mesh)
     mdotf = FaceScalarField(mesh)
     pf = FaceScalarField(mesh)
     ∇p = Grad{Linear}(p)
@@ -174,6 +175,7 @@ p = ScalarField(mesh)
         interpolate!(Uf, U)
         correct_boundaries!(Uf, U, UBCs)
         mass_flux!(mdotf, Uf)
+        div!(mdot, mdotf)
         
         source!(∇p, pf, p, pBCs)
         negative_vector_source!(∇p)
@@ -279,6 +281,7 @@ scatter(xf(mesh), yf(mesh), Uf.y, color=:red)
 scatter(x(mesh), y(mesh), rD.values, color=:red)
 scatter(xf(mesh), yf(mesh), rDf.values, color=:red)
 
+scatter(x(mesh), y(mesh), mdot.values, color=:red)
 scatter(xf(mesh), yf(mesh), mdotf.values, color=:red)
 
 

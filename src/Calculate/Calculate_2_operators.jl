@@ -44,6 +44,27 @@ function div!(div::Div{I,F}, BCs) where {I,F}
     end
 end
 
+function div!(phi::ScalarField, phif::FaceScalarField{I,F}) where {I,F}
+    (; mesh, values) = phif
+    (; cells, faces) = mesh
+
+    for ci ∈ eachindex(cells)
+        (; facesID, nsign, volume) = cells[ci]
+        phi.values[ci] = zero(F)
+        for fi ∈ eachindex(facesID)
+            fID = facesID[fi]
+            phi.values[ci] += values[fID]*nsign[fi]
+        end
+    end
+    # Add boundary faces contribution
+    nbfaces = total_boundary_faces(mesh)
+    for fID ∈ 1:nbfaces
+        cID = faces[fID].ownerCells[1]
+        # Boundary normals are correct by definition
+        phi.values[cID] += values[fID]
+    end
+end
+
 function green_gauss!(grad::Grad{S,I,F}, phif; source=false) where {S,I,F}
     (; x, y, z) = grad
     (; mesh, values) = phif

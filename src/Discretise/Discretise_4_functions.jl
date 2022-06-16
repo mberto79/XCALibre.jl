@@ -103,7 +103,7 @@ function H!(Hv::VectorField, v::VectorField{I,F}, xeqn, yeqn, B, V, H) where {I,
     nothing
 end
 
-function H_new!(Hv::VectorField, v::VectorField{I,F}, xeqn, yeqn, B, V, H) where {I,F}
+function H_new!(Hv::VectorField, v::VectorField{I,F}, xeqn, yeqn) where {I,F}
     (; x, y, z, mesh) = Hv 
     (; cells, faces) = mesh
     Ax = xeqn.A;  Ay = yeqn.A

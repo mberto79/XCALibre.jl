@@ -140,8 +140,8 @@ function run!(
             res = normR/normB
         end
         if res <= tolerance
-            println("Converged in ", i, " iterations. ", "Residual: ", res)
-            println("")
+            # println("Converged in ", i, " iterations. ", "Residual: ", res)
+            # println("")
             break
         end
         # println("Residual: ", res)

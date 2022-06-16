@@ -1,4 +1,5 @@
 export interpolate!
+export correct_boundaries!
 
 # Scalar face interpolation
 
@@ -217,7 +218,7 @@ function correct_boundary_generic!(
     end
 end
 
-function interpolate!(phif::FaceScalarField, phi::ScalarField)
+function interpolate!(phif::FaceScalarField{I,F}, phi::ScalarField{I,F}) where {I,F}
     vals = phi.values 
     fvals = phif.values
     mesh = phi.mesh 
@@ -226,6 +227,74 @@ function interpolate!(phif::FaceScalarField, phi::ScalarField)
         (; weight, ownerCells) = faces[fi]
         phi1 = vals[ownerCells[1]]
         phi2 = vals[ownerCells[2]]
-        fvals[fi] = weight*phi1 + (1.0 - weight)*phi2
+        fvals[fi] = weight*phi1 + (1.0 - weight)*phi2 # check weight is used correctly!
+    end
+end
+
+function interpolate!(phif::FaceVectorField{I,F}, phi::VectorField{I,F}) where {I,F}
+    (; x, y, z) = phif # must extend to 3D
+    mesh = phi.mesh 
+    faces = mesh.faces
+    for fID ∈ eachindex(faces)
+        (; weight, ownerCells) = faces[fID]
+        cID1 = ownerCells[1]; cID2 = ownerCells[2]
+        x1 = phi.x[cID1]; x2 = phi.x[cID2]
+        y1 = phi.y[cID1]; y2 = phi.y[cID2]
+        x[fID] = weight*x1 + (1.0 - weight)*x2 # check weight is used correctly!
+        y[fID] = weight*y1 + (1.0 - weight)*y2 # check weight is used correctly!
+    end
+end
+
+function correct_boundaries!(
+    phif::FaceVectorField{I,F}, 
+    phi::VectorField{I,F},
+    BCs
+    ) where {I,F}
+    mesh = phif.mesh
+    faces = mesh.faces
+    for BC ∈ BCs
+        bi = boundary_index(mesh, BC.name)
+        boundary = mesh.boundaries[bi]
+        correct!(BC, phif, phi, boundary, faces)
+    end
+end
+
+function correct!(
+    BC::Dirichlet, 
+    phif::FaceVectorField{I,F}, 
+    phi::VectorField{I,F},
+    boundary, 
+    faces) where {I,F}
+
+    (; mesh, x, y, z) = phif
+    (; facesID) = boundary
+    for fID ∈ facesID
+        x[fID] = BC.value[1]
+        y[fID] = BC.value[2]
+        z[fID] = BC.value[3]
+    end
+end
+
+function correct!( 
+    BC::Neumann, 
+    phif::FaceVectorField{I,F}, 
+    phi::VectorField{I,F},
+    boundary, 
+    faces) where {I,F}
+
+    (; mesh, x, y, z) = phif
+    (; facesID) = boundary
+    
+    for fID ∈ facesID
+        face = faces[fID]
+        # normal = faces[fID].normal
+        cID = face.ownerCells[1]
+        phi_cell = phi(cID)
+        # Line below needs sorting out for general user-defined gradients
+        # now only works for zero gradient
+        # U_boundary =   U_cell - (U_cell⋅normal)*normal
+        x[fID] = phi_cell[1]
+        y[fID] = phi_cell[2]
+        z[fID] = phi_cell[3]
     end
 end

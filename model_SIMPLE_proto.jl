@@ -106,7 +106,7 @@ pBCs = (
 setup = SolverSetup(
     iterations  = 100,
     solver      = GmresSolver,
-    tolerance   = 1e-8,
+    tolerance   = 1e-3,
     # tolerance   = 1e-01,
     relax       = 1.0,
     itmax       = 100,
@@ -116,7 +116,7 @@ setup = SolverSetup(
 setup_p = SolverSetup(
     iterations  = 100,
     solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
-    tolerance   = 1e-8,
+    tolerance   = 1e-3,
     # tolerance   = 1e-01,
     relax       = 1.0,
     itmax       = 100,
@@ -182,15 +182,17 @@ p0 = zeros(length(p.values))
 B = zeros(length(mesh.cells),3)
 V = zeros(length(mesh.cells),3)
 H = zeros(length(mesh.cells),3)
-Fm = ilu(x_momentum_eqn.A, τ = 0.05) #ilu0(x_momentum_eqn.A)
-Fp = ilu(pressure_eqn.A, τ = 0.05) #ilu0(pressure_eqn.A)
+# Fm = ilu(x_momentum_eqn.A, τ = 0.05)
+# Fp = ilu(pressure_eqn.A, τ = 0.05)
+Fm = ilu0(x_momentum_eqn.A)
+Fp = ilu0(pressure_eqn.A)
 vols = volumes(mesh)
 ############################
 ############################
 
-@time for i ∈ 1:100
+@time for iteration ∈ 1:200
 
-println("Iteration ", i)
+println("Iteration ", iteration)
 
 source!(∇p, pf, p, pBCs)
 negative_vector_source!(∇p)
@@ -198,47 +200,96 @@ negative_vector_source!(∇p)
 discretise!(x_momentum_eqn, x_momentum_model)
 Discretise.ux_boundary_update!(x_momentum_eqn, x_momentum_model, uxBCs)
 println("Solving x-momentum")
-Fm = ilu(x_momentum_eqn.A)
+alpha_U = 0.9
+implicit_relaxation!(x_momentum_eqn, ux0, alpha_U)
+# Fm = ilu(x_momentum_eqn.A)
+ilu0!(Fm, x_momentum_eqn.A)
 run!(x_momentum_eqn, x_momentum_model, uxBCs, setup, F=Fm)
 
 discretise!(y_momentum_eqn, y_momentum_model)
 Discretise.uy_boundary_update!(y_momentum_eqn, y_momentum_model, uyBCs)
 println("Solving y-momentum")
+implicit_relaxation!(y_momentum_eqn, uy0, alpha_U)
 run!(y_momentum_eqn, y_momentum_model, uyBCs, setup, F=Fm)
 
-alpha = 0.9
-@. U.x = alpha*ux.values + (1.0 - alpha)*U.x
-@. U.y = alpha*uy.values + (1.0 - alpha)*U.y
+
+# alpha = 0.9
+# @. U.x = alpha*ux.values + (1.0 - alpha)*U.x
+# @. U.y = alpha*uy.values + (1.0 - alpha)*U.y
+
+# alpha = 1.0
+# @. U.x = alpha*ux.values + (1.0 - alpha)*ux0
+# @. U.y = alpha*uy.values + (1.0 - alpha)*uy0
+
+@. ux0 = U.x
+@. uy0 = U.y
+
+@. U.x = ux.values 
+@. U.y = uy.values
+
 
 inverse_diagonal!(rD, x_momentum_eqn)
 interpolate!(rDf, rD)
-remove_pressure_source!(x_momentum_eqn, y_momentum_eqn, ∇p)
-H!(Hv, U, x_momentum_eqn, y_momentum_eqn, B, V, H)
+remove_pressure_source!(x_momentum_eqn, y_momentum_eqn, ∇p, rD)
+# H!(Hv, U, x_momentum_eqn, y_momentum_eqn, B, V, H)
+H_new!(Hv, U, x_momentum_eqn, y_momentum_eqn, B, V, H)
 div!(divHv, UBCs) 
 # divHv.values .*= vols
 
 discretise!(pressure_eqn, pressure_correction)
 Discretise.p_boundary_update!(pressure_eqn, pressure_correction, pBCs)
 println("Solving pressure correction")
-Fp = ilu(pressure_eqn.A, τ = 0.1)
+# Fp = ilu(pressure_eqn.A, τ = 0.1)
+ilu0!(Fp, pressure_eqn.A)
 run!(pressure_eqn, pressure_correction, pBCs, setup_p, F=Fp)
 
-explicit_relaxation!(p, p0, 0.001)
+if iteration == 1
+    @. p0 = p.values
+end
 
 source!(∇p, pf, p, pBCs) 
+@. U.x = ux0
+@. U.y = uy0
+correct_velocity!(U, Hv, ∇p, rD)
+interpolate!(Uf, U, UBCs)
+
+explicit_relaxation!(p, p0, 0.9)
+source!(∇p, pf, p, pBCs) 
 # grad!(∇p, pf, p, pBCs) 
+correct_velocity!(ux, uy, Hv, ∇p, rD)
+
 # negative_vector_source!(∇p)
 
-correct_velocity!(U, Hv, ∇p, rD)
-# correct_velocity!(ux, uy, Hv, ∇p, rD)
-interpolate!(Uf, U, UBCs)
 # @. ux.values = U.x
 # @. uy.values = U.y
 
 end # 4.6s, 4.4s
+# ux.values .= U.x
 write_vtk(mesh, ux)
 write_vtk(mesh, uy)
 write_vtk(mesh, p)
+
+function implicit_relaxation!(eqn::Equation{I,F}, field, alpha) where {I,F}
+    (; A, b) = eqn
+    for i ∈ eachindex(b)
+        A[i,i] /= alpha
+        b[i] += (1.0 - alpha)*A[i,i]*field[i]
+    end
+end
+
+function correct_face_velocity!(Uf, p, )
+    mesh = Uf.mesh
+    (; cells, faces) = mesh
+    nbfaces = total_boundary_faces(mesh)
+    for fID ∈ (nbfaces + 1):length(faces)
+        face = faces[fID]
+        gradp = 0.0
+        Uf.x = nothing
+        ################
+        # CONTINUE 
+        ################
+    end
+end
 
 volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 
@@ -268,7 +319,8 @@ function inverse_diagonal!(rD::ScalarField, eqn)
 end
 
 function explicit_relaxation!(phi, phi0, alpha)
-    @. phi.values = phi.values + alpha*(phi.values - phi0)
+    # @. phi.values = phi.values + alpha*(phi.values - phi0)
+    @. phi.values = alpha*phi.values + (1.0 - alpha)*phi0
     @. phi0 = phi.values
     nothing
 end
@@ -293,9 +345,11 @@ function negative_vector_source!(∇p)
     nothing
 end
 
-function remove_pressure_source!(x_momentum_eqn, y_momentum_eqn, ∇p)
+function remove_pressure_source!(x_momentum_eqn, y_momentum_eqn, ∇p, rD)
     @. x_momentum_eqn.b -= ∇p.x
     @. y_momentum_eqn.b -= ∇p.y
+    # @. x_momentum_eqn.b -= ∇p.x/rD.values
+    # @. y_momentum_eqn.b -= ∇p.y/rD.values
     nothing
 end
 

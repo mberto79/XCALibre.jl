@@ -168,14 +168,15 @@ p = ScalarField(mesh)
 
     # Perform SIMPLE loops 
     # @time for iteration ∈ 1:iterations
-    # @time for iteration ∈ 1:1000
+    @time for iteration ∈ 1:50
 
         println("Iteration ", iteration)
         
-        interpolate!(Uf, U)
-        correct_boundaries!(Uf, U, UBCs)
-        mass_flux!(mdotf, Uf)
-        div!(mdot, mdotf)
+        interpolate!(Uf, U, UBCs)
+        # interpolate!(Uf, U)
+        # correct_boundaries!(Uf, U, UBCs)
+        # mass_flux!(mdotf, Uf)
+        # div!(mdot, mdotf)
         
         source!(∇p, pf, p, pBCs)
         negative_vector_source!(∇p)
@@ -215,7 +216,7 @@ p = ScalarField(mesh)
         # H!(Hv, U, x_momentum_eqn, y_momentum_eqn, B, V, H)
         H_new!(Hv, U, x_momentum_eqn, y_momentum_eqn)
         div!(divHv, UBCs) 
-        # divHv.values .*= vols
+        # divHv.values ./= volumes(mesh)
         
         discretise!(pressure_eqn, pressure_correction)
         Discretise.p_boundary_update!(pressure_eqn, pressure_correction, pBCs)
@@ -228,18 +229,22 @@ p = ScalarField(mesh)
             @. p0 = p.values
         end
         
-        source!(∇p, pf, p, pBCs) 
+        # source!(∇p, pf, p, pBCs) 
+        grad!(∇p, pf, p, pBCs) 
         @. U.x = ux0
         @. U.y = uy0
         correct_velocity!(U, Hv, ∇p, rD)
         interpolate!(Uf, U, UBCs)
         
-        explicit_relaxation!(p, p0, 0.9)
-        source!(∇p, pf, p, pBCs) 
-        # grad!(∇p, pf, p, pBCs) 
+        explicit_relaxation!(p, p0, 0.4)
+        grad!(∇p, pf, p, pBCs) 
+        # source!(∇p, pf, p, pBCs) 
         correct_velocity!(ux, uy, Hv, ∇p, rD)
+        
+        source!(∇p, pf, p, pBCs) 
+        
 
-    # end # end for loop 
+    end # end for loop 
         
 # end # end function
 
@@ -247,8 +252,8 @@ p = ScalarField(mesh)
 #     mesh, velocity, nu, ux, uy, p, 
 #     uxBCs, uyBCs, pBCs, UBCs,
 #     setup, setup_p, 1000)
-
-write_vtk(mesh, ux)
+ux.values = Hv.values
+write_vtk(mesh, ux)[1]
 write_vtk(mesh, uy)
 write_vtk(mesh, p)
 

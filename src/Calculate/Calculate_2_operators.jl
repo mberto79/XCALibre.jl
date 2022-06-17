@@ -27,6 +27,7 @@ function div!(div::Div{I,F}, BCs) where {I,F}
 
     for ci ∈ eachindex(cells)
         (; facesID, nsign, volume) = cells[ci]
+        values[ci] = zero(F)
         for fi ∈ eachindex(facesID)
             fID = facesID[fi]
             (; area, normal) = faces[fID]

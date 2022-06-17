@@ -81,7 +81,7 @@ end
 
 function run!(
     equation::Equation{Ti,Tf}, phiModel, BCs, setup; 
-    correct_term=nothing, precondition=true, F=nothing
+    correct_term=nothing, opA, opP
     ) where {Ti,Tf}
     
     equation.b .+= phiModel.sources.source1
@@ -91,20 +91,7 @@ function run!(
     (; phi) = phiModel.terms.term1
     (; values, mesh) = phi
 
-    opA = LinearOperator(A)
     solver_alloc = solver(A, b)
-
-    if precondition
-        # F = ilu(A, τ = 0.001)
-        # if F === nothing
-        #     F = ilu0(A)
-        # end
-        # ilu0!(F, A)
-        # Definition of linear operators to reduce allocations during iterations
-        opP = LinearOperator(Float64, A.m, A.n, false, false, (y, v) -> ldiv!(y, F, v))
-    else
-        opP = I
-    end
 
     if correct_term !== nothing 
         bb      = copy(b)

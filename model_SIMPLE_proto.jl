@@ -88,21 +88,21 @@ pBCs = (
 setup = SolverSetup(
     iterations  = 100,
     solver      = GmresSolver,
-    tolerance   = 1e-5,
+    tolerance   = 1e-8,
     # tolerance   = 1e-01,
     relax       = 1.0,
     itmax       = 200,
-    rtol        = 1e-2
+    rtol        = 1e-1
 )
 
 setup_p = SolverSetup(
     iterations  = 100,
     solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
-    tolerance   = 1e-6,
+    tolerance   = 1e-8,
     # tolerance   = 1e-01,
     relax       = 1.0,
     itmax       = 200,
-    rtol        = 1e-3
+    rtol        = 1e-2
 )
 
 #SymmlqSolver, MinresSolver - did not work!
@@ -166,10 +166,10 @@ p = ScalarField(mesh)
         U.x .= velocity[1]; U.y .= velocity[2]
         ux.values .= velocity[1]; uy.values .= velocity[2]
     # end
-    Rx = []
+    Rx = Float64[]
     # Perform SIMPLE loops 
     # @time for iteration ∈ 1:iterations
-    @time for iteration ∈ 1:100
+    @time for iteration ∈ 1:250
 
         print("\nIteration ", iteration, "\n")
         
@@ -187,15 +187,15 @@ p = ScalarField(mesh)
         @. y_momentum_eqn.A.nzval = x_momentum_eqn.A.nzval
         Discretise.ux_boundary_update!(x_momentum_eqn, x_momentum_model, uxBCs)
         print("Solving x-momentum. ")
-        alpha_U = 0.6
+        alpha_U = 0.7
         implicit_relaxation!(x_momentum_eqn, ux0, alpha_U)
         # Fm = ilu(x_momentum_eqn.A)
         # Initial residual - Ux
-        mul!(x_momentum_eqn.Fx, x_momentum_eqn.A, ux.values)
-        x_momentum_eqn.R .= x_momentum_eqn.b .+ ∇p.x .- x_momentum_eqn.Fx
-        res_x = norm(x_momentum_eqn.R)/norm(x_momentum_eqn.b)
-        print("Initial residual: ", res_x, "\n")
-        push!(Rx, res_x)
+        # mul!(x_momentum_eqn.Fx, x_momentum_eqn.A, ux.values)
+        # x_momentum_eqn.R .= x_momentum_eqn.b .+ ∇p.x .- x_momentum_eqn.Fx
+        # res_x = norm(x_momentum_eqn.R)/norm(x_momentum_eqn.b)
+        # print("Initial residual: ", res_x, "\n")
+        # push!(Rx, res_x)
         
         ilu0!(Fm, x_momentum_eqn.A)
         run!(x_momentum_eqn, x_momentum_model, uxBCs, setup, F=Fm)
@@ -248,7 +248,7 @@ p = ScalarField(mesh)
         correct_velocity!(U, Hv, ∇p, rD)
         interpolate!(Uf, U, UBCs)
         
-        explicit_relaxation!(p, p0, 0.4)
+        explicit_relaxation!(p, p0, 0.3)
         source!(∇p, pf, p, pBCs) 
         # grad!(∇p, pf, p, pBCs) 
         correct_velocity!(ux, uy, Hv, ∇p, rD)

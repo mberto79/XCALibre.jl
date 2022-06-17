@@ -88,21 +88,21 @@ pBCs = (
 setup = SolverSetup(
     iterations  = 100,
     solver      = GmresSolver,
-    tolerance   = 1e-3,
+    tolerance   = 1e-5,
     # tolerance   = 1e-01,
     relax       = 1.0,
-    itmax       = 100,
-    rtol        = 1e-6
+    itmax       = 200,
+    rtol        = 1e-2
 )
 
 setup_p = SolverSetup(
     iterations  = 100,
     solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
-    tolerance   = 1e-3,
+    tolerance   = 1e-6,
     # tolerance   = 1e-01,
     relax       = 1.0,
-    itmax       = 100,
-    rtol        = 1e-6
+    itmax       = 200,
+    rtol        = 1e-3
 )
 
 #SymmlqSolver, MinresSolver - did not work!
@@ -128,7 +128,8 @@ p = ScalarField(mesh)
     ∇p = Grad{Linear}(p)
     
     Hv = VectorField(mesh)
-    divHv = Div(Hv)
+    # divHv = Div(Hv)
+    divHv = Div(Hv, FaceVectorField(mesh), zeros(length(mesh.cells)), mesh)
     rD = ScalarField(mesh)
     rDf = FaceScalarField(mesh)
 
@@ -165,12 +166,12 @@ p = ScalarField(mesh)
         U.x .= velocity[1]; U.y .= velocity[2]
         ux.values .= velocity[1]; uy.values .= velocity[2]
     # end
-
+    Rx = []
     # Perform SIMPLE loops 
     # @time for iteration ∈ 1:iterations
-    @time for iteration ∈ 1:50
+    @time for iteration ∈ 1:100
 
-        println("Iteration ", iteration)
+        print("\nIteration ", iteration, "\n")
         
         interpolate!(Uf, U, UBCs)
         # interpolate!(Uf, U)
@@ -179,20 +180,30 @@ p = ScalarField(mesh)
         # div!(mdot, mdotf)
         
         source!(∇p, pf, p, pBCs)
+        # grad!(∇p, pf, p, pBCs)
         negative_vector_source!(∇p)
         
         discretise!(x_momentum_eqn, x_momentum_model)
+        @. y_momentum_eqn.A.nzval = x_momentum_eqn.A.nzval
         Discretise.ux_boundary_update!(x_momentum_eqn, x_momentum_model, uxBCs)
-        # println("Solving x-momentum")
-        alpha_U = 0.9
+        print("Solving x-momentum. ")
+        alpha_U = 0.6
         implicit_relaxation!(x_momentum_eqn, ux0, alpha_U)
         # Fm = ilu(x_momentum_eqn.A)
+        # Initial residual - Ux
+        mul!(x_momentum_eqn.Fx, x_momentum_eqn.A, ux.values)
+        x_momentum_eqn.R .= x_momentum_eqn.b .+ ∇p.x .- x_momentum_eqn.Fx
+        res_x = norm(x_momentum_eqn.R)/norm(x_momentum_eqn.b)
+        print("Initial residual: ", res_x, "\n")
+        push!(Rx, res_x)
+        
         ilu0!(Fm, x_momentum_eqn.A)
         run!(x_momentum_eqn, x_momentum_model, uxBCs, setup, F=Fm)
-        
-        discretise!(y_momentum_eqn, y_momentum_model)
+
+        # discretise!(y_momentum_eqn, y_momentum_model)
+        @. y_momentum_eqn.b = 0.0
         Discretise.uy_boundary_update!(y_momentum_eqn, y_momentum_model, uyBCs)
-        # println("Solving y-momentum")
+        print("Solving y-momentum. \n")
         implicit_relaxation!(y_momentum_eqn, uy0, alpha_U)
         run!(y_momentum_eqn, y_momentum_model, uyBCs, setup, F=Fm)
         
@@ -215,35 +226,32 @@ p = ScalarField(mesh)
         remove_pressure_source!(x_momentum_eqn, y_momentum_eqn, ∇p, rD)
         # H!(Hv, U, x_momentum_eqn, y_momentum_eqn, B, V, H)
         H_new!(Hv, U, x_momentum_eqn, y_momentum_eqn)
+        @. U.x = ux0
+        @. U.y = uy0
         div!(divHv, UBCs) 
-        # divHv.values ./= volumes(mesh)
+        divHv.values .*= 1.0./volumes(mesh)
         
         discretise!(pressure_eqn, pressure_correction)
         Discretise.p_boundary_update!(pressure_eqn, pressure_correction, pBCs)
-        # println("Solving pressure correction")
+        print("Solving pressure correction. \n")
         # Fp = ilu(pressure_eqn.A, τ = 0.1)
         ilu0!(Fp, pressure_eqn.A)
         run!(pressure_eqn, pressure_correction, pBCs, setup_p, F=Fp)
         
-        if iteration == 1
-            @. p0 = p.values
-        end
+        # if iteration == 1
+        #     @. p0 = p.values
+        # end
         
-        # source!(∇p, pf, p, pBCs) 
-        grad!(∇p, pf, p, pBCs) 
-        @. U.x = ux0
-        @. U.y = uy0
+        source!(∇p, pf, p, pBCs) 
+        # grad!(∇p, pf, p, pBCs) 
+        
         correct_velocity!(U, Hv, ∇p, rD)
         interpolate!(Uf, U, UBCs)
         
         explicit_relaxation!(p, p0, 0.4)
-        grad!(∇p, pf, p, pBCs) 
-        # source!(∇p, pf, p, pBCs) 
-        correct_velocity!(ux, uy, Hv, ∇p, rD)
-        
         source!(∇p, pf, p, pBCs) 
-        
-
+        # grad!(∇p, pf, p, pBCs) 
+        correct_velocity!(ux, uy, Hv, ∇p, rD)
     end # end for loop 
         
 # end # end function
@@ -252,13 +260,13 @@ p = ScalarField(mesh)
 #     mesh, velocity, nu, ux, uy, p, 
 #     uxBCs, uyBCs, pBCs, UBCs,
 #     setup, setup_p, 1000)
-ux.values = Hv.values
-write_vtk(mesh, ux)[1]
+# ux.values .= U.x
+write_vtk(mesh, ux)
 write_vtk(mesh, uy)
 write_vtk(mesh, p)
 
-
 plotly(size=(400,400), markersize=1, markerstrokewidth=1)
+plot(collect(1:100), Rx[1:100], yscale=:log10)
 scatter(x(mesh), y(mesh), ux.values, color=:red)
 scatter(x(mesh), y(mesh), uy.values, color=:red)
 
@@ -404,9 +412,9 @@ function negative_vector_source!(∇p)
 end
 
 function remove_pressure_source!(x_momentum_eqn, y_momentum_eqn, ∇p, rD)
-    @. x_momentum_eqn.b -= ∇p.x
-    @. y_momentum_eqn.b -= ∇p.y
-    # @. x_momentum_eqn.b -= ∇p.x/rD.values
-    # @. y_momentum_eqn.b -= ∇p.y/rD.values
+    # @. x_momentum_eqn.b -= ∇p.x
+    # @. y_momentum_eqn.b -= ∇p.y
+    @. x_momentum_eqn.b -= ∇p.x/rD.values
+    @. y_momentum_eqn.b -= ∇p.y/rD.values
     nothing
 end

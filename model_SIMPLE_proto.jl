@@ -189,6 +189,9 @@ p = ScalarField(mesh)
     interpolate!(Uf, U, UBCs)   
     source!(∇p, pf, p, pBCs)
 
+    solver_p = setup_p.solver(pressure_eqn.A, pressure_eqn.b)
+    solver_U = setup.solver(x_momentum_eqn.A, x_momentum_eqn.b)
+
     # @time for iteration ∈ 1:iterations
     @time for iteration ∈ 1:100
 
@@ -219,7 +222,7 @@ p = ScalarField(mesh)
         # push!(Rx, res_x)
         
         ilu0!(Px, x_momentum_eqn.A)
-        run!(x_momentum_eqn, x_momentum_model, uxBCs, setup, opA=opAx, opP=opPUx)
+        run!(x_momentum_eqn, x_momentum_model, uxBCs, setup, opA=opAx, opP=opPUx, solver_alloc=solver_U)
 
         # discretise!(y_momentum_eqn, y_momentum_model)
         @. y_momentum_eqn.b = 0.0
@@ -227,7 +230,7 @@ p = ScalarField(mesh)
         print("Solving y-momentum. ")
         implicit_relaxation!(y_momentum_eqn, uy0, alpha_U)
         ilu0!(Py, y_momentum_eqn.A)
-        run!(y_momentum_eqn, y_momentum_model, uyBCs, setup, opA=opAy, opP=opPUy)
+        run!(y_momentum_eqn, y_momentum_model, uyBCs, setup, opA=opAy, opP=opPUy, solver_alloc=solver_U)
         
         @. ux0 = U.x
         @. uy0 = U.y
@@ -255,7 +258,7 @@ p = ScalarField(mesh)
         print("Solving pressure correction. ")
         # Fp = ilu(pressure_eqn.A, τ = 0.1)
         ilu0!(Pp, pressure_eqn.A)
-        run!(pressure_eqn, pressure_correction, pBCs, setup_p, opA=opAp, opP=opPP)
+        run!(pressure_eqn, pressure_correction, pBCs, setup_p, opA=opAp, opP=opPP, solver_alloc=solver_p)
         
         # if iteration == 1
         #     @. p0 = p.values
@@ -271,7 +274,7 @@ p = ScalarField(mesh)
         source!(∇p, pf, p, pBCs) 
         # grad!(∇p, pf, p, pBCs) 
         correct_velocity!(ux, uy, Hv, ∇p, rD)
-    end # end for loop 9.82s 564.73k, 10.53 553.23k
+    end # end for loop 9.82s 564.73k, 10.53 553./// 5.57s 551.49k -> 5.31s 507.56k
         
 # end # end function
 

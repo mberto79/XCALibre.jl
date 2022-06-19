@@ -127,8 +127,8 @@ function run!(
             res = normR/normB
         end
         if res <= tolerance
-            println("Converged in ", i, " iterations. ", "Residual: ", res)
-            # println("")
+            print("Converged in ", i, " iterations. ", "Residual: ", res, "\n")
+            print("Internal iterations ", niterations(solver_alloc), "\n")
             break
         end
         # println("Residual: ", res)

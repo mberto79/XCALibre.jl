@@ -86,23 +86,23 @@ pBCs = (
 )
 
 setup = SolverSetup(
-    iterations  = 100,
+    iterations  = 1,
     solver      = GmresSolver,
-    tolerance   = 1e-5,
+    tolerance   = 1e-1,
     # tolerance   = 1e-01,
     relax       = 1.0,
     itmax       = 100,
-    rtol        = 1e-4
+    rtol        = 1e-2
 )
 
 setup_p = SolverSetup(
-    iterations  = 100,
+    iterations  = 1,
     solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
-    tolerance   = 1e-6,
+    tolerance   = 1e-1,
     # tolerance   = 1e-01,
     relax       = 1.0,
     itmax       = 100,
-    rtol        = 1e-4
+    rtol        = 1e-3
 )
 
 #SymmlqSolver, MinresSolver - did not work!
@@ -113,11 +113,11 @@ ux = ScalarField(mesh)
 uy = ScalarField(mesh)
 p = ScalarField(mesh)
 
-# function isimple!(
-#     mesh, velocity, nu, ux, uy, p, 
-#     uxBCs, uyBCs, pBCs, UBCs,
-#     setup, setup_p, iterations
-#     ; resume=true)
+function isimple!(
+    mesh, velocity, nu, ux, uy, p, 
+    uxBCs, uyBCs, pBCs, UBCs,
+    setup, setup_p, iterations
+    ; resume=true)
     # Pre-allocate fields
 
     U = VectorField(mesh)
@@ -160,27 +160,34 @@ p = ScalarField(mesh)
         )
     y_momentum_model = create_model(ConvectionDiffusion, Uf, nu, uy, ∇p.y)
     generate_boundary_conditions!(:uy_boundary_update!, mesh, y_momentum_model, uyBCs)
-
+    
     pressure_eqn = Equation(mesh)
-    opAp = LinearOperator(pressure_eqn.A)
-    Pp = ilu0(pressure_eqn.A)
-    opPP = LinearOperator(
-        Float64, pressure_eqn.A.m, pressure_eqn.A.n, 
-        false, false, (y, v) -> ldiv!(y, Pp, v)
-        )
     pressure_correction = create_model(Diffusion, rDf, p, divHv.values) #.*D)
     generate_boundary_conditions!(:p_boundary_update!, mesh, pressure_correction, pBCs)
-
+    rDf.values .= 1.0
+    discretise!(pressure_eqn, pressure_correction)
+    Discretise.p_boundary_update!(pressure_eqn, pressure_correction, pBCs)
     
+    opAp = LinearOperator(pressure_eqn.A)
+    # Pp = ilu0(pressure_eqn.A)
+    # opPP = LinearOperator(
+    #     Float64, pressure_eqn.A.m, pressure_eqn.A.n, 
+    #     false, false, (y, v) -> ldiv!(y, Pp, v)
+    #     )
+    # opPP = I
+    opPP = opLDL(pressure_eqn.A)
 
+    #### NEED TO IMPLEMENT A SENSIBLE INITIALISATION TO INCLUDE WARM START!!!!
     # Update initial (guessed) fields
     # if resume
     #     @. U.x = ux.values
     #     @. U.y = uy.values
     #     @. p0 = p.values
     # else
+        ux0 .= ux.values; uy0 .= uy.values 
         U.x .= velocity[1]; U.y .= velocity[2]
         ux.values .= velocity[1]; uy.values .= velocity[2]
+        p0 .= p.values
     # end
     Rx = Float64[]
     volume  = volumes(mesh)
@@ -192,8 +199,8 @@ p = ScalarField(mesh)
     solver_p = setup_p.solver(pressure_eqn.A, pressure_eqn.b)
     solver_U = setup.solver(x_momentum_eqn.A, x_momentum_eqn.b)
 
-    # @time for iteration ∈ 1:iterations
-    @time for iteration ∈ 1:100
+    @time for iteration ∈ 1:iterations
+    # @time for iteration ∈ 1:100
 
         print("\nIteration ", iteration, "\n")
         
@@ -231,38 +238,31 @@ p = ScalarField(mesh)
         implicit_relaxation!(y_momentum_eqn, uy0, alpha_U)
         ilu0!(Py, y_momentum_eqn.A)
         run!(y_momentum_eqn, y_momentum_model, uyBCs, setup, opA=opAy, opP=opPUy, solver_alloc=solver_U)
-        
-        @. ux0 = U.x
-        @. uy0 = U.y
-        
-        @. U.x = ux.values 
-        @. U.y = uy.values
+
+        @inbounds @simd for i ∈ eachindex(ux0)
+            ux0[i] = U.x[i]
+            uy0[i] = U.y[i]
+            U.x[i] = ux.values[i]
+            U.y[i] = uy.values[i]
+        end
         
         inverse_diagonal!(rD, x_momentum_eqn)
         interpolate!(rDf, rD)
         remove_pressure_source!(x_momentum_eqn, y_momentum_eqn, ∇p, rD)
         # H!(Hv, U, x_momentum_eqn, y_momentum_eqn, B, V, H)
         H_new!(Hv, U, x_momentum_eqn, y_momentum_eqn)
-        @. U.x = ux0
-        @. U.y = uy0
-        div!(divHv, UBCs) 
-        divHv.values .*= 1.0./volume
-        # rD.values .*= volume
-        # interpolate!(rDf, rD)
-        # rD.values ./= volume
-
-
         
+        @inbounds @simd for i ∈ eachindex(ux0)
+            U.x[i] = ux0[i]
+            U.y[i] = uy0[i]
+        end
+        div!(divHv, UBCs) 
+        @. divHv.values *= 1.0./volume
+
         discretise!(pressure_eqn, pressure_correction)
         Discretise.p_boundary_update!(pressure_eqn, pressure_correction, pBCs)
         print("Solving pressure correction. ")
-        # Fp = ilu(pressure_eqn.A, τ = 0.1)
-        ilu0!(Pp, pressure_eqn.A)
         run!(pressure_eqn, pressure_correction, pBCs, setup_p, opA=opAp, opP=opPP, solver_alloc=solver_p)
-        
-        # if iteration == 1
-        #     @. p0 = p.values
-        # end
         
         source!(∇p, pf, p, pBCs) 
         # grad!(∇p, pf, p, pBCs) 
@@ -270,18 +270,21 @@ p = ScalarField(mesh)
         correct_velocity!(U, Hv, ∇p, rD)
         interpolate!(Uf, U, UBCs)
         
-        explicit_relaxation!(p, p0, 0.2)
+        explicit_relaxation!(p, p0, 0.3)
         source!(∇p, pf, p, pBCs) 
         # grad!(∇p, pf, p, pBCs) 
         correct_velocity!(ux, uy, Hv, ∇p, rD)
     end # end for loop 9.82s 564.73k, 10.53 553./// 5.57s 551.49k -> 5.31s 507.56k
+    # 1.43/1.55s 514.91k - 516.11k
+    # 1.53/1.42s 508.81k
+    # 1.28s 509.15k
         
-# end # end function
+end # end function
 
-# isimple!(
-#     mesh, velocity, nu, ux, uy, p, 
-#     uxBCs, uyBCs, pBCs, UBCs,
-#     setup, setup_p, 1000)
+isimple!(
+    mesh, velocity, nu, ux, uy, p, 
+    uxBCs, uyBCs, pBCs, UBCs,
+    setup, setup_p, 100)
 # ux.values .= U.x
 write_vtk(mesh, ux)
 write_vtk(mesh, uy)
@@ -359,7 +362,7 @@ end
 
 function implicit_relaxation!(eqn::Equation{I,F}, field, alpha) where {I,F}
     (; A, b) = eqn
-    for i ∈ eachindex(b)
+    @inbounds @simd for i ∈ eachindex(b)
         A[i,i] /= alpha
         b[i] += (1.0 - alpha)*A[i,i]*field[i]
     end
@@ -402,41 +405,62 @@ end
 
 function inverse_diagonal!(rD::ScalarField, eqn)
     D = @view eqn.A[diagind(eqn.A)]
-    rD.values .= 1.0./D
-    nothing
+    # @. rD.values = 1.0./D
+    rD = rD.values
+    @inbounds @simd for i ∈ eachindex(rD)
+        rD[i] = 1.0./D[i]
+    end
 end
 
 function explicit_relaxation!(phi, phi0, alpha)
-    # @. phi.values = phi.values + alpha*(phi.values - phi0)
-    @. phi.values = alpha*phi.values + (1.0 - alpha)*phi0
-    @. phi0 = phi.values
-    nothing
+    # @. phi.values = alpha*phi.values + (1.0 - alpha)*phi0
+    # @. phi0 = phi.values
+    values = phi.values
+    @inbounds @simd for i ∈ eachindex(values)
+        values[i] = alpha*values[i] + (1.0 - alpha)*phi0[i]
+        phi0[i] = values[i]
+    end
 end
 
 function correct_velocity!(U, Hv, ∇p, rD)
-    @. U.x = Hv.x - ∇p.x*rD.values
-    @. U.y = Hv.y - ∇p.y*rD.values
-    nothing
+    # @. U.x = Hv.x - ∇p.x*rD.values
+    # @. U.y = Hv.y - ∇p.y*rD.values
+    Ux = U.x; Uy = U.y; Hvx = Hv.x; Hvy = Hv.y
+    dpdx = ∇p.x; dpdy = ∇p.y; rDvalues = rD.values
+    @inbounds @simd for i ∈ eachindex(Ux)
+        Ux[i] = Hvx[i] - dpdx[i]*rDvalues[i]
+        Uy[i] = Hvy[i] - dpdy[i]*rDvalues[i]
+    end
 end
 
 function correct_velocity!(ux, uy, Hv, ∇p, rD)
-    @. ux.values = Hv.x - ∇p.x*rD.values
-    @. uy.values = Hv.y - ∇p.y*rD.values
-    # @. ux.values = (Hv.x - ∇p.x)*rD.values
-    # @. uy.values = (Hv.y - ∇p.y)*rD.values
-    nothing
+    # @. ux.values = Hv.x - ∇p.x*rD.values
+    # @. uy.values = Hv.y - ∇p.y*rD.values
+    ux = ux.values; uy = uy.values; Hvx = Hv.x; Hvy = Hv.y
+    dpdx = ∇p.x; dpdy = ∇p.y; rDvalues = rD.values
+    @inbounds @simd for i ∈ eachindex(ux)
+        ux[i] = Hvx[i] - dpdx[i]*rDvalues[i]
+        uy[i] = Hvy[i] - dpdy[i]*rDvalues[i]
+    end
 end
 
 function negative_vector_source!(∇p)
-    ∇p.x .*= -1.0
-    ∇p.y .*= -1.0
-    nothing
+    # ∇p.x .*= -1.0
+    # ∇p.y .*= -1.0
+    dpdx = ∇p.x; dpdy = ∇p.y
+    @inbounds @simd for i ∈ eachindex(dpdx)
+        dpdx[i] *= -1.0
+        dpdy[i] *= -1.0
+    end
 end
 
 function remove_pressure_source!(x_momentum_eqn, y_momentum_eqn, ∇p, rD)
-    # @. x_momentum_eqn.b -= ∇p.x
-    # @. y_momentum_eqn.b -= ∇p.y
-    @. x_momentum_eqn.b -= ∇p.x/rD.values
-    @. y_momentum_eqn.b -= ∇p.y/rD.values
-    nothing
+    # @. x_momentum_eqn.b -= ∇p.x/rD.values
+    # @. y_momentum_eqn.b -= ∇p.y/rD.values
+    dpdx, dpdy, rD = ∇p.x, ∇p.y, rD.values
+    bx, by = x_momentum_eqn.b, y_momentum_eqn.b
+    @inbounds @simd for i ∈ eachindex(bx)
+        bx[i] -= dpdx[i]/rD[i]
+        by[i] -= dpdy[i]/rD[i]
+    end
 end

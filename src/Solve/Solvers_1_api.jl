@@ -22,7 +22,7 @@ SolverSetup(
     atol::F=1e-12, 
     rtol::F=1e-1
     ) where {S,I,F} = begin
-    SolverSetup(solver, iterations, tolerance, relax, itmax, atol, rtol)
+    SolverSetup{S,I,F}(solver, iterations, tolerance, relax, itmax, atol, rtol)
 end
 
 function run_old!(
@@ -100,15 +100,18 @@ function run!(
         gradf   = FaceVectorField(mesh)
     end
 
-    mul!(Fx, opA, values)
-    R .= b .- Fx
+    # mul!(Fx, opA, values)
+    # R .= b .- Fx
 
-    @inbounds for i ∈ 1:iterations
+    for i ∈ 1:iterations
         solve!(
-            solver_alloc, opA, R; 
+            # solver_alloc, opA, R; 
+            solver_alloc, opA, b, values; 
             M=opP, itmax=itmax, atol=atol, rtol=rtol
             )
-        values .+= relax.*solver_alloc.x
+        # values .+= relax.*solver_alloc.x
+        # @time @. values += relax*(x - values)
+        relax!(values, solver_alloc.x, relax)
 
         if correct_term !== nothing
             nonorthogonal_correction!(gradPhi, gradf, phif, BCs)
@@ -127,8 +130,9 @@ function run!(
             res = normR/normB
         end
         if res <= tolerance
-            print("Converged in ", i, " iterations. ", "Residual: ", res, "\n")
-            print("Internal iterations ", niterations(solver_alloc), "\n")
+            print(
+                "Converged in ", niterations(solver_alloc), " iterations. ",
+                "Residual: ", res, "\n")
             break
         end
         # println("Residual: ", res)
@@ -141,13 +145,10 @@ function run!(
     end
 end
 
-@inline function relax!(phi, solver, α)
-    # phi.values .= (1.0 - α).*phi.values .+ α.*solver.x
-    values = phi.values
-    x = solver.x
-    @inbounds for i ∈ eachindex(values)
-        # values[i] = (1.0 - α)*values[i] + α*x[i]
-        values[i] = values[i] + α(values[i] - x[i])
+@inline function relax!(phi, phi_new, α)
+    @inbounds for i ∈ eachindex(phi)
+        phi[i] += α*(phi_new[i] - phi[i])
+        # phi[i] = α*phi_new[i] + (1.0 - α)*phi[i]
     end
 end
 

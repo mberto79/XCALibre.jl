@@ -13,6 +13,7 @@ using FVM_1D.VTK
 using Krylov
 using ILUZero
 using IncompleteLU
+using LoopVectorization
 
 function generate_mesh()
     # n_vertical      = 20 
@@ -87,7 +88,7 @@ pBCs = (
 
 setup = SolverSetup(
     iterations  = 1,
-    solver      = GmresSolver,
+    solver      = BicgstabSolver,
     tolerance   = 1e-1,
     # tolerance   = 1e-01,
     relax       = 1.0,
@@ -115,6 +116,9 @@ p = ScalarField(mesh)
 
 function isimple!(
     mesh, velocity, nu, ux, uy, p, 
+    # x_momentum_model,
+    # y_momentum_model,
+    # pressure_correction,
     uxBCs, uyBCs, pBCs, UBCs,
     setup, setup_p, iterations
     ; resume=true)
@@ -175,6 +179,7 @@ function isimple!(
     #     false, false, (y, v) -> ldiv!(y, Pp, v)
     #     )
     # opPP = I
+    # opPP = opCholesky(pressure_eqn.A)
     opPP = opLDL(pressure_eqn.A)
 
     #### NEED TO IMPLEMENT A SENSIBLE INITIALISATION TO INCLUDE WARM START!!!!
@@ -184,10 +189,13 @@ function isimple!(
     #     @. U.y = uy.values
     #     @. p0 = p.values
     # else
-        ux0 .= ux.values; uy0 .= uy.values 
-        U.x .= velocity[1]; U.y .= velocity[2]
-        ux.values .= velocity[1]; uy.values .= velocity[2]
-        p0 .= p.values
+        @turbo ux0 .= ux.values
+        @turbo uy0 .= uy.values 
+        @turbo U.x .= velocity[1]
+        @turbo U.y .= velocity[2]
+        @turbo ux.values .= velocity[1]
+        @turbo uy.values .= velocity[2]
+        @turbo p0 .= p.values
     # end
     Rx = Float64[]
     volume  = volumes(mesh)
@@ -215,7 +223,8 @@ function isimple!(
         negative_vector_source!(∇p)
         
         discretise!(x_momentum_eqn, x_momentum_model)
-        @. y_momentum_eqn.A.nzval = x_momentum_eqn.A.nzval
+        @turbo @. y_momentum_eqn.A.nzval = x_momentum_eqn.A.nzval
+        # 672 allocations!!!
         Discretise.ux_boundary_update!(x_momentum_eqn, x_momentum_model, uxBCs)
         print("Solving x-momentum. ")
         alpha_U = 0.8
@@ -232,14 +241,15 @@ function isimple!(
         run!(x_momentum_eqn, x_momentum_model, uxBCs, setup, opA=opAx, opP=opPUx, solver_alloc=solver_U)
 
         # discretise!(y_momentum_eqn, y_momentum_model)
-        @. y_momentum_eqn.b = 0.0
+        @turbo @. y_momentum_eqn.b = 0.0
+        # 672 allocations!!
         Discretise.uy_boundary_update!(y_momentum_eqn, y_momentum_model, uyBCs)
         print("Solving y-momentum. ")
         implicit_relaxation!(y_momentum_eqn, uy0, alpha_U)
         ilu0!(Py, y_momentum_eqn.A)
         run!(y_momentum_eqn, y_momentum_model, uyBCs, setup, opA=opAy, opP=opPUy, solver_alloc=solver_U)
 
-        @inbounds @simd for i ∈ eachindex(ux0)
+        @turbo for i ∈ eachindex(ux0)
             ux0[i] = U.x[i]
             uy0[i] = U.y[i]
             U.x[i] = ux.values[i]
@@ -252,26 +262,27 @@ function isimple!(
         # H!(Hv, U, x_momentum_eqn, y_momentum_eqn, B, V, H)
         H_new!(Hv, U, x_momentum_eqn, y_momentum_eqn)
         
-        @inbounds @simd for i ∈ eachindex(ux0)
+        @turbo for i ∈ eachindex(ux0)
             U.x[i] = ux0[i]
             U.y[i] = uy0[i]
         end
-        div!(divHv, UBCs) 
-        @. divHv.values *= 1.0./volume
+        div!(divHv, UBCs) # 7 allocations
+        @turbo @. divHv.values *= 1.0./volume
 
         discretise!(pressure_eqn, pressure_correction)
+        # Need to fix how BCs are applied 3.5k allocations!!!!!
         Discretise.p_boundary_update!(pressure_eqn, pressure_correction, pBCs)
         print("Solving pressure correction. ")
         run!(pressure_eqn, pressure_correction, pBCs, setup_p, opA=opAp, opP=opPP, solver_alloc=solver_p)
         
-        source!(∇p, pf, p, pBCs) 
+        source!(∇p, pf, p, pBCs) # 7 allocations
         # grad!(∇p, pf, p, pBCs) 
         
         correct_velocity!(U, Hv, ∇p, rD)
-        interpolate!(Uf, U, UBCs)
+        interpolate!(Uf, U, UBCs) # 7 allocations
         
         explicit_relaxation!(p, p0, 0.3)
-        source!(∇p, pf, p, pBCs) 
+        source!(∇p, pf, p, pBCs)  # 7 allocations
         # grad!(∇p, pf, p, pBCs) 
         correct_velocity!(ux, uy, Hv, ∇p, rD)
     end # end for loop 9.82s 564.73k, 10.53 553./// 5.57s 551.49k -> 5.31s 507.56k
@@ -403,12 +414,15 @@ function correct_flux_boundary!(
     end
 end
 
-function inverse_diagonal!(rD::ScalarField, eqn)
-    D = @view eqn.A[diagind(eqn.A)]
+function inverse_diagonal!(rD::ScalarField{I,F}, eqn) where {I,F}
+    # D = @view eqn.A[diagind(eqn.A)]
     # @. rD.values = 1.0./D
-    rD = rD.values
-    @inbounds @simd for i ∈ eachindex(rD)
-        rD[i] = 1.0./D[i]
+    A = eqn.A
+    rD_values = rD.values
+    @inbounds for i ∈ eachindex(rD_values)
+        # ap = @view A[i,i]
+        # rD_values[i] = 1.0/ap
+        rD_values[i] = 1.0/view(A, i, i)[1]
     end
 end
 
@@ -416,7 +430,7 @@ function explicit_relaxation!(phi, phi0, alpha)
     # @. phi.values = alpha*phi.values + (1.0 - alpha)*phi0
     # @. phi0 = phi.values
     values = phi.values
-    @inbounds @simd for i ∈ eachindex(values)
+    @turbo for i ∈ eachindex(values)
         values[i] = alpha*values[i] + (1.0 - alpha)*phi0[i]
         phi0[i] = values[i]
     end
@@ -427,7 +441,7 @@ function correct_velocity!(U, Hv, ∇p, rD)
     # @. U.y = Hv.y - ∇p.y*rD.values
     Ux = U.x; Uy = U.y; Hvx = Hv.x; Hvy = Hv.y
     dpdx = ∇p.x; dpdy = ∇p.y; rDvalues = rD.values
-    @inbounds @simd for i ∈ eachindex(Ux)
+    @turbo for i ∈ eachindex(Ux)
         Ux[i] = Hvx[i] - dpdx[i]*rDvalues[i]
         Uy[i] = Hvy[i] - dpdy[i]*rDvalues[i]
     end
@@ -438,7 +452,7 @@ function correct_velocity!(ux, uy, Hv, ∇p, rD)
     # @. uy.values = Hv.y - ∇p.y*rD.values
     ux = ux.values; uy = uy.values; Hvx = Hv.x; Hvy = Hv.y
     dpdx = ∇p.x; dpdy = ∇p.y; rDvalues = rD.values
-    @inbounds @simd for i ∈ eachindex(ux)
+    @turbo for i ∈ eachindex(ux)
         ux[i] = Hvx[i] - dpdx[i]*rDvalues[i]
         uy[i] = Hvy[i] - dpdy[i]*rDvalues[i]
     end
@@ -448,7 +462,7 @@ function negative_vector_source!(∇p)
     # ∇p.x .*= -1.0
     # ∇p.y .*= -1.0
     dpdx = ∇p.x; dpdy = ∇p.y
-    @inbounds @simd for i ∈ eachindex(dpdx)
+    @turbo for i ∈ eachindex(dpdx)
         dpdx[i] *= -1.0
         dpdy[i] *= -1.0
     end
@@ -459,7 +473,7 @@ function remove_pressure_source!(x_momentum_eqn, y_momentum_eqn, ∇p, rD)
     # @. y_momentum_eqn.b -= ∇p.y/rD.values
     dpdx, dpdy, rD = ∇p.x, ∇p.y, rD.values
     bx, by = x_momentum_eqn.b, y_momentum_eqn.b
-    @inbounds @simd for i ∈ eachindex(bx)
+    @turbo for i ∈ eachindex(bx)
         bx[i] -= dpdx[i]/rD[i]
         by[i] -= dpdy[i]/rD[i]
     end

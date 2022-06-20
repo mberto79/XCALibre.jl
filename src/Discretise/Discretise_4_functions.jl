@@ -54,7 +54,7 @@ function generate_boundary_conditions!(name, mesh::Mesh2{I,F}, model, BCs) where
         push!(func_template.args[1].args[2].args, assignment_loop.args...)
     end
 
-    func_template |> eval
+    func_template  |> eval |> esc
 end
 
 function get_boundary_indices(mesh::Mesh2{I,F}, BCs) where {I,F}

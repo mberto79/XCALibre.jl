@@ -1,6 +1,51 @@
 export generate_boundary_conditions!, update_boundaries!
+export apply_boundary_conditions!
 export boundary_index
 export H!, H_new!
+
+@generated function apply_boundary_conditions!(
+    equation::Equation{I,F}, model, BCs) where {I,F}
+
+    # Unpack terms that make up the model (not sources)
+    terms = Expr[]
+    for term ∈ model.types[1].parameters[1]
+        term_extracted = :($term = model.terms.$term)
+        push!(terms, term_extracted)
+    end
+
+    # Definition of main assignment loop (one per patch)
+    assignment_loops = []
+    for bci ∈ 1:length(BCs.parameters)
+        func_calls = Expr[]
+        for term ∈ model.types[1].parameters[1] 
+            # call = Expr(:call, :(BCs[$bci]), term, :A, :b, :cellID, :cell, :face, :faceID)
+            call = quote
+                (BCs[$bci])($term, A, b, cellID, cell, face, faceID)
+            end
+            push!(func_calls, call)
+        end
+        assignment_loop = quote
+            (; facesID, cellsID) = boundaries[indices[$bci]]
+            @inbounds for i ∈ eachindex(cellsID)
+                faceID = facesID[i]
+                cellID = cellsID[i]
+                face = faces[faceID]
+                cell = cells[cellID]
+                $(func_calls...)
+            end
+        end
+        push!(assignment_loops, assignment_loop.args...)
+    end
+
+    quote
+    (; A, b, mesh) = equation
+    (; boundaries, faces, cells) = mesh
+    indices = get_boundary_indices(mesh, BCs)
+    $(terms...)
+    $(assignment_loops...)
+    nothing
+    end
+end
 
 function generate_boundary_conditions!(name, mesh::Mesh2{I,F}, model, BCs) where {I,F}
     nBCs = length(BCs)
@@ -57,22 +102,26 @@ function generate_boundary_conditions!(name, mesh::Mesh2{I,F}, model, BCs) where
     func_template  |> eval |> esc
 end
 
-function get_boundary_indices(mesh::Mesh2{I,F}, BCs) where {I,F}
-    BC_indices = I[]
+function get_boundary_indices(mesh::Mesh2{TI,TF}, BCs) where {TI,TF}
+    BC_indices = TI[]
+    # BC_indices = ()
     for BC ∈ BCs
         name = BC.name
         index = boundary_index(mesh, name)
         push!(BC_indices, index)
-        println("Boundary ", name, "\t", "found at index ", index)
+        # BC_indices = (BC_indices..., index)
+        # println("Boundary ", name, "\t", "found at index ", index)
     end
     BC_indices
 end
 
-function boundary_index(mesh::Mesh2{I,F}, name::Symbol) where {I,F}
+function boundary_index(mesh::Mesh2{TI,TF}, name::Symbol) where {TI,TF}
     (; boundaries) = mesh
+    bci = zero(TI)
     for i ∈ eachindex(boundaries)
+        bci += 1
         if boundaries[i].name == name
-            return i 
+            return bci 
         end
     end
 end

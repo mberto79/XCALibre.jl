@@ -88,12 +88,12 @@ pBCs = (
 
 setup = SolverSetup(
     iterations  = 1,
-    solver      = BicgstabSolver,
+    solver      = GmresSolver,
     tolerance   = 1e-1,
     # tolerance   = 1e-01,
     relax       = 1.0,
     itmax       = 100,
-    rtol        = 1e-2
+    rtol        = 1e-1
 )
 
 setup_p = SolverSetup(
@@ -103,7 +103,7 @@ setup_p = SolverSetup(
     # tolerance   = 1e-01,
     relax       = 1.0,
     itmax       = 100,
-    rtol        = 1e-3
+    rtol        = 1e-2
 )
 
 #SymmlqSolver, MinresSolver - did not work!
@@ -116,14 +116,11 @@ p = ScalarField(mesh)
 
 function isimple!(
     mesh, velocity, nu, ux, uy, p, 
-    # x_momentum_model,
-    # y_momentum_model,
-    # pressure_correction,
     uxBCs, uyBCs, pBCs, UBCs,
     setup, setup_p, iterations
     ; resume=true)
-    # Pre-allocate fields
 
+    # Pre-allocate fields
     U = VectorField(mesh)
     Uf = FaceVectorField(mesh)
     mdot = ScalarField(mesh)
@@ -146,40 +143,28 @@ function isimple!(
 
     # Define models and equations
     x_momentum_eqn = Equation(mesh)
+    m, n = x_momentum_eqn.A.m, x_momentum_eqn.A.n
     opAx = LinearOperator(x_momentum_eqn.A)
     Px = ilu0(x_momentum_eqn.A)
-    opPUx = LinearOperator(
-        Float64, x_momentum_eqn.A.m, x_momentum_eqn.A.n, 
-        false, false, (y, v) -> ldiv!(y, Px, v)
-        )
+    opPUx = LinearOperator(Float64, m, n, false, false, (y, v) -> ldiv!(y, Px, v))
+    
+    
     x_momentum_model = create_model(ConvectionDiffusion, Uf, nu, ux, ∇p.x)
-    generate_boundary_conditions!(:ux_boundary_update!, mesh, x_momentum_model, uxBCs)
     
     y_momentum_eqn = Equation(mesh)
     opAy = LinearOperator(y_momentum_eqn.A)
     Py = ilu0(y_momentum_eqn.A)
-    opPUy = LinearOperator(
-        Float64, y_momentum_eqn.A.m, y_momentum_eqn.A.n, 
-        false, false, (y, v) -> ldiv!(y, Py, v)
-        )
+    opPUy = LinearOperator(Float64, m, n, false, false, (y, v) -> ldiv!(y, Py, v))
+
     y_momentum_model = create_model(ConvectionDiffusion, Uf, nu, uy, ∇p.y)
-    generate_boundary_conditions!(:uy_boundary_update!, mesh, y_momentum_model, uyBCs)
     
     pressure_eqn = Equation(mesh)
-    pressure_correction = create_model(Diffusion, rDf, p, divHv.values) #.*D)
-    generate_boundary_conditions!(:p_boundary_update!, mesh, pressure_correction, pBCs)
+    pressure_correction = create_model(Diffusion, rDf, p, divHv.values)
     rDf.values .= 1.0
     discretise!(pressure_eqn, pressure_correction)
-    Discretise.p_boundary_update!(pressure_eqn, pressure_correction, pBCs)
+    apply_boundary_conditions!(pressure_eqn, pressure_correction, pBCs)
     
     opAp = LinearOperator(pressure_eqn.A)
-    # Pp = ilu0(pressure_eqn.A)
-    # opPP = LinearOperator(
-    #     Float64, pressure_eqn.A.m, pressure_eqn.A.n, 
-    #     false, false, (y, v) -> ldiv!(y, Pp, v)
-    #     )
-    # opPP = I
-    # opPP = opCholesky(pressure_eqn.A)
     opPP = opLDL(pressure_eqn.A)
 
     #### NEED TO IMPLEMENT A SENSIBLE INITIALISATION TO INCLUDE WARM START!!!!
@@ -199,18 +184,17 @@ function isimple!(
     # end
     Rx = Float64[]
     volume  = volumes(mesh)
-    # Perform SIMPLE loops 
-
+    
     interpolate!(Uf, U, UBCs)   
     source!(∇p, pf, p, pBCs)
-
+    
     solver_p = setup_p.solver(pressure_eqn.A, pressure_eqn.b)
     solver_U = setup.solver(x_momentum_eqn.A, x_momentum_eqn.b)
-
+    
+    # Perform SIMPLE loops 
     @time for iteration ∈ 1:iterations
-    # @time for iteration ∈ 1:100
 
-        print("\nIteration ", iteration, "\n")
+        print("\nIteration ", iteration, "\n") # 91 allocations
         
         # interpolate!(Uf, U, UBCs)
         # interpolate!(Uf, U)
@@ -224,30 +208,28 @@ function isimple!(
         
         discretise!(x_momentum_eqn, x_momentum_model)
         @turbo @. y_momentum_eqn.A.nzval = x_momentum_eqn.A.nzval
-        # 672 allocations!!!
-        Discretise.ux_boundary_update!(x_momentum_eqn, x_momentum_model, uxBCs)
-        print("Solving x-momentum. ")
+
+        apply_boundary_conditions!(x_momentum_eqn, x_momentum_model, uxBCs)
+        print("Solving x-momentum. ") # 2 allocations
         alpha_U = 0.8
         implicit_relaxation!(x_momentum_eqn, ux0, alpha_U)
-        # Fm = ilu(x_momentum_eqn.A)
-        # Initial residual - Ux
-        # mul!(x_momentum_eqn.Fx, x_momentum_eqn.A, ux.values)
-        # x_momentum_eqn.R .= x_momentum_eqn.b .+ ∇p.x .- x_momentum_eqn.Fx
-        # res_x = norm(x_momentum_eqn.R)/norm(x_momentum_eqn.b)
-        # print("Initial residual: ", res_x, "\n")
-        # push!(Rx, res_x)
         
         ilu0!(Px, x_momentum_eqn.A)
-        run!(x_momentum_eqn, x_momentum_model, uxBCs, setup, opA=opAx, opP=opPUx, solver_alloc=solver_U)
+        run!(
+            x_momentum_eqn, x_momentum_model, uxBCs, 
+            setup, opA=opAx, opP=opPUx, solver_alloc=solver_U
+        ) # 41 allocations
 
-        # discretise!(y_momentum_eqn, y_momentum_model)
         @turbo @. y_momentum_eqn.b = 0.0
-        # 672 allocations!!
-        Discretise.uy_boundary_update!(y_momentum_eqn, y_momentum_model, uyBCs)
+
+        apply_boundary_conditions!(y_momentum_eqn, y_momentum_model, uyBCs)
         print("Solving y-momentum. ")
         implicit_relaxation!(y_momentum_eqn, uy0, alpha_U)
         ilu0!(Py, y_momentum_eqn.A)
-        run!(y_momentum_eqn, y_momentum_model, uyBCs, setup, opA=opAy, opP=opPUy, solver_alloc=solver_U)
+        run!(
+            y_momentum_eqn, y_momentum_model, uyBCs, 
+            setup, opA=opAy, opP=opPUy, solver_alloc=solver_U
+        )
 
         @turbo for i ∈ eachindex(ux0)
             ux0[i] = U.x[i]
@@ -259,7 +241,6 @@ function isimple!(
         inverse_diagonal!(rD, x_momentum_eqn)
         interpolate!(rDf, rD)
         remove_pressure_source!(x_momentum_eqn, y_momentum_eqn, ∇p, rD)
-        # H!(Hv, U, x_momentum_eqn, y_momentum_eqn, B, V, H)
         H_new!(Hv, U, x_momentum_eqn, y_momentum_eqn)
         
         @turbo for i ∈ eachindex(ux0)
@@ -270,14 +251,15 @@ function isimple!(
         @turbo @. divHv.values *= 1.0./volume
 
         discretise!(pressure_eqn, pressure_correction)
-        # Need to fix how BCs are applied 3.5k allocations!!!!!
-        Discretise.p_boundary_update!(pressure_eqn, pressure_correction, pBCs)
+        apply_boundary_conditions!(pressure_eqn, pressure_correction, pBCs)
         print("Solving pressure correction. ")
-        run!(pressure_eqn, pressure_correction, pBCs, setup_p, opA=opAp, opP=opPP, solver_alloc=solver_p)
+        run!(
+            pressure_eqn, pressure_correction, pBCs, 
+            setup_p, opA=opAp, opP=opPP, solver_alloc=solver_p
+        )
         
         source!(∇p, pf, p, pBCs) # 7 allocations
         # grad!(∇p, pf, p, pBCs) 
-        
         correct_velocity!(U, Hv, ∇p, rD)
         interpolate!(Uf, U, UBCs) # 7 allocations
         
@@ -285,18 +267,15 @@ function isimple!(
         source!(∇p, pf, p, pBCs)  # 7 allocations
         # grad!(∇p, pf, p, pBCs) 
         correct_velocity!(ux, uy, Hv, ∇p, rD)
-    end # end for loop 9.82s 564.73k, 10.53 553./// 5.57s 551.49k -> 5.31s 507.56k
-    # 1.43/1.55s 514.91k - 516.11k
-    # 1.53/1.42s 508.81k
-    # 1.28s 509.15k
-        
+    end # end for loop         
 end # end function
 
+GC.gc()
 isimple!(
     mesh, velocity, nu, ux, uy, p, 
     uxBCs, uyBCs, pBCs, UBCs,
     setup, setup_p, 100)
-# ux.values .= U.x
+
 write_vtk(mesh, ux)
 write_vtk(mesh, uy)
 write_vtk(mesh, p)

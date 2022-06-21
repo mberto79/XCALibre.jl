@@ -146,13 +146,13 @@ abstract type AbstractBoundary end
 abstract type AbstractDirichlet <: AbstractBoundary end
 abstract type AbstractNeumann <: AbstractBoundary end
 
-struct Dirichlet{F}
+struct Dirichlet{V}
     name::Symbol 
-    value::F 
-    function Dirichlet(name, value::T) where {T}
-        if T <: Number
+    value::V
+    function Dirichlet(name, value::V) where {V}
+        if V <: Number
             return new{eltype(value)}(name, value)
-        elseif T <: Vector
+        elseif V <: Vector
             if length(value) == 3 
                 nvalue = SVector{3, eltype(value)}(value)
                 return new{typeof(nvalue)}(name, nvalue)
@@ -165,7 +165,7 @@ struct Dirichlet{F}
     end
 end
 
-struct Neumann{F}
+struct Neumann{V}
     name::Symbol 
-    value::F 
+    value::V 
 end

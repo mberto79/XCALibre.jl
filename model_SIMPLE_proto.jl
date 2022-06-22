@@ -272,7 +272,7 @@ p = ScalarField(mesh)
 isimple!(
     mesh, velocity, nu, ux, uy, p, 
     uxBCs, uyBCs, pBCs, UBCs,
-    setup, setup_p, 350)
+    setup, setup_p, 100)
 
 write_vtk(mesh, ux)
 write_vtk(mesh, uy)

@@ -6,9 +6,11 @@ function source!(grad::Grad{Linear,I,F}, phif, phi, BCs; source=true) where {I,F
 end
 
 function grad!(grad::Grad{Linear,I,F}, phif, phi, BCs; source=false) where {I,F}
-    interpolate!(get_scheme(grad), phif, phi, BCs)
-    # interpolate!(phif, phi)
+    # interpolate!(get_scheme(grad), phif, phi, BCs)
+    interpolate!(phif, phi)
+    correct_boundaries!(phif, phi, BCs)
     green_gauss!(grad, phif; source)
+
     # correct phif field 
     if grad.correct
         phif0 = copy(phif.values) # it would be nice to find a way to avoid this!
@@ -23,7 +25,9 @@ end
 function div!(div::Div{I,F}, BCs) where {I,F}
     (; mesh, values, vector, face_vector) = div
     (; cells, faces) = mesh
-    interpolate!(face_vector, vector, BCs)
+    # interpolate!(face_vector, vector, BCs)
+    interpolate!(face_vector, vector)
+    correct_boundaries!(face_vector, vector, BCs)
 
     for ci ∈ eachindex(cells)
         (; facesID, nsign, volume) = cells[ci]

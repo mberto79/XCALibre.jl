@@ -110,10 +110,6 @@ setup_p = SolverSetup(
 
 mesh = generate_mesh()
 
-ux = ScalarField(mesh)
-uy = ScalarField(mesh)
-p = ScalarField(mesh)
-
 function isimple!(
     mesh, velocity, nu, ux, uy, p, 
     uxBCs, uyBCs, pBCs, UBCs,
@@ -185,7 +181,9 @@ function isimple!(
     Rx = Float64[]
     volume  = volumes(mesh)
     
-    interpolate!(Uf, U, UBCs)   
+    # interpolate!(Uf, U, UBCs)   
+    interpolate!(Uf, U)   
+    correct_boundaries!(Uf, U, UBCs)
     source!(∇p, pf, p, pBCs)
     
     solver_p = setup_p.solver(pressure_eqn.A, pressure_eqn.b)
@@ -195,12 +193,6 @@ function isimple!(
     @time for iteration ∈ 1:iterations
 
         print("\nIteration ", iteration, "\n") # 91 allocations
-        
-        # interpolate!(Uf, U, UBCs)
-        # interpolate!(Uf, U)
-        # correct_boundaries!(Uf, U, UBCs)
-        # mass_flux!(mdotf, Uf)
-        # div!(mdot, mdotf)
         
         # source!(∇p, pf, p, pBCs)
         # grad!(∇p, pf, p, pBCs)
@@ -258,23 +250,29 @@ function isimple!(
             setup_p, opA=opAp, opP=opPP, solver_alloc=solver_p
         )
         
-        source!(∇p, pf, p, pBCs) # 7 allocations
+        source!(∇p, pf, p, pBCs)
         # grad!(∇p, pf, p, pBCs) 
         correct_velocity!(U, Hv, ∇p, rD)
-        interpolate!(Uf, U, UBCs) # 7 allocations
+        interpolate!(Uf, U)
+        correct_boundaries!(Uf, U, UBCs)
         
         explicit_relaxation!(p, p0, 0.3)
-        source!(∇p, pf, p, pBCs)  # 7 allocations
+        source!(∇p, pf, p, pBCs)
         # grad!(∇p, pf, p, pBCs) 
         correct_velocity!(ux, uy, Hv, ∇p, rD)
     end # end for loop         
 end # end function
 
 GC.gc()
+
+ux = ScalarField(mesh)
+uy = ScalarField(mesh)
+p = ScalarField(mesh)
+
 isimple!(
     mesh, velocity, nu, ux, uy, p, 
     uxBCs, uyBCs, pBCs, UBCs,
-    setup, setup_p, 100)
+    setup, setup_p, 350)
 
 write_vtk(mesh, ux)
 write_vtk(mesh, uy)

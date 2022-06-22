@@ -2,6 +2,7 @@ module Calculate
 
 using LinearAlgebra
 using StaticArrays
+using LoopVectorization
 # using SparseArrays
 
 using FVM_1D.Mesh2D

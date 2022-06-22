@@ -39,28 +39,32 @@ export H!
     quote
     (; A, b, mesh) = equation
     (; boundaries, faces, cells) = mesh
-    indices = get_boundary_indices(mesh, BCs)
+    indices = boundary_indices(mesh, BCs)
     $(terms...)
     $(assignment_loops...)
     nothing
     end
 end
 
-function get_boundary_indices(mesh::Mesh2{TI,TF}, BCs) where {TI,TF}
-    BC_indices = TI[]
-    # BC_indices = ()
-    for BC ∈ BCs
-        name = BC.name
-        index = boundary_index(mesh, name)
-        push!(BC_indices, index)
-        # BC_indices = (BC_indices..., index)
-        # println("Boundary ", name, "\t", "found at index ", index)
+@generated function boundary_indices(mesh::Mesh2{TI,TF}, BCs) where {TI,TF}
+    unpacked_BCs = []
+    for i ∈ 1:length(BCs.parameters)
+        unpack = quote
+            name = BCs[$i].name
+            index = boundary_index(boundaries, name)
+            BC_indices = (BC_indices..., index)
+        end
+        push!(unpacked_BCs, unpack)
     end
-    BC_indices
+    quote
+        boundaries = mesh.boundaries
+        BC_indices = ()
+        $(unpacked_BCs...)
+        return BC_indices
+    end
 end
 
-function boundary_index(mesh::Mesh2{TI,TF}, name::Symbol) where {TI,TF}
-    (; boundaries) = mesh
+function boundary_index(boundaries::Vector{Boundary{TI}}, name::Symbol) where {TI}
     bci = zero(TI)
     for i ∈ eachindex(boundaries)
         bci += 1

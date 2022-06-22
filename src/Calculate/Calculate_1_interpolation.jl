@@ -1,92 +1,241 @@
 export interpolate!
 export correct_boundaries!
 
-# Scalar face interpolation
+# Function to correct interpolation at boundaries (expands loop to reduct allocations)
 
-function interpolate!(::Type{Linear}, phif::FaceScalarField{I,F}, phi, BCs) where {I,F}
-    nbfaces = total_boundary_faces(phi.mesh)
-    start = nbfaces + 1
-    (; mesh, values) = phi
-    (; cells, faces, boundaries) = mesh
-    for fi ∈ start:length(faces)
-        (; ownerCells) = faces[fi]
-        # w, df = weight(Linear, cells, faces, fi) # need to check is correct
-        w = 0.5
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        phi1 = values[cID1]
-        phi2 = values[cID2]
-        phif.values[fi] = w*phi1 + (1.0 - w)*phi2
+@generated function correct_boundaries!(phif, phi, BCs)
+    unpacked_BCs = []
+    for i ∈ 1:length(BCs.parameters)
+        unpack = quote
+            BC = BCs[$i]
+            name = BC.name
+            index = boundary_index(boundaries, name)
+            boundary = boundaries[index]
+            adjust_boundary!(BC, phif, phi, boundary, faces)
+        end
+        push!(unpacked_BCs, unpack)
     end
-    # boundary faces
-    for BC ∈ BCs
-        bi = boundary_index(mesh, BC.name)
-        boundary = mesh.boundaries[bi]
-        correct_boundary!(BC, phif, phi, boundary, faces)
+    quote
+    mesh = phi.mesh
+    (; faces, boundaries) = mesh  
+    $(unpacked_BCs...) 
     end
 end
 
-function correct_boundary!(
+# SCALAR INTERPOLATION
+
+function interpolate!(phif::FaceScalarField{I,F}, phi::ScalarField{I,F}) where {I,F}
+    vals = phi.values 
+    fvals = phif.values
+    mesh = phi.mesh 
+    faces = mesh.faces
+    @inbounds for fID ∈ eachindex(faces)
+        # (; weight, ownerCells) = faces[fi]
+        face = faces[fID]
+        weight = face.weight
+        ownerCells = face.ownerCells
+        phi1 = vals[ownerCells[1]]
+        phi2 = vals[ownerCells[2]]
+        one_minus_weight = 1.0 - weight
+        fvals[fID] = weight*phi1 + one_minus_weight*phi2 # check weight is used correctly!
+    end
+end
+
+# function interpolate!(::Type{Linear}, phif::FaceScalarField{I,F}, phi, BCs) where {I,F}
+#     nbfaces = total_boundary_faces(phi.mesh)
+#     start = nbfaces + 1
+#     (; mesh, values) = phi
+#     (; cells, faces, boundaries) = mesh
+#     for fi ∈ start:length(faces)
+#         (; ownerCells) = faces[fi]
+#         # w, df = weight(Linear, cells, faces, fi) # need to check is correct
+#         w = 0.5
+#         cID1 = ownerCells[1]
+#         cID2 = ownerCells[2]
+#         phi1 = values[cID1]
+#         phi2 = values[cID2]
+#         phif.values[fi] = w*phi1 + (1.0 - w)*phi2
+#     end
+#     correct_boundaries!(phif, phi, BCs)
+# end
+
+function adjust_boundary!(
     BC::Dirichlet, phif::FaceScalarField{I,F}, phi, boundary, faces) where {I,F}
     (; facesID, cellsID) = boundary
-    for fID ∈ facesID
+    @inbounds for fID ∈ facesID
         phif.values[fID] = BC.value 
     end
 end
 
-function correct_boundary!(
+function adjust_boundary!(
     BC::Neumann, phif::FaceScalarField{I,F}, phi, boundary, faces) where {I,F}
     (;facesID, cellsID) = boundary
-    for fi ∈ eachindex(facesID)
+    @inbounds for fi ∈ eachindex(facesID)
         fID = facesID[fi]
         cID = cellsID[fi]
-        (; normal, e, delta) = faces[fID]
+        # (; normal, e, delta) = faces[fID]
         phif.values[fID] = phi.values[cID] #+ BC.value*delta*(normal⋅e)
     end
 end
 
-function correct_interpolation!(
-    ::Type{Linear}, phif::FaceScalarField{I,F}, grad, phif0) where {I,F}
-    mesh = phif.mesh
-    start = total_boundary_faces(mesh) + 1
-    (; cells, faces) = mesh
-    for fi ∈ start:length(faces)
-        (; ownerCells) = faces[fi]
-        w, df = weight(Linear, cells, faces, fi)
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        grad1 = grad(cID1)
-        grad2 = grad(cID2)
-        grad_ave = w*grad1 + (1.0 - w)*grad2
-        phif.values[fi] = phif0[fi] + grad_ave⋅df
+# VECTOR INTERPOLATION
+
+function interpolate!(psif::FaceVectorField{I,F}, psi::VectorField{I,F}) where {I,F}
+    (; x, y, z) = psif # must extend to 3D
+    mesh = psi.mesh
+    faces = mesh.faces
+    @inbounds for fID ∈ eachindex(faces)
+        # (; weight, ownerCells) = faces[fID]
+        face = faces[fID]
+        weight = face.weight
+        ownerCells = face.ownerCells
+        # w, df = weight(Linear, cells, faces, fi)
+        cID1 = ownerCells[1]; cID2 = ownerCells[2]
+        x1 = psi.x[cID1]; x2 = psi.x[cID2]
+        y1 = psi.y[cID1]; y2 = psi.y[cID2]
+        one_minus_weight = 1.0 - weight
+        x[fID] = weight*x1 + one_minus_weight*x2 # check weight is used correctly!
+        y[fID] = weight*y1 + one_minus_weight*y2 # check weight is used correctly!
     end
 end
 
-# Gradient face interpolation
+# function interpolate!(psif::FaceVectorField{I,F}, psi::VectorField{I,F}, BCs) where {I,F}
+#     (; mesh, x, y, z) = psif
+#     (; cells, faces, boundaries) = mesh
+#     nbfaces = total_boundary_faces(mesh)
+#     start = nbfaces + 1
+#     for fi ∈ start:length(faces)
+#         (; ownerCells) = faces[fi]
+#         w, df = weight(Linear, cells, faces, fi)
+#         cID1 = ownerCells[1]
+#         cID2 = ownerCells[2]
+#         psi1 = psi(cID1)
+#         psi2 = psi(cID2)
+#         psii = w*psi1 + (1.0 - w)*psi2
+#         x[fi] = psii[1]
+#         y[fi] = psii[2]
+#         z[fi] = psii[3]
+#     end
+#     # correct_interpolation!(Linear, psif, grad)
+#     correct_boundaries!(psif, psi, BCs)
+# end
+
+function adjust_boundary!( 
+    BC::Dirichlet, psif::FaceVectorField{I,F}, psi::VectorField{I,F}, boundary, faces
+    ) where {I,F}
+
+    (; x, y, z) = psif
+    (; facesID) = boundary
+
+    @inbounds for fID ∈ facesID
+        x[fID] = BC.value[1]
+        y[fID] = BC.value[2]
+        z[fID] = BC.value[3]
+    end
+end
+
+function adjust_boundary!( 
+    BC::Neumann, psif::FaceVectorField{I,F}, psi::VectorField{I,F}, boundary, faces
+    ) where {I,F}
+
+    (; x, y, z) = psif
+    (; facesID, cellsID) = boundary
+
+    @inbounds for fi ∈ eachindex(facesID)
+        fID = facesID[fi]
+        cID = cellsID[fi]
+        psi_cell = psi(cID)
+        # normal = faces[fID].normal
+        # Line below needs sorting out for general user-defined gradients
+        # now only works for zero gradient
+        # psi_boundary =   psi_cell - (psi_cell⋅normal)*normal
+        x[fID] = psi_cell[1]
+        y[fID] = psi_cell[2]
+        z[fID] = psi_cell[3]
+    end
+end
+
+# GRADIENT INTERPOLATION
 
 function interpolate!(::Type{Linear}, gradf::FaceVectorField{I,F}, grad, BCs) where {I,F}
     (; mesh, x, y, z) = gradf
     (; cells, faces) = mesh
     nbfaces = total_boundary_faces(mesh)
     start = nbfaces + 1
-    for fi ∈ start:length(faces)
-        (; ownerCells) = faces[fi]
+    @inbounds for fID ∈ start:length(faces)
+        # (; ownerCells) = faces[fi]
+        face = faces[fID]
+        ownerCells = face.ownerCells
+        w, df = weight(Linear, cells, faces, fID)
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        grad1 = grad(cID1)
+        grad2 = grad(cID2)
+        one_minus_weight = 1.0 - w
+        gradi = w*grad1 + one_minus_weight*grad2
+        x[fID] = gradi[1]
+        y[fID] = gradi[2]
+        z[fID] = gradi[3]
+    end
+    correct_interpolation!(Linear, gradf, grad)
+    # boundary faces
+    for BC ∈ BCs
+        bi = boundary_index(boundaries, BC.name)
+        boundary = boundaries[bi]
+        correct_boundary!(BC, gradf, grad, boundary, faces)
+    end
+end
+
+function correct_interpolation!(
+    ::Type{Linear}, phif::FaceScalarField{I,F}, grad, phif0) where {I,F}
+    mesh = phif.mesh
+    (; cells, faces) = mesh
+    start = total_boundary_faces(mesh) + 1
+    finish = length(faces)
+    @inbounds for fID ∈ start:finish
+        # (; ownerCells) = faces[fi]
+        face = faces[fID]
+        ownerCells = face.ownerCells
         w, df = weight(Linear, cells, faces, fi)
         cID1 = ownerCells[1]
         cID2 = ownerCells[2]
         grad1 = grad(cID1)
         grad2 = grad(cID2)
-        gradi = w*grad1 + (1.0 - w)*grad2
-        x[fi] = gradi[1]
-        y[fi] = gradi[2]
-        z[fi] = gradi[3]
+        one_minus_weight = 1.0 - w
+        grad_ave = w*grad1 + one_minus_weight*grad2
+        phif.values[fID] = phif0[fID] + grad_ave⋅df
     end
-    correct_interpolation!(Linear, gradf, grad)
-    # boundary faces
-    for BC ∈ BCs
-        bi = boundary_index(mesh, BC.name)
-        boundary = mesh.boundaries[bi]
-        correct_boundary!(BC, gradf, grad, boundary, faces)
+end
+
+function correct_interpolation!(::Type{Linear}, gradf, grad)
+    values = grad.phi.values
+    mesh = grad.mesh
+    (; cells, faces) = mesh
+    start = total_boundary_faces(mesh) + 1
+    finish = length(faces)
+    @inbounds for fID ∈ start:finish
+    # for fi ∈ 1:length(faces)
+        # (; ownerCells, delta, e) = faces[fi]
+        face = faces[fID]
+        ownerCells = face.ownerCells
+        delta = face.ownerCells
+        e = face.ownerCells
+        w, df = weight(Linear, cells, faces, fi)
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        # c1 = cells[cID1].centre
+        # c2 = cells[cID2].centre
+        # distance = c2 - c1
+        # d = distance/delta
+        d = e
+        # grad1 = grad(cID1)
+        # grad2 = grad(cID2)
+        # grad_ave = w*grad1 + (1.0 - w)*grad2
+        grad_ave = gradf(fID)
+        grad_corr = grad_ave + ((values[cID2] - values[cID1])/delta - (grad_ave⋅d))*d
+        gradf.x[fID] = grad_corr[1]
+        gradf.y[fID] = grad_corr[2]
+        gradf.z[fID] = grad_corr[3]
     end
 end
 
@@ -94,7 +243,7 @@ function correct_boundary!( # Another way is to use the boundary value and geome
     BC::Dirichlet, gradf::FaceVectorField{I,F}, grad, boundary, faces) where {I,F}
     (; mesh, x, y, z) = gradf
     (; facesID) = boundary
-    for fID ∈ facesID
+    @inbounds for fID ∈ facesID
         face = faces[fID]
         normal = faces[fID].normal
         cID = face.ownerCells[1]
@@ -111,7 +260,7 @@ function correct_boundary!(
     BC::Neumann, gradf::FaceVectorField{I,F}, grad, boundary, faces) where {I,F}
     (; mesh, x, y, z) = gradf
     (; facesID) = boundary
-    for fID ∈ facesID
+    @inbounds for fID ∈ facesID
         face = faces[fID]
         normal = faces[fID].normal
         cID = face.ownerCells[1]
@@ -120,181 +269,5 @@ function correct_boundary!(
         x[fID] = grad_boundary[1]
         y[fID] = grad_boundary[2]
         z[fID] = grad_boundary[3]
-    end
-end
-
-function correct_interpolation!(::Type{Linear}, gradf, grad)
-    mesh = grad.mesh
-    values = grad.phi.values
-    start = total_boundary_faces(mesh) + 1
-    (; cells, faces) = mesh
-    for fi ∈ start:length(faces)
-    # for fi ∈ 1:length(faces)
-        (; ownerCells, delta, e) = faces[fi]
-        w, df = weight(Linear, cells, faces, fi)
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        # c1 = cells[cID1].centre
-        # c2 = cells[cID2].centre
-        # distance = c2 - c1
-        # d = distance/delta
-        d = e
-        # grad1 = grad(cID1)
-        # grad2 = grad(cID2)
-        # grad_ave = w*grad1 + (1.0 - w)*grad2
-        grad_ave = gradf(fi)
-        grad_corr = grad_ave + ((values[cID2] - values[cID1])/delta - (grad_ave⋅d))*d
-        gradf.x[fi] = grad_corr[1]
-        gradf.y[fi] = grad_corr[2]
-        gradf.z[fi] = grad_corr[3]
-    end
-end
-
-# Vector face interpolation
-
-function interpolate!(gradf::FaceVectorField{I,F}, grad::VectorField{I,F}, BCs) where {I,F}
-    (; mesh, x, y, z) = gradf
-    (; cells, faces) = mesh
-    nbfaces = total_boundary_faces(mesh)
-    start = nbfaces + 1
-    for fi ∈ start:length(faces)
-        (; ownerCells) = faces[fi]
-        w, df = weight(Linear, cells, faces, fi)
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        grad1 = grad(cID1)
-        grad2 = grad(cID2)
-        gradi = w*grad1 + (1.0 - w)*grad2
-        x[fi] = gradi[1]
-        y[fi] = gradi[2]
-        z[fi] = gradi[3]
-    end
-    # correct_interpolation!(Linear, gradf, grad)
-    # boundary faces
-    for BC ∈ BCs
-        bi = boundary_index(mesh, BC.name)
-        boundary = mesh.boundaries[bi]
-        correct_boundary_generic!(BC, gradf, grad, boundary, faces)
-    end
-end
-
-function correct_boundary_generic!( 
-    BC::Dirichlet, 
-    Uf::FaceVectorField{I,F}, 
-    U::VectorField{I,F},
-    boundary, 
-    faces) where {I,F}
-
-    (; mesh, x, y, z) = Uf
-    (; facesID) = boundary
-    for fID ∈ facesID
-        x[fID] = BC.value[1]
-        y[fID] = BC.value[2]
-        z[fID] = BC.value[3]
-    end
-end
-
-function correct_boundary_generic!( 
-    BC::Neumann, 
-    Uf::FaceVectorField{I,F}, 
-    U::VectorField{I,F},
-    boundary, 
-    faces) where {I,F}
-
-    (; mesh, x, y, z) = Uf
-    (; facesID) = boundary
-    
-    for fID ∈ facesID
-        face = faces[fID]
-        # normal = faces[fID].normal
-        cID = face.ownerCells[1]
-        U_cell = U(cID)
-        # Line below needs sorting out for general user-defined gradients
-        # now only works for zero gradient
-        # U_boundary =   U_cell - (U_cell⋅normal)*normal
-        x[fID] = U_cell[1]
-        y[fID] = U_cell[2]
-        z[fID] = U_cell[3]
-    end
-end
-
-function interpolate!(phif::FaceScalarField{I,F}, phi::ScalarField{I,F}) where {I,F}
-    vals = phi.values 
-    fvals = phif.values
-    mesh = phi.mesh 
-    faces = mesh.faces
-    for fi ∈ eachindex(faces)
-        (; weight, ownerCells) = faces[fi]
-        phi1 = vals[ownerCells[1]]
-        phi2 = vals[ownerCells[2]]
-        fvals[fi] = weight*phi1 + (1.0 - weight)*phi2 # check weight is used correctly!
-    end
-end
-
-function interpolate!(phif::FaceVectorField{I,F}, phi::VectorField{I,F}) where {I,F}
-    (; x, y, z) = phif # must extend to 3D
-    mesh = phi.mesh 
-    faces = mesh.faces
-    for fID ∈ eachindex(faces)
-        (; weight, ownerCells) = faces[fID]
-        cID1 = ownerCells[1]; cID2 = ownerCells[2]
-        x1 = phi.x[cID1]; x2 = phi.x[cID2]
-        y1 = phi.y[cID1]; y2 = phi.y[cID2]
-        x[fID] = weight*x1 + (1.0 - weight)*x2 # check weight is used correctly!
-        y[fID] = weight*y1 + (1.0 - weight)*y2 # check weight is used correctly!
-    end
-end
-
-function correct_boundaries!(
-    phif::FaceVectorField{I,F}, 
-    phi::VectorField{I,F},
-    BCs
-    ) where {I,F}
-    mesh = phif.mesh
-    faces = mesh.faces
-    for BC ∈ BCs
-        bi = boundary_index(mesh, BC.name)
-        boundary = mesh.boundaries[bi]
-        correct!(BC, phif, phi, boundary, faces)
-    end
-end
-
-function correct!(
-    BC::Dirichlet, 
-    phif::FaceVectorField{I,F}, 
-    phi::VectorField{I,F},
-    boundary, 
-    faces) where {I,F}
-
-    (; mesh, x, y, z) = phif
-    (; facesID) = boundary
-    for fID ∈ facesID
-        x[fID] = BC.value[1]
-        y[fID] = BC.value[2]
-        z[fID] = BC.value[3]
-    end
-end
-
-function correct!( 
-    BC::Neumann, 
-    phif::FaceVectorField{I,F}, 
-    phi::VectorField{I,F},
-    boundary, 
-    faces) where {I,F}
-
-    (; mesh, x, y, z) = phif
-    (; facesID) = boundary
-    
-    for fID ∈ facesID
-        face = faces[fID]
-        # normal = faces[fID].normal
-        cID = face.ownerCells[1]
-        phi_cell = phi(cID)
-        # Line below needs sorting out for general user-defined gradients
-        # now only works for zero gradient
-        # U_boundary =   U_cell - (U_cell⋅normal)*normal
-        x[fID] = phi_cell[1]
-        y[fID] = phi_cell[2]
-        z[fID] = phi_cell[3]
     end
 end

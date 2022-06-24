@@ -1,6 +1,7 @@
 using Plots
 using LinearOperators
 using LinearAlgebra
+using Statistics
 
 using FVM_1D.Mesh2D
 using FVM_1D.Plotting
@@ -88,22 +89,22 @@ pBCs = (
 
 setup = SolverSetup(
     iterations  = 1,
-    solver      = GmresSolver,
+    solver      = BicgstabSolver,
     tolerance   = 1e-1,
     # tolerance   = 1e-01,
     relax       = 1.0,
     itmax       = 100,
-    rtol        = 1e-1
+    rtol        = 1e-3
 )
 
 setup_p = SolverSetup(
     iterations  = 1,
-    solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
+    solver      = BicgstabSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
     tolerance   = 1e-1,
     # tolerance   = 1e-01,
     relax       = 1.0,
     itmax       = 100,
-    rtol        = 1e-2
+    rtol        = 1e-3
 )
 
 #SymmlqSolver, MinresSolver - did not work!
@@ -190,6 +191,7 @@ function isimple!(
     solver_U = setup.solver(x_momentum_eqn.A, x_momentum_eqn.b)
     
     # Perform SIMPLE loops 
+    residual_ux = Float64[]
     @time for iteration ∈ 1:iterations
 
         print("\nIteration ", iteration, "\n") # 91 allocations
@@ -203,7 +205,7 @@ function isimple!(
 
         apply_boundary_conditions!(x_momentum_eqn, x_momentum_model, uxBCs)
         print("Solving x-momentum. ") # 2 allocations
-        alpha_U = 0.8
+        alpha_U = 0.7
         implicit_relaxation!(x_momentum_eqn, ux0, alpha_U)
         
         ilu0!(Px, x_momentum_eqn.A)
@@ -211,6 +213,9 @@ function isimple!(
             x_momentum_eqn, x_momentum_model, uxBCs, 
             setup, opA=opAx, opP=opPUx, solver_alloc=solver_U
         ) # 41 allocations
+
+        res = residual(x_momentum_eqn, ux, opAx, solver_U)
+        push!(residual_ux, res)
 
         @turbo @. y_momentum_eqn.b = 0.0
 
@@ -260,7 +265,8 @@ function isimple!(
         source!(∇p, pf, p, pBCs)
         # grad!(∇p, pf, p, pBCs) 
         correct_velocity!(ux, uy, Hv, ∇p, rD)
-    end # end for loop         
+    end # end for loop
+    return residual_ux         
 end # end function
 
 GC.gc()
@@ -269,17 +275,19 @@ ux = ScalarField(mesh)
 uy = ScalarField(mesh)
 p = ScalarField(mesh)
 
-isimple!(
+Rx = isimple!(
     mesh, velocity, nu, ux, uy, p, 
     uxBCs, uyBCs, pBCs, UBCs,
-    setup, setup_p, 100)
+    setup, setup_p, 300)
 
 write_vtk(mesh, ux)
 write_vtk(mesh, uy)
 write_vtk(mesh, p)
 
-plotly(size=(400,400), markersize=1, markerstrokewidth=1)
-plot(collect(1:100), Rx[1:100], yscale=:log10)
+# plotly(size=(400,400), markersize=1, markerstrokewidth=1)
+
+plot(collect(1:300), Rx[1:300], yscale=:log10)
+
 scatter(x(mesh), y(mesh), ux.values, color=:red)
 scatter(x(mesh), y(mesh), uy.values, color=:red)
 
@@ -314,7 +322,20 @@ scatter(xf(mesh), yf(mesh), mdotf.values, color=:red)
 
 
 
-
+function residual(equation, phi, opA, solver)
+    (; A, b, R, Fx) = equation
+    values = phi.values
+    mul!(Fx, opA, values)
+    R .= abs.(Fx .- b)
+    # for i ∈ eachindex(values)
+    #     Fx[i] = abs(A[i,i]*values[i])
+    # end
+    # R .= R./Fx
+    # res = mean(R)
+    res = norm(R)/mean(values)
+    print("Residual: ", res, " (", niterations(solver), " iterations)\n") 
+    return res
+end
 
 
 function mass_flux!(mdotf::FaceScalarField{I,F}, Uf::FaceVectorField{I,F}) where {I,F}

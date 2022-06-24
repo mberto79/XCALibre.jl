@@ -19,64 +19,10 @@ SolverSetup(
     tolerance::F, 
     relax::F, 
     itmax::I=200, 
-    atol::F=1e-12, 
+    atol::F=1e-15, 
     rtol::F=1e-1
     ) where {S,I,F} = begin
     SolverSetup{S,I,F}(solver, iterations, tolerance, relax, itmax, atol, rtol)
-end
-
-function run_old!(
-    equation::Equation{Ti,Tf}, phiModel, BCs, setup; correct_term=nothing
-    ) where {Ti,Tf}
-    discretise!(equation, phiModel)
-    update_boundaries!(equation, phiModel, BCs)
-
-    (; solver, iterations, tolerance, relax, itmax, atol, rtol) = setup
-    (; A, b) = equation
-    (; phi) = phiModel.terms.term1
-    (; values, mesh) = phi
-
-    solver_alloc = solver(A, b)
-    F = ilu(A, τ = 0.005)
-    
-    # Definition of linear operators to reduce allocations during iterations
-    opP = LinearOperator(Float64, A.m, A.n, false, false, (y, v) -> ldiv!(y, F, v))
-    opA = LinearOperator(A)
-
-    if correct_term !== nothing 
-        bb      = copy(b)
-        gradPhi = Grad{Linear}(phi,2)
-        phif    = FaceScalarField(mesh)
-        gradf   = FaceVectorField(mesh)
-    end
-
-    @inbounds for i ∈ 1:iterations
-        solve!(
-            solver_alloc, opA, b, values; 
-            M=opP, itmax=itmax, atol=atol, rtol=rtol
-            )
-        relax!(phi, solver_alloc, relax)
-
-        if correct_term !== nothing
-            nonorthogonal_correction!(gradPhi, gradf, phif, BCs)
-            b .= bb
-            correct!(equation, correct_term, phif)
-        end
-
-        update_residual!(equation, opA, phi)
-        if residual(equation) <= tolerance
-            residual_print(equation)
-            println("Converged in ", i, " iterations")
-            break
-        end
-        residual_print(equation)
-    end
-    if correct_term !== nothing 
-        bb      = nothing
-        gradPhi = nothing
-        phif    = nothing
-        gradf   = nothing
-    end
 end
 
 function run!(
@@ -91,17 +37,12 @@ function run!(
     (; phi) = phiModel.terms.term1
     (; values, mesh) = phi
 
-    # solver_alloc = solver(A, b)
-
     if correct_term !== nothing 
         bb      = copy(b)
         gradPhi = Grad{Linear}(phi,2)
         phif    = FaceScalarField(mesh)
         gradf   = FaceVectorField(mesh)
     end
-
-    # mul!(Fx, opA, values)
-    # R .= b .- Fx
 
     for i ∈ 1:iterations
         solve!(
@@ -119,22 +60,28 @@ function run!(
             correct!(equation, correct_term, phif)
         end
 
-        mul!(Fx, opA, values)
-        R .= b .- Fx
-        res = 0.0
-        normB = norm(b) 
-        normR = norm(R)
-        if normB == zero(eltype(b))
-            res = 1.0
-        else
-            res = normR/normB
-        end
-        if res <= tolerance
-            print(
-                "Converged in ", niterations(solver_alloc), " iterations. ",
-                "Residual: ", res, "\n")
-            break
-        end
+        # mul!(Fx, opA, values)
+        # # R .= b .- Fx
+        # R .= abs.(Fx .- b)
+        # for i ∈ eachindex(values)
+        #     Fx[i] = abs(A[i,i]*values[i])
+        # end
+        # R .= R./maximum(Fx)
+
+        # # res = 0.0
+        # res = maximum(R)
+        # # normB = norm(b) 
+        # # normR = norm(R)
+        # # if normB == zero(eltype(b))
+        # #     res = 1.0
+        # # else
+        #     # res = normR/normB
+        # # end
+        # # if res <= tolerance
+        #     print(
+        #         "Residual: ", res, " (", niterations(solver_alloc), " iterations)\n")
+            # break
+        # end
         # println("Residual: ", res)
     end
     if correct_term !== nothing 

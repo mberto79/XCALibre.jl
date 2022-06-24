@@ -1,10 +1,11 @@
 module Solvers
 
-using Krylov
-using IncompleteLU
-using LinearOperators
+using LoopVectorization
 using LinearAlgebra
+using LinearOperators
+using Krylov
 using ILUZero
+# using IncompleteLU
 
 using FVM_1D.Mesh2D
 using FVM_1D.Discretise

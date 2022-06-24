@@ -27,12 +27,12 @@ end
 
 function run!(
     equation::Equation{Ti,Tf}, phiModel, BCs, setup; 
-    correct_term=nothing, opA, opP
+    correct_term=nothing, opA, opP, solver
     ) where {Ti,Tf}
     
     equation.b .+= phiModel.sources.source1
 
-    (; solver, iterations, tolerance, relax, itmax, atol, rtol) = setup
+    (; iterations, tolerance, relax, itmax, atol, rtol) = setup
     (; A, b, R, Fx) = equation
     (; phi) = phiModel.terms.term1
     (; values, mesh) = phi

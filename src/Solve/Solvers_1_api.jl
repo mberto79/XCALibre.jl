@@ -27,7 +27,7 @@ end
 
 function run!(
     equation::Equation{Ti,Tf}, phiModel, BCs, setup; 
-    correct_term=nothing, opA, opP, solver_alloc
+    correct_term=nothing, opA, opP
     ) where {Ti,Tf}
     
     equation.b .+= phiModel.sources.source1
@@ -46,43 +46,19 @@ function run!(
 
     for i ∈ 1:iterations
         solve!(
-            # solver_alloc, opA, R; 
-            solver_alloc, opA, b, values; 
+            # solver, opA, R; 
+            solver, opA, b, values; 
             M=opP, itmax=itmax, atol=atol, rtol=rtol
             )
-        # values .+= relax.*solver_alloc.x
+        # values .+= relax.*solver.x
         # @time @. values += relax*(x - values)
-        relax!(values, solver_alloc.x, relax)
+        relax!(values, solver.x, relax)
 
         if correct_term !== nothing
             nonorthogonal_correction!(gradPhi, gradf, phif, BCs)
             b .= bb
             correct!(equation, correct_term, phif)
         end
-
-        # mul!(Fx, opA, values)
-        # # R .= b .- Fx
-        # R .= abs.(Fx .- b)
-        # for i ∈ eachindex(values)
-        #     Fx[i] = abs(A[i,i]*values[i])
-        # end
-        # R .= R./maximum(Fx)
-
-        # # res = 0.0
-        # res = maximum(R)
-        # # normB = norm(b) 
-        # # normR = norm(R)
-        # # if normB == zero(eltype(b))
-        # #     res = 1.0
-        # # else
-        #     # res = normR/normB
-        # # end
-        # # if res <= tolerance
-        #     print(
-        #         "Residual: ", res, " (", niterations(solver_alloc), " iterations)\n")
-            # break
-        # end
-        # println("Residual: ", res)
     end
     if correct_term !== nothing 
         bb      = nothing

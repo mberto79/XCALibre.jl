@@ -17,7 +17,7 @@ function isimple!(
     ∇p = Grad{Linear}(p)
     
     Hv = VectorField(mesh)
-    divHv = Div(Hv, FaceVectorField(mesh), Hv.values, mesh)
+    divHv = Div(Hv, FaceVectorField(mesh), zeros(TF, n_cells), mesh)
     rD = ScalarField(mesh)
     rDf = FaceScalarField(mesh)
 
@@ -73,7 +73,7 @@ function isimple!(
     source!(∇p, pf, p, pBCs)
     
     # Perform SIMPLE loops 
-    R_ux = Float64[]
+    R_ux = TF[]
     @time for iteration ∈ 1:iterations
 
         print("\nIteration ", iteration, "\n") # 91 allocations
@@ -82,26 +82,29 @@ function isimple!(
         # grad!(∇p, pf, p, pBCs)
         neg!(∇p)
         
+        print("Solving x-momentum. ")
+
         discretise!(x_momentum_eqn, x_momentum_model)
         @inbounds @. y_momentum_eqn.A.nzval = x_momentum_eqn.A.nzval
-
         apply_boundary_conditions!(x_momentum_eqn, x_momentum_model, uxBCs)
-        print("Solving x-momentum. ")
         implicit_relaxation!(x_momentum_eqn, ux0, setup_U.relax)
-        
         ilu0!(Px, x_momentum_eqn.A)
         run!(
             x_momentum_eqn, x_momentum_model, uxBCs, 
             setup_U, opA=opAx, opP=opPUx, solver=solver_U
         )
 
-        res_ux = residual(x_momentum_eqn, ux, opAx, solver_U)
-        push!(R_ux, res_ux)
+        res = residual(x_momentum_eqn, ux, opAx, solver_U)
+        push!(R_ux, res)
+        if res <= 2e-6
+            print("\nSimulation met convergence criterion. Stop!\n")
+            break
+        end
+
+        print("Solving y-momentum. ")
 
         @inbounds @. y_momentum_eqn.b = 0.0
-
         apply_boundary_conditions!(y_momentum_eqn, y_momentum_model, uyBCs)
-        print("Solving y-momentum. ")
         implicit_relaxation!(y_momentum_eqn, uy0, setup_U.relax)
         ilu0!(Py, y_momentum_eqn.A)
         run!(
@@ -126,11 +129,15 @@ function isimple!(
             U.y[i] = uy0[i]
         end
         div!(divHv, UBCs) # 7 allocations
-        @inbounds @. divHv.values *= 1.0./volume
+        # @inbounds @. divHv.values *= 1.0./volume
+        @inbounds @. rD.values *= volume#^2
+        interpolate!(rDf, rD)
+        @inbounds @. rD.values /= volume#^2
+
+        print("Solving pressure correction. ")
 
         discretise!(pressure_eqn, pressure_correction)
         apply_boundary_conditions!(pressure_eqn, pressure_correction, pBCs)
-        print("Solving pressure correction. ")
         run!(
             pressure_eqn, pressure_correction, pBCs, 
             setup_p, opA=opAp, opP=opPP, solver=solver_p
@@ -147,11 +154,11 @@ function isimple!(
         # grad!(∇p, pf, p, pBCs) 
         correct_velocity!(ux, uy, Hv, ∇p, rD)
     end # end for loop
-    return residual_ux         
+    return R_ux         
 end # end function
 
 
-function residual(equation, phi, opA, solver)
+function residual(equation::Equation{TI,TF}, phi, opA, solver) where {TI,TF}
     (; A, b, R, Fx) = equation
     values = phi.values
     # Option 1
@@ -161,8 +168,8 @@ function residual(equation, phi, opA, solver)
 
     # Option 2
     mul!(Fx, opA, values)
-    @inbounds @. R = Fx - b
-    sum = 
+    @inbounds @. R = b - Fx
+    sum = zero(TF)
     @inbounds for i ∈ eachindex(R)
         sum += (R[i])^2 
     end

@@ -111,7 +111,7 @@ ux = ScalarField(mesh)
 uy = ScalarField(mesh)
 p = ScalarField(mesh)
 
-iterations = 100
+iterations = 200
 Rx = isimple!(
     mesh, velocity, nu, ux, uy, p, 
     uxBCs, uyBCs, pBCs, UBCs,
@@ -122,8 +122,8 @@ write_vtk(mesh, uy)
 write_vtk(mesh, p)
 
 # plotly(size=(400,400), markersize=1, markerstrokewidth=1)
-
-plot(collect(1:iterations), Rx[1:iterations], yscale=:log10)
+niterations = length(Rx)
+plot(collect(1:niterations), Rx[1:niterations], yscale=:log10)
 
 scatter(x(mesh), y(mesh), ux.values, color=:red)
 scatter(x(mesh), y(mesh), uy.values, color=:red)

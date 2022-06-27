@@ -29,8 +29,10 @@ function generate_mesh(n_horizontal, n_vertical)
     e2 = line!(points,3,4,n_horizontal)
     
     # Edges in y-direction
-    e3 = line!(points,1,3,n_vertical)
-    e4 = line!(points,2,4,n_vertical)
+    # e3 = line!(points,1,3,n_vertical)
+    # e4 = line!(points,2,4,n_vertical)
+    e3 = line!(points,1,3,n_vertical,0.9)
+    e4 = line!(points,2,4,n_vertical,0.9)
     edges = [e1, e2, e3, e4]
 
     b1 = quad(edges, [1,2,3,4])
@@ -55,24 +57,24 @@ UBCs = (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:bottom, [0.0, 0.0, 0.0]),
-    Dirichlet(:top, [0.0, 0.0, 0.0])
-    # Neumann(:top, 0.0)
+    # Dirichlet(:top, [0.0, 0.0, 0.0])
+    Neumann(:top, 0.0)
 )
 
 uxBCs = (
     Dirichlet(:inlet, velocity[1]),
     Neumann(:outlet, 0.0),
     Dirichlet(:bottom, 0.0),
-    Dirichlet(:top, 0.0)
-    # Neumann(:top, 0.0)
+    # Dirichlet(:top, 0.0)
+    Neumann(:top, 0.0)
 )
 
 uyBCs = (
     Dirichlet(:inlet, velocity[2]),
     Neumann(:outlet, 0.0),
     Dirichlet(:bottom, 0.0),
-    Dirichlet(:top, 0.0)
-    # Neumann(:top, 0.0)
+    # Dirichlet(:top, 0.0)
+    Neumann(:top, 0.0)
 )
 
 pBCs = (
@@ -101,8 +103,8 @@ setup_p = SolverSetup(
 )
 
 #SymmlqSolver, MinresSolver - did not work!
-n_vertical      = 40 
-n_horizontal    = 200 
+n_vertical      = 40 #40 
+n_horizontal    = 200 #200 
 mesh = generate_mesh(n_horizontal, n_vertical)
 
 GC.gc()
@@ -111,12 +113,13 @@ ux = ScalarField(mesh)
 uy = ScalarField(mesh)
 p = ScalarField(mesh)
 
-iterations = 200
+iterations = 100
 Rx = isimple!(
     mesh, velocity, nu, ux, uy, p, 
     uxBCs, uyBCs, pBCs, UBCs,
     setup_U, setup_p, iterations)
 
+ux.values .= 0.0
 write_vtk(mesh, ux)
 write_vtk(mesh, uy)
 write_vtk(mesh, p)

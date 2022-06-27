@@ -167,16 +167,50 @@ function residual(equation::Equation{TI,TF}, phi, opA, solver) where {TI,TF}
     # res = norm(R)/mean(values)
 
     # Option 2
-    mul!(Fx, opA, values)
-    @inbounds @. R = b - Fx
-    sum = zero(TF)
-    @inbounds for i ∈ eachindex(R)
-        sum += (R[i])^2 
-    end
-    res = sqrt(sum/length(R))
+    # mul!(Fx, opA, values)
+    # @inbounds @. R = b - Fx
+    # sum = zero(TF)
+    # @inbounds for i ∈ eachindex(R)
+    #     sum += (R[i])^2 
+    # end
+    # res = sqrt(sum/length(R))
+
+    # Option 3 (OpenFOAM definition)
+    solMean = mean(values)
+    term1 = abs.(opA*(values .- solMean))
+    term2 = abs.(b .- opA*solMean*values./values) # ones(length(b))*  values./values
+    N = sum(term1 + term2)
+    res = (1/N)*sum(abs.(b - opA*values))
 
     print("Residual: ", res, " (", niterations(solver), " iterations)\n") 
     return res
+end
+
+function calculate_residuals(
+    divU::ScalarField, UxEqn::Equation, UyEqn::Equation, Ux::ScalarField, Uy::ScalarField)
+    
+    continuityError = abs(mean(-divU.values))
+    # UxResidual = norm(UxEqn.A*Ux.values - UxEqn.b)/Rx₀
+    # UyResidual = norm(UyEqn.A*Uy.values - UyEqn.b)/Ry₀
+
+    solMean = mean(Ux.values)
+    N = sum(
+        abs.(UxEqn.A*(Ux.values .- solMean)) + 
+        abs.(UxEqn.b .- UxEqn.A*ones(length(UxEqn.b))*solMean)
+        )
+    UxResidual = (1/N)*sum(abs.(UxEqn.b - UxEqn.A*Ux.values))
+
+    solMean = mean(Uy.values)
+    N = sum(
+        abs.(UyEqn.A*(Uy.values .- solMean)) + 
+        abs.(UyEqn.b .- UyEqn.A*ones(length(UyEqn.b))*solMean)
+        )
+    UyResidual = (1/N)*sum(abs.(UyEqn.b - UyEqn.A*Uy.values))
+
+    # UxResidual = sum(sqrt.((UxEqn.b - UxEqn.A*Ux.values).^2))/length(UxEqn.b)/Rx₀
+    # UyResidual = sum(sqrt.((UyEqn.b - UyEqn.A*Uy.values).^2))/length(UyEqn.b)/Ry₀
+
+    return continuityError, UxResidual, UyResidual
 end
 
 

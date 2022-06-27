@@ -306,6 +306,31 @@ function linear_distribution(p1::Node{F}, p2::Node{F}, ncells::I) where {I,F}
     spacing, normal
 end
 
+function line!(pts::Vector{Node{F}}, p1_index::I, p2_index::I, ncells::I, ratio::F) where {I,F}
+    nodesID = fill(zero(I), ncells+1)
+    nodesID[1] = p1_index
+    nodesID[end] = p2_index
+
+    p1 = pts[p1_index]
+    p2 = pts[p2_index]
+    spacing, normal = geometric_distribution(p1, p2, ncells)
+    for j ∈ 2:ncells
+        println( p1.coords, " ", normal)
+        push!(pts, Node(p1.coords + spacing(ratio, ncells-j+2) * normal))
+        nodesID[j] = length(pts)
+    end
+    return Edge(nodesID, ncells, false)
+end
+
+function geometric_distribution(p1::Node{F}, p2::Node{F}, ncells::I) where {I,F}
+    d = p2.coords - p1.coords
+    d_mag = norm(d)
+    normal = d/d_mag
+    println(d_mag)
+    spacing(ratio, ni) = d_mag*ratio^(ni)
+    spacing, normal
+end
+
 function quad(edges::Vector{Edge{I}}, edgesID::Vector{I}) where {I,F}
     IDs = SVector{4,I}(edgesID)
     nx = edges[IDs[1]].ncells

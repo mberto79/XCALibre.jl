@@ -67,7 +67,7 @@ end
     ) where {V} = begin
     ap = term.sign[1]*(term.J⋅face.normal*face.area)
     A[cellID,cellID] += ap # 2.0*ap
-    b[cellID] += 0.0*-ap*0.5
+    # b[cellID] += 0.0 # need to extend for gradients other than zero
     nothing
 end
 

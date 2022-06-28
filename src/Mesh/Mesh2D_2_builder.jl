@@ -313,22 +313,24 @@ function line!(pts::Vector{Node{F}}, p1_index::I, p2_index::I, ncells::I, ratio:
 
     p1 = pts[p1_index]
     p2 = pts[p2_index]
-    spacing, normal = geometric_distribution(p1, p2, ncells)
+    δx, normal = symmetric_tanh_distribution(p1, p2, ncells)
     for j ∈ 2:ncells
-        println( p1.coords, " ", normal)
-        push!(pts, Node(p1.coords + spacing(ratio, ncells-j+2) * normal))
+        push!(pts, Node(p1.coords + δx(j-1, ratio) * normal))
         nodesID[j] = length(pts)
     end
     return Edge(nodesID, ncells, false)
 end
 
-function geometric_distribution(p1::Node{F}, p2::Node{F}, ncells::I) where {I,F}
+function symmetric_tanh_distribution(
+    p1::Node{F}, p2::Node{F}, ncells::I) where {I,F}
     d = p2.coords - p1.coords
     d_mag = norm(d)
     normal = d/d_mag
-    println(d_mag)
-    spacing(ratio, ni) = d_mag*ratio^(ni)
-    spacing, normal
+    δx(i, β) = begin
+        η = (i)/(ncells)
+        (d_mag/2)*(1.0 - tanh(β*(1-2*η))/tanh(β))
+    end
+    δx, normal
 end
 
 function quad(edges::Vector{Edge{I}}, edgesID::Vector{I}) where {I,F}

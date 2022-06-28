@@ -71,8 +71,8 @@ end
     xN = cellN.centre
     weight = norm(xf - xC)/norm(xN - xC)
     ap = term.sign[1]*(term.J⋅face.normal*ns*face.area) # need to implement weights
-    nzval[cIndex] += ap*0.5 #(1.0 - weight)
-    nzval[nIndex] += ap*0.5 #weight
+    nzval[cIndex] += ap*(1.0 - weight)
+    nzval[nIndex] += ap*weight
     nothing
 end
 @inline scheme_source!(term::Divergence{Linear, SVector{3, Float64}}, b, cell, cID) = begin
@@ -94,8 +94,8 @@ end
     xN = cellN.centre
     weight = norm(xf - xC)/norm(xN - xC)
     ap = term.sign[1]*(term.J(fID)⋅face.normal*ns*face.area)
-    nzval[cIndex] += ap*0.5 #(1.0 - weight)
-    nzval[nIndex] += ap*0.5 #weight
+    nzval[cIndex] += ap*(1.0 - weight)
+    nzval[nIndex] += ap*weight
     nothing
 end
 @inline scheme_source!(

@@ -31,8 +31,8 @@ function generate_mesh(n_horizontal, n_vertical)
     # Edges in y-direction
     # e3 = line!(points,1,3,n_vertical)
     # e4 = line!(points,2,4,n_vertical)
-    e3 = line!(points,1,3,n_vertical,0.9)
-    e4 = line!(points,2,4,n_vertical,0.9)
+    e3 = line!(points,1,3,n_vertical,2.0)
+    e4 = line!(points,2,4,n_vertical,2.0)
     edges = [e1, e2, e3, e4]
 
     b1 = quad(edges, [1,2,3,4])
@@ -57,24 +57,24 @@ UBCs = (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:bottom, [0.0, 0.0, 0.0]),
-    # Dirichlet(:top, [0.0, 0.0, 0.0])
-    Neumann(:top, 0.0)
+    Dirichlet(:top, [0.0, 0.0, 0.0])
+    # Neumann(:top, 0.0)
 )
 
 uxBCs = (
     Dirichlet(:inlet, velocity[1]),
     Neumann(:outlet, 0.0),
     Dirichlet(:bottom, 0.0),
-    # Dirichlet(:top, 0.0)
-    Neumann(:top, 0.0)
+    Dirichlet(:top, 0.0)
+    # Neumann(:top, 0.0)
 )
 
 uyBCs = (
     Dirichlet(:inlet, velocity[2]),
     Neumann(:outlet, 0.0),
     Dirichlet(:bottom, 0.0),
-    # Dirichlet(:top, 0.0)
-    Neumann(:top, 0.0)
+    Dirichlet(:top, 0.0)
+    # Neumann(:top, 0.0)
 )
 
 pBCs = (
@@ -113,13 +113,12 @@ ux = ScalarField(mesh)
 uy = ScalarField(mesh)
 p = ScalarField(mesh)
 
-iterations = 100
+iterations = 500
 Rx = isimple!(
     mesh, velocity, nu, ux, uy, p, 
     uxBCs, uyBCs, pBCs, UBCs,
     setup_U, setup_p, iterations)
 
-ux.values .= 0.0
 write_vtk(mesh, ux)
 write_vtk(mesh, uy)
 write_vtk(mesh, p)
@@ -157,3 +156,5 @@ scatter(xf(mesh), yf(mesh), rDf.values, color=:red)
 
 scatter(x(mesh), y(mesh), mdot.values, color=:red)
 scatter(xf(mesh), yf(mesh), mdotf.values, color=:red)
+
+scatter(mesh.nodes)

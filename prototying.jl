@@ -25,3 +25,18 @@ ex = @equation ux_eqn(
     == 
     -∇p.x
     )
+
+using Plots
+
+β = 1
+L = 0.1
+N = 10
+x₀ = 1.0
+
+η(i, N) = (i-1)/(N-1)
+x(i, N, β, x₀, L) = x₀ + (L/2)*(1.0 - tanh(β*(1-2*η(i,N)))/tanh(β))
+
+i = [1:N;]
+xc = x.(i,N,β,x₀, L)
+
+scatter(i, xc)

@@ -1,6 +1,6 @@
 export write_vtk
 
-function write_vtk(mesh, scalarField) #, Ux, Uy, Uz, p)
+function write_vtk(name, mesh, args...) #, Ux, Uy, Uz, p)
     # UxNodes = FVM.NodeScalarField(Ux)
     # UyNodes = FVM.NodeScalarField(Uy)
     # UzNodes = FVM.NodeScalarField(Uz)
@@ -9,8 +9,8 @@ function write_vtk(mesh, scalarField) #, Ux, Uy, Uz, p)
     # FVM.interpolate2nodes!(UyNodes, Uy)
     # FVM.interpolate2nodes!(UzNodes, Uz)
     # FVM.interpolate2nodes!(pNodes, p)
-
-    open("results.vtk", "w") do io
+    filename = name*".vtk"
+    open(filename, "w") do io
         write(io, "# vtk DataFile Version 3.0\n")
         write(io, "jCFD simulation data\n")
         write(io, "ASCII\n")
@@ -37,7 +37,9 @@ function write_vtk(mesh, scalarField) #, Ux, Uy, Uz, p)
             end 
             println(io, nNodes," ", nodes)
         end
+
         write(io, "CELL_TYPES $(nCells)\n")
+
         for cell ∈ mesh.cells
             nCellIDs = length(cell.nodesID)
             if nCellIDs == 3
@@ -49,12 +51,31 @@ function write_vtk(mesh, scalarField) #, Ux, Uy, Uz, p)
             end
             println(io, type)
         end
+
         write(io, "CELL_DATA $(nCells)\n")
-        write(io, "SCALARS phi float 1\n")
-        write(io, "LOOKUP_TABLE CellColors\n")
-        for value ∈ scalarField.values
-            println(io, value)
+
+        for arg ∈ args
+            label = arg[1]
+            field = arg[2]
+            field_type = typeof(field)
+            if field_type <: ScalarField
+                write(io, "SCALARS $(label) double 1\n")
+                write(io, "LOOKUP_TABLE CellColors\n")
+                for value ∈ field.values
+                    println(io, value)
+                end
+            elseif field_type <: VectorField
+                write(io, "VECTORS $(label) double\n")
+                for i ∈ eachindex(field.x)
+                    println(io, field.x[i]," ",field.y[i] ," ",field.z[i] )
+                end
+            else
+                throw("""
+                Input data should be a ScalarField or VectorField e.g. ("U", U)
+                """)
+            end
         end
+        
         # write(io, "POINT_DATA $(nPoints)\n")
         # write(io, "SCALARS p double 1\n")
         # write(io, "LOOKUP_TABLE default\n")

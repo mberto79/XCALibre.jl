@@ -191,10 +191,10 @@ function generate_inner_points!(
             pID2 = edge_y2.nodesID[yi]
             p1 = points[pID1]
             p2 = points[pID2]
-            spacing, normal = linear_distribution(p1, p2, block.nx)
+            δx, normal = linear_distribution(p1, p2, block.nx)
             for xi ∈ 2:block.nx
                 points_count += 1
-                mesh.nodes[points_count] = Node(p1.coords + spacing*normal*(xi-1))
+                mesh.nodes[points_count] = Node(p1.coords + δx(xi-1, 1)*normal)
                 block.nodesID[xi, yi] = points_count
             end
         end
@@ -290,9 +290,9 @@ function line!(pts::Vector{Node{F}}, p1_index::I, p2_index::I, ncells::I) where 
 
     p1 = pts[p1_index]
     p2 = pts[p2_index]
-    spacing, normal = linear_distribution(p1, p2, ncells)
+    δx, normal = linear_distribution(p1, p2, ncells)
     for j ∈ 2:ncells
-        push!(pts, Node(p1.coords + spacing*normal*(j-1)))
+        push!(pts, Node(p1.coords + δx(j-1, 1)*normal) )
         nodesID[j] = length(pts)
     end
     return Edge(nodesID, ncells, false)
@@ -302,11 +302,11 @@ function linear_distribution(p1::Node{F}, p2::Node{F}, ncells::I) where {I,F}
     d = p2.coords - p1.coords
     d_mag = norm(d)
     normal = d/d_mag
-    spacing = d_mag/ncells
-    spacing, normal
+    δx(i, β) = (d_mag/ncells)*i
+    δx, normal
 end
 
-function line!(pts::Vector{Node{F}}, p1_index::I, p2_index::I, ncells::I, ratio::F) where {I,F}
+function line!(pts::Vector{Node{F}}, p1_index::I, p2_index::I, ncells::I, ratio::Number) where {I,F}
     nodesID = fill(zero(I), ncells+1)
     nodesID[1] = p1_index
     nodesID[end] = p2_index

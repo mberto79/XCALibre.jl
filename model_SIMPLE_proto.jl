@@ -19,7 +19,8 @@ using LoopVectorization
 function generate_mesh(n_horizontal, n_vertical)
 
     p1 = Point(0.0,0.0,0.0)
-    p2 = Point(0.5,0.0,0.0)
+    # p2 = Point(0.5,0.0,0.0)
+    p2 = Point(0.5,-0.2,0.0)
     p3 = Point(0.0,0.1,0.0)
     p4 = Point(0.5,0.1,0.0)
     points = [p1, p2, p3, p4]
@@ -31,8 +32,8 @@ function generate_mesh(n_horizontal, n_vertical)
     # Edges in y-direction
     # e3 = line!(points,1,3,n_vertical)
     # e4 = line!(points,2,4,n_vertical)
-    e3 = line!(points,1,3,n_vertical,2.0)
-    e4 = line!(points,2,4,n_vertical,2.0)
+    e3 = line!(points,1,3,n_vertical,4)
+    e4 = line!(points,2,4,n_vertical,4)
     edges = [e1, e2, e3, e4]
 
     b1 = quad(edges, [1,2,3,4])
@@ -114,14 +115,14 @@ uy = ScalarField(mesh)
 p = ScalarField(mesh)
 
 iterations = 500
-Rx = isimple!(
+Rx, U = isimple!(
     mesh, velocity, nu, ux, uy, p, 
     uxBCs, uyBCs, pBCs, UBCs,
     setup_U, setup_p, iterations)
 
-write_vtk(mesh, ux)
-write_vtk(mesh, uy)
-write_vtk(mesh, p)
+# write_vtk(mesh, ux)
+# write_vtk(mesh, uy)
+write_vtk("results", mesh, ("U", U), ("p", p))
 
 # plotly(size=(400,400), markersize=1, markerstrokewidth=1)
 niterations = length(Rx)

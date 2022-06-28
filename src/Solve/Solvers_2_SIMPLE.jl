@@ -154,7 +154,7 @@ function isimple!(
         # grad!(∇p, pf, p, pBCs) 
         correct_velocity!(ux, uy, Hv, ∇p, rD)
     end # end for loop
-    return R_ux         
+    return R_ux, U        
 end # end function
 
 

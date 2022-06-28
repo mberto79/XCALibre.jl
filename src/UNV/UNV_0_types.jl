@@ -1,7 +1,7 @@
 struct Point{TF<:AbstractFloat}
-    xyz::Vector{TF}
+    xyz::SVector{3, TF}
 end
-Point(z::TF) where TF<:AbstractFloat = Point([zero(TF), zero(TF), zero(TF)])
+Point(z::TF) where TF<:AbstractFloat = Point(SVector{3, TF}(zero(TF), zero(TF), zero(TF)))
 
 mutable struct Element{TI<:Integer} # <: AbstractArray{Int, 1}
     index::TI
@@ -19,9 +19,9 @@ Boundary(z::TI) where TI<:Integer = Boundary("default", zero(TI), TI[])
 
 function get_xyz(P::Vector{Point{TF}}) where TF
     N = length(P)
-    x = zeros(TF, (N,))
-    y = zeros(TF, (N,))
-    z = zeros(TF, (N,))
+    x = zeros(TF, N)
+    y = zeros(TF, N)
+    z = zeros(TF, N)
     for i ∈ 1:N
         x[i] = P[i].xyz[1]
         y[i] = P[i].xyz[2]
@@ -32,9 +32,9 @@ end
 
 function get_xyz(P::Vector{Vector{TF}}) where TF<:AbstractFloat
     N = length(P)
-    x = zeros(TF, (N,))
-    y = zeros(TF, (N,))
-    z = zeros(TF, (N,))
+    x = zeros(TF, N)
+    y = zeros(TF, N)
+    z = zeros(TF, N)
     for i ∈ 1:N
         x[i] = P[i][1]
         y[i] = P[i][2]

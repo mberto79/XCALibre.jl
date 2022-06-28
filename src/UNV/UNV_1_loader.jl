@@ -1,3 +1,5 @@
+export load
+
 function load(meshFile, TI, TF)
     blockStart = false
     processDataset2411 = false
@@ -11,7 +13,7 @@ function load(meshFile, TI, TF)
     index = 0
     vertexCount = 0
     vertices = TI[]
-    newBoundary = UNV.Boundary()
+    newBoundary = UNV.Boundary(0)
     currentBC = 0
     
     for (indx, line) in enumerate(eachline(meshFile))
@@ -54,7 +56,7 @@ function load(meshFile, TI, TF)
                 x = parse(TF, sline[1])
                 y = parse(TF, sline[2])
                 z = parse(TF, sline[3])
-                push!(points, UNV.Point([x, y, z]))
+                push!(points, UNV.Point(SVector{3, TF}(x, y, z)))
                 continue
             end
         end
@@ -97,7 +99,7 @@ function load(meshFile, TI, TF)
         # Read boundary cells
         if processDataset2467
             if typeof(tryparse(TI, sline[1]))!= Nothing && tryparse(Int32, sline[2]) == 0
-                newBoundary = UNV.Boundary()
+                newBoundary = UNV.Boundary(0)
                 push!(boundaries, newBoundary)
                 currentBC = tryparse(TI, sline[1])
                 boundaries[currentBC].groupNumber = currentBC 

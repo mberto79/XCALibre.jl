@@ -51,7 +51,8 @@ end
 # end
 
 struct Cell{I,F}
-    nodesID::SVector{4, I}
+    # nodesID::SVector{4, I}
+    nodesID::Vector{I}
     # facesID::SVector{4, I}
     facesID::Vector{I}
     neighbours::Vector{I}
@@ -66,7 +67,8 @@ Cell(I,F) = begin
     vecI_faceID = I[]
     vecI_neighbours = I[]
     vecI_nsign = I[]
-    vec4I = SVector{4,I}(zi,zi,zi,zi)
+    # vec4I = SVector{4,I}(zi,zi,zi,zi)
+    vec4I = I[]
     vec3F = SVector{3,F}(zf,zf,zf)
     Cell(vec4I, vecI_faceID, vecI_neighbours, vecI_nsign, vec3F, zf)
 end

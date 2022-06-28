@@ -164,7 +164,8 @@ function generate_elements!(
                 n2 = nodesID[xi+1,yi]
                 n3 = nodesID[xi+1,yi+1]
                 n4 = nodesID[xi,yi+1]
-                nodeList = SVector{4, I}(n1,n2,n3,n4)
+                # nodeList = SVector{4, I}(n1,n2,n3,n4)
+                nodeList = [n1,n2,n3,n4] # Can this allocation be removed?
                 centre = geometric_centre(nodes, nodeList)
                 block.elementsID[xi,yi] = celli
                 cell = cells[celli]

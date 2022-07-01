@@ -6,9 +6,9 @@ function load(meshFile, TI, TF)
     processDataset2412 = false
     processDataset2467 = false
     
-    points = UNV.Point[] # Array to hold points
-    elements = UNV.Element[] # Array to hold elements
-    boundaries = UNV.Boundary[] # Array to hold boundaries
+    points = UNV.Point{TF}[] # Array to hold points
+    elements = UNV.Element{TI}[] # Array to hold elements
+    boundaries = UNV.Boundary{TI}[] # Array to hold boundaries
     
     index = 0
     vertexCount = 0

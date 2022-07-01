@@ -9,13 +9,14 @@ struct UnitVectors
         SVector(1.0,0.0,0.0), SVector(0.0,1.0,0.0), SVector(0.0,0.0,1.0))
 end
 
-struct Node{F}
-    coords::SVector{3, F}
+struct Node{TI<:Integer,TF}
+    coords::SVector{3, TF}
+    neighbourCells::Vector{TI}
 end
-Node(F) = begin
-    zf = zero(F)
-    vec_3F = SVector{3,F}(zf,zf,zf)
-    Node(vec_3F)
+Node(TF,TI) = begin
+    zf = zero(TF)
+    vec_3F = SVector{3,TF}(zf,zf,zf)
+    Node(vec_3F, TI[])
 end
 Node(x::F, y::F, z::F) where F<:AbstractFloat = Node(SVector{3, F}(x,y,z))
 Node(zero::F) where F<:AbstractFloat = Node(zero,zero,zero)

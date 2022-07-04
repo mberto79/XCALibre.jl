@@ -10,6 +10,16 @@ using FVM_1D.UNV
 
 points, elements, boundaries = load("unv_sample_meshes/quad.unv", Int64, Float64)
 
-@time nodes, faces = build_mesh("unv_sample_meshes/quad.unv")
+@time nodes, faces, cells = build_mesh("unv_sample_meshes/quad.unv")
 
-scatter(nodes[1:40])
+scatter(nodes)
+
+fig = plot()
+for fID ∈ 1:220
+    p1 = nodes[faces[fID].nodesID[1]].coords
+    p2 = nodes[faces[fID].nodesID[2]].coords
+    x = [p1[1], p2[1]]
+    y = [p1[2], p2[2]]
+    plot!(fig, x,y, legend=false)
+end
+@show fig

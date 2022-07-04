@@ -9,28 +9,28 @@ function build_mesh(meshFile; scaleFactor=1.0, TI=Int64, TF=Float64)
         scalePoints!(points, scaleFactor)
     end
     println("Generating mesh connectivity...")
-    nodes = connect(points, elements, boundaryFaces)
+    nodes, faces, cells = connect(points, elements, boundaryFaces)
     # nodes, cells, faces, boundaries = connect(points, elements, boundaryFaces)
     # preprocess!(nodes, faces, cells, boundaries)
     # mesh = Mesh.FullMesh(nodes, faces, cells, boundaries)
     end
     # println("Done! Execution time: ", @sprintf "%.6f" stats.time)
     # println("Mesh ready!")
-    return nodes #mesh
+    return nodes, faces, cells
 end
-
-
 
 function connect(points, elements, boundaryFaces)
     bfaces = total_boundary_faces(boundaryFaces)
     first_element = bfaces + 1
     nodes = generate_nodes(first_element, points, elements);
     faces = generate_faces(first_element, elements, nodes, boundaryFaces);
+    cells = generate_cells(first_element, elements, faces, nodes)
+    face_cell_connectivity!(cells, faces, nodes)
     # facesRaw, boundaries = generate_faces(elements, nodes, boundaryFaces);
     # faces = face_connectivity(facesRaw);
     # cells = generate_cells(points, elements, faces);
     # return nodes, cells, faces, boundaries
-    return nodes, faces
+    return nodes, faces, cells
 end
 
 
@@ -101,10 +101,10 @@ function generate_faces(
         for vi ∈ 1:nvertices
             vertex1 = elements[i].vertices[vi]
             # Check that vi+1 is in bounds - otherwise use the first vertex
-            if vi+1 < nvertices
-                vertex2 = elements[i].vertices[vi+1] 
-            else
+            if vi+1 > nvertices
                 vertex2 = elements[i].vertices[1]
+            else
+                vertex2 = elements[i].vertices[vi+1] 
             end
             if vertex1 < vertex2
                 face = @set face.nodesID = SVector{2,TI}(vertex1, vertex2)
@@ -119,64 +119,53 @@ function generate_faces(
             end
         end
     end
-
     unique!(faces) # remove duplicates
-
-
-    # # Collect boundary faces
-    # faces = Mesh.OrderedFace[]
-    # boundaryFaces = Mesh.Boundary[]
-    # totalBoundaryFaces = 1
-    # for (facei, boundaryFace) ∈ enumerate(boundaries)
-    #     tempBoundary = Mesh.Boundary()
-    #     tempBoundary.name = boundaryFace.name
-    #     tempBoundary.ID = facei 
-    #     tempBoundary.nFaces = length(boundaryFace.elements)
-    #     tempBoundary.startFace = totalBoundaryFaces
-    #     totalBoundaryFaces += tempBoundary.nFaces
-    #     for element ∈ boundaryFace.elements
-    #         nodesID = elements[element].vertices
-    #         push!(tempBoundary.nodesID, nodesID)
-
-    #         #= There is an offset of "firstElement" to ignore boundary faces. 
-    #         In 3D will need loop over index e.g. nodesID[i]? =#
-    #         offset = firstElement - 1 # needed to shift loop to match elements count
-    #         for celli ∈ (nodes[nodesID[1]].neighbourCellsID)
-    #             testCondition = sum(
-    #                 (elements[celli .+ offset].vertices.==nodesID[1])
-    #                 .+ 
-    #                 (elements[celli .+ offset].vertices.==nodesID[2])
-    #                 ) 
-    #             if testCondition == 2
-    #                 tempFace = Mesh.OrderedFace(nodesID, celli)
-    #                 push!(faces, tempFace)
-    #                 push!(tempBoundary.cellsID, celli)
-    #                 break
-    #             end
-            
-    #         end
-    #     end
-    #     push!(boundaryFaces, tempBoundary)
-    # end
-    
-    # # Collect and order faces for all cells
-    # for (celli, element) ∈ enumerate(elements[firstElement:end])
-    #     nNodes = length(element.vertices)
-    #     for nodei ∈ 1:nNodes 
-    #         if  nodei == nNodes
-    #             tempFace = Mesh.OrderedFace(
-    #                 [element.vertices[1], element.vertices[nNodes]], celli
-    #                 )
-    #             push!(faces, tempFace)
-    #             break
-    #         end
-    #         tempFace = Mesh.OrderedFace(
-    #             [element.vertices[nodei], element.vertices[nodei+1]], celli
-    #             )
-    #         push!(faces, tempFace)
-    #     end
-    # end
-    # # Assign array of facesID built from startFace and nFaces (may be removed?)
-    # for i ∈ 1:length(boundaryFaces); Mesh.Boundary(boundaryFaces[i]); end
     return faces
+end
+
+function generate_cells(
+    first_element, elements, faces::Vector{Face2D{TI, TF}}, nodes
+    ) where {TI,TF}
+    cells = Cell{TI,TF}[]
+    for i ∈ first_element:length(elements)
+        cell = Cell(TI,TF)
+        nodesID = elements[i].vertices
+        for nodeID ∈ nodesID
+            push!(cell.nodesID, nodeID)
+        end
+        push!(cells, cell)
+    end
+    return cells
+end
+
+function face_cell_connectivity!(cells, faces::Vector{Face2D{TI, TF}}, nodes) where {TI,TF}
+    for fID ∈ eachindex(faces)
+        nodesID = faces[fID].nodesID
+        node1 = nodesID[1]
+        node2 = nodesID[2]
+        neighbours1 = nodes[node1].neighbourCells
+        neighbours2 = nodes[node2].neighbourCells
+        ownerCells = TI[0,0] # Array for storing cells that have same nodes
+        owner_counter = zero(TI) # counter to track which node has been allocated (2D only)
+        # Loop to find nodes that share the same neighboring cells (only works for 2D faces)
+        for neighbour1 ∈ neighbours1
+            for neighbour2 ∈ neighbours2
+                if neighbour1 == neighbour2
+                    owner_counter += 1
+                    ownerCells[owner_counter] = neighbour1
+                end
+            end
+        end
+        face = faces[fID]
+        face = @set face.ownerCells = SVector{2, TI}(ownerCells)
+        faces[fID] = face
+        # If no face allocated in the second entry, it's a a boundary face -> don't add
+        if ownerCells[2] != 0
+            for ownerCell ∈ ownerCells
+                push!(cells[ownerCell].facesID, fID)
+            end
+            push!(cells[ownerCells[1]].neighbours, ownerCells[2])
+            push!(cells[ownerCells[2]].neighbours, ownerCells[1])
+        end
+    end
 end

@@ -9,7 +9,7 @@ function build_mesh(meshFile; scaleFactor=1.0, TI=Int64, TF=Float64)
         scalePoints!(points, scaleFactor)
     end
     println("Generating mesh connectivity...")
-    nodes, faces, cells = connect(points, elements, boundaryFaces)
+    nodes, faces, cells = generate(points, elements, boundaryFaces)
     # nodes, cells, faces, boundaries = connect(points, elements, boundaryFaces)
     # preprocess!(nodes, faces, cells, boundaries)
     # mesh = Mesh.FullMesh(nodes, faces, cells, boundaries)
@@ -19,7 +19,7 @@ function build_mesh(meshFile; scaleFactor=1.0, TI=Int64, TF=Float64)
     return nodes, faces, cells
 end
 
-function connect(points, elements, boundaryFaces)
+function generate(points, elements, boundaryFaces)
     bfaces = total_boundary_faces(boundaryFaces)
     first_element = bfaces + 1
     nodes = generate_nodes(first_element, points, elements);

@@ -1,56 +1,59 @@
 export build_mesh
 
-function build_mesh(meshFile; scaleFactor=1.0, TI=Int64, TF=Float64)
+function build_mesh(meshFile; scale=1.0, TI=Int64, TF=Float64)
     stats = @timed begin
     println("Loading mesh...")
-    points, elements, boundaryFaces = load(meshFile, TI, TF);
+    points, elements, boundaryElements = load(meshFile, TI, TF);
     println("File read successfully")
-    if scaleFactor != 1
-        scalePoints!(points, scaleFactor)
+    if scale != one(typeof(scale))
+        scalePoints!(points, scale)
     end
-    println("Generating mesh connectivity...")
-    nodes, faces, cells = generate(points, elements, boundaryFaces)
-    # nodes, cells, faces, boundaries = connect(points, elements, boundaryFaces)
+    println("Generating mesh...")
+    bfaces = total_boundary_faces(boundaryElements)
+    cells, faces, nodes, boundaries = generate(points, elements, boundaryElements, bfaces)
+    println("Building connectivity...")
+    connect!(cells, faces, nodes, boundaries, bfaces)
     # preprocess!(nodes, faces, cells, boundaries)
     # mesh = Mesh.FullMesh(nodes, faces, cells, boundaries)
     end
-    # println("Done! Execution time: ", @sprintf "%.6f" stats.time)
-    # println("Mesh ready!")
-    return nodes, faces, cells
+    println("Done! Execution time: ", @sprintf "%.6f" stats.time)
+    println("Mesh ready!")
+    return cells, faces, nodes, boundaries
 end
 
-function generate(points, elements, boundaryFaces)
-    bfaces = total_boundary_faces(boundaryFaces)
+function generate(points::Vector{Point{TF}}, elements, boundaryElements, bfaces) where TF
     first_element = bfaces + 1
-    nodes = generate_nodes(first_element, points, elements);
-    faces = generate_faces(first_element, elements, nodes, boundaryFaces);
-    cells = generate_cells(first_element, elements, faces, nodes)
-    face_cell_connectivity!(cells, faces, nodes)
-    # facesRaw, boundaries = generate_faces(elements, nodes, boundaryFaces);
-    # faces = face_connectivity(facesRaw);
-    # cells = generate_cells(points, elements, faces);
-    # return nodes, cells, faces, boundaries
-    return nodes, faces, cells
+    nodes = generate_nodes(first_element, elements, points)
+    faces = generate_faces(first_element, elements, TF)
+    cells = generate_cells(first_element, elements, TF)
+    boundaries = generate_boundaries(boundaryElements, elements)
+    return cells, faces, nodes, boundaries
 end
 
+function connect!(cells, faces, nodes, boundaries, bfaces)
+    face_cell_connectivity!(cells, faces, nodes)
+    boundary_connectivity!(boundaries, faces, bfaces)
+end
 
-# Lower level functions
+# GENERATION FUNCTIONS
 
 function scalePoints!(points::Vector{Point{TF}}, scaleFactor) where TF
-    for point ∈ points
-        point.xyz = point.xyz*scaleFactor
+    for i ∈ eachindex(points)
+        point = points[i]
+        point = @set point.xyz = point.xyz*scaleFactor
+        points[i] = point
     end
 end
 
-function total_boundary_faces(boundaries::Vector{UNV.Boundary{TI}}) where TI
+function total_boundary_faces(boundaryElements::Vector{BoundaryLoader{TI}}) where TI
     sum = zero(TI)
-    @inbounds for boundary ∈ boundaries
+    @inbounds for boundary ∈ boundaryElements
         sum += length(boundary.elements)
     end
     return sum
 end
 
-function generate_nodes(first_element, points::Vector{Point{TF}}, elements) where TF
+function generate_nodes(first_element, elements, points::Vector{Point{TF}}) where TF
    nodes = Node{TF}[]
    for i ∈ 1:length(points)
        point = points[i].xyz
@@ -66,13 +69,7 @@ function generate_nodes(first_element, points::Vector{Point{TF}}, elements) wher
    return nodes
 end
 
-function generate_faces(
-    first_element, 
-    elements::Vector{UNV.Element{TI}}, 
-    nodes::Vector{Node{TF}}, 
-    boundaryFaces
-    ) where {TI,TF}
-    # Generate all faces from element and point information
+function generate_faces(first_element, elements::Vector{Element{TI}}, TF) where {TI}
     faces = Face2D{TI,TF}[]
 
     # Start with boundary faces (stored in "elements")
@@ -123,9 +120,7 @@ function generate_faces(
     return faces
 end
 
-function generate_cells(
-    first_element, elements, faces::Vector{Face2D{TI, TF}}, nodes
-    ) where {TI,TF}
+function generate_cells(first_element, elements::Vector{Element{TI}}, TF) where {TI}
     cells = Cell{TI,TF}[]
     for i ∈ first_element:length(elements)
         cell = Cell(TI,TF)
@@ -137,6 +132,25 @@ function generate_cells(
     end
     return cells
 end
+
+function generate_boundaries(
+    boundaryElements::Vector{BoundaryLoader{TI}}, elements
+    ) where TI
+    boundaries = Boundary{TI}[]
+    for boundaryElement ∈ boundaryElements
+        name = Symbol(boundaryElement.name)
+        boundary = Boundary(name, TI[], TI[], TI[])
+        for elementID ∈ boundaryElement.elements
+            nodesID = elements[elementID].vertices
+            push!(boundary.nodesID, nodesID...)
+            unique!(boundary.nodesID)
+        end
+        push!(boundaries, boundary)
+    end
+    return boundaries
+end
+
+# CONNECTIVITY FUNCTIONS
 
 function face_cell_connectivity!(cells, faces::Vector{Face2D{TI, TF}}, nodes) where {TI,TF}
     ownerCells = TI[0,0] # Array for storing cells that have same nodes
@@ -167,6 +181,36 @@ function face_cell_connectivity!(cells, faces::Vector{Face2D{TI, TF}}, nodes) wh
             end
             push!(cells[ownerCells[1]].neighbours, ownerCells[2])
             push!(cells[ownerCells[2]].neighbours, ownerCells[1])
+        else
+            # for consistency make ownerCells equal for boundary faces
+            face = faces[fID]
+            face = @set face.ownerCells = SVector{2, TI}(ownerCells[1], ownerCells[1])
+            faces[fID] = face
+        end
+    end
+end
+
+function boundary_connectivity!(
+    boundaries::Vector{Boundary{TI}}, faces, bfaces
+    ) where TI
+    facedef = SVector{2,TI}(0,0)
+    for boundary ∈ boundaries 
+        nodesID = boundary.nodesID
+        for i ∈ 2:length(nodesID)
+            id1 = nodesID[i-1]
+            id2 = nodesID[i]
+            if id1 < id2 
+                facedef = SVector{2,TI}(id1,id2)
+            else
+                facedef = SVector{2,TI}(id2,id1)
+            end
+            for fID ∈ 1:bfaces 
+                face = faces[fID]
+                if facedef == face.nodesID
+                    push!(boundary.facesID, fID)
+                    push!(boundary.cellsID, face.ownerCells[1])
+                end
+            end
         end
     end
 end

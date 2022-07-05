@@ -8,12 +8,12 @@ function load(meshFile, TI, TF)
     
     points = UNV.Point{TF}[] # Array to hold points
     elements = UNV.Element{TI}[] # Array to hold elements
-    boundaries = UNV.Boundary{TI}[] # Array to hold boundaries
+    boundaryElements = UNV.BoundaryLoader{TI}[] # Array to hold boundaryElements
     
     index = 0
     vertexCount = 0
     vertices = TI[]
-    newBoundary = UNV.Boundary(0)
+    newBoundary = UNV.BoundaryLoader(0)
     currentBC = 0
     
     @inbounds for (indx, line) in enumerate(eachline(meshFile))
@@ -99,22 +99,22 @@ function load(meshFile, TI, TF)
         # Read boundary cells
         if processDataset2467
             if typeof(tryparse(TI, sline[1]))!= Nothing && tryparse(Int32, sline[2]) == 0
-                newBoundary = UNV.Boundary(0)
-                push!(boundaries, newBoundary)
+                newBoundary = UNV.BoundaryLoader(0)
+                push!(boundaryElements, newBoundary)
                 currentBC = tryparse(TI, sline[1])
-                boundaries[currentBC].groupNumber = currentBC 
+                boundaryElements[currentBC].groupNumber = currentBC 
                 continue
             end
             if typeof(tryparse(TI, sline[1]))== Nothing
                 println("Boundary name: ", sline[1])
-                boundaries[currentBC].name = sline[1]
+                boundaryElements[currentBC].name = sline[1]
                 continue
             end
-            push!(boundaries[currentBC].elements, parse(TI, sline[2]))
+            push!(boundaryElements[currentBC].elements, parse(TI, sline[2]))
             if length(sline) >= 6
-                push!(boundaries[currentBC].elements, parse(TI, sline[6]))
+                push!(boundaryElements[currentBC].elements, parse(TI, sline[6]))
             end   
         end
     end
-    return points, elements, boundaries
+    return points, elements, boundaryElements
     end

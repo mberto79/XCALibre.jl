@@ -10,12 +10,12 @@ mutable struct Element{TI<:Integer} # <: AbstractArray{Int, 1}
 end
 Element(z::TI) where TI<:Integer = Element(0 , 0, TI[])
 
-mutable struct Boundary{TI<:Integer}
+mutable struct BoundaryLoader{TI<:Integer}
     name::String
     groupNumber::TI
     elements::Vector{TI}
 end
-Boundary(z::TI) where TI<:Integer = Boundary("default", zero(TI), TI[])
+BoundaryLoader(z::TI) where TI<:Integer = BoundaryLoader("default", zero(TI), TI[])
 
 function get_xyz(P::Vector{Point{TF}}) where TF
     N = length(P)

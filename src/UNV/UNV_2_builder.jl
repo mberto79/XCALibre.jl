@@ -139,13 +139,14 @@ function generate_cells(
 end
 
 function face_cell_connectivity!(cells, faces::Vector{Face2D{TI, TF}}, nodes) where {TI,TF}
+    ownerCells = TI[0,0] # Array for storing cells that have same nodes
     for fID ∈ eachindex(faces)
+        ownerCells .= zero(TI)
         nodesID = faces[fID].nodesID
         node1 = nodesID[1]
         node2 = nodesID[2]
         neighbours1 = nodes[node1].neighbourCells
         neighbours2 = nodes[node2].neighbourCells
-        ownerCells = TI[0,0] # Array for storing cells that have same nodes
         owner_counter = zero(TI) # counter to track which node has been allocated (2D only)
         # Loop to find nodes that share the same neighboring cells (only works for 2D faces)
         for neighbour1 ∈ neighbours1

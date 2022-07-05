@@ -16,7 +16,7 @@ function load(meshFile, TI, TF)
     newBoundary = UNV.Boundary(0)
     currentBC = 0
     
-    for (indx, line) in enumerate(eachline(meshFile))
+    @inbounds for (indx, line) in enumerate(eachline(meshFile))
         sline = split(line)
     
         if !blockStart && sline[1] == "-1"

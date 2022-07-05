@@ -35,6 +35,10 @@ function connect!(cells, faces, nodes, boundaries, bfaces)
     boundary_connectivity!(boundaries, faces, bfaces)
 end
 
+function process_geometry!(cells, faces, nodes, boundaries)
+    nothing
+end
+
 # GENERATION FUNCTIONS
 
 function scalePoints!(points::Vector{Point{TF}}, scaleFactor) where TF

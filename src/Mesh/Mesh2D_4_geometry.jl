@@ -82,7 +82,7 @@ function boundary_face_properties!(mesh::Mesh2{I,F}) where {I,F}
             cc = cells[ownerCells[1]].centre
             d_cf = cf - cc # distance vector from cell to face centre
             if d_cf⋅normal < zero(F)
-                normal = -1*normal
+                normal = -1.0*normal
             end
             # delta = abs(d_cf⋅normal) # face-normal distance
             delta = norm(d_cf) # exact distance

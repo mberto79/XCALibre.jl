@@ -19,8 +19,8 @@ using LoopVectorization
 function generate_mesh(n_horizontal, n_vertical)
 
     p1 = Point(0.0,0.0,0.0)
-    # p2 = Point(0.5,0.0,0.0)
-    p2 = Point(0.5,-0.2,0.0)
+    p2 = Point(0.5,0.0,0.0)
+    # p2 = Point(0.5,-0.2,0.0)
     p3 = Point(0.0,0.1,0.0)
     p4 = Point(0.5,0.1,0.0)
     points = [p1, p2, p3, p4]
@@ -30,10 +30,10 @@ function generate_mesh(n_horizontal, n_vertical)
     e2 = line!(points,3,4,n_horizontal)
     
     # Edges in y-direction
-    # e3 = line!(points,1,3,n_vertical)
-    # e4 = line!(points,2,4,n_vertical)
-    e3 = line!(points,1,3,n_vertical,4)
-    e4 = line!(points,2,4,n_vertical,4)
+    e3 = line!(points,1,3,n_vertical)
+    e4 = line!(points,2,4,n_vertical)
+    # e3 = line!(points,1,3,n_vertical,4) # with stretching
+    # e4 = line!(points,2,4,n_vertical,4) # with stretching
     edges = [e1, e2, e3, e4]
 
     b1 = quad(edges, [1,2,3,4])

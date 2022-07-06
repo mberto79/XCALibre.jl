@@ -257,7 +257,6 @@ function boundary_connectivity!(
             for fID ∈ 1:bfaces 
                 face = faces[fID]
                 if facedef == face.nodesID
-                    println(counter," ", facedef," ", boundary.name)
                     push!(boundary.facesID, fID)
                     push!(boundary.cellsID, face.ownerCells[1])
                 end

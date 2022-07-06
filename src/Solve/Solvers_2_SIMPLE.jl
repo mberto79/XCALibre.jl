@@ -4,7 +4,7 @@ function isimple!(
     mesh::Mesh2{TI,TF}, velocity, nu, ux, uy, p, 
     uxBCs, uyBCs, pBCs, UBCs,
     setup_U, setup_p, iterations
-    ; resume=true) where {TI,TF}
+    ; resume=true, pref=nothing) where {TI,TF}
 
     n_cells = m = n = length(mesh.cells)
 
@@ -96,7 +96,7 @@ function isimple!(
 
         res = residual(x_momentum_eqn, ux, opAx, solver_U)
         push!(R_ux, res)
-        if res <= 2e-6
+        if res <= 2e-10
             print("\nSimulation met convergence criterion. Stop!\n")
             break
         end
@@ -138,6 +138,7 @@ function isimple!(
 
         discretise!(pressure_eqn, pressure_correction)
         apply_boundary_conditions!(pressure_eqn, pressure_correction, pBCs)
+        setReference!(pressure_eqn, pref)
         run!(
             pressure_eqn, pressure_correction, pBCs, 
             setup_p, opA=opAp, opP=opPP, solver=solver_p
@@ -178,7 +179,8 @@ function residual(equation::Equation{TI,TF}, phi, opA, solver) where {TI,TF}
     # Option 3 (OpenFOAM definition)
     solMean = mean(values)
     term1 = abs.(opA*(values .- solMean))
-    term2 = abs.(b .- opA*solMean*values./values) # ones(length(b))*  values./values
+    # term2 = abs.(b .- opA*solMean*values./values)
+    term2 = abs.(b .- opA*solMean*values./values)
     N = sum(term1 + term2)
     res = (1/N)*sum(abs.(b - opA*values))
 
@@ -332,5 +334,14 @@ function remove_pressure_source!(x_momentum_eqn, y_momentum_eqn, ∇p, rD)
     @inbounds for i ∈ eachindex(bx)
         bx[i] -= dpdx[i]/rD[i]
         by[i] -= dpdy[i]/rD[i]
+    end
+end
+
+function setReference!(pEqn::Equation{TI,TF}, pRef) where {TI,TF}
+    if pRef === nothing
+        return nothing
+    else
+        pEqn.b[1] += pEqn.A[1,1]*pRef
+        pEqn.A[1,1] += pEqn.A[1,1]
     end
 end

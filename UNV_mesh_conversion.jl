@@ -1,8 +1,4 @@
 using Plots
-using StaticArrays
-using BenchmarkTools
-
-using FVM_1D
 
 using FVM_1D.Mesh2D
 using FVM_1D.UNV
@@ -17,8 +13,7 @@ using Krylov
 
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
-mesh_file = "unv_sample_meshes/backwardFacingStep_2mm.unv"
-points, elements, boundaryElements = load(mesh_file, Int64, Float64);
+mesh_file = "unv_sample_meshes/trig100.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 
 velocity = [0.5, 0.0, 0.0]
@@ -60,6 +55,40 @@ pBCs = (
     Neumann(:top, 0.0)
 )
 
+# CAVITY BOUNDARY CONDITIONS 
+
+velocity = [0.5, 0.0, 0.0]
+noSlip = [0.0, 0.0, 0.0]
+nu = 1e-3
+
+UBCs = ( 
+    Dirichlet(:inlet, noSlip),
+    Dirichlet(:outlet, noSlip),
+    Dirichlet(:bottom, noSlip),
+    Dirichlet(:top, velocity)
+)
+
+uxBCs = (
+    Dirichlet(:inlet, noSlip[1]),
+    Dirichlet(:outlet, noSlip[1]),
+    Dirichlet(:bottom, noSlip[1]),
+    Dirichlet(:top, velocity[1])
+)
+
+uyBCs = (
+    Dirichlet(:inlet, noSlip[2]),
+    Dirichlet(:outlet, noSlip[2]),
+    Dirichlet(:bottom, noSlip[2]),
+    Dirichlet(:top, velocity[2])
+)
+
+pBCs = (
+    Neumann(:inlet, 0.0),
+    Neumann(:outlet, 0.0),
+    Neumann(:bottom, 0.0),
+    Neumann(:top, 0.0)
+)
+
 setup_U = SolverSetup(
     iterations  = 1,
     solver      = BicgstabSolver,
@@ -89,7 +118,7 @@ iterations = 1000
 Rx, U = isimple!(
     mesh, velocity, nu, ux, uy, p, 
     uxBCs, uyBCs, pBCs, UBCs,
-    setup_U, setup_p, iterations)
+    setup_U, setup_p, iterations, pref=0.0)
 
 write_vtk("results", mesh, ("U", U), ("p", p))
 

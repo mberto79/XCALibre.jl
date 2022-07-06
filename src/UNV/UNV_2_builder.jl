@@ -46,7 +46,7 @@ end
 # SUPPORT FUNCTIONS
 
 function scalePoints!(points::Vector{Point{TF}}, scaleFactor) where TF
-    for i ∈ eachindex(points)
+    @inbounds for i ∈ eachindex(points)
         point = points[i]
         point = @set point.xyz = point.xyz*scaleFactor
         points[i] = point
@@ -63,7 +63,7 @@ end
 
 function first_2d_element(elements::Vector{Element{TI}}) where TI
     element_index = zero(TI)
-    for counter ∈ eachindex(elements)
+    @inbounds for counter ∈ eachindex(elements)
          nvertices = elements[counter].vertexCount 
         if nvertices > 2
             element_index = counter
@@ -76,14 +76,14 @@ end
 
 function generate_nodes(first_element, elements, points::Vector{Point{TF}}) where TF
    nodes = Node{TF}[]
-   for i ∈ 1:length(points)
+   @inbounds for i ∈ 1:length(points)
        point = points[i].xyz
        push!(nodes, Node(point))
    end
    cellID = 0 # counter for cells
-   for i ∈ first_element:length(elements) 
+   @inbounds for i ∈ first_element:length(elements) 
            cellID += 1
-           for nodeID ∈ elements[i].vertices
+           @inbounds for nodeID ∈ elements[i].vertices
                push!(nodes[nodeID].neighbourCells, cellID)
            end
    end
@@ -95,8 +95,8 @@ function generate_faces(bfaces, first_element, elements::Vector{Element{TI}},
     faces = Face2D{TI,TF}[]
 
     # Generate boundary faces
-    for boundary ∈ boundaryElements
-        for elementi ∈ boundary.elements
+    @inbounds for boundary ∈ boundaryElements
+        @inbounds for elementi ∈ boundary.elements
             face = Face2D(TI,TF)
             vertex1 = elements[elementi].vertices[1]
             vertex2 = elements[elementi].vertices[2]
@@ -133,11 +133,11 @@ function generate_faces(bfaces, first_element, elements::Vector{Element{TI}},
     # end
 
     # Now build faces for cell-elements (will generate some duplicate faces)
-    for i ∈ first_element:length(elements)
+    @inbounds for i ∈ first_element:length(elements)
         face = Face2D(TI,TF)
         vertices = elements[i].vertices
         nvertices = length(vertices)
-        for vi ∈ 1:nvertices
+        @inbounds for vi ∈ 1:nvertices
             vertex1 = elements[i].vertices[vi]
             # Check that vi+1 is in bounds - otherwise use the first vertex
             if vi+1 > nvertices
@@ -164,11 +164,11 @@ end
 
 function generate_cells(first_element, elements::Vector{Element{TI}}, TF) where {TI}
     cells = Cell{TI,TF}[]
-    for i ∈ first_element:length(elements)
+    @inbounds for i ∈ first_element:length(elements)
         cell = Cell(TI,TF)
         nodesID = elements[i].vertices
         # if length(nodesID) > 2
-            for nodeID ∈ nodesID
+        @inbounds for nodeID ∈ nodesID
                 push!(cell.nodesID, nodeID)
             end
             push!(cells, cell)
@@ -181,10 +181,10 @@ function generate_boundaries(
     boundaryElements::Vector{BoundaryLoader{TI}}, elements
     ) where TI
     boundaries = Boundary{TI}[]
-    for boundaryElement ∈ boundaryElements
+    @inbounds for boundaryElement ∈ boundaryElements
         name = Symbol(boundaryElement.name)
         boundary = Boundary(name, Vector{TI}[], TI[], TI[])
-        for elementID ∈ boundaryElement.elements
+        @inbounds for elementID ∈ boundaryElement.elements
             nodesID = elements[elementID].vertices
             push!(boundary.nodesID, nodesID)
             # push!(boundary.nodesID, nodesID...)
@@ -199,7 +199,7 @@ end
 
 function face_cell_connectivity!(cells, faces::Vector{Face2D{TI, TF}}, nodes) where {TI,TF}
     ownerCells = TI[0,0] # Array for storing cells that have same nodes
-    for fID ∈ eachindex(faces)
+    @inbounds for fID ∈ eachindex(faces)
         ownerCells .= zero(TI)
         nodesID = faces[fID].nodesID
         node1 = nodesID[1]
@@ -208,8 +208,8 @@ function face_cell_connectivity!(cells, faces::Vector{Face2D{TI, TF}}, nodes) wh
         neighbours2 = nodes[node2].neighbourCells
         owner_counter = zero(TI) # counter to track which node has been allocated (2D only)
         # Loop to find nodes that share the same neighboring cells (only works for 2D faces)
-        for neighbour1 ∈ neighbours1
-            for neighbour2 ∈ neighbours2
+        @inbounds for neighbour1 ∈ neighbours1
+            @inbounds for neighbour2 ∈ neighbours2
                 if neighbour1 == neighbour2
                     owner_counter += 1
                     ownerCells[owner_counter] = neighbour1
@@ -221,7 +221,7 @@ function face_cell_connectivity!(cells, faces::Vector{Face2D{TI, TF}}, nodes) wh
         faces[fID] = face
         # If no face allocated in the second entry, it's a a boundary face -> don't add
         if ownerCells[2] != 0
-            for ownerCell ∈ ownerCells
+            @inbounds for ownerCell ∈ ownerCells
                 push!(cells[ownerCell].facesID, fID)
             end
             push!(cells[ownerCells[1]].neighbours, ownerCells[2])
@@ -238,10 +238,10 @@ end
 function boundary_connectivity!(
     boundaries::Vector{Boundary{TI}}, faces, bfaces
     ) where TI
-    for boundary ∈ boundaries 
+    @inbounds for boundary ∈ boundaries 
         nodesID = boundary.nodesID
         counter = 0
-        for faceNodesID ∈ nodesID
+        @inbounds for faceNodesID ∈ nodesID
             counter += 1
             sort!(faceNodesID)
             id1 = faceNodesID[1]
@@ -254,7 +254,7 @@ function boundary_connectivity!(
             # else
             #     facedef = SVector{2,TI}(id2,id1)
             # end
-            for fID ∈ 1:bfaces 
+            @inbounds for fID ∈ 1:bfaces 
                 face = faces[fID]
                 if facedef == face.nodesID
                     push!(boundary.facesID, fID)
@@ -268,7 +268,7 @@ end
 # GEOMETRY FUNCTIONS
 
 function face_centres!(faces, nodes)
-    for fID ∈ eachindex(faces)
+    @inbounds for fID ∈ eachindex(faces)
         face = faces[fID]
         nodesID = face.nodesID
         centre = geometric_centre(nodes, nodesID) # from Mesh module (geometry)
@@ -278,7 +278,7 @@ function face_centres!(faces, nodes)
 end
 
 function cell_centres!(cells, nodes)
-    for cID ∈ eachindex(cells)
+    @inbounds for cID ∈ eachindex(cells)
         cell = cells[cID]
         nodesID = cell.nodesID
         centre = geometric_centre(nodes, nodesID) # from Mesh module (geometry)

@@ -225,11 +225,13 @@ function preallocate_boundaries(builder::MeshBuilder2D{I,F}) where {I,F}
             ncells += edges[edgeID].ncells
         end
         nfaces = ncells
-        nnodes = ncells + 1
+        # nnodes = ncells + 1
+        face_nodesID = [zeros(I,2) for _ ∈ 1:ncells]
         push!(
             boundaries, 
             Boundary(
-                patch.name, zeros(I, nnodes), zeros(I, nfaces), zeros(I,ncells)
+                # patch.name, zeros(I, nnodes), zeros(I, nfaces), zeros(I,ncells)
+                patch.name, face_nodesID, zeros(I, nfaces), zeros(I,ncells)
                 ))
     end
     boundaries

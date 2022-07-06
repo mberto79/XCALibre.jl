@@ -112,11 +112,19 @@ end
 function assign_nodesID_to_boundaries!(
     mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}) where {I,F}
     (; faces, boundaries) = mesh
-    for boundary ∈ boundaries
+    # for boundary ∈ boundaries
+    #     (; nodesID, facesID) = boundary
+    #     nodesID[1] = faces[facesID[1]].nodesID[1]
+    #     for (fi, faceID) ∈ enumerate(facesID)
+    #         nodesID[fi+1] = faces[faceID].nodesID[2]
+    #     end
+    # end
+    for boundary ∈ boundaries 
         (; nodesID, facesID) = boundary
-        nodesID[1] = faces[facesID[1]].nodesID[1]
-        for (fi, faceID) ∈ enumerate(facesID)
-            nodesID[fi+1] = faces[faceID].nodesID[2]
+        for i ∈ eachindex(facesID)
+            fID = facesID[i]
+            face = faces[fID] 
+            nodesID[i] .= face.nodesID
         end
     end
 end

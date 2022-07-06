@@ -41,7 +41,8 @@ end
 
 struct Boundary{I}
     name::Symbol
-    nodesID::Vector{I}
+    # nodesID::Vector{I}
+    nodesID::Vector{Vector{I}}
     facesID::Vector{I}
     cellsID::Vector{I}
     # normal::SVector{3, F}

@@ -36,13 +36,13 @@ function isimple!(
     opAx = LinearOperator(x_momentum_eqn.A)
     Px = ilu0(x_momentum_eqn.A)
     opPUx = LinearOperator(Float64, m, n, false, false, (y, v) -> ldiv!(y, Px, v))
-    x_momentum_model = create_model(ConvectionDiffusion, Uf, nu, ux, ∇p.x)
+    x_momentum_model = create_model(ConvectionDiffusion, mdotf, nu, ux, ∇p.x)
     
     y_momentum_eqn = Equation(mesh)
     opAy = LinearOperator(y_momentum_eqn.A)
     Py = ilu0(y_momentum_eqn.A)
     opPUy = LinearOperator(Float64, m, n, false, false, (y, v) -> ldiv!(y, Py, v))
-    y_momentum_model = create_model(ConvectionDiffusion, Uf, nu, uy, ∇p.y)
+    y_momentum_model = create_model(ConvectionDiffusion, mdotf, nu, uy, ∇p.y)
     
     pressure_eqn = Equation(mesh)
     pressure_correction = create_model(Diffusion, rDf, p, divHv.values)
@@ -67,9 +67,10 @@ function isimple!(
     # end
     volume  = volumes(mesh)
     
-    # interpolate!(Uf, U, UBCs)   
     interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, UBCs)
+    flux!(mdotf, Uf)
+
     source!(∇p, pf, p, pBCs)
     
     # Perform SIMPLE loops 
@@ -149,6 +150,8 @@ function isimple!(
         correct_velocity!(U, Hv, ∇p, rD)
         interpolate!(Uf, U)
         correct_boundaries!(Uf, U, UBCs)
+        flux!(mdotf, Uf)
+
         
         explicit_relaxation!(p, p0, setup_p.relax)
         source!(∇p, pf, p, pBCs)
@@ -216,12 +219,12 @@ function calculate_residuals(
 end
 
 
-function mass_flux!(mdotf::FaceScalarField{I,F}, Uf::FaceVectorField{I,F}) where {I,F}
-    (; mesh, values) = mdotf
-    (; cells, faces) = mesh 
+function flux!(phif::FaceScalarField{TI,TF}, psif::FaceVectorField{TI,TF}) where {TI,TF}
+    (; mesh, values) = phif
+    (; faces) = mesh 
     @inbounds for fID ∈ eachindex(faces)
         (; area, normal) = faces[fID]
-        values[fID] = Uf(fID)*area⋅normal
+        values[fID] = psif(fID)*area⋅normal
     end
 end
 

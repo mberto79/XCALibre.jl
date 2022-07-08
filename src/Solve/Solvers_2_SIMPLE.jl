@@ -77,7 +77,7 @@ function isimple!(
     R_ux = TF[]
     @time for iteration ∈ 1:iterations
 
-        print("\nIteration ", iteration, "\n") # 91 allocations
+        print("\n\nIteration ", iteration, "\n") # 91 allocations
         
         # source!(∇p, pf, p, pBCs)
         # grad!(∇p, pf, p, pBCs)
@@ -130,10 +130,10 @@ function isimple!(
             U.y[i] = uy0[i]
         end
         div!(divHv, UBCs) # 7 allocations
-        # @inbounds @. divHv.values *= 1.0./volume
-        @inbounds @. rD.values *= volume#^2
-        interpolate!(rDf, rD)
-        @inbounds @. rD.values /= volume#^2
+        @inbounds @. divHv.values *= 1.0./volume
+        # @inbounds @. rD.values *= volume#^2
+        # interpolate!(rDf, rD)
+        # @inbounds @. rD.values /= volume#^2
 
         print("Solving pressure correction. ")
 

@@ -33,32 +33,43 @@ function internal_face_properties!(mesh::Mesh2{I,F}) where {I,F}
     (; nodes, faces, cells) = mesh
     nbfaces = total_boundary_faces(mesh)
     for facei ∈ (nbfaces + 1):length(faces) # loop over internal faces only!
-        # extract face
+        # Extract face
         face = faces[facei]
-        # node-based calculations
+
+        # Node-based calculations
         (; nodesID, ownerCells) = face
         p1 = nodes[nodesID[1]]
         p2 = nodes[nodesID[2]]
         tangent = p2.coords - p1.coords
         area = norm(tangent)
-        unit_tangent = tangent/area
-        normal = unit_tangent × UnitVectors().k
-        face = @set face.area = area
-        face = @set face.normal = normal
-        # ownercell-based calculations
+
+        # Ownercell-based calculations
         c1 = cells[ownerCells[1]].centre
         c2 = cells[ownerCells[2]].centre
         cf = face.centre
         d_1f = cf - c1 # distance vector from cell1 to face centre
         d_f2 = c2 - cf # distance vector from face centre to cell2
         d_12 = c2 - c1 # distance vector from cell1 to cell2
-        # delta = abs(d_12⋅normal) # abs just in case is -ve (face-normal distance)
+
+        # Calculate normal and check direction (from owner1 to owner2)
+        unit_tangent = tangent/area
+        normal = unit_tangent × UnitVectors().k
+        if d_12⋅normal < zero(F)
+            normal = -1.0*normal
+        end
+
+        # Calculate delta and interpolation weight
         delta = norm(d_12) 
         e = d_12/delta
         weight = abs((d_1f⋅normal)/(d_1f⋅normal + d_f2⋅normal)) 
+
+        # Assign values to face
+        face = @set face.area = area
+        face = @set face.normal = normal
         face = @set face.delta = delta
         face = @set face.e = e
-        faces[facei] = @set face.weight = weight
+        face = @set face.weight = weight
+        faces[facei] = face
     end
 end
 
@@ -69,6 +80,7 @@ function boundary_face_properties!(mesh::Mesh2{I,F}) where {I,F}
         (;facesID) = boundary
         for ID ∈ facesID
             face = faces[ID]
+
             # node-based calculations
             (; nodesID, ownerCells) = face
             p1 = nodes[nodesID[1]].coords
@@ -77,6 +89,7 @@ function boundary_face_properties!(mesh::Mesh2{I,F}) where {I,F}
             area = norm(tangent)
             unit_tangent = tangent/area
             normal = unit_tangent × UnitVectors().k
+
             # perform normal direction check
             cf = face.centre
             cc = cells[ownerCells[1]].centre
@@ -87,6 +100,7 @@ function boundary_face_properties!(mesh::Mesh2{I,F}) where {I,F}
             # delta = abs(d_cf⋅normal) # face-normal distance
             delta = norm(d_cf) # exact distance
             e = d_cf/delta
+
             # assign values to face
             face = @set face.area = area
             face = @set face.normal = normal
@@ -97,13 +111,6 @@ function boundary_face_properties!(mesh::Mesh2{I,F}) where {I,F}
         end
     end
 end
-
-#= 
-For cells need the following
-
-nsign::SVector{4, I}
-volume::F
-=#
 
 function cell_properties!(mesh::Mesh2{I,F}) where {I,F}
     (; nodes, faces, cells) = mesh

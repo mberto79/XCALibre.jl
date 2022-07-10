@@ -6,8 +6,8 @@ export clear!
 
 struct SolverSetup{S,I,F}
     solver::S 
-    iterations::I 
-    tolerance::F 
+    # iterations::I 
+    # tolerance::F 
     relax::F 
     itmax::I
     atol::F 
@@ -15,14 +15,15 @@ struct SolverSetup{S,I,F}
 end
 SolverSetup(
     ; solver::S, 
-    iterations::I, 
-    tolerance::F, 
+    # iterations::I, 
+    # tolerance::F, 
     relax::F, 
     itmax::I=200, 
     atol::F=1e-15, 
     rtol::F=1e-1
     ) where {S,I,F} = begin
-    SolverSetup{S,I,F}(solver, iterations, tolerance, relax, itmax, atol, rtol)
+    # SolverSetup{S,I,F}(solver, iterations, tolerance, relax, itmax, atol, rtol)
+    SolverSetup{S,I,F}(solver, relax, itmax, atol, rtol)
 end
 
 function run!(
@@ -32,7 +33,7 @@ function run!(
     
     equation.b .+= phiModel.sources.source1
 
-    (; iterations, tolerance, relax, itmax, atol, rtol) = setup
+    (; relax, itmax, atol, rtol) = setup
     (; A, b, R, Fx) = equation
     (; phi) = phiModel.terms.term1
     (; values, mesh) = phi
@@ -44,22 +45,19 @@ function run!(
         gradf   = FaceVectorField(mesh)
     end
 
-    for i ∈ 1:iterations
-        solve!(
-            # solver, opA, R; 
-            solver, opA, b, values; 
-            M=opP, itmax=itmax, atol=atol, rtol=rtol
-            )
-        # values .+= relax.*solver.x
-        # @time @. values += relax*(x - values)
-        relax!(values, solver.x, relax)
+    # for i ∈ 1:iterations
+    solve!(
+        solver, opA, b, values; 
+        M=opP, itmax=itmax, atol=atol, rtol=rtol
+        )
+    relax!(values, solver.x, relax)
 
-        if correct_term !== nothing
-            nonorthogonal_correction!(gradPhi, gradf, phif, BCs)
-            b .= bb
-            correct!(equation, correct_term, phif)
-        end
+    if correct_term !== nothing
+        nonorthogonal_correction!(gradPhi, gradf, phif, BCs)
+        b .= bb
+        correct!(equation, correct_term, phif)
     end
+    # end
     if correct_term !== nothing 
         bb      = nothing
         gradPhi = nothing

@@ -11,7 +11,7 @@ function isimple!(
     # Pre-allocate fields
     U = VectorField(mesh)
     Uf = FaceVectorField(mesh)
-    mdot = ScalarField(mesh)
+    # mdot = ScalarField(mesh)
     mdotf = FaceScalarField(mesh)
     pf = FaceScalarField(mesh)
     ∇p = Grad{Linear}(p)
@@ -31,21 +31,25 @@ function isimple!(
     p0 .= zero(TF)
     rDf.values .= 1.0
 
-    # Define models and equations
-    x_momentum_eqn = Equation(mesh)
+    # Define models 
+    x_momentum_model    = create_model(ConvectionDiffusion, mdotf, nu, ux, ∇p.x)
+    y_momentum_model    = create_model(ConvectionDiffusion, mdotf, nu, uy, ∇p.y)
+    pressure_correction = create_model(Diffusion, rDf, p, divHv.values)
+    
+    # Define equations
+    x_momentum_eqn  = Equation(mesh)
+    y_momentum_eqn  = Equation(mesh)
+    pressure_eqn    = Equation(mesh)
+
+    # Define preconditioners and linear operators
     opAx = LinearOperator(x_momentum_eqn.A)
     Px = ilu0(x_momentum_eqn.A)
     opPUx = LinearOperator(Float64, m, n, false, false, (y, v) -> ldiv!(y, Px, v))
-    x_momentum_model = create_model(ConvectionDiffusion, mdotf, nu, ux, ∇p.x)
     
-    y_momentum_eqn = Equation(mesh)
     opAy = LinearOperator(y_momentum_eqn.A)
     Py = ilu0(y_momentum_eqn.A)
     opPUy = LinearOperator(Float64, m, n, false, false, (y, v) -> ldiv!(y, Py, v))
-    y_momentum_model = create_model(ConvectionDiffusion, mdotf, nu, uy, ∇p.y)
     
-    pressure_eqn = Equation(mesh)
-    pressure_correction = create_model(Diffusion, rDf, p, divHv.values)
     discretise!(pressure_eqn, pressure_correction)
     apply_boundary_conditions!(pressure_eqn, pressure_correction, pBCs)
     opAp = LinearOperator(pressure_eqn.A)
@@ -116,14 +120,15 @@ function isimple!(
         @inbounds for i ∈ eachindex(ux0)
             ux0[i] = U.x[i]
             uy0[i] = U.y[i]
-            U.x[i] = ux.values[i]
-            U.y[i] = uy.values[i]
+            # U.x[i] = ux.values[i]
+            # U.y[i] = uy.values[i]
         end
         
         inverse_diagonal!(rD, x_momentum_eqn)
         interpolate!(rDf, rD)
         remove_pressure_source!(x_momentum_eqn, y_momentum_eqn, ∇p, rD)
-        H!(Hv, U, x_momentum_eqn, y_momentum_eqn)
+        # H!(Hv, U, x_momentum_eqn, y_momentum_eqn)
+        H!(Hv, ux, uy, x_momentum_eqn, y_momentum_eqn)
         
         @inbounds for i ∈ eachindex(ux0)
             U.x[i] = ux0[i]
@@ -228,10 +233,6 @@ function flux!(phif::FaceScalarField{TI,TF}, psif::FaceVectorField{TI,TF}) where
     end
 end
 
-function flux!()
-    nothing
-end
-
 function implicit_relaxation!(eqn::Equation{I,F}, field, alpha) where {I,F}
     (; A, b) = eqn
     @inbounds @simd for i ∈ eachindex(b)
@@ -240,40 +241,40 @@ function implicit_relaxation!(eqn::Equation{I,F}, field, alpha) where {I,F}
     end
 end
 
-function correct_face_velocity!(Uf, p, )
-    mesh = Uf.mesh
-    (; cells, faces) = mesh
-    nbfaces = total_boundary_faces(mesh)
-    for fID ∈ (nbfaces + 1):length(faces)
-        face = faces[fID]
-        gradp = 0.0
-        Uf.x = nothing
-        ################
-        # CONTINUE 
-        ################
-    end
-end
+# function correct_face_velocity!(Uf, p, )
+#     mesh = Uf.mesh
+#     (; cells, faces) = mesh
+#     nbfaces = total_boundary_faces(mesh)
+#     for fID ∈ (nbfaces + 1):length(faces)
+#         face = faces[fID]
+#         gradp = 0.0
+#         Uf.x = nothing
+#         ################
+#         # CONTINUE 
+#         ################
+#     end
+# end
 
 volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 
-function correct_boundary_Hvf!(Hvf, ux, uy, ∇pf, UBCs)
-    mesh = ux.mesh
-    for BC ∈ UBCs
-        if typeof(BC) <: Neumann
-            bi = boundary_index(mesh, BC.name)
-            boundary = mesh.boundaries[bi]
-            correct_flux_boundary!(BC, phif, phi, boundary, faces)
-        end
-    end
-end
+# function correct_boundary_Hvf!(Hvf, ux, uy, ∇pf, UBCs)
+#     mesh = ux.mesh
+#     for BC ∈ UBCs
+#         if typeof(BC) <: Neumann
+#             bi = boundary_index(mesh, BC.name)
+#             boundary = mesh.boundaries[bi]
+#             correct_flux_boundary!(BC, phif, phi, boundary, faces)
+#         end
+#     end
+# end
 
-function correct_flux_boundary!(
-    BC::Neumann, phif::FaceScalarField{I,F}, phi, boundary, faces) where {I,F}
-    (; facesID, cellsID) = boundary
-    for fID ∈ facesID
-        phif.values[fID] = BC.value 
-    end
-end
+# function correct_flux_boundary!(
+#     BC::Neumann, phif::FaceScalarField{I,F}, phi, boundary, faces) where {I,F}
+#     (; facesID, cellsID) = boundary
+#     for fID ∈ facesID
+#         phif.values[fID] = BC.value 
+#     end
+# end
 
 function inverse_diagonal!(rD::ScalarField{I,F}, eqn) where {I,F}
     # D = @view eqn.A[diagind(eqn.A)]
@@ -292,7 +293,8 @@ function explicit_relaxation!(phi, phi0, alpha)
     # @. phi0 = phi.values
     values = phi.values
     @inbounds for i ∈ eachindex(values)
-        values[i] = alpha*values[i] + (1.0 - alpha)*phi0[i]
+        # values[i] = alpha*values[i] + (1.0 - alpha)*phi0[i]
+        values[i] = phi0[i] + alpha*(values[i] - phi0[i])
         phi0[i] = values[i]
     end
 end
@@ -303,8 +305,9 @@ function correct_velocity!(U, Hv, ∇p, rD)
     Ux = U.x; Uy = U.y; Hvx = Hv.x; Hvy = Hv.y
     dpdx = ∇p.x; dpdy = ∇p.y; rDvalues = rD.values
     @inbounds for i ∈ eachindex(Ux)
-        Ux[i] = Hvx[i] - dpdx[i]*rDvalues[i]
-        Uy[i] = Hvy[i] - dpdy[i]*rDvalues[i]
+        rDvalues_i = rDvalues[i]
+        Ux[i] = Hvx[i] - dpdx[i]*rDvalues_i
+        Uy[i] = Hvy[i] - dpdy[i]*rDvalues_i
     end
 end
 
@@ -314,8 +317,9 @@ function correct_velocity!(ux, uy, Hv, ∇p, rD)
     ux = ux.values; uy = uy.values; Hvx = Hv.x; Hvy = Hv.y
     dpdx = ∇p.x; dpdy = ∇p.y; rDvalues = rD.values
     @inbounds for i ∈ eachindex(ux)
-        ux[i] = Hvx[i] - dpdx[i]*rDvalues[i]
-        uy[i] = Hvy[i] - dpdy[i]*rDvalues[i]
+        rDvalues_i = rDvalues[i]
+        ux[i] = Hvx[i] - dpdx[i]*rDvalues_i
+        uy[i] = Hvy[i] - dpdy[i]*rDvalues_i
     end
 end
 
@@ -335,8 +339,9 @@ function remove_pressure_source!(x_momentum_eqn, y_momentum_eqn, ∇p, rD)
     dpdx, dpdy, rD = ∇p.x, ∇p.y, rD.values
     bx, by = x_momentum_eqn.b, y_momentum_eqn.b
     @inbounds for i ∈ eachindex(bx)
-        bx[i] -= dpdx[i]/rD[i]
-        by[i] -= dpdy[i]/rD[i]
+        rDi = rD[i]
+        bx[i] -= dpdx[i]/rDi
+        by[i] -= dpdy[i]/rDi
     end
 end
 

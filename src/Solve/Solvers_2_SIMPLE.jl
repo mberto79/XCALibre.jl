@@ -1,4 +1,4 @@
-export isimple!
+export isimple!, flux!
 
 function isimple!(
     mesh::Mesh2{TI,TF}, velocity, nu, ux, uy, p, 

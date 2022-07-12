@@ -332,8 +332,8 @@ function remove_pressure_source!(x_momentum_eqn, y_momentum_eqn, ∇p, rD)
     dpdx, dpdy, rD = ∇p.x, ∇p.y, rD.values
     bx, by = x_momentum_eqn.b, y_momentum_eqn.b
     @inbounds for i ∈ eachindex(bx)
-        bx[i] -= dpdx[i]/rD[i]
-        by[i] -= dpdy[i]/rD[i]
+        bx[i] -= dpdx[i] #/rD[i]
+        by[i] -= dpdy[i] #/rD[i]
     end
 end
 

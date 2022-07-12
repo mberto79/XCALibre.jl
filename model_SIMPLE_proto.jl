@@ -114,7 +114,7 @@ ux = ScalarField(mesh)
 uy = ScalarField(mesh)
 p = ScalarField(mesh)
 
-iterations = 500
+iterations = 320
 Rx, U = isimple!(
     mesh, velocity, nu, ux, uy, p, 
     uxBCs, uyBCs, pBCs, UBCs,

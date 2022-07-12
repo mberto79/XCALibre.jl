@@ -27,24 +27,24 @@ UBCs = (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:cylinder, noSlip),
-    Dirichlet(:bottom, velocity),
-    Dirichlet(:top, velocity)
+    Neumann(:bottom, 0.0),
+    Neumann(:top, 0.0)
 )
 
 uxBCs = (
     Dirichlet(:inlet, velocity[1]),
     Neumann(:outlet, 0.0),
     Dirichlet(:cylinder, noSlip[1]),
-    Dirichlet(:bottom, velocity[1]),
-    Dirichlet(:top, velocity[1])
+    Neumann(:bottom, 0.0),
+    Neumann(:top, 0.0)
 )
 
 uyBCs = (
     Dirichlet(:inlet, velocity[2]),
     Neumann(:outlet, 0.0),
     Dirichlet(:cylinder, noSlip[2]),
-    Dirichlet(:bottom, velocity[2]),
-    Dirichlet(:top, velocity[2])
+    Neumann(:bottom, 0.0),
+    Neumann(:top, 0.0)
 )
 
 pBCs = (
@@ -56,19 +56,15 @@ pBCs = (
 )
 
 setup_U = SolverSetup(
-    iterations  = 1,
     solver      = BicgstabSolver,
-    tolerance   = 1e-1,
-    relax       = 0.8,
+    relax       = 0.7,
     itmax       = 100,
     rtol        = 1e-1
 )
 
 setup_p = SolverSetup(
-    iterations  = 1,
     solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
-    tolerance   = 1e-1,
-    relax       = 0.2,
+    relax       = 0.3,
     itmax       = 100,
     rtol        = 1e-2
 )
@@ -80,7 +76,7 @@ uy = ScalarField(mesh)
 p = ScalarField(mesh)
 U = VectorField(mesh)
 
-iterations = 1000
+iterations = 500
 Rx, U = isimple!(
     mesh, velocity, nu, ux, uy, p, 
     uxBCs, uyBCs, pBCs, UBCs,

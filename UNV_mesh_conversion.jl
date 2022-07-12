@@ -13,7 +13,9 @@ using Krylov
 
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
-mesh_file = "unv_sample_meshes/trig100.unv"
+mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
+mesh_file = "unv_sample_meshes/quad100.unv"
+mesh_file = "unv_sample_meshes/trig40.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 
 velocity = [0.5, 0.0, 0.0]
@@ -60,7 +62,7 @@ pBCs = (
 velocity = [0.5, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
-
+Re = 1*velocity[1]/nu
 UBCs = ( 
     Dirichlet(:inlet, noSlip),
     Dirichlet(:outlet, noSlip),
@@ -90,19 +92,15 @@ pBCs = (
 )
 
 setup_U = SolverSetup(
-    iterations  = 1,
     solver      = BicgstabSolver,
-    tolerance   = 1e-1,
-    relax       = 0.8,
+    relax       = 0.9,
     itmax       = 100,
     rtol        = 1e-1
 )
 
 setup_p = SolverSetup(
-    iterations  = 1,
     solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
-    tolerance   = 1e-1,
-    relax       = 0.2,
+    relax       = 0.1,
     itmax       = 100,
     rtol        = 1e-2
 )

@@ -1,6 +1,5 @@
 export apply_boundary_conditions!
 export boundary_index
-export H!
 
 @generated function apply_boundary_conditions!(
     equation::Equation{I,F}, model, BCs) where {I,F}
@@ -71,54 +70,5 @@ function boundary_index(boundaries::Vector{Boundary{TI}}, name::Symbol) where {T
         if boundaries[i].name == name
             return bci 
         end
-    end
-end
-
-function H!(Hv::VectorField, v::VectorField{I,F}, xeqn, yeqn) where {I,F}
-    (; x, y, z, mesh) = Hv 
-    (; cells, faces) = mesh
-    Ax = xeqn.A;  Ay = yeqn.A
-    bx = xeqn.b; by = yeqn.b; # bz = zeros(length(bx))
-    
-    vx, vy = v.x, v.y
-    @inbounds for cID ∈ eachindex(cells)
-        cell = cells[cID]
-        (; neighbours) = cell
-        sumx = zero(F)
-        sumy = zero(F)
-        @inbounds for nID ∈ neighbours
-            sumx += Ax[cID,nID]*vx[nID]
-            sumy += Ay[cID,nID]*vy[nID]
-        end
-        rD = 1.0/Ax[cID, cID]
-        x[cID] = (bx[cID] - sumx)*rD
-        y[cID] = (by[cID] - sumy)*rD
-        z[cID] = zero(F)
-    end
-end
-
-function H!(
-    Hv::VectorField, ux::ScalarField{I,F}, uy::ScalarField{I,F}, xeqn, yeqn
-    ) where {I,F}
-    (; x, y, z, mesh) = Hv 
-    (; cells, faces) = mesh
-    Ax = xeqn.A;  Ay = yeqn.A
-    bx = xeqn.b; by = yeqn.b; # bz = zeros(length(bx))
-    ux_vals = ux.values
-    uy_vals = uy.values
-    
-    @inbounds for cID ∈ eachindex(cells)
-        cell = cells[cID]
-        (; neighbours) = cell
-        sumx = zero(F)
-        sumy = zero(F)
-        @inbounds for nID ∈ neighbours
-            sumx += Ax[cID,nID]*ux_vals[nID]
-            sumy += Ay[cID,nID]*uy_vals[nID]
-        end
-        rD = 1.0/Ax[cID, cID]
-        x[cID] = (bx[cID] - sumx)*rD
-        y[cID] = (by[cID] - sumy)*rD
-        z[cID] = zero(F)
     end
 end

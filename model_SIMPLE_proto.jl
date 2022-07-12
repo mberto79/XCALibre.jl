@@ -1,9 +1,7 @@
 using Plots
-using LinearOperators
-using LinearAlgebra
-using Statistics
+using Krylov
 
-using FVM_1D
+# using FVM_1D
 
 using FVM_1D.Mesh2D
 using FVM_1D.Plotting
@@ -12,11 +10,8 @@ using FVM_1D.Calculate
 using FVM_1D.Models
 using FVM_1D.Solvers
 using FVM_1D.VTK
+using FVM_1D.UNV
 
-using Krylov
-using ILUZero
-using IncompleteLU
-using LoopVectorization
 
 function generate_mesh(n_horizontal, n_vertical)
 
@@ -112,14 +107,12 @@ ux = ScalarField(mesh)
 uy = ScalarField(mesh)
 p = ScalarField(mesh)
 
-iterations = 250
+iterations = 500
 Rx, U = isimple!(
     mesh, velocity, nu, ux, uy, p, 
     uxBCs, uyBCs, pBCs, UBCs,
     setup_U, setup_p, iterations)
 
-# write_vtk(mesh, ux)
-# write_vtk(mesh, uy)
 write_vtk("results", mesh, ("U", U), ("p", p))
 
 # plotly(size=(400,400), markersize=1, markerstrokewidth=1)

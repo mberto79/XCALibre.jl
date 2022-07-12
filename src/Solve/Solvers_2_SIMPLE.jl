@@ -61,15 +61,15 @@ function isimple!(
     #### NEED TO IMPLEMENT A SENSIBLE INITIALISATION TO INCLUDE WARM START!!!!
     # Update initial (guessed) fields
 
-    @inbounds ux0 .= ux.values
-    @inbounds uy0 .= uy.values 
-    @inbounds p0 .= p.values
-    @inbounds U.x .= ux.values #velocity[1]
-    @inbounds U.y .= uy.values# velocity[2]
+    @turbo ux0 .= ux.values
+    @turbo uy0 .= uy.values 
+    @turbo p0 .= p.values
+    @turbo U.x .= ux.values #velocity[1]
+    @turbo U.y .= uy.values# velocity[2]
     # @inbounds ux.values .= velocity[1]
     # @inbounds uy.values .= velocity[2]
     # end
-    volume  = volumes(mesh)
+    rvolume  = 1.0./volumes(mesh)
     
     interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, UBCs)
@@ -83,14 +83,11 @@ function isimple!(
 
         print("\n\nIteration ", iteration, "\n") # 91 allocations
         
-        # source!(∇p, pf, p, pBCs)
-        # grad!(∇p, pf, p, pBCs)
-        neg!(∇p)
-        
         print("Solving x-momentum. ")
-
+        
+        neg!(∇p)
         discretise!(x_momentum_eqn, x_momentum_model)
-        @inbounds @. y_momentum_eqn.A.nzval = x_momentum_eqn.A.nzval
+        @turbo @. y_momentum_eqn.A.nzval = x_momentum_eqn.A.nzval
         apply_boundary_conditions!(x_momentum_eqn, x_momentum_model, uxBCs)
         implicit_relaxation!(x_momentum_eqn, ux0, setup_U.relax)
         ilu0!(Px, x_momentum_eqn.A)
@@ -101,14 +98,14 @@ function isimple!(
 
         res = residual(x_momentum_eqn, ux, opAx, solver_U)
         push!(R_ux, res)
-        if res <= 2e-10
+        if res <= 1e-6
             print("\nSimulation converged... Stop!\n")
             break
         end
 
         print("Solving y-momentum. ")
 
-        @inbounds @. y_momentum_eqn.b = 0.0
+        @turbo @. y_momentum_eqn.b = 0.0
         apply_boundary_conditions!(y_momentum_eqn, y_momentum_model, uyBCs)
         implicit_relaxation!(y_momentum_eqn, uy0, setup_U.relax)
         ilu0!(Py, y_momentum_eqn.A)
@@ -117,7 +114,7 @@ function isimple!(
             setup_U, opA=opAy, opP=opPUy, solver=solver_U
         )
 
-        @inbounds for i ∈ eachindex(ux0)
+        @turbo for i ∈ eachindex(ux0)
             ux0[i] = U.x[i]
             uy0[i] = U.y[i]
             # U.x[i] = ux.values[i]
@@ -130,15 +127,13 @@ function isimple!(
         # H!(Hv, U, x_momentum_eqn, y_momentum_eqn)
         H!(Hv, ux, uy, x_momentum_eqn, y_momentum_eqn)
         
-        @inbounds for i ∈ eachindex(ux0)
+        @turbo for i ∈ eachindex(ux0)
             U.x[i] = ux0[i]
             U.y[i] = uy0[i]
         end
         div!(divHv, UBCs) # 7 allocations
-        @inbounds @. divHv.values *= 1.0./volume
-        # @inbounds @. rD.values *= volume#^2
-        # interpolate!(rDf, rD)
-        # @inbounds @. rD.values /= volume#^2
+        # @turbo @. divHv.values *= 1.0./volume
+        @turbo @. divHv.values *= rvolume
 
         print("Solving pressure correction. ")
 
@@ -187,7 +182,6 @@ function residual(equation::Equation{TI,TF}, phi, opA, solver) where {TI,TF}
     # Option 3 (OpenFOAM definition)
     solMean = mean(values)
     term1 = abs.(opA*(values .- solMean))
-    # term2 = abs.(b .- opA*solMean*values./values)
     term2 = abs.(b .- opA*solMean*values./values)
     N = sum(term1 + term2)
     res = (1/N)*sum(abs.(b - opA*values))
@@ -292,7 +286,7 @@ function explicit_relaxation!(phi, phi0, alpha)
     # @. phi.values = alpha*phi.values + (1.0 - alpha)*phi0
     # @. phi0 = phi.values
     values = phi.values
-    @inbounds for i ∈ eachindex(values)
+    @inbounds @simd for i ∈ eachindex(values)
         # values[i] = alpha*values[i] + (1.0 - alpha)*phi0[i]
         values[i] = phi0[i] + alpha*(values[i] - phi0[i])
         phi0[i] = values[i]
@@ -304,7 +298,7 @@ function correct_velocity!(U, Hv, ∇p, rD)
     # @. U.y = Hv.y - ∇p.y*rD.values
     Ux = U.x; Uy = U.y; Hvx = Hv.x; Hvy = Hv.y
     dpdx = ∇p.x; dpdy = ∇p.y; rDvalues = rD.values
-    @inbounds for i ∈ eachindex(Ux)
+    @inbounds @simd for i ∈ eachindex(Ux)
         rDvalues_i = rDvalues[i]
         Ux[i] = Hvx[i] - dpdx[i]*rDvalues_i
         Uy[i] = Hvy[i] - dpdy[i]*rDvalues_i
@@ -316,7 +310,7 @@ function correct_velocity!(ux, uy, Hv, ∇p, rD)
     # @. uy.values = Hv.y - ∇p.y*rD.values
     ux = ux.values; uy = uy.values; Hvx = Hv.x; Hvy = Hv.y
     dpdx = ∇p.x; dpdy = ∇p.y; rDvalues = rD.values
-    @inbounds for i ∈ eachindex(ux)
+    @inbounds @simd for i ∈ eachindex(ux)
         rDvalues_i = rDvalues[i]
         ux[i] = Hvx[i] - dpdx[i]*rDvalues_i
         uy[i] = Hvy[i] - dpdy[i]*rDvalues_i
@@ -339,9 +333,11 @@ function remove_pressure_source!(x_momentum_eqn, y_momentum_eqn, ∇p, rD)
     dpdx, dpdy, rD = ∇p.x, ∇p.y, rD.values
     bx, by = x_momentum_eqn.b, y_momentum_eqn.b
     @inbounds for i ∈ eachindex(bx)
-        rDi = rD[i]
-        bx[i] -= dpdx[i]/rDi
-        by[i] -= dpdy[i]/rDi
+        # rDi = rD[i]
+        # bx[i] -= dpdx[i]/rDi
+        # by[i] -= dpdy[i]/rDi
+        bx[i] -= dpdx[i]
+        by[i] -= dpdy[i]
     end
 end
 
@@ -351,5 +347,54 @@ function setReference!(pEqn::Equation{TI,TF}, pRef) where {TI,TF}
     else
         pEqn.b[1] += pEqn.A[1,1]*pRef
         pEqn.A[1,1] += pEqn.A[1,1]
+    end
+end
+
+function H!(Hv::VectorField, v::VectorField{I,F}, xeqn, yeqn) where {I,F}
+    (; x, y, z, mesh) = Hv 
+    (; cells, faces) = mesh
+    Ax = xeqn.A;  Ay = yeqn.A
+    bx = xeqn.b; by = yeqn.b; # bz = zeros(length(bx))
+    
+    vx, vy = v.x, v.y
+    @inbounds for cID ∈ eachindex(cells)
+        cell = cells[cID]
+        (; neighbours) = cell
+        sumx = zero(F)
+        sumy = zero(F)
+        @inbounds for nID ∈ neighbours
+            sumx += Ax[cID,nID]*vx[nID]
+            sumy += Ay[cID,nID]*vy[nID]
+        end
+        rD = 1.0/Ax[cID, cID]
+        x[cID] = (bx[cID] - sumx)*rD
+        y[cID] = (by[cID] - sumy)*rD
+        z[cID] = zero(F)
+    end
+end
+
+function H!(
+    Hv::VectorField, ux::ScalarField{I,F}, uy::ScalarField{I,F}, xeqn, yeqn
+    ) where {I,F}
+    (; x, y, z, mesh) = Hv 
+    (; cells, faces) = mesh
+    Ax = xeqn.A;  Ay = yeqn.A
+    bx = xeqn.b; by = yeqn.b; # bz = zeros(length(bx))
+    ux_vals = ux.values
+    uy_vals = uy.values
+    
+    @inbounds for cID ∈ eachindex(cells)
+        cell = cells[cID]
+        (; neighbours) = cell
+        sumx = zero(F)
+        sumy = zero(F)
+        @inbounds for nID ∈ neighbours
+            sumx += Ax[cID,nID]*ux_vals[nID]
+            sumy += Ay[cID,nID]*uy_vals[nID]
+        end
+        rD = 1.0/Ax[cID, cID]
+        x[cID] = (bx[cID] - sumx)*rD
+        y[cID] = (by[cID] - sumy)*rD
+        z[cID] = zero(F)
     end
 end

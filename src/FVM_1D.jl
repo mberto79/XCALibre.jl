@@ -17,5 +17,6 @@ using Reexport
 @reexport using FVM_1D.Models
 @reexport using FVM_1D.Solvers
 @reexport using FVM_1D.VTK
+@reexport using FVM_1D.UNV
 
 end # module

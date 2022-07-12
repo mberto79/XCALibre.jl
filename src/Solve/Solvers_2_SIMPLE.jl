@@ -186,7 +186,8 @@ function residual(equation::Equation{TI,TF}, phi, opA, solver) where {TI,TF}
     N = sum(term1 + term2)
     res = (1/N)*sum(abs.(b - opA*values))
 
-    print("Residual: ", res, " (", niterations(solver), " iterations)\n") 
+    # print("Residual: ", res, " (", niterations(solver), " iterations)\n") 
+    @printf "Residual: %.4e (%i iterations)\n" res niterations(solver)
     return res
 end
 

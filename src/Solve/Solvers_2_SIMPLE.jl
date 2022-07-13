@@ -32,8 +32,10 @@ function isimple!(
     rDf.values .= 1.0
 
     # Define models 
-    x_momentum_model    = create_model(ConvectionDiffusion, mdotf, nu, ux, ∇p.x)
-    y_momentum_model    = create_model(ConvectionDiffusion, mdotf, nu, uy, ∇p.y)
+    # x_momentum_model    = create_model(ConvectionDiffusion, mdotf, nu, ux, ∇p.x)
+    # y_momentum_model    = create_model(ConvectionDiffusion, mdotf, nu, uy, ∇p.y)
+    x_momentum_model    = create_model(ConvectionDiffusion, Uf, nu, ux, ∇p.x)
+    y_momentum_model    = create_model(ConvectionDiffusion, Uf, nu, uy, ∇p.y)
     pressure_correction = create_model(Diffusion, rDf, p, divHv.values)
     
     # Define equations
@@ -73,7 +75,7 @@ function isimple!(
     
     interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, UBCs)
-    flux!(mdotf, Uf)
+    # flux!(mdotf, Uf)
 
     source!(∇p, pf, p, pBCs)
     
@@ -117,15 +119,15 @@ function isimple!(
         @turbo for i ∈ eachindex(ux0)
             ux0[i] = U.x[i]
             uy0[i] = U.y[i]
-            # U.x[i] = ux.values[i]
-            # U.y[i] = uy.values[i]
+            U.x[i] = ux.values[i]
+            U.y[i] = uy.values[i]
         end
         
         inverse_diagonal!(rD, x_momentum_eqn)
         interpolate!(rDf, rD)
         remove_pressure_source!(x_momentum_eqn, y_momentum_eqn, ∇p, rD)
-        # H!(Hv, U, x_momentum_eqn, y_momentum_eqn)
-        H!(Hv, ux, uy, x_momentum_eqn, y_momentum_eqn)
+        H!(Hv, U, x_momentum_eqn, y_momentum_eqn)
+        # H!(Hv, ux, uy, x_momentum_eqn, y_momentum_eqn)
         
         @turbo for i ∈ eachindex(ux0)
             U.x[i] = ux0[i]
@@ -139,7 +141,7 @@ function isimple!(
 
         discretise!(pressure_eqn, pressure_correction)
         apply_boundary_conditions!(pressure_eqn, pressure_correction, pBCs)
-        setReference!(pressure_eqn, pref)
+        setReference!(pressure_eqn, pref, 1)
         run!(
             pressure_eqn, pressure_correction, pBCs, 
             setup_p, opA=opAp, opP=opPP, solver=solver_p
@@ -150,7 +152,7 @@ function isimple!(
         correct_velocity!(U, Hv, ∇p, rD)
         interpolate!(Uf, U)
         correct_boundaries!(Uf, U, UBCs)
-        flux!(mdotf, Uf)
+        # flux!(mdotf, Uf)
 
         
         explicit_relaxation!(p, p0, setup_p.relax)
@@ -158,7 +160,7 @@ function isimple!(
         # grad!(∇p, pf, p, pBCs) 
         correct_velocity!(ux, uy, Hv, ∇p, rD)
     end # end for loop
-    return R_ux, U        
+    return R_ux, U, Uf        
 end # end function
 
 
@@ -224,7 +226,8 @@ function flux!(phif::FaceScalarField{TI,TF}, psif::FaceVectorField{TI,TF}) where
     (; faces) = mesh 
     @inbounds for fID ∈ eachindex(faces)
         (; area, normal) = faces[fID]
-        values[fID] = psif(fID)*area⋅normal
+        Sf = area*normal
+        values[fID] = psif(fID)⋅Sf
     end
 end
 
@@ -342,12 +345,12 @@ function remove_pressure_source!(x_momentum_eqn, y_momentum_eqn, ∇p, rD)
     end
 end
 
-function setReference!(pEqn::Equation{TI,TF}, pRef) where {TI,TF}
+function setReference!(pEqn::Equation{TI,TF}, pRef, cellID::TI) where {TI,TF}
     if pRef === nothing
         return nothing
     else
-        pEqn.b[1] += pEqn.A[1,1]*pRef
-        pEqn.A[1,1] += pEqn.A[1,1]
+        pEqn.b[cellID] += pEqn.A[cellID,cellID]*pRef
+        pEqn.A[cellID,cellID] += pEqn.A[cellID,cellID]
     end
 end
 

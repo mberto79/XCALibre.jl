@@ -15,7 +15,7 @@ using Krylov
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
 mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
 mesh_file = "unv_sample_meshes/quad100.unv"
-mesh_file = "unv_sample_meshes/trig40.unv"
+mesh_file = "unv_sample_meshes/trig100.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 
 velocity = [0.5, 0.0, 0.0]
@@ -112,28 +112,16 @@ uy = ScalarField(mesh)
 p = ScalarField(mesh)
 U = VectorField(mesh)
 
-iterations = 1000
-Rx, U = isimple!(
+iterations = 500
+Rx, U, Uf = isimple!(
     mesh, velocity, nu, ux, uy, p, 
     uxBCs, uyBCs, pBCs, UBCs,
     setup_U, setup_p, iterations, pref=0.0)
 
 write_vtk("results", mesh, ("U", U), ("p", p))
 
-# plotly(size=(400,400), markersize=1, markerstrokewidth=1)
+plotly(size=(400,400), markersize=1, markerstrokewidth=1)
 niterations = length(Rx)
 plot(collect(1:niterations), Rx[1:niterations], yscale=:log10)
 
-plot(aspect_ratio=:equal, xlim=(0.0,0.25), ylim=(-0.1, 0.1))
-plot_mesh!(mesh)
-scatter!(mesh.nodes, aspect_ratio=:equal)
-
-fig = plot(aspect_ratio=:equal, color=:blue, legend=false)
-for fID ∈ 1:length(faces)
-    p1 = nodes[faces[fID].nodesID[1]].coords
-    p2 = nodes[faces[fID].nodesID[2]].coords
-    x = [p1[1], p2[1]]
-    y = [p1[2], p2[2]]
-    plot!(fig, x,y, color=:blue)
-end
-@show fig
+scatter(xf(mesh), yf(mesh), Uf.x)

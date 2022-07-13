@@ -94,12 +94,37 @@ end
     xN = cellN.centre
     weight = norm(xf - xC)/norm(xN - xC)
     ap = term.sign[1]*(term.J(fID)*ns)
+    # ap = term.sign[1]*(term.J⋅face.normal*ns*face.area)
     nzval[cIndex] += ap*(1.0 - weight)
     nzval[nIndex] += ap*weight
     nothing
 end
 @inline scheme_source!(
     term::Divergence{Linear, FaceScalarField{I,F}}, b, cell, cID
+    ) where {I,F} = begin
+    # b[cID] += 0.0
+    nothing
+end
+
+Divergence{Linear}(J::FaceVectorField{I,F}, phi) where {I,F}= begin
+    Divergence{Linear, FaceVectorField{I,F}}(J, phi, [1])
+end
+
+@inline function scheme!(
+    term::Divergence{Linear, FaceVectorField{I,F}}, nzval, cell, face, cellN, ns, cIndex, nIndex, fID
+    )  where {I,F}
+    xf = face.centre
+    xC = cell.centre
+    xN = cellN.centre
+    weight = norm(xf - xC)/norm(xN - xC)
+    # ap = term.sign[1]*(term.J(fID)*ns)
+    ap = term.sign[1]*(term.J(fID)⋅face.normal*ns*face.area)
+    nzval[cIndex] += ap*(1.0 - weight)
+    nzval[nIndex] += ap*weight
+    nothing
+end
+@inline scheme_source!(
+    term::Divergence{Linear, FaceVectorField{I,F}}, b, cell, cID
     ) where {I,F} = begin
     # b[cID] += 0.0
     nothing

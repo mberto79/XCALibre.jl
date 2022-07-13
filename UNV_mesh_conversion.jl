@@ -93,14 +93,14 @@ pBCs = (
 
 setup_U = SolverSetup(
     solver      = BicgstabSolver,
-    relax       = 0.8,
+    relax       = 0.7,
     itmax       = 100,
     rtol        = 1e-1
 )
 
 setup_p = SolverSetup(
     solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
-    relax       = 0.2,
+    relax       = 0.3,
     itmax       = 100,
     rtol        = 1e-2
 )
@@ -112,7 +112,7 @@ uy = ScalarField(mesh)
 p = ScalarField(mesh)
 U = VectorField(mesh)
 
-iterations = 2000
+iterations = 3000
 Rx, U, Uf = isimple!(
     mesh, velocity, nu, ux, uy, p, 
     uxBCs, uyBCs, pBCs, UBCs,
@@ -120,7 +120,7 @@ Rx, U, Uf = isimple!(
 
 write_vtk("results", mesh, ("U", U), ("p", p))
 
-plotly(size=(400,400), markersize=1, markerstrokewidth=1)
+# plotly(size=(400,400), markersize=1, markerstrokewidth=1)
 niterations = length(Rx)
 plot(collect(1:niterations), Rx[1:niterations], yscale=:log10)
 

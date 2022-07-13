@@ -84,14 +84,14 @@ pBCs = (
 
 setup_U = SolverSetup(
     solver      = BicgstabSolver,
-    relax       = 0.8,
+    relax       = 0.7,
     itmax       = 100,
     rtol        = 1e-1
 )
 
 setup_p = SolverSetup(
     solver      = BicgstabSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
-    relax       = 0.2,
+    relax       = 0.3,
     itmax       = 100,
     rtol        = 1e-2
 )

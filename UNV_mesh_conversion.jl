@@ -93,14 +93,14 @@ pBCs = (
 
 setup_U = SolverSetup(
     solver      = BicgstabSolver,
-    relax       = 0.9,
+    relax       = 0.8,
     itmax       = 100,
     rtol        = 1e-1
 )
 
 setup_p = SolverSetup(
     solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
-    relax       = 0.1,
+    relax       = 0.2,
     itmax       = 100,
     rtol        = 1e-2
 )
@@ -112,7 +112,7 @@ uy = ScalarField(mesh)
 p = ScalarField(mesh)
 U = VectorField(mesh)
 
-iterations = 500
+iterations = 2000
 Rx, U, Uf = isimple!(
     mesh, velocity, nu, ux, uy, p, 
     uxBCs, uyBCs, pBCs, UBCs,

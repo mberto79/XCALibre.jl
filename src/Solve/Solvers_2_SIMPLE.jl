@@ -32,10 +32,10 @@ function isimple!(
     rDf.values .= 1.0
 
     # Define models 
-    # x_momentum_model    = create_model(ConvectionDiffusion, mdotf, nu, ux, ∇p.x)
-    # y_momentum_model    = create_model(ConvectionDiffusion, mdotf, nu, uy, ∇p.y)
-    x_momentum_model    = create_model(ConvectionDiffusion, Uf, nu, ux, ∇p.x)
-    y_momentum_model    = create_model(ConvectionDiffusion, Uf, nu, uy, ∇p.y)
+    x_momentum_model    = create_model(ConvectionDiffusion, mdotf, nu, ux, ∇p.x)
+    y_momentum_model    = create_model(ConvectionDiffusion, mdotf, nu, uy, ∇p.y)
+    # x_momentum_model    = create_model(ConvectionDiffusion, Uf, nu, ux, ∇p.x)
+    # y_momentum_model    = create_model(ConvectionDiffusion, Uf, nu, uy, ∇p.y)
     pressure_correction = create_model(Diffusion, rDf, p, divHv.values)
     
     # Define equations
@@ -71,11 +71,11 @@ function isimple!(
     # @inbounds ux.values .= velocity[1]
     # @inbounds uy.values .= velocity[2]
     # end
-    rvolume  = 1.0./volumes(mesh)
+    volume  = volumes(mesh)
     
     interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, UBCs)
-    # flux!(mdotf, Uf)
+    flux!(mdotf, Uf)
 
     source!(∇p, pf, p, pBCs)
     
@@ -134,8 +134,12 @@ function isimple!(
             U.y[i] = uy0[i]
         end
         div!(divHv, UBCs) # 7 allocations
-        # @turbo @. divHv.values *= 1.0./volume
-        @turbo @. divHv.values *= rvolume
+        # @turbo @. divHv.values *= 1.0/volume
+        # @turbo @. divHv.values *= rvolume
+       
+        @inbounds @. rD.values *= volume#^2
+        interpolate!(rDf, rD)
+        @inbounds @. rD.values /= volume
 
         print("Solving pressure correction. ")
 
@@ -152,7 +156,7 @@ function isimple!(
         correct_velocity!(U, Hv, ∇p, rD)
         interpolate!(Uf, U)
         correct_boundaries!(Uf, U, UBCs)
-        # flux!(mdotf, Uf)
+        flux!(mdotf, Uf)
 
         
         explicit_relaxation!(p, p0, setup_p.relax)

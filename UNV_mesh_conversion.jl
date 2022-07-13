@@ -13,6 +13,7 @@ using Krylov
 
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
+mesh_file = "unv_sample_meshes/quad100.unv"
 mesh_file = "unv_sample_meshes/trig100.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 
@@ -114,7 +115,7 @@ uy = ScalarField(mesh)
 p = ScalarField(mesh)
 U = VectorField(mesh)
 
-iterations = 1000
+iterations = 2000
 Rx, U = isimple!(
     mesh, velocity, nu, ux, uy, p, 
     uxBCs, uyBCs, pBCs, UBCs,

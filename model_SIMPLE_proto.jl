@@ -90,7 +90,7 @@ setup_U = SolverSetup(
 )
 
 setup_p = SolverSetup(
-    solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
+    solver      = BicgstabSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
     relax       = 0.2,
     itmax       = 100,
     rtol        = 1e-2

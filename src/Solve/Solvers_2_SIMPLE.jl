@@ -98,7 +98,7 @@ function isimple!(
 
         res = residual(x_momentum_eqn, ux, opAx, solver_U)
         push!(R_ux, res)
-        if res <= 1e-15
+        if res <= 1e-6
             print("\nSimulation converged... Stop!\n")
             break
         end

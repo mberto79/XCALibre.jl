@@ -96,7 +96,7 @@ setup_U = SolverSetup(
 
 setup_p = SolverSetup(
     iterations  = 1,
-    solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
+    solver      = BicgstabSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
     tolerance   = 1e-1,
     relax       = 0.2,
     itmax       = 100,

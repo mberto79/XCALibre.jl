@@ -50,7 +50,8 @@ function run!(
         solver, opA, b, values; 
         M=opP, itmax=itmax, atol=atol, rtol=rtol
         )
-    relax!(values, solver.x, relax)
+    # relax!(values, solver.x, 1.0)
+    @turbo values .= solver.x
 
     if correct_term !== nothing
         nonorthogonal_correction!(gradPhi, gradf, phif, BCs)

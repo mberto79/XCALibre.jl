@@ -1,7 +1,7 @@
 export isimple!, flux!
 
 function isimple!(
-    mesh::Mesh2{TI,TF}, velocity, nu, ux, uy, p, 
+    mesh::Mesh2{TI,TF}, velocity, nu, U, p, 
     uxBCs, uyBCs, pBCs, UBCs,
     setup_U, setup_p, iterations
     ; resume=true, pref=nothing) where {TI,TF}
@@ -9,7 +9,9 @@ function isimple!(
     n_cells = m = n = length(mesh.cells)
 
     # Pre-allocate fields
-    U = VectorField(mesh)
+    ux = ScalarField(mesh)
+    uy = ScalarField(mesh)
+    # U = VectorField(mesh)
     Uf = FaceVectorField(mesh)
     # mdot = ScalarField(mesh)
     mdotf = FaceScalarField(mesh)
@@ -85,15 +87,18 @@ function isimple!(
 
     source!(∇p, pf, p, pBCs)
     
-    # Perform SIMPLE loops 
     R_ux = TF[]
+    R_uy = TF[]
+    R_p = TF[]
+
+    # Perform SIMPLE loops 
     @time for iteration ∈ 1:iterations
 
-        print("\n\nIteration ", iteration, "\n") # 91 allocations
+        print("\nIteration ", iteration, "\n") # 91 allocations
         
-        print("Solving x-momentum. ")
+        print("Solving Ux...")
         
-        # source!(∇p, pf, p, pBCs)
+        source!(∇p, pf, p, pBCs)
         neg!(∇p)
 
         discretise!(x_momentum_eqn, x_momentum_model)
@@ -105,15 +110,10 @@ function isimple!(
             x_momentum_eqn, x_momentum_model, uxBCs, 
             setup_U, opA=opAx, opP=opPUx, solver=solver_U
         )
+        r_ux = residual(x_momentum_eqn, ux, opAx, solver_U)
 
-        res = residual(x_momentum_eqn, ux, opAx, solver_U)
-        push!(R_ux, res)
-        if res <= 1e-6
-            print("\nSimulation converged... Stop!\n")
-            break
-        end
 
-        print("Solving y-momentum. ")
+        print("Solving Uy...")
 
         @turbo @. y_momentum_eqn.b = 0.0
         apply_boundary_conditions!(y_momentum_eqn, y_momentum_model, uyBCs)
@@ -123,6 +123,8 @@ function isimple!(
             y_momentum_eqn, y_momentum_model, uyBCs, 
             setup_U, opA=opAy, opP=opPUy, solver=solver_U
         )
+        r_uy = residual(y_momentum_eqn, uy, opAy, solver_U)
+
 
         @turbo for i ∈ eachindex(ux0)
             ux0[i] = U.x[i]
@@ -135,7 +137,7 @@ function isimple!(
         interpolate!(rDf, rD)
         remove_pressure_source!(x_momentum_eqn, y_momentum_eqn, ∇p, rD)
         # H!(Hv, U, x_momentum_eqn, y_momentum_eqn)
-        H!(Hv, ux, uy, x_momentum_eqn, y_momentum_eqn)
+        H!(Hv, ux, uy, x_momentum_eqn, y_momentum_eqn, rD)
         
         # @turbo for i ∈ eachindex(ux0)
         #     U.x[i] = ux0[i]
@@ -151,11 +153,11 @@ function isimple!(
         div!(divHv_new, Hv_flux)
         # @turbo @. divHv_new.values *= rvolume
 
-        @inbounds @. rD.values *= volume
-        interpolate!(rDf, rD)
-        @inbounds @. rD.values *= rvolume
+        # @inbounds @. rD.values *= volume
+        # interpolate!(rDf, rD)
+        # @inbounds @. rD.values *= rvolume
 
-        print("Solving pressure correction. ")
+        print("Solving p...")
 
         discretise!(pressure_eqn, pressure_correction)
         apply_boundary_conditions!(pressure_eqn, pressure_correction, pBCs)
@@ -165,8 +167,8 @@ function isimple!(
             setup_p, opA=opAp, opP=opPP, solver=solver_p
         )
         
-        source!(∇p, pf, p, pBCs)
-        # grad!(∇p, pf, p, pBCs) 
+        # source!(∇p, pf, p, pBCs)
+        grad!(∇p, pf, p, pBCs) 
         correct_velocity!(U, Hv, ∇p, rD)
         interpolate!(Uf, U)
         correct_boundaries!(Uf, U, UBCs)
@@ -174,11 +176,21 @@ function isimple!(
 
         
         explicit_relaxation!(p, p0, setup_p.relax)
-        source!(∇p, pf, p, pBCs)
-        # grad!(∇p, pf, p, pBCs) 
+        r_p = residual(pressure_eqn, p, opAp, solver_p)
+
+        # source!(∇p, pf, p, pBCs)
+        grad!(∇p, pf, p, pBCs) 
         correct_velocity!(ux, uy, Hv, ∇p, rD)
+
+        push!(R_ux, r_ux)
+        push!(R_uy, r_uy)
+        push!(R_p, r_p)
+        if r_ux <= 1e-6 && r_uy <= 1e-6 && r_p <= 1e-6
+            print("\nSimulation converged!\n")
+            break
+        end
     end # end for loop
-    return R_ux, U, Uf        
+    return R_ux, R_uy, R_p     
 end # end function
 
 
@@ -207,7 +219,7 @@ function residual(equation::Equation{TI,TF}, phi, opA, solver) where {TI,TF}
     res = (1/N)*sum(abs.(b - opA*values))
 
     # print("Residual: ", res, " (", niterations(solver), " iterations)\n") 
-    @printf "Residual: %.4e (%i iterations)\n" res niterations(solver)
+    @printf "\tResidual: %.4e (%i iterations)\n" res niterations(solver)
     return res
 end
 
@@ -293,14 +305,16 @@ volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 # end
 
 function inverse_diagonal!(rD::ScalarField{I,F}, eqn) where {I,F}
-    # D = @view eqn.A[diagind(eqn.A)]
-    # @. rD.values = 1.0./D
+    (; mesh, values) = rD
+    cells = mesh.cells
     A = eqn.A
-    rD_values = rD.values
-    @inbounds for i ∈ eachindex(rD_values)
-        # ap = @view A[i,i]
-        # rD_values[i] = 1.0/ap
-        rD_values[i] = 1.0/view(A, i, i)[1]
+    @inbounds for i ∈ eachindex(values)
+        D = view(A, i, i)[1]
+        volume = cells[i].volume
+        # DV = D/volume
+        values[i] = volume/D
+        # values[i] = 1.0/DV
+        # values[i] = 1.0/view(A, i, i)[1]
     end
 end
 
@@ -372,7 +386,7 @@ function setReference!(pEqn::Equation{TI,TF}, pRef, cellID::TI) where {TI,TF}
     end
 end
 
-function H!(Hv::VectorField, v::VectorField{I,F}, xeqn, yeqn) where {I,F}
+function H!(Hv::VectorField, v::VectorField{I,F}, xeqn, yeqn, rD) where {I,F}
     (; x, y, z, mesh) = Hv 
     (; cells, faces) = mesh
     Ax = xeqn.A;  Ay = yeqn.A
@@ -388,15 +402,22 @@ function H!(Hv::VectorField, v::VectorField{I,F}, xeqn, yeqn) where {I,F}
             sumx += Ax[cID,nID]*vx[nID]
             sumy += Ay[cID,nID]*vy[nID]
         end
-        rD = 1.0/Ax[cID, cID]
-        x[cID] = (bx[cID] - sumx)*rD
-        y[cID] = (by[cID] - sumy)*rD
+        # rD = 1.0/Ax[cID, cID]
+        # x[cID] = (bx[cID] - sumx)*rD
+        # y[cID] = (by[cID] - sumy)*rD
+        # z[cID] = zero(F)
+
+        # rD_temp = rD.values[cID]/cells[cID].volume # works
+        D = view(Ax, cID, cID)[1] # Good for now (add check to use max of Ax or Ay)
+        rD_temp = 1.0/D
+        x[cID] = (bx[cID] - sumx)*rD_temp
+        y[cID] = (by[cID] - sumy)*rD_temp
         z[cID] = zero(F)
     end
 end
 
 function H!(
-    Hv::VectorField, ux::ScalarField{I,F}, uy::ScalarField{I,F}, xeqn, yeqn
+    Hv::VectorField, ux::ScalarField{I,F}, uy::ScalarField{I,F}, xeqn, yeqn, rD
     ) where {I,F}
     (; x, y, z, mesh) = Hv 
     (; cells, faces) = mesh
@@ -414,9 +435,16 @@ function H!(
             sumx += Ax[cID,nID]*ux_vals[nID]
             sumy += Ay[cID,nID]*uy_vals[nID]
         end
-        rD = 1.0/Ax[cID, cID]
-        x[cID] = (bx[cID] - sumx)*rD
-        y[cID] = (by[cID] - sumy)*rD
+        # rD = 1.0/Ax[cID, cID]
+        # x[cID] = (bx[cID] - sumx)*rD
+        # y[cID] = (by[cID] - sumy)*rD
+        # z[cID] = zero(F)
+
+        # rD_temp = rD.values[cID]/cells[cID].volume # works
+        D = view(Ax, cID, cID)[1] # Good for now (add check to use max of Ax or Ay)
+        rD_temp = 1.0/D
+        x[cID] = (bx[cID] - sumx)*rD_temp
+        y[cID] = (by[cID] - sumy)*rD_temp
         z[cID] = zero(F)
     end
 end

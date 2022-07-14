@@ -103,13 +103,12 @@ mesh = generate_mesh(n_horizontal, n_vertical)
 
 GC.gc()
 
-ux = ScalarField(mesh)
-uy = ScalarField(mesh)
+U = VectorField(mesh)
 p = ScalarField(mesh)
 
 iterations = 500
-Rx, U = isimple!(
-    mesh, velocity, nu, ux, uy, p, 
+Rx, Ry, Rp = isimple!(
+    mesh, velocity, nu, U, p, 
     uxBCs, uyBCs, pBCs, UBCs,
     setup_U, setup_p, iterations)
 
@@ -118,6 +117,8 @@ write_vtk("results", mesh, ("U", U), ("p", p))
 # plotly(size=(400,400), markersize=1, markerstrokewidth=1)
 niterations = length(Rx)
 plot(collect(1:niterations), Rx[1:niterations], yscale=:log10)
+plot!(collect(1:niterations), Ry[1:niterations], yscale=:log10)
+plot!(collect(1:niterations), Rp[1:niterations], yscale=:log10)
 
 scatter(x(mesh), y(mesh), ux.values, color=:red)
 scatter(x(mesh), y(mesh), uy.values, color=:red)

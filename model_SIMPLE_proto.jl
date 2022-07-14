@@ -116,9 +116,9 @@ write_vtk("results", mesh, ("U", U), ("p", p))
 
 # plotly(size=(400,400), markersize=1, markerstrokewidth=1)
 niterations = length(Rx)
-plot(collect(1:niterations), Rx[1:niterations], yscale=:log10)
-plot!(collect(1:niterations), Ry[1:niterations], yscale=:log10)
-plot!(collect(1:niterations), Rp[1:niterations], yscale=:log10)
+plot(collect(1:niterations), Rx[1:niterations], yscale=:log10, label="Ux")
+plot!(collect(1:niterations), Ry[1:niterations], yscale=:log10, label="Uy")
+plot!(collect(1:niterations), Rp[1:niterations], yscale=:log10, label="p")
 
 scatter(x(mesh), y(mesh), ux.values, color=:red)
 scatter(x(mesh), y(mesh), uy.values, color=:red)

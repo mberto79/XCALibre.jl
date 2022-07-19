@@ -16,7 +16,8 @@ function isimple!(
     # mdot = ScalarField(mesh)
     mdotf = FaceScalarField(mesh)
     pf = FaceScalarField(mesh)
-    ∇p = Grad{Linear}(p)
+    # ∇p = Grad{Linear}(p)
+    ∇p = Grad{Midpoint}(p)
     
     Hv = VectorField(mesh)
     Hvf = FaceVectorField(mesh)
@@ -73,10 +74,10 @@ function isimple!(
     @turbo ux0 .= ux.values
     @turbo uy0 .= uy.values 
     @turbo p0 .= p.values
+    @inbounds ux.values .= velocity[1]
+    @inbounds uy.values .= velocity[2]
     @turbo U.x .= ux.values #velocity[1]
     @turbo U.y .= uy.values# velocity[2]
-    # @inbounds ux.values .= velocity[1]
-    # @inbounds uy.values .= velocity[2]
     # end
     volume  = volumes(mesh)
     rvolume  = 1.0./volume

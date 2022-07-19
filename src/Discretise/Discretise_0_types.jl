@@ -3,7 +3,7 @@ export AbstractOperators, AbstractLaplacian, AbstractDivergence
 export AbstractScheme 
 export AbstractLaplacian, AbstractDivergence 
 export Laplacian, Divergence
-export Constant, Linear, Upwind 
+export Constant, Linear, Upwind, Midpoint
 export ScalarField, FaceScalarField
 export VectorField, FaceVectorField
 export Equation 
@@ -27,6 +27,7 @@ abstract type AbstractScheme end
 struct Constant <: AbstractScheme end
 struct Linear <: AbstractScheme end
 struct Upwind <: AbstractScheme end
+struct Midpoint <: AbstractScheme end
 
 # FIELDS 
 

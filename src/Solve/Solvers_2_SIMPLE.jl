@@ -16,8 +16,8 @@ function isimple!(
     # mdot = ScalarField(mesh)
     mdotf = FaceScalarField(mesh)
     pf = FaceScalarField(mesh)
-    # ∇p = Grad{Linear}(p)
-    ∇p = Grad{Midpoint}(p)
+    ∇p = Grad{Linear}(p)
+    # ∇p = Grad{Midpoint}(p)
     gradpf = FaceVectorField(mesh)
     
     Hv = VectorField(mesh)
@@ -161,6 +161,7 @@ function isimple!(
 
         print("Solving p...")
 
+        
         discretise!(pressure_eqn, pressure_correction)
         apply_boundary_conditions!(pressure_eqn, pressure_correction, pBCs)
         setReference!(pressure_eqn, pref, 1)
@@ -169,11 +170,27 @@ function isimple!(
             setup_p, opA=opAp, opP=opPP, solver=solver_p
         )
 
-        
-        # source!(∇p, pf, p, pBCs)
         grad!(∇p, pf, p, pBCs) 
+        correct = false
+        if correct
+            ncorrectors = 2
+            for i ∈ 1:ncorrectors
+                discretise!(pressure_eqn, pressure_correction)
+                apply_boundary_conditions!(pressure_eqn, pressure_correction, pBCs)
+                setReference!(pressure_eqn, pref, 1)
+                # grad!(∇p, pf, p, pBCs) 
+                interpolate!(gradpf, ∇p, p)
+                nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
+                correct!(pressure_eqn, pressure_correction.terms.term1, pf)
+                run!(
+                    pressure_eqn, pressure_correction, pBCs, 
+                    setup_p, opA=opAp, opP=opPP, solver=solver_p
+                )
+                grad!(∇p, pf, p, pBCs) 
+            end
+        end
 
-        interpolate!(gradpf, ∇p, p)
+        # source!(∇p, pf, p, pBCs)
         
         correct_velocity!(U, Hv, ∇p, rD)
         interpolate!(Uf, U)
@@ -191,7 +208,8 @@ function isimple!(
         push!(R_ux, r_ux)
         push!(R_uy, r_uy)
         push!(R_p, r_p)
-        if r_ux <= 1e-6 && r_uy <= 1e-6 && r_p <= 1e-6
+        convergence = 1e-7
+        if r_ux <= convergence && r_uy <= convergence && r_p <= convergence
             print("\nSimulation converged!\n")
             break
         end

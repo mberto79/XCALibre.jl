@@ -46,3 +46,16 @@ function correct_interpolation!(
         values[fID] = phifᵖ + ∇phi⋅R
     end
 end
+
+# Linear gradient calculation
+
+function grad!(grad::Grad{Linear,TI,TF}, phif, phi, BCs; source=false) where {TI,TF}
+    # interpolate!(get_scheme(grad), phif, phi) # Needs to be implemented properly
+    interpolate!(phif, phi)
+    correct_boundaries!(phif, phi, BCs)
+    green_gauss!(grad, phif; source)
+    # for i ∈ 1:2
+    #     correct_interpolation!(grad, phif, phi)
+    #     green_gauss!(grad, phif; source)
+    # end
+end

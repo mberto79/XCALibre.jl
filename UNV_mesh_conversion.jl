@@ -93,14 +93,14 @@ pBCs = (
 
 setup_U = SolverSetup(
     solver      = BicgstabSolver,
-    relax       = 0.7,
+    relax       = 0.8,
     itmax       = 100,
     rtol        = 1e-1
 )
 
 setup_p = SolverSetup(
     solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
-    relax       = 0.3,
+    relax       = 0.2,
     itmax       = 100,
     rtol        = 1e-2
 )
@@ -120,8 +120,8 @@ write_vtk("results", mesh, ("U", U), ("p", p))
 
 # plotly(size=(400,400), markersize=1, markerstrokewidth=1)
 niterations = length(Rx)
-plot(collect(1:niterations), Rx[1:niterations], yscale=:log10)
-plot!(collect(1:niterations), Ry[1:niterations], yscale=:log10)
-plot!(collect(1:niterations), Rp[1:niterations], yscale=:log10)
+plot(collect(1:niterations), Rx[1:niterations], yscale=:log10, label="Ux")
+plot!(collect(1:niterations), Ry[1:niterations], yscale=:log10, label="Uy")
+plot!(collect(1:niterations), Rp[1:niterations], yscale=:log10, label="p")
 
 scatter(xf(mesh), yf(mesh), Uf.x)

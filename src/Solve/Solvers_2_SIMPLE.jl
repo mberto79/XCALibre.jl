@@ -18,6 +18,7 @@ function isimple!(
     pf = FaceScalarField(mesh)
     # ∇p = Grad{Linear}(p)
     ∇p = Grad{Midpoint}(p)
+    gradpf = FaceVectorField(mesh)
     
     Hv = VectorField(mesh)
     Hvf = FaceVectorField(mesh)
@@ -167,9 +168,13 @@ function isimple!(
             pressure_eqn, pressure_correction, pBCs, 
             setup_p, opA=opAp, opP=opPP, solver=solver_p
         )
+
         
         # source!(∇p, pf, p, pBCs)
         grad!(∇p, pf, p, pBCs) 
+
+        interpolate!(gradpf, ∇p, p)
+        
         correct_velocity!(U, Hv, ∇p, rD)
         interpolate!(Uf, U)
         correct_boundaries!(Uf, U, UBCs)

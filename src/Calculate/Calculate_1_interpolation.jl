@@ -1,5 +1,5 @@
-export interpolate!
 export correct_boundaries!
+export interpolate!
 
 # Function to correct interpolation at boundaries (expands loop to reduce allocations)
 
@@ -138,6 +138,66 @@ end
 
 # GRADIENT INTERPOLATION
 
+function interpolate!(
+    gradf::FaceVectorField{TI,TF}, grad::Grad{S,TI,TF}, phi
+    ) where {S,TI,TF}
+    (; mesh, x, y, z) = gradf
+    (; cells, faces) = mesh
+    (; values) = phi
+    nbfaces = total_boundary_faces(mesh)
+    start = nbfaces + 1
+    @inbounds for fID ∈ start:length(faces)
+        face = faces[fID]
+        (; delta, ownerCells, e) = face
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        grad1 = grad(cID1)
+        grad2 = grad(cID2)
+        # get weight for current scheme
+        w = weight(get_scheme(grad), cells, faces, fID)
+        one_minus_weight = 1.0 - w
+        # calculate interpolated value
+        grad_ave = w*grad1 + one_minus_weight*grad2
+        # correct interpolation
+        grad_corr = grad_ave + ((values[cID2] - values[cID1])/delta - (grad_ave⋅e))*e
+        x[fID] = grad_corr[1]
+        y[fID] = grad_corr[2]
+        z[fID] = grad_corr[3]
+    end
+end
+
+function weight(::Type{Midpoint}, cells, faces, fID)
+    w = 0.5
+    return w
+end
+
+# function correct_gradient_interpolation!(::Type{Linear}, gradf, phi)
+#     values = phi.phi.values
+#     mesh = phi.mesh
+#     (; cells, faces) = mesh
+#     start = total_boundary_faces(mesh) + 1
+#     finish = length(faces)
+#     @inbounds for fID ∈ start:finish
+#     # for fi ∈ 1:length(faces)
+#         # (; ownerCells, delta, e) = faces[fi]
+#         face = faces[fID]
+#         ownerCells = face.ownerCells
+#         delta = face.ownerCells
+#         e = face.e
+#         w, df = weight(Linear, cells, faces, fi)
+#         cID1 = ownerCells[1]
+#         cID2 = ownerCells[2]
+#         grad_ave = gradf(fID)
+#         grad_corr = grad_ave + ((values[cID2] - values[cID1])/delta - (grad_ave⋅e))*e
+#         gradf.x[fID] = grad_corr[1]
+#         gradf.y[fID] = grad_corr[2]
+#         gradf.z[fID] = grad_corr[3]
+#     end
+# end
+
+############ OLD LINEAR GRADIENT INTERPOLATION IMPLEMENTATION #############
+
+
 function interpolate!(::Type{Linear}, gradf::FaceVectorField{I,F}, grad, BCs) where {I,F}
     (; mesh, x, y, z) = gradf
     (; cells, faces) = mesh
@@ -158,7 +218,7 @@ function interpolate!(::Type{Linear}, gradf::FaceVectorField{I,F}, grad, BCs) wh
         y[fID] = gradi[2]
         z[fID] = gradi[3]
     end
-    correct_interpolation!(Linear, gradf, grad)
+    correct_gradient_interpolation!(Linear, gradf, grad)
     # boundary faces
     for BC ∈ BCs
         bi = boundary_index(boundaries, BC.name)
@@ -167,30 +227,30 @@ function interpolate!(::Type{Linear}, gradf::FaceVectorField{I,F}, grad, BCs) wh
     end
 end
 
-function correct_interpolation!(
-    ::Type{Linear}, phif::FaceScalarField{I,F}, grad, phif0) where {I,F}
-    mesh = phif.mesh
-    (; cells, faces) = mesh
-    start = total_boundary_faces(mesh) + 1
-    finish = length(faces)
-    @inbounds for fID ∈ start:finish
-        # (; ownerCells) = faces[fi]
-        face = faces[fID]
-        ownerCells = face.ownerCells
-        w, df = weight(Linear, cells, faces, fi)
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        grad1 = grad(cID1)
-        grad2 = grad(cID2)
-        one_minus_weight = 1.0 - w
-        grad_ave = w*grad1 + one_minus_weight*grad2
-        phif.values[fID] = phif0[fID] + grad_ave⋅df
-    end
-end
+# function correct_interpolation!(
+#     ::Type{Linear}, phif::FaceScalarField{I,F}, grad, phif0) where {I,F}
+#     mesh = phif.mesh
+#     (; cells, faces) = mesh
+#     start = total_boundary_faces(mesh) + 1
+#     finish = length(faces)
+#     @inbounds for fID ∈ start:finish
+#         # (; ownerCells) = faces[fi]
+#         face = faces[fID]
+#         ownerCells = face.ownerCells
+#         w, df = weight(Linear, cells, faces, fi)
+#         cID1 = ownerCells[1]
+#         cID2 = ownerCells[2]
+#         grad1 = grad(cID1)
+#         grad2 = grad(cID2)
+#         one_minus_weight = 1.0 - w
+#         grad_ave = w*grad1 + one_minus_weight*grad2
+#         phif.values[fID] = phif0[fID] + grad_ave⋅df
+#     end
+# end
 
-function correct_interpolation!(::Type{Linear}, gradf, grad)
-    values = grad.phi.values
-    mesh = grad.mesh
+function correct_gradient_interpolation!(::Type{Linear}, gradf, phi)
+    values = phi.phi.values
+    mesh = phi.mesh
     (; cells, faces) = mesh
     start = total_boundary_faces(mesh) + 1
     finish = length(faces)

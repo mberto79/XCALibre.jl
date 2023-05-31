@@ -1,6 +1,8 @@
 export UnitVectors
 export Node, Face2D, Boundary, Cell, Mesh2
 
+abstract type AbstractMesh end
+
 struct UnitVectors
     i::SVector{3, Float64}
     j::SVector{3, Float64}
@@ -62,7 +64,7 @@ Cell(I,F) = begin
     Cell(I[], I[], I[], I[], vec3F, zf)
 end
 
-struct Mesh2{I,F}
+struct Mesh2{I,F} <: AbstractMesh
     cells::Vector{Cell{I,F}}
     faces::Vector{Face2D{I,F}}
     boundaries::Vector{Boundary{I}}

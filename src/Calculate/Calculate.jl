@@ -5,7 +5,7 @@ using StaticArrays
 using LoopVectorization
 # using SparseArrays
 
-using FVM_1D.Mesh2D
+using FVM_1D.Mesh
 using FVM_1D.Discretise
 
 include("Calculate_0_types.jl")

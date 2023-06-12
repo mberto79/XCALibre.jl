@@ -1,13 +1,6 @@
 using Plots
 
-using FVM_1D.Mesh
-using FVM_1D.UNV
-using FVM_1D.Plotting
-using FVM_1D.Discretise
-using FVM_1D.Calculate
-using FVM_1D.Models
-using FVM_1D.Solvers
-using FVM_1D.VTK
+using FVM_1D
 
 using Krylov
 

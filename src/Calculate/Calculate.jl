@@ -3,9 +3,10 @@ module Calculate
 using LinearAlgebra
 using StaticArrays
 using LoopVectorization
-# using SparseArrays
+using SparseArrays
 
 using FVM_1D.Mesh
+using FVM_1D.Fields
 using FVM_1D.Discretise
 
 include("Calculate_0_types.jl")

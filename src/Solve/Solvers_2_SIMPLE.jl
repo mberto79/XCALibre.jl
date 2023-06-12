@@ -171,9 +171,9 @@ function isimple!(
         )
 
         grad!(∇p, pf, p, pBCs) 
-        correct = false
+        correct = true
         if correct
-            ncorrectors = 2
+            ncorrectors = 1
             for i ∈ 1:ncorrectors
                 discretise!(pressure_eqn, pressure_correction)
                 apply_boundary_conditions!(pressure_eqn, pressure_correction, pBCs)

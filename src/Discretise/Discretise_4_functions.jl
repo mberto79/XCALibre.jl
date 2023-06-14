@@ -1,6 +1,5 @@
 export apply_boundary_conditions!
 export boundary_index
-export H!
 
 @generated function apply_boundary_conditions!(
     equation::Equation{I,F}, model, BCs) where {I,F}
@@ -71,27 +70,5 @@ function boundary_index(boundaries::Vector{Boundary{TI}}, name::Symbol) where {T
         if boundaries[i].name == name
             return bci 
         end
-    end
-end
-
-function H!(Hv::VectorField, v::VectorField{I,F}, xeqn, yeqn) where {I,F}
-    (; x, y, z, mesh) = Hv 
-    (; cells, faces) = mesh
-    Ax = xeqn.A;  Ay = yeqn.A
-    bx = xeqn.b; by = yeqn.b; # bz = zeros(length(bx))
-    
-    @inbounds for cID ∈ eachindex(cells)
-        cell = cells[cID]
-        (; neighbours) = cell
-        sumx = zero(F)
-        sumy = zero(F)
-        @inbounds for nID ∈ neighbours
-            sumx += Ax[cID,nID]*v.x[nID]
-            sumy += Ay[cID,nID]*v.y[nID]
-        end
-        rD = 1.0/Ax[cID, cID]
-        x[cID] = (bx[cID] - sumx)*rD
-        y[cID] = (by[cID] - sumy)*rD
-        z[cID] = zero(F)
     end
 end

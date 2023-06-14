@@ -4,7 +4,8 @@ using LinearAlgebra
 using SparseArrays
 using StaticArrays
 
-using FVM_1D.Mesh2D
+using FVM_1D.Mesh
+using FVM_1D.Fields
 
 include("Discretise_0_types.jl")
 # include("Discretise_1_operations.jl")

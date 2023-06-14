@@ -4,7 +4,7 @@ using StaticArrays
 using Setfield
 using Printf
 
-using FVM_1D.Mesh2D
+using FVM_1D.Mesh
 
 include("UNV_0_types.jl")
 include("UNV_1_loader.jl")

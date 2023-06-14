@@ -1,13 +1,6 @@
 using Plots
 
-using FVM_1D.Mesh2D
-using FVM_1D.UNV
-using FVM_1D.Plotting
-using FVM_1D.Discretise
-using FVM_1D.Calculate
-using FVM_1D.Models
-using FVM_1D.Solvers
-using FVM_1D.VTK
+using FVM_1D
 
 using Krylov
 
@@ -27,24 +20,24 @@ UBCs = (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:cylinder, noSlip),
-    Dirichlet(:bottom, velocity),
-    Dirichlet(:top, velocity)
+    Neumann(:bottom, 0.0),
+    Neumann(:top, 0.0)
 )
 
 uxBCs = (
     Dirichlet(:inlet, velocity[1]),
     Neumann(:outlet, 0.0),
     Dirichlet(:cylinder, noSlip[1]),
-    Dirichlet(:bottom, velocity[1]),
-    Dirichlet(:top, velocity[1])
+    Neumann(:bottom, 0.0),
+    Neumann(:top, 0.0)
 )
 
 uyBCs = (
     Dirichlet(:inlet, velocity[2]),
     Neumann(:outlet, 0.0),
     Dirichlet(:cylinder, noSlip[2]),
-    Dirichlet(:bottom, velocity[2]),
-    Dirichlet(:top, velocity[2])
+    Neumann(:bottom, 0.0),
+    Neumann(:top, 0.0)
 )
 
 pBCs = (
@@ -56,39 +49,34 @@ pBCs = (
 )
 
 setup_U = SolverSetup(
-    iterations  = 1,
     solver      = BicgstabSolver,
-    tolerance   = 1e-1,
-    relax       = 0.8,
+    relax       = 0.7,
     itmax       = 100,
     rtol        = 1e-1
 )
 
 setup_p = SolverSetup(
-    iterations  = 1,
     solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
-    tolerance   = 1e-1,
-    relax       = 0.2,
+    relax       = 0.3,
     itmax       = 100,
     rtol        = 1e-2
 )
 
 GC.gc()
 
-ux = ScalarField(mesh)
-uy = ScalarField(mesh)
 p = ScalarField(mesh)
 U = VectorField(mesh)
 
-iterations = 1000
-Rx, U = isimple!(
-    mesh, velocity, nu, ux, uy, p, 
+iterations = 2000
+Rx, Ry, Rp = isimple!(
+    mesh, velocity, nu, U, p, 
     uxBCs, uyBCs, pBCs, UBCs,
-    setup_U, setup_p, iterations
-)
+    setup_U, setup_p, iterations)
 
 write_vtk("results", mesh, ("U", U), ("p", p))
 
 # plotly(size=(400,400), markersize=1, markerstrokewidth=1)
 niterations = length(Rx)
-plot(collect(1:niterations), Rx[1:niterations], yscale=:log10)
+plot(collect(1:niterations), Rx[1:niterations], yscale=:log10, label="Ux")
+plot!(collect(1:niterations), Ry[1:niterations], yscale=:log10, label="Uy")
+plot!(collect(1:niterations), Rp[1:niterations], yscale=:log10, label="p")

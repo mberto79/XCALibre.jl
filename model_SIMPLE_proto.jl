@@ -1,7 +1,7 @@
 using Plots
-using LinearOperators
-using LinearAlgebra
-using Statistics
+using Krylov
+
+# using FVM_1D
 
 using FVM_1D.Mesh2D
 using FVM_1D.Plotting
@@ -10,11 +10,8 @@ using FVM_1D.Calculate
 using FVM_1D.Models
 using FVM_1D.Solvers
 using FVM_1D.VTK
+using FVM_1D.UNV
 
-using Krylov
-using ILUZero
-using IncompleteLU
-using LoopVectorization
 
 function generate_mesh(n_horizontal, n_vertical)
 
@@ -86,19 +83,15 @@ pBCs = (
 )
 
 setup_U = SolverSetup(
-    iterations  = 1,
     solver      = BicgstabSolver,
-    tolerance   = 1e-1,
-    relax       = 0.8,
+    relax       = 0.7,
     itmax       = 100,
     rtol        = 1e-1
 )
 
 setup_p = SolverSetup(
-    iterations  = 1,
     solver      = BicgstabSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
-    tolerance   = 1e-1,
-    relax       = 0.2,
+    relax       = 0.3,
     itmax       = 100,
     rtol        = 1e-2
 )
@@ -110,23 +103,22 @@ mesh = generate_mesh(n_horizontal, n_vertical)
 
 GC.gc()
 
-ux = ScalarField(mesh)
-uy = ScalarField(mesh)
+U = VectorField(mesh)
 p = ScalarField(mesh)
 
-iterations = 320
-Rx, U = isimple!(
-    mesh, velocity, nu, ux, uy, p, 
+iterations = 500
+Rx, Ry, Rp = isimple!(
+    mesh, velocity, nu, U, p, 
     uxBCs, uyBCs, pBCs, UBCs,
     setup_U, setup_p, iterations)
 
-# write_vtk(mesh, ux)
-# write_vtk(mesh, uy)
 write_vtk("results", mesh, ("U", U), ("p", p))
 
 # plotly(size=(400,400), markersize=1, markerstrokewidth=1)
 niterations = length(Rx)
-plot(collect(1:niterations), Rx[1:niterations], yscale=:log10)
+plot(collect(1:niterations), Rx[1:niterations], yscale=:log10, label="Ux")
+plot!(collect(1:niterations), Ry[1:niterations], yscale=:log10, label="Uy")
+plot!(collect(1:niterations), Rp[1:niterations], yscale=:log10, label="p")
 
 scatter(x(mesh), y(mesh), ux.values, color=:red)
 scatter(x(mesh), y(mesh), uy.values, color=:red)

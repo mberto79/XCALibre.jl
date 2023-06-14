@@ -1,13 +1,6 @@
 using Plots
 
-using FVM_1D.Mesh2D
-using FVM_1D.UNV
-using FVM_1D.Plotting
-using FVM_1D.Discretise
-using FVM_1D.Calculate
-using FVM_1D.Models
-using FVM_1D.Solvers
-using FVM_1D.VTK
+using FVM_1D
 
 using Krylov
 
@@ -114,7 +107,8 @@ iterations = 3000
 Rx, Ry, Rp = isimple!(
     mesh, velocity, nu, U, p, 
     uxBCs, uyBCs, pBCs, UBCs,
-    setup_U, setup_p, iterations, pref=0.0)
+    # setup_U, setup_p, iterations, pref=0.0)
+    setup_U, setup_p, iterations)
 
 write_vtk("results", mesh, ("U", U), ("p", p))
 

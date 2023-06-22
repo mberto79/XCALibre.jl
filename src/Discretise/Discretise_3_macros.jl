@@ -1,7 +1,9 @@
 export @discretise
-export @discretise2
-export @discretise3
-export @discretise4
+export discretise!
+
+@generated function discretise!()
+    nothing
+end
 
 macro discretise(Model_type, nTerms::Integer, nSources::Integer)
     assignment_block_1 = [] #Expr(:block)

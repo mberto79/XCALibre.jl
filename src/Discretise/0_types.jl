@@ -66,9 +66,12 @@ Source{T}(field) where T = Src(
 )
 
 # MODEL TYPE
-struct Model{T,S}
+struct Model{T,S, TN, SN}
     terms::T
     sources::S
+end
+Model{TN,SN}(terms, sources) where {TN,SN} = begin
+    Model{typeof(terms),typeof(sources),TN,SN}(terms, sources)
 end
 
 

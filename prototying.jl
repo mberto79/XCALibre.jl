@@ -25,3 +25,17 @@ model = (
     -
     Divergence{Linear}(J, phi)  
 )
+
+@generated function test(model)
+    nterms = model.parameters[3]
+    nsources = model.parameters[4]
+    quote
+        term1 = model.terms[1]
+        term2 = model.terms[2]
+        src1 = model.sources
+        # println($nterms, " ", $nsources)
+        nothing
+    end
+end
+
+@time test(model)

@@ -7,12 +7,12 @@ export scheme4!, scheme_source4!
 
 ### OPERATORS AND SCHEMES
 
-struct Source{T} <: AbstractSource
-    phi::Float64
-    type::T
-    label::Symbol
-end
-Source{Constant}(phi) = Source{Constant}(phi, Constant(), :ConstantSource)
+# struct Source{T} <: AbstractSource
+#     phi::Float64
+#     type::T
+#     label::Symbol
+# end
+# Source{Constant}(phi) = Source{Constant}(phi, Constant(), :ConstantSource)
 
 
 ### LAPLACIAN (constant scalar)

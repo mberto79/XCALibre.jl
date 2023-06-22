@@ -1,9 +1,10 @@
 
-export AbstractOperators, AbstractSource   
-export Laplacian, Divergence, Source
+export AbstractOperator, AbstractSource   
+export Operator, Source, Src
+export Laplacian, Divergence
 export AbstractScheme, Constant, Linear, Upwind, Midpoint
 
-export Equation 
+export Model, Equation 
 export AbstractBoundary, AbstractDirichlet, AbstractNeumann
 export Dirichlet, Neumann 
 export initialise!
@@ -25,9 +26,9 @@ struct Midpoint <: AbstractScheme end
 
 # Base Operator
 
-struct Operator{P,F,S,T}
-    phi::P 
+struct Operator{F,P,S,T}
     flux::F
+    phi::P 
     sign::S
     type::T
 end
@@ -40,11 +41,11 @@ struct Divergence{T} <: AbstractOperator end
 # constructors
 
 Laplacian{T}(flux, phi) where T = Operator(
-    phi, flux, [], Laplacian{T}()
+    flux, phi, 1, Laplacian{T}
     )
 
 Divergence{T}(flux, phi) where T = Operator(
-    phi, flux, [], Divergence{T}()
+    flux, phi, 1, Divergence{T}
     )
 
 # SOURCES
@@ -61,12 +62,12 @@ end
 struct Source{T} <: AbstractSource end
 
 Source{T}(field) where T = Src(
-    field, [], Source{T}()
+    field, 1, Source{T}
 )
 
 # MODEL TYPE
-struct Model{O,S}
-    operators::O
+struct Model{T,S}
+    terms::T
     sources::S
 end
 

@@ -8,6 +8,20 @@ J = 4.0
 
 grad = ScalarField(mesh)
 
-model = begin
-    Divergence{Linear}(J, phi) - Laplacian{Linear}(J, phi) == Source{Constant}(grad)
-end
+model = (
+    Divergence{Upwind}(J, phi) 
+    + 
+    Laplacian{Linear}(2.0, phi) 
+    == 
+    Source{Constant}(grad)
+    # +
+    # Source{Linear}(0)
+)
+
+model = (
+    Divergence{Linear}(J, phi)  
+    + 
+    Laplacian{Linear}(J, phi) 
+    -
+    Divergence{Linear}(J, phi)  
+)

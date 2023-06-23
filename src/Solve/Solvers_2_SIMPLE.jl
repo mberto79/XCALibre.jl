@@ -15,6 +15,8 @@ function isimple!(
     Uf = FaceVectorField(mesh)
     # mdot = ScalarField(mesh)
     mdotf = FaceScalarField(mesh)
+    nuf = FaceScalarField(mesh) # Implement constant field! Priority 1
+    nuf.values .= nu
     pf = FaceScalarField(mesh)
     ∇p = Grad{Linear}(p)
     # ∇p = Grad{Midpoint}(p)
@@ -39,13 +41,21 @@ function isimple!(
     rDf.values .= 1.0
 
     # Define models 
-    x_momentum_model    = create_model(ConvectionDiffusion, mdotf, nu, ux, ∇p.x)
-    y_momentum_model    = create_model(ConvectionDiffusion, mdotf, nu, uy, ∇p.y)
-    # x_momentum_model    = create_model(ConvectionDiffusion, Uf, nu, ux, ∇p.x)
-    # y_momentum_model    = create_model(ConvectionDiffusion, Uf, nu, uy, ∇p.y)
+    x_momentum_model = (
+        Divergence{Linear}(mdotf, ux) - Laplacian{Linear}(nuf, ux) 
+        == 
+        Source(∇p.x)
+    )
+    
+    y_momentum_model = (
+        Divergence{Linear}(mdotf, uy) - Laplacian{Linear}(nuf, uy) 
+        == 
+        Source(∇p.y)
+    )
 
-    # pressure_correction = create_model(Diffusion, rDf, p, divHv.values)
-    pressure_correction = create_model(Diffusion, rDf, p, divHv_new.values)
+    pressure_correction = (
+        Laplacian{Linear}(rDf, p) == Source(divHv_new)
+    )
 
     # Define equations
     x_momentum_eqn  = Equation(mesh)

@@ -41,11 +41,11 @@ struct Divergence{T} <: AbstractOperator end
 # constructors
 
 Laplacian{T}(flux, phi) where T = Operator(
-    flux, phi, 1, Laplacian{T}
+    flux, phi, 1, Laplacian{T}()
     )
 
 Divergence{T}(flux, phi) where T = Operator(
-    flux, phi, 1, Divergence{T}
+    flux, phi, 1, Divergence{T}()
     )
 
 # SOURCES
@@ -59,11 +59,11 @@ end
 
 # Source types
 
-struct Source{T} <: AbstractSource end
+struct Source <: AbstractSource end
 
-Source{T}(field) where T = Src(
-    field, 1, Source{T}
-)
+Source(f::AbstractVector) = Src(f, 1, typeof(f))
+Source(f::ScalarField) = Src(f.values, 1, typeof(f))
+# Source(f::Number) = Src(f.values, 1, typeof(f)) # To implement!!
 
 # MODEL TYPE
 struct Model{T,S, TN, SN}

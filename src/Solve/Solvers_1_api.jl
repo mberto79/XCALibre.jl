@@ -31,11 +31,11 @@ function run!(
     correct_term=nothing, opA, opP, solver
     ) where {Ti,Tf}
     
-    equation.b .+= phiModel.sources.source1
+    equation.b .+= phiModel.sources[1].field
 
     (; relax, itmax, atol, rtol) = setup
     (; A, b, R, Fx) = equation
-    (; phi) = phiModel.terms.term1
+    (; phi) = phiModel.terms[1]
     (; values, mesh) = phi
 
     if correct_term !== nothing 

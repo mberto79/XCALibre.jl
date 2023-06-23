@@ -29,6 +29,7 @@ FaceScalarField(mesh::Mesh2{I,F}) where {I,F} =begin
 end
 
 (s::AbstractScalarField)(i::Integer) = s.values[i]
+Base.getindex(s::AbstractScalarField, i::Integer) = s.values[i]
 
 struct VectorField{I,F} <: AbstractVectorField
     x::Vector{F}
@@ -53,6 +54,8 @@ FaceVectorField(mesh::Mesh2{I,F}) where {I,F} = begin
 end
 
 (v::AbstractVectorField)(i::Integer) = SVector{3, eltype(v.x)}(v.x[i], v.y[i], v.z[i])
+
+Base.getindex(v::AbstractVectorField, i::Integer) = SVector{3, eltype(v.x)}(v.x[i], v.y[i], v.z[i])
 
 function initialise!(v::AbstractVectorField, vec::Vector{T}) where T
     n = length(vec)

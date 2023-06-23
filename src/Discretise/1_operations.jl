@@ -28,15 +28,15 @@ end
 # Equality operation for model wrapper
 
 Base.:(==)(a::Operator, b::Src) = begin
-    Model{1,1}((a),(b))
+    Model{1,1}((a,),(b,))
 end
 
 Base.:(==)(a::Vector{<:Operator}, b::Src) = begin
-    Model{length(a),1}((a...,),(b))
+    Model{length(a),1}((a...,),(b,))
 end
 
 Base.:(==)(a::Operator, b::Vector{<:Src}) = begin
-    Model{1,length(b)}((a...,),(b))
+    Model{1,length(b)}((a...,),(b,))
 end
 
 Base.:(==)(a::Vector{<:Operator}, b::Vector{<:Src}) = begin

@@ -12,7 +12,7 @@ using IncompleteLU
 using FVM_1D.Mesh
 using FVM_1D.Fields
 using FVM_1D.Discretise
-using FVM_1D.Models
+# using FVM_1D.Models
 using FVM_1D.Calculate
 
 include("Solvers_1_api.jl")

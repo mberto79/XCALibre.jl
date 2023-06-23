@@ -15,8 +15,7 @@ function isimple!(
     Uf = FaceVectorField(mesh)
     # mdot = ScalarField(mesh)
     mdotf = FaceScalarField(mesh)
-    nuf = FaceScalarField(mesh) # Implement constant field! Priority 1
-    nuf.values .= nu
+    nuf = ConstantScalar(nu) # Implement constant field! Priority 1
     pf = FaceScalarField(mesh)
     ∇p = Grad{Linear}(p)
     # ∇p = Grad{Midpoint}(p)
@@ -41,43 +40,43 @@ function isimple!(
     rDf.values .= 1.0
 
     # Define models 
-    x_momentum_model = (
+    model_ux = (
         Divergence{Linear}(mdotf, ux) - Laplacian{Linear}(nuf, ux) 
         == 
         Source(∇p.x)
     )
     
-    y_momentum_model = (
+    model_uy = (
         Divergence{Linear}(mdotf, uy) - Laplacian{Linear}(nuf, uy) 
         == 
         Source(∇p.y)
     )
 
-    pressure_correction = (
+    model_p = (
         Laplacian{Linear}(rDf, p) == Source(divHv_new)
     )
 
     # Define equations
-    x_momentum_eqn  = Equation(mesh)
-    y_momentum_eqn  = Equation(mesh)
-    pressure_eqn    = Equation(mesh)
+    ux_eqn  = Equation(mesh)
+    uy_eqn  = Equation(mesh)
+    p_eqn    = Equation(mesh)
 
     # Define preconditioners and linear operators
-    opAx = LinearOperator(x_momentum_eqn.A)
-    Px = ilu0(x_momentum_eqn.A)
+    opAx = LinearOperator(ux_eqn.A)
+    Px = ilu0(ux_eqn.A)
     opPUx = LinearOperator(Float64, m, n, false, false, (y, v) -> ldiv!(y, Px, v))
     
-    opAy = LinearOperator(y_momentum_eqn.A)
-    Py = ilu0(y_momentum_eqn.A)
+    opAy = LinearOperator(uy_eqn.A)
+    Py = ilu0(uy_eqn.A)
     opPUy = LinearOperator(Float64, m, n, false, false, (y, v) -> ldiv!(y, Py, v))
     
-    discretise!(pressure_eqn, pressure_correction)
-    apply_boundary_conditions!(pressure_eqn, pressure_correction, pBCs)
-    opAp = LinearOperator(pressure_eqn.A)
-    opPP = opLDL(pressure_eqn.A)
+    discretise!(p_eqn, model_p)
+    apply_boundary_conditions!(p_eqn, model_p, pBCs)
+    opAp = LinearOperator(p_eqn.A)
+    opPP = opLDL(p_eqn.A)
 
-    solver_p = setup_p.solver(pressure_eqn.A, pressure_eqn.b)
-    solver_U = setup_U.solver(x_momentum_eqn.A, x_momentum_eqn.b)
+    solver_p = setup_p.solver(p_eqn.A, p_eqn.b)
+    solver_U = setup_U.solver(ux_eqn.A, ux_eqn.b)
 
     #### NEED TO IMPLEMENT A SENSIBLE INITIALISATION TO INCLUDE WARM START!!!!
     # Update initial (guessed) fields
@@ -99,9 +98,13 @@ function isimple!(
 
     source!(∇p, pf, p, pBCs)
     
-    R_ux = TF[]
-    R_uy = TF[]
-    R_p = TF[]
+    # R_ux = TF[]
+    # R_uy = TF[]
+    # R_p = TF[]
+
+    R_ux = zeros(TF, iterations)
+    R_uy = zeros(TF, iterations)
+    R_p = zeros(TF, iterations)
 
     # Perform SIMPLE loops 
     @time for iteration ∈ 1:iterations
@@ -113,29 +116,29 @@ function isimple!(
         source!(∇p, pf, p, pBCs)
         neg!(∇p)
 
-        discretise!(x_momentum_eqn, x_momentum_model)
-        @turbo @. y_momentum_eqn.A.nzval = x_momentum_eqn.A.nzval
-        apply_boundary_conditions!(x_momentum_eqn, x_momentum_model, uxBCs)
-        implicit_relaxation!(x_momentum_eqn, ux0, setup_U.relax)
-        ilu0!(Px, x_momentum_eqn.A)
+        discretise!(ux_eqn, model_ux)
+        @turbo @. uy_eqn.A.nzval = ux_eqn.A.nzval
+        apply_boundary_conditions!(ux_eqn, model_ux, uxBCs)
+        implicit_relaxation!(ux_eqn, ux0, setup_U.relax)
+        ilu0!(Px, ux_eqn.A)
         run!(
-            x_momentum_eqn, x_momentum_model, uxBCs, 
+            ux_eqn, model_ux, uxBCs, 
             setup_U, opA=opAx, opP=opPUx, solver=solver_U
         )
-        r_ux = residual(x_momentum_eqn, ux, opAx, solver_U)
+        r_ux = residual(ux_eqn, ux, opAx, solver_U)
 
 
         print("Solving Uy...")
 
-        @turbo @. y_momentum_eqn.b = 0.0
-        apply_boundary_conditions!(y_momentum_eqn, y_momentum_model, uyBCs)
-        implicit_relaxation!(y_momentum_eqn, uy0, setup_U.relax)
-        ilu0!(Py, y_momentum_eqn.A)
+        @turbo @. uy_eqn.b = 0.0
+        apply_boundary_conditions!(uy_eqn, model_uy, uyBCs)
+        implicit_relaxation!(uy_eqn, uy0, setup_U.relax)
+        ilu0!(Py, uy_eqn.A)
         run!(
-            y_momentum_eqn, y_momentum_model, uyBCs, 
+            uy_eqn, model_uy, uyBCs, 
             setup_U, opA=opAy, opP=opPUy, solver=solver_U
         )
-        r_uy = residual(y_momentum_eqn, uy, opAy, solver_U)
+        r_uy = residual(uy_eqn, uy, opAy, solver_U)
 
 
         @turbo for i ∈ eachindex(ux0)
@@ -145,11 +148,11 @@ function isimple!(
             # U.y[i] = uy.values[i]
         end
         
-        inverse_diagonal!(rD, x_momentum_eqn)
+        inverse_diagonal!(rD, ux_eqn)
         interpolate!(rDf, rD)
-        remove_pressure_source!(x_momentum_eqn, y_momentum_eqn, ∇p, rD)
-        # H!(Hv, U, x_momentum_eqn, y_momentum_eqn)
-        H!(Hv, ux, uy, x_momentum_eqn, y_momentum_eqn, rD)
+        remove_pressure_source!(ux_eqn, uy_eqn, ∇p, rD)
+        # H!(Hv, U, ux_eqn, uy_eqn)
+        H!(Hv, ux, uy, ux_eqn, uy_eqn, rD)
         
         # @turbo for i ∈ eachindex(ux0)
         #     U.x[i] = ux0[i]
@@ -172,11 +175,11 @@ function isimple!(
         print("Solving p...")
 
         
-        discretise!(pressure_eqn, pressure_correction)
-        apply_boundary_conditions!(pressure_eqn, pressure_correction, pBCs)
-        setReference!(pressure_eqn, pref, 1)
+        discretise!(p_eqn, model_p)
+        apply_boundary_conditions!(p_eqn, model_p, pBCs)
+        setReference!(p_eqn, pref, 1)
         run!(
-            pressure_eqn, pressure_correction, pBCs, 
+            p_eqn, model_p, pBCs, 
             setup_p, opA=opAp, opP=opPP, solver=solver_p
         )
 
@@ -185,15 +188,15 @@ function isimple!(
         if correct
             ncorrectors = 1
             for i ∈ 1:ncorrectors
-                discretise!(pressure_eqn, pressure_correction)
-                apply_boundary_conditions!(pressure_eqn, pressure_correction, pBCs)
-                setReference!(pressure_eqn, pref, 1)
+                discretise!(p_eqn, model_p)
+                apply_boundary_conditions!(p_eqn, model_p, pBCs)
+                setReference!(p_eqn, pref, 1)
                 # grad!(∇p, pf, p, pBCs) 
                 interpolate!(gradpf, ∇p, p)
                 nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
-                correct!(pressure_eqn, pressure_correction.terms.term1, pf)
+                correct!(p_eqn, model_p.terms.term1, pf)
                 run!(
-                    pressure_eqn, pressure_correction, pBCs, 
+                    p_eqn, model_p, pBCs, 
                     setup_p, opA=opAp, opP=opPP, solver=solver_p
                 )
                 grad!(∇p, pf, p, pBCs) 
@@ -209,15 +212,18 @@ function isimple!(
 
         
         explicit_relaxation!(p, p0, setup_p.relax)
-        r_p = residual(pressure_eqn, p, opAp, solver_p)
+        r_p = residual(p_eqn, p, opAp, solver_p)
 
         # source!(∇p, pf, p, pBCs)
         grad!(∇p, pf, p, pBCs) 
         correct_velocity!(ux, uy, Hv, ∇p, rD)
 
-        push!(R_ux, r_ux)
-        push!(R_uy, r_uy)
-        push!(R_p, r_p)
+        # push!(R_ux, r_ux)
+        # push!(R_uy, r_uy)
+        # push!(R_p, r_p)
+        R_ux[iteration] = r_ux
+        R_uy[iteration] = r_uy
+        R_p[iteration] = r_p
         convergence = 1e-7
         if r_ux <= convergence && r_uy <= convergence && r_p <= convergence
             print("\nSimulation converged!\n")
@@ -397,11 +403,11 @@ function neg!(∇p)
     end
 end
 
-function remove_pressure_source!(x_momentum_eqn, y_momentum_eqn, ∇p, rD)
-    # @. x_momentum_eqn.b -= ∇p.x/rD.values
-    # @. y_momentum_eqn.b -= ∇p.y/rD.values
+function remove_pressure_source!(ux_eqn, uy_eqn, ∇p, rD)
+    # @. ux_eqn.b -= ∇p.x/rD.values
+    # @. uy_eqn.b -= ∇p.y/rD.values
     dpdx, dpdy, rD = ∇p.x, ∇p.y, rD.values
-    bx, by = x_momentum_eqn.b, y_momentum_eqn.b
+    bx, by = ux_eqn.b, uy_eqn.b
     @inbounds for i ∈ eachindex(bx)
         # rDi = rD[i]
         # bx[i] -= dpdx[i]/rDi

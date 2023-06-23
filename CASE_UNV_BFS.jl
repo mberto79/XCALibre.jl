@@ -63,7 +63,7 @@ GC.gc()
 p = ScalarField(mesh)
 U = VectorField(mesh)
 
-iterations = 3000
+iterations = 1000
 Rx, Ry, Rp = isimple!(
     mesh, velocity, nu, U, p, 
     uxBCs, uyBCs, pBCs, UBCs,

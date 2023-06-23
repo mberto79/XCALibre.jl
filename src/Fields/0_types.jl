@@ -1,4 +1,5 @@
 export AbstractField, AbstractScalarField, AbstractVectorField
+export ConstantScalar, ConstantVector
 export ScalarField, FaceScalarField
 export VectorField, FaceVectorField
 
@@ -7,6 +8,20 @@ export VectorField, FaceVectorField
 abstract type AbstractField end
 abstract type AbstractScalarField <: AbstractField end
 abstract type AbstractVectorField <: AbstractField end
+
+# CONSTANT FIELDS 
+
+struct ConstantScalar{V<:Number} <: AbstractScalarField
+    values::V
+end
+Base.getindex(s::ConstantScalar, i::Integer) = s.values
+
+struct ConstantVector{V<:Number} <: AbstractVectorField
+    x::V
+    y::V
+    z::V
+end
+Base.getindex(v::ConstantVector, i::Integer) = SVector{3, eltype(v.x)}(v.x[i], v.y[i], v.z[i])
 
 # FIELDS 
 

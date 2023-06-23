@@ -291,7 +291,7 @@ function flux!(phif::FaceScalarField{TI,TF}, psif::FaceVectorField{TI,TF}) where
     @inbounds for fID ∈ eachindex(faces)
         (; area, normal) = faces[fID]
         Sf = area*normal
-        values[fID] = psif(fID)⋅Sf
+        values[fID] = psif[fID]⋅Sf
     end
 end
 

@@ -111,7 +111,7 @@ function isimple!(
 
         print("\nIteration ", iteration, "\n") # 91 allocations
         
-        print("Solving Ux...")
+        # print("Solving Ux...")
         
         source!(∇p, pf, p, pBCs)
         neg!(∇p)
@@ -128,7 +128,7 @@ function isimple!(
         r_ux = residual(ux_eqn, ux, opAx, solver_U)
 
 
-        print("Solving Uy...")
+        # print("Solving Uy...")
 
         @turbo @. uy_eqn.b = 0.0
         apply_boundary_conditions!(uy_eqn, model_uy, uyBCs)
@@ -172,7 +172,7 @@ function isimple!(
         # interpolate!(rDf, rD)
         # @inbounds @. rD.values *= rvolume
 
-        print("Solving p...")
+        # print("Solving p...")
 
         
         discretise!(p_eqn, model_p)
@@ -259,7 +259,7 @@ function residual(equation::Equation{TI,TF}, phi, opA, solver) where {TI,TF}
     res = (1/N)*sum(abs.(b - opA*values))
 
     # print("Residual: ", res, " (", niterations(solver), " iterations)\n") 
-    @printf "\tResidual: %.4e (%i iterations)\n" res niterations(solver)
+    # @printf "\tResidual: %.4e (%i iterations)\n" res niterations(solver)
     return res
 end
 

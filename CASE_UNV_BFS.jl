@@ -58,6 +58,8 @@ setup_p = SolverSetup(
     rtol        = 1e-2
 )
 
+using Profile, PProf
+
 GC.gc()
 
 p = ScalarField(mesh)
@@ -69,5 +71,20 @@ Rx, Ry, Rp = isimple!(
     uxBCs, uyBCs, pBCs, UBCs,
     # setup_U, setup_p, iterations, pref=0.0)
     setup_U, setup_p, iterations)
+
+GC.gc()
+
+p = ScalarField(mesh)
+U = VectorField(mesh)
+
+Profile.Allocs.clear()
+Profile.Allocs.@profile sample_rate=0.25 begin Rx, Ry, Rp = isimple!(
+    mesh, velocity, nu, U, p, 
+    uxBCs, uyBCs, pBCs, UBCs,
+    # setup_U, setup_p, iterations, pref=0.0)
+    setup_U, setup_p, iterations)
+end
+
+PProf.Allocs.pprof()
 
 write_vtk("results", mesh, ("U", U), ("p", p))

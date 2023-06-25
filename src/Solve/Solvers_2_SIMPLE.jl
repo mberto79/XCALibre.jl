@@ -102,14 +102,16 @@ function isimple!(
     # R_uy = TF[]
     # R_p = TF[]
 
-    R_ux = zeros(TF, iterations)
-    R_uy = zeros(TF, iterations)
-    R_p = zeros(TF, iterations)
+    R_ux = ones(TF, iterations)
+    R_uy = ones(TF, iterations)
+    R_p = ones(TF, iterations)
 
     # Perform SIMPLE loops 
+    progress = Progress(iterations; dt=1.0, showspeed=true)
     @time for iteration ∈ 1:iterations
+    # for iteration ∈ 1:iterations
 
-        print("\nIteration ", iteration, "\n") # 91 allocations
+        # print("\nIteration ", iteration, "\n") # 91 allocations
         
         # print("Solving Ux...")
         
@@ -125,7 +127,7 @@ function isimple!(
             ux_eqn, model_ux, uxBCs, 
             setup_U, opA=opAx, opP=opPUx, solver=solver_U
         )
-        r_ux = residual(ux_eqn, ux, opAx, solver_U)
+        residual!(R_ux, ux_eqn, ux, opAx, solver_U, iteration)
 
 
         # print("Solving Uy...")
@@ -138,7 +140,7 @@ function isimple!(
             uy_eqn, model_uy, uyBCs, 
             setup_U, opA=opAy, opP=opPUy, solver=solver_U
         )
-        r_uy = residual(uy_eqn, uy, opAy, solver_U)
+        residual!(R_uy, uy_eqn, uy, opAy, solver_U, iteration)
 
 
         @turbo for i ∈ eachindex(ux0)
@@ -212,7 +214,7 @@ function isimple!(
 
         
         explicit_relaxation!(p, p0, setup_p.relax)
-        r_p = residual(p_eqn, p, opAp, solver_p)
+        residual!(R_p, p_eqn, p, opAp, solver_p, iteration)
 
         # source!(∇p, pf, p, pBCs)
         grad!(∇p, pf, p, pBCs) 
@@ -221,20 +223,30 @@ function isimple!(
         # push!(R_ux, r_ux)
         # push!(R_uy, r_uy)
         # push!(R_p, r_p)
-        R_ux[iteration] = r_ux
-        R_uy[iteration] = r_uy
-        R_p[iteration] = r_p
+        # R_ux[iteration] = r_ux
+        # R_uy[iteration] = r_uy
+        # R_p[iteration] = r_p
         convergence = 1e-7
-        if r_ux <= convergence && r_uy <= convergence && r_p <= convergence
+        if R_ux[iteration] <= convergence && R_uy[iteration] <= convergence && R_p[iteration] <= convergence
             print("\nSimulation converged!\n")
             break
         end
+
+        ProgressMeter.next!(
+            progress, showvalues = [
+                (:iter,iteration),
+                (:Ux, R_ux[iteration]),
+                (:Uy, R_uy[iteration]),
+                (:p, R_p[iteration]),
+                ]
+            )
+
     end # end for loop
     return R_ux, R_uy, R_p     
 end # end function
 
 
-function residual(equation::Equation{TI,TF}, phi, opA, solver) where {TI,TF}
+function residual!(Residual, equation::Equation{TI,TF}, phi, opA, solver, iteration) where {TI,TF}
     (; A, b, R, Fx) = equation
     values = phi.values
     # Option 1
@@ -253,14 +265,24 @@ function residual(equation::Equation{TI,TF}, phi, opA, solver) where {TI,TF}
 
     # Option 3 (OpenFOAM definition)
     solMean = mean(values)
-    term1 = abs.(opA*(values .- solMean))
-    term2 = abs.(b .- opA*solMean*values./values)
-    N = sum(term1 + term2)
-    res = (1/N)*sum(abs.(b - opA*values))
+    # term1 = abs.(opA*(values .- solMean))
+    # R .= opA*(values .- solMean)
+    mul!(R, opA, values .- solMean)
+    # R .= opA*R 
+    term1 = abs.(R)
+    # R .= opA*values
+    mul!(R, opA, values)
+    Fx .= b .- R.*solMean./values
+    term2 = abs.(Fx)
+    N = sum(term1 .+ term2)
+    # res = (1/N)*sum(abs.(b - opA*values))
+    res = (1/N)*sum(abs.(b .- R))
 
     # print("Residual: ", res, " (", niterations(solver), " iterations)\n") 
     # @printf "\tResidual: %.4e (%i iterations)\n" res niterations(solver)
-    return res
+    # return res
+    Residual[iteration] = res
+    nothing
 end
 
 function calculate_residuals(

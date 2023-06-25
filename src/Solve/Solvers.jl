@@ -8,6 +8,7 @@ using Krylov
 using ILUZero
 using Printf
 using IncompleteLU
+using ProgressMeter
 
 using FVM_1D.Mesh
 using FVM_1D.Fields

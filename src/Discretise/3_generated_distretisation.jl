@@ -1,8 +1,11 @@
 export discretise!
 
-@generated function discretise!(equation, model)
-    nTerms = model.parameters[3]
-    nSources = model.parameters[4]
+@generated function discretise!(
+    equation, model::Model{T,S,TN,SN}
+    ) where {T,S,TN,SN}
+
+    nTerms = TN
+    nSources = SN
 
     assignment_block_1 = Expr[] 
     assignment_block_2 = Expr[]

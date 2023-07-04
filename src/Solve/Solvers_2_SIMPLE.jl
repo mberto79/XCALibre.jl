@@ -6,38 +6,16 @@ function isimple!(
     setup_U, setup_p, iterations
     ; resume=true, pref=nothing) where {TI,TF}
 
-    n_cells = m = n = length(mesh.cells)
 
     # Pre-allocate fields
     ux = ScalarField(mesh)
     uy = ScalarField(mesh)
-    # U = VectorField(mesh)
-    Uf = FaceVectorField(mesh)
-    # mdot = ScalarField(mesh)
+    ∇p = Grad{Linear}(p)
     mdotf = FaceScalarField(mesh)
     nuf = ConstantScalar(nu) # Implement constant field! Priority 1
-    pf = FaceScalarField(mesh)
-    ∇p = Grad{Linear}(p)
-    # ∇p = Grad{Midpoint}(p)
-    gradpf = FaceVectorField(mesh)
-    
-    Hv = VectorField(mesh)
-    Hvf = FaceVectorField(mesh)
-    Hv_flux = FaceScalarField(mesh)
-    divHv_new = ScalarField(mesh)
-    divHv = Div(Hv, FaceVectorField(mesh), zeros(TF, n_cells), mesh)
-    rD = ScalarField(mesh)
     rDf = FaceScalarField(mesh)
+    divHv_new = ScalarField(mesh)
 
-    # Pre-allocated auxiliary variables
-    ux0 = zeros(TF, n_cells)
-    uy0 = zeros(TF, n_cells)
-    p0 = zeros(TF, n_cells)
-
-    ux0 .= velocity[1]
-    uy0 .= velocity[2]
-    p0 .= zero(TF)
-    rDf.values .= 1.0
 
     # Define models 
     model_ux = (
@@ -56,10 +34,62 @@ function isimple!(
         Laplacian{Linear}(rDf, p) == Source(divHv_new)
     )
 
+    R_ux, R_uy, R_p  = SIMPLE_loop(
+    mesh::Mesh2{TI,TF}, velocity, nu, U, p, ∇p,
+    uxBCs, uyBCs, pBCs, UBCs,
+    setup_U, setup_p, iterations,
+    model_ux, model_uy, model_p
+    ; resume=true, pref=nothing)
+
+    return R_ux, R_uy, R_p     
+end # end function
+
+function SIMPLE_loop(
+    mesh::Mesh2{TI,TF}, velocity, nu, U, p, ∇p,
+    uxBCs, uyBCs, pBCs, UBCs,
+    setup_U, setup_p, iterations,
+    model_ux, model_uy, model_p
+    ; resume=true, pref=nothing) where {TI,TF}
+
+    # Extract model variables
+    ux = model_ux.terms[1].phi
+    mdotf = model_ux.terms[1].flux
+    uy = model_uy.terms[1].phi
+    nuf = model_ux.terms[2].flux
+    rDf = model_p.terms[1].flux 
+    rDf.values .= 1.0
+    divHv_new = ScalarField(model_p.sources[1].field, mesh)
+
+    # Define aux fields 
+    n_cells = m = n = length(mesh.cells)
+
+    # U = VectorField(mesh)
+    Uf = FaceVectorField(mesh)
+    # mdot = ScalarField(mesh)
+    
+    pf = FaceScalarField(mesh)
+    # ∇p = Grad{Midpoint}(p)
+    gradpf = FaceVectorField(mesh)
+    
+    Hv = VectorField(mesh)
+    Hvf = FaceVectorField(mesh)
+    Hv_flux = FaceScalarField(mesh)
+    divHv = Div(Hv, FaceVectorField(mesh), zeros(TF, n_cells), mesh)
+    rD = ScalarField(mesh)
+
     # Define equations
     ux_eqn  = Equation(mesh)
     uy_eqn  = Equation(mesh)
     p_eqn    = Equation(mesh)
+
+    # Pre-allocated auxiliary variables
+    ux0 = zeros(TF, n_cells)
+    uy0 = zeros(TF, n_cells)
+    p0 = zeros(TF, n_cells)
+
+    ux0 .= velocity[1]
+    uy0 .= velocity[2]
+    p0 .= zero(TF)
 
     # Define preconditioners and linear operators
     opAx = LinearOperator(ux_eqn.A)
@@ -69,7 +99,7 @@ function isimple!(
     opAy = LinearOperator(uy_eqn.A)
     Py = ilu0(uy_eqn.A)
     opPUy = LinearOperator(Float64, m, n, false, false, (y, v) -> ldiv!(y, Py, v))
-    
+
     discretise!(p_eqn, model_p)
     apply_boundary_conditions!(p_eqn, model_p, pBCs)
     opAp = LinearOperator(p_eqn.A)
@@ -118,16 +148,18 @@ function isimple!(
         source!(∇p, pf, p, pBCs)
         neg!(∇p)
 
+        # println(typeof(ux_eqn), " ", typeof(model_ux))
+
         discretise!(ux_eqn, model_ux)
         @turbo @. uy_eqn.A.nzval = ux_eqn.A.nzval
-        apply_boundary_conditions!(ux_eqn, model_ux, uxBCs)
+        apply_boundary_conditions!(ux_eqn, model_ux, uxBCs) # 4 allocs
         implicit_relaxation!(ux_eqn, ux0, setup_U.relax)
         ilu0!(Px, ux_eqn.A)
-        run!(
+        run!( # 6 allocs
             ux_eqn, model_ux, uxBCs, 
             setup_U, opA=opAx, opP=opPUx, solver=solver_U
         )
-        @time residual!(R_ux, ux_eqn, ux, opAx, solver_U, iteration)
+        residual!(R_ux, ux_eqn, ux, opAx, solver_U, iteration)# 2 allocs
 
 
         # print("Solving Uy...")
@@ -179,9 +211,9 @@ function isimple!(
 
         
         discretise!(p_eqn, model_p)
-        apply_boundary_conditions!(p_eqn, model_p, pBCs)
+        apply_boundary_conditions!(p_eqn, model_p, pBCs) # 4 allocs
         setReference!(p_eqn, pref, 1)
-        run!(
+        @time run!( # 36 allocs
             p_eqn, model_p, pBCs, 
             setup_p, opA=opAp, opP=opPP, solver=solver_p
         )
@@ -243,8 +275,8 @@ function isimple!(
             )
 
     end # end for loop
-    return R_ux, R_uy, R_p     
-end # end function
+    return R_ux, R_uy, R_p 
+end
 
 function residual!(Residual, equation, phi, opA, solver, iteration)
     begin

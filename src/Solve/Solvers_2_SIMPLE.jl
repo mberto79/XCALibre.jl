@@ -127,12 +127,13 @@ function isimple!(
             ux_eqn, model_ux, uxBCs, 
             setup_U, opA=opAx, opP=opPUx, solver=solver_U
         )
-        residual!(R_ux, ux_eqn, ux, opAx, solver_U, iteration)
+        @time residual!(R_ux, ux_eqn, ux, opAx, solver_U, iteration)
 
 
         # print("Solving Uy...")
 
         @turbo @. uy_eqn.b = 0.0
+        # discretise!(uy_eqn, model_uy)
         apply_boundary_conditions!(uy_eqn, model_uy, uyBCs)
         implicit_relaxation!(uy_eqn, uy0, setup_U.relax)
         ilu0!(Py, uy_eqn.A)
@@ -228,7 +229,7 @@ function isimple!(
         # R_p[iteration] = r_p
         convergence = 1e-7
         if R_ux[iteration] <= convergence && R_uy[iteration] <= convergence && R_p[iteration] <= convergence
-            print("\nSimulation converged!\n")
+            print("\nSimulation converged! ($iteration iterations)\n")
             break
         end
 
@@ -245,14 +246,25 @@ function isimple!(
     return R_ux, R_uy, R_p     
 end # end function
 
-
-function residual!(Residual, equation::Equation{TI,TF}, phi, opA, solver, iteration) where {TI,TF}
+function residual!(Residual, equation, phi, opA, solver, iteration)
+    begin
     (; A, b, R, Fx) = equation
     values = phi.values
     # Option 1
-    # mul!(Fx, opA, values)
-    # @inbounds @. R = abs(Fx - b)
-    # res = norm(R)/mean(values)
+    
+    mul!(Fx, opA, values)
+    @inbounds @. R = abs(Fx - b)
+    res = max(norm(R), eps())/abs(mean(values))
+    end
+
+    # sum_mean = zero(TF)
+    # sum_norm = zero(TF)
+    # @inbounds for i ∈ eachindex(R)
+    #     sum_mean += values[i]
+    #     sum_norm += abs(Fx[i] - b[i])^2
+    # end
+    # N = length(values)
+    # res = sqrt(sum_norm)/abs(sum_mean/N)
 
     # Option 2
     # mul!(Fx, opA, values)
@@ -264,19 +276,19 @@ function residual!(Residual, equation::Equation{TI,TF}, phi, opA, solver, iterat
     # res = sqrt(sum/length(R))
 
     # Option 3 (OpenFOAM definition)
-    solMean = mean(values)
+    # solMean = mean(values)
+    # mul!(R, opA, values .- solMean)
+    # term1 = abs.(R)
+    # mul!(R, opA, values)
+    # Fx .= b .- R.*solMean./values
+    # term2 = abs.(Fx)
+    # N = sum(term1 .+ term2)
+    # res = (1/N)*sum(abs.(b .- R))
+
     # term1 = abs.(opA*(values .- solMean))
-    # R .= opA*(values .- solMean)
-    mul!(R, opA, values .- solMean)
-    # R .= opA*R 
-    term1 = abs.(R)
-    # R .= opA*values
-    mul!(R, opA, values)
-    Fx .= b .- R.*solMean./values
-    term2 = abs.(Fx)
-    N = sum(term1 .+ term2)
+    # term2 = abs.(b .- R.*solMean./values)
+    # N = sum(term1 .+ term2)
     # res = (1/N)*sum(abs.(b - opA*values))
-    res = (1/N)*sum(abs.(b .- R))
 
     # print("Residual: ", res, " (", niterations(solver), " iterations)\n") 
     # @printf "\tResidual: %.4e (%i iterations)\n" res niterations(solver)

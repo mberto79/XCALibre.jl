@@ -78,7 +78,7 @@ p = ScalarField(mesh)
 U = VectorField(mesh)
 
 Profile.Allocs.clear()
-Profile.Allocs.@profile sample_rate=0.25 begin Rx, Ry, Rp = isimple!(
+Profile.Allocs.@profile sample_rate=1 begin Rx, Ry, Rp = isimple!(
     mesh, velocity, nu, U, p, 
     uxBCs, uyBCs, pBCs, UBCs,
     # setup_U, setup_p, iterations, pref=0.0)
@@ -88,3 +88,8 @@ end
 PProf.Allocs.pprof()
 
 write_vtk("results", mesh, ("U", U), ("p", p))
+
+plot(; xlims=(0,230))
+plot!(1:length(Rx), Rx, yscale=:log10)
+plot!(1:length(Ry), Ry, yscale=:log10)
+plot!(1:length(Rp), Rp, yscale=:log10)

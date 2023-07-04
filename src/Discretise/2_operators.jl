@@ -40,7 +40,7 @@ export scheme4!, scheme_source4!
 @inline function scheme!(
     term::Operator{F,P,I,Laplacian{Linear}}, 
     nzval, cell, face,  cellN, ns, cIndex, nIndex, fID)  where {F,P,I}
-    ap = term.sign[1]*(-term.flux[fID] * face.area)/face.delta
+    ap = term.sign*(-term.flux[fID] * face.area)/face.delta
     nzval[cIndex] += ap
     nzval[nIndex] += -ap
     nothing
@@ -84,9 +84,10 @@ end
     xC = cell.centre
     xN = cellN.centre
     weight = norm(xf - xC)/norm(xN - xC)
-    ap = term.sign[1]*(term.flux[fID]*ns)
+    one_minus_weight = one(eltype(weight)) - weight
+    ap = term.sign*(term.flux[fID]*ns)
     # ap = term.sign[1]*(term.J⋅face.normal*ns*face.area)
-    nzval[cIndex] += ap*(1.0 - weight)
+    nzval[cIndex] += ap*one_minus_weight
     nzval[nIndex] += ap*weight
     nothing
 end

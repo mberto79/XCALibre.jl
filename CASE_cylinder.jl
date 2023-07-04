@@ -59,7 +59,7 @@ setup_p = SolverSetup(
     solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
     relax       = 0.2,
     itmax       = 100,
-    rtol        = 1e-2
+    rtol        = 1e-1
 )
 
 GC.gc()
@@ -75,8 +75,7 @@ Rx, Ry, Rp = isimple!(
 
 write_vtk("results", mesh, ("U", U), ("p", p))
 
-# plotly(size=(400,400), markersize=1, markerstrokewidth=1)
-niterations = length(Rx)
-plot(collect(1:niterations), Rx[1:niterations], yscale=:log10, label="Ux")
-plot!(collect(1:niterations), Ry[1:niterations], yscale=:log10, label="Uy")
-plot!(collect(1:niterations), Rp[1:niterations], yscale=:log10, label="p")
+plot(; xlims=(0,1000), ylims=(1e-8,0))
+plot!(1:length(Rx), Rx, yscale=:log10)
+plot!(1:length(Ry), Ry, yscale=:log10)
+plot!(1:length(Rp), Rp, yscale=:log10)

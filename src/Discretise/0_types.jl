@@ -70,8 +70,8 @@ struct Model{T,S, TN, SN}
     terms::T
     sources::S
 end
-Model{TN,SN}(terms, sources) where {TN,SN} = begin
-    Model{typeof(terms),typeof(sources),TN,SN}(terms, sources)
+Model{TN,SN}(terms::T, sources::S) where {T,S,TN,SN} = begin
+    Model{T,S,TN,SN}(terms, sources)
 end
 
 

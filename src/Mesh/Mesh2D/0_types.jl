@@ -21,5 +21,5 @@ struct Mesh2{I,F} <: AbstractMesh
     cells::Vector{Cell{I,F}}
     faces::Vector{Face2D{I,F}}
     boundaries::Vector{Boundary{I}}
-    nodes::Vector{Node{F}}
+    nodes::Vector{Node{I,F}}
 end

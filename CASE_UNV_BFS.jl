@@ -9,6 +9,15 @@ using Krylov
 mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 
+# struct Mesh2{I,F} <: AbstractMesh
+#     cells::Vector{Cell{I,F}}
+#     faces::Vector{Face2D{I,F}}
+#     boundaries::Vector{Boundary{I}}
+#     nodes::Vector{Node{F}}
+# end
+
+# mesh = Mesh2(mesh.cells, mesh.faces, (mesh.boundaries...), mesh.nodes)
+
 p = ScalarField(mesh)
 U = VectorField(mesh)
 

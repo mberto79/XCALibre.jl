@@ -11,18 +11,18 @@ struct UnitVectors
         SVector(1.0,0.0,0.0), SVector(0.0,1.0,0.0), SVector(0.0,0.0,1.0))
 end
 
-struct Node{TF}
+struct Node{TI, TF}
     coords::SVector{3, TF}
-    neighbourCells::Vector{Int32}
+    neighbourCells::Vector{TI}
 end
 Node(TF) = begin
     zf = zero(TF)
     vec_3F = SVector{3,TF}(zf,zf,zf)
-    Node(vec_3F, Int32[])
+    Node(vec_3F, Int64[])
 end
-Node(x::F, y::F, z::F) where F<:AbstractFloat = Node(SVector{3, F}(x,y,z), Int32[])
+Node(x::F, y::F, z::F) where F<:AbstractFloat = Node(SVector{3, F}(x,y,z), Int64[])
 Node(zero::F) where F<:AbstractFloat = Node(zero, zero, zero)
-Node(vector::F) where F<:AbstractVector = Node(vector, Int32[])
+Node(vector::F) where F<:AbstractVector = Node(vector, Int64[])
 
 struct Boundary{I}
     name::Symbol

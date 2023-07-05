@@ -75,7 +75,7 @@ end
 # GENERATION FUNCTIONS
 
 function generate_nodes(first_element, elements, points::Vector{Point{TF}}) where TF
-   nodes = Node{TF}[]
+   nodes = Node{Int64, TF}[]
    @inbounds for i ∈ 1:length(points)
        point = points[i].xyz
        push!(nodes, Node(point))

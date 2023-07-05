@@ -3,6 +3,7 @@ export boundary_index
 export define_boundaries
 
 function define_boundaries(field, BCs...)
+    # use this function to pack boundary ID info at runtime
     nothing
 end
 

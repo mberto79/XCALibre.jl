@@ -1,5 +1,16 @@
 export x, y, z # access cell centres
 export xf, yf, zf # access face centres
+export boundary_index
+
+function boundary_index(boundaries::Vector{Boundary{TI}}, name::Symbol) where {TI}
+    bci = zero(TI)
+    for i ∈ eachindex(boundaries)
+        bci += 1
+        if boundaries[i].name == name
+            return bci 
+        end
+    end
+end
 
 function x(mesh::Mesh2{I,F}) where {I,F}
     cells = mesh.cells

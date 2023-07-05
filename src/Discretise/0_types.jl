@@ -119,26 +119,41 @@ abstract type AbstractBoundary end
 abstract type AbstractDirichlet <: AbstractBoundary end
 abstract type AbstractNeumann <: AbstractBoundary end
 
-struct Dirichlet{S,V}
-    name::S 
+struct Dirichlet{I,V} <: AbstractBoundary
+    ID::I
     value::V
-    function Dirichlet(name::S, value::V) where {S,V}
-        if V <: Number
-            return new{S,eltype(value)}(name, value)
-        elseif V <: Vector
-            if length(value) == 3 
-                nvalue = SVector{3, eltype(value)}(value)
-                return new{S,typeof(nvalue)}(name, nvalue)
-            else
-                throw("Only vectors with three components can be used")
-            end
+end
+
+function Dirichlet(ID::I, value::V) where {I<:Integer,V}
+    if V <: Number
+        return Dirichlet{I,eltype(value)}(ID, value)
+    elseif V <: Vector
+        if length(value) == 3 
+            nvalue = SVector{3, eltype(value)}(value)
+            return Dirichlet{I,typeof(nvalue)}(ID, nvalue)
         else
-            throw("The value provided should be a scalar or a vector")
+            throw("Only vectors with three components can be used")
         end
+    else
+        throw("The value provided should be a scalar or a vector")
     end
 end
 
-struct Neumann{S,V}
-    name::S 
+struct Neumann{I<:Integer,V} <: AbstractBoundary
+    ID::I 
     value::V 
+end
+
+Dirichlet(field::AbstractField, name::Symbol, value) = begin
+    boundaries = field.mesh.boundaries
+    idx = boundary_index(boundaries, name)
+    println("calling abstraction: ", idx)
+    Dirichlet(idx, value)
+end
+
+Neumann(field::AbstractField, name::Symbol, value) = begin
+    boundaries = field.mesh.boundaries
+    idx = boundary_index(boundaries, name)
+    println("calling abstraction: ", idx)
+    Neumann(idx, value)
 end

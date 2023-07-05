@@ -152,7 +152,7 @@ function SIMPLE_loop(
 
         discretise!(ux_eqn, model_ux)
         @turbo @. uy_eqn.A.nzval = ux_eqn.A.nzval
-        apply_boundary_conditions!(ux_eqn, model_ux, uxBCs) # 4 allocs
+        apply_boundary_conditions!(ux_eqn, model_ux, uxBCs)
         implicit_relaxation!(ux_eqn, ux0, setup_U.relax)
         ilu0!(Px, ux_eqn.A)
         run!( # 6 allocs
@@ -211,7 +211,7 @@ function SIMPLE_loop(
 
         
         discretise!(p_eqn, model_p)
-        apply_boundary_conditions!(p_eqn, model_p, pBCs) # 4 allocs
+        apply_boundary_conditions!(p_eqn, model_p, pBCs)
         setReference!(p_eqn, pref, 1)
         run!( # 36 allocs
             p_eqn, model_p, pBCs, 
@@ -279,15 +279,13 @@ function SIMPLE_loop(
 end
 
 function residual!(Residual, equation, phi, opA, solver, iteration)
-    begin
     (; A, b, R, Fx) = equation
     values = phi.values
     # Option 1
     
     mul!(Fx, opA, values)
     @inbounds @. R = abs(Fx - b)
-    res = max(norm(R), eps())/abs(mean(values))
-    end
+    Residual[iteration] = max(norm(R), eps())/abs(mean(values))
 
     # sum_mean = zero(TF)
     # sum_norm = zero(TF)
@@ -325,7 +323,7 @@ function residual!(Residual, equation, phi, opA, solver, iteration)
     # print("Residual: ", res, " (", niterations(solver), " iterations)\n") 
     # @printf "\tResidual: %.4e (%i iterations)\n" res niterations(solver)
     # return res
-    Residual[iteration] = res
+    # Residual[iteration] = res
     nothing
 end
 

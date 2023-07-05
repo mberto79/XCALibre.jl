@@ -9,39 +9,42 @@ using Krylov
 mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 
+p = ScalarField(mesh)
+U = VectorField(mesh)
+
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
 
-UBCs = ( 
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, [0.0, 0.0, 0.0]),
-    Dirichlet(:top, [0.0, 0.0, 0.0])
-    # Neumann(:top, 0.0)
-)
+UBCs = (
+    Dirichlet(U, :inlet, velocity),
+    Neumann(U, :outlet, 0.0),
+    Dirichlet(U, :wall, [0.0, 0.0, 0.0]),
+    Dirichlet(U, :top, [0.0, 0.0, 0.0])
+    # Neumann(U, :top, 0.0)
+    )
 
 uxBCs = (
-    Dirichlet(:inlet, velocity[1]),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, 0.0),
-    Dirichlet(:top, 0.0)
+    Dirichlet(U, :inlet, velocity[1]),
+    Neumann(U, :outlet, 0.0),
+    Dirichlet(U, :wall, 0.0),
+    Dirichlet(U, :top, 0.0)
     # Neumann(:top, 0.0)
 )
 
 uyBCs = (
-    Dirichlet(:inlet, velocity[2]),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, 0.0),
-    Dirichlet(:top, 0.0)
+    Dirichlet(U, :inlet, velocity[2]),
+    Neumann(U, :outlet, 0.0),
+    Dirichlet(U, :wall, 0.0),
+    Dirichlet(U, :top, 0.0)
     # Neumann(:top, 0.0)
 )
 
 pBCs = (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
+    Neumann(p, :inlet, 0.0),
+    Dirichlet(p, :outlet, 0.0),
+    Neumann(p, :wall, 0.0),
+    Neumann(p, :top, 0.0)
 )
 
 setup_U = SolverSetup(

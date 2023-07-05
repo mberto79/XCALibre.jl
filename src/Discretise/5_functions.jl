@@ -1,20 +1,20 @@
 export apply_boundary_conditions!
-export boundary_index
+# export boundary_index
 export assign
 
-function assign(field, BCs...)
+function assign(field, assignment)
     # use this function to pack boundary ID info at runtime
     nothing
 end
 
 function apply_boundary_conditions!(equation, model, BCs)
     (; mesh) = equation
-    indices = boundary_indices(mesh, BCs)
-    update_boundary_conditions!(equation, model, BCs, indices)
+    # indices = boundary_indices(mesh, BCs)
+    update_boundary_conditions!(equation, model, BCs)
 end
 
 @generated function update_boundary_conditions!(
-    equation::Equation{I,F}, model, BCs, indices) where {I,F}
+    equation::Equation{I,F}, model, BCs) where {I,F}
 
     # Unpack terms that make up the model (not sources)
     # terms = Expr[]
@@ -37,7 +37,8 @@ end
             push!(func_calls, call)
         end
         assignment_loop = quote
-            (; facesID, cellsID) = boundaries[indices[$bci]]
+            # (; facesID, cellsID) = boundaries[indices[$bci]]
+            (; facesID, cellsID) = boundaries[$bci]
             @inbounds for i ∈ eachindex(cellsID)
                 faceID = facesID[i]
                 cellID = cellsID[i]
@@ -77,12 +78,3 @@ end
     end
 end
 
-function boundary_index(boundaries::Vector{Boundary{TI}}, name::Symbol) where {TI}
-    bci = zero(TI)
-    for i ∈ eachindex(boundaries)
-        bci += 1
-        if boundaries[i].name == name
-            return bci 
-        end
-    end
-end

@@ -8,10 +8,11 @@ export interpolate!
     for i ∈ 1:length(BCs.parameters)
         unpack = quote
             BC = BCs[$i]
-            name = BC.name
-            index = boundary_index(boundaries, name)
-            boundary = boundaries[index]
+            # name = BC.name
+            # index = boundary_index(boundaries, name)
+            boundary = boundaries[BC.ID]
             adjust_boundary!(BC, phif, phi, boundary, faces)
+            # adjust_boundary!(BC, phif, phi, BC.ID, faces)
         end
         push!(unpacked_BCs, unpack)
     end

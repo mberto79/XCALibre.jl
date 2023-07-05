@@ -38,7 +38,7 @@ end
         end
         assignment_loop = quote
             # (; facesID, cellsID) = boundaries[indices[$bci]]
-            (; facesID, cellsID) = boundaries[$bci]
+            (; facesID, cellsID) = boundaries[BCs[$bci].ID]
             @inbounds for i ∈ eachindex(cellsID)
                 faceID = facesID[i]
                 cellID = cellsID[i]

@@ -9,6 +9,10 @@ using Krylov
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 
+# Fields 
+p = ScalarField(mesh)
+U = VectorField(mesh)
+
 # BOUNDARY CONDITIONS 
 
 velocity = [0.1, 0.0, 0.0]
@@ -17,35 +21,35 @@ nu = 1e-3
 Re = (0.2*velocity[1])/nu
 
 UBCs = ( 
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:cylinder, noSlip),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+    Dirichlet(U, :inlet, velocity),
+    Neumann(U, :outlet, 0.0),
+    Dirichlet(U, :cylinder, noSlip),
+    Neumann(U, :bottom, 0.0),
+    Neumann(U, :top, 0.0)
 )
 
 uxBCs = (
-    Dirichlet(:inlet, velocity[1]),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:cylinder, noSlip[1]),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+    Dirichlet(U, :inlet, velocity[1]),
+    Neumann(U, :outlet, 0.0),
+    Dirichlet(U, :cylinder, noSlip[1]),
+    Neumann(U, :bottom, 0.0),
+    Neumann(U, :top, 0.0)
 )
 
 uyBCs = (
-    Dirichlet(:inlet, velocity[2]),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:cylinder, noSlip[2]),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+    Dirichlet(U, :inlet, velocity[2]),
+    Neumann(U, :outlet, 0.0),
+    Dirichlet(U, :cylinder, noSlip[2]),
+    Neumann(U, :bottom, 0.0),
+    Neumann(U, :top, 0.0)
 )
 
 pBCs = (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:cylinder, 0.0),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+    Neumann(p, :inlet, 0.0),
+    Dirichlet(p, :outlet, 0.0),
+    Neumann(p, :cylinder, 0.0),
+    Neumann(p, :bottom, 0.0),
+    Neumann(p, :top, 0.0)
 )
 
 setup_U = SolverSetup(

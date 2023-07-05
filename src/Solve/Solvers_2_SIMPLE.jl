@@ -14,6 +14,7 @@ function isimple!(
     mdotf = FaceScalarField(mesh)
     nuf = ConstantScalar(nu) # Implement constant field! Priority 1
     rDf = FaceScalarField(mesh)
+    rDf.values .= 1.0
     divHv_new = ScalarField(mesh)
 
 
@@ -34,11 +35,45 @@ function isimple!(
         Laplacian{Linear}(rDf, p) == Source(divHv_new)
     )
 
+    # Define equations
+    ux_eqn  = Equation(mesh)
+    uy_eqn  = Equation(mesh)
+    p_eqn    = Equation(mesh)
+
+    n_cells = m = n = length(mesh.cells)
+
+    # Define preconditioners and linear operators
+    opAx = LinearOperator(ux_eqn.A)
+    Px = ilu0(ux_eqn.A)
+    opPUx = LinearOperator(Float64, m, n, false, false, (y, v) -> ldiv!(y, Px, v))
+    
+    opAy = LinearOperator(uy_eqn.A)
+    Py = ilu0(uy_eqn.A)
+    opPUy = LinearOperator(Float64, m, n, false, false, (y, v) -> ldiv!(y, Py, v))
+
+    discretise!(p_eqn, model_p)
+    apply_boundary_conditions!(p_eqn, model_p, pBCs)
+    opAp = LinearOperator(p_eqn.A)
+    opPP = opLDL(p_eqn.A)
+    # opPP = opCholesky(p_eqn.A)
+
+    # discretise!(p_eqn, model_p)
+    # apply_boundary_conditions!(p_eqn, model_p, pBCs)
+    # opAp = LinearOperator(p_eqn.A)
+    Pp = ilu0(p_eqn.A)
+    # opPP = LinearOperator(Float64, m, n, true, false, (y, v) -> ldiv!(y, Pp, v))
+
+    solver_p = setup_p.solver(p_eqn.A, p_eqn.b)
+    solver_U = setup_U.solver(ux_eqn.A, ux_eqn.b)
+
     R_ux, R_uy, R_p  = SIMPLE_loop(
     mesh::Mesh2{TI,TF}, velocity, nu, U, p, ∇p,
     uxBCs, uyBCs, pBCs, UBCs,
     setup_U, setup_p, iterations,
-    model_ux, model_uy, model_p
+    model_ux, model_uy, model_p,
+    opAx, opAy, opAp, Px, Py, Pp, opPUx, opPUy, opPP,
+    solver_U, solver_p,
+    ux_eqn, uy_eqn, p_eqn
     ; resume=true, pref=nothing)
 
     return R_ux, R_uy, R_p     
@@ -48,7 +83,10 @@ function SIMPLE_loop(
     mesh::Mesh2{TI,TF}, velocity, nu, U, p, ∇p,
     uxBCs, uyBCs, pBCs, UBCs,
     setup_U, setup_p, iterations,
-    model_ux, model_uy, model_p
+    model_ux, model_uy, model_p,
+    opAx, opAy, opAp, Px, Py, Pp, opPUx, opPUy, opPP,
+    solver_U, solver_p,
+    ux_eqn, uy_eqn, p_eqn
     ; resume=true, pref=nothing) where {TI,TF}
 
     # Extract model variables
@@ -77,11 +115,6 @@ function SIMPLE_loop(
     divHv = Div(Hv, FaceVectorField(mesh), zeros(TF, n_cells), mesh)
     rD = ScalarField(mesh)
 
-    # Define equations
-    ux_eqn  = Equation(mesh)
-    uy_eqn  = Equation(mesh)
-    p_eqn    = Equation(mesh)
-
     # Pre-allocated auxiliary variables
     ux0 = zeros(TF, n_cells)
     uy0 = zeros(TF, n_cells)
@@ -91,22 +124,7 @@ function SIMPLE_loop(
     uy0 .= velocity[2]
     p0 .= zero(TF)
 
-    # Define preconditioners and linear operators
-    opAx = LinearOperator(ux_eqn.A)
-    Px = ilu0(ux_eqn.A)
-    opPUx = LinearOperator(Float64, m, n, false, false, (y, v) -> ldiv!(y, Px, v))
     
-    opAy = LinearOperator(uy_eqn.A)
-    Py = ilu0(uy_eqn.A)
-    opPUy = LinearOperator(Float64, m, n, false, false, (y, v) -> ldiv!(y, Py, v))
-
-    discretise!(p_eqn, model_p)
-    apply_boundary_conditions!(p_eqn, model_p, pBCs)
-    opAp = LinearOperator(p_eqn.A)
-    opPP = opLDL(p_eqn.A)
-
-    solver_p = setup_p.solver(p_eqn.A, p_eqn.b)
-    solver_U = setup_U.solver(ux_eqn.A, ux_eqn.b)
 
     #### NEED TO IMPLEMENT A SENSIBLE INITIALISATION TO INCLUDE WARM START!!!!
     # Update initial (guessed) fields
@@ -152,9 +170,10 @@ function SIMPLE_loop(
 
         discretise!(ux_eqn, model_ux)
         @turbo @. uy_eqn.A.nzval = ux_eqn.A.nzval
-        apply_boundary_conditions!(ux_eqn, model_ux, uxBCs)
+        apply_boundary_conditions!(ux_eqn, model_ux, uxBCs) # 4 allocs
         implicit_relaxation!(ux_eqn, ux0, setup_U.relax)
         ilu0!(Px, ux_eqn.A)
+        # opAx = ux_eqn.A
         run!( # 6 allocs
             ux_eqn, model_ux, uxBCs, 
             setup_U, opA=opAx, opP=opPUx, solver=solver_U
@@ -211,8 +230,9 @@ function SIMPLE_loop(
 
         
         discretise!(p_eqn, model_p)
-        apply_boundary_conditions!(p_eqn, model_p, pBCs)
+        apply_boundary_conditions!(p_eqn, model_p, pBCs) # 4 allocs
         setReference!(p_eqn, pref, 1)
+        # ilu0!(Pp, p_eqn.A)
         run!( # 36 allocs
             p_eqn, model_p, pBCs, 
             setup_p, opA=opAp, opP=opPP, solver=solver_p
@@ -279,13 +299,15 @@ function SIMPLE_loop(
 end
 
 function residual!(Residual, equation, phi, opA, solver, iteration)
+    begin
     (; A, b, R, Fx) = equation
     values = phi.values
     # Option 1
     
     mul!(Fx, opA, values)
     @inbounds @. R = abs(Fx - b)
-    Residual[iteration] = max(norm(R), eps())/abs(mean(values))
+    res = max(norm(R), eps())/abs(mean(values))
+    end
 
     # sum_mean = zero(TF)
     # sum_norm = zero(TF)
@@ -323,7 +345,7 @@ function residual!(Residual, equation, phi, opA, solver, iteration)
     # print("Residual: ", res, " (", niterations(solver), " iterations)\n") 
     # @printf "\tResidual: %.4e (%i iterations)\n" res niterations(solver)
     # return res
-    # Residual[iteration] = res
+    Residual[iteration] = res
     nothing
 end
 

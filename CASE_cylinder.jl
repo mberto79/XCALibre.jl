@@ -53,7 +53,7 @@ pBCs = (
 )
 
 setup_U = SolverSetup(
-    solver      = BicgstabSolver,
+    solver      = GmresSolver,
     relax       = 0.8,
     itmax       = 100,
     rtol        = 1e-1

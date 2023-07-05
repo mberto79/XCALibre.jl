@@ -9,7 +9,7 @@ end
 function apply_boundary_conditions!(equation, model, BCs)
     (; mesh) = equation
     indices = boundary_indices(mesh, BCs)
-    @time update_boundary_conditions!(equation, model, BCs, indices)
+    update_boundary_conditions!(equation, model, BCs, indices)
 end
 
 @generated function update_boundary_conditions!(

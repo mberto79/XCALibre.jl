@@ -213,7 +213,7 @@ function SIMPLE_loop(
         discretise!(p_eqn, model_p)
         apply_boundary_conditions!(p_eqn, model_p, pBCs) # 4 allocs
         setReference!(p_eqn, pref, 1)
-        @time run!( # 36 allocs
+        run!( # 36 allocs
             p_eqn, model_p, pBCs, 
             setup_p, opA=opAp, opP=opPP, solver=solver_p
         )

@@ -1,10 +1,15 @@
 export apply_boundary_conditions!
 export boundary_index
+export define_boundaries
+
+function define_boundaries(field, BCs...)
+    nothing
+end
 
 function apply_boundary_conditions!(equation, model, BCs)
     (; mesh) = equation
     indices = boundary_indices(mesh, BCs)
-    update_boundary_conditions!(equation, model, BCs, indices)
+    @time update_boundary_conditions!(equation, model, BCs, indices)
 end
 
 @generated function update_boundary_conditions!(

@@ -119,16 +119,16 @@ abstract type AbstractBoundary end
 abstract type AbstractDirichlet <: AbstractBoundary end
 abstract type AbstractNeumann <: AbstractBoundary end
 
-struct Dirichlet{V}
-    name::Symbol 
+struct Dirichlet{S,V}
+    name::S 
     value::V
-    function Dirichlet(name, value::V) where {V}
+    function Dirichlet(name::S, value::V) where {S,V}
         if V <: Number
-            return new{eltype(value)}(name, value)
+            return new{S,eltype(value)}(name, value)
         elseif V <: Vector
             if length(value) == 3 
                 nvalue = SVector{3, eltype(value)}(value)
-                return new{typeof(nvalue)}(name, nvalue)
+                return new{S,typeof(nvalue)}(name, nvalue)
             else
                 throw("Only vectors with three components can be used")
             end
@@ -138,7 +138,7 @@ struct Dirichlet{V}
     end
 end
 
-struct Neumann{V}
-    name::Symbol 
+struct Neumann{S,V}
+    name::S 
     value::V 
 end

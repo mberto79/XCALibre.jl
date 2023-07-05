@@ -25,7 +25,9 @@ export discretise!
     end
 
     quote
-        (; A, b, mesh) = equation
+        # (; A, b, mesh) = equation
+        (; A, b) = equation
+        mesh = model.terms[1].phi.mesh
         (; faces, cells) = mesh
         (; rowval, colptr, nzval) = A
         fz = zero(0.0)

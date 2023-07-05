@@ -8,7 +8,7 @@ function assign(field, assignment)
 end
 
 function apply_boundary_conditions!(equation, model, BCs)
-    (; mesh) = equation
+    # (; mesh) = equation
     # indices = boundary_indices(mesh, BCs)
     update_boundary_conditions!(equation, model, BCs)
 end
@@ -51,7 +51,9 @@ end
     end
 
     quote
-    (; A, b, mesh) = equation
+    # (; A, b, mesh) = equation
+    (; A, b) = equation
+    mesh = model.terms[1].phi.mesh
     (; boundaries, faces, cells) = mesh
     # indices = boundary_indices(mesh, BCs)
     # $(terms...)

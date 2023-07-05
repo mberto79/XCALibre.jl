@@ -32,7 +32,7 @@ function run!(
     opA, opP, solver
     ) where {Ti,Tf}
     
-    equation.b .+= phiModel.sources[1].field # should be moved out to "add_sources" function using the "Model" struct
+    @inbounds equation.b .+= phiModel.sources[1].field # should be moved out to "add_sources" function using the "Model" struct
 
     (; relax, itmax, atol, rtol) = setup
     (; A, b, R, Fx) = equation

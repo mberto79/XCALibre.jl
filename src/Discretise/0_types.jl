@@ -80,7 +80,7 @@ struct Equation{Ti,Tf}
     b::Vector{Tf}
     R::Vector{Tf}
     Fx::Vector{Tf}
-    mesh::Mesh2{Ti,Tf}
+    # mesh::Mesh2{Ti,Tf}
 end
 Equation(mesh::Mesh2{Ti,Tf}) where {Ti,Tf} = begin
     nCells = length(mesh.cells)
@@ -89,8 +89,8 @@ Equation(mesh::Mesh2{Ti,Tf}) where {Ti,Tf} = begin
         sparse(i, j, v), 
         zeros(Tf, nCells), 
         zeros(Tf, nCells), 
-        zeros(Tf, nCells), 
-        mesh
+        zeros(Tf, nCells)
+        # mesh
         )
 end
 

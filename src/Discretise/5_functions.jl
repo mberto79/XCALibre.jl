@@ -1,8 +1,8 @@
 export apply_boundary_conditions!
 export boundary_index
-export define_boundaries
+export assign
 
-function define_boundaries(field, BCs...)
+function assign(field, BCs...)
     # use this function to pack boundary ID info at runtime
     nothing
 end

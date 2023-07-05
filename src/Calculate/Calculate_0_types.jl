@@ -32,7 +32,8 @@ Grad{S}(phi::ScalarField{I,F}, correctors::I) where {S,I,F} = begin
     Grad{S,I,F}(phi, gradx, grady, gradz, correctors, true, mesh)
 end
 get_scheme(term::Grad{S,I,F}) where {S,I,F} = S
-(grad::Grad{S,I,F})(i::I) where {S,I,F} = SVector{3,F}(grad.x[i], grad.y[i], grad.z[i])
+# (grad::Grad{S,I,F})(i::I) where {S,I,F} = SVector{3,F}(grad.x[i], grad.y[i], grad.z[i])
+Base.getindex(grad::Grad{S,I,F}, i::Integer) where {S,I,F} = SVector{3,F}(grad.x[i], grad.y[i], grad.z[i])
 
 # Divergence explicit operator
 

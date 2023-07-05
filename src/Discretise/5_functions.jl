@@ -1,25 +1,37 @@
 export apply_boundary_conditions!
 export boundary_index
-export H!
+export define_boundaries
 
-@generated function apply_boundary_conditions!(
-    equation::Equation{I,F}, model, BCs) where {I,F}
+function define_boundaries(field, BCs...)
+    nothing
+end
+
+function apply_boundary_conditions!(equation, model, BCs)
+    (; mesh) = equation
+    indices = boundary_indices(mesh, BCs)
+    @time update_boundary_conditions!(equation, model, BCs, indices)
+end
+
+@generated function update_boundary_conditions!(
+    equation::Equation{I,F}, model, BCs, indices) where {I,F}
 
     # Unpack terms that make up the model (not sources)
-    terms = Expr[]
-    for term ∈ model.types[1].parameters[1]
-        term_extracted = :($term = model.terms.$term)
-        push!(terms, term_extracted)
-    end
+    # terms = Expr[]
+    nTerms = model.parameters[3]
+    # for t ∈ 1:nTerms
+    #     term_extracted = :(term$t = model.terms[$t])
+    #     push!(terms, term_extracted)
+    # end
 
     # Definition of main assignment loop (one per patch)
     assignment_loops = []
     for bci ∈ 1:length(BCs.parameters)
         func_calls = Expr[]
-        for term ∈ model.types[1].parameters[1] 
+        for t ∈ 1:nTerms 
             # call = Expr(:call, :(BCs[$bci]), term, :A, :b, :cellID, :cell, :face, :faceID)
             call = quote
-                (BCs[$bci])($term, A, b, cellID, cell, face, faceID)
+                # (BCs[$bci])(term$t, A, b, cellID, cell, face, faceID)
+                (BCs[$bci])(model.terms[$t], A, b, cellID, cell, face, faceID)
             end
             push!(func_calls, call)
         end
@@ -39,8 +51,8 @@ export H!
     quote
     (; A, b, mesh) = equation
     (; boundaries, faces, cells) = mesh
-    indices = boundary_indices(mesh, BCs)
-    $(terms...)
+    # indices = boundary_indices(mesh, BCs)
+    # $(terms...)
     $(assignment_loops...)
     nothing
     end
@@ -71,27 +83,5 @@ function boundary_index(boundaries::Vector{Boundary{TI}}, name::Symbol) where {T
         if boundaries[i].name == name
             return bci 
         end
-    end
-end
-
-function H!(Hv::VectorField, v::VectorField{I,F}, xeqn, yeqn) where {I,F}
-    (; x, y, z, mesh) = Hv 
-    (; cells, faces) = mesh
-    Ax = xeqn.A;  Ay = yeqn.A
-    bx = xeqn.b; by = yeqn.b; # bz = zeros(length(bx))
-    
-    @inbounds for cID ∈ eachindex(cells)
-        cell = cells[cID]
-        (; neighbours) = cell
-        sumx = zero(F)
-        sumy = zero(F)
-        @inbounds for nID ∈ neighbours
-            sumx += Ax[cID,nID]*v.x[nID]
-            sumy += Ay[cID,nID]*v.y[nID]
-        end
-        rD = 1.0/Ax[cID, cID]
-        x[cID] = (bx[cID] - sumx)*rD
-        y[cID] = (by[cID] - sumy)*rD
-        z[cID] = zero(F)
     end
 end

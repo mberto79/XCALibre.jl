@@ -1,16 +1,4 @@
-module Mesh2D
 export generate!
-
-using StaticArrays
-using LinearAlgebra
-using Setfield
-
-include("Mesh2D_0_mesh_types.jl")
-include("Mesh2D_1_builder_types.jl")
-include("Mesh2D_2_builder.jl")
-include("Mesh2D_3_connectivity.jl")
-include("Mesh2D_4_geometry.jl")
-include("Mesh2D_5_access_functions.jl")
 
 function generate!(builder::MeshBuilder2D{I,F}) where {I,F}
     GC.gc()
@@ -32,6 +20,4 @@ function generate_mesh!(builder::MeshBuilder2D{I,F}) where {I,F}
     connect!(mesh, builder)
     geometry!(mesh)
     mesh
-end
-
 end

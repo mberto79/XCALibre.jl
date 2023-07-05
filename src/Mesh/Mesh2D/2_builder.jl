@@ -336,7 +336,7 @@ function symmetric_tanh_distribution(
     δx, normal
 end
 
-function quad(edges::Vector{Edge{I}}, edgesID::Vector{I}) where {I,F}
+function quad(edges::Vector{Edge{I}}, edgesID::Vector{I}) where I
     IDs = SVector{4,I}(edgesID)
     nx = edges[IDs[1]].ncells
     ny = edges[IDs[3]].ncells

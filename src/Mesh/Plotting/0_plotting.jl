@@ -1,6 +1,6 @@
 module Plotting
 
-using FVM_1D.Mesh2D
+using FVM_1D.Mesh
 using RecipesBase
 export plotRecipe, plot_mesh
 

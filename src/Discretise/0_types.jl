@@ -1,21 +1,18 @@
 
-export AbstractLaplacian, AbstractDivergence, AbstractSource
-export AbstractOperators, AbstractScheme 
-export AbstractLaplacian, AbstractDivergence 
+export AbstractOperator, AbstractSource   
+export Operator, Source, Src
 export Laplacian, Divergence
-export Constant, Linear, Upwind, Midpoint
+export AbstractScheme, Constant, Linear, Upwind, Midpoint
 
-export Equation 
+export Model, Equation 
 export AbstractBoundary, AbstractDirichlet, AbstractNeumann
 export Dirichlet, Neumann 
 export initialise!
 
 # ABSTRACT TYPES 
 
-abstract type AbstractSource <: AbstractField end
+abstract type AbstractSource end
 abstract type AbstractOperator end
-abstract type AbstractLaplacian <: AbstractOperator end
-abstract type AbstractDivergence <: AbstractOperator end
 
 # SUPPORTED DISCRETISATION SCHEMES 
 
@@ -27,17 +24,56 @@ struct Midpoint <: AbstractScheme end
 
 # OPERATORS
 
-struct Laplacian{S<:AbstractScheme, T} <: AbstractLaplacian
-    J::T # either Float64 or Vector{Float64}
-    phi::ScalarField
-    sign::Vector{Int64}
+# Base Operator
+
+struct Operator{F,P,S,T}
+    flux::F
+    phi::P 
+    sign::S
+    type::T
 end
 
-struct Divergence{S<:AbstractScheme, T} <: AbstractDivergence
-    J::T # SVector{3, Float64} or Vector{SVector{3, Float64}}
-    phi::ScalarField
-    sign::Vector{Int64}
+# operators
+
+struct Laplacian{T} <: AbstractOperator end
+struct Divergence{T} <: AbstractOperator end
+
+# constructors
+
+Laplacian{T}(flux, phi) where T = Operator(
+    flux, phi, 1, Laplacian{T}()
+    )
+
+Divergence{T}(flux, phi) where T = Operator(
+    flux, phi, 1, Divergence{T}()
+    )
+
+# SOURCES
+
+# Base Source
+struct Src{F,S,T}
+    field::F 
+    sign::S 
+    type::T
 end
+
+# Source types
+
+struct Source <: AbstractSource end
+
+Source(f::AbstractVector) = Src(f, 1, typeof(f))
+Source(f::ScalarField) = Src(f.values, 1, typeof(f))
+# Source(f::Number) = Src(f.values, 1, typeof(f)) # To implement!!
+
+# MODEL TYPE
+struct Model{T,S, TN, SN}
+    terms::T
+    sources::S
+end
+Model{TN,SN}(terms::T, sources::S) where {T,S,TN,SN} = begin
+    Model{T,S,TN,SN}(terms, sources)
+end
+
 
 struct Equation{Ti,Tf}
     A::SparseMatrixCSC{Tf,Ti}
@@ -83,16 +119,16 @@ abstract type AbstractBoundary end
 abstract type AbstractDirichlet <: AbstractBoundary end
 abstract type AbstractNeumann <: AbstractBoundary end
 
-struct Dirichlet{V}
-    name::Symbol 
+struct Dirichlet{S,V}
+    name::S 
     value::V
-    function Dirichlet(name, value::V) where {V}
+    function Dirichlet(name::S, value::V) where {S,V}
         if V <: Number
-            return new{eltype(value)}(name, value)
+            return new{S,eltype(value)}(name, value)
         elseif V <: Vector
             if length(value) == 3 
                 nvalue = SVector{3, eltype(value)}(value)
-                return new{typeof(nvalue)}(name, nvalue)
+                return new{S,typeof(nvalue)}(name, nvalue)
             else
                 throw("Only vectors with three components can be used")
             end
@@ -102,7 +138,7 @@ struct Dirichlet{V}
     end
 end
 
-struct Neumann{V}
-    name::Symbol 
+struct Neumann{S,V}
+    name::S 
     value::V 
 end

@@ -1,4 +1,5 @@
 export AbstractField, AbstractScalarField, AbstractVectorField
+export ConstantScalar, ConstantVector
 export ScalarField, FaceScalarField
 export VectorField, FaceVectorField
 
@@ -7,6 +8,20 @@ export VectorField, FaceVectorField
 abstract type AbstractField end
 abstract type AbstractScalarField <: AbstractField end
 abstract type AbstractVectorField <: AbstractField end
+
+# CONSTANT FIELDS 
+
+struct ConstantScalar{V<:Number} <: AbstractScalarField
+    values::V
+end
+Base.getindex(s::ConstantScalar, i::Integer) = s.values
+
+struct ConstantVector{V<:Number} <: AbstractVectorField
+    x::V
+    y::V
+    z::V
+end
+Base.getindex(v::ConstantVector, i::Integer) = SVector{3, eltype(v.x)}(v.x[i], v.y[i], v.z[i])
 
 # FIELDS 
 
@@ -28,7 +43,8 @@ FaceScalarField(mesh::Mesh2{I,F}) where {I,F} =begin
     FaceScalarField(zeros(F,nfaces), mesh)
 end
 
-(s::AbstractScalarField)(i::Integer) = s.values[i]
+# (s::AbstractScalarField)(i::Integer) = s.values[i]
+Base.getindex(s::AbstractScalarField, i::Integer) = s.values[i]
 
 struct VectorField{I,F} <: AbstractVectorField
     x::Vector{F}
@@ -52,7 +68,9 @@ FaceVectorField(mesh::Mesh2{I,F}) where {I,F} = begin
     FaceVectorField(zeros(F, nfaces), zeros(F, nfaces), zeros(F, nfaces), mesh)
 end
 
-(v::AbstractVectorField)(i::Integer) = SVector{3, eltype(v.x)}(v.x[i], v.y[i], v.z[i])
+# (v::AbstractVectorField)(i::Integer) = SVector{3, eltype(v.x)}(v.x[i], v.y[i], v.z[i])
+
+Base.getindex(v::AbstractVectorField, i::Integer) = SVector{3, eltype(v.x)}(v.x[i], v.y[i], v.z[i])
 
 function initialise!(v::AbstractVectorField, vec::Vector{T}) where T
     n = length(vec)

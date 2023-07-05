@@ -65,7 +65,7 @@ function adjust_boundary!(
     @inbounds for fi ∈ eachindex(facesID)
         fID = facesID[fi]
         cID = cellsID[fi]
-        psi_cell = psi(cID)
+        psi_cell = psi[cID]
         # normal = faces[fID].normal
         # Line below needs sorting out for general user-defined gradients
         # now only works for zero gradient
@@ -210,6 +210,8 @@ function interpolate!(::Type{Linear}, gradf::FaceVectorField{I,F}, grad, BCs) wh
         w, df = weight(Linear, cells, faces, fID)
         cID1 = ownerCells[1]
         cID2 = ownerCells[2]
+        # grad1 = grad(cID1)
+        # grad2 = grad(cID2)
         grad1 = grad(cID1)
         grad2 = grad(cID2)
         one_minus_weight = 1.0 - w
@@ -289,6 +291,7 @@ function correct_boundary!( # Another way is to use the boundary value and geome
         normal = faces[fID].normal
         cID = face.ownerCells[1]
         grad_cell = grad(cID)
+        # grad_cell = grad[cID]
         grad_boundary = grad_cell #.*normal .+ grad_cell
         # grad_boundary = ((BC.value - grad.phi.values[fID])/face.delta)*normal
         x[fID] = grad_boundary[1]
@@ -306,6 +309,7 @@ function correct_boundary!(
         normal = faces[fID].normal
         cID = face.ownerCells[1]
         grad_cell = grad(cID)
+        # grad_cell = grad[cID]
         grad_boundary =   grad_cell - (grad_cell⋅normal)*normal # needs sorting out!
         x[fID] = grad_boundary[1]
         y[fID] = grad_boundary[2]

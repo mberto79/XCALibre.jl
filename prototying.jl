@@ -1,42 +1,25 @@
-struct Laplacian{S,F,P}
-    J::F
-    phi::P
-end
-Laplacian{S}(J::F, phi::P) where {S,F,P} = Laplacian{S,F,P}(J,phi)
+using FVM_1D
 
-struct Linear end
+mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
+mesh = build_mesh(mesh_file, scale=0.001)
 
-n = 20
-J = zeros(n)
-phi = zeros(n)
+phi = ScalarField(mesh)
+J = FaceScalarField(mesh)
 
-lap = Laplacian{Linear}(J, phi)
+J.values .= 2.5
 
-ex = :(Laplacian{Linear}(J, phi) - Laplacian{Linear}(J,phi) = -∇p.x)
+grad = ScalarField(mesh)
 
-macro equation(ex)
-    print(ex)
-    return :(ex)
-end
-
-ex = @equation ux_eqn(
+model = (
+    # Divergence{Linear}(J, phi) 
+    # + 
     Laplacian{Linear}(J, phi) 
-    - Laplacian{Linear}(J,phi) 
     == 
-    -∇p.x
-    )
+    Source(grad)
+    # +
+    # Source{Linear}(0)
+)
 
-using Plots
 
-β = 1
-L = 0.1
-N = 10
-x₀ = 1.0
-
-η(i, N) = (i-1)/(N-1)
-x(i, N, β, x₀, L) = x₀ + (L/2)*(1.0 - tanh(β*(1-2*η(i,N)))/tanh(β))
-
-i = [1:N;]
-xc = x.(i,N,β,x₀, L)
-
-scatter(i, xc)
+eqn = Equation(mesh)
+@time discretise!(eqn, model)

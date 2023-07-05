@@ -4,7 +4,7 @@ include("Mesh/Mesh.jl")
 include("Mesh/Plotting/0_plotting.jl")
 include("Fields/Fields.jl")
 include("Discretise/Discretise.jl")
-include("Model/Models.jl")
+# include("Model/Models.jl")
 include("Calculate/Calculate.jl")
 include("Solve/Solvers.jl")
 include("VTK/VTK.jl")
@@ -16,7 +16,7 @@ using Reexport
 @reexport using FVM_1D.Fields
 @reexport using FVM_1D.Discretise
 @reexport using FVM_1D.Calculate
-@reexport using FVM_1D.Models
+# @reexport using FVM_1D.Models
 @reexport using FVM_1D.Solvers
 @reexport using FVM_1D.VTK
 @reexport using FVM_1D.UNV

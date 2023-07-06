@@ -170,18 +170,16 @@ function SIMPLE_loop(
 
         discretise!(ux_eqn, model_ux)
         @turbo @. uy_eqn.A.nzval = ux_eqn.A.nzval
-        apply_boundary_conditions!(ux_eqn, model_ux, uxBCs) # 4 allocs
+        apply_boundary_conditions!(ux_eqn, model_ux, uxBCs)
         implicit_relaxation!(ux_eqn, ux0, setup_U.relax)
         ilu0!(Px, ux_eqn.A)
         # opAx = ux_eqn.A
-        run!( # 6 allocs
+        run!(
             ux_eqn, model_ux, uxBCs, 
             setup_U, opA=opAx, opP=opPUx, solver=solver_U
         )
-        residual!(R_ux, ux_eqn, ux, opAx, solver_U, iteration)# 2 allocs
+        residual!(R_ux, ux_eqn, ux, opAx, solver_U, iteration)
 
-
-        # print("Solving Uy...")
 
         @turbo @. uy_eqn.b = 0.0
         # discretise!(uy_eqn, model_uy)
@@ -230,10 +228,10 @@ function SIMPLE_loop(
 
         
         discretise!(p_eqn, model_p)
-        apply_boundary_conditions!(p_eqn, model_p, pBCs) # 4 allocs
+        apply_boundary_conditions!(p_eqn, model_p, pBCs)
         setReference!(p_eqn, pref, 1)
         # ilu0!(Pp, p_eqn.A)
-        run!( # 36 allocs
+        run!( # 30 allocs
             p_eqn, model_p, pBCs, 
             setup_p, opA=opAp, opP=opPP, solver=solver_p
         )

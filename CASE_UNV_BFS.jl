@@ -60,11 +60,11 @@ setup_U = SolverSetup(
     solver      = GmresSolver, # BicgstabSolver
     relax       = 0.8,
     itmax       = 100,
-    rtol        = 1e-1
+    rtol        = 1e-2
 )
 
 setup_p = SolverSetup(
-    solver      = GmresSolver, # FomSolver, DiomSolver, BicgstabSolver
+    solver      = GmresSolver, # GmresSolver, FomSolver, DiomSolver
     relax       = 0.2,
     itmax       = 100,
     rtol        = 1e-2

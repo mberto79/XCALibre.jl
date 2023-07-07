@@ -55,12 +55,9 @@ function isimple!(
     apply_boundary_conditions!(p_eqn, model_p, pBCs)
     opAp = LinearOperator(p_eqn.A)
     opPP = opLDL(p_eqn.A)
-    # opPP = opCholesky(p_eqn.A)
+    Pp = opPP
 
-    # discretise!(p_eqn, model_p)
-    # apply_boundary_conditions!(p_eqn, model_p, pBCs)
-    # opAp = LinearOperator(p_eqn.A)
-    Pp = ilu0(p_eqn.A)
+    # Pp = ilu0(p_eqn.A)
     # opPP = LinearOperator(Float64, m, n, true, false, (y, v) -> ldiv!(y, Pp, v))
 
     solver_p = setup_p.solver(p_eqn.A, p_eqn.b)
@@ -297,15 +294,14 @@ function SIMPLE_loop(
 end
 
 function residual!(Residual, equation, phi, opA, solver, iteration)
-    begin
     (; A, b, R, Fx) = equation
     values = phi.values
     # Option 1
     
     mul!(Fx, opA, values)
     @inbounds @. R = abs(Fx - b)
-    res = max(norm(R), eps())/abs(mean(values))
-    end
+    # res = max(norm(R), eps())/abs(mean(values))
+    res = sqrt(mean(R.^2))/abs(mean(values))
 
     # sum_mean = zero(TF)
     # sum_norm = zero(TF)

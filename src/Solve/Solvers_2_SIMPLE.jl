@@ -54,8 +54,11 @@ function isimple!(
     discretise!(p_eqn, model_p)
     apply_boundary_conditions!(p_eqn, model_p, pBCs)
     opAp = LinearOperator(p_eqn.A)
-    opPP = opLDL(p_eqn.A)
-    Pp = opPP
+    # opPP = opLDL(p_eqn.A)
+    # Pp = p_eqn.A
+
+    Pp = p_eqn.A
+    opPP = Diagonal(Pp)
 
     # Pp = ilu0(p_eqn.A)
     # opPP = LinearOperator(Float64, m, n, true, false, (y, v) -> ldiv!(y, Pp, v))

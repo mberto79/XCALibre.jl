@@ -3,6 +3,7 @@ using Plots
 using FVM_1D
 
 using LinearAlgebra
+using SparseArrays
 using Krylov
 using LinearOperators
 using ILUZero
@@ -152,7 +153,8 @@ p0 .= zero(Float64)
 
 discretise!(p_eqn, model_p)
 
-p_eqn.A[10,10]
-Ad = Diagonal(p_eqn.A)
+T = sprand(Float64, 4,4, 0.75) 
+D = DiagonalPreconditioner(p_eqn.A)
 
-Ad[10,10]
+@time get_diagonal_direct(D, T)
+@time get_diagonal_csc(D, T)

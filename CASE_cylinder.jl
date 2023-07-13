@@ -63,7 +63,7 @@ setup_p = SolverSetup(
     solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
     relax       = 0.2,
     itmax       = 100,
-    rtol        = 0.5e-1
+    rtol        = 1e-1
 )
 
 GC.gc()
@@ -71,7 +71,7 @@ GC.gc()
 p = ScalarField(mesh)
 U = VectorField(mesh)
 
-iterations = 1500
+iterations = 500
 Rx, Ry, Rp = isimple!(
     mesh, velocity, nu, U, p, 
     uxBCs, uyBCs, pBCs, UBCs,
@@ -79,7 +79,7 @@ Rx, Ry, Rp = isimple!(
 
 write_vtk("results", mesh, ("U", U), ("p", p))
 
-plot(; xlims=(0,1500), ylims=(1e-8,0))
-plot!(1:length(Rx), Rx, yscale=:log10)
-plot!(1:length(Ry), Ry, yscale=:log10)
-plot!(1:length(Rp), Rp, yscale=:log10)
+plot(; xlims=(0,iterations), ylims=(1e-8,0))
+plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
+plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
+plot!(1:length(Rp), Rp, yscale=:log10, label="p")

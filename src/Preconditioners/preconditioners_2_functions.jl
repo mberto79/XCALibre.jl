@@ -62,6 +62,18 @@ begin
     nothing
 end
 
+
+
+update_preconditioner!(
+    P::Preconditioner{DILU,M,PT,S}
+    ) where {M<:SparseMatrixCSC,PT,S} =
+begin
+    dilu_diagonal2!(P.storage.diagonal,P.A) # works with matrix definitions
+    # dilu_diagonal1!(P.storage.diagonal,P.A)
+
+    nothing
+end
+
 # function update_preconditioner!(P::Preconditioner{Jacobi})
 #     A = P.A
 #     m, n = size(A)

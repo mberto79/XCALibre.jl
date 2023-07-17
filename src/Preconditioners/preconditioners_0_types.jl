@@ -1,12 +1,15 @@
 
 export PreconditionerType, Preconditioner
 export Jacobi, NormDiagonal, LDL, ILU0
+export DILU, DILUprecon
 
 abstract type PreconditionerType end
 struct NormDiagonal <: PreconditionerType end
 struct Jacobi <: PreconditionerType end
 struct LDL <: PreconditionerType end
 struct ILU0 <: PreconditionerType end
+struct DILU <: PreconditionerType end
+
 
 struct Preconditioner{T,M,P,S}
     A::M
@@ -43,7 +46,33 @@ Preconditioner{ILU0}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
     m == n || throw("Matrix not square")
     S = ilu0(A)
     P  = LinearOperator(
-        Float64, m, n, false, false, (y, v) -> ldiv!(y, S, v)
+        F, m, n, false, false, (y, v) -> ldiv!(y, S, v)
         )
     Preconditioner{ILU0,typeof(A),typeof(P),typeof(S)}(A,P,S)
+end
+
+struct DILUprecon{M,V,D,L,U,DD}
+    A::M
+    diagonal::V
+    D::D
+    L::L
+    U::U
+    Da::DD
+end
+
+Preconditioner{DILU}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
+    m, n = size(A)
+    m == n || throw("Matrix not square")
+    diag = zeros(F, m)
+    S = DILUprecon(
+        A, 
+        diag, 
+        Diagonal(diag),
+        LowerTriangular(A),
+        UpperTriangular(A),
+        Diagonal(A))
+    P  = LinearOperator(
+        F, m, n, false, false, (y, v) -> ldiv!(y, S, v)
+        )
+    Preconditioner{DILU,typeof(A),typeof(P),typeof(S)}(A,P,S)
 end

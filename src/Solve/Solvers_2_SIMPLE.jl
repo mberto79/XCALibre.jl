@@ -48,7 +48,8 @@ function isimple!(
     opAp = LinearOperator(p_eqn.A)
 
 
-    Pu = set_preconditioner(NormDiagonal(), ux_eqn, ux_model, uxBCs)
+    # Pu = set_preconditioner(NormDiagonal(), ux_eqn, ux_model, uxBCs)
+    Pu = set_preconditioner(DILU(), ux_eqn, ux_model, uxBCs)
     Pp = set_preconditioner(LDL(), p_eqn, p_model, pBCs)
 
 

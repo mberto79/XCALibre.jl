@@ -14,15 +14,6 @@ using LoopVectorization
 mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 
-# struct Mesh2{I,F} <: AbstractMesh
-#     cells::Vector{Cell{I,F}}
-#     faces::Vector{Face2D{I,F}}
-#     boundaries::Vector{Boundary{I}}
-#     nodes::Vector{Node{F}}
-# end
-
-# mesh = Mesh2(mesh.cells, mesh.faces, (mesh.boundaries...), mesh.nodes)
-
 p = ScalarField(mesh)
 U = VectorField(mesh)
 
@@ -94,30 +85,30 @@ divHv_new = ScalarField(mesh)
 
 
 # Define models 
-model_ux = (
+ux_model = (
     Divergence{Linear}(mdotf, ux) - Laplacian{Linear}(nuf, ux) 
     == 
     Source(∇p.x)
 )
 
-model_uy = (
+uy_model = (
     Divergence{Linear}(mdotf, uy) - Laplacian{Linear}(nuf, uy) 
     == 
     Source(∇p.y)
 )
 
-model_p = (
+p_model = (
     Laplacian{Linear}(rDf, p) == Source(divHv_new)
 )
 
 # Extract model variables
-ux = model_ux.terms[1].phi
-mdotf = model_ux.terms[1].flux
-uy = model_uy.terms[1].phi
-nuf = model_ux.terms[2].flux
-rDf = model_p.terms[1].flux 
+ux = ux_model.terms[1].phi
+mdotf = ux_model.terms[1].flux
+uy = uy_model.terms[1].phi
+nuf = ux_model.terms[2].flux
+rDf = p_model.terms[1].flux 
 rDf.values .= 1.0
-divHv_new = ScalarField(model_p.sources[1].field, mesh)
+divHv_new = ScalarField(p_model.sources[1].field, mesh)
 
 # Define aux fields 
 n_cells = m = n = length(mesh.cells)
@@ -141,20 +132,65 @@ ux_eqn  = Equation(mesh)
 uy_eqn  = Equation(mesh)
 p_eqn    = Equation(mesh)
 
-# Pre-allocated auxiliary variables
-ux0 = zeros(Float64, n_cells)
-uy0 = zeros(Float64, n_cells)
-p0 = zeros(Float64, n_cells)
+n_cells = m = n = length(mesh.cells)
 
-ux0 .= velocity[1]
-uy0 .= velocity[2]
-p0 .= zero(Float64)
+# Define preconditioners and linear operators
+opAx = LinearOperator(ux_eqn.A)
+opAy = LinearOperator(uy_eqn.A)
+opAp = LinearOperator(p_eqn.A)
 
+discretise!(ux_eqn, ux_model)
+apply_boundary_conditions!(ux_eqn, ux_model, uxBCs)
+Pu = set_preconditioner(NormDiagonal(), ux_eqn, ux_model, uxBCs)
+Pp = set_preconditioner(LDL(), p_eqn, p_model, pBCs)
 
-discretise!(p_eqn, model_p)
+A = ux_eqn.A
+Da = Diagonal(A)
+m, n = size(A)
 
-T = sprand(Float64, 4,4, 0.75) 
-D = DiagonalPreconditioner(p_eqn.A)
+D0 = zeros(eltype(A), m)
+D1 = zeros(eltype(A), m)
+D2 = zeros(eltype(A), m)
+b = ones(eltype(A), m)
 
-@time get_diagonal_direct(D, T)
-@time get_diagonal_csc(D, T)
+x = A\b
+A*x
+
+extract_diagonal!(D0, A)
+@time extract_diagonal!(D1, A)
+@time dilu_diagonal1!(D1,A)
+@time dilu_diagonal2!(D2,A)
+
+DD1 = Diagonal(D0)
+La =LowerTriangular(A) - DD1 + I
+Ua = UpperTriangular(A) #- DD1
+
+DD1i =inv(DD1)
+L1 = (La + DD1)*DD1i# *(DD1 + Ua)
+U1 = (DD1 + Ua)
+L1*U1
+c1 = L1\b
+x1 = U1\c1
+L1*U1*x1
+
+DD2 = Diagonal(D2)
+DD2i =inv(DD2)
+L2 = (La + DD2)*DD2i# *(DD1 + Ua)
+U2 = (DD2 + Ua)
+L2*U2
+
+c2 = L2\b
+x2 = U2\c2
+
+A*x2
+
+x1 = zeros(eltype(A), m)
+left_div!(x1, A, D1, b)
+x1
+
+P = Preconditioner{DILU}(A)
+dilu_diagonal2!(P.storage.diagonal,P.A)
+ldiv!(x, P.storage, b)
+x
+
+P.P*ones(m)

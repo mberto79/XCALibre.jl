@@ -8,6 +8,7 @@ using Krylov
 using LinearOperators
 using ILUZero
 using LoopVectorization
+using BenchmarkTools
 
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
@@ -148,49 +149,47 @@ A = ux_eqn.A
 Da = Diagonal(A)
 m, n = size(A)
 
-D0 = zeros(eltype(A), m)
-D1 = zeros(eltype(A), m)
-D2 = zeros(eltype(A), m)
+Pu = set_preconditioner(DILU(), ux_eqn, ux_model, uxBCs)
+
+Da = zeros(eltype(A), m)
 b = ones(eltype(A), m)
 
-x = A\b
-A*x
+@benchmark dilu_diagonal2!(Pu) # 11.615 ms
 
-extract_diagonal!(D0, A)
-@time extract_diagonal!(D1, A)
-@time dilu_diagonal1!(D1,A)
-@time dilu_diagonal2!(D2,A)
+extract_diagonal!(Da, Pu.storage.Di, A)
+Da
+@time dilu_diagonal2!(Pu)
+Da
+DDa = Diagonal(Da)
+D_dilu = Pu.storage.D
+# D_dilu = 1.0./Pu.storage.D
+DD = Diagonal(D_dilu)
+La =LowerTriangular(A - DDa)
+Ua = UpperTriangular(A - DDa) #- DD1
+LL = (La + DD)*inv(DD)
+UU = (DD + Ua)
+Q = LL*UU
+Diagonal(Q).diag
 
-DD1 = Diagonal(D0)
-La =LowerTriangular(A) - DD1 + I
-Ua = UpperTriangular(A) #- DD1
+@benchmark c = forward_substitution($A, $D0, $b) # 5.264 ms
+@benchmark c = forward_substitution($Pu, $b) # 16 μs
+@time c = forward_substitution(Pu, b)
 
-DD1i =inv(DD1)
-L1 = (La + DD1)*DD1i# *(DD1 + Ua)
-U1 = (DD1 + Ua)
-L1*U1
-c1 = L1\b
-x1 = U1\c1
-L1*U1*x1
+LL*c
 
-DD2 = Diagonal(D2)
-DD2i =inv(DD2)
-L2 = (La + DD2)*DD2i# *(DD1 + Ua)
-U2 = (DD2 + Ua)
-L2*U2
+@benchmark $d = backward_substitution($Pu, $c) # 6.2 ms
+@benchmark $d = backward_substitution($Pu, $c) # 18 μs
+c
+@time d = backward_substitution(Pu, b)
+UU*d
 
-c2 = L2\b
-x2 = U2\c2
+xx = zeros(eltype(b), length(b))
+b
+left_div!(xx, Pu.storage, b)
+xx
 
-A*x2
+Q*xx
 
-x1 = zeros(eltype(A), m)
-left_div!(x1, A, D1, b)
-x1
 
-P = Preconditioner{DILU}(A)
-dilu_diagonal2!(P.storage.diagonal,P.A)
-ldiv!(x, P.storage, b)
-x
-
-P.P*ones(m)
+@time mul!(xx, Pu.P, b)
+xx

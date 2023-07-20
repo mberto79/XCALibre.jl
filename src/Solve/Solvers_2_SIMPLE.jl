@@ -49,6 +49,8 @@ function isimple!(
 
 
     # Pu = set_preconditioner(NormDiagonal(), ux_eqn, ux_model, uxBCs)
+    # Pu = set_preconditioner(Jacobi(), ux_eqn, ux_model, uxBCs)
+    # Pu = set_preconditioner(ILU0(), ux_eqn, ux_model, uxBCs)
     Pu = set_preconditioner(DILU(), ux_eqn, ux_model, uxBCs)
     Pp = set_preconditioner(LDL(), p_eqn, p_model, pBCs)
 
@@ -154,6 +156,7 @@ function SIMPLE_loop(
         apply_boundary_conditions!(ux_eqn, model_ux, uxBCs)
         implicit_relaxation!(ux_eqn, ux0, setup_U.relax)
         update_preconditioner!(Pu)
+        # @time update_preconditioner!(Pu)
 
         run!(
             ux_eqn, model_ux, uxBCs, 

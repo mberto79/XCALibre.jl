@@ -51,26 +51,23 @@ Preconditioner{ILU0}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
     Preconditioner{ILU0,typeof(A),typeof(P),typeof(S)}(A,P,S)
 end
 
-struct DILUprecon{M,V,D,L,U,DD}
+struct DILUprecon{M,V,I}
     A::M
-    diagonal::V
-    D::D
-    L::L
-    U::U
-    Da::DD
+    D::V
+    Di::I
 end
 
 Preconditioner{DILU}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
     m, n = size(A)
     m == n || throw("Matrix not square")
-    diag = zeros(F, m)
+    D = zeros(F, m)
+    Di = zeros(I, m)
+    sparse_diagonal_indices!(Di, A)
     S = DILUprecon(
         A, 
-        diag, 
-        Diagonal(diag),
-        LowerTriangular(A),
-        UpperTriangular(A),
-        Diagonal(A))
+        D,
+        Di
+    )
     P  = LinearOperator(
         F, m, n, false, false, (y, v) -> ldiv!(y, S, v)
         )

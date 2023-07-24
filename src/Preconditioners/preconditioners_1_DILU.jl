@@ -1,7 +1,7 @@
 import LinearAlgebra.ldiv!, LinearAlgebra.\
 
 export extract_diagonal!
-export dilu_diagonal2!, sparse_diagonal_indices!
+export dilu_diagonal2!, sparse_diagonal_indices!, sparse_row_indices
 export forward_substitution, backward_substitution
 export ldiv!, left_div!
 
@@ -40,6 +40,33 @@ function sparse_diagonal_indices!(Di, A)
     end
 end
 
+integer_type(A::SparseMatrixCSC{Tf,Ti}) where {Tf,Ti} = Ti
+
+function sparse_row_indices(A, Di) # upper triangular row indices
+    (; colptr, m, n, nzval, rowval) = A
+    idx_diagonal = zero(eltype(m)) 
+    Ri = Vector{integer_type(A)}[] # pointers to sparse rows
+    J = Vector{integer_type(A)}[] # pointers to sparse rows
+    @inbounds for i ∈ 1:m
+        temp = integer_type(A)[]
+        J_temp = integer_type(A)[]
+        for j = (i+1):m
+            idx_start = colptr[j]
+            idx_next = Di[j] #colptr[j+1] - 1
+            @inbounds for p ∈ idx_start:idx_next
+                row = rowval[p]
+                if row == i
+                    push!(temp, p) # array of pointers
+                    push!(J_temp, j) # column indeces
+                end
+            end
+        end
+        push!(Ri, temp)
+        push!(J, J_temp)
+    end
+    return Ri, J
+end
+
 function dilu_diagonal2!(P) # must rename
     # (; A, storage) = P
     # (; colptr, m, n, nzval, rowval) = A
@@ -53,45 +80,41 @@ function dilu_diagonal2!(P) # must rename
     #     end
     # end
 
-    # Algo 2 No good!!!
+    # Algo 2
     # (; A, storage) = P
     # (; colptr, m, n, nzval, rowval) = A
     # (; Di, D) = storage
-    # extract_diagonal!(D, Di, A)
-    # T = A*transpose(A)*(1.0./D)
-    # D .-= T
+    # extract_diagonal!(D, Di, A) 
+    # sum = 0.0
+    # for i ∈ 2:m
+    #     for j ∈ 1:(i-1)
+    #         sum += A[i,j]*A[j,i]/D[j]
+    #     end
+    #     D[i] -= sum
+    #     sum = 0.0
+    # end
     
     # Algo 3
     (; A, storage) = P
     (; colptr, m, n, nzval, rowval) = A
-    (; Di, D) = storage
+    (; Di, Ri, D) = storage
     
     extract_diagonal!(D, Di, A)
-    @inbounds for i ∈ 1:n # add  D[j] -= A[i,j]*A[j,i]/D[i] 
-        for j = (i+1):n
-            pj_start = colptr[i] 
-            pj_end = colptr[i+1] - 1
-            for p_j ∈ pj_start:pj_end
-                rowi = rowval[p_j]
-                # if rowi > i 
-                #     break
-                # end
-                active_row = j
-                p_ij = p_j
-                pi_start = colptr[active_row] 
-                pi_end = colptr[active_row+1] - 1 
-                for p_i ∈ pi_start:pi_end
-                    rowj = rowval[p_i]
-                    if rowj == i 
-                        p_ji = p_i
-                        D[Di[j]] -= A[p_ij]*A[p_ji]/D[Di[i]]
-                        break
-                    end
-                end
-            end
 
+    @inbounds for i ∈ 1:n
+        # D[i] = nzval[Di[i]] 
+        c_start = Di[i] + 1
+        c_end = colptr[i+1] - 1
+        r_pointer = Ri[i]
+        r_count = 0
+        @inbounds for c_pointer ∈ c_start:c_end
+            j = rowval[c_pointer]
+            r_count += 1
+            D[j] -= nzval[c_pointer]*nzval[r_pointer[r_count]]/D[i]
         end
+        D[i] = 1.0/D[i] # store inverse
     end
+    # D .= 1.0./D # store inverse
     nothing
 end
 
@@ -151,64 +174,56 @@ end
 function left_div!(x, P, b)
 # function left_div!(x, A, D, b)
 
-    (; A, Di, D) = P
+    (; A, D, Di, Ri, J) = P
     (; colptr, m, n, nzval, rowval) = A
 
     # Forward substitution
 
     # # Algo 1
     # x .= b
-    # for i ∈ 1:m
+    # for i ∈ 2:m
     #     for j ∈ 1:(i-1) # needs serious check!
-    #         x[i] -= A[i,j]*x[j] # Ci = (1/Di)(bi - Aij*Cj)
+    #         x[i] -= A[i,j]*x[j]/D[j]
+    #         x[i] -= A[i,j]*x[j]*D[j]
     #     end
-    #     x[i] /= D[i]
     # end
 
     # Algo 2
     @inbounds for i ∈ eachindex(x)
-        # x[i] = b[i]/D[i]
-        # x[i] = b[i]*D[i]
         x[i] = b[i]
     end
-    @inbounds for j ∈ 1:n-1
+    @inbounds for j ∈ 1:n
         c_start = Di[j] + 1
         c_end = colptr[j+1] - 1
-        for c_pointer ∈ c_start:c_end
+        @inbounds for c_pointer ∈ c_start:c_end
             i = rowval[c_pointer]
-            # x[i] -= nzval[c_pointer] * x[j]
-            x[i] -= nzval[c_pointer] * x[j]/D[j]
-            # x[i] -= nzval[c_pointer] * x[j]*D[i]
+            # x[i] -= nzval[c_pointer]*x[j]/D[j]
+            x[i] -= nzval[c_pointer]*x[j]*D[j]
         end
     end
 
     # Backward substitution
     # Algo 1
-    # x[n] = x[n]/D[n]
-    # x[n] = x[n]*D[n]
-    # sum = zero(eltype(A))
-    # for i ∈ n-1:-1:1
-    #     for j=i+1:n
-    #     sum += A[i,j]*x[j]
+    # x .= x./D
+    # x .= x.*D
+    # for i ∈ (n-1):-1:1
+    #     for j ∈ (i+1):n # needs serious check!
+    #         x[i] -= A[i,j]*x[j]/D[i]
+    #         x[i] -= A[i,j]*x[j]*D[i]
     #     end
-    #     # x[i] = (x[i] - sum)/D[i]
-    #     x[i] = (x[i] - sum)*D[i]
-    #     sum = zero(eltype(A))
     # end
 
     # Algo 2
     @inbounds for i ∈ eachindex(x)
-        x[i] = x[i]/D[i]
-        # x[i] = b[i]*D[i]
-        # x[i] = x[i]
+        # x[i] = x[i]/D[i]
+        x[i] = x[i]*D[i]
     end
-    @inbounds for j ∈ n-1:-1:1
-        c_start = Di[j] + 1
-        c_end = colptr[j+1] - 1
-        for c_pointer ∈ c_start:c_end
-            i = rowval[c_pointer]
-            # x[j] -= nzval[c_pointer] * x[i]/D[j]
-            x[j] -= nzval[c_pointer] * x[i]/D[j]
+    for i ∈ (n-1):-1:1
+        c_pointers = Ri[i]
+        j = J[i]
+        for (p_i, p) ∈ enumerate(c_pointers)
+            # x[i] -= nzval[p]*x[j[p_i]]/D[i]
+            x[i] -= nzval[p]*x[j[p_i]]*D[i]
         end
     end
     nothing

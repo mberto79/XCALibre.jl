@@ -53,7 +53,7 @@ pBCs = (
 )
 
 setup_U = SolverSetup(
-    solver      = GmresSolver,
+    solver      = GmresSolver, # GmresSolver, BicgstabSolver
     relax       = 0.8,
     itmax       = 100,
     rtol        = 1e-1
@@ -71,7 +71,7 @@ GC.gc()
 p = ScalarField(mesh)
 U = VectorField(mesh)
 
-iterations = 500
+iterations = 500 # 84.86s
 Rx, Ry, Rp = isimple!(
     mesh, velocity, nu, U, p, 
     uxBCs, uyBCs, pBCs, UBCs,

@@ -54,7 +54,9 @@ end
 struct DILUprecon{M,V,I}
     A::M
     D::V
-    Di::I
+    Di::Vector{I}
+    Ri::Vector{Vector{I}}
+    J::Vector{Vector{I}}
 end
 
 Preconditioner{DILU}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
@@ -63,10 +65,13 @@ Preconditioner{DILU}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
     D = zeros(F, m)
     Di = zeros(I, m)
     sparse_diagonal_indices!(Di, A)
+    Ri, J = sparse_row_indices(A, Di)
     S = DILUprecon(
         A, 
         D,
-        Di
+        Di,
+        Ri,
+        J
     )
     P  = LinearOperator(
         F, m, n, false, false, (y, v) -> ldiv!(y, S, v)

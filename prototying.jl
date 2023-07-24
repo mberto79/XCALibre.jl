@@ -154,19 +154,21 @@ Pu = set_preconditioner(DILU(), ux_eqn, ux_model, uxBCs)
 Da = zeros(eltype(A), m)
 b = ones(eltype(A), m)
 
-@benchmark dilu_diagonal2!(Pu) # 11.615 ms
+# @benchmark dilu_diagonal2!(Pu) # 11.615 ms, 23 ms, 48.687 μs, 14.14 μs
 
-extract_diagonal!(Da, Pu.storage.Di, A)
+@time extract_diagonal!(Da, Pu.storage.Di, A)
 Da
 @time dilu_diagonal2!(Pu)
 Da
 DDa = Diagonal(Da)
-D_dilu = Pu.storage.D
-# D_dilu = 1.0./Pu.storage.D
+# D_dilu = Pu.storage.D
+D_dilu = 1.0./Pu.storage.D
 DD = Diagonal(D_dilu)
-La =LowerTriangular(A - DDa)
-Ua = UpperTriangular(A - DDa) #- DD1
+# rDD = Diagonal(1.0./D_dilu)
+La =sparse(LowerTriangular(A - DDa))
+Ua = sparse(UpperTriangular(A - DDa)) #- DD1
 LL = (La + DD)*inv(DD)
+# LL = (La + DD)*rDD
 UU = (DD + Ua)
 Q = LL*UU
 Diagonal(Q).diag
@@ -181,15 +183,21 @@ LL*c
 @benchmark $d = backward_substitution($Pu, $c) # 18 μs
 c
 @time d = backward_substitution(Pu, b)
+d
 UU*d
 
+c = zeros(eltype(b), length(b))
 xx = zeros(eltype(b), length(b))
 b
 left_div!(xx, Pu.storage, b)
-xx
 
+xx
 Q*xx
 
+c .= LL\b 
+xx .= UU\c
+Q*xx
 
-@time mul!(xx, Pu.P, b)
-xx
+for i ∈ 4:2
+    println(i)
+end

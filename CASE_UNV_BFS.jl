@@ -92,7 +92,7 @@ PProf.Allocs.pprof()
 
 write_vtk("results", mesh, ("U", U), ("p", p))
 
-plot(; xlims=(0,137))
+plot(; xlims=(0,130))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
 plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
 plot!(1:length(Rp), Rp, yscale=:log10, label="p")

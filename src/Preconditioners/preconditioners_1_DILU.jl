@@ -1,10 +1,6 @@
 import LinearAlgebra.ldiv!, LinearAlgebra.\
 
 export ldiv!
-# export extract_diagonal!
-# export diagonal_indices!, upper_row_indices
-# export update_dilu_diagonal!
-# export forward_substitution!, backward_substitution!
 
 extract_diagonal!(D, Di, A::SparseMatrixCSC{Tf,Ti}) where {Tf,Ti} =
 begin

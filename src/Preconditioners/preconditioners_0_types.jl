@@ -65,7 +65,7 @@ Preconditioner{DILU}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
     D = zeros(F, m)
     Di = zeros(I, m)
     diagonal_indices!(Di, A)
-    Ri, J = upper_row_indices(A, Di)
+    @time Ri, J = upper_row_indices(A, Di)
     S = DILUprecon(A, D, Di, Ri, J)
     P  = LinearOperator(
         F, m, n, false, false, (y, v) -> ldiv!(y, S, v)

@@ -8,6 +8,7 @@ function isimple!(
 
 
     # Pre-allocate fields
+    @info "Preallocating fields..."
     ux = ScalarField(mesh)
     uy = ScalarField(mesh)
     ∇p = Grad{Linear}(p)
@@ -19,6 +20,7 @@ function isimple!(
 
 
     # Define models 
+    @info "Defining models..."
     ux_model = (
         Divergence{Linear}(mdotf, ux) - Laplacian{Linear}(nuf, ux) 
         == 
@@ -36,6 +38,7 @@ function isimple!(
     )
 
     # Define equations
+    @info "Allocating matrix equations..."
     ux_eqn  = Equation(mesh)
     uy_eqn  = Equation(mesh)
     p_eqn    = Equation(mesh)
@@ -47,14 +50,14 @@ function isimple!(
     opAy = LinearOperator(uy_eqn.A)
     opAp = LinearOperator(p_eqn.A)
 
-
+    @info "Initialising preconditioners..."
     # Pu = set_preconditioner(NormDiagonal(), ux_eqn, ux_model, uxBCs)
     # Pu = set_preconditioner(Jacobi(), ux_eqn, ux_model, uxBCs)
     # Pu = set_preconditioner(ILU0(), ux_eqn, ux_model, uxBCs)
     Pu = set_preconditioner(DILU(), ux_eqn, ux_model, uxBCs)
     Pp = set_preconditioner(LDL(), p_eqn, p_model, pBCs)
 
-
+    @info "Initialising linear solvers..."
     solver_p = setup_p.solver(p_eqn.A, p_eqn.b)
     solver_U = setup_U.solver(ux_eqn.A, ux_eqn.b)
 
@@ -80,6 +83,8 @@ function SIMPLE_loop(
     solver_U, solver_p,
     ux_eqn, uy_eqn, p_eqn
     ; resume=true, pref=nothing) where {TI,TF}
+
+    @info "Allocating working memory..."
 
     # Extract model variables
     ux = model_ux.terms[1].phi
@@ -143,6 +148,7 @@ function SIMPLE_loop(
     R_p = ones(TF, iterations)
 
     # Perform SIMPLE loops 
+    @info "Staring SIMPLE loops..."
     progress = Progress(iterations; dt=1.0, showspeed=true)
     @time for iteration ∈ 1:iterations
     # for iteration ∈ 1:iterations

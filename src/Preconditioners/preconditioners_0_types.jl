@@ -64,8 +64,8 @@ Preconditioner{DILU}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
     m == n || throw("Matrix not square")
     D = zeros(F, m)
     Di = zeros(I, m)
-    sparse_diagonal_indices!(Di, A)
-    Ri, J = sparse_row_indices(A, Di)
+    diagonal_indices!(Di, A)
+    Ri, J = upper_row_indices(A, Di)
     S = DILUprecon(
         A, 
         D,

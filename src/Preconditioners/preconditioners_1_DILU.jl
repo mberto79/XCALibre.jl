@@ -1,32 +1,23 @@
 import LinearAlgebra.ldiv!, LinearAlgebra.\
 
-export extract_diagonal!
-export dilu_diagonal2!, sparse_diagonal_indices!, sparse_row_indices
-export forward_substitution, backward_substitution
-export ldiv!, left_div!
+export ldiv!
+# export extract_diagonal!
+# export diagonal_indices!, upper_row_indices
+# export update_dilu_diagonal!
+# export forward_substitution!, backward_substitution!
 
-
-
-function extract_diagonal!(D, Di, A) 
-# function extract_diagonal!(D, A) 
-# m, n = size(A)
-# for i ∈ 1:m
-#     D[i] = A[i,i]
-# end
-
-
-(; colptr, m, n, nzval, rowval) = A
-idx_diagonal = zero(eltype(m)) # index to diagonal element
-@inbounds for i ∈ 1:m
-    D[i] = nzval[Di[i]]
+extract_diagonal!(D, Di, A::SparseMatrixCSC{Tf,Ti}) where {Tf,Ti} =
+begin
+    (; n, nzval) = A
+    @inbounds for i ∈ 1:n
+        D[i] = nzval[Di[i]]
+    end
 end
 
-end
-
-function sparse_diagonal_indices!(Di, A) 
-    (; colptr, m, n, nzval, rowval) = A
-    idx_diagonal = zero(eltype(m)) # index to diagonal element
-    @inbounds for i ∈ 1:m
+function diagonal_indices!(Di, A::SparseMatrixCSC{Tf,Ti}) where {Tf,Ti} 
+    (; colptr, n, rowval) = A
+    idx_diagonal = zero(eltype(n)) # index to diagonal element
+    @inbounds for i ∈ 1:n
         idx_start = colptr[i]
         idx_next = colptr[i+1]
         @inbounds for p ∈ idx_start:(idx_next-1)
@@ -42,32 +33,31 @@ end
 
 integer_type(A::SparseMatrixCSC{Tf,Ti}) where {Tf,Ti} = Ti
 
-function sparse_row_indices(A, Di) # upper triangular row indices
-    (; colptr, m, n, nzval, rowval) = A
-    idx_diagonal = zero(eltype(m)) 
-    Ri = Vector{integer_type(A)}[] # pointers to sparse rows
-    J = Vector{integer_type(A)}[] # pointers to sparse rows
-    @inbounds for i ∈ 1:m
-        temp = integer_type(A)[]
+function upper_row_indices(A, Di) # upper triangular row column indices
+    (; colptr, n, rowval) = A
+    Ri = Vector{integer_type(A)}[] # column pointers on i-th row
+    J = Vector{integer_type(A)}[] # column indices on i-th row
+    @inbounds for i ∈ 1:n
+        R_temp = integer_type(A)[]
         J_temp = integer_type(A)[]
-        for j = (i+1):m
+        for j = (i+1):n
             idx_start = colptr[j]
-            idx_next = Di[j] #colptr[j+1] - 1
+            idx_next = Di[j] # access column down to diagonal only
             @inbounds for p ∈ idx_start:idx_next
                 row = rowval[p]
                 if row == i
-                    push!(temp, p) # array of pointers
-                    push!(J_temp, j) # column indeces
+                    push!(R_temp, p) # array of pointers
+                    push!(J_temp, j) # column indices
                 end
             end
         end
-        push!(Ri, temp)
+        push!(Ri, R_temp)
         push!(J, J_temp)
     end
     return Ri, J
 end
 
-function dilu_diagonal2!(P) # must rename
+function update_dilu_diagonal!(P) # must rename
     # (; A, storage) = P
     # (; colptr, m, n, nzval, rowval) = A
     # (; Di, D) = storage
@@ -96,7 +86,7 @@ function dilu_diagonal2!(P) # must rename
     
     # Algo 3
     (; A, storage) = P
-    (; colptr, m, n, nzval, rowval) = A
+    (; colptr, n, nzval, rowval) = A
     (; Di, Ri, D) = storage
     
     extract_diagonal!(D, Di, A)
@@ -118,66 +108,9 @@ function dilu_diagonal2!(P) # must rename
     nothing
 end
 
-function forward_substitution(P, b)
-    (; A, storage) = P
-    (; colptr, m, n, nzval, rowval) = A
-    (; Di, D) = storage
-
-    x = zeros(eltype(D), m)
-    x .= b
-    for j ∈ 1:n-1
-        c_start = Di[j] + 1
-        c_end = colptr[j+1] - 1
-        for c_pointer ∈ c_start:c_end
-            i = rowval[c_pointer]
-            x[i] -= nzval[c_pointer] * x[j] / D[j]
-        end
-    end
-    return x
-
-end
-
-function backward_substitution(P, b)
-    (; A, storage) = P
-    (; colptr, m, n, nzval, rowval) = A
-    (; Di, D) = storage
-
-    # # Algo 1
-    # x = zeros(eltype(D), n)
-    # x[n] = b[n]/D[n]
-    # sum = zero(eltype(A))
-    # for i ∈ n-1:-1:1
-    #     for j=i+1:n
-    #     sum += A[i,j]*x[j]
-    #     end
-    #     x[i] = (b[i] - sum)/D[i]
-    #     sum = zero(eltype(A))
-    # end
-    # return x
-
-    # Algo 2
-    x = zeros(eltype(D), m)
-    x .= b./D
-    # x .= b.*D
-    for j ∈ n-1:-1:1
-        c_start = Di[j] + 1
-        c_end = colptr[j+1] - 1
-        for c_pointer ∈ c_start:c_end
-            i = rowval[c_pointer]
-            x[j] -= nzval[c_pointer] * x[i]/D[j]
-            # x[j] -= nzval[c_pointer] * x[i]*D[j]
-        end
-    end
-    return x
-end
-
-function left_div!(x, P, b)
-# function left_div!(x, A, D, b)
-
+function forward_substitution!(x, P, b)
     (; A, D, Di, Ri, J) = P
-    (; colptr, m, n, nzval, rowval) = A
-
-    # Forward substitution
+    (; colptr, n, nzval, rowval) = A
 
     # # Algo 1
     # x .= b
@@ -201,9 +134,13 @@ function left_div!(x, P, b)
             x[i] -= nzval[c_pointer]*x[j]*D[j]
         end
     end
+end
 
-    # Backward substitution
-    # Algo 1
+function backward_substitution!(x, P, c)
+    (; A, D, Di, Ri, J) = P
+    (; colptr, n, nzval, rowval) = A
+
+     # Algo 1
     # x .= x./D
     # x .= x.*D
     # for i ∈ (n-1):-1:1
@@ -215,8 +152,8 @@ function left_div!(x, P, b)
 
     # Algo 2
     @inbounds for i ∈ eachindex(x)
-        # x[i] = x[i]/D[i]
-        x[i] = x[i]*D[i]
+        # x[i] = c[i]/D[i]
+        x[i] = c[i]*D[i]
     end
     for i ∈ (n-1):-1:1
         c_pointers = Ri[i]
@@ -226,13 +163,10 @@ function left_div!(x, P, b)
             x[i] -= nzval[p]*x[j[p_i]]*D[i]
         end
     end
-    nothing
 end
 
-function ldiv!(y, P::DILUprecon{M,V,I}, b
-    ) where {M<:SparseMatrixCSC,V,I}
-    ###
-    left_div!(y, P, b)
-    ###   
-    nothing
+ldiv!(x, P::DILUprecon{M,V,I}, b) where {M<:SparseMatrixCSC,V,I} =
+begin
+    forward_substitution!(x, P, b)
+    backward_substitution!(x, P, x)
 end

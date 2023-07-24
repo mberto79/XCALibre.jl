@@ -68,15 +68,6 @@ update_preconditioner!(
     P::Preconditioner{DILU,M,PT,S}
     ) where {M<:SparseMatrixCSC,PT,S} =
 begin
-    dilu_diagonal2!(P) 
+    update_dilu_diagonal!(P) 
     nothing
 end
-
-# function update_preconditioner!(P::Preconditioner{Jacobi})
-#     A = P.A
-#     m, n = size(A)
-#     storage = P.storage
-#     for i ∈ 1:m
-#         storage[i] = 1/abs(A[i,i])
-#     end
-# end

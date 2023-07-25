@@ -1,43 +1,22 @@
 export apply_boundary_conditions!
-# export boundary_index
-export assign
 
-function assign(field, assignment)
-    # use this function to pack boundary ID info at runtime
-    nothing
-end
-
-function apply_boundary_conditions!(equation, model, BCs)
-    # (; mesh) = equation
-    # indices = boundary_indices(mesh, BCs)
-    update_boundary_conditions!(equation, model, BCs)
-end
-
-@generated function update_boundary_conditions!(
+@generated function apply_boundary_conditions!(
     equation::Equation{I,F}, model, BCs) where {I,F}
 
     # Unpack terms that make up the model (not sources)
-    # terms = Expr[]
     nTerms = model.parameters[3]
-    # for t ∈ 1:nTerms
-    #     term_extracted = :(term$t = model.terms[$t])
-    #     push!(terms, term_extracted)
-    # end
 
     # Definition of main assignment loop (one per patch)
     assignment_loops = []
     for bci ∈ 1:length(BCs.parameters)
         func_calls = Expr[]
         for t ∈ 1:nTerms 
-            # call = Expr(:call, :(BCs[$bci]), term, :A, :b, :cellID, :cell, :face, :faceID)
             call = quote
-                # (BCs[$bci])(term$t, A, b, cellID, cell, face, faceID)
                 (BCs[$bci])(model.terms[$t], A, b, cellID, cell, face, faceID)
             end
             push!(func_calls, call)
         end
         assignment_loop = quote
-            # (; facesID, cellsID) = boundaries[indices[$bci]]
             (; facesID, cellsID) = boundaries[BCs[$bci].ID]
             @inbounds for i ∈ eachindex(cellsID)
                 faceID = facesID[i]
@@ -51,12 +30,9 @@ end
     end
 
     quote
-    # (; A, b, mesh) = equation
     (; A, b) = equation
     mesh = model.terms[1].phi.mesh
     (; boundaries, faces, cells) = mesh
-    # indices = boundary_indices(mesh, BCs)
-    # $(terms...)
     $(assignment_loops...)
     nothing
     end
@@ -79,4 +55,3 @@ end
         return BC_indices
     end
 end
-

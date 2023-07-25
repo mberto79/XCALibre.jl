@@ -16,7 +16,7 @@ function isimple!(
     nuf = ConstantScalar(nu) # Implement constant field! Priority 1
     rDf = FaceScalarField(mesh)
     rDf.values .= 1.0
-    divHv_new = ScalarField(mesh)
+    divHv = ScalarField(mesh)
 
 
     # Define models 
@@ -34,7 +34,7 @@ function isimple!(
     )
 
     p_model = (
-        Laplacian{Linear}(rDf, p) == Source(divHv_new)
+        Laplacian{Linear}(rDf, p) == Source(divHv)
     )
 
     # Define equations

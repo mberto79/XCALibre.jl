@@ -293,34 +293,6 @@ function residual!(Residual, equation, phi, opA, solver, iteration)
     nothing
 end
 
-function calculate_residuals(
-    divU::ScalarField, UxEqn::Equation, UyEqn::Equation, Ux::ScalarField, Uy::ScalarField)
-    
-    continuityError = abs(mean(-divU.values))
-    # UxResidual = norm(UxEqn.A*Ux.values - UxEqn.b)/Rx₀
-    # UyResidual = norm(UyEqn.A*Uy.values - UyEqn.b)/Ry₀
-
-    solMean = mean(Ux.values)
-    N = sum(
-        abs.(UxEqn.A*(Ux.values .- solMean)) + 
-        abs.(UxEqn.b .- UxEqn.A*ones(length(UxEqn.b))*solMean)
-        )
-    UxResidual = (1/N)*sum(abs.(UxEqn.b - UxEqn.A*Ux.values))
-
-    solMean = mean(Uy.values)
-    N = sum(
-        abs.(UyEqn.A*(Uy.values .- solMean)) + 
-        abs.(UyEqn.b .- UyEqn.A*ones(length(UyEqn.b))*solMean)
-        )
-    UyResidual = (1/N)*sum(abs.(UyEqn.b - UyEqn.A*Uy.values))
-
-    # UxResidual = sum(sqrt.((UxEqn.b - UxEqn.A*Ux.values).^2))/length(UxEqn.b)/Rx₀
-    # UyResidual = sum(sqrt.((UyEqn.b - UyEqn.A*Uy.values).^2))/length(UyEqn.b)/Ry₀
-
-    return continuityError, UxResidual, UyResidual
-end
-
-
 function flux!(phif::FaceScalarField{TI,TF}, psif::FaceVectorField{TI,TF}) where {TI,TF}
     (; mesh, values) = phif
     (; faces) = mesh 

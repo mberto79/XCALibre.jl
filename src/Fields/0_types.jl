@@ -68,8 +68,6 @@ FaceVectorField(mesh::Mesh2{I,F}) where {I,F} = begin
     FaceVectorField(zeros(F, nfaces), zeros(F, nfaces), zeros(F, nfaces), mesh)
 end
 
-# (v::AbstractVectorField)(i::Integer) = SVector{3, eltype(v.x)}(v.x[i], v.y[i], v.z[i])
-
 Base.getindex(v::AbstractVectorField, i::Integer) = SVector{3, eltype(v.x)}(v.x[i], v.y[i], v.z[i])
 
 function initialise!(v::AbstractVectorField, vec::Vector{T}) where T

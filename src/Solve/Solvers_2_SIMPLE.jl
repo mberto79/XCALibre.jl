@@ -126,16 +126,16 @@ function SIMPLE_loop(
     #### NEED TO IMPLEMENT A SENSIBLE INITIALISATION TO INCLUDE WARM START!!!!
     # Update initial (guessed) fields
 
-    @turbo ux0 .= ux.values
-    @turbo uy0 .= uy.values 
-    @turbo p0 .= p.values
     @inbounds ux.values .= velocity[1]
     @inbounds uy.values .= velocity[2]
-    @turbo U.x .= ux.values #velocity[1]
-    @turbo U.y .= uy.values# velocity[2]
+    @inbounds ux0 .= ux.values
+    @inbounds uy0 .= uy.values 
+    @inbounds p0 .= p.values
+    @inbounds U.x.values .= ux.values #velocity[1]
+    @inbounds U.y.values .= uy.values# velocity[2]
     # end
-    volume  = volumes(mesh)
-    rvolume  = 1.0./volume
+    # volume  = volumes(mesh)
+    # rvolume  = 1.0./volume
     
     interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, UBCs)
@@ -184,15 +184,16 @@ function SIMPLE_loop(
         residual!(R_uy, uy_eqn, uy, opAy, solver_U, iteration)
 
 
-        @turbo for i ∈ eachindex(ux0)
-            ux0[i] = U.x[i]
-            uy0[i] = U.y[i]
-            # U.x[i] = ux.values[i]
-            # U.y[i] = uy.values[i]
-        end
+        # @inbounds for i ∈ eachindex(ux0)
+        #     ux0[i] = U.x[i]
+        #     uy0[i] = U.y[i]
+        #     # U.x[i] = ux.values[i]
+        #     # U.y[i] = uy.values[i]
+        # end
         
         inverse_diagonal!(rD, ux_eqn)
         interpolate!(rDf, rD)
+        # source!(∇p, pf, p, pBCs) #######
         remove_pressure_source!(ux_eqn, uy_eqn, ∇p, rD)
         # H!(Hv, U, ux_eqn, uy_eqn)
         H!(Hv, ux, uy, ux_eqn, uy_eqn, rD)
@@ -224,7 +225,7 @@ function SIMPLE_loop(
             setup_p, opA=opAp, opP=Pp.P, solver=solver_p
         )
 
-        grad!(∇p, pf, p, pBCs) 
+        # grad!(∇p, pf, p, pBCs) 
         correct = false
         if correct
             ncorrectors = 1
@@ -244,6 +245,8 @@ function SIMPLE_loop(
             end
         end
 
+        explicit_relaxation!(p, p0, setup_p.relax)
+        grad!(∇p, pf, p, pBCs) 
         # source!(∇p, pf, p, pBCs)
         
         correct_velocity!(U, Hv, ∇p, rD)
@@ -252,12 +255,18 @@ function SIMPLE_loop(
         flux!(mdotf, Uf)
 
         
-        explicit_relaxation!(p, p0, setup_p.relax)
         residual!(R_p, p_eqn, p, opAp, solver_p, iteration)
 
+        # grad!(∇p, pf, p, pBCs) 
         # source!(∇p, pf, p, pBCs)
-        grad!(∇p, pf, p, pBCs) 
         correct_velocity!(ux, uy, Hv, ∇p, rD)
+
+        @inbounds for i ∈ eachindex(ux0)
+            # ux0[i] = U.x[i]
+            # uy0[i] = U.y[i]
+            ux0[i] = ux.values[i]
+            uy0[i] = uy.values[i]
+        end
 
         convergence = 1e-7
         if R_ux[iteration] <= convergence && R_uy[iteration] <= convergence && R_p[iteration] <= convergence
@@ -371,7 +380,7 @@ end
 
 function implicit_relaxation!(eqn::Equation{I,F}, field, alpha) where {I,F}
     (; A, b) = eqn
-    @inbounds @simd for i ∈ eachindex(b)
+    @inbounds for i ∈ eachindex(b)
         A[i,i] /= alpha
         b[i] += (1.0 - alpha)*A[i,i]*field[i]
     end
@@ -417,7 +426,8 @@ function inverse_diagonal!(rD::ScalarField{I,F}, eqn) where {I,F}
     cells = mesh.cells
     A = eqn.A
     @inbounds for i ∈ eachindex(values)
-        D = view(A, i, i)[1]
+        # D = view(A, i, i)[1]
+        D = A[i,i]
         volume = cells[i].volume
         # DV = D/volume
         values[i] = volume/D
@@ -515,9 +525,9 @@ function H!(Hv::VectorField, v::VectorField{I,F}, xeqn, yeqn, rD) where {I,F}
         # y[cID] = (by[cID] - sumy)*rD
         # z[cID] = zero(F)
 
-        # rD_temp = rD.values[cID]/cells[cID].volume # works
-        D = view(Ax, cID, cID)[1] # Good for now (add check to use max of Ax or Ay)
+        D = view(Ax, cID, cID)[1] # add check to use max of Ax or Ay)
         rD_temp = 1.0/D
+        # rD_temp = rD[cID]
         x[cID] = (bx[cID] - sumx)*rD_temp
         y[cID] = (by[cID] - sumy)*rD_temp
         z[cID] = zero(F)
@@ -548,9 +558,9 @@ function H!(
         # y[cID] = (by[cID] - sumy)*rD
         # z[cID] = zero(F)
 
-        # rD_temp = rD.values[cID]/cells[cID].volume # works
-        D = view(Ax, cID, cID)[1] # Good for now (add check to use max of Ax or Ay)
+        D = view(Ax, cID, cID)[1] # add check to use max of Ax or Ay)
         rD_temp = 1.0/D
+        # rD_temp = rD[cID]
         x[cID] = (bx[cID] - sumx)*rD_temp
         y[cID] = (by[cID] - sumy)*rD_temp
         z[cID] = zero(F)

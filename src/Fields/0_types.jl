@@ -44,8 +44,10 @@ FaceScalarField(mesh::Mesh2{I,F}) where {I,F} =begin
 end
 
 # (s::AbstractScalarField)(i::Integer) = s.values[i]
-Base.getindex(s::AbstractScalarField, i::Integer) = s.values[i]
-Base.setindex!(s::AbstractScalarField, x, i::Integer) = begin
+Base.getindex(s::AbstractScalarField, i::I) where I<:Integer = begin
+    s.values[i]
+end
+Base.setindex!(s::AbstractScalarField, x, i::I) where I<:Integer = begin
     s.values[i] = x
 end
 Base.length(s::AbstractScalarField) = length(s.values)

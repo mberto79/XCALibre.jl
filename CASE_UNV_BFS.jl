@@ -56,7 +56,7 @@ setup_U = SolverSetup(
 
 setup_p = SolverSetup(
     solver      = GmresSolver, # GmresSolver, FomSolver, DiomSolver
-    relax       = 0.2,
+    relax       = 0.3,
     itmax       = 100,
     rtol        = 1e-1
 )
@@ -92,7 +92,7 @@ Rx, Ry, Rp = isimple!(
 
 write_vtk("results", mesh, ("U", U), ("p", p))
 
-plot(; xlims=(0,92))
+plot(; xlims=(0,103))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
 plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
 plot!(1:length(Rp), Rp, yscale=:log10, label="p")

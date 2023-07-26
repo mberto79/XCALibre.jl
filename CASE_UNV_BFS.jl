@@ -65,8 +65,8 @@ using Profile, PProf
 
 GC.gc()
 
-p = ScalarField(mesh)
-U = VectorField(mesh)
+initialise!(U, velocity)
+initialise!(p, 0.0)
 
 iterations = 1000
 Rx, Ry, Rp = isimple!(

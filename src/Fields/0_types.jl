@@ -2,6 +2,7 @@ export AbstractField, AbstractScalarField, AbstractVectorField
 export ConstantScalar, ConstantVector
 export ScalarField, FaceScalarField
 export VectorField, FaceVectorField
+export initialise!
 
 # ABSTRACT TYPES
 
@@ -91,16 +92,21 @@ Base.setindex!(v::AbstractVectorField, x::AbstractVector, i::Integer) = begin
     v.z[i] = z[3]
 end
 
-# function initialise!(v::AbstractVectorField, vec::Vector{T}) where T
-#     n = length(vec)
-#     if T !== eltype(v.x)
-#         throw("Vectors are not the same type: $(eltype(v.x)) is not $T")
-#     elseif n == 3
-#         v.x .= vec[1]
-#         v.y .= vec[2]
-#         v.z .= vec[3]
-#     else
-#         throw("Vectors should have 3 components")
-#     end
-#     nothing
-# end
+function initialise!(v::AbstractVectorField, vec::Vector{T}) where T
+    n = length(vec)
+    v_type = eltype(v.x.values)
+    if n == 3
+        v.x.values .= convert(v_type, vec[1])
+        v.y.values .= convert(v_type, vec[2])
+        v.z.values .= convert(v_type, vec[3])
+    else
+        throw("Vectors should have 3 components")
+    end
+    nothing
+end
+
+function initialise!(s::AbstractScalarField, value::V) where V
+    s_type = eltype(s.values)
+    s.values .= convert(s_type, value)
+    nothing
+end

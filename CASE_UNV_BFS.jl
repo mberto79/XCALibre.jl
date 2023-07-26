@@ -75,10 +75,10 @@ Rx, Ry, Rp = isimple!(
     # setup_U, setup_p, iterations, pref=0.0)
     setup_U, setup_p, iterations)
 
-GC.gc()
+# GC.gc()
 
-p = ScalarField(mesh)
-U = VectorField(mesh)
+# p = ScalarField(mesh)
+# U = VectorField(mesh)
 
 # Profile.Allocs.clear()
 # Profile.Allocs.@profile sample_rate=1 begin Rx, Ry, Rp = isimple!(

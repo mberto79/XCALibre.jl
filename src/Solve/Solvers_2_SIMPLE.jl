@@ -297,8 +297,11 @@ function residual!(Residual, equation, phi, opA, solver, iteration)
     
     mul!(Fx, opA, values)
     @inbounds @. R = abs(Fx - b)
+    # res = sqrt(mean(R.^2))/abs(mean(values))
+    res = sqrt(mean(R.^2))/norm(b)
+
+
     # res = max(norm(R), eps())/abs(mean(values))
-    res = sqrt(mean(R.^2))/abs(mean(values))
 
     # sum_mean = zero(TF)
     # sum_norm = zero(TF)

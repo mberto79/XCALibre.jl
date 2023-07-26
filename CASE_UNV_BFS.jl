@@ -80,15 +80,15 @@ GC.gc()
 p = ScalarField(mesh)
 U = VectorField(mesh)
 
-Profile.Allocs.clear()
-Profile.Allocs.@profile sample_rate=1 begin Rx, Ry, Rp = isimple!(
-    mesh, velocity, nu, U, p, 
-    uxBCs, uyBCs, pBCs, UBCs,
-    # setup_U, setup_p, iterations, pref=0.0)
-    setup_U, setup_p, iterations)
-end
+# Profile.Allocs.clear()
+# Profile.Allocs.@profile sample_rate=1 begin Rx, Ry, Rp = isimple!(
+#     mesh, velocity, nu, U, p, 
+#     uxBCs, uyBCs, pBCs, UBCs,
+#     # setup_U, setup_p, iterations, pref=0.0)
+#     setup_U, setup_p, iterations)
+# end
 
-PProf.Allocs.pprof()
+# PProf.Allocs.pprof()
 
 write_vtk("results", mesh, ("U", U), ("p", p))
 

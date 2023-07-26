@@ -70,7 +70,7 @@ initialise!(p, 0.0)
 
 iterations = 1000
 Rx, Ry, Rp = isimple!(
-    mesh, velocity, nu, U, p, 
+    mesh, nu, U, p, 
     uxBCs, uyBCs, pBCs, UBCs,
     # setup_U, setup_p, iterations, pref=0.0)
     setup_U, setup_p, iterations)
@@ -92,7 +92,7 @@ Rx, Ry, Rp = isimple!(
 
 write_vtk("results", mesh, ("U", U), ("p", p))
 
-plot(; xlims=(0,103))
+plot(; xlims=(0,123))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
 plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
 plot!(1:length(Rp), Rp, yscale=:log10, label="p")

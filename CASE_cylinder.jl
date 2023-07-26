@@ -68,12 +68,12 @@ setup_p = SolverSetup(
 
 GC.gc()
 
-p = ScalarField(mesh)
-U = VectorField(mesh)
+initialise!(U, velocity)
+initialise!(p, 0.0)
 
 iterations = 500 # 84.86s
 Rx, Ry, Rp = isimple!(
-    mesh, velocity, nu, U, p, 
+    mesh, nu, U, p, 
     uxBCs, uyBCs, pBCs, UBCs,
     setup_U, setup_p, iterations)
 

@@ -1,7 +1,7 @@
 export isimple!, flux!
 
 function isimple!(
-    mesh::Mesh2{TI,TF}, velocity, nu, U, p, 
+    mesh::Mesh2{TI,TF}, nu, U, p, 
     uxBCs, uyBCs, pBCs, UBCs,
     setup_U, setup_p, iterations
     ; resume=true, pref=nothing) where {TI,TF}
@@ -59,7 +59,7 @@ function isimple!(
     solver_U = setup_U.solver(ux_eqn.A, ux_eqn.b)
 
     R_ux, R_uy, R_p  = SIMPLE_loop(
-    mesh::Mesh2{TI,TF}, velocity, U, p, ∇p,
+    mesh::Mesh2{TI,TF}, U, p, ∇p,
     uxBCs, uyBCs, pBCs, UBCs,
     setup_U, setup_p, iterations,
     ux_model, uy_model, p_model,
@@ -72,7 +72,7 @@ function isimple!(
 end # end function
 
 function SIMPLE_loop(
-    mesh::Mesh2{TI,TF}, velocity, U, p, ∇p,
+    mesh::Mesh2{TI,TF}, U, p, ∇p,
     uxBCs, uyBCs, pBCs, UBCs,
     setup_U, setup_p, iterations,
     model_ux, model_uy, model_p,
@@ -119,8 +119,6 @@ function SIMPLE_loop(
     #### IMPLEMENT A SENSIBLE INITIALISATION TO INCLUDE WARM START!!!!
     # Update initial (guessed) fields
 
-    @inbounds U.x.values .= velocity[1]
-    @inbounds U.y.values .= velocity[2]
     @inbounds ux0 .= U.x.values
     @inbounds uy0 .= U.y.values 
     @inbounds p0 .= p.values

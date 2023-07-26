@@ -9,32 +9,32 @@ function isimple!(
 
     # Pre-allocate fields
     @info "Preallocating fields..."
-    # ux = ScalarField(mesh)
-    # uy = ScalarField(mesh)
+    ux = ScalarField(mesh)
+    uy = ScalarField(mesh)
     ∇p = Grad{Linear}(p)
     mdotf = FaceScalarField(mesh)
     nuf = ConstantScalar(nu) # Implement constant field! Priority 1
     rDf = FaceScalarField(mesh)
     rDf.values .= 1.0
-    divHv = ScalarField(mesh)
+    divHv_new = ScalarField(mesh)
 
 
     # Define models 
     @info "Defining models..."
     ux_model = (
-        Divergence{Linear}(mdotf, U.x) - Laplacian{Linear}(nuf, U.x) 
+        Divergence{Linear}(mdotf, ux) - Laplacian{Linear}(nuf, ux) 
         == 
         Source(∇p.x)
     )
     
     uy_model = (
-        Divergence{Linear}(mdotf, U.y) - Laplacian{Linear}(nuf, U.y) 
+        Divergence{Linear}(mdotf, uy) - Laplacian{Linear}(nuf, uy) 
         == 
         Source(∇p.y)
     )
 
     p_model = (
-        Laplacian{Linear}(rDf, p) == Source(divHv)
+        Laplacian{Linear}(rDf, p) == Source(divHv_new)
     )
 
     # Define equations
@@ -87,9 +87,9 @@ function SIMPLE_loop(
     @info "Allocating working memory..."
 
     # Extract model variables
-    # ux = model_ux.terms[1].phi
+    ux = model_ux.terms[1].phi
     mdotf = model_ux.terms[1].flux
-    # uy = model_uy.terms[1].phi
+    uy = model_uy.terms[1].phi
     nuf = model_ux.terms[2].flux
     rDf = model_p.terms[1].flux 
     rDf.values .= 1.0
@@ -98,9 +98,12 @@ function SIMPLE_loop(
     # Define aux fields 
     n_cells = m = n = length(mesh.cells)
 
+    # U = VectorField(mesh)
     Uf = FaceVectorField(mesh)
+    # mdot = ScalarField(mesh)
     
     pf = FaceScalarField(mesh)
+    # ∇p = Grad{Midpoint}(p)
     gradpf = FaceVectorField(mesh)
     
     Hv = VectorField(mesh)
@@ -114,27 +117,25 @@ function SIMPLE_loop(
     uy0 = zeros(TF, n_cells)
     p0 = zeros(TF, n_cells)
 
-    # ux0 .= velocity[1]
-    # uy0 .= velocity[2]
-    # p0 .= zero(TF)
+    ux0 .= velocity[1]
+    uy0 .= velocity[2]
+    p0 .= zero(TF)
 
     
 
     #### NEED TO IMPLEMENT A SENSIBLE INITIALISATION TO INCLUDE WARM START!!!!
     # Update initial (guessed) fields
-    @turbo U.x.values .= velocity[1]
-    @turbo U.y.values .= velocity[2]
-    @turbo ux0 .= U.x.values
-    @turbo uy0 .= U.y.values
-    @turbo p0 .= p.values
-    # @inbounds ux.values .= velocity[1]
-    # @inbounds uy.values .= velocity[2]
-    # @turbo U.x .= ux.values #velocity[1]
-    # @turbo U.y .= uy.values# velocity[2]
-    # end
 
-    # volume  = volumes(mesh)
-    # rvolume  = 1.0./volume
+    @turbo ux0 .= ux.values
+    @turbo uy0 .= uy.values 
+    @turbo p0 .= p.values
+    @inbounds ux.values .= velocity[1]
+    @inbounds uy.values .= velocity[2]
+    @turbo U.x .= ux.values #velocity[1]
+    @turbo U.y .= uy.values# velocity[2]
+    # end
+    volume  = volumes(mesh)
+    rvolume  = 1.0./volume
     
     interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, UBCs)
@@ -150,6 +151,8 @@ function SIMPLE_loop(
     @info "Staring SIMPLE loops..."
     progress = Progress(iterations; dt=1.0, showspeed=true)
     @time for iteration ∈ 1:iterations
+    # for iteration ∈ 1:iterations
+
         
         source!(∇p, pf, p, pBCs)
         neg!(∇p)
@@ -159,14 +162,17 @@ function SIMPLE_loop(
         apply_boundary_conditions!(ux_eqn, model_ux, uxBCs)
         implicit_relaxation!(ux_eqn, ux0, setup_U.relax)
         update_preconditioner!(Pu)
+        # @time update_preconditioner!(Pu)
+
         run!(
             ux_eqn, model_ux, uxBCs, 
             setup_U, opA=opAx, opP=Pu.P, solver=solver_U
         )
-        residual!(R_ux, ux_eqn, U.x, opAx, solver_U, iteration)
+        residual!(R_ux, ux_eqn, ux, opAx, solver_U, iteration)
 
 
         @turbo @. uy_eqn.b = 0.0
+        # discretise!(uy_eqn, model_uy)
         apply_boundary_conditions!(uy_eqn, model_uy, uyBCs)
         implicit_relaxation!(uy_eqn, uy0, setup_U.relax)
         update_preconditioner!(Pu)
@@ -175,21 +181,21 @@ function SIMPLE_loop(
             uy_eqn, model_uy, uyBCs, 
             setup_U, opA=opAy, opP=Pu.P, solver=solver_U
         )
-        residual!(R_uy, uy_eqn, U.y, opAy, solver_U, iteration)
+        residual!(R_uy, uy_eqn, uy, opAy, solver_U, iteration)
 
 
-        # for i ∈ eachindex(ux0)
-        #     ux0[i] = U.x[i]
-        #     uy0[i] = U.y[i]
-        #     # U.x[i] = ux.values[i]
-        #     # U.y[i] = uy.values[i]
-        # end
+        @turbo for i ∈ eachindex(ux0)
+            ux0[i] = U.x[i]
+            uy0[i] = U.y[i]
+            # U.x[i] = ux.values[i]
+            # U.y[i] = uy.values[i]
+        end
         
         inverse_diagonal!(rD, ux_eqn)
         interpolate!(rDf, rD)
         remove_pressure_source!(ux_eqn, uy_eqn, ∇p, rD)
         # H!(Hv, U, ux_eqn, uy_eqn)
-        H!(Hv, U.x, U.y, ux_eqn, uy_eqn, rD)
+        H!(Hv, ux, uy, ux_eqn, uy_eqn, rD)
         
         # @turbo for i ∈ eachindex(ux0)
         #     U.x[i] = ux0[i]
@@ -203,6 +209,11 @@ function SIMPLE_loop(
         correct_boundaries!(Hvf, Hv, UBCs)
         flux!(Hv_flux, Hvf)
         div!(divHv_new, Hv_flux)
+        # @turbo @. divHv_new.values *= rvolume
+
+        # @inbounds @. rD.values *= volume
+        # interpolate!(rDf, rD)
+        # @inbounds @. rD.values *= rvolume
    
         discretise!(p_eqn, model_p)
         apply_boundary_conditions!(p_eqn, model_p, pBCs)
@@ -221,6 +232,7 @@ function SIMPLE_loop(
                 discretise!(p_eqn, model_p)
                 apply_boundary_conditions!(p_eqn, model_p, pBCs)
                 setReference!(p_eqn, pref, 1)
+                # grad!(∇p, pf, p, pBCs) 
                 interpolate!(gradpf, ∇p, p)
                 nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
                 correct!(p_eqn, model_p.terms.term1, pf)
@@ -233,28 +245,19 @@ function SIMPLE_loop(
         end
 
         # source!(∇p, pf, p, pBCs)
-        grad!(∇p, pf, p, pBCs) 
         
         correct_velocity!(U, Hv, ∇p, rD)
         interpolate!(Uf, U)
         correct_boundaries!(Uf, U, UBCs)
         flux!(mdotf, Uf)
 
-        for i ∈ eachindex(ux0)
-            ux0[i] = U.x[i]
-            uy0[i] = U.y[i]
-            # U.x[i] = ux.values[i]
-            # U.y[i] = uy.values[i]
-        end
-
         
         explicit_relaxation!(p, p0, setup_p.relax)
         residual!(R_p, p_eqn, p, opAp, solver_p, iteration)
 
+        # source!(∇p, pf, p, pBCs)
         grad!(∇p, pf, p, pBCs) 
-        # correct_velocity!(U.x, U.y, Hv, ∇p, rD)
-
-        
+        correct_velocity!(ux, uy, Hv, ∇p, rD)
 
         convergence = 1e-7
         if R_ux[iteration] <= convergence && R_uy[iteration] <= convergence && R_p[iteration] <= convergence
@@ -332,6 +335,8 @@ function calculate_residuals(
     divU::ScalarField, UxEqn::Equation, UyEqn::Equation, Ux::ScalarField, Uy::ScalarField)
     
     continuityError = abs(mean(-divU.values))
+    # UxResidual = norm(UxEqn.A*Ux.values - UxEqn.b)/Rx₀
+    # UyResidual = norm(UyEqn.A*Uy.values - UyEqn.b)/Ry₀
 
     solMean = mean(Ux.values)
     N = sum(
@@ -346,6 +351,9 @@ function calculate_residuals(
         abs.(UyEqn.b .- UyEqn.A*ones(length(UyEqn.b))*solMean)
         )
     UyResidual = (1/N)*sum(abs.(UyEqn.b - UyEqn.A*Uy.values))
+
+    # UxResidual = sum(sqrt.((UxEqn.b - UxEqn.A*Ux.values).^2))/length(UxEqn.b)/Rx₀
+    # UyResidual = sum(sqrt.((UyEqn.b - UyEqn.A*Uy.values).^2))/length(UyEqn.b)/Ry₀
 
     return continuityError, UxResidual, UyResidual
 end
@@ -369,7 +377,40 @@ function implicit_relaxation!(eqn::Equation{I,F}, field, alpha) where {I,F}
     end
 end
 
+# function correct_face_velocity!(Uf, p, )
+#     mesh = Uf.mesh
+#     (; cells, faces) = mesh
+#     nbfaces = total_boundary_faces(mesh)
+#     for fID ∈ (nbfaces + 1):length(faces)
+#         face = faces[fID]
+#         gradp = 0.0
+#         Uf.x = nothing
+#         ################
+#         # CONTINUE 
+#         ################
+#     end
+# end
+
 volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
+
+# function correct_boundary_Hvf!(Hvf, ux, uy, ∇pf, UBCs)
+#     mesh = ux.mesh
+#     for BC ∈ UBCs
+#         if typeof(BC) <: Neumann
+#             bi = boundary_index(mesh, BC.name)
+#             boundary = mesh.boundaries[bi]
+#             correct_flux_boundary!(BC, phif, phi, boundary, faces)
+#         end
+#     end
+# end
+
+# function correct_flux_boundary!(
+#     BC::Neumann, phif::FaceScalarField{I,F}, phi, boundary, faces) where {I,F}
+#     (; facesID, cellsID) = boundary
+#     for fID ∈ facesID
+#         phif.values[fID] = BC.value 
+#     end
+# end
 
 function inverse_diagonal!(rD::ScalarField{I,F}, eqn) where {I,F}
     (; mesh, values) = rD
@@ -378,19 +419,27 @@ function inverse_diagonal!(rD::ScalarField{I,F}, eqn) where {I,F}
     @inbounds for i ∈ eachindex(values)
         D = view(A, i, i)[1]
         volume = cells[i].volume
+        # DV = D/volume
         values[i] = volume/D
+        # values[i] = 1.0/DV
+        # values[i] = 1.0/view(A, i, i)[1]
     end
 end
 
 function explicit_relaxation!(phi, phi0, alpha)
+    # @. phi.values = alpha*phi.values + (1.0 - alpha)*phi0
+    # @. phi0 = phi.values
     values = phi.values
     @inbounds @simd for i ∈ eachindex(values)
+        # values[i] = alpha*values[i] + (1.0 - alpha)*phi0[i]
         values[i] = phi0[i] + alpha*(values[i] - phi0[i])
         phi0[i] = values[i]
     end
 end
 
 function correct_velocity!(U, Hv, ∇p, rD)
+    # @. U.x = Hv.x - ∇p.x*rD.values
+    # @. U.y = Hv.y - ∇p.y*rD.values
     Ux = U.x; Uy = U.y; Hvx = Hv.x; Hvy = Hv.y
     dpdx = ∇p.x; dpdy = ∇p.y; rDvalues = rD.values
     @inbounds @simd for i ∈ eachindex(Ux)
@@ -401,6 +450,8 @@ function correct_velocity!(U, Hv, ∇p, rD)
 end
 
 function correct_velocity!(ux, uy, Hv, ∇p, rD)
+    # @. ux.values = Hv.x - ∇p.x*rD.values
+    # @. uy.values = Hv.y - ∇p.y*rD.values
     u = ux.values; v = uy.values; Hvx = Hv.x; Hvy = Hv.y
     dpdx = ∇p.x; dpdy = ∇p.y; rDvalues = rD.values
     @inbounds @simd for i ∈ eachindex(u)
@@ -411,6 +462,8 @@ function correct_velocity!(ux, uy, Hv, ∇p, rD)
 end
 
 function neg!(∇p)
+    # ∇p.x .*= -1.0
+    # ∇p.y .*= -1.0
     dpdx = ∇p.x; dpdy = ∇p.y
     @inbounds for i ∈ eachindex(dpdx)
         dpdx[i] *= -1.0
@@ -419,9 +472,14 @@ function neg!(∇p)
 end
 
 function remove_pressure_source!(ux_eqn, uy_eqn, ∇p, rD)
+    # @. ux_eqn.b -= ∇p.x/rD.values
+    # @. uy_eqn.b -= ∇p.y/rD.values
     dpdx, dpdy, rD = ∇p.x, ∇p.y, rD.values
     bx, by = ux_eqn.b, uy_eqn.b
     @inbounds for i ∈ eachindex(bx)
+        # rDi = rD[i]
+        # bx[i] -= dpdx[i]/rDi
+        # by[i] -= dpdy[i]/rDi
         bx[i] -= dpdx[i]
         by[i] -= dpdy[i]
     end
@@ -452,6 +510,12 @@ function H!(Hv::VectorField, v::VectorField{I,F}, xeqn, yeqn, rD) where {I,F}
             sumx += Ax[cID,nID]*vx[nID]
             sumy += Ay[cID,nID]*vy[nID]
         end
+        # rD = 1.0/Ax[cID, cID]
+        # x[cID] = (bx[cID] - sumx)*rD
+        # y[cID] = (by[cID] - sumy)*rD
+        # z[cID] = zero(F)
+
+        # rD_temp = rD.values[cID]/cells[cID].volume # works
         D = view(Ax, cID, cID)[1] # Good for now (add check to use max of Ax or Ay)
         rD_temp = 1.0/D
         x[cID] = (bx[cID] - sumx)*rD_temp
@@ -479,7 +543,12 @@ function H!(
             sumx += Ax[cID,nID]*ux_vals[nID]
             sumy += Ay[cID,nID]*uy_vals[nID]
         end
+        # rD = 1.0/Ax[cID, cID]
+        # x[cID] = (bx[cID] - sumx)*rD
+        # y[cID] = (by[cID] - sumy)*rD
+        # z[cID] = zero(F)
 
+        # rD_temp = rD.values[cID]/cells[cID].volume # works
         D = view(Ax, cID, cID)[1] # Good for now (add check to use max of Ax or Ay)
         rD_temp = 1.0/D
         x[cID] = (bx[cID] - sumx)*rD_temp

@@ -9,8 +9,8 @@ function isimple!(
 
     # Pre-allocate fields
     @info "Preallocating fields..."
-    ux = ScalarField(mesh)
-    uy = ScalarField(mesh)
+    # ux = ScalarField(mesh)
+    # uy = ScalarField(mesh)
     ∇p = Grad{Linear}(p)
     mdotf = FaceScalarField(mesh)
     nuf = ConstantScalar(nu) # Implement constant field! Priority 1
@@ -22,13 +22,13 @@ function isimple!(
     # Define models 
     @info "Defining models..."
     ux_model = (
-        Divergence{Linear}(mdotf, ux) - Laplacian{Linear}(nuf, ux) 
+        Divergence{Linear}(mdotf, U.x) - Laplacian{Linear}(nuf, U.x) 
         == 
         Source(∇p.x)
     )
     
     uy_model = (
-        Divergence{Linear}(mdotf, uy) - Laplacian{Linear}(nuf, uy) 
+        Divergence{Linear}(mdotf, U.y) - Laplacian{Linear}(nuf, U.y) 
         == 
         Source(∇p.y)
     )
@@ -87,9 +87,9 @@ function SIMPLE_loop(
     @info "Allocating working memory..."
 
     # Extract model variables
-    ux = model_ux.terms[1].phi
+    # ux = model_ux.terms[1].phi
     mdotf = model_ux.terms[1].flux
-    uy = model_uy.terms[1].phi
+    # uy = model_uy.terms[1].phi
     nuf = model_ux.terms[2].flux
     rDf = model_p.terms[1].flux 
     rDf.values .= 1.0
@@ -114,22 +114,27 @@ function SIMPLE_loop(
     uy0 = zeros(TF, n_cells)
     p0 = zeros(TF, n_cells)
 
-    ux0 .= velocity[1]
-    uy0 .= velocity[2]
-    p0 .= zero(TF)
+    # ux0 .= velocity[1]
+    # uy0 .= velocity[2]
+    # p0 .= zero(TF)
 
     
 
     #### NEED TO IMPLEMENT A SENSIBLE INITIALISATION TO INCLUDE WARM START!!!!
     # Update initial (guessed) fields
-
-    @turbo ux0 .= ux.values
-    @turbo uy0 .= uy.values 
+    @turbo U.x.values .= velocity[1]
+    @turbo U.y.values .= velocity[2]
+    @turbo ux0 .= U.x.values
+    @turbo uy0 .= U.y.values
     @turbo p0 .= p.values
-    @inbounds ux.values .= velocity[1]
-    @inbounds uy.values .= velocity[2]
-    @turbo U.x .= ux.values #velocity[1]
-    @turbo U.y .= uy.values# velocity[2]
+    # @inbounds ux.values .= velocity[1]
+    # @inbounds uy.values .= velocity[2]
+    # @turbo U.x .= ux.values #velocity[1]
+    # @turbo U.y .= uy.values# velocity[2]
+    # end
+
+    # volume  = volumes(mesh)
+    # rvolume  = 1.0./volume
     
     interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, UBCs)
@@ -158,7 +163,7 @@ function SIMPLE_loop(
             ux_eqn, model_ux, uxBCs, 
             setup_U, opA=opAx, opP=Pu.P, solver=solver_U
         )
-        residual!(R_ux, ux_eqn, ux, opAx, solver_U, iteration)
+        residual!(R_ux, ux_eqn, U.x, opAx, solver_U, iteration)
 
 
         @turbo @. uy_eqn.b = 0.0
@@ -170,18 +175,29 @@ function SIMPLE_loop(
             uy_eqn, model_uy, uyBCs, 
             setup_U, opA=opAy, opP=Pu.P, solver=solver_U
         )
-        residual!(R_uy, uy_eqn, uy, opAy, solver_U, iteration)
+        residual!(R_uy, uy_eqn, U.y, opAy, solver_U, iteration)
 
 
-        @turbo for i ∈ eachindex(ux0)
-            ux0[i] = U.x[i]
-            uy0[i] = U.y[i]
-        end
+        # for i ∈ eachindex(ux0)
+        #     ux0[i] = U.x[i]
+        #     uy0[i] = U.y[i]
+        #     # U.x[i] = ux.values[i]
+        #     # U.y[i] = uy.values[i]
+        # end
         
         inverse_diagonal!(rD, ux_eqn)
         interpolate!(rDf, rD)
         remove_pressure_source!(ux_eqn, uy_eqn, ∇p, rD)
-        H!(Hv, ux, uy, ux_eqn, uy_eqn, rD)
+        # H!(Hv, U, ux_eqn, uy_eqn)
+        H!(Hv, U.x, U.y, ux_eqn, uy_eqn, rD)
+        
+        # @turbo for i ∈ eachindex(ux0)
+        #     U.x[i] = ux0[i]
+        #     U.y[i] = uy0[i]
+        # end
+
+        # div!(divHv, UBCs) # 7 allocations
+        # @turbo @. divHv.values *= rvolume
         
         interpolate!(Hvf, Hv)
         correct_boundaries!(Hvf, Hv, UBCs)
@@ -216,17 +232,29 @@ function SIMPLE_loop(
             end
         end
 
+        # source!(∇p, pf, p, pBCs)
+        grad!(∇p, pf, p, pBCs) 
+        
         correct_velocity!(U, Hv, ∇p, rD)
         interpolate!(Uf, U)
         correct_boundaries!(Uf, U, UBCs)
         flux!(mdotf, Uf)
+
+        for i ∈ eachindex(ux0)
+            ux0[i] = U.x[i]
+            uy0[i] = U.y[i]
+            # U.x[i] = ux.values[i]
+            # U.y[i] = uy.values[i]
+        end
 
         
         explicit_relaxation!(p, p0, setup_p.relax)
         residual!(R_p, p_eqn, p, opAp, solver_p, iteration)
 
         grad!(∇p, pf, p, pBCs) 
-        correct_velocity!(ux, uy, Hv, ∇p, rD)
+        # correct_velocity!(U.x, U.y, Hv, ∇p, rD)
+
+        
 
         convergence = 1e-7
         if R_ux[iteration] <= convergence && R_uy[iteration] <= convergence && R_p[iteration] <= convergence

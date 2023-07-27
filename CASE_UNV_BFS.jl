@@ -58,20 +58,20 @@ Rx, Ry, Rp = isimple!(
     # setup_U, setup_p, iterations, pref=0.0)
     setup_U, setup_p, iterations)
 
-using Profile, PProf
-GC.gc()
+# using Profile, PProf
+# GC.gc()
 
-initialise!(U, velocity)
-initialise!(p, 0.0)
+# initialise!(U, velocity)
+# initialise!(p, 0.0)
 
-Profile.Allocs.clear()
-Profile.Allocs.@profile sample_rate=1 begin Rx, Ry, Rp = isimple!(
-    mesh, nu, U, p,
-    # setup_U, setup_p, iterations, pref=0.0)
-    setup_U, setup_p, iterations)
-end
+# Profile.Allocs.clear()
+# Profile.Allocs.@profile sample_rate=1 begin Rx, Ry, Rp = isimple!(
+#     mesh, nu, U, p,
+#     # setup_U, setup_p, iterations, pref=0.0)
+#     setup_U, setup_p, iterations)
+# end
 
-PProf.Allocs.pprof()
+# PProf.Allocs.pprof()
 
 write_vtk("results", mesh, ("U", U), ("p", p))
 

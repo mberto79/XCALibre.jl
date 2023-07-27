@@ -20,36 +20,22 @@ noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
 Re = (0.2*velocity[1])/nu
 
-UBCs = ( 
-    Dirichlet(U, :inlet, velocity),
-    Neumann(U, :outlet, 0.0),
-    Dirichlet(U, :cylinder, noSlip),
-    Neumann(U, :bottom, 0.0),
-    Neumann(U, :top, 0.0)
+U = assign(
+    U, 
+    Dirichlet(:inlet, velocity),
+    Neumann(:outlet, 0.0),
+    Dirichlet(:cylinder, noSlip),
+    Neumann(:bottom, 0.0),
+    Neumann(:top, 0.0)
 )
 
-uxBCs = (
-    Dirichlet(U, :inlet, velocity[1]),
-    Neumann(U, :outlet, 0.0),
-    Dirichlet(U, :cylinder, noSlip[1]),
-    Neumann(U, :bottom, 0.0),
-    Neumann(U, :top, 0.0)
-)
-
-uyBCs = (
-    Dirichlet(U, :inlet, velocity[2]),
-    Neumann(U, :outlet, 0.0),
-    Dirichlet(U, :cylinder, noSlip[2]),
-    Neumann(U, :bottom, 0.0),
-    Neumann(U, :top, 0.0)
-)
-
-pBCs = (
-    Neumann(p, :inlet, 0.0),
-    Dirichlet(p, :outlet, 0.0),
-    Neumann(p, :cylinder, 0.0),
-    Neumann(p, :bottom, 0.0),
-    Neumann(p, :top, 0.0)
+p = assign(
+    p,
+    Neumann(:inlet, 0.0),
+    Dirichlet(:outlet, 0.0),
+    Neumann(:cylinder, 0.0),
+    Neumann(:bottom, 0.0),
+    Neumann(:top, 0.0)
 )
 
 setup_U = SolverSetup(
@@ -61,7 +47,7 @@ setup_U = SolverSetup(
 
 setup_p = SolverSetup(
     solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
-    relax       = 0.2,
+    relax       = 0.3,
     itmax       = 100,
     rtol        = 1e-1
 )
@@ -74,7 +60,6 @@ initialise!(p, 0.0)
 iterations = 500 # 84.86s
 Rx, Ry, Rp = isimple!(
     mesh, nu, U, p, 
-    uxBCs, uyBCs, pBCs, UBCs,
     setup_U, setup_p, iterations)
 
 write_vtk("results", mesh, ("U", U), ("p", p))

@@ -6,6 +6,6 @@ using StaticArrays
 
 using FVM_1D.Mesh
 
-include("0_types.jl")
+include("Fields_0_types.jl")
 
 end

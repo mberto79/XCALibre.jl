@@ -7,7 +7,7 @@ include("Discretise/Discretise.jl")
 include("Preconditioners/Preconditioners.jl")
 # include("Model/Models.jl")
 include("Calculate/Calculate.jl")
-include("Solve/Solvers.jl")
+include("Solve/Solve.jl")
 include("VTK/VTK.jl")
 include("UNV/UNV.jl")
 
@@ -19,7 +19,7 @@ using Reexport
 @reexport using FVM_1D.Preconditioners
 @reexport using FVM_1D.Calculate
 # @reexport using FVM_1D.Models
-@reexport using FVM_1D.Solvers
+@reexport using FVM_1D.Solve
 @reexport using FVM_1D.VTK
 @reexport using FVM_1D.UNV
 

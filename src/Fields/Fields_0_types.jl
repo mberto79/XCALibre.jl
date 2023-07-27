@@ -54,11 +54,12 @@ end
 Base.length(s::AbstractScalarField) = length(s.values)
 Base.eachindex(s::AbstractScalarField) = eachindex(s.values)
 
-struct VectorField{I,F} <: AbstractVectorField
+struct VectorField{I,F,BC} <: AbstractVectorField
     x::ScalarField{I,F}
     y::ScalarField{I,F}
     z::ScalarField{I,F}
     mesh::Mesh2{I,F}
+    BCs::BC
 end
 VectorField(mesh::Mesh2{I,F}) where {I,F} = begin
     ncells = length(mesh.cells)
@@ -66,7 +67,9 @@ VectorField(mesh::Mesh2{I,F}) where {I,F} = begin
         ScalarField(zeros(F, ncells), mesh),
         ScalarField(zeros(F, ncells), mesh), 
         ScalarField(zeros(F, ncells), mesh), 
-        mesh)
+        mesh,
+        ()
+        )
 end
 
 struct FaceVectorField{I,F} <: AbstractVectorField

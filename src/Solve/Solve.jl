@@ -1,4 +1,4 @@
-module Solvers
+module Solve
 
 using LoopVectorization
 using LinearAlgebra
@@ -13,7 +13,7 @@ using FVM_1D.Discretise
 using FVM_1D.Preconditioners
 using FVM_1D.Calculate
 
-include("Solvers_1_api.jl")
-include("Solvers_2_SIMPLE.jl")
+include("Solve_1_api.jl")
+include("Solve_2_SIMPLE.jl")
 
 end

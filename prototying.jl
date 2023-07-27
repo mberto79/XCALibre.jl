@@ -2,13 +2,7 @@ using Plots
 
 using FVM_1D
 
-using LinearAlgebra
-using SparseArrays
 using Krylov
-using LinearOperators
-using ILUZero
-using LoopVectorization
-using BenchmarkTools
 
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
@@ -21,6 +15,47 @@ U = VectorField(mesh)
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
+
+B = Dirichlet(U, :top, [0.0, 0.0, 0.0])
+
+set_boundaries(U,
+    Dirichlet(U, :inlet, velocity),
+    Neumann(U, :outlet, 0.0),
+    Dirichlet(U, :wall, [0.0, 0.0, 0.0]),
+    Dirichlet(U, :top, [0.0, 0.0, 0.0])
+    )
+
+set_boundaries(
+    U,
+    Dirichlet(:inlet, velocity),
+    Neumann(:outlet, 0.0),
+    Dirichlet(:wall, [0.0, 0.0, 0.0]),
+    Dirichlet(:top, [0.0, 0.0, 0.0])
+)
+
+using Accessors
+
+U = assign(U,
+    # Dirichlet(U, :inlet, velocity)
+    Dirichlet(:inlet, velocity),
+    # Neumann(U, :outlet, 0.0),
+    Dirichlet(:wall, [0.0, 0.0, 0.0])
+    # Dirichlet(U, :top, [0.0, 0.0, 0.0])
+)
+
+assign(vec::VectorField, args...) = begin
+    boundaries = vec.mesh.boundaries
+    for arg ∈ args
+        idx = boundary_index(boundaries, arg.ID)
+        println("calling abstraction: ", idx)
+        if arg.value <: AbstractVector
+        xBCs = (vec.BCs..., Dirichlet(idx, arg.value))
+        yBCs = (vec.BCs..., Dirichlet(idx, arg.value))
+        zBCs = (vec.BCs..., Dirichlet(idx, arg.value))
+        @reset vec.BCs = (xBCs, yBCs, zBCs)
+    end
+    return vec
+end
 
 UBCs = (
     Dirichlet(U, :inlet, velocity),
@@ -54,150 +89,36 @@ pBCs = (
 )
 
 setup_U = SolverSetup(
-    solver      = BicgstabSolver,
+    solver      = GmresSolver, # BicgstabSolver, GmresSolver
     relax       = 0.8,
     itmax       = 100,
     rtol        = 1e-1
 )
 
 setup_p = SolverSetup(
-    solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
-    relax       = 0.2,
+    solver      = GmresSolver, # GmresSolver, FomSolver, DiomSolver
+    relax       = 0.3,
     itmax       = 100,
-    rtol        = 1e-2
+    rtol        = 1e-1
 )
 
 using Profile, PProf
 
 GC.gc()
 
-p = ScalarField(mesh)
-U = VectorField(mesh)
+initialise!(U, velocity)
+initialise!(p, 0.0)
 
+iterations = 1000
+Rx, Ry, Rp = isimple!(
+    mesh, nu, U, p, 
+    uxBCs, uyBCs, pBCs, UBCs,
+    # setup_U, setup_p, iterations, pref=0.0)
+    setup_U, setup_p, iterations)
 
-# Pre-allocate fields
-ux = ScalarField(mesh)
-uy = ScalarField(mesh)
-∇p = Grad{Linear}(p)
-mdotf = FaceScalarField(mesh)
-nuf = ConstantScalar(nu) # Implement constant field! Priority 1
-rDf = FaceScalarField(mesh)
-divHv_new = ScalarField(mesh)
+write_vtk("results", mesh, ("U", U), ("p", p))
 
-
-# Define models 
-ux_model = (
-    Divergence{Linear}(mdotf, ux) - Laplacian{Linear}(nuf, ux) 
-    == 
-    Source(∇p.x)
-)
-
-uy_model = (
-    Divergence{Linear}(mdotf, uy) - Laplacian{Linear}(nuf, uy) 
-    == 
-    Source(∇p.y)
-)
-
-p_model = (
-    Laplacian{Linear}(rDf, p) == Source(divHv_new)
-)
-
-# Extract model variables
-ux = ux_model.terms[1].phi
-mdotf = ux_model.terms[1].flux
-uy = uy_model.terms[1].phi
-nuf = ux_model.terms[2].flux
-rDf = p_model.terms[1].flux 
-rDf.values .= 1.0
-divHv_new = ScalarField(p_model.sources[1].field, mesh)
-
-# Define aux fields 
-n_cells = m = n = length(mesh.cells)
-
-# U = VectorField(mesh)
-Uf = FaceVectorField(mesh)
-# mdot = ScalarField(mesh)
-
-pf = FaceScalarField(mesh)
-# ∇p = Grad{Midpoint}(p)
-gradpf = FaceVectorField(mesh)
-
-Hv = VectorField(mesh)
-Hvf = FaceVectorField(mesh)
-Hv_flux = FaceScalarField(mesh)
-divHv = Div(Hv, FaceVectorField(mesh), zeros(Float64, n_cells), mesh)
-rD = ScalarField(mesh)
-
-# Define equations
-ux_eqn  = Equation(mesh)
-uy_eqn  = Equation(mesh)
-p_eqn    = Equation(mesh)
-
-n_cells = m = n = length(mesh.cells)
-
-# Define preconditioners and linear operators
-opAx = LinearOperator(ux_eqn.A)
-opAy = LinearOperator(uy_eqn.A)
-opAp = LinearOperator(p_eqn.A)
-
-discretise!(ux_eqn, ux_model)
-apply_boundary_conditions!(ux_eqn, ux_model, uxBCs)
-Pu = set_preconditioner(NormDiagonal(), ux_eqn, ux_model, uxBCs)
-Pp = set_preconditioner(LDL(), p_eqn, p_model, pBCs)
-
-A = ux_eqn.A
-Da = Diagonal(A)
-m, n = size(A)
-
-Pu = set_preconditioner(DILU(), ux_eqn, ux_model, uxBCs)
-
-Da = zeros(eltype(A), m)
-b = ones(eltype(A), m)
-
-# @benchmark dilu_diagonal2!(Pu) # 11.615 ms, 23 ms, 48.687 μs, 14.14 μs
-
-@time extract_diagonal!(Da, Pu.storage.Di, A)
-Da
-@time dilu_diagonal2!(Pu)
-Da
-DDa = Diagonal(Da)
-# D_dilu = Pu.storage.D
-D_dilu = 1.0./Pu.storage.D
-DD = Diagonal(D_dilu)
-# rDD = Diagonal(1.0./D_dilu)
-La =sparse(LowerTriangular(A - DDa))
-Ua = sparse(UpperTriangular(A - DDa)) #- DD1
-LL = (La + DD)*inv(DD)
-# LL = (La + DD)*rDD
-UU = (DD + Ua)
-Q = LL*UU
-Diagonal(Q).diag
-
-@benchmark c = forward_substitution($A, $D0, $b) # 5.264 ms
-@benchmark c = forward_substitution($Pu, $b) # 16 μs
-@time c = forward_substitution(Pu, b)
-
-LL*c
-
-@benchmark $d = backward_substitution($Pu, $c) # 6.2 ms
-@benchmark $d = backward_substitution($Pu, $c) # 18 μs
-c
-@time d = backward_substitution(Pu, b)
-d
-UU*d
-
-c = zeros(eltype(b), length(b))
-xx = zeros(eltype(b), length(b))
-b
-left_div!(xx, Pu.storage, b)
-
-xx
-Q*xx
-
-c .= LL\b 
-xx .= UU\c
-Q*xx
-
-for i ∈ 4:2
-    println(i)
-end
+plot(; xlims=(0,123))
+plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
+plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
+plot!(1:length(Rp), Rp, yscale=:log10, label="p")

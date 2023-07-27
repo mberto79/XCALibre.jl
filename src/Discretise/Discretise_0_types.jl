@@ -139,17 +139,23 @@ function Dirichlet(ID::I, value::V) where {I<:Integer,V}
     end
 end
 
-struct Neumann{I<:Integer,V} <: AbstractBoundary
+struct Neumann{I,V} <: AbstractBoundary
     ID::I 
     value::V 
 end
 
-Dirichlet(field::AbstractField, name::Symbol, value) = begin
-    boundaries = field.mesh.boundaries
-    idx = boundary_index(boundaries, name)
-    println("calling abstraction: ", idx)
-    Dirichlet(idx, value)
-end
+# Dirichlet(field::AbstractField, name::Symbol, value) = begin
+#     boundaries = field.mesh.boundaries
+#     idx = boundary_index(boundaries, name)
+#     println("calling abstraction: ", idx)
+# end
+
+# Dirichlet(field::AbstractField, name::Symbol, value) = begin
+#     boundaries = field.mesh.boundaries
+#     idx = boundary_index(boundaries, name)
+#     println("calling abstraction: ", idx)
+#     @reset field.BCs = (field.BCs..., Dirichlet(idx, value))
+# end
 
 Neumann(field::AbstractField, name::Symbol, value) = begin
     boundaries = field.mesh.boundaries

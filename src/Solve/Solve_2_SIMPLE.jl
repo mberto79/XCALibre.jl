@@ -289,7 +289,7 @@ function residual!(Residual, equation, phi, opA, solver, iteration)
     nothing
 end
 
-function flux!(phif::FaceScalarField{TI,TF}, psif::FaceVectorField{TI,TF}) where {TI,TF}
+function flux!(phif::FaceScalarField, psif::FaceVectorField) 
     (; mesh, values) = phif
     (; faces) = mesh 
     @inbounds for fID ∈ eachindex(faces)

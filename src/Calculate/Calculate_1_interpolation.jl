@@ -24,7 +24,7 @@ export interpolate!
 end
 
 function adjust_boundary!(
-    BC::Dirichlet, phif::FaceScalarField, phi, boundary, faces) where {I,F}
+    BC::Dirichlet, phif::FaceScalarField, phi, boundary, faces)
     (; facesID, cellsID) = boundary
     @inbounds for fID ∈ facesID
         phif.values[fID] = BC.value 
@@ -32,7 +32,7 @@ function adjust_boundary!(
 end
 
 function adjust_boundary!(
-    BC::Neumann, phif::FaceScalarField, phi, boundary, faces) where {I,F}
+    BC::Neumann, phif::FaceScalarField, phi, boundary, faces)
     (;facesID, cellsID) = boundary
     @inbounds for fi ∈ eachindex(facesID)
         fID = facesID[fi]

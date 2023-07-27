@@ -53,7 +53,7 @@ initialise!(U, velocity)
 initialise!(p, 0.0)
 
 iterations = 1000
-Rx, Ry, Rp = isimple!(
+Rx, Ry, Rp = isimple!( # 123 its, 4.68k allocs
     mesh, nu, U, p,
     # setup_U, setup_p, iterations, pref=0.0)
     setup_U, setup_p, iterations)

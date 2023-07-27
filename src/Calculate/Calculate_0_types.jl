@@ -3,33 +3,41 @@ export get_scheme
 
 # Gradient explicit operator
 
-struct Grad{S<:AbstractScheme, I, F}
-    phi::ScalarField{I,F}
+struct Grad{S<:AbstractScheme, I, F,SF<:ScalarField,M<:Mesh2}
+    phi::SF
     x::Vector{F}
     y::Vector{F}
     z::Vector{F}
     # phif::FaceScalarField{I,F} 
     correctors::I
     correct::Bool
-    mesh::Mesh2{I,F}
+    mesh::M
 end
-Grad{S}(phi::ScalarField{I,F}) where {S,I,F} = begin
+Grad{S}(phi::ScalarField) where S= begin
     mesh = phi.mesh
     (; cells) = mesh
     ncells = length(cells)
+    F = eltype(mesh.nodes[1].coords)
+    I = eltype(mesh.nodes[1].neighbourCells)
+    SF = typeof(phi)
+    M = typeof(mesh)
     gradx = zeros(F, ncells)
     grady = zeros(F, ncells)
     gradz = zeros(F, ncells)
-    Grad{S,I,F}(phi, gradx, grady, gradz, one(I), false, mesh)
+    Grad{S,I,F,SF,M}(phi, gradx, grady, gradz, one(I), false, mesh)
 end
-Grad{S}(phi::ScalarField{I,F}, correctors::I) where {S,I,F} = begin 
+Grad{S}(phi::ScalarField, correctors::Integer) where S = begin 
     mesh = phi.mesh
     (; cells) = mesh
     ncells = length(cells)
+    F = eltype(mesh.nodes[1].coords)
+    I = eltype(mesh.nodes[1].neighbourCells)
+    SF = typeof(phi)
+    M = typeof(mesh)
     gradx = zeros(F, ncells)
     grady = zeros(F, ncells)
     gradz = zeros(F, ncells)
-    Grad{S,I,F}(phi, gradx, grady, gradz, correctors, true, mesh)
+    Grad{S,I,F,SF,M}(phi, gradx, grady, gradz, correctors, true, mesh)
 end
 get_scheme(term::Grad{S,I,F}) where {S,I,F} = S
 # (grad::Grad{S,I,F})(i::I) where {S,I,F} = SVector{3,F}(grad.x[i], grad.y[i], grad.z[i])

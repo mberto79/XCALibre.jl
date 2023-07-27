@@ -45,9 +45,10 @@ function div!(div::Div{I,F}, BCs) where {I,F}
     end
 end
 
-function div!(phi::ScalarField, phif::FaceScalarField{I,F}) where {I,F}
+function div!(phi::ScalarField, phif::FaceScalarField)
     (; mesh, values) = phif
     (; cells, faces) = mesh
+    F = eltype(mesh.nodes[1].coords)
 
     for ci ∈ eachindex(cells)
         (; facesID, nsign, volume) = cells[ci]

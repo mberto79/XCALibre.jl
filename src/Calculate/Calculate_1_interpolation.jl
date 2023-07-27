@@ -24,7 +24,7 @@ export interpolate!
 end
 
 function adjust_boundary!(
-    BC::Dirichlet, phif::FaceScalarField{I,F}, phi, boundary, faces) where {I,F}
+    BC::Dirichlet, phif::FaceScalarField, phi, boundary, faces) where {I,F}
     (; facesID, cellsID) = boundary
     @inbounds for fID ∈ facesID
         phif.values[fID] = BC.value 
@@ -32,7 +32,7 @@ function adjust_boundary!(
 end
 
 function adjust_boundary!(
-    BC::Neumann, phif::FaceScalarField{I,F}, phi, boundary, faces) where {I,F}
+    BC::Neumann, phif::FaceScalarField, phi, boundary, faces) where {I,F}
     (;facesID, cellsID) = boundary
     @inbounds for fi ∈ eachindex(facesID)
         fID = facesID[fi]
@@ -43,8 +43,8 @@ function adjust_boundary!(
 end
 
 function adjust_boundary!( 
-    BC::Dirichlet, psif::FaceVectorField{I,F}, psi::VectorField{I,F}, boundary, faces
-    ) where {I,F}
+    BC::Dirichlet, psif::FaceVectorField, psi::VectorField, boundary, faces
+    )
 
     (; x, y, z) = psif
     (; facesID) = boundary
@@ -57,8 +57,8 @@ function adjust_boundary!(
 end
 
 function adjust_boundary!( 
-    BC::Neumann, psif::FaceVectorField{I,F}, psi::VectorField{I,F}, boundary, faces
-    ) where {I,F}
+    BC::Neumann, psif::FaceVectorField, psi::VectorField, boundary, faces
+    ) 
 
     (; x, y, z) = psif
     (; facesID, cellsID) = boundary
@@ -79,7 +79,7 @@ end
 
 # SCALAR INTERPOLATION
 
-function interpolate!(phif::FaceScalarField{I,F}, phi::ScalarField{I,F}) where {I,F}
+function interpolate!(phif::FaceScalarField, phi::ScalarField) 
     vals = phi.values 
     fvals = phif.values
     mesh = phi.mesh 
@@ -97,8 +97,8 @@ function interpolate!(phif::FaceScalarField{I,F}, phi::ScalarField{I,F}) where {
 end
 
 function interpolate!(
-    ::Type{Midpoint}, phif::FaceScalarField{I,F}, phi::ScalarField{I,F}
-    ) where {I,F}
+    ::Type{Midpoint}, phif::FaceScalarField, phi::ScalarField
+    )
     vals = phi.values 
     fvals = phif.values
     mesh = phi.mesh 
@@ -118,7 +118,7 @@ end
 
 # VECTOR INTERPOLATION
 
-function interpolate!(psif::FaceVectorField{I,F}, psi::VectorField{I,F}) where {I,F}
+function interpolate!(psif::FaceVectorField, psi::VectorField)
     (; x, y, z) = psif # must extend to 3D
     mesh = psi.mesh
     faces = mesh.faces
@@ -140,8 +140,8 @@ end
 # GRADIENT INTERPOLATION
 
 function interpolate!(
-    gradf::FaceVectorField{TI,TF}, grad::Grad{S,TI,TF}, phi
-    ) where {S,TI,TF}
+    gradf::FaceVectorField, grad::Grad, phi
+    )
     (; mesh, x, y, z) = gradf
     (; cells, faces) = mesh
     (; values) = phi
@@ -199,7 +199,7 @@ end
 ############ OLD LINEAR GRADIENT INTERPOLATION IMPLEMENTATION #############
 
 
-function interpolate!(::Type{Linear}, gradf::FaceVectorField{I,F}, grad, BCs) where {I,F}
+function interpolate!(::Type{Linear}, gradf::FaceVectorField, grad, BCs)
     (; mesh, x, y, z) = gradf
     (; cells, faces) = mesh
     nbfaces = total_boundary_faces(mesh)
@@ -284,7 +284,7 @@ function correct_gradient_interpolation!(::Type{Linear}, gradf, phi)
 end
 
 function correct_boundary!( # Another way is to use the boundary value and geometry to calc
-    BC::Dirichlet, gradf::FaceVectorField{I,F}, grad, boundary, faces) where {I,F}
+    BC::Dirichlet, gradf::FaceVectorField, grad, boundary, faces)
     (; mesh, x, y, z) = gradf
     (; facesID) = boundary
     @inbounds for fID ∈ facesID
@@ -302,7 +302,7 @@ function correct_boundary!( # Another way is to use the boundary value and geome
 end
 
 function correct_boundary!(
-    BC::Neumann, gradf::FaceVectorField{I,F}, grad, boundary, faces) where {I,F}
+    BC::Neumann, gradf::FaceVectorField, grad, boundary, faces)
     (; mesh, x, y, z) = gradf
     (; facesID) = boundary
     @inbounds for fID ∈ facesID

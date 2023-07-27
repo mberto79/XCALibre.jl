@@ -16,35 +16,21 @@ velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
 
-UBCs = (
-    Dirichlet(U, :inlet, velocity),
-    Neumann(U, :outlet, 0.0),
-    Dirichlet(U, :wall, [0.0, 0.0, 0.0]),
-    Dirichlet(U, :top, [0.0, 0.0, 0.0])
+U = assign(
+    U,
+    Dirichlet(:inlet, velocity),
+    Neumann(:outlet, 0.0),
+    Dirichlet(:wall, [0.0, 0.0, 0.0]),
+    Dirichlet(:top, [0.0, 0.0, 0.0])
     # Neumann(U, :top, 0.0)
     )
 
-uxBCs = (
-    Dirichlet(U, :inlet, velocity[1]),
-    Neumann(U, :outlet, 0.0),
-    Dirichlet(U, :wall, 0.0),
-    Dirichlet(U, :top, 0.0)
-    # Neumann(:top, 0.0)
-)
-
-uyBCs = (
-    Dirichlet(U, :inlet, velocity[2]),
-    Neumann(U, :outlet, 0.0),
-    Dirichlet(U, :wall, 0.0),
-    Dirichlet(U, :top, 0.0)
-    # Neumann(:top, 0.0)
-)
-
-pBCs = (
-    Neumann(p, :inlet, 0.0),
-    Dirichlet(p, :outlet, 0.0),
-    Neumann(p, :wall, 0.0),
-    Neumann(p, :top, 0.0)
+p = assign(
+    p,
+    Neumann(:inlet, 0.0),
+    Dirichlet(:outlet, 0.0),
+    Neumann(:wall, 0.0),
+    Neumann(:top, 0.0)
 )
 
 setup_U = SolverSetup(
@@ -61,8 +47,6 @@ setup_p = SolverSetup(
     rtol        = 1e-1
 )
 
-using Profile, PProf
-
 GC.gc()
 
 initialise!(U, velocity)
@@ -70,25 +54,24 @@ initialise!(p, 0.0)
 
 iterations = 1000
 Rx, Ry, Rp = isimple!(
-    mesh, nu, U, p, 
-    uxBCs, uyBCs, pBCs, UBCs,
+    mesh, nu, U, p,
     # setup_U, setup_p, iterations, pref=0.0)
     setup_U, setup_p, iterations)
 
-# GC.gc()
+using Profile, PProf
+GC.gc()
 
-# p = ScalarField(mesh)
-# U = VectorField(mesh)
+initialise!(U, velocity)
+initialise!(p, 0.0)
 
-# Profile.Allocs.clear()
-# Profile.Allocs.@profile sample_rate=1 begin Rx, Ry, Rp = isimple!(
-#     mesh, velocity, nu, U, p, 
-#     uxBCs, uyBCs, pBCs, UBCs,
-#     # setup_U, setup_p, iterations, pref=0.0)
-#     setup_U, setup_p, iterations)
-# end
+Profile.Allocs.clear()
+Profile.Allocs.@profile sample_rate=1 begin Rx, Ry, Rp = isimple!(
+    mesh, nu, U, p,
+    # setup_U, setup_p, iterations, pref=0.0)
+    setup_U, setup_p, iterations)
+end
 
-# PProf.Allocs.pprof()
+PProf.Allocs.pprof()
 
 write_vtk("results", mesh, ("U", U), ("p", p))
 

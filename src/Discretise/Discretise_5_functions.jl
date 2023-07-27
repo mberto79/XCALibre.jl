@@ -1,7 +1,7 @@
 export apply_boundary_conditions!
 
 @generated function apply_boundary_conditions!(
-    equation::Equation{I,F}, model, BCs) where {I,F}
+    equation::E, model, BCs::B) where {E<:Equation,B}
 
     # Unpack terms that make up the model (not sources)
     nTerms = model.parameters[3]
@@ -38,7 +38,7 @@ export apply_boundary_conditions!
     end
 end
 
-@generated function boundary_indices(mesh::Mesh2{TI,TF}, BCs) where {TI,TF}
+@generated function boundary_indices(mesh::M, BCs::B) where {M<:Mesh2,B}
     unpacked_BCs = []
     for i ∈ 1:length(BCs.parameters)
         unpack = quote

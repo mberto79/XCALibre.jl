@@ -26,13 +26,14 @@ Base.getindex(v::ConstantVector, i::Integer) = SVector{3, eltype(v.x)}(v.x[i], v
 
 # FIELDS 
 
-struct ScalarField{I,F} <: AbstractScalarField
+struct ScalarField{I,F,BC} <: AbstractScalarField
     values::Vector{F}
     mesh::Mesh2{I,F}
+    BCs::BC
 end
 ScalarField(mesh::Mesh2{I,F}) where {I,F} =begin
     ncells  = length(mesh.cells)
-    ScalarField(zeros(F,ncells), mesh)
+    ScalarField(zeros(F,ncells), mesh, ())
 end
 
 struct FaceScalarField{I,F} <: AbstractScalarField
@@ -54,21 +55,21 @@ end
 Base.length(s::AbstractScalarField) = length(s.values)
 Base.eachindex(s::AbstractScalarField) = eachindex(s.values)
 
-struct VectorField{I,F,BC} <: AbstractVectorField
-    x::ScalarField{I,F}
-    y::ScalarField{I,F}
-    z::ScalarField{I,F}
-    mesh::Mesh2{I,F}
+struct VectorField{S1,S2,S3,M<:Mesh2,BC} <: AbstractVectorField
+    x::S1
+    y::S2
+    z::S3
+    mesh::M
     BCs::BC
 end
 VectorField(mesh::Mesh2{I,F}) where {I,F} = begin
     ncells = length(mesh.cells)
     VectorField(
-        ScalarField(zeros(F, ncells), mesh),
-        ScalarField(zeros(F, ncells), mesh), 
-        ScalarField(zeros(F, ncells), mesh), 
+        ScalarField(zeros(F, ncells), mesh, ()),
+        ScalarField(zeros(F, ncells), mesh, ()), 
+        ScalarField(zeros(F, ncells), mesh, ()), 
         mesh,
-        ()
+        () # to hold x, y, z and combined BCs
         )
 end
 

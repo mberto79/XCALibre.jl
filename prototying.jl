@@ -18,44 +18,17 @@ Re = velocity[1]*0.1/nu
 
 B = Dirichlet(U, :top, [0.0, 0.0, 0.0])
 
-set_boundaries(U,
-    Dirichlet(U, :inlet, velocity),
-    Neumann(U, :outlet, 0.0),
-    Dirichlet(U, :wall, [0.0, 0.0, 0.0]),
-    Dirichlet(U, :top, [0.0, 0.0, 0.0])
-    )
+using Accessors
+using LinearAlgebra
 
-set_boundaries(
-    U,
+U = assign(U,
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:wall, [0.0, 0.0, 0.0]),
     Dirichlet(:top, [0.0, 0.0, 0.0])
 )
 
-using Accessors
 
-U = assign(U,
-    # Dirichlet(U, :inlet, velocity)
-    Dirichlet(:inlet, velocity),
-    # Neumann(U, :outlet, 0.0),
-    Dirichlet(:wall, [0.0, 0.0, 0.0])
-    # Dirichlet(U, :top, [0.0, 0.0, 0.0])
-)
-
-assign(vec::VectorField, args...) = begin
-    boundaries = vec.mesh.boundaries
-    for arg ∈ args
-        idx = boundary_index(boundaries, arg.ID)
-        println("calling abstraction: ", idx)
-        if arg.value <: AbstractVector
-        xBCs = (vec.BCs..., Dirichlet(idx, arg.value))
-        yBCs = (vec.BCs..., Dirichlet(idx, arg.value))
-        zBCs = (vec.BCs..., Dirichlet(idx, arg.value))
-        @reset vec.BCs = (xBCs, yBCs, zBCs)
-    end
-    return vec
-end
 
 UBCs = (
     Dirichlet(U, :inlet, velocity),

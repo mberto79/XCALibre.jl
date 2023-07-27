@@ -37,15 +37,15 @@ Base.getindex(grad::Grad{S,I,F}, i::Integer) where {S,I,F} = SVector{3,F}(grad.x
 
 # Divergence explicit operator
 
-struct Div{I,F}
-    vector::VectorField{I,F}
-    face_vector::FaceVectorField{I,F}
+struct Div{VF<:VectorField,FVF<:FaceVectorField,F,M}
+    vector::VF
+    face_vector::FVF
     values::Vector{F}
-    mesh::Mesh2{I,F}
+    mesh::M
 end
-Div(vector::VectorField{I,F}) where {I,F}= begin
+Div(vector::VectorField) = begin
     mesh = vector.mesh
     face_vector = FaceVectorField(mesh)
     values = zeros(F, length(mesh.cells))
-    Div{I,F}(vector, face_vector, values, mesh)
+    Div(vector, face_vector, values, mesh)
 end

@@ -7,7 +7,7 @@ export AbstractScheme, Constant, Linear, Upwind, Midpoint
 export Model, Equation 
 export AbstractBoundary, AbstractDirichlet, AbstractNeumann
 export Dirichlet, Neumann 
-export initialise!
+export initialise!, assign
 
 # ABSTRACT TYPES 
 
@@ -144,22 +144,49 @@ struct Neumann{I,V} <: AbstractBoundary
     value::V 
 end
 
-# Dirichlet(field::AbstractField, name::Symbol, value) = begin
-#     boundaries = field.mesh.boundaries
-#     idx = boundary_index(boundaries, name)
-#     println("calling abstraction: ", idx)
-# end
+assign(vec::VectorField, args...) = begin
+    boundaries = vec.mesh.boundaries
+    @reset vec.x.BCs = ()
+    @reset vec.y.BCs = ()
+    @reset vec.z.BCs = ()
+    @reset vec.BCs = ()
+    for arg ∈ args
+        bc_type = Base.typename(typeof(arg)).wrapper
+        idx = boundary_index(boundaries, arg.ID)
+        println("calling abstraction: ", idx)
+        if typeof(arg.value) <: AbstractVector
+            length(arg.value) == 3 || throw("Vector must have 3 components")
+            xBCs = (vec.x.BCs..., bc_type(idx, arg.value[1]))
+            yBCs = (vec.y.BCs..., bc_type(idx, arg.value[2]))
+            zBCs = (vec.z.BCs..., bc_type(idx, arg.value[3]))
+            uBCs = (vec.BCs..., bc_type(idx, arg.value))
+            @reset vec.x.BCs = xBCs
+            @reset vec.y.BCs = yBCs
+            @reset vec.z.BCs = zBCs
+            @reset vec.BCs = uBCs
+        else
+            xBCs = (vec.x.BCs..., bc_type(idx, arg.value))
+            yBCs = (vec.y.BCs..., bc_type(idx, arg.value))
+            zBCs = (vec.z.BCs..., bc_type(idx, arg.value))
+            uBCs = (vec.BCs..., bc_type(idx, arg.value))
+            @reset vec.x.BCs = xBCs
+            @reset vec.y.BCs = yBCs
+            @reset vec.z.BCs = zBCs
+            @reset vec.BCs = uBCs
+        end
+    end
+    return vec
+end
 
-# Dirichlet(field::AbstractField, name::Symbol, value) = begin
-#     boundaries = field.mesh.boundaries
-#     idx = boundary_index(boundaries, name)
-#     println("calling abstraction: ", idx)
-#     @reset field.BCs = (field.BCs..., Dirichlet(idx, value))
-# end
-
-Neumann(field::AbstractField, name::Symbol, value) = begin
-    boundaries = field.mesh.boundaries
-    idx = boundary_index(boundaries, name)
-    println("calling abstraction: ", idx)
-    Neumann(idx, value)
+assign(scalar::ScalarField, args...) = begin
+    boundaries = scalar.mesh.boundaries
+    @reset scalar.BCs = ()
+    for arg ∈ args
+        bc_type = Base.typename(typeof(arg)).wrapper
+        idx = boundary_index(boundaries, arg.ID)
+        println("calling abstraction: ", idx)
+        BCs = (scalar.BCs..., bc_type(idx, arg.value))
+        @reset scalar.BCs = BCs
+    end
+    return scalar
 end

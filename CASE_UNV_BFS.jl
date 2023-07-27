@@ -4,7 +4,6 @@ using FVM_1D
 
 using Krylov
 
-
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
@@ -22,7 +21,7 @@ U = assign(
     Neumann(:outlet, 0.0),
     Dirichlet(:wall, [0.0, 0.0, 0.0]),
     Dirichlet(:top, [0.0, 0.0, 0.0])
-    # Neumann(U, :top, 0.0)
+    # Neumann(:top, 0.0)
     )
 
 p = assign(
@@ -58,9 +57,18 @@ Rx, Ry, Rp = isimple!( # 123 its, 4.68k allocs
     # setup_U, setup_p, iterations, pref=0.0)
     setup_U, setup_p, iterations)
 
-# using Profile, PProf
-# GC.gc()
+write_vtk("results", mesh, ("U", U), ("p", p))
 
+plot(; xlims=(0,123))
+plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
+plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
+plot!(1:length(Rp), Rp, yscale=:log10, label="p")
+
+# # PROFILING CODE
+
+# using Profile, PProf
+
+# GC.gc()
 # initialise!(U, velocity)
 # initialise!(p, 0.0)
 
@@ -72,10 +80,3 @@ Rx, Ry, Rp = isimple!( # 123 its, 4.68k allocs
 # end
 
 # PProf.Allocs.pprof()
-
-write_vtk("results", mesh, ("U", U), ("p", p))
-
-plot(; xlims=(0,123))
-plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p")

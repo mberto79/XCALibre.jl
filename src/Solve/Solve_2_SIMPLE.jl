@@ -38,12 +38,6 @@ function isimple!(
     uy_eqn  = Equation(mesh)
     p_eqn    = Equation(mesh)
 
-    # Define preconditioners and linear operators
-
-    opAx = LinearOperator(ux_eqn.A)
-    opAy = LinearOperator(uy_eqn.A)
-    opAp = LinearOperator(p_eqn.A)
-
     @info "Initialising preconditioners..."
 
     # Pu = set_preconditioner(NormDiagonal(), ux_eqn, ux_model, uxBCs)
@@ -61,7 +55,7 @@ function isimple!(
     mesh::Mesh2{TI,TF}, U, p, ∇p,
     setup_U, setup_p, iterations,
     ux_model, uy_model, p_model,
-    opAx, opAy, opAp, Pu, Pp,
+    Pu, Pp,
     solver_U, solver_p,
     ux_eqn, uy_eqn, p_eqn
     ; resume=true, pref=nothing)
@@ -72,21 +66,21 @@ end # end function
 function SIMPLE_loop(
     mesh::Mesh2{TI,TF}, U, p, ∇p,
     setup_U, setup_p, iterations,
-    model_ux, model_uy, model_p,
-    opAx, opAy, opAp, Pu, Pp,
+    ux_model, uy_model, p_model,
+    Pu, Pp,
     solver_U, solver_p,
     ux_eqn, uy_eqn, p_eqn
     ; resume=true, pref=nothing) where {TI,TF}
 
-    @info "Allocating working memory..."
-
+    
     # Extract model variables
-
-    mdotf = model_ux.terms[1].flux
-    nuf = model_ux.terms[2].flux
-    rDf = model_p.terms[1].flux 
-    rDf.values .= 1.0
-    divHv_new = ScalarField(model_p.sources[1].field, mesh, p.BCs)
+    
+    mdotf = get_flux(ux_model, 1)
+    rDf = get_flux(p_model, 1)
+    # nuf = ux_model.terms[2].flux
+    divHv_new = ScalarField(p_model.sources[1].field, mesh, p.BCs)
+    
+    @info "Allocating working memory..."
 
     # Define aux fields 
 
@@ -98,7 +92,6 @@ function SIMPLE_loop(
     Hv = VectorField(mesh)
     Hvf = FaceVectorField(mesh)
     Hv_flux = FaceScalarField(mesh)
-    divHv = Div(Hv, FaceVectorField(mesh), zeros(TF, n_cells), mesh)
     rD = ScalarField(mesh)
 
     # Pre-allocate auxiliary variables
@@ -135,29 +128,23 @@ function SIMPLE_loop(
         source!(∇p, pf, p, p.BCs)
         neg!(∇p)
 
-        discretise!(ux_eqn, model_ux)
-        @turbo @. uy_eqn.A.nzval = ux_eqn.A.nzval
-        apply_boundary_conditions!(ux_eqn, model_ux, U.x.BCs)
+        discretise!(ux_eqn, ux_model)
+        @turbo @. uy_eqn.A.nzval = ux_eqn.A.nzval # Avoid rediscretising
+        apply_boundary_conditions!(ux_eqn, ux_model, U.x.BCs)
         implicit_relaxation!(ux_eqn, ux0, setup_U.relax)
         update_preconditioner!(Pu)
 
-        run!(
-            ux_eqn, model_ux, U.x.BCs, 
-            setup_U, opA=opAx, opP=Pu.P, solver=solver_U
-        )
-        residual!(R_ux, ux_eqn, U.x, opAx, solver_U, iteration)
+        run!(ux_eqn, ux_model, setup_U, opP=Pu.P, solver=solver_U)
+        residual!(R_ux, ux_eqn, U.x, iteration)
 
         @turbo @. uy_eqn.b = 0.0
-        # discretise!(uy_eqn, model_uy)
-        apply_boundary_conditions!(uy_eqn, model_uy, U.y.BCs)
+        # discretise!(uy_eqn, uy_model)
+        apply_boundary_conditions!(uy_eqn, uy_model, U.y.BCs)
         implicit_relaxation!(uy_eqn, uy0, setup_U.relax)
         update_preconditioner!(Pu)
 
-        run!(
-            uy_eqn, model_uy, U.y.BCs, 
-            setup_U, opA=opAy, opP=Pu.P, solver=solver_U
-        )
-        residual!(R_uy, uy_eqn, U.y, opAy, solver_U, iteration)
+        run!(uy_eqn, uy_model, setup_U, opP=Pu.P, solver=solver_U)
+        residual!(R_uy, uy_eqn, U.y, iteration)
         
         inverse_diagonal!(rD, ux_eqn)
         interpolate!(rDf, rD)
@@ -169,17 +156,14 @@ function SIMPLE_loop(
         flux!(Hv_flux, Hvf)
         div!(divHv_new, Hv_flux)
    
-        discretise!(p_eqn, model_p)
-        apply_boundary_conditions!(p_eqn, model_p, p.BCs)
+        discretise!(p_eqn, p_model)
+        apply_boundary_conditions!(p_eqn, p_model, p.BCs)
         setReference!(p_eqn, pref, 1)
         update_preconditioner!(Pp)
-        run!( 
-            p_eqn, model_p, p.BCs, 
-            setup_p, opA=opAp, opP=Pp.P, solver=solver_p
-        )
+        run!( p_eqn, p_model, setup_p, opP=Pp.P, solver=solver_p)
 
         explicit_relaxation!(p, p0, setup_p.relax)
-        residual!(R_p, p_eqn, p, opAp, solver_p, iteration)
+        residual!(R_p, p_eqn, p, iteration)
 
         grad!(∇p, pf, p, p.BCs) 
         # source!(∇p, pf, p, pBCs)
@@ -188,17 +172,14 @@ function SIMPLE_loop(
         if correct
             ncorrectors = 1
             for i ∈ 1:ncorrectors
-                discretise!(p_eqn, model_p)
-                apply_boundary_conditions!(p_eqn, model_p, p.BCs)
+                discretise!(p_eqn, p_model)
+                apply_boundary_conditions!(p_eqn, p_model, p.BCs)
                 setReference!(p_eqn, pref, 1)
                 # grad!(∇p, pf, p, pBCs) 
                 interpolate!(gradpf, ∇p, p)
                 nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
-                correct!(p_eqn, model_p.terms.term1, pf)
-                run!(
-                    p_eqn, model_p, pBCs, 
-                    setup_p, opA=opAp, opP=opPP, solver=solver_p
-                )
+                correct!(p_eqn, p_model.terms.term1, pf)
+                run!(p_eqn, p_model, setup_p, opP=Pp.P, solver=solver_p)
                 grad!(∇p, pf, p, pBCs) 
             end
         end
@@ -215,7 +196,10 @@ function SIMPLE_loop(
 
         convergence = 1e-7
 
-        if R_ux[iteration] <= convergence && R_uy[iteration] <= convergence && R_p[iteration] <= convergence
+        if (R_ux[iteration] <= convergence && 
+            R_uy[iteration] <= convergence && 
+            R_p[iteration] <= convergence)
+
             print(
                 """
                 \n\n\n\n\n
@@ -236,12 +220,12 @@ function SIMPLE_loop(
     return R_ux, R_uy, R_p 
 end
 
-function residual!(Residual, equation, phi, opA, solver, iteration)
+function residual!(Residual, equation, phi, iteration)
     (; A, b, R, Fx) = equation
     values = phi.values
     # Option 1
     
-    mul!(Fx, opA, values)
+    mul!(Fx, A, values)
     @inbounds @. R = abs(Fx - b)
     # res = sqrt(mean(R.^2))/abs(mean(values))
     res = sqrt(mean(R.^2))/norm(b)
@@ -289,7 +273,7 @@ function residual!(Residual, equation, phi, opA, solver, iteration)
     nothing
 end
 
-function flux!(phif::FaceScalarField, psif::FaceVectorField) 
+function flux!(phif::FS, psif::FV) where {FS<:FaceScalarField,FV<:FaceVectorField}
     (; mesh, values) = phif
     (; faces) = mesh 
     @inbounds for fID ∈ eachindex(faces)
@@ -299,7 +283,7 @@ function flux!(phif::FaceScalarField, psif::FaceVectorField)
     end
 end
 
-function implicit_relaxation!(eqn::Equation{I,F}, field, alpha) where {I,F}
+function implicit_relaxation!(eqn::E, field, alpha) where E<:Equation
     (; A, b) = eqn
     @inbounds for i ∈ eachindex(b)
         A[i,i] /= alpha
@@ -309,7 +293,7 @@ end
 
 volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 
-function inverse_diagonal!(rD::ScalarField{I,F}, eqn) where {I,F}
+function inverse_diagonal!(rD::S, eqn) where S<:ScalarField
     (; mesh, values) = rD
     cells = mesh.cells
     A = eqn.A
@@ -380,7 +364,7 @@ function remove_pressure_source!(ux_eqn, uy_eqn, ∇p, rD)
     end
 end
 
-function setReference!(pEqn::Equation{TI,TF}, pRef, cellID::TI) where {TI,TF}
+function setReference!(pEqn::E, pRef, cellID) where E<:Equation
     if pRef === nothing
         return nothing
     else

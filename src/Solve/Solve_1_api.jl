@@ -21,19 +21,19 @@ SolverSetup(
 end
 
 function run!(
-    equation::Equation{Ti,Tf}, phiModel, BCs, setup; 
-    opA, opP, solver
+    equation::Equation{Ti,Tf}, phiModel, setup; 
+    opP, solver
     ) where {Ti,Tf}
     
     @inbounds equation.b .+= phiModel.sources[1].field # should be moved out to "add_sources" function using the "Model" struct
 
-    (; relax, itmax, atol, rtol) = setup
-    (; A, b, R, Fx) = equation
-    (; phi) = phiModel.terms[1]
-    (; values, mesh) = phi
+    (; itmax, atol, rtol) = setup
+    (; A, b) = equation
+    phi = get_phi(phiModel)
+    values = phi.values
 
     solve!(
-        solver, opA, b, values; 
+        solver, A, b, values; 
         M=opP, itmax=itmax, atol=atol, rtol=rtol
         )
     # println(solver.stats.niter)

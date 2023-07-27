@@ -1,18 +1,8 @@
-
-export AbstractOperator, AbstractSource   
-export Operator, Source, Src
-export Laplacian, Divergence
 export AbstractScheme, Constant, Linear, Upwind, Midpoint
-
-export Model, Equation 
 export AbstractBoundary, AbstractDirichlet, AbstractNeumann
+export Equation
 export Dirichlet, Neumann 
-export initialise!, assign
-
-# ABSTRACT TYPES 
-
-abstract type AbstractSource end
-abstract type AbstractOperator end
+export assign
 
 # SUPPORTED DISCRETISATION SCHEMES 
 
@@ -22,58 +12,7 @@ struct Linear <: AbstractScheme end
 struct Upwind <: AbstractScheme end
 struct Midpoint <: AbstractScheme end
 
-# OPERATORS
-
-# Base Operator
-
-struct Operator{F,P,S,T}
-    flux::F
-    phi::P 
-    sign::S
-    type::T
-end
-
-# operators
-
-struct Laplacian{T} <: AbstractOperator end
-struct Divergence{T} <: AbstractOperator end
-
-# constructors
-
-Laplacian{T}(flux, phi) where T = Operator(
-    flux, phi, 1, Laplacian{T}()
-    )
-
-Divergence{T}(flux, phi) where T = Operator(
-    flux, phi, 1, Divergence{T}()
-    )
-
-# SOURCES
-
-# Base Source
-struct Src{F,S,T}
-    field::F 
-    sign::S 
-    type::T
-end
-
-# Source types
-
-struct Source <: AbstractSource end
-
-Source(f::AbstractVector) = Src(f, 1, typeof(f))
-Source(f::ScalarField) = Src(f.values, 1, typeof(f))
-# Source(f::Number) = Src(f.values, 1, typeof(f)) # To implement!!
-
-# MODEL TYPE
-struct Model{T,S, TN, SN}
-    terms::T
-    sources::S
-end
-Model{TN,SN}(terms::T, sources::S) where {T,S,TN,SN} = begin
-    Model{T,S,TN,SN}(terms, sources)
-end
-
+# Linear system matrix equation
 
 struct Equation{Ti,Tf}
     A::SparseMatrixCSC{Tf,Ti}

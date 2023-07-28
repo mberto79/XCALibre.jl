@@ -93,8 +93,8 @@ FaceVectorField(mesh::Mesh2) = begin
 end
 
 Base.getindex(v::AbstractVectorField, i::Integer) = SVector{3, eltype(v.x)}(v.x[i], v.y[i], v.z[i])
-Base.setindex!(v::AbstractVectorField, x::AbstractVector, i::Integer) = begin
-    length(x) == 3 || throw("Vectors must have 3 components")
+Base.setindex!(v::AbstractVectorField, x::SVector{3, T}, i::Integer) where T= begin
+    # length(x) == 3 || throw("Vectors must have 3 components")
     v.x[i] = x[1]
     v.y[i] = y[2]
     v.z[i] = z[3]

@@ -1,7 +1,8 @@
-function green_gauss!(grad::Grad{S,I,F}, phif; source=false) where {S,I,F}
+function green_gauss!(grad::Grad, phif; source=false)
     (; x, y, z) = grad
     (; mesh, values) = phif
     (; cells, faces) = mesh
+    F = eltype(mesh.nodes[1].coords)
     for ci ∈ eachindex(cells)
         (; facesID, nsign, volume) = cells[ci]
         res = SVector{3,F}(0.0,0.0,0.0)

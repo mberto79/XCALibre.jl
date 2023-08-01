@@ -3,11 +3,11 @@ export get_scheme
 
 # Gradient explicit operator
 
-struct Grad{S<:AbstractScheme, I, F,SF<:ScalarField,M<:Mesh2}
-    phi::SF
-    x::Vector{F}
-    y::Vector{F}
-    z::Vector{F}
+struct Grad{S<:AbstractScheme,F,X,Y,Z,I,M}
+    phi::F
+    x::X
+    y::Y
+    z::Z
     # phif::FaceScalarField{I,F} 
     correctors::I
     correct::Bool
@@ -17,15 +17,20 @@ Grad{S}(phi::ScalarField) where S= begin
     mesh = phi.mesh
     (; cells) = mesh
     ncells = length(cells)
-    F = eltype(mesh.nodes[1].coords)
+    ell = eltype(mesh.nodes[1].coords)
+    gradx = zeros(ell, ncells)
+    grady = zeros(ell, ncells)
+    gradz = zeros(ell, ncells)
+    F = typeof(phi)
+    X = Y = Z = typeof(gradx)
     I = eltype(mesh.nodes[1].neighbourCells)
-    SF = typeof(phi)
     M = typeof(mesh)
-    gradx = zeros(F, ncells)
-    grady = zeros(F, ncells)
-    gradz = zeros(F, ncells)
-    Grad{S,I,F,SF,M}(phi, gradx, grady, gradz, one(I), false, mesh)
+    Grad{S,F,X,Y,Z,I,M}(phi, gradx, grady, gradz, one(I), false, mesh)
 end
+Grad{S}(vec::VectorField) where S = begin
+    println("Definition for vector")
+end
+
 Grad{S}(phi::ScalarField, correctors::Integer) where S = begin 
     mesh = phi.mesh
     (; cells) = mesh

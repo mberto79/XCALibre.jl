@@ -57,7 +57,7 @@ GC.gc()
 initialise!(U, velocity)
 initialise!(p, 0.0)
 
-iterations = 1000 # 84.86s
+iterations = 500 # 84.86s
 Rx, Ry, Rp = isimple!(
     mesh, nu, U, p, 
     setup_U, setup_p, iterations)

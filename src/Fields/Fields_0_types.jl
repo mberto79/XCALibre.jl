@@ -1,8 +1,8 @@
-export AbstractField, AbstractScalarField, AbstractVectorField
+export AbstractField
 export ConstantScalar, ConstantVector
-export ScalarField, FaceScalarField
-export VectorField, FaceVectorField
-export TensorField
+export AbstractScalarField, ScalarField, FaceScalarField
+export AbstractVectorField, VectorField, FaceVectorField
+export AbstractTensorField, TensorField
 export initialise!
 
 # ABSTRACT TYPES
@@ -113,6 +113,21 @@ struct TensorField{S1,S2,S3,S4,S5,S6,S7,S8,S9,M} <: AbstractTensorField
     zy::S8
     zz::S9
     mesh::M
+end
+
+TensorField(mesh::Mesh2) = begin
+    TensorField(
+        ScalarField(mesh),
+        ScalarField(mesh),
+        ScalarField(mesh),
+        ScalarField(mesh),
+        ScalarField(mesh),
+        ScalarField(mesh),
+        ScalarField(mesh),
+        ScalarField(mesh),
+        ScalarField(mesh),
+        mesh
+    )
 end
 
 Base.getindex(T::TensorField, i::Integer) = begin

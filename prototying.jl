@@ -11,6 +11,18 @@ mesh = build_mesh(mesh_file, scale=0.001)
 p = ScalarField(mesh)
 U = VectorField(mesh)
 
+
+function (v::VectorField)(s::Symbol)
+    getproperty(v, s)
+end
+
+function test(v, s)
+     v(s)
+     nothing
+end
+
+@time test(U,:x)
+
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu

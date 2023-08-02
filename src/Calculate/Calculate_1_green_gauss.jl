@@ -1,5 +1,5 @@
 function green_gauss!(grad::Grad, phif; source=false)
-    (; x, y, z) = grad
+    (; x, y, z) = grad.result
     (; mesh, values) = phif
     (; cells, faces) = mesh
     F = eltype(mesh.nodes[1].coords)

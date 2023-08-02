@@ -19,13 +19,13 @@ function isimple!(
     ux_model = (
         Divergence{Linear}(mdotf, U.x) - Laplacian{Linear}(nuf, U.x) 
         == 
-        Source(∇p.x)
+        Source(∇p.result.x)
     )
     
     uy_model = (
         Divergence{Linear}(mdotf, U.y) - Laplacian{Linear}(nuf, U.y) 
         == 
-        Source(∇p.y)
+        Source(∇p.result.y)
     )
 
     p_model = (
@@ -324,10 +324,10 @@ function explicit_relaxation!(phi, phi0, alpha)
 end
 
 function correct_velocity!(U, Hv, ∇p, rD)
-    # @. U.x = Hv.x - ∇p.x*rD.values
-    # @. U.y = Hv.y - ∇p.y*rD.values
+    # @. U.x = Hv.x - ∇p.result.x*rD.values
+    # @. U.y = Hv.y - ∇p.result.y*rD.values
     Ux = U.x; Uy = U.y; Hvx = Hv.x; Hvy = Hv.y
-    dpdx = ∇p.x; dpdy = ∇p.y; rDvalues = rD.values
+    dpdx = ∇p.result.x; dpdy = ∇p.result.y; rDvalues = rD.values
     @inbounds @simd for i ∈ eachindex(Ux)
         rDvalues_i = rDvalues[i]
         Ux[i] = Hvx[i] - dpdx[i]*rDvalues_i
@@ -336,10 +336,10 @@ function correct_velocity!(U, Hv, ∇p, rD)
 end
 
 function correct_velocity!(ux, uy, Hv, ∇p, rD)
-    # @. ux.values = Hv.x - ∇p.x*rD.values
-    # @. uy.values = Hv.y - ∇p.y*rD.values
+    # @. ux.values = Hv.x - ∇p.result.x*rD.values
+    # @. uy.values = Hv.y - ∇p.result.y*rD.values
     u = ux.values; v = uy.values; Hvx = Hv.x; Hvy = Hv.y
-    dpdx = ∇p.x; dpdy = ∇p.y; rDvalues = rD.values
+    dpdx = ∇p.result.x; dpdy = ∇p.result.y; rDvalues = rD.values
     @inbounds @simd for i ∈ eachindex(u)
         rDvalues_i = rDvalues[i]
         u[i] = Hvx[i] - dpdx[i]*rDvalues_i
@@ -348,7 +348,7 @@ function correct_velocity!(ux, uy, Hv, ∇p, rD)
 end
 
 function neg!(∇p)
-    dpdx = ∇p.x; dpdy = ∇p.y
+    dpdx = ∇p.result.x; dpdy = ∇p.result.y
     @inbounds for i ∈ eachindex(dpdx)
         dpdx[i] *= -1.0
         dpdy[i] *= -1.0
@@ -356,9 +356,9 @@ function neg!(∇p)
 end
 
 function remove_pressure_source!(ux_eqn, uy_eqn, ∇p, rD)
-    # @. ux_eqn.b -= ∇p.x/rD.values
-    # @. uy_eqn.b -= ∇p.y/rD.values
-    dpdx, dpdy, rD = ∇p.x, ∇p.y, rD.values
+    # @. ux_eqn.b -= ∇p.result.x/rD.values
+    # @. uy_eqn.b -= ∇p.result.y/rD.values
+    dpdx, dpdy, rD = ∇p.result.x, ∇p.result.y, rD.values
     bx, by = ux_eqn.b, uy_eqn.b
     @inbounds for i ∈ eachindex(bx)
         # rDi = rD[i]

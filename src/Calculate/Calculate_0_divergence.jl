@@ -1,4 +1,20 @@
+export Div
 export div! 
+
+# Define Divergence type and functionality
+
+struct Div{VF<:VectorField,FVF<:FaceVectorField,F,M}
+    vector::VF
+    face_vector::FVF
+    values::Vector{F}
+    mesh::M
+end
+Div(vector::VectorField) = begin
+    mesh = vector.mesh
+    face_vector = FaceVectorField(mesh)
+    values = zeros(F, length(mesh.cells))
+    Div(vector, face_vector, values, mesh)
+end
 
 
 # function grad!(grad::Grad{Linear,I,F}, phif, phi, BCs; source=false) where {I,F}

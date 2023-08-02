@@ -2,6 +2,7 @@ export AbstractField, AbstractScalarField, AbstractVectorField
 export ConstantScalar, ConstantVector
 export ScalarField, FaceScalarField
 export VectorField, FaceVectorField
+export TensorField
 export initialise!
 
 # ABSTRACT TYPES
@@ -9,6 +10,7 @@ export initialise!
 abstract type AbstractField end
 abstract type AbstractScalarField <: AbstractField end
 abstract type AbstractVectorField <: AbstractField end
+abstract type AbstractTensorField <: AbstractField end
 
 # CONSTANT FIELDS 
 
@@ -57,7 +59,7 @@ end
 Base.length(s::AbstractScalarField) = length(s.values)
 Base.eachindex(s::AbstractScalarField) = eachindex(s.values)
 
-struct VectorField{S1,S2,S3,M<:Mesh2,BC} <: AbstractVectorField
+struct VectorField{S1<:ScalarField,S2,S3,M<:Mesh2,BC} <: AbstractVectorField
     x::S1
     y::S2
     z::S3
@@ -76,10 +78,10 @@ VectorField(mesh::Mesh2) = begin
         )
 end
 
-struct FaceVectorField{F1<:FaceScalarField,F2,F3,M} <: AbstractVectorField
-    x::F1
-    y::F2
-    z::F3
+struct FaceVectorField{S1<:FaceScalarField,S2,S3,M} <: AbstractVectorField
+    x::S1
+    y::S2
+    z::S3
     mesh::M
 end
 FaceVectorField(mesh::Mesh2) = begin
@@ -99,6 +101,55 @@ Base.setindex!(v::AbstractVectorField, x::SVector{3, T}, i::Integer) where T= be
     v.y[i] = y[2]
     v.z[i] = z[3]
 end
+
+struct TensorField{S1,S2,S3,S4,S5,S6,S7,S8,S9,M} <: AbstractTensorField
+    xx::S1
+    xy::S2
+    xz::S3 
+    yx::S4 
+    yy::S5 
+    yz::S6 
+    zx::S7 
+    zy::S8
+    zz::S9
+    mesh::M
+end
+
+Base.getindex(T::TensorField, i::Integer) = begin
+    Tf = eltype(T.xx.values)
+    SMatrix{3,3,Tf,9}(
+        T.xx[i],
+        T.yx[i],
+        T.zx[i],
+        T.xy[i],
+        T.yy[i],
+        T.zy[i],
+        T.xz[i],
+        T.yz[i],
+        T.zz[i],
+        )
+end
+
+# struct Transpose{T<:Grad}
+#     parent::T
+# end
+# Base.getindex(t::Transpose{Grad{S,F,X,Y,Z,I,M}}, i::Integer) where {S,F,X<:Grad,Y,Z,I,M} = begin
+#     gradt = t.parent
+#     Tf = eltype(gradt.x.x)
+#     SMatrix{3,3,Tf,9}(
+#         gradt.x.x[i],
+#         gradt.y.x[i],
+#         gradt.z.x[i],
+#         gradt.x.y[i],
+#         gradt.y.y[i],
+#         gradt.z.y[i],
+#         gradt.x.z[i],
+#         gradt.y.z[i],
+#         gradt.z.z[i],
+#         )
+# end
+
+# Initialise Scalar and Vector fields
 
 function initialise!(v::AbstractVectorField, vec::Vector{T}) where T
     n = length(vec)

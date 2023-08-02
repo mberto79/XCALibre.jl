@@ -90,7 +90,7 @@ function SIMPLE_loop(
     # ∇p = Grad{Midpoint}(p)
     gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
-    Hvf = FaceVectorField(mesh)
+    # Hvf = FaceVectorField(mesh)
     Hv_flux = FaceScalarField(mesh)
     rD = ScalarField(mesh)
 
@@ -151,9 +151,14 @@ function SIMPLE_loop(
         remove_pressure_source!(ux_eqn, uy_eqn, ∇p, rD)
         H!(Hv, U, ux_eqn, uy_eqn, rD)
         
-        interpolate!(Hvf, Hv)
-        correct_boundaries!(Hvf, Hv, U.BCs)
-        flux!(Hv_flux, Hvf)
+        # interpolate!(Hvf, Hv)
+        # correct_boundaries!(Hvf, Hv, U.BCs)
+        # flux!(Hv_flux, Hvf)
+        # div!(divHv_new, Hv_flux)
+
+        interpolate!(Uf, Hv)
+        correct_boundaries!(Uf, Hv, U.BCs)
+        flux!(Hv_flux, Uf)
         div!(divHv_new, Hv_flux)
    
         discretise!(p_eqn, p_model)

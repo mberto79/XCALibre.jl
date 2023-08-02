@@ -1,5 +1,6 @@
-function green_gauss!(grad::Grad, phif; source=false)
-    (; x, y, z) = grad.result
+# function green_gauss!(grad::Grad, phif; source=false)
+function green_gauss!(dx, dy, dz, phif; source=false)
+    # (; x, y, z) = grad.result
     (; mesh, values) = phif
     (; cells, faces) = mesh
     F = eltype(mesh.nodes[1].coords)
@@ -14,9 +15,9 @@ function green_gauss!(grad::Grad, phif; source=false)
         if !source
             res /= volume
         end
-        x[ci] = res[1]
-        y[ci] = res[2]
-        z[ci] = res[3]
+        dx[ci] = res[1]
+        dy[ci] = res[2]
+        dz[ci] = res[3]
     end
     # Add boundary faces contribution
     nbfaces = total_boundary_faces(mesh)
@@ -29,8 +30,8 @@ function green_gauss!(grad::Grad, phif; source=false)
         if !source
             res /= volume
         end
-        x[cID] += res[1]
-        y[cID] += res[2]
-        z[cID] += res[3]
+        dx[cID] += res[1]
+        dy[cID] += res[2]
+        dz[cID] += res[3]
     end
 end

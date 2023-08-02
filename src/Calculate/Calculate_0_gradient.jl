@@ -4,7 +4,7 @@ export get_scheme
 
 # Define Gradient type and functionality
 
-struct Grad{S<:AbstractScheme,F,R,I,M}
+struct Grad{S<:AbstractScheme,F,R,I,M} <: AbstractField
     field::F
     result::R
     correctors::I
@@ -47,7 +47,7 @@ end
 # end
 # get_scheme(term::Grad{S,I,F}) where {S,I,F} = S
 
-Base.getindex(grad::Grad{S,F,R,I,M}, i::Integer) where {S,F,R<:AbstractVector,I,M} = begin
+Base.getindex(grad::Grad{S,F,R,I,M}, i::Integer) where {S,F,R<:VectorField,I,M} = begin
     Tf = eltype(grad.result.x.values)
     SVector{3,Tf}(
         grad.result.x[i], 
@@ -58,24 +58,37 @@ end
 
 Base.getindex(grad::Grad{S,F,R,I,M}, i::Integer) where {S,F,R<:AbstractTensorField,I,M} = begin
     Tf = eltype(grad.result.xx.values)
+    tensor = grad.result
     SMatrix{3,3,Tf,9}(
-        grad.xx[i],
-        grad.xy[i],
-        grad.xz[i],
-        grad.yx[i],
-        grad.yy[i],
-        grad.yz[i],
-        grad.zx[i],
-        grad.zy[i],
-        grad.zz[i],
+        tensor.xx[i],
+        tensor.yx[i],
+        tensor.zx[i],
+        tensor.xy[i],
+        tensor.yy[i],
+        tensor.zy[i],
+        tensor.xz[i],
+        tensor.yz[i],
+        tensor.zz[i],
+        )
+end
+
+Base.getindex(t::T{Grad{S,F,R,I,M}}, i::Integer) where {S,F,R<:AbstractTensorField,I,M} = begin
+    tensor = t.parent.result
+    Tf = eltype(tensor.xx.values)
+    SMatrix{3,3,Tf,9}(
+        tensor.xx[i],
+        tensor.xy[i],
+        tensor.xz[i],
+        tensor.yx[i],
+        tensor.yy[i],
+        tensor.yz[i],
+        tensor.zx[i],
+        tensor.zy[i],
+        tensor.zz[i],
         )
 end
 
 # GRADIENT CALCULATION FUNCTIONS
-
-function source!(grad::Grad, phif, phi, BCs; source=true)
-    grad!(grad, phif, phi, BCs; source=source)
-end
 
 # Mid-point gradient calculation
 
@@ -121,12 +134,35 @@ end
 
 # Linear gradient calculation
 
-function grad!(grad::Grad{Linear,F,R,I,M}, phif, phi, BCs; source=false) where {F,R,I,M}
+function grad!(grad::Grad{Linear,F,R,I,M}, phif, phi, BCs; source=false) where {F,R<:VectorField,I,M}
     interpolate!(phif, phi)
     correct_boundaries!(phif, phi, BCs)
-    green_gauss!(grad, phif; source)
+    # green_gauss!(grad, phif; source)
+    green_gauss!(grad.result.x, grad.result.y, grad.result.z, phif; source)
     # for i ∈ 1:2
     #     correct_interpolation!(grad, phif, phi)
     #     green_gauss!(grad, phif; source)
     # end
+end
+
+function source!(grad::Grad{S,F,R,I,M}, phif, phi, BCs; source=true) where {S,F,R<:VectorField,I,M}
+    grad!(grad, phif, phi, BCs; source=source)
+end
+
+function grad!(grad::Grad{Linear,F,R,I,M}, psif, psi, BCs; source=false) where {F,R<:TensorField,I,M}
+
+    interpolate!(psif, psi)
+    correct_boundaries!(psif, psi, BCs)
+
+    green_gauss!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x; 
+    source)
+
+
+    green_gauss!(grad.result.xy, grad.result.yy, grad.result.zy, psif.y; 
+    source)
+
+    
+    green_gauss!(grad.result.xz, grad.result.yz, grad.result.zz, psif.z; 
+    source)
+ 
 end

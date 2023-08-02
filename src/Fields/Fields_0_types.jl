@@ -2,7 +2,7 @@ export AbstractField
 export ConstantScalar, ConstantVector
 export AbstractScalarField, ScalarField, FaceScalarField
 export AbstractVectorField, VectorField, FaceVectorField
-export AbstractTensorField, TensorField
+export AbstractTensorField, TensorField, T
 export initialise!
 
 # ABSTRACT TYPES
@@ -145,24 +145,25 @@ Base.getindex(T::TensorField, i::Integer) = begin
         )
 end
 
-# struct Transpose{T<:Grad}
-#     parent::T
-# end
-# Base.getindex(t::Transpose{Grad{S,F,X,Y,Z,I,M}}, i::Integer) where {S,F,X<:Grad,Y,Z,I,M} = begin
-#     gradt = t.parent
-#     Tf = eltype(gradt.x.x)
-#     SMatrix{3,3,Tf,9}(
-#         gradt.x.x[i],
-#         gradt.y.x[i],
-#         gradt.z.x[i],
-#         gradt.x.y[i],
-#         gradt.y.y[i],
-#         gradt.z.y[i],
-#         gradt.x.z[i],
-#         gradt.y.z[i],
-#         gradt.z.z[i],
-#         )
-# end
+struct T{F<:AbstractField}
+    parent::F
+end
+
+Base.getindex(t::T{F}, i::Integer) where F<:TensorField = begin
+    T = t.parent
+    Tf = eltype(T.xx.values)
+    SMatrix{3,3,Tf,9}(
+        T.xx[i],
+        T.xy[i],
+        T.xz[i],
+        T.yx[i],
+        T.yy[i],
+        T.yz[i],
+        T.zx[i],
+        T.zy[i],
+        T.zz[i],
+        )
+end
 
 # Initialise Scalar and Vector fields
 

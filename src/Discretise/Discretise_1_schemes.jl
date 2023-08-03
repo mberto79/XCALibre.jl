@@ -36,3 +36,18 @@ end
     b, cell, cID) where {F,P,I} = begin
     nothing
 end
+
+# IMPLICIT SOURCE
+
+@inline function scheme!(
+    term::Operator{F,P,I,Si}, 
+    nzval, cell, face,  cellN, ns, cIndex, nIndex, fID)  where {F,P,I}
+    ap = term.sign*(-term.flux[fID] * cell.volume)
+    nzval[cIndex] += ap
+    nothing
+end
+@inline scheme_source!(
+    term::Operator{F,P,I,Si}, 
+    b, cell, cID)  where {F,P,I} = begin
+    nothing
+end

@@ -1,6 +1,6 @@
 export AbstractOperator, AbstractSource   
 export Operator, Source, Src
-export Laplacian, Divergence
+export Laplacian, Divergence, Si
 export Model 
 
 # ABSTRACT TYPES 
@@ -23,6 +23,7 @@ end
 
 struct Laplacian{T} <: AbstractOperator end
 struct Divergence{T} <: AbstractOperator end
+struct Si <: AbstractOperator end
 
 # constructors
 
@@ -33,6 +34,10 @@ Laplacian{T}(flux, phi) where T = Operator(
 Divergence{T}(flux, phi) where T = Operator(
     flux, phi, 1, Divergence{T}()
     )
+
+Si(flux, phi) = Operator(
+    flux, phi, 1, Si()
+)
 
 # SOURCES
 

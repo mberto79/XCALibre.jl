@@ -91,7 +91,7 @@ function SIMPLE_loop(
     gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
     # Hvf = FaceVectorField(mesh)
-    Hv_flux = FaceScalarField(mesh)
+    # Hv_flux = FaceScalarField(mesh)
     rD = ScalarField(mesh)
 
     # Pre-allocate auxiliary variables
@@ -158,8 +158,11 @@ function SIMPLE_loop(
 
         interpolate!(Uf, Hv)
         correct_boundaries!(Uf, Hv, U.BCs)
-        flux!(Hv_flux, Uf)
-        div!(divHv_new, Hv_flux)
+        
+        # flux!(Hv_flux, Uf)
+        # div!(divHv_new, Hv_flux)
+
+        div!(divHv_new, Uf)
    
         discretise!(p_eqn, p_model)
         apply_boundary_conditions!(p_eqn, p_model, p.BCs)

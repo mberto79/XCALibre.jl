@@ -12,7 +12,7 @@ abstract type AbstractOperator end
 
 # Base Operator
 
-struct Operator{F,P,S,T}
+struct Operator{F,P,S,T} <: AbstractOperator
     flux::F
     phi::P 
     sign::S
@@ -21,9 +21,9 @@ end
 
 # operators
 
-struct Laplacian{T} <: AbstractOperator end
-struct Divergence{T} <: AbstractOperator end
-struct Si <: AbstractOperator end
+struct Laplacian{T}  end
+struct Divergence{T} end
+struct Si end
 
 # constructors
 

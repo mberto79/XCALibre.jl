@@ -1,6 +1,6 @@
 
 Base.:+(a::Operator, b::Operator) = [a, b]
-Base.:+(a::Vector{<:Operator}, b::Operator) = push!(a, b)
+Base.:+(a::Vector{<:Operator}, b::Operator) = [a..., b]
 
 Base.:-(a::Operator, b::Operator) = begin
     @reset b.sign = -1
@@ -8,13 +8,13 @@ Base.:-(a::Operator, b::Operator) = begin
 end
 Base.:-(a::Vector{<:Operator}, b::Operator) = begin
     @reset b.sign = -1
-    push!(a, b)
+    [a..., b]
 end
 
 # Source operations
 
 Base.:+(a::Src, b::Src) = [a, b]
-Base.:+(a::Vector{<:Src}, b::Src) = push!(a, b)
+Base.:+(a::Vector{<:Src}, b::Src) = [a..., b]
 
 Base.:-(a::Src, b::Src) = begin
     @reset b.sign = -1
@@ -22,7 +22,7 @@ Base.:-(a::Src, b::Src) = begin
 end
 Base.:-(a::Vector{<:Src}, b::Src) = begin
     @reset b.sign = -1
-    push!(a, b)
+    [a..., b]
 end
 
 # Equality operation for model wrapper

@@ -43,3 +43,18 @@ end
     A[cellID,cellID] += ap
     nothing
 end
+
+
+# IMPLICIT SOURCE
+
+@inline (bc::Dirichlet)(
+    term::Operator{F,P,I,Si}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    nothing
+end
+
+@inline (bc::Neumann)(
+    term::Operator{F,P,I,Si}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    nothing
+end

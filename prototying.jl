@@ -42,6 +42,24 @@ k_model = (
 gradU = Grad{Linear}(U)
 Uf = FaceVectorField(mesh)
 
+gradUT = T(gradU)
+
+grad!(gradU, Uf, U, U.BCs)
+
+S = StrainRate(gradU, gradUT)
+
+S[20]
+
+magS = ScalarField(mesh)
+magS2 = ScalarField(mesh)
+
+using FVM_1D.RANS
+magnitude!(magS, S)
+magnitude2!(magS2, S)
+
+p.values .= magS.values
+53^2
+write_vtk("results", mesh, ("U", U), ("p", p), ("S2", magS2))
 
 kOmega()
 kk()

@@ -1,7 +1,7 @@
-export isimple!, flux!
+export isimple!
 
 function isimple!(
-    mesh::Mesh2{TI,TF}, nu, U, p, 
+    mesh::Mesh2{TI,TF}, nu, U, p, k, ω, νt, 
     setup_U, setup_p, iterations
     ; resume=true, pref=nothing) where {TI,TF}
 
@@ -32,6 +32,10 @@ function isimple!(
         Laplacian{Linear}(rDf, p) == Source(divHv_new)
     )
 
+    @info "Initialising turbulence model..."
+
+    turbulence_model = initialise_RANS(k, ω, mdotf)
+
     @info "Allocating matrix equations..."
 
     ux_eqn  = Equation(mesh)
@@ -52,9 +56,10 @@ function isimple!(
     solver_U = setup_U.solver(ux_eqn.A, ux_eqn.b)
 
     R_ux, R_uy, R_p  = SIMPLE_loop(
-    mesh::Mesh2{TI,TF}, U, p, ∇p,
+    mesh::Mesh2{TI,TF}, U, p, k, ω, νt, ∇p,
     setup_U, setup_p, iterations,
     ux_model, uy_model, p_model,
+    turbulence_model,
     Pu, Pp,
     solver_U, solver_p,
     ux_eqn, uy_eqn, p_eqn
@@ -64,25 +69,29 @@ function isimple!(
 end # end function
 
 function SIMPLE_loop(
-    mesh::Mesh2{TI,TF}, U, p, ∇p,
+    mesh::Mesh2{TI,TF}, U, p, k, ω, νt, ∇p,
     setup_U, setup_p, iterations,
     ux_model, uy_model, p_model,
+    turbulence_model,
     Pu, Pp,
     solver_U, solver_p,
     ux_eqn, uy_eqn, p_eqn
     ; resume=true, pref=nothing) where {TI,TF}
-
     
     # Extract model variables
     
     mdotf = get_flux(ux_model, 1)
+    nuf = get_flux(ux_model, 2)
     rDf = get_flux(p_model, 1)
-    # nuf = ux_model.terms[2].flux
     divHv_new = ScalarField(p_model.sources[1].field, mesh, p.BCs)
     
     @info "Allocating working memory..."
 
     # Define aux fields 
+    gradU = Grad{Linear}(U)
+    gradUT = T(gradU)
+    S = StrainRate(gradU, gradUT)
+    S2 = ScalarField(mesh)
 
     n_cells = length(mesh.cells)
     Uf = FaceVectorField(mesh)
@@ -202,6 +211,10 @@ function SIMPLE_loop(
             uy0[i] = U.y.values[i]
         end
 
+        grad!(gradU, Uf, U, U.BCs)
+
+        turbulence!(turbulence_model, νt, nuf, S, S2, solver_p, setup_p)
+
         convergence = 1e-7
 
         if (R_ux[iteration] <= convergence && 
@@ -212,6 +225,11 @@ function SIMPLE_loop(
                 """
                 \n\n\n\n\n
                 Simulation converged! $iteration iterations in""")
+
+                turbulence!(turbulence_model, νt, nuf, S, S2, solver_p, setup_p)
+
+                # k.values .= S2.values
+
             break
         end
 

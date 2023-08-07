@@ -12,6 +12,10 @@ abstract type AbstractScalarField <: AbstractField end
 abstract type AbstractVectorField <: AbstractField end
 abstract type AbstractTensorField <: AbstractField end
 
+Base.getindex(field::AbstractField, i::I) where I<:Integer = begin
+    field(i)
+end
+
 # CONSTANT FIELDS 
 
 struct ConstantScalar{V<:Number} <: AbstractScalarField

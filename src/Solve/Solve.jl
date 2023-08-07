@@ -13,8 +13,9 @@ using FVM_1D.ModelFramework
 using FVM_1D.Discretise
 using FVM_1D.Preconditioners
 using FVM_1D.Calculate
+using FVM_1D.RANS
 
-include("Solve_1_api.jl")
+# include("Solve_1_api.jl")
 include("Solve_2_SIMPLE.jl")
 
 end

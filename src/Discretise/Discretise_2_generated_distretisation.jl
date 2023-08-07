@@ -19,7 +19,7 @@ export discretise!
         push!(assignment_block_1, function_call)
 
         assign_source = quote
-            scheme_source!(model.terms[$t], b, cell, cID)
+            scheme_source!(model.terms[$t], b, nzval, cell, cID)
         end
         push!(assignment_block_2, assign_source)
     end

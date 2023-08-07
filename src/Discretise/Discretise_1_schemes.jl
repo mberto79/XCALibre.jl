@@ -12,7 +12,7 @@ export scheme!, scheme_source!
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Laplacian{Linear}}, 
-    b, cell, cID)  where {F,P,I} = begin
+    b, nzval, cell, cID)  where {F,P,I} = begin
     nothing
 end
 
@@ -33,7 +33,7 @@ end
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Divergence{Linear}}, 
-    b, cell, cID) where {F,P,I} = begin
+    b, nzval, cell, cID) where {F,P,I} = begin
     nothing
 end
 
@@ -42,12 +42,14 @@ end
 @inline function scheme!(
     term::Operator{F,P,I,Si}, 
     nzval, cell, face,  cellN, ns, cIndex, nIndex, fID)  where {F,P,I}
-    ap = term.sign*(-term.flux[fID] * cell.volume)
-    nzval[cIndex] += ap
+    # ap = term.sign*(-term.flux[cIndex] * cell.volume)
+    # nzval[cIndex] += ap
     nothing
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Si}, 
-    b, cell, cID)  where {F,P,I} = begin
+    b, nzval, cell, cID)  where {F,P,I} = begin
+    ap = term.sign*(term.flux[cID] * cell.volume)
+    nzval[cID] += ap
     nothing
 end

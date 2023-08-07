@@ -1,6 +1,5 @@
 export AbstractScheme, Constant, Linear, Upwind, Midpoint
 export AbstractBoundary, AbstractDirichlet, AbstractNeumann
-export Equation
 export Dirichlet, Neumann 
 export assign
 
@@ -12,45 +11,7 @@ struct Linear <: AbstractScheme end
 struct Upwind <: AbstractScheme end
 struct Midpoint <: AbstractScheme end
 
-# Linear system matrix equation
 
-struct Equation{Ti,Tf}
-    A::SparseMatrixCSC{Tf,Ti}
-    b::Vector{Tf}
-    R::Vector{Tf}
-    Fx::Vector{Tf}
-    # mesh::Mesh2{Ti,Tf}
-end
-Equation(mesh::Mesh2{Ti,Tf}) where {Ti,Tf} = begin
-    nCells = length(mesh.cells)
-    i, j, v = sparse_matrix_connectivity(mesh)
-    Equation(
-        sparse(i, j, v), 
-        zeros(Tf, nCells), 
-        zeros(Tf, nCells), 
-        zeros(Tf, nCells)
-        # mesh
-        )
-end
-
-function sparse_matrix_connectivity(mesh::Mesh2{I,F}) where{I,F}
-    cells = mesh.cells
-    nCells = length(cells)
-    i = I[]
-    j = I[]
-    for cID = 1:nCells   
-        cell = cells[cID]
-        push!(i, cID) # diagonal row index
-        push!(j, cID) # diagonal column index
-        for fi ∈ eachindex(cell.facesID)
-            neighbour = cell.neighbours[fi]
-            push!(i, cID) # cell index (row)
-            push!(j, neighbour) # neighbour index (column)
-        end
-    end
-    v = zeros(F, length(i))
-    return i, j, v
-end
 
 # SUPPORTED BOUNDARY CONDITIONS 
 

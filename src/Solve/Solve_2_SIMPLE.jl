@@ -2,7 +2,7 @@ export isimple!
 
 function isimple!(
     mesh::Mesh2{TI,TF}, nu, U, p, k, ω, νt, 
-    setup_U, setup_p, iterations
+    setup_U, setup_p, setup_turb, iterations
     ; resume=true, pref=nothing) where {TI,TF}
 
     @info "Preallocating fields..."
@@ -11,19 +11,20 @@ function isimple!(
     mdotf = FaceScalarField(mesh)
     nuf = ConstantScalar(nu) # Implement constant field! Priority 1
     rDf = FaceScalarField(mesh)
+    nueff = FaceScalarField(mesh)
     rDf.values .= 1.0
     divHv_new = ScalarField(mesh)
 
     @info "Defining models..."
 
     ux_model = (
-        Divergence{Linear}(mdotf, U.x) - Laplacian{Linear}(nuf, U.x) 
+        Divergence{Linear}(mdotf, U.x) - Laplacian{Linear}(nueff, U.x) 
         == 
         Source(∇p.result.x)
     )
     
     uy_model = (
-        Divergence{Linear}(mdotf, U.y) - Laplacian{Linear}(nuf, U.y) 
+        Divergence{Linear}(mdotf, U.y) - Laplacian{Linear}(nueff, U.y) 
         == 
         Source(∇p.result.y)
     )
@@ -56,8 +57,8 @@ function isimple!(
     solver_U = setup_U.solver(ux_eqn.A, ux_eqn.b)
 
     R_ux, R_uy, R_p  = SIMPLE_loop(
-    mesh::Mesh2{TI,TF}, U, p, k, ω, νt, ∇p,
-    setup_U, setup_p, iterations,
+    mesh::Mesh2{TI,TF}, U, p, k, ω, nuf, νt, ∇p,
+    setup_U, setup_p, setup_turb, iterations,
     ux_model, uy_model, p_model,
     turbulence_model,
     Pu, Pp,
@@ -69,8 +70,8 @@ function isimple!(
 end # end function
 
 function SIMPLE_loop(
-    mesh::Mesh2{TI,TF}, U, p, k, ω, νt, ∇p,
-    setup_U, setup_p, iterations,
+    mesh::Mesh2{TI,TF}, U, p, k, ω, nuf, νt, ∇p,
+    setup_U, setup_p, setup_turb, iterations,
     ux_model, uy_model, p_model,
     turbulence_model,
     Pu, Pp,
@@ -81,7 +82,7 @@ function SIMPLE_loop(
     # Extract model variables
     
     mdotf = get_flux(ux_model, 1)
-    nuf = get_flux(ux_model, 2)
+    nueff = get_flux(ux_model, 2)
     rDf = get_flux(p_model, 1)
     divHv_new = ScalarField(p_model.sources[1].field, mesh, p.BCs)
     
@@ -126,6 +127,8 @@ function SIMPLE_loop(
     correct_boundaries!(Uf, U, U.BCs)
     flux!(mdotf, Uf)
     source!(∇p, pf, p, p.BCs)
+
+    update_nueff!(nueff, nuf, turbulence_model)
 
     @info "Staring SIMPLE loops..."
 
@@ -213,7 +216,13 @@ function SIMPLE_loop(
 
         grad!(gradU, Uf, U, U.BCs)
 
-        turbulence!(turbulence_model, νt, nuf, S, S2, solver_p, setup_p)
+        # turbulence!(turbulence_model, νt, nuf, S, S2, solver_p, setup_turb, explicit_relaxation!)
+
+        turbulence!(turbulence_model, νt, nuf, S, S2, solver_p, setup_turb, implicit_relaxation!)
+        update_nueff!(nueff, nuf, turbulence_model)
+
+
+        
 
         convergence = 1e-7
 
@@ -226,7 +235,7 @@ function SIMPLE_loop(
                 \n\n\n\n\n
                 Simulation converged! $iteration iterations in""")
 
-                turbulence!(turbulence_model, νt, nuf, S, S2, solver_p, setup_p)
+                # turbulence!(turbulence_model, νt, nuf, S, S2, solver_p, setup_p, explicit_relaxation!)
 
                 # k.values .= S2.values
 
@@ -244,6 +253,12 @@ function SIMPLE_loop(
 
     end # end for loop
     return R_ux, R_uy, R_p 
+end
+
+update_nueff!(nueff, nu, turb_model) = begin
+    for i ∈ eachindex(nueff)
+        nueff[i] = nu[i] + turb_model.νtf[i]
+    end
 end
 
 function residual!(Residual, equation, phi, iteration)

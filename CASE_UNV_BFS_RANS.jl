@@ -6,6 +6,7 @@ using Krylov
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
+mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 
 U = VectorField(mesh)
@@ -14,10 +15,12 @@ k = ScalarField(mesh)
 ω = ScalarField(mesh)
 νt = ScalarField(mesh)
 
-velocity = [0.5, 0.0, 0.0]
-k_inlet = 0.2
-ω_inlet = 200
-ω_wall = 1e3 # ω_inlet
+# velocity = [0.5, 0.0, 0.0]
+velocity = [1.5, 0.0, 0.0]
+k_inlet = 0.1
+ω_inlet = 50
+ω_wall = 400
+# ω_wall = ω_inlet
 nu = 1e-3
 Re = velocity[1]*0.1/nu
 
@@ -68,6 +71,13 @@ setup_p = SolverSetup(
     rtol        = 1e-1
 )
 
+setup_turb = SolverSetup(
+    solver      = GmresSolver, # BicgstabSolver, GmresSolver
+    relax       = 0.3,
+    itmax       = 100,
+    rtol        = 1e-1
+)
+
 GC.gc()
 
 initialise!(U, velocity)
@@ -76,11 +86,11 @@ initialise!(k, k_inlet)
 initialise!(ω, ω_inlet)
 initialise!(νt, k_inlet/ω_inlet)
 
-iterations = 1
+iterations = 200
 Rx, Ry, Rp = isimple!( # 123 its, 4.68k allocs
     mesh, nu, U, p, k, ω, νt, 
     # setup_U, setup_p, iterations, pref=0.0)
-    setup_U, setup_p, iterations)
+    setup_U, setup_p, setup_turb, iterations)
 
 write_vtk(
     "results", mesh, 

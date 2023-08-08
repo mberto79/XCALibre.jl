@@ -98,7 +98,9 @@ function initialise_RANS(k, ω, mdotf)
 
 end
 
-function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup) where M
+function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
+
+    prev = zeros(eltype(kOmega.coeffs.α1), length(S2))
     
     magnitude2!(S2, S)
 
@@ -136,29 +138,30 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup) where M
     discretise!(ω_eqn, ω_model)
     apply_boundary_conditions!(ω_eqn, ω_model, ω.BCs)
     update_preconditioner!(PW)
+    prev .= ω.values
+    relax!(ω_eqn, prev, setup.relax)
     run!(ω_eqn, ω_model, setup, opP=PW.P, solver=solver)
-    # explicit_relaxation!(p, p0, setup_p.relax)
+    bound!(ω)
+    # relax!(ω, prev, setup.relax)
 
     discretise!(k_eqn, k_model)
     apply_boundary_conditions!(k_eqn, k_model, k.BCs)
     update_preconditioner!(PK)
+    prev .= k.values
+    relax!(k_eqn, prev, setup.relax)
     run!(k_eqn, k_model, setup, opP=PK.P, solver=solver)
-    # explicit_relaxation!(p, p0, setup_p.relax)
+    bound!(k)
+    # relax!(k, prev, setup.relax)
     
     update_eddy_viscosity!(νt, k, ω)
 
-    # nueffω = FaceScalarField(mesh)
-    # Dωf = ScalarField(mesh)
-    # Pω = ScalarField(mesh)
+    interpolate!(kf, k)
+    correct_boundaries!(kf, k, k.BCs)
 
-
-
-    # discretise!(p_eqn, p_model)
-    # apply_boundary_conditions!(p_eqn, p_model, p.BCs)
-    # setReference!(p_eqn, pref, 1)
-    # update_preconditioner!(Pp)
-    # run!( p_eqn, p_model, setup_p, opP=Pp.P, solver=solver_p)
-    # explicit_relaxation!(p, p0, setup_p.relax)
+    interpolate!(ωf, ω)
+    correct_boundaries!(ωf, ω, ω.BCs)
+    
+    update_eddy_viscosity!(νtf, kf, ωf)
 end
 
 update_eddy_viscosity!(νt::F, k, ω) where F<:AbstractScalarField = begin
@@ -196,7 +199,13 @@ end
 
 production_ω!(Pω, Pk, k, ω, α1) = begin
     for i ∈ eachindex(Pk)
-        Pω[i] =  α1*Pk[i]*ω[i]/max(k[i], 1e-15)
+        Pω[i] =  α1*Pk[i]*ω[i]/max(k[i], 1e-20)
+    end
+end
+
+bound!(field) = begin
+    for i ∈ eachindex(field)
+        field[i] = max(field[i], 0.0)
     end
 end
 

@@ -45,16 +45,20 @@ k = assign(
     k,
     Dirichlet(:inlet, k_inlet),
     Neumann(:outlet, 0.0),
-    Dirichlet(:wall, 0.0),
-    Dirichlet(:top, 0.0)
+    kWallFunction(:wall, (κ=0.41, cmu=0.09)),
+    kWallFunction(:top, (κ=0.41, cmu=0.09))
+    # Dirichlet(:wall, 0.0),
+    # Dirichlet(:top, 0.0)
 )
 
 ω = assign(
     ω,
     Dirichlet(:inlet, ω_inlet),
     Neumann(:outlet, 0.0),
-    Dirichlet(:wall, ω_wall),
-    Dirichlet(:top, ω_wall)
+    OmegaWallFunction(:wall, (κ=0.41, cmu=0.09, k=k)),
+    OmegaWallFunction(:top, (κ=0.41, cmu=0.09, k=k))
+    # Dirichlet(:wall, ω_wall),
+    # Dirichlet(:top, ω_wall)
 )
 
 setup_U = SolverSetup(

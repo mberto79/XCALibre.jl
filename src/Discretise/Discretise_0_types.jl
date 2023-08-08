@@ -1,6 +1,6 @@
 export AbstractScheme, Constant, Linear, Upwind, Midpoint
 export AbstractBoundary, AbstractDirichlet, AbstractNeumann
-export Dirichlet, Neumann 
+export Dirichlet, Neumann, kWallFunction, OmegaWallFunction 
 export assign
 
 # SUPPORTED DISCRETISATION SCHEMES 
@@ -40,6 +40,16 @@ function Dirichlet(ID::I, value::V) where {I<:Integer,V}
 end
 
 struct Neumann{I,V} <: AbstractBoundary
+    ID::I 
+    value::V 
+end
+
+struct kWallFunction{I,V} <: AbstractBoundary
+    ID::I 
+    value::V 
+end
+
+struct OmegaWallFunction{I,V} <: AbstractBoundary
     ID::I 
     value::V 
 end

@@ -42,6 +42,27 @@ function adjust_boundary!(
     end
 end
 
+function adjust_boundary!(
+    BC::KWallFunction, phif::FaceScalarField, phi, boundary, faces)
+    (;facesID, cellsID) = boundary
+    @inbounds for fi ∈ eachindex(facesID)
+        fID = facesID[fi]
+        cID = cellsID[fi]
+        phif.values[fID] = phi.values[cID] # Using Neumann condition
+        # phif.values[fID] = 0.0 # set νt to zero at the wall
+    end
+end
+
+function adjust_boundary!(
+    BC::OmegaWallFunction, phif::FaceScalarField, phi, boundary, faces)
+    (;facesID, cellsID) = boundary
+    @inbounds for fi ∈ eachindex(facesID)
+        fID = facesID[fi]
+        cID = cellsID[fi]
+        phif.values[fID] = 1.01*phi.values[cID] # Using Neumann condition
+    end
+end
+
 function adjust_boundary!( 
     BC::Dirichlet, psif::FaceVectorField, psi::VectorField, boundary, faces
     )

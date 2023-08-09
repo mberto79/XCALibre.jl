@@ -7,6 +7,7 @@ using Krylov
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
 mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
+# mesh_file = "unv_sample_meshes/backwardFacingStep_2mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 
 U = VectorField(mesh)
@@ -16,12 +17,16 @@ k = ScalarField(mesh)
 νt = ScalarField(mesh)
 
 # velocity = [0.5, 0.0, 0.0]
-velocity = [1.5, 0.0, 0.0]
-k_inlet = 0.1
-ω_inlet = 50
+nu = 1e-3
+# u_mag = 1.5
+u_mag = 1.5
+velocity = [u_mag, 0.0, 0.0]
+Tu = 0.1
+k_inlet = 3/2*(Tu*u_mag)^2
+νR = 0.1 # nut/nu
+ω_inlet = k_inlet/(nu*νR) # nut = k/ω thus w = k/nut 
 ω_wall = 400
 # ω_wall = ω_inlet
-nu = 1e-3
 Re = velocity[1]*0.1/nu
 
 U = assign(
@@ -45,10 +50,10 @@ k = assign(
     k,
     Dirichlet(:inlet, k_inlet),
     Neumann(:outlet, 0.0),
-    kWallFunction(:wall, (κ=0.41, cmu=0.09)),
-    kWallFunction(:top, (κ=0.41, cmu=0.09))
-    # Dirichlet(:wall, 0.0),
-    # Dirichlet(:top, 0.0)
+    # KWallFunction(:wall, (κ=0.41, cmu=0.09, k=k)),
+    # KWallFunction(:top, (κ=0.41, cmu=0.09, k=k))
+    Dirichlet(:wall, 1e-15),
+    Dirichlet(:top, 1e-15)
 )
 
 ω = assign(
@@ -63,7 +68,7 @@ k = assign(
 
 setup_U = SolverSetup(
     solver      = GmresSolver, # BicgstabSolver, GmresSolver
-    relax       = 0.8,
+    relax       = 0.7,
     itmax       = 100,
     rtol        = 1e-1
 )
@@ -79,7 +84,7 @@ setup_turb = SolverSetup(
     solver      = GmresSolver, # BicgstabSolver, GmresSolver
     relax       = 0.3,
     itmax       = 100,
-    rtol        = 1e-1
+    rtol        = 1e-1,
 )
 
 GC.gc()
@@ -90,7 +95,7 @@ initialise!(k, k_inlet)
 initialise!(ω, ω_inlet)
 initialise!(νt, k_inlet/ω_inlet)
 
-iterations = 200
+iterations = 1
 Rx, Ry, Rp = isimple!( # 123 its, 4.68k allocs
     mesh, nu, U, p, k, ω, νt, 
     # setup_U, setup_p, iterations, pref=0.0)

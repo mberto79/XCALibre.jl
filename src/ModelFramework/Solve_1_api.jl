@@ -24,8 +24,6 @@ function run!(
     equation::Equation{Ti,Tf}, phiModel, setup; 
     opP, solver
     ) where {Ti,Tf}
-    
-    @inbounds equation.b .+= phiModel.sources[1].field # should be moved out to "add_sources" function using the "Model" struct
 
     (; itmax, atol, rtol) = setup
     (; A, b) = equation

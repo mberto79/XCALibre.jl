@@ -146,6 +146,7 @@ function SIMPLE_loop(
         implicit_relaxation!(ux_eqn, ux0, setup_U.relax)
         update_preconditioner!(Pu)
 
+        @inbounds ux_eqn.b .+= ux_model.sources[1].field # should be moved out to "add_sources" function using the "Model" struct
         run!(ux_eqn, ux_model, setup_U, opP=Pu.P, solver=solver_U)
         residual!(R_ux, ux_eqn, U.x, iteration)
 
@@ -155,6 +156,7 @@ function SIMPLE_loop(
         implicit_relaxation!(uy_eqn, uy0, setup_U.relax)
         update_preconditioner!(Pu)
 
+        @inbounds uy_eqn.b .+= uy_model.sources[1].field
         run!(uy_eqn, uy_model, setup_U, opP=Pu.P, solver=solver_U)
         residual!(R_uy, uy_eqn, U.y, iteration)
         
@@ -180,6 +182,7 @@ function SIMPLE_loop(
         apply_boundary_conditions!(p_eqn, p_model, p.BCs)
         setReference!(p_eqn, pref, 1)
         update_preconditioner!(Pp)
+        @inbounds p_eqn.b .+= p_model.sources[1].field
         run!( p_eqn, p_model, setup_p, opP=Pp.P, solver=solver_p)
 
         explicit_relaxation!(p, p0, setup_p.relax)

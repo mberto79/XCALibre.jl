@@ -25,6 +25,18 @@ end
     nothing
 end
 
+@inline (bc::KWallFunction)(
+    term::Operator{F,P,I,Laplacian{Linear}}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    nothing
+end
+
+@inline (bc::OmegaWallFunction)(
+    term::Operator{F,P,I,Laplacian{Linear}}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    nothing
+end
+
 # DIVERGENCE TERM (NON-UNIFORM)
 
 @inline (bc::Dirichlet)(
@@ -44,6 +56,18 @@ end
     nothing
 end
 
+@inline (bc::KWallFunction)(
+    term::Operator{F,P,I,Divergence{Linear}}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    nothing
+end
+
+@inline (bc::OmegaWallFunction)(
+    term::Operator{F,P,I,Divergence{Linear}}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    nothing
+end
+
 
 # IMPLICIT SOURCE
 
@@ -56,5 +80,26 @@ end
 @inline (bc::Neumann)(
     term::Operator{F,P,I,Si}, 
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    nothing
+end
+
+@inline (bc::KWallFunction)(# a bit hacky for now (should be Src)
+    term::Operator{F,P,I,Si}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    # cmu, κ, k = bc.value
+    # b[cellID] -= k[cellID]^1.5*cmu^0.75/(κ*face.delta)*cell.volume
+    nothing
+end
+
+@inline (bc::OmegaWallFunction)(# a bit hacky for now (should be Src)
+    term::Operator{F,P,I,Si}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    cmu, κ, k = bc.value
+    # ωc = k[cellID]^0.5/(cmu^0.25*κ*face.delta)*cell.volume
+    ωc = 10*6*1e-3/(0.075*face.delta^2)#*cell.volume
+    b[cellID] = A[cellID,cellID]*ωc
+    A[cellID,cellID] += A[cellID,cellID]
+    # b[cellID] += A[cellID,cellID]*ωc
+    # A[cellID,cellID] += A[cellID,cellID]
     nothing
 end

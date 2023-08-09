@@ -68,21 +68,21 @@ k = assign(
 
 setup_U = SolverSetup(
     solver      = GmresSolver, # BicgstabSolver, GmresSolver
-    relax       = 0.8,
+    relax       = 0.7,
     itmax       = 100,
     rtol        = 1e-1
 )
 
 setup_p = SolverSetup(
     solver      = GmresSolver, # GmresSolver, FomSolver, DiomSolver
-    relax       = 0.2,
+    relax       = 0.3,
     itmax       = 100,
     rtol        = 1e-1
 )
 
 setup_turb = SolverSetup(
     solver      = GmresSolver, # BicgstabSolver, GmresSolver
-    relax       = 0.2,
+    relax       = 0.3,
     itmax       = 100,
     rtol        = 1e-1,
 )

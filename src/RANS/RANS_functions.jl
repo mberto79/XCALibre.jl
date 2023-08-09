@@ -1,4 +1,5 @@
 export StrainRate
+export double_inner_product!
 export magnitude!, magnitude2!
 
 struct StrainRate{G, GT} <: AbstractTensorField
@@ -10,6 +11,22 @@ function (S::StrainRate)(i)
     0.5.*(S.gradU[i] .+ S.gradUT[i])
 end
 
+double_inner_product!(
+    s, t1::AbstractTensorField, t2) = 
+begin
+    sum = 0.0
+    for i ∈ eachindex(s)
+        sum = 0.0
+        for j ∈ 1:3
+            for k ∈ 1:3
+                # sum +=   S[i][j,k]*S[i][k,j]
+                sum +=   t1[i][j,k]*t2[i][j,k]
+            end
+        end
+        s[i] = sum
+    end
+end
+
 function magnitude!(magS::ScalarField, S::AbstractTensorField)
     sum = 0.0
     for i ∈ eachindex(magS.values)
@@ -17,7 +34,7 @@ function magnitude!(magS::ScalarField, S::AbstractTensorField)
         for j ∈ 1:3
             for k ∈ 1:3
                 # sum +=   S[i][j,k]*S[i][k,j]
-                sum +=   S[i][j,k]*S[i][j,k]
+                sum +=   S[i][j,k]*S[i][k,j]
             end
         end
         magS.values[i] =   sqrt(sum)
@@ -34,6 +51,6 @@ function magnitude2!(magS::ScalarField, S::AbstractTensorField)
                 sum +=   S[i][j,k]*S[i][j,k]
             end
         end
-        magS.values[i] =   sum
+        magS.values[i] = sum
     end
 end

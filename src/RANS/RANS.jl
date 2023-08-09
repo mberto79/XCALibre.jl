@@ -1,5 +1,7 @@
 module RANS
 
+using LinearAlgebra
+
 using FVM_1D.Mesh
 using FVM_1D.Fields
 using FVM_1D.ModelFramework

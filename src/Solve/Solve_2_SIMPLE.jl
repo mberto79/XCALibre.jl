@@ -222,10 +222,7 @@ function SIMPLE_loop(
         # turbulence!(turbulence_model, νt, nuf, S, S2, solver_p, setup_turb, explicit_relaxation!)
 
         turbulence!(turbulence_model, νt, nuf, S, S2, solver_p, setup_turb, implicit_relaxation!)
-        update_nueff!(nueff, nuf, turbulence_model)
-
-
-        
+        # update_nueff!(nueff, nuf, turbulence_model)
 
         convergence = 1e-7
 
@@ -240,7 +237,7 @@ function SIMPLE_loop(
 
                 # turbulence!(turbulence_model, νt, nuf, S, S2, solver_p, setup_p, explicit_relaxation!)
 
-                # k.values .= S2.values
+                k.values .= S2.values
 
             break
         end

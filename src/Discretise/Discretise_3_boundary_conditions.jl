@@ -96,9 +96,9 @@ end
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
     cmu, κ, k = bc.value
     # ωc = k[cellID]^0.5/(cmu^0.25*κ*face.delta)*cell.volume
-    ωc = 10*6*1e-3/(0.075*face.delta^2)#*cell.volume
+    ωc = 10*6*1e-3/(0.075*face.delta^2)
     b[cellID] = A[cellID,cellID]*ωc
-    A[cellID,cellID] += A[cellID,cellID]
+    # A[cellID,cellID] += A[cellID,cellID]
     # b[cellID] += A[cellID,cellID]*ωc
     # A[cellID,cellID] += A[cellID,cellID]
     nothing

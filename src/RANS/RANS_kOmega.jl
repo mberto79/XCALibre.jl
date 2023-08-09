@@ -95,7 +95,10 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
 
     prev = zeros(eltype(kOmega.coeffs.α1), length(S2))
     
-    magnitude2!(S2, S) # should be multiplied by 2 (def of Sij)
+    # magnitude2!(S2, S) # should be multiplied by 2 (def of Sij)
+    magnitude!(S2, S) # should be multiplied by 2 (def of Sij)
+
+    S2.values .= sqrt(2).*S2.values
 
     (;k_eqn,ω_eqn,k_model,ω_model,PK,PW,kf,ωf,νtf,coeffs) = kOmega
 
@@ -111,22 +114,30 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
     Pω = ω_model.sources[1].field
 
     
-    correct_omega!(ω, ω.BCs)
-    production_k!(Pk, k, ω, νt, S2)
-    # # correct_production!(Pk, k, k.BCs) # based on choice of wall function
-    production_ω!(Pω, Pk, k, ω, νt, coeffs.α1)
-    Pk .*= k.values./ω.values # add eddy viscosity
+    # correct_omega!(ω, ω.BCs)
+    # production_k!(Pk, k, ω, νt, S2)
 
-    destruction_flux!(Dωf, coeffs.β1, ω) 
-    destruction_flux!(Dkf, coeffs.β⁺, ω) 
+    # double_inner_product!(Pk, S, S.gradU)
 
-    interpolate!(kf, k)
-    correct_boundaries!(kf, k, k.BCs)
-    interpolate!(ωf, ω)
-    correct_boundaries!(ωf, ω, ω.BCs)
+    # cells = k.mesh.cells
+    # for i ∈ eachindex(Pk)
+    #     Pk[i] = 2.0*Pk[i]*cells[i].volume
+    # end
+    # # # correct_production!(Pk, k, k.BCs) # based on choice of wall function
+    # # production_ω!(Pω, Pk, k, ω, νt, coeffs.α1)
+    # Pω .= coeffs.α1*Pk
+    # Pk .= νt.values.*Pk # add eddy viscosity
+
+    # destruction_flux!(Dωf, coeffs.β1, ω) 
+    # destruction_flux!(Dkf, coeffs.β⁺, ω) 
+
+    # interpolate!(kf, k)
+    # correct_boundaries!(kf, k, k.BCs)
+    # interpolate!(ωf, ω)
+    # correct_boundaries!(ωf, ω, ω.BCs)
     
-    diffusion_flux!(nueffω, nu, kf, ωf, coeffs.σω)
-    diffusion_flux!(nueffk, nu, kf, ωf, coeffs.σk)
+    # diffusion_flux!(nueffω, nu, kf, ωf, coeffs.σω)
+    # diffusion_flux!(nueffk, nu, kf, ωf, coeffs.σk)
 
     # discretise!(ω_eqn, ω_model)
     # apply_boundary_conditions!(ω_eqn, ω_model, ω.BCs)
@@ -135,27 +146,30 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
     # prev .= ω.values
     # relax!(ω_eqn, prev, setup.relax)
     # run!(ω_eqn, ω_model, setup, opP=PW.P, solver=solver)
-    # bound!(ω)
+    # # bound!(ω)
 
-    discretise!(k_eqn, k_model)
-    apply_boundary_conditions!(k_eqn, k_model, k.BCs)
-    update_preconditioner!(PK)
-    k_eqn.b .+= Pk
-    prev .= k.values
-    relax!(k_eqn, prev, setup.relax)
-    run!(k_eqn, k_model, setup, opP=PK.P, solver=solver)
-    bound!(k)
+    # discretise!(k_eqn, k_model)
+    # apply_boundary_conditions!(k_eqn, k_model, k.BCs)
+    # update_preconditioner!(PK)
+    # k_eqn.b .+= Pk
+    # prev .= k.values
+    # relax!(k_eqn, prev, setup.relax)
+    # run!(k_eqn, k_model, setup, opP=PK.P, solver=solver)
+    # # bound!(k)
 
-    # νt.values .= Pω
+    # # νt.values .= Pω
 
-    interpolate!(kf, k)
-    correct_boundaries!(kf, k, k.BCs)
+    # interpolate!(kf, k)
+    # correct_boundaries!(kf, k, k.BCs)
     
-    interpolate!(ωf, ω)
-    correct_boundaries!(ωf, ω, ω.BCs)
+    # interpolate!(ωf, ω)
+    # correct_boundaries!(ωf, ω, ω.BCs)
     
-    update_eddy_viscosity!(νtf, kf, ωf)
-    update_eddy_viscosity!(νt, k, ω)
+    # update_eddy_viscosity!(νtf, kf, ωf)
+    # update_eddy_viscosity!(νt, k, ω)
+
+    # bound!(νt)
+    # bound!(νtf)
 
 end
 
@@ -188,7 +202,7 @@ production_k!(Pk, k, ω, νt, S2) = begin
     for i ∈ eachindex(Pk)
         # Pk[i] = 2.0*νt[i]*S2[i]*cells[i].volume
         # Pk[i] = 2.0*k[i]/ω[i]*S2[i]*cells[i].volume
-        Pk[i] = 2.0*S2[i]*cells[i].volume
+        Pk[i] = 1.0*S2[i]*cells[i].volume
     end
 end
 
@@ -278,23 +292,25 @@ apply_wall_function!(Pk, k, kBC) = begin
 end
 
 bound!(field) = begin
-    mesh = field.mesh
-    cells = mesh.cells
-    for i ∈ eachindex(field)
-        average = 0.0
-        neighbours = cells[i].neighbours
-        for cID ∈ neighbours
-            average += abs(field[cID])
-        end
-        average /= length(neighbours)
-        # field[i] = max(field[i], eps()^2)
-        field[i] = max(
-            field[i], min(
-                signbit(field[i])*field[i], maximum(field.values)
-                # signbit(field[i])*field[i], average
-                )
-        )
-    end
+    # mesh = field.mesh
+    # cells = mesh.cells
+    # for i ∈ eachindex(field)
+    #     average = 0.0
+    #     neighbours = cells[i].neighbours
+    #     for cID ∈ neighbours
+    #         average += abs(field[cID])
+    #     end
+    #     average /= length(neighbours)
+    #     # field[i] = max(field[i], eps()^2)
+    #     field[i] = max(
+    #         field[i], min(
+    #             signbit(field[i])*field[i], maximum(field.values)
+    #             # signbit(field[i])*field[i], average
+    #             )
+    #     )
+    # end
+
+    field.values .= max.(field.values, 1e-15)
 end
 
 function kk()

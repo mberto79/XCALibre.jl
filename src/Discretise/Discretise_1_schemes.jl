@@ -49,7 +49,11 @@ end
 @inline scheme_source!(
     term::Operator{F,P,I,Si}, 
     b, nzval, cell, cID)  where {F,P,I} = begin
-    ap = term.sign*(term.flux[cID] * cell.volume)
+    phi = term.phi
+    flux = term.flux[cID]*cell.volume
+    ap = term.sign*max(flux, 0.0)
+    ab = term.sign*min(flux, 0.0)*phi[cID]
     nzval[cID] += ap
+    b[cID] -= ab
     nothing
 end

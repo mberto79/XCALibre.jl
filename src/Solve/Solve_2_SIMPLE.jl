@@ -57,7 +57,7 @@ function isimple!(
     solver_U = setup_U.solver(ux_eqn.A, ux_eqn.b)
 
     R_ux, R_uy, R_p  = SIMPLE_loop(
-    mesh::Mesh2{TI,TF}, U, p, k, ω, nuf, νt, ∇p,
+    mesh::Mesh2{TI,TF}, U, p, nuf, νt, ∇p,
     setup_U, setup_p, setup_turb, iterations,
     ux_model, uy_model, p_model,
     turbulence_model,
@@ -70,7 +70,7 @@ function isimple!(
 end # end function
 
 function SIMPLE_loop(
-    mesh::Mesh2{TI,TF}, U, p, k, ω, nuf, νt, ∇p,
+    mesh::Mesh2{TI,TF}, U, p, nuf, νt, ∇p,
     setup_U, setup_p, setup_turb, iterations,
     ux_model, uy_model, p_model,
     turbulence_model,
@@ -221,7 +221,9 @@ function SIMPLE_loop(
 
         # turbulence!(turbulence_model, νt, nuf, S, S2, solver_p, setup_turb, explicit_relaxation!)
 
+        # if 100 % iteration == 0
         turbulence!(turbulence_model, νt, nuf, S, S2, solver_p, setup_turb, implicit_relaxation!)
+        # end
         # update_nueff!(nueff, nuf, turbulence_model)
 
         convergence = 1e-7
@@ -237,7 +239,7 @@ function SIMPLE_loop(
 
                 # turbulence!(turbulence_model, νt, nuf, S, S2, solver_p, setup_p, explicit_relaxation!)
 
-                k.values .= S2.values
+                # k.values .= S2.values
 
             break
         end

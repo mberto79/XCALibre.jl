@@ -60,10 +60,10 @@ k = assign(
     ω,
     Dirichlet(:inlet, ω_inlet),
     Neumann(:outlet, 0.0),
-    OmegaWallFunction(:wall, (κ=0.41, cmu=0.09, k=k)),
-    OmegaWallFunction(:top, (κ=0.41, cmu=0.09, k=k))
-    # Dirichlet(:wall, ω_wall), 
-    # Dirichlet(:top, ω_wall)
+    # OmegaWallFunction(:wall, (κ=0.41, cmu=0.09, k=k)),
+    # OmegaWallFunction(:top, (κ=0.41, cmu=0.09, k=k))
+    Dirichlet(:wall, ω_wall), 
+    Dirichlet(:top, ω_wall)
 )
 
 setup_U = SolverSetup(
@@ -95,7 +95,7 @@ initialise!(k, k_inlet)
 initialise!(ω, ω_inlet)
 initialise!(νt, k_inlet/ω_inlet)
 
-iterations = 500
+iterations = 50
 Rx, Ry, Rp = isimple!( # 123 its, 4.68k allocs
     mesh, nu, U, p, k, ω, νt, 
     # setup_U, setup_p, iterations, pref=0.0)

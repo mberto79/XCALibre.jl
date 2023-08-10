@@ -96,7 +96,7 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
     prev = zeros(eltype(kOmega.coeffs.α1), length(S2))
     
     # magnitude2!(S2, S) # should be multiplied by 2 (def of Sij)
-    magnitude!(S2, S) # should be multiplied by 2 (def of Sij)
+    # magnitude!(S2, S) # should be multiplied by 2 (def of Sij)
 
     S2.values .= sqrt(2).*S2.values
 
@@ -117,56 +117,71 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
     # correct_omega!(ω, ω.BCs)
     # production_k!(Pk, k, ω, νt, S2)
 
-    # double_inner_product!(Pk, S, S.gradU)
+    double_inner_product!(Pk, S, S.gradU)
 
-    # cells = k.mesh.cells
-    # for i ∈ eachindex(Pk)
-    #     Pk[i] = 2.0*Pk[i]*cells[i].volume
-    # end
+    cells = k.mesh.cells
+    for i ∈ eachindex(Pk)
+        Pk[i] = sqrt(2)*Pk[i]*cells[i].volume
+    end
     # # # correct_production!(Pk, k, k.BCs) # based on choice of wall function
     # # production_ω!(Pω, Pk, k, ω, νt, coeffs.α1)
-    # Pω .= coeffs.α1*Pk
-    # Pk .= νt.values.*Pk # add eddy viscosity
+    Pω .= coeffs.α1*Pk
+    Pk .= νt.values.*Pk # add eddy viscosity
 
-    # destruction_flux!(Dωf, coeffs.β1, ω) 
-    # destruction_flux!(Dkf, coeffs.β⁺, ω) 
+    destruction_flux!(Dωf, coeffs.β1, ω) 
 
-    # interpolate!(kf, k)
-    # correct_boundaries!(kf, k, k.BCs)
-    # interpolate!(ωf, ω)
-    # correct_boundaries!(ωf, ω, ω.BCs)
+
     
-    # diffusion_flux!(nueffω, nu, kf, ωf, coeffs.σω)
-    # diffusion_flux!(nueffk, nu, kf, ωf, coeffs.σk)
 
-    # discretise!(ω_eqn, ω_model)
-    # apply_boundary_conditions!(ω_eqn, ω_model, ω.BCs)
-    # update_preconditioner!(PW)
-    # ω_eqn.b .+= Pω
-    # prev .= ω.values
-    # relax!(ω_eqn, prev, setup.relax)
-    # run!(ω_eqn, ω_model, setup, opP=PW.P, solver=solver)
-    # # bound!(ω)
+    interpolate!(kf, k)
+    correct_boundaries!(kf, k, k.BCs)
+    interpolate!(ωf, ω)
+    correct_boundaries!(ωf, ω, ω.BCs)
+    
+    diffusion_flux!(nueffω, nu, kf, ωf, coeffs.σω)
 
-    # discretise!(k_eqn, k_model)
-    # apply_boundary_conditions!(k_eqn, k_model, k.BCs)
-    # update_preconditioner!(PK)
-    # k_eqn.b .+= Pk
-    # prev .= k.values
-    # relax!(k_eqn, prev, setup.relax)
-    # run!(k_eqn, k_model, setup, opP=PK.P, solver=solver)
-    # # bound!(k)
+
+
+    discretise!(ω_eqn, ω_model)
+    apply_boundary_conditions!(ω_eqn, ω_model, ω.BCs)
+    prev .= ω.values
+    update_preconditioner!(PW)
+    ω_eqn.b .+= Pω
+    relax!(ω_eqn, prev, setup.relax)
+    run!(ω_eqn, ω_model, setup, opP=PW.P, solver=solver)
+    bound!(ω, 300)
+
+    # k.values .= k.values
+    # ω.values .= nueffω.values
+
+    destruction_flux!(Dkf, coeffs.β⁺, ω) 
+    interpolate!(ωf, ω)
+    correct_boundaries!(ωf, ω, ω.BCs)
+    diffusion_flux!(nueffk, nu, kf, ωf, coeffs.σk)
+    νt.values .= max.(k.values./ω.values, 0.0)
+    Pk .= νt.values.*Pk # add eddy viscosity
+
+
+
+    discretise!(k_eqn, k_model)
+    apply_boundary_conditions!(k_eqn, k_model, k.BCs)
+    prev .= k.values
+    update_preconditioner!(PK)
+    k_eqn.b .+= Pk
+    relax!(k_eqn, prev, setup.relax)
+    run!(k_eqn, k_model, setup, opP=PK.P, solver=solver)
+    bound!(k, 1e-15)
 
     # # νt.values .= Pω
 
-    # interpolate!(kf, k)
-    # correct_boundaries!(kf, k, k.BCs)
+    interpolate!(kf, k)
+    correct_boundaries!(kf, k, k.BCs)
     
-    # interpolate!(ωf, ω)
-    # correct_boundaries!(ωf, ω, ω.BCs)
+    interpolate!(ωf, ω)
+    correct_boundaries!(ωf, ω, ω.BCs)
     
-    # update_eddy_viscosity!(νtf, kf, ωf)
-    # update_eddy_viscosity!(νt, k, ω)
+    update_eddy_viscosity!(νtf, kf, ωf)
+    update_eddy_viscosity!(νt, k, ω)
 
     # bound!(νt)
     # bound!(νtf)
@@ -175,13 +190,13 @@ end
 
 update_eddy_viscosity!(νt::F, k, ω) where F<:AbstractScalarField = begin
     for i ∈ eachindex(νt)
-        νt[i] = k[i]/ω[i]
+        νt[i] = k[i]/max(ω[i], 1e-15)
     end
 end
 
 diffusion_flux!(nueff, nu, kf::F, ωf, σ) where F<:FaceScalarField = begin
     for i ∈ eachindex(nueff)
-        nueff[i] = nu[i] + max(σ*kf[i]/ωf[i], 0.0)
+        nueff[i] = nu[i] + σ*kf[i]/max(ωf[i], 1e-15)
     end
 end
 
@@ -291,7 +306,7 @@ apply_wall_function!(Pk, k, kBC) = begin
     end
 end
 
-bound!(field) = begin
+bound!(field, val) = begin
     # mesh = field.mesh
     # cells = mesh.cells
     # for i ∈ eachindex(field)
@@ -310,7 +325,7 @@ bound!(field) = begin
     #     )
     # end
 
-    field.values .= max.(field.values, 1e-15)
+    field.values .= max.(field.values, val)
 end
 
 function kk()

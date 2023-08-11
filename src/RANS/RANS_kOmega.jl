@@ -95,10 +95,7 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
 
     prev = zeros(eltype(kOmega.coeffs.α1), length(S2))
     
-    # magnitude2!(S2, S) # should be multiplied by 2 (def of Sij)
-    # magnitude!(S2, S) # should be multiplied by 2 (def of Sij)
-
-    S2.values .= sqrt(2).*S2.values
+    
 
     (;k_eqn,ω_eqn,k_model,ω_model,PK,PW,kf,ωf,νtf,coeffs) = kOmega
 
@@ -114,39 +111,37 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
     Pω = ω_model.sources[1].field
 
     
-    # correct_omega!(ω, ω.BCs)
-    # production_k!(Pk, k, ω, νt, S2)
 
-    double_inner_product!(Pk, S, S.gradU)
+    # double_inner_product!(Pk, S, S.gradU)
+    # cells = k.mesh.cells
+    # for i ∈ eachindex(Pk)
+    #     # Pk[i] = 2.0*Pk[i]*cells[i].volume
+    #     Pk[i] = 2.0*Pk[i]*cells[i].volume
+    # end
 
+    magnitude2!(S2, S) # should be multiplied by 2 (def of Sij)
     cells = k.mesh.cells
     for i ∈ eachindex(Pk)
-        # Pk[i] = 2.0*Pk[i]*cells[i].volume
-        Pk[i] = 2.0*Pk[i]*cells[i].volume
+        Pk[i] = 2.0*S2[i]*cells[i].volume
     end
+
+    
     # # # correct_production!(Pk, k, k.BCs) # based on choice of wall function
     # # production_ω!(Pω, Pk, k, ω, νt, coeffs.α1)
     Pω .= coeffs.α1*Pk
-    Pk .= νt.values.*Pk # add eddy viscosity
     
     # constrain_boundary!(ω, ω.BCs)
     @. Dωf.values = coeffs.β1*ω.values
     # destruction_flux!(Dωf, coeffs.β1, ω) 
     
-    # constrain_boundary!(ω, ω.BCs)
-    # interpolate!(kf, k)
-    # correct_boundaries!(kf, k, k.BCs)
-    # interpolate!(ωf, ω)
-    # correct_boundaries!(ωf, ω, ω.BCs)
-        
-    # diffusion_flux!(nueffω, nu, kf, ωf, coeffs.σω)
-
     @. νt.values = k.values/ω.values
     interpolate!(νtf, νt)
     correct_boundaries!(νtf, νt, νt.BCs)
-
     diffusion_flux!(nueffω, nu,  νtf, coeffs.σω)
+
     
+
+    # Solve ω equation
     prev .= ω.values
     discretise!(ω_eqn, ω_model)
     apply_boundary_conditions!(ω_eqn, ω_model, ω.BCs)
@@ -156,50 +151,43 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
     update_preconditioner!(PW)
     run!(ω_eqn, ω_model, setup, opP=PW.P, solver=solver)
    
-    constrain_boundary!(ω, ω.BCs)
+    # constrain_boundary!(ω, ω.BCs)
     interpolate!(ωf, ω)
     correct_boundaries!(ωf, ω, ω.BCs)
-    bound!(ω, ωf, 1)
+    bound!(ω, ωf, eps())
     constrain_boundary!(ω, ω.BCs)
 
-    # k.values .= k.values
-    # ω.values .= nueffω.values
+    # @. νt.values = k.values/ω.values
+    # interpolate!(νtf, νt)
+    # correct_boundaries!(νtf, νt, νt.BCs)
 
-    # destruction_flux!(Dkf, coeffs.β⁺, ω) 
-    # interpolate!(ωf, ω)
-    # correct_boundaries!(ωf, ω, ω.BCs)
-    # diffusion_flux!(nueffk, nu, kf, ωf, coeffs.σk)
-    # νt.values .= max.(k.values./ω.values, 0.0)
-    # Pk .= νt.values.*Pk # add eddy viscosity
-
-
-
-    # discretise!(k_eqn, k_model)
-    # apply_boundary_conditions!(k_eqn, k_model, k.BCs)
-    # prev .= k.values
-    # update_preconditioner!(PK)
-    # k_eqn.b .+= Pk
-    # relax!(k_eqn, prev, setup.relax)
-    # run!(k_eqn, k_model, setup, opP=PK.P, solver=solver)
-    # bound!(k, 1e-15)
-
-    # # νt.values .= Pω
-
-    # interpolate!(kf, k)
-    # correct_boundaries!(kf, k, k.BCs)
+    # update k fluxes
     
-    # interpolate!(ωf, ω)
-    # correct_boundaries!(ωf, ω, ω.BCs)
-    
-    # update_eddy_viscosity!(νtf, kf, ωf)
+    Pk .= νt.values.*Pk # add eddy viscosity
+    @. Dkf.values = coeffs.β⁺*ω.values
+    diffusion_flux!(nueffk, nu,  νtf, coeffs.σk)
+    # @. nueffk.values = nueffω.values
+
+    # Solve k equation
+    # constrain_boundary!(k, k.BCs)
+    prev .= k.values
+    discretise!(k_eqn, k_model)
+    apply_boundary_conditions!(k_eqn, k_model, k.BCs)
+    k_eqn.b .+= Pk
+    relax!(k_eqn, prev, setup.relax)
+    update_preconditioner!(PK)
+    run!(k_eqn, k_model, setup, opP=PK.P, solver=solver)
+    # constrain_boundary!(k, k.BCs)
+    interpolate!(kf, k)
+    correct_boundaries!(kf, k, k.BCs)
+    bound!(k, kf, eps())
+    # constrain_boundary!(k, k.BCs)
+
 
     update_eddy_viscosity!(νt, k, ω)
     # @. νt.values = max(νt.values, eps())
     interpolate!(νtf, νt)
     correct_boundaries!(νtf, νt, νt.BCs)
-
-    # bound!(νtf)
-
 end
 
 update_eddy_viscosity!(νt::F, k, ω) where F<:AbstractScalarField = begin

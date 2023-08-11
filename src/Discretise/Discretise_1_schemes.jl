@@ -50,13 +50,11 @@ end
     term::Operator{F,P,I,Si}, 
     b, nzval, cell, cID)  where {F,P,I} = begin
     phi = term.phi
-    # flux = term.sign*term.flux[cID]*cell.volume # this worked!
-    flux = term.sign*term.flux[cID]*cell.volume#*phi[cID]
     # ap = max(flux, 0.0)
     # ab = min(flux, 0.0)*phi[cID]
+    # flux = term.sign*term.flux[cID]*cell.volume
     # nzval[cID] += flux
-    # nzval[cID] += flux
-    # b[cID] -= ab
+    flux = term.sign*term.flux[cID]*cell.volume # *phi[cID]
     b[cID] -= flux
     nothing
 end

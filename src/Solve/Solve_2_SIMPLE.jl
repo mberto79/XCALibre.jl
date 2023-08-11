@@ -222,7 +222,7 @@ function SIMPLE_loop(
         # if 100 % iteration == 0
         turbulence!(turbulence_model, νt, nuf, S, S2, solver_p, setup_turb, implicit_relaxation!) #explicit_relaxation!
         # end
-        # update_nueff!(nueff, nuf, turbulence_model)
+        update_nueff!(nueff, nuf, turbulence_model)
 
         convergence = 1e-7
 

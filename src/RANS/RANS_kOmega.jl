@@ -112,18 +112,18 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
 
     
 
-    double_inner_product!(Pk, S, S.gradU)
-    cells = k.mesh.cells
-    for i ∈ eachindex(Pk)
-        # Pk[i] = 2.0*Pk[i]*cells[i].volume
-        Pk[i] = 2.0*Pk[i]*cells[i].volume
-    end
-
-    # magnitude2!(S2, S) # should be multiplied by 2 (def of Sij)
+    # double_inner_product!(Pk, S, S.gradU)
     # cells = k.mesh.cells
     # for i ∈ eachindex(Pk)
-    #     Pk[i] = 2.0*S2[i]*cells[i].volume
+    #     # Pk[i] = 2.0*Pk[i]*cells[i].volume
+    #     Pk[i] = 2.0*Pk[i]*cells[i].volume
     # end
+
+    magnitude2!(S2, S) # should be multiplied by 2 (def of Sij)
+    cells = k.mesh.cells
+    for i ∈ eachindex(Pk)
+        Pk[i] = 2.0*S2[i]*cells[i].volume
+    end
 
     
     # # # correct_production!(Pk, k, k.BCs) # based on choice of wall function
@@ -147,7 +147,7 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
     apply_boundary_conditions!(ω_eqn, ω_model, ω.BCs)
     ω_eqn.b .+= Pω
     relax!(ω_eqn, prev, setup.relax)
-    constrain_equation!(ω_eqn, ω, ω.BCs)
+    # constrain_equation!(ω_eqn, ω, ω.BCs) # Only if using wall function?
     update_preconditioner!(PW)
     run!(ω_eqn, ω_model, setup, opP=PW.P, solver=solver)
    
@@ -155,7 +155,7 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
     interpolate!(ωf, ω)
     correct_boundaries!(ωf, ω, ω.BCs)
     bound!(ω, ωf, eps())
-    constrain_boundary!(ω, ω.BCs)
+    # constrain_boundary!(ω, ω.BCs)
 
     # @. νt.values = k.values/ω.values
     # interpolate!(νtf, νt)
@@ -374,7 +374,8 @@ bound!(field, fieldf, bound) = begin
             # sum_flux += max(fieldf[fID]*area, eps()) # bounded sum?
             sum_flux += max(field[cID], eps()) # bounded sum?
             # sum_flux += abs(fieldf[fID]*area)
-            sum_area += 1*max(sign(field[cID]), 0.0)
+            # sum_area += 1*max(sign(field[cID]), 0.0)
+            sum_area += 1
         end
 
         # npatches = length(mesh.boundaries)

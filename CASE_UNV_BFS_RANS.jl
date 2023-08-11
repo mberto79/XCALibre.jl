@@ -19,14 +19,14 @@ k = ScalarField(mesh)
 # velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
 # u_mag = 1.5
-u_mag = 5.0
+u_mag = 2.0
 velocity = [u_mag, 0.0, 0.0]
 Tu = 0.1
 k_inlet = 1 # 3/2*(Tu*u_mag)^2
 νR = 0.1 # nut/nu
 ω_inlet = 1000 # k_inlet/(nu*νR) # nut = k/ω thus w = k/nut 
-ω_wall = 10*6*1e-3/(0.075*mesh.faces[61].delta^2)
-# ω_wall = ω_inlet
+# ω_wall = 10*6*1e-3/(0.075*mesh.faces[61].delta^2)
+ω_wall = ω_inlet
 Re = velocity[1]*0.1/nu
 
 U = assign(
@@ -85,14 +85,14 @@ setup_U = SolverSetup(
 
 setup_p = SolverSetup(
     solver      = GmresSolver, # GmresSolver, FomSolver, DiomSolver
-    relax       = 0.2,
+    relax       = 0.3,
     itmax       = 100,
     rtol        = 1e-1
 )
 
 setup_turb = SolverSetup(
     solver      = GmresSolver, # BicgstabSolver, GmresSolver
-    relax       = 0.2,
+    relax       = 0.3,
     itmax       = 100,
     rtol        = 1e-1,
 )
@@ -105,7 +105,7 @@ initialise!(k, k_inlet)
 initialise!(ω, ω_inlet)
 initialise!(νt, k_inlet/ω_inlet)
 
-iterations = 20
+iterations = 1500
 Rx, Ry, Rp = isimple!( # 123 its, 4.68k allocs
     mesh, nu, U, p, k, ω, νt, 
     # setup_U, setup_p, iterations, pref=0.0)

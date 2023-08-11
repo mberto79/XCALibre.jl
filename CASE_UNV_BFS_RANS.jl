@@ -78,7 +78,7 @@ k = assign(
 
 setup_U = SolverSetup(
     solver      = GmresSolver, # BicgstabSolver, GmresSolver
-    relax       = 0.7,
+    relax       = 0.8,
     itmax       = 100,
     rtol        = 1e-1
 )
@@ -92,9 +92,9 @@ setup_p = SolverSetup(
 
 setup_turb = SolverSetup(
     solver      = GmresSolver, # BicgstabSolver, GmresSolver
-    relax       = 0.1,
+    relax       = 0.2,
     itmax       = 100,
-    rtol        = 1e-3,
+    rtol        = 1e-1,
 )
 
 GC.gc()
@@ -105,7 +105,7 @@ initialise!(k, k_inlet)
 initialise!(ω, ω_inlet)
 initialise!(νt, k_inlet/ω_inlet)
 
-iterations = 10
+iterations = 20
 Rx, Ry, Rp = isimple!( # 123 its, 4.68k allocs
     mesh, nu, U, p, k, ω, νt, 
     # setup_U, setup_p, iterations, pref=0.0)

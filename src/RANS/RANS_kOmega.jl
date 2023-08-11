@@ -112,18 +112,18 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
 
     
 
-    # double_inner_product!(Pk, S, S.gradU)
-    # cells = k.mesh.cells
-    # for i ∈ eachindex(Pk)
-    #     # Pk[i] = 2.0*Pk[i]*cells[i].volume
-    #     Pk[i] = 2.0*Pk[i]*cells[i].volume
-    # end
-
-    magnitude2!(S2, S) # should be multiplied by 2 (def of Sij)
+    double_inner_product!(Pk, S, S.gradU)
     cells = k.mesh.cells
     for i ∈ eachindex(Pk)
-        Pk[i] = 2.0*S2[i]*cells[i].volume
+        # Pk[i] = 2.0*Pk[i]*cells[i].volume
+        Pk[i] = 2.0*Pk[i]*cells[i].volume
     end
+
+    # magnitude2!(S2, S) # should be multiplied by 2 (def of Sij)
+    # cells = k.mesh.cells
+    # for i ∈ eachindex(Pk)
+    #     Pk[i] = 2.0*S2[i]*cells[i].volume
+    # end
 
     
     # # # correct_production!(Pk, k, k.BCs) # based on choice of wall function

@@ -54,7 +54,7 @@ end
     # ab = min(flux, 0.0)*phi[cID]
     # flux = term.sign*term.flux[cID]*cell.volume
     # nzval[cID] += flux
-    flux = term.sign*term.flux[cID]*cell.volume # *phi[cID]
+    flux = term.sign*term.flux[cID]*cell.volume*phi[cID]
     b[cID] -= flux
     nothing
 end

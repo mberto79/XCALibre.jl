@@ -121,82 +121,102 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
 
     cells = k.mesh.cells
     for i ∈ eachindex(Pk)
-        Pk[i] = sqrt(2)*Pk[i]*cells[i].volume
+        # Pk[i] = 2.0*Pk[i]*cells[i].volume
+        Pk[i] = 2.0*Pk[i]*cells[i].volume
     end
     # # # correct_production!(Pk, k, k.BCs) # based on choice of wall function
     # # production_ω!(Pω, Pk, k, ω, νt, coeffs.α1)
     Pω .= coeffs.α1*Pk
     Pk .= νt.values.*Pk # add eddy viscosity
-
-    destruction_flux!(Dωf, coeffs.β1, ω) 
-
-
     
-
-    interpolate!(kf, k)
-    correct_boundaries!(kf, k, k.BCs)
-    interpolate!(ωf, ω)
-    correct_boundaries!(ωf, ω, ω.BCs)
+    # constrain_boundary!(ω, ω.BCs)
+    @. Dωf.values = coeffs.β1*ω.values
+    # destruction_flux!(Dωf, coeffs.β1, ω) 
     
-    diffusion_flux!(nueffω, nu, kf, ωf, coeffs.σω)
+    # constrain_boundary!(ω, ω.BCs)
+    # interpolate!(kf, k)
+    # correct_boundaries!(kf, k, k.BCs)
+    # interpolate!(ωf, ω)
+    # correct_boundaries!(ωf, ω, ω.BCs)
+        
+    # diffusion_flux!(nueffω, nu, kf, ωf, coeffs.σω)
 
+    @. νt.values = k.values/ω.values
+    interpolate!(νtf, νt)
+    correct_boundaries!(νtf, νt, νt.BCs)
 
-
+    diffusion_flux!(nueffω, nu,  νtf, coeffs.σω)
+    
+    prev .= ω.values
     discretise!(ω_eqn, ω_model)
     apply_boundary_conditions!(ω_eqn, ω_model, ω.BCs)
-    prev .= ω.values
-    update_preconditioner!(PW)
     ω_eqn.b .+= Pω
     relax!(ω_eqn, prev, setup.relax)
+    constrain_equation!(ω_eqn, ω, ω.BCs)
+    update_preconditioner!(PW)
     run!(ω_eqn, ω_model, setup, opP=PW.P, solver=solver)
-    bound!(ω, 300)
+   
+    constrain_boundary!(ω, ω.BCs)
+    interpolate!(ωf, ω)
+    correct_boundaries!(ωf, ω, ω.BCs)
+    bound!(ω, ωf, 1)
+    constrain_boundary!(ω, ω.BCs)
 
     # k.values .= k.values
     # ω.values .= nueffω.values
 
-    destruction_flux!(Dkf, coeffs.β⁺, ω) 
-    interpolate!(ωf, ω)
-    correct_boundaries!(ωf, ω, ω.BCs)
-    diffusion_flux!(nueffk, nu, kf, ωf, coeffs.σk)
-    νt.values .= max.(k.values./ω.values, 0.0)
-    Pk .= νt.values.*Pk # add eddy viscosity
+    # destruction_flux!(Dkf, coeffs.β⁺, ω) 
+    # interpolate!(ωf, ω)
+    # correct_boundaries!(ωf, ω, ω.BCs)
+    # diffusion_flux!(nueffk, nu, kf, ωf, coeffs.σk)
+    # νt.values .= max.(k.values./ω.values, 0.0)
+    # Pk .= νt.values.*Pk # add eddy viscosity
 
 
 
-    discretise!(k_eqn, k_model)
-    apply_boundary_conditions!(k_eqn, k_model, k.BCs)
-    prev .= k.values
-    update_preconditioner!(PK)
-    k_eqn.b .+= Pk
-    relax!(k_eqn, prev, setup.relax)
-    run!(k_eqn, k_model, setup, opP=PK.P, solver=solver)
-    bound!(k, 1e-15)
+    # discretise!(k_eqn, k_model)
+    # apply_boundary_conditions!(k_eqn, k_model, k.BCs)
+    # prev .= k.values
+    # update_preconditioner!(PK)
+    # k_eqn.b .+= Pk
+    # relax!(k_eqn, prev, setup.relax)
+    # run!(k_eqn, k_model, setup, opP=PK.P, solver=solver)
+    # bound!(k, 1e-15)
 
     # # νt.values .= Pω
 
-    interpolate!(kf, k)
-    correct_boundaries!(kf, k, k.BCs)
+    # interpolate!(kf, k)
+    # correct_boundaries!(kf, k, k.BCs)
     
-    interpolate!(ωf, ω)
-    correct_boundaries!(ωf, ω, ω.BCs)
+    # interpolate!(ωf, ω)
+    # correct_boundaries!(ωf, ω, ω.BCs)
     
-    update_eddy_viscosity!(νtf, kf, ωf)
-    update_eddy_viscosity!(νt, k, ω)
+    # update_eddy_viscosity!(νtf, kf, ωf)
 
-    # bound!(νt)
+    update_eddy_viscosity!(νt, k, ω)
+    # @. νt.values = max(νt.values, eps())
+    interpolate!(νtf, νt)
+    correct_boundaries!(νtf, νt, νt.BCs)
+
     # bound!(νtf)
 
 end
 
 update_eddy_viscosity!(νt::F, k, ω) where F<:AbstractScalarField = begin
     for i ∈ eachindex(νt)
-        νt[i] = k[i]/max(ω[i], 1e-15)
+        νt[i] = k[i]/ω[i]
     end
 end
 
-diffusion_flux!(nueff, nu, kf::F, ωf, σ) where F<:FaceScalarField = begin
+# diffusion_flux!(nueff, nu, kf::F, ωf, σ) where F<:FaceScalarField = begin
+#     for i ∈ eachindex(nueff)
+#         nueff[i] = nu[i] + σ*kf[i]/ωf[i]
+#     end
+# end
+
+diffusion_flux!(nueff, nu, νtf::F, σ) where F<:FaceScalarField = begin
     for i ∈ eachindex(nueff)
-        nueff[i] = nu[i] + σ*kf[i]/max(ωf[i], 1e-15)
+        nueff[i] = nu[i] + σ*νtf[i]
     end
 end
 
@@ -234,14 +254,14 @@ production_ω!(Pω, Pk, k, ω, νt, α1) = begin
     end
 end
 
-@generated correct_omega!(ω, ωBCs) = begin
-    BCs = ωBCs.parameters
+@generated constrain_equation!(eqn, field, fieldBCs) = begin
+    BCs = fieldBCs.parameters
     func_calls = Expr[]
     for i ∈ eachindex(BCs)
         BC = BCs[i]
-        if BC <: OmegaWallFunction
+        if BC <: OmegaWallFunction || BC <: Dirichlet
             call = quote
-                omega_wall!(ω, ωBCs[$i])
+                constraint!(eqn, field, fieldBCs[$i])
             end
             push!(func_calls, call)
         end
@@ -252,22 +272,57 @@ end
     end 
 end
 
-omega_wall!(ω, ωBC) = begin
-    ID = ωBC.ID
-    cmu = ωBC.value.cmu
-    κ = ωBC.value.κ
-    k = ωBC.value.k
-    mesh = ω.mesh
+constraint!(eqn, field, BC) = begin
+    ID = BC.ID
+    # cmu = BC.value.cmu
+    # κ = BC.value.κ
+    # k = BC.value.k
+    mesh = field.mesh
+    (; faces, cells, boundaries) = mesh
+    (; A, b) = eqn
+    boundary = boundaries[ID]
+    (; cellsID, facesID) = boundary
+    for i ∈ eachindex(cellsID)
+        cID = cellsID[i]
+        fID = facesID[i]
+        b[cID] += A[cID,cID]*BC.value
+        A[cID,cID] += A[cID,cID]
+        # b[cID] = A[cID,cID]*BC.value
+        # A[cID,cID] = 2*A[cID,cID]
+    end
+end
+
+@generated constrain_boundary!(field, fieldBCs) = begin
+    BCs = fieldBCs.parameters
+    func_calls = Expr[]
+    for i ∈ eachindex(BCs)
+        BC = BCs[i]
+        if BC <: OmegaWallFunction || BC <: Dirichlet
+            call = quote
+                set_cell_value!(field, fieldBCs[$i])
+            end
+            push!(func_calls, call)
+        end
+    end
+    quote
+    $(func_calls...)
+    nothing
+    end 
+end
+
+set_cell_value!(field, BC) = begin
+    ID = BC.ID
+    # cmu = BC.value.cmu
+    # κ = BC.value.κ
+    # k = BC.value.k
+    mesh = field.mesh
     (; faces, cells, boundaries) = mesh
     boundary = boundaries[ID]
     (; cellsID, facesID) = boundary
     for i ∈ eachindex(cellsID)
         cID = cellsID[i]
         fID = facesID[i]
-        # cell = cells[cID]
-        face = faces[fID]
-        # ω.values[cID] = k[cID]^0.5/(cmu^0.25*κ*face.delta)
-        ω.values[cID] = 10*6*1e-3/(0.075*face.delta^2)
+        field.values[cID] = BC.value
     end
 end
 
@@ -306,26 +361,53 @@ apply_wall_function!(Pk, k, kBC) = begin
     end
 end
 
-bound!(field, val) = begin
-    # mesh = field.mesh
-    # cells = mesh.cells
-    # for i ∈ eachindex(field)
-    #     average = 0.0
-    #     neighbours = cells[i].neighbours
-    #     for cID ∈ neighbours
-    #         average += abs(field[cID])
-    #     end
-    #     average /= length(neighbours)
-    #     # field[i] = max(field[i], eps()^2)
-    #     field[i] = max(
-    #         field[i], min(
-    #             signbit(field[i])*field[i], maximum(field.values)
-    #             # signbit(field[i])*field[i], average
-    #             )
-    #     )
-    # end
+bound!(field, fieldf, bound) = begin
+    mesh = field.mesh
+    (; cells, faces) = mesh
+    for i ∈ eachindex(field)
+        sum_flux = 0.0
+        sum_area = 0
+        average = 0.0
+        # Face based average 
 
-    field.values .= max.(field.values, val)
+        # facesID = cells[i].facesID
+        # for fID ∈ facesID
+        #     area = faces[fID].area
+        #     # sum_flux += max(fieldf[fID]*area, eps()) # bounded sum?
+        #     sum_flux += max(fieldf[fID], eps()) # bounded sum?
+        #     # sum_flux += abs(fieldf[fID]*area)
+        #     sum_area += 1
+        # end
+
+        # Cell based average
+        cellsID = cells[i].neighbours
+        for cID ∈ cellsID
+            # area = faces[fID].area
+            # sum_flux += max(fieldf[fID]*area, eps()) # bounded sum?
+            sum_flux += max(field[cID], eps()) # bounded sum?
+            # sum_flux += abs(fieldf[fID]*area)
+            sum_area += 1*max(sign(field[cID]), 0.0)
+        end
+
+        # npatches = length(mesh.boundaries)
+        # last_boundary_cell = mesh.boundaries[npatches].cellsID[end]
+        # if i < last_boundary_cell
+        #     area = faces[fID].area
+        #     sum_flux += max(fieldf[fID]*area, eps()) # bounded sum?
+        #     sum_area += area
+        # end
+
+        average = sum_flux/sum_area
+        field[i] = max(
+            max(
+                field[i],
+                average*signbit(field[i])
+            ),
+            bound
+        )
+    end
+
+    # field.values .= max.(field.values, val)
 end
 
 function kk()

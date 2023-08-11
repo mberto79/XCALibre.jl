@@ -22,9 +22,9 @@ nu = 1e-3
 u_mag = 0.5
 velocity = [u_mag, 0.0, 0.0]
 Tu = 0.1
-k_inlet = 1 # 3/2*(Tu*u_mag)^2
+k_inlet = 10 # 3/2*(Tu*u_mag)^2
 νR = 0.1 # nut/nu
-ω_inlet = 300 # k_inlet/(nu*νR) # nut = k/ω thus w = k/nut 
+ω_inlet = 1000 # k_inlet/(nu*νR) # nut = k/ω thus w = k/nut 
 ω_wall = 10*6*1e-3/(0.075*mesh.faces[61].delta^2)
 # ω_wall = ω_inlet
 Re = velocity[1]*0.1/nu
@@ -66,23 +66,33 @@ k = assign(
     Dirichlet(:top, ω_wall)
 )
 
+νt = assign(
+    νt,
+    Dirichlet(:inlet, k_inlet/ω_inlet),
+    Neumann(:outlet, 0.0),
+    # OmegaWallFunction(:wall, (κ=0.41, cmu=0.09, k=k)),
+    # OmegaWallFunction(:top, (κ=0.41, cmu=0.09, k=k))
+    Dirichlet(:wall, 0.0), 
+    Dirichlet(:top, 0.0)
+)
+
 setup_U = SolverSetup(
     solver      = GmresSolver, # BicgstabSolver, GmresSolver
-    relax       = 0.7,
+    relax       = 0.8,
     itmax       = 100,
     rtol        = 1e-1
 )
 
 setup_p = SolverSetup(
     solver      = GmresSolver, # GmresSolver, FomSolver, DiomSolver
-    relax       = 0.3,
+    relax       = 0.2,
     itmax       = 100,
     rtol        = 1e-1
 )
 
 setup_turb = SolverSetup(
     solver      = GmresSolver, # BicgstabSolver, GmresSolver
-    relax       = 0.3,
+    relax       = 0.2,
     itmax       = 100,
     rtol        = 1e-1,
 )
@@ -95,7 +105,7 @@ initialise!(k, k_inlet)
 initialise!(ω, ω_inlet)
 initialise!(νt, k_inlet/ω_inlet)
 
-iterations = 50
+iterations = 500
 Rx, Ry, Rp = isimple!( # 123 its, 4.68k allocs
     mesh, nu, U, p, k, ω, νt, 
     # setup_U, setup_p, iterations, pref=0.0)

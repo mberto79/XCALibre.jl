@@ -12,15 +12,19 @@ function (S::StrainRate)(i)
 end
 
 double_inner_product!(
-    s, t1::AbstractTensorField, t2) = 
+    # s, t1::AbstractTensorField, t2) = 
+    s, t0::AbstractTensorField, t2) = 
 begin
     sum = 0.0
     for i ∈ eachindex(s)
+        t1 = t0[i] .- (1/3)*t0[i]*I
         sum = 0.0
         for j ∈ 1:3
             for k ∈ 1:3
                 # sum +=   S[i][j,k]*S[i][k,j]
-                sum +=   t1[i][j,k]*t2[i][j,k]
+                # sum +=   t1[i][j,k]*t2[i][j,k]
+                # sum +=   t1[j,k]*t2[i][j,k]
+                sum +=   t1[j,k]*t2[i][k,j]
             end
         end
         s[i] = sum

@@ -219,10 +219,8 @@ function SIMPLE_loop(
 
         grad!(gradU, Uf, U, U.BCs)
 
-        # turbulence!(turbulence_model, νt, nuf, S, S2, solver_p, setup_turb, explicit_relaxation!)
-
         # if 100 % iteration == 0
-        turbulence!(turbulence_model, νt, nuf, S, S2, solver_p, setup_turb, implicit_relaxation!)
+        turbulence!(turbulence_model, νt, nuf, S, S2, solver_p, setup_turb, implicit_relaxation!) #explicit_relaxation!
         # end
         # update_nueff!(nueff, nuf, turbulence_model)
 

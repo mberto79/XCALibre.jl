@@ -19,7 +19,7 @@ export discretise!
         push!(assignment_block_1, function_call)
 
         assign_source = quote
-            scheme_source!(model.terms[$t], b, nzval, cell, cID)
+            scheme_source!(model.terms[$t], b, nzval, cell, cID, cIndex)
         end
         push!(assignment_block_2, assign_source)
     end
@@ -30,10 +30,12 @@ export discretise!
         mesh = model.terms[1].phi.mesh
         (; faces, cells) = mesh
         (; rowval, colptr, nzval) = A
-        fz = zero(0.0)
+        fz = zero(Float64) # replace with func to return mesh type (Mesh module)
         @inbounds for i ∈ eachindex(nzval)
             nzval[i] = fz
         end
+        cIndex = zero(Int64) # replace with func to return mesh type (Mesh module)
+        nIndex = zero(Int64) # replace with func to return mesh type (Mesh module)
         @inbounds for cID ∈ eachindex(cells)
             cell = cells[cID]
             (; facesID, nsign, neighbours) = cell

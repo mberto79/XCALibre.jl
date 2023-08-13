@@ -52,9 +52,9 @@ end
     phi = term.phi
     # ap = max(flux, 0.0)
     # ab = min(flux, 0.0)*phi[cID]
-    # flux = term.sign*term.flux[cID]*cell.volume # indexed with cID
-    # nzval[cIndex] += flux # indexed with cIndex
-    flux = term.sign*term.flux[cID]*cell.volume*phi[cID]
-    b[cID] -= flux
+    flux = term.sign*term.flux[cID]*cell.volume # indexed with cID
+    nzval[cIndex] += flux # indexed with cIndex
+    # flux = term.sign*term.flux[cID]*cell.volume*phi[cID]
+    # b[cID] -= flux
     nothing
 end

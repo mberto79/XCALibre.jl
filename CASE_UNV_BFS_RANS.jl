@@ -92,7 +92,7 @@ setup_p = SolverSetup(
 
 setup_turb = SolverSetup(
     solver      = GmresSolver, # BicgstabSolver, GmresSolver
-    relax       = 0.3,
+    relax       = 0.8,
     itmax       = 100,
     rtol        = 1e-1,
 )

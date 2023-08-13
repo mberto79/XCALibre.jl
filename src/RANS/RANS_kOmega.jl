@@ -13,12 +13,13 @@ end
 get_coeffs(FloatType) = begin
     kOmegaCoefficients{FloatType}(
         0.09,
-        5/9,
-        3/40,
+        0.52, #5/9,
+        0.072, #3/40,
         0.5,
         0.5
     )
 end
+
 
 struct kOmega{EK,EW,MK,MW,P1,P2,FK,FW,FN,C}
     k_eqn::EK

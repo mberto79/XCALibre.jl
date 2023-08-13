@@ -94,6 +94,10 @@ function SIMPLE_loop(
     S = StrainRate(gradU, gradUT)
     S2 = ScalarField(mesh)
 
+    # Temp sources to test GradUT explicit source
+    divUTx = zeros(Float64, length(mesh.cells))
+    divUTy = zeros(Float64, length(mesh.cells))
+
     n_cells = length(mesh.cells)
     Uf = FaceVectorField(mesh)
     pf = FaceScalarField(mesh)
@@ -143,20 +147,22 @@ function SIMPLE_loop(
         discretise!(ux_eqn, ux_model)
         @turbo @. uy_eqn.A.nzval = ux_eqn.A.nzval # Avoid rediscretising
         apply_boundary_conditions!(ux_eqn, ux_model, U.x.BCs)
+        @inbounds ux_eqn.b .+= ux_model.sources[1].field # should be moved out to "add_sources" function using the "Model" struct
+        ux_eqn.b .-= divUTx
         implicit_relaxation!(ux_eqn, ux0, setup_U.relax)
         update_preconditioner!(Pu)
 
-        @inbounds ux_eqn.b .+= ux_model.sources[1].field # should be moved out to "add_sources" function using the "Model" struct
         run!(ux_eqn, ux_model, setup_U, opP=Pu.P, solver=solver_U)
         residual!(R_ux, ux_eqn, U.x, iteration)
 
         @turbo @. uy_eqn.b = 0.0
         # discretise!(uy_eqn, uy_model)
         apply_boundary_conditions!(uy_eqn, uy_model, U.y.BCs)
+        @inbounds uy_eqn.b .+= uy_model.sources[1].field
+        uy_eqn.b .-= divUTy
         implicit_relaxation!(uy_eqn, uy0, setup_U.relax)
         update_preconditioner!(Pu)
 
-        @inbounds uy_eqn.b .+= uy_model.sources[1].field
         run!(uy_eqn, uy_model, setup_U, opP=Pu.P, solver=solver_U)
         residual!(R_uy, uy_eqn, U.y, iteration)
         
@@ -218,11 +224,18 @@ function SIMPLE_loop(
         end
 
         grad!(gradU, Uf, U, U.BCs)
-
+        
         # if 100 % iteration == 0
         turbulence!(turbulence_model, νt, nuf, S, S2, solver_p, setup_turb, implicit_relaxation!) #explicit_relaxation!
         # end
         update_nueff!(nueff, nuf, turbulence_model)
+
+        for i ∈ eachindex(divUTx)
+            vol = mesh.cells[i].volume
+            divUTx = (nuf[i] + νt[i])*(gradUT[i][1,1]+ gradUT[i][1,2] + gradUT[i][1,3])*vol
+            divUTy = (nuf[i] + νt[i])*(gradUT[i][2,1]+ gradUT[i][2,2] + gradUT[i][2,3])*vol
+        end
+        
 
         convergence = 1e-7
 

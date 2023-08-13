@@ -85,7 +85,7 @@ setup_U = SolverSetup(
 
 setup_p = SolverSetup(
     solver      = GmresSolver, # GmresSolver, FomSolver, DiomSolver
-    relax       = 0.3,
+    relax       = 0.2,
     itmax       = 100,
     rtol        = 1e-1
 )

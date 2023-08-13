@@ -149,11 +149,11 @@ Base.getindex(T::TensorField, i::Integer) = begin
         )
 end
 
-struct T{F<:AbstractField}
+struct T{F<:AbstractField} # Needs to be abstractTensor type
     parent::F
 end
 
-Base.getindex(t::T{F}, i::Integer) where F<:TensorField = begin
+Base.getindex(t::T{F}, i::Integer) where F<:TensorField = begin # type calls need sorting
     T = t.parent
     Tf = eltype(T.xx.values)
     SMatrix{3,3,Tf,9}(

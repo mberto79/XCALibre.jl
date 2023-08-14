@@ -19,7 +19,7 @@ k = ScalarField(mesh)
 # velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
 # u_mag = 1.5
-u_mag = 2.0
+u_mag = 1.5
 velocity = [u_mag, 0.0, 0.0]
 Tu = 0.1
 k_inlet = 1 # 3/2*(Tu*u_mag)^2
@@ -60,10 +60,10 @@ k = assign(
     ω,
     Dirichlet(:inlet, ω_inlet),
     Neumann(:outlet, 0.0),
-    # OmegaWallFunction(:wall, (κ=0.41, cmu=0.09, k=k)),
-    # OmegaWallFunction(:top, (κ=0.41, cmu=0.09, k=k))
-    Dirichlet(:wall, ω_wall), 
-    Dirichlet(:top, ω_wall)
+    OmegaWallFunction(:wall, (κ=0.41, cmu=0.09, k=k)),
+    OmegaWallFunction(:top, (κ=0.41, cmu=0.09, k=k))
+    # Dirichlet(:wall, ω_wall), 
+    # Dirichlet(:top, ω_wall)
 )
 
 νt = assign(
@@ -97,7 +97,6 @@ setup_turb = SolverSetup(
     rtol        = 1e-1,
 )
 
-GC.gc()
 
 initialise!(U, velocity)
 initialise!(p, 0.0)

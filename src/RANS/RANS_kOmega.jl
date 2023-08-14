@@ -135,10 +135,18 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
     @. Dωf.values = coeffs.β1*ω.values
     # destruction_flux!(Dωf, coeffs.β1, ω) 
     
-    @. νt.values = k.values/ω.values
-    interpolate!(νtf, νt)
-    correct_boundaries!(νtf, νt, νt.BCs)
-    diffusion_flux!(nueffω, nu,  νtf, coeffs.σω)
+    # @. νt.values = k.values/ω.values
+    # interpolate!(νtf, νt)
+    # correct_boundaries!(νtf, νt, νt.BCs)
+    # diffusion_flux!(nueffω, nu,  νtf, coeffs.σω)
+
+    interpolate!(kf, k)
+    correct_boundaries!(kf, k, k.BCs)
+    interpolate!(ωf, ω)
+    correct_boundaries!(ωf, ω, ω.BCs)
+    for i ∈ eachindex(nueffω)
+        nueffω[i] = nu[i] + coeffs.σω*kf[i]/ωf[i]
+    end
 
     
 
@@ -146,13 +154,13 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
     prev .= ω.values
     discretise!(ω_eqn, ω_model)
     apply_boundary_conditions!(ω_eqn, ω_model, ω.BCs)
+    update_preconditioner!(PW)
     ω_eqn.b .+= Pω
     relax!(ω_eqn, prev, setup.relax)
-    # constrain_equation!(ω_eqn, ω, ω.BCs) # Only if using wall function?
-    update_preconditioner!(PW)
+    constrain_equation!(ω_eqn, ω, ω.BCs) # Only if using wall function?
     run!(ω_eqn, ω_model, setup, opP=PW.P, solver=solver)
    
-    # constrain_boundary!(ω, ω.BCs)
+    constrain_boundary!(ω, ω.BCs)
     interpolate!(ωf, ω)
     correct_boundaries!(ωf, ω, ω.BCs)
     bound!(ω, ωf, eps())
@@ -166,17 +174,24 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
     
     Pk .= νt.values.*Pk # add eddy viscosity
     @. Dkf.values = coeffs.β⁺*ω.values
-    diffusion_flux!(nueffk, nu,  νtf, coeffs.σk)
+    # diffusion_flux!(nueffk, nu,  νtf, coeffs.σk)
     # @. nueffk.values = nueffω.values
+    interpolate!(kf, k)
+    correct_boundaries!(kf, k, k.BCs)
+    interpolate!(ωf, ω)
+    correct_boundaries!(ωf, ω, ω.BCs)
+    for i ∈ eachindex(nueffk)
+        nueffk[i] = nu[i] + coeffs.σk*kf[i]/ωf[i]
+    end
 
     # Solve k equation
     # constrain_boundary!(k, k.BCs)
     prev .= k.values
     discretise!(k_eqn, k_model)
     apply_boundary_conditions!(k_eqn, k_model, k.BCs)
+    update_preconditioner!(PK)
     k_eqn.b .+= Pk
     relax!(k_eqn, prev, setup.relax)
-    update_preconditioner!(PK)
     run!(k_eqn, k_model, setup, opP=PK.P, solver=solver)
     # constrain_boundary!(k, k.BCs)
     interpolate!(kf, k)
@@ -248,7 +263,7 @@ end
     func_calls = Expr[]
     for i ∈ eachindex(BCs)
         BC = BCs[i]
-        if BC <: OmegaWallFunction || BC <: Dirichlet
+        if BC <: OmegaWallFunction # || BC <: Dirichlet
             call = quote
                 constraint!(eqn, field, fieldBCs[$i])
             end
@@ -271,13 +286,31 @@ constraint!(eqn, field, BC) = begin
     (; A, b) = eqn
     boundary = boundaries[ID]
     (; cellsID, facesID) = boundary
+    # for fi ∈ eachindex(facesID)
+    #     fID = facesID[fi]
+    #     cID 
     for i ∈ eachindex(cellsID)
+    # for i ∈ 1:length(cellsID)-1 
         cID = cellsID[i]
+        # nID = cellsID[i+1]
         fID = facesID[i]
-        b[cID] += A[cID,cID]*BC.value
-        A[cID,cID] += A[cID,cID]
-        # b[cID] = A[cID,cID]*BC.value
-        # A[cID,cID] = 2*A[cID,cID]
+        # nfID = facesID[i+1]
+        face = faces[fID]
+        cell = cells[cID]
+        y = face.delta
+        ωc = 6*1e-3/(0.075*y^2)
+        b[cID] = A[cID,cID]*ωc
+        # b[cID] += A[cID,cID]*ωc
+        # A[cID,cID] += A[cID,cID]
+        # for nID ∈ cell.neighbours
+        #     for boundaryCell ∈ cellsID
+        #         if nID == boundaryCell
+        #             # b[nID] += A[cID,nID]*ωc
+        #             # b[cID] += A[nID,cID]*ωc
+        #         end
+        #     end
+        # end
+        # b[nID] -= A[cID, nID]*ωc
     end
 end
 
@@ -286,7 +319,7 @@ end
     func_calls = Expr[]
     for i ∈ eachindex(BCs)
         BC = BCs[i]
-        if BC <: OmegaWallFunction || BC <: Dirichlet
+        if BC <: OmegaWallFunction  #|| BC <: Dirichlet
             call = quote
                 set_cell_value!(field, fieldBCs[$i])
             end
@@ -311,7 +344,9 @@ set_cell_value!(field, BC) = begin
     for i ∈ eachindex(cellsID)
         cID = cellsID[i]
         fID = facesID[i]
-        field.values[cID] = BC.value
+        y = faces[fID].delta
+        ωc = 6*1e-3/(0.075*y^2)
+        field.values[cID] = ωc
     end
 end
 

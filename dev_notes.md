@@ -8,6 +8,8 @@
 - [ ] Double check tensors operations are implemented correctly
 - [ ] Make Mesh types fully parametric
 - [ ] Implement functions to return mesh Int and Float types easing GPU implementation
+- [ ] Check Divergence BCs for Upwind scheme
+- [ ] Implemente Upwind as deferred correction
 
 ### Mesh module
 

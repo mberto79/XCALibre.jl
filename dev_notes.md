@@ -2,6 +2,13 @@
 
 ## To do
 
+### House keeping and checks
+
+- [ ] Clean tensor implementation and add setfield! implementation
+- [ ] Double check tensors operations are implemented correctly
+- [ ] Make Mesh types fully parametric
+- [ ] Implement functions to return mesh Int and Float types easing GPU implementation
+
 ### Mesh module
 
 - [x] Face centres calculations
@@ -45,8 +52,8 @@
 
 - [x] Implement laminar solver (steady)
 - [ ] Implement laminar solver (transient)
-- [ ] Implement first RANS turbulence model e.g. $k-\omega$
-- [ ] Calculation of y for first cell (can be from mesh.delta?)
+- [x] Implement first RANS turbulence model e.g. $k-\omega$
+- [x] Calculation of y for first cell (can be from mesh.delta?)
 - [ ] Calculation of wall normal distance needed for turbulence models
 - [ ] Implement wall functions
 - [ ] LES solver

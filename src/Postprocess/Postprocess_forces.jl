@@ -26,6 +26,8 @@ end
 viscous_forces(patch::Symbol, U::VectorField, rho, ν, νt) = begin
     mesh = U.mesh
     faces = mesh.faces
+    boundaries = mesh.boundaries
+    nboundaries = length(U.BCs)
     ID = boundary_index(mesh.boundaries, patch)
     @info "calculating viscous forces on patch: $patch at index $ID"
     boundary = mesh.boundaries[ID]
@@ -34,7 +36,11 @@ viscous_forces(patch::Symbol, U::VectorField, rho, ν, νt) = begin
     y = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
     z = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
     snGrad = FaceVectorField(x,y,z, mesh)
-    surface_normal_gradient(snGrad, facesID, cellsID, U, U.BCs[ID].value)
+    for i ∈ 1:nboundaries
+        if ID == U.BCs[i].ID
+        surface_normal_gradient(snGrad, facesID, cellsID, U, U.BCs[i].value)
+        end
+    end
     sumx, sumy, sumz = 0.0, 0.0, 0.0, 0.0
     for i ∈ eachindex(snGrad)
         fID = facesID[i]

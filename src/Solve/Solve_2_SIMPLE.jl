@@ -18,13 +18,13 @@ function isimple!(
     @info "Defining models..."
 
     ux_model = (
-        Divergence{Linear}(mdotf, U.x) - Laplacian{Linear}(nueff, U.x) 
+        Divergence{Upwind}(mdotf, U.x) - Laplacian{Linear}(nueff, U.x) 
         == 
         Source(∇p.result.x)
     )
     
     uy_model = (
-        Divergence{Linear}(mdotf, U.y) - Laplacian{Linear}(nueff, U.y) 
+        Divergence{Upwind}(mdotf, U.y) - Laplacian{Linear}(nueff, U.y) 
         == 
         Source(∇p.result.y)
     )
@@ -45,10 +45,10 @@ function isimple!(
 
     @info "Initialising preconditioners..."
 
-    # Pu = set_preconditioner(NormDiagonal(), ux_eqn, ux_model, uxBCs)
-    # Pu = set_preconditioner(Jacobi(), ux_eqn, ux_model, uxBCs)
-    # Pu = set_preconditioner(ILU0(), ux_eqn, ux_model, uxBCs)
-    Pu = set_preconditioner(DILU(), ux_eqn, ux_model, U.x.BCs)
+    # Pu = set_preconditioner(NormDiagonal(), ux_eqn, ux_model, U.x.BCs)
+    # Pu = set_preconditioner(Jacobi(), ux_eqn, ux_model, U.x.BCs)
+    Pu = set_preconditioner(ILU0(), ux_eqn, ux_model, U.x.BCs)
+    # Pu = set_preconditioner(DILU(), ux_eqn, ux_model, U.x.BCs)
     Pp = set_preconditioner(LDL(), p_eqn, p_model, p.BCs)
 
     @info "Initialising linear solvers..."

@@ -50,7 +50,7 @@ function initialise_RANS(k, ω, mdotf)
     Pω = ScalarField(mesh)
     
     k_model = (
-            Divergence{Linear}(mdotf, k) 
+            Divergence{Upwind}(mdotf, k) 
             - Laplacian{Linear}(nueffk, k) 
             + Si(Dkf,k) # Dkf = β⁺*ω
             ==
@@ -58,7 +58,7 @@ function initialise_RANS(k, ω, mdotf)
         )
     
     ω_model = (
-        Divergence{Linear}(mdotf, ω) 
+        Divergence{Upwind}(mdotf, ω) 
         - Laplacian{Linear}(nueffω, ω) 
         + Si(Dωf,ω)  # Dωf = β1*ω
         ==
@@ -68,8 +68,10 @@ function initialise_RANS(k, ω, mdotf)
     k_eqn    = Equation(mesh)
     ω_eqn    = Equation(mesh)
 
-    PK = set_preconditioner(DILU(), k_eqn, k_model, k.BCs)
-    PW = set_preconditioner(DILU(), ω_eqn, ω_model, ω.BCs)
+    # PK = set_preconditioner(DILU(), k_eqn, k_model, k.BCs)
+    # PW = set_preconditioner(DILU(), ω_eqn, ω_model, ω.BCs)
+    PK = set_preconditioner(ILU0(), k_eqn, k_model, k.BCs)
+    PW = set_preconditioner(ILU0(), ω_eqn, ω_model, ω.BCs)
 
 
     float_type = eltype(mesh.nodes[1].coords)

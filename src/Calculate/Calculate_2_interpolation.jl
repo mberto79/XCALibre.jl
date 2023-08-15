@@ -59,7 +59,7 @@ function adjust_boundary!(
     @inbounds for fi ∈ eachindex(facesID)
         fID = facesID[fi]
         cID = cellsID[fi]
-        phif.values[fID] = 1.01*phi.values[cID] # Using Neumann condition
+        phif.values[fID] = phi.values[cID] # Using Neumann condition
     end
 end
 

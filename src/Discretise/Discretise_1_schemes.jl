@@ -37,6 +37,25 @@ end
     nothing
 end
 
+@inline function scheme!(
+    term::Operator{F,P,I,Divergence{Upwind}}, 
+    nzval, cell, face, cellN, ns, cIndex, nIndex, fID)  where {F,P,I}
+    # xf = face.centre
+    # xC = cell.centre
+    # xN = cellN.centre
+    # weight = norm(xf - xC)/norm(xN - xC)
+    # one_minus_weight = one(eltype(weight)) - weight
+    ap = term.sign*(term.flux[fID]*ns)
+    nzval[cIndex] += max(ap, 0.0)
+    nzval[nIndex] += -max(-ap, 0.0)
+    nothing
+end
+@inline scheme_source!(
+    term::Operator{F,P,I,Divergence{Upwind}}, 
+    b, nzval, cell, cID, cIndex) where {F,P,I} = begin
+    nothing
+end
+
 # IMPLICIT SOURCE
 
 @inline function scheme!(

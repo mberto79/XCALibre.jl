@@ -32,8 +32,8 @@ end
 end
 
 @inline (bc::OmegaWallFunction)(
-    term::Operator{F,P,I,Laplacian{Linear}}, 
-    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    term::Operator{F,P,I,Laplacian{T}}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} where T = begin
     nothing
 end
 
@@ -56,6 +56,23 @@ end
     nothing
 end
 
+@inline (bc::Dirichlet)(
+    term::Operator{F,P,I,Divergence{Upwind}}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    A[cellID,cellID] += 0.0 
+    b[cellID] += term.sign[1]*(-term.flux[fID]*bc.value)
+    nothing
+end
+
+@inline (bc::Neumann)(
+    term::Operator{F,P,I,Divergence{Upwind}}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    phi = term.phi 
+    ap = term.sign[1]*(term.flux[fID])
+    A[cellID,cellID] += ap
+    nothing
+end
+
 @inline (bc::KWallFunction)(
     term::Operator{F,P,I,Divergence{Linear}}, 
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
@@ -63,8 +80,8 @@ end
 end
 
 @inline (bc::OmegaWallFunction)(
-    term::Operator{F,P,I,Divergence{Linear}}, 
-    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    term::Operator{F,P,I,Divergence{T}}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} where T = begin
     nothing
 end
 

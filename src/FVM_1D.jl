@@ -9,6 +9,7 @@ include("Preconditioners/Preconditioners.jl")
 include("Calculate/Calculate.jl")
 include("RANS/RANS.jl")
 include("Solve/Solve.jl")
+include("Postprocess/Postprocess.jl")
 include("VTK/VTK.jl")
 include("UNV/UNV.jl")
 
@@ -22,6 +23,7 @@ using Reexport
 @reexport using FVM_1D.Calculate
 @reexport using FVM_1D.RANS
 @reexport using FVM_1D.Solve
+@reexport using FVM_1D.Postprocess
 @reexport using FVM_1D.VTK
 @reexport using FVM_1D.UNV
 

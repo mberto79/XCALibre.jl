@@ -16,5 +16,6 @@ include("Calculate_0_divergence.jl")
 include("Calculate_1_green_gauss.jl")
 include("Calculate_2_interpolation.jl")
 include("Calculate_3_orthogonality_correction.jl")
+include("Calculate_5_surface_normal_gradient.jl")
 
 end

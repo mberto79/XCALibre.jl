@@ -19,7 +19,7 @@ k = ScalarField(mesh)
 # velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
 # u_mag = 1.5
-u_mag = 1.5
+u_mag = 2.5
 velocity = [u_mag, 0.0, 0.0]
 Tu = 0.1
 k_inlet = 1 # 3/2*(Tu*u_mag)^2
@@ -109,6 +109,10 @@ Rx, Ry, Rp = isimple!( # 123 its, 4.68k allocs
     mesh, nu, U, p, k, ω, νt, 
     # setup_U, setup_p, iterations, pref=0.0)
     setup_U, setup_p, setup_turb, iterations)
+
+Fp = pressure_forces(:wall, p, 1.25)
+Reff = stress_tensor(U, nu, νt)
+Fv = viscous_forces(:wall, U, 1.25, nu, νt)
 
 write_vtk(
     "results", mesh, 

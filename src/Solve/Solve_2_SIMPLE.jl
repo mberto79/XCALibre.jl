@@ -225,19 +225,20 @@ function SIMPLE_loop(
 
         grad!(gradU, Uf, U, U.BCs)
         
-        # if 100 % iteration == 0
-        turbulence!(turbulence_model, νt, nuf, S, S2, solver_p, setup_turb, implicit_relaxation!) #explicit_relaxation!
-        # end
+        
+        turbulence!(
+            turbulence_model, νt, nuf, S, S2, solver_p, setup_turb, implicit_relaxation!
+            ) 
         update_nueff!(nueff, nuf, turbulence_model)
 
-        for i ∈ eachindex(divUTx)
-            vol = mesh.cells[i].volume
-            divUTx = (nuf[i] + νt[i])*(gradUT[i][1,1]+ gradUT[i][1,2] + gradUT[i][1,3])*vol
-            divUTy = (nuf[i] + νt[i])*(gradUT[i][2,1]+ gradUT[i][2,2] + gradUT[i][2,3])*vol
-        end
+        # for i ∈ eachindex(divUTx)
+        #     vol = mesh.cells[i].volume
+        #     divUTx = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][1,1]+ gradUT[i][1,2] + gradUT[i][1,3])*vol
+        #     divUTy = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][2,1]+ gradUT[i][2,2] + gradUT[i][2,3])*vol
+        # end
         
 
-        convergence = 1e-7
+        convergence = 1e-6
 
         if (R_ux[iteration] <= convergence && 
             R_uy[iteration] <= convergence && 

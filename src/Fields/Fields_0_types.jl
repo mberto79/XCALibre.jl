@@ -63,6 +63,8 @@ end
 Base.length(s::AbstractScalarField) = length(s.values)
 Base.eachindex(s::AbstractScalarField) = eachindex(s.values)
 
+# VECTOR FIELD IMPLEMENTATION
+
 struct VectorField{S1<:ScalarField,S2,S3,M<:Mesh2,BC} <: AbstractVectorField
     x::S1
     y::S2
@@ -105,6 +107,10 @@ Base.setindex!(v::AbstractVectorField, x::SVector{3, T}, i::Integer) where T= be
     v.y[i] = y[2]
     v.z[i] = z[3]
 end
+Base.length(v::AbstractVectorField) = length(v.x)
+Base.eachindex(v::AbstractVectorField) = eachindex(v.x)
+
+# TENSORFIELD IMPLEMENTATION
 
 struct TensorField{S1,S2,S3,S4,S5,S6,S7,S8,S9,M} <: AbstractTensorField
     xx::S1
@@ -148,6 +154,23 @@ Base.getindex(T::TensorField, i::Integer) = begin
         T.zz[i],
         )
 end
+
+Base.setindex!(T::TensorField, t::SMatrix{3,3,F,9}, i::Integer) where F= begin
+    T.xx[i] = t[1,1]
+    T.yx[i] = t[2,1]
+    T.zx[i] = t[3,1]
+    T.xy[i] = t[1,2]
+    T.yy[i] = t[2,2]
+    T.zy[i] = t[3,2]
+    T.xz[i] = t[1,3]
+    T.yz[i] = t[2,3]
+    T.zz[i] = t[3,3]
+end
+
+Base.length(t::AbstractTensorField) = length(t.xx)
+Base.eachindex(t::AbstractTensorField) = eachindex(t.xx)
+
+# TRANSPOSE IMPLEMENTATION
 
 struct T{F<:AbstractField} # Needs to be abstractTensor type
     parent::F

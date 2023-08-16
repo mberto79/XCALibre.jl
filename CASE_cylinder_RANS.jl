@@ -18,18 +18,17 @@ k = ScalarField(mesh)
 
 # BOUNDARY CONDITIONS 
 
-Umag = 2.5
+Umag = 5
 velocity = [Umag, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
-νR = 10
+νR = 20
 Tu = 0.05
 k_inlet = 3/2*(Tu*Umag)^2
 ω_inlet = k_inlet/(νR*nu)
 Re = (0.2*velocity[1])/nu
 
-U = assign(
-    U, 
+@assign! U ( 
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Neumann(:top, 0.0),
@@ -39,8 +38,7 @@ U = assign(
     Dirichlet(:cylinder, noSlip)
 )
 
-p = assign(
-    p,
+@assign! p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
     Neumann(:top, 0.0),
@@ -48,8 +46,7 @@ p = assign(
     Neumann(:cylinder, 0.0)
 )
 
-k = assign(
-    k,
+@assign! k (
     Dirichlet(:inlet, k_inlet),
     Neumann(:outlet, 0.0),
     Neumann(:top, 0.0),
@@ -57,8 +54,7 @@ k = assign(
     Dirichlet(:cylinder, 1e-15)
 )
 
-ω = assign(
-    ω,
+@assign! ω (
     Dirichlet(:inlet, ω_inlet),
     Neumann(:outlet, 0.0),
     Neumann(:top, 0.0),
@@ -66,8 +62,7 @@ k = assign(
     OmegaWallFunction(:cylinder, (κ=0.41, cmu=0.09, k=k))
 )
 
-νt = assign(
-    νt,
+@assign! νt (
     Dirichlet(:inlet, k_inlet/ω_inlet),
     Neumann(:outlet, 0.0),
     Neumann(:top, 0.0),

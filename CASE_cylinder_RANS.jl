@@ -22,8 +22,8 @@ Umag = 5
 velocity = [Umag, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
-νR = 20
-Tu = 0.05
+νR = 5
+Tu = 0.01
 k_inlet = 3/2*(Tu*Umag)^2
 ω_inlet = k_inlet/(νR*nu)
 Re = (0.2*velocity[1])/nu
@@ -74,21 +74,21 @@ setup_U = SolverSetup(
     solver      = GmresSolver, # GmresSolver, BicgstabSolver
     relax       = 0.7,
     itmax       = 100,
-    rtol        = 1e-1
+    rtol        = 1e-2
 )
 
 setup_p = SolverSetup(
     solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
     relax       = 0.3,
     itmax       = 100,
-    rtol        = 1e-1
+    rtol        = 1e-2
 )
 
 setup_turb = SolverSetup(
     solver      = GmresSolver, # BicgstabSolver, GmresSolver
     relax       = 0.6,
     itmax       = 100,
-    rtol        = 1e-1,
+    rtol        = 1e-2
 )
 
 GC.gc()

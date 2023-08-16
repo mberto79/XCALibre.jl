@@ -174,7 +174,8 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
 
     # update k fluxes
     
-    Pk .= νt.values.*Pk # add eddy viscosity
+    # @. Pk = min(νt.values*Pk, 20*coeffs.β⁺*ω.values*k.values) # add eddy viscosity
+    @. Pk = νt.values*Pk
     @. Dkf.values = coeffs.β⁺*ω.values
     # diffusion_flux!(nueffk, nu,  νtf, coeffs.σk)
     # @. nueffk.values = nueffω.values

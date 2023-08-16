@@ -29,25 +29,21 @@ k_inlet = 1 # 3/2*(Tu*u_mag)^2
 ω_wall = ω_inlet
 Re = velocity[1]*0.1/nu
 
-U = assign(
-    U,
+@assign! U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:wall, [0.0, 0.0, 0.0]),
     Dirichlet(:top, [0.0, 0.0, 0.0])
-    # Neumann(:top, 0.0)
-    )
+)
 
-p = assign(
-    p,
+@assign! p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
     Neumann(:wall, 0.0),
     Neumann(:top, 0.0)
 )
 
-k = assign(
-    k,
+@assign! k (
     Dirichlet(:inlet, k_inlet),
     Neumann(:outlet, 0.0),
     # KWallFunction(:wall, (κ=0.41, cmu=0.09, k=k)),
@@ -56,8 +52,7 @@ k = assign(
     Dirichlet(:top, 1e-15)
 )
 
-ω = assign(
-    ω,
+@assign! ω (
     Dirichlet(:inlet, ω_inlet),
     Neumann(:outlet, 0.0),
     OmegaWallFunction(:wall, (κ=0.41, cmu=0.09, k=k)),
@@ -66,8 +61,7 @@ k = assign(
     # Dirichlet(:top, ω_wall)
 )
 
-νt = assign(
-    νt,
+@assign! νt (
     Dirichlet(:inlet, k_inlet/ω_inlet),
     Neumann(:outlet, 0.0),
     # OmegaWallFunction(:wall, (κ=0.41, cmu=0.09, k=k)),
@@ -123,7 +117,7 @@ write_vtk(
     ("nut", νt)
     )
 
-plot(; xlims=(0,123))
+plot(; xlims=(0,1500))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
 plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
 plot!(1:length(Rp), Rp, yscale=:log10, label="p")

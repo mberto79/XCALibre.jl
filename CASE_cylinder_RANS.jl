@@ -18,11 +18,11 @@ k = ScalarField(mesh)
 
 # BOUNDARY CONDITIONS 
 
-Umag = 1.5
+Umag = 2.5
 velocity = [Umag, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
-νR = 50
+νR = 10
 Tu = 0.05
 k_inlet = 3/2*(Tu*Umag)^2
 ω_inlet = k_inlet/(νR*nu)
@@ -77,21 +77,21 @@ k = assign(
 
 setup_U = SolverSetup(
     solver      = GmresSolver, # GmresSolver, BicgstabSolver
-    relax       = 0.9,
+    relax       = 0.7,
     itmax       = 100,
     rtol        = 1e-1
 )
 
 setup_p = SolverSetup(
     solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
-    relax       = 0.2,
+    relax       = 0.3,
     itmax       = 100,
     rtol        = 1e-1
 )
 
 setup_turb = SolverSetup(
     solver      = GmresSolver, # BicgstabSolver, GmresSolver
-    relax       = 0.8,
+    relax       = 0.6,
     itmax       = 100,
     rtol        = 1e-1,
 )
@@ -104,7 +104,7 @@ initialise!(k, k_inlet)
 initialise!(ω, ω_inlet)
 initialise!(νt, k_inlet/ω_inlet)
 
-iterations = 500
+iterations = 2000
 Rx, Ry, Rp = isimple!( 
     mesh, nu, U, p, k, ω, νt, 
     setup_U, setup_p, setup_turb, iterations)

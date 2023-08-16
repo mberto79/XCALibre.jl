@@ -1,7 +1,7 @@
 export AbstractScheme, Constant, Linear, Upwind, Midpoint
 export AbstractBoundary, AbstractDirichlet, AbstractNeumann
 export Dirichlet, Neumann, KWallFunction, OmegaWallFunction 
-export assign
+export assign, @assign!
 
 # SUPPORTED DISCRETISATION SCHEMES 
 
@@ -99,4 +99,13 @@ assign(scalar::ScalarField, args...) = begin
         @reset scalar.BCs = BCs
     end
     return scalar
+end
+
+macro assign!(field, BCs)
+    efield = esc(field)
+    eBCs = esc(BCs)
+    quote
+        $efield = assign($efield, $eBCs...)
+    end
+    
 end

@@ -20,7 +20,9 @@ pressure_forces(patch::Symbol, p::ScalarField, rho) = begin
         sumy += snflux.y[i]
         sumz += snflux.z[i]
     end
-    rho.*[sumx, sumy, sumz]
+    Fp = rho.*[sumx, sumy, sumz]
+    print("\n Pressure force: (", Fp[1], " ", Fp[2], " ", Fp[3], ")\n")
+    return Fp
 end
 
 viscous_forces(patch::Symbol, U::VectorField, rho, ν, νt) = begin
@@ -51,7 +53,9 @@ viscous_forces(patch::Symbol, U::VectorField, rho, ν, νt) = begin
         sumy += snGrad.y[i]*area*(ν + νt[cID])
         sumz += snGrad.z[i]*area*(ν + νt[cID])
     end
-    rho.*[sumx, sumy, sumz]
+    Fv = rho.*[sumx, sumy, sumz]
+    print("\n Pressure force: (", Fv[1], " ", Fv[2], " ", Fv[3], ")\n")
+    return Fv
 end
 
 stress_tensor(U, ν, νt) = begin

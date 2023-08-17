@@ -26,13 +26,13 @@ function isimple!(
     ux_model = ux_eqn → (
         Divergence{Upwind}(mdotf, U.x) - Laplacian{Linear}(nueff, U.x) 
         == 
-        Source(∇p.result.x)
+        -Source(∇p.result.x)
     )
     
     uy_model = uy_eqn → (
         Divergence{Upwind}(mdotf, U.y) - Laplacian{Linear}(nueff, U.y) 
         == 
-        Source(∇p.result.y)
+        -Source(∇p.result.y)
     )
 
     p_model = eqn → (
@@ -83,7 +83,8 @@ function SIMPLE_loop(
     mdotf = get_flux(ux_model, 1)
     nueff = get_flux(ux_model, 2)
     rDf = get_flux(p_model, 1)
-    divHv = ScalarField(p_model.sources[1].field, mesh, p.BCs)
+    # divHv = ScalarField(p_model.sources[1].field, mesh, p.BCs)
+    divHv = get_source(p_model, 1)
     
     @info "Allocating working memory..."
 
@@ -128,11 +129,11 @@ function SIMPLE_loop(
     @time for iteration ∈ 1:iterations
         
         source!(∇p, pf, p, p.BCs)
-        neg!(∇p)
+        # neg!(∇p)
 
         discretise!(ux_model)
         # @turbo @. uy_eqn.A.nzval = ux_eqn.A.nzval # Avoid rediscretising
-        @inbounds ux_model.equation.b .+= ux_model.sources[1].field # should be moved out to "add_sources" function using the "Model" struct
+        # @inbounds ux_model.equation.b .+= ux_model.sources[1].field # should be moved out to "add_sources" function using the "Model" struct
         apply_boundary_conditions!(ux_model, U.x.BCs)
         # ux_eqn.b .-= divUTx
         @. prev = U.x.values
@@ -143,7 +144,7 @@ function SIMPLE_loop(
 
         # @turbo @. uy_eqn.b = 0.0
         discretise!(uy_model)
-        @inbounds uy_model.equation.b .+= uy_model.sources[1].field
+        # @inbounds uy_model.equation.b .+= uy_model.sources[1].field
         apply_boundary_conditions!(uy_model, U.y.BCs)
         # uy_eqn.b .-= divUTy
         @. prev = U.y.values
@@ -163,7 +164,7 @@ function SIMPLE_loop(
         div!(divHv, Uf)
    
         discretise!(p_model)
-        @inbounds p_model.equation.b .+= p_model.sources[1].field
+        # @inbounds p_model.equation.b .+= p_model.sources[1].field
         apply_boundary_conditions!(p_model, p.BCs)
         setReference!(p_model.equation, pref, 1)
         update_preconditioner!(Pp)
@@ -367,8 +368,10 @@ remove_pressure_source!(ux_model::M1, uy_model::M2, ∇p) where {M1,M2} = begin
     dpdx, dpdy = ∇p.result.x, ∇p.result.y
     bx, by = ux_model.equation.b, uy_model.equation.b
     @inbounds for i ∈ eachindex(bx)
-        bx[i] -= dpdx[i]
-        by[i] -= dpdy[i]
+        # bx[i] -= dpdx[i]
+        # by[i] -= dpdy[i]
+        bx[i] += dpdx[i]
+        by[i] += dpdy[i]
     end
 end
 

@@ -7,9 +7,11 @@ export discretise!
     nTerms = TN
     nSources = SN
 
-    assignment_block_1 = Expr[] 
-    assignment_block_2 = Expr[]
+    assignment_block_1 = Expr[] # Ap
+    assignment_block_2 = Expr[] # An or b
+    assignment_block_3 = Expr[] # b (sources)
 
+    # Loop for operators
     for t ∈ 1:nTerms
         function_call = quote
             scheme!(
@@ -22,6 +24,15 @@ export discretise!
             scheme_source!(model.terms[$t], b, nzval, cell, cID, cIndex)
         end
         push!(assignment_block_2, assign_source)
+    end
+
+    # Loop for sources
+    for s ∈ 1:nSources
+        add_source = quote
+            (; field, sign) = model.sources[$s]
+            b[cID] += sign*field[cID]
+        end
+        push!(assignment_block_3, add_source)
     end
 
     quote
@@ -56,6 +67,7 @@ export discretise!
             end
             b[cID] = zero(0.0)
             $(assignment_block_2...)
+            $(assignment_block_3...)
         end
         nothing
     end

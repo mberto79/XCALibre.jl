@@ -43,7 +43,7 @@ Si(flux, phi) = Operator(
 # SOURCES
 
 # Base Source
-struct Src{F,S,T}
+struct Src{F,S,T} <: AbstractSource
     field::F 
     sign::S 
     type::T
@@ -51,10 +51,10 @@ end
 
 # Source types
 
-struct Source <: AbstractSource end
+struct Source end
 
-Source(f::AbstractVector) = Src(f, 1, typeof(f))
-Source(f::ScalarField) = Src(f.values, 1, typeof(f))
+Source(f::T) where T = Src(f, 1, typeof(f))
+# Source(f::ScalarField) = Src(f.values, 1, typeof(f))
 # Source(f::Number) = Src(f.values, 1, typeof(f)) # To implement!!
 
 # MODEL TYPE

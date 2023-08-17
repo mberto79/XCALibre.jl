@@ -96,11 +96,11 @@ function turbulence!(
 
     nueffk = get_flux(k_model, 2)
     Dkf = get_flux(k_model, 3)
-    Pk = k_model.sources[1].field
+    Pk = get_source(k_model, 1)
 
     nueffω = get_flux(ω_model, 2)
     Dωf = get_flux(ω_model, 3)
-    Pω = ω_model.sources[1].field
+    Pω = get_source(ω_model, 1)
 
     # double_inner_product!(Pk, S, S.gradU)
     # cells = k.mesh.cells
@@ -115,7 +115,7 @@ function turbulence!(
         Pk[i] = S2[i]*cells[i].volume
     end
 
-    @. Pω = coeffs.α1*Pk
+    @. Pω.values = coeffs.α1*Pk.values
     @. Dωf.values = coeffs.β1*ω.values
 
     interpolate!(kf, k)
@@ -127,7 +127,7 @@ function turbulence!(
     # Solve ω equation
 
     discretise!(ω_model)
-    ω_model.equation.b .+= Pω
+    # ω_model.equation.b .+= Pω
     apply_boundary_conditions!(ω_model, ω.BCs)
     prev .= ω.values
     relax!(ω_model.equation, prev, setup.relax)
@@ -142,7 +142,7 @@ function turbulence!(
 
     # update k fluxes
 
-    @. Pk = νt.values*Pk
+    @. Pk.values = νt.values*Pk.values
     @. Dkf.values = coeffs.β⁺*ω.values
 
     interpolate!(kf, k)
@@ -154,7 +154,7 @@ function turbulence!(
     # Solve k equation
 
     discretise!(k_model)
-    k_model.equation.b .+= Pk
+    # k_model.equation.b .+= Pk
     apply_boundary_conditions!(k_model, k.BCs)
     prev .= k.values
     relax!(k_model.equation, prev, setup.relax)

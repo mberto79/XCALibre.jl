@@ -327,10 +327,7 @@ function inverse_diagonal!(rD::S, eqn) where S<:ScalarField
         # D = view(A, i, i)[1]
         D = A[i,i]
         volume = cells[i].volume
-        # DV = D/volume
         values[i] = volume/D
-        # values[i] = 1.0/DV
-        # values[i] = 1.0/view(A, i, i)[1]
     end
 end
 
@@ -341,8 +338,6 @@ function explicit_relaxation!(phi, phi0, alpha)
 end
 
 function correct_velocity!(U, Hv, ∇p, rD)
-    # @. U.x = Hv.x - ∇p.result.x*rD.values
-    # @. U.y = Hv.y - ∇p.result.y*rD.values
     Ux = U.x; Uy = U.y; Hvx = Hv.x; Hvy = Hv.y
     dpdx = ∇p.result.x; dpdy = ∇p.result.y; rDvalues = rD.values
     @inbounds @simd for i ∈ eachindex(Ux)
@@ -353,8 +348,6 @@ function correct_velocity!(U, Hv, ∇p, rD)
 end
 
 function correct_velocity!(ux, uy, Hv, ∇p, rD)
-    # @. ux.values = Hv.x - ∇p.result.x*rD.values
-    # @. uy.values = Hv.y - ∇p.result.y*rD.values
     u = ux.values; v = uy.values; Hvx = Hv.x; Hvy = Hv.y
     dpdx = ∇p.result.x; dpdy = ∇p.result.y; rDvalues = rD.values
     @inbounds @simd for i ∈ eachindex(u)
@@ -373,14 +366,9 @@ function neg!(∇p)
 end
 
 function remove_pressure_source!(ux_eqn, uy_eqn, ∇p)
-    # @. ux_eqn.b -= ∇p.result.x/rD.values
-    # @. uy_eqn.b -= ∇p.result.y/rD.values
     dpdx, dpdy = ∇p.result.x, ∇p.result.y
     bx, by = ux_eqn.b, uy_eqn.b
     @inbounds for i ∈ eachindex(bx)
-        # rDi = rD[i]
-        # bx[i] -= dpdx[i]/rDi
-        # by[i] -= dpdy[i]/rDi
         bx[i] -= dpdx[i]
         by[i] -= dpdy[i]
     end
@@ -415,10 +403,9 @@ begin
         end
 
         D = view(Ax, cID, cID)[1] # add check to use max of Ax or Ay)
-        rD_temp = 1.0/D
-        # rD_temp = rD[cID]
-        x[cID] = (bx[cID] - sumx)*rD_temp
-        y[cID] = (by[cID] - sumy)*rD_temp
+        rD = 1.0/D
+        x[cID] = (bx[cID] - sumx)*rD
+        y[cID] = (by[cID] - sumy)*rD
         z[cID] = zero(F)
     end
 end

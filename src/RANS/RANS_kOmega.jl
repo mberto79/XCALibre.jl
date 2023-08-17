@@ -21,9 +21,9 @@ get_coeffs(FloatType) = begin
 end
 
 
-struct kOmega{EK,EW,MK,MW,P1,P2,FK,FW,FN,C}
-    k_eqn::EK
-    ω_eqn::EW
+struct kOmega{E,MK,MW,P1,P2,FK,FW,FN,C}
+    eqn::E
+    # ω_eqn::EW
     k_model::MK
     ω_model::MW
     PK::P1
@@ -34,7 +34,7 @@ struct kOmega{EK,EW,MK,MW,P1,P2,FK,FW,FN,C}
     coeffs::C
 end
 
-function initialise_RANS(k, ω, mdotf)
+function initialise_RANS(k, ω, mdotf, eqn)
     mesh = mdotf.mesh
 
     kf = FaceScalarField(mesh)
@@ -64,21 +64,20 @@ function initialise_RANS(k, ω, mdotf)
         Source(Pω)
     )
 
-    k_eqn    = Equation(mesh)
-    ω_eqn    = Equation(mesh)
+    # k_eqn    = Equation(mesh)
+    # ω_eqn    = Equation(mesh)
 
     # PK = set_preconditioner(DILU(), k_eqn, k_model, k.BCs)
     # PW = set_preconditioner(DILU(), ω_eqn, ω_model, ω.BCs)
-    PK = set_preconditioner(ILU0(), k_eqn, k_model, k.BCs)
-    PW = set_preconditioner(ILU0(), ω_eqn, ω_model, ω.BCs)
+    PK = set_preconditioner(ILU0(), eqn, k_model, k.BCs)
+    PW = set_preconditioner(ILU0(), eqn, ω_model, ω.BCs)
 
 
     float_type = eltype(mesh.nodes[1].coords)
     coeffs = get_coeffs(float_type)
 
     kOmega_model = kOmega(
-        k_eqn,
-        ω_eqn,
+        eqn,
         k_model,
         ω_model,
         PK,
@@ -96,7 +95,9 @@ end
 function turbulence!(
     kOmega::M, νt, nu, S, S2, solver, setup, prev,relax!) where M
 
-    (;k_eqn,ω_eqn,k_model,ω_model,PK,PW,kf,ωf,νtf,coeffs) = kOmega
+    (;eqn,k_model,ω_model,PK,PW,kf,ωf,νtf,coeffs) = kOmega
+
+    k_eqn = ω_eqn = eqn
 
     k = get_phi(k_model)
     ω = get_phi(ω_model)

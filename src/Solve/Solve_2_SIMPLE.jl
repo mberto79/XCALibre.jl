@@ -33,15 +33,16 @@ function isimple!(
         Laplacian{Linear}(rDf, p) == Source(divHv)
     )
 
-    @info "Initialising turbulence model..."
-
-    turbulence_model = initialise_RANS(k, ω, mdotf)
-
     @info "Allocating matrix equations..."
 
     ux_eqn  = Equation(mesh)
     uy_eqn  = Equation(mesh)
-    p_eqn    = Equation(mesh)
+    eqn    = Equation(mesh)
+
+    @info "Initialising turbulence model..."
+
+    turbulence_model = initialise_RANS(k, ω, mdotf, eqn)
+
 
     @info "Initialising preconditioners..."
 
@@ -49,11 +50,11 @@ function isimple!(
     # Pu = set_preconditioner(Jacobi(), ux_eqn, ux_model, U.x.BCs)
     Pu = set_preconditioner(ILU0(), ux_eqn, ux_model, U.x.BCs)
     # Pu = set_preconditioner(DILU(), ux_eqn, ux_model, U.x.BCs)
-    Pp = set_preconditioner(LDL(), p_eqn, p_model, p.BCs)
+    Pp = set_preconditioner(LDL(), eqn, p_model, p.BCs)
 
     @info "Initialising linear solvers..."
 
-    solver_p = setup_p.solver(p_eqn.A, p_eqn.b)
+    solver_p = setup_p.solver(eqn.A, eqn.b)
     solver_U = setup_U.solver(ux_eqn.A, ux_eqn.b)
 
     R_ux, R_uy, R_p  = SIMPLE_loop(
@@ -63,7 +64,7 @@ function isimple!(
     turbulence_model,
     Pu, Pp,
     solver_U, solver_p,
-    ux_eqn, uy_eqn, p_eqn
+    ux_eqn, uy_eqn, eqn
     ; resume=true, pref=nothing)
 
     return R_ux, R_uy, R_p     
@@ -76,7 +77,7 @@ function SIMPLE_loop(
     turbulence_model,
     Pu, Pp,
     solver_U, solver_p,
-    ux_eqn, uy_eqn, p_eqn
+    ux_eqn, uy_eqn, eqn
     ; resume=true, pref=nothing) where {TI,TF}
     
     # Extract model variables
@@ -156,23 +157,23 @@ function SIMPLE_loop(
         
         inverse_diagonal!(rD, ux_eqn)
         interpolate!(rDf, rD)
-        remove_pressure_source!(ux_eqn, uy_eqn, ∇p, rD)
-        H!(Hv, U, ux_eqn, uy_eqn, rD)
+        remove_pressure_source!(ux_eqn, uy_eqn, ∇p)
+        H!(Hv, U, ux_eqn, uy_eqn)
 
         interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs)
         div!(divHv, Uf)
    
-        discretise!(p_eqn, p_model)
-        @inbounds p_eqn.b .+= p_model.sources[1].field
-        apply_boundary_conditions!(p_eqn, p_model, p.BCs)
-        setReference!(p_eqn, pref, 1)
+        discretise!(eqn, p_model)
+        @inbounds eqn.b .+= p_model.sources[1].field
+        apply_boundary_conditions!(eqn, p_model, p.BCs)
+        setReference!(eqn, pref, 1)
         update_preconditioner!(Pp)
         @. prev = p.values
-        run!( p_eqn, p_model, setup_p, opP=Pp.P, solver=solver_p)
+        run!( eqn, p_model, setup_p, opP=Pp.P, solver=solver_p)
 
         explicit_relaxation!(p, prev, setup_p.relax)
-        residual!(R_p, p_eqn, p, iteration)
+        residual!(R_p, eqn, p, iteration)
 
         grad!(∇p, pf, p, p.BCs) 
         # source!(∇p, pf, p, pBCs)
@@ -181,14 +182,14 @@ function SIMPLE_loop(
         if correct
             ncorrectors = 1
             for i ∈ 1:ncorrectors
-                discretise!(p_eqn, p_model)
-                apply_boundary_conditions!(p_eqn, p_model, p.BCs)
-                setReference!(p_eqn, pref, 1)
+                discretise!(eqn, p_model)
+                apply_boundary_conditions!(eqn, p_model, p.BCs)
+                setReference!(eqn, pref, 1)
                 # grad!(∇p, pf, p, pBCs) 
                 interpolate!(gradpf, ∇p, p)
                 nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
-                correct!(p_eqn, p_model.terms.term1, pf)
-                run!(p_eqn, p_model, setup_p, opP=Pp.P, solver=solver_p)
+                correct!(eqn, p_model.terms.term1, pf)
+                run!(eqn, p_model, setup_p, opP=Pp.P, solver=solver_p)
                 grad!(∇p, pf, p, pBCs) 
             end
         end
@@ -371,10 +372,10 @@ function neg!(∇p)
     end
 end
 
-function remove_pressure_source!(ux_eqn, uy_eqn, ∇p, rD)
+function remove_pressure_source!(ux_eqn, uy_eqn, ∇p)
     # @. ux_eqn.b -= ∇p.result.x/rD.values
     # @. uy_eqn.b -= ∇p.result.y/rD.values
-    dpdx, dpdy, rD = ∇p.result.x, ∇p.result.y, rD.values
+    dpdx, dpdy = ∇p.result.x, ∇p.result.y
     bx, by = ux_eqn.b, uy_eqn.b
     @inbounds for i ∈ eachindex(bx)
         # rDi = rD[i]
@@ -394,7 +395,7 @@ function setReference!(pEqn::E, pRef, cellID) where E<:Equation
     end
 end
 
-H!(Hv, v::VF, xeqn, yeqn, rD) where VF<:VectorField = 
+H!(Hv, v::VF, xeqn, yeqn) where VF<:VectorField = 
 begin
     (; x, y, z, mesh) = Hv 
     (; cells, faces) = mesh

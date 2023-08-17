@@ -54,8 +54,8 @@ function isimple!(
 
     @info "Initialising linear solvers..."
 
-    solver_p = setup_p.solver(p_model.equation.A, p_model.equation.b)
-    solver_U = setup_U.solver(ux_model.equation.A, ux_model.equation.b)
+    solver_p = setup_p.solver(_A(p_model), _b(p_model))
+    solver_U = setup_U.solver(_A(ux_model), _b(ux_model))
 
     R_ux, R_uy, R_p  = SIMPLE_loop(
     mesh::Mesh2{TI,TF}, U, p, nuf, νt, ∇p,

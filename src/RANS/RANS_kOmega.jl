@@ -153,10 +153,10 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
     
 
     # Solve ω equation
-    prev .= ω.values
     discretise!(ω_eqn, ω_model)
-    apply_boundary_conditions!(ω_eqn, ω_model, ω.BCs)
     ω_eqn.b .+= Pω
+    apply_boundary_conditions!(ω_eqn, ω_model, ω.BCs)
+    prev .= ω.values
     relax!(ω_eqn, prev, setup.relax)
     constrain_equation!(ω_eqn, ω, ω.BCs) # Only if using wall function?
     update_preconditioner!(PW)
@@ -189,10 +189,10 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
 
     # Solve k equation
     # constrain_boundary!(k, k.BCs)
-    prev .= k.values
     discretise!(k_eqn, k_model)
-    apply_boundary_conditions!(k_eqn, k_model, k.BCs)
     k_eqn.b .+= Pk
+    apply_boundary_conditions!(k_eqn, k_model, k.BCs)
+    prev .= k.values
     relax!(k_eqn, prev, setup.relax)
     update_preconditioner!(PK)
     run!(k_eqn, k_model, setup, opP=PK.P, solver=solver)

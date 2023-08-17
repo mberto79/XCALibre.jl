@@ -12,8 +12,8 @@ function isimple!(
     nuf = ConstantScalar(nu) # Implement constant field! Priority 1
     rDf = FaceScalarField(mesh)
     nueff = FaceScalarField(mesh)
-    rDf.values .= 1.0
-    divHv_new = ScalarField(mesh)
+    initialise!(rDf, 1.0)
+    divHv = ScalarField(mesh)
 
     @info "Defining models..."
 
@@ -30,7 +30,7 @@ function isimple!(
     )
 
     p_model = (
-        Laplacian{Linear}(rDf, p) == Source(divHv_new)
+        Laplacian{Linear}(rDf, p) == Source(divHv)
     )
 
     @info "Initialising turbulence model..."
@@ -84,7 +84,7 @@ function SIMPLE_loop(
     mdotf = get_flux(ux_model, 1)
     nueff = get_flux(ux_model, 2)
     rDf = get_flux(p_model, 1)
-    divHv_new = ScalarField(p_model.sources[1].field, mesh, p.BCs)
+    divHv = ScalarField(p_model.sources[1].field, mesh, p.BCs)
     
     @info "Allocating working memory..."
 
@@ -95,37 +95,25 @@ function SIMPLE_loop(
     S2 = ScalarField(mesh)
 
     # Temp sources to test GradUT explicit source
-    divUTx = zeros(Float64, length(mesh.cells))
-    divUTy = zeros(Float64, length(mesh.cells))
+    # divUTx = zeros(Float64, length(mesh.cells))
+    # divUTy = zeros(Float64, length(mesh.cells))
 
     n_cells = length(mesh.cells)
     Uf = FaceVectorField(mesh)
     pf = FaceScalarField(mesh)
-    # ∇p = Grad{Midpoint}(p)
     gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
-    # Hvf = FaceVectorField(mesh)
-    # Hv_flux = FaceScalarField(mesh)
     rD = ScalarField(mesh)
 
     # Pre-allocate auxiliary variables
 
-    ux0 = zeros(TF, n_cells)
-    uy0 = zeros(TF, n_cells)
-    p0 = zeros(TF, n_cells)  
+    prev = zeros(TF, n_cells)  
 
     # Pre-allocate vectors to hold residuals 
 
     R_ux = ones(TF, iterations)
     R_uy = ones(TF, iterations)
     R_p = ones(TF, iterations)
-
-    #### IMPLEMENT A SENSIBLE INITIALISATION TO INCLUDE WARM START!!!!
-    # Update initial (guessed) fields
-
-    @inbounds ux0 .= U.x.values
-    @inbounds uy0 .= U.y.values 
-    @inbounds p0 .= p.values
     
     interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, U.BCs)
@@ -139,28 +127,28 @@ function SIMPLE_loop(
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
     @time for iteration ∈ 1:iterations
-    # for iteration ∈ 1:iterations
         
         source!(∇p, pf, p, p.BCs)
         neg!(∇p)
 
         discretise!(ux_eqn, ux_model)
-        @turbo @. uy_eqn.A.nzval = ux_eqn.A.nzval # Avoid rediscretising
-        apply_boundary_conditions!(ux_eqn, ux_model, U.x.BCs)
+        # @turbo @. uy_eqn.A.nzval = ux_eqn.A.nzval # Avoid rediscretising
         @inbounds ux_eqn.b .+= ux_model.sources[1].field # should be moved out to "add_sources" function using the "Model" struct
-        ux_eqn.b .-= divUTx
-        implicit_relaxation!(ux_eqn, ux0, setup_U.relax)
+        apply_boundary_conditions!(ux_eqn, ux_model, U.x.BCs)
+        # ux_eqn.b .-= divUTx
+        @. prev = U.x.values
+        implicit_relaxation!(ux_eqn, prev, setup_U.relax)
         update_preconditioner!(Pu)
-
         run!(ux_eqn, ux_model, setup_U, opP=Pu.P, solver=solver_U)
         residual!(R_ux, ux_eqn, U.x, iteration)
 
-        @turbo @. uy_eqn.b = 0.0
-        # discretise!(uy_eqn, uy_model)
-        apply_boundary_conditions!(uy_eqn, uy_model, U.y.BCs)
+        # @turbo @. uy_eqn.b = 0.0
+        discretise!(uy_eqn, uy_model)
         @inbounds uy_eqn.b .+= uy_model.sources[1].field
-        uy_eqn.b .-= divUTy
-        implicit_relaxation!(uy_eqn, uy0, setup_U.relax)
+        apply_boundary_conditions!(uy_eqn, uy_model, U.y.BCs)
+        # uy_eqn.b .-= divUTy
+        @. prev = U.y.values
+        implicit_relaxation!(uy_eqn, prev, setup_U.relax)
         update_preconditioner!(Pu)
 
         run!(uy_eqn, uy_model, setup_U, opP=Pu.P, solver=solver_U)
@@ -170,28 +158,20 @@ function SIMPLE_loop(
         interpolate!(rDf, rD)
         remove_pressure_source!(ux_eqn, uy_eqn, ∇p, rD)
         H!(Hv, U, ux_eqn, uy_eqn, rD)
-        
-        # interpolate!(Hvf, Hv)
-        # correct_boundaries!(Hvf, Hv, U.BCs)
-        # flux!(Hv_flux, Hvf)
-        # div!(divHv_new, Hv_flux)
 
-        interpolate!(Uf, Hv)
+        interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs)
-        
-        # flux!(Hv_flux, Uf)
-        # div!(divHv_new, Hv_flux)
-
-        div!(divHv_new, Uf)
+        div!(divHv, Uf)
    
         discretise!(p_eqn, p_model)
+        @inbounds p_eqn.b .+= p_model.sources[1].field
         apply_boundary_conditions!(p_eqn, p_model, p.BCs)
         setReference!(p_eqn, pref, 1)
         update_preconditioner!(Pp)
-        @inbounds p_eqn.b .+= p_model.sources[1].field
+        @. prev = p.values
         run!( p_eqn, p_model, setup_p, opP=Pp.P, solver=solver_p)
 
-        explicit_relaxation!(p, p0, setup_p.relax)
+        explicit_relaxation!(p, prev, setup_p.relax)
         residual!(R_p, p_eqn, p, iteration)
 
         grad!(∇p, pf, p, p.BCs) 
@@ -218,11 +198,6 @@ function SIMPLE_loop(
         correct_boundaries!(Uf, U, U.BCs)
         flux!(mdotf, Uf)
 
-        @inbounds for i ∈ eachindex(ux0)
-            ux0[i] = U.x.values[i]
-            uy0[i] = U.y.values[i]
-        end
-
         grad!(gradU, Uf, U, U.BCs)
         
         
@@ -237,7 +212,6 @@ function SIMPLE_loop(
         #     divUTy = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][2,1]+ gradUT[i][2,2] + gradUT[i][2,3])*vol
         # end
         
-
         convergence = 1e-6
 
         if (R_ux[iteration] <= convergence && 
@@ -247,12 +221,8 @@ function SIMPLE_loop(
             print(
                 """
                 \n\n\n\n\n
-                Simulation converged! $iteration iterations in""")
-
-                # turbulence!(turbulence_model, νt, nuf, S, S2, solver_p, setup_p, explicit_relaxation!)
-
-                # k.values .= S2.values
-
+                Simulation converged! $iteration iterations in
+                """)
             break
         end
 
@@ -364,12 +334,8 @@ function inverse_diagonal!(rD::S, eqn) where S<:ScalarField
 end
 
 function explicit_relaxation!(phi, phi0, alpha)
-    # @. phi.values = alpha*phi.values + (1.0 - alpha)*phi0
-    # @. phi0 = phi.values
-    values = phi.values
-    @inbounds @simd for i ∈ eachindex(values)
-        values[i] = phi0[i] + alpha*(values[i] - phi0[i])
-        phi0[i] = values[i]
+    @inbounds @simd for i ∈ eachindex(phi)
+        phi[i] = phi0[i] + alpha*(phi[i] - phi0[i])
     end
 end
 

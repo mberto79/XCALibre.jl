@@ -104,10 +104,6 @@ Rx, Ry, Rp = isimple!(
     # setup_U, setup_p, iterations, pref=0.0)
     setup_U, setup_p, setup_turb, iterations)
 
-Fp = pressure_forces(:wall, p, 1.25)
-Reff = stress_tensor(U, nu, νt)
-Fv = viscous_forces(:wall, U, 1.25, nu, νt)
-
 write_vtk(
     "results", mesh, 
     ("U", U), 
@@ -116,6 +112,11 @@ write_vtk(
     ("omega", ω),
     ("nut", νt)
     )
+
+# Fp = pressure_forces(:wall, p, 1.25)
+# Reff = stress_tensor(U, nu, νt)
+# Fv = viscous_forces(:wall, U, 1.25, nu, νt)
+
 
 plot(; xlims=(0,1500))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

@@ -48,6 +48,6 @@ Base.:(==)(a::Vector{<:Operator}, b::Vector{<:Src}) = begin
     ((a...,), (b...,), length(a), length(b))
 end
 
-(→)(model_equation::T, eqn::Equation) where T<:Tuple = begin
-    Model(eqn, model_equation...)
+(→)(eqn::Equation, model::T) where T<:Tuple = begin
+    Model(eqn, model...)
 end

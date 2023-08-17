@@ -23,30 +23,26 @@ function isimple!(
 
     @info "Defining models..."
 
-    ux_model = (
+    ux_model = ux_eqn → (
         Divergence{Upwind}(mdotf, U.x) - Laplacian{Linear}(nueff, U.x) 
         == 
         Source(∇p.result.x)
-    ) → ux_eqn
+    )
     
-    uy_model = (
+    uy_model = uy_eqn → (
         Divergence{Upwind}(mdotf, U.y) - Laplacian{Linear}(nueff, U.y) 
         == 
         Source(∇p.result.y)
-    ) → uy_eqn
+    )
 
-    p_model = (
+    p_model = eqn → (
         Laplacian{Linear}(rDf, p) == Source(divHv)
-    ) → eqn
+    ) 
 
-    # ux_model = Model(ux_eqn, ux_momentum...)
-    # uy_model = Model(uy_eqn, uy_momentum...)
-    # p_model = Model(eqn, p_m...)
 
     @info "Initialising turbulence model..."
 
     turbulence_model = initialise_RANS(k, ω, mdotf, eqn)
-
 
     @info "Initialising preconditioners..."
 
@@ -159,8 +155,8 @@ function SIMPLE_loop(
         
         inverse_diagonal!(rD, ux_model.equation)
         interpolate!(rDf, rD)
-        remove_pressure_source!(ux_model.equation, uy_model.equation, ∇p)
-        H!(Hv, U, ux_model.equation, uy_model.equation)
+        remove_pressure_source!(ux_model, uy_model, ∇p)
+        H!(Hv, U, ux_model, uy_model)
 
         interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs)
@@ -367,9 +363,9 @@ function neg!(∇p)
     end
 end
 
-function remove_pressure_source!(ux_eqn, uy_eqn, ∇p)
+remove_pressure_source!(ux_model::M1, uy_model::M2, ∇p) where {M1,M2} = begin
     dpdx, dpdy = ∇p.result.x, ∇p.result.y
-    bx, by = ux_eqn.b, uy_eqn.b
+    bx, by = ux_model.equation.b, uy_model.equation.b
     @inbounds for i ∈ eachindex(bx)
         bx[i] -= dpdx[i]
         by[i] -= dpdy[i]
@@ -385,13 +381,12 @@ function setReference!(pEqn::E, pRef, cellID) where E<:Equation
     end
 end
 
-H!(Hv, v::VF, xeqn, yeqn) where VF<:VectorField = 
+H!(Hv, v::VF, ux_model, uy_model) where VF<:VectorField = 
 begin
     (; x, y, z, mesh) = Hv 
     (; cells, faces) = mesh
-    Ax = xeqn.A;  Ay = yeqn.A
-    bx = xeqn.b; by = yeqn.b; # bz = zeros(length(bx))
-    
+    Ax = ux_model.equation.A; Ay = uy_model.equation.A
+    bx = ux_model.equation.b; by = uy_model.equation.b
     vx, vy = v.x, v.y
     F = eltype(v.x.values)
     @inbounds for cID ∈ eachindex(cells)

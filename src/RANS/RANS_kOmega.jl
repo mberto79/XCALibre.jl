@@ -46,24 +46,21 @@ function initialise_RANS(k, ω, mdotf, eqn)
     Pk = ScalarField(mesh)
     Pω = ScalarField(mesh)
     
-    k_model = (
+    k_model = eqn → (
             Divergence{Upwind}(mdotf, k) 
             - Laplacian{Linear}(nueffk, k) 
             + Si(Dkf,k) # Dkf = β⁺*ω
             ==
             Source(Pk)
-        ) → eqn
+        )
     
-    ω_model = (
+    ω_model = eqn → (
         Divergence{Upwind}(mdotf, ω) 
         - Laplacian{Linear}(nueffω, ω) 
         + Si(Dωf,ω)  # Dωf = β1*ω
         ==
         Source(Pω)
-    ) → eqn
-
-    # k_model   = Model(eqn, k_eqn...)
-    # ω_model    = Model(eqn, ω_eqn...)
+    )
 
     # PK = set_preconditioner(DILU(), k_eqn, k_model, k.BCs)
     # PW = set_preconditioner(DILU(), ω_eqn, ω_model, ω.BCs)
@@ -187,7 +184,6 @@ end
 destruction_flux!(Dxf::F, coeff, ω) where F<:ScalarField = begin
     for i ∈ eachindex(Dxf.values)
         Dxf[i] = coeff*ω[i]
-        # Dxf[i] = max(coeff*ω[i], eps()^2)
     end
 end
 

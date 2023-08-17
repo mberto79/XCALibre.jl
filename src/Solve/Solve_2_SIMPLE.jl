@@ -23,25 +23,25 @@ function isimple!(
 
     @info "Defining models..."
 
-    ux_momentum = (
+    ux_model = (
         Divergence{Upwind}(mdotf, U.x) - Laplacian{Linear}(nueff, U.x) 
         == 
         Source(∇p.result.x)
-    )
+    ) → ux_eqn
     
-    uy_momentum = (
+    uy_model = (
         Divergence{Upwind}(mdotf, U.y) - Laplacian{Linear}(nueff, U.y) 
         == 
         Source(∇p.result.y)
-    )
+    ) → uy_eqn
 
-    p_m = (
+    p_model = (
         Laplacian{Linear}(rDf, p) == Source(divHv)
-    )
+    ) → eqn
 
-    ux_model = Model(ux_eqn, ux_momentum...)
-    uy_model = Model(uy_eqn, uy_momentum...)
-    p_model = Model(eqn, p_m...)
+    # ux_model = Model(ux_eqn, ux_momentum...)
+    # uy_model = Model(uy_eqn, uy_momentum...)
+    # p_model = Model(eqn, p_m...)
 
     @info "Initialising turbulence model..."
 

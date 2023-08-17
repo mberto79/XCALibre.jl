@@ -1,4 +1,4 @@
-export kOmega, kk
+export kOmega
 export initialise_RANS
 export turbulence!
 
@@ -33,7 +33,6 @@ struct kOmega{EK,EW,MK,MW,P1,P2,FK,FW,FN,C}
     νtf::FN
     coeffs::C
 end
-
 
 function initialise_RANS(k, ω, mdotf)
     mesh = mdotf.mesh
@@ -94,11 +93,8 @@ function initialise_RANS(k, ω, mdotf)
 
 end
 
-function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
-
-    prev = zeros(eltype(kOmega.coeffs.α1), length(S2))
-    
-    
+function turbulence!(
+    kOmega::M, νt, nu, S, S2, solver, setup, prev,relax!) where M
 
     (;k_eqn,ω_eqn,k_model,ω_model,PK,PW,kf,ωf,νtf,coeffs) = kOmega
 
@@ -113,8 +109,6 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
     Dωf = get_flux(ω_model, 3)
     Pω = ω_model.sources[1].field
 
-    
-
     # double_inner_product!(Pk, S, S.gradU)
     # cells = k.mesh.cells
     # for i ∈ eachindex(Pk)
@@ -122,37 +116,23 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
     #     Pk[i] = 2.0*Pk[i]*cells[i].volume
     # end
 
-    magnitude2!(S2, S) # should be multiplied by 2 (def of Sij)
+    magnitude2!(S2, S, scale_factor=2.0) # multiplied by 2 (def of Sij)
     cells = k.mesh.cells
     for i ∈ eachindex(Pk)
-        Pk[i] = 2.0*S2[i]*cells[i].volume
+        Pk[i] = S2[i]*cells[i].volume
     end
 
-    
-    # # # correct_production!(Pk, k, k.BCs) # based on choice of wall function
-    # # production_ω!(Pω, Pk, k, ω, νt, coeffs.α1)
-    Pω .= coeffs.α1*Pk
-    
-    # constrain_boundary!(ω, ω.BCs)
+    @. Pω = coeffs.α1*Pk
     @. Dωf.values = coeffs.β1*ω.values
-    # destruction_flux!(Dωf, coeffs.β1, ω) 
-    
-    # @. νt.values = k.values/ω.values
-    # interpolate!(νtf, νt)
-    # correct_boundaries!(νtf, νt, νt.BCs)
-    # diffusion_flux!(nueffω, nu,  νtf, coeffs.σω)
 
     interpolate!(kf, k)
     correct_boundaries!(kf, k, k.BCs)
     interpolate!(ωf, ω)
     correct_boundaries!(ωf, ω, ω.BCs)
-    for i ∈ eachindex(nueffω)
-        nueffω[i] = nu[i] + coeffs.σω*kf[i]/ωf[i]
-    end
-
-    
+    diffusion_flux!(nueffω, nu, kf, ωf, coeffs.σω)
 
     # Solve ω equation
+
     discretise!(ω_eqn, ω_model)
     ω_eqn.b .+= Pω
     apply_boundary_conditions!(ω_eqn, ω_model, ω.BCs)
@@ -166,29 +146,20 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
     interpolate!(ωf, ω)
     correct_boundaries!(ωf, ω, ω.BCs)
     bound!(ω, ωf, eps())
-    # constrain_boundary!(ω, ω.BCs)
-
-    # @. νt.values = k.values/ω.values
-    # interpolate!(νtf, νt)
-    # correct_boundaries!(νtf, νt, νt.BCs)
 
     # update k fluxes
-    
-    # @. Pk = min(νt.values*Pk, 20*coeffs.β⁺*ω.values*k.values) # add eddy viscosity
+
     @. Pk = νt.values*Pk
     @. Dkf.values = coeffs.β⁺*ω.values
-    # diffusion_flux!(nueffk, nu,  νtf, coeffs.σk)
-    # @. nueffk.values = nueffω.values
+
     interpolate!(kf, k)
     correct_boundaries!(kf, k, k.BCs)
     interpolate!(ωf, ω)
     correct_boundaries!(ωf, ω, ω.BCs)
-    for i ∈ eachindex(nueffk)
-        nueffk[i] = nu[i] + coeffs.σk*kf[i]/ωf[i]
-    end
+    diffusion_flux!(nueffk, nu, kf, ωf, coeffs.σk)
 
     # Solve k equation
-    # constrain_boundary!(k, k.BCs)
+
     discretise!(k_eqn, k_model)
     k_eqn.b .+= Pk
     apply_boundary_conditions!(k_eqn, k_model, k.BCs)
@@ -196,15 +167,11 @@ function turbulence!(kOmega::M, νt, nu, S, S2, solver, setup, relax!) where M
     relax!(k_eqn, prev, setup.relax)
     update_preconditioner!(PK)
     run!(k_eqn, k_model, setup, opP=PK.P, solver=solver)
-    # constrain_boundary!(k, k.BCs)
     interpolate!(kf, k)
     correct_boundaries!(kf, k, k.BCs)
     bound!(k, kf, eps())
-    # constrain_boundary!(k, k.BCs)
-
 
     update_eddy_viscosity!(νt, k, ω)
-    # @. νt.values = max(νt.values, eps())
     interpolate!(νtf, νt)
     correct_boundaries!(νtf, νt, νt.BCs)
 end
@@ -215,15 +182,9 @@ update_eddy_viscosity!(νt::F, k, ω) where F<:AbstractScalarField = begin
     end
 end
 
-# diffusion_flux!(nueff, nu, kf::F, ωf, σ) where F<:FaceScalarField = begin
-#     for i ∈ eachindex(nueff)
-#         nueff[i] = nu[i] + σ*kf[i]/ωf[i]
-#     end
-# end
-
-diffusion_flux!(nueff, nu, νtf::F, σ) where F<:FaceScalarField = begin
-    for i ∈ eachindex(nueff)
-        nueff[i] = nu[i] + σ*νtf[i]
+diffusion_flux!(nueff, nu, kf::F, ωf, σ) where F<:FaceScalarField = begin
+    @inbounds for i ∈ eachindex(nueff)
+        nueff[i] = nu[i] + σ*kf[i]/ωf[i]
     end
 end
 
@@ -231,33 +192,6 @@ destruction_flux!(Dxf::F, coeff, ω) where F<:ScalarField = begin
     for i ∈ eachindex(Dxf.values)
         Dxf[i] = coeff*ω[i]
         # Dxf[i] = max(coeff*ω[i], eps()^2)
-    end
-end
-
-production_k!(Pk, k, ω, νt, S2) = begin
-    mesh = k.mesh
-    cells = mesh.cells
-    boundaries = mesh.boundaries
-    start_cell = boundaries[end].cellsID[end] + 1
-    end_cell = length(cells)
-    # for i ∈ start_cell:end_cell
-    for i ∈ eachindex(Pk)
-        # Pk[i] = 2.0*νt[i]*S2[i]*cells[i].volume
-        # Pk[i] = 2.0*k[i]/ω[i]*S2[i]*cells[i].volume
-        Pk[i] = 1.0*S2[i]*cells[i].volume
-    end
-end
-
-production_ω!(Pω, Pk, k, ω, νt, α1) = begin
-    mesh = ω.mesh
-    boundaries = mesh.boundaries
-    start_cell = boundaries[end].cellsID[end] + 1
-    end_cell = length(mesh.cells)
-    # for i ∈ start_cell:end_cell
-    for i ∈ eachindex(Pω)
-        # Pω[i] =  α1*Pk[i]/νt[i]
-        # Pω[i] =  α1*Pk[i]*ω[i]/max(k[i], 1e-100)
-        Pω[i] =  α1*Pk[i]
     end
 end
 
@@ -353,41 +287,6 @@ set_cell_value!(field, BC) = begin
     end
 end
 
-@generated correct_production!(Pk, k, kBCs) = begin
-    BCs = kBCs.parameters
-    func_calls = Expr[]
-    for i ∈ eachindex(BCs)
-        BC = BCs[i]
-        if BC <: KWallFunction
-            call = quote
-                apply_wall_function!(Pk, k, kBCs[$i])
-            end
-            push!(func_calls, call)
-        end
-    end
-    quote
-    $(func_calls...)
-    nothing
-    end            
-end
-
-apply_wall_function!(Pk, k, kBC) = begin
-    ID = kBC.ID
-    cmu = kBC.value.cmu
-    κ = kBC.value.κ
-    mesh = k.mesh
-    (; faces, cells, boundaries) = mesh
-    boundary = boundaries[ID]
-    (; cellsID, facesID) = boundary
-    for i ∈ eachindex(cellsID)
-        cID = cellsID[i]
-        fID = facesID[i]
-        cell = cells[cID]
-        face = faces[fID]
-        Pk[cID] = k[cID]^1.5*cmu^0.75/(κ*face.delta)*cell.volume
-    end
-end
-
 bound!(field, fieldf, bound) = begin
     mesh = field.mesh
     (; cells, faces) = mesh
@@ -395,37 +294,15 @@ bound!(field, fieldf, bound) = begin
         sum_flux = 0.0
         sum_area = 0
         average = 0.0
-        # Face based average 
-
-        # facesID = cells[i].facesID
-        # for fID ∈ facesID
-        #     area = faces[fID].area
-        #     # sum_flux += max(fieldf[fID]*area, eps()) # bounded sum?
-        #     sum_flux += max(fieldf[fID], eps()) # bounded sum?
-        #     # sum_flux += abs(fieldf[fID]*area)
-        #     sum_area += 1
-        # end
-
+        
         # Cell based average
         cellsID = cells[i].neighbours
         for cID ∈ cellsID
-            # area = faces[fID].area
-            # sum_flux += max(fieldf[fID]*area, eps()) # bounded sum?
             sum_flux += max(field[cID], eps()) # bounded sum?
-            # sum_flux += abs(fieldf[fID]*area)
-            # sum_area += 1*max(sign(field[cID]), 0.0)
             sum_area += 1
         end
-
-        # npatches = length(mesh.boundaries)
-        # last_boundary_cell = mesh.boundaries[npatches].cellsID[end]
-        # if i < last_boundary_cell
-        #     area = faces[fID].area
-        #     sum_flux += max(fieldf[fID]*area, eps()) # bounded sum?
-        #     sum_area += area
-        # end
-
         average = sum_flux/sum_area
+
         field[i] = max(
             max(
                 field[i],
@@ -434,10 +311,4 @@ bound!(field, fieldf, bound) = begin
             bound
         )
     end
-
-    # field.values .= max.(field.values, val)
-end
-
-function kk()
-    nothing
 end

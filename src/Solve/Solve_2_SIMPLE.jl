@@ -202,7 +202,7 @@ function SIMPLE_loop(
         
         
         turbulence!(
-            turbulence_model, νt, nuf, S, S2, solver_p, setup_turb, implicit_relaxation!
+            turbulence_model, νt, nuf, S, S2, solver_p, setup_turb, prev, implicit_relaxation!
             ) 
         update_nueff!(nueff, nuf, turbulence_model)
 

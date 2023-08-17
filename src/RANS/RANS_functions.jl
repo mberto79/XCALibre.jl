@@ -12,7 +12,6 @@ function (S::StrainRate)(i)
 end
 
 double_inner_product!(
-    # s, t1::AbstractTensorField, t2) = 
     s, t0::AbstractTensorField, t2) = 
 begin
     sum = 0.0
@@ -45,7 +44,9 @@ function magnitude!(magS::ScalarField, S::AbstractTensorField)
     end
 end
 
-function magnitude2!(magS::ScalarField, S::AbstractTensorField)
+function magnitude2!(
+    magS::ScalarField, S::AbstractTensorField; scale_factor=1.0
+    )
     sum = 0.0
     for i ∈ eachindex(magS.values)
         sum = 0.0
@@ -55,6 +56,6 @@ function magnitude2!(magS::ScalarField, S::AbstractTensorField)
                 sum +=   S[i][j,k]*S[i][j,k]
             end
         end
-        magS.values[i] = sum
+        magS.values[i] = sum*scale_factor
     end
 end

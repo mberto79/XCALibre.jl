@@ -98,7 +98,7 @@ initialise!(k, k_inlet)
 initialise!(ω, ω_inlet)
 initialise!(νt, k_inlet/ω_inlet)
 
-iterations = 1500
+iterations = 1000
 Rx, Ry, Rp = isimple!( 
     mesh, nu, U, p, k, ω, νt, 
     # setup_U, setup_p, iterations, pref=0.0)

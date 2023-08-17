@@ -1,10 +1,11 @@
 export apply_boundary_conditions!
 
 @generated function apply_boundary_conditions!(
-    equation::E, model, BCs::B) where {E<:Equation,B}
+    model::M, BCs::B) where {M<:Model,B}
 
     # Unpack terms that make up the model (not sources)
-    nTerms = model.parameters[3]
+    # nTerms = model.parameters[3]
+    nTerms = model.parameters[4]
 
     # Definition of main assignment loop (one per patch)
     assignment_loops = []
@@ -30,7 +31,7 @@ export apply_boundary_conditions!
     end
 
     quote
-    (; A, b) = equation
+    (; A, b) = model.equation
     mesh = model.terms[1].phi.mesh
     (; boundaries, faces, cells) = mesh
     $(assignment_loops...)

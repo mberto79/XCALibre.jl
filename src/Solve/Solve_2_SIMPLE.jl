@@ -15,29 +15,33 @@ function isimple!(
     initialise!(rDf, 1.0)
     divHv = ScalarField(mesh)
 
-    @info "Defining models..."
-
-    ux_model = (
-        Divergence{Upwind}(mdotf, U.x) - Laplacian{Linear}(nueff, U.x) 
-        == 
-        Source(∇p.result.x)
-    )
-    
-    uy_model = (
-        Divergence{Upwind}(mdotf, U.y) - Laplacian{Linear}(nueff, U.y) 
-        == 
-        Source(∇p.result.y)
-    )
-
-    p_model = (
-        Laplacian{Linear}(rDf, p) == Source(divHv)
-    )
-
     @info "Allocating matrix equations..."
 
     ux_eqn  = Equation(mesh)
     uy_eqn  = Equation(mesh)
     eqn    = Equation(mesh)
+
+    @info "Defining models..."
+
+    ux_momentum = (
+        Divergence{Upwind}(mdotf, U.x) - Laplacian{Linear}(nueff, U.x) 
+        == 
+        Source(∇p.result.x)
+    )
+    
+    uy_momentum = (
+        Divergence{Upwind}(mdotf, U.y) - Laplacian{Linear}(nueff, U.y) 
+        == 
+        Source(∇p.result.y)
+    )
+
+    p_m = (
+        Laplacian{Linear}(rDf, p) == Source(divHv)
+    )
+
+    ux_model = Model(ux_eqn, ux_momentum...)
+    uy_model = Model(uy_eqn, uy_momentum...)
+    p_model = Model(eqn, p_m...)
 
     @info "Initialising turbulence model..."
 
@@ -48,14 +52,14 @@ function isimple!(
 
     # Pu = set_preconditioner(NormDiagonal(), ux_eqn, ux_model, U.x.BCs)
     # Pu = set_preconditioner(Jacobi(), ux_eqn, ux_model, U.x.BCs)
-    Pu = set_preconditioner(ILU0(), ux_eqn, ux_model, U.x.BCs)
+    Pu = set_preconditioner(ILU0(), ux_model, U.x.BCs)
     # Pu = set_preconditioner(DILU(), ux_eqn, ux_model, U.x.BCs)
-    Pp = set_preconditioner(LDL(), eqn, p_model, p.BCs)
+    Pp = set_preconditioner(LDL(), p_model, p.BCs)
 
     @info "Initialising linear solvers..."
 
-    solver_p = setup_p.solver(eqn.A, eqn.b)
-    solver_U = setup_U.solver(ux_eqn.A, ux_eqn.b)
+    solver_p = setup_p.solver(p_model.equation.A, p_model.equation.b)
+    solver_U = setup_U.solver(ux_model.equation.A, ux_model.equation.b)
 
     R_ux, R_uy, R_p  = SIMPLE_loop(
     mesh::Mesh2{TI,TF}, U, p, nuf, νt, ∇p,
@@ -64,7 +68,6 @@ function isimple!(
     turbulence_model,
     Pu, Pp,
     solver_U, solver_p,
-    ux_eqn, uy_eqn, eqn
     ; resume=true, pref=nothing)
 
     return R_ux, R_uy, R_p     
@@ -77,7 +80,6 @@ function SIMPLE_loop(
     turbulence_model,
     Pu, Pp,
     solver_U, solver_p,
-    ux_eqn, uy_eqn, eqn
     ; resume=true, pref=nothing) where {TI,TF}
     
     # Extract model variables
@@ -132,48 +134,48 @@ function SIMPLE_loop(
         source!(∇p, pf, p, p.BCs)
         neg!(∇p)
 
-        discretise!(ux_eqn, ux_model)
+        discretise!(ux_model)
         # @turbo @. uy_eqn.A.nzval = ux_eqn.A.nzval # Avoid rediscretising
-        @inbounds ux_eqn.b .+= ux_model.sources[1].field # should be moved out to "add_sources" function using the "Model" struct
-        apply_boundary_conditions!(ux_eqn, ux_model, U.x.BCs)
+        @inbounds ux_model.equation.b .+= ux_model.sources[1].field # should be moved out to "add_sources" function using the "Model" struct
+        apply_boundary_conditions!(ux_model, U.x.BCs)
         # ux_eqn.b .-= divUTx
         @. prev = U.x.values
-        implicit_relaxation!(ux_eqn, prev, setup_U.relax)
+        implicit_relaxation!(ux_model.equation, prev, setup_U.relax)
         update_preconditioner!(Pu)
-        run!(ux_eqn, ux_model, setup_U, opP=Pu.P, solver=solver_U)
-        residual!(R_ux, ux_eqn, U.x, iteration)
+        run!(ux_model, setup_U, opP=Pu.P, solver=solver_U)
+        residual!(R_ux, ux_model.equation, U.x, iteration)
 
         # @turbo @. uy_eqn.b = 0.0
-        discretise!(uy_eqn, uy_model)
-        @inbounds uy_eqn.b .+= uy_model.sources[1].field
-        apply_boundary_conditions!(uy_eqn, uy_model, U.y.BCs)
+        discretise!(uy_model)
+        @inbounds uy_model.equation.b .+= uy_model.sources[1].field
+        apply_boundary_conditions!(uy_model, U.y.BCs)
         # uy_eqn.b .-= divUTy
         @. prev = U.y.values
-        implicit_relaxation!(uy_eqn, prev, setup_U.relax)
+        implicit_relaxation!(uy_model.equation, prev, setup_U.relax)
         update_preconditioner!(Pu)
 
-        run!(uy_eqn, uy_model, setup_U, opP=Pu.P, solver=solver_U)
-        residual!(R_uy, uy_eqn, U.y, iteration)
+        run!(uy_model, setup_U, opP=Pu.P, solver=solver_U)
+        residual!(R_uy, uy_model.equation, U.y, iteration)
         
-        inverse_diagonal!(rD, ux_eqn)
+        inverse_diagonal!(rD, ux_model.equation)
         interpolate!(rDf, rD)
-        remove_pressure_source!(ux_eqn, uy_eqn, ∇p)
-        H!(Hv, U, ux_eqn, uy_eqn)
+        remove_pressure_source!(ux_model.equation, uy_model.equation, ∇p)
+        H!(Hv, U, ux_model.equation, uy_model.equation)
 
         interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs)
         div!(divHv, Uf)
    
-        discretise!(eqn, p_model)
-        @inbounds eqn.b .+= p_model.sources[1].field
-        apply_boundary_conditions!(eqn, p_model, p.BCs)
-        setReference!(eqn, pref, 1)
+        discretise!(p_model)
+        @inbounds p_model.equation.b .+= p_model.sources[1].field
+        apply_boundary_conditions!(p_model, p.BCs)
+        setReference!(p_model.equation, pref, 1)
         update_preconditioner!(Pp)
         @. prev = p.values
-        run!( eqn, p_model, setup_p, opP=Pp.P, solver=solver_p)
+        run!(p_model, setup_p, opP=Pp.P, solver=solver_p)
 
         explicit_relaxation!(p, prev, setup_p.relax)
-        residual!(R_p, eqn, p, iteration)
+        residual!(R_p, p_model.equation, p, iteration)
 
         grad!(∇p, pf, p, p.BCs) 
         # source!(∇p, pf, p, pBCs)
@@ -182,14 +184,14 @@ function SIMPLE_loop(
         if correct
             ncorrectors = 1
             for i ∈ 1:ncorrectors
-                discretise!(eqn, p_model)
-                apply_boundary_conditions!(eqn, p_model, p.BCs)
-                setReference!(eqn, pref, 1)
+                discretise!(p_model)
+                apply_boundary_conditions!(p_model, p.BCs)
+                setReference!(p_model.equation, pref, 1)
                 # grad!(∇p, pf, p, pBCs) 
                 interpolate!(gradpf, ∇p, p)
                 nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
-                correct!(eqn, p_model.terms.term1, pf)
-                run!(eqn, p_model, setup_p, opP=Pp.P, solver=solver_p)
+                correct!(p_model.equation, p_model.terms.term1, pf)
+                run!(p_model, setup_p, opP=Pp.P, solver=solver_p)
                 grad!(∇p, pf, p, pBCs) 
             end
         end

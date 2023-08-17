@@ -58,14 +58,17 @@ Source(f::ScalarField) = Src(f.values, 1, typeof(f))
 # Source(f::Number) = Src(f.values, 1, typeof(f)) # To implement!!
 
 # MODEL TYPE
-struct Model{T,S, TN, SN}
+struct Model{E,T,S,TN,SN}
+    equation::E
     terms::T
     sources::S
 end
-Model{TN,SN}(terms::T, sources::S) where {T,S,TN,SN} = begin
-    Model{T,S,TN,SN}(terms, sources)
+# Model{TN,SN}(terms::T, sources::S) where {T,S,TN,SN} = begin
+#     Model{T,S,TN,SN}(terms, sources)
+# end
+Model(eqn::E, terms::T, sources::S, TN, SN) where {E,T,S} = begin
+    Model{E,T,S,TN,SN}(eqn, terms, sources)
 end
-
 
 # Linear system matrix equation
 

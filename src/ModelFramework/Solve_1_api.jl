@@ -20,13 +20,10 @@ SolverSetup(
     SolverSetup{S,I,F}(solver, relax, itmax, atol, rtol)
 end
 
-function run!(
-    equation::Equation{Ti,Tf}, phiModel, setup; 
-    opP, solver
-    ) where {Ti,Tf}
+function run!(phiModel::Model, setup; opP, solver)
 
     (; itmax, atol, rtol) = setup
-    (; A, b) = equation
+    (; A, b) = phiModel.equation
     phi = get_phi(phiModel)
     values = phi.values
 

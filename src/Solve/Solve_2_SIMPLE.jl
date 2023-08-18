@@ -118,7 +118,6 @@ function SIMPLE_loop(
     interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, U.BCs)
     flux!(mdotf, Uf)
-    # source!(∇p, pf, p, p.BCs)
     grad!(∇p, pf, p, p.BCs)
 
     update_nueff!(nueff, nuf, turbulence_model)
@@ -129,12 +128,8 @@ function SIMPLE_loop(
 
     @time for iteration ∈ 1:iterations
         
-        # source!(∇p, pf, p, p.BCs)
-        # neg!(∇p)
 
         discretise!(ux_model)
-        # @turbo @. uy_eqn.A.nzval = ux_eqn.A.nzval # Avoid rediscretising
-        # @inbounds ux_model.equation.b .+= ux_model.sources[1].field # should be moved out to "add_sources" function using the "Model" struct
         apply_boundary_conditions!(ux_model, U.x.BCs)
         # ux_eqn.b .-= divUTx
         @. prev = U.x.values
@@ -165,7 +160,6 @@ function SIMPLE_loop(
         div!(divHv, Uf)
    
         discretise!(p_model)
-        # @inbounds p_model.equation.b .+= p_model.sources[1].field
         apply_boundary_conditions!(p_model, p.BCs)
         setReference!(p_model.equation, pref, 1)
         update_preconditioner!(Pp)
@@ -176,7 +170,6 @@ function SIMPLE_loop(
         residual!(R_p, p_model.equation, p, iteration)
 
         grad!(∇p, pf, p, p.BCs) 
-        # source!(∇p, pf, p, pBCs)
 
         correct = false
         if correct
@@ -328,7 +321,6 @@ function inverse_diagonal!(rD::S, eqn) where S<:ScalarField
         D = A[i,i]
         volume = cells[i].volume
         values[i] = volume/D
-        # values[i] = 1/D
     end
 end
 
@@ -368,14 +360,15 @@ end
 
 remove_pressure_source!(ux_model::M1, uy_model::M2, ∇p) where {M1,M2} = begin
     cells = get_phi(ux_model).mesh.cells
+    source_sign = get_source_sign(ux_model, 1)
     dpdx, dpdy = ∇p.result.x, ∇p.result.y
     bx, by = ux_model.equation.b, uy_model.equation.b
     @inbounds for i ∈ eachindex(bx)
         volume = cells[i].volume
         # bx[i] -= dpdx[i]
         # by[i] -= dpdy[i]
-        bx[i] += dpdx[i]*volume
-        by[i] += dpdy[i]*volume
+        bx[i] -= source_sign*dpdx[i]*volume
+        by[i] -= source_sign*dpdy[i]*volume
     end
 end
 

@@ -84,7 +84,7 @@ function div!(phi::ScalarField, psif::FaceVectorField)
             fID = facesID[fi]
             (; area, normal) = faces[fID]
             Sf = area*normal
-            phi.values[ci] += psif[fID]⋅Sf*nsign[fi]
+            phi.values[ci] += psif[fID]⋅Sf*nsign[fi]/volume
         end
     end
     # Add boundary faces contribution
@@ -95,11 +95,7 @@ function div!(phi::ScalarField, psif::FaceVectorField)
         (; area, normal) = faces[fID]
         Sf = area*normal
         # Boundary normals are correct by definition
-        phi.values[cID] += psif[fID]⋅Sf
-    end
-    # Divide by cell volume
-    for i ∈ eachindex(phi)
-        phi[i] /= cells[i].volume
+        phi.values[cID] += psif[fID]⋅Sf/volume
     end
 end
 

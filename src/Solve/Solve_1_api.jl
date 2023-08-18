@@ -1,4 +1,4 @@
-export SolverSetup, solver_setup
+export SolverSetup, setup_solver
 export run!
 
 struct SolverSetup{S,I,F}
@@ -20,20 +20,40 @@ SolverSetup(
     SolverSetup{S,I,F}(solver, relax, itmax, atol, rtol)
 end
 
-solver_setup(field; ) = begin
-    nothing
+setup_solver( field::AbstractField; # To do - relax inputs and correct internally
+    solver::S, 
+    preconditioner::PT, 
+    P::PP=nothing,
+    tolerance::F, 
+    relax::F, 
+    itmax::I=100, 
+    atol::F=sqrt(eps()),
+    rtol::F=1e-3 
+    ) where {S,PT<:PreconditionerType,PP,I<:Integer,F<:AbstractFloat} = 
+begin
+    teqn = Equation(field.mesh)
+    (
+        solver=solver(teqn.A,teqn.b), 
+        preconditioner=preconditioner, 
+        P=P,
+        tolerance=tolerance, 
+        relax=relax, 
+        itmax=itmax, 
+        atol=atol, 
+        rtol=rtol
+    )
 end
 
-function run!(phiModel::Model, setup; opP, solver)
+function run!(phiModel::Model, setup) # ; opP, solver
 
-    (; itmax, atol, rtol) = setup
+    (; itmax, atol, rtol, P, solver) = setup
     (; A, b) = phiModel.equation
     phi = get_phi(phiModel)
     values = phi.values
 
     solve!(
         solver, A, b, values; 
-        M=opP, itmax=itmax, atol=atol, rtol=rtol
+        M=P.P, itmax=itmax, atol=atol, rtol=rtol
         )
     # println(solver.stats.niter)
     @turbo values .= solver.x

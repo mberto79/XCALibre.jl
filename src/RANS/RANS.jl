@@ -1,5 +1,6 @@
 module RANS
 
+using Accessors
 using LinearAlgebra
 
 using FVM_1D.Mesh

@@ -68,27 +68,36 @@ Re = velocity[1]*0.1/nu
     Dirichlet(:top, 0.0)
 )
 
-setup_U = SolverSetup(
-    solver      = GmresSolver, # BicgstabSolver, GmresSolver
-    relax       = 0.7,
-    itmax       = 100,
-    rtol        = 1e-3
+config = (
+    U = setup_solver(
+        U;
+        solver      = GmresSolver, # BicgstabSolver, GmresSolver
+        preconditioner = ILU0(),
+        tolerance = 1e-7,
+        relax       = 0.8,
+    ),
+    p = setup_solver(
+        p;
+        solver      = GmresSolver, # BicgstabSolver, GmresSolver
+        preconditioner = LDL(),
+        tolerance = 1e-7,
+        relax       = 0.2,
+    ),
+    k = setup_solver(
+        k;
+        solver      = GmresSolver, # BicgstabSolver, GmresSolver
+        preconditioner = ILU0(),
+        tolerance = 1e-7,
+        relax       = 0.8,
+    ),
+    ω = setup_solver(
+        ω;
+        solver      = GmresSolver, # BicgstabSolver, GmresSolver
+        preconditioner = ILU0(),
+        tolerance = 1e-7,
+        relax       = 0.8,
+    )
 )
-
-setup_p = SolverSetup(
-    solver      = GmresSolver, # GmresSolver, FomSolver, DiomSolver
-    relax       = 0.3,
-    itmax       = 100,
-    rtol        = 1e-3
-)
-
-setup_turb = SolverSetup(
-    solver      = GmresSolver, # BicgstabSolver, GmresSolver
-    relax       = 0.7,
-    itmax       = 100,
-    rtol        = 1e-3
-)
-
 
 initialise!(U, velocity)
 initialise!(p, 0.0)
@@ -100,7 +109,7 @@ iterations = 1000
 Rx, Ry, Rp = isimple!( 
     mesh, nu, U, p, k, ω, νt, 
     # setup_U, setup_p, iterations, pref=0.0)
-    setup_U, setup_p, setup_turb, iterations)
+    config, iterations)
 
 write_vtk(
     "results", mesh, 

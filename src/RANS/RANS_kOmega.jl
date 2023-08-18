@@ -21,18 +21,17 @@ get_coeffs(FloatType) = begin
 end
 
 
-struct kOmega{MK,MW,P1,P2,FK,FW,FN,C}
+struct kOmega{MK,MW,FK,FW,FN,C,S}
     k_model::MK
     ω_model::MW
-    PK::P1
-    PW::P2
     kf::FK
     ωf::FW
     νtf::FN
     coeffs::C
+    config::S
 end
 
-function initialise_RANS(k, ω, mdotf, eqn)
+function initialise_RANS(k, ω, mdotf, eqn, config)
     mesh = mdotf.mesh
 
     kf = FaceScalarField(mesh)
@@ -64,8 +63,16 @@ function initialise_RANS(k, ω, mdotf, eqn)
 
     # PK = set_preconditioner(DILU(), k_eqn, k_model, k.BCs)
     # PW = set_preconditioner(DILU(), ω_eqn, ω_model, ω.BCs)
-    PK = set_preconditioner(ILU0(), k_model, k.BCs)
-    PW = set_preconditioner(ILU0(), ω_model, ω.BCs)
+    @reset config.k.P = set_preconditioner(
+        config.k.preconditioner, k_model, k.BCs
+        )
+
+    @reset config.ω.P = set_preconditioner(
+        config.ω.preconditioner, ω_model, ω.BCs
+        )
+
+    # PK = set_preconditioner(ILU0(), k_model, k.BCs)
+    # PW = set_preconditioner(ILU0(), ω_model, ω.BCs)
 
 
     float_type = eltype(mesh.nodes[1].coords)
@@ -74,12 +81,11 @@ function initialise_RANS(k, ω, mdotf, eqn)
     kOmega_model = kOmega(
         k_model,
         ω_model,
-        PK,
-        PW,
         kf,
         ωf,
         νtf,
-        coeffs
+        coeffs,
+        config
     )
 
     return kOmega_model
@@ -87,9 +93,9 @@ function initialise_RANS(k, ω, mdotf, eqn)
 end
 
 function turbulence!(
-    kOmega::M, νt, nu, S, S2, solver, setup, prev,relax!) where M
+    kOmega::M, νt, nu, S, S2, prev, relax!) where M
 
-    (;k_model,ω_model,PK,PW,kf,ωf,νtf,coeffs) = kOmega
+    (;k_model,ω_model,kf,ωf,νtf,coeffs,config) = kOmega
 
     k = get_phi(k_model)
     ω = get_phi(ω_model)
@@ -130,10 +136,10 @@ function turbulence!(
     discretise!(ω_model)
     apply_boundary_conditions!(ω_model, ω.BCs)
     prev .= ω.values
-    relax!(ω_model.equation, prev, setup.relax)
+    relax!(ω_model.equation, prev, config.ω.relax)
     constrain_equation!(ω_model.equation, ω, ω.BCs) # Only if using wall function?
-    update_preconditioner!(PW)
-    run!(ω_model, setup, opP=PW.P, solver=solver)
+    update_preconditioner!(config.ω.P)
+    run!(ω_model, config.ω)
    
     constrain_boundary!(ω, ω.BCs)
     interpolate!(ωf, ω)
@@ -156,9 +162,9 @@ function turbulence!(
     discretise!(k_model)
     apply_boundary_conditions!(k_model, k.BCs)
     prev .= k.values
-    relax!(k_model.equation, prev, setup.relax)
-    update_preconditioner!(PK)
-    run!(k_model, setup, opP=PK.P, solver=solver)
+    relax!(k_model.equation, prev, config.k.relax)
+    update_preconditioner!(config.k.P)
+    run!(k_model, config.k)
     interpolate!(kf, k)
     correct_boundaries!(kf, k, k.BCs)
     bound!(k, kf, eps())

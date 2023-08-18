@@ -1,8 +1,7 @@
 export isimple!
 
 function isimple!(
-    mesh::Mesh2{TI,TF}, nu, U, p, k, ω, νt, 
-    setup_U, setup_p, setup_turb, iterations
+    mesh::Mesh2{TI,TF}, nu, U, p, k, ω, νt, config, iterations
     ; resume=true, pref=nothing) where {TI,TF}
 
     @info "Preallocating fields..."
@@ -39,43 +38,41 @@ function isimple!(
         Laplacian{Linear}(rDf, p) == Source(divHv)
     ) 
 
-
-    @info "Initialising turbulence model..."
-
-    turbulence_model = initialise_RANS(k, ω, mdotf, eqn)
-
     @info "Initialising preconditioners..."
 
     # Pu = set_preconditioner(NormDiagonal(), ux_eqn, ux_model, U.x.BCs)
     # Pu = set_preconditioner(Jacobi(), ux_eqn, ux_model, U.x.BCs)
-    Pu = set_preconditioner(ILU0(), ux_model, U.x.BCs)
+    @reset config.U.P = set_preconditioner(
+        config.U.preconditioner, ux_model, U.x.BCs
+        )
     # Pu = set_preconditioner(DILU(), ux_eqn, ux_model, U.x.BCs)
-    Pp = set_preconditioner(LDL(), p_model, p.BCs)
+    @reset config.p.P = set_preconditioner(
+        config.p.preconditioner, p_model, p.BCs
+        )
+
+    @info "Initialising turbulence model..."
+
+    turbulence_model = initialise_RANS(k, ω, mdotf, eqn, config)
+    config = turbulence_model.config
 
     @info "Initialising linear solvers..."
 
-    solver_p = setup_p.solver(_A(p_model), _b(p_model))
-    solver_U = setup_U.solver(_A(ux_model), _b(ux_model))
+    # solver_p = setup_p.solver(_A(p_model), _b(p_model))
+    # solver_U = setup_U.solver(_A(ux_model), _b(ux_model))
 
     R_ux, R_uy, R_p  = SIMPLE_loop(
-    mesh::Mesh2{TI,TF}, U, p, nuf, νt, ∇p,
-    setup_U, setup_p, setup_turb, iterations,
+    mesh::Mesh2{TI,TF}, U, p, nuf, νt, ∇p, iterations,
     ux_model, uy_model, p_model,
-    turbulence_model,
-    Pu, Pp,
-    solver_U, solver_p,
+    turbulence_model, config
     ; resume=true, pref=nothing)
 
     return R_ux, R_uy, R_p     
 end # end function
 
 function SIMPLE_loop(
-    mesh::Mesh2{TI,TF}, U, p, nuf, νt, ∇p,
-    setup_U, setup_p, setup_turb, iterations,
+    mesh::Mesh2{TI,TF}, U, p, nuf, νt, ∇p, iterations,
     ux_model, uy_model, p_model,
-    turbulence_model,
-    Pu, Pp,
-    solver_U, solver_p,
+    turbulence_model, config
     ; resume=true, pref=nothing) where {TI,TF}
     
     # Extract model variables
@@ -133,9 +130,9 @@ function SIMPLE_loop(
         apply_boundary_conditions!(ux_model, U.x.BCs)
         # ux_eqn.b .-= divUTx
         @. prev = U.x.values
-        implicit_relaxation!(ux_model.equation, prev, setup_U.relax)
-        update_preconditioner!(Pu)
-        run!(ux_model, setup_U, opP=Pu.P, solver=solver_U)
+        implicit_relaxation!(ux_model.equation, prev, config.U.relax)
+        update_preconditioner!(config.U.P)
+        run!(ux_model, config.U) #opP=Pu.P, solver=solver_U)
         residual!(R_ux, ux_model.equation, U.x, iteration)
 
         # @turbo @. uy_eqn.b = 0.0
@@ -144,10 +141,10 @@ function SIMPLE_loop(
         apply_boundary_conditions!(uy_model, U.y.BCs)
         # uy_eqn.b .-= divUTy
         @. prev = U.y.values
-        implicit_relaxation!(uy_model.equation, prev, setup_U.relax)
-        update_preconditioner!(Pu)
+        implicit_relaxation!(uy_model.equation, prev, config.U.relax)
+        update_preconditioner!(config.U.P)
 
-        run!(uy_model, setup_U, opP=Pu.P, solver=solver_U)
+        run!(uy_model, config.U)
         residual!(R_uy, uy_model.equation, U.y, iteration)
         
         inverse_diagonal!(rD, ux_model.equation)
@@ -162,11 +159,11 @@ function SIMPLE_loop(
         discretise!(p_model)
         apply_boundary_conditions!(p_model, p.BCs)
         setReference!(p_model.equation, pref, 1)
-        update_preconditioner!(Pp)
+        update_preconditioner!(config.p.P)
         @. prev = p.values
-        run!(p_model, setup_p, opP=Pp.P, solver=solver_p)
+        run!(p_model, config.p)
 
-        explicit_relaxation!(p, prev, setup_p.relax)
+        explicit_relaxation!(p, prev, config.p.relax)
         residual!(R_p, p_model.equation, p, iteration)
 
         grad!(∇p, pf, p, p.BCs) 
@@ -182,7 +179,7 @@ function SIMPLE_loop(
                 interpolate!(gradpf, ∇p, p)
                 nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
                 correct!(p_model.equation, p_model.terms.term1, pf)
-                run!(p_model, setup_p, opP=Pp.P, solver=solver_p)
+                run!(p_model, config.p)
                 grad!(∇p, pf, p, pBCs) 
             end
         end
@@ -194,9 +191,8 @@ function SIMPLE_loop(
 
         grad!(gradU, Uf, U, U.BCs)
         
-        
         turbulence!(
-            turbulence_model, νt, nuf, S, S2, solver_p, setup_turb, prev, implicit_relaxation!
+            turbulence_model, νt, nuf, S, S2, prev, implicit_relaxation!
             ) 
         update_nueff!(nueff, nuf, turbulence_model)
 

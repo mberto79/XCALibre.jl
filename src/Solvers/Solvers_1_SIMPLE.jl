@@ -191,9 +191,7 @@ function SIMPLE_loop(
 
         grad!(gradU, Uf, U, U.BCs)
         
-        turbulence!(
-            turbulence_model, νt, nuf, S, S2, prev, implicit_relaxation!
-            ) 
+        turbulence!(turbulence_model, νt, nuf, S, S2, prev) 
         update_nueff!(nueff, nuf, turbulence_model)
 
         # for i ∈ eachindex(divUTx)
@@ -298,14 +296,6 @@ function flux!(phif::FS, psif::FV) where {FS<:FaceScalarField,FV<:FaceVectorFiel
     end
 end
 
-function implicit_relaxation!(eqn::E, field, alpha) where E<:Equation
-    (; A, b) = eqn
-    @inbounds for i ∈ eachindex(b)
-        A[i,i] /= alpha
-        b[i] += (1.0 - alpha)*A[i,i]*field[i]
-    end
-end
-
 volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 
 function inverse_diagonal!(rD::S, eqn) where S<:ScalarField
@@ -320,12 +310,6 @@ function inverse_diagonal!(rD::S, eqn) where S<:ScalarField
     end
 end
 
-function explicit_relaxation!(phi, phi0, alpha)
-    @inbounds @simd for i ∈ eachindex(phi)
-        phi[i] = phi0[i] + alpha*(phi[i] - phi0[i])
-    end
-end
-
 function correct_velocity!(U, Hv, ∇p, rD)
     Ux = U.x; Uy = U.y; Hvx = Hv.x; Hvy = Hv.y
     dpdx = ∇p.result.x; dpdy = ∇p.result.y; rDvalues = rD.values
@@ -336,14 +320,6 @@ function correct_velocity!(U, Hv, ∇p, rD)
     end
 end
 
-function neg!(∇p)
-    dpdx = ∇p.result.x; dpdy = ∇p.result.y
-    @inbounds for i ∈ eachindex(dpdx)
-        dpdx[i] *= -1.0
-        dpdy[i] *= -1.0
-    end
-end
-
 remove_pressure_source!(ux_model::M1, uy_model::M2, ∇p) where {M1,M2} = begin
     cells = get_phi(ux_model).mesh.cells
     source_sign = get_source_sign(ux_model, 1)
@@ -351,19 +327,8 @@ remove_pressure_source!(ux_model::M1, uy_model::M2, ∇p) where {M1,M2} = begin
     bx, by = ux_model.equation.b, uy_model.equation.b
     @inbounds for i ∈ eachindex(bx)
         volume = cells[i].volume
-        # bx[i] -= dpdx[i]
-        # by[i] -= dpdy[i]
         bx[i] -= source_sign*dpdx[i]*volume
         by[i] -= source_sign*dpdy[i]*volume
-    end
-end
-
-function setReference!(pEqn::E, pRef, cellID) where E<:Equation
-    if pRef === nothing
-        return nothing
-    else
-        pEqn.b[cellID] += pEqn.A[cellID,cellID]*pRef
-        pEqn.A[cellID,cellID] += pEqn.A[cellID,cellID]
     end
 end
 

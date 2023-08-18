@@ -93,7 +93,7 @@ function initialise_RANS(k, ω, mdotf, eqn, config)
 end
 
 function turbulence!(
-    kOmega::M, νt, nu, S, S2, prev, relax!) where M
+    kOmega::M, νt, nu, S, S2, prev) where M
 
     (;k_model,ω_model,kf,ωf,νtf,coeffs,config) = kOmega
 
@@ -136,7 +136,7 @@ function turbulence!(
     discretise!(ω_model)
     apply_boundary_conditions!(ω_model, ω.BCs)
     prev .= ω.values
-    relax!(ω_model.equation, prev, config.ω.relax)
+    implicit_relaxation!(ω_model.equation, prev, config.ω.relax)
     constrain_equation!(ω_model.equation, ω, ω.BCs) # Only if using wall function?
     update_preconditioner!(config.ω.P)
     run!(ω_model, config.ω)
@@ -162,7 +162,7 @@ function turbulence!(
     discretise!(k_model)
     apply_boundary_conditions!(k_model, k.BCs)
     prev .= k.values
-    relax!(k_model.equation, prev, config.k.relax)
+    implicit_relaxation!(k_model.equation, prev, config.k.relax)
     update_preconditioner!(config.k.P)
     run!(k_model, config.k)
     interpolate!(kf, k)

@@ -109,10 +109,11 @@ function turbulence!(
     #     Pk[i] = 2.0*Pk[i]*cells[i].volume
     # end
 
-    magnitude2!(S2, S, scale_factor=2.0) # multiplied by 2 (def of Sij)
+    magnitude2!(Pk, S, scale_factor=2.0) # multiplied by 2 (def of Sij)
     # cells = k.mesh.cells
     # for i ∈ eachindex(Pk)
-    #     Pk[i] = S2[i]*cells[i].volume
+    #     # Pk[i] = S2[i]*cells[i].volume
+    #     Pk[i] = S2[i]
     # end
 
     @. Pω.values = coeffs.α1*Pk.values

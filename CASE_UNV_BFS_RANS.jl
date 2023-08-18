@@ -64,31 +64,29 @@ Re = velocity[1]*0.1/nu
 @assign! νt (
     Dirichlet(:inlet, k_inlet/ω_inlet),
     Neumann(:outlet, 0.0),
-    # OmegaWallFunction(:wall, (κ=0.41, cmu=0.09, k=k)),
-    # OmegaWallFunction(:top, (κ=0.41, cmu=0.09, k=k))
     Dirichlet(:wall, 0.0), 
     Dirichlet(:top, 0.0)
 )
 
 setup_U = SolverSetup(
     solver      = GmresSolver, # BicgstabSolver, GmresSolver
-    relax       = 0.8,
+    relax       = 0.7,
     itmax       = 100,
-    rtol        = 1e-1
+    rtol        = 1e-3
 )
 
 setup_p = SolverSetup(
     solver      = GmresSolver, # GmresSolver, FomSolver, DiomSolver
-    relax       = 0.2,
+    relax       = 0.3,
     itmax       = 100,
-    rtol        = 1e-1
+    rtol        = 1e-3
 )
 
 setup_turb = SolverSetup(
     solver      = GmresSolver, # BicgstabSolver, GmresSolver
-    relax       = 0.8,
+    relax       = 0.7,
     itmax       = 100,
-    rtol        = 1e-1,
+    rtol        = 1e-3
 )
 
 

@@ -213,7 +213,7 @@ function SIMPLE_loop(
         #     divUTy = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][2,1]+ gradUT[i][2,2] + gradUT[i][2,3])*vol
         # end
         
-        convergence = 1e-6
+        convergence = 1e-7
 
         if (R_ux[iteration] <= convergence && 
             R_uy[iteration] <= convergence && 
@@ -328,6 +328,7 @@ function inverse_diagonal!(rD::S, eqn) where S<:ScalarField
         D = A[i,i]
         volume = cells[i].volume
         values[i] = volume/D
+        # values[i] = 1/D
     end
 end
 
@@ -347,15 +348,15 @@ function correct_velocity!(U, Hv, ∇p, rD)
     end
 end
 
-function correct_velocity!(ux, uy, Hv, ∇p, rD)
-    u = ux.values; v = uy.values; Hvx = Hv.x; Hvy = Hv.y
-    dpdx = ∇p.result.x; dpdy = ∇p.result.y; rDvalues = rD.values
-    @inbounds @simd for i ∈ eachindex(u)
-        rDvalues_i = rDvalues[i]
-        u[i] = Hvx[i] - dpdx[i]*rDvalues_i
-        v[i] = Hvy[i] - dpdy[i]*rDvalues_i
-    end
-end
+# function correct_velocity!(ux, uy, Hv, ∇p, rD)
+#     u = ux.values; v = uy.values; Hvx = Hv.x; Hvy = Hv.y
+#     dpdx = ∇p.result.x; dpdy = ∇p.result.y; rDvalues = rD.values
+#     @inbounds @simd for i ∈ eachindex(u)
+#         rDvalues_i = rDvalues[i]
+#         u[i] = Hvx[i] - dpdx[i]*rDvalues_i
+#         v[i] = Hvy[i] - dpdy[i]*rDvalues_i
+#     end
+# end
 
 function neg!(∇p)
     dpdx = ∇p.result.x; dpdy = ∇p.result.y
@@ -397,7 +398,7 @@ begin
     F = eltype(v.x.values)
     @inbounds for cID ∈ eachindex(cells)
         cell = cells[cID]
-        (; neighbours) = cell
+        (; neighbours, volume) = cell
         sumx = zero(F)
         sumy = zero(F)
         @inbounds for nID ∈ neighbours
@@ -407,6 +408,7 @@ begin
 
         D = view(Ax, cID, cID)[1] # add check to use max of Ax or Ay)
         rD = 1.0/D
+        # rD = volume/D
         x[cID] = (bx[cID] - sumx)*rD
         y[cID] = (by[cID] - sumy)*rD
         z[cID] = zero(F)

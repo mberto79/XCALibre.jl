@@ -120,9 +120,9 @@ write_vtk(
     ("nut", νt)
     )
 
-# Reff = stress_tensor(U, nu, νt)
-# Fp = pressure_forces(:wall, p, 1.25)
-# Fv = viscous_forces(:wall, U, 1.25, nu, νt)
+Reff = stress_tensor(U, nu, νt)
+Fp = pressure_forces(:wall, p, 1.25)
+Fv = viscous_forces(:wall, U, 1.25, nu, νt)
 
 
 plot(; xlims=(0,1500))

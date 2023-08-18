@@ -14,7 +14,7 @@ using FVM_1D.ModelFramework
 using FVM_1D.Discretise
 using FVM_1D.Solve
 using FVM_1D.Calculate
-using FVM_1D.RANS
+using FVM_1D.RANSModels
 
 # include("Solve_1_api.jl")
 include("Solvers_1_SIMPLE.jl")

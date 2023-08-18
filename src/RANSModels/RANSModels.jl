@@ -1,4 +1,4 @@
-module RANS
+module RANSModels
 
 using Accessors
 using LinearAlgebra
@@ -10,7 +10,7 @@ using FVM_1D.Discretise
 using FVM_1D.Solve
 using FVM_1D.Calculate
 
-include("RANS_kOmega.jl")
-include("RANS_functions.jl")
+include("RANSModels_kOmega.jl")
+include("RANSModels_functions.jl")
 
 end # end module

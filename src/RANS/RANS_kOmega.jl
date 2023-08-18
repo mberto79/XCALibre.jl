@@ -128,7 +128,6 @@ function turbulence!(
     # Solve ω equation
 
     discretise!(ω_model)
-    # ω_model.equation.b .+= Pω
     apply_boundary_conditions!(ω_model, ω.BCs)
     prev .= ω.values
     relax!(ω_model.equation, prev, setup.relax)
@@ -155,7 +154,6 @@ function turbulence!(
     # Solve k equation
 
     discretise!(k_model)
-    # k_model.equation.b .+= Pk
     apply_boundary_conditions!(k_model, k.BCs)
     prev .= k.values
     relax!(k_model.equation, prev, setup.relax)

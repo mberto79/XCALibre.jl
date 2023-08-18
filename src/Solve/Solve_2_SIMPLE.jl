@@ -118,7 +118,8 @@ function SIMPLE_loop(
     interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, U.BCs)
     flux!(mdotf, Uf)
-    source!(∇p, pf, p, p.BCs)
+    # source!(∇p, pf, p, p.BCs)
+    grad!(∇p, pf, p, p.BCs)
 
     update_nueff!(nueff, nuf, turbulence_model)
 
@@ -128,7 +129,7 @@ function SIMPLE_loop(
 
     @time for iteration ∈ 1:iterations
         
-        source!(∇p, pf, p, p.BCs)
+        # source!(∇p, pf, p, p.BCs)
         # neg!(∇p)
 
         discretise!(ux_model)
@@ -365,13 +366,15 @@ function neg!(∇p)
 end
 
 remove_pressure_source!(ux_model::M1, uy_model::M2, ∇p) where {M1,M2} = begin
+    cells = get_phi(ux_model).mesh.cells
     dpdx, dpdy = ∇p.result.x, ∇p.result.y
     bx, by = ux_model.equation.b, uy_model.equation.b
     @inbounds for i ∈ eachindex(bx)
+        volume = cells[i].volume
         # bx[i] -= dpdx[i]
         # by[i] -= dpdy[i]
-        bx[i] += dpdx[i]
-        by[i] += dpdy[i]
+        bx[i] += dpdx[i]*volume
+        by[i] += dpdy[i]*volume
     end
 end
 

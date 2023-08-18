@@ -5,7 +5,7 @@ using FVM_1D
 using Krylov
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
-mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
+# mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
 mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
 # mesh_file = "unv_sample_meshes/backwardFacingStep_2mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
@@ -113,8 +113,8 @@ write_vtk(
     ("nut", νt)
     )
 
-# Fp = pressure_forces(:wall, p, 1.25)
 # Reff = stress_tensor(U, nu, νt)
+# Fp = pressure_forces(:wall, p, 1.25)
 # Fv = viscous_forces(:wall, U, 1.25, nu, νt)
 
 

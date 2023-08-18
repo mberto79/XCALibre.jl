@@ -30,7 +30,7 @@ export discretise!
     for s ∈ 1:nSources
         add_source = quote
             (; field, sign) = model.sources[$s]
-            b[cID] += sign*field[cID]
+            b[cID] += sign*field[cID]*volume
         end
         push!(assignment_block_3, add_source)
     end
@@ -66,6 +66,7 @@ export discretise!
                 $(assignment_block_1...)    
             end
             b[cID] = zero(0.0)
+            volume = cell.volume
             $(assignment_block_2...)
             $(assignment_block_3...)
         end

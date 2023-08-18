@@ -1,4 +1,4 @@
-module Solve
+module Solvers
 
 using LoopVectorization
 using LinearAlgebra
@@ -16,6 +16,6 @@ using FVM_1D.Calculate
 using FVM_1D.RANS
 
 # include("Solve_1_api.jl")
-include("Solve_1_SIMPLE.jl")
+include("Solvers_1_SIMPLE.jl")
 
 end

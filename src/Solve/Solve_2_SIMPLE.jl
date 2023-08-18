@@ -24,13 +24,13 @@ function isimple!(
     @info "Defining models..."
 
     ux_model = ux_eqn → (
-        Divergence{Upwind}(mdotf, U.x) - Laplacian{Linear}(nueff, U.x) 
+        Divergence{Linear}(mdotf, U.x) - Laplacian{Linear}(nueff, U.x) 
         == 
         -Source(∇p.result.x)
     )
     
     uy_model = uy_eqn → (
-        Divergence{Upwind}(mdotf, U.y) - Laplacian{Linear}(nueff, U.y) 
+        Divergence{Linear}(mdotf, U.y) - Laplacian{Linear}(nueff, U.y) 
         == 
         -Source(∇p.result.y)
     )

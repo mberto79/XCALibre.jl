@@ -47,7 +47,7 @@ function initialise_RANS(k, ω, mdotf, eqn)
     Pω = ScalarField(mesh)
     
     k_model = eqn → (
-            Divergence{Upwind}(mdotf, k) 
+            Divergence{Linear}(mdotf, k) 
             - Laplacian{Linear}(nueffk, k) 
             + Si(Dkf,k) # Dkf = β⁺*ω
             ==
@@ -55,7 +55,7 @@ function initialise_RANS(k, ω, mdotf, eqn)
         )
     
     ω_model = eqn → (
-        Divergence{Upwind}(mdotf, ω) 
+        Divergence{Linear}(mdotf, ω) 
         - Laplacian{Linear}(nueffω, ω) 
         + Si(Dωf,ω)  # Dωf = β1*ω
         ==

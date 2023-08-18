@@ -19,7 +19,7 @@ Base.:+(a::Vector{<:Src}, b::Src) = [a..., b]
 
 Base.:-(a::Src) = begin
     @reset a.sign = -1
-    a
+    [a]
 end
 
 Base.:-(a::Src, b::Src) = begin

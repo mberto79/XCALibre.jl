@@ -1,4 +1,4 @@
-export SolverSetup
+export SolverSetup, solver_setup
 export run!
 
 struct SolverSetup{S,I,F}
@@ -18,6 +18,10 @@ SolverSetup(
     rtol::F=1e-1
     ) where {S,I,F} = begin
     SolverSetup{S,I,F}(solver, relax, itmax, atol, rtol)
+end
+
+solver_setup(field; ) = begin
+    nothing
 end
 
 function run!(phiModel::Model, setup; opP, solver)

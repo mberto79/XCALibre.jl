@@ -5,7 +5,7 @@ include("Mesh/Plotting/0_plotting.jl")
 include("Fields/Fields.jl")
 include("ModelFramework/ModelFramework.jl")
 include("Discretise/Discretise.jl")
-include("Preconditioners/Preconditioners.jl")
+include("Solve/Solve.jl")
 include("Calculate/Calculate.jl")
 include("RANS/RANS.jl")
 include("Solvers/Solvers.jl")
@@ -19,7 +19,7 @@ using Reexport
 @reexport using FVM_1D.Fields
 @reexport using FVM_1D.ModelFramework
 @reexport using FVM_1D.Discretise
-@reexport using FVM_1D.Preconditioners
+@reexport using FVM_1D.Solve
 @reexport using FVM_1D.Calculate
 @reexport using FVM_1D.RANS
 @reexport using FVM_1D.Solvers

@@ -340,16 +340,6 @@ function correct_velocity!(U, Hv, ∇p, rD)
     end
 end
 
-# function correct_velocity!(ux, uy, Hv, ∇p, rD)
-#     u = ux.values; v = uy.values; Hvx = Hv.x; Hvy = Hv.y
-#     dpdx = ∇p.result.x; dpdy = ∇p.result.y; rDvalues = rD.values
-#     @inbounds @simd for i ∈ eachindex(u)
-#         rDvalues_i = rDvalues[i]
-#         u[i] = Hvx[i] - dpdx[i]*rDvalues_i
-#         v[i] = Hvy[i] - dpdy[i]*rDvalues_i
-#     end
-# end
-
 function neg!(∇p)
     dpdx = ∇p.result.x; dpdy = ∇p.result.y
     @inbounds for i ∈ eachindex(dpdx)

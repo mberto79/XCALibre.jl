@@ -101,11 +101,25 @@ assign(scalar::ScalarField, args...) = begin
     return scalar
 end
 
-macro assign!(field, BCs)
-    efield = esc(field)
+macro assign!(model, field, BCs)
+    emodel = esc(model)
+    efield = Symbol(field)
     eBCs = esc(BCs)
     quote
-        $efield = assign($efield, $eBCs...)
+        f = $emodel.$efield
+        f = assign(f, $eBCs...)
+        @reset $emodel.$efield = f
     end
-    
+end
+
+macro assign!(model, turb, field, BCs)
+    emodel = esc(model)
+    eturb = Symbol(turb)
+    efield = Symbol(field)
+    eBCs = esc(BCs)
+    quote
+        f = $emodel.$eturb.$efield
+        f = assign(f, $eBCs...)
+        @reset $emodel.$eturb.$efield = f
+    end
 end

@@ -125,7 +125,7 @@ end
 @inline (bc::OmegaWallFunction)(# a bit hacky for now (should be Src)
     term::Operator{F,P,I,Si}, 
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
-    cmu, κ, k = bc.value
+    # cmu, κ, k = bc.value
     # ωc = k[cellID]^0.5/(cmu^0.25*κ*face.delta)*cell.volume
     # y = face.delta
     # ωc = 6*1e-3/(0.075*y^2)

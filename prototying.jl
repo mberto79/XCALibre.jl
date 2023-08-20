@@ -10,7 +10,8 @@ mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
 # mesh_file = "unv_sample_meshes/backwardFacingStep_2mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 
-RAS{Laminar}(mesh)
+model = RANS{Laminar}(mesh=mesh, viscosity=1e-3)
+is_turbulent(model)
 
 definition = Simulation(RANS{Laminar}, mesh, Fluid{Incompressible}, false)
 
@@ -124,29 +125,51 @@ write_vtk(
     ("nut", νt)
     )
 
-# Reff = stress_tensor(U, nu, νt)
-# Fp = pressure_forces(:wall, p, 1.25)
-# Fv = viscous_forces(:wall, U, 1.25, nu, νt)
+schemes(; 
+    time::F=2.0,
+    a::I=1
+    ) where {F,I} = begin
+    (
+        field = (
+            time=time,
+            a=a
+        )
+    )
+end
+
+@kwdef mutable struct Schemes2{F<:AbstractFloat,SL}
+    time::F=2.5
+    laplacian::SL=Linear
+end 
+
+s = schemes()
+s = Schemes2()
+
+s.laplacian = Upwind
+
+struct Schemes3{F<:AbstractFloat,SL}
+    time::F
+    laplacian::SL
+end 
+Schemes3(; time, laplacian) = Schemes3(time, laplacian)
+
+@kwdef struct Schemes4{F<:AbstractFloat,SL}
+    time::F=2.5
+    laplacian::SL=Linear
+end 
 
 
-plot(; xlims=(0,1500))
-plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p")
+s = Schemes4(2.5,Linear)
 
-# # PROFILING CODE
+t = (a1=2, a2="fr", b=:test)
 
-# using Profile, PProf
+Schemes3(time=2.4,laplacian="Test")
 
-# GC.gc()
-# initialise!(U, velocity)
-# initialise!(p, 0.0)
+test = (a=1, b=4, v=6)
 
-# Profile.Allocs.clear()
-# Profile.Allocs.@profile sample_rate=1 begin Rx, Ry, Rp = isimple!(
-#     mesh, nu, U, p,
-#     # setup_U, setup_p, iterations, pref=0.0)
-#     setup_U, setup_p, iterations)
-# end
+field = :v
+t = :(_.v)
 
-# PProf.Allocs.pprof()
+dump(t)
+lense = @optic t
+set(test,lense,1)

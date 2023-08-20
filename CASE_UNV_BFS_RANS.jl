@@ -10,40 +10,32 @@ mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
 # mesh_file = "unv_sample_meshes/backwardFacingStep_2mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 
-U = VectorField(mesh)
-p = ScalarField(mesh)
-k = ScalarField(mesh)
-ω = ScalarField(mesh)
-νt = ScalarField(mesh)
 
-# velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
-# u_mag = 1.5
 u_mag = 1.5
 velocity = [u_mag, 0.0, 0.0]
-Tu = 0.1
-k_inlet = 1 # 3/2*(Tu*u_mag)^2
-νR = 0.1 # nut/nu
-ω_inlet = 1000 # k_inlet/(nu*νR) # nut = k/ω thus w = k/nut 
-# ω_wall = 10*6*1e-3/(0.075*mesh.faces[61].delta^2)
+k_inlet = 1
+ω_inlet = 1000
 ω_wall = ω_inlet
 Re = velocity[1]*0.1/nu
 
-@assign! U (
+model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
+
+@assign! model U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:wall, [0.0, 0.0, 0.0]),
     Dirichlet(:top, [0.0, 0.0, 0.0])
 )
 
-@assign! p (
+@assign! model p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
     Neumann(:wall, 0.0),
     Neumann(:top, 0.0)
 )
 
-@assign! k (
+@assign! model turbulence k (
     Dirichlet(:inlet, k_inlet),
     Neumann(:outlet, 0.0),
     # KWallFunction(:wall, (κ=0.41, cmu=0.09, k=k)),
@@ -52,16 +44,16 @@ Re = velocity[1]*0.1/nu
     Dirichlet(:top, 1e-15)
 )
 
-@assign! ω (
+@assign! model turbulence omega (
     Dirichlet(:inlet, ω_inlet),
     Neumann(:outlet, 0.0),
-    OmegaWallFunction(:wall, (κ=0.41, cmu=0.09, k=k)),
-    OmegaWallFunction(:top, (κ=0.41, cmu=0.09, k=k))
+    OmegaWallFunction(:wall, (κ=0.41, cmu=0.09)),
+    OmegaWallFunction(:top, (κ=0.41, cmu=0.09))
     # Dirichlet(:wall, ω_wall), 
     # Dirichlet(:top, ω_wall)
 )
 
-@assign! νt (
+@assign! model turbulence nut (
     Dirichlet(:inlet, k_inlet/ω_inlet),
     Neumann(:outlet, 0.0),
     Dirichlet(:wall, 0.0), 
@@ -70,59 +62,59 @@ Re = velocity[1]*0.1/nu
 
 config = (
     U = setup_solver(
-        U;
+        model.U;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         tolerance = 1e-7,
-        relax       = 0.8,
+        relax       = 0.7,
     ),
     p = setup_solver(
-        p;
+        model.p;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = LDL(),
         tolerance = 1e-7,
-        relax       = 0.2,
+        relax       = 0.3,
     ),
     k = setup_solver(
-        k;
+        model.turbulence.k;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         tolerance = 1e-7,
-        relax       = 0.8,
+        relax       = 0.7,
     ),
-    ω = setup_solver(
-        ω;
+    omega = setup_solver(
+        model.turbulence.omega;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         tolerance = 1e-7,
-        relax       = 0.8,
+        relax       = 0.7,
     )
 )
 
-initialise!(U, velocity)
-initialise!(p, 0.0)
-initialise!(k, k_inlet)
-initialise!(ω, ω_inlet)
-initialise!(νt, k_inlet/ω_inlet)
+initialise!(model.U, velocity)
+initialise!(model.p, 0.0)
+initialise!(model.turbulence.k, k_inlet)
+initialise!(model.turbulence.omega, ω_inlet)
+initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
 iterations = 1000
 Rx, Ry, Rp = isimple!( 
-    mesh, nu, U, p, k, ω, νt, 
+    model,
     # setup_U, setup_p, iterations, pref=0.0)
     config, iterations)
 
 write_vtk(
     "results", mesh, 
-    ("U", U), 
-    ("p", p),
-    ("k", k),
-    ("omega", ω),
-    ("nut", νt)
+    ("U", model.U), 
+    ("p", model.p),
+    ("k", model.turbulence.k),
+    ("omega", model.turbulence.omega),
+    ("nut", model.turbulence.nut)
     )
 
-Reff = stress_tensor(U, nu, νt)
-Fp = pressure_forces(:wall, p, 1.25)
-Fv = viscous_forces(:wall, U, 1.25, nu, νt)
+Reff = stress_tensor(model.U, nu, model.turbulence.nut)
+Fp = pressure_force(:wall, model.p, 1.25)
+Fv = viscous_force(:wall, model.U, 1.25, nu, model.turbulence.nut)
 
 
 plot(; xlims=(0,1500))

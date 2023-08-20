@@ -10,6 +10,7 @@ using FVM_1D.Discretise
 using FVM_1D.Solve
 using FVM_1D.Calculate
 
+include("RANSModels_0_types.jl")
 include("RANSModels_kOmega.jl")
 include("RANSModels_functions.jl")
 

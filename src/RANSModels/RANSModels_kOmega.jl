@@ -1,6 +1,23 @@
-export kOmega
+export KOmega
 export initialise_RANS
 export turbulence!
+
+struct KOmega <: AbstractTurbulenceModel end
+
+# Constructor 
+
+RANS{KOmega}(; mesh, viscosity) = begin
+    U = VectorField(mesh); F1 = typeof(U)
+    p = ScalarField(mesh); F2 = typeof(p)
+    V = typeof(viscosity)
+    k = ScalarField(mesh); omega = ScalarField(mesh); nut = ScalarField(mesh)
+    turb = (k=k , omega=omega, nut=nut); T = typeof(turb)
+    flag = false; F = typeof(flag)
+    D = typeof(mesh)
+    RANS{KOmega,F1,F2,V,T,F,D}(
+        KOmega(), U, p, viscosity, turb, flag, mesh
+    )
+end
 
 struct kOmegaCoefficients{T}
     β⁺::T
@@ -21,7 +38,7 @@ get_coeffs(FloatType) = begin
 end
 
 
-struct kOmega{MK,MW,FK,FW,FN,C,S}
+struct KOmegaModel{MK,MW,FK,FW,FN,C,S}
     k_model::MK
     ω_model::MW
     kf::FK
@@ -31,7 +48,9 @@ struct kOmega{MK,MW,FK,FW,FN,C,S}
     config::S
 end
 
-function initialise_RANS(k, ω, mdotf, eqn, config)
+function initialise_RANS(mdotf, eqn, config, turbulence)
+    # unpack turbulent quantities
+    (; k, omega, nut) = turbulence
     mesh = mdotf.mesh
 
     kf = FaceScalarField(mesh)
@@ -48,37 +67,37 @@ function initialise_RANS(k, ω, mdotf, eqn, config)
     k_model = eqn → (
             Divergence{Linear}(mdotf, k) 
             - Laplacian{Linear}(nueffk, k) 
-            + Si(Dkf,k) # Dkf = β⁺*ω
+            + Si(Dkf,k) # Dkf = β⁺*omega
             ==
             Source(Pk)
         )
     
     ω_model = eqn → (
-        Divergence{Linear}(mdotf, ω) 
-        - Laplacian{Linear}(nueffω, ω) 
-        + Si(Dωf,ω)  # Dωf = β1*ω
+        Divergence{Linear}(mdotf, omega) 
+        - Laplacian{Linear}(nueffω, omega) 
+        + Si(Dωf,omega)  # Dωf = β1*omega
         ==
         Source(Pω)
     )
 
     # PK = set_preconditioner(DILU(), k_eqn, k_model, k.BCs)
-    # PW = set_preconditioner(DILU(), ω_eqn, ω_model, ω.BCs)
+    # PW = set_preconditioner(DILU(), ω_eqn, ω_model, omega.BCs)
     @reset config.k.P = set_preconditioner(
         config.k.preconditioner, k_model, k.BCs
         )
 
-    @reset config.ω.P = set_preconditioner(
-        config.ω.preconditioner, ω_model, ω.BCs
+    @reset config.omega.P = set_preconditioner(
+        config.omega.preconditioner, ω_model, omega.BCs
         )
 
     # PK = set_preconditioner(ILU0(), k_model, k.BCs)
-    # PW = set_preconditioner(ILU0(), ω_model, ω.BCs)
+    # PW = set_preconditioner(ILU0(), ω_model, omega.BCs)
 
 
     float_type = eltype(mesh.nodes[1].coords)
     coeffs = get_coeffs(float_type)
 
-    kOmega_model = kOmega(
+    kOmega_model = KOmegaModel(
         k_model,
         ω_model,
         kf,
@@ -92,13 +111,16 @@ function initialise_RANS(k, ω, mdotf, eqn, config)
 
 end
 
-function turbulence!(
-    kOmega::M, νt, nu, S, S2, prev) where M
+function turbulence!( # Sort out dispatch when possible
+    KOmega::M, model, S, S2, prev) where M
 
-    (;k_model,ω_model,kf,ωf,νtf,coeffs,config) = kOmega
+    nu = model.nu
+    nut = model.turbulence.nut
+
+    (;k_model,ω_model,kf,ωf,νtf,coeffs,config) = KOmega
 
     k = get_phi(k_model)
-    ω = get_phi(ω_model)
+    omega = get_phi(ω_model)
 
     nueffk = get_flux(k_model, 2)
     Dkf = get_flux(k_model, 3)
@@ -123,38 +145,38 @@ function turbulence!(
     # end
 
     @. Pω.values = coeffs.α1*Pk.values
-    @. Dωf.values = coeffs.β1*ω.values
+    @. Dωf.values = coeffs.β1*omega.values
 
     interpolate!(kf, k)
     correct_boundaries!(kf, k, k.BCs)
-    interpolate!(ωf, ω)
-    correct_boundaries!(ωf, ω, ω.BCs)
+    interpolate!(ωf, omega)
+    correct_boundaries!(ωf, omega, omega.BCs)
     diffusion_flux!(nueffω, nu, kf, ωf, coeffs.σω)
 
-    # Solve ω equation
+    # Solve omega equation
 
     discretise!(ω_model)
-    apply_boundary_conditions!(ω_model, ω.BCs)
-    prev .= ω.values
-    implicit_relaxation!(ω_model.equation, prev, config.ω.relax)
-    constrain_equation!(ω_model.equation, ω, ω.BCs) # Only if using wall function?
-    update_preconditioner!(config.ω.P)
-    run!(ω_model, config.ω)
+    apply_boundary_conditions!(ω_model, omega.BCs)
+    prev .= omega.values
+    implicit_relaxation!(ω_model.equation, prev, config.omega.relax)
+    constrain_equation!(ω_model.equation, omega, omega.BCs) # Only if using wall function?
+    update_preconditioner!(config.omega.P)
+    run!(ω_model, config.omega)
    
-    constrain_boundary!(ω, ω.BCs)
-    interpolate!(ωf, ω)
-    correct_boundaries!(ωf, ω, ω.BCs)
-    bound!(ω, ωf, eps())
+    constrain_boundary!(omega, omega.BCs)
+    interpolate!(ωf, omega)
+    correct_boundaries!(ωf, omega, omega.BCs)
+    bound!(omega, ωf, eps())
 
     # update k fluxes
 
-    @. Pk.values = νt.values*Pk.values
-    @. Dkf.values = coeffs.β⁺*ω.values
+    @. Pk.values = nut.values*Pk.values
+    @. Dkf.values = coeffs.β⁺*omega.values
 
     interpolate!(kf, k)
     correct_boundaries!(kf, k, k.BCs)
-    interpolate!(ωf, ω)
-    correct_boundaries!(ωf, ω, ω.BCs)
+    interpolate!(ωf, omega)
+    correct_boundaries!(ωf, omega, omega.BCs)
     diffusion_flux!(nueffk, nu, kf, ωf, coeffs.σk)
 
     # Solve k equation
@@ -169,14 +191,14 @@ function turbulence!(
     correct_boundaries!(kf, k, k.BCs)
     bound!(k, kf, eps())
 
-    update_eddy_viscosity!(νt, k, ω)
-    interpolate!(νtf, νt)
-    correct_boundaries!(νtf, νt, νt.BCs)
+    update_eddy_viscosity!(nut, k, omega)
+    interpolate!(νtf, nut)
+    correct_boundaries!(νtf, nut, nut.BCs)
 end
 
-update_eddy_viscosity!(νt::F, k, ω) where F<:AbstractScalarField = begin
-    for i ∈ eachindex(νt)
-        νt[i] = k[i]/ω[i]
+update_eddy_viscosity!(nut::F, k, omega) where F<:AbstractScalarField = begin
+    for i ∈ eachindex(nut)
+        nut[i] = k[i]/omega[i]
     end
 end
 
@@ -186,9 +208,9 @@ diffusion_flux!(nueff, nu, kf::F, ωf, σ) where F<:FaceScalarField = begin
     end
 end
 
-destruction_flux!(Dxf::F, coeff, ω) where F<:ScalarField = begin
+destruction_flux!(Dxf::F, coeff, omega) where F<:ScalarField = begin
     for i ∈ eachindex(Dxf.values)
-        Dxf[i] = coeff*ω[i]
+        Dxf[i] = coeff*omega[i]
     end
 end
 

@@ -1,14 +1,17 @@
 export isimple!
 
 function isimple!(
-    mesh::Mesh2{TI,TF}, nu, U, p, k, ω, νt, config, iterations
-    ; resume=true, pref=nothing) where {TI,TF}
+    model, config, iterations
+    ; resume=true, pref=nothing) 
+
+    @info "Extracting input fields..."
+    (; U, p, nu, mesh) = model
 
     @info "Preallocating fields..."
     
     ∇p = Grad{Linear}(p)
     mdotf = FaceScalarField(mesh)
-    nuf = ConstantScalar(nu) # Implement constant field! Priority 1
+    # nuf = ConstantScalar(nu) # Implement constant field!
     rDf = FaceScalarField(mesh)
     nueff = FaceScalarField(mesh)
     initialise!(rDf, 1.0)
@@ -52,8 +55,12 @@ function isimple!(
 
     @info "Initialising turbulence model..."
 
-    turbulence_model = initialise_RANS(k, ω, mdotf, eqn, config)
-    config = turbulence_model.config
+    if isturbulent(model)
+        turbulence = initialise_RANS(mdotf, eqn, config, model.turbulence)
+        config = turbulence.config
+    else
+        turbulence = nothing
+    end
 
     @info "Initialising linear solvers..."
 
@@ -61,21 +68,23 @@ function isimple!(
     # solver_U = setup_U.solver(_A(ux_model), _b(ux_model))
 
     R_ux, R_uy, R_p  = SIMPLE_loop(
-    mesh::Mesh2{TI,TF}, U, p, nuf, νt, ∇p, iterations,
+    model, ∇p, iterations,
     ux_model, uy_model, p_model,
-    turbulence_model, config
+    turbulence, config
     ; resume=true, pref=nothing)
 
     return R_ux, R_uy, R_p     
 end # end function
 
 function SIMPLE_loop(
-    mesh::Mesh2{TI,TF}, U, p, nuf, νt, ∇p, iterations,
+    model, ∇p, iterations,
     ux_model, uy_model, p_model,
-    turbulence_model, config
-    ; resume=true, pref=nothing) where {TI,TF}
+    turbulence, config
+    ; resume=true, pref=nothing)
     
     # Extract model variables
+
+    (;mesh, U, p, nu) = model
     
     mdotf = get_flux(ux_model, 1)
     nueff = get_flux(ux_model, 2)
@@ -104,6 +113,7 @@ function SIMPLE_loop(
 
     # Pre-allocate auxiliary variables
 
+    TF = _get_float(mesh)
     prev = zeros(TF, n_cells)  
 
     # Pre-allocate vectors to hold residuals 
@@ -117,7 +127,7 @@ function SIMPLE_loop(
     flux!(mdotf, Uf)
     grad!(∇p, pf, p, p.BCs)
 
-    update_nueff!(nueff, nuf, turbulence_model)
+    update_nueff!(nueff, nu, turbulence)
 
     @info "Staring SIMPLE loops..."
 
@@ -190,9 +200,13 @@ function SIMPLE_loop(
         flux!(mdotf, Uf)
 
         grad!(gradU, Uf, U, U.BCs)
+
+        if isturbulent(model)
+            turbulence!(turbulence, model, S, S2, prev) 
+            update_nueff!(nueff, nu, turbulence)
+        end
         
-        turbulence!(turbulence_model, νt, nuf, S, S2, prev) 
-        update_nueff!(nueff, nuf, turbulence_model)
+        
 
         # for i ∈ eachindex(divUTx)
         #     vol = mesh.cells[i].volume
@@ -228,8 +242,14 @@ function SIMPLE_loop(
 end
 
 update_nueff!(nueff, nu, turb_model) = begin
-    for i ∈ eachindex(nueff)
-        nueff[i] = nu[i] + turb_model.νtf[i]
+    if turb_model === nothing
+        for i ∈ eachindex(nueff)
+            nueff[i] = nu[i]
+        end
+    else
+        for i ∈ eachindex(nueff)
+            nueff[i] = nu[i] + turb_model.νtf[i]
+        end
     end
 end
 

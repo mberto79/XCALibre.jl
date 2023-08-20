@@ -1,8 +1,8 @@
-export pressure_forces, viscous_forces
+export pressure_force, viscous_force
 export stress_tensor
 
 
-pressure_forces(patch::Symbol, p::ScalarField, rho) = begin
+pressure_force(patch::Symbol, p::ScalarField, rho) = begin
     mesh = p.mesh
     ID = boundary_index(mesh.boundaries, patch)
     @info "calculating pressure forces on patch: $patch at index $ID"
@@ -25,7 +25,7 @@ pressure_forces(patch::Symbol, p::ScalarField, rho) = begin
     return Fp
 end
 
-viscous_forces(patch::Symbol, U::VectorField, rho, ν, νt) = begin
+viscous_force(patch::Symbol, U::VectorField, rho, ν, νt) = begin
     mesh = U.mesh
     faces = mesh.faces
     boundaries = mesh.boundaries
@@ -54,7 +54,7 @@ viscous_forces(patch::Symbol, U::VectorField, rho, ν, νt) = begin
         sumz += snGrad.z[i]*area*(ν + νt[cID])
     end
     Fv = rho.*[sumx, sumy, sumz]
-    print("\n Pressure force: (", Fv[1], " ", Fv[2], " ", Fv[3], ")\n")
+    print("\n Viscous force: (", Fv[1], " ", Fv[2], " ", Fv[3], ")\n")
     return Fv
 end
 

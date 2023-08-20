@@ -1,31 +1,12 @@
-export SolverSetup, setup_solver
+export set_solver
 export explicit_relaxation!, implicit_relaxation!, setReference!
 export run!
 
-struct SolverSetup{S,I,F}
-    solver::S 
-    relax::F 
-    itmax::I
-    atol::F 
-    rtol::F
-end
-SolverSetup(
-    ; solver::S, 
-    # iterations::I, 
-    # tolerance::F, 
-    relax::F, 
-    itmax::I=200, 
-    atol::F=1e-15, 
-    rtol::F=1e-1
-    ) where {S,I,F} = begin
-    SolverSetup{S,I,F}(solver, relax, itmax, atol, rtol)
-end
-
-setup_solver( field::AbstractField; # To do - relax inputs and correct internally
+set_solver( field::AbstractField; # To do - relax inputs and correct internally
     solver::S, 
     preconditioner::PT, 
     P::PP=nothing,
-    tolerance::F, 
+    convergence::F, 
     relax::F, 
     itmax::I=100, 
     atol::F=sqrt(eps()),
@@ -37,7 +18,7 @@ begin
         solver=solver(teqn.A,teqn.b), 
         preconditioner=preconditioner, 
         P=P,
-        tolerance=tolerance, 
+        convergence=convergence, 
         relax=relax, 
         itmax=itmax, 
         atol=atol, 

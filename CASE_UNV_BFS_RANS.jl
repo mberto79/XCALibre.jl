@@ -60,36 +60,47 @@ model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
     Dirichlet(:top, 0.0)
 )
 
-config = (
-    U = setup_solver(
+schemes = (
+    U = set_schemes(),
+    p = set_schemes(),
+    k = set_schemes(),
+    omega = set_schemes()
+)
+
+solvers = (
+    U = set_solver(
         model.U;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
-        tolerance = 1e-7,
+        convergence = 1e-7,
         relax       = 0.7,
     ),
-    p = setup_solver(
+    p = set_solver(
         model.p;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = LDL(),
-        tolerance = 1e-7,
+        convergence = 1e-7,
         relax       = 0.3,
     ),
-    k = setup_solver(
+    k = set_solver(
         model.turbulence.k;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
-        tolerance = 1e-7,
+        convergence = 1e-7,
         relax       = 0.7,
     ),
-    omega = setup_solver(
+    omega = set_solver(
         model.turbulence.omega;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
-        tolerance = 1e-7,
+        convergence = 1e-7,
         relax       = 0.7,
     )
 )
+
+config = Configuration(solvers=solvers, schemes=schemes, runtime=())
+
+GC.gc()
 
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)

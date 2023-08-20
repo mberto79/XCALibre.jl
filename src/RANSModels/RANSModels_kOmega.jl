@@ -49,8 +49,9 @@ struct KOmegaModel{MK,MW,FK,FW,FN,C,S}
 end
 
 function initialise_RANS(mdotf, eqn, config, turbulence)
-    # unpack turbulent quantities
+    # unpack turbulent quantities and configuration
     (; k, omega, nut) = turbulence
+    (; solvers, schemes) = config
     mesh = mdotf.mesh
 
     kf = FaceScalarField(mesh)
@@ -82,12 +83,12 @@ function initialise_RANS(mdotf, eqn, config, turbulence)
 
     # PK = set_preconditioner(DILU(), k_eqn, k_model, k.BCs)
     # PW = set_preconditioner(DILU(), ω_eqn, ω_model, omega.BCs)
-    @reset config.k.P = set_preconditioner(
-        config.k.preconditioner, k_model, k.BCs
+    @reset config.solvers.k.P = set_preconditioner(
+        solvers.k.preconditioner, k_model, k.BCs
         )
 
-    @reset config.omega.P = set_preconditioner(
-        config.omega.preconditioner, ω_model, omega.BCs
+    @reset config.solvers.omega.P = set_preconditioner(
+        solvers.omega.preconditioner, ω_model, omega.BCs
         )
 
     # PK = set_preconditioner(ILU0(), k_model, k.BCs)
@@ -118,6 +119,7 @@ function turbulence!( # Sort out dispatch when possible
     nut = model.turbulence.nut
 
     (;k_model,ω_model,kf,ωf,νtf,coeffs,config) = KOmega
+    (; solvers) = config
 
     k = get_phi(k_model)
     omega = get_phi(ω_model)
@@ -158,10 +160,10 @@ function turbulence!( # Sort out dispatch when possible
     discretise!(ω_model)
     apply_boundary_conditions!(ω_model, omega.BCs)
     prev .= omega.values
-    implicit_relaxation!(ω_model.equation, prev, config.omega.relax)
+    implicit_relaxation!(ω_model.equation, prev, solvers.omega.relax)
     constrain_equation!(ω_model.equation, omega, omega.BCs) # Only if using wall function?
-    update_preconditioner!(config.omega.P)
-    run!(ω_model, config.omega)
+    update_preconditioner!(solvers.omega.P)
+    run!(ω_model, solvers.omega)
    
     constrain_boundary!(omega, omega.BCs)
     interpolate!(ωf, omega)
@@ -184,9 +186,9 @@ function turbulence!( # Sort out dispatch when possible
     discretise!(k_model)
     apply_boundary_conditions!(k_model, k.BCs)
     prev .= k.values
-    implicit_relaxation!(k_model.equation, prev, config.k.relax)
-    update_preconditioner!(config.k.P)
-    run!(k_model, config.k)
+    implicit_relaxation!(k_model.equation, prev, solvers.k.relax)
+    update_preconditioner!(solvers.k.P)
+    run!(k_model, solvers.k)
     interpolate!(kf, k)
     correct_boundaries!(kf, k, k.BCs)
     bound!(k, kf, eps())

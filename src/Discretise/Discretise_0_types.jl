@@ -2,6 +2,7 @@ export AbstractScheme, Constant, Linear, Upwind, Midpoint
 export AbstractBoundary, AbstractDirichlet, AbstractNeumann
 export Dirichlet, Neumann, KWallFunction, OmegaWallFunction 
 export assign, @assign!
+export set_schemes
 
 # SUPPORTED DISCRETISATION SCHEMES 
 
@@ -122,4 +123,15 @@ macro assign!(model, turb, field, BCs)
         f = assign(f, $eBCs...)
         @reset $emodel.$eturb.$efield = f
     end
+end
+
+set_schemes(; 
+    divergence=Linear, 
+    laplacian=Linear, 
+    gradient=Linear) = begin
+    (
+        divergence=divergence,
+        laplacian=laplacian,
+        gradient=gradient
+    )
 end

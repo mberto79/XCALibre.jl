@@ -29,23 +29,30 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
     Neumann(:top, 0.0)
 )
 
+schemes = (
+    U = set_schemes(),
+    p = set_schemes()
+)
 
-config = (
-    U = setup_solver(
+
+solvers = (
+    U = set_solver(
         model.U;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
-        tolerance = 1e-7,
+        convergence = 1e-7,
         relax       = 0.8,
     ),
-    p = setup_solver(
+    p = set_solver(
         model.p;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = LDL(),
-        tolerance = 1e-7,
+        convergence = 1e-7,
         relax       = 0.2,
     )
 )
+
+config = Configuration(solvers=solvers, schemes=schemes, runtime=())
 
 GC.gc()
 

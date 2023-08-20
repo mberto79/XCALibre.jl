@@ -119,9 +119,9 @@ Rx, Ry, Rp = isimple!(
     # setup_U, setup_p, iterations, pref=0.0)
     config, iterations)
 
-Fp = pressure_forces(:cylinder, model.p, 1.25)
 Reff = stress_tensor(model.U, nu, model.nut)
-Fv = viscous_forces(:cylinder, model.U, 1.25, nu, model.nut)
+Fp = pressure_force(:cylinder, model.p, 1.25)
+Fv = viscous_force(:cylinder, model.U, 1.25, nu, model.nut)
 
 write_vtk(
     "results", mesh, 

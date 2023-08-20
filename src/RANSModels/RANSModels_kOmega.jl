@@ -66,16 +66,16 @@ function initialise_RANS(mdotf, eqn, config, turbulence)
     Pω = ScalarField(mesh)
     
     k_model = eqn → (
-            Divergence{Linear}(mdotf, k) 
-            - Laplacian{Linear}(nueffk, k) 
+            Divergence{schemes.k.divergence}(mdotf, k) 
+            - Laplacian{schemes.k.laplacian}(nueffk, k) 
             + Si(Dkf,k) # Dkf = β⁺*omega
             ==
             Source(Pk)
         )
     
     ω_model = eqn → (
-        Divergence{Linear}(mdotf, omega) 
-        - Laplacian{Linear}(nueffω, omega) 
+        Divergence{schemes.omega.divergence}(mdotf, omega) 
+        - Laplacian{schemes.omega.laplacian}(nueffω, omega) 
         + Si(Dωf,omega)  # Dωf = β1*omega
         ==
         Source(Pω)

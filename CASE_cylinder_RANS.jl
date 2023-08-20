@@ -132,7 +132,7 @@ write_vtk(
     ("nut", model.turbulence.nut)
     )
 
-plot(; xlims=(0,iterations), ylims=(1e-8,0))
+plot(; xlims=(0,iterations), ylims=(1e-10,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
 plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
 plot!(1:length(Rp), Rp, yscale=:log10, label="p")

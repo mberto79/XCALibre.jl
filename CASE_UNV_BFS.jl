@@ -39,7 +39,7 @@ solvers = (
     U = set_solver(
         model.U;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0(),
+        preconditioner = DILU(),
         convergence = 1e-7,
         relax       = 0.8,
     ),
@@ -60,10 +60,7 @@ initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
 iterations = 1000
-Rx, Ry, Rp = isimple!( 
-    model,
-    # setup_U, setup_p, iterations, pref=0.0)
-    config, iterations)
+Rx, Ry, Rp = isimple!(model, config, iterations) #, pref=0.0)
 
 write_vtk("results", mesh, ("U", model.U), ("p", model.p))
 

@@ -65,10 +65,7 @@ initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
 iterations = 1000
-Rx, Ry, Rp = isimple!( 
-    model,
-    # setup_U, setup_p, iterations, pref=0.0)
-    config, iterations)
+Rx, Ry, Rp = isimple!(model, config, iterations) #, pref=0.0)
 
 write_vtk("results", mesh, ("U", model.U), ("p", model.p))
 

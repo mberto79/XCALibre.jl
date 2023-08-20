@@ -119,17 +119,17 @@ Rx, Ry, Rp = isimple!(
     # setup_U, setup_p, iterations, pref=0.0)
     config, iterations)
 
-Reff = stress_tensor(model.U, nu, model.nut)
+Reff = stress_tensor(model.U, nu, model.turbulence.nut)
 Fp = pressure_force(:cylinder, model.p, 1.25)
-Fv = viscous_force(:cylinder, model.U, 1.25, nu, model.nut)
+Fv = viscous_force(:cylinder, model.U, 1.25, nu, model.turbulence.nut)
 
 write_vtk(
     "results", mesh, 
     ("U", model.U), 
     ("p", model.p),
-    ("k", model.k),
-    ("omega", model.omega),
-    ("nut", model.nut)
+    ("k", model.turbulence.k),
+    ("omega", model.turbulence.omega),
+    ("nut", model.turbulence.nut)
     )
 
 plot(; xlims=(0,iterations), ylims=(1e-8,0))

@@ -5,19 +5,16 @@ export run!
 set_solver( field::AbstractField; # To do - relax inputs and correct internally
     solver::S, 
     preconditioner::PT, 
-    P::PP=nothing,
     convergence::F, 
     relax::F, 
     itmax::I=100, 
     atol::F=sqrt(eps()),
     rtol::F=1e-3 
-    ) where {S,PT<:PreconditionerType,PP,I<:Integer,F<:AbstractFloat} = 
+    ) where {S,PT<:PreconditionerType,I<:Integer,F<:AbstractFloat} = 
 begin
-    teqn = Equation(field.mesh)
     (
-        solver=solver(teqn.A,teqn.b), 
+        solver=solver, 
         preconditioner=preconditioner, 
-        P=P,
         convergence=convergence, 
         relax=relax, 
         itmax=itmax, 
@@ -26,20 +23,20 @@ begin
     )
 end
 
-function run!(phiModel::ModelEquation, setup) # ; opP, solver
+function run!(phiEqn::ModelEquation, setup) # ; opP, solver
 
-    (; itmax, atol, rtol, P, solver) = setup
-    (; A, b) = phiModel.equation
-    phi = get_phi(phiModel)
-    values = phi.values
+    (; itmax, atol, rtol) = setup
+    (; A, b) = phiEqn.equation
+    P = phiEqn.preconditioner
+    solver = phiEqn.solver
+    values = get_phi(phiEqn).values
 
     solve!(
-        solver, A, b, values; 
-        M=P.P, itmax=itmax, atol=atol, rtol=rtol
+        solver, A, b, values; M=P.P, itmax=itmax, atol=atol, rtol=rtol
         )
     # println(solver.stats.niter)
     @turbo values .= solver.x
-
+    nothing
 end
 
 function explicit_relaxation!(phi, phi0, alpha)

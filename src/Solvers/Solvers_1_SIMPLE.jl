@@ -50,23 +50,27 @@ function isimple!(
     @reset ux_eqn.preconditioner = set_preconditioner(
         solvers.U.preconditioner, ux_eqn, U.x.BCs
         )
+    @reset ux_eqn.solver = solvers.U.solver(_A(ux_eqn), _b(ux_eqn))
+
     uy_eqn = ModelEquation(
         uy_model, Equation(mesh), (), ux_eqn.preconditioner
         )
-    p_eqn = ModelEquation(p_model, Equation(mesh), (), ())
+    @reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
+    
+    p_eqn = ModelEquation(
+        p_model, Equation(mesh),(), ())
     @reset p_eqn.preconditioner = set_preconditioner(
         solvers.p.preconditioner, p_eqn, p.BCs
         )
+    @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
+    
 
-    # Pu = set_preconditioner(NormDiagonal(), ux_eqn, ux_model, U.x.BCs)
-    # Pu = set_preconditioner(Jacobi(), ux_eqn, ux_model, U.x.BCs)
-    @reset config.solvers.U.P = set_preconditioner(
-        solvers.U.preconditioner, ux_eqn, U.x.BCs
-        )
-    # Pu = set_preconditioner(DILU(), ux_eqn, ux_model, U.x.BCs)
-    @reset config.solvers.p.P = set_preconditioner(
-        solvers.p.preconditioner, p_eqn, p.BCs
-        )
+    # @reset config.solvers.U.P = set_preconditioner(
+    #     solvers.U.preconditioner, ux_eqn, U.x.BCs
+    #     )
+    # @reset config.solvers.p.P = set_preconditioner(
+    #     solvers.p.preconditioner, p_eqn, p.BCs
+    #     )
 
     @info "Initialising turbulence model..."
 
@@ -160,7 +164,7 @@ function SIMPLE_loop(
         # ux_eqn.b .-= divUTx
         @. prev = U.x.values
         implicit_relaxation!(ux_eqn.equation, prev, solvers.U.relax)
-        update_preconditioner!(solvers.U.P)
+        update_preconditioner!(ux_eqn.preconditioner)
         run!(ux_eqn, solvers.U) #opP=Pu.P, solver=solver_U)
         residual!(R_ux, ux_eqn.equation, U.x, iteration)
 
@@ -171,8 +175,7 @@ function SIMPLE_loop(
         # uy_eqn.b .-= divUTy
         @. prev = U.y.values
         implicit_relaxation!(uy_eqn.equation, prev, solvers.U.relax)
-        update_preconditioner!(solvers.U.P)
-
+        update_preconditioner!(uy_eqn.preconditioner)
         run!(uy_eqn, solvers.U)
         residual!(R_uy, uy_eqn.equation, U.y, iteration)
         
@@ -188,7 +191,7 @@ function SIMPLE_loop(
         discretise!(p_eqn)
         apply_boundary_conditions!(p_eqn, p.BCs)
         setReference!(p_eqn.equation, pref, 1)
-        update_preconditioner!(solvers.p.P)
+        update_preconditioner!(p_eqn.preconditioner)
         @. prev = p.values
         run!(p_eqn, solvers.p)
 

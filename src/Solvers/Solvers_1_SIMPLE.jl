@@ -18,12 +18,6 @@ function isimple!(
     initialise!(rDf, 1.0)
     divHv = ScalarField(mesh)
 
-    @info "Allocating matrix equations..."
-
-    # ux_eqn  = Equation(mesh)
-    # uy_eqn  = Equation(mesh)
-    # eqn    = Equation(mesh)
-
     @info "Defining models..."
 
     ux_model = (
@@ -44,49 +38,31 @@ function isimple!(
         Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
     ) 
 
-    @info "Initialising preconditioners..."
-
     ux_eqn = ModelEquation(ux_model, Equation(mesh), (), ())
+    uy_eqn = ModelEquation(uy_model, Equation(mesh), (), ())
+    p_eqn = ModelEquation(p_model, Equation(mesh),(), ())
+
+    @info "Initialising preconditioners..."
+    
     @reset ux_eqn.preconditioner = set_preconditioner(
-        solvers.U.preconditioner, ux_eqn, U.x.BCs
-        )
-    @reset ux_eqn.solver = solvers.U.solver(_A(ux_eqn), _b(ux_eqn))
-
-    uy_eqn = ModelEquation(
-        uy_model, Equation(mesh), (), ux_eqn.preconditioner
-        )
-    @reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
-    
-    p_eqn = ModelEquation(
-        p_model, Equation(mesh),(), ())
+                        solvers.U.preconditioner, ux_eqn, U.x.BCs)
+    @reset uy_eqn.preconditioner = ux_eqn.preconditioner
     @reset p_eqn.preconditioner = set_preconditioner(
-        solvers.p.preconditioner, p_eqn, p.BCs
-        )
+                        solvers.p.preconditioner, p_eqn, p.BCs)
+
+    @info "Pre-allocating solvers..."
+     
+    @reset ux_eqn.solver = solvers.U.solver(_A(ux_eqn), _b(ux_eqn))
+    @reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
-    
-
-    # @reset config.solvers.U.P = set_preconditioner(
-    #     solvers.U.preconditioner, ux_eqn, U.x.BCs
-    #     )
-    # @reset config.solvers.p.P = set_preconditioner(
-    #     solvers.p.preconditioner, p_eqn, p.BCs
-    #     )
-
-    @info "Initialising turbulence model..."
 
     if isturbulent(model)
-        turbulence = initialise_RANS(
-            mdotf, p_eqn.equation, config, model.turbulence
-            )
+        @info "Initialising turbulence model..."
+        turbulence = initialise_RANS(mdotf, p_eqn, config, model)
         config = turbulence.config
     else
         turbulence = nothing
     end
-
-    @info "Initialising linear solvers..."
-
-    # solver_p = setup_p.solver(_A(p_model), _b(p_model))
-    # solver_U = setup_U.solver(_A(ux_model), _b(ux_model))
 
     R_ux, R_uy, R_p  = SIMPLE_loop(
     model, ∇p, iterations,

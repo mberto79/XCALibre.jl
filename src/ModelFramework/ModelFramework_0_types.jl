@@ -1,8 +1,7 @@
 export AbstractOperator, AbstractSource   
 export Operator, Source, Src
 export Laplacian, Divergence, Si
-export Model 
-export Equation
+export Model, Equation, ModelEquation
 
 # ABSTRACT TYPES 
 
@@ -58,17 +57,17 @@ Source(f::T) where T = Src(f, 1, typeof(f))
 # Source(f::Number) = Src(f.values, 1, typeof(f)) # To implement!!
 
 # MODEL TYPE
-struct Model{E,T,S,TN,SN}
-    equation::E
+struct Model{T,S,TN,SN}
+    # equation::E
     terms::T
     sources::S
 end
-# Model{TN,SN}(terms::T, sources::S) where {T,S,TN,SN} = begin
-#     Model{T,S,TN,SN}(terms, sources)
-# end
-Model(eqn::E, terms::T, sources::S, TN, SN) where {E,T,S} = begin
-    Model{E,T,S,TN,SN}(eqn, terms, sources)
+Model{TN,SN}(terms::T, sources::S) where {T,S,TN,SN} = begin
+    Model{T,S,TN,SN}(terms, sources)
 end
+# Model(eqn::E, terms::T, sources::S, TN, SN) where {E,T,S} = begin
+#     Model{E,T,S,TN,SN}(eqn, terms, sources)
+# end
 
 # Linear system matrix equation
 
@@ -108,4 +107,13 @@ function sparse_matrix_connectivity(mesh::Mesh2{I,F}) where{I,F}
     end
     v = zeros(F, length(i))
     return i, j, v
+end
+
+# Model equation type 
+
+struct ModelEquation{M,E,S,P}
+    model::M 
+    equation::E 
+    solver::S
+    preconditioner::P
 end

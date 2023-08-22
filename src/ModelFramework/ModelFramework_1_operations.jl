@@ -1,4 +1,4 @@
-export →
+# export →
 
 Base.:+(a::Operator, b::Operator) = [a, b]
 Base.:+(a::Vector{<:Operator}, b::Operator) = [a..., b]
@@ -34,25 +34,25 @@ end
 # Equality operation for model wrapper
 
 Base.:(==)(a::Operator, b::Src) = begin
-    # Model{1,1}((a,),(b,))
-    ((a,), (b,), 1, 1)
+    Model{1,1}((a,),(b,))
+    # ((a,), (b,), 1, 1)
 end
 
 Base.:(==)(a::Vector{<:Operator}, b::Src) = begin
-    # Model{length(a),1}((a...,),(b,))
-    ((a...,), (b,), length(a), 1)
+    Model{length(a),1}((a...,),(b,))
+    # ((a...,), (b,), length(a), 1)
 end
 
 Base.:(==)(a::Operator, b::Vector{<:Src}) = begin
-    # Model{1,length(b)}((a...,),(b,))
-    ((a...,) ,(b,) ,1 ,length(b))
+    Model{1,length(b)}((a...,),(b,))
+    # ((a...,) ,(b,) ,1 ,length(b))
 end
 
 Base.:(==)(a::Vector{<:Operator}, b::Vector{<:Src}) = begin
-    # Model{length(a), length(b)}((a...,),(b...,))
-    ((a...,), (b...,), length(a), length(b))
+    Model{length(a), length(b)}((a...,),(b...,))
+    # ((a...,), (b...,), length(a), length(b))
 end
 
-(→)(eqn::Equation, model::T) where T<:Tuple = begin
-    Model(eqn, model...)
-end
+# (→)(eqn::Equation, model::T) where T<:Tuple = begin
+#     Model(eqn, model...)
+# end

@@ -26,7 +26,7 @@ begin
     )
 end
 
-function run!(phiModel::Model, setup) # ; opP, solver
+function run!(phiModel::ModelEquation, setup) # ; opP, solver
 
     (; itmax, atol, rtol, P, solver) = setup
     (; A, b) = phiModel.equation

@@ -1,4 +1,4 @@
-# export →
+export →
 
 Base.:+(a::Operator, b::Operator) = [a, b]
 Base.:+(a::Vector{<:Operator}, b::Operator) = [a..., b]
@@ -53,6 +53,6 @@ Base.:(==)(a::Vector{<:Operator}, b::Vector{<:Src}) = begin
     # ((a...,), (b...,), length(a), length(b))
 end
 
-# (→)(eqn::Equation, model::T) where T<:Tuple = begin
-#     Model(eqn, model...)
-# end
+(→)(model::Model, eqn::Equation) = begin
+    ModelEquation(model, eqn, (), ())
+end

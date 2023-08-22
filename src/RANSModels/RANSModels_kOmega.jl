@@ -66,24 +66,24 @@ function initialise_RANS(mdotf, peqn, config, model)
     Pk = ScalarField(mesh)
     Pω = ScalarField(mesh)
     
-    k_model = (
+    k_eqn = (
             Divergence{schemes.k.divergence}(mdotf, k) 
             - Laplacian{schemes.k.laplacian}(nueffk, k) 
             + Si(Dkf,k) # Dkf = β⁺*omega
             ==
             Source(Pk)
-        )
+        ) → eqn
     
-    ω_model = (
+    ω_eqn = (
         Divergence{schemes.omega.divergence}(mdotf, omega) 
         - Laplacian{schemes.omega.laplacian}(nueffω, omega) 
         + Si(Dωf,omega)  # Dωf = β1*omega
         ==
         Source(Pω)
-    )
+    ) → eqn
 
-    k_eqn = ModelEquation(k_model, eqn, (), ())
-    ω_eqn = ModelEquation(ω_model, eqn, (), ())
+    # k_eqn = ModelEquation(k_model, eqn, (), ())
+    # ω_eqn = ModelEquation(ω_model, eqn, (), ())
 
     # Set up preconditioners
 

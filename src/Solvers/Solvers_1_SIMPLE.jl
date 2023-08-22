@@ -20,27 +20,27 @@ function isimple!(
 
     @info "Defining models..."
 
-    ux_model = (
+    ux_eqn = (
         Divergence{schemes.U.divergence}(mdotf, U.x) 
         - Laplacian{schemes.U.laplacian}(nueff, U.x) 
         == 
         -Source(∇p.result.x)
-    )
+    ) → Equation(mesh)
     
-    uy_model = (
+    uy_eqn = (
         Divergence{schemes.U.divergence}(mdotf, U.y) 
         - Laplacian{schemes.U.laplacian}(nueff, U.y) 
         == 
         -Source(∇p.result.y)
-    )
+    ) → Equation(mesh)
 
-    p_model = (
+    p_eqn = (
         Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
-    ) 
+    ) → Equation(mesh)
 
-    ux_eqn = ModelEquation(ux_model, Equation(mesh), (), ())
-    uy_eqn = ModelEquation(uy_model, Equation(mesh), (), ())
-    p_eqn = ModelEquation(p_model, Equation(mesh),(), ())
+    # ux_eqn = ModelEquation(ux_model, Equation(mesh), (), ())
+    # uy_eqn = ModelEquation(uy_model, Equation(mesh), (), ())
+    # p_eqn = ModelEquation(p_model, Equation(mesh),(), ())
 
     @info "Initialising preconditioners..."
     

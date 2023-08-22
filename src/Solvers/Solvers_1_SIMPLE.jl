@@ -47,17 +47,25 @@ function isimple!(
     @info "Initialising preconditioners..."
 
     ux_eqn = ModelEquation(ux_model, Equation(mesh), (), ())
-    uy_eqn = ModelEquation(uy_model, Equation(mesh), (), ())
+    @reset ux_eqn.preconditioner = set_preconditioner(
+        solvers.U.preconditioner, ux_eqn, U.x.BCs
+        )
+    uy_eqn = ModelEquation(
+        uy_model, Equation(mesh), (), ux_eqn.preconditioner
+        )
     p_eqn = ModelEquation(p_model, Equation(mesh), (), ())
+    @reset p_eqn.preconditioner = set_preconditioner(
+        solvers.p.preconditioner, p_eqn, p.BCs
+        )
 
     # Pu = set_preconditioner(NormDiagonal(), ux_eqn, ux_model, U.x.BCs)
     # Pu = set_preconditioner(Jacobi(), ux_eqn, ux_model, U.x.BCs)
     @reset config.solvers.U.P = set_preconditioner(
-        solvers.U.preconditioner, ux_model, ux_eqn, U.x.BCs
+        solvers.U.preconditioner, ux_eqn, U.x.BCs
         )
     # Pu = set_preconditioner(DILU(), ux_eqn, ux_model, U.x.BCs)
     @reset config.solvers.p.P = set_preconditioner(
-        solvers.p.preconditioner, p_model,p_eqn, p.BCs
+        solvers.p.preconditioner, p_eqn, p.BCs
         )
 
     @info "Initialising turbulence model..."

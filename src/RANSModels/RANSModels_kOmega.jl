@@ -151,10 +151,10 @@ function turbulence!( # Sort out dispatch when possible
 
     @. Dkf.values = coeffs.β⁺*omega.values
 
-    interpolate!(kf, k)
-    correct_boundaries!(kf, k, k.BCs)
-    interpolate!(ωf, omega)
-    correct_boundaries!(ωf, omega, omega.BCs)
+    # interpolate!(kf, k)
+    # correct_boundaries!(kf, k, k.BCs)
+    # interpolate!(ωf, omega)
+    # correct_boundaries!(ωf, omega, omega.BCs)
     diffusion_flux!(nueffk, nu, kf, ωf, coeffs.σk)
 
     # Solve omega equation
@@ -168,8 +168,6 @@ function turbulence!( # Sort out dispatch when possible
     run!(ω_eqn, solvers.omega)
    
     constrain_boundary!(omega, omega.BCs, model) # active with WFs only
-    interpolate!(ωf, omega)
-    correct_boundaries!(ωf, omega, omega.BCs)
     bound!(omega, eps())
 
     # Solve k equation
@@ -182,8 +180,6 @@ function turbulence!( # Sort out dispatch when possible
     implicit_relaxation!(k_eqn.equation, prev, solvers.k.relax)
     update_preconditioner!(k_eqn.preconditioner)
     run!(k_eqn, solvers.k)
-    interpolate!(kf, k)
-    correct_boundaries!(kf, k, k.BCs)
     bound!(k, eps())
 
     update_eddy_viscosity!(nut, k, omega)

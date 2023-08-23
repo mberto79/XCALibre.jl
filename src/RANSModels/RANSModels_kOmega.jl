@@ -137,7 +137,7 @@ function turbulence!( # Sort out dispatch when possible
     # end
 
     magnitude2!(Pk, S, scale_factor=2.0) # multiplied by 2 (def of Sij)
-  
+
     @. Pω.values = coeffs.α1*Pk.values
     @. Dωf.values = coeffs.β1*omega.values
 
@@ -157,7 +157,7 @@ function turbulence!( # Sort out dispatch when possible
     update_preconditioner!(ω_eqn.preconditioner)
     run!(ω_eqn, solvers.omega)
    
-    constrain_boundary!(omega, omega.BCs)
+    constrain_boundary!(omega, omega.BCs, model)
     interpolate!(ωf, omega)
     correct_boundaries!(ωf, omega, omega.BCs)
     bound!(omega, ωf, eps())
@@ -208,6 +208,8 @@ destruction_flux!(Dxf::F, coeff, omega) where F<:ScalarField = begin
     end
 end
 
+low_Re_omega(nu, beta1, y) = 6*nu/(beta1*y^2)
+
 @generated constrain_equation!(eqn, fieldBCs, model) = begin
     BCs = fieldBCs.parameters
     func_calls = Expr[]
@@ -228,9 +230,8 @@ end
 
 constraint!(eqn, BC, model) = begin
     ID = BC.ID
-    # cmu = BC.value.cmu
-    # κ = BC.value.κ
-    # k = BC.value.k
+    nu = model.nu
+    beta1 = BC.value.beta1
     field = get_phi(eqn)
     mesh = field.mesh
     (; faces, cells, boundaries) = mesh
@@ -249,7 +250,7 @@ constraint!(eqn, BC, model) = begin
         face = faces[fID]
         cell = cells[cID]
         y = face.delta
-        ωc = 6*1e-3/(0.075*y^2)
+        ωc = low_Re_omega(nu[i], beta1, y)
         b[cID] = A[cID,cID]*ωc
         # b[cID] += A[cID,cID]*ωc
         # A[cID,cID] += A[cID,cID]
@@ -265,14 +266,14 @@ constraint!(eqn, BC, model) = begin
     end
 end
 
-@generated constrain_boundary!(field, fieldBCs) = begin
+@generated constrain_boundary!(field, fieldBCs, model) = begin
     BCs = fieldBCs.parameters
     func_calls = Expr[]
     for i ∈ eachindex(BCs)
         BC = BCs[i]
         if BC <: OmegaWallFunction  #|| BC <: Dirichlet
             call = quote
-                set_cell_value!(field, fieldBCs[$i])
+                set_cell_value!(field, fieldBCs[$i], model)
             end
             push!(func_calls, call)
         end
@@ -283,11 +284,10 @@ end
     end 
 end
 
-set_cell_value!(field, BC) = begin
+set_cell_value!(field, BC, model) = begin
     ID = BC.ID
-    # cmu = BC.value.cmu
-    # κ = BC.value.κ
-    # k = BC.value.k
+    nu = model.nu
+    beta1 = BC.value.beta1
     mesh = field.mesh
     (; faces, cells, boundaries) = mesh
     boundary = boundaries[ID]
@@ -296,7 +296,7 @@ set_cell_value!(field, BC) = begin
         cID = cellsID[i]
         fID = facesID[i]
         y = faces[fID].delta
-        ωc = 6*1e-3/(0.075*y^2)
+        ωc = low_Re_omega(nu[i], beta1, y)
         field.values[cID] = ωc
     end
 end

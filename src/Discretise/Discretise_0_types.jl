@@ -54,6 +54,9 @@ struct OmegaWallFunction{I,V} <: AbstractBoundary
     ID::I 
     value::V 
 end
+OmegaWallFunction(name::Symbol) = begin
+    OmegaWallFunction(name, (kappa=0.41, beta1=0.075))
+end
 
 assign(vec::VectorField, args...) = begin
     boundaries = vec.mesh.boundaries

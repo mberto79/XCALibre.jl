@@ -47,8 +47,8 @@ model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
 @assign! model turbulence omega (
     Dirichlet(:inlet, ω_inlet),
     Neumann(:outlet, 0.0),
-    OmegaWallFunction(:wall, (κ=0.41, cmu=0.09)),
-    OmegaWallFunction(:top, (κ=0.41, cmu=0.09))
+    OmegaWallFunction(:wall),
+    OmegaWallFunction(:top)
     # Dirichlet(:wall, ω_wall), 
     # Dirichlet(:top, ω_wall)
 )

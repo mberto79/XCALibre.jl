@@ -19,7 +19,7 @@ RANS{KOmega}(; mesh, viscosity) = begin
     )
 end
 
-struct kOmegaCoefficients{T}
+struct KOmegaCoefficients{T}
     β⁺::T
     α1::T
     β1::T
@@ -28,7 +28,7 @@ struct kOmegaCoefficients{T}
 end
 
 get_coeffs(FloatType) = begin
-    kOmegaCoefficients{FloatType}(
+    KOmegaCoefficients{FloatType}(
         0.09,
         0.52, #5/9,
         0.072, #3/40,
@@ -81,8 +81,6 @@ function initialise_RANS(mdotf, eqn, config, turbulence)
         Source(Pω)
     )
 
-    # PK = set_preconditioner(DILU(), k_eqn, k_model, k.BCs)
-    # PW = set_preconditioner(DILU(), ω_eqn, ω_model, omega.BCs)
     @reset config.solvers.k.P = set_preconditioner(
         solvers.k.preconditioner, k_model, k.BCs
         )
@@ -90,10 +88,6 @@ function initialise_RANS(mdotf, eqn, config, turbulence)
     @reset config.solvers.omega.P = set_preconditioner(
         solvers.omega.preconditioner, ω_model, omega.BCs
         )
-
-    # PK = set_preconditioner(ILU0(), k_model, k.BCs)
-    # PW = set_preconditioner(ILU0(), ω_model, omega.BCs)
-
 
     float_type = eltype(mesh.nodes[1].coords)
     coeffs = get_coeffs(float_type)

@@ -147,24 +147,8 @@ function turbulence!( # Sort out dispatch when possible
     correct_boundaries!(ωf, omega, omega.BCs)
     diffusion_flux!(nueffω, nu, kf, ωf, coeffs.σω)
 
-    # Solve omega equation
-
-    discretise!(ω_eqn)
-    apply_boundary_conditions!(ω_eqn, omega.BCs)
-    prev .= omega.values
-    implicit_relaxation!(ω_eqn.equation, prev, solvers.omega.relax)
-    constrain_equation!(ω_eqn, omega.BCs, model) # activates with WFs
-    update_preconditioner!(ω_eqn.preconditioner)
-    run!(ω_eqn, solvers.omega)
-   
-    constrain_boundary!(omega, omega.BCs, model)
-    interpolate!(ωf, omega)
-    correct_boundaries!(ωf, omega, omega.BCs)
-    bound!(omega, ωf, eps())
-
     # update k fluxes
 
-    @. Pk.values = nut.values*Pk.values
     @. Dkf.values = coeffs.β⁺*omega.values
 
     interpolate!(kf, k)
@@ -173,7 +157,24 @@ function turbulence!( # Sort out dispatch when possible
     correct_boundaries!(ωf, omega, omega.BCs)
     diffusion_flux!(nueffk, nu, kf, ωf, coeffs.σk)
 
+    # Solve omega equation
+
+    discretise!(ω_eqn)
+    apply_boundary_conditions!(ω_eqn, omega.BCs)
+    prev .= omega.values
+    implicit_relaxation!(ω_eqn.equation, prev, solvers.omega.relax)
+    constrain_equation!(ω_eqn, omega.BCs, model) # active with WFs only
+    update_preconditioner!(ω_eqn.preconditioner)
+    run!(ω_eqn, solvers.omega)
+   
+    constrain_boundary!(omega, omega.BCs, model) # active with WFs only
+    interpolate!(ωf, omega)
+    correct_boundaries!(ωf, omega, omega.BCs)
+    bound!(omega, eps())
+
     # Solve k equation
+
+    @. Pk.values = nut.values*Pk.values
 
     discretise!(k_eqn)
     apply_boundary_conditions!(k_eqn, k.BCs)
@@ -183,7 +184,7 @@ function turbulence!( # Sort out dispatch when possible
     run!(k_eqn, solvers.k)
     interpolate!(kf, k)
     correct_boundaries!(kf, k, k.BCs)
-    bound!(k, kf, eps())
+    bound!(k, eps())
 
     update_eddy_viscosity!(nut, k, omega)
     interpolate!(νtf, nut)
@@ -301,7 +302,7 @@ set_cell_value!(field, BC, model) = begin
     end
 end
 
-bound!(field, fieldf, bound) = begin
+bound!(field, bound) = begin
     mesh = field.mesh
     (; cells, faces) = mesh
     for i ∈ eachindex(field)
@@ -312,7 +313,7 @@ bound!(field, fieldf, bound) = begin
         # Cell based average
         cellsID = cells[i].neighbours
         for cID ∈ cellsID
-            sum_flux += max(field[cID], eps()) # bounded sum?
+            sum_flux += max(field[cID], eps()) # bounded sum
             sum_area += 1
         end
         average = sum_flux/sum_area

@@ -82,9 +82,6 @@ function initialise_RANS(mdotf, peqn, config, model)
         Source(Pω)
     ) → eqn
 
-    # k_eqn = ModelEquation(k_model, eqn, (), ())
-    # ω_eqn = ModelEquation(ω_model, eqn, (), ())
-
     # Set up preconditioners
 
     @reset k_eqn.preconditioner = set_preconditioner(
@@ -140,12 +137,7 @@ function turbulence!( # Sort out dispatch when possible
     # end
 
     magnitude2!(Pk, S, scale_factor=2.0) # multiplied by 2 (def of Sij)
-    # cells = k.mesh.cells
-    # for i ∈ eachindex(Pk)
-    #     # Pk[i] = S2[i]*cells[i].volume
-    #     Pk[i] = S2[i]
-    # end
-
+  
     @. Pω.values = coeffs.α1*Pk.values
     @. Dωf.values = coeffs.β1*omega.values
 
@@ -161,7 +153,7 @@ function turbulence!( # Sort out dispatch when possible
     apply_boundary_conditions!(ω_eqn, omega.BCs)
     prev .= omega.values
     implicit_relaxation!(ω_eqn.equation, prev, solvers.omega.relax)
-    constrain_equation!(ω_eqn.equation, omega, omega.BCs) # Only if using wall function?
+    constrain_equation!(ω_eqn, omega.BCs, model) # activates with WFs
     update_preconditioner!(ω_eqn.preconditioner)
     run!(ω_eqn, solvers.omega)
    
@@ -216,14 +208,14 @@ destruction_flux!(Dxf::F, coeff, omega) where F<:ScalarField = begin
     end
 end
 
-@generated constrain_equation!(eqn, field, fieldBCs) = begin
+@generated constrain_equation!(eqn, fieldBCs, model) = begin
     BCs = fieldBCs.parameters
     func_calls = Expr[]
     for i ∈ eachindex(BCs)
         BC = BCs[i]
         if BC <: OmegaWallFunction # || BC <: Dirichlet
             call = quote
-                constraint!(eqn, field, fieldBCs[$i])
+                constraint!(eqn, fieldBCs[$i], model)
             end
             push!(func_calls, call)
         end
@@ -234,14 +226,15 @@ end
     end 
 end
 
-constraint!(eqn, field, BC) = begin
+constraint!(eqn, BC, model) = begin
     ID = BC.ID
     # cmu = BC.value.cmu
     # κ = BC.value.κ
     # k = BC.value.k
+    field = get_phi(eqn)
     mesh = field.mesh
     (; faces, cells, boundaries) = mesh
-    (; A, b) = eqn
+    (; A, b) = eqn.equation
     boundary = boundaries[ID]
     (; cellsID, facesID) = boundary
     # for fi ∈ eachindex(facesID)

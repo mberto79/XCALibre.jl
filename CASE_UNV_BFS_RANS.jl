@@ -108,7 +108,7 @@ initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
-iterations = 1000
+iterations = 1000 # 36.90k allocs
 Rx, Ry, Rp = isimple!(model, config, iterations) #, pref=0.0)
 
 write_vtk(

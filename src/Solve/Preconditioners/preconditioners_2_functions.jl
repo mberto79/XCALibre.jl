@@ -1,11 +1,11 @@
 export set_preconditioner
 export update_preconditioner!
 
-set_preconditioner(PT::T, model, BCs) where T<:PreconditionerType =
+set_preconditioner(PT::T, eqn, BCs) where T<:PreconditionerType =
 begin
-    discretise!(model)
-    apply_boundary_conditions!(model, BCs)
-    P = Preconditioner{T}(model.equation.A)
+    discretise!(eqn)
+    apply_boundary_conditions!(eqn, BCs)
+    P = Preconditioner{T}(eqn.equation.A)
     update_preconditioner!(P)
     return P
 end

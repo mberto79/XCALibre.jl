@@ -1,8 +1,10 @@
 export discretise!
 
-@generated function discretise!(
-    model::Model{E,T,S,TN,SN}
-    ) where {E,T,S,TN,SN}
+discretise!(eqn) = _discretise!(eqn.model, eqn)
+
+@generated function _discretise!(
+    model::Model{T,S,TN,SN}, eqn
+    ) where {T,S,TN,SN}
 
     nTerms = TN
     nSources = SN
@@ -36,7 +38,7 @@ export discretise!
     end
 
     quote
-        (; A, b) = model.equation
+        (; A, b) = eqn.equation
         mesh = model.terms[1].phi.mesh
         (; faces, cells) = mesh
         (; rowval, colptr, nzval) = A

@@ -37,10 +37,9 @@ get_coeffs(FloatType) = begin
     )
 end
 
-
 struct KOmegaModel{MK,MW,FK,FW,FN,C,S}
-    k_model::MK
-    ω_model::MW
+    k_eqn::MK
+    ω_eqn::MW
     kf::FK
     ωf::FW
     νtf::FN
@@ -48,11 +47,13 @@ struct KOmegaModel{MK,MW,FK,FW,FN,C,S}
     config::S
 end
 
-function initialise_RANS(mdotf, eqn, config, turbulence)
+function initialise_RANS(mdotf, peqn, config, model)
     # unpack turbulent quantities and configuration
+    turbulence = model.turbulence
     (; k, omega, nut) = turbulence
     (; solvers, schemes) = config
     mesh = mdotf.mesh
+    eqn = peqn.equation
 
     kf = FaceScalarField(mesh)
     ωf = FaceScalarField(mesh)
@@ -65,66 +66,71 @@ function initialise_RANS(mdotf, eqn, config, turbulence)
     Pk = ScalarField(mesh)
     Pω = ScalarField(mesh)
     
-    k_model = eqn → (
+    k_eqn = (
             Divergence{schemes.k.divergence}(mdotf, k) 
             - Laplacian{schemes.k.laplacian}(nueffk, k) 
             + Si(Dkf,k) # Dkf = β⁺*omega
             ==
             Source(Pk)
-        )
+        ) → eqn
     
-    ω_model = eqn → (
+    ω_eqn = (
         Divergence{schemes.omega.divergence}(mdotf, omega) 
         - Laplacian{schemes.omega.laplacian}(nueffω, omega) 
         + Si(Dωf,omega)  # Dωf = β1*omega
         ==
         Source(Pω)
-    )
+    ) → eqn
 
-    @reset config.solvers.k.P = set_preconditioner(
-        solvers.k.preconditioner, k_model, k.BCs
-        )
+    # k_eqn = ModelEquation(k_model, eqn, (), ())
+    # ω_eqn = ModelEquation(ω_model, eqn, (), ())
 
-    @reset config.solvers.omega.P = set_preconditioner(
-        solvers.omega.preconditioner, ω_model, omega.BCs
-        )
+    # Set up preconditioners
 
-    float_type = eltype(mesh.nodes[1].coords)
+    @reset k_eqn.preconditioner = set_preconditioner(
+                    solvers.k.preconditioner, k_eqn, k.BCs)
+
+    @reset ω_eqn.preconditioner = set_preconditioner(
+                    solvers.omega.preconditioner, ω_eqn, omega.BCs)
+    
+    # preallocating solvers
+
+    @reset k_eqn.solver = solvers.k.solver(_A(k_eqn), _b(k_eqn))
+    @reset ω_eqn.solver = solvers.omega.solver(_A(ω_eqn), _b(ω_eqn))
+
+    float_type = _get_float(mesh)
     coeffs = get_coeffs(float_type)
 
-    kOmega_model = KOmegaModel(
-        k_model,
-        ω_model,
+    return KOmegaModel(
+        k_eqn,
+        ω_eqn,
         kf,
         ωf,
         νtf,
         coeffs,
         config
     )
-
-    return kOmega_model
-
 end
 
 function turbulence!( # Sort out dispatch when possible
-    KOmega::M, model, S, S2, prev) where M
+    KOmega::KOmegaModel, model, S, S2, prev)
 
     nu = model.nu
     nut = model.turbulence.nut
 
-    (;k_model,ω_model,kf,ωf,νtf,coeffs,config) = KOmega
+    (;k_eqn, ω_eqn, kf, ωf, νtf, coeffs, config) = KOmega
     (; solvers) = config
 
-    k = get_phi(k_model)
-    omega = get_phi(ω_model)
+    k = get_phi(k_eqn)
+    omega = get_phi(ω_eqn)
 
-    nueffk = get_flux(k_model, 2)
-    Dkf = get_flux(k_model, 3)
-    Pk = get_source(k_model, 1)
+    nueffk = get_flux(k_eqn, 2)
+    Dkf = get_flux(k_eqn, 3)
+    Pk = get_source(k_eqn, 1)
 
-    nueffω = get_flux(ω_model, 2)
-    Dωf = get_flux(ω_model, 3)
-    Pω = get_source(ω_model, 1)
+    nueffω = get_flux(ω_eqn, 2)
+    Dωf = get_flux(ω_eqn, 3)
+    Pω = get_source(ω_eqn, 1)
 
     # double_inner_product!(Pk, S, S.gradU)
     # cells = k.mesh.cells
@@ -151,13 +157,13 @@ function turbulence!( # Sort out dispatch when possible
 
     # Solve omega equation
 
-    discretise!(ω_model)
-    apply_boundary_conditions!(ω_model, omega.BCs)
+    discretise!(ω_eqn)
+    apply_boundary_conditions!(ω_eqn, omega.BCs)
     prev .= omega.values
-    implicit_relaxation!(ω_model.equation, prev, solvers.omega.relax)
-    constrain_equation!(ω_model.equation, omega, omega.BCs) # Only if using wall function?
-    update_preconditioner!(solvers.omega.P)
-    run!(ω_model, solvers.omega)
+    implicit_relaxation!(ω_eqn.equation, prev, solvers.omega.relax)
+    constrain_equation!(ω_eqn.equation, omega, omega.BCs) # Only if using wall function?
+    update_preconditioner!(ω_eqn.preconditioner)
+    run!(ω_eqn, solvers.omega)
    
     constrain_boundary!(omega, omega.BCs)
     interpolate!(ωf, omega)
@@ -177,12 +183,12 @@ function turbulence!( # Sort out dispatch when possible
 
     # Solve k equation
 
-    discretise!(k_model)
-    apply_boundary_conditions!(k_model, k.BCs)
+    discretise!(k_eqn)
+    apply_boundary_conditions!(k_eqn, k.BCs)
     prev .= k.values
-    implicit_relaxation!(k_model.equation, prev, solvers.k.relax)
-    update_preconditioner!(solvers.k.P)
-    run!(k_model, solvers.k)
+    implicit_relaxation!(k_eqn.equation, prev, solvers.k.relax)
+    update_preconditioner!(k_eqn.preconditioner)
+    run!(k_eqn, solvers.k)
     interpolate!(kf, k)
     correct_boundaries!(kf, k, k.BCs)
     bound!(k, kf, eps())

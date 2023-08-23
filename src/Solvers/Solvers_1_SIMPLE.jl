@@ -18,61 +18,55 @@ function isimple!(
     initialise!(rDf, 1.0)
     divHv = ScalarField(mesh)
 
-    @info "Allocating matrix equations..."
-
-    ux_eqn  = Equation(mesh)
-    uy_eqn  = Equation(mesh)
-    eqn    = Equation(mesh)
-
     @info "Defining models..."
 
-    ux_model = ux_eqn → (
+    ux_eqn = (
         Divergence{schemes.U.divergence}(mdotf, U.x) 
         - Laplacian{schemes.U.laplacian}(nueff, U.x) 
         == 
         -Source(∇p.result.x)
-    )
+    ) → Equation(mesh)
     
-    uy_model = uy_eqn → (
+    uy_eqn = (
         Divergence{schemes.U.divergence}(mdotf, U.y) 
         - Laplacian{schemes.U.laplacian}(nueff, U.y) 
         == 
         -Source(∇p.result.y)
-    )
+    ) → Equation(mesh)
 
-    p_model = eqn → (
+    p_eqn = (
         Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
-    ) 
+    ) → Equation(mesh)
+
+    # ux_eqn = ModelEquation(ux_model, Equation(mesh), (), ())
+    # uy_eqn = ModelEquation(uy_model, Equation(mesh), (), ())
+    # p_eqn = ModelEquation(p_model, Equation(mesh),(), ())
 
     @info "Initialising preconditioners..."
+    
+    @reset ux_eqn.preconditioner = set_preconditioner(
+                        solvers.U.preconditioner, ux_eqn, U.x.BCs)
+    @reset uy_eqn.preconditioner = ux_eqn.preconditioner
+    @reset p_eqn.preconditioner = set_preconditioner(
+                        solvers.p.preconditioner, p_eqn, p.BCs)
 
-    # Pu = set_preconditioner(NormDiagonal(), ux_eqn, ux_model, U.x.BCs)
-    # Pu = set_preconditioner(Jacobi(), ux_eqn, ux_model, U.x.BCs)
-    @reset config.solvers.U.P = set_preconditioner(
-        solvers.U.preconditioner, ux_model, U.x.BCs
-        )
-    # Pu = set_preconditioner(DILU(), ux_eqn, ux_model, U.x.BCs)
-    @reset config.solvers.p.P = set_preconditioner(
-        solvers.p.preconditioner, p_model, p.BCs
-        )
-
-    @info "Initialising turbulence model..."
+    @info "Pre-allocating solvers..."
+     
+    @reset ux_eqn.solver = solvers.U.solver(_A(ux_eqn), _b(ux_eqn))
+    @reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
+    @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
 
     if isturbulent(model)
-        turbulence = initialise_RANS(mdotf, eqn, config, model.turbulence)
+        @info "Initialising turbulence model..."
+        turbulence = initialise_RANS(mdotf, p_eqn, config, model)
         config = turbulence.config
     else
         turbulence = nothing
     end
 
-    @info "Initialising linear solvers..."
-
-    # solver_p = setup_p.solver(_A(p_model), _b(p_model))
-    # solver_U = setup_U.solver(_A(ux_model), _b(ux_model))
-
     R_ux, R_uy, R_p  = SIMPLE_loop(
     model, ∇p, iterations,
-    ux_model, uy_model, p_model,
+    ux_eqn, uy_eqn, p_eqn,
     turbulence, config
     ; resume=true, pref=nothing)
 
@@ -81,19 +75,21 @@ end # end function
 
 function SIMPLE_loop(
     model, ∇p, iterations,
-    ux_model, uy_model, p_model,
+    ux_eqn, uy_eqn, p_eqn,
     turbulence, config
     ; resume=true, pref=nothing)
     
     # Extract model variables and configuration
     (;mesh, U, p, nu) = model
+    ux_model, uy_model = ux_eqn.model, uy_eqn.model
+    p_model = p_eqn.model
     (; solvers, schemes) = config
     
-    mdotf = get_flux(ux_model, 1)
-    nueff = get_flux(ux_model, 2)
-    rDf = get_flux(p_model, 1)
+    mdotf = get_flux(ux_eqn, 1)
+    nueff = get_flux(ux_eqn, 2)
+    rDf = get_flux(p_eqn, 1)
     # divHv = ScalarField(p_model.sources[1].field, mesh, p.BCs)
-    divHv = get_source(p_model, 1)
+    divHv = get_source(p_eqn, 1)
     
     @info "Allocating working memory..."
 
@@ -139,45 +135,44 @@ function SIMPLE_loop(
     @time for iteration ∈ 1:iterations
         
 
-        discretise!(ux_model)
-        apply_boundary_conditions!(ux_model, U.x.BCs)
+        discretise!(ux_eqn)
+        apply_boundary_conditions!(ux_eqn, U.x.BCs)
         # ux_eqn.b .-= divUTx
         @. prev = U.x.values
-        implicit_relaxation!(ux_model.equation, prev, solvers.U.relax)
-        update_preconditioner!(solvers.U.P)
-        run!(ux_model, solvers.U) #opP=Pu.P, solver=solver_U)
-        residual!(R_ux, ux_model.equation, U.x, iteration)
+        implicit_relaxation!(ux_eqn.equation, prev, solvers.U.relax)
+        update_preconditioner!(ux_eqn.preconditioner)
+        run!(ux_eqn, solvers.U) #opP=Pu.P, solver=solver_U)
+        residual!(R_ux, ux_eqn.equation, U.x, iteration)
 
         # @turbo @. uy_eqn.b = 0.0
-        discretise!(uy_model)
+        discretise!(uy_eqn)
         # @inbounds uy_model.equation.b .+= uy_model.sources[1].field
-        apply_boundary_conditions!(uy_model, U.y.BCs)
+        apply_boundary_conditions!(uy_eqn, U.y.BCs)
         # uy_eqn.b .-= divUTy
         @. prev = U.y.values
-        implicit_relaxation!(uy_model.equation, prev, solvers.U.relax)
-        update_preconditioner!(solvers.U.P)
-
-        run!(uy_model, solvers.U)
-        residual!(R_uy, uy_model.equation, U.y, iteration)
+        implicit_relaxation!(uy_eqn.equation, prev, solvers.U.relax)
+        update_preconditioner!(uy_eqn.preconditioner)
+        run!(uy_eqn, solvers.U)
+        residual!(R_uy, uy_eqn.equation, U.y, iteration)
         
-        inverse_diagonal!(rD, ux_model.equation)
+        inverse_diagonal!(rD, ux_eqn.equation)
         interpolate!(rDf, rD)
-        remove_pressure_source!(ux_model, uy_model, ∇p)
-        H!(Hv, U, ux_model, uy_model)
+        remove_pressure_source!(ux_eqn, uy_eqn, ∇p)
+        H!(Hv, U, ux_eqn, uy_eqn)
 
         interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs)
         div!(divHv, Uf)
    
-        discretise!(p_model)
-        apply_boundary_conditions!(p_model, p.BCs)
-        setReference!(p_model.equation, pref, 1)
-        update_preconditioner!(solvers.p.P)
+        discretise!(p_eqn)
+        apply_boundary_conditions!(p_eqn, p.BCs)
+        setReference!(p_eqn.equation, pref, 1)
+        update_preconditioner!(p_eqn.preconditioner)
         @. prev = p.values
-        run!(p_model, solvers.p)
+        run!(p_eqn, solvers.p)
 
         explicit_relaxation!(p, prev, solvers.p.relax)
-        residual!(R_p, p_model.equation, p, iteration)
+        residual!(R_p, p_eqn.equation, p, iteration)
 
         grad!(∇p, pf, p, p.BCs) 
 
@@ -185,13 +180,13 @@ function SIMPLE_loop(
         if correct
             ncorrectors = 1
             for i ∈ 1:ncorrectors
-                discretise!(p_model)
-                apply_boundary_conditions!(p_model, p.BCs)
-                setReference!(p_model.equation, pref, 1)
+                discretise!(p_eqn)
+                apply_boundary_conditions!(p_eqn, p.BCs)
+                setReference!(p_eqn.equation, pref, 1)
                 # grad!(∇p, pf, p, pBCs) 
                 interpolate!(gradpf, ∇p, p)
                 nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
-                correct!(p_model.equation, p_model.terms.term1, pf)
+                correct!(p_eqn.equation, p_model.terms.term1, pf)
                 run!(p_model, solvers.p)
                 grad!(∇p, pf, p, pBCs) 
             end
@@ -343,11 +338,11 @@ function correct_velocity!(U, Hv, ∇p, rD)
     end
 end
 
-remove_pressure_source!(ux_model::M1, uy_model::M2, ∇p) where {M1,M2} = begin
-    cells = get_phi(ux_model).mesh.cells
-    source_sign = get_source_sign(ux_model, 1)
+remove_pressure_source!(ux_eqn::M1, uy_eqn::M2, ∇p) where {M1,M2} = begin
+    cells = get_phi(ux_eqn).mesh.cells
+    source_sign = get_source_sign(ux_eqn, 1)
     dpdx, dpdy = ∇p.result.x, ∇p.result.y
-    bx, by = ux_model.equation.b, uy_model.equation.b
+    bx, by = ux_eqn.equation.b, uy_eqn.equation.b
     @inbounds for i ∈ eachindex(bx)
         volume = cells[i].volume
         bx[i] -= source_sign*dpdx[i]*volume
@@ -355,12 +350,12 @@ remove_pressure_source!(ux_model::M1, uy_model::M2, ∇p) where {M1,M2} = begin
     end
 end
 
-H!(Hv, v::VF, ux_model, uy_model) where VF<:VectorField = 
+H!(Hv, v::VF, ux_eqn, uy_eqn) where VF<:VectorField = 
 begin
     (; x, y, z, mesh) = Hv 
     (; cells, faces) = mesh
-    Ax = ux_model.equation.A; Ay = uy_model.equation.A
-    bx = ux_model.equation.b; by = uy_model.equation.b
+    Ax = ux_eqn.equation.A; Ay = uy_eqn.equation.A
+    bx = ux_eqn.equation.b; by = uy_eqn.equation.b
     vx, vy = v.x, v.y
     F = eltype(v.x.values)
     @inbounds for cID ∈ eachindex(cells)

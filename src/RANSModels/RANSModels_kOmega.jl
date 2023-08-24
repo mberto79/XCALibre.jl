@@ -173,6 +173,7 @@ function turbulence!( # Sort out dispatch when possible
     # Solve k equation
 
     @. Pk.values = nut.values*Pk.values
+    # correct_production!(Pk, k, k.BCs, model) # to implement
 
     discretise!(k_eqn)
     apply_boundary_conditions!(k_eqn, k.BCs)
@@ -183,6 +184,7 @@ function turbulence!( # Sort out dispatch when possible
     bound!(k, eps())
 
     update_eddy_viscosity!(nut, k, omega)
+    # correct_eddy_viscosity!(nut, nut.BCs, model) # to implement
     interpolate!(νtf, nut)
     correct_boundaries!(νtf, nut, nut.BCs)
 end
@@ -342,7 +344,7 @@ set_cell_value!(field, BC, model) = begin
         else
             ωc = ωvis
         end
-        
+
         field.values[cID] = ωc
     end
 end

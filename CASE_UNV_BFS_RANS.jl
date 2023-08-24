@@ -125,7 +125,7 @@ Fp = pressure_force(:wall, model.p, 1.25)
 Fv = viscous_force(:wall, model.U, 1.25, nu, model.turbulence.nut)
 
 
-plot(; xlims=(0,498))
+plot(; xlims=(0,494))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
 plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
 plot!(1:length(Rp), Rp, yscale=:log10, label="p")

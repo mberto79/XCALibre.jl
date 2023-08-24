@@ -54,7 +54,7 @@ model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
     Neumann(:outlet, 0.0),
     Neumann(:top, 0.0),
     Neumann(:bottom, 0.0),
-    OmegaWallFunction(:cylinder, (κ=0.41, cmu=0.09))
+    OmegaWallFunction(:cylinder) # need constructor to force keywords
 )
 
 @assign! model turbulence nut (
@@ -92,18 +92,21 @@ solvers = (
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.9,
+        relax       = 0.8,
     ),
     omega = set_solver(
         model.turbulence.omega;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.9,
+        relax       = 0.8,
     )
 )
 
-config = Configuration(solvers=solvers, schemes=schemes, runtime=())
+runtime = set_runtime(iterations=500, write_interval=0)
+
+config = Configuration(
+    solvers=solvers, schemes=schemes, runtime=runtime)
 
 GC.gc()
 
@@ -113,8 +116,7 @@ initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
-iterations = 1000
-Rx, Ry, Rp = isimple!(model, config, iterations) #, pref=0.0)
+Rx, Ry, Rp = isimple!(model, config) #, pref=0.0)
 
 Reff = stress_tensor(model.U, nu, model.turbulence.nut)
 Fp = pressure_force(:cylinder, model.p, 1.25)
@@ -129,7 +131,7 @@ write_vtk(
     ("nut", model.turbulence.nut)
     )
 
-plot(; xlims=(0,iterations), ylims=(1e-10,0))
+plot(; xlims=(0,runtime.iterations), ylims=(1e-10,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
 plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
 plot!(1:length(Rp), Rp, yscale=:log10, label="p")

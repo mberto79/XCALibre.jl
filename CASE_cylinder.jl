@@ -56,16 +56,17 @@ schemes = (
     p = set_schemes()
 )
 
-config = Configuration(solvers=solvers, schemes=schemes, runtime=())
+runtime = set_runtime(iterations=1000, write_interval=0)
 
+config = Configuration(
+    solvers=solvers, schemes=schemes, runtime=runtime)
 
 GC.gc()
 
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-iterations = 1000
-Rx, Ry, Rp = isimple!(model, config, iterations) #, pref=0.0)
+Rx, Ry, Rp = isimple!(model, config) #, pref=0.0)
 
 write_vtk("results", mesh, ("U", model.U), ("p", model.p))
 

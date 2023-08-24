@@ -205,8 +205,9 @@ destruction_flux!(Dxf::F, coeff, omega) where F<:ScalarField = begin
     end
 end
 
-ω_vis(nu, beta1, y) = 6*nu/(beta1*y^2)
-ω_log(k, cmu, kappa, y) = sqrt(k)/(cmu*kappa*y)
+ω_vis(nu, y, beta1) = 6*nu/(beta1*y^2)
+ω_log(k, y, cmu, kappa) = sqrt(k)/(cmu*kappa*y)
+y_plus(k, nu, y, cmu) = cmu^0.25*y*sqrt(k)/nu
 
 @generated constrain_equation!(eqn, fieldBCs, model) = begin
     BCs = fieldBCs.parameters
@@ -247,7 +248,8 @@ constraint!(eqn, BC, model) = begin
         # nfID = facesID[i+1]
         face = faces[fID]
         cell = cells[cID]
-        ωc = ω_vis(nu[i], beta1, face.delta)
+        y = face.delta
+        ωc = ω_vis(nu[i], y, beta1)
         b[cID] = A[cID,cID]*ωc
         # b[cID] += A[cID,cID]*ωc
         # A[cID,cID] += A[cID,cID]
@@ -293,7 +295,7 @@ set_cell_value!(field, BC, model) = begin
         cID = cellsID[i]
         fID = facesID[i]
         y = faces[fID].delta
-        ωc = ω_vis(nu[i], beta1, y)
+        ωc = ω_vis(nu[i], y, beta1)
         field.values[cID] = ωc
     end
 end

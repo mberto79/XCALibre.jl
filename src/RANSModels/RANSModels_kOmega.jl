@@ -205,16 +205,33 @@ destruction_flux!(Dxf::F, coeff, omega) where F<:ScalarField = begin
     end
 end
 
-ω_vis(nu, y, beta1) = 6*nu/(beta1*y^2)
-ω_log(k, y, cmu, kappa) = sqrt(k)/(cmu*kappa*y)
+y_plus_laminar(B, kappa) = begin
+    # yL = 11; for i ∈ 1:10; yL = log(B*yL)/kappa; end
+    yL = 11.0; for i ∈ 1:10; yL = log(yL)/kappa + B; end
+    yL
+end
+
+ω_vis(nu, y, beta1) = 6.0*nu/(beta1*y^2)
+
+ω_log(k, y, cmu, kappa) = sqrt(k)/(cmu^0.25*kappa*y)
+
 y_plus(k, nu, y, cmu) = cmu^0.25*y*sqrt(k)/nu
+
+sngrad() = nothing
+
+nut_wall(nu, yP, kappa, E) = nu*(
+    yP*kappa/log(max(E*yP, 1.0 + 1e-4)) - 1.0) # E = 9.8 E*yP, 1 + 1e-4)
+
+nut_wall_direct(k, yP, kappa, cmu, B) = begin
+    cmu^0.25*sqrt(k)*yP*kappa/(log(yP) + B)
+end
 
 @generated constrain_equation!(eqn, fieldBCs, model) = begin
     BCs = fieldBCs.parameters
     func_calls = Expr[]
     for i ∈ eachindex(BCs)
         BC = BCs[i]
-        if BC <: OmegaWallFunction # || BC <: Dirichlet
+        if BC <: OmegaWallFunction
             call = quote
                 constraint!(eqn, fieldBCs[$i], model)
             end
@@ -230,13 +247,16 @@ end
 constraint!(eqn, BC, model) = begin
     ID = BC.ID
     nu = model.nu
-    beta1 = BC.value.beta1
+    k = model.turbulence.k
+    (; kappa, beta1, cmu, B) = BC.value
     field = get_phi(eqn)
     mesh = field.mesh
     (; faces, cells, boundaries) = mesh
     (; A, b) = eqn.equation
     boundary = boundaries[ID]
     (; cellsID, facesID) = boundary
+    ylam = y_plus_laminar(B, kappa) # must add B to KomegaWF type
+    ωc = zero(_get_float(mesh))
     # for fi ∈ eachindex(facesID)
     #     fID = facesID[fi]
     #     cID 
@@ -249,8 +269,21 @@ constraint!(eqn, BC, model) = begin
         face = faces[fID]
         cell = cells[cID]
         y = face.delta
-        ωc = ω_vis(nu[i], y, beta1)
+        ωvis = ω_vis(nu[cID], y, beta1)
+        ωlog = ω_log(k[cID], y, cmu, kappa)
+        yplus = y_plus(k[cID], nu[cID], y, cmu) 
+
+        if yplus > ylam 
+            ωc = ωlog
+        else
+            ωc = ωvis
+        end
+
         b[cID] = A[cID,cID]*ωc
+
+        nutw = nut_wall(nu[cID], yplus, 0.41, 9.8) 
+        nutwd = nut_wall_direct(k[cID], yplus, 0.41, 0.09, 5.25)
+
         # b[cID] += A[cID,cID]*ωc
         # A[cID,cID] += A[cID,cID]
         # for nID ∈ cell.neighbours
@@ -286,16 +319,30 @@ end
 set_cell_value!(field, BC, model) = begin
     ID = BC.ID
     nu = model.nu
-    beta1 = BC.value.beta1
+    k = model.turbulence.k
+    (; kappa, beta1, cmu, B) = BC.value
     mesh = field.mesh
     (; faces, cells, boundaries) = mesh
     boundary = boundaries[ID]
     (; cellsID, facesID) = boundary
+    ylam = y_plus_laminar(B, kappa) # must add B to KomegaWF type
+    ωc = zero(_get_float(mesh))
     for i ∈ eachindex(cellsID)
         cID = cellsID[i]
         fID = facesID[i]
-        y = faces[fID].delta
-        ωc = ω_vis(nu[i], y, beta1)
+        face = faces[fID]
+        cell = cells[cID]
+        y = face.delta
+        ωvis = ω_vis(nu[cID], y, beta1)
+        ωlog = ω_log(k[cID], y, cmu, kappa)
+        yplus = y_plus(k[cID], nu[cID], y, cmu) 
+
+        if yplus > ylam 
+            ωc = ωlog
+        else
+            ωc = ωvis
+        end
+        
         field.values[cID] = ωc
     end
 end

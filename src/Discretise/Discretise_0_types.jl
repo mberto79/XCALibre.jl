@@ -55,7 +55,7 @@ struct OmegaWallFunction{I,V} <: AbstractBoundary
     value::V 
 end
 OmegaWallFunction(name::Symbol) = begin
-    OmegaWallFunction(name, (kappa=0.41, beta1=0.075))
+    OmegaWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2))
 end
 
 assign(vec::VectorField, args...) = begin

@@ -98,7 +98,10 @@ solvers = (
     )
 )
 
-config = Configuration(solvers=solvers, schemes=schemes, runtime=())
+runtime = set_runtime(iterations=1000, write_interval=0)
+
+config = Configuration(
+    solvers=solvers, schemes=schemes, runtime=runtime)
 
 GC.gc()
 
@@ -108,8 +111,7 @@ initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
-iterations = 1000 # 36.90k allocs
-Rx, Ry, Rp = isimple!(model, config, iterations) #, pref=0.0)
+Rx, Ry, Rp = isimple!(model, config) # 36.90k allocs
 
 write_vtk(
     "results", mesh, 

@@ -1,4 +1,4 @@
-export set_solver
+export set_solver, set_runtime
 export explicit_relaxation!, implicit_relaxation!, setReference!
 export run!
 
@@ -21,6 +21,10 @@ begin
         atol=atol, 
         rtol=rtol
     )
+end
+
+set_runtime(; iterations::I, write_interval::I) where I<:Integer = begin
+    (iterations=iterations, write_interval=write_interval)
 end
 
 function run!(phiEqn::ModelEquation, setup) # ; opP, solver

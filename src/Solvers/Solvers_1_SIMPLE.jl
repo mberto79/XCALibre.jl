@@ -1,8 +1,6 @@
 export isimple!
 
-function isimple!(
-    model, config, iterations
-    ; resume=true, pref=nothing) 
+function isimple!(model, config; resume=true, pref=nothing) 
 
     @info "Extracting configuration and input fields..."
     (; U, p, nu, mesh) = model
@@ -38,10 +36,6 @@ function isimple!(
         Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
     ) → Equation(mesh)
 
-    # ux_eqn = ModelEquation(ux_model, Equation(mesh), (), ())
-    # uy_eqn = ModelEquation(uy_model, Equation(mesh), (), ())
-    # p_eqn = ModelEquation(p_model, Equation(mesh),(), ())
-
     @info "Initialising preconditioners..."
     
     @reset ux_eqn.preconditioner = set_preconditioner(
@@ -65,30 +59,24 @@ function isimple!(
     end
 
     R_ux, R_uy, R_p  = SIMPLE_loop(
-    model, ∇p, iterations,
-    ux_eqn, uy_eqn, p_eqn,
-    turbulence, config
-    ; resume=true, pref=nothing)
+    model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config ; resume=true, pref=nothing)
 
     return R_ux, R_uy, R_p     
 end # end function
 
 function SIMPLE_loop(
-    model, ∇p, iterations,
-    ux_eqn, uy_eqn, p_eqn,
-    turbulence, config
-    ; resume=true, pref=nothing)
+    model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config ; resume=true, pref=nothing)
     
     # Extract model variables and configuration
     (;mesh, U, p, nu) = model
-    ux_model, uy_model = ux_eqn.model, uy_eqn.model
+    # ux_model, uy_model = ux_eqn.model, uy_eqn.model
     p_model = p_eqn.model
-    (; solvers, schemes) = config
+    (; solvers, runtime) = config
+    (; iterations, write_interval) = runtime
     
     mdotf = get_flux(ux_eqn, 1)
     nueff = get_flux(ux_eqn, 2)
     rDf = get_flux(p_eqn, 1)
-    # divHv = ScalarField(p_model.sources[1].field, mesh, p.BCs)
     divHv = get_source(p_eqn, 1)
     
     @info "Allocating working memory..."
@@ -133,7 +121,6 @@ function SIMPLE_loop(
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
     @time for iteration ∈ 1:iterations
-        
 
         discretise!(ux_eqn)
         apply_boundary_conditions!(ux_eqn, U.x.BCs)
@@ -144,9 +131,7 @@ function SIMPLE_loop(
         run!(ux_eqn, solvers.U) #opP=Pu.P, solver=solver_U)
         residual!(R_ux, ux_eqn.equation, U.x, iteration)
 
-        # @turbo @. uy_eqn.b = 0.0
         discretise!(uy_eqn)
-        # @inbounds uy_model.equation.b .+= uy_model.sources[1].field
         apply_boundary_conditions!(uy_eqn, U.y.BCs)
         # uy_eqn.b .-= divUTy
         @. prev = U.y.values
@@ -204,8 +189,6 @@ function SIMPLE_loop(
             update_nueff!(nueff, nu, turbulence)
         end
         
-        
-
         # for i ∈ eachindex(divUTx)
         #     vol = mesh.cells[i].volume
         #     divUTx = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][1,1]+ gradUT[i][1,2] + gradUT[i][1,3])*vol

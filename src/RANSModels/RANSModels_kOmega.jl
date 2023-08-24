@@ -205,7 +205,8 @@ destruction_flux!(Dxf::F, coeff, omega) where F<:ScalarField = begin
     end
 end
 
-low_Re_omega(nu, beta1, y) = 6*nu/(beta1*y^2)
+ω_vis(nu, beta1, y) = 6*nu/(beta1*y^2)
+ω_log(k, cmu, kappa, y) = sqrt(k)/(cmu*kappa*y)
 
 @generated constrain_equation!(eqn, fieldBCs, model) = begin
     BCs = fieldBCs.parameters
@@ -246,8 +247,7 @@ constraint!(eqn, BC, model) = begin
         # nfID = facesID[i+1]
         face = faces[fID]
         cell = cells[cID]
-        y = face.delta
-        ωc = low_Re_omega(nu[i], beta1, y)
+        ωc = ω_vis(nu[i], beta1, face.delta)
         b[cID] = A[cID,cID]*ωc
         # b[cID] += A[cID,cID]*ωc
         # A[cID,cID] += A[cID,cID]
@@ -293,7 +293,7 @@ set_cell_value!(field, BC, model) = begin
         cID = cellsID[i]
         fID = facesID[i]
         y = faces[fID].delta
-        ωc = low_Re_omega(nu[i], beta1, y)
+        ωc = ω_vis(nu[i], beta1, y)
         field.values[cID] = ωc
     end
 end

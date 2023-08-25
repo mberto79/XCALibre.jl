@@ -85,21 +85,21 @@ solvers = (
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = LDL(),
         convergence = 1e-7,
-        relax       = 0.3,
+        relax       = 0.4,
     ),
     k = set_solver(
         model.turbulence.k;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.9,
     ),
     omega = set_solver(
         model.turbulence.omega;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.9,
     )
 )
 

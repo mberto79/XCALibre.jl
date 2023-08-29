@@ -56,8 +56,8 @@ model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
 @assign! model turbulence nut (
     Dirichlet(:inlet, k_inlet/ω_inlet),
     Neumann(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0),
+    Neumann(:wall, 0.0), 
+    Neumann(:top, 0.0)
     # Dirichlet(:wall, 0.0), 
     # Dirichlet(:top, 0.0)
 )
@@ -129,7 +129,7 @@ Fp = pressure_force(:wall, model.p, 1.25)
 Fv = viscous_force(:wall, model.U, 1.25, nu, model.turbulence.nut)
 
 
-plot(; xlims=(0,runtime.iterations)) # 594
+plot(; xlims=(0,494))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
 plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
 plot!(1:length(Rp), Rp, yscale=:log10, label="p")

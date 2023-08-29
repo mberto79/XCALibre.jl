@@ -173,7 +173,7 @@ function turbulence!( # Sort out dispatch when possible
     # Solve k equation
 
     @. Pk.values = nut.values*Pk.values
-    # correct_production!(Pk, k, k.BCs, model) # to implement
+    correct_production!(Pk, k.BCs, model) # to implement
 
     discretise!(k_eqn)
     apply_boundary_conditions!(k_eqn, k.BCs)
@@ -219,13 +219,20 @@ end
 
 y_plus(k, nu, y, cmu) = cmu^0.25*y*sqrt(k)/nu
 
-sngrad() = nothing
+sngrad(Ui, Uw, delta, normal) = begin
+    Udiff = (Ui - Uw)
+    Up = Udiff - (Udiff⋅normal)*normal # oarallel velocity difference
+    grad = Up/delta
+    return grad
+end
 
-nut_wall(nu, yP, kappa, E) = nu*(
-    yP*kappa/log(max(E*yP, 1.0 + 1e-4)) - 1.0) # E = 9.8 E*yP, 1 + 1e-4)
+mag(vector) = sqrt(vector[1]^2 + vector[2]^2 + vector[3]^2) 
 
-nut_wall_direct(k, yP, kappa, cmu, B) = begin
-    cmu^0.25*sqrt(k)*yP*kappa/(log(yP) + B)
+# nut_wall(nu, yP, kappa, E) = nu*(
+#     yP*kappa/log(max(E*yP, 1.0 + 1e-4)) - 1.0) # E = 9.8 E*yP, 1 + 1e-4)
+
+nut_wall(k, delta, yplus, kappa, cmu, B) = begin
+    cmu^0.25*sqrt(k)*delta/(log(yplus)/kappa + B)
 end
 
 @generated constrain_equation!(eqn, fieldBCs, model) = begin
@@ -282,9 +289,6 @@ constraint!(eqn, BC, model) = begin
         end
 
         b[cID] = A[cID,cID]*ωc
-
-        nutw = nut_wall(nu[cID], yplus, 0.41, 9.8) 
-        nutwd = nut_wall_direct(k[cID], yplus, 0.41, 0.09, 5.25)
 
         # b[cID] += A[cID,cID]*ωc
         # A[cID,cID] += A[cID,cID]
@@ -346,6 +350,50 @@ set_cell_value!(field, BC, model) = begin
         end
 
         field.values[cID] = ωc
+    end
+end
+
+@generated correct_production!(P, fieldBCs, model) = begin
+    BCs = fieldBCs.parameters
+    func_calls = Expr[]
+    for i ∈ eachindex(BCs)
+        BC = BCs[i]
+        if BC <: KWallFunction
+            call = quote
+                set_production!(P, fieldBCs[$i], model)
+            end
+            push!(func_calls, call)
+        end
+    end
+    quote
+    $(func_calls...)
+    nothing
+    end 
+end
+
+set_production!(P, BC, model) = begin
+    ID = BC.ID
+    (; kappa, beta1, cmu, B) = BC.value
+    (; U, nu, mesh) = model
+    (; k, nut) = model.turbulence
+    (; faces, cells, boundaries) = mesh
+    boundary = boundaries[ID]
+    (; cellsID, facesID) = boundary
+    ylam = y_plus_laminar(B, kappa) # must add B to KomegaWF type
+    Uw = SVector{3,_get_float(mesh)}(0.0,0.0,0.0)
+    for i ∈ eachindex(cellsID)
+        cID = cellsID[i]
+        fID = facesID[i]
+        face = faces[fID]
+        cell = cells[cID]
+        (; delta, normal)= face
+        uStar = cmu^0.25*sqrt(k[cID])
+        yplus = y_plus(k[cID], nu[cID], delta, cmu)
+        nutwc = nut_wall(k[cID], delta, yplus, kappa, cmu, B)
+        nutw = max(nutwc - nu[cID] , 0.0)
+        nut[cID] = max(nutw - nu[cID] , 0.0)
+        mag_grad_U = mag(sngrad(U[cID], Uw, delta, normal))
+        P.values[cID] = (nu[cID] + nutw)*mag_grad_U*uStar/(kappa*delta)
     end
 end
 

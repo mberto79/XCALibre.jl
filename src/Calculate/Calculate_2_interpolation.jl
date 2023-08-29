@@ -49,7 +49,6 @@ function adjust_boundary!(
         fID = facesID[fi]
         cID = cellsID[fi]
         phif.values[fID] = phi.values[cID] # Using Neumann condition
-        # phif.values[fID] = 0.0 # set νt to zero at the wall
     end
 end
 

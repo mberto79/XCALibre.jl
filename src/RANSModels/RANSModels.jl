@@ -1,6 +1,7 @@
 module RANSModels
 
 using Accessors
+using StaticArrays
 using LinearAlgebra
 
 using FVM_1D.Mesh

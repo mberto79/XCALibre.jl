@@ -49,6 +49,9 @@ struct KWallFunction{I,V} <: AbstractBoundary
     ID::I 
     value::V 
 end
+KWallFunction(name::Symbol) = begin
+    KWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2))
+end
 
 struct OmegaWallFunction{I,V} <: AbstractBoundary
     ID::I 

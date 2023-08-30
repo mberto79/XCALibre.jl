@@ -9,8 +9,8 @@ mesh_file = "unv_sample_meshes/flatplate_2D.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 
 
-velocity = [0.5, 0.0, 0.0]
-nu = 1e-3
+velocity = [1.0, 0.0, 0.0]
+nu = 1e-5
 Re = velocity[1]*0.1/nu
 
 model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
@@ -19,7 +19,7 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:wall, [0.0, 0.0, 0.0]),
-    Dirichlet(:top, [0.0, 0.0, 0.0])
+    Neumann(:top, 0.0)
 )
 
  @assign! model p (
@@ -30,8 +30,8 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 )
 
 schemes = (
-    U = set_schemes(),
-    p = set_schemes()
+    U = set_schemes(divergence=Upwind),
+    p = set_schemes(divergence=Upwind)
 )
 
 
@@ -66,24 +66,7 @@ Rx, Ry, Rp = isimple!(model, config) # 9.39k allocs
 
 write_vtk("results", mesh, ("U", model.U), ("p", model.p))
 
-plot(; xlims=(0,184))
+plot(; xlims=(0,325))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
 plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p")
-
-# # PROFILING CODE
-
-# using Profile, PProf
-
-# GC.gc()
-# initialise!(U, velocity)
-# initialise!(p, 0.0)
-
-# Profile.Allocs.clear()
-# Profile.Allocs.@profile sample_rate=1 begin Rx, Ry, Rp = isimple!(
-#     mesh, nu, U, p,
-#     # setup_U, setup_p, iterations, pref=0.0)
-#     setup_U, setup_p, iterations)
-# end
-
-# PProf.Allocs.pprof()
+plot!(1:length(Rp), Rp, yscale=:log10, label="p") |> display

@@ -1,5 +1,5 @@
 export pressure_force, viscous_force
-export stress_tensor
+export stress_tensor, wall_shear_stress
 
 
 pressure_force(patch::Symbol, p::ScalarField, rho) = begin
@@ -56,6 +56,41 @@ viscous_force(patch::Symbol, U::VectorField, rho, ν, νt) = begin
     Fv = rho.*[sumx, sumy, sumz]
     print("\n Viscous force: (", Fv[1], " ", Fv[2], " ", Fv[3], ")\n")
     return Fv
+end
+
+wall_shear_stress(patch::Symbol, model::RANS{Laminar,F1,F2,V,T,E,D}) where {F1,F2,V,T,E,D} = begin
+    (; mesh, U, nu) = model
+    (; boundaries, faces) = mesh
+    ID = boundary_index(boundaries, patch)
+    boundary = boundaries[ID]
+    (; facesID, cellsID) = boundary
+    @info "calculating viscous forces on patch: $patch at index $ID"
+    x = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
+    y = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
+    z = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
+    tauw = FaceVectorField(x,y,z, mesh)
+    Uw = zero(_get_float(mesh))
+    for i ∈ 1:length(U.BCs)
+        if ID == U.BCs[i].ID
+            Uw = U.BCs[i].value
+        end
+    end
+    surface_normal_gradient(tauw, facesID, cellsID, U, Uw)
+    pos = fill(SVector{3,Float64}(0,0,0), length(facesID))
+    for i ∈ eachindex(tauw)
+        fID = facesID[i]
+        cID = cellsID[i]
+        face = faces[fID]
+        area = face.area
+        # Anu = area*nu[cID]
+        Anu = nu[cID]
+        tauw.x[i] *= Anu # this may need using νtf? (wall funcs)
+        tauw.y[i] *= Anu
+        tauw.z[i] *= Anu
+        pos[i] = face.centre
+    end
+    
+    return tauw, pos
 end
 
 stress_tensor(U, ν, νt) = begin

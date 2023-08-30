@@ -9,9 +9,9 @@ mesh_file = "unv_sample_meshes/flatplate_2D.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 
 
-velocity = [1.0, 0.0, 0.0]
+velocity = [0.1, 0.0, 0.0]
 nu = 1e-5
-Re = velocity[1]*0.1/nu
+Re = velocity[1]*1/nu
 
 model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
@@ -65,6 +65,16 @@ initialise!(model.p, 0.0)
 Rx, Ry, Rp = isimple!(model, config) # 9.39k allocs
 
 write_vtk("results", mesh, ("U", model.U), ("p", model.p))
+
+tauw, pos = wall_shear_stress(:wall, model)
+
+tauMag = [norm(tauw[i]) for i ∈ eachindex(tauw)]
+x = [pos[i][1] for i ∈ eachindex(pos)]
+
+Rex = velocity[1].*x/nu[1]
+Cf = 0.664./sqrt.(Rex)
+plot(Rex, Cf, color=:red)
+scatter!(Rex,tauMag./(0.5*velocity[1]^2)) |> display
 
 plot(; xlims=(0,325))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

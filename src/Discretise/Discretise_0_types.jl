@@ -1,6 +1,6 @@
 export AbstractScheme, Constant, Linear, Upwind, Midpoint
 export AbstractBoundary, AbstractDirichlet, AbstractNeumann
-export Dirichlet, Neumann, KWallFunction, OmegaWallFunction 
+export Dirichlet, Neumann, KWallFunction, OmegaWallFunction, NutWallFunction
 export assign, @assign!
 export set_schemes
 
@@ -50,7 +50,7 @@ struct KWallFunction{I,V} <: AbstractBoundary
     value::V 
 end
 KWallFunction(name::Symbol) = begin
-    KWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2))
+    KWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8))
 end
 
 struct OmegaWallFunction{I,V} <: AbstractBoundary
@@ -58,7 +58,15 @@ struct OmegaWallFunction{I,V} <: AbstractBoundary
     value::V 
 end
 OmegaWallFunction(name::Symbol) = begin
-    OmegaWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2))
+    OmegaWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8))
+end
+
+struct NutWallFunction{I,V} <: AbstractBoundary 
+    ID::I 
+    value::V 
+end
+NutWallFunction(name::Symbol) = begin
+    NutWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8))
 end
 
 assign(vec::VectorField, args...) = begin

@@ -173,7 +173,7 @@ function turbulence!( # Sort out dispatch when possible
     # Solve k equation
 
     @. Pk.values = nut.values*Pk.values
-    correct_production!(Pk, k.BCs, model) # to implement
+    correct_production!(Pk, k.BCs, model)
 
     discretise!(k_eqn)
     apply_boundary_conditions!(k_eqn, k.BCs)
@@ -184,6 +184,8 @@ function turbulence!( # Sort out dispatch when possible
     bound!(k, eps())
 
     update_eddy_viscosity!(nut, k, omega)
+    # correct_production!(Pk, k.BCs, model)
+
     # correct_eddy_viscosity!(nut, nut.BCs, model) # to implement
     interpolate!(νtf, nut)
     correct_boundaries!(νtf, nut, nut.BCs)
@@ -208,14 +210,14 @@ destruction_flux!(Dxf::F, coeff, omega) where F<:ScalarField = begin
 end
 
 y_plus_laminar(B, kappa) = begin
-    # yL = 11; for i ∈ 1:10; yL = log(B*yL)/kappa; end
-    yL = 11.0; for i ∈ 1:10; yL = log(yL)/kappa + B; end
+    yL = 11.0; for i ∈ 1:10; yL = log(yL*B)/kappa; end
     yL
 end
 
 ω_vis(nu, y, beta1) = 6.0*nu/(beta1*y^2)
 
 ω_log(k, y, cmu, kappa) = sqrt(k)/(cmu^0.25*kappa*y)
+# ω_log(k, y, cmu, kappa) = sqrt(k)/(cmu*kappa*y)
 
 y_plus(k, nu, y, cmu) = cmu^0.25*y*sqrt(k)/nu
 
@@ -231,8 +233,10 @@ mag(vector) = sqrt(vector[1]^2 + vector[2]^2 + vector[3]^2)
 # nut_wall(nu, yP, kappa, E) = nu*(
 #     yP*kappa/log(max(E*yP, 1.0 + 1e-4)) - 1.0) # E = 9.8 E*yP, 1 + 1e-4)
 
-nut_wall(k, delta, yplus, kappa, cmu, B) = begin
-    cmu^0.25*sqrt(k)*delta/(log(yplus)/kappa + B)
+# nut_wall(k, delta, yplus, kappa, cmu, B) = begin
+nut_wall(nu, yplus, kappa, E) = begin
+    # cmu^0.25*sqrt(k)*delta/(log(yplus)/kappa + B)
+    max(nu*(yplus*kappa/log(E*yplus) - 1), zero(typeof(E)))
 end
 
 @generated constrain_equation!(eqn, fieldBCs, model) = begin
@@ -257,7 +261,7 @@ constraint!(eqn, BC, model) = begin
     ID = BC.ID
     nu = model.nu
     k = model.turbulence.k
-    (; kappa, beta1, cmu, B) = BC.value
+    (; kappa, beta1, cmu, B, E) = BC.value
     field = get_phi(eqn)
     mesh = field.mesh
     (; faces, cells, boundaries) = mesh
@@ -373,7 +377,7 @@ end
 
 set_production!(P, BC, model) = begin
     ID = BC.ID
-    (; kappa, beta1, cmu, B) = BC.value
+    (; kappa, beta1, cmu, B, E) = BC.value
     (; U, nu, mesh) = model
     (; k, nut) = model.turbulence
     (; faces, cells, boundaries) = mesh
@@ -386,39 +390,20 @@ set_production!(P, BC, model) = begin
         fID = facesID[i]
         face = faces[fID]
         cell = cells[cID]
+        nuc = nu[cID]
         (; delta, normal)= face
         uStar = cmu^0.25*sqrt(k[cID])
-        yplus = y_plus(k[cID], nu[cID], delta, cmu)
-        nutwc = nut_wall(k[cID], delta, yplus, kappa, cmu, B)
-        nutw = max(nutwc - nu[cID] , 0.0)
-        nut[cID] = max(nutw - nu[cID] , 0.0)
+        dUdy = uStar/(kappa*delta)
+        yplus = y_plus(k[cID], nuc, delta, cmu)
+        nutw = nut_wall(nuc, yplus, kappa, E)
+        nut[cID] = nutw
         mag_grad_U = mag(sngrad(U[cID], Uw, delta, normal))
-        P.values[cID] = (nu[cID] + nutw)*mag_grad_U*uStar/(kappa*delta)
-    end
-end
-
-bound!(field, bound) = begin
-    mesh = field.mesh
-    (; cells, faces) = mesh
-    for i ∈ eachindex(field)
-        sum_flux = 0.0
-        sum_area = 0
-        average = 0.0
-        
-        # Cell based average
-        cellsID = cells[i].neighbours
-        for cID ∈ cellsID
-            sum_flux += max(field[cID], eps()) # bounded sum
-            sum_area += 1
+        if yplus > ylam
+            # P.values[cID] = (nu[cID] + nutw)*mag_grad_U*dUdy
+            P.values[cID] = (nu[cID] + nutw)*mag_grad_U*dUdy
+        else
+            P.values[cID] = zero(_get_float(mesh))
         end
-        average = sum_flux/sum_area
-
-        field[i] = max(
-            max(
-                field[i],
-                average*signbit(field[i])
-            ),
-            bound
-        )
     end
 end
+

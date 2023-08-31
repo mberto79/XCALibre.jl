@@ -59,3 +59,29 @@ function magnitude2!(
         magS.values[i] = sum*scale_factor
     end
 end
+
+bound!(field, bound) = begin
+    mesh = field.mesh
+    (; cells, faces) = mesh
+    for i ∈ eachindex(field)
+        sum_flux = 0.0
+        sum_area = 0
+        average = 0.0
+        
+        # Cell based average
+        cellsID = cells[i].neighbours
+        for cID ∈ cellsID
+            sum_flux += max(field[cID], eps()) # bounded sum
+            sum_area += 1
+        end
+        average = sum_flux/sum_area
+
+        field[i] = max(
+            max(
+                field[i],
+                average*signbit(field[i])
+            ),
+            bound
+        )
+    end
+end

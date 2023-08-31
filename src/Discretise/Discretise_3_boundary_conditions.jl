@@ -34,7 +34,7 @@ end
 @inline (bc::OmegaWallFunction)(
     term::Operator{F,P,I,Laplacian{T}}, 
     A, b, cellID, cell, face, fID) where {F,P,I,T} = begin
-    nothing
+    nothing # should this be Dirichlet?
 end
 
 # DIVERGENCE TERM (NON-UNIFORM)
@@ -50,10 +50,16 @@ end
 @inline (bc::Neumann)(
     term::Operator{F,P,I,Divergence{Linear}}, 
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
-    phi = term.phi 
     ap = term.sign[1]*(term.flux[fID])
     A[cellID,cellID] += ap
     nothing
+end
+
+@inline (bc::KWallFunction)(
+    term::Operator{F,P,I,Divergence{Linear}}, # use upwind for all
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    ap = term.sign[1]*(term.flux[fID])
+    A[cellID,cellID] += ap
 end
 
 @inline (bc::Dirichlet)(
@@ -88,8 +94,8 @@ end
 end
 
 @inline (bc::KWallFunction)(
-    term::Operator{F,P,I,Divergence{T}}, # use upwind for all
-    A, b, cellID, cell, face, fID) where {F,P,I,T} = begin
+    term::Operator{F,P,I,Divergence{Upwind}},
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
     ap = term.sign[1]*(term.flux[fID])
     A[cellID,cellID] += max(ap, 0.0)
 end

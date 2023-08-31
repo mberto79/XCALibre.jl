@@ -81,12 +81,10 @@ wall_shear_stress(patch::Symbol, model::RANS{Laminar,F1,F2,V,T,E,D}) where {F1,F
         fID = facesID[i]
         cID = cellsID[i]
         face = faces[fID]
-        area = face.area
-        # Anu = area*nu[cID]
-        Anu = nu[cID]
-        tauw.x[i] *= Anu # this may need using νtf? (wall funcs)
-        tauw.y[i] *= Anu
-        tauw.z[i] *= Anu
+        nuc = nu[cID]
+        tauw.x[i] *= nuc # this may need using νtf? (wall funcs)
+        tauw.y[i] *= nuc
+        tauw.z[i] *= nuc
         pos[i] = face.centre
     end
     

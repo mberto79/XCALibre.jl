@@ -58,7 +58,9 @@ viscous_force(patch::Symbol, U::VectorField, rho, ν, νt) = begin
     return Fv
 end
 
-wall_shear_stress(patch::Symbol, model::RANS{Laminar,F1,F2,V,T,E,D}) where {F1,F2,V,T,E,D} = begin
+wall_shear_stress(patch::Symbol, model::RANS{M,F1,F2,V,T,E,D}) where {M,F1,F2,V,T,E,D} = begin
+    # Line below needs to change to do selection based on nut BC
+    M == Laminar ? nut = ConstantScalar(0.0) : nut = model.turbulence.nut
     (; mesh, U, nu) = model
     (; boundaries, faces) = mesh
     ID = boundary_index(boundaries, patch)
@@ -81,10 +83,10 @@ wall_shear_stress(patch::Symbol, model::RANS{Laminar,F1,F2,V,T,E,D}) where {F1,F
         fID = facesID[i]
         cID = cellsID[i]
         face = faces[fID]
-        nuc = nu[cID]
-        tauw.x[i] *= nuc # this may need using νtf? (wall funcs)
-        tauw.y[i] *= nuc
-        tauw.z[i] *= nuc
+        nueff = nu[cID]  # + nut[cID]
+        tauw.x[i] *= nueff # this may need using νtf? (wall funcs)
+        tauw.y[i] *= nueff
+        tauw.z[i] *= nueff
         pos[i] = face.centre
     end
     

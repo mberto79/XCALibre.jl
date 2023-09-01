@@ -46,7 +46,7 @@ model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
 @assign! model turbulence nut (
     Dirichlet(:inlet, k_inlet/ω_inlet),
     Neumann(:outlet, 0.0),
-    Neumann(:wall, 0.0), 
+    NutWallFunction(:wall), 
     Neumann(:top, 0.0)
 )
 

@@ -84,18 +84,18 @@ solvers = (
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.8,
     ),
     omega = set_solver(
         model.turbulence.omega;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.8,
     )
 )
 
-runtime = set_runtime(iterations=2000, write_interval=0)
+runtime = set_runtime(iterations=1000, write_interval=0)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

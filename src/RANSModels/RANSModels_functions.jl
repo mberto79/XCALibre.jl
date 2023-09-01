@@ -20,9 +20,7 @@ begin
         sum = 0.0
         for j ∈ 1:3
             for k ∈ 1:3
-                # sum +=   S[i][j,k]*S[i][k,j]
-                # sum +=   t1[i][j,k]*t2[i][j,k]
-                # sum +=   t1[j,k]*t2[i][j,k]
+                # sum +=   t1[j,k]*t2[i][k,j]
                 sum +=   t1[j,k]*t2[i][j,k]
             end
         end

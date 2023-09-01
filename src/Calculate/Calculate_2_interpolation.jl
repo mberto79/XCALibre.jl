@@ -53,6 +53,16 @@ function adjust_boundary!(
 end
 
 function adjust_boundary!(
+    BC::NutWallFunction, phif::FaceScalarField, phi, boundary, faces)
+    (;facesID, cellsID) = boundary
+    # @inbounds for fi ∈ eachindex(facesID)
+    #     fID = facesID[fi]
+    #     cID = cellsID[fi]
+    #     phif.values[fID] = phi.values[cID] # Using Neumann condition
+    # end
+end
+
+function adjust_boundary!(
     BC::OmegaWallFunction, phif::FaceScalarField, phi, boundary, faces)
     (;facesID, cellsID) = boundary
     @inbounds for fi ∈ eachindex(facesID)

@@ -83,7 +83,7 @@ wall_shear_stress(patch::Symbol, model::RANS{M,F1,F2,V,T,E,D}) where {M,F1,F2,V,
         fID = facesID[i]
         cID = cellsID[i]
         face = faces[fID]
-        nueff = nu[cID]  # + nut[cID]
+        nueff = nu[cID]*0  + nut[cID]
         tauw.x[i] *= nueff # this may need using νtf? (wall funcs)
         tauw.y[i] *= nueff
         tauw.z[i] *= nueff

@@ -64,7 +64,7 @@ initialise!(model.p, 0.0)
 
 Rx, Ry, Rp = isimple!(model, config) # 9.39k allocs
 
-write_vtk("results", mesh, ("U", model.U), ("p", model.p))
+model2vtk(model, "results")
 
 plot(; xlims=(0,184))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

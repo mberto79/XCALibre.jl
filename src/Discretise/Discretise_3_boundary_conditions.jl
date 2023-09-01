@@ -65,7 +65,7 @@ end
 
 @inline (bc::OmegaWallFunction)(
     term::Operator{F,P,I,Divergence{Linear}}, # might need to change this!!!!
-    A, b, cellID, cell, face, fID) where {F,P,I,T}  = begin
+    A, b, cellID, cell, face, fID) where {F,P,I}  = begin
     ap = term.sign[1]*(term.flux[fID])
     A[cellID,cellID] += ap
     nothing
@@ -112,7 +112,7 @@ end
 
 @inline (bc::OmegaWallFunction)(
     term::Operator{F,P,I,Divergence{Upwind}}, # might need to change this!!!!
-    A, b, cellID, cell, face, fID) where {F,P,I,T}  = begin
+    A, b, cellID, cell, face, fID) where {F,P,I}  = begin
     ap = term.sign[1]*(term.flux[fID])
     A[cellID,cellID] += max(ap, 0.0)
     nothing

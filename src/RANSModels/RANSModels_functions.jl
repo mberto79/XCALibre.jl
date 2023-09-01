@@ -16,12 +16,13 @@ double_inner_product!(
 begin
     sum = 0.0
     for i ∈ eachindex(s)
-        t1 = t0[i] .- (1/3)*t0[i]*I
+        # t1 = t0[i] .- (1/3)*t0[i]*I
+        t1 = 2.0.*t0[i] .- (2/3)*t0[i]*I
         sum = 0.0
         for j ∈ 1:3
             for k ∈ 1:3
-                # sum +=   t1[j,k]*t2[i][k,j]
-                sum +=   t1[j,k]*t2[i][j,k]
+                sum +=   t1[j,k]*t2[i][k,j]
+                # sum +=   t1[j,k]*t2[i][j,k]
             end
         end
         s[i] = sum

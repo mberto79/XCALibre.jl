@@ -294,7 +294,7 @@ constraint!(eqn, BC, model) = begin
         # Line below is weird but worked
         # b[cID] = A[cID,cID]*ωc
 
-        # Classing approach
+        # Classic approach
         b[cID] += A[cID,cID]*ωc
         A[cID,cID] += A[cID,cID]
     end
@@ -388,12 +388,12 @@ set_production!(P, BC, model) = begin
         dUdy = uStar/(kappa*delta)
         yplus = y_plus(k[cID], nuc, delta, cmu)
         nutw = nut_wall(nuc, yplus, kappa, E)
-        nut[cID] = nutw
+        # nut[cID] = nutw
         mag_grad_U = mag(sngrad(U[cID], Uw, delta, normal))
         if yplus > ylam
             P.values[cID] = (nu[cID] + nutw)*mag_grad_U*dUdy
-        else
-            P.values[cID] = zero(_get_float(mesh))
+        # else
+        #     # P.values[cID] = zero(_get_float(mesh))
         end
     end
 end
@@ -420,7 +420,7 @@ correct_nut_wall!(νtf, BC, model) = begin
     ID = BC.ID
     (; kappa, beta1, cmu, B, E) = BC.value
     (; U, nu, mesh) = model
-    (; k, nut) = model.turbulence
+    (; k, omega, nut) = model.turbulence
     (; faces, cells, boundaries) = mesh
     boundary = boundaries[ID]
     (; cellsID, facesID) = boundary
@@ -435,9 +435,12 @@ correct_nut_wall!(νtf, BC, model) = begin
         yplus = y_plus(k[cID], nuf, delta, cmu)
         nutw = nut_wall(nuf, yplus, kappa, E)
         if yplus > ylam
+            # nut[cID] = nutw
             νtf.values[fID] = nutw
         else
-            νtf.values[fID] = zero(_get_float(mesh))
+            # νtf.values[fID] = zero(_get_float(mesh))
+            # nut[cID] = k[cID]/omega[cID]
+            # νtf.values[fID] = nut[cID]
         end
     end
 end

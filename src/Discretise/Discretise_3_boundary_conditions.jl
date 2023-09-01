@@ -135,11 +135,17 @@ end
 @inline (bc::KWallFunction)(
     term::Operator{F,P,I,Si}, 
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    # phi = term.phi[cellID] 
+    # flux = term.sign*term.flux[cellID]
+    # b[cellID] += flux*phi*cell.volume 
     nothing
 end
 
 @inline (bc::OmegaWallFunction)(
     term::Operator{F,P,I,Si}, 
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    phi = term.phi[cellID] 
+    flux = term.sign*term.flux[cellID]
+    b[cellID] += flux*phi*cell.volume 
     nothing
 end

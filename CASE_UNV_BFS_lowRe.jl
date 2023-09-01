@@ -120,20 +120,3 @@ plot(; xlims=(0,494))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
 plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
 plot!(1:length(Rp), Rp, yscale=:log10, label="p")
-
-# # PROFILING CODE
-
-# using Profile, PProf
-
-# GC.gc()
-# initialise!(U, velocity)
-# initialise!(p, 0.0)
-
-# Profile.Allocs.clear()
-# Profile.Allocs.@profile sample_rate=1 begin Rx, Ry, Rp = isimple!(
-#     mesh, nu, U, p,
-#     # setup_U, setup_p, iterations, pref=0.0)
-#     setup_U, setup_p, iterations)
-# end
-
-# PProf.Allocs.pprof()

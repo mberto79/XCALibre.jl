@@ -135,28 +135,17 @@ function turbulence!( # Sort out dispatch when possible
     # end
 
     magnitude2!(Pk, S, scale_factor=2.0) # multiplied by 2 (def of Sij)
-    # constrain_boundary!(omega, omega.BCs, model) # active with WFs only
 
     @. Pω.values = coeffs.α1*Pk.values
     @. Dωf.values = coeffs.β1*omega.values
-
-    # interpolate!(kf, k)
-    # correct_boundaries!(kf, k, k.BCs)
-    # interpolate!(ωf, omega)
-    # correct_boundaries!(ωf, omega, omega.BCs)
-    # diffusion_flux!(nueffω, nu, kf, ωf, coeffs.σω)
     diffusion_flux!(nueffω, nu, νtf, coeffs.σω)
 
     # update k fluxes
 
     @. Dkf.values = coeffs.β⁺*omega.values
-
-    # interpolate!(kf, k)
-    # correct_boundaries!(kf, k, k.BCs)
-    # interpolate!(ωf, omega)
-    # correct_boundaries!(ωf, omega, omega.BCs)
-    # diffusion_flux!(nueffk, nu, kf, ωf, coeffs.σk)
     diffusion_flux!(nueffk, nu, νtf, coeffs.σk)
+    @. Pk.values = nut.values*Pk.values
+    correct_production!(Pk, k.BCs, model)
 
     # Solve omega equation
 
@@ -172,10 +161,7 @@ function turbulence!( # Sort out dispatch when possible
     bound!(omega, eps())
 
     # Solve k equation
-
-    @. Pk.values = nut.values*Pk.values
-    correct_production!(Pk, k.BCs, model)
-
+    
     discretise!(k_eqn)
     apply_boundary_conditions!(k_eqn, k.BCs)
     prev .= k.values
@@ -188,7 +174,7 @@ function turbulence!( # Sort out dispatch when possible
     
     interpolate!(νtf, nut)
     correct_boundaries!(νtf, nut, nut.BCs)
-    correct_eddy_viscosity!(νtf, nut.BCs, model) # to implement
+    correct_eddy_viscosity!(νtf, nut.BCs, model)
 end
 
 update_eddy_viscosity!(nut::F, k, omega) where F<:AbstractScalarField = begin
@@ -196,12 +182,6 @@ update_eddy_viscosity!(nut::F, k, omega) where F<:AbstractScalarField = begin
         nut[i] = k[i]/omega[i]
     end
 end
-
-# diffusion_flux!(nueff, nu, kf::F, ωf, σ) where F<:FaceScalarField = begin
-#     @inbounds for i ∈ eachindex(nueff)
-#         nueff[i] = nu[i] + σ*kf[i]/ωf[i]
-#     end
-# end
 
 diffusion_flux!(nueff, nu, νtf::F, σ) where F<:FaceScalarField = begin
     @inbounds for i ∈ eachindex(nueff)
@@ -228,7 +208,7 @@ y_plus(k, nu, y, cmu) = cmu^0.25*y*sqrt(k)/nu
 
 sngrad(Ui, Uw, delta, normal) = begin
     Udiff = (Ui - Uw)
-    Up = Udiff - (Udiff⋅normal)*normal # oarallel velocity difference
+    Up = Udiff - (Udiff⋅normal)*normal # parallel velocity difference
     grad = Up/delta
     return grad
 end
@@ -270,15 +250,9 @@ constraint!(eqn, BC, model) = begin
     (; cellsID, facesID) = boundary
     ylam = y_plus_laminar(E, kappa)
     ωc = zero(_get_float(mesh))
-    # for fi ∈ eachindex(facesID)
-    #     fID = facesID[fi]
-    #     cID 
     for i ∈ eachindex(cellsID)
-    # for i ∈ 1:length(cellsID)-1 
         cID = cellsID[i]
-        # nID = cellsID[i+1]
         fID = facesID[i]
-        # nfID = facesID[i+1]
         face = faces[fID]
         cell = cells[cID]
         y = face.delta
@@ -305,7 +279,7 @@ end
     func_calls = Expr[]
     for i ∈ eachindex(BCs)
         BC = BCs[i]
-        if BC <: OmegaWallFunction  #|| BC <: Dirichlet
+        if BC <: OmegaWallFunction
             call = quote
                 set_cell_value!(field, fieldBCs[$i], model)
             end
@@ -327,7 +301,7 @@ set_cell_value!(field, BC, model) = begin
     (; faces, cells, boundaries) = mesh
     boundary = boundaries[ID]
     (; cellsID, facesID) = boundary
-    ylam = y_plus_laminar(E, kappa) # must add B to KomegaWF type
+    ylam = y_plus_laminar(E, kappa)
     ωc = zero(_get_float(mesh))
     for i ∈ eachindex(cellsID)
         cID = cellsID[i]
@@ -375,7 +349,7 @@ set_production!(P, BC, model) = begin
     (; faces, cells, boundaries) = mesh
     boundary = boundaries[ID]
     (; cellsID, facesID) = boundary
-    ylam = y_plus_laminar(E, kappa) # must add B to KomegaWF type
+    ylam = y_plus_laminar(E, kappa)
     Uw = SVector{3,_get_float(mesh)}(0.0,0.0,0.0)
     for i ∈ eachindex(cellsID)
         cID = cellsID[i]
@@ -388,12 +362,9 @@ set_production!(P, BC, model) = begin
         dUdy = uStar/(kappa*delta)
         yplus = y_plus(k[cID], nuc, delta, cmu)
         nutw = nut_wall(nuc, yplus, kappa, E)
-        # nut[cID] = nutw
         mag_grad_U = mag(sngrad(U[cID], Uw, delta, normal))
         if yplus > ylam
             P.values[cID] = (nu[cID] + nutw)*mag_grad_U*dUdy
-        # else
-        #     # P.values[cID] = zero(_get_float(mesh))
         end
     end
 end
@@ -424,7 +395,7 @@ correct_nut_wall!(νtf, BC, model) = begin
     (; faces, cells, boundaries) = mesh
     boundary = boundaries[ID]
     (; cellsID, facesID) = boundary
-    ylam = y_plus_laminar(E, kappa) # must add B to KomegaWF type
+    ylam = y_plus_laminar(E, kappa)
     for i ∈ eachindex(cellsID)
         cID = cellsID[i]
         fID = facesID[i]
@@ -435,12 +406,7 @@ correct_nut_wall!(νtf, BC, model) = begin
         yplus = y_plus(k[cID], nuf, delta, cmu)
         nutw = nut_wall(nuf, yplus, kappa, E)
         if yplus > ylam
-            # nut[cID] = nutw
             νtf.values[fID] = nutw
-        else
-            # νtf.values[fID] = zero(_get_float(mesh))
-            # nut[cID] = k[cID]/omega[cID]
-            # νtf.values[fID] = nut[cID]
         end
     end
 end

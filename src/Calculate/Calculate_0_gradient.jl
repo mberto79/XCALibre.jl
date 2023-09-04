@@ -134,35 +134,23 @@ end
 
 # Linear gradient calculation
 
-function grad!(grad::Grad{Linear,F,R,I,M}, phif, phi, BCs; source=false) where {F,R<:VectorField,I,M}
+function grad!(grad::Grad{Linear,F,R,I,M}, phif, phi, BCs) where {F,R<:VectorField,I,M}
     interpolate!(phif, phi)
     correct_boundaries!(phif, phi, BCs)
     # green_gauss!(grad, phif; source)
-    green_gauss!(grad.result.x, grad.result.y, grad.result.z, phif; source)
+    green_gauss!(grad.result.x, grad.result.y, grad.result.z, phif)
     # for i ∈ 1:2
     #     correct_interpolation!(grad, phif, phi)
     #     green_gauss!(grad, phif; source)
     # end
 end
 
-function source!(grad::Grad{S,F,R,I,M}, phif, phi, BCs; source=true) where {S,F,R<:VectorField,I,M}
-    grad!(grad, phif, phi, BCs; source=source)
-end
-
-function grad!(grad::Grad{Linear,F,R,I,M}, psif, psi, BCs; source=false) where {F,R<:TensorField,I,M}
+function grad!(grad::Grad{Linear,F,R,I,M}, psif, psi, BCs) where {F,R<:TensorField,I,M}
 
     interpolate!(psif, psi)
     correct_boundaries!(psif, psi, BCs)
-
-    green_gauss!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x; 
-    source)
-
-
-    green_gauss!(grad.result.xy, grad.result.yy, grad.result.zy, psif.y; 
-    source)
-
-    
-    green_gauss!(grad.result.xz, grad.result.yz, grad.result.zz, psif.z; 
-    source)
+    green_gauss!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x)
+    green_gauss!(grad.result.xy, grad.result.yy, grad.result.zy, psif.y)
+    green_gauss!(grad.result.xz, grad.result.yz, grad.result.zz, psif.z)
  
 end

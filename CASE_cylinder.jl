@@ -1,7 +1,5 @@
 using Plots
-
 using FVM_1D
-
 using Krylov
 
 
@@ -52,11 +50,11 @@ solvers = (
 )
 
 schemes = (
-    U = set_schemes(),
-    p = set_schemes()
+    U = set_schemes(gradient=Midpoint),
+    p = set_schemes(gradient=Midpoint)
 )
 
-runtime = set_runtime(iterations=500, write_interval=-1)
+runtime = set_runtime(iterations=500, write_interval=200)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

@@ -1,9 +1,6 @@
 using Plots
-
 using FVM_1D
-
 using Krylov
-
 
 # quad and trig 40 and 100
 mesh_file = "unv_sample_meshes/trig100.unv"
@@ -31,8 +28,8 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 )
 
 schemes = (
-    U = set_schemes(),
-    p = set_schemes()
+    U = set_schemes(gradient=Midpoint),
+    p = set_schemes(gradient=Midpoint)
 )
 
 
@@ -53,7 +50,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=2000, write_interval=-1)
+runtime = set_runtime(iterations=2000, write_interval=2000)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

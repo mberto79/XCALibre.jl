@@ -8,7 +8,7 @@ function isimple!(model, config; resume=true, pref=nothing)
 
     @info "Preallocating fields..."
     
-    ∇p = Grad{schemes.U.gradient}(p)
+    ∇p = Grad{schemes.p.gradient}(p)
     mdotf = FaceScalarField(mesh)
     # nuf = ConstantScalar(nu) # Implement constant field!
     rDf = FaceScalarField(mesh)
@@ -71,7 +71,7 @@ function SIMPLE_loop(
     (;mesh, U, p, nu) = model
     # ux_model, uy_model = ux_eqn.model, uy_eqn.model
     p_model = p_eqn.model
-    (; solvers, runtime) = config
+    (; solvers, schemes, runtime) = config
     (; iterations, write_interval) = runtime
     
     mdotf = get_flux(ux_eqn, 1)
@@ -82,7 +82,7 @@ function SIMPLE_loop(
     @info "Allocating working memory..."
 
     # Define aux fields 
-    gradU = Grad{Linear}(U)
+    gradU = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
     S = StrainRate(gradU, gradUT)
     S2 = ScalarField(mesh)
@@ -182,9 +182,9 @@ function SIMPLE_loop(
         correct_boundaries!(Uf, U, U.BCs)
         flux!(mdotf, Uf)
 
-        grad!(gradU, Uf, U, U.BCs)
-
+        
         if isturbulent(model)
+            grad!(gradU, Uf, U, U.BCs)
             turbulence!(turbulence, model, S, S2, prev) 
             update_nueff!(nueff, nu, turbulence)
         end

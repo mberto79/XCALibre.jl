@@ -1,4 +1,4 @@
-export AbstractScheme, Constant, Linear, Upwind, Midpoint
+export AbstractScheme, Constant, Linear, Upwind, Orthogonal, Midpoint
 export AbstractBoundary, AbstractDirichlet, AbstractNeumann
 export Dirichlet, Neumann, KWallFunction, OmegaWallFunction, NutWallFunction
 export assign, @assign!
@@ -10,6 +10,7 @@ abstract type AbstractScheme end
 struct Constant <: AbstractScheme end
 struct Linear <: AbstractScheme end
 struct Upwind <: AbstractScheme end
+struct Orthogonal <: AbstractScheme end
 struct Midpoint <: AbstractScheme end
 
 
@@ -142,7 +143,7 @@ end
 set_schemes(; 
     divergence=Linear, 
     laplacian=Linear, 
-    gradient=Linear) = begin
+    gradient=Orthogonal) = begin
     (
         divergence=divergence,
         laplacian=laplacian,

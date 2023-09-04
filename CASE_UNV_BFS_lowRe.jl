@@ -57,10 +57,10 @@ model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
 )
 
 schemes = (
-    U = set_schemes(),
-    p = set_schemes(),
-    k = set_schemes(),
-    omega = set_schemes()
+    U = set_schemes(gradient=Midpoint),
+    p = set_schemes(gradient=Midpoint),
+    k = set_schemes(gradient=Midpoint),
+    omega = set_schemes(gradient=Midpoint)
 )
 
 solvers = (

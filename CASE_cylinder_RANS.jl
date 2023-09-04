@@ -1,7 +1,5 @@
 using Plots
-
 using FVM_1D
-
 using Krylov
 
 
@@ -66,10 +64,10 @@ model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind),
-    p = set_schemes(),
-    k = set_schemes(divergence=Upwind),
-    omega = set_schemes(divergence=Upwind)
+    U = set_schemes(divergence=Upwind, gradient=Midpoint),
+    p = set_schemes(gradient=Midpoint),
+    k = set_schemes(divergence=Upwind, gradient=Midpoint),
+    omega = set_schemes(divergence=Upwind, gradient=Midpoint)
 )
 
 solvers = (
@@ -103,7 +101,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=-1)
+runtime = set_runtime(iterations=1000, write_interval=100)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

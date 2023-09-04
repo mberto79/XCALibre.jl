@@ -89,7 +89,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=0)
+runtime = set_runtime(iterations=1000, write_interval=-1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -103,15 +103,6 @@ initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
 Rx, Ry, Rp = isimple!(model, config) # 9.39k allocs
-
-write_vtk(
-    "results", mesh, 
-    ("U", model.U), 
-    ("p", model.p),
-    ("k", model.turbulence.k),
-    ("omega", model.turbulence.omega),
-    ("nut", model.turbulence.nut)
-    )
 
 using DelimitedFiles
 using LinearAlgebra

@@ -103,7 +103,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=0)
+runtime = set_runtime(iterations=1000, write_interval=-1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -121,15 +121,6 @@ Rx, Ry, Rp = isimple!(model, config) #, pref=0.0)
 Reff = stress_tensor(model.U, nu, model.turbulence.nut)
 Fp = pressure_force(:cylinder, model.p, 1.25)
 Fv = viscous_force(:cylinder, model.U, 1.25, nu, model.turbulence.nut)
-
-write_vtk(
-    "results", mesh, 
-    ("U", model.U), 
-    ("p", model.p),
-    ("k", model.turbulence.k),
-    ("omega", model.turbulence.omega),
-    ("nut", model.turbulence.nut)
-    )
 
 plot(; xlims=(0,runtime.iterations), ylims=(1e-10,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

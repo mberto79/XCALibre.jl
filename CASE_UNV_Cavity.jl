@@ -13,57 +13,58 @@ velocity = [0.5, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
 Re = 1*velocity[1]/nu
-UBCs = ( 
+
+model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
+
+@assign! model U (
     Dirichlet(:inlet, noSlip),
     Dirichlet(:outlet, noSlip),
     Dirichlet(:bottom, noSlip),
     Dirichlet(:top, velocity)
 )
 
-uxBCs = (
-    Dirichlet(:inlet, noSlip[1]),
-    Dirichlet(:outlet, noSlip[1]),
-    Dirichlet(:bottom, noSlip[1]),
-    Dirichlet(:top, velocity[1])
-)
-
-uyBCs = (
-    Dirichlet(:inlet, noSlip[2]),
-    Dirichlet(:outlet, noSlip[2]),
-    Dirichlet(:bottom, noSlip[2]),
-    Dirichlet(:top, velocity[2])
-)
-
-pBCs = (
+@assign! model p (
     Neumann(:inlet, 0.0),
     Neumann(:outlet, 0.0),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0)
 )
 
-setup_U = SolverSetup(
-    solver      = BicgstabSolver,
-    relax       = 0.8,
-    itmax       = 100,
-    rtol        = 1e-1
+schemes = (
+    U = set_schemes(),
+    p = set_schemes()
 )
 
-setup_p = SolverSetup(
-    solver      = GmresSolver, #CgSolver, #GmresSolver, #BicgstabSolver,
-    relax       = 0.2,
-    itmax       = 100,
-    rtol        = 1e-2
+
+solvers = (
+    U = set_solver(
+        model.U;
+        solver      = GmresSolver, # BicgstabSolver, GmresSolver
+        preconditioner = DILU(),
+        convergence = 1e-7,
+        relax       = 0.8,
+    ),
+    p = set_solver(
+        model.p;
+        solver      = GmresSolver, # BicgstabSolver, GmresSolver
+        preconditioner = LDL(),
+        convergence = 1e-7,
+        relax       = 0.2,
+    )
 )
+
+runtime = set_runtime(iterations=2000, write_interval=-1)
+
+config = Configuration(
+    solvers=solvers, schemes=schemes, runtime=runtime)
 
 GC.gc()
 
-p = ScalarField(mesh)
-U = VectorField(mesh)
+initialise!(model.U, [0, 0, 0])
+initialise!(model.p, 0.0)
 
-iterations = 3000
-Rx, Ry, Rp = isimple!(
-    mesh, velocity, nu, U, p, 
-    uxBCs, uyBCs, pBCs, UBCs,
-    setup_U, setup_p, iterations, pref=0.0)
+Rx, Ry, Rp = isimple!(model, config; pref=0.0) # 9.39k allocs
 
-write_vtk("results", mesh, ("U", U), ("p", p))
+plot(1:runtime.iterations, Rx, yscale=:log10)
+plot!(1:runtime.iterations, Ry, yscale=:log10)
+plot!(1:runtime.iterations, Rp, yscale=:log10)

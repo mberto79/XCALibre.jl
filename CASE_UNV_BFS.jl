@@ -52,7 +52,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=0)
+runtime = set_runtime(iterations=1000, write_interval=-1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -63,8 +63,6 @@ initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
 Rx, Ry, Rp = isimple!(model, config) # 9.39k allocs
-
-model2vtk(model, "results")
 
 plot(; xlims=(0,184))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

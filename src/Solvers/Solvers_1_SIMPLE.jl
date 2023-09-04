@@ -59,13 +59,13 @@ function isimple!(model, config; resume=true, pref=nothing)
     end
 
     R_ux, R_uy, R_p  = SIMPLE_loop(
-    model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config ; resume=true, pref=nothing)
+    model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config ; resume=resume, pref=pref)
 
     return R_ux, R_uy, R_p     
 end # end function
 
 function SIMPLE_loop(
-    model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config ; resume=true, pref=nothing)
+    model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config ; resume, pref)
     
     # Extract model variables and configuration
     (;mesh, U, p, nu) = model
@@ -206,6 +206,9 @@ function SIMPLE_loop(
                 \n\n\n\n\n
                 Simulation converged! $iteration iterations in
                 """)
+                if !signbit(write_interval)
+                    model2vtk(model, @sprintf "iteration_%.6d" iteration)
+                end
             break
         end
 
@@ -217,6 +220,10 @@ function SIMPLE_loop(
                 (:p, R_p[iteration]),
                 ]
             )
+
+        if iteration%write_interval + signbit(write_interval) == 0
+            model2vtk(model, @sprintf "iteration_%.6d" iteration)
+        end
 
     end # end for loop
     return R_ux, R_uy, R_p 

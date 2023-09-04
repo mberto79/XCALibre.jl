@@ -56,7 +56,7 @@ schemes = (
     p = set_schemes()
 )
 
-runtime = set_runtime(iterations=500, write_interval=0)
+runtime = set_runtime(iterations=500, write_interval=-1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -67,8 +67,6 @@ initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
 Rx, Ry, Rp = isimple!(model, config) #, pref=0.0)
-
-write_vtk("results", mesh, ("U", model.U), ("p", model.p))
 
 plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

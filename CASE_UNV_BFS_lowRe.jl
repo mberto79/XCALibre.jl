@@ -94,7 +94,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=0)
+runtime = set_runtime(iterations=1000, write_interval=100)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -108,8 +108,6 @@ initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
 Rx, Ry, Rp = isimple!(model, config) # 36.90k allocs
-
-model2vtk(model, "results")
 
 Reff = stress_tensor(model.U, nu, model.turbulence.nut)
 Fp = pressure_force(:wall, model.p, 1.25)

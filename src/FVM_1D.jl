@@ -9,9 +9,9 @@ include("Solve/Solve.jl")
 include("Calculate/Calculate.jl")
 include("RANSModels/RANSModels.jl")
 include("Simulate/Simulate.jl")
+include("VTK/VTK.jl")
 include("Solvers/Solvers.jl")
 include("Postprocess/Postprocess.jl")
-include("VTK/VTK.jl")
 include("UNV/UNV.jl")
 
 using Reexport

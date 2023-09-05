@@ -114,7 +114,7 @@ initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
-Rx, Ry, Rp = isimple!(model, config) #, pref=0.0)
+Rx, Ry, Rp = simple!(model, config) #, pref=0.0)
 
 Reff = stress_tensor(model.U, nu, model.turbulence.nut)
 Fp = pressure_force(:cylinder, model.p, 1.25)

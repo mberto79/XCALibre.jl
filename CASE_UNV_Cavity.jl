@@ -60,7 +60,7 @@ GC.gc()
 initialise!(model.U, [0, 0, 0])
 initialise!(model.p, 0.0)
 
-Rx, Ry, Rp = isimple!(model, config; pref=0.0) # 9.39k allocs
+Rx, Ry, Rp = simple!(model, config; pref=0.0) # 9.39k allocs
 
 plot(1:runtime.iterations, Rx, yscale=:log10)
 plot!(1:runtime.iterations, Ry, yscale=:log10)

@@ -62,9 +62,7 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-Rx, Ry, Rp = isimple!(model, config) # 9.39k allocs
-
-write_vtk("results", mesh, ("U", model.U), ("p", model.p))
+Rx, Ry, Rp = simple!(model, config) # 9.39k allocs
 
 using DelimitedFiles
 using LinearAlgebra

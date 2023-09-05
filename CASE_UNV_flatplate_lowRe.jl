@@ -108,7 +108,7 @@ initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
-Rx, Ry, Rp = isimple!(model, config) # 9.39k allocs
+Rx, Ry, Rp = simple!(model, config) # 9.39k allocs
 
 using DelimitedFiles
 using LinearAlgebra

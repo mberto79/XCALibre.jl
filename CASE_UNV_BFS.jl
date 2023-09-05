@@ -62,7 +62,7 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-Rx, Ry, Rp = isimple!(model, config) # 9.39k allocs
+Rx, Ry, Rp = simple!(model, config) # 9.39k allocs
 
 plot(; xlims=(0,184))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

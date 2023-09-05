@@ -1,6 +1,6 @@
-export simple!
+export piso!
 
-function simple!(model, config; resume=true, pref=nothing) 
+function piso!(model, config; resume=true, pref=nothing) 
 
     @info "Extracting configuration and input fields..."
     (; U, p, nu, mesh) = model
@@ -58,13 +58,13 @@ function simple!(model, config; resume=true, pref=nothing)
         turbulence = nothing
     end
 
-    R_ux, R_uy, R_p  = SIMPLE_loop(
+    R_ux, R_uy, R_p  = PISO_loop(
     model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config ; resume=resume, pref=pref)
 
     return R_ux, R_uy, R_p     
 end # end function
 
-function SIMPLE_loop(
+function PISO_loop(
     model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config ; resume, pref)
     
     # Extract model variables and configuration

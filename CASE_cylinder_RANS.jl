@@ -13,7 +13,7 @@ Umag = 5
 velocity = [Umag, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
-νR = 2
+νR = 5
 Tu = 0.01
 k_inlet = 3/2*(Tu*Umag)^2
 ω_inlet = k_inlet/(νR*nu)
@@ -76,7 +76,7 @@ solvers = (
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.6,
     ),
     p = set_solver(
         model.p;
@@ -90,18 +90,18 @@ solvers = (
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.9,
+        relax       = 0.8,
     ),
     omega = set_solver(
         model.turbulence.omega;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.9,
+        relax       = 0.8,
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=100)
+runtime = set_runtime(iterations=2000, write_interval=100)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

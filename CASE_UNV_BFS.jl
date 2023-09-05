@@ -50,7 +50,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=-1)
+runtime = set_runtime(iterations=1000, write_interval=1000)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -61,6 +61,7 @@ initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
 Rx, Ry, Rp = simple!(model, config) # 9.39k allocs
+Rx, Ry, Rp = piso!(model, config)
 
 plot(; xlims=(0,184))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

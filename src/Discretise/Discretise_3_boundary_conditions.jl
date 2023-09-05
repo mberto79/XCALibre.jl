@@ -1,10 +1,10 @@
 export dirichlet, neumann
 
 # TRANSIENT TERM 
-@inline (bc::AbstractBoundary)(
-    term::Operator{F,P,I,Time{Steady}}, 
+@inline (bc::AbstractBoundary)( # Used for all schemes (using "T")
+    term::Operator{F,P,I,Time{T}}, 
     A, b, cellID, cell, face, fID
-    ) where { F,P,I} = begin
+    ) where {F,P,I,T} = begin
     nothing
 end
 

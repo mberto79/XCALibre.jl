@@ -1,6 +1,6 @@
 export AbstractOperator, AbstractSource   
 export Operator, Source, Src
-export Laplacian, Divergence, Si
+export Time, Laplacian, Divergence, Si
 export Model, Equation, ModelEquation
 
 # ABSTRACT TYPES 
@@ -21,11 +21,20 @@ end
 
 # operators
 
+struct Time{T} end
 struct Laplacian{T}  end
 struct Divergence{T} end
 struct Si end
 
 # constructors
+
+Time{T}(flux, phi) where T = Operator(
+    flux, phi, 1, Time{T}()
+    )
+
+Time{T}(phi) where T = Operator(
+    ConstantScalar(one(_get_int(phi.mesh))), phi, 1, Time{T}()
+    )
 
 Laplacian{T}(flux, phi) where T = Operator(
     flux, phi, 1, Laplacian{T}()

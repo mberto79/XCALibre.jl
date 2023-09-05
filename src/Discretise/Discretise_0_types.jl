@@ -1,6 +1,10 @@
-export AbstractScheme, Constant, Linear, Upwind, Orthogonal, Midpoint
-export AbstractBoundary, AbstractDirichlet, AbstractNeumann
-export Dirichlet, Neumann, KWallFunction, OmegaWallFunction, NutWallFunction
+export AbstractScheme, AbstractBoundary
+export AbstractDirichlet, AbstractNeumann
+export Dirichlet, Neumann
+export KWallFunction, OmegaWallFunction, NutWallFunction
+export Constant, Linear, Upwind
+export Steady, Euler, CrankNicolson
+export Orthogonal, Midpoint
 export assign, @assign!
 export set_schemes
 
@@ -12,6 +16,9 @@ struct Linear <: AbstractScheme end
 struct Upwind <: AbstractScheme end
 struct Orthogonal <: AbstractScheme end
 struct Midpoint <: AbstractScheme end
+struct Steady <: AbstractScheme end 
+struct Euler <: AbstractScheme end 
+struct CrankNicolson <: AbstractScheme end
 
 
 

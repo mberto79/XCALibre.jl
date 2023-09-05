@@ -38,23 +38,24 @@ solvers = (
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 1.0,
     ),
     p = set_solver(
         model.p;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = LDL(),
         convergence = 1e-7,
-        relax       = 0.3,
+        relax       = 1.0,
     )
 )
 
 schemes = (
-    U = set_schemes(gradient=Midpoint),
-    p = set_schemes(gradient=Midpoint)
+    U = set_schemes(time=Euler, gradient=Midpoint),
+    p = set_schemes(time=Euler, gradient=Midpoint)
 )
 
-runtime = set_runtime(iterations=1000, write_interval=-1, time_step=1)
+runtime = set_runtime(
+    iterations=2000, write_interval=10, time_step=0.005)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -64,7 +65,7 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-Rx, Ry, Rp = simple!(model, config) #, pref=0.0)
+Rx, Ry, Rp = piso!(model, config) #, pref=0.0)
 
 plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

@@ -1,9 +1,9 @@
 export discretise!
 
-discretise!(eqn, prev) = _discretise!(eqn.model, eqn, prev)
+discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
 
 @generated function _discretise!(
-    model::Model{T,S,TN,SN}, eqn, prev
+    model::Model{T,S,TN,SN}, eqn, prev, runtime
     ) where {T,S,TN,SN}
 
     nTerms = TN
@@ -17,13 +17,13 @@ discretise!(eqn, prev) = _discretise!(eqn.model, eqn, prev)
     for t ∈ 1:nTerms
         function_call = quote
             scheme!(
-                model.terms[$t], nzval, cell, face, cellN, ns, cIndex, nIndex, fID, prev
+                model.terms[$t], nzval, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
                 )
         end
         push!(assignment_block_1, function_call)
 
         assign_source = quote
-            scheme_source!(model.terms[$t], b, nzval, cell, cID, cIndex, prev)
+            scheme_source!(model.terms[$t], b, nzval, cell, cID, cIndex, prev, runtime)
         end
         push!(assignment_block_2, assign_source)
     end

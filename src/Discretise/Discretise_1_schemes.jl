@@ -10,26 +10,28 @@ cIndex - Index of the cell based on sparse matrix. Use to index "nzval"
 ## Steady
 @inline function scheme!(
     term::Operator{F,P,I,Time{Steady}}, 
-    nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev)  where {F,P,I}
+    nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
     nothing
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Time{Steady}}, 
-    b, nzval, cell, cID, cIndex, prev)  where {F,P,I} = begin
+    b, nzval, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
     nothing
 end
 
 ## Euler
 @inline function scheme!(
     term::Operator{F,P,I,Time{Euler}}, 
-    nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev)  where {F,P,I}
+    nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
     nothing
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Time{Euler}}, 
-    b, nzval, cell, cID, cIndex, prev)  where {F,P,I} = begin
-        nzval[cIndex] += 0.0 # placeholder for now CHANGE!
-        b[cID] -= 0.0 # MUST CHANGE!!!!
+    b, nzval, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
+        volume = cell.volume
+        dt = runtime.dt
+        nzval[cIndex] += volume/dt
+        b[cID] += prev[cID]*volume/dt
     nothing
 end
 
@@ -37,7 +39,7 @@ end
 
 @inline function scheme!(
     term::Operator{F,P,I,Laplacian{Linear}}, 
-    nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev
+    nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     ap = term.sign*(-term.flux[fID] * face.area)/face.delta
     nzval[cIndex] += ap
@@ -46,7 +48,7 @@ end
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Laplacian{Linear}}, 
-    b, nzval, cell, cID, cIndex, prev)  where {F,P,I} = begin
+    b, nzval, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
     nothing
 end
 
@@ -54,7 +56,7 @@ end
 
 @inline function scheme!(
     term::Operator{F,P,I,Divergence{Linear}}, 
-    nzval, cell, face, cellN, ns, cIndex, nIndex, fID, prev
+    nzval, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     xf = face.centre
     xC = cell.centre
@@ -68,13 +70,13 @@ end
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Divergence{Linear}}, 
-    b, nzval, cell, cID, cIndex, prev) where {F,P,I} = begin
+    b, nzval, cell, cID, cIndex, prev, runtime) where {F,P,I} = begin
     nothing
 end
 
 @inline function scheme!(
     term::Operator{F,P,I,Divergence{Upwind}}, 
-    nzval, cell, face, cellN, ns, cIndex, nIndex, fID, prev
+    nzval, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     ap = term.sign*(term.flux[fID]*ns)
     nzval[cIndex] += max(ap, 0.0)
@@ -83,7 +85,7 @@ end
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Divergence{Upwind}}, 
-    b, nzval, cell, cID, cIndex, prev) where {F,P,I} = begin
+    b, nzval, cell, cID, cIndex, prev, runtime) where {F,P,I} = begin
     nothing
 end
 
@@ -91,7 +93,7 @@ end
 
 @inline function scheme!(
     term::Operator{F,P,I,Si}, 
-    nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev
+    nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     # ap = term.sign*(-term.flux[cIndex] * cell.volume)
     # nzval[cIndex] += ap
@@ -99,7 +101,7 @@ end
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Si}, 
-    b, nzval, cell, cID, cIndex, prev)  where {F,P,I} = begin
+    b, nzval, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
     phi = term.phi
     # ap = max(flux, 0.0)
     # ab = min(flux, 0.0)*phi[cID]

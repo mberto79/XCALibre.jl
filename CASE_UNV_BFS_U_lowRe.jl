@@ -55,10 +55,10 @@ model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
 )
 
 schemes = (
-    U = set_schemes(gradient=Midpoint),
+    U = set_schemes(gradient=Midpoint, time=Euler),
     p = set_schemes(gradient=Midpoint),
-    k = set_schemes(gradient=Midpoint),
-    omega = set_schemes(gradient=Midpoint)
+    k = set_schemes(gradient=Midpoint, time=Euler),
+    omega = set_schemes(gradient=Midpoint, time=Euler)
 )
 
 solvers = (
@@ -67,32 +67,33 @@ solvers = (
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 1.0,
     ),
     p = set_solver(
         model.p;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = LDL(),
         convergence = 1e-7,
-        relax       = 0.3,
+        relax       = 1.0,
     ),
     k = set_solver(
         model.turbulence.k;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 1.0,
     ),
     omega = set_solver(
         model.turbulence.omega;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 1.0,
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
+runtime = set_runtime(
+    iterations=1000, write_interval=10, time_step=0.01)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -105,7 +106,7 @@ initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
-Rx, Ry, Rp = simple!(model, config) # 36.90k allocs
+Rx, Ry, Rp = piso!(model, config) # 36.90k allocs
 
 Reff = stress_tensor(model.U, nu, model.turbulence.nut)
 Fp = pressure_force(:wall, model.p, 1.25)

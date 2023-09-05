@@ -51,7 +51,7 @@ function initialise_RANS(mdotf, peqn, config, model)
     # unpack turbulent quantities and configuration
     turbulence = model.turbulence
     (; k, omega, nut) = turbulence
-    (; solvers, schemes) = config
+    (; solvers, schemes, runtime) = config
     mesh = mdotf.mesh
     eqn = peqn.equation
 
@@ -87,10 +87,10 @@ function initialise_RANS(mdotf, peqn, config, model)
     # Set up preconditioners
 
     @reset k_eqn.preconditioner = set_preconditioner(
-                    solvers.k.preconditioner, k_eqn, k.BCs)
+                solvers.k.preconditioner, k_eqn, k.BCs, runtime)
 
     @reset ω_eqn.preconditioner = set_preconditioner(
-                    solvers.omega.preconditioner, ω_eqn, omega.BCs)
+                solvers.omega.preconditioner, ω_eqn, omega.BCs, runtime)
     
     # preallocating solvers
 
@@ -118,7 +118,7 @@ function turbulence!( # Sort out dispatch when possible
     nut = model.turbulence.nut
 
     (;k_eqn, ω_eqn, kf, ωf, νtf, coeffs, config) = KOmega
-    (; solvers) = config
+    (; solvers, runtime) = config
 
     k = get_phi(k_eqn)
     omega = get_phi(ω_eqn)
@@ -151,9 +151,9 @@ function turbulence!( # Sort out dispatch when possible
 
     # Solve omega equation
 
-    discretise!(ω_eqn)
-    apply_boundary_conditions!(ω_eqn, omega.BCs)
     prev .= omega.values
+    discretise!(ω_eqn, prev, runtime)
+    apply_boundary_conditions!(ω_eqn, omega.BCs)
     implicit_relaxation!(ω_eqn.equation, prev, solvers.omega.relax)
     constrain_equation!(ω_eqn, omega.BCs, model) # active with WFs only
     update_preconditioner!(ω_eqn.preconditioner)
@@ -164,9 +164,9 @@ function turbulence!( # Sort out dispatch when possible
 
     # Solve k equation
     
-    discretise!(k_eqn)
-    apply_boundary_conditions!(k_eqn, k.BCs)
     prev .= k.values
+    discretise!(k_eqn, prev, runtime)
+    apply_boundary_conditions!(k_eqn, k.BCs)
     implicit_relaxation!(k_eqn.equation, prev, solvers.k.relax)
     update_preconditioner!(k_eqn.preconditioner)
     run!(k_eqn, solvers.k)

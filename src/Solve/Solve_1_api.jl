@@ -23,8 +23,8 @@ begin
     )
 end
 
-set_runtime(; iterations::I, write_interval::I) where I<:Integer = begin
-    (iterations=iterations, write_interval=write_interval)
+set_runtime(; iterations::I, write_interval::I, time_step::N) where {I<:Integer,N<:Number} = begin
+    (iterations=iterations, dt=time_step, write_interval=write_interval)
 end
 
 function run!(phiEqn::ModelEquation, setup) # ; opP, solver

@@ -4,7 +4,7 @@ function simple!(model, config; resume=true, pref=nothing)
 
     @info "Extracting configuration and input fields..."
     (; U, p, nu, mesh) = model
-    (; solvers, schemes) = config
+    (; solvers, schemes, runtime) = config
 
     @info "Preallocating fields..."
     
@@ -41,10 +41,10 @@ function simple!(model, config; resume=true, pref=nothing)
     @info "Initialising preconditioners..."
     
     @reset ux_eqn.preconditioner = set_preconditioner(
-                        solvers.U.preconditioner, ux_eqn, U.x.BCs)
+                    solvers.U.preconditioner, ux_eqn, U.x.BCs, runtime)
     @reset uy_eqn.preconditioner = ux_eqn.preconditioner
     @reset p_eqn.preconditioner = set_preconditioner(
-                        solvers.p.preconditioner, p_eqn, p.BCs)
+                    solvers.p.preconditioner, p_eqn, p.BCs, runtime)
 
     @info "Pre-allocating solvers..."
      
@@ -125,7 +125,7 @@ function SIMPLE_loop(
     @time for iteration ∈ 1:iterations
 
         @. prev = U.x.values
-        discretise!(ux_eqn, prev)
+        discretise!(ux_eqn, prev, runtime)
         apply_boundary_conditions!(ux_eqn, U.x.BCs)
         # ux_eqn.b .-= divUTx
         implicit_relaxation!(ux_eqn.equation, prev, solvers.U.relax)
@@ -134,7 +134,7 @@ function SIMPLE_loop(
         residual!(R_ux, ux_eqn.equation, U.x, iteration)
 
         @. prev = U.y.values
-        discretise!(uy_eqn, prev)
+        discretise!(uy_eqn, prev, runtime)
         apply_boundary_conditions!(uy_eqn, U.y.BCs)
         # uy_eqn.b .-= divUTy
         implicit_relaxation!(uy_eqn.equation, prev, solvers.U.relax)
@@ -152,7 +152,7 @@ function SIMPLE_loop(
         div!(divHv, Uf)
    
         @. prev = p.values
-        discretise!(p_eqn, prev)
+        discretise!(p_eqn, prev, runtime)
         apply_boundary_conditions!(p_eqn, p.BCs)
         setReference!(p_eqn.equation, pref, 1)
         update_preconditioner!(p_eqn.preconditioner)

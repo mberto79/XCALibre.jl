@@ -28,7 +28,7 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 )
 
 schemes = (
-    U = set_schemes(),
+    U = set_schemes(time=Euler),
     p = set_schemes()
 )
 
@@ -39,19 +39,19 @@ solvers = (
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = DILU(),
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 1.0,
     ),
     p = set_solver(
         model.p;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = LDL(),
         convergence = 1e-7,
-        relax       = 0.2,
+        relax       = 1.0,
     )
 )
 
 runtime = set_runtime(
-    iterations=1000, time_step=1, write_interval=-1)
+    iterations=1000, time_step=0.005, write_interval=10)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -61,7 +61,7 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-Rx, Ry, Rp = simple!(model, config) # 9.39k allocs
+Rx, Ry, Rp = piso!(model, config) # 9.39k allocs
 
 plot(; xlims=(0,184))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

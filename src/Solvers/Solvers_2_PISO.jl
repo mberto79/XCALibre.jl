@@ -4,7 +4,7 @@ function piso!(model, config; resume=true, pref=nothing)
 
     @info "Extracting configuration and input fields..."
     (; U, p, nu, mesh) = model
-    (; solvers, schemes) = config
+    (; solvers, schemes, runtime) = config
 
     @info "Preallocating fields..."
     
@@ -41,10 +41,10 @@ function piso!(model, config; resume=true, pref=nothing)
     @info "Initialising preconditioners..."
     
     @reset ux_eqn.preconditioner = set_preconditioner(
-                        solvers.U.preconditioner, ux_eqn, U.x.BCs)
+                    solvers.U.preconditioner, ux_eqn, U.x.BCs, runtime)
     @reset uy_eqn.preconditioner = ux_eqn.preconditioner
     @reset p_eqn.preconditioner = set_preconditioner(
-                        solvers.p.preconditioner, p_eqn, p.BCs)
+                    solvers.p.preconditioner, p_eqn, p.BCs, runtime)
 
     @info "Pre-allocating solvers..."
      
@@ -124,19 +124,19 @@ function PISO_loop(
 
     @time for iteration ∈ 1:iterations
 
-        discretise!(ux_eqn)
+        @. prev = U.x.values
+        discretise!(ux_eqn, prev, runtime)
         apply_boundary_conditions!(ux_eqn, U.x.BCs)
         # ux_eqn.b .-= divUTx
-        @. prev = U.x.values
         implicit_relaxation!(ux_eqn.equation, prev, solvers.U.relax)
         update_preconditioner!(ux_eqn.preconditioner)
         run!(ux_eqn, solvers.U) #opP=Pu.P, solver=solver_U)
         residual!(R_ux, ux_eqn.equation, U.x, iteration)
 
-        discretise!(uy_eqn)
+        @. prev = U.y.values
+        discretise!(uy_eqn, prev, runtime)
         apply_boundary_conditions!(uy_eqn, U.y.BCs)
         # uy_eqn.b .-= divUTy
-        @. prev = U.y.values
         implicit_relaxation!(uy_eqn.equation, prev, solvers.U.relax)
         update_preconditioner!(uy_eqn.preconditioner)
         run!(uy_eqn, solvers.U)
@@ -145,17 +145,19 @@ function PISO_loop(
         inverse_diagonal!(rD, ux_eqn.equation)
         interpolate!(rDf, rD)
         remove_pressure_source!(ux_eqn, uy_eqn, ∇p)
+
+        for i ∈ 1:2
         H!(Hv, U, ux_eqn, uy_eqn)
 
         interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs)
         div!(divHv, Uf)
    
-        discretise!(p_eqn)
+        @. prev = p.values
+        discretise!(p_eqn, prev, runtime)
         apply_boundary_conditions!(p_eqn, p.BCs)
         setReference!(p_eqn.equation, pref, 1)
         update_preconditioner!(p_eqn.preconditioner)
-        @. prev = p.values
         run!(p_eqn, solvers.p)
 
         explicit_relaxation!(p, prev, solvers.p.relax)
@@ -190,6 +192,8 @@ function PISO_loop(
             turbulence!(turbulence, model, S, S2, prev) 
             update_nueff!(nueff, nu, turbulence)
         end
+
+    end # corrector loop end
         
         # for i ∈ eachindex(divUTx)
         #     vol = mesh.cells[i].volume
@@ -197,7 +201,7 @@ function PISO_loop(
         #     divUTy = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][2,1]+ gradUT[i][2,2] + gradUT[i][2,3])*vol
         # end
         
-        convergence = 1e-7
+        convergence = 1e-70
 
         if (R_ux[iteration] <= convergence && 
             R_uy[iteration] <= convergence && 
@@ -209,7 +213,7 @@ function PISO_loop(
                 Simulation converged! $iteration iterations in
                 """)
                 if !signbit(write_interval)
-                    model2vtk(model, @sprintf "iteration_%.6d" iteration)
+                    model2vtk(model, @sprintf "timestep_%.6d" iteration)
                 end
             break
         end
@@ -224,7 +228,7 @@ function PISO_loop(
             )
 
         if iteration%write_interval + signbit(write_interval) == 0
-            model2vtk(model, @sprintf "iteration_%.6d" iteration)
+            model2vtk(model, @sprintf "timestep_%.6d" iteration)
         end
 
     end # end for loop

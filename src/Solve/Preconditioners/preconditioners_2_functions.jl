@@ -1,9 +1,11 @@
 export set_preconditioner
 export update_preconditioner!
 
-set_preconditioner(PT::T, eqn, BCs) where T<:PreconditionerType =
+set_preconditioner(PT::T, eqn, BCs, runtime
+) where T<:PreconditionerType = 
 begin
-    discretise!(eqn, ConstantScalar(zero(_get_int(get_phi(eqn).mesh))))
+    discretise!(
+        eqn, ConstantScalar(zero(_get_int(get_phi(eqn).mesh))), runtime)
     apply_boundary_conditions!(eqn, BCs)
     P = Preconditioner{T}(eqn.equation.A)
     update_preconditioner!(P)

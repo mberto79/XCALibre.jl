@@ -147,11 +147,13 @@ macro assign!(model, turb, field, BCs)
     end
 end
 
-set_schemes(; 
+set_schemes(;
+    time=Steady,
     divergence=Linear, 
     laplacian=Linear, 
     gradient=Orthogonal) = begin
     (
+        time=time,
         divergence=divergence,
         laplacian=laplacian,
         gradient=gradient

@@ -1,5 +1,13 @@
 export dirichlet, neumann
 
+# TRANSIENT TERM 
+@inline (bc::AbstractBoundary)(
+    term::Operator{F,P,I,Time{Steady}}, 
+    A, b, cellID, cell, face, fID
+    ) where { F,P,I} = begin
+    nothing
+end
+
 # LAPLACIAN TERM (NON-UNIFORM)
 
 @inline (bc::Dirichlet)(

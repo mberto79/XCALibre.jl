@@ -67,7 +67,8 @@ function initialise_RANS(mdotf, peqn, config, model)
     Pω = ScalarField(mesh)
     
     k_eqn = (
-            Divergence{schemes.k.divergence}(mdotf, k) 
+            Time{schemes.k.time}(k)
+            + Divergence{schemes.k.divergence}(mdotf, k) 
             - Laplacian{schemes.k.laplacian}(nueffk, k) 
             + Si(Dkf,k) # Dkf = β⁺*omega
             ==
@@ -75,11 +76,12 @@ function initialise_RANS(mdotf, peqn, config, model)
         ) → eqn
     
     ω_eqn = (
-        Divergence{schemes.omega.divergence}(mdotf, omega) 
-        - Laplacian{schemes.omega.laplacian}(nueffω, omega) 
-        + Si(Dωf,omega)  # Dωf = β1*omega
-        ==
-        Source(Pω)
+            Time{schemes.omega.time}(omega)
+            + Divergence{schemes.omega.divergence}(mdotf, omega) 
+            - Laplacian{schemes.omega.laplacian}(nueffω, omega) 
+            + Si(Dωf,omega)  # Dωf = β1*omega
+            ==
+            Source(Pω)
     ) → eqn
 
     # Set up preconditioners
@@ -121,12 +123,12 @@ function turbulence!( # Sort out dispatch when possible
     k = get_phi(k_eqn)
     omega = get_phi(ω_eqn)
 
-    nueffk = get_flux(k_eqn, 2)
-    Dkf = get_flux(k_eqn, 3)
+    nueffk = get_flux(k_eqn, 3)
+    Dkf = get_flux(k_eqn, 4)
     Pk = get_source(k_eqn, 1)
 
-    nueffω = get_flux(ω_eqn, 2)
-    Dωf = get_flux(ω_eqn, 3)
+    nueffω = get_flux(ω_eqn, 3)
+    Dωf = get_flux(ω_eqn, 4)
     Pω = get_source(ω_eqn, 1)
 
     # double_inner_product!(Pk, S, S.gradU)

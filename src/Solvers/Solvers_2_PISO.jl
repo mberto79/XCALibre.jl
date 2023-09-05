@@ -19,14 +19,16 @@ function piso!(model, config; resume=true, pref=nothing)
     @info "Defining models..."
 
     ux_eqn = (
-        Divergence{schemes.U.divergence}(mdotf, U.x) 
+        Time{schemes.U.time}(U.x)
+        + Divergence{schemes.U.divergence}(mdotf, U.x) 
         - Laplacian{schemes.U.laplacian}(nueff, U.x) 
         == 
         -Source(∇p.result.x)
     ) → Equation(mesh)
     
     uy_eqn = (
-        Divergence{schemes.U.divergence}(mdotf, U.y) 
+        Time{schemes.U.time}(U.y)
+        + Divergence{schemes.U.divergence}(mdotf, U.y) 
         - Laplacian{schemes.U.laplacian}(nueff, U.y) 
         == 
         -Source(∇p.result.y)
@@ -74,8 +76,8 @@ function PISO_loop(
     (; solvers, schemes, runtime) = config
     (; iterations, write_interval) = runtime
     
-    mdotf = get_flux(ux_eqn, 1)
-    nueff = get_flux(ux_eqn, 2)
+    mdotf = get_flux(ux_eqn, 2)
+    nueff = get_flux(ux_eqn, 3)
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
     

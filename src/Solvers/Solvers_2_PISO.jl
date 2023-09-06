@@ -218,9 +218,12 @@ function PISO_loop(
             break
         end
 
+        co = courant_number(U, mesh, runtime)
+
         ProgressMeter.next!(
             progress, showvalues = [
-                (:iter,iteration),
+                (:time,iteration*runtime.dt),
+                (:Courant,co),
                 (:Ux, R_ux[iteration]),
                 (:Uy, R_uy[iteration]),
                 (:p, R_p[iteration]),

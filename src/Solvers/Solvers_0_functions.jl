@@ -135,3 +135,17 @@ begin # Extend to 3D!
         z[cID] = zero(F)
     end
 end
+
+courant_number(U, mesh::Mesh2, runtime) = begin
+    dt = runtime.dt 
+    co = zero(_get_float(mesh))
+    # courant_max = zero(_get_float(mesh))
+    cells = mesh.cells
+    for i ∈ eachindex(U)
+        umag = norm(U[i])
+        volume = cells[i].volume
+        dx = sqrt(volume)
+        co = max(co, umag*dt/dx)
+    end
+    return co
+end

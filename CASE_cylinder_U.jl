@@ -7,9 +7,9 @@ using Krylov
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 
-# Inlet conditionns
+# Inlet conditions
 
-velocity = [0.25, 0.0, 0.0]
+velocity = [0.50, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
 Re = (0.2*velocity[1])/nu
@@ -55,7 +55,7 @@ schemes = (
 )
 
 runtime = set_runtime(
-    iterations=2000, write_interval=20, time_step=0.005)
+    iterations=10000, write_interval=50, time_step=0.005)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

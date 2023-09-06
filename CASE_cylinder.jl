@@ -7,9 +7,9 @@ using Krylov
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 
-# Inlet conditionns
+# Inlet conditions
 
-velocity = [0.1, 0.0, 0.0]
+velocity = [0.50, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
 Re = (0.2*velocity[1])/nu
@@ -38,23 +38,23 @@ solvers = (
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.6,
     ),
     p = set_solver(
         model.p;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = LDL(),
         convergence = 1e-7,
-        relax       = 0.3,
+        relax       = 0.4,
     )
 )
 
 schemes = (
-    U = set_schemes(gradient=Midpoint),
-    p = set_schemes(gradient=Midpoint)
+    U = set_schemes(divergence=Upwind, gradient=Midpoint),
+    p = set_schemes(divergence=Upwind, gradient=Midpoint)
 )
 
-runtime = set_runtime(iterations=1000, write_interval=-1, time_step=1)
+runtime = set_runtime(iterations=600, write_interval=-1, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

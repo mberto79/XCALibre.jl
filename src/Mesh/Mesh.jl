@@ -3,6 +3,7 @@ module Mesh
 using StaticArrays
 using LinearAlgebra
 using Setfield
+using Adapt
 
 include("Mesh_0_types.jl")
 include("Mesh2D/Mesh2D_0_types.jl")

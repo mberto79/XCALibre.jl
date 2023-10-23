@@ -1,5 +1,13 @@
 export dirichlet, neumann
 
+# TRANSIENT TERM 
+@inline (bc::AbstractBoundary)( # Used for all schemes (using "T")
+    term::Operator{F,P,I,Time{T}}, 
+    A, b, cellID, cell, face, fID
+    ) where {F,P,I,T} = begin
+    nothing
+end
+
 # LAPLACIAN TERM (NON-UNIFORM)
 
 @inline (bc::Dirichlet)(
@@ -26,15 +34,15 @@ end
 end
 
 @inline (bc::KWallFunction)(
-    term::Operator{F,P,I,Laplacian{Linear}}, 
-    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    term::Operator{F,P,I,Laplacian{T}}, 
+    A, b, cellID, cell, face, fID) where {F,P,I,T}  = begin
     nothing
 end
 
 @inline (bc::OmegaWallFunction)(
     term::Operator{F,P,I,Laplacian{T}}, 
-    A, b, cellID, cell, face, fID) where {F,P,I} where T = begin
-    nothing
+    A, b, cellID, cell, face, fID) where {F,P,I,T} = begin
+    nothing # should this be Dirichlet?
 end
 
 # DIVERGENCE TERM (NON-UNIFORM)
@@ -50,7 +58,22 @@ end
 @inline (bc::Neumann)(
     term::Operator{F,P,I,Divergence{Linear}}, 
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
-    phi = term.phi 
+    ap = term.sign[1]*(term.flux[fID])
+    A[cellID,cellID] += ap
+    nothing
+end
+
+@inline (bc::KWallFunction)(
+    term::Operator{F,P,I,Divergence{Linear}}, # use upwind for all
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    ap = term.sign[1]*(term.flux[fID])
+    A[cellID,cellID] += ap
+    nothing
+end
+
+@inline (bc::OmegaWallFunction)(
+    term::Operator{F,P,I,Divergence{Linear}}, # might need to change this!!!!
+    A, b, cellID, cell, face, fID) where {F,P,I}  = begin
     ap = term.sign[1]*(term.flux[fID])
     A[cellID,cellID] += ap
     nothing
@@ -88,17 +111,20 @@ end
 end
 
 @inline (bc::KWallFunction)(
-    term::Operator{F,P,I,Divergence{Linear}}, 
+    term::Operator{F,P,I,Divergence{Upwind}},
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    ap = term.sign[1]*(term.flux[fID])
+    A[cellID,cellID] += max(ap, 0.0)
     nothing
 end
 
 @inline (bc::OmegaWallFunction)(
-    term::Operator{F,P,I,Divergence{T}}, 
-    A, b, cellID, cell, face, fID) where {F,P,I} where T = begin
+    term::Operator{F,P,I,Divergence{Upwind}}, # might need to change this!!!!
+    A, b, cellID, cell, face, fID) where {F,P,I}  = begin
+    ap = term.sign[1]*(term.flux[fID])
+    A[cellID,cellID] += max(ap, 0.0)
     nothing
 end
-
 
 # IMPLICIT SOURCE
 
@@ -114,24 +140,20 @@ end
     nothing
 end
 
-@inline (bc::KWallFunction)(# a bit hacky for now (should be Src)
+@inline (bc::KWallFunction)(
     term::Operator{F,P,I,Si}, 
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
-    # cmu, κ, k = bc.value
-    # b[cellID] -= k[cellID]^1.5*cmu^0.75/(κ*face.delta)*cell.volume
+    # phi = term.phi[cellID] 
+    # flux = term.sign*term.flux[cellID]
+    # b[cellID] += flux*phi*cell.volume 
     nothing
 end
 
-@inline (bc::OmegaWallFunction)(# a bit hacky for now (should be Src)
+@inline (bc::OmegaWallFunction)(
     term::Operator{F,P,I,Si}, 
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
-    cmu, κ, k = bc.value
-    # ωc = k[cellID]^0.5/(cmu^0.25*κ*face.delta)*cell.volume
-    # y = face.delta
-    # ωc = 6*1e-3/(0.075*y^2)
-    # b[cellID] += A[cellID,cellID]*ωc
-    # A[cellID,cellID] += A[cellID,cellID]
-    # b[cellID] += A[cellID,cellID]*ωc
-    # A[cellID,cellID] += A[cellID,cellID]
+    phi = term.phi[cellID] 
+    flux = term.sign*term.flux[cellID]
+    b[cellID] += flux*phi*cell.volume 
     nothing
 end

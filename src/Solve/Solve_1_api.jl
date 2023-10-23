@@ -1,42 +1,67 @@
-export SolverSetup
+export set_solver, set_runtime
+export explicit_relaxation!, implicit_relaxation!, setReference!
 export run!
 
-struct SolverSetup{S,I,F}
-    solver::S 
-    relax::F 
-    itmax::I
-    atol::F 
-    rtol::F
-end
-SolverSetup(
-    ; solver::S, 
-    # iterations::I, 
-    # tolerance::F, 
+set_solver( field::AbstractField; # To do - relax inputs and correct internally
+    solver::S, 
+    preconditioner::PT, 
+    convergence::F, 
     relax::F, 
-    itmax::I=200, 
-    atol::F=1e-15, 
-    rtol::F=1e-1
-    ) where {S,I,F} = begin
-    SolverSetup{S,I,F}(solver, relax, itmax, atol, rtol)
+    itmax::I=100, 
+    atol::F=sqrt(eps()),
+    rtol::F=1e-3 
+    ) where {S,PT<:PreconditionerType,I<:Integer,F<:AbstractFloat} = 
+begin
+    (
+        solver=solver, 
+        preconditioner=preconditioner, 
+        convergence=convergence, 
+        relax=relax, 
+        itmax=itmax, 
+        atol=atol, 
+        rtol=rtol
+    )
 end
 
-function run!(
-    equation::Equation{Ti,Tf}, phiModel, setup; 
-    opP, solver
-    ) where {Ti,Tf}
-    
-    @inbounds equation.b .+= phiModel.sources[1].field # should be moved out to "add_sources" function using the "Model" struct
+set_runtime(; iterations::I, write_interval::I, time_step::N) where {I<:Integer,N<:Number} = begin
+    (iterations=iterations, dt=time_step, write_interval=write_interval)
+end
+
+function run!(phiEqn::ModelEquation, setup) # ; opP, solver
 
     (; itmax, atol, rtol) = setup
-    (; A, b) = equation
-    phi = get_phi(phiModel)
-    values = phi.values
+    (; A, b) = phiEqn.equation
+    P = phiEqn.preconditioner
+    solver = phiEqn.solver
+    values = get_phi(phiEqn).values
 
     solve!(
-        solver, A, b, values; 
-        M=opP, itmax=itmax, atol=atol, rtol=rtol
+        solver, A, b, values; M=P.P, itmax=itmax, atol=atol, rtol=rtol
         )
     # println(solver.stats.niter)
     @turbo values .= solver.x
+    nothing
+end
 
+function explicit_relaxation!(phi, phi0, alpha)
+    @inbounds @simd for i ∈ eachindex(phi)
+        phi[i] = phi0[i] + alpha*(phi[i] - phi0[i])
+    end
+end
+
+function implicit_relaxation!(eqn::E, field, alpha) where E<:Equation
+    (; A, b) = eqn
+    @inbounds for i ∈ eachindex(b)
+        A[i,i] /= alpha
+        b[i] += (1.0 - alpha)*A[i,i]*field[i]
+    end
+end
+
+function setReference!(pEqn::E, pRef, cellID) where E<:Equation
+    if pRef === nothing
+        return nothing
+    else
+        pEqn.b[cellID] += pEqn.A[cellID,cellID]*pRef
+        pEqn.A[cellID,cellID] += pEqn.A[cellID,cellID]
+    end
 end

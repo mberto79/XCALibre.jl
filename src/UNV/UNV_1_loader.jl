@@ -101,7 +101,8 @@ function load(meshFile, TI, TF)
             if typeof(tryparse(TI, sline[1]))!= Nothing && tryparse(Int32, sline[2]) == 0
                 newBoundary = UNV.BoundaryLoader(0)
                 push!(boundaryElements, newBoundary)
-                currentBC = tryparse(TI, sline[1])
+                # currentBC = tryparse(TI, sline[1])
+                currentBC += 1
                 boundaryElements[currentBC].groupNumber = currentBC 
                 continue
             end

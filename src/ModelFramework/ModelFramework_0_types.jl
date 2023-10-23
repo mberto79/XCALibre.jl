@@ -1,8 +1,7 @@
 export AbstractOperator, AbstractSource   
 export Operator, Source, Src
-export Laplacian, Divergence, Si
-export Model 
-export Equation
+export Time, Laplacian, Divergence, Si
+export Model, Equation, ModelEquation
 
 # ABSTRACT TYPES 
 
@@ -22,11 +21,20 @@ end
 
 # operators
 
+struct Time{T} end
 struct Laplacian{T}  end
 struct Divergence{T} end
 struct Si end
 
 # constructors
+
+Time{T}(flux, phi) where T = Operator(
+    flux, phi, 1, Time{T}()
+    )
+
+Time{T}(phi) where T = Operator(
+    ConstantScalar(one(_get_int(phi.mesh))), phi, 1, Time{T}()
+    )
 
 Laplacian{T}(flux, phi) where T = Operator(
     flux, phi, 1, Laplacian{T}()
@@ -43,7 +51,7 @@ Si(flux, phi) = Operator(
 # SOURCES
 
 # Base Source
-struct Src{F,S,T}
+struct Src{F,S,T} <: AbstractSource
     field::F 
     sign::S 
     type::T
@@ -51,21 +59,24 @@ end
 
 # Source types
 
-struct Source <: AbstractSource end
+struct Source end
 
-Source(f::AbstractVector) = Src(f, 1, typeof(f))
-Source(f::ScalarField) = Src(f.values, 1, typeof(f))
+Source(f::T) where T = Src(f, 1, typeof(f))
+# Source(f::ScalarField) = Src(f.values, 1, typeof(f))
 # Source(f::Number) = Src(f.values, 1, typeof(f)) # To implement!!
 
 # MODEL TYPE
-struct Model{T,S, TN, SN}
+struct Model{T,S,TN,SN}
+    # equation::E
     terms::T
     sources::S
 end
 Model{TN,SN}(terms::T, sources::S) where {T,S,TN,SN} = begin
     Model{T,S,TN,SN}(terms, sources)
 end
-
+# Model(eqn::E, terms::T, sources::S, TN, SN) where {E,T,S} = begin
+#     Model{E,T,S,TN,SN}(eqn, terms, sources)
+# end
 
 # Linear system matrix equation
 
@@ -105,4 +116,13 @@ function sparse_matrix_connectivity(mesh::Mesh2{I,F}) where{I,F}
     end
     v = zeros(F, length(i))
     return i, j, v
+end
+
+# Model equation type 
+
+struct ModelEquation{M,E,S,P}
+    model::M 
+    equation::E 
+    solver::S
+    preconditioner::P
 end

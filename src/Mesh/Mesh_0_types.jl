@@ -10,11 +10,13 @@ struct UnitVectors
     UnitVectors() = new(
         SVector(1.0,0.0,0.0), SVector(0.0,1.0,0.0), SVector(0.0,0.0,1.0))
 end
+Adapt.@adapt_structure UnitVectors
 
 struct Node{TI, TF}
     coords::SVector{3, TF}
     neighbourCells::Vector{TI}
 end
+Adapt.@adapt_structure Node
 Node(TF) = begin
     zf = zero(TF)
     vec_3F = SVector{3,TF}(zf,zf,zf)
@@ -32,6 +34,7 @@ struct Boundary{I}
     cellsID::Vector{I}
     # normal::SVector{3, F}
 end
+Adapt.@adapt_structure Boundary
 
 struct Cell{I,F}
     nodesID::Vector{I}
@@ -41,6 +44,7 @@ struct Cell{I,F}
     centre::SVector{3, F}
     volume::F
 end
+Adapt.@adapt_structure Cell
 Cell(I,F) = begin
     zf = zero(F)
     vec3F = SVector{3,F}(zf,zf,zf)

@@ -1,4 +1,23 @@
-export write_vtk
+export write_vtk, model2vtk
+
+function model2vtk(model::RANS{Laminar,F1,F2,V,T,E,D}, name) where {F1,F2,V,T,E,D}
+    args = (
+        ("U", model.U), 
+        ("p", model.p)
+    )
+    write_vtk(name, model.mesh, args...)
+end
+
+function model2vtk(model::RANS{KOmega,F1,F2,V,T,E,D}, name) where {F1,F2,V,T,E,D}
+    args = (
+        ("U", model.U), 
+        ("p", model.p),
+        ("k", model.turbulence.k),
+        ("omega", model.turbulence.omega),
+        ("nut", model.turbulence.nut)
+    )
+    write_vtk(name, model.mesh, args...)
+end
 
 function write_vtk(name, mesh, args...) #, Ux, Uy, Uz, p)
     # UxNodes = FVM.NodeScalarField(Ux)

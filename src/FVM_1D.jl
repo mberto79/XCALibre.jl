@@ -5,12 +5,13 @@ include("Mesh/Plotting/0_plotting.jl")
 include("Fields/Fields.jl")
 include("ModelFramework/ModelFramework.jl")
 include("Discretise/Discretise.jl")
-include("Preconditioners/Preconditioners.jl")
-include("Calculate/Calculate.jl")
-include("RANS/RANS.jl")
 include("Solve/Solve.jl")
-include("Postprocess/Postprocess.jl")
+include("Calculate/Calculate.jl")
+include("RANSModels/RANSModels.jl")
+include("Simulate/Simulate.jl")
 include("VTK/VTK.jl")
+include("Solvers/Solvers.jl")
+include("Postprocess/Postprocess.jl")
 include("UNV/UNV.jl")
 
 using Reexport
@@ -19,10 +20,11 @@ using Reexport
 @reexport using FVM_1D.Fields
 @reexport using FVM_1D.ModelFramework
 @reexport using FVM_1D.Discretise
-@reexport using FVM_1D.Preconditioners
-@reexport using FVM_1D.Calculate
-@reexport using FVM_1D.RANS
 @reexport using FVM_1D.Solve
+@reexport using FVM_1D.Calculate
+@reexport using FVM_1D.RANSModels
+@reexport using FVM_1D.Simulate
+@reexport using FVM_1D.Solvers
 @reexport using FVM_1D.Postprocess
 @reexport using FVM_1D.VTK
 @reexport using FVM_1D.UNV

@@ -84,17 +84,18 @@ function div!(phi::ScalarField, psif::FaceVectorField)
             fID = facesID[fi]
             (; area, normal) = faces[fID]
             Sf = area*normal
-            phi.values[ci] += psif[fID]⋅Sf*nsign[fi]
+            phi.values[ci] += psif[fID]⋅Sf*nsign[fi]/volume
         end
     end
     # Add boundary faces contribution
     nbfaces = total_boundary_faces(mesh)
     for fID ∈ 1:nbfaces
         cID = faces[fID].ownerCells[1]
+        volume = cells[cID].volume
         (; area, normal) = faces[fID]
         Sf = area*normal
         # Boundary normals are correct by definition
-        phi.values[cID] += psif[fID]⋅Sf
+        phi.values[cID] += psif[fID]⋅Sf/volume
     end
 end
 

@@ -16,6 +16,7 @@ Face2D(I,F) = begin
     vec_3F = SVector{3,F}(zf,zf,zf)
     Face2D(vec_2I, vec_2I, vec_3F, vec_3F, vec_3F, zf, zf, zf)
 end
+Adapt.@adapt_structure Face2D
 
 struct Mesh2{I,F} <: AbstractMesh
     cells::Vector{Cell{I,F}}
@@ -23,3 +24,4 @@ struct Mesh2{I,F} <: AbstractMesh
     boundaries::Vector{Boundary{I}}
     nodes::Vector{Node{I,F}}
 end
+Adapt.@adapt_structure Mesh2

@@ -1,5 +1,5 @@
 # function green_gauss!(grad::Grad, phif; source=false)
-function green_gauss!(dx, dy, dz, phif; source=false)
+function green_gauss!(dx, dy, dz, phif)
     # (; x, y, z) = grad.result
     (; mesh, values) = phif
     (; cells, faces) = mesh
@@ -12,9 +12,7 @@ function green_gauss!(dx, dy, dz, phif; source=false)
             (; area, normal) = faces[fID]
             res += values[fID]*(area*normal*nsign[fi])
         end
-        if !source
-            res /= volume
-        end
+        res /= volume
         dx[ci] = res[1]
         dy[ci] = res[2]
         dz[ci] = res[3]
@@ -27,9 +25,7 @@ function green_gauss!(dx, dy, dz, phif; source=false)
         cID = ownerCells[1] 
         (; volume) = cells[cID]
         res = values[i]*(area*normal)
-        if !source
-            res /= volume
-        end
+        res /= volume
         dx[cID] += res[1]
         dy[cID] += res[2]
         dz[cID] += res[3]

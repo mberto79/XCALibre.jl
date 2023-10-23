@@ -1,7 +1,12 @@
-export AbstractScheme, Constant, Linear, Upwind, Midpoint
-export AbstractBoundary, AbstractDirichlet, AbstractNeumann
-export Dirichlet, Neumann, KWallFunction, OmegaWallFunction 
+export AbstractScheme, AbstractBoundary
+export AbstractDirichlet, AbstractNeumann
+export Dirichlet, Neumann
+export KWallFunction, OmegaWallFunction, NutWallFunction
+export Constant, Linear, Upwind
+export Steady, Euler, CrankNicolson
+export Orthogonal, Midpoint
 export assign, @assign!
+export set_schemes
 
 # SUPPORTED DISCRETISATION SCHEMES 
 
@@ -9,7 +14,11 @@ abstract type AbstractScheme end
 struct Constant <: AbstractScheme end
 struct Linear <: AbstractScheme end
 struct Upwind <: AbstractScheme end
+struct Orthogonal <: AbstractScheme end
 struct Midpoint <: AbstractScheme end
+struct Steady <: AbstractScheme end 
+struct Euler <: AbstractScheme end 
+struct CrankNicolson <: AbstractScheme end
 
 
 
@@ -48,10 +57,24 @@ struct KWallFunction{I,V} <: AbstractBoundary
     ID::I 
     value::V 
 end
+KWallFunction(name::Symbol) = begin
+    KWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8))
+end
 
 struct OmegaWallFunction{I,V} <: AbstractBoundary
     ID::I 
     value::V 
+end
+OmegaWallFunction(name::Symbol) = begin
+    OmegaWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8))
+end
+
+struct NutWallFunction{I,V} <: AbstractBoundary 
+    ID::I 
+    value::V 
+end
+NutWallFunction(name::Symbol) = begin
+    NutWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8))
 end
 
 assign(vec::VectorField, args...) = begin
@@ -101,11 +124,38 @@ assign(scalar::ScalarField, args...) = begin
     return scalar
 end
 
-macro assign!(field, BCs)
-    efield = esc(field)
+macro assign!(model, field, BCs)
+    emodel = esc(model)
+    efield = Symbol(field)
     eBCs = esc(BCs)
     quote
-        $efield = assign($efield, $eBCs...)
+        f = $emodel.$efield
+        f = assign(f, $eBCs...)
+        @reset $emodel.$efield = f
     end
-    
+end
+
+macro assign!(model, turb, field, BCs)
+    emodel = esc(model)
+    eturb = Symbol(turb)
+    efield = Symbol(field)
+    eBCs = esc(BCs)
+    quote
+        f = $emodel.$eturb.$efield
+        f = assign(f, $eBCs...)
+        @reset $emodel.$eturb.$efield = f
+    end
+end
+
+set_schemes(;
+    time=Steady,
+    divergence=Linear, 
+    laplacian=Linear, 
+    gradient=Orthogonal) = begin
+    (
+        time=time,
+        divergence=divergence,
+        laplacian=laplacian,
+        gradient=gradient
+    )
 end

@@ -1,32 +1,44 @@
 export discretise!
 
-@generated function discretise!(
-    equation, model::Model{T,S,TN,SN}
+discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
+
+@generated function _discretise!(
+    model::Model{T,S,TN,SN}, eqn, prev, runtime
     ) where {T,S,TN,SN}
 
     nTerms = TN
     nSources = SN
 
-    assignment_block_1 = Expr[] 
-    assignment_block_2 = Expr[]
+    assignment_block_1 = Expr[] # Ap
+    assignment_block_2 = Expr[] # An or b
+    assignment_block_3 = Expr[] # b (sources)
 
+    # Loop for operators
     for t ∈ 1:nTerms
         function_call = quote
             scheme!(
-                model.terms[$t], nzval, cell, face, cellN, ns, cIndex, nIndex, fID
+                model.terms[$t], nzval, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
                 )
         end
         push!(assignment_block_1, function_call)
 
         assign_source = quote
-            scheme_source!(model.terms[$t], b, nzval, cell, cID, cIndex)
+            scheme_source!(model.terms[$t], b, nzval, cell, cID, cIndex, prev, runtime)
         end
         push!(assignment_block_2, assign_source)
     end
 
+    # Loop for sources
+    for s ∈ 1:nSources
+        add_source = quote
+            (; field, sign) = model.sources[$s]
+            b[cID] += sign*field[cID]*volume
+        end
+        push!(assignment_block_3, add_source)
+    end
+
     quote
-        # (; A, b, mesh) = equation
-        (; A, b) = equation
+        (; A, b) = eqn.equation
         mesh = model.terms[1].phi.mesh
         (; faces, cells) = mesh
         (; rowval, colptr, nzval) = A
@@ -56,7 +68,9 @@ export discretise!
                 $(assignment_block_1...)    
             end
             b[cID] = zero(0.0)
+            volume = cell.volume
             $(assignment_block_2...)
+            $(assignment_block_3...)
         end
         nothing
     end

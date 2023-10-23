@@ -1,8 +1,8 @@
-export pressure_forces, viscous_forces
-export stress_tensor
+export pressure_force, viscous_force
+export stress_tensor, wall_shear_stress
 
 
-pressure_forces(patch::Symbol, p::ScalarField, rho) = begin
+pressure_force(patch::Symbol, p::ScalarField, rho) = begin
     mesh = p.mesh
     ID = boundary_index(mesh.boundaries, patch)
     @info "calculating pressure forces on patch: $patch at index $ID"
@@ -25,7 +25,7 @@ pressure_forces(patch::Symbol, p::ScalarField, rho) = begin
     return Fp
 end
 
-viscous_forces(patch::Symbol, U::VectorField, rho, ν, νt) = begin
+viscous_force(patch::Symbol, U::VectorField, rho, ν, νt) = begin
     mesh = U.mesh
     faces = mesh.faces
     boundaries = mesh.boundaries
@@ -54,8 +54,43 @@ viscous_forces(patch::Symbol, U::VectorField, rho, ν, νt) = begin
         sumz += snGrad.z[i]*area*(ν + νt[cID])
     end
     Fv = rho.*[sumx, sumy, sumz]
-    print("\n Pressure force: (", Fv[1], " ", Fv[2], " ", Fv[3], ")\n")
+    print("\n Viscous force: (", Fv[1], " ", Fv[2], " ", Fv[3], ")\n")
     return Fv
+end
+
+wall_shear_stress(patch::Symbol, model::RANS{M,F1,F2,V,T,E,D}) where {M,F1,F2,V,T,E,D} = begin
+    # Line below needs to change to do selection based on nut BC
+    M == Laminar ? nut = ConstantScalar(0.0) : nut = model.turbulence.nut
+    (; mesh, U, nu) = model
+    (; boundaries, faces) = mesh
+    ID = boundary_index(boundaries, patch)
+    boundary = boundaries[ID]
+    (; facesID, cellsID) = boundary
+    @info "calculating viscous forces on patch: $patch at index $ID"
+    x = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
+    y = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
+    z = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
+    tauw = FaceVectorField(x,y,z, mesh)
+    Uw = zero(_get_float(mesh))
+    for i ∈ 1:length(U.BCs)
+        if ID == U.BCs[i].ID
+            Uw = U.BCs[i].value
+        end
+    end
+    surface_normal_gradient(tauw, facesID, cellsID, U, Uw)
+    pos = fill(SVector{3,Float64}(0,0,0), length(facesID))
+    for i ∈ eachindex(tauw)
+        fID = facesID[i]
+        cID = cellsID[i]
+        face = faces[fID]
+        nueff = nu[cID]*0  + nut[cID]
+        tauw.x[i] *= nueff # this may need using νtf? (wall funcs)
+        tauw.y[i] *= nueff
+        tauw.z[i] *= nueff
+        pos[i] = face.centre
+    end
+    
+    return tauw, pos
 end
 
 stress_tensor(U, ν, νt) = begin

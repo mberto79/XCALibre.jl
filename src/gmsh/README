@@ -1,0 +1,43 @@
+## ------------------------------------------------------------------------- ##
+
+## README ##
+
+## ------------------------------------------------------------------------- ##
+
+## Author: Christopher D. Ellis ##
+## Date:   30/10/2023           ##
+
+## ------------------------------------------------------------------------- ##
+
+readgmesh.jl
+meshmain.jl
+
+This is some code that I used in a finite volume code I wrote in 2020.
+
+readgmesh.jl parses the mesh to something you can manipulate and use. It returns a Mesh structure that contains the nodes, a boundary block (sblock) and a volume block (vblock) -- I think -- it has been a long time since I wrote it and I haven't added many comments in the code.
+
+meshmain.jl then organises the mesh into components I needed for the finite volume code.
+
+This code does 3D and, in theory, pure 2D meshes too.
+
+The code is rough and I'm certain that its performance can be vastly improved. It could be a useful guideline for you.
+
+gmsh is an open source mesher that is relatively simple to use. You can use text based files or the software's gui to build 2D and 3D mesh files.
+
+I have included some examples that I have used in the past:
+    - bump3d.* is a 3 dimensional bump case
+    - nasa_cavity_3200.* is the lid driven cavity flow benchmark case (the 3200 is the Reynolds number I used)
+    - mixedmesh_cavity.* is an example of using different elements to test my mesher etc.
+
+File extensions: 
+    - *.msh is the mesh file generated from gmsh
+    - *.geo is the file used to generate the mesh in the gmsh software
+    - *.vtu is an unstructured vtk file that might possibly demonstrate the mesh.
+
+## ------------------------------------------------------------------------- ##
+
+I have also added a more recent version of the parser that I have only used for 2D work. It is a bit more refined and I have used it for work on a high-order code.
+
+See /Refined_2D/mesh_reader_gmsh.jl and /Refined_2D/mesh_reader.jl
+
+## ------------------------------------------------------------------------- ##

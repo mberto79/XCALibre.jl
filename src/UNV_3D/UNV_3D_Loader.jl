@@ -10,10 +10,10 @@ function load(meshFile,TI,TF)
 
     #Defining Arrays with Structs
     points=Point[]
-    vertices=Vertices[]
-    faces=Faces[]
-    groups=Volumes[]
-    boundaryElements=BoundaryLoader[]
+    vertices=Vertex[]
+    faces=Face[]
+    groups=Volume[]
+    boundaryElements=BoundaryCondition[]
     elements=Element[]
 
     #Defining Arrays for data collection
@@ -23,8 +23,8 @@ function load(meshFile,TI,TF)
 
     #Vertices
     vertex=[]
-    vertexCount1=[]
-    vertexindex1=[]
+    vertexCount=[]
+    vertexindex=[]
 
     #Faces
     face=[]
@@ -41,10 +41,8 @@ function load(meshFile,TI,TF)
     bcs=[]
     bcindex=[]
     currentBC=0
-    groupNumber=0
+    bcNumber=0
     
-    
-
     #Splits UNV file into sections
     for (indx,line) in enumerate(eachline(meshFile))
         sline=split(line)
@@ -86,8 +84,8 @@ function load(meshFile,TI,TF)
         #Elements
         #Vertices
         if length(sline)==6 && parse(Int64,sline[end])==2
-            vertexCount1=parse(Int,sline[end])
-            vertexindex1=parse(Int,sline[1])
+            vertexCount=parse(Int,sline[end])
+            vertexindex=parse(Int,sline[1])
             #allelementCount=parse(Int,sline[end])
             #allelementindex=parse(Int,sline[1])
             continue
@@ -95,9 +93,9 @@ function load(meshFile,TI,TF)
 
         if length(sline)==2 && indx>elementindx
             vertex=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(vertices,Vertices(vertexindex1,vertexCount1,vertex))
+            push!(vertices,Vertex(vertexindex,vertexCount,vertex))
             #allelement=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(elements,Element(vertexindex1,vertexCount1,vertex))
+            push!(elements,Element(vertexindex,vertexCount,vertex))
             continue
         end
 
@@ -110,7 +108,7 @@ function load(meshFile,TI,TF)
 
         if length(sline)==3 && indx>elementindx && parse(Int,sline[end]) ≠ 1
             face=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(faces,Faces(faceindex,faceCount,face))
+            push!(faces,Face(faceindex,faceCount,face))
             push!(elements,Element(faceindex,faceCount,face))
             continue
         end
@@ -125,7 +123,7 @@ function load(meshFile,TI,TF)
 
         if length(sline)==4 && indx>elementindx
             group=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(groups,Volumes(groupindex,groupCount,group))
+            push!(groups,Volume(groupindex,groupCount,group))
             push!(elements,Element(groupindex,groupCount,group))
             continue
         end
@@ -134,12 +132,12 @@ function load(meshFile,TI,TF)
         if length(sline)==1 && indx>bcindx && typeof(tryparse(Int64,sline[1]))==Nothing
             bcindex=sline[1]
             currentBC=currentBC+1
-            newBoundary=BoundaryLoader(0)
+            newBoundary=BoundaryCondition(0)
             push!(boundaryElements, newBoundary)
             name=sline[1]
             name=convert(String,name)
-            groupNumber=groupNumber+1
-            boundaryElements[currentBC].groupNumber=currentBC
+            bcNumber=bcNumber+1
+            boundaryElements[currentBC].bcNumber=currentBC
             boundaryElements[currentBC].name=sline[1]
             continue
         end
@@ -187,6 +185,8 @@ function load(meshFile,TI,TF)
         #end
 
     end
-    return points,elements,boundaryElements
+
+
+    return points,vertices,groups,elements,boundaryElements
 
 end

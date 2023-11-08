@@ -4,37 +4,37 @@ struct Point{TF<:AbstractFloat}
 end
 Point(z::TF) where TF<:AbstractFloat = Point(SVector{3, TF}(zero(TF), zero(TF), zero(TF)))
 
-mutable struct Vertices{TI<:Integer} 
-    vertexindex1::TI
-    vertexCount1::TI
-    vertices1::Vector{TI}
+mutable struct Vertex{TI<:Integer} 
+    vertexindex::TI
+    vertexCount::TI
+    vertices::Vector{TI}
 end
-Vertices(z::TI) where TI<:Integer = Vertices(0 , 0, TI[])
+Vertex(z::TI) where TI<:Integer = Vertex(0 , 0, TI[])
 
-mutable struct Faces{TI<:Integer} 
+mutable struct Face{TI<:Integer} 
     faceindex::TI
     faceCount::TI
     faces::Vector{TI}
 end
-Faces(z::TI) where TI<:Integer = Faces(0 , 0, TI[])
+Face(z::TI) where TI<:Integer = Face(0 , 0, TI[])
 
-mutable struct Volumes{TI<:Integer}
+mutable struct Volume{TI<:Integer}
     groupindex::TI
     groupCount::TI
     groups::Vector{TI}
 end
-Volumes(z::TI) where TI<:Integer = Volumes(0 , 0, TI[])
+Volume(z::TI) where TI<:Integer = Volume(0 , 0, TI[])
 
-mutable struct BoundaryLoader{TI<:Integer}
+mutable struct BoundaryCondition{TI<:Integer}
     name::String
-    groupNumber::TI
+    bcNumber::TI
     elements::Vector{TI}
 end
-BoundaryLoader(z::TI) where TI<:Integer = BoundaryLoader("default", 0, TI[])
+BoundaryCondition(z::TI) where TI<:Integer = BoundaryCondition("default", 0, TI[])
 
 mutable struct Element{TI<:Integer}
     index::TI
-    vertexCount::TI
-    vertices::Vector{TI}
+    elementCount::TI
+    elements::Vector{TI}
 end
 Element(z::TI) where TI<:Integer = Element(0,0,TI[])

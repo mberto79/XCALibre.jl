@@ -222,3 +222,145 @@ bcNumber
 currentBC
 elements
 
+
+
+#Total Boundary Faces
+sum=zero(Int64)
+@inbounds for boundary ∈ boundaryElements
+    sum += length(boundary.elements)
+end
+sum
+
+#First 2D element
+
+element_index=zero(Int64)
+@inbounds for counter ∈ eachindex(elements)
+    nvertices = elements[counter].elementCount 
+        if nvertices > 2
+            element_index = counter
+            return element_index
+        end
+    end
+
+element_index=zero(Int64)
+element_index=length(vertices)
+
+#Generate Nodes
+struct Node{TI, TF}
+    coords::SVector{3, TF}
+    neighbourCells::Vector{TI}
+end
+Adapt.@adapt_structure Node
+Node(TF) = begin
+    zf = zero(TF)
+    vec_3F = SVector{3,TF}(zf,zf,zf)
+    Node(vec_3F, Int64[])
+end
+Node(x::F, y::F, z::F) where F<:AbstractFloat = Node(SVector{3, F}(x,y,z), Int64[])
+Node(zero::F) where F<:AbstractFloat = Node(zero, zero, zero)
+Node(vector::F) where F<:AbstractVector = Node(vector, Int64[])
+
+
+
+nodes = Node[]
+   @inbounds for i ∈ 1:length(points)
+       point1 = points[i].xyz
+       push!(nodes, Node(point1))
+   end
+   cellID = 0 # counter for cells
+   @inbounds for i ∈ 1:length(elements) 
+           cellID += 1
+           @inbounds for nodeID ∈ elements[i].elements
+               push!(nodes[nodeID].neighbourCells, cellID)
+           end
+   end
+
+nodes
+
+#Generate Faces
+struct Face3D{I,F}
+    nodesID::SVector{3,I}
+    ownerCells::SVector{2,I}
+    centre::SVector{3, F}
+    normal::SVector{3, F}
+    e::SVector{3, F}
+    area::F
+    delta::F
+    weight::F
+end
+Face3D(I,F) = begin
+    zi = zero(I); zf = zero(F)
+    vec_2I = SVector{2,I}(zi,zi)
+    vec_3I=SVector{3,I}(zi,zi,zi)
+    vec_3F = SVector{3,F}(zf,zf,zf)
+    Face3D(vec_3I, vec_2I, vec_3F, vec_3F, vec_3F, zf, zf, zf)
+end
+
+faces1 = Face3D[]
+
+#@inbounds for boundary ∈ boundaryElements
+    @inbounds for elementi=element_index+1:length(faces)+element_index
+            face1 = Face3D(Integer,Float64)
+            vertex1 = elements[elementi].elements[1]
+            vertex2 = elements[elementi].elements[2]
+            vertex3 = elements[elementi].elements[3]
+            if vertex1 < vertex2 && vertex2 < vertex3
+                face1 = @set face1.nodesID = SVector{3,Integer}(vertex1, vertex2, vertex3)
+                push!(faces1, face1)
+                continue
+            elseif vertex1 > vertex2 && vertex3 > vertex1
+                face1 = @set face1.nodesID = SVector{3,Integer}(vertex2, vertex1,vertex3)
+                push!(faces1, face1)
+                continue
+            elseif vertex3 > vertex1 && vertex2 > vertex3
+                face1 = @set face1.nodesID = SVector{3,Integer}(vertex1, vertex3,vertex2)
+                push!(faces1, face1)
+                continue
+            elseif vertex3 > vertex2 && vertex1 > vertex3
+                face1 = @set face1.nodesID = SVector{3,Integer}(vertex2, vertex3,vertex1)
+                push!(faces1, face1)
+                continue
+            elseif vertex1 > vertex3 && vertex2 > vertex1
+                face1 = @set face1.nodesID = SVector{3,Integer}(vertex3, vertex1,vertex2)
+                push!(faces1, face1)
+                continue
+            elseif vertex2 > vertex3 && vertex1 > vertex2
+                face1 = @set face1.nodesID = SVector{3,Integer}(vertex3, vertex2,vertex1)
+                push!(faces1, face1)
+                continue
+            else
+                throw("Boundary elements are inconsistent: possible mesh corruption")
+            end 
+    end
+#end
+
+faces1
+face1
+
+struct Cell{I,F}
+    nodesID::Vector{I}
+    facesID::Vector{I}
+    neighbours::Vector{I}
+    nsign::Vector{I}
+    centre::SVector{3, F}
+    volume::F
+end
+Cell(I,F) = begin
+    zf = zero(F)
+    vec3F = SVector{3,F}(zf,zf,zf)
+    Cell(I[], I[], I[], I[], vec3F, zf)
+end
+
+cells=Cell[]
+@inbounds for i ∈ length(vertices)+length(faces)+1:length(elements)
+    cell = Cell(Int64,Float64)
+    nodesID = elements[i].elements
+    # if length(nodesID) > 2
+    @inbounds for nodeID ∈ nodesID
+            push!(cell.nodesID, nodeID)
+        end
+        push!(cells, cell)
+    # end
+end
+
+cells

@@ -3,7 +3,7 @@ export Node, Boundary, Cell
 
 abstract type AbstractMesh end
 
-struct UnitVectors
+struct UnitVectors # parametrise
     i::SVector{3, Float64}
     j::SVector{3, Float64}
     k::SVector{3, Float64}

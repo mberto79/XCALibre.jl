@@ -268,9 +268,9 @@ nodes = Node[]
        push!(nodes, Node(point1))
    end
    cellID = 0 # counter for cells
-   @inbounds for i ∈ 1:length(elements) 
+   @inbounds for i ∈ 1:length(groups) 
            cellID += 1
-           @inbounds for nodeID ∈ elements[i].elements
+           @inbounds for nodeID ∈ groups[i].groups
                push!(nodes[nodeID].neighbourCells, cellID)
            end
    end
@@ -364,3 +364,71 @@ cells=Cell[]
 end
 
 cells
+
+struct Boundary{I}
+    name::Symbol
+    # nodesID::Vector{I}
+    nodesID::Vector{Vector{I}}
+    facesID::Vector{I}
+    cellsID::Vector{I}
+    # normal::SVector{3, F}
+end
+Boundary(z::I) where I <:Integer = Boundary("default",Vector{I}[],I[],I[])
+
+boundaries=Boundary[]
+@inbounds for boundaryElement ∈ boundaryElements
+    name = Symbol(boundaryElement.name)
+    boundary = Boundary(name,Vector{Integer}[],Integer[],Integer[]) 
+    @inbounds for elementID ∈ boundaryElement.elements
+        nodesID = elements[elementID].elements
+        push!(boundary.nodesID,nodesID)
+    end
+    push!(boundaries,boundary)
+end
+
+boundaries
+
+#CONNECTIVITY
+
+ownerCells=Integer[0,0]
+@inbounds for fID ∈ eachindex(faces)
+    ownerCells = zero(Integer)
+    nodesID=faces1[fID].nodesID
+    node1=nodesID[1]
+    node2=nodesID[2]
+    node3=nodesID[3]
+    neigh1=nodes[node1].neighbourCells
+    neigh2=nodes[node2].neighbourCells
+    neigh3=nodes[node3].neighbourCells
+    owner_counter=zero(Integer)
+    @inbounds for n1 ∈ neigh1
+        @inbounds for n2 ∈ neigh2
+            if n1 == n2
+                owner_counter += 1
+                ownerCells[owner_counter] = n1
+            end
+        end
+    end
+    @inbounds for n1 ∈ neigh1
+        @inbounds for n3 ∈ neigh3
+            if n1 == n3
+                owner_counter +=1
+                ownerCells[owner_counter] = n1
+            end
+        end
+    end
+    face = faces[fID]
+    face = @set face.ownerCells = SVector{2,Integer}(ownerCells)
+    faces[fID]=face
+    if ownerCells[2] != 0
+        @inbounds for ownerCell ∈ ownerCells
+            push!(cells[ownerCell].facesID,fID)
+        end
+        push!(cells[ownerCells[1]].neighbours,ownCells[2])
+        push!(cells[ownerCells[2]].neighbours,ownCells[1])
+    else
+        face=faces[fID]
+        face=@set face.ownerCells =SVector{2,Integer}(ownerCells[1],ownerCells[1])
+        faces[fID]=face
+    end
+end

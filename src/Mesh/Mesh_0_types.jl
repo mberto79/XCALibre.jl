@@ -1,7 +1,10 @@
 export UnitVectors
 export Node, Boundary, Cell
+export AbstractMesh, AbstractMesh2, AbstractMesh3
 
-abstract type AbstractMesh end
+abstract type AbstractMesh{I,F} end
+abstract type AbstractMesh2{I,F} end
+abstract type AbstractMesh3{I,F} end
 
 struct UnitVectors
     i::SVector{3, Float64}

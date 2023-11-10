@@ -1,11 +1,7 @@
-E = 5.2
-kappa = 0.41
-cmu=0.09
+using Plots
+using FVM_1D
+using Krylov
 
-yL = 11
-for i ∈ 1:10
-    println(yL)
-    yL = log(yL)/kappa + B
-end
-
-nut = sqrt(1/sqrt(cmu))
+# backwardFacingStep_2mm, backwardFacingStep_10mm
+mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
+mesh = build_mesh(mesh_file, scale=0.001)

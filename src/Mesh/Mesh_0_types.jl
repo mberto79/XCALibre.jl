@@ -1,19 +1,7 @@
-export UnitVectors
 export Node, Boundary, Cell
-export AbstractMesh, AbstractMesh2, AbstractMesh3
+export AbstractMesh
 
-abstract type AbstractMesh{I,F} end
-abstract type AbstractMesh2{I,F} end
-abstract type AbstractMesh3{I,F} end
-
-struct UnitVectors
-    i::SVector{3, Float64}
-    j::SVector{3, Float64}
-    k::SVector{3, Float64}
-    UnitVectors() = new(
-        SVector(1.0,0.0,0.0), SVector(0.0,1.0,0.0), SVector(0.0,0.0,1.0))
-end
-Adapt.@adapt_structure UnitVectors
+abstract type AbstractMesh end
 
 struct Node{TI, TF}
     coords::SVector{3, TF}

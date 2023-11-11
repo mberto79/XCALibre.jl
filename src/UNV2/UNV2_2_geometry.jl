@@ -1,7 +1,3 @@
-export geometry!
-export centre2d
-export geometric_centre
-
 function centre2d(face::Face2D{I,F}) where {I,F}
     c = face.centre
     [c[1]], [c[2]]
@@ -21,7 +17,7 @@ function geometric_centre(nodes, nodeList) # made generic - requires Node type
     return sum/(length(nodeList))
 end
 
-function geometry!(mesh::AbstractMesh2)
+function geometry!(mesh::Mesh2)
     internal_face_properties!(mesh)
     boundary_face_properties!(mesh)
     cell_properties!(mesh)
@@ -30,7 +26,17 @@ function geometry!(mesh::AbstractMesh2)
 end
 
 # Calculate face properties: area, normal, delta (internal faces)
-function internal_face_properties!(mesh::AbstractMesh2{I,F}) where {I,F}
+
+function total_boundary_faces(mesh::Mesh2{I,F}) where {I,F}
+    (; boundaries) = mesh
+    nbfaces = zero(I)
+    @inbounds for boundary ∈ boundaries
+        nbfaces += length(boundary.facesID)
+    end
+    nbfaces
+end
+
+function internal_face_properties!(mesh::Mesh2{I,F}) where {I,F}
      (; nodes, faces, cells) = mesh
     nbfaces = total_boundary_faces(mesh)
     for facei ∈ (nbfaces + 1):length(faces) # loop over internal faces only!
@@ -75,7 +81,7 @@ function internal_face_properties!(mesh::AbstractMesh2{I,F}) where {I,F}
 end
 
 # Calculate face properties: area, normal, delta (boundary faces)
-function boundary_face_properties!(mesh::AbstractMesh2{I,F}) where {I,F}
+function boundary_face_properties!(mesh::Mesh2{I,F}) where {I,F}
     (; boundaries, nodes, faces, cells) = mesh
     for boundary ∈ boundaries
         (;facesID) = boundary
@@ -113,7 +119,7 @@ function boundary_face_properties!(mesh::AbstractMesh2{I,F}) where {I,F}
     end
 end
 
-function cell_properties!(mesh::AbstractMesh2{I,F}) where {I,F}
+function cell_properties!(mesh::Mesh2{I,F}) where {I,F}
     (; nodes, faces, cells) = mesh
     for celli ∈ eachindex(cells)
         cell = cells[celli]
@@ -140,7 +146,7 @@ function cell_properties!(mesh::AbstractMesh2{I,F}) where {I,F}
     end
 end
 
-function correct_boundary_cell_volumes!(mesh::AbstractMesh2{I,F}) where {I,F}
+function correct_boundary_cell_volumes!(mesh::Mesh2{I,F}) where {I,F}
     (; boundaries, faces, cells) = mesh
     for boundary ∈ boundaries
         (; cellsID, facesID) = boundary

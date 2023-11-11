@@ -18,7 +18,7 @@ Face2D(I,F) = begin
 end
 Adapt.@adapt_structure Face2D
 
-struct Mesh2{I,F} <: AbstractMesh2{I,F}
+struct Mesh2{I,F} <: AbstractMesh
     cells::Vector{Cell{I,F}}
     faces::Vector{Face2D{I,F}}
     boundaries::Vector{Boundary{I}}

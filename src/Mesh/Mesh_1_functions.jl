@@ -6,7 +6,7 @@ export xf, yf, zf # access face centres
 _get_float(mesh) = eltype(mesh.cells[1].centre)
 _get_int(mesh) = eltype(mesh.cells[1].facesID)
 
-function total_boundary_faces(mesh::AbstractMesh2{I,F}) where {I,F}
+function total_boundary_faces(mesh::Mesh2{I,F}) where {I,F}
     (; boundaries) = mesh
     nbfaces = zero(I)
     @inbounds for boundary ∈ boundaries

@@ -1,3 +1,11 @@
+struct UnitVectors
+    i::SVector{3, Float64}
+    j::SVector{3, Float64}
+    k::SVector{3, Float64}
+    UnitVectors() = new(
+        SVector(1.0,0.0,0.0), SVector(0.0,1.0,0.0), SVector(0.0,0.0,1.0))
+end
+
 struct Point{TF<:AbstractFloat}
     xyz::SVector{3, TF}
 end
@@ -70,7 +78,7 @@ Face2D(I,F) = begin
     Face2D(vec_2I, vec_2I, vec_3F, vec_3F, vec_3F, zf, zf, zf)
 end
 
-struct Mesh2{I,F} <: AbstractMesh2{I,F}
+struct Mesh2{I,F}
     cells::Vector{Cell{I,F}}
     faces::Vector{Face2D{I,F}}
     boundaries::Vector{Boundary{I}}

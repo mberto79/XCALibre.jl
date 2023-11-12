@@ -10,12 +10,6 @@ struct Face2D{I,F}
     delta::F
     weight::F
 end
-Face2D(I,F) = begin
-    zi = zero(I); zf = zero(F)
-    vec_2I = SVector{2,I}(zi,zi)
-    vec_3F = SVector{3,F}(zf,zf,zf)
-    Face2D(vec_2I, vec_2I, vec_3F, vec_3F, vec_3F, zf, zf, zf)
-end
 Adapt.@adapt_structure Face2D
 
 struct Mesh2{I,F} <: AbstractMesh

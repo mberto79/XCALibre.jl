@@ -4,7 +4,9 @@ using Krylov
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
-mesh = build_mesh(mesh_file, scale=0.001)
+unv_mesh = build_mesh(mesh_file, scale=0.001)
+
+mesh = mesh2_from_UNV()
 
 boundaries = Vector{Boundary{Int64}}(undef, length(mesh.boundaries))
 cells = Vector{Cell{Int64,Float64}}(undef, length(mesh.cells))

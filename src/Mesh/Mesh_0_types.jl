@@ -8,11 +8,6 @@ struct Node{TI, TF}
     neighbourCells::Vector{TI}
 end
 Adapt.@adapt_structure Node
-Node(TF) = begin
-    zf = zero(TF)
-    vec_3F = SVector{3,TF}(zf,zf,zf)
-    Node(vec_3F, Int64[])
-end
 
 struct Boundary{I}
     name::Symbol

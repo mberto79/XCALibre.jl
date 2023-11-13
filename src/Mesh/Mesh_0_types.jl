@@ -22,6 +22,7 @@ struct Cell{I,F}
     centre::SVector{3, F}
     volume::F
     nodes_map::SVector{2,I}
-    faces_map::SVector{2,I}
+    # faces_map::SVector{2,I}
+    faces_map::UnitRange{I}
 end
 Adapt.@adapt_structure Cell

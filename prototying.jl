@@ -8,8 +8,9 @@ unv_mesh = build_mesh(mesh_file, scale=0.001)
 
 mesh = mesh2_from_UNV(unv_mesh)
 
+mesh.cell_faces[mesh.cells[800].faces_map[1]:mesh.cells[800].faces_map[end]]
 
-
+mesh.cell_faces[mesh.cells[800].faces_map]
 
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3

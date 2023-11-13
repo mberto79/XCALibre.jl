@@ -41,7 +41,8 @@ mesh2_from_UNV(mesh; integer=Int64, float=Float64) = begin
             ni += 1
         end
         # cell array loop
-        faces_map = SVector{2,integer}(length(facesID), fi)
+        # faces_map = SVector{2,integer}(length(facesID), fi)
+        faces_map = fi:(fi + length(facesID) - 1) 
         for j ∈ eachindex(facesID)
             cell_faces[fi] = facesID[j]
             cell_neighbours[fi] = neighbours[j]

@@ -21,9 +21,7 @@ Adapt.@adapt_structure Boundary
 struct Cell{I,F}
     centre::SVector{3, F}
     volume::F
-    map2nodes::SVector{2,I}
-    map2faces::SVector{2,I}
-    map2neighbours::SVector{2,I}
-    map2nsign::SVector{2,I}
+    nodes_map::SVector{2,I}
+    faces_map::SVector{2,I}
 end
 Adapt.@adapt_structure Cell

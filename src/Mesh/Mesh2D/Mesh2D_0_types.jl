@@ -1,7 +1,7 @@
 export Face2D, Mesh2
 
 struct Face2D{I,F}
-    face2nodes::SVector{2,I}
+    nodes_map::SVector{2,I}
     ownerCells::SVector{2,I}
     centre::SVector{3, F}
     normal::SVector{3, F}
@@ -14,12 +14,12 @@ Adapt.@adapt_structure Face2D
 
 struct Mesh2{I,F} <: AbstractMesh
     cells::Vector{Cell{I,F}}
-    cell2nodes::Vector{I}
-    cell2faces::Vector{I}
-    cell2neighbours::Vector{I}
-    cell2nsign::Vector{I}
+    cell_nodes::Vector{I}
+    cell_faces::Vector{I}
+    cell_neighbours::Vector{I}
+    cell_nsign::Vector{I}
     faces::Vector{Face2D{I,F}}
-    face2nodes::Vector{I}
+    face_nodes::Vector{I}
     boundaries::Vector{Boundary{I}}
     nodes::Vector{Node{I,F}}
 end

@@ -6,58 +6,9 @@ using Krylov
 mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
 unv_mesh = build_mesh(mesh_file, scale=0.001)
 
-mesh = mesh2_from_UNV()
+mesh = mesh2_from_UNV(unv_mesh)
 
-boundaries = Vector{Boundary{Int64}}(undef, length(mesh.boundaries))
-cells = Vector{Cell{Int64,Float64}}(undef, length(mesh.cells))
-faces = Vector{Face2D{Int64,Float64}}(undef, length(mesh.faces))
-nodes = Vector{Node{Int64,Float64}}(undef, length(mesh.nodes))
 
-for (i, b) ∈ enumerate(mesh.boundaries)
-    bi = Boundary(
-        b.name,
-        b.nodesID,
-        b.facesID,
-        b.cellsID
-        )
-    boundaries[i] = bi
-end
-
-for (i, c) ∈ enumerate(mesh.cells)
-    ci = Cell(
-            c.nodesID,
-            c.facesID,
-            c.neighbours,
-            c.nsign,
-            c.centre,
-            c.volume
-        )
-    cells[i] = ci
-end
-
-for (i, n) ∈ enumerate(mesh.nodes)
-    ni = Node(
-        n.coords,
-        n.neighbourCells
-        )
-    nodes[i] = ni
-end
-
-for (i, f) ∈ enumerate(mesh.faces)
-    fi = Face2D(
-        f.nodesID,
-        f.ownerCells,
-        f.centre,
-        f.normal,
-        f.e,
-        f.area,
-        f.delta,
-        f.weight
-        )
-    faces[i] = fi
-end
-
-mesh = Mesh2(cells, faces, boundaries, nodes)
 
 
 velocity = [0.5, 0.0, 0.0]

@@ -3,8 +3,8 @@ export total_boundary_faces, boundary_index
 export x, y, z # access cell centres
 export xf, yf, zf # access face centres
 
-_get_float(mesh) = eltype(mesh.cells[1].centre)
-_get_int(mesh) = eltype(mesh.cells[1].facesID)
+_get_int(mesh) = typeof(mesh).parameters[1]
+_get_float(mesh) = typeof(mesh).parameters[2]
 
 function total_boundary_faces(mesh::Mesh2{I,F}) where {I,F}
     (; boundaries) = mesh

@@ -8,6 +8,15 @@ function model2vtk(model::RANS{Laminar,F1,F2,V,T,E,D}, name) where {F1,F2,V,T,E,
     write_vtk(name, model.mesh, args...)
 end
 
+function model2vtk(model::dRANS{Laminar,F1,F2,F3,V,T,E,D}, name) where {F1,F2,F3,V,T,E,D}
+    args = (
+        ("U", model.U), 
+        ("p", model.p),
+        ("h", model.h)
+    )
+    write_vtk(name, model.mesh, args...)
+end
+
 function model2vtk(model::RANS{KOmega,F1,F2,V,T,E,D}, name) where {F1,F2,V,T,E,D}
     args = (
         ("U", model.U), 

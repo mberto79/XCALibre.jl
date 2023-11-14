@@ -6,6 +6,10 @@ get_phi(eqn::ModelEquation)  = begin
     eqn.model.terms[1].phi
 end
 
+get_phi(eqn::ModelEquation, ti::Integer)  = begin 
+    eqn.model.terms[ti].phi
+end
+
 get_flux(eqn::ModelEquation, ti::Integer) = begin 
     eqn.model.terms[ti].flux
 end

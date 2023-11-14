@@ -10,6 +10,18 @@ update_nueff!(nueff, nu, turb_model) = begin
     end
 end
 
+update_alphaeff!(alphaeff, mu, turb_model) = begin
+    if turb_model === nothing
+        for i ∈ eachindex(alphaeff)
+            alphaeff[i] = mu[i] / 0.7
+        end
+    else
+        for i ∈ eachindex(alphaeff)
+            alphaeff[i] = mu[i] / 0.7 + turb_model.νtf[i]
+        end
+    end
+end
+
 function residual!(Residual, equation, phi, iteration)
     (; A, b, R, Fx) = equation
     values = phi.values
@@ -73,6 +85,17 @@ function flux!(phif::FS, psif::FV) where {FS<:FaceScalarField,FV<:FaceVectorFiel
     end
 end
 
+function flux!(phif::FS, psif::FV, rhof::FS) where {FS<:FaceScalarField,FV<:FaceVectorField,}
+    (; mesh, values) = phif
+    (; mesh, values) = rhof
+    (; faces) = mesh 
+    @inbounds for fID ∈ eachindex(faces)
+        (; area, normal) = faces[fID]
+        Sf = area*normal
+        values[fID] = (psif[fID]⋅Sf)*rhof[fID]
+    end
+end
+
 volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 
 function inverse_diagonal!(rD::S, eqn) where S<:ScalarField
@@ -88,6 +111,7 @@ function inverse_diagonal!(rD::S, eqn) where S<:ScalarField
 end
 
 function correct_velocity!(U, Hv, ∇p, rD)
+    (; mesh, values) = rD
     Ux = U.x; Uy = U.y; Hvx = Hv.x; Hvy = Hv.y
     dpdx = ∇p.result.x; dpdy = ∇p.result.y; rDvalues = rD.values
     @inbounds @simd for i ∈ eachindex(Ux)

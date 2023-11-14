@@ -27,6 +27,10 @@ set_runtime(; iterations::I, write_interval::I, time_step::N) where {I<:Integer,
     (iterations=iterations, dt=time_step, write_interval=write_interval)
 end
 
+# set_runtime(; iterations::I, write_interval::I) where {I<:Integer} = begin
+#     (iterations=iterations, write_interval=write_interval)
+# end
+
 function run!(phiEqn::ModelEquation, setup) # ; opP, solver
 
     (; itmax, atol, rtol) = setup

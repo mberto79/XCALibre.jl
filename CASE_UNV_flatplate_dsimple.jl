@@ -5,15 +5,18 @@ using FVM_1D
 using Krylov
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
-mesh_file = "unv_sample_meshes/flatplate_2D_laminar.unv"
+# mesh_file = "unv_sample_meshes/flatplate_2D_laminar.unv"
+mesh_file = "unv_sample_meshes/flatplate_2D_highRe.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 
 
-velocity = [0.2, 0.0, 0.0]
-nu = 1e-5
+velocity = [10.0, 0.0, 0.0]
+temp = 300
+nu = 1e-6
 Re = velocity[1]*1/nu
+Cp = 1005
 
-model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
+model = dRANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 @assign! model U (
     Dirichlet(:inlet, velocity),
@@ -22,22 +25,37 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
     Neumann(:top, 0.0)
 )
 
+@assign! model h (
+    Dirichlet(:inlet, Cp * temp),
+    Neumann(:outlet, 0.0),
+    Dirichlet(:wall, Cp * 310),
+    Neumann(:top, 0.0)
+)
+
  @assign! model p (
     Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
+    Dirichlet(:outlet, 100000.0),
     Neumann(:wall, 0.0),
     Neumann(:top, 0.0)
 )
 
 schemes = (
-    U = set_schemes(divergence=Linear),
-    p = set_schemes(divergence=Linear)
+    U = set_schemes(divergence=Upwind),
+    h = set_schemes(divergence=Linear),
+    p = set_schemes(divergence=Upwind)
 )
 
 
 solvers = (
     U = set_solver(
         model.U;
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = DILU(),
+        convergence = 1e-7,
+        relax       = 0.8,
+    ),
+    h = set_solver(
+        model.h;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = DILU(),
         convergence = 1e-7,
@@ -52,8 +70,7 @@ solvers = (
     )
 )
 
-# runtime = set_runtime(iterations=2000, write_interval=-1)
-runtime = set_runtime(iterations=2000, write_interval=-1, time_step=1)
+runtime = set_runtime(iterations=2000, write_interval=100)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -61,9 +78,10 @@ config = Configuration(
 GC.gc()
 
 initialise!(model.U, velocity)
-initialise!(model.p, 0.0)
+initialise!(model.h, temp*1005)
+initialise!(model.p, 100000.0)
 
-Rx, Ry, Rp = simple!(model, config) # 9.39k allocs
+Rx, Ry, Rh, Rp = dsimple!(model, config) # 9.39k allocs
 
 using DelimitedFiles
 using LinearAlgebra

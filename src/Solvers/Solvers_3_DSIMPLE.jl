@@ -1,9 +1,9 @@
-export discretisesimple!
+export dsimple!
 
 function dsimple!(model, config; resume=true, pref=nothing) 
 
     @info "Extracting configuration and input fields..."
-    (; U, p, nu, mesh) = model
+    (; U, h, p, nu, mesh) = model
     (; solvers, schemes, runtime) = config
 
     @info "Preallocating fields..."
@@ -11,39 +11,38 @@ function dsimple!(model, config; resume=true, pref=nothing)
     ∇p = Grad{schemes.p.gradient}(p)
     mdotf = FaceScalarField(mesh)
     # nuf = ConstantScalar(nu) # Implement constant field!
-    rDf = FaceScalarField(mesh)
+    rhorDf = FaceScalarField(mesh)
     nueff = FaceScalarField(mesh)
-    initialise!(rDf, 1.0)
+    alphaeff = FaceScalarField(mesh)
+    initialise!(rhorDf, 1.0)
     divHv = ScalarField(mesh)
+
+    divK = ScalarField(mesh)
 
     @info "Defining models..."
 
     ux_eqn = (
-        Time{schemes.U.time}(U.x)
-        + Divergence{schemes.U.divergence}(mdotf, U.x) 
+        Divergence{schemes.U.divergence}(mdotf, U.x) 
         - Laplacian{schemes.U.laplacian}(nueff, U.x) 
         == 
         -Source(∇p.result.x)
     ) → Equation(mesh)
     
     uy_eqn = (
-        Time{schemes.U.time}(U.y)
-        + Divergence{schemes.U.divergence}(mdotf, U.y) 
+        Divergence{schemes.U.divergence}(mdotf, U.y) 
         - Laplacian{schemes.U.laplacian}(nueff, U.y) 
         == 
         -Source(∇p.result.y)
     ) → Equation(mesh)
 
     h_eqn = (
-        Time{schemes.h.time}(h)
-        + Divergence{schemes.h.divergence}(mdotf, h)
-        + Divergence{schemes.h.divergence}(mdotf, K)
+        Divergence{schemes.h.divergence}(mdotf, h)
         - Laplacian{schemes.h.laplacian}(alphaeff, h) 
-        == 0
+        == -Source(divK)
     ) → Equation(mesh)
 
     p_eqn = (
-        Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
+        Laplacian{schemes.p.laplacian}(rhorDf, p) == Source(divHv)
     ) → Equation(mesh)
 
     @info "Initialising preconditioners..."
@@ -51,6 +50,8 @@ function dsimple!(model, config; resume=true, pref=nothing)
     @reset ux_eqn.preconditioner = set_preconditioner(
                     solvers.U.preconditioner, ux_eqn, U.x.BCs, runtime)
     @reset uy_eqn.preconditioner = ux_eqn.preconditioner
+    @reset h_eqn.preconditioner = set_preconditioner(
+                    solvers.h.preconditioner, h_eqn, h.BCs, runtime)
     @reset p_eqn.preconditioner = set_preconditioner(
                     solvers.p.preconditioner, p_eqn, p.BCs, runtime)
 
@@ -58,6 +59,7 @@ function dsimple!(model, config; resume=true, pref=nothing)
      
     @reset ux_eqn.solver = solvers.U.solver(_A(ux_eqn), _b(ux_eqn))
     @reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
+    @reset h_eqn.solver = solvers.h.solver(_A(h_eqn), _b(h_eqn))
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
 
     if isturbulent(model)
@@ -68,26 +70,30 @@ function dsimple!(model, config; resume=true, pref=nothing)
         turbulence = nothing
     end
 
-    R_ux, R_uy, R_p  = SIMPLE_loop(
-    model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config ; resume=resume, pref=pref)
+    R_ux, R_uy, R_h, R_p  = dSIMPLE_loop(
+    model, ∇p, ux_eqn, uy_eqn, h_eqn, p_eqn, turbulence, config ; resume=resume, pref=pref)
 
-    return R_ux, R_uy, R_p     
+    return R_ux, R_uy, R_h, R_p     
 end # end function
 
-function SIMPLE_loop(
-    model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config ; resume, pref)
+function dSIMPLE_loop(
+    model, ∇p, ux_eqn, uy_eqn, h_eqn, p_eqn, turbulence, config ; resume, pref)
     
     # Extract model variables and configuration
-    (;mesh, U, p, nu) = model
+    (;mesh, U, h, p, nu) = model
     # ux_model, uy_model = ux_eqn.model, uy_eqn.model
     p_model = p_eqn.model
     (; solvers, schemes, runtime) = config
     (; iterations, write_interval) = runtime
     
-    mdotf = get_flux(ux_eqn, 2)
-    nueff = get_flux(ux_eqn, 3)
-    rDf = get_flux(p_eqn, 1)
+    mdotf = get_flux(ux_eqn, 1)
+    nueff = get_flux(ux_eqn, 2)
+    alphaeff = get_flux(h_eqn, 2)
+    rhorDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
+    divK = get_source(h_eqn, 1)
+
+    # K = get_phi(h_eqn, 2)
     
     @info "Allocating working memory..."
 
@@ -103,10 +109,14 @@ function SIMPLE_loop(
 
     n_cells = length(mesh.cells)
     Uf = FaceVectorField(mesh)
+    hf = FaceScalarField(mesh)
     pf = FaceScalarField(mesh)
+    rhof = FaceScalarField(mesh)
     gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
-    rD = ScalarField(mesh)
+    rhorD = ScalarField(mesh)
+    rho = ScalarField(mesh)
+    phiKf = FaceVectorField(mesh)
 
     # Pre-allocate auxiliary variables
 
@@ -117,20 +127,44 @@ function SIMPLE_loop(
 
     R_ux = ones(TF, iterations)
     R_uy = ones(TF, iterations)
+    R_h = ones(TF, iterations)
     R_p = ones(TF, iterations)
-    
+
+    R = 287.
+    Cp = 1005.
+
+    # T = h/Cp
+    # rho = p/(R*T)
+
+    interpolate!(hf, h)
+    correct_boundaries!(hf, h, h.BCs)
+   
     interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, U.BCs)
-    flux!(mdotf, Uf)
+  
     grad!(∇p, pf, p, p.BCs)
 
+    rhof.values .= (pf.values.*Cp)./(R.*hf.values)
+    rho.values .= (p.values.*Cp)./(R.*h.values)
+    
+    flux!(mdotf, Uf, rhof)
+
     update_nueff!(nueff, nu, turbulence)
+
+    update_alphaeff!(alphaeff, nu, turbulence)
 
     @info "Staring SIMPLE loops..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
     @time for iteration ∈ 1:iterations
+
+        # I think divK is the problem
+        phiKf.x.values .= rhof.values .* Uf.x.values .* 0.5 .* (Uf.x.values .* Uf.x.values .+ Uf.y.values .* Uf.y.values .+ Uf.z.values .* Uf.z.values)
+        phiKf.y.values .= rhof.values .* Uf.y.values .* 0.5 .* (Uf.x.values .* Uf.x.values .+ Uf.y.values .* Uf.y.values .+ Uf.z.values .* Uf.z.values)
+        phiKf.z.values .= rhof.values .* Uf.z.values .* 0.5 .* (Uf.x.values .* Uf.x.values .+ Uf.y.values .* Uf.y.values .+ Uf.z.values .* Uf.z.values)
+        explicitdiv!(divK, phiKf)
+        divK.values .= 0
 
         @. prev = U.x.values
         discretise!(ux_eqn, prev, runtime)
@@ -150,13 +184,35 @@ function SIMPLE_loop(
         run!(uy_eqn, solvers.U)
         residual!(R_uy, uy_eqn.equation, U.y, iteration)
         
-        inverse_diagonal!(rD, ux_eqn.equation)
-        interpolate!(rDf, rD)
+        @. prev = h.values
+        discretise!(h_eqn, prev, runtime)
+        apply_boundary_conditions!(h_eqn, h.BCs)
+        implicit_relaxation!(h_eqn.equation, prev, solvers.h.relax)
+        update_preconditioner!(h_eqn.preconditioner)
+        run!(h_eqn, solvers.h)
+        residual!(R_h, h_eqn.equation, h, iteration)
+
+        # interpolate!(hf, h)
+        # correct_boundaries!(hf, h, h.BCs)
+        # interpolate!(pf, p)
+        # correct_boundaries!(pf, p, p.BCs)
+        # rhof.values .= (pf.values.*Cp)./(R.*hf.values)
+        
+        # rho.values .= (p.values.*Cp)./(R.*h.values)
+
+        inverse_diagonal!(rhorD, ux_eqn.equation)
+        rhorD.values .*= rho.values
+        interpolate!(rhorDf, rhorD)
         remove_pressure_source!(ux_eqn, uy_eqn, ∇p)
         H!(Hv, U, ux_eqn, uy_eqn)
 
+        Hv.x.values .*= rho.values
+        Hv.y.values .*= rho.values
+        Hv.z.values .*= rho.values
+
         interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs)
+        
         div!(divHv, Uf)
    
         @. prev = p.values
@@ -165,7 +221,6 @@ function SIMPLE_loop(
         setReference!(p_eqn.equation, pref, 1)
         update_preconditioner!(p_eqn.preconditioner)
         run!(p_eqn, solvers.p)
-
         explicit_relaxation!(p, prev, solvers.p.relax)
         residual!(R_p, p_eqn.equation, p, iteration)
 
@@ -187,12 +242,30 @@ function SIMPLE_loop(
             end
         end
 
-        correct_velocity!(U, Hv, ∇p, rD)
-        interpolate!(Uf, U)
-        correct_boundaries!(Uf, U, U.BCs)
-        flux!(mdotf, Uf)
+        # rhorD.values .*= rho.values
+        correct_velocity!(U, Hv, ∇p, rhorD)
 
+        # @. prev = rho.values
+
+        rho.values .= (p.values.*Cp)./(R.*h.values)
+        interpolate!(hf, h)
+        correct_boundaries!(hf, h, h.BCs)
+        rhof.values .= (pf.values.*Cp)./(R.*hf.values)
+
+        U.x.values ./= rho.values
+        U.y.values ./= rho.values
+        U.z.values ./= rho.values
+
+        interpolate!(Uf, U)   
+        correct_boundaries!(Uf, U, U.BCs)
+
+        flux!(mdotf, Uf, rhof)
+
+      
+
+        # explicit_relaxation!(rho, prev, 0.01)
         
+
         if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs)
             turbulence!(turbulence, model, S, S2, prev) 
@@ -207,8 +280,11 @@ function SIMPLE_loop(
         
         convergence = 1e-7
 
+        convergence = 1e-20
+
         if (R_ux[iteration] <= convergence && 
             R_uy[iteration] <= convergence && 
+            R_h[iteration] <= convergence &&
             R_p[iteration] <= convergence)
 
             print(
@@ -227,6 +303,7 @@ function SIMPLE_loop(
                 (:iter,iteration),
                 (:Ux, R_ux[iteration]),
                 (:Uy, R_uy[iteration]),
+                (:h, R_h[iteration]),
                 (:p, R_p[iteration]),
                 ]
             )
@@ -236,5 +313,5 @@ function SIMPLE_loop(
         end
 
     end # end for loop
-    return R_ux, R_uy, R_p 
+    return R_ux, R_uy, R_h, R_p 
 end

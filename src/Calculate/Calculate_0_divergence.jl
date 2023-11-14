@@ -1,5 +1,6 @@
 export Div
 export div! 
+export explicitdiv!
 
 # Define Divergence type and functionality
 
@@ -96,6 +97,33 @@ function div!(phi::ScalarField, psif::FaceVectorField)
         Sf = area*normal
         # Boundary normals are correct by definition
         phi.values[cID] += psif[fID]⋅Sf/volume
+    end
+end
+
+function explicitdiv!(phi::ScalarField, psif::FaceVectorField)
+    mesh = phi.mesh
+    (; cells, faces) = mesh
+    F = eltype(mesh.nodes[1].coords)
+
+    for ci ∈ eachindex(cells)
+        (; facesID, nsign, volume) = cells[ci]
+        phi.values[ci] = zero(F)
+        for fi ∈ eachindex(facesID)
+            fID = facesID[fi]
+            (; area, normal) = faces[fID]
+            Sf = area*normal
+            phi.values[ci] += psif[fID]⋅Sf*nsign[fi]
+        end
+    end
+    # Add boundary faces contribution
+    nbfaces = total_boundary_faces(mesh)
+    for fID ∈ 1:nbfaces
+        cID = faces[fID].ownerCells[1]
+        volume = cells[cID].volume
+        (; area, normal) = faces[fID]
+        Sf = area*normal
+        # Boundary normals are correct by definition
+        phi.values[cID] += psif[fID]⋅Sf
     end
 end
 

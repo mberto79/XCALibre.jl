@@ -9,12 +9,14 @@ mesh = build_mesh(mesh_file, scale=0.001)
 
 # Inlet conditions
 
-velocity = [0.50, 0.0, 0.0]
+velocity = [30.0, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
-nu = 1e-3
+nu = 1e-5
 Re = (0.2*velocity[1])/nu
+temp = 300
+Cp = 1005
 
-model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
+model = dRANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 @assign! model U ( 
     Dirichlet(:inlet, velocity),
@@ -24,9 +26,17 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
     Neumann(:top, 0.0)
 )
 
+@assign! model h (
+    Dirichlet(:inlet, Cp * temp),
+    Neumann(:outlet, 0.0),
+    Dirichlet(:cylinder, Cp * temp),
+    Neumann(:top, 0.0),
+    Neumann(:bottom, 0.0)
+)
+
 @assign! model p (
     Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
+    Dirichlet(:outlet, 100000.0),
     Neumann(:cylinder, 0.0),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0)
@@ -35,8 +45,15 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 solvers = (
     U = set_solver(
         model.U;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0(),
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = DILU(),
+        convergence = 1e-7,
+        relax       = 0.7,
+    ),
+    h = set_solver(
+        model.h;
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = DILU(),
         convergence = 1e-7,
         relax       = 0.7,
     ),
@@ -51,10 +68,11 @@ solvers = (
 
 schemes = (
     U = set_schemes(divergence=Upwind, gradient=Midpoint),
+    h = set_schemes(divergence=Upwind, gradient=Midpoint),
     p = set_schemes(divergence=Upwind, gradient=Midpoint)
 )
 
-runtime = set_runtime(iterations=600, write_interval=100)
+runtime = set_runtime(iterations=200, write_interval=10, time_step=1.0)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -62,9 +80,10 @@ config = Configuration(
 GC.gc()
 
 initialise!(model.U, velocity)
-initialise!(model.p, 0.0)
+initialise!(model.p, 100000)
+initialise!(model.h, 1005*temp)
 
-Rx, Ry, Rp = simple!(model, config) #, pref=0.0)
+Rx, Ry, Rh, Rp = dsimple!(model, config) #, pref=0.0)
 
 plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

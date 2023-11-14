@@ -1,19 +1,25 @@
 using Plots
+
 using FVM_1D
+
 using Krylov
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
+# mesh_file = "unv_sample_meshes/flatplate_2D_laminar.unv"
 mesh_file = "unv_sample_meshes/flatplate_2D_highRe.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 
 
-velocity = [15, 0.0, 0.0]
+velocity = [15.0, 0.0, 0.0]
+temp = 300
 nu = 1e-5
 Re = velocity[1]*1/nu
+Cp = 1005
 k_inlet = 0.375
 ω_inlet = 1000
 
-model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
+
+model = dRANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 @assign! model U (
     Dirichlet(:inlet, velocity),
@@ -22,9 +28,16 @@ model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
     Neumann(:top, 0.0)
 )
 
- @assign! model p (
+@assign! model h (
+    Dirichlet(:inlet, Cp * temp),
+    Neumann(:outlet, 0.0),
+    Dirichlet(:wall, Cp * 305),
+    Neumann(:top, 0.0)
+)
+
+@assign! model p (
     Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
+    Dirichlet(:outlet, 100000.0),
     Neumann(:wall, 0.0),
     Neumann(:top, 0.0)
 )
@@ -35,6 +48,7 @@ model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
     KWallFunction(:wall),
     Neumann(:top, 0.0)
 )
+
 
 @assign! model turbulence omega (
     Dirichlet(:inlet, ω_inlet),
@@ -50,8 +64,10 @@ model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
     Neumann(:top, 0.0)
 )
 
+
 schemes = (
     U = set_schemes(divergence=Upwind),
+    h = set_schemes(divergence=Upwind),
     p = set_schemes(divergence=Upwind),
     k = set_schemes(divergence=Upwind),
     omega = set_schemes(divergence=Upwind)
@@ -62,7 +78,14 @@ solvers = (
     U = set_solver(
         model.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0(),
+        preconditioner = DILU(),
+        convergence = 1e-7,
+        relax       = 0.8,
+    ),
+    h = set_solver(
+        model.h;
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = DILU(),
         convergence = 1e-7,
         relax       = 0.8,
     ),
@@ -89,7 +112,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=100)
+runtime = set_runtime(iterations=2000, write_interval=100)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -97,31 +120,27 @@ config = Configuration(
 GC.gc()
 
 initialise!(model.U, velocity)
-initialise!(model.p, 0.0)
-initialise!(model.turbulence.k, k_inlet)
-initialise!(model.turbulence.omega, ω_inlet)
-initialise!(model.turbulence.nut, k_inlet/ω_inlet)
+initialise!(model.h, temp*1005)
+initialise!(model.p, 100000.0)
 
-Rx, Ry, Rp = simple!(model, config) # 9.39k allocs
+Rx, Ry, Rh, Rp = dsimple!(model, config) # 9.39k allocs
 
 using DelimitedFiles
 using LinearAlgebra
 
-OF_data = readdlm("flatplate_OF_wall_kOmega_highRe.csv", ',', Float64, skipstart=1)
+OF_data = readdlm("flatplate_OF_wall_laminar.csv", ',', Float64, skipstart=1)
 oRex = OF_data[:,7].*velocity[1]./nu[1]
-oCf = sqrt.(OF_data[:,12].^2 + OF_data[:,13].^2)/(0.5*velocity[1]^2)
+oCf = sqrt.(OF_data[:,9].^2 + OF_data[:,10].^2)/(0.5*velocity[1]^2)
 
 tauw, pos = wall_shear_stress(:wall, model)
 tauMag = [norm(tauw[i]) for i ∈ eachindex(tauw)]
 x = [pos[i][1] for i ∈ eachindex(pos)]
-Rex = velocity[1].*x./nu
 
-x_corr = [0:0.0002:1;]
-Rex_corr = velocity[1].*x_corr/nu
-Cf_corr = 0.074.*(Rex_corr).^(-1/5)
+Rex = velocity[1].*x/nu[1]
+Cf = 0.664./sqrt.(Rex)
 plot(; xaxis="Rex", yaxis="Cf")
-plot!(Rex_corr, Cf_corr, color=:red, ylims=(0, 0.02), label="Blasius",lw=1.5)
-plot!(oRex, oCf, color=:green, lw=1.5, label="OpenFOAM") |> display
+plot!(Rex, Cf, color=:red, ylims=(0, 0.05), xlims=(0,2e4), label="Blasius",lw=1.5)
+plot!(oRex, oCf, color=:green, lw=1.5, label="OpenFOAM")
 plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code") |> display
 
 plot(; xlims=(0,1000))

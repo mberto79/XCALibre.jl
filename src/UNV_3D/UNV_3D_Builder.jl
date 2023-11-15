@@ -68,19 +68,24 @@ end
 
 #Generate FUNCTIONS
 
-function generate_nodes(elements,points)
+#Nodes
+function generate_nodes(points)
     nodes = Node[]
    @inbounds for i ∈ 1:length(points)
        point1 = points[i].xyz
        push!(nodes, Node(point1))
    end
-   cellID = 0 # counter for cells
-   @inbounds for i ∈ 1:length(elements) 
-           cellID += 1
-           @inbounds for nodeID ∈ elements[i].elements
-               push!(nodes[nodeID].neighbourCells, cellID)
-           end
-   end
    return nodes
+end
+
+#Faces
+function generate_faces(faces)
+    facenodes=Mesh3[]
+    @inbounds for i ∈ 1:length(faces)
+        face1=faces[i].faces
+        push!(facenodes[i].face_nodes,face1)
+    end
+    return facenodes
+
 end
 

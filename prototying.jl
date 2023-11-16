@@ -1,6 +1,7 @@
 using Plots
 using FVM_1D
 using Krylov
+using CUDA
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
@@ -8,10 +9,54 @@ unv_mesh = build_mesh(mesh_file, scale=0.001)
 
 mesh = mesh2_from_UNV(unv_mesh)
 
-mesh.cell_faces[mesh.cells[800].faces_map[1]:mesh.cells[800].faces_map[end]]
+# mesh.cell_faces[mesh.cells[800].faces_map[1]:mesh.cells[800].faces_map[end]]
 
-mesh.cell_faces[mesh.cells[800].faces_map]
+facesID_gpu = []
+nodesID_gpu = []
+centres_gpu = []
+volumes_gpu = []
 
+faces_range_gpu = []
+nodes_range_gpu = []
+
+for i in 1:length(mesh.cells)
+
+    cell_faces_cpu = mesh.cell_faces[mesh.cells[i].faces_range]
+    cell_nodes_cpu = mesh.cell_nodes[mesh.cells[i].nodes_range]
+    cell_centres_cpu = mesh.cells[i].centre
+    cell_volumes_cpu = mesh.cells[i].volume
+    # faces_nodes_cpu = mesh.faces[mesh.faces[i].nodes_range]
+
+    push!(facesID_gpu, cell_faces_cpu...)
+    push!(nodesID_gpu, cell_nodes_cpu...)
+    push!(centres_gpu, cell_centres_cpu...)
+    push!(volumes_gpu, cell_volumes_cpu...)
+    push!(faces_range_gpu, mesh.cells[i].faces_range)
+    push!(nodes_range_gpu, mesh.cells[i].nodes_range)    
+
+end
+
+function test_kernel(f, n, c, v, fr, nr)
+    i = threadIdx().x
+    
+    @inbounds if i <= length(fr) && i > 0
+        
+        for j in fr[i]
+           
+            f[j] = f[j] + f[j]
+            
+        end
+
+    end
+
+    return nothing
+
+end
+
+@cuda threads = length(facesID_gpu) test_kernel!(facesID_gpu, nodesID_gpu, centres_gpu, volumes_gpu,
+                                                faces_range_gpu, nodes_range_gpu)
+
+# solver 
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu

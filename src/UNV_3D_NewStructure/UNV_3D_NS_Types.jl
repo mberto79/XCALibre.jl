@@ -24,9 +24,9 @@ Adapt.@adapt_structure Boundary
 struct Cell{I,F}
     centre::SVector{3, F}
     volume::F
-    nodes_map::UnitRange{I}
+    nodes_range::UnitRange{I}
     # faces_map::SVector{2,I}
-    faces_map::UnitRange{I}
+    faces_range::UnitRange{I}
 end
 Adapt.@adapt_structure Cell
 
@@ -51,9 +51,9 @@ end
 Face(z::TI) where TI<:Integer = Face(0 , 0, TI[])
 
 mutable struct Volume{TI<:Integer}
-    groupindex::TI
-    groupCount::TI
-    groups::Vector{TI}
+    volumeindex::TI
+    volumeCount::TI
+    volumes::Vector{TI}
 end
 Volume(z::TI) where TI<:Integer = Volume(0 , 0, TI[])
 
@@ -70,3 +70,35 @@ mutable struct Element{TI<:Integer}
     elements::Vector{TI}
 end
 Element(z::TI) where TI<:Integer = Element(0,0,TI[])
+
+struct Face3D{I,F}
+    nodes_range::UnitRange{I}
+    ownerCells::SVector{2,I}
+    centre::SVector{3, F}
+    normal::SVector{3, F}
+    e::SVector{3, F}
+    area::F
+    delta::F
+    weight::F
+end
+Adapt.@adapt_structure Face3D
+Face3D(I,F) = begin
+    zi = zero(I); zf = zero(F)
+    vec_2I = SVector{2,I}(zi,zi)
+    vec_3I=SVector{3,I}(zi,zi,zi)
+    vec_3F = SVector{3,F}(zf,zf,zf)
+    Face3D(vec_3I, vec_2I, vec_3F, vec_3F, vec_3F, zf, zf, zf)
+end
+
+struct Mesh3{I,F} #<: AbstractMesh
+    cells::Vector{Cell{I,F}}
+    cell_nodes::Vector{I}
+    cell_faces::Vector{I}
+    cell_neighbours::Vector{I}
+    cell_nsign::Vector{I}
+    faces::Vector{Face3D{I,F}}
+    face_nodes::Vector{I}
+    boundaries::Vector{Boundary{I}}
+    nodes::Vector{Node{I,F}}
+end
+Adapt.@adapt_structure Mesh3

@@ -12,7 +12,8 @@ function centre2d(cell::Cell{I,F}) where {I,F}
     [c[1]], [c[2]]
 end
 
-function geometric_centre(nodes::Vector{Node{I,F}}, nodeList) where {I,F}
+function geometric_centre(nodes, nodeList) # made generic - requires Node type
+    F = eltype(nodes[1].coords)
     sum = SVector{3, F}(0.0,0.0,0.0)
         for ID ∈ nodeList
             sum += nodes[ID].coords

@@ -1,7 +1,7 @@
 export Face2D, Mesh2
 
 struct Face2D{I,F}
-    nodes_map::SVector{2,I}
+    nodes_range::UnitRange{I}
     ownerCells::SVector{2,I}
     centre::SVector{3, F}
     normal::SVector{3, F}

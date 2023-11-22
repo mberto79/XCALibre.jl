@@ -30,7 +30,6 @@ struct Cell{I,F}
 end
 Adapt.@adapt_structure Cell
 
-
 struct Point{TF<:AbstractFloat}
     xyz::SVector{3, TF}
 end

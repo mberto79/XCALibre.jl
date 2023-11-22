@@ -187,114 +187,222 @@ boundaryNumber
 currentBoundary
 elements
 
-mesh=Mesh3[]
+
+
 #Generate nodes
-nodes=Node[]
-@inbounds for i ∈ 1:length(points)
-    point=points[i].xyz
-    push!(nodes,Node(point))
+function generate_nodes(points)
+    nodes=Node[]
+    @inbounds for i ∈ 1:length(points)
+        point=points[i].xyz
+        push!(nodes,Node(point))
+    end
+    return nodes
 end
-nodes
+
+nodes=generate_nodes(points)
+
+
+
 
 #Generate Faces
-face_nodes=[] #Vector(undef,length(faces)*3)
-
-for n=1:length(faces)
-    for i=1:3
-        push!(face_nodes,faces[n].faces[i])
+function generate_face_nodes(faces)
+    face_nodes=[] #Vector(undef,length(faces)*3)
+    for n=1:length(faces)
+        for i=1:3
+            push!(face_nodes,faces[n].faces[i])
+        end
     end
+    return face_nodes
 end
-face_nodes
+
+face_nodes=generate_face_nodes(faces)
+
 
 #Generate cells
-cell_nodes=[]
-cell_faces=[]
 
-for n=1:length(volumes)
-    for i=1:4
-        push!(cell_nodes,volumes[n].volumes[i])
+function generate_cell_nodes(volumes)
+    cell_nodes=[]
+    for n=1:length(volumes)
+        for i=1:4
+            push!(cell_nodes,volumes[n].volumes[i])
+        end
     end
+    return cell_nodes
 end
-cell_nodes
 
-for n=1:length(faces)
-    #for i=1:4
-        push!(cell_faces,faces[n].faceindex)
-    #end
+generate_cell_nodes(volumes)
+
+function generate_cell_faces(faces)
+    cell_faces=[]
+    for n=1:length(faces)
+        #for i=1:4
+            push!(cell_faces,faces[n].faceindex)
+        #end
+    end
+    return cell_faces
 end
-cell_faces
+
+generate_cell_faces(faces)
 
 #Nodes Range
-cell_nodes_range=UnitRange(0,0)
-for i=1:length(volumes)
-    cell_nodes_range=UnitRange(volumes[i].volumes[1],volumes[i].volumes[end])
+function generate_cell_nodes_range(volumes)
+    cell_nodes_range=UnitRange(0,0)
+    for i=1:length(volumes)
+        cell_nodes_range=UnitRange(volumes[i].volumes[1],volumes[i].volumes[end])
+    end
+    return cell_nodes_range
 end
-cell_nodes_range
 
-face_nodes_range=UnitRange(0,0)
-for i=1:length(faces)
-    face_nodes_range=UnitRange(faces[i].faces[1],faces[i].faces[end])
+cell_nodes_range=generate_cell_nodes_range(volumes)
+
+#function generate_face_nodes_range(faces)
+  #  face_nodes_range=UnitRange(0,0)
+   # for i=1:length(faces)
+   #     face_nodes_range=UnitRange(faces[i].faces[1],faces[i].faces[end])
+   # end
+   # return face_nodes_range
+#end
+
+#generate_face_nodes_range(faces)
+
+function generate_face_nodes_range(face_nodes)
+    face_nodes_range=UnitRange(0,0)
+    for i=1:length(face_nodes)
+        face_nodes_range=UnitRange((3*i-2),3*i)
+    end
+    return face_nodes_range
 end
-face_nodes_range
 
+face_nodes_range=generate_face_nodes_range(faces)
 
 #Faces Range
-cell_faces_range=UnitRange(faces[1].faceindex,faces[4].faceindex)
+function generate_faces_range(volumes,faces)
+    cell_faces_range=UnitRange(0,0)
+    @inbounds for i=1:length(volumes)
+        cell_faces_range=UnitRange(faces[(4*i)-3].faceindex,faces[4*i].faceindex)
+    end
+    return cell_faces_range
+end
+
+cell_faces_range=generate_faces_range(volumes,faces)
 
 #Face Area
-A=(nodes[1].coords)
-B=(nodes[2].coords)
-C=(nodes[3].coords)
 
-AB=[B[1]-A[1],B[2]-A[2],B[3]-A[3]]
-AC=[C[1]-A[1],C[2]-A[2],C[3]-A[3]]
+function generate_face_area(nodes,faces)
+    face_area=0
+    @inbounds for i=1:length(faces)
+        n1=faces[i].faces[1]
+        n2=faces[i].faces[2]
+        n3=faces[i].faces[3]
+        A=(nodes[n1].coords)
+        B=(nodes[n2].coords)
+        C=(nodes[n3].coords)
 
-face_area=0.5*norm(cross(AB,AC))
+        AB=[B[1]-A[1],B[2]-A[2],B[3]-A[3]]
+        AC=[C[1]-A[1],C[2]-A[2],C[3]-A[3]]
 
+        face_area=0.5*norm(cross(AB,AC))
+    end
+    #face_area
+    return face_area
+end
+
+generate_face_area(nodes,faces)
 #Face centre
 
-function centre_of_face(nodes)
-    x_centre = (nodes[1].coords[1] + nodes[2].coords[1] + nodes[3].coords[1]) / 3
-    y_centre = (nodes[1].coords[2]+nodes[2].coords[2]+nodes[3].coords[2]) / 3
-    z_centre = (nodes[1].coords[3]+nodes[2].coords[3]+nodes[3].coords[3]) / 3
-    return (x_centre, y_centre, z_centre)
+function centre_of_face(nodes,faces)
+    x_centre=0
+    y_centre=0
+    z_centre=0
+    centre=0
+    for i=1:length(faces)
+        n1=faces[i].faces[1]
+        n2=faces[i].faces[2]
+        n3=faces[i].faces[3]
+        x_centre = (nodes[n1].coords[1] + nodes[n2].coords[1] + nodes[n3].coords[1]) / 3
+        y_centre = (nodes[n1].coords[2]+nodes[n2].coords[2]+nodes[n3].coords[2]) / 3
+        z_centre = (nodes[n1].coords[3]+nodes[n2].coords[3]+nodes[n3].coords[3]) / 3
+        centre=SVector(x_centre,y_centre,z_centre)
+    end
+    return centre
 end
 
-centre_of_face(nodes)
+centre_of_face(nodes,faces)
 
 #Cell centre
-function centre_of_cell(nodes)
-    x_centre = (nodes[1].coords[1]+nodes[2].coords[1]+nodes[3].coords[1]+nodes[4].coords[1]) / 4
-    y_centre = (nodes[1].coords[2]+nodes[2].coords[2]+nodes[3].coords[2]+nodes[4].coords[2]) / 4
-    z_centre = (nodes[1].coords[3]+nodes[2].coords[3]+nodes[3].coords[3]+nodes[4].coords[3]) / 4
-    return (x_centre, y_centre, z_centre)
-end
 
-centre_of_cell(nodes)
+function centre_of_cell(nodes,volumes)
+    x_centre=0
+    y_centre=0
+    z_centre=0
+    centre=0
+    @inbounds for i=1:length(volumes)
+        n1=volumes[i].volumes[1]
+        n2=volumes[i].volumes[2]
+        n3=volumes[i].volumes[3]
+        n4 =volumes[i].volumes[4]
+        x_centre = (nodes[n1].coords[1]+nodes[n2].coords[1]+nodes[n3].coords[1]+nodes[n4].coords[1]) / 4
+        y_centre = (nodes[n1].coords[2]+nodes[n2].coords[2]+nodes[n3].coords[2]+nodes[n4].coords[2]) / 4
+        z_centre = (nodes[n1].coords[3]+nodes[n2].coords[3]+nodes[n3].coords[3]+nodes[n4].coords[3]) / 4
+        centre=SVector{3,Float64}(x_centre,y_centre,z_centre)
+    end
+    return centre #(x_centre, y_centre, z_centre)
+end
+centre=centre_of_cell(nodes,volumes)
 
 #Cell Volume
-function volume_of_cell(nodes)
-    A=(nodes[1].coords)
-    B=(nodes[2].coords)
-    C=(nodes[3].coords)
-    D=(nodes[4].coords)
-    AB=[B[1]-A[1],B[2]-A[2],B[3]-A[3]]
-    AC=[C[1]-A[1],C[2]-A[2],C[3]-A[3]]
-    AD=[D[1]-A[1],D[2]-A[2],D[3]-A[3]]
+function volume_of_cell(nodes,volumes)
+    AB=0
+    AC=0
+    AD=0
+    for i=1:length(volumes)
+        n1=volumes[i].volumes[1]
+        n2=volumes[i].volumes[2]
+        n3=volumes[i].volumes[3]
+        n4=volumes[i].volumes[4]
+        A=(nodes[n1].coords)
+        B=(nodes[n2].coords)
+        C=(nodes[n3].coords)
+        D=(nodes[n4].coords)
+        AB=[B[1]-A[1],B[2]-A[2],B[3]-A[3]]
+        AC=[C[1]-A[1],C[2]-A[2],C[3]-A[3]]
+        AD=[D[1]-A[1],D[2]-A[2],D[3]-A[3]]
+    end
     return abs(dot(AB, cross(AC, AD))) / 6
 end
 
-volume_of_cell(nodes)
+volume=volume_of_cell(nodes,volumes)
 
 #Face Normals
-function face_normal(nodes)
-    A=(nodes[1].coords)
-    B=(nodes[2].coords)
-    C=(nodes[3].coords)
-    AB=[B[1]-A[1],B[2]-A[2],B[3]-A[3]]
-    AC=[C[1]-A[1],C[2]-A[2],C[3]-A[3]]
-    cross_product = cross(AB, AC)
+function face_normal(nodes,faces)
+    cross_product=0
+    for i=1:length(faces)
+        n1=faces[i].faces[1]
+        n2=faces[i].faces[2]
+        n3=faces[i].faces[3]
+        A=(nodes[n1].coords)
+        B=(nodes[n2].coords)
+        C=(nodes[n3].coords)
+        AB=[B[1]-A[1],B[2]-A[2],B[3]-A[3]]
+        AC=[C[1]-A[1],C[2]-A[2],C[3]-A[3]]
+        cross_product = cross(AB, AC)
+    end
     return normalize(cross_product)
 end
+face_normal(nodes,faces)
 
-face_normal(nodes)
+#Generate function
+
+function generate(points,faces,volumes)
+    nodes=generate_nodes(points)
+    face_nodes=generate_face_nodes(faces)
+    cell_nodes=generate_cell_nodes(volumes)
+    cell_faces=generate_cell_faces(faces)
+
+    return nodes,face_nodes,cell_nodes,cell_faces
+end
+
+
+cells=Cell[]
+mesh=Mesh3[]
+push!(cells,Cell(centre,volume,cell_nodes_range,cell_faces_range))

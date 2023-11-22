@@ -8,3 +8,7 @@ Range
 2) VTK XML Tetrahedral, Hexahedral, Polyhedral
 
 3) Boundary Face Cell Connectivity
+
+4) Neighbour Cells for Nodes
+
+5) Cell Normal Sign

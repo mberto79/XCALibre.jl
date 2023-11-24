@@ -1,8 +1,8 @@
 using Plots
-using FVM_1D
 using Krylov
 using StaticArrays
 using CUDA
+using FVM_1D
 
 function test_kernel_cells!(mesh)
     i = threadIdx().x + (blockIdx().x-1)*blockDim().x
@@ -155,9 +155,9 @@ function test_kernel_nodes!(mesh)
 
         coords = coords + coords
 
-        for j in eachindex(neighbourCells)
-            neighbourCells[j] = neighbourCells[j] + neighbourCells[j]
-        end
+        # for j in eachindex(neighbourCells)
+        #     neighbourCells[j] = neighbourCells[j] + neighbourCells[j]
+        # end
 
         nodes[i] = Node{Vector{Int64},Float64}(
             coords,
@@ -225,3 +225,13 @@ mesh.nodes[1].neighbourCells
 
 mesh.nodes[1].coords
 mesh.nodes[1].neighbourCells
+
+#=
+    BUG REPORT:
+        - Illegal memory accesses error thrown when executing kernels, but not consistently
+        - Error can occur when executing any of these kernels
+        - The 4 kernels in this function can't all be run before error occurs
+        - Only began occuring after implementing boundaries kernels
+        - Only got worse after implementing nodes kernels
+        - Kernels execute correctly when memory is not accessed illegally
+=#

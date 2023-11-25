@@ -379,3 +379,7 @@ TF.xx.values
 
 TF.xx.values
 
+#=
+    Constant scalar is of type number and constant vector is of type SVector - both are compitable with kernels
+    and need no alterations other than adapt
+=#

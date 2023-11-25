@@ -1,6 +1,4 @@
 export connect!
-export total_boundary_faces
-
 
 function connect!(mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}) where {I,F}
     assign_cellsID_to_boundary_faces!(mesh, builder)
@@ -13,15 +11,6 @@ function connect!(mesh::Mesh2{I,F}, builder::MeshBuilder2D{I,F}) where {I,F}
     builder = nothing
     # mesh
     nothing
-end
-
-function total_boundary_faces(mesh::Mesh2{I,F}) where {I,F}
-    (; boundaries) = mesh
-    nbfaces = zero(I)
-    @inbounds for boundary ∈ boundaries
-        nbfaces += length(boundary.facesID)
-    end
-    nbfaces
 end
 
 function assign_cellsID_to_boundary_faces!(

@@ -379,7 +379,31 @@ TF.xx.values
 
 TF.xx.values
 
+## CONSTANT SCALAR
+cu(Base.getindex(3))
+
+## CONSTANT VECTOR
+cuda = CuArray([1,2,120312])
+cu(Base.getindex(cuda,3))
+
+## TENSOR MATRIX
+mat =     SMatrix{3,3,eltype(TF.xx.values),9}(
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    )
+cu(mat)
+Base.setindex!(TF,mat,100)
+
 #=
     Constant scalar is of type number and constant vector is of type SVector - both are compitable with kernels
     and need no alterations other than adapt
+
+    T does not need alteration as all abstract field types have been altered as needed
 =#

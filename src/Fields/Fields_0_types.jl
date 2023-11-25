@@ -48,12 +48,12 @@ ScalarField(mesh::Mesh2) =begin
     ScalarField(zeros(F,ncells), mesh, ())
 end
 
-struct FaceScalarField{F,M<:Mesh2} <: AbstractScalarField
-    values::Vector{F}
+struct FaceScalarField{VF,M<:Mesh2} <: AbstractScalarField
+    values::VF#Vector{F}
     mesh::M
 end
 Adapt.@adapt_structure FaceScalarField
-FaceScalarField(mesh::Mesh2) =begin
+FaceScalarField(mesh::Mesh2) = begin
     nfaces  = length(mesh.faces)
     F = eltype(mesh.nodes[1].coords)
     FaceScalarField(zeros(F,nfaces), mesh)

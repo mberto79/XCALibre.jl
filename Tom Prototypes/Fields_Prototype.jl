@@ -331,3 +331,51 @@ FVF.mesh.cells[1].volume
 FVF.x.values
 FVF.y.values
 FVF.z.values
+
+## TENSOR FIELD
+
+TF = TensorField(mesh)
+
+function TF_GPU!(TF)
+    (; xx, xy, xz, yx, yy, yz, zx, zy, zz, mesh) = TF
+    xx = SF_GPU!(xx)
+    xy = SF_GPU!(xy)
+    xz = SF_GPU!(xz)
+    yx = SF_GPU!(yx)
+    yy = SF_GPU!(yy)
+    yz = SF_GPU!(yz)
+    zx = SF_GPU!(zx)
+    zy = SF_GPU!(zy)
+    zz = SF_GPU!(zz)
+    VF = TensorField(xx, xy, xz, yx, yy, yz, zx, zy, zz, mesh)
+end
+
+TF = TF_GPU!(TF)
+
+function test_kernel_TF!(TF)
+    i = threadIdx().x + (blockIdx().x-1)*blockDim().x
+
+    (; xx) = TF
+    (; values) = xx
+    
+    @inbounds if i <= length(values) && i > 0
+
+
+        if values[i] == 0
+            values[i] = values[i] + 1
+        else
+            values[i] = values[i] + values[i]
+        end
+
+    end
+
+    return nothing
+
+end
+
+TF.xx.values
+
+@cuda threads = 1024 blocks = cld(length(TF.xx.values),1024) test_kernel_TF!(TF)
+
+TF.xx.values
+

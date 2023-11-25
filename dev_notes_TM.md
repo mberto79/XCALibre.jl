@@ -4,15 +4,23 @@
 
 ## Structs for GPU (only if altering adapt code is not possible)
 - [x] Determine general method to alter structs for GPU - SEE METHOD BELOW
-- [ ] Write notes on how meshing structs need to be altered for GPU and discuss  practical possibilities with Oscar
-- [ ] Alter field structs for GPU
-- [ ] Alter model framework structs for GPU
-- [ ] Alter discretise structs for GPU
-- [ ] Alter preconditioner structs for GPU
-- [ ] Alter RANS model structs for GPU
-- [ ] Alter simulate structs for GPU
-- [ ] Alter UNV structs for GPU
-- [ ] Test structs against simple addition kernel
+- [x] Alter mesh structs for GPU and write conversion functions
+- [X] Alter field structs for GPU and write conversion functions
+- [ ] Alter model framework structs for GPU and write conversion functions
+- [-] Alter discretise structs for GPU and write conversion functions
+- [ ] Alter preconditioner structs for GPU and write conversion functions
+- [ ] Alter RANS model structs for GPU and write conversion functions
+- [ ] Alter simulate structs for GPU and write conversion functions
+- [ ] Alter UNV structs for GPU and write conversion functions
+- [ ] Test structs against simple addition kernel for:
+    - [x] Mesh structs
+    - [x] Field structs
+    - [ ] Model framework structs
+    - [ ] Discretise structs
+    - [ ] Preconditioner structs
+    - [ ] RANS model structs
+    - [ ] Simulate structs
+    - [ ] UNV structs
 
 Note - struct alteration will only happen if structs cannot be read within simple addition test kernel
 

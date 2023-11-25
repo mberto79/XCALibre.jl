@@ -39,17 +39,17 @@ function test_kernel_cells!(mesh)
 
     end
 
-    mesh = Mesh2(
-        cells,
-        cell_nodes,
-        cell_faces,
-        cell_neighbours,
-        cell_nsign,
-        mesh.faces,
-        mesh.face_nodes,
-        mesh.boundaries,
-        mesh.nodes,
-    )
+    # mesh = Mesh2(
+    #     cells,
+    #     cell_nodes,
+    #     cell_faces,
+    #     cell_neighbours,
+    #     cell_nsign,
+    #     mesh.faces,
+    #     mesh.face_nodes,
+    #     mesh.boundaries,
+    #     mesh.nodes,
+    # )
 
     return nothing
 end 
@@ -88,17 +88,17 @@ function test_kernel_faces!(mesh)
 
     end
 
-    mesh = Mesh2(
-        mesh.cells,
-        mesh.cell_nodes,
-        mesh.cell_faces,
-        mesh.cell_neighbours,
-        mesh.cell_nsign,
-        faces,
-        face_nodes,
-        mesh.boundaries,
-        mesh.nodes,
-    )
+    # mesh = Mesh2(
+    #     mesh.cells,
+    #     mesh.cell_nodes,
+    #     mesh.cell_faces,
+    #     mesh.cell_neighbours,
+    #     mesh.cell_nsign,
+    #     faces,
+    #     face_nodes,
+    #     mesh.boundaries,
+    #     mesh.nodes,
+    # )
 
     return nothing
 end
@@ -129,17 +129,17 @@ function test_kernel_boundaries!(mesh)
 
     end
 
-    mesh = Mesh2(
-        mesh.cells,
-        mesh.cell_nodes,
-        mesh.cell_faces,
-        mesh.cell_neighbours,
-        mesh.cell_nsign,
-        mesh.faces,
-        mesh.face_nodes,
-        boundaries,
-        mesh.nodes,
-    )
+    # mesh = Mesh2(
+    #     mesh.cells,
+    #     mesh.cell_nodes,
+    #     mesh.cell_faces,
+    #     mesh.cell_neighbours,
+    #     mesh.cell_nsign,
+    #     mesh.faces,
+    #     mesh.face_nodes,
+    #     boundaries,
+    #     mesh.nodes,
+    # )
 
     return nothing
 
@@ -166,21 +166,22 @@ function test_kernel_nodes!(mesh)
 
     end
 
-    mesh = Mesh2(
-        mesh.cells,
-        mesh.cell_nodes,
-        mesh.cell_faces,
-        mesh.cell_neighbours,
-        mesh.cell_nsign,
-        mesh.faces,
-        mesh.face_nodes,
-        mesh.boundaries,
-        nodes,
-    )
+    # mesh = Mesh2(
+    #     mesh.cells,
+    #     mesh.cell_nodes,
+    #     mesh.cell_faces,
+    #     mesh.cell_neighbours,
+    #     mesh.cell_nsign,
+    #     mesh.faces,
+    #     mesh.face_nodes,
+    #     mesh.boundaries,
+    #     nodes,
+    # )
 
     return nothing
 
 end
+
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
 unv_mesh = build_mesh(mesh_file, scale=0.001)
@@ -210,7 +211,9 @@ mesh.face_nodes
 
 # BOUNDARIES
 mesh.boundaries
+
 @cuda threads = 1024 test_kernel_boundaries!(mesh)
+
 mesh.boundaries
 
 # NODES

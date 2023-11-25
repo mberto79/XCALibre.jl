@@ -1,13 +1,15 @@
+using CUDA
+
 export mesh2_from_UNV
 
 mesh2_from_UNV(mesh; integer=Int64, float=Float64) = begin
-    boundaries = Vector{Boundary{integer}}(undef, length(mesh.boundaries))
+    boundaries = Vector{Boundary{Vector{integer}}}(undef, length(mesh.boundaries))
     cells = Vector{Cell{integer,float}}(undef, length(mesh.cells))
     faces = Vector{Face2D{integer,float}}(undef, length(mesh.faces))
-    nodes = Vector{Node{integer,float}}(undef, length(mesh.nodes))
+    nodes = Vector{Node{Vector{integer},float}}(undef, length(mesh.nodes))
 
     for (i, b) ∈ enumerate(mesh.boundaries)
-        boundaries[i] = Boundary{integer}(b.name, b.facesID, b.cellsID)
+        boundaries[i] = Boundary{Vector{integer}}(b.name, b.facesID, b.cellsID)
     end
 
     for (i, n) ∈ enumerate(mesh.nodes)
@@ -56,7 +58,7 @@ mesh2_from_UNV(mesh; integer=Int64, float=Float64) = begin
             cell.volume,
             nodes_range,
             faces_range
-        )
+        ) |> cu
     end
 
     # PROCESSING FACES
@@ -90,10 +92,10 @@ mesh2_from_UNV(mesh; integer=Int64, float=Float64) = begin
             face.area,
             face.delta,
             face.weight
-        )
+        ) |> cu
     end
 
-    Mesh2(
+    Mesh2{Vector{Cell{integer,float}}, Vector{integer}, Vector{Face2D{integer,float}}, Vector{Boundary{Vector{integer}}}, Vector{Node{Vector{integer},float}}}(
         cells,
         cell_nodes,
         cell_faces,
@@ -103,5 +105,5 @@ mesh2_from_UNV(mesh; integer=Int64, float=Float64) = begin
         face_nodes,
         boundaries,
         nodes,
-    )
+    ) |> cu
 end

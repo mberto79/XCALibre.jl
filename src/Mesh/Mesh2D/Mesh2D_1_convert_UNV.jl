@@ -1,13 +1,15 @@
+using CUDA
+
 export mesh2_from_UNV
 
 mesh2_from_UNV(mesh; integer=Int64, float=Float64) = begin
-    boundaries = Vector{Boundary{integer}}(undef, length(mesh.boundaries))
+    boundaries = Vector{Boundary{Vector{integer}}}(undef, length(mesh.boundaries))
     cells = Vector{Cell{integer,float}}(undef, length(mesh.cells))
     faces = Vector{Face2D{integer,float}}(undef, length(mesh.faces))
-    nodes = Vector{Node{integer,float}}(undef, length(mesh.nodes))
+    nodes = Vector{Node{Vector{integer},float}}(undef, length(mesh.nodes))
 
     for (i, b) ∈ enumerate(mesh.boundaries)
-        boundaries[i] = Boundary{integer}(b.name, b.facesID, b.cellsID)
+        boundaries[i] = Boundary{Vector{integer}}(b.name, b.facesID, b.cellsID)
     end
 
     for (i, n) ∈ enumerate(mesh.nodes)
@@ -35,14 +37,14 @@ mesh2_from_UNV(mesh; integer=Int64, float=Float64) = begin
     for (i, cell) ∈ enumerate(mesh.cells)
         (;nodesID, facesID, neighbours, nsign) = cell
         # node array loop
-        nodes_map = SVector{2,integer}(length(nodesID), ni)
+        nodes_range = ni:(ni + length(nodesID) - 1) #SVector{2,integer}(length(nodesID), ni)
         for nodeID ∈ nodesID
             cell_nodes[ni] = nodeID 
             ni += 1
         end
         # cell array loop
-        # faces_map = SVector{2,integer}(length(facesID), fi)
-        faces_map = fi:(fi + length(facesID) - 1) 
+        # faces_range = SVector{2,integer}(length(facesID), fi)
+        faces_range = fi:(fi + length(facesID) - 1) 
         for j ∈ eachindex(facesID)
             cell_faces[fi] = facesID[j]
             cell_neighbours[fi] = neighbours[j]
@@ -54,9 +56,9 @@ mesh2_from_UNV(mesh; integer=Int64, float=Float64) = begin
         cells[i] = Cell{integer,float}(
             cell.centre,
             cell.volume,
-            nodes_map,
-            faces_map
-        )
+            nodes_range,
+            faces_range
+        ) |> cu
     end
 
     # PROCESSING FACES
@@ -74,7 +76,7 @@ mesh2_from_UNV(mesh; integer=Int64, float=Float64) = begin
     for (i, face) ∈ enumerate(mesh.faces)
         (;nodesID) = face
         # node array loop
-        nodes_map = SVector{2,integer}(length(nodesID), ni)
+        nodes_range = ni:(ni + length(nodesID) - 1) #SVector{2,integer}(length(nodesID), ni)
         for nodeID ∈ nodesID
             face_nodes[ni] = nodeID 
             ni += 1
@@ -82,7 +84,7 @@ mesh2_from_UNV(mesh; integer=Int64, float=Float64) = begin
 
         # face assignment
         faces[i] = Face2D{integer,float}(
-            nodes_map,
+            nodes_range,
             face.ownerCells,
             face.centre,
             face.normal,
@@ -90,10 +92,10 @@ mesh2_from_UNV(mesh; integer=Int64, float=Float64) = begin
             face.area,
             face.delta,
             face.weight
-        )
+        ) |> cu
     end
 
-    Mesh2(
+    Mesh2{Vector{Cell{integer,float}}, Vector{integer}, Vector{Face2D{integer,float}}, Vector{Boundary{Vector{integer}}}, Vector{Node{Vector{integer},float}}}(
         cells,
         cell_nodes,
         cell_faces,
@@ -103,5 +105,5 @@ mesh2_from_UNV(mesh; integer=Int64, float=Float64) = begin
         face_nodes,
         boundaries,
         nodes,
-    )
+    ) |> cu
 end

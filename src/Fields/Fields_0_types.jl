@@ -1,3 +1,5 @@
+using Adapt
+
 export AbstractField
 export ConstantScalar, ConstantVector
 export AbstractScalarField, ScalarField, FaceScalarField
@@ -21,6 +23,7 @@ end
 struct ConstantScalar{V<:Number} <: AbstractScalarField
     values::V
 end
+Adapt.@adapt_structure ConstantScalar
 Base.getindex(s::ConstantScalar, i::Integer) = s.values
 
 struct ConstantVector{V<:Number} <: AbstractVectorField
@@ -28,26 +31,29 @@ struct ConstantVector{V<:Number} <: AbstractVectorField
     y::V
     z::V
 end
+Adapt.@adapt_structure ConstantVector
 Base.getindex(v::ConstantVector, i::Integer) = SVector{3, eltype(v.x)}(v.x[i], v.y[i], v.z[i])
 
 # FIELDS 
 
-struct ScalarField{F,M<:Mesh2,BC} <: AbstractScalarField
-    values::Vector{F}
+struct ScalarField{VF,M<:Mesh2,BC} <: AbstractScalarField
+    values::VF#Vector{F}
     mesh::M
     BCs::BC
 end
+Adapt.@adapt_structure ScalarField
 ScalarField(mesh::Mesh2) =begin
     ncells  = length(mesh.cells)
     F = eltype(mesh.nodes[1].coords)
     ScalarField(zeros(F,ncells), mesh, ())
 end
 
-struct FaceScalarField{F,M<:Mesh2} <: AbstractScalarField
-    values::Vector{F}
+struct FaceScalarField{VF,M<:Mesh2} <: AbstractScalarField
+    values::VF#Vector{F}
     mesh::M
 end
-FaceScalarField(mesh::Mesh2) =begin
+Adapt.@adapt_structure FaceScalarField
+FaceScalarField(mesh::Mesh2) = begin
     nfaces  = length(mesh.faces)
     F = eltype(mesh.nodes[1].coords)
     FaceScalarField(zeros(F,nfaces), mesh)
@@ -72,6 +78,7 @@ struct VectorField{S1<:ScalarField,S2,S3,M<:Mesh2,BC} <: AbstractVectorField
     mesh::M
     BCs::BC
 end
+Adapt.@adapt_structure VectorField
 VectorField(mesh::Mesh2) = begin
     ncells = length(mesh.cells)
     F = eltype(mesh.nodes[1].coords)
@@ -90,6 +97,7 @@ struct FaceVectorField{S1<:FaceScalarField,S2,S3,M} <: AbstractVectorField
     z::S3
     mesh::M
 end
+Adapt.@adapt_structure FaceVectorField
 FaceVectorField(mesh::Mesh2) = begin
     nfaces = length(mesh.faces)
     F = eltype(mesh.nodes[1].coords)
@@ -124,7 +132,7 @@ struct TensorField{S1,S2,S3,S4,S5,S6,S7,S8,S9,M} <: AbstractTensorField
     zz::S9
     mesh::M
 end
-
+Adapt.@adapt_structure TensorField
 TensorField(mesh::Mesh2) = begin
     TensorField(
         ScalarField(mesh),
@@ -175,7 +183,7 @@ Base.eachindex(t::AbstractTensorField) = eachindex(t.xx)
 struct T{F<:AbstractField} # Needs to be abstractTensor type
     parent::F
 end
-
+Adapt.@adapt_structure T
 Base.getindex(t::T{F}, i::Integer) where F<:TensorField = begin # type calls need sorting
     T = t.parent
     Tf = eltype(T.xx.values)

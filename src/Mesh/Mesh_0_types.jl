@@ -3,17 +3,17 @@ export AbstractMesh
 
 abstract type AbstractMesh end
 
-struct Node{TI, TF}
+struct Node{VTI, TF}
     coords::SVector{3, TF}
-    neighbourCells::Vector{TI}
+    neighbourCells::VTI#Vector{TI}
 end
 Adapt.@adapt_structure Node
 
-struct Boundary{I}
+struct Boundary{VI}
     name::Symbol
     # nodesID::Vector{I} # can be deduced from face info
-    facesID::Vector{I}
-    cellsID::Vector{I}
+    facesID::VI#Vector{I}
+    cellsID::VI#Vector{I}
     # normal::SVector{3, F} # correctly aligned by definition
 end
 Adapt.@adapt_structure Boundary
@@ -21,8 +21,7 @@ Adapt.@adapt_structure Boundary
 struct Cell{I,F}
     centre::SVector{3, F}
     volume::F
-    nodes_map::SVector{2,I}
-    # faces_map::SVector{2,I}
-    faces_map::UnitRange{I}
+    nodes_range::UnitRange{I}
+    faces_range::UnitRange{I}
 end
 Adapt.@adapt_structure Cell

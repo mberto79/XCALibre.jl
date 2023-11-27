@@ -477,3 +477,15 @@ cell_neighbours=Vector{Int}(undef,1)
 cell_nsign=Vector{Int}(undef,1)
 
 push!(mesh,Mesh3(cells,cell_nodes,cell_faces,cell_neighbours,cell_nsign,faces,face_nodes,boundaries,nodes))
+
+mesh[1].nodes[1].coords
+
+length(mesh[1].nodes)
+
+LinRange(1,length(mesh[1].nodes),length(mesh[1].nodes))
+
+store=zeros(Int32,length(faces))
+for i=1:length(faces)
+    store[i]=3*i
+end
+store

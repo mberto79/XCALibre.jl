@@ -293,7 +293,6 @@ end
 cell_faces_range=generate_faces_range(volumes,faces)
 
 #Face Area
-
 function generate_face_area(nodes,faces)
     face_area=0
     store=[]
@@ -477,3 +476,31 @@ cell_neighbours=Vector{Int}(undef,1)
 cell_nsign=Vector{Int}(undef,1)
 
 push!(mesh,Mesh3(cells,cell_nodes,cell_faces,cell_neighbours,cell_nsign,faces,face_nodes,boundaries,nodes))
+mesh
+store_nodes=zeros(length(mesh[1].nodes)*3)
+for i=1:length(mesh[1].nodes)
+    store_nodes[(3*i-2):(3*i)]=mesh[1].nodes[i].coords
+end
+store_nodes
+join(store_nodes," ")
+
+LinRange(1,length(mesh[1].nodes),length(mesh[1].nodes))
+
+store_faces=zeros(Int32,length(mesh[1].faces))
+for i=1:length(mesh[1].faces)
+    store_faces[i]=length(mesh[1].faces[1].nodes_range)*i
+end
+store_faces
+
+mesh[1].face_nodes
+
+
+function generate(points,faces,volumes,boundaryElements)
+    nodes=generate_nodes(points)
+    faces=generate_faces(faces)
+    cells=generate_cells(volumes)
+    boundaries=generate_boundaries(boundaryElements)
+    return nodes,faces,cells,boundaries
+end
+
+generate(points,faces,volumes,boundaryElements)

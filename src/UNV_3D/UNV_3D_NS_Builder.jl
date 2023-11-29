@@ -36,41 +36,6 @@ function build_mesh3D(unv_mesh)
 end
 
 
-#function build_mesh3D(unv_mesh)
-    #stats = @timed begin
-    #println("Loading mesh...")
-    #points,edges,faces,volumes,boundaryElements = load(unv_mesh);
-    #println("File read successfully")
-
-    #if scale != one(typeof(scale))
-     #   scalePoints!(points, scale)
-    #end
-
-    #cells, faces, nodes, boundaries = generate(points,faces,volumes,boundaryElements)
-
-    #println("Generating geometry...")
-    #face_nodes,face_nodes_range,faces_area,centre_of_face,faces_normal=process_faces(faces,nodes)
-    #cell_nodes,cell_faces,cell_nodes_range,cell_faces_range,centre_of_cells,volume_of_cells=process_cells(faces,volumes)
-    #println("Geometry processed!")
-
-    #println("Generating mesh...")
-
-    
-
-    #println("Building connectivity...")
-    #connect!(cells, faces, nodes, boundaries, bfaces)
-    #mesh = Mesh3()
-    #process_geometry!(mesh)
-
-    #mesh=Mesh3(cells,cell_nodes,cell_faces,cell_neighbours,cell_nsign,faces,face_nodes,boundaries,nodes)
-    #println("Mesh Generated!")
-
-    #end
-    #println("Done! Execution time: ", @sprintf "%.6f" stats.time)
-    #println("Mesh ready!")
-    #return mesh
-#end
-
 #Generate
 function generate(points,faces,volumes,boundaryElements)
     nodes=generate_nodes(points)

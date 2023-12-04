@@ -19,15 +19,15 @@ Face3D(I,F) = begin
     Face3D(vec_3I, vec_2I, vec_3F, vec_3F, vec_3F, zf, zf, zf)
 end
 
-struct Mesh3{I,F} <: AbstractMesh
-    cells::Vector{Cell{I,F}}
-    cell_nodes::Vector{I}
-    cell_faces::Vector{I}
-    cell_neighbours::Vector{I}
-    cell_nsign::Vector{I}
-    faces::Vector{Face3D{I,F}}
-    face_nodes::Vector{I}
-    boundaries::Vector{Boundary{I}}
-    nodes::Vector{Node{I,F}}
+struct Mesh3{VC<:AbstractArray{Cell},VN<:AbstractArray{Node},VF<:AbstractArray{Face3D},VB<:AbstractArray{Boundary},VI<:AbstractArray{Int}} <: AbstractMesh
+    cells::VC
+    cell_nodes::VI
+    cell_faces::VI
+    cell_neighbours::VI
+    cell_nsign::VI
+    faces::VF
+    face_nodes::VI
+    boundaries::VB
+    nodes::VN
 end
 Adapt.@adapt_structure Mesh3

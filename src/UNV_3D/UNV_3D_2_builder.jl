@@ -22,12 +22,13 @@ function build_mesh3D(unv_mesh)
     cells=generate_cells(volumes,centre_of_cells,volume_of_cells,cell_nodes_range,cell_faces_range)
     faces=generate_faces(faces,face_nodes_range,centre_of_faces,faces_normal,faces_area)
 
-    mesh=UNV_3D.Mesh3[]
+    #mesh=UNV_3D.Mesh3[]
 
     cell_neighbours=Vector{Int}(undef,1)
     cell_nsign=Vector{Int}(undef,1)
 
-    push!(mesh,Mesh3(cells,cell_nodes,cell_faces,cell_neighbours,cell_nsign,faces,face_nodes,boundaries,nodes))
+    #push!(mesh,Mesh3(cells,cell_nodes,cell_faces,cell_neighbours,cell_nsign,faces,face_nodes,boundaries,nodes))
+    mesh=Mesh3(cells,cell_nodes,cell_faces,cell_neighbours,cell_nsign,faces,face_nodes,boundaries,nodes)
 
     end
     println("Done! Execution time: ", @sprintf "%.6f" stats.time)

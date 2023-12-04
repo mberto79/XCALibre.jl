@@ -1,23 +1,22 @@
 #UNV Reader New Structure
 
-#For Tetrahedral Cell Types
+export load_3D
 
-export load
-
-function load(unv_mesh)
+function load_3D(unv_mesh)
     #Defining Variables
     pointindx=0
     elementindx=0
     volumeindx=0
     boundaryindx=0
+    faceindx=0
     
     #Defining Arrays with Structs
-    points=Point[]
-    edges=Edge[]
-    faces=Face[]
-    volumes=Volume[]
-    boundaryElements=BoundaryElement[]
-    elements=Element[]
+    points=UNV_3D.Point[]
+    edges=UNV_3D.Edge[]
+    faces=UNV_3D.Face[]
+    volumes=UNV_3D.Volume[]
+    boundaryElements=UNV_3D.BoundaryElement[]
+    elements=UNV_3D.Element[]
     
     #Defining Arrays for data collection
     #Points
@@ -96,7 +95,8 @@ function load(unv_mesh)
         end
     
         #Faces
-        if length(sline)==6 && parse(Int64,sline[end])==3
+        #Tetrahedral
+        if length(sline)==6 && parse(Int64,sline[2])==41 && parse(Int64,sline[end])==3
             faceCount=parse(Int,sline[end])
             faceindex=parse(Int,sline[1])
             continue
@@ -108,8 +108,24 @@ function load(unv_mesh)
             push!(elements,Element(faceindex,faceCount,face))
             continue
         end
+
+        #Hexahedral
+        if length(sline)==6 && parse(Int,sline[2])==44 && parse(Int,sline[end])==4
+            faceCount=parse(Int,sline[end])
+            faceindex=parse(Int,sline[1])
+            faceindx=indx
+            continue
+        end
+
+        if length(sline)==4 && indx>elementindx && indx==faceindx+1
+            face=[parse(Int,sline[i]) for i=1:length(sline)]
+            push!(faces,Face(faceindex-edgeindex,faceCount,face))
+            push!(elements,Element(faceindex,faceCount,face))
+            continue
+        end
     
         #Volumes
+        #Tetrahedral
         if length(sline)==6 && parse(Int,sline[2])==111
             volumeCount=parse(Int,sline[end])
             volumeindex=parse(Int,sline[1])
@@ -118,6 +134,21 @@ function load(unv_mesh)
         end
     
         if length(sline)==4 && indx>elementindx
+            volume=[parse(Int,sline[i]) for i=1:length(sline)]
+            push!(volumes,Volume(volumeindex-faceindex,volumeCount,volume))
+            push!(elements,Element(volumeindex,volumeCount,volume))
+            continue
+        end
+
+        #Hexahedral
+        if length(sline)==6 && parse(Int,sline[2])==115
+            volumeCount=parse(Int,sline[end])
+            volumeindex=parse(Int,sline[1])
+            volumeindx=indx
+            continue
+        end
+
+        if length(sline)==8 && indx<boundaryindx
             volume=[parse(Int,sline[i]) for i=1:length(sline)]
             push!(volumes,Volume(volumeindex-faceindex,volumeCount,volume))
             push!(elements,Element(volumeindex,volumeCount,volume))

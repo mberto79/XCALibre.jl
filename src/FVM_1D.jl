@@ -14,7 +14,7 @@ include("Solvers/Solvers.jl")
 include("Postprocess/Postprocess.jl")
 include("UNV/UNV.jl")
 include("Mesh/Mesh3D.jl")
-include("UNV_3D_GPU_Test/UNV_3D.jl")
+include("UNV_3D/UNV_3D.jl")
 
 using Reexport
 @reexport using FVM_1D.Mesh

@@ -1,11 +1,11 @@
 export Face3D,Mesh3
 
-struct Face3D{I,F}
-    nodes_range::UnitRange{I}
-    ownerCells::SVector{2,I}
-    centre::SVector{3, F}
-    normal::SVector{3, F}
-    e::SVector{3, F}
+struct Face3D{UR<:UnitRange{Int},F<:AbstractFloat,SV2<:SVector{2,Int},SV3<:SVector{3,Float64}}
+    nodes_range::UR
+    ownerCells::SV2
+    centre::SV3
+    normal::SV3
+    e::SV3
     area::F
     delta::F
     weight::F

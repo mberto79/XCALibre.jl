@@ -1,6 +1,6 @@
 export Face3D,Mesh3
 
-struct Face3D{UR<:UnitRange{Int},F<:AbstractFloat,SV2<:SVector{2,Int},SV3<:SVector{3,Float64}}
+struct Face3D{I<:Integer,UR<:UnitRange{I},F<:AbstractFloat,SV2<:SVector{2,I},SV3<:SVector{3,F}}
     nodes_range::UR
     ownerCells::SV2
     centre::SV3
@@ -12,9 +12,9 @@ struct Face3D{UR<:UnitRange{Int},F<:AbstractFloat,SV2<:SVector{2,Int},SV3<:SVect
 end
 Adapt.@adapt_structure Face3D
 
-abstract type AbstractMesh end
+#abstract type AbstractMesh end
 
-struct Mesh3{VC<:AbstractArray{Cell},VN<:AbstractArray{Node},VF<:AbstractArray{Face3D},VB<:AbstractArray{Boundary},VI<:AbstractArray{Int}} <: AbstractMesh
+struct Mesh3{I<:Integer,VC<:AbstractArray{Cell},VN<:AbstractArray{Node},VF<:AbstractArray{Face3D},VB<:AbstractArray{Boundary},VI<:AbstractArray{I}} <: AbstractMesh
     cells::VC
     cell_nodes::VI
     cell_faces::VI

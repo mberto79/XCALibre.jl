@@ -16,6 +16,8 @@ include("Mesh2D/Mesh2D_1_convert_UNV.jl")
 # include("Mesh2D/6_elements.jl")
 # include("Mesh2D/Mesh2D_7_generate.jl")
 
+include("Mesh3D/Mesh3D_0_types.jl")
+
 include("Mesh_1_functions.jl")
 
 end

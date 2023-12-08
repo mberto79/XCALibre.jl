@@ -40,5 +40,3 @@ struct Cell{F<:AbstractFloat,I<:Integer, SV3<:SVector{3,F},UR<:UnitRange{I}}
     faces_range::UR
 end
 Adapt.@adapt_structure Cell
-
-export Node, Boundary,Cell 

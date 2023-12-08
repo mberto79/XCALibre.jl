@@ -1,7 +1,7 @@
 export Face2D, Mesh2
 
 struct Face2D{I,F}
-    nodesID::SVector{2,I}
+    nodes_range::UnitRange{I}
     ownerCells::SVector{2,I}
     centre::SVector{3, F}
     normal::SVector{3, F}
@@ -10,18 +10,17 @@ struct Face2D{I,F}
     delta::F
     weight::F
 end
-Face2D(I,F) = begin
-    zi = zero(I); zf = zero(F)
-    vec_2I = SVector{2,I}(zi,zi)
-    vec_3F = SVector{3,F}(zf,zf,zf)
-    Face2D(vec_2I, vec_2I, vec_3F, vec_3F, vec_3F, zf, zf, zf)
-end
 Adapt.@adapt_structure Face2D
 
-struct Mesh2{I,F} <: AbstractMesh
-    cells::Vector{Cell{I,F}}
-    faces::Vector{Face2D{I,F}}
-    boundaries::Vector{Boundary{I}}
-    nodes::Vector{Node{I,F}}
+struct Mesh2{VC, VI, VF2, VB, VN} <: AbstractMesh
+    cells::VC#Vector{Cell{I,F}}
+    cell_nodes::VI#Vector{I}
+    cell_faces::VI#Vector{I}
+    cell_neighbours::VI#Vector{I}
+    cell_nsign::VI#Vector{I}
+    faces::VF2#Vector{Face2D{I,F}}
+    face_nodes::VI#Vector{I}
+    boundaries::VB#Vector{Boundary{I}}
+    nodes::VN#Vector{Node{I,F}}
 end
 Adapt.@adapt_structure Mesh2

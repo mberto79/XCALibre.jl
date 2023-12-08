@@ -1,5 +1,5 @@
-export UnitVectors
 export Node, Boundary, Cell
+export AbstractMesh
 
 abstract type AbstractMesh end
 
@@ -17,14 +17,6 @@ struct Node{I<:Integer, F<:AbstractFloat, VI<:AbstractArray{I}, SV3<:SVector{3,F
     neighbourCells::VI
 end
 Adapt.@adapt_structure Node
-Node(TF) = begin
-    zf = zero(TF)
-    vec_3F = SVector{3,TF}(zf,zf,zf)
-    Node(vec_3F, Int64[])
-end
-Node(x::F, y::F, z::F) where F<:AbstractFloat = Node(SVector{3, F}(x,y,z), Int64[])
-Node(zero::F) where F<:AbstractFloat = Node(zero, zero, zero)
-Node(vector::F) where F<:AbstractVector = Node(vector, Int64[])
 
 struct Boundary{S<:Symbol, I<:Integer, VI<:AbstractArray{I}}
     name::S

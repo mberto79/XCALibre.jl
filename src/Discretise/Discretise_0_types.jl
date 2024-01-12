@@ -131,7 +131,7 @@ macro assign!(model, field, BCs)
     quote
         f = $emodel.$efield
         f = assign(f, $eBCs...)
-        @reset $emodel.$efield = f
+        $emodel = @set $emodel.$efield = f
     end
 end
 
@@ -143,7 +143,8 @@ macro assign!(model, turb, field, BCs)
     quote
         f = $emodel.$eturb.$efield
         f = assign(f, $eBCs...)
-        @reset $emodel.$eturb.$efield = f
+        # @reset $emodel.$eturb.$efield = f
+        $emodel = @set $emodel.$eturb.$efield = f
     end
 end
 

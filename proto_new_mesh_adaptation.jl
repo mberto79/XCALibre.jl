@@ -8,7 +8,6 @@ mesh = build_mesh(mesh_file, scale=0.001)
 
 # using FVM_1D.Mesh
 update_mesh_format(mesh)
-test()
 
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3

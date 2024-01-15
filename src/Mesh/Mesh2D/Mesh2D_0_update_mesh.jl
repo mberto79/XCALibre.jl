@@ -5,31 +5,54 @@ export update_mesh_format
 update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
     println("Update to new mesh format - temp solution")
 
-    boundaries = Vector{Boundary{Symbol, Vector{integer}}}(undef, length(mesh.boundaries))
-    cells = Vector{Cell{float, SVector{3,float},UnitRange{integer}}}(
+    boundaries = Vector{Boundary{Symbol, Vector{integer}}}(
+        undef, length(mesh.boundaries)
+        )
+    cells = Vector{Cell{float,SVector{3,float},UnitRange{integer}}}(
         undef, length(mesh.cells)
         )
-    faces = Vector{Face2D{float, SVector{2,integer},SVector{3,float},UnitRange{integer}}}(
+    faces = Vector{Face2D{float,SVector{2,integer},SVector{3,float},UnitRange{integer}}}(
         undef, length(mesh.faces)
         )
     nodes = Vector{Node{SVector{3,float}, UnitRange{integer}}}(
         undef, length(mesh.nodes)
         )
+
+    # PROCESSING BOUNDARIES
+    for (i, b) ∈ enumerate(mesh.boundaries)
+        boundaries[i] = Boundary(b.name, b.facesID, b.cellsID)
+    end
+
+    # PROCESSING NODES 
+
+    # calculate array size to hold node_cells information 
+    n = zero(integer)
+    for node ∈ mesh.nodes 
+        n += length(node.neighbourCells)
+    end
+    node_cells = Vector{integer}(undef, n)
+
+    # Copy neighbourCells indices to node_cells array and build new Node type
+    counter = one(integer)
+    for (i, n) ∈ enumerate(mesh.nodes)
+        neighbours = length(n.neighbourCells)
+        range = counter:(counter + neighbours - one(integer))
+        nodes[i] = Node(n.coords, n.neighbourCells)
+        node_cells[counter] = 
+        counter += one(integer)
+    end
+    boundaries
 end
 
-mesh2_from_UNV(mesh; integer=Int64, float=Float64) = begin
+old_func(mesh; integer=Int64, float=Float64) = begin
     boundaries = Vector{Boundary{Vector{integer}}}(undef, length(mesh.boundaries))
     cells = Vector{Cell{integer,float}}(undef, length(mesh.cells))
     faces = Vector{Face2D{integer,float}}(undef, length(mesh.faces))
     nodes = Vector{Node{Vector{integer},float}}(undef, length(mesh.nodes))
 
-    for (i, b) ∈ enumerate(mesh.boundaries)
-        boundaries[i] = Boundary{Vector{integer}}(b.name, b.facesID, b.cellsID)
-    end
+    
 
-    for (i, n) ∈ enumerate(mesh.nodes)
-        nodes[i] = Node(n.coords, n.neighbourCells)
-    end
+    
 
     # PROCESSING CELLS
     # Calculate array size needed for nodes and faces

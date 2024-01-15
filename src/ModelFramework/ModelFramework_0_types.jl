@@ -102,7 +102,7 @@ end
 function sparse_matrix_connectivity(mesh::Mesh2)
     cells = mesh.cells
     nCells = length(cells)
-    TI = _get_int(mesh)
+    TI = _get_int(mesh) # would this result in regression (type identified inside func?)
     i = TI[]
     j = TI[]
     for cID = 1:nCells   

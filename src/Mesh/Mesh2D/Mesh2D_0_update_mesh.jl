@@ -3,7 +3,9 @@ import FVM_1D.UNV2
 export update_mesh_format
 
 update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
-    println("Update to new mesh format - temp solution")
+    @info "Update to new mesh format (temporary solution)"
+
+    # Pre-allocate memory for mesh entities
 
     boundaries = Vector{Boundary{Symbol, Vector{integer}}}(
         undef, length(mesh.boundaries)
@@ -19,13 +21,14 @@ update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
         )
 
     # PROCESSING BOUNDARIES
+
     for (i, b) ∈ enumerate(mesh.boundaries)
         boundaries[i] = Boundary(b.name, b.facesID, b.cellsID)
     end
 
     # PROCESSING NODES 
 
-    # calculate array size to hold node_cells information 
+    # Determine array size to hold node_cells information 
     n = zero(integer)
     for node ∈ mesh.nodes 
         n += length(node.neighbourCells)
@@ -33,29 +36,18 @@ update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
     node_cells = Vector{integer}(undef, n)
 
     # Copy neighbourCells indices to node_cells array and build new Node type
-    counter = one(integer)
-    for (i, n) ∈ enumerate(mesh.nodes)
-        neighbours = length(n.neighbourCells)
-        range = counter:(counter + neighbours - one(integer))
-        nodes[i] = Node(n.coords, n.neighbourCells)
-        node_cells[counter] = 
-        counter += one(integer)
+    start_index = one(integer)
+    for (ni, node) ∈ enumerate(mesh.nodes)
+        n_neighbours = length(node.neighbourCells)
+        range = start_index:(start_index + n_neighbours - one(integer))
+        nodes[ni] = Node(node.coords, range)
+        node_cells[range] .= node.neighbourCells
+        start_index += n_neighbours
     end
-    boundaries
-end
-
-old_func(mesh; integer=Int64, float=Float64) = begin
-    boundaries = Vector{Boundary{Vector{integer}}}(undef, length(mesh.boundaries))
-    cells = Vector{Cell{integer,float}}(undef, length(mesh.cells))
-    faces = Vector{Face2D{integer,float}}(undef, length(mesh.faces))
-    nodes = Vector{Node{Vector{integer},float}}(undef, length(mesh.nodes))
-
     
-
-    
-
     # PROCESSING CELLS
-    # Calculate array size needed for nodes and faces
+
+    # Calculate array size needed for cell node and face data
     nnodes = zero(integer)
     nfaces = zero(integer)
     for cell ∈ mesh.cells
@@ -64,24 +56,25 @@ old_func(mesh; integer=Int64, float=Float64) = begin
         nfaces += length(facesID)
     end
 
-    # Initialise arrays 
+    # Pre-allocate arrays 
     cell_nodes = Vector{integer}(undef, nnodes)
     cell_faces = Vector{integer}(undef, nfaces)
     cell_neighbours = Vector{integer}(undef, nfaces)
     cell_nsign = Vector{integer}(undef, nfaces)
 
-    ni = 1 # node counter
-    fi = 1 # face counter
+    ni = one(integer) # node index counter
+    fi = one(integer) # face index counter
     for (i, cell) ∈ enumerate(mesh.cells)
         (;nodesID, facesID, neighbours, nsign) = cell
-        # node array loop
-        nodes_range = ni:(ni + length(nodesID) - 1) #SVector{2,integer}(length(nodesID), ni)
+
+        # collect node data
+        nodes_range = ni:(ni + length(nodesID) - 1)
         for nodeID ∈ nodesID
             cell_nodes[ni] = nodeID 
             ni += 1
         end
-        # cell array loop
-        # faces_range = SVector{2,integer}(length(facesID), fi)
+
+        # collect face data
         faces_range = fi:(fi + length(facesID) - 1) 
         for j ∈ eachindex(facesID)
             cell_faces[fi] = facesID[j]
@@ -91,37 +84,38 @@ old_func(mesh; integer=Int64, float=Float64) = begin
         end
 
         # cell assignment
-        cells[i] = Cell{integer,float}(
+        cells[i] = Cell(
             cell.centre,
             cell.volume,
             nodes_range,
             faces_range
-        ) |> cu
+        )
     end
 
     # PROCESSING FACES
-    # Calculate array size needed for all face nodes
+
+    # Calculate array size needed for face node data
     nnodes = zero(integer)
     for face ∈ mesh.faces
         (; nodesID) = face 
         nnodes += length(nodesID)
     end
 
-    # Initialise arrays 
+    # Pre-allocate arrays 
     face_nodes = Vector{integer}(undef, nnodes)
 
-    ni = 1 # node counter
+    ni = one(integer) # node index counter
     for (i, face) ∈ enumerate(mesh.faces)
         (;nodesID) = face
         # node array loop
-        nodes_range = ni:(ni + length(nodesID) - 1) #SVector{2,integer}(length(nodesID), ni)
+        nodes_range = ni:(ni + length(nodesID) - 1)
         for nodeID ∈ nodesID
             face_nodes[ni] = nodeID 
             ni += 1
         end
 
         # face assignment
-        faces[i] = Face2D{integer,float}(
+        faces[i] = Face2D(
             nodes_range,
             face.ownerCells,
             face.centre,
@@ -130,10 +124,11 @@ old_func(mesh; integer=Int64, float=Float64) = begin
             face.area,
             face.delta,
             face.weight
-        ) |> cu
+        ) 
     end
 
-    Mesh2{Vector{Cell{integer,float}}, Vector{integer}, Vector{Face2D{integer,float}}, Vector{Boundary{Vector{integer}}}, Vector{Node{Vector{integer},float}}}(
+    # CONSTRUCT FINAL MESH (MESH2)
+    Mesh2(
         cells,
         cell_nodes,
         cell_faces,
@@ -143,5 +138,6 @@ old_func(mesh; integer=Int64, float=Float64) = begin
         face_nodes,
         boundaries,
         nodes,
-    ) |> cu
+        node_cells
+    )
 end

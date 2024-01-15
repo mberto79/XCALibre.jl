@@ -23,7 +23,7 @@ update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
     # PROCESSING BOUNDARIES
 
     for (i, b) ∈ enumerate(mesh.boundaries)
-        boundaries[i] = Boundary(b.name, b.facesID, b.cellsID)
+        boundaries[i] = Boundary(b.name, integer.(b.facesID), integer.(b.cellsID))
     end
 
     # PROCESSING NODES 
@@ -40,7 +40,7 @@ update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
     for (ni, node) ∈ enumerate(mesh.nodes)
         n_neighbours = length(node.neighbourCells)
         range = start_index:(start_index + n_neighbours - one(integer))
-        nodes[ni] = Node(node.coords, range)
+        nodes[ni] = Node(float.(node.coords), convert(UnitRange{integer}, range))
         node_cells[range] .= node.neighbourCells
         start_index += n_neighbours
     end
@@ -85,10 +85,10 @@ update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
 
         # cell assignment
         cells[i] = Cell(
-            cell.centre,
-            cell.volume,
-            nodes_range,
-            faces_range
+            float.(cell.centre),
+            float(cell.volume),
+            convert(UnitRange{integer}, nodes_range),
+            convert(UnitRange{integer}, faces_range)
         )
     end
 
@@ -116,14 +116,14 @@ update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
 
         # face assignment
         faces[i] = Face2D(
-            nodes_range,
-            face.ownerCells,
-            face.centre,
-            face.normal,
-            face.e,
-            face.area,
-            face.delta,
-            face.weight
+            convert(UnitRange{integer}, nodes_range),
+            integer.(face.ownerCells),
+            float.(face.centre),
+            float.(face.normal),
+            float.(face.e),
+            float(face.area),
+            float(face.delta),
+            float(face.weight)
         ) 
     end
 

@@ -1,13 +1,15 @@
 using Plots
 using FVM_1D
 using Krylov
+using CUDA
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 
 # using FVM_1D.Mesh
-nmesh = update_mesh_format(mesh)
+nmesh = update_mesh_format(mesh; float=Float32, integer=Int32)
+cmesh = cu(nmesh)
 
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3

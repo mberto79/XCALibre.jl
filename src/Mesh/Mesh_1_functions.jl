@@ -15,7 +15,9 @@ function total_boundary_faces(mesh::Mesh2{I,F}) where {I,F}
     nbfaces
 end
 
-function boundary_index(boundaries::Vector{Boundary{TI}}, name::Symbol) where {TI}
+function boundary_index(
+    boundaries::Vector{Boundary{Symbol, Vector{TI}}}, name::Symbol
+    ) where TI<:Integer
     bci = zero(TI)
     for i ∈ eachindex(boundaries)
         bci += 1

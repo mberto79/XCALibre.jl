@@ -13,7 +13,7 @@ velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
 
-model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
+model = RANS{Laminar}(mesh=nmesh, viscosity=ConstantScalar(nu))
 
 @assign! model U (
     Dirichlet(:inlet, velocity),

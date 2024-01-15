@@ -43,7 +43,7 @@ Adapt.@adapt_structure Cell
 
 struct Face2D{
     F<:AbstractFloat, 
-    SV2<:SVector{3,<:Integer},
+    SV2<:SVector{2,<:Integer},
     SV3<:SVector{3,F}, 
     UR<:UnitRange{<:Integer}
     }
@@ -61,7 +61,7 @@ Adapt.@adapt_structure Face2D
 
 struct Face3D{
     F<:AbstractFloat, 
-    SV2<:SVector{3,<:Integer},
+    SV2<:SVector{2,<:Integer},
     SV3<:SVector{3,F}, 
     UR<:UnitRange{<:Integer}
     }

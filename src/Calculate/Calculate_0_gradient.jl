@@ -17,7 +17,7 @@ Grad{S}(phi::ScalarField) where S= begin
     grad = VectorField(mesh)
     F = typeof(phi)
     R = typeof(grad)
-    I = eltype(mesh.nodes[1].neighbourCells)
+    I = _get_int(mesh)
     M = typeof(mesh)
     Grad{S,F,R,I,M}(phi, grad, one(I), false, mesh)
 end

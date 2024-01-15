@@ -99,11 +99,12 @@ Equation(mesh::Mesh2{Ti,Tf}) where {Ti,Tf} = begin
         )
 end
 
-function sparse_matrix_connectivity(mesh::Mesh2{I,F}) where{I,F}
+function sparse_matrix_connectivity(mesh::Mesh2)
     cells = mesh.cells
     nCells = length(cells)
-    i = I[]
-    j = I[]
+    TI = _get_int(mesh)
+    i = TI[]
+    j = TI[]
     for cID = 1:nCells   
         cell = cells[cID]
         push!(i, cID) # diagonal row index

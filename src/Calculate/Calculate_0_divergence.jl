@@ -74,17 +74,24 @@ end
 
 function div!(phi::ScalarField, psif::FaceVectorField)
     mesh = phi.mesh
-    (; cells, faces) = mesh
+    # (; cells, faces) = mesh
+    (; cells, cell_neighbours, cell_nsign, cell_faces, faces) = mesh
     F = eltype(mesh.nodes[1].coords)
 
     for ci ∈ eachindex(cells)
-        (; facesID, nsign, volume) = cells[ci]
+        # (; facesID, nsign, volume) = cells[ci]
+        cell = cells[ci]
+        (; volume) = cell
         phi.values[ci] = zero(F)
-        for fi ∈ eachindex(facesID)
-            fID = facesID[fi]
+        # for fi ∈ eachindex(facesID)
+        for fi ∈ cell.faces_range
+            # fID = facesID[fi]
+            fID = cell_faces[fi]
+            nsign = cell_nsign[fi]
             (; area, normal) = faces[fID]
             Sf = area*normal
-            phi.values[ci] += psif[fID]⋅Sf*nsign[fi]/volume
+            # phi.values[ci] += psif[fID]⋅Sf*nsign[fi]/volume
+            phi.values[ci] += psif[fID]⋅Sf*nsign/volume
         end
     end
     # Add boundary faces contribution

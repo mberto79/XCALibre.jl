@@ -12,14 +12,16 @@ set_solver( field::AbstractField; # To do - relax inputs and correct internally
     rtol::F=1e-3 
     ) where {S,PT<:PreconditionerType,I<:Integer,F<:AbstractFloat} = 
 begin
+    TF = _get_float(field.mesh)
+    # TI = _get_int(field.mesh)
     (
         solver=solver, 
         preconditioner=preconditioner, 
-        convergence=convergence, 
-        relax=relax, 
+        convergence=convergence |> TF, 
+        relax=relax |> TF, 
         itmax=itmax, 
-        atol=atol, 
-        rtol=rtol
+        atol=atol |> TF, 
+        rtol=rtol |> TF
     )
 end
 

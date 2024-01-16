@@ -87,8 +87,9 @@ struct Equation{Ti,Tf}
     Fx::Vector{Tf}
     # mesh::Mesh2{Ti,Tf}
 end
-Equation(mesh::Mesh2{Ti,Tf}) where {Ti,Tf} = begin
+Equation(mesh::Mesh2) = begin
     nCells = length(mesh.cells)
+    Tf = _get_float(mesh)
     i, j, v = sparse_matrix_connectivity(mesh)
     Equation(
         sparse(i, j, v), 

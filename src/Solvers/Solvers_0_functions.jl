@@ -113,16 +113,20 @@ H!(Hv, v::VF, ux_eqn, uy_eqn) where VF<:VectorField =
 begin # Extend to 3D!
     (; x, y, z, mesh) = Hv 
     (; cells, faces) = mesh
+    (; cells, cell_neighbours, faces) = mesh
     Ax = ux_eqn.equation.A; Ay = uy_eqn.equation.A
     bx = ux_eqn.equation.b; by = uy_eqn.equation.b
     vx, vy = v.x, v.y
     F = eltype(v.x.values)
     @inbounds for cID ∈ eachindex(cells)
         cell = cells[cID]
-        (; neighbours, volume) = cell
+        # (; neighbours, volume) = cell
+        (; volume) = cell
         sumx = zero(F)
         sumy = zero(F)
-        @inbounds for nID ∈ neighbours
+        # @inbounds for nID ∈ neighbours
+        @inbounds for ni ∈ cell.faces_range 
+            nID = cell_neighbours[ni]
             sumx += Ax[cID,nID]*vx[nID]
             sumy += Ay[cID,nID]*vy[nID]
         end

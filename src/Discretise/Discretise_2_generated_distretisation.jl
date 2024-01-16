@@ -40,7 +40,8 @@ discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
     quote
         (; A, b) = eqn.equation
         mesh = model.terms[1].phi.mesh
-        (; faces, cells) = mesh
+        # (; faces, cells, ) = mesh
+        (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
         (; rowval, colptr, nzval) = A
         fz = zero(Float64) # replace with func to return mesh type (Mesh module)
         @inbounds for i ∈ eachindex(nzval)
@@ -50,12 +51,13 @@ discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
         nIndex = zero(Int64) # replace with func to return mesh type (Mesh module)
         @inbounds for cID ∈ eachindex(cells)
             cell = cells[cID]
-            (; facesID, nsign, neighbours) = cell
-            @inbounds for fi ∈ eachindex(facesID)
-                fID = cell.facesID[fi]
-                ns = cell.nsign[fi] # normal sign
+            # (; facesID, nsign, neighbours) = cell
+            # @inbounds for fi ∈ eachindex(facesID)
+            @inbounds for fi ∈ cell.faces_range
+                fID = cell_faces[fi]
+                ns = cell_nsign[fi] # normal sign
                 face = faces[fID]
-                nID = cell.neighbours[fi]
+                nID = cell_neighbours[fi]
                 cellN = cells[nID]
 
                 start = colptr[cID]

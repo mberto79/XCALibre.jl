@@ -5,12 +5,12 @@ export run!
 set_solver( field::AbstractField; # To do - relax inputs and correct internally
     solver::S, 
     preconditioner::PT, 
-    convergence::F, 
-    relax::F, 
-    itmax::I=100, 
-    atol::F=sqrt(eps()),
-    rtol::F=1e-3 
-    ) where {S,PT<:PreconditionerType,I<:Integer,F<:AbstractFloat} = 
+    convergence, 
+    relax, 
+    itmax::Integer=100, 
+    atol=sqrt(eps(_get_float(field.mesh))),
+    rtol=_get_float(field.mesh)(1e-3)
+    ) where {S,PT<:PreconditionerType} = 
 begin
     TF = _get_float(field.mesh)
     # TI = _get_int(field.mesh)

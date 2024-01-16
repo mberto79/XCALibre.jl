@@ -4,12 +4,13 @@
 
 ### House keeping and checks
 
-- [ ] Clean tensor implementation and add setfield! implementation
-- [ ] Double check tensors operations are implemented correctly
-- [ ] Make Mesh types fully parametric
-- [ ] Implement functions to return mesh Int and Float types easing GPU implementation
-- [ ] Check Divergence BCs for Upwind scheme
-- [ ] Implemente Upwind as deferred correction
+- [x] Clean tensor implementation and add setfield! implementation
+- [x] Double check tensors operations are implemented correctly
+- [x] Make Mesh types fully parametric
+- [x] Implement functions to return mesh Int and Float types easing GPU implementation
+- [x] Check Divergence BCs for Upwind scheme
+- [ ] Implement Upwind as deferred correction
+- [ ] Do mesh conversion to new format within UNV read/writer (2D and 3D meshes)
 
 ### Mesh module
 
@@ -43,7 +44,7 @@
   - [ ] Symmetry
   - [ ] Wall
   - [ ] Slip
-- [x] A simple plotting to check results
+- [ ] A simple plotting to check results
 - [ ] Extend code for solution including non-orthogonal correction
 - [x] Implement second order upwind scheme
 - [x] Implement gradient interpolation
@@ -53,18 +54,20 @@
 ### Physics
 
 - [x] Implement laminar solver (steady)
-- [ ] Implement laminar solver (transient)
+- [x] Implement laminar solver (transient)
 - [x] Implement first RANS turbulence model e.g. $k-\omega$
+- [ ] Implement $k-\omega LKE$ model
 - [x] Calculation of y for first cell (can be from mesh.delta?)
 - [ ] Calculation of wall normal distance needed for turbulence models
-- [ ] Implement wall functions
+- [x] Implement wall functions
 - [ ] LES solver
+- [ ] Add compressible solvers (Chris Ellis may be interested?)
 
 ### Algorithms
 
 - [x] Steady state SIMPLE
 - [ ] Extend to SIMPLEC
-- [ ] Transient PISO
+- [x] Transient PISO
 
 ### Computing
 

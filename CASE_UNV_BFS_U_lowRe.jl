@@ -7,7 +7,7 @@ using Krylov
 mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
 # mesh_file = "unv_sample_meshes/backwardFacingStep_2mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
-
+mesh = update_mesh_format(mesh)
 
 nu = 1e-3
 u_mag = 1.5

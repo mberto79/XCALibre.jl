@@ -78,6 +78,7 @@ NutWallFunction(name::Symbol) = begin
 end
 
 assign(vec::VectorField, args...) = begin
+    float = _get_float(vec.mesh)
     boundaries = vec.mesh.boundaries
     @reset vec.x.BCs = ()
     @reset vec.y.BCs = ()
@@ -89,19 +90,19 @@ assign(vec::VectorField, args...) = begin
         println("calling abstraction: ", idx)
         if typeof(arg.value) <: AbstractVector
             length(arg.value) == 3 || throw("Vector must have 3 components")
-            xBCs = (vec.x.BCs..., bc_type(idx, arg.value[1]))
-            yBCs = (vec.y.BCs..., bc_type(idx, arg.value[2]))
-            zBCs = (vec.z.BCs..., bc_type(idx, arg.value[3]))
-            uBCs = (vec.BCs..., bc_type(idx, arg.value))
+            xBCs = (vec.x.BCs..., bc_type(idx, float(arg.value[1])))
+            yBCs = (vec.y.BCs..., bc_type(idx, float(arg.value[2])))
+            zBCs = (vec.z.BCs..., bc_type(idx, float(arg.value[3])))
+            uBCs = (vec.BCs..., bc_type(idx, float.(arg.value)))
             @reset vec.x.BCs = xBCs
             @reset vec.y.BCs = yBCs
             @reset vec.z.BCs = zBCs
             @reset vec.BCs = uBCs
         else
-            xBCs = (vec.x.BCs..., bc_type(idx, arg.value))
-            yBCs = (vec.y.BCs..., bc_type(idx, arg.value))
-            zBCs = (vec.z.BCs..., bc_type(idx, arg.value))
-            uBCs = (vec.BCs..., bc_type(idx, arg.value))
+            xBCs = (vec.x.BCs..., bc_type(idx, float(arg.value)))
+            yBCs = (vec.y.BCs..., bc_type(idx, float(arg.value)))
+            zBCs = (vec.z.BCs..., bc_type(idx, float(arg.value)))
+            uBCs = (vec.BCs..., bc_type(idx, float(arg.value)))
             @reset vec.x.BCs = xBCs
             @reset vec.y.BCs = yBCs
             @reset vec.z.BCs = zBCs
@@ -112,13 +113,14 @@ assign(vec::VectorField, args...) = begin
 end
 
 assign(scalar::ScalarField, args...) = begin
+    float = _get_float(scalar.mesh)
     boundaries = scalar.mesh.boundaries
     @reset scalar.BCs = ()
     for arg ∈ args
         bc_type = Base.typename(typeof(arg)).wrapper
         idx = boundary_index(boundaries, arg.ID)
         println("calling abstraction: ", idx)
-        BCs = (scalar.BCs..., bc_type(idx, arg.value))
+        BCs = (scalar.BCs..., bc_type(idx, float(arg.value)))
         @reset scalar.BCs = BCs
     end
     return scalar

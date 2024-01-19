@@ -5,7 +5,7 @@ using Krylov
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
-mesh = update_mesh_format(mesh)
+mesh = update_mesh_format(mesh; integer=Int32, float=Float32)
 
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
@@ -51,7 +51,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=1000, time_step=1, write_interval=100)
+    iterations=1000, time_step=1, write_interval=-1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

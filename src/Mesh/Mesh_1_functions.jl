@@ -22,7 +22,7 @@ function boundary_index(
     ) where TI<:Integer
     bci = zero(TI)
     for i ∈ eachindex(boundaries)
-        bci += 1
+        bci += one(TI)
         if boundaries[i].name == name
             return bci 
         end

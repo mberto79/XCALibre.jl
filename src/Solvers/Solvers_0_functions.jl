@@ -16,9 +16,8 @@ function residual!(Residual, equation, phi, iteration)
     # Option 1
     
     mul!(Fx, A, values)
-    @inbounds @. R = abs(Fx - b)
-    # res = sqrt(mean(R.^2))/abs(mean(values))
-    res = sqrt(mean(R.^2))/norm(b)
+    @inbounds @. R = abs(Fx - b)^2
+    res = sqrt(mean(R))/norm(b)
 
 
     # res = max(norm(R), eps())/abs(mean(values))
@@ -132,7 +131,7 @@ begin # Extend to 3D!
         end
 
         D = view(Ax, cID, cID)[1] # add check to use max of Ax or Ay)
-        rD = 1.0/D
+        rD = 1/D
         # rD = volume/D
         x[cID] = (bx[cID] - sumx)*rD
         y[cID] = (by[cID] - sumy)*rD

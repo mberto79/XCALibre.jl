@@ -5,7 +5,7 @@ using Krylov
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
-mesh = update_mesh_format(mesh; integer=Int32, float=Float32)
+# mesh = update_mesh_format(mesh; integer=Int32, float=Float32)
 mesh = update_mesh_format(mesh)
 
 velocity = [0.5, 0.0, 0.0]
@@ -52,7 +52,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=1000, time_step=1, write_interval=-1)
+    iterations=184, time_step=1, write_interval=-1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -71,17 +71,15 @@ plot!(1:length(Rp), Rp, yscale=:log10, label="p")
 
 # # PROFILING CODE
 
-# using Profile, PProf
+using Profile, PProf
 
-# GC.gc()
-# initialise!(U, velocity)
-# initialise!(p, 0.0)
+GC.gc()
+initialise!(model.U, velocity)
+initialise!(model.p, 0.0)
 
-# Profile.Allocs.clear()
-# Profile.Allocs.@profile sample_rate=1 begin Rx, Ry, Rp = isimple!(
-#     mesh, nu, U, p,
-#     # setup_U, setup_p, iterations, pref=0.0)
-#     setup_U, setup_p, iterations)
-# end
+Profile.Allocs.clear()
+Profile.Allocs.@profile sample_rate=1 begin 
+    Rx, Ry, Rp = simple!(model, config)
+end
 
-# PProf.Allocs.pprof()
+PProf.Allocs.pprof()

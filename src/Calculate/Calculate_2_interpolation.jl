@@ -121,7 +121,7 @@ function interpolate!(phif::FaceScalarField, phi::ScalarField)
         ownerCells = face.ownerCells
         phi1 = vals[ownerCells[1]]
         phi2 = vals[ownerCells[2]]
-        one_minus_weight = 1.0 - weight
+        one_minus_weight = 1 - weight
         fvals[fID] = weight*phi1 + one_minus_weight*phi2 # check weight is used correctly!
     end
 end
@@ -141,7 +141,7 @@ function interpolate!(psif::FaceVectorField, psi::VectorField)
         cID1 = ownerCells[1]; cID2 = ownerCells[2]
         x1 = psi.x[cID1]; x2 = psi.x[cID2]
         y1 = psi.y[cID1]; y2 = psi.y[cID2]
-        one_minus_weight = 1.0 - weight
+        one_minus_weight = 1 - weight
         x[fID] = weight*x1 + one_minus_weight*x2 # check weight is used correctly!
         y[fID] = weight*y1 + one_minus_weight*y2 # check weight is used correctly!
     end
@@ -166,7 +166,7 @@ function interpolate!(
         grad2 = grad(cID2)
         # get weight for current scheme
         w, df = weight(get_scheme(grad), cells, faces, fID)
-        one_minus_weight = 1.0 - w
+        one_minus_weight = 1 - w
         # calculate interpolated value
         grad_ave = w*grad1 + one_minus_weight*grad2
         # correct interpolation

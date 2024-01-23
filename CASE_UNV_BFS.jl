@@ -3,7 +3,7 @@ using FVM_1D
 using Krylov
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
-mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
+mesh_file = "unv_sample_meshes/backwardFacingStep_2mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 
 
@@ -51,7 +51,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=1000, time_step=1, write_interval=100)
+    iterations=1000, time_step=1, write_interval=-1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

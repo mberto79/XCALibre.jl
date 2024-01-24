@@ -65,7 +65,7 @@ struct OmegaWallFunction{I,V} <: AbstractBoundary
     ID::I 
     value::V 
 end
-OmegaWallFunction(name::Symbol) = begin
+OmegaWallFunction(name::Symbol) = begin # issue assigning tuples BCs in type conversion
     OmegaWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8))
 end
 
@@ -120,7 +120,7 @@ assign(scalar::ScalarField, args...) = begin
         bc_type = Base.typename(typeof(arg)).wrapper
         idx = boundary_index(boundaries, arg.ID)
         println("calling abstraction: ", idx)
-        BCs = (scalar.BCs..., bc_type(idx, float(arg.value)))
+        BCs = (scalar.BCs..., bc_type(idx, float(arg.value))) # doesn't work with tuples
         @reset scalar.BCs = BCs
     end
     return scalar

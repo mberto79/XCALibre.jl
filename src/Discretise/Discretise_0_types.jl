@@ -138,7 +138,7 @@ assign(scalar::ScalarField, args...) = begin
             BCs = (bc_type(idx, BCs_vals))
             @reset scalar.BCs = (scalar.BCs..., BCs)
         else
-            error("Value given to boundary $idx is not recognised")
+            error("Value given to boundary $idx ($bname) is not recognised")
         end
     end
     return scalar

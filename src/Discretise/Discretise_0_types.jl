@@ -65,7 +65,7 @@ struct OmegaWallFunction{I,V} <: AbstractBoundary
     ID::I 
     value::V 
 end
-OmegaWallFunction(name::Symbol) = begin # issue assigning tuples BCs in type conversion
+OmegaWallFunction(name::Symbol) = begin
     OmegaWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8))
 end
 
@@ -87,7 +87,8 @@ assign(vec::VectorField, args...) = begin
     for arg ∈ args
         bc_type = Base.typename(typeof(arg)).wrapper
         idx = boundary_index(boundaries, arg.ID)
-        println("calling abstraction: ", idx)
+        bname = boundaries[idx].name
+        println("Setting boundary $idx: ", bname)
         if typeof(arg.value) <: AbstractVector
             length(arg.value) == 3 || throw("Vector must have 3 components")
             xBCs = (vec.x.BCs..., bc_type(idx, float(arg.value[1])))
@@ -119,9 +120,26 @@ assign(scalar::ScalarField, args...) = begin
     for arg ∈ args
         bc_type = Base.typename(typeof(arg)).wrapper
         idx = boundary_index(boundaries, arg.ID)
-        println("calling abstraction: ", idx)
-        BCs = (scalar.BCs..., bc_type(idx, float(arg.value))) # doesn't work with tuples
-        @reset scalar.BCs = BCs
+        bname = boundaries[idx].name
+        println("Setting boundary $idx: ", bname)
+
+        # Exception 1: value is a number
+        if typeof(arg.value) <: Number
+            BCs = (bc_type(idx, float(arg.value))) # doesn't work with tuples
+            @reset scalar.BCs = (scalar.BCs..., BCs)
+
+        # Exception 2: value is a named tuple (used in wall functions)
+        elseif typeof(arg.value) <: NamedTuple
+            BCs_vals = arg.value
+            for entry ∈ typeof(arg.value).parameters[1] # access names
+                val = float(getproperty(arg.value, entry)) # type conversion
+                BCs_vals = set(BCs_vals, PropertyLens{entry}(), val)
+            end
+            BCs = (bc_type(idx, BCs_vals))
+            @reset scalar.BCs = (scalar.BCs..., BCs)
+        else
+            error("Value given to boundary $idx is not recognised")
+        end
     end
     return scalar
 end

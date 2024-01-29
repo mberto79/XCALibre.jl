@@ -44,7 +44,7 @@ end
 Adapt.@adapt_structure ScalarField
 ScalarField(mesh::Mesh2) =begin
     ncells  = length(mesh.cells)
-    F = eltype(mesh.nodes[1].coords)
+    F = _get_float(mesh)
     ScalarField(zeros(F,ncells), mesh, ())
 end
 
@@ -55,7 +55,7 @@ end
 Adapt.@adapt_structure FaceScalarField
 FaceScalarField(mesh::Mesh2) = begin
     nfaces  = length(mesh.faces)
-    F = eltype(mesh.nodes[1].coords)
+    F = _get_float(mesh)
     FaceScalarField(zeros(F,nfaces), mesh)
 end
 

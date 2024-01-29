@@ -29,9 +29,9 @@ end
     term::Operator{F,P,I,Time{Euler}}, 
     b, nzval, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
         volume = cell.volume
-        dt = runtime.dt
-        nzval[cIndex] += volume/dt
-        b[cID] += prev[cID]*volume/dt
+        rdt = 1/runtime.dt
+        nzval[cIndex] += volume*rdt
+        b[cID] += prev[cID]*volume*rdt
     nothing
 end
 

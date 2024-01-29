@@ -3,22 +3,26 @@ export total_boundary_faces, boundary_index
 export x, y, z # access cell centres
 export xf, yf, zf # access face centres
 
-_get_int(mesh) = typeof(mesh).parameters[1]
-_get_float(mesh) = typeof(mesh).parameters[2]
+_get_int(mesh) = eltype(mesh.cells[1].faces_range)
+_get_float(mesh) = eltype(mesh.cells[1].centre)
 
-function total_boundary_faces(mesh::Mesh2{I,F}) where {I,F}
+# function total_boundary_faces(mesh::Mesh2{I,F}) where {I,F}
+function total_boundary_faces(mesh::Mesh2)
     (; boundaries) = mesh
-    nbfaces = zero(I)
+    # nbfaces = zero(I)
+    nbfaces = zero(_get_int(mesh))
     @inbounds for boundary ∈ boundaries
         nbfaces += length(boundary.facesID)
     end
     nbfaces
 end
 
-function boundary_index(boundaries::Vector{Boundary{TI}}, name::Symbol) where {TI}
+function boundary_index(
+    boundaries::Vector{Boundary{Symbol, Vector{TI}}}, name::Symbol
+    ) where TI<:Integer
     bci = zero(TI)
     for i ∈ eachindex(boundaries)
-        bci += 1
+        bci += one(TI)
         if boundaries[i].name == name
             return bci 
         end

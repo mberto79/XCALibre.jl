@@ -78,6 +78,7 @@ NutWallFunction(name::Symbol) = begin
 end
 
 assign(vec::VectorField, args...) = begin
+    float = _get_float(vec.mesh)
     boundaries = vec.mesh.boundaries
     @reset vec.x.BCs = ()
     @reset vec.y.BCs = ()
@@ -86,22 +87,23 @@ assign(vec::VectorField, args...) = begin
     for arg ∈ args
         bc_type = Base.typename(typeof(arg)).wrapper
         idx = boundary_index(boundaries, arg.ID)
-        println("calling abstraction: ", idx)
+        bname = boundaries[idx].name
+        println("Setting boundary $idx: ", bname)
         if typeof(arg.value) <: AbstractVector
             length(arg.value) == 3 || throw("Vector must have 3 components")
-            xBCs = (vec.x.BCs..., bc_type(idx, arg.value[1]))
-            yBCs = (vec.y.BCs..., bc_type(idx, arg.value[2]))
-            zBCs = (vec.z.BCs..., bc_type(idx, arg.value[3]))
-            uBCs = (vec.BCs..., bc_type(idx, arg.value))
+            xBCs = (vec.x.BCs..., bc_type(idx, float(arg.value[1])))
+            yBCs = (vec.y.BCs..., bc_type(idx, float(arg.value[2])))
+            zBCs = (vec.z.BCs..., bc_type(idx, float(arg.value[3])))
+            uBCs = (vec.BCs..., bc_type(idx, float.(arg.value)))
             @reset vec.x.BCs = xBCs
             @reset vec.y.BCs = yBCs
             @reset vec.z.BCs = zBCs
             @reset vec.BCs = uBCs
         else
-            xBCs = (vec.x.BCs..., bc_type(idx, arg.value))
-            yBCs = (vec.y.BCs..., bc_type(idx, arg.value))
-            zBCs = (vec.z.BCs..., bc_type(idx, arg.value))
-            uBCs = (vec.BCs..., bc_type(idx, arg.value))
+            xBCs = (vec.x.BCs..., bc_type(idx, float(arg.value)))
+            yBCs = (vec.y.BCs..., bc_type(idx, float(arg.value)))
+            zBCs = (vec.z.BCs..., bc_type(idx, float(arg.value)))
+            uBCs = (vec.BCs..., bc_type(idx, float(arg.value)))
             @reset vec.x.BCs = xBCs
             @reset vec.y.BCs = yBCs
             @reset vec.z.BCs = zBCs
@@ -112,14 +114,32 @@ assign(vec::VectorField, args...) = begin
 end
 
 assign(scalar::ScalarField, args...) = begin
+    float = _get_float(scalar.mesh)
     boundaries = scalar.mesh.boundaries
     @reset scalar.BCs = ()
     for arg ∈ args
         bc_type = Base.typename(typeof(arg)).wrapper
         idx = boundary_index(boundaries, arg.ID)
-        println("calling abstraction: ", idx)
-        BCs = (scalar.BCs..., bc_type(idx, arg.value))
-        @reset scalar.BCs = BCs
+        bname = boundaries[idx].name
+        println("Setting boundary $idx: ", bname)
+
+        # Exception 1: value is a number
+        if typeof(arg.value) <: Number
+            BCs = (bc_type(idx, float(arg.value))) # doesn't work with tuples
+            @reset scalar.BCs = (scalar.BCs..., BCs)
+
+        # Exception 2: value is a named tuple (used in wall functions)
+        elseif typeof(arg.value) <: NamedTuple
+            BCs_vals = arg.value
+            for entry ∈ typeof(arg.value).parameters[1] # access names
+                val = float(getproperty(arg.value, entry)) # type conversion
+                BCs_vals = set(BCs_vals, PropertyLens{entry}(), val)
+            end
+            BCs = (bc_type(idx, BCs_vals))
+            @reset scalar.BCs = (scalar.BCs..., BCs)
+        else
+            error("Value given to boundary $idx ($bname) is not recognised")
+        end
     end
     return scalar
 end

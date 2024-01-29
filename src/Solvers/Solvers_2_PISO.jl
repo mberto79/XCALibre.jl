@@ -128,7 +128,7 @@ function PISO_loop(
         discretise!(ux_eqn, prev, runtime)
         apply_boundary_conditions!(ux_eqn, U.x.BCs)
         # ux_eqn.b .-= divUTx
-        implicit_relaxation!(ux_eqn.equation, prev, solvers.U.relax)
+        # implicit_relaxation!(ux_eqn.equation, prev, solvers.U.relax)
         update_preconditioner!(ux_eqn.preconditioner)
         run!(ux_eqn, solvers.U) #opP=Pu.P, solver=solver_U)
         residual!(R_ux, ux_eqn.equation, U.x, iteration)
@@ -137,7 +137,7 @@ function PISO_loop(
         discretise!(uy_eqn, prev, runtime)
         apply_boundary_conditions!(uy_eqn, U.y.BCs)
         # uy_eqn.b .-= divUTy
-        implicit_relaxation!(uy_eqn.equation, prev, solvers.U.relax)
+        # implicit_relaxation!(uy_eqn.equation, prev, solvers.U.relax)
         update_preconditioner!(uy_eqn.preconditioner)
         run!(uy_eqn, solvers.U)
         residual!(R_uy, uy_eqn.equation, U.y, iteration)
@@ -201,22 +201,22 @@ function PISO_loop(
         #     divUTy = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][2,1]+ gradUT[i][2,2] + gradUT[i][2,3])*vol
         # end
         
-        convergence = 1e-70
+        # convergence = 1e-7
 
-        if (R_ux[iteration] <= convergence && 
-            R_uy[iteration] <= convergence && 
-            R_p[iteration] <= convergence)
+        # if (R_ux[iteration] <= convergence && 
+        #     R_uy[iteration] <= convergence && 
+        #     R_p[iteration] <= convergence)
 
-            print(
-                """
-                \n\n\n\n\n
-                Simulation converged! $iteration iterations in
-                """)
-                if !signbit(write_interval)
-                    model2vtk(model, @sprintf "timestep_%.6d" iteration)
-                end
-            break
-        end
+        #     print(
+        #         """
+        #         \n\n\n\n\n
+        #         Simulation converged! $iteration iterations in
+        #         """)
+        #         if !signbit(write_interval)
+        #             model2vtk(model, @sprintf "timestep_%.6d" iteration)
+        #         end
+        #     break
+        # end
 
         co = courant_number(U, mesh, runtime)
 

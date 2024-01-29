@@ -1,5 +1,6 @@
 module FVM_1D
 
+include("UNV2/UNV2.jl")
 include("Mesh/Mesh.jl")
 include("Mesh/Plotting/0_plotting.jl")
 include("Fields/Fields.jl")
@@ -13,7 +14,6 @@ include("VTK/VTK.jl")
 include("Solvers/Solvers.jl")
 include("Postprocess/Postprocess.jl")
 include("UNV_3D/UNV_3D.jl")
-include("UNV2/UNV2.jl")
 
 using Reexport
 @reexport using FVM_1D.Mesh

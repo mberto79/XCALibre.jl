@@ -6,6 +6,7 @@ using Krylov
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
+mesh = update_mesh_format(mesh)
 
 # Inlet conditions
 
@@ -55,7 +56,7 @@ schemes = (
 )
 
 runtime = set_runtime(
-    iterations=10000, write_interval=-1, time_step=0.005)
+    iterations=10000, write_interval=50, time_step=0.005)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

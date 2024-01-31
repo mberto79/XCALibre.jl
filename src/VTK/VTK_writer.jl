@@ -28,6 +28,7 @@ function write_vtk(name, mesh, args...) #, Ux, Uy, Uz, p)
     # FVM.interpolate2nodes!(UyNodes, Uy)
     # FVM.interpolate2nodes!(UzNodes, Uz)
     # FVM.interpolate2nodes!(pNodes, p)
+    (; cell_nodes) = mesh
     filename = name*".vtk"
     open(filename, "w") do io
         write(io, "# vtk DataFile Version 3.0\n")
@@ -43,14 +44,18 @@ function write_vtk(name, mesh, args...) #, Ux, Uy, Uz, p)
         end
         sumIndeces = 0
         for cell ∈ mesh.cells
-            sumIndeces += length(cell.nodesID)
+            # sumIndeces += length(cell.nodesID)
+            sumIndeces += length(cell.nodes_range)
         end
         cellListSize = sumIndeces + nCells
         write(io, "CELLS $(nCells) $(cellListSize)\n")
         for cell ∈ mesh.cells
-            nNodes = length(cell.nodesID)
+            # nNodes = length(cell.nodesID)
+            nNodes = length(cell.nodes_range)
             nodes = ""
-            for nodeID ∈ cell.nodesID 
+            # for nodeID ∈ cell.nodesID 
+            for ni ∈ cell.nodes_range 
+                nodeID = cell_nodes[ni]
                 node = "$(nodeID-1)"
                 nodes = nodes*" "*node
             end 
@@ -60,7 +65,8 @@ function write_vtk(name, mesh, args...) #, Ux, Uy, Uz, p)
         write(io, "CELL_TYPES $(nCells)\n")
 
         for cell ∈ mesh.cells
-            nCellIDs = length(cell.nodesID)
+            # nCellIDs = length(cell.nodesID)
+            nCellIDs = length(cell.nodes_range)
             if nCellIDs == 3
                 type = "5"
             elseif nCellIDs == 4

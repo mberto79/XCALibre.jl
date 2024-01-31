@@ -7,7 +7,7 @@ using Krylov
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "unv_sample_meshes/flatplate_2D_laminar.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
-
+mesh = update_mesh_format(mesh)
 
 velocity = [0.2, 0.0, 0.0]
 nu = 1e-5
@@ -52,7 +52,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=2000, write_interval=-1)
+runtime = set_runtime(iterations=2000, write_interval=1000, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -80,9 +80,9 @@ Cf = 0.664./sqrt.(Rex)
 plot(; xaxis="Rex", yaxis="Cf")
 plot!(Rex, Cf, color=:red, ylims=(0, 0.05), xlims=(0,2e4), label="Blasius",lw=1.5)
 plot!(oRex, oCf, color=:green, lw=1.5, label="OpenFOAM")
-plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code") |> display
+plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code")
 
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
 plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p") |> display
+plot!(1:length(Rp), Rp, yscale=:log10, label="p")

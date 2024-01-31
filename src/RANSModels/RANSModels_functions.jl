@@ -61,15 +61,18 @@ end
 
 bound!(field, bound) = begin
     mesh = field.mesh
-    (; cells, faces) = mesh
+    # (; cells, faces) = mesh
+    (; cells, cell_neighbours) = mesh
     for i ∈ eachindex(field)
         sum_flux = 0.0
         sum_area = 0
         average = 0.0
         
         # Cell based average
-        cellsID = cells[i].neighbours
-        for cID ∈ cellsID
+        # cellsID = cells[i].neighbours
+        # for cID ∈ cellsID
+        for fi ∈ cells[i].faces_range
+            cID = cell_neighbours[fi]
             sum_flux += max(field[cID], eps()) # bounded sum
             sum_area += 1
         end

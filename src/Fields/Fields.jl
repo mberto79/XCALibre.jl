@@ -1,5 +1,7 @@
 module Fields
 
+using Adapt
+using CUDA
 using LinearAlgebra
 using SparseArrays
 using StaticArrays

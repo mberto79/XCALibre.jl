@@ -40,34 +40,39 @@ discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
     quote
         (; A, b) = eqn.equation
         mesh = model.terms[1].phi.mesh
-        (; faces, cells) = mesh
+        integer = _get_int(mesh)
+        float = _get_float(mesh)
+        # (; faces, cells, ) = mesh
+        (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
         (; rowval, colptr, nzval) = A
-        fz = zero(Float64) # replace with func to return mesh type (Mesh module)
+        fzero = zero(float) # replace with func to return mesh type (Mesh module)
+        ione = one(integer)
         @inbounds for i ∈ eachindex(nzval)
-            nzval[i] = fz
+            nzval[i] = fzero
         end
-        cIndex = zero(Int64) # replace with func to return mesh type (Mesh module)
-        nIndex = zero(Int64) # replace with func to return mesh type (Mesh module)
+        cIndex = zero(integer) # replace with func to return mesh type (Mesh module)
+        nIndex = zero(integer) # replace with func to return mesh type (Mesh module)
         @inbounds for cID ∈ eachindex(cells)
             cell = cells[cID]
-            (; facesID, nsign, neighbours) = cell
-            @inbounds for fi ∈ eachindex(facesID)
-                fID = cell.facesID[fi]
-                ns = cell.nsign[fi] # normal sign
+            # (; facesID, nsign, neighbours) = cell
+            # @inbounds for fi ∈ eachindex(facesID)
+            @inbounds for fi ∈ cell.faces_range
+                fID = cell_faces[fi]
+                ns = cell_nsign[fi] # normal sign
                 face = faces[fID]
-                nID = cell.neighbours[fi]
+                nID = cell_neighbours[fi]
                 cellN = cells[nID]
 
                 start = colptr[cID]
-                offset = findfirst(isequal(cID),@view rowval[start:end]) - 1
+                offset = findfirst(isequal(cID),@view rowval[start:end]) - ione
                 cIndex = start + offset
 
                 start = colptr[nID]
-                offset = findfirst(isequal(cID),@view rowval[start:end]) - 1
+                offset = findfirst(isequal(cID),@view rowval[start:end]) - ione
                 nIndex = start + offset
                 $(assignment_block_1...)    
             end
-            b[cID] = zero(0.0)
+            b[cID] = fzero
             volume = cell.volume
             $(assignment_block_2...)
             $(assignment_block_3...)

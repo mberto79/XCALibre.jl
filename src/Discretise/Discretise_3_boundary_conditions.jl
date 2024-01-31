@@ -27,9 +27,10 @@ end
     term::Operator{F,P,I,Laplacian{Linear}}, 
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
     phi = term.phi 
-    # values = phi.values
-    A[cellID,cellID] += 0.0
-    b[cellID] += 0.0
+    # # values = phi.values
+    # fzero = zero(eltype(b))
+    # A[cellID,cellID] += fzero
+    # b[cellID] += fzero
     nothing
 end
 
@@ -50,7 +51,7 @@ end
 @inline (bc::Dirichlet)(
     term::Operator{F,P,I,Divergence{Linear}}, 
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
-    A[cellID,cellID] += 0.0 
+    # A[cellID,cellID] += 0.0 
     b[cellID] += term.sign[1]*(-term.flux[fID]*bc.value)
     nothing
 end

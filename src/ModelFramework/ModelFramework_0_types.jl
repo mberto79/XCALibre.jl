@@ -87,8 +87,9 @@ struct Equation{Ti,Tf}
     Fx::Vector{Tf}
     # mesh::Mesh2{Ti,Tf}
 end
-Equation(mesh::Mesh2{Ti,Tf}) where {Ti,Tf} = begin
+Equation(mesh::Mesh2) = begin
     nCells = length(mesh.cells)
+    Tf = _get_float(mesh)
     i, j, v = sparse_matrix_connectivity(mesh)
     Equation(
         sparse(i, j, v), 
@@ -99,22 +100,26 @@ Equation(mesh::Mesh2{Ti,Tf}) where {Ti,Tf} = begin
         )
 end
 
-function sparse_matrix_connectivity(mesh::Mesh2{I,F}) where{I,F}
-    cells = mesh.cells
+function sparse_matrix_connectivity(mesh::Mesh2)
+    (; cells, cell_neighbours) = mesh
     nCells = length(cells)
-    i = I[]
-    j = I[]
+    TI = _get_int(mesh) # would this result in regression (type identified inside func?)
+    TF = _get_float(mesh) # would this result in regression (type identified inside func?)
+    i = TI[]
+    j = TI[]
     for cID = 1:nCells   
         cell = cells[cID]
         push!(i, cID) # diagonal row index
         push!(j, cID) # diagonal column index
-        for fi ∈ eachindex(cell.facesID)
-            neighbour = cell.neighbours[fi]
+        # for fi ∈ eachindex(cell.facesID)
+        for fi ∈ cell.faces_range
+            # neighbour = cell.neighbours[fi]
+            neighbour = cell_neighbours[fi]
             push!(i, cID) # cell index (row)
             push!(j, neighbour) # neighbour index (column)
         end
     end
-    v = zeros(F, length(i))
+    v = zeros(TF, length(i))
     return i, j, v
 end
 

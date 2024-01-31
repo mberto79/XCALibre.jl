@@ -16,9 +16,8 @@ function residual!(Residual, equation, phi, iteration)
     # Option 1
     
     mul!(Fx, A, values)
-    @inbounds @. R = abs(Fx - b)
-    # res = sqrt(mean(R.^2))/abs(mean(values))
-    res = sqrt(mean(R.^2))/norm(b)
+    @inbounds @. R = abs(Fx - b)^2
+    res = sqrt(mean(R))/norm(b)
 
 
     # res = max(norm(R), eps())/abs(mean(values))
@@ -113,22 +112,26 @@ H!(Hv, v::VF, ux_eqn, uy_eqn) where VF<:VectorField =
 begin # Extend to 3D!
     (; x, y, z, mesh) = Hv 
     (; cells, faces) = mesh
+    (; cells, cell_neighbours, faces) = mesh
     Ax = ux_eqn.equation.A; Ay = uy_eqn.equation.A
     bx = ux_eqn.equation.b; by = uy_eqn.equation.b
     vx, vy = v.x, v.y
     F = eltype(v.x.values)
     @inbounds for cID ∈ eachindex(cells)
         cell = cells[cID]
-        (; neighbours, volume) = cell
+        # (; neighbours, volume) = cell
+        (; volume) = cell
         sumx = zero(F)
         sumy = zero(F)
-        @inbounds for nID ∈ neighbours
+        # @inbounds for nID ∈ neighbours
+        @inbounds for ni ∈ cell.faces_range 
+            nID = cell_neighbours[ni]
             sumx += Ax[cID,nID]*vx[nID]
             sumy += Ay[cID,nID]*vy[nID]
         end
 
         D = view(Ax, cID, cID)[1] # add check to use max of Ax or Ay)
-        rD = 1.0/D
+        rD = 1/D
         # rD = volume/D
         x[cID] = (bx[cID] - sumx)*rD
         y[cID] = (by[cID] - sumy)*rD

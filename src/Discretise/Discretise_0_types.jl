@@ -32,6 +32,7 @@ struct Dirichlet{I,V} <: AbstractBoundary
     ID::I
     value::V
 end
+Adapt.@adapt_structure Dirichlet
 
 function Dirichlet(ID::I, value::V) where {I<:Integer,V}
     if V <: Number
@@ -52,11 +53,13 @@ struct Neumann{I,V} <: AbstractBoundary
     ID::I 
     value::V 
 end
+Adapt.@adapt_structure Neumann
 
 struct KWallFunction{I,V} <: AbstractBoundary
     ID::I 
     value::V 
 end
+Adapt.@adapt_structure KWallFunction
 KWallFunction(name::Symbol) = begin
     KWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8))
 end
@@ -65,6 +68,7 @@ struct OmegaWallFunction{I,V} <: AbstractBoundary
     ID::I 
     value::V 
 end
+Adapt.@adapt_structure OmegaWallFunction
 OmegaWallFunction(name::Symbol) = begin
     OmegaWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8))
 end
@@ -73,6 +77,7 @@ struct NutWallFunction{I,V} <: AbstractBoundary
     ID::I 
     value::V 
 end
+Adapt.@adapt_structure NutWallFunction
 NutWallFunction(name::Symbol) = begin
     NutWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8))
 end

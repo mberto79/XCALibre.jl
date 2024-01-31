@@ -4,6 +4,7 @@ using StaticArrays
 using LinearAlgebra
 using Setfield
 using Printf
+using CUDA
 
 # using FVM_1D.Mesh
 

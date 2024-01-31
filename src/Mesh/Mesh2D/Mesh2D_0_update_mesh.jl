@@ -124,7 +124,7 @@ update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
             float(face.area),
             float(face.delta),
             float(face.weight)
-        ) 
+        ) |> cu
     end
 
     # CONSTRUCT FINAL MESH (MESH2)
@@ -139,5 +139,5 @@ update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
         boundaries,
         nodes,
         node_cells
-    )
+    ) |> cu
 end

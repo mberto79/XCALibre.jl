@@ -9,7 +9,7 @@ using Krylov
 mesh_file = "unv_sample_meshes/backwardFacingStep_5mm_long.unv"
 # mesh_file = "unv_sample_meshes/backwardFacingStep_2mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
-
+mesh = update_mesh_format(mesh)
 
 nu = 1e-5
 u_mag = 1.5
@@ -96,7 +96,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=-1)
+runtime = set_runtime(iterations=1000, write_interval=1000, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

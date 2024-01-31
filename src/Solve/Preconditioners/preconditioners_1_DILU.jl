@@ -98,7 +98,7 @@ function update_dilu_diagonal!(P) # must rename
             r_count += 1
             D[j] -= nzval[c_pointer]*nzval[r_pointer[r_count]]/D[i]
         end
-        D[i] = 1.0/D[i] # store inverse
+        D[i] = 1/D[i] # store inverse
     end
     # D .= 1.0./D # store inverse
     nothing

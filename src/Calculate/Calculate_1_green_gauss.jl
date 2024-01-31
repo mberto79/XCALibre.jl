@@ -2,15 +2,22 @@
 function green_gauss!(dx, dy, dz, phif)
     # (; x, y, z) = grad.result
     (; mesh, values) = phif
-    (; cells, faces) = mesh
+    # (; cells, faces) = mesh
+    (; faces, cells, cell_faces, cell_nsign) = mesh
     F = eltype(mesh.nodes[1].coords)
     for ci ∈ eachindex(cells)
-        (; facesID, nsign, volume) = cells[ci]
+        # (; facesID, nsign, volume) = cells[ci]
+        cell = cells[ci]
+        (; volume) = cell
         res = SVector{3,F}(0.0,0.0,0.0)
-        for fi ∈ eachindex(facesID)
-            fID = facesID[fi]
+        # for fi ∈ eachindex(facesID)
+        for fi ∈ cell.faces_range
+            # fID = facesID[fi]
+            fID = cell_faces[fi]
+            nsign = cell_nsign[fi]
             (; area, normal) = faces[fID]
-            res += values[fID]*(area*normal*nsign[fi])
+            # res += values[fID]*(area*normal*nsign[fi])
+            res += values[fID]*(area*normal*nsign)
         end
         res /= volume
         dx[ci] = res[1]

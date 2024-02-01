@@ -124,7 +124,7 @@ assign(scalar::ScalarField, args...) = begin
     @reset scalar.BCs = ()
     for arg ∈ args
         bc_type = Base.typename(typeof(arg)).wrapper
-        idx = boundary_index(boundaries, arg.ID)
+        idx = boundary_index(boundaries, arg.ID) #returns index number of mesh boundary with same name as boundary condition ID
         bname = boundaries[idx].name
         println("Setting boundary $idx: ", bname)
 

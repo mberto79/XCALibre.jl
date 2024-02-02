@@ -16,6 +16,16 @@ Dictionary LUT Solution Time On Model Level 02/02/2024
     55.614298 seconds (261.69 k allocations: 27.149 GiB, 0.23% gc time, 0.55% compilation time)
     63.194156 seconds (15.50 M allocations: 28.347 GiB, 1.08% gc time, 12.12% compilation time)
 
-boundary_info Struct Solution Time On Model Level RETEST 02/02/2024
+boundary_info Struct Solution Time On Model Level RETES 1 02/02/2024
     55.493791 seconds (261.61 k allocations: 27.149 GiB, 0.46% gc time, 0.56% compilation time)
     62.917948 seconds (15.50 M allocations: 28.347 GiB, 1.04% gc time, 12.01% compilation time)
+
+boundary_info Struct Solution Time on Model Level RETEST 2 DIRECTLY AFTER RETEST 1 02/02/2024
+    55.063332 seconds (157.31 k allocations: 27.142 GiB, 0.14% gc time)
+    55.234175 seconds (158.61 k allocations: 27.327 GiB, 0.14% gc time)
+
+Notes:
+Appears the majority of the 15.5 million allocations occurs during preallocation as when any case retested directly after first test, the number of allocations drops significantly
+Potential area for improvement with the GPU as a result
+No significant difference between LUT solution and boundary_info struct solution in terms of performance
+boundary_info struct solution likely to be more scalable in the future based on memory load - literature needed

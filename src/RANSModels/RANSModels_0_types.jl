@@ -9,7 +9,12 @@ abstract type AbstractTurbulenceModel end
 # Models 
 struct Laminar <: AbstractMomentumModel end 
 
-struct RANS{M,F1,F2,V,T,E,D}
+struct boundary_info{I<:Integer, S<:Symbol}
+    ID::I
+    Name::S
+end
+
+struct RANS{M,F1,F2,V,T,E,D,VBI}
     model::M
     U::F1 
     p::F2
@@ -17,6 +22,7 @@ struct RANS{M,F1,F2,V,T,E,D}
     turbulence::T
     energy::E
     mesh::D
+    boundary_info::VBI
 end 
 
 RANS{Laminar}(; mesh, viscosity) = begin
@@ -25,8 +31,9 @@ RANS{Laminar}(; mesh, viscosity) = begin
     V = typeof(viscosity)
     flag = false; F = typeof(flag)
     D = typeof(mesh)
-    RANS{Laminar,F1,F2,V,F,F,D}(
-        Laminar(), U, p, viscosity, flag, flag, mesh
+    boundary_info = boundary_map(mesh); VBI = typeof(boundary_info)
+    RANS{Laminar,F1,F2,V,F,F,D,VBI}(
+        Laminar(), U, p, viscosity, flag, flag, mesh, boundary_info
     )
 end
 

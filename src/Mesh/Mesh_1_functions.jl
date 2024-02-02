@@ -1,6 +1,6 @@
 export _get_float, _get_int
 export total_boundary_faces, boundary_index
-export number_symbols
+# export number_symbols
 export x, y, z # access cell centres
 export xf, yf, zf # access face centres
 
@@ -18,14 +18,24 @@ function total_boundary_faces(mesh::Mesh2)
     nbfaces
 end
 
+# function boundary_index(
+#     boundaries::Vector{Boundary{Symbol, Vector{TI}}}, name::Symbol
+#     ) where TI<:Integer
+#     bci = zero(TI)
+#     for i ∈ eachindex(boundaries)
+#         bci += one(TI)
+#         if boundaries[i].name == name
+#             return bci 
+#         end
+#     end
+# end
+
 function boundary_index(
-    boundaries::Vector{Boundary{Symbol, Vector{TI}}}, name::Symbol
-    ) where TI<:Integer
-    bci = zero(TI)
-    for i ∈ eachindex(boundaries)
-        bci += one(TI)
-        if boundaries[i].name == name
-            return bci 
+    boundaries, name
+    )
+    for i in eachindex(boundaries)
+        if boundaries[i].Name == name
+            return boundaries[i].ID
         end
     end
 end
@@ -84,17 +94,17 @@ function zf(mesh::Mesh2{I,F}) where {I,F}
     return out
 end
 
-function number_symbols(mesh)
-    symbol_mapping = Dict{Symbol, Int}()
+# function number_symbols(mesh)
+#     symbol_mapping = Dict{Symbol, Int}()
 
-    for (i, boundary) in enumerate(mesh.boundaries)
-        if haskey(symbol_mapping, boundary.name)
-            # Do nothing, the symbol is already mapped
-        else
-            new_number = length(symbol_mapping) + 1
-            symbol_mapping[boundary.name] = new_number
-        end
-    end
+#     for (i, boundary) in enumerate(mesh.boundaries)
+#         if haskey(symbol_mapping, boundary.name)
+#             # Do nothing, the symbol is already mapped
+#         else
+#             new_number = length(symbol_mapping) + 1
+#             symbol_mapping[boundary.name] = new_number
+#         end
+#     end
     
-    return symbol_mapping
-end
+#     return symbol_mapping
+# end

@@ -1,11 +1,15 @@
 using Plots
 using FVM_1D
 using Krylov
+using CUDA
 
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
+mesh = update_mesh_format(mesh)
+# symbol_mapping = number_symbols(mesh)
+# mesh = cu(mesh)
 
 # Inlet conditions
 
@@ -64,7 +68,9 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
+@time begin
 Rx, Ry, Rp = simple!(model, config) #, pref=0.0)
+end
 
 plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

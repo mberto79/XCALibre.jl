@@ -1,7 +1,15 @@
+SOLUTIONS TO SYMBOL USE ERROR IN Discretise_0_types.jl
+
 Original Program Time 02/02/2024
     62.906696 seconds (175.13 k allocations: 30.198 GiB, 0.84% gc time)
     63.131286 seconds (176.55 k allocations: 30.383 GiB, 0.84% gc time, 0.03% compilation time)
 
-LUT Solution Time 02/02/2024
+Dictionary LUT Solution Time On API Level 02/02/2024
     56.457224 seconds (261.88 k allocations: 27.149 GiB, 0.20% gc time, 0.58% compilation time)
     64.161817 seconds (15.50 M allocations: 28.347 GiB, 1.15% gc time, 12.21% compilation time)
+
+boundary_info Struct Solution Time On Model Level 02/02/2024
+    55.215160 seconds (157.30 k allocations: 27.142 GiB, 0.16% gc time)
+    55.411227 seconds (158.67 k allocations: 27.327 GiB, 0.16% gc time, 0.02% compilation time)
+
+Dictionary LUT Solution Time On Model Level 02/02/2024

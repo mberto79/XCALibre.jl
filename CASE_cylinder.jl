@@ -8,7 +8,6 @@ using CUDA
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
-# symbol_mapping = number_symbols(mesh)
 # mesh = cu(mesh)
 
 # Inlet conditions
@@ -20,7 +19,7 @@ Re = (0.2*velocity[1])/nu
 
 model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
-@assign! model U symbol_mapping ( 
+@assign! model U ( 
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:cylinder, noSlip),
@@ -28,7 +27,7 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
     Neumann(:top, 0.0)
 )
 
-@assign! model p symbol_mapping (
+@assign! model p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
     Neumann(:cylinder, 0.0),

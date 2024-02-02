@@ -1,5 +1,6 @@
 export _get_float, _get_int
 export total_boundary_faces, boundary_index
+export number_symbols
 export x, y, z # access cell centres
 export xf, yf, zf # access face centres
 
@@ -81,4 +82,19 @@ function zf(mesh::Mesh2{I,F}) where {I,F}
         out[i] = faces[i].centre[3]
     end
     return out
+end
+
+function number_symbols(mesh)
+    symbol_mapping = Dict{Symbol, Int}()
+
+    for (i, boundary) in enumerate(mesh.boundaries)
+        if haskey(symbol_mapping, boundary.name)
+            # Do nothing, the symbol is already mapped
+        else
+            new_number = length(symbol_mapping) + 1
+            symbol_mapping[boundary.name] = new_number
+        end
+    end
+    
+    return symbol_mapping
 end

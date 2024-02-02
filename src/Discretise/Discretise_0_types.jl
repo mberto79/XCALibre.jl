@@ -82,7 +82,7 @@ NutWallFunction(name::Symbol) = begin
     NutWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8))
 end
 
-assign(vec::VectorField, args...) = begin
+assign(vec::VectorField, symbol_mapping, args...) = begin
     float = _get_float(vec.mesh)
     boundaries = vec.mesh.boundaries
     @reset vec.x.BCs = ()
@@ -91,7 +91,8 @@ assign(vec::VectorField, args...) = begin
     @reset vec.BCs = ()
     for arg ∈ args
         bc_type = Base.typename(typeof(arg)).wrapper
-        idx = boundary_index(boundaries, arg.ID)
+        # idx = boundary_index(boundaries, arg.ID)
+        idx = get(symbol_mapping,arg.ID,nothing)
         bname = boundaries[idx].name
         println("Setting boundary $idx: ", bname)
         if typeof(arg.value) <: AbstractVector
@@ -118,13 +119,14 @@ assign(vec::VectorField, args...) = begin
     return vec
 end
 
-assign(scalar::ScalarField, args...) = begin
+assign(scalar::ScalarField, symbol_mapping, args...) = begin
     float = _get_float(scalar.mesh)
     boundaries = scalar.mesh.boundaries
     @reset scalar.BCs = ()
     for arg ∈ args
         bc_type = Base.typename(typeof(arg)).wrapper
-        idx = boundary_index(boundaries, arg.ID) #returns index number of mesh boundary with same name as boundary condition ID
+        # idx = boundary_index(boundaries, arg.ID) #returns index number of mesh boundary with same name as boundary condition ID
+        idx = get(symbol_mapping,arg.ID,nothing)
         bname = boundaries[idx].name
         println("Setting boundary $idx: ", bname)
 
@@ -149,25 +151,27 @@ assign(scalar::ScalarField, args...) = begin
     return scalar
 end
 
-macro assign!(model, field, BCs)
+macro assign!(model, field, symbol_mapping, BCs)
     emodel = esc(model)
     efield = Symbol(field)
     eBCs = esc(BCs)
+    esymbol_mapping = esc(symbol_mapping)
     quote
         f = $emodel.$efield
-        f = assign(f, $eBCs...)
+        f = assign(f, $esymbol_mapping, $eBCs...)
         $emodel = @set $emodel.$efield = f
     end
 end
 
-macro assign!(model, turb, field, BCs)
+macro assign!(model, turb, field, symbol_mapping, BCs)
     emodel = esc(model)
     eturb = Symbol(turb)
     efield = Symbol(field)
     eBCs = esc(BCs)
+    esymbol_mapping = esc(symbol_mapping)
     quote
         f = $emodel.$eturb.$efield
-        f = assign(f, $eBCs...)
+        f = assign(f, $esymbol_mapping, $eBCs...)
         # @reset $emodel.$eturb.$efield = f
         $emodel = @set $emodel.$eturb.$efield = f
     end

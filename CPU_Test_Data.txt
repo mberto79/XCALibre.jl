@@ -15,3 +15,7 @@ boundary_info Struct Solution Time On Model Level 02/02/2024
 Dictionary LUT Solution Time On Model Level 02/02/2024
     55.614298 seconds (261.69 k allocations: 27.149 GiB, 0.23% gc time, 0.55% compilation time)
     63.194156 seconds (15.50 M allocations: 28.347 GiB, 1.08% gc time, 12.12% compilation time)
+
+boundary_info Struct Solution Time On Model Level RETEST 02/02/2024
+    55.493791 seconds (261.61 k allocations: 27.149 GiB, 0.46% gc time, 0.56% compilation time)
+    62.917948 seconds (15.50 M allocations: 28.347 GiB, 1.04% gc time, 12.01% compilation time)

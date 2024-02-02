@@ -18,18 +18,6 @@ function total_boundary_faces(mesh::Mesh2)
     nbfaces
 end
 
-# function boundary_index(
-#     boundaries::Vector{Boundary{Symbol, Vector{TI}}}, name::Symbol
-#     ) where TI<:Integer
-#     bci = zero(TI)
-#     for i ∈ eachindex(boundaries)
-#         bci += one(TI)
-#         if boundaries[i].name == name
-#             return bci 
-#         end
-#     end
-# end
-
 function boundary_index(
     boundaries, name
     )

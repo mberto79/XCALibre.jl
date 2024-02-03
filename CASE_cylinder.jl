@@ -8,7 +8,6 @@ using CUDA
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
-# mesh = cu(mesh)
 
 # Inlet conditions
 
@@ -67,9 +66,11 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-@time begin
+mesh = cu(mesh)
+
+# @time begin
 Rx, Ry, Rp = simple!(model, config) #, pref=0.0)
-end
+# end
 
 plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

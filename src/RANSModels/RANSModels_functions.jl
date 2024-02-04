@@ -91,7 +91,8 @@ end
 
 # Create LUT to map boudnary names to indices
 function boundary_map(mesh)
-    I = Integer; S = Symbol
+    I = _get_int(mesh)
+    S = Symbol
     boundary_map = boundary_info{I,S}[]
 
     for (i, boundary) in enumerate(mesh.boundaries)

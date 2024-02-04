@@ -32,8 +32,40 @@ No significant difference between LUT solution and boundary_info struct solution
 boundary_info struct solution likely to be more scalable in the future based on memory load - literature needed
 
 
-BENCHMARKING INDIVIDUAL FUNCTIONS
-Original 
+BENCHMARKING INDIVIDUAL FUNCTIONS 04/02/2024
+Original
+    boundary_map() Function:
+    NONE
+
+    boundary_index() Function for model.U:
+    0.000001 seconds
+    Setting boundary 1: inlet
+    0.000001 seconds (1 allocation: 32 bytes)
+    Setting boundary 2: outlet
+    0.000000 seconds
+    Setting boundary 5: cylinder
+    0.000000 seconds (1 allocation: 32 bytes)
+    Setting boundary 4: bottom
+    0.000000 seconds (1 allocation: 32 bytes)
+    Setting boundary 3: top
+
+    boundary_index() Function for model.p:
+    0.000001 seconds (1 allocation: 32 bytes)
+    Setting boundary 1: inlet
+    0.000001 seconds (1 allocation: 32 bytes)
+    Setting boundary 2: outlet
+    0.000000 seconds (1 allocation: 32 bytes)
+    Setting boundary 5: cylinder
+    0.000000 seconds (1 allocation: 32 bytes)
+    Setting boundary 4: bottom
+    0.000000 seconds (1 allocation: 32 bytes)
+    Setting boundary 3: top
+
+    SIMPLE loop time
+    57.105106 seconds (261.88 k allocations: 27.149 GiB, 0.77% gc time, 0.60% compilation time)
+
+    model.boundary_info Memory Load:
+    NONE
 
 boundary_info Struct On Model Level 04/02/2024
     boundary_map() Function:
@@ -109,3 +141,7 @@ Notes 04/02/2024
 - Allocations and memory associated with them are about double for number_symbol() function compared to boundary_map() function
 - SIMPLE loop time is approximately equal for both solutions while allocations are slightly higher for dictionary
 - Dictionary option seems more appropriate at this time, but scalability to ~30 boundaries needs to be explored
+- Comparing both solutions to original, allocations in SIMPLE loop drop dramatically in solution cases, indicating better scalability for solutions
+- Comparing both solutions to original, setup time is slower for both solutions due to lack of boundary_info constructor function in original, but this time will be made up by GPU implementation
+- No additional memory load for original, but memory penalty likely to be negligible compared to computational time decrease benefit
+- Clear that the change to one of the solutions is necessary

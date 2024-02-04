@@ -25,7 +25,7 @@ boundary_info Struct Solution Time on Model Level RETEST 2 DIRECTLY AFTER RETEST
     55.063332 seconds (157.31 k allocations: 27.142 GiB, 0.14% gc time)
     55.234175 seconds (158.61 k allocations: 27.327 GiB, 0.14% gc time)
 
-Notes:
+Notes 02/02/2024:
 Appears the majority of the 15.5 million allocations occurs during preallocation as when any case retested directly after first test, the number of allocations drops significantly
 Potential area for improvement with the GPU as a result
 No significant difference between LUT solution and boundary_info struct solution in terms of performance
@@ -33,6 +33,8 @@ boundary_info struct solution likely to be more scalable in the future based on 
 
 
 BENCHMARKING INDIVIDUAL FUNCTIONS
+Original 
+
 boundary_info Struct On Model Level 04/02/2024
     boundary_map() Function:
     0.000004 seconds (2 allocations: 208 bytes)
@@ -69,11 +71,41 @@ boundary_info Struct On Model Level 04/02/2024
 
 Dictionary LUT Solution on Model Level 04/02/2024
     boundary_map() Function:
+    0.000005 seconds (4 allocations: 528 bytes)
 
-    boundary_index() Function for model.U:
+    get!() Function for model.U:
+    0.000002 seconds
+    Setting boundary 1: inlet
+    0.000001 seconds (1 allocation: 32 bytes)
+    Setting boundary 2: outlet
+    0.000000 seconds
+    Setting boundary 5: cylinder
+    0.000000 seconds (1 allocation: 32 bytes)
+    Setting boundary 4: bottom
+    0.000000 seconds (1 allocation: 32 bytes)
+    Setting boundary 3: top
+    0.000002 seconds (1 allocation: 32 bytes)
 
-    boundary_index() Function for model.p:
+    get!() Function for model.p:
+    Setting boundary 1: inlet
+    0.000002 seconds (1 allocation: 32 bytes)
+    Setting boundary 2: outlet
+    0.000000 seconds (1 allocation: 32 bytes)
+    Setting boundary 5: cylinder
+    0.000000 seconds (1 allocation: 32 bytes)
+    Setting boundary 4: bottom
+    0.000000 seconds (1 allocation: 32 bytes)
+    Setting boundary 3: top
 
     SIMPLE loop time
+    57.652249 seconds (157.58 k allocations: 27.142 GiB, 0.12% gc time)
 
     model.boundary_info Memory Load:
+    64 Bytes
+
+Notes 04/02/2024
+- Upon closer inspection, memory load of dictionary is lower than struct solution for laminar cylinder case
+- Performance on get!() function is comparable to boudnary_index() function
+- Allocations and memory associated with them are about double for number_symbol() function compared to boundary_map() function
+- SIMPLE loop time is approximately equal for both solutions while allocations are slightly higher for dictionary
+- Dictionary option seems more appropriate at this time, but scalability to ~30 boundaries needs to be explored

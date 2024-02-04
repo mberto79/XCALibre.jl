@@ -1,8 +1,6 @@
 using Plots
 using FVM_1D
 using Krylov
-using CUDA
-
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
@@ -65,8 +63,6 @@ GC.gc()
 
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
-
-mesh = cu(mesh)
 
 # @time begin
 Rx, Ry, Rp = simple!(model, config) #, pref=0.0)

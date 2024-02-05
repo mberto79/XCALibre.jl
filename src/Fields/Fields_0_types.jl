@@ -81,7 +81,7 @@ end
 Adapt.@adapt_structure VectorField
 VectorField(mesh::Mesh2) = begin
     ncells = length(mesh.cells)
-    F = eltype(mesh.nodes[1].coords)
+    F = _get_float(mesh) #eltype(mesh.nodes[1].coords) #TEMPORARY SOLUTION, RUN BY HUMBERTO
     VectorField(
         ScalarField(zeros(F, ncells), mesh, ()),
         ScalarField(zeros(F, ncells), mesh, ()), 

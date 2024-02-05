@@ -1,10 +1,6 @@
 using Plots
 using FVM_1D
 using Krylov
-<<<<<<< HEAD
-=======
-
->>>>>>> af6962b084433513d909f27b78b9e303bcf97e14
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"

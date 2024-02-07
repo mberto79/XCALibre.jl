@@ -4,7 +4,7 @@ using Accessors
 # using LinearAlgebra
 using SparseArrays
 # using StaticArrays
-
+using Adapt
 
 using LoopVectorization
 # using LinearAlgebra

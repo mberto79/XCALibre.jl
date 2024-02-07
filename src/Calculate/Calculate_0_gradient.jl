@@ -11,7 +11,7 @@ struct Grad{S<:AbstractScheme,F,R,I,M} <: AbstractField
     correct::Bool
     mesh::M
 end
-
+Adapt.@adapt_structure Grad
 Grad{S}(phi::ScalarField) where S= begin
     mesh = phi.mesh
     grad = VectorField(mesh)

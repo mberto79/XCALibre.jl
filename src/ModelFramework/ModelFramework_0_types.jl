@@ -18,14 +18,17 @@ struct Operator{F,P,S,T} <: AbstractOperator
     sign::S
     type::T
 end
-
+Adapt.@adapt_structure Operator
 # operators
 
 struct Time{T} end
+Adapt.@adapt_structure Time
 struct Laplacian{T}  end
+Adapt.@adapt_structure Laplacian
 struct Divergence{T} end
+Adapt.@adapt_structure Divergence
 struct Si end
-
+Adapt.@adapt_structure Si
 # constructors
 
 Time{T}(flux, phi) where T = Operator(
@@ -56,11 +59,11 @@ struct Src{F,S,T} <: AbstractSource
     sign::S 
     type::T
 end
-
+Adapt.@adapt_structure Src
 # Source types
 
 struct Source end
-
+Adapt.@adapt_structure Source
 Source(f::T) where T = Src(f, 1, typeof(f))
 # Source(f::ScalarField) = Src(f.values, 1, typeof(f))
 # Source(f::Number) = Src(f.values, 1, typeof(f)) # To implement!!
@@ -71,6 +74,7 @@ struct Model{T,S,TN,SN}
     terms::T
     sources::S
 end
+Adapt.@adapt_structure Model
 Model{TN,SN}(terms::T, sources::S) where {T,S,TN,SN} = begin
     Model{T,S,TN,SN}(terms, sources)
 end
@@ -87,6 +91,7 @@ struct Equation{Ti,Tf}
     Fx::Vector{Tf}
     # mesh::Mesh2{Ti,Tf}
 end
+Adapt.@adapt_structure Equation
 Equation(mesh::Mesh2) = begin
     nCells = length(mesh.cells)
     Tf = _get_float(mesh)
@@ -131,3 +136,4 @@ struct ModelEquation{M,E,S,P}
     solver::S
     preconditioner::P
 end
+Adapt.@adapt_structure ModelEquation

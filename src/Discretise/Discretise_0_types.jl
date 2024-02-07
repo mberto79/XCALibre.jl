@@ -92,8 +92,8 @@ assign(vec::VectorField, model, args...) = begin
     for arg ∈ args
         bc_type = Base.typename(typeof(arg)).wrapper
         # idx = boundary_index(boundaries, arg.ID)
-        idx = @time begin get(model.boundary_info,arg.ID,nothing) end
-        # idx = boundary_index(model.boundary_info, arg.ID)
+        # idx = @time begin get(model.boundary_info,arg.ID,nothing) end
+        idx = boundary_index(model.boundary_info, arg.ID)
         bname = boundaries[idx].name
         println("Setting boundary $idx: ", bname)
         if typeof(arg.value) <: AbstractVector
@@ -127,8 +127,8 @@ assign(scalar::ScalarField, model, args...) = begin
     for arg ∈ args
         bc_type = Base.typename(typeof(arg)).wrapper
         # idx = boundary_index(boundaries, arg.ID) #returns index number of mesh boundary with same name as boundary condition ID
-        idx = @time begin get(model.boundary_info,arg.ID,nothing) end
-        # idx = boundary_index(model.boundary_info, arg.ID)
+        # idx = @time begin get(model.boundary_info,arg.ID,nothing) end
+        idx = boundary_index(model.boundary_info, arg.ID)
         bname = boundaries[idx].name
         println("Setting boundary $idx: ", bname)
 

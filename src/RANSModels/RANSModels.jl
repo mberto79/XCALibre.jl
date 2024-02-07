@@ -3,7 +3,7 @@ module RANSModels
 using Accessors
 using StaticArrays
 using LinearAlgebra
-
+using Adapt
 using FVM_1D.Mesh
 using FVM_1D.Fields
 using FVM_1D.ModelFramework

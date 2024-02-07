@@ -1,11 +1,12 @@
-export _get_float, _get_int
+export _get_float, _get_int, _get_backend
 export total_boundary_faces, boundary_index
 # export number_symbols
 export x, y, z # access cell centres
 export xf, yf, zf # access face centres
 
-_get_int(mesh) = eltype(mesh.cells[1].faces_range)
-_get_float(mesh) = eltype(mesh.cells[1].centre)
+_get_int(mesh) = eltype(mesh.get_int)
+_get_float(mesh) = eltype(mesh.get_float)
+_get_backend(mesh) = get_backend(mesh.cells)
 
 # function total_boundary_faces(mesh::Mesh2{I,F}) where {I,F}
 function total_boundary_faces(mesh::Mesh2)

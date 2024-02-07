@@ -79,7 +79,7 @@ Adapt.@adapt_structure Face3D
 
 # 2D and 3D Mesh types
 
-struct Mesh2{VC, VI, VF<:AbstractArray{<:Face2D}, VB, VN} <: AbstractMesh
+struct Mesh2{VC, VI, VF<:AbstractArray{<:Face2D}, VB, VN, SV3, UR} <: AbstractMesh
     cells::VC
     cell_nodes::VI
     cell_faces::VI
@@ -90,10 +90,12 @@ struct Mesh2{VC, VI, VF<:AbstractArray{<:Face2D}, VB, VN} <: AbstractMesh
     boundaries::VB
     nodes::VN
     node_cells::VI # can be empty for now
+    get_float::SV3
+    get_int::UR
 end
 Adapt.@adapt_structure Mesh2
 
-struct Mesh3{VC, VI, VF<:AbstractArray{<:Face3D}, VB, VN} <: AbstractMesh
+struct Mesh3{VC, VI, VF<:AbstractArray{<:Face3D}, VB, VN, SV3, UR} <: AbstractMesh
     cells::VC
     cell_nodes::VI
     cell_faces::VI
@@ -104,5 +106,7 @@ struct Mesh3{VC, VI, VF<:AbstractArray{<:Face3D}, VB, VN} <: AbstractMesh
     boundaries::VB
     nodes::VN
     node_cells::VI # can be empty for now
+    get_float::SV3
+    get_int::UR
 end
 Adapt.@adapt_structure Mesh3

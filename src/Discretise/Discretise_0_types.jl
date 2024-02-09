@@ -1,6 +1,6 @@
 export AbstractScheme, AbstractBoundary
 export AbstractDirichlet, AbstractNeumann
-export Dirichlet, Neumann
+export Dirichlet, fixedValue, Neumann
 export KWallFunction, OmegaWallFunction, NutWallFunction
 export Constant, Linear, Upwind
 export Steady, Euler, CrankNicolson
@@ -34,7 +34,7 @@ struct Dirichlet{I,V} <: AbstractBoundary
 end
 Adapt.@adapt_structure Dirichlet
 
-function Dirichlet(ID::I, value::V) where {I<:Integer,V}
+function fixedValue(BC::Dirichlet, ID::I, value::V) where {I<:Integer,V}
     if V <: Number
         return Dirichlet{I,eltype(value)}(ID, value)
     elseif V <: Vector
@@ -44,7 +44,7 @@ function Dirichlet(ID::I, value::V) where {I<:Integer,V}
         else
             throw("Only vectors with three components can be used")
         end
-    else
+    elsefixedValue
         throw("The value provided should be a scalar or a vector")
     end
 end
@@ -54,6 +54,20 @@ struct Neumann{I,V} <: AbstractBoundary
     value::V 
 end
 Adapt.@adapt_structure Neumann
+function fixedValue(BC::Neumann, ID::I, value::V) where {I<:Integer,V}
+    if V <: Number
+        return Neumann{I,eltype(value)}(ID, value)
+    elseif V <: Vector
+        if length(value) == 3 
+            nvalue = SVector{3, eltype(value)}(value)
+            return Neumann{I,typeof(nvalue)}(ID, nvalue)
+        else
+            throw("Only vectors with three components can be used")
+        end
+    elsefixedValue
+        throw("The value provided should be a scalar or a vector")
+    end
+end
 
 struct KWallFunction{I,V} <: AbstractBoundary
     ID::I 
@@ -90,7 +104,9 @@ assign(vec::VectorField, model, args...) = begin
     @reset vec.z.BCs = ()
     @reset vec.BCs = ()
     for arg ∈ args
-        bc_type = Base.typename(typeof(arg)).wrapper
+        # bc_type = Base.typename(typeof(arg)).wrapper #NOT NEEDED WITH MULTIPLE DISPATCH OF VIXED VALUE
+        a = typeof(arg)
+        println("$a")
         # idx = boundary_index(boundaries, arg.ID)
         # idx = @time begin get(model.boundary_info,arg.ID,nothing) end
         idx = boundary_index(model.boundary_info, arg.ID)
@@ -98,19 +114,20 @@ assign(vec::VectorField, model, args...) = begin
         println("Setting boundary $idx: ", bname)
         if typeof(arg.value) <: AbstractVector
             length(arg.value) == 3 || throw("Vector must have 3 components")
-            xBCs = (vec.x.BCs..., bc_type(idx, float(arg.value[1])))
-            yBCs = (vec.y.BCs..., bc_type(idx, float(arg.value[2])))
-            zBCs = (vec.z.BCs..., bc_type(idx, float(arg.value[3])))
-            uBCs = (vec.BCs..., bc_type(idx, float.(arg.value)))
+            # println("",typeof(bc_type))
+            xBCs = (vec.x.BCs..., fixedValue(arg, idx, float(arg.value[1])))
+            yBCs = (vec.y.BCs..., fixedValue(arg, idx, float(arg.value[2])))
+            zBCs = (vec.z.BCs..., fixedValue(arg, idx, float(arg.value[3])))
+            uBCs = (vec.BCs..., fixedValue(arg, idx, float.(arg.value)))
             @reset vec.x.BCs = xBCs
             @reset vec.y.BCs = yBCs
             @reset vec.z.BCs = zBCs
             @reset vec.BCs = uBCs
         else
-            xBCs = (vec.x.BCs..., bc_type(idx, float(arg.value)))
-            yBCs = (vec.y.BCs..., bc_type(idx, float(arg.value)))
-            zBCs = (vec.z.BCs..., bc_type(idx, float(arg.value)))
-            uBCs = (vec.BCs..., bc_type(idx, float(arg.value)))
+            xBCs = (vec.x.BCs..., fixedValue(arg, idx, float(arg.value)))
+            yBCs = (vec.y.BCs..., fixedValue(arg, idx, float(arg.value)))
+            zBCs = (vec.z.BCs..., fixedValue(arg, idx, float(arg.value)))
+            uBCs = (vec.BCs..., fixedValue(arg, idx, float(arg.value)))
             @reset vec.x.BCs = xBCs
             @reset vec.y.BCs = yBCs
             @reset vec.z.BCs = zBCs
@@ -125,7 +142,7 @@ assign(scalar::ScalarField, model, args...) = begin
     boundaries = scalar.mesh.boundaries
     @reset scalar.BCs = ()
     for arg ∈ args
-        bc_type = Base.typename(typeof(arg)).wrapper
+        # bc_type = Base.typename(typeof(arg)).wrapper
         # idx = boundary_index(boundaries, arg.ID) #returns index number of mesh boundary with same name as boundary condition ID
         # idx = @time begin get(model.boundary_info,arg.ID,nothing) end
         idx = boundary_index(model.boundary_info, arg.ID)
@@ -134,7 +151,7 @@ assign(scalar::ScalarField, model, args...) = begin
 
         # Exception 1: value is a number
         if typeof(arg.value) <: Number
-            BCs = (bc_type(idx, float(arg.value))) # doesn't work with tuples
+            BCs = (fixedValue(arg, idx, float(arg.value))) # doesn't work with tuples
             @reset scalar.BCs = (scalar.BCs..., BCs)
 
         # Exception 2: value is a named tuple (used in wall functions)
@@ -144,7 +161,7 @@ assign(scalar::ScalarField, model, args...) = begin
                 val = float(getproperty(arg.value, entry)) # type conversion
                 BCs_vals = set(BCs_vals, PropertyLens{entry}(), val)
             end
-            BCs = (bc_type(idx, BCs_vals))
+            BCs = (fixedValue(arg, idx, BCs_vals))
             @reset scalar.BCs = (scalar.BCs..., BCs)
         else
             error("Value given to boundary $idx ($bname) is not recognised")

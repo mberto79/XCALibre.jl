@@ -84,11 +84,11 @@ end
 
 # Linear system matrix equation
 
-struct Equation{Ti,Tf}
-    A::SparseMatrixCSC{Tf,Ti}
-    b::Vector{Tf}
-    R::Vector{Tf}
-    Fx::Vector{Tf}
+struct Equation{SMCSC,VTf}
+    A::SMCSC
+    b::VTf
+    R::VTf
+    Fx::VTf
     # mesh::Mesh2{Ti,Tf}
 end
 Adapt.@adapt_structure Equation
@@ -96,11 +96,15 @@ Equation(mesh::Mesh2) = begin
     nCells = length(mesh.cells)
     Tf = _get_float(mesh)
     i, j, v = sparse_matrix_connectivity(mesh)
-    Equation(
-        sparse(i, j, v), 
-        zeros(Tf, nCells), 
-        zeros(Tf, nCells), 
-        zeros(Tf, nCells)
+    A = sparse(i, j, v); SMCSC = typeof(A)
+    b = zeros(Tf, nCells); VTf = typeof(b)
+    R = zeros(Tf, nCells)  
+    Fx = zeros(Tf, nCells)
+    Equation{SMCSC,VTf}(
+        A,
+        b,
+        R,
+        Fx
         # mesh
         )
 end

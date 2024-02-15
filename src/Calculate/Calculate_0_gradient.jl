@@ -11,7 +11,14 @@ struct Grad{S<:AbstractScheme,F,R,I,M} <: AbstractField
     correct::Bool
     mesh::M
 end
-Adapt.@adapt_structure Grad
+function Adapt.adapt_structure(to, itp::Grad{S}) where {S}
+    field = Adapt.adapt_structure(to, itp.field); F = typeof(field)
+    result = Adapt.adapt_structure(to, itp.result); R = typeof(result)
+    correctors = Adapt.adapt_structure(to, itp.correctors); I = typeof(correctors)
+    correct = Adapt.adapt_structure(to, itp.correct)
+    mesh = Adapt.adapt_structure(to, itp.mesh); M = typeof(mesh)
+    Grad{S,F,R,I,M}(field, result, correctors, correct, mesh)
+end
 Grad{S}(phi::ScalarField) where S= begin
     mesh = phi.mesh
     grad = VectorField(mesh)

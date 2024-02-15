@@ -5,10 +5,15 @@ export DILU, DILUprecon
 
 abstract type PreconditionerType end
 struct NormDiagonal <: PreconditionerType end
+Adapt.@adapt_structure NormDiagonal
 struct Jacobi <: PreconditionerType end
+Adapt.@adapt_structure Jacobi
 struct LDL <: PreconditionerType end
+Adapt.@adapt_structure LDL
 struct ILU0 <: PreconditionerType end
+Adapt.@adapt_structure ILU0
 struct DILU <: PreconditionerType end
+Adapt.@adapt_structure DILU
 
 
 struct Preconditioner{T,M,P,S}
@@ -16,7 +21,12 @@ struct Preconditioner{T,M,P,S}
     P::P
     storage::S
 end
-
+function Adapt.adapt_structure(to, itp::Preconditioner{T}) where {T}
+    A = Adapt.adapt_structure(to, itp.A)
+    P = Adapt.adapt_structure(to, itp.P)
+    storage = Adapt.adapt_structure(to, itp.storage) 
+    Preconditioner{T,typeof(A),typeof(P),typeof(storage)}(A,P,storage)
+end
 Preconditioner{NormDiagonal}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
     m, n = size(A)
     m == n || throw("Matrix not square")
@@ -51,14 +61,14 @@ Preconditioner{ILU0}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
     Preconditioner{ILU0,typeof(A),typeof(P),typeof(S)}(A,P,S)
 end
 
-struct DILUprecon{M,V,I}
+struct DILUprecon{M,V,VI,VVI}
     A::M
     D::V
-    Di::Vector{I}
-    Ri::Vector{Vector{I}}
-    J::Vector{Vector{I}}
+    Di::VI
+    Ri::VVI
+    J::VVI
 end
-
+Adapt.@adapt_structure DILUprecon
 Preconditioner{DILU}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
     m, n = size(A)
     m == n || throw("Matrix not square")

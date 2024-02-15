@@ -18,13 +18,28 @@ struct Operator{F,P,S,T} <: AbstractOperator
     sign::S
     type::T
 end
-
+Adapt.@adapt_structure Operator
 # operators
 
 struct Time{T} end
-struct Laplacian{T}  end
+function Adapt.adapt_structure(to, itp::Time{T}) where {T}
+    Time{T}()
+end
+
+struct Laplacian{T} end
+function Adapt.adapt_structure(to, itp::Laplacian{T}) where {T}
+    Laplacian{T}()
+end
+
 struct Divergence{T} end
+function Adapt.adapt_structure(to, itp::Divergence{T}) where {T}
+    Divergence{T}()
+end
+
 struct Si end
+function Adapt.adapt_structure(to, itp::Si)
+    Si()
+end
 
 # constructors
 
@@ -56,11 +71,11 @@ struct Src{F,S,T} <: AbstractSource
     sign::S 
     type::T
 end
-
+Adapt.@adapt_structure Src
 # Source types
 
 struct Source end
-
+Adapt.@adapt_structure Source
 Source(f::T) where T = Src(f, 1, typeof(f))
 # Source(f::ScalarField) = Src(f.values, 1, typeof(f))
 # Source(f::Number) = Src(f.values, 1, typeof(f)) # To implement!!
@@ -71,6 +86,11 @@ struct Model{T,S,TN,SN}
     terms::T
     sources::S
 end
+function Adapt.adapt_structure(to, itp::Model{TN,SN}) where {TN,SN}
+    terms = Adapt.adapt_structure(to, itp.terms); T = typeof(terms)
+    sources = Adapt.adapt_structure(to, itp.sources); S = typeof(sources)
+    Model{T,S,TN,SN}(terms,sources)
+end
 Model{TN,SN}(terms::T, sources::S) where {T,S,TN,SN} = begin
     Model{T,S,TN,SN}(terms, sources)
 end
@@ -80,22 +100,27 @@ end
 
 # Linear system matrix equation
 
-struct Equation{Ti,Tf}
-    A::SparseMatrixCSC{Tf,Ti}
-    b::Vector{Tf}
-    R::Vector{Tf}
-    Fx::Vector{Tf}
+struct Equation{SMCSC,VTf}
+    A::SMCSC
+    b::VTf
+    R::VTf
+    Fx::VTf
     # mesh::Mesh2{Ti,Tf}
 end
+Adapt.@adapt_structure Equation
 Equation(mesh::Mesh2) = begin
     nCells = length(mesh.cells)
     Tf = _get_float(mesh)
     i, j, v = sparse_matrix_connectivity(mesh)
-    Equation(
-        sparse(i, j, v), 
-        zeros(Tf, nCells), 
-        zeros(Tf, nCells), 
-        zeros(Tf, nCells)
+    A = sparse(i, j, v); SMCSC = typeof(A)
+    b = zeros(Tf, nCells); VTf = typeof(b)
+    R = zeros(Tf, nCells)  
+    Fx = zeros(Tf, nCells)
+    Equation{SMCSC,VTf}(
+        A,
+        b,
+        R,
+        Fx
         # mesh
         )
 end
@@ -131,3 +156,4 @@ struct ModelEquation{M,E,S,P}
     solver::S
     preconditioner::P
 end
+Adapt.@adapt_structure ModelEquation

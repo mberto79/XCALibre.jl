@@ -92,6 +92,10 @@ update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
         )
     end
 
+    # Set get_float and get_int arrays
+    get_float = cells[1].centre
+    get_int = cells[1].faces_range
+
     # PROCESSING FACES
 
     # Calculate array size needed for face node data
@@ -124,7 +128,7 @@ update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
             float(face.area),
             float(face.delta),
             float(face.weight)
-        ) |> cu
+        ) 
     end
 
     # CONSTRUCT FINAL MESH (MESH2)
@@ -138,6 +142,8 @@ update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
         face_nodes,
         boundaries,
         nodes,
-        node_cells
-    ) |> cu
+        node_cells,
+        get_float,
+        get_int
+    ) 
 end

@@ -22,13 +22,25 @@ Adapt.@adapt_structure Operator
 # operators
 
 struct Time{T} end
-Adapt.@adapt_structure Time
-struct Laplacian{T}  end
-Adapt.@adapt_structure Laplacian
+function Adapt.adapt_structure(to, itp::Time{T}) where {T}
+    Time{T}()
+end
+
+struct Laplacian{T} end
+function Adapt.adapt_structure(to, itp::Laplacian{T}) where {T}
+    Laplacian{T}()
+end
+
 struct Divergence{T} end
-Adapt.@adapt_structure Divergence
+function Adapt.adapt_structure(to, itp::Divergence{T}) where {T}
+    Divergence{T}()
+end
+
 struct Si end
-Adapt.@adapt_structure Si
+function Adapt.adapt_structure(to, itp::Si)
+    Si()
+end
+
 # constructors
 
 Time{T}(flux, phi) where T = Operator(
@@ -74,7 +86,11 @@ struct Model{T,S,TN,SN}
     terms::T
     sources::S
 end
-Adapt.@adapt_structure Model
+function Adapt.adapt_structure(to, itp::Model{TN,SN}) where {TN,SN}
+    terms = Adapt.adapt_structure(to, itp.terms); T = typeof(terms)
+    sources = Adapt.adapt_structure(to, itp.sources); S = typeof(sources)
+    Model{T,S,TN,SN}(terms,sources)
+end
 Model{TN,SN}(terms::T, sources::S) where {T,S,TN,SN} = begin
     Model{T,S,TN,SN}(terms, sources)
 end

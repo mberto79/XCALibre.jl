@@ -135,13 +135,15 @@ else
     turbulence = nothing
 end
 
-CUDA.allowscalar(false)
+# CUDA.allowscalar(false)
 
 cu(model)
 cu(∇p)
 cu(ux_eqn)
 cu(uy_eqn)
 cu(p_eqn)
+cu(turbulence)
+cu(config)
 
 # model constructor
 function model_to_GPU(model)

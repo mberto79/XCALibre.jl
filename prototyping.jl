@@ -137,6 +137,11 @@ end
 
 CUDA.allowscalar(false)
 
+cu(model)
+cu(∇p)
+cu(ux_eqn)
+cu(uy_eqn)
+cu(p_eqn)
 
 # model constructor
 function model_to_GPU(model)
@@ -441,3 +446,41 @@ ux_eqn.model.terms[1].phi.mesh.cell_neighbours
 
 # R_ux, R_uy, R_p  = SIMPLE_loop(
     # model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config ; resume=resume, pref=pref)
+
+
+    ## ADAPT TESTING
+import Adapt
+function Adapt.adapt_structure(to, itp::test)
+    test()
+end
+
+struct test end
+
+T = test()
+
+cu(T)
+
+struct test0{F,T} 
+    Bool::T
+end
+
+using Adapt
+using CUDA
+
+function Adapt.adapt_structure(to, itp::test0{F,T}) where {F,T}
+    Bool = Adapt.adapt_structure(to, itp.Bool)
+    test0{F,T}(Bool)
+end
+
+a = 1
+F = Float32
+T = typeof(a)
+
+test0{F}(val) where {F} = begin
+    T = typeof(val)
+    test0{F,T}(val)
+end
+
+T = test0{Float32}(1)
+
+cu(T)

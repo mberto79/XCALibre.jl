@@ -21,7 +21,12 @@ struct Preconditioner{T,M,P,S}
     P::P
     storage::S
 end
-Adapt.@adapt_structure Preconditioner
+function Adapt.adapt_structure(to, itp::Preconditioner{T}) where {T}
+    A = Adapt.adapt_structure(to, itp.A)
+    P = Adapt.adapt_structure(to, itp.P)
+    storage = Adapt.adapt_structure(to, itp.storage) 
+    Preconditioner{T,typeof(A),typeof(P),typeof(storage)}(A,P,storage)
+end
 Preconditioner{NormDiagonal}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
     m, n = size(A)
     m == n || throw("Matrix not square")

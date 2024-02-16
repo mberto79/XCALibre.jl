@@ -60,6 +60,16 @@ function simple!(model, config; resume=true, pref=nothing)
         turbulence = nothing
     end
 
+    CUDA.allowscalar(false)
+
+    model = adapt(CuArray, model)
+    ∇p = adapt(CuArray, ∇p)
+    ux_eqn = adapt(CuArray, ux_eqn)
+    uy_eqn = adapt(CuArray, uy_eqn)
+    p_eqn = adapt(CuArray, p_eqn)
+    turbulence = adapt(CuArray, turbulence)
+    config = adapt(CuArray, config)
+
     R_ux, R_uy, R_p  = SIMPLE_loop(
     model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config ; resume=resume, pref=pref)
 
@@ -110,6 +120,8 @@ function SIMPLE_loop(
     R_ux = ones(TF, iterations)
     R_uy = ones(TF, iterations)
     R_p = ones(TF, iterations)
+
+    Uf = adapt(CuArray,Uf)
     
     interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, U.BCs)
@@ -125,6 +137,8 @@ function SIMPLE_loop(
     @time for iteration ∈ 1:iterations
 
         @. prev = U.x.values
+        type = typeof(ux_eqn)
+        println("$type")
         discretise!(ux_eqn, prev, runtime)
         apply_boundary_conditions!(ux_eqn, U.x.BCs)
         # ux_eqn.b .-= divUTx

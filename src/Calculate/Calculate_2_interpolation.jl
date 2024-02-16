@@ -128,22 +128,63 @@ end
 
 # VECTOR INTERPOLATION
 
+## CPU code
+# function interpolate!(psif::FaceVectorField, psi::VectorField)
+#     (; x, y, z) = psif # must extend to 3D
+#     mesh = psi.mesh
+#     faces = mesh.faces
+#     @inbounds for fID ∈ eachindex(faces)
+#         # (; weight, ownerCells) = faces[fID]
+#         face = faces[fID]
+#         weight = face.weight
+#         ownerCells = face.ownerCells
+#         # w, df = weight(Linear, cells, faces, fi)
+#         cID1 = ownerCells[1]; cID2 = ownerCells[2]
+#         x1 = psi.x[cID1]; x2 = psi.x[cID2]
+#         y1 = psi.y[cID1]; y2 = psi.y[cID2]
+#         one_minus_weight = 1 - weight
+#         x[fID] = weight*x1 + one_minus_weight*x2 # check weight is used correctly!
+#         y[fID] = weight*y1 + one_minus_weight*y2 # check weight is used correctly!
+#     end
+# end
+
+## Kernel code
 function interpolate!(psif::FaceVectorField, psi::VectorField)
-    (; x, y, z) = psif # must extend to 3D
-    mesh = psi.mesh
+    # Extract x, y, z, values from FaceVectorField
+    (; mesh, x, y, z) = psif
+    xf = x; yf = y; zf = z; #Redefine x, y, z values to be used in kernel
+
+    # Extract x, y, z, values from VectorField
+    (; x, y, z) = psi
+
+    #Extract faces array from mesh
     faces = mesh.faces
-    @inbounds for fID ∈ eachindex(faces)
-        # (; weight, ownerCells) = faces[fID]
-        face = faces[fID]
-        weight = face.weight
-        ownerCells = face.ownerCells
-        # w, df = weight(Linear, cells, faces, fi)
+
+    # Launch interpolate kernel
+    backend = _get_backend(mesh)
+    kernel! = interpolate_Vector!(backend)
+    kernel!(x, y, xf, yf, faces, ndrange = length(faces))
+end
+
+@kernel function interpolate_Vector!(x, y, xf, yf, faces)
+    # Define index for thread
+    i = @index(Global)
+
+    @inbounds begin
+        # Deconstruct faces to use weight and ownerCells in calculations
+        (; weight, ownerCells) = faces[i]
+
+        # Define indices for initial x and y values from psi struct
         cID1 = ownerCells[1]; cID2 = ownerCells[2]
-        x1 = psi.x[cID1]; x2 = psi.x[cID2]
-        y1 = psi.y[cID1]; y2 = psi.y[cID2]
+        x1 = x[cID1]; x2 = x[cID2]
+        y1 = y[cID1]; y2 = y[cID2]
+
+        # Calculate one minus weight
         one_minus_weight = 1 - weight
-        x[fID] = weight*x1 + one_minus_weight*x2 # check weight is used correctly!
-        y[fID] = weight*y1 + one_minus_weight*y2 # check weight is used correctly!
+
+        # Update psif x and y arrays for interpolation (IMPLEMENT 3D)
+        xf[i] = weight*x1 + one_minus_weight*x2 # check weight is used correctly!
+        yf[i] = weight*y1 + one_minus_weight*y2 # check weight is used correctly!
     end
 end
 

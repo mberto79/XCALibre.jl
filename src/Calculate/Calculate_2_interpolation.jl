@@ -109,20 +109,57 @@ end
 
 # SCALAR INTERPOLATION
 
-function interpolate!(phif::FaceScalarField, phi::ScalarField) 
-    vals = phi.values 
+## CPU code
+# function interpolate!(phif::FaceScalarField, phi::ScalarField) 
+#     vals = phi.values 
+#     fvals = phif.values
+#     mesh = phi.mesh 
+#     faces = mesh.faces
+#     @inbounds for fID ∈ eachindex(faces)
+#         # (; weight, ownerCells) = faces[fi]
+#         face = faces[fID]
+#         weight = face.weight
+#         ownerCells = face.ownerCells
+#         phi1 = vals[ownerCells[1]]
+#         phi2 = vals[ownerCells[2]]
+#         one_minus_weight = 1 - weight
+#         fvals[fID] = weight*phi1 + one_minus_weight*phi2 # check weight is used correctly!
+#     end
+# end
+
+## Kernel code
+function interpolate!(phif::FaceScalarField, phi::ScalarField)
+    # Extract values arrays from scalar fields 
+    vals = phi.values
     fvals = phif.values
-    mesh = phi.mesh 
+
+    # Extract faces from mesh
+    mesh = phif.mesh
     faces = mesh.faces
-    @inbounds for fID ∈ eachindex(faces)
-        # (; weight, ownerCells) = faces[fi]
-        face = faces[fID]
-        weight = face.weight
-        ownerCells = face.ownerCells
+
+    # Launch interpolate kernel
+    backend = _get_backend(mesh)
+    kernel! = interpolate_Scalar!(backend)
+    kernel!(fvals, vals, faces, ndrange = length(faces))
+end
+
+@kernel function interpolate_Scalar!(fvals, vals, faces)
+    # Define index for thread
+    i = @index(Global)
+
+    @inbounds begin
+        # Deconstruct faces to use weight and ownerCells in calculations
+        (; weight, ownerCells) = faces[i]
+
+        # Calculate initial values based on index queried from ownerCells
         phi1 = vals[ownerCells[1]]
         phi2 = vals[ownerCells[2]]
+
+        # Calculate one minus weight
         one_minus_weight = 1 - weight
-        fvals[fID] = weight*phi1 + one_minus_weight*phi2 # check weight is used correctly!
+
+        # Update phif values array for interpolation
+        fvals[i] = weight*phi1 + one_minus_weight*phi2 # check weight is used correctly!
     end
 end
 

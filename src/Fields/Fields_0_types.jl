@@ -100,7 +100,7 @@ end
 Adapt.@adapt_structure FaceVectorField
 FaceVectorField(mesh::Mesh2) = begin
     nfaces = length(mesh.faces)
-    F = eltype(mesh.nodes[1].coords)
+    F = _get_float(mesh)
     FaceVectorField(
         FaceScalarField(zeros(F, nfaces), mesh),
         FaceScalarField(zeros(F, nfaces), mesh), 

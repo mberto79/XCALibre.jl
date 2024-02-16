@@ -16,12 +16,15 @@ lines = update_mesh(
     ctrl_p = ctrl_p, #Control point vector
     vol_size = (16,10), #Total fluid volume size (x,y) in chord multiples [aerofoil located in the vertical centre at the 1/3 position horizontally]
     thickness = 1, #Aerofoil thickness [%c]
-    py_lines = (13,44,51,59,36,68,72,283), #SALOME python script relevant lines (notebook path, 3 B-Spline lines,chord line, thickness lines, .unv path)
-    py_path = "/home/tim/Documents/MEng Individual Project/Julia/AerofoilOptimisation/FoilMesh.py", #Path to SALOME python script
+    BL_thick = 5, #Boundary layer mesh thickness [%c]
+    BL_layers = 35, #Boundary layer mesh layers [-]
+    BL_stretch = 1.2, #Boundary layer stretch factor (successive multiplication factor of cell thickness away from wall cell) [-]
+    py_lines = (13,44,51,59,36,68,247,284), #SALOME python script relevant lines (notebook path, 3 B-Spline lines,chord line, thickness line, BL line .unv path)
+    py_path = "FoilMesh.py", #Path to SALOME python script
     salome_path = "/home/tim/Downloads/InstallationFiles/SALOME-9.11.0/mesa_salome", #Path to SALOME installation
     unv_path = "/home/tim/Documents/MEng Individual Project/Julia/FVM_1D_TW/unv_sample_meshes/FoilMesh.unv", #Path to .unv destination
     note_path = "/home/tim/Documents/MEng Individual Project/SALOME", #Path to SALOME notebook (.hdf) destination
-    GUI = false #SALOME GUI selector
+    GUI = true #SALOME GUI selector
 ) #Updates SALOME geometry and mesh to new aerofoil MCL definition
 
 
@@ -92,7 +95,12 @@ initialise!(model.p, 0.0)
 Rx, Ry, Rp = simple!(model, config) #, pref=0.0)
 
 #%% POST-PROCESSING
-aero_eff = foil_obj_func(:foil,model.p, model.U, 1.25, nu, model.turbulence.nut)
-residuals_plot(runtime.iterations, Rx, Ry, Rp)
+aero_eff = foil_obj_func(:foil, model.p, model.U, 1.25, nu, model.turbulence)
+let
+    plot(; xlims=(0,runtime.iterations), ylims=(1e-10,0))
+    plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
+    plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
+    plot!(1:length(Rp), Rp, yscale=:log10, label="p")
+end
 paraview_vis(paraview_path = "paraview", #Path to paraview
              vtk_path = "/home/tim/Documents/MEng Individual Project/Julia/FVM_1D_TW/vtk_results/iteration_..vtk") #Path to vtk files

@@ -189,72 +189,64 @@ using KernelAbstractions
     R_p = ones(TF, iterations)
 
     Uf = adapt(CuArray,Uf)
+    rDf = adapt(CuArray, rDf)
+    rD = adapt(CuArray, rD)
 
-    @time begin interpolate!(Uf, U) end
+    interpolate!(Uf, U) 
+    @time begin interpolate!(rDf, rD) end  
 
-    CUDA.allowscalar(true)
-
-    Uf.x[100]
-    Uf.y[100]
-    
-    U.x[100]
-    U.y[100]
-
-## VECTOR INTERPOLATION
-
-# function interpolate!(psif::FaceVectorField, psi::VectorField)
-#     (; x, y, z) = psif # must extend to 3D
-#     mesh = psi.mesh
-#     faces = mesh.faces
-#     @inbounds for fID ∈ eachindex(faces)
-#         # (; weight, ownerCells) = faces[fID]
-#         face = faces[fID]
-#         weight = face.weight
-#         ownerCells = face.ownerCells
-#         # w, df = weight(Linear, cells, faces, fi)
-#         cID1 = ownerCells[1]; cID2 = ownerCells[2]
-#         x1 = psi.x[cID1]; x2 = psi.x[cID2]
-#         y1 = psi.y[cID1]; y2 = psi.y[cID2]
-#         one_minus_weight = 1 - weight
-#         x[fID] = weight*x1 + one_minus_weight*x2 # check weight is used correctly!
-#         y[fID] = weight*y1 + one_minus_weight*y2 # check weight is used correctly!
-#     end
-# end
-
-using KernelAbstractions
-
-CUDA.allowscalar(false)
-
-@time begin interpolate!(Uf,U) end
+## SCALAR INTERPOLATION
 
 CUDA.allowscalar(true)
 
-Uf.x[100]
-Uf.y[100]
+rDf.values[100]
+rD.values[100]
 
-U.x[100]
-U.y[100]
+CUDA.allowscalar(false)
 
-function interpolate!(psif::FaceVectorField, psi::VectorField)
-    # Extract x, y, z, values from FaceVectorField
-    (; mesh, x, y, z) = psif
-    xf = x; yf = y; zf = z; #Redefine x, y, z values to be used in kernel
+@time begin interpolate_gpu!(rDf, rD) end
 
-    # Extract x, y, z, values from VectorField
-    (; x, y, z) = psi
+CUDA.allowscalar(true)
 
-    #Extract faces array from mesh
+rDf.values[100]
+rD.values[100]
+
+
+# function interpolate!(phif::FaceScalarField, phi::ScalarField) 
+#     vals = phi.values 
+#     fvals = phif.values
+#     mesh = phi.mesh 
+#     faces = mesh.faces
+#     @inbounds for fID ∈ eachindex(faces)
+#         # (; weight, ownerCells) = faces[fi]
+#         face = faces[fID]
+#         weight = face.weight
+#         ownerCells = face.ownerCells
+#         phi1 = vals[ownerCells[1]]
+#         phi2 = vals[ownerCells[2]]
+#         one_minus_weight = 1 - weight
+#         fvals[fID] = weight*phi1 + one_minus_weight*phi2 # check weight is used correctly!
+#     end
+# end
+
+
+
+function interpolate_gpu!(phif::FaceScalarField, phi::ScalarField)
+    # Extract values arrays from scalar fields 
+    vals = phi.values
+    fvals = phif.values
+
+    # Extract faces from mesh
+    mesh = rDf.mesh
     faces = mesh.faces
 
     # Launch interpolate kernel
     backend = _get_backend(mesh)
-    kernel! = interpolate_Vector!(backend)
-    kernel!(x, y, xf, yf, faces, ndrange = length(faces))
+    kernel! = interpolate_Scalar!(backend)
+    kernel!(fvals, vals, faces, ndrange = length(faces))
 end
 
-
-
-@kernel function interpolate_Vector!(x, y, xf, yf, faces)
+@kernel function interpolate_Scalar!(fvals, vals, faces)
     # Define index for thread
     i = @index(Global)
 
@@ -262,16 +254,14 @@ end
         # Deconstruct faces to use weight and ownerCells in calculations
         (; weight, ownerCells) = faces[i]
 
-        # Define indices for initial x and y values from psi struct
-        cID1 = ownerCells[1]; cID2 = ownerCells[2]
-        x1 = x[cID1]; x2 = x[cID2]
-        y1 = y[cID1]; y2 = y[cID2]
+        # Calculate initial values based on index queried from ownerCells
+        phi1 = vals[ownerCells[1]]
+        phi2 = vals[ownerCells[2]]
 
         # Calculate one minus weight
         one_minus_weight = 1 - weight
 
-        # Update psif x and y arrays for interpolation (IMPLEMENT 3D)
-        xf[i] = weight*x1 + one_minus_weight*x2 # check weight is used correctly!
-        yf[i] = weight*y1 + one_minus_weight*y2 # check weight is used correctly!
+        # Update phif values array for interpolation
+        fvals[i] = weight*phi1 + one_minus_weight*phi2 # check weight is used correctly!
     end
-end 
+end

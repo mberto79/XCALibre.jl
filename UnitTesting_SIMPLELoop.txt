@@ -1,0 +1,15 @@
+interpolate_Vector!() kernel (Float64 types)
+
+CPU benchmark (compilation):                0.013502 seconds (10.71 k allocations: 725.883 KiB, 85.76% compilation time)
+CPU benchmark (post compilation):           0.000663 seconds
+
+GPU benchmerk (compilation):                6.983992 seconds (9.41 M allocations: 642.477 MiB, 1.18% gc time, 98.89% compilation time: 2% of which was recompilation)
+GPU benchmark (post compilation):           0.000078 seconds (49 allocations: 6.797 KiB)
+
+CPU kernel benchmark (compilation):         0.172516 seconds (281.38 k allocations: 19.026 MiB, 98.53% compilation time)
+CPU kernel benchmark (post compilation):    0.000746 seconds (14 allocations: 2.312 KiB)
+
+Output the same for all benchmarks?: YES
+
+
+

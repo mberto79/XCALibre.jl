@@ -5,7 +5,7 @@ export stress_tensor, wall_shear_stress
 pressure_force(patch::Symbol, p::ScalarField, rho) = begin
     mesh = p.mesh
     ID = boundary_index(mesh.boundaries, patch)
-    @info "calculating pressure forces on patch: $patch at index $ID"
+    #@info "calculating pressure forces on patch: $patch at index $ID"
     boundary = mesh.boundaries[ID]
     (; facesID, cellsID) = boundary
     x = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
@@ -21,7 +21,7 @@ pressure_force(patch::Symbol, p::ScalarField, rho) = begin
         sumz += snflux.z[i]
     end
     Fp = rho.*[sumx, sumy, sumz]
-    print("\n Pressure force: (", Fp[1], " ", Fp[2], " ", Fp[3], ")\n")
+    print("\nPressure force: (", Fp[1], " ", Fp[2], " ", Fp[3], ")\n")
     return Fp
 end
 
@@ -31,7 +31,7 @@ viscous_force(patch::Symbol, U::VectorField, rho, ν, νt) = begin
     boundaries = mesh.boundaries
     nboundaries = length(U.BCs)
     ID = boundary_index(mesh.boundaries, patch)
-    @info "calculating viscous forces on patch: $patch at index $ID"
+    #@info "calculating viscous forces on patch: $patch at index $ID"
     boundary = mesh.boundaries[ID]
     (; facesID, cellsID) = boundary
     x = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
@@ -54,7 +54,7 @@ viscous_force(patch::Symbol, U::VectorField, rho, ν, νt) = begin
         sumz += snGrad.z[i]*area*(ν + νt[cID])
     end
     Fv = rho.*[sumx, sumy, sumz]
-    print("\n Viscous force: (", Fv[1], " ", Fv[2], " ", Fv[3], ")\n")
+    print("\nViscous force: (", Fv[1], " ", Fv[2], " ", Fv[3], ")\n")
     return Fv
 end
 
@@ -66,7 +66,7 @@ wall_shear_stress(patch::Symbol, model::RANS{M,F1,F2,V,T,E,D}) where {M,F1,F2,V,
     ID = boundary_index(boundaries, patch)
     boundary = boundaries[ID]
     (; facesID, cellsID) = boundary
-    @info "calculating viscous forces on patch: $patch at index $ID"
+    #@info "calculating viscous forces on patch: $patch at index $ID"
     x = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
     y = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
     z = FaceScalarField(zeros(Float64, length(cellsID)), mesh)

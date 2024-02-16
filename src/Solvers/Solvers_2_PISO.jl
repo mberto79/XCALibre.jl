@@ -2,6 +2,9 @@ export piso!
 
 function piso!(model, config; resume=true, pref=nothing) 
 
+    @info "Overwriting vtk backup folder contents with the previous vtk results..."
+    backup_vtk()
+
     @info "Extracting configuration and input fields..."
     (; U, p, nu, mesh) = model
     (; solvers, schemes, runtime) = config

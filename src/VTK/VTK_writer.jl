@@ -1,4 +1,13 @@
-export write_vtk, model2vtk
+export write_vtk, model2vtk, backup_vtk
+
+backup_vtk() = begin
+    vtk_files = filter(x->occursin(".vtk",x), readdir("vtk_results/"))
+    for file ∈ vtk_files
+        filepath = "vtk_results/"*file
+        dest = "vtk_backup/"*file
+        mv(filepath, dest, force=true)
+    end
+end
 
 function model2vtk(model::RANS{Laminar,F1,F2,V,T,E,D}, name) where {F1,F2,V,T,E,D}
     args = (
@@ -29,7 +38,7 @@ function write_vtk(name, mesh, args...) #, Ux, Uy, Uz, p)
     # FVM.interpolate2nodes!(UzNodes, Uz)
     # FVM.interpolate2nodes!(pNodes, p)
     (; cell_nodes) = mesh
-    filename = name*".vtk"
+    filename = "vtk_results/"*name*".vtk"
     open(filename, "w") do io
         write(io, "# vtk DataFile Version 3.0\n")
         write(io, "jCFD simulation data\n")

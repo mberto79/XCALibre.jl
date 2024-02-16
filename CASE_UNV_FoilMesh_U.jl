@@ -1,7 +1,7 @@
 using Plots, FVM_1D, Krylov, AerofoilOptimisation
 
 #%% AEROFOIL GEOMETRY DEFINITION
-foil,ctrl_p = spline_foil(FoilDef(
+@time foil,ctrl_p = spline_foil(FoilDef(
     chord   = 100, #[mm]
     LE_h    = 0, #[%c]
     TE_h    = 0, #[%c]
@@ -57,8 +57,8 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind),
-    p = set_schemes(divergence=Upwind)
+    U = set_schemes(time=Euler, divergence=Upwind),
+    p = set_schemes(time=Euler, divergence=Upwind)
 )
 
 solvers = (
@@ -79,7 +79,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=1000, write_interval=500, time_step=1)
+    iterations=5000, write_interval=10, time_step=0.001)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -92,12 +92,7 @@ initialise!(model.p, 0.0)
 Rx, Ry, Rp = simple!(model, config) #, pref=0.0)
 
 #%% POST-PROCESSING
-aero_eff = foil_obj_func(:foil, model.p, model.U, 1.25, nu, model.turbulence)
-let
-    plot(; xlims=(0,runtime.iterations), ylims=(1e-10,0))
-    plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-    plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-    plot!(1:length(Rp), Rp, yscale=:log10, label="p")
-end
+aero_eff = foil_obj_func(:foil,model.p, model.U, 1.25, nu, model.turbulence.nut)
+residuals_plot(runtime.iterations, Rx, Ry, Rp)
 paraview_vis(paraview_path = "paraview", #Path to paraview
              vtk_path = "/home/tim/Documents/MEng Individual Project/Julia/FVM_1D_TW/vtk_results/iteration_..vtk") #Path to vtk files

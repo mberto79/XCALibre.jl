@@ -1,7 +1,7 @@
 export write_vtk, model2vtk, backup_vtk
 
 backup_vtk() = begin
-    vtk_files = filter(x->occursin(".vtk",x), readdir("vtk_results/"))
+    vtk_files = filter(x->endswith(x,".vtk"), readdir("vtk_results/"))
     for file ∈ vtk_files
         filepath = "vtk_results/"*file
         dest = "vtk_backup/"*file

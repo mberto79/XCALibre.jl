@@ -15,15 +15,6 @@ export interpolate!
 
             # boundary = boundaries[BC.ID]
             # adjust_boundary!(BC, phif, phi, boundary, faces)
-
-            (; x, y, z, mesh) = phif
-            (; boundaries) = mesh 
-
-            boundaries_cpu = Array{eltype(mesh.boundaries)}(undef, length(boundaries))
-            copyto!(boundaries_cpu, boundaries)
-        
-            backend = _get_backend(mesh)
-        
             for i in eachindex(BCs)
                 (; ID) = BCs[i]
                 (; facesID, cellsID) = boundaries_cpu[ID]
@@ -38,8 +29,13 @@ export interpolate!
         push!(unpacked_BCs, unpack)
     end
     quote
-    mesh = phi.mesh
-    (; faces, boundaries) = mesh  
+    (; x, y, z, mesh) = phif
+    (; boundaries) = mesh 
+
+    boundaries_cpu = Array{eltype(mesh.boundaries)}(undef, length(boundaries))
+    copyto!(boundaries_cpu, boundaries)
+
+    backend = _get_backend(mesh)
     $(unpacked_BCs...) 
     end
 end

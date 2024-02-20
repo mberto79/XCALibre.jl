@@ -7,11 +7,32 @@ export interpolate!
     unpacked_BCs = []
     for i ∈ 1:length(BCs.parameters)
         unpack = quote
-            BC = BCs[$i]
+            
+            # BC = BCs[$i]
+
             # name = BC.name
             # index = boundary_index(boundaries, name)
-            boundary = boundaries[BC.ID]
-            adjust_boundary!(BC, phif, phi, boundary, faces)
+
+            # boundary = boundaries[BC.ID]
+            # adjust_boundary!(BC, phif, phi, boundary, faces)
+
+            (; x, y, z, mesh) = phif
+            (; boundaries) = mesh 
+
+            boundaries_cpu = Array{eltype(mesh.boundaries)}(undef, length(boundaries))
+            copyto!(boundaries_cpu, boundaries)
+        
+            backend = _get_backend(mesh)
+        
+            for i in eachindex(BCs)
+                (; ID) = BCs[i]
+                (; facesID, cellsID) = boundaries_cpu[ID]
+                facesID = _convert_array(facesID, backend)
+                cellsID = _convert_array(cellsID, backend)
+                #KERNEL LAUNCH
+                adjust_boundary!(backend, BCs[i], phif, phi, facesID, cellsID, x, y, z)
+            end
+
             # adjust_boundary!(BC, phif, phi, BC.ID, faces)
         end
         push!(unpacked_BCs, unpack)
@@ -21,6 +42,16 @@ export interpolate!
     (; faces, boundaries) = mesh  
     $(unpacked_BCs...) 
     end
+end
+
+function adjust_boundary!(backend, BC::Dirichlet, psif::FaceVectorField, psi::VectorField, facesID, cellsID, x, y, z)
+    kernel = adjust_boundary_dirichlet_vector!(backend)
+    kernel(BC, psif, psi, facesID, cellsID, x, y, z, ndrange = length(facesID))
+end
+
+function adjust_boundary!(backend, BC::Neumann, psif::FaceVectorField, psi::VectorField, facesID, cellsID, x, y, z)
+    kernel = adjust_boundary_neumann_vector!(backend)
+    kernel(BC, psif, psi, facesID, cellsID, x, y, z, ndrange = length(facesID))
 end
 
 function adjust_boundary!(
@@ -72,30 +103,58 @@ function adjust_boundary!(
     end
 end
 
-function adjust_boundary!( 
-    BC::Dirichlet, psif::FaceVectorField, psi::VectorField, boundary, faces
-    )
+# function adjust_boundary!( 
+#     BC::Dirichlet, psif::FaceVectorField, psi::VectorField, boundary, faces
+#     )
 
-    (; x, y, z) = psif
-    (; facesID) = boundary
+#     (; x, y, z) = psif
+#     (; facesID) = boundary
 
-    @inbounds for fID ∈ facesID
+#     @inbounds for fID ∈ facesID
+#         x[fID] = BC.value[1]
+#         y[fID] = BC.value[2]
+#         z[fID] = BC.value[3]
+#     end
+# end
+
+# function adjust_boundary!( 
+#     BC::Neumann, psif::FaceVectorField, psi::VectorField, boundary, faces
+#     ) 
+
+#     (; x, y, z) = psif
+#     (; facesID, cellsID) = boundary
+
+#     @inbounds for fi ∈ eachindex(facesID)
+#         fID = facesID[fi]
+#         cID = cellsID[fi]
+#         psi_cell = psi[cID]
+#         # normal = faces[fID].normal
+#         # Line below needs sorting out for general user-defined gradients
+#         # now only works for zero gradient
+#         # psi_boundary =   psi_cell - (psi_cell⋅normal)*normal
+#         x[fID] = psi_cell[1]
+#         y[fID] = psi_cell[2]
+#         z[fID] = psi_cell[3]
+#     end
+# end
+
+## GPU VECTOR ADJUST BOUNDARY KERNELS
+
+@kernel function adjust_boundary_dirichlet_vector!(BC, psif, psi, facesID, cellsID, x, y, z)
+    i = @index(Global)
+    @inbounds begin
+        fID = facesID[i]
         x[fID] = BC.value[1]
         y[fID] = BC.value[2]
         z[fID] = BC.value[3]
     end
 end
 
-function adjust_boundary!( 
-    BC::Neumann, psif::FaceVectorField, psi::VectorField, boundary, faces
-    ) 
-
-    (; x, y, z) = psif
-    (; facesID, cellsID) = boundary
-
-    @inbounds for fi ∈ eachindex(facesID)
-        fID = facesID[fi]
-        cID = cellsID[fi]
+@kernel function adjust_boundary_neumann_vector!(BC, psif, psi, facesID, cellsID, x, y, z)
+    i = @index(Global)
+    @inbounds begin
+        fID = facesID[i]
+        cID = cellsID[i]
         psi_cell = psi[cID]
         # normal = faces[fID].normal
         # Line below needs sorting out for general user-defined gradients
@@ -106,6 +165,7 @@ function adjust_boundary!(
         z[fID] = psi_cell[3]
     end
 end
+
 
 # SCALAR INTERPOLATION
 

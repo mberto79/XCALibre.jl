@@ -6,6 +6,7 @@ using LoopVectorization
 using SparseArrays
 using Adapt
 using KernelAbstractions
+using CUDA
 using FVM_1D.Mesh
 using FVM_1D.Fields
 using FVM_1D.ModelFramework

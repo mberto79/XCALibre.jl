@@ -27,3 +27,17 @@ CPU kernel benchmark (compilation):         0.140007 seconds (549.70 k allocatio
 CPU kernel benchmark (post compilation):    0.000989 seconds (20 allocations: 768 bytes)
 
 Output the same for all benchmarks?: YES
+
+
+correct_boundaries!() update for GPU (Float64 types with variables Uf, U, U.BCs)
+
+CPU benchmark (compilation):                0.052378 seconds (37.88 k allocations: 2.543 MiB, 99.96% compilation time)
+CPU benchmark (post compilation):           0.000010 seconds (2 allocations: 1024 bytes)
+
+GPU benchmark (compilation):                1.120777 seconds (864.77 k allocations: 61.422 MiB, 89.27% compilation time)
+GPU benchmark (post compilation):           0.000852 seconds (1.61 k allocations: 389.828 KiB)
+
+CPU kernel benchmark (compilation):         0.472322 seconds (457.18 k allocations: 31.895 MiB, 99.97% compilation time)
+CPU kernel benchmark (post compilation):    0.000062 seconds (457 allocations: 147.484 KiB)
+
+Output the same for all benchmarks?: YES

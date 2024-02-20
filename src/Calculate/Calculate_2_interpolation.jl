@@ -32,6 +32,7 @@ export interpolate!
     (; x, y, z, mesh) = phif
     (; boundaries) = mesh 
 
+    ## REMOVE MEMCOPY!!!!!!!!!!!!!!!!
     boundaries_cpu = Array{eltype(mesh.boundaries)}(undef, length(boundaries))
     copyto!(boundaries_cpu, boundaries)
 

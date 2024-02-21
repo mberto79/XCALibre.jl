@@ -102,3 +102,18 @@ CPU kernel benchmark (compilation):         0.262248 seconds (368.08 k allocatio
 CPU kernel benchmark (post compilation):    0.001171 seconds (25 allocations: 2.984 KiB)
 
 Output the same for all benchmarks?: YES
+
+
+
+correct_interpolation!() update for GPU (Float64 types with variables ∇p.result.x, ∇p.result.y, ∇p.result.z, pf, p)
+
+CPU benchmark (compilation):                0.015256 seconds (15.34 k allocations: 1.024 MiB, 91.21% compilation time)
+CPU benchmark (post compilation):           0.002456 seconds
+
+GPU benchmark (compilation):                0.458400 seconds (671.08 k allocations: 47.750 MiB, 88.13% compilation time)
+GPU benchmark (post compilation):           0.000085 seconds (81 allocations: 9.359 KiB)
+
+CPU kernel benchmark (compilation):         0.946198 seconds (4.47 M allocations: 167.186 MiB, 1.69% gc time, 15.79% compilation time)
+CPU kernel benchmark (post compilation):    0.797572 seconds (4.26 M allocations: 152.120 MiB)
+
+Output the same for all benchmarks?: YES

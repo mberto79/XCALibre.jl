@@ -196,52 +196,107 @@ using KernelAbstractions
     interpolate!(Uf, U)
     correct_boundaries!(Uf, U, U.BCs)
     flux!(mdotf, Uf)
+
+    @time begin correct_boundaries!(pf, p, p.BCs) end
+
     grad!(∇p, pf, p, p.BCs)
+
+
+    # correct_boundaries!(phif, phi, BCs)
 
     phif = pf
     phi = p
+    BCs = p.BCs
 
-    # phif[100]
-    # phif.values
+    (; mesh) = phif
+    (; boundaries, faces) = mesh 
 
-    # @time begin interpolate_midpoint!(phif, phi) end
-
-    # phif[100]
-    phif.values
-
-    @time begin interpolate_midpoint_test!(phif, phi) end
-
-    # phif[100]
-    phif.values
-
-
-    interpolate_midpoint!(phif::FaceScalarField, phi::ScalarField) = begin
-        mesh = phi.mesh
-        (; faces) = mesh
-        for i ∈ eachindex(faces)
-            owners = faces[i].ownerCells 
-            c1 = owners[1]
-            c2 = owners[2]
-            phif[i] = 0.5*(phi[c1] + phi[c2])
-        end
+    for i ∈ 1:length(BCs)
+    BC = BCs[i]
+    boundary = boundaries[BC.ID]
+    adjust_boundary!(BC, phif, phi, boundary, faces)
     end
 
-    function interpolate_midpoint_test!(phif::FaceScalarField, phi::ScalarField)
-        (; mesh) = phi
-        (; faces) = mesh
-        backend = _get_backend(mesh)
-        kernel! = interpolate_midpoint_scalar!(backend)
-        kernel!(faces, phif, phi, ndrange = length(faces))
+    phif.values
+
+
+    (; mesh) = phif
+    (; boundaries) = mesh 
+
+    ## REMOVE MEMCOPY!!!!!!!!!!!!!!!!
+    boundaries_cpu = Array{eltype(mesh.boundaries)}(undef, length(boundaries))
+    copyto!(boundaries_cpu, boundaries)
+
+    backend = _get_backend(mesh)
+
+    phif.values
+
+    for i in eachindex(BCs)
+        (; ID) = BCs[i]
+        (; facesID, cellsID) = boundaries_cpu[ID]
+        facesID = _convert_array(facesID, backend)
+        cellsID = _convert_array(cellsID, backend)
+        #KERNEL LAUNCH
+        adjust_boundary!(backend, BCs[i], phif, phi, facesID, cellsID)
     end
 
-    @kernel function interpolate_midpoint_scalar!(faces, phif, phi)
+    phif.values
+    phi.values
+
+    function adjust_boundary!(backend, BC::Neumann, phif::FaceScalarField, phi::ScalarField, facesID, cellsID)
+        (; values) = phif
+        phif_values = values
+        (; values) = phi
+        phi_values = values
+        kernel! = adjust_boundary_neumann_scalar!(backend)
+        kernel!(BC, phif, phi, facesID, cellsID, phif_values, phi_values, ndrange = length(facesID))
+    end
+
+
+    @kernel function adjust_boundary_neumann_scalar!(BC, phif, phi, facesID, cellsID, phif_values, phi_values)
         i = @index(Global)
 
         @inbounds begin
-            (; ownerCells) = faces[i]
-            c1 = ownerCells[1]
-            c2 = ownerCells[2]
-            phif[i] = 0.5*(phi[c1] + phi[c2])
+            fID = facesID[i]
+            cID = cellsID[i]
+            phif_values[fID] = phi_values[cID] 
+        end
+    end
+
+    function adjust_boundary!(backend, BC::Dirichlet, phif::FaceScalarField, phi::ScalarField, facesID, cellsID)
+        (; values) = phif
+        phif_values = values
+        (; values) = phi
+        phi_values = values
+        kernel! = adjust_boundary_dirichlet_scalar1!(backend)
+        kernel!(BC, phif, phi, facesID, cellsID, phif_values, phi_values, ndrange = length(facesID))
+    end
+
+    @kernel function adjust_boundary_dirichlet_scalar1!(BC, phif, phi, facesID, cellsID, phif_values, phi_values)
+        i = @index(Global)
+
+        @inbounds begin
+            fID = facesID[i]
+            phif_values[fID] = BC.value
+        end
+    end
+
+
+    function adjust_boundary!(
+        BC::Dirichlet, phif::FaceScalarField, phi, boundary, faces)
+        (; facesID, cellsID) = boundary
+        @inbounds for fID ∈ facesID
+            phif.values[fID] = BC.value 
         end
     end
     
+    function adjust_boundary!(
+        BC::Neumann, phif::FaceScalarField, phi, boundary, faces)
+        (;facesID, cellsID) = boundary
+        @inbounds for fi ∈ eachindex(facesID)
+            fID = facesID[fi]
+            cID = cellsID[fi]
+            # (; normal, e, delta) = faces[fID]
+            phif.values[fID] = phi.values[cID] #+ BC.value*delta*(normal⋅e)
+        end
+    end

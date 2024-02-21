@@ -29,7 +29,7 @@ export interpolate!
         push!(unpacked_BCs, unpack)
     end
     quote
-    (; x, y, z, mesh) = phif
+    (; mesh) = phif
     (; boundaries) = mesh 
 
     ## REMOVE MEMCOPY!!!!!!!!!!!!!!!!
@@ -42,11 +42,13 @@ export interpolate!
 end
 
 function adjust_boundary!(backend, BC::Dirichlet, psif::FaceVectorField, psi::VectorField, facesID, cellsID, x, y, z)
+    (; x, y, z) = psif
     kernel = adjust_boundary_dirichlet_vector!(backend)
     kernel(BC, psif, psi, facesID, cellsID, x, y, z, ndrange = length(facesID))
 end
 
 function adjust_boundary!(backend, BC::Neumann, psif::FaceVectorField, psi::VectorField, facesID, cellsID, x, y, z)
+    (; x, y, z) = psif
     kernel = adjust_boundary_neumann_vector!(backend)
     kernel(BC, psif, psi, facesID, cellsID, x, y, z, ndrange = length(facesID))
 end

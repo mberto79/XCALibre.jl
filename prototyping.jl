@@ -198,104 +198,121 @@ using KernelAbstractions
     flux!(mdotf, Uf)
     grad!(∇p, pf, p, p.BCs)
 
-    dx = ∇p.result.x
-    dy = ∇p.result.y
-    dz = ∇p.result.z
-    phif = pf
+dx = ∇p.result.x
+dy = ∇p.result.y
+dz = ∇p.result.z
+phif = pf
+phi = p
+
+phif.values
 
 using StaticArrays
 
-    # @time begin green_gauss!(dx, dy, dz, phif) end
-    @time begin green_gauss_test!(dx, dy, dz, phif) end
+@time begin correct_interpolation!(dx, dy, dz, phif, phi) end
+# @time begin correct_interpolation_test!(dx, dy, dz, phif, phi) end
 
-    dx
-    dy
-    dz
+phif.values
 
 
-function green_gauss_test!(dx, dy, dz, phif)
-    # (; x, y, z) = grad.result
+length(faces) - nbfaces
+a = start:length(faces)
+length(a)
+
+function correct_interpolation_test!(dx, dy, dz, phif, phi)
     (; mesh, values) = phif
-    # (; cells, faces) = mesh
-    (; faces, cells, cell_faces, cell_nsign, nbfaces) = mesh
-    # F = _get_float(mesh)
-
-    backend = _get_backend(mesh)
-    kernel! = result_calculation!(backend)
-    kernel!(values, faces, cells, cell_nsign, cell_faces, dx, dy, dz, ndrange = length(cells))
-    kernel! = boundary_faces_contribution!(backend)
-    kernel!(values, faces, cells, dx, dy, dz, ndrange = nbfaces)
-end
-
-@kernel function result_calculation!(values, faces, cells, cell_nsign, cell_faces, dx, dy, dz)
-    i = @index(Global)
-
-    @inbounds begin
-        (; volume, faces_range) = cells[i]
-
-        for fi in faces_range
-            fID = cell_faces[fi]
-            nsign = cell_nsign[fi]
-            (; area, normal) = faces[fID]
-            dx[i] += values[fID]*(area*normal[1]*nsign)
-            dy[i] += values[fID]*(area*normal[2]*nsign)
-            dz[i] += values[fID]*(area*normal[3]*nsign)
-        end
-        dx[i] /= volume
-        dy[i] /= volume
-        dz[i] /= volume
-    end    
-end
-
-@kernel function boundary_faces_contribution!(values, faces, cells, dx, dy, dz)
-    i = @index(Global)
-
-    @inbounds begin
-        (; ownerCells, area, normal) = faces[i]
-        cID = ownerCells[1]
-        (; volume) = cells[cID]
-        dx[cID] = (values[i]*(area*normal[1]))/volume
-        dy[cID] = (values[i]*(area*normal[2]))/volume
-        dz[cID] = (values[i]*(area*normal[3]))/volume
-    end
-end
-
-function green_gauss!(dx, dy, dz, phif)
-    # (; x, y, z) = grad.result
-    (; mesh, values) = phif
-    # (; cells, faces) = mesh
-    (; faces, cells, cell_faces, cell_nsign) = mesh
+    (; faces, cells, nbfaces) = mesh
     F = _get_float(mesh)
-    for ci ∈ eachindex(cells)
-        # (; facesID, nsign, volume) = cells[ci]
-        cell = cells[ci]
-        (; volume) = cell
-        res = SVector{3,F}(0.0,0.0,0.0)
-        # for fi ∈ eachindex(facesID)
-        for fi ∈ cell.faces_range
-            # fID = facesID[fi]
-            fID = cell_faces[fi]
-            nsign = cell_nsign[fi]
-            (; area, normal) = faces[fID]
-            # res += values[fID]*(area*normal*nsign[fi])
-            res += values[fID]*(area*normal*nsign)
-        end
-        res /= volume
-        dx[ci] = res[1]
-        dy[ci] = res[2]
-        dz[ci] = res[3]
+    phic = phi.values
+    # nbfaces = total_boundary_faces(mesh)
+    # start = nbfaces+1
+    weight = 0.5
+    backend = _get_backend(mesh)
+    kernel! = correct_interpolation_loop!(backend)
+    kernel!(faces, cells, nbfaces, phic, F, weight, dx, dy, dz, values, ndrange = length(faces)-nbfaces)
+end
+
+@kernel function correct_interpolation_loop!(faces, cells, nbfaces, phic, F, weight, dx, dy, dz, values)
+    i = @index(Global)
+    i += nbfaces
+
+    (; ownerCells, centre) = faces[i]
+    centre_faces = centre
+
+    owner1 = ownerCells[1]
+    owner2 = ownerCells[2]
+
+    (; centre) = cells[owner1]
+    centre_cell1 = centre
+
+    (; centre) = cells[owner2]
+    centre_cell2 = centre
+
+    phi1 = phic[owner1]
+    phi2 = phic[owner2]
+
+    ∇phi1 = SVector{3, F}(dx[owner1], dy[owner1], dz[owner1])
+    ∇phi2 = SVector{3, F}(dx[owner2], dy[owner2], dz[owner2])
+
+    rf = centre_faces
+    rP = centre_cell1 
+    rN = centre_cell2
+
+    phifᵖ = weight*(phi1 + phi2)
+    ∇phi = weight*(∇phi1 + ∇phi2)
+    Ri = rf - weight*(rP + rN)
+
+    values[i] = phifᵖ + ∇phi⋅Ri
+end
+
+correct_interpolation!(dx,dy,dz, phif, phi) = begin
+    (; mesh, values) = phif
+    (; faces, cells, nbfaces) = mesh
+    F = _get_float(mesh)
+    phic = phi.values
+    # nbfaces = total_boundary_faces(mesh)
+    start = nbfaces + 1
+    weight = 0.5
+    @inbounds @simd for fID ∈ start:length(faces)
+        face = faces[fID]
+        ownerCells = face.ownerCells
+        owner1 = ownerCells[1]
+        owner2 = ownerCells[2]
+        cell1 = cells[owner1]
+        cell2 = cells[owner2]
+        phi1 = phic[owner1]
+        phi2 = phic[owner2]
+        ∇phi1 = SVector{3, F}(dx[owner1], dy[owner1], dz[owner1])
+        ∇phi2 = SVector{3, F}(dx[owner2], dy[owner2], dz[owner2])
+        rf = face.centre 
+        rP = cell1.centre 
+        rN = cell2.centre
+        phifᵖ = weight*(phi1 + phi2)
+        ∇phi = weight*(∇phi1 + ∇phi2)
+        Ri = rf - weight*(rP + rN)
+        values[fID] = phifᵖ + ∇phi⋅Ri
     end
-    # Add boundary faces contribution
-    nbfaces = total_boundary_faces(mesh)
-    for i ∈ 1:nbfaces
-        face = faces[i]
-        (; ownerCells, area, normal) = face
-        cID = ownerCells[1] 
-        (; volume) = cells[cID]
-        res = values[i]*(area*normal)
-        res /= volume
-        dx[cID] += res[1]
-        dy[cID] += res[2]
-        dz[cID] += res[3]
+end
+
+
+V1 = SVector{3, Float64}(rand(1:10) for i in 1:3)
+F = _get_float(mesh)
+# V2 = SVector{3, Float64}(rand(1:10) for i in 1:3)
+Res = CUDA.zeros(Float64, 1)
+
+backend = get_backend(Res)
+kernel = SVector_test2(backend)
+kernel(V1, F, Res, ndrange = 1)
+
+Res
+V1⋅V2
+
+@kernel function SVector_test2(V1, F, Res)
+    i = @index(Global)
+
+    V2 = SVector{3, F}(rand(1:10) for i in 1:3)
+
+    @inbounds begin
+        Res[1] = V1⋅V2
     end
+
 end

@@ -171,10 +171,10 @@ end
 
 correct_interpolation!(dx,dy,dz, phif, phi) = begin
     (; mesh, values) = phif
-    (; faces, cells) = mesh
+    (; faces, cells, nbfaces) = mesh
     F = _get_float(mesh)
     phic = phi.values
-    nbfaces = total_boundary_faces(mesh)
+    # nbfaces = total_boundary_faces(mesh)
     start = nbfaces + 1
     weight = 0.5
     @inbounds @simd for fID ∈ start:length(faces)

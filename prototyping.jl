@@ -196,107 +196,106 @@ using KernelAbstractions
     interpolate!(Uf, U)
     correct_boundaries!(Uf, U, U.BCs)
     flux!(mdotf, Uf)
-
-    @time begin correct_boundaries!(pf, p, p.BCs) end
-
     grad!(∇p, pf, p, p.BCs)
 
-
-    # correct_boundaries!(phif, phi, BCs)
-
+    dx = ∇p.result.x
+    dy = ∇p.result.y
+    dz = ∇p.result.z
     phif = pf
-    phi = p
-    BCs = p.BCs
 
-    (; mesh) = phif
-    (; boundaries, faces) = mesh 
+using StaticArrays
 
-    for i ∈ 1:length(BCs)
-    BC = BCs[i]
-    boundary = boundaries[BC.ID]
-    adjust_boundary!(BC, phif, phi, boundary, faces)
-    end
+    # @time begin green_gauss!(dx, dy, dz, phif) end
+    @time begin green_gauss_test!(dx, dy, dz, phif) end
 
-    phif.values
+    dx
+    dy
+    dz
 
 
-    (; mesh) = phif
-    (; boundaries) = mesh 
-
-    ## REMOVE MEMCOPY!!!!!!!!!!!!!!!!
-    boundaries_cpu = Array{eltype(mesh.boundaries)}(undef, length(boundaries))
-    copyto!(boundaries_cpu, boundaries)
+function green_gauss_test!(dx, dy, dz, phif)
+    # (; x, y, z) = grad.result
+    (; mesh, values) = phif
+    # (; cells, faces) = mesh
+    (; faces, cells, cell_faces, cell_nsign, nbfaces) = mesh
+    # F = _get_float(mesh)
 
     backend = _get_backend(mesh)
+    kernel! = result_calculation!(backend)
+    kernel!(values, faces, cells, cell_nsign, cell_faces, dx, dy, dz, ndrange = length(cells))
+    kernel! = boundary_faces_contribution!(backend)
+    kernel!(values, faces, cells, dx, dy, dz, ndrange = nbfaces)
+end
 
-    phif.values
+@kernel function result_calculation!(values, faces, cells, cell_nsign, cell_faces, dx, dy, dz)
+    i = @index(Global)
 
-    for i in eachindex(BCs)
-        (; ID) = BCs[i]
-        (; facesID, cellsID) = boundaries_cpu[ID]
-        facesID = _convert_array(facesID, backend)
-        cellsID = _convert_array(cellsID, backend)
-        #KERNEL LAUNCH
-        adjust_boundary!(backend, BCs[i], phif, phi, facesID, cellsID)
-    end
+    @inbounds begin
+        (; volume, faces_range) = cells[i]
 
-    phif.values
-    phi.values
-
-    function adjust_boundary!(backend, BC::Neumann, phif::FaceScalarField, phi::ScalarField, facesID, cellsID)
-        (; values) = phif
-        phif_values = values
-        (; values) = phi
-        phi_values = values
-        kernel! = adjust_boundary_neumann_scalar!(backend)
-        kernel!(BC, phif, phi, facesID, cellsID, phif_values, phi_values, ndrange = length(facesID))
-    end
-
-
-    @kernel function adjust_boundary_neumann_scalar!(BC, phif, phi, facesID, cellsID, phif_values, phi_values)
-        i = @index(Global)
-
-        @inbounds begin
-            fID = facesID[i]
-            cID = cellsID[i]
-            phif_values[fID] = phi_values[cID] 
+        for fi in faces_range
+            fID = cell_faces[fi]
+            nsign = cell_nsign[fi]
+            (; area, normal) = faces[fID]
+            dx[i] += values[fID]*(area*normal[1]*nsign)
+            dy[i] += values[fID]*(area*normal[2]*nsign)
+            dz[i] += values[fID]*(area*normal[3]*nsign)
         end
+        dx[i] /= volume
+        dy[i] /= volume
+        dz[i] /= volume
+    end    
+end
+
+@kernel function boundary_faces_contribution!(values, faces, cells, dx, dy, dz)
+    i = @index(Global)
+
+    @inbounds begin
+        (; ownerCells, area, normal) = faces[i]
+        cID = ownerCells[1]
+        (; volume) = cells[cID]
+        dx[cID] = (values[i]*(area*normal[1]))/volume
+        dy[cID] = (values[i]*(area*normal[2]))/volume
+        dz[cID] = (values[i]*(area*normal[3]))/volume
     end
+end
 
-    function adjust_boundary!(backend, BC::Dirichlet, phif::FaceScalarField, phi::ScalarField, facesID, cellsID)
-        (; values) = phif
-        phif_values = values
-        (; values) = phi
-        phi_values = values
-        kernel! = adjust_boundary_dirichlet_scalar1!(backend)
-        kernel!(BC, phif, phi, facesID, cellsID, phif_values, phi_values, ndrange = length(facesID))
-    end
-
-    @kernel function adjust_boundary_dirichlet_scalar1!(BC, phif, phi, facesID, cellsID, phif_values, phi_values)
-        i = @index(Global)
-
-        @inbounds begin
-            fID = facesID[i]
-            phif_values[fID] = BC.value
+function green_gauss!(dx, dy, dz, phif)
+    # (; x, y, z) = grad.result
+    (; mesh, values) = phif
+    # (; cells, faces) = mesh
+    (; faces, cells, cell_faces, cell_nsign) = mesh
+    F = _get_float(mesh)
+    for ci ∈ eachindex(cells)
+        # (; facesID, nsign, volume) = cells[ci]
+        cell = cells[ci]
+        (; volume) = cell
+        res = SVector{3,F}(0.0,0.0,0.0)
+        # for fi ∈ eachindex(facesID)
+        for fi ∈ cell.faces_range
+            # fID = facesID[fi]
+            fID = cell_faces[fi]
+            nsign = cell_nsign[fi]
+            (; area, normal) = faces[fID]
+            # res += values[fID]*(area*normal*nsign[fi])
+            res += values[fID]*(area*normal*nsign)
         end
+        res /= volume
+        dx[ci] = res[1]
+        dy[ci] = res[2]
+        dz[ci] = res[3]
     end
-
-
-    function adjust_boundary!(
-        BC::Dirichlet, phif::FaceScalarField, phi, boundary, faces)
-        (; facesID, cellsID) = boundary
-        @inbounds for fID ∈ facesID
-            phif.values[fID] = BC.value 
-        end
+    # Add boundary faces contribution
+    nbfaces = total_boundary_faces(mesh)
+    for i ∈ 1:nbfaces
+        face = faces[i]
+        (; ownerCells, area, normal) = face
+        cID = ownerCells[1] 
+        (; volume) = cells[cID]
+        res = values[i]*(area*normal)
+        res /= volume
+        dx[cID] += res[1]
+        dy[cID] += res[2]
+        dz[cID] += res[3]
     end
-    
-    function adjust_boundary!(
-        BC::Neumann, phif::FaceScalarField, phi, boundary, faces)
-        (;facesID, cellsID) = boundary
-        @inbounds for fi ∈ eachindex(facesID)
-            fID = facesID[fi]
-            cID = cellsID[fi]
-            # (; normal, e, delta) = faces[fID]
-            phif.values[fID] = phi.values[cID] #+ BC.value*delta*(normal⋅e)
-        end
-    end
+end

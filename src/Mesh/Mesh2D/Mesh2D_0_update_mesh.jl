@@ -25,6 +25,15 @@ update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
     for (i, b) ∈ enumerate(mesh.boundaries)
         boundaries[i] = Boundary(b.name, integer.(b.facesID), integer.(b.cellsID))
     end
+        
+    # Total boundary faces calculation
+    (; boundaries) = mesh
+    # nbfaces = zero(I)
+    nbfaces = integer.(0)
+    @inbounds for boundary ∈ boundaries
+        nbfaces += length(boundary.facesID)
+    end
+    
 
     # PROCESSING NODES 
 
@@ -131,6 +140,7 @@ update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
         ) 
     end
 
+
     # CONSTRUCT FINAL MESH (MESH2)
     Mesh2(
         cells,
@@ -144,6 +154,7 @@ update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
         nodes,
         node_cells,
         get_float,
-        get_int
+        get_int,
+        nbfaces
     ) 
 end

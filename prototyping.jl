@@ -138,13 +138,13 @@ using KernelAbstractions
     end
 
     CUDA.allowscalar(false)
-    # model = adapt(CuArray, model)
-    # ∇p = adapt(CuArray, ∇p)
-    # ux_eqn = adapt(CuArray, ux_eqn)
-    # uy_eqn = adapt(CuArray, uy_eqn)
-    # p_eqn = adapt(CuArray, p_eqn)
-    # turbulence = adapt(CuArray, turbulence)
-    # config = adapt(CuArray, config)
+    model = adapt(CuArray, model)
+    ∇p = adapt(CuArray, ∇p)
+    ux_eqn = adapt(CuArray, ux_eqn)
+    uy_eqn = adapt(CuArray, uy_eqn)
+    p_eqn = adapt(CuArray, p_eqn)
+    turbulence = adapt(CuArray, turbulence)
+    config = adapt(CuArray, config)
     
     # Extract model variables and configuration
     (;mesh, U, p, nu) = model
@@ -188,12 +188,50 @@ using KernelAbstractions
     R_uy = ones(TF, iterations)
     R_p = ones(TF, iterations)
 
-    # Uf = adapt(CuArray,Uf)
-    # rDf = adapt(CuArray, rDf)
-    # rD = adapt(CuArray, rD)
+    Uf = adapt(CuArray,Uf)
+    rDf = adapt(CuArray, rDf)
+    rD = adapt(CuArray, rD)
 
     interpolate!(Uf, U)
     correct_boundaries!(Uf, U, U.BCs)
+
+    mdotf.values
+
+    @time begin flux!(mdotf, Uf) end
+
+    mdotf.values
+
+    @time begin flux_test!(mdotf, Uf) end
+
+    mdotf.values
+
+function flux_test!(phif::FS, psif::FV) where {FS<:FaceScalarField,FV<:FaceVectorField}
+    (; mesh, values) = phif
+    (; faces) = mesh
+
+    backend = _get_backend(mesh)
+    kernel! = flux_kernel!(backend)
+    kernel!(faces, values, psif, ndrange = length(faces))
+end
+
+
+@kernel function flux_kernel!(faces, values, psif)
+    i = @index(Global)
+
+    @inbounds begin
+        (; area, normal) = faces[i]
+        Sf = area*normal
+        values[i] = psif[i]⋅Sf
+    end
+end
+
+
+        @inbounds for fID ∈ eachindex(faces)
+            (; area, normal) = faces[fID]
+            Sf = area*normal
+            values[fID] = psif[fID]⋅Sf
+        end
+    # end
 
     sum = 0
 

@@ -41,3 +41,19 @@ CPU kernel benchmark (compilation):         0.472322 seconds (457.18 k allocatio
 CPU kernel benchmark (post compilation):    0.000062 seconds (457 allocations: 147.484 KiB)
 
 Output the same for all benchmarks?: YES
+
+
+
+
+flux!() for vector fields update for GPU (Float64 types with variables mdotf, Uf)
+
+CPU benchmark (compilation):                0.023009 seconds (17.61 k allocations: 1.204 MiB, 91.49% compilation time)
+CPU benchmark (post compilation):           0.000665 seconds
+
+GPU benchmark (compilation):                0.587757 seconds (3.80 M allocations: 249.595 MiB, 3.83% gc time, 90.30% compilation time)
+GPU benchmark (post compilation):           0.000081 seconds (39 allocations: 5.172 KiB)
+
+CPU kernel benchmark (compilation):         0.125378 seconds (366.16 k allocations: 20.164 MiB, 98.95% compilation time)
+CPU kernel benchmark (post compilation):    0.000708 seconds (11 allocations: 1.750 KiB)
+
+Output the same for all benchmarks?: YES

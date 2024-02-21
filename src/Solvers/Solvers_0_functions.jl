@@ -1,3 +1,5 @@
+export flux!
+
 update_nueff!(nueff, nu, turb_model) = begin
     if turb_model === nothing
         for i ∈ eachindex(nueff)
@@ -62,13 +64,32 @@ function residual!(Residual, equation, phi, iteration)
     nothing
 end
 
+# function flux!(phif::FS, psif::FV) where {FS<:FaceScalarField,FV<:FaceVectorField}
+#     (; mesh, values) = phif
+#     (; faces) = mesh 
+#     @inbounds for fID ∈ eachindex(faces)
+#         (; area, normal) = faces[fID]
+#         Sf = area*normal
+#         values[fID] = psif[fID]⋅Sf
+#     end
+# end
+
 function flux!(phif::FS, psif::FV) where {FS<:FaceScalarField,FV<:FaceVectorField}
     (; mesh, values) = phif
-    (; faces) = mesh 
-    @inbounds for fID ∈ eachindex(faces)
-        (; area, normal) = faces[fID]
+    (; faces) = mesh
+
+    backend = _get_backend(mesh)
+    kernel! = flux_kernel!(backend)
+    kernel!(faces, values, psif, ndrange = length(faces))
+end
+
+@kernel function flux_kernel!(faces, values, psif)
+    i = @index(Global)
+
+    @inbounds begin
+        (; area, normal) = faces[i]
         Sf = area*normal
-        values[fID] = psif[fID]⋅Sf
+        values[i] = psif[i]⋅Sf
     end
 end
 

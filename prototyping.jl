@@ -191,294 +191,57 @@ using KernelAbstractions
     Uf = adapt(CuArray,Uf)
     rDf = adapt(CuArray, rDf)
     rD = adapt(CuArray, rD)
+    pf = adapt(CuArray, pf)
 
     interpolate!(Uf, U)
     correct_boundaries!(Uf, U, U.BCs)
-
-    mdotf.values
-
-    @time begin flux!(mdotf, Uf) end
-
-    mdotf.values
-
-    @time begin flux_test!(mdotf, Uf) end
-
-    mdotf.values
-
-function flux_test!(phif::FS, psif::FV) where {FS<:FaceScalarField,FV<:FaceVectorField}
-    (; mesh, values) = phif
-    (; faces) = mesh
-
-    backend = _get_backend(mesh)
-    kernel! = flux_kernel!(backend)
-    kernel!(faces, values, psif, ndrange = length(faces))
-end
-
-
-@kernel function flux_kernel!(faces, values, psif)
-    i = @index(Global)
-
-    @inbounds begin
-        (; area, normal) = faces[i]
-        Sf = area*normal
-        values[i] = psif[i]⋅Sf
-    end
-end
-
-
-        @inbounds for fID ∈ eachindex(faces)
-            (; area, normal) = faces[fID]
-            Sf = area*normal
-            values[fID] = psif[fID]⋅Sf
-        end
-    # end
-
-    sum = 0
-
-    CUDA.allowscalar(true)
-
-    for i in eachindex(U)
-        num = U[i][1]
-        if num != 0.5
-            sum += 1
-            println("Sum incremented")
-        end
-    end
-
-    println("$sum")
-    length(U)
-    length(Uf.x)
-    
-    # IDs = Array{typeof(BCs[1].ID)}(undef,length(BCs))
-    # values = _get_float(mesh)[]
-
-    function _convert_array(arr, backend::CPU)
-        return arr
-    end
-    function _convert_array(arr, backend::CUDABackend)
-        return adapt(CuArray, arr)
-    end
-
-    BCs = U.BCs
-    psif = Uf
-    psi = U
-    (; x, y, z, mesh) = psif
-    (; boundaries) = mesh 
-    
-
-    boundaries_cpu = Array{eltype(mesh.boundaries)}(undef, length(boundaries))
-    copyto!(boundaries_cpu, boundaries)
-
-    backend = _get_backend(psif.mesh)
-    kernel_dirichlet = adjust_boundary_dirichlet_vector!(backend)
-    kernel_neumann = adjust_boundary_neumann_vector!(backend)
-
-    for i in eachindex(BCs)
-        (; ID) = BCs[i]
-        (; facesID, cellsID) = boundaries_cpu[ID]
-        facesID = _convert_array(facesID, backend)
-        cellsID = _convert_array(cellsID, backend)
-        #KERNEL LAUNCH
-        call_adjust_boundary(BCs[i], psif, psi, facesID, cellsID, x, y, z)
-    end
-
-    CUDA.allowscalar(true)
-
-    psif.x[50]
-    sum = 0
-
-    for i in eachindex(psi)
-        num = psi[i][1]
-        if num != 0.5
-            sum += 1
-        end
-    end
-
-    println("$sum") # aim for 158 and 0
-    length(x)
-
-    function call_adjust_boundary(BC::Dirichlet, psif::FaceVectorField, psi::VectorField, facesID, cellsID, x, y, z)
-        kernel_dirichlet(BC, psif, psi, facesID, cellsID, x, y, z, ndrange = length(facesID))
-    end
-
-    function call_adjust_boundary(BC::Neumann, psif, psi, facesID, cellsID, x, y, z)
-        kernel_neumann(BC, psif, psi, facesID, cellsID, x, y, z, ndrange = length(facesID))
-    end
-
-    @kernel function adjust_boundary_dirichlet_vector!(BC, psif, psi, facesID, cellsID, x, y, z)
-        i = @index(Global)
-        @inbounds begin
-            fID = facesID[i]
-            x[fID] = BC.value[1]
-            y[fID] = BC.value[2]
-            z[fID] = BC.value[3]
-        end
-    end
-
-    @kernel function adjust_boundary_neumann_vector!(BC, psif, psi, facesID, cellsID, x, y, z)
-        i = @index(Global)
-        @inbounds begin
-            fID = facesID[i]
-            cID = cellsID[i]
-            psi_cell = psi[cID]
-            # normal = faces[fID].normal
-            # Line below needs sorting out for general user-defined gradients
-            # now only works for zero gradient
-            # psi_boundary =   psi_cell - (psi_cell⋅normal)*normal
-            x[fID] = psi_cell[1]
-            y[fID] = psi_cell[2]
-            z[fID] = psi_cell[3]
-        end
-    end
-
-    function adjust_boundary!( 
-        BC::Neumann, psif::FaceVectorField, psi::VectorField, boundary, faces
-        ) 
-    
-        (; x, y, z) = psif
-        (; facesID, cellsID) = boundary
-    
-        @inbounds for fi ∈ eachindex(facesID)
-            fID = facesID[fi]
-            cID = cellsID[fi]
-            psi_cell = psi[cID]
-            # normal = faces[fID].normal
-            # Line below needs sorting out for general user-defined gradients
-            # now only works for zero gradient
-            # psi_boundary =   psi_cell - (psi_cell⋅normal)*normal
-            x[fID] = psi_cell[1]
-            y[fID] = psi_cell[2]
-            z[fID] = psi_cell[3]
-        end
-    end
-
-
-    CUDA.allowscalar(true)
-
-    (; facesID) = mesh.boundaries[IDs[1]]
-
-
-    values
-
-
-    kernel(BC, IDs, ndrange = length(IDs))
-
-    @kernel function adjust_boundary(BC::Dirichlet, IDs)
-        i = @index(Global)
-        
-        # boundary = boundaries[ID]
-
-        ID = IDs[i]
-
-        @cushow(ID)
-        
-        # adjust_boundary!(BCs[i], phif, phi, boundary, faces)
-    end
-    
-    function adjust_boundary!( 
-        BC::Dirichlet, psif::FaceVectorField, psi::VectorField, boundary, faces
-        )
-    
-        (; x, y, z) = psif
-        (; facesID) = boundary
-    
-        @inbounds for fID ∈ facesID
-            x[fID] = BC.value[1]
-            y[fID] = BC.value[2]
-            z[fID] = BC.value[3]
-        end
-    end
-
-    U.BCs.ID
     flux!(mdotf, Uf)
     grad!(∇p, pf, p, p.BCs)
 
+    phif = pf
+    phi = p
+
+    # phif[100]
+    # phif.values
+
+    # @time begin interpolate_midpoint!(phif, phi) end
+
+    # phif[100]
+    phif.values
+
+    @time begin interpolate_midpoint_test!(phif, phi) end
+
+    # phif[100]
+    phif.values
 
 
-## Tuple Test
-
-using KernelAbstractions
-using Adapt
-using CUDA
-
-A = (1, 2, 3, 4, 5)
-typeof(A)
-
-A = cu(A)
-result = CUDA.zeros(eltype(A), length(A))
-
-backend = get_backend(result)
-kernel! = test1(backend)
-kernel!(A, result, ndrange = length(A))
-
-result
-
-@kernel function test1(A, result)
-    i = @index(Global)
-
-    @inbounds result[i] = A[i]
-
-end
-
-
-struct tuple_parent1{V<:AbstractArray{tuple_test}}
-    tuple_test::V
-    int1::Integer
-    int2::Integer
-end
-Adapt.@adapt_structure tuple_parent1
-
-struct tuple_test{S<:Symbol, NT<:NTuple}
-    name::S
-    vec1::NT
-    vec2::NT
-end
-Adapt.@adapt_structure tuple_test
-
-child = tuple_test[]
-
-for i in 1:5
-    name = Symbol("child")
-    I = rand(5:10)
-    type = NTuple{I, Integer}
-    vec1 = type(rand(1:10) for j in 1:I)
-    vec2 = type(rand(1:10) for j in 1:I)
-    push!(child, tuple_test(name, vec1, vec2))
-end
-
-child
-
-parent = tuple_parent1(child, 100, 200)
-
-parent.tuple_test = adapt(CuArray, parent.tuple_test)
-
-parent = adapt(CuArray, parent)
-tuple = parent.tuple_test
-
-result1 = CUDA.zeros(Int64, 5)
-result2 = similar(result1)
-
-backend = get_backend(tuple[1].vec1)
-kernel! = tuple_test_kernel(backend)
-@device_code_warntype kernel!(tuple, result1, result2, ndrange = length(tuple))
-
-
-@kernel function tuple_test_kernel(tuple, result1, result2)
-    i = @index(Global)
-
-    @inbounds begin
-        (; vec1, vec2) = tuple[i]
-        result1[i] = length(vec1)
-        result2[i] = length(vec2)
+    interpolate_midpoint!(phif::FaceScalarField, phi::ScalarField) = begin
+        mesh = phi.mesh
+        (; faces) = mesh
+        for i ∈ eachindex(faces)
+            owners = faces[i].ownerCells 
+            c1 = owners[1]
+            c2 = owners[2]
+            phif[i] = 0.5*(phi[c1] + phi[c2])
+        end
     end
-end
 
+    function interpolate_midpoint_test!(phif::FaceScalarField, phi::ScalarField)
+        (; mesh) = phi
+        (; faces) = mesh
+        backend = _get_backend(mesh)
+        kernel! = interpolate_midpoint_scalar!(backend)
+        kernel!(faces, phif, phi, ndrange = length(faces))
+    end
 
+    @kernel function interpolate_midpoint_scalar!(faces, phif, phi)
+        i = @index(Global)
 
-A = CUDA.zeros(Int64, 100)
-B = []
-for i in 1:10
-    push!(B, A)
-end
-B
-cu(B)
+        @inbounds begin
+            (; ownerCells) = faces[i]
+            c1 = ownerCells[1]
+            c2 = ownerCells[2]
+            phif[i] = 0.5*(phi[c1] + phi[c2])
+        end
+    end
+    

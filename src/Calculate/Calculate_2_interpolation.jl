@@ -21,7 +21,7 @@ export interpolate!
                 facesID = _convert_array(facesID, backend)
                 cellsID = _convert_array(cellsID, backend)
                 #KERNEL LAUNCH
-                adjust_boundary!(backend, BCs[i], phif, phi, facesID, cellsID, x, y, z)
+                adjust_boundary!(backend, BCs[i], phif, phi, facesID, cellsID)
             end
 
             # adjust_boundary!(BC, phif, phi, BC.ID, faces)
@@ -41,34 +41,59 @@ export interpolate!
     end
 end
 
-function adjust_boundary!(backend, BC::Dirichlet, psif::FaceVectorField, psi::VectorField, facesID, cellsID, x, y, z)
-    (; x, y, z) = psif
-    kernel = adjust_boundary_dirichlet_vector!(backend)
-    kernel(BC, psif, psi, facesID, cellsID, x, y, z, ndrange = length(facesID))
+# function adjust_boundary!(
+#     BC::Dirichlet, phif::FaceScalarField, phi, boundary, faces)
+#     (; facesID, cellsID) = boundary
+#     @inbounds for fID ∈ facesID
+#         phif.values[fID] = BC.value 
+#     end
+# end
+
+# function adjust_boundary!(
+#     BC::Neumann, phif::FaceScalarField, phi, boundary, faces)
+#     (;facesID, cellsID) = boundary
+#     @inbounds for fi ∈ eachindex(facesID)
+#         fID = facesID[fi]
+#         cID = cellsID[fi]
+#         # (; normal, e, delta) = faces[fID]
+#         phif.values[fID] = phi.values[cID] #+ BC.value*delta*(normal⋅e)
+#     end
+# end
+
+function adjust_boundary!(backend, BC::Dirichlet, phif::FaceScalarField, phi, facesID, cellsID)
+    (; values) = phif
+    phif_values = values
+    (; values) = phi
+    phi_values = values
+    kernel! = adjust_boundary_dirichlet_scalar!(backend)
+    kernel!(BC, phif, phi, facesID, cellsID, phif_values, phi_values, ndrange = length(facesID))
 end
 
-function adjust_boundary!(backend, BC::Neumann, psif::FaceVectorField, psi::VectorField, facesID, cellsID, x, y, z)
-    (; x, y, z) = psif
-    kernel = adjust_boundary_neumann_vector!(backend)
-    kernel(BC, psif, psi, facesID, cellsID, x, y, z, ndrange = length(facesID))
+function adjust_boundary!(backend, BC::Neumann, phif::FaceScalarField, phi, facesID, cellsID)
+    (; values) = phif
+    phif_values = values
+    (; values) = phi
+    phi_values = values
+    kernel! = adjust_boundary_neumann_scalar!(backend)
+    kernel!(BC, phif, phi, facesID, cellsID, phif_values, phi_values, ndrange = length(facesID))
 end
 
-function adjust_boundary!(
-    BC::Dirichlet, phif::FaceScalarField, phi, boundary, faces)
-    (; facesID, cellsID) = boundary
-    @inbounds for fID ∈ facesID
-        phif.values[fID] = BC.value 
+@kernel function adjust_boundary_dirichlet_scalar!(BC, phif, phi, facesID, cellsID, phif_values, phi_values)
+    i = @index(Global)
+
+    @inbounds begin
+        fID = facesID[i]
+        phif_values[fID] = BC.value
     end
 end
 
-function adjust_boundary!(
-    BC::Neumann, phif::FaceScalarField, phi, boundary, faces)
-    (;facesID, cellsID) = boundary
-    @inbounds for fi ∈ eachindex(facesID)
-        fID = facesID[fi]
-        cID = cellsID[fi]
-        # (; normal, e, delta) = faces[fID]
-        phif.values[fID] = phi.values[cID] #+ BC.value*delta*(normal⋅e)
+@kernel function adjust_boundary_neumann_scalar!(BC, phif, phi, facesID, cellsID, phif_values, phi_values)
+    i = @index(Global)
+
+    @inbounds begin
+        fID = facesID[i]
+        cID = cellsID[i]
+        phif_values[fID] = phi_values[cID] 
     end
 end
 
@@ -137,7 +162,19 @@ end
 #     end
 # end
 
-## GPU VECTOR ADJUST BOUNDARY KERNELS
+## GPU VECTOR ADJUST BOUNDARY FUNCTIONS AND KERNELS
+
+function adjust_boundary!(backend, BC::Dirichlet, psif::FaceVectorField, psi::VectorField, facesID, cellsID)
+    (; x, y, z) = psif
+    kernel! = adjust_boundary_dirichlet_vector!(backend)
+    kernel!(BC, psif, psi, facesID, cellsID, x, y, z, ndrange = length(facesID))
+end
+
+function adjust_boundary!(backend, BC::Neumann, psif::FaceVectorField, psi::VectorField, facesID, cellsID)
+    (; x, y, z) = psif
+    kernel! = adjust_boundary_neumann_vector!(backend)
+    kernel!(BC, psif, psi, facesID, cellsID, x, y, z, ndrange = length(facesID))
+end
 
 @kernel function adjust_boundary_dirichlet_vector!(BC, psif, psi, facesID, cellsID, x, y, z)
     i = @index(Global)

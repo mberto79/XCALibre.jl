@@ -45,6 +45,21 @@ Output the same for all benchmarks?: YES
 
 
 
+correct_boundaries!() for scalar fields update for GPU (Float64 types with variables pf, p, p.BCs)
+
+CPU benchmark (compilation):                0.020172 seconds (13.25 k allocations: 885.430 KiB, 99.87% compilation time)
+CPU benchmark (post compilation):           0.000012 seconds (2 allocations: 320 bytes)
+
+GPU benchmark (compilation):                0.521102 seconds (628.48 k allocations: 44.852 MiB, 93.39% compilation time)
+GPU benchmark (post compilation):           0.000584 seconds (1.38 k allocations: 115.328 KiB)
+
+CPU kernel benchmark (compilation):         0.262248 seconds (368.08 k allocations: 25.803 MiB, 12.63% gc time, 99.95% compilation time)
+CPU kernel benchmark (post compilation):    0.000048 seconds (378 allocations: 38.766 KiB)
+
+Output the same for all benchmarks?: YES
+
+
+
 flux!() update for GPU (Float64 types with variables mdotf, Uf)
 
 CPU benchmark (compilation):                0.023009 seconds (17.61 k allocations: 1.204 MiB, 91.49% compilation time)

@@ -29,6 +29,7 @@ CPU kernel benchmark (post compilation):    0.000989 seconds (20 allocations: 76
 Output the same for all benchmarks?: YES
 
 
+
 correct_boundaries!() for vector fields update for GPU (Float64 types with variables Uf, U, U.BCs)
 
 CPU benchmark (compilation):                0.052378 seconds (37.88 k allocations: 2.543 MiB, 99.96% compilation time)
@@ -44,8 +45,7 @@ Output the same for all benchmarks?: YES
 
 
 
-
-flux!() for vector fields update for GPU (Float64 types with variables mdotf, Uf)
+flux!() update for GPU (Float64 types with variables mdotf, Uf)
 
 CPU benchmark (compilation):                0.023009 seconds (17.61 k allocations: 1.204 MiB, 91.49% compilation time)
 CPU benchmark (post compilation):           0.000665 seconds
@@ -55,5 +55,20 @@ GPU benchmark (post compilation):           0.000081 seconds (39 allocations: 5.
 
 CPU kernel benchmark (compilation):         0.125378 seconds (366.16 k allocations: 20.164 MiB, 98.95% compilation time)
 CPU kernel benchmark (post compilation):    0.000708 seconds (11 allocations: 1.750 KiB)
+
+Output the same for all benchmarks?: YES
+
+
+
+interpolate_midpoint!() for scalar fields update for GPU (Float64 types with variables mdotf, Uf)
+
+CPU benchmark (compilation):                0.011991 seconds (5.86 k allocations: 396.617 KiB, 92.49% compilation time)
+CPU benchmark (post compilation):           0.000971 seconds
+
+GPU benchmark (compilation):                0.206542 seconds (256.26 k allocations: 18.306 MiB, 81.99% compilation time)
+GPU benchmark (post compilation):           0.000082 seconds (42 allocations: 3.703 KiB)
+
+CPU kernel benchmark (compilation):         0.104183 seconds (184.65 k allocations: 12.933 MiB, 99.05% compilation time)
+CPU kernel benchmark (post compilation):    0.001015 seconds (12 allocations: 1.234 KiB)
 
 Output the same for all benchmarks?: YES

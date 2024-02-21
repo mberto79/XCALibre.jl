@@ -120,13 +120,32 @@ end
 
 ## Mid-point gradient calculation
 
-interpolate_midpoint!(phif::FaceScalarField, phi::ScalarField) = begin
-    mesh = phi.mesh
+# interpolate_midpoint!(phif::FaceScalarField, phi::ScalarField) = begin
+#     mesh = phi.mesh
+#     (; faces) = mesh
+#     for i ∈ eachindex(faces)
+#         owners = faces[i].ownerCells 
+#         c1 = owners[1]
+#         c2 = owners[2]
+#         phif[i] = 0.5*(phi[c1] + phi[c2])
+#     end
+# end
+
+function interpolate_midpoint!(phif::FaceScalarField, phi::ScalarField)
+    (; mesh) = phi
     (; faces) = mesh
-    for i ∈ eachindex(faces)
-        owners = faces[i].ownerCells 
-        c1 = owners[1]
-        c2 = owners[2]
+    backend = _get_backend(mesh)
+    kernel! = interpolate_midpoint_scalar!(backend)
+    kernel!(faces, phif, phi, ndrange = length(faces))
+end
+
+@kernel function interpolate_midpoint_scalar!(faces, phif, phi)
+    i = @index(Global)
+
+    @inbounds begin
+        (; ownerCells) = faces[i]
+        c1 = ownerCells[1]
+        c2 = ownerCells[2]
         phif[i] = 0.5*(phi[c1] + phi[c2])
     end
 end

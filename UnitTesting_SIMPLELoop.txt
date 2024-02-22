@@ -98,8 +98,8 @@ CPU benchmark (post compilation):           0.001318 seconds
 GPU benchmark (compilation):                0.548092 seconds (703.39 k allocations: 49.602 MiB, 80.38% compilation time)
 GPU benchmark (post compilation):           0.000102 seconds (83 allocations: 8.953 KiB)
 
-GPU benchmark SVector implementation (compilation):                0.765497 seconds (846.48 k allocations: 60.605 MiB, 85.78% compilation time)
-GPU benchmark SVector implementation (post compilation):           0.000105 seconds (155 allocations: 24.734 KiB)
+GPU benchmark SVector implementation (compilation):                0.992773 seconds (847.64 k allocations: 60.564 MiB, 19.29% gc time, 69.13% compilation time)
+GPU benchmark SVector implementation (post compilation):           0.000133 seconds (155 allocations: 24.734 KiB)
 
 CPU kernel benchmark (compilation):         0.262248 seconds (368.08 k allocations: 25.803 MiB, 12.63% gc time, 99.95% compilation time)
 CPU kernel benchmark (post compilation):    0.001171 seconds (25 allocations: 2.984 KiB)

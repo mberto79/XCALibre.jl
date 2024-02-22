@@ -5,6 +5,7 @@ using LinearAlgebra
 using SparseArrays
 using StaticArrays
 using Adapt
+using CUDA
 
 using FVM_1D.Mesh
 using FVM_1D.Fields

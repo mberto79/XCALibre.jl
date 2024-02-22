@@ -44,7 +44,8 @@ discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
         float = _get_float(mesh)
         # (; faces, cells, ) = mesh
         (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
-        (; rowval, colptr, nzval) = A
+        # (; rowval, colptr, nzval) = A
+        rowval, colptr, nzval = sparse_array_deconstructor(A)
         fzero = zero(float) # replace with func to return mesh type (Mesh module)
         ione = one(integer)
         @inbounds for i ∈ eachindex(nzval)
@@ -79,4 +80,15 @@ discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
         end
         nothing
     end
+end
+
+
+function sparse_array_deconstructor(arr::SparseArrays.SparseMatrixCSC)
+    (; rowval, colptr, nzval) = arr
+    return rowval, colptr, nzval
+end
+
+function sparse_array_deconstructor(arr::CUDA.CUSPARSE.CuSparseMatrixCSC)
+    (; rowVal, colPtr, nzVal) = arr
+    return rowVal, colPtr, nzVal
 end

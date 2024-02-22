@@ -45,7 +45,8 @@ function green_gauss!(dx, dy, dz, phif)
     # (; x, y, z) = grad.result
     (; mesh, values) = phif
     # (; cells, faces) = mesh
-    (; faces, cells, cell_faces, cell_nsign, nbfaces) = mesh
+    (; faces, cells, cell_faces, cell_nsign, boundaries) = mesh
+    nbfaces = maximum(boundaries[end].IDs_range)
     F = _get_float(mesh)
 
     backend = _get_backend(mesh)

@@ -1,3 +1,5 @@
+export green_gauss!
+
 # function green_gauss!(grad::Grad, phif; source=false)
 # function green_gauss!(dx, dy, dz, phif)
 #     # (; x, y, z) = grad.result
@@ -44,44 +46,66 @@ function green_gauss!(dx, dy, dz, phif)
     (; mesh, values) = phif
     # (; cells, faces) = mesh
     (; faces, cells, cell_faces, cell_nsign, nbfaces) = mesh
-    # F = _get_float(mesh)
+    F = _get_float(mesh)
 
     backend = _get_backend(mesh)
     kernel! = result_calculation!(backend)
-    kernel!(values, faces, cells, cell_nsign, cell_faces, dx, dy, dz, ndrange = length(cells))
+    kernel!(values, faces, cells, cell_nsign, cell_faces, F, dx, dy, dz, ndrange = length(cells))
     kernel! = boundary_faces_contribution!(backend)
-    kernel!(values, faces, cells, dx, dy, dz, ndrange = nbfaces)
+    kernel!(values, faces, cells, F, dx, dy, dz, ndrange = nbfaces)
 end
 
-@kernel function result_calculation!(values, faces, cells, cell_nsign, cell_faces, dx, dy, dz)
+@kernel function result_calculation!(values, faces, cells, cell_nsign, cell_faces, F, dx, dy, dz)
     i = @index(Global)
 
     @inbounds begin
         (; volume, faces_range) = cells[i]
 
-        for fi in faces_range
+        # for fi in faces_range
+        #     fID = cell_faces[fi]
+        #     nsign = cell_nsign[fi]
+        #     (; area, normal) = faces[fID]
+        #     dx[i] += values[fID]*(area*normal[1]*nsign)
+        #     dy[i] += values[fID]*(area*normal[2]*nsign)
+        #     dz[i] += values[fID]*(area*normal[3]*nsign)
+        # end
+        # dx[i] /= volume
+        # dy[i] /= volume
+        # dz[i] /= volume
+        res = SVector{3,F}(0.0,0.0,0.0)
+
+        for fi ∈ faces_range
+            # fID = facesID[fi]
             fID = cell_faces[fi]
             nsign = cell_nsign[fi]
             (; area, normal) = faces[fID]
-            dx[i] += values[fID]*(area*normal[1]*nsign)
-            dy[i] += values[fID]*(area*normal[2]*nsign)
-            dz[i] += values[fID]*(area*normal[3]*nsign)
+            # res += values[fID]*(area*normal*nsign[fi])
+            res += values[fID]*(area*normal*nsign)
         end
-        dx[i] /= volume
-        dy[i] /= volume
-        dz[i] /= volume
+        res /= volume
+        dx[i] = res[1]
+        dy[i] = res[2]
+        dz[i] = res[3]
     end    
 end
 
-@kernel function boundary_faces_contribution!(values, faces, cells, dx, dy, dz)
+@kernel function boundary_faces_contribution!(values, faces, cells, F, dx, dy, dz)
     i = @index(Global)
 
     @inbounds begin
         (; ownerCells, area, normal) = faces[i]
         cID = ownerCells[1]
         (; volume) = cells[cID]
-        dx[cID] = (values[i]*(area*normal[1]))/volume
-        dy[cID] = (values[i]*(area*normal[2]))/volume
-        dz[cID] = (values[i]*(area*normal[3]))/volume
+        # dx[cID] = (values[i]*(area*normal[1]))/volume
+        # dy[cID] = (values[i]*(area*normal[2]))/volume
+        # dz[cID] = (values[i]*(area*normal[3]))/volume
+
+        res = SVector{3,F}(0.0,0.0,0.0)
+
+        res = values[i]*(area*normal)
+        res /= volume
+        dx[cID] += res[1]
+        dy[cID] += res[2]
+        dz[cID] += res[3]
     end
 end

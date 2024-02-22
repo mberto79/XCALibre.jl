@@ -201,7 +201,7 @@ end
 function correct_interpolation!(dx, dy, dz, phif, phi)
     (; mesh, values) = phif
     (; faces, cells, boundaries) = mesh
-    nbfaces = maximum(boundaries[end].IDs_range)
+    nbfaces = length(mesh.boundary_cellsID)
     F = _get_float(mesh)
     phic = phi.values
     # nbfaces = total_boundary_faces(mesh)

@@ -138,13 +138,13 @@ using KernelAbstractions
     end
 
     CUDA.allowscalar(false)
-    model = adapt(CuArray, model)
-    ∇p = adapt(CuArray, ∇p)
-    ux_eqn = adapt(CuArray, ux_eqn)
-    uy_eqn = adapt(CuArray, uy_eqn)
-    p_eqn = adapt(CuArray, p_eqn)
-    turbulence = adapt(CuArray, turbulence)
-    config = adapt(CuArray, config)
+    # model = adapt(CuArray, model)
+    # ∇p = adapt(CuArray, ∇p)
+    # ux_eqn = adapt(CuArray, ux_eqn)
+    # uy_eqn = adapt(CuArray, uy_eqn)
+    # p_eqn = adapt(CuArray, p_eqn)
+    # turbulence = adapt(CuArray, turbulence)
+    # config = adapt(CuArray, config)
     
     # Extract model variables and configuration
     (;mesh, U, p, nu) = model
@@ -188,15 +188,28 @@ using KernelAbstractions
     R_uy = ones(TF, iterations)
     R_p = ones(TF, iterations)
 
-    Uf = adapt(CuArray,Uf)
-    rDf = adapt(CuArray, rDf)
-    rD = adapt(CuArray, rD)
-    pf = adapt(CuArray, pf)
+    # Uf = adapt(CuArray,Uf)
+    # rDf = adapt(CuArray, rDf)
+    # rD = adapt(CuArray, rD)
+    # pf = adapt(CuArray, pf)
 
     interpolate!(Uf, U)
     correct_boundaries!(Uf, U, U.BCs)
     flux!(mdotf, Uf)
     grad!(∇p, pf, p, p.BCs)
+
+
+    ∇p.result.x.values
+    ∇p.result.y.values
+    ∇p.result.z.values
+
+    @time begin green_gauss!(∇p.result.x, ∇p.result.y, ∇p.result.z, pf) end
+    
+    ∇p.result.x.values
+    ∇p.result.y.values
+    ∇p.result.z.values
+
+    update_nueff!(nueff, nu, turbulence)
 
 dx = ∇p.result.x
 dy = ∇p.result.y

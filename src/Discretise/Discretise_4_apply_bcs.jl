@@ -5,7 +5,7 @@ apply_boundary_conditions!(eqn, BCs) = begin
 end
 
 @generated function _apply_boundary_conditions!(
-    model::Model{T,S,TN,SN}, BCs::B, eqn) where {T,S,TN,SN,B}
+    model::Model{TN,SN,T,S}, BCs::B, eqn) where {T,S,TN,SN,B}
 
     # Unpack terms that make up the model (not sources)
     # nTerms = model.parameters[3]

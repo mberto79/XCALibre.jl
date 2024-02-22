@@ -3,8 +3,8 @@ export discretise!
 discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
 
 @generated function _discretise!(
-    model::Model{T,S,TN,SN}, eqn, prev, runtime
-    ) where {T,S,TN,SN}
+    model::Model{TN,SN,T,S}, eqn, prev, runtime
+    ) where {TN,SN,T,S}
 
     nTerms = TN
     nSources = SN

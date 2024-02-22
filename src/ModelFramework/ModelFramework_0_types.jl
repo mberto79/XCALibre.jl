@@ -81,7 +81,7 @@ Source(f::T) where T = Src(f, 1, typeof(f))
 # Source(f::Number) = Src(f.values, 1, typeof(f)) # To implement!!
 
 # MODEL TYPE
-struct Model{T,S,TN,SN}
+struct Model{TN,SN,T,S}
     # equation::E
     terms::T
     sources::S
@@ -89,10 +89,10 @@ end
 function Adapt.adapt_structure(to, itp::Model{TN,SN}) where {TN,SN}
     terms = Adapt.adapt_structure(to, itp.terms); T = typeof(terms)
     sources = Adapt.adapt_structure(to, itp.sources); S = typeof(sources)
-    Model{T,S,TN,SN}(terms,sources)
+    Model{TN,SN,T,S}(terms, sources)
 end
-Model{TN,SN}(terms::T, sources::S) where {T,S,TN,SN} = begin
-    Model{T,S,TN,SN}(terms, sources)
+Model{TN,SN}(terms::T, sources::S) where {TN,SN,T,S} = begin
+    Model{TN,SN,T,S}(terms, sources)
 end
 # Model(eqn::E, terms::T, sources::S, TN, SN) where {E,T,S} = begin
 #     Model{E,T,S,TN,SN}(eqn, terms, sources)

@@ -53,8 +53,14 @@ CPU benchmark (post compilation):           0.000012 seconds (2 allocations: 320
 GPU benchmark (compilation):                0.521102 seconds (628.48 k allocations: 44.852 MiB, 93.39% compilation time)
 GPU benchmark (post compilation):           0.000584 seconds (1.38 k allocations: 115.328 KiB)
 
+GPU benchmark no memcopy (compilation):                1.098787 seconds (813.39 k allocations: 57.993 MiB, 87.84% compilation time)
+GPU benchmark no memcopy (post compilation):           0.000138 seconds (237 allocations: 78.094 KiB)
+
 CPU kernel benchmark (compilation):         0.262248 seconds (368.08 k allocations: 25.803 MiB, 12.63% gc time, 99.95% compilation time)
 CPU kernel benchmark (post compilation):    0.000048 seconds (378 allocations: 38.766 KiB)
+
+CPU kernel benchmark no memcopy (compilation):         0.499414 seconds (388.67 k allocations: 27.149 MiB, 99.97% compilation time)
+CPU kernel benchmark no memcopy (post compilation):    0.000032 seconds (77 allocations: 30.875 KiB)
 
 Output the same for all benchmarks?: YES
 

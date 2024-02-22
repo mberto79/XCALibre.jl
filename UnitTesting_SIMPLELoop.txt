@@ -129,3 +129,18 @@ CPU kernel benchmark (compilation):         0.946198 seconds (4.47 M allocations
 CPU kernel benchmark (post compilation):    0.797572 seconds (4.26 M allocations: 152.120 MiB)
 
 Output the same for all benchmarks?: YES
+
+
+
+update_nueff!() update for GPU (Float64 types with variables nu, nueff, turbulence)
+
+CPU benchmark (compilation):                0.006767 seconds (3.86 k allocations: 274.680 KiB, 99.11% compilation time)
+CPU benchmark (post compilation):           0.000058 seconds
+
+GPU benchmark (compilation):                0.283222 seconds (419.46 k allocations: 30.050 MiB, 89.19% compilation time)
+GPU benchmark (post compilation):           0.000069 seconds (42 allocations: 2.172 KiB)
+
+CPU kernel benchmark (compilation):         0.086834 seconds (180.90 k allocations: 12.645 MiB, 99.85% compilation time)
+CPU kernel benchmark (post compilation):    0.000089 seconds (12 allocations: 640 bytes)
+
+Output the same for all benchmarks?: YES

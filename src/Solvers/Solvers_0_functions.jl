@@ -1,14 +1,44 @@
-export flux!
+export flux!, update_nueff!
 
-update_nueff!(nueff, nu, turb_model) = begin
+# update_nueff!(nueff, nu, turb_model) = begin
+#     if turb_model === nothing
+#         for i ∈ eachindex(nueff)
+#             nueff[i] = nu[i]
+#         end
+#     else
+#         for i ∈ eachindex(nueff)
+#             nueff[i] = nu[i] + turb_model.νtf[i]
+#         end
+#     end
+# end
+
+function update_nueff!(nueff, nu, turb_model)
+    (; mesh) = nueff
+    backend = _get_backend(mesh)
     if turb_model === nothing
-        for i ∈ eachindex(nueff)
-            nueff[i] = nu[i]
-        end
+        kernel! = update_nueff_laminar!(backend)
+        kernel!(nu, nueff, ndrange = length(nueff))
     else
-        for i ∈ eachindex(nueff)
-            nueff[i] = nu[i] + turb_model.νtf[i]
-        end
+        (; νtf) = turb_model
+        kernel! = update_nueff_turbulent!(backend)
+        kernel!(nu, νtf, nueff, ndrange = length(nueff))
+    end
+    
+end
+
+@kernel function update_nueff_laminar!(nu, nueff)
+    i = @index(Global)
+
+    @inbounds begin
+        nueff[i] = nu[i]
+    end
+end
+
+@kernel function update_nueff_turbulent!(nu, νtf, nueff)
+    i = @index(Global)
+    
+    @inbounds begin
+        nueff[i] = nu[i] + νtf[i]
     end
 end
 

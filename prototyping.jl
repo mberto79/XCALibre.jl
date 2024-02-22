@@ -13,7 +13,6 @@ noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
 Re = (0.2*velocity[1])/nu
 
-# CUDA.allowscalar(false)
 model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 @assign! model U ( 
@@ -201,48 +200,10 @@ using KernelAbstractions
     # nueff.values
 
     update_nueff!(nueff, nu, turbulence)
-    # @time begin update_nueff_test!(nueff, nu, turbulence) end
 
-    nueff.values
+    prev = adapt(CuArray, prev)
 
-    update_nueff!(nueff, nu, turb_model) = begin
-        if turb_model === nothing
-            for i ∈ eachindex(nueff)
-                nueff[i] = nu[i]
-            end
-        else
-            for i ∈ eachindex(nueff)
-                nueff[i] = nu[i] + turb_model.νtf[i]
-            end
-        end
-    end
-
-    function update_nueff_test!(nueff, nu, turb_model)
-        (; mesh) = nueff
-        backend = _get_backend(mesh)
-        if turb_model === nothing
-            kernel! = update_nueff_laminar!(backend)
-            kernel!(nu, nueff, ndrange = length(nueff))
-        else
-            (; νtf) = turb_model
-            kernel! = update_nueff_turbulent!(backend)
-            kernel!(nu, νtf, nueff, ndrange = length(nueff))
-        end
-        
-    end
-
-    @kernel function update_nueff_laminar!(nu, nueff)
-        i = @index(Global)
-
-        @inbounds begin
-            nueff[i] = nu[i]
-        end
-    end
-
-    @kernel function update_nueff_turbulent!(nu, νtf, nueff)
-        i = @index(Global)
-        
-        @inbounds begin
-            nueff[i] = nu[i] + νtf[i]
-        end
-    end
+    @. prev = U.x.values
+    type = typeof(ux_eqn)
+    println("$type")
+    discretise!(ux_eqn, prev, runtime)

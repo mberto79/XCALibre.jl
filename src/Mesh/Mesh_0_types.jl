@@ -24,10 +24,10 @@ struct Node{SV3<:SVector{3,<:AbstractFloat}, UR<:UnitRange{<:Integer}}
 end
 Adapt.@adapt_structure Node
 
-struct Boundary{S<:Symbol, VI<:AbstractArray{<:Integer}}
+struct Boundary{S<:Symbol, UR<:UnitRange{<:Integer}}
     name::S
-    facesID::VI
-    cellsID::VI
+    IDs_range::UR
+    # cellsID::VI
 end
 Adapt.@adapt_structure Boundary
 
@@ -79,7 +79,7 @@ Adapt.@adapt_structure Face3D
 
 # 2D and 3D Mesh types
 
-struct Mesh2{VC, VI, VF<:AbstractArray{<:Face2D}, VB, VN, SV3, UR, I} <: AbstractMesh
+struct Mesh2{VC, VI, VF<:AbstractArray{<:Face2D}, VB, VN, SV3, UR} <: AbstractMesh
     cells::VC
     cell_nodes::VI
     cell_faces::VI
@@ -92,7 +92,7 @@ struct Mesh2{VC, VI, VF<:AbstractArray{<:Face2D}, VB, VN, SV3, UR, I} <: Abstrac
     node_cells::VI # can be empty for now
     get_float::SV3
     get_int::UR
-    nbfaces::I
+    boundary_cellsID::VI
 end
 Adapt.@adapt_structure Mesh2
 # function Adapt.adapt_structure(to, itp::Mesh2)

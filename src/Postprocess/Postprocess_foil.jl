@@ -11,7 +11,7 @@ foil_obj_func(patch::Symbol, p::ScalarField, U::VectorField, rho, ν, turb_model
     Ft = Fp + Fv
     aero_eff = Ft[2]/Ft[1]
     print("\nAerofoil L/D: ",round(aero_eff,sigdigits = 4))
-    return Fp
+    return aero_eff
 end
 
 paraview_vis(;paraview_path::String,vtk_path::String) = begin

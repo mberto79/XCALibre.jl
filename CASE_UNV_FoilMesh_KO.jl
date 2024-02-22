@@ -12,10 +12,10 @@ foil,ctrl_p = spline_foil(FoilDef(
 
 #%% REYNOLDS & Y+ CALCULATIONS
 velocity = [15, 0.0, 0.0]
-(nu,ρ) = (1.48e-5,1.225)
-y_plus = 1.0
+nu,ρ = 1.48e-5,1.225
+y_plus,BL_layers = 1.0,35
 laminar = false
-(BL_mesh,Re) = BL_calcs(velocity,nu,ρ,foil.chord,y_plus,laminar)
+BL_mesh = BL_calcs(velocity,nu,ρ,foil.chord,y_plus,BL_layers,laminar) #Returns (BL mesh thickness, BL mesh growth rate)
 
 #%% AEROFOIL MESHING
 lines = update_mesh(
@@ -23,9 +23,9 @@ lines = update_mesh(
     ctrl_p = ctrl_p, #Control point vector
     vol_size = (16,10), #Total fluid volume size (x,y) in chord multiples [aerofoil located in the vertical centre at the 1/3 position horizontally]
     thickness = 1, #Aerofoil thickness [%c]
-    BL_thick = 1, #Boundary layer mesh thickness [%c]
-    BL_layers = 35, #Boundary layer mesh layers [-]
-    BL_stretch = 1.2, #Boundary layer stretch factor (successive multiplication factor of cell thickness away from wall cell) [-]
+    BL_thick = BL_mesh[1], #Boundary layer mesh thickness [%c]
+    BL_layers = BL_layers, #Boundary layer mesh layers [-]
+    BL_stretch = BL_mesh[2], #Boundary layer stretch factor (successive multiplication factor of cell thickness away from wall cell) [-]
     py_lines = (13,44,51,59,36,68,247,284), #SALOME python script relevant lines (notebook path, 3 B-Spline lines,chord line, thickness line, BL line .unv path)
     py_path = "/home/tim/Documents/MEng Individual Project/Julia/AerofoilOptimisation/FoilMesh.py", #Path to SALOME python script
     salome_path = "/home/tim/Downloads/InstallationFiles/SALOME-9.11.0/mesa_salome", #Path to SALOME installation
@@ -42,7 +42,7 @@ mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
 # Turbulence Model
-νR = 2
+νR = 2.5
 Tu = 0.01
 k_inlet = 3/2*(Tu*velocity[1])^2
 ω_inlet = k_inlet/(νR*nu)

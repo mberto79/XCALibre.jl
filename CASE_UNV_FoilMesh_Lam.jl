@@ -5,16 +5,17 @@ foil,ctrl_p = spline_foil(FoilDef(
     chord   = 100, #[mm]
     LE_h    = 0, #[%c]
     TE_h    = 0, #[%c]
-    peak    = [25,7.5], #[%c]
-    trough  = [80,-2.5], #[%c]
+    peak    = [25,10], #[%c]
+    trough  = [75,-10], #[%c]
     xover = 50 #[%c]
 )) #Returns aerofoil MCL & control point vector (spline method)
 
 #%% REYNOLDS & Y+ CALCULATIONS
-velocity = [0.5, 0.0, 0.0]
-nu = 1.48e-5
-Re = (foil.chord*0.001*velocity[1])/nu
-#BL_mesh = BL_calcs(Re,foil.chord)
+velocity = [15, 0.0, 0.0]
+nu,ρ = 1.48e-5,1.225
+y_plus,BL_layers = 0.9,35
+laminar = false
+BL_mesh = BL_calcs(velocity,nu,ρ,foil.chord,y_plus,BL_layers,laminar) #Returns (BL mesh thickness, BL mesh growth rate)
 
 #%% AEROFOIL MESHING
 lines = update_mesh(
@@ -23,14 +24,14 @@ lines = update_mesh(
     vol_size = (16,10), #Total fluid volume size (x,y) in chord multiples [aerofoil located in the vertical centre at the 1/3 position horizontally]
     thickness = 1, #Aerofoil thickness [%c]
     BL_thick = BL_mesh[1], #Boundary layer mesh thickness [%c]
-    BL_layers = BL_mesh[2], #Boundary layer mesh layers [-]
-    BL_stretch = BL_mesh[3], #Boundary layer stretch factor (successive multiplication factor of cell thickness away from wall cell) [-]
+    BL_layers = BL_layers, #Boundary layer mesh layers [-]
+    BL_stretch = BL_mesh[2], #Boundary layer stretch factor (successive multiplication factor of cell thickness away from wall cell) [-]
     py_lines = (13,44,51,59,36,68,247,284), #SALOME python script relevant lines (notebook path, 3 B-Spline lines,chord line, thickness line, BL line .unv path)
     py_path = "/home/tim/Documents/MEng Individual Project/Julia/AerofoilOptimisation/FoilMesh.py", #Path to SALOME python script
     salome_path = "/home/tim/Downloads/InstallationFiles/SALOME-9.11.0/mesa_salome", #Path to SALOME installation
     unv_path = "/home/tim/Documents/MEng Individual Project/Julia/FVM_1D_TW/unv_sample_meshes/FoilMesh.unv", #Path to .unv destination
     note_path = "/home/tim/Documents/MEng Individual Project/SALOME", #Path to SALOME notebook (.hdf) destination
-    GUI = true #SALOME GUI selector
+    GUI = false #SALOME GUI selector
 ) #Updates SALOME geometry and mesh to new aerofoil MCL definition
 
 
@@ -98,7 +99,7 @@ initialise!(model.p, 0.0)
 Rx, Ry, Rp = simple!(model, config) #, pref=0.0)
 
 #%% POST-PROCESSING
-aero_eff = foil_obj_func(:foil, model.p, model.U, 1.25, nu, model.turbulence)
+aero_eff = foil_obj_func(:foil, model.p, model.U, ρ, nu, model.turbulence)
 let
     plot(; xlims=(0,runtime.iterations), ylims=(1e-10,0))
     plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

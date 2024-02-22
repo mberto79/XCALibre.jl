@@ -193,20 +193,9 @@ using KernelAbstractions
     pf = adapt(CuArray, pf)
 
     interpolate!(Uf, U)
-    @time begin correct_boundaries!(Uf, U, U.BCs)end
+    correct_boundaries!(Uf, U, U.BCs)
     flux!(mdotf, Uf)
     grad!(∇p, pf, p, p.BCs)
-
-
-    ∇p.result.x.values
-    ∇p.result.y.values
-    ∇p.result.z.values
-
-    @time begin green_gauss!(∇p.result.x, ∇p.result.y, ∇p.result.z, pf) end
-    
-    ∇p.result.x.values
-    ∇p.result.y.values
-    ∇p.result.z.values
 
     update_nueff!(nueff, nu, turbulence)
 

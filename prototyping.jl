@@ -8,7 +8,6 @@ mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
 # Inlet conditions
-
 velocity = [0.50, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
@@ -194,9 +193,9 @@ using KernelAbstractions
     pf = adapt(CuArray, pf)
 
     interpolate!(Uf, U)
-    correct_boundaries!(Uf, U, U.BCs)
+    @time begin correct_boundaries!(Uf, U, U.BCs)end
     flux!(mdotf, Uf)
-    # grad!(∇p, pf, p, p.BCs)
+    grad!(∇p, pf, p, p.BCs)
 
 
     ∇p.result.x.values

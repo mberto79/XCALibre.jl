@@ -2,6 +2,7 @@ module Postprocess
 
 using LinearAlgebra
 using StaticArrays
+using Statistics
 # using LoopVectorization
 # using SparseArrays
 

@@ -13,9 +13,9 @@ foil,ctrl_p = spline_foil(FoilDef(
 #%% REYNOLDS & Y+ CALCULATIONS
 velocity = [15, 0.0, 0.0]
 nu,ρ = 1.48e-5,1.225
-y_plus,BL_layers = 1.0,35
+yplus_init,BL_layers = 1.0,55
 laminar = false
-BL_mesh = BL_calcs(velocity,nu,ρ,foil.chord,y_plus,BL_layers,laminar) #Returns (BL mesh thickness, BL mesh growth rate)
+BL_mesh = BL_calcs(velocity,nu,ρ,foil.chord,yplus_init,BL_layers,laminar) #Returns (BL mesh thickness, BL mesh growth rate)
 
 #%% AEROFOIL MESHING
 lines = update_mesh(
@@ -23,7 +23,7 @@ lines = update_mesh(
     ctrl_p = ctrl_p, #Control point vector
     vol_size = (16,10), #Total fluid volume size (x,y) in chord multiples [aerofoil located in the vertical centre at the 1/3 position horizontally]
     thickness = 1, #Aerofoil thickness [%c]
-    BL_thick = BL_mesh[1], #Boundary layer mesh thickness [%c]
+    BL_thick = 1, #Boundary layer mesh thickness [mm]
     BL_layers = BL_layers, #Boundary layer mesh layers [-]
     BL_stretch = BL_mesh[2], #Boundary layer stretch factor (successive multiplication factor of cell thickness away from wall cell) [-]
     py_lines = (13,44,51,59,36,68,247,284), #SALOME python script relevant lines (notebook path, 3 B-Spline lines,chord line, thickness line, BL line .unv path)
@@ -131,7 +131,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=750, write_interval=250, time_step=1)
+    iterations=15, write_interval=15, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -148,6 +148,7 @@ Rx, Ry, Rp = simple!(model, config) #, pref=0.0)
 
 #%% POST-PROCESSING
 aero_eff = foil_obj_func(:foil, model.p, model.U, ρ, nu, model.turbulence)
+yplus,y = y_plus(:foil,ρ,model)
 let
     plot(; xlims=(0,runtime.iterations), ylims=(1e-10,0))
     plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

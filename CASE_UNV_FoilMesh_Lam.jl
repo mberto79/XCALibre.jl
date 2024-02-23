@@ -11,10 +11,10 @@ foil,ctrl_p = spline_foil(FoilDef(
 )) #Returns aerofoil MCL & control point vector (spline method)
 
 #%% REYNOLDS & Y+ CALCULATIONS
-velocity = [15, 0.0, 0.0]
+velocity = [0.5, 0.0, 0.0]
 nu,ρ = 1.48e-5,1.225
 y_plus,BL_layers = 0.9,35
-laminar = false
+laminar = true
 BL_mesh = BL_calcs(velocity,nu,ρ,foil.chord,y_plus,BL_layers,laminar) #Returns (BL mesh thickness, BL mesh growth rate)
 
 #%% AEROFOIL MESHING

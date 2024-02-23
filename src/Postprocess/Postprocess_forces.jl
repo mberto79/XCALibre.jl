@@ -1,11 +1,37 @@
 export pressure_force, viscous_force
 export stress_tensor, wall_shear_stress
+export y_plus
 
+y_plus(patch::Symbol, ρ::Float64, model::RANS{M,F1,F2,V,T,E,D}) where {M,F1,F2,V,T,E,D} = begin
+    M == Laminar ? nut = ConstantScalar(0.0) : nut = model.turbulence.nut
+    tau, face_centres = wall_shear_stress(patch, model)
+    (; mesh, nu) = model
+    (; boundaries, cells,faces) = mesh
+    ID = boundary_index(boundaries, patch)
+    boundary = boundaries[ID]
+    (; cellsID) = boundary
+    @info "calculating y+ values on patch: $patch at index $ID"
+    sumX,sumY,sumZ = 0.0,0.0,0.0
+    for i ∈ eachindex(tau)
+            sumX += tau.x[i]
+            sumY += tau.y[i]
+            sumZ += tau.z[i]
+    end
+    yplus = Array{Float64,1}(undef,length(face_centres))
+    y = Array{Float64,1}(undef,length(face_centres))
+    for (i,face_centre) ∈ enumerate(face_centres)
+        ustar = √(norm([sumX,sumY,sumZ])/ρ)
+        y[i] = 2*norm(face_centre-cells[cellsID[i]].centre) #First cell height = 2*distance from boundary face to first cell centre
+        yplus[i] = (ustar*y[i])/(nu[cellsID[i]]+nut[cellsID[i]])
+    end
+    print("\nAverage y+ value on patch: ",round(mean(yplus),sigdigits = 4))
+    return yplus,y
+end
 
 pressure_force(patch::Symbol, p::ScalarField, rho) = begin
     mesh = p.mesh
     ID = boundary_index(mesh.boundaries, patch)
-    #@info "calculating pressure forces on patch: $patch at index $ID"
+    @info "calculating pressure forces on patch: $patch at index $ID"
     boundary = mesh.boundaries[ID]
     (; facesID, cellsID) = boundary
     x = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
@@ -31,7 +57,7 @@ viscous_force(patch::Symbol, U::VectorField, rho, ν, νt) = begin
     boundaries = mesh.boundaries
     nboundaries = length(U.BCs)
     ID = boundary_index(mesh.boundaries, patch)
-    #@info "calculating viscous forces on patch: $patch at index $ID"
+    @info "calculating viscous forces on patch: $patch at index $ID"
     boundary = mesh.boundaries[ID]
     (; facesID, cellsID) = boundary
     x = FaceScalarField(zeros(Float64, length(cellsID)), mesh)

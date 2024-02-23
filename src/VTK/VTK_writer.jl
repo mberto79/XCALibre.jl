@@ -1,11 +1,13 @@
-export write_vtk, model2vtk, backup_vtk
+export write_vtk, model2vtk, backup_results
 
-backup_vtk() = begin
+backup_results() = begin
+    @info "Overwriting vtk backup folder contents with the previous vtk results..."
     vtk_files = filter(x->endswith(x,".vtk"), readdir("vtk_results/"))
+    foreach(rm, filter(endswith(".vtk"), readdir("vtk_backup/",join=true)))
     for file ∈ vtk_files
         filepath = "vtk_results/"*file
         dest = "vtk_backup/"*file
-        mv(filepath, dest, force=true)
+        mv(filepath, dest)
     end
 end
 

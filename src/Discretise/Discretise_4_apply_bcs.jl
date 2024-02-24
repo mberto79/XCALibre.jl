@@ -5,7 +5,7 @@ apply_boundary_conditions!(eqn, BCs) = begin
 end
 
 @generated function _apply_boundary_conditions!(
-    model::Model{T,S,TN,SN}, BCs::B, eqn) where {T,S,TN,SN,B}
+    model::Model{TN,SN,T,S}, BCs::B, eqn) where {T,S,TN,SN,B}
 
     # Unpack terms that make up the model (not sources)
     # nTerms = model.parameters[3]
@@ -22,10 +22,10 @@ end
             push!(func_calls, call)
         end
         assignment_loop = quote
-            (; facesID, cellsID) = boundaries[BCs[$bci].ID]
-            @inbounds for i ∈ eachindex(cellsID)
-                faceID = facesID[i]
-                cellID = cellsID[i]
+            (; IDs_range) = boundaries[BCs[$bci].ID]
+            @inbounds for i ∈ IDs_range
+                faceID = IDs_range[i]
+                cellID = boundary_cellsID[i]
                 face = faces[faceID]
                 cell = cells[cellID]
                 $(func_calls...)
@@ -37,7 +37,7 @@ end
     quote
     (; A, b) = eqn.equation
     mesh = model.terms[1].phi.mesh
-    (; boundaries, faces, cells) = mesh
+    (; boundaries, faces, cells, boundary_cellsID) = mesh
     $(assignment_loops...)
     nothing
     end

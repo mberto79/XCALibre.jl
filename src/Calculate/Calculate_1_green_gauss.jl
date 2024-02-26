@@ -27,7 +27,7 @@ export green_gauss!
 #         dz[ci] = res[3]
 #     end
 #     # Add boundary faces contribution
-#     nbfaces = total_boundary_faces(mesh)
+#     nbfaces = length(mesh.boundary_cellsID)
 #     for i ∈ 1:nbfaces
 #         face = faces[i]
 #         (; ownerCells, area, normal) = face

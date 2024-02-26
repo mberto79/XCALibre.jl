@@ -60,7 +60,7 @@ function simple!(model, config; resume=true, pref=nothing)
         turbulence = nothing
     end
 
-    CUDA.allowscalar(false)
+    # CUDA.allowscalar(false)
 
     # model = adapt(CuArray, model)
     # ∇p = adapt(CuArray, ∇p)
@@ -137,8 +137,8 @@ function SIMPLE_loop(
     @time for iteration ∈ 1:iterations
 
         @. prev = U.x.values
-        type = typeof(ux_eqn)
-        println("$type")
+        # type = typeof(ux_eqn)
+        # println("$type")
         discretise!(ux_eqn, prev, runtime)
         apply_boundary_conditions!(ux_eqn, U.x.BCs)
         # ux_eqn.b .-= divUTx

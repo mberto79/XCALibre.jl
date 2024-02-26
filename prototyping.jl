@@ -204,6 +204,266 @@ using KernelAbstractions
     prev = adapt(CuArray, prev)
 
     @. prev = U.x.values
-    type = typeof(ux_eqn)
-    println("$type")
-    discretise!(ux_eqn, prev, runtime)
+    # type = typeof(ux_eqn)
+    # println("$type")
+
+    # CUDA.allowscalar(true)
+    ux_eqn.equation.b
+    ux_eqn.equation.A.nzval
+    # _discretise!(ux_eqn.model, ux_eqn, prev, runtime)
+
+    ux_eqn.equation.b
+    ux_eqn.equation.A.nzval
+
+    using SparseArrays
+    using CUDA
+    using KernelAbstractions
+
+    # @generated function _discretise!(
+    #     model::Model{TN,SN,T,S}, eqn, prev, runtime
+    #     ) where {TN,SN,T,S}
+    
+        # assignment_block_1 = Expr[] # Ap
+        # assignment_block_2 = Expr[] # An or b
+        # assignment_block_3 = Expr[] # b (sources)
+    
+        # # Loop for operators
+        # for t ∈ 1:nTerms
+        #     function_call = quote
+        #         scheme!(
+        #             model.terms[$t], nzval, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
+        #             )
+        #     end
+        #     push!(assignment_block_1, function_call)
+        #     # _convert_array(assignment_block_1, backend)
+        #     # type = typeof(assignment_block_1)
+        #     # println("$type")
+    
+        #     assign_source = quote
+        #         scheme_source!(model.terms[$t], b, nzval, cell, cID, cIndex, prev, runtime)
+        #     end
+        #     push!(assignment_block_2, assign_source)
+        #     # backend = _get_backend(mesh)
+        #     # _convert_array(assignment_block_2, backend)
+        # end
+    
+        # # Loop for sources
+        # for s ∈ 1:nSources
+        #     add_source = quote
+        #         (; field, sign) = model.sources[$s]
+        #         b[cID] += sign*field[cID]*volume
+        #     end
+        #     push!(assignment_block_3, add_source)
+        #     # backend = _get_backend(mesh)
+        #     # _convert_array(assignment_block_3, backend)
+        # end
+    
+        # quote
+            nTerms = 3
+            nSources = 1
+
+            model = ux_eqn.model
+            eqn = ux_eqn
+
+            (; A, b) = eqn.equation
+            (; terms, sources) = model
+            mesh = model.terms[1].phi.mesh
+            integer = _get_int(mesh)
+            float = _get_float(mesh)
+            backend = _get_backend(mesh)
+            # (; faces, cells, ) = mesh
+            (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
+            # (; rowval, colptr, nzval) = A
+            rowval, colptr, nzval = sparse_array_deconstructor(A)
+            fzero = zero(float) # replace with func to return mesh type (Mesh module)
+            ione = one(integer)
+            # @inbounds for i ∈ eachindex(nzval)
+            #     nzval[i] = fzero
+            # end
+
+            kernel! = set_nzval(backend)
+            kernel!(nzval, fzero, ndrange = length(nzval))
+
+            # CUDA.allowscalar(true)
+            # start = colptr[1]
+            # offset = findfirst(isequal(1),@view rowval[start:end]) - ione
+            # typeof(offset)
+
+            cIndex = zero(integer) # replace with func to return mesh type (Mesh module)
+            nIndex = zero(integer) # replace with func to return mesh type (Mesh module)
+            offset = zero(integer)
+
+            CUDA.allowscalar(false)
+
+            sources_field = Array{typeof(sources[1].field)}(undef, length(sources))
+            sources_sign = Array{typeof(sources[1].sign)}(undef, length(sources))
+
+            for i in eachindex(sources)
+                sources_field[i] = sources[i].field
+                sources_sign[i] = sources[i].sign
+            end
+
+            sources_field = _convert_array(sources_field, backend)
+            sources_sign = _convert_array(sources_sign, backend)
+
+            kernel! = schemes_and_sources!(backend)
+            kernel!(nTerms, nSources, offset, fzero, ione, terms, sources_field,
+                    sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
+                    cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
+                    backend, ndrange = length(cells))
+
+
+
+    @kernel function schemes_and_sources!(nTerms, nSources, offset, fzero, ione, terms, sources_field, sources_sign, rowval, colptr, nzval, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend)
+        i = @index(Global)
+        # (; terms) = model
+
+        @inbounds begin
+            cell = cells[i]
+            (; faces_range, volume) = cell
+
+            for fi in faces_range
+                fID = cell_faces[fi]
+                ns = cell_nsign[fi] # normal sign
+                face = faces[fID]
+                nID = cell_neighbours[fi]
+                cellN = cells[nID]
+
+                start = colptr[i]
+                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
+                for j in start:length(rowval)
+                    val = rowval[start + j - ione]
+                    if val == i
+                        offset = j - ione
+                        break
+                    end
+                end
+                cIndex = start + offset
+
+                start = colptr[nID]
+                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
+                for j in start:length(rowval)
+                    val = rowval[start + j - 1]
+                    if val == i
+                        offset = j - ione
+                        break
+                    end
+                end
+                nIndex = start + offset
+
+                for t ∈ 1:nTerms
+                    # @cushow(t)
+                    scheme!(terms[t], nzval, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime)
+                end
+
+            end
+
+        
+        # b[i] = fzero
+
+        # for t ∈ 1:nTerms
+        #     scheme_source!(terms[t], b, nzval, cell, cID, cIndex, prev, runtime)
+        # end
+
+        # for s ∈ 1:nSources
+        #     (; field, sign) = sources[s]
+        #     b[i] += sign*field[i]*volume
+        # end
+
+        end
+    end
+
+
+    # Loop for terms
+    for t ∈ 1:nTerms
+        scheme!(model.terms[t], nzval, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime)
+        scheme_source!(model.terms[t], b, nzval, cell, cID, cIndex, prev, runtime)
+    end
+
+    # Loop for sources
+    for s ∈ 1:nSources
+        (; field, sign) = model.sources[s]
+        b[cID] += sign*field[cID]*volume
+    end
+    
+    
+    function sparse_array_deconstructor(arr::SparseArrays.SparseMatrixCSC)
+        (; rowval, colptr, nzval) = arr
+        return rowval, colptr, nzval
+    end
+    
+    function sparse_array_deconstructor(arr::CUDA.CUSPARSE.CuSparseMatrixCSC)
+        (; rowVal, colPtr, nzVal) = arr
+        return rowVal, colPtr, nzVal
+    end
+
+    @kernel function set_nzval(nzval, fzero)
+        i = @index(Global)
+    
+        @inbounds begin
+            nzval[i] = fzero
+        end
+    end
+
+
+
+    a = [1 2 3 4]
+    res = add(a...)
+
+    function add(a,b,c,d)
+        return a + b + c +d
+    end
+
+
+    @kernel function test10(tuple, res)
+        i = @index(Global)
+
+        start_index = 2
+
+        # @inbounds begin
+            for j in start_index:length(tuple) # Use enumerate with the sliced tuple
+                val = tuple[start_index + j - 1]
+                if val == 4
+                    res[1] = j - 1  # Adjust the index to account for the starting index
+                    # break    # Break out of the loop since we found the first occurrence
+                end
+            end
+        # end
+    end
+
+    arr = [0 2 4 5 6 7 8 9]
+    start = 4
+    for i in eachindex(arr[start:end])
+        val = arr[i+start-1]
+        println("$val")
+    end
+    isequal(10)(10)
+
+    tuple = cu([0,1,2,3,4,10,6])
+    res = CUDA.zeros(Int64, 1)
+    kernel = test10(backend)
+    @device_code_warntype kernel(tuple, res, ndrange = 1)
+    res
+
+
+
+    tuple = [0,1,2,3,4,10,6]
+
+    start = 2
+
+    findfirst(isequal(4),@view tuple[start:end]) - ione
+
+    tuple = [0,1,2,3,4,10,6]
+    res = nothing  # Initialize res outside the loop
+    
+    start_index = 2  # Define the starting index
+    
+    for (j, val) in enumerate(tuple[start_index:end])  # Use enumerate with the sliced tuple
+        if val == 4
+            res = j - ione  # Adjust the index to account for the starting index
+            break    # Break out of the loop since we found the first occurrence
+        end
+    end
+    
+    println(res)
+

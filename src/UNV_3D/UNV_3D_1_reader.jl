@@ -9,6 +9,7 @@ function load_3D(unv_mesh)
     volumeindx=0
     boundaryindx=0
     faceindx=0
+    edgeindx=0
     
     #Defining Arrays with Structs
     points=UNV_3D.Point[]
@@ -80,10 +81,11 @@ function load_3D(unv_mesh)
         end
     
         #Elements
-        #Vertices
+        #Lines
         if length(sline)==6 && parse(Int64,sline[end])==2
             edgeCount=parse(Int,sline[end])
             edgeindex=parse(Int,sline[1])
+            edgeindx=indx
             continue
         end
     
@@ -99,10 +101,11 @@ function load_3D(unv_mesh)
         if length(sline)==6 && parse(Int64,sline[2])==41 && parse(Int64,sline[end])==3
             faceCount=parse(Int,sline[end])
             faceindex=parse(Int,sline[1])
+            faceindx=indx
             continue
         end
     
-        if length(sline)==3 && indx>elementindx && parse(Int,sline[end]) ≠ 1
+        if length(sline)==3 && indx>elementindx && indx==faceindx+1 #&& parse(Int,sline[end]) ≠ 1
             face=[parse(Int,sline[i]) for i=1:length(sline)]
             push!(faces,Face(faceindex-edgeindex,faceCount,face))
             push!(elements,Element(faceindex,faceCount,face))
@@ -123,6 +126,8 @@ function load_3D(unv_mesh)
             push!(elements,Element(faceindex,faceCount,face))
             continue
         end
+
+
     
         #Volumes
         #Tetrahedral
@@ -154,6 +159,21 @@ function load_3D(unv_mesh)
             push!(elements,Element(volumeindex,volumeCount,volume))
             continue
         end
+
+        #Wedge
+        if length(sline)==6 && parse(Int,sline[2])==112
+            volumeCount=parse(Int,sline[end])
+            volumeindex=parse(Int,sline[1])
+            volumeindx=indx
+            continue
+        end
+
+        if length(sline)==6 && indx<boundaryindx
+            volume=[parse(Int,sline[i]) for i=1:length(sline)]
+            push!(volumes,Volume(volumeindex-faceindex,volumeCount,volume))
+            push!(elements,Element(volumeindex,volumeCount,volume))
+            continue
+        end
     
         #Boundary
         if length(sline)==1 && indx>boundaryindx && typeof(tryparse(Int64,sline[1]))==Nothing
@@ -170,8 +190,10 @@ function load_3D(unv_mesh)
         if length(sline)==8 && indx>boundaryindx && parse(Int64,sline[2])!=0
             boundary=[parse(Int,sline[i]) for i=1:length(sline)]
             push!(boundarys,(boundaryindex,boundary))
-            push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[2]))
-            push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[6]))
+            push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[2])-edgeindex)
+            if parse(Int64,sline[6]) ≠ 0
+              push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[6])-edgeindex)
+            end
             continue
         end
     

@@ -132,5 +132,6 @@ struct Mesh3{VC, VI, VF<:AbstractArray{<:Face3D}, VB, VN, SV3, UR} <: AbstractMe
     node_cells::VI # can be empty for now
     get_float::SV3
     get_int::UR
+    boundary_cellsID::VI
 end
 Adapt.@adapt_structure Mesh3

@@ -42,15 +42,18 @@ discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
         mesh = model.terms[1].phi.mesh
         integer = _get_int(mesh)
         float = _get_float(mesh)
+        backend = _get_backend(mesh)
         # (; faces, cells, ) = mesh
         (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
         # (; rowval, colptr, nzval) = A
         rowval, colptr, nzval = sparse_array_deconstructor(A)
         fzero = zero(float) # replace with func to return mesh type (Mesh module)
         ione = one(integer)
-        @inbounds for i ∈ eachindex(nzval)
-            nzval[i] = fzero
-        end
+        # @inbounds for i ∈ eachindex(nzval)
+        #     nzval[i] = fzero
+        # end
+        kernel! = set_nzval(backend)
+        kernel!(nzval, fzero, ndrange = length(nzval))
         cIndex = zero(integer) # replace with func to return mesh type (Mesh module)
         nIndex = zero(integer) # replace with func to return mesh type (Mesh module)
         @inbounds for cID ∈ eachindex(cells)
@@ -91,4 +94,13 @@ end
 function sparse_array_deconstructor(arr::CUDA.CUSPARSE.CuSparseMatrixCSC)
     (; rowVal, colPtr, nzVal) = arr
     return rowVal, colPtr, nzVal
+end
+
+
+@kernel function set_nzval(nzval, fzero)
+    i = @index(Global)
+
+    @inbounds begin
+        nzval[i] = fzero
+    end
 end

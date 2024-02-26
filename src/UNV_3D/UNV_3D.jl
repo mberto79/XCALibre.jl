@@ -6,6 +6,7 @@ using Setfield
 using Adapt
 using Printf
 using FVM_1D.Mesh
+using Statistics
 
 include("UNV_3D_0_types.jl")
 include("UNV_3D_1_reader.jl")

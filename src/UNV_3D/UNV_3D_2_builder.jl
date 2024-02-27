@@ -41,7 +41,11 @@ function build_mesh3D(unv_mesh)
     
     cell_nsign=calculate_cell_nsign(cells,faces1,cell_faces)
 
-    mesh=Mesh3(cells,cell_nodes,cell_faces,cell_neighbours,cell_nsign,faces1,face_nodes,boundaries,nodes,node_cells,boundary_cells)
+
+    get_float=SVector(0,0,0)
+    get_int=UnitRange(0,0)
+
+    mesh=Mesh3(cells,cell_nodes,cell_faces,cell_neighbours,cell_nsign,faces1,face_nodes,boundaries,nodes,node_cells,get_float,get_int,boundary_cells)
 
     end
     println("Done! Execution time: ", @sprintf "%.6f" stats.time)

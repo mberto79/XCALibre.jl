@@ -108,7 +108,7 @@ struct Equation{SMCSC,VTf}
     # mesh::Mesh2{Ti,Tf}
 end
 Adapt.@adapt_structure Equation
-Equation(mesh::Mesh2) = begin
+Equation(mesh::AbstractMesh) = begin
     nCells = length(mesh.cells)
     Tf = _get_float(mesh)
     i, j, v = sparse_matrix_connectivity(mesh)
@@ -125,7 +125,7 @@ Equation(mesh::Mesh2) = begin
         )
 end
 
-function sparse_matrix_connectivity(mesh::Mesh2)
+function sparse_matrix_connectivity(mesh::AbstractMesh)
     (; cells, cell_neighbours) = mesh
     nCells = length(cells)
     TI = _get_int(mesh) # would this result in regression (type identified inside func?)
@@ -137,7 +137,7 @@ function sparse_matrix_connectivity(mesh::Mesh2)
         push!(i, cID) # diagonal row index
         push!(j, cID) # diagonal column index
         # for fi ∈ eachindex(cell.facesID)
-        for fi ∈ cell.faces_range
+        for fi ∈ cell.neighbours_range
             # neighbour = cell.neighbours[fi]
             neighbour = cell_neighbours[fi]
             push!(i, cID) # cell index (row)

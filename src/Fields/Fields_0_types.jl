@@ -36,24 +36,24 @@ Base.getindex(v::ConstantVector, i::Integer) = SVector{3, eltype(v.x)}(v.x[i], v
 
 # FIELDS 
 
-struct ScalarField{VF,M<:Mesh2,BC} <: AbstractScalarField
+struct ScalarField{VF,M<:AbstractMesh,BC} <: AbstractScalarField
     values::VF#Vector{F}
     mesh::M
     BCs::BC
 end
 Adapt.@adapt_structure ScalarField
-ScalarField(mesh::Mesh2) =begin
+ScalarField(mesh::AbstractMesh) =begin
     ncells  = length(mesh.cells)
     F = _get_float(mesh)
     ScalarField(zeros(F,ncells), mesh, ())
 end
 
-struct FaceScalarField{VF,M<:Mesh2} <: AbstractScalarField
+struct FaceScalarField{VF,M<:AbstractMesh} <: AbstractScalarField
     values::VF#Vector{F}
     mesh::M
 end
 Adapt.@adapt_structure FaceScalarField
-FaceScalarField(mesh::Mesh2) = begin
+FaceScalarField(mesh::AbstractMesh) = begin
     nfaces  = length(mesh.faces)
     F = _get_float(mesh)
     FaceScalarField(zeros(F,nfaces), mesh)
@@ -71,7 +71,7 @@ Base.eachindex(s::AbstractScalarField) = eachindex(s.values)
 
 # VECTOR FIELD IMPLEMENTATION
 
-struct VectorField{S1<:ScalarField,S2,S3,M<:Mesh2,BC} <: AbstractVectorField
+struct VectorField{S1<:ScalarField,S2,S3,M<:AbstractMesh,BC} <: AbstractVectorField
     x::S1
     y::S2
     z::S3
@@ -79,7 +79,7 @@ struct VectorField{S1<:ScalarField,S2,S3,M<:Mesh2,BC} <: AbstractVectorField
     BCs::BC
 end
 Adapt.@adapt_structure VectorField
-VectorField(mesh::Mesh2) = begin
+VectorField(mesh::AbstractMesh) = begin
     ncells = length(mesh.cells)
     F = _get_float(mesh) #eltype(mesh.nodes[1].coords) #TEMPORARY SOLUTION, RUN BY HUMBERTO
     VectorField(
@@ -98,7 +98,7 @@ struct FaceVectorField{S1<:FaceScalarField,S2,S3,M} <: AbstractVectorField
     mesh::M
 end
 Adapt.@adapt_structure FaceVectorField
-FaceVectorField(mesh::Mesh2) = begin
+FaceVectorField(mesh::AbstractMesh) = begin
     nfaces = length(mesh.faces)
     F = _get_float(mesh)
     FaceVectorField(
@@ -133,7 +133,7 @@ struct TensorField{S1,S2,S3,S4,S5,S6,S7,S8,S9,M} <: AbstractTensorField
     mesh::M
 end
 Adapt.@adapt_structure TensorField
-TensorField(mesh::Mesh2) = begin
+TensorField(mesh::AbstractMesh) = begin
     TensorField(
         ScalarField(mesh),
         ScalarField(mesh),

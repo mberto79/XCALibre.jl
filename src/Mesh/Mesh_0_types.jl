@@ -36,6 +36,7 @@ struct Cell{F<:AbstractFloat, SV3<:SVector{3,F},UR<:UnitRange{<:Integer}}
     volume::F
     nodes_range::UR
     faces_range::UR
+    neighbours_range::UR
 end
 Adapt.@adapt_structure Cell
 

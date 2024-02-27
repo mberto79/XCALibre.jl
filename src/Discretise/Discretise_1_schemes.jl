@@ -119,7 +119,7 @@ cIndex - Index of the cell based on sparse matrix. Use to index "nzval"
     nTerms, nSources, offset, fzero, ione, terms, sources_field,
     sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
     cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-    backend, runtime)  where {F,P,I}
+    backend, runtime, prev)  where {F,P,I}
     nothing
 end
 
@@ -128,17 +128,17 @@ end
     nTerms, nSources, offset, fzero, ione, terms, sources_field,
     sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
     cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-    backend, runtime)  where {F,P,I}
+    backend, runtime, prev)  where {F,P,I}
 
     kernel! = schemes_time_euler!(backend)
     kernel!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field,
             sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
             cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-            backend, runtime, ndrange = length(cells))
+            backend, runtime, prev, ndrange = length(cells))
 
 end
 
-@kernel function schemes_time_euler!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field, sources_sign, rowval, colptr, nzval, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime)
+@kernel function schemes_time_euler!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field, sources_sign, rowval, colptr, nzval, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime, prev)
     i = @index(Global)
     # (; terms) = model
 
@@ -183,7 +183,7 @@ end
     volume = cell.volume
     rdt = 1/runtime.dt
     nzval[cIndex] += volume*rdt
-    b[cID] += prev[cID]*volume*rdt
+    b[i] += prev[i]*volume*rdt
 
     end
 end
@@ -193,16 +193,16 @@ end
     nTerms, nSources, offset, fzero, ione, terms, sources_field,
     sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
     cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-    backend, runtime)  where {F,P,I}
+    backend, runtime, prev)  where {F,P,I}
 
     kernel! = schemes_laplacian_linear!(backend)
     kernel!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field,
             sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
             cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-            backend, runtime, ndrange = length(cells))
+            backend, runtime, prev, ndrange = length(cells))
 end
 
-@kernel function schemes_laplacian_linear!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field, sources_sign, rowval, colptr, nzval, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime)
+@kernel function schemes_laplacian_linear!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field, sources_sign, rowval, colptr, nzval, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime, prev)
     i = @index(Global)
     # (; terms) = model
 
@@ -257,16 +257,16 @@ end
     nTerms, nSources, offset, fzero, ione, terms, sources_field,
     sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
     cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-    backend, runtime)  where {F,P,I}
+    backend, runtime, prev)  where {F,P,I}
 
     kernel! = schemes_divergence_linear!(backend)
     kernel!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field,
             sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
             cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-            backend, runtime, ndrange = length(cells))
+            backend, runtime, prev, ndrange = length(cells))
 end
 
-@kernel function schemes_divergence_linear!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field, sources_sign, rowval, colptr, nzval, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime)
+@kernel function schemes_divergence_linear!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field, sources_sign, rowval, colptr, nzval, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime, prev)
     i = @index(Global)
     # (; terms) = model
 
@@ -326,16 +326,16 @@ end
     nTerms, nSources, offset, fzero, ione, terms, sources_field,
     sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
     cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-    backend, runtime)  where {F,P,I}
+    backend, runtime, prev)  where {F,P,I}
 
     kernel! = schemes_divergence_upwind!(backend)
     kernel!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field,
             sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
             cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-            backend, runtime, ndrange = length(cells))
+            backend, runtime, prev, ndrange = length(cells))
 end
 
-@kernel function schemes_divergence_upwind!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field, sources_sign, rowval, colptr, nzval, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime)
+@kernel function schemes_divergence_upwind!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field, sources_sign, rowval, colptr, nzval, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime, prev)
     i = @index(Global)
     # (; terms) = model
 
@@ -390,16 +390,16 @@ end
     nTerms, nSources, offset, fzero, ione, terms, sources_field,
     sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
     cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-    backend, runtime)  where {F,P,I}
+    backend, runtime, prev)  where {F,P,I}
 
     kernel! = schemes_si!(backend)
     kernel!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field,
             sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
             cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-            backend, runtime, ndrange = length(cells))
+            backend, runtime, prev, ndrange = length(cells))
 end
 
-@kernel function schemes_si!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field, sources_sign, rowval, colptr, nzval, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime)
+@kernel function schemes_si!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field, sources_sign, rowval, colptr, nzval, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime, prev)
     i = @index(Global)
     # (; terms) = model
 
@@ -440,7 +440,7 @@ end
             phi = term.phi
             # ap = max(flux, 0.0)
             # ab = min(flux, 0.0)*phi[cID]
-            flux = term.sign*term.flux[cID]*cell.volume # indexed with cID
+            flux = term.sign*term.flux[i]*cell.volume # indexed with cID
             nzval[cIndex] += flux # indexed with cIndex
             # flux = term.sign*term.flux[cID]*cell.volume*phi[cID]
             # b[cID] -= flux

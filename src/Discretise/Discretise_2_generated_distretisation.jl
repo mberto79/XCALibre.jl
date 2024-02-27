@@ -134,7 +134,7 @@ discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
             nTerms, nSources, offset, fzero, ione, terms, sources_field,
             sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
             cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-            backend, runtime)
+            backend, runtime, prev)
         end
 
         kernel! = sources!(backend)

@@ -6,6 +6,7 @@ using SparseArrays
 using StaticArrays
 using Adapt
 using CUDA
+using KernelAbstractions
 
 using FVM_1D.Mesh
 using FVM_1D.Fields

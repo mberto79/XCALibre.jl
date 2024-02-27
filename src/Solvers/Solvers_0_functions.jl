@@ -1,12 +1,44 @@
-update_nueff!(nueff, nu, turb_model) = begin
+export flux!, update_nueff!
+
+# update_nueff!(nueff, nu, turb_model) = begin
+#     if turb_model === nothing
+#         for i ∈ eachindex(nueff)
+#             nueff[i] = nu[i]
+#         end
+#     else
+#         for i ∈ eachindex(nueff)
+#             nueff[i] = nu[i] + turb_model.νtf[i]
+#         end
+#     end
+# end
+
+function update_nueff!(nueff, nu, turb_model)
+    (; mesh) = nueff
+    backend = _get_backend(mesh)
     if turb_model === nothing
-        for i ∈ eachindex(nueff)
-            nueff[i] = nu[i]
-        end
+        kernel! = update_nueff_laminar!(backend)
+        kernel!(nu, nueff, ndrange = length(nueff))
     else
-        for i ∈ eachindex(nueff)
-            nueff[i] = nu[i] + turb_model.νtf[i]
-        end
+        (; νtf) = turb_model
+        kernel! = update_nueff_turbulent!(backend)
+        kernel!(nu, νtf, nueff, ndrange = length(nueff))
+    end
+    
+end
+
+@kernel function update_nueff_laminar!(nu, nueff)
+    i = @index(Global)
+
+    @inbounds begin
+        nueff[i] = nu[i]
+    end
+end
+
+@kernel function update_nueff_turbulent!(nu, νtf, nueff)
+    i = @index(Global)
+    
+    @inbounds begin
+        nueff[i] = nu[i] + νtf[i]
     end
 end
 
@@ -72,6 +104,25 @@ function flux!(phif::FS, psif::FV) where {FS<:FaceScalarField,FV<:FaceVectorFiel
     end
 end
 
+# function flux!(phif::FS, psif::FV) where {FS<:FaceScalarField,FV<:FaceVectorField}
+#     (; mesh, values) = phif
+#     (; faces) = mesh
+
+#     backend = _get_backend(mesh)
+#     kernel! = flux_kernel!(backend)
+#     kernel!(faces, values, psif, ndrange = length(faces))
+# end
+
+# @kernel function flux_kernel!(faces, values, psif)
+#     i = @index(Global)
+
+#     @inbounds begin
+#         (; area, normal) = faces[i]
+#         Sf = area*normal
+#         values[i] = psif[i]⋅Sf
+#     end
+# end
+
 volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 
 function inverse_diagonal!(rD::S, eqn) where S<:ScalarField
@@ -86,8 +137,19 @@ function inverse_diagonal!(rD::S, eqn) where S<:ScalarField
     end
 end
 
+# function correct_velocity!(U, Hv, ∇p, rD)
+#     Ux = U.x; Uy = U.y; Hvx = Hv.x; Hvy = Hv.y
+#     dpdx = ∇p.result.x; dpdy = ∇p.result.y; rDvalues = rD.values
+#     @inbounds @simd for i ∈ eachindex(Ux)
+#         rDvalues_i = rDvalues[i]
+#         Ux[i] = Hvx[i] - dpdx[i]*rDvalues_i
+#         Uy[i] = Hvy[i] - dpdy[i]*rDvalues_i
+#         #Uz[i] = Hvz[i] - dpdz[i]*rDvalues_i
+#     end
+# end
+
 function correct_velocity!(U, Hv, ∇p, rD)
-    Ux = U.x; Uy = U.y; Uz = U.z; Hvx = Hv.x; Hvy = Hv.y; Hvz = Hv.z
+    Ux = U.x; Uy = U.y; Uz= U.z; Hvx = Hv.x; Hvy = Hv.y; Hvz = Hv.z
     dpdx = ∇p.result.x; dpdy = ∇p.result.y; dpdz = ∇p.result.z; rDvalues = rD.values
     @inbounds @simd for i ∈ eachindex(Ux)
         rDvalues_i = rDvalues[i]
@@ -96,6 +158,18 @@ function correct_velocity!(U, Hv, ∇p, rD)
         Uz[i] = Hvz[i] - dpdz[i]*rDvalues_i
     end
 end
+
+# remove_pressure_source!(ux_eqn::M1, uy_eqn::M2, ∇p) where {M1,M2} = begin # Extend to 3D
+#     cells = get_phi(ux_eqn).mesh.cells
+#     source_sign = get_source_sign(ux_eqn, 1)
+#     dpdx, dpdy = ∇p.result.x, ∇p.result.y
+#     bx, by= ux_eqn.equation.b, uy_eqn.equation.b
+#     @inbounds for i ∈ eachindex(bx)
+#         volume = cells[i].volume
+#         bx[i] -= source_sign*dpdx[i]*volume
+#         by[i] -= source_sign*dpdy[i]*volume
+#     end
+# end
 
 remove_pressure_source!(ux_eqn::M1, uy_eqn::M2, uz_eqn::M3, ∇p) where {M1,M2,M3} = begin # Extend to 3D
     cells = get_phi(ux_eqn).mesh.cells
@@ -109,6 +183,36 @@ remove_pressure_source!(ux_eqn::M1, uy_eqn::M2, uz_eqn::M3, ∇p) where {M1,M2,M
         bz[i] -= source_sign*dpdz[i]*volume
     end
 end
+
+# H!(Hv, v::VF, ux_eqn, uy_eqn) where VF<:VectorField = 
+# begin # Extend to 3D!
+#     (; x, y, z, mesh) = Hv 
+#     (; cells, faces) = mesh
+#     (; cells, cell_neighbours, faces) = mesh
+#     Ax = ux_eqn.equation.A; Ay = uy_eqn.equation.A
+#     bx = ux_eqn.equation.b; by = uy_eqn.equation.b
+#     vx, vy= v.x, v.y
+#     F = eltype(v.x.values)
+#     @inbounds for cID ∈ eachindex(cells)
+#         cell = cells[cID]
+#         # (; neighbours, volume) = cell
+#         (; volume) = cell
+#         sumx = zero(F)
+#         sumy = zero(F)
+#         # @inbounds for nID ∈ neighbours
+#         @inbounds for ni ∈ cell.faces_range 
+#             nID = cell_neighbours[ni]
+#             sumx += Ax[cID,nID]*vx[nID]
+#             sumy += Ay[cID,nID]*vy[nID]
+#         end
+
+#         D = view(Ax, cID, cID)[1] # add check to use max of Ax or Ay)
+#         rD = 1/D
+#         # rD = volume/D
+#         x[cID] = (bx[cID] - sumx)*rD
+#         y[cID] = (by[cID] - sumy)*rD
+#     end
+# end
 
 H!(Hv, v::VF, ux_eqn, uy_eqn, uz_eqn) where VF<:VectorField = 
 begin # Extend to 3D!

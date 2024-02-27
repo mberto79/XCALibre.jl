@@ -24,7 +24,7 @@ end
         assignment_loop = quote
             (; IDs_range) = boundaries[BCs[$bci].ID]
             @inbounds for i ∈ IDs_range
-                faceID = IDs_range[i]
+                faceID = i
                 cellID = boundary_cellsID[i]
                 face = faces[faceID]
                 cell = cells[cellID]

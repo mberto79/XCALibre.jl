@@ -23,5 +23,6 @@ mesh.cells[1].faces_range
 
 mesh.cells[5].neighbours_range
 mesh.cell_neighbours
+mesh.cells[1].neighbours_range
 
 SVector(0.0)

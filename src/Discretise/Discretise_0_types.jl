@@ -105,8 +105,8 @@ assign(vec::VectorField, model, args...) = begin
     @reset vec.BCs = ()
     for arg ∈ args
         # bc_type = Base.typename(typeof(arg)).wrapper #NOT NEEDED WITH MULTIPLE DISPATCH OF VIXED VALUE
-        a = typeof(arg)
-        println("$a")
+        # a = typeof(arg)
+        # println("$a")
         # idx = boundary_index(boundaries, arg.ID)
         # idx = @time begin get(model.boundary_info,arg.ID,nothing) end
         idx = boundary_index(model.boundary_info, arg.ID)

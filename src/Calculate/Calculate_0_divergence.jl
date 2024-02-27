@@ -76,7 +76,8 @@ function div!(phi::ScalarField, psif::FaceVectorField)
     mesh = phi.mesh
     # (; cells, faces) = mesh
     (; cells, cell_neighbours, cell_nsign, cell_faces, faces) = mesh
-    F = eltype(mesh.nodes[1].coords)
+    # F = eltype(mesh.nodes[1].coords)
+    F = _get_float(mesh)
 
     for ci ∈ eachindex(cells)
         # (; facesID, nsign, volume) = cells[ci]
@@ -95,7 +96,8 @@ function div!(phi::ScalarField, psif::FaceVectorField)
         end
     end
     # Add boundary faces contribution
-    nbfaces = total_boundary_faces(mesh)
+    # nbfaces = total_boundary_faces(mesh)
+    nbfaces = length(mesh.boundary_cellsID)
     for fID ∈ 1:nbfaces
         cID = faces[fID].ownerCells[1]
         volume = cells[cID].volume

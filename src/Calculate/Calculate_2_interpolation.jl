@@ -15,12 +15,9 @@ export interpolate!
 
             # boundary = boundaries[BC.ID]
             # adjust_boundary!(BC, phif, phi, boundary, faces)
-            # for i in eachindex(BCs)
-                # (; ID) = BCs[i]
-                # (; IDs_range) = boundaries[ID]
+
             #KERNEL LAUNCH
             adjust_boundary!(backend, BCs[$i], phif, phi, boundaries, boundary_cellsID)
-            # end
 
             # adjust_boundary!(BC, phif, phi, BC.ID, faces)
         end
@@ -39,20 +36,24 @@ export interpolate!
     end
 end
 
+## GPU SCALAR ADJUST BOUNDARY FUNCTIONS AND KERNELS
+
 # function adjust_boundary!(
 #     BC::Dirichlet, phif::FaceScalarField, phi, boundary, faces)
-#     (; facesID, cellsID) = boundary
-#     @inbounds for fID ∈ facesID
+#     (; IDs_range) = boundary
+#     @inbounds for fID ∈ IDs_range
 #         phif.values[fID] = BC.value 
 #     end
 # end
 
 # function adjust_boundary!(
 #     BC::Neumann, phif::FaceScalarField, phi, boundary, faces)
-#     (;facesID, cellsID) = boundary
-#     @inbounds for fi ∈ eachindex(facesID)
-#         fID = facesID[fi]
-#         cID = cellsID[fi]
+#     (; mesh) = phif
+#     (; boundary_cellsID) = mesh
+#     (;IDs_range) = boundary
+#     @inbounds for fi ∈ IDs_range
+#         fID = fi
+#         cID = boundary_cellsID[fi]
 #         # (; normal, e, delta) = faces[fID]
 #         phif.values[fID] = phi.values[cID] #+ BC.value*delta*(normal⋅e)
 #     end
@@ -78,6 +79,7 @@ end
 
 @kernel function adjust_boundary_dirichlet_scalar!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values)
     i = @index(Global)
+    i = BC.ID
 
     @inbounds begin
         (; IDs_range) = boundaries[i]
@@ -90,6 +92,7 @@ end
 
 @kernel function adjust_boundary_neumann_scalar!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values)
     i = @index(Global)
+    i = BC.ID
 
     @inbounds begin
         (; IDs_range) = boundaries[i]
@@ -100,6 +103,8 @@ end
         end
     end
 end
+
+## ORIGINAL PROGRAM SCALAR FUNCTIONS
 
 function adjust_boundary!(
     BC::KWallFunction, phif::FaceScalarField, phi, boundary, faces)
@@ -136,9 +141,9 @@ end
 #     )
 
 #     (; x, y, z) = psif
-#     (; facesID) = boundary
+#     (; IDs_range) = boundary
 
-#     @inbounds for fID ∈ facesID
+#     @inbounds for fID ∈ IDs_range
 #         x[fID] = BC.value[1]
 #         y[fID] = BC.value[2]
 #         z[fID] = BC.value[3]
@@ -149,12 +154,13 @@ end
 #     BC::Neumann, psif::FaceVectorField, psi::VectorField, boundary, faces
 #     ) 
 
-#     (; x, y, z) = psif
-#     (; facesID, cellsID) = boundary
+#     (; x, y, z, mesh) = psif
+#     (; boundary_cellsID) = mesh
+#     (; IDs_range) = boundary
 
-#     @inbounds for fi ∈ eachindex(facesID)
-#         fID = facesID[fi]
-#         cID = cellsID[fi]
+#     @inbounds for fi ∈ IDs_range
+#         fID = fi
+#         cID = boundary_cellsID[fi]
 #         psi_cell = psi[cID]
 #         # normal = faces[fID].normal
 #         # Line below needs sorting out for general user-defined gradients
@@ -182,6 +188,8 @@ end
 
 @kernel function adjust_boundary_dirichlet_vector!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z)
     i = @index(Global)
+    i = BC.ID
+
     @inbounds begin
         (; IDs_range) = boundaries[i]
         for fID in IDs_range
@@ -195,6 +203,8 @@ end
 
 @kernel function adjust_boundary_neumann_vector!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z)
     i = @index(Global)
+    i = BC.ID
+
     @inbounds begin
         (; IDs_range) = boundaries[i]
         for fID in IDs_range

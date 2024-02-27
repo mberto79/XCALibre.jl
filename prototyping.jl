@@ -209,15 +209,391 @@ using KernelAbstractions
 
     # CUDA.allowscalar(true)
     ux_eqn.equation.b
-    ux_eqn.equation.A.nzval
-    # _discretise!(ux_eqn.model, ux_eqn, prev, runtime)
+    ux_eqn.equation.A.nzVal
+    @time begin discretise!(ux_eqn, prev, runtime) end
 
     ux_eqn.equation.b
-    ux_eqn.equation.A.nzval
+    ux_eqn.equation.A.nzVal
 
     using SparseArrays
     using CUDA
     using KernelAbstractions
+
+    @inline function schemes_and_sources!(
+        term::Operator{F,P,I,Time{Steady}}, 
+        nTerms, nSources, offset, fzero, ione, terms, sources_field,
+        sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
+        cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
+        backend, runtime)  where {F,P,I}
+        nothing
+    end
+    
+    @inline function schemes_and_sources!(
+        term::Operator{F,P,I,Time{Euler}}, 
+        nTerms, nSources, offset, fzero, ione, terms, sources_field,
+        sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
+        cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
+        backend)  where {F,P,I}
+    
+        kernel! = schemes_time_euler!(backend)
+        kernel!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field,
+                sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
+                cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
+                backend, runtime, ndrange = length(cells))
+    
+    end
+    
+    @kernel function schemes_time_euler!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field, sources_sign, rowval, colptr, nzval, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime)
+        i = @index(Global)
+        # (; terms) = model
+    
+        @inbounds begin
+            cell = cells[i]
+            (; faces_range, volume) = cell
+    
+            for fi in faces_range
+                fID = cell_faces[fi]
+                ns = cell_nsign[fi] # normal sign
+                face = faces[fID]
+                nID = cell_neighbours[fi]
+                cellN = cells[nID]
+    
+                start = colptr[i]
+                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
+                offset = 0
+                for j in start:length(rowval)
+                    offset += 1
+                    if rowval[j] == i
+                        break
+                    end
+                end
+                cIndex = start + offset - ione
+    
+                start = colptr[nID]
+                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
+                offset = 0
+                for j in start:length(rowval)
+                    offset += 1
+                    if rowval[j] == i
+                        break
+                    end
+                end
+                nIndex = start + offset - ione
+    
+                # No scheme code for Euler time scheme
+    
+            end
+    
+        # scheme_scource loop
+        volume = cell.volume
+        rdt = 1/runtime.dt
+        nzval[cIndex] += volume*rdt
+        b[cID] += prev[cID]*volume*rdt
+    
+        end
+    end
+    
+    @inline function schemes_and_sources!(
+        term::Operator{F,P,I,Laplacian{Linear}}, 
+        nTerms, nSources, offset, fzero, ione, terms, sources_field,
+        sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
+        cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
+        backend, runtime)  where {F,P,I}
+    
+        kernel! = schemes_laplacian_linear!(backend)
+        kernel!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field,
+                sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
+                cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
+                backend, runtime, ndrange = length(cells))
+    end
+    
+    @kernel function schemes_laplacian_linear!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field, sources_sign, rowval, colptr, nzval, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime)
+        i = @index(Global)
+        # (; terms) = model
+    
+        @inbounds begin
+            cell = cells[i]
+            (; faces_range, volume) = cell
+    
+            for fi in faces_range
+                fID = cell_faces[fi]
+                ns = cell_nsign[fi] # normal sign
+                face = faces[fID]
+                nID = cell_neighbours[fi]
+                cellN = cells[nID]
+    
+                start = colptr[i]
+                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
+                offset = 0
+                for j in start:length(rowval)
+                    offset += 1
+                    if rowval[j] == i
+                        break
+                    end
+                end
+                cIndex = start + offset - ione
+    
+                start = colptr[nID]
+                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
+                offset = 0
+                for j in start:length(rowval)
+                    offset += 1
+                    if rowval[j] == i
+                        break
+                    end
+                end
+                nIndex = start + offset - ione
+    
+                # scheme code
+                ap = term.sign*(-term.flux[fID] * face.area)/face.delta
+                nzval[cIndex] += ap
+                nzval[nIndex] += -ap
+    
+            end
+    
+        # scheme_scource loop
+        # no scheme_source code for linear laplacian scheme
+    
+        end
+    end
+    
+    @inline function schemes_and_sources!(
+        term::Operator{F,P,I,Divergence{Linear}}, 
+        nTerms, nSources, offset, fzero, ione, terms, sources_field,
+        sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
+        cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
+        backend)  where {F,P,I}
+    
+        kernel! = schemes_divergence_linear!(backend)
+        kernel!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field,
+                sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
+                cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
+                backend, runtime, ndrange = length(cells))
+    end
+    
+    @kernel function schemes_divergence_linear!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field, sources_sign, rowval, colptr, nzval, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime)
+        i = @index(Global)
+        # (; terms) = model
+    
+        @inbounds begin
+            cell = cells[i]
+            (; faces_range, volume) = cell
+    
+            for fi in faces_range
+                fID = cell_faces[fi]
+                ns = cell_nsign[fi] # normal sign
+                face = faces[fID]
+                nID = cell_neighbours[fi]
+                cellN = cells[nID]
+    
+                start = colptr[i]
+                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
+                offset = 0
+                for j in start:length(rowval)
+                    offset += 1
+                    if rowval[j] == i
+                        break
+                    end
+                end
+                cIndex = start + offset - ione
+    
+                start = colptr[nID]
+                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
+                offset = 0
+                for j in start:length(rowval)
+                    offset += 1
+                    if rowval[j] == i
+                        break
+                    end
+                end
+                nIndex = start + offset - ione
+    
+                # scheme code
+                xf = face.centre
+                xC = cell.centre
+                xN = cellN.centre
+                weight = norm(xf - xC)/norm(xN - xC)
+                one_minus_weight = one(eltype(weight)) - weight
+                ap = term.sign*(term.flux[fID]*ns)
+                nzval[cIndex] += ap*one_minus_weight
+                nzval[nIndex] += ap*weight
+    
+            end
+    
+        # scheme_scource loop
+        # no scheme_source code for divergence linear scheme
+    
+        end
+    end
+    
+    @inline function schemes_and_sources!(
+        term::Operator{F,P,I,Divergence{Upwind}}, 
+        nTerms, nSources, offset, fzero, ione, terms, sources_field,
+        sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
+        cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
+        backend, runtime)  where {F,P,I}
+    
+        kernel! = schemes_divergence_upwind!(backend)
+        kernel!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field,
+                sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
+                cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
+                backend, runtime, ndrange = length(cells))
+    end
+    
+    @kernel function schemes_divergence_upwind!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field, sources_sign, rowval, colptr, nzval, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime)
+        i = @index(Global)
+        # (; terms) = model
+    
+        @inbounds begin
+            cell = cells[i]
+            (; faces_range, volume) = cell
+    
+            for fi in faces_range
+                fID = cell_faces[fi]
+                ns = cell_nsign[fi] # normal sign
+                face = faces[fID]
+                nID = cell_neighbours[fi]
+                cellN = cells[nID]
+    
+                start = colptr[i]
+                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
+                offset = 0
+                for j in start:length(rowval)
+                    offset += 1
+                    if rowval[j] == i
+                        break
+                    end
+                end
+                cIndex = start + offset - ione
+    
+                start = colptr[nID]
+                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
+                offset = 0
+                for j in start:length(rowval)
+                    offset += 1
+                    if rowval[j] == i
+                        break
+                    end
+                end
+                nIndex = start + offset - ione
+    
+                # scheme code
+                ap = term.sign*(term.flux[fID]*ns)
+                nzval[cIndex] += max(ap, 0.0)
+                nzval[nIndex] += -max(-ap, 0.0)
+    
+            end
+    
+        # scheme_scource loop
+        # no scheme_source code for divergence upwind scheme
+    
+        end
+    end
+    
+    @inline function schemes_and_sources!(
+        term::Operator{F,P,I,Si}, 
+        nTerms, nSources, offset, fzero, ione, terms, sources_field,
+        sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
+        cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
+        backend)  where {F,P,I}
+    
+        kernel! = schemes_si!(backend)
+        kernel!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field,
+                sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
+                cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
+                backend, runtime, ndrange = length(cells))
+    end
+    
+    @kernel function schemes_si!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field, sources_sign, rowval, colptr, nzval, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime)
+        i = @index(Global)
+        # (; terms) = model
+    
+        @inbounds begin
+            cell = cells[i]
+            (; faces_range, volume) = cell
+    
+            for fi in faces_range
+                fID = cell_faces[fi]
+                ns = cell_nsign[fi] # normal sign
+                face = faces[fID]
+                nID = cell_neighbours[fi]
+                cellN = cells[nID]
+    
+                start = colptr[i]
+                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
+                offset = 0
+                for j in start:length(rowval)
+                    offset += 1
+                    if rowval[j] == i
+                        break
+                    end
+                end
+                cIndex = start + offset - ione
+    
+                start = colptr[nID]
+                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
+                offset = 0
+                for j in start:length(rowval)
+                    offset += 1
+                    if rowval[j] == i
+                        break
+                    end
+                end
+                nIndex = start + offset - ione
+    
+                # scheme code
+                phi = term.phi
+                # ap = max(flux, 0.0)
+                # ab = min(flux, 0.0)*phi[cID]
+                flux = term.sign*term.flux[cID]*cell.volume # indexed with cID
+                nzval[cIndex] += flux # indexed with cIndex
+                # flux = term.sign*term.flux[cID]*cell.volume*phi[cID]
+                # b[cID] -= flux
+    
+            end
+    
+        # scheme_scource loop
+        # no scheme_source code for si scheme
+    
+        end
+    end
+    
+    @kernel function sources!(field, sign, cells, b)
+        i = @index(Global)
+    
+        @inbounds begin
+            cell = cells[i]
+            
+            volume = cell.volume
+            b[i] += sign*field[i]*volume
+        end
+    end
+    
+    @kernel function set_b!(fzero, b)
+        i = @index(Global)
+    
+        @inbounds begin
+            b[i] = fzero
+        end
+    end
+
+    function sparse_array_deconstructor(arr::SparseArrays.SparseMatrixCSC)
+        (; rowval, colptr, nzval) = arr
+        return rowval, colptr, nzval
+    end
+    
+    function sparse_array_deconstructor(arr::CUDA.CUSPARSE.CuSparseMatrixCSC)
+        (; rowVal, colPtr, nzVal) = arr
+        return rowVal, colPtr, nzVal
+    end
+
+    @kernel function set_nzval(nzval, fzero)
+        i = @index(Global)
+    
+        @inbounds begin
+            nzval[i] = fzero
+        end
+    end
 
     # @generated function _discretise!(
     #     model::Model{TN,SN,T,S}, eqn, prev, runtime
@@ -303,107 +679,43 @@ using KernelAbstractions
                 sources_sign[i] = sources[i].sign
             end
 
-            sources_field = _convert_array(sources_field, backend)
-            sources_sign = _convert_array(sources_sign, backend)
+            sources_field = _convert_array!(sources_field, backend)
+            sources_sign = _convert_array!(sources_sign, backend)
 
-            kernel! = schemes_and_sources!(backend)
-            kernel!(nTerms, nSources, offset, fzero, ione, terms, sources_field,
-                    sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
-                    cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-                    backend, ndrange = length(cells))
+            kernel! = set_b!(backend)
+            kernel!(fzero, b, ndrange = length(b))
 
-
-
-    @kernel function schemes_and_sources!(nTerms, nSources, offset, fzero, ione, terms, sources_field, sources_sign, rowval, colptr, nzval, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend)
-        i = @index(Global)
-        # (; terms) = model
-
-        @inbounds begin
-            cell = cells[i]
-            (; faces_range, volume) = cell
-
-            for fi in faces_range
-                fID = cell_faces[fi]
-                ns = cell_nsign[fi] # normal sign
-                face = faces[fID]
-                nID = cell_neighbours[fi]
-                cellN = cells[nID]
-
-                start = colptr[i]
-                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
-                for j in start:length(rowval)
-                    val = rowval[start + j - ione]
-                    if val == i
-                        offset = j - ione
-                        break
-                    end
-                end
-                cIndex = start + offset
-
-                start = colptr[nID]
-                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
-                for j in start:length(rowval)
-                    val = rowval[start + j - 1]
-                    if val == i
-                        offset = j - ione
-                        break
-                    end
-                end
-                nIndex = start + offset
-
-                for t ∈ 1:nTerms
-                    # @cushow(t)
-                    scheme!(terms[t], nzval, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime)
-                end
-
+            for i in eachindex(model.terms)
+                schemes_and_sources!(model.terms[i], 
+                nTerms, nSources, offset, fzero, ione, terms, sources_field,
+                sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
+                cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
+                backend, runtime)
             end
 
-        
-        # b[i] = fzero
-
-        # for t ∈ 1:nTerms
-        #     scheme_source!(terms[t], b, nzval, cell, cID, cIndex, prev, runtime)
+            kernel! = sources!(backend)
+            for i in nSources
+                (; field, sign) = sources[i]
+                kernel!(field, sign, cells, b, ndrange = length(cells))
+            end
         # end
-
-        # for s ∈ 1:nSources
-        #     (; field, sign) = sources[s]
-        #     b[i] += sign*field[i]*volume
-        # end
-
-        end
-    end
+    # end
 
 
-    # Loop for terms
-    for t ∈ 1:nTerms
-        scheme!(model.terms[t], nzval, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime)
-        scheme_source!(model.terms[t], b, nzval, cell, cID, cIndex, prev, runtime)
-    end
+    # # Loop for terms
+    # for t ∈ 1:nTerms
+    #     scheme!(model.terms[t], nzval, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime)
+    #     scheme_source!(model.terms[t], b, nzval, cell, cID, cIndex, prev, runtime)
+    # end
 
-    # Loop for sources
-    for s ∈ 1:nSources
-        (; field, sign) = model.sources[s]
-        b[cID] += sign*field[cID]*volume
-    end
+    # # Loop for sources
+    # for s ∈ 1:nSources
+    #     (; field, sign) = model.sources[s]
+    #     b[cID] += sign*field[cID]*volume
+    # end
     
     
-    function sparse_array_deconstructor(arr::SparseArrays.SparseMatrixCSC)
-        (; rowval, colptr, nzval) = arr
-        return rowval, colptr, nzval
-    end
-    
-    function sparse_array_deconstructor(arr::CUDA.CUSPARSE.CuSparseMatrixCSC)
-        (; rowVal, colPtr, nzVal) = arr
-        return rowVal, colPtr, nzVal
-    end
 
-    @kernel function set_nzval(nzval, fzero)
-        i = @index(Global)
-    
-        @inbounds begin
-            nzval[i] = fzero
-        end
-    end
 
 
 
@@ -430,19 +742,41 @@ using KernelAbstractions
             end
         # end
     end
+    
+    @kernel function test(arr, res)
+        i = @index(Global)
+
+        start = 2
+
+        res[1] = findfirst(isequal(4), arr[start:end])
+    end
 
     arr = [0 2 4 5 6 7 8 9]
-    start = 4
-    for i in eachindex(arr[start:end])
-        val = arr[i+start-1]
-        println("$val")
+    start = 3
+    val = 0
+    for i in start:length(arr)
+        val += 1
+        if arr[i] == 9
+            break
+        end
     end
+    val
+
+    findfirst(isequal(9),@view arr[start:end])
+
+
+
+
     isequal(10)(10)
 
     tuple = cu([0,1,2,3,4,10,6])
     res = CUDA.zeros(Int64, 1)
-    kernel = test10(backend)
-    @device_code_warntype kernel(tuple, res, ndrange = 1)
+    kernel = test(backend)
+
+
+    i
+
+    kernel(tuple, res, ndrange = 1)
     res
 
 

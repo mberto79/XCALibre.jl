@@ -19,3 +19,9 @@ boundaryElements
 
 mesh=build_mesh3D(unv_mesh)
 
+mesh.cells[1].faces_range
+
+mesh.cells[5].neighbours_range
+mesh.cell_neighbours
+
+SVector(0.0)

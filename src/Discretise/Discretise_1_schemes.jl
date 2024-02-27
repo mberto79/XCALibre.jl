@@ -128,7 +128,7 @@ end
     nTerms, nSources, offset, fzero, ione, terms, sources_field,
     sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
     cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-    backend)  where {F,P,I}
+    backend, runtime)  where {F,P,I}
 
     kernel! = schemes_time_euler!(backend)
     kernel!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field,
@@ -257,7 +257,7 @@ end
     nTerms, nSources, offset, fzero, ione, terms, sources_field,
     sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
     cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-    backend)  where {F,P,I}
+    backend, runtime)  where {F,P,I}
 
     kernel! = schemes_divergence_linear!(backend)
     kernel!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field,
@@ -390,7 +390,7 @@ end
     nTerms, nSources, offset, fzero, ione, terms, sources_field,
     sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
     cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-    backend)  where {F,P,I}
+    backend, runtime)  where {F,P,I}
 
     kernel! = schemes_si!(backend)
     kernel!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field,

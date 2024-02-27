@@ -6,7 +6,6 @@ using Statistics
 
 using LinearAlgebra
 
-#unv_mesh="src/UNV_3D/internalface_test.unv"
 unv_mesh="src/UNV_3D/5_cell_new_boundaries.unv"
 #unv_mesh="src/UNV_3D/700_cell_case.unv"
 

@@ -137,7 +137,7 @@ function sparse_matrix_connectivity(mesh::AbstractMesh)
         push!(i, cID) # diagonal row index
         push!(j, cID) # diagonal column index
         # for fi ∈ eachindex(cell.facesID)
-        for fi ∈ cell.neighbours_range
+        for fi ∈ cell.faces_range
             # neighbour = cell.neighbours[fi]
             neighbour = cell_neighbours[fi]
             push!(i, cID) # cell index (row)

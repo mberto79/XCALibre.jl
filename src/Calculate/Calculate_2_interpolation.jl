@@ -65,7 +65,7 @@ function adjust_boundary!(backend, BC::Dirichlet, phif::FaceScalarField, phi, bo
     (; values) = phi
     phi_values = values
     kernel! = adjust_boundary_dirichlet_scalar!(backend)
-    kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = length(boundaries))
+    kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = 1)
 end
 
 function adjust_boundary!(backend, BC::Neumann, phif::FaceScalarField, phi, boundaries, boundary_cellsID)
@@ -74,7 +74,7 @@ function adjust_boundary!(backend, BC::Neumann, phif::FaceScalarField, phi, boun
     (; values) = phi
     phi_values = values
     kernel! = adjust_boundary_neumann_scalar!(backend)
-    kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = length(boundaries))
+    kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = 1)
 end
 
 @kernel function adjust_boundary_dirichlet_scalar!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values)
@@ -177,13 +177,13 @@ end
 function adjust_boundary!(backend, BC::Dirichlet, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID)
     (; x, y, z) = psif
     kernel! = adjust_boundary_dirichlet_vector!(backend)
-    kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = length(boundaries))
+    kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = 1)
 end
 
 function adjust_boundary!(backend, BC::Neumann, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID)
     (; x, y, z) = psif
     kernel! = adjust_boundary_neumann_vector!(backend)
-    kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = length(boundaries))
+    kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = 1)
 end
 
 @kernel function adjust_boundary_dirichlet_vector!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z)

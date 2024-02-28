@@ -7,6 +7,11 @@ unv_mesh="src/UNV_3D/5_cell_new_boundaries.unv"
 
 mesh=build_mesh3D(unv_mesh)
 mesh.cell_neighbours
+mesh.boundary_cellsID
+mesh.boundaries
+mesh.get_float
+mesh.get_int
+eltype(mesh.get_int)
 
 velocity = [0.5,0.0,0.0]
 nu=1e-3

@@ -28,10 +28,12 @@ function build_mesh3D(unv_mesh)
     boundary_faces,boundary_face_range=generate_boundary_faces(boundaryElements)
     boundary_cells=generate_boundary_cells(boundary_faces,cell_faces,cell_faces_range)
 
-    cell_neighbours,neighbours_range=generate_cell_neighbours(volumes)
+    
 
     boundaries=generate_boundaries(boundaryElements,boundary_face_range)
-    cells=generate_cells(volumes,centre_of_cells,volume_of_cells,cell_nodes_range,cell_faces_range,neighbours_range)
+    cells=generate_cells(volumes,centre_of_cells,volume_of_cells,cell_nodes_range,cell_faces_range)
+
+    cell_neighbours=generate_cell_neighbours(cells,cell_faces)
 
     face_ownerCells=generate_face_ownerCells(faces,cell_faces,volumes,cell_faces_range)
 
@@ -41,11 +43,7 @@ function build_mesh3D(unv_mesh)
     
     cell_nsign=calculate_cell_nsign(cells,faces1,cell_faces)
 
-
-    get_float=SVector(0.0,0.0,0.0)
-    get_int=UnitRange(0,0)
-
-    mesh=Mesh3(cells,cell_nodes,cell_faces,cell_neighbours,cell_nsign,faces1,face_nodes,boundaries,nodes,node_cells,get_float,get_int,boundary_cells)
+    mesh=Mesh3(cells,cell_nodes,cell_faces,cell_neighbours,cell_nsign,faces1,face_nodes,boundaries,nodes,node_cells,boundary_cells)
 
     end
     println("Done! Execution time: ", @sprintf "%.6f" stats.time)
@@ -184,45 +182,38 @@ function calculate_faces_properties(faces,face_nodes,nodes,cell_nodes,cells,face
     return store_normal,store_area,store_centre,store_e,store_delta,store_weight
 end
 
-function generate_cell_neighbours(volumes)
-    store_cell_neighbours=[]
+function generate_cell_neighbours(cells,cell_faces)
     cell_neighbours=Int[]
-
-    for i=1:length(volumes)
-        cell_1=sort(volumes[i].volumes)
-        store_cells=Int[]
-        for ic=1:length(volumes)
-            cell_2=sort(volumes[ic].volumes)
-
-            store=[]
-            
-            push!(store,cell_2[1] in cell_1)
-            push!(store,cell_2[2] in cell_1)
-            push!(store,cell_2[3] in cell_1)
-            push!(store,cell_2[4] in cell_1)
-
-            count_faces=count(store)
-
-            if count_faces==3
-                push!(cell_neighbours,ic)
-                push!(store_cells,ic)
+    for ID=1:length(cells) # 1:5
+        for i=cells[ID].faces_range # 1:4, 5:8, etc
+            faces=cell_faces[i]
+            for ic=1:length(i) #1:4
+                face=faces[ic]
+                index=findall(x->x==face,cell_faces)
+                if length(index)==2
+                    if i[1]<=index[1]<=i[end]
+                        for ip=1:length(cells)
+                            if cells[ip].faces_range[1]<=index[2]<=cells[ip].faces_range[end]
+                                push!(cell_neighbours,ip)
+                            end
+                        end
+                    end
+                    if i[1]<=index[2]<=i[end]
+                        for ip=1:length(cells)
+                            if cells[ip].faces_range[1]<=index[1]<=cells[ip].faces_range[end]
+                                push!(cell_neighbours,ip)
+                            end
+                        end
+                    end
+                end
+                if length(index)==1
+                    x=0
+                    push!(cell_neighbours,x)
+                end
             end
         end
-        push!(store_cell_neighbours,store_cells)
     end
-
-    x=0
-    neighbours_range=UnitRange[]
-    for i=1:length(store_cell_neighbours)
-        if length(store_cell_neighbours[i])==1
-            push!(neighbours_range,UnitRange(x+1,x+1))
-            x=x+1
-        elseif length(store_cell_neighbours[i])≠1
-            push!(neighbours_range,UnitRange(x+1,x+length(store_cell_neighbours[i])))
-            x=x+length(store_cell_neighbours[i])
-        end
-    end
-    return cell_neighbours, neighbours_range
+    return cell_neighbours
 end
 
 function generate_internal_faces(volumes,faces)
@@ -503,10 +494,10 @@ function generate_faces_range(volumes,faces)
 end
 
 #Generate cells
-function generate_cells(volumes,centre_of_cells,volume_of_cells,cell_nodes_range,cell_faces_range,neighbours_range)
+function generate_cells(volumes,centre_of_cells,volume_of_cells,cell_nodes_range,cell_faces_range)
     cells=Cell[]
     for i=1:length(volumes)
-        push!(cells,Cell(centre_of_cells[i],volume_of_cells[i],cell_nodes_range[i],cell_faces_range[i],neighbours_range[i]))
+        push!(cells,Cell(centre_of_cells[i],volume_of_cells[i],cell_nodes_range[i],cell_faces_range[i]))
     end
     return cells
 end

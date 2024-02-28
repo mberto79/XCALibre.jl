@@ -1,4 +1,4 @@
-export discretise!
+export discretise!, sparse_array_deconstructor
 
 discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
 
@@ -129,7 +129,7 @@ discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
         kernel! = set_b!(backend)
         kernel!(fzero, b, ndrange = length(b))
 
-        for i in eachindex(model.terms)
+        for i in 1:nTerms
             schemes_and_sources!(model.terms[i], 
             nTerms, nSources, offset, fzero, ione, terms, sources_field,
             sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
@@ -138,7 +138,7 @@ discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
         end
 
         kernel! = sources!(backend)
-        for i in nSources
+        for i in 1:nSources
             (; field, sign) = sources[i]
             kernel!(field, sign, cells, b, ndrange = length(cells))
         end

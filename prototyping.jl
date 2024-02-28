@@ -136,13 +136,13 @@ using KernelAbstractions
     end
 
     CUDA.allowscalar(false)
-    model = adapt(CuArray, model)
-    ∇p = adapt(CuArray, ∇p)
-    ux_eqn = adapt(CuArray, ux_eqn)
-    uy_eqn = adapt(CuArray, uy_eqn)
-    p_eqn = adapt(CuArray, p_eqn)
-    turbulence = adapt(CuArray, turbulence)
-    config = adapt(CuArray, config)
+    # model = adapt(CuArray, model)
+    # ∇p = adapt(CuArray, ∇p)
+    # ux_eqn = adapt(CuArray, ux_eqn)
+    # uy_eqn = adapt(CuArray, uy_eqn)
+    # p_eqn = adapt(CuArray, p_eqn)
+    # turbulence = adapt(CuArray, turbulence)
+    # config = adapt(CuArray, config)
     
     # Extract model variables and configuration
     (;mesh, U, p, nu) = model
@@ -186,10 +186,10 @@ using KernelAbstractions
     R_uy = ones(TF, iterations)
     R_p = ones(TF, iterations)
 
-    Uf = adapt(CuArray,Uf)
-    rDf = adapt(CuArray, rDf)
-    rD = adapt(CuArray, rD)
-    pf = adapt(CuArray, pf)
+    # Uf = adapt(CuArray,Uf)
+    # rDf = adapt(CuArray, rDf)
+    # rD = adapt(CuArray, rD)
+    # pf = adapt(CuArray, pf)
 
     interpolate!(Uf, U)
     correct_boundaries!(Uf, U, U.BCs)
@@ -201,603 +201,443 @@ using KernelAbstractions
 
     update_nueff!(nueff, nu, turbulence)
 
-    prev = adapt(CuArray, prev)
+    # prev = adapt(CuArray, prev)
 
     @. prev = U.x.values
-    # type = typeof(ux_eqn)
-    # println("$type")
+    discretise!(ux_eqn, prev, runtime)
+    # ux_eqn.equation.A.nzVal
+    # ux_eqn.equation.b
+    @time begin apply_boundary_conditions!(ux_eqn, U.x.BCs) end
+    # ux_eqn.equation.A.nzVal
+    # ux_eqn.equation.b
 
-    # CUDA.allowscalar(true)
-    ux_eqn.equation.b
-    ux_eqn.equation.A.nzVal
-    @time begin discretise!(ux_eqn, prev, runtime) end
+    eqn = ux_eqn
+    model = ux_eqn.model
+    BCs = U.x.BCs
 
-    ux_eqn.equation.b
-    ux_eqn.equation.A.nzVal
+    (; A, b) = eqn.equation
+    mesh = model.terms[1].phi.mesh
+    (; boundaries, faces, cells, boundary_cellsID, cell_neighbours) = mesh
+    rowval, colptr, nzval = sparse_array_deconstructor(A)
+    backend = _get_backend(mesh)
+    integer = _get_int(mesh)
+    ione = one(integer)
+    kernel! = Dirichlet_laplacian_linear!(backend)
+    kernel!(model.terms[3], BCs[1], ione, boundaries, faces, cells, boundary_cellsID, rowval, colptr, nzval, b, ndrange = 1)
 
-    using SparseArrays
-    using CUDA
-    using KernelAbstractions
-
-    @inline function schemes_and_sources!(
-        term::Operator{F,P,I,Time{Steady}}, 
-        nTerms, nSources, offset, fzero, ione, terms, sources_field,
-        sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
-        cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-        backend, runtime)  where {F,P,I}
-        nothing
-    end
-    
-    @inline function schemes_and_sources!(
-        term::Operator{F,P,I,Time{Euler}}, 
-        nTerms, nSources, offset, fzero, ione, terms, sources_field,
-        sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
-        cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-        backend)  where {F,P,I}
-    
-        kernel! = schemes_time_euler!(backend)
-        kernel!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field,
-                sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
-                cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-                backend, runtime, ndrange = length(cells))
-    
-    end
-    
-    @kernel function schemes_time_euler!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field, sources_sign, rowval, colptr, nzval, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime)
+    @kernel function Dirichlet_laplacian_linear!(term, BC, ione, boundaries, faces, cells, boundary_cellsID, rowval, colptr, nzval, b)
         i = @index(Global)
-        # (; terms) = model
-    
+        i = BC.ID
+        # @cushow i
+        
         @inbounds begin
-            cell = cells[i]
-            (; faces_range, volume) = cell
-    
-            for fi in faces_range
-                fID = cell_faces[fi]
-                ns = cell_nsign[fi] # normal sign
-                face = faces[fID]
-                nID = cell_neighbours[fi]
-                cellN = cells[nID]
-    
-                start = colptr[i]
-                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
+            (; IDs_range) = boundaries[i]
+            for k ∈ IDs_range 
+                faceID = k
+                cellID = boundary_cellsID[k]
+                face = faces[faceID]
+                cell = cells[cellID] 
+                @cushow cellID
+                # (BCs[$bci])(model.terms[$t], A, b, cellID, cell, face, faceID)
+                J = term.flux[faceID]
+                (; area, delta) = face 
+                flux = J*area/delta
+                ap = term.sign[1]*(-flux)
+                # @synchronize
+                
+                start = colptr[cellID]
                 offset = 0
                 for j in start:length(rowval)
                     offset += 1
-                    if rowval[j] == i
-                        break
-                    end
-                end
-                cIndex = start + offset - ione
-    
-                start = colptr[nID]
-                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
-                offset = 0
-                for j in start:length(rowval)
-                    offset += 1
-                    if rowval[j] == i
+                    if rowval[j] == cellID
                         break
                     end
                 end
                 nIndex = start + offset - ione
-    
-                # No scheme code for Euler time scheme
-    
+
+                nzval[nIndex] += ap
+                b[cellID] += ap*BC.value
             end
-    
-        # scheme_scource loop
-        volume = cell.volume
-        rdt = 1/runtime.dt
-        nzval[cIndex] += volume*rdt
-        b[cID] += prev[cID]*volume*rdt
-    
-        end
-    end
-    
-    @inline function schemes_and_sources!(
-        term::Operator{F,P,I,Laplacian{Linear}}, 
-        nTerms, nSources, offset, fzero, ione, terms, sources_field,
-        sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
-        cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-        backend, runtime)  where {F,P,I}
-    
-        kernel! = schemes_laplacian_linear!(backend)
-        kernel!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field,
-                sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
-                cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-                backend, runtime, ndrange = length(cells))
-    end
-    
-    @kernel function schemes_laplacian_linear!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field, sources_sign, rowval, colptr, nzval, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime)
-        i = @index(Global)
-        # (; terms) = model
-    
-        @inbounds begin
-            cell = cells[i]
-            (; faces_range, volume) = cell
-    
-            for fi in faces_range
-                fID = cell_faces[fi]
-                ns = cell_nsign[fi] # normal sign
-                face = faces[fID]
-                nID = cell_neighbours[fi]
-                cellN = cells[nID]
-    
-                start = colptr[i]
-                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
-                offset = 0
-                for j in start:length(rowval)
-                    offset += 1
-                    if rowval[j] == i
-                        break
-                    end
-                end
-                cIndex = start + offset - ione
-    
-                start = colptr[nID]
-                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
-                offset = 0
-                for j in start:length(rowval)
-                    offset += 1
-                    if rowval[j] == i
-                        break
-                    end
-                end
-                nIndex = start + offset - ione
-    
-                # scheme code
-                ap = term.sign*(-term.flux[fID] * face.area)/face.delta
-                nzval[cIndex] += ap
-                nzval[nIndex] += -ap
-    
-            end
-    
-        # scheme_scource loop
-        # no scheme_source code for linear laplacian scheme
-    
-        end
-    end
-    
-    @inline function schemes_and_sources!(
-        term::Operator{F,P,I,Divergence{Linear}}, 
-        nTerms, nSources, offset, fzero, ione, terms, sources_field,
-        sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
-        cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-        backend)  where {F,P,I}
-    
-        kernel! = schemes_divergence_linear!(backend)
-        kernel!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field,
-                sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
-                cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-                backend, runtime, ndrange = length(cells))
-    end
-    
-    @kernel function schemes_divergence_linear!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field, sources_sign, rowval, colptr, nzval, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime)
-        i = @index(Global)
-        # (; terms) = model
-    
-        @inbounds begin
-            cell = cells[i]
-            (; faces_range, volume) = cell
-    
-            for fi in faces_range
-                fID = cell_faces[fi]
-                ns = cell_nsign[fi] # normal sign
-                face = faces[fID]
-                nID = cell_neighbours[fi]
-                cellN = cells[nID]
-    
-                start = colptr[i]
-                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
-                offset = 0
-                for j in start:length(rowval)
-                    offset += 1
-                    if rowval[j] == i
-                        break
-                    end
-                end
-                cIndex = start + offset - ione
-    
-                start = colptr[nID]
-                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
-                offset = 0
-                for j in start:length(rowval)
-                    offset += 1
-                    if rowval[j] == i
-                        break
-                    end
-                end
-                nIndex = start + offset - ione
-    
-                # scheme code
-                xf = face.centre
-                xC = cell.centre
-                xN = cellN.centre
-                weight = norm(xf - xC)/norm(xN - xC)
-                one_minus_weight = one(eltype(weight)) - weight
-                ap = term.sign*(term.flux[fID]*ns)
-                nzval[cIndex] += ap*one_minus_weight
-                nzval[nIndex] += ap*weight
-    
-            end
-    
-        # scheme_scource loop
-        # no scheme_source code for divergence linear scheme
-    
-        end
-    end
-    
-    @inline function schemes_and_sources!(
-        term::Operator{F,P,I,Divergence{Upwind}}, 
-        nTerms, nSources, offset, fzero, ione, terms, sources_field,
-        sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
-        cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-        backend, runtime)  where {F,P,I}
-    
-        kernel! = schemes_divergence_upwind!(backend)
-        kernel!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field,
-                sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
-                cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-                backend, runtime, ndrange = length(cells))
-    end
-    
-    @kernel function schemes_divergence_upwind!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field, sources_sign, rowval, colptr, nzval, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime)
-        i = @index(Global)
-        # (; terms) = model
-    
-        @inbounds begin
-            cell = cells[i]
-            (; faces_range, volume) = cell
-    
-            for fi in faces_range
-                fID = cell_faces[fi]
-                ns = cell_nsign[fi] # normal sign
-                face = faces[fID]
-                nID = cell_neighbours[fi]
-                cellN = cells[nID]
-    
-                start = colptr[i]
-                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
-                offset = 0
-                for j in start:length(rowval)
-                    offset += 1
-                    if rowval[j] == i
-                        break
-                    end
-                end
-                cIndex = start + offset - ione
-    
-                start = colptr[nID]
-                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
-                offset = 0
-                for j in start:length(rowval)
-                    offset += 1
-                    if rowval[j] == i
-                        break
-                    end
-                end
-                nIndex = start + offset - ione
-    
-                # scheme code
-                ap = term.sign*(term.flux[fID]*ns)
-                nzval[cIndex] += max(ap, 0.0)
-                nzval[nIndex] += -max(-ap, 0.0)
-    
-            end
-    
-        # scheme_scource loop
-        # no scheme_source code for divergence upwind scheme
-    
-        end
-    end
-    
-    @inline function schemes_and_sources!(
-        term::Operator{F,P,I,Si}, 
-        nTerms, nSources, offset, fzero, ione, terms, sources_field,
-        sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
-        cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-        backend)  where {F,P,I}
-    
-        kernel! = schemes_si!(backend)
-        kernel!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field,
-                sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
-                cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-                backend, runtime, ndrange = length(cells))
-    end
-    
-    @kernel function schemes_si!(term, nTerms, nSources, offset, fzero, ione, terms, sources_field, sources_sign, rowval, colptr, nzval, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime)
-        i = @index(Global)
-        # (; terms) = model
-    
-        @inbounds begin
-            cell = cells[i]
-            (; faces_range, volume) = cell
-    
-            for fi in faces_range
-                fID = cell_faces[fi]
-                ns = cell_nsign[fi] # normal sign
-                face = faces[fID]
-                nID = cell_neighbours[fi]
-                cellN = cells[nID]
-    
-                start = colptr[i]
-                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
-                offset = 0
-                for j in start:length(rowval)
-                    offset += 1
-                    if rowval[j] == i
-                        break
-                    end
-                end
-                cIndex = start + offset - ione
-    
-                start = colptr[nID]
-                # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
-                offset = 0
-                for j in start:length(rowval)
-                    offset += 1
-                    if rowval[j] == i
-                        break
-                    end
-                end
-                nIndex = start + offset - ione
-    
-                # scheme code
-                phi = term.phi
-                # ap = max(flux, 0.0)
-                # ab = min(flux, 0.0)*phi[cID]
-                flux = term.sign*term.flux[cID]*cell.volume # indexed with cID
-                nzval[cIndex] += flux # indexed with cIndex
-                # flux = term.sign*term.flux[cID]*cell.volume*phi[cID]
-                # b[cID] -= flux
-    
-            end
-    
-        # scheme_scource loop
-        # no scheme_source code for si scheme
-    
-        end
-    end
-    
-    @kernel function sources!(field, sign, cells, b)
-        i = @index(Global)
-    
-        @inbounds begin
-            cell = cells[i]
-            
-            volume = cell.volume
-            b[i] += sign*field[i]*volume
-        end
-    end
-    
-    @kernel function set_b!(fzero, b)
-        i = @index(Global)
-    
-        @inbounds begin
-            b[i] = fzero
         end
     end
 
-    function sparse_array_deconstructor(arr::SparseArrays.SparseMatrixCSC)
-        (; rowval, colptr, nzval) = arr
-        return rowval, colptr, nzval
-    end
-    
-    function sparse_array_deconstructor(arr::CUDA.CUSPARSE.CuSparseMatrixCSC)
-        (; rowVal, colPtr, nzVal) = arr
-        return rowVal, colPtr, nzVal
+    for i in boundaries[1].IDs_range
+        cID = boundary_cellsID[i]
+        A[cID,cID] = A[cID,cID] + 0.5
+        val = A[cID, cID]
+        println("$val")
     end
 
-    @kernel function set_nzval(nzval, fzero)
-        i = @index(Global)
-    
-        @inbounds begin
-            nzval[i] = fzero
-        end
-    end
-
-    # @generated function _discretise!(
-    #     model::Model{TN,SN,T,S}, eqn, prev, runtime
-    #     ) where {TN,SN,T,S}
-    
-        # assignment_block_1 = Expr[] # Ap
-        # assignment_block_2 = Expr[] # An or b
-        # assignment_block_3 = Expr[] # b (sources)
-    
-        # # Loop for operators
-        # for t ∈ 1:nTerms
-        #     function_call = quote
-        #         scheme!(
-        #             model.terms[$t], nzval, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
-        #             )
-        #     end
-        #     push!(assignment_block_1, function_call)
-        #     # _convert_array(assignment_block_1, backend)
-        #     # type = typeof(assignment_block_1)
-        #     # println("$type")
-    
-        #     assign_source = quote
-        #         scheme_source!(model.terms[$t], b, nzval, cell, cID, cIndex, prev, runtime)
-        #     end
-        #     push!(assignment_block_2, assign_source)
-        #     # backend = _get_backend(mesh)
-        #     # _convert_array(assignment_block_2, backend)
-        # end
-    
-        # # Loop for sources
-        # for s ∈ 1:nSources
-        #     add_source = quote
-        #         (; field, sign) = model.sources[$s]
-        #         b[cID] += sign*field[cID]*volume
-        #     end
-        #     push!(assignment_block_3, add_source)
-        #     # backend = _get_backend(mesh)
-        #     # _convert_array(assignment_block_3, backend)
-        # end
-    
-        # quote
-            nTerms = 3
-            nSources = 1
-
-            model = ux_eqn.model
-            eqn = ux_eqn
-
-            (; A, b) = eqn.equation
-            (; terms, sources) = model
-            mesh = model.terms[1].phi.mesh
-            integer = _get_int(mesh)
-            float = _get_float(mesh)
-            backend = _get_backend(mesh)
-            # (; faces, cells, ) = mesh
-            (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
-            # (; rowval, colptr, nzval) = A
-            rowval, colptr, nzval = sparse_array_deconstructor(A)
-            fzero = zero(float) # replace with func to return mesh type (Mesh module)
-            ione = one(integer)
-            # @inbounds for i ∈ eachindex(nzval)
-            #     nzval[i] = fzero
-            # end
-
-            kernel! = set_nzval(backend)
-            kernel!(nzval, fzero, ndrange = length(nzval))
-
-            # CUDA.allowscalar(true)
-            # start = colptr[1]
-            # offset = findfirst(isequal(1),@view rowval[start:end]) - ione
-            # typeof(offset)
-
-            cIndex = zero(integer) # replace with func to return mesh type (Mesh module)
-            nIndex = zero(integer) # replace with func to return mesh type (Mesh module)
-            offset = zero(integer)
-
-            CUDA.allowscalar(false)
-
-            sources_field = Array{typeof(sources[1].field)}(undef, length(sources))
-            sources_sign = Array{typeof(sources[1].sign)}(undef, length(sources))
-
-            for i in eachindex(sources)
-                sources_field[i] = sources[i].field
-                sources_sign[i] = sources[i].sign
-            end
-
-            sources_field = _convert_array!(sources_field, backend)
-            sources_sign = _convert_array!(sources_sign, backend)
-
-            kernel! = set_b!(backend)
-            kernel!(fzero, b, ndrange = length(b))
-
-            for i in eachindex(model.terms)
-                schemes_and_sources!(model.terms[i], 
-                nTerms, nSources, offset, fzero, ione, terms, sources_field,
-                sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
-                cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-                backend, runtime)
-            end
-
-            kernel! = sources!(backend)
-            for i in nSources
-                (; field, sign) = sources[i]
-                kernel!(field, sign, cells, b, ndrange = length(cells))
-            end
-        # end
-    # end
-
-
-    # # Loop for terms
-    # for t ∈ 1:nTerms
-    #     scheme!(model.terms[t], nzval, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime)
-    #     scheme_source!(model.terms[t], b, nzval, cell, cID, cIndex, prev, runtime)
-    # end
-
-    # # Loop for sources
-    # for s ∈ 1:nSources
-    #     (; field, sign) = model.sources[s]
-    #     b[cID] += sign*field[cID]*volume
-    # end
-    
-    
-
-
-
-
-    a = [1 2 3 4]
-    res = add(a...)
-
-    function add(a,b,c,d)
-        return a + b + c +d
-    end
-
-
-    @kernel function test10(tuple, res)
-        i = @index(Global)
-
-        start_index = 2
-
-        # @inbounds begin
-            for j in start_index:length(tuple) # Use enumerate with the sliced tuple
-                val = tuple[start_index + j - 1]
-                if val == 4
-                    res[1] = j - 1  # Adjust the index to account for the starting index
-                    # break    # Break out of the loop since we found the first occurrence
-                end
-            end
-        # end
-    end
-    
-    @kernel function test(arr, res)
-        i = @index(Global)
-
-        start = 2
-
-        res[1] = findfirst(isequal(4), arr[start:end])
-    end
-
-    arr = [0 2 4 5 6 7 8 9]
-    start = 3
-    val = 0
-    for i in start:length(arr)
-        val += 1
-        if arr[i] == 9
+    i = 2
+    nID = boundary_cellsID[i]
+    start = colptr[nID]
+    # cell = cells[boundary_cellsID[i]]
+    # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
+    offset = 0
+    for j in start:length(rowval)
+        offset += 1
+        if rowval[j] == i
             break
         end
     end
-    val
+    cIndex = start + offset - ione
+    nzval[cIndex]
+    A[nID, nID]
 
-    findfirst(isequal(9),@view arr[start:end])
-
-
-
-
-    isequal(10)(10)
-
-    tuple = cu([0,1,2,3,4,10,6])
-    res = CUDA.zeros(Int64, 1)
-    kernel = test(backend)
-
-
-    i
-
-    kernel(tuple, res, ndrange = 1)
-    res
-
-
-
-    tuple = [0,1,2,3,4,10,6]
-
-    start = 2
-
-    findfirst(isequal(4),@view tuple[start:end]) - ione
-
-    tuple = [0,1,2,3,4,10,6]
-    res = nothing  # Initialize res outside the loop
-    
-    start_index = 2  # Define the starting index
-    
-    for (j, val) in enumerate(tuple[start_index:end])  # Use enumerate with the sliced tuple
-        if val == 4
-            res = j - ione  # Adjust the index to account for the starting index
-            break    # Break out of the loop since we found the first occurrence
+    fi = 20
+    cellID = boundary_cellsID[fi]
+    start = colptr[cellID]
+    # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
+    offset = 0
+    for j in start:length(rowval)
+        offset += 1
+        if rowval[j] == cellID
+            # nIndex = j
+            break
         end
     end
-    
-    println(res)
+    # nIndex = offset - ione
+    nIndex = start + offset - ione
+    rowval[nIndex]
+    nzval[nIndex]
+    A[cellID, cellID]
 
+    1
+    2
+    3
+  160
+
+
+    rowval
+    colptr
+
+    ## Unpacking quote
+
+    using KernelAbstractions
+    using StaticArrays
+
+    eqn = ux_eqn
+    model = ux_eqn.model
+    BCs = U.x.BCs
+
+
+    (; A, b) = eqn.equation
+    mesh = model.terms[1].phi.mesh
+    (; boundaries, faces, cells, boundary_cellsID) = mesh
+
+    (bc::Dirichlet)(
+        term::Operator{F,P,I,Laplacian{Linear}}, 
+        backend, boundaries, faces, cells,
+        boundary_cellsID, A, b) where {F,P,I} = begin
+            kernel! = Dirichlet_laplacian_linear!(backend)
+            kernel!(term, bc, boundaries, faces, cells, boundary_cellsID, A, b, ndrange = length(BCs))
+        end
+
+    Execute_apply_boundary_condition_kernel!(BCs[1], model.terms[3], backend, boundaries, faces, cells, boundary_cellsID, A, b)
+
+
+
+    backend = _get_backend(mesh)
+    # IDs_range_array = Array{UnitRange{_get_int(mesh)}}(undef, length(BCs))
+    # IDs_range_array = _convert_array!(IDs_range_array, backend)
+    # kernel! = Get_IDs_range4!(backend)
+    # kernel!(boundaries, IDs_range_array, ndrange = length(IDs_range_array))
+
+
+
+
+
+    # @kernel function Get_IDs_range4!(boundaries, IDs_range_array)
+    #     i = @index(Global)
+        
+    #     @inbounds begin
+    #         (; IDs_range) = boundaries[i]
+    #         IDs_range_array[i] = IDs_range
+    #     end
+    # end
+
+    function Get_IDs_range(backend::CUDABackend, boundaries)
+        IDs_range_array = Array{UnitRange{_get_int(mesh)}}(undef, length(BCs))
+        IDs_range_array_GPU = _convert_array!(IDs_range_array, backend)
+        kernel! = Get_IDs_range_kernel!(backend)
+        kernel!(boundaries, IDs_range_array_GPU, ndrange = length(IDs_range_array))
+        copyto!(IDs_range_array, IDs_range_array_GPU)
+        IDs_range_array_GPU = nothing
+        return IDs_range_array
+    end
+
+    function Get_IDs_range(backend::CPU, boundaries)
+        IDs_range_array = Array{UnitRange{_get_int(mesh)}}(undef, length(BCs))
+        for i in eachindex(IDs_range_array)
+            IDs_range_array[i] = boundaries[i].IDs_range
+        end
+        return IDs_range_array
+    end
+
+    boundary_IDs_range = Get_IDs_range(backend, boundaries)
+
+    @kernel function Get_IDs_range_kernel!(boundaries, IDs_range_array)
+        i = @index(Global)
+        
+        @inbounds begin
+            (; IDs_range) = boundaries[i]
+            IDs_range_array[i] = IDs_range
+        end
+    end
+
+
+
+    # TRANSIENT TERM 
+    function Execute_apply_boundary_condition_kernel!(
+        bc::AbstractBoundary, term::Operator{F,P,I,Time{T}}, 
+        backend, boundaries, faces, cells,
+        boundary_cellsID, A, b) where {F,P,I,T}
+        nothing
+    end
+
+    # LAPLACIAN TERM (NON-UNIFORM)
+    function Execute_apply_boundary_condition_kernel!(
+        bc::Dirichlet, term::Operator{F,P,I,Laplacian{Linear}}, 
+        backend, boundaries, faces, cells,
+        boundary_cellsID, A, b) where {F,P,I}
+        
+        kernel! = Dirichlet_laplacian_linear!(backend)
+        kernel!(term, bc, boundaries, faces, cells, boundary_cellsID, A, b, ndrange = 1)
+    end
+
+    @kernel function Dirichlet_laplacian_linear!(term, BC, boundaries, faces, cells, boundary_cellsID, A, b)
+        i = @index(Global)
+        i = BC.ID
+        
+        (; IDs_range) = boundaries[i]
+        @inbounds for j ∈ IDs_range
+            faceID = j
+            cellID = boundary_cellsID[j]
+            face = faces[faceID]
+            cell = cells[cellID] 
+            # (BCs[$bci])(model.terms[$t], A, b, cellID, cell, face, faceID)
+            J = term.flux[faceID]
+            (; area, delta) = face 
+            flux = J*area/delta
+            ap = term.sign[1]*(-flux)
+            A[cellID,cellID] += ap
+            b[cellID] += ap*bc.value
+        end
+    end
+
+    function Execute_apply_boundary_condition_kernel!(
+        bc::Neumann, term::Operator{F,P,I,Laplacian{Linear}}, 
+        backend, boundaries, faces, cells,
+        boundary_cellsID, A, b) where {F,P,I}
+        
+        kernel! = Neumann_laplacian_linear!(backend)
+        kernel!(term, bc, boundaries, faces, cells, boundary_cellsID, A, b, ndrange = 1)
+    end
+
+    @kernel function Neumann_laplacian_linear!(term, BC, boundaries, faces, cells, boundary_cellsID, A, b)
+        i = @index(Global)
+        i = BC.ID
+        
+        (; IDs_range) = boundaries[i]
+        @inbounds for j ∈ IDs_range
+            faceID = j
+            cellID = boundary_cellsID[j]
+            face = faces[faceID]
+            cell = cells[cellID] 
+            # (BCs[$bci])(model.terms[$t], A, b, cellID, cell, face, faceID)
+            phi = term.phi
+        end
+    end
+
+    # DIVERGENCE TERM (NON-UNIFORM)
+    function Execute_apply_boundary_condition_kernel!(
+        bc::Dirichlet, term::Operator{F,P,I,Divergence{Linear}}, 
+        backend, boundaries, faces, cells,
+        boundary_cellsID, A, b) where {F,P,I}
+        
+        kernel! = Dirichlet_divergence_linear!(backend)
+        kernel!(term, bc, boundaries, faces, cells, boundary_cellsID, A, b, ndrange = 1)
+    end
+
+    @kernel function Dirichlet_divergence_linear!(term, BC, boundaries, faces, cells, boundary_cellsID, A, b)
+        i = @index(Global)
+        i = BC.ID
+        
+        (; IDs_range) = boundaries[i]
+        @inbounds for j ∈ IDs_range
+            faceID = j
+            cellID = boundary_cellsID[j]
+            face = faces[faceID]
+            cell = cells[cellID] 
+            # (BCs[$bci])(model.terms[$t], A, b, cellID, cell, face, faceID)
+            b[cellID] += term.sign[1]*(-term.flux[faceID]*bc.value)
+        end
+    end
+
+    function Execute_apply_boundary_condition_kernel!(
+        bc::Neumann, term::Operator{F,P,I,Divergence{Linear}}, 
+        backend, boundaries, faces, cells,
+        boundary_cellsID, A, b) where {F,P,I}
+        
+        kernel! = Neumann_divergence_linear!(backend)
+        kernel!(term, bc, boundaries, faces, cells, boundary_cellsID, A, b, ndrange = 1)
+    end
+
+    @kernel function Neumann_divergence_linear!(term, BC, boundaries, faces, cells, boundary_cellsID, A, b)
+        i = @index(Global)
+        i = BC.ID
+        
+        (; IDs_range) = boundaries[i]
+        @inbounds for j ∈ IDs_range
+            faceID = j
+            cellID = boundary_cellsID[j]
+            face = faces[faceID]
+            cell = cells[cellID] 
+            # (BCs[$bci])(model.terms[$t], A, b, cellID, cell, face, faceID)
+            ap = term.sign[1]*(term.flux[faceID])
+            A[cellID,cellID] += ap
+        end
+    end
+
+    function Execute_apply_boundary_condition_kernel!(
+        bc::Dirichlet, term::Operator{F,P,I,Divergence{Upwind}}, 
+        backend, boundaries, faces, cells,
+        boundary_cellsID, A, b) where {F,P,I}
+        
+        kernel! = Dirichlet_divergence_upwind!(backend)
+        kernel!(term, bc, boundaries, faces, cells, boundary_cellsID, A, b, ndrange = 1)
+    end
+
+    @kernel function Dirichlet_divergence_upwind!(term, BC, boundaries, faces, cells, boundary_cellsID, A, b)
+        i = @index(Global)
+        i = BC.ID
+        
+        (; IDs_range) = boundaries[i]
+        @inbounds for j ∈ IDs_range
+            faceID = j
+            cellID = boundary_cellsID[j]
+            face = faces[faceID]
+            cell = cells[cellID] 
+            # (BCs[$bci])(model.terms[$t], A, b, cellID, cell, face, faceID)
+            # A[cellID,cellID] += 0.0 
+            # b[cellID] += term.sign[1]*(-term.flux[fID]*bc.value)
+
+            ap = term.sign[1]*(term.flux[faceID])
+            # A[cellID,cellID] += max(ap, 0.0)
+            b[cellID] -= ap*bc.value
+
+            # ap = term.sign[1]*(term.flux[fID])
+            # b[cellID] += A[cellID,cellID]*bc.value
+            # A[cellID,cellID] += A[cellID,cellID]
+        end
+    end
+
+    function Execute_apply_boundary_condition_kernel!(
+        bc::Neumann, term::Operator{F,P,I,Divergence{Upwind}}, 
+        backend, boundaries, faces, cells,
+        boundary_cellsID, A, b) where {F,P,I}
+        
+        kernel! = Neumann_divergence_upwind!(backend)
+        kernel!(term, bc, boundaries, faces, cells, boundary_cellsID, A, b, ndrange = 1)
+    end
+
+    @kernel function Neumann_divergence_upwind!(term, BC, boundaries, faces, cells, boundary_cellsID, A, b)
+        i = @index(Global)
+        i = BC.ID
+        
+        (; IDs_range) = boundaries[i]
+        @inbounds for j ∈ IDs_range
+            faceID = j
+            cellID = boundary_cellsID[j]
+            face = faces[faceID]
+            cell = cells[cellID] 
+            phi = term.phi 
+            # ap = term.sign[1]*(term.flux[fID])
+            # A[cellID,cellID] += ap
+            # ap = term.sign[1]*(term.flux[fID])
+            # A[cellID,cellID] += ap
+            # b[cellID] -= ap*phi[cellID]
+            ap = term.sign[1]*(term.flux[fID])
+            A[cellID,cellID] += max(ap, 0.0)
+            # b[cellID] -= max(ap*phi[cellID], 0.0)
+        end
+    end
+
+    # IMPLICIT SOURCE
+
+    function Execute_apply_boundary_condition_kernel!(
+        bc::Dirichlet, term::Operator{F,P,I,Si}, 
+        backend, boundaries, faces, cells,
+        boundary_cellsID, A, b) where {F,P,I}
+        nothing
+    end
+
+    function Execute_apply_boundary_condition_kernel!(
+        bc::Neumann, term::Operator{F,P,I,Si}, 
+        backend, boundaries, faces, cells,
+        boundary_cellsID, A, b) where {F,P,I}
+        nothing
+    end
+
+    (; A, b) = eqn.equation
+    mesh = model.terms[1].phi.mesh
+    (; boundaries, faces, cells, boundary_cellsID) = mesh
+    for bci ∈ 1:length(BCs.parameters)
+        func_calls = Expr[]
+        for t ∈ 1:nTerms 
+            call = quote
+                (BCs[$bci])(model.terms[$t], A, b, cellID, cell, face, faceID)
+            end
+            push!(func_calls, call)
+        end
+        assignment_loop = quote
+            (; IDs_range) = boundaries[BCs[$bci].ID]
+            @inbounds for i ∈ IDs_range
+                faceID = i
+                cellID = boundary_cellsID[i]
+                face = faces[faceID]
+                cell = cells[cellID]
+                $(func_calls...)
+            end
+        end
+        push!(assignment_loops, assignment_loop.args...)
+    end
+
+    # @generated function _apply_boundary_conditions!(
+    #     model::Model{TN,SN,T,S}, BCs::B, eqn) where {T,S,TN,SN,B}
+    
+        # Unpack terms that make up the model (not sources)
+        # nTerms = model.parameters[3]
+        nTerms = 3
+    
+        # Definition of main assignment loop (one per patch)
+        assignment_loops = []
+        for bci ∈ 1:length(BCs.parameters)
+            func_calls = Expr[]
+            for t ∈ 1:nTerms 
+                call = quote
+                    (BCs[$bci])(model.terms[$t], A, b, cellID, cell, face, faceID)
+                end
+                push!(func_calls, call)
+            end
+            assignment_loop = quote
+                (; IDs_range) = boundaries[BCs[$bci].ID]
+                @inbounds for i ∈ IDs_range
+                    faceID = i
+                    cellID = boundary_cellsID[i]
+                    face = faces[faceID]
+                    cell = cells[cellID]
+                    $(func_calls...)
+                end
+            end
+            push!(assignment_loops, assignment_loop.args...)
+        end
+    
+        quote
+        (; A, b) = eqn.equation
+        mesh = model.terms[1].phi.mesh
+        (; boundaries, faces, cells, boundary_cellsID) = mesh
+        $(assignment_loops...)
+        nothing
+        end
+    end

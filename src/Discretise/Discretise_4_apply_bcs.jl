@@ -9,36 +9,53 @@ end
 
     # Unpack terms that make up the model (not sources)
     # nTerms = model.parameters[3]
-    nTerms = TN
+    # nTerms = TN
 
-    # Definition of main assignment loop (one per patch)
-    assignment_loops = []
-    for bci ∈ 1:length(BCs.parameters)
-        func_calls = Expr[]
-        for t ∈ 1:nTerms 
-            call = quote
-                (BCs[$bci])(model.terms[$t], A, b, cellID, cell, face, faceID)
-            end
-            push!(func_calls, call)
-        end
-        assignment_loop = quote
-            (; IDs_range) = boundaries[BCs[$bci].ID]
-            @inbounds for i ∈ IDs_range
-                faceID = i
-                cellID = boundary_cellsID[i]
-                face = faces[faceID]
-                cell = cells[cellID]
-                $(func_calls...)
-            end
-        end
-        push!(assignment_loops, assignment_loop.args...)
-    end
+    # # Definition of main assignment loop (one per patch)
+    # assignment_loops = []
+    # for bci ∈ 1:length(BCs.parameters)
+    #     func_calls = Expr[]
+    #     for t ∈ 1:nTerms 
+    #         call = quote
+    #             # (BCs[$bci])(model.terms[$t], A, b, cellID, cell, face, faceID)
+    #             Execute_apply_boundary_condition_kernel!(BCs[$bci], model.terms[$t], backend, boundaries, faces, cells, boundary_cellsID, A, b)
+    #         end
+    #         push!(func_calls, call)
+    #     end
+    #     assignment_loop = quote
+    #         # (; IDs_range) = boundaries[BCs[$bci].ID]
+    #         # @inbounds for i ∈ IDs_range
+    #         #     faceID = i
+    #         #     cellID = boundary_cellsID[i]
+    #         #     face = faces[faceID]
+    #         #     cell = cells[cellID]
+    #             $(func_calls...)
+    #         # end
+    #     end
+    #     push!(assignment_loops, assignment_loop.args...)
+    # end
 
     quote
+    nTerms = TN
     (; A, b) = eqn.equation
     mesh = model.terms[1].phi.mesh
     (; boundaries, faces, cells, boundary_cellsID) = mesh
-    $(assignment_loops...)
+
+    rowval, colptr, nzval = sparse_array_deconstructor(A)
+
+    backend = _get_backend(mesh)
+
+    integer = _get_int(mesh)
+    ione = one(integer)
+
+    for bci in 1:length(BCs)
+        for t in 1:nTerms
+            Execute_apply_boundary_condition_kernel!(BCs[bci], model.terms[t], 
+            backend, boundaries, faces, cells,
+            boundary_cellsID, ione, rowval, colptr, nzval, b)
+        end
+    end
+    # $(assignment_loops...)
     nothing
     end
 end

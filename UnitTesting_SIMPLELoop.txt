@@ -147,7 +147,7 @@ Output the same for all benchmarks?: YES
 
 
 
-discretise!() update for GPU (Float64 types with variables nu, nueff, turbulence)
+discretise!() update for GPU (Float64 types with variables ux_eqn, prev, runtime)
 
 CPU benchmark (compilation):                0.041263 seconds (40.45 k allocations: 2.601 MiB, 91.21% compilation time)
 CPU benchmark (post compilation):           0.003630 seconds (10 allocations: 224 bytes)
@@ -157,5 +157,20 @@ GPU benchmark (post compilation):           0.000205 seconds (334 allocations: 6
 
 CPU kernel benchmark (compilation):         0.033016 seconds (27.59 k allocations: 1.909 MiB, 83.70% compilation time)
 CPU kernel benchmark (post compilation):    0.006137 seconds (63 allocations: 13.953 KiB)
+
+Output the same for all benchmarks?: YES
+
+
+
+apply_boundary_conditions!() update for GPU (Float64 types with variables ux_eqn, U.x.BCs)
+
+CPU benchmark (compilation):                0.070366 seconds (40.20 k allocations: 2.497 MiB, 99.94% compilation time)
+CPU benchmark (post compilation):           0.000025 seconds (4 allocations: 1.406 KiB)
+
+GPU benchmark (compilation):                1.054918 seconds (1.30 M allocations: 93.161 MiB, 2.25% gc time, 84.23% compilation time)
+GPU benchmark (post compilation):           0.000670 seconds (394 allocations: 60.938 KiB)
+
+CPU kernel benchmark (compilation):         0.016154 seconds (18.40 k allocations: 1.253 MiB, 99.65% compilation time)
+CPU kernel benchmark (post compilation):    0.000039 seconds (154 allocations: 33.906 KiB)
 
 Output the same for all benchmarks?: YES

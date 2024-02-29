@@ -347,7 +347,8 @@ function generate_face_ownerCells(faces,cell_faces,volumes,cell_faces_range)
         for i=1:length(x)
             #if length(x[i])==1
                 if cell_faces_range[ic][1]<=x[i][1]<=cell_faces_range[ic][end]
-                    y[i]=ic
+                    y[i,1]=ic
+                    y[i,2]=ic
                 end
             #end
 

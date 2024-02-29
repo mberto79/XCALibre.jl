@@ -1,5 +1,5 @@
 using FVM_1D
-using Plots
+# using Plots
 using Krylov
 
 unv_mesh="src/UNV_3D/5_cell_new_boundaries.unv"
@@ -7,11 +7,15 @@ unv_mesh="src/UNV_3D/5_cell_new_boundaries.unv"
 
 mesh=build_mesh3D(unv_mesh)
 mesh.cell_neighbours
+mesh.cell_faces
 mesh.boundary_cellsID
 mesh.boundaries
-mesh.get_float
-mesh.get_int
-eltype(mesh.get_int)
+mesh.faces
+mesh.cells
+mesh.boundaries
+
+
+mesh.faces[12].ownerCells
 
 velocity = [0.5,0.0,0.0]
 nu=1e-3

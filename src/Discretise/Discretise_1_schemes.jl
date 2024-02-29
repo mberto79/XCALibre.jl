@@ -153,27 +153,29 @@ end
             nID = cell_neighbours[fi]
             cellN = cells[nID]
 
-            start = colptr[i]
-            # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
-            offset = 0
-            for j in start:length(rowval)
-                offset += 1
-                if rowval[j] == i
-                    break
-                end
-            end
-            cIndex = start + offset - ione
+            # start = colptr[i]
+            # # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
+            # offset = 0
+            # for j in start:length(rowval)
+            #     offset += 1
+            #     if rowval[j] == i
+            #         break
+            #     end
+            # end
+            # cIndex = start + offset - ione
+            cIndex = nzval_index(colptr, rowval, i, i, ione)
 
-            start = colptr[nID]
+            # start = colptr[nID]
             # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
-            offset = 0
-            for j in start:length(rowval)
-                offset += 1
-                if rowval[j] == i
-                    break
-                end
-            end
-            nIndex = start + offset - ione
+            # offset = 0
+            # for j in start:length(rowval)
+            #     offset += 1
+            #     if rowval[j] == i
+            #         break
+            #     end
+            # end
+            # nIndex = start + offset - ione
+            nIndex = nzval_index(colptr, rowval, nID, i, ione)
 
             # No scheme code for Euler time scheme
 
@@ -217,27 +219,29 @@ end
             nID = cell_neighbours[fi]
             cellN = cells[nID]
 
-            start = colptr[i]
-            # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
-            offset = 0
-            for j in start:length(rowval)
-                offset += 1
-                if rowval[j] == i
-                    break
-                end
-            end
-            cIndex = start + offset - ione
+            # start = colptr[i]
+            # # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
+            # offset = 0
+            # for j in start:length(rowval)
+            #     offset += 1
+            #     if rowval[j] == i
+            #         break
+            #     end
+            # end
+            # cIndex = start + offset - ione
+            cIndex = nzval_index(colptr, rowval, i, i, ione)
 
-            start = colptr[nID]
+            # start = colptr[nID]
             # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
-            offset = 0
-            for j in start:length(rowval)
-                offset += 1
-                if rowval[j] == i
-                    break
-                end
-            end
-            nIndex = start + offset - ione
+            # offset = 0
+            # for j in start:length(rowval)
+            #     offset += 1
+            #     if rowval[j] == i
+            #         break
+            #     end
+            # end
+            # nIndex = start + offset - ione
+            nIndex = nzval_index(colptr, rowval, nID, i, ione)
 
             # scheme code
             ap = term.sign*(-term.flux[fID] * face.area)/face.delta
@@ -281,27 +285,29 @@ end
             nID = cell_neighbours[fi]
             cellN = cells[nID]
 
-            start = colptr[i]
-            # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
-            offset = 0
-            for j in start:length(rowval)
-                offset += 1
-                if rowval[j] == i
-                    break
-                end
-            end
-            cIndex = start + offset - ione
+            # start = colptr[i]
+            # # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
+            # offset = 0
+            # for j in start:length(rowval)
+            #     offset += 1
+            #     if rowval[j] == i
+            #         break
+            #     end
+            # end
+            # cIndex = start + offset - ione
+            cIndex = nzval_index(colptr, rowval, i, i, ione)
 
-            start = colptr[nID]
+            # start = colptr[nID]
             # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
-            offset = 0
-            for j in start:length(rowval)
-                offset += 1
-                if rowval[j] == i
-                    break
-                end
-            end
-            nIndex = start + offset - ione
+            # offset = 0
+            # for j in start:length(rowval)
+            #     offset += 1
+            #     if rowval[j] == i
+            #         break
+            #     end
+            # end
+            # nIndex = start + offset - ione
+            nIndex = nzval_index(colptr, rowval, nID, i, ione)
 
             # scheme code
             xf = face.centre
@@ -350,27 +356,29 @@ end
             nID = cell_neighbours[fi]
             cellN = cells[nID]
 
-            start = colptr[i]
-            # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
-            offset = 0
-            for j in start:length(rowval)
-                offset += 1
-                if rowval[j] == i
-                    break
-                end
-            end
-            cIndex = start + offset - ione
+            # start = colptr[i]
+            # # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
+            # offset = 0
+            # for j in start:length(rowval)
+            #     offset += 1
+            #     if rowval[j] == i
+            #         break
+            #     end
+            # end
+            # cIndex = start + offset - ione
+            cIndex = nzval_index(colptr, rowval, i, i, ione)
 
-            start = colptr[nID]
+            # start = colptr[nID]
             # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
-            offset = 0
-            for j in start:length(rowval)
-                offset += 1
-                if rowval[j] == i
-                    break
-                end
-            end
-            nIndex = start + offset - ione
+            # offset = 0
+            # for j in start:length(rowval)
+            #     offset += 1
+            #     if rowval[j] == i
+            #         break
+            #     end
+            # end
+            # nIndex = start + offset - ione
+            nIndex = nzval_index(colptr, rowval, nID, i, ione)
 
             # scheme code
             ap = term.sign*(term.flux[fID]*ns)
@@ -414,27 +422,29 @@ end
             nID = cell_neighbours[fi]
             cellN = cells[nID]
 
-            start = colptr[i]
-            # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
-            offset = 0
-            for j in start:length(rowval)
-                offset += 1
-                if rowval[j] == i
-                    break
-                end
-            end
-            cIndex = start + offset - ione
+            # start = colptr[i]
+            # # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
+            # offset = 0
+            # for j in start:length(rowval)
+            #     offset += 1
+            #     if rowval[j] == i
+            #         break
+            #     end
+            # end
+            # cIndex = start + offset - ione
+            cIndex = nzval_index(colptr, rowval, i, i, ione)
 
-            start = colptr[nID]
+            # start = colptr[nID]
             # offset = findfirst(isequal(i),@view rowval[start:end]) - ione
-            offset = 0
-            for j in start:length(rowval)
-                offset += 1
-                if rowval[j] == i
-                    break
-                end
-            end
-            nIndex = start + offset - ione
+            # offset = 0
+            # for j in start:length(rowval)
+            #     offset += 1
+            #     if rowval[j] == i
+            #         break
+            #     end
+            # end
+            # nIndex = start + offset - ione
+            nIndex = nzval_index(colptr, rowval, nID, i, ione)
 
             # scheme code
             phi = term.phi

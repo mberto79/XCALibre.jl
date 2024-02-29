@@ -199,16 +199,17 @@ end
             (; area, delta) = face 
             flux = J*area/delta
             ap = term.sign[1]*(-flux)
-            start = colptr[cellID]
-
-            offset = 0
-            for j in start:length(rowval)
-                offset += 1
-                if rowval[j] == cellID
-                    break
-                end
-            end
-            nIndex = start + offset - ione
+            
+            # start = colptr[cellID]
+            # offset = 0
+            # for j in start:length(rowval)
+            #     offset += 1
+            #     if rowval[j] == cellID
+            #         break
+            #     end
+            # end
+            # nIndex = start + offset - ione
+            nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
 
             nzval[nIndex] += ap
             b[cellID] += ap*BC.value
@@ -295,15 +296,16 @@ end
             # (BCs[$bci])(model.terms[$t], A, b, cellID, cell, face, faceID)
             ap = term.sign[1]*(term.flux[faceID])
 
-            start = colptr[cellID]
-            offset = 0
-            for j in start:length(rowval)
-                offset += 1
-                if rowval[j] == cellID
-                    break
-                end
-            end
-            nIndex = start + offset - ione
+            # start = colptr[cellID]
+            # offset = 0
+            # for j in start:length(rowval)
+            #     offset += 1
+            #     if rowval[j] == cellID
+            #         break
+            #     end
+            # end
+            # nIndex = start + offset - ione
+            nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
 
             nzval[nIndex] += ap
         end
@@ -375,15 +377,16 @@ end
             # b[cellID] -= ap*phi[cellID]
             ap = term.sign[1]*(term.flux[faceID])
 
-            start = colptr[cellID]
-            offset = 0
-            for j in start:length(rowval)
-                offset += 1
-                if rowval[j] == cellID
-                    break
-                end
-            end
-            nIndex = start + offset - ione
+            # start = colptr[cellID]
+            # offset = 0
+            # for j in start:length(rowval)
+            #     offset += 1
+            #     if rowval[j] == cellID
+            #         break
+            #     end
+            # end
+            # nIndex = start + offset - ione
+            nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
 
             nzval[nIndex] += ap
             # b[cellID] -= max(ap*phi[cellID], 0.0)

@@ -35,7 +35,7 @@ solvers = (
     U = set_solver(
         model.U;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = DILU(),
+        preconditioner = ILU0(),
         convergence = 1e-7,
         relax       = 0.6,
     ),
@@ -136,13 +136,13 @@ using KernelAbstractions
     end
 
     CUDA.allowscalar(false)
-    # model = adapt(CuArray, model)
-    # ∇p = adapt(CuArray, ∇p)
-    # ux_eqn = adapt(CuArray, ux_eqn)
-    # uy_eqn = adapt(CuArray, uy_eqn)
-    # p_eqn = adapt(CuArray, p_eqn)
-    # turbulence = adapt(CuArray, turbulence)
-    # config = adapt(CuArray, config)
+    model = adapt(CuArray, model)
+    ∇p = adapt(CuArray, ∇p)
+    ux_eqn = adapt(CuArray, ux_eqn)
+    uy_eqn = adapt(CuArray, uy_eqn)
+    p_eqn = adapt(CuArray, p_eqn)
+    turbulence = adapt(CuArray, turbulence)
+    config = adapt(CuArray, config)
     
     # Extract model variables and configuration
     (;mesh, U, p, nu) = model
@@ -186,10 +186,10 @@ using KernelAbstractions
     R_uy = ones(TF, iterations)
     R_p = ones(TF, iterations)
 
-    # Uf = adapt(CuArray,Uf)
-    # rDf = adapt(CuArray, rDf)
-    # rD = adapt(CuArray, rD)
-    # pf = adapt(CuArray, pf)
+    Uf = adapt(CuArray,Uf)
+    rDf = adapt(CuArray, rDf)
+    rD = adapt(CuArray, rD)
+    pf = adapt(CuArray, pf)
 
     interpolate!(Uf, U)
     correct_boundaries!(Uf, U, U.BCs)
@@ -201,58 +201,39 @@ using KernelAbstractions
 
     update_nueff!(nueff, nu, turbulence)
 
-    # prev = adapt(CuArray, prev)
+    prev = adapt(CuArray, prev)
 
     @. prev = U.x.values
     discretise!(ux_eqn, prev, runtime)
     apply_boundary_conditions!(ux_eqn, U.x.BCs)
-    @time begin implicit_relaxation!(ux_eqn.equation, prev, solvers.U.relax, mesh) end
-    # implicit_relaxation_test!(ux_eqn.equation, prev, solvers.U.relax, mesh)
-    
-    ux_eqn.equation.A.nzVal
-    ux_eqn.equation.b
+    implicit_relaxation!(ux_eqn.equation, prev, solvers.U.relax, mesh)
 
-    function implicit_relaxation!(eqn::E, field, alpha, mesh) where E<:Equation
-        (; A, b) = eqn
-        rowval, colptr, nzval = sparse_array_deconstructor(A)
-        backend = _get_backend(mesh)
-        kernel! = implicit_relaxation_kernel1!(backend)
-        
-        integer = _get_int(mesh)
-        ione = one(integer)
-        
-        kernel!(ione, rowval, colptr, nzval, b, field, alpha, ndrange = length(b))
+    A = ux_eqn.equation.A
+    CUDA.allowscalar(true)
+    rowval, colptr, nzval = sparse_array_deconstructor(A)
+
+    function nzval_index(colptr, rowval, start_index, required_index)
+        start = colptr[start_index]
+        offset = 0
+        for j in start:length(rowval)
+            offset += 1
+            if rowval[j] == required_index
+                break
+            end
+        end
+        return start + offset - 1
     end
 
-    @kernel function implicit_relaxation_kernel!(ione, rowval, colptr, nzval, b, field, alpha)
-        i = @index(Global)
-        
-        @inbounds begin
+    for i in 1:length(colptr)-1
+        nIndex = nzval_index(colptr, rowval, i, i)
 
-            start = colptr[i]
-            offset = 0
-            for j in start:length(rowval)
-                offset += 1
-                if rowval[j] == i
-                    break
-                end
-            end
-            nIndex = start + offset - ione
-
-            nzval[nIndex] /= alpha
-            b[i] += (1.0 - alpha)*nzval[nIndex]*field[i]
+        if nzval[nIndex] != A[i,i]
+            println("nzval element $i not indexed correctly")
         end
     end
 
-using SparseArrays
-using KernelAbstractions
+    sum
 
-    function sparse_array_deconstructor(arr::SparseArrays.SparseMatrixCSC)
-        (; rowval, colptr, nzval) = arr
-        return rowval, colptr, nzval
-    end
-    
-    function sparse_array_deconstructor(arr::CUDA.CUSPARSE.CuSparseMatrixCSC)
-        (; rowVal, colPtr, nzVal) = arr
-        return rowVal, colPtr, nzVal
-    end
+
+
+    findfirst(isequal(test[2]),@view test[start:end])

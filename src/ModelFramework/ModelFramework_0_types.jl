@@ -2,6 +2,7 @@ export AbstractOperator, AbstractSource
 export Operator, Source, Src
 export Time, Laplacian, Divergence, Si
 export Model, Equation, ModelEquation
+export nzval_index
 
 # ABSTRACT TYPES 
 
@@ -146,6 +147,18 @@ function sparse_matrix_connectivity(mesh::Mesh2)
     end
     v = zeros(TF, length(i))
     return i, j, v
+end
+
+function nzval_index(colptr, rowval, start_index, required_index, ione)
+    start = colptr[start_index]
+    offset = 0
+    for j in start:length(rowval)
+        offset += 1
+        if rowval[j] == required_index
+            break
+        end
+    end
+    return start + offset - ione
 end
 
 # Model equation type 

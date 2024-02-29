@@ -13,7 +13,7 @@ foil,ctrl_p = spline_foil(FoilDef(
 #%% REYNOLDS & Y+ CALCULATIONS
 velocity = [15, 0.0, 0.0]
 nu,ρ = 1.48e-5,1.225
-yplus_init,BL_layers = 1.0,55
+yplus_init,BL_layers = 2.0,35
 laminar = false
 BL_mesh = BL_calcs(velocity,nu,ρ,foil.chord,yplus_init,BL_layers,laminar) #Returns (BL mesh thickness, BL mesh growth rate)
 
@@ -42,8 +42,8 @@ mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
 # Turbulence Model
-νR = 2.5
-Tu = 0.01
+νR = 5
+Tu = 0.05
 k_inlet = 3/2*(Tu*velocity[1])^2
 ω_inlet = k_inlet/(νR*nu)
 model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))

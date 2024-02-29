@@ -51,11 +51,54 @@ function explicit_relaxation!(phi, phi0, alpha)
     end
 end
 
-function implicit_relaxation!(eqn::E, field, alpha) where E<:Equation
+# function implicit_relaxation!(eqn::E, field, alpha) where E<:Equation
+#     (; A, b) = eqn
+#     @inbounds for i ∈ eachindex(b)
+#         A[i,i] /= alpha
+#         b[i] += (1.0 - alpha)*A[i,i]*field[i]
+#     end
+# end
+
+## IMPLICIT RELAXATION KERNEL 
+
+# Prepare variables for kernel and call
+function implicit_relaxation!(eqn::E, field, alpha, mesh) where E<:Equation
     (; A, b) = eqn
-    @inbounds for i ∈ eachindex(b)
-        A[i,i] /= alpha
-        b[i] += (1.0 - alpha)*A[i,i]*field[i]
+    # Output sparse matrix properties and values
+    rowval, colptr, nzval = sparse_array_deconstructor(A)
+
+    # Get backend and define kernel
+    backend = _get_backend(mesh)
+    kernel! = implicit_relaxation_kernel!(backend)
+    
+    # Define variable equal to 1 with same type as mesh integers
+    integer = _get_int(mesh)
+    ione = one(integer)
+    
+    # Execute kernel
+    kernel!(ione, rowval, colptr, nzval, b, field, alpha, ndrange = length(b))
+end
+
+@kernel function implicit_relaxation_kernel!(ione, rowval, colptr, nzval, b, field, alpha)
+    # i defined as values from 1 to length(b)
+    i = @index(Global)
+    
+    @inbounds begin
+
+        # Find nzval index relating to A[i,i] (CHANGE TO WHILE LOOP, WRAP IN FUNCTION)
+        start = colptr[i]
+        offset = 0
+        for j in start:length(rowval)
+            offset += 1
+            if rowval[j] == i
+                break
+            end
+        end
+        nIndex = start + offset - ione
+
+        # Run implicit relaxation calculations
+        nzval[nIndex] /= alpha
+        b[i] += (1.0 - alpha)*nzval[nIndex]*field[i]
     end
 end
 

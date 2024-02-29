@@ -5,6 +5,7 @@ using LoopVectorization
 using LinearAlgebra
 using SparseArrays
 using LinearOperators
+using KernelAbstractions
 # using ILUZero
 
 using FVM_1D.Mesh

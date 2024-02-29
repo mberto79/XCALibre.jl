@@ -174,3 +174,18 @@ CPU kernel benchmark (compilation):         0.016154 seconds (18.40 k allocation
 CPU kernel benchmark (post compilation):    0.000039 seconds (154 allocations: 33.906 KiB)
 
 Output the same for all benchmarks?: YES
+
+
+
+implicit_relaxation!() update for GPU (Float64 types with variables ux_eqn.equation, prev, solvers.U.relax, mesh)
+
+CPU benchmark (compilation):                0.048336 seconds (37.90 k allocations: 2.584 MiB, 97.74% compilation time)
+CPU benchmark (post compilation):           0.001065 seconds (6 allocations: 1.656 KiB)
+
+GPU benchmark (compilation):                0.245107 seconds (331.28 k allocations: 23.452 MiB, 84.05% compilation time: 6% of which was recompilation)
+GPU benchmark (post compilation):           0.000082 seconds (45 allocations: 2.953 KiB)
+
+CPU kernel benchmark (compilation):         0.096476 seconds (193.76 k allocations: 13.468 MiB, 99.52% compilation time)
+CPU kernel benchmark (post compilation):    0.000408 seconds (17 allocations: 1.953 KiB)
+
+Output the same for all benchmarks?: YES

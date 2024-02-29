@@ -12,6 +12,7 @@ mesh.nodes
 
 #Boundary
 mesh.boundaries
+mesh.boundary_cellsID
 
 #Cell
 mesh.cells
@@ -25,9 +26,6 @@ mesh.cells[1].faces_range
 
 #Face
 mesh.faces
-
-
-
 
 
 velocity = [0.5,0.0,0.0]

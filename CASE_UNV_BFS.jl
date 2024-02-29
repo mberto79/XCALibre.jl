@@ -13,7 +13,7 @@ mesh.faces
 mesh.boundaries
 mesh.cell_faces
 mesh.cell_nodes
-mesh.cells[1800].faces_range
+mesh.cells[1].faces_range
 mesh.cell_neighbours
 mesh.faces[241]
 mesh.faces[2].ownerCells

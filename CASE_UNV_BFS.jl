@@ -7,20 +7,28 @@ mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 # mesh = update_mesh_format(mesh; integer=Int32, float=Float32)
 mesh = update_mesh_format(mesh)
-mesh.nodes
-mesh.cells
-mesh.faces
-mesh.boundaries
-mesh.cell_faces
-mesh.cell_nodes
-mesh.cells[1].faces_range
-mesh.cell_neighbours
-mesh.faces[241]
-mesh.faces[2].ownerCells
-mesh.boundary_cellsID
-maximum(mesh.boundary_cellsID)
 
-minimum(mesh.cell_faces)
+mesh.nodes[end].cells_range
+mesh.node_cells
+
+mesh.boundaries[end].IDs_range
+mesh.boundary_cellsID
+
+mesh.cells[end].nodes_range
+mesh.cell_nodes
+
+mesh.cells[end].faces_range
+mesh.cell_faces
+mesh.cell_neighbours
+mesh.cell_nsign
+
+mesh.faces[end].nodes_range
+mesh.face_nodes
+
+mesh.nodes
+mesh.faces
+mesh.cells
+
 
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3

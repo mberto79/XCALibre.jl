@@ -7,25 +7,27 @@ unv_mesh="src/UNV_3D/5_cell_new_boundaries.unv"
 
 mesh=build_mesh3D(unv_mesh)
 
-#Nodes
-mesh.nodes
+mesh.nodes[end].cells_range
+mesh.node_cells
 
-#Boundary
-mesh.boundaries
+mesh.boundaries[end].IDs_range
 mesh.boundary_cellsID
 
-#Cell
-mesh.cells
-mesh.cell_faces
+mesh.cells[end].nodes_range
 mesh.cell_nodes
+
+mesh.cells[end].faces_range
+mesh.cell_faces
 mesh.cell_neighbours
+mesh.cell_nsign
 
-mesh.cells[1].nodes_range
-mesh.cells[1].faces_range
+mesh.faces[end].nodes_range
+mesh.face_nodes
 
-
-#Face
+mesh.nodes
 mesh.faces
+mesh.cells
+mesh.boundaries
 
 
 velocity = [0.5,0.0,0.0]

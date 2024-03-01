@@ -35,14 +35,14 @@ solvers = (
     U = set_solver(
         model.U;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = NormDiagonal(),
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.6,
     ),
     p = set_solver(
         model.p;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = NormDiagonal(),
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.4,
     )
@@ -202,37 +202,36 @@ using KernelAbstractions
     update_nueff!(nueff, nu, turbulence)
 
     prev = adapt(CuArray, prev)
+    # solvers = adapt(CuArray, solvers)
 
     @. prev = U.x.values
     discretise!(ux_eqn, prev, runtime)
     apply_boundary_conditions!(ux_eqn, U.x.BCs)
     implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh)
     @time begin update_preconditioner!(ux_eqn.preconditioner, mesh) end
+    # run!(ux_eqn, solvers.U) #opP=Pu.P, solver=solver_U)
     ux_eqn.preconditioner.A.nzVal
     ux_eqn.preconditioner.storage
 
-    arr = [1 2 3 4 5 6 7 8 9 10; 10 9 8 7 6 5 4 3 2 1]
+    test = cu(ux_eqn.solver.R)
+    test
 
-    # Generate random dimensions for the matrix
-    rows = rand(1:10)
-    cols = rand(1:10)
+    GmresSolver()
 
-    # Generate random elements for the matrix
-    arr = rand(Float64, rows, cols) * 10
-    test = norm(arr, 10)
-    test1 = norm_static(arr, 10)
 
-    if test == test1
-        println("SUCCESS")
+    using CUDA
+    using Adapt
+    mutable struct Test{I,F}
+        test1::I
+        test2::F
+        test3::I
+        test4::Vector{Int}
     end
-
-# norm_static
-function norm_static(arr, p = 2)
-    sum = 0
-    for i in eachindex(arr)
-        val = (abs(arr[i]))^p
-        sum += val
+    Adapt.@adapt_structure Test
+    function ahh(test1, test2, test3, test4::Vector{Int})
+        return Test{typeof(test1), typeof(test2)}(test1, test2, test3, test4)
     end
-    return sum^(1/p)
-end
-
+    
+    my_test = ahh(10, 101.23, 200, [1, 2, 3, 4, 5, 6])
+    my_test = cu(my_test)
+    my_test.test4

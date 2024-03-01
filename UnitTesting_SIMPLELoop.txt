@@ -204,3 +204,18 @@ CPU kernel benchmark (compilation):         0.004041 seconds (71 allocations: 4.
 CPU kernel benchmark (post compilation):    0.000966 seconds (12 allocations: 1.500 KiB)
 
 Output the same for all benchmarks?: YES
+
+
+
+update_preconditioner!() for Jacobi update for GPU (Float64 types with variables ux_eqn.preconditioner)
+
+CPU benchmark (compilation):                0.003947 seconds (16 allocations: 2.078 KiB, 91.94% compilation time)
+CPU benchmark (post compilation):           0.000331 seconds (2 allocations: 1.281 KiB)
+
+GPU benchmark (compilation):                0.292935 seconds (280.05 k allocations: 20.391 MiB, 7.96% gc time, 70.11% compilation time)
+GPU benchmark (post compilation):           0.000097 seconds (42 allocations: 2.562 KiB)
+
+CPU kernel benchmark (compilation):         0.003857 seconds (31 allocations: 2.453 KiB, 90.47% compilation time)
+CPU kernel benchmark (post compilation):    0.000389 seconds (17 allocations: 1.656 KiB)
+
+Output the same for all benchmarks?: YES

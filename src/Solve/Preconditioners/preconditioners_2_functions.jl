@@ -48,30 +48,49 @@ end
         idx_start = colptr[i]
         idx_next = colptr[i+1]
         column_vals = @view nzval[idx_start:(idx_next-1)] 
-
-        # sum = 0
-        # for j in eachindex(column_vals)
-        #     val = (abs(column_vals[j]))^2
-        #     sum += val
-        # end
-        # norm = sum^(1/2)
-
         norm = norm_static(column_vals)
-
         storage[i] = 1/norm
     end
 end
 
-update_preconditioner!(
-    P::Preconditioner{Jacobi,M,PT,S}
-    ) where {M<:AbstractSparseArray,PT,S} =
-begin
+# update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh) where {M<:AbstractSparseArray,PT,S} =
+# begin
+#     A = P.A
+#     # (; colptr, m, n, nzval, rowval) = A
+#     rowval, colptr, nzval, m, n = sparse_array_deconstructor_preconditioners(A)
+#     storage = P.storage
+#     idx_diagonal = zero(eltype(m)) # index to diagonal element
+#     @inbounds for i ∈ 1:m
+#         idx_start = colptr[i]
+#         idx_next = colptr[i+1]
+#         @inbounds for p ∈ idx_start:(idx_next-1)
+#             row = rowval[p]
+#             if row == i
+#                 idx_diagonal = p
+#                 break
+#             end
+#         end
+#         storage[i] = 1/abs(nzval[idx_diagonal])
+#     end
+# end
+
+function update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh) where {M<:AbstractSparseArray,PT,S}
+    backend = _get_backend(mesh)
+
     A = P.A
     # (; colptr, m, n, nzval, rowval) = A
-    rowval, colptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
+    rowval, colptr, nzval, m, n = sparse_array_deconstructor_preconditioners(A)
     storage = P.storage
     idx_diagonal = zero(eltype(m)) # index to diagonal element
-    @inbounds for i ∈ 1:m
+
+    kernel! = update_Jacobi!(backend)
+    kernel!(rowval, colptr, nzval, idx_diagonal, storage, ndrange = m)
+end
+
+@kernel function update_Jacobi!(rowval, colptr, nzval, idx_diagonal, storage)
+    i = @index(Global)
+
+    @inbounds begin
         idx_start = colptr[i]
         idx_next = colptr[i+1]
         @inbounds for p ∈ idx_start:(idx_next-1)
@@ -85,24 +104,18 @@ begin
     end
 end
 
-update_preconditioner!(
-    P::Preconditioner{LDL,M,PT,S}
-    ) where {M<:AbstractSparseArray,PT,S} =
+update_preconditioner!(P::Preconditioner{LDL,M,PT,S}, mesh) where {M<:AbstractSparseArray,PT,S} =
 begin
     nothing
 end
 
-update_preconditioner!(
-    P::Preconditioner{ILU0,M,PT,S}
-    ) where {M<:AbstractSparseArray,PT,S} =
+update_preconditioner!(P::Preconditioner{ILU0,M,PT,S}, mesh) where {M<:AbstractSparseArray,PT,S} =
 begin
     ilu0!(P.storage, P.A)
     nothing
 end
 
-update_preconditioner!(
-    P::Preconditioner{DILU,M,PT,S}
-    ) where {M<:AbstractSparseArray,PT,S} =
+update_preconditioner!(P::Preconditioner{DILU,M,PT,S}, mesh) where {M<:AbstractSparseArray,PT,S} =
 begin
     update_dilu_diagonal!(P) 
     nothing

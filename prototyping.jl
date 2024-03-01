@@ -35,14 +35,14 @@ solvers = (
     U = set_solver(
         model.U;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0(),
+        preconditioner = NormDiagonal(),
         convergence = 1e-7,
         relax       = 0.6,
     ),
     p = set_solver(
         model.p;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = LDL(),
+        preconditioner = NormDiagonal(),
         convergence = 1e-7,
         relax       = 0.4,
     )
@@ -206,34 +206,33 @@ using KernelAbstractions
     @. prev = U.x.values
     discretise!(ux_eqn, prev, runtime)
     apply_boundary_conditions!(ux_eqn, U.x.BCs)
-    implicit_relaxation!(ux_eqn.equation, prev, solvers.U.relax, mesh)
+    implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh)
+    @time begin update_preconditioner!(ux_eqn.preconditioner, mesh) end
+    ux_eqn.preconditioner.A.nzVal
+    ux_eqn.preconditioner.storage
 
-    A = ux_eqn.equation.A
-    CUDA.allowscalar(true)
-    rowval, colptr, nzval = sparse_array_deconstructor(A)
+    arr = [1 2 3 4 5 6 7 8 9 10; 10 9 8 7 6 5 4 3 2 1]
 
-    function nzval_index(colptr, rowval, start_index, required_index)
-        start = colptr[start_index]
-        offset = 0
-        for j in start:length(rowval)
-            offset += 1
-            if rowval[j] == required_index
-                break
-            end
-        end
-        return start + offset - 1
+    # Generate random dimensions for the matrix
+    rows = rand(1:10)
+    cols = rand(1:10)
+
+    # Generate random elements for the matrix
+    arr = rand(Float64, rows, cols) * 10
+    test = norm(arr, 10)
+    test1 = norm_static(arr, 10)
+
+    if test == test1
+        println("SUCCESS")
     end
 
-    for i in 1:length(colptr)-1
-        nIndex = nzval_index(colptr, rowval, i, i)
-
-        if nzval[nIndex] != A[i,i]
-            println("nzval element $i not indexed correctly")
-        end
+# norm_static
+function norm_static(arr, p = 2)
+    sum = 0
+    for i in eachindex(arr)
+        val = (abs(arr[i]))^p
+        sum += val
     end
+    return sum^(1/p)
+end
 
-    sum
-
-
-
-    findfirst(isequal(test[2]),@view test[start:end])

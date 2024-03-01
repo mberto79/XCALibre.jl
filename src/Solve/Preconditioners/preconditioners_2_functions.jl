@@ -48,7 +48,17 @@ end
         idx_start = colptr[i]
         idx_next = colptr[i+1]
         column_vals = @view nzval[idx_start:(idx_next-1)] 
-        storage[i] = 1/norm(column_vals)
+
+        # sum = 0
+        # for j in eachindex(column_vals)
+        #     val = (abs(column_vals[j]))^2
+        #     sum += val
+        # end
+        # norm = sum^(1/2)
+
+        norm = norm_static(column_vals)
+
+        storage[i] = 1/norm
     end
 end
 
@@ -106,13 +116,4 @@ end
 function sparse_array_deconstructor_preconditioners(arr::CUDA.CUSPARSE.CuSparseMatrixCSC)
     (; rowVal, colPtr, nzVal, dims) = arr
     return rowVal, colPtr, nzVal, dims[1], dims[2]
-end
-
-function norm_static(arr, p = 2)
-    sum = 0
-    for i in eachindex(arr)
-        val = (abs(arr[i]))^p
-        sum += val
-    end
-    return sum^(1/p)
 end

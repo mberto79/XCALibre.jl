@@ -189,3 +189,18 @@ CPU kernel benchmark (compilation):         0.096476 seconds (193.76 k allocatio
 CPU kernel benchmark (post compilation):    0.000408 seconds (17 allocations: 1.953 KiB)
 
 Output the same for all benchmarks?: YES
+
+
+
+update_preconditioner!() for NormDiagonal update for GPU (Float64 types with variables ux_eqn.preconditioner)
+
+CPU benchmark (compilation):                0.000987 seconds (2 allocations: 1.281 KiB)
+CPU benchmark (post compilation):           0.000933 seconds (2 allocations: 1.281 KiB)
+
+GPU benchmark (compilation):                1.397839 seconds (1.82 M allocations: 195.162 MiB, 0.89% gc time, 35.00% compilation time)
+GPU benchmark (post compilation):           0.000070 seconds (42 allocations: 2.453 KiB)
+
+CPU kernel benchmark (compilation):         0.004041 seconds (71 allocations: 4.562 KiB, 75.60% compilation time)
+CPU kernel benchmark (post compilation):    0.000966 seconds (12 allocations: 1.500 KiB)
+
+Output the same for all benchmarks?: YES

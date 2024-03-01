@@ -82,7 +82,8 @@ function update_dilu_diagonal!(P) # must rename
     
     # Algo 3
     (; A, storage) = P
-    (; colptr, n, nzval, rowval) = A
+    # (; colptr, n, nzval, rowval) = A
+    rowval, colptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
     (; Di, Ri, D) = storage
     
     extract_diagonal!(D, Di, A)

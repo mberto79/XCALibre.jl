@@ -40,6 +40,7 @@ end
     (; A, b) = eqn.equation
     mesh = model.terms[1].phi.mesh
     (; boundaries, faces, cells, boundary_cellsID) = mesh
+    precon = eqn.preconditioner
 
     rowval, colptr, nzval = sparse_array_deconstructor(A)
 
@@ -55,6 +56,8 @@ end
             boundary_cellsID, ione, rowval, colptr, nzval, b)
         end
     end
+
+    check_for_precon!(nzval, precon, backend)
     # $(assignment_loops...)
     nothing
     end

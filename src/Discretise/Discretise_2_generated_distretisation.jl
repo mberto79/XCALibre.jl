@@ -1,4 +1,4 @@
-export discretise!, sparse_array_deconstructor
+export discretise!, sparse_array_deconstructor, check_for_precon!
 
 discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
 
@@ -83,38 +83,47 @@ discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
     #        end
 
     quote
+        # Extract number of terms and sources
         nTerms = TN
         nSources = SN
-        (; A, b) = eqn.equation
-        (; terms, sources) = model
+
+        # Define variables for function
         mesh = model.terms[1].phi.mesh
+        precon = eqn.preconditioner
+
+        # Deconstructors to get lower-level variables for function
+        (; A, b) = eqn.equation
+        A = A
+        b = b
+        (; terms, sources) = model
+        (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
+        
+        # Get types and create float(zero) and integer(one)
         integer = _get_int(mesh)
         float = _get_float(mesh)
         backend = _get_backend(mesh)
-        # (; faces, cells, ) = mesh
-        (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
-        # (; rowval, colptr, nzval) = A
-        rowval, colptr, nzval = sparse_array_deconstructor(A)
         fzero = zero(float) # replace with func to return mesh type (Mesh module)
         ione = one(integer)
+
+        # (; faces, cells, ) = mesh
+        # (; rowval, colptr, nzval) = A
+        # Deconstruct sparse array dependent on sparse arrays type
+        rowval, colptr, nzval = sparse_array_deconstructor(A)
+
         # @inbounds for i ∈ eachindex(nzval)
         #     nzval[i] = fzero
         # end
-
+        
+        # Kernel to set nzval array
         kernel! = set_nzval(backend)
         kernel!(nzval, fzero, ndrange = length(nzval))
 
-        # CUDA.allowscalar(true)
-        # start = colptr[1]
-        # offset = findfirst(isequal(1),@view rowval[start:end]) - ione
-        # typeof(offset)
-
+        # Set initial values for indexing of nzval array
         cIndex = zero(integer) # replace with func to return mesh type (Mesh module)
         nIndex = zero(integer) # replace with func to return mesh type (Mesh module)
         offset = zero(integer)
 
-        CUDA.allowscalar(false)
-
+        # Assign storage for sources arrays
         sources_field = Array{typeof(sources[1].field)}(undef, length(sources))
         sources_sign = Array{typeof(sources[1].sign)}(undef, length(sources))
 
@@ -123,25 +132,32 @@ discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
             sources_sign[i] = sources[i].sign
         end
 
+        # Move sources arrays to required backend
         sources_field = _convert_array!(sources_field, backend)
         sources_sign = _convert_array!(sources_sign, backend)
 
+        # Set b array to 0
         kernel! = set_b!(backend)
         kernel!(fzero, b, ndrange = length(b))
 
+        # Run schemes and sources calculations on all terms
         for i in 1:nTerms
             schemes_and_sources!(model.terms[i], 
             nTerms, nSources, offset, fzero, ione, terms, sources_field,
-            sources_sign, rowval, colptr, nzval, cIndex, nIndex,  b, faces,
-            cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-            backend, runtime, prev)
+            sources_sign, rowval, colptr, nzval, cIndex, nIndex,
+            b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer,
+            float, backend, runtime, prev)
         end
 
+        # Run sources calculations on all sources
         kernel! = sources!(backend)
         for i in 1:nSources
             (; field, sign) = sources[i]
             kernel!(field, sign, cells, b, ndrange = length(cells))
         end
+
+        # Copy nzval array to preconditioner if running on GPU and if preconditioner is not empty
+        check_for_precon!(nzval, precon, backend)
         # end
         nothing
     end
@@ -163,5 +179,34 @@ end
 
     @inbounds begin
         nzval[i] = fzero
+    end
+end
+
+function check_for_precon!(nzval, precon::Tuple, backend)
+    nothing
+end
+
+function check_for_precon!(nzval, precon, backend)
+    (; A) = precon
+    A_precon = A
+    copy_to_precon!(nzval, A_precon, backend)
+end
+
+function copy_to_precon!(nzval, A::SparseArrays.SparseMatrixCSC, backend)
+    nothing
+end
+
+function copy_to_precon!(nzval, A::CUDA.CUSPARSE.CuSparseMatrixCSC, backend)
+    rowval_precon, colptr_precon, nzval_precon = sparse_array_deconstructor(A)
+
+    kernel! = copy_to_precon_kernel!(backend)
+    kernel!(nzval, nzval_precon, ndrange = length(nzval))
+end
+
+@kernel function copy_to_precon_kernel!(nzval, nzval_precon)
+    i = @index(Global)
+
+    @inbounds begin
+        nzval_precon[i] = nzval[i]
     end
 end

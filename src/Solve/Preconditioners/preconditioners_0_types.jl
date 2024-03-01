@@ -27,7 +27,7 @@ function Adapt.adapt_structure(to, itp::Preconditioner{T}) where {T}
     storage = Adapt.adapt_structure(to, itp.storage) 
     Preconditioner{T,typeof(A),typeof(P),typeof(storage)}(A,P,storage)
 end
-Preconditioner{NormDiagonal}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
+Preconditioner{NormDiagonal}(A::AbstractSparseArray{F,I}) where {F,I} = begin
     m, n = size(A)
     m == n || throw("Matrix not square")
     S = zeros(F, m)
@@ -35,7 +35,7 @@ Preconditioner{NormDiagonal}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
     Preconditioner{NormDiagonal,typeof(A),typeof(P),typeof(S)}(A,P,S)
 end
 
-Preconditioner{Jacobi}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
+Preconditioner{Jacobi}(A::AbstractSparseArray{F,I}) where {F,I} = begin
     m, n = size(A)
     m == n || throw("Matrix not square")
     S = zeros(F, m)
@@ -43,7 +43,7 @@ Preconditioner{Jacobi}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
     Preconditioner{Jacobi,typeof(A),typeof(P),typeof(S)}(A,P,S)
 end
 
-Preconditioner{LDL}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
+Preconditioner{LDL}(A::AbstractSparseArray{F,I}) where {F,I} = begin
     m, n = size(A)
     m == n || throw("Matrix not square")
     S = zeros(F, m)
@@ -51,7 +51,7 @@ Preconditioner{LDL}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
     Preconditioner{LDL,typeof(A),typeof(P),typeof(S)}(A,P,S)
 end
 
-Preconditioner{ILU0}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
+Preconditioner{ILU0}(A::AbstractSparseArray{F,I}) where {F,I} = begin
     m, n = size(A)
     m == n || throw("Matrix not square")
     S = ilu0(A)
@@ -69,7 +69,7 @@ struct DILUprecon{M,V,VI,VVI}
     J::VVI
 end
 Adapt.@adapt_structure DILUprecon
-Preconditioner{DILU}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
+Preconditioner{DILU}(A::AbstractSparseArray{F,I}) where {F,I} = begin
     m, n = size(A)
     m == n || throw("Matrix not square")
     D = zeros(F, m)

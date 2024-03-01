@@ -15,27 +15,26 @@ function build_mesh3D(unv_mesh)
     face_nodes=Vector{Int}(generate_face_nodes(faces))
     cell_nodes=Vector{Int}(generate_cell_nodes(volumes))
     
-    cell_faces=Vector{Int}(generate_cell_faces(volumes,faces))
+    all_cell_faces=Vector{Int}(generate_all_cell_faces(volumes,faces))
 
     cell_nodes_range=generate_cell_nodes_range(volumes)
     face_nodes_range=generate_face_nodes_range(faces)
-    cell_faces_range=generate_faces_range(volumes,faces)
+    all_cell_faces_range=generate_all_faces_range(volumes,faces)
 
     centre_of_cells=calculate_centre_cell(volumes,nodes)
     volume_of_cells=calculate_cell_volume(volumes,nodes)
 
-
     boundary_faces,boundary_face_range=generate_boundary_faces(boundaryElements)
-    boundary_cells=generate_boundary_cells(boundary_faces,cell_faces,cell_faces_range)
+    boundary_cells=generate_boundary_cells(boundary_faces,all_cell_faces,all_cell_faces_range)
 
-    
+    cell_faces,cell_faces_range=generate_cell_faces(volumes,faces,boundaryElements)
 
     boundaries=generate_boundaries(boundaryElements,boundary_face_range)
     cells=generate_cells(volumes,centre_of_cells,volume_of_cells,cell_nodes_range,cell_faces_range)
 
     cell_neighbours=generate_cell_neighbours(cells,cell_faces)
 
-    face_ownerCells=generate_face_ownerCells(faces,cell_faces,volumes,cell_faces_range)
+    face_ownerCells=generate_face_ownerCells(faces,all_cell_faces,volumes,all_cell_faces_range)
 
     faces_normal,faces_area,faces_centre,faces_e,faces_delta,faces_weight=calculate_faces_properties(faces,face_nodes,nodes,cell_nodes,cells,face_ownerCells,face_nodes_range)
 
@@ -54,11 +53,55 @@ function build_mesh3D(unv_mesh)
     return mesh
 end
 
+function generate_cell_faces(volumes,faces,boundaryElements)
+    cell_faces=Int[]
+    cell_faces_range=[]
+    max_store=0
+    max=0
+    for ib=1:length(boundaryElements)
+        max_store=maximum(boundaryElements[ib].elements)
+        if max_store>=max
+            max=max_store
+        end
+    end
+    
+    x=0
+    for i=1:length(volumes)
+    wipe=[]
+        for ic=max+1:length(faces)
+            bad=sort(volumes[i].volumes)
+            good=sort(faces[ic].faces)
+            store=[]
+
+            push!(store,good[1] in bad)
+            push!(store,good[2] in bad)
+            push!(store,good[3] in bad)
+
+            if store[1:3] == [true,true,true]
+                push!(cell_faces,faces[ic].faceindex)
+                push!(wipe,faces[ic].faceindex)
+            end
+            continue
+        end
+
+        if length(wipe)==1
+            push!(cell_faces_range,UnitRange(x+1,x+1))
+            x=x+1
+        end
+
+        if length(wipe) ≠ 1
+            push!(cell_faces_range,UnitRange(x+1,x+length(wipe)))
+            x=x+length(wipe)
+        end
+    end
+    return cell_faces,cell_faces_range
+end
+
 function calculate_cell_nsign(cells,faces1,cell_faces)
     cell_nsign=Int[]
     for i=1:length(cells)
         centre=cells[i].centre 
-        for ic=1:4
+        for ic=1:length(cells[i].faces_range)
             fcentre=faces1[cell_faces[cells[i].faces_range][ic]].centre
             fnormal=faces1[cell_faces[cells[i].faces_range][ic]].normal
             d_cf=fcentre-centre
@@ -128,7 +171,7 @@ function calculate_faces_properties(faces,face_nodes,nodes,cell_nodes,cells,face
         
         cf=(p1+p2+p3)/3
         
-        if face_ownerCells[i,2]==0
+        if face_ownerCells[i,2]==face_ownerCells[i,1]
             p1=nodes[cell_nodes[cells[face_ownerCells[i,1]].nodes_range][1]].coords
             p2=nodes[cell_nodes[cells[face_ownerCells[i,1]].nodes_range][2]].coords
             p3=nodes[cell_nodes[cells[face_ownerCells[i,1]].nodes_range][3]].coords
@@ -337,23 +380,23 @@ function generate_boundary_faces(boundaryElements)
 end
 
 
-function generate_face_ownerCells(faces,cell_faces,volumes,cell_faces_range)
+function generate_face_ownerCells(faces,all_cell_faces,volumes,all_cell_faces_range)
     x=[]
     for i=1:length(faces)
-        push!(x,findall(x->x==i,cell_faces))
+        push!(x,findall(x->x==i,all_cell_faces))
     end
     y=zeros(Int,length(x),2)
     for ic=1:length(volumes)
         for i=1:length(x)
             #if length(x[i])==1
-                if cell_faces_range[ic][1]<=x[i][1]<=cell_faces_range[ic][end]
+                if all_cell_faces_range[ic][1]<=x[i][1]<=all_cell_faces_range[ic][end]
                     y[i,1]=ic
                     y[i,2]=ic
                 end
             #end
 
             if length(x[i])==2
-                if cell_faces_range[ic][1]<=x[i][2]<=cell_faces_range[ic][end]
+                if all_cell_faces_range[ic][1]<=x[i][2]<=all_cell_faces_range[ic][end]
                     #y[i]=ic
                     y[i,2]=ic
 
@@ -401,7 +444,28 @@ function generate_cell_nodes(volumes)
     return cell_nodes
 end
 
-function generate_cell_faces(volumes,faces)
+# function generate_cell_faces(volumes,faces)
+#     cell_faces=[]
+#     for i=1:length(volumes)
+#         for ic=1:length(faces)
+#             bad=sort(volumes[i].volumes)
+#             good=sort(faces[ic].faces)
+#             store=[]
+
+#             push!(store,good[1] in bad)
+#             push!(store,good[2] in bad)
+#             push!(store,good[3] in bad)
+
+#             if store[1:3] == [true,true,true]
+#                 push!(cell_faces,faces[ic].faceindex)
+#             end
+#             continue
+#         end
+#     end
+#     return cell_faces
+# end
+
+function generate_all_cell_faces(volumes,faces)
     cell_faces=[]
     for i=1:length(volumes)
         for ic=1:length(faces)
@@ -469,7 +533,7 @@ function generate_face_nodes_range(faces)
 end
 
 #Faces Range
-function generate_faces_range(volumes,faces)
+function generate_all_faces_range(volumes,faces)
     cell_faces_range=UnitRange(0,0)
     store=[]
     x=0

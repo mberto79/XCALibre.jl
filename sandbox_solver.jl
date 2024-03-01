@@ -1,36 +1,13 @@
 using FVM_1D
-# using Plots
+using Plots
 using Krylov
 
-unv_mesh="src/UNV_3D/5_cell_new_boundaries.unv"
-#unv_mesh="src/UNV_3D/800_cell_new_boundaries.unv"
+#unv_mesh="src/UNV_3D/5_cell_new_boundaries.unv"
+unv_mesh="src/UNV_3D/800_cell_new_boundaries.unv"
 
 mesh=build_mesh3D(unv_mesh)
 
-mesh.nodes[end].cells_range
-mesh.node_cells
-
-mesh.boundaries[end].IDs_range
-mesh.boundary_cellsID
-
-mesh.cells[end].nodes_range
-mesh.cell_nodes
-
-mesh.cells[end].faces_range
-mesh.cell_faces
-mesh.cell_neighbours
-mesh.cell_nsign
-
-mesh.faces[end].nodes_range
-mesh.face_nodes
-
-mesh.nodes
-mesh.faces
-mesh.cells
-mesh.boundaries
-
-
-velocity = [0.5,0.0,0.0]
+velocity = [2.0,0.0,0.0]
 nu=1e-3
 Re=velocity[1]*0.1/nu
 
@@ -88,6 +65,11 @@ initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
 Rx, Ry, Rz, Rp = simple!(model, config)
+Rx
+Ry
+Rz
+Rp
+
 
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
@@ -107,19 +89,3 @@ Profile.Allocs.@profile sample_rate=1 begin
 end
 
 PProf.Allocs.pprof()
-
-#function boundary_index(
-    #boundaries::Vector{Boundary}, name::Symbol,
-    #) 
-    bci = zero(Int)
-    for i ∈ eachindex(mesh.boundaries)
-        bci += one(Int)
-        if mesh.boundaries[i].name == name
-            return bci 
-        end
-    end
-#end
-
-name=Symbol("outlet")
-boundary_index(mesh.boundaries,name)
-mesh.boundaries

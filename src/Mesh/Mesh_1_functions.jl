@@ -1,5 +1,6 @@
 export _get_float, _get_int, _get_backend, _convert_array!
 export total_boundary_faces, boundary_index
+export norm_static
 # export number_symbols
 export x, y, z # access cell centres
 export xf, yf, zf # access face centres
@@ -88,6 +89,15 @@ function zf(mesh::Mesh2{I,F}) where {I,F}
         out[i] = faces[i].centre[3]
     end
     return out
+end
+
+function norm_static(arr, p = 2)
+    sum = 0
+    for i in eachindex(arr)
+        val = (abs(arr[i]))^p
+        sum += val
+    end
+    return sum^(1/p)
 end
 
 # function number_symbols(mesh)

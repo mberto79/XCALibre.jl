@@ -38,14 +38,14 @@ function build_mesh3D(unv_mesh)
 
     faces_normal,faces_area,faces_centre,faces_e,faces_delta,faces_weight=calculate_faces_properties(faces,face_nodes,nodes,cell_nodes,cells,face_ownerCells,face_nodes_range)
 
-    faces1=generate_faces(faces,face_nodes_range,faces_centre,faces_normal,faces_area,face_ownerCells,faces_e,faces_delta,faces_weight)
+    faces=generate_faces(faces,face_nodes_range,faces_centre,faces_normal,faces_area,face_ownerCells,faces_e,faces_delta,faces_weight)
     
-    cell_nsign=calculate_cell_nsign(cells,faces1,cell_faces)
+    cell_nsign=calculate_cell_nsign(cells,faces,cell_faces)
 
     get_float=SVector(0.0,0.0,0.0)
     get_int=UnitRange(0,0)
 
-    mesh=Mesh3(cells,cell_nodes,cell_faces,cell_neighbours,cell_nsign,faces1,face_nodes,boundaries,nodes,node_cells,get_float,get_int,boundary_cells)
+    mesh=Mesh3(cells,cell_nodes,cell_faces,cell_neighbours,cell_nsign,faces,face_nodes,boundaries,nodes,node_cells,get_float,get_int,boundary_cells)
 
     end
     println("Done! Execution time: ", @sprintf "%.6f" stats.time)

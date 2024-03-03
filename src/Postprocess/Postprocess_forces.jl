@@ -30,7 +30,7 @@ y_plus(patch::Symbol, ρ::Float64, model::RANS{M,F1,F2,V,T,E,D}) where {M,F1,F2,
     y = Array{Float64,1}(undef,length(face_centres))
     for (i,face_centre) ∈ enumerate(face_centres)
         ustar = √(norm([sumX,sumY,sumZ])/ρ)
-        y[i] = 2*norm(face_centre-cells[cellsID[i]].centre) #First cell height = 2*distance from boundary face to first cell centre
+        y[i] = norm(face_centre-cells[cellsID[i]].centre) #First cell height = distance from boundary face to first cell centre
         yplus[i] = (ustar*y[i])/(nu[cellsID[i]]+nut[cellsID[i]])
     end
     print("\nAverage y+ value on patch: ",round(mean(yplus),sigdigits = 4))

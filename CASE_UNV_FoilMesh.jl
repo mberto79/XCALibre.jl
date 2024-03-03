@@ -44,7 +44,7 @@ mesh = update_mesh_format(mesh)
 
 # Turbulence Model
 νR = 5
-Tu = 0.05
+Tu = 0.01
 k_inlet = 3/2*(Tu*velocity[1])^2
 ω_inlet = k_inlet/(νR*nu)
 model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))

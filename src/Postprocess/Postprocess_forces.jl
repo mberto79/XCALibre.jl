@@ -1,6 +1,15 @@
-export pressure_force, viscous_force
 export stress_tensor, wall_shear_stress
-export y_plus
+export pressure_force, viscous_force
+export lift_to_drag, aero_coeffs
+export paraview_vis, y_plus
+
+paraview_vis(;paraview_path::String,vtk_path::String) = begin
+    try
+        run(`"$paraview_path" "$vtk_path"`)
+    catch
+        println("\nCannot open paraview: check installation location & integrity!")
+    end
+end
 
 y_plus(patch::Symbol, ρ::Float64, model::RANS{M,F1,F2,V,T,E,D}) where {M,F1,F2,V,T,E,D} = begin
     M == Laminar ? nut = ConstantScalar(0.0) : nut = model.turbulence.nut
@@ -28,8 +37,34 @@ y_plus(patch::Symbol, ρ::Float64, model::RANS{M,F1,F2,V,T,E,D}) where {M,F1,F2,
     return yplus,y
 end
 
-pressure_force(patch::Symbol, p::ScalarField, rho) = begin
-    mesh = p.mesh
+lift_to_drag(patch::Symbol, ρ, model::RANS{M,F1,F2,V,T,E,D}) where {M,F1,F2,V,T,E,D} = begin
+    oldstd = stdout
+    redirect_stdout(devnull)
+    Fp = pressure_force(patch, ρ, model)
+    Fv = viscous_force(patch, ρ, model)
+    redirect_stdout(oldstd)
+    Ft = Fp + Fv
+    aero_eff = Ft[2]/Ft[1]
+    print("Aerofoil L/D: ",round(aero_eff,sigdigits = 4))
+    return aero_eff
+end
+
+aero_coeffs(patch::Symbol, chord::R where R <: Real, ρ, velocity::Vector{Float64}, model::RANS{M,F1,F2,V,T,E,D}) where {M,F1,F2,V,T,E,D} = begin
+    oldstd = stdout
+    redirect_stdout(devnull)
+    Fp = pressure_force(patch, ρ, model)
+    Fv = viscous_force(patch, ρ, model)
+    redirect_stdout(oldstd)
+    Ft = Fp + Fv
+    C_l = 2Ft[2]/(ρ*(velocity[1]^2)*chord*0.001)
+    C_d = 2Ft[1]/(ρ*(velocity[1]^2)*chord*0.001)
+    print("Lift Coefficient: ",round(C_l,sigdigits = 4))
+    print("\nDrag Coefficient: ",round(C_d,sigdigits = 4))
+    return C_l,C_d
+end
+
+pressure_force(patch::Symbol, rho, model::RANS{M,F1,F2,V,T,E,D}) where {M,F1,F2,V,T,E,D} = begin
+    (; mesh, p) = model
     ID = boundary_index(mesh.boundaries, patch)
     @info "calculating pressure forces on patch: $patch at index $ID"
     boundary = mesh.boundaries[ID]
@@ -51,8 +86,9 @@ pressure_force(patch::Symbol, p::ScalarField, rho) = begin
     return Fp
 end
 
-viscous_force(patch::Symbol, U::VectorField, rho, ν, νt) = begin
-    mesh = U.mesh
+viscous_force(patch::Symbol, rho, model::RANS{M,F1,F2,V,T,E,D}) where {M,F1,F2,V,T,E,D} = begin
+    M == Laminar ? nut = ConstantScalar(0.0) : nut = model.turbulence.nut
+    (; mesh, U, nu) = model
     faces = mesh.faces
     boundaries = mesh.boundaries
     nboundaries = length(U.BCs)
@@ -75,9 +111,9 @@ viscous_force(patch::Symbol, U::VectorField, rho, ν, νt) = begin
         cID = cellsID[i]
         face = faces[fID]
         area = face.area
-        sumx += snGrad.x[i]*area*(ν + νt[cID]) # this may need using νtf? (wall funcs)
-        sumy += snGrad.y[i]*area*(ν + νt[cID])
-        sumz += snGrad.z[i]*area*(ν + νt[cID])
+        sumx += snGrad.x[i]*area*(nu[cID] + nut[cID]) # this may need using νtf? (wall funcs)
+        sumy += snGrad.y[i]*area*(nu[cID] + nut[cID])
+        sumz += snGrad.z[i]*area*(nu[cID] + nut[cID])
     end
     Fv = rho.*[sumx, sumy, sumz]
     print("\nViscous force: (", Fv[1], " ", Fv[2], " ", Fv[3], ")\n")
@@ -92,7 +128,7 @@ wall_shear_stress(patch::Symbol, model::RANS{M,F1,F2,V,T,E,D}) where {M,F1,F2,V,
     ID = boundary_index(boundaries, patch)
     boundary = boundaries[ID]
     (; facesID, cellsID) = boundary
-    #@info "calculating viscous forces on patch: $patch at index $ID"
+    @info "calculating viscous forces on patch: $patch at index $ID"
     x = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
     y = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
     z = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
@@ -132,29 +168,3 @@ stress_tensor(U, ν, νt) = begin
     end
     return Reff
 end
-
-# viscous_forces(patch::Symbol, Reff::TensorField, U::VectorField, rho, ν, νt) = begin
-#     mesh = U.mesh
-#     faces = mesh.faces
-#     ID = boundary_index(mesh.boundaries, patch)
-#     @info "calculating viscous forces on patch: $patch at index $ID"
-#     boundary = mesh.boundaries[ID]
-#     (; facesID, cellsID) = boundary
-#     x = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
-#     y = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
-#     z = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
-#     snGrad = FaceVectorField(x,y,z, mesh)
-#     surface_flux(snGrad, facesID, cellsID, Reff)
-#     # surface_normal_gradient(snGrad, facesID, cellsID, U, U.BCs[ID].value)
-#     sumx, sumy, sumz = 0.0, 0.0, 0.0, 0.0
-#     for i ∈ eachindex(snGrad)
-#         fID = facesID[i]
-#         cID = cellsID[i]
-#         face = faces[fID]
-#         area = face.area
-#         sumx += snGrad.x[i] #*area*(ν + νt[cID]) # this may need to be using νtf?
-#         sumy += snGrad.y[i] #*area*(ν + νt[cID])
-#         sumz += snGrad.z[i] #*area*(ν + νt[cID])
-#     end
-#     rho.*[sumx, sumy, sumz]
-# end

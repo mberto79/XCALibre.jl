@@ -158,6 +158,13 @@ GPU benchmark (post compilation):           0.000205 seconds (334 allocations: 6
 CPU kernel benchmark (compilation):         0.033016 seconds (27.59 k allocations: 1.909 MiB, 83.70% compilation time)
 CPU kernel benchmark (post compilation):    0.006137 seconds (63 allocations: 13.953 KiB)
 
+Removed copy_to_precon kernel and sparse_array_deconstructor
+GPU benchmark (compilation):                1.533304 seconds (876.43 k CPU allocations: 65.699 MiB, 1.72% gc time) (2 GPU allocations: 144 bytes, 0.00% memmgmt time)
+GPU benchmark (post compilation):           0.000347 seconds (331 CPU allocations: 60.000 KiB) (2 GPU allocations: 144 bytes, 4.28% memmgmt time)
+
+CPU kernel benchmark (compilation):         0.379195 seconds (275.92 k CPU allocations: 19.291 MiB, 1.69% gc time)
+CPU kernel benchmark (post compilation):    0.006102 seconds (63 CPU allocations: 13.953 KiB)
+
 Output the same for all benchmarks?: YES
 
 
@@ -172,6 +179,13 @@ GPU benchmark (post compilation):           0.000670 seconds (394 allocations: 6
 
 CPU kernel benchmark (compilation):         0.016154 seconds (18.40 k allocations: 1.253 MiB, 99.65% compilation time)
 CPU kernel benchmark (post compilation):    0.000039 seconds (154 allocations: 33.906 KiB)
+
+Removed copy_to_precon kernel and sparse_array_deconstructor
+GPU benchmark (compilation):                0.031098 seconds (22.84 k CPU allocations: 1.609 MiB)
+GPU benchmark (post compilation):           0.000602 seconds (395 CPU allocations: 60.953 KiB)
+
+CPU kernel benchmark (compilation):         0.015751 seconds (17.84 k CPU allocations: 1.211 MiB)
+CPU kernel benchmark (post compilation):    0.000054 seconds (154 CPU allocations: 33.906 KiB)
 
 Output the same for all benchmarks?: YES
 
@@ -188,6 +202,13 @@ GPU benchmark (post compilation):           0.000082 seconds (45 allocations: 2.
 CPU kernel benchmark (compilation):         0.096476 seconds (193.76 k allocations: 13.468 MiB, 99.52% compilation time)
 CPU kernel benchmark (post compilation):    0.000408 seconds (17 allocations: 1.953 KiB)
 
+Removed copy_to_precon kernel and sparse_array_deconstructor
+GPU benchmark (compilation):                0.210587 seconds (314.45 k CPU allocations: 22.475 MiB, 4.53% gc time), 0.01% GPU memmgmt time
+GPU benchmark (post compilation):           0.000080 seconds (42 CPU allocations: 1.469 KiB)
+
+CPU kernel benchmark (compilation):         0.090764 seconds (193.30 k CPU allocations: 13.432 MiB)
+CPU kernel benchmark (post compilation):    0.000430 seconds (14 CPU allocations: 448 bytes)
+
 Output the same for all benchmarks?: YES
 
 
@@ -203,6 +224,13 @@ GPU benchmark (post compilation):           0.000070 seconds (42 allocations: 2.
 CPU kernel benchmark (compilation):         0.004041 seconds (71 allocations: 4.562 KiB, 75.60% compilation time)
 CPU kernel benchmark (post compilation):    0.000966 seconds (12 allocations: 1.500 KiB)
 
+Removed copy_to_precon kernel and sparse_array_deconstructor
+GPU benchmark (compilation):                
+GPU benchmark (post compilation):           
+
+CPU kernel benchmark (compilation):         
+CPU kernel benchmark (post compilation):    
+
 Output the same for all benchmarks?: YES
 
 
@@ -217,6 +245,13 @@ GPU benchmark (post compilation):           0.000097 seconds (42 allocations: 2.
 
 CPU kernel benchmark (compilation):         0.003857 seconds (31 allocations: 2.453 KiB, 90.47% compilation time)
 CPU kernel benchmark (post compilation):    0.000389 seconds (17 allocations: 1.656 KiB)
+
+Removed copy_to_precon kernel and sparse_array_deconstructor
+GPU benchmark (compilation):                0.003830 seconds (56 CPU allocations: 3.359 KiB)
+GPU benchmark (post compilation):           0.000084 seconds (42 CPU allocations: 2.562 KiB)
+
+CPU kernel benchmark (compilation):         0.007440 seconds (86 CPU allocations: 5.438 KiB)
+CPU kernel benchmark (post compilation):    0.000381 seconds (12 CPU allocations: 1.531 KiB)
 
 Output the same for all benchmarks?: YES
 

@@ -33,15 +33,18 @@ function run!(phiEqn::ModelEquation, setup) # ; opP, solver
 
     (; itmax, atol, rtol) = setup
     (; A, b) = phiEqn.equation
-    P = phiEqn.preconditioner
+    precon = phiEqn.preconditioner
+    (; P) = precon 
     solver = phiEqn.solver
+    (; x) = solver
     values = get_phi(phiEqn).values
 
     solve!(
-        solver, A, b, values; M=P.P, itmax=itmax, atol=atol, rtol=rtol
+        solver, A, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
         )
+    # gmres!(solver, A, b, values; M=P.P, itmax=itmax, atol=atol, rtol=rtol)
     # println(solver.stats.niter)
-    @turbo values .= solver.x
+    values .= x
     nothing
 end
 

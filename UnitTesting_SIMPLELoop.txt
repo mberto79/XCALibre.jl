@@ -234,3 +234,18 @@ CPU kernel benchmark (compilation):         0.008074 seconds (152 allocations: 8
 CPU kernel benchmark (post compilation):    0.000657 seconds (22 allocations: 1.969 KiB)
 
 Output the same for all benchmarks?: YES
+
+
+
+run!() for Jacobi update for GPU (Float64 types with variables ux_eqn, solvers.U)
+
+CPU benchmark (compilation):                0.679942 seconds (2.54 M CPU allocations: 173.592 MiB, 6.58% gc time)
+CPU benchmark (post compilation):           0.008293 seconds (5 CPU allocations: 1007.531 KiB)
+
+GPU benchmark (compilation):                3.447203 seconds (9.67 M CPU allocations: 657.331 MiB, 18.10% gc time) (10 GPU allocations: 1015.219 KiB, 0.00% memmgmt time)
+GPU benchmark (post compilation):           0.002663 seconds (874 CPU allocations: 30.016 KiB) (10 GPU allocations: 1015.219 KiB, 1.72% memmgmt time)
+
+CPU kernel benchmark (compilation):         N/A (same as non-kernel)
+CPU kernel benchmark (post compilation):    N/A (same as non-kernel)
+
+Output the same for all benchmarks?: YES

@@ -34,11 +34,14 @@ function update_preconditioner!(P::Preconditioner{NormDiagonal,M,PT,S}, mesh) wh
     
     A = P.A
     # (; colptr, m, n, nzval, rowval) = A
-    rowval, colptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
+    # rowval, colptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
+    nzval_array = nzval(A)
+    m_array = m(A)
+
     storage = P.storage
 
     kernel! = update_NormDiagonal!(backend)
-    kernel!(colptr, nzval, storage, ndrange = m)
+    kernel!(colptr, nzval_array, storage, ndrange = m_array)
 end
 
 @kernel function update_NormDiagonal!(colptr, nzval, storage)
@@ -79,12 +82,17 @@ function update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh) where {M
 
     A = P.A
     # (; colptr, m, n, nzval, rowval) = A
-    rowval, colptr, nzval, m, n = sparse_array_deconstructor_preconditioners(A)
+    # rowval, colptr, nzval, m, n = sparse_array_deconstructor_preconditioners(A)
+    rowval_array = rowval(A)
+    colptr_array = colptr(A)
+    nzval_array = nzval(A)
+    m_array = m(A)
+
     storage = P.storage
-    idx_diagonal = zero(eltype(m)) # index to diagonal element
+    idx_diagonal = zero(eltype(m_array)) # index to diagonal element
 
     kernel! = update_Jacobi!(backend)
-    kernel!(rowval, colptr, nzval, idx_diagonal, storage, ndrange = m)
+    kernel!(rowval_array, colptr_array, nzval_array, idx_diagonal, storage, ndrange = m_array)
 end
 
 @kernel function update_Jacobi!(rowval, colptr, nzval, idx_diagonal, storage)
@@ -130,3 +138,9 @@ function sparse_array_deconstructor_preconditioners(arr::CUDA.CUSPARSE.CuSparseM
     (; rowVal, colPtr, nzVal, dims) = arr
     return rowVal, colPtr, nzVal, dims[1], dims[2]
 end
+
+m(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.dims[1]
+m(A::SparseArrays.SparseMatrixCSC) = A.m
+
+n(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.dims[2]
+n(A::SparseArrays.SparseMatrixCSC) = A.n

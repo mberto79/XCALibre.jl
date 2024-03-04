@@ -69,7 +69,10 @@ function implicit_relaxation!(eqn::E, field, alpha, mesh) where E<:ModelEquation
     (; A, b) = eqn.equation
     precon = eqn.preconditioner
     # Output sparse matrix properties and values
-    rowval, colptr, nzval = sparse_array_deconstructor(A)
+    # rowval, colptr, nzval = sparse_array_deconstructor(A)
+    rowval_array = rowval(A)
+    colptr_array = colptr(A)
+    nzval_array = nzval(A)
 
     # Get backend and define kernel
     backend = _get_backend(mesh)
@@ -80,9 +83,9 @@ function implicit_relaxation!(eqn::E, field, alpha, mesh) where E<:ModelEquation
     ione = one(integer)
     
     # Execute kernel
-    kernel!(ione, rowval, colptr, nzval, b, field, alpha, ndrange = length(b))
+    kernel!(ione, rowval_array, colptr_array, nzval_array, b, field, alpha, ndrange = length(b))
 
-    check_for_precon!(nzval, precon, backend)
+    # check_for_precon!(nzval_array, precon, backend)
 end
 
 @kernel function implicit_relaxation_kernel!(ione, rowval, colptr, nzval, b, field, alpha)

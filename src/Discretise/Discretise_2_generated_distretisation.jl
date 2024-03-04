@@ -1,4 +1,4 @@
-export discretise!, sparse_array_deconstructor, check_for_precon!
+export discretise!, nzval, rowval, colptr
 
 discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
 
@@ -93,8 +93,8 @@ discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
 
         # Deconstructors to get lower-level variables for function
         (; A, b) = eqn.equation
-        A = A
-        b = b
+        # A = A
+        # b = b
         (; terms, sources) = model
         (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
         
@@ -108,7 +108,9 @@ discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
         # (; faces, cells, ) = mesh
         # (; rowval, colptr, nzval) = A
         # Deconstruct sparse array dependent on sparse arrays type
-        rowval, colptr, nzval = sparse_array_deconstructor(A)
+        rowval_array = rowval(A)
+        colptr_array = colptr(A)
+        nzval_array = nzval(A)
 
         # @inbounds for i ∈ eachindex(nzval)
         #     nzval[i] = fzero
@@ -116,7 +118,7 @@ discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
         
         # Kernel to set nzval array
         kernel! = set_nzval(backend)
-        kernel!(nzval, fzero, ndrange = length(nzval))
+        kernel!(nzval_array, fzero, ndrange = length(nzval_array))
 
         # Set initial values for indexing of nzval array
         cIndex = zero(integer) # replace with func to return mesh type (Mesh module)
@@ -144,7 +146,7 @@ discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
         for i in 1:nTerms
             schemes_and_sources!(model.terms[i], 
             nTerms, nSources, offset, fzero, ione, terms, sources_field,
-            sources_sign, rowval, colptr, nzval, cIndex, nIndex,
+            sources_sign, rowval_array, colptr_array, nzval_array, cIndex, nIndex,
             b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer,
             float, backend, runtime, prev)
         end
@@ -157,22 +159,22 @@ discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
         end
 
         # Copy nzval array to preconditioner if running on GPU and if preconditioner is not empty
-        check_for_precon!(nzval, precon, backend)
+        # check_for_precon!(nzval, precon, backend)
         # end
         nothing
     end
 end
 
 
-function sparse_array_deconstructor(arr::SparseArrays.SparseMatrixCSC)
-    (; rowval, colptr, nzval) = arr
-    return rowval, colptr, nzval
-end
+# function sparse_array_deconstructor(arr::SparseArrays.SparseMatrixCSC)
+#     (; rowval, colptr, nzval) = arr
+#     return rowval, colptr, nzval
+# end
 
-function sparse_array_deconstructor(arr::CUDA.CUSPARSE.CuSparseMatrixCSC)
-    (; rowVal, colPtr, nzVal) = arr
-    return rowVal, colPtr, nzVal
-end
+# function sparse_array_deconstructor(arr::CUDA.CUSPARSE.CuSparseMatrixCSC)
+#     (; rowVal, colPtr, nzVal) = arr
+#     return rowVal, colPtr, nzVal
+# end
 
 @kernel function set_nzval(nzval, fzero)
     i = @index(Global)
@@ -182,31 +184,40 @@ end
     end
 end
 
-function check_for_precon!(nzval, precon::Tuple, backend)
-    nothing
-end
+# function check_for_precon!(nzval, precon::Tuple, backend)
+#     nothing
+# end
 
-function check_for_precon!(nzval, precon, backend)
-    (; A) = precon
-    A_precon = A
-    copy_to_precon!(nzval, A_precon, backend)
-end
+# function check_for_precon!(nzval, precon, backend)
+#     (; A) = precon
+#     A_precon = A
+#     copy_to_precon!(nzval, A_precon, backend)
+# end
 
-function copy_to_precon!(nzval, A::SparseArrays.SparseMatrixCSC, backend)
-    nothing
-end
+# function copy_to_precon!(nzval, A::SparseArrays.SparseMatrixCSC, backend)
+#     nothing
+# end
 
-function copy_to_precon!(nzval, A::CUDA.CUSPARSE.CuSparseMatrixCSC, backend)
-    rowval_precon, colptr_precon, nzval_precon = sparse_array_deconstructor(A)
+# function copy_to_precon!(nzval, A::CUDA.CUSPARSE.CuSparseMatrixCSC, backend)
+#     rowval_precon, colptr_precon, nzval_precon = sparse_array_deconstructor(A)
 
-    kernel! = copy_to_precon_kernel!(backend)
-    kernel!(nzval, nzval_precon, ndrange = length(nzval))
-end
+#     kernel! = copy_to_precon_kernel!(backend)
+#     kernel!(nzval, nzval_precon, ndrange = length(nzval))
+# end
 
-@kernel function copy_to_precon_kernel!(nzval, nzval_precon)
-    i = @index(Global)
+# @kernel function copy_to_precon_kernel!(nzval, nzval_precon)
+#     i = @index(Global)
 
-    @inbounds begin
-        nzval_precon[i] = nzval[i]
-    end
-end
+#     @inbounds begin
+#         nzval_precon[i] = nzval[i]
+#     end
+# end
+
+nzval(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.nzVal
+nzval(A::SparseArrays.SparseMatrixCSC) = A.nzval
+
+colptr(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.colPtr
+colptr(A::SparseArrays.SparseMatrixCSC) = A.colptr
+
+rowval(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.rowVal
+rowval(A::SparseArrays.SparseMatrixCSC) = A.rowval 

@@ -42,7 +42,9 @@ end
     (; boundaries, faces, cells, boundary_cellsID) = mesh
     precon = eqn.preconditioner
 
-    rowval, colptr, nzval = sparse_array_deconstructor(A)
+    rowval_array = rowval(A)
+    colptr_array = colptr(A)
+    nzval_array = nzval(A)
 
     backend = _get_backend(mesh)
 
@@ -53,11 +55,11 @@ end
         for t in 1:nTerms
             Execute_apply_boundary_condition_kernel!(BCs[bci], model.terms[t], 
             backend, boundaries, faces, cells,
-            boundary_cellsID, ione, rowval, colptr, nzval, b)
+            boundary_cellsID, ione, rowval_array, colptr_array, nzval_array, b)
         end
     end
 
-    check_for_precon!(nzval, precon, backend)
+    # check_for_precon!(nzval_array, precon, backend)
     # $(assignment_loops...)
     nothing
     end

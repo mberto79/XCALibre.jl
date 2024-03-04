@@ -38,28 +38,6 @@ function simple!(model, config; resume=true, pref=nothing)
         Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
     ) → Equation(mesh)
 
-    @info "Initialising preconditioners..."
-    
-    @reset ux_eqn.preconditioner = set_preconditioner(
-                    solvers.U.preconditioner, ux_eqn, U.x.BCs, runtime)
-    @reset uy_eqn.preconditioner = ux_eqn.preconditioner
-    @reset p_eqn.preconditioner = set_preconditioner(
-                    solvers.p.preconditioner, p_eqn, p.BCs, runtime)
-
-    @info "Pre-allocating solvers..."
-     
-    @reset ux_eqn.solver = solvers.U.solver(_A(ux_eqn), _b(ux_eqn))
-    @reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
-    @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
-
-    if isturbulent(model)
-        @info "Initialising turbulence model..."
-        turbulence = initialise_RANS(mdotf, p_eqn, config, model)
-        config = turbulence.config
-    else
-        turbulence = nothing
-    end
-
     # CUDA.allowscalar(false)
 
     # model = adapt(CuArray, model)
@@ -69,6 +47,29 @@ function simple!(model, config; resume=true, pref=nothing)
     # p_eqn = adapt(CuArray, p_eqn)
     # turbulence = adapt(CuArray, turbulence)
     # config = adapt(CuArray, config)
+
+    @info "Initialising preconditioners..."
+    
+    @reset ux_eqn.preconditioner = set_preconditioner(
+                    solvers.U.preconditioner, ux_eqn, U.x.BCs, runtime)
+    @reset uy_eqn.preconditioner = ux_eqn.preconditioner
+    @reset p_eqn.preconditioner = set_preconditioner(
+                    solvers.p.preconditioner, p_eqn, p.BCs, runtime)
+
+    if isturbulent(model)
+        @info "Initialising turbulence model..."
+        turbulence = initialise_RANS(mdotf, p_eqn, config, model)
+        config = turbulence.config
+    else
+        turbulence = nothing
+    end
+
+
+    @info "Pre-allocating solvers..."
+     
+    @reset ux_eqn.solver = solvers.U.solver(_A(ux_eqn), _b(ux_eqn))
+    @reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
+    @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
 
     R_ux, R_uy, R_p  = SIMPLE_loop(
     model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config ; resume=resume, pref=pref)

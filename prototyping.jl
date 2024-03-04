@@ -1,8 +1,17 @@
-using Plots
+# using Plots
 using FVM_1D
 using Krylov
+using CUDA
+using KernelAbstractions
+
+
+# Backend selection
+
+backend = CPU()
+# backend = CUDABackend()
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
+
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
@@ -74,8 +83,6 @@ using Krylov
 using LinearOperators
 using ProgressMeter
 using Printf
-using CUDA
-using KernelAbstractions
 
     @info "Extracting configuration and input fields..."
     (; U, p, nu, mesh) = model
@@ -114,11 +121,11 @@ using KernelAbstractions
     ) → Equation(mesh)
 
     CUDA.allowscalar(false)
-    # model = adapt(CuArray, model)
-    # ∇p = adapt(CuArray, ∇p)
-    # ux_eqn = adapt(CuArray, ux_eqn)
-    # uy_eqn = adapt(CuArray, uy_eqn)
-    # p_eqn = adapt(CuArray, p_eqn)
+    model = _convert_array!(model, backend)
+    ∇p = _convert_array!(∇p, backend)
+    ux_eqn = _convert_array!(ux_eqn, backend)
+    uy_eqn = _convert_array!(uy_eqn, backend)
+    p_eqn = _convert_array!(p_eqn, backend)
 
     @info "Initialising preconditioners..."
 
@@ -184,10 +191,10 @@ using KernelAbstractions
     R_uy = ones(TF, iterations)
     R_p = ones(TF, iterations)
 
-    # Uf = adapt(CuArray,Uf)
-    # rDf = adapt(CuArray, rDf)
-    # rD = adapt(CuArray, rD)
-    # pf = adapt(CuArray, pf)
+    Uf = _convert_array!(Uf, backend)
+    rDf = _convert_array!(rDf, backend)
+    rD = _convert_array!(rD, backend)
+    pf = _convert_array!(pf, backend)
 
     interpolate!(Uf, U)
     correct_boundaries!(Uf, U, U.BCs)
@@ -199,23 +206,16 @@ using KernelAbstractions
 
     update_nueff!(nueff, nu, turbulence)
 
-    # prev = adapt(CuArray, prev)
+    prev = _convert_array!(prev, backend)
 
     @. prev = U.x.values
     discretise!(ux_eqn, prev, runtime)
     apply_boundary_conditions!(ux_eqn, U.x.BCs)
     implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh)
-    update_preconditioner!(ux_eqn.preconditioner, mesh)
+    CUDA.@time update_preconditioner!(ux_eqn.preconditioner, mesh)
     run!(ux_eqn, solvers.U) #opP=Pu.P, solver=solver_U)
 
 
-    A = ux_eqn.equation.A
-    b = ux_eqn.equation.b
-    x0 = similar(b)
-
-    s = BicgstabSolver(A, b)
-    s = GmresSolver(A, b)
-
-    CUDA.@time (x, stats) = bicgstab(A, b, x0)
-    CUDA.@time  gmres!(s, A, b, x0)
-    CUDA.@time  gmres!(s, A, b)
+    using SparseArrays
+    nzval(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.nzVal
+    nzval(A::SparseArrays.SparseMatrixCSC) = A.nzval

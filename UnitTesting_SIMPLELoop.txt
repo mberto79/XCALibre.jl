@@ -219,3 +219,18 @@ CPU kernel benchmark (compilation):         0.003857 seconds (31 allocations: 2.
 CPU kernel benchmark (post compilation):    0.000389 seconds (17 allocations: 1.656 KiB)
 
 Output the same for all benchmarks?: YES
+
+
+
+update_preconditioner!() for DILU update for GPU (Float64 types with variables ux_eqn.preconditioner)
+
+CPU benchmark (compilation):                0.003859 seconds (19 allocations: 2.094 KiB, 70.68% compilation time) 
+CPU benchmark (post compilation):           0.001028 seconds (2 allocations: 1.188 KiB)
+
+GPU benchmark (compilation):                0.399508 seconds (599.73 k allocations: 42.510 MiB, 88.39% compilation time)
+GPU benchmark (post compilation):           0.000103 seconds (74 allocations: 3.734 KiB)
+
+CPU kernel benchmark (compilation):         0.008074 seconds (152 allocations: 8.719 KiB, 92.38% compilation time)
+CPU kernel benchmark (post compilation):    0.000657 seconds (22 allocations: 1.969 KiB)
+
+Output the same for all benchmarks?: YES

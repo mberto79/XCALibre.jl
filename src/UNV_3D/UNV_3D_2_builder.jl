@@ -136,14 +136,27 @@ function calculate_cell_volume(volumes,nodes)
     return volume_store
 end
 
+# function calculate_centre_cell(volumes,nodes)
+#     centre_store=[]
+#     for i=1:length(volumes)
+#         A=nodes[volumes[i].volumes[1]].coords
+#         B=nodes[volumes[i].volumes[2]].coords
+#         C=nodes[volumes[i].volumes[3]].coords
+#         D=nodes[volumes[i].volumes[4]].coords
+#         centre=((A+B+C+D)/4)
+#         push!(centre_store,centre)
+#     end
+#     return centre_store
+# end
+
 function calculate_centre_cell(volumes,nodes)
     centre_store=[]
     for i=1:length(volumes)
-        A=nodes[volumes[i].volumes[1]].coords
-        B=nodes[volumes[i].volumes[2]].coords
-        C=nodes[volumes[i].volumes[3]].coords
-        D=nodes[volumes[i].volumes[4]].coords
-        centre=((A+B+C+D)/4)
+        cell_store=[]
+        for ic=1:length(volumes[i].volumes)
+            push!(cell_store,nodes[volumes[i].volumes[ic]].coords)
+        end
+        centre=(sum(cell_store)/length(cell_store))
         push!(centre_store,centre)
     end
     return centre_store

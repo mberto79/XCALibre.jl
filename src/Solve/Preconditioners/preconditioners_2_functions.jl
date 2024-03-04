@@ -117,7 +117,7 @@ end
 
 update_preconditioner!(P::Preconditioner{DILU,M,PT,S}, mesh) where {M<:AbstractSparseArray,PT,S} =
 begin
-    update_dilu_diagonal!(P) 
+    update_dilu_diagonal!(P, mesh)
     nothing
 end
 

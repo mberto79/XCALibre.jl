@@ -61,12 +61,13 @@ Preconditioner{ILU0}(A::AbstractSparseArray{F,I}) where {F,I} = begin
     Preconditioner{ILU0,typeof(A),typeof(P),typeof(S)}(A,P,S)
 end
 
-struct DILUprecon{M,V,VI,VVI}
+struct DILUprecon{M,V,VI,VUR}
     A::M
     D::V
     Di::VI
-    Ri::VVI
-    J::VVI
+    Ri::VI
+    J::VI
+    upper_indices_IDs::VUR
 end
 Adapt.@adapt_structure DILUprecon
 Preconditioner{DILU}(A::AbstractSparseArray{F,I}) where {F,I} = begin
@@ -75,8 +76,8 @@ Preconditioner{DILU}(A::AbstractSparseArray{F,I}) where {F,I} = begin
     D = zeros(F, m)
     Di = zeros(I, m)
     diagonal_indices!(Di, A)
-    @time Ri, J = upper_row_indices(A, Di)
-    S = DILUprecon(A, D, Di, Ri, J)
+    @time Ri, J, upper_indices_IDs = upper_row_indices(A, Di)
+    S = DILUprecon(A, D, Di, Ri, J, upper_indices_IDs)
     P  = LinearOperator(
         F, m, n, false, false, (y, v) -> ldiv!(y, S, v)
         )

@@ -143,7 +143,7 @@ function SIMPLE_loop(
         apply_boundary_conditions!(ux_eqn, U.x.BCs)
         # ux_eqn.b .-= divUTx
         implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh)
-        update_preconditioner!(ux_eqn.preconditioner)
+        update_preconditioner!(ux_eqn.preconditioner, mesh)
         run!(ux_eqn, solvers.U) #opP=Pu.P, solver=solver_U)
         residual!(R_ux, ux_eqn.equation, U.x, iteration)
 
@@ -152,7 +152,7 @@ function SIMPLE_loop(
         apply_boundary_conditions!(uy_eqn, U.y.BCs)
         # uy_eqn.b .-= divUTy
         implicit_relaxation!(uy_eqn, prev, solvers.U.relax, mesh)
-        update_preconditioner!(uy_eqn.preconditioner)
+        update_preconditioner!(uy_eqn.preconditioner, mesh)
         run!(uy_eqn, solvers.U)
         residual!(R_uy, uy_eqn.equation, U.y, iteration)
         
@@ -169,7 +169,7 @@ function SIMPLE_loop(
         discretise!(p_eqn, prev, runtime)
         apply_boundary_conditions!(p_eqn, p.BCs)
         setReference!(p_eqn.equation, pref, 1)
-        update_preconditioner!(p_eqn.preconditioner)
+        update_preconditioner!(p_eqn.preconditioner, mesh)
         run!(p_eqn, solvers.p)
 
         explicit_relaxation!(p, prev, solvers.p.relax)

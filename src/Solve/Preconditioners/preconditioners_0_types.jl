@@ -28,17 +28,19 @@ function Adapt.adapt_structure(to, itp::Preconditioner{T}) where {T}
     Preconditioner{T,typeof(A),typeof(P),typeof(storage)}(A,P,storage)
 end
 Preconditioner{NormDiagonal}(A::AbstractSparseArray{F,I}) where {F,I} = begin
+    backend = get_backend(A)
     m, n = size(A)
     m == n || throw("Matrix not square")
-    S = zeros(F, m)
+    S = _convert_array!(zeros(m), backend)
     P = opDiagonal(S)
     Preconditioner{NormDiagonal,typeof(A),typeof(P),typeof(S)}(A,P,S)
 end
 
 Preconditioner{Jacobi}(A::AbstractSparseArray{F,I}) where {F,I} = begin
+    backend = get_backend(A)
     m, n = size(A)
     m == n || throw("Matrix not square")
-    S = zeros(F, m)
+    S = _convert_array!(zeros(m), backend)
     P = opDiagonal(S)
     Preconditioner{Jacobi,typeof(A),typeof(P),typeof(S)}(A,P,S)
 end

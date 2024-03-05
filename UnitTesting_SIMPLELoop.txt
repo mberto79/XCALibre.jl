@@ -326,3 +326,33 @@ CPU kernel benchmark (compilation):         0.095697 seconds (184.73 k CPU alloc
 CPU kernel benchmark (post compilation):    0.000502 seconds (12 CPU allocations: 1.578 KiB)
 
 Output the same for all benchmarks?: YES
+
+
+
+remove_pressure_source!() update for GPU (Float64 types with variables ux_eqn, uy_eqn, ∇p)
+
+CPU benchmark (compilation):                0.013037 seconds (6.72 k CPU allocations: 452.766 KiB)    
+CPU benchmark (post compilation):           0.000417 seconds
+
+GPU benchmark (compilation):                0.219619 seconds (270.99 k CPU allocations: 19.333 MiB)
+GPU benchmark (post compilation):           0.000087 seconds (42 CPU allocations: 3.406 KiB)    
+
+CPU kernel benchmark (compilation):         
+CPU kernel benchmark (post compilation):    
+
+Output the same for all benchmarks?: YES
+
+
+
+H!() update for GPU (Float64 types with variables Hv, U, ux_eqn, uy_eqn)
+
+CPU benchmark (compilation):                0.013037 seconds (6.72 k CPU allocations: 452.766 KiB)    
+CPU benchmark (post compilation):           0.000417 seconds
+
+GPU benchmark (compilation):                0.219619 seconds (270.99 k CPU allocations: 19.333 MiB)
+GPU benchmark (post compilation):           0.000087 seconds (42 CPU allocations: 3.406 KiB)    
+
+CPU kernel benchmark (compilation):         0.118783 seconds (185.85 k CPU allocations: 12.936 MiB)
+CPU kernel benchmark (post compilation):    0.000286 seconds (12 CPU allocations: 1.094 KiB)
+
+Output the same for all benchmarks?: YES

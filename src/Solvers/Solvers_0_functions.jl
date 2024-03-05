@@ -1,4 +1,4 @@
-export flux!, update_nueff!, residual!, inverse_diagonal!
+export flux!, update_nueff!, residual!, inverse_diagonal!, remove_pressure_source!
 
 # update_nueff!(nueff, nu, turb_model) = begin
 #     if turb_model === nothing
@@ -174,13 +174,35 @@ function correct_velocity!(U, Hv, ∇p, rD)
     end
 end
 
+# remove_pressure_source!(ux_eqn::M1, uy_eqn::M2, ∇p) where {M1,M2} = begin # Extend to 3D
+#     cells = get_phi(ux_eqn).mesh.cells
+#     source_sign = get_source_sign(ux_eqn, 1)
+#     dpdx, dpdy = ∇p.result.x, ∇p.result.y
+#     bx, by = ux_eqn.equation.b, uy_eqn.equation.b
+#     @inbounds for i ∈ eachindex(bx)
+#         volume = cells[i].volume
+#         bx[i] -= source_sign*dpdx[i]*volume
+#         by[i] -= source_sign*dpdy[i]*volume
+#     end
+# end
+
 remove_pressure_source!(ux_eqn::M1, uy_eqn::M2, ∇p) where {M1,M2} = begin # Extend to 3D
+    backend = _get_backend(get_phi(ux_eqn).mesh)
     cells = get_phi(ux_eqn).mesh.cells
     source_sign = get_source_sign(ux_eqn, 1)
     dpdx, dpdy = ∇p.result.x, ∇p.result.y
     bx, by = ux_eqn.equation.b, uy_eqn.equation.b
-    @inbounds for i ∈ eachindex(bx)
-        volume = cells[i].volume
+
+    kernel! = remove_pressure_source_kernel!(backend)
+    kernel!(cells, source_sign, dpdx, dpdy, bx, by, ndrange = length(bx))
+end
+
+@kernel function remove_pressure_source_kernel!(cells, source_sign, dpdx, dpdy, bx, by) #Extend to 3D
+    # i ranges from 1 to number of elements in bx
+    i = @index(Global)
+
+    @inbounds begin
+        (; volume) = cells[i]
         bx[i] -= source_sign*dpdx[i]*volume
         by[i] -= source_sign*dpdy[i]*volume
     end

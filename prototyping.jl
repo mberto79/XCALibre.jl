@@ -230,5 +230,5 @@ using Printf
 
     inverse_diagonal!(rD, ux_eqn.equation)
     interpolate!(rDf, rD)
-    remove_pressure_source!(ux_eqn, uy_eqn, ∇p)
+    CUDA.@time remove_pressure_source!(ux_eqn, uy_eqn, ∇p)
     H!(Hv, U, ux_eqn, uy_eqn)

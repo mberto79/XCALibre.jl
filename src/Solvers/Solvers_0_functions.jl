@@ -1,4 +1,4 @@
-export flux!, update_nueff!, residual!, inverse_diagonal!, remove_pressure_source!
+export flux!, update_nueff!, residual!, inverse_diagonal!, remove_pressure_source!, H!
 
 # update_nueff!(nueff, nu, turb_model) = begin
 #     if turb_model === nothing
@@ -208,34 +208,94 @@ end
     end
 end
 
-H!(Hv, v::VF, ux_eqn, uy_eqn) where VF<:VectorField = 
-begin # Extend to 3D!
+# H!(Hv, v::VF, ux_eqn, uy_eqn) where VF<:VectorField = 
+# begin # Extend to 3D!
+#     (; x, y, z, mesh) = Hv 
+#     (; cells, faces) = mesh
+#     (; cells, cell_neighbours, faces) = mesh
+#     Ax = ux_eqn.equation.A; Ay = uy_eqn.equation.A
+#     bx = ux_eqn.equation.b; by = uy_eqn.equation.b
+#     vx, vy = v.x, v.y
+#     F = eltype(v.x.values)
+#     @inbounds for cID ∈ eachindex(cells)
+#         cell = cells[cID]
+#         # (; neighbours, volume) = cell
+#         (; volume) = cell
+#         sumx = zero(F)
+#         sumy = zero(F)
+#         # @inbounds for nID ∈ neighbours
+#         @inbounds for ni ∈ cell.faces_range 
+#             nID = cell_neighbours[ni]
+#             sumx += Ax[cID,nID]*vx[nID]
+#             sumy += Ay[cID,nID]*vy[nID]
+#         end
+
+#         D = view(Ax, cID, cID)[1] # add check to use max of Ax or Ay)
+#         rD = 1/D
+#         # rD = volume/D
+#         x[cID] = (bx[cID] - sumx)*rD
+#         y[cID] = (by[cID] - sumy)*rD
+#         z[cID] = zero(F)
+#     end
+# end
+
+
+function H!(Hv, v::VF, ux_eqn, uy_eqn) where VF<:VectorField # Extend to 3D!
     (; x, y, z, mesh) = Hv 
     (; cells, faces) = mesh
     (; cells, cell_neighbours, faces) = mesh
-    Ax = ux_eqn.equation.A; Ay = uy_eqn.equation.A
-    bx = ux_eqn.equation.b; by = uy_eqn.equation.b
+    backend = _get_backend(mesh)
+
+    Ax = ux_eqn.equation.A
+    bx = ux_eqn.equation.b
+    nzval_x = nzval(Ax)
+    colptr_x = colptr(Ax)
+    rowval_x = rowval(Ax)
+    
+    Ay = uy_eqn.equation.A
+    by = uy_eqn.equation.b
+    nzval_y = nzval(Ay)
+    colptr_y = colptr(Ay)
+    rowval_y = rowval(Ay)
+    
     vx, vy = v.x, v.y
-    F = eltype(v.x.values)
-    @inbounds for cID ∈ eachindex(cells)
-        cell = cells[cID]
-        # (; neighbours, volume) = cell
-        (; volume) = cell
+    F = _get_float(mesh)
+    ione = one(_get_int(mesh))
+    
+    kernel! = H_kernel!(backend)
+    kernel!(ione, cells, F, cell_neighbours,
+            nzval_x, colptr_x, rowval_x, bx, vx,
+            nzval_y, colptr_y, rowval_y, by, vy,
+            x, y, z, ndrange = length(cells))
+end
+
+@kernel function H_kernel!(ione, cells, F, cell_neighbours,
+                           nzval_x, colptr_x, rowval_x, bx, vx,
+                           nzval_y, colptr_y, rowval_y, by, vy,
+                            x, y, z) #Extend to 3D!
+    i = @index(Global)
+
+    @inbounds begin
         sumx = zero(F)
         sumy = zero(F)
-        # @inbounds for nID ∈ neighbours
-        @inbounds for ni ∈ cell.faces_range 
+        (; faces_range) = cells[i]
+
+        for ni ∈ faces_range
             nID = cell_neighbours[ni]
-            sumx += Ax[cID,nID]*vx[nID]
-            sumy += Ay[cID,nID]*vy[nID]
+            xIndex = nzval_index(colptr_x, rowval_x, nID, i, ione)
+            yIndex = nzval_index(colptr_y, rowval_y, nID, i, ione)
+            sumx += nzval_x[xIndex]*vx[nID]
+            sumy += nzval_y[yIndex]*vy[nID]
         end
 
-        D = view(Ax, cID, cID)[1] # add check to use max of Ax or Ay)
+        # D = view(Ax, i, i)[1] # add check to use max of Ax or Ay)
+        DIndex = nzval_index(colptr_x, rowval_x, i, i, ione)
+        D = nzval_x[DIndex]
         rD = 1/D
         # rD = volume/D
-        x[cID] = (bx[cID] - sumx)*rD
-        y[cID] = (by[cID] - sumy)*rD
-        z[cID] = zero(F)
+        x[i] = (bx[i] - sumx)*rD
+        y[i] = (by[i] - sumy)*rD
+        z[i] = zero(F)
     end
 end
 

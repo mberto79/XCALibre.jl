@@ -195,6 +195,7 @@ using Printf
     rDf = _convert_array!(rDf, backend)
     rD = _convert_array!(rD, backend)
     pf = _convert_array!(pf, backend)
+    Hv = _convert_array!(Hv, backend)
 
     interpolate!(Uf, U)
     correct_boundaries!(Uf, U, U.BCs)
@@ -230,5 +231,45 @@ using Printf
 
     inverse_diagonal!(rD, ux_eqn.equation)
     interpolate!(rDf, rD)
-    CUDA.@time remove_pressure_source!(ux_eqn, uy_eqn, ∇p)
+    remove_pressure_source!(ux_eqn, uy_eqn, ∇p)
     H!(Hv, U, ux_eqn, uy_eqn)
+    # x = Hv.x
+    # y = Hv.y
+    # z = Hv.z
+
+    for i in eachindex(Hv.x)
+        if Hv.x[i] != x[i]
+            diff = Hv.x[i] - x[i]
+            println("Error: diff = $diff")
+        elseif Hv.x[i] == x[i]
+            nothing
+        end
+    end 
+
+    A = ux_eqn.equation.A
+    b = ux_eqn.equation.b
+    (; nzval, colptr, rowval) = A
+
+    nID = 9
+    cID = 10
+
+    nIndex = nzval_index(colptr, rowval, cID, nID, 1)
+
+    A[cID, nID]
+    nzval[nIndex]
+
+    function nzval_index(colptr, rowval, start_index, required_index, ione)
+        start = colptr[start_index]
+        offset = 0
+        for j in start:length(rowval)
+            offset += 1
+            if rowval[j] == required_index
+                break
+            end
+        end
+        return start + offset - ione
+    end
+
+
+    view(A, 5, 5)[1]
+    A[5,5]

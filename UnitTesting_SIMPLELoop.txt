@@ -346,13 +346,13 @@ Output the same for all benchmarks?: YES
 
 H!() update for GPU (Float64 types with variables Hv, U, ux_eqn, uy_eqn)
 
-CPU benchmark (compilation):                0.013037 seconds (6.72 k CPU allocations: 452.766 KiB)    
-CPU benchmark (post compilation):           0.000417 seconds
+CPU benchmark (compilation):                0.040242 seconds (63.15 k CPU allocations: 4.233 MiB)    
+CPU benchmark (post compilation):           0.004235 seconds
 
-GPU benchmark (compilation):                0.219619 seconds (270.99 k CPU allocations: 19.333 MiB)
-GPU benchmark (post compilation):           0.000087 seconds (42 CPU allocations: 3.406 KiB)    
+GPU benchmark (compilation):                0.624334 seconds (459.95 k CPU allocations: 33.729 MiB)
+GPU benchmark (post compilation):           0.000164 seconds (97 CPU allocations: 17.078 KiB) 
 
-CPU kernel benchmark (compilation):         0.118783 seconds (185.85 k CPU allocations: 12.936 MiB)
-CPU kernel benchmark (post compilation):    0.000286 seconds (12 CPU allocations: 1.094 KiB)
+CPU kernel benchmark (compilation):         0.245053 seconds (1.90 M CPU allocations: 64.537 MiB, 5.32% gc time)
+CPU kernel benchmark (post compilation):    0.037167 seconds (1.68 M CPU allocations: 49.175 MiB)
 
 Output the same for all benchmarks?: YES

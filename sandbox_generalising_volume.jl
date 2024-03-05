@@ -278,12 +278,6 @@ end
 face_normal=calculate_face_normal(faces,nodes)
 
 
-
-face_ownerCells
-faces[1]
-face_centre
-cell_centre
-
 function flip_face_normal(faces,face_ownerCells,cell_centre,face_centre,face_normal)
     for i=1:length(faces)
         if face_ownerCells[i,2]==face_ownerCells[i,1]
@@ -292,18 +286,15 @@ function flip_face_normal(faces,face_ownerCells,cell_centre,face_centre,face_nor
 
             d_cf=cf-cc
 
-            if d_cf⋅face_normal[i]<0
+            if d_cf⋅face_normal[i]<0.0
                 face_normal[i]=-1.0*face_normal[i]
             end
         else
             c1=cell_centre[face_ownerCells[i,1]]
             c2=cell_centre[face_ownerCells[i,2]]
-            cf=face_centre[i]
-            #d_1f=cf-c1
-            #d_f2=c2-cf
             d_12=c2-c1
 
-            if d_12⋅face_normal[i]<0
+            if d_12⋅face_normal[i]<0.0
                 face_normal[i]=-1.0*face_normal[i]
             end
         end
@@ -314,40 +305,40 @@ end
 face_normal=flip_face_normal(faces,face_ownerCells,cell_centre,face_centre,face_normal)
 
 
-store_e=[]
-store_delta=[]
-store_weight=[]
-for i=1:length(faces)
-    if face_ownerCells[i,2]==face_ownerCells[i,1]
-        cc=cell_centre[face_ownerCells[i,1]]
-        cf=face_centre[i]
+# store_e=[]
+# store_delta=[]
+# store_weight=[]
+# for i=1:length(faces)
+#     if face_ownerCells[i,2]==face_ownerCells[i,1]
+#         cc=cell_centre[face_ownerCells[i,1]]
+#         cf=face_centre[i]
 
-        d_cf=cf-cc
+#         d_cf=cf-cc
 
-        delta=norm(d_cf)
-        push!(store_delta,delta)
-        e=d_cf/delta
-        push!(store_e,e)
-        weight=one(Float64)
-        push!(store_weight,weight)
+#         delta=norm(d_cf)
+#         push!(store_delta,delta)
+#         e=d_cf/delta
+#         push!(store_e,e)
+#         weight=one(Float64)
+#         push!(store_weight,weight)
 
-    else
-        c1=cell_centre[face_ownerCells[i,1]]
-        c2=cell_centre[face_ownerCells[i,2]]
-        cf=face_centre[i]
-        d_1f=cf-c1
-        d_f2=c2-cf
-        d_12=c2-c1
+#     else
+#         c1=cell_centre[face_ownerCells[i,1]]
+#         c2=cell_centre[face_ownerCells[i,2]]
+#         cf=face_centre[i]
+#         d_1f=cf-c1
+#         d_f2=c2-cf
+#         d_12=c2-c1
 
-        delta=norm(d_12)
-        push!(store_delta,delta)
-        e=d_12/delta
-        push!(store_e,e)
-        weight=abs((d_1f⋅face_normal[i])/(d_1f⋅face_normal[i] + d_f2⋅face_normal[i]))
-        push!(store_weight,weight)
+#         delta=norm(d_12)
+#         push!(store_delta,delta)
+#         e=d_12/delta
+#         push!(store_e,e)
+#         weight=abs((d_1f⋅face_normal[i])/(d_1f⋅face_normal[i] + d_f2⋅face_normal[i]))
+#         push!(store_weight,weight)
 
-    end
-end
+#     end
+# end
 
 function calculate_face_properties(faces,face_ownerCells,cell_centre,face_centre,face_normal)
     store_e=[]
@@ -490,18 +481,47 @@ end
 
 face_ownerCells=generate_face_ownerCells(faces,all_cell_faces,volumes,all_cell_faces_range)
 
+
 volume_store=[]
 volume=0
 for i=1:length(volumes)
     volume=0
     for f=all_cell_faces_range[i]
         findex=all_cell_faces[f]
-        volume=volume+(face_normal[findex][1]*face_centre[findex][1]*face_area[findex])
+
+        normal=face_normal[findex]
+
+        volume=volume+(normal[1]*face_centre[findex][1]*face_area[findex])
     end
     push!(volume_store,volume)
 end
 
 volume_store
-sum(volume_store)
+
+volume=0
+for f=all_cell_faces_range[1]
+    findex=all_cell_faces[f]
+
+    normal=face_normal[findex]
+    cc=cell_centre[1]
+
+    if face_ownerCells[findex,1] ≠ face_ownerCells[findex,2]
+        if dot(cc,normal)<0.0
+            normal=-1.0*normal
+        end
+    end
+
+
+    volume=volume+(normal[1]*face_centre[findex][1]*face_area[findex])
+end
 
 volume
+
+all_cell_faces
+normal=face_normal[13]
+cc=cell_centre[1]
+
+if dot(cc,normal)<0.0
+    normal=-1.0*normal
+end
+

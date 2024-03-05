@@ -1,26 +1,26 @@
 using Plots, FVM_1D, Krylov, AerofoilOptimisation
 
 #%% REYNOLDS & Y+ CALCULATIONS
-chord = 100.0
-Re = 300000
+chord = 575.0
+Re = 2000000
 nu,ρ = 1.48e-5,1.225
-yplus_init,BL_layers = 1.0,55
+yplus_init,BL_layers = 2.0,55
 laminar = false
 velocity,BL_mesh = BL_calcs(Re,nu,ρ,chord,yplus_init,BL_layers,laminar) #Returns (BL mesh thickness, BL mesh growth rate)
 
 #%% CFD CASE SETUP & SOLVE
-iter = 24
+iter = 18
 aero_eff = Array{Float64,1}(undef,iter)
 C_l = Array{Float64,1}(undef,iter)
 C_d = Array{Float64,1}(undef,iter)
-for i ∈ 16:iter
+for i ∈ 1:iter
     α = i-1
-
+    writes = α > 10 ? 50 : 1000
     # Aerofoil Mesh
     create_NACA_mesh(
-        chord = 100, #[mm]
+        chord = chord, #[mm]
         α = α, #[°]
-        cutoff = 0.5, #Min thickness of TE [mm]. Default = 0.5; reduce for aerofoils with very thin TE
+        cutoff = 0.5*(chord/100), #Min thickness of TE [mm]. Default = 0.5 @ 100mm chord; reduce for aerofoils with very thin TE
         vol_size = (16,10), #Total fluid volume size (x,y) in chord multiples [aerofoil located in the vertical centre at the 1/3 position horizontally]
         BL_thick = BL_mesh[1], #Boundary layer mesh thickness [%c]
         BL_layers = BL_layers, #Boundary layer mesh layers [-]
@@ -39,7 +39,7 @@ for i ∈ 16:iter
 
     # Turbulence Model
     νR = 35
-    Tu = 0.15
+    Tu = 0.01
     k_inlet = 3/2*(Tu*velocity[1])^2
     ω_inlet = k_inlet/(νR*nu)
     model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
@@ -101,7 +101,7 @@ for i ∈ 16:iter
             solver      = GmresSolver, # BicgstabSolver, GmresSolver
             preconditioner = ILU0(),
             convergence = 1e-7,
-            relax       = 0.7,
+            relax       = 0.5,
         ),
         p = set_solver(
             model.p;
@@ -115,19 +115,19 @@ for i ∈ 16:iter
             solver      = GmresSolver, # BicgstabSolver, GmresSolver
             preconditioner = ILU0(),
             convergence = 1e-7,
-            relax       = 0.5,
+            relax       = 0.4,
         ),
         omega = set_solver(
             model.turbulence.omega;
             solver      = GmresSolver, # BicgstabSolver, GmresSolver
             preconditioner = ILU0(),
             convergence = 1e-7,
-            relax       = 0.5,
+            relax       = 0.4,
         )
     )
 
     runtime = set_runtime(
-        iterations=1000, write_interval=1000, time_step=1)
+        iterations=1000, write_interval=writes, time_step=1)
 
     config = Configuration(
         solvers=solvers, schemes=schemes, runtime=runtime)
@@ -159,5 +159,5 @@ for i ∈ 16:iter
         mv(filepath, dest)
     end
 end
-diff_80k = (abs(Clα_exp_80k-Clα_num)/((Clα_exp_80k+Clα_num)/2))*100paraview_vis(paraview_path = "paraview", #Path to paraview
+paraview_vis(paraview_path = "paraview", #Path to paraview
              vtk_path = "/home/tim/Documents/MEng Individual Project/Julia/FVM_1D_TW/vtk_results/iteration_..vtk") #Path to vtk files

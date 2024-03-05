@@ -1,7 +1,7 @@
 using Plots, FVM_1D, Krylov, AerofoilOptimisation
 
 #%% REYNOLDS & Y+ CALCULATIONS
-chord = 100.0
+chord = 500.0
 Re = 10000
 nu,ρ = 1.48e-5,1.225
 yplus_init,BL_layers = 1.0,35
@@ -9,18 +9,18 @@ laminar = true
 velocity,BL_mesh = BL_calcs(Re,nu,ρ,chord,yplus_init,BL_layers,laminar) #Returns (BL mesh thickness, BL mesh growth rate)
 
 #%% CFD CASE SETUP & SOLVE
-iter = 24
+iter = 15
 aero_eff = Array{Float64,1}(undef,iter)
 C_l = Array{Float64,1}(undef,iter)
 C_d = Array{Float64,1}(undef,iter)
-for i ∈ 1:iter
+for i ∈ 15:iter
     α = i-1
 
     # Aerofoil Mesh
     create_NACA_mesh(
-        chord = 100, #[mm]
+        chord = chord, #[mm]
         α = α, #[°]
-        cutoff = 0.5, #Min thickness of TE [mm]. Default = 0.5; reduce for aerofoils with very thin TE
+        cutoff = 0.5*(chord/100), #Min thickness of TE [mm]. Default = 0.5; reduce for aerofoils with very thin TE
         vol_size = (16,10), #Total fluid volume size (x,y) in chord multiples [aerofoil located in the vertical centre at the 1/3 position horizontally]
         BL_thick = BL_mesh[1], #Boundary layer mesh thickness [%c]
         BL_layers = BL_layers, #Boundary layer mesh layers [-]
@@ -59,8 +59,8 @@ for i ∈ 1:iter
     )
 
     schemes = (
-        U = set_schemes(divergence=Upwind,gradient=Midpoint),
-        p = set_schemes(divergence=Upwind),
+        U = set_schemes(time=Euler,divergence=Upwind,gradient=Midpoint),
+        p = set_schemes(time=Euler,divergence=Upwind),
     )
 
     solvers = (
@@ -81,7 +81,7 @@ for i ∈ 1:iter
     )
 
     runtime = set_runtime(
-        iterations=1000, write_interval=1000, time_step=0.005)
+        iterations=1000, write_interval=50, time_step=0.005)
 
     config = Configuration(
         solvers=solvers, schemes=schemes, runtime=runtime)
@@ -106,9 +106,15 @@ for i ∈ 1:iter
     vtk_files = filter(x->endswith(x,".vtk"), readdir("vtk_results/"))
     for file ∈ vtk_files
         filepath = "vtk_results/"*file
-        dest = "vtk_loop/laminar$(i-1)_"*file
+        dest = "vtk_loop/Re=10k (laminar model)/laminar$(i-1)_"*file
         mv(filepath, dest)
     end
 end
 paraview_vis(paraview_path = "paraview", #Path to paraview
              vtk_path = "/home/tim/Documents/MEng Individual Project/Julia/FVM_1D_TW/vtk_results/iteration_..vtk") #Path to vtk files
+vtk_files = filter(x->endswith(x,".vtk"), readdir("vtk_results/"))
+for file ∈ vtk_files
+    filepath = "vtk_results/"*file
+    dest = "vtk_loop/Re=10k (laminar model)/laminar$(6)_"*file
+    mv(filepath, dest)
+end

@@ -36,7 +36,14 @@ function build_mesh3D(unv_mesh)
 
     face_ownerCells=generate_face_ownerCells(faces,all_cell_faces,volumes,all_cell_faces_range)
 
-    faces_normal,faces_area,faces_centre,faces_e,faces_delta,faces_weight=calculate_faces_properties(faces,face_nodes,nodes,cell_nodes,cells,face_ownerCells,face_nodes_range)
+    #faces_normal,faces_area,faces_centre,faces_e,faces_delta,faces_weight=calculate_faces_properties(faces,face_nodes,nodes,cell_nodes,cells,face_ownerCells,face_nodes_range)
+
+    faces_area=calculate_face_area(nodes,faces)
+    faces_centre=calculate_face_centre(faces,nodes)
+    faces_normal=calculate_face_normal(faces,nodes)
+    faces_normal=flip_face_normal(faces,face_ownerCells,centre_of_cells,faces_centre,faces_normal)
+    faces_e,faces_delta,faces_weight=calculate_face_properties(faces,face_ownerCells,centre_of_cells,faces_centre,faces_normal)
+    
 
     faces=generate_faces(faces,face_nodes_range,faces_centre,faces_normal,faces_area,face_ownerCells,faces_e,faces_delta,faces_weight)
     
@@ -51,6 +58,177 @@ function build_mesh3D(unv_mesh)
     println("Done! Execution time: ", @sprintf "%.6f" stats.time)
     println("Mesh ready!")
     return mesh
+end
+
+function calculate_face_properties(faces,face_ownerCells,cell_centre,face_centre,face_normal)
+    store_e=[]
+    store_delta=[]
+    store_weight=[]
+    for i=1:length(faces)
+        if face_ownerCells[i,2]==face_ownerCells[i,1]
+            cc=cell_centre[face_ownerCells[i,1]]
+            cf=face_centre[i]
+
+            d_cf=cf-cc
+
+            delta=norm(d_cf)
+            push!(store_delta,delta)
+            e=d_cf/delta
+            push!(store_e,e)
+            weight=one(Float64)
+            push!(store_weight,weight)
+
+        else
+            c1=cell_centre[face_ownerCells[i,1]]
+            c2=cell_centre[face_ownerCells[i,2]]
+            cf=face_centre[i]
+            d_1f=cf-c1
+            d_f2=c2-cf
+            d_12=c2-c1
+
+            delta=norm(d_12)
+            push!(store_delta,delta)
+            e=d_12/delta
+            push!(store_e,e)
+            weight=abs((d_1f⋅face_normal[i])/(d_1f⋅face_normal[i] + d_f2⋅face_normal[i]))
+            push!(store_weight,weight)
+
+        end
+    end
+    return store_e,store_delta,store_weight
+end
+
+function flip_face_normal(faces,face_ownerCells,cell_centre,face_centre,face_normal)
+    for i=1:length(faces)
+        if face_ownerCells[i,2]==face_ownerCells[i,1]
+            cc=cell_centre[face_ownerCells[i,1]]
+            cf=face_centre[i]
+
+            d_cf=cf-cc
+
+            if d_cf⋅face_normal[i]<0
+                face_normal[i]=-1.0*face_normal[i]
+            end
+        else
+            c1=cell_centre[face_ownerCells[i,1]]
+            c2=cell_centre[face_ownerCells[i,2]]
+            cf=face_centre[i]
+            #d_1f=cf-c1
+            #d_f2=c2-cf
+            d_12=c2-c1
+
+            if d_12⋅face_normal[i]<0
+                face_normal[i]=-1.0*face_normal[i]
+            end
+        end
+    end
+    return face_normal
+end
+
+function calculate_face_normal(faces,nodes)
+    normal_store=[]
+    for i=1:length(faces)
+        n1=nodes[faces[i].faces[1]].coords
+        n2=nodes[faces[i].faces[2]].coords
+        n3=nodes[faces[i].faces[3]].coords
+
+        t1x=n2[1]-n1[1]
+        t1y=n2[2]-n1[2]
+        t1z=n2[3]-n1[3]
+
+        t2x=n3[1]-n1[1]
+        t2y=n3[2]-n1[2]
+        t2z=n3[3]-n1[3]
+
+        nx=t1y*t2z-t1z*t2y
+        ny=-(t1x*t2z-t1z*t2x)
+        nz=t1x*t2y-t2y*t2x
+
+        magn2=(nx)^2+(ny)^2+(nz)^2
+
+        snx=nx/sqrt(magn2)
+        sny=ny/sqrt(magn2)
+        snz=nz/sqrt(magn2)
+
+        normal=SVector(snx,sny,snz)
+        push!(normal_store,normal)
+    end
+    return normal_store
+end
+
+function calculate_face_centre(faces,nodes)
+    centre_store=[]
+    for i=1:length(faces)
+        face_store=[]
+        for ic=1:length(faces[i].faces)
+            push!(face_store,nodes[faces[i].faces[ic]].coords)
+        end
+        centre=(sum(face_store)/length(face_store))
+        push!(centre_store,centre)
+    end
+    return centre_store
+end
+
+function calculate_face_area(nodes,faces)
+    area_store=Float64[]
+    for i=1:length(faces)
+        if faces[i].faceCount==3
+            n1=nodes[faces[i].faces[1]].coords
+            n2=nodes[faces[i].faces[2]].coords
+            n3=nodes[faces[i].faces[3]].coords
+
+            t1x=n2[1]-n1[1]
+            t1y=n2[2]-n1[2]
+            t1z=n2[3]-n1[3]
+
+            t2x=n3[1]-n1[1]
+            t2y=n3[2]-n1[2]
+            t2z=n3[3]-n1[3]
+
+            area2=(t1y*t2z-t1z*t2y)^2+(t1x*t2z-t1z*t2x)^2+(t1y*t2x-t1x*t2y)^2
+            area=sqrt(area2)/2
+            push!(area_store,area)
+        end
+
+        if faces[i].faceCount>3
+            n1=nodes[faces[i].faces[1]].coords
+            n2=nodes[faces[i].faces[2]].coords
+            n3=nodes[faces[i].faces[3]].coords
+
+            t1x=n2[1]-n1[1]
+            t1y=n2[2]-n1[2]
+            t1z=n2[3]-n1[3]
+
+            t2x=n3[1]-n1[1]
+            t2y=n3[2]-n1[2]
+            t2z=n3[3]-n1[3]
+
+            area2=(t1y*t2z-t1z*t2y)^2+(t1x*t2z-t1z*t2x)^2+(t1y*t2x-t1x*t2y)^2
+            area=sqrt(area2)/2
+
+            for ic=4:faces[i].faceCount
+                n1=nodes[faces[i].faces[ic]].coords
+                n2=nodes[faces[i].faces[2]].coords
+                n3=nodes[faces[i].faces[3]].coords
+
+                t1x=n2[1]-n1[1]
+                t1y=n2[2]-n1[2]
+                t1z=n2[3]-n1[3]
+
+                t2x=n3[1]-n1[1]
+                t2y=n3[2]-n1[2]
+                t2z=n3[3]-n1[3]
+
+                area2=(t1y*t2z-t1z*t2y)^2+(t1x*t2z-t1z*t2x)^2+(t1y*t2x-t1x*t2y)^2
+                area=area+sqrt(area2)/2
+
+            end
+
+            push!(area_store,area)
+
+        end
+    end
+    return area_store
 end
 
 function generate_cell_faces(volumes,faces,boundaryElements)

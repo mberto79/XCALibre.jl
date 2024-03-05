@@ -15,9 +15,9 @@ faces
 volumes
 boundaryElements
 
-mesh.faces[16].centre
+mesh=build_mesh3D(unv_mesh)
 
-#mesh=build_mesh3D(unv_mesh)
+mesh.faces
 
 # area_store=[]
 # for i=1:length(faces)
@@ -127,6 +127,72 @@ function nodes_cells_range!(points,volumes)
 end
 
 nodes=generate_nodes(points,volumes)
+
+function generate_internal_faces(volumes,faces)
+    store_cell_faces=Int[]
+    store_faces=Int[]
+    
+    for i=1:length(volumes)
+    cell=sort(volumes[i].volumes)
+    push!(store_cell_faces,cell[1],cell[2],cell[3])
+    push!(store_cell_faces,cell[1],cell[2],cell[4])
+    push!(store_cell_faces,cell[1],cell[3],cell[4])
+    push!(store_cell_faces,cell[2],cell[3],cell[4])
+    end
+    
+    for i=1:length(faces)
+        face=sort(faces[i].faces)
+        push!(store_faces,face[1],face[2],face[3])
+    end
+
+    range=[]
+
+    x=0
+    for i=1:length(store_cell_faces)/3
+        store=UnitRange(x+1:x+3)
+        x=x+3
+        push!(range,store)
+    end
+
+    faces1=[]
+
+    for i=1:length(range)
+        face1=store_cell_faces[range[i]]
+        for ic=1:length(range)
+            face2=store_cell_faces[range[ic]]
+            store=[]
+    
+            push!(store,face2[1] in face1)
+            push!(store,face2[2] in face1)
+            push!(store,face2[3] in face1)
+    
+            count1=count(store)
+    
+            if count1!=3
+                push!(faces1,face1)
+            end
+        end
+    end
+
+    all_faces=unique(faces1)
+
+    store1_faces=[]
+    for i=1:length(faces)
+        push!(store1_faces,sort(faces[i].faces))
+    end
+
+    all_faces=sort(all_faces)
+    store1_faces=sort(store1_faces)
+    
+    internal_faces=setdiff(all_faces,store1_faces)
+    
+    for i=1:length(internal_faces)
+        push!(faces,UNV_3D.Face(faces[end].faceindex+1,faces[end].faceCount,internal_faces[i]))
+    end
+    return faces
+end
+
+faces=generate_internal_faces(volumes,faces)
 
 function calculate_face_area(nodes,faces)
     area_store=Float64[]
@@ -269,74 +335,136 @@ function calculate_face_normal(faces,nodes)
     return normal_store
 end
 
-mesh.faces[16].normal
 face_normal=calculate_face_normal(faces,nodes)
 
-function generate_internal_faces(volumes,faces)
-    store_cell_faces=Int[]
-    store_faces=Int[]
-    
-    for i=1:length(volumes)
-    cell=sort(volumes[i].volumes)
-    push!(store_cell_faces,cell[1],cell[2],cell[3])
-    push!(store_cell_faces,cell[1],cell[2],cell[4])
-    push!(store_cell_faces,cell[1],cell[3],cell[4])
-    push!(store_cell_faces,cell[2],cell[3],cell[4])
-    end
-    
+
+
+face_ownerCells
+faces[1]
+face_centre
+cell_centre
+
+function flip_face_normal(faces,face_ownerCells,cell_centre,face_centre,face_normal)
     for i=1:length(faces)
-        face=sort(faces[i].faces)
-        push!(store_faces,face[1],face[2],face[3])
-    end
+        if face_ownerCells[i,2]==face_ownerCells[i,1]
+            cc=cell_centre[face_ownerCells[i,1]]
+            cf=face_centre[i]
 
-    range=[]
+            d_cf=cf-cc
 
-    x=0
-    for i=1:length(store_cell_faces)/3
-        store=UnitRange(x+1:x+3)
-        x=x+3
-        push!(range,store)
-    end
+            if d_cf⋅face_normal[i]<0
+                face_normal[i]=-1.0*face_normal[i]
+            end
+        else
+            c1=cell_centre[face_ownerCells[i,1]]
+            c2=cell_centre[face_ownerCells[i,2]]
+            cf=face_centre[i]
+            #d_1f=cf-c1
+            #d_f2=c2-cf
+            d_12=c2-c1
 
-    faces1=[]
-
-    for i=1:length(range)
-        face1=store_cell_faces[range[i]]
-        for ic=1:length(range)
-            face2=store_cell_faces[range[ic]]
-            store=[]
-    
-            push!(store,face2[1] in face1)
-            push!(store,face2[2] in face1)
-            push!(store,face2[3] in face1)
-    
-            count1=count(store)
-    
-            if count1!=3
-                push!(faces1,face1)
+            if d_12⋅face_normal[i]<0
+                face_normal[i]=-1.0*face_normal[i]
             end
         end
     end
-
-    all_faces=unique(faces1)
-
-    store1_faces=[]
-    for i=1:length(faces)
-        push!(store1_faces,sort(faces[i].faces))
-    end
-
-    all_faces=sort(all_faces)
-    store1_faces=sort(store1_faces)
-    
-    internal_faces=setdiff(all_faces,store1_faces)
-    
-    for i=1:length(internal_faces)
-        push!(faces,UNV_3D.Face(faces[end].faceindex+1,faces[end].faceCount,internal_faces[i]))
-    end
-    return faces
+    return face_normal
 end
 
-faces=generate_internal_faces(volumes,faces)
+face_normal=flip_face_normal(faces,face_ownerCells,cell_centre,face_centre,face_normal)
+
+
+store_e=[]
+store_delta=[]
+store_weight=[]
+for i=1:length(faces)
+    if face_ownerCells[i,2]==face_ownerCells[i,1]
+        cc=cell_centre[face_ownerCells[i,1]]
+        cf=face_centre[i]
+
+        d_cf=cf-cc
+
+        delta=norm(d_cf)
+        push!(store_delta,delta)
+        e=d_cf/delta
+        push!(store_e,e)
+        weight=one(Float64)
+        push!(store_weight,weight)
+
+    else
+        c1=cell_centre[face_ownerCells[i,1]]
+        c2=cell_centre[face_ownerCells[i,2]]
+        cf=face_centre[i]
+        d_1f=cf-c1
+        d_f2=c2-cf
+        d_12=c2-c1
+
+        delta=norm(d_12)
+        push!(store_delta,delta)
+        e=d_12/delta
+        push!(store_e,e)
+        weight=abs((d_1f⋅face_normal[i])/(d_1f⋅face_normal[i] + d_f2⋅face_normal[i]))
+        push!(store_weight,weight)
+
+    end
+end
+
+function calculate_face_properties(faces,face_ownerCells,cell_centre,face_centre,face_normal)
+    store_e=[]
+    store_delta=[]
+    store_weight=[]
+    for i=1:length(faces)
+        if face_ownerCells[i,2]==face_ownerCells[i,1]
+            cc=cell_centre[face_ownerCells[i,1]]
+            cf=face_centre[i]
+
+            d_cf=cf-cc
+
+            delta=norm(d_cf)
+            push!(store_delta,delta)
+            e=d_cf/delta
+            push!(store_e,e)
+            weight=one(Float64)
+            push!(store_weight,weight)
+
+        else
+            c1=cell_centre[face_ownerCells[i,1]]
+            c2=cell_centre[face_ownerCells[i,2]]
+            cf=face_centre[i]
+            d_1f=cf-c1
+            d_f2=c2-cf
+            d_12=c2-c1
+
+            delta=norm(d_12)
+            push!(store_delta,delta)
+            e=d_12/delta
+            push!(store_e,e)
+            weight=abs((d_1f⋅face_normal[i])/(d_1f⋅face_normal[i] + d_f2⋅face_normal[i]))
+            push!(store_weight,weight)
+
+        end
+    end
+    return store_e,store_delta,store_weight
+end
+
+face_properties=calculate_face_properties(faces,face_ownerCells,cell_centre,face_centre,face_normal)
+
+
+function calculate_centre_cell(volumes,nodes)
+    centre_store=[]
+    for i=1:length(volumes)
+        cell_store=[]
+        for ic=1:length(volumes[i].volumes)
+            push!(cell_store,nodes[volumes[i].volumes[ic]].coords)
+        end
+        centre=(sum(cell_store)/length(cell_store))
+        push!(centre_store,centre)
+    end
+    return centre_store
+end
+
+cell_centre=calculate_centre_cell(volumes,nodes)
+
 
 function generate_all_cell_faces(volumes,faces)
     cell_faces=[]
@@ -391,6 +519,36 @@ function generate_all_faces_range(volumes,faces)
 end
 
 all_cell_faces_range=generate_all_faces_range(volumes,faces)
+
+function generate_face_ownerCells(faces,all_cell_faces,volumes,all_cell_faces_range)
+    x=[]
+    for i=1:length(faces)
+        push!(x,findall(x->x==i,all_cell_faces))
+    end
+    y=zeros(Int,length(x),2)
+    for ic=1:length(volumes)
+        for i=1:length(x)
+            #if length(x[i])==1
+                if all_cell_faces_range[ic][1]<=x[i][1]<=all_cell_faces_range[ic][end]
+                    y[i,1]=ic
+                    y[i,2]=ic
+                end
+            #end
+
+            if length(x[i])==2
+                if all_cell_faces_range[ic][1]<=x[i][2]<=all_cell_faces_range[ic][end]
+                    #y[i]=ic
+                    y[i,2]=ic
+
+                end
+            end
+
+        end
+    end
+    return y
+end
+
+face_ownerCells=generate_face_ownerCells(faces,all_cell_faces,volumes,all_cell_faces_range)
 
 volume_store=[]
 volume=0

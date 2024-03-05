@@ -9,6 +9,7 @@ struct Div{VF<:VectorField,FVF<:FaceVectorField,F,M}
     values::Vector{F}
     mesh::M
 end
+Adapt.@adapt_structure Div
 Div(vector::VectorField) = begin
     mesh = vector.mesh
     face_vector = FaceVectorField(mesh)
@@ -72,42 +73,93 @@ end
 #     end
 # end
 
+# function div!(phi::ScalarField, psif::FaceVectorField)
+#     mesh = phi.mesh
+#     # (; cells, faces) = mesh
+#     (; cells, cell_neighbours, cell_nsign, cell_faces, faces) = mesh
+#     # F = eltype(mesh.nodes[1].coords)
+#     F = _get_float(mesh)
+
+#     for ci ∈ eachindex(cells)
+#         # (; facesID, nsign, volume) = cells[ci]
+#         cell = cells[ci]
+#         (; volume) = cell
+#         phi.values[ci] = zero(F)
+#         # for fi ∈ eachindex(facesID)
+#         for fi ∈ cell.faces_range
+#             # fID = facesID[fi]
+#             fID = cell_faces[fi]
+#             nsign = cell_nsign[fi]
+#             (; area, normal) = faces[fID]
+#             Sf = area*normal
+#             # phi.values[ci] += psif[fID]⋅Sf*nsign[fi]/volume
+#             phi.values[ci] += psif[fID]⋅Sf*nsign/volume
+#         end
+#     end
+#     # Add boundary faces contribution
+#     # nbfaces = total_boundary_faces(mesh)
+#     nbfaces = length(mesh.boundary_cellsID)
+#     for fID ∈ 1:nbfaces
+#         cID = faces[fID].ownerCells[1]
+#         volume = cells[cID].volume
+#         (; area, normal) = faces[fID]
+#         Sf = area*normal
+#         # Boundary normals are correct by definition
+#         phi.values[cID] += psif[fID]⋅Sf/volume
+#     end
+# end
+
 function div!(phi::ScalarField, psif::FaceVectorField)
     mesh = phi.mesh
+    backend = _get_backend(mesh)
     # (; cells, faces) = mesh
     (; cells, cell_neighbours, cell_nsign, cell_faces, faces) = mesh
     # F = eltype(mesh.nodes[1].coords)
     F = _get_float(mesh)
 
-    for ci ∈ eachindex(cells)
+    kernel! = div_kernel!(backend)
+    kernel!(cells, F, cell_faces, cell_nsign, faces, phi, psif, ndrange = length(cells))
+
+    # Add boundary faces contribution
+    # nbfaces = total_boundary_faces(mesh)
+    nbfaces = length(mesh.boundary_cellsID)
+
+    kernel! = div_boundary_faces_contribution_kernel!(backend)
+    kernel!(faces, cells, phi, psif, ndrange = nbfaces)
+end
+
+@kernel function div_kernel!(cells, F, cell_faces, cell_nsign, faces, phi, psif)
+    i = @index(Global)
+    # for ci ∈ eachindex(cells)
+    @inbounds begin
         # (; facesID, nsign, volume) = cells[ci]
-        cell = cells[ci]
-        (; volume) = cell
-        phi.values[ci] = zero(F)
+        (; volume, faces_range) = cells[i]
+        phi.values[i] = zero(F)
         # for fi ∈ eachindex(facesID)
-        for fi ∈ cell.faces_range
+        for fi ∈ faces_range
             # fID = facesID[fi]
             fID = cell_faces[fi]
             nsign = cell_nsign[fi]
             (; area, normal) = faces[fID]
             Sf = area*normal
             # phi.values[ci] += psif[fID]⋅Sf*nsign[fi]/volume
-            phi.values[ci] += psif[fID]⋅Sf*nsign/volume
+            phi.values[i] += psif[fID]⋅Sf*nsign/volume
         end
-    end
-    # Add boundary faces contribution
-    # nbfaces = total_boundary_faces(mesh)
-    nbfaces = length(mesh.boundary_cellsID)
-    for fID ∈ 1:nbfaces
-        cID = faces[fID].ownerCells[1]
-        volume = cells[cID].volume
-        (; area, normal) = faces[fID]
-        Sf = area*normal
-        # Boundary normals are correct by definition
-        phi.values[cID] += psif[fID]⋅Sf/volume
     end
 end
 
+@kernel function div_boundary_faces_contribution_kernel!(faces, cells, phi, psif)
+    i = @index(Global)
+    
+    @inbounds begin
+        cID = faces[i].ownerCells[1]
+        volume = cells[cID].volume
+        (; area, normal) = faces[i]
+        Sf = area*normal
+        # Boundary normals are correct by definition
+        phi.values[cID] += psif[i]⋅Sf/volume
+    end
+end
 # function div!(phi::ScalarField, phif::FaceScalarField)
 #     (; mesh, values) = phif
 #     (; cells, faces) = mesh

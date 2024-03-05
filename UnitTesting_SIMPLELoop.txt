@@ -268,6 +268,13 @@ GPU benchmark (post compilation):           0.000103 seconds (74 allocations: 3.
 CPU kernel benchmark (compilation):         0.008074 seconds (152 allocations: 8.719 KiB, 92.38% compilation time)
 CPU kernel benchmark (post compilation):    0.000657 seconds (22 allocations: 1.969 KiB)
 
+Removed copy_to_precon kernel and sparse_array_deconstructor
+GPU benchmark (compilation):                
+GPU benchmark (post compilation):           
+
+CPU kernel benchmark (compilation):         
+CPU kernel benchmark (post compilation):    
+
 Output the same for all benchmarks?: YES
 
 

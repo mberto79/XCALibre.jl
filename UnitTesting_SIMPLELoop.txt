@@ -291,3 +291,23 @@ CPU kernel benchmark (compilation):         N/A (same as non-kernel)
 CPU kernel benchmark (post compilation):    N/A (same as non-kernel)
 
 Output the same for all benchmarks?: YES
+
+
+
+residual!() option 1 update for GPU (Float64 types with variables R_ux, ux_eqn.equation, U.x, 1)
+
+CPU benchmark (compilation):                0.176061 seconds (325.58 k CPU allocations: 21.828 MiB)
+CPU benchmark (post compilation):           0.000820 seconds (4 CPU allocations: 2.391 KiB)
+
+No alterations:
+GPU benchmark (compilation):                1.520010 seconds (2.00 M CPU allocations: 142.103 MiB, 2.89% gc time) (3 GPU allocations: 1.559 KiB, 0.00% memmgmt time)
+GPU benchmark (post compilation):           0.000287 seconds (130 CPU allocations: 6.203 KiB) (3 GPU allocations: 1.559 KiB, 7.12% memmgmt time)
+
+Adapted residual arrays and wrapped copy to residual in kernel:
+GPU benchmark (compilation):                1.452162 seconds (2.22 M CPU allocations: 158.057 MiB, 1.94% gc time) (3 GPU allocations: 1.559 KiB, 0.00% memmgmt time)
+GPU benchmark (post compilation):           0.000313 seconds (162 CPU allocations: 7.203 KiB) (3 GPU allocations: 1.559 KiB, 5.68% memmgmt time)
+
+CPU kernel benchmark (compilation):         N/A (reverted to original)
+CPU kernel benchmark (post compilation):    N/A (reverted to original)
+
+Output the same for all benchmarks?: YES

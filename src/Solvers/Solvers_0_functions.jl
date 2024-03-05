@@ -1,4 +1,4 @@
-export flux!, update_nueff!
+export flux!, update_nueff!, residual!
 
 # update_nueff!(nueff, nu, turb_model) = begin
 #     if turb_model === nothing

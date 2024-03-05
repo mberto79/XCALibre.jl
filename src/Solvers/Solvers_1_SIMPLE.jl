@@ -169,7 +169,7 @@ function SIMPLE_loop(
         @. prev = p.values
         discretise!(p_eqn, prev, runtime)
         apply_boundary_conditions!(p_eqn, p.BCs)
-        setReference!(p_eqn.equation, pref, 1)
+        setReference!(p_eqn, pref, 1)
         update_preconditioner!(p_eqn.preconditioner, mesh)
         run!(p_eqn, solvers.p)
 

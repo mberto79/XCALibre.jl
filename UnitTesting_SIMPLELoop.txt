@@ -386,3 +386,18 @@ CPU kernel benchmark (compilation):         0.095142 seconds (184.35 k CPU alloc
 CPU kernel benchmark (post compilation):    0.000012 seconds (9 CPU allocations: 272 bytes)
 
 Output the same for all benchmarks?: YES
+
+
+
+explicit_relaxation!() update for GPU (Float64 types with variables p, prev, solvers.p.relax)
+
+CPU benchmark (compilation):                0.009334 seconds (7.67 k CPU allocations: 526.750 KiB)    
+CPU benchmark (post compilation):           0.000109 seconds (3 CPU allocations: 144 bytes)
+
+GPU benchmark (compilation):                0.237779 seconds (244.02 k CPU allocations: 17.432 MiB)
+GPU benchmark (post compilation):           0.000080 seconds (45 CPU allocations: 2.797 KiB)
+
+CPU kernel benchmark (compilation):         0.101853 seconds (182.27 k CPU allocations: 12.779 MiB)
+CPU kernel benchmark (post compilation):    0.000092 seconds (15 CPU allocations: 1024 bytes)
+
+Output the same for all benchmarks?: YES

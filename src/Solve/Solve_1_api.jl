@@ -48,9 +48,24 @@ function run!(phiEqn::ModelEquation, setup) # ; opP, solver
     nothing
 end
 
+# function explicit_relaxation!(phi, phi0, alpha)
+#     @inbounds @simd for i ∈ eachindex(phi)
+#         phi[i] = phi0[i] + alpha*(phi[i] - phi0[i])
+#     end
+# end
+
 function explicit_relaxation!(phi, phi0, alpha)
-    @inbounds @simd for i ∈ eachindex(phi)
-        phi[i] = phi0[i] + alpha*(phi[i] - phi0[i])
+    backend = _get_backend(phi.mesh)
+
+    kernel! = explicit_relaxation_kernel!(backend)
+    kernel!(phi, phi0, alpha, ndrange = length(phi))
+end
+
+@kernel function explicit_relaxation_kernel!(phi, phi0, alpha)
+    i = @index(Global)
+
+    @inbounds begin
+        phi[i] = phi[i] = phi0[i] + alpha*(phi[i] - phi0[i])
     end
 end
 

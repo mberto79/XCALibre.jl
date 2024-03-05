@@ -7,8 +7,8 @@ using KernelAbstractions
 
 # Backend selection
 
-# backend = CPU()
-backend = CUDABackend()
+backend = CPU()
+# backend = CUDABackend()
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
 
@@ -196,6 +196,7 @@ using Printf
     rD = _convert_array!(rD, backend)
     pf = _convert_array!(pf, backend)
     Hv = _convert_array!(Hv, backend)
+    prev = _convert_array!(prev, backend)
 
     interpolate!(Uf, U)
     correct_boundaries!(Uf, U, U.BCs)
@@ -206,11 +207,6 @@ using Printf
     # nueff.values
 
     update_nueff!(nueff, nu, turbulence)
-
-    prev = _convert_array!(prev, backend)
-    # R_ux = _convert_array!(R_ux, backend)
-    # R_uy = _convert_array!(R_uy, backend)
-    # R_p = _convert_array!(R_p, backend)
 
     @. prev = U.x.values
     discretise!(ux_eqn, prev, runtime)
@@ -247,4 +243,7 @@ using Printf
     update_preconditioner!(p_eqn.preconditioner, mesh)
     run!(p_eqn, solvers.p)
 
+    explicit_relaxation!(p, prev, solvers.p.relax)
+    residual!(R_p, p_eqn.equation, p, iteration)
 
+    grad!(∇p, pf, p, p.BCs) 

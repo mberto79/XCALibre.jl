@@ -7,8 +7,8 @@ using KernelAbstractions
 
 # Backend selection
 
-# backend = CPU()
-backend = CUDABackend()
+backend = CPU()
+# backend = CUDABackend()
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
 
@@ -219,28 +219,16 @@ using Printf
     run!(ux_eqn, solvers.U) #opP=Pu.P, solver=solver_U)
     residual!(R_ux, ux_eqn.equation, U.x, 1)
 
+    @. prev = U.y.values
+    discretise!(uy_eqn, prev, runtime)
+    apply_boundary_conditions!(uy_eqn, U.y.BCs)
+    # uy_eqn.b .-= divUTy
+    implicit_relaxation!(uy_eqn, prev, solvers.U.relax, mesh)
+    update_preconditioner!(uy_eqn.preconditioner, mesh)
+    run!(uy_eqn, solvers.U)
+    residual!(R_uy, uy_eqn.equation, U.y, 1)
 
-    A = [1; 2; 3; 4; 5]
-    size(A)
-    B = [6 7 8 9 10]
-    size(B)
-    res1 = zeros(5,5)
-    mul!(res1, A, B)
-
-    res2 = zeros(5,5)
-    matrix_multiply!(res2, A, B)
-    res1 == res2
-
-    function matrix_multiply!(result, A, B)
-        if size(A, 2) != size(B, 1) || size(result) != (size(A, 1), size(B, 2))
-            error(DimensionMismatch("Matrices dimensions are not compatible for multiplication"))
-        end
-        
-        for i in 1:size(A, 1)
-            for j in 1:size(B, 2)
-                for k in 1:size(A, 2)
-                    result[i, j] = A[i, k] * B[k, j]
-                end
-            end
-        end
-    end
+    inverse_diagonal!(rD, ux_eqn.equation)
+    interpolate!(rDf, rD)
+    remove_pressure_source!(ux_eqn, uy_eqn, ∇p)
+    H!(Hv, U, ux_eqn, uy_eqn)

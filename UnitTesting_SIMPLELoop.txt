@@ -311,3 +311,18 @@ CPU kernel benchmark (compilation):         N/A (reverted to original)
 CPU kernel benchmark (post compilation):    N/A (reverted to original)
 
 Output the same for all benchmarks?: YES
+
+
+
+inverse_diagonal!() update for GPU (Float64 types with variables rD, ux_eqn.equation)
+
+CPU benchmark (compilation):                0.013150 seconds (11.67 k CPU allocations: 807.336 KiB)
+CPU benchmark (post compilation):           0.000530 seconds (2 CPU allocations: 1.297 KiB)
+
+GPU benchmark (compilation):                0.234649 seconds (276.50 k CPU allocations: 19.672 MiB, 7.76% gc time), 0.01% GPU memmgmt time
+GPU benchmark (post compilation):           0.000087 seconds (38 CPU allocations: 2.531 KiB)
+
+CPU kernel benchmark (compilation):         0.095697 seconds (184.73 k CPU allocations: 12.912 MiB)
+CPU kernel benchmark (post compilation):    0.000502 seconds (12 CPU allocations: 1.578 KiB)
+
+Output the same for all benchmarks?: YES

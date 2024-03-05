@@ -1,4 +1,4 @@
-export flux!, update_nueff!, residual!
+export flux!, update_nueff!, residual!, inverse_diagonal!
 
 # update_nueff!(nueff, nu, turb_model) = begin
 #     if turb_model === nothing
@@ -125,14 +125,41 @@ end
 
 volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 
+# function inverse_diagonal!(rD::S, eqn) where S<:ScalarField
+#     (; mesh, values) = rD
+#     cells = mesh.cells
+#     A = eqn.A
+#     @inbounds for i ∈ eachindex(values)
+#         # D = view(A, i, i)[1]
+#         D = A[i,i]
+#         volume = cells[i].volume
+#         values[i] = volume/D
+#     end
+# end
+
 function inverse_diagonal!(rD::S, eqn) where S<:ScalarField
     (; mesh, values) = rD
     cells = mesh.cells
     A = eqn.A
-    @inbounds for i ∈ eachindex(values)
-        # D = view(A, i, i)[1]
-        D = A[i,i]
-        volume = cells[i].volume
+    nzval_array = nzval(A)
+    colptr_array = colptr(A)
+    rowval_array = rowval(A)
+    backend = _get_backend(mesh)
+
+    ione = one(_get_int(mesh))
+
+    kernel! = inverse_diagonal_kernel!(backend)
+    kernel!(ione, colptr_array, rowval_array, nzval_array, cells, values, ndrange = length(values))
+end
+
+@kernel function inverse_diagonal_kernel!(ione, colptr, rowval, nzval, cells, values)
+    # i from 1 to number of variables in values
+    i = @index(Global)
+
+    @inbounds begin
+        nIndex = nzval_index(colptr, rowval, i, i, ione)
+        D = nzval[nIndex]
+        (; volume) = cells[i]
         values[i] = volume/D
     end
 end

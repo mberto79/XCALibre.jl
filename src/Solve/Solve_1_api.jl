@@ -111,11 +111,38 @@ end
     end
 end
 
-function setReference!(pEqn::E, pRef, cellID) where E<:Equation
+# function setReference!(pEqn::E, pRef, cellID) where E<:Equation
+#     if pRef === nothing
+#         return nothing
+#     else
+#         pEqn.b[cellID] += pEqn.A[cellID,cellID]*pRef
+#         pEqn.A[cellID,cellID] += pEqn.A[cellID,cellID]
+#     end
+# end
+
+function setReference!(pEqn::E, pRef, cellID) where E<:ModelEquation
     if pRef === nothing
         return nothing
     else
-        pEqn.b[cellID] += pEqn.A[cellID,cellID]*pRef
-        pEqn.A[cellID,cellID] += pEqn.A[cellID,cellID]
+        backend = _get_backend((get_phi(pEqn)).mesh)
+        ione = one(_get_int((get_phi(pEqn)).mesh))
+        (; b, A) = pEqn.equation
+        nzval_array = nzval(A)
+        colptr_array = colptr(A)
+        rowval_array = rowval(A)
+
+        kernel! = setReference_kernel!(backend)
+        kernel!(nzval_array, colptr_array, rowval_array, b, pRef, ione, cellID, ndrange = 1)
+
+    end
+end
+
+@kernel function setReference_kernel!(nzval, colptr, rowval, b, pRef, ione, cellID)
+    i = @index(Global)
+
+    @inbounds begin
+        nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
+        b[cellID] = nzval[nIndex]*pRef
+        nzval[nIndex] += nzval[nIndex]
     end
 end

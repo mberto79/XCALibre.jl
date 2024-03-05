@@ -237,5 +237,14 @@ using Printf
     interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
     correct_boundaries!(Uf, Hv, U.BCs)
     div!(divHv, Uf)
+    
+    pref = nothing
+
+    @. prev = p.values
+    discretise!(p_eqn, prev, runtime)
+    apply_boundary_conditions!(p_eqn, p.BCs)
+    setReference!(p_eqn, pref, 1)
+    update_preconditioner!(p_eqn.preconditioner, mesh)
+    run!(p_eqn, solvers.p)
 
 

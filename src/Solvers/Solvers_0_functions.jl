@@ -1,4 +1,4 @@
-export flux!, update_nueff!, residual!, inverse_diagonal!, remove_pressure_source!, H!
+export flux!, update_nueff!, residual!, inverse_diagonal!, remove_pressure_source!, H!, correct_velocity!
 
 # update_nueff!(nueff, nu, turb_model) = begin
 #     if turb_model === nothing
@@ -164,10 +164,31 @@ end
     end
 end
 
+# function correct_velocity!(U, Hv, ∇p, rD)
+#     Ux = U.x; Uy = U.y; Hvx = Hv.x; Hvy = Hv.y
+#     dpdx = ∇p.result.x; dpdy = ∇p.result.y; rDvalues = rD.values
+#     @inbounds @simd for i ∈ eachindex(Ux)
+#         rDvalues_i = rDvalues[i]
+#         Ux[i] = Hvx[i] - dpdx[i]*rDvalues_i
+#         Uy[i] = Hvy[i] - dpdy[i]*rDvalues_i
+#     end
+# end
+
 function correct_velocity!(U, Hv, ∇p, rD)
     Ux = U.x; Uy = U.y; Hvx = Hv.x; Hvy = Hv.y
     dpdx = ∇p.result.x; dpdy = ∇p.result.y; rDvalues = rD.values
-    @inbounds @simd for i ∈ eachindex(Ux)
+    backend = _get_backend(U.mesh)
+
+    kernel! = correct_velocity_kernel!(backend)
+    kernel!(rDvalues, Ux, Hvx, dpdx, Uy, Hvy, dpdy, ndrange = length(Ux))
+end
+
+@kernel function correct_velocity_kernel!(rDvalues,
+                                          Ux, Hvx, dpdx,
+                                          Uy, Hvy, dpdy)
+    i = @index(Global)
+    
+    @inbounds begin
         rDvalues_i = rDvalues[i]
         Ux[i] = Hvx[i] - dpdx[i]*rDvalues_i
         Uy[i] = Hvy[i] - dpdy[i]*rDvalues_i

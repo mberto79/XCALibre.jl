@@ -9,6 +9,7 @@ using KernelAbstractions
 
 backend = CPU()
 # backend = CUDABackend()
+iteration = 1
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
 
@@ -214,7 +215,7 @@ using Printf
     implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh)
     update_preconditioner!(ux_eqn.preconditioner, mesh)
     run!(ux_eqn, solvers.U) #opP=Pu.P, solver=solver_U)
-    residual!(R_ux, ux_eqn.equation, U.x, 1)
+    residual!(R_ux, ux_eqn.equation, U.x, iteration)
 
     @. prev = U.y.values
     discretise!(uy_eqn, prev, runtime)
@@ -223,7 +224,7 @@ using Printf
     implicit_relaxation!(uy_eqn, prev, solvers.U.relax, mesh)
     update_preconditioner!(uy_eqn.preconditioner, mesh)
     run!(uy_eqn, solvers.U)
-    residual!(R_uy, uy_eqn.equation, U.y, 1)
+    residual!(R_uy, uy_eqn.equation, U.y, iteration)
 
     inverse_diagonal!(rD, ux_eqn.equation)
     interpolate!(rDf, rD)
@@ -247,3 +248,8 @@ using Printf
     residual!(R_p, p_eqn.equation, p, iteration)
 
     grad!(∇p, pf, p, p.BCs) 
+
+    CUDA.@time correct_velocity!(U, Hv, ∇p, rD)
+    interpolate!(Uf, U)
+    correct_boundaries!(Uf, U, U.BCs)
+    flux!(mdotf, Uf)

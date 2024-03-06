@@ -231,6 +231,50 @@ function calculate_face_area(nodes,faces)
     return area_store
 end
 
+# function generate_cell_faces(volumes,faces,boundaryElements)
+#     cell_faces=Int[]
+#     cell_faces_range=[]
+#     max_store=0
+#     max=0
+#     for ib=1:length(boundaryElements)
+#         max_store=maximum(boundaryElements[ib].elements)
+#         if max_store>=max
+#             max=max_store
+#         end
+#     end
+    
+#     x=0
+#     for i=1:length(volumes)
+#     wipe=[]
+#         for ic=max+1:length(faces)
+#             bad=sort(volumes[i].volumes)
+#             good=sort(faces[ic].faces)
+#             store=[]
+
+#             push!(store,good[1] in bad)
+#             push!(store,good[2] in bad)
+#             push!(store,good[3] in bad)
+
+#             if store[1:3] == [true,true,true]
+#                 push!(cell_faces,faces[ic].faceindex)
+#                 push!(wipe,faces[ic].faceindex)
+#             end
+#             continue
+#         end
+
+#         if length(wipe)==1
+#             push!(cell_faces_range,UnitRange(x+1,x+1))
+#             x=x+1
+#         end
+
+#         if length(wipe) ≠ 1
+#             push!(cell_faces_range,UnitRange(x+1,x+length(wipe)))
+#             x=x+length(wipe)
+#         end
+#     end
+#     return cell_faces,cell_faces_range
+# end
+
 function generate_cell_faces(volumes,faces,boundaryElements)
     cell_faces=Int[]
     cell_faces_range=[]
@@ -250,12 +294,14 @@ function generate_cell_faces(volumes,faces,boundaryElements)
             bad=sort(volumes[i].volumes)
             good=sort(faces[ic].faces)
             store=[]
+            true_store=[]
 
-            push!(store,good[1] in bad)
-            push!(store,good[2] in bad)
-            push!(store,good[3] in bad)
+            for ip=1:length(good)
+                push!(store,good[ip] in bad)
+                push!(true_store,true)
+            end
 
-            if store[1:3] == [true,true,true]
+            if store[1:length(good)] == true_store
                 push!(cell_faces,faces[ic].faceindex)
                 push!(wipe,faces[ic].faceindex)
             end
@@ -678,7 +724,7 @@ end
 # end
 
 function generate_all_cell_faces(volumes,faces)
-    cell_faces=Int[]
+    cell_faces=[]
     for i=1:length(volumes)
         for ic=1:length(faces)
             bad=sort(volumes[i].volumes)

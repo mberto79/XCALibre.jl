@@ -656,19 +656,42 @@ end
 #     return cell_faces
 # end
 
+# function generate_all_cell_faces(volumes,faces)
+#     cell_faces=[]
+#     for i=1:length(volumes)
+#         for ic=1:length(faces)
+#             bad=sort(volumes[i].volumes)
+#             good=sort(faces[ic].faces)
+#             store=[]
+
+#             push!(store,good[1] in bad)
+#             push!(store,good[2] in bad)
+#             push!(store,good[3] in bad)
+
+#             if store[1:3] == [true,true,true]
+#                 push!(cell_faces,faces[ic].faceindex)
+#             end
+#             continue
+#         end
+#     end
+#     return cell_faces
+# end
+
 function generate_all_cell_faces(volumes,faces)
-    cell_faces=[]
+    cell_faces=Int[]
     for i=1:length(volumes)
         for ic=1:length(faces)
             bad=sort(volumes[i].volumes)
             good=sort(faces[ic].faces)
             store=[]
+            true_store=[]
 
-            push!(store,good[1] in bad)
-            push!(store,good[2] in bad)
-            push!(store,good[3] in bad)
+            for ip=1:length(good)
+                push!(store,good[ip] in bad)
+                push!(true_store,true)
+            end
 
-            if store[1:3] == [true,true,true]
+            if store[1:length(good)] == true_store
                 push!(cell_faces,faces[ic].faceindex)
             end
             continue

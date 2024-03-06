@@ -793,28 +793,50 @@ function generate_face_nodes_range(faces)
 end
 
 #Faces Range
-function generate_all_faces_range(volumes,faces)
+# function generate_all_faces_range(volumes,faces)
+#     cell_faces_range=UnitRange(0,0)
+#     store=[]
+#     x=0
+#     @inbounds for i=1:length(volumes)
+#         #Tetra
+#         if length(volumes[i].volumes)==4
+#             #cell_faces_range=UnitRange(faces[(4*i)-3].faceindex,faces[4*i].faceindex)
+#             cell_faces_range=UnitRange(x+1,x+length(volumes[i].volumes))
+#             x=x+length(volumes[i].volumes)
+#             push!(store,cell_faces_range)
+#         end
+
+#         #Hexa
+#         if length(volumes[i].volumes)==8
+#                 cell_faces_range=UnitRange(faces[6*i-5].faceindex,faces[6*i].faceindex)
+#                 push!(store,cell_faces_range)
+#         end
+
+#         #wedge
+#         if length(volumes[i].volumes)==6
+#                 cell_faces_range=UnitRange(faces[5*i-4].faceindex,faces[5*i].faceindex)
+#                 push!(store,cell_faces_range)
+#         end
+#     end
+#     return store
+# end
+
+function generate_all_faces_range(volumes)
     cell_faces_range=UnitRange(0,0)
     store=[]
     x=0
     @inbounds for i=1:length(volumes)
         #Tetra
         if length(volumes[i].volumes)==4
-            #cell_faces_range=UnitRange(faces[(4*i)-3].faceindex,faces[4*i].faceindex)
-            cell_faces_range=UnitRange(x+1,x+length(volumes[i].volumes))
-            x=x+length(volumes[i].volumes)
+            cell_faces_range=UnitRange(x+1,x+4)
+            x=x+4
             push!(store,cell_faces_range)
         end
 
         #Hexa
         if length(volumes[i].volumes)==8
-                cell_faces_range=UnitRange(faces[6*i-5].faceindex,faces[6*i].faceindex)
-                push!(store,cell_faces_range)
-        end
-
-        #wedge
-        if length(volumes[i].volumes)==6
-                cell_faces_range=UnitRange(faces[5*i-4].faceindex,faces[5*i].faceindex)
+                cell_faces_range=UnitRange(x+1,x+6)
+                x=x+6
                 push!(store,cell_faces_range)
         end
     end

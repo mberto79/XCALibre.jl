@@ -1,6 +1,6 @@
 export simple!
 
-function simple!(model, config; resume=true, pref=nothing) 
+function simple!(model, config, backend; resume=true, pref=nothing) 
 
     @info "Extracting configuration and input fields..."
     (; U, p, nu, mesh) = model
@@ -38,18 +38,15 @@ function simple!(model, config; resume=true, pref=nothing)
         Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
     ) → Equation(mesh)
 
-    # CUDA.allowscalar(false)
-
-    # model = adapt(CuArray, model)
-    # ∇p = adapt(CuArray, ∇p)
-    # ux_eqn = adapt(CuArray, ux_eqn)
-    # uy_eqn = adapt(CuArray, uy_eqn)
-    # p_eqn = adapt(CuArray, p_eqn)
-    # turbulence = adapt(CuArray, turbulence)
-    # config = adapt(CuArray, config)
+    CUDA.allowscalar(false)
+    model = _convert_array!(model, backend)
+    ∇p = _convert_array!(∇p, backend)
+    ux_eqn = _convert_array!(ux_eqn, backend)
+    uy_eqn = _convert_array!(uy_eqn, backend)
+    p_eqn = _convert_array!(p_eqn, backend)
 
     @info "Initialising preconditioners..."
-    
+
     @reset ux_eqn.preconditioner = set_preconditioner(
                     solvers.U.preconditioner, ux_eqn, U.x.BCs, runtime)
     @reset uy_eqn.preconditioner = ux_eqn.preconditioner
@@ -64,7 +61,6 @@ function simple!(model, config; resume=true, pref=nothing)
         turbulence = nothing
     end
 
-
     @info "Pre-allocating solvers..."
      
     @reset ux_eqn.solver = solvers.U.solver(_A(ux_eqn), _b(ux_eqn))
@@ -72,13 +68,13 @@ function simple!(model, config; resume=true, pref=nothing)
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
 
     R_ux, R_uy, R_p  = SIMPLE_loop(
-    model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config ; resume=resume, pref=pref)
+    model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config, backend ; resume=resume, pref=pref)
 
     return R_ux, R_uy, R_p     
 end # end function
 
 function SIMPLE_loop(
-    model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config ; resume, pref)
+    model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config, backend ; resume, pref)
     
     # Extract model variables and configuration
     (;mesh, U, p, nu) = model
@@ -122,14 +118,26 @@ function SIMPLE_loop(
     R_uy = ones(TF, iterations)
     R_p = ones(TF, iterations)
 
-    # Uf = adapt(CuArray,Uf)
+    # Convert arrays to selected backend
+
+    Uf = _convert_array!(Uf, backend)
+    rDf = _convert_array!(rDf, backend)
+    rD = _convert_array!(rD, backend)
+    pf = _convert_array!(pf, backend)
+    Hv = _convert_array!(Hv, backend)
+    prev = _convert_array!(prev, backend)
     
     interpolate!(Uf, U)   
+    
     correct_boundaries!(Uf, U, U.BCs)
+    
     flux!(mdotf, Uf)
+    
     grad!(∇p, pf, p, p.BCs)
+    
 
     update_nueff!(nueff, nu, turbulence)
+    
 
     @info "Staring SIMPLE loops..."
 
@@ -145,7 +153,7 @@ function SIMPLE_loop(
         # ux_eqn.b .-= divUTx
         implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh)
         update_preconditioner!(ux_eqn.preconditioner, mesh)
-        run!(ux_eqn, solvers.U) #opP=Pu.P, solver=solver_U)
+        run!(ux_eqn, solvers.U, U.x) #opP=Pu.P, solver=solver_U)
         residual!(R_ux, ux_eqn.equation, U.x, iteration)
 
         @. prev = U.y.values
@@ -154,24 +162,24 @@ function SIMPLE_loop(
         # uy_eqn.b .-= divUTy
         implicit_relaxation!(uy_eqn, prev, solvers.U.relax, mesh)
         update_preconditioner!(uy_eqn.preconditioner, mesh)
-        run!(uy_eqn, solvers.U)
+        run!(uy_eqn, solvers.U, U.y)
         residual!(R_uy, uy_eqn.equation, U.y, iteration)
-        
+          
         inverse_diagonal!(rD, ux_eqn.equation)
         interpolate!(rDf, rD)
         remove_pressure_source!(ux_eqn, uy_eqn, ∇p)
         H!(Hv, U, ux_eqn, uy_eqn)
-
+        
         interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs)
         div!(divHv, Uf)
-   
+        
         @. prev = p.values
         discretise!(p_eqn, prev, runtime)
         apply_boundary_conditions!(p_eqn, p.BCs)
         setReference!(p_eqn, pref, 1)
         update_preconditioner!(p_eqn.preconditioner, mesh)
-        run!(p_eqn, solvers.p)
+        run!(p_eqn, solvers.p, p)
 
         explicit_relaxation!(p, prev, solvers.p.relax)
         residual!(R_p, p_eqn.equation, p, iteration)
@@ -199,7 +207,6 @@ function SIMPLE_loop(
         correct_boundaries!(Uf, U, U.BCs)
         flux!(mdotf, Uf)
 
-        
         if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs)
             turbulence!(turbulence, model, S, S2, prev) 

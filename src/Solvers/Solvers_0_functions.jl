@@ -46,9 +46,17 @@ function residual!(Residual, equation, phi, iteration)
     (; A, b, R, Fx) = equation
     values = phi.values
     # Option 1
+
+    backend = _get_backend(phi.mesh)
     
-    mul!(Fx, A, values)
+    # mul!(Fx, A, values)
+
+    sparse_matmul!(A, values, Fx, backend)
+    KernelAbstractions.synchronize(backend)
+
     @inbounds @. R = abs(Fx - b)^2
+    KernelAbstractions.synchronize(backend)
+
     res = sqrt(mean(R))/norm(b)
 
 
@@ -92,6 +100,52 @@ function residual!(Residual, equation, phi, iteration)
     # return res
     Residual[iteration] = res
     nothing
+end
+
+function sparse_matmul!(a, b, c, backend)
+    if size(a)[2] != length(b)
+        error("Matrix size mismatch!")
+        return nothing
+    end
+
+    nzval_array = nzval(a)
+    colptr_array = colptr(a)
+    rowval_array = rowval(a)
+    fzero = zero(eltype(c))
+
+    kernel! = matmul_copy_zeros_kernel!(backend)
+    kernel!(c, fzero, ndrange = length(c))
+    KernelAbstractions.synchronize(backend)
+
+    kernel! = sparse_matmul_kernel!(backend)
+    kernel!(nzval_array, rowval_array, colptr_array, b, c, ndrange=length(c))
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel function sparse_matmul_kernel!(nzval, rowval, colptr, mulvec, res)
+    i = @index(Global)
+
+    # res[i] = zero(eltype(res))
+
+    # @inbounds begin
+        @synchronize
+        start = colptr[i]
+        fin = colptr[i+1]
+
+        for j in start:fin-1
+            val = nzval[j] #A[j,i]
+            row = rowval[j] #Row index of non-zero element in A
+            Atomix.@atomic res[row] += mulvec[i] * val
+        end
+    # end
+end
+
+@kernel function matmul_copy_zeros_kernel!(c, fzero)
+    i = @index(Global)
+
+    @inbounds begin
+        c[i] = fzero
+    end
 end
 
 # function flux!(phif::FS, psif::FV) where {FS<:FaceScalarField,FV<:FaceVectorField}

@@ -29,7 +29,7 @@ set_runtime(; iterations::I, write_interval::I, time_step::N) where {I<:Integer,
     (iterations=iterations, dt=time_step, write_interval=write_interval)
 end
 
-function run!(phiEqn::ModelEquation, setup) # ; opP, solver
+function run!(phiEqn::ModelEquation, setup, result) # ; opP, solver
 
     (; itmax, atol, rtol) = setup
     (; A, b) = phiEqn.equation
@@ -37,15 +37,29 @@ function run!(phiEqn::ModelEquation, setup) # ; opP, solver
     (; P) = precon 
     solver = phiEqn.solver
     (; x) = solver
-    values = get_phi(phiEqn).values
+    values_eqn = get_phi(phiEqn).values
+    values_res = result.values
+
+    backend = _get_backend(get_phi(phiEqn).mesh)
 
     solve!(
-        solver, A, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
+        solver, A, b, values_eqn; M=P, itmax=itmax, atol=atol, rtol=rtol
         )
+    KernelAbstractions.synchronize(backend)
     # gmres!(solver, A, b, values; M=P.P, itmax=itmax, atol=atol, rtol=rtol)
     # println(solver.stats.niter)
-    values .= x
-    nothing
+    kernel! = solve_copy_kernel!(backend)
+    kernel!(values_eqn, values_res, x, ndrange = length(values_eqn))
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel function solve_copy_kernel!(values_eqn, values_res, x)
+    i = @index(Global)
+
+    @inbounds begin
+        values_eqn[i] = x[i]  
+        values_res[i] = x[i]   
+    end
 end
 
 # function explicit_relaxation!(phi, phi0, alpha)
@@ -99,6 +113,7 @@ function implicit_relaxation!(eqn::E, field, alpha, mesh) where E<:ModelEquation
     
     # Execute kernel
     kernel!(ione, rowval_array, colptr_array, nzval_array, b, field, alpha, ndrange = length(b))
+    KernelAbstractions.synchronize(backend)
 
     # check_for_precon!(nzval_array, precon, backend)
 end

@@ -210,46 +210,203 @@ using Printf
     update_nueff!(nueff, nu, turbulence)
 
     @. prev = U.x.values
-    discretise!(ux_eqn, prev, runtime)
-    apply_boundary_conditions!(ux_eqn, U.x.BCs)
-    implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh)
-    update_preconditioner!(ux_eqn.preconditioner, mesh)
-    run!(ux_eqn, solvers.U) #opP=Pu.P, solver=solver_U)
-    residual!(R_ux, ux_eqn.equation, U.x, iteration)
-
-    @. prev = U.y.values
-    discretise!(uy_eqn, prev, runtime)
-    apply_boundary_conditions!(uy_eqn, U.y.BCs)
-    # uy_eqn.b .-= divUTy
-    implicit_relaxation!(uy_eqn, prev, solvers.U.relax, mesh)
-    update_preconditioner!(uy_eqn.preconditioner, mesh)
-    run!(uy_eqn, solvers.U)
-    residual!(R_uy, uy_eqn.equation, U.y, iteration)
-
-    inverse_diagonal!(rD, ux_eqn.equation)
-    interpolate!(rDf, rD)
-    remove_pressure_source!(ux_eqn, uy_eqn, ∇p)
-    H!(Hv, U, ux_eqn, uy_eqn)
-
-    interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
-    correct_boundaries!(Uf, Hv, U.BCs)
-    div!(divHv, Uf)
     
-    pref = nothing
+    for i in 1:600
+        discretise!(ux_eqn, prev, runtime)
+        # KernelAbstractions.synchronize(backend)
+        apply_boundary_conditions!(ux_eqn, U.x.BCs)
+        # KernelAbstractions.synchronize(backend)
+        implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh)
+        # KernelAbstractions.synchronize(backend)
+        update_preconditioner!(ux_eqn.preconditioner, mesh)
+        run!(ux_eqn, solvers.U, U.x)
+        residual!(R_ux, ux_eqn.equation, U.x, i) 
 
-    @. prev = p.values
-    discretise!(p_eqn, prev, runtime)
-    apply_boundary_conditions!(p_eqn, p.BCs)
-    setReference!(p_eqn, pref, 1)
-    update_preconditioner!(p_eqn.preconditioner, mesh)
-    run!(p_eqn, solvers.p)
+        @. prev = U.y.values
+        discretise!(uy_eqn, prev, runtime)
+        apply_boundary_conditions!(uy_eqn, U.y.BCs)
+        # uy_eqn.b .-= divUTy
+        implicit_relaxation!(uy_eqn, prev, solvers.U.relax, mesh)
+        update_preconditioner!(uy_eqn.preconditioner, mesh)
+        run!(uy_eqn, solvers.U, U.y)
+        residual!(R_uy, uy_eqn.equation, U.y, i)
+    end
+    # ncpu = ux_eqn.equation.A.nzVal
+    # bcpu = ux_eqn.equation.b
+    # npreconcpu = ux_eqn.preconditioner.A.nzVal
+    # valuescpu = U.x.values
+    Ruycpu = R_uy
 
-    explicit_relaxation!(p, prev, solvers.p.relax)
-    residual!(R_p, p_eqn.equation, p, iteration)
+    # error_check(valuesgpu, U.x.values, 10^-15)
+    error_check(Ruxcpu, R_ux, 10^-20)
 
-    grad!(∇p, pf, p, p.BCs) 
+    function error_check(arr1, arr2, target)
+        CUDA.allowscalar(true)
+        sum = 0
+        for i in eachindex(arr1)
+            # if arr1[i] != arr2[i]
+                diff = arr1[i]-arr2[i]
+                if abs(diff) > target
+                    sum += 1
+                    println("At index $i: diff = $diff")
+                end
+            # end
+        end
+        
+        println("$sum elements are out of the specified error")
+    end
 
-    CUDA.@time correct_velocity!(U, Hv, ∇p, rD)
-    interpolate!(Uf, U)
-    correct_boundaries!(Uf, U, U.BCs)
-    flux!(mdotf, Uf)
+
+    #MATMUL
+    using Atomix
+
+    @kernel function sparse_matmul6!(nzval, rowval, colptr, mulvec, res)
+        i = @index(Global)
+
+        # res[i] = zero(eltype(res))
+
+        # @inbounds begin
+            @synchronize
+            start = colptr[i]
+            fin = colptr[i+1]
+    
+            for j in start:fin-1
+                val = nzval[j] #A[j,i]
+                row = rowval[j] #Row index of non-zero element in A
+                Atomix.@atomic res[row] += mulvec[i] * val
+            end
+        # end
+    end
+
+    @kernel function matmul_copy_zeros_kernel!(c, fzero)
+        i = @index(Global)
+
+        @inbounds begin
+            c[i] = fzero
+        end
+    end
+
+    function matmul_sparse!(a, b, c, backend)
+        if size(a)[2] != length(b)
+            error("Matrix size mismatch!")
+            return nothing
+        end
+
+        nzval_array = nzval(a)
+        colptr_array = colptr(a)
+        rowval_array = rowval(a)
+        fzero = zero(eltype(c))
+
+        kernel! = matmul_copy_zeros_kernel!(backend)
+        kernel!(c, fzero, ndrange = length(c))
+        KernelAbstractions.synchronize(backend)
+
+        kernel! = sparse_matmul6!(backend)
+        kernel!(nzval_array, rowval_array, colptr_array, b, c, ndrange=length(c))
+        KernelAbstractions.synchronize(backend)
+    end
+
+    # GPU
+    # CUDA.allowscalar(false)
+    (; A, b, R, Fx) = ux_eqn.equation
+    # Fx_test = CUDA.zeros(eltype(Fx),length(Fx))
+
+    # for i in 1:2
+    matmul_sparse!(A, U.x.values, Fx, backend)
+    # KernelAbstractions.synchronize(backend)
+    # end
+    Fxgpu = Fx
+
+    # backend = _get_backend(phi.mesh)
+
+    # CPU
+    (; A, b, R, Fx) = ux_eqn.equation
+    vals = U.x.values
+    mul!(Fx, A, vals)
+    Fxcpu = Fx
+
+    # ERROR CHECK
+    Fxgpu == Fxcpu
+    error_check(Fxgpu, Fxcpu, 10^-16)
+
+
+
+    A.rowval
+    A.colptr
+    A.nzval
+
+
+
+    using SparseArrays
+    A = sparse([1, 1, 2, 3], [1, 3, 2, 3], [6, 1, 2, 12])
+
+    mulvec = Array{eltype(A.nzval)}(undef, size(A)[1])
+    for i in eachindex(mulvec)
+        mulvec[i] = rand(1:10)
+    end
+    mulvec
+
+    res1 = zeros(eltype(A.nzval), size(A)[1])
+
+    for i in 1:length(A.colptr) - 1
+        start = A.colptr[i]
+        fin = A.colptr[i+1]
+
+        for j in start:fin-1
+            val = A.nzval[j] #A[j,i]
+            row = A.rowval[j] #Row index of non-zero element in A
+            res1[row] += mulvec[i] * val
+        end
+    end
+
+    using Atomix
+
+    @kernel function sparse_matmul1!(nzval, rowval, colptr, mulvec, res1)
+        i = @index(Global)
+
+        # @inbounds begin
+            start = colptr[i]
+            fin = colptr[i+1]
+    
+            @synchronize
+            for j in start:fin-1
+                val = nzval[j] #A[j,i]
+                row = rowval[j] #Row index of non-zero element in A
+                Atomix.@atomic res1[row] += mulvec[i] * val
+            end
+        # end
+    end
+
+    nzval_array = nzval(A)
+    colptr_array = colptr(A)
+    rowval_array = rowval(A)
+
+    mulvec = Array{eltype(A.nzval)}(undef, size(A)[1])
+    for i in eachindex(mulvec)
+        mulvec[i] = rand(1:10)
+    end
+
+    backend = CUDABackend()
+
+    res1 = zeros(eltype(A.nzval), size(A)[1])
+
+    nzval_array = _convert_array!(nzval_array, backend)
+    colptr_array = _convert_array!(colptr_array, backend)
+    rowval_array = _convert_array!(rowval_array, backend)
+    mulvec = _convert_array!(mulvec, backend)
+    res1 = _convert_array!(res1, backend)
+
+    kernel! = sparse_matmul1!(backend)
+    kernel!(nzval_array, rowval_array, colptr_array, mulvec, res1, ndrange = length(colptr_array) - 1)
+
+
+    res1
+
+    A.rowval
+    A.colptr
+    A.nzval
+
+    res2 = zeros(eltype(A.nzval), size(A)[1])
+    mul!(res2, A, mulvec)
+
+    error_check(res1, res2, 10^-15)

@@ -498,6 +498,12 @@ end
 
 volume_store
 
+bfaceindex=0
+for i=1:length(boundaryElements)
+    bfaceindex=maximum(boundaryElements[i].elements)
+end
+bfaceindex
+
 volume=0
 for f=all_cell_faces_range[1]
     findex=all_cell_faces[f]
@@ -505,7 +511,7 @@ for f=all_cell_faces_range[1]
     normal=face_normal[findex]
     cc=cell_centre[1]
 
-    if face_ownerCells[findex,1] ≠ face_ownerCells[findex,2]
+    if  findex>bfaceindex && face_ownerCells[findex,1] ≠ face_ownerCells[findex,2]
         if dot(cc,normal)<0.0
             normal=-1.0*normal
         end

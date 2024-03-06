@@ -6,6 +6,7 @@ using LinearAlgebra
 using SparseArrays
 using LinearOperators
 using KernelAbstractions
+using Atomix
 # using ILUZero
 
 using FVM_1D.Mesh

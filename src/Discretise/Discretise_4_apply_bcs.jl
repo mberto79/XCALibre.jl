@@ -54,8 +54,10 @@ end
     for bci in 1:length(BCs)
         for t in 1:nTerms
             Execute_apply_boundary_condition_kernel!(BCs[bci], model.terms[t], 
-            backend, boundaries, faces, cells,
-            boundary_cellsID, ione, rowval_array, colptr_array, nzval_array, b)
+                                                    backend, boundaries, faces, cells,
+                                                    boundary_cellsID, ione, rowval_array,
+                                                    colptr_array, nzval_array, b)
+            KernelAbstractions.synchronize(backend)
         end
     end
 

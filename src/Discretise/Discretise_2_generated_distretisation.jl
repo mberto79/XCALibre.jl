@@ -119,6 +119,7 @@ discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
         # Kernel to set nzval array
         kernel! = set_nzval(backend)
         kernel!(nzval_array, fzero, ndrange = length(nzval_array))
+        KernelAbstractions.synchronize(backend)
 
         # Set initial values for indexing of nzval array
         cIndex = zero(integer) # replace with func to return mesh type (Mesh module)
@@ -141,14 +142,16 @@ discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
         # Set b array to 0
         kernel! = set_b!(backend)
         kernel!(fzero, b, ndrange = length(b))
+        KernelAbstractions.synchronize(backend)
 
         # Run schemes and sources calculations on all terms
         for i in 1:nTerms
             schemes_and_sources!(model.terms[i], 
-            nTerms, nSources, offset, fzero, ione, terms, sources_field,
-            sources_sign, rowval_array, colptr_array, nzval_array, cIndex, nIndex,
-            b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer,
-            float, backend, runtime, prev)
+                                nTerms, nSources, offset, fzero, ione, terms, sources_field,
+                                sources_sign, rowval_array, colptr_array, nzval_array, cIndex, nIndex,
+                                b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer,
+                                float, backend, runtime, prev)
+            KernelAbstractions.synchronize(backend)
         end
 
         # Run sources calculations on all sources
@@ -156,6 +159,7 @@ discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
         for i in 1:nSources
             (; field, sign) = sources[i]
             kernel!(field, sign, cells, b, ndrange = length(cells))
+            KernelAbstractions.synchronize(backend)
         end
 
         # Copy nzval array to preconditioner if running on GPU and if preconditioner is not empty

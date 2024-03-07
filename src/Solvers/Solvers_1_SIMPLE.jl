@@ -128,17 +128,12 @@ function SIMPLE_loop(
     prev = _convert_array!(prev, backend)
     
     interpolate!(Uf, U)   
-    
     correct_boundaries!(Uf, U, U.BCs)
-    
     flux!(mdotf, Uf)
-    
     grad!(∇p, pf, p, p.BCs)
-    
 
     update_nueff!(nueff, nu, turbulence)
     
-
     @info "Staring SIMPLE loops..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
@@ -165,7 +160,7 @@ function SIMPLE_loop(
         run!(uy_eqn, solvers.U, U.y)
         residual!(R_uy, uy_eqn.equation, U.y, iteration)
           
-        inverse_diagonal!(rD, ux_eqn.equation)
+        inverse_diagonal!(rD, ux_eqn)
         interpolate!(rDf, rD)
         remove_pressure_source!(ux_eqn, uy_eqn, ∇p)
         H!(Hv, U, ux_eqn, uy_eqn)
@@ -245,7 +240,7 @@ function SIMPLE_loop(
                 ]
             )
 
-        if iteration%write_interval + signbit(write_interval) == 0
+        if iteration%write_interval + signbit(write_interval) == 0      
             model2vtk(model, @sprintf "iteration_%.6d" iteration)
         end
 

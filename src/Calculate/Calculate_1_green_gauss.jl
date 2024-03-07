@@ -46,14 +46,19 @@ function green_gauss!(dx, dy, dz, phif)
     (; mesh, values) = phif
     # (; cells, faces) = mesh
     (; faces, cells, cell_faces, cell_nsign) = mesh
-    nbfaces = length(mesh.boundary_cellsID)
     F = _get_float(mesh)
 
     backend = _get_backend(mesh)
+    
     kernel! = result_calculation!(backend)
     kernel!(values, faces, cells, cell_nsign, cell_faces, F, dx, dy, dz, ndrange = length(cells))
+    KernelAbstractions.synchronize(backend)
+
+    nbfaces = length(mesh.boundary_cellsID)
+    
     kernel! = boundary_faces_contribution!(backend)
     kernel!(values, faces, cells, F, dx, dy, dz, ndrange = nbfaces)
+    KernelAbstractions.synchronize(backend)
 end
 
 @kernel function result_calculation!(values, faces, cells, cell_nsign, cell_faces, F, dx, dy, dz)

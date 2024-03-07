@@ -1,13 +1,13 @@
-export discretise!, nzval, rowval, colptr
+export discretise!, _nzval, _rowval, _colptr
 
 discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
 
-@generated function _discretise!(
+function _discretise!(
     model::Model{TN,SN,T,S}, eqn, prev, runtime
     ) where {TN,SN,T,S}
 
-    nTerms = TN
-    nSources = SN
+    # nTerms = TN
+    # nSources = SN
 
     # assignment_block_1 = Expr[] # Ap
     # assignment_block_2 = Expr[] # An or b
@@ -82,44 +82,39 @@ discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
     #         $(assignment_block_3...)
     #        end
 
-    quote
+    # quote
         # Extract number of terms and sources
-        nTerms = TN
-        nSources = SN
+        nTerms = length(model.terms)
+        nSources = length(model.sources)
 
         # Define variables for function
         mesh = model.terms[1].phi.mesh
-        precon = eqn.preconditioner
+        # precon = eqn.preconditioner
 
         # Deconstructors to get lower-level variables for function
-        (; A, b) = eqn.equation
-        # A = A
-        # b = b
+        # (; A, b) = eqn.equation
         (; terms, sources) = model
         (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
+        backend = _get_backend(mesh)
+        A_array = _A(eqn)
+        b_array = _b(eqn)
         
-        # Get types and create float(zero) and integer(one)
+        # Get types and set float(zero) and integer(one)
         integer = _get_int(mesh)
         float = _get_float(mesh)
-        backend = _get_backend(mesh)
         fzero = zero(float) # replace with func to return mesh type (Mesh module)
         ione = one(integer)
 
-        # (; faces, cells, ) = mesh
-        # (; rowval, colptr, nzval) = A
         # Deconstruct sparse array dependent on sparse arrays type
-        rowval_array = rowval(A)
-        colptr_array = colptr(A)
-        nzval_array = nzval(A)
-
-        # @inbounds for i ∈ eachindex(nzval)
-        #     nzval[i] = fzero
-        # end
+        rowval_array = _rowval(A_array)
+        colptr_array = _colptr(A_array)
+        nzval_array = _nzval(A_array)
         
-        # Kernel to set nzval array
+        # Kernel to set nzval array to 0
         kernel! = set_nzval(backend)
         kernel!(nzval_array, fzero, ndrange = length(nzval_array))
         KernelAbstractions.synchronize(backend)
+        # println(typeof(eqn))
 
         # Set initial values for indexing of nzval array
         cIndex = zero(integer) # replace with func to return mesh type (Mesh module)
@@ -127,46 +122,50 @@ discretise!(eqn, prev, runtime) = _discretise!(eqn.model, eqn, prev, runtime)
         offset = zero(integer)
 
         # Assign storage for sources arrays
-        sources_field = Array{typeof(sources[1].field)}(undef, length(sources))
-        sources_sign = Array{typeof(sources[1].sign)}(undef, length(sources))
+        # sources_field = Array{typeof(sources[1].field)}(undef, length(sources))
+        # sources_sign = Array{typeof(sources[1].sign)}(undef, length(sources))
 
-        for i in eachindex(sources)
-            sources_field[i] = sources[i].field
-            sources_sign[i] = sources[i].sign
-        end
+        # # Populate sources arrays
+        # for i in eachindex(sources)
+        #     sources_field[i] = sources[i].field
+        #     sources_sign[i] = sources[i].sign
+        # end
 
-        # Move sources arrays to required backend
-        sources_field = _convert_array!(sources_field, backend)
-        sources_sign = _convert_array!(sources_sign, backend)
+        # # Copy sources arrays to required backend
+        # sources_field = _convert_array!(sources_field, backend)
+        # sources_sign = _convert_array!(sources_sign, backend)
+        # KernelAbstractions.synchronize(backend)
 
         # Set b array to 0
         kernel! = set_b!(backend)
-        kernel!(fzero, b, ndrange = length(b))
+        kernel!(fzero, b_array, ndrange = length(b_array))
         KernelAbstractions.synchronize(backend)
 
         # Run schemes and sources calculations on all terms
+
         for i in 1:nTerms
             schemes_and_sources!(model.terms[i], 
-                                nTerms, nSources, offset, fzero, ione, terms, sources_field,
-                                sources_sign, rowval_array, colptr_array, nzval_array, cIndex, nIndex,
-                                b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer,
+                                nTerms, nSources, offset, fzero, ione, terms, rowval_array,
+                                colptr_array, nzval_array, cIndex, nIndex, b_array,
+                                faces, cells, cell_faces, cell_neighbours, cell_nsign, integer,
                                 float, backend, runtime, prev)
-            KernelAbstractions.synchronize(backend)
+            # KernelAbstractions.synchronize(backend)
         end
+
+        # Free unneeded backend memory 
+        nzval_array = nothing
+        rowval_array = nothing
+        colptr_array = nothing
 
         # Run sources calculations on all sources
         kernel! = sources!(backend)
         for i in 1:nSources
             (; field, sign) = sources[i]
-            kernel!(field, sign, cells, b, ndrange = length(cells))
-            KernelAbstractions.synchronize(backend)
+            kernel!(field, sign, cells, b_array, ndrange = length(cells))
+            # KernelAbstractions.synchronize(backend)
         end
-
-        # Copy nzval array to preconditioner if running on GPU and if preconditioner is not empty
-        # check_for_precon!(nzval, precon, backend)
-        # end
         nothing
-    end
+    # end
 end
 
 
@@ -217,11 +216,11 @@ end
 #     end
 # end
 
-nzval(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.nzVal
-nzval(A::SparseArrays.SparseMatrixCSC) = A.nzval
+_nzval(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.nzVal
+_nzval(A::SparseArrays.SparseMatrixCSC) = A.nzval
 
-colptr(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.colPtr
-colptr(A::SparseArrays.SparseMatrixCSC) = A.colptr
+_colptr(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.colPtr
+_colptr(A::SparseArrays.SparseMatrixCSC) = A.colptr
 
-rowval(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.rowVal
-rowval(A::SparseArrays.SparseMatrixCSC) = A.rowval 
+_rowval(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.rowVal
+_rowval(A::SparseArrays.SparseMatrixCSC) = A.rowval 

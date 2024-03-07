@@ -68,7 +68,7 @@ function simple!(model_in, config, backend; resume=true, pref=nothing)
     @reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
 
-    R_ux, R_uy, R_p  = SIMPLE_loop(
+    R_ux, R_uy, R_p, model  = SIMPLE_loop(
     model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config, backend ; resume=resume, pref=pref)
 
     return R_ux, R_uy, R_p, model    

@@ -119,6 +119,7 @@ function div!(phi::ScalarField, psif::FaceVectorField)
 
     kernel! = div_kernel!(backend)
     kernel!(cells, F, cell_faces, cell_nsign, faces, phi, psif, ndrange = length(cells))
+    KernelAbstractions.synchronize(backend)
 
     # Add boundary faces contribution
     # nbfaces = total_boundary_faces(mesh)
@@ -126,6 +127,7 @@ function div!(phi::ScalarField, psif::FaceVectorField)
 
     kernel! = div_boundary_faces_contribution_kernel!(backend)
     kernel!(faces, cells, phi, psif, ndrange = nbfaces)
+    KernelAbstractions.synchronize(backend)
 end
 
 @kernel function div_kernel!(cells, F, cell_faces, cell_nsign, faces, phi, psif)
@@ -143,7 +145,7 @@ end
             (; area, normal) = faces[fID]
             Sf = area*normal
             # phi.values[ci] += psif[fID]⋅Sf*nsign[fi]/volume
-            phi.values[i] += psif[fID]⋅Sf*nsign/volume
+            Atomix.@atomic phi.values[i] += psif[fID]⋅Sf*nsign/volume
         end
     end
 end
@@ -157,7 +159,7 @@ end
         (; area, normal) = faces[i]
         Sf = area*normal
         # Boundary normals are correct by definition
-        phi.values[cID] += psif[i]⋅Sf/volume
+        Atomix.@atomic phi.values[cID] += psif[i]⋅Sf/volume
     end
 end
 # function div!(phi::ScalarField, phif::FaceScalarField)

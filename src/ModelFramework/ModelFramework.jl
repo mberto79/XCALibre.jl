@@ -12,6 +12,7 @@ using LoopVectorization
 using Krylov
 # using LinearOperators
 # using ProgressMeter
+using KernelAbstractions
 
 using FVM_1D.Mesh
 using FVM_1D.Fields

@@ -113,7 +113,8 @@ Adapt.@adapt_structure Equation
 Equation(mesh::Mesh2) = begin
     nCells = length(mesh.cells)
     Tf = _get_float(mesh)
-    i, j, v = sparse_matrix_connectivity(mesh)
+    mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution (sparse_matrix_connectivity should be kernel!!!!!!!)
+    i, j, v = sparse_matrix_connectivity(mesh_temp)
     backend = _get_backend(mesh)
     Equation(
         _convert_array!(sparse(i, j, v), backend) ,

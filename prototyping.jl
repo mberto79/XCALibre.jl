@@ -83,6 +83,8 @@ using Printf
     (; U, p, nu, mesh) = model_backend
     (; solvers, schemes, runtime) = config
 
+    # Test that backends from KernelAbstractions can be used to adapt directly
+    # no need for _convert_array function!
     mesh_cpu = adapt(CPU(), mesh) 
     mesh_1 = adapt(CUDABackend(), mesh_cpu) 
 

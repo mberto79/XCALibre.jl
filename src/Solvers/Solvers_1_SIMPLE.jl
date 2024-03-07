@@ -1,8 +1,9 @@
 export simple!
 
-function simple!(model, config, backend; resume=true, pref=nothing) 
+function simple!(model_in, config, backend; resume=true, pref=nothing) 
 
     @info "Extracting configuration and input fields..."
+    model = adapt(backend, model_in)
     (; U, p, nu, mesh) = model
     (; solvers, schemes, runtime) = config
 
@@ -39,11 +40,11 @@ function simple!(model, config, backend; resume=true, pref=nothing)
     ) → Equation(mesh)
 
     CUDA.allowscalar(false)
-    model = _convert_array!(model, backend)
-    ∇p = _convert_array!(∇p, backend)
-    ux_eqn = _convert_array!(ux_eqn, backend)
-    uy_eqn = _convert_array!(uy_eqn, backend)
-    p_eqn = _convert_array!(p_eqn, backend)
+    # model = _convert_array!(model, backend)
+    # ∇p = _convert_array!(∇p, backend)
+    # ux_eqn = _convert_array!(ux_eqn, backend)
+    # uy_eqn = _convert_array!(uy_eqn, backend)
+    # p_eqn = _convert_array!(p_eqn, backend)
 
     @info "Initialising preconditioners..."
 
@@ -67,10 +68,10 @@ function simple!(model, config, backend; resume=true, pref=nothing)
     @reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
 
-    R_ux, R_uy, R_p  = SIMPLE_loop(
+    R_ux, R_uy, R_p, model  = SIMPLE_loop(
     model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config, backend ; resume=resume, pref=pref)
 
-    return R_ux, R_uy, R_p     
+    return R_ux, R_uy, R_p, model    
 end # end function
 
 function SIMPLE_loop(
@@ -109,8 +110,11 @@ function SIMPLE_loop(
 
     # Pre-allocate auxiliary variables
 
+    # Consider using allocate from KernelAbstractions 
+    # e.g. allocate(backend, Float32, res, res)
     TF = _get_float(mesh)
-    prev = zeros(TF, n_cells)  
+    prev = zeros(TF, n_cells)
+    prev = _convert_array!(prev, backend) 
 
     # Pre-allocate vectors to hold residuals 
 
@@ -120,12 +124,12 @@ function SIMPLE_loop(
 
     # Convert arrays to selected backend
 
-    Uf = _convert_array!(Uf, backend)
-    rDf = _convert_array!(rDf, backend)
-    rD = _convert_array!(rD, backend)
-    pf = _convert_array!(pf, backend)
-    Hv = _convert_array!(Hv, backend)
-    prev = _convert_array!(prev, backend)
+    # Uf = _convert_array!(Uf, backend)
+    # rDf = _convert_array!(rDf, backend)
+    # rD = _convert_array!(rD, backend)
+    # pf = _convert_array!(pf, backend)
+    # Hv = _convert_array!(Hv, backend)
+    # prev = _convert_array!(prev, backend)
     
     interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, U.BCs)
@@ -245,5 +249,5 @@ function SIMPLE_loop(
         end
 
     end # end for loop
-    return R_ux, R_uy, R_p 
+    return R_ux, R_uy, R_p, model
 end

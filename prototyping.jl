@@ -79,8 +79,16 @@ using ProgressMeter
 using Printf
 
     @info "Extracting configuration and input fields..."
-    (; U, p, nu, mesh) = model
+    # model_backend = _convert_array!(model, backend)
+    model_backend = adapt(backend, model)
+    (; U, p, nu, mesh) = model_backend
     (; solvers, schemes, runtime) = config
+
+    # Test that backends from KernelAbstractions can be used to adapt directly
+    # no need for _convert_array function!
+    mesh_cpu = adapt(CPU(), mesh) 
+    mesh_1 = adapt(CUDABackend(), mesh_cpu) 
+
 
     @info "Preallocating fields..."
     
@@ -115,11 +123,11 @@ using Printf
     ) → Equation(mesh)
 
     CUDA.allowscalar(false)
-    model = _convert_array!(model, backend)
-    ∇p = _convert_array!(∇p, backend)
-    ux_eqn = _convert_array!(ux_eqn, backend)
-    uy_eqn = _convert_array!(uy_eqn, backend)
-    p_eqn = _convert_array!(p_eqn, backend)
+    # model = _convert_array!(model, backend)
+    # ∇p = _convert_array!(∇p, backend)
+    # ux_eqn = _convert_array!(ux_eqn, backend)
+    # uy_eqn = _convert_array!(uy_eqn, backend)
+    # p_eqn = _convert_array!(p_eqn, backend)
 
     @info "Initialising preconditioners..."
 
@@ -145,17 +153,20 @@ using Printf
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
     
     # Extract model variables and configuration
-    (;mesh, U, p, nu) = model
+    (;mesh, U, p, nu) = model_backend # TEMP!!! inside function model_backend = model
     # ux_model, uy_model = ux_eqn.model, uy_eqn.model
     p_model = p_eqn.model
     (; solvers, schemes, runtime) = config
     (; iterations, write_interval) = runtime
     
-    mdotfx = get_flux(ux_eqn, 2)
-    nueffx = get_flux(ux_eqn, 3)
+    # mdotfx = get_flux(ux_eqn, 2) # THIS GAVE ME A CLUE!
+    # nueffx = get_flux(ux_eqn, 3)
 
-    mdotfy = get_flux(uy_eqn, 2)
-    nueffy = get_flux(uy_eqn, 3)
+    # mdotfy = get_flux(uy_eqn, 2)
+    # nueffy = get_flux(uy_eqn, 3)
+
+    mdotf = get_flux(ux_eqn, 2) # THIS GAVE ME A CLUE!
+    nueff = get_flux(ux_eqn, 3)
     
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
@@ -181,6 +192,8 @@ using Printf
 
     # Pre-allocate auxiliary variables
 
+    # Consider using allocate from KernelAbstractions 
+    # e.g. allocate(backend, Float32, res, res)
     TF = _get_float(mesh)
     prev = zeros(TF, n_cells)
     prev = _convert_array!(prev, backend)
@@ -200,8 +213,9 @@ using Printf
 
     interpolate!(Uf, U)
     correct_boundaries!(Uf, U, U.BCs)
-    flux!(mdotfx, Uf)
-    flux!(mdotfy, Uf)
+    # flux!(mdotfx, Uf)
+    # flux!(mdotfy, Uf)
+    flux!(mdotf, Uf)
     grad!(∇p, pf, p, p.BCs)
 
 

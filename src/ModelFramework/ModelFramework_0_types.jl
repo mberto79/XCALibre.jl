@@ -101,8 +101,9 @@ end
 
 # Linear system matrix equation
 
-struct Equation{SMCSC,VTf}
-    A::SMCSC
+## ORIGINAL STRUCTURE PARAMETERISED FOR GPU
+struct Equation{VTf<:AbstractVector, ASA<:AbstractSparseArray}
+    A::ASA
     b::VTf
     R::VTf
     Fx::VTf
@@ -113,18 +114,41 @@ Equation(mesh::Mesh2) = begin
     nCells = length(mesh.cells)
     Tf = _get_float(mesh)
     i, j, v = sparse_matrix_connectivity(mesh)
-    A = sparse(i, j, v); SMCSC = typeof(A)
-    b = zeros(Tf, nCells); VTf = typeof(b)
-    R = zeros(Tf, nCells)  
-    Fx = zeros(Tf, nCells)
-    Equation{SMCSC,VTf}(
-        A,
-        b,
-        R,
-        Fx
+    backend = _get_backend(mesh)
+    Equation(
+        _convert_array!(sparse(i, j, v), backend) ,
+        _convert_array!(zeros(Tf, nCells), backend),
+        _convert_array!(zeros(Tf, nCells), backend),
+        _convert_array!(zeros(Tf, nCells), backend)
         # mesh
         )
 end
+
+## NEW STRUCTURE USED
+# struct Equation{SMCSC,VTf}
+#     A::SMCSC
+#     b::VTf
+#     R::VTf
+#     Fx::VTf
+#     # mesh::Mesh2{Ti,Tf}
+# end
+# Equation(mesh::Mesh2) = begin
+#     nCells = length(mesh.cells)
+#     Tf = _get_float(mesh)
+#     backend = _get_backend(mesh)
+#     i, j, v = sparse_matrix_connectivity(mesh)
+#     A = _convert_array!(sparse(i, j, v), backend); SMCSC = typeof(A)
+#     b = _convert_array!(zeros(Tf, nCells), backend); VTf = typeof(b)
+#     R = _convert_array!(zeros(Tf, nCells), backend)  
+#     Fx = _convert_array!(zeros(Tf, nCells), backend)
+#     Equation{SMCSC,VTf}(
+#         A,
+#         b,
+#         R,
+#         Fx
+#         # mesh
+#         )
+# end
 
 function sparse_matrix_connectivity(mesh::Mesh2)
     (; cells, cell_neighbours) = mesh

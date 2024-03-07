@@ -153,7 +153,7 @@ function foil_optim(y::Vector{Float64})
     #%% POST-PROCESSING
     aero_eff = lift_to_drag(:foil, ρ, model)
     let
-        plot(; xlims=(0,runtime.iterations), ylims=(1e-10,0))
+        p = plot(; xlims=(0,runtime.iterations), ylims=(1e-10,0))
         plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
         plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
         plot!(1:length(Rp), Rp, yscale=:log10, label="p")
@@ -167,22 +167,28 @@ model = ElasticGPE(2,                            # 2 input dimensions
                    capacity = 3000)              # the initial capacity of the GP is 3000 samples.
 set_priors!(model.mean, [Normal(1, 2)])
 
-modeloptimizer = MAPGPOptimizer(every = 50,       # bounds of the logNoise
-                                kernbounds = [[-1, 0], [4, 10]],  # bounds of the 3 parameters GaussianProcesses.get_param_names(model.kernel)
+modeloptimizer = MAPGPOptimizer(every = 50,       
                                 maxeval = 40)
+
+#STORAGE OF COMPUTED VALUES
+#2300hrs 07/03 storage
+x_vals = [7.90625 27.65625 37.53125 17.78125 12.84375 32.59375 22.71875 2.96875 4.203125 23.953125 0.5 16.112870099295126 33.46937876554953 7.90625 27.65625 37.53125 17.78125 12.84375 32.59375 22.71875 2.96875 4.203125 23.953125 15.010205826656271 15.830122468845381 17.709843847742608 17.693108068662305; 12.84375 32.59375 2.96875 22.71875 7.90625 27.65625 17.78125 37.53125 19.015625 38.765625 34.92286502681552 6.989950515116923 33.82142295164507 12.84375 32.59375 2.96875 22.71875 7.90625 27.65625 17.78125 37.53125 19.015625 38.765625 35.74575148959419 38.329659721186225 36.29551115520995 25.009409583021228]
+y_vals = [1.2205801265750773, 0.9852896728958433, -0.9275936057855946, 2.8187764816234226, 2.154853195082591, 0.7607322271213195, 0.8133944237116522, 1.0707233254321726, 1.321805751477013, 1.2255568641349772, 1.5593437741124245, 1.0557608689281692, 0.45943949130426726, 1.2205801265750786, 0.9852896728958433, -0.9275936057855946, 2.8187764816234226, 2.154853195082591, 0.7607322271213195, 0.8133944237116522, 1.0707233254321726, 1.321805751477013, 1.2255568641349772, 2.3803608902434115, 2.3562707977989437, 1.7055569879810102, 3.5415788822143743]
+append!(model, x_vals, y_vals)
 
 opt = BOpt(foil_optim,
            model,
-           UpperConfidenceBound(),                   # type of acquisition
+           UpperConfidenceBound(),
            modeloptimizer,                        
-           [0.5,0.5], [40.0,40.0],                     # lowerbounds, upperbounds         
-           repetitions = 1,                          # evaluate the function for each input 5 times
-           maxiterations = 60,                      # evaluate at 100 input positions
-           sense = Max,                              # minimize the function
-           acquisitionoptions = (method = :LD_LBFGS, # run optimization of acquisition function with NLopts :LD_LBFGS method
-                                 restarts = 5,       # run the NLopt method from 5 random initial conditions each time.
-                                 maxtime = 0.1,      # run the NLopt method for at most 0.1 second each time
-                                 maxeval = 1000),    # run the NLopt methods for at most 1000 iterations (for other options see https://github.com/JuliaOpt/NLopt.jl)
+           [0.5,0.5], [40.0,40.0],       
+           repetitions = 1,
+           maxiterations = 60,
+           sense = Max,
+           initializer_iterations = 0,   
             verbosity = Progress)
 
 result = boptimize!(opt)
+
+#2300hrs 07/03 storage
+#model.x = 
+#model.y = [1.2205801265750773, 0.9852896728958433, -0.9275936057855946, 2.8187764816234226, 2.154853195082591, 0.7607322271213195, 0.8133944237116522, 1.0707233254321726, 1.321805751477013, 1.2255568641349772, 1.5593437741124245, 1.0557608689281692, 0.45943949130426726, 1.2205801265750786, 0.9852896728958433, -0.9275936057855946, 2.8187764816234226, 2.154853195082591, 0.7607322271213195, 0.8133944237116522, 1.0707233254321726, 1.321805751477013, 1.2255568641349772, 2.3803608902434115, 2.3562707977989437, 1.7055569879810102, 3.5415788822143743]

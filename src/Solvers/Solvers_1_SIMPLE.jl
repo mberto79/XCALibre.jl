@@ -71,7 +71,7 @@ function simple!(model_in, config, backend; resume=true, pref=nothing)
     R_ux, R_uy, R_p  = SIMPLE_loop(
     model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config, backend ; resume=resume, pref=pref)
 
-    return R_ux, R_uy, R_p     
+    return R_ux, R_uy, R_p, model    
 end # end function
 
 function SIMPLE_loop(
@@ -249,5 +249,5 @@ function SIMPLE_loop(
         end
 
     end # end for loop
-    return R_ux, R_uy, R_p 
+    return R_ux, R_uy, R_p, model
 end

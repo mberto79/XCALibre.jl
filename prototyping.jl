@@ -79,7 +79,8 @@ using ProgressMeter
 using Printf
 
     @info "Extracting configuration and input fields..."
-    model_backend = _convert_array!(model, backend)
+    # model_backend = _convert_array!(model, backend)
+    model_backend = adapt(backend, model)
     (; U, p, nu, mesh) = model_backend
     (; solvers, schemes, runtime) = config
 

@@ -64,7 +64,7 @@ initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
 backend = CUDABackend()
-Rx, Ry, Rp = simple!(model, config, backend) # 9.39k allocs in 184 iterations
+Rx, Ry, Rp, model = simple!(model, config, backend) # 9.39k allocs in 184 iterations
 
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

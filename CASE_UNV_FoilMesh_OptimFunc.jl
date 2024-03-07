@@ -1,15 +1,15 @@
 using Plots, FVM_1D, Krylov, AerofoilOptimisation
 using BayesianOptimization, GaussianProcesses, Distributions
 
-function foil_optim(peak_y::Float64,trough_y::Float64)
-
+function foil_optim(y::Vector{Float64})
+    println(y)
     #%% AEROFOIL GEOMETRY DEFINITION
     foil,ctrl_p = spline_foil(FoilDef(
         chord   = 100, #[mm]
         LE_h    = 0, #[%c]
         TE_h    = 0, #[%c]
-        peak    = [25,peak_y], #[%c]
-        trough  = [75,-trough_y], #[%c]
+        peak    = [25,y[1]], #[%c]
+        trough  = [75,-y[2]], #[%c]
         xover = 50 #[%c]
     )) #Returns aerofoil MCL & control point vector (spline method)
 
@@ -56,31 +56,31 @@ function foil_optim(peak_y::Float64,trough_y::Float64)
     noSlip = [0.0, 0.0, 0.0]
 
     @assign! model U ( 
-        Dirichlet(:inlet, velocity),
+        FVM_1D.FVM_1D.Dirichlet(:inlet, velocity),
         Neumann(:outlet, 0.0),
-        Dirichlet(:top, velocity),
-        Dirichlet(:bottom, velocity),
-        Dirichlet(:foil, noSlip)
+        FVM_1D.Dirichlet(:top, velocity),
+        FVM_1D.Dirichlet(:bottom, velocity),
+        FVM_1D.Dirichlet(:foil, noSlip)
     )
 
     @assign! model p (
         Neumann(:inlet, 0.0),
-        Dirichlet(:outlet, 0.0),
+        FVM_1D.Dirichlet(:outlet, 0.0),
         Neumann(:top, 0.0),
         Neumann(:bottom, 0.0),
         Neumann(:foil, 0.0)
     )
 
     @assign! model turbulence k (
-        Dirichlet(:inlet, k_inlet),
+        FVM_1D.Dirichlet(:inlet, k_inlet),
         Neumann(:outlet, 0.0),
         Neumann(:top, 0.0),
         Neumann(:bottom, 0.0),
-        Dirichlet(:foil, 1e-15)
+        FVM_1D.Dirichlet(:foil, 1e-15)
     )
 
     @assign! model turbulence omega (
-        Dirichlet(:inlet, ω_inlet),
+        FVM_1D.Dirichlet(:inlet, ω_inlet),
         Neumann(:outlet, 0.0),
         Neumann(:top, 0.0),
         Neumann(:bottom, 0.0),
@@ -88,11 +88,11 @@ function foil_optim(peak_y::Float64,trough_y::Float64)
     )
 
     @assign! model turbulence nut (
-        Dirichlet(:inlet, k_inlet/ω_inlet),
+        FVM_1D.Dirichlet(:inlet, k_inlet/ω_inlet),
         Neumann(:outlet, 0.0),
         Neumann(:top, 0.0),
         Neumann(:bottom, 0.0), 
-        Dirichlet(:foil, 0.0)
+        FVM_1D.Dirichlet(:foil, 0.0)
     )
 
 

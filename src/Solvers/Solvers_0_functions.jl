@@ -108,9 +108,9 @@ function sparse_matmul!(a, b, c, backend)
         return nothing
     end
 
-    nzval_array = nzval(a)
-    colptr_array = colptr(a)
-    rowval_array = rowval(a)
+    nzval_array = _nzval(a)
+    colptr_array = _colptr(a)
+    rowval_array = _rowval(a)
     fzero = zero(eltype(c))
 
     kernel! = matmul_copy_zeros_kernel!(backend)
@@ -194,16 +194,17 @@ volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 function inverse_diagonal!(rD::S, eqn) where S<:ScalarField
     (; mesh, values) = rD
     cells = mesh.cells
-    A = eqn.A
-    nzval_array = nzval(A)
-    colptr_array = colptr(A)
-    rowval_array = rowval(A)
+    A_array = _A(eqn)
+    nzval_array = _nzval(A_array)
+    colptr_array = _colptr(A_array)
+    rowval_array = _rowval(A_array)
     backend = _get_backend(mesh)
 
     ione = one(_get_int(mesh))
 
     kernel! = inverse_diagonal_kernel!(backend)
     kernel!(ione, colptr_array, rowval_array, nzval_array, cells, values, ndrange = length(values))
+    KernelAbstractions.synchronize(backend)
 end
 
 @kernel function inverse_diagonal_kernel!(ione, colptr, rowval, nzval, cells, values)
@@ -235,6 +236,7 @@ function correct_velocity!(U, Hv, ∇p, rD)
 
     kernel! = correct_velocity_kernel!(backend)
     kernel!(rDvalues, Ux, Hvx, dpdx, Uy, Hvy, dpdy, ndrange = length(Ux))
+    KernelAbstractions.synchronize(backend)
 end
 
 @kernel function correct_velocity_kernel!(rDvalues,
@@ -278,8 +280,8 @@ end
 
     @inbounds begin
         (; volume) = cells[i]
-        bx[i] -= source_sign*dpdx[i]*volume
-        by[i] -= source_sign*dpdy[i]*volume
+        Atomix.@atomic bx[i] -= source_sign*dpdx[i]*volume
+        Atomix.@atomic by[i] -= source_sign*dpdy[i]*volume
     end
 end
 
@@ -321,17 +323,17 @@ function H!(Hv, v::VF, ux_eqn, uy_eqn) where VF<:VectorField # Extend to 3D!
     (; cells, cell_neighbours, faces) = mesh
     backend = _get_backend(mesh)
 
-    Ax = ux_eqn.equation.A
-    bx = ux_eqn.equation.b
-    nzval_x = nzval(Ax)
-    colptr_x = colptr(Ax)
-    rowval_x = rowval(Ax)
+    Ax = _A(ux_eqn)
+    bx = _b(ux_eqn)
+    nzval_x = _nzval(Ax)
+    colptr_x = _colptr(Ax)
+    rowval_x = _rowval(Ax)
     
-    Ay = uy_eqn.equation.A
-    by = uy_eqn.equation.b
-    nzval_y = nzval(Ay)
-    colptr_y = colptr(Ay)
-    rowval_y = rowval(Ay)
+    Ay = _A(uy_eqn)
+    by = _b(uy_eqn)
+    nzval_y = _nzval(Ay)
+    colptr_y = _colptr(Ay)
+    rowval_y = _rowval(Ay)
     
     vx, vy = v.x, v.y
     F = _get_float(mesh)
@@ -347,7 +349,7 @@ end
 @kernel function H_kernel!(ione, cells, F, cell_neighbours,
                            nzval_x, colptr_x, rowval_x, bx, vx,
                            nzval_y, colptr_y, rowval_y, by, vy,
-                            x, y, z) #Extend to 3D!
+                           x, y, z) #Extend to 3D!
     i = @index(Global)
 
     @inbounds begin

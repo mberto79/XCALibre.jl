@@ -35,25 +35,27 @@ function update_preconditioner!(P::Preconditioner{NormDiagonal,M,PT,S}, mesh) wh
     A = P.A
     # (; colptr, m, n, nzval, rowval) = A
     # rowval, colptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
-    nzval_array = nzval(A)
+    nzval_array = _nzval(A)
+    colptr_array = _colptr(A)
     m_array = m(A)
 
     storage = P.storage
 
     kernel! = update_NormDiagonal!(backend)
-    kernel!(colptr, nzval_array, storage, ndrange = m_array)
+    kernel!(colptr_array, nzval_array, storage, ndrange = m_array)
+    KernelAbstractions.synchronize(backend)
 end
 
 @kernel function update_NormDiagonal!(colptr, nzval, storage)
     i = @index(Global)
 
-    @inbounds begin
+    # @inbounds begin
         idx_start = colptr[i]
         idx_next = colptr[i+1]
         column_vals = @view nzval[idx_start:(idx_next-1)] 
         norm = norm_static(column_vals)
         storage[i] = 1/norm
-    end
+    # end
 end
 
 # update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh) where {M<:AbstractSparseArray,PT,S} =
@@ -83,16 +85,17 @@ function update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh) where {M
     A = P.A
     # (; colptr, m, n, nzval, rowval) = A
     # rowval, colptr, nzval, m, n = sparse_array_deconstructor_preconditioners(A)
-    rowval_array = rowval(A)
-    colptr_array = colptr(A)
-    nzval_array = nzval(A)
-    m_array = m(A)
+    rowval_array = _rowval(A)
+    colptr_array = _colptr(A)
+    nzval_array = _nzval(A)
+    m_array = _m(A)
 
     storage = P.storage
     idx_diagonal = zero(eltype(m_array)) # index to diagonal element
 
     kernel! = update_Jacobi!(backend)
     kernel!(rowval_array, colptr_array, nzval_array, idx_diagonal, storage, ndrange = m_array)
+    KernelAbstractions.synchronize(backend)
 end
 
 @kernel function update_Jacobi!(rowval, colptr, nzval, idx_diagonal, storage)
@@ -139,8 +142,8 @@ function sparse_array_deconstructor_preconditioners(arr::CUDA.CUSPARSE.CuSparseM
     return rowVal, colPtr, nzVal, dims[1], dims[2]
 end
 
-m(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.dims[1]
-m(A::SparseArrays.SparseMatrixCSC) = A.m
+_m(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.dims[1]
+_m(A::SparseArrays.SparseMatrixCSC) = A.m
 
-n(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.dims[2]
-n(A::SparseArrays.SparseMatrixCSC) = A.n
+_n(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.dims[2]
+_n(A::SparseArrays.SparseMatrixCSC) = A.n

@@ -49,16 +49,17 @@ function run!(phiEqn::ModelEquation, setup, result) # ; opP, solver
     # gmres!(solver, A, b, values; M=P.P, itmax=itmax, atol=atol, rtol=rtol)
     # println(solver.stats.niter)
     kernel! = solve_copy_kernel!(backend)
-    kernel!(values_eqn, values_res, x, ndrange = length(values_eqn))
+    kernel!(values_eqn, x, ndrange = length(values_eqn))
+    KernelAbstractions.synchronize(backend)
+    kernel!(values_res, values_eqn, ndrange = length(values_eqn))
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function solve_copy_kernel!(values_eqn, values_res, x)
+@kernel function solve_copy_kernel!(a, b)
     i = @index(Global)
 
     @inbounds begin
-        values_eqn[i] = x[i]  
-        values_res[i] = x[i]   
+        a[i] = b[i]  
     end
 end
 
@@ -73,6 +74,7 @@ function explicit_relaxation!(phi, phi0, alpha)
 
     kernel! = explicit_relaxation_kernel!(backend)
     kernel!(phi, phi0, alpha, ndrange = length(phi))
+    KernelAbstractions.synchronize(backend)
 end
 
 @kernel function explicit_relaxation_kernel!(phi, phi0, alpha)
@@ -99,9 +101,9 @@ function implicit_relaxation!(eqn::E, field, alpha, mesh) where E<:ModelEquation
     precon = eqn.preconditioner
     # Output sparse matrix properties and values
     # rowval, colptr, nzval = sparse_array_deconstructor(A)
-    rowval_array = rowval(A)
-    colptr_array = colptr(A)
-    nzval_array = nzval(A)
+    rowval_array = _rowval(A)
+    colptr_array = _colptr(A)
+    nzval_array = _nzval(A)
 
     # Get backend and define kernel
     backend = _get_backend(mesh)
@@ -163,6 +165,7 @@ function setReference!(pEqn::E, pRef, cellID) where E<:ModelEquation
 
         kernel! = setReference_kernel!(backend)
         kernel!(nzval_array, colptr_array, rowval_array, b, pRef, ione, cellID, ndrange = 1)
+        KernelAbstractions.synchronize(backend)
 
     end
 end

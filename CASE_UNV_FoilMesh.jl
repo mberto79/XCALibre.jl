@@ -5,16 +5,16 @@ foil,ctrl_p = spline_foil(FoilDef(
     chord   = 100, #[mm]
     LE_h    = 0, #[%c]
     TE_h    = 0, #[%c]
-    peak    = [25,10], #[%c]
-    trough  = [75,-10], #[%c]
+    peak    = [25,40], #[%c]
+    trough  = [75,-40], #[%c]
     xover = 50 #[%c]
 )) #Returns aerofoil MCL & control point vector (spline method)
 
 #%% REYNOLDS & Y+ CALCULATIONS
 chord = 100.0
-Re = 100000
+Re = 80000
 nu,ρ = 1.48e-5,1.225
-yplus_init,BL_layers = 2.0,35
+yplus_init,BL_layers = 2.0,50
 laminar = false
 velocity,BL_mesh = BL_calcs(Re,nu,ρ,chord,yplus_init,BL_layers,laminar) #Returns (BL mesh thickness, BL mesh growth rate)
 
@@ -28,7 +28,7 @@ lines = update_mesh(
     BL_layers = BL_layers, #Boundary layer mesh layers [-]
     BL_stretch = BL_mesh[2], #Boundary layer stretch factor (successive multiplication factor of cell thickness away from wall cell) [-]
     py_lines = (13,44,51,59,36,68,247,284), #SALOME python script relevant lines (notebook path, 3 B-Spline lines,chord line, thickness line, BL line .unv path)
-    py_path = "/home/tim/Documents/MEng Individual Project/Julia/AerofoilOptimisation/FoilMesh.py", #Path to SALOME python script
+    py_path = "/home/tim/Documents/MEng Individual Project/Julia/AerofoilOptimisation/foil_pythons/FoilMesh.py", #Path to SALOME python script
     salome_path = "/home/tim/Downloads/InstallationFiles/SALOME-9.11.0/mesa_salome", #Path to SALOME installation
     unv_path = "/home/tim/Documents/MEng Individual Project/Julia/FVM_1D_TW/unv_sample_meshes/FoilMesh.unv", #Path to .unv destination
     note_path = "/home/tim/Documents/MEng Individual Project/SALOME", #Path to SALOME notebook (.hdf) destination
@@ -43,8 +43,8 @@ mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
 # Turbulence Model
-νR = 5
-Tu = 0.01
+νR = 10
+Tu = 0.025
 k_inlet = 3/2*(Tu*velocity[1])^2
 ω_inlet = k_inlet/(νR*nu)
 model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
@@ -113,26 +113,26 @@ solvers = (
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = LDL(),
         convergence = 1e-7,
-        relax       = 0.3,
+        relax       = 0.4,
     ),
     k = set_solver(
         model.turbulence.k;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.5,
+        relax       = 0.4,
     ),
     omega = set_solver(
         model.turbulence.omega;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.5,
+        relax       = 0.4,
     )
 )
 
 runtime = set_runtime(
-    iterations=750, write_interval=250, time_step=1)
+    iterations=1000, write_interval=250, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -148,7 +148,8 @@ initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 Rx, Ry, Rp = simple!(model, config) #, pref=0.0)
 
 #%% POST-PROCESSING
-aero_eff = foil_obj_func(:foil, ρ, model)
+aero_eff = lift_to_drag(:foil, ρ, model)
+C_l,C_d = aero_coeffs(:foil, chord, ρ, velocity, model)
 yplus,y = y_plus(:foil,ρ,model)
 let
     plot(; xlims=(0,runtime.iterations), ylims=(1e-10,0))

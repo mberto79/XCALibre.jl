@@ -9,11 +9,11 @@ laminar = false
 velocity,BL_mesh = BL_calcs(Re,nu,ρ,chord,yplus_init,BL_layers,laminar) #Returns (BL mesh thickness, BL mesh growth rate)
 
 #%% CFD CASE SETUP & SOLVE
-iter = 18
+iter = 23
 aero_eff = Array{Float64,1}(undef,iter)
 C_l = Array{Float64,1}(undef,iter)
 C_d = Array{Float64,1}(undef,iter)
-for i ∈ 1:iter
+for i ∈ 19:iter
     α = i-1
     writes = α > 10 ? 50 : 1000
     # Aerofoil Mesh
@@ -38,7 +38,7 @@ for i ∈ 1:iter
     mesh = update_mesh_format(mesh)
 
     # Turbulence Model
-    νR = 35
+    νR = 50
     Tu = 0.01
     k_inlet = 3/2*(Tu*velocity[1])^2
     ω_inlet = k_inlet/(νR*nu)

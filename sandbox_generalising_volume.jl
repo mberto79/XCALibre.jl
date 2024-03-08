@@ -15,8 +15,10 @@ faces
 volumes
 boundaryElements
 
-#mesh=build_mesh3D(unv_mesh)
+mesh=build_mesh3D(unv_mesh)
 
+mesh.cells[1].volume
+sum(mesh.cells[1:5].volume)
 
 
 struct Node{SV3<:SVector{3,<:AbstractFloat}, UR<:UnitRange{<:Integer}}
@@ -498,36 +500,60 @@ end
 
 volume_store
 
-bfaceindex=0
-for i=1:length(boundaryElements)
-    bfaceindex=maximum(boundaryElements[i].elements)
-end
-bfaceindex
+face_centre
 
-volume=0
-for f=all_cell_faces_range[1]
-    findex=all_cell_faces[f]
+volume_store=[]
+for i=1:length(volumes)
+    volume=0
+    for f=all_cell_faces_range[i]
+        findex=all_cell_faces[f]
 
-    normal=face_normal[findex]
-    cc=cell_centre[1]
+        normal=face_normal[findex]
+        cc=cell_centre[i]
+        fc=face_centre[findex]
+        d_fc=fc-cc
 
-    if  findex>bfaceindex && face_ownerCells[findex,1] ≠ face_ownerCells[findex,2]
-        if dot(cc,normal)<0.0
-            normal=-1.0*normal
+        if  face_ownerCells[findex,1] ≠ face_ownerCells[findex,2]
+            if dot(d_fc,normal)<0.0
+                normal=-1.0*normal
+            end
         end
+
+
+        volume=volume+(normal[1]*face_centre[findex][1]*face_area[findex])
+        
     end
-
-
-    volume=volume+(normal[1]*face_centre[findex][1]*face_area[findex])
+    push!(volume_store,volume)
 end
 
-volume
+volume_store
 
-all_cell_faces
-normal=face_normal[13]
-cc=cell_centre[1]
+function calculate_cell_volume(volumes,all_cell_faces_range,all_cell_faces,face_normal,cell_centre,face_centre,face_ownerCells,face_area)
+    volume_store=[]
+    for i=1:length(volumes)
+        volume=0
+        for f=all_cell_faces_range[i]
+            findex=all_cell_faces[f]
 
-if dot(cc,normal)<0.0
-    normal=-1.0*normal
+            normal=face_normal[findex]
+            cc=cell_centre[i]
+            fc=face_centre[findex]
+            d_fc=fc-cc
+
+            if  face_ownerCells[findex,1] ≠ face_ownerCells[findex,2]
+                if dot(d_fc,normal)<0.0
+                    normal=-1.0*normal
+                end
+            end
+
+
+            volume=volume+(normal[1]*face_centre[findex][1]*face_area[findex])
+            
+        end
+        push!(volume_store,volume)
+    end
+    return volume_store
 end
+
+calculate_cell_volume(volumes,all_cell_faces_range,all_cell_faces,face_normal,cell_centre,face_centre,face_ownerCells,face_area)
 

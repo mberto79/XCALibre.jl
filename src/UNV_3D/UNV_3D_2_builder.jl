@@ -416,84 +416,84 @@ function calculate_centre_cell(volumes,nodes)
     return centre_store
 end
 
-function calculate_faces_properties(faces,face_nodes,nodes,cell_nodes,cells,face_ownerCells,face_nodes_range)
-    store_normal=[]
-    store_area=[]
-    store_centre=[]
-    store_e=[]
-    store_delta=[]
-    store_weight=[]
-    for i=1:length(faces)
-        p1=nodes[face_nodes[face_nodes_range[i]][1]].coords
-        p2=nodes[face_nodes[face_nodes_range[i]][2]].coords
-        p3=nodes[face_nodes[face_nodes_range[i]][3]].coords
+# function calculate_faces_properties(faces,face_nodes,nodes,cell_nodes,cells,face_ownerCells,face_nodes_range)
+#     store_normal=[]
+#     store_area=[]
+#     store_centre=[]
+#     store_e=[]
+#     store_delta=[]
+#     store_weight=[]
+#     for i=1:length(faces)
+#         p1=nodes[face_nodes[face_nodes_range[i]][1]].coords
+#         p2=nodes[face_nodes[face_nodes_range[i]][2]].coords
+#         p3=nodes[face_nodes[face_nodes_range[i]][3]].coords
 
-        e1 = p2 - p1
-        e2 = p3 - p1
+#         e1 = p2 - p1
+#         e2 = p3 - p1
         
-        normal = cross(e1, e2)
-        normal /= norm(normal)
+#         normal = cross(e1, e2)
+#         normal /= norm(normal)
         
-        area = 0.5 * norm(cross(e1, e2))
+#         area = 0.5 * norm(cross(e1, e2))
         
-        cf=(p1+p2+p3)/3
+#         cf=(p1+p2+p3)/3
         
-        if face_ownerCells[i,2]==face_ownerCells[i,1]
-            p1=nodes[cell_nodes[cells[face_ownerCells[i,1]].nodes_range][1]].coords
-            p2=nodes[cell_nodes[cells[face_ownerCells[i,1]].nodes_range][2]].coords
-            p3=nodes[cell_nodes[cells[face_ownerCells[i,1]].nodes_range][3]].coords
-            p4=nodes[cell_nodes[cells[face_ownerCells[i,1]].nodes_range][4]].coords
+#         if face_ownerCells[i,2]==face_ownerCells[i,1]
+#             p1=nodes[cell_nodes[cells[face_ownerCells[i,1]].nodes_range][1]].coords
+#             p2=nodes[cell_nodes[cells[face_ownerCells[i,1]].nodes_range][2]].coords
+#             p3=nodes[cell_nodes[cells[face_ownerCells[i,1]].nodes_range][3]].coords
+#             p4=nodes[cell_nodes[cells[face_ownerCells[i,1]].nodes_range][4]].coords
 
-            cc=(p1+p2+p3+p4)/4
+#             cc=(p1+p2+p3+p4)/4
 
-            d_cf=cf-cc
+#             d_cf=cf-cc
 
-            if d_cf⋅normal<0
-                normal=-1.0*normal
-            end
-            normal
+#             if d_cf⋅normal<0
+#                 normal=-1.0*normal
+#             end
+#             normal
 
-            delta=norm(d_cf)
-            push!(store_delta,delta)
-            e=d_cf/delta
-            push!(store_e,e)
-            weight=one(Float64)
-            push!(store_weight,weight)
+#             delta=norm(d_cf)
+#             push!(store_delta,delta)
+#             e=d_cf/delta
+#             push!(store_e,e)
+#             weight=one(Float64)
+#             push!(store_weight,weight)
 
-        else
-            p1=nodes[cell_nodes[cells[face_ownerCells[i,1]].nodes_range][1]].coords
-            p2=nodes[cell_nodes[cells[face_ownerCells[i,1]].nodes_range][2]].coords
-            p3=nodes[cell_nodes[cells[face_ownerCells[i,1]].nodes_range][3]].coords
-            p4=nodes[cell_nodes[cells[face_ownerCells[i,1]].nodes_range][4]].coords
+#         else
+#             p1=nodes[cell_nodes[cells[face_ownerCells[i,1]].nodes_range][1]].coords
+#             p2=nodes[cell_nodes[cells[face_ownerCells[i,1]].nodes_range][2]].coords
+#             p3=nodes[cell_nodes[cells[face_ownerCells[i,1]].nodes_range][3]].coords
+#             p4=nodes[cell_nodes[cells[face_ownerCells[i,1]].nodes_range][4]].coords
             
-            o1=nodes[cell_nodes[cells[face_ownerCells[i,2]].nodes_range][1]].coords
-            o2=nodes[cell_nodes[cells[face_ownerCells[i,2]].nodes_range][2]].coords
-            o3=nodes[cell_nodes[cells[face_ownerCells[i,2]].nodes_range][3]].coords
-            o4=nodes[cell_nodes[cells[face_ownerCells[i,2]].nodes_range][4]].coords
+#             o1=nodes[cell_nodes[cells[face_ownerCells[i,2]].nodes_range][1]].coords
+#             o2=nodes[cell_nodes[cells[face_ownerCells[i,2]].nodes_range][2]].coords
+#             o3=nodes[cell_nodes[cells[face_ownerCells[i,2]].nodes_range][3]].coords
+#             o4=nodes[cell_nodes[cells[face_ownerCells[i,2]].nodes_range][4]].coords
             
-            c1=(p1+p2+p3+p4)/4
-            c2=(o1+o2+o3+o4)/4
-            d_1f=cf-c1
-            d_f2=c2-cf
-            d_12=c2-c1
+#             c1=(p1+p2+p3+p4)/4
+#             c2=(o1+o2+o3+o4)/4
+#             d_1f=cf-c1
+#             d_f2=c2-cf
+#             d_12=c2-c1
             
-            if d_12⋅normal<0
-                normal=-1.0*normal
-            end
+#             if d_12⋅normal<0
+#                 normal=-1.0*normal
+#             end
             
-            delta=norm(d_12)
-            push!(store_delta,delta)
-            e=d_12/delta
-            push!(store_e,e)
-            weight=abs((d_1f⋅normal)/(d_1f⋅normal + d_f2⋅normal))
-            push!(store_weight,weight)
-        end
-        push!(store_normal,normal)
-        push!(store_area,area)
-        push!(store_centre,cf)
-    end
-    return store_normal,store_area,store_centre,store_e,store_delta,store_weight
-end
+#             delta=norm(d_12)
+#             push!(store_delta,delta)
+#             e=d_12/delta
+#             push!(store_e,e)
+#             weight=abs((d_1f⋅normal)/(d_1f⋅normal + d_f2⋅normal))
+#             push!(store_weight,weight)
+#         end
+#         push!(store_normal,normal)
+#         push!(store_area,area)
+#         push!(store_centre,cf)
+#     end
+#     return store_normal,store_area,store_centre,store_e,store_delta,store_weight
+# end
 
 function generate_cell_neighbours(cells,cell_faces)
     cell_neighbours=Int[]

@@ -1,17 +1,44 @@
 using Plots
 using FVM_1D
 using Krylov
-using CUDA
 using KernelAbstractions
-
-# Select backend
-# backend = CPU()
-backend = CUDABackend()
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
+
+cID_array = _get_int(mesh)[]
+
+for i in 1:length(mesh.cells)
+    faces_range_current = mesh.cells[i].faces_range
+    
+    if i > 1
+        faces_range_prev = mesh.cells[i-1].faces_range
+    else
+        faces_range_prev = 0
+    end
+
+    cID = i + maximum(faces_range_prev)
+    push!(cID_array, cID)
+
+    for fi in 1:length(faces_range_current)
+        index = cID + fi
+        push!(cID_array, index)
+    end
+end
+
+cID_array
+sum = 1
+
+for i in eachindex(cID_array)
+    if i < length(cID_array)
+        if cID_array[i+1] - cID_array[i] == 1
+            sum += 1
+        end
+    end
+end
+sum == length(cID_array)
 
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
@@ -34,9 +61,10 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 )
 
 schemes = (
-    U = set_schemes(time=Euler),
+    U = set_schemes(),
     p = set_schemes()
 )
+
 
 solvers = (
     U = set_solver(
@@ -44,19 +72,19 @@ solvers = (
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 1.0,
+        relax       = 0.8,
     ),
     p = set_solver(
         model.p;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 1.0,
+        relax       = 0.2,
     )
 )
 
 runtime = set_runtime(
-    iterations=350, time_step=0.005, write_interval=10)
+    iterations=1000, time_step=1, write_interval=500)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -120,7 +148,7 @@ using Printf
 
     p_eqn = (
         Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
-    ) → Equation(mesh)
+    ) → Equation(mesh);
 
     CUDA.allowscalar(false)
     # model = _convert_array!(model, backend)

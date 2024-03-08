@@ -174,6 +174,50 @@ function sparse_matrix_connectivity(mesh::Mesh2)
     return i, j, v
 end
 
+# function sparse_matrix_connectivity(mesh::Mesh2)
+#     (; cells, cell_neighbours, cell_faces) = mesh
+#     nCells = length(cells)
+#     nFaces = length(cell_faces)
+#     TI = _get_int(mesh) # would this result in regression (type identified inside func?)
+#     TF = _get_float(mesh) # would this result in regression (type identified inside func?)
+#     backend = _get_backend(mesh)
+
+#     i = zeros(TI, nCells + nFaces)
+#     i = adapt(backend, i)
+
+#     j = zeros(TI, nCells + nFaces)
+#     j = adapt(backend, j)
+
+#     v = zeros(TF, nCells + nFaces)
+#     v = adapt(backend, v)
+
+#     kernel! = sparse_matrix_connectivity_kernel!(backend)
+#     kernel!(i, j, cell_neighbours, cells, ndrange = nCells)
+#     return i, j, v
+# end
+
+# @kernel function sparse_matrix_connectivity_kernel!(i_array, j_array, cell_neighbours, cells)
+#     i = @index(Global)
+
+#     faces_range_current = cells[i].faces_range
+    
+#     if i > 1
+#         faces_range_prev = cells[i-1].faces_range
+#     else
+#         faces_range_prev = 0
+#     end
+
+#     cID = i + maximum(faces_range_prev)
+
+#     for fi ∈ 1:length(faces_range_current)
+#         neighbour = cell_neighbours[fi]
+#         index = cID + fi
+
+#         i_array[index] = cID
+#         j_array[index] = neighbour
+#     end
+# end
+
 function nzval_index(colptr, rowval, start_index, required_index, ione)
     start = colptr[start_index]
     offset = 0

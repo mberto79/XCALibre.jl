@@ -19,10 +19,10 @@ function build_mesh3D(unv_mesh)
 
     cell_nodes_range=generate_cell_nodes_range(volumes)
     face_nodes_range=generate_face_nodes_range(faces)
-    all_cell_faces_range=generate_all_faces_range(volumes,faces)
+    all_cell_faces_range=generate_all_faces_range(volumes)
 
     centre_of_cells=calculate_centre_cell(volumes,nodes)
-    volume_of_cells=calculate_cell_volume(volumes,nodes)
+    #volume_of_cells=calculate_cell_volume(volumes,all_cell_faces_range,all_cell_faces,face_normal,cell_centre,face_centre,face_ownerCells,face_area)
 
     boundary_faces,boundary_face_range=generate_boundary_faces(boundaryElements)
     boundary_cells=generate_boundary_cells(boundary_faces,all_cell_faces,all_cell_faces_range)
@@ -30,9 +30,9 @@ function build_mesh3D(unv_mesh)
     cell_faces,cell_faces_range=generate_cell_faces(volumes,faces,boundaryElements)
 
     boundaries=generate_boundaries(boundaryElements,boundary_face_range)
-    cells=generate_cells(volumes,centre_of_cells,volume_of_cells,cell_nodes_range,cell_faces_range)
+    #cells=generate_cells(volumes,centre_of_cells,volume_of_cells,cell_nodes_range,cell_faces_range)
 
-    cell_neighbours=generate_cell_neighbours(cells,cell_faces)
+    #cell_neighbours=generate_cell_neighbours(cells,cell_faces)
 
     face_ownerCells=generate_face_ownerCells(faces,all_cell_faces,volumes,all_cell_faces_range)
 
@@ -44,7 +44,10 @@ function build_mesh3D(unv_mesh)
     faces_normal=flip_face_normal(faces,face_ownerCells,centre_of_cells,faces_centre,faces_normal)
     faces_e,faces_delta,faces_weight=calculate_face_properties(faces,face_ownerCells,centre_of_cells,faces_centre,faces_normal)
     
+    volume_of_cells=calculate_cell_volume(volumes,all_cell_faces_range,all_cell_faces,faces_normal,centre_of_cells,faces_centre,face_ownerCells,faces_area)
 
+    cells=generate_cells(volumes,centre_of_cells,volume_of_cells,cell_nodes_range,cell_faces_range)
+    cell_neighbours=generate_cell_neighbours(cells,cell_faces)
     faces=generate_faces(faces,face_nodes_range,faces_centre,faces_normal,faces_area,face_ownerCells,faces_e,faces_delta,faces_weight)
     
     cell_nsign=calculate_cell_nsign(cells,faces,cell_faces)
@@ -142,7 +145,7 @@ function calculate_face_normal(faces,nodes)
 
         nx=t1y*t2z-t1z*t2y
         ny=-(t1x*t2z-t1z*t2x)
-        nz=t1x*t2y-t2y*t2x
+        nz=t1x*t2y-t1y*t2x
 
         magn2=(nx)^2+(ny)^2+(nz)^2
 
@@ -343,18 +346,45 @@ function calculate_cell_nsign(cells,faces1,cell_faces)
     return cell_nsign
 end
 
-function calculate_cell_volume(volumes,nodes)
-    volume_store=Float64[]
-    for i=1:length(volumes)
-        A=nodes[volumes[i].volumes[1]].coords
-        B=nodes[volumes[i].volumes[2]].coords
-        C=nodes[volumes[i].volumes[3]].coords
-        D=nodes[volumes[i].volumes[4]].coords
+# function calculate_cell_volume(volumes,nodes)
+#     volume_store=Float64[]
+#     for i=1:length(volumes)
+#         A=nodes[volumes[i].volumes[1]].coords
+#         B=nodes[volumes[i].volumes[2]].coords
+#         C=nodes[volumes[i].volumes[3]].coords
+#         D=nodes[volumes[i].volumes[4]].coords
 
-        AB=[B[1]-A[1],B[2]-A[2],B[3]-A[3]]
-        AC=[C[1]-A[1],C[2]-A[2],C[3]-A[3]]
-        AD=[D[1]-A[1],D[2]-A[2],D[3]-A[3]]
-        volume=abs(dot(AB, cross(AC, AD)))/6
+#         AB=[B[1]-A[1],B[2]-A[2],B[3]-A[3]]
+#         AC=[C[1]-A[1],C[2]-A[2],C[3]-A[3]]
+#         AD=[D[1]-A[1],D[2]-A[2],D[3]-A[3]]
+#         volume=abs(dot(AB, cross(AC, AD)))/6
+#         push!(volume_store,volume)
+#     end
+#     return volume_store
+# end
+
+function calculate_cell_volume(volumes,all_cell_faces_range,all_cell_faces,face_normal,cell_centre,face_centre,face_ownerCells,face_area)
+    volume_store=[]
+    for i=1:length(volumes)
+        volume=0
+        for f=all_cell_faces_range[i]
+            findex=all_cell_faces[f]
+
+            normal=face_normal[findex]
+            cc=cell_centre[i]
+            fc=face_centre[findex]
+            d_fc=fc-cc
+
+            if  face_ownerCells[findex,1] ≠ face_ownerCells[findex,2]
+                if dot(d_fc,normal)<0.0
+                    normal=-1.0*normal
+                end
+            end
+
+
+            volume=volume+(normal[1]*face_centre[findex][1]*face_area[findex])
+            
+        end
         push!(volume_store,volume)
     end
     return volume_store

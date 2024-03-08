@@ -121,21 +121,6 @@ function _discretise!(
         nIndex = zero(integer) # replace with func to return mesh type (Mesh module)
         offset = zero(integer)
 
-        # Assign storage for sources arrays
-        # sources_field = Array{typeof(sources[1].field)}(undef, length(sources))
-        # sources_sign = Array{typeof(sources[1].sign)}(undef, length(sources))
-
-        # # Populate sources arrays
-        # for i in eachindex(sources)
-        #     sources_field[i] = sources[i].field
-        #     sources_sign[i] = sources[i].sign
-        # end
-
-        # # Copy sources arrays to required backend
-        # sources_field = _convert_array!(sources_field, backend)
-        # sources_sign = _convert_array!(sources_sign, backend)
-        # KernelAbstractions.synchronize(backend)
-
         # Set b array to 0
         kernel! = set_b!(backend)
         kernel!(fzero, b_array, ndrange = length(b_array))

@@ -27,23 +27,25 @@ function Adapt.adapt_structure(to, itp::Preconditioner{T}) where {T}
     storage = Adapt.adapt_structure(to, itp.storage) 
     Preconditioner{T,typeof(A),typeof(P),typeof(storage)}(A,P,storage)
 end
-Preconditioner{NormDiagonal}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
+Preconditioner{NormDiagonal}(A::AbstractSparseArray{F,I}) where {F,I} = begin
+    backend = get_backend(A)
     m, n = size(A)
     m == n || throw("Matrix not square")
-    S = zeros(F, m)
+    S = _convert_array!(zeros(m), backend)
     P = opDiagonal(S)
     Preconditioner{NormDiagonal,typeof(A),typeof(P),typeof(S)}(A,P,S)
 end
 
-Preconditioner{Jacobi}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
+Preconditioner{Jacobi}(A::AbstractSparseArray{F,I}) where {F,I} = begin
+    backend = get_backend(A)
     m, n = size(A)
     m == n || throw("Matrix not square")
-    S = zeros(F, m)
+    S = _convert_array!(zeros(m), backend)
     P = opDiagonal(S)
     Preconditioner{Jacobi,typeof(A),typeof(P),typeof(S)}(A,P,S)
 end
 
-Preconditioner{LDL}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
+Preconditioner{LDL}(A::AbstractSparseArray{F,I}) where {F,I} = begin
     m, n = size(A)
     m == n || throw("Matrix not square")
     S = zeros(F, m)
@@ -51,7 +53,7 @@ Preconditioner{LDL}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
     Preconditioner{LDL,typeof(A),typeof(P),typeof(S)}(A,P,S)
 end
 
-Preconditioner{ILU0}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
+Preconditioner{ILU0}(A::AbstractSparseArray{F,I}) where {F,I} = begin
     m, n = size(A)
     m == n || throw("Matrix not square")
     S = ilu0(A)
@@ -61,22 +63,23 @@ Preconditioner{ILU0}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
     Preconditioner{ILU0,typeof(A),typeof(P),typeof(S)}(A,P,S)
 end
 
-struct DILUprecon{M,V,VI,VVI}
+struct DILUprecon{M,V,VI,VUR}
     A::M
     D::V
     Di::VI
-    Ri::VVI
-    J::VVI
+    Ri::VI
+    J::VI
+    upper_indices_IDs::VUR
 end
 Adapt.@adapt_structure DILUprecon
-Preconditioner{DILU}(A::SparseMatrixCSC{F,I}) where {F,I} = begin
+Preconditioner{DILU}(A::AbstractSparseArray{F,I}) where {F,I} = begin
     m, n = size(A)
     m == n || throw("Matrix not square")
     D = zeros(F, m)
     Di = zeros(I, m)
     diagonal_indices!(Di, A)
-    @time Ri, J = upper_row_indices(A, Di)
-    S = DILUprecon(A, D, Di, Ri, J)
+    @time Ri, J, upper_indices_IDs = upper_row_indices(A, Di)
+    S = DILUprecon(A, D, Di, Ri, J, upper_indices_IDs)
     P  = LinearOperator(
         F, m, n, false, false, (y, v) -> ldiv!(y, S, v)
         )

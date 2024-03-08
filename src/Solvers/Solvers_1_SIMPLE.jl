@@ -1,8 +1,9 @@
 export simple!
 
-function simple!(model, config; resume=true, pref=nothing) 
+function simple!(model_in, config, backend; resume=true, pref=nothing) 
 
     @info "Extracting configuration and input fields..."
+    model = adapt(backend, model_in)
     (; U, p, nu, mesh) = model
     (; solvers, schemes, runtime) = config
 
@@ -38,19 +39,20 @@ function simple!(model, config; resume=true, pref=nothing)
         Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
     ) → Equation(mesh)
 
+    CUDA.allowscalar(false)
+    # model = _convert_array!(model, backend)
+    # ∇p = _convert_array!(∇p, backend)
+    # ux_eqn = _convert_array!(ux_eqn, backend)
+    # uy_eqn = _convert_array!(uy_eqn, backend)
+    # p_eqn = _convert_array!(p_eqn, backend)
+
     @info "Initialising preconditioners..."
-    
+
     @reset ux_eqn.preconditioner = set_preconditioner(
                     solvers.U.preconditioner, ux_eqn, U.x.BCs, runtime)
     @reset uy_eqn.preconditioner = ux_eqn.preconditioner
     @reset p_eqn.preconditioner = set_preconditioner(
                     solvers.p.preconditioner, p_eqn, p.BCs, runtime)
-
-    @info "Pre-allocating solvers..."
-     
-    @reset ux_eqn.solver = solvers.U.solver(_A(ux_eqn), _b(ux_eqn))
-    @reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
-    @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
 
     if isturbulent(model)
         @info "Initialising turbulence model..."
@@ -60,14 +62,20 @@ function simple!(model, config; resume=true, pref=nothing)
         turbulence = nothing
     end
 
-    R_ux, R_uy, R_p  = SIMPLE_loop(
-    model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config ; resume=resume, pref=pref)
+    @info "Pre-allocating solvers..."
+     
+    @reset ux_eqn.solver = solvers.U.solver(_A(ux_eqn), _b(ux_eqn))
+    @reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
+    @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
 
-    return R_ux, R_uy, R_p     
+    R_ux, R_uy, R_p, model  = SIMPLE_loop(
+    model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config, backend ; resume=resume, pref=pref)
+
+    return R_ux, R_uy, R_p, model    
 end # end function
 
 function SIMPLE_loop(
-    model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config ; resume, pref)
+    model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config, backend ; resume, pref)
     
     # Extract model variables and configuration
     (;mesh, U, p, nu) = model
@@ -102,14 +110,26 @@ function SIMPLE_loop(
 
     # Pre-allocate auxiliary variables
 
+    # Consider using allocate from KernelAbstractions 
+    # e.g. allocate(backend, Float32, res, res)
     TF = _get_float(mesh)
-    prev = zeros(TF, n_cells)  
+    prev = zeros(TF, n_cells)
+    prev = _convert_array!(prev, backend) 
 
     # Pre-allocate vectors to hold residuals 
 
     R_ux = ones(TF, iterations)
     R_uy = ones(TF, iterations)
     R_p = ones(TF, iterations)
+
+    # Convert arrays to selected backend
+
+    # Uf = _convert_array!(Uf, backend)
+    # rDf = _convert_array!(rDf, backend)
+    # rD = _convert_array!(rD, backend)
+    # pf = _convert_array!(pf, backend)
+    # Hv = _convert_array!(Hv, backend)
+    # prev = _convert_array!(prev, backend)
     
     interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, U.BCs)
@@ -117,46 +137,48 @@ function SIMPLE_loop(
     grad!(∇p, pf, p, p.BCs)
 
     update_nueff!(nueff, nu, turbulence)
-
+    
     @info "Staring SIMPLE loops..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
-    @time for iteration ∈ 1:iterations
+    CUDA.@time for iteration ∈ 1:iterations
 
         @. prev = U.x.values
+        # type = typeof(ux_eqn)
+        # println("$type")
         discretise!(ux_eqn, prev, runtime)
         apply_boundary_conditions!(ux_eqn, U.x.BCs)
         # ux_eqn.b .-= divUTx
-        implicit_relaxation!(ux_eqn.equation, prev, solvers.U.relax)
-        update_preconditioner!(ux_eqn.preconditioner)
-        run!(ux_eqn, solvers.U) #opP=Pu.P, solver=solver_U)
+        implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh)
+        update_preconditioner!(ux_eqn.preconditioner, mesh)
+        run!(ux_eqn, solvers.U, U.x) #opP=Pu.P, solver=solver_U)
         residual!(R_ux, ux_eqn.equation, U.x, iteration)
 
         @. prev = U.y.values
         discretise!(uy_eqn, prev, runtime)
         apply_boundary_conditions!(uy_eqn, U.y.BCs)
         # uy_eqn.b .-= divUTy
-        implicit_relaxation!(uy_eqn.equation, prev, solvers.U.relax)
-        update_preconditioner!(uy_eqn.preconditioner)
-        run!(uy_eqn, solvers.U)
+        implicit_relaxation!(uy_eqn, prev, solvers.U.relax, mesh)
+        update_preconditioner!(uy_eqn.preconditioner, mesh)
+        run!(uy_eqn, solvers.U, U.y)
         residual!(R_uy, uy_eqn.equation, U.y, iteration)
-        
-        inverse_diagonal!(rD, ux_eqn.equation)
+          
+        inverse_diagonal!(rD, ux_eqn)
         interpolate!(rDf, rD)
         remove_pressure_source!(ux_eqn, uy_eqn, ∇p)
         H!(Hv, U, ux_eqn, uy_eqn)
-
+        
         interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs)
         div!(divHv, Uf)
-   
+        
         @. prev = p.values
         discretise!(p_eqn, prev, runtime)
         apply_boundary_conditions!(p_eqn, p.BCs)
-        setReference!(p_eqn.equation, pref, 1)
-        update_preconditioner!(p_eqn.preconditioner)
-        run!(p_eqn, solvers.p)
+        setReference!(p_eqn, pref, 1)
+        update_preconditioner!(p_eqn.preconditioner, mesh)
+        run!(p_eqn, solvers.p, p)
 
         explicit_relaxation!(p, prev, solvers.p.relax)
         residual!(R_p, p_eqn.equation, p, iteration)
@@ -184,7 +206,6 @@ function SIMPLE_loop(
         correct_boundaries!(Uf, U, U.BCs)
         flux!(mdotf, Uf)
 
-        
         if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs)
             turbulence!(turbulence, model, S, S2, prev) 
@@ -223,10 +244,10 @@ function SIMPLE_loop(
                 ]
             )
 
-        if iteration%write_interval + signbit(write_interval) == 0
+        if iteration%write_interval + signbit(write_interval) == 0      
             model2vtk(model, @sprintf "iteration_%.6d" iteration)
         end
 
     end # end for loop
-    return R_ux, R_uy, R_p 
+    return R_ux, R_uy, R_p, model
 end

@@ -1,6 +1,8 @@
 using Plots
 using FVM_1D
 using Krylov
+using CUDA
+using KernelAbstractions
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
@@ -36,14 +38,14 @@ solvers = (
     U = set_solver(
         model.U;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0(),
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.6,
     ),
     p = set_solver(
         model.p;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = LDL(),
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.4,
     )
@@ -64,8 +66,11 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
+backend = CUDABackend()
+# backend = CPU()
+
 # @time begin
-Rx, Ry, Rp = simple!(model, config) #, pref=0.0)
+Rx, Ry, Rp, model = simple!(model, config, backend); #, pref=0.0)
 # end
 
 plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))

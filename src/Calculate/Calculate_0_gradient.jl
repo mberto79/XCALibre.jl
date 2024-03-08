@@ -120,13 +120,33 @@ end
 
 ## Mid-point gradient calculation
 
-interpolate_midpoint!(phif::FaceScalarField, phi::ScalarField) = begin
-    mesh = phi.mesh
+# interpolate_midpoint!(phif::FaceScalarField, phi::ScalarField) = begin
+#     mesh = phi.mesh
+#     (; faces) = mesh
+#     for i ∈ eachindex(faces)
+#         owners = faces[i].ownerCells 
+#         c1 = owners[1]
+#         c2 = owners[2]
+#         phif[i] = 0.5*(phi[c1] + phi[c2])
+#     end
+# end
+
+function interpolate_midpoint!(phif::FaceScalarField, phi::ScalarField)
+    (; mesh) = phi
     (; faces) = mesh
-    for i ∈ eachindex(faces)
-        owners = faces[i].ownerCells 
-        c1 = owners[1]
-        c2 = owners[2]
+    backend = _get_backend(mesh)
+    kernel! = interpolate_midpoint_scalar!(backend)
+    kernel!(faces, phif, phi, ndrange = length(faces))
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel function interpolate_midpoint_scalar!(faces, phif, phi)
+    i = @index(Global)
+
+    @inbounds begin
+        (; ownerCells) = faces[i]
+        c1 = ownerCells[1]
+        c2 = ownerCells[2]
         phif[i] = 0.5*(phi[c1] + phi[c2])
     end
 end
@@ -150,33 +170,81 @@ interpolate_midpoint!(psif::FaceVectorField, psi::VectorField) = begin
     end
 end
 
-correct_interpolation!(dx,dy,dz, phif, phi) = begin
+# correct_interpolation!(dx,dy,dz, phif, phi) = begin
+#     (; mesh, values) = phif
+#     (; faces, cells, nbfaces) = mesh
+#     F = _get_float(mesh)
+#     phic = phi.values
+#     # nbfaces = total_boundary_faces(mesh)
+#     start = nbfaces + 1
+#     weight = 0.5
+#     @inbounds @simd for fID ∈ start:length(faces)
+#         face = faces[fID]
+#         ownerCells = face.ownerCells
+#         owner1 = ownerCells[1]
+#         owner2 = ownerCells[2]
+#         cell1 = cells[owner1]
+#         cell2 = cells[owner2]
+#         phi1 = phic[owner1]
+#         phi2 = phic[owner2]
+#         ∇phi1 = SVector{3, F}(dx[owner1], dy[owner1], dz[owner1])
+#         ∇phi2 = SVector{3, F}(dx[owner2], dy[owner2], dz[owner2])
+#         rf = face.centre 
+#         rP = cell1.centre 
+#         rN = cell2.centre
+#         phifᵖ = weight*(phi1 + phi2)
+#         ∇phi = weight*(∇phi1 + ∇phi2)
+#         Ri = rf - weight*(rP + rN)
+#         values[fID] = phifᵖ + ∇phi⋅Ri
+#     end
+# end
+
+function correct_interpolation!(dx, dy, dz, phif, phi)
     (; mesh, values) = phif
-    (; faces, cells) = mesh
+    (; faces, cells, boundaries) = mesh
+    nbfaces = length(mesh.boundary_cellsID)
     F = _get_float(mesh)
     phic = phi.values
-    nbfaces = total_boundary_faces(mesh)
-    start = nbfaces + 1
+    # nbfaces = total_boundary_faces(mesh)
+    # start = nbfaces+1
     weight = 0.5
-    @inbounds @simd for fID ∈ start:length(faces)
-        face = faces[fID]
-        ownerCells = face.ownerCells
-        owner1 = ownerCells[1]
-        owner2 = ownerCells[2]
-        cell1 = cells[owner1]
-        cell2 = cells[owner2]
-        phi1 = phic[owner1]
-        phi2 = phic[owner2]
-        ∇phi1 = SVector{3, F}(dx[owner1], dy[owner1], dz[owner1])
-        ∇phi2 = SVector{3, F}(dx[owner2], dy[owner2], dz[owner2])
-        rf = face.centre 
-        rP = cell1.centre 
-        rN = cell2.centre
-        phifᵖ = weight*(phi1 + phi2)
-        ∇phi = weight*(∇phi1 + ∇phi2)
-        Ri = rf - weight*(rP + rN)
-        values[fID] = phifᵖ + ∇phi⋅Ri
-    end
+    backend = _get_backend(mesh)
+    kernel! = correct_interpolation_kernel!(backend)
+    kernel!(faces, cells, nbfaces, phic, F, weight, dx, dy, dz, values, ndrange = length(faces)-nbfaces)
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel function correct_interpolation_kernel!(faces, cells, nbfaces, phic, F, weight, dx, dy, dz, values)
+    i = @index(Global)
+    i += nbfaces
+
+    (; ownerCells, centre) = faces[i]
+    centre_faces = centre
+
+    owner1 = ownerCells[1]
+    owner2 = ownerCells[2]
+
+    (; centre) = cells[owner1]
+    centre_cell1 = centre
+
+    (; centre) = cells[owner2]
+    centre_cell2 = centre
+
+    phi1 = phic[owner1]
+    phi2 = phic[owner2]
+
+    ∇phi1 = SVector{3, F}(dx[owner1], dy[owner1], dz[owner1])
+    ∇phi2 = SVector{3, F}(dx[owner2], dy[owner2], dz[owner2])
+
+    rf = centre_faces
+    rP = centre_cell1 
+    rN = centre_cell2
+
+    phifᵖ = weight*(phi1 + phi2)
+    ∇phi = weight*(∇phi1 + ∇phi2)
+    Ri = rf - weight*(rP + rN)
+
+    values[i] = phifᵖ + ∇phi⋅Ri
 end
 
 function grad!(grad::Grad{Midpoint,F,R,I,M}, phif, phi, BCs) where {F,R<:VectorField,I,M}

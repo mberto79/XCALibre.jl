@@ -24,10 +24,10 @@ struct Node{SV3<:SVector{3,<:AbstractFloat}, UR<:UnitRange{<:Integer}}
 end
 Adapt.@adapt_structure Node
 
-struct Boundary{S<:Symbol, VI<:AbstractArray{<:Integer}}
+struct Boundary{S<:Symbol, UR<:UnitRange{<:Integer}}
     name::S
-    facesID::VI
-    cellsID::VI
+    IDs_range::UR
+    # cellsID::VI
 end
 Adapt.@adapt_structure Boundary
 
@@ -92,8 +92,32 @@ struct Mesh2{VC, VI, VF<:AbstractArray{<:Face2D}, VB, VN, SV3, UR} <: AbstractMe
     node_cells::VI # can be empty for now
     get_float::SV3
     get_int::UR
+    boundary_cellsID::VI
 end
 Adapt.@adapt_structure Mesh2
+# function Adapt.adapt_structure(to, itp::Mesh2)
+#     cells = Adapt.adapt_structure(to, itp.cells)
+#     cell_nodes = Adapt.adapt_structure(to, itp.cell_nodes)
+#     cell_faces = Adapt.adapt_structure(to, itp.cell_faces)
+#     cell_neighbours = Adapt.adapt_structure(to, itp.cell_neighbours)
+#     cell_nsign = Adapt.adapt_structure(to, itp.cell_nsign)
+#     # boundaries = Adapt.adapt_structure(to, itp.boundaries)
+#     faces = Adapt.adapt_structure(to, itp.faces)
+#     face_nodes = Adapt.adapt_structure(to, itp.face_nodes)
+
+#     boundaries_arr = Boundary[]
+#     for i in eachindex(itp.boundaries)
+#         boundary = Adapt.adapt_structure(to, itp.boundaries[i])
+#         push!(boundaries_arr, boundary)
+#     end
+
+#     nodes = Adapt.adapt_structure(to, itp.nodes)
+#     node_cells = Adapt.adapt_structure(to, itp.node_cells)
+#     get_float = Adapt.adapt_structure(to, itp.get_float)
+#     get_int = Adapt.adapt_structure(to, itp.get_int)
+
+#     Mesh2(cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes, boundaries_arr, nodes, node_cells, get_float, get_int)
+# end
 
 struct Mesh3{VC, VI, VF<:AbstractArray{<:Face3D}, VB, VN, SV3, UR} <: AbstractMesh
     cells::VC

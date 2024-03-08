@@ -1,6 +1,7 @@
 using Plots
 using FVM_1D
 using Krylov
+using KernelAbstractions
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
@@ -61,12 +62,14 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-Rx, Ry, Rp = piso!(model, config) # 9.39k allocs
+backend = CPU()
 
-plot(; xlims=(0,184))
-plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p")
+Rx, Ry, Rp, model = simple!(model, config, backend) # 9.39k allocs
+
+# plot(; xlims=(0,184))
+# plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
+# plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
+# plot!(1:length(Rp), Rp, yscale=:log10, label="p")
 
 # # PROFILING CODE
 

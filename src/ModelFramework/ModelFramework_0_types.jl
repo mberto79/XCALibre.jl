@@ -2,6 +2,7 @@ export AbstractOperator, AbstractSource
 export Operator, Source, Src
 export Time, Laplacian, Divergence, Si
 export Model, Equation, ModelEquation
+export nzval_index
 
 # ABSTRACT TYPES 
 
@@ -81,7 +82,7 @@ Source(f::T) where T = Src(f, 1, typeof(f))
 # Source(f::Number) = Src(f.values, 1, typeof(f)) # To implement!!
 
 # MODEL TYPE
-struct Model{T,S,TN,SN}
+struct Model{TN,SN,T,S}
     # equation::E
     terms::T
     sources::S
@@ -89,10 +90,10 @@ end
 function Adapt.adapt_structure(to, itp::Model{TN,SN}) where {TN,SN}
     terms = Adapt.adapt_structure(to, itp.terms); T = typeof(terms)
     sources = Adapt.adapt_structure(to, itp.sources); S = typeof(sources)
-    Model{T,S,TN,SN}(terms,sources)
+    Model{TN,SN,T,S}(terms, sources)
 end
-Model{TN,SN}(terms::T, sources::S) where {T,S,TN,SN} = begin
-    Model{T,S,TN,SN}(terms, sources)
+Model{TN,SN}(terms::T, sources::S) where {TN,SN,T,S} = begin
+    Model{TN,SN,T,S}(terms, sources)
 end
 # Model(eqn::E, terms::T, sources::S, TN, SN) where {E,T,S} = begin
 #     Model{E,T,S,TN,SN}(eqn, terms, sources)
@@ -100,8 +101,9 @@ end
 
 # Linear system matrix equation
 
-struct Equation{SMCSC,VTf}
-    A::SMCSC
+## ORIGINAL STRUCTURE PARAMETERISED FOR GPU
+struct Equation{VTf<:AbstractVector, ASA<:AbstractSparseArray}
+    A::ASA
     b::VTf
     R::VTf
     Fx::VTf
@@ -111,19 +113,43 @@ Adapt.@adapt_structure Equation
 Equation(mesh::Mesh2) = begin
     nCells = length(mesh.cells)
     Tf = _get_float(mesh)
-    i, j, v = sparse_matrix_connectivity(mesh)
-    A = sparse(i, j, v); SMCSC = typeof(A)
-    b = zeros(Tf, nCells); VTf = typeof(b)
-    R = zeros(Tf, nCells)  
-    Fx = zeros(Tf, nCells)
-    Equation{SMCSC,VTf}(
-        A,
-        b,
-        R,
-        Fx
+    mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution (sparse_matrix_connectivity should be kernel!!!!!!!)
+    i, j, v = sparse_matrix_connectivity(mesh_temp)
+    backend = _get_backend(mesh)
+    Equation(
+        _convert_array!(sparse(i, j, v), backend) ,
+        _convert_array!(zeros(Tf, nCells), backend),
+        _convert_array!(zeros(Tf, nCells), backend),
+        _convert_array!(zeros(Tf, nCells), backend)
         # mesh
         )
 end
+
+## NEW STRUCTURE USED
+# struct Equation{SMCSC,VTf}
+#     A::SMCSC
+#     b::VTf
+#     R::VTf
+#     Fx::VTf
+#     # mesh::Mesh2{Ti,Tf}
+# end
+# Equation(mesh::Mesh2) = begin
+#     nCells = length(mesh.cells)
+#     Tf = _get_float(mesh)
+#     backend = _get_backend(mesh)
+#     i, j, v = sparse_matrix_connectivity(mesh)
+#     A = _convert_array!(sparse(i, j, v), backend); SMCSC = typeof(A)
+#     b = _convert_array!(zeros(Tf, nCells), backend); VTf = typeof(b)
+#     R = _convert_array!(zeros(Tf, nCells), backend)  
+#     Fx = _convert_array!(zeros(Tf, nCells), backend)
+#     Equation{SMCSC,VTf}(
+#         A,
+#         b,
+#         R,
+#         Fx
+#         # mesh
+#         )
+# end
 
 function sparse_matrix_connectivity(mesh::Mesh2)
     (; cells, cell_neighbours) = mesh
@@ -146,6 +172,62 @@ function sparse_matrix_connectivity(mesh::Mesh2)
     end
     v = zeros(TF, length(i))
     return i, j, v
+end
+
+# function sparse_matrix_connectivity(mesh::Mesh2)
+#     (; cells, cell_neighbours, cell_faces) = mesh
+#     nCells = length(cells)
+#     nFaces = length(cell_faces)
+#     TI = _get_int(mesh) # would this result in regression (type identified inside func?)
+#     TF = _get_float(mesh) # would this result in regression (type identified inside func?)
+#     backend = _get_backend(mesh)
+
+#     i = zeros(TI, nCells + nFaces)
+#     i = adapt(backend, i)
+
+#     j = zeros(TI, nCells + nFaces)
+#     j = adapt(backend, j)
+
+#     v = zeros(TF, nCells + nFaces)
+#     v = adapt(backend, v)
+
+#     kernel! = sparse_matrix_connectivity_kernel!(backend)
+#     kernel!(i, j, cell_neighbours, cells, ndrange = nCells)
+#     return i, j, v
+# end
+
+# @kernel function sparse_matrix_connectivity_kernel!(i_array, j_array, cell_neighbours, cells)
+#     i = @index(Global)
+
+#     faces_range_current = cells[i].faces_range
+    
+#     if i > 1
+#         faces_range_prev = cells[i-1].faces_range
+#     else
+#         faces_range_prev = 0
+#     end
+
+#     cID = i + maximum(faces_range_prev)
+
+#     for fi ∈ 1:length(faces_range_current)
+#         neighbour = cell_neighbours[fi]
+#         index = cID + fi
+
+#         i_array[index] = cID
+#         j_array[index] = neighbour
+#     end
+# end
+
+function nzval_index(colptr, rowval, start_index, required_index, ione)
+    start = colptr[start_index]
+    offset = 0
+    for j in start:length(rowval)
+        offset += 1
+        if rowval[j] == required_index
+            break
+        end
+    end
+    return start + offset - ione
 end
 
 # Model equation type 

@@ -151,28 +151,7 @@ end
             nID = cell_neighbours[fi]
             cellN = cells[nID]
 
-            # start = colptr_array[i]
-            # # offset = findfirst(isequal(i),@view rowval_array[start:end]) - ione
-            # offset = 0
-            # for j in start:length(rowval_array)
-            #     offset += 1
-            #     if rowval_array[j] == i
-            #         break
-            #     end
-            # end
-            # cIndex = start + offset - ione
             cIndex = nzval_index(colptr_array, rowval_array, i, i, ione)
-
-            # start = colptr_array[nID]
-            # offset = findfirst(isequal(i),@view rowval_array[start:end]) - ione
-            # offset = 0
-            # for j in start:length(rowval_array)
-            #     offset += 1
-            #     if rowval_array[j] == i
-            #         break
-            #     end
-            # end
-            # nIndex = start + offset - ione
             nIndex = nzval_index(colptr_array, rowval_array, nID, i, ione)
 
             # No scheme code for Euler time scheme
@@ -217,35 +196,13 @@ end
             nID = cell_neighbours[fi]
             cellN = cells[nID]
 
-            # start = colptr_array[i]
-            # # offset = findfirst(isequal(i),@view rowval_array[start:end]) - ione
-            # offset = 0
-            # for j in start:length(rowval_array)
-            #     offset += 1
-            #     if rowval_array[j] == i
-            #         break
-            #     end
-            # end
-            # cIndex = start + offset - ione
             cIndex = nzval_index(colptr_array, rowval_array, i, i, ione)
-
-            # start = colptr_array[nID]
-            # offset = findfirst(isequal(i),@view rowval_array[start:end]) - ione
-            # offset = 0
-            # for j in start:length(rowval_array)
-            #     offset += 1
-            #     if rowval_array[j] == i
-            #         break
-            #     end
-            # end
-            # nIndex = start + offset - ione
             nIndex = nzval_index(colptr_array, rowval_array, nID, i, ione)
 
             # scheme code
             ap = term.sign*(-term.flux[fID] * area)/delta
             Atomix.@atomic nzval_array[cIndex] += ap
             Atomix.@atomic nzval_array[nIndex] += -ap
-
         end
 
     # scheme_scource loop

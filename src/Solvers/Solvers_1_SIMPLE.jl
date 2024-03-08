@@ -142,7 +142,7 @@ function SIMPLE_loop(
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
-    @time for iteration ∈ 1:iterations
+    CUDA.@time for iteration ∈ 1:iterations
 
         @. prev = U.x.values
         # type = typeof(ux_eqn)

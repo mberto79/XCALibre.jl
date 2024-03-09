@@ -181,15 +181,16 @@ function discretise!(eqn, prev, runtime)
     KernelAbstractions.synchronize(backend)
 
     kernel! = _discretise!(backend)
-    kernel!(model, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione, ndrange = length(mesh.cells))
+    kernel!(model, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione, _scheme!, _scheme_source!, _sources!, ndrange = length(mesh.cells))
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function _discretise!(model, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione)
+@kernel function _discretise!(
+    model::Model{TN,SN,T,S}, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione, gfunc_1::F1, gfunc_2::F2, gfunc_3::F3) where {TN,SN,T,S,F1,F2,F3}
     i = @index(Global)
     
     (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
-
+    (; terms, sources) = model
 
     @inbounds begin
         cell = cells[i]
@@ -206,22 +207,28 @@ end
 
             nIndex = nzval_index(colptr_array, rowval_array, nID, i, ione)
 
-            _scheme!(model, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+            gfunc_1(model, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+
+            # scheme!(terms[1], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+            # scheme!(term2, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+            # scheme!(term3, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+
         end
         # b_array[i] = fzero
-        _scheme_source!(model, b_array, nzval_array, cell, i, cIndex, prev, runtime)
-        _sources!(model, b_array, volume, i)
+        gfunc_2(model, terms, b_array, nzval_array, cell, i, cIndex, prev, runtime)
+        gfunc_3(model, sources, b_array, volume, i)
     end
 end
 
-@generated function _scheme!(model::Model{TN,SN,T,S}, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime) where {TN,SN,T,S}
+@generated function _scheme!(model::Model{TN,SN,T,S}, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime) where {TN,SN,T,S}
     nTerms = TN
     
     assignment_block = Expr[]
     
     for t in 1:nTerms
         function_call_scheme = quote
-            scheme!(model.terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+            # scheme!(model.terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+            scheme!(terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
         end
         push!(assignment_block, function_call_scheme)
     end
@@ -232,14 +239,15 @@ end
     end
 end
 
-@generated function _scheme_source!(model::Model{TN,SN,T,S}, b, nzval_array, cell, cID, cIndex, prev, runtime) where {TN,SN,T,S}
+@generated function _scheme_source!(model::Model{TN,SN,T,S}, terms, b, nzval_array, cell, cID, cIndex, prev, runtime) where {TN,SN,T,S}
     nTerms = TN
     
     assign_source = Expr[]
 
     for t in 1:nTerms
         function_call_scheme_source = quote
-            scheme_source!(model.terms[$t], b, nzval_array, cell, cID, cIndex, prev, runtime)
+            # scheme_source!(model.terms[$t], b, nzval_array, cell, cID, cIndex, prev, runtime)
+            scheme_source!(terms[$t], b, nzval_array, cell, cID, cIndex, prev, runtime)
         end
         push!(assign_source, function_call_scheme_source)
     end
@@ -249,14 +257,15 @@ end
     end
 end
 
-@generated function _sources!(model::Model{TN,SN,T,S}, b, volume, cID) where {TN,SN,T,S}
+@generated function _sources!(model::Model{TN,SN,T,S}, sources, b, volume, cID) where {TN,SN,T,S}
     nSources = SN
     
     add_source = Expr[]
 
     for s in 1:nSources
         expression_call_sources = quote
-            (; field, sign) = model.sources[$s]
+            # (; field, sign) = model.sources[$s]
+            (; field, sign) = sources[$s]
             b[cID] += sign*field[cID]*volume
         end
         push!(add_source, expression_call_sources)

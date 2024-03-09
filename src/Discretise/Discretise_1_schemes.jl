@@ -1,4 +1,4 @@
-export schemes_and_sources!, sources!, set_b! #scheme!, scheme_source!
+export scheme!, scheme_source!
 
 #= NOTE:
 In source scheme the following indices are used and should be used with care:
@@ -367,11 +367,3 @@ end
 #     end
 # end
 
-# @kernel function set_b!(fzero, b)
-#     i = @index(Global)
-
-#     @inbounds begin
-#         # @synchronize
-#         b[i] = fzero
-#     end
-# end

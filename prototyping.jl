@@ -124,88 +124,143 @@ CUDA.allowscalar(false)
 # uy_eqn = _convert_array!(uy_eqn, backend)
 # p_eqn = _convert_array!(p_eqn, backend)
 
-# @info "Initialising preconditioners..."
+@info "Initialising preconditioners..."
 
-# @reset ux_eqn.preconditioner = set_preconditioner(
-#                 solvers.U.preconditioner, ux_eqn, U.x.BCs, runtime)
-# @reset uy_eqn.preconditioner = ux_eqn.preconditioner
-# @reset p_eqn.preconditioner = set_preconditioner(
-#                 solvers.p.preconditioner, p_eqn, p.BCs, runtime)
+@reset ux_eqn.preconditioner = set_preconditioner(
+                solvers.U.preconditioner, ux_eqn, U.x.BCs, runtime)
+@reset uy_eqn.preconditioner = ux_eqn.preconditioner
+@reset p_eqn.preconditioner = set_preconditioner(
+                solvers.p.preconditioner, p_eqn, p.BCs, runtime)
 
-# if isturbulent(model)
-#     @info "Initialising turbulence model..."
-#     turbulence = initialise_RANS(mdotf, p_eqn, config, model)
-#     config = turbulence.config
-# else
-#     turbulence = nothing
-# end
+if isturbulent(model)
+    @info "Initialising turbulence model..."
+    turbulence = initialise_RANS(mdotf, p_eqn, config, model)
+    config = turbulence.config
+else
+    turbulence = nothing
+end
 
-# @info "Pre-allocating solvers..."
+@info "Pre-allocating solvers..."
  
-# @reset ux_eqn.solver = solvers.U.solver(_A(ux_eqn), _b(ux_eqn))
-# @reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
-# @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
+@reset ux_eqn.solver = solvers.U.solver(_A(ux_eqn), _b(ux_eqn))
+@reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
+@reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
 
-# # Extract model variables and configuration
-# (;mesh, U, p, nu) = model
-# # ux_model, uy_model = ux_eqn.model, uy_eqn.model
-# p_model = p_eqn.model
-# (; solvers, schemes, runtime) = config
-# (; iterations, write_interval) = runtime
+# Extract model variables and configuration
+(;mesh, U, p, nu) = model
+# ux_model, uy_model = ux_eqn.model, uy_eqn.model
+p_model = p_eqn.model
+(; solvers, schemes, runtime) = config
+(; iterations, write_interval) = runtime
 
-# mdotf = get_flux(ux_eqn, 2)
-# nueff = get_flux(ux_eqn, 3)
-# rDf = get_flux(p_eqn, 1)
-# divHv = get_source(p_eqn, 1)
+mdotf = get_flux(ux_eqn, 2)
+nueff = get_flux(ux_eqn, 3)
+rDf = get_flux(p_eqn, 1)
+divHv = get_source(p_eqn, 1)
 
-# @info "Allocating working memory..."
+@info "Allocating working memory..."
 
-# # Define aux fields 
-# gradU = Grad{schemes.U.gradient}(U)
-# gradUT = T(gradU)
-# S = StrainRate(gradU, gradUT)
-# S2 = ScalarField(mesh)
+# Define aux fields 
+gradU = Grad{schemes.U.gradient}(U)
+gradUT = T(gradU)
+S = StrainRate(gradU, gradUT)
+S2 = ScalarField(mesh)
 
-# # Temp sources to test GradUT explicit source
-# # divUTx = zeros(Float64, length(mesh.cells))
-# # divUTy = zeros(Float64, length(mesh.cells))
+# Temp sources to test GradUT explicit source
+# divUTx = zeros(Float64, length(mesh.cells))
+# divUTy = zeros(Float64, length(mesh.cells))
 
-# n_cells = length(mesh.cells)
-# Uf = FaceVectorField(mesh)
-# pf = FaceScalarField(mesh)
-# gradpf = FaceVectorField(mesh)
-# Hv = VectorField(mesh)
-# rD = ScalarField(mesh)
+n_cells = length(mesh.cells)
+Uf = FaceVectorField(mesh)
+pf = FaceScalarField(mesh)
+gradpf = FaceVectorField(mesh)
+Hv = VectorField(mesh)
+rD = ScalarField(mesh)
 
-# # Pre-allocate auxiliary variables
+# Pre-allocate auxiliary variables
 
-# # Consider using allocate from KernelAbstractions 
-# # e.g. allocate(backend, Float32, res, res)
-# TF = _get_float(mesh)
-# prev = zeros(TF, n_cells)
-# prev = _convert_array!(prev, backend) 
+# Consider using allocate from KernelAbstractions 
+# e.g. allocate(backend, Float32, res, res)
+TF = _get_float(mesh)
+prev = zeros(TF, n_cells)
+prev = _convert_array!(prev, backend) 
 
-# # Pre-allocate vectors to hold residuals 
+# Pre-allocate vectors to hold residuals 
 
-# R_ux = ones(TF, iterations)
-# R_uy = ones(TF, iterations)
-# R_p = ones(TF, iterations)
+R_ux = ones(TF, iterations)
+R_uy = ones(TF, iterations)
+R_p = ones(TF, iterations)
 
-# # Convert arrays to selected backend
+# Convert arrays to selected backend
 
-# # Uf = _convert_array!(Uf, backend)
-# # rDf = _convert_array!(rDf, backend)
-# # rD = _convert_array!(rD, backend)
-# # pf = _convert_array!(pf, backend)
-# # Hv = _convert_array!(Hv, backend)
-# # prev = _convert_array!(prev, backend)
+# Uf = _convert_array!(Uf, backend)
+# rDf = _convert_array!(rDf, backend)
+# rD = _convert_array!(rD, backend)
+# pf = _convert_array!(pf, backend)
+# Hv = _convert_array!(Hv, backend)
+# prev = _convert_array!(prev, backend)
 
-# interpolate!(Uf, U)   
-# correct_boundaries!(Uf, U, U.BCs)
-# flux!(mdotf, Uf)
-# grad!(∇p, pf, p, p.BCs)
+interpolate!(Uf, U)   
+correct_boundaries!(Uf, U, U.BCs)
+flux!(mdotf, Uf)
+grad!(∇p, pf, p, p.BCs)
 
-# update_nueff!(nueff, nu, turbulence)
+update_nueff!(nueff, nu, turbulence)
+
+@. prev = U.x.values
+
+discretise_test!(ux_eqn, prev, runtime)
+
+A = _A(ux_eqn.equation)
+
+## TESTING IF NUMBER TYPES WORK IN KERNELS
+using Adapt
+
+struct test{TN, SN, VI}
+    val::VI
+end
+function Adapt.adapt_structure(to, itp::test{TN,SN}) where {TN,SN}
+    value = Adapt.adapt_structure(to, itp.val); VI = typeof(value)
+    test{TN, SN, VI}(value)
+end
+test{TN,SN}(value) where {TN, SN} = begin
+    VI = typeof(value)
+    test{TN,SN, VI}(value)
+end
+
+Test = test{3,1}([1 2 3 4 5])
+Test = adapt(backend, Test)
+
+kernel = test_struct(backend)
+kernel(Test, ndrange = length(Test.val))
+
+@kernel function test_struct(Test_sruct)
+    i = @index(Global)
+
+    (; val) = Test_sruct
+
+    val[i] += 1
+end
+
+
+## TESTING IF SOURCES WORKS IN KERNELS - BOTH MODEL AND SOURCES WORK WHEN REMOVING TYPE FROM SRC STRUCT
+model = ux_eqn.model
+sources = model.sources
+
+kernel = source_test4(backend)
+kernel(model, ndrange = length(sources[1].field.values))
+
+@kernel function source_test4(model)
+    i = @index(Global)
+
+    (; sources) = model
+    (; field, sign) = sources[1]
+    (; values) = field
+
+    @inbounds begin
+        values[i] += sign
+    end
+end
 
 model = ux_eqn.model
 
@@ -214,38 +269,60 @@ mesh = model.terms[1].phi.mesh
 kernel = test2!(backend)
 kernel(mesh, ndrange = 1)
 
-function discretise!(eqn, prev, runtime)
-    mesh = eqn.model.terms[1].phi.mesh
-    terms = eqn.model.terms
-    sources = eqn.model.sources
+## TESTING IF MODEL WORKS WITH NEW SOURCES STRUCTURE
+model = ux_eqn.model
 
-    backend = _get_backend(mesh)
-    kernel! = _discretise(backend)
-    kernel!(terms, sources, mesh, eqn, prev, runtime, ndrange = length(mesh.cells))
+## TESTING NZVAL ACCESSOR
+kernel = test_nzval1(backend)
+kernel(_A(ux_eqn.equation), ndrange = length(ux_eqn.equation.A.nzVal))
+
+@kernel function test_nzval1(A_arr)
+    i = @index(Global)
+
+    # A_arr = _A(eqn)
+    
+    nzval_arr = _nzval(A_arr)
+
+    nzval_arr[i] += 1
 end
 
-## GENERATED FUNCTION W/ KERNEL
-@kernel function _discretise!(terms, sources, mesh, eqn, prev, runtime)
-    i = @index(Global)
+## DISCRETISE ALTERATIONS
+
+discretise_test!(ux_eqn, prev, runtime)
+
+function discretise_test!(eqn, prev, runtime)
+    mesh = eqn.model.terms[1].phi.mesh
+    model = eqn.model
 
     integer = _get_int(mesh)
     float = _get_float(mesh)
     fzero = zero(float)
     ione = one(integer)
-    cIndex = zero(integer)
-    nIndex = zero(inetger)
-    
-    (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
+    # cIndex = zero(integer)
+    # nIndex = zero(inetger)
 
-    A_array = _A(eqn.equation)
-    b_array = _b(eqn.equation)
+    A_array = _A(eqn)
+    b_array = _b(eqn)
 
     nzval_array = _nzval(A_array)
     rowval_array = _rowval(A_array)
     colptr_array = _colptr(A_array)
 
+    backend = _get_backend(mesh)
+    kernel! = _discretise2!(backend)
+    @device_code_warntype kernel!(model, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione, ndrange = length(mesh.cells))
+end
+
+## GENERATED FUNCTION W/ KERNEL
+@kernel function _discretise2!(model, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione)
+    i = @index(Global)
+    
+    (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
+
+
     @inbounds begin
         cell = cells[i]
+        (; faces_range, volume) = cell
 
         for fi in faces_range
             fID = cell_faces[fi]
@@ -257,20 +334,22 @@ end
             cIndex = nzval_index(colptr_array, rowval_array, i, i, ione)
             nIndex = nzval_index(colptr_array, rowval_array, nID, i, ione)
 
-            _scheme!(terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+            _scheme!(model, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
         end
         b_array[i] = fzero
-        _scheme_source!(terms, b_array, nzval_array, cell, i, cIndex, prev, runtime)
-        _sources!(sources, b_array, volume, i)
+        _scheme_source!(model, b_array, nzval_array, cell, i, cIndex, prev, runtime)
+        _sources!(model, b_array, volume, i)
     end
 end
 
-@generated function _scheme!(terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+@generated function _scheme!(model::Model{TN,SN,T,S}, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime) where {TN,SN,T,S}
+    nTerms = TN
+    
     assignment_block = Expr[]
     
-    for t in 1:TN
+    for t in 1:nTerms
         function_call_scheme = quote
-            scheme!(terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+            scheme!(model.terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
         end
         push!(assignment_block, function_call_scheme)
     end
@@ -281,12 +360,14 @@ end
     end
 end
 
-@generated function _scheme_source!(terms, b, nzval_array, cell, cID, cIndex, prev, runtime)
+@generated function _scheme_source!(model::Model{TN,SN,T,S}, b, nzval_array, cell, cID, cIndex, prev, runtime) where {TN,SN,T,S}
+    nTerms = TN
+    
     assign_source = Expr[]
 
-    for t in 1:TN
+    for t in 1:nTerms
         function_call_scheme_source = quote
-            scheme_source!(terms[$t], b, nzval_array, cell, cID, cIndex, prev, runtime)
+            scheme_source!(model.terms[$t], b, nzval_array, cell, cID, cIndex, prev, runtime)
         end
         push!(assign_source, function_call_scheme_source)
     end
@@ -296,12 +377,14 @@ end
     end
 end
 
-@generated function _sources!(sources, b, volume, cID)
+@generated function _sources!(model::Model{TN,SN,T,S}, b, volume, cID) where {TN,SN,T,S}
+    nSources = SN
+    
     add_source = Expr[]
 
-    for s in 1:SN
+    for s in 1:nSources
         expression_call_sources = quote
-            (; field, sign) = sources[$s]
+            (; field, sign) = model.sources[$s]
             b[cID] += sign*field[cID]*volume
         end
         push!(add_source, expression_call_sources)

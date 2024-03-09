@@ -56,7 +56,7 @@ schemes = (
     p = set_schemes(divergence=Upwind, gradient=Midpoint)
 );
 
-runtime = set_runtime(iterations=600, write_interval=-1, time_step=1)
+runtime = set_runtime(iterations=600, write_interval=600, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime);

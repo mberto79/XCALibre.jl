@@ -38,16 +38,16 @@ solvers = (
     U = set_solver(
         model.U;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = DILU(),
+        preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 1.0,
+        relax       = 0.6,
     ),
     p = set_solver(
         model.p;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = LDL(),
+        preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 1.0,
+        relax       = 0.4,
     )
 )
 
@@ -62,9 +62,9 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-backend = CPU()
+backend = CUDABackend()
 
-Rx, Ry, Rp, model = simple!(model, config, backend) # 9.39k allocs
+Rx, Ry, Rp, model = simple!(model, config, backend); # 9.39k allocs
 
 # plot(; xlims=(0,184))
 # plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

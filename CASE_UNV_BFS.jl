@@ -2,6 +2,7 @@ using Plots
 using FVM_1D
 using Krylov
 using CUDA
+using KernelAbstractions
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "unv_sample_meshes/backwardFacingStep_2mm.unv"
@@ -63,7 +64,7 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-backend = CUDABackend()
+backend = CPU()
 Rx, Ry, Rp, model = simple!(model, config, backend) # 9.39k allocs in 184 iterations
 
 plot(; xlims=(0,1000))

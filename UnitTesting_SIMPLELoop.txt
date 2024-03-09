@@ -165,6 +165,13 @@ GPU benchmark (post compilation):           0.000347 seconds (331 CPU allocation
 CPU kernel benchmark (compilation):         0.379195 seconds (275.92 k CPU allocations: 19.291 MiB, 1.69% gc time)
 CPU kernel benchmark (post compilation):    0.006102 seconds (63 CPU allocations: 13.953 KiB)
 
+Added Synchronization
+GPU benchmark (compilation):                1.493356 seconds (487.50 k CPU allocations: 38.470 MiB, 0.90% gc time)
+GPU benchmark (post compilation):           0.000390 seconds (310 CPU allocations: 58.828 KiB)
+
+CPU kernel benchmark (compilation):         0.347304 seconds (68.95 k CPU allocations: 4.713 MiB)
+CPU kernel benchmark (post compilation):    0.007660 seconds (61 CPU allocations: 13.703 KiB)
+
 Output the same for all benchmarks?: YES
 
 

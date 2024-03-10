@@ -41,16 +41,16 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.9,
-        rtol = 1e-4
+        relax       = 0.7,
+        rtol = 1e-3
     ),
     p = set_solver(
         model.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.15,
-        rtol = 1e-4
+        relax       = 0.3,
+        rtol = 1e-5
     )
 );
 

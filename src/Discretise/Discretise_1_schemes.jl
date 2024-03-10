@@ -31,7 +31,7 @@ end
         volume = cell.volume
         rdt = 1/runtime.dt
         nzval_array[cIndex] += volume*rdt
-        b[cID] += prev[cID]*volume*rdt
+        Atomix.@atomic b[cID] += prev[cID]*volume*rdt
     nothing
 end
 
@@ -42,8 +42,8 @@ end
     nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     ap = term.sign*(-term.flux[fID] * face.area)/face.delta
-    nzval_array[cIndex] += ap
-    nzval_array[nIndex] += -ap
+    Atomix.@atomic nzval_array[cIndex] += ap
+    Atomix.@atomic nzval_array[nIndex] += -ap
     nothing
 end
 @inline scheme_source!(
@@ -64,8 +64,8 @@ end
     weight = norm(xf - xC)/norm(xN - xC)
     one_minus_weight = one(eltype(weight)) - weight
     ap = term.sign*(term.flux[fID]*ns)
-    nzval_array[cIndex] += ap*one_minus_weight
-    nzval_array[nIndex] += ap*weight
+    Atomix.@atomic nzval_array[cIndex] += ap*one_minus_weight
+    Atomix.@atomic nzval_array[nIndex] += ap*weight
     nothing
 end
 @inline scheme_source!(
@@ -79,8 +79,8 @@ end
     nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     ap = term.sign*(term.flux[fID]*ns)
-    nzval_array[cIndex] += max(ap, 0.0)
-    nzval_array[nIndex] += -max(-ap, 0.0)
+    Atomix.@atomic nzval_array[cIndex] += max(ap, 0.0)
+    Atomix.@atomic nzval_array[nIndex] += -max(-ap, 0.0)
     nothing
 end
 @inline scheme_source!(
@@ -106,7 +106,7 @@ end
     # ap = max(flux, 0.0)
     # ab = min(flux, 0.0)*phi[cID]
     flux = term.sign*term.flux[cID]*cell.volume # indexed with cID
-    nzval_array[cIndex] += flux # indexed with cIndex
+    Atomix.@atomic nzval_array[cIndex] += flux # indexed with cIndex
     # flux = term.sign*term.flux[cID]*cell.volume*phi[cID]
     # b[cID] -= flux
     nothing

@@ -221,59 +221,81 @@ end
 end
 
 @generated function _scheme!(model::Model{TN,SN,T,S}, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime) where {TN,SN,T,S}
-    nTerms = TN
     
-    assignment_block = Expr[]
+    # nTerms = TN
+    # assignment_block = Expr[]
+    # for t in 1:nTerms
+    #     function_call_scheme = quote
+    #         # scheme!(model.terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+    #         scheme!(terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+    #     end
+    #     push!(assignment_block, function_call_scheme)
+    # end
+    # quote
+    #     $(assignment_block...)
+    # end
+
+    out = Expr(:block)
     
-    for t in 1:nTerms
+    for t in 1:TN
         function_call_scheme = quote
             # scheme!(model.terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
             scheme!(terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
         end
-        push!(assignment_block, function_call_scheme)
+        push!(out.args, function_call_scheme)
     end
-    
-
-    quote
-        $(assignment_block...)
-    end
+    out
 end
 
 @generated function _scheme_source!(model::Model{TN,SN,T,S}, terms, b, nzval_array, cell, cID, cIndex, prev, runtime) where {TN,SN,T,S}
-    nTerms = TN
-    
-    assign_source = Expr[]
-
-    for t in 1:nTerms
+    # nTerms = TN
+    # assign_source = Expr[]
+    # for t in 1:nTerms
+    #     function_call_scheme_source = quote
+    #         # scheme_source!(model.terms[$t], b, nzval_array, cell, cID, cIndex, prev, runtime)
+    #         scheme_source!(terms[$t], b, nzval_array, cell, cID, cIndex, prev, runtime)
+    #     end
+    #     push!(assign_source, function_call_scheme_source)
+    # end
+    # quote
+    #     $(assign_source...)
+    # end
+    out = Expr(:block)
+    for t in 1:TN
         function_call_scheme_source = quote
             # scheme_source!(model.terms[$t], b, nzval_array, cell, cID, cIndex, prev, runtime)
             scheme_source!(terms[$t], b, nzval_array, cell, cID, cIndex, prev, runtime)
         end
-        push!(assign_source, function_call_scheme_source)
+        push!(out.args, function_call_scheme_source)
     end
-
-    quote
-        $(assign_source...)
-    end
+    out
 end
 
 @generated function _sources!(model::Model{TN,SN,T,S}, sources, b, volume, cID) where {TN,SN,T,S}
-    nSources = SN
-    
-    add_source = Expr[]
+    # nSources = SN
+    # add_source = Expr[]
+    # for s in 1:nSources
+    #     expression_call_sources = quote
+    #         # (; field, sign) = model.sources[$s]
+    #         (; field, sign) = sources[$s]
+    #         b[cID] += sign*field[cID]*volume
+    #     end
+    #     push!(add_source, expression_call_sources)
+    # end
+    # quote
+    #     $(add_source...)
+    # end
 
-    for s in 1:nSources
+    out = Expr(:block)
+    for s in 1:SN
         expression_call_sources = quote
             # (; field, sign) = model.sources[$s]
             (; field, sign) = sources[$s]
-            b[cID] += sign*field[cID]*volume
+            Atomix.@atomic b[cID] += sign*field[cID]*volume
         end
-        push!(add_source, expression_call_sources)
+        push!(out.args, expression_call_sources)
     end
-
-    quote
-        $(add_source...)
-    end
+    out
 end
 
 @kernel function set_nzval!(nzval, fzero)

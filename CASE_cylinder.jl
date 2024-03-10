@@ -6,6 +6,7 @@ using KernelAbstractions
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
 mesh_file = "unv_sample_meshes/cylinder_d10mm_2mm.unv"
+# mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
@@ -37,17 +38,19 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu));
 solvers = (
     U = set_solver(
         model.U;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(),
-        convergence = 1e-7,
-        relax       = 0.55,
-    ),
-    p = set_solver(
-        model.p;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.9,
+        rtol = 1e-4
+    ),
+    p = set_solver(
+        model.p;
+        solver      = CgSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(),
+        convergence = 1e-7,
+        relax       = 0.15,
+        rtol = 1e-4
     )
 );
 
@@ -70,7 +73,7 @@ backend = CUDABackend() # 357 s
 # backend = CPU()
 
 # @time begin
-Rx, Ry, Rp, model = simple!(model, config, backend); #, pref=0.0)
+Rx, Ry, Rp, model1 = simple!(model, config, backend); #, pref=0.0)
 # end
 
 plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))

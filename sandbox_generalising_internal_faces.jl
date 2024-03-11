@@ -3,6 +3,7 @@ using StaticArrays
 using Statistics
 using LinearAlgebra
 
+include("src/VTK_3D/VTU.jl")
 
 #unv_mesh="src/UNV_3D/5_cell_new_boundaries.unv"
 #unv_mesh="src/UNV_3D/800_cell_new_boundaries.unv"
@@ -21,7 +22,12 @@ mesh.faces
 mesh.cells
 mesh.cell_neighbours
 mesh.cell_faces
+mesh.face_nodes
+mesh.faces[1].nodes_range
 
+
+name="test_vtu"
+write_vtu(name,mesh)
 
 
 struct Node{SV3<:SVector{3,<:AbstractFloat}, UR<:UnitRange{<:Integer}}

@@ -216,6 +216,13 @@ function SIMPLE_loop(
             break
         end
 
+        if isnan(R_ux[iteration]) || isnan(R_uy[iteration]) || isnan(R_p[iteration])
+            if iteration ≠ 1
+                print("\n\nSimulation failed at iteration $(iteration)! Exiting simulation...\n\n")
+                break
+            end
+        end
+
         ProgressMeter.next!(
             progress, showvalues = [
                 (:iter,iteration),

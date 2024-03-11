@@ -3,11 +3,12 @@ using Plots, FVM_1D, Krylov, AerofoilOptimisation
 #%% AEROFOIL GEOMETRY DEFINITION
 @time foil,ctrl_p = spline_foil(FoilDef(
     chord   = 100, #[mm]
-    LE_h    = 0, #[%c]
-    TE_h    = 0, #[%c]
+    LE_h    = 0, #[%c, at α=0°]
+    TE_h    = 0, #[%c, at α=0°]
     peak    = [25,2.5], #[%c]
     trough  = [80,-7.5], #[%c]
-    xover = 50 #[%c]
+    xover = 50, #[%c]
+    α = 0 #[°]
 )) #Returns aerofoil MCL & control point vector (spline method)
 
 #%% AEROFOIL MESHING

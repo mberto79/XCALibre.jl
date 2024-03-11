@@ -3,16 +3,17 @@ using Plots, FVM_1D, Krylov, AerofoilOptimisation
 #%% AEROFOIL GEOMETRY DEFINITION
 foil,ctrl_p = spline_foil(FoilDef(
     chord   = 100, #[mm]
-    LE_h    = 0, #[%c]
-    TE_h    = 0, #[%c]
-    peak    = [25,40], #[%c]
-    trough  = [75,-40], #[%c]
-    xover = 50 #[%c]
+    LE_h    = 0, #[%c, at α=0°]
+    TE_h    = 0, #[%c, at α=0°]
+    peak    = [25,25], #[%c]
+    trough  = [75,-25], #[%c]
+    xover = 50, #[%c]
+    α = 0 #[°]
 )) #Returns aerofoil MCL & control point vector (spline method)
 
 #%% REYNOLDS & Y+ CALCULATIONS
 chord = 100.0
-Re = 80000
+Re = 200000000
 nu,ρ = 1.48e-5,1.225
 yplus_init,BL_layers = 2.0,50
 laminar = false
@@ -43,8 +44,8 @@ mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
 # Turbulence Model
-νR = 10
-Tu = 0.025
+νR = 1
+Tu = 0.00001
 k_inlet = 3/2*(Tu*velocity[1])^2
 ω_inlet = k_inlet/(νR*nu)
 model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
@@ -53,31 +54,31 @@ model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
 noSlip = [0.0, 0.0, 0.0]
 
 @assign! model U ( 
-    Dirichlet(:inlet, velocity),
+    FVM_1D.Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Dirichlet(:top, velocity),
-    Dirichlet(:bottom, velocity),
-    Dirichlet(:foil, noSlip)
+    FVM_1D.Dirichlet(:top, velocity),
+    FVM_1D.Dirichlet(:bottom, velocity),
+    FVM_1D.Dirichlet(:foil, noSlip)
 )
 
 @assign! model p (
     Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
+    FVM_1D.Dirichlet(:outlet, 0.0),
     Neumann(:top, 0.0),
     Neumann(:bottom, 0.0),
     Neumann(:foil, 0.0)
 )
 
 @assign! model turbulence k (
-    Dirichlet(:inlet, k_inlet),
+    FVM_1D.Dirichlet(:inlet, k_inlet),
     Neumann(:outlet, 0.0),
     Neumann(:top, 0.0),
     Neumann(:bottom, 0.0),
-    Dirichlet(:foil, 1e-15)
+    FVM_1D.Dirichlet(:foil, 1e-15)
 )
 
 @assign! model turbulence omega (
-    Dirichlet(:inlet, ω_inlet),
+    FVM_1D.Dirichlet(:inlet, ω_inlet),
     Neumann(:outlet, 0.0),
     Neumann(:top, 0.0),
     Neumann(:bottom, 0.0),
@@ -85,11 +86,11 @@ noSlip = [0.0, 0.0, 0.0]
 )
 
 @assign! model turbulence nut (
-    Dirichlet(:inlet, k_inlet/ω_inlet),
+    FVM_1D.Dirichlet(:inlet, k_inlet/ω_inlet),
     Neumann(:outlet, 0.0),
     Neumann(:top, 0.0),
     Neumann(:bottom, 0.0), 
-    Dirichlet(:foil, 0.0)
+    FVM_1D.Dirichlet(:foil, 0.0)
 )
 
 

@@ -1,20 +1,20 @@
 using Plots, FVM_1D, Krylov, AerofoilOptimisation
 
 #%% REYNOLDS & Y+ CALCULATIONS
-chord = 575.0
-Re = 2000000
+chord = 100.0
+Re = 80000
 nu,ρ = 1.48e-5,1.225
 yplus_init,BL_layers = 2.0,55
 laminar = false
 velocity,BL_mesh = BL_calcs(Re,nu,ρ,chord,yplus_init,BL_layers,laminar) #Returns (BL mesh thickness, BL mesh growth rate)
 
 #%% CFD CASE SETUP & SOLVE
-iter = 23
+iter = 1
 aero_eff = Array{Float64,1}(undef,iter)
 C_l = Array{Float64,1}(undef,iter)
 C_d = Array{Float64,1}(undef,iter)
-for i ∈ 19:iter
-    α = i-1
+for i ∈ 1:iter
+    α = 2
     writes = α > 10 ? 50 : 1000
     # Aerofoil Mesh
     create_NACA_mesh(
@@ -26,7 +26,7 @@ for i ∈ 19:iter
         BL_layers = BL_layers, #Boundary layer mesh layers [-]
         BL_stretch = BL_mesh[2], #Boundary layer stretch factor (successive multiplication factor of cell thickness away from wall cell) [-]
         py_lines = (14,37,44,248,358,391,405), #SALOME python script relevant lines (notebook path, chord line, points line, splines line, BL thickness, foil end BL fidelity, .unv path)
-        dat_path = "/home/tim/Documents/MEng Individual Project/Julia/AerofoilOptimisation/foil_dats/NACA0012.dat",
+        dat_path = "/home/tim/Documents/MEng Individual Project/Julia/AerofoilOptimisation/foil_dats/NACA6502.dat",
         py_path = "/home/tim/Documents/MEng Individual Project/Julia/AerofoilOptimisation/foil_pythons/NACAMesh.py", #Path to SALOME python script
         salome_path = "/home/tim/Downloads/InstallationFiles/SALOME-9.11.0/mesa_salome", #Path to SALOME installation
         unv_path = "/home/tim/Documents/MEng Individual Project/Julia/FVM_1D_TW/unv_sample_meshes/NACAMesh.unv", #Path to .unv destination
@@ -38,8 +38,8 @@ for i ∈ 19:iter
     mesh = update_mesh_format(mesh)
 
     # Turbulence Model
-    νR = 50
-    Tu = 0.01
+    νR = 10
+    Tu = 0.025
     k_inlet = 3/2*(Tu*velocity[1])^2
     ω_inlet = k_inlet/(νR*nu)
     model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))

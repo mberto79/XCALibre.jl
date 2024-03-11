@@ -64,7 +64,7 @@ initialise!(model.p, 0.0)
 
 backend = CPU()
 
-Rx, Ry, Rp, model = simple!(model, config, backend) # 9.39k allocs
+Rx, Ry, Rp, model = simple!(model, config, backend); # 9.39k allocs
 
 # plot(; xlims=(0,184))
 # plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

@@ -13,6 +13,7 @@ using Krylov
 # using LinearOperators
 # using ProgressMeter
 using KernelAbstractions
+using CUDA
 
 using FVM_1D.Mesh
 using FVM_1D.Fields

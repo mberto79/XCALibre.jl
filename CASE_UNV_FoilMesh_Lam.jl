@@ -3,19 +3,20 @@ using Plots, FVM_1D, Krylov, AerofoilOptimisation
 #%% AEROFOIL GEOMETRY DEFINITION
 foil,ctrl_p = spline_foil(FoilDef(
     chord   = 100, #[mm]
-    LE_h    = 0, #[%c]
-    TE_h    = 0, #[%c]
-    peak    = [25,10], #[%c]
-    trough  = [75,-10], #[%c]
-    xover = 50 #[%c]
+    LE_h    = 0, #[%c, at α=0°]
+    TE_h    = 0, #[%c, at α=0°]
+    peak    = [33.5225,15.2300], #[%c]
+    trough  = [62.5639,-1.4844], #[%c]
+    xover = 26.487, #[%c]
+    α = 0 #[°]
 )) #Returns aerofoil MCL & control point vector (spline method)
-
+plot(foil.x,foil.y)
 #%% REYNOLDS & Y+ CALCULATIONS
 chord = 100.0
-Re = 5000
+Re = 1000
 nu,ρ = 1.48e-5,1.225
-yplus_init,BL_layers = 2.0,35
-laminar = false
+yplus_init,BL_layers = 1.0,35
+laminar = true
 velocity,BL_mesh = BL_calcs(Re,nu,ρ,chord,yplus_init,BL_layers,laminar) #Returns (BL mesh thickness, BL mesh growth rate)
 
 #%% AEROFOIL MESHING
@@ -28,7 +29,7 @@ lines = update_mesh(
     BL_layers = BL_layers, #Boundary layer mesh layers [-]
     BL_stretch = BL_mesh[2], #Boundary layer stretch factor (successive multiplication factor of cell thickness away from wall cell) [-]
     py_lines = (13,44,51,59,36,68,247,284), #SALOME python script relevant lines (notebook path, 3 B-Spline lines,chord line, thickness line, BL line .unv path)
-    py_path = "/home/tim/Documents/MEng Individual Project/Julia/AerofoilOptimisation/FoilMesh.py", #Path to SALOME python script
+    py_path = "/home/tim/Documents/MEng Individual Project/Julia/AerofoilOptimisation/foil_pythons/FoilMesh.py", #Path to SALOME python script
     salome_path = "/home/tim/Downloads/InstallationFiles/SALOME-9.11.0/mesa_salome", #Path to SALOME installation
     unv_path = "/home/tim/Documents/MEng Individual Project/Julia/FVM_1D_TW/unv_sample_meshes/FoilMesh.unv", #Path to .unv destination
     note_path = "/home/tim/Documents/MEng Individual Project/SALOME", #Path to SALOME notebook (.hdf) destination
@@ -87,7 +88,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=1000, write_interval=500, time_step=1)
+    iterations=5000, write_interval=10, time_step=0.001)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -100,7 +101,8 @@ initialise!(model.p, 0.0)
 Rx, Ry, Rp = simple!(model, config) #, pref=0.0)
 
 #%% POST-PROCESSING
-aero_eff = foil_obj_func(:foil, ρ, model)
+aero_eff = lift_to_drag(:foil, ρ, model)
+C_l,C_d = aero_coeffs(:foil, chord, ρ, velocity, model)
 yplus,y = y_plus(:foil,ρ,model)
 let
     plot(; xlims=(0,runtime.iterations), ylims=(1e-10,0))

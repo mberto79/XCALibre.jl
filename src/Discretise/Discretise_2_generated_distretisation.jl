@@ -182,18 +182,17 @@ function discretise!(eqn, prev, runtime)
 
     kernel! = _discretise!(backend)
     # kernel!(model, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione, _scheme!, _scheme_source!, _sources!, ndrange = length(mesh.cells))
-    kernel!(model, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione, ndrange = length(mesh.cells))
+    kernel!(model, model.terms, model.sources, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione; ndrange = length(mesh.cells))
     KernelAbstractions.synchronize(backend)
 end
 
 # @kernel function _discretise!(
     # model::Model{TN,SN,T,S}, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione, gfunc_1::F1, gfunc_2::F2, gfunc_3::F3) where {TN,SN,T,S,F1,F2,F3}
 @kernel function _discretise!(
-    model::Model{TN,SN,T,S}, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione) where {TN,SN,T,S}
+    model::Model{TN,SN,T,S}, terms, sources, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione) where {TN,SN,T,S}
     i = @index(Global)
     
     (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
-    (; terms, sources) = model
 
     # @inbounds begin
         cell = cells[i]
@@ -212,7 +211,10 @@ end
 
             # gfunc_1(model, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
 
+            # (; terms) = model
             _scheme!(model, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+
+            
 
 
         end
@@ -224,8 +226,11 @@ end
     # end
 end
 
+return_quote(x, t) = :(nothing)
+
 @generated function _scheme!(model::Model{TN,SN,T,S}, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime) where {TN,SN,T,S}
-    
+    # Implementation 1
+
     # nTerms = TN
     # assignment_block = Expr[]
     # for t in 1:nTerms
@@ -239,8 +244,8 @@ end
     #     $(assignment_block...)
     # end
 
+    # # Implementation 2
     out = Expr(:block)
-    
     for t in 1:TN
         function_call_scheme = quote
             # scheme!(model.terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
@@ -249,9 +254,19 @@ end
         push!(out.args, function_call_scheme)
     end
     out
+
+    # Implementation 3
+    # out = Expr(:block)
+    # for t in 1:TN
+    #     push!(out.args, scheme!(terms.types[t] , t))
+    # end
+    # push!(out.args, :(nothing))
+    # out
 end
 
 @generated function _scheme_source!(model::Model{TN,SN,T,S}, terms, b, nzval_array, cell, cID, cIndex, prev, runtime) where {TN,SN,T,S}
+    
+    # # Implementation 1
     # nTerms = TN
     # assign_source = Expr[]
     # for t in 1:nTerms
@@ -264,6 +279,8 @@ end
     # quote
     #     $(assign_source...)
     # end
+
+    # Implementation 2
     out = Expr(:block)
     for t in 1:TN
         function_call_scheme_source = quote
@@ -273,9 +290,18 @@ end
         push!(out.args, function_call_scheme_source)
     end
     out
+
+    # # Implementation 3
+    # out = Expr(:block)
+    # for t in 1:TN
+    #     push!(out.args, scheme_source!(terms.types[t] , t))
+    # end
+    # push!(out.args, :(nothing))
+    # out
 end
 
 @generated function _sources!(model::Model{TN,SN,T,S}, sources, b, volume, cID) where {TN,SN,T,S}
+    # # Implementation 1
     # nSources = SN
     # add_source = Expr[]
     # for s in 1:nSources
@@ -290,6 +316,7 @@ end
     #     $(add_source...)
     # end
 
+    # Implementation 2
     out = Expr(:block)
     for s in 1:SN
         expression_call_sources = quote
@@ -300,6 +327,18 @@ end
         push!(out.args, expression_call_sources)
     end
     out
+
+    # # Implementation 3
+    # out = Expr(:block)
+    # for s in 1:SN
+    #     expression_call_sources = quote
+    #         # (; field, sign) = model.sources[$s]
+    #         (; field, sign) = sources[$s]
+    #         b[cID] += sign*field[cID]*volume
+    #     end
+    #     push!(out.args, expression_call_sources)
+    # end
+    # out
 end
 
 @kernel function set_nzval!(nzval, fzero)

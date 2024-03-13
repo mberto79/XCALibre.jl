@@ -7,6 +7,7 @@ using KernelAbstractions
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
 mesh_file = "unv_sample_meshes/cylinder_d10mm_2mm.unv"
 # mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
+# mesh_file = "unv_sample_meshes/cylinder_d10mm_10-7.5-2mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
@@ -41,16 +42,16 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.8,
         rtol = 1e-3
     ),
     p = set_solver(
         model.p;
-        solver      = CgSolver, # BicgstabSolver, GmresSolver
+        solver      = CgLanczosSolver, #CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.3,
-        rtol = 1e-5
+        relax       = 0.2,
+        rtol = 1e-4
     )
 );
 

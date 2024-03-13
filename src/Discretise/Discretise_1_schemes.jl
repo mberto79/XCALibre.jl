@@ -7,7 +7,7 @@ cIndex - Index of the cell based on sparse matrix. Use to index "nzval_array"
 =#
 
 # TIME 
-# Steady
+# Steady 1
 @inline function scheme!(
     term::Operator{F,P,I,Time{Steady}}, 
     nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
@@ -19,7 +19,21 @@ end
     nothing
 end
 
-## Euler
+# # Steady 2
+# @inline function scheme!(
+#     ::Type{Operator{F,P,I,Time{Steady}}}, t)  where {F,P,I}
+#     quote
+#         nothing
+#     end
+# end
+# @inline function scheme_source!(
+#     ::Type{Operator{F,P,I,Time{Steady}}}, t)  where {F,P,I}
+#     quote
+#         nothing
+#     end
+# end
+
+## Euler 1
 @inline function scheme!(
     term::Operator{F,P,I,Time{Euler}}, 
     nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
@@ -31,19 +45,36 @@ end
         volume = cell.volume
         rdt = 1/runtime.dt
         nzval_array[cIndex] += volume*rdt
-        b[cID] += prev[cID]*volume*rdt
+        Atomix.@atomic b[cID] += prev[cID]*volume*rdt
     nothing
 end
 
-# LAPLACIAN
+# ## Euler 2
+# @inline function scheme!(
+#     ::Type{Operator{F,P,I,Time{Euler}}}, t)  where {F,P,I}
+#     quote
+#         nothing
+#     end
+# end
+# @inline function scheme_source!(
+#     ::Type{Operator{F,P,I,Time{Euler}}}, t)  where {F,P,I}
+#     quote
+#         # volume = cell.volume
+#         # rdt = 1/runtime.dt
+#         # nzval_array[cIndex] += volume*rdt
+#         # Atomix.@atomic b[cID] += prev[cID]*volume*rdt
+#     end
+# end
+
+# LAPLACIAN 1
 
 @inline function scheme!(
     term::Operator{F,P,I,Laplacian{Linear}}, 
     nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     ap = term.sign*(-term.flux[fID] * face.area)/face.delta
-    nzval_array[cIndex] += ap
-    nzval_array[nIndex] += -ap
+    Atomix.@atomic nzval_array[cIndex] += ap
+    Atomix.@atomic nzval_array[nIndex] += -ap
     nothing
 end
 @inline scheme_source!(
@@ -52,7 +83,27 @@ end
     nothing
 end
 
+# # LAPLACIAN 2
+
+# @inline function scheme!(
+#     ::Type{Operator{F,P,I,Laplacian{Linear}}}, t)  where {F,P,I}
+#     quote
+#         term = terms[$t]
+#         ap = term.sign*(-term.flux[fID] * face.area)/face.delta
+#         Atomix.@atomic nzval_array[cIndex] += ap
+#         Atomix.@atomic nzval_array[nIndex] += -ap
+#     end
+# end
+# @inline function scheme_source!(
+#     ::Type{Operator{F,P,I,Laplacian{Linear}}}, t)  where {F,P,I} 
+#     quote
+#         # nothing
+#     end
+# end
+
 # DIVERGENCE
+
+# linear 1
 
 @inline function scheme!(
     term::Operator{F,P,I,Divergence{Linear}}, 
@@ -64,8 +115,8 @@ end
     weight = norm(xf - xC)/norm(xN - xC)
     one_minus_weight = one(eltype(weight)) - weight
     ap = term.sign*(term.flux[fID]*ns)
-    nzval_array[cIndex] += ap*one_minus_weight
-    nzval_array[nIndex] += ap*weight
+    Atomix.@atomic nzval_array[cIndex] += ap*one_minus_weight
+    Atomix.@atomic nzval_array[nIndex] += ap*weight
     nothing
 end
 @inline scheme_source!(
@@ -74,13 +125,37 @@ end
     nothing
 end
 
+# # linear 2
+
+# @inline function scheme!(
+#     ::Type{Operator{F,P,I,Divergence{Linear}}}, t)  where {F,P,I}
+#     quote
+#         term = terms[$t]
+#         xf = face.centre
+#         xC = cell.centre
+#         xN = cellN.centre
+#         weight = norm(xf - xC)/norm(xN - xC)
+#         one_minus_weight = one(eltype(weight)) - weight
+#         ap = term.sign*(term.flux[fID]*ns)
+#         Atomix.@atomic nzval_array[cIndex] += ap*one_minus_weight
+#         Atomix.@atomic nzval_array[nIndex] += ap*weight
+#     end
+# end
+# @inline function scheme_source!(
+#     ::Type{Operator{F,P,I,Divergence{Linear}}}, t) where {F,P,I}
+#     quote
+#         nothing
+#     end
+# end
+
+# Upwind 1
 @inline function scheme!(
     term::Operator{F,P,I,Divergence{Upwind}}, 
     nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     ap = term.sign*(term.flux[fID]*ns)
-    nzval_array[cIndex] += max(ap, 0.0)
-    nzval_array[nIndex] += -max(-ap, 0.0)
+    Atomix.@atomic nzval_array[cIndex] += max(ap, 0.0)
+    Atomix.@atomic nzval_array[nIndex] += -max(-ap, 0.0)
     nothing
 end
 @inline scheme_source!(
@@ -89,7 +164,24 @@ end
     nothing
 end
 
-# IMPLICIT SOURCE
+# # Upwind 2
+# @inline function scheme!(
+#     ::Type{Operator{F,P,I,Divergence{Upwind}}}, t)  where {F,P,I}
+#     quote
+#         term = terms[$t]
+#         ap = term.sign*(term.flux[fID]*ns)
+#         Atomix.@atomic nzval_array[cIndex] += max(ap, 0.0)
+#         Atomix.@atomic nzval_array[nIndex] += -max(-ap, 0.0)
+#     end
+# end
+# @inline function scheme_source!(
+#     ::Type{Operator{F,P,I,Divergence{Upwind}}}) where {F,P,I}
+#     quote
+#         nothing
+#     end
+# end
+
+# IMPLICIT SOURCE 1
 
 @inline function scheme!(
     term::Operator{F,P,I,Si}, 
@@ -106,264 +198,30 @@ end
     # ap = max(flux, 0.0)
     # ab = min(flux, 0.0)*phi[cID]
     flux = term.sign*term.flux[cID]*cell.volume # indexed with cID
-    nzval_array[cIndex] += flux # indexed with cIndex
+    Atomix.@atomic nzval_array[cIndex] += flux # indexed with cIndex
     # flux = term.sign*term.flux[cID]*cell.volume*phi[cID]
     # b[cID] -= flux
     nothing
 end
 
+# # IMPLICIT SOURCE 2
 
-
-# @inline function schemes_and_sources!(
-#     term::Operator{F,P,I,Time{Steady}}, 
-#     nTerms, nSources, offset, fzero, ione, terms, rowval_array, colptr_array, nzval_array, cIndex, nIndex,  b, faces,
-#     cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-#     backend, runtime, prev)  where {F,P,I}
-#     nothing
-# end
-
-# @inline function schemes_and_sources!(
-#     term::Operator{F,P,I,Time{Euler}}, 
-#     nTerms, nSources, offset, fzero, ione, terms, rowval_array, colptr_array, nzval_array, cIndex, nIndex,  b, faces,
-#     cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-#     backend, runtime, prev)  where {F,P,I}
-
-#     kernel! = schemes_time_euler!(backend)
-#     kernel!(term, nTerms, nSources, offset, fzero, ione, terms, rowval_array, colptr_array, nzval_array, cIndex, nIndex,  b, faces,
-#             cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-#             backend, runtime, prev, ndrange = length(cells))
-#     KernelAbstractions.synchronize(backend)
-# end
-
-# @kernel function schemes_time_euler!(term, nTerms, nSources, offset, fzero, ione, terms,  rowval_array, colptr_array, nzval_array, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime, prev)
-#     i = @index(Global)
-#     # (; terms) = model
-
-#     @inbounds begin
-#         # cell = cells[i]
-#         # @synchronize
-#         (; faces_range, volume) = cells[i]
-
-#         for fi in faces_range
-#             fID = cell_faces[fi]
-#             ns = cell_nsign[fi] # normal sign
-#             # face = faces[fID]
-#             nID = cell_neighbours[fi]
-#             cellN = cells[nID]
-
-#             cIndex = nzval_index(colptr_array, rowval_array, i, i, ione)
-#             nIndex = nzval_index(colptr_array, rowval_array, nID, i, ione)
-
-#             # No scheme code for Euler time scheme
-
-#         end
-
-#     # scheme_scource loop
-#     # volume = cell.volume
-#     rdt = 1/runtime.dt
-#     Atomix.@atomic nzval_array[cIndex] += volume*rdt
-#     Atomix.@atomic b[i] += prev[i]*volume*rdt
-
+# @inline function scheme!(
+#     ::Type{Operator{F,P,I,Si}}, t
+#     )  where {F,P,I}
+#     # ap = term.sign*(-term.flux[cIndex] * cell.volume)
+#     # nzval_array[cIndex] += ap
+#     quote
+#         nothing
 #     end
 # end
-
-# @inline function schemes_and_sources!(
-#     term::Operator{F,P,I,Laplacian{Linear}}, 
-#     nTerms, nSources, offset, fzero, ione, terms, rowval_array, colptr_array, nzval_array, cIndex, nIndex,  b, faces,
-#     cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-#     backend, runtime, prev)  where {F,P,I}
-
-#     kernel! = schemes_laplacian_linear!(backend)
-#     kernel!(term, nTerms, nSources, offset, fzero, ione, terms, rowval_array, colptr_array, nzval_array, cIndex, nIndex,  b, faces,
-#             cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-#             backend, runtime, prev, ndrange = length(cells))
-#     KernelAbstractions.synchronize(backend)
-# end
-
-# @kernel function schemes_laplacian_linear!(term, nTerms, nSources, offset, fzero, ione, terms,  rowval_array, colptr_array, nzval_array, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime, prev)
-#     i = @index(Global)
-#     # (; terms) = model
-
-#     @inbounds begin
-#         # cell = cells[i]
-#         # @synchronize
-#         (; faces_range, volume) = cells[i]
-
-#         for fi in faces_range
-#             fID = cell_faces[fi]
-#             ns = cell_nsign[fi] # normal sign
-#             (; area, delta) = faces[fID]
-#             nID = cell_neighbours[fi]
-#             cellN = cells[nID]
-
-#             cIndex = nzval_index(colptr_array, rowval_array, i, i, ione)
-#             nIndex = nzval_index(colptr_array, rowval_array, nID, i, ione)
-
-#             # scheme code
-#             ap = term.sign*(-term.flux[fID] * area)/delta
-#             Atomix.@atomic nzval_array[cIndex] += ap
-#             Atomix.@atomic nzval_array[nIndex] += -ap
-#         end
-
-#     # scheme_scource loop
-#     # no scheme_source code for linear laplacian scheme
-
-#     end
-# end
-
-# @inline function schemes_and_sources!(
-#     term::Operator{F,P,I,Divergence{Linear}}, 
-#     nTerms, nSources, offset, fzero, ione, terms, rowval_array, colptr_array, nzval_array, cIndex, nIndex,  b, faces,
-#     cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-#     backend, runtime, prev)  where {F,P,I}
-
-#     kernel! = schemes_divergence_linear!(backend)
-#     kernel!(term, nTerms, nSources, offset, fzero, ione, terms, rowval_array, colptr_array, nzval_array, cIndex, nIndex,  b, faces,
-#             cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-#             backend, runtime, prev, ndrange = length(cells))
-#     KernelAbstractions.synchronize(backend)
-# end
-
-# @kernel function schemes_divergence_linear!(term, nTerms, nSources, offset, fzero, ione, terms,  rowval_array, colptr_array, nzval_array, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime, prev)
-#     i = @index(Global)
-#     # (; terms) = model
-
-#     @inbounds begin
-#         # cell = cells[i]
-#         # @synchronize
-#         (; faces_range, volume) = cells[i]
-
-#         for fi in faces_range
-#             fID = cell_faces[fi]
-#             ns = cell_nsign[fi] # normal sign
-#             (; centre) = faces[fID]
-#             nID = cell_neighbours[fi]
-#             cellN = cells[nID]
-
-#             cIndex = nzval_index(colptr_array, rowval_array, i, i, ione)
-#             nIndex = nzval_index(colptr_array, rowval_array, nID, i, ione)
-
-#             # scheme code
-#             xf = centre
-#             xC = cells[i].centre
-#             xN = cellN.centre
-#             weight = norm(xf - xC)/norm(xN - xC)
-#             one_minus_weight = one(eltype(weight)) - weight
-#             ap = term.sign*(term.flux[fID]*ns)
-#             Atomix.@atomic nzval_array[cIndex] += ap*one_minus_weight
-#             Atomix.@atomic nzval_array[nIndex] += ap*weight
-
-#         end
-
-#     # scheme_scource loop
-#     # no scheme_source code for divergence linear scheme
-
-#     end
-# end
-
-# @inline function schemes_and_sources!(
-#     term::Operator{F,P,I,Divergence{Upwind}}, 
-#     nTerms, nSources, offset, fzero, ione, terms, rowval_array, colptr_array, nzval_array, cIndex, nIndex,  b, faces,
-#     cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-#     backend, runtime, prev)  where {F,P,I}
-
-#     kernel! = schemes_divergence_upwind!(backend)
-#     kernel!(term, nTerms, nSources, offset, fzero, ione, terms, rowval_array, colptr_array, nzval_array, cIndex, nIndex,  b, faces,
-#             cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-#             backend, runtime, prev, ndrange = length(cells))
-#     KernelAbstractions.synchronize(backend)
-# end
-
-# @kernel function schemes_divergence_upwind!(term, nTerms, nSources, offset, fzero, ione, terms,  rowval_array, colptr_array, nzval_array, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime, prev)
-#     i = @index(Global)
-#     # (; terms) = model
-
-#     @inbounds begin
-#         # cell = cells[i]
-#         # @synchronize
-#         (; faces_range, volume) = cells[i]
-
-#         for fi in faces_range
-#             fID = cell_faces[fi]
-#             ns = cell_nsign[fi] # normal sign
-#             # face = faces[fID]
-#             nID = cell_neighbours[fi]
-#             cellN = cells[nID]
-
-#             cIndex = nzval_index(colptr_array, rowval_array, i, i, ione)
-#             nIndex = nzval_index(colptr_array, rowval_array, nID, i, ione)
-
-#             # scheme code
-#             ap = term.sign*(term.flux[fID]*ns)
-#             Atomix.@atomic nzval_array[cIndex] += max(ap, 0.0)
-#             Atomix.@atomic nzval_array[nIndex] += -max(-ap, 0.0)
-
-#         end
-
-#     # scheme_scource loop
-#     # no scheme_source code for divergence upwind scheme
-
-#     end
-# end
-
-# @inline function schemes_and_sources!(
-#     term::Operator{F,P,I,Si}, 
-#     nTerms, nSources, offset, fzero, ione, terms, rowval_array, colptr_array, nzval_array, cIndex, nIndex,  b, faces,
-#     cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-#     backend, runtime, prev)  where {F,P,I}
-
-#     kernel! = schemes_si!(backend)
-#     kernel!(term, nTerms, nSources, offset, fzero, ione, terms, rowval_array, colptr_array, nzval_array, cIndex, nIndex,  b, faces,
-#             cells, cell_faces, cell_neighbours, cell_nsign, integer, float,
-#             backend, runtime, prev, ndrange = length(cells))
-#     KernelAbstractions.synchronize(backend)            
-# end
-
-# @kernel function schemes_si!(term, nTerms, nSources, offset, fzero, ione, terms,  rowval_array, colptr_array, nzval_array, cIndex, nIndex, b, faces, cells, cell_faces, cell_neighbours, cell_nsign, integer, float, backend, runtime, prev)
-#     i = @index(Global)
-#     # (; terms) = model
-
-#     @inbounds begin
-#         # cell = cells[i]
-#         # @synchronize
-#         (; faces_range, volume) = cells[i]
-
-#         for fi in faces_range
-#             fID = cell_faces[fi]
-#             ns = cell_nsign[fi] # normal sign
-#             # face = faces[fID]
-#             nID = cell_neighbours[fi]
-#             cellN = cells[nID]
-
-
-#             cIndex = nzval_index(colptr_array, rowval_array, i, i, ione)
-#             nIndex = nzval_index(colptr_array, rowval_array, nID, i, ione)
-
-#             # scheme code
-#             phi = term.phi
-#             # ap = max(flux, 0.0)
-#             # ab = min(flux, 0.0)*phi[cID]
-#             flux = term.sign*term.flux[i]*cell.volume # indexed with cID
-#             Atomix.@atomic nzval_array[cIndex] += flux # indexed with cIndex
-#             # flux = term.sign*term.flux[cID]*cell.volume*phi[cID]
-#             # b[cID] -= flux
-
-#         end
-
-#     # scheme_scource loop
-#     # no scheme_source code for si scheme
-
-#     end
-# end
-
-# @kernel function sources!(field, sign, cells, b)
-#     i = @index(Global)
-
-#     @inbounds begin
-#         # cell = cells[i]
-#         # @synchronize
-#         volume = cells[i].volume
-#         Atomix.@atomic b[i] += sign*field[i]*volume
+# @inline function scheme_source!(
+#     ::Type{Operator{F,P,I,Si}}, t)  where {F,P,I}
+#     quote
+#         # term = terms[$t]
+#         # phi = term.phi
+#         # flux = term.sign*term.flux[cID]*cell.volume # indexed with cID
+#         # Atomix.@atomic nzval_array[cIndex] += flux # indexed with cIndex
 #     end
 # end
 

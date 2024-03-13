@@ -181,17 +181,20 @@ function discretise!(eqn, prev, runtime)
     KernelAbstractions.synchronize(backend)
 
     kernel! = _discretise!(backend)
-    kernel!(model, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione, ndrange = length(mesh.cells))
+    # kernel!(model, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione, _scheme!, _scheme_source!, _sources!, ndrange = length(mesh.cells))
+    kernel!(model, model.terms, model.sources, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione; ndrange = length(mesh.cells))
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function _discretise!(model, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione)
+# @kernel function _discretise!(
+    # model::Model{TN,SN,T,S}, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione, gfunc_1::F1, gfunc_2::F2, gfunc_3::F3) where {TN,SN,T,S,F1,F2,F3}
+@kernel function _discretise!(
+    model::Model{TN,SN,T,S}, terms, sources, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione) where {TN,SN,T,S}
     i = @index(Global)
     
     (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
 
-
-    @inbounds begin
+    # @inbounds begin
         cell = cells[i]
         (; faces_range, volume) = cell
 
@@ -206,65 +209,136 @@ end
 
             nIndex = nzval_index(colptr_array, rowval_array, nID, i, ione)
 
-            _scheme!(model, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+            # gfunc_1(model, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+
+            # (; terms) = model
+            _scheme!(model, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+
+            
+
+
         end
-        # b_array[i] = fzero
-        _scheme_source!(model, b_array, nzval_array, cell, i, cIndex, prev, runtime)
-        _sources!(model, b_array, volume, i)
-    end
+        # gfunc_2(model, terms, b_array, nzval_array, cell, i, cIndex, prev, runtime)
+        # gfunc_3(model, sources, b_array, volume, i)
+
+        _scheme_source!(model, terms, b_array, nzval_array, cell, i, cIndex, prev, runtime)
+        _sources!(model, sources, b_array, volume, i)
+    # end
 end
 
-@generated function _scheme!(model::Model{TN,SN,T,S}, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime) where {TN,SN,T,S}
-    nTerms = TN
-    
-    assignment_block = Expr[]
-    
-    for t in 1:nTerms
+return_quote(x, t) = :(nothing)
+
+@generated function _scheme!(model::Model{TN,SN,T,S}, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime) where {TN,SN,T,S}
+    # Implementation 1
+
+    # nTerms = TN
+    # assignment_block = Expr[]
+    # for t in 1:nTerms
+    #     function_call_scheme = quote
+    #         # scheme!(model.terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+    #         scheme!(terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+    #     end
+    #     push!(assignment_block, function_call_scheme)
+    # end
+    # quote
+    #     $(assignment_block...)
+    # end
+
+    # # Implementation 2
+    out = Expr(:block)
+    for t in 1:TN
         function_call_scheme = quote
-            scheme!(model.terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+            # scheme!(model.terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+            scheme!(terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
         end
-        push!(assignment_block, function_call_scheme)
+        push!(out.args, function_call_scheme)
     end
-    
+    out
 
-    quote
-        $(assignment_block...)
-    end
+    # Implementation 3
+    # out = Expr(:block)
+    # for t in 1:TN
+    #     push!(out.args, scheme!(terms.types[t] , t))
+    # end
+    # push!(out.args, :(nothing))
+    # out
 end
 
-@generated function _scheme_source!(model::Model{TN,SN,T,S}, b, nzval_array, cell, cID, cIndex, prev, runtime) where {TN,SN,T,S}
-    nTerms = TN
+@generated function _scheme_source!(model::Model{TN,SN,T,S}, terms, b, nzval_array, cell, cID, cIndex, prev, runtime) where {TN,SN,T,S}
     
-    assign_source = Expr[]
+    # # Implementation 1
+    # nTerms = TN
+    # assign_source = Expr[]
+    # for t in 1:nTerms
+    #     function_call_scheme_source = quote
+    #         # scheme_source!(model.terms[$t], b, nzval_array, cell, cID, cIndex, prev, runtime)
+    #         scheme_source!(terms[$t], b, nzval_array, cell, cID, cIndex, prev, runtime)
+    #     end
+    #     push!(assign_source, function_call_scheme_source)
+    # end
+    # quote
+    #     $(assign_source...)
+    # end
 
-    for t in 1:nTerms
+    # Implementation 2
+    out = Expr(:block)
+    for t in 1:TN
         function_call_scheme_source = quote
-            scheme_source!(model.terms[$t], b, nzval_array, cell, cID, cIndex, prev, runtime)
+            # scheme_source!(model.terms[$t], b, nzval_array, cell, cID, cIndex, prev, runtime)
+            scheme_source!(terms[$t], b, nzval_array, cell, cID, cIndex, prev, runtime)
         end
-        push!(assign_source, function_call_scheme_source)
+        push!(out.args, function_call_scheme_source)
     end
+    out
 
-    quote
-        $(assign_source...)
-    end
+    # # Implementation 3
+    # out = Expr(:block)
+    # for t in 1:TN
+    #     push!(out.args, scheme_source!(terms.types[t] , t))
+    # end
+    # push!(out.args, :(nothing))
+    # out
 end
 
-@generated function _sources!(model::Model{TN,SN,T,S}, b, volume, cID) where {TN,SN,T,S}
-    nSources = SN
-    
-    add_source = Expr[]
+@generated function _sources!(model::Model{TN,SN,T,S}, sources, b, volume, cID) where {TN,SN,T,S}
+    # # Implementation 1
+    # nSources = SN
+    # add_source = Expr[]
+    # for s in 1:nSources
+    #     expression_call_sources = quote
+    #         # (; field, sign) = model.sources[$s]
+    #         (; field, sign) = sources[$s]
+    #         b[cID] += sign*field[cID]*volume
+    #     end
+    #     push!(add_source, expression_call_sources)
+    # end
+    # quote
+    #     $(add_source...)
+    # end
 
-    for s in 1:nSources
+    # Implementation 2
+    out = Expr(:block)
+    for s in 1:SN
         expression_call_sources = quote
-            (; field, sign) = model.sources[$s]
-            b[cID] += sign*field[cID]*volume
+            # (; field, sign) = model.sources[$s]
+            (; field, sign) = sources[$s]
+            Atomix.@atomic b[cID] += sign*field[cID]*volume
         end
-        push!(add_source, expression_call_sources)
+        push!(out.args, expression_call_sources)
     end
+    out
 
-    quote
-        $(add_source...)
-    end
+    # # Implementation 3
+    # out = Expr(:block)
+    # for s in 1:SN
+    #     expression_call_sources = quote
+    #         # (; field, sign) = model.sources[$s]
+    #         (; field, sign) = sources[$s]
+    #         b[cID] += sign*field[cID]*volume
+    #     end
+    #     push!(out.args, expression_call_sources)
+    # end
+    # out
 end
 
 @kernel function set_nzval!(nzval, fzero)

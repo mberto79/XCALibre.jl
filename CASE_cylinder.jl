@@ -5,7 +5,9 @@ using CUDA
 using KernelAbstractions
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
-mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
+mesh_file = "unv_sample_meshes/cylinder_d10mm_2mm.unv"
+# mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
+# mesh_file = "unv_sample_meshes/cylinder_d10mm_10-7.5-2mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
@@ -37,17 +39,19 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu));
 solvers = (
     U = set_solver(
         model.U;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.6,
+        rtol = 1e-4
     ),
     p = set_solver(
         model.p;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
+        solver      = CgSolver, #CgLanczosSolver, #CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.4,
+        rtol = 1e-4
     )
 );
 
@@ -56,7 +60,7 @@ schemes = (
     p = set_schemes(divergence=Upwind, gradient=Midpoint)
 );
 
-runtime = set_runtime(iterations=600, write_interval=600, time_step=1)
+runtime = set_runtime(iterations=600, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime);
@@ -66,11 +70,11 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-backend = CUDABackend()
+backend = CUDABackend() # 357 s
 # backend = CPU()
 
 # @time begin
-Rx, Ry, Rp, model = simple!(model, config, backend); #, pref=0.0)
+Rx, Ry, Rp, model1 = simple!(model, config, backend); #, pref=0.0)
 # end
 
 plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))

@@ -37,7 +37,7 @@ function update_preconditioner!(P::Preconditioner{NormDiagonal,M,PT,S}, mesh) wh
     # rowval, colptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
     nzval_array = _nzval(A)
     colptr_array = _colptr(A)
-    m_array = m(A)
+    m_array = _m(A)
 
     storage = P.storage
 

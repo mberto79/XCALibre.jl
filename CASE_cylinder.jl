@@ -42,15 +42,15 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.8,
-        rtol = 1e-3
+        relax       = 0.6,
+        rtol = 1e-4
     ),
     p = set_solver(
         model.p;
-        solver      = CgLanczosSolver, #CgSolver, # BicgstabSolver, GmresSolver
+        solver      = CgSolver, #CgLanczosSolver, #CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.2,
+        relax       = 0.4,
         rtol = 1e-4
     )
 );

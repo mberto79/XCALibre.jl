@@ -15,11 +15,11 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 @assign! model U (
     Dirichlet(:inlet, velocity),
-    Dirichlet(:wall_top, [0.0, 0.0, 0.0]),
-    Dirichlet(:wall_1, [0.0, 0.0, 0.0]),
+    Neumann(:wall_top, 0.0),
+    Neumann(:wall_1, 0.0),
     Neumann(:outlet, 0.0),
-    Dirichlet(:wall_bottom, [0.0, 0.0, 0.0]),
-    Dirichlet(:wall_2, [0.0, 0.0, 0.0])
+    Neumann(:wall_bottom, 0.0),
+    Neumann(:wall_2, 0.0),
 )
 
  @assign! model p (
@@ -39,15 +39,15 @@ schemes = (
 solvers = (
     U = set_solver(
         model.U;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = DILU(),
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
     ),
     p = set_solver(
         model.p;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = LDL(),
+        solver      = CgSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
     )
@@ -64,7 +64,7 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-Rx, Ry, Rz, Rp = simple!(model, config)
+Rx, Ry, Rz, Rp, model1 = simple!(model, config)
 Rx
 Ry
 Rz

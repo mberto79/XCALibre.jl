@@ -230,24 +230,26 @@ end
 # end
 
 function correct_velocity!(U, Hv, ∇p, rD)
-    Ux = U.x; Uy = U.y; Hvx = Hv.x; Hvy = Hv.y
+    Ux = U.x; Uy = U.y; Uz = U.z; Hvx = Hv.x; Hvy = Hv.y; Hvz = Hv.z
     dpdx = ∇p.result.x; dpdy = ∇p.result.y; rDvalues = rD.values
     backend = _get_backend(U.mesh)
 
     kernel! = correct_velocity_kernel!(backend)
-    kernel!(rDvalues, Ux, Hvx, dpdx, Uy, Hvy, dpdy, ndrange = length(Ux))
+    kernel!(rDvalues, Ux, Hvx, dpdx, Uy, Hvy, dpdy, Uz, Hvz, dpdz, ndrange = length(Ux))
     KernelAbstractions.synchronize(backend)
 end
 
 @kernel function correct_velocity_kernel!(rDvalues,
                                           Ux, Hvx, dpdx,
-                                          Uy, Hvy, dpdy)
+                                          Uy, Hvy, dpdy,
+                                          Uz, Hvz, dpdz)
     i = @index(Global)
     
     @inbounds begin
         rDvalues_i = rDvalues[i]
         Ux[i] = Hvx[i] - dpdx[i]*rDvalues_i
         Uy[i] = Hvy[i] - dpdy[i]*rDvalues_i
+        Uz[i] = Hvz[i] - dpdz[i]*rDvalues_i
     end
 end
 
@@ -263,18 +265,18 @@ end
 #     end
 # end
 
-remove_pressure_source!(ux_eqn::M1, uy_eqn::M2, ∇p) where {M1,M2} = begin # Extend to 3D
+remove_pressure_source!(ux_eqn::M1, uy_eqn::M2, uz_eqn::M3, ∇p) where {M1,M2,M3} = begin # Extend to 3D
     backend = _get_backend(get_phi(ux_eqn).mesh)
     cells = get_phi(ux_eqn).mesh.cells
     source_sign = get_source_sign(ux_eqn, 1)
-    dpdx, dpdy = ∇p.result.x, ∇p.result.y
-    bx, by = ux_eqn.equation.b, uy_eqn.equation.b
+    dpdx, dpdy, dpdz = ∇p.result.x, ∇p.result.y, ∇p.result.z
+    bx, by, bz = ux_eqn.equation.b, uy_eqn.equation.b, uz_eqn.equation.b
 
     kernel! = remove_pressure_source_kernel!(backend)
-    kernel!(cells, source_sign, dpdx, dpdy, bx, by, ndrange = length(bx))
+    kernel!(cells, source_sign, dpdx, dpdy, dpdz, bx, by, bz, ndrange = length(bx))
 end
 
-@kernel function remove_pressure_source_kernel!(cells, source_sign, dpdx, dpdy, bx, by) #Extend to 3D
+@kernel function remove_pressure_source_kernel!(cells, source_sign, dpdx, dpdy, dpdz, bx, by, bz) #Extend to 3D
     # i ranges from 1 to number of elements in bx
     i = @index(Global)
 
@@ -282,6 +284,7 @@ end
         (; volume) = cells[i]
         Atomix.@atomic bx[i] -= source_sign*dpdx[i]*volume
         Atomix.@atomic by[i] -= source_sign*dpdy[i]*volume
+        Atomix.@atomic bz[i] -= source_sign*dpdz[i]*volume
     end
 end
 
@@ -317,7 +320,7 @@ end
 # end
 
 
-function H!(Hv, v::VF, ux_eqn, uy_eqn) where VF<:VectorField # Extend to 3D!
+function H!(Hv, v::VF, ux_eqn, uy_eqn, uz_eqn) where VF<:VectorField # Extend to 3D!
     (; x, y, z, mesh) = Hv 
     (; cells, faces) = mesh
     (; cells, cell_neighbours, faces) = mesh
@@ -334,8 +337,14 @@ function H!(Hv, v::VF, ux_eqn, uy_eqn) where VF<:VectorField # Extend to 3D!
     nzval_y = _nzval(Ay)
     colptr_y = _colptr(Ay)
     rowval_y = _rowval(Ay)
+
+    Az = _A(uz_eqn)
+    bz = _b(uz_eqn)
+    nzval_z = _nzval(Az)
+    colptr_z = _colptr(Az)
+    rowval_z = _rowval(Az)
     
-    vx, vy = v.x, v.y
+    vx, vy, vz = v.x, v.y, v.z
     F = _get_float(mesh)
     ione = one(_get_int(mesh))
     
@@ -343,12 +352,14 @@ function H!(Hv, v::VF, ux_eqn, uy_eqn) where VF<:VectorField # Extend to 3D!
     kernel!(ione, cells, F, cell_neighbours,
             nzval_x, colptr_x, rowval_x, bx, vx,
             nzval_y, colptr_y, rowval_y, by, vy,
+            nzval_z, colptr_z, rowval_z, bz, vz,
             x, y, z, ndrange = length(cells))
 end
 
 @kernel function H_kernel!(ione, cells, F, cell_neighbours,
                            nzval_x, colptr_x, rowval_x, bx, vx,
                            nzval_y, colptr_y, rowval_y, by, vy,
+                           nzval_z, colptr_z, rowval_z, bz, vz,
                            x, y, z) #Extend to 3D!
     i = @index(Global)
 
@@ -361,8 +372,10 @@ end
             nID = cell_neighbours[ni]
             xIndex = nzval_index(colptr_x, rowval_x, nID, i, ione)
             yIndex = nzval_index(colptr_y, rowval_y, nID, i, ione)
+            zIndex = nzval_index(colptr_z, rowval_z, nID, i, ione)
             sumx += nzval_x[xIndex]*vx[nID]
             sumy += nzval_y[yIndex]*vy[nID]
+            sumz += nzval_z[zIndex]*vz[nID]
         end
 
         # D = view(Ax, i, i)[1] # add check to use max of Ax or Ay)
@@ -372,11 +385,11 @@ end
         # rD = volume/D
         x[i] = (bx[i] - sumx)*rD
         y[i] = (by[i] - sumy)*rD
-        z[i] = zero(F)
+        z[i] = (bz[i] - sumz)*rD
     end
 end
 
-courant_number(U, mesh::Mesh2, runtime) = begin
+courant_number(U, mesh::AbstractMesh, runtime) = begin
     dt = runtime.dt 
     co = zero(_get_float(mesh))
     # courant_max = zero(_get_float(mesh))

@@ -328,11 +328,11 @@ function interpolate!(psif::FaceVectorField, psi::VectorField)
     # Launch interpolate kernel
     backend = _get_backend(mesh)
     kernel! = interpolate_Vector!(backend)
-    kernel!(xv, yv, xf, yf, faces, ndrange = length(faces))
+    kernel!(xv, yv, zv, xf, yf, zf, faces, ndrange = length(faces))
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function interpolate_Vector!(xv, yv, xf, yf, faces)
+@kernel function interpolate_Vector!(xv, yv, zv, xf, yf, zf, faces)
     # Define index for thread
     i = @index(Global)
 
@@ -344,6 +344,7 @@ end
         cID1 = ownerCells[1]; cID2 = ownerCells[2]
         x1 = xv[cID1]; x2 = xv[cID2]
         y1 = yv[cID1]; y2 = yv[cID2]
+        z1 = zv[cID1]; z2 = zv[cID2]
 
         # Calculate one minus weight
         one_minus_weight = 1 - weight
@@ -351,6 +352,7 @@ end
         # Update psif x and y arrays for interpolation (IMPLEMENT 3D)
         xf[i] = weight*x1 + one_minus_weight*x2 # check weight is used correctly!
         yf[i] = weight*y1 + one_minus_weight*y2 # check weight is used correctly!
+        zf[i] = weight*z1 + one_minus_weight*z2 # check weight is used correctly!
     end
 end
 

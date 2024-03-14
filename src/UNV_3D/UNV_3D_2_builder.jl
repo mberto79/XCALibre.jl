@@ -10,8 +10,8 @@ function build_mesh3D(unv_mesh)
 
     node_cells=generate_node_cells(points,volumes)
 
-    #faces=generate_internal_faces(volumes,faces)
-    faces=quad_internal_faces(volumes,faces)
+    faces=generate_internal_faces(volumes,faces)
+    #faces=quad_internal_faces(volumes,faces)
 
     face_nodes=Vector{Int}(generate_face_nodes(faces))
     cell_nodes=Vector{Int}(generate_cell_nodes(volumes))

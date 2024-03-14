@@ -1,4 +1,5 @@
 Manifest.toml
+.vscode/*
 data/mesh.jld2
 data/fields.jld2
 results.vtk

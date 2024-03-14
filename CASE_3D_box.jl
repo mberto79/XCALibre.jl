@@ -3,11 +3,11 @@ using FVM_1D
 using Krylov
 using CUDA
 
-#unv_mesh="src/UNV_3D/5_cell_new_boundaries.unv"
-unv_mesh="src/UNV_3D/800_cell_new_boundaries.unv"
+#mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
+mesh_file="src/UNV_3D/800_cell_new_boundaries.unv"
 mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1.unv"
 
-mesh=build_mesh3D(unv_mesh)
+mesh=build_mesh3D(mesh_file)
 
 velocity = [10,0.0,0.0]
 nu=1e-3
@@ -17,20 +17,14 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 @assign! model U (
     Dirichlet(:inlet, velocity),
-    Neumann(:wall_top, 0.0),
-    Neumann(:wall_1, 0.0),
     Neumann(:outlet, 0.0),
-    Neumann(:wall_bottom, 0.0),
-    Neumann(:wall_2, 0.0),
+    Neumann(:sides, 0.0)
 )
 
- @assign! model p (
+@assign! model p (
     Neumann(:inlet, 0.0),
-    Neumann(:wall_top, 0.0),
-    Neumann(:wall_1, 0.0),
     Dirichlet(:outlet, 0.0),
-    Neumann(:wall_bottom, 0.0),
-    Neumann(:wall_2, 0.0)
+    Neumann(:sides, 0.0)
 )
 
 schemes = (

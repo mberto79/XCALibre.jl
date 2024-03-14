@@ -645,7 +645,7 @@ end
 
 
 function generate_boundaries(boundaryElements,boundary_face_range)
-    boundaries=Boundary[]
+    boundaries=Boundary{Symbol, UnitRange{Int64}}[]
     for i=1:length(boundaryElements)
         push!(boundaries,Boundary(Symbol(boundaryElements[i].name),boundary_face_range[i]))
     end
@@ -730,7 +730,7 @@ end
 
 #Generate nodes
 function generate_nodes(points,volumes)
-    nodes=Node[]
+    nodes=Node{SVector{3,Float64}, UnitRange{Int64}}[]
     cells_range=nodes_cells_range!(points,volumes)
     @inbounds for i ∈ 1:length(points)
         #point=points[i].xyz
@@ -925,7 +925,7 @@ end
 
 #Generate cells
 function generate_cells(volumes,centre_of_cells,volume_of_cells,cell_nodes_range,cell_faces_range)
-    cells=Cell[]
+    cells=Cell{Float64,SVector{3,Float64},UnitRange{Int64}}[]
     for i=1:length(volumes)
         push!(cells,Cell(centre_of_cells[i],volume_of_cells[i],cell_nodes_range[i],cell_faces_range[i]))
     end
@@ -933,7 +933,7 @@ function generate_cells(volumes,centre_of_cells,volume_of_cells,cell_nodes_range
 end
 
 function generate_faces(faces,face_nodes_range,faces_centre,faces_normal,faces_area,face_ownerCells,faces_e,faces_delta,faces_weight)
-    faces3D=Face3D[]
+    faces3D=Face3D{Float64,SVector{2,Int64},SVector{3,Float64},UnitRange{Int64}}[]
     for i=1:length(faces)
         push!(faces3D,Face3D(face_nodes_range[i],SVector(face_ownerCells[i,1],face_ownerCells[i,2]),faces_centre[i],faces_normal[i],faces_e[i],faces_area[i],faces_delta[i],faces_weight[i]))
     end

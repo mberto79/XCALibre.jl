@@ -231,7 +231,7 @@ end
 
 function correct_velocity!(U, Hv, ∇p, rD)
     Ux = U.x; Uy = U.y; Uz = U.z; Hvx = Hv.x; Hvy = Hv.y; Hvz = Hv.z
-    dpdx = ∇p.result.x; dpdy = ∇p.result.y; rDvalues = rD.values
+    dpdx = ∇p.result.x; dpdy = ∇p.result.y; dpdz = ∇p.result.z; rDvalues = rD.values
     backend = _get_backend(U.mesh)
 
     kernel! = correct_velocity_kernel!(backend)
@@ -366,6 +366,7 @@ end
     @inbounds begin
         sumx = zero(F)
         sumy = zero(F)
+        sumz = zero(F)
         (; faces_range) = cells[i]
 
         for ni ∈ faces_range
@@ -380,12 +381,16 @@ end
 
         # D = view(Ax, i, i)[1] # add check to use max of Ax or Ay)
         DIndex = nzval_index(colptr_x, rowval_x, i, i, ione)
-        D = nzval_x[DIndex]
-        rD = 1/D
+        Dx = nzval_x[DIndex]
+        Dy = nzval_y[DIndex]
+        Dz = nzval_z[DIndex]
+        rDx = 1/Dx
+        rDy = 1/Dy
+        rDz = 1/Dz
         # rD = volume/D
-        x[i] = (bx[i] - sumx)*rD
-        y[i] = (by[i] - sumy)*rD
-        z[i] = (bz[i] - sumz)*rD
+        x[i] = (bx[i] - sumx)*rDx
+        y[i] = (by[i] - sumy)*rDy
+        z[i] = (bz[i] - sumz)*rDz
     end
 end
 

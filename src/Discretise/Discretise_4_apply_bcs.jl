@@ -113,7 +113,7 @@ end
     end
 end
 
-@generated function boundary_indices(mesh::M, BCs::B) where {M<:Mesh2,B}
+@generated function boundary_indices(mesh::M, BCs::B) where {M<:AbstractMesh,B}
     unpacked_BCs = []
     for i ∈ 1:length(BCs.parameters)
         unpack = quote

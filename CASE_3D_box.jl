@@ -1,15 +1,16 @@
-using FVM_1D
 using Plots
+using FVM_1D
 using Krylov
+using CUDA
 
 #unv_mesh="src/UNV_3D/5_cell_new_boundaries.unv"
 unv_mesh="src/UNV_3D/800_cell_new_boundaries.unv"
 
 mesh=build_mesh3D(unv_mesh)
 
-velocity = [2.0,0.0,0.0]
+velocity = [10,0.0,0.0]
 nu=1e-3
-Re=velocity[1]*0.1/nu
+Re=velocity[1]*10/nu
 
 model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
@@ -42,19 +43,22 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.7,
+        rtol = 1e-4
     ),
     p = set_solver(
         model.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.2,
+        relax       = 0.3,
+        rtol = 1e-4
+
     )
 )
 
 runtime = set_runtime(
-    iterations=1000, time_step=1, write_interval=-1)
+    iterations=2, time_step=1, write_interval=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -64,7 +68,9 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-Rx, Ry, Rz, Rp, model1 = simple!(model, config)
+backend = CUDABackend()
+
+Rx, Ry, Rz, Rp, model1 = simple!(model, config, backend)
 Rx
 Ry
 Rz

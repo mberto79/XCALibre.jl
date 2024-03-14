@@ -17,7 +17,7 @@ function _convert_array!(arr, backend::CUDABackend)
 end
 
 # function total_boundary_faces(mesh::Mesh2{I,F}) where {I,F}
-function total_boundary_faces(mesh::Mesh2)
+function total_boundary_faces(mesh::AbstractMesh)
     (; boundaries) = mesh
     # nbfaces = zero(I)
     nbfaces = zero(_get_int(mesh))

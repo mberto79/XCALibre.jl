@@ -152,7 +152,7 @@ end
 #         )
 # end
 
-function sparse_matrix_connectivity(mesh::Mesh2)
+function sparse_matrix_connectivity(mesh::AbstractMesh)
     (; cells, cell_neighbours) = mesh
     nCells = length(cells)
     TI = _get_int(mesh) # would this result in regression (type identified inside func?)

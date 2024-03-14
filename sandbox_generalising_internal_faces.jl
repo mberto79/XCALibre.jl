@@ -6,8 +6,8 @@ using LinearAlgebra
 include("src/VTK_3D/VTU.jl")
 
 #unv_mesh="src/UNV_3D/5_cell_new_boundaries.unv"
-#unv_mesh="src/UNV_3D/800_cell_new_boundaries.unv"
-unv_mesh="src/UNV_3D/Quad_cell_new_boundaries.unv"
+unv_mesh="src/UNV_3D/800_cell_new_boundaries.unv"
+#unv_mesh="src/UNV_3D/Quad_cell_new_boundaries.unv"
 
 points,edges,faces,volumes,boundaryElements=load_3D(unv_mesh)
 
@@ -24,6 +24,12 @@ mesh.cell_neighbours
 mesh.cell_faces
 mesh.face_nodes
 mesh.faces[1].nodes_range
+mesh.node_cells
+mesh.nodes[4].cells_range
+
+mesh.faces[1].ownerCells
+mesh.boundaries
+mesh.boundary_cellsID[1]
 
 
 name="test_vtu"

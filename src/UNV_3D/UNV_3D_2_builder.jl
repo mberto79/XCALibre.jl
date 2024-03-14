@@ -530,118 +530,118 @@ function generate_cell_neighbours(cells,cell_faces)
     return cell_neighbours
 end
 
-# function generate_internal_faces(volumes,faces)
-#     store_cell_faces=Int[]
-#     store_faces=Int[]
+function generate_internal_faces(volumes,faces)
+    store_cell_faces=Int[]
+    store_faces=Int[]
     
-#     for i=1:length(volumes)
-#     cell=sort(volumes[i].volumes)
-#     push!(store_cell_faces,cell[1],cell[2],cell[3])
-#     push!(store_cell_faces,cell[1],cell[2],cell[4])
-#     push!(store_cell_faces,cell[1],cell[3],cell[4])
-#     push!(store_cell_faces,cell[2],cell[3],cell[4])
-#     end
-    
-#     for i=1:length(faces)
-#         face=sort(faces[i].faces)
-#         push!(store_faces,face[1],face[2],face[3])
-#     end
-
-#     range=[]
-
-#     x=0
-#     for i=1:length(store_cell_faces)/3
-#         store=UnitRange(x+1:x+3)
-#         x=x+3
-#         push!(range,store)
-#     end
-
-#     faces1=[]
-
-#     for i=1:length(range)
-#         face1=store_cell_faces[range[i]]
-#         for ic=1:length(range)
-#             face2=store_cell_faces[range[ic]]
-#             store=[]
-    
-#             push!(store,face2[1] in face1)
-#             push!(store,face2[2] in face1)
-#             push!(store,face2[3] in face1)
-    
-#             count1=count(store)
-    
-#             if count1!=3
-#                 push!(faces1,face1)
-#             end
-#         end
-#     end
-
-#     all_faces=unique(faces1)
-
-#     store1_faces=[]
-#     for i=1:length(faces)
-#         push!(store1_faces,sort(faces[i].faces))
-#     end
-
-#     all_faces=sort(all_faces)
-#     store1_faces=sort(store1_faces)
-    
-#     internal_faces=setdiff(all_faces,store1_faces)
-    
-#     for i=1:length(internal_faces)
-#         push!(faces,UNV_3D.Face(faces[end].faceindex+1,faces[end].faceCount,internal_faces[i]))
-#     end
-#     return faces
-# end
-
-function quad_internal_faces(volumes,faces)
-    store_cell_faces1=[]
-
     for i=1:length(volumes)
-        cell_faces=zeros(Int,6,4)
+    cell=sort(volumes[i].volumes)
+    push!(store_cell_faces,cell[1],cell[2],cell[3])
+    push!(store_cell_faces,cell[1],cell[2],cell[4])
+    push!(store_cell_faces,cell[1],cell[3],cell[4])
+    push!(store_cell_faces,cell[2],cell[3],cell[4])
+    end
+    
+    for i=1:length(faces)
+        face=sort(faces[i].faces)
+        push!(store_faces,face[1],face[2],face[3])
+    end
 
-        cell_faces[1,1:4]=volumes[i].volumes[1:4]
-        cell_faces[2,1:4]=volumes[i].volumes[5:8]
-        cell_faces[3,1:2]=volumes[i].volumes[1:2]
-        cell_faces[3,3:4]=volumes[i].volumes[5:6]
-        cell_faces[4,1:2]=volumes[i].volumes[3:4]
-        cell_faces[4,3:4]=volumes[i].volumes[7:8]
-        cell_faces[5,1:2]=volumes[i].volumes[2:3]
-        cell_faces[5,3:4]=volumes[i].volumes[6:7]
-        cell_faces[6,1]=volumes[i].volumes[1]
-        cell_faces[6,2]=volumes[i].volumes[4]
-        cell_faces[6,3]=volumes[i].volumes[5]
-        cell_faces[6,4]=volumes[i].volumes[8]
+    range=[]
 
-        for ic=1:6
-            push!(store_cell_faces1,cell_faces[ic,:])
+    x=0
+    for i=1:length(store_cell_faces)/3
+        store=UnitRange(x+1:x+3)
+        x=x+3
+        push!(range,store)
+    end
+
+    faces1=[]
+
+    for i=1:length(range)
+        face1=store_cell_faces[range[i]]
+        for ic=1:length(range)
+            face2=store_cell_faces[range[ic]]
+            store=[]
+    
+            push!(store,face2[1] in face1)
+            push!(store,face2[2] in face1)
+            push!(store,face2[3] in face1)
+    
+            count1=count(store)
+    
+            if count1!=3
+                push!(faces1,face1)
+            end
         end
     end
 
-    store_cell_faces1
+    all_faces=unique(faces1)
 
-    sorted_cell_faces=[]
-    for i=1:length(store_cell_faces1)
-
-        push!(sorted_cell_faces,sort(store_cell_faces1[i]))
-    end
-
-    sorted_cell_faces
-
-    faces
-    sorted_faces=[]
+    store1_faces=[]
     for i=1:length(faces)
-        push!(sorted_faces,sort(faces[i].faces))
+        push!(store1_faces,sort(faces[i].faces))
     end
-    sorted_faces
 
-    internal_faces=setdiff(sorted_cell_faces,sorted_faces)
-
+    all_faces=sort(all_faces)
+    store1_faces=sort(store1_faces)
+    
+    internal_faces=setdiff(all_faces,store1_faces)
+    
     for i=1:length(internal_faces)
         push!(faces,UNV_3D.Face(faces[end].faceindex+1,faces[end].faceCount,internal_faces[i]))
     end
     return faces
 end
+
+# function quad_internal_faces(volumes,faces)
+#     store_cell_faces1=[]
+
+#     for i=1:length(volumes)
+#         cell_faces=zeros(Int,6,4)
+
+#         cell_faces[1,1:4]=volumes[i].volumes[1:4]
+#         cell_faces[2,1:4]=volumes[i].volumes[5:8]
+#         cell_faces[3,1:2]=volumes[i].volumes[1:2]
+#         cell_faces[3,3:4]=volumes[i].volumes[5:6]
+#         cell_faces[4,1:2]=volumes[i].volumes[3:4]
+#         cell_faces[4,3:4]=volumes[i].volumes[7:8]
+#         cell_faces[5,1:2]=volumes[i].volumes[2:3]
+#         cell_faces[5,3:4]=volumes[i].volumes[6:7]
+#         cell_faces[6,1]=volumes[i].volumes[1]
+#         cell_faces[6,2]=volumes[i].volumes[4]
+#         cell_faces[6,3]=volumes[i].volumes[5]
+#         cell_faces[6,4]=volumes[i].volumes[8]
+
+#         for ic=1:6
+#             push!(store_cell_faces1,cell_faces[ic,:])
+#         end
+#     end
+
+#     store_cell_faces1
+
+#     sorted_cell_faces=[]
+#     for i=1:length(store_cell_faces1)
+
+#         push!(sorted_cell_faces,sort(store_cell_faces1[i]))
+#     end
+
+#     sorted_cell_faces
+
+#     faces
+#     sorted_faces=[]
+#     for i=1:length(faces)
+#         push!(sorted_faces,sort(faces[i].faces))
+#     end
+#     sorted_faces
+
+#     internal_faces=setdiff(sorted_cell_faces,sorted_faces)
+
+#     for i=1:length(internal_faces)
+#         push!(faces,UNV_3D.Face(faces[end].faceindex+1,faces[end].faceCount,internal_faces[i]))
+#     end
+#     return faces
+# end
 
 
 function generate_boundaries(boundaryElements,boundary_face_range)

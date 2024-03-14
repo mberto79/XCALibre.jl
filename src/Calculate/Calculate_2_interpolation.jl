@@ -60,21 +60,23 @@ end
 # end
 
 function adjust_boundary!(backend, BC::Dirichlet, phif::FaceScalarField, phi, boundaries, boundary_cellsID)
-    (; values) = phif
-    phif_values = values
-    (; values) = phi
-    phi_values = values
+    # (; values) = phif
+    phif_values = phif.values
+    # (; values) = phi
+    phi_values = phi.values
     kernel! = adjust_boundary_dirichlet_scalar!(backend)
-    kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = length(boundaries))
+    kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = 1)
+    KernelAbstractions.synchronize(backend)
 end
 
 function adjust_boundary!(backend, BC::Neumann, phif::FaceScalarField, phi, boundaries, boundary_cellsID)
-    (; values) = phif
-    phif_values = values
-    (; values) = phi
-    phi_values = values
+    # (; values) = phif
+    phif_values = phif.values
+    # (; values) = phi
+    phi_values = phi.values
     kernel! = adjust_boundary_neumann_scalar!(backend)
-    kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = length(boundaries))
+    kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = 1)
+    KernelAbstractions.synchronize(backend)
 end
 
 @kernel function adjust_boundary_dirichlet_scalar!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values)
@@ -177,13 +179,15 @@ end
 function adjust_boundary!(backend, BC::Dirichlet, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID)
     (; x, y, z) = psif
     kernel! = adjust_boundary_dirichlet_vector!(backend)
-    kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = length(boundaries))
+    kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = 1)
+    KernelAbstractions.synchronize(backend)
 end
 
 function adjust_boundary!(backend, BC::Neumann, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID)
     (; x, y, z) = psif
     kernel! = adjust_boundary_neumann_vector!(backend)
-    kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = length(boundaries))
+    kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = 1)
+    KernelAbstractions.synchronize(backend)
 end
 
 @kernel function adjust_boundary_dirichlet_vector!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z)
@@ -257,6 +261,7 @@ function interpolate!(phif::FaceScalarField, phi::ScalarField)
     backend = _get_backend(mesh)
     kernel! = interpolate_Scalar!(backend)
     kernel!(fvals, vals, faces, ndrange = length(faces))
+    KernelAbstractions.synchronize(backend)
 end
 
 @kernel function interpolate_Scalar!(fvals, vals, faces)
@@ -304,11 +309,18 @@ end
 ## Kernel code
 function interpolate!(psif::FaceVectorField, psi::VectorField)
     # Extract x, y, z, values from FaceVectorField
-    (; mesh, x, y, z) = psif
-    xf = x; yf = y; zf = z; #Redefine x, y, z values to be used in kernel
+    (; mesh) = psif
+    # xf = x; yf = y; zf = z; 
+    #Redefine x, y, z values to be used in kernel
+    xf = psif.x
+    yf = psif.y
+    zf = psif.z
 
     # Extract x, y, z, values from VectorField
-    (; x, y, z) = psi
+    # (; x, y, z) = psi
+    xv = psi.x
+    yv = psi.y
+    zv = psi.z
 
     #Extract faces array from mesh
     faces = mesh.faces
@@ -316,10 +328,11 @@ function interpolate!(psif::FaceVectorField, psi::VectorField)
     # Launch interpolate kernel
     backend = _get_backend(mesh)
     kernel! = interpolate_Vector!(backend)
-    kernel!(x, y, xf, yf, faces, ndrange = length(faces))
+    kernel!(xv, yv, xf, yf, faces, ndrange = length(faces))
+    KernelAbstractions.synchronize(backend)
 end
 
-@kernel function interpolate_Vector!(x, y, xf, yf, faces)
+@kernel function interpolate_Vector!(xv, yv, xf, yf, faces)
     # Define index for thread
     i = @index(Global)
 
@@ -329,8 +342,8 @@ end
 
         # Define indices for initial x and y values from psi struct
         cID1 = ownerCells[1]; cID2 = ownerCells[2]
-        x1 = x[cID1]; x2 = x[cID2]
-        y1 = y[cID1]; y2 = y[cID2]
+        x1 = xv[cID1]; x2 = xv[cID2]
+        y1 = yv[cID1]; y2 = yv[cID2]
 
         # Calculate one minus weight
         one_minus_weight = 1 - weight

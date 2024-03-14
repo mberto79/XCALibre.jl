@@ -10,6 +10,8 @@ using ProgressMeter
 using Printf
 using CUDA
 using KernelAbstractions
+using Atomix
+using Adapt
 
 using FVM_1D.Mesh
 using FVM_1D.Fields

@@ -137,6 +137,7 @@ function interpolate_midpoint!(phif::FaceScalarField, phi::ScalarField)
     backend = _get_backend(mesh)
     kernel! = interpolate_midpoint_scalar!(backend)
     kernel!(faces, phif, phi, ndrange = length(faces))
+    KernelAbstractions.synchronize(backend)
 end
 
 @kernel function interpolate_midpoint_scalar!(faces, phif, phi)
@@ -210,6 +211,7 @@ function correct_interpolation!(dx, dy, dz, phif, phi)
     backend = _get_backend(mesh)
     kernel! = correct_interpolation_kernel!(backend)
     kernel!(faces, cells, nbfaces, phic, F, weight, dx, dy, dz, values, ndrange = length(faces)-nbfaces)
+    KernelAbstractions.synchronize(backend)
 end
 
 @kernel function correct_interpolation_kernel!(faces, cells, nbfaces, phic, F, weight, dx, dy, dz, values)

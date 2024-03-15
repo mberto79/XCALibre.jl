@@ -10,5 +10,6 @@ using KernelAbstractions
 # using FVM_1D.Calculate
 
 include("VTK_writer.jl")
+include("VTK_writer_3D.jl")
 
 end

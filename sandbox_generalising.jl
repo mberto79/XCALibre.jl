@@ -2,9 +2,10 @@ using FVM_1D.UNV_3D
 using StaticArrays
 using Statistics
 using LinearAlgebra
+include("src/VTK_3D/VTU.jl")
 
 unv_mesh="src/UNV_3D/5_cell_new_boundaries.unv"
-#unv_mesh="src/UNV_3D/800_cell_new_boundaries.unv"
+unv_mesh="src/UNV_3D/800_cell_new_boundaries.unv"
 #unv_mesh="src/UNV_3D/Quad_cell_new_boundaries.unv"
 
 points,edges,faces,volumes,boundaryElements=load_3D(unv_mesh)
@@ -17,7 +18,48 @@ boundaryElements
 
 mesh=build_mesh3D(unv_mesh)
 
-mesh.faces
+mesh.cells[1].faces_range
+mesh.cell_faces
+mesh.faces[3].ownerCells
+mesh.cells[1].nodes_range
+mesh.face_nodes
+
+
+mesh.face_nodes[mesh.faces[1].nodes_range]
+name="test_vtu"
+write_vtu(name,mesh)
+
+length(mesh.faces[3].nodes_range)
+
+store_faces=[]
+
+for i=1:length(mesh.cells)
+    store_faces=[]
+    for id=1:length(mesh.faces)
+        if mesh.faces[id].ownerCells[1]==i || mesh.faces[id].ownerCells[2]==i
+            push!(store_faces,id)
+        end
+    end
+end
+
+store_number=[]
+        for i=1:length(mesh.cells)
+            store_faces=[]
+            for id=1:length(mesh.faces)
+                if mesh.faces[id].ownerCells[1]==i || mesh.faces[id].ownerCells[2]==i
+                    push!(store_faces,id)
+                end
+            end
+            #write(io,"      $(length(store_faces))\n")
+            for ic=1:length(store_faces)
+            #write(io,"      $(length(mesh.faces[store_faces[ic]].nodes_range)) $(join(mesh.face_nodes[mesh.faces[store_faces[ic]].nodes_range].-1," "))\n")
+            push!(store_number,(length(store_faces))+length(mesh.faces[store_faces[ic]].nodes_range)+length(mesh.face_nodes[mesh.faces[store_faces[ic]].nodes_range]))
+            end
+        end
+
+store_number
+        store_faces
+dsad
 
 # area_store=[]
 # for i=1:length(faces)

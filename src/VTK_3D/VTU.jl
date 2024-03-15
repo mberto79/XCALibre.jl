@@ -67,27 +67,43 @@ function write_vtu(name,mesh)
         end
         write(io,"     </DataArray>\n")
         write(io,"     <DataArray type=\"$(I64)\" Name=\"$(faces)\" format=\"$(format)\">\n")
-        #write(io,"      $(length(mesh.faces))\n")
-        #for i=1:length(mesh.faces)
-            #write(io,"      $(length(mesh.faces[i].nodes_range)) $(join(mesh.face_nodes[length(mesh.faces[i].nodes_range)*i-length(mesh.faces[i].nodes_range)+1:length(mesh.faces[i].nodes_range)*i].-1," "))\n")
-        #end
-        #for i=1:length(mesh.faces)
-            #write(io,"      $(length(mesh.faces[i].nodes_range)) $(join(mesh.face_nodes[mesh.faces[i].nodes_range[1]:mesh.faces[i].nodes_range[end]].-1," "))\n")
-        #end
+        
+        # for i=1:length(mesh.cells)
+        #     write(io,"      $(length(mesh.cells[i].faces_range))\n")
+        #     for ic=mesh.cells[i].faces_range
+        #     write(io,"      $(length(mesh.faces[i].nodes_range)) $(join(mesh.face_nodes[mesh.faces[mesh.cell_faces[ic]].nodes_range].-1," "))\n")
+        #     end
+        # end
+
+        
         for i=1:length(mesh.cells)
-            write(io,"      $(length(mesh.cells[i].faces_range))\n")
-            for ic=mesh.cells[i].faces_range
-            write(io,"      $(length(mesh.faces[i].nodes_range)) $(join(mesh.face_nodes[mesh.faces[mesh.cell_faces[ic]].nodes_range].-1," "))\n")
+            store_faces=[]
+            for id=1:length(mesh.faces)
+                if mesh.faces[id].ownerCells[1]==i || mesh.faces[id].ownerCells[2]==i
+                    push!(store_faces,id)
+                end
+            end
+            write(io,"      $(length(store_faces))\n")
+            for ic=1:length(store_faces)
+            write(io,"      $(length(mesh.faces[store_faces[ic]].nodes_range)) $(join(mesh.face_nodes[mesh.faces[store_faces[ic]].nodes_range].-1," "))\n")
             end
         end
+
         write(io,"     </DataArray>\n")
         write(io,"     <DataArray type=\"$(I64)\" Name=\"$(face_offsets)\" format=\"$(format)\">\n")
         #write(io,"      $(length(mesh.faces)*(length(mesh.faces[1].nodes_range)+1)+1)\n")
         #write(io,"      $(length(mesh.face_nodes)+length(mesh.faces)+1)\n")
+        # for i=1:length(mesh.cells)
+        #     x=1+(length(mesh.cells[i].faces_range)+length(mesh.cell_faces[mesh.cells[i].faces_range])*3)
+        #     y=x+y
+        #     write(io,"     $(y)\n")
+        # end
+
         for i=1:length(mesh.cells)
-            x=1+(length(mesh.cells[i].faces_range)+length(mesh.cell_faces[mesh.cells[i].faces_range])*3)
-            y=x+y
-            write(io,"     $(y)\n")
+            if length(mesh.cells[i].nodes_range)==4
+                x=17*i
+                write(io,"     $(x)\n")
+            end
         end
         write(io,"     </DataArray>\n")
         write(io,"     <DataArray type=\"$(I64)\" Name=\"$(types)\" format=\"$(format)\">\n")

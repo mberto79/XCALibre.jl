@@ -5,15 +5,15 @@ foil,ctrl_p = spline_foil(FoilDef(
     chord   = 100, #[mm]
     LE_h    = 0, #[%c, at α=0°]
     TE_h    = 0, #[%c, at α=0°]
-    peak    = [33.5225,15.2300], #[%c]
-    trough  = [62.5639,-1.4844], #[%c]
-    xover = 26.487, #[%c]
+    peak    = [25,14.83461375], #[%c]
+    trough  = [75,-26.22306056], #[%c]
+    xover = 50, #[%c]
     α = 0 #[°]
 )) #Returns aerofoil MCL & control point vector (spline method)
-plot(foil.x,foil.y)
+
 #%% REYNOLDS & Y+ CALCULATIONS
 chord = 100.0
-Re = 1000
+Re = 5000
 nu,ρ = 1.48e-5,1.225
 yplus_init,BL_layers = 1.0,35
 laminar = true
@@ -66,8 +66,8 @@ noSlip = [0.0, 0.0, 0.0]
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind),
-    p = set_schemes(divergence=Upwind)
+    U = set_schemes(time=Euler,divergence=Upwind),
+    p = set_schemes(time=Euler,divergence=Upwind)
 )
 
 solvers = (

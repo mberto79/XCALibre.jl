@@ -10,6 +10,8 @@ mesh = build_mesh(mesh_file, scale=0.001)
 # mesh = update_mesh_format(mesh; integer=Int32, float=Float32)
 mesh = update_mesh_format(mesh)
 
+mesh.boundaries
+
 mesh.nodes[end].cells_range
 mesh.node_cells
 

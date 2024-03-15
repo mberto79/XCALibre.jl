@@ -594,54 +594,56 @@ function generate_internal_faces(volumes,faces)
     return faces
 end
 
-# function quad_internal_faces(volumes,faces)
-#     store_cell_faces1=[]
 
-#     for i=1:length(volumes)
-#         cell_faces=zeros(Int,6,4)
 
-#         cell_faces[1,1:4]=volumes[i].volumes[1:4]
-#         cell_faces[2,1:4]=volumes[i].volumes[5:8]
-#         cell_faces[3,1:2]=volumes[i].volumes[1:2]
-#         cell_faces[3,3:4]=volumes[i].volumes[5:6]
-#         cell_faces[4,1:2]=volumes[i].volumes[3:4]
-#         cell_faces[4,3:4]=volumes[i].volumes[7:8]
-#         cell_faces[5,1:2]=volumes[i].volumes[2:3]
-#         cell_faces[5,3:4]=volumes[i].volumes[6:7]
-#         cell_faces[6,1]=volumes[i].volumes[1]
-#         cell_faces[6,2]=volumes[i].volumes[4]
-#         cell_faces[6,3]=volumes[i].volumes[5]
-#         cell_faces[6,4]=volumes[i].volumes[8]
+function quad_internal_faces(volumes,faces)
+    store_cell_faces1=[]
 
-#         for ic=1:6
-#             push!(store_cell_faces1,cell_faces[ic,:])
-#         end
-#     end
+    for i=1:length(volumes)
+        cell_faces=zeros(Int,6,4)
 
-#     store_cell_faces1
+        cell_faces[1,1:4]=volumes[i].volumes[1:4]
+        cell_faces[2,1:4]=volumes[i].volumes[5:8]
+        cell_faces[3,1:2]=volumes[i].volumes[1:2]
+        cell_faces[3,3:4]=volumes[i].volumes[5:6]
+        cell_faces[4,1:2]=volumes[i].volumes[3:4]
+        cell_faces[4,3:4]=volumes[i].volumes[7:8]
+        cell_faces[5,1:2]=volumes[i].volumes[2:3]
+        cell_faces[5,3:4]=volumes[i].volumes[6:7]
+        cell_faces[6,1]=volumes[i].volumes[1]
+        cell_faces[6,2]=volumes[i].volumes[4]
+        cell_faces[6,3]=volumes[i].volumes[5]
+        cell_faces[6,4]=volumes[i].volumes[8]
 
-#     sorted_cell_faces=[]
-#     for i=1:length(store_cell_faces1)
+        for ic=1:6
+            push!(store_cell_faces1,cell_faces[ic,:])
+        end
+    end
 
-#         push!(sorted_cell_faces,sort(store_cell_faces1[i]))
-#     end
+    store_cell_faces1
 
-#     sorted_cell_faces
+    sorted_cell_faces=[]
+    for i=1:length(store_cell_faces1)
 
-#     faces
-#     sorted_faces=[]
-#     for i=1:length(faces)
-#         push!(sorted_faces,sort(faces[i].faces))
-#     end
-#     sorted_faces
+        push!(sorted_cell_faces,sort(store_cell_faces1[i]))
+    end
 
-#     internal_faces=setdiff(sorted_cell_faces,sorted_faces)
+    sorted_cell_faces
 
-#     for i=1:length(internal_faces)
-#         push!(faces,UNV_3D.Face(faces[end].faceindex+1,faces[end].faceCount,internal_faces[i]))
-#     end
-#     return faces
-# end
+    faces
+    sorted_faces=[]
+    for i=1:length(faces)
+        push!(sorted_faces,sort(faces[i].faces))
+    end
+    sorted_faces
+
+    internal_faces=setdiff(sorted_cell_faces,sorted_faces)
+
+    for i=1:length(internal_faces)
+        push!(faces,UNV_3D.Face(faces[end].faceindex+1,faces[end].faceCount,internal_faces[i]))
+    end
+    return faces
+end
 
 
 function generate_boundaries(boundaryElements,boundary_face_range)
@@ -695,6 +697,40 @@ function generate_boundary_faces(boundaryElements)
     end
     return boundary_faces,boundary_face_range
 end
+
+# function generate_boundary_faces(boundaryElements)
+#     boundary_faces=[]
+#     z=0
+#     wipe=Int64[]
+#     boundary_face_range=[]
+#     for i=1:length(boundaryElements)
+#         for n=1:length(boundaryElements[i].elements)
+#             push!(boundary_faces,boundaryElements[i].elements[n])
+#             push!(wipe,boundaryElements[i].elements[n])
+#         end
+#         if length(wipe)==1
+#             push!(boundary_face_range,UnitRange(boundaryElements[i].elements[1],boundaryElements[i].elements[1]))
+#             z=z+1
+#         elseif length(wipe) ≠1
+#             push!(boundary_face_range,UnitRange(boundaryElements[i].elements[1],boundaryElements[i].elements[end]))
+#             z=z+length(wipe)
+#         end
+#         wipe=Int64[]
+#     end
+
+#     store=[]
+
+#     boundary_face_range=sort(boundary_face_range)
+#     for i=1:length(boundary_face_range)
+#         for ic=boundary_face_range[i]
+#         push!(store,ic)
+#         end
+#     end
+
+#     store
+
+#     return store,boundary_face_range
+# end
 
 
 function generate_face_ownerCells(faces,all_cell_faces,volumes,all_cell_faces_range)

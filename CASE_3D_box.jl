@@ -5,8 +5,13 @@ using CUDA
 
 #unv_mesh="src/UNV_3D/5_cell_new_boundaries.unv"
 unv_mesh="src/UNV_3D/800_cell_new_boundaries.unv"
+#unv_mesh="src/UNV_3D/800_cell_changed_manual_boundaries.unv"
 
 mesh=build_mesh3D(unv_mesh)
+
+mesh.boundaries
+mesh.boundary_cellsID
+mesh.faces[1]
 
 velocity = [10,0.0,0.0]
 nu=1e-3
@@ -15,20 +20,20 @@ Re=velocity[1]*10/nu
 model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 @assign! model U (
-    Dirichlet(:inlet, velocity),
     Neumann(:wall_top, 0.0),
-    Neumann(:wall_1, 0.0),
-    Neumann(:outlet, 0.0),
     Neumann(:wall_bottom, 0.0),
+    Neumann(:outlet, 0.0),
+    Dirichlet(:inlet, velocity),
+    Neumann(:wall_1, 0.0),
     Neumann(:wall_2, 0.0),
 )
 
  @assign! model p (
-    Neumann(:inlet, 0.0),
     Neumann(:wall_top, 0.0),
-    Neumann(:wall_1, 0.0),
-    Dirichlet(:outlet, 0.0),
     Neumann(:wall_bottom, 0.0),
+    Dirichlet(:outlet, 0.0),
+    Neumann(:inlet, 0.0),
+    Neumann(:wall_1, 0.0),
     Neumann(:wall_2, 0.0)
 )
 

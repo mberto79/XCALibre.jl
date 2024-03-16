@@ -18,13 +18,19 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 @assign! model U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Neumann(:sides, 0.0)
+    Neumann(:bottom, 0.0),
+    Neumann(:top, 0.0),
+    Neumann(:side1, 0.0),
+    Neumann(:side2, 0.0)
 )
 
 @assign! model p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
-    Neumann(:sides, 0.0)
+    Neumann(:bottom, 0.0),
+    Neumann(:top, 0.0),
+    Neumann(:side1, 0.0),
+    Neumann(:side2, 0.0)
 )
 
 schemes = (

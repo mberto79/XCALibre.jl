@@ -45,22 +45,31 @@ function load_3D(unv_mesh)
     boundaryindex=[]
     currentBoundary=0
     boundaryNumber=0
-    
+    section_start = false
     
     #Splits UNV file into sections
     for (indx,line) in enumerate(eachline(unv_mesh))
         sline=split(line)
-    
+
+        if sline[1]=="-1" && section_start==false
+            section_start=true
+            continue
+        end
+
+        if sline[1]=="-1" && section_start==true
+            section_start=false
+        end
+
         #Points = 2411
-        if sline[1]=="2411" && length(sline)==1
+        if sline[1]=="2411" && length(sline)==1 && section_start
             pointindx=indx
         end
         #Elements = 2412
-        if sline[1]=="2412" && length(sline)==1
+        if sline[1]=="2412" && length(sline)==1 && section_start
             elementindx=indx
         end
         #BC=2467
-        if sline[1]== "2467" && length(sline)==1
+        if sline[1]== "2467" && length(sline)==1 && section_start
             boundaryindx=indx
         end
     end
@@ -86,6 +95,7 @@ function load_3D(unv_mesh)
             edgeCount=parse(Int,sline[end])
             edgeindex=parse(Int,sline[1])
             edgeindx=indx
+            # println(edgeindex)
             continue
         end
     
@@ -177,26 +187,29 @@ function load_3D(unv_mesh)
     
         #Boundary
         if length(sline)==1 && indx>boundaryindx && typeof(tryparse(Int64,sline[1]))==Nothing
+            boundary_name=sline[1]
             boundaryindex=sline[1]
             currentBoundary=currentBoundary+1
             newBoundary=BoundaryElement(0)
             push!(boundaryElements, newBoundary)
             boundaryNumber=boundaryNumber+1
             boundaryElements[currentBoundary].boundaryNumber=currentBoundary
-            boundaryElements[currentBoundary].name=boundaryindex
+            boundaryElements[currentBoundary].name=boundary_name
+            # println(boundary_name," ", boundaryindex)
             continue
         end
     
         if length(sline)==8 && indx>boundaryindx && parse(Int64,sline[2])!=0
             boundary=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(boundarys,(boundaryindex,boundary))
+            push!(boundarys,(boundaryindex,boundary)) # not being used?
             push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[2])-edgeindex)
             if parse(Int64,sline[6]) ≠ 0
               push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[6])-edgeindex)
             end
+            # println(boundaryElements[currentBoundary].elements)
+            
             continue
         end
-    
     end
     return points,edges,faces,volumes,boundaryElements
 

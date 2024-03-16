@@ -2,559 +2,82 @@ using Plots
 using FVM_1D
 using Krylov
 using CUDA
-using Accessors
-using LoopVectorization
-using LinearAlgebra
-using Statistics
-using Krylov
-using LinearOperators
-using ProgressMeter
-using Printf
-using CUDA
-using KernelAbstractions
-using Atomix
-using Adapt
 
-# backend = CPU()
-backend = CUDABackend()
+#mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
+mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
+mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.06mm.unv"
 
-# backwardFacingStep_2mm, backwardFacingStep_10mm
-mesh_file = "unv_sample_meshes/backwardFacingStep_2mm.unv"
-mesh = build_mesh(mesh_file, scale=0.001)
-# mesh = update_mesh_format(mesh; integer=Int32, float=Float32)
-mesh = update_mesh_format(mesh)
+mesh=build_mesh3D(mesh_file)
 
-velocity = [0.5, 0.0, 0.0]
-nu = 1e-3
-Re = velocity[1]*0.1/nu
+_x(node::Node) = node.coords[1]
+_y(node::Node) = node.coords[2]
+_z(node::Node) = node.coords[3]
 
-model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
+_x(face::Face3D) = face.centre[1]
+_y(face::Face3D) = face.centre[2]
+_z(face::Face3D) = face.centre[3]
 
-@assign! model U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, [0.0, 0.0, 0.0]),
-    Dirichlet(:top, [0.0, 0.0, 0.0])
-)
-
- @assign! model p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
-)
-
-schemes = (
-    U = set_schemes(),
-    p = set_schemes()
-)
-
-
-solvers = (
-    U = set_solver(
-        model.U;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(),
-        convergence = 1e-7,
-        relax       = 0.8,
-    ),
-    p = set_solver(
-        model.p;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(),
-        convergence = 1e-7,
-        relax       = 0.2,
+_coords(obj::Node) = [obj.coords[1]],[obj.coords[2]],[obj.coords[3]]
+_centre(obj::Face3D) = [obj.centre[1]],[obj.centre[2]],[obj.centre[3]]
+_centre(obj::Cell) = [obj.centre[1]],[obj.centre[2]],[obj.centre[3]]
+_face_edges(obj::Vector{Node{A,B}}) where {A,B} = begin
+    (
+        [obj[i].coords[1] for i ∈ [1,2,3,1]],
+        [obj[i].coords[2] for i ∈ [1,2,3,1]],
+        [obj[i].coords[3] for i ∈ [1,2,3,1]]
     )
-)
-
-runtime = set_runtime(
-    iterations=1000, time_step=1, write_interval=500)
-
-config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime)
-
-GC.gc()
-
-initialise!(model.U, velocity)
-initialise!(model.p, 0.0)
-
-
-@info "Extracting configuration and input fields..."
-model_in = model
-model = adapt(backend, model_in)
-(; U, p, nu, mesh) = model
-(; solvers, schemes, runtime) = config
-
-@info "Preallocating fields..."
-
-∇p = Grad{schemes.p.gradient}(p)
-mdotf = FaceScalarField(mesh)
-# nuf = ConstantScalar(nu) # Implement constant field!
-rDf = FaceScalarField(mesh)
-nueff = FaceScalarField(mesh)
-initialise!(rDf, 1.0)
-divHv = ScalarField(mesh)
-
-@info "Defining models..."
-
-ux_eqn = (
-    Time{schemes.U.time}(U.x)
-    + Divergence{schemes.U.divergence}(mdotf, U.x) 
-    - Laplacian{schemes.U.laplacian}(nueff, U.x) 
-    == 
-    -Source(∇p.result.x)
-) → Equation(mesh)
-
-uy_eqn = (
-    Time{schemes.U.time}(U.y)
-    + Divergence{schemes.U.divergence}(mdotf, U.y) 
-    - Laplacian{schemes.U.laplacian}(nueff, U.y) 
-    == 
-    -Source(∇p.result.y)
-) → Equation(mesh)
-
-p_eqn = (
-    Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
-) → Equation(mesh)
-
-CUDA.allowscalar(false)
-# model = _convert_array!(model, backend)
-# ∇p = _convert_array!(∇p, backend)
-# ux_eqn = _convert_array!(ux_eqn, backend)
-# uy_eqn = _convert_array!(uy_eqn, backend)
-# p_eqn = _convert_array!(p_eqn, backend)
-
-@info "Initialising preconditioners..."
-
-@reset ux_eqn.preconditioner = set_preconditioner(
-                solvers.U.preconditioner, ux_eqn, U.x.BCs, runtime)
-@reset uy_eqn.preconditioner = ux_eqn.preconditioner
-@reset p_eqn.preconditioner = set_preconditioner(
-                solvers.p.preconditioner, p_eqn, p.BCs, runtime)
-
-if isturbulent(model)
-    @info "Initialising turbulence model..."
-    turbulence = initialise_RANS(mdotf, p_eqn, config, model)
-    config = turbulence.config
-else
-    turbulence = nothing
 end
 
-@info "Pre-allocating solvers..."
- 
-@reset ux_eqn.solver = solvers.U.solver(_A(ux_eqn), _b(ux_eqn))
-@reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
-@reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
-
-# Extract model variables and configuration
-(;mesh, U, p, nu) = model
-# ux_model, uy_model = ux_eqn.model, uy_eqn.model
-p_model = p_eqn.model
-(; solvers, schemes, runtime) = config
-(; iterations, write_interval) = runtime
-
-mdotf = get_flux(ux_eqn, 2)
-nueff = get_flux(ux_eqn, 3)
-rDf = get_flux(p_eqn, 1)
-divHv = get_source(p_eqn, 1)
-
-@info "Allocating working memory..."
-
-# Define aux fields 
-gradU = Grad{schemes.U.gradient}(U)
-gradUT = T(gradU)
-S = StrainRate(gradU, gradUT)
-S2 = ScalarField(mesh)
-
-# Temp sources to test GradUT explicit source
-# divUTx = zeros(Float64, length(mesh.cells))
-# divUTy = zeros(Float64, length(mesh.cells))
-
-n_cells = length(mesh.cells)
-Uf = FaceVectorField(mesh)
-pf = FaceScalarField(mesh)
-gradpf = FaceVectorField(mesh)
-Hv = VectorField(mesh)
-rD = ScalarField(mesh)
-
-# Pre-allocate auxiliary variables
-
-# Consider using allocate from KernelAbstractions 
-# e.g. allocate(backend, Float32, res, res)
-TF = _get_float(mesh)
-prev = zeros(TF, n_cells)
-prev = _convert_array!(prev, backend) 
-
-# Pre-allocate vectors to hold residuals 
-
-R_ux = ones(TF, iterations)
-R_uy = ones(TF, iterations)
-R_p = ones(TF, iterations)
-
-# Convert arrays to selected backend
-
-# Uf = _convert_array!(Uf, backend)
-# rDf = _convert_array!(rDf, backend)
-# rD = _convert_array!(rD, backend)
-# pf = _convert_array!(pf, backend)
-# Hv = _convert_array!(Hv, backend)
-# prev = _convert_array!(prev, backend)
-
-interpolate!(Uf, U)   
-correct_boundaries!(Uf, U, U.BCs)
-flux!(mdotf, Uf)
-grad!(∇p, pf, p, p.BCs)
-
-update_nueff!(nueff, nu, turbulence)
-
-@. prev = U.x.values
-
-discretise_test!(ux_eqn, prev, runtime)
-
-A = _A(ux_eqn.equation)
-
-## TESTING IF NUMBER TYPES WORK IN KERNELS
-using Adapt
-
-struct test{TN, SN, VI}
-    val::VI
-end
-function Adapt.adapt_structure(to, itp::test{TN,SN}) where {TN,SN}
-    value = Adapt.adapt_structure(to, itp.val); VI = typeof(value)
-    test{TN, SN, VI}(value)
-end
-test{TN,SN}(value) where {TN, SN} = begin
-    VI = typeof(value)
-    test{TN,SN, VI}(value)
-end
-
-Test = test{3,1}([1 2 3 4 5])
-Test = adapt(backend, Test)
-
-kernel = test_struct(backend)
-kernel(Test, ndrange = length(Test.val))
-
-@kernel function test_struct(Test_sruct)
-    i = @index(Global)
-
-    (; val) = Test_sruct
-
-    val[i] += 1
-end
-
-
-## TESTING IF SOURCES WORKS IN KERNELS - BOTH MODEL AND SOURCES WORK WHEN REMOVING TYPE FROM SRC STRUCT
-model = ux_eqn.model
-sources = model.sources
-
-kernel = source_test4(backend)
-kernel(model, ndrange = length(sources[1].field.values))
-
-@kernel function source_test4(model)
-    i = @index(Global)
-
-    (; sources) = model
-    (; field, sign) = sources[1]
-    (; values) = field
-
-    @inbounds begin
-        values[i] += sign
+plot_nodes_IDs!(fig, mesh) = begin
+    nodes = mesh.nodes
+    for (ni, node) ∈ enumerate(nodes)
+        annotate!(
+            _x(node), _y(node), _z(node), 
+            text(ni))
     end
+    fig
 end
 
-model = ux_eqn.model
-
-mesh = model.terms[1].phi.mesh
-
-kernel = test2!(backend)
-kernel(mesh, ndrange = 1)
-
-## TESTING IF MODEL WORKS WITH NEW SOURCES STRUCTURE
-model = ux_eqn.model
-
-## TESTING NZVAL ACCESSOR
-kernel = test_nzval1(backend)
-kernel(_A(ux_eqn.equation), ndrange = length(ux_eqn.equation.A.nzVal))
-
-@kernel function test_nzval1(A_arr)
-    i = @index(Global)
-
-    # A_arr = _A(eqn)
-    
-    nzval_arr = _nzval(A_arr)
-
-    nzval_arr[i] += 1
-end
-
-## DISCRETISE ALTERATIONS
-
-discretise_test!(ux_eqn, prev, runtime)
-
-function discretise_test!(eqn, prev, runtime)
-    mesh = eqn.model.terms[1].phi.mesh
-    model = eqn.model
-
-    integer = _get_int(mesh)
-    float = _get_float(mesh)
-    fzero = zero(float)
-    ione = one(integer)
-    # cIndex = zero(integer)
-    # nIndex = zero(inetger)
-
-    A_array = _A(eqn)
-    b_array = _b(eqn)
-
-    nzval_array = _nzval(A_array)
-    rowval_array = _rowval(A_array)
-    colptr_array = _colptr(A_array)
-
-    backend = _get_backend(mesh)
-    kernel! = _discretise2!(backend)
-    @device_code_warntype kernel!(model, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione, ndrange = length(mesh.cells))
-end
-
-## GENERATED FUNCTION W/ KERNEL
-@kernel function _discretise2!(model, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione)
-    i = @index(Global)
-    
-    (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
-
-
-    @inbounds begin
-        cell = cells[i]
-        (; faces_range, volume) = cell
-
-        for fi in faces_range
-            fID = cell_faces[fi]
-            ns = cell_nsign[fi] # normal sign
-            face = faces[fID]
-            nID = cell_neighbours[fi]
-            cellN = cells[nID]
-
-            cIndex = nzval_index(colptr_array, rowval_array, i, i, ione)
-            nIndex = nzval_index(colptr_array, rowval_array, nID, i, ione)
-
-            _scheme!(model, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
-        end
-        b_array[i] = fzero
-        _scheme_source!(model, b_array, nzval_array, cell, i, cIndex, prev, runtime)
-        _sources!(model, b_array, volume, i)
+plot_faces_IDs!(fig, mesh) = begin
+    faces = mesh.faces
+    for (fi, face) ∈ enumerate(faces)
+        annotate!(
+            _x(face), _y(face), _z(face), 
+            text(fi, :blue))
     end
+    fig
 end
 
-@generated function _scheme!(model::Model{TN,SN,T,S}, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime) where {TN,SN,T,S}
-    nTerms = TN
-    
-    assignment_block = Expr[]
-    
-    for t in 1:nTerms
-        function_call_scheme = quote
-            scheme!(model.terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
-        end
-        push!(assignment_block, function_call_scheme)
+plot_face_edges!(fig, mesh) = begin
+    (; nodes, faces, face_nodes) = mesh
+    for (fi, face) ∈ enumerate(faces)
+        nodesID = face_nodes[face.nodes_range]
+        fnodes = nodes[nodesID]
+        plot!(
+            fig, _face_edges(fnodes), 
+            label=false, color=:black,
+            alpha=0.2)
     end
-    
-
-    quote
-        $(assignment_block...)
-    end
-end
-
-@generated function _scheme_source!(model::Model{TN,SN,T,S}, b, nzval_array, cell, cID, cIndex, prev, runtime) where {TN,SN,T,S}
-    nTerms = TN
-    
-    assign_source = Expr[]
-
-    for t in 1:nTerms
-        function_call_scheme_source = quote
-            scheme_source!(model.terms[$t], b, nzval_array, cell, cID, cIndex, prev, runtime)
-        end
-        push!(assign_source, function_call_scheme_source)
-    end
-
-    quote
-        $(assign_source...)
-    end
-end
-
-@generated function _sources!(model::Model{TN,SN,T,S}, b, volume, cID) where {TN,SN,T,S}
-    nSources = SN
-    
-    add_source = Expr[]
-
-    for s in 1:nSources
-        expression_call_sources = quote
-            (; field, sign) = model.sources[$s]
-            b[cID] += sign*field[cID]*volume
-        end
-        push!(add_source, expression_call_sources)
-    end
-
-    quote
-        $(add_source...)
-    end
-end
-
-## DISCRETISE FUNCTION
-
-# Define variables for function
-nTerms = length(model.terms)
-nSources = length(model.sources)
-mesh = model.terms[1].phi.mesh
-
-# Deconstructors to get lower-level variables for function
-# (; A, b) = eqn.equation
-(; terms, sources) = model
-(; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
-backend = _get_backend(mesh)
-A_array = _A(eqn)
-b_array = _b(eqn)
-
-# Get types and set float(zero) and integer(one)
-integer = _get_int(mesh)
-float = _get_float(mesh)
-fzero = zero(float) # replace with func to return mesh type (Mesh module)
-ione = one(integer)
-
-# Deconstruct sparse array dependent on sparse arrays type
-rowval_array = _rowval(A_array)
-colptr_array = _colptr(A_array)
-nzval_array = _nzval(A_array)
-
-# Kernel to set nzval array to 0
-kernel! = set_nzval(backend)
-kernel!(nzval_array, fzero, ndrange = length(nzval_array))
-KernelAbstractions.synchronize(backend)
-# println(typeof(eqn))
-
-# Set initial values for indexing of nzval array
-cIndex = zero(integer) # replace with func to return mesh type (Mesh module)
-nIndex = zero(integer) # replace with func to return mesh type (Mesh module)
-offset = zero(integer)
-
-# Set b array to 0
-kernel! = set_b!(backend)
-kernel!(fzero, b_array, ndrange = length(b_array))
-KernelAbstractions.synchronize(backend)
-
-# Run schemes and sources calculations on all terms
-
-for i in 1:nTerms
-    schemes_and_sources!(model.terms[i], 
-                        nTerms, nSources, offset, fzero, ione, terms, rowval_array,
-                        colptr_array, nzval_array, cIndex, nIndex, b_array,
-                        faces, cells, cell_faces, cell_neighbours, cell_nsign, integer,
-                        float, backend, runtime, prev)
-    # KernelAbstractions.synchronize(backend)
-end
-
-# Free unneeded backend memory 
-nzval_array = nothing
-rowval_array = nothing
-colptr_array = nothing
-
-# Run sources calculations on all sources
-kernel! = sources!(backend)
-for i in 1:nSources
-    (; field, sign) = sources[i]
-    kernel!(field, sign, cells, b_array, ndrange = length(cells))
-    # KernelAbstractions.synchronize(backend)
+    fig
 end
 
 
 
 
+plotlyjs() # back end for an interactive plot
+fig = scatter(_coords.(mesh.nodes), label=false, color=:black)
+scatter!(_centre.(mesh.faces), label=false, color=:blue)
+scatter!(_centre.(mesh.cells), label=false, color=:red)
+plot_face_edges!(fig, mesh)
 
+gr() # this plotting backend gives ability to move plots
+fig = scatter3d(xlabel="x", ylabel="y", zlabel="z")
+plot_face_edges!(fig, mesh)
+plot_nodes_IDs!(fig, mesh) # needs an existing plot
+plot_faces_IDs!(fig, mesh) # needs an existing plot
+plot3d!(fig, camera=(45,20))
 
-arr = [1 2 3]
-test(arr)
-function test(arr)
-    test_gen{length(arr)}(arr)
-end
-
-
-@generated function test_gen(arr) where {TN}
-
-    print_arr = Expr[]
-
-    for i in 1:TN
-        print = quote
-            println(arr[i])
-        end
-        push!(print_arr, print)
-    end
-
-    quote
-       $(print_arr...) 
-    end
-end
-
-
-
-
-
-
-
-
-
-
-## TESTING ACCESSORS AND GENERATED FUNCTIONS IN KERNELS
-backend = CUDABackend()
-# backend = CPU()
-
-struct test{VI}
-    A::VI
-    B::VI
-    res::VI
-end
-Adapt.@adapt_structure test
-
-_A(Struct) = Struct.A
-_B(Struct) = Struct.B
-_res(Struct) = Struct.res
-
-@kernel function test_gen3(Test)
-    i = @index(Global)
-
-    A = _A(Test)
-    B = _B(Test)
-    res = _res(Test)
-
-    @inbounds begin
-        res[i] = gen_add!(A[i],B[i])
-    end
-end
-
-@generated function gen_add!(a,b)
-
-    assignment_block = Expr[]
-
-    function_call = quote
-        add!(a,b)
-    end
-    push!(assignment_block, function_call)
-
-    quote
-        res = $(assignment_block...)
-    end
-end
-
-function add!(a,b)
-    res = a + b
-    return res
-end
-
-
-A = ones(Int64, 100)
-B = A.+1
-res = zeros(Int64, 100)
-
-Test = test(A, B, res)
-Test = adapt(backend, Test)
-
-Test.res
-
-kernel! = test_gen3(backend)
-kernel!(Test, ndrange = length(Test.A))
-
-Test.res
+@gif for angle ∈ range(45, stop = 500, length = 1000)
+    plot3d!(fig, camera=(angle,20))
+end every 5
+# Save the output in vscode (look for save icon where plots are shown)

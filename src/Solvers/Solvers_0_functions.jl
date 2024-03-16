@@ -384,13 +384,23 @@ end
         Dx = nzval_x[DIndex]
         Dy = nzval_y[DIndex]
         Dz = nzval_z[DIndex]
-        rDx = 1/Dx
-        rDy = 1/Dy
-        rDz = 1/Dz
+
+        # # Implementation 1: Using individual inverses
+        # rDx = 1/Dx
+        # rDy = 1/Dy
+        # rDz = 1/Dz
+        # # rD = volume/D
+        # x[i] = (bx[i] - sumx)*rDx
+        # y[i] = (by[i] - sumy)*rDy
+        # z[i] = (bz[i] - sumz)*rDz
+
+        # Implementation 2: Using max
+        Dmax = max(Dx,Dy,Dz)
+        rD = 1/Dmax
         # rD = volume/D
-        x[i] = (bx[i] - sumx)*rDx
-        y[i] = (by[i] - sumy)*rDy
-        z[i] = (bz[i] - sumz)*rDz
+        x[i] = (bx[i] - sumx)*rD
+        y[i] = (by[i] - sumy)*rD
+        z[i] = (bz[i] - sumz)*rD
     end
 end
 

@@ -5,23 +5,24 @@ using CUDA
 
 #mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
 mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
-mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.08mm.unv"
+mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.06mm.unv"
 
 mesh=build_mesh3D(mesh_file)
 
-velocity = [10,0.0,0.0]
+velocity = [0.05,0.0,0.0]
 nu=1e-3
-Re=velocity[1]*10/nu
+Re=velocity[1]*0.1/nu
+noSlip = [0.0, 0.0, 0.0]
 
 model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 @assign! model U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0),
-    Neumann(:side1, 0.0),
-    Neumann(:side2, 0.0)
+    Dirichlet(:bottom, noSlip),
+    Dirichlet(:top, noSlip),
+    Dirichlet(:side1, noSlip),
+    Dirichlet(:side2, noSlip)
 )
 
 @assign! model p (
@@ -44,22 +45,22 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
-        rtol = 1e-4
+        relax       = 0.8,
+        rtol = 1e-2
     ),
     p = set_solver(
         model.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.3,
-        rtol = 1e-4
+        relax       = 0.2,
+        rtol = 1e-2
 
     )
 )
 
 runtime = set_runtime(
-    iterations=2, time_step=1, write_interval=1)
+    iterations=1000, time_step=1, write_interval=100)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -72,11 +73,6 @@ initialise!(model.p, 0.0)
 backend = CUDABackend()
 
 Rx, Ry, Rz, Rp, model1 = simple!(model, config, backend)
-Rx
-Ry
-Rz
-Rp
-
 
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

@@ -1,6 +1,18 @@
 export simple!
 
-function simple!(model_in, config, backend; resume=true, pref=nothing) 
+simple!(model_in, config, backend; resume=true, pref=nothing) = begin
+    R_ux, R_uy, R_uz, R_p, model = setup_incompressible_solvers(
+        SIMPLE, model_in, config, backend;
+        resume=true, pref=nothing
+        )
+
+    return R_ux, R_uy, R_uz, R_p, model
+end
+
+function setup_incompressible_solvers(
+    solver_variant, 
+    model_in, config, backend; resume=true, pref=nothing
+    ) 
 
     @info "Extracting configuration and input fields..."
     model = adapt(backend, model_in)
@@ -78,13 +90,13 @@ function simple!(model_in, config, backend; resume=true, pref=nothing)
     @reset uz_eqn.solver = solvers.U.solver(_A(uz_eqn), _b(uz_eqn))
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
 
-    R_ux, R_uy, R_uz, R_p, model  = SIMPLE_loop(
+    R_ux, R_uy, R_uz, R_p, model  = solver_variant(
     model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config, backend ; resume=resume, pref=pref)
 
     return R_ux, R_uy, R_uz, R_p, model    
 end # end function
 
-function SIMPLE_loop(
+function SIMPLE(
     model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config, backend ; resume, pref)
     
     # Extract model variables and configuration
@@ -132,15 +144,6 @@ function SIMPLE_loop(
     R_uy = ones(TF, iterations)
     R_uz = ones(TF, iterations)
     R_p = ones(TF, iterations)
-
-    # Convert arrays to selected backend
-
-    # Uf = _convert_array!(Uf, backend)
-    # rDf = _convert_array!(rDf, backend)
-    # rD = _convert_array!(rD, backend)
-    # pf = _convert_array!(pf, backend)
-    # Hv = _convert_array!(Hv, backend)
-    # prev = _convert_array!(prev, backend)
     
     interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, U.BCs)

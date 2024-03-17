@@ -1,13 +1,15 @@
 using Plots
 using FVM_1D
 using Krylov
+using CUDA
+using KernelAbstractions
 
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
+mesh_file = "unv_sample_meshes/cylinder_d10mm_2mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
-symbol_mapping = number_symbols(mesh)
 
 # Inlet conditions
 
@@ -18,7 +20,7 @@ Re = (0.2*velocity[1])/nu
 
 model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
-@assign! model U symbol_mapping ( 
+@assign! model U ( 
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:cylinder, noSlip),
@@ -26,7 +28,7 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
     Neumann(:top, 0.0),
 )
 
-@assign! model p symbol_mapping (
+@assign! model p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
     Neumann(:cylinder, 0.0),
@@ -37,27 +39,29 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 solvers = (
     U = set_solver(
         model.U;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0(),
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = NormDiagonal(),
         convergence = 1e-7,
         relax       = 1.0,
+        rtol = 1e-4
     ),
     p = set_solver(
         model.p;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = LDL(),
+        solver      = CgSolver, # BicgstabSolver, GmresSolver
+        preconditioner = NormDiagonal(),
         convergence = 1e-7,
-        relax       = 1.0,
+        relax       = 0.3,
+        rtol = 1e-4
     )
 )
 
 schemes = (
-    U = set_schemes(time=Euler, gradient=Midpoint),
-    p = set_schemes(time=Euler, gradient=Midpoint)
+    U = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint),
+    p = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint)
 )
 
 runtime = set_runtime(
-    iterations=10000, write_interval=50, time_step=0.005)
+    iterations=10000, write_interval=50, time_step=0.001)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -67,7 +71,10 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-Rx, Ry, Rp = piso!(model, config) #, pref=0.0)
+backend = CUDABackend()
+# backend = CPU()
+
+Rx, Ry, Rp, model1 = piso!(model, config, backend); #, pref=0.0)
 
 plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

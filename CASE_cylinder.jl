@@ -73,9 +73,7 @@ initialise!(model.p, 0.0)
 backend = CUDABackend() # 357 s
 # backend = CPU()
 
-# @time begin
 Rx, Ry, Rp, model1 = simple!(model, config, backend); #, pref=0.0)
-# end
 
 plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

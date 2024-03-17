@@ -173,17 +173,19 @@ function write_vtk(name, mesh::Mesh3, args...)
             field = arg[2]
             field_type=typeof(field)
             if field_type <: ScalarField
-                write(io,"     <DataArray type=\"$(F32)\" Name=\"$(scalar)\" format=\"$(format)\">\n")
+                write(io,"     <DataArray type=\"$(F32)\" Name=\"$(scalar) $(label)\" format=\"$(format)\">\n")
                 values_cpu= copy_scalarfield_to_cpu(field.values, backend)
                 for value ∈ values_cpu
                     println(io,value)
                 end
+                write(io,"     </DataArray>\n")
             elseif field_type <: VectorField
                 write(io,"     <DataArray type=\"$(F32)\" Name=\"$(vector)\" format=\"$(format)\">\n")
                 x_cpu, y_cpu, z_cpu = copy_to_cpu(field.x.values, field.y.values, field.z.values, backend)
                 for i ∈ eachindex(x_cpu)
                     println(io, x_cpu[i]," ",y_cpu[i] ," ",z_cpu[i] )
                 end
+                write(io,"     </DataArray>\n")
             else
                 throw("""
                 Input data should be a ScalarField or VectorField e.g. ("U", U)

@@ -362,11 +362,11 @@ end
                            nzval_z, colptr_z, rowval_z, bz, vz,
                            x, y, z) #Extend to 3D!
     i = @index(Global)
+    @private sumx = zero(F)
+    @private sumy = zero(F)
+    @private sumz = zero(F)
 
     @inbounds begin
-        sumx = zero(F)
-        sumy = zero(F)
-        sumz = zero(F)
         (; faces_range) = cells[i]
 
         for ni ∈ faces_range
@@ -405,6 +405,7 @@ end
 end
 
 courant_number(U, mesh::AbstractMesh, runtime) = begin
+    F = _get_float(mesh)
     dt = runtime.dt 
     co = zero(_get_float(mesh))
     # courant_max = zero(_get_float(mesh))
@@ -416,4 +417,13 @@ courant_number(U, mesh::AbstractMesh, runtime) = begin
         co = max(co, umag*dt/dx)
     end
     return co
+end
+
+@kernel function courant_number_kernel(U, cells, dt, F)
+    i = @index(Global)
+    co = zero(F)
+    umag = norm(U[i])
+    volume = cells[i].volume
+    dx = sqrt(volume)
+    co = max(co, umag*dt/dx)
 end

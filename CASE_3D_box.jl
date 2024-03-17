@@ -9,7 +9,7 @@ mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.06mm.unv"
 
 mesh=build_mesh3D(mesh_file)
 
-velocity = [10,0.0,0.0]
+velocity = [0.5,0.0,0.0]
 nu=1e-3
 Re=velocity[1]*10/nu
 

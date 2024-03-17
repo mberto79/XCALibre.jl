@@ -22,10 +22,18 @@ end
             push!(func_calls, call)
         end
         assignment_loop = quote
-            (; facesID, cellsID) = boundaries[BCs[$bci].ID]
-            @inbounds for i ∈ eachindex(cellsID)
-                faceID = facesID[i]
-                cellID = cellsID[i]
+            # (; facesID, cellsID) = boundaries[BCs[$bci].ID]
+            # @inbounds for i ∈ eachindex(cellsID)
+            #     faceID = facesID[i]
+            #     cellID = cellsID[i]
+            #     face = faces[faceID]
+            #     cell = cells[cellID]
+            #     $(func_calls...)
+            # end
+            (; IDs_range) = boundaries[BCs[$bci].ID]
+            @inbounds for i ∈ IDs_range
+                faceID = i
+                cellID = boundary_cellsID[i]
                 face = faces[faceID]
                 cell = cells[cellID]
                 $(func_calls...)
@@ -37,7 +45,7 @@ end
     quote
     (; A, b) = eqn.equation
     mesh = model.terms[1].phi.mesh
-    (; boundaries, faces, cells) = mesh
+    (; boundaries, faces, cells, boundary_cellsID) = mesh
     $(assignment_loops...)
     nothing
     end

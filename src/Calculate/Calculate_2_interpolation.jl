@@ -25,18 +25,22 @@ end
 
 function adjust_boundary!(
     BC::Dirichlet, phif::FaceScalarField, phi, boundary, faces)
-    (; facesID, cellsID) = boundary
-    @inbounds for fID ∈ facesID
+    # (;facesID, cellsID) = boundary
+    (; IDs_range) = boundary
+    @inbounds for fID ∈ IDs_range
         phif.values[fID] = BC.value 
     end
 end
 
 function adjust_boundary!(
     BC::Neumann, phif::FaceScalarField, phi, boundary, faces)
-    (;facesID, cellsID) = boundary
-    @inbounds for fi ∈ eachindex(facesID)
-        fID = facesID[fi]
-        cID = cellsID[fi]
+    # (;facesID, cellsID) = boundary
+    (; IDs_range) = boundary
+    (; boundary_cellsID) = phif.mesh
+    @inbounds for fi ∈ IDs_range
+        # fID = facesID[fi]
+        fID = fi
+        cID = boundary_cellsID[fi]
         # (; normal, e, delta) = faces[fID]
         phif.values[fID] = phi.values[cID] #+ BC.value*delta*(normal⋅e)
     end
@@ -44,30 +48,42 @@ end
 
 function adjust_boundary!(
     BC::KWallFunction, phif::FaceScalarField, phi, boundary, faces)
-    (;facesID, cellsID) = boundary
-    @inbounds for fi ∈ eachindex(facesID)
-        fID = facesID[fi]
-        cID = cellsID[fi]
+    # (;facesID, cellsID) = boundary
+    (; IDs_range) = boundary
+    (; boundary_cellsID) = phif.mesh
+    @inbounds for fi ∈ IDs_range
+        # fID = facesID[fi]
+        # cID = cellsID[fi]
+        fID = fi
+        cID = boundary_cellsID[fID]
         phif.values[fID] = phi.values[cID] # Using Neumann condition
     end
 end
 
 function adjust_boundary!(
     BC::NutWallFunction, phif::FaceScalarField, phi, boundary, faces)
-    (;facesID, cellsID) = boundary
-    @inbounds for fi ∈ eachindex(facesID)
-        fID = facesID[fi]
-        cID = cellsID[fi]
+    # (;facesID, cellsID) = boundary
+    (; IDs_range) = boundary
+    (; boundary_cellsID) = phif.mesh
+    @inbounds for fi ∈ IDs_range
+        # fID = facesID[fi]
+        # cID = cellsID[fi]
+        fID = fi
+        cID = boundary_cellsID[fID]
         phif.values[fID] = phi.values[cID] # Using Neumann condition
     end
 end
 
 function adjust_boundary!(
     BC::OmegaWallFunction, phif::FaceScalarField, phi, boundary, faces)
-    (;facesID, cellsID) = boundary
-    @inbounds for fi ∈ eachindex(facesID)
-        fID = facesID[fi]
-        cID = cellsID[fi]
+    # (;facesID, cellsID) = boundary
+    (; IDs_range) = boundary
+    (; boundary_cellsID) = phif.mesh
+    @inbounds for fi ∈ IDs_range
+        # fID = facesID[fi]
+        # cID = cellsID[fi]
+        fID = fi
+        cID = boundary_cellsID[fID]
         phif.values[fID] = phi.values[cID] # Using Neumann condition
     end
 end
@@ -77,9 +93,9 @@ function adjust_boundary!(
     )
 
     (; x, y, z) = psif
-    (; facesID) = boundary
+    (; IDs_range) = boundary
 
-    @inbounds for fID ∈ facesID
+    @inbounds for fID ∈ IDs_range
         x[fID] = BC.value[1]
         y[fID] = BC.value[2]
         z[fID] = BC.value[3]
@@ -90,12 +106,13 @@ function adjust_boundary!(
     BC::Neumann, psif::FaceVectorField, psi::VectorField, boundary, faces
     ) 
 
-    (; x, y, z) = psif
-    (; facesID, cellsID) = boundary
+    (; x, y, z, mesh) = psif
+    (; boundary_cellsID) = mesh
+    (; IDs_range) = boundary
 
-    @inbounds for fi ∈ eachindex(facesID)
-        fID = facesID[fi]
-        cID = cellsID[fi]
+    @inbounds for fi ∈ IDs_range
+        fID = fi
+        cID = boundary_cellsID[fID]
         psi_cell = psi[cID]
         # normal = faces[fID].normal
         # Line below needs sorting out for general user-defined gradients

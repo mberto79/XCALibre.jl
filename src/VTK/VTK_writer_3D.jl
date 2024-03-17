@@ -1,9 +1,30 @@
 # function write_vtu(name,mesh)
+# export write_vtk, model2vtk
+# export copy_to_cpu
+
+# function model2vtk(model::RANS{Laminar,F1,F2,V,T,E,D}, name) where {F1,F2,V,T,E,D}
+#     args = (
+#         ("U", model.U), 
+#         ("p", model.p)
+#     )
+#     write_vtk(name, model.mesh, args...)
+# end
+
+# function model2vtk(model::RANS{KOmega,F1,F2,V,T,E,D}, name) where {F1,F2,V,T,E,D}
+#     args = (
+#         ("U", model.U), 
+#         ("p", model.p),
+#         ("k", model.turbulence.k),
+#         ("omega", model.turbulence.omega),
+#         ("nut", model.turbulence.nut)
+#     )
+#     write_vtk(name, model.mesh, args...)
+# end
 
 get_data(a, backend::CUDABackend) = begin
-        a_cpu = Array{eltype(a)}(undef, length(a))
-        copyto!(a_cpu, a)
-        a_cpu
+    a_cpu = Array{eltype(a)}(undef, length(a))
+    copyto!(a_cpu, a)
+    a_cpu
 end
 
 function write_vtk(name, mesh::Mesh3, args...)
@@ -33,8 +54,10 @@ function write_vtk(name, mesh::Mesh3, args...)
         faces="faces"
         face_offsets="faceoffsets"
         types="types"
-        temp="temperature"
-        pressure="pressure"
+        #temp="temperature"
+        scalar="scalar"
+        vector="vector"
+        #pressure="pressure"
         poly=42
         x=0
         y=0
@@ -46,10 +69,10 @@ function write_vtk(name, mesh::Mesh3, args...)
         end
 
         #temp
-        temp_cells=LinRange(0,500,length(cells_cpu))
+        #temp_cells=LinRange(0,500,length(cells_cpu))
 
         #pressure
-        pressure_cells=LinRange(0,10000,length(cells_cpu))
+        #pressure_cells=LinRange(0,10000,length(cells_cpu))
 
         #Writing
         write(io,"<?xml version=\"$(one)\"?>\n")
@@ -130,16 +153,47 @@ function write_vtk(name, mesh::Mesh3, args...)
         write(io,"     </DataArray>\n")
         write(io,"    </Cells>\n")
         write(io,"    <CellData>\n")
-        write(io,"     <DataArray type=\"$(F32)\" Name=\"$(temp)\" format=\"$(format)\">\n")
-        for i=1:length(temp_cells)
-            write(io,"      $(join(temp_cells[i]," "))\n")
+
+
+        # write(io,"     <DataArray type=\"$(F32)\" Name=\"$(temp)\" format=\"$(format)\">\n")
+        # for i=1:length(temp_cells)
+        #     write(io,"      $(join(temp_cells[i]," "))\n")
+        # end
+        # write(io,"     </DataArray>\n")
+
+
+        # write(io,"     <DataArray type=\"$(F32)\" Name=\"$(pressure)\" format=\"$(format)\">\n")
+        # for i=1:length(pressure_cells)
+        #     write(io,"      $(join(pressure_cells[i]," "))\n")
+        # end
+        # write(io,"     </DataArray>\n")
+
+        for arg ∈ args
+            label = arg[1]
+            field = arg[2]
+            field_type=typeof(field)
+            if field_type <: ScalarField
+                write(io,"     <DataArray type=\"$(F32)\" Name=\"$(scalar) $(label)\" format=\"$(format)\">\n")
+                values_cpu= copy_scalarfield_to_cpu(field.values, backend)
+                for value ∈ values_cpu
+                    println(io,value)
+                end
+                write(io,"     </DataArray>\n")
+            elseif field_type <: VectorField
+                write(io,"     <DataArray type=\"$(F32)\" Name=\"$(vector)\" format=\"$(format)\">\n")
+                x_cpu, y_cpu, z_cpu = copy_to_cpu(field.x.values, field.y.values, field.z.values, backend)
+                for i ∈ eachindex(x_cpu)
+                    println(io, x_cpu[i]," ",y_cpu[i] ," ",z_cpu[i] )
+                end
+                write(io,"     </DataArray>\n")
+            else
+                throw("""
+                Input data should be a ScalarField or VectorField e.g. ("U", U)
+                """)
+            end
         end
-        write(io,"     </DataArray>\n")
-        write(io,"     <DataArray type=\"$(F32)\" Name=\"$(pressure)\" format=\"$(format)\">\n")
-        for i=1:length(pressure_cells)
-            write(io,"      $(join(pressure_cells[i]," "))\n")
-        end
-        write(io,"     </DataArray>\n")
+
+
         write(io,"    </CellData>\n")
         write(io,"   </Piece>\n")
         write(io,"  </UnstructuredGrid>\n")

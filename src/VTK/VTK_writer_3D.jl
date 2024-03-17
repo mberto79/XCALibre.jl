@@ -196,4 +196,3 @@ open(filename,"w") do io
     write(io,"  </UnstructuredGrid>\n")
     write(io," </VTKFile>\n")
 end
-end

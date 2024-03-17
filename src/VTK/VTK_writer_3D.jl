@@ -189,6 +189,7 @@ function write_vtk(name, mesh::Mesh3, args...)
                 Input data should be a ScalarField or VectorField e.g. ("U", U)
                 """)
             end
+        end
 
 
         write(io,"    </CellData>\n")

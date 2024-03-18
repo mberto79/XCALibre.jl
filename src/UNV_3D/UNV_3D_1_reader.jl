@@ -2,7 +2,7 @@
 
 export load_3D
 
-function load_3D(unv_mesh)
+function load_3D(unv_mesh; integer=Int64, float=Float64)
     #Defining Variables
     pointindx=0
     elementindx=0

@@ -1,13 +1,12 @@
 using Plots
 using FVM_1D
 using Krylov
-using CUDA
 
 #mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
 mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
-mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.04m.unv"
+mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.08m.unv"
 
-mesh=build_mesh3D(mesh_file)
+@time mesh=build_mesh3D(mesh_file)
 
 velocity = [0.01,0.0,0.0]
 nu=1e-3

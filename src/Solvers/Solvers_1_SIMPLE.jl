@@ -240,7 +240,7 @@ function SIMPLE_loop(
                 (:iter,iteration),
                 (:Ux, R_ux[iteration]),
                 (:Uy, R_uy[iteration]),
-                (:Uz, R_uy[iteration]),
+                (:Uz, R_uz[iteration]),
                 (:p, R_p[iteration]),
                 ]
             )

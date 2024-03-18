@@ -5,7 +5,7 @@ using CUDA
 
 #mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
 mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
-mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.06m.unv"
+mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.04m.unv"
 
 mesh=build_mesh3D(mesh_file)
 
@@ -60,7 +60,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=1000, time_step=1, write_interval=10)
+    iterations=5000, time_step=1, write_interval=100)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

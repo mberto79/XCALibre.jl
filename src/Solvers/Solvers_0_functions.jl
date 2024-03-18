@@ -87,35 +87,37 @@ function inverse_diagonal!(rD::S, eqn) where S<:ScalarField
 end
 
 function correct_velocity!(U, Hv, ∇p, rD)
-    Ux = U.x; Uy = U.y; Hvx = Hv.x; Hvy = Hv.y
-    dpdx = ∇p.result.x; dpdy = ∇p.result.y; rDvalues = rD.values
+    Ux = U.x; Uy = U.y; Uz = U.z; Hvx = Hv.x; Hvy = Hv.y; Hvz = Hv.z
+    dpdx = ∇p.result.x; dpdy = ∇p.result.y; dpdz = ∇p.result.z; rDvalues = rD.values
     @inbounds @simd for i ∈ eachindex(Ux)
         rDvalues_i = rDvalues[i]
         Ux[i] = Hvx[i] - dpdx[i]*rDvalues_i
         Uy[i] = Hvy[i] - dpdy[i]*rDvalues_i
+        Uz[i] = Hvz[i] - dpdz[i]*rDvalues_i
     end
 end
 
-remove_pressure_source!(ux_eqn::M1, uy_eqn::M2, ∇p) where {M1,M2} = begin # Extend to 3D
+remove_pressure_source!(ux_eqn::M1, uy_eqn::M2, uz_eqn::M3, ∇p) where {M1,M2, M3} = begin # Extend to 3D
     cells = get_phi(ux_eqn).mesh.cells
     source_sign = get_source_sign(ux_eqn, 1)
-    dpdx, dpdy = ∇p.result.x, ∇p.result.y
-    bx, by = ux_eqn.equation.b, uy_eqn.equation.b
+    dpdx, dpdy, dpdz = ∇p.result.x, ∇p.result.y, ∇p.result.z
+    bx, by, bz = ux_eqn.equation.b, uy_eqn.equation.b, uz_eqn.equation.b
     @inbounds for i ∈ eachindex(bx)
         volume = cells[i].volume
         bx[i] -= source_sign*dpdx[i]*volume
         by[i] -= source_sign*dpdy[i]*volume
+        bz[i] -= source_sign*dpdz[i]*volume
     end
 end
 
-H!(Hv, v::VF, ux_eqn, uy_eqn) where VF<:VectorField = 
+H!(Hv, v::VF, ux_eqn, uy_eqn, uz_eqn) where VF<:VectorField = 
 begin # Extend to 3D!
     (; x, y, z, mesh) = Hv 
     (; cells, faces) = mesh
     (; cells, cell_neighbours, faces) = mesh
-    Ax = ux_eqn.equation.A; Ay = uy_eqn.equation.A
-    bx = ux_eqn.equation.b; by = uy_eqn.equation.b
-    vx, vy = v.x, v.y
+    Ax = ux_eqn.equation.A; Ay = uy_eqn.equation.A; Az = uy_eqn.equation.A
+    bx = ux_eqn.equation.b; by = uy_eqn.equation.b; bz = uz_eqn.equation.b
+    vx, vy, vz = v.x, v.y, v.z
     F = eltype(v.x.values)
     @inbounds for cID ∈ eachindex(cells)
         cell = cells[cID]
@@ -123,19 +125,21 @@ begin # Extend to 3D!
         (; volume) = cell
         sumx = zero(F)
         sumy = zero(F)
+        sumz = zero(F)
         # @inbounds for nID ∈ neighbours
         @inbounds for ni ∈ cell.faces_range 
             nID = cell_neighbours[ni]
             sumx += Ax[cID,nID]*vx[nID]
             sumy += Ay[cID,nID]*vy[nID]
+            sumz += Az[cID,nID]*vz[nID]
         end
 
         D = view(Ax, cID, cID)[1] # add check to use max of Ax or Ay)
-        rD = 1/D
+        rD = 1/D # should this be the max of all 3 directions of for D??????
         # rD = volume/D
         x[cID] = (bx[cID] - sumx)*rD
         y[cID] = (by[cID] - sumy)*rD
-        z[cID] = zero(F)
+        z[cID] = (bz[cID] - sumz)*rD
     end
 end
 

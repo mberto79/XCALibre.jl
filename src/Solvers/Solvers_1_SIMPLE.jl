@@ -164,8 +164,8 @@ function SIMPLE_loop(
         
         inverse_diagonal!(rD, ux_eqn.equation)
         interpolate!(rDf, rD)
-        remove_pressure_source!(ux_eqn, uy_eqn, ∇p)
-        H!(Hv, U, ux_eqn, uy_eqn)
+        remove_pressure_source!(ux_eqn, uy_eqn, uy_eqn, ∇p)
+        H!(Hv, U, ux_eqn, uy_eqn, uy_eqn)
 
         interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs)

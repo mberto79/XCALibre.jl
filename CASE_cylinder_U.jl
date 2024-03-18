@@ -56,7 +56,7 @@ schemes = (
 )
 
 runtime = set_runtime(
-    iterations=10, write_interval=1, time_step=0.005)
+    iterations=500, write_interval=-1, time_step=0.005)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

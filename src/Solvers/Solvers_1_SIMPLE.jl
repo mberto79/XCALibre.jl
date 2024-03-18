@@ -34,6 +34,14 @@ function simple!(model, config; resume=true, pref=nothing)
         -Source(∇p.result.y)
     ) → Equation(mesh)
 
+    uz_eqn = (
+        Time{schemes.U.time}(U.z)
+        + Divergence{schemes.U.divergence}(mdotf, U.z) 
+        - Laplacian{schemes.U.laplacian}(nueff, U.z) 
+        == 
+        -Source(∇p.result.y)
+    ) → Equation(mesh)
+
     p_eqn = (
         Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
     ) → Equation(mesh)
@@ -43,6 +51,7 @@ function simple!(model, config; resume=true, pref=nothing)
     @reset ux_eqn.preconditioner = set_preconditioner(
                     solvers.U.preconditioner, ux_eqn, U.x.BCs, runtime)
     @reset uy_eqn.preconditioner = ux_eqn.preconditioner
+    @reset uz_eqn.preconditioner = ux_eqn.preconditioner
     @reset p_eqn.preconditioner = set_preconditioner(
                     solvers.p.preconditioner, p_eqn, p.BCs, runtime)
 
@@ -50,6 +59,7 @@ function simple!(model, config; resume=true, pref=nothing)
      
     @reset ux_eqn.solver = solvers.U.solver(_A(ux_eqn), _b(ux_eqn))
     @reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
+    @reset uz_eqn.solver = solvers.U.solver(_A(uz_eqn), _b(uz_eqn))
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
 
     if isturbulent(model)
@@ -60,14 +70,14 @@ function simple!(model, config; resume=true, pref=nothing)
         turbulence = nothing
     end
 
-    R_ux, R_uy, R_p  = SIMPLE_loop(
-    model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config ; resume=resume, pref=pref)
+    R_ux, R_uy, R_uz, R_p  = SIMPLE_loop(
+    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config ; resume=resume, pref=pref)
 
-    return R_ux, R_uy, R_p     
+    return R_ux, R_uy, R_uz, R_p     
 end # end function
 
 function SIMPLE_loop(
-    model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config ; resume, pref)
+    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config ; resume, pref)
     
     # Extract model variables and configuration
     (;mesh, U, p, nu) = model
@@ -109,6 +119,7 @@ function SIMPLE_loop(
 
     R_ux = ones(TF, iterations)
     R_uy = ones(TF, iterations)
+    R_uz = ones(TF, iterations)
     R_p = ones(TF, iterations)
     
     interpolate!(Uf, U)   
@@ -141,6 +152,15 @@ function SIMPLE_loop(
         update_preconditioner!(uy_eqn.preconditioner)
         run!(uy_eqn, solvers.U)
         residual!(R_uy, uy_eqn.equation, U.y, iteration)
+
+        @. prev = U.z.values
+        discretise!(uz_eqn, prev, runtime)
+        apply_boundary_conditions!(uz_eqn, U.z.BCs)
+        # uy_eqn.b .-= divUTy
+        implicit_relaxation!(uz_eqn.equation, prev, solvers.U.relax)
+        update_preconditioner!(uz_eqn.preconditioner)
+        run!(uz_eqn, solvers.U)
+        residual!(R_uz, uz_eqn.equation, U.z, iteration)
         
         inverse_diagonal!(rD, ux_eqn.equation)
         interpolate!(rDf, rD)
@@ -201,6 +221,7 @@ function SIMPLE_loop(
 
         if (R_ux[iteration] <= convergence && 
             R_uy[iteration] <= convergence && 
+            R_uz[iteration] <= convergence && 
             R_p[iteration] <= convergence)
 
             print(
@@ -219,6 +240,7 @@ function SIMPLE_loop(
                 (:iter,iteration),
                 (:Ux, R_ux[iteration]),
                 (:Uy, R_uy[iteration]),
+                (:Uz, R_uy[iteration]),
                 (:p, R_p[iteration]),
                 ]
             )
@@ -228,5 +250,5 @@ function SIMPLE_loop(
         end
 
     end # end for loop
-    return R_ux, R_uy, R_p 
+    return R_ux, R_uy, R_uz, R_p 
 end

@@ -5,7 +5,7 @@ using CUDA
 
 #mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
 mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
-mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.08m.unv"
+mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.06m.unv"
 
 mesh=build_mesh3D(mesh_file)
 
@@ -60,7 +60,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=1, time_step=1, write_interval=1)
+    iterations=2, time_step=1, write_interval=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -70,9 +70,9 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-backend = CUDABackend()
+# backend = CUDABackend()
 
-Rx, Ry, Rz, Rp, model1 = simple!(model, config, backend)
+Rx, Ry, Rz, Rp = simple!(model, config)
 
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

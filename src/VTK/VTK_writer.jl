@@ -19,7 +19,7 @@ function model2vtk(model::RANS{KOmega,F1,F2,V,T,E,D}, name) where {F1,F2,V,T,E,D
     write_vtk(name, model.mesh, args...)
 end
 
-function write_vtk(name, mesh, args...) #, Ux, Uy, Uz, p)
+function write_vtk(name, mesh::Mesh2, args...) #, Ux, Uy, Uz, p)
     # UxNodes = FVM.NodeScalarField(Ux)
     # UyNodes = FVM.NodeScalarField(Uy)
     # UzNodes = FVM.NodeScalarField(Uz)

@@ -9,7 +9,7 @@ mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.06m.unv"
 
 mesh=build_mesh3D(mesh_file)
 
-velocity = [0.05,0.0,0.0]
+velocity = [0.01,0.0,0.0]
 nu=1e-3
 Re=velocity[1]*0.1/nu
 noSlip = [0.0, 0.0, 0.0]
@@ -35,23 +35,23 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 )
 
 schemes = (
-    U = set_schemes(),
-    p = set_schemes()
+    U = set_schemes(divergence=Upwind),
+    p = set_schemes(divergence=Upwind)
 )
 
 solvers = (
     U = set_solver(
         model.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(),
+        preconditioner = ILU0(),
         convergence = 1e-7,
         relax       = 0.8,
         rtol = 1e-4
     ),
     p = set_solver(
         model.p;
-        solver      = CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(),
+        solver      = GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
+        preconditioner = LDL(),
         convergence = 1e-7,
         relax       = 0.2,
         rtol = 1e-4
@@ -60,7 +60,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=2, time_step=1, write_interval=1)
+    iterations=1000, time_step=1, write_interval=10)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

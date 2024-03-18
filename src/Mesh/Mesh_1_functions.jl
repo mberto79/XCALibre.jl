@@ -37,54 +37,54 @@ function boundary_index(
     end
 end
 
-function x(mesh::Mesh2{I,F}) where {I,F}
+function x(mesh::AbstractMesh)
     cells = mesh.cells
-    out = zeros(F, length(cells))
+    out = zeros(_get_float(mesh), length(cells))
     @inbounds for i ∈ eachindex(cells)
         out[i] = cells[i].centre[1]
     end
     return out
 end
 
-function y(mesh::Mesh2{I,F}) where {I,F}
+function y(mesh::AbstractMesh)
     cells = mesh.cells
-    out = zeros(F, length(cells))
+    out = zeros(_get_float(mesh), length(cells))
     @inbounds for i ∈ eachindex(cells)
         out[i] = cells[i].centre[2]
     end
     return out
 end
 
-function z(mesh::Mesh2{I,F}) where {I,F}
+function z(mesh::AbstractMesh)
     cells = mesh.cells
-    out = zeros(F, length(cells))
+    out = zeros(_get_float(mesh), length(cells))
     @inbounds for i ∈ eachindex(cells)
         out[i] = cells[i].centre[3]
     end
     return out
 end
 
-function xf(mesh::Mesh2{I,F}) where {I,F}
+function xf(mesh::AbstractMesh) 
     faces = mesh.faces
-    out = zeros(F, length(faces))
+    out = zeros(_get_float(mesh), length(faces))
     @inbounds for i ∈ eachindex(faces)
         out[i] = faces[i].centre[1]
     end
     return out
 end
 
-function yf(mesh::Mesh2{I,F}) where {I,F}
+function yf(mesh::AbstractMesh)
     faces = mesh.faces
-    out = zeros(F, length(faces))
+    out = zeros(_get_float(mesh), length(faces))
     @inbounds for i ∈ eachindex(faces)
         out[i] = faces[i].centre[2]
     end
     return out
 end
 
-function zf(mesh::Mesh2{I,F}) where {I,F}
+function zf(mesh::AbstractMesh) 
     faces = mesh.faces
-    out = zeros(F, length(faces))
+    out = zeros(_get_float(mesh), length(faces))
     @inbounds for i ∈ eachindex(faces)
         out[i] = faces[i].centre[3]
     end

@@ -139,7 +139,7 @@ begin # Extend to 3D!
     end
 end
 
-courant_number(U, mesh::Mesh2, runtime) = begin
+courant_number(U, mesh::AbstractMesh, runtime) = begin
     dt = runtime.dt 
     co = zero(_get_float(mesh))
     # courant_max = zero(_get_float(mesh))

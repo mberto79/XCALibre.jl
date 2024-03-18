@@ -87,7 +87,7 @@ struct Equation{Ti,Tf}
     Fx::Vector{Tf}
     # mesh::Mesh2{Ti,Tf}
 end
-Equation(mesh::Mesh2) = begin
+Equation(mesh::AbstractMesh) = begin
     nCells = length(mesh.cells)
     Tf = _get_float(mesh)
     i, j, v = sparse_matrix_connectivity(mesh)
@@ -100,7 +100,7 @@ Equation(mesh::Mesh2) = begin
         )
 end
 
-function sparse_matrix_connectivity(mesh::Mesh2)
+function sparse_matrix_connectivity(mesh::AbstractMesh)
     (; cells, cell_neighbours) = mesh
     nCells = length(cells)
     TI = _get_int(mesh) # would this result in regression (type identified inside func?)

@@ -56,12 +56,12 @@ solvers = (
 )
 
 schemes = (
-    U = set_schemes(time=Euler, divergence=Linear, gradient=Midpoint),
-    p = set_schemes(time=Euler, divergence=Linear, gradient=Midpoint)
+    U = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint),
+    p = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint)
 )
 
 runtime = set_runtime(
-    iterations=1000, write_interval=50, time_step=0.005)
+    iterations=100, write_interval=1, time_step=0.005)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

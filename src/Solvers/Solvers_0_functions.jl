@@ -362,11 +362,11 @@ end
                            nzval_z, colptr_z, rowval_z, bz, vz,
                            x, y, z) #Extend to 3D!
     i = @index(Global)
-    @private sumx = zero(F)
-    @private sumy = zero(F)
-    @private sumz = zero(F)
+    sumx = zero(F)
+    sumy = zero(F)
+    sumz = zero(F)
 
-    @inbounds begin
+    # @inbounds begin
         (; faces_range) = cells[i]
 
         for ni ∈ faces_range
@@ -401,7 +401,7 @@ end
         x[i] = (bx[i] - sumx)*rD
         y[i] = (by[i] - sumy)*rD
         z[i] = (bz[i] - sumz)*rD
-    end
+    # end
 end
 
 courant_number(U, mesh::AbstractMesh, runtime) = begin

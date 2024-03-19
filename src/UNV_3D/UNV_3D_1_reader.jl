@@ -12,39 +12,39 @@ function load_3D(unv_mesh; integer=Int64, float=Float64)
     edgeindx=0
     
     #Defining Arrays with Structs
-    points=UNV_3D.Point[]
-    edges=UNV_3D.Edge[]
-    faces=UNV_3D.Face[]
-    volumes=UNV_3D.Volume[]
-    boundaryElements=UNV_3D.BoundaryElement[]
-    elements=UNV_3D.Element[]
+    points=UNV_3D.Point{float,SVector{3,float}}[]
+    edges=UNV_3D.Edge{integer,Vector{integer}}[]
+    faces=UNV_3D.Face{integer,Vector{integer}}[]
+    volumes=UNV_3D.Volume{integer,Vector{integer}}[]
+    boundaryElements=UNV_3D.BoundaryElement{String,integer,Vector{integer}}[]
+    elements=UNV_3D.Element{integer,Vector{integer}}[]
     
     #Defining Arrays for data collection
     #Points
-    point=[]
-    pointindex=[]
+    point=float[]
+    pointindex=integer[]
     
     #Vertices
-    edge=[]
-    edgeCount=[]
-    edgeindex=[]
+    edge=integer[]
+    edgeCount=integer[]
+    edgeindex=integer[]
     
     #Faces
-    face=[]
-    faceindex=[]
-    faceCount=[]
+    face=integer[]
+    faceindex=integer[]
+    faceCount=integer[]
     
     #Volumes
-    volume=[]
-    volumeindex=[]
-    volumeCount=[]
+    volume=integer[]
+    volumeindex=integer[]
+    volumeCount=integer[]
     
     #bc
-    boundary=[]
-    boundarys=[]
-    boundaryindex=[]
-    currentBoundary=0
-    boundaryNumber=0
+    boundary=integer[]
+    boundarys=Tuple{SubString{String}, Vector{Int64}}[]
+    boundaryindex=integer[]
+    currentBoundary=zero(integer)
+    boundaryNumber=zero(integer)
     
     
     #Splits UNV file into sections
@@ -139,7 +139,7 @@ function load_3D(unv_mesh; integer=Int64, float=Float64)
         end
     
         if length(sline)==4 && indx>elementindx
-            volume=[parse(Int,sline[i]) for i=1:length(sline)]
+            volume=[parse(Int64,sline[i]) for i=1:length(sline)]
             push!(volumes,Volume(volumeindex-faceindex,volumeCount,volume))
             push!(elements,Element(volumeindex,volumeCount,volume))
             continue
@@ -188,7 +188,7 @@ function load_3D(unv_mesh; integer=Int64, float=Float64)
         end
     
         if length(sline)==8 && indx>boundaryindx && parse(Int64,sline[2])!=0
-            boundary=[parse(Int,sline[i]) for i=1:length(sline)]
+            boundary=[parse(Int64,sline[i]) for i=1:length(sline)]
             push!(boundarys,(boundaryindex,boundary))
             push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[2])-edgeindex)
             if parse(Int64,sline[6]) ≠ 0

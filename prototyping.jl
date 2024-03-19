@@ -1,71 +1,82 @@
-export build_mesh3D
+using Plots
+using FVM_1D
+# using Krylov
+using Accessors
+using StaticArrays
+using LinearAlgebra
 
-function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
-    stats= @timed begin
-    println("Loading UNV File...")
-    points,edges,faces,volumes,boundaryElements=load_3D(
-        unv_mesh; integer=integer, float=float)
-    println("File Read Successfully")
-    println("Generating Mesh...")
-    nodes=generate_nodes(points,volumes)
+#mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
+mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
+mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.08m.unv"
+mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.06m.unv"
 
-    node_cells=generate_node_cells(points,volumes)
+@time mesh=build_mesh3D(mesh_file)
 
-    faces=generate_internal_faces(volumes,faces)
-    #faces=quad_internal_faces(volumes,faces)
 
-    face_nodes=Vector{Int}(generate_face_nodes(faces))
-    cell_nodes=Vector{Int}(generate_cell_nodes(volumes))
-    
-    all_cell_faces=Vector{Int}(generate_all_cell_faces(volumes,faces))
+println("Loading UNV File...")
+points,edges,faces,volumes,boundaryElements=load_3D(
+    mesh_file; integer=Int64, float=Float64)
+println("File Read Successfully")
+println("Generating Mesh...")
+points
+@time nodes=generate_nodes(points,volumes)
+volumes
+@time node_cells=generate_node_cells(points,volumes)
+typeof(volumes)
+@time faces=generate_internal_faces(volumes,faces) # Needs work
+#faces=quad_internal_faces(volumes,faces)
 
-    cell_nodes_range=generate_cell_nodes_range(volumes)
-    face_nodes_range=generate_face_nodes_range(faces)
-    all_cell_faces_range=generate_all_faces_range(volumes)
+@time face_nodes=Vector{Int}(generate_face_nodes(faces))
+@time cell_nodes=Vector{Int}(generate_cell_nodes(volumes))
 
-    centre_of_cells=calculate_centre_cell(volumes,nodes)
-    #volume_of_cells=calculate_cell_volume(volumes,all_cell_faces_range,all_cell_faces,face_normal,cell_centre,face_centre,face_ownerCells,face_area)
+@time all_cell_faces=Vector{Int}(generate_all_cell_faces(volumes,faces)) # needs work
 
-    boundary_faces,boundary_face_range=generate_boundary_faces(boundaryElements)
-    boundary_cells=generate_boundary_cells(boundary_faces,all_cell_faces,all_cell_faces_range)
+@time cell_nodes_range=generate_cell_nodes_range(volumes)
+@time face_nodes_range=generate_face_nodes_range(faces)
+@time all_cell_faces_range=generate_all_faces_range(volumes)
 
-    cell_faces,cell_faces_range=generate_cell_faces(volumes,faces,boundaryElements)
+@time centre_of_cells=calculate_centre_cell(volumes,nodes)
+#volume_of_cells=calculate_cell_volume(volumes,all_cell_faces_range,all_cell_faces,face_normal,cell_centre,face_centre,face_ownerCells,face_area)
 
-    boundaries=generate_boundaries(boundaryElements,boundary_face_range)
-    #cells=generate_cells(volumes,centre_of_cells,volume_of_cells,cell_nodes_range,cell_faces_range)
+@time boundary_faces,boundary_face_range=generate_boundary_faces(boundaryElements)
+@time boundary_cells=generate_boundary_cells(boundary_faces,all_cell_faces,all_cell_faces_range)
 
-    #cell_neighbours=generate_cell_neighbours(cells,cell_faces)
+@time cell_faces,cell_faces_range=generate_cell_faces(volumes,faces,boundaryElements) # needs work
 
-    face_ownerCells=generate_face_ownerCells(faces,all_cell_faces,volumes,all_cell_faces_range)
+@time boundaries=generate_boundaries(boundaryElements,boundary_face_range)
+#cells=generate_cells(volumes,centre_of_cells,volume_of_cells,cell_nodes_range,cell_faces_range)
 
-    #faces_normal,faces_area,faces_centre,faces_e,faces_delta,faces_weight=calculate_faces_properties(faces,face_nodes,nodes,cell_nodes,cells,face_ownerCells,face_nodes_range)
+#cell_neighbours=generate_cell_neighbours(cells,cell_faces)
 
-    faces_area=calculate_face_area(nodes,faces)
-    faces_centre=calculate_face_centre(faces,nodes)
-    faces_normal=calculate_face_normal(faces,nodes)
-    faces_normal=flip_face_normal(faces,face_ownerCells,centre_of_cells,faces_centre,faces_normal)
-    faces_e,faces_delta,faces_weight=calculate_face_properties(faces,face_ownerCells,centre_of_cells,faces_centre,faces_normal)
-    
-    volume_of_cells=calculate_cell_volume(volumes,all_cell_faces_range,all_cell_faces,faces_normal,centre_of_cells,faces_centre,face_ownerCells,faces_area)
+@time face_ownerCells=generate_face_ownerCells(faces,all_cell_faces,volumes,all_cell_faces_range)
 
-    cells=generate_cells(volumes,centre_of_cells,volume_of_cells,cell_nodes_range,cell_faces_range)
-    cell_neighbours=generate_cell_neighbours(cells,cell_faces)
-    faces=generate_faces(faces,face_nodes_range,faces_centre,faces_normal,faces_area,face_ownerCells,faces_e,faces_delta,faces_weight)
-    
-    cell_nsign=calculate_cell_nsign(cells,faces,cell_faces)
+#faces_normal,faces_area,faces_centre,faces_e,faces_delta,faces_weight=calculate_faces_properties(faces,face_nodes,nodes,cell_nodes,cells,face_ownerCells,face_nodes_range)
 
-    get_float=SVector(0.0,0.0,0.0)
-    get_int=UnitRange(0,0)
+@time faces_area=calculate_face_area(nodes,faces)
+@time faces_centre=calculate_face_centre(faces,nodes)
+@time faces_normal=calculate_face_normal(faces,nodes)
+@time faces_normal=flip_face_normal(faces,face_ownerCells,centre_of_cells,faces_centre,faces_normal)
+@time faces_e,faces_delta,faces_weight=calculate_face_properties(faces,face_ownerCells,centre_of_cells,faces_centre,faces_normal)
 
-    mesh=Mesh3(cells,cell_nodes,cell_faces,cell_neighbours,cell_nsign,faces,face_nodes,boundaries,nodes,node_cells,get_float,get_int,boundary_cells)
+@time volume_of_cells=calculate_cell_volume(volumes,all_cell_faces_range,all_cell_faces,faces_normal,centre_of_cells,faces_centre,face_ownerCells,faces_area)
 
-    end
-    println("Done! Execution time: ", @sprintf "%.6f" stats.time)
-    println("Mesh ready!")
-    return mesh
-end
+@time cells=generate_cells(volumes,centre_of_cells,volume_of_cells,cell_nodes_range,cell_faces_range)
+@time cell_neighbours=generate_cell_neighbours(cells,cell_faces)
+@time faces=generate_faces(faces,face_nodes_range,faces_centre,faces_normal,faces_area,face_ownerCells,faces_e,faces_delta,faces_weight)
 
-# DEFINE FUNCTIONS
+@time cell_nsign=calculate_cell_nsign(cells,faces,cell_faces)
+
+@time get_float=SVector(0.0,0.0,0.0)
+@time get_int=UnitRange(0,0)
+
+@time mesh=Mesh3(cells,cell_nodes,cell_faces,cell_neighbours,cell_nsign,faces,face_nodes,boundaries,nodes,node_cells,get_float,get_int,boundary_cells)
+
+println("Done! Execution time: ", @sprintf "%.6f" stats.time)
+println("Mesh ready!")
+
+
+# DEFINE FUNCTIONS ###########
+
 function calculate_face_properties(faces,face_ownerCells,cell_centre,face_centre,face_normal)
     store_e=SVector{3,Float64}[]
     store_delta=Float64[]

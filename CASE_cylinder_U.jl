@@ -40,7 +40,7 @@ solvers = (
     U = set_solver(
         model.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = NormDiagonal(),
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1.0,
         rtol = 1e-4
@@ -48,20 +48,20 @@ solvers = (
     p = set_solver(
         model.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = NormDiagonal(),
+        preconditioner = Jacobi(), #NormDiagonal(),
         convergence = 1e-7,
-        relax       = 0.3,
+        relax       = 1.0,
         rtol = 1e-4
     )
 )
 
 schemes = (
-    U = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint)
+    U = set_schemes(time=Euler, divergence=Linear, gradient=Midpoint),
+    p = set_schemes(time=Euler, divergence=Linear, gradient=Midpoint)
 )
 
 runtime = set_runtime(
-    iterations=10000, write_interval=50, time_step=0.001)
+    iterations=1000, write_interval=50, time_step=0.005)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

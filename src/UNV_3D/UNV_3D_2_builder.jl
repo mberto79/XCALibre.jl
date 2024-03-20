@@ -31,7 +31,7 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
     boundary_faces,boundary_face_range=generate_boundary_faces(boundaryElements)
     boundary_cells=generate_boundary_cells(boundary_faces,all_cell_faces,all_cell_faces_range)
 
-    cell_faces,cell_faces_range=generate_cell_faces(volumes,faces,boundaryElements)
+    cell_faces,cell_faces_range=generate_cell_faces(boundaryElements,volumes,all_cell_faces)
 
     boundaries=generate_boundaries(boundaryElements,boundary_face_range)
     #cells=generate_cells(volumes,centre_of_cells,volume_of_cells,cell_nodes_range,cell_faces_range)
@@ -283,50 +283,36 @@ end
 #     return cell_faces,cell_faces_range
 # end
 
-function generate_cell_faces(volumes,faces,boundaryElements)
-    cell_faces=Int64[]
-    cell_faces_range=UnitRange{Int64}[]
-    max_store=0
+function generate_cell_faces(boundaryElements,volumes,all_cell_faces)
+    cell_faces=Vector{Int}[]
+    cell_face_range=UnitRange{Int64}[]
+    counter_start=0
+    x=0
     max=0
+
     for ib=1:length(boundaryElements)
         max_store=maximum(boundaryElements[ib].elements)
         if max_store>=max
             max=max_store
         end
     end
-    
-    x=0
+
     for i=1:length(volumes)
-    wipe=typeof(faces[1].faceindex)[]
-        for ic=max+1:length(faces)
-            bad=sort(volumes[i].volumes)
-            good=sort(faces[ic].faces)
-            store=typeof(good[1])[]
-            true_store=typeof(true)[]
+        push!(cell_faces,all_cell_faces[counter_start+1:counter_start+length(volumes[i].volumes)])
+        counter_start=counter_start+length(volumes[i].volumes)
+        cell_faces[i]=filter(x-> x>max,cell_faces[i])
 
-            for ip=1:length(good)
-                push!(store,good[ip] in bad)
-                push!(true_store,true)
-            end
-
-            if store[1:length(good)] == true_store
-                push!(cell_faces,faces[ic].faceindex)
-                push!(wipe,faces[ic].faceindex)
-            end
-            continue
-        end
-
-        if length(wipe)==1
-            push!(cell_faces_range,UnitRange(x+1,x+1))
+        if length(cell_faces[i])==1
+            push!(cell_face_range,UnitRange(x+1,x+1))
             x=x+1
-        end
-
-        if length(wipe) ≠ 1
-            push!(cell_faces_range,UnitRange(x+1,x+length(wipe)))
-            x=x+length(wipe)
+        else
+            push!(cell_face_range,UnitRange(x+1,x+length(cell_faces[i])))
+            x=x+length(cell_faces[i])
         end
     end
-    return cell_faces,cell_faces_range
+    cell_faces=reduce(vcat,cell_faces)
+
+    return cell_faces,cell_face_range
 end
 
 function calculate_cell_nsign(cells,faces1,cell_faces)

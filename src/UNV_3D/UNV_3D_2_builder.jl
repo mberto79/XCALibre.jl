@@ -11,7 +11,9 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
 
     node_cells=generate_node_cells(points,volumes)
 
-    faces=generate_internal_faces(volumes,faces)
+    #faces=generate_internal_faces(volumes,faces)
+
+    faces=generate_tet_internal_faces(volumes,faces)
     #faces=quad_internal_faces(volumes,faces)
 
     face_nodes=Vector{Int}(generate_face_nodes(faces))
@@ -532,73 +534,103 @@ function generate_cell_neighbours(cells,cell_faces)
     return cell_neighbours
 end
 
-function generate_internal_faces(volumes,faces)
-    store_cell_faces=Int64[]
-    store_faces=Int64[]
+# function generate_internal_faces(volumes,faces)
+#     store_cell_faces=Int64[]
+#     store_faces=Int64[]
     
+#     for i=1:length(volumes)
+#     cell=sort(volumes[i].volumes)
+#     push!(store_cell_faces,cell[1],cell[2],cell[3])
+#     push!(store_cell_faces,cell[1],cell[2],cell[4])
+#     push!(store_cell_faces,cell[1],cell[3],cell[4])
+#     push!(store_cell_faces,cell[2],cell[3],cell[4])
+#     end
+    
+#     for i=1:length(faces)
+#         face=sort(faces[i].faces)
+#         push!(store_faces,face[1],face[2],face[3])
+#     end
+
+#     range=UnitRange{Int64}[]
+
+#     x=0
+#     for i=1:length(store_cell_faces)/3 # Very dodgy! could give float!!!
+#         store=UnitRange(x+1:x+3)
+#         x=x+3
+#         push!(range,store)
+#     end
+
+#     faces1=Vector{Int64}[]
+
+#     for i=1:length(range)
+#         face1=store_cell_faces[range[i]]
+#         for ic=1:length(range)
+#             face2=store_cell_faces[range[ic]]
+#             store=[] # Why are you allocating inside the loop?
+    
+#             push!(store,face2[1] in face1)
+#             push!(store,face2[2] in face1)
+#             push!(store,face2[3] in face1)
+
+#             count1=count(store)
+#             # println(count1)
+    
+#             if count1!=3
+#             # if length(store) !=3 # is this what you want to do?
+#                 push!(faces1,face1)
+#             end
+#         end
+#     end
+
+#     all_faces=unique(faces1)
+
+#     store1_faces=Vector{Int64}[]
+#     for i=1:length(faces)
+#         push!(store1_faces,sort(faces[i].faces))
+#     end
+
+#     all_faces=sort(all_faces)
+#     store1_faces=sort(store1_faces)
+    
+#     internal_faces=setdiff(all_faces,store1_faces)
+    
+#     for i=1:length(internal_faces)
+#         push!(faces,UNV_3D.Face(faces[end].faceindex+1,faces[end].faceCount,internal_faces[i]))
+#     end
+#     return faces
+# end
+
+function generate_tet_internal_faces(volumes,faces)
+    cell_face_nodes=Vector{Int}[]
+
     for i=1:length(volumes)
-    cell=sort(volumes[i].volumes)
-    push!(store_cell_faces,cell[1],cell[2],cell[3])
-    push!(store_cell_faces,cell[1],cell[2],cell[4])
-    push!(store_cell_faces,cell[1],cell[3],cell[4])
-    push!(store_cell_faces,cell[2],cell[3],cell[4])
-    end
-    
-    for i=1:length(faces)
-        face=sort(faces[i].faces)
-        push!(store_faces,face[1],face[2],face[3])
-    end
+        cell_faces=zeros(Int,4,3)
+        cell=sort(volumes[i].volumes)
 
-    range=UnitRange{Int64}[]
+        cell_faces[1,1:3]=cell[1:3]
+        cell_faces[2,1:2]=cell[1:2]
+        cell_faces[2,3]=cell[4]
+        cell_faces[3,1]=cell[1]
+        cell_faces[3,2:3]=cell[3:4]
+        cell_faces[4,1:3]=cell[2:4]
 
-    x=0
-    for i=1:length(store_cell_faces)/3 # Very dodgy! could give float!!!
-        store=UnitRange(x+1:x+3)
-        x=x+3
-        push!(range,store)
-    end
-
-    faces1=Vector{Int64}[]
-
-    for i=1:length(range)
-        face1=store_cell_faces[range[i]]
-        for ic=1:length(range)
-            face2=store_cell_faces[range[ic]]
-            store=[] # Why are you allocating inside the loop?
-    
-            push!(store,face2[1] in face1)
-            push!(store,face2[2] in face1)
-            push!(store,face2[3] in face1)
-
-            count1=count(store)
-            # println(count1)
-    
-            if count1!=3
-            # if length(store) !=3 # is this what you want to do?
-                push!(faces1,face1)
-            end
+        for ic=1:4
+            push!(cell_face_nodes,cell_faces[ic,:])
         end
     end
 
-    all_faces=unique(faces1)
-
-    store1_faces=Vector{Int64}[]
+    sorted_faces=Vector{Int}[]
     for i=1:length(faces)
-        push!(store1_faces,sort(faces[i].faces))
+        push!(sorted_faces,sort(faces[i].faces))
     end
 
-    all_faces=sort(all_faces)
-    store1_faces=sort(store1_faces)
-    
-    internal_faces=setdiff(all_faces,store1_faces)
-    
+    internal_faces=setdiff(cell_face_nodes,sorted_faces)
+
     for i=1:length(internal_faces)
         push!(faces,UNV_3D.Face(faces[end].faceindex+1,faces[end].faceCount,internal_faces[i]))
     end
     return faces
 end
-
-
 
 function quad_internal_faces(volumes,faces)
     store_cell_faces1=Int64[]

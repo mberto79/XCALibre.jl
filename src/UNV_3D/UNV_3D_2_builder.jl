@@ -13,13 +13,13 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
 
     #faces=generate_internal_faces(volumes,faces)
 
-    faces=generate_tet_internal_faces(volumes,faces)
+    faces,cell_face_nodes=generate_tet_internal_faces(volumes,faces)
     #faces=quad_internal_faces(volumes,faces)
 
     face_nodes=Vector{Int}(generate_face_nodes(faces))
     cell_nodes=Vector{Int}(generate_cell_nodes(volumes))
     
-    all_cell_faces=Vector{Int}(generate_all_cell_faces(volumes,faces))
+    all_cell_faces=generate_all_cell_faces(faces,cell_face_nodes)
 
     cell_nodes_range=generate_cell_nodes_range(volumes)
     face_nodes_range=generate_face_nodes_range(faces)
@@ -629,7 +629,7 @@ function generate_tet_internal_faces(volumes,faces)
     for i=1:length(internal_faces)
         push!(faces,UNV_3D.Face(faces[end].faceindex+1,faces[end].faceCount,internal_faces[i]))
     end
-    return faces
+    return faces, cell_face_nodes
 end
 
 function quad_internal_faces(volumes,faces)
@@ -878,27 +878,40 @@ end
 #     return cell_faces
 # end
 
-function generate_all_cell_faces(volumes,faces)
-    cell_faces=typeof(faces[1].faceindex)[]
-    for i=1:length(volumes)
-        for ic=1:length(faces)
-            bad=sort(volumes[i].volumes)
-            good=sort(faces[ic].faces)
-            store=typeof(good[1])[]
-            true_store=typeof(true)[]
+# function generate_all_cell_faces(volumes,faces)
+#     cell_faces=typeof(faces[1].faceindex)[]
+#     for i=1:length(volumes)
+#         for ic=1:length(faces)
+#             bad=sort(volumes[i].volumes)
+#             good=sort(faces[ic].faces)
+#             store=typeof(good[1])[]
+#             true_store=typeof(true)[]
 
-            for ip=1:length(good)
-                push!(store,good[ip] in bad)
-                push!(true_store,true)
-            end
+#             for ip=1:length(good)
+#                 push!(store,good[ip] in bad)
+#                 push!(true_store,true)
+#             end
 
-            if store[1:length(good)] == true_store
-                push!(cell_faces,faces[ic].faceindex)
-            end
-            continue
-        end
+#             if store[1:length(good)] == true_store
+#                 push!(cell_faces,faces[ic].faceindex)
+#             end
+#             continue
+#         end
+#     end
+#     return cell_faces
+# end
+
+function generate_all_cell_faces(faces,cell_face_nodes)
+    all_cell_faces=Int[]
+    sorted_faces=Vector{Int}[]
+    for i=1:length(faces)
+        push!(sorted_faces,sort(faces[i].faces))
     end
-    return cell_faces
+
+    for i=1:length(cell_face_nodes)
+        push!(all_cell_faces,findfirst(x -> x==cell_face_nodes[i],sorted_faces))
+    end
+    return all_cell_faces
 end
 
 #function generate_cell_faces(faces)

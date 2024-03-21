@@ -5,14 +5,14 @@ using Krylov
 
 #mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
 mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
-mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.08m.unv"
+mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.06m.unv"
 
 @time mesh=build_mesh3D(mesh_file)
 
 boundary_faces(mesh)
 @time faces_checked, results = check_face_owners(mesh)
 
-velocity = [1.5,0.0,0.0]
+velocity = [0.01,0.0,0.0]
 nu=1e-3
 Re=velocity[1]*0.1/nu
 noSlip = [0.0, 0.0, 0.0]
@@ -63,7 +63,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=20, time_step=1, write_interval=5)
+    iterations=5000, time_step=1, write_interval=1000)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -77,11 +77,13 @@ initialise!(model.p, 0.0)
 
 Rx, Ry, Rz, Rp = simple!(model, config)
 
-plot(; xlims=(0,1000))
+plot(; xlims=(0,400))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
 plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
 plot!(1:length(Rz), Rz, yscale=:log10, label="Uz")
 plot!(1:length(Rp), Rp, yscale=:log10, label="p")
+plot!(ylabel="Residuals")
+plot!(xlabel="Iterations")
 
 using Profile, PProf
 

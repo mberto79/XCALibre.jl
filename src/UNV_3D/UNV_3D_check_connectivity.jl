@@ -23,15 +23,15 @@ function check_face_owners(mesh)
         owner2 = ownerCells[2] # cell ID of owner 2
         owner1_face_range = cells[owner1].faces_range
         owner2_face_range = cells[owner2].faces_range
-        owner1_fIDs = cell_faces[owner1_face_range]
-        owner2_fIDs = cell_faces[owner2_face_range]
+        owner1_fIDs = @view cell_faces[owner1_face_range]
+        owner2_fIDs = @view cell_faces[owner2_face_range]
         owner1_check = face_ID ∈ owner1_fIDs
         owner2_check = face_ID ∈ owner2_fIDs
         if owner1_check && owner2_check
             results[i] = true
             faces_checked[i] = face_ID
         else
-            println("Face owners not consistent for face ", face_ID)
+            # println("Face owners not consistent for face ", face_ID)
             # face_checks[face_ID] = false # not needed array was initialised with false
         end  
     end

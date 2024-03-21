@@ -10,7 +10,7 @@ mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.08m.unv"
 @time mesh=build_mesh3D(mesh_file)
 
 boundary_faces(mesh)
-faces_checked, results = check_face_owners(mesh)
+@time faces_checked, results = check_face_owners(mesh)
 
 velocity = [1.5,0.0,0.0]
 nu=1e-3

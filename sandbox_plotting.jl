@@ -16,6 +16,10 @@ _x(face::Face3D) = face.centre[1]
 _y(face::Face3D) = face.centre[2]
 _z(face::Face3D) = face.centre[3]
 
+_x(cell::Cell) = cell.centre[1]
+_y(cell::Cell) = cell.centre[2]
+_z(cell::Cell) = cell.centre[3]
+
 _coords(obj::Node) = [obj.coords[1]],[obj.coords[2]],[obj.coords[3]]
 _centre(obj::Face3D) = [obj.centre[1]],[obj.centre[2]],[obj.centre[3]]
 _centre(obj::Cell) = [obj.centre[1]],[obj.centre[2]],[obj.centre[3]]
@@ -43,6 +47,16 @@ plot_faces_IDs!(fig, mesh) = begin
         annotate!(
             _x(face), _y(face), _z(face), 
             text(fi, :blue))
+    end
+    fig
+end
+
+plot_cells_IDs!(fig, mesh) = begin
+    cells = mesh.cells
+    for (ci, cell) ∈ enumerate(cells)
+        annotate!(
+            _x(cell), _y(cell), _z(cell), 
+            text(ci, :red))
     end
     fig
 end
@@ -82,15 +96,17 @@ fig = scatter(_coords.(mesh.nodes), label=false, color=:black)
 scatter!(_centre.(mesh.faces), label=false, color=:blue)
 scatter!(_centre.(mesh.cells), label=false, color=:red)
 plot_face_edges!(fig, mesh)
+plot_cell_edges!(fig,mesh,5)
 
 gr() # not for interactive inspection but fast for annimations
 fig = scatter3d(xlabel="x", ylabel="y", zlabel="z")
 plot_face_edges!(fig, mesh)
 plot_nodes_IDs!(fig, mesh) # needs an existing plot
 plot_faces_IDs!(fig, mesh) # needs an existing plot
+plot_cells_IDs!(fig,mesh)
 plot3d!(fig, camera=(45,20))
 
-plot_cell_edges!(fig, mesh, 1)
+#plot_cell_edges!(fig, mesh, 1)
 
 @gif for angle ∈ range(45, stop = 500, length = 1000)
     plot3d!(fig, camera=(angle,20))

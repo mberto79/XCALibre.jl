@@ -1,3 +1,4 @@
+using FVM_1D
 using FVM_1D.UNV_3D
 using StaticArrays
 using Statistics
@@ -19,13 +20,69 @@ faces
 volumes
 boundaryElements
 
-mesh,cell_face_nodes,node_cells,all_cell_faces=build_mesh3D(unv_mesh)
+# mesh,cell_face_nodes,node_cells,all_cell_faces=build_mesh3D(unv_mesh)
+# mesh.boundaries
+# mesh.faces
 
 @time faces_checked, results = check_face_owners(mesh)
 @time check_cell_face_nodes(mesh,cell_face_nodes)
 @time boundary_faces(mesh)
 @time check_node_cells(mesh,node_cells)
 @time check_all_cell_faces(mesh,all_cell_faces)
+
+function generate_boundary_faces(boundaryElements)
+    boundary_faces=Int64[]
+    z=0
+    wipe=Int64[]
+    boundary_face_range=UnitRange{Int64}[]
+    for i=1:length(boundaryElements)
+        for n=1:length(boundaryElements[i].elements)
+            push!(boundary_faces,boundaryElements[i].elements[n])
+            push!(wipe,boundaryElements[i].elements[n])
+        end
+        if length(wipe)==1
+            push!(boundary_face_range,UnitRange(boundaryElements[i].elements[1],boundaryElements[i].elements[1]))
+            z=z+1
+        elseif length(wipe) ≠1
+            push!(boundary_face_range,UnitRange(boundaryElements[i].elements[1],boundaryElements[i].elements[end]))
+            z=z+length(wipe)
+        end
+        wipe=Int64[]
+    end
+    return boundary_faces,boundary_face_range
+end
+
+boundary_faces,boundary_face_range=generate_boundary_faces(boundaryElements)
+
+faces,cell_face_nodes=generate_tet_internal_faces(volumes,faces)
+all_cell_faces=generate_all_cell_faces(faces,cell_face_nodes)
+all_cell_faces_range=generate_all_faces_range(volumes)
+boundary_cells=generate_boundary_cells(boundary_faces,all_cell_faces,all_cell_faces_range)
+
+faces[12]
+volumes[1]
+
+function generate_boundary_cells(boundary_faces,cell_faces,cell_faces_range)
+    boundary_cells = Int64[]
+    store = Int64[]
+    for ic=1:length(boundary_faces)
+        for i in eachindex(cell_faces)
+                if cell_faces[i]==boundary_faces[ic]
+                    push!(store,i)
+                end
+        end
+    end
+    store
+    
+    for ic=1:length(store)
+        for i=1:length(cell_faces_range)
+            if cell_faces_range[i][1]<=store[ic]<=cell_faces_range[i][end]
+                push!(boundary_cells,i)
+            end
+        end
+    end
+    return boundary_cells
+end
 
 function generate_tet_internal_faces(volumes,faces)
     cell_face_nodes=Vector{Int}[]
@@ -59,8 +116,6 @@ function generate_tet_internal_faces(volumes,faces)
     return faces, cell_face_nodes
 end
 
-faces,cell_face_nodes=generate_tet_internal_faces(volumes,faces)
-
 function generate_all_cell_faces(faces,cell_face_nodes)
     all_cell_faces=Int[]
     sorted_faces=Vector{Int}[]
@@ -74,22 +129,24 @@ function generate_all_cell_faces(faces,cell_face_nodes)
     return all_cell_faces
 end
 
-all_cell_faces=generate_all_cell_faces(faces,cell_face_nodes)
+function generate_all_faces_range(volumes)
+    cell_faces_range=UnitRange(0,0)
+    store=typeof(cell_faces_range)[]
+    x=0
+    @inbounds for i=1:length(volumes)
+        #Tetra
+        if length(volumes[i].volumes)==4
+            cell_faces_range=UnitRange(x+1,x+4)
+            x=x+4
+            push!(store,cell_faces_range)
+        end
 
-function check_all_cell_faces(mesh,all_cell_faces)
-    #Check tet cells, no. of faces=4
-    #only works for meshes of same cell type
-    numface=0
-    (; cells,faces)=mesh
-    if length(faces[1].nodes_range)==3
-        numface=4
+        #Hexa
+        if length(volumes[i].volumes)==8
+                cell_faces_range=UnitRange(x+1,x+6)
+                x=x+6
+                push!(store,cell_faces_range)
+        end
     end
-    total_cell_faces=length(cells)*numface
-    if length(cell_face_nodes)==total_cell_faces
-        println("Passed: Length of all_cell_faces matches calculation")
-    else
-        println("Failed: Warning, length of all_cell_faces does not match calculations")
-    end
+    return store
 end
-
-check_all_cell_faces(mesh,all_cell_faces)

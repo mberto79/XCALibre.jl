@@ -2,6 +2,7 @@ export boundary_faces
 export check_face_owners
 export check_cell_face_nodes
 export check_node_cells
+export check_all_cell_faces
 
 # Function to work out number of boundary faces (based on boundary IDs_range)
 function boundary_faces(mesh)
@@ -73,5 +74,21 @@ function check_node_cells(mesh,node_cells)
         println("Passed: Each node_cell has the correct node")
     else
         println("Failed: Error with node_cell")
+    end
+end
+
+function check_all_cell_faces(mesh,all_cell_faces)
+    #Check tet cells, no. of faces=4
+    #only works for meshes of same cell type
+    numface=0
+    (; cells,faces)=mesh
+    if length(faces[1].nodes_range)==3
+        numface=4
+    end
+    total_cell_faces=length(cells)*numface
+    if length(all_cell_faces)==total_cell_faces
+        println("Passed: Length of all_cell_faces matches calculation")
+    else
+        println("Failed: Warning, length of all_cell_faces does not match calculations")
     end
 end

@@ -64,7 +64,10 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
     end
     println("Done! Execution time: ", @sprintf "%.6f" stats.time)
     println("Mesh ready!")
-    return mesh
+    #return mesh
+
+    #For unit testing
+    return mesh,cell_face_nodes
 end
 
 # DEFINE FUNCTIONS

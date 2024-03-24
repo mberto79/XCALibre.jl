@@ -25,42 +25,64 @@ mesh,cell_face_nodes=build_mesh3D(unv_mesh)
 @time check_cell_face_nodes(mesh,cell_face_nodes)
 boundary_faces(mesh)
 
-mesh.faces[1].nodes_range
-
-function generate_tet_internal_faces(volumes,faces)
-    cell_face_nodes=Vector{Int}[]
-
-    for i=1:length(volumes)
-        cell_faces=zeros(Int,4,3)
-        cell=sort(volumes[i].volumes)
-
-        cell_faces[1,1:3]=cell[1:3]
-        cell_faces[2,1:2]=cell[1:2]
-        cell_faces[2,3]=cell[4]
-        cell_faces[3,1]=cell[1]
-        cell_faces[3,2:3]=cell[3:4]
-        cell_faces[4,1:3]=cell[2:4]
-
-        for ic=1:4
-            push!(cell_face_nodes,cell_faces[ic,:])
+function generate_node_cells(points,volumes)
+    neighbour=Int64[]
+    store=Int64[]
+    #cells_range=UnitRange(0,0)
+    @inbounds for in=1:length(points)
+        @inbounds for iv=1:length(volumes)
+            @inbounds for i=1:length(volumes[iv].volumes)
+                if volumes[iv].volumes[i]==in
+                    neighbour=iv
+                    push!(store,neighbour)
+                end
+                continue
+            end
         end
     end
-
-    sorted_faces=Vector{Int}[]
-    for i=1:length(faces)
-        push!(sorted_faces,sort(faces[i].faces))
-    end
-
-    internal_faces=setdiff(cell_face_nodes,sorted_faces)
-
-    for i=1:length(internal_faces)
-        push!(faces,UNV_3D.Face(faces[end].faceindex+1,faces[end].faceCount,internal_faces[i]))
-    end
-    return faces, cell_face_nodes
+    return store
 end
 
-faces,cell_face_nodes=generate_tet_internal_faces(volumes,faces)
-faces
-cell_face_nodes
+@time node_cells=generate_node_cells(points,volumes)
 
-length(volumes)*4
+
+total=Int[]
+mesh.nodes[1].cells_range
+
+node_cells[mesh.nodes[1].cells_range]
+
+node_cells[mesh.nodes[1].cells_range][1]
+
+mesh.cells[node_cells[mesh.nodes[1].cells_range][1]].nodes_range
+
+mesh.cell_nodes[mesh.cells[node_cells[mesh.nodes[1].cells_range][1]].nodes_range]
+
+for in=1:length(mesh.nodes)
+    for i=1:length(node_cells[mesh.nodes[in].cells_range])
+        if findfirst(x-> x==in,mesh.cell_nodes[mesh.cells[node_cells[mesh.nodes[in].cells_range][i]].nodes_range]) != nothing
+            push!(total,1)
+            break
+        end
+    end
+end
+total
+mesh.nodes
+
+function check_node_cells(mesh,node_cells)
+    total=Int[]
+    for in=1:length(mesh.nodes)
+        for i=1:length(node_cells[mesh.nodes[in].cells_range])
+            if findfirst(x-> x==in,mesh.cell_nodes[mesh.cells[node_cells[mesh.nodes[in].cells_range][i]].nodes_range]) !== nothing
+                push!(total,1)
+                break
+            end
+        end
+    end
+    if length(total)==length(mesh.nodes)
+        println("Passed: Each node_cell has the correct node")
+    else
+        println("Failed: Error with node_cell")
+    end
+end
+
+@time check_node_cells(mesh,node_cells)

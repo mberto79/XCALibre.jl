@@ -45,6 +45,7 @@ end
 function check_cell_face_nodes(mesh,cell_face_nodes)
     #Check tet cells, no. of faces=4
     #only works for meshes of same cell type
+    numface=0
     (; cells,faces)=mesh
     if length(faces[1].nodes_range)==3
         numface=4
@@ -54,5 +55,22 @@ function check_cell_face_nodes(mesh,cell_face_nodes)
         println("Passed: Length of cell_face_nodes matches calculation")
     else
         println("Failed: Warning, length of cell_face_nodes does not match calculations")
+    end
+end
+
+function check_node_cells(mesh,node_cells)
+    total=Int[]
+    for in=1:length(mesh.nodes)
+        for i=1:length(node_cells[mesh.nodes[in].cells_range])
+            if findfirst(x-> x==in,mesh.cell_nodes[mesh.cells[node_cells[mesh.nodes[in].cells_range][i]].nodes_range]) !== nothing
+                push!(total,1)
+                break
+            end
+        end
+    end
+    if length(total)==length(mesh.nodes)
+        println("Passed: Each node_cell has the correct node")
+    else
+        println("Failed: Error with node_cell")
     end
 end

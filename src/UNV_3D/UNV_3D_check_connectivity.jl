@@ -1,6 +1,7 @@
 export boundary_faces
 export check_face_owners
 export check_cell_face_nodes
+export check_node_cells
 
 # Function to work out number of boundary faces (based on boundary IDs_range)
 function boundary_faces(mesh)

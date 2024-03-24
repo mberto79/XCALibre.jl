@@ -19,11 +19,12 @@ faces
 volumes
 boundaryElements
 
-mesh,cell_face_nodes=build_mesh3D(unv_mesh)
+mesh,cell_face_nodes,node_cells=build_mesh3D(unv_mesh)
 
 @time faces_checked, results = check_face_owners(mesh)
 @time check_cell_face_nodes(mesh,cell_face_nodes)
-boundary_faces(mesh)
+@time boundary_faces(mesh)
+@time check_node_cells(mesh,node_cells)
 
 function generate_node_cells(points,volumes)
     neighbour=Int64[]

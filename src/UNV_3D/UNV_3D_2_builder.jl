@@ -67,7 +67,7 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
     #return mesh
 
     #For unit testing
-    return mesh,cell_face_nodes, node_cells, all_cell_faces
+    return mesh,cell_face_nodes, node_cells, all_cell_faces,boundary_cells,boundary_faces,all_cell_faces_range
 end
 
 # DEFINE FUNCTIONS

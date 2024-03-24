@@ -20,7 +20,7 @@ faces
 volumes
 boundaryElements
 
-# mesh,cell_face_nodes,node_cells,all_cell_faces=build_mesh3D(unv_mesh)
+mesh,cell_face_nodes, node_cells, all_cell_faces,boundary_cells,boundary_faces,all_cell_faces_range=build_mesh3D(unv_mesh)
 # mesh.boundaries
 # mesh.faces
 
@@ -29,6 +29,85 @@ boundaryElements
 @time boundary_faces(mesh)
 @time check_node_cells(mesh,node_cells)
 @time check_all_cell_faces(mesh,all_cell_faces)
+@time check_boundary_faces(boundary_cells,boundary_faces,all_cell_faces,all_cell_faces_range)
+
+boundary_faces,boundary_face_range=generate_boundary_faces(boundaryElements)
+faces,cell_face_nodes=generate_tet_internal_faces(volumes,faces)
+all_cell_faces=generate_all_cell_faces(faces,cell_face_nodes)
+all_cell_faces_range=generate_all_faces_range(volumes)
+#cell_faces,cell_faces_range=generate_cell_faces(boundaryElements,volumes,all_cell_faces)
+boundary_cells=generate_boundary_cells(boundary_faces,all_cell_faces,all_cell_faces_range)
+
+
+boundary_faces
+boundary_cells
+
+all_cell_faces
+all_cell_faces_range
+
+bface=boundary_faces[1]
+bcell=boundary_cells[1]
+
+face_ID=all_cell_faces[all_cell_faces_range[4]]
+
+total=[]
+if findfirst(x-> x==bface,face_ID) !== nothing
+    push!(total,1)
+end
+
+total=[]
+
+for i=1:length(boundary_cells)
+    bface=boundary_faces[i]
+    bcell=boundary_cells[i]
+    face_ID=all_cell_faces[all_cell_faces_range[bcell]]
+    if findfirst(x-> x==bface,face_ID) !== nothing
+        push!(total,1)
+    end
+end
+total
+
+if length(total)== length(boundary_faces) && length(total)==length(boundary_cells)
+    println("Passed: boundary faces match cell faces")
+end
+
+function check_boundary_faces(boundary_cells,boundary_faces,all_cell_faces,all_cell_faces_range)
+    total=[]
+    for i=1:length(boundary_cells)
+        bface=boundary_faces[i]
+        bcell=boundary_cells[i]
+        face_ID=all_cell_faces[all_cell_faces_range[bcell]]
+        if findfirst(x-> x==bface,face_ID) !== nothing
+            push!(total,1)
+        end
+    end
+    if length(total)== length(boundary_faces) && length(total)==length(boundary_cells)
+        println("Passed: boundary faces match cell faces")
+    end
+end
+
+
+function generate_boundary_cells(boundary_faces,cell_faces,cell_faces_range)
+    boundary_cells = Int64[]
+    store = Int64[]
+    for ic=1:length(boundary_faces)
+        for i in eachindex(cell_faces)
+                if cell_faces[i]==boundary_faces[ic]
+                    push!(store,i)
+                end
+        end
+    end
+    store
+    
+    for ic=1:length(store)
+        for i=1:length(cell_faces_range)
+            if cell_faces_range[i][1]<=store[ic]<=cell_faces_range[i][end]
+                push!(boundary_cells,i)
+            end
+        end
+    end
+    return boundary_cells
+end
 
 function generate_boundary_faces(boundaryElements)
     boundary_faces=Int64[]
@@ -52,36 +131,40 @@ function generate_boundary_faces(boundaryElements)
     return boundary_faces,boundary_face_range
 end
 
-boundary_faces,boundary_face_range=generate_boundary_faces(boundaryElements)
+function generate_all_cell_faces(faces,cell_face_nodes)
+    all_cell_faces=Int[]
+    sorted_faces=Vector{Int}[]
+    for i=1:length(faces)
+        push!(sorted_faces,sort(faces[i].faces))
+    end
 
-faces,cell_face_nodes=generate_tet_internal_faces(volumes,faces)
-all_cell_faces=generate_all_cell_faces(faces,cell_face_nodes)
-all_cell_faces_range=generate_all_faces_range(volumes)
-boundary_cells=generate_boundary_cells(boundary_faces,all_cell_faces,all_cell_faces_range)
+    for i=1:length(cell_face_nodes)
+        push!(all_cell_faces,findfirst(x -> x==cell_face_nodes[i],sorted_faces))
+    end
+    return all_cell_faces
+end
 
-faces[12]
-volumes[1]
 
-function generate_boundary_cells(boundary_faces,cell_faces,cell_faces_range)
-    boundary_cells = Int64[]
-    store = Int64[]
-    for ic=1:length(boundary_faces)
-        for i in eachindex(cell_faces)
-                if cell_faces[i]==boundary_faces[ic]
-                    push!(store,i)
-                end
+function generate_all_faces_range(volumes)
+    cell_faces_range=UnitRange(0,0)
+    store=typeof(cell_faces_range)[]
+    x=0
+    @inbounds for i=1:length(volumes)
+        #Tetra
+        if length(volumes[i].volumes)==4
+            cell_faces_range=UnitRange(x+1,x+4)
+            x=x+4
+            push!(store,cell_faces_range)
+        end
+
+        #Hexa
+        if length(volumes[i].volumes)==8
+                cell_faces_range=UnitRange(x+1,x+6)
+                x=x+6
+                push!(store,cell_faces_range)
         end
     end
-    store
-    
-    for ic=1:length(store)
-        for i=1:length(cell_faces_range)
-            if cell_faces_range[i][1]<=store[ic]<=cell_faces_range[i][end]
-                push!(boundary_cells,i)
-            end
-        end
-    end
-    return boundary_cells
+    return store
 end
 
 function generate_tet_internal_faces(volumes,faces)
@@ -116,37 +199,34 @@ function generate_tet_internal_faces(volumes,faces)
     return faces, cell_face_nodes
 end
 
-function generate_all_cell_faces(faces,cell_face_nodes)
-    all_cell_faces=Int[]
-    sorted_faces=Vector{Int}[]
-    for i=1:length(faces)
-        push!(sorted_faces,sort(faces[i].faces))
-    end
-
-    for i=1:length(cell_face_nodes)
-        push!(all_cell_faces,findfirst(x -> x==cell_face_nodes[i],sorted_faces))
-    end
-    return all_cell_faces
-end
-
-function generate_all_faces_range(volumes)
-    cell_faces_range=UnitRange(0,0)
-    store=typeof(cell_faces_range)[]
+function generate_cell_faces(boundaryElements,volumes,all_cell_faces)
+    cell_faces=Vector{Int}[]
+    cell_face_range=UnitRange{Int64}[]
+    counter_start=0
     x=0
-    @inbounds for i=1:length(volumes)
-        #Tetra
-        if length(volumes[i].volumes)==4
-            cell_faces_range=UnitRange(x+1,x+4)
-            x=x+4
-            push!(store,cell_faces_range)
-        end
+    max=0
 
-        #Hexa
-        if length(volumes[i].volumes)==8
-                cell_faces_range=UnitRange(x+1,x+6)
-                x=x+6
-                push!(store,cell_faces_range)
+    for ib=1:length(boundaryElements)
+        max_store=maximum(boundaryElements[ib].elements)
+        if max_store>=max
+            max=max_store
         end
     end
-    return store
+
+    for i=1:length(volumes)
+        push!(cell_faces,all_cell_faces[counter_start+1:counter_start+length(volumes[i].volumes)])
+        counter_start=counter_start+length(volumes[i].volumes)
+        cell_faces[i]=filter(x-> x>max,cell_faces[i])
+
+        if length(cell_faces[i])==1
+            push!(cell_face_range,UnitRange(x+1,x+1))
+            x=x+1
+        else
+            push!(cell_face_range,UnitRange(x+1,x+length(cell_faces[i])))
+            x=x+length(cell_faces[i])
+        end
+    end
+    cell_faces=reduce(vcat,cell_faces)
+
+    return cell_faces,cell_face_range
 end

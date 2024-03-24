@@ -3,6 +3,7 @@ export check_face_owners
 export check_cell_face_nodes
 export check_node_cells
 export check_all_cell_faces
+export check_boundary_faces
 
 # Function to work out number of boundary faces (based on boundary IDs_range)
 function boundary_faces(mesh)
@@ -90,5 +91,22 @@ function check_all_cell_faces(mesh,all_cell_faces)
         println("Passed: Length of all_cell_faces matches calculation")
     else
         println("Failed: Warning, length of all_cell_faces does not match calculations")
+    end
+end
+
+function check_boundary_faces(boundary_cells,boundary_faces,all_cell_faces,all_cell_faces_range)
+    total=[]
+    for i=1:length(boundary_cells)
+        bface=boundary_faces[i]
+        bcell=boundary_cells[i]
+        face_ID=all_cell_faces[all_cell_faces_range[bcell]]
+        if findfirst(x-> x==bface,face_ID) !== nothing
+            push!(total,1)
+        end
+    end
+    if length(total)== length(boundary_faces) && length(total)==length(boundary_cells)
+        println("Passed: boundary faces match cell faces")
+    else
+        println("Failed: boundary faces do not match cell faces")
     end
 end

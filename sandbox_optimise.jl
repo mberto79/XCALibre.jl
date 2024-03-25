@@ -1,3 +1,4 @@
+using FVM_1D
 using FVM_1D.UNV_3D
 using StaticArrays
 using Statistics
@@ -19,9 +20,7 @@ faces
 volumes
 boundaryElements
 
-@time generate_tet_internal_faces(volumes,faces)
-
-mesh=build_mesh3D(unv_mesh)
+@time mesh=build_mesh3D(unv_mesh)
 
 function generate_tet_internal_faces(volumes,faces)
     cell_face_nodes=Vector{Int}[]

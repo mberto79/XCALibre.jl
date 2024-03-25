@@ -11,8 +11,6 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
 
     node_cells=generate_node_cells(points,volumes)
 
-    #faces=generate_internal_faces(volumes,faces)
-
     faces,cell_face_nodes=generate_tet_internal_faces(volumes,faces)
     #faces=quad_internal_faces(volumes,faces)
 
@@ -26,26 +24,19 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
     all_cell_faces_range=generate_all_faces_range(volumes)
 
     cells_centre=calculate_centre_cell(volumes,nodes)
-    #volume_of_cells=calculate_cell_volume(volumes,all_cell_faces_range,all_cell_faces,face_normal,cell_centre,face_centre,face_ownerCells,face_area)
-
+    
     boundary_faces,boundary_face_range=generate_boundary_faces(boundaryElements)
     boundary_cells=generate_boundary_cells(boundary_faces,all_cell_faces,all_cell_faces_range)
 
     cell_faces,cell_faces_range=generate_cell_faces(boundaryElements,volumes,all_cell_faces)
 
     boundaries=generate_boundaries(boundaryElements,boundary_face_range)
-    #cells=generate_cells(volumes,centre_of_cells,volume_of_cells,cell_nodes_range,cell_faces_range)
-
-    #cell_neighbours=generate_cell_neighbours(cells,cell_faces)
 
     face_ownerCells=generate_face_ownerCells(faces,all_cell_faces,volumes,all_cell_faces_range)
-
-    #faces_normal,faces_area,faces_centre,faces_e,faces_delta,faces_weight=calculate_faces_properties(faces,face_nodes,nodes,cell_nodes,cells,face_ownerCells,face_nodes_range)
 
     faces_area=calculate_face_area(nodes,faces)
     faces_centre=calculate_face_centre(faces,nodes)
     faces_normal=calculate_face_normal(nodes,faces,face_ownerCells,cells_centre,faces_centre)
-    #faces_normal=flip_face_normal(faces,face_ownerCells,centre_of_cells,faces_centre,faces_normal)
     faces_e,faces_delta,faces_weight=calculate_face_properties(faces,face_ownerCells,cells_centre,faces_centre,faces_normal)
     
     cells_volume=calculate_cell_volume(volumes,all_cell_faces_range,all_cell_faces,faces_normal,cells_centre,faces_centre,face_ownerCells,faces_area)
@@ -64,10 +55,9 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
     end
     println("Done! Execution time: ", @sprintf "%.6f" stats.time)
     println("Mesh ready!")
-    #return mesh
-
+    return mesh
     #For unit testing
-    return mesh,cell_face_nodes, node_cells, all_cell_faces,boundary_cells,boundary_faces,all_cell_faces_range
+    #return mesh,cell_face_nodes, node_cells, all_cell_faces,boundary_cells,boundary_faces,all_cell_faces_range
 end
 
 # DEFINE FUNCTIONS

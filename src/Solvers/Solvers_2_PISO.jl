@@ -90,14 +90,16 @@ function PISO(
         run!(uy_eqn, solvers.U, U.y)
         residual!(R_uy, uy_eqn.equation, U.y, iteration)
 
-        @. prev = U.z.values
-        discretise!(uz_eqn, prev, runtime)
-        apply_boundary_conditions!(uz_eqn, U.z.BCs)
-        # uy_eqn.b .-= divUTy
-        # implicit_relaxation!(uz_eqn, prev, solvers.U.relax, mesh)
-        update_preconditioner!(uz_eqn.preconditioner, mesh)
-        run!(uz_eqn, solvers.U, U.z)
-        residual!(R_uz, uz_eqn.equation, U.z, iteration)
+        if typeof(mesh) <: Mesh3
+            @. prev = U.z.values
+            discretise!(uz_eqn, prev, runtime)
+            apply_boundary_conditions!(uz_eqn, U.z.BCs)
+            # uy_eqn.b .-= divUTy
+            # implicit_relaxation!(uz_eqn, prev, solvers.U.relax, mesh)
+            update_preconditioner!(uz_eqn.preconditioner, mesh)
+            run!(uz_eqn, solvers.U, U.z)
+            residual!(R_uz, uz_eqn.equation, U.z, iteration)
+        end
         
         inverse_diagonal!(rD, ux_eqn)
         interpolate!(rDf, rD)

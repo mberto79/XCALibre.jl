@@ -67,6 +67,45 @@ boundaryElements
 
 @time cell_nsign=calculate_cell_nsign(cells,faces,cell_faces) #0.027957 seconds 
 
+#work
+face_ownerCells
+face_ownerCells[16,:]
+face_nodes[faces[16].nodes_range]
+cell_nodes[cells[5].nodes_range]
+
+#function generate_face_ownerCells(faces,all_cell_faces,volumes,all_cell_faces_range)
+    x=Vector{Int64}[]
+    for i=1:length(faces)
+        push!(x,findall(x->x==i,all_cell_faces))
+    end
+    x
+    y=zeros(Int,length(x),2)
+    for ic=1:length(volumes)
+        for i=1:length(x)
+            #if length(x[i])==1
+                if all_cell_faces_range[ic][1]<=x[i][1]<=all_cell_faces_range[ic][end]
+                    y[i,1]=ic
+                    y[i,2]=ic
+                end
+            #end
+
+            if length(x[i])==2
+                if all_cell_faces_range[ic][1]<=x[i][2]<=all_cell_faces_range[ic][end]
+                    #y[i]=ic
+                    y[i,2]=ic
+
+                end
+            end
+
+        end
+    end
+    return y
+#end
+
+
+
+
+
 # DEFINE FUNCTIONS
 function calculate_face_properties(faces,face_ownerCells,cell_centre,face_centre,face_normal)
     store_e=SVector{3,Float64}[]

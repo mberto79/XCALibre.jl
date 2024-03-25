@@ -44,7 +44,7 @@ function fixedValue(BC::Dirichlet, ID::I, value::V) where {I<:Integer,V}
         else
             throw("Only vectors with three components can be used")
         end
-    elsefixedValue
+    else #fixedValue
         throw("The value provided should be a scalar or a vector")
     end
 end
@@ -64,7 +64,7 @@ function fixedValue(BC::Neumann, ID::I, value::V) where {I<:Integer,V}
         else
             throw("Only vectors with three components can be used")
         end
-    elsefixedValue
+    else #fixedValue
         throw("The value provided should be a scalar or a vector")
     end
 end

@@ -20,7 +20,7 @@ faces
 volumes
 boundaryElements
 
-@time mesh=build_mesh3D(unv_mesh)
+#@time mesh=build_mesh3D(unv_mesh)
 
 #Priority
 #1) all_cell_faces
@@ -73,34 +73,33 @@ face_ownerCells[16,:]
 face_nodes[faces[16].nodes_range]
 cell_nodes[cells[5].nodes_range]
 
-#function generate_face_ownerCells(faces,all_cell_faces,volumes,all_cell_faces_range)
-    x=Vector{Int64}[]
+all_cell_faces
+function generate_face_ownerCells_update(faces,all_cell_faces,volumes,all_cell_faces_range)
+    cell_face_index=Vector{Int64}[]
     for i=1:length(faces)
-        push!(x,findall(x->x==i,all_cell_faces))
+        push!(cell_face_index,findall(x->x==i,all_cell_faces))
     end
-    x
-    y=zeros(Int,length(x),2)
+    cell_face_index
+    face_owners=zeros(Int,length(cell_face_index),2)
     for ic=1:length(volumes)
-        for i=1:length(x)
-            #if length(x[i])==1
-                if all_cell_faces_range[ic][1]<=x[i][1]<=all_cell_faces_range[ic][end]
-                    y[i,1]=ic
-                    y[i,2]=ic
+        for i=1:length(cell_face_index)
+                if all_cell_faces_range[ic][1]<=cell_face_index[i][1]<=all_cell_faces_range[ic][end]
+                    face_owners[i,1]=ic
+                    face_owners[i,2]=ic
                 end
-            #end
 
             if length(x[i])==2
-                if all_cell_faces_range[ic][1]<=x[i][2]<=all_cell_faces_range[ic][end]
-                    #y[i]=ic
-                    y[i,2]=ic
-
+                if all_cell_faces_range[ic][1]<=cell_face_index[i][2]<=all_cell_faces_range[ic][end]
+                    face_owners[i,2]=ic
                 end
             end
 
         end
     end
-    return y
-#end
+    return face_owners
+end
+
+@time f=generate_face_ownerCells_update(faces,all_cell_faces,volumes,all_cell_faces_range)
 
 
 

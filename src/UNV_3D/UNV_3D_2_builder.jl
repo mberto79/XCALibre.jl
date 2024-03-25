@@ -75,7 +75,7 @@ function calculate_face_properties(faces,face_ownerCells,cell_centre,face_centre
     store_e=SVector{3,Float64}[]
     store_delta=Float64[]
     store_weight=Float64[]
-    for i=1:length(faces)
+    for i=1:length(faces) #Boundary Face
         if face_ownerCells[i,2]==face_ownerCells[i,1]
             cc=cell_centre[face_ownerCells[i,1]]
             cf=face_centre[i]
@@ -89,7 +89,7 @@ function calculate_face_properties(faces,face_ownerCells,cell_centre,face_centre
             weight=one(Float64)
             push!(store_weight,weight)
 
-        else
+        else #Internal Face
             c1=cell_centre[face_ownerCells[i,1]]
             c2=cell_centre[face_ownerCells[i,2]]
             cf=face_centre[i]

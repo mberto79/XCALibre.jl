@@ -25,7 +25,7 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
     Neumann(:outlet, 0.0),
     Dirichlet(:cylinder, noSlip),
     Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0),
+    Neumann(:top, 0.0)
 )
 
 @assign! model p (
@@ -43,7 +43,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1.0,
-        rtol = 1e-4
+        rtol = 1e-3
     ),
     p = set_solver(
         model.p;
@@ -51,17 +51,17 @@ solvers = (
         preconditioner = Jacobi(), #NormDiagonal(),
         convergence = 1e-7,
         relax       = 1.0,
-        rtol = 1e-4
+        rtol = 1e-3
     )
 )
 
 schemes = (
-    U = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint)
+    U = set_schemes(time=Euler, divergence=Linear, gradient=Midpoint),
+    p = set_schemes(time=Euler, divergence=Linear, gradient=Midpoint)
 )
 
 runtime = set_runtime(
-    iterations=100, write_interval=1, time_step=0.005)
+    iterations=1000, write_interval=50, time_step=0.005)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

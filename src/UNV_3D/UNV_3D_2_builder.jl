@@ -584,15 +584,29 @@ function generate_cell_nodes(volumes)
     return cell_nodes
 end
 
+# function generate_all_cell_faces(faces,cell_face_nodes)
+#     all_cell_faces=Int[]
+#     sorted_faces=Vector{Int}[]
+#     for i=1:length(faces)
+#         push!(sorted_faces,sort(faces[i].faces))
+#     end
+
+#     for i=1:length(cell_face_nodes)
+#         push!(all_cell_faces,findfirst(x -> x==cell_face_nodes[i],sorted_faces))
+#     end
+#     return all_cell_faces
+# end
+
 function generate_all_cell_faces(faces,cell_face_nodes)
     all_cell_faces=Int[]
-    sorted_faces=Vector{Int}[]
+    sorted_faces=Vector{Vector{Int64}}(undef,length(faces))
     for i=1:length(faces)
-        push!(sorted_faces,sort(faces[i].faces))
+        sorted_faces[i]=sort(faces[i].faces)
     end
 
+    all_cell_faces=zeros(Int,length(cell_face_nodes)) #May only work for Tet
     for i=1:length(cell_face_nodes)
-        push!(all_cell_faces,findfirst(x -> x==cell_face_nodes[i],sorted_faces))
+        all_cell_faces[i]=findfirst(x->x==cell_face_nodes[i],sorted_faces)
     end
     return all_cell_faces
 end

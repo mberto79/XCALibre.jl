@@ -32,7 +32,7 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
 
     boundaries=generate_boundaries(boundaryElements,boundary_face_range)
 
-    face_ownerCells=generate_face_ownerCells(faces,all_cell_faces,volumes,all_cell_faces_range)
+    face_ownerCells=generate_face_ownerCells(faces,all_cell_faces,all_cell_faces_range)
 
     faces_area=calculate_face_area(nodes,faces)
     faces_centre=calculate_face_centre(faces,nodes)
@@ -483,33 +483,58 @@ function generate_boundary_faces(boundaryElements)
     return boundary_faces,boundary_face_range
 end
 
-function generate_face_ownerCells(faces,all_cell_faces,volumes,all_cell_faces_range)
-    x=Vector{Int64}[]
-    for i=1:length(faces)
-        push!(x,findall(x->x==i,all_cell_faces))
+function generate_face_ownerCells(faces,all_cell_faces,all_cell_faces_range)
+    cell_face_index=Vector{Vector{Int64}}(undef,length(faces))
+    for i=1:length(cell_face_index)
+        cell_face_index[i]=findall(x->x==i,all_cell_faces)
     end
-    y=zeros(Int,length(x),2)
-    for ic=1:length(volumes)
-        for i=1:length(x)
-            #if length(x[i])==1
-                if all_cell_faces_range[ic][1]<=x[i][1]<=all_cell_faces_range[ic][end]
-                    y[i,1]=ic
-                    y[i,2]=ic
+
+    face_owners=zeros(Int,length(cell_face_index),2)
+    for ic=1:length(all_cell_faces_range)
+        for i=1:length(cell_face_index)
+                if all_cell_faces_range[ic][1]<=cell_face_index[i][1]<=all_cell_faces_range[ic][end]
+                    face_owners[i,1]=ic
+                    face_owners[i,2]=ic
                 end
-            #end
 
-            if length(x[i])==2
-                if all_cell_faces_range[ic][1]<=x[i][2]<=all_cell_faces_range[ic][end]
-                    #y[i]=ic
-                    y[i,2]=ic
-
+            if length(cell_face_index[i])==2
+                if all_cell_faces_range[ic][1]<=cell_face_index[i][2]<=all_cell_faces_range[ic][end]
+                    face_owners[i,2]=ic
                 end
             end
 
         end
     end
-    return y
+    return face_owners
 end
+
+# function generate_face_ownerCells(faces,all_cell_faces,volumes,all_cell_faces_range)
+#     x=Vector{Int64}[]
+#     for i=1:length(faces)
+#         push!(x,findall(x->x==i,all_cell_faces))
+#     end
+#     y=zeros(Int,length(x),2)
+#     for ic=1:length(volumes)
+#         for i=1:length(x)
+#             #if length(x[i])==1
+#                 if all_cell_faces_range[ic][1]<=x[i][1]<=all_cell_faces_range[ic][end]
+#                     y[i,1]=ic
+#                     y[i,2]=ic
+#                 end
+#             #end
+
+#             if length(x[i])==2
+#                 if all_cell_faces_range[ic][1]<=x[i][2]<=all_cell_faces_range[ic][end]
+#                     #y[i]=ic
+#                     y[i,2]=ic
+
+#                 end
+#             end
+
+#         end
+#     end
+#     return y
+# end
 
 function generate_nodes(points,volumes)
     nodes=Node{SVector{3,Float64}, UnitRange{Int64}}[]

@@ -1,6 +1,7 @@
 using Plots
 using FVM_1D
 using Krylov
+using CUDA
 
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
@@ -56,7 +57,7 @@ schemes = (
     p = set_schemes(divergence=Upwind, gradient=Midpoint)
 )
 
-runtime = set_runtime(iterations=600, write_interval=-1, time_step=1)
+runtime = set_runtime(iterations=600, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

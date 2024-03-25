@@ -69,23 +69,51 @@ mesh=build_mesh3D(unv_mesh)
 
 #work
 
-generate_all_cell_faces(faces,cell_face_nodes)
-
-function generate_all_cell_faces(faces,cell_face_nodes)
-    all_cell_faces=Int[]
-    sorted_faces=Vector{Vector{Int64}}(undef,length(faces))
-    for i=1:length(faces)
-        sorted_faces[i]=sort(faces[i].faces)
+#function generate_cell_neighbours(cells,cell_faces)
+    cell_neighbours=Int64[]
+    for ID=1:length(cells) 
+        for i=cells[ID].faces_range 
+            faces=cell_faces[i]
+            for ic=1:length(i)
+                face=faces[ic]
+                index=findall(x->x==face,cell_faces)
+                if length(index)==2
+                    if i[1]<=index[1]<=i[end]
+                        for ip=1:length(cells)
+                            if cells[ip].faces_range[1]<=index[2]<=cells[ip].faces_range[end]
+                                push!(cell_neighbours,ip)
+                            end
+                        end
+                    end
+                    if i[1]<=index[2]<=i[end]
+                        for ip=1:length(cells)
+                            if cells[ip].faces_range[1]<=index[1]<=cells[ip].faces_range[end]
+                                push!(cell_neighbours,ip)
+                            end
+                        end
+                    end
+                end
+                if length(index)==1
+                    x=0
+                    push!(cell_neighbours,x)
+                end
+            end
+        end
     end
+    return cell_neighbours
+#end
 
-    all_cell_faces=zeros(Int,length(cell_face_nodes)) #May only work for Tet
-    for i=1:length(cell_face_nodes)
-        all_cell_faces[i]=findfirst(x->x==cell_face_nodes[i],sorted_faces)
-    end
-    return all_cell_faces
+cell_faces
+cell_faces_range
+
+cell_neighbours=zeros(Int64,length(cell_faces))
+
+face_index=[]
+for i=1:length(cell_faces)
+    push!(face_index,findall(x->x==cell_faces[i],cell_faces))
 end
+face_index
 
-@time al2=generate_all_cell_faces_1(faces,cell_face_nodes)
 
 
 

@@ -521,6 +521,22 @@ function generate_nodes(points,volumes)
     return nodes
 end
 
+# function generate_nodes(points,volumes)
+#     # nodes=Node{SVector{3,Float64}, UnitRange{Int64}}[]
+#     nnodes = length(points)
+#     nodes = [Node(SVector{3,Float64}(0.0,0.0,0.0), 1:1) for i ∈ 1:nnodes]
+#     tnode = Node(SVector{3,Float64}(0.0,0.0,0.0), 1:1) # temporary node object used to rewrite
+#     cells_range=nodes_cells_range!(points,volumes)
+#     @inbounds for i ∈ 1:length(points)
+#         #point=points[i].xyz
+#         # push!(nodes,Node(points[i].xyz,cells_range[i]))
+#         tnode = @reset tnode.coords = points[i].xyz
+#         tnode = @reset tnode.cells_range = cells_range[i]
+#         nodes[i] = tnode # overwrite preallocated array with temporary node
+#     end
+#     return nodes
+# end
+
 #Generate Faces
 function generate_face_nodes(faces)
     face_nodes=typeof(faces[1].faces[1])[] # Giving type to array constructor

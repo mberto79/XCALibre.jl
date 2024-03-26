@@ -69,95 +69,37 @@ boundaryElements
 
 #work
 
-function generate_cell_neighbours(cells,cell_faces)
-    cell_neighbours=Int64[]
-    for ID=1:length(cells) 
-        for i=cells[ID].faces_range 
-            faces=cell_faces[i]
-            for ic=1:length(i)
-                face=faces[ic]
-                index=findall(x->x==face,cell_faces)
-                if length(index)==2
-                    if i[1]<=index[1]<=i[end]
-                        for ip=1:length(cells)
-                            if cells[ip].faces_range[1]<=index[2]<=cells[ip].faces_range[end]
-                                push!(cell_neighbours,ip)
-                            end
-                        end
-                    end
-                    if i[1]<=index[2]<=i[end]
-                        for ip=1:length(cells)
-                            if cells[ip].faces_range[1]<=index[1]<=cells[ip].faces_range[end]
-                                push!(cell_neighbours,ip)
-                            end
-                        end
-                    end
-                end
-                if length(index)==1
-                    x=0
-                    push!(cell_neighbours,x)
-                end
-            end
-        end
+function generate_all_cell_faces(faces,cell_face_nodes)
+    all_cell_faces=Int[]
+    sorted_faces=Vector{Int}[]
+    for i=1:length(faces)
+        push!(sorted_faces,sort(faces[i].faces))
     end
-    return cell_neighbours
+
+    for i=1:length(cell_face_nodes)
+        push!(all_cell_faces,findfirst(x -> x==cell_face_nodes[i],sorted_faces))
+    end
+    return all_cell_faces
 end
 
-@time f=generate_cell_neighbours(cells,cell_faces)
-
-#function generate_cell_neighbours(cells,cell_faces)
-    cell_neighbours=[]
-    for ID=1:length(cell_faces_range) 
-        for i=cell_faces_range[ID] 
-            faces=cell_faces[i]
-            for ic=1:length(i)
-                face=faces[ic]
-                index=findall(x->x==face,cell_faces)
-                if length(index)==2
-                    if i[1]<=index[1]<=i[end]
-                        for ip=1:length(cell_faces_range)
-                            if cell_faces_range[ip][1]<=index[2]<=cell_faces_range[ip][end]
-                                push!(cell_neighbours,ip)
-                            end
-                        end
-                    end
-                    if i[1]<=index[2]<=i[end]
-                        for ip=1:length(cells)
-                            if cell_faces_range[ip][1]<=index[1]<=cell_faces_range[ip][end]
-                                push!(cell_neighbours,ip)
-                            end
-                        end
-                    end
-                end
-            end
-        end
+function generate_all_cell_faces_1(faces,cell_face_nodes)
+    all_cell_faces=zeros(Int64,length(cell_face_nodes))
+    sorted_faces=Vector(undef,length(faces))
+    for i=1:length(faces)
+        #push!(sorted_faces,sort(faces[i].faces))
+        sorted_faces[i]=sort(faces[i].faces)
     end
-    return cell_neighbours
-#end
+    sorted_faces
 
-
-function generate_cell_neighbours_1(cell_faces,cell_faces_range)
-    cell_neighbours=zeros(Int64,length(cell_faces))
-    for i=1:length(cell_faces)
-        first_index=findfirst(x->x==cell_faces[i],cell_faces)
-        second_index=findlast(x->x==cell_faces[i],cell_faces)
-        if first_index==i
-            next_index=second_index
-        end
-        if second_index==i
-            next_index=first_index
-        end
-        for ic=1:length(cell_faces_range)
-            if findall(x->x==next_index,collect(cell_faces_range[ic])) != Int64[]
-                cell_neighbours[i]=ic
-            end
-        end
+    for i=1:length(cell_face_nodes)
+        #push!(all_cell_faces,findfirst(x -> x==cell_face_nodes[i],sorted_faces))
+        all_cell_faces[i]=findfirst(x->x==cell_face_nodes[i],sorted_faces)
     end
-    return cell_neighbours
+    return all_cell_faces
 end
 
-#@time f=generate_cell_neighbours_1(cell_faces,cell_faces_range)
-
+@time f=generate_all_cell_faces_1(faces,cell_face_nodes)
+@time f=generate_all_cell_faces(faces,cell_face_nodes)
 
 
 # DEFINE FUNCTIONS

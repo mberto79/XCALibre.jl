@@ -272,7 +272,7 @@ function error_check(arr_cpu, arr_gpu, min_error)
         diff = varcpu - vargpu
         
         if abs(diff) > min_error
-            println("Index  = $i:\nCPU Value = $varcpu\nGPU Value = $vargpu\nDifference = $diff\n")
+            # println("Index  = $i:\nCPU Value = $varcpu\nGPU Value = $vargpu\nDifference = $diff\n")
             sum += 1
             push!(error_array, abs(diff))
         end
@@ -301,6 +301,9 @@ error_check(rDf_values_cpu, rDf.values, eps(Float64))
 error_check(Hx_cpu, Hv.x.values, eps(Float64))
 error_check(Hy_cpu, Hv.y.values, eps(Float64))
 error_check(Hz_cpu, Hv.z.values, eps(Float64))
+error_check(Ufx_cpu, Uf.x.values, eps(Float64))
+error_check(Ufy_cpu, Uf.y.values, eps(Float64))
+error_check(Ufz_cpu, Uf.z.values, eps(Float64))
 
 error_check(nzvaly_cpu, uy_eqn.equation.A.nzVal, eps(Float32))
 error_check(by_cpu, uy_eqn.equation.b, eps(Float32))

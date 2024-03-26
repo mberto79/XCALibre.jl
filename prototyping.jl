@@ -251,6 +251,11 @@ for iteration in 1:1000
     residual!(R_p, p_eqn.equation, p, iteration)
 
     grad!(∇p, pf, p, p.BCs) 
+
+    correct_velocity!(U, Hv, ∇p, rD)
+    interpolate!(Uf, U)
+    correct_boundaries!(Uf, U, U.BCs)
+    flux!(mdotf, Uf)
 end
 
 nzval_cpu = ux_eqn.equation.A.nzval
@@ -268,6 +273,7 @@ Ufy_cpu = Uf.y.values
 Ufz_cpu = Uf.z.values
 divHv_values_cpu = divHv.values
 p_values_cpu = p.values 
+mdotf_cpu = mdotf.values
 
 nzvaly_cpu = uy_eqn.equation.A.nzval
 by_cpu = uy_eqn.equation.b
@@ -331,6 +337,7 @@ error_check(Ufx_cpu, Uf.x.values, eps(Float64))
 error_check(Ufy_cpu, Uf.y.values, eps(Float64))
 error_check(Ufz_cpu, Uf.z.values, eps(Float64))
 error_check(divHv_values_cpu, divHv.values, eps(Float64))
+error_check(mdotf_cpu, mdotf.values, eps(Float64))
 
 error_check(nzvaly_cpu, uy_eqn.equation.A.nzVal, eps(Float64))
 error_check(by_cpu, uy_eqn.equation.b, eps(Float64))

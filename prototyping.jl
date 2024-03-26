@@ -359,3 +359,71 @@ error_check(∇p_resultz_cpu, ∇p.result.z.values, eps(Float64))
 using KernelAbstractions
 backend = CPU()
 backend = CUDABackend()
+using LinearAlgebra
+function check_face_duplicates(mesh)
+    for (fi, face) ∈ enumerate(mesh.faces)
+        face = mesh.faces[fi] # face to check
+        for i ∈ eachindex(mesh.faces)
+            facei = mesh.faces[i]
+            centre_diff = norm(face.centre - facei.centre)
+            if centre_diff <= 1e-16
+                # println("Face ", fi, " and face ", i, " share same location")
+                if fi !== i 
+                    println("Problem here!")
+                end
+            end
+        end
+    end
+end
+
+function size_cell_faces_array(mesh)
+    nfaces = 0
+    for cell ∈ mesh.cells
+        nfaces += length(cell.faces_range)
+    end
+    nfaces == length(mesh.cell_faces) ? println("Pass: cell_faces ok") : println("FAIL")
+    nothing
+end
+
+function check_boundary_normals(mesh)
+    (; cells, faces, boundaries) = mesh
+    for boundary ∈ boundaries
+        for fID ∈ boundary.IDs_range
+            face = faces[fID]
+            own1 = face.ownerCells[1]
+            own2 = face.ownerCells[2]
+            if own1 !== own2
+                println("Fail: Boundary faces can only have one owner")
+            end
+            cell = cells[own1]
+            e = face.centre - cell.centre
+            check = signbit(e ⋅ face.normal)
+            if check
+                println("Fail: face normal not correctly aligned")
+            end
+        end
+    end
+end
+
+function check_internal_face_normals(mesh)
+    (; cells, faces, cell_faces, cell_nsign) = mesh
+    nfails = 0
+    for cell ∈ cells
+        for fi ∈ cell.faces_range
+            fID = cell_faces[fi]
+            nsign = cell_nsign[fi]
+            face = faces[fID]
+            e = face.centre - cell.centre
+            check = signbit(e ⋅ face.normal)
+            if (check && nsign !== -1) || (!check && nsign !== 1)
+                nfails += 1
+                println("Fail: Normal not consistent on ", nfails, " faces")
+            end
+        end
+    end
+end
+
+@time check_face_duplicates(mesh)
+@time size_cell_faces_array(mesh)
+@time check_boundary_normals(mesh)
+@time check_internal_face_normals(mesh)

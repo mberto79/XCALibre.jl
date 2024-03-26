@@ -1,40 +1,53 @@
-using Plots
+# using Plots
 using FVM_1D
 using Krylov
 using CUDA
 using KernelAbstractions
 
-mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
-# mesh_file = "unv_sample_meshes/cylinder_d10mm_2mm.unv"
-# mesh_file = "unv_sample_meshes/cylinder_d10mm_10-7.5-2mm.unv"
+using Accessors
+using LoopVectorization
+using LinearAlgebra
+using Statistics
+using Krylov
+using LinearOperators
+using ProgressMeter
+using Printf
+using CUDA
+using KernelAbstractions
+using Atomix
+using Adapt
+
+# BFS_U CASE
+mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
-mesh = update_mesh_format(mesh, integer=Int32, float=Float32)
+# mesh = update_mesh_format(mesh, integer = Int32, float = Float32)
 mesh = update_mesh_format(mesh)
 
-# Inlet conditions
-
 velocity = [0.5, 0.0, 0.0]
-noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
-Re = (0.2*velocity[1])/nu
+Re = velocity[1]*0.1/nu
 
-model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu));
+model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
-@assign! model U ( 
+@assign! model U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Dirichlet(:cylinder, noSlip),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
-);
+    Dirichlet(:wall, [0.0, 0.0, 0.0]),
+    Dirichlet(:top, [0.0, 0.0, 0.0])
+)
 
-@assign! model p (
+ @assign! model p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
-    Neumann(:cylinder, 0.0),
-    Neumann(:bottom, 0.0),
+    Neumann(:wall, 0.0),
     Neumann(:top, 0.0)
-);
+)
+
+schemes = (
+    U = set_schemes(time=Euler),
+    p = set_schemes()
+)
+
 
 solvers = (
     U = set_solver(
@@ -42,28 +55,22 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
-        rtol = 1e-3
+        relax       = 1.0,
     ),
     p = set_solver(
         model.p;
-        solver      = CgSolver, #CgLanczosSolver, #CgSolver, # BicgstabSolver, GmresSolver
+        solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.3,
-        rtol = 1e-3
+        relax       = 1.0,
     )
-);
+)
 
-schemes = (
-    U = set_schemes(divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(divergence=Upwind, gradient=Midpoint)
-);
-
-runtime = set_runtime(iterations=600, write_interval=100, time_step=1)
+runtime = set_runtime(
+    iterations=1000, time_step=0.005, write_interval=10)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime);
+    solvers=solvers, schemes=schemes, runtime=runtime)
 
 GC.gc()
 
@@ -71,7 +78,7 @@ initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
 @info "Extracting configuration and input fields..."
-model = adapt(backend, model_in)
+model = adapt(backend, model)
 (; U, p, nu, mesh) = model
 (; solvers, schemes, runtime) = config
 
@@ -201,84 +208,61 @@ end
  
  @info "Staring SIMPLE loops..."
 
- progress = Progress(iterations; dt=1.0, showspeed=true)
+#  progress = Progress(iterations; dt=1.0, showspeed=true)
 
- CUDA.@time for iteration ∈ 1:iterations
+#  CUDA.@tinzval_cpu = 2.2844029e-8
+for iteration in 1:1000
+    @. prev = U.x.values
+    discretise!(ux_eqn, prev, runtime)
+    apply_boundary_conditions!(ux_eqn, U.x.BCs)
+    implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh)
+    update_preconditioner!(ux_eqn.preconditioner, mesh)
+    run!(ux_eqn, solvers.U, U.x) #opP=Pu.P, solver=solver_U)
+end
 
-     @. prev = U.x.values
-     # type = typeof(ux_eqn)
-     # println("$type")
-     discretise!(ux_eqn, prev, runtime)
-     apply_boundary_conditions!(ux_eqn, U.x.BCs)
-     # ux_eqn.b .-= divUTx
-     implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh)
-     update_preconditioner!(ux_eqn.preconditioner, mesh)
-     run!(ux_eqn, solvers.U, U.x) #opP=Pu.P, solver=solver_U)
-     residual!(R_ux, ux_eqn.equation, U.x, iteration)
+nzval_cpu = ux_eqn.equation.A.nzval
+b_cpu = ux_eqn.equation.b
+precon_cpu = ux_eqn.preconditioner.storage
+values_cpu = U.x.values
 
-     @. prev = U.y.values
-     discretise!(uy_eqn, prev, runtime)
-     apply_boundary_conditions!(uy_eqn, U.y.BCs)
-     # uy_eqn.b .-= divUTy
-     implicit_relaxation!(uy_eqn, prev, solvers.U.relax, mesh)
-     update_preconditioner!(uy_eqn.preconditioner, mesh)
-     run!(uy_eqn, solvers.U, U.y)
-     residual!(R_uy, uy_eqn.equation, U.y, iteration)
 
-     @. prev = U.z.values
-     discretise!(uz_eqn, prev, runtime)
-     apply_boundary_conditions!(uz_eqn, U.z.BCs)
-     # uy_eqn.b .-= divUTy
-     implicit_relaxation!(uz_eqn, prev, solvers.U.relax, mesh)
-     update_preconditioner!(uz_eqn.preconditioner, mesh)
-     run!(uz_eqn, solvers.U, U.z)
-     residual!(R_uz, uz_eqn.equation, U.z, iteration)
-       
-     inverse_diagonal!(rD, ux_eqn)
-     interpolate!(rDf, rD)
-     remove_pressure_source!(ux_eqn, uy_eqn, uz_eqn, ∇p)
-     H!(Hv, U, ux_eqn, uy_eqn, uz_eqn)
-     
-     interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
-     correct_boundaries!(Uf, Hv, U.BCs)
-     div!(divHv, Uf)
-     
-     @. prev = p.values
-     discretise!(p_eqn, prev, runtime)
-     apply_boundary_conditions!(p_eqn, p.BCs)
-     setReference!(p_eqn, pref, 1)
-     update_preconditioner!(p_eqn.preconditioner, mesh)
-     run!(p_eqn, solvers.p, p)
+CUDA.allowscalar(true)
 
-     explicit_relaxation!(p, prev, solvers.p.relax)
-     residual!(R_p, p_eqn.equation, p, iteration)
+error_check(nzval_cpu, ux_eqn.equation.A.nzVal, 0)
+error_check(b_cpu, ux_eqn.equation.b, 0)
+error_check(ux_eqn.equation.A.nzVal, ux_eqn.preconditioner.A.nzVal, 0)
+error_check(precon_cpu, ux_eqn.preconditioner.storage, 0)
+error_check(values_cpu, U.x.values, 0)
 
-     grad!(∇p, pf, p, p.BCs) 
+function error_check(arr_cpu, arr_gpu, min_error)
+    sum = 0
 
-    #  correct = false
-    #  if correct
-    #      ncorrectors = 1
-    #      for i ∈ 1:ncorrectors
-    #          discretise!(p_eqn)
-    #          apply_boundary_conditions!(p_eqn, p.BCs)
-    #          setReference!(p_eqn.equation, pref, 1)
-    #          # grad!(∇p, pf, p, pBCs) 
-    #          interpolate!(gradpf, ∇p, p)
-    #          nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
-    #          correct!(p_eqn.equation, p_model.terms.term1, pf)
-    #          run!(p_model, solvers.p)
-    #          grad!(∇p, pf, p, pBCs) 
-    #      end
-    #  end
+    error_array = eltype(arr_cpu)[]
+    
+    for i in eachindex(arr_cpu)
 
-     correct_velocity!(U, Hv, ∇p, rD)
-     interpolate!(Uf, U)
-     correct_boundaries!(Uf, U, U.BCs)
-     flux!(mdotf, Uf)
+        varcpu = arr_cpu[i]
+        vargpu = arr_gpu[i]
 
-    #  if isturbulent(model)
-    #      grad!(gradU, Uf, U, U.BCs)
-    #      turbulence!(turbulence, model, S, S2, prev) 
-    #      update_nueff!(nueff, nu, turbulence)
-    #  end
- end
+        diff = varcpu - vargpu
+        
+        if abs(diff) > min_error
+            println("Index  = $i:\nnzval_cpu = $varcpu\nnzval_gpu = $vargpu\ndifference = $diff\n")
+            sum += 1
+            push!(error_array, abs(diff))
+        end
+    end
+
+    if length(error_array) > 0
+        max_error = maximum(error_array)
+        println("max error = $max_error")
+        min_error = minimum(error_array)
+        println("min error = $min_error")
+    end
+
+    println("number errored = $sum")
+end
+
+using KernelAbstractions
+backend = CPU()
+backend = CUDABackend()

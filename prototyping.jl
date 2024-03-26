@@ -218,23 +218,48 @@ for iteration in 1:1000
     implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh)
     update_preconditioner!(ux_eqn.preconditioner, mesh)
     run!(ux_eqn, solvers.U, U.x) #opP=Pu.P, solver=solver_U)
+    residual!(R_ux, ux_eqn.equation, U.x, iteration)
+
+    @. prev = U.y.values
+    discretise!(uy_eqn, prev, runtime)
+    apply_boundary_conditions!(uy_eqn, U.y.BCs)
+    # uy_eqn.b .-= divUTy
+    implicit_relaxation!(uy_eqn, prev, solvers.U.relax, mesh)
+    update_preconditioner!(uy_eqn.preconditioner, mesh)
+    run!(uy_eqn, solvers.U, U.y)
+    residual!(R_uy, uy_eqn.equation, U.y, iteration)
+
+    inverse_diagonal!(rD, ux_eqn)
+    interpolate!(rDf, rD)
+    remove_pressure_source!(ux_eqn, uy_eqn, uz_eqn, ∇p)
+    H!(Hv, U, ux_eqn, uy_eqn, uz_eqn)
+
+    interpolate!(Uf, Hv)
 end
 
 nzval_cpu = ux_eqn.equation.A.nzval
 b_cpu = ux_eqn.equation.b
 precon_cpu = ux_eqn.preconditioner.storage
 values_cpu = U.x.values
+R_ux_cpu = R_ux
+rD_values_cpu = rD.values
+rDf_values_cpu = rDf.values
+Hx_cpu = Hv.x.values
+Hy_cpu = Hv.y.values
+Hz_cpu = Hv.z.values
+Ufx_cpu = Uf.x.values
+Ufy_cpu = Uf.y.values
+Ufz_cpu = Uf.z.values
 
-
-CUDA.allowscalar(true)
-
-error_check(nzval_cpu, ux_eqn.equation.A.nzVal, 0)
-error_check(b_cpu, ux_eqn.equation.b, 0)
-error_check(ux_eqn.equation.A.nzVal, ux_eqn.preconditioner.A.nzVal, 0)
-error_check(precon_cpu, ux_eqn.preconditioner.storage, 0)
-error_check(values_cpu, U.x.values, 0)
+nzvaly_cpu = uy_eqn.equation.A.nzval
+by_cpu = uy_eqn.equation.b
+precony_cpu = uy_eqn.preconditioner.storage
+valuesy_cpu = U.y.values
+R_uy_cpu = R_uy
 
 function error_check(arr_cpu, arr_gpu, min_error)
+    CUDA.allowscalar(true)
+    
     sum = 0
 
     error_array = eltype(arr_cpu)[]
@@ -247,7 +272,7 @@ function error_check(arr_cpu, arr_gpu, min_error)
         diff = varcpu - vargpu
         
         if abs(diff) > min_error
-            println("Index  = $i:\nnzval_cpu = $varcpu\nnzval_gpu = $vargpu\ndifference = $diff\n")
+            println("Index  = $i:\nCPU Value = $varcpu\nGPU Value = $vargpu\nDifference = $diff\n")
             sum += 1
             push!(error_array, abs(diff))
         end
@@ -261,7 +286,29 @@ function error_check(arr_cpu, arr_gpu, min_error)
     end
 
     println("number errored = $sum")
+    CUDA.allowscalar(false)
 end
+
+
+error_check(nzval_cpu, ux_eqn.equation.A.nzVal, eps(Float64))
+error_check(b_cpu, ux_eqn.equation.b, eps(Float64))
+error_check(ux_eqn.equation.A.nzVal, ux_eqn.preconditioner.A.nzVal, eps(Float64))
+error_check(precon_cpu, ux_eqn.preconditioner.storage, eps(Float64))
+error_check(values_cpu, U.x.values, eps(Float64))
+error_check(R_ux_cpu, R_ux, eps(Float64))
+error_check(rD_values_cpu, rD.values, eps(Float64))
+error_check(rDf_values_cpu, rDf.values, eps(Float64))
+error_check(Hx_cpu, Hv.x.values, eps(Float64))
+error_check(Hy_cpu, Hv.y.values, eps(Float64))
+error_check(Hz_cpu, Hv.z.values, eps(Float64))
+
+error_check(nzvaly_cpu, uy_eqn.equation.A.nzVal, eps(Float32))
+error_check(by_cpu, uy_eqn.equation.b, eps(Float32))
+error_check(uy_eqn.equation.A.nzVal, uy_eqn.preconditioner.A.nzVal, eps(Float32))
+error_check(precony_cpu, uy_eqn.preconditioner.storage, eps(Float32))
+error_check(valuesy_cpu, U.y.values, eps(Float32))
+error_check(R_uy_cpu, R_uy, eps(Float32))
+
 
 using KernelAbstractions
 backend = CPU()

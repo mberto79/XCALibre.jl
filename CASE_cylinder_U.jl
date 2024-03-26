@@ -9,6 +9,7 @@ using KernelAbstractions
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 mesh_file = "unv_sample_meshes/cylinder_d10mm_2mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
+mesh = update_mesh_format(mesh, integer=Int32, float=Float32)
 mesh = update_mesh_format(mesh)
 
 # Inlet conditions

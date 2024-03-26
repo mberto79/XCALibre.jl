@@ -9,6 +9,7 @@ using KernelAbstractions
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 mesh_file = "unv_sample_meshes/cylinder_d10mm_2mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
+mesh = update_mesh_format(mesh, integer=Int32, float=Float32)
 mesh = update_mesh_format(mesh)
 
 # Inlet conditions
@@ -25,7 +26,7 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
     Neumann(:outlet, 0.0),
     Dirichlet(:cylinder, noSlip),
     Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0),
+    Neumann(:top, 0.0)
 )
 
 @assign! model p (
@@ -60,8 +61,13 @@ schemes = (
     p = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint)
 )
 
+
 runtime = set_runtime(
-    iterations=100, write_interval=1, time_step=0.005)
+    iterations=1000, write_interval=50, time_step=0.005)
+
+# 2mm mesh use settings below (to lower Courant number)
+runtime = set_runtime(
+        iterations=5000, write_interval=250, time_step=0.001) # Only runs on 32 bit
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

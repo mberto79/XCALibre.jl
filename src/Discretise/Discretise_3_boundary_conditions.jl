@@ -33,6 +33,16 @@ end
     # fzero = zero(eltype(b))
     # A[cellID,cellID] += fzero
     # b[cellID] += fzero
+
+    values = phi.values
+    J = term.flux[fID]
+    (; area, delta) = face 
+    flux = J*area/delta
+    ap = term.sign[1]*(-flux)
+    # A[cellID,cellID] += ap
+    nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
+    Atomix.@atomic nzval[nIndex] += ap
+    Atomix.@atomic b[cellID] += ap*values[cellID]
     nothing
 end
 

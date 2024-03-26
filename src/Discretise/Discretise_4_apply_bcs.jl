@@ -11,6 +11,9 @@ end
     # nTerms = model.parameters[3]
     nTerms = TN
 
+    println(BCs)
+    println(BCs.parameters)
+
     # Definition of main assignment loop (one per patch)
     assignment_loops = []
     for bci ∈ 1:length(BCs.parameters)

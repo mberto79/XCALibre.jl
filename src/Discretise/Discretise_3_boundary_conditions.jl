@@ -33,6 +33,15 @@ end
     nothing
 end
 
+@inline (bc::Wall)(
+    term::Operator{F,P,I,Laplacian{Linear}}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    # A[cellID,cellID] += 0.0#ap
+    # b[cellID] += 0.0
+    nothing
+end
+
+
 @inline (bc::KWallFunction)(
     term::Operator{F,P,I,Laplacian{T}}, 
     A, b, cellID, cell, face, fID) where {F,P,I,T}  = begin
@@ -60,6 +69,14 @@ end
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
     ap = term.sign[1]*(term.flux[fID])
     A[cellID,cellID] += ap
+    nothing
+end
+
+@inline (bc::Wall)(
+    term::Operator{F,P,I,Divergence{Linear}}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    # A[cellID,cellID] += 0.0#ap
+    # b[cellID] += 0.0
     nothing
 end
 
@@ -110,6 +127,14 @@ end
     nothing
 end
 
+@inline (bc::Wall)(
+    term::Operator{F,P,I,Divergence{Upwind}}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    # A[cellID,cellID] += 0.0#ap
+    # b[cellID] += 0.0
+    nothing
+end
+
 @inline (bc::KWallFunction)(
     term::Operator{F,P,I,Divergence{Upwind}},
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
@@ -135,6 +160,12 @@ end
 end
 
 @inline (bc::Neumann)(
+    term::Operator{F,P,I,Si}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    nothing
+end
+
+@inline (bc::Wall)(
     term::Operator{F,P,I,Si}, 
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
     nothing

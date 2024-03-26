@@ -9,9 +9,9 @@ mesh = build_mesh(mesh_file, scale=0.001)
 
 # Inlet conditions
 
-velocity = [30.0, 0.0, 0.0]
+velocity = [0.5, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
-nu = 1e-5
+nu = 1e-2
 Re = (0.2*velocity[1])/nu
 temp = 300
 Cp = 1005
@@ -22,16 +22,16 @@ model = dRANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:cylinder, noSlip),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+    Dirichlet(:bottom, velocity),
+    Dirichlet(:top, velocity)
 )
 
 @assign! model h (
     Dirichlet(:inlet, Cp * temp),
     Neumann(:outlet, 0.0),
-    Dirichlet(:cylinder, Cp * temp),
-    Neumann(:top, 0.0),
-    Neumann(:bottom, 0.0)
+    Dirichlet(:cylinder, Cp * 305),
+    Dirichlet(:top, Cp * temp),
+    Dirichlet(:bottom, Cp * temp)
 )
 
 @assign! model p (
@@ -46,16 +46,16 @@ solvers = (
     U = set_solver(
         model.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = DILU(),
+        preconditioner = ILU0(),
         convergence = 1e-7,
         relax       = 0.7,
     ),
     h = set_solver(
         model.h;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = DILU(),
+        preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.3,
     ),
     p = set_solver(
         model.p;
@@ -69,10 +69,10 @@ solvers = (
 schemes = (
     U = set_schemes(divergence=Upwind, gradient=Midpoint),
     h = set_schemes(divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(divergence=Upwind, gradient=Midpoint)
+    p = set_schemes(divergence=Linear, gradient=Midpoint)
 )
 
-runtime = set_runtime(iterations=200, write_interval=10, time_step=1.0)
+runtime = set_runtime(iterations=1000, write_interval=10, time_step=1.0)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

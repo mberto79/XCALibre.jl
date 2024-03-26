@@ -10,9 +10,9 @@ mesh_file = "unv_sample_meshes/flatplate_2D_highRe.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 
 
-velocity = [10.0, 0.0, 0.0]
+velocity = [1.0, 0.0, 0.0]
 temp = 300
-nu = 1e-6
+nu = 1e-2
 Re = velocity[1]*1/nu
 Cp = 1005
 
@@ -28,7 +28,7 @@ model = dRANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 @assign! model h (
     Dirichlet(:inlet, Cp * temp),
     Neumann(:outlet, 0.0),
-    Dirichlet(:wall, Cp * 310),
+    Neumann(:wall, Cp * 100),
     Neumann(:top, 0.0)
 )
 
@@ -70,7 +70,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=2000, write_interval=100)
+runtime = set_runtime(iterations=2000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

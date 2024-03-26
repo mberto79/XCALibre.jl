@@ -1,6 +1,6 @@
 export AbstractScheme, AbstractBoundary
 export AbstractDirichlet, AbstractNeumann
-export Dirichlet, Neumann
+export Dirichlet, Neumann, Wall
 export KWallFunction, OmegaWallFunction, NutWallFunction
 export Constant, Linear, Upwind
 export Steady, Euler, CrankNicolson
@@ -49,6 +49,11 @@ function Dirichlet(ID::I, value::V) where {I<:Integer,V}
 end
 
 struct Neumann{I,V} <: AbstractBoundary
+    ID::I 
+    value::V 
+end
+
+struct Wall{I,V} <: AbstractBoundary
     ID::I 
     value::V 
 end

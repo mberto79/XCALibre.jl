@@ -9,7 +9,7 @@ mesh = build_mesh(mesh_file, scale=0.001)
 
 # Inlet conditions
 
-velocity = [0.50, 0.0, 0.0]
+velocity = [5, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
 Re = (0.2*velocity[1])/nu
@@ -19,9 +19,9 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 @assign! model U ( 
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Dirichlet(:cylinder, noSlip),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+    Wall(:cylinder, noSlip),
+    Wall(:bottom, 0.0),
+    Wall(:top, 0.0)
 )
 
 @assign! model p (
@@ -51,10 +51,10 @@ solvers = (
 
 schemes = (
     U = set_schemes(divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(divergence=Upwind, gradient=Midpoint)
+    p = set_schemes(divergence=Linear, gradient=Midpoint)
 )
 
-runtime = set_runtime(iterations=600, write_interval=100)
+runtime = set_runtime(iterations=600, write_interval=10, time_step=1.0)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

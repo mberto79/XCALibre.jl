@@ -3,7 +3,7 @@ export dsimple!
 function dsimple!(model, config; resume=true, pref=nothing) 
 
     @info "Extracting configuration and input fields..."
-    (; U, h, p, nu, mesh) = model
+    (; U, h, p, nu, rho, mesh) = model
     (; solvers, schemes, runtime) = config
 
     @info "Preallocating fields..."
@@ -111,12 +111,17 @@ function dSIMPLE_loop(
     Uf = FaceVectorField(mesh)
     hf = FaceScalarField(mesh)
     pf = FaceScalarField(mesh)
+    rDf = FaceScalarField(mesh)
     rhof = FaceScalarField(mesh)
     gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
+    rD = ScalarField(mesh)
     rhorD = ScalarField(mesh)
     rho = ScalarField(mesh)
     phiKf = FaceVectorField(mesh)
+
+    psi = ScalarField(mesh)
+    psif = FaceScalarField(mesh)
 
     # Pre-allocate auxiliary variables
 
@@ -130,28 +135,32 @@ function dSIMPLE_loop(
     R_h = ones(TF, iterations)
     R_p = ones(TF, iterations)
 
-    R = 287.
-    Cp = 1005.
+    R = 287.0
+    Cp = 1005.0
 
-    # T = h/Cp
-    # rho = p/(R*T)
+    # INITIALISE Massflow
 
     interpolate!(hf, h)
     correct_boundaries!(hf, h, h.BCs)
    
     interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, U.BCs)
+
+    println(minimum(Uf.x.values))
+    println(maximum(Uf.x.values))
   
     grad!(∇p, pf, p, p.BCs)
 
-    rhof.values .= (pf.values.*Cp)./(R.*hf.values)
-    rho.values .= (p.values.*Cp)./(R.*h.values)
+    rhof.values .= (pf.values.*1005.0)./(287.0.*hf.values)
+    rho.values .= (p.values.*1005.0)./(287.0.*h.values)
     
     flux!(mdotf, Uf, rhof)
 
     update_nueff!(nueff, nu, turbulence)
 
     update_alphaeff!(alphaeff, nu, turbulence)
+
+    alphaeff.values .= 0.0001
 
     @info "Staring SIMPLE loops..."
 
@@ -160,11 +169,15 @@ function dSIMPLE_loop(
     @time for iteration ∈ 1:iterations
 
         # I think divK is the problem
-        phiKf.x.values .= rhof.values .* Uf.x.values .* 0.5 .* (Uf.x.values .* Uf.x.values .+ Uf.y.values .* Uf.y.values .+ Uf.z.values .* Uf.z.values)
-        phiKf.y.values .= rhof.values .* Uf.y.values .* 0.5 .* (Uf.x.values .* Uf.x.values .+ Uf.y.values .* Uf.y.values .+ Uf.z.values .* Uf.z.values)
-        phiKf.z.values .= rhof.values .* Uf.z.values .* 0.5 .* (Uf.x.values .* Uf.x.values .+ Uf.y.values .* Uf.y.values .+ Uf.z.values .* Uf.z.values)
-        explicitdiv!(divK, phiKf)
+        # phiKf.x.values .= rhof.values .* Uf.x.values .* 0.5 .* (Uf.x.values .* Uf.x.values .+ Uf.y.values .* Uf.y.values .+ Uf.z.values .* Uf.z.values)
+        # phiKf.y.values .= rhof.values .* Uf.y.values .* 0.5 .* (Uf.x.values .* Uf.x.values .+ Uf.y.values .* Uf.y.values .+ Uf.z.values .* Uf.z.values)
+        # phiKf.z.values .= rhof.values .* Uf.z.values .* 0.5 .* (Uf.x.values .* Uf.x.values .+ Uf.y.values .* Uf.y.values .+ Uf.z.values .* Uf.z.values)
+        # explicitdiv!(divK, phiKf)
+        # println(divK)
         divK.values .= 0
+
+        println(minimum(divK.values))
+        println(maximum(divK.values))
 
         @. prev = U.x.values
         discretise!(ux_eqn, prev, runtime)
@@ -183,38 +196,39 @@ function dSIMPLE_loop(
         update_preconditioner!(uy_eqn.preconditioner)
         run!(uy_eqn, solvers.U)
         residual!(R_uy, uy_eqn.equation, U.y, iteration)
-        
-        @. prev = h.values
-        discretise!(h_eqn, prev, runtime)
-        apply_boundary_conditions!(h_eqn, h.BCs)
-        implicit_relaxation!(h_eqn.equation, prev, solvers.h.relax)
-        update_preconditioner!(h_eqn.preconditioner)
-        run!(h_eqn, solvers.h)
-        residual!(R_h, h_eqn.equation, h, iteration)
 
-        # interpolate!(hf, h)
-        # correct_boundaries!(hf, h, h.BCs)
-        # interpolate!(pf, p)
-        # correct_boundaries!(pf, p, p.BCs)
-        # rhof.values .= (pf.values.*Cp)./(R.*hf.values)
+        println(minimum(U.x.values))
+        println(maximum(U.x.values))
         
-        # rho.values .= (p.values.*Cp)./(R.*h.values)
+        # CALCULATE rhostar from equation of state -----
 
-        inverse_diagonal!(rhorD, ux_eqn.equation)
-        rhorD.values .*= rho.values
-        interpolate!(rhorDf, rhorD)
+        interpolate!(hf, h)
+        correct_boundaries!(hf, h, h.BCs)
+    
+        interpolate!(Uf, U)   
+        correct_boundaries!(Uf, U, U.BCs)
+
+        
+    
+        grad!(∇p, pf, p, p.BCs)
+
+        rhof.values .= (pf.values.*1005.0)./(287.0.*hf.values)
+        rho.values .= (p.values.*1005.0)./(287.0.*h.values)
+
+        inverse_diagonal!(rD, ux_eqn.equation)
+        interpolate!(rDf, rD)
+        rhorDf.values .= rhof.values .* rDf.values
+
         remove_pressure_source!(ux_eqn, uy_eqn, ∇p)
         H!(Hv, U, ux_eqn, uy_eqn)
-
-        Hv.x.values .*= rho.values
-        Hv.y.values .*= rho.values
-        Hv.z.values .*= rho.values
-
+        
         interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs)
-        
+        Uf.x.values .*= rhof.values
+        Uf.y.values .*= rhof.values
+        Uf.z.values .*= rhof.values
         div!(divHv, Uf)
-   
+
         @. prev = p.values
         discretise!(p_eqn, prev, runtime)
         apply_boundary_conditions!(p_eqn, p.BCs)
@@ -242,41 +256,67 @@ function dSIMPLE_loop(
             end
         end
 
-        # rhorD.values .*= rho.values
-        correct_velocity!(U, Hv, ∇p, rhorD)
+        # correct_boundaries!(pf, p, p.BCs)
+        # rhof.values .= (pf.values.*Cp)./(R.*hf.values)
+        # rho.values .= (p.values.*Cp)./(R.*h.values)
+        # correct_boundaries!(Uf, U, U.BCs)
+        # flux!(mdotf, Uf, rhof)
 
-        # @. prev = rho.values
+        @. prev = h.values
+        discretise!(h_eqn, prev, runtime)
+        apply_boundary_conditions!(h_eqn, h.BCs)
+        implicit_relaxation!(h_eqn.equation, prev, solvers.h.relax)
+        update_preconditioner!(h_eqn.preconditioner)
+        run!(h_eqn, solvers.h)
+        residual!(R_h, h_eqn.equation, h, iteration)
 
-        rho.values .= (p.values.*Cp)./(R.*h.values)
         interpolate!(hf, h)
         correct_boundaries!(hf, h, h.BCs)
+
+        interpolate!(pf, p)
+        correct_boundaries!(pf, p, p.BCs)
         rhof.values .= (pf.values.*Cp)./(R.*hf.values)
+        rho.values .= (p.values.*Cp)./(R.*h.values)
 
-        U.x.values ./= rho.values
-        U.y.values ./= rho.values
-        U.z.values ./= rho.values
-
-        interpolate!(Uf, U)   
+        correct_velocity!(U, Hv, ∇p, rD)
+        interpolate!(Uf, U)
+   
         correct_boundaries!(Uf, U, U.BCs)
-
         flux!(mdotf, Uf, rhof)
 
-      
+        # # # rhorD.values .*= rho.values
+        # # correct_velocity!(U, Hv, ∇p, rhorD)
 
-        # explicit_relaxation!(rho, prev, 0.01)
+        # # # @. prev = rho.values
+
+        # # # U.x.values ./= rho.values
+        # # # U.y.values ./= rho.values
+        # # # U.z.values ./= rho.values
+
+        # # interpolate!(Uf, U)   
+        # # correct_boundaries!(Uf, U, U.BCs)
+
+        # # rho.values .= (p.values.*Cp)./(R.*h.values)      
+        # # interpolate!(hf, h)
+        # # correct_boundaries!(hf, h, h.BCs)
+        # # rhof.values .= (pf.values.*Cp)./(R.*hf.values)
+        # # flux!(mdotf, Uf, rhof)
+
+
+        # # # explicit_relaxation!(rho, prev, 0.01)
         
 
-        if isturbulent(model)
-            grad!(gradU, Uf, U, U.BCs)
-            turbulence!(turbulence, model, S, S2, prev) 
-            update_nueff!(nueff, nu, turbulence)
-        end
+        # # if isturbulent(model)
+        # #     grad!(gradU, Uf, U, U.BCs)
+        # #     turbulence!(turbulence, model, S, S2, prev) 
+        # #     update_nueff!(nueff, nu, turbulence)
+        # # end
         
-        # for i ∈ eachindex(divUTx)
-        #     vol = mesh.cells[i].volume
-        #     divUTx = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][1,1]+ gradUT[i][1,2] + gradUT[i][1,3])*vol
-        #     divUTy = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][2,1]+ gradUT[i][2,2] + gradUT[i][2,3])*vol
-        # end
+        # # for i ∈ eachindex(divUTx)
+        # #     vol = mesh.cells[i].volume
+        # #     divUTx = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][1,1]+ gradUT[i][1,2] + gradUT[i][1,3])*vol
+        # #     divUTy = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][2,1]+ gradUT[i][2,2] + gradUT[i][2,3])*vol
+        # # end
         
         convergence = 1e-7
 

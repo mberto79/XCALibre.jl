@@ -31,12 +31,13 @@ RANS{Laminar}(; mesh, viscosity) = begin
     )
 end
 
-struct dRANS{M,F1,F2,F3,V,T,E,D}
+struct dRANS{M,F1,F2,F3,V,R,T,E,D}
     model::M
     U::F1
     h::F2 
     p::F3
     nu::V
+    rho::R
     turbulence::T
     energy::E
     mesh::D
@@ -47,10 +48,11 @@ dRANS{Laminar}(; mesh, viscosity) = begin
     h = ScalarField(mesh); F2 = typeof(h)
     p = ScalarField(mesh); F3 = typeof(p)
     V = typeof(viscosity)
+    rho = ScalarField(mesh); R = typeof(rho)
     flag = false; F = typeof(flag)
     D = typeof(mesh)
-    dRANS{Laminar,F1,F2,F3,V,F,F,D}(
-        Laminar(), U, h, p, viscosity, flag, flag, mesh
+    dRANS{Laminar,F1,F2,F3,V,R,F,F,D}(
+        Laminar(), U, h, p, viscosity, rho, flag, flag, mesh
     )
 end
 

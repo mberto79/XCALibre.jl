@@ -96,9 +96,13 @@ function SIMPLE_loop(
     n_cells = length(mesh.cells)
     Uf = FaceVectorField(mesh)
     pf = FaceScalarField(mesh)
+    rDfx = FaceScalarField(mesh)
+    rDfy = FaceScalarField(mesh)
     gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
+    rDx = ScalarField(mesh)
+    rDy = ScalarField(mesh)
 
     # Pre-allocate auxiliary variables
 
@@ -122,11 +126,63 @@ function SIMPLE_loop(
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
+    ## define mesh for Quick Wall Correction (remove later)
+    (; faces, cells, boundaries) = mesh  
+
     @time for iteration ∈ 1:iterations
+
+        ## Quick Wall Correction
+        for bci ∈ 1:length(U.x.BCs)
+            if U.x.BCs[bci] isa Wall{}
+                (; facesID, cellsID) = boundaries[U.x.BCs[bci].ID]
+                @inbounds for i ∈ eachindex(cellsID)
+                    faceID = facesID[i]
+                    cellID = cellsID[i]
+                    face = faces[faceID]
+                    cell = cells[cellID]
+                    (; area, normal, delta) = face 
+
+                    Uc = U.x.values[cellID]
+                    Vc = U.y.values[cellID]
+                    nueff_face = nueff.values[faceID]
+
+                    ux_eqn.equation.A[cellID, cellID] += nueff_face*area*(1-normal[1]*normal[1])/delta
+                    uy_eqn.equation.A[cellID, cellID] += nueff_face*area*(1-normal[2]*normal[2])/delta
+
+                    ux_eqn.equation.b[cellID] += nueff_face*area*((0)*(1-normal[1]*normal[1]) + (Vc-0)*(normal[2]*normal[1]))/delta
+                    uy_eqn.equation.b[cellID] += nueff_face*area*((Uc-0)*(normal[1]*normal[2]) + (0)*(1-normal[2]*normal[2]))/delta
+                end
+            end
+        end
+        ## Enf of Quick Wall COrrectyion
 
         @. prev = U.x.values
         discretise!(ux_eqn, prev, runtime)
         apply_boundary_conditions!(ux_eqn, U.x.BCs)
+        ## Quick Wall Correction
+        for bci ∈ 1:length(U.x.BCs)
+            if U.x.BCs[bci] isa Wall{}
+                (; facesID, cellsID) = boundaries[U.x.BCs[bci].ID]
+                @inbounds for i ∈ eachindex(cellsID)
+                    faceID = facesID[i]
+                    cellID = cellsID[i]
+                    face = faces[faceID]
+                    cell = cells[cellID]
+                    (; area, normal, delta) = face 
+
+                    Uc = U.x.values[cellID]
+                    Vc = U.y.values[cellID]
+                    nueff_face = nueff.values[faceID]
+
+                    ux_eqn.equation.A[cellID, cellID] += nueff_face*area*(1-normal[1]*normal[1])/delta
+                    uy_eqn.equation.A[cellID, cellID] += nueff_face*area*(1-normal[2]*normal[2])/delta
+
+                    ux_eqn.equation.b[cellID] += nueff_face*area*((0)*(1-normal[1]*normal[1]) + (Vc-0)*(normal[2]*normal[1]))/delta
+                    uy_eqn.equation.b[cellID] += nueff_face*area*((Uc-0)*(normal[1]*normal[2]) + (0)*(1-normal[2]*normal[2]))/delta
+                end
+            end
+        end
+        ## Enf of Quick Wall COrrectyion
         # ux_eqn.b .-= divUTx
         implicit_relaxation!(ux_eqn.equation, prev, solvers.U.relax)
         update_preconditioner!(ux_eqn.preconditioner)
@@ -136,14 +192,50 @@ function SIMPLE_loop(
         @. prev = U.y.values
         discretise!(uy_eqn, prev, runtime)
         apply_boundary_conditions!(uy_eqn, U.y.BCs)
+        ## Quick Wall Correction
+        for bci ∈ 1:length(U.x.BCs)
+            if U.x.BCs[bci] isa Wall{}
+                (; facesID, cellsID) = boundaries[U.x.BCs[bci].ID]
+                @inbounds for i ∈ eachindex(cellsID)
+                    faceID = facesID[i]
+                    cellID = cellsID[i]
+                    face = faces[faceID]
+                    cell = cells[cellID]
+                    (; area, normal, delta) = face 
+
+                    Uc = U.x.values[cellID]
+                    Vc = U.y.values[cellID]
+                    nueff_face = nueff.values[faceID]
+
+                    ux_eqn.equation.A[cellID, cellID] += nueff_face*area*(1-normal[1]*normal[1])/delta
+                    uy_eqn.equation.A[cellID, cellID] += nueff_face*area*(1-normal[2]*normal[2])/delta
+
+                    ux_eqn.equation.b[cellID] += nueff_face*area*((0)*(1-normal[1]*normal[1]) + (Vc-0)*(normal[2]*normal[1]))/delta
+                    uy_eqn.equation.b[cellID] += nueff_face*area*((Uc-0)*(normal[1]*normal[2]) + (0)*(1-normal[2]*normal[2]))/delta
+                end
+            end
+        end
+        ## Enf of Quick Wall COrrectyion
         # uy_eqn.b .-= divUTy
         implicit_relaxation!(uy_eqn.equation, prev, solvers.U.relax)
         update_preconditioner!(uy_eqn.preconditioner)
         run!(uy_eqn, solvers.U)
         residual!(R_uy, uy_eqn.equation, U.y, iteration)
         
+        inverse_diagonal!(rDx, ux_eqn.equation)
+        interpolate!(rDfx, rDx)
+        inverse_diagonal!(rDy, uy_eqn.equation)
+        interpolate!(rDfy, rDy)
+
+        # for fci ∈ 1:length(rDfx)
+        #     (; area, normal, delta) = faces[fci] 
+
+        #     rDf.values[fci] = ((rDfx.values[fci]*normal[1])^2 + (rDfy.values[fci]*normal[2])^2)/((rDfx.values[fci]*normal[1]) + (rDfy.values[fci]*normal[2]))
+        # end
+
         inverse_diagonal!(rD, ux_eqn.equation)
         interpolate!(rDf, rD)
+
         remove_pressure_source!(ux_eqn, uy_eqn, ∇p)
         H!(Hv, U, ux_eqn, uy_eqn)
 
@@ -179,7 +271,8 @@ function SIMPLE_loop(
             end
         end
 
-        correct_velocity!(U, Hv, ∇p, rD)
+        # correct_velocity!(U, Hv, ∇p, rD)
+        correct_velocity_vec!(U, Hv, ∇p, rDx, rDy)
         interpolate!(Uf, U)
         correct_boundaries!(Uf, U, U.BCs)
         flux!(mdotf, Uf)

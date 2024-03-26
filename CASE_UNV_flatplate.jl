@@ -19,6 +19,7 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:wall, [0.0, 0.0, 0.0]),
+    # Wall(:wall, [0.0, 0.0, 0.0]),
     Neumann(:top, 0.0)
 )
 
@@ -53,7 +54,7 @@ solvers = (
 )
 
 # runtime = set_runtime(iterations=2000, write_interval=-1)
-runtime = set_runtime(iterations=2000, write_interval=-1, time_step=1)
+runtime = set_runtime(iterations=2000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

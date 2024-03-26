@@ -43,6 +43,14 @@ function adjust_boundary!(
 end
 
 function adjust_boundary!(
+    BC::Wall, phif::FaceScalarField, phi, boundary, faces)
+    (; facesID, cellsID) = boundary
+    @inbounds for fID ∈ facesID
+        phif.values[fID] = BC.value 
+    end
+end
+
+function adjust_boundary!(
     BC::KWallFunction, phif::FaceScalarField, phi, boundary, faces)
     (;facesID, cellsID) = boundary
     @inbounds for fi ∈ eachindex(facesID)
@@ -104,6 +112,20 @@ function adjust_boundary!(
         x[fID] = psi_cell[1]
         y[fID] = psi_cell[2]
         z[fID] = psi_cell[3]
+    end
+end
+
+function adjust_boundary!( 
+    BC::Wall, psif::FaceVectorField, psi::VectorField, boundary, faces
+    )
+
+    (; x, y, z) = psif
+    (; facesID) = boundary
+
+    @inbounds for fID ∈ facesID
+        x[fID] = BC.value[1]
+        y[fID] = BC.value[2]
+        z[fID] = BC.value[3]
     end
 end
 

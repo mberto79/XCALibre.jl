@@ -24,11 +24,9 @@ model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
 @assign! model U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    # Neumann(:top, 0.0),
-    # Neumann(:bottom, 0.0),
-    Dirichlet(:top, velocity),
-    Dirichlet(:bottom, velocity),
-    Dirichlet(:cylinder, noSlip)
+    Wall(:top, noSlip),
+    Wall(:bottom, noSlip),
+    Wall(:cylinder, noSlip)
 )
 
 @assign! model p (
@@ -76,14 +74,14 @@ solvers = (
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.6,
+        relax       = 0.7,
     ),
     p = set_solver(
         model.p;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = LDL(),
         convergence = 1e-7,
-        relax       = 0.4,
+        relax       = 0.3,
     ),
     k = set_solver(
         model.turbulence.k;
@@ -101,7 +99,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=2000, write_interval=100)
+runtime = set_runtime(iterations=2000, write_interval=10, time_step=1.0)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

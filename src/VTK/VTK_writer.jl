@@ -12,7 +12,8 @@ function model2vtk(model::dRANS{Laminar,F1,F2,F3,V,T,E,D}, name) where {F1,F2,F3
     args = (
         ("U", model.U), 
         ("p", model.p),
-        ("h", model.h)
+        ("h", model.h),
+        ("rho", model.rho)
     )
     write_vtk(name, model.mesh, args...)
 end

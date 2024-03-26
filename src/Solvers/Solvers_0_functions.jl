@@ -17,7 +17,7 @@ update_alphaeff!(alphaeff, mu, turb_model) = begin
         end
     else
         for i ∈ eachindex(alphaeff)
-            alphaeff[i] = mu[i] / 0.7 + turb_model.νtf[i]
+            alphaeff[i] = (mu[i] / 0.7 + turb_model.νtf[i])
         end
     end
 end
@@ -87,12 +87,12 @@ end
 
 function flux!(phif::FS, psif::FV, rhof::FS) where {FS<:FaceScalarField,FV<:FaceVectorField,}
     (; mesh, values) = phif
-    (; mesh, values) = rhof
     (; faces) = mesh 
+    rhofvalues = rhof.values
     @inbounds for fID ∈ eachindex(faces)
         (; area, normal) = faces[fID]
         Sf = area*normal
-        values[fID] = (psif[fID]⋅Sf)*rhof[fID]
+        values[fID] = (psif[fID]⋅Sf)*rhofvalues[fID]
     end
 end
 
@@ -111,13 +111,23 @@ function inverse_diagonal!(rD::S, eqn) where S<:ScalarField
 end
 
 function correct_velocity!(U, Hv, ∇p, rD)
-    (; mesh, values) = rD
     Ux = U.x; Uy = U.y; Hvx = Hv.x; Hvy = Hv.y
     dpdx = ∇p.result.x; dpdy = ∇p.result.y; rDvalues = rD.values
     @inbounds @simd for i ∈ eachindex(Ux)
         rDvalues_i = rDvalues[i]
         Ux[i] = Hvx[i] - dpdx[i]*rDvalues_i
         Uy[i] = Hvy[i] - dpdy[i]*rDvalues_i
+    end
+end
+
+function correct_velocity_vec!(U, Hv, ∇p, rDx, rDy)
+    Ux = U.x; Uy = U.y; Hvx = Hv.x; Hvy = Hv.y
+    dpdx = ∇p.result.x; dpdy = ∇p.result.y; rDxvalues = rDx.values; rDyvalues = rDy.values
+    @inbounds @simd for i ∈ eachindex(Ux)
+        rDxvalues_i = rDxvalues[i]
+        rDyvalues_i = rDyvalues[i]
+        Ux[i] = Hvx[i] - dpdx[i]*rDxvalues_i
+        Uy[i] = Hvy[i] - dpdy[i]*rDyvalues_i
     end
 end
 
@@ -151,11 +161,13 @@ begin # Extend to 3D!
             sumy += Ay[cID,nID]*vy[nID]
         end
 
-        D = view(Ax, cID, cID)[1] # add check to use max of Ax or Ay)
-        rD = 1.0/D
+        Dx = view(Ax, cID, cID)[1] # add check to use max of Ax or Ay)
+        rDx = 1.0/Dx
+        Dy = view(Ay, cID, cID)[1] # add check to use max of Ax or Ay)
+        rDy = 1.0/Dy
         # rD = volume/D
-        x[cID] = (bx[cID] - sumx)*rD
-        y[cID] = (by[cID] - sumy)*rD
+        x[cID] = (bx[cID] - sumx)*rDx
+        y[cID] = (by[cID] - sumy)*rDy
         z[cID] = zero(F)
     end
 end
@@ -172,4 +184,16 @@ courant_number(U, mesh::Mesh2, runtime) = begin
         co = max(co, umag*dt/dx)
     end
     return co
+end
+
+function correct_Ψ(Ψ, h)
+    (; values, mesh) = Ψ
+    (; cells, faces) = mesh
+    hvalues = h.values
+    R = 287 # For air perfect gas
+    Cp = 1005 # For air perfect gas
+    @inbounds for cID ∈ eachindex(cells)
+        T = h.values / Cp
+        values[cID] = 1/(R*T)
+    end
 end

@@ -25,7 +25,7 @@ boundaryElements
 #Priority
 #1) all_cell_faces (unsuccsessful)
 #2) face_ownerCells (unsuccsessful)
-#3) cell neighbours
+#3) cell neighbours (unsuccsessful)
 
 @time nodes=generate_nodes(points,volumes) #0.067947 seconds
 
@@ -105,6 +105,37 @@ end
 
 @time f=generate_cell_neighbours(cells,cell_faces)
 
+#function generate_cell_neighbours(cells,cell_faces)
+    cell_neighbours=[]
+    for ID=1:length(cell_faces_range) 
+        for i=cell_faces_range[ID] 
+            faces=cell_faces[i]
+            for ic=1:length(i)
+                face=faces[ic]
+                index=findall(x->x==face,cell_faces)
+                if length(index)==2
+                    if i[1]<=index[1]<=i[end]
+                        for ip=1:length(cell_faces_range)
+                            if cell_faces_range[ip][1]<=index[2]<=cell_faces_range[ip][end]
+                                push!(cell_neighbours,ip)
+                            end
+                        end
+                    end
+                    if i[1]<=index[2]<=i[end]
+                        for ip=1:length(cells)
+                            if cell_faces_range[ip][1]<=index[1]<=cell_faces_range[ip][end]
+                                push!(cell_neighbours,ip)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return cell_neighbours
+#end
+
+
 function generate_cell_neighbours_1(cell_faces,cell_faces_range)
     cell_neighbours=zeros(Int64,length(cell_faces))
     for i=1:length(cell_faces)
@@ -125,7 +156,7 @@ function generate_cell_neighbours_1(cell_faces,cell_faces_range)
     return cell_neighbours
 end
 
-@time f=generate_cell_neighbours_1(cell_faces,cell_faces_range)
+#@time f=generate_cell_neighbours_1(cell_faces,cell_faces_range)
 
 
 

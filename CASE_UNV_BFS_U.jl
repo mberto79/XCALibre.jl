@@ -2,6 +2,7 @@ using Plots
 using FVM_1D
 using Krylov
 using KernelAbstractions
+using CUDA
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
@@ -39,15 +40,11 @@ solvers = (
         model.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1.0,
     ),
     p = set_solver(
         model.p;
-        solver      = CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(),
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -66,7 +63,6 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-backend = CUDABackend()
 # backend = CUDABackend()
 backend = CPU()
 

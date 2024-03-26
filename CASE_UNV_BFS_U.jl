@@ -62,6 +62,7 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
+# backend = CUDABackend()
 backend = CPU()
 
 Rx, Ry, Rp, model = simple!(model, config, backend); # 9.39k allocs

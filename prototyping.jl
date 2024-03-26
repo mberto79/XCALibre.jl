@@ -211,6 +211,8 @@ end
 #  progress = Progress(iterations; dt=1.0, showspeed=true)
 
 #  CUDA.@tinzval_cpu = 2.2844029e-8
+pref = nothing
+# iteration = 1
 for iteration in 1:1000
     @. prev = U.x.values
     discretise!(ux_eqn, prev, runtime)
@@ -235,6 +237,20 @@ for iteration in 1:1000
     H!(Hv, U, ux_eqn, uy_eqn, uz_eqn)
 
     interpolate!(Uf, Hv)
+    correct_boundaries!(Uf, Hv, U.BCs)
+    div!(divHv, Uf)
+
+    @. prev = p.values
+    discretise!(p_eqn, prev, runtime)
+    apply_boundary_conditions!(p_eqn, p.BCs)
+    setReference!(p_eqn, pref, 1)
+    update_preconditioner!(p_eqn.preconditioner, mesh)
+    run!(p_eqn, solvers.p, p)
+
+    explicit_relaxation!(p, prev, solvers.p.relax)
+    residual!(R_p, p_eqn.equation, p, iteration)
+
+    grad!(∇p, pf, p, p.BCs) 
 end
 
 nzval_cpu = ux_eqn.equation.A.nzval
@@ -250,12 +266,23 @@ Hz_cpu = Hv.z.values
 Ufx_cpu = Uf.x.values
 Ufy_cpu = Uf.y.values
 Ufz_cpu = Uf.z.values
+divHv_values_cpu = divHv.values
+p_values_cpu = p.values 
 
 nzvaly_cpu = uy_eqn.equation.A.nzval
 by_cpu = uy_eqn.equation.b
 precony_cpu = uy_eqn.preconditioner.storage
 valuesy_cpu = U.y.values
 R_uy_cpu = R_uy
+
+nzvalp_cpu = p_eqn.equation.A.nzval
+bp_cpu = p_eqn.equation.b
+preconp_cpu = p_eqn.preconditioner.storage
+valuesp_cpu = p.values
+R_p_cpu = R_p
+∇p_resultx_cpu = ∇p.result.x.values
+∇p_resulty_cpu = ∇p.result.y.values
+∇p_resultz_cpu = ∇p.result.z.values
 
 function error_check(arr_cpu, arr_gpu, min_error)
     CUDA.allowscalar(true)
@@ -289,7 +316,6 @@ function error_check(arr_cpu, arr_gpu, min_error)
     CUDA.allowscalar(false)
 end
 
-
 error_check(nzval_cpu, ux_eqn.equation.A.nzVal, eps(Float64))
 error_check(b_cpu, ux_eqn.equation.b, eps(Float64))
 error_check(ux_eqn.equation.A.nzVal, ux_eqn.preconditioner.A.nzVal, eps(Float64))
@@ -304,14 +330,24 @@ error_check(Hz_cpu, Hv.z.values, eps(Float64))
 error_check(Ufx_cpu, Uf.x.values, eps(Float64))
 error_check(Ufy_cpu, Uf.y.values, eps(Float64))
 error_check(Ufz_cpu, Uf.z.values, eps(Float64))
+error_check(divHv_values_cpu, divHv.values, eps(Float64))
 
-error_check(nzvaly_cpu, uy_eqn.equation.A.nzVal, eps(Float32))
-error_check(by_cpu, uy_eqn.equation.b, eps(Float32))
-error_check(uy_eqn.equation.A.nzVal, uy_eqn.preconditioner.A.nzVal, eps(Float32))
-error_check(precony_cpu, uy_eqn.preconditioner.storage, eps(Float32))
-error_check(valuesy_cpu, U.y.values, eps(Float32))
-error_check(R_uy_cpu, R_uy, eps(Float32))
+error_check(nzvaly_cpu, uy_eqn.equation.A.nzVal, eps(Float64))
+error_check(by_cpu, uy_eqn.equation.b, eps(Float64))
+error_check(uy_eqn.equation.A.nzVal, uy_eqn.preconditioner.A.nzVal, eps(Float64))
+error_check(precony_cpu, uy_eqn.preconditioner.storage, eps(Float64))
+error_check(valuesy_cpu, U.y.values, eps(Float64))
+error_check(R_uy_cpu, R_uy, eps(Float64))
 
+error_check(nzvalp_cpu, p_eqn.equation.A.nzVal, eps(Float64))
+error_check(bp_cpu, p_eqn.equation.b, eps(Float64))
+error_check(p_eqn.equation.A.nzVal, p_eqn.preconditioner.A.nzVal, eps(Float64))
+error_check(preconp_cpu, p_eqn.preconditioner.storage, eps(Float64))
+error_check(valuesp_cpu, p.values, eps(Float64))
+error_check(R_p_cpu, R_p, eps(Float64))
+error_check(∇p_resultx_cpu, ∇p.result.x.values, eps(Float64))
+error_check(∇p_resulty_cpu, ∇p.result.y.values, eps(Float64))
+error_check(∇p_resultz_cpu, ∇p.result.z.values, eps(Float64))
 
 using KernelAbstractions
 backend = CPU()

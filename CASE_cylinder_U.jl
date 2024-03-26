@@ -44,7 +44,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1.0,
-        rtol = 1e-3
+        rtol = 1e-5
     ),
     p = set_solver(
         model.p;
@@ -52,17 +52,22 @@ solvers = (
         preconditioner = Jacobi(), #NormDiagonal(),
         convergence = 1e-7,
         relax       = 1.0,
-        rtol = 1e-3
+        rtol = 1e-5
     )
 )
 
 schemes = (
-    U = set_schemes(time=Euler, divergence=Linear, gradient=Midpoint),
-    p = set_schemes(time=Euler, divergence=Linear, gradient=Midpoint)
+    U = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint),
+    p = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint)
 )
+
 
 runtime = set_runtime(
     iterations=1000, write_interval=50, time_step=0.005)
+
+# 2mm mesh use settings below (to lower Courant number)
+runtime = set_runtime(
+        iterations=5000, write_interval=250, time_step=0.001)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

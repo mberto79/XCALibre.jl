@@ -338,6 +338,7 @@ end
 
     @inbounds begin
         # Deconstruct faces to use weight and ownerCells in calculations
+        @synchronize
         (; weight, ownerCells) = faces[i]
 
         # Define indices for initial x and y values from psi struct

@@ -69,7 +69,7 @@ boundaryElements
 
 #work
 
-#function generate_cell_neighbours(cells,cell_faces)
+function generate_cell_neighbours(cells,cell_faces)
     cell_neighbours=Int64[]
     for ID=1:length(cells) 
         for i=cells[ID].faces_range 
@@ -101,7 +101,9 @@ boundaryElements
         end
     end
     return cell_neighbours
-#end
+end
+
+@time f=generate_cell_neighbours(cells,cell_faces)
 
 #
 cell_faces

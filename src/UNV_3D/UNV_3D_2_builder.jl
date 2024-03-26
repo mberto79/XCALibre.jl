@@ -58,10 +58,43 @@ function build_mesh3D(unv_mesh)
 
     mesh=Mesh3(cells,cell_nodes,cell_faces,cell_neighbours,cell_nsign,faces,face_nodes,boundaries,nodes,node_cells,get_float,get_int,boundary_cells)
 
+    mesh = correct_boundary_normals(mesh)
+
     end
     println("Done! Execution time: ", @sprintf "%.6f" stats.time)
     println("Mesh ready!")
     return mesh
+end
+
+function correct_boundary_normals(mesh)
+    # Only works with tets
+    (; boundaries, faces, face_nodes, nodes) = mesh
+    edge1 = SVector(0.0,0.0,0.0)
+    edge2 = SVector(0.0,0.0,0.0)
+    for boundary ∈ boundaries
+        for fID ∈ boundary.IDs_range
+            face = faces[fID]
+            nodes_range = face.nodes_range
+            nodeIDs = @view face_nodes[nodes_range]
+            
+            n1=nodes[nodeIDs[1]].coords
+            n2=nodes[nodeIDs[2]].coords
+            n3=nodes[nodeIDs[3]].coords
+    
+            edge1 = n2 - n1
+            edge2 = n3 - n1
+            normal_vec = edge1 × edge2
+    
+            magnitude = norm(normal_vec)
+            normal = normal_vec/magnitude
+            # if boundary.name == :bottom
+            #     println(normal)
+            # end
+            @reset face.normal = normal
+            faces[fID] = face
+        end
+    end
+    mesh
 end
 
 function calculate_face_properties(faces,face_ownerCells,cell_centre,face_centre,face_normal)
@@ -136,25 +169,33 @@ function calculate_face_normal(faces,nodes)
         n2=nodes[faces[i].faces[2]].coords
         n3=nodes[faces[i].faces[3]].coords
 
-        t1x=n2[1]-n1[1]
-        t1y=n2[2]-n1[2]
-        t1z=n2[3]-n1[3]
+        # t1x=n2[1]-n1[1]
+        # t1y=n2[2]-n1[2]
+        # t1z=n2[3]-n1[3]
 
-        t2x=n3[1]-n1[1]
-        t2y=n3[2]-n1[2]
-        t2z=n3[3]-n1[3]
+        # t2x=n3[1]-n1[1]
+        # t2y=n3[2]-n1[2]
+        # t2z=n3[3]-n1[3]
 
-        nx=t1y*t2z-t1z*t2y
-        ny=-(t1x*t2z-t1z*t2x)
-        nz=t1x*t2y-t1y*t2x
+        # nx=t1y*t2z-t1z*t2y
+        # ny=-(t1x*t2z-t1z*t2x)
+        # nz=t1x*t2y-t1y*t2x
 
-        magn2=(nx)^2+(ny)^2+(nz)^2
+        # magn2=(nx)^2+(ny)^2+(nz)^2
 
-        snx=nx/sqrt(magn2)
-        sny=ny/sqrt(magn2)
-        snz=nz/sqrt(magn2)
+        # snx=nx/sqrt(magn2)
+        # sny=ny/sqrt(magn2)
+        # snz=nz/sqrt(magn2)
+        # normal=SVector(snx,sny,snz)
 
-        normal=SVector(snx,sny,snz)
+        edge1 = n2 - n1
+        edge2 = n3 - n1
+        normal_vec = edge1 × edge2
+
+        magnitude = norm(normal_vec)
+        normal = normal_vec/magnitude
+
+
         push!(normal_store,normal)
     end
     return normal_store

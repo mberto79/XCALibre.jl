@@ -89,9 +89,9 @@ end
             res += values[fID]*(area*normal*nsign)
         end
         res /= volume
-        dx[i] = res[1]
-        dy[i] = res[2]
-        dz[i] = res[3]
+        dx.values[i] = res[1]
+        dy.values[i] = res[2]
+        dz.values[i] = res[3]
     end    
 end
 
@@ -102,16 +102,15 @@ end
         (; ownerCells, area, normal) = faces[i]
         cID = ownerCells[1]
         (; volume) = cells[cID]
-        # dx[cID] = (values[i]*(area*normal[1]))/volume
-        # dy[cID] = (values[i]*(area*normal[2]))/volume
-        # dz[cID] = (values[i]*(area*normal[3]))/volume
+        # Atomix.@atomic dx.values[cID] += (values[i]*(area*normal[1]))/volume
+        # Atomix.@atomic dy.values[cID] += (values[i]*(area*normal[2]))/volume
+        # Atomix.@atomic dz.values[cID] += (values[i]*(area*normal[3]))/volume
 
         res = SVector{3,F}(0.0,0.0,0.0)
-
         res = values[i]*(area*normal)
-        res /= volume
-        dx[cID] += res[1]
-        dy[cID] += res[2]
-        dz[cID] += res[3]
+        res /= volume 
+        Atomix.@atomic dx.values[cID] += res[1]
+        Atomix.@atomic dy.values[cID] += res[2]
+        Atomix.@atomic dz.values[cID] += res[3]
     end
 end

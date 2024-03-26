@@ -63,14 +63,14 @@ schemes = (
 solvers = (
     U = set_solver(
         model.U;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
     ),
     p = set_solver(
         model.p;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
+        solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
@@ -90,7 +90,7 @@ initialise!(model.p, 0.0)
 
 backend = CPU()
 backend = CUDABackend()
-Rx, Ry, Rp, model = simple!(model, config, backend) # 9.39k allocs in 184 iterations
+Rx, Ry, Rz, Rp, model1 = simple!(model, config, backend) # 9.39k allocs in 184 iterations
 
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

@@ -37,15 +37,15 @@ schemes = (
 solvers = (
     U = set_solver(
         model.U;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = DILU(),
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1.0,
     ),
     p = set_solver(
         model.p;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = LDL(),
+        solver      = CgSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1.0,
     )
@@ -62,6 +62,7 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
+# backend = CUDABackend()
 backend = CPU()
 
 Rx, Ry, Rp, model = simple!(model, config, backend); # 9.39k allocs

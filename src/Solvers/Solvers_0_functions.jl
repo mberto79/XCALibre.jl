@@ -369,7 +369,7 @@ end
     sumy = zero(F)
     sumz = zero(F)
 
-    # @inbounds begin
+    @inbounds begin
         (; faces_range) = cells[i]
 
         for ni ∈ faces_range
@@ -404,7 +404,7 @@ end
         x[i] = (bx[i] - sumx)*rD
         y[i] = (by[i] - sumy)*rD
         z[i] = (bz[i] - sumz)*rD
-    # end
+    end
 end
 
 courant_number(U, mesh::AbstractMesh, runtime) = begin

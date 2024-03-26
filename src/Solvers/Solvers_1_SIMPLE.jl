@@ -247,7 +247,7 @@ function SIMPLE(
 
         if (R_ux[iteration] <= convergence && 
             R_uy[iteration] <= convergence && 
-            R_uz[iteration] <= convergence &&
+            # R_uz[iteration] <= convergence &&
             R_p[iteration] <= convergence)
 
             print(

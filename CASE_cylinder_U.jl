@@ -8,6 +8,7 @@ using KernelAbstractions
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 mesh_file = "unv_sample_meshes/cylinder_d10mm_2mm.unv"
+mesh_file = "unv_sample_meshes/cylinder_d10mm_10-7.5-2mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh, integer=Int32, float=Float32)
 mesh = update_mesh_format(mesh)
@@ -57,8 +58,8 @@ solvers = (
 )
 
 schemes = (
-    U = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint)
+    U = set_schemes(time=Euler, divergence=Linear, gradient=Midpoint),
+    p = set_schemes(time=Euler, divergence=Linear, gradient=Midpoint)
 )
 
 

@@ -83,7 +83,7 @@ end
     i = @index(Global)
 
     @inbounds begin
-        phi[i] = phi[i] = phi0[i] + alpha*(phi[i] - phi0[i])
+        phi[i] = phi0[i] + alpha*(phi[i] - phi0[i])
     end
 end
 

@@ -165,6 +165,7 @@ function flux!(phif::FS, psif::FV) where {FS<:FaceScalarField,FV<:FaceVectorFiel
     backend = _get_backend(mesh)
     kernel! = flux_kernel!(backend)
     kernel!(faces, values, psif, ndrange = length(faces))
+    KernelAbstractions.synchronize(backend)
 end
 
 @kernel function flux_kernel!(faces, values, psif)
@@ -274,6 +275,7 @@ remove_pressure_source!(ux_eqn::M1, uy_eqn::M2, uz_eqn::M3, ∇p) where {M1,M2,M
 
     kernel! = remove_pressure_source_kernel!(backend)
     kernel!(cells, source_sign, dpdx, dpdy, dpdz, bx, by, bz, ndrange = length(bx))
+    KernelAbstractions.synchronize(backend)
 end
 
 @kernel function remove_pressure_source_kernel!(cells, source_sign, dpdx, dpdy, dpdz, bx, by, bz) #Extend to 3D
@@ -354,6 +356,7 @@ function H!(Hv, v::VF, ux_eqn, uy_eqn, uz_eqn) where VF<:VectorField # Extend to
             nzval_y, colptr_y, rowval_y, by, vy,
             nzval_z, colptr_z, rowval_z, bz, vz,
             x, y, z, ndrange = length(cells))
+    KernelAbstractions.synchronize(backend)
 end
 
 @kernel function H_kernel!(ione, cells, F, cell_neighbours,

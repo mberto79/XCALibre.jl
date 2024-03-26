@@ -44,7 +44,7 @@ end
     b, nzval_array, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
         volume = cell.volume
         rdt = 1/runtime.dt
-        nzval_array[cIndex] += volume*rdt
+        Atomix.@atomic nzval_array[cIndex] += volume*rdt
         Atomix.@atomic b[cID] += prev[cID]*volume*rdt
     nothing
 end

@@ -71,26 +71,24 @@ mesh.nodes
 
 #work
 
-function generate_face_nodes(faces)
-    face_nodes=Vector{Int64}(undef,length(faces)*3) # number of bc faces times number of nodes per face
-    counter=0 
-    for n=1:length(faces)
-        for i=1:faces[n].faceCount
+function generate_cell_nodes(volumes)
+    cell_nodes=Vector{Int64}(undef,length(volumes)*4) #length of cells times number of nodes per cell
+    counter=0
+    for n=1:length(volumes)
+        for i=1:volumes[n].volumeCount
             counter=counter+1
-            face_nodes[counter]=faces[n].faces[i]
+            cell_nodes[counter]=volumes[n].volumes[i]
         end
     end
-    return face_nodes
+    return cell_nodes
 end
 
-generate_face_nodes(faces)
-
-#function generate_face_nodes(faces)
-    face_nodes=typeof(faces[1].faces[1])[] # Giving type to array constructor
-    for n=1:length(faces)
-        for i=1:faces[n].faceCount
-            push!(face_nodes,faces[n].faces[i])
+#function generate_cell_nodes(volumes)
+    cell_nodes=typeof(volumes[1].volumes[1])[] # Giving type to array constructor
+    for n=1:length(volumes)
+        for i=1:volumes[n].volumeCount
+            push!(cell_nodes,volumes[n].volumes[i])
         end
     end
-    return face_nodes
+    return cell_nodes
 #end

@@ -590,14 +590,26 @@ end
 
 #Generate cells
 function generate_cell_nodes(volumes)
-    cell_nodes=typeof(volumes[1].volumes[1])[] # Giving type to array constructor
+    cell_nodes=Vector{Int64}(undef,length(volumes)*4) #length of cells times number of nodes per cell
+    counter=0
     for n=1:length(volumes)
         for i=1:volumes[n].volumeCount
-            push!(cell_nodes,volumes[n].volumes[i])
+            counter=counter+1
+            cell_nodes[counter]=volumes[n].volumes[i]
         end
     end
     return cell_nodes
 end
+
+# function generate_cell_nodes(volumes)
+#     cell_nodes=typeof(volumes[1].volumes[1])[] # Giving type to array constructor
+#     for n=1:length(volumes)
+#         for i=1:volumes[n].volumeCount
+#             push!(cell_nodes,volumes[n].volumes[i])
+#         end
+#     end
+#     return cell_nodes
+# end
 
 # function generate_all_cell_faces(faces,cell_face_nodes)
 #     all_cell_faces=Int[]

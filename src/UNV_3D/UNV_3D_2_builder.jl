@@ -15,8 +15,8 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
     faces,cell_face_nodes=generate_tet_internal_faces(volumes,faces)
     #faces=quad_internal_faces(volumes,faces)
 
-    face_nodes=Vector{Int}(generate_face_nodes(faces))
-    cell_nodes=Vector{Int}(generate_cell_nodes(volumes))
+    face_nodes=generate_face_nodes(faces)
+    cell_nodes=generate_cell_nodes(volumes)
     
     all_cell_faces=generate_all_cell_faces(faces,cell_face_nodes)
 
@@ -599,7 +599,6 @@ end
 # end
 
 function generate_all_cell_faces(faces,cell_face_nodes)
-    all_cell_faces=Int[]
     sorted_faces=Vector{Vector{Int64}}(undef,length(faces))
     for i=1:length(faces)
         sorted_faces[i]=sort(faces[i].faces)
@@ -607,7 +606,7 @@ function generate_all_cell_faces(faces,cell_face_nodes)
 
     all_cell_faces=zeros(Int,length(cell_face_nodes)) #May only work for Tet
     for i=1:length(cell_face_nodes)
-        push!(all_cell_faces,findfirst(x->x==cell_face_nodes[i],sorted_faces))
+        all_cell_faces[i]=findfirst(x->x==cell_face_nodes[i],sorted_faces)
     end
     return all_cell_faces
 end

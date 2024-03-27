@@ -1,9 +1,10 @@
 export build_mesh3D
+export gen
 
 function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
     stats= @timed begin
     println("Loading UNV File...")
-    points,edges,faces,volumes,boundaryElements=load_3D(
+    points,edges,bfaces,unv_cells,boundaryConditions=load_3D(
         unv_mesh; integer=integer, float=float)
     println("File Read Successfully")
     println("Generating Mesh...")
@@ -606,7 +607,7 @@ function generate_all_cell_faces(faces,cell_face_nodes)
 
     all_cell_faces=zeros(Int,length(cell_face_nodes)) #May only work for Tet
     for i=1:length(cell_face_nodes)
-        all_cell_faces[i]=findfirst(x->x==cell_face_nodes[i],sorted_faces)
+        push!(all_cell_faces,findfirst(x->x==cell_face_nodes[i],sorted_faces))
     end
     return all_cell_faces
 end

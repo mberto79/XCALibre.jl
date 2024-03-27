@@ -52,7 +52,7 @@ mesh=build_mesh3D(unv_mesh)
 
 @time boundaries=generate_boundaries(boundaryElements,boundary_face_range) #0.009460 seconds 
 
-@time face_ownerCells=generate_face_ownerCells(faces,all_cell_faces,volumes,all_cell_faces_range) #0.535271 seconds
+@time face_ownerCells= FVM_1D.UNV_3D.generate_face_ownerCells(faces,all_cell_faces,volumes,all_cell_faces_range) #0.535271 seconds
 
 @time faces_area=calculate_face_area(nodes,faces) #0.037004 seconds
 @time faces_centre=calculate_face_centre(faces,nodes) #0.026016 seconds
@@ -69,21 +69,82 @@ mesh=build_mesh3D(unv_mesh)
 
 #work
 
-#function generate_nodes(points,volumes)
-    # nodes=Node{SVector{3,Float64}, UnitRange{Int64}}[]
-    nnodes = length(points)
-    nodes = [Node(SVector{3,Float64}(0.0,0.0,0.0), 1:1) for i ∈ 1:nnodes]
-    tnode = Node(SVector{3,Float64}(0.0,0.0,0.0), 1:1) # temporary node object used to rewrite
-    cells_range=nodes_cells_range!(points,volumes)
-    @inbounds for i ∈ 1:length(points)
-        #point=points[i].xyz
-        # push!(nodes,Node(points[i].xyz,cells_range[i]))
-        tnode = @reset tnode.coords = points[i].xyz
-        tnode = @reset tnode.cells_range = cells_range[i]
-        nodes[i] = tnode # overwrite preallocated array with temporary node
+function generate_all_cell_faces(faces,cell_face_nodes)
+    all_cell_faces=Int[]
+    sorted_faces=Vector{Int}[]
+    for i=1:length(faces)
+        push!(sorted_faces,sort(faces[i].faces))
     end
-    return nodes
-#end
+
+    for i=1:length(cell_face_nodes)
+        push!(all_cell_faces,findfirst(x -> x==cell_face_nodes[i],sorted_faces))
+    end
+    return all_cell_faces
+end
+
+@time all_cell_faces=generate_all_cell_faces(faces,cell_face_nodes)
+
+function generate_face_ownerCells(faces,all_cell_faces,volumes,all_cell_faces_range)
+    x=Vector{Int64}[]
+    for i=1:length(faces)
+        push!(x,findall(x->x==i,all_cell_faces))
+    end
+    y=zeros(Int,length(x),2)
+    for ic=1:length(volumes)
+        for i=1:length(x)
+            #if length(x[i])==1
+                if all_cell_faces_range[ic][1]<=x[i][1]<=all_cell_faces_range[ic][end]
+                    y[i,1]=ic
+                    y[i,2]=ic
+                end
+            #end
+
+            if length(x[i])==2
+                if all_cell_faces_range[ic][1]<=x[i][2]<=all_cell_faces_range[ic][end]
+                    #y[i]=ic
+                    y[i,2]=ic
+
+                end
+            end
+
+        end
+    end
+    return y
+end
+
+function generate_cell_neighbours(cells,cell_faces)
+    cell_neighbours=Int64[]
+    for ID=1:length(cells) 
+        for i=cells[ID].faces_range 
+            faces=cell_faces[i]
+            for ic=1:length(i)
+                face=faces[ic]
+                index=findall(x->x==face,cell_faces)
+                if length(index)==2
+                    if i[1]<=index[1]<=i[end]
+                        for ip=1:length(cells)
+                            if cells[ip].faces_range[1]<=index[2]<=cells[ip].faces_range[end]
+                                push!(cell_neighbours,ip)
+                            end
+                        end
+                    end
+                    if i[1]<=index[2]<=i[end]
+                        for ip=1:length(cells)
+                            if cells[ip].faces_range[1]<=index[1]<=cells[ip].faces_range[end]
+                                push!(cell_neighbours,ip)
+                            end
+                        end
+                    end
+                end
+                if length(index)==1
+                    x=0
+                    push!(cell_neighbours,x)
+                end
+            end
+        end
+    end
+    return cell_neighbours
+end
 
 
 # DEFINE FUNCTIONS

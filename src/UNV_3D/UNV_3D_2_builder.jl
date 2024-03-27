@@ -661,17 +661,28 @@ end
 #     return store
 # end
 
+
 function generate_face_nodes_range(faces)
-    face_nodes_range=UnitRange(0,0)
-    store=typeof(face_nodes_range)[]
+    face_nodes_range=Vector{UnitRange{Int64}}(undef,length(faces))
     x=0
     for i=1:length(faces)
-        face_nodes_range=UnitRange(x+1,x+faces[i].faceCount)
+        face_nodes_range[i]=UnitRange(x+1,x+faces[i].faceCount)
         x=x+faces[i].faceCount
-        push!(store,face_nodes_range)
     end
-    return store
+    return face_nodes_range
 end
+
+# function generate_face_nodes_range(faces)
+#     face_nodes_range=UnitRange(0,0)
+#     store=typeof(face_nodes_range)[]
+#     x=0
+#     for i=1:length(faces)
+#         face_nodes_range=UnitRange(x+1,x+faces[i].faceCount)
+#         x=x+faces[i].faceCount
+#         push!(store,face_nodes_range)
+#     end
+#     return store
+# end
 
 function generate_all_faces_range(volumes)
     cell_faces_range=UnitRange(0,0)

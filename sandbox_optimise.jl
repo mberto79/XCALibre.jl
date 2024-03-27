@@ -89,7 +89,6 @@ function generate_all_cell_faces_1(faces,cell_face_nodes)
         #push!(sorted_faces,sort(faces[i].faces))
         sorted_faces[i]=sort(faces[i].faces)
     end
-    sorted_faces
 
     for i=1:length(cell_face_nodes)
         #push!(all_cell_faces,findfirst(x -> x==cell_face_nodes[i],sorted_faces))

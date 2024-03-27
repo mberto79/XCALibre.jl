@@ -639,16 +639,27 @@ end
 
 #Nodes Range
 function generate_cell_nodes_range(volumes)
-    cell_nodes_range=UnitRange(0,0)
-    store=typeof(cell_nodes_range)[]
+    cell_nodes_range=Vector{UnitRange{Int64}}(undef,length(volumes))
     x=0
     for i=1:length(volumes)
-        cell_nodes_range=UnitRange(x+1,x+length(volumes[i].volumes))
+        cell_nodes_range[i]=UnitRange(x+1,x+length(volumes[i].volumes))
         x=x+length(volumes[i].volumes)
-        push!(store,cell_nodes_range)
+        
     end
-    return store
+    return cell_nodes_range
 end
+
+# function generate_cell_nodes_range(volumes)
+#     cell_nodes_range=UnitRange(0,0)
+#     store=typeof(cell_nodes_range)[]
+#     x=0
+#     for i=1:length(volumes)
+#         cell_nodes_range=UnitRange(x+1,x+length(volumes[i].volumes))
+#         x=x+length(volumes[i].volumes)
+#         push!(store,cell_nodes_range)
+#     end
+#     return store
+# end
 
 function generate_face_nodes_range(faces)
     face_nodes_range=UnitRange(0,0)

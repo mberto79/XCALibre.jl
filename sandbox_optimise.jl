@@ -71,24 +71,25 @@ mesh.nodes
 
 #work
 
-function generate_cell_nodes(volumes)
-    cell_nodes=Vector{Int64}(undef,length(volumes)*4) #length of cells times number of nodes per cell
-    counter=0
-    for n=1:length(volumes)
-        for i=1:volumes[n].volumeCount
-            counter=counter+1
-            cell_nodes[counter]=volumes[n].volumes[i]
-        end
+function generate_cell_nodes_range(volumes)
+    cell_nodes_range=Vector{UnitRange{Int64}}(undef,length(volumes))
+    x=0
+    for i=1:length(volumes)
+        cell_nodes_range[i]=UnitRange(x+1,x+length(volumes[i].volumes))
+        x=x+length(volumes[i].volumes)
+        
     end
-    return cell_nodes
+    return cell_nodes_range
 end
 
-#function generate_cell_nodes(volumes)
-    cell_nodes=typeof(volumes[1].volumes[1])[] # Giving type to array constructor
-    for n=1:length(volumes)
-        for i=1:volumes[n].volumeCount
-            push!(cell_nodes,volumes[n].volumes[i])
-        end
+function generate_cell_nodes_range(volumes)
+    cell_nodes_range=UnitRange(0,0)
+    store=typeof(cell_nodes_range)[]
+    x=0
+    for i=1:length(volumes)
+        cell_nodes_range=UnitRange(x+1,x+length(volumes[i].volumes))
+        x=x+length(volumes[i].volumes)
+        push!(store,cell_nodes_range)
     end
-    return cell_nodes
-#end
+    return store
+end

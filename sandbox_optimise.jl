@@ -69,6 +69,52 @@ mesh=build_mesh3D(unv_mesh)
 
 #work
 
+#function generate_all_cell_faces(faces,cell_face_nodes)
+    #all_cell_faces=Int[]
+    sorted_faces=Vector{Vector{Int64}}(undef,length(faces))
+    for i=1:length(faces)
+        sorted_faces[i]=sort(faces[i].faces)
+    end
+    sorted_faces
+cell_face_nodes
+    all_cell_faces=zeros(Int,length(cell_face_nodes)) #May only work for Tet
+    for i=1:length(cell_face_nodes)
+        all_cell_faces[i]=findfirst(x->x==cell_face_nodes[i],sorted_faces)
+    end
+    return all_cell_faces
+#end
+
+function generate_face_ownerCells1(faces,all_cell_faces,all_cell_faces_range)
+    cell_face_index=Vector{Vector{Int64}}(undef,length(faces))
+    for i=1:length(cell_face_index)
+        cell_face_index[i]=findall(x->x==i,all_cell_faces)
+    end
+
+    face_owners=zeros(Int,length(cell_face_index),2)
+    for ic=1:length(all_cell_faces_range)
+        for i=1:length(cell_face_index)
+                if all_cell_faces_range[ic][1]<=cell_face_index[i][1]<=all_cell_faces_range[ic][end]
+                    face_owners[i,1]=ic
+                    face_owners[i,2]=ic
+                end
+
+            if length(cell_face_index[i])==2
+                if all_cell_faces_range[ic][1]<=cell_face_index[i][2]<=all_cell_faces_range[ic][end]
+                    face_owners[i,2]=ic
+                end
+            end
+
+        end
+    end
+    return face_owners
+end
+
+generate_face_ownerCells1(faces,all_cell_faces,all_cell_faces_range)
+
+generate_face_ownerCells(faces,all_cell_faces,volumes,all_cell_faces_range)
+
+#
+
 function generate_all_cell_faces(faces,cell_face_nodes)
     all_cell_faces=Int[]
     sorted_faces=Vector{Int}[]

@@ -20,7 +20,7 @@ faces
 volumes
 boundaryElements
 
-#mesh=build_mesh3D(unv_mesh)
+mesh=build_mesh3D(unv_mesh)
 
 #Priority
 #1) all_cell_faces (unsuccsessful)
@@ -69,36 +69,21 @@ boundaryElements
 
 #work
 
-function generate_all_cell_faces(faces,cell_face_nodes)
-    all_cell_faces=Int[]
-    sorted_faces=Vector{Int}[]
-    for i=1:length(faces)
-        push!(sorted_faces,sort(faces[i].faces))
+#function generate_nodes(points,volumes)
+    # nodes=Node{SVector{3,Float64}, UnitRange{Int64}}[]
+    nnodes = length(points)
+    nodes = [Node(SVector{3,Float64}(0.0,0.0,0.0), 1:1) for i ∈ 1:nnodes]
+    tnode = Node(SVector{3,Float64}(0.0,0.0,0.0), 1:1) # temporary node object used to rewrite
+    cells_range=nodes_cells_range!(points,volumes)
+    @inbounds for i ∈ 1:length(points)
+        #point=points[i].xyz
+        # push!(nodes,Node(points[i].xyz,cells_range[i]))
+        tnode = @reset tnode.coords = points[i].xyz
+        tnode = @reset tnode.cells_range = cells_range[i]
+        nodes[i] = tnode # overwrite preallocated array with temporary node
     end
-
-    for i=1:length(cell_face_nodes)
-        push!(all_cell_faces,findfirst(x -> x==cell_face_nodes[i],sorted_faces))
-    end
-    return all_cell_faces
-end
-
-function generate_all_cell_faces_1(faces,cell_face_nodes)
-    all_cell_faces=zeros(Int64,length(cell_face_nodes))
-    sorted_faces=Vector(undef,length(faces))
-    for i=1:length(faces)
-        #push!(sorted_faces,sort(faces[i].faces))
-        sorted_faces[i]=sort(faces[i].faces)
-    end
-
-    for i=1:length(cell_face_nodes)
-        #push!(all_cell_faces,findfirst(x -> x==cell_face_nodes[i],sorted_faces))
-        all_cell_faces[i]=findfirst(x->x==cell_face_nodes[i],sorted_faces)
-    end
-    return all_cell_faces
-end
-
-@time f=generate_all_cell_faces_1(faces,cell_face_nodes)
-@time f=generate_all_cell_faces(faces,cell_face_nodes)
+    return nodes
+#end
 
 
 # DEFINE FUNCTIONS

@@ -565,15 +565,28 @@ end
 # end
 
 #Generate Faces
+
 function generate_face_nodes(faces)
-    face_nodes=typeof(faces[1].faces[1])[] # Giving type to array constructor
+    face_nodes=Vector{Int64}(undef,length(faces)*3) # number of bc faces times number of nodes per face
+    counter=0 
     for n=1:length(faces)
         for i=1:faces[n].faceCount
-            push!(face_nodes,faces[n].faces[i])
+            counter=counter+1
+            face_nodes[counter]=faces[n].faces[i]
         end
     end
     return face_nodes
 end
+
+# function generate_face_nodes(faces)
+#     face_nodes=typeof(faces[1].faces[1])[] # Giving type to array constructor
+#     for n=1:length(faces)
+#         for i=1:faces[n].faceCount
+#             push!(face_nodes,faces[n].faces[i])
+#         end
+#     end
+#     return face_nodes
+# end
 
 #Generate cells
 function generate_cell_nodes(volumes)

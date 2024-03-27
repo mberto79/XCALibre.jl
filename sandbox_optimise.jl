@@ -71,85 +71,26 @@ mesh.nodes
 
 #work
 
-#function nodes_cells_range!(points,volumes)
-    neighbour=Int64[]
-    wipe=Int64[]
-    cells_range=UnitRange{Int64}[]
-    x=0
-    @inbounds for in=1:length(points)
-        @inbounds for iv=1:length(volumes)
-            @inbounds for i=1:length(volumes[iv].volumes)
-                if volumes[iv].volumes[i]==in
-                    neighbour=iv
-                    push!(wipe,neighbour)
-                    
-                end
-                continue
-                
-            end
+function generate_face_nodes(faces)
+    face_nodes=Vector{Int64}(undef,length(faces)*3) # number of bc faces times number of nodes per face
+    counter=0 
+    for n=1:length(faces)
+        for i=1:faces[n].faceCount
+            counter=counter+1
+            face_nodes[counter]=faces[n].faces[i]
         end
-        if length(wipe)==1
-            #cells_range[in]=UnitRange(x+1,x+1)
-            push!(cells_range,UnitRange(x+1,x+1))
-            x=x+1
-        elseif length(wipe) ≠1
-            #cells_range[in]=UnitRange(x+1,x+length(wipe))
-            push!(cells_range,UnitRange(x+1,x+length(wipe)))
-            x=x+length(wipe)
-        end
-        #push!(mesh.nodes[in].cells_range,cells_range)
-        wipe=Int64[]
     end
-    return cells_range
+    return face_nodes
+end
+
+generate_face_nodes(faces)
+
+#function generate_face_nodes(faces)
+    face_nodes=typeof(faces[1].faces[1])[] # Giving type to array constructor
+    for n=1:length(faces)
+        for i=1:faces[n].faceCount
+            push!(face_nodes,faces[n].faces[i])
+        end
+    end
+    return face_nodes
 #end
-
-store
-function generate_node_cells(points,volumes)
-    node_cells=Vector{Int64}(undef,length(volumes)*4) #Tet Only
-    counter=0
-    cells_range=Vector{UnitRange{Int64}}(undef,length(points))
-    x=0
-    
-    @inbounds for in=1:length(points)
-        wipe=Int64[]
-        @inbounds for iv=1:length(volumes)
-            @inbounds for i=1:length(volumes[iv].volumes)
-                if volumes[iv].volumes[i]==in
-                    counter=counter+1
-                    node_cells[counter]=iv
-                    push!(wipe,iv)
-                end
-                continue
-            end
-        end
-        if length(wipe)==1
-            #cells_range[in]=UnitRange(x+1,x+1)
-            cells_range[in]=UnitRange(x+1,x+1)
-            x=x+1
-        elseif length(wipe) ≠1
-            #cells_range[in]=UnitRange(x+1,x+length(wipe))
-            cells_range[in]=UnitRange(x+1,x+length(wipe))
-            x=x+length(wipe)
-        end
-        
-    end
-    return node_cells,cells_range
-end
-
-generate_node_cells(points,volumes)
-
-function generate_nodes(points,cells_range)
-    # nodes=Node{SVector{3,Float64}, UnitRange{Int64}}[]
-    nnodes = length(points)
-    nodes = [Node(SVector{3,Float64}(0.0,0.0,0.0), 1:1) for i ∈ 1:nnodes]
-    tnode = Node(SVector{3,Float64}(0.0,0.0,0.0), 1:1) # temporary node object used to rewrite
-    #cells_range=nodes_cells_range!(points,volumes)
-    @inbounds for i ∈ 1:length(points)
-        #point=points[i].xyz
-        # push!(nodes,Node(points[i].xyz,cells_range[i]))
-        tnode = @reset tnode.coords = points[i].xyz
-        tnode = @reset tnode.cells_range = cells_range[i]
-        nodes[i] = tnode # overwrite preallocated array with temporary node
-    end
-    return nodes
-end

@@ -24,7 +24,7 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
 
     cell_nodes_range=generate_cell_nodes_range(volumes)
     face_nodes_range=generate_face_nodes_range(faces)
-    all_cell_faces_range=generate_all_faces_range(volumes)
+    all_cell_faces_range=generate_all_cell_faces_range(volumes)
 
     cells_centre=calculate_centre_cell(volumes,nodes)
     
@@ -684,27 +684,46 @@ end
 #     return store
 # end
 
-function generate_all_faces_range(volumes)
-    cell_faces_range=UnitRange(0,0)
-    store=typeof(cell_faces_range)[]
+function generate_all_cell_faces_range(volumes)
+    cell_faces_range=Vector{UnitRange{Int64}}(undef,length(volumes))
     x=0
     @inbounds for i=1:length(volumes)
         #Tetra
         if length(volumes[i].volumes)==4
-            cell_faces_range=UnitRange(x+1,x+4)
+            cell_faces_range[i]=UnitRange(x+1,x+4)
             x=x+4
-            push!(store,cell_faces_range)
         end
 
         #Hexa
         if length(volumes[i].volumes)==8
-                cell_faces_range=UnitRange(x+1,x+6)
+                cell_faces_range[i]=UnitRange(x+1,x+6)
                 x=x+6
-                push!(store,cell_faces_range)
         end
     end
-    return store
+    return cell_faces_range
 end
+
+# function generate_all_faces_range(volumes)
+#     cell_faces_range=UnitRange(0,0)
+#     store=typeof(cell_faces_range)[]
+#     x=0
+#     @inbounds for i=1:length(volumes)
+#         #Tetra
+#         if length(volumes[i].volumes)==4
+#             cell_faces_range=UnitRange(x+1,x+4)
+#             x=x+4
+#             push!(store,cell_faces_range)
+#         end
+
+#         #Hexa
+#         if length(volumes[i].volumes)==8
+#                 cell_faces_range=UnitRange(x+1,x+6)
+#                 x=x+6
+#                 push!(store,cell_faces_range)
+#         end
+#     end
+#     return store
+# end
 
 #Generate cells
 function generate_cells(volumes,centre_of_cells,volume_of_cells,cell_nodes_range,cell_faces_range)

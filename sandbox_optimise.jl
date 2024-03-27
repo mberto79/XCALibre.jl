@@ -71,37 +71,23 @@ mesh.nodes
 
 #work
 
-function generate_face_nodes_range(faces)
-    face_nodes_range=Vector{UnitRange{Int64}}(undef,length(faces))
+function generate_all_faces_range(volumes)
+    cell_faces_range=Vector{UnitRange{Int64}}(undef,length(volumes))
     x=0
-    for i=1:length(faces)
-        face_nodes_range[i]=UnitRange(x+1,x+faces[i].faceCount)
-        x=x+faces[i].faceCount
+    @inbounds for i=1:length(volumes)
+        #Tetra
+        if length(volumes[i].volumes)==4
+            cell_faces_range[i]=UnitRange(x+1,x+4)
+            x=x+4
+        end
+
+        #Hexa
+        if length(volumes[i].volumes)==8
+                cell_faces_range[i]=UnitRange(x+1,x+6)
+                x=x+6
+        end
     end
-    return face_nodes_range
+    return cell_faces_range
 end
 
-generate_face_nodes_range(faces)
-
-function generate_cell_nodes_range(volumes)
-    cell_nodes_range=Vector{UnitRange{Int64}}(undef,length(volumes))
-    x=0
-    for i=1:length(volumes)
-        cell_nodes_range[i]=UnitRange(x+1,x+length(volumes[i].volumes))
-        x=x+length(volumes[i].volumes)
-        
-    end
-    return cell_nodes_range
-end
-
-function generate_cell_nodes_range(volumes)
-    cell_nodes_range=UnitRange(0,0)
-    store=typeof(cell_nodes_range)[]
-    x=0
-    for i=1:length(volumes)
-        cell_nodes_range=UnitRange(x+1,x+length(volumes[i].volumes))
-        x=x+length(volumes[i].volumes)
-        push!(store,cell_nodes_range)
-    end
-    return store
-end
+generate_all_faces_range(volumes)

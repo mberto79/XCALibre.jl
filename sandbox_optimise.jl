@@ -70,29 +70,12 @@ boundaryElements
 
 
 #work
-function generate_cell_faces(bfaces, volumes, all_cell_faces)
-    cell_faces = Vector{Int}[] # May be a way to preallocate this. For now will leave as []
-    cell_face_range = Vector{UnitRange{Int64}}(undef,length(volumes))
-    counter_start = 0
-    x = 0
-    max = length(bfaces)
-
-    for i = eachindex(volumes)
-        push!(cell_faces, all_cell_faces[counter_start+1:counter_start+length(volumes[i].volumes)])
-        counter_start = counter_start + length(volumes[i].volumes)
-        cell_faces[i] = filter(x -> x > max, cell_faces[i])
-
-        if length(cell_faces[i]) == 1
-            cell_face_range[i] = UnitRange(x + 1, x + 1)
-            x = x + 1
-        else
-            cell_face_range[i] = UnitRange(x + 1, x + length(cell_faces[i]))
-            x = x + length(cell_faces[i])
-        end
+function generate_boundaries(boundaryElements, boundary_face_range1)
+    boundaries = Vector{Boundary{Symbol,UnitRange{Int64}}}(undef,length(boundaryElements))
+    for i = eachindex(boundaryElements)
+        boundaries[i] = Boundary(Symbol(boundaryElements[i].name), boundary_face_range1[i])
     end
-    cell_faces = reduce(vcat, cell_faces)
-
-    return cell_faces, cell_face_range
+    return boundaries
 end
 
-@time generate_cell_faces(bfaces, volumes, all_cell_faces)
+generate_boundaries(boundaryElements, boundary_face_range1)

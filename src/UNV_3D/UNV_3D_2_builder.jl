@@ -33,9 +33,9 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
 
         cell_faces, cell_faces_range = generate_cell_faces(bfaces, volumes, all_cell_faces) # Removed push
 
-        boundaries = generate_boundaries(boundaryElements, boundary_face_range)
+        boundaries = generate_boundaries(boundaryElements, boundary_face_range) #Removed push
 
-        face_ownerCells = generate_face_ownerCells(faces, all_cell_faces, all_cell_faces_range)
+        face_ownerCells = generate_face_ownerCells(faces, all_cell_faces, all_cell_faces_range) #New method approach needed
 
         faces_area = calculate_face_area(nodes, faces)
         faces_centre = calculate_face_centre(faces, nodes)
@@ -203,7 +203,7 @@ function calculate_face_centre(faces, nodes)
     return centre_store
 end
 
-function calculate_face_area(nodes, faces)
+function calculate_face_area(nodes, faces) # Need to shorten
     area_store = Float64[]
     for i = 1:length(faces)
         if faces[i].faceCount == 3
@@ -486,11 +486,10 @@ function quad_internal_faces(volumes, faces)
     return faces
 end
 
-
 function generate_boundaries(boundaryElements, boundary_face_range)
-    boundaries = Boundary{Symbol,UnitRange{Int64}}[]
-    for i = 1:length(boundaryElements)
-        push!(boundaries, Boundary(Symbol(boundaryElements[i].name), boundary_face_range[i]))
+    boundaries = Vector{Boundary{Symbol,UnitRange{Int64}}}(undef,length(boundaryElements))
+    for i = eachindex(boundaryElements)
+        boundaries[i] = Boundary(Symbol(boundaryElements[i].name), boundary_face_range[i])
     end
     return boundaries
 end

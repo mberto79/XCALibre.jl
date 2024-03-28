@@ -48,7 +48,7 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
         cell_neighbours = generate_cell_neighbours(cells, cell_faces) # Removed push, new method needed
         faces = generate_faces(faces, face_nodes_range, faces_centre, faces_normal, faces_area, face_ownerCells, faces_e, faces_delta, faces_weight) #Removed push
 
-        cell_nsign = calculate_cell_nsign(cells, faces, cell_faces)
+        cell_nsign = calculate_cell_nsign(cells, faces, cell_faces) #removed push
 
         get_float = SVector(0.0, 0.0, 0.0)
         get_int = UnitRange(0, 0)
@@ -287,13 +287,14 @@ function generate_cell_faces(bfaces, volumes, all_cell_faces)
     return cell_faces, cell_face_range
 end
 
-function calculate_cell_nsign(cells, faces1, cell_faces)
-    cell_nsign = Int[]
+function calculate_cell_nsign(cells, faces, cell_faces)
+    cell_nsign = Vector{Int}(undef,length(cell_faces))
+    counter=0
     for i = 1:length(cells)
         centre = cells[i].centre
         for ic = 1:length(cells[i].faces_range)
-            fcentre = faces1[cell_faces[cells[i].faces_range][ic]].centre
-            fnormal = faces1[cell_faces[cells[i].faces_range][ic]].normal
+            fcentre = faces[cell_faces[cells[i].faces_range][ic]].centre
+            fnormal = faces[cell_faces[cells[i].faces_range][ic]].normal
             d_cf = fcentre - centre
             fnsign = zero(Int)
 
@@ -302,7 +303,8 @@ function calculate_cell_nsign(cells, faces1, cell_faces)
             else
                 fnsign = -one(Int)
             end
-            push!(cell_nsign, fnsign)
+            counter=counter+1
+            cell_nsign[counter] = fnsign
         end
 
     end

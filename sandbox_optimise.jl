@@ -70,12 +70,28 @@ boundaryElements
 
 
 #work
-function generate_faces(faces, face_nodes_range, faces_centre, faces_normal, faces_area, face_ownerCells, faces_e, faces_delta, faces_weight)
-    faces3D = Vector{Face3D{Float64,SVector{2,Int64},SVector{3,Float64},UnitRange{Int64}}}(undef,length(faces))
-    for i = eachindex(faces)
-        faces3D[i] = Face3D(face_nodes_range[i], SVector(face_ownerCells[i, 1], face_ownerCells[i, 2]), faces_centre[i], faces_normal[i], faces_e[i], faces_area[i], faces_delta[i], faces_weight[i])
+function calculate_cell_nsign(cells, faces, cell_faces)
+    cell_nsign = Vector{Int}(undef,length(cell_faces))
+    counter=0
+    for i = 1:length(cells)
+        centre = cells[i].centre
+        for ic = 1:length(cells[i].faces_range)
+            fcentre = faces[cell_faces[cells[i].faces_range][ic]].centre
+            fnormal = faces[cell_faces[cells[i].faces_range][ic]].normal
+            d_cf = fcentre - centre
+            fnsign = zero(Int)
+
+            if d_cf ⋅ fnormal > zero(Float64)
+                fnsign = one(Int)
+            else
+                fnsign = -one(Int)
+            end
+            counter=counter+1
+            cell_nsign[counter] = fnsign
+        end
+
     end
-    return faces3D
+    return cell_nsign
 end
 
-generate_faces(faces, face_nodes_range, faces_centre, faces_normal, faces_area, face_ownerCells, faces_e, faces_delta, faces_weight)
+calculate_cell_nsign(cells, faces, cell_faces)

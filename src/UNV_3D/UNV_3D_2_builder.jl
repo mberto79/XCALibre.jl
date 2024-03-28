@@ -77,7 +77,7 @@ function generate_node_cells(points, volumes)
 
     node_cells_size = sum(length.(temp_node_cells)) # number of cells in node_cells
 
-    index = 0
+    index = 0 # change to node cells index
     node_cells = zeros(Int64, node_cells_size)
     cells_range = [UnitRange{Int64}(1, 1) for _ ∈ eachindex(points)]
     for (nodeID, cellsID) ∈ enumerate(temp_node_cells)

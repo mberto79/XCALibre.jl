@@ -71,23 +71,27 @@ mesh.nodes
 
 #work
 
-function generate_all_faces_range(volumes)
-    cell_faces_range=Vector{UnitRange{Int64}}(undef,length(volumes))
+#function generate_cell_nodes_range(volumes)
+    cell_nodes_range=Vector{UnitRange{Int64}}(undef,length(volumes))
     x=0
-    @inbounds for i=1:length(volumes)
-        #Tetra
-        if length(volumes[i].volumes)==4
-            cell_faces_range[i]=UnitRange(x+1,x+4)
-            x=x+4
-        end
-
-        #Hexa
-        if length(volumes[i].volumes)==8
-                cell_faces_range[i]=UnitRange(x+1,x+6)
-                x=x+6
-        end
+    for i=1:length(volumes)
+        cell_nodes_range[i]=UnitRange(x+1,x+length(volumes[i].volumes))
+        x=x+length(volumes[i].volumes)
+        
     end
-    return cell_faces_range
-end
+    return cell_nodes_range
+#end
 
-generate_all_faces_range(volumes)
+#function calculate_centre_cell(volumes,nodes)
+    cell_centres=Vector{SVector{3,Float64}}(undef,length(volumes))
+    for i=1:length(volumes)
+        for ic=1:length(volumes[i].volumes)
+            #push!(cell_store,nodes[volumes[i].volumes[ic]].coords)
+            cell_centres[i]=sum(nodes[volumes[i].volumes[ic]].coords)
+        end
+        centre=(sum(cell_store)/length(cell_store))
+    end
+    return cell_centres
+#end
+
+points[volumes[1].volumes]

@@ -14,7 +14,7 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
         node_cells, cells_range = generate_node_cells(points, volumes) #Rewritten, optimized
         nodes = generate_nodes(points, cells_range) #Rewritten, optimzied
 
-        ifaces, cell_face_nodes = generate_tet_internal_faces(volumes, bfaces) # New method appraoch
+        ifaces, cell_face_nodes = generate_tet_internal_faces(volumes, bfaces) # New method appraoch needed
         #faces=quad_internal_faces(volumes,faces)
 
         face_nodes = generate_face_nodes(faces) #Removed push
@@ -29,7 +29,7 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
         cells_centre = calculate_centre_cell(volumes, nodes) #Removed push
 
         boundary_faces, boundary_face_range = generate_boundary_faces(boundaryElements,bfaces) #Rewritten
-        boundary_cells = generate_boundary_cells(boundary_faces, all_cell_faces, all_cell_faces_range)
+        boundary_cells = generate_boundary_cells(bfaces, all_cell_faces, all_cell_faces_range) #Rewritten, error found, using face index of boundary_faces instead of bfaces
 
         cell_faces, cell_faces_range = generate_cell_faces(boundaryElements, volumes, all_cell_faces)
 
@@ -490,27 +490,45 @@ function generate_boundaries(boundaryElements, boundary_face_range)
     return boundaries
 end
 
-function generate_boundary_cells(boundary_faces, cell_faces, cell_faces_range)
-    boundary_cells = Int64[]
-    store = Int64[]
-    for ic = 1:length(boundary_faces)
-        for i in eachindex(cell_faces)
-            if cell_faces[i] == boundary_faces[ic]
-                push!(store, i)
-            end
+function generate_boundary_cells(bfaces, all_cell_faces, all_cell_faces_range)
+    boundary_cells = Vector{Int64}(undef,length(bfaces))
+    index_all_cell_faces = Vector{Int64}(undef,length(bfaces))
+    for ic = eachindex(bfaces) 
+        for i in eachindex(all_cell_faces) 
+                if all_cell_faces[i] == bfaces[ic].faceindex
+                    index_all_cell_faces[ic]=i
+                end
         end
-    end
-    store
-
-    for ic = 1:length(store)
-        for i = 1:length(cell_faces_range)
-            if cell_faces_range[i][1] <= store[ic] <= cell_faces_range[i][end]
-                push!(boundary_cells, i)
+        for i = eachindex(all_cell_faces_range) 
+            if all_cell_faces_range[i][1] <= index_all_cell_faces[ic] <= all_cell_faces_range[i][end]
+                boundary_cells[ic]=i
             end
         end
     end
     return boundary_cells
 end
+
+# function generate_boundary_cells(boundary_faces, cell_faces, cell_faces_range)
+#     boundary_cells = Int64[]
+#     store = Int64[]
+#     for ic = 1:length(boundary_faces)
+#         for i in eachindex(cell_faces)
+#             if cell_faces[i] == boundary_faces[ic]
+#                 push!(store, i)
+#             end
+#         end
+#     end
+#     store
+
+#     for ic = 1:length(store)
+#         for i = 1:length(cell_faces_range)
+#             if cell_faces_range[i][1] <= store[ic] <= cell_faces_range[i][end]
+#                 push!(boundary_cells, i)
+#             end
+#         end
+#     end
+#     return boundary_cells
+# end
 
 function generate_boundary_faces(boundaryElements,bfaces) #Only works if all bc have more than 1 face, which is very unlikely
     boundary_faces = Vector{Int64}(undef,length(bfaces)) #Same length as bfaces

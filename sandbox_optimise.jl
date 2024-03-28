@@ -47,7 +47,7 @@ boundaryElements
 @time cells_centre=FVM_1D.UNV_3D.calculate_centre_cell(volumes,nodes) #0.026527 seconds
 
 @time boundary_faces1,boundary_face_range1=FVM_1D.UNV_3D.generate_boundary_faces(boundaryElements,bfaces) #0.036406 seconds
-@time boundary_cells=FVM_1D.UNV_3D.generate_boundary_cells(boundary_faces1,all_cell_faces,all_cell_faces_range) #0.093407 seconds
+@time boundary_cells=FVM_1D.UNV_3D.generate_boundary_cells(bfaces,all_cell_faces,all_cell_faces_range) #0.093407 seconds
 
 @time cell_faces,cell_faces_range=FVM_1D.UNV_3D.generate_cell_faces(boundaryElements,volumes,all_cell_faces) #0.055045 seconds
 
@@ -74,29 +74,26 @@ bfaces
 boundary_faces1
 all_cell_faces
 all_cell_faces_range
-#function generate_boundary_cells(boundary_faces, all_cell_faces, all_cell_faces_range)
-    boundary_cells = Int64[]
-    store = Int64[]
-    for ic = 1:length(bfaces)
-        for i in eachindex(all_cell_faces)
-            for ip in eachindex(bfaces[ic].faces)
-                if all_cell_faces[i] == bfaces[ic].faces[ip]
-                    push!(store, i)
-                end
-            end
-        end
-    end
-    store
 
-    for ic = 1:length(store)
-        for i = 1:length(all_cell_faces_range)
-            if cell_faces_range[i][1] <= store[ic] <= cell_faces_range[i][end]
-                push!(boundary_cells, i)
+function generate_boundary_cells(bfaces, all_cell_faces, all_cell_faces_range)
+    boundary_cells = Vector{Int64}(undef,length(bfaces))
+    index_all_cell_faces = Vector{Int64}(undef,length(bfaces))
+    for ic = eachindex(bfaces) 
+        for i in eachindex(all_cell_faces) 
+                if all_cell_faces[i] == bfaces[ic].faceindex
+                    index_all_cell_faces[ic]=i
+                end
+        end
+        for i = eachindex(all_cell_faces_range) 
+            if all_cell_faces_range[i][1] <= index_all_cell_faces[ic] <= all_cell_faces_range[i][end]
+                boundary_cells[ic]=i
             end
         end
     end
     return boundary_cells
-#end
+end
+
+@time generate_boundary_cells(bfaces, all_cell_faces, all_cell_faces_range)
 
 
 boundary_faces1
@@ -113,8 +110,8 @@ boundary_faces1
     store
 
     for ic = 1:length(store)
-        for i = 1:length(cell_faces_range)
-            if cell_faces_range[i][1] <= store[ic] <= cell_faces_range[i][end]
+        for i = 1:length(all_cell_faces_range)
+            if all_cell_faces_range[i][1] <= store[ic] <= all_cell_faces_range[i][end]
                 push!(boundary_cells, i)
             end
         end

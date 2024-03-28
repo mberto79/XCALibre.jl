@@ -6,7 +6,7 @@ export build_mesh3D
 function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
     stats = @timed begin
         println("Loading UNV File...")
-        points, edges, faces, volumes, boundaryElements = load_3D(
+        points, edges, bfaces, volumes, boundaryElements = load_3D(
             unv_mesh; integer=integer, float=float)
         println("File Read Successfully")
         println("Generating Mesh...")
@@ -14,7 +14,7 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
         node_cells, cells_range = generate_node_cells(points, volumes)
         nodes = generate_nodes(points, cells_range)
 
-        faces, cell_face_nodes = generate_tet_internal_faces(volumes, faces)
+        ifaces, cell_face_nodes = generate_tet_internal_faces(volumes, bfaces)
         #faces=quad_internal_faces(volumes,faces)
 
         face_nodes = generate_face_nodes(faces)
@@ -61,6 +61,41 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
     return mesh
     #For unit testing
     #return mesh,cell_face_nodes, node_cells, all_cell_faces,boundary_cells,boundary_faces,all_cell_faces_range
+end
+
+# Node connectivity
+
+function generate_node_cells(points, volumes)
+    temp_node_cells = [Int64[] for _ ∈ eachindex(points)] # array of vectors to hold cellIDs
+
+    # Add cellID to each point that defines a "volume"
+    for (cellID, volume) ∈ enumerate(volumes)
+        for nodeID ∈ volume.volumes
+            push!(temp_node_cells[nodeID], cellID)
+        end
+    end
+
+    node_cells_size = sum(length.(temp_node_cells)) # number of cells in node_cells
+
+    index = 0
+    node_cells = zeros(Int64, node_cells_size)
+    cells_range = [UnitRange{Int64}(1, 1) for _ ∈ eachindex(points)]
+    for (nodeID, cellsID) ∈ enumerate(temp_node_cells)
+        for cellID ∈ cellsID
+            index += 1
+            node_cells[index] = cellID
+        end
+        cells_range[nodeID] = UnitRange{Int64}(index - length(cellsID) + 1, index)
+    end
+    return node_cells, cells_range
+end
+
+function generate_nodes(points, cells_range)
+    nodes = [Node(SVector{3, Float64}(0.0,0.0,0.0), 1:1) for _ ∈ eachindex(points)]
+    @inbounds for i ∈ eachindex(points)
+        nodes[i] =  Node(points[i].xyz, cells_range[i])
+    end
+    return nodes
 end
 
 # DEFINE FUNCTIONS
@@ -539,15 +574,7 @@ end
 #     return y
 # end
 
-function generate_nodes(points, cells_range)
-    nodes = Node{SVector{3,Float64},UnitRange{Int64}}[]
-    #cells_range=nodes_cells_range!(points,volumes)
-    @inbounds for i ∈ 1:length(points)
-        #point=points[i].xyz
-        push!(nodes, Node(points[i].xyz, cells_range[i]))
-    end
-    return nodes
-end
+
 
 # function generate_nodes(points,cells_range)
 #     # nodes=Node{SVector{3,Float64}, UnitRange{Int64}}[]
@@ -742,78 +769,4 @@ function generate_faces(faces, face_nodes_range, faces_centre, faces_normal, fac
     return faces3D
 end
 
-#Node connectivity
 
-function generate_node_cells(points, volumes)
-    temp_node_cells = [Int64[] for _ ∈ eachindex(points)] # array of vectors to hold cellIDs
-
-    # Add cellID to each point that defines a "volume"
-    for (cellID, volume) ∈ enumerate(volumes)
-        for nodeID ∈ volume.volumes
-            push!(temp_node_cells[nodeID], cellID)
-        end
-    end
-
-    node_cells_size = sum(length.(temp_node_cells)) # number of cells in node_cells
-
-    index = 0
-    node_cells = zeros(Int64, node_cells_size)
-    cells_range = [UnitRange{Int64}(1, 1) for _ ∈ eachindex(points)]
-    for (nodeID, cellsID) ∈ enumerate(temp_node_cells)
-        for cellID ∈ cellsID
-            index += 1
-            node_cells[index] = cellID
-        end
-        cells_range[nodeID] = UnitRange{Int64}(index - length(cellsID) + 1, index)
-    end
-    return node_cells, cells_range
-end
-
-# function nodes_cells_range!(points,volumes)
-#     neighbour=Int64[]
-#     wipe=Int64[]
-#     cells_range=UnitRange{Int64}[]
-#     x=0
-#     @inbounds for in=1:length(points)
-#         @inbounds for iv=1:length(volumes)
-#             @inbounds for i=1:length(volumes[iv].volumes)
-#                 if volumes[iv].volumes[i]==in
-#                     neighbour=iv
-#                     push!(wipe,neighbour)
-
-#                 end
-#                 continue
-
-#             end
-#         end
-#         if length(wipe)==1
-#             #cells_range[in]=UnitRange(x+1,x+1)
-#             push!(cells_range,UnitRange(x+1,x+1))
-#             x=x+1
-#         elseif length(wipe) ≠1
-#             #cells_range[in]=UnitRange(x+1,x+length(wipe))
-#             push!(cells_range,UnitRange(x+1,x+length(wipe)))
-#             x=x+length(wipe)
-#         end
-#         #push!(mesh.nodes[in].cells_range,cells_range)
-#         wipe=Int64[]
-#     end
-#     return cells_range
-# end
-
-# function generate_node_cells(points,volumes)
-#     neighbour=Int64[]
-#     store=Int64[]
-#     @inbounds for in=1:length(points)
-#         @inbounds for iv=1:length(volumes)
-#             @inbounds for i=1:length(volumes[iv].volumes)
-#                 if volumes[iv].volumes[i]==in
-#                     neighbour=iv
-#                     push!(store,neighbour)
-#                 end
-#                 continue
-#             end
-#         end
-#     end
-#     return store
-# end

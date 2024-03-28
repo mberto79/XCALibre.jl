@@ -70,29 +70,55 @@ boundaryElements
 
 
 #work
-function calculate_face_centre(faces, nodes)
-    face_centres = Vector{SVector{3,Float64}}(undef,length(faces))
+function calculate_face_normal(nodes, faces, face_ownerCells, cells_centre, faces_centre) #Rewrite needed
+    face_normal = Vector{SVector{3,Float64}}(undef,length(faces))
     for i = eachindex(faces)
-        temp_coords = Vector{SVector{3,Float64}}(undef,length(faces[i].faces))
-        for ic = 1:length(faces[i].faces)
-            temp_coords[ic] = nodes[faces[i].faces[ic]].coords
+        n1 = nodes[faces[i].faces[1]].coords
+        n2 = nodes[faces[i].faces[2]].coords
+        n3 = nodes[faces[i].faces[3]].coords
+
+        t1x = n2[1] - n1[1]
+        t1y = n2[2] - n1[2]
+        t1z = n2[3] - n1[3]
+
+        t2x = n3[1] - n1[1]
+        t2y = n3[2] - n1[2]
+        t2z = n3[3] - n1[3]
+
+        nx = t1y * t2z - t1z * t2y
+        ny = -(t1x * t2z - t1z * t2x)
+        nz = t1x * t2y - t1y * t2x
+
+        magn2 = (nx)^2 + (ny)^2 + (nz)^2
+
+        snx = nx / sqrt(magn2)
+        sny = ny / sqrt(magn2)
+        snz = nz / sqrt(magn2)
+
+        normal = SVector(snx, sny, snz)
+        face_normal[i] = normal
+
+        if face_ownerCells[i, 2] == face_ownerCells[i, 1]
+            cc = cells_centre[face_ownerCells[i, 1]]
+            cf = faces_centre[i]
+
+            d_cf = cf - cc
+
+            if d_cf ⋅ face_normal[i] < 0
+                face_normal[i] = -1.0 * face_normal[i]
+            end
+        else
+            c1 = cells_centre[face_ownerCells[i, 1]]
+            c2 = cells_centre[face_ownerCells[i, 2]]
+            cf = faces_centre[i]
+            d_12 = c2 - c1
+
+            if d_12 ⋅ face_normal[i] < 0
+                face_normal[i] = -1.0 * face_normal[i]
+            end
         end
-        face_centres[i] = sum(temp_coords) / length(faces[i].faces)
     end
-    return face_centres
+    return face_normal
 end
 
-calculate_face_centre(faces, nodes)
-
-
-function calculate_centre_cell(volumes,nodes)
-    cell_centres = Vector{SVector{3,Float64}}(undef,length(volumes))
-    for i = eachindex(volumes)
-        temp_coords = Vector{SVector{3,Float64}}(undef,length(volumes[i].volumes))
-        for ic = eachindex(volumes[i].volumes)
-            temp_coords[ic] = nodes[volumes[i].volumes[ic]].coords
-        end
-        cell_centres[i] = sum(temp_coords) / length(volumes[i].volumes)
-    end
-    return cell_centres
-end
+calculate_face_normal(nodes, faces, face_ownerCells, cells_centre, faces_centre)

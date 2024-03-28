@@ -39,7 +39,7 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
 
         faces_area = calculate_face_area(nodes, faces) #Rewrite needed, removed push
         faces_centre = calculate_face_centre(faces, nodes) # Removed push
-        faces_normal = calculate_face_normal(nodes, faces, face_ownerCells, cells_centre, faces_centre)
+        faces_normal = calculate_face_normal(nodes, faces, face_ownerCells, cells_centre, faces_centre) # Rewrite needed
         faces_e, faces_delta, faces_weight = calculate_face_properties(faces, face_ownerCells, cells_centre, faces_centre, faces_normal)
 
         cells_volume = calculate_cell_volume(volumes, all_cell_faces_range, all_cell_faces, faces_normal, cells_centre, faces_centre, face_ownerCells, faces_area)
@@ -137,9 +137,9 @@ function calculate_face_properties(faces, face_ownerCells, cell_centre, face_cen
     return store_e, store_delta, store_weight
 end
 
-function calculate_face_normal(nodes, faces, face_ownerCells, cell_centre, face_centre)
-    face_normal = SVector{3,Float64}[]
-    for i = 1:length(faces)
+function calculate_face_normal(nodes, faces, face_ownerCells, cells_centre, faces_centre) #Rewrite needed
+    face_normal = Vector{SVector{3,Float64}}(undef,length(faces))
+    for i = eachindex(faces)
         n1 = nodes[faces[i].faces[1]].coords
         n2 = nodes[faces[i].faces[2]].coords
         n3 = nodes[faces[i].faces[3]].coords
@@ -163,11 +163,11 @@ function calculate_face_normal(nodes, faces, face_ownerCells, cell_centre, face_
         snz = nz / sqrt(magn2)
 
         normal = SVector(snx, sny, snz)
-        push!(face_normal, normal)
+        face_normal[i] = normal
 
         if face_ownerCells[i, 2] == face_ownerCells[i, 1]
-            cc = cell_centre[face_ownerCells[i, 1]]
-            cf = face_centre[i]
+            cc = cells_centre[face_ownerCells[i, 1]]
+            cf = faces_centre[i]
 
             d_cf = cf - cc
 
@@ -175,11 +175,9 @@ function calculate_face_normal(nodes, faces, face_ownerCells, cell_centre, face_
                 face_normal[i] = -1.0 * face_normal[i]
             end
         else
-            c1 = cell_centre[face_ownerCells[i, 1]]
-            c2 = cell_centre[face_ownerCells[i, 2]]
-            cf = face_centre[i]
-            #d_1f=cf-c1
-            #d_f2=c2-cf
+            c1 = cells_centre[face_ownerCells[i, 1]]
+            c2 = cells_centre[face_ownerCells[i, 2]]
+            cf = faces_centre[i]
             d_12 = c2 - c1
 
             if d_12 ⋅ face_normal[i] < 0

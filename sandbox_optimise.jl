@@ -20,8 +20,8 @@ faces
 volumes
 boundaryElements
 
-mesh=build_mesh3D(unv_mesh)
-mesh.nodes
+#mesh=build_mesh3D(unv_mesh)
+#mesh.nodes
 
 #Priority
 #1) all_cell_faces (unsuccsessful)
@@ -82,16 +82,22 @@ mesh.nodes
     return cell_nodes_range
 #end
 
-#function calculate_centre_cell(volumes,nodes)
+function calculate_centre_cell(volumes,nodes)
     cell_centres=Vector{SVector{3,Float64}}(undef,length(volumes))
-    for i=1:length(volumes)
-        for ic=1:length(volumes[i].volumes)
-            #push!(cell_store,nodes[volumes[i].volumes[ic]].coords)
-            cell_centres[i]=sum(nodes[volumes[i].volumes[ic]].coords)
+    for i=eachindex(volumes)
+        temp_coords=Vector{SVector{3,Float64}}(undef,length(volumes[i].volumes))
+        for ic=eachindex(volumes[i].volumes)
+            temp_coords[ic]=nodes[volumes[i].volumes[ic]].coords
         end
-        centre=(sum(cell_store)/length(cell_store))
+        cell_centres[i]=sum(temp_coords)/length(volumes[i].volumes)
     end
     return cell_centres
-#end
+end
 
-points[volumes[1].volumes]
+@time f=calculate_centre_cell(volumes,nodes)
+
+volumes[1].volumes
+nodes[7].coords
+nodes[1].coords
+nodes[5].coords
+nodes[6].coords

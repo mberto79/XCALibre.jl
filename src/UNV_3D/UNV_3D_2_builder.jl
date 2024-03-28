@@ -346,18 +346,30 @@ function calculate_cell_volume(volumes, all_cell_faces_range, all_cell_faces, fa
     return volume_store
 end
 
-function calculate_centre_cell(volumes, nodes)
-    centre_store = SVector{3,Float64}[]
-    for i = 1:length(volumes)
-        cell_store = typeof(nodes[volumes[1].volumes[1]].coords)[]
-        for ic = 1:length(volumes[i].volumes)
-            push!(cell_store, nodes[volumes[i].volumes[ic]].coords)
+function calculate_centre_cell(volumes,nodes)
+    cell_centres=Vector{SVector{3,Float64}}(undef,length(volumes))
+    for i=eachindex(volumes)
+        temp_coords=Vector{SVector{3,Float64}}(undef,length(volumes[i].volumes))
+        for ic=eachindex(volumes[i].volumes)
+            temp_coords[ic]=nodes[volumes[i].volumes[ic]].coords
         end
-        centre = (sum(cell_store) / length(cell_store))
-        push!(centre_store, centre)
+        cell_centres[i]=sum(temp_coords)/length(volumes[i].volumes)
     end
-    return centre_store
+    return cell_centres
 end
+
+# function calculate_centre_cell(volumes, nodes)
+#     centre_store = SVector{3,Float64}[]
+#     for i = 1:length(volumes)
+#         cell_store = typeof(nodes[volumes[1].volumes[1]].coords)[]
+#         for ic = 1:length(volumes[i].volumes)
+#             push!(cell_store, nodes[volumes[i].volumes[ic]].coords)
+#         end
+#         centre = (sum(cell_store) / length(cell_store))
+#         push!(centre_store, centre)
+#     end
+#     return centre_store
+# end
 
 function generate_cell_neighbours(cells, cell_faces)
     cell_neighbours = Int64[]

@@ -28,7 +28,7 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
 
         cells_centre = calculate_centre_cell(volumes, nodes) #Removed push
 
-        boundary_faces, boundary_face_range = generate_boundary_faces(boundaryElements)
+        boundary_faces, boundary_face_range = generate_boundary_faces(boundaryElements,bfaces) #Rewritten
         boundary_cells = generate_boundary_cells(boundary_faces, all_cell_faces, all_cell_faces_range)
 
         cell_faces, cell_faces_range = generate_cell_faces(boundaryElements, volumes, all_cell_faces)
@@ -405,8 +405,9 @@ function generate_cell_neighbours(cells, cell_faces)
     return cell_neighbours
 end
 
-function generate_tet_internal_faces(volumes, faces)
+function generate_tet_internal_faces(volumes, bfaces)
     cell_face_nodes = Vector{Int}[]
+    ifaces=[]
 
     for i = 1:length(volumes)
         cell_faces = zeros(Int, 4, 3)
@@ -425,16 +426,16 @@ function generate_tet_internal_faces(volumes, faces)
     end
 
     sorted_faces = Vector{Int}[]
-    for i = 1:length(faces)
-        push!(sorted_faces, sort(faces[i].faces))
+    for i = 1:length(bfaces)
+        push!(sorted_faces, sort(bfaces[i].faces))
     end
 
     internal_faces = setdiff(cell_face_nodes, sorted_faces)
 
     for i = 1:length(internal_faces)
-        push!(faces, UNV_3D.Face(faces[end].faceindex + 1, faces[end].faceCount, internal_faces[i]))
+        push!(ifaces, UNV_3D.Face(bfaces[end].faceindex + 1, bfaces[end].faceCount, internal_faces[i]))
     end
-    return faces, cell_face_nodes
+    return ifaces, cell_face_nodes
 end
 
 function quad_internal_faces(volumes, faces)
@@ -511,7 +512,7 @@ function generate_boundary_cells(boundary_faces, cell_faces, cell_faces_range)
     return boundary_cells
 end
 
-function generate_boundary_faces(boundaryElements) #Only works if all bc have more than 1 face, which is very unlikely
+function generate_boundary_faces(boundaryElements,bfaces) #Only works if all bc have more than 1 face, which is very unlikely
     boundary_faces = Vector{Int64}(undef,length(bfaces)) #Same length as bfaces
     counter = 0
     boundary_face_range = Vector{UnitRange{Int64}}(undef,length(boundaryElements))

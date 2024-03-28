@@ -32,7 +32,7 @@ boundaryElements
 
 @time nodes=FVM_1D.UNV_3D.generate_nodes(points,cells_range)
 
-@time faces,cell_face_nodes=FVM_1D.UNV_3D.generate_tet_internal_faces(volumes,bfaces) #0.065681 seconds
+@time ifaces,cell_face_nodes=FVM_1D.UNV_3D.generate_tet_internal_faces(volumes,bfaces) #0.065681 seconds
 #faces=quad_internal_faces(volumes,faces)
 
 @time face_nodes=FVM_1D.UNV_3D.generate_face_nodes(faces) #0.014925 seconds
@@ -46,7 +46,7 @@ boundaryElements
 
 @time cells_centre=FVM_1D.UNV_3D.calculate_centre_cell(volumes,nodes) #0.026527 seconds
 
-@time boundary_faces1,boundary_face_range1=FVM_1D.UNV_3D.generate_boundary_faces(boundaryElements) #0.036406 seconds
+@time boundary_faces1,boundary_face_range1=FVM_1D.UNV_3D.generate_boundary_faces(boundaryElements,bfaces) #0.036406 seconds
 @time boundary_cells=FVM_1D.UNV_3D.generate_boundary_cells(boundary_faces1,all_cell_faces,all_cell_faces_range) #0.093407 seconds
 
 @time cell_faces,cell_faces_range=FVM_1D.UNV_3D.generate_cell_faces(boundaryElements,volumes,all_cell_faces) #0.055045 seconds
@@ -71,40 +71,24 @@ boundaryElements
 
 #work
 
-#function generate_boundary_faces(boundaryElements)
-    boundary_faces = Int64[]
-    counter = 0
-    wipe = Int64[]
-    boundary_face_range = UnitRange{Int64}[]
-    for i = 1:length(boundaryElements)
-        for n = 1:length(boundaryElements[i].elements)
-            push!(boundary_faces, boundaryElements[i].elements[n])
-            push!(wipe, boundaryElements[i].elements[n])
+#function generate_boundary_cells(boundary_faces, cell_faces, cell_faces_range)
+    boundary_cells = Int64[]
+    store = Int64[]
+    for ic = 1:length(boundary_faces)
+        for i in eachindex(cell_faces)
+            if cell_faces[i] == boundary_faces[ic]
+                push!(store, i)
+            end
         end
-        if length(wipe) == 1
-            push!(boundary_face_range, UnitRange(boundaryElements[i].elements[1], boundaryElements[i].elements[1]))
-            counter = counter + 1
-        elseif length(wipe) ≠ 1
-            push!(boundary_face_range, UnitRange(boundaryElements[i].elements[1], boundaryElements[i].elements[end]))
-            counter = counter + length(wipe)
-        end
-        wipe = Int64[]
     end
-    return boundary_faces, boundary_face_range
+    store
+
+    for ic = 1:length(store)
+        for i = 1:length(cell_faces_range)
+            if cell_faces_range[i][1] <= store[ic] <= cell_faces_range[i][end]
+                push!(boundary_cells, i)
+            end
+        end
+    end
+    return boundary_cells
 #end
-
-function generate_boundary_faces(boundaryElements) #Only works if all bc have more than 1 face, which is very unlikely
-    boundary_faces = Vector{Int64}(undef,length(bfaces)) #Same length as bfaces
-    counter = 0
-    boundary_face_range = Vector{UnitRange{Int64}}(undef,length(boundaryElements))
-    for i = eachindex(boundaryElements)
-        for n = eachindex(boundaryElements[i].elements)
-            counter=counter+1
-            boundary_faces[counter] = boundaryElements[i].elements[n]
-        end
-        boundary_face_range[i] = UnitRange(boundaryElements[i].elements[1], boundaryElements[i].elements[end])
-    end
-    return boundary_faces, boundary_face_range
-end
-
-@time f,g=generate_boundary_faces(boundaryElements)

@@ -44,7 +44,7 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
 
         cells_volume = calculate_cell_volume(volumes, all_cell_faces_range, all_cell_faces, faces_normal, cells_centre, faces_centre, face_ownerCells, faces_area) #Removed push
 
-        cells = generate_cells(volumes, cells_centre, cells_volume, cell_nodes_range, cell_faces_range)
+        cells = generate_cells(volumes, cells_centre, cells_volume, cell_nodes_range, cell_faces_range) #Removed push
         cell_neighbours = generate_cell_neighbours(cells, cell_faces)
         faces = generate_faces(faces, face_nodes_range, faces_centre, faces_normal, faces_area, face_ownerCells, faces_e, faces_delta, faces_weight)
 
@@ -797,10 +797,10 @@ end
 # end
 
 #Generate cells
-function generate_cells(volumes, centre_of_cells, volume_of_cells, cell_nodes_range, cell_faces_range)
-    cells = Cell{Float64,SVector{3,Float64},UnitRange{Int64}}[]
-    for i = 1:length(volumes)
-        push!(cells, Cell(centre_of_cells[i], volume_of_cells[i], cell_nodes_range[i], cell_faces_range[i]))
+function generate_cells(volumes, cells_centre, cells_volume, cell_nodes_range, cell_faces_range)
+    cells = Vector{Cell{Float64,SVector{3,Float64},UnitRange{Int64}}}(undef,length(volumes))
+    for i = eachindex(volumes)
+        cells[i] = Cell(cells_centre[i], cells_volume[i], cell_nodes_range[i], cell_faces_range[i])
     end
     return cells
 end

@@ -70,30 +70,12 @@ boundaryElements
 
 
 #work
-function calculate_cell_volume(volumes, all_cell_faces_range, all_cell_faces, face_normal, cells_centre, faces_centre, face_ownerCells, faces_area)
-    cells_volume = Vector{Float64}(undef,length(volumes))
+function generate_cells(volumes, cells_centre, cells_volume, cell_nodes_range, cell_faces_range)
+    cells = Vector{Cell{Float64,SVector{3,Float64},UnitRange{Int64}}}(undef,length(volumes))
     for i = eachindex(volumes)
-        volume = zero(Float64) # to avoid type instability
-        for f = all_cell_faces_range[i]
-            findex = all_cell_faces[f]
-
-            normal = face_normal[findex]
-            cc = cells_centre[i]
-            fc = faces_centre[findex]
-            d_fc = fc - cc
-
-            if face_ownerCells[findex, 1] ≠ face_ownerCells[findex, 2]
-                if dot(d_fc, normal) < 0.0
-                    normal = -1.0 * normal
-                end
-            end
-
-            volume = volume + (normal[1] * faces_centre[findex][1] * faces_area[findex])
-
-        end
-        cells_volume[i] = volume
+        cells[i] = Cell(cells_centre[i], cells_volume[i], cell_nodes_range[i], cell_faces_range[i])
     end
-    return cells_volume
+    return cells
 end
 
-calculate_cell_volume(volumes, all_cell_faces_range, all_cell_faces, face_normal, cells_centre, faces_centre, face_ownerCells, faces_area)
+generate_cells(volumes, cells_centre, cells_volume, cell_nodes_range, cell_faces_range)

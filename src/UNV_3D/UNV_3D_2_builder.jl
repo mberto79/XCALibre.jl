@@ -99,42 +99,42 @@ function generate_nodes(points, cells_range)
 end
 
 # DEFINE FUNCTIONS
-function calculate_face_properties(faces, face_ownerCells, cell_centre, face_centre, face_normal)
-    store_e = SVector{3,Float64}[]
-    store_delta = Float64[]
-    store_weight = Float64[]
-    for i = 1:length(faces) #Boundary Face
+function calculate_face_properties(faces, face_ownerCells, cells_centre, faces_centre, face_normal)
+    faces_e = Vector{SVector{3,Float64}}(undef,length(faces))
+    faces_delta = Vector{Float64}(undef,length(faces))
+    faces_weight = Vector{Float64}(undef,length(faces))
+    for i = eachindex(faces) #Boundary Face
         if face_ownerCells[i, 2] == face_ownerCells[i, 1]
-            cc = cell_centre[face_ownerCells[i, 1]]
-            cf = face_centre[i]
+            cc = cells_centre[face_ownerCells[i, 1]]
+            cf = faces_centre[i]
 
             d_cf = cf - cc
 
             delta = norm(d_cf)
-            push!(store_delta, delta)
+            faces_delta[i] = delta
             e = d_cf / delta
-            push!(store_e, e)
+            faces_e[i] = e
             weight = one(Float64)
-            push!(store_weight, weight)
+            faces_weight[i] = weight
 
         else #Internal Face
-            c1 = cell_centre[face_ownerCells[i, 1]]
-            c2 = cell_centre[face_ownerCells[i, 2]]
-            cf = face_centre[i]
+            c1 = cells_centre[face_ownerCells[i, 1]]
+            c2 = cells_centre[face_ownerCells[i, 2]]
+            cf = faces_centre[i]
             d_1f = cf - c1
             d_f2 = c2 - cf
             d_12 = c2 - c1
 
             delta = norm(d_12)
-            push!(store_delta, delta)
+            faces_delta[i] = delta
             e = d_12 / delta
-            push!(store_e, e)
+            faces_e[i] = e
             weight = abs((d_1f ⋅ face_normal[i]) / (d_1f ⋅ face_normal[i] + d_f2 ⋅ face_normal[i]))
-            push!(store_weight, weight)
+            faces_weight[i] = weight
 
         end
     end
-    return store_e, store_delta, store_weight
+    return faces_e, faces_delta, faces_weight
 end
 
 function calculate_face_normal(nodes, faces, face_ownerCells, cells_centre, faces_centre) #Rewrite needed

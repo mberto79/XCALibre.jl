@@ -70,55 +70,42 @@ boundaryElements
 
 
 #work
-function calculate_face_normal(nodes, faces, face_ownerCells, cells_centre, faces_centre) #Rewrite needed
-    face_normal = Vector{SVector{3,Float64}}(undef,length(faces))
-    for i = eachindex(faces)
-        n1 = nodes[faces[i].faces[1]].coords
-        n2 = nodes[faces[i].faces[2]].coords
-        n3 = nodes[faces[i].faces[3]].coords
-
-        t1x = n2[1] - n1[1]
-        t1y = n2[2] - n1[2]
-        t1z = n2[3] - n1[3]
-
-        t2x = n3[1] - n1[1]
-        t2y = n3[2] - n1[2]
-        t2z = n3[3] - n1[3]
-
-        nx = t1y * t2z - t1z * t2y
-        ny = -(t1x * t2z - t1z * t2x)
-        nz = t1x * t2y - t1y * t2x
-
-        magn2 = (nx)^2 + (ny)^2 + (nz)^2
-
-        snx = nx / sqrt(magn2)
-        sny = ny / sqrt(magn2)
-        snz = nz / sqrt(magn2)
-
-        normal = SVector(snx, sny, snz)
-        face_normal[i] = normal
-
+function calculate_face_properties(faces, face_ownerCells, cells_centre, faces_centre, face_normal)
+    faces_e = Vector{SVector{3,Float64}}(undef,length(faces))
+    faces_delta = Vector{Float64}(undef,length(faces))
+    faces_weight = Vector{Float64}(undef,length(faces))
+    for i = eachindex(faces) #Boundary Face
         if face_ownerCells[i, 2] == face_ownerCells[i, 1]
             cc = cells_centre[face_ownerCells[i, 1]]
             cf = faces_centre[i]
 
             d_cf = cf - cc
 
-            if d_cf ⋅ face_normal[i] < 0
-                face_normal[i] = -1.0 * face_normal[i]
-            end
-        else
+            delta = norm(d_cf)
+            faces_delta[i] = delta
+            e = d_cf / delta
+            faces_e[i] = e
+            weight = one(Float64)
+            faces_weight[i] = weight
+
+        else #Internal Face
             c1 = cells_centre[face_ownerCells[i, 1]]
             c2 = cells_centre[face_ownerCells[i, 2]]
             cf = faces_centre[i]
+            d_1f = cf - c1
+            d_f2 = c2 - cf
             d_12 = c2 - c1
 
-            if d_12 ⋅ face_normal[i] < 0
-                face_normal[i] = -1.0 * face_normal[i]
-            end
+            delta = norm(d_12)
+            faces_delta[i] = delta
+            e = d_12 / delta
+            faces_e[i] = e
+            weight = abs((d_1f ⋅ face_normal[i]) / (d_1f ⋅ face_normal[i] + d_f2 ⋅ face_normal[i]))
+            faces_weight[i] = weight
+
         end
     end
-    return face_normal
+    return faces_e, faces_delta, faces_weight
 end
 
-calculate_face_normal(nodes, faces, face_ownerCells, cells_centre, faces_centre)
+calculate_face_properties(faces, face_ownerCells, cells_centre, faces_centre, face_normal)

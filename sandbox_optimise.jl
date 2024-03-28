@@ -20,7 +20,7 @@ bfaces
 volumes
 boundaryElements
 
-#mesh=build_mesh3D(unv_mesh)
+mesh=build_mesh3D(unv_mesh)
 #mesh.nodes
 
 #Priority

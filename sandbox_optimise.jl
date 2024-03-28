@@ -32,13 +32,13 @@ boundaryElements
 
 @time nodes=FVM_1D.UNV_3D.generate_nodes(points,cells_range)
 
-@time ifaces,cell_face_nodes=FVM_1D.UNV_3D.generate_tet_internal_faces(volumes,bfaces) #0.065681 seconds
+@time ifaces,faces,cell_face_nodes=FVM_1D.UNV_3D.generate_tet_internal_faces(volumes,bfaces) #0.065681 seconds
 #faces=quad_internal_faces(volumes,faces)
 
-@time face_nodes=FVM_1D.UNV_3D.generate_face_nodes(ifaces) #0.014925 seconds
+@time face_nodes=FVM_1D.UNV_3D.generate_face_nodes(faces) #0.014925 seconds
 @time cell_nodes=FVM_1D.UNV_3D.generate_cell_nodes(volumes) #0.011821 seconds
 
-@time all_cell_faces=FVM_1D.UNV_3D.generate_all_cell_faces(ifaces,cell_face_nodes) #0.526907 seconds
+@time all_cell_faces=FVM_1D.UNV_3D.generate_all_cell_faces(faces,cell_face_nodes) #0.526907 seconds
 
 @time cell_nodes_range=FVM_1D.UNV_3D.generate_cell_nodes_range(volumes) #0.008669 seconds
 @time face_nodes_range=FVM_1D.UNV_3D.generate_face_nodes_range(faces) #0.011004 seconds
@@ -70,44 +70,12 @@ boundaryElements
 
 
 #work
-#function generate_cell_faces(boundaryElements, volumes, all_cell_faces)
-    cell_faces = Vector{Int}[]
-    cell_face_range = UnitRange{Int64}[]
-    counter_start = 0
-    x = 0
-    max = 0
-
-    for ib = 1:length(boundaryElements)
-        max = maximum(boundaryElements[ib].elements)
-        #if max_store >= max
-           # max = max_store
-        #end
-    end
-    max
-
-    for i = 1:length(volumes)
-        push!(cell_faces, all_cell_faces[counter_start+1:counter_start+length(volumes[i].volumes)])
-        counter_start = counter_start + length(volumes[i].volumes)
-        cell_faces[i] = filter(x -> x > max, cell_faces[i])
-
-        if length(cell_faces[i]) == 1
-            push!(cell_face_range, UnitRange(x + 1, x + 1))
-            x = x + 1
-        else
-            push!(cell_face_range, UnitRange(x + 1, x + length(cell_faces[i])))
-            x = x + length(cell_faces[i])
-        end
-    end
-    cell_faces = reduce(vcat, cell_faces)
-
-    return cell_faces, cell_face_range
-#end
 
 function generate_tet_internal_faces(volumes, bfaces)
     cell_face_nodes = Vector{Int}[]
     counter=0
 
-    for i = 1:length(volumes)
+    for i = eachindex(volumes)
         cell_faces = zeros(Int, 4, 3)
         cell = sort(volumes[i].volumes)
 
@@ -124,18 +92,32 @@ function generate_tet_internal_faces(volumes, bfaces)
     end
 
     sorted_faces = Vector{Int}[]
-    for i = 1:length(bfaces)
+    for i = eachindex(bfaces)
         push!(sorted_faces, sort(bfaces[i].faces))
     end
 
     internal_faces = setdiff(cell_face_nodes, sorted_faces)
 
-    ifaces=Vector(undef,length(internal_faces))
+    ifaces=Vector{UNV_3D.Face}(undef,length(internal_faces))
+    faces=Vector{UNV_3D.Face}(undef,(length(internal_faces)+length(bfaces)))
 
-    for i = 1:length(internal_faces)
-        counter=counter+1
-        #push!(ifaces, UNV_3D.Face(bfaces[end].faceindex + counter, length(internal_faces[i]), internal_faces[i]))
-        ifaces[i]=UNV_3D.Face(bfaces[end].faceindex + counter, length(internal_faces[i]), internal_faces[i])
+    for i = eachindex(bfaces)
+        faces[i]=UNV_3D.Face(bfaces[i].faceindex , bfaces[i].faceCount, bfaces[i].faces)
     end
-    return ifaces, cell_face_nodes
+
+    bface_index=length(bfaces)
+
+    for i = eachindex(internal_faces)
+        counter=counter+1
+        ifaces[i]=UNV_3D.Face(bfaces[end].faceindex + counter, length(internal_faces[i]), internal_faces[i])
+        bface_index=bface_index+1
+        faces[bface_index]=ifaces[i]
+    end
+    return ifaces, faces, cell_face_nodes
 end
+
+@time f=generate_tet_internal_faces(volumes, bfaces)
+
+ifaces
+faces
+cell_face_nodes

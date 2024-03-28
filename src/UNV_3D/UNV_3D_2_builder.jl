@@ -14,7 +14,7 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
         node_cells, cells_range = generate_node_cells(points, volumes) #Rewritten, optimized
         nodes = generate_nodes(points, cells_range) #Rewritten, optimzied
 
-        ifaces, cell_face_nodes = generate_tet_internal_faces(volumes, bfaces) # New method appraoch needed
+        ifaces, faces,cell_face_nodes = generate_tet_internal_faces(volumes, bfaces) # Temp fix added, New method appraoch needed
         #faces=quad_internal_faces(volumes,faces)
 
         face_nodes = generate_face_nodes(faces) #Removed push
@@ -405,11 +405,11 @@ function generate_cell_neighbours(cells, cell_faces)
     return cell_neighbours
 end
 
-function generate_tet_internal_faces(volumes, bfaces)
+function generate_tet_internal_faces(volumes, bfaces) #temp fix
     cell_face_nodes = Vector{Int}[]
     counter=0
 
-    for i = 1:length(volumes)
+    for i = eachindex(volumes)
         cell_faces = zeros(Int, 4, 3)
         cell = sort(volumes[i].volumes)
 
@@ -426,20 +426,28 @@ function generate_tet_internal_faces(volumes, bfaces)
     end
 
     sorted_faces = Vector{Int}[]
-    for i = 1:length(bfaces)
+    for i = eachindex(bfaces)
         push!(sorted_faces, sort(bfaces[i].faces))
     end
 
     internal_faces = setdiff(cell_face_nodes, sorted_faces)
 
     ifaces=Vector{UNV_3D.Face}(undef,length(internal_faces))
+    faces=Vector{UNV_3D.Face}(undef,(length(internal_faces)+length(bfaces)))
 
-    for i = 1:length(internal_faces)
-        counter=counter+1
-        #push!(ifaces, UNV_3D.Face(bfaces[end].faceindex + counter, length(internal_faces[i]), internal_faces[i]))
-        ifaces[i]=UNV_3D.Face(bfaces[end].faceindex + counter, length(internal_faces[i]), internal_faces[i])
+    for i = eachindex(bfaces)
+        faces[i]=UNV_3D.Face(bfaces[i].faceindex , bfaces[i].faceCount, bfaces[i].faces)
     end
-    return ifaces, cell_face_nodes
+
+    bface_index=length(bfaces)
+
+    for i = eachindex(internal_faces)
+        counter=counter+1
+        ifaces[i]=UNV_3D.Face(bfaces[end].faceindex + counter, length(internal_faces[i]), internal_faces[i])
+        bface_index=bface_index+1
+        faces[bface_index]=ifaces[i]
+    end
+    return ifaces, faces, cell_face_nodes
 end
 
 function quad_internal_faces(volumes, faces)

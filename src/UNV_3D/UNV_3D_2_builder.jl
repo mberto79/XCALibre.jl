@@ -31,7 +31,7 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
         boundary_faces, boundary_face_range = generate_boundary_faces(boundaryElements,bfaces) #Rewritten
         boundary_cells = generate_boundary_cells(bfaces, all_cell_faces, all_cell_faces_range) #Rewritten, error found, using face index of boundary_faces instead of bfaces
 
-        cell_faces, cell_faces_range = generate_cell_faces(boundaryElements, volumes, all_cell_faces)
+        cell_faces, cell_faces_range = generate_cell_faces(bfaces, volumes, all_cell_faces) # Removed push
 
         boundaries = generate_boundaries(boundaryElements, boundary_face_range)
 
@@ -265,30 +265,23 @@ function calculate_face_area(nodes, faces)
     return area_store
 end
 
-function generate_cell_faces(boundaryElements, volumes, all_cell_faces)
-    cell_faces = Vector{Int}[]
-    cell_face_range = UnitRange{Int64}[]
+function generate_cell_faces(bfaces, volumes, all_cell_faces)
+    cell_faces = Vector{Int64}[] # May be a way to preallocate this. For now will leave as []
+    cell_face_range = Vector{UnitRange{Int64}}(undef,length(volumes))
     counter_start = 0
     x = 0
-    max = 0
+    max = length(bfaces)
 
-    for ib = 1:length(boundaryElements)
-        max_store = maximum(boundaryElements[ib].elements)
-        if max_store >= max
-            max = max_store
-        end
-    end
-
-    for i = 1:length(volumes)
+    for i = eachindex(volumes)
         push!(cell_faces, all_cell_faces[counter_start+1:counter_start+length(volumes[i].volumes)])
         counter_start = counter_start + length(volumes[i].volumes)
         cell_faces[i] = filter(x -> x > max, cell_faces[i])
 
         if length(cell_faces[i]) == 1
-            push!(cell_face_range, UnitRange(x + 1, x + 1))
+            cell_face_range[i] = UnitRange(x + 1, x + 1)
             x = x + 1
         else
-            push!(cell_face_range, UnitRange(x + 1, x + length(cell_faces[i])))
+            cell_face_range[i] = UnitRange(x + 1, x + length(cell_faces[i]))
             x = x + length(cell_faces[i])
         end
     end

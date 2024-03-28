@@ -70,12 +70,37 @@ boundaryElements
 
 
 #work
-function generate_cells(volumes, cells_centre, cells_volume, cell_nodes_range, cell_faces_range)
-    cells = Vector{Cell{Float64,SVector{3,Float64},UnitRange{Int64}}}(undef,length(volumes))
-    for i = eachindex(volumes)
-        cells[i] = Cell(cells_centre[i], cells_volume[i], cell_nodes_range[i], cell_faces_range[i])
+function generate_cell_neighbours(cells, cell_faces)
+    cell_neighbours = Vector{Int64}(undef,length(cell_faces))
+    counter=0
+    for ID = 1:length(cells)
+        for i = cells[ID].faces_range
+            faces = cell_faces[i]
+            for ic = 1:length(i)
+                face = faces[ic]
+                index = findall(x -> x == face, cell_faces)
+                if length(index) == 2
+                    if i[1] <= index[1] <= i[end]
+                        for ip = 1:length(cells)
+                            if cells[ip].faces_range[1] <= index[2] <= cells[ip].faces_range[end]
+                                counter=counter+1
+                                cell_neighbours[counter] = ip
+                            end
+                        end
+                    end
+                    if i[1] <= index[2] <= i[end]
+                        for ip = 1:length(cells)
+                            if cells[ip].faces_range[1] <= index[1] <= cells[ip].faces_range[end]
+                                counter=counter+1
+                                cell_neighbours[counter] = ip
+                            end
+                        end
+                    end
+                end
+            end
+        end
     end
-    return cells
+    return cell_neighbours
 end
 
-generate_cells(volumes, cells_centre, cells_volume, cell_nodes_range, cell_faces_range)
+generate_cell_neighbours(cells, cell_faces)

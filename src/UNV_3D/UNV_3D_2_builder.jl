@@ -45,7 +45,7 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
         cells_volume = calculate_cell_volume(volumes, all_cell_faces_range, all_cell_faces, faces_normal, cells_centre, faces_centre, face_ownerCells, faces_area) #Removed push
 
         cells = generate_cells(volumes, cells_centre, cells_volume, cell_nodes_range, cell_faces_range) #Removed push
-        cell_neighbours = generate_cell_neighbours(cells, cell_faces)
+        cell_neighbours = generate_cell_neighbours(cells, cell_faces) # Removed push, new method needed
         faces = generate_faces(faces, face_nodes_range, faces_centre, faces_normal, faces_area, face_ownerCells, faces_e, faces_delta, faces_weight)
 
         cell_nsign = calculate_cell_nsign(cells, faces, cell_faces)
@@ -361,7 +361,8 @@ end
 # end
 
 function generate_cell_neighbours(cells, cell_faces)
-    cell_neighbours = Int64[]
+    cell_neighbours = Vector{Int64}(undef,length(cell_faces))
+    counter=0
     for ID = 1:length(cells)
         for i = cells[ID].faces_range
             faces = cell_faces[i]
@@ -372,21 +373,19 @@ function generate_cell_neighbours(cells, cell_faces)
                     if i[1] <= index[1] <= i[end]
                         for ip = 1:length(cells)
                             if cells[ip].faces_range[1] <= index[2] <= cells[ip].faces_range[end]
-                                push!(cell_neighbours, ip)
+                                counter=counter+1
+                                cell_neighbours[counter] = ip
                             end
                         end
                     end
                     if i[1] <= index[2] <= i[end]
                         for ip = 1:length(cells)
                             if cells[ip].faces_range[1] <= index[1] <= cells[ip].faces_range[end]
-                                push!(cell_neighbours, ip)
+                                counter=counter+1
+                                cell_neighbours[counter] = ip
                             end
                         end
                     end
-                end
-                if length(index) == 1
-                    x = 0
-                    push!(cell_neighbours, x)
                 end
             end
         end

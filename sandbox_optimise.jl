@@ -12,11 +12,11 @@ unv_mesh="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.04m.unv"
 #unv_mesh="src/UNV_3D/Quad_cell_new_boundaries.unv"
 
 
-points,edges,faces,volumes,boundaryElements=load_3D(unv_mesh)
+points,edges,bfaces,volumes,boundaryElements=load_3D(unv_mesh)
 
 points
 edges
-faces
+bfaces
 volumes
 boundaryElements
 
@@ -32,7 +32,7 @@ boundaryElements
 
 @time nodes=FVM_1D.UNV_3D.generate_nodes(points,cells_range)
 
-@time faces,cell_face_nodes=FVM_1D.UNV_3D.generate_tet_internal_faces(volumes,faces) #0.065681 seconds
+@time faces,cell_face_nodes=FVM_1D.UNV_3D.generate_tet_internal_faces(volumes,bfaces) #0.065681 seconds
 #faces=quad_internal_faces(volumes,faces)
 
 @time face_nodes=FVM_1D.UNV_3D.generate_face_nodes(faces) #0.014925 seconds
@@ -71,33 +71,40 @@ boundaryElements
 
 #work
 
-#function generate_cell_nodes_range(volumes)
-    cell_nodes_range=Vector{UnitRange{Int64}}(undef,length(volumes))
-    x=0
-    for i=1:length(volumes)
-        cell_nodes_range[i]=UnitRange(x+1,x+length(volumes[i].volumes))
-        x=x+length(volumes[i].volumes)
-        
+#function generate_boundary_faces(boundaryElements)
+    boundary_faces = Int64[]
+    counter = 0
+    wipe = Int64[]
+    boundary_face_range = UnitRange{Int64}[]
+    for i = 1:length(boundaryElements)
+        for n = 1:length(boundaryElements[i].elements)
+            push!(boundary_faces, boundaryElements[i].elements[n])
+            push!(wipe, boundaryElements[i].elements[n])
+        end
+        if length(wipe) == 1
+            push!(boundary_face_range, UnitRange(boundaryElements[i].elements[1], boundaryElements[i].elements[1]))
+            counter = counter + 1
+        elseif length(wipe) ≠ 1
+            push!(boundary_face_range, UnitRange(boundaryElements[i].elements[1], boundaryElements[i].elements[end]))
+            counter = counter + length(wipe)
+        end
+        wipe = Int64[]
     end
-    return cell_nodes_range
+    return boundary_faces, boundary_face_range
 #end
 
-function calculate_centre_cell(volumes,nodes)
-    cell_centres=Vector{SVector{3,Float64}}(undef,length(volumes))
-    for i=eachindex(volumes)
-        temp_coords=Vector{SVector{3,Float64}}(undef,length(volumes[i].volumes))
-        for ic=eachindex(volumes[i].volumes)
-            temp_coords[ic]=nodes[volumes[i].volumes[ic]].coords
+function generate_boundary_faces(boundaryElements) #Only works if all bc have more than 1 face, which is very unlikely
+    boundary_faces = Vector{Int64}(undef,length(bfaces)) #Same length as bfaces
+    counter = 0
+    boundary_face_range = Vector{UnitRange{Int64}}(undef,length(boundaryElements))
+    for i = eachindex(boundaryElements)
+        for n = eachindex(boundaryElements[i].elements)
+            counter=counter+1
+            boundary_faces[counter] = boundaryElements[i].elements[n]
         end
-        cell_centres[i]=sum(temp_coords)/length(volumes[i].volumes)
+        boundary_face_range[i] = UnitRange(boundaryElements[i].elements[1], boundaryElements[i].elements[end])
     end
-    return cell_centres
+    return boundary_faces, boundary_face_range
 end
 
-@time f=calculate_centre_cell(volumes,nodes)
-
-volumes[1].volumes
-nodes[7].coords
-nodes[1].coords
-nodes[5].coords
-nodes[6].coords
+@time f,g=generate_boundary_faces(boundaryElements)

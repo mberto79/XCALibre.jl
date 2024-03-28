@@ -511,27 +511,41 @@ function generate_boundary_cells(boundary_faces, cell_faces, cell_faces_range)
     return boundary_cells
 end
 
-function generate_boundary_faces(boundaryElements)
-    boundary_faces = Int64[]
-    z = 0
-    wipe = Int64[]
-    boundary_face_range = UnitRange{Int64}[]
-    for i = 1:length(boundaryElements)
-        for n = 1:length(boundaryElements[i].elements)
-            push!(boundary_faces, boundaryElements[i].elements[n])
-            push!(wipe, boundaryElements[i].elements[n])
+function generate_boundary_faces(boundaryElements) #Only works if all bc have more than 1 face, which is very unlikely
+    boundary_faces = Vector{Int64}(undef,length(bfaces)) #Same length as bfaces
+    counter = 0
+    boundary_face_range = Vector{UnitRange{Int64}}(undef,length(boundaryElements))
+    for i = eachindex(boundaryElements)
+        for n = eachindex(boundaryElements[i].elements)
+            counter=counter+1
+            boundary_faces[counter] = boundaryElements[i].elements[n]
         end
-        if length(wipe) == 1
-            push!(boundary_face_range, UnitRange(boundaryElements[i].elements[1], boundaryElements[i].elements[1]))
-            z = z + 1
-        elseif length(wipe) ≠ 1
-            push!(boundary_face_range, UnitRange(boundaryElements[i].elements[1], boundaryElements[i].elements[end]))
-            z = z + length(wipe)
-        end
-        wipe = Int64[]
+        boundary_face_range[i] = UnitRange(boundaryElements[i].elements[1], boundaryElements[i].elements[end])
     end
     return boundary_faces, boundary_face_range
 end
+
+# function generate_boundary_faces(boundaryElements)
+#     boundary_faces = Int64[]
+#     z = 0
+#     wipe = Int64[]
+#     boundary_face_range = UnitRange{Int64}[]
+#     for i = 1:length(boundaryElements)
+#         for n = 1:length(boundaryElements[i].elements)
+#             push!(boundary_faces, boundaryElements[i].elements[n])
+#             push!(wipe, boundaryElements[i].elements[n])
+#         end
+#         if length(wipe) == 1
+#             push!(boundary_face_range, UnitRange(boundaryElements[i].elements[1], boundaryElements[i].elements[1]))
+#             z = z + 1
+#         elseif length(wipe) ≠ 1
+#             push!(boundary_face_range, UnitRange(boundaryElements[i].elements[1], boundaryElements[i].elements[end]))
+#             z = z + length(wipe)
+#         end
+#         wipe = Int64[]
+#     end
+#     return boundary_faces, boundary_face_range
+# end
 
 function generate_face_ownerCells(faces, all_cell_faces, all_cell_faces_range)
     cell_face_index = Vector{Vector{Int64}}(undef, length(faces))

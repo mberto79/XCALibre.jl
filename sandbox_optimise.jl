@@ -70,42 +70,30 @@ boundaryElements
 
 
 #work
-function calculate_face_properties(faces, face_ownerCells, cells_centre, faces_centre, face_normal)
-    faces_e = Vector{SVector{3,Float64}}(undef,length(faces))
-    faces_delta = Vector{Float64}(undef,length(faces))
-    faces_weight = Vector{Float64}(undef,length(faces))
-    for i = eachindex(faces) #Boundary Face
-        if face_ownerCells[i, 2] == face_ownerCells[i, 1]
-            cc = cells_centre[face_ownerCells[i, 1]]
-            cf = faces_centre[i]
+function calculate_cell_volume(volumes, all_cell_faces_range, all_cell_faces, face_normal, cells_centre, faces_centre, face_ownerCells, faces_area)
+    cells_volume = Vector{Float64}(undef,length(volumes))
+    for i = eachindex(volumes)
+        volume = zero(Float64) # to avoid type instability
+        for f = all_cell_faces_range[i]
+            findex = all_cell_faces[f]
 
-            d_cf = cf - cc
+            normal = face_normal[findex]
+            cc = cells_centre[i]
+            fc = faces_centre[findex]
+            d_fc = fc - cc
 
-            delta = norm(d_cf)
-            faces_delta[i] = delta
-            e = d_cf / delta
-            faces_e[i] = e
-            weight = one(Float64)
-            faces_weight[i] = weight
+            if face_ownerCells[findex, 1] ≠ face_ownerCells[findex, 2]
+                if dot(d_fc, normal) < 0.0
+                    normal = -1.0 * normal
+                end
+            end
 
-        else #Internal Face
-            c1 = cells_centre[face_ownerCells[i, 1]]
-            c2 = cells_centre[face_ownerCells[i, 2]]
-            cf = faces_centre[i]
-            d_1f = cf - c1
-            d_f2 = c2 - cf
-            d_12 = c2 - c1
-
-            delta = norm(d_12)
-            faces_delta[i] = delta
-            e = d_12 / delta
-            faces_e[i] = e
-            weight = abs((d_1f ⋅ face_normal[i]) / (d_1f ⋅ face_normal[i] + d_f2 ⋅ face_normal[i]))
-            faces_weight[i] = weight
+            volume = volume + (normal[1] * faces_centre[findex][1] * faces_area[findex])
 
         end
+        cells_volume[i] = volume
     end
-    return faces_e, faces_delta, faces_weight
+    return cells_volume
 end
 
-calculate_face_properties(faces, face_ownerCells, cells_centre, faces_centre, face_normal)
+calculate_cell_volume(volumes, all_cell_faces_range, all_cell_faces, face_normal, cells_centre, faces_centre, face_ownerCells, faces_area)

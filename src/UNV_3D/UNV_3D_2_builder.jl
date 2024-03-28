@@ -40,9 +40,9 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
         faces_area = calculate_face_area(nodes, faces) #Rewrite needed, removed push
         faces_centre = calculate_face_centre(faces, nodes) # Removed push
         faces_normal = calculate_face_normal(nodes, faces, face_ownerCells, cells_centre, faces_centre) # Rewrite needed
-        faces_e, faces_delta, faces_weight = calculate_face_properties(faces, face_ownerCells, cells_centre, faces_centre, faces_normal)
+        faces_e, faces_delta, faces_weight = calculate_face_properties(faces, face_ownerCells, cells_centre, faces_centre, faces_normal) #Removed push
 
-        cells_volume = calculate_cell_volume(volumes, all_cell_faces_range, all_cell_faces, faces_normal, cells_centre, faces_centre, face_ownerCells, faces_area)
+        cells_volume = calculate_cell_volume(volumes, all_cell_faces_range, all_cell_faces, faces_normal, cells_centre, faces_centre, face_ownerCells, faces_area) #Removed push
 
         cells = generate_cells(volumes, cells_centre, cells_volume, cell_nodes_range, cell_faces_range)
         cell_neighbours = generate_cell_neighbours(cells, cell_faces)
@@ -309,16 +309,16 @@ function calculate_cell_nsign(cells, faces1, cell_faces)
     return cell_nsign
 end
 
-function calculate_cell_volume(volumes, all_cell_faces_range, all_cell_faces, face_normal, cell_centre, face_centre, face_ownerCells, face_area)
-    volume_store = Float64[]
-    for i = 1:length(volumes)
+function calculate_cell_volume(volumes, all_cell_faces_range, all_cell_faces, face_normal, cells_centre, faces_centre, face_ownerCells, faces_area)
+    cells_volume = Vector{Float64}(undef,length(volumes))
+    for i = eachindex(volumes)
         volume = zero(Float64) # to avoid type instability
         for f = all_cell_faces_range[i]
             findex = all_cell_faces[f]
 
             normal = face_normal[findex]
-            cc = cell_centre[i]
-            fc = face_centre[findex]
+            cc = cells_centre[i]
+            fc = faces_centre[findex]
             d_fc = fc - cc
 
             if face_ownerCells[findex, 1] ≠ face_ownerCells[findex, 2]
@@ -327,13 +327,12 @@ function calculate_cell_volume(volumes, all_cell_faces_range, all_cell_faces, fa
                 end
             end
 
-
-            volume = volume + (normal[1] * face_centre[findex][1] * face_area[findex])
+            volume = volume + (normal[1] * faces_centre[findex][1] * faces_area[findex])
 
         end
-        push!(volume_store, volume)
+        cells_volume[i] = volume
     end
-    return volume_store
+    return cells_volume
 end
 
 function calculate_centre_cell(volumes,nodes)

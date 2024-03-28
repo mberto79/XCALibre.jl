@@ -70,37 +70,12 @@ boundaryElements
 
 
 #work
-function generate_cell_neighbours(cells, cell_faces)
-    cell_neighbours = Vector{Int64}(undef,length(cell_faces))
-    counter=0
-    for ID = 1:length(cells)
-        for i = cells[ID].faces_range
-            faces = cell_faces[i]
-            for ic = 1:length(i)
-                face = faces[ic]
-                index = findall(x -> x == face, cell_faces)
-                if length(index) == 2
-                    if i[1] <= index[1] <= i[end]
-                        for ip = 1:length(cells)
-                            if cells[ip].faces_range[1] <= index[2] <= cells[ip].faces_range[end]
-                                counter=counter+1
-                                cell_neighbours[counter] = ip
-                            end
-                        end
-                    end
-                    if i[1] <= index[2] <= i[end]
-                        for ip = 1:length(cells)
-                            if cells[ip].faces_range[1] <= index[1] <= cells[ip].faces_range[end]
-                                counter=counter+1
-                                cell_neighbours[counter] = ip
-                            end
-                        end
-                    end
-                end
-            end
-        end
+function generate_faces(faces, face_nodes_range, faces_centre, faces_normal, faces_area, face_ownerCells, faces_e, faces_delta, faces_weight)
+    faces3D = Vector{Face3D{Float64,SVector{2,Int64},SVector{3,Float64},UnitRange{Int64}}}(undef,length(faces))
+    for i = eachindex(faces)
+        faces3D[i] = Face3D(face_nodes_range[i], SVector(face_ownerCells[i, 1], face_ownerCells[i, 2]), faces_centre[i], faces_normal[i], faces_e[i], faces_area[i], faces_delta[i], faces_weight[i])
     end
-    return cell_neighbours
+    return faces3D
 end
 
-generate_cell_neighbours(cells, cell_faces)
+generate_faces(faces, face_nodes_range, faces_centre, faces_normal, faces_area, face_ownerCells, faces_e, faces_delta, faces_weight)

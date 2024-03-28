@@ -46,7 +46,7 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
 
         cells = generate_cells(volumes, cells_centre, cells_volume, cell_nodes_range, cell_faces_range) #Removed push
         cell_neighbours = generate_cell_neighbours(cells, cell_faces) # Removed push, new method needed
-        faces = generate_faces(faces, face_nodes_range, faces_centre, faces_normal, faces_area, face_ownerCells, faces_e, faces_delta, faces_weight)
+        faces = generate_faces(faces, face_nodes_range, faces_centre, faces_normal, faces_area, face_ownerCells, faces_e, faces_delta, faces_weight) #Removed push
 
         cell_nsign = calculate_cell_nsign(cells, faces, cell_faces)
 
@@ -805,11 +805,9 @@ function generate_cells(volumes, cells_centre, cells_volume, cell_nodes_range, c
 end
 
 function generate_faces(faces, face_nodes_range, faces_centre, faces_normal, faces_area, face_ownerCells, faces_e, faces_delta, faces_weight)
-    faces3D = Face3D{Float64,SVector{2,Int64},SVector{3,Float64},UnitRange{Int64}}[]
-    for i = 1:length(faces)
-        push!(faces3D, Face3D(face_nodes_range[i], SVector(face_ownerCells[i, 1], face_ownerCells[i, 2]), faces_centre[i], faces_normal[i], faces_e[i], faces_area[i], faces_delta[i], faces_weight[i]))
+    faces3D = Vector{Face3D{Float64,SVector{2,Int64},SVector{3,Float64},UnitRange{Int64}}}(undef,length(faces))
+    for i = eachindex(faces)
+        faces3D[i] = Face3D(face_nodes_range[i], SVector(face_ownerCells[i, 1], face_ownerCells[i, 2]), faces_centre[i], faces_normal[i], faces_e[i], faces_area[i], faces_delta[i], faces_weight[i])
     end
     return faces3D
 end
-
-

@@ -407,7 +407,7 @@ end
 
 function generate_tet_internal_faces(volumes, bfaces)
     cell_face_nodes = Vector{Int}[]
-    ifaces=[]
+    counter=0
 
     for i = 1:length(volumes)
         cell_faces = zeros(Int, 4, 3)
@@ -432,8 +432,12 @@ function generate_tet_internal_faces(volumes, bfaces)
 
     internal_faces = setdiff(cell_face_nodes, sorted_faces)
 
+    ifaces=Vector{UNV_3D.Face}(undef,length(internal_faces))
+
     for i = 1:length(internal_faces)
-        push!(ifaces, UNV_3D.Face(bfaces[end].faceindex + 1, bfaces[end].faceCount, internal_faces[i]))
+        counter=counter+1
+        #push!(ifaces, UNV_3D.Face(bfaces[end].faceindex + counter, length(internal_faces[i]), internal_faces[i]))
+        ifaces[i]=UNV_3D.Face(bfaces[end].faceindex + counter, length(internal_faces[i]), internal_faces[i])
     end
     return ifaces, cell_face_nodes
 end

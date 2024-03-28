@@ -70,66 +70,29 @@ boundaryElements
 
 
 #work
-function calculate_face_area(nodes, faces) # Need to shorten
-    face_area= Vector{Float64}(undef,length(faces))
+function calculate_face_centre(faces, nodes)
+    face_centres = Vector{SVector{3,Float64}}(undef,length(faces))
     for i = eachindex(faces)
-        if faces[i].faceCount == 3
-            n1 = nodes[faces[i].faces[1]].coords
-            n2 = nodes[faces[i].faces[2]].coords
-            n3 = nodes[faces[i].faces[3]].coords
-
-            t1x = n2[1] - n1[1]
-            t1y = n2[2] - n1[2]
-            t1z = n2[3] - n1[3]
-
-            t2x = n3[1] - n1[1]
-            t2y = n3[2] - n1[2]
-            t2z = n3[3] - n1[3]
-
-            area2 = (t1y * t2z - t1z * t2y)^2 + (t1x * t2z - t1z * t2x)^2 + (t1y * t2x - t1x * t2y)^2
-            area = sqrt(area2) / 2
-            face_area[i]= area
+        temp_coords = Vector{SVector{3,Float64}}(undef,length(faces[i].faces))
+        for ic = 1:length(faces[i].faces)
+            temp_coords[ic] = nodes[faces[i].faces[ic]].coords
         end
-
-        if faces[i].faceCount > 3
-            n1 = nodes[faces[i].faces[1]].coords
-            n2 = nodes[faces[i].faces[2]].coords
-            n3 = nodes[faces[i].faces[3]].coords
-
-            t1x = n2[1] - n1[1]
-            t1y = n2[2] - n1[2]
-            t1z = n2[3] - n1[3]
-
-            t2x = n3[1] - n1[1]
-            t2y = n3[2] - n1[2]
-            t2z = n3[3] - n1[3]
-
-            area2 = (t1y * t2z - t1z * t2y)^2 + (t1x * t2z - t1z * t2x)^2 + (t1y * t2x - t1x * t2y)^2
-            area = sqrt(area2) / 2
-
-            for ic = 4:faces[i].faceCount
-                n1 = nodes[faces[i].faces[ic]].coords
-                n2 = nodes[faces[i].faces[2]].coords
-                n3 = nodes[faces[i].faces[3]].coords
-
-                t1x = n2[1] - n1[1]
-                t1y = n2[2] - n1[2]
-                t1z = n2[3] - n1[3]
-
-                t2x = n3[1] - n1[1]
-                t2y = n3[2] - n1[2]
-                t2z = n3[3] - n1[3]
-
-                area2 = (t1y * t2z - t1z * t2y)^2 + (t1x * t2z - t1z * t2x)^2 + (t1y * t2x - t1x * t2y)^2
-                area = area + sqrt(area2) / 2
-
-            end
-
-            face_area[i]=area
-
-        end
+        face_centres[i] = sum(temp_coords) / length(faces[i].faces)
     end
-    return face_area
+    return face_centres
 end
 
-@time calculate_face_area(nodes, faces)
+calculate_face_centre(faces, nodes)
+
+
+function calculate_centre_cell(volumes,nodes)
+    cell_centres = Vector{SVector{3,Float64}}(undef,length(volumes))
+    for i = eachindex(volumes)
+        temp_coords = Vector{SVector{3,Float64}}(undef,length(volumes[i].volumes))
+        for ic = eachindex(volumes[i].volumes)
+            temp_coords[ic] = nodes[volumes[i].volumes[ic]].coords
+        end
+        cell_centres[i] = sum(temp_coords) / length(volumes[i].volumes)
+    end
+    return cell_centres
+end

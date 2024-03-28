@@ -37,8 +37,8 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
 
         face_ownerCells = generate_face_ownerCells(faces, all_cell_faces, all_cell_faces_range) #New method approach needed
 
-        faces_area = calculate_face_area(nodes, faces) #Rewrite needed
-        faces_centre = calculate_face_centre(faces, nodes)
+        faces_area = calculate_face_area(nodes, faces) #Rewrite needed, removed push
+        faces_centre = calculate_face_centre(faces, nodes) # Removed push
         faces_normal = calculate_face_normal(nodes, faces, face_ownerCells, cells_centre, faces_centre)
         faces_e, faces_delta, faces_weight = calculate_face_properties(faces, face_ownerCells, cells_centre, faces_centre, faces_normal)
 
@@ -191,16 +191,15 @@ function calculate_face_normal(nodes, faces, face_ownerCells, cell_centre, face_
 end
 
 function calculate_face_centre(faces, nodes)
-    centre_store = SVector{3,Float64}[]
-    for i = 1:length(faces)
-        face_store = SVector{3,Float64}[]
+    face_centres = Vector{SVector{3,Float64}}(undef,length(faces))
+    for i = eachindex(faces)
+        temp_coords = Vector{SVector{3,Float64}}(undef,length(faces[i].faces))
         for ic = 1:length(faces[i].faces)
-            push!(face_store, nodes[faces[i].faces[ic]].coords)
+            temp_coords[ic] = nodes[faces[i].faces[ic]].coords
         end
-        centre = (sum(face_store) / length(face_store))
-        push!(centre_store, centre)
+        face_centres[i] = sum(temp_coords) / length(faces[i].faces)
     end
-    return centre_store
+    return face_centres
 end
 
 function calculate_face_area(nodes, faces) # Need to shorten

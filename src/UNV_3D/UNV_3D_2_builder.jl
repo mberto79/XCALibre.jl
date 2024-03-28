@@ -11,22 +11,22 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
         println("File Read Successfully")
         println("Generating Mesh...")
 
-        node_cells, cells_range = generate_node_cells(points, volumes)
-        nodes = generate_nodes(points, cells_range)
+        node_cells, cells_range = generate_node_cells(points, volumes) #Rewritten, optimized
+        nodes = generate_nodes(points, cells_range) #Rewritten, optimzied
 
-        ifaces, cell_face_nodes = generate_tet_internal_faces(volumes, bfaces)
+        ifaces, cell_face_nodes = generate_tet_internal_faces(volumes, bfaces) # New method appraoch
         #faces=quad_internal_faces(volumes,faces)
 
-        face_nodes = generate_face_nodes(faces)
-        cell_nodes = generate_cell_nodes(volumes)
+        face_nodes = generate_face_nodes(faces) #Removed push
+        cell_nodes = generate_cell_nodes(volumes) #Removed push
 
-        all_cell_faces = generate_all_cell_faces(faces, cell_face_nodes)
+        all_cell_faces = generate_all_cell_faces(faces, cell_face_nodes) # New method needed
 
-        cell_nodes_range = generate_cell_nodes_range(volumes)
-        face_nodes_range = generate_face_nodes_range(faces)
-        all_cell_faces_range = generate_all_cell_faces_range(volumes)
+        cell_nodes_range = generate_cell_nodes_range(volumes) #Removed push
+        face_nodes_range = generate_face_nodes_range(faces) #Removed Push
+        all_cell_faces_range = generate_all_cell_faces_range(volumes) #Removed push
 
-        cells_centre = calculate_centre_cell(volumes, nodes)
+        cells_centre = calculate_centre_cell(volumes, nodes) #Removed push
 
         boundary_faces, boundary_face_range = generate_boundary_faces(boundaryElements)
         boundary_cells = generate_boundary_cells(boundary_faces, all_cell_faces, all_cell_faces_range)
@@ -347,13 +347,13 @@ function calculate_cell_volume(volumes, all_cell_faces_range, all_cell_faces, fa
 end
 
 function calculate_centre_cell(volumes,nodes)
-    cell_centres=Vector{SVector{3,Float64}}(undef,length(volumes))
-    for i=eachindex(volumes)
-        temp_coords=Vector{SVector{3,Float64}}(undef,length(volumes[i].volumes))
-        for ic=eachindex(volumes[i].volumes)
-            temp_coords[ic]=nodes[volumes[i].volumes[ic]].coords
+    cell_centres = Vector{SVector{3,Float64}}(undef,length(volumes))
+    for i = eachindex(volumes)
+        temp_coords = Vector{SVector{3,Float64}}(undef,length(volumes[i].volumes))
+        for ic = eachindex(volumes[i].volumes)
+            temp_coords[ic] = nodes[volumes[i].volumes[ic]].coords
         end
-        cell_centres[i]=sum(temp_coords)/length(volumes[i].volumes)
+        cell_centres[i] = sum(temp_coords) / length(volumes[i].volumes)
     end
     return cell_centres
 end
@@ -606,9 +606,9 @@ end
 #Generate Faces
 
 function generate_face_nodes(faces)
-    face_nodes = Vector{Int64}(undef, length(faces) * 3) # number of bc faces times number of nodes per face
+    face_nodes = Vector{Int64}(undef, length(faces) * 3) # number of bc faces times number of nodes per face. Tet Only for now.
     counter = 0
-    for n = 1:length(faces)
+    for n = eachindex(faces)
         for i = 1:faces[n].faceCount
             counter = counter + 1
             face_nodes[counter] = faces[n].faces[i]
@@ -631,7 +631,7 @@ end
 function generate_cell_nodes(volumes)
     cell_nodes = Vector{Int64}(undef, length(volumes) * 4) #length of cells times number of nodes per cell
     counter = 0
-    for n = 1:length(volumes)
+    for n = eachindex(volumes)
         for i = 1:volumes[n].volumeCount
             counter = counter + 1
             cell_nodes[counter] = volumes[n].volumes[i]
@@ -680,10 +680,9 @@ end
 function generate_cell_nodes_range(volumes)
     cell_nodes_range = Vector{UnitRange{Int64}}(undef, length(volumes))
     x = 0
-    for i = 1:length(volumes)
+    for i = eachindex(volumes)
         cell_nodes_range[i] = UnitRange(x + 1, x + length(volumes[i].volumes))
         x = x + length(volumes[i].volumes)
-
     end
     return cell_nodes_range
 end
@@ -704,7 +703,7 @@ end
 function generate_face_nodes_range(faces)
     face_nodes_range = Vector{UnitRange{Int64}}(undef, length(faces))
     x = 0
-    for i = 1:length(faces)
+    for i = eachindex(faces)
         face_nodes_range[i] = UnitRange(x + 1, x + faces[i].faceCount)
         x = x + faces[i].faceCount
     end
@@ -726,7 +725,7 @@ end
 function generate_all_cell_faces_range(volumes)
     cell_faces_range = Vector{UnitRange{Int64}}(undef, length(volumes))
     x = 0
-    @inbounds for i = 1:length(volumes)
+    @inbounds for i = eachindex(volumes)
         #Tetra
         if length(volumes[i].volumes) == 4
             cell_faces_range[i] = UnitRange(x + 1, x + 4)

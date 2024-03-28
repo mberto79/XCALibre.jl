@@ -42,7 +42,7 @@ boundaryElements
 
 @time cell_nodes_range=FVM_1D.UNV_3D.generate_cell_nodes_range(volumes) #0.008669 seconds
 @time face_nodes_range=FVM_1D.UNV_3D.generate_face_nodes_range(faces) #0.011004 seconds
-@time all_cell_faces_range=FVM_1D.UNV_3D.generate_all_faces_range(volumes) #0.010706 seconds
+@time all_cell_faces_range=FVM_1D.UNV_3D.generate_all_cell_faces_range(volumes) #0.010706 seconds
 
 @time cells_centre=FVM_1D.UNV_3D.calculate_centre_cell(volumes,nodes) #0.026527 seconds
 

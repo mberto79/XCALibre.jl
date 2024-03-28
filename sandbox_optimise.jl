@@ -70,14 +70,43 @@ boundaryElements
 
 
 #work
+bfaces
+boundary_faces1
+all_cell_faces
+all_cell_faces_range
+#function generate_boundary_cells(boundary_faces, all_cell_faces, all_cell_faces_range)
+    boundary_cells = Int64[]
+    store = Int64[]
+    for ic = 1:length(bfaces)
+        for i in eachindex(all_cell_faces)
+            for ip in eachindex(bfaces[ic].faces)
+                if all_cell_faces[i] == bfaces[ic].faces[ip]
+                    push!(store, i)
+                end
+            end
+        end
+    end
+    store
 
+    for ic = 1:length(store)
+        for i = 1:length(all_cell_faces_range)
+            if cell_faces_range[i][1] <= store[ic] <= cell_faces_range[i][end]
+                push!(boundary_cells, i)
+            end
+        end
+    end
+    return boundary_cells
+#end
+
+
+boundary_faces1
 #function generate_boundary_cells(boundary_faces, cell_faces, cell_faces_range)
     boundary_cells = Int64[]
     store = Int64[]
-    for ic = 1:length(boundary_faces)
-        for i in eachindex(cell_faces)
-            if cell_faces[i] == boundary_faces[ic]
-                push!(store, i)
+    for ic = 1:length(boundary_faces1)
+        for i in eachindex(all_cell_faces)
+            if all_cell_faces[i] == boundary_faces1[ic]
+                push!(store, boundary_faces1[ic])
             end
         end
     end
@@ -92,3 +121,6 @@ boundaryElements
     end
     return boundary_cells
 #end
+
+bfaces[12]
+volumes[1].volumes

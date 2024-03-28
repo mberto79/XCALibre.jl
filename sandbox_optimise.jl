@@ -70,12 +70,66 @@ boundaryElements
 
 
 #work
-function generate_boundaries(boundaryElements, boundary_face_range1)
-    boundaries = Vector{Boundary{Symbol,UnitRange{Int64}}}(undef,length(boundaryElements))
-    for i = eachindex(boundaryElements)
-        boundaries[i] = Boundary(Symbol(boundaryElements[i].name), boundary_face_range1[i])
+function calculate_face_area(nodes, faces) # Need to shorten
+    face_area= Vector{Float64}(undef,length(faces))
+    for i = eachindex(faces)
+        if faces[i].faceCount == 3
+            n1 = nodes[faces[i].faces[1]].coords
+            n2 = nodes[faces[i].faces[2]].coords
+            n3 = nodes[faces[i].faces[3]].coords
+
+            t1x = n2[1] - n1[1]
+            t1y = n2[2] - n1[2]
+            t1z = n2[3] - n1[3]
+
+            t2x = n3[1] - n1[1]
+            t2y = n3[2] - n1[2]
+            t2z = n3[3] - n1[3]
+
+            area2 = (t1y * t2z - t1z * t2y)^2 + (t1x * t2z - t1z * t2x)^2 + (t1y * t2x - t1x * t2y)^2
+            area = sqrt(area2) / 2
+            face_area[i]= area
+        end
+
+        if faces[i].faceCount > 3
+            n1 = nodes[faces[i].faces[1]].coords
+            n2 = nodes[faces[i].faces[2]].coords
+            n3 = nodes[faces[i].faces[3]].coords
+
+            t1x = n2[1] - n1[1]
+            t1y = n2[2] - n1[2]
+            t1z = n2[3] - n1[3]
+
+            t2x = n3[1] - n1[1]
+            t2y = n3[2] - n1[2]
+            t2z = n3[3] - n1[3]
+
+            area2 = (t1y * t2z - t1z * t2y)^2 + (t1x * t2z - t1z * t2x)^2 + (t1y * t2x - t1x * t2y)^2
+            area = sqrt(area2) / 2
+
+            for ic = 4:faces[i].faceCount
+                n1 = nodes[faces[i].faces[ic]].coords
+                n2 = nodes[faces[i].faces[2]].coords
+                n3 = nodes[faces[i].faces[3]].coords
+
+                t1x = n2[1] - n1[1]
+                t1y = n2[2] - n1[2]
+                t1z = n2[3] - n1[3]
+
+                t2x = n3[1] - n1[1]
+                t2y = n3[2] - n1[2]
+                t2z = n3[3] - n1[3]
+
+                area2 = (t1y * t2z - t1z * t2y)^2 + (t1x * t2z - t1z * t2x)^2 + (t1y * t2x - t1x * t2y)^2
+                area = area + sqrt(area2) / 2
+
+            end
+
+            face_area[i]=area
+
+        end
     end
-    return boundaries
+    return face_area
 end
 
-generate_boundaries(boundaryElements, boundary_face_range1)
+@time calculate_face_area(nodes, faces)

@@ -37,7 +37,7 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
 
         face_ownerCells = generate_face_ownerCells(faces, all_cell_faces, all_cell_faces_range) #New method approach needed
 
-        faces_area = calculate_face_area(nodes, faces)
+        faces_area = calculate_face_area(nodes, faces) #Rewrite needed
         faces_centre = calculate_face_centre(faces, nodes)
         faces_normal = calculate_face_normal(nodes, faces, face_ownerCells, cells_centre, faces_centre)
         faces_e, faces_delta, faces_weight = calculate_face_properties(faces, face_ownerCells, cells_centre, faces_centre, faces_normal)
@@ -204,8 +204,8 @@ function calculate_face_centre(faces, nodes)
 end
 
 function calculate_face_area(nodes, faces) # Need to shorten
-    area_store = Float64[]
-    for i = 1:length(faces)
+    face_area= Vector{Float64}(undef,length(faces))
+    for i = eachindex(faces)
         if faces[i].faceCount == 3
             n1 = nodes[faces[i].faces[1]].coords
             n2 = nodes[faces[i].faces[2]].coords
@@ -221,7 +221,7 @@ function calculate_face_area(nodes, faces) # Need to shorten
 
             area2 = (t1y * t2z - t1z * t2y)^2 + (t1x * t2z - t1z * t2x)^2 + (t1y * t2x - t1x * t2y)^2
             area = sqrt(area2) / 2
-            push!(area_store, area)
+            face_area[i]= area
         end
 
         if faces[i].faceCount > 3
@@ -258,11 +258,11 @@ function calculate_face_area(nodes, faces) # Need to shorten
 
             end
 
-            push!(area_store, area)
+            face_area[i]=area
 
         end
     end
-    return area_store
+    return face_area
 end
 
 function generate_cell_faces(bfaces, volumes, all_cell_faces)

@@ -28,6 +28,9 @@ mesh = build_mesh3D(unv_mesh)
 #2) face_ownerCells (unsuccsessful)
 #3) cell neighbours (unsuccsessful)
 
+@time cell_nodes = FVM_1D.UNV_3D.generate_cell_nodes(volumes) #0.011821 seconds
+@time cell_nodes_range = FVM_1D.UNV_3D.generate_cell_nodes_range(volumes) #0.008669 seconds
+
 @time node_cells, node_cells_range = FVM_1D.UNV_3D.generate_node_cells(points, volumes)
 
 @time nodes = FVM_1D.UNV_3D.generate_nodes(points, cells_range)
@@ -42,11 +45,9 @@ mesh = build_mesh3D(unv_mesh)
 # NOTE: A function will be needed here to reorder the nodes IDs of "faces" to be geometrically sound! (not needed for tet cells though)
 
 @time face_nodes = FVM_1D.UNV_3D.generate_face_nodes(faces) #0.014925 seconds
-@time cell_nodes = FVM_1D.UNV_3D.generate_cell_nodes(volumes) #0.011821 seconds
 
 @time all_cell_faces = FVM_1D.UNV_3D.generate_all_cell_faces(faces, cell_face_nodes) #0.526907 seconds
 
-@time cell_nodes_range = FVM_1D.UNV_3D.generate_cell_nodes_range(volumes) #0.008669 seconds
 @time face_nodes_range = FVM_1D.UNV_3D.generate_face_nodes_range(faces) #0.011004 seconds
 @time all_cell_faces_range = FVM_1D.UNV_3D.generate_all_cell_faces_range(volumes) #0.010706 seconds
 

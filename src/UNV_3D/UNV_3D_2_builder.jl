@@ -11,6 +11,9 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
         println("File Read Successfully")
         println("Generating Mesh...")
 
+        cell_nodes = generate_cell_nodes(volumes) #Removed push
+        cell_nodes_range = generate_cell_nodes_range(volumes) #Removed push
+        
         node_cells, node_cells_range = generate_node_cells(points, volumes) #Rewritten, optimized
         nodes = generate_nodes(points, node_cells_range) #Rewritten, optimzied
 
@@ -21,11 +24,10 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
         boundary_cells = generate_boundary_cells(bfaces, all_cell_faces, all_cell_faces_range) #Rewritten, error found, using face index of boundary_faces instead of bfaces
 
         face_nodes = generate_face_nodes(faces) #Removed push
-        cell_nodes = generate_cell_nodes(volumes) #Removed push
+
 
         all_cell_faces = generate_all_cell_faces(faces, cell_face_nodes) # New method needed
 
-        cell_nodes_range = generate_cell_nodes_range(volumes) #Removed push
         face_nodes_range = generate_face_nodes_range(faces) #Removed Push
         all_cell_faces_range = generate_all_cell_faces_range(volumes) #Removed push
 

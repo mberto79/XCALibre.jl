@@ -11,8 +11,8 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
         println("File Read Successfully")
         println("Generating Mesh...")
 
-        node_cells, cells_range = generate_node_cells(points, volumes) #Rewritten, optimized
-        nodes = generate_nodes(points, cells_range) #Rewritten, optimzied
+        node_cells, node_cells_range = generate_node_cells(points, volumes) #Rewritten, optimized
+        nodes = generate_nodes(points, node_cells_range) #Rewritten, optimzied
 
         faces_nodesIDs, owners_cellIDs = generate_internal_faces(volumes, bfaces, nodes, node_cells) 
 
@@ -81,15 +81,15 @@ function generate_node_cells(points, volumes)
 
     index = 0 # change to node cells index
     node_cells = zeros(Int64, node_cells_size)
-    cells_range = [UnitRange{Int64}(1, 1) for _ ∈ eachindex(points)]
+    node_cells_range = [UnitRange{Int64}(1, 1) for _ ∈ eachindex(points)]
     for (nodeID, cellsID) ∈ enumerate(temp_node_cells)
         for cellID ∈ cellsID
             index += 1
             node_cells[index] = cellID
         end
-        cells_range[nodeID] = UnitRange{Int64}(index - length(cellsID) + 1, index)
+        node_cells_range[nodeID] = UnitRange{Int64}(index - length(cellsID) + 1, index)
     end
-    return node_cells, cells_range
+    return node_cells, node_cells_range
 end
 
 function generate_nodes(points, cells_range)

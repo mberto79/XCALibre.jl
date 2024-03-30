@@ -8,7 +8,7 @@ unv_mesh = "src/UNV_3D/5_cell_new_boundaries.unv"
 unv_mesh = "unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.08m.unv"
 unv_mesh = "unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.06m.unv"
 unv_mesh = "unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.04m.unv"
-unv_mesh = "unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.015m.unv"
+unv_mesh = "unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.03m.unv"
 #unv_mesh="src/UNV_3D/Quad_cell_new_boundaries.unv"
 
 
@@ -28,7 +28,7 @@ mesh = build_mesh3D(unv_mesh)
 #2) face_ownerCells (unsuccsessful)
 #3) cell neighbours (unsuccsessful)
 
-@time node_cells, cells_range = FVM_1D.UNV_3D.generate_node_cells(points, volumes)
+@time node_cells, node_cells_range = FVM_1D.UNV_3D.generate_node_cells(points, volumes)
 
 @time nodes = FVM_1D.UNV_3D.generate_nodes(points, cells_range)
 

@@ -33,8 +33,10 @@ mesh = build_mesh3D(unv_mesh)
 @time nodes = FVM_1D.UNV_3D.generate_nodes(points, cells_range)
 
 # @time ifaces,faces,cell_face_nodes=FVM_1D.UNV_3D.generate_tet_internal_faces(volumes,bfaces) #0.065681 seconds
-@time ifaces, faces, cell_face_nodes = FVM_1D.UNV_3D.generate_tet_internal_faces(volumes, bfaces) #0.065681 seconds
+@time faces_nodesIDs, owners_cellIDs = FVM_1D.UNV_3D.generate_internal_faces(volumes, bfaces, nodes, node_cells) #0.065681 seconds
 #faces=quad_internal_faces(volumes,faces)
+
+# NOTE: A function will be needed here to reorder the nodes IDs of "faces" to be geometrically sound! (not needed for tet cells though)
 
 @time face_nodes = FVM_1D.UNV_3D.generate_face_nodes(faces) #0.014925 seconds
 @time cell_nodes = FVM_1D.UNV_3D.generate_cell_nodes(volumes) #0.011821 seconds

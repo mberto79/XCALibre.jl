@@ -572,28 +572,6 @@ function generate_boundary_cells(bfaces, all_cell_faces, all_cell_faces_range)
     return boundary_cells
 end
 
-# function generate_boundary_cells(boundary_faces, cell_faces, cell_faces_range)
-#     boundary_cells = Int64[]
-#     store = Int64[]
-#     for ic = 1:length(boundary_faces)
-#         for i in eachindex(cell_faces)
-#             if cell_faces[i] == boundary_faces[ic]
-#                 push!(store, i)
-#             end
-#         end
-#     end
-#     store
-
-#     for ic = 1:length(store)
-#         for i = 1:length(cell_faces_range)
-#             if cell_faces_range[i][1] <= store[ic] <= cell_faces_range[i][end]
-#                 push!(boundary_cells, i)
-#             end
-#         end
-#     end
-#     return boundary_cells
-# end
-
 function generate_boundary_faces(boundaryElements,bfaces) #Only works if all bc have more than 1 face, which is very unlikely
     boundary_faces = Vector{Int64}(undef,length(bfaces)) #Same length as bfaces
     counter = 0
@@ -607,28 +585,6 @@ function generate_boundary_faces(boundaryElements,bfaces) #Only works if all bc 
     end
     return boundary_faces, boundary_face_range
 end
-
-# function generate_boundary_faces(boundaryElements)
-#     boundary_faces = Int64[]
-#     z = 0
-#     wipe = Int64[]
-#     boundary_face_range = UnitRange{Int64}[]
-#     for i = 1:length(boundaryElements)
-#         for n = 1:length(boundaryElements[i].elements)
-#             push!(boundary_faces, boundaryElements[i].elements[n])
-#             push!(wipe, boundaryElements[i].elements[n])
-#         end
-#         if length(wipe) == 1
-#             push!(boundary_face_range, UnitRange(boundaryElements[i].elements[1], boundaryElements[i].elements[1]))
-#             z = z + 1
-#         elseif length(wipe) ≠ 1
-#             push!(boundary_face_range, UnitRange(boundaryElements[i].elements[1], boundaryElements[i].elements[end]))
-#             z = z + length(wipe)
-#         end
-#         wipe = Int64[]
-#     end
-#     return boundary_faces, boundary_face_range
-# end
 
 function generate_face_ownerCells(faces, all_cell_faces, all_cell_faces_range)
     cell_face_index = Vector{Vector{Int64}}(undef, length(faces))
@@ -655,51 +611,6 @@ function generate_face_ownerCells(faces, all_cell_faces, all_cell_faces_range)
     return face_owners
 end
 
-# function generate_face_ownerCells(faces,all_cell_faces,volumes,all_cell_faces_range)
-#     x=Vector{Int64}[]
-#     for i=1:length(faces)
-#         push!(x,findall(x->x==i,all_cell_faces))
-#     end
-#     y=zeros(Int,length(x),2)
-#     for ic=1:length(volumes)
-#         for i=1:length(x)
-#             #if length(x[i])==1
-#                 if all_cell_faces_range[ic][1]<=x[i][1]<=all_cell_faces_range[ic][end]
-#                     y[i,1]=ic
-#                     y[i,2]=ic
-#                 end
-#             #end
-
-#             if length(x[i])==2
-#                 if all_cell_faces_range[ic][1]<=x[i][2]<=all_cell_faces_range[ic][end]
-#                     #y[i]=ic
-#                     y[i,2]=ic
-
-#                 end
-#             end
-
-#         end
-#     end
-#     return y
-# end
-
-
-
-# function generate_nodes(points,cells_range)
-#     # nodes=Node{SVector{3,Float64}, UnitRange{Int64}}[]
-#     nnodes = length(points)
-#     nodes = [Node(SVector{3,Float64}(0.0,0.0,0.0), 1:1) for i ∈ 1:nnodes]
-#     tnode = Node(SVector{3,Float64}(0.0,0.0,0.0), 1:1) # temporary node object used to rewrite
-#     @inbounds for i ∈ 1:length(points)
-#         #point=points[i].xyz
-#         # push!(nodes,Node(points[i].xyz,cells_range[i]))
-#         tnode = @reset tnode.coords = points[i].xyz
-#         tnode = @reset tnode.cells_range = cells_range[i]
-#         nodes[i] = tnode # overwrite preallocated array with temporary node
-#     end
-#     return nodes
-# end
-
 #Generate Faces
 
 function generate_face_nodes(faces)
@@ -714,16 +625,6 @@ function generate_face_nodes(faces)
     return face_nodes
 end
 
-# function generate_face_nodes(faces)
-#     face_nodes=typeof(faces[1].faces[1])[] # Giving type to array constructor
-#     for n=1:length(faces)
-#         for i=1:faces[n].faceCount
-#             push!(face_nodes,faces[n].faces[i])
-#         end
-#     end
-#     return face_nodes
-# end
-
 #Generate cells
 function generate_cell_nodes(volumes)
     cell_nodes = Vector{Int64}(undef, length(volumes) * 4) #length of cells times number of nodes per cell
@@ -736,29 +637,6 @@ function generate_cell_nodes(volumes)
     end
     return cell_nodes
 end
-
-# function generate_cell_nodes(volumes)
-#     cell_nodes=typeof(volumes[1].volumes[1])[] # Giving type to array constructor
-#     for n=1:length(volumes)
-#         for i=1:volumes[n].volumeCount
-#             push!(cell_nodes,volumes[n].volumes[i])
-#         end
-#     end
-#     return cell_nodes
-# end
-
-# function generate_all_cell_faces(faces,cell_face_nodes)
-#     all_cell_faces=Int[]
-#     sorted_faces=Vector{Int}[]
-#     for i=1:length(faces)
-#         push!(sorted_faces,sort(faces[i].faces))
-#     end
-
-#     for i=1:length(cell_face_nodes)
-#         push!(all_cell_faces,findfirst(x -> x==cell_face_nodes[i],sorted_faces))
-#     end
-#     return all_cell_faces
-# end
 
 function generate_all_cell_faces(faces, cell_face_nodes)
     sorted_faces = Vector{Vector{Int64}}(undef, length(faces))
@@ -784,18 +662,6 @@ function generate_cell_nodes_range(volumes)
     return cell_nodes_range
 end
 
-# function generate_cell_nodes_range(volumes)
-#     cell_nodes_range=UnitRange(0,0)
-#     store=typeof(cell_nodes_range)[]
-#     x=0
-#     for i=1:length(volumes)
-#         cell_nodes_range=UnitRange(x+1,x+length(volumes[i].volumes))
-#         x=x+length(volumes[i].volumes)
-#         push!(store,cell_nodes_range)
-#     end
-#     return store
-# end
-
 
 function generate_face_nodes_range(faces)
     face_nodes_range = Vector{UnitRange{Int64}}(undef, length(faces))
@@ -806,18 +672,6 @@ function generate_face_nodes_range(faces)
     end
     return face_nodes_range
 end
-
-# function generate_face_nodes_range(faces)
-#     face_nodes_range=UnitRange(0,0)
-#     store=typeof(face_nodes_range)[]
-#     x=0
-#     for i=1:length(faces)
-#         face_nodes_range=UnitRange(x+1,x+faces[i].faceCount)
-#         x=x+faces[i].faceCount
-#         push!(store,face_nodes_range)
-#     end
-#     return store
-# end
 
 function generate_all_cell_faces_range(volumes)
     cell_faces_range = Vector{UnitRange{Int64}}(undef, length(volumes))
@@ -837,28 +691,6 @@ function generate_all_cell_faces_range(volumes)
     end
     return cell_faces_range
 end
-
-# function generate_all_faces_range(volumes)
-#     cell_faces_range=UnitRange(0,0)
-#     store=typeof(cell_faces_range)[]
-#     x=0
-#     @inbounds for i=1:length(volumes)
-#         #Tetra
-#         if length(volumes[i].volumes)==4
-#             cell_faces_range=UnitRange(x+1,x+4)
-#             x=x+4
-#             push!(store,cell_faces_range)
-#         end
-
-#         #Hexa
-#         if length(volumes[i].volumes)==8
-#                 cell_faces_range=UnitRange(x+1,x+6)
-#                 x=x+6
-#                 push!(store,cell_faces_range)
-#         end
-#     end
-#     return store
-# end
 
 #Generate cells
 function generate_cells(volumes, cells_centre, cells_volume, cell_nodes_range, cell_faces_range)

@@ -1,4 +1,4 @@
-export boundary_faces
+export _boundary_faces
 export check_face_owners
 export check_cell_face_nodes
 export check_node_cells
@@ -6,7 +6,7 @@ export check_all_cell_faces
 export check_boundary_faces
 
 # Function to work out number of boundary faces (based on boundary IDs_range)
-function boundary_faces(mesh)
+function _boundary_faces(mesh)
     nbfaces = 0 # number of boundary faces
     for boundary ∈ mesh.boundaries
         nbfaces = max(nbfaces, maximum(boundary.IDs_range))

@@ -35,13 +35,15 @@ mesh = build_mesh3D(unv_mesh)
 
 @time nodes = FVM_1D.UNV_3D.generate_nodes(points, node_cells_range)
 
-@time boundary_faces1, boundary_face_range1 = FVM_1D.UNV_3D.generate_boundary_faces(boundaryElements, bfaces) #0.036406 seconds
+@time boundary_faces, boundary_face_range = FVM_1D.UNV_3D.generate_boundary_faces(boundaryElements, bfaces) #0.036406 seconds
+@time FVM_1D.UNV_3D.generate_boundary_faces(boundaryElements, bfaces) #0.036406 seconds
+
+@time boundaries = FVM_1D.UNV_3D.generate_boundaries(boundaryElements, boundary_face_range1) #0.009460 seconds 
+
+@time boundary_cells = FVM_1D.UNV_3D.generate_boundary_cells(bfaces, all_cell_faces, all_cell_faces_range) #0.093407 seconds
 
 @time faces_nodesIDs, owners_cellIDs = FVM_1D.UNV_3D.generate_internal_faces(volumes, bfaces, nodes, node_cells) #0.065681 seconds
 #faces=quad_internal_faces(volumes,faces)
-
-
-@time boundary_cells = FVM_1D.UNV_3D.generate_boundary_cells(bfaces, all_cell_faces, all_cell_faces_range) #0.093407 seconds
 
 # NOTE: A function will be needed here to reorder the nodes IDs of "faces" to be geometrically sound! (not needed for tet cells though)
 
@@ -58,7 +60,7 @@ mesh = build_mesh3D(unv_mesh)
 
 @time cell_faces, cell_faces_range = FVM_1D.UNV_3D.generate_cell_faces(bfaces, volumes, all_cell_faces) #0.055045 seconds
 
-@time boundaries = FVM_1D.UNV_3D.generate_boundaries(boundaryElements, boundary_face_range1) #0.009460 seconds 
+
 
 @time face_ownerCells = FVM_1D.UNV_3D.generate_face_ownerCells(faces, all_cell_faces, all_cell_faces_range) #0.535271 seconds
 

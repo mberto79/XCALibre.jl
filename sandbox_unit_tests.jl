@@ -26,7 +26,7 @@ mesh,cell_face_nodes, node_cells, all_cell_faces,boundary_cells,boundary_faces,a
 
 @time faces_checked, results = check_face_owners(mesh)
 @time check_cell_face_nodes(mesh,cell_face_nodes)
-@time boundary_faces(mesh)
+@time _boundary_faces(mesh)
 @time check_node_cells(mesh,node_cells)
 @time check_all_cell_faces(mesh,all_cell_faces)
 @time check_boundary_faces(boundary_cells,boundary_faces,all_cell_faces,all_cell_faces_range)

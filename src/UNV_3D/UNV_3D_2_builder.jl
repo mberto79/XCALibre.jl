@@ -21,7 +21,10 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
 
         boundary_faces, boundary_face_range = generate_boundary_faces(boundaryElements,bfaces) #Rewritten
         
+        boundaries = generate_boundaries(boundaryElements, boundary_face_range) #Removed push
+
         boundary_cells = generate_boundary_cells(bfaces, all_cell_faces, all_cell_faces_range) #Rewritten, error found, using face index of boundary_faces instead of bfaces
+
 
         face_nodes = generate_face_nodes(faces) #Removed push
 
@@ -36,8 +39,6 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
         
 
         cell_faces, cell_faces_range = generate_cell_faces(bfaces, volumes, all_cell_faces) # Removed push
-
-        boundaries = generate_boundaries(boundaryElements, boundary_face_range) #Removed push
 
         face_ownerCells = generate_face_ownerCells(faces, all_cell_faces, all_cell_faces_range) #New method approach needed
 

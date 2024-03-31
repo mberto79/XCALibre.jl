@@ -13,7 +13,7 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
 
         cell_nodes = generate_cell_nodes(volumes) #Removed push
         cell_nodes_range = generate_cell_nodes_range(volumes) #Removed push
-        
+
         node_cells, node_cells_range = generate_node_cells(points, volumes) #Rewritten, optimized
         nodes = generate_nodes(points, node_cells_range) #Rewritten, optimzied
 
@@ -629,7 +629,7 @@ end
 
 #Generate cells
 function generate_cell_nodes(volumes)
-    cell_nodes = Vector{Int64}(undef, length(volumes) * 4) #length of cells times number of nodes per cell
+    cell_nodes = Vector{Int64}(undef, length(volumes) * 4) #length of cells times number of nodes per cell (tet only)
     counter = 0
     for n = eachindex(volumes)
         for i = 1:volumes[n].volumeCount

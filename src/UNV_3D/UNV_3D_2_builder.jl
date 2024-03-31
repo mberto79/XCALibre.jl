@@ -640,6 +640,17 @@ function generate_cell_nodes(volumes)
     return cell_nodes
 end
 
+#Nodes Range
+function generate_cell_nodes_range(volumes)
+    cell_nodes_range = Vector{UnitRange{Int64}}(undef, length(volumes))
+    x = 0
+    for i = eachindex(volumes)
+        cell_nodes_range[i] = UnitRange(x + 1, x + length(volumes[i].volumes))
+        x = x + length(volumes[i].volumes)
+    end
+    return cell_nodes_range
+end
+
 function generate_all_cell_faces(faces, cell_face_nodes)
     sorted_faces = Vector{Vector{Int64}}(undef, length(faces))
     for i = 1:length(faces)
@@ -653,16 +664,7 @@ function generate_all_cell_faces(faces, cell_face_nodes)
     return all_cell_faces
 end
 
-#Nodes Range
-function generate_cell_nodes_range(volumes)
-    cell_nodes_range = Vector{UnitRange{Int64}}(undef, length(volumes))
-    x = 0
-    for i = eachindex(volumes)
-        cell_nodes_range[i] = UnitRange(x + 1, x + length(volumes[i].volumes))
-        x = x + length(volumes[i].volumes)
-    end
-    return cell_nodes_range
-end
+
 
 
 function generate_face_nodes_range(faces)

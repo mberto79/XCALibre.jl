@@ -38,9 +38,22 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
         face_nodes_range = vcat(bface_nodes_range, iface_nodes_range)
         face_owner_cells = vcat(bface_owners_cells, iface_owners_cells)
 
+        # Sort out cell to face connectivity
         cell_faces, cell_nsign, cell_faces_range, cell_neighbours = begin
             generate_cell_face_connectivity(volumes, bfaces, face_owner_cells)
         end
+
+        # Build mesh (without calculation of geometry/properties)
+        cells = build_cells()
+        faces = build_faces()
+        mesh = build_mesh()
+
+        # Update mesh to include all geometry calculations required
+        calculate_centres!(mesh)
+        calculate_face_properties!(mesh)
+        calculate_area_and_volume!(mesh)
+
+        return mesh
 
 #=
         face_nodes = generate_face_nodes(faces) #Removed push

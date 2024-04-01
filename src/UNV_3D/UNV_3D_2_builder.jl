@@ -44,8 +44,8 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
         end
 
         # Build mesh (without calculation of geometry/properties)
-        cells = build_cells()
-        faces = build_faces()
+        cells = build_cells(cell_nodes_range, cell_faces_range)
+        faces = build_faces(face_nodes_range, face_owner_cells)
         mesh = build_mesh()
 
         # Update mesh to include all geometry calculations required
@@ -101,6 +101,37 @@ get_data(array, range, index) = @view array[range[index]]
 nodeIDs = get_data
 faceIDs = get_data
 cellIDs = get_data
+
+# BUILD mesh functions
+
+build_cells(cell_nodes_range, cell_faces_range) = begin
+    nothing
+    # return cells
+end
+
+build_faces(face_nodes_range, face_owner_cells) = begin
+    nothing
+    # return faces
+end
+
+build_mesh() = begin
+    nothing
+    # return mesh
+end
+
+# CALCULATION of mesh properties
+
+calculate_centres!(mesh) = begin
+    nothing
+end
+
+calculate_face_properties!(mesh) = begin
+    nothing
+end
+
+calculate_area_and_volume!(mesh) = begin
+    nothing
+end
 
 # Node connectivity
 

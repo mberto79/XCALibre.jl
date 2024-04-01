@@ -44,14 +44,14 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
         end
 
         # Build mesh (without calculation of geometry/properties)
-        cells = build_cells(cell_nodes_range, cell_faces_range)
-        faces = build_faces(face_nodes_range, face_owner_cells)
-        mesh = build_mesh()
+        # cells = build_cells(cell_nodes_range, cell_faces_range)
+        # faces = build_faces(face_nodes_range, face_owner_cells)
+        # mesh = build_mesh()
 
         # Update mesh to include all geometry calculations required
-        calculate_centres!(mesh)
-        calculate_face_properties!(mesh)
-        calculate_area_and_volume!(mesh)
+        # calculate_centres!(mesh)
+        # calculate_face_properties!(mesh)
+        # calculate_area_and_volume!(mesh)
 
         return mesh
 

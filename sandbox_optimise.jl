@@ -57,6 +57,7 @@ end
     FVM_1D.UNV_3D.generate_cell_face_connectivity(volumes, bfaces, face_owner_cells)
 end
 
+@time cells = FVM_1D.UNV_3D.build_cells(cell_nodes_range, cell_faces_range)
 
 
 @time cells_centre = FVM_1D.UNV_3D.calculate_centre_cell(volumes, nodes) #0.026527 seconds

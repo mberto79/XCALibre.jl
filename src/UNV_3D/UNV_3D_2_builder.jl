@@ -44,7 +44,7 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
         end
 
         # Build mesh (without calculation of geometry/properties)
-        # cells = build_cells(cell_nodes_range, cell_faces_range)
+        cells = build_cells(cell_nodes_range, cell_faces_range)
         # faces = build_faces(face_nodes_range, face_owner_cells)
         # mesh = build_mesh()
 
@@ -106,8 +106,25 @@ cellIDs = get_data
 # BUILD mesh functions
 
 build_cells(cell_nodes_range, cell_faces_range) = begin
-    nothing
-    # return cells
+    cells = [Cell(
+        SVector{3,Float64}(0.0,0.0,0.0),
+        zero(Float64),
+        UnitRange{Int64}(0,0),
+        UnitRange{Int64}(0,0)
+    ) for _ ∈ eachindex(cell_faces_range)]
+    
+    for cID ∈ eachindex(cell_nodes_range)
+        nothing
+    end
+
+
+    # struct Cell{F<:AbstractFloat, SV3<:SVector{3,F},UR<:UnitRange{<:Integer}}
+    #     centre::SV3
+    #     volume::F
+    #     nodes_range::UR
+    #     faces_range::UR
+    # end
+    return cells
 end
 
 build_faces(face_nodes_range, face_owner_cells) = begin

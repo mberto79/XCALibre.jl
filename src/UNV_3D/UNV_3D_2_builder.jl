@@ -21,12 +21,27 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
             generate_boundary_faces(boundaryElements, bfaces, node_cells, node_cells_range, volumes)
         end
 
-        iface_nodes, iface_owners_cells = 
+        iface_nodes, iface_nodes_range, iface_owners_cells = 
         begin 
             generate_internal_faces(volumes, bfaces, nodes, node_cells)
         end
 
         # NOTE: A function will be needed here to reorder the nodes IDs of "faces" to be geometrically sound! (not needed for tet cells though)
+
+        # Shift range of nodes_range for internal faces (since it will be appended)
+        iface_nodes_range .= [
+            iface_nodes_range[i] .+ length(bface_nodes) for i ∈ eachindex(iface_nodes_range)
+            ]
+
+        # Concatenate boundary and internal faces
+        face_nodes = vcat(bface_nodes, iface_nodes)
+        face_nodes_range = vcat(bface_nodes_range, iface_nodes_range)
+        face_owner_cells = vcat(bface_owners_cells, iface_owners_cells)
+
+        cell_faces, cell_nsign, cell_faces_range, cell_neighbours = begin
+            generate_cell_face_connectivity(volumes, bfaces, face_owner_cells)
+        end
+
 #=
         face_nodes = generate_face_nodes(faces) #Removed push
 
@@ -471,18 +486,18 @@ function generate_internal_faces(volumes, bfaces, nodes, node_cells)
     sort!.(owners_cellIDs) # in-place sorting
 
     # Extract nodesIDs for each face from all cells into a vector of vectors
-    faces_nodesIDs = Vector{Int64}[Int64[] for _ ∈ 1:total_faces] # nodesID for all faces
+    face_nodes = Vector{Int64}[Int64[] for _ ∈ 1:total_faces] # nodesID for all faces
     fID = 0 # counter to keep track of faceID
     for celli_faces_nodeIDs ∈ cells_faces_nodeIDs
         for nodesID ∈ celli_faces_nodeIDs
             fID += 1
-            faces_nodesIDs[fID] = nodesID
+            face_nodes[fID] = nodesID
         end
     end
 
     # Remove duplicates
-    unique_indices = unique(i -> faces_nodesIDs[i], eachindex(faces_nodesIDs))
-    unique!(faces_nodesIDs)
+    unique_indices = unique(i -> face_nodes[i], eachindex(face_nodes))
+    unique!(face_nodes)
     keepat!(owners_cellIDs, unique_indices)
 
     # Remove boundary faces
@@ -504,12 +519,64 @@ function generate_internal_faces(volumes, bfaces, nodes, node_cells)
     end
 
     deleteat!(owners_cellIDs, bfaces_indices)
-    deleteat!(faces_nodesIDs, bfaces_indices)
+    deleteat!(face_nodes, bfaces_indices)
 
     println("Removing ", total_bfaces, " (from ", length(bfaces), ") boundary faces")
 
-    return faces_nodesIDs, owners_cellIDs
+    # Generate face_nodes_range
+    face_nodes_range = Vector{UnitRange{Int64}}(undef, length(face_nodes))
+    start = 1
+    for (fID, nodesID) ∈ enumerate(face_nodes)
+        nnodes = length(nodesID)
+        face_nodes_range[fID] = UnitRange{Int64}(start:(start + nnodes - 1))
+        start += nnodes
+    end
 
+    # Flatten array i.e. go from Vector{Vector{Int}} to Vector{Int}
+    face_nodes = vcat(face_nodes...) 
+
+    return face_nodes, face_nodes_range, owners_cellIDs
+
+end
+
+function generate_cell_face_connectivity(volumes, bfaces, face_owner_cells)
+    cell_faces = Vector{Int64}[Int64[] for _ ∈ eachindex(volumes)] 
+    cell_nsign = Vector{Int64}[Int64[] for _ ∈ eachindex(volumes)] 
+    cell_neighbours = Vector{Int64}[Int64[] for _ ∈ eachindex(volumes)] 
+    cell_faces_range = UnitRange{Int64}[UnitRange{Int64}(0,0) for _ ∈ eachindex(volumes)] 
+
+    # Pass face ID to each cell
+    first_internal_face = length(bfaces) + 1
+    total_faces = length(face_owner_cells)
+    for fID ∈ first_internal_face:total_faces
+        owners = face_owner_cells[fID] # 2 cell owners IDs
+        owner1 = owners[1]
+        owner2 = owners[2]
+        push!(cell_faces[owner1], fID)       
+        push!(cell_faces[owner2], fID)
+        push!(cell_nsign[owner1], 1) # Contract: Face normal goes from owner 1 to 2      
+        push!(cell_nsign[owner2], -1)   
+        push!(cell_neighbours[owner1], owner2)     
+        push!(cell_neighbours[owner2], owner1)     
+    end
+
+    # Generate cell faces range
+    start = 1
+    for (cID, faces) ∈ enumerate(cell_faces)
+        nfaces = length(faces)
+        cell_faces_range[cID] = UnitRange{Int64}(start:(start + nfaces - 1))
+        start += nfaces
+    end
+
+    # Flatten output (go from Vector{Vector{Int}} to Vector{Int})
+
+    cell_faces = vcat(cell_faces...)
+    cell_nsign = vcat(cell_nsign...)
+
+    # NOTE: Check how this is being accessed in RANS models (need to flatten)
+    # cell_neighbours = vcat(cell_neighbours...) # Need to check RANSMODELS!!!
+
+    return cell_faces, cell_nsign, cell_faces_range, cell_neighbours
 end
 
 function quad_internal_faces(volumes, faces)
@@ -623,6 +690,8 @@ function generate_boundary_faces(
                 end
             end
     end
+
+    bface_nodes = vcat(bface_nodes...) # Flatten - from Vector{Vector{Int}} to Vector{Int}
 
     return bface_nodes, bface_nodes_range, bowners_cells, boundary_cells
     # return bfaces_nodes, bowners_cells

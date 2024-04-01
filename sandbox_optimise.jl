@@ -39,34 +39,27 @@ begin
         boundaryElements, bfaces, node_cells,node_cells_range, volumes)
 end
 
-@time iface_nodes, iface_owners_cells = 
+@time iface_nodes, iface_nodes_range, iface_owners_cells = 
 begin
     FVM_1D.UNV_3D.generate_internal_faces(volumes, bfaces, nodes, node_cells)
 end
 
+# shift range
+@time iface_nodes_range .= [
+    iface_nodes_range[i] .+ length(bface_nodes) for i ∈ eachindex(iface_nodes_range)
+    ]
 
-@time faces_nodesIDs, owners_cellIDs = FVM_1D.UNV_3D.generate_internal_faces(volumes, bfaces, nodes, node_cells) #0.065681 seconds
-#faces=quad_internal_faces(volumes,faces)
+@time face_nodes = vcat(bface_nodes, iface_nodes)
+@time face_nodes_range = vcat(bface_nodes_range, iface_nodes_range)
+@time face_owner_cells = vcat(bface_owners_cells, iface_owners_cells)
+
+@time cell_faces, cell_nsign, cell_faces_range, cell_neighbours = begin
+    FVM_1D.UNV_3D.generate_cell_face_connectivity(volumes, bfaces, face_owner_cells)
+end
 
 
-
-@time face_nodes = FVM_1D.UNV_3D.generate_face_nodes(faces) #0.014925 seconds
-
-@time all_cell_faces = FVM_1D.UNV_3D.generate_all_cell_faces(faces, cell_face_nodes) #0.526907 seconds
-
-@time face_nodes_range = FVM_1D.UNV_3D.generate_face_nodes_range(faces) #0.011004 seconds
-@time all_cell_faces_range = FVM_1D.UNV_3D.generate_all_cell_faces_range(volumes) #0.010706 seconds
 
 @time cells_centre = FVM_1D.UNV_3D.calculate_centre_cell(volumes, nodes) #0.026527 seconds
-
-
-
-@time cell_faces, cell_faces_range = FVM_1D.UNV_3D.generate_cell_faces(bfaces, volumes, all_cell_faces) #0.055045 seconds
-
-
-
-@time face_ownerCells = FVM_1D.UNV_3D.generate_face_ownerCells(faces, all_cell_faces, all_cell_faces_range) #0.535271 seconds
-
 @time faces_area = FVM_1D.UNV_3D.calculate_face_area(nodes, faces) #0.037004 seconds
 @time faces_centre = FVM_1D.UNV_3D.calculate_face_centre(faces, nodes) #0.026016 seconds
 @time faces_normal = FVM_1D.UNV_3D.calculate_face_normal(nodes, faces, face_ownerCells, cells_centre, faces_centre) #0.050983 seconds 
@@ -74,12 +67,10 @@ end
 
 @time cells_volume = FVM_1D.UNV_3D.calculate_cell_volume(volumes, all_cell_faces_range, all_cell_faces, faces_normal, cells_centre, faces_centre, face_ownerCells, faces_area) #0.030618 seconds
 
+
 @time cells = FVM_1D.UNV_3D.generate_cells(volumes, cells_centre, cells_volume, cell_nodes_range, cell_faces_range) #0.011763 seconds
 @time cell_neighbours = FVM_1D.UNV_3D.generate_cell_neighbours(cells, cell_faces) #0.497284 seconds
 @time faces = FVM_1D.UNV_3D.generate_faces(faces, face_nodes_range, faces_centre, faces_normal, faces_area, face_ownerCells, faces_e, faces_delta, faces_weight) #0.034309 seconds
-
-@time cell_nsign = FVM_1D.UNV_3D.calculate_cell_nsign(cells, faces, cell_faces) #0.027957 seconds 
-
 
 #work
 function calculate_cell_nsign(cells, faces, cell_faces)

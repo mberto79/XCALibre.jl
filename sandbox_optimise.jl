@@ -28,17 +28,14 @@ mesh = build_mesh3D(unv_mesh)
 #2) face_ownerCells (unsuccsessful)
 #3) cell neighbours (unsuccsessful)
 
-@time cell_nodes = FVM_1D.UNV_3D.generate_cell_nodes(volumes) #0.011821 seconds
-@time cell_nodes_range = FVM_1D.UNV_3D.generate_cell_nodes_range(volumes) #0.008669 seconds
-
-@time node_cells, node_cells_range = FVM_1D.UNV_3D.generate_node_cells(points, volumes)
-
+@time cell_nodes, cell_nodes_range = FVM_1D.UNV_3D.generate_cell_nodes(volumes) 
+@time node_cells, node_cells_range = FVM_1D.UNV_3D.generate_node_cells(points, volumes) 
 @time nodes = FVM_1D.UNV_3D.generate_nodes(points, node_cells_range)
+@time boundaries = FVM_1D.UNV_3D.generate_boundaries(boundaryElements) 
 
 @time boundary_faces, boundary_face_range = FVM_1D.UNV_3D.generate_boundary_faces(boundaryElements, bfaces) #0.036406 seconds
 @time FVM_1D.UNV_3D.generate_boundary_faces(boundaryElements, bfaces) #0.036406 seconds
 
-@time boundaries = FVM_1D.UNV_3D.generate_boundaries(boundaryElements, boundary_face_range1) #0.009460 seconds 
 
 @time boundary_cells = FVM_1D.UNV_3D.generate_boundary_cells(bfaces, all_cell_faces, all_cell_faces_range) #0.093407 seconds
 

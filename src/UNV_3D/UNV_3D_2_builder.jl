@@ -13,8 +13,8 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
 
         cell_nodes, cell_nodes_range = generate_cell_nodes(volumes)
         node_cells, node_cells_range = generate_node_cells(points, volumes) 
-        nodes = generate_nodes(points, node_cells_range)
-        boundaries = generate_boundaries(boundaryElements)
+        nodes = build_nodes(points, node_cells_range)
+        boundaries = build_boundaries(boundaryElements)
 
         bface_nodes, bface_nodes_range, bface_owners_cells, boundary_cells = 
         begin
@@ -116,7 +116,7 @@ function generate_node_cells(points, volumes)
     return node_cells, node_cells_range
 end
 
-function generate_nodes(points, cells_range)
+function build_nodes(points, cells_range)
     nodes = [Node(SVector{3, Float64}(0.0,0.0,0.0), 1:1) for _ ∈ eachindex(points)]
     @inbounds for i ∈ eachindex(points)
         nodes[i] =  Node(points[i].xyz, cells_range[i])
@@ -622,7 +622,7 @@ function quad_internal_faces(volumes, faces)
     return faces
 end
 
-function generate_boundaries(boundaryElements)
+function build_boundaries(boundaryElements)
     bfaces_start = 1
     boundaries = Vector{Boundary{Symbol,UnitRange{Int64}}}(undef,length(boundaryElements))
     for (i, boundaryElement) ∈ enumerate(boundaryElements)

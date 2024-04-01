@@ -72,7 +72,7 @@ bound!(field, bound) = begin
         # cellsID = cells[i].neighbours
         # for cID ∈ cellsID
         for fi ∈ cells[i].faces_range
-            cID = cell_neighbours[fi]
+            cID = cell_neighbours[fi] # CHECK IF THIS IS CORRECT!!!
             sum_flux += max(field[cID], eps()) # bounded sum
             sum_area += 1
         end

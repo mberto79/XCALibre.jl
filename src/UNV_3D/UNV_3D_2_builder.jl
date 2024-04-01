@@ -53,7 +53,8 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
         # calculate_face_properties!(mesh)
         # calculate_area_and_volume!(mesh)
 
-        return mesh
+        # return mesh
+        return 0
 
 #=
         face_nodes = generate_face_nodes(faces) #Removed push

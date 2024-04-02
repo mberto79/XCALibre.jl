@@ -20,7 +20,7 @@ function Adapt.adapt_structure(to, itp::Grad{S}) where {S}
     Grad{S,F,R,I,M}(field, result, correctors, correct, mesh)
 end
 
-# Grad outer contructor for scalar field
+# Grad outer constructor for scalar field definition
 
 Grad{S}(phi::ScalarField) where S= begin
     # Retrieve mesh and define grad as vector field
@@ -37,7 +37,7 @@ Grad{S}(phi::ScalarField) where S= begin
     Grad{S,F,R,I,M}(phi, grad, one(I), false, mesh)
 end
 
-# Grad outer contructor for vector field
+# Grad outer constructor for vector field definition
 
 Grad{S}(psi::VectorField) where S = begin
     # Retrieve mesh and define grad as tensor field
@@ -99,7 +99,7 @@ end
 
 ## Orthogonal (uncorrected) gradient calculation
 
-# Vector field function
+# Vector field function definition
 
 function grad!(grad::Grad{Orthogonal,F,R,I,M}, phif, phi, BCs) where {F,R<:VectorField,I,M}
     interpolate!(phif, phi)
@@ -107,7 +107,7 @@ function grad!(grad::Grad{Orthogonal,F,R,I,M}, phif, phi, BCs) where {F,R<:Vecto
     green_gauss!(grad.result.x, grad.result.y, grad.result.z, phif)
 end
 
-# Tensor field function
+# Tensor field function definition
 
 function grad!(grad::Grad{Orthogonal,F,R,I,M}, psif, psi, BCs) where {F,R<:TensorField,I,M}
     interpolate!(psif, psi)
@@ -121,7 +121,7 @@ end
 
 ## Mid-point gradient calculation
 
-# Scalar field calculation
+# Scalar field calculation definition
 
 function interpolate_midpoint!(phif::FaceScalarField, phi::ScalarField)
     # Extract required variables for function
@@ -135,7 +135,7 @@ function interpolate_midpoint!(phif::FaceScalarField, phi::ScalarField)
     KernelAbstractions.synchronize(backend)
 end
 
-# Interpolate kernel for scalar field
+# Interpolate kernel for scalar field definition
 
 @kernel function interpolate_midpoint_scalar!(faces, phif, phi)
     i = @index(Global)
@@ -151,7 +151,7 @@ end
     end
 end
 
-# Interpolate function for vector field (NEEDS KERNEL IMPLEMENTATION!!!!!!)
+# Interpolate function for vector field definition (NEEDS KERNEL IMPLEMENTATION!!!!!!)
 
 interpolate_midpoint!(psif::FaceVectorField, psi::VectorField) = begin
     # Extract individual value vectors from vector field
@@ -186,7 +186,7 @@ interpolate_midpoint!(psif::FaceVectorField, psi::VectorField) = begin
     end
 end
 
-# Correct interpolation function
+# Correct interpolation function definition
 
 function correct_interpolation!(dx, dy, dz, phif, phi)
     # Define required variables for function
@@ -208,7 +208,7 @@ function correct_interpolation!(dx, dy, dz, phif, phi)
     KernelAbstractions.synchronize(backend)
 end
 
-# Correct interpolation kernel
+# Correct interpolation kernel definition
 
 @kernel function correct_interpolation_kernel!(faces, cells, nbfaces, phic, F, weight, dx, dy, dz, values)
     i = @index(Global)
@@ -247,7 +247,7 @@ end
     values[i] = phifᵖ + ∇phi⋅Ri
 end
 
-# Vector field function
+# Vector field function definition
 
 function grad!(grad::Grad{Midpoint,F,R,I,M}, phif, phi, BCs) where {F,R<:VectorField,I,M}
     interpolate_midpoint!(phif, phi)
@@ -261,7 +261,7 @@ function grad!(grad::Grad{Midpoint,F,R,I,M}, phif, phi, BCs) where {F,R<:VectorF
     end
 end
 
-# Tensor field function
+# Tensor field function definition
 
 function grad!(grad::Grad{Midpoint,F,R,I,M}, psif, psi, BCs) where {F,R<:TensorField,I,M}
     interpolate_midpoint!(psif, psi)

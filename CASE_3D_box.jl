@@ -12,10 +12,6 @@ mesh_file="unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.015m.unv" # Converges
 
 @time mesh=build_mesh3D(mesh_file)
 
-_boundary_faces(mesh)
-@time faces_checked, results = check_face_owners(mesh)
-
-velocity = [0.01,0.0,0.0]
 velocity = [0.05,0.0,0.0]
 nu=1e-3
 Re=velocity[1]*0.1/nu

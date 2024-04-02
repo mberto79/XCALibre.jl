@@ -17,7 +17,7 @@ end
 # Function to check existence of faceID in cell_faces (accessed via faces_range) 
 function check_face_owners(mesh)
     (; cells, faces, cell_faces) = mesh
-    test_range = (boundary_faces(mesh) + 1):length(faces) # test only internal faces
+    test_range = (_boundary_faces(mesh) + 1):length(faces) # test only internal faces
     results = [false for i ∈ test_range] # preallocate results
     faces_checked = [0 for i ∈ test_range] # IDs of internal faces checked
     for (i, face_ID) ∈ enumerate(test_range)

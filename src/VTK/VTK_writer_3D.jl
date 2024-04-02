@@ -196,6 +196,14 @@ function write_vtk(name, mesh::Mesh3, args...)
                     println(io, x_cpu[i]," ",y_cpu[i] ," ",z_cpu[i] )
                 end
                 write(io,"     </DataArray>\n")
+
+                println(io,"     <DataArray type=\"$(F32)\" Name=\"Ux\" format=\"$(format)\">")
+                # x_cpu, y_cpu, z_cpu = copy_to_cpu(field.x.values, field.y.values, field.z.values, backend)
+                x_cpu, y_cpu, z_cpu = field.x.values, field.y.values, field.z.values
+                for i ∈ eachindex(x_cpu)
+                    println(io, x_cpu[i])
+                end
+                println(io,"     </DataArray>")
             else
                 throw("""
                 Input data should be a ScalarField or VectorField e.g. ("U", U)

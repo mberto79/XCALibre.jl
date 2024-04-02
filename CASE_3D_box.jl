@@ -7,7 +7,8 @@ using Krylov
 mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
 mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.04m.unv"
 mesh_file="unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.03m.unv"
-mesh_file="unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.015m.unv"
+mesh_file="unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.015m.unv" # Converges
+# mesh_file="unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.01m.unv"
 
 @time mesh=build_mesh3D(mesh_file)
 
@@ -57,29 +58,29 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.7,
-        rtol = 1e-4
+        relax       = 0.8,
+        rtol = 1e-5
     ),
     p = set_solver(
         model.p;
         solver      = GmresSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = LDL(),
         convergence = 1e-7,
-        relax       = 0.3,
-        rtol = 1e-4
+        relax       = 0.2,
+        rtol = 1e-5
 
     )
 )
 
 runtime = set_runtime(
-    iterations=1000, time_step=1, write_interval=100)
+    iterations=500, time_step=1, write_interval=100)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
 
 GC.gc()
 
-initialise!(model.U, [0.0,0.0,0.0])
+initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
 # model2vtk(model, "iteration_0")

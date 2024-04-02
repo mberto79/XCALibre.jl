@@ -158,9 +158,11 @@ function interpolate!(psif::FaceVectorField, psi::VectorField)
         cID1 = ownerCells[1]; cID2 = ownerCells[2]
         x1 = psi.x[cID1]; x2 = psi.x[cID2]
         y1 = psi.y[cID1]; y2 = psi.y[cID2]
+        z1 = psi.z[cID1]; z2 = psi.z[cID2]
         one_minus_weight = 1 - weight
         x[fID] = weight*x1 + one_minus_weight*x2 # check weight is used correctly!
         y[fID] = weight*y1 + one_minus_weight*y2 # check weight is used correctly!
+        z[fID] = weight*z1 + one_minus_weight*z2 # check weight is used correctly!
     end
 end
 

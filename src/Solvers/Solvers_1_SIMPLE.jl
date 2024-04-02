@@ -39,7 +39,7 @@ function simple!(model, config; resume=true, pref=nothing)
         + Divergence{schemes.U.divergence}(mdotf, U.z) 
         - Laplacian{schemes.U.laplacian}(nueff, U.z) 
         == 
-        -Source(∇p.result.y)
+        -Source(∇p.result.z) # bug here!
     ) → Equation(mesh)
 
     p_eqn = (

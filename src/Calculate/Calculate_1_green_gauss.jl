@@ -3,19 +3,23 @@ export green_gauss!
 # Green gauss function definition
 
 function green_gauss!(dx, dy, dz, phif)
-    
+    # Retrieve required varaibles for function
     (; mesh, values) = phif
     (; faces, cells, cell_faces, cell_nsign) = mesh
-    F = _get_float(mesh)
-
     backend = _get_backend(mesh)
+
+    # Retrieve user-selected float type
+    F = _get_float(mesh)
     
+    # Launch result calculation kernel
     kernel! = result_calculation!(backend)
     kernel!(values, faces, cells, cell_nsign, cell_faces, F, dx, dy, dz, ndrange = length(cells))
     KernelAbstractions.synchronize(backend)
 
+    # Retrieve number of boundary faces
     nbfaces = length(mesh.boundary_cellsID)
     
+    # Launch boundary faces contribution kernel
     kernel! = boundary_faces_contribution!(backend)
     kernel!(values, faces, cells, F, dx, dy, dz, ndrange = nbfaces)
     KernelAbstractions.synchronize(backend)

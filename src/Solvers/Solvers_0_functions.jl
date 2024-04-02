@@ -115,7 +115,7 @@ begin # Extend to 3D!
     (; x, y, z, mesh) = Hv 
     (; cells, faces) = mesh
     (; cells, cell_neighbours, faces) = mesh
-    Ax = ux_eqn.equation.A; Ay = uy_eqn.equation.A; Az = uy_eqn.equation.A
+    Ax = ux_eqn.equation.A; Ay = uy_eqn.equation.A; Az = uz_eqn.equation.A
     bx = ux_eqn.equation.b; by = uy_eqn.equation.b; bz = uz_eqn.equation.b
     vx, vy, vz = v.x, v.y, v.z
     F = eltype(v.x.values)

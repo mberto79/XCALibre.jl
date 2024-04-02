@@ -16,7 +16,7 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
         nodes = build_nodes(points, node_cells_range)
         boundaries = build_boundaries(boundaryElements)
 
-        bface_nodes, bface_nodes_range, bface_owners_cells, boundary_cells = 
+        bface_nodes, bface_nodes_range, bface_owners_cells, boundary_cellsID = 
         begin
             generate_boundary_faces(boundaryElements, bfaces, node_cells, node_cells_range, volumes)
         end
@@ -45,16 +45,22 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
 
         # Build mesh (without calculation of geometry/properties)
         cells = build_cells(cell_nodes_range, cell_faces_range)
-        # faces = build_faces(face_nodes_range, face_owner_cells)
-        # mesh = build_mesh()
+        faces = build_faces(face_nodes_range, face_owner_cells)
+
+        mesh = Mesh3(
+            cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, 
+            faces, face_nodes, boundaries, 
+            nodes, node_cells,
+            SVector{3, Float64}(0.0, 0.0, 0.0), UnitRange{Int64}(0, 0), boundary_cellsID
+        )
 
         # Update mesh to include all geometry calculations required
-        # calculate_centres!(mesh)
-        # calculate_face_properties!(mesh)
+        calculate_centres!(mesh)
+        calculate_face_properties!(mesh)
         # calculate_area_and_volume!(mesh)
 
-        # return mesh
-        return 0
+        return mesh
+        # return 0
 
 #=
         face_nodes = generate_face_nodes(faces) #Removed push
@@ -99,6 +105,7 @@ end
 
 # Convenience access FUNCTIONS
 get_data(array, range, index) = @view array[range[index]]
+get_data(array, range) =  array[range] #@view array[range] # 
 nodeIDs = get_data
 faceIDs = get_data
 cellIDs = get_data
@@ -106,30 +113,33 @@ cellIDs = get_data
 # BUILD mesh functions
 
 build_cells(cell_nodes_range, cell_faces_range) = begin
-    cells = [Cell(
-        SVector{3,Float64}(0.0,0.0,0.0),
-        zero(Float64),
-        UnitRange{Int64}(0,0),
-        UnitRange{Int64}(0,0)
-    ) for _ ∈ eachindex(cell_faces_range)]
-    
+    # Allocate memory for cells array
+    cells = [Cell(Int64, Float64) for _ ∈ eachindex(cell_faces_range)]
+
+    # update cell nodes and faces ranges (using Accessors.jl)
     for cID ∈ eachindex(cell_nodes_range)
-        nothing
+        cell = cells[cID]
+        @reset cell.nodes_range = cell_nodes_range[cID]
+        @reset cell.faces_range = cell_faces_range[cID]
+        cells[cID] = cell
     end
 
-
-    # struct Cell{F<:AbstractFloat, SV3<:SVector{3,F},UR<:UnitRange{<:Integer}}
-    #     centre::SV3
-    #     volume::F
-    #     nodes_range::UR
-    #     faces_range::UR
-    # end
     return cells
 end
 
 build_faces(face_nodes_range, face_owner_cells) = begin
-    nothing
-    # return faces
+    # Allocate memory for faces array
+    faces = [Face3D(Int64, Float64) for _ ∈ eachindex(face_nodes_range)]
+
+    # Update face nodes range and owner cells
+    for fID ∈ eachindex(face_nodes_range)
+        face = faces[fID]
+        @reset face.nodes_range = face_nodes_range[fID]
+        @reset face.ownerCells = SVector{2,Int64}(face_owner_cells[fID])
+        faces[fID] = face # needed to replace entry with new Face3D object
+    end
+
+    return faces
 end
 
 build_mesh() = begin
@@ -140,15 +150,120 @@ end
 # CALCULATION of mesh properties
 
 calculate_centres!(mesh) = begin
-    nothing
+    (; nodes, cells, faces, cell_nodes, face_nodes) = mesh
+    sum = SVector{3, Float64}(0.0,0.0,0.0)
+
+    # calculate cell centres (geometric - not centroid - needs fixing)
+    for cID ∈ eachindex(cells)
+        cell = cells[cID]
+        sum = SVector{3, Float64}(0.0,0.0,0.0)
+        nodes_ID = nodeIDs(cell_nodes, cell.nodes_range)
+        for nID ∈ nodes_ID
+            sum += nodes[nID].coords 
+        end
+        @reset cell.centre = sum/length(nodes_ID)
+        cells[cID] = cell
+    end
+
+    # calculate face centres (geometric - not centroid - needs fixing)
+    for fID ∈ eachindex(faces)
+        face = faces[fID]
+        sum = SVector{3, Float64}(0.0,0.0,0.0)
+        nodes_ID = nodeIDs(face_nodes, face.nodes_range)
+        for nID ∈ nodes_ID
+            sum += nodes[nID].coords 
+        end
+        @reset face.centre = sum/length(nodes_ID)
+        faces[fID] = face
+    end        
 end
 
 calculate_face_properties!(mesh) = begin
-    nothing
+    (; nodes, cells, faces, face_nodes, boundary_cellsID) = mesh
+    n_bfaces = length(boundary_cellsID)
+    n_faces = length(mesh.faces)
+
+    # loop over boundary faces
+    for fID ∈ 1:n_bfaces
+        face = faces[fID]
+        nIDs = nodeIDs(face_nodes, face.nodes_range)
+        node1 = nodes[nIDs[1]]
+        node2 = nodes[nIDs[2]]
+        owners = face.ownerCells
+        cell1 = cells[owners[1]]
+        # cell2 = cells[owners[2]]
+        fc_n1 = node1.coords - face.centre
+        fc_n2 = node2.coords - face.centre 
+        # cc1_cc2 = cell2.centre - cell1.centre
+        cc1_cc2 = face.centre - cell1.centre
+        normal_vec = fc_n1 × fc_n2
+        normal = normal_vec/norm(normal_vec)
+        if cc1_cc2 ⋅ normal < 0
+            normal *= -1
+        end
+        @reset face.normal = normal
+
+        # delta
+        cc_fc = face.centre - cell1.centre
+        delta = norm(cc_fc)
+        e = cc_fc/delta
+        weight = one(Float64)
+        @reset face.delta = delta
+        @reset face.e = e
+        @reset face.weight = weight
+        @reset face.area = 4*delta ### temporary estimate
+
+        faces[fID] = face
+    end
+
+    # loop over internal faces
+    for fID ∈ (n_bfaces + 1):n_faces
+        face = faces[fID]
+        nIDs = nodeIDs(face_nodes, face.nodes_range)
+        node1 = nodes[nIDs[1]]
+        node2 = nodes[nIDs[2]]
+        owners = face.ownerCells
+        cell1 = cells[owners[1]]
+        cell2 = cells[owners[2]]
+        fc_n1 = node1.coords - face.centre
+        fc_n2 = node2.coords - face.centre 
+        cc1_cc2 = cell2.centre - cell1.centre
+        # cc1_cc2 = face.centre - cell1.centre
+        normal_vec = fc_n1 × fc_n2
+        normal = normal_vec/norm(normal_vec)
+        if cc1_cc2 ⋅ normal < 0
+            normal *= -1
+        end
+        @reset face.normal = normal
+
+        # delta
+        c1_c2 = cell2.centre - cell1.centre
+        delta = norm(c1_c2)
+        e = c1_c2/delta
+        weight = 0.5 # !!!!!!!!!!!!!! fixed value for now !!!!!!!!!!
+        @reset face.delta = delta
+        @reset face.e = e
+        @reset face.weight = weight
+        @reset face.area = 2*delta ### temporary estimate
+        
+        faces[fID] = face
+    end
 end
 
 calculate_area_and_volume!(mesh) = begin
-    nothing
+    (; nodes, faces, face_nodes, cells, cell_faces, cell_nodes) = mesh
+    for cID ∈ eachindex(cells)
+        cell = cells[cID]
+        fIDs = faceIDs(cell_faces, cell.faces_range)
+        face = faces[fIDs[1]]
+        nIDs = nodeIDs(face_nodes, face.nodes_range)
+        node1 = nodes[nIDs[1]]
+        node2 = nodes[nIDs[2]]
+        dist = norm(node2.coords - node1.coords)
+        volume = dist^3
+        @reset cell.volume = volume
+        cells[cID] = cell
+    end
 end
 
 # Node connectivity
@@ -635,8 +750,8 @@ function generate_cell_face_connectivity(volumes, bfaces, face_owner_cells)
     cell_faces = vcat(cell_faces...)
     cell_nsign = vcat(cell_nsign...)
 
-    # NOTE: Check how this is being accessed in RANS models (need to flatten)
-    # cell_neighbours = vcat(cell_neighbours...) # Need to check RANSMODELS!!!
+    # NOTE: Check how this is being accessed in RANS models (need to flatten?)
+    cell_neighbours = vcat(cell_neighbours...) # Need to check RANSMODELS!!!
 
     return cell_faces, cell_nsign, cell_faces_range, cell_neighbours
 end

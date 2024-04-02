@@ -30,10 +30,10 @@ boundaryElements
 
 @time cell_nodes, cell_nodes_range = FVM_1D.UNV_3D.generate_cell_nodes(volumes) 
 @time node_cells, node_cells_range = FVM_1D.UNV_3D.generate_node_cells(points, volumes) 
-@time nodes = FVM_1D.UNV_3D.generate_nodes(points, node_cells_range)
-@time boundaries = FVM_1D.UNV_3D.generate_boundaries(boundaryElements) 
+@time nodes = FVM_1D.UNV_3D.build_nodes(points, node_cells_range)
+@time boundaries = FVM_1D.UNV_3D.build_boundaries(boundaryElements) 
 
-@time bface_nodes, bface_nodes_range, bface_owners_cells, boundary_cells = 
+@time bface_nodes, bface_nodes_range, bface_owners_cells, boundary_cellsID = 
 begin
     FVM_1D.UNV_3D.generate_boundary_faces(
         boundaryElements, bfaces, node_cells,node_cells_range, volumes)
@@ -58,6 +58,30 @@ end
 end
 
 @time cells = FVM_1D.UNV_3D.build_cells(cell_nodes_range, cell_faces_range)
+@time faces = FVM_1D.UNV_3D.build_faces(face_nodes_range, face_owner_cells)
+
+@time mesh = Mesh3(
+            cells, 
+            cell_nodes, 
+            cell_faces, 
+            cell_neighbours, 
+            cell_nsign, 
+            faces, 
+            face_nodes, 
+            boundaries, 
+            nodes, 
+            node_cells,
+            SVector{3, Float64}(0.0, 0.0, 0.0), # get_float
+            UnitRange{Int64}(0, 0), # get_int
+            boundary_cellsID
+        )
+
+@time FVM_1D.UNV_3D.calculate_centres!(mesh)
+@time FVM_1D.UNV_3D.calculate_face_properties!(mesh)
+@time FVM_1D.UNV_3D.calculate_area_and_volume!(mesh)
+
+
+
 
 
 @time cells_centre = FVM_1D.UNV_3D.calculate_centre_cell(volumes, nodes) #0.026527 seconds

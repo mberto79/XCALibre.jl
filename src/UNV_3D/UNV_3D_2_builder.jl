@@ -179,6 +179,7 @@ calculate_centres!(mesh) = begin
 end
 
 calculate_face_properties!(mesh) = begin
+    # written for Tet only for debugging
     (; nodes, cells, faces, face_nodes, boundary_cellsID) = mesh
     n_bfaces = length(boundary_cellsID)
     n_faces = length(mesh.faces)
@@ -189,7 +190,11 @@ calculate_face_properties!(mesh) = begin
         nIDs = nodeIDs(face_nodes, face.nodes_range)
         node1 = nodes[nIDs[1]]
         node2 = nodes[nIDs[2]]
+        node3 = nodes[nIDs[3]]
+        edge1 = node2.coords - node1.coords
+        edge2 = node3.coords - node1.coords
         owners = face.ownerCells
+
         cell1 = cells[owners[1]]
         # cell2 = cells[owners[2]]
         fc_n1 = node1.coords - face.centre
@@ -211,7 +216,7 @@ calculate_face_properties!(mesh) = begin
         @reset face.delta = delta
         @reset face.e = e
         @reset face.weight = weight
-        @reset face.area = 0.0001 ### temporary estimate
+        @reset face.area = 0.5*norm(edge1×edge2)
 
         faces[fID] = face
     end
@@ -222,6 +227,9 @@ calculate_face_properties!(mesh) = begin
         nIDs = nodeIDs(face_nodes, face.nodes_range)
         node1 = nodes[nIDs[1]]
         node2 = nodes[nIDs[2]]
+        node3 = nodes[nIDs[3]]
+        edge1 = node2.coords - node1.coords
+        edge2 = node3.coords - node1.coords
         owners = face.ownerCells
         cell1 = cells[owners[1]]
         cell2 = cells[owners[2]]
@@ -244,7 +252,7 @@ calculate_face_properties!(mesh) = begin
         @reset face.delta = delta
         @reset face.e = e
         @reset face.weight = weight
-        @reset face.area = 0.0001 ### temporary estimate
+        @reset face.area = 0.5*norm(edge1×edge2)
         
         faces[fID] = face
     end
@@ -252,15 +260,23 @@ end
 
 calculate_area_and_volume!(mesh) = begin
     (; nodes, faces, face_nodes, cells, cell_faces, cell_nodes) = mesh
+    c = 1/6 # calculate only once
     for cID ∈ eachindex(cells)
         cell = cells[cID]
-        fIDs = faceIDs(cell_faces, cell.faces_range)
-        face = faces[fIDs[1]]
-        nIDs = nodeIDs(face_nodes, face.nodes_range)
+        # fIDs = faceIDs(cell_faces, cell.faces_range)
+        # face = faces[fIDs[1]]
+        # nIDs = nodeIDs(face_nodes, face.nodes_range)
+        nIDs = nodeIDs(cell_nodes, cell.nodes_range)
         node1 = nodes[nIDs[1]]
         node2 = nodes[nIDs[2]]
-        dist = norm(node2.coords - node1.coords)
-        volume = 1e-3
+        node3 = nodes[nIDs[3]]
+        node4 = nodes[nIDs[4]]
+        edge1 = node2.coords - node1.coords
+        edge2 = node3.coords - node1.coords
+        edge3 = node4.coords - node1.coords
+        # dist = norm(node2.coords - node1.coords)
+
+        volume = c*((edge1×edge2)⋅edge3)
         @reset cell.volume = volume
         cells[cID] = cell
     end

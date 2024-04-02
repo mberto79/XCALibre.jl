@@ -17,6 +17,8 @@ Div(vector::VectorField) = begin
     Div(vector, face_vector, values, mesh)
 end
 
+# Divergence function definition
+
 function div!(phi::ScalarField, psif::FaceVectorField)
     # Extract variables for function
     mesh = phi.mesh
@@ -39,6 +41,8 @@ function div!(phi::ScalarField, psif::FaceVectorField)
     kernel!(faces, cells, phi, psif, ndrange = nbfaces)
     KernelAbstractions.synchronize(backend)
 end
+
+# Divergence calculation kernel
 
 @kernel function div_kernel!(cells, F, cell_faces, cell_nsign, faces, phi, psif)
     i = @index(Global)
@@ -65,6 +69,8 @@ end
         end
     end
 end
+
+# Boundary faces contribution kernel
 
 @kernel function div_boundary_faces_contribution_kernel!(faces, cells, phi, psif)
     i = @index(Global)

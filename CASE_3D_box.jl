@@ -5,11 +5,11 @@ using Krylov
 
 #mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
 mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
-mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.06m.unv"
+mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.04m.unv"
 
 @time mesh=build_mesh3D(mesh_file)
 
-boundary_faces(mesh)
+_boundary_faces(mesh)
 @time faces_checked, results = check_face_owners(mesh)
 
 velocity = [0.01,0.0,0.0]
@@ -20,12 +20,18 @@ noSlip = [0.0, 0.0, 0.0]
 model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 @assign! model U (
+    # Dirichlet(:inlet, velocity),
+    # Neumann(:outlet, 0.0),
+    # Dirichlet(:bottom, velocity),
+    # Dirichlet(:top, velocity),
+    # Dirichlet(:side1, velocity),
+    # Dirichlet(:side2, velocity)
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Dirichlet(:bottom, velocity),
-    Dirichlet(:top, velocity),
-    Dirichlet(:side1, velocity),
-    Dirichlet(:side2, velocity)
+    Neumann(:bottom, 0.0),
+    Neumann(:top, 0.0),
+    Neumann(:side1, 0.0),
+    Neumann(:side2, 0.0)
 )
 
 @assign! model p (
@@ -38,8 +44,8 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(divergence=Upwind, gradient=Midpoint)
+    U = set_schemes(divergence=Linear, gradient=Midpoint),
+    p = set_schemes(divergence=Linear, gradient=Midpoint)
 )
 
 solvers = (
@@ -48,22 +54,22 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.8,
-        rtol = 1e-4
+        relax       = 0.3,
+        rtol = 1e-2
     ),
     p = set_solver(
         model.p;
-        solver      = GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
+        solver      = GmresSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = LDL(),
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 1e-4
+        rtol = 1e-2
 
     )
 )
 
 runtime = set_runtime(
-    iterations=5000, time_step=1, write_interval=1000)
+    iterations=100, time_step=1, write_interval=10)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

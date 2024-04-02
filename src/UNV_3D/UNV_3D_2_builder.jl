@@ -57,7 +57,7 @@ function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
         # Update mesh to include all geometry calculations required
         calculate_centres!(mesh)
         calculate_face_properties!(mesh)
-        # calculate_area_and_volume!(mesh)
+        calculate_area_and_volume!(mesh)
 
         return mesh
         # return 0
@@ -211,7 +211,7 @@ calculate_face_properties!(mesh) = begin
         @reset face.delta = delta
         @reset face.e = e
         @reset face.weight = weight
-        @reset face.area = 4*delta ### temporary estimate
+        @reset face.area = 0.0001 ### temporary estimate
 
         faces[fID] = face
     end
@@ -244,7 +244,7 @@ calculate_face_properties!(mesh) = begin
         @reset face.delta = delta
         @reset face.e = e
         @reset face.weight = weight
-        @reset face.area = 2*delta ### temporary estimate
+        @reset face.area = 0.0001 ### temporary estimate
         
         faces[fID] = face
     end
@@ -260,7 +260,7 @@ calculate_area_and_volume!(mesh) = begin
         node1 = nodes[nIDs[1]]
         node2 = nodes[nIDs[2]]
         dist = norm(node2.coords - node1.coords)
-        volume = dist^3
+        volume = 1e-3
         @reset cell.volume = volume
         cells[cID] = cell
     end

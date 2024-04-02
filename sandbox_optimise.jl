@@ -21,6 +21,13 @@ volumes
 boundaryElements
 
 @time mesh = build_mesh3D(unv_mesh)
+
+_boundary_faces(mesh)
+check_face_owners(mesh)
+check_cell_face_nodes(mesh)
+check_node_cells(mesh)
+check_all_cell_faces(mesh)
+check_boundary_faces(mesh)
 #mesh.nodes
 
 #Priority

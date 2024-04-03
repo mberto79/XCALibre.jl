@@ -21,11 +21,11 @@
 #     write_vtk(name, model.mesh, args...)
 # end
 
-# get_data(a, backend::CUDABackend) = begin
-#     a_cpu = Array{eltype(a)}(undef, length(a))
-#     copyto!(a_cpu, a)
-#     a_cpu
-# end
+get_data(a, backend::CUDABackend) = begin
+    a_cpu = Array{eltype(a)}(undef, length(a))
+    copyto!(a_cpu, a)
+    a_cpu
+end
 
 function write_vtk(name, mesh::Mesh3, args...)
     filename=name*".vtu"

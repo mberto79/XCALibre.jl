@@ -50,26 +50,17 @@ function load_3D(unv_mesh; scale, integer, float)
     #Splits UNV file into sections
     for (indx,line) in enumerate(eachline(unv_mesh))
         sline=split(line)
-
-        if sline[1]=="-1" && section_start==false
-            section_start=true
-            continue
-        end
-
-        if sline[1]=="-1" && section_start==true
-            section_start=false
-        end
-
+    
         #Points = 2411
-        if sline[1]=="2411" && length(sline)==1 && section_start
+        if sline[1]=="2411" && length(sline)==1
             pointindx=indx
         end
         #Elements = 2412
-        if sline[1]=="2412" && length(sline)==1 && section_start
+        if sline[1]=="2412" && length(sline)==1
             elementindx=indx
         end
         #BC=2467
-        if sline[1]== "2467" && length(sline)==1 && section_start
+        if sline[1]== "2467" && length(sline)==1
             boundaryindx=indx
         end
     end
@@ -186,15 +177,13 @@ function load_3D(unv_mesh; scale, integer, float)
     
         #Boundary
         if length(sline)==1 && indx>boundaryindx && typeof(tryparse(Int64,sline[1]))==Nothing
-            boundary_name=sline[1]
             boundaryindex=sline[1]
             currentBoundary=currentBoundary+1
             newBoundary=BoundaryElement(0)
             push!(boundaryElements, newBoundary)
             boundaryNumber=boundaryNumber+1
             boundaryElements[currentBoundary].boundaryNumber=currentBoundary
-            boundaryElements[currentBoundary].name=boundary_name
-            # println(boundary_name," ", boundaryindex)
+            boundaryElements[currentBoundary].name=boundaryindex
             continue
         end
     
@@ -207,6 +196,7 @@ function load_3D(unv_mesh; scale, integer, float)
             end
             continue
         end
+    
     end
     return points,edges,faces,volumes,boundaryElements
 

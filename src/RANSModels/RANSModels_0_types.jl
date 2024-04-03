@@ -23,7 +23,6 @@ struct RANS{M,F1,F2,V,T,E,D,BI}
     energy::E
     mesh::D
     boundary_info::BI
-    boundary_info::BI
 end 
 Adapt.@adapt_structure RANS
 RANS{Laminar}(; mesh, viscosity) = begin

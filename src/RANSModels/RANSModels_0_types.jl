@@ -35,9 +35,9 @@ RANS{Laminar}(; mesh, viscosity) = begin
     boundary_info = @time begin boundary_map(mesh) end; BI = typeof(boundary_info)
     RANS{Laminar,F1,F2,V,F,F,D,BI}(
         Laminar(), U, p, viscosity, flag, flag, mesh, boundary_info
-    boundary_info = @time begin boundary_map(mesh) end; BI = typeof(boundary_info)
-    RANS{Laminar,F1,F2,V,F,F,D,BI}(
-        Laminar(), U, p, viscosity, flag, flag, mesh, boundary_info
+    # boundary_info = @time begin boundary_map(mesh) end; BI = typeof(boundary_info)
+    # RANS{Laminar,F1,F2,V,F,F,D,BI}(
+    #     Laminar(), U, p, viscosity, flag, flag, mesh, boundary_info
     )
 end
 

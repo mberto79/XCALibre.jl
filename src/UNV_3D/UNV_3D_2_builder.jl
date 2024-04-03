@@ -3,11 +3,11 @@ export build_mesh3D
 # [] is also BANNED! No more kneecaps if found using []!
 #Exceptions apply to where I have no idea what the size will be
 
-function build_mesh3D(unv_mesh; integer=Int64, float=Float64)
+function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
     stats = @timed begin
         println("Loading UNV File...")
         points, edges, bfaces, volumes, boundaryElements = load_3D(
-            unv_mesh; integer=integer, float=float)
+            unv_mesh; scale=scale, integer=integer, float=float)
         println("File Read Successfully")
         println("Generating Mesh...")
 

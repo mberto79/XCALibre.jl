@@ -31,19 +31,19 @@ function write_vtk(name, mesh::Mesh3, args...)
     filename=name*".vtu"
 
     # Deactivate copies below for serial version of the codebase
-    # backend = _get_backend(mesh)
-    # nodes_cpu = get_data(mesh.nodes, backend)
-    # faces_cpu = get_data(mesh.faces, backend)
-    # cells_cpu = get_data(mesh.cells, backend)
-    # cell_nodes_cpu = get_data(mesh.cell_nodes, backend)
-    # face_nodes_cpu = get_data(mesh.face_nodes, backend)
+    backend = _get_backend(mesh)
+    nodes_cpu = get_data(mesh.nodes, backend)
+    faces_cpu = get_data(mesh.faces, backend)
+    cells_cpu = get_data(mesh.cells, backend)
+    cell_nodes_cpu = get_data(mesh.cell_nodes, backend)
+    face_nodes_cpu = get_data(mesh.face_nodes, backend)
 
     # Serial version
-    nodes_cpu = mesh.nodes
-    faces_cpu = mesh.faces
-    cells_cpu = mesh.cells
-    cell_nodes_cpu = mesh.cell_nodes
-    face_nodes_cpu = mesh.face_nodes
+    # nodes_cpu = mesh.nodes
+    # faces_cpu = mesh.faces
+    # cells_cpu = mesh.cells
+    # cell_nodes_cpu = mesh.cell_nodes
+    # face_nodes_cpu = mesh.face_nodes
 
     open(filename,"w") do io
 

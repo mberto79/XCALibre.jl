@@ -79,12 +79,10 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-# model2vtk(model, "iteration_0")
-
 # backend = CUDABackend()
 backend = CPU()
 
-Rx, Ry, Rz, Rp = simple!(model, config)
+Rx, Ry, Rz, Rp, model1 = simple!(model, config, backend)
 
 plot(; xlims=(0,400))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

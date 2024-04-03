@@ -70,11 +70,12 @@ function write_vtk(name, mesh::Mesh3, args...)
         x=0
         y=0
 
-        #Modifying Data
-        store_cells=zeros(Int32,length(cells_cpu))
-        for i=1:length(cells_cpu)
-            store_cells[i]=length(cells_cpu[1].nodes_range)*i
-        end
+        # Not in use!
+        # #Modifying Data
+        # store_cells=zeros(Int32,length(cells_cpu))
+        # for i=1:length(cells_cpu)
+        #     store_cells[i]=length(cells_cpu[1].nodes_range)*i
+        # end
 
         #temp
         #temp_cells=LinRange(0,500,length(cells_cpu))

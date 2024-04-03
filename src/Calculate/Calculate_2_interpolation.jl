@@ -110,30 +110,42 @@ end
 
 function adjust_boundary!(
     BC::KWallFunction, phif::FaceScalarField, phi, boundary, faces)
-    (;facesID, cellsID) = boundary
-    @inbounds for fi ∈ eachindex(facesID)
-        fID = facesID[fi]
-        cID = cellsID[fi]
+    # (;facesID, cellsID) = boundary
+    (; IDs_range) = boundary
+    (; boundary_cellsID) = phif.mesh
+    @inbounds for fi ∈ IDs_range
+        # fID = facesID[fi]
+        # cID = cellsID[fi]
+        fID = fi
+        cID = boundary_cellsID[fID]
         phif.values[fID] = phi.values[cID] # Using Neumann condition
     end
 end
 
 function adjust_boundary!(
     BC::NutWallFunction, phif::FaceScalarField, phi, boundary, faces)
-    (;facesID, cellsID) = boundary
-    @inbounds for fi ∈ eachindex(facesID)
-        fID = facesID[fi]
-        cID = cellsID[fi]
+    # (;facesID, cellsID) = boundary
+    (; IDs_range) = boundary
+    (; boundary_cellsID) = phif.mesh
+    @inbounds for fi ∈ IDs_range
+        # fID = facesID[fi]
+        # cID = cellsID[fi]
+        fID = fi
+        cID = boundary_cellsID[fID]
         phif.values[fID] = phi.values[cID] # Using Neumann condition
     end
 end
 
 function adjust_boundary!(
     BC::OmegaWallFunction, phif::FaceScalarField, phi, boundary, faces)
-    (;facesID, cellsID) = boundary
-    @inbounds for fi ∈ eachindex(facesID)
-        fID = facesID[fi]
-        cID = cellsID[fi]
+    # (;facesID, cellsID) = boundary
+    (; IDs_range) = boundary
+    (; boundary_cellsID) = phif.mesh
+    @inbounds for fi ∈ IDs_range
+        # fID = facesID[fi]
+        # cID = cellsID[fi]
+        fID = fi
+        cID = boundary_cellsID[fID]
         phif.values[fID] = phi.values[cID] # Using Neumann condition
     end
 end
@@ -343,12 +355,18 @@ end
 
         # Define indices for initial x and y values from psi struct
         cID1 = ownerCells[1]; cID2 = ownerCells[2]
+        x1 = psi.x[cID1]; x2 = psi.x[cID2]
+        y1 = psi.y[cID1]; y2 = psi.y[cID2]
+        z1 = psi.z[cID1]; z2 = psi.z[cID2]
         x1 = xv[cID1]; x2 = xv[cID2]
         y1 = yv[cID1]; y2 = yv[cID2]
         z1 = zv[cID1]; z2 = zv[cID2]
 
         # Calculate one minus weight
         one_minus_weight = 1 - weight
+        x[fID] = weight*x1 + one_minus_weight*x2 # check weight is used correctly!
+        y[fID] = weight*y1 + one_minus_weight*y2 # check weight is used correctly!
+        z[fID] = weight*z1 + one_minus_weight*z2 # check weight is used correctly!
 
         # Update psif x and y arrays for interpolation (IMPLEMENT 3D)
         xf[i] = weight*x1 + one_minus_weight*x2 # check weight is used correctly!

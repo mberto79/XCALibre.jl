@@ -2,7 +2,7 @@
 
 export load_3D
 
-function load_3D(unv_mesh)
+function load_3D(unv_mesh; scale, integer, float)
     #Defining Variables
     pointindx=0
     elementindx=0
@@ -12,40 +12,40 @@ function load_3D(unv_mesh)
     edgeindx=0
     
     #Defining Arrays with Structs
-    points=UNV_3D.Point[]
-    edges=UNV_3D.Edge[]
-    faces=UNV_3D.Face[]
-    volumes=UNV_3D.Volume[]
-    boundaryElements=UNV_3D.BoundaryElement[]
-    elements=UNV_3D.Element[]
+    points=UNV_3D.Point{float,SVector{3,float}}[]
+    edges=UNV_3D.Edge{integer,Vector{integer}}[]
+    faces=UNV_3D.Face{integer,Vector{integer}}[]
+    volumes=UNV_3D.Volume{integer,Vector{integer}}[]
+    boundaryElements=UNV_3D.BoundaryElement{String,integer,Vector{integer}}[]
+    elements=UNV_3D.Element{integer,Vector{integer}}[]
     
     #Defining Arrays for data collection
     #Points
-    point=[]
-    pointindex=[]
+    point=float[]
+    pointindex=integer[]
     
     #Vertices
-    edge=[]
-    edgeCount=[]
-    edgeindex=[]
+    edge=integer[]
+    edgeCount=integer[]
+    edgeindex=integer[]
     
     #Faces
-    face=[]
-    faceindex=[]
-    faceCount=[]
+    face=integer[]
+    faceindex=integer[]
+    faceCount=integer[]
     
     #Volumes
-    volume=[]
-    volumeindex=[]
-    volumeCount=[]
+    volume=integer[]
+    volumeindex=integer[]
+    volumeCount=integer[]
     
     #bc
-    boundary=[]
-    boundarys=[]
-    boundaryindex=[]
-    currentBoundary=0
-    boundaryNumber=0
-    section_start = false
+    boundary=integer[]
+    boundarys=Tuple{SubString{String}, Vector{Int64}}[]
+    boundaryindex=integer[]
+    currentBoundary=zero(integer)
+    boundaryNumber=zero(integer)
+    
     
     #Splits UNV file into sections
     for (indx,line) in enumerate(eachline(unv_mesh))
@@ -85,7 +85,7 @@ function load_3D(unv_mesh)
     
         if length(sline)==3 && indx>pointindx && indx<elementindx
             point=[parse(Float64,sline[i]) for i=1:length(sline)]
-            push!(points,Point(SVector{3,Float64}(point)))
+            push!(points,Point(scale * SVector{3,Float64}(point)))
             continue
         end
     
@@ -95,7 +95,6 @@ function load_3D(unv_mesh)
             edgeCount=parse(Int,sline[end])
             edgeindex=parse(Int,sline[1])
             edgeindx=indx
-            # println(edgeindex)
             continue
         end
     
@@ -149,7 +148,7 @@ function load_3D(unv_mesh)
         end
     
         if length(sline)==4 && indx>elementindx
-            volume=[parse(Int,sline[i]) for i=1:length(sline)]
+            volume=[parse(Int64,sline[i]) for i=1:length(sline)]
             push!(volumes,Volume(volumeindex-faceindex,volumeCount,volume))
             push!(elements,Element(volumeindex,volumeCount,volume))
             continue
@@ -200,14 +199,12 @@ function load_3D(unv_mesh)
         end
     
         if length(sline)==8 && indx>boundaryindx && parse(Int64,sline[2])!=0
-            boundary=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(boundarys,(boundaryindex,boundary)) # not being used?
+            boundary=[parse(Int64,sline[i]) for i=1:length(sline)]
+            push!(boundarys,(boundaryindex,boundary))
             push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[2])-edgeindex)
             if parse(Int64,sline[6]) ≠ 0
               push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[6])-edgeindex)
             end
-            # println(boundaryElements[currentBoundary].elements)
-            
             continue
         end
     end

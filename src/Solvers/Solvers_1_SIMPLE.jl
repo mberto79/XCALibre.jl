@@ -72,6 +72,7 @@ function setup_incompressible_solvers(
                     solvers.U.preconditioner, ux_eqn, U.x.BCs, runtime)
     @reset uy_eqn.preconditioner = ux_eqn.preconditioner
     @reset uz_eqn.preconditioner = ux_eqn.preconditioner
+    @reset uz_eqn.preconditioner = ux_eqn.preconditioner
     @reset p_eqn.preconditioner = set_preconditioner(
                     solvers.p.preconditioner, p_eqn, p.BCs, runtime)
 
@@ -142,6 +143,7 @@ function SIMPLE(
 
     R_ux = ones(TF, iterations)
     R_uy = ones(TF, iterations)
+    R_uz = ones(TF, iterations)
     R_uz = ones(TF, iterations)
     R_p = ones(TF, iterations)
     
@@ -266,6 +268,7 @@ function SIMPLE(
                 (:iter,iteration),
                 (:Ux, R_ux[iteration]),
                 (:Uy, R_uy[iteration]),
+                (:Uz, R_uz[iteration]),
                 (:Uz, R_uz[iteration]),
                 (:p, R_p[iteration]),
                 ]

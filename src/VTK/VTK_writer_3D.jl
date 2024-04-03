@@ -122,17 +122,41 @@ function write_vtk(name, mesh::Mesh3, args...)
         #     end
         # end
 
+        # This is needed because boundary faces are missing from cell level connectivity
         
-        for i=1:length(cells_cpu)
-            store_faces=[]
-            for id=1:length(faces_cpu)
-                if faces_cpu[id].ownerCells[1]==i || faces_cpu[id].ownerCells[2]==i
-                    push!(store_faces,id)
-                end
+        # # Version 1
+        # for i=1:length(cells_cpu)
+        #     store_faces=[]
+        #     for id=1:length(faces_cpu)
+        #         if faces_cpu[id].ownerCells[1]==i || faces_cpu[id].ownerCells[2]==i
+        #             push!(store_faces,id)
+        #         end
+        #     end
+        #     write(io,"      $(length(store_faces))\n")
+        #     for ic=1:length(store_faces)
+        #     write(io,"      $(length(faces_cpu[store_faces[ic]].nodes_range)) $(join(face_nodes_cpu[faces_cpu[store_faces[ic]].nodes_range].-1," "))\n")
+        #     end
+        # end
+
+        # # Version 2 (x2.8 faster)
+        all_cell_faces = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_cpu)]
+        for fID ∈ eachindex(faces_cpu)
+            owners = faces_cpu[fID].ownerCells
+            owner1 = owners[1]
+            owner2 = owners[2]
+            # if faces_cpu[fID].ownerCells[1]==cID || faces_cpu[fID].ownerCells[2]==cID
+            push!(all_cell_faces[owner1],fID)
+            if owner1 !== owner2 #avoid duplication of cells for boundary faces
+                push!(all_cell_faces[owner2],fID)
             end
-            write(io,"      $(length(store_faces))\n")
-            for ic=1:length(store_faces)
-            write(io,"      $(length(faces_cpu[store_faces[ic]].nodes_range)) $(join(face_nodes_cpu[faces_cpu[store_faces[ic]].nodes_range].-1," "))\n")
+            # end
+        end
+        for (cID, fIDs) ∈ enumerate(all_cell_faces)
+            write(io,"\t$(length(all_cell_faces[cID]))\n")
+            for fID ∈ fIDs
+                write(
+                    io,"\t$(length(faces_cpu[fID].nodes_range)) $(join(face_nodes_cpu[faces_cpu[fID].nodes_range] .- 1," "))\n"
+                    )
             end
         end
 

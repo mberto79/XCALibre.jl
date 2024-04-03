@@ -1,6 +1,7 @@
 using Plots
 using FVM_1D
 using Krylov
+using KernelAbstractions
 
 #mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
 mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
@@ -51,15 +52,15 @@ solvers = (
     U = set_solver(
         model.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0(),
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
         rtol = 1e-5
     ),
     p = set_solver(
         model.p;
-        solver      = GmresSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = LDL(),
+        solver      = CgSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
         rtol = 1e-5
@@ -81,6 +82,7 @@ initialise!(model.p, 0.0)
 # model2vtk(model, "iteration_0")
 
 # backend = CUDABackend()
+backend = CPU()
 
 Rx, Ry, Rz, Rp = simple!(model, config)
 

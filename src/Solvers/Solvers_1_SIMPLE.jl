@@ -158,7 +158,7 @@ function SIMPLE(
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
-    CUDA.@time for iteration ∈ 1:iterations
+    @time for iteration ∈ 1:iterations
 
         @. prev = U.x.values
         # type = typeof(ux_eqn)
@@ -268,7 +268,6 @@ function SIMPLE(
                 (:iter,iteration),
                 (:Ux, R_ux[iteration]),
                 (:Uy, R_uy[iteration]),
-                (:Uz, R_uz[iteration]),
                 (:Uz, R_uz[iteration]),
                 (:p, R_p[iteration]),
                 ]

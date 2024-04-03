@@ -69,20 +69,6 @@ function fixedValue(BC::Neumann, ID::I, value::V) where {I<:Integer,V}
     end
 end
 
-function fixedValue(BC::Neumann, ID::I, value::V) where {I<:Integer,V}
-    if V <: Number
-        return Neumann{I,eltype(value)}(ID, value)
-    elseif V <: Vector
-        if length(value) == 3 
-            nvalue = SVector{3, eltype(value)}(value)
-            return Neumann{I,typeof(nvalue)}(ID, nvalue)
-        else
-            throw("Only vectors with three components can be used")
-        end
-        throw("The value provided should be a scalar or a vector")
-    end
-end
-
 struct KWallFunction{I,V} <: AbstractBoundary
     ID::I 
     value::V 

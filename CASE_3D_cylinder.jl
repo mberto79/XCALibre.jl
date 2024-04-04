@@ -6,39 +6,44 @@ using CUDA
 
 
 # bfs_unv_tet_15mm, 10mm, 5mm, 4mm, 3mm
-mesh_file = "unv_sample_meshes/bfs_unv_tet_5mm.unv"
+mesh_file = "unv_sample_meshes/3D_cylinder.unv"
 @time mesh = build_mesh3D(mesh_file, scale=0.001)
 
-velocity = [0.5, 0.0, 0.0]
+velocity = [0.50, 0.0, 0.0]
+velocity = [0.50, 0.0, 0.0]
+noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
-Re = velocity[1]*0.1/nu
+Re = (0.2*velocity[1])/nu
 
 model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
-@assign! model U (
+@assign! model U ( 
     # Dirichlet(:inlet, velocity),
     # Neumann(:outlet, 0.0),
-    # Dirichlet(:wall, [0.0, 0.0, 0.0]),
-    # Dirichlet(:top, [0.0, 0.0, 0.0]),
-    # Dirichlet(:sides, [0.0, 0.0, 0.0])
+    # Dirichlet(:cylinder, noSlip),
+    # Dirichlet(:bottom, velocity),
+    # Dirichlet(:top, velocity),
+    # Dirichlet(:sides, velocity)
     Dirichlet(:inlet, velocity),
-    Dirichlet(:wall, [0.0, 0.0, 0.0]),
     Neumann(:outlet, 0.0),
+    Dirichlet(:cylinder, noSlip),
+    Neumann(:bottom, 0.0),
     Neumann(:top, 0.0),
     Neumann(:sides, 0.0)
 )
 
- @assign! model p (
+@assign! model p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
+    Neumann(:cylinder, 0.0),
+    Neumann(:bottom, 0.0),
     Neumann(:top, 0.0),
     Neumann(:sides, 0.0)
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind),
-    p = set_schemes()
+    U = set_schemes(divergence=Upwind, gradient=Midpoint),
+    p = set_schemes(gradient=Midpoint)
 )
 
 
@@ -54,7 +59,7 @@ solvers = (
     p = set_solver(
         model.p;
         solver      = CgSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = NormDiagonal(),
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
         rtol = 1e-3
@@ -72,6 +77,7 @@ GC.gc()
 
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
+# model2vtk(model, "WRITE_TEST")
 
 backend = CPU()
 backend = CUDABackend()

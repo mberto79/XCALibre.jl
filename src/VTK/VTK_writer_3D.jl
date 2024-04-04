@@ -21,10 +21,14 @@
 #     write_vtk(name, model.mesh, args...)
 # end
 
-get_data(a, backend::CUDABackend) = begin
-    a_cpu = Array{eltype(a)}(undef, length(a))
-    copyto!(a_cpu, a)
+get_data(arr, backend::CUDABackend) = begin
+    arr_cpu = Array{eltype(a)}(undef, length(arr))
+    copyto!(arr_cpu, arr)
     a_cpu
+end
+
+get_data(arr, backend::CPU) = begin
+    arr
 end
 
 function write_vtk(name, mesh::Mesh3, args...)

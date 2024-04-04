@@ -1,6 +1,9 @@
 using Plots
 using FVM_1D
 using Krylov
+using KernelAbstractions
+using CUDA
+
 
 # bfs_unv_tet_15mm, 10mm, 5mm, 4mm, 3mm
 mesh_file = "unv_sample_meshes/bfs_unv_tet_10mm.unv"
@@ -37,19 +40,20 @@ schemes = (
 solvers = (
     U = set_solver(
         model.U;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0(),
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
-        rtol = 1e-4
+        rtol = 1e-5
     ),
     p = set_solver(
         model.p;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = LDL(),
+        solver      = CgSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 1e-4
+        rtol = 1e-5
+
     )
 )
 
@@ -64,7 +68,10 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-Rx, Ry, Rp = simple!(model, config) # 9.39k allocs in 184 iterations
+backend = CPU()
+backend = CUDABackend()
+
+Rx, Ry, Rz, Rp, model1 = simple!(model, config, backend)
 
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

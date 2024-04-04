@@ -6,7 +6,7 @@ export build_mesh3D
 function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
     stats = @timed begin
         println("Loading UNV File...")
-        points, edges, bfaces, volumes, boundaryElements = load_3D(
+        points, edges, efaces, volumes, boundaryElements = load_3D(
             unv_mesh; scale=scale, integer=integer, float=float)
         println("File Read Successfully")
         println("Generating Mesh...")
@@ -16,14 +16,16 @@ function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
         nodes = build_nodes(points, node_cells_range)
         boundaries = build_boundaries(boundaryElements)
 
+        nbfaces = sum(length.(getproperty.(boundaries, :IDs_range))) # total boundary faces
+
         bface_nodes, bface_nodes_range, bface_owners_cells, boundary_cellsID = 
         begin
-            generate_boundary_faces(boundaryElements, bfaces, node_cells, node_cells_range, volumes)
+            generate_boundary_faces(boundaryElements, efaces, nbfaces, node_cells, node_cells_range, volumes)
         end
 
         iface_nodes, iface_nodes_range, iface_owners_cells = 
         begin 
-            generate_internal_faces(volumes, bfaces, nodes, node_cells)
+            generate_internal_faces(volumes, nbfaces, nodes, node_cells)
         end
 
         # NOTE: A function will be needed here to reorder the nodes IDs of "faces" to be geometrically sound! (not needed for tet cells though)
@@ -40,7 +42,7 @@ function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
 
         # Sort out cell to face connectivity
         cell_faces, cell_nsign, cell_faces_range, cell_neighbours = begin
-            generate_cell_face_connectivity(volumes, bfaces, face_owner_cells)
+            generate_cell_face_connectivity(volumes, nbfaces, face_owner_cells)
         end
 
         # Build mesh (without calculation of geometry/properties)
@@ -615,7 +617,7 @@ function generate_cell_neighbours(cells, cell_faces)
 end
 
 # NOTE: the function has been written to be extendable to multiple element types
-function generate_internal_faces(volumes, bfaces, nodes, node_cells)
+function generate_internal_faces(volumes, nbfaces, nodes, node_cells)
 
     # determine total number of faces based on cell type (including duplicates)
     total_faces = 0
@@ -714,7 +716,7 @@ function generate_internal_faces(volumes, bfaces, nodes, node_cells)
     deleteat!(owners_cellIDs, bfaces_indices)
     deleteat!(face_nodes, bfaces_indices)
 
-    println("Removing ", total_bfaces, " (from ", length(bfaces), ") boundary faces")
+    println("Removing ", total_bfaces, " (from ", nbfaces, ") boundary faces")
 
     # Generate face_nodes_range
     face_nodes_range = Vector{UnitRange{Int64}}(undef, length(face_nodes))
@@ -732,14 +734,14 @@ function generate_internal_faces(volumes, bfaces, nodes, node_cells)
 
 end
 
-function generate_cell_face_connectivity(volumes, bfaces, face_owner_cells)
+function generate_cell_face_connectivity(volumes, nbfaces, face_owner_cells)
     cell_faces = Vector{Int64}[Int64[] for _ ∈ eachindex(volumes)] 
     cell_nsign = Vector{Int64}[Int64[] for _ ∈ eachindex(volumes)] 
     cell_neighbours = Vector{Int64}[Int64[] for _ ∈ eachindex(volumes)] 
     cell_faces_range = UnitRange{Int64}[UnitRange{Int64}(0,0) for _ ∈ eachindex(volumes)] 
 
     # Pass face ID to each cell
-    first_internal_face = length(bfaces) + 1
+    first_internal_face = nbfaces + 1
     total_faces = length(face_owner_cells)
     for fID ∈ first_internal_face:total_faces
         owners = face_owner_cells[fID] # 2 cell owners IDs
@@ -846,12 +848,12 @@ function generate_boundary_cells(bfaces, all_cell_faces, all_cell_faces_range)
 end
 
 function generate_boundary_faces(
-    boundaryElements, bfaces, node_cells, node_cells_range, volumes
+    boundaryElements, efaces, nbfaces, node_cells, node_cells_range, volumes
     )
-    bface_nodes = Vector{Vector{Int64}}(undef, length(bfaces))
-    bface_nodes_range = Vector{UnitRange{Int64}}(undef,length(bfaces))
-    bowners_cells = Vector{Int64}[Int64[0,0] for _ ∈ eachindex(bfaces)]
-    boundary_cells = Vector{Int64}(undef,length(bfaces))
+    bface_nodes = Vector{Vector{Int64}}(undef, nbfaces)
+    bface_nodes_range = Vector{UnitRange{Int64}}(undef, nbfaces)
+    bowners_cells = Vector{Int64}[Int64[0,0] for _ ∈ 1:nbfaces]
+    boundary_cells = Vector{Int64}(undef, nbfaces)
 
     fID = 0 # faceID index of output array (reordered)
     start = 1
@@ -859,8 +861,8 @@ function generate_boundary_faces(
         elements = boundary.elements
             for bfaceID ∈ elements
                 fID += 1
-                nnodes = length(bfaces[bfaceID].faces)
-                nodeIDs = bfaces[bfaceID].faces # Actually nodesIDs
+                nnodes = length(efaces[bfaceID].faces)
+                nodeIDs = efaces[bfaceID].faces # Actually nodesIDs
                 bface_nodes[fID] = nodeIDs
                 bface_nodes_range[fID] = UnitRange{Int64}(start:(start + nnodes - 1))
                 start += nnodes

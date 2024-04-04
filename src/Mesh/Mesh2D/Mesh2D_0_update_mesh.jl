@@ -3,7 +3,6 @@ import FVM_1D.UNV2
 export update_mesh_format
 
 update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
-    @info "Update to new mesh format (temporary solution)"
 
     # Pre-allocate memory for mesh entities
     boundaries = Vector{Boundary{Symbol, UnitRange{integer}}}(

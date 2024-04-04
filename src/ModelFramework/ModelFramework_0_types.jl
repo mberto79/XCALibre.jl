@@ -20,6 +20,7 @@ struct Operator{F,P,S,T} <: AbstractOperator
     type::T
 end
 Adapt.@adapt_structure Operator
+
 # operators
 
 struct Time{T} end
@@ -73,18 +74,16 @@ struct Src{F,S} <: AbstractSource
     # type::T
 end
 Adapt.@adapt_structure Src
+
 # Source types
 
 struct Source end
 Adapt.@adapt_structure Source
-# Source(f::T) where T = Src(f, 1, typeof(f))
 Source(f::T) where T = Src(f, 1)
-# Source(f::ScalarField) = Src(f.values, 1, typeof(f))
 # Source(f::Number) = Src(f.values, 1, typeof(f)) # To implement!!
 
 # MODEL TYPE
 struct Model{TN,SN,T,S}
-    # equation::E
     terms::T
     sources::S
 end
@@ -96,9 +95,6 @@ end
 Model{TN,SN}(terms::T, sources::S) where {TN,SN,T,S} = begin
     Model{TN,SN,T,S}(terms, sources)
 end
-# Model(eqn::E, terms::T, sources::S, TN, SN) where {E,T,S} = begin
-#     Model{E,T,S,TN,SN}(eqn, terms, sources)
-# end
 
 # Linear system matrix equation
 
@@ -108,7 +104,6 @@ struct Equation{VTf<:AbstractVector, ASA<:AbstractSparseArray}
     b::VTf
     R::VTf
     Fx::VTf
-    # mesh::Mesh2{Ti,Tf}
 end
 Adapt.@adapt_structure Equation
 Equation(mesh::AbstractMesh) = begin
@@ -122,50 +117,22 @@ Equation(mesh::AbstractMesh) = begin
         _convert_array!(zeros(Tf, nCells), backend),
         _convert_array!(zeros(Tf, nCells), backend),
         _convert_array!(zeros(Tf, nCells), backend)
-        # mesh
         )
 end
 
-## NEW STRUCTURE USED
-# struct Equation{SMCSC,VTf}
-#     A::SMCSC
-#     b::VTf
-#     R::VTf
-#     Fx::VTf
-#     # mesh::Mesh2{Ti,Tf}
-# end
-# Equation(mesh::Mesh2) = begin
-#     nCells = length(mesh.cells)
-#     Tf = _get_float(mesh)
-#     backend = _get_backend(mesh)
-#     i, j, v = sparse_matrix_connectivity(mesh)
-#     A = _convert_array!(sparse(i, j, v), backend); SMCSC = typeof(A)
-#     b = _convert_array!(zeros(Tf, nCells), backend); VTf = typeof(b)
-#     R = _convert_array!(zeros(Tf, nCells), backend)  
-#     Fx = _convert_array!(zeros(Tf, nCells), backend)
-#     Equation{SMCSC,VTf}(
-#         A,
-#         b,
-#         R,
-#         Fx
-#         # mesh
-#         )
-# end
-
+# Sparse matrix connectivity function definition
 function sparse_matrix_connectivity(mesh::AbstractMesh)
     (; cells, cell_neighbours) = mesh
     nCells = length(cells)
-    TI = _get_int(mesh) # would this result in regression (type identified inside func?)
-    TF = _get_float(mesh) # would this result in regression (type identified inside func?)
+    TI = _get_int(mesh)
+    TF = _get_float(mesh)
     i = TI[]
     j = TI[]
     for cID = 1:nCells   
         cell = cells[cID]
         push!(i, cID) # diagonal row index
         push!(j, cID) # diagonal column index
-        # for fi ∈ eachindex(cell.facesID)
         for fi ∈ cell.faces_range
-            # neighbour = cell.neighbours[fi]
             neighbour = cell_neighbours[fi]
             push!(i, cID) # cell index (row)
             push!(j, neighbour) # neighbour index (column)
@@ -219,20 +186,25 @@ end
 #     end
 # end
 
+# Nzval index function definition for sparse array
 function nzval_index(colptr, rowval, start_index, required_index, ione)
+    # Set start value and offset to 0
     start = colptr[start_index]
     offset = 0
+    
+    # Loop over rowval array and increment offset until required value
     for j in start:length(rowval)
         offset += 1
         if rowval[j] == required_index
             break
         end
     end
+
+    # Calculate index to output
     return start + offset - ione
 end
 
 # Model equation type 
-
 struct ModelEquation{M,E,S,P}
     model::M 
     equation::E 

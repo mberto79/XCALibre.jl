@@ -212,7 +212,8 @@ function write_vtk(name, mesh::Mesh3, args...)
             if field_type <: ScalarField
                 write(io,"     <DataArray type=\"$(F32)\" Name=\"$(label)\" format=\"$(format)\">\n")
                 # values_cpu= copy_scalarfield_to_cpu(field.values, backend)
-                values_cpu= field.values
+                values_cpu = get_data(field.values)
+                # values_cpu= field.values
                 for value ∈ values_cpu
                     println(io,value)
                 end
@@ -220,7 +221,10 @@ function write_vtk(name, mesh::Mesh3, args...)
             elseif field_type <: VectorField
                 write(io,"     <DataArray type=\"$(F32)\" Name=\"$(label)\" format=\"$(format)\" NumberOfComponents=\"3\">\n")
                 # x_cpu, y_cpu, z_cpu = copy_to_cpu(field.x.values, field.y.values, field.z.values, backend)
-                x_cpu, y_cpu, z_cpu = field.x.values, field.y.values, field.z.values
+                # x_cpu, y_cpu, z_cpu = field.x.values, field.y.values, field.z.values
+                x_cpu = get_data(field.x.values)
+                y_cpu = get_data(field.y.values)
+                z_cpu = get_data(field.z.values)
                 for i ∈ eachindex(x_cpu)
                     println(io, x_cpu[i]," ",y_cpu[i] ," ",z_cpu[i] )
                 end

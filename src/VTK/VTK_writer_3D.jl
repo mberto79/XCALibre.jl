@@ -22,7 +22,7 @@
 # end
 
 get_data(arr, backend::CUDABackend) = begin
-    arr_cpu = Array{eltype(a)}(undef, length(arr))
+    arr_cpu = Array{eltype(arr)}(undef, length(arr))
     copyto!(arr_cpu, arr)
     a_cpu
 end

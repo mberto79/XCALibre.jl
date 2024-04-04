@@ -35,7 +35,7 @@ function write_vtk(name, mesh::Mesh3, args...)
     filename=name*".vtu"
 
     # Deactivate copies below for serial version of the codebase
-    backend = get_backend(mesh)
+    backend = _get_backend(mesh)
     nodes_cpu = get_data(mesh.nodes, backend)
     faces_cpu = get_data(mesh.faces, backend)
     cells_cpu = get_data(mesh.cells, backend)

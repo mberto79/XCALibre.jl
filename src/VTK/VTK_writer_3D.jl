@@ -24,7 +24,7 @@
 get_data(arr, backend::CUDABackend) = begin
     arr_cpu = Array{eltype(arr)}(undef, length(arr))
     copyto!(arr_cpu, arr)
-    a_cpu
+    arr_cpu
 end
 
 get_data(arr, backend::CPU) = begin

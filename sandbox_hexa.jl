@@ -21,12 +21,14 @@ boundaryElements
 cell_nodes, cell_nodes_range = FVM_1D.UNV_3D.generate_cell_nodes(volumes) # Should be Hybrid compatible, tested for hexa. Using push instead of allocating vector.
 node_cells, node_cells_range = FVM_1D.UNV_3D.generate_node_cells(points, volumes)
 
-function build_nodes(points, node_cells_range)
-    nodes = [Node(SVector{3, Float64}(0.0,0.0,0.0), 1:1) for _ ∈ eachindex(points)]
-    @inbounds for i ∈ eachindex(points)
-        nodes[i] =  Node(points[i].xyz, node_cells_range[i])
+function build_boundaries(boundaryElements)
+    bfaces_start = 1
+    boundaries = Vector{Boundary{Symbol,UnitRange{Int64}}}(undef,length(boundaryElements))
+    for (i, boundaryElement) ∈ enumerate(boundaryElements)
+        bfaces = length(boundaryElement.elements)
+        bfaces_range = UnitRange{Int64}(bfaces_start:(bfaces_start + bfaces - 1))
+        boundaries[i] = Boundary(Symbol(boundaryElement.name), bfaces_range)
+        bfaces_start += bfaces
     end
-    return nodes
+    return boundaries
 end
-
-build_nodes(points, node_cells_range)

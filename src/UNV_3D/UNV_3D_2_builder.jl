@@ -14,7 +14,7 @@ function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
         cell_nodes, cell_nodes_range = generate_cell_nodes(volumes) # Should be Hybrid compatible, tested for hexa. Using push instead of allocating vector.
         node_cells, node_cells_range = generate_node_cells(points, volumes)  # Should be Hybrid compatible, tested for hexa.
         nodes = build_nodes(points, node_cells_range) # Hyrbid compatible, works for Tet and Hexa
-        boundaries = build_boundaries(boundaryElements)
+        boundaries = build_boundaries(boundaryElements) # Hybrid compatible
 
         bface_nodes, bface_nodes_range, bface_owners_cells, boundary_cellsID = 
         begin

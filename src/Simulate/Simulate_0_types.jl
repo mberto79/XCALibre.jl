@@ -5,7 +5,7 @@ export Configuration
     solvers::SL
     runtime::RT
 end
-
+Adapt.@adapt_structure Configuration
 
 
 # Simulation medium 

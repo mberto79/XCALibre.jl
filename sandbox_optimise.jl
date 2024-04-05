@@ -9,10 +9,13 @@ unv_mesh = "unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.08m.unv"
 unv_mesh = "unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.06m.unv"
 unv_mesh = "unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.04m.unv"
 unv_mesh = "unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.03m.unv"
+
+unv_mesh = "unv_sample_meshes/3D_cylinder.unv"
+
 #unv_mesh="src/UNV_3D/Quad_cell_new_boundaries.unv"
 
 
-points, edges, bfaces, volumes, boundaryElements = load_3D(unv_mesh)
+points, edges, bfaces, volumes, boundaryElements = load_3D(unv_mesh, scale=1, integer=Int64, float=Float64)
 
 points
 edges

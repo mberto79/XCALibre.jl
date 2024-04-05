@@ -4,6 +4,10 @@ using Accessors
 using LinearAlgebra
 using SparseArrays
 using StaticArrays
+using Adapt
+using CUDA
+using KernelAbstractions
+using Atomix
 
 using FVM_1D.Mesh
 using FVM_1D.Fields

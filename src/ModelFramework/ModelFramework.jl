@@ -4,7 +4,7 @@ using Accessors
 # using LinearAlgebra
 using SparseArrays
 # using StaticArrays
-
+using Adapt
 
 using LoopVectorization
 # using LinearAlgebra
@@ -12,6 +12,8 @@ using LoopVectorization
 using Krylov
 # using LinearOperators
 # using ProgressMeter
+using KernelAbstractions
+using CUDA
 
 using FVM_1D.Mesh
 using FVM_1D.Fields

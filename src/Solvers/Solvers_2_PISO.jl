@@ -1,73 +1,17 @@
 export piso!
 
-function piso!(model, config; resume=true, pref=nothing) 
+piso!(model_in, config, backend; resume=true, pref=nothing) = begin
 
-    @info "Extracting configuration and input fields..."
-    (; U, p, nu, mesh) = model
-    (; solvers, schemes, runtime) = config
+    R_ux, R_uy, R_uz, R_p, model = setup_incompressible_solvers(
+        PISO, model_in, config, backend;
+        resume=true, pref=nothing
+        )
+        
+    return R_ux, R_uy, R_uz, R_p, model
+end
 
-    @info "Preallocating fields..."
-    
-    ∇p = Grad{schemes.p.gradient}(p)
-    mdotf = FaceScalarField(mesh)
-    # nuf = ConstantScalar(nu) # Implement constant field!
-    rDf = FaceScalarField(mesh)
-    nueff = FaceScalarField(mesh)
-    initialise!(rDf, 1.0)
-    divHv = ScalarField(mesh)
-
-    @info "Defining models..."
-
-    ux_eqn = (
-        Time{schemes.U.time}(U.x)
-        + Divergence{schemes.U.divergence}(mdotf, U.x) 
-        - Laplacian{schemes.U.laplacian}(nueff, U.x) 
-        == 
-        -Source(∇p.result.x)
-    ) → Equation(mesh)
-    
-    uy_eqn = (
-        Time{schemes.U.time}(U.y)
-        + Divergence{schemes.U.divergence}(mdotf, U.y) 
-        - Laplacian{schemes.U.laplacian}(nueff, U.y) 
-        == 
-        -Source(∇p.result.y)
-    ) → Equation(mesh)
-
-    p_eqn = (
-        Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
-    ) → Equation(mesh)
-
-    @info "Initialising preconditioners..."
-    
-    @reset ux_eqn.preconditioner = set_preconditioner(
-                    solvers.U.preconditioner, ux_eqn, U.x.BCs, runtime)
-    @reset uy_eqn.preconditioner = ux_eqn.preconditioner
-    @reset p_eqn.preconditioner = set_preconditioner(
-                    solvers.p.preconditioner, p_eqn, p.BCs, runtime)
-
-    @info "Pre-allocating solvers..."
-     
-    @reset ux_eqn.solver = solvers.U.solver(_A(ux_eqn), _b(ux_eqn))
-    @reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
-    @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
-
-    if isturbulent(model)
-        @info "Initialising turbulence model..."
-        turbulence = initialise_RANS(mdotf, p_eqn, config, model)
-        config = turbulence.config
-    else
-        turbulence = nothing
-    end
-
-    R_ux, R_uy, R_p  = PISO_loop(
-    model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config ; resume=resume, pref=pref)
-
-    return R_ux, R_uy, R_p     
-end # end function
-
-function PISO_loop(
-    model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config ; resume, pref)
+function PISO(
+    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config, backend ; resume, pref)
     
     # Extract model variables and configuration
     (;mesh, U, p, nu) = model
@@ -102,13 +46,17 @@ function PISO_loop(
 
     # Pre-allocate auxiliary variables
 
+    # Consider using allocate from KernelAbstractions 
+    # e.g. allocate(backend, Float32, res, res)
     TF = _get_float(mesh)
-    prev = zeros(TF, n_cells)  
+    prev = zeros(TF, n_cells)
+    prev = _convert_array!(prev, backend)  
 
     # Pre-allocate vectors to hold residuals 
 
     R_ux = ones(TF, iterations)
     R_uy = ones(TF, iterations)
+    R_uz = ones(TF, iterations)
     R_p = ones(TF, iterations)
     
     interpolate!(Uf, U)   
@@ -118,7 +66,7 @@ function PISO_loop(
 
     update_nueff!(nueff, nu, turbulence)
 
-    @info "Staring SIMPLE loops..."
+    @info "Staring PISO loops..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
@@ -129,8 +77,8 @@ function PISO_loop(
         apply_boundary_conditions!(ux_eqn, U.x.BCs)
         # ux_eqn.b .-= divUTx
         # implicit_relaxation!(ux_eqn.equation, prev, solvers.U.relax)
-        update_preconditioner!(ux_eqn.preconditioner)
-        run!(ux_eqn, solvers.U) #opP=Pu.P, solver=solver_U)
+        update_preconditioner!(ux_eqn.preconditioner, mesh)
+        run!(ux_eqn, solvers.U, U.x) #opP=Pu.P, solver=solver_U)
         residual!(R_ux, ux_eqn.equation, U.x, iteration)
 
         @. prev = U.y.values
@@ -138,16 +86,27 @@ function PISO_loop(
         apply_boundary_conditions!(uy_eqn, U.y.BCs)
         # uy_eqn.b .-= divUTy
         # implicit_relaxation!(uy_eqn.equation, prev, solvers.U.relax)
-        update_preconditioner!(uy_eqn.preconditioner)
-        run!(uy_eqn, solvers.U)
+        update_preconditioner!(uy_eqn.preconditioner, mesh)
+        run!(uy_eqn, solvers.U, U.y)
         residual!(R_uy, uy_eqn.equation, U.y, iteration)
+
+        if typeof(mesh) <: Mesh3
+            @. prev = U.z.values
+            discretise!(uz_eqn, prev, runtime)
+            apply_boundary_conditions!(uz_eqn, U.z.BCs)
+            # uy_eqn.b .-= divUTy
+            # implicit_relaxation!(uz_eqn, prev, solvers.U.relax, mesh)
+            update_preconditioner!(uz_eqn.preconditioner, mesh)
+            run!(uz_eqn, solvers.U, U.z)
+            residual!(R_uz, uz_eqn.equation, U.z, iteration)
+        end
         
-        inverse_diagonal!(rD, ux_eqn.equation)
+        inverse_diagonal!(rD, ux_eqn)
         interpolate!(rDf, rD)
-        remove_pressure_source!(ux_eqn, uy_eqn, ∇p)
+        remove_pressure_source!(ux_eqn, uy_eqn, uz_eqn, ∇p)
 
         for i ∈ 1:2
-        H!(Hv, U, ux_eqn, uy_eqn)
+        H!(Hv, U, ux_eqn, uy_eqn, uz_eqn)
 
         interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs)
@@ -156,9 +115,9 @@ function PISO_loop(
         @. prev = p.values
         discretise!(p_eqn, prev, runtime)
         apply_boundary_conditions!(p_eqn, p.BCs)
-        setReference!(p_eqn.equation, pref, 1)
-        update_preconditioner!(p_eqn.preconditioner)
-        run!(p_eqn, solvers.p)
+        setReference!(p_eqn, pref, 1)
+        update_preconditioner!(p_eqn.preconditioner, mesh)
+        run!(p_eqn, solvers.p, p)
 
         explicit_relaxation!(p, prev, solvers.p.relax)
         residual!(R_p, p_eqn.equation, p, iteration)
@@ -218,14 +177,15 @@ function PISO_loop(
         #     break
         # end
 
-        co = courant_number(U, mesh, runtime)
+        # co = courant_number(U, mesh, runtime) # MUST IMPLEMENT!!!!!!
 
         ProgressMeter.next!(
             progress, showvalues = [
                 (:time,iteration*runtime.dt),
-                (:Courant,co),
+                # (:Courant,co),
                 (:Ux, R_ux[iteration]),
                 (:Uy, R_uy[iteration]),
+                (:Uz, R_uz[iteration]),
                 (:p, R_p[iteration]),
                 ]
             )
@@ -235,5 +195,5 @@ function PISO_loop(
         end
 
     end # end for loop
-    return R_ux, R_uy, R_p 
+    return R_ux, R_uy, R_uz, R_p, model
 end

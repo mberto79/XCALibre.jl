@@ -21,29 +21,33 @@
 #     write_vtk(name, model.mesh, args...)
 # end
 
-# get_data(a, backend::CUDABackend) = begin
-#     a_cpu = Array{eltype(a)}(undef, length(a))
-#     copyto!(a_cpu, a)
-#     a_cpu
-# end
+get_data(arr, backend::CUDABackend) = begin
+    arr_cpu = Array{eltype(arr)}(undef, length(arr))
+    copyto!(arr_cpu, arr)
+    arr_cpu
+end
+
+get_data(arr, backend::CPU) = begin
+    arr
+end
 
 function write_vtk(name, mesh::Mesh3, args...)
     filename=name*".vtu"
 
     # Deactivate copies below for serial version of the codebase
-    # backend = _get_backend(mesh)
-    # nodes_cpu = get_data(mesh.nodes, backend)
-    # faces_cpu = get_data(mesh.faces, backend)
-    # cells_cpu = get_data(mesh.cells, backend)
-    # cell_nodes_cpu = get_data(mesh.cell_nodes, backend)
-    # face_nodes_cpu = get_data(mesh.face_nodes, backend)
+    backend = _get_backend(mesh)
+    nodes_cpu = get_data(mesh.nodes, backend)
+    faces_cpu = get_data(mesh.faces, backend)
+    cells_cpu = get_data(mesh.cells, backend)
+    cell_nodes_cpu = get_data(mesh.cell_nodes, backend)
+    face_nodes_cpu = get_data(mesh.face_nodes, backend)
 
     # Serial version
-    nodes_cpu = mesh.nodes
-    faces_cpu = mesh.faces
-    cells_cpu = mesh.cells
-    cell_nodes_cpu = mesh.cell_nodes
-    face_nodes_cpu = mesh.face_nodes
+    # nodes_cpu = mesh.nodes
+    # faces_cpu = mesh.faces
+    # cells_cpu = mesh.cells
+    # cell_nodes_cpu = mesh.cell_nodes
+    # face_nodes_cpu = mesh.face_nodes
 
     open(filename,"w") do io
 
@@ -208,7 +212,8 @@ function write_vtk(name, mesh::Mesh3, args...)
             if field_type <: ScalarField
                 write(io,"     <DataArray type=\"$(F32)\" Name=\"$(label)\" format=\"$(format)\">\n")
                 # values_cpu= copy_scalarfield_to_cpu(field.values, backend)
-                values_cpu= field.values
+                values_cpu = get_data(field.values, backend)
+                # values_cpu= field.values
                 for value ∈ values_cpu
                     println(io,value)
                 end
@@ -216,7 +221,10 @@ function write_vtk(name, mesh::Mesh3, args...)
             elseif field_type <: VectorField
                 write(io,"     <DataArray type=\"$(F32)\" Name=\"$(label)\" format=\"$(format)\" NumberOfComponents=\"3\">\n")
                 # x_cpu, y_cpu, z_cpu = copy_to_cpu(field.x.values, field.y.values, field.z.values, backend)
-                x_cpu, y_cpu, z_cpu = field.x.values, field.y.values, field.z.values
+                # x_cpu, y_cpu, z_cpu = field.x.values, field.y.values, field.z.values
+                x_cpu = get_data(field.x.values, backend)
+                y_cpu = get_data(field.y.values, backend)
+                z_cpu = get_data(field.z.values, backend)
                 for i ∈ eachindex(x_cpu)
                     println(io, x_cpu[i]," ",y_cpu[i] ," ",z_cpu[i] )
                 end

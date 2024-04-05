@@ -45,7 +45,9 @@ Adapt.@adapt_structure ScalarField
 ScalarField(mesh::AbstractMesh) =begin
     ncells  = length(mesh.cells)
     F = _get_float(mesh)
-    ScalarField(zeros(F,ncells), mesh, ())
+    backend = _get_backend(mesh)
+    arr = _convert_array!(zeros(F,ncells), backend)
+    ScalarField(arr, mesh, ())
 end
 
 struct FaceScalarField{VF,M<:AbstractMesh} <: AbstractScalarField
@@ -56,7 +58,9 @@ Adapt.@adapt_structure FaceScalarField
 FaceScalarField(mesh::AbstractMesh) = begin
     nfaces  = length(mesh.faces)
     F = _get_float(mesh)
-    FaceScalarField(zeros(F,nfaces), mesh)
+    backend = _get_backend(mesh)
+    arr = _convert_array!(zeros(F,nfaces), backend)
+    FaceScalarField(arr, mesh) #Make it pretty
 end
 
 # (s::AbstractScalarField)(i::Integer) = s.values[i]
@@ -81,11 +85,15 @@ end
 Adapt.@adapt_structure VectorField
 VectorField(mesh::AbstractMesh) = begin
     ncells = length(mesh.cells)
-    F = eltype(mesh.nodes[1].coords)
+    F = _get_float(mesh) #eltype(mesh.nodes[1].coords) #TEMPORARY SOLUTION, RUN BY HUMBERTO
+    backend = _get_backend(mesh)
+    arr1 = _convert_array!(zeros(F,ncells), backend)
+    arr2 = _convert_array!(zeros(F,ncells), backend)
+    arr3 = _convert_array!(zeros(F,ncells), backend)
     VectorField(
-        ScalarField(zeros(F, ncells), mesh, ()),
-        ScalarField(zeros(F, ncells), mesh, ()), 
-        ScalarField(zeros(F, ncells), mesh, ()), 
+        ScalarField(arr1, mesh, ()),
+        ScalarField(arr2, mesh, ()), 
+        ScalarField(arr3, mesh, ()), 
         mesh,
         () # to hold x, y, z and combined BCs
         )
@@ -100,11 +108,15 @@ end
 Adapt.@adapt_structure FaceVectorField
 FaceVectorField(mesh::AbstractMesh) = begin
     nfaces = length(mesh.faces)
-    F = eltype(mesh.nodes[1].coords)
+    F = _get_float(mesh)
+    backend = _get_backend(mesh)
+    arr1 = _convert_array!(zeros(F,nfaces), backend)
+    arr2 = _convert_array!(zeros(F,nfaces), backend)
+    arr3 = _convert_array!(zeros(F,nfaces), backend)
     FaceVectorField(
-        FaceScalarField(zeros(F, nfaces), mesh),
-        FaceScalarField(zeros(F, nfaces), mesh), 
-        FaceScalarField(zeros(F, nfaces), mesh),
+        FaceScalarField(arr1, mesh),
+        FaceScalarField(arr2, mesh), 
+        FaceScalarField(arr3, mesh),
         mesh)
 end
 

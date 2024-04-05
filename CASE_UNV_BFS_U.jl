@@ -1,6 +1,8 @@
 using Plots
 using FVM_1D
 using Krylov
+using KernelAbstractions
+using CUDA
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
@@ -36,15 +38,15 @@ schemes = (
 solvers = (
     U = set_solver(
         model.U;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = DILU(),
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1.0,
     ),
     p = set_solver(
         model.p;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = LDL(),
+        solver      = CgSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1.0,
     )
@@ -61,12 +63,15 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-Rx, Ry, Rp = piso!(model, config) # 9.39k allocs
+# backend = CUDABackend()
+backend = CPU()
 
-plot(; xlims=(0,184))
-plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p")
+Rx, Ry, Rz, Rp, model1 = simple!(model, config, backend); # 9.39k allocs
+
+# plot(; xlims=(0,184))
+# plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
+# plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
+# plot!(1:length(Rp), Rp, yscale=:log10, label="p")
 
 # # PROFILING CODE
 

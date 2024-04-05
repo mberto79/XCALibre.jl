@@ -1,6 +1,8 @@
 export StrainRate
 export double_inner_product!
 export magnitude!, magnitude2!
+export number_symbols
+# export boundary_map
 
 struct StrainRate{G, GT} <: AbstractTensorField
     gradU::G
@@ -88,6 +90,7 @@ bound!(field, bound) = begin
     end
 end
 
+# Create LUT to map boudnary names to indices
 function boundary_map(mesh)
     I = Integer; S = Symbol
     boundary_map = boundary_info{I,S}[]
@@ -98,3 +101,18 @@ function boundary_map(mesh)
 
     return boundary_map
 end
+
+# function number_symbols(mesh)
+#     symbol_mapping = Dict{Symbol, Int}()
+
+#     for (i, boundary) in enumerate(mesh.boundaries)
+#         if haskey(symbol_mapping, boundary.name)
+#             # Do nothing, the symbol is already mapped
+#         else
+#             new_number = length(symbol_mapping) + 1
+#             symbol_mapping[boundary.name] = new_number
+#         end
+#     end
+    
+#     return symbol_mapping
+# end

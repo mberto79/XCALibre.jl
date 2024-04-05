@@ -11,7 +11,7 @@ mesh = build_mesh(mesh_file, scale=0.001)
 
 velocity = [0.50, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
-nu = 1e-3
+nu = 1e-4
 Re = (0.2*velocity[1])/nu
 
 model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))

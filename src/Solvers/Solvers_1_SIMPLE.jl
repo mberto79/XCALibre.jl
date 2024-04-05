@@ -11,9 +11,11 @@ function simple!(model, config; resume=true, pref=nothing)
     ∇p = Grad{schemes.p.gradient}(p)
     mdotf = FaceScalarField(mesh)
     # nuf = ConstantScalar(nu) # Implement constant field!
-    rDf = FaceScalarField(mesh)
+    # rDf = FaceScalarField(mesh)
+    rDf = FaceVectorField(mesh)
     nueff = FaceScalarField(mesh)
-    initialise!(rDf, 1.0)
+    # initialise!(rDf, 1.0)
+    initialise!(rDf, [1.0, 1.0, 1.0])
     divHv = ScalarField(mesh)
 
     @info "Defining models..."
@@ -79,6 +81,7 @@ function SIMPLE_loop(
     mdotf = get_flux(ux_eqn, 2)
     nueff = get_flux(ux_eqn, 3)
     rDf = get_flux(p_eqn, 1)
+
     divHv = get_source(p_eqn, 1)
     
     @info "Allocating working memory..."
@@ -227,14 +230,11 @@ function SIMPLE_loop(
         inverse_diagonal!(rDy, uy_eqn.equation)
         interpolate!(rDfy, rDy)
 
-        # for fci ∈ 1:length(rDfx)
-        #     (; area, normal, delta) = faces[fci] 
+        rDf.x.values .= rDfx.values
+        rDf.y.values .= rDfy.values
 
-        #     rDf.values[fci] = ((rDfx.values[fci]*normal[1])^2 + (rDfy.values[fci]*normal[2])^2)/((rDfx.values[fci]*normal[1]) + (rDfy.values[fci]*normal[2]))
-        # end
-
-        inverse_diagonal!(rD, ux_eqn.equation)
-        interpolate!(rDf, rD)
+        # inverse_diagonal!(rD, ux_eqn.equation)
+        # interpolate!(rDf, rD)
 
         remove_pressure_source!(ux_eqn, uy_eqn, ∇p)
         H!(Hv, U, ux_eqn, uy_eqn)
@@ -276,7 +276,6 @@ function SIMPLE_loop(
         interpolate!(Uf, U)
         correct_boundaries!(Uf, U, U.BCs)
         flux!(mdotf, Uf)
-
         
         if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs)

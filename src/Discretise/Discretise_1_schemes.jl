@@ -41,7 +41,12 @@ end
     term::Operator{F,P,I,Laplacian{Linear}}, 
     nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
-    ap = term.sign*(-term.flux[fID] * face.area)/face.delta
+    if term.flux isa FaceScalarField{}
+        ap = term.sign*(-term.flux[fID] * face.area)/face.delta
+    elseif term.flux isa FaceVectorField{}
+        # Using orthogonal correction approach
+        ap = term.sign*(-sqrt((term.flux[fID][1]*face.normal[1])^2 + (term.flux[fID][2]*face.normal[2])^2 + (term.flux[fID][3]*face.normal[3])^2) * face.area)/face.delta
+    end
     nzval[cIndex] += ap
     nzval[nIndex] += -ap
     nothing

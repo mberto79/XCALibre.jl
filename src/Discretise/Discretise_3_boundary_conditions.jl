@@ -16,7 +16,12 @@ end
     ) where {F,P,I} = begin
     J = term.flux[fID]
     (; area, delta) = face 
-    flux = J*area/delta
+    if term.flux isa FaceScalarField{}
+        flux = J*area/delta
+    elseif term.flux isa FaceVectorField{}
+        println(J[1])
+        flux = (sqrt((J[1]*face.normal[1])^2 + (J[2]*face.normal[2])^2 + (J[3]*face.normal[3])^2) * area)/delta
+    end
     ap = term.sign[1]*(-flux)
     A[cellID,cellID] += ap
     b[cellID] += ap*bc.value

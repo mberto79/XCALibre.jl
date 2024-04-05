@@ -14,6 +14,8 @@ noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
 Re = (0.2*velocity[1])/nu
 
+println(Re)
+
 model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 @assign! model U ( 
@@ -45,16 +47,16 @@ solvers = (
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = LDL(),
         convergence = 1e-7,
-        relax       = 0.3,
+        relax       = 0.2,
     )
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind, gradient=Midpoint),
+    U = set_schemes(divergence=Linear, gradient=Midpoint),
     p = set_schemes(divergence=Linear, gradient=Midpoint)
 )
 
-runtime = set_runtime(iterations=600, write_interval=10, time_step=1.0)
+runtime = set_runtime(iterations=600, write_interval=10, time_step=0.1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

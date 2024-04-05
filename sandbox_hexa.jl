@@ -18,23 +18,27 @@ boundaryElements
 
 @time mesh = build_mesh3D(unv_mesh)
 
-function generate_cell_nodes(volumes)
-    #cell_nodes = Vector{Int64}(undef, length(volumes) * 4) #length of cells times number of nodes per cell (tet only)
-    cell_nodes = Int64[] # cell_node length is undetermined as mesh could be hybrid, using push. Could use for and if before to preallocate vector.
-    counter = 0
-    for n = eachindex(volumes)
-        for i = 1:volumes[n].volumeCount
-            counter = counter + 1
-            push!(cell_nodes,volumes[n].volumes[i])
-        end
-    end
-    cell_nodes
+function generate_node_cells(points, volumes)
+    temp_node_cells = [Int64[] for _ ∈ eachindex(points)] # array of vectors to hold cellIDs
 
-    cell_nodes_range = Vector{UnitRange{Int64}}(undef, length(volumes)) # cell_nodes_range determined by no. of cells.
-    x = 0
-    for i = eachindex(volumes)
-        cell_nodes_range[i] = UnitRange(x + 1, x + length(volumes[i].volumes))
-        x = x + length(volumes[i].volumes)
+    # Add cellID to each point that defines a "volume"
+    for (cellID, volume) ∈ enumerate(volumes)
+        for nodeID ∈ volume.volumes
+            push!(temp_node_cells[nodeID], cellID)
+        end
+    end # Should be hybrid compatible 
+
+    node_cells_size = sum(length.(temp_node_cells)) # number of cells in node_cells
+
+    node_cells_index = 0 # change to node cells index
+    node_cells = zeros(Int64, node_cells_size)
+    node_cells_range = [UnitRange{Int64}(1, 1) for _ ∈ eachindex(points)]
+    for (nodeID, cellsID) ∈ enumerate(temp_node_cells)
+        for cellID ∈ cellsID
+            node_cells_index += 1
+            node_cells[node_cells_index] = cellID
+        end
+        node_cells_range[nodeID] = UnitRange{Int64}(node_cells_index - length(cellsID) + 1, node_cells_index)
     end
-    return cell_nodes, cell_nodes_range
-end
+    return node_cells, node_cells_range
+end #Tested for hexa cells, working

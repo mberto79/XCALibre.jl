@@ -292,22 +292,47 @@ function generate_node_cells(points, volumes)
         for nodeID ∈ volume.volumes
             push!(temp_node_cells[nodeID], cellID)
         end
-    end
+    end # Should be hybrid compatible 
 
     node_cells_size = sum(length.(temp_node_cells)) # number of cells in node_cells
 
-    index = 0 # change to node cells index
+    node_cells_index = 0 # change to node cells index
     node_cells = zeros(Int64, node_cells_size)
     node_cells_range = [UnitRange{Int64}(1, 1) for _ ∈ eachindex(points)]
     for (nodeID, cellsID) ∈ enumerate(temp_node_cells)
         for cellID ∈ cellsID
-            index += 1
-            node_cells[index] = cellID
+            node_cells_index += 1
+            node_cells[node_cells_index] = cellID
         end
-        node_cells_range[nodeID] = UnitRange{Int64}(index - length(cellsID) + 1, index)
+        node_cells_range[nodeID] = UnitRange{Int64}(node_cells_index - length(cellsID) + 1, node_cells_index)
     end
     return node_cells, node_cells_range
-end
+end #Tested for hexa cells, working
+
+# function generate_node_cells(points, volumes)
+#     temp_node_cells = [Int64[] for _ ∈ eachindex(points)] # array of vectors to hold cellIDs
+
+#     # Add cellID to each point that defines a "volume"
+#     for (cellID, volume) ∈ enumerate(volumes)
+#         for nodeID ∈ volume.volumes
+#             push!(temp_node_cells[nodeID], cellID)
+#         end
+#     end
+
+#     node_cells_size = sum(length.(temp_node_cells)) # number of cells in node_cells
+
+#     index = 0 # change to node cells index
+#     node_cells = zeros(Int64, node_cells_size)
+#     node_cells_range = [UnitRange{Int64}(1, 1) for _ ∈ eachindex(points)]
+#     for (nodeID, cellsID) ∈ enumerate(temp_node_cells)
+#         for cellID ∈ cellsID
+#             index += 1
+#             node_cells[index] = cellID
+#         end
+#         node_cells_range[nodeID] = UnitRange{Int64}(index - length(cellsID) + 1, index)
+#     end
+#     return node_cells, node_cells_range
+# end
 
 function build_nodes(points, cells_range)
     nodes = [Node(SVector{3, Float64}(0.0,0.0,0.0), 1:1) for _ ∈ eachindex(points)]

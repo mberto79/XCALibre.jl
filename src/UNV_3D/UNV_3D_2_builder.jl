@@ -23,7 +23,7 @@ function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
 
         iface_nodes, iface_nodes_range, iface_owners_cells = 
         begin 
-            generate_internal_faces(volumes, bfaces, nodes, node_cells)
+            generate_internal_faces(volumes, bfaces, nodes, node_cells) # Added other cell types, error occuring with ownerCells which removes all ifaces thinking they are bfaces
         end
 
         # NOTE: A function will be needed here to reorder the nodes IDs of "faces" to be geometrically sound! (not needed for tet cells though)

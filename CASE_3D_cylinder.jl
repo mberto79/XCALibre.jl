@@ -50,11 +50,12 @@ schemes = (
 solvers = (
     U = set_solver(
         model.U;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
-        rtol = 1e-3
+        rtol = 1e-4,
+        atol = 1e-4
     ),
     p = set_solver(
         model.p;
@@ -62,8 +63,8 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 1e-3
-
+        rtol = 1e-4,
+        atol = 1e-4
     )
 )
 

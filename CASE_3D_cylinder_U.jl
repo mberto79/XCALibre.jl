@@ -57,7 +57,7 @@ solvers = (
     ),
     p = set_solver(
         model.p;
-        solver      = CgSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
+        solver      = CgSolver, #SymmlqSolver, #CgSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1.0,

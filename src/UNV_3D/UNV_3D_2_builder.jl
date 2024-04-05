@@ -11,9 +11,9 @@ function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
         println("File Read Successfully")
         println("Generating Mesh...")
 
-        cell_nodes, cell_nodes_range = generate_cell_nodes(volumes)
-        node_cells, node_cells_range = generate_node_cells(points, volumes) 
-        nodes = build_nodes(points, node_cells_range)
+        cell_nodes, cell_nodes_range = generate_cell_nodes(volumes) # Should be Hybrid compatible, tested for hexa. Using push instead of allocating vector.
+        node_cells, node_cells_range = generate_node_cells(points, volumes)  # Should be Hybrid compatible, tested for hexa.
+        nodes = build_nodes(points, node_cells_range) # Hyrbid compatible, works for Tet and Hexa
         boundaries = build_boundaries(boundaryElements)
 
         bface_nodes, bface_nodes_range, bface_owners_cells, boundary_cellsID = 
@@ -334,13 +334,21 @@ end #Tested for hexa cells, working
 #     return node_cells, node_cells_range
 # end
 
-function build_nodes(points, cells_range)
+function build_nodes(points, node_cells_range) # Hybrid compatible. Works for Tet and Hexa
     nodes = [Node(SVector{3, Float64}(0.0,0.0,0.0), 1:1) for _ ∈ eachindex(points)]
     @inbounds for i ∈ eachindex(points)
-        nodes[i] =  Node(points[i].xyz, cells_range[i])
+        nodes[i] =  Node(points[i].xyz, node_cells_range[i])
     end
     return nodes
 end
+
+# function build_nodes(points, cells_range)
+#     nodes = [Node(SVector{3, Float64}(0.0,0.0,0.0), 1:1) for _ ∈ eachindex(points)]
+#     @inbounds for i ∈ eachindex(points)
+#         nodes[i] =  Node(points[i].xyz, cells_range[i])
+#     end
+#     return nodes
+# end
 
 # DEFINE FUNCTIONS
 function calculate_face_properties(faces, face_ownerCells, cells_centre, faces_centre, face_normal)

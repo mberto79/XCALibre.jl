@@ -18,27 +18,15 @@ boundaryElements
 
 @time mesh = build_mesh3D(unv_mesh)
 
-function generate_node_cells(points, volumes)
-    temp_node_cells = [Int64[] for _ ∈ eachindex(points)] # array of vectors to hold cellIDs
+cell_nodes, cell_nodes_range = FVM_1D.UNV_3D.generate_cell_nodes(volumes) # Should be Hybrid compatible, tested for hexa. Using push instead of allocating vector.
+node_cells, node_cells_range = FVM_1D.UNV_3D.generate_node_cells(points, volumes)
 
-    # Add cellID to each point that defines a "volume"
-    for (cellID, volume) ∈ enumerate(volumes)
-        for nodeID ∈ volume.volumes
-            push!(temp_node_cells[nodeID], cellID)
-        end
-    end # Should be hybrid compatible 
-
-    node_cells_size = sum(length.(temp_node_cells)) # number of cells in node_cells
-
-    node_cells_index = 0 # change to node cells index
-    node_cells = zeros(Int64, node_cells_size)
-    node_cells_range = [UnitRange{Int64}(1, 1) for _ ∈ eachindex(points)]
-    for (nodeID, cellsID) ∈ enumerate(temp_node_cells)
-        for cellID ∈ cellsID
-            node_cells_index += 1
-            node_cells[node_cells_index] = cellID
-        end
-        node_cells_range[nodeID] = UnitRange{Int64}(node_cells_index - length(cellsID) + 1, node_cells_index)
+function build_nodes(points, node_cells_range)
+    nodes = [Node(SVector{3, Float64}(0.0,0.0,0.0), 1:1) for _ ∈ eachindex(points)]
+    @inbounds for i ∈ eachindex(points)
+        nodes[i] =  Node(points[i].xyz, node_cells_range[i])
     end
-    return node_cells, node_cells_range
-end #Tested for hexa cells, working
+    return nodes
+end
+
+build_nodes(points, node_cells_range)

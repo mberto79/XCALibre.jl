@@ -20,12 +20,12 @@ function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
 
         bface_nodes, bface_nodes_range, bface_owners_cells, boundary_cellsID = 
         begin
-            generate_boundary_faces(boundaryElements, efaces, nbfaces, node_cells, node_cells_range, volumes)
+            generate_boundary_faces(boundaryElements, efaces, nbfaces, node_cells, node_cells_range, volumes) # Hybrid compatible, tested with hexa
         end
 
         iface_nodes, iface_nodes_range, iface_owners_cells = 
         begin 
-            generate_internal_faces(volumes, nbfaces, nodes, node_cells)
+            generate_internal_faces(volumes, nbfaces, nodes, node_cells) # Hybrid compatible, tested with hexa.
         end
 
         # NOTE: A function will be needed here to reorder the nodes IDs of "faces" to be geometrically sound! (not needed for tet cells though)
@@ -650,7 +650,6 @@ function generate_cell_neighbours(cells, cell_faces)
 end
 
 # NOTE: the function has been written to be extendable to multiple element types
-#function generate_internal_faces(volumes, nbfaces, nodes, node_cells)
 
 function generate_internal_faces(volumes, nbfaces, nodes, node_cells)
     # determine total number of faces based on cell type (including duplicates)

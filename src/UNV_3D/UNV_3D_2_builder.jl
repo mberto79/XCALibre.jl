@@ -57,7 +57,7 @@ function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
         ) # Hexa tested.
 
         # Update mesh to include all geometry calculations required
-        calculate_centres!(mesh) # Uses centroid instead of geometric. Will need changing.
+        calculate_centres!(mesh) # Uses centroid instead of geometric. Will need changing, should work fine for regular cells and faces
         calculate_face_properties!(mesh)
         calculate_area_and_volume!(mesh)
 
@@ -102,7 +102,7 @@ function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
     #For unit testing
     #return mesh,cell_face_nodes, node_cells, all_cell_faces,boundary_cells,boundary_faces,all_cell_faces_range
 =#
-end
+    end
 end
 
 # Convenience access FUNCTIONS

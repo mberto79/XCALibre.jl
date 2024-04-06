@@ -66,26 +66,11 @@ function write_vtk(name, mesh::Mesh3, args...)
         faces="faces"
         face_offsets="faceoffsets"
         types="types"
-        #temp="temperature"
         scalar="scalar"
         vector="vector"
-        #pressure="pressure"
         poly=42
         x=0
         y=0
-
-        # Not in use!
-        # #Modifying Data
-        # store_cells=zeros(Int32,length(cells_cpu))
-        # for i=1:length(cells_cpu)
-        #     store_cells[i]=length(cells_cpu[1].nodes_range)*i
-        # end
-
-        #temp
-        #temp_cells=LinRange(0,500,length(cells_cpu))
-
-        #pressure
-        #pressure_cells=LinRange(0,10000,length(cells_cpu))
 
         #Writing
         write(io,"<?xml version=\"$(one)\"?>\n")
@@ -176,11 +161,18 @@ function write_vtk(name, mesh::Mesh3, args...)
         # end
 
         for i=1:length(cells_cpu)
+            #Tet
             if length(cells_cpu[i].nodes_range)==4
                 x=17*i
                 write(io,"     $(x)\n")
             end
+            #Hexa
+            if length(cells_cpu[i].nodes_range)==8
+                x=31*i
+                write(io,"     $(x)\n")
+            end
         end
+
         write(io,"     </DataArray>\n")
         write(io,"     <DataArray type=\"$(I64)\" Name=\"$(types)\" format=\"$(format)\">\n")
         #write(io,"      $(poly)\n")
@@ -191,13 +183,11 @@ function write_vtk(name, mesh::Mesh3, args...)
         write(io,"    </Cells>\n")
         write(io,"    <CellData>\n")
 
-
         # write(io,"     <DataArray type=\"$(F32)\" Name=\"$(temp)\" format=\"$(format)\">\n")
         # for i=1:length(temp_cells)
         #     write(io,"      $(join(temp_cells[i]," "))\n")
         # end
         # write(io,"     </DataArray>\n")
-
 
         # write(io,"     <DataArray type=\"$(F32)\" Name=\"$(pressure)\" format=\"$(format)\">\n")
         # for i=1:length(pressure_cells)

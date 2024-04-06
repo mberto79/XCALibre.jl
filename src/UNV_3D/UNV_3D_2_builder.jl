@@ -57,7 +57,7 @@ function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
         ) # Hexa tested.
 
         # Update mesh to include all geometry calculations required
-        calculate_centres!(mesh)
+        calculate_centres!(mesh) # Uses centroid instead of geometric. Will need changing.
         calculate_face_properties!(mesh)
         calculate_area_and_volume!(mesh)
 

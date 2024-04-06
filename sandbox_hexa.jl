@@ -17,7 +17,7 @@ efaces
 volumes
 boundaryElements
 
-#@time mesh = build_mesh3D(unv_mesh)
+@time mesh = build_mesh3D(unv_mesh)
 
 cell_nodes, cell_nodes_range = FVM_1D.UNV_3D.generate_cell_nodes(volumes) # Should be Hybrid compatible, tested for hexa. Using push instead of allocating vector.
 node_cells, node_cells_range = FVM_1D.UNV_3D.generate_node_cells(points, volumes)
@@ -53,9 +53,3 @@ cells = FVM_1D.UNV_3D.build_cells(cell_nodes_range, cell_faces_range)
 
 faces = FVM_1D.UNV_3D.build_faces(face_nodes_range, face_owner_cells)
 
-mesh = Mesh3(
-            cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, 
-            faces, face_nodes, boundaries, 
-            nodes, node_cells,
-            SVector{3, Float64}(0.0, 0.0, 0.0), UnitRange{Int64}(0, 0), boundary_cellsID
-        )

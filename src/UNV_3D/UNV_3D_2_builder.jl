@@ -47,14 +47,14 @@ function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
 
         # Build mesh (without calculation of geometry/properties)
         cells = build_cells(cell_nodes_range, cell_faces_range) # Hybrid compatible. Hexa tested.
-        faces = build_faces(face_nodes_range, face_owner_cells)
+        faces = build_faces(face_nodes_range, face_owner_cells) # Hybrid compatible. Hexa tested.
 
         mesh = Mesh3(
             cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, 
             faces, face_nodes, boundaries, 
             nodes, node_cells,
             SVector{3, Float64}(0.0, 0.0, 0.0), UnitRange{Int64}(0, 0), boundary_cellsID
-        )
+        ) # Hexa tested.
 
         # Update mesh to include all geometry calculations required
         calculate_centres!(mesh)

@@ -87,9 +87,9 @@ function load_3D(unv_mesh; scale, integer, float)
         #Lines
         if length(sline)==6 && parse(Int64,sline[end])==2
             edgeCount=parse(Int,sline[end])
-            #edgeindex=parse(Int,sline[1])
-            counter=counter+1
-            edgeindex=counter
+            edgeindex=parse(Int,sline[1])
+            # counter=counter+1
+            # edgeindex=counter
             edgeindx=indx
             continue
         end
@@ -105,16 +105,17 @@ function load_3D(unv_mesh; scale, integer, float)
         #Tetrahedral
         if length(sline)==6 && parse(Int64,sline[2])==41 && parse(Int64,sline[end])==3
             faceCount=parse(Int,sline[end])
-            #faceindex=parse(Int,sline[1])
-            counter=counter+1
-            faceindex=counter
+            faceindex=parse(Int,sline[1])
+            # counter=counter+1
+            # faceindex=counter
             faceindx=indx
             continue
         end
     
         if length(sline)==3 && indx>elementindx && indx==faceindx+1 #&& parse(Int,sline[end]) ≠ 1
             face=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(faces,Face(faceindex-edgeindex,faceCount,face))
+            #push!(faces,Face(faceindex-edgeindex,faceCount,face))
+            push!(faces,Face(faceindex,faceCount,face))
             push!(elements,Element(faceindex,faceCount,face))
             continue
         end
@@ -122,16 +123,17 @@ function load_3D(unv_mesh; scale, integer, float)
         #Hexahedral
         if length(sline)==6 && parse(Int,sline[2])==44 && parse(Int,sline[end])==4
             faceCount=parse(Int,sline[end])
-            #faceindex=parse(Int,sline[1])
-            counter=counter+1
-            faceindex=counter
+            faceindex=parse(Int,sline[1])
+            # counter=counter+1
+            # faceindex=counter
             faceindx=indx
             continue
         end
 
         if length(sline)==4 && indx>elementindx && indx==faceindx+1
             face=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(faces,Face(faceindex-edgeindex,faceCount,face))
+            #push!(faces,Face(faceindex-edgeindex,faceCount,face))
+            push!(faces,Face(faceindex,faceCount,face))
             push!(elements,Element(faceindex,faceCount,face))
             continue
         end
@@ -140,16 +142,17 @@ function load_3D(unv_mesh; scale, integer, float)
         #Tetrahedral
         if length(sline)==6 && parse(Int,sline[2])==111
             volumeCount=parse(Int,sline[end])
-            #volumeindex=parse(Int,sline[1])
-            counter=counter+1
-            volumeindex=counter
+            volumeindex=parse(Int,sline[1])
+            # counter=counter+1
+            # volumeindex=counter
             volumeindx=indx
             continue
         end
     
         if length(sline)==4 && indx>elementindx
             volume=[parse(Int64,sline[i]) for i=1:length(sline)]
-            push!(volumes,Volume(volumeindex-faceindex,volumeCount,volume))
+            #push!(volumes,Volume(volumeindex-faceindex,volumeCount,volume))
+            push!(volumes,Volume(volumeindex,volumeCount,volume))
             push!(elements,Element(volumeindex,volumeCount,volume))
             continue
         end
@@ -157,16 +160,17 @@ function load_3D(unv_mesh; scale, integer, float)
         #Hexahedral
         if length(sline)==6 && parse(Int,sline[2])==115
             volumeCount=parse(Int,sline[end])
-            #volumeindex=parse(Int,sline[1])
-            counter=counter+1
-            volumeindex=counter
+            volumeindex=parse(Int,sline[1])
+            # counter=counter+1
+            # volumeindex=counter
             volumeindx=indx
             continue
         end
 
         if length(sline)==8 && indx<boundaryindx
             volume=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(volumes,Volume(volumeindex-faceindex,volumeCount,volume))
+            #push!(volumes,Volume(volumeindex-faceindex,volumeCount,volume))
+            push!(volumes,Volume(volumeindex,volumeCount,volume))
             push!(elements,Element(volumeindex,volumeCount,volume))
             continue
         end
@@ -174,16 +178,17 @@ function load_3D(unv_mesh; scale, integer, float)
         #Wedge
         if length(sline)==6 && parse(Int,sline[2])==112
             volumeCount=parse(Int,sline[end])
-            #volumeindex=parse(Int,sline[1])
-            counter=counter+1
-            volumeindex=counter
+            volumeindex=parse(Int,sline[1])
+            # counter=counter+1
+            # volumeindex=counter
             volumeindx=indx
             continue
         end
 
         if length(sline)==6 && indx<boundaryindx
             volume=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(volumes,Volume(volumeindex-faceindex,volumeCount,volume))
+            #push!(volumes,Volume(volumeindex-faceindex,volumeCount,volume))
+            push!(volumes,Volume(volumeindex,volumeCount,volume))
             push!(elements,Element(volumeindex,volumeCount,volume))
             continue
         end
@@ -203,9 +208,11 @@ function load_3D(unv_mesh; scale, integer, float)
         if length(sline)==8 && indx>boundaryindx && parse(Int64,sline[2])!=0
             boundary=[parse(Int64,sline[i]) for i=1:length(sline)]
             push!(boundarys,(boundaryindex,boundary))
-            push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[2])-edgeindex)
+            #push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[2])-edgeindex)
+            push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[2]))
             if parse(Int64,sline[6]) ≠ 0
-              push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[6])-edgeindex)
+              #push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[6])-edgeindex)
+              push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[6]))
             end
             continue
         end

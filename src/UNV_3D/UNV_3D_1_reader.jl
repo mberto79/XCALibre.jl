@@ -114,6 +114,9 @@ function load_3D(unv_mesh; scale, integer, float)
             face_counter=face_counter+1
             faceindex=face_counter
             faceindx=indx
+            if parse(Int64,sline[1])-edgeindex != face_counter
+                throw("Face Index in UNV file are not in order! At UNV index = $(parse(Int64,sline[1]))")
+            end
             continue
         end
     
@@ -133,6 +136,9 @@ function load_3D(unv_mesh; scale, integer, float)
             face_counter=face_counter+1
             faceindex=face_counter
             faceindx=indx
+            if parse(Int64,sline[1])-edgeindex != face_counter
+                throw("Face Index in UNV file are not in order! At UNV index = $(parse(Int64,sline[1]))")
+            end
             continue
         end
 
@@ -152,6 +158,9 @@ function load_3D(unv_mesh; scale, integer, float)
             volume_counter=volume_counter+1
             volumeindex=volume_counter
             volumeindx=indx
+            if parse(Int64,sline[1])-faceindex-edgeindex != volume_counter
+                throw("Volume Index in UNV file are not in order! At UNV index = $(parse(Int64,sline[1]))")
+            end
             continue
         end
     
@@ -170,6 +179,9 @@ function load_3D(unv_mesh; scale, integer, float)
             volume_counter=volume_counter+1
             volumeindex=volume_counter
             volumeindx=indx
+            if parse(Int64,sline[1])-faceindex-edgeindex != volume_counter
+                throw("Volume Index in UNV file are not in order! At UNV index = $(parse(Int64,sline[1]))")
+            end
             continue
         end
 
@@ -188,6 +200,9 @@ function load_3D(unv_mesh; scale, integer, float)
             volume_counter=volume_counter+1
             volumeindex=volume_counter
             volumeindx=indx
+            if parse(Int64,sline[1])-faceindex-edgeindex != volume_counter
+                throw("Volume Index in UNV file are not in order! At UNV index = $(parse(Int64,sline[1]))")
+            end
             continue
         end
 

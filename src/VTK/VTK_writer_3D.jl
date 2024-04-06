@@ -171,6 +171,11 @@ function write_vtk(name, mesh::Mesh3, args...)
                 x=31*i
                 write(io,"     $(x)\n")
             end
+            #TET_PRISM
+            if length(cells_cpu[i].nodes_range)==6
+                x=24*i
+                write(io,"     $(x)\n")
+            end
         end
 
         write(io,"     </DataArray>\n")

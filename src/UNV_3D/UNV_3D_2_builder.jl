@@ -58,7 +58,7 @@ function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
 
         # Update mesh to include all geometry calculations required
         calculate_centres!(mesh) # Uses centroid instead of geometric. Will need changing, should work fine for regular cells and faces
-        calculate_face_properties!(mesh)
+        calculate_face_properties!(mesh) # Touched up face properties, double check values.
         calculate_area_and_volume!(mesh)
 
         return mesh
@@ -192,9 +192,9 @@ calculate_face_properties!(mesh) = begin
         nIDs = nodeIDs(face_nodes, face.nodes_range)
         node1 = nodes[nIDs[1]]
         node2 = nodes[nIDs[2]]
-        node3 = nodes[nIDs[3]]
-        edge1 = node2.coords - node1.coords
-        edge2 = node3.coords - node1.coords
+        #node3 = nodes[nIDs[3]]
+        # edge1 = node2.coords - node1.coords
+        # edge2 = node3.coords - node1.coords
         owners = face.ownerCells
 
         cell1 = cells[owners[1]]
@@ -218,7 +218,7 @@ calculate_face_properties!(mesh) = begin
         @reset face.delta = delta
         @reset face.e = e
         @reset face.weight = weight
-        @reset face.area = 0.5*norm(edge1×edge2)
+        #@reset face.area = 0.5*norm(edge1×edge2)
 
         faces[fID] = face
     end
@@ -229,9 +229,9 @@ calculate_face_properties!(mesh) = begin
         nIDs = nodeIDs(face_nodes, face.nodes_range)
         node1 = nodes[nIDs[1]]
         node2 = nodes[nIDs[2]]
-        node3 = nodes[nIDs[3]]
-        edge1 = node2.coords - node1.coords
-        edge2 = node3.coords - node1.coords
+        #node3 = nodes[nIDs[3]]
+        # edge1 = node2.coords - node1.coords
+        # edge2 = node3.coords - node1.coords
         owners = face.ownerCells
         cell1 = cells[owners[1]]
         cell2 = cells[owners[2]]
@@ -248,17 +248,99 @@ calculate_face_properties!(mesh) = begin
 
         # delta
         c1_c2 = cell2.centre - cell1.centre
+        fc_c1 = face.centre - cell1.centre
+        c2_fc = cell2.centre - face.centre
         delta = norm(c1_c2)
         e = c1_c2/delta
-        weight = 0.5 # !!!!!!!!!!!!!! fixed value for now !!!!!!!!!!
+        weight = abs((fc_c1 ⋅ normal)/((fc_c1 ⋅ normal)+(c2_fc ⋅ normal)))
         @reset face.delta = delta
         @reset face.e = e
         @reset face.weight = weight
-        @reset face.area = 0.5*norm(edge1×edge2)
+        #@reset face.area = 0.5*norm(edge1×edge2)
         
         faces[fID] = face
     end
 end
+
+# calculate_face_properties!(mesh) = begin
+#     # written for Tet only for debugging
+#     (; nodes, cells, faces, face_nodes, boundary_cellsID) = mesh
+#     n_bfaces = length(boundary_cellsID)
+#     n_faces = length(mesh.faces)
+
+#     # loop over boundary faces
+#     for fID ∈ 1:n_bfaces
+#         face = faces[fID]
+#         nIDs = nodeIDs(face_nodes, face.nodes_range)
+#         node1 = nodes[nIDs[1]]
+#         node2 = nodes[nIDs[2]]
+#         node3 = nodes[nIDs[3]]
+#         edge1 = node2.coords - node1.coords
+#         edge2 = node3.coords - node1.coords
+#         owners = face.ownerCells
+
+#         cell1 = cells[owners[1]]
+#         # cell2 = cells[owners[2]]
+#         fc_n1 = node1.coords - face.centre
+#         fc_n2 = node2.coords - face.centre 
+#         # cc1_cc2 = cell2.centre - cell1.centre
+#         cc1_cc2 = face.centre - cell1.centre
+#         normal_vec = fc_n1 × fc_n2
+#         normal = normal_vec/norm(normal_vec)
+#         if cc1_cc2 ⋅ normal < 0
+#             normal *= -1
+#         end
+#         @reset face.normal = normal
+
+#         # delta
+#         cc_fc = face.centre - cell1.centre
+#         delta = norm(cc_fc)
+#         e = cc_fc/delta
+#         weight = one(Float64)
+#         @reset face.delta = delta
+#         @reset face.e = e
+#         @reset face.weight = weight
+#         @reset face.area = 0.5*norm(edge1×edge2)
+
+#         faces[fID] = face
+#     end
+
+#     # loop over internal faces
+#     for fID ∈ (n_bfaces + 1):n_faces
+#         face = faces[fID]
+#         nIDs = nodeIDs(face_nodes, face.nodes_range)
+#         node1 = nodes[nIDs[1]]
+#         node2 = nodes[nIDs[2]]
+#         node3 = nodes[nIDs[3]]
+#         edge1 = node2.coords - node1.coords
+#         edge2 = node3.coords - node1.coords
+#         owners = face.ownerCells
+#         cell1 = cells[owners[1]]
+#         cell2 = cells[owners[2]]
+#         fc_n1 = node1.coords - face.centre
+#         fc_n2 = node2.coords - face.centre 
+#         cc1_cc2 = cell2.centre - cell1.centre
+#         # cc1_cc2 = face.centre - cell1.centre
+#         normal_vec = fc_n1 × fc_n2
+#         normal = normal_vec/norm(normal_vec)
+#         if cc1_cc2 ⋅ normal < 0
+#             normal *= -1
+#         end
+#         @reset face.normal = normal
+
+#         # delta
+#         c1_c2 = cell2.centre - cell1.centre
+#         delta = norm(c1_c2)
+#         e = c1_c2/delta
+#         weight = 0.5 # !!!!!!!!!!!!!! fixed value for now !!!!!!!!!!
+#         @reset face.delta = delta
+#         @reset face.e = e
+#         @reset face.weight = weight
+#         @reset face.area = 0.5*norm(edge1×edge2)
+        
+#         faces[fID] = face
+#     end
+# end
 
 calculate_area_and_volume!(mesh) = begin
     (; nodes, faces, face_nodes, cells, cell_faces, cell_nodes) = mesh

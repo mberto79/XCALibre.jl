@@ -163,17 +163,17 @@ function write_vtk(name, mesh::Mesh3, args...)
         for i=1:length(cells_cpu)
             #Tet
             if length(cells_cpu[i].nodes_range)==4
-                x=17*i
+                x=x+17
                 write(io,"     $(x)\n")
             end
             #Hexa
             if length(cells_cpu[i].nodes_range)==8
-                x=31*i
+                x=x+31
                 write(io,"     $(x)\n")
             end
             #TET_PRISM
             if length(cells_cpu[i].nodes_range)==6
-                x=24*i
+                x=x+24
                 write(io,"     $(x)\n")
             end
         end

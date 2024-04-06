@@ -21,24 +21,18 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
     # Dirichlet(:inlet, velocity),
     # Neumann(:outlet, 0.0),
     # Dirichlet(:cylinder, noSlip),
-    # Dirichlet(:bottom, velocity),
-    # Dirichlet(:top, velocity),
-    # Dirichlet(:sides, velocity)
+    # Dirichlet(:freestream, velocity)
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:cylinder, noSlip),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0),
-    Neumann(:sides, 0.0)
+    Neumann(:freestream, 0.0)
 )
 
 @assign! model p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
     Neumann(:cylinder, 0.0),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0),
-    Neumann(:sides, 0.0)
+    Neumann(:freestream, 0.0)
 )
 
 schemes = (
@@ -50,21 +44,21 @@ schemes = (
 solvers = (
     U = set_solver(
         model.U;
-        solver      = CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(),
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = NormDiagonal(),
         convergence = 1e-7,
         relax       = 0.8,
         rtol = 1e-4,
-        atol = 1e-4
+        atol = 1e-5
     ),
     p = set_solver(
         model.p;
         solver      = CgSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(),
+        preconditioner = NormDiagonal(),
         convergence = 1e-7,
         relax       = 0.2,
         rtol = 1e-4,
-        atol = 1e-4
+        atol = 1e-5
     )
 )
 

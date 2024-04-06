@@ -20,24 +20,18 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
     # Dirichlet(:inlet, velocity),
     # Neumann(:outlet, 0.0),
     # Dirichlet(:cylinder, noSlip),
-    # Dirichlet(:bottom, velocity),
-    # Dirichlet(:top, velocity),
-    # Dirichlet(:sides, velocity)
+    # Dirichlet(:freestream, velocity)
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:cylinder, noSlip),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0),
-    Neumann(:sides, 0.0)
+    Neumann(:freestream, 0.0)
 )
 
 @assign! model p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
     Neumann(:cylinder, 0.0),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0),
-    Neumann(:sides, 0.0)
+    Neumann(:freestream, 0.0)
 )
 
 schemes = (
@@ -50,24 +44,25 @@ solvers = (
     U = set_solver(
         model.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(),
+        preconditioner = NormDiagonal(),
         convergence = 1e-7,
         relax       = 1.0,
-        rtol = 1e-4
+        rtol = 1e-4,
+        atol = 1e-3
     ),
     p = set_solver(
         model.p;
         solver      = CgSolver, #SymmlqSolver, #CgSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(),
+        preconditioner = NormDiagonal(),
         convergence = 1e-7,
         relax       = 1.0,
-        rtol = 1e-4
-
+        rtol = 1e-4,
+        atol = 1e-3
     )
 )
 
 runtime = set_runtime(
-    iterations=1000, write_interval=100, time_step=0.0025)
+    iterations=1000, write_interval=50, time_step=0.005)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

@@ -70,7 +70,7 @@ function load_3D(unv_mesh; scale, integer, float)
     face_counter=0
     volume_counter=0 # To avoid UNV file jumping indexs. If exporting Salome mesh from Windows.
 
-    face_index_UNV=Int64[]
+    #face_index_UNV=Int64[]
 
     for (indx,line) in enumerate(eachline(unv_mesh))
         
@@ -110,7 +110,7 @@ function load_3D(unv_mesh; scale, integer, float)
         if length(sline)==6 && parse(Int64,sline[2])==41 && parse(Int64,sline[end])==3
             faceCount=parse(Int,sline[end])
             #faceindex=parse(Int,sline[1])
-            push!(face_index_UNV,parse(Int,sline[1]))
+            #push!(face_index_UNV,parse(Int,sline[1]))
             face_counter=face_counter+1
             faceindex=face_counter
             faceindx=indx
@@ -129,7 +129,7 @@ function load_3D(unv_mesh; scale, integer, float)
         if length(sline)==6 && parse(Int,sline[2])==44 && parse(Int,sline[end])==4
             faceCount=parse(Int,sline[end])
             #faceindex=parse(Int,sline[1])
-            push!(face_index_UNV,parse(Int,sline[1]))
+            #push!(face_index_UNV,parse(Int,sline[1]))
             face_counter=face_counter+1
             faceindex=face_counter
             faceindx=indx
@@ -212,19 +212,19 @@ function load_3D(unv_mesh; scale, integer, float)
         end
 
         #Window Users need to have this enabled
-        dict=Dict() # To avoid UNV from skipping index, dictionary is used to assign UNV index to new face index.
-        for (n,f) in enumerate(face_index_UNV)
-            dict[f] = n
-        end
+        # dict=Dict() # To avoid UNV from skipping index, dictionary is used to assign UNV index to new face index.
+        # for (n,f) in enumerate(face_index_UNV)
+        #     dict[f] = n
+        # end
     
         if length(sline)==8 && indx>boundaryindx && parse(Int64,sline[2])!=0
             boundary=[parse(Int64,sline[i]) for i=1:length(sline)]
             push!(boundarys,(boundaryindex,boundary))
-            push!(boundaryElements[currentBoundary].elements,dict[parse(Int64,sline[2])])
-            #push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[2]))
+            #push!(boundaryElements[currentBoundary].elements,dict[parse(Int64,sline[2])])
+            push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[2])-edgeindex)
             if parse(Int64,sline[6]) ≠ 0
-              push!(boundaryElements[currentBoundary].elements,dict[parse(Int64,sline[6])])
-              #push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[6]))
+              #push!(boundaryElements[currentBoundary].elements,dict[parse(Int64,sline[6])])
+              push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[6])-edgeindex)
             end
             continue
         end

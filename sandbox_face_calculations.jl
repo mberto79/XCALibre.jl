@@ -9,7 +9,7 @@ unv_mesh="src/UNV_3D/TET_PRISM_HM.unv"
 # unv_mesh="src/UNV_3D/Quad_cell_new_boundaries.unv"
 # unv_mesh="src/UNV_3D/5_cell_new_boundaries.unv"
 
-# @time mesh = build_mesh3D(unv_mesh)
+@time mesh = build_mesh3D(unv_mesh)
 # mesh.faces
 # mesh.cells
 # mesh.boundaries

@@ -14,10 +14,27 @@ points, edges, efaces, volumes, boundaryElements = load_3D(unv_mesh,scale=1, int
 
 points
 edges
-efaces
+efaces[165]
 volumes
 boundaryElements
 
+a=length(boundaryElements[1].elements)
+b=length(boundaryElements[2].elements)
+c=length(boundaryElements[3].elements)
+d=length(boundaryElements[4].elements)
+e=length(boundaryElements[5].elements)
+f=length(boundaryElements[6].elements)
+
+x=[57 58 59]
+
+dict=Dict()
+
+for (n,f) in enumerate(x)
+    dict[f] = n
+end
+dict
+
+dict[57]
 
 # Index for volumes error found. Fixing later.
 

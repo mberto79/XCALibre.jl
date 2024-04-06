@@ -67,7 +67,14 @@ function load_3D(unv_mesh; scale, integer, float)
     end
     
     #Extracting Data from UNV file
-    counter=0 # To avoid UNV file jumping indexs.
+    edge_counter=0
+    face_counter=0
+    volume_counter=0 # To avoid UNV file jumping indexs.
+
+    face_index=[]
+
+
+
     for (indx,line) in enumerate(eachline(unv_mesh))
         
         sline=split(line)
@@ -87,9 +94,9 @@ function load_3D(unv_mesh; scale, integer, float)
         #Lines
         if length(sline)==6 && parse(Int64,sline[end])==2
             edgeCount=parse(Int,sline[end])
-            edgeindex=parse(Int,sline[1])
-            # counter=counter+1
-            # edgeindex=counter
+            #edgeindex=parse(Int,sline[1])
+            edge_counter=edge_counter+1
+            edgeindex=edge_counter
             edgeindx=indx
             continue
         end
@@ -105,9 +112,9 @@ function load_3D(unv_mesh; scale, integer, float)
         #Tetrahedral
         if length(sline)==6 && parse(Int64,sline[2])==41 && parse(Int64,sline[end])==3
             faceCount=parse(Int,sline[end])
-            faceindex=parse(Int,sline[1])
-            # counter=counter+1
-            # faceindex=counter
+            #faceindex=parse(Int,sline[1])
+            face_counter=face_counter+1
+            faceindex=face_counter
             faceindx=indx
             continue
         end
@@ -123,9 +130,9 @@ function load_3D(unv_mesh; scale, integer, float)
         #Hexahedral
         if length(sline)==6 && parse(Int,sline[2])==44 && parse(Int,sline[end])==4
             faceCount=parse(Int,sline[end])
-            faceindex=parse(Int,sline[1])
-            # counter=counter+1
-            # faceindex=counter
+            #faceindex=parse(Int,sline[1])
+            face_counter=face_counter+1
+            faceindex=face_counter
             faceindx=indx
             continue
         end
@@ -142,9 +149,9 @@ function load_3D(unv_mesh; scale, integer, float)
         #Tetrahedral
         if length(sline)==6 && parse(Int,sline[2])==111
             volumeCount=parse(Int,sline[end])
-            volumeindex=parse(Int,sline[1])
-            # counter=counter+1
-            # volumeindex=counter
+            #volumeindex=parse(Int,sline[1])
+            volume_counter=volume_counter+1
+            volumeindex=volume_counter
             volumeindx=indx
             continue
         end
@@ -160,9 +167,9 @@ function load_3D(unv_mesh; scale, integer, float)
         #Hexahedral
         if length(sline)==6 && parse(Int,sline[2])==115
             volumeCount=parse(Int,sline[end])
-            volumeindex=parse(Int,sline[1])
-            # counter=counter+1
-            # volumeindex=counter
+            #volumeindex=parse(Int,sline[1])
+            volume_counter=volume_counter+1
+            volumeindex=volume_counter
             volumeindx=indx
             continue
         end
@@ -178,9 +185,9 @@ function load_3D(unv_mesh; scale, integer, float)
         #Wedge
         if length(sline)==6 && parse(Int,sline[2])==112
             volumeCount=parse(Int,sline[end])
-            volumeindex=parse(Int,sline[1])
-            # counter=counter+1
-            # volumeindex=counter
+            #volumeindex=parse(Int,sline[1])
+            volume_counter=volume_counter+1
+            volumeindex=volume_counter
             volumeindx=indx
             continue
         end
@@ -208,11 +215,11 @@ function load_3D(unv_mesh; scale, integer, float)
         if length(sline)==8 && indx>boundaryindx && parse(Int64,sline[2])!=0
             boundary=[parse(Int64,sline[i]) for i=1:length(sline)]
             push!(boundarys,(boundaryindex,boundary))
-            #push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[2])-edgeindex)
-            push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[2]))
+            push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[2])-edgeindex)
+            #push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[2]))
             if parse(Int64,sline[6]) ≠ 0
-              #push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[6])-edgeindex)
-              push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[6]))
+              push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[6])-edgeindex)
+              #push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[6]))
             end
             continue
         end

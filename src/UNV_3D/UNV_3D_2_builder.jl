@@ -46,7 +46,7 @@ function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
         end
 
         # Build mesh (without calculation of geometry/properties)
-        cells = build_cells(cell_nodes_range, cell_faces_range)
+        cells = build_cells(cell_nodes_range, cell_faces_range) # Hybrid compatible. Hexa tested.
         faces = build_faces(face_nodes_range, face_owner_cells)
 
         mesh = Mesh3(

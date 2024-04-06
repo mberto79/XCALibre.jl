@@ -343,7 +343,76 @@ end
 # end
 
 calculate_area_and_volume!(mesh) = begin
-    (; nodes, faces, face_nodes, cells, cell_faces, cell_nodes) = mesh
+    (; nodes, faces, face_nodes, cells, cell_nodes) = mesh
+
+    n_faces=length(faces)
+
+    #Using old method for now, know it works. Following method outlined by Sandip.
+
+    for fID ∈ 1:n_faces
+        face = faces[fID]
+        nIDs = nodeIDs(face_nodes, face.nodes_range)
+        if length(face.nodes_range) == 3 # For Triangles
+            #nIDs = nodeIDs(face_nodes, face.nodes_range)
+            n1 = nodes[nIDs[1]].coords
+            n2 = nodes[nIDs[2]].coords
+            n3 = nodes[nIDs[3]].coords
+            
+            t1x=n2[1]-n1[1]
+            t1y=n2[2]-n1[2]
+            t1z=n2[3]-n1[3]
+
+            t2x=n3[1]-n1[1]
+            t2y=n3[2]-n1[2]
+            t2z=n3[3]-n1[3]
+
+            area2=(t1y*t2z-t1z*t2y)^2+(t1x*t2z-t1z*t2x)^2+(t1y*t2x-t1x*t2y)^2
+            area=sqrt(area2)/2
+            
+            @reset face.area = area
+
+            faces[fID] = face
+        end
+
+        if length(face.nodes_range) >= 4 # For any shape
+            n1 = nodes[nIDs[1]].coords
+            n2 = nodes[nIDs[2]].coords
+            n3 = nodes[nIDs[3]].coords
+
+            t1x=n2[1]-n1[1]
+            t1y=n2[2]-n1[2]
+            t1z=n2[3]-n1[3]
+
+            t2x=n3[1]-n1[1]
+            t2y=n3[2]-n1[2]
+            t2z=n3[3]-n1[3]
+
+            area2=(t1y*t2z-t1z*t2y)^2+(t1x*t2z-t1z*t2x)^2+(t1y*t2x-t1x*t2y)^2
+            area=sqrt(area2)/2
+
+            for ic=4:length(face.nodes_range)
+                n1 = nodes[nIDs[ic]].coords
+                n2 = nodes[nIDs[2]].coords
+                n3 = nodes[nIDs[3]].coords
+
+                t1x=n2[1]-n1[1]
+                t1y=n2[2]-n1[2]
+                t1z=n2[3]-n1[3]
+
+                t2x=n3[1]-n1[1]
+                t2y=n3[2]-n1[2]
+                t2z=n3[3]-n1[3]
+
+                area2=(t1y*t2z-t1z*t2y)^2+(t1x*t2z-t1z*t2x)^2+(t1y*t2x-t1x*t2y)^2
+                area=area+sqrt(area2)/2
+
+            end
+            @reset face.area = area
+            faces[fID] = face
+        end
+    end
+
+
     c = 1/6 # calculate only once
     for cID ∈ eachindex(cells)
         cell = cells[cID]
@@ -365,6 +434,30 @@ calculate_area_and_volume!(mesh) = begin
         cells[cID] = cell
     end
 end
+
+# calculate_area_and_volume!(mesh) = begin
+#     (; nodes, faces, face_nodes, cells, cell_faces, cell_nodes) = mesh
+#     c = 1/6 # calculate only once
+#     for cID ∈ eachindex(cells)
+#         cell = cells[cID]
+#         # fIDs = faceIDs(cell_faces, cell.faces_range)
+#         # face = faces[fIDs[1]]
+#         # nIDs = nodeIDs(face_nodes, face.nodes_range)
+#         nIDs = nodeIDs(cell_nodes, cell.nodes_range)
+#         node1 = nodes[nIDs[1]]
+#         node2 = nodes[nIDs[2]]
+#         node3 = nodes[nIDs[3]]
+#         node4 = nodes[nIDs[4]]
+#         edge1 = node2.coords - node1.coords
+#         edge2 = node3.coords - node1.coords
+#         edge3 = node4.coords - node1.coords
+#         # dist = norm(node2.coords - node1.coords)
+
+#         volume = c*((edge1×edge2)⋅edge3)
+#         @reset cell.volume = volume
+#         cells[cID] = cell
+#     end
+# end
 
 # Node connectivity
 

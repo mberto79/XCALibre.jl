@@ -212,7 +212,7 @@ function load_3D(unv_mesh; scale, integer, float)
             continue
         end
 
-        dict=Dict() # To avoid UNV from skipping index
+        dict=Dict() # To avoid UNV from skipping index, dictionary is used to assign UNV index to new face index.
         for (n,f) in enumerate(face_index_UNV)
             dict[f] = n
         end

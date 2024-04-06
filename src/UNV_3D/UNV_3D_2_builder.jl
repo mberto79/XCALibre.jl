@@ -833,48 +833,48 @@ function generate_cell_face_connectivity(volumes, nbfaces, face_owner_cells)
     return cell_faces, cell_nsign, cell_faces_range, cell_neighbours
 end
 
-function quad_internal_faces(volumes, faces)
-    store_cell_faces1 = Int64[]
+# function quad_internal_faces(volumes, faces)
+#     store_cell_faces1 = Int64[]
 
-    for i = 1:length(volumes)
-        cell_faces = zeros(Int, 6, 4)
+#     for i = 1:length(volumes)
+#         cell_faces = zeros(Int, 6, 4)
 
-        cell_faces[1, 1:4] = volumes[i].volumes[1:4]
-        cell_faces[2, 1:4] = volumes[i].volumes[5:8]
-        cell_faces[3, 1:2] = volumes[i].volumes[1:2]
-        cell_faces[3, 3:4] = volumes[i].volumes[5:6]
-        cell_faces[4, 1:2] = volumes[i].volumes[3:4]
-        cell_faces[4, 3:4] = volumes[i].volumes[7:8]
-        cell_faces[5, 1:2] = volumes[i].volumes[2:3]
-        cell_faces[5, 3:4] = volumes[i].volumes[6:7]
-        cell_faces[6, 1] = volumes[i].volumes[1]
-        cell_faces[6, 2] = volumes[i].volumes[4]
-        cell_faces[6, 3] = volumes[i].volumes[5]
-        cell_faces[6, 4] = volumes[i].volumes[8]
+#         cell_faces[1, 1:4] = volumes[i].volumes[1:4]
+#         cell_faces[2, 1:4] = volumes[i].volumes[5:8]
+#         cell_faces[3, 1:2] = volumes[i].volumes[1:2]
+#         cell_faces[3, 3:4] = volumes[i].volumes[5:6]
+#         cell_faces[4, 1:2] = volumes[i].volumes[3:4]
+#         cell_faces[4, 3:4] = volumes[i].volumes[7:8]
+#         cell_faces[5, 1:2] = volumes[i].volumes[2:3]
+#         cell_faces[5, 3:4] = volumes[i].volumes[6:7]
+#         cell_faces[6, 1] = volumes[i].volumes[1]
+#         cell_faces[6, 2] = volumes[i].volumes[4]
+#         cell_faces[6, 3] = volumes[i].volumes[5]
+#         cell_faces[6, 4] = volumes[i].volumes[8]
 
-        for ic = 1:6
-            push!(store_cell_faces1, cell_faces[ic, :])
-        end
-    end
+#         for ic = 1:6
+#             push!(store_cell_faces1, cell_faces[ic, :])
+#         end
+#     end
 
-    sorted_cell_faces = Int64[]
-    for i = 1:length(store_cell_faces1)
+#     sorted_cell_faces = Int64[]
+#     for i = 1:length(store_cell_faces1)
 
-        push!(sorted_cell_faces, sort(store_cell_faces1[i]))
-    end
+#         push!(sorted_cell_faces, sort(store_cell_faces1[i]))
+#     end
 
-    sorted_faces = Int64[]
-    for i = 1:length(faces)
-        push!(sorted_faces, sort(faces[i].faces))
-    end
+#     sorted_faces = Int64[]
+#     for i = 1:length(faces)
+#         push!(sorted_faces, sort(faces[i].faces))
+#     end
 
-    internal_faces = setdiff(sorted_cell_faces, sorted_faces)
+#     internal_faces = setdiff(sorted_cell_faces, sorted_faces)
 
-    for i = 1:length(internal_faces)
-        push!(faces, UNV_3D.Face(faces[end].faceindex + 1, faces[end].faceCount, internal_faces[i]))
-    end
-    return faces
-end
+#     for i = 1:length(internal_faces)
+#         push!(faces, UNV_3D.Face(faces[end].faceindex + 1, faces[end].faceCount, internal_faces[i]))
+#     end
+#     return faces
+# end
 
 function build_boundaries(boundaryElements)
     bfaces_start = 1

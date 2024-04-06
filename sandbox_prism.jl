@@ -28,7 +28,6 @@ points[169]
 points[241]
 
 
-
 findall(x->x==[7,52,40],efaces)
 findall(x->x==[52,7,40],efaces)
 findall(x->x==[40,7,52],efaces)
@@ -51,14 +50,7 @@ efaces[119]
 findall(x->x==[169,175,241],face_nodes)
 
 
-
-
-
-
-
-
-
-@time mesh = build_mesh3D(unv_mesh)
+#@time mesh = build_mesh3D(unv_mesh)
 
 cell_nodes, cell_nodes_range = FVM_1D.UNV_3D.generate_cell_nodes(volumes) # Should be Hybrid compatible, tested for hexa. Using push instead of allocating vector.
 node_cells, node_cells_range = FVM_1D.UNV_3D.generate_node_cells(points, volumes)

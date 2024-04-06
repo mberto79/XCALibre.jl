@@ -42,7 +42,7 @@ function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
 
         # Sort out cell to face connectivity
         cell_faces, cell_nsign, cell_faces_range, cell_neighbours = begin
-            generate_cell_face_connectivity(volumes, nbfaces, face_owner_cells)
+            generate_cell_face_connectivity(volumes, nbfaces, face_owner_cells) # Hybrid compatible. Hexa and tet tested.
         end
 
         # Build mesh (without calculation of geometry/properties)
@@ -798,7 +798,7 @@ function generate_cell_face_connectivity(volumes, nbfaces, face_owner_cells)
         owners = face_owner_cells[fID] # 2 cell owners IDs
         owner1 = owners[1]
         owner2 = owners[2]
-        push!(cell_faces[owner1], fID)       
+        push!(cell_faces[owner1], fID) # Cell-faces only for internal faces.     
         push!(cell_faces[owner2], fID)
         push!(cell_nsign[owner1], 1) # Contract: Face normal goes from owner 1 to 2      
         push!(cell_nsign[owner2], -1)   

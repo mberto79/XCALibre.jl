@@ -46,7 +46,6 @@ function load_3D(unv_mesh; scale, integer, float)
     currentBoundary=zero(integer)
     boundaryNumber=zero(integer)
     
-    
 
     #Splits UNV file into sections
     for (indx,line) in enumerate(eachline(unv_mesh))
@@ -69,7 +68,7 @@ function load_3D(unv_mesh; scale, integer, float)
     #Extracting Data from UNV file
     edge_counter=0
     face_counter=0
-    volume_counter=0 # To avoid UNV file jumping indexs.
+    volume_counter=0 # To avoid UNV file jumping indexs. If exporting Salome mesh from Windows.
 
     face_index_UNV=Int64[]
 
@@ -212,6 +211,7 @@ function load_3D(unv_mesh; scale, integer, float)
             continue
         end
 
+        #Window Users need to have this enabled
         dict=Dict() # To avoid UNV from skipping index, dictionary is used to assign UNV index to new face index.
         for (n,f) in enumerate(face_index_UNV)
             dict[f] = n

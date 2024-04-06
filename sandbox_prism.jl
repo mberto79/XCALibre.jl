@@ -8,6 +8,7 @@ using LinearAlgebra
 unv_mesh="src/UNV_3D/TET_PRISM.unv"
 unv_mesh="src/UNV_3D/Quad_cell_new_boundaries.unv"
 
+@time mesh = build_mesh3D(unv_mesh)
 
 points, edges, efaces, volumes, boundaryElements = load_3D(unv_mesh,scale=1, integer=Int64, float=Float64)
 
@@ -51,7 +52,7 @@ efaces[119]
 findall(x->x==[169,175,241],face_nodes)
 
 
-#@time mesh = build_mesh3D(unv_mesh)
+@time mesh = build_mesh3D(unv_mesh)
 
 cell_nodes, cell_nodes_range = FVM_1D.UNV_3D.generate_cell_nodes(volumes) # Should be Hybrid compatible, tested for hexa. Using push instead of allocating vector.
 node_cells, node_cells_range = FVM_1D.UNV_3D.generate_node_cells(points, volumes)

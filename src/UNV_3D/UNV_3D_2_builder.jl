@@ -29,6 +29,7 @@ function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
         end
 
         # NOTE: A function will be needed here to reorder the nodes IDs of "faces" to be geometrically sound! (not needed for tet cells though)
+        bface_nodes,iface_nodes=order_face_nodes(bface_nodes_range,iface_nodes_range,bface_nodes,iface_nodes,nodes)
 
         # Shift range of nodes_range for internal faces (since it will be appended)
         iface_nodes_range .= [
@@ -105,12 +106,125 @@ function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
     end
 end
 
+function order_face_nodes(bface_nodes_range,iface_nodes_range,bface_nodes,iface_nodes,nodes)
+    n_bfaces = length(bface_nodes_range)
+    n_ifaces =  length(iface_nodes_range)
+    for fID = 1:n_bfaces # Re-order Boundary Faces
+        if length(bface_nodes_range[fID]) == 4 # Only for Quad faces
+            nIDs=nodeIDs(bface_nodes,bface_nodes_range[fID]) # Get ids of nodes of face
+    
+            ordered_ID=sort(nIDs) # sort them so that the lowest ID is first
+    
+            n1=nodes[ordered_ID[1]].coords # Get coords of 4 nodes
+            n2=nodes[ordered_ID[2]].coords
+            n3=nodes[ordered_ID[3]].coords
+            n4=nodes[ordered_ID[4]].coords
+    
+            points = [n1, n2, n3, n4]
+    
+            _x(n) = n[1]
+            _y(n) = n[2]
+            _z(n) = n[3]
+    
+            fc=sum(points)/length(points) # geographic centre (not centroid)
+            s = segment.(Ref(fc), points) # surface vectors (from face centre)
+            u = unit_vector.(s)
+            l = segment.(Ref(points[1]), points) # surface vectors (segments connecting nodes to reference node)
+            fn = unit_vector(l[2] × l[3]) # face normal vector
+    
+            angles=Float64[] # Vector to store angles
+            theta2 = angle1(l, 2, 2)*(signbit((l[2] × fn)⋅l[2]) ? 1 : -1)
+            theta3 = angle1(l, 2, 3)*(signbit((l[2] × fn)⋅l[3]) ? 1 : -1)
+            theta4 = angle1(l, 2, 4)*(signbit((l[2] × fn)⋅l[4]) ? 1 : -1)
+    
+            push!(angles,theta2,theta3,theta4)
+    
+            dict=Dict() # Using dictionary to link noode Id to angle
+            for (n,f) in enumerate(angles)
+                dict[f] = ordered_ID[n+1]
+            end
+    
+            sorted_angles=sort(angles) # Sort angles from smallest to largest. Right hand rule.
+    
+            sorted_IDs=Int64[]
+            push!(sorted_IDs,ordered_ID[1])
+            push!(sorted_IDs,dict[sorted_angles[1]])
+            push!(sorted_IDs,dict[sorted_angles[2]])
+            push!(sorted_IDs,dict[sorted_angles[3]])
+    
+            counter=0
+            for i=bface_nodes_range[fID] # Re-writing face_nodes with ordered nodes
+                counter=counter+1
+                bface_nodes[i]=sorted_IDs[counter]
+            end
+        end
+    end
+    
+    for fID = 1:n_ifaces # Re-order internal faces
+        if length(iface_nodes_range[fID])==4 # Only for Quad Faces
+            nIDs=nodeIDs(iface_nodes,iface_nodes_range[fID]) # Get ids of nodes of the face
+    
+            ordered_ID=sort(nIDs) # Sort them so that the lowest ID is first
+    
+            n1=nodes[ordered_ID[1]].coords
+            n2=nodes[ordered_ID[2]].coords
+            n3=nodes[ordered_ID[3]].coords
+            n4=nodes[ordered_ID[4]].coords
+    
+            points = [n1, n2, n3, n4]
+    
+            _x(n) = n[1]
+            _y(n) = n[2]
+            _z(n) = n[3]
+    
+            fc=sum(points)/length(points) # geographic centre (not centroid)
+            s = segment.(Ref(fc), points) # surface vectors (from face centre)
+            u = unit_vector.(s)
+            l = segment.(Ref(points[1]), points) # surface vectors (segments connecting nodes to reference node)
+            fn = unit_vector(l[2] × l[3]) # face normal vector
+    
+            angles=Float64[]
+            theta2 = angle1(l, 2, 2)*(signbit((l[2] × fn)⋅l[2]) ? 1 : -1)
+            theta3 = angle1(l, 2, 3)*(signbit((l[2] × fn)⋅l[3]) ? 1 : -1)
+            theta4 = angle1(l, 2, 4)*(signbit((l[2] × fn)⋅l[4]) ? 1 : -1)
+    
+            push!(angles,theta2,theta3,theta4)
+    
+            dict=Dict()
+            for (n,f) in enumerate(angles)
+                dict[f] = ordered_ID[n+1]
+            end
+    
+            sorted_angles=sort(angles)
+    
+            sorted_IDs=Int64[]
+            push!(sorted_IDs,ordered_ID[1])
+            push!(sorted_IDs,dict[sorted_angles[1]])
+            push!(sorted_IDs,dict[sorted_angles[2]])
+            push!(sorted_IDs,dict[sorted_angles[3]])
+    
+            counter=0
+            for i=iface_nodes_range[fID]
+                counter=counter+1
+                iface_nodes[i]=sorted_IDs[counter]
+            end
+        end
+    end
+    return bface_nodes, iface_nodes
+end
+
 # Convenience access FUNCTIONS
 get_data(array, range, index) = @view array[range[index]]
 get_data(array, range) =  array[range] #@view array[range] # 
 nodeIDs = get_data
 faceIDs = get_data
 cellIDs = get_data
+
+
+#Functions for Face Node Order
+segment(p1, p2) = p2 - p1
+angle1(s, i1, i2) = acosd( (s[i1]⋅s[i2])/(norm(s[i1])*norm(s[i2])))
+unit_vector(vec) = vec/norm(vec)
 
 # BUILD mesh functions
 

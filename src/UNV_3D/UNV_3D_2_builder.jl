@@ -596,7 +596,7 @@ calculate_area_and_volume!(mesh) = begin
             faces[fID] = face
         end
 
-        if length(face.nodes_range) >= 4 # For any shape
+        if length(face.nodes_range) == 4 # Quad Faces Can be extended
             n1 = nodes[nIDs[1]].coords
             n2 = nodes[nIDs[2]].coords
             n3 = nodes[nIDs[3]].coords
@@ -612,10 +612,10 @@ calculate_area_and_volume!(mesh) = begin
             area2=(t1y*t2z-t1z*t2y)^2+(t1x*t2z-t1z*t2x)^2+(t1y*t2x-t1x*t2y)^2
             area=sqrt(area2)/2
 
-            for ic=4:length(face.nodes_range)
-                n1 = nodes[nIDs[ic]].coords
-                n2 = nodes[nIDs[2]].coords
-                n3 = nodes[nIDs[3]].coords
+            for ic=4:4 # Temp fix
+                n1 = nodes[nIDs[1]].coords
+                n2 = nodes[nIDs[3]].coords
+                n3 = nodes[nIDs[ic]].coords # Make sure for a square that the opposite node is used so that it covers the entire face.
 
                 t1x=n2[1]-n1[1]
                 t1y=n2[2]-n1[2]

@@ -9,6 +9,8 @@ unv_mesh="src/UNV_3D/Quad_cell_new_boundaries.unv"
 
 unv_mesh="src/UNV_3D/HEXA_HM.unv"
 
+@time mesh = build_mesh3D(unv_mesh)
+mesh.cells
 
 points, edges, efaces, volumes, boundaryElements = load_3D(unv_mesh,scale=1, integer=Int64, float=Float64)
 

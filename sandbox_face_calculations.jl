@@ -2,7 +2,7 @@ using FVM_1D
 using StaticArrays
 using Statistics
 using LinearAlgebra
-#include("src/VTK_3D/VTU.jl")
+#include("src/VTK/VTK_writer_3D.jl")
 
 
 unv_mesh="src/UNV_3D/TET_PRISM_HM.unv"
@@ -11,9 +11,15 @@ unv_mesh="src/UNV_3D/TET_PRISM_HM.unv"
 unv_mesh="src/UNV_3D/HEXA_HM.unv"
 
 @time mesh = build_mesh3D(unv_mesh)
-mesh.faces
+mesh.faces[2]
 mesh.cells
 mesh.boundaries
+
+name="tet_prism"
+
+write_vtk(name, mesh::Mesh3)
+
+mesh.cell_faces[mesh.cells[800].faces_range]
 
 points, edges, efaces, volumes, boundaryElements = load_3D(unv_mesh,scale=1, integer=Int64, float=Float64)
 

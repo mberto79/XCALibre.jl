@@ -1523,14 +1523,11 @@ end
 function generate_cell_nodes(volumes)
     #cell_nodes = Vector{Int64}(undef, length(volumes) * 4) #length of cells times number of nodes per cell (tet only)
     cell_nodes = Int64[] # cell_node length is undetermined as mesh could be hybrid, using push. Could use for and if before to preallocate vector.
-    counter = 0
     for n = eachindex(volumes)
         for i = 1:volumes[n].volumeCount
-            counter = counter + 1
             push!(cell_nodes,volumes[n].volumes[i])
         end
     end
-    cell_nodes
 
     cell_nodes_range = Vector{UnitRange{Int64}}(undef, length(volumes)) # cell_nodes_range determined by no. of cells.
     x = 0

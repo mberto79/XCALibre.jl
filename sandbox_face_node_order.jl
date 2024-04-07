@@ -15,7 +15,7 @@ mesh.faces
 mesh.cells
 mesh.boundaries
 
-mesh.faces[1]
+mesh.faces[700]
 mesh.face_nodes
 
 points, edges, efaces, volumes, boundaryElements = load_3D(unv_mesh,scale=1, integer=Int64, float=Float64)

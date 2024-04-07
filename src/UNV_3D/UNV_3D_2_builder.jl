@@ -133,7 +133,8 @@ function order_face_nodes(bface_nodes_range,iface_nodes_range,bface_nodes,iface_
             fn = unit_vector(l[2] × l[3]) # face normal vector
     
             angles=Float64[] # Vector to store angles
-            theta2 = angle1(l, 2, 2)*(signbit((l[2] × fn)⋅l[2]) ? 1 : -1)
+            #theta2 = angle1(l, 2, 2)*(signbit((l[2] × fn)⋅l[2]) ? 1 : -1)
+            theta2 = 0.0
             theta3 = angle1(l, 2, 3)*(signbit((l[2] × fn)⋅l[3]) ? 1 : -1)
             theta4 = angle1(l, 2, 4)*(signbit((l[2] × fn)⋅l[4]) ? 1 : -1)
     
@@ -184,7 +185,8 @@ function order_face_nodes(bface_nodes_range,iface_nodes_range,bface_nodes,iface_
             fn = unit_vector(l[2] × l[3]) # face normal vector
     
             angles=Float64[]
-            theta2 = angle1(l, 2, 2)*(signbit((l[2] × fn)⋅l[2]) ? 1 : -1)
+            #theta2 = angle1(l, 2, 2)*(signbit((l[2] × fn)⋅l[2]) ? 1 : -1)
+            theta2 = 0.0
             theta3 = angle1(l, 2, 3)*(signbit((l[2] × fn)⋅l[3]) ? 1 : -1)
             theta4 = angle1(l, 2, 4)*(signbit((l[2] × fn)⋅l[4]) ? 1 : -1)
     

@@ -61,7 +61,7 @@ function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
         # Update mesh to include all geometry calculations required
         calculate_centres!(mesh) # Uses centroid instead of geometric. Will need changing, should work fine for regular cells and faces
         calculate_face_properties!(mesh) # Touched up face properties, double check values.
-        calculate_area_and_volume!(mesh)
+        calculate_area_and_volume!(mesh) # Will only work for Tet,Hexa, Prism cells
 
         return mesh
         # return 0

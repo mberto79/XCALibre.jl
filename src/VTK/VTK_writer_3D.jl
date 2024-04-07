@@ -99,8 +99,11 @@ function write_vtk(name, mesh::Mesh3, args...)
         write(io,"     <DataArray type=\"$(I64)\" Name=\"$(offsets)\" format=\"$(format)\">\n")
         #write(io,"      $(join(store_cells," "))\n")
         #write(io,"      $(length(cell_nodes_cpu)+length(cells_cpu)+1)\n")
+        node_counter=0
         for i=1:length(cells_cpu)
-            write(io,"      $(length(cells_cpu[i].nodes_range)*i)\n")
+            node_counter=node_counter+length(cells_cpu[i].nodes_range)
+            #write(io,"      $(length(cells_cpu[i].nodes_range)*i)\n")
+            write(io,"      $(node_counter)\n")
         end
         write(io,"     </DataArray>\n")
         write(io,"     <DataArray type=\"$(I64)\" Name=\"$(faces)\" format=\"$(format)\">\n")
@@ -114,7 +117,7 @@ function write_vtk(name, mesh::Mesh3, args...)
 
         # This is needed because boundary faces are missing from cell level connectivity
         
-        # # Version 1
+        # Version 1
         # for i=1:length(cells_cpu)
         #     store_faces=[]
         #     for id=1:length(faces_cpu)
@@ -128,18 +131,18 @@ function write_vtk(name, mesh::Mesh3, args...)
         #     end
         # end
 
-        # # Version 2 (x2.8 faster)
+        # Version 2 (x2.8 faster)
         all_cell_faces = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_cpu)]
         for fID ∈ eachindex(faces_cpu)
             owners = faces_cpu[fID].ownerCells
             owner1 = owners[1]
             owner2 = owners[2]
-            # if faces_cpu[fID].ownerCells[1]==cID || faces_cpu[fID].ownerCells[2]==cID
-            push!(all_cell_faces[owner1],fID)
-            if owner1 !== owner2 #avoid duplication of cells for boundary faces
-                push!(all_cell_faces[owner2],fID)
-            end
-            # end
+            #if faces_cpu[fID].ownerCells[1]==cID || faces_cpu[fID].ownerCells[2]==cID
+                push!(all_cell_faces[owner1],fID)
+                if owner1 !== owner2 #avoid duplication of cells for boundary faces
+                    push!(all_cell_faces[owner2],fID)
+                end
+            #end
         end
         for (cID, fIDs) ∈ enumerate(all_cell_faces)
             write(io,"\t$(length(all_cell_faces[cID]))\n")

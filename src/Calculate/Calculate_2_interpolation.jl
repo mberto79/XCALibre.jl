@@ -60,49 +60,79 @@ end
 # end
 
 function adjust_boundary!(backend, BC::Dirichlet, phif::FaceScalarField, phi, boundaries, boundary_cellsID)
+    (; boundaries) = phif.mesh
+    CUDA.@allowscalar boundary = boundaries[BC.ID]
+    (; IDs_range) = boundary
+    kernel_range = length(IDs_range)
     # (; values) = phif
     phif_values = phif.values
     # (; values) = phi
     phi_values = phi.values
     kernel! = adjust_boundary_dirichlet_scalar!(backend)
-    kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = 1)
+    kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = kernel_range)
     KernelAbstractions.synchronize(backend)
 end
 
 function adjust_boundary!(backend, BC::Neumann, phif::FaceScalarField, phi, boundaries, boundary_cellsID)
+    (; boundaries) = phif.mesh
+    CUDA.@allowscalar boundary = boundaries[BC.ID]
+    (; IDs_range) = boundary
+    kernel_range = length(IDs_range)
     # (; values) = phif
     phif_values = phif.values
     # (; values) = phi
     phi_values = phi.values
     kernel! = adjust_boundary_neumann_scalar!(backend)
-    kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = 1)
+    kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = kernel_range)
     KernelAbstractions.synchronize(backend)
 end
 
 @kernel function adjust_boundary_dirichlet_scalar!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values)
+    # i = @index(Global)
+    # i = BC.ID
+
+    # @inbounds begin
+    #     (; IDs_range) = boundaries[i]
+    #     for fID in IDs_range
+    #         # fID = IDs_range[j]
+    #         phif_values[fID] = BC.value
+    #     end
+    # end
+
+    # parallel implementation 
     i = @index(Global)
-    i = BC.ID
+    (; IDs_range) = boundaries[BC.ID]
+    fID = IDs_range[i] 
 
     @inbounds begin
-        (; IDs_range) = boundaries[i]
-        for fID in IDs_range
+        # for fID in IDs_range
             # fID = IDs_range[j]
             phif_values[fID] = BC.value
-        end
+        # end
     end
 end
 
 @kernel function adjust_boundary_neumann_scalar!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values)
+    # i = @index(Global)
+    # i = BC.ID
+
+    # @inbounds begin
+    #     (; IDs_range) = boundaries[i]
+    #     for fID in IDs_range
+    #         # fID = IDs_range[j]
+    #         cID = boundary_cellsID[fID]
+    #         phif_values[fID] = phi_values[cID] 
+    #     end
+    # end
+
+    # parallel implementation 
     i = @index(Global)
-    i = BC.ID
+    (; IDs_range) = boundaries[BC.ID]
+    fID = IDs_range[i] 
 
     @inbounds begin
-        (; IDs_range) = boundaries[i]
-        for fID in IDs_range
-            # fID = IDs_range[j]
             cID = boundary_cellsID[fID]
-            phif_values[fID] = phi_values[cID] 
-        end
+            phif_values[fID] = phi_values[cID]
     end
 end
 
@@ -110,30 +140,42 @@ end
 
 function adjust_boundary!(
     BC::KWallFunction, phif::FaceScalarField, phi, boundary, faces)
-    (;facesID, cellsID) = boundary
-    @inbounds for fi ∈ eachindex(facesID)
-        fID = facesID[fi]
-        cID = cellsID[fi]
+    # (;facesID, cellsID) = boundary
+    (; IDs_range) = boundary
+    (; boundary_cellsID) = phif.mesh
+    @inbounds for fi ∈ IDs_range
+        # fID = facesID[fi]
+        # cID = cellsID[fi]
+        fID = fi
+        cID = boundary_cellsID[fID]
         phif.values[fID] = phi.values[cID] # Using Neumann condition
     end
 end
 
 function adjust_boundary!(
     BC::NutWallFunction, phif::FaceScalarField, phi, boundary, faces)
-    (;facesID, cellsID) = boundary
-    @inbounds for fi ∈ eachindex(facesID)
-        fID = facesID[fi]
-        cID = cellsID[fi]
+    # (;facesID, cellsID) = boundary
+    (; IDs_range) = boundary
+    (; boundary_cellsID) = phif.mesh
+    @inbounds for fi ∈ IDs_range
+        # fID = facesID[fi]
+        # cID = cellsID[fi]
+        fID = fi
+        cID = boundary_cellsID[fID]
         phif.values[fID] = phi.values[cID] # Using Neumann condition
     end
 end
 
 function adjust_boundary!(
     BC::OmegaWallFunction, phif::FaceScalarField, phi, boundary, faces)
-    (;facesID, cellsID) = boundary
-    @inbounds for fi ∈ eachindex(facesID)
-        fID = facesID[fi]
-        cID = cellsID[fi]
+    # (;facesID, cellsID) = boundary
+    (; IDs_range) = boundary
+    (; boundary_cellsID) = phif.mesh
+    @inbounds for fi ∈ IDs_range
+        # fID = facesID[fi]
+        # cID = cellsID[fi]
+        fID = fi
+        cID = boundary_cellsID[fID]
         phif.values[fID] = phi.values[cID] # Using Neumann condition
     end
 end
@@ -177,41 +219,85 @@ end
 ## GPU VECTOR ADJUST BOUNDARY FUNCTIONS AND KERNELS
 
 function adjust_boundary!(backend, BC::Dirichlet, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID)
+    (; boundaries) = psif.mesh
+    CUDA.@allowscalar boundary = boundaries[BC.ID]
+    (; IDs_range) = boundary
+    kernel_range = length(IDs_range)
+
     (; x, y, z) = psif
     kernel! = adjust_boundary_dirichlet_vector!(backend)
-    kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = 1)
+    kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = kernel_range)
     KernelAbstractions.synchronize(backend)
 end
 
 function adjust_boundary!(backend, BC::Neumann, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID)
+    (; boundaries) = psif.mesh
+    CUDA.@allowscalar boundary = boundaries[BC.ID]
+    (; IDs_range) = boundary
+    kernel_range = length(IDs_range)
+
     (; x, y, z) = psif
     kernel! = adjust_boundary_neumann_vector!(backend)
-    kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = 1)
+    kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = kernel_range)
     KernelAbstractions.synchronize(backend)
 end
 
 @kernel function adjust_boundary_dirichlet_vector!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z)
+    # i = @index(Global)
+    # i = BC.ID
+
+    # @inbounds begin
+    #     (; IDs_range) = boundaries[i]
+    #     for fID in IDs_range
+    #         # fID = IDs_range[j]
+    #         x[fID] = BC.value[1]
+    #         y[fID] = BC.value[2]
+    #         z[fID] = BC.value[3]
+    #     end
+    # end
+
+    # parallel implementation
     i = @index(Global)
-    i = BC.ID
+    (; IDs_range) = boundaries[BC.ID]
+    fID = IDs_range[i]
 
     @inbounds begin
-        (; IDs_range) = boundaries[i]
-        for fID in IDs_range
+        # for fID in IDs_range
             # fID = IDs_range[j]
             x[fID] = BC.value[1]
             y[fID] = BC.value[2]
             z[fID] = BC.value[3]
-        end
+        # end
     end
 end
 
 @kernel function adjust_boundary_neumann_vector!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z)
+    # i = @index(Global)
+    # i = BC.ID
+
+    # @inbounds begin
+    #     (; IDs_range) = boundaries[i]
+    #     for fID in IDs_range
+    #         # fID = IDs_range[i]
+    #         cID = boundary_cellsID[fID]
+    #         psi_cell = psi[cID]
+    #         # normal = faces[fID].normal
+    #         # Line below needs sorting out for general user-defined gradients
+    #         # now only works for zero gradient
+    #         # psi_boundary =   psi_cell - (psi_cell⋅normal)*normal
+    #         x[fID] = psi_cell[1]
+    #         y[fID] = psi_cell[2]
+    #         z[fID] = psi_cell[3]
+    #     end
+    # end
+
+    # parallel implementation
     i = @index(Global)
-    i = BC.ID
+    (; IDs_range) = boundaries[BC.ID]
+    fID = IDs_range[i]
 
     @inbounds begin
-        (; IDs_range) = boundaries[i]
-        for fID in IDs_range
+        # for fID in IDs_range
             # fID = IDs_range[i]
             cID = boundary_cellsID[fID]
             psi_cell = psi[cID]
@@ -222,7 +308,7 @@ end
             x[fID] = psi_cell[1]
             y[fID] = psi_cell[2]
             z[fID] = psi_cell[3]
-        end
+        # end
     end
 end
 

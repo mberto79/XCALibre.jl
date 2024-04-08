@@ -22,7 +22,7 @@ mutable struct Volume{I<:Integer,VI<:AbstractArray{I}}
     volumeCount::I
     volumes::VI
 end
-Volume(z::TI) where TI<:Integer = Volume(0 , 0, TI[])
+Volume(z::TI) where TI<:Integer = Volume(zero(TI) , zero(TI), TI[])
 
 mutable struct BoundaryElement{S<:String,I<:Integer,VI<:AbstractArray{I}}
     name::S

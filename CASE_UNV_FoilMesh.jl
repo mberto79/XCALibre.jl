@@ -5,15 +5,15 @@ foil,ctrl_p = spline_foil(FoilDef(
     chord   = 100, #[mm]
     LE_h    = 0, #[%c, at α=0°]
     TE_h    = 0, #[%c, at α=0°]
-    peak    = [25,25], #[%c]
-    trough  = [75,-25], #[%c]
+    peak    = [25,15], #[%c]
+    trough  = [75,-15], #[%c]
     xover = 50, #[%c]
     α = 0 #[°]
 )) #Returns aerofoil MCL & control point vector (spline method)
 
 #%% REYNOLDS & Y+ CALCULATIONS
 chord = 100.0
-Re = 200000000
+Re = 80000
 nu,ρ = 1.48e-5,1.225
 yplus_init,BL_layers = 2.0,50
 laminar = false

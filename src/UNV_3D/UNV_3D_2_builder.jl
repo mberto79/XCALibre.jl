@@ -1207,7 +1207,7 @@ function generate_internal_faces(volumes, nbfaces, nodes, node_cells)
         if volume.volumeCount == 6
             nodesID = volume.volumes
             push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[3]]) # Triangle 1
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[3], nodesID[4], nodesID[5]]) # Triangle 2
+            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[4], nodesID[5], nodesID[6]]) # Triangle 2
             push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[4], nodesID[5]]) # Rectangle 1
             push!(cells_faces_nodeIDs[cellID], Int64[nodesID[2], nodesID[3], nodesID[5], nodesID[6]]) # Rectangle 2
             push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[3], nodesID[4], nodesID[6]]) # Rectangle 3

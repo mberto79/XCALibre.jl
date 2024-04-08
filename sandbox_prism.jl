@@ -10,14 +10,14 @@ unv_mesh="src/UNV_3D/TET_PRISM_HM.unv"
 unv_mesh="src/UNV_3D/HEXA_HM.unv"
 # unv_mesh="src/UNV_3D/TET_HM.unv"
 
-#@time mesh = build_mesh3D(unv_mesh)
-# mesh.faces
-# mesh.cells
-# mesh.boundaries
+@time mesh = build_mesh3D(unv_mesh)
+mesh.faces
+mesh.cells
+mesh.boundaries
 
-# name="tet_prism"
+name="tet_prism"
 
-# write_vtk(name, mesh::Mesh3)
+write_vtk(name, mesh::Mesh3)
 
 points, edges, efaces, volumes, boundaryElements = load_3D(unv_mesh,scale=1, integer=Int64, float=Float64)
 

@@ -287,7 +287,7 @@ function SIMPLE(
                 ]
             )
 
-        if iteration%write_interval + signbit(write_interval) == 0 || iteration == iterations   
+        if iteration%write_interval + signbit(write_interval) == 0
             model2vtk(model, @sprintf "iteration_%.6d" iteration)
         end
 

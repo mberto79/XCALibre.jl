@@ -44,6 +44,7 @@ function run!(phiEqn::ModelEquation, setup, result) # ; opP, solver
     backend = _get_backend(get_phi(phiEqn).mesh)
 
     solve!(
+        # solver, LinearOperator(A), b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
         solver, A, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
         )
     KernelAbstractions.synchronize(backend)

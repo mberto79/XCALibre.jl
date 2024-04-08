@@ -6,7 +6,7 @@ using CUDA
 
 
 # bfs_unv_tet_15mm, 10mm, 5mm, 4mm, 3mm
-mesh_file = "unv_sample_meshes/bfs_unv_tet_4mm.unv"
+mesh_file = "unv_sample_meshes/bfs_unv_tet_5mm.unv"
 @time mesh = build_mesh3D(mesh_file, scale=0.001)
 
 velocity = [0.5, 0.0, 0.0]

@@ -171,7 +171,7 @@ function SIMPLE(
             # ux_eqn.b .-= divUTx
             implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh)
             update_preconditioner!(ux_eqn.preconditioner, mesh)
-            run!(ux_eqn, solvers.U, U.x, Acsr) #opP=Pu.P, solver=solver_U)
+            run!(ux_eqn, solvers.U, U.x) #opP=Pu.P, solver=solver_U)
             # residual!(R_ux, ux_eqn.equation, U.x, iteration)
         end
 
@@ -182,7 +182,7 @@ function SIMPLE(
             # uy_eqn.b .-= divUTy
             implicit_relaxation!(uy_eqn, prev, solvers.U.relax, mesh)
             update_preconditioner!(uy_eqn.preconditioner, mesh)
-            run!(uy_eqn, solvers.U, U.y, Acsr)
+            run!(uy_eqn, solvers.U, U.y)
             # residual!(R_uy, uy_eqn.equation, U.y, iteration)
         end
 
@@ -194,7 +194,7 @@ function SIMPLE(
                 # uy_eqn.b .-= divUTy
                 implicit_relaxation!(uz_eqn, prev, solvers.U.relax, mesh)
                 update_preconditioner!(uz_eqn.preconditioner, mesh)
-                run!(uz_eqn, solvers.U, U.z, Acsr)
+                run!(uz_eqn, solvers.U, U.z)
                 # residual!(R_uz, uz_eqn.equation, U.z, iteration)
             end
         end
@@ -214,7 +214,7 @@ function SIMPLE(
             apply_boundary_conditions!(p_eqn, p.BCs)
             setReference!(p_eqn, pref, 1)
             update_preconditioner!(p_eqn.preconditioner, mesh)
-            run!(p_eqn, solvers.p, p, Acsr)
+            run!(p_eqn, solvers.p, p)
 
             explicit_relaxation!(p, prev, solvers.p.relax)
             # residual!(R_p, p_eqn.equation, p, iteration)
@@ -233,7 +233,7 @@ function SIMPLE(
                 interpolate!(gradpf, ∇p, p)
                 nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
                 correct!(p_eqn.equation, p_model.terms.term1, pf)
-                run!(p_model, solvers.p, Acsr)
+                run!(p_model, solvers.p)
                 grad!(∇p, pf, p, pBCs) 
             end
         end

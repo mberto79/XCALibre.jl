@@ -1,6 +1,7 @@
 # function write_vtu(name,mesh)
 # export write_vtk, model2vtk
 # export copy_to_cpu
+using LinearAlgebra
 
 # function model2vtk(model::RANS{Laminar,F1,F2,V,T,E,D}, name) where {F1,F2,V,T,E,D}
 #     args = (
@@ -30,6 +31,9 @@ end
 get_data(arr, backend::CPU) = begin
     arr
 end
+
+segment(p1, p2) = p2 - p1
+unit_vector(vec) = vec/norm(vec)
 
 function write_vtk(name, mesh::Mesh3, args...)
     filename=name*".vtu"
@@ -132,7 +136,7 @@ function write_vtk(name, mesh::Mesh3, args...)
         # end
 
         # Version 2 (x2.8 faster)
-        all_cell_faces = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_cpu)]
+        all_cell_faces = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_cpu)] # Calculating all the faces that belong to each cell
         for fID ∈ eachindex(faces_cpu)
             owners = faces_cpu[fID].ownerCells
             owner1 = owners[1]
@@ -145,10 +149,33 @@ function write_vtk(name, mesh::Mesh3, args...)
             #end
         end
         for (cID, fIDs) ∈ enumerate(all_cell_faces)
-            write(io,"\t$(length(all_cell_faces[cID]))\n")
+            write(io,"\t$(length(all_cell_faces[cID]))\n") # No. of Faces per cell
             for fID ∈ fIDs
+                #Ordering of face nodes so that they are ordered anti-clockwise when looking at the cell from the outside
+                nIDs=face_nodes_cpu[faces_cpu[fID].nodes_range] # Get ids of nodes of face
+    
+                n1=nodes_cpu[nIDs[1]].coords # Coordinates of 3 nodes only.
+                n2=nodes_cpu[nIDs[2]].coords
+                n3=nodes_cpu[nIDs[3]].coords
+
+                points = [n1, n2, n3]
+
+                _x(n) = n[1]
+                _y(n) = n[2]
+                _z(n) = n[3]
+
+                l = segment.(Ref(points[1]), points) # surface vectors (segments connecting nodes to reference node)
+                fn = unit_vector(l[2] × l[3]) # Calculating face normal 
+                cc=cells_cpu[cID].centre
+                fc=faces_cpu[fID].centre
+                d_fc=fc-cc
+
+                if dot(d_fc,fn)<0.0
+                    nIDs=reverse(nIDs)
+                end
                 write(
-                    io,"\t$(length(faces_cpu[fID].nodes_range)) $(join(face_nodes_cpu[faces_cpu[fID].nodes_range] .- 1," "))\n"
+                    #io,"\t$(length(faces_cpu[fID].nodes_range)) $(join(face_nodes_cpu[faces_cpu[fID].nodes_range] .- 1," "))\n"
+                    io,"\t$(length(faces_cpu[fID].nodes_range)) $(join(nIDs .- 1," "))\n"
                     )
             end
         end
@@ -165,17 +192,17 @@ function write_vtk(name, mesh::Mesh3, args...)
 
         for i=1:length(cells_cpu)
             #Tet
-            if length(cells_cpu[i].nodes_range)==4
-                x=x+17
+            if length(cells_cpu[i].nodes_range)==4 #No. of Nodes in a Tet Cell
+                x=x+17 
                 write(io,"     $(x)\n")
             end
             #Hexa
-            if length(cells_cpu[i].nodes_range)==8
+            if length(cells_cpu[i].nodes_range)==8 #No. of Nodes in a Hexa Cell
                 x=x+31
                 write(io,"     $(x)\n")
             end
-            #TET_PRISM
-            if length(cells_cpu[i].nodes_range)==6
+            #PRISM
+            if length(cells_cpu[i].nodes_range)==6 # No. of Nodes in a Prism cell
                 x=x+24
                 write(io,"     $(x)\n")
             end

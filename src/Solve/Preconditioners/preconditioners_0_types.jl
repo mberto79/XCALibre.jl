@@ -2,6 +2,7 @@
 export PreconditionerType, Preconditioner
 export Jacobi, NormDiagonal, LDL, ILU0
 export DILU, DILUprecon
+export CUDA_IC0, CUDA_ILU2
 
 abstract type PreconditionerType end
 struct NormDiagonal <: PreconditionerType end
@@ -15,6 +16,10 @@ Adapt.@adapt_structure ILU0
 struct DILU <: PreconditionerType end
 Adapt.@adapt_structure DILU
 
+struct CUDA_IC0 <: PreconditionerType end
+Adapt.@adapt_structure CUDA_IC0
+struct CUDA_ILU2 <: PreconditionerType end
+Adapt.@adapt_structure CUDA_ILU2
 
 struct Preconditioner{T,M,P,S}
     A::M
@@ -84,4 +89,67 @@ Preconditioner{DILU}(A::AbstractSparseArray{F,I}) where {F,I} = begin
         F, m, n, false, false, (y, v) -> ldiv!(y, S, v)
         )
     Preconditioner{DILU,typeof(A),typeof(P),typeof(S)}(A,P,S)
+end
+
+
+Preconditioner{CUDA_IC0}(A::CuSparseMatrixCSC{F,I}) where {F,I} = begin
+    m, n = size(A)
+    backend = get_backend(A)
+    z = _convert_array!(zeros(F, n), backend)
+    S = CuSparseMatrixCSR(Transpose(A))
+    ic02!(S)
+    U1 = LowerTriangular(S)
+    U2 = LowerTriangular(S)'
+
+    # function ldiv_ic0!(S::CuSparseMatrixCSC, x, y, z, U1, U2)
+    #     ldiv!(z, U1, x)  # Forward substitution with L
+    #     ldiv!(y, U2, z)   # Backward substitution with Lᴴ
+    #     return y
+    # end
+
+    
+
+    P = LinearOperator(T, n, n, true, true, (y, x) -> ldiv_ic0!(S, x, y, z, U1, U2))
+
+    Preconditioner{CUDA_IC0,typeof(A),typeof(P),typeof(S)}(A,P,S)
+end
+
+function ldiv_ic0!(S::CuSparseMatrixCSR, x, y, z, U1, U2)
+    ldiv!(z, U1, x)  # Forward substitution with L
+    ldiv!(y, U2, z)   # Backward substitution with Lᴴ
+    return y
+end
+
+Preconditioner{CUDA_ILU2}(A::CuSparseMatrixCSC{F,I}) where {F,I} = begin
+    m, n = size(A)
+    backend = get_backend(A)
+    z = _convert_array!(zeros(F, n), backend)
+    S = CuSparseMatrixCSR(Transpose(A))
+    ilu02!(S)
+
+    # CSR
+    L1 = UnitLowerTriangular(S)
+    U1 = UpperTriangular(S)
+
+    # # CSC
+    # L1 = LowerTriangular(S)
+    # U1 = UnitUpperTriangular(S)
+
+    # function ldiv_ilu0!(S::CuSparseMatrixCSC, x, y, z, L1, U1)
+    #     ldiv!(z, L1, x)  # Forward substitution with L
+    #     ldiv!(y, U1, z)  # Backward substitution with U
+    #     return y
+    # end
+
+    
+
+    P = LinearOperator(T, n, n, false, false, (y, x) -> ldiv_ilu0!(S, x, y, z, L1, U1))
+
+    Preconditioner{CUDA_ILU2,typeof(A),typeof(P),typeof(S)}(A,P,S)
+end
+
+function ldiv_ilu0!(S::CuSparseMatrixCSR, x, y, z, L1, U1)
+    ldiv!(z, L1, x)  # Forward substitution with L
+    ldiv!(y, U1, z)  # Backward substitution with U
+    return y
 end

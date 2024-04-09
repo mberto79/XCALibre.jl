@@ -1,4 +1,4 @@
-using Plots
+# using Plots
 using FVM_1D
 using Krylov
 
@@ -6,6 +6,7 @@ using Krylov
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
+mesh = update_mesh_format(mesh)
 
 # INLET CONDITIONS 
 
@@ -101,7 +102,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=2000, write_interval=100)
+runtime = set_runtime(iterations=2000, write_interval=100, timestep=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

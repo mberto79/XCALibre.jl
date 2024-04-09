@@ -1482,6 +1482,10 @@ end
 function generate_cell_nodes(volumes)
     #cell_nodes = Vector{Int64}(undef, length(volumes) * 4) #length of cells times number of nodes per cell (tet only)
     cell_nodes = Int64[] # cell_node length is undetermined as mesh could be hybrid, using push. Could use for and if before to preallocate vector.
+    
+    # Note 0: this errors with prism and hex for some reason? Reader? (volumentCount !- length(volumes))
+    # NOTE 1: You could also run a loop over all the "volumes" and accumulate their size. Then allocate
+    # NOTE 2: Or you could allocate an empty vector of vector of size ncells (less performant than NOTE 1 but faster than the current method)
     for n = eachindex(volumes)
         for i = 1:volumes[n].volumeCount
             push!(cell_nodes,volumes[n].volumes[i])

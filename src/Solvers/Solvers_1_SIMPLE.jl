@@ -1,12 +1,12 @@
 export simple!
 
 simple!(model_in, config, backend; resume=true, pref=nothing) = begin
-    R_ux, R_uy, R_uz, R_p, model, p_eqn = setup_incompressible_solvers(
+    R_ux, R_uy, R_uz, R_p, model_out = setup_incompressible_solvers(
         SIMPLE, model_in, config, backend;
         resume=true, pref=nothing
         )
 
-    return R_ux, R_uy, R_uz, R_p, model, p_eqn
+    return R_ux, R_uy, R_uz, R_p, model_out
 end
 
 function setup_incompressible_solvers(
@@ -90,10 +90,10 @@ function setup_incompressible_solvers(
     @reset uz_eqn.solver = solvers.U.solver(_A(uz_eqn), _b(uz_eqn))
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
 
-    R_ux, R_uy, R_uz, R_p, model  = solver_variant(
+    R_ux, R_uy, R_uz, R_p, model_out  = solver_variant(
     model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config, backend ; resume=resume, pref=pref)
 
-    return R_ux, R_uy, R_uz, R_p, model, p_eqn    
+    return R_ux, R_uy, R_uz, R_p, model_out    
 end # end function
 
 function SIMPLE(
@@ -120,6 +120,7 @@ function SIMPLE(
     gradUT = T(gradU)
     S = StrainRate(gradU, gradUT)
     S2 = ScalarField(mesh)
+    Acsr = CuSparseMatrixCSR(Transpose(ux_eqn.equation.A))
 
     # Temp sources to test GradUT explicit source
     # divUTx = zeros(Float64, length(mesh.cells))
@@ -170,7 +171,7 @@ function SIMPLE(
             # ux_eqn.b .-= divUTx
             implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh)
             update_preconditioner!(ux_eqn.preconditioner, mesh)
-            run!(ux_eqn, solvers.U, U.x) #opP=Pu.P, solver=solver_U)
+            run!(ux_eqn, solvers.U, U.x, Acsr) #opP=Pu.P, solver=solver_U)
             # residual!(R_ux, ux_eqn.equation, U.x, iteration)
         end
 
@@ -181,7 +182,7 @@ function SIMPLE(
             # uy_eqn.b .-= divUTy
             implicit_relaxation!(uy_eqn, prev, solvers.U.relax, mesh)
             update_preconditioner!(uy_eqn.preconditioner, mesh)
-            run!(uy_eqn, solvers.U, U.y)
+            run!(uy_eqn, solvers.U, U.y, Acsr)
             # residual!(R_uy, uy_eqn.equation, U.y, iteration)
         end
 
@@ -193,7 +194,7 @@ function SIMPLE(
                 # uy_eqn.b .-= divUTy
                 implicit_relaxation!(uz_eqn, prev, solvers.U.relax, mesh)
                 update_preconditioner!(uz_eqn.preconditioner, mesh)
-                run!(uz_eqn, solvers.U, U.z)
+                run!(uz_eqn, solvers.U, U.z, Acsr)
                 # residual!(R_uz, uz_eqn.equation, U.z, iteration)
             end
         end
@@ -213,7 +214,7 @@ function SIMPLE(
             apply_boundary_conditions!(p_eqn, p.BCs)
             setReference!(p_eqn, pref, 1)
             update_preconditioner!(p_eqn.preconditioner, mesh)
-            run!(p_eqn, solvers.p, p)
+            run!(p_eqn, solvers.p, p, Acsr)
 
             explicit_relaxation!(p, prev, solvers.p.relax)
             # residual!(R_p, p_eqn.equation, p, iteration)
@@ -232,7 +233,7 @@ function SIMPLE(
                 interpolate!(gradpf, ∇p, p)
                 nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
                 correct!(p_eqn.equation, p_model.terms.term1, pf)
-                run!(p_model, solvers.p)
+                run!(p_model, solvers.p, Acsr)
                 grad!(∇p, pf, p, pBCs) 
             end
         end
@@ -291,5 +292,8 @@ function SIMPLE(
         end
 
     end # end for loop
-    return R_ux, R_uy, R_uz, R_p, model
+
+    # add a copy model to cpu and return or overwrite the "model" given
+    model_out = adapt(CPU(), model)
+    return R_ux, R_uy, R_uz, R_p, model_out
 end

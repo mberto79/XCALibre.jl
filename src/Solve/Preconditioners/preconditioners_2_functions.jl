@@ -132,21 +132,27 @@ begin
     nothing
 end
 
-update_preconditioner!(P::Preconditioner{CUDA_IC0,M,PT,S}, mesh) where {M<:CuSparseMatrixCSC,PT,S} =
+update_preconditioner!(P::Preconditioner{CUDA_IC0,M,PT,S}, mesh) where {M,PT,S} =
 begin
-    backend = _get_backend(mesh)
-    P.storage .= ic02(P.A)
-    KernelAbstractions.synchronize(backend)
+    # backend = _get_backend(mesh)
+    # P.storage .= ic02(P.A .= CuSparseMatrixCSR(Transpose(A)))
+
+    P.storage .= CuSparseMatrixCSR(Transpose(P.A))
+    ic02!(P.storage)
+    # KernelAbstractions.synchronize(backend)
     # P.storage.U1.data .= (UpperTriangular(P.storage.P)').data
     # P.storage.U2.data .= UpperTriangular(P.storage.P).data
     nothing
 end
 
-update_preconditioner!(P::Preconditioner{CUDA_ILU2,M,PT,S}, mesh) where {M<:CuSparseMatrixCSC,PT,S} =
+update_preconditioner!(P::Preconditioner{CUDA_ILU2,M,PT,S}, mesh) where {M,PT,S} =
 begin
-    backend = _get_backend(mesh)
-    P.storage .= ilu02(P.A)
-    KernelAbstractions.synchronize(backend)
+    # backend = _get_backend(mesh)
+    # P.storage .= ilu02(P.A .= CuSparseMatrixCSR(Transpose(A)))
+
+    P.storage .= CuSparseMatrixCSR(Transpose(P.A))
+    ilu02!(P.storage)
+    # KernelAbstractions.synchronize(backend)
     # P.storage.U1.data .= (UpperTriangular(P.storage.P)').data
     # P.storage.U2.data .= UpperTriangular(P.storage.P).data
     nothing

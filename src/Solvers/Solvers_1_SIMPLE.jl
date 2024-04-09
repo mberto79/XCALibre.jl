@@ -1,12 +1,12 @@
 export simple!
 
 simple!(model_in, config, backend; resume=true, pref=nothing) = begin
-    R_ux, R_uy, R_uz, R_p, model_out = setup_incompressible_solvers(
+    R_ux, R_uy, R_uz, R_p, model = setup_incompressible_solvers(
         SIMPLE, model_in, config, backend;
         resume=true, pref=nothing
         )
 
-    return R_ux, R_uy, R_uz, R_p, model_out
+    return R_ux, R_uy, R_uz, R_p, model
 end
 
 function setup_incompressible_solvers(
@@ -72,6 +72,7 @@ function setup_incompressible_solvers(
                     solvers.U.preconditioner, ux_eqn, U.x.BCs, runtime)
     @reset uy_eqn.preconditioner = ux_eqn.preconditioner
     @reset uz_eqn.preconditioner = ux_eqn.preconditioner
+    @reset uz_eqn.preconditioner = ux_eqn.preconditioner
     @reset p_eqn.preconditioner = set_preconditioner(
                     solvers.p.preconditioner, p_eqn, p.BCs, runtime)
 
@@ -90,10 +91,10 @@ function setup_incompressible_solvers(
     @reset uz_eqn.solver = solvers.U.solver(_A(uz_eqn), _b(uz_eqn))
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
 
-    R_ux, R_uy, R_uz, R_p, model_out  = solver_variant(
+    R_ux, R_uy, R_uz, R_p, model  = solver_variant(
     model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config, backend ; resume=resume, pref=pref)
 
-    return R_ux, R_uy, R_uz, R_p, model_out    
+    return R_ux, R_uy, R_uz, R_p, model    
 end # end function
 
 function SIMPLE(
@@ -291,8 +292,5 @@ function SIMPLE(
         end
 
     end # end for loop
-
-    # add a copy model to cpu and return or overwrite the "model" given
-    model_out = adapt(CPU(), model)
-    return R_ux, R_uy, R_uz, R_p, model_out
+    return R_ux, R_uy, R_uz, R_p, model
 end

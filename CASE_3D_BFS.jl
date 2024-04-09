@@ -45,22 +45,19 @@ schemes = (
 solvers = (
     U = set_solver(
         model.U;
-        solver      = CgSolver, # BicgstabSolver, GmresSolver, #CgSolver
-        # preconditioner = CUDA_ILU2(),
+        solver      = CgSolver, #BicgstabSolver, # BicgstabSolver, GmresSolver, #CgSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.8,
         rtol = 1e-4,
-        atol = 1e-2
+        atol = 1e-3
     ),
     p = set_solver(
         model.p;
         solver      = CgSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
-        # preconditioner = CUDA_IC0(),
         preconditioner = Jacobi(),
-
         convergence = 1e-7,
-        relax       = 0.3,
+        relax       = 0.2,
         rtol = 1e-4,
         atol = 1e-3
 
@@ -69,54 +66,37 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=500, time_step=1, write_interval=500)
+    iterations=1000, time_step=1, write_interval=500)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
 
 GC.gc()
 
-initialise!(model.U, [0.0,0.0,0.0])
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
 backend = CPU()
 backend = CUDABackend()
 
-Rx, Ry, Rz, Rp, model = simple!(model, config, backend)
+Rx, Ry, Rz, Rp, model1 = simple!(model, config, backend)
 
-using CUDA.CUSPARSE
-using LinearOperators
-using SparseArrays
-using LinearAlgebra
-using SparseMatricesCSR
+plot(; xlims=(0,1000))
+plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
+plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
+plot!(1:length(Rp), Rp, yscale=:log10, label="p")
 
-Ac = peqn.equation.A # column compressed
-Ar = CuSparseMatrixCSR(Transpose(Ac)) # row compressed
+# # PROFILING CODE
 
-CUDA.@time Pc = ic02(Ac)
-CUDA.@time Pr = ic02(Ar)
+using Profile, PProf
 
+GC.gc()
+initialise!(model.U, velocity)
+initialise!(model.p, 0.0)
 
-n = length(peqn.equation.b)
-type = eltype(peqn.equation.b)
-z = CUDA.zeros(type, n)
-
-function ldiv_ic0!(P::CuSparseMatrixCSR, x, y, z)
-    ldiv!(z, LowerTriangular(P), x)   # Forward substitution with L
-    ldiv!(y, LowerTriangular(P)', z)  # Backward substitution with Lᴴ
-    return y
-  end
-
-function ldiv_ic0!(P::CuSparseMatrixCSC, x, y, z)
-    ldiv!(z, UpperTriangular(P)', x)  # Forward substitution with L
-    ldiv!(y, UpperTriangular(P), z)   # Backward substitution with Lᴴ
-    return y
+Profile.Allocs.clear()
+Profile.Allocs.@profile sample_rate=1 begin 
+    Rx, Ry, Rp = simple!(model, config)
 end
 
-sym = her = true
-opMc = LinearOperator(T, n, n, sym, her, (y, x) -> ldiv_ic0!(Pc, x, y, z))
-opMr = LinearOperator(T, n, n, sym, her, (y, x) -> ldiv_ic0!(Pr, x, y, z))
-
-CUDA.@time xc, stats = cg(Ac, peqn.equation.b, M=opMc)
-CUDA.@time xr, stats = cg(Ac, peqn.equation.b, M=opMr)
+PProf.Allocs.pprof()

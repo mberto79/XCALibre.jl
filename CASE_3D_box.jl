@@ -46,30 +46,27 @@ solvers = (
     U = set_solver(
         model.U;
         solver      = CgSolver, #BicgstabSolver, # BicgstabSolver, GmresSolver, #CgSolver
-        # preconditioner = CUDA_ILU2(),
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
         rtol = 1e-4,
-        atol = 1e-2
+        atol = 1e-3
     ),
     p = set_solver(
         model.p;
         solver      = CgSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
-        # preconditioner = CUDA_IC0(),
         preconditioner = Jacobi(),
-
         convergence = 1e-7,
         relax       = 0.2,
         rtol = 1e-4,
-        atol = 1e-2
+        atol = 1e-3
 
 
     )
 )
 
 runtime = set_runtime(
-    iterations=500, time_step=1, write_interval=500)
+    iterations=1000, time_step=1, write_interval=500)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -82,36 +79,24 @@ initialise!(model.p, 0.0)
 backend = CPU()
 backend = CUDABackend()
 
-Rx, Ry, Rz, Rp, model1, peqn = simple!(model, config, backend)
+Rx, Ry, Rz, Rp, model1 = simple!(model, config, backend)
 
-using CUDA.CUSPARSE
-using LinearOperators
-using SparseArrays
-using LinearAlgebra
+plot(; xlims=(0,1000))
+plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
+plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
+plot!(1:length(Rp), Rp, yscale=:log10, label="p")
 
-P = ic02(peqn.equation.A)
-P = ilu02(peqn.equation.A)
-test = similar(P)
-test .= ic02(peqn.equation.A)
+# # PROFILING CODE
 
-CUDA.@allowscalar test1 = UpperTriangular(P)'
+using Profile, PProf
 
-n = length(peqn.equation.b)
-type = eltype(peqn.equation.b)
-z = CUDA.zeros(type, n)
+GC.gc()
+initialise!(model.U, velocity)
+initialise!(model.p, 0.0)
 
-function ldiv_ic0!(P::CuSparseMatrixCSC, x, y, z)
-    ldiv!(z, UpperTriangular(P)', x)  # Forward substitution with L
-    ldiv!(y, UpperTriangular(P), z)   # Backward substitution with Lᴴ
-    return y
+Profile.Allocs.clear()
+Profile.Allocs.@profile sample_rate=1 begin 
+    Rx, Ry, Rp = simple!(model, config)
 end
 
-sym = her = true
-opM = LinearOperator(T, n, n, sym, her, (y, x) -> ldiv_ic0!(P, x, y, z))
-
-x, stats = cg(peqn.equation.A, peqn.equation.b, M=opM)
-
-A_cpu = sprand(100, 100, 0.3)
-
-U1 = UpperTriangular(A_cpu)'
-U11 = UpperTriangular(A_cpu)'
+PProf.Allocs.pprof()

@@ -12,6 +12,8 @@ mesh_file="unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.015m.unv" # Converges
 
 mesh_file="unv_sample_meshes/box_HEX_20mm.unv"
 mesh_file="unv_sample_meshes/box_HEX_10mm.unv"
+mesh_file="unv_sample_meshes/box_TET_PRISM_10mm.unv"
+mesh_file="unv_sample_meshes/box_TET_PRISM_25_5mm.unv"
 # mesh_file="unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.01m.unv"
 
 @time mesh=build_mesh3D(mesh_file, scale=0.001)
@@ -48,8 +50,8 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(divergence=Upwind, gradient=Midpoint)
+    U = set_schemes(divergence=Upwind),
+    p = set_schemes()
 )
 
 solvers = (
@@ -58,9 +60,9 @@ solvers = (
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.5,
+        relax       = 0.3,
         rtol = 1e-4,
-        atol = 1e-3
+        atol = 1e-4
     ),
     p = set_solver(
         model.p;
@@ -69,13 +71,13 @@ solvers = (
         convergence = 1e-7,
         relax       = 0.1,
         rtol = 1e-4,
-        atol = 1e-3
+        atol = 1e-4
 
     )
 )
 
 runtime = set_runtime(
-    iterations=500, time_step=1, write_interval=100)
+    iterations=10, time_step=1, write_interval=5)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -83,10 +85,8 @@ config = Configuration(
 GC.gc()
 
 initialise!(model.U, velocity)
-initialise!(model.U, [0.0,0.0,0.0])
+# initialise!(model.U, [0.0,0.0,0.0])
 initialise!(model.p, 0.0)
-
-model2vtk(model, "HEX_TEST")
 
 backend = CUDABackend()
 # backend = CPU()

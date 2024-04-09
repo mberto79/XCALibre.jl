@@ -2,15 +2,19 @@ using Plots
 using FVM_1D
 using Krylov
 using KernelAbstractions
+using CUDA
 
 #mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
 mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
 mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.04m.unv"
 mesh_file="unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.03m.unv"
 mesh_file="unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.015m.unv" # Converges
+
+mesh_file="unv_sample_meshes/box_HEX_20mm.unv"
+mesh_file="unv_sample_meshes/box_HEX_10mm.unv"
 # mesh_file="unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.01m.unv"
 
-@time mesh=build_mesh3D(mesh_file)
+@time mesh=build_mesh3D(mesh_file, scale=0.001)
 
 velocity = [0.05,0.0,0.0]
 nu=1e-3
@@ -20,7 +24,7 @@ noSlip = [0.0, 0.0, 0.0]
 model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 @assign! model U (
-    Dirichlet(:inlet, velocity),
+    Dirichlet(:inet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:bottom, noSlip),
     Dirichlet(:top, noSlip),
@@ -35,7 +39,7 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 )
 
 @assign! model p (
-    Neumann(:inlet, 0.0),
+    Neumann(:inet, 0.0),
     Dirichlet(:outlet, 0.0),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0),
@@ -51,19 +55,21 @@ schemes = (
 solvers = (
     U = set_solver(
         model.U;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.8,
-        rtol = 1e-5
+        relax       = 0.5,
+        rtol = 1e-4,
+        atol = 1e-3
     ),
     p = set_solver(
         model.p;
         solver      = CgSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.2,
-        rtol = 1e-5
+        relax       = 0.1,
+        rtol = 1e-4,
+        atol = 1e-3
 
     )
 )
@@ -77,10 +83,13 @@ config = Configuration(
 GC.gc()
 
 initialise!(model.U, velocity)
+initialise!(model.U, [0.0,0.0,0.0])
 initialise!(model.p, 0.0)
 
-# backend = CUDABackend()
-backend = CPU()
+model2vtk(model, "HEX_TEST")
+
+backend = CUDABackend()
+# backend = CPU()
 
 Rx, Ry, Rz, Rp, model1 = simple!(model, config, backend)
 

@@ -120,7 +120,6 @@ function SIMPLE(
     gradUT = T(gradU)
     S = StrainRate(gradU, gradUT)
     S2 = ScalarField(mesh)
-    Acsr = CuSparseMatrixCSR(Transpose(ux_eqn.equation.A))
 
     # Temp sources to test GradUT explicit source
     # divUTx = zeros(Float64, length(mesh.cells))

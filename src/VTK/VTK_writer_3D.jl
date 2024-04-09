@@ -148,8 +148,9 @@ function write_vtk(name, mesh::Mesh3, args...)
                 end
             #end
         end
+
         for (cID, fIDs) ∈ enumerate(all_cell_faces)
-            write(io,"\t$(length(all_cell_faces[cID]))\n") # No. of Faces per cell
+            write(io,"\t$(length(all_cell_faces[cID]))\n") # No. of Faces for each cell
             for fID ∈ fIDs
                 #Ordering of face nodes so that they are ordered anti-clockwise when looking at the cell from the outside
                 nIDs=face_nodes_cpu[faces_cpu[fID].nodes_range] # Get ids of nodes of face

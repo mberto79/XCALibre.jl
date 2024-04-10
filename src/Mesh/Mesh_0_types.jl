@@ -39,6 +39,14 @@ struct Cell{F<:AbstractFloat, SV3<:SVector{3,F},UR<:UnitRange{<:Integer}}
 end
 Adapt.@adapt_structure Cell
 
+Cell(TI::T, TF::T) where T<:DataType = begin
+    Cell(
+        SVector{3,TF}(0.0,0.0,0.0),
+        zero(TF),
+        UnitRange{TI}(0,0),
+        UnitRange{TI}(0,0)
+        )
+end
 # 2D and 3D Face types
 
 struct Face2D{
@@ -76,6 +84,19 @@ struct Face3D{
     weight::F
 end
 Adapt.@adapt_structure Face3D
+
+Face3D(TI::T, TF::T) where T<:DataType = begin
+    Face3D(
+        UnitRange{TI}(0,0),
+        SVector{2,TI}(0,0),
+        SVector{3,TF}(0.0,0.0,0.0),
+        SVector{3,TF}(0.0,0.0,0.0),
+        SVector{3,TF}(0.0,0.0,0.0),
+        zero(TF),
+        zero(TF),
+        zero(TF)
+    )
+end
 
 # 2D and 3D Mesh types
 

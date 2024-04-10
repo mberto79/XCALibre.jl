@@ -1,8 +1,8 @@
-# using Plots
+using Plots
+
 using FVM_1D
+
 using Krylov
-using KernelAbstractions
-using CUDA
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "unv_sample_meshes/flatplate_2D_laminar.unv"
@@ -38,21 +38,21 @@ schemes = (
 solvers = (
     U = set_solver(
         model.U;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = DILU(),
         convergence = 1e-7,
         relax       = 0.8,
     ),
     p = set_solver(
         model.p;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = LDL(),
         convergence = 1e-7,
         relax       = 0.2,
     )
 )
 
-runtime = set_runtime(iterations=2000, write_interval=1000, time_step=0.01)
+runtime = set_runtime(iterations=2000, write_interval=1000, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -62,10 +62,7 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-backend = CPU()
-# backend = CUDABackend()
-
-Rx, Ry, Rp, model1 = simple!(model, config, backend); # 9.39k allocs
+Rx, Ry, Rp = simple!(model, config) # 9.39k allocs
 
 using DelimitedFiles
 using LinearAlgebra

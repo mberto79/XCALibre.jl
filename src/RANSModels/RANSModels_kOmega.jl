@@ -14,8 +14,8 @@ RANS{KOmega}(; mesh, viscosity) = begin
     turb = (k=k , omega=omega, nut=nut); T = typeof(turb)
     flag = false; F = typeof(flag)
     D = typeof(mesh)
-    RANS{KOmega,F1,F2,V,T,F,D}(
-        KOmega(), U, p, viscosity, turb, flag, mesh
+    RANS{KOmega,F1,F2,F,F,V,T,F,D}(
+        KOmega(), U, p, flag, flag, viscosity, turb, flag, mesh
     )
 end
 

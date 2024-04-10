@@ -25,10 +25,11 @@ lines = update_mesh(
     ctrl_p = ctrl_p, #Control point vector
     vol_size = (16,10), #Total fluid volume size (x,y) in chord multiples [aerofoil located in the vertical centre at the 1/3 position horizontally]
     thickness = 1, #Aerofoil thickness [%c]
-    BL_thick = BL_mesh[1], #Boundary layer mesh thickness [mm]
+    BL_thick = 1, #Boundary layer mesh thickness [mm]
     BL_layers = BL_layers, #Boundary layer mesh layers [-]
-    BL_stretch = BL_mesh[2], #Boundary layer stretch factor (successive multiplication factor of cell thickness away from wall cell) [-]
-    py_lines = (13,44,51,59,36,68,247,284), #SALOME python script relevant lines (notebook path, 3 B-Spline lines,chord line, thickness line, BL line .unv path)
+    BL_stretch = 1.2, #Boundary layer stretch factor (successive multiplication factor of cell thickness away from wall cell) [-]
+    ratio = 1.15,
+    py_lines = (13,44,51,59,36,68,225,247,284), #SALOME python script relevant lines (notebook path, 3 B-Spline lines,chord line, thickness line, BL line .unv path)
     py_path = "/home/tim/Documents/MEng Individual Project/Julia/AerofoilOptimisation/foil_pythons/FoilMesh.py", #Path to SALOME python script
     salome_path = "/home/tim/Downloads/InstallationFiles/SALOME-9.11.0/mesa_salome", #Path to SALOME installation
     unv_path = "/home/tim/Documents/MEng Individual Project/Julia/FVM_1D_TW/unv_sample_meshes/FoilMesh.unv", #Path to .unv destination
@@ -50,16 +51,16 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 noSlip = [0.0, 0.0, 0.0]
 
 @assign! model U ( 
-    Dirichlet(:inlet, velocity),
+    FVM_1D.Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Dirichlet(:top, velocity),
-    Dirichlet(:bottom, velocity),
-    Dirichlet(:foil, noSlip)
+    FVM_1D.Dirichlet(:top, velocity),
+    FVM_1D.Dirichlet(:bottom, velocity),
+    FVM_1D.Dirichlet(:foil, noSlip)
 )
 
 @assign! model p (
     Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
+    FVM_1D.Dirichlet(:outlet, 0.0),
     Neumann(:top, 0.0),
     Neumann(:bottom, 0.0),
     Neumann(:foil, 0.0)

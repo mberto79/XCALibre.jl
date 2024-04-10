@@ -9,10 +9,12 @@ abstract type AbstractTurbulenceModel end
 # Models 
 struct Laminar <: AbstractMomentumModel end 
 
-struct RANS{M,F1,F2,V,T,E,D}
+struct RANS{M,F1,F2,F3,F4,V,T,E,D}
     model::M
     U::F1 
     p::F2
+    phi::F3
+    y::F4
     nu::V
     turbulence::T
     energy::E
@@ -25,8 +27,8 @@ RANS{Laminar}(; mesh, viscosity) = begin
     V = typeof(viscosity)
     flag = false; F = typeof(flag)
     D = typeof(mesh)
-    RANS{Laminar,F1,F2,V,F,F,D}(
-        Laminar(), U, p, viscosity, flag, flag, mesh
+    RANS{Laminar,F1,F2,F,F,V,F,F,D}(
+        Laminar(), U, p, flag, flag, viscosity, flag, flag, mesh
     )
 end
 

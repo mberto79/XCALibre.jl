@@ -5,17 +5,17 @@ foil,ctrl_p = spline_foil(FoilDef(
     chord   = 100, #[mm]
     LE_h    = 0, #[%c, at α=0°]
     TE_h    = 0, #[%c, at α=0°]
-    peak    = [25,15], #[%c]
-    trough  = [75,-15], #[%c]
+    peak    = [25,5], #[%c]
+    trough  = [75,-5], #[%c]
     xover = 50, #[%c]
-    α = 0 #[°]
+    α = 5 #[°]
 )) #Returns aerofoil MCL & control point vector (spline method)
 
 #%% REYNOLDS & Y+ CALCULATIONS
 chord = 100.0
 Re = 80000
 nu,ρ = 1.48e-5,1.225
-yplus_init,BL_layers = 2.0,50
+yplus_init,BL_layers = 2.0,35
 laminar = false
 velocity,BL_mesh = BL_calcs(Re,nu,ρ,chord,yplus_init,BL_layers,laminar) #Returns (BL mesh thickness, BL mesh growth rate)
 
@@ -25,10 +25,11 @@ lines = update_mesh(
     ctrl_p = ctrl_p, #Control point vector
     vol_size = (16,10), #Total fluid volume size (x,y) in chord multiples [aerofoil located in the vertical centre at the 1/3 position horizontally]
     thickness = 1, #Aerofoil thickness [%c]
-    BL_thick = BL_mesh[1], #Boundary layer mesh thickness [mm]
+    BL_thick = 1, #Boundary layer mesh thickness [mm]
     BL_layers = BL_layers, #Boundary layer mesh layers [-]
-    BL_stretch = BL_mesh[2], #Boundary layer stretch factor (successive multiplication factor of cell thickness away from wall cell) [-]
-    py_lines = (13,44,51,59,36,68,247,284), #SALOME python script relevant lines (notebook path, 3 B-Spline lines,chord line, thickness line, BL line .unv path)
+    BL_stretch = 1.2, #Boundary layer stretch factor (successive multiplication factor of cell thickness away from wall cell) [-]
+    ratio = 1.15,
+    py_lines = (13,44,51,59,36,68,225,247,284), #SALOME python script relevant lines (notebook path, 3 B-Spline lines,chord line, thickness line, BL line .unv path)
     py_path = "/home/tim/Documents/MEng Individual Project/Julia/AerofoilOptimisation/foil_pythons/FoilMesh.py", #Path to SALOME python script
     salome_path = "/home/tim/Downloads/InstallationFiles/SALOME-9.11.0/mesa_salome", #Path to SALOME installation
     unv_path = "/home/tim/Documents/MEng Individual Project/Julia/FVM_1D_TW/unv_sample_meshes/FoilMesh.unv", #Path to .unv destination
@@ -44,8 +45,8 @@ mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
 # Turbulence Model
-νR = 1
-Tu = 0.00001
+νR = 10
+Tu = 0.025
 k_inlet = 3/2*(Tu*velocity[1])^2
 ω_inlet = k_inlet/(νR*nu)
 model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
@@ -160,3 +161,10 @@ let
 end
 paraview_vis(paraview_path = "paraview", #Path to paraview
              vtk_path = "/home/tim/Documents/MEng Individual Project/Julia/FVM_1D_TW/vtk_results/iteration_..vtk") #Path to vtk files
+
+let
+faces = [46232,55238,62322,68544,78838,83540,88458,93680,99512,109250,121240,132022,141532]
+efficiencies = [3.467,3.584,3.693,3.768,3.844,3.956,4.01,3.94,4.021,3.979,3.989,3.938,3.996]
+plot(faces/10^5,efficiencies,ylims=(2.97,4.5),xlims=(0.4,1.5),xticks=(0.4:0.1:1.5),yticks=(3:0.1:4.5))
+scatter!(faces/10^5,efficiencies)
+end

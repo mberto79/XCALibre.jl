@@ -22,9 +22,9 @@ for i ∈ 1:iter
         α = α, #[°]
         cutoff = 0.5*(chord/100), #Min thickness of TE [mm]. Default = 0.5 @ 100mm chord; reduce for aerofoils with very thin TE
         vol_size = (16,10), #Total fluid volume size (x,y) in chord multiples [aerofoil located in the vertical centre at the 1/3 position horizontally]
-        BL_thick = BL_mesh[1], #Boundary layer mesh thickness [%c]
+        BL_thick = 1, #Boundary layer mesh thickness [%c]
         BL_layers = BL_layers, #Boundary layer mesh layers [-]
-        BL_stretch = BL_mesh[2], #Boundary layer stretch factor (successive multiplication factor of cell thickness away from wall cell) [-]
+        BL_stretch = 1.2, #Boundary layer stretch factor (successive multiplication factor of cell thickness away from wall cell) [-]
         py_lines = (14,37,44,248,358,391,405), #SALOME python script relevant lines (notebook path, chord line, points line, splines line, BL thickness, foil end BL fidelity, .unv path)
         dat_path = "/home/tim/Documents/MEng Individual Project/Julia/AerofoilOptimisation/foil_dats/NACA0012.dat",
         py_path = "/home/tim/Documents/MEng Individual Project/Julia/AerofoilOptimisation/foil_pythons/NACAMesh.py", #Path to SALOME python script

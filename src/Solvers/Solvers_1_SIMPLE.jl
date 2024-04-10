@@ -5,7 +5,7 @@ function simple!(model, config; resume=true, pref=nothing)
     backup_results()
 
     @info "Extracting configuration and input fields..."
-    (; U, p, nu, mesh) = model
+    (; U, p, phi, nu, mesh) = model
     (; solvers, schemes, runtime) = config
 
     @info "Preallocating fields..."
@@ -15,9 +15,12 @@ function simple!(model, config; resume=true, pref=nothing)
     # nuf = ConstantScalar(nu) # Implement constant field!
     rDf = FaceScalarField(mesh)
     nueff = FaceScalarField(mesh)
+    phif = FaceScalarField(mesh)
     initialise!(rDf, 1.0)
+    initialise!(phif, 1.0)
     divHv = ScalarField(mesh)
-
+    #phi_const = ScalarField(mesh)
+    #initialise!(phi_const,-1.0)
     @info "Defining models..."
 
     ux_eqn = (
@@ -40,6 +43,10 @@ function simple!(model, config; resume=true, pref=nothing)
         Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
     ) → Equation(mesh)
 
+    phi_eqn = (
+        Laplacian{schemes.phi.laplacian}(phif, phi) == Source(ConstantScalar(-1.0))
+    ) → Equation(mesh)
+
     @info "Initialising preconditioners..."
     
     @reset ux_eqn.preconditioner = set_preconditioner(
@@ -47,15 +54,20 @@ function simple!(model, config; resume=true, pref=nothing)
     @reset uy_eqn.preconditioner = ux_eqn.preconditioner
     @reset p_eqn.preconditioner = set_preconditioner(
                     solvers.p.preconditioner, p_eqn, p.BCs, runtime)
+    @reset phi_eqn.preconditioner = set_preconditioner(
+                    solvers.phi.preconditioner, phi_eqn, phi.BCs, runtime)
 
     @info "Pre-allocating solvers..."
      
     @reset ux_eqn.solver = solvers.U.solver(_A(ux_eqn), _b(ux_eqn))
     @reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
+    @reset phi_eqn.solver = solvers.phi.solver(_A(phi_eqn), _b(phi_eqn))
 
     if isturbulent(model)
         @info "Initialising turbulence model..."
+        calc_wall_distance!(model, config, phi_eqn)
+        model2vtk(model, "wall distance")
         turbulence = initialise_RANS(mdotf, p_eqn, config, model)
         config = turbulence.config
     else
@@ -120,7 +132,7 @@ function SIMPLE_loop(
 
     update_nueff!(nueff, nu, turbulence)
 
-    @info "Staring SIMPLE loops..."
+    @info "Starting SIMPLE loops..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 

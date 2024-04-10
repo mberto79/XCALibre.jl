@@ -120,7 +120,7 @@ function PISO_loop(
 
     update_nueff!(nueff, nu, turbulence)
 
-    @info "Staring SIMPLE loops..."
+    @info "Starting SIMPLE loops..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 

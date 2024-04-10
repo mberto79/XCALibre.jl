@@ -6,7 +6,7 @@ using CUDA
 
 
 # bfs_unv_tet_15mm, 10mm, 5mm, 4mm, 3mm
-mesh_file = "unv_sample_meshes/bfs_unv_tet_5mm.unv"
+mesh_file = "unv_sample_meshes/bfs_unv_tet_10mm.unv"
 @time mesh = build_mesh3D(mesh_file, scale=0.001)
 
 velocity = [0.5, 0.0, 0.0]
@@ -84,3 +84,10 @@ backend = CPU()
 backend = CUDABackend()
 
 Rx, Ry, Rz, Rp, model = simple!(model, config, backend)
+
+using SparseArrays
+
+A = sprand(Float64, 5, 5, 0.5) 
+
+Ad = Array(A)
+

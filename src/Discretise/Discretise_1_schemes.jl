@@ -43,9 +43,10 @@ end
     term::Operator{F,P,I,Time{Euler}}, 
     b, nzval_array, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
         volume = cell.volume
-        rdt = 1/runtime.dt
-        Atomix.@atomic nzval_array[cIndex] += volume*rdt
-        Atomix.@atomic b[cID] += prev[cID]*volume*rdt
+        # rdt = 1/runtime.dt
+        ap = volume/runtime.dt
+        Atomix.@atomic nzval_array[cIndex] += ap
+        Atomix.@atomic b[cID] += prev[cID]*ap
     nothing
 end
 

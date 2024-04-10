@@ -151,10 +151,13 @@ function SIMPLE(
     R_uz = ones(TF, iterations)
     R_uz = ones(TF, iterations)
     R_p = ones(TF, iterations)
-    
+
     interpolate!(Uf, U)   
-    correct_boundaries!CUDA.@allowscalar nbfaces = mesh.boundaries[end].IDs_range[end]
-    nfaces = length(mesh.faces)f, nu, turbulence)
+    correct_boundaries!(Uf, U, U.BCs)
+    flux!(mdotf, Uf)
+    grad!(∇p, pf, p, p.BCs)
+
+    update_nueff!(nueff, nu, turbulence)
 
     CUDA.@allowscalar nbfaces = mesh.boundaries[end].IDs_range[end]
     nfaces = length(mesh.faces)

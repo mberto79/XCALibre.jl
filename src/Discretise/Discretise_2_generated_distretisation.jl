@@ -68,7 +68,7 @@ end
 
 
     N = @groupsize()[1]
-    test = @localmem Int32 N
+    test = @localmem typeof(ione) N
 
 
     @uniform nbfaces = mesh.boundaries[end].IDs_range[end]

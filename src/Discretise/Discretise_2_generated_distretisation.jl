@@ -58,13 +58,10 @@ end
 
         end
 
-
         _scheme_source!(model, terms, b_array, nzval_array, cell, i, cIndex, prev, runtime)
         _sources!(model, sources, b_array, volume, i)
     # end
 end
-
-return_quote(x, t) = :(nothing)
 
 @generated function _scheme!(model::Model{TN,SN,T,S}, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime) where {TN,SN,T,S}
     

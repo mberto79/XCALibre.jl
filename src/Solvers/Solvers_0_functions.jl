@@ -374,12 +374,12 @@ end
 
         for ni ∈ faces_range
             nID = cell_neighbours[ni]
-            xIndex = nzval_index(colptr_x, rowval_x, nID, i, ione)
-            yIndex = nzval_index(colptr_y, rowval_y, nID, i, ione)
-            zIndex = nzval_index(colptr_z, rowval_z, nID, i, ione)
-            sumx += nzval_x[xIndex]*vx[nID]
-            sumy += nzval_y[yIndex]*vy[nID]
-            sumz += nzval_z[zIndex]*vz[nID]
+            nID_sparse = nzval_index(colptr_x, rowval_x, nID, i, ione)
+            # yIndex = nzval_index(colptr_y, rowval_y, nID, i, ione)
+            # zIndex = nzval_index(colptr_z, rowval_z, nID, i, ione)
+            sumx += nzval_x[nID_sparse]*vx[nID]
+            sumy += nzval_y[nID_sparse]*vy[nID]
+            sumz += nzval_z[nID_sparse]*vz[nID]
         end
 
         # D = view(Ax, i, i)[1] # add check to use max of Ax or Ay)

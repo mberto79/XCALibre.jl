@@ -45,7 +45,8 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1.0,
-        rtol = 1e-4
+        rtol = 1e-4,
+        atol = 1e-4
     ),
     p = set_solver(
         model.p;
@@ -53,7 +54,8 @@ solvers = (
         preconditioner = Jacobi(), #NormDiagonal(),
         convergence = 1e-7,
         relax       = 1.0,
-        rtol = 1e-4
+        rtol = 1e-4,
+        atol = 1e-4
     )
 )
 
@@ -64,7 +66,7 @@ schemes = (
 
 
 runtime = set_runtime(
-    iterations=1000, write_interval=50, time_step=0.005)
+    iterations=10000, write_interval=50, time_step=0.005)
 
 # 2mm mesh use settings below (to lower Courant number)
 runtime = set_runtime(
@@ -81,7 +83,7 @@ initialise!(model.p, 0.0)
 backend = CUDABackend()
 # backend = CPU()
 
-Rx, Ry, Rp, model1 = piso!(model, config, backend); #, pref=0.0)
+Rx, Ry, Rp, model = piso!(model, config, backend); #, pref=0.0)
 
 plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

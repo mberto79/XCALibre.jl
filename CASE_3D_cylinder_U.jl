@@ -43,12 +43,12 @@ schemes = (
 solvers = (
     U = set_solver(
         model.U;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = NormDiagonal(),
         convergence = 1e-7,
         relax       = 1.0,
         rtol = 1e-4,
-        atol = 1e-3
+        atol = 1e-2
     ),
     p = set_solver(
         model.p;
@@ -62,7 +62,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=1000, write_interval=50, time_step=0.005)
+    iterations=1000, write_interval=-1, time_step=0.005)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

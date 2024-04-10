@@ -55,7 +55,7 @@ function load_3D(unv_mesh; scale, integer, float)
         if sline[1]=="2411" && length(sline)==1
             pointindx=indx
         end
-        #Elements = 2412
+        #Elements = 2412 (Edges, Faces, Volumes)
         if sline[1]=="2412" && length(sline)==1
             elementindx=indx
         end
@@ -164,7 +164,7 @@ function load_3D(unv_mesh; scale, integer, float)
             continue
         end
     
-        if length(sline)==4 && indx>elementindx
+        if length(sline)==4 && indx<boundaryindx && indx>elementindx
             volume=[parse(Int64,sline[i]) for i=1:length(sline)]
             #push!(volumes,Volume(volumeindex-faceindex,volumeCount,volume))
             push!(volumes,Volume(volumeindex,volumeCount,volume))
@@ -185,7 +185,7 @@ function load_3D(unv_mesh; scale, integer, float)
             continue
         end
 
-        if length(sline)==8 && indx<boundaryindx
+        if length(sline)==8 && indx<boundaryindx && indx>elementindx
             volume=[parse(Int,sline[i]) for i=1:length(sline)]
             #push!(volumes,Volume(volumeindex-faceindex,volumeCount,volume))
             push!(volumes,Volume(volumeindex,volumeCount,volume))
@@ -206,7 +206,7 @@ function load_3D(unv_mesh; scale, integer, float)
             continue
         end
 
-        if length(sline)==6 && indx<boundaryindx
+        if length(sline)==6 && indx<boundaryindx && indx>elementindx
             volume=[parse(Int,sline[i]) for i=1:length(sline)]
             #push!(volumes,Volume(volumeindex-faceindex,volumeCount,volume))
             push!(volumes,Volume(volumeindex,volumeCount,volume))

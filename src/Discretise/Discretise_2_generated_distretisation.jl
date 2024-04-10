@@ -45,11 +45,11 @@ function discretise!(eqn, prev, runtime, nfaces, nbfaces)
 end
 
 @kernel function _discretise_face!(
-    model::Model{TN,SN,T,S}, terms, sources, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione) where {TN,SN,T,S}
+    model::Model{TN,SN,T,S}, terms, sources, mesh, nzval_array, @Const(rowval_array), @Const(colptr_array), b_array, prev, @Const(runtime), fzero, ione) where {TN,SN,T,S}
     i = @index(Global)
-    nbfaces = nbfaces = mesh.boundaries[end].IDs_range[end]
+    @uniform nbfaces = nbfaces = mesh.boundaries[end].IDs_range[end]
     fID = i + nbfaces
-    (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
+    @uniform (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
     
     face = faces[fID]
     owners = face.ownerCells
@@ -93,10 +93,10 @@ end
 end
 
 @kernel function _discretise_face_sources!(
-    model::Model{TN,SN,T,S}, terms, sources, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione) where {TN,SN,T,S}
+    model::Model{TN,SN,T,S}, terms, sources, mesh, nzval_array, @Const(rowval_array), @Const(colptr_array), b_array, prev, runtime, fzero, ione) where {TN,SN,T,S}
     i = @index(Global)
     
-    (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
+    @uniform (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
 
     # @inbounds begin
     cell = cells[i]

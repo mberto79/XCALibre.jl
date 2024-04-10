@@ -49,7 +49,7 @@ solvers = (
         # preconditioner = CUDA_ILU2(),
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.8,
         rtol = 1e-4,
         atol = 1e-2
     ),
@@ -60,7 +60,7 @@ solvers = (
         preconditioner = Jacobi(),
 
         convergence = 1e-7,
-        relax       = 0.3,
+        relax       = 0.2,
         rtol = 1e-4,
         atol = 1e-3
 
@@ -69,7 +69,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=500, time_step=1, write_interval=500)
+    iterations=500, time_step=1, write_interval=-1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

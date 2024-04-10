@@ -237,10 +237,18 @@ function load_3D(unv_mesh; scale, integer, float)
             push!(boundarys,(boundaryindex,boundary))
             #push!(boundaryElements[currentBoundary].elements,dict[parse(Int64,sline[2])])
             push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[2])-edgeindex)
-            if parse(Int64,sline[6]) ≠ 0
+            #if parse(Int64,sline[6]) ≠ 0 # Might not be needed? See below
               #push!(boundaryElements[currentBoundary].elements,dict[parse(Int64,sline[6])])
               push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[6])-edgeindex)
-            end
+            #end
+            continue
+        end
+
+        if length(sline)==4 && indx>boundaryindx && parse(Int64,sline[2])!=0
+            boundary=[parse(Int64,sline[i]) for i=1:length(sline)]
+            push!(boundarys,(boundaryindex,boundary))
+            #push!(boundaryElements[currentBoundary].elements,dict[parse(Int64,sline[2])])
+            push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[2])-edgeindex)
             continue
         end
     

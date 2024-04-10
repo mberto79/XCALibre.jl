@@ -66,6 +66,9 @@ function PISO(
 
     update_nueff!(nueff, nu, turbulence)
 
+    CUDA.@allowscalar nbfaces = mesh.boundaries[end].IDs_range[end]
+    nfaces = length(mesh.faces)
+
     @info "Staring PISO loops..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
@@ -73,7 +76,7 @@ function PISO(
     @time for iteration ∈ 1:iterations
 
         @. prev = U.x.values
-        discretise!(ux_eqn, prev, runtime)
+        discretise!(ux_eqn, prev, runtime, nfaces, nbfaces)
         apply_boundary_conditions!(ux_eqn, U.x.BCs)
         # ux_eqn.b .-= divUTx
         # implicit_relaxation!(ux_eqn.equation, prev, solvers.U.relax)
@@ -82,7 +85,7 @@ function PISO(
         residual!(R_ux, ux_eqn.equation, U.x, iteration)
 
         @. prev = U.y.values
-        discretise!(uy_eqn, prev, runtime)
+        discretise!(uy_eqn, prev, runtime, nfaces, nbfaces)
         apply_boundary_conditions!(uy_eqn, U.y.BCs)
         # uy_eqn.b .-= divUTy
         # implicit_relaxation!(uy_eqn.equation, prev, solvers.U.relax)
@@ -92,7 +95,7 @@ function PISO(
 
         if typeof(mesh) <: Mesh3
             @. prev = U.z.values
-            discretise!(uz_eqn, prev, runtime)
+            discretise!(uz_eqn, prev, runtime, nfaces, nbfaces)
             apply_boundary_conditions!(uz_eqn, U.z.BCs)
             # uy_eqn.b .-= divUTy
             # implicit_relaxation!(uz_eqn, prev, solvers.U.relax, mesh)
@@ -113,7 +116,7 @@ function PISO(
         div!(divHv, Uf)
    
         @. prev = p.values
-        discretise!(p_eqn, prev, runtime)
+        discretise!(p_eqn, prev, runtime, nfaces, nbfaces)
         apply_boundary_conditions!(p_eqn, p.BCs)
         setReference!(p_eqn, pref, 1)
         update_preconditioner!(p_eqn.preconditioner, mesh)
@@ -128,7 +131,7 @@ function PISO(
         if correct
             ncorrectors = 1
             for i ∈ 1:ncorrectors
-                discretise!(p_eqn)
+                discretise!(p_eqn, nfaces, nbfaces)
                 apply_boundary_conditions!(p_eqn, p.BCs)
                 setReference!(p_eqn.equation, pref, 1)
                 # grad!(∇p, pf, p, pBCs) 

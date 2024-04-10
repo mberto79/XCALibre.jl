@@ -70,7 +70,7 @@ runtime = set_runtime(
 
 # 2mm mesh use settings below (to lower Courant number)
 runtime = set_runtime(
-    iterations=500, write_interval=-1, time_step=0.005)
+    iterations=500, write_interval=-1, time_step=0.0025)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

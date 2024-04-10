@@ -68,12 +68,15 @@ function setup_incompressible_solvers(
 
     @info "Initialising preconditioners..."
 
+    CUDA.@allowscalar nbfaces = mesh.boundaries[end].IDs_range[end]
+    nfaces = length(mesh.faces)
+
     @reset ux_eqn.preconditioner = set_preconditioner(
-                    solvers.U.preconditioner, ux_eqn, U.x.BCs, runtime)
+                    solvers.U.preconditioner, ux_eqn, U.x.BCs, runtime, nfaces, nbfaces)
     @reset uy_eqn.preconditioner = ux_eqn.preconditioner
     @reset uz_eqn.preconditioner = ux_eqn.preconditioner
     @reset p_eqn.preconditioner = set_preconditioner(
-                    solvers.p.preconditioner, p_eqn, p.BCs, runtime)
+                    solvers.p.preconditioner, p_eqn, p.BCs, runtime, nfaces, nbfaces)
 
     if isturbulent(model)
         @info "Initialising turbulence model..."
@@ -154,6 +157,9 @@ function SIMPLE(
     grad!(∇p, pf, p, p.BCs)
 
     update_nueff!(nueff, nu, turbulence)
+
+    CUDA.@allowscalar nbfaces = mesh.boundaries[end].IDs_range[end]
+    nfaces = length(mesh.faces)
     
     @info "Staring SIMPLE loops..."
 
@@ -165,7 +171,7 @@ function SIMPLE(
         # type = typeof(ux_eqn)
         # println("$type")
         if R_ux[iteration] > convergence
-            discretise!(ux_eqn, prev, runtime)
+            discretise!(ux_eqn, prev, runtime, nfaces, nbfaces)
             apply_boundary_conditions!(ux_eqn, U.x.BCs)
             # ux_eqn.b .-= divUTx
             implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh)
@@ -176,7 +182,7 @@ function SIMPLE(
 
         @. prev = U.y.values
         if R_uy[iteration] > convergence
-            discretise!(uy_eqn, prev, runtime)
+            discretise!(uy_eqn, prev, runtime, nfaces, nbfaces)
             apply_boundary_conditions!(uy_eqn, U.y.BCs)
             # uy_eqn.b .-= divUTy
             implicit_relaxation!(uy_eqn, prev, solvers.U.relax, mesh)
@@ -188,7 +194,7 @@ function SIMPLE(
         if typeof(mesh) <: Mesh3
             @. prev = U.z.values
             if R_uz[iteration] > convergence
-                discretise!(uz_eqn, prev, runtime)
+                discretise!(uz_eqn, prev, runtime, nfaces, nbfaces)
                 apply_boundary_conditions!(uz_eqn, U.z.BCs)
                 # uy_eqn.b .-= divUTy
                 implicit_relaxation!(uz_eqn, prev, solvers.U.relax, mesh)
@@ -209,7 +215,7 @@ function SIMPLE(
         
         @. prev = p.values
         if R_p[iteration] > convergence
-            discretise!(p_eqn, prev, runtime)
+            discretise!(p_eqn, prev, runtime, nfaces, nbfaces)
             apply_boundary_conditions!(p_eqn, p.BCs)
             setReference!(p_eqn, pref, 1)
             update_preconditioner!(p_eqn.preconditioner, mesh)

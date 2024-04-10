@@ -15,6 +15,7 @@ function setup_incompressible_solvers(
     ) 
 
     @info "Extracting configuration and input fields..."
+    # Add line to extract boundary information from CPU and pass along
     model = adapt(backend, model_in)
     (; U, p, nu, mesh) = model
     (; solvers, schemes, runtime) = config
@@ -152,11 +153,8 @@ function SIMPLE(
     R_p = ones(TF, iterations)
     
     interpolate!(Uf, U)   
-    correct_boundaries!(Uf, U, U.BCs)
-    flux!(mdotf, Uf)
-    grad!(∇p, pf, p, p.BCs)
-
-    update_nueff!(nueff, nu, turbulence)
+    correct_boundaries!CUDA.@allowscalar nbfaces = mesh.boundaries[end].IDs_range[end]
+    nfaces = length(mesh.faces)f, nu, turbulence)
 
     CUDA.@allowscalar nbfaces = mesh.boundaries[end].IDs_range[end]
     nfaces = length(mesh.faces)

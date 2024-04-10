@@ -13,6 +13,7 @@ function simple_rho!(model, config; resume=true, pref=nothing)
     # nuf = ConstantScalar(nu) # Implement constant field!
     rDf = FaceScalarField(mesh)
     nueff = FaceScalarField(mesh)
+    keff_by_cp = FaceScalarField(mesh)
     initialise!(rDf, 1.0)
     divHv = ScalarField(mesh)
 
@@ -46,6 +47,15 @@ function simple_rho!(model, config; resume=true, pref=nothing)
         Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
     ) → Equation(mesh)
 
+    # Actually using enthalpy -> energy = cp * T
+    energy_eqn = (
+        Time{schemes.U.time}(energy)
+        + Divergence{schemes.U.divergence}(mdotf, energy) 
+        - Laplacian{schemes.U.laplacian}(keff_by_cp, energy) 
+        == 
+        -Source(0.0)
+    ) → Equation(mesh)
+
     @info "Initialising preconditioners..."
     
     @reset ux_eqn.preconditioner = set_preconditioner(
@@ -54,6 +64,8 @@ function simple_rho!(model, config; resume=true, pref=nothing)
     @reset uz_eqn.preconditioner = ux_eqn.preconditioner
     @reset p_eqn.preconditioner = set_preconditioner(
                     solvers.p.preconditioner, p_eqn, p.BCs, runtime)
+    @reset energy_eqn.preconditioner = set_preconditioner(
+                    solvers.energy.preconditioner, energy_eqn, energy.BCs, runtime)
 
     @info "Pre-allocating solvers..."
      
@@ -61,6 +73,7 @@ function simple_rho!(model, config; resume=true, pref=nothing)
     @reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
     @reset uz_eqn.solver = solvers.U.solver(_A(uz_eqn), _b(uz_eqn))
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
+    @reset energy_eqn.solver = solvers.p.solver(_A(energy_eqn), _b(energy_eqn))
 
     if isturbulent(model)
         @info "Initialising turbulence model..."
@@ -70,17 +83,17 @@ function simple_rho!(model, config; resume=true, pref=nothing)
         turbulence = nothing
     end
 
-    R_ux, R_uy, R_uz, R_p  = SIMPLE_RHO_loop(
-    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config ; resume=resume, pref=pref)
+    R_ux, R_uy, R_uz, R_p, R_e = SIMPLE_RHO_loop(
+    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, energy_eqn, turbulence, config ; resume=resume, pref=pref)
 
-    return R_ux, R_uy, R_uz, R_p     
+    return R_ux, R_uy, R_uz, R_p, R_e     
 end # end function
 
 function SIMPLE_RHO_loop(
-    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config ; resume, pref)
+    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, energy_eqn, turbulence, config ; resume, pref)
     
     # Extract model variables and configuration
-    (;mesh, U, p, nu) = model
+    (;mesh, U, p, energy, nu) = model
     # ux_model, uy_model = ux_eqn.model, uy_eqn.model
     p_model = p_eqn.model
     (; solvers, schemes, runtime) = config
@@ -90,6 +103,7 @@ function SIMPLE_RHO_loop(
     nueff = get_flux(ux_eqn, 3)
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
+    keff_by_cp = get_flux(energy_eqn, 3)
     
     @info "Allocating working memory..."
 
@@ -121,13 +135,19 @@ function SIMPLE_RHO_loop(
     R_uy = ones(TF, iterations)
     R_uz = ones(TF, iterations)
     R_p = ones(TF, iterations)
-    
+    R_e = ones(TF, iterations)
+
     interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, U.BCs)
     flux!(mdotf, Uf)
     grad!(∇p, pf, p, p.BCs)
 
     update_nueff!(nueff, nu, turbulence)
+
+    # Calculate keff_by_cp
+    rho = 1.0; Pr = 0.7
+    keff_by_cp.values .= nueff.values*rho/Pr
+
 
     @info "Staring SIMPLE loops..."
 
@@ -199,6 +219,14 @@ function SIMPLE_RHO_loop(
             end
         end
 
+        @. prev = energy.values
+        discretise!(energy_eqn, prev, runtime)
+        apply_boundary_conditions!(energy_eqn, energy.BCs)
+        implicit_relaxation!(energy_eqn.equation, prev, solvers.energy.relax)
+        update_preconditioner!(energy_eqn.preconditioner)
+        run!(energy_eqn, solvers.energy)
+        residual!(R_e, energy_eqn.equation, energy, iteration)
+
         correct_velocity!(U, Hv, ∇p, rD)
         interpolate!(Uf, U)
         correct_boundaries!(Uf, U, U.BCs)
@@ -222,7 +250,8 @@ function SIMPLE_RHO_loop(
         if (R_ux[iteration] <= convergence && 
             R_uy[iteration] <= convergence && 
             R_uz[iteration] <= convergence && 
-            R_p[iteration] <= convergence)
+            R_p[iteration] <= convergence && 
+            R_e[iteration] <= convergence)
 
             print(
                 """
@@ -242,6 +271,7 @@ function SIMPLE_RHO_loop(
                 (:Uy, R_uy[iteration]),
                 (:Uz, R_uz[iteration]),
                 (:p, R_p[iteration]),
+                (:energy, R_e[iteration]),
                 ]
             )
 
@@ -250,5 +280,5 @@ function SIMPLE_RHO_loop(
         end
 
     end # end for loop
-    return R_ux, R_uy, R_uz, R_p 
+    return R_ux, R_uy, R_uz, R_p, R_e
 end

@@ -31,6 +31,11 @@ end
     # fzero = zero(eltype(b))
     # A[cellID,cellID] += fzero
     # b[cellID] += fzero
+
+    # Chris' fix
+    (; area) = face 
+    b[cellID] -= bc.value*area
+
     nothing
 end
 

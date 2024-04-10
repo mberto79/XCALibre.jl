@@ -69,7 +69,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=500, time_step=1, write_interval=-1)
+    iterations=100, time_step=1, write_interval=-1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -84,39 +84,3 @@ backend = CPU()
 backend = CUDABackend()
 
 Rx, Ry, Rz, Rp, model = simple!(model, config, backend)
-
-using CUDA.CUSPARSE
-using LinearOperators
-using SparseArrays
-using LinearAlgebra
-using SparseMatricesCSR
-
-Ac = peqn.equation.A # column compressed
-Ar = CuSparseMatrixCSR(Transpose(Ac)) # row compressed
-
-CUDA.@time Pc = ic02(Ac)
-CUDA.@time Pr = ic02(Ar)
-
-
-n = length(peqn.equation.b)
-type = eltype(peqn.equation.b)
-z = CUDA.zeros(type, n)
-
-function ldiv_ic0!(P::CuSparseMatrixCSR, x, y, z)
-    ldiv!(z, LowerTriangular(P), x)   # Forward substitution with L
-    ldiv!(y, LowerTriangular(P)', z)  # Backward substitution with Lᴴ
-    return y
-  end
-
-function ldiv_ic0!(P::CuSparseMatrixCSC, x, y, z)
-    ldiv!(z, UpperTriangular(P)', x)  # Forward substitution with L
-    ldiv!(y, UpperTriangular(P), z)   # Backward substitution with Lᴴ
-    return y
-end
-
-sym = her = true
-opMc = LinearOperator(T, n, n, sym, her, (y, x) -> ldiv_ic0!(Pc, x, y, z))
-opMr = LinearOperator(T, n, n, sym, her, (y, x) -> ldiv_ic0!(Pr, x, y, z))
-
-CUDA.@time xc, stats = cg(Ac, peqn.equation.b, M=opMc)
-CUDA.@time xr, stats = cg(Ac, peqn.equation.b, M=opMr)

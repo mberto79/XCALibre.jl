@@ -47,7 +47,7 @@ end
 @kernel function _discretise_face!(
     model::Model{TN,SN,T,S}, terms, sources, mesh, nzval_array, @Const(rowval_array), @Const(colptr_array), b_array, prev, @Const(runtime), fzero, ione) where {TN,SN,T,S}
     i = @index(Global)
-    @uniform nbfaces = nbfaces = mesh.boundaries[end].IDs_range[end]
+    @uniform nbfaces = mesh.boundaries[end].IDs_range[end]
     fID = i + nbfaces
     @uniform (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
     
@@ -66,11 +66,6 @@ end
 
     _scheme!(model, terms, nzval_array, cell1, face,  cell2, ione, cIndex1, nIndex1, fID, prev, runtime)
     _scheme!(model, terms, nzval_array, cell2, face,  cell1, -ione, cIndex2, nIndex2, fID, prev, runtime)
-
-    # _scheme!(model, terms, nzval_array, cell1, face,  cell2, -ione, cIndex1, nIndex2, fID, prev, runtime)
-    # _scheme!(model, terms, nzval_array, cell2, face,  cell1, ione, cIndex2, nIndex1, fID, prev, runtime)
-
-
 
     # @inbounds begin
         # (; faces_range, volume) = cell

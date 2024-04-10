@@ -22,7 +22,7 @@ function total_boundary_faces(mesh::AbstractMesh)
     # nbfaces = zero(I)
     nbfaces = zero(_get_int(mesh))
     @inbounds for boundary ∈ boundaries
-        nbfaces += length(boundary.IDs_range)
+        nbfaces += length(boundary.facesID)
     end
     nbfaces
 end
@@ -37,54 +37,54 @@ function boundary_index(
     end
 end
 
-function x(mesh::AbstractMesh)
+function x(mesh::Mesh2{I,F}) where {I,F}
     cells = mesh.cells
-    out = zeros(_get_float(mesh), length(cells))
+    out = zeros(F, length(cells))
     @inbounds for i ∈ eachindex(cells)
         out[i] = cells[i].centre[1]
     end
     return out
 end
 
-function y(mesh::AbstractMesh)
+function y(mesh::Mesh2{I,F}) where {I,F}
     cells = mesh.cells
-    out = zeros(_get_float(mesh), length(cells))
+    out = zeros(F, length(cells))
     @inbounds for i ∈ eachindex(cells)
         out[i] = cells[i].centre[2]
     end
     return out
 end
 
-function z(mesh::AbstractMesh)
+function z(mesh::Mesh2{I,F}) where {I,F}
     cells = mesh.cells
-    out = zeros(_get_float(mesh), length(cells))
+    out = zeros(F, length(cells))
     @inbounds for i ∈ eachindex(cells)
         out[i] = cells[i].centre[3]
     end
     return out
 end
 
-function xf(mesh::AbstractMesh) 
+function xf(mesh::Mesh2{I,F}) where {I,F}
     faces = mesh.faces
-    out = zeros(_get_float(mesh), length(faces))
+    out = zeros(F, length(faces))
     @inbounds for i ∈ eachindex(faces)
         out[i] = faces[i].centre[1]
     end
     return out
 end
 
-function yf(mesh::AbstractMesh)
+function yf(mesh::Mesh2{I,F}) where {I,F}
     faces = mesh.faces
-    out = zeros(_get_float(mesh), length(faces))
+    out = zeros(F, length(faces))
     @inbounds for i ∈ eachindex(faces)
         out[i] = faces[i].centre[2]
     end
     return out
 end
 
-function zf(mesh::AbstractMesh) 
+function zf(mesh::Mesh2{I,F}) where {I,F}
     faces = mesh.faces
-    out = zeros(_get_float(mesh), length(faces))
+    out = zeros(F, length(faces))
     @inbounds for i ∈ eachindex(faces)
         out[i] = faces[i].centre[3]
     end

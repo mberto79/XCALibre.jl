@@ -72,7 +72,6 @@ function setup_incompressible_solvers(
                     solvers.U.preconditioner, ux_eqn, U.x.BCs, runtime)
     @reset uy_eqn.preconditioner = ux_eqn.preconditioner
     @reset uz_eqn.preconditioner = ux_eqn.preconditioner
-    @reset uz_eqn.preconditioner = ux_eqn.preconditioner
     @reset p_eqn.preconditioner = set_preconditioner(
                     solvers.p.preconditioner, p_eqn, p.BCs, runtime)
 
@@ -99,8 +98,6 @@ end # end function
 
 function SIMPLE(
     model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config, backend ; resume, pref)
-
-    convergence = 1e-8
     
     # Extract model variables and configuration
     (;mesh, U, p, nu) = model
@@ -146,7 +143,6 @@ function SIMPLE(
     R_ux = ones(TF, iterations)
     R_uy = ones(TF, iterations)
     R_uz = ones(TF, iterations)
-    R_uz = ones(TF, iterations)
     R_p = ones(TF, iterations)
     
     interpolate!(Uf, U)   
@@ -160,43 +156,37 @@ function SIMPLE(
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
-    @time for iteration ∈ 1:iterations
+    CUDA.@time for iteration ∈ 1:iterations
 
         @. prev = U.x.values
         # type = typeof(ux_eqn)
         # println("$type")
-        if R_ux[iteration] > convergence
-            discretise!(ux_eqn, prev, runtime)
-            apply_boundary_conditions!(ux_eqn, U.x.BCs)
-            # ux_eqn.b .-= divUTx
-            implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh)
-            update_preconditioner!(ux_eqn.preconditioner, mesh)
-            run!(ux_eqn, solvers.U, U.x) #opP=Pu.P, solver=solver_U)
-            # residual!(R_ux, ux_eqn.equation, U.x, iteration)
-        end
+        discretise!(ux_eqn, prev, runtime)
+        apply_boundary_conditions!(ux_eqn, U.x.BCs)
+        # ux_eqn.b .-= divUTx
+        implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh)
+        update_preconditioner!(ux_eqn.preconditioner, mesh)
+        run!(ux_eqn, solvers.U, U.x) #opP=Pu.P, solver=solver_U)
+        residual!(R_ux, ux_eqn.equation, U.x, iteration)
 
         @. prev = U.y.values
-        if R_uy[iteration] > convergence
-            discretise!(uy_eqn, prev, runtime)
-            apply_boundary_conditions!(uy_eqn, U.y.BCs)
-            # uy_eqn.b .-= divUTy
-            implicit_relaxation!(uy_eqn, prev, solvers.U.relax, mesh)
-            update_preconditioner!(uy_eqn.preconditioner, mesh)
-            run!(uy_eqn, solvers.U, U.y)
-            # residual!(R_uy, uy_eqn.equation, U.y, iteration)
-        end
+        discretise!(uy_eqn, prev, runtime)
+        apply_boundary_conditions!(uy_eqn, U.y.BCs)
+        # uy_eqn.b .-= divUTy
+        implicit_relaxation!(uy_eqn, prev, solvers.U.relax, mesh)
+        update_preconditioner!(uy_eqn.preconditioner, mesh)
+        run!(uy_eqn, solvers.U, U.y)
+        residual!(R_uy, uy_eqn.equation, U.y, iteration)
 
         if typeof(mesh) <: Mesh3
             @. prev = U.z.values
-            if R_uz[iteration] > convergence
-                discretise!(uz_eqn, prev, runtime)
-                apply_boundary_conditions!(uz_eqn, U.z.BCs)
-                # uy_eqn.b .-= divUTy
-                implicit_relaxation!(uz_eqn, prev, solvers.U.relax, mesh)
-                update_preconditioner!(uz_eqn.preconditioner, mesh)
-                run!(uz_eqn, solvers.U, U.z)
-                # residual!(R_uz, uz_eqn.equation, U.z, iteration)
-            end
+            discretise!(uz_eqn, prev, runtime)
+            apply_boundary_conditions!(uz_eqn, U.z.BCs)
+            # uy_eqn.b .-= divUTy
+            implicit_relaxation!(uz_eqn, prev, solvers.U.relax, mesh)
+            update_preconditioner!(uz_eqn.preconditioner, mesh)
+            run!(uz_eqn, solvers.U, U.z)
+            residual!(R_uz, uz_eqn.equation, U.z, iteration)
         end
           
         inverse_diagonal!(rD, ux_eqn)
@@ -209,16 +199,14 @@ function SIMPLE(
         div!(divHv, Uf)
         
         @. prev = p.values
-        if R_p[iteration] > convergence
-            discretise!(p_eqn, prev, runtime)
-            apply_boundary_conditions!(p_eqn, p.BCs)
-            setReference!(p_eqn, pref, 1)
-            update_preconditioner!(p_eqn.preconditioner, mesh)
-            run!(p_eqn, solvers.p, p)
+        discretise!(p_eqn, prev, runtime)
+        apply_boundary_conditions!(p_eqn, p.BCs)
+        setReference!(p_eqn, pref, 1)
+        update_preconditioner!(p_eqn.preconditioner, mesh)
+        run!(p_eqn, solvers.p, p)
 
-            explicit_relaxation!(p, prev, solvers.p.relax)
-            # residual!(R_p, p_eqn.equation, p, iteration)
-        end
+        explicit_relaxation!(p, prev, solvers.p.relax)
+        residual!(R_p, p_eqn.equation, p, iteration)
 
         grad!(∇p, pf, p, p.BCs) 
 
@@ -254,13 +242,9 @@ function SIMPLE(
         #     divUTx = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][1,1]+ gradUT[i][1,2] + gradUT[i][1,3])*vol
         #     divUTy = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][2,1]+ gradUT[i][2,2] + gradUT[i][2,3])*vol
         # end
-
-        # update residuals
-        residual!(R_ux, ux_eqn.equation, U.x, iteration)
-        residual!(R_uy, uy_eqn.equation, U.y, iteration)
-        residual!(R_uz, uz_eqn.equation, U.z, iteration)
-        residual!(R_p, p_eqn.equation, p, iteration)
         
+        convergence = 1e-7
+
         if (R_ux[iteration] <= convergence && 
             R_uy[iteration] <= convergence && 
             # R_uz[iteration] <= convergence &&
@@ -287,7 +271,7 @@ function SIMPLE(
                 ]
             )
 
-        if iteration%write_interval + signbit(write_interval) == 0
+        if iteration%write_interval + signbit(write_interval) == 0      
             model2vtk(model, @sprintf "iteration_%.6d" iteration)
         end
 

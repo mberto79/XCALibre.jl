@@ -58,11 +58,7 @@ function piso!(model, config; resume=true, pref=nothing)
         @info "Initialising turbulence model..."
         turbulence = initialise_RANS(mdotf, p_eqn, config, model)
         config = turbulence.config
-    else
-        turbulence = nothing
-    end
-
-    if istransition(model)
+    elseif istransition(model)
         @info "Initialising transition model..."
         calc_wall_distance!(model, config)
         model2vtk(model, "wall distance")

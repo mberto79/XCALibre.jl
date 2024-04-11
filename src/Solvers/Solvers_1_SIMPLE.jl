@@ -5,24 +5,19 @@ function simple!(model, config; resume=true, pref=nothing)
     backup_results()
 
     @info "Extracting configuration and input fields..."
-    (; U, p, phi, nu, mesh) = model
+    (; U, p, nu, mesh) = model
     (; solvers, schemes, runtime) = config
 
     @info "Preallocating fields..."
-    
     ∇p = Grad{schemes.p.gradient}(p)
     mdotf = FaceScalarField(mesh)
     # nuf = ConstantScalar(nu) # Implement constant field!
     rDf = FaceScalarField(mesh)
     nueff = FaceScalarField(mesh)
-    phif = FaceScalarField(mesh)
     initialise!(rDf, 1.0)
-    initialise!(phif, 1.0)
     divHv = ScalarField(mesh)
-    #phi_const = ScalarField(mesh)
-    #initialise!(phi_const,-1.0)
-    @info "Defining models..."
 
+    @info "Defining models..."
     ux_eqn = (
         Time{schemes.U.time}(U.x)
         + Divergence{schemes.U.divergence}(mdotf, U.x) 
@@ -43,30 +38,32 @@ function simple!(model, config; resume=true, pref=nothing)
         Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
     ) → Equation(mesh)
 
-    phi_eqn = (
-        Laplacian{schemes.phi.laplacian}(phif, phi) == Source(ConstantScalar(-1.0))
-    ) → Equation(mesh)
-
     @info "Initialising preconditioners..."
-    
+
     @reset ux_eqn.preconditioner = set_preconditioner(
                     solvers.U.preconditioner, ux_eqn, U.x.BCs, runtime)
     @reset uy_eqn.preconditioner = ux_eqn.preconditioner
     @reset p_eqn.preconditioner = set_preconditioner(
                     solvers.p.preconditioner, p_eqn, p.BCs, runtime)
-    @reset phi_eqn.preconditioner = set_preconditioner(
-                    solvers.phi.preconditioner, phi_eqn, phi.BCs, runtime)
 
     @info "Pre-allocating solvers..."
-     
+
     @reset ux_eqn.solver = solvers.U.solver(_A(ux_eqn), _b(ux_eqn))
     @reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
-    @reset phi_eqn.solver = solvers.phi.solver(_A(phi_eqn), _b(phi_eqn))
+
 
     if isturbulent(model)
         @info "Initialising turbulence model..."
-        calc_wall_distance!(model, config, phi_eqn)
+        turbulence = initialise_RANS(mdotf, p_eqn, config, model)
+        config = turbulence.config
+    else
+        turbulence = nothing
+    end
+
+    if istransition(model)
+        @info "Initialising transition model..."
+        calc_wall_distance!(model, config)
         model2vtk(model, "wall distance")
         turbulence = initialise_RANS(mdotf, p_eqn, config, model)
         config = turbulence.config

@@ -1,10 +1,11 @@
 export RANS
 export Laminar
-export AbstractMomentumModel, AbstractTurbulenceModel
-export isturbulent
+export AbstractMomentumModel, AbstractTurbulenceModel, AbstractTransitionModel
+export isturbulent, istransition
 
 abstract type AbstractMomentumModel end
 abstract type AbstractTurbulenceModel end
+abstract type AbstractTransitionModel end
 
 # Models 
 struct Laminar <: AbstractMomentumModel end 
@@ -34,4 +35,8 @@ end
 
 isturbulent(model) = begin
     typeof(model).parameters[1] <: AbstractTurbulenceModel
+end
+
+istransition(model) = begin
+    typeof(model).parameters[1] <: AbstractTransitionModel
 end

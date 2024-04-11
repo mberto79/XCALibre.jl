@@ -5,6 +5,7 @@ using StaticArrays
 using LoopVectorization
 using SparseArrays
 using Statistics
+using Accessors
 
 using FVM_1D.Mesh
 using FVM_1D.Fields

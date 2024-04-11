@@ -1,11 +1,23 @@
 export calc_wall_distance!
 
-function calc_wall_distance!(model, config, phi_eqn)
+function calc_wall_distance!(model, config)
     @info "Calculating wall distance..."
 
     (;mesh, phi, y) = model
     (; solvers, schemes, runtime) = config
     (; iterations) = runtime
+
+    phif = FaceScalarField(mesh)
+    initialise!(phif, 1.0)
+
+    phi_eqn = (
+        Laplacian{schemes.phi.laplacian}(phif, phi) == Source(ConstantScalar(-1.0))
+    ) → Equation(mesh)
+
+    @reset phi_eqn.preconditioner = set_preconditioner(
+        solvers.phi.preconditioner, phi_eqn, phi.BCs, runtime)
+
+    @reset phi_eqn.solver = solvers.phi.solver(_A(phi_eqn), _b(phi_eqn))
 
     phiGrad = Grad{schemes.phi.gradient}(phi)
     phif = FaceScalarField(mesh)
@@ -25,6 +37,7 @@ function calc_wall_distance!(model, config, phi_eqn)
         explicit_relaxation!(phi, prev, solvers.phi.relax)
         residual!(R_phi, phi_eqn.equation, phi, iteration)
         grad!(phiGrad, phif, phi, phi.BCs)
+
         if R_phi[iteration] < solvers.phi.convergence
             @info "Wall distance converged!"
             break
@@ -53,3 +66,12 @@ function residual!(Residual, equation, phi, iteration)
     Residual[iteration] = res
     nothing
 end
+
+#=
+using ProgressMeter
+progress = Progress(iterations; dt=1.0, showspeed=true)
+        ProgressMeter.next!(
+            progress, showvalues = [
+                (:phi, R_phi[iteration])]
+            )
+=#

@@ -2,7 +2,7 @@ export KOmegaLKE
 export initialise_RANS
 export turbulence!
 
-struct KOmegaLKE <: AbstractTurbulenceModel end
+struct KOmegaLKE <: AbstractTransitionModel end
 
 # Constructor 
 

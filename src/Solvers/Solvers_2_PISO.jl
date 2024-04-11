@@ -62,6 +62,16 @@ function piso!(model, config; resume=true, pref=nothing)
         turbulence = nothing
     end
 
+    if istransition(model)
+        @info "Initialising transition model..."
+        calc_wall_distance!(model, config)
+        model2vtk(model, "wall distance")
+        turbulence = initialise_RANS(mdotf, p_eqn, config, model)
+        config = turbulence.config
+    else
+        turbulence = nothing
+    end
+
     R_ux, R_uy, R_p  = PISO_loop(
     model, ∇p, ux_eqn, uy_eqn, p_eqn, turbulence, config ; resume=resume, pref=pref)
 

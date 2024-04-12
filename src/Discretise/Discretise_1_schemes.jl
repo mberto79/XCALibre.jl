@@ -10,8 +10,13 @@ cIndex - Index of the cell based on sparse matrix. Use to index "nzval_array"
 # Steady 1
 @inline function scheme!(
     term::Operator{F,P,I,Time{Steady}}, 
-    nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
-    nothing
+    cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
+    # nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
+    # nothing
+    z = zero(typeof(cell.volume))
+    Ac = z
+    An = z
+    Ac, An
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Time{Steady}}, 
@@ -45,8 +50,11 @@ end
         volume = cell.volume
         # rdt = 1/runtime.dt
         ap = volume/runtime.dt
-        Atomix.@atomic nzval_array[cIndex] += ap
-        Atomix.@atomic b[cID] += prev[cID]*ap
+        # Atomix.@atomic nzval_array[cIndex] += ap
+        # Atomix.@atomic b[cID] += prev[cID]*ap
+
+        nzval_array[cIndex] += ap
+        b[cID] += prev[cID]*ap
     nothing
 end
 
@@ -71,12 +79,15 @@ end
 
 @inline function scheme!(
     term::Operator{F,P,I,Laplacian{Linear}}, 
-    nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime
+    # nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime
+    cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     ap = term.sign*(-term.flux[fID] * face.area)/face.delta
-    Atomix.@atomic nzval_array[cIndex] += ap
-    Atomix.@atomic nzval_array[nIndex] += -ap
-    nothing
+    # Atomix.@atomic nzval_array[cIndex] += ap
+    # Atomix.@atomic nzval_array[nIndex] += -ap
+    Ac = ap
+    An = -ap
+    Ac, An
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Laplacian{Linear}}, 
@@ -108,7 +119,8 @@ end
 
 @inline function scheme!(
     term::Operator{F,P,I,Divergence{Linear}}, 
-    nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
+    # nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
+    cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     xf = face.centre
     xC = cell.centre
@@ -116,9 +128,11 @@ end
     weight = norm(xf - xC)/norm(xN - xC)
     one_minus_weight = one(eltype(weight)) - weight
     ap = term.sign*(term.flux[fID]*ns)
-    Atomix.@atomic nzval_array[cIndex] += ap*one_minus_weight
-    Atomix.@atomic nzval_array[nIndex] += ap*weight
-    nothing
+    # Atomix.@atomic nzval_array[cIndex] += ap*one_minus_weight
+    # Atomix.@atomic nzval_array[nIndex] += ap*weight
+    Ac = ap*one_minus_weight
+    An = ap*weight
+    Ac, An
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Divergence{Linear}}, 
@@ -152,12 +166,16 @@ end
 # Upwind 1
 @inline function scheme!(
     term::Operator{F,P,I,Divergence{Upwind}}, 
-    nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
+    cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
+    # nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     ap = term.sign*(term.flux[fID]*ns)
-    Atomix.@atomic nzval_array[cIndex] += max(ap, 0.0)
-    Atomix.@atomic nzval_array[nIndex] += -max(-ap, 0.0)
-    nothing
+    # Atomix.@atomic nzval_array[cIndex] += max(ap, 0.0)
+    # Atomix.@atomic nzval_array[nIndex] += -max(-ap, 0.0)
+    # nothing
+    Ac = max(ap, 0.0)
+    An = -max(-ap, 0.0)
+    Ac, An
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Divergence{Upwind}}, 
@@ -199,7 +217,8 @@ end
     # ap = max(flux, 0.0)
     # ab = min(flux, 0.0)*phi[cID]
     flux = term.sign*term.flux[cID]*cell.volume # indexed with cID
-    Atomix.@atomic nzval_array[cIndex] += flux # indexed with cIndex
+    # Atomix.@atomic nzval_array[cIndex] += flux # indexed with cIndex
+    nzval_array[cIndex] += flux # indexed with cIndex
     # flux = term.sign*term.flux[cID]*cell.volume*phi[cID]
     # b[cID] -= flux
     nothing

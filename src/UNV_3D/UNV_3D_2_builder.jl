@@ -3,13 +3,13 @@ export build_mesh3D
 function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
     stats = @timed begin
         println("Loading UNV File...")
-        points, edges, efaces, volumes, boundaryElements = load_3D(
+        points, efaces, cells_UNV, boundaryElements = load_3D( # "volumes" changed to cells_UNV
             unv_mesh; scale=scale, integer=integer, float=float)
         println("File Read Successfully")
         println("Generating Mesh...")
 
-        cell_nodes, cell_nodes_range = generate_cell_nodes(volumes) # Should be Hybrid compatible, tested for hexa. Using push instead of allocating vector.
-        node_cells, node_cells_range = generate_node_cells(points, volumes)  # Should be Hybrid compatible, tested for hexa.
+        cell_nodes, cell_nodes_range = generate_cell_nodes(cells_UNV) # Should be Hybrid compatible, tested for hexa. Using push instead of allocating vector.
+        node_cells, node_cells_range = generate_node_cells(points, cells_UNV)  # Should be Hybrid compatible, tested for hexa.
         nodes = build_nodes(points, node_cells_range) # Hyrbid compatible, works for Tet and Hexa
         boundaries = build_boundaries(boundaryElements) # Hybrid compatible
 
@@ -17,12 +17,12 @@ function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
 
         bface_nodes, bface_nodes_range, bface_owners_cells, boundary_cellsID = 
         begin
-            generate_boundary_faces(boundaryElements, efaces, nbfaces, node_cells, node_cells_range, volumes) # Hybrid compatible, tested with hexa
+            generate_boundary_faces(boundaryElements, efaces, nbfaces, node_cells, node_cells_range, cells_UNV) # Hybrid compatible, tested with hexa
         end
 
         iface_nodes, iface_nodes_range, iface_owners_cells = 
         begin 
-            generate_internal_faces(volumes, nbfaces, nodes, node_cells) # Hybrid compatible, tested with hexa.
+            generate_internal_faces(cells_UNV, nbfaces, nodes, node_cells) # Hybrid compatible, tested with hexa.
         end
 
         # NOTE: A function will be needed here to reorder the nodes IDs of "faces" to be geometrically sound! (not needed for tet cells though)
@@ -42,7 +42,7 @@ function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
 
         # Sort out cell to face connectivity
         cell_faces, cell_nsign, cell_faces_range, cell_neighbours = begin
-            generate_cell_face_connectivity(volumes, nbfaces, face_owner_cells) # Hybrid compatible. Hexa and tet tested.
+            generate_cell_face_connectivity(cells_UNV, nbfaces, face_owner_cells) # Hybrid compatible. Hexa and tet tested.
         end
 
         # Build mesh (without calculation of geometry/properties)
@@ -353,12 +353,12 @@ end
 
 # Node connectivity
 
-function generate_node_cells(points, volumes)
+function generate_node_cells(points, cells_UNV)
     temp_node_cells = [Int64[] for _ ∈ eachindex(points)] # array of vectors to hold cellIDs
 
     # Add cellID to each point that defines a "volume"
-    for (cellID, volume) ∈ enumerate(volumes)
-        for nodeID ∈ volume.volumes
+    for (cellID, cell) ∈ enumerate(cells_UNV)
+        for nodeID ∈ cell.nodesID
             push!(temp_node_cells[nodeID], cellID)
         end
     end # Should be hybrid compatible 
@@ -709,23 +709,23 @@ function generate_boundary_faces(
     return bface_nodes, bface_nodes_range, bowners_cells, boundary_cells
 end
 
-function generate_cell_nodes(volumes)
+function generate_cell_nodes(cells_UNV)
     cell_nodes = Int64[] # cell_node length is undetermined as mesh could be hybrid, using push. Could use for and if before to preallocate vector.
     
     # Note 0: this errors with prism and hex for some reason? Reader? (volumentCount !- length(volumes))
     # NOTE 1: You could also run a loop over all the "volumes" and accumulate their size. Then allocate
     # NOTE 2: Or you could allocate an empty vector of vector of size ncells (less performant than NOTE 1 but faster than the current method)
-    for n = eachindex(volumes)
-        for i = 1:volumes[n].volumeCount
-            push!(cell_nodes,volumes[n].volumes[i])
+    for n = eachindex(cells_UNV)
+        for i = 1:cells_UNV[n].total
+            push!(cell_nodes,cells_UNV[n].nodesID[i])
         end
     end
 
-    cell_nodes_range = Vector{UnitRange{Int64}}(undef, length(volumes)) # cell_nodes_range determined by no. of cells.
+    cell_nodes_range = Vector{UnitRange{Int64}}(undef, length(cells_UNV)) # cell_nodes_range determined by no. of cells.
     x = 0
-    for i = eachindex(volumes)
-        cell_nodes_range[i] = UnitRange(x + 1, x + length(volumes[i].volumes))
-        x = x + length(volumes[i].volumes)
+    for i = eachindex(cells_UNV)
+        cell_nodes_range[i] = UnitRange(x + 1, x + length(cells_UNV[i].nodesID))
+        x = x + length(cells_UNV[i].nodesID)
     end
     return cell_nodes, cell_nodes_range
 end

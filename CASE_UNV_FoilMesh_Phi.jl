@@ -1,4 +1,5 @@
-using Plots, FVM_1D, Krylov, AerofoilOptimisation
+using Plots
+using FVM_1D, Krylov, AerofoilOptimisation
 
 #%% AEROFOIL GEOMETRY DEFINITION
 foil,ctrl_p = spline_foil(FoilDef(
@@ -47,9 +48,10 @@ mesh = update_mesh_format(mesh)
 # Turbulence Model
 νR = 10
 Tu = 0.025
+kL_inlet = 1/2*(Tu*velocity[1])^2
 k_inlet = 3/2*(Tu*velocity[1])^2
 ω_inlet = k_inlet/(νR*nu)
-model = RANS{KOmegaLKE}(mesh=mesh, viscosity=ConstantScalar(nu))
+model = RANS{KOmegaLKE}(mesh=mesh, viscosity=ConstantScalar(nu), Tu=Tu)
 
 # Boundary Conditions
 noSlip = [0.0, 0.0, 0.0]
@@ -76,6 +78,14 @@ noSlip = [0.0, 0.0, 0.0]
     Neumann(:top, 0.0),
     Neumann(:bottom,0.0),
     FVM_1D.Dirichlet(:foil,0.0)
+)
+
+@assign! model transition kL (
+    FVM_1D.Dirichlet(:inlet, kL_inlet),
+    Neumann(:outlet, 0.0),
+    Neumann(:top, 0.0),
+    Neumann(:bottom, 0.0),
+    FVM_1D.Dirichlet(:foil, 1e-15)
 )
 
 @assign! model turbulence k (
@@ -108,6 +118,7 @@ schemes = (
     U = set_schemes(divergence=Upwind,gradient=Midpoint),
     p = set_schemes(divergence=Upwind),
     phi = set_schemes(gradient=Midpoint),
+    kL = set_schemes(divergence=Upwind,gradient=Midpoint),
     k = set_schemes(divergence=Upwind,gradient=Midpoint),
     omega = set_schemes(divergence=Upwind,gradient=Midpoint)
 )
@@ -133,6 +144,13 @@ solvers = (
         preconditioner = ILU0(),
         convergence = 1e-7,
         relax       = 0.85,
+    ),
+    kL = set_solver(
+        model.transition.kL;
+        solver      = GmresSolver, # BicgstabSolver, GmresSolver
+        preconditioner = ILU0(),
+        convergence = 1e-7,
+        relax       = 0.4,
     ),
     k = set_solver(
         model.turbulence.k;
@@ -161,11 +179,12 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 initialise!(model.phi, 0.0)
+initialise!(model.transition.kL, kL_inlet)
 initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
-Rx, Ry, Rp = simple!(model, config) #, pref=0.0)
+R_ux, R_uy, R_p = simple!(model, config) #, pref=0.0)
 
 #%% POST-PROCESSING
 aero_eff = lift_to_drag(:foil, ρ, model)

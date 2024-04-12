@@ -60,8 +60,7 @@ function simple!(model, config; resume=true, pref=nothing)
     elseif istransition(model)
         @info "Initialising transition model..."
         calc_wall_distance!(model, config)
-        model2vtk(model, "wall distance")
-        turbulence = initialise_RANS(mdotf, p_eqn, config, model)
+        turbulence = initialise_RANS_LKE(mdotf, p_eqn, config, model)
         config = turbulence.config
     else
         turbulence = nothing

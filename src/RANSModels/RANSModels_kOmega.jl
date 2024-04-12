@@ -14,8 +14,8 @@ RANS{KOmega}(; mesh, viscosity) = begin
     turb = (k=k , omega=omega, nut=nut); T = typeof(turb)
     flag = false; F = typeof(flag)
     D = typeof(mesh)
-    RANS{KOmega,F1,F2,F,F,V,T,F,D}(
-        KOmega(), U, p, flag, flag, viscosity, turb, flag, mesh
+    RANS{KOmega,F1,F2,F,F,V,T,F,F,D}(
+        KOmega(), U, p, flag, flag, viscosity, turb, flag, flag, mesh
     )
 end
 
@@ -30,12 +30,12 @@ end
 get_coeffs(FloatType) = begin
     KOmegaCoefficients{FloatType}(
         0.09,
-        0.52, #5/9,
+        0.52, #13/25,
         0.072, #3/40,
         0.5,
         0.5
     )
-end
+end #Wilcox 1998
 
 struct KOmegaModel{MK,MW,FK,FW,FN,C,S}
     k_eqn::MK

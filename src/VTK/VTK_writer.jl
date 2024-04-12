@@ -30,7 +30,7 @@ function model2vtk(model::RANS{KOmega,F1,F2,V,T,E,D}, name) where {F1,F2,V,T,E,D
     write_vtk(name, model.mesh, args...)
 end
 
-function model2vtk(model::RANS{KOmegaLKE,F1,F2,F3,F4,V,T,E,D}, name) where {F1,F2,F3,F4,V,T,E,D}
+#=function model2vtk(model::RANS{KOmegaLKE,F1,F2,F3,F4,V,T,E,D}, name) where {F1,F2,F3,F4,V,T,E,D}
     args = (
         #("U", model.U), 
         #("p", model.p),
@@ -40,7 +40,7 @@ function model2vtk(model::RANS{KOmegaLKE,F1,F2,F3,F4,V,T,E,D}, name) where {F1,F
         #("nut", model.turbulence.nut)
     )
     write_vtk(name, model.mesh, args...)
-end
+end=#
 
 
 function write_vtk(name, mesh, args...) #, Ux, Uy, Uz, p)

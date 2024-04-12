@@ -665,7 +665,7 @@ function generate_cell_face_connectivity(volumes, nbfaces, face_owner_cells)
 end
 
 function generate_boundary_faces(
-    boundaryElements, efaces, nbfaces, node_cells, node_cells_range, volumes
+    boundaryElements, efaces, nbfaces, node_cells, node_cells_range, cells_UNV
     )
     bface_nodes = Vector{Vector{Int64}}(undef, nbfaces)
     bface_nodes_range = Vector{UnitRange{Int64}}(undef, nbfaces)
@@ -689,7 +689,7 @@ function generate_boundary_faces(
                 for nodeID ∈ nodeIDs
                     cIDs = cellIDs(node_cells, node_cells_range, nodeID)
                     for cID ∈ cIDs
-                        if intersect(nodeIDs, volumes[cID].volumes) == nodeIDs
+                        if intersect(nodeIDs, cells_UNV[cID].nodesID) == nodeIDs
                             bowners_cells[fID] .= cID
                             boundary_cells[fID] = cID
                             assigned = true

@@ -57,15 +57,16 @@ get_LKE_coeffs(FloatType) = begin
     ) #Medina 2018
 end
 
-struct KOmegaLKEModel{ML,MK,MW,FK,FW,FN,FY,FL,NL,NS,NT,O,Y,D,NK,NO,NU,RV,YF,C,S}
+struct KOmegaLKEModel{ML,MK,MW,EL,EK,EO,FK,FW,FN,NL,NS,NT,O,Y,D,NK,NO,NU,RV,C,S}
     kL_eqn::ML
     k_eqn::MK
     ω_eqn::MW
+    nueffkLS::EL
+    nueffkS::EK
+    nueffωS::EO
     kf::FK
     ωf::FW
     νtf::FN
-    γf::FY
-    kLf::FL
     nuL::NL
     nuts::NS
     nut_turb::NT
@@ -76,7 +77,6 @@ struct KOmegaLKEModel{ML,MK,MW,FK,FW,FN,FY,FL,NL,NS,NT,O,Y,D,NK,NO,NU,RV,YF,C,S}
     ∇ω::NO
     normU::NU
     Reυ::RV
-    yf::YF
     coeffs::C
     config::S
 end
@@ -95,9 +95,9 @@ function initialise_RANS(mdotf, peqn, config, model::RANS{KOmegaLKE})
     kf = FaceScalarField(mesh)
     ωf = FaceScalarField(mesh)
     νtf = FaceScalarField(mesh)
-    γf = FaceScalarField(mesh)
-    kLf = FaceScalarField(mesh)
-    yf = FaceScalarField(mesh)
+    nueffkLS = ScalarField(mesh)
+    nueffkS = ScalarField(mesh)
+    nueffωS = ScalarField(mesh)
     nueffkL = FaceScalarField(mesh)
     nueffk = FaceScalarField(mesh)
     nueffω = FaceScalarField(mesh)
@@ -174,11 +174,12 @@ function initialise_RANS(mdotf, peqn, config, model::RANS{KOmegaLKE})
         kL_eqn,
         k_eqn,
         ω_eqn,
+        nueffkLS,
+        nueffkS,
+        nueffωS,
         kf,
         ωf,
         νtf,
-        γf,
-        kLf,
         nuL,
         nuts,
         nut_turb,
@@ -189,7 +190,6 @@ function initialise_RANS(mdotf, peqn, config, model::RANS{KOmegaLKE})
         ∇ω,
         normU,
         Reυ,
-        yf,
         coeffs,
         config
     )
@@ -200,7 +200,7 @@ function turbulence!( # Sort out dispatch when possible
     (;nu, U, y, phi, turbulence) = model
     (;Tu, nut) = turbulence
     
-    (;kL_eqn, k_eqn, ω_eqn, kf, ωf, νtf, γf, kLf, nuL, nuts, nut_turb, Ω, γ, fv, ∇k, ∇ω, normU, Reυ, yf, coeffs, config) = KOmegaLKE
+    (;kL_eqn, k_eqn, ω_eqn, nueffkLS, nueffkS, nueffωS, kf, ωf, νtf, nuL, nuts, nut_turb, Ω, γ, fv, ∇k, ∇ω, normU, Reυ, coeffs, config) = KOmegaLKE
     (; solvers, runtime) = config
 
     kL = get_phi(kL_eqn)
@@ -228,13 +228,17 @@ function turbulence!( # Sort out dispatch when possible
     @. Pω.values = coeffs.Cω1*Pk.values #Pω = S²*Cω1*ω/k*k/ω = S²*Cω1
     @. dkdomegadx.values = (coeffs.σd/omega.values)*dkdomegadx.values
     @. Dωf.values = coeffs.Cω2*omega.values
-    @. nueffω.values = nu.values+(coeffs.σω*νtf.values*γf.values)
+    @. nueffωS.values = nu.values+(coeffs.σω*nut_turb.values*γ.values)
+    interpolate!(nueffω,nueffωS)
+    correct_boundaries!(nueffω, nueffωS, nut.BCs)
 
     #Update k fluxes
     @. Dkf.values = coeffs.Cμ*omega.values*γ.values
-    @. nueffk.values = nu.values+(coeffs.σk*νtf.values*γf.values)
+    @. nueffkS.values = nu.values+(coeffs.σk*nut_turb.values*γ.values)
+    interpolate!(nueffk,nueffkS)
+    correct_boundaries!(nueffk, nueffkS, nut.BCs)
     @. Pk.values = nut_turb.values*Pk.values*γ.values*fv.values #Pk = νtS² Does it work to multiply by trigger/damping here?
-    correct_production!(Pk, k.BCs, model) #What is this doing?
+    correct_production!(Pk, k.BCs, model)
 
     #Update kL fluxes
     magnitude!(PkL, S)
@@ -244,7 +248,9 @@ function turbulence!( # Sort out dispatch when possible
     @. Reυ.values = ((((2*kL.values*(nu.values^2))/(y.values^2))^1/4)*y.values)/nu.values
     @. PkL.values = PkL.values*η*kL.values*(Reυ.values^-13/10)*(((normU.values*y.values)/nu.values)^1/2)
     @. DkLf.values = (2*nu.values*kL.values)/(y.values^2)
-    @. nueffkL.values = nu.values+(coeffs.σkL*sqrt(kLf.values)*yf.values)
+    @. nueffkLS.values = nu.values+(coeffs.σkL*sqrt(kL.values)*y.values)
+    interpolate!(nueffkL,nueffkLS)
+    correct_boundaries!(nueffkL, nueffkLS, nut.BCs)
 
     # Solve omega equation
     prev .= omega.values
@@ -287,13 +293,6 @@ function turbulence!( # Sort out dispatch when possible
     @. fv.values = 1-exp(sqrt(k.values/(nu.values*omega.values))/coeffs.Cv)
     @. γ.values = min((kL.values/(min(nu.values*nuL.values)*Ω.values))^2,coeffs.Ccrit)/coeffs.Ccrit
 
-
-    interpolate!(γf, γ)
-    correct_boundaries!(γf, γ, kL.BCs)
-    interpolate!(kLf, kL)
-    correct_boundaries!(kLf, kL, kL.BCs)
-    interpolate!(yf, y)
-    correct_boundaries!(yf, y, phi.BCs)
     interpolate!(νtf, nut)
     correct_boundaries!(νtf, nut, nut.BCs)
     correct_eddy_viscosity!(νtf, nut.BCs, model)

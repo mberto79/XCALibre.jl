@@ -85,7 +85,7 @@ noSlip = [0.0, 0.0, 0.0]
     Neumann(:outlet, 0.0),
     Neumann(:top, 0.0),
     Neumann(:bottom, 0.0),
-    FVM_1D.Dirichlet(:foil, 1e-15)
+    FVM_1D.Dirichlet(:foil, 0.0)
 )
 
 @assign! model turbulence k (
@@ -93,7 +93,7 @@ noSlip = [0.0, 0.0, 0.0]
     Neumann(:outlet, 0.0),
     Neumann(:top, 0.0),
     Neumann(:bottom, 0.0),
-    FVM_1D.Dirichlet(:foil, 1e-15)
+    FVM_1D.Dirichlet(:foil, 0.0)
 )
 
 @assign! model turbulence omega (
@@ -150,21 +150,21 @@ solvers = (
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.2,
+        relax       = 0.7,
     ),
     k = set_solver(
         model.turbulence.k;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.2,
+        relax       = 0.4,
     ),
     omega = set_solver(
         model.turbulence.omega;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.2,
+        relax       = 0.4,
     )
 )
 

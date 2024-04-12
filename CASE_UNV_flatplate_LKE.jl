@@ -11,8 +11,8 @@ nu = 1.48e-5
 νR = 20
 Tu = 0.025
 kL_inlet = 1/2*(Tu*velocity[1])^2
-k_inlet = 3/2*(Tu*velocity[1])^2
-ω_inlet = k_inlet/(νR*nu)
+k_inlet = 0.375
+ω_inlet = 1000
 model = RANS{KOmegaLKE}(mesh=mesh, viscosity=ConstantScalar(nu), Tu=Tu)
 
 # Boundary Conditions

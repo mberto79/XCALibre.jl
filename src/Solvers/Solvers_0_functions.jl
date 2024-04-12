@@ -51,11 +51,13 @@ function residual!(Residual, equation, phi, iteration)
     
     # mul!(Fx, A, values)
 
-    sparse_matmul!(A, values, Fx, backend)
-    KernelAbstractions.synchronize(backend)
+    # sparse_matmul!(A, values, Fx, backend)
+    # KernelAbstractions.synchronize(backend)
+
+    Fx .= A*values
 
     @inbounds @. R = abs(Fx - b)^2
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 
     res = sqrt(mean(R))/norm(b)
 

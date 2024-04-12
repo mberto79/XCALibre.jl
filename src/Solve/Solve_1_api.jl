@@ -31,10 +31,10 @@ end
 
 function run!(phiEqn::ModelEquation, setup, result) # ; opP, solver
 
-    (; itmax, atol, rtol) = setup
+    # (; itmax, atol, rtol) = setup
     (; A, b) = phiEqn.equation
     precon = phiEqn.preconditioner
-    (; P) = precon 
+    # (; P) = precon 
     solver = phiEqn.solver
     (; x) = solver
     # values_eqn = get_phi(phiEqn).values
@@ -43,10 +43,12 @@ function run!(phiEqn::ModelEquation, setup, result) # ; opP, solver
 
     backend = _get_backend(get_phi(phiEqn).mesh)
 
-    solve!(
-        # solver, LinearOperator(A), b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
-        solver, A, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
-        )
+    _solve!(solver, A, b, values; setup, precon)
+
+    # solve!(
+    #     # solver, LinearOperator(A), b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
+    #     solver, A, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
+    #     )
     KernelAbstractions.synchronize(backend)
     # gmres!(solver, A, b, values; M=P.P, itmax=itmax, atol=atol, rtol=rtol)
     # println(solver.stats.niter)
@@ -56,6 +58,16 @@ function run!(phiEqn::ModelEquation, setup, result) # ; opP, solver
     KernelAbstractions.synchronize(backend)
     # kernel!(values_res, values_eqn, ndrange = length(values_eqn))
     # KernelAbstractions.synchronize(backend)
+end
+
+_solve!(solver, A, b, values; setup, precon) = begin
+    (; itmax, atol, rtol) = setup
+    solve!(solver, LinearOperator(A), b, values; M=precon.P, itmax=itmax, atol=atol, rtol=rtol)
+end
+
+_solve!(solver::QmrSolver, A, b, values; setup, precon) = begin
+    (; itmax, atol, rtol) = setup
+    solve!(solver, LinearOperator(A), b, values; itmax=itmax, atol=atol, rtol=rtol)
 end
 
 @kernel function solve_copy_kernel!(a, b)

@@ -3,37 +3,39 @@ struct Point{F<:AbstractFloat, SV3<:SVector{3,F}}
 end
 Point(z::TF) where TF<:AbstractFloat = Point(SVector{3, TF}(zero(TF), zero(TF), zero(TF)))
 
-mutable struct Edge{I<:Integer,VI<:AbstractArray{I}} 
-    edgeindex::I
-    edgeCount::I
-    edges::VI
-end
-Edge(z::TI) where TI<:Integer = Edge(0 , 0, TI[])
+#Edges not used in the mesh at this time.
+# mutable struct Edge{I<:Integer,VI<:AbstractArray{I}} 
+#     edgeindex::I
+#     edgeCount::I
+#     edges::VI
+# end
+# Edge(z::TI) where TI<:Integer = Edge(0 , 0, TI[])
 
 mutable struct Face{I<:Integer, VI<:AbstractArray{I}} 
-    faceindex::I
-    faceCount::I
-    faces::VI
+    index::I
+    total::I
+    nodesID::VI
 end
 Face(z::TI) where TI<:Integer = Face(0 , 0, TI[])
 
-mutable struct Volume{I<:Integer,VI<:AbstractArray{I}}
-    volumeindex::I
-    volumeCount::I
-    volumes::VI
+mutable struct Cell{I<:Integer,VI<:AbstractArray{I}}
+    index::I
+    total::I
+    nodesID::VI
 end
-Volume(z::TI) where TI<:Integer = Volume(zero(TI) , zero(TI), TI[])
+Volume(z::TI) where TI<:Integer = Cell(zero(TI) , zero(TI), TI[])
 
 mutable struct BoundaryElement{S<:String,I<:Integer,VI<:AbstractArray{I}}
     name::S
-    boundaryNumber::I
+    index::I
     elements::VI
 end
 BoundaryElement(z::TI) where TI<:Integer = BoundaryElement("default", 0, TI[])
 
-mutable struct Element{I<:Integer,VI<:AbstractArray{I}}
-    index::I
-    elementCount::I
-    elements::VI
-end
-Element(z::TI) where TI<:Integer = Element(0,0,TI[])
+#Not used.
+# mutable struct Element{I<:Integer,VI<:AbstractArray{I}}
+#     index::I
+#     elementCount::I
+#     elements::VI
+# end
+# Element(z::TI) where TI<:Integer = Element(0,0,TI[])

@@ -5,20 +5,20 @@ using LinearAlgebra
 #include("src/VTK_3D/VTU.jl")
 
 
-# unv_mesh="src/UNV_3D/TET_PRISM_HM.unv"
-# #unv_mesh="src/UNV_3D/Quad_cell_new_boundaries.unv"
-# unv_mesh="src/UNV_3D/HEXA_HM.unv"
-# unv_mesh="src/UNV_3D/TET_HM.unv"
+unv_mesh="src/UNV_3D/TET_PRISM_HM.unv"
+unv_mesh="src/UNV_3D/Quad_cell_new_boundaries.unv"
+unv_mesh="src/UNV_3D/HEXA_HM.unv"
+unv_mesh="src/UNV_3D/TET_HM.unv"
 unv_mesh="src/UNV_3D/3D_cylinder_HEX_PRISM.unv"
 
-# @time mesh = build_mesh3D(unv_mesh)
-# mesh.faces
-# mesh.cells
-# mesh.boundaries
+@time mesh = build_mesh3D(unv_mesh)
+mesh.faces
+mesh.cells
+mesh.boundaries
 
-# name="tet_prism"
+name="tet_prism"
 
-# write_vtk(name, mesh::Mesh3)
+write_vtk(name, mesh::Mesh3)
 
 points, edges, efaces, volumes, boundaryElements = load_3D(unv_mesh,scale=1, integer=Int64, float=Float64)
 

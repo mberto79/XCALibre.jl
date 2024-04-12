@@ -8,6 +8,8 @@ using CUDA
 # bfs_unv_tet_15mm, 10mm, 5mm, 4mm, 3mm
 mesh_file = "unv_sample_meshes/3D_cylinder.unv"
 mesh_file = "unv_sample_meshes/3D_cylinder_extruded_HEX_PRISM.unv"
+mesh_file = "unv_sample_meshes/3D_cylinder_extruded_HEX_PRISM_FIXED.unv"
+mesh_file = "unv_sample_meshes/3D_cylinder_extruded_HEX_PRISM_FIXED_2mm.unv"
 @time mesh = build_mesh3D(mesh_file, scale=0.001)
 
 velocity = [0.50, 0.0, 0.0]
@@ -47,12 +49,12 @@ schemes = (
 solvers = (
     U = set_solver(
         model.U;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.6,
         rtol = 1e-4,
-        atol = 1e-1
+        atol = 1e-2
     ),
     p = set_solver(
         model.p;
@@ -61,12 +63,12 @@ solvers = (
         convergence = 1e-7,
         relax       = 0.4,
         rtol = 1e-4,
-        atol = 1e-2
+        atol = 1e-3
     )
 )
 
 runtime = set_runtime(
-    iterations=500, time_step=1, write_interval=100)
+    iterations=500, time_step=1, write_interval=500)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

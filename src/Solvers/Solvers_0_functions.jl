@@ -9,7 +9,7 @@ update_nueff!(nueff, nu, turb_model) = begin
         end
     end
 end
-
+#=
 function residual!(Residual, equation, phi, iteration)
     (; A, b, R, Fx) = equation
     values = phi.values
@@ -60,7 +60,7 @@ function residual!(Residual, equation, phi, iteration)
     # return res
     Residual[iteration] = res
     nothing
-end
+end=#
 
 function flux!(phif::FS, psif::FV) where {FS<:FaceScalarField,FV<:FaceVectorField}
     (; mesh, values) = phif

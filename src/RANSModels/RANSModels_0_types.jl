@@ -1,11 +1,10 @@
 export RANS
 export Laminar
-export AbstractMomentumModel, AbstractTurbulenceModel, AbstractTransitionModel
+export AbstractMomentumModel, AbstractTurbulenceModel
 export isturbulent, istransition
 
 abstract type AbstractMomentumModel end
 abstract type AbstractTurbulenceModel end
-abstract type AbstractTransitionModel end
 
 # Models 
 struct Laminar <: AbstractMomentumModel end 

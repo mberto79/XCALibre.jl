@@ -1,4 +1,5 @@
 export calc_wall_distance!
+export residual!
 
 function calc_wall_distance!(model, config)
     @info "Calculating wall distance..."

@@ -14,6 +14,6 @@ using FVM_1D.Calculate
 include("RANSModels_0_types.jl")
 include("RANSModels_functions.jl")
 include("RANSModels_kOmega.jl")
-#include("RANSModels_kOmegaLKE.jl")
+include("RANSModels_kOmegaLKE.jl")
 
 end # end module

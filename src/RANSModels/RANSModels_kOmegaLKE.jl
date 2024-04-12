@@ -2,7 +2,7 @@ export KOmegaLKE
 export initialise_RANS_LKE
 export turbulence!
 
-struct KOmegaLKE <: AbstractTransitionModel end
+struct KOmegaLKE <: AbstractTurbulenceModel end
 
 # Constructor 
 
@@ -57,65 +57,69 @@ get_LKE_coeffs(FloatType) = begin
     ) #Medina 2018
 end
 
-struct KOmegaLKEModel{ML,MK,MW,FL,FK,FW,FE,FN,FS,NL,NS,NT,Y,D,NK,NO,RL,RV,C,S}
+struct KOmegaLKEModel{ML,MK,MW,FK,FW,FN,FY,FL,NL,NS,NT,O,Y,D,NK,NO,NU,RV,YF,C,S}
     kL_eqn::ML
     k_eqn::MK
     ω_eqn::MW
-    kLf::FL
     kf::FK
     ωf::FW
-    νLf::FE
     νtf::FN
-    νtsf::FS
+    γf::FY
+    kLf::FL
     nuL::NL
     nuts::NS
     nut_turb::NT
+    Ω::O
     γ::Y
     fv::D
     ∇k::NK
     ∇ω::NO
-    ReΛ::RL
-    Rev::RV
+    normU::NU
+    Reυ::RV
+    yf::YF
     coeffs::C
     config::S
 end
 
-function initialise_RANS_LKE(mdotf, peqn, config, model)
+function initialise_RANS(mdotf, peqn, config, model::RANS{KOmegaLKE})
+    @info "Initialising k-ω LKE model..."
     # unpack turbulent quantities and configuration
-    transition = model.transition
-    (; kL) = transition
     turbulence = model.turbulence
-    (; k, omega) = turbulence
+    (; kL, k, omega) = turbulence
     (; solvers, schemes, runtime) = config
     mesh = mdotf.mesh
     eqn = peqn.equation
 
-    kLf = FaceScalarField(mesh)
+    calc_wall_distance!(model, config)
+
     kf = FaceScalarField(mesh)
     ωf = FaceScalarField(mesh)
-    νLf = FaceScalarField(mesh)
     νtf = FaceScalarField(mesh)
-    νtsf = FaceScalarField(mesh)
-
+    γf = FaceScalarField(mesh)
+    kLf = FaceScalarField(mesh)
+    yf = FaceScalarField(mesh)
     nueffkL = FaceScalarField(mesh)
     nueffk = FaceScalarField(mesh)
     nueffω = FaceScalarField(mesh)
-    DkLf = FaceScalarField(mesh)
+    DkLf = ScalarField(mesh)
     Dkf = ScalarField(mesh)
     Dωf = ScalarField(mesh)
     PkL = ScalarField(mesh)
     Pk = ScalarField(mesh)
     Pω = ScalarField(mesh)
-    σdω = ScalarField(mesh)
-    ReΛ = ScalarField(mesh)
-    Rev = ScalarField(mesh)
+    dkdomegadx = ScalarField(mesh)
+    normU = ScalarField(mesh)
+    Reυ = ScalarField(mesh)
     nuL = ScalarField(mesh)
     nuts = ScalarField(mesh)
     nut_turb = ScalarField(mesh)
+    Ω = ScalarField(mesh)
     γ = ScalarField(mesh)
     fv = ScalarField(mesh)
     ∇k = VectorField(mesh)
     ∇ω = VectorField(mesh)
+    ∇k = Grad{schemes.k.gradient}(k)
+    ∇ω = Grad{schemes.p.gradient}(omega)
 
     kL_eqn = (
             Time{schemes.kL.time}(kL)
@@ -129,7 +133,7 @@ function initialise_RANS_LKE(mdotf, peqn, config, model)
     k_eqn = (
             Time{schemes.k.time}(k)
             + Divergence{schemes.k.divergence}(mdotf, k) 
-            - Laplacian{schemes.k.laplacian}(nueffk, kL) 
+            - Laplacian{schemes.k.laplacian}(nueffk, k) 
             + Si(Dkf,k) # Dkf = β⁺*omega
             ==
             Source(Pk)
@@ -138,11 +142,11 @@ function initialise_RANS_LKE(mdotf, peqn, config, model)
     ω_eqn = (
             Time{schemes.omega.time}(omega)
             + Divergence{schemes.omega.divergence}(mdotf, omega) 
-            - Laplacian{schemes.omega.laplacian}(nueffω, kL)
+            - Laplacian{schemes.omega.laplacian}(nueffω, omega)
             + Si(Dωf,omega)  # Dωf = β1*omega
             ==
             Source(Pω)
-            + Source(σdω)
+            + Source(dkdomegadx)
     ) → eqn
 
     
@@ -170,21 +174,22 @@ function initialise_RANS_LKE(mdotf, peqn, config, model)
         kL_eqn,
         k_eqn,
         ω_eqn,
-        kLf,
         kf,
         ωf,
-        νLf,
         νtf,
-        νtsf,
+        γf,
+        kLf,
         nuL,
         nuts,
         nut_turb,
+        Ω,
         γ,
         fv,
         ∇k,
         ∇ω,
-        ReΛ,
-        Rev,
+        normU,
+        Reυ,
+        yf,
         coeffs,
         config
     )
@@ -192,11 +197,10 @@ end
 
 function turbulence!( # Sort out dispatch when possible
     KOmegaLKE::KOmegaLKEModel, model, S, S2, prev)
-    (;nu, U, y, transition, turbulence) = model
-    (; nuL, nuts, nut_actual, γ, fv) = transition
+    (;nu, U, y, phi, turbulence) = model
     (;Tu, nut) = turbulence
     
-    (;kL_eqn, k_eqn, ω_eqn, kLf, kf, ωf, νLf, νtf, νtsf, nuL, nuts, nut_turb, γ, fv, ∇k, ∇ω, ReΛ, Rev, coeffs, config) = KOmegaLKE
+    (;kL_eqn, k_eqn, ω_eqn, kf, ωf, νtf, γf, kLf, nuL, nuts, nut_turb, Ω, γ, fv, ∇k, ∇ω, normU, Reυ, yf, coeffs, config) = KOmegaLKE
     (; solvers, runtime) = config
 
     kL = get_phi(kL_eqn)
@@ -212,43 +216,37 @@ function turbulence!( # Sort out dispatch when possible
     Pk = get_source(k_eqn, 1)
 
     nueffω = get_flux(ω_eqn, 3)
-    Dωf = get_flux(ω_eqn, 5)
-    Pω = get_source(ω_eqn, 2)
-    dkdomegadx = get_source(ω_eqn, 1) # cross diffusion term
-
-    magnitude2!(Pk, S, scale_factor=2.0) # multiplied by 2 (def of Sij)
-    #Pk = S² at this point
+    Dωf = get_flux(ω_eqn, 4)
+    Pω = get_source(ω_eqn, 1)
+    dkdomegadx = get_source(ω_eqn, 2) # cross diffusion term
 
     #Update ω fluxes
-
+    magnitude2!(Pk, S, scale_factor=2.0) # multiplied by 2 (def of Sij) (Pk = S² at this point)
     grad!(∇ω,ωf,omega,omega.BCs)
     grad!(∇k,kf,k,k.BCs)
+    inner_product!(dkdomegadx,∇k,∇ω)
     @. Pω.values = coeffs.Cω1*Pk.values #Pω = S²*Cω1*ω/k*k/ω = S²*Cω1
-    @. dkdomegadx.values = (coeffs.σd/omega.values)*(∇k⋅∇ω)
+    @. dkdomegadx.values = (coeffs.σd/omega.values)*dkdomegadx.values
     @. Dωf.values = coeffs.Cω2*omega.values
-    @. nueffω.values = nu.values
-    diffusion_flux!(nueffω, nu, νtf, coeffs.σω, γ)
+    @. nueffω.values = nu.values+(coeffs.σω*νtf.values*γf.values)
 
     #Update k fluxes
-
     @. Dkf.values = coeffs.Cμ*omega.values*γ.values
-    diffusion_flux!(nueffk, nu, νtf, coeffs.σk, γ)
-    @. Pk.values = nut.values*Pk.values*γ.values*fv.values #Pk = νtS² Does it work to multiply by trigger/damping here?
+    @. nueffk.values = nu.values+(coeffs.σk*νtf.values*γf.values)
+    @. Pk.values = nut_turb.values*Pk.values*γ.values*fv.values #Pk = νtS² Does it work to multiply by trigger/damping here?
     correct_production!(Pk, k.BCs, model) #What is this doing?
 
     #Update kL fluxes
-    η = production_coefficient(Tu, coeffs)
     magnitude!(PkL, S)
-    magnitude!(ReΛ, U)
-
-    @. Rev.values = ((((2*kL.values*(nu.values^2))/(y.values^2))^1/4)*y.values)/nu.values
-    @. ReΛ.values = (ReΛ.values*y.values)/nu.values
-    @. PkL.values = pkL.values*η*kL.values*(ReΛ.values^1/2)*(Rev.values^-13/10)
+    magnitude!(normU,U)
+    #norm!(normU, U)
+    η = coeffs.C1*tanh(coeffs.C2*(Tu^coeffs.C3)+coeffs.C4)
+    @. Reυ.values = ((((2*kL.values*(nu.values^2))/(y.values^2))^1/4)*y.values)/nu.values
+    @. PkL.values = PkL.values*η*kL.values*(Reυ.values^-13/10)*(((normU.values*y.values)/nu.values)^1/2)
     @. DkLf.values = (2*nu.values*kL.values)/(y.values^2)
-    @. nueffkL.values = nu.values+(σkL*sqrt(kL.values)*y.values)
+    @. nueffkL.values = nu.values+(coeffs.σkL*sqrt(kLf.values)*yf.values)
 
     # Solve omega equation
-
     prev .= omega.values
     discretise!(ω_eqn, prev, runtime)
     apply_boundary_conditions!(ω_eqn, omega.BCs)
@@ -256,12 +254,10 @@ function turbulence!( # Sort out dispatch when possible
     constrain_equation!(ω_eqn, omega.BCs, model) # active with WFs only
     update_preconditioner!(ω_eqn.preconditioner)
     run!(ω_eqn, solvers.omega)
-   
     constrain_boundary!(omega, omega.BCs, model) # active with WFs only
-    bound!(omega, eps()) #What does this do?
+    bound!(omega, eps())
 
     # Solve k equation
-    
     prev .= k.values
     discretise!(k_eqn, prev, runtime)
     apply_boundary_conditions!(k_eqn, k.BCs)
@@ -271,7 +267,6 @@ function turbulence!( # Sort out dispatch when possible
     bound!(k, eps())
 
     # Solve kL equation
-
     prev .= kL.values
     discretise!(kL_eqn, prev, runtime)
     apply_boundary_conditions!(kL_eqn, kL.BCs)
@@ -280,39 +275,37 @@ function turbulence!( # Sort out dispatch when possible
     run!(kL_eqn, solvers.kL)
     bound!(kL, eps())
 
-    #scalars here rather than functions
-    update_eddy_viscosity!(nut, k, omega)
-    update_laminar_eddy_viscosity!(nuL, S, PkL)
-    update_small_scale_viscosity!(nuts, k, S, nu,coeffs.CSS)
-    update_actual_eddy_viscosity!(nut_actual, nuts, nuL)
-    update_trigger!(γ, kL, nu, nuL, S, coeffs.Ccrit)
-    update_damping!(fv, k, nu, omega, Cv)
+    #Eddy viscosity
+    magnitude2!(S2, S, scale_factor=2.0)
+    double_inner_product!(Ω,S,S)
+    @. nut_turb.values = k.values/omega.values
+    @. nuL.values = PkL.values/max(S2.values,(normU.values/y.values)^2)
+    @. nuts.values = exp(-(coeffs.CSS/(k.values/(nu.values*Ω.values)))^2)*(k.values/omega.values)
+    @. nut.values = nuts.values+nuL.values
 
+    #Damping and trigger
+    @. fv.values = 1-exp(sqrt(k.values/(nu.values*omega.values))/coeffs.Cv)
+    @. γ.values = min((kL.values/(min(nu.values*nuL.values)*Ω.values))^2,coeffs.Ccrit)/coeffs.Ccrit
+
+
+    interpolate!(γf, γ)
+    correct_boundaries!(γf, γ, kL.BCs)
+    interpolate!(kLf, kL)
+    correct_boundaries!(kLf, kL, kL.BCs)
+    interpolate!(yf, y)
+    correct_boundaries!(yf, y, phi.BCs)
     interpolate!(νtf, nut)
     correct_boundaries!(νtf, nut, nut.BCs)
-    correct_eddy_viscosity!(νtf, nut.BCs, model) #What are these doing?
+    correct_eddy_viscosity!(νtf, nut.BCs, model)
 end
 
-production_coeff(Tu, coeffs) = coeffs.C1*tanh(coeffs.C2*(Tu^coeffs.C3)+coeffs.C4)
-
-update_eddy_viscosity!(nut::F, k, omega) where F<:AbstractScalarField = begin
-    for i ∈ eachindex(nut)
-        nut[i] = k[i]/omega[i]
+inner_product!(S::F, ∇1::Grad, ∇2::Grad) where F<:ScalarField = begin
+    for i ∈ eachindex(S.values)
+        S[i] = ∇1[i]⋅∇2[i]
     end
 end
 
-diffusion_flux!(nueff, nu, νtf::F, σ, γ) where F<:FaceScalarField = begin
-    @inbounds for i ∈ eachindex(nueff)
-        nueff[i] = nu[i] + σ*νtf[i]*γ[i]
-    end
-end
-
-destruction_flux!(Dxf::F, coeff, omega) where F<:ScalarField = begin
-    for i ∈ eachindex(Dxf.values)
-        Dxf[i] = coeff*omega[i]
-    end
-end
-
+#=
 y_plus_laminar(E, kappa) = begin
     yL = 11.0; for i ∈ 1:10; yL = log(max(yL*E, 1.0))/kappa; end
     yL
@@ -528,3 +521,4 @@ correct_nut_wall!(νtf, BC, model) = begin
         end
     end
 end
+=#

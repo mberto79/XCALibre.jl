@@ -47,7 +47,8 @@ struct KOmegaModel{MK,MW,FK,FW,FN,C,S}
     config::S
 end
 
-function initialise_RANS(mdotf, peqn, config, model)
+function initialise_RANS(mdotf, peqn, config, model::RANS{KOmega})
+    @info "Initialising k-ω model..."
     # unpack turbulent quantities and configuration
     turbulence = model.turbulence
     (; k, omega, nut) = turbulence

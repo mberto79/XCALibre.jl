@@ -1,38 +1,15 @@
-using Plots
+# using Plots
 using FVM_1D
 using Krylov
 using CUDA
 using KernelAbstractions
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
-mesh_file = "unv_sample_meshes/backwardFacingStep_2mm.unv"
+mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
+# mesh_file = "unv_sample_meshes/backwardFacingStep_2mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 # mesh = update_mesh_format(mesh; integer=Int32, float=Float32)
 mesh = update_mesh_format(mesh)
-
-mesh.boundaries
-
-mesh.nodes[end].cells_range
-mesh.node_cells
-
-mesh.boundaries[end].IDs_range
-mesh.boundary_cellsID
-
-mesh.cells[end].nodes_range
-mesh.cell_nodes
-
-mesh.cells[end].faces_range
-mesh.cell_faces
-mesh.cell_neighbours
-mesh.cell_nsign
-
-mesh.faces[end].nodes_range
-mesh.face_nodes
-
-mesh.nodes
-mesh.faces
-mesh.cells
-
 
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
@@ -78,7 +55,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=1000, time_step=1, write_interval=500)
+    iterations=2000, time_step=1, write_interval=500)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -88,9 +65,9 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-backend = CPU()
+# backend = CPU()
 backend = CUDABackend()
-Rx, Ry, Rz, Rp, model1 = simple!(model, config, backend) # 9.39k allocs in 184 iterations
+Rx, Ry, Rz, Rp, model1 = simple!(model, config, backend); # 9.39k allocs in 184 iterations
 
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

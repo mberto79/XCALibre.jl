@@ -483,32 +483,32 @@ function order_face_nodes(bface_nodes_range,iface_nodes_range,bface_nodes,iface_
 end
 
 # NOTE: the function has been written to be extendable to multiple element types
-function generate_internal_faces(volumes, nbfaces, nodes, node_cells)
+function generate_internal_faces(cells_UNV, nbfaces, nodes, node_cells)
     # determine total number of faces based on cell type (including duplicates)
     total_faces = 0
-    for volume ∈ volumes
+    for cell ∈ cells_UNV
         # add faces for tets
-        if volume.volumeCount == 4
+        if cell.total == 4
             total_faces += 4
         end
         # add faces for Hexa
-        if volume.volumeCount == 8 
+        if cell.total == 8 
             total_faces += 6
         end
         #add faces for Wedge/Penta
-        if volume.volumeCount == 6
+        if cell.total == 6
             total_faces += 5
         end
     end
 
     # Face nodeIDs for each cell is a vector of vectors of vectors :-)
-    cells_faces_nodeIDs = Vector{Vector{Int64}}[Vector{Int64}[] for _ ∈ 1:length(volumes)] 
+    cells_faces_nodeIDs = Vector{Vector{Int64}}[Vector{Int64}[] for _ ∈ 1:length(cells_UNV)] 
 
     # Generate all faces for each cell/element/volume
-    for (cellID, volume) ∈ enumerate(volumes)
+    for (cellID, cell) ∈ enumerate(cells_UNV)
         # Generate faces for tet elements
-        if volume.volumeCount == 4
-            nodesID = volume.volumes
+        if cell.total == 4
+            nodesID = cell.nodesID
             push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[3]])
             push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[4]])
             push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[3], nodesID[4]])
@@ -516,8 +516,8 @@ function generate_internal_faces(volumes, nbfaces, nodes, node_cells)
         end
         # add conditions for other cell types
         # Generate faces for hexa elements using UNV structure method
-        if volume.volumeCount == 8
-            nodesID = volume.volumes
+        if cell.total == 8
+            nodesID = cell.nodesID
             push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[3], nodesID[4]])
             push!(cells_faces_nodeIDs[cellID], Int64[nodesID[5], nodesID[6], nodesID[7], nodesID[8]])
             push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[5], nodesID[6]])
@@ -526,8 +526,8 @@ function generate_internal_faces(volumes, nbfaces, nodes, node_cells)
             push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[4], nodesID[5], nodesID[8]])
         end
         # Generate faces for prism elements, using pattern in UNV file.
-        if volume.volumeCount == 6
-            nodesID = volume.volumes
+        if cell.total == 6
+            nodesID = cell.nodesID
             push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[3]]) # Triangle 1
             push!(cells_faces_nodeIDs[cellID], Int64[nodesID[4], nodesID[5], nodesID[6]]) # Triangle 2
             push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[4], nodesID[5]]) # Rectangle 1
@@ -624,11 +624,11 @@ function generate_internal_faces(volumes, nbfaces, nodes, node_cells)
     return face_nodes, face_nodes_range, owners_cellIDs
 end
 
-function generate_cell_face_connectivity(volumes, nbfaces, face_owner_cells)
-    cell_faces = Vector{Int64}[Int64[] for _ ∈ eachindex(volumes)] 
-    cell_nsign = Vector{Int64}[Int64[] for _ ∈ eachindex(volumes)] 
-    cell_neighbours = Vector{Int64}[Int64[] for _ ∈ eachindex(volumes)] 
-    cell_faces_range = UnitRange{Int64}[UnitRange{Int64}(0,0) for _ ∈ eachindex(volumes)] 
+function generate_cell_face_connectivity(cells_UNV, nbfaces, face_owner_cells)
+    cell_faces = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_UNV)] 
+    cell_nsign = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_UNV)] 
+    cell_neighbours = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_UNV)] 
+    cell_faces_range = UnitRange{Int64}[UnitRange{Int64}(0,0) for _ ∈ eachindex(cells_UNV)] 
 
     # Pass face ID to each cell
     first_internal_face = nbfaces + 1
@@ -678,8 +678,8 @@ function generate_boundary_faces(
         elements = boundary.elements
             for bfaceID ∈ elements
                 fID += 1
-                nnodes = length(efaces[bfaceID].faces)
-                nodeIDs = efaces[bfaceID].faces # Actually nodesIDs
+                nnodes = length(efaces[bfaceID].nodesID)
+                nodeIDs = efaces[bfaceID].nodesID # Actually nodesIDs
                 bface_nodes[fID] = nodeIDs
                 bface_nodes_range[fID] = UnitRange{Int64}(start:(start + nnodes - 1))
                 start += nnodes

@@ -18,12 +18,12 @@ mutable struct Face{I<:Integer, VI<:AbstractArray{I}}
 end
 Face(z::TI) where TI<:Integer = Face(0 , 0, TI[])
 
-mutable struct Cell{I<:Integer,VI<:AbstractArray{I}}
+mutable struct Cell_UNV{I<:Integer,VI<:AbstractArray{I}}
     index::I
     total::I
     nodesID::VI
 end
-Cell(z::TI) where TI<:Integer = Cell(zero(TI) , zero(TI), TI[])
+Cell_UNV(z::TI) where TI<:Integer = Cell_UNV(zero(TI) , zero(TI), TI[])
 
 mutable struct BoundaryElement{S<:String,I<:Integer,VI<:AbstractArray{I}}
     name::S

@@ -1,14 +1,8 @@
 export StrainRate
-export ShearRate
 export double_inner_product!
 export magnitude!, magnitude2!
 
 struct StrainRate{G, GT} <: AbstractTensorField
-    gradU::G
-    gradUT::GT
-end
-
-struct ShearRate{G, GT} <: AbstractTensorField
     gradU::G
     gradUT::GT
 end

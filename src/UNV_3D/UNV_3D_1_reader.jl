@@ -15,7 +15,7 @@ function load_3D(unv_mesh; scale, integer, float)
     points=UNV_3D.Point{float,SVector{3,float}}[]
     #edges=UNV_3D.Edge{integer,Vector{integer}}[]
     faces=UNV_3D.Face{integer,Vector{integer}}[]
-    cells=UNV_3D.Cell{integer,Vector{integer}}[]
+    cells=UNV_3D.Cell_UNV{integer,Vector{integer}}[]
     boundaryElements=UNV_3D.BoundaryElement{String,integer,Vector{integer}}[]
     #elements=UNV_3D.Element{integer,Vector{integer}}[]
     
@@ -158,7 +158,7 @@ function load_3D(unv_mesh; scale, integer, float)
     
         if length(sline)==4 && indx<boundaryindx && indx>elementindx
             cell=[parse(Int64,sline[i]) for i=1:length(sline)]
-            push!(cells,Cell(cellindex,cellCount,cell))
+            push!(cells,Cell_UNV(cellindex,cellCount,cell))
             continue
         end
 
@@ -176,7 +176,7 @@ function load_3D(unv_mesh; scale, integer, float)
 
         if length(sline)==8 && indx<boundaryindx && indx>elementindx
             cell=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(cells,Cell(cellindex,cellCount,cell))
+            push!(cells,Cell_UNV(cellindex,cellCount,cell))
             continue
         end
 
@@ -194,7 +194,7 @@ function load_3D(unv_mesh; scale, integer, float)
 
         if length(sline)==6 && indx<boundaryindx && indx>elementindx
             cell=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(cells,Cell(cellindex,cellCount,cell))
+            push!(cells,Cell_UNV(cellindex,cellCount,cell))
             continue
         end
     

@@ -23,7 +23,7 @@ mutable struct Cell{I<:Integer,VI<:AbstractArray{I}}
     total::I
     nodesID::VI
 end
-Volume(z::TI) where TI<:Integer = Cell(zero(TI) , zero(TI), TI[])
+Cell(z::TI) where TI<:Integer = Cell(zero(TI) , zero(TI), TI[])
 
 mutable struct BoundaryElement{S<:String,I<:Integer,VI<:AbstractArray{I}}
     name::S

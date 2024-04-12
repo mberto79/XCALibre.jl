@@ -111,7 +111,27 @@ build_faces(face_nodes_range, face_owner_cells) = begin
     return faces
 end
 
-build_mesh() = begin
+function build_nodes(points, node_cells_range) # Hybrid compatible. Works for Tet and Hexa
+    nodes = [Node(SVector{3, Float64}(0.0,0.0,0.0), 1:1) for _ ∈ eachindex(points)]
+    @inbounds for i ∈ eachindex(points)
+        nodes[i] =  Node(points[i].xyz, node_cells_range[i])
+    end
+    return nodes
+end
+
+function build_boundaries(boundaryElements)
+    bfaces_start = 1
+    boundaries = Vector{Boundary{Symbol,UnitRange{Int64}}}(undef,length(boundaryElements))
+    for (i, boundaryElement) ∈ enumerate(boundaryElements)
+        bfaces = length(boundaryElement.elements)
+        bfaces_range = UnitRange{Int64}(bfaces_start:(bfaces_start + bfaces - 1))
+        boundaries[i] = Boundary(Symbol(boundaryElement.name), bfaces_range)
+        bfaces_start += bfaces
+    end
+    return boundaries
+end
+
+build_mesh() = begin # Not needed?
     nothing
     # return mesh
 end
@@ -228,6 +248,7 @@ calculate_area_and_volume!(mesh) = begin
 
     #Using old method for now, know it works. Following method outlined by Sandip.
 
+    #Calculating Area of Faces (Triangle and Quad)
     for fID ∈ 1:n_faces
         face = faces[fID]
         nIDs = nodeIDs(face_nodes, face.nodes_range)
@@ -291,6 +312,7 @@ calculate_area_and_volume!(mesh) = begin
         end
     end
 
+    #Calculating all cell faces to calculate volume for each cell
     all_cell_faces = Vector{Int64}[Int64[] for _ ∈ eachindex(cells)]
     for fID ∈ eachindex(faces)
         owners = faces[fID].ownerCells
@@ -302,6 +324,7 @@ calculate_area_and_volume!(mesh) = begin
         end
     end
 
+    #Calculating volume of each cell. Using Gaussian Divergence Theory method outlined by Sandip.
     for cID ∈ eachindex(cells)
         cell = cells[cID]
         nface = length(all_cell_faces[cID])
@@ -320,7 +343,7 @@ calculate_area_and_volume!(mesh) = begin
                 normal=-1.0*normal
             end
             
-            volume=volume+(normal[1]*fc[1]*face.area)
+            volume=volume+(normal[1]*fc[1]*face.area) #Only uses x direction. For better results, can be extended to y and z.
 
         end
         @reset cell.volume = volume
@@ -355,19 +378,12 @@ function generate_node_cells(points, volumes)
     return node_cells, node_cells_range
 end #Tested for hexa cells, working
 
-
-function build_nodes(points, node_cells_range) # Hybrid compatible. Works for Tet and Hexa
-    nodes = [Node(SVector{3, Float64}(0.0,0.0,0.0), 1:1) for _ ∈ eachindex(points)]
-    @inbounds for i ∈ eachindex(points)
-        nodes[i] =  Node(points[i].xyz, node_cells_range[i])
-    end
-    return nodes
-end
-
 # DEFINE FUNCTIONS
 function order_face_nodes(bface_nodes_range,iface_nodes_range,bface_nodes,iface_nodes,nodes) # Old Method
+
     n_bfaces = length(bface_nodes_range)
     n_ifaces =  length(iface_nodes_range)
+
     for fID = 1:n_bfaces # Re-order Boundary Faces
         if length(bface_nodes_range[fID]) == 4 # Only for Quad faces
             nIDs=nodeIDs(bface_nodes,bface_nodes_range[fID]) # Get ids of nodes of face
@@ -467,7 +483,6 @@ function order_face_nodes(bface_nodes_range,iface_nodes_range,bface_nodes,iface_
 end
 
 # NOTE: the function has been written to be extendable to multiple element types
-
 function generate_internal_faces(volumes, nbfaces, nodes, node_cells)
     # determine total number of faces based on cell type (including duplicates)
     total_faces = 0
@@ -649,19 +664,6 @@ function generate_cell_face_connectivity(volumes, nbfaces, face_owner_cells)
     return cell_faces, cell_nsign, cell_faces_range, cell_neighbours
 end
 
-
-function build_boundaries(boundaryElements)
-    bfaces_start = 1
-    boundaries = Vector{Boundary{Symbol,UnitRange{Int64}}}(undef,length(boundaryElements))
-    for (i, boundaryElement) ∈ enumerate(boundaryElements)
-        bfaces = length(boundaryElement.elements)
-        bfaces_range = UnitRange{Int64}(bfaces_start:(bfaces_start + bfaces - 1))
-        boundaries[i] = Boundary(Symbol(boundaryElement.name), bfaces_range)
-        bfaces_start += bfaces
-    end
-    return boundaries
-end
-
 function generate_boundary_faces(
     boundaryElements, efaces, nbfaces, node_cells, node_cells_range, volumes
     )
@@ -726,21 +728,4 @@ function generate_cell_nodes(volumes)
         x = x + length(volumes[i].volumes)
     end
     return cell_nodes, cell_nodes_range
-end
-
-#Generate cells
-function generate_cells(volumes, cells_centre, cells_volume, cell_nodes_range, cell_faces_range)
-    cells = Vector{Cell{Float64,SVector{3,Float64},UnitRange{Int64}}}(undef,length(volumes))
-    for i = eachindex(volumes)
-        cells[i] = Cell(cells_centre[i], cells_volume[i], cell_nodes_range[i], cell_faces_range[i])
-    end
-    return cells
-end
-
-function generate_faces(faces, face_nodes_range, faces_centre, faces_normal, faces_area, face_ownerCells, faces_e, faces_delta, faces_weight)
-    faces3D = Vector{Face3D{Float64,SVector{2,Int64},SVector{3,Float64},UnitRange{Int64}}}(undef,length(faces))
-    for i = eachindex(faces)
-        faces3D[i] = Face3D(face_nodes_range[i], SVector(face_ownerCells[i, 1], face_ownerCells[i, 2]), faces_centre[i], faces_normal[i], faces_e[i], faces_area[i], faces_delta[i], faces_weight[i])
-    end
-    return faces3D
 end

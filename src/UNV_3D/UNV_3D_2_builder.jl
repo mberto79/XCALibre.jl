@@ -1,7 +1,4 @@
 export build_mesh3D
-#push! is BANNED! THOSE FOUND USING PUSH WILL BE EXILED!
-# [] is also BANNED! No more kneecaps if found using []!
-#Exceptions apply to where I have no idea what the size will be
 
 function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
     stats = @timed begin
@@ -65,151 +62,8 @@ function build_mesh3D(unv_mesh; scale=1, integer=Int64, float=Float64)
         calculate_area_and_volume!(mesh) # Will only work for Tet,Hexa, Prism cells
 
         return mesh
-        # return 0
-
-#=
-        face_nodes = generate_face_nodes(faces) #Removed push
-
-
-        # all_cell_faces = generate_all_cell_faces(faces, cell_face_nodes) # New method needed
-        # face_nodes_range = generate_face_nodes_range(faces) #Removed Push
-        # all_cell_faces_range = generate_all_cell_faces_range(volumes) #Removed push
-
-        cells_centre = calculate_centre_cell(volumes, nodes) #Removed push
-        cell_faces, cell_faces_range = generate_cell_faces(bfaces, volumes, all_cell_faces) 
-        face_ownerCells = generate_face_ownerCells(
-            faces, all_cell_faces, all_cell_faces_range) #New method approach needed
-
-        faces_area = calculate_face_area(nodes, faces) #Rewrite needed, removed push
-        faces_centre = calculate_face_centre(faces, nodes) # Removed push
-        faces_normal = calculate_face_normal(nodes, faces, face_ownerCells, cells_centre, faces_centre) # Rewrite needed
-        faces_e, faces_delta, faces_weight = calculate_face_properties(faces, face_ownerCells, cells_centre, faces_centre, faces_normal) #Removed push
-
-        cells_volume = calculate_cell_volume(volumes, all_cell_faces_range, all_cell_faces, faces_normal, cells_centre, faces_centre, face_ownerCells, faces_area) #Removed push
-
-        cells = generate_cells(volumes, cells_centre, cells_volume, cell_nodes_range, cell_faces_range) #Removed push
-        cell_neighbours = generate_cell_neighbours(cells, cell_faces) # Removed push, new method needed
-        faces = generate_faces(faces, face_nodes_range, faces_centre, faces_normal, faces_area, face_ownerCells, faces_e, faces_delta, faces_weight) #Removed push
-
-        cell_nsign = calculate_cell_nsign(cells, faces, cell_faces) #removed push
-
-        get_float = SVector(0.0, 0.0, 0.0)
-        get_int = UnitRange(0, 0)
-
-        mesh = Mesh3(cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes, boundaries, nodes, node_cells, get_float, get_int, boundary_cells)
-
-    end
-    println("Done! Execution time: ", @sprintf "%.6f" stats.time)
-    println("Mesh ready!")
-    return mesh
-    #For unit testing
-    #return mesh,cell_face_nodes, node_cells, all_cell_faces,boundary_cells,boundary_faces,all_cell_faces_range
-=#
     end
 end
-
-# function order_face_nodes(bface_nodes_range,iface_nodes_range,bface_nodes,iface_nodes,nodes) # New Method
-#     n_bfaces = length(bface_nodes_range)
-#     n_ifaces =  length(iface_nodes_range)
-#     for fID = 1:n_bfaces # Re-order Boundary Faces
-#         if length(bface_nodes_range[fID]) == 4 # Only for Quad faces
-#             nIDs=nodeIDs(bface_nodes,bface_nodes_range[fID]) # Get ids of nodes of face
-    
-#             ordered_ID=sort(nIDs) # sort them so that the lowest ID is first
-    
-#             p1=nodes[ordered_ID[1]].coords # Get coords of 4 nodes
-#             p2=nodes[ordered_ID[2]].coords
-#             p3=nodes[ordered_ID[3]].coords
-#             p4=nodes[ordered_ID[4]].coords
-    
-#             points = [p1, p2, p3, p4]
-    
-#             _x(p) = p[1]
-#             _y(p) = p[2]
-#             _z(p) = p[3]
-
-#             p1_p2 = segment(p1, p2) # vector/segment from p1 to p2 (pivot!)
-#             p1_p3 = segment(p1, p3) # vector/segment from p1 to p3
-#             p1_p4 = segment(p1, p4) # vector/segment from p1 to p4
-
-#             angle2_2 = 0.0
-#             angle2_3 = angle1(p1_p2, p1_p3)
-#             angle2_4 = angle1(p1_p2, p1_p4)
-    
-#             angles=Float64[]
-#             push!(angles,angle2_2,angle2_3,angle2_4)
-    
-#             dict=Dict() # Using dictionary to link noode Id to angle
-#             for (n,f) in enumerate(angles)
-#                 dict[f] = ordered_ID[n+1]
-#             end
-    
-#             sorted_angles=sort(angles) # Sort angles from smallest to largest. Right hand rule.
-    
-#             sorted_IDs=Int64[]
-#             push!(sorted_IDs,ordered_ID[1])
-#             push!(sorted_IDs,dict[sorted_angles[1]])
-#             push!(sorted_IDs,dict[sorted_angles[2]])
-#             push!(sorted_IDs,dict[sorted_angles[3]])
-    
-#             counter=0
-#             for i=bface_nodes_range[fID] # Re-writing face_nodes with ordered nodes
-#                 counter=counter+1
-#                 bface_nodes[i]=sorted_IDs[counter]
-#             end
-#         end
-#     end
-    
-#     for fID = 1:n_ifaces # Re-order internal faces
-#         if length(iface_nodes_range[fID])==4 # Only for Quad Faces
-#             nIDs=nodeIDs(iface_nodes,iface_nodes_range[fID]) # Get ids of nodes of the face
-    
-#             ordered_ID=sort(nIDs) # Sort them so that the lowest ID is first
-    
-#             p1=nodes[ordered_ID[1]].coords # Get coords of 4 nodes
-#             p2=nodes[ordered_ID[2]].coords
-#             p3=nodes[ordered_ID[3]].coords
-#             p4=nodes[ordered_ID[4]].coords
-    
-#             points = [p1, p2, p3, p4]
-    
-#             _x(p) = p[1]
-#             _y(p) = p[2]
-#             _z(p) = p[3]
-    
-#             p1_p2 = segment(p1, p2) # vector/segment from p1 to p2 (pivot!)
-#             p1_p3 = segment(p1, p3) # vector/segment from p1 to p3
-#             p1_p4 = segment(p1, p4) # vector/segment from p1 to p4
-
-#             angle2_2 = 0.0
-#             angle2_3 = angle1(p1_p2, p1_p3)
-#             angle2_4 = angle1(p1_p2, p1_p4)
-    
-#             angles=Float64[]
-#             push!(angles,angle2_2,angle2_3,angle2_4)
-    
-#             dict=Dict()
-#             for (n,f) in enumerate(angles)
-#                 dict[f] = ordered_ID[n+1]
-#             end
-    
-#             sorted_angles=sort(angles)
-    
-#             sorted_IDs=Int64[]
-#             push!(sorted_IDs,ordered_ID[1])
-#             push!(sorted_IDs,dict[sorted_angles[1]])
-#             push!(sorted_IDs,dict[sorted_angles[2]])
-#             push!(sorted_IDs,dict[sorted_angles[3]])
-    
-#             counter=0
-#             for i=iface_nodes_range[fID]
-#                 counter=counter+1
-#                 iface_nodes[i]=sorted_IDs[counter]
-#             end
-#         end
-#     end
-#     return bface_nodes, iface_nodes
-# end
 
 function order_face_nodes(bface_nodes_range,iface_nodes_range,bface_nodes,iface_nodes,nodes) # Old Method
     n_bfaces = length(bface_nodes_range)
@@ -485,86 +339,6 @@ calculate_face_properties!(mesh) = begin
     end
 end
 
-# calculate_face_properties!(mesh) = begin
-#     # written for Tet only for debugging
-#     (; nodes, cells, faces, face_nodes, boundary_cellsID) = mesh
-#     n_bfaces = length(boundary_cellsID)
-#     n_faces = length(mesh.faces)
-
-#     # loop over boundary faces
-#     for fID ∈ 1:n_bfaces
-#         face = faces[fID]
-#         nIDs = nodeIDs(face_nodes, face.nodes_range)
-#         node1 = nodes[nIDs[1]]
-#         node2 = nodes[nIDs[2]]
-#         node3 = nodes[nIDs[3]]
-#         edge1 = node2.coords - node1.coords
-#         edge2 = node3.coords - node1.coords
-#         owners = face.ownerCells
-
-#         cell1 = cells[owners[1]]
-#         # cell2 = cells[owners[2]]
-#         fc_n1 = node1.coords - face.centre
-#         fc_n2 = node2.coords - face.centre 
-#         # cc1_cc2 = cell2.centre - cell1.centre
-#         cc1_cc2 = face.centre - cell1.centre
-#         normal_vec = fc_n1 × fc_n2
-#         normal = normal_vec/norm(normal_vec)
-#         if cc1_cc2 ⋅ normal < 0
-#             normal *= -1
-#         end
-#         @reset face.normal = normal
-
-#         # delta
-#         cc_fc = face.centre - cell1.centre
-#         delta = norm(cc_fc)
-#         e = cc_fc/delta
-#         weight = one(Float64)
-#         @reset face.delta = delta
-#         @reset face.e = e
-#         @reset face.weight = weight
-#         @reset face.area = 0.5*norm(edge1×edge2)
-
-#         faces[fID] = face
-#     end
-
-#     # loop over internal faces
-#     for fID ∈ (n_bfaces + 1):n_faces
-#         face = faces[fID]
-#         nIDs = nodeIDs(face_nodes, face.nodes_range)
-#         node1 = nodes[nIDs[1]]
-#         node2 = nodes[nIDs[2]]
-#         node3 = nodes[nIDs[3]]
-#         edge1 = node2.coords - node1.coords
-#         edge2 = node3.coords - node1.coords
-#         owners = face.ownerCells
-#         cell1 = cells[owners[1]]
-#         cell2 = cells[owners[2]]
-#         fc_n1 = node1.coords - face.centre
-#         fc_n2 = node2.coords - face.centre 
-#         cc1_cc2 = cell2.centre - cell1.centre
-#         # cc1_cc2 = face.centre - cell1.centre
-#         normal_vec = fc_n1 × fc_n2
-#         normal = normal_vec/norm(normal_vec)
-#         if cc1_cc2 ⋅ normal < 0
-#             normal *= -1
-#         end
-#         @reset face.normal = normal
-
-#         # delta
-#         c1_c2 = cell2.centre - cell1.centre
-#         delta = norm(c1_c2)
-#         e = c1_c2/delta
-#         weight = 0.5 # !!!!!!!!!!!!!! fixed value for now !!!!!!!!!!
-#         @reset face.delta = delta
-#         @reset face.e = e
-#         @reset face.weight = weight
-#         @reset face.area = 0.5*norm(edge1×edge2)
-        
-#         faces[fID] = face
-#     end
-# end
-
 calculate_area_and_volume!(mesh) = begin
     (; nodes, faces, face_nodes, cells, cell_nodes) = mesh
 
@@ -676,123 +450,6 @@ calculate_area_and_volume!(mesh) = begin
     end
 end
 
-# calculate_area_and_volume!(mesh) = begin
-#     (; nodes, faces, face_nodes, cells, cell_nodes) = mesh
-
-#     n_faces=length(faces)
-
-#     #Using old method for now, know it works. Following method outlined by Sandip.
-
-#     for fID ∈ 1:n_faces
-#         face = faces[fID]
-#         nIDs = nodeIDs(face_nodes, face.nodes_range)
-#         if length(face.nodes_range) == 3 # For Triangles
-#             #nIDs = nodeIDs(face_nodes, face.nodes_range)
-#             n1 = nodes[nIDs[1]].coords
-#             n2 = nodes[nIDs[2]].coords
-#             n3 = nodes[nIDs[3]].coords
-            
-#             t1x=n2[1]-n1[1]
-#             t1y=n2[2]-n1[2]
-#             t1z=n2[3]-n1[3]
-
-#             t2x=n3[1]-n1[1]
-#             t2y=n3[2]-n1[2]
-#             t2z=n3[3]-n1[3]
-
-#             area2=(t1y*t2z-t1z*t2y)^2+(t1x*t2z-t1z*t2x)^2+(t1y*t2x-t1x*t2y)^2
-#             area=sqrt(area2)/2
-            
-#             @reset face.area = area
-
-#             faces[fID] = face
-#         end
-
-#         if length(face.nodes_range) >= 4 # For any shape
-#             n1 = nodes[nIDs[1]].coords
-#             n2 = nodes[nIDs[2]].coords
-#             n3 = nodes[nIDs[3]].coords
-
-#             t1x=n2[1]-n1[1]
-#             t1y=n2[2]-n1[2]
-#             t1z=n2[3]-n1[3]
-
-#             t2x=n3[1]-n1[1]
-#             t2y=n3[2]-n1[2]
-#             t2z=n3[3]-n1[3]
-
-#             area2=(t1y*t2z-t1z*t2y)^2+(t1x*t2z-t1z*t2x)^2+(t1y*t2x-t1x*t2y)^2
-#             area=sqrt(area2)/2
-
-#             for ic=4:length(face.nodes_range)
-#                 n1 = nodes[nIDs[ic]].coords
-#                 n2 = nodes[nIDs[2]].coords
-#                 n3 = nodes[nIDs[3]].coords
-
-#                 t1x=n2[1]-n1[1]
-#                 t1y=n2[2]-n1[2]
-#                 t1z=n2[3]-n1[3]
-
-#                 t2x=n3[1]-n1[1]
-#                 t2y=n3[2]-n1[2]
-#                 t2z=n3[3]-n1[3]
-
-#                 area2=(t1y*t2z-t1z*t2y)^2+(t1x*t2z-t1z*t2x)^2+(t1y*t2x-t1x*t2y)^2
-#                 area=area+sqrt(area2)/2
-
-#             end
-#             @reset face.area = area
-#             faces[fID] = face
-#         end
-#     end
-
-
-#     c = 1/6 # calculate only once
-#     for cID ∈ eachindex(cells)
-#         cell = cells[cID]
-#         # fIDs = faceIDs(cell_faces, cell.faces_range)
-#         # face = faces[fIDs[1]]
-#         # nIDs = nodeIDs(face_nodes, face.nodes_range)
-#         nIDs = nodeIDs(cell_nodes, cell.nodes_range)
-#         node1 = nodes[nIDs[1]]
-#         node2 = nodes[nIDs[2]]
-#         node3 = nodes[nIDs[3]]
-#         node4 = nodes[nIDs[4]]
-#         edge1 = node2.coords - node1.coords
-#         edge2 = node3.coords - node1.coords
-#         edge3 = node4.coords - node1.coords
-#         # dist = norm(node2.coords - node1.coords)
-
-#         volume = c*((edge1×edge2)⋅edge3)
-#         @reset cell.volume = volume
-#         cells[cID] = cell
-#     end
-# end
-
-# calculate_area_and_volume!(mesh) = begin
-#     (; nodes, faces, face_nodes, cells, cell_faces, cell_nodes) = mesh
-#     c = 1/6 # calculate only once
-#     for cID ∈ eachindex(cells)
-#         cell = cells[cID]
-#         # fIDs = faceIDs(cell_faces, cell.faces_range)
-#         # face = faces[fIDs[1]]
-#         # nIDs = nodeIDs(face_nodes, face.nodes_range)
-#         nIDs = nodeIDs(cell_nodes, cell.nodes_range)
-#         node1 = nodes[nIDs[1]]
-#         node2 = nodes[nIDs[2]]
-#         node3 = nodes[nIDs[3]]
-#         node4 = nodes[nIDs[4]]
-#         edge1 = node2.coords - node1.coords
-#         edge2 = node3.coords - node1.coords
-#         edge3 = node4.coords - node1.coords
-#         # dist = norm(node2.coords - node1.coords)
-
-#         volume = c*((edge1×edge2)⋅edge3)
-#         @reset cell.volume = volume
-#         cells[cID] = cell
-#     end
-# end
-
 # Node connectivity
 
 function generate_node_cells(points, volumes)
@@ -820,30 +477,6 @@ function generate_node_cells(points, volumes)
     return node_cells, node_cells_range
 end #Tested for hexa cells, working
 
-# function generate_node_cells(points, volumes)
-#     temp_node_cells = [Int64[] for _ ∈ eachindex(points)] # array of vectors to hold cellIDs
-
-#     # Add cellID to each point that defines a "volume"
-#     for (cellID, volume) ∈ enumerate(volumes)
-#         for nodeID ∈ volume.volumes
-#             push!(temp_node_cells[nodeID], cellID)
-#         end
-#     end
-
-#     node_cells_size = sum(length.(temp_node_cells)) # number of cells in node_cells
-
-#     index = 0 # change to node cells index
-#     node_cells = zeros(Int64, node_cells_size)
-#     node_cells_range = [UnitRange{Int64}(1, 1) for _ ∈ eachindex(points)]
-#     for (nodeID, cellsID) ∈ enumerate(temp_node_cells)
-#         for cellID ∈ cellsID
-#             index += 1
-#             node_cells[index] = cellID
-#         end
-#         node_cells_range[nodeID] = UnitRange{Int64}(index - length(cellsID) + 1, index)
-#     end
-#     return node_cells, node_cells_range
-# end
 
 function build_nodes(points, node_cells_range) # Hybrid compatible. Works for Tet and Hexa
     nodes = [Node(SVector{3, Float64}(0.0,0.0,0.0), 1:1) for _ ∈ eachindex(points)]
@@ -852,14 +485,6 @@ function build_nodes(points, node_cells_range) # Hybrid compatible. Works for Te
     end
     return nodes
 end
-
-# function build_nodes(points, cells_range)
-#     nodes = [Node(SVector{3, Float64}(0.0,0.0,0.0), 1:1) for _ ∈ eachindex(points)]
-#     @inbounds for i ∈ eachindex(points)
-#         nodes[i] =  Node(points[i].xyz, cells_range[i])
-#     end
-#     return nodes
-# end
 
 # DEFINE FUNCTIONS
 function calculate_face_properties(faces, face_ownerCells, cells_centre, faces_centre, face_normal)
@@ -1111,19 +736,6 @@ function calculate_centre_cell(volumes,nodes)
     end
     return cell_centres
 end
-
-# function calculate_centre_cell(volumes, nodes)
-#     centre_store = SVector{3,Float64}[]
-#     for i = 1:length(volumes)
-#         cell_store = typeof(nodes[volumes[1].volumes[1]].coords)[]
-#         for ic = 1:length(volumes[i].volumes)
-#             push!(cell_store, nodes[volumes[i].volumes[ic]].coords)
-#         end
-#         centre = (sum(cell_store) / length(cell_store))
-#         push!(centre_store, centre)
-#     end
-#     return centre_store
-# end
 
 function generate_cell_neighbours(cells, cell_faces)
     cell_neighbours = Vector{Int64}(undef,length(cell_faces))
@@ -1418,51 +1030,6 @@ function generate_boundary_faces(
     return bface_nodes, bface_nodes_range, bowners_cells, boundary_cells
 end
 
-# function generate_boundary_faces(
-#     boundaryElements, bfaces, node_cells, node_cells_range, volumes
-#     )
-#     bface_nodes = Vector{Vector{Int64}}(undef, length(bfaces))
-#     bface_nodes_range = Vector{UnitRange{Int64}}(undef,length(bfaces))
-#     bowners_cells = Vector{Int64}[Int64[0,0] for _ ∈ eachindex(bfaces)]
-#     boundary_cells = Vector{Int64}(undef,length(bfaces))
-
-#     fID = 0 # faceID index of output array (reordered)
-#     start = 1
-#     for boundary ∈ boundaryElements
-#         elements = boundary.elements
-#             for bfaceID ∈ elements
-#                 fID += 1
-#                 nnodes = length(bfaces[bfaceID].faces)
-#                 nodeIDs = bfaces[bfaceID].faces # Actually nodesIDs
-#                 bface_nodes[fID] = nodeIDs
-#                 bface_nodes_range[fID] = UnitRange{Int64}(start:(start + nnodes - 1))
-#                 start += nnodes
-
-#                 # Find owner cells (same as boundary cells)
-#                 assigned = false
-#                 for nodeID ∈ nodeIDs
-#                     cIDs = cellIDs(node_cells, node_cells_range, nodeID)
-#                     for cID ∈ cIDs
-#                         if intersect(nodeIDs, volumes[cID].volumes) == nodeIDs
-#                             bowners_cells[fID] .= cID
-#                             boundary_cells[fID] = cID
-#                             assigned = true
-#                             break
-#                         end
-#                     end
-#                     if assigned 
-#                         break
-#                     end
-#                 end
-#             end
-#     end
-
-#     bface_nodes = vcat(bface_nodes...) # Flatten - from Vector{Vector{Int}} to Vector{Int}
-
-#     return bface_nodes, bface_nodes_range, bowners_cells, boundary_cells
-#     # return bfaces_nodes, bowners_cells
-# end
-
 #Generate Faces
 
 function generate_face_nodes(faces)
@@ -1500,25 +1067,6 @@ function generate_cell_nodes(volumes)
     end
     return cell_nodes, cell_nodes_range
 end
-
-# function generate_cell_nodes(volumes)
-#     cell_nodes = Vector{Int64}(undef, length(volumes) * 4) #length of cells times number of nodes per cell (tet only)
-#     counter = 0
-#     for n = eachindex(volumes)
-#         for i = 1:volumes[n].volumeCount
-#             counter = counter + 1
-#             cell_nodes[counter] = volumes[n].volumes[i]
-#         end
-#     end
-
-#     cell_nodes_range = Vector{UnitRange{Int64}}(undef, length(volumes))
-#     x = 0
-#     for i = eachindex(volumes)
-#         cell_nodes_range[i] = UnitRange(x + 1, x + length(volumes[i].volumes))
-#         x = x + length(volumes[i].volumes)
-#     end
-#     return cell_nodes, cell_nodes_range
-# end
 
 function generate_all_cell_faces(faces, cell_face_nodes)
     sorted_faces = Vector{Vector{Int64}}(undef, length(faces))

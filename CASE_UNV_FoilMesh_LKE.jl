@@ -169,7 +169,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=1000, write_interval=250, time_step=1)
+    iterations=1000, write_interval=1, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

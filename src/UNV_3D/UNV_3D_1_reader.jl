@@ -220,9 +220,9 @@ function load_3D(unv_mesh; scale, integer, float)
             boundary=[parse(Int64,sline[i]) for i=1:length(sline)]
             push!(boundarys,(boundaryindex,boundary))
             #push!(boundaryElements[currentBoundary].elements,dict[parse(Int64,sline[2])]) # Kept for Dict
-            push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[2])-edgeindex)
+            push!(boundaryElements[currentBoundary].facesID,parse(Int64,sline[2])-edgeindex)
             #push!(boundaryElements[currentBoundary].elements,dict[parse(Int64,sline[6])]) # Kept for Dict
-            push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[6])-edgeindex)
+            push!(boundaryElements[currentBoundary].facesID,parse(Int64,sline[6])-edgeindex)
             continue
         end
 
@@ -230,7 +230,7 @@ function load_3D(unv_mesh; scale, integer, float)
             boundary=[parse(Int64,sline[i]) for i=1:length(sline)]
             push!(boundarys,(boundaryindex,boundary))
             #push!(boundaryElements[currentBoundary].elements,dict[parse(Int64,sline[2])]) # Kept for Dict
-            push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[2])-edgeindex)
+            push!(boundaryElements[currentBoundary].facesID,parse(Int64,sline[2])-edgeindex)
             continue
         end
     

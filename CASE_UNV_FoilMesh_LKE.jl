@@ -14,7 +14,7 @@ foil,ctrl_p = spline_foil(FoilDef(
 
 #%% REYNOLDS & Y+ CALCULATIONS
 chord = 100.0
-Re = 80000
+Re = 35000
 nu,ρ = 1.48e-5,1.225
 yplus_init,BL_layers = 2.0,50
 laminar = false
@@ -46,11 +46,11 @@ mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
 # Turbulence Model
-νR = 20
+νR = 11.9
 Tu = 0.025
-kL_inlet = 1/2*(Tu*velocity[1])^2
-k_inlet = 3/2*(Tu*velocity[1])^2
-ω_inlet = k_inlet/(νR*nu)
+kL_inlet = 0.007
+k_inlet = 0.068
+ω_inlet = 380
 model = RANS{KOmegaLKE}(mesh=mesh, viscosity=ConstantScalar(nu), Tu=Tu)
 
 # Boundary Conditions
@@ -150,21 +150,21 @@ solvers = (
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.05,
     ),
     k = set_solver(
         model.turbulence.k;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.4,
+        relax       = 0.1,
     ),
     omega = set_solver(
         model.turbulence.omega;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.4,
+        relax       = 0.1,
     )
 )
 

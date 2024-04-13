@@ -1,5 +1,5 @@
 export StrainRate
-export double_inner_product!
+export double_inner_product!, double_inner_product2!
 export magnitude!, magnitude2!
 
 struct StrainRate{G, GT} <: AbstractTensorField
@@ -12,10 +12,28 @@ function (S::StrainRate)(i)
 end
 
 double_inner_product!(
-    magS::ScalarField, t0::AbstractTensorField, t2::AbstractTensorField) = 
+    magS::ScalarField, t1::AbstractTensorField, t2::AbstractTensorField; scale_factor =1.0) = 
 begin
     sum = 0.0
     for i ∈ eachindex(magS.values)
+        # t1 = t0[i] .- (1/3)*t0[i]*I
+        #t1 = 2.0.*t0[i] .- (2/3)*t0[i]*I
+        sum = 0.0
+        for j ∈ 1:3
+            for k ∈ 1:3
+                sum +=   t1[i][j,k]*t2[i][j,k]
+                # sum +=   t1[j,k]*t2[i][j,k]
+            end
+        end
+        magS.values[i] = sqrt(sum*scale_factor)
+    end
+end #For shear rate
+
+double_inner_product!(
+    magS::ScalarField, t0::AbstractTensorField, t2) = 
+begin
+    sum = 0.0
+    for i ∈ eachindex(magS)
         # t1 = t0[i] .- (1/3)*t0[i]*I
         t1 = 2.0.*t0[i] .- (2/3)*t0[i]*I
         sum = 0.0
@@ -25,11 +43,11 @@ begin
                 # sum +=   t1[j,k]*t2[i][j,k]
             end
         end
-        magS.values[i] = sum
+        magS[i] = sum
     end
-end
+end #For Pk
 
-function magnitude!(magS::ScalarField, S::AbstractTensorField)
+function magnitude!(magS::ScalarField, S::AbstractTensorField; scale_factor=1.0)
     sum = 0.0
     for i ∈ eachindex(magS.values)
         sum = 0.0
@@ -39,20 +57,20 @@ function magnitude!(magS::ScalarField, S::AbstractTensorField)
                 sum +=   S[i][j,k]*S[i][k,j]
             end
         end
-        magS.values[i] =   sqrt(sum)
+        magS.values[i] =   sqrt(sum*scale_factor)
     end
-end
+end #For PkL
 
-function magnitude!(magS::ScalarField, S::AbstractVectorField)
+function magnitude!(magS::ScalarField, S::AbstractVectorField; scale_factor=1.0)
     sum = 0.0
     for i ∈ eachindex(magS.values)
         sum = 0.0
         for j ∈ 1:3
                 sum +=   S[i][j]^2
         end
-        magS.values[i] =   sqrt(sum)
+        magS.values[i] =   sqrt(sum*scale_factor)
     end
-end
+end #For U
 
 function magnitude2!(
     magS::ScalarField, S::AbstractTensorField; scale_factor=1.0

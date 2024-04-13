@@ -45,7 +45,7 @@ mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
 # Turbulence Model
-νR = 10
+νR = 20
 Tu = 0.025
 k_inlet = 3/2*(Tu*velocity[1])^2
 ω_inlet = k_inlet/(νR*nu)

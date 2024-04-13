@@ -110,7 +110,7 @@ function SIMPLE_loop(
     R_ux = ones(TF, iterations)
     R_uy = ones(TF, iterations)
     R_p = ones(TF, iterations)
-    
+
     interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, U.BCs)
     flux!(mdotf, Uf)
@@ -187,7 +187,7 @@ function SIMPLE_loop(
         
         if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs)
-            turbulence!(turbulence, model, S, S2, prev) 
+            turbulence!(turbulence, model, S, S2, gradU, prev) 
             update_nueff!(nueff, nu, turbulence)
         end
         

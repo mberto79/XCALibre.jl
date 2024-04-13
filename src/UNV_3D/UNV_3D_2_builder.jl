@@ -123,7 +123,7 @@ function build_boundaries(boundaryElements)
     bfaces_start = 1
     boundaries = Vector{Boundary{Symbol,UnitRange{Int64}}}(undef,length(boundaryElements))
     for (i, boundaryElement) ∈ enumerate(boundaryElements)
-        bfaces = length(boundaryElement.elements)
+        bfaces = length(boundaryElement.facesID)
         bfaces_range = UnitRange{Int64}(bfaces_start:(bfaces_start + bfaces - 1))
         boundaries[i] = Boundary(Symbol(boundaryElement.name), bfaces_range)
         bfaces_start += bfaces
@@ -488,15 +488,15 @@ function generate_internal_faces(cells_UNV, nbfaces, nodes, node_cells)
     total_faces = 0
     for cell ∈ cells_UNV
         # add faces for tets
-        if cell.total == 4
+        if cell.nodeCount == 4
             total_faces += 4
         end
         # add faces for Hexa
-        if cell.total == 8 
+        if cell.nodeCount == 8 
             total_faces += 6
         end
         #add faces for Wedge/Penta
-        if cell.total == 6
+        if cell.nodeCount == 6
             total_faces += 5
         end
     end
@@ -507,7 +507,7 @@ function generate_internal_faces(cells_UNV, nbfaces, nodes, node_cells)
     # Generate all faces for each cell/element/volume
     for (cellID, cell) ∈ enumerate(cells_UNV)
         # Generate faces for tet elements
-        if cell.total == 4
+        if cell.nodeCount == 4
             nodesID = cell.nodesID
             push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[3]])
             push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[4]])
@@ -516,7 +516,7 @@ function generate_internal_faces(cells_UNV, nbfaces, nodes, node_cells)
         end
         # add conditions for other cell types
         # Generate faces for hexa elements using UNV structure method
-        if cell.total == 8
+        if cell.nodeCount == 8
             nodesID = cell.nodesID
             push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[3], nodesID[4]])
             push!(cells_faces_nodeIDs[cellID], Int64[nodesID[5], nodesID[6], nodesID[7], nodesID[8]])
@@ -526,7 +526,7 @@ function generate_internal_faces(cells_UNV, nbfaces, nodes, node_cells)
             push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[4], nodesID[5], nodesID[8]])
         end
         # Generate faces for prism elements, using pattern in UNV file.
-        if cell.total == 6
+        if cell.nodeCount == 6
             nodesID = cell.nodesID
             push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[3]]) # Triangle 1
             push!(cells_faces_nodeIDs[cellID], Int64[nodesID[4], nodesID[5], nodesID[6]]) # Triangle 2
@@ -675,7 +675,7 @@ function generate_boundary_faces(
     fID = 0 # faceID index of output array (reordered)
     start = 1
     for boundary ∈ boundaryElements
-        elements = boundary.elements
+        elements = boundary.facesID
             for bfaceID ∈ elements
                 fID += 1
                 nnodes = length(efaces[bfaceID].nodesID)
@@ -716,7 +716,7 @@ function generate_cell_nodes(cells_UNV)
     # NOTE 1: You could also run a loop over all the "volumes" and accumulate their size. Then allocate
     # NOTE 2: Or you could allocate an empty vector of vector of size ncells (less performant than NOTE 1 but faster than the current method)
     for n = eachindex(cells_UNV)
-        for i = 1:cells_UNV[n].total
+        for i = 1:cells_UNV[n].nodeCount
             push!(cell_nodes,cells_UNV[n].nodesID[i])
         end
     end

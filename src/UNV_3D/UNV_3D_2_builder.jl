@@ -136,7 +136,384 @@ build_mesh() = begin # Not needed?
     # return mesh
 end
 
-# CALCULATION of mesh properties
+# GENERATE Functions
+
+function generate_cell_nodes(cells_UNV)
+    cell_nodes = Int64[] # cell_node length is undetermined as mesh could be hybrid, using push. Could use for and if before to preallocate vector.
+    
+    # Note 0: this errors with prism and hex for some reason? Reader? (volumentCount !- length(volumes))
+    # NOTE 1: You could also run a loop over all the "volumes" and accumulate their size. Then allocate
+    # NOTE 2: Or you could allocate an empty vector of vector of size ncells (less performant than NOTE 1 but faster than the current method)
+    for n = eachindex(cells_UNV)
+        for i = 1:cells_UNV[n].nodeCount
+            push!(cell_nodes,cells_UNV[n].nodesID[i])
+        end
+    end
+
+    cell_nodes_range = Vector{UnitRange{Int64}}(undef, length(cells_UNV)) # cell_nodes_range determined by no. of cells.
+    x = 0
+    for i = eachindex(cells_UNV)
+        cell_nodes_range[i] = UnitRange(x + 1, x + length(cells_UNV[i].nodesID))
+        x = x + length(cells_UNV[i].nodesID)
+    end
+    return cell_nodes, cell_nodes_range
+end
+
+function generate_node_cells(points, cells_UNV)
+    temp_node_cells = [Int64[] for _ ∈ eachindex(points)] # array of vectors to hold cellIDs
+
+    # Add cellID to each point that defines a "volume"
+    for (cellID, cell) ∈ enumerate(cells_UNV)
+        for nodeID ∈ cell.nodesID
+            push!(temp_node_cells[nodeID], cellID)
+        end
+    end # Should be hybrid compatible 
+
+    node_cells_size = sum(length.(temp_node_cells)) # number of cells in node_cells
+
+    node_cells_index = 0 # change to node cells index
+    node_cells = zeros(Int64, node_cells_size)
+    node_cells_range = [UnitRange{Int64}(1, 1) for _ ∈ eachindex(points)]
+    for (nodeID, cellsID) ∈ enumerate(temp_node_cells)
+        for cellID ∈ cellsID
+            node_cells_index += 1
+            node_cells[node_cells_index] = cellID
+        end
+        node_cells_range[nodeID] = UnitRange{Int64}(node_cells_index - length(cellsID) + 1, node_cells_index)
+    end
+    return node_cells, node_cells_range
+end #Tested for hexa cells, working
+
+function generate_boundary_faces(
+    boundaryElements, efaces, nbfaces, node_cells, node_cells_range, cells_UNV
+    )
+    bface_nodes = Vector{Vector{Int64}}(undef, nbfaces)
+    bface_nodes_range = Vector{UnitRange{Int64}}(undef, nbfaces)
+    bowners_cells = Vector{Int64}[Int64[0,0] for _ ∈ 1:nbfaces]
+    boundary_cells = Vector{Int64}(undef, nbfaces)
+
+    fID = 0 # faceID index of output array (reordered)
+    start = 1
+    for boundary ∈ boundaryElements
+        elements = boundary.facesID
+            for bfaceID ∈ elements
+                fID += 1
+                nnodes = length(efaces[bfaceID].nodesID)
+                nodeIDs = efaces[bfaceID].nodesID # Actually nodesIDs
+                bface_nodes[fID] = nodeIDs
+                bface_nodes_range[fID] = UnitRange{Int64}(start:(start + nnodes - 1))
+                start += nnodes
+
+                # Find owner cells (same as boundary cells)
+                assigned = false
+                for nodeID ∈ nodeIDs
+                    cIDs = cellIDs(node_cells, node_cells_range, nodeID)
+                    for cID ∈ cIDs
+                        if intersect(nodeIDs, cells_UNV[cID].nodesID) == nodeIDs
+                            bowners_cells[fID] .= cID
+                            boundary_cells[fID] = cID
+                            assigned = true
+                            break
+                        end
+                    end
+                    if assigned 
+                        break
+                    end
+                end
+            end
+    end
+
+    bface_nodes = vcat(bface_nodes...) # Flatten - from Vector{Vector{Int}} to Vector{Int}
+    # Check: Length of bface_nodes = no. of bfaces x no. of nodes of each bface
+
+    return bface_nodes, bface_nodes_range, bowners_cells, boundary_cells
+end
+
+function generate_internal_faces(cells_UNV, nbfaces, nodes, node_cells)
+    # determine total number of faces based on cell type (including duplicates)
+    total_faces = 0
+    for cell ∈ cells_UNV
+        # add faces for tets
+        if cell.nodeCount == 4
+            total_faces += 4
+        end
+        # add faces for Hexa
+        if cell.nodeCount == 8 
+            total_faces += 6
+        end
+        #add faces for Wedge/Penta
+        if cell.nodeCount == 6
+            total_faces += 5
+        end
+    end
+
+    # Face nodeIDs for each cell is a vector of vectors of vectors :-)
+    cells_faces_nodeIDs = Vector{Vector{Int64}}[Vector{Int64}[] for _ ∈ 1:length(cells_UNV)] 
+
+    # Generate all faces for each cell/element/volume
+    for (cellID, cell) ∈ enumerate(cells_UNV)
+        # Generate faces for tet elements
+        if cell.nodeCount == 4
+            nodesID = cell.nodesID
+            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[3]])
+            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[4]])
+            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[3], nodesID[4]])
+            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[2], nodesID[3], nodesID[4]])
+        end
+        # add conditions for other cell types
+        # Generate faces for hexa elements using UNV structure method
+        if cell.nodeCount == 8
+            nodesID = cell.nodesID
+            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[3], nodesID[4]])
+            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[5], nodesID[6], nodesID[7], nodesID[8]])
+            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[5], nodesID[6]])
+            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[3], nodesID[4], nodesID[7], nodesID[8]])
+            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[2], nodesID[3], nodesID[6], nodesID[7]])
+            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[4], nodesID[5], nodesID[8]])
+        end
+        # Generate faces for prism elements, using pattern in UNV file.
+        if cell.nodeCount == 6
+            nodesID = cell.nodesID
+            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[3]]) # Triangle 1
+            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[4], nodesID[5], nodesID[6]]) # Triangle 2
+            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[4], nodesID[5]]) # Rectangle 1
+            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[2], nodesID[3], nodesID[5], nodesID[6]]) # Rectangle 2
+            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[3], nodesID[4], nodesID[6]]) # Rectangle 3
+        end
+    end
+
+    # Sort nodesIDs for each face based on ID (need to correct order later to be physical)
+    # this allows to find duplicates later more easily (query on ordered ids is faster)
+    for face_nodesID ∈ cells_faces_nodeIDs
+        for nodesID ∈ face_nodesID
+            sort!(nodesID)
+        end
+    end
+
+    # Find owner cells for each face
+    owners_cellIDs = Vector{Int64}[zeros(Int64, 2) for _ ∈ 1:total_faces]
+    facei = 0 # faceID counter (will be reduced to internal faces later)
+    for (cellID, faces_nodeIDs) ∈ enumerate(cells_faces_nodeIDs) # loop over cells
+        for facei_nodeIDs ∈ faces_nodeIDs # loop over vectors of nodeIDs for each face
+            facei += 1 # face counter
+            owners_cellIDs[facei][1] = cellID # ID of first cell containing the face
+            for nodeID ∈ facei_nodeIDs # loop over ID of each node in the face
+                cells_range = nodes[nodeID].cells_range
+                node_cellIDs = @view node_cells[cells_range] # find cells that use this node
+                for nodei_cellID ∈ node_cellIDs # loop over cells that share the face node
+                    if nodei_cellID !== cellID # ensure cellID is not same as current cell 
+                        for face ∈ cells_faces_nodeIDs[nodei_cellID]
+                            if face == facei_nodeIDs
+                                owners_cellIDs[facei][2] = nodei_cellID # set owner cell ID 
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    # Sort all face owner vectors
+    sort!.(owners_cellIDs) # in-place sorting
+
+    # Extract nodesIDs for each face from all cells into a vector of vectors
+    face_nodes = Vector{Int64}[Int64[] for _ ∈ 1:total_faces] # nodesID for all faces
+    fID = 0 # counter to keep track of faceID
+    for celli_faces_nodeIDs ∈ cells_faces_nodeIDs
+        for nodesID ∈ celli_faces_nodeIDs
+            fID += 1
+            face_nodes[fID] = nodesID
+        end
+    end
+
+    # Remove duplicates
+    unique_indices = unique(i -> face_nodes[i], eachindex(face_nodes))
+    unique!(face_nodes)
+    keepat!(owners_cellIDs, unique_indices)
+
+    # Remove boundary faces
+
+    total_bfaces = 0 # count boundary faces
+    for owners ∈ owners_cellIDs
+        if owners[1] == 0
+            total_bfaces += 1
+        end
+    end
+
+    bfaces_indices = zeros(Int64, total_bfaces) # preallocate memory
+    counter = 0
+    for (i, owners) ∈ enumerate(owners_cellIDs)
+        if owners[1] == 0
+            counter += 1
+            bfaces_indices[counter] = i # contains indices of faces to remove
+        end
+    end
+
+    deleteat!(owners_cellIDs, bfaces_indices)
+    deleteat!(face_nodes, bfaces_indices)
+
+    println("Removing ", total_bfaces, " (from ", nbfaces, ") boundary faces")
+
+    # Generate face_nodes_range
+    face_nodes_range = Vector{UnitRange{Int64}}(undef, length(face_nodes))
+    start = 1
+    for (fID, nodesID) ∈ enumerate(face_nodes)
+        nnodes = length(nodesID)
+        face_nodes_range[fID] = UnitRange{Int64}(start:(start + nnodes - 1))
+        start += nnodes
+    end
+
+    # Flatten array i.e. go from Vector{Vector{Int}} to Vector{Int}
+    face_nodes = vcat(face_nodes...) 
+
+    return face_nodes, face_nodes_range, owners_cellIDs
+end
+
+function order_face_nodes(bface_nodes_range,iface_nodes_range,bface_nodes,iface_nodes,nodes) # Old Method
+
+    n_bfaces = length(bface_nodes_range)
+    n_ifaces =  length(iface_nodes_range)
+
+    for fID = 1:n_bfaces # Re-order Boundary Faces
+        if length(bface_nodes_range[fID]) == 4 # Only for Quad faces
+            nIDs=nodeIDs(bface_nodes,bface_nodes_range[fID]) # Get ids of nodes of face
+    
+            ordered_ID=sort(nIDs) # sort them so that the lowest ID is first
+    
+            n1=nodes[ordered_ID[1]].coords # Get coords of 4 nodes
+            n2=nodes[ordered_ID[2]].coords
+            n3=nodes[ordered_ID[3]].coords
+            n4=nodes[ordered_ID[4]].coords
+    
+            points = [n1, n2, n3, n4]
+    
+            _x(n) = n[1]
+            _y(n) = n[2]
+            _z(n) = n[3]
+    
+            l = segment.(Ref(points[1]), points) # surface vectors (segments connecting nodes to reference node)
+            fn = unit_vector(l[2] × l[3]) # face normal vector
+    
+            angles=Float64[] # Vector to store angles
+            theta2 = 0.0
+            theta3 = angle1(l, 2, 3)*(signbit((l[2] × fn)⋅l[3]) ? 1 : -1)
+            theta4 = angle1(l, 2, 4)*(signbit((l[2] × fn)⋅l[4]) ? 1 : -1)
+    
+            push!(angles,theta2,theta3,theta4)
+    
+            dict=Dict() # Using dictionary to link noode IDs to angle
+            for (n,f) in enumerate(angles)
+                dict[f] = ordered_ID[n+1]
+            end
+    
+            sorted_angles=sort(angles) # Sort angles from smallest to largest. Right hand rule.
+    
+            sorted_IDs=Int64[]
+            push!(sorted_IDs,ordered_ID[1])
+            push!(sorted_IDs,dict[sorted_angles[1]])
+            push!(sorted_IDs,dict[sorted_angles[2]])
+            push!(sorted_IDs,dict[sorted_angles[3]])
+    
+            counter=0
+            for i=bface_nodes_range[fID] # Re-writing face_nodes with ordered nodes
+                counter=counter+1
+                bface_nodes[i]=sorted_IDs[counter]
+            end
+        end
+    end
+    
+    for fID = 1:n_ifaces # Re-order internal faces
+        if length(iface_nodes_range[fID])==4 # Only for Quad Faces
+            nIDs=nodeIDs(iface_nodes,iface_nodes_range[fID]) # Get ids of nodes of the face
+    
+            ordered_ID=sort(nIDs) # Sort them so that the lowest ID is first
+    
+            n1=nodes[ordered_ID[1]].coords
+            n2=nodes[ordered_ID[2]].coords
+            n3=nodes[ordered_ID[3]].coords
+            n4=nodes[ordered_ID[4]].coords
+    
+            points = [n1, n2, n3, n4]
+    
+            _x(n) = n[1]
+            _y(n) = n[2]
+            _z(n) = n[3]
+    
+            l = segment.(Ref(points[1]), points) # surface vectors (segments connecting nodes to reference node)
+            fn = unit_vector(l[2] × l[3]) # face normal vector
+    
+            angles=Float64[]
+            theta2 = 0.0
+            theta3 = angle1(l, 2, 3)*(signbit((l[2] × fn)⋅l[3]) ? 1 : -1)
+            theta4 = angle1(l, 2, 4)*(signbit((l[2] × fn)⋅l[4]) ? 1 : -1)
+    
+            push!(angles,theta2,theta3,theta4)
+    
+            dict=Dict()
+            for (n,f) in enumerate(angles)
+                dict[f] = ordered_ID[n+1]
+            end
+    
+            sorted_angles=sort(angles)
+    
+            sorted_IDs=Int64[]
+            push!(sorted_IDs,ordered_ID[1])
+            push!(sorted_IDs,dict[sorted_angles[1]])
+            push!(sorted_IDs,dict[sorted_angles[2]])
+            push!(sorted_IDs,dict[sorted_angles[3]])
+    
+            counter=0
+            for i=iface_nodes_range[fID]
+                counter=counter+1
+                iface_nodes[i]=sorted_IDs[counter]
+            end
+        end
+    end
+    return bface_nodes, iface_nodes
+end
+
+function generate_cell_face_connectivity(cells_UNV, nbfaces, face_owner_cells)
+    cell_faces = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_UNV)] 
+    cell_nsign = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_UNV)] 
+    cell_neighbours = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_UNV)] 
+    cell_faces_range = UnitRange{Int64}[UnitRange{Int64}(0,0) for _ ∈ eachindex(cells_UNV)] 
+
+    # Pass face ID to each cell
+    first_internal_face = nbfaces + 1
+    total_faces = length(face_owner_cells)
+    for fID ∈ first_internal_face:total_faces
+        owners = face_owner_cells[fID] # 2 cell owners IDs
+        owner1 = owners[1]
+        owner2 = owners[2]
+        push!(cell_faces[owner1], fID) # Cell-faces only for internal faces.     
+        push!(cell_faces[owner2], fID)
+        push!(cell_nsign[owner1], 1) # Contract: Face normal goes from owner 1 to 2      
+        push!(cell_nsign[owner2], -1)   
+        push!(cell_neighbours[owner1], owner2)     
+        push!(cell_neighbours[owner2], owner1)     
+    end
+
+    # Generate cell faces range
+    start = 1
+    for (cID, faces) ∈ enumerate(cell_faces)
+        nfaces = length(faces)
+        cell_faces_range[cID] = UnitRange{Int64}(start:(start + nfaces - 1))
+        start += nfaces
+    end
+
+    # Flatten output (go from Vector{Vector{Int}} to Vector{Int})
+
+    cell_faces = vcat(cell_faces...)
+    cell_nsign = vcat(cell_nsign...)
+
+    # NOTE: Check how this is being accessed in RANS models (need to flatten?)
+    cell_neighbours = vcat(cell_neighbours...) # Need to check RANSMODELS!!!
+
+    return cell_faces, cell_nsign, cell_faces_range, cell_neighbours
+end
+
+# CALCULATION of geometric properties for cells and faces
 
 calculate_centres!(mesh) = begin
     (; nodes, cells, faces, cell_nodes, face_nodes) = mesh
@@ -349,383 +726,4 @@ calculate_area_and_volume!(mesh) = begin
         @reset cell.volume = volume
         cells[cID] = cell
     end
-end
-
-# Node connectivity
-
-function generate_node_cells(points, cells_UNV)
-    temp_node_cells = [Int64[] for _ ∈ eachindex(points)] # array of vectors to hold cellIDs
-
-    # Add cellID to each point that defines a "volume"
-    for (cellID, cell) ∈ enumerate(cells_UNV)
-        for nodeID ∈ cell.nodesID
-            push!(temp_node_cells[nodeID], cellID)
-        end
-    end # Should be hybrid compatible 
-
-    node_cells_size = sum(length.(temp_node_cells)) # number of cells in node_cells
-
-    node_cells_index = 0 # change to node cells index
-    node_cells = zeros(Int64, node_cells_size)
-    node_cells_range = [UnitRange{Int64}(1, 1) for _ ∈ eachindex(points)]
-    for (nodeID, cellsID) ∈ enumerate(temp_node_cells)
-        for cellID ∈ cellsID
-            node_cells_index += 1
-            node_cells[node_cells_index] = cellID
-        end
-        node_cells_range[nodeID] = UnitRange{Int64}(node_cells_index - length(cellsID) + 1, node_cells_index)
-    end
-    return node_cells, node_cells_range
-end #Tested for hexa cells, working
-
-# DEFINE FUNCTIONS
-function order_face_nodes(bface_nodes_range,iface_nodes_range,bface_nodes,iface_nodes,nodes) # Old Method
-
-    n_bfaces = length(bface_nodes_range)
-    n_ifaces =  length(iface_nodes_range)
-
-    for fID = 1:n_bfaces # Re-order Boundary Faces
-        if length(bface_nodes_range[fID]) == 4 # Only for Quad faces
-            nIDs=nodeIDs(bface_nodes,bface_nodes_range[fID]) # Get ids of nodes of face
-    
-            ordered_ID=sort(nIDs) # sort them so that the lowest ID is first
-    
-            n1=nodes[ordered_ID[1]].coords # Get coords of 4 nodes
-            n2=nodes[ordered_ID[2]].coords
-            n3=nodes[ordered_ID[3]].coords
-            n4=nodes[ordered_ID[4]].coords
-    
-            points = [n1, n2, n3, n4]
-    
-            _x(n) = n[1]
-            _y(n) = n[2]
-            _z(n) = n[3]
-    
-            l = segment.(Ref(points[1]), points) # surface vectors (segments connecting nodes to reference node)
-            fn = unit_vector(l[2] × l[3]) # face normal vector
-    
-            angles=Float64[] # Vector to store angles
-            theta2 = 0.0
-            theta3 = angle1(l, 2, 3)*(signbit((l[2] × fn)⋅l[3]) ? 1 : -1)
-            theta4 = angle1(l, 2, 4)*(signbit((l[2] × fn)⋅l[4]) ? 1 : -1)
-    
-            push!(angles,theta2,theta3,theta4)
-    
-            dict=Dict() # Using dictionary to link noode IDs to angle
-            for (n,f) in enumerate(angles)
-                dict[f] = ordered_ID[n+1]
-            end
-    
-            sorted_angles=sort(angles) # Sort angles from smallest to largest. Right hand rule.
-    
-            sorted_IDs=Int64[]
-            push!(sorted_IDs,ordered_ID[1])
-            push!(sorted_IDs,dict[sorted_angles[1]])
-            push!(sorted_IDs,dict[sorted_angles[2]])
-            push!(sorted_IDs,dict[sorted_angles[3]])
-    
-            counter=0
-            for i=bface_nodes_range[fID] # Re-writing face_nodes with ordered nodes
-                counter=counter+1
-                bface_nodes[i]=sorted_IDs[counter]
-            end
-        end
-    end
-    
-    for fID = 1:n_ifaces # Re-order internal faces
-        if length(iface_nodes_range[fID])==4 # Only for Quad Faces
-            nIDs=nodeIDs(iface_nodes,iface_nodes_range[fID]) # Get ids of nodes of the face
-    
-            ordered_ID=sort(nIDs) # Sort them so that the lowest ID is first
-    
-            n1=nodes[ordered_ID[1]].coords
-            n2=nodes[ordered_ID[2]].coords
-            n3=nodes[ordered_ID[3]].coords
-            n4=nodes[ordered_ID[4]].coords
-    
-            points = [n1, n2, n3, n4]
-    
-            _x(n) = n[1]
-            _y(n) = n[2]
-            _z(n) = n[3]
-    
-            l = segment.(Ref(points[1]), points) # surface vectors (segments connecting nodes to reference node)
-            fn = unit_vector(l[2] × l[3]) # face normal vector
-    
-            angles=Float64[]
-            theta2 = 0.0
-            theta3 = angle1(l, 2, 3)*(signbit((l[2] × fn)⋅l[3]) ? 1 : -1)
-            theta4 = angle1(l, 2, 4)*(signbit((l[2] × fn)⋅l[4]) ? 1 : -1)
-    
-            push!(angles,theta2,theta3,theta4)
-    
-            dict=Dict()
-            for (n,f) in enumerate(angles)
-                dict[f] = ordered_ID[n+1]
-            end
-    
-            sorted_angles=sort(angles)
-    
-            sorted_IDs=Int64[]
-            push!(sorted_IDs,ordered_ID[1])
-            push!(sorted_IDs,dict[sorted_angles[1]])
-            push!(sorted_IDs,dict[sorted_angles[2]])
-            push!(sorted_IDs,dict[sorted_angles[3]])
-    
-            counter=0
-            for i=iface_nodes_range[fID]
-                counter=counter+1
-                iface_nodes[i]=sorted_IDs[counter]
-            end
-        end
-    end
-    return bface_nodes, iface_nodes
-end
-
-# NOTE: the function has been written to be extendable to multiple element types
-function generate_internal_faces(cells_UNV, nbfaces, nodes, node_cells)
-    # determine total number of faces based on cell type (including duplicates)
-    total_faces = 0
-    for cell ∈ cells_UNV
-        # add faces for tets
-        if cell.nodeCount == 4
-            total_faces += 4
-        end
-        # add faces for Hexa
-        if cell.nodeCount == 8 
-            total_faces += 6
-        end
-        #add faces for Wedge/Penta
-        if cell.nodeCount == 6
-            total_faces += 5
-        end
-    end
-
-    # Face nodeIDs for each cell is a vector of vectors of vectors :-)
-    cells_faces_nodeIDs = Vector{Vector{Int64}}[Vector{Int64}[] for _ ∈ 1:length(cells_UNV)] 
-
-    # Generate all faces for each cell/element/volume
-    for (cellID, cell) ∈ enumerate(cells_UNV)
-        # Generate faces for tet elements
-        if cell.nodeCount == 4
-            nodesID = cell.nodesID
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[3]])
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[4]])
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[3], nodesID[4]])
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[2], nodesID[3], nodesID[4]])
-        end
-        # add conditions for other cell types
-        # Generate faces for hexa elements using UNV structure method
-        if cell.nodeCount == 8
-            nodesID = cell.nodesID
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[3], nodesID[4]])
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[5], nodesID[6], nodesID[7], nodesID[8]])
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[5], nodesID[6]])
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[3], nodesID[4], nodesID[7], nodesID[8]])
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[2], nodesID[3], nodesID[6], nodesID[7]])
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[4], nodesID[5], nodesID[8]])
-        end
-        # Generate faces for prism elements, using pattern in UNV file.
-        if cell.nodeCount == 6
-            nodesID = cell.nodesID
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[3]]) # Triangle 1
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[4], nodesID[5], nodesID[6]]) # Triangle 2
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[4], nodesID[5]]) # Rectangle 1
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[2], nodesID[3], nodesID[5], nodesID[6]]) # Rectangle 2
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[3], nodesID[4], nodesID[6]]) # Rectangle 3
-        end
-    end
-
-    # Sort nodesIDs for each face based on ID (need to correct order later to be physical)
-    # this allows to find duplicates later more easily (query on ordered ids is faster)
-    for face_nodesID ∈ cells_faces_nodeIDs
-        for nodesID ∈ face_nodesID
-            sort!(nodesID)
-        end
-    end
-
-    # Find owner cells for each face
-    owners_cellIDs = Vector{Int64}[zeros(Int64, 2) for _ ∈ 1:total_faces]
-    facei = 0 # faceID counter (will be reduced to internal faces later)
-    for (cellID, faces_nodeIDs) ∈ enumerate(cells_faces_nodeIDs) # loop over cells
-        for facei_nodeIDs ∈ faces_nodeIDs # loop over vectors of nodeIDs for each face
-            facei += 1 # face counter
-            owners_cellIDs[facei][1] = cellID # ID of first cell containing the face
-            for nodeID ∈ facei_nodeIDs # loop over ID of each node in the face
-                cells_range = nodes[nodeID].cells_range
-                node_cellIDs = @view node_cells[cells_range] # find cells that use this node
-                for nodei_cellID ∈ node_cellIDs # loop over cells that share the face node
-                    if nodei_cellID !== cellID # ensure cellID is not same as current cell 
-                        for face ∈ cells_faces_nodeIDs[nodei_cellID]
-                            if face == facei_nodeIDs
-                                owners_cellIDs[facei][2] = nodei_cellID # set owner cell ID 
-                                break
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    # Sort all face owner vectors
-    sort!.(owners_cellIDs) # in-place sorting
-
-    # Extract nodesIDs for each face from all cells into a vector of vectors
-    face_nodes = Vector{Int64}[Int64[] for _ ∈ 1:total_faces] # nodesID for all faces
-    fID = 0 # counter to keep track of faceID
-    for celli_faces_nodeIDs ∈ cells_faces_nodeIDs
-        for nodesID ∈ celli_faces_nodeIDs
-            fID += 1
-            face_nodes[fID] = nodesID
-        end
-    end
-
-    # Remove duplicates
-    unique_indices = unique(i -> face_nodes[i], eachindex(face_nodes))
-    unique!(face_nodes)
-    keepat!(owners_cellIDs, unique_indices)
-
-    # Remove boundary faces
-
-    total_bfaces = 0 # count boundary faces
-    for owners ∈ owners_cellIDs
-        if owners[1] == 0
-            total_bfaces += 1
-        end
-    end
-
-    bfaces_indices = zeros(Int64, total_bfaces) # preallocate memory
-    counter = 0
-    for (i, owners) ∈ enumerate(owners_cellIDs)
-        if owners[1] == 0
-            counter += 1
-            bfaces_indices[counter] = i # contains indices of faces to remove
-        end
-    end
-
-    deleteat!(owners_cellIDs, bfaces_indices)
-    deleteat!(face_nodes, bfaces_indices)
-
-    println("Removing ", total_bfaces, " (from ", nbfaces, ") boundary faces")
-
-    # Generate face_nodes_range
-    face_nodes_range = Vector{UnitRange{Int64}}(undef, length(face_nodes))
-    start = 1
-    for (fID, nodesID) ∈ enumerate(face_nodes)
-        nnodes = length(nodesID)
-        face_nodes_range[fID] = UnitRange{Int64}(start:(start + nnodes - 1))
-        start += nnodes
-    end
-
-    # Flatten array i.e. go from Vector{Vector{Int}} to Vector{Int}
-    face_nodes = vcat(face_nodes...) 
-
-    return face_nodes, face_nodes_range, owners_cellIDs
-end
-
-function generate_cell_face_connectivity(cells_UNV, nbfaces, face_owner_cells)
-    cell_faces = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_UNV)] 
-    cell_nsign = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_UNV)] 
-    cell_neighbours = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_UNV)] 
-    cell_faces_range = UnitRange{Int64}[UnitRange{Int64}(0,0) for _ ∈ eachindex(cells_UNV)] 
-
-    # Pass face ID to each cell
-    first_internal_face = nbfaces + 1
-    total_faces = length(face_owner_cells)
-    for fID ∈ first_internal_face:total_faces
-        owners = face_owner_cells[fID] # 2 cell owners IDs
-        owner1 = owners[1]
-        owner2 = owners[2]
-        push!(cell_faces[owner1], fID) # Cell-faces only for internal faces.     
-        push!(cell_faces[owner2], fID)
-        push!(cell_nsign[owner1], 1) # Contract: Face normal goes from owner 1 to 2      
-        push!(cell_nsign[owner2], -1)   
-        push!(cell_neighbours[owner1], owner2)     
-        push!(cell_neighbours[owner2], owner1)     
-    end
-
-    # Generate cell faces range
-    start = 1
-    for (cID, faces) ∈ enumerate(cell_faces)
-        nfaces = length(faces)
-        cell_faces_range[cID] = UnitRange{Int64}(start:(start + nfaces - 1))
-        start += nfaces
-    end
-
-    # Flatten output (go from Vector{Vector{Int}} to Vector{Int})
-
-    cell_faces = vcat(cell_faces...)
-    cell_nsign = vcat(cell_nsign...)
-
-    # NOTE: Check how this is being accessed in RANS models (need to flatten?)
-    cell_neighbours = vcat(cell_neighbours...) # Need to check RANSMODELS!!!
-
-    return cell_faces, cell_nsign, cell_faces_range, cell_neighbours
-end
-
-function generate_boundary_faces(
-    boundaryElements, efaces, nbfaces, node_cells, node_cells_range, cells_UNV
-    )
-    bface_nodes = Vector{Vector{Int64}}(undef, nbfaces)
-    bface_nodes_range = Vector{UnitRange{Int64}}(undef, nbfaces)
-    bowners_cells = Vector{Int64}[Int64[0,0] for _ ∈ 1:nbfaces]
-    boundary_cells = Vector{Int64}(undef, nbfaces)
-
-    fID = 0 # faceID index of output array (reordered)
-    start = 1
-    for boundary ∈ boundaryElements
-        elements = boundary.facesID
-            for bfaceID ∈ elements
-                fID += 1
-                nnodes = length(efaces[bfaceID].nodesID)
-                nodeIDs = efaces[bfaceID].nodesID # Actually nodesIDs
-                bface_nodes[fID] = nodeIDs
-                bface_nodes_range[fID] = UnitRange{Int64}(start:(start + nnodes - 1))
-                start += nnodes
-
-                # Find owner cells (same as boundary cells)
-                assigned = false
-                for nodeID ∈ nodeIDs
-                    cIDs = cellIDs(node_cells, node_cells_range, nodeID)
-                    for cID ∈ cIDs
-                        if intersect(nodeIDs, cells_UNV[cID].nodesID) == nodeIDs
-                            bowners_cells[fID] .= cID
-                            boundary_cells[fID] = cID
-                            assigned = true
-                            break
-                        end
-                    end
-                    if assigned 
-                        break
-                    end
-                end
-            end
-    end
-
-    bface_nodes = vcat(bface_nodes...) # Flatten - from Vector{Vector{Int}} to Vector{Int}
-    # Check: Length of bface_nodes = no. of bfaces x no. of nodes of each bface
-
-    return bface_nodes, bface_nodes_range, bowners_cells, boundary_cells
-end
-
-function generate_cell_nodes(cells_UNV)
-    cell_nodes = Int64[] # cell_node length is undetermined as mesh could be hybrid, using push. Could use for and if before to preallocate vector.
-    
-    # Note 0: this errors with prism and hex for some reason? Reader? (volumentCount !- length(volumes))
-    # NOTE 1: You could also run a loop over all the "volumes" and accumulate their size. Then allocate
-    # NOTE 2: Or you could allocate an empty vector of vector of size ncells (less performant than NOTE 1 but faster than the current method)
-    for n = eachindex(cells_UNV)
-        for i = 1:cells_UNV[n].nodeCount
-            push!(cell_nodes,cells_UNV[n].nodesID[i])
-        end
-    end
-
-    cell_nodes_range = Vector{UnitRange{Int64}}(undef, length(cells_UNV)) # cell_nodes_range determined by no. of cells.
-    x = 0
-    for i = eachindex(cells_UNV)
-        cell_nodes_range[i] = UnitRange(x + 1, x + length(cells_UNV[i].nodesID))
-        x = x + length(cells_UNV[i].nodesID)
-    end
-    return cell_nodes, cell_nodes_range
 end

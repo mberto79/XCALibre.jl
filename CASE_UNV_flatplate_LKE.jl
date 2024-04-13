@@ -6,13 +6,13 @@ mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
 # Turbulence Model
-velocity = [10,0,0]
+velocity = [5.4,0,0]
 nu = 1.48e-5
-νR = 20
+νR = 11.9
 Tu = 0.025
-kL_inlet = 1/2*(Tu*velocity[1])^2
-k_inlet = 0.375
-ω_inlet = 1000
+kL_inlet = 0.007
+k_inlet = 0.068
+ω_inlet = 380
 model = RANS{KOmegaLKE}(mesh=mesh, viscosity=ConstantScalar(nu), Tu=Tu)
 
 # Boundary Conditions
@@ -123,7 +123,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=1000, write_interval=250, time_step=1)
+    iterations=1000, write_interval=1, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

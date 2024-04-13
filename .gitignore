@@ -3,4 +3,4 @@ data/fields.jld2
 #results.vtk
 #unv_sample_meshes/*
 *.vtk
-vtk_loop/*
+vtk_loop/

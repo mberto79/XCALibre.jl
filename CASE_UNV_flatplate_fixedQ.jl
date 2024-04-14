@@ -20,7 +20,7 @@ model = RANS{Laminar_rho}(mesh=mesh, viscosity=ConstantScalar(nu))
 @assign! model U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Dirichlet(:wall, [0.0, 0.0, 0.0]),
+    Wall(:wall, [0.0, 0.0, 0.0]),
     Neumann(:top, 0.0)
 )
 
@@ -34,8 +34,8 @@ model = RANS{Laminar_rho}(mesh=mesh, viscosity=ConstantScalar(nu))
 @assign! model energy (
     Dirichlet(:inlet, 300.0*Cp),
     Neumann(:outlet, 0.0),
-    Neumann(:wall, -20.0),
-    Dirichlet(:top, 300.0*Cp)
+    Neumann(:wall, 0.0),#,200.0*Cp),#-20.0),
+    Neumann(:top, 0.0)
 )
 
 schemes = (
@@ -69,7 +69,7 @@ solvers = (
     ),
 )
 
-runtime = set_runtime(iterations=2000, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -78,7 +78,7 @@ GC.gc()
 
 initialise!(model.U, velocity)
 initialise!(model.p, 100000.0)
-initialise!(model.energy, 300.0)
+initialise!(model.energy, 300.0*Cp)
 
 Rx, Ry, Rz, Rp, Re = simple_rho!(model, config)
 
@@ -100,7 +100,7 @@ using LinearAlgebra
 # plot!(oRex, oCf, color=:green, lw=1.5, label="OpenFOAM")
 # plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code")
 
-plot(; xlims=(0,2000))
+plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
 plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
 plot!(1:length(Rp), Rp, yscale=:log10, label="p")

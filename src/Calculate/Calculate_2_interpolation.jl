@@ -42,7 +42,18 @@ function adjust_boundary!(
         fID = fi
         cID = boundary_cellsID[fi]
         # (; normal, e, delta) = faces[fID]
-        phif.values[fID] = phi.values[cID] #+ BC.value*delta*(normal⋅e)
+        # phif.values[fID] = phi.values[cID] #+ BC.value*delta*(normal⋅e)
+        # Chris' fix
+        (; area, normal, e, delta) = faces[fID]
+        phif.values[fID] = phi.values[cID] - BC.value*area*(normal⋅e)/delta
+    end
+end
+
+function adjust_boundary!(
+    BC::Wall, phif::FaceScalarField, phi, boundary, faces)
+    (; facesID, cellsID) = boundary
+    @inbounds for fID ∈ facesID
+        phif.values[fID] = BC.value 
     end
 end
 
@@ -121,6 +132,20 @@ function adjust_boundary!(
         x[fID] = psi_cell[1]
         y[fID] = psi_cell[2]
         z[fID] = psi_cell[3]
+    end
+end
+
+function adjust_boundary!( 
+    BC::Wall, psif::FaceVectorField, psi::VectorField, boundary, faces
+    )
+
+    (; x, y, z) = psif
+    (; IDs_range) = boundary
+
+    @inbounds for fID ∈ IDs_range
+        x[fID] = BC.value[1]
+        y[fID] = BC.value[2]
+        z[fID] = BC.value[3]
     end
 end
 

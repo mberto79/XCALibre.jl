@@ -6,54 +6,58 @@ function simple_rho!(model, config; resume=true, pref=nothing)
     (; U, p, energy, nu, mesh) = model
     (; solvers, schemes, runtime) = config
 
+    transonic = false
+
     @info "Preallocating fields..."
     
     ∇p = Grad{schemes.p.gradient}(p)
     mdotf = FaceScalarField(mesh)
     # nuf = ConstantScalar(nu) # Implement constant field!
-    rDf = FaceScalarField(mesh)
-    nueff = FaceScalarField(mesh)
+    rhorDf = FaceScalarField(mesh)
+    mueff = FaceScalarField(mesh)
     keff_by_cp = FaceScalarField(mesh)
-    initialise!(rDf, 1.0)
+    initialise!(rhorDf, 1.0)
     divHv = ScalarField(mesh)
+    rho = ScalarField(mesh)
+    Qt = ScalarField(mesh)
 
     @info "Defining models..."
 
     ux_eqn = (
-        Time{schemes.U.time}(U.x)
+        Time{schemes.U.time}(rho, U.x)
         + Divergence{schemes.U.divergence}(mdotf, U.x) 
-        - Laplacian{schemes.U.laplacian}(nueff, U.x) 
+        - Laplacian{schemes.U.laplacian}(mueff, U.x) 
         == 
         -Source(∇p.result.x)
     ) → Equation(mesh)
     
     uy_eqn = (
-        Time{schemes.U.time}(U.y)
+        Time{schemes.U.time}(rho, U.y)
         + Divergence{schemes.U.divergence}(mdotf, U.y) 
-        - Laplacian{schemes.U.laplacian}(nueff, U.y) 
+        - Laplacian{schemes.U.laplacian}(mueff, U.y) 
         == 
         -Source(∇p.result.y)
     ) → Equation(mesh)
 
     uz_eqn = (
-        Time{schemes.U.time}(U.z)
+        Time{schemes.U.time}(rho, U.z)
         + Divergence{schemes.U.divergence}(mdotf, U.z) 
-        - Laplacian{schemes.U.laplacian}(nueff, U.z) 
+        - Laplacian{schemes.U.laplacian}(mueff, U.z) 
         == 
-        -Source(∇p.result.y)
+        -Source(∇p.result.z)
     ) → Equation(mesh)
 
     p_eqn = (
-        Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
+        Laplacian{schemes.p.laplacian}(rhorDf, p) == Source(divHv)
     ) → Equation(mesh)
 
     # Actually using enthalpy -> energy = cp * T
     energy_eqn = (
-        Time{schemes.U.time}(energy)
+        Time{schemes.U.time}(rho, energy)
         + Divergence{schemes.U.divergence}(mdotf, energy) 
         - Laplacian{schemes.U.laplacian}(keff_by_cp, energy) 
         == 
-        -Source(0.0)
+        Source(Qt)
     ) → Equation(mesh)
 
     @info "Initialising preconditioners..."
@@ -84,13 +88,13 @@ function simple_rho!(model, config; resume=true, pref=nothing)
     end
 
     R_ux, R_uy, R_uz, R_p, R_e = SIMPLE_RHO_loop(
-    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, energy_eqn, turbulence, config ; resume=resume, pref=pref)
+    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, energy_eqn, turbulence, transonic, config ; resume=resume, pref=pref)
 
     return R_ux, R_uy, R_uz, R_p, R_e     
 end # end function
 
 function SIMPLE_RHO_loop(
-    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, energy_eqn, turbulence, config ; resume, pref)
+    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, energy_eqn, turbulence, transonic, config ; resume, pref)
     
     # Extract model variables and configuration
     (;mesh, U, p, energy, nu) = model
@@ -98,20 +102,29 @@ function SIMPLE_RHO_loop(
     p_model = p_eqn.model
     (; solvers, schemes, runtime) = config
     (; iterations, write_interval) = runtime
+
+    # Need to replace this with ThermoModel
+    R = 287.0
+    Cp = 1005.0
+    Pr = 0.7
     
+    rho = get_flux(ux_eqn, 1)
     mdotf = get_flux(ux_eqn, 2)
-    nueff = get_flux(ux_eqn, 3)
-    rDf = get_flux(p_eqn, 1)
+    mueff = get_flux(ux_eqn, 3)
+    rhorDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
     keff_by_cp = get_flux(energy_eqn, 3)
+    Qt = get_source(energy_eqn, 1)
     
     @info "Allocating working memory..."
 
     # Define aux fields 
     gradU = Grad{schemes.U.gradient}(U)
+    println(size(gradU.result.xx.values))
     gradUT = T(gradU)
     S = StrainRate(gradU, gradUT)
     S2 = ScalarField(mesh)
+    # ∇U = Grad{schemes.U.gradient}(U)
 
     # Temp sources to test GradUT explicit source
     # divUTx = zeros(Float64, length(mesh.cells))
@@ -120,9 +133,16 @@ function SIMPLE_RHO_loop(
     n_cells = length(mesh.cells)
     Uf = FaceVectorField(mesh)
     pf = FaceScalarField(mesh)
+    energyf = FaceScalarField(mesh)
+    rhof = FaceScalarField(mesh)
+    # rDf = FaceScalarField(mesh)
     gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
+    rhorD = ScalarField(mesh)
+    mueff_c = ScalarField(mesh)
+    Psi = ScalarField(mesh)
+    Psif = FaceScalarField(mesh)
 
     # Pre-allocate auxiliary variables
 
@@ -137,17 +157,36 @@ function SIMPLE_RHO_loop(
     R_p = ones(TF, iterations)
     R_e = ones(TF, iterations)
 
+    rho.values .= (p.values.*Cp)./(R.*energy.values)
+    # rho.values .= 1.0
+
     interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, U.BCs)
-    flux!(mdotf, Uf)
+
+    interpolate!(energyf, energy)   
+    correct_boundaries!(energyf, energy, energy.BCs)
+    interpolate!(pf, p)   
+    correct_boundaries!(pf, p, p.BCs)
+ 
+    rhof.values .= (pf.values.*Cp)./(R.*energyf.values)
+    # rhof.values .= 1.0
+
+    flux!(mdotf, Uf, rhof)
     grad!(∇p, pf, p, p.BCs)
 
-    update_nueff!(nueff, nu, turbulence)
+    update_nueff!(mueff, nu, turbulence)
+    mueff.values .*= rhof.values
+
+    mueff_c.values .= nu.values .* rho.values
 
     # Calculate keff_by_cp
-    rho = 1.0; Pr = 0.7
-    keff_by_cp.values .= nueff.values*rho/Pr
+    keff_by_cp.values .= mueff.values./Pr
 
+    # grad!(∇U, Uf, U, U.BCs)
+
+    # Calculate Qt
+    Qt.values .= ∇p.result.x.values .* U.x.values .+ ∇p.result.y.values .* U.y.values
+    Qt.values .-= (2/3).*mueff_c.values.*(gradU.result.xx.values .+ gradU.result.yy.values).^2
 
     @info "Staring SIMPLE loops..."
 
@@ -155,40 +194,65 @@ function SIMPLE_RHO_loop(
 
     @time for iteration ∈ 1:iterations
 
-        @. prev = U.x.values
+        # ASSEMBLE AND SOLVE MOMENTUM EQUATIONS for U*
+
         discretise!(ux_eqn, prev, runtime)
+        discretise!(uy_eqn, prev, runtime)
+        discretise!(uz_eqn, prev, runtime)
         apply_boundary_conditions!(ux_eqn, U.x.BCs)
-        # ux_eqn.b .-= divUTx
+        apply_boundary_conditions!(uy_eqn, U.y.BCs)
+        apply_boundary_conditions!(uz_eqn, U.z.BCs)
+        wallBC!(ux_eqn, uy_eqn, U, mesh, mueff)
+
+        @. prev = U.x.values
         implicit_relaxation!(ux_eqn.equation, prev, solvers.U.relax)
         update_preconditioner!(ux_eqn.preconditioner)
         run!(ux_eqn, solvers.U) #opP=Pu.P, solver=solver_U)
         residual!(R_ux, ux_eqn.equation, U.x, iteration)
 
         @. prev = U.y.values
-        discretise!(uy_eqn, prev, runtime)
-        apply_boundary_conditions!(uy_eqn, U.y.BCs)
-        # uy_eqn.b .-= divUTy
         implicit_relaxation!(uy_eqn.equation, prev, solvers.U.relax)
         update_preconditioner!(uy_eqn.preconditioner)
         run!(uy_eqn, solvers.U)
         residual!(R_uy, uy_eqn.equation, U.y, iteration)
 
         @. prev = U.z.values
-        discretise!(uz_eqn, prev, runtime)
-        apply_boundary_conditions!(uz_eqn, U.z.BCs)
-        # uy_eqn.b .-= divUTy
         implicit_relaxation!(uz_eqn.equation, prev, solvers.U.relax)
         update_preconditioner!(uz_eqn.preconditioner)
         run!(uz_eqn, solvers.U)
         residual!(R_uz, uz_eqn.equation, U.z, iteration)
+
+        # Calculate Qt
+        Qt.values .= ∇p.result.x.values .* U.x.values .+ ∇p.result.y.values .* U.y.values
         
+        mueff_c.values .= nu.values .* rho.values
+        Qt.values .-= (2/3).*mueff_c.values.*(gradU.result.xx.values .+ gradU.result.yy.values).^2
+
+        @. prev = energy.values
+        discretise!(energy_eqn, prev, runtime)
+        apply_boundary_conditions!(energy_eqn, energy.BCs)
+        implicit_relaxation!(energy_eqn.equation, prev, solvers.energy.relax)
+        update_preconditioner!(energy_eqn.preconditioner)
+        run!(energy_eqn, solvers.energy)
+        residual!(R_e, energy_eqn.equation, energy, iteration)
+
+        Psi.values .= Cp./(R.*energy.values)
+        interpolate!(energyf, energy)
+        correct_boundaries!(energyf, energy, energy.BCs) 
+        Psif.values .= Cp./(R.*energyf.values)
+
         inverse_diagonal!(rD, ux_eqn.equation)
-        interpolate!(rDf, rD)
-        remove_pressure_source!(ux_eqn, uy_eqn, uy_eqn, ∇p)
-        H!(Hv, U, ux_eqn, uy_eqn, uy_eqn)
+        rhorD.values .= rD.values.*rho.values
+        interpolate!(rhorDf, rhorD)
+
+        remove_pressure_source!(ux_eqn, uy_eqn, uz_eqn, ∇p)
+        H!(Hv, U, ux_eqn, uy_eqn, uz_eqn)
 
         interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs)
+        Uf.x.values .*= rhof.values
+        Uf.y.values .*= rhof.values
+        Uf.z.values .*= rhof.values
         div!(divHv, Uf)
    
         @. prev = p.values
@@ -219,26 +283,28 @@ function SIMPLE_RHO_loop(
             end
         end
 
-        @. prev = energy.values
-        discretise!(energy_eqn, prev, runtime)
-        apply_boundary_conditions!(energy_eqn, energy.BCs)
-        implicit_relaxation!(energy_eqn.equation, prev, solvers.energy.relax)
-        update_preconditioner!(energy_eqn.preconditioner)
-        run!(energy_eqn, solvers.energy)
-        residual!(R_e, energy_eqn.equation, energy, iteration)
-
+        # When the bottom is uncommented, the code starts to break in some cases.
+        rho.values .= p.values.*Psi.values
+        rhof.values .= pf.values.*Psif.values
         correct_velocity!(U, Hv, ∇p, rD)
         interpolate!(Uf, U)
         correct_boundaries!(Uf, U, U.BCs)
-        flux!(mdotf, Uf)
+        flux!(mdotf, Uf, rhof)
 
-        
+        update_nueff!(mueff, nu, turbulence)
+        mueff.values .*= rhof.values
+
         if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs)
             turbulence!(turbulence, model, S, S2, prev) 
-            update_nueff!(nueff, nu, turbulence)
+            update_nueff!(mueff, nu, turbulence)
+            mueff.values .*= rhof.values
         end
-        
+
+        # Calculate keff_by_cp
+        keff_by_cp.values .= mueff.values./Pr
+
+
         # for i ∈ eachindex(divUTx)
         #     vol = mesh.cells[i].volume
         #     divUTx = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][1,1]+ gradUT[i][1,2] + gradUT[i][1,3])*vol
@@ -281,4 +347,32 @@ function SIMPLE_RHO_loop(
 
     end # end for loop
     return R_ux, R_uy, R_uz, R_p, R_e
+end
+
+function wallBC!(ux_eqn, uy_eqn, U, mesh, nueff)
+    (; boundaries, boundary_cellsID, faces, cells) = mesh
+    for bci ∈ 1:length(U.x.BCs)
+        if U.x.BCs[bci] isa Wall{}
+            (; IDs_range) = boundaries[U.x.BCs[bci].ID]
+            
+            @inbounds for i ∈ eachindex(IDs_range)
+                faceID = IDs_range[i]
+                cellID = boundary_cellsID[faceID]
+                face = faces[faceID]
+                cell = cells[cellID]
+                (; area, normal, delta) = face 
+
+                Uc = U.x.values[cellID]
+                Vc = U.y.values[cellID]
+                nueff_face = nueff.values[faceID]
+
+                ux_eqn.equation.A[cellID, cellID] += nueff_face*area*(1-normal[1]*normal[1])/delta
+                uy_eqn.equation.A[cellID, cellID] += nueff_face*area*(1-normal[2]*normal[2])/delta
+
+                ux_eqn.equation.b[cellID] += nueff_face*area*((0)*(1-normal[1]*normal[1]) + (Vc-0)*(normal[2]*normal[1]))/delta
+                uy_eqn.equation.b[cellID] += nueff_face*area*((Uc-0)*(normal[1]*normal[2]) + (0)*(1-normal[2]*normal[2]))/delta
+            end
+        end
+    end
+    return ux_eqn, uy_eqn
 end

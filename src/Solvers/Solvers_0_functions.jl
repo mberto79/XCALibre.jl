@@ -72,6 +72,17 @@ function flux!(phif::FS, psif::FV) where {FS<:FaceScalarField,FV<:FaceVectorFiel
     end
 end
 
+function flux!(phif::FS, psif::FV, rhof::FS) where {FS<:FaceScalarField,FV<:FaceVectorField}
+    (; mesh, values) = phif
+    rhof_values = rhof.values
+    (; faces) = mesh 
+    @inbounds for fID ∈ eachindex(faces)
+        (; area, normal) = faces[fID]
+        Sf = area*normal
+        values[fID] = (psif[fID]⋅Sf)*rhof_values[fID]
+    end
+end
+
 volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 
 function inverse_diagonal!(rD::S, eqn) where S<:ScalarField

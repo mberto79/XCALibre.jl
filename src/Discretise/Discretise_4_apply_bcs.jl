@@ -12,7 +12,7 @@ function _apply_boundary_conditions!(
     mesh = model.terms[1].phi.mesh
     A = _A(eqn)
     b = _b(eqn)
-    (; boundaries, faces, cells, boundary_cellsID) = mesh
+    (; faces, cells, boundary_cellsID) = mesh
 
     # Deconstruct sparse array dependent on sparse arrays type
     rowval = _rowval(A)
@@ -38,11 +38,11 @@ function _apply_boundary_conditions!(
         # CUDA.@allowscalar start_ID = mesh.boundaries[BC.ID].IDs_range[1]
         # CUDA.@allowscalar facesID_range = mesh.boundaries[BC.ID].IDs_range
         
-        # Copy boundaries to CPU
-        boundaries_cpu = Array{eltype(mesh.boundaries)}(undef, length(mesh.boundaries))
-        copyto!(boundaries_cpu, mesh.boundaries)
-        facesID_range = boundaries_cpu[BC.ID].IDs_range
-        start_ID = facesID_range[1]  
+        
+        
+        # copyto!(boundaries_cpu, mesh.boundaries)
+        facesID_range = get_boundaries(BC, mesh.boundaries)
+        start_ID = facesID_range[1]
 
         # Execute apply boundary conditions kernel
         kernel! = apply_boundary_conditions_kernel!(backend)
@@ -55,36 +55,18 @@ function _apply_boundary_conditions!(
     # end
 end
 
-   # Unpack terms that make up the model (not sources)
-    # nTerms = model.parameters[3]
-    # nTerms = TN
+function get_boundaries(BC, boundaries::Array)
+    facesID_range = boundaries[BC.ID].IDs_range
+    return facesID_range
+end
 
-    # # Definition of main assignment loop (one per patch)
-    # assignment_loops = []
-    # for bci ∈ 1:length(BCs.parameters)
-    #     func_calls = Expr[]
-    #     for t ∈ 1:nTerms 
-    #         call = quote
-    #             # (BCs[$bci])(model.terms[$t], A, b, cellID, cell, face, faceID)
-    #             Execute_apply_boundary_condition_kernel!(BCs[$bci], model.terms[$t], backend, boundaries, faces, cells, boundary_cellsID, A, b)
-    #         end
-    #         push!(func_calls, call)
-    #     end
-    #     assignment_loop = quote
-    #         # (; IDs_range) = boundaries[BCs[$bci].ID]
-    #         # @inbounds for i ∈ IDs_range
-    #         #     faceID = i
-    #         #     cellID = boundary_cellsID[i]
-    #         #     face = faces[faceID]
-    #         #     cell = cells[cellID]
-    #             $(func_calls...)
-    #         # end
-    #     end
-    #     push!(assignment_loops, assignment_loop.args...)
-    # end
-
-    # quote
-    # Extract number of terms
+function get_boundaries(BC, boundaries::CuArray)
+    # Copy boundaries to CPU
+    boundaries_cpu = Array{eltype(boundaries)}(undef, length(boundaries))
+    copyto!(boundaries_cpu, boundaries)
+    facesID_range = boundaries_cpu[BC.ID].IDs_range
+    return facesID_range
+end
 
 @kernel function apply_boundary_conditions_kernel!(
     model::Model{TN,SN,T,S}, BC, terms, 

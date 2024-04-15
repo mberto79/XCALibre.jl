@@ -35,7 +35,7 @@ function discretise!(eqn, prev, runtime, nfaces, nbfaces)
     # nfaces = length(mesh.faces)
     internalfaces = nfaces - nbfaces
 
-    kernel! = _discretise_face!(backend, 512, internalfaces)
+    kernel! = _discretise_face!(backend, 64, internalfaces)
     kernel!(model, model.terms, model.sources, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione; ndrange = internalfaces)
     KernelAbstractions.synchronize(backend)
 
@@ -71,20 +71,31 @@ end
     # backend = _get_backend(mesh)
     @uniform (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
 
-    # N = @groupsize()[1]
-    # # lface = @localmem eltype(faces) N
-    # lcell1 = @localmem eltype(cells) N
-    # lcell2 = @localmem eltype(cells) N
+    N = @groupsize()[1]
+    lface = @localmem eltype(faces) N
+    lcell1 = @localmem eltype(cells) N
+    lcell2 = @localmem eltype(cells) N
     # # test = @localmem typeof(ione) N
-    
-    face = faces[fID]
+
+    # copy face and cells to shared memory
+    lface[li] = faces[fID]
+    face = lface[li]
     owners = face.ownerCells
     cID1 = owners[1]
     cID2 = owners[2]
-    cell1 = cells[cID1]
-    cell2 = cells[cID2]
-    # cell1 = lcell1[li] = cells[cID1]
-    # cell2 = lcell2[li] = cells[cID2]
+    lcell1[li] = cells[cID1]
+    lcell2[li] = cells[cID2]
+
+    cell1 = lcell1[li]
+    cell2 = lcell2[li]
+    
+    # face = faces[fID]
+    # owners = face.ownerCells
+    # cID1 = owners[1]
+    # cID2 = owners[2]
+    # cell1 = cells[cID1]
+    # cell2 = cells[cID2]
+
 
     # cIndex1 = nzval_index(colptr_array, rowval_array, cID1, cID1, ione)
     # cIndex2 = nzval_index(colptr_array, rowval_array, cID2, cID2, ione)

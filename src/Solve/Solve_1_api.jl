@@ -32,7 +32,7 @@ end
 function run!(phiEqn::ModelEquation, setup, result) # ; opP, solver
 
     # (; itmax, atol, rtol) = setup
-    (; A, b) = phiEqn.equation
+    (; A, b, Fx, R) = phiEqn.equation
     precon = phiEqn.preconditioner
     # (; P) = precon 
     solver = phiEqn.solver
@@ -43,31 +43,39 @@ function run!(phiEqn::ModelEquation, setup, result) # ; opP, solver
 
     backend = _get_backend(get_phi(phiEqn).mesh)
 
-    _solve!(solver, A, b, values; setup, precon)
+    _solve!(solver, A, b, values, R, Fx; setup, precon)
 
     # solve!(
     #     # solver, LinearOperator(A), b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
     #     solver, A, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
     #     )
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
     # gmres!(solver, A, b, values; M=P.P, itmax=itmax, atol=atol, rtol=rtol)
     # println(solver.stats.niter)
-    kernel! = solve_copy_kernel!(backend)
-    kernel!(values, x, ndrange = length(values))
-    # kernel!(values_eqn, x, ndrange = length(values_eqn))
-    KernelAbstractions.synchronize(backend)
-    # kernel!(values_res, values_eqn, ndrange = length(values_eqn))
+
+    # kernel! = solve_copy_kernel!(backend)
+    # kernel!(values, x, ndrange = length(values))
     # KernelAbstractions.synchronize(backend)
 end
 
-_solve!(solver, A, b, values; setup, precon) = begin
+_solve!(solver, A, b, values, R, Fx; setup, precon) = begin
     (; itmax, atol, rtol) = setup
-    solve!(solver, LinearOperator(A), b, values; M=precon.P, itmax=itmax, atol=atol, rtol=rtol)
+    Fx .= A*values
+    R .= b .- Fx         # r = b - Ax₀
+    solve!(solver, A, R; M=precon.P, itmax=itmax, atol=atol, rtol=rtol)
+    values .+= solver.x             # Ax = b
+    nothing
+
+    # warm_start!(solver, values)         # r = b - Ax₀
+    # solve!(solver, A, b, values; M=precon.P, itmax=itmax, atol=atol, rtol=rtol)
+    # values .= solver.x             # Ax = b
+    # nothing
+    # cg!(solver, A, b, values; M=precon.P, itmax=itmax, atol=atol, rtol=rtol)
 end
 
 _solve!(solver::QmrSolver, A, b, values; setup, precon) = begin
     (; itmax, atol, rtol) = setup
-    solve!(solver, LinearOperator(A), b, values; itmax=itmax, atol=atol, rtol=rtol)
+    solve!(solver, A, b, values; itmax=itmax, atol=atol, rtol=rtol)
 end
 
 @kernel function solve_copy_kernel!(a, b)

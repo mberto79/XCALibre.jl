@@ -88,20 +88,6 @@ end
 
     cell1 = lcell1[li]
     cell2 = lcell2[li]
-    
-    # face = faces[fID]
-    # owners = face.ownerCells
-    # cID1 = owners[1]
-    # cID2 = owners[2]
-    # cell1 = cells[cID1]
-    # cell2 = cells[cID2]
-
-
-    # cIndex1 = nzval_index(colptr_array, rowval_array, cID1, cID1, ione)
-    # cIndex2 = nzval_index(colptr_array, rowval_array, cID2, cID2, ione)
-
-    # nIndex1 = nzval_index(colptr_array, rowval_array, cID2, cID1, ione)
-    # nIndex2 = nzval_index(colptr_array, rowval_array, cID1, cID2, ione)
 
     cIndex1 = spindex(rowval_array, colptr_array, cID1, cID1)
     cIndex2 = spindex(rowval_array, colptr_array, cID2, cID2)
@@ -109,97 +95,36 @@ end
     nIndex1 = spindex(rowval_array, colptr_array, cID1, cID2)
     nIndex2 = spindex(rowval_array, colptr_array, cID2, cID1)
 
-    # _scheme!(model, terms, nzval_array, face, cell1,  cell2, ione, cIndex1, nIndex1, cIndex2, nIndex2, fID, prev, runtime)
-
-    Ac1, An1, Ac2, An2 = _scheme!(model, terms, face, cell1,  cell2, ione, cIndex1, nIndex1, cIndex2, nIndex2, fID, prev, runtime)
+    Ac1, An1, Ac2, An2 = _scheme_face!(model, terms, face, cell1,  cell2, ione, cIndex1, nIndex1, cIndex2, nIndex2, fID, prev, runtime)
 
     Atomix.@atomic nzval_array[cIndex1] += Ac1
     nzval_array[nIndex1] = An1
     Atomix.@atomic nzval_array[cIndex2] += Ac2
     nzval_array[nIndex2] = An2
-    
-
-    # @inbounds begin
-        # (; faces_range, volume) = cell
-
-        # cIndex = nzval_index(colptr_array, rowval_array, i, i, ione)
-
-        # for fi in faces_range
-        #     fID = cell_faces[fi]
-        #     ns = cell_nsign[fi] # normal sign
-        #     face = faces[fID]
-        #     nID = cell_neighbours[fi]
-        #     cellN = cells[nID]
-
-            # nIndex = nzval_index(colptr_array, rowval_array, nID, i, ione)
-
-        #     _scheme!(model, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
-
-        # end
-    # end
 end
 
 @kernel function _discretise_face_sources!(
     model::Model{TN,SN,T,S}, terms, sources, mesh, nzval_array, @Const(rowval_array), @Const(colptr_array), b_array, prev, runtime, fzero, ione) where {TN,SN,T,S}
     i = @index(Global)
-    # b_thread = zero(eltype(b_array))
     
     @uniform (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
-    # @inbounds begin
     cell = cells[i]
     (; volume) = cell
 
     # cIndex = nzval_index(colptr_array, rowval_array, i, i, ione)
     cIndex = spindex(rowval_array, colptr_array, i, i)
 
-    _scheme_source!(model, terms, b_array, nzval_array, cell, i, cIndex, prev, runtime)
+    _scheme_source_face!(model, terms, b_array, nzval_array, cell, i, cIndex, prev, runtime)
     
-    b_thread = _sources!(model, sources, volume, i)
+    b_thread = _sources_face!(model, sources, volume, i)
     Atomix.@atomic b_array[i] += b_thread
-    # end
 end
 
-@kernel function _discretise!(
-    model::Model{TN,SN,T,S}, terms, sources, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione) where {TN,SN,T,S}
-    i = @index(Global)
-    
-    (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
+@generated function _scheme_face!(model::Model{TN,SN,T,S}, terms, face, cell1, cell2, ns, cIndex1, nIndex1, cIndex2, nIndex2, fID, prev, runtime) where {TN,SN,T,S}
 
-    # @inbounds begin
-        cell = cells[i]
-        (; faces_range, volume) = cell
-
-        cIndex = nzval_index(colptr_array, rowval_array, i, i, ione)
-
-        for fi in faces_range
-            fID = cell_faces[fi]
-            ns = cell_nsign[fi] # normal sign
-            face = faces[fID]
-            nID = cell_neighbours[fi]
-            cellN = cells[nID]
-
-            nIndex = nzval_index(colptr_array, rowval_array, nID, i, ione)
-
-            _scheme!(model, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
-
-        end
-
-        @synchronize()
-        _scheme_source!(model, terms, b_array, nzval_array, cell, i, cIndex, prev, runtime)
-        _sources!(model, sources, b_array, volume, i)
-    # end
-end
-
-# @generated function _scheme!(model::Model{TN,SN,T,S}, terms, nzval_array, face, cell1,   cell2, ns, cIndex1, nIndex1, cIndex2, nIndex2, fID, prev, runtime) where {TN,SN,T,S}
-@generated function _scheme!(model::Model{TN,SN,T,S}, terms, face, cell1, cell2, ns, cIndex1, nIndex1, cIndex2, nIndex2, fID, prev, runtime) where {TN,SN,T,S}
-    
-    # # Implementation 2
     term_scheme_calls = Expr(:block)
     for t in 1:TN
         func_calls = quote
-            # scheme!(terms[$t], nzval_array, cell1, face,  cell2, ns, cIndex1, nIndex1, fID, prev, runtime)
-            # scheme!(terms[$t], nzval_array, cell2, face,  cell1, -ns, cIndex2, nIndex2, fID, prev, runtime)
-
             Ac1s, An1s = scheme!(terms[$t], cell1, face,  cell2, ns, cIndex1, nIndex1, fID, prev, runtime)
             Ac1 += Ac1s 
             An1 += An1s
@@ -221,37 +146,22 @@ end
     return_quote
 end
 
-@generated function _scheme_source!(model::Model{TN,SN,T,S}, terms, b, nzval_array, cell, cID, cIndex, prev, runtime) where {TN,SN,T,S}
-    
-    # Implementation 2
+@generated function _scheme_source_face!(model::Model{TN,SN,T,S}, terms, b, nzval_array, cell, cID, cIndex, prev, runtime) where {TN,SN,T,S}
     out = Expr(:block)
     for t in 1:TN
         function_call_scheme_source = quote
-            # scheme_source!(model.terms[$t], b, nzval_array, cell, cID, cIndex, prev, runtime)
             scheme_source!(terms[$t], b, nzval_array, cell, cID, cIndex, prev, runtime)
         end
         push!(out.args, function_call_scheme_source)
     end
     out
-
 end
 
-@generated function _sources!(model::Model{TN,SN,T,S}, sources, volume, cID) where {TN,SN,T,S}
-   
-    # Implementation 2
+@generated function _sources_face!(model::Model{TN,SN,T,S}, sources, volume, cID) where {TN,SN,T,S}
     func_calls = Expr(:block)
     for s in 1:SN
-        # expression_call_sources = quote
-        #     # (; field, sign) = model.sources[$s]
-        #     (; field, sign) = sources[$s]
-        #     # Atomix.@atomic b[cID] += sign*field[cID]*volume
-        #     b[cID] += sign*field[cID]*volume
-        # end
-        # push!(out.args, expression_call_sources)
         call_sources = quote
-            # (; field, sign) = model.sources[$s]
             (; field, sign) = sources[$s]
-            # Atomix.@atomic b[cID] += sign*field[cID]*volume
             b_thread += sign*field[cID]*volume
         end
         push!(func_calls.args, call_sources.args...)
@@ -262,6 +172,68 @@ end
         return b_thread
     end
     return_quote
+end
+
+# Cell-based discretisation functions 
+
+@kernel function _discretise!(
+    model::Model{TN,SN,T,S}, terms, sources, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione) where {TN,SN,T,S}
+    i = @index(Global)
+    
+    (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
+
+    cell = cells[i]
+    (; faces_range, volume) = cell
+
+    cIndex = nzval_index(colptr_array, rowval_array, i, i, ione)
+
+    for fi in faces_range
+        fID = cell_faces[fi]
+        ns = cell_nsign[fi] # normal sign
+        face = faces[fID]
+        nID = cell_neighbours[fi]
+        cellN = cells[nID]
+
+        nIndex = nzval_index(colptr_array, rowval_array, nID, i, ione)
+        _scheme!(model, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+
+    end
+    _scheme_source!(model, terms, b_array, nzval_array, cell, i, cIndex, prev, runtime)
+    _sources!(model, sources, b_array, volume, i)
+end
+
+@generated function _scheme!(model::Model{TN,SN,T,S}, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime) where {TN,SN,T,S}
+    out = Expr(:block)
+    for t in 1:TN
+        function_call_scheme = quote
+            scheme!(terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+        end
+        push!(out.args, function_call_scheme)
+    end
+    out
+end
+
+@generated function _scheme_source!(model::Model{TN,SN,T,S}, terms, b, nzval_array, cell, cID, cIndex, prev, runtime) where {TN,SN,T,S}
+    out = Expr(:block)
+    for t in 1:TN
+        function_call_scheme_source = quote
+            scheme_source!(terms[$t], b, nzval_array, cell, cID, cIndex, prev, runtime)
+        end
+        push!(out.args, function_call_scheme_source)
+    end
+    out
+end
+
+@generated function _sources!(model::Model{TN,SN,T,S}, sources, b, volume, cID) where {TN,SN,T,S}
+    out = Expr(:block)
+    for s in 1:SN
+        expression_call_sources = quote
+            (; field, sign) = sources[$s]
+            Atomix.@atomic b[cID] += sign*field[cID]*volume
+        end
+        push!(out.args, expression_call_sources)
+    end
+    out
 end
 
 @kernel function set_nzval!(nzval, fzero)

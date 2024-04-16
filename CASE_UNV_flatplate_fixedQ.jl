@@ -10,7 +10,7 @@ mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
 velocity = [0.2, 0.0, 0.0]
-nu = 1e-5
+nu = 1E-3
 Re = velocity[1]*1/nu
 
 Cp = 1005
@@ -21,7 +21,7 @@ model = RANS{Laminar_rho}(mesh=mesh, viscosity=ConstantScalar(nu))
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Wall(:wall, [0.0, 0.0, 0.0]),
-    Neumann(:top, 0.0)
+    Symmetry(:top, 0.0)
 )
 
  @assign! model p (
@@ -34,7 +34,7 @@ model = RANS{Laminar_rho}(mesh=mesh, viscosity=ConstantScalar(nu))
 @assign! model energy (
     Dirichlet(:inlet, 300.0*Cp),
     Neumann(:outlet, 0.0),
-    Neumann(:wall, 0.0),#,200.0*Cp),#-20.0),
+    Dirichlet(:wall, 310.0*Cp),#,200.0*Cp),#-20.0),
     Neumann(:top, 0.0)
 )
 
@@ -52,6 +52,8 @@ solvers = (
         preconditioner = DILU(),
         convergence = 1e-7,
         relax       = 0.8,
+        atol        = 1e-5,
+        rtol        = 1e-3,
     ),
     p = set_solver(
         model.p;
@@ -59,6 +61,8 @@ solvers = (
         preconditioner = LDL(),
         convergence = 1e-7,
         relax       = 0.2,
+        atol        = 1e-5,
+        rtol        = 1e-3,
     ),
     energy = set_solver(
         model.energy;
@@ -66,10 +70,12 @@ solvers = (
         preconditioner = DILU(),
         convergence = 1e-7,
         relax       = 0.8,
+        atol        = 1e-5,
+        rtol        = 1e-3,
     ),
 )
 
-runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=2000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -80,7 +86,7 @@ initialise!(model.U, velocity)
 initialise!(model.p, 100000.0)
 initialise!(model.energy, 300.0*Cp)
 
-Rx, Ry, Rz, Rp, Re = simple_rho!(model, config)
+Rx, Ry, Rz, Rp, Re = simple_rho_K!(model, config)
 
 using DelimitedFiles
 using LinearAlgebra
@@ -100,7 +106,7 @@ using LinearAlgebra
 # plot!(oRex, oCf, color=:green, lw=1.5, label="OpenFOAM")
 # plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code")
 
-plot(; xlims=(0,1000))
+plot(; xlims=(0,runtime.iterations))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
 plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
 plot!(1:length(Rp), Rp, yscale=:log10, label="p")

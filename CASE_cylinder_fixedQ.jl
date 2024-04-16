@@ -20,9 +20,9 @@ model = RANS{Laminar_rho}(mesh=mesh, viscosity=ConstantScalar(nu))
 @assign! model U ( 
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Dirichlet(:cylinder, noSlip),
-    Dirichlet(:bottom, noSlip),
-    Dirichlet(:top, noSlip)
+    Wall(:cylinder, noSlip),
+    Neumann(:bottom, 0.0),
+    Neumann(:top, 0.0)
 )
 
 @assign! model p (
@@ -36,7 +36,7 @@ model = RANS{Laminar_rho}(mesh=mesh, viscosity=ConstantScalar(nu))
 @assign! model energy ( 
     Dirichlet(:inlet, 300*1005),
     Neumann(:outlet, 0.0),
-    Dirichlet(:cylinder, 320*1005),
+    Dirichlet(:cylinder, 310*1005),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0)
 )
@@ -66,12 +66,12 @@ solvers = (
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(divergence=Upwind, gradient=Midpoint),
-    energy = set_schemes(divergence=Upwind, gradient=Midpoint)
+    U = set_schemes(divergence=Upwind),#, gradient=Midpoint),
+    p = set_schemes(divergence=Upwind),# gradient=Midpoint),
+    energy = set_schemes(divergence=Upwind)# gradient=Midpoint)
 )
 
-runtime = set_runtime(iterations=600, write_interval=20, time_step=1)
+runtime = set_runtime(iterations=2000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

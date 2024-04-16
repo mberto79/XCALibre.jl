@@ -1,6 +1,6 @@
-export simple_rho!
+export simple_rho_K!
 
-function simple_rho!(model, config; resume=true, pref=nothing) 
+function simple_rho_K!(model, config; resume=true, pref=nothing) 
 
     @info "Extracting configuration and input fields..."
     (; U, p, energy, nu, mesh) = model
@@ -20,7 +20,7 @@ function simple_rho!(model, config; resume=true, pref=nothing)
     divHv = ScalarField(mesh)
     rho = ScalarField(mesh)
     initialise!(rho, 1.0)
-    Qt = ScalarField(mesh)
+    divK = ScalarField(mesh)
 
     @info "Defining models..."
 
@@ -58,7 +58,7 @@ function simple_rho!(model, config; resume=true, pref=nothing)
         + Divergence{schemes.energy.divergence}(mdotf, energy) 
         - Laplacian{schemes.energy.laplacian}(keff_by_cp, energy) 
         == 
-        Source(Qt)
+        -Source(divK)
     ) → Equation(mesh)
 
     @info "Initialising preconditioners..."
@@ -88,13 +88,13 @@ function simple_rho!(model, config; resume=true, pref=nothing)
         turbulence = nothing
     end
 
-    R_ux, R_uy, R_uz, R_p, R_e = SIMPLE_RHO_loop(
+    R_ux, R_uy, R_uz, R_p, R_e = SIMPLE_RHO_K_loop(
     model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, energy_eqn, turbulence, transonic, config ; resume=resume, pref=pref)
 
     return R_ux, R_uy, R_uz, R_p, R_e     
 end # end function
 
-function SIMPLE_RHO_loop(
+function SIMPLE_RHO_K_loop(
     model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, energy_eqn, turbulence, transonic, config ; resume, pref)
     
     # Extract model variables and configuration
@@ -115,7 +115,7 @@ function SIMPLE_RHO_loop(
     rhorDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
     keff_by_cp = get_flux(energy_eqn, 3)
-    Qt = get_source(energy_eqn, 1)
+    divK = get_source(energy_eqn, 1)
     
     @info "Allocating working memory..."
 
@@ -140,7 +140,7 @@ function SIMPLE_RHO_loop(
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
     rhorD = ScalarField(mesh)
-    mueff_c = ScalarField(mesh)
+    Kf = FaceVectorField(mesh)
     Psi = ScalarField(mesh)
     Psif = FaceScalarField(mesh)
 
@@ -173,7 +173,6 @@ function SIMPLE_RHO_loop(
     grad!(∇p, pf, p, p.BCs)
 
     update_nueff!(mueff, nu, turbulence)
-    mueff_c.values .= nu.values
 
     # Calculate keff_by_cp
     keff_by_cp.values .= mueff.values./Pr
@@ -184,16 +183,11 @@ function SIMPLE_RHO_loop(
 
     @time for iteration ∈ 1:iterations
 
-         # Calculate Qt
-         grad!(∇p, pf, p, p.BCs) 
-         grad!(gradU, Uf, U, U.BCs) 
-         Qt.values .= (∇p.result.x.values .* U.x.values .+ ∇p.result.y.values .* U.y.values)
-         mueff_c.values .= nu.values
-         Qt.values .-= (2/3).*mueff_c.values.*(gradU.result.xx.values .+ gradU.result.yy.values).^2
-         Qt.values .+= mueff_c.values.*(2*(gradU.result.xx.values.^2 .+ gradU.result.yy.values.^2) .+ 
-                          (gradU.result.xy.values .+ gradU.result.yx.values).^2)
-        
-
+        # Calculate Qt
+        Kf.x.values .= Uf.x.values.*rhof.values.*0.5.*(Uf.x.values.*Uf.x.values .+ Uf.y.values.*Uf.y.values)
+        Kf.y.values .= Uf.y.values.*rhof.values.*0.5.*(Uf.x.values.*Uf.x.values .+ Uf.y.values.*Uf.y.values)
+        Kf.z.values .= Uf.z.values.*rhof.values.*0.5.*(Uf.x.values.*Uf.x.values .+ Uf.y.values.*Uf.y.values)
+        div!(divK, Kf)
 
         # ASSEMBLE AND SOLVE MOMENTUM EQUATIONS for U*
         discretise!(ux_eqn, prev, runtime)

@@ -45,7 +45,7 @@ function adjust_boundary!(
         # phif.values[fID] = phi.values[cID] #+ BC.value*delta*(normal⋅e)
         # Chris' fix
         (; area, normal, e, delta) = faces[fID]
-        phif.values[fID] = phi.values[cID] - BC.value*area*(normal⋅e)/delta
+        phif.values[fID] = phi.values[cID] + BC.value*delta
     end
 end
 
@@ -54,6 +54,14 @@ function adjust_boundary!(
     (; facesID, cellsID) = boundary
     @inbounds for fID ∈ facesID
         phif.values[fID] = BC.value 
+    end
+end
+
+function adjust_boundary!(
+    BC::Symmetry, phif::FaceScalarField, phi, boundary, faces)
+    (; facesID, cellsID) = boundary
+    @inbounds for fID ∈ facesID
+        phif.values[fID] = psi.value 
     end
 end
 
@@ -146,6 +154,23 @@ function adjust_boundary!(
         x[fID] = BC.value[1]
         y[fID] = BC.value[2]
         z[fID] = BC.value[3]
+    end
+end
+
+function adjust_boundary!( 
+    BC::Symmetry, psif::FaceVectorField, psi::VectorField, boundary, faces
+    )
+
+    (; x, y, z) = psif
+    (; IDs_range) = boundary
+    (; boundary_cellsID) = psif.mesh
+
+    @inbounds for fID ∈ IDs_range
+        (; area, normal, e, delta) = faces[fID]
+        cID = boundary_cellsID[fID]
+        x[fID] = psi.x.values[cID] - (psi.x.values[cID]*normal[1] + psi.y.values[cID]*normal[2] + psi.z.values[cID]*normal[3])*normal[1]
+        y[fID] = psi.y.values[cID] - (psi.x.values[cID]*normal[1] + psi.y.values[cID]*normal[2] + psi.z.values[cID]*normal[3])*normal[2]
+        z[fID] = psi.z.values[cID] - (psi.x.values[cID]*normal[1] + psi.y.values[cID]*normal[2] + psi.z.values[cID]*normal[3])*normal[3]
     end
 end
 

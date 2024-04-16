@@ -21,6 +21,7 @@ using FVM_1D.VTK
 include("Solvers_0_functions.jl")
 include("Solvers_1_SIMPLE.jl")
 include("Solvers_1_SIMPLE_RHO.jl")
+include("Solvers_1_SIMPLE_RHO_K.jl")
 include("Solvers_2_PISO.jl")
 
 end

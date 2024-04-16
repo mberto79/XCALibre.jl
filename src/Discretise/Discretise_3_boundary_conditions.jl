@@ -34,13 +34,21 @@ end
 
     # Chris' fix
     J = term.flux[fID]
-    (; area) = face 
-    b[cellID] -= bc.value*area*term.sign[1]*J
+    (; area, normal) = face 
+    b[cellID] -= term.sign[1]*bc.value*area*J
 
     nothing
 end
 
 @inline (bc::Wall)(
+    term::Operator{F,P,I,Laplacian{Linear}}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    # A[cellID,cellID] += 0.0#ap
+    # b[cellID] += 0.0
+    nothing
+end
+
+@inline (bc::Symmetry)(
     term::Operator{F,P,I,Laplacian{Linear}}, 
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
     # A[cellID,cellID] += 0.0#ap
@@ -79,6 +87,14 @@ end
 end
 
 @inline (bc::Wall)(
+    term::Operator{F,P,I,Divergence{Linear}}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    # A[cellID,cellID] += 0.0#ap
+    # b[cellID] += 0.0
+    nothing
+end
+
+@inline (bc::Symmetry)(
     term::Operator{F,P,I,Divergence{Linear}}, 
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
     # A[cellID,cellID] += 0.0#ap
@@ -141,6 +157,14 @@ end
     nothing
 end
 
+@inline (bc::Symmetry)(
+    term::Operator{F,P,I,Divergence{Upwind}}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    # A[cellID,cellID] += 0.0#ap
+    # b[cellID] += 0.0
+    nothing
+end
+
 @inline (bc::KWallFunction)(
     term::Operator{F,P,I,Divergence{Upwind}},
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
@@ -172,6 +196,12 @@ end
 end
 
 @inline (bc::Wall)(
+    term::Operator{F,P,I,Si}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    nothing
+end
+
+@inline (bc::Symmetry)(
     term::Operator{F,P,I,Si}, 
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
     nothing

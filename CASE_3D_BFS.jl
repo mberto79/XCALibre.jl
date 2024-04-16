@@ -6,7 +6,7 @@ using CUDA
 
 
 # bfs_unv_tet_15mm, 10mm, 5mm, 4mm, 3mm
-mesh_file = "unv_sample_meshes/bfs_unv_tet_5mm.unv"
+mesh_file = "unv_sample_meshes/bfs_unv_tet_4mm.unv"
 @time mesh = build_mesh3D(mesh_file, scale=0.001)
 
 velocity = [0.5, 0.0, 0.0]
@@ -38,20 +38,20 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 schemes = (
     U = set_schemes(divergence=Upwind),
-    p = set_schemes()
+    p = set_schemes(gradient=Midpoint)
 )
 
 
 solvers = (
     U = set_solver(
         model.U;
-        solver      = CgSolver, #QmrSolver, # BicgstabSolver, GmresSolver, #CgSolver
+        solver      = BicgstabSolver, #QmrSolver, # BicgstabSolver, GmresSolver, #CgSolver
         # preconditioner = CUDA_ILU2(),
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
-        rtol = 0.0,
-        atol = 1e-2
+        relax       = 0.8,
+        rtol = 1e-1,
+        atol = 1e-5
     ),
     p = set_solver(
         model.p;
@@ -60,16 +60,16 @@ solvers = (
         preconditioner = Jacobi(),
 
         convergence = 1e-7,
-        relax       = 0.3,
-        rtol = 0.0,
-        atol = 1e-3
+        relax       = 0.2,
+        rtol = 1e-1,
+        atol = 1e-5
 
 
     )
 )
 
 runtime = set_runtime(
-    iterations=2000, time_step=1, write_interval=2000)
+    iterations=500, time_step=1, write_interval=500)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

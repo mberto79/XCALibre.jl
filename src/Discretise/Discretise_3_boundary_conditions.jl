@@ -61,7 +61,7 @@ end
     # ap = term.sign[1]*(-flux)
     # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
     # Atomix.@atomic nzval[nIndex] += ap
-    # Atomix.@atomic b[cellID] += ap*values[cellID]
+    # # Atomix.@atomic b[cellID] += ap*values[cellID]
     nothing
 end
 
@@ -153,8 +153,9 @@ end
 
     # test
     ap = term.sign[1]*(term.flux[fID])
-    cIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
-    Atomix.@atomic nzval[cIndex] += max(ap, 0.0)
+    nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
+    # Atomix.@atomic nzval[nIndex] += max(ap, 0.0)
+    Atomix.@atomic nzval[nIndex] += ap
     # Atomix.@atomic b[cellID] += max(-ap*phi[cellID], 0.0)
     nothing
 end

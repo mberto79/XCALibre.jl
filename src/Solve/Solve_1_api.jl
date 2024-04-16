@@ -64,6 +64,7 @@ _solve!(solver, A, b, values, R, Fx; setup, precon) = begin
     R .= b .- Fx         # r = b - Ax₀
     solve!(solver, A, R; M=precon.P, itmax=itmax, atol=atol, rtol=rtol)
     values .+= solver.x             # Ax = b
+    # println(solver.stats.niter)
     nothing
 
     # warm_start!(solver, values)         # r = b - Ax₀

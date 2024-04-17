@@ -116,8 +116,8 @@ function initialise_RANS(mdotf, peqn, config, model::RANS{KOmegaLKE})
     Ω = ScalarField(mesh)
     γ = ScalarField(mesh)
     fv = ScalarField(mesh)
-    ∇k = VectorField(mesh)
-    ∇ω = VectorField(mesh)
+    # ∇k = VectorField(mesh)
+    # ∇ω = VectorField(mesh)
     ∇k = Grad{schemes.k.gradient}(k)
     ∇ω = Grad{schemes.p.gradient}(omega)
 
@@ -233,6 +233,10 @@ function turbulence!( # Sort out dispatch when possible
     interpolate!(nueffω,nueffωS)
     correct_boundaries!(nueffω, nueffωS, nut.BCs)
 
+    #Damping and trigger
+    @. fv.values = 1-exp(sqrt(k.values/(nu.values*omega.values))/coeffs.Cv)
+    @. γ.values = min((kL.values/(min(nu.values*nuL.values)*Ω.values))^2,coeffs.Ccrit)/coeffs.Ccrit
+
     #Update k fluxes
     @. Dkf.values = coeffs.Cμ*omega.values*γ.values
     @. nueffkS.values = nu.values+(coeffs.σk*nut_turb.values*γ.values)
@@ -243,11 +247,14 @@ function turbulence!( # Sort out dispatch when possible
 
     #Update kL fluxes
     magnitude!(PkL, S,scale_factor=2.0)
-    magnitude!(normU,U)
+    # magnitude!(normU,U) # tim's
+    for i ∈ eachindex(normU.values)
+        normU.values[i] = norm(U[i])
+    end
     #norm!(normU, U)
     η = coeffs.C1*tanh(coeffs.C2*(Tu^coeffs.C3)+coeffs.C4)
-    @. Reυ.values = ((((2*kL.values*(nu.values^2))/(y.values^2))^1/4)*y.values)/nu.values
-    @. PkL.values = PkL.values*η*kL.values*(Reυ.values^-13/10)*(((normU.values*y.values)/nu.values)^1/2)
+    @. Reυ.values = ((((2*kL.values*(nu.values^2))/(y.values^2))^(1/4))*y.values)/nu.values
+    @. PkL.values = PkL.values*η*kL.values*(Reυ.values^(-13/10))*(((normU.values*y.values)/nu.values)^(1/2))
     @. DkLf.values = (2*nu.values*kL.values)/(y.values^2)
     @. nueffkLS.values = nu.values+(coeffs.σkL*sqrt(kL.values)*y.values)
     interpolate!(nueffkL,nueffkLS)
@@ -293,9 +300,11 @@ function turbulence!( # Sort out dispatch when possible
     @. nuts.values = exp(-(coeffs.CSS/(k.values/(nu.values*Ω.values)))^2)*(k.values/omega.values)
     @. nut.values = nuts.values+nuL.values
 
-    #Damping and trigger
-    @. fv.values = 1-exp(sqrt(k.values/(nu.values*omega.values))/coeffs.Cv)
-    @. γ.values = min((kL.values/(min(nu.values*nuL.values)*Ω.values))^2,coeffs.Ccrit)/coeffs.Ccrit
+    # #Damping and trigger
+    # @. fv.values = 1-exp(sqrt(k.values/(nu.values*omega.values))/coeffs.Cv)
+    # @. γ.values = min((kL.values/(min(nu.values*nuL.values)*Ω.values))^2,coeffs.Ccrit)/coeffs.Ccrit
+
+    # @. kL.values = Reυ.values^(-13/10)
 
     interpolate!(νtf, nut)
     correct_boundaries!(νtf, nut, nut.BCs)

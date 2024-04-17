@@ -60,10 +60,16 @@ end
 
 _solve!(solver, A, b, values, R, Fx; setup, precon) = begin
     (; itmax, atol, rtol) = setup
-    Fx .= A*values
-    R .= b .- Fx         # r = b - Ax₀
-    solve!(solver, A, R; M=precon.P, itmax=itmax, atol=atol, rtol=rtol)
-    values .+= solver.x             # Ax = b
+
+    # Manual warm-start
+    # Fx .= A*values
+    # R .= b .- Fx         # r = b - Ax₀
+    # solve!(solver, A, R; M=precon.P, itmax=itmax, atol=atol, rtol=rtol)
+    # values .+= solver.x             # Ax = b
+
+    # Krylov warm-start
+    solve!(solver, A, b, values; M=precon.P, itmax=itmax, atol=atol, rtol=rtol)
+    values .= solver.x
     # println(solver.stats.niter)
     nothing
 

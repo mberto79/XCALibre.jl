@@ -84,29 +84,3 @@ backend = CPU()
 backend = CUDABackend()
 
 Rx, Ry, Rz, Rp, model = simple!(model, config, backend)
-
-term_scheme_calls = Expr(:block)
-    for t in 1:3
-        func_calls = quote
-            # scheme!(terms[$t], nzval_array, cell1, face,  cell2, ns, cIndex1, nIndex1, fID, prev, runtime)
-            # scheme!(terms[$t], nzval_array, cell2, face,  cell1, -ns, cIndex2, nIndex2, fID, prev, runtime)
-
-            Ac1, An1 = scheme!(terms[$t], cell1, face,  cell2, ns, cIndex1, nIndex1, fID, prev, runtime)
-            Ac1 += Ac1 
-            An1 += An1
-            Ac2, An2 = scheme!(terms[$t], cell2, face,  cell1, -ns, cIndex2, nIndex2, fID, prev, runtime)
-            Ac2 += Ac2 
-            An2 += An2
-        end
-        push!(term_scheme_calls.args, func_calls.args...)
-    end
-    return_quote = quote
-        z = zero(typeof(face.area))
-        Ac1 = 0.0
-        Ac2 = 0.0
-        An1 = 0.0 
-        An2 = 0.0 
-        $(term_scheme_calls.args...)
-        return Ac1, An1, Ac2, An2
-    end
-    return_quote

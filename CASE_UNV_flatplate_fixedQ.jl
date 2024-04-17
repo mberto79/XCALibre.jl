@@ -75,7 +75,7 @@ solvers = (
     ),
 )
 
-runtime = set_runtime(iterations=2000, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

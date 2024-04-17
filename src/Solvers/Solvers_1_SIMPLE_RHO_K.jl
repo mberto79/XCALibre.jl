@@ -184,9 +184,9 @@ function SIMPLE_RHO_K_loop(
     @time for iteration ∈ 1:iterations
 
         # Calculate Qt
-        Kf.x.values .= Uf.x.values.*rhof.values.*0.5.*(Uf.x.values.*Uf.x.values .+ Uf.y.values.*Uf.y.values)
-        Kf.y.values .= Uf.y.values.*rhof.values.*0.5.*(Uf.x.values.*Uf.x.values .+ Uf.y.values.*Uf.y.values)
-        Kf.z.values .= Uf.z.values.*rhof.values.*0.5.*(Uf.x.values.*Uf.x.values .+ Uf.y.values.*Uf.y.values)
+        Kf.x.values .= rhof.values.*0.5.*(Uf.x.values.*Uf.x.values .+ Uf.y.values.*Uf.y.values)
+        Kf.y.values .= rhof.values.*0.5.*(Uf.x.values.*Uf.x.values .+ Uf.y.values.*Uf.y.values)
+        Kf.z.values .= 0.0*rhof.values.*0.5.*(Uf.x.values.*Uf.x.values .+ Uf.y.values.*Uf.y.values)
         div!(divK, Kf)
 
         divK.values .= 0.0

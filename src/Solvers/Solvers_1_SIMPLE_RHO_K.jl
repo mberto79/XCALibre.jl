@@ -189,6 +189,8 @@ function SIMPLE_RHO_K_loop(
         Kf.z.values .= Uf.z.values.*rhof.values.*0.5.*(Uf.x.values.*Uf.x.values .+ Uf.y.values.*Uf.y.values)
         div!(divK, Kf)
 
+        divK.values .= 0.0
+
         # ASSEMBLE AND SOLVE MOMENTUM EQUATIONS for U*
         discretise!(ux_eqn, prev, runtime)
         discretise!(uy_eqn, prev, runtime)
@@ -216,7 +218,6 @@ function SIMPLE_RHO_K_loop(
         run!(uz_eqn, solvers.U)
         residual!(R_uz, uz_eqn.equation, U.z, iteration)
 
-       
         @. prev = energy.values
         discretise!(energy_eqn, prev, runtime)
         apply_boundary_conditions!(energy_eqn, energy.BCs)

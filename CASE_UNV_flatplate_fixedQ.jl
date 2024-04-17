@@ -10,7 +10,7 @@ mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
 velocity = [0.2, 0.0, 0.0]
-nu = 1E-3
+nu = 1E-4
 Re = velocity[1]*1/nu
 
 Cp = 1005
@@ -20,8 +20,8 @@ model = RANS{Laminar_rho}(mesh=mesh, viscosity=ConstantScalar(nu))
 @assign! model U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Symmetry(:top, 0.0)
+    Dirichlet(:wall, [0.0, 0.0, 0.0]),
+    Neumann(:top, 0.0)
 )
 
  @assign! model p (
@@ -34,14 +34,14 @@ model = RANS{Laminar_rho}(mesh=mesh, viscosity=ConstantScalar(nu))
 @assign! model energy (
     Dirichlet(:inlet, 300.0*Cp),
     Neumann(:outlet, 0.0),
-    Dirichlet(:wall, 310.0*Cp),#,200.0*Cp),#-20.0),
+    Neumann(:wall, 0.0*Cp),#,200.0*Cp),#-20.0),
     Neumann(:top, 0.0)
 )
 
 schemes = (
-    U = set_schemes(divergence=Linear),
-    p = set_schemes(divergence=Linear),
-    energy = set_schemes(divergence=Linear)
+    U = set_schemes(divergence=Upwind),
+    p = set_schemes(divergence=Upwind),
+    energy = set_schemes(divergence=Upwind)
 )
 
 
@@ -51,27 +51,27 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = DILU(),
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.7,
         atol        = 1e-5,
-        rtol        = 1e-3,
+        rtol        = 1e-2,
     ),
     p = set_solver(
         model.p;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = LDL(),
         convergence = 1e-7,
-        relax       = 0.2,
-        atol        = 1e-5,
-        rtol        = 1e-3,
+        relax       = 0.3,
+        atol        = 1e-6,
+        rtol        = 1e-2,
     ),
     energy = set_solver(
         model.energy;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = DILU(),
         convergence = 1e-7,
-        relax       = 0.8,
-        atol        = 1e-5,
-        rtol        = 1e-3,
+        relax       = 0.3,
+        # atol        = 1e-6,
+        rtol        = 1e-2,
     ),
 )
 

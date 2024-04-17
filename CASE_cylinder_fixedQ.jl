@@ -10,7 +10,7 @@ mesh = update_mesh_format(mesh)
 
 # Inlet conditions
 
-velocity = [0.50, 0.0, 0.0]
+velocity = [0.10, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
 Re = (0.2*velocity[1])/nu
@@ -21,8 +21,8 @@ model = RANS{Laminar_rho}(mesh=mesh, viscosity=ConstantScalar(nu))
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Wall(:cylinder, noSlip),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+    Symmetry(:bottom, 0.0),
+    Symmetry(:top, 0.0)
 )
 
 @assign! model p (
@@ -36,7 +36,7 @@ model = RANS{Laminar_rho}(mesh=mesh, viscosity=ConstantScalar(nu))
 @assign! model energy ( 
     Dirichlet(:inlet, 300*1005),
     Neumann(:outlet, 0.0),
-    Dirichlet(:cylinder, 310*1005),
+    Dirichlet(:cylinder, 320*1005),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0)
 )
@@ -44,31 +44,37 @@ model = RANS{Laminar_rho}(mesh=mesh, viscosity=ConstantScalar(nu))
 solvers = (
     U = set_solver(
         model.U;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0(),
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = DILU(),
         convergence = 1e-7,
-        relax       = 0.6,
+        relax       = 0.7,
+        rtol        = 1e-2,
+        atol        = 1e-5,
     ),
     p = set_solver(
         model.p;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = LDL(),
         convergence = 1e-7,
-        relax       = 0.4,
+        relax       = 0.3,
+        rtol        = 1e-1,
+        atol        = 1e-5,
     ),
     energy = set_solver(
         model.energy;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0(),
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = DILU(),
         convergence = 1e-7,
-        relax       = 0.6,
+        relax       = 0.7,
+        rtol        = 1e-4,
+        # atol        = 1e-5,
     ),
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind),#, gradient=Midpoint),
-    p = set_schemes(divergence=Upwind),# gradient=Midpoint),
-    energy = set_schemes(divergence=Upwind)# gradient=Midpoint)
+    U = set_schemes(divergence=Upwind),
+    p = set_schemes(divergence=Upwind),
+    energy = set_schemes(divergence=Upwind)
 )
 
 runtime = set_runtime(iterations=2000, write_interval=100, time_step=1)
@@ -82,7 +88,7 @@ initialise!(model.U, velocity)
 initialise!(model.p, 100000.0)
 initialise!(model.energy, 300.0*1005)
 
-Rx, Ry, Rz, Rp, Re = simple_rho!(model, config)
+Rx, Ry, Rz, Rp, Re = simple_rho_K!(model, config)
 
 plot(; xlims=(0,runtime.iterations))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

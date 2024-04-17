@@ -31,12 +31,21 @@ end
     # fzero = zero(eltype(b))
     # A[cellID,cellID] += fzero
     # b[cellID] += fzero
+    nothing
+end
 
-    # Chris' fix
+@inline (bc::FixedGradient)(
+    term::Operator{F,P,I,Laplacian{Linear}}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    phi = term.phi 
+
     J = term.flux[fID]
-    (; area, normal) = face 
-    b[cellID] -= term.sign[1]*bc.value*area*J
-
+    (; area, delta) = face 
+    phif = phi.values[cellID] + bc.value*delta
+    flux = J*area/delta
+    ap = term.sign[1]*(-flux)
+    A[cellID,cellID] += ap
+    b[cellID] += ap*phif
     nothing
 end
 
@@ -83,6 +92,12 @@ end
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
     ap = term.sign[1]*(term.flux[fID])
     A[cellID,cellID] += ap
+    nothing
+end
+
+@inline (bc::FixedGradient)(
+    term::Operator{F,P,I,Divergence{Linear}}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
     nothing
 end
 
@@ -144,8 +159,16 @@ end
     # A[cellID,cellID] += ap
     # b[cellID] -= ap*phi[cellID]
     ap = term.sign[1]*(term.flux[fID])
-    A[cellID,cellID] += max(ap, 0.0)
+    A[cellID,cellID] += ap
     # b[cellID] -= max(ap*phi[cellID], 0.0)
+    nothing
+end
+
+@inline (bc::FixedGradient)(
+    term::Operator{F,P,I,Divergence{Upwind}}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    # A[cellID,cellID] += 0.0#ap
+    # b[cellID] += 0.0
     nothing
 end
 
@@ -190,6 +213,12 @@ end
 end
 
 @inline (bc::Neumann)(
+    term::Operator{F,P,I,Si}, 
+    A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    nothing
+end
+
+@inline (bc::FixedGradient)(
     term::Operator{F,P,I,Si}, 
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
     nothing

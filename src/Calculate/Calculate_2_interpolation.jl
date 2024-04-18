@@ -7,29 +7,14 @@ export interpolate!
     unpacked_BCs = []
     for i ∈ 1:length(BCs.parameters)
         unpack = quote
-            
-            # BC = BCs[$i]
-
-            # name = BC.name
-            # index = boundary_index(boundaries, name)
-
-            # boundary = boundaries[BC.ID]
-            # adjust_boundary!(BC, phif, phi, boundary, faces)
-
             #KERNEL LAUNCH
             adjust_boundary!(backend, BCs[$i], phif, phi, boundaries, boundary_cellsID)
-
-            # adjust_boundary!(BC, phif, phi, BC.ID, faces)
         end
         push!(unpacked_BCs, unpack)
     end
     quote
     (; mesh) = phif
     (; boundary_cellsID, boundaries) = mesh 
-
-    ## REMOVE MEMCOPY!!!!!!!!!!!!!!!!
-    # boundaries_cpu = Array{eltype(mesh.boundaries)}(undef, length(boundaries))
-    # copyto!(boundaries_cpu, boundaries)
 
     backend = _get_backend(mesh)
     $(unpacked_BCs...) 
@@ -38,31 +23,8 @@ end
 
 ## GPU SCALAR ADJUST BOUNDARY FUNCTIONS AND KERNELS
 
-# function adjust_boundary!(
-#     BC::Dirichlet, phif::FaceScalarField, phi, boundary, faces)
-#     (; IDs_range) = boundary
-#     @inbounds for fID ∈ IDs_range
-#         phif.values[fID] = BC.value 
-#     end
-# end
-
-# function adjust_boundary!(
-#     BC::Neumann, phif::FaceScalarField, phi, boundary, faces)
-#     (; mesh) = phif
-#     (; boundary_cellsID) = mesh
-#     (;IDs_range) = boundary
-#     @inbounds for fi ∈ IDs_range
-#         fID = fi
-#         cID = boundary_cellsID[fi]
-#         # (; normal, e, delta) = faces[fID]
-#         phif.values[fID] = phi.values[cID] #+ BC.value*delta*(normal⋅e)
-#     end
-# end
-
 function adjust_boundary!(backend, BC::Dirichlet, phif::FaceScalarField, phi, boundaries, boundary_cellsID)
-    # (; values) = phif
     phif_values = phif.values
-    # (; values) = phi
     phi_values = phi.values
     kernel! = adjust_boundary_dirichlet_scalar!(backend)
     kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = 1)
@@ -70,9 +32,7 @@ function adjust_boundary!(backend, BC::Dirichlet, phif::FaceScalarField, phi, bo
 end
 
 function adjust_boundary!(backend, BC::Neumann, phif::FaceScalarField, phi, boundaries, boundary_cellsID)
-    # (; values) = phif
     phif_values = phif.values
-    # (; values) = phi
     phi_values = phi.values
     kernel! = adjust_boundary_neumann_scalar!(backend)
     kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = 1)
@@ -86,7 +46,6 @@ end
     @inbounds begin
         (; IDs_range) = boundaries[i]
         for fID in IDs_range
-            # fID = IDs_range[j]
             phif_values[fID] = BC.value
         end
     end

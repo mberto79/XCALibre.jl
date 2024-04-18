@@ -28,11 +28,11 @@ function _apply_boundary_conditions!(
 
     # Loop over boundary conditions to apply boundary conditions 
     for BC ∈ BCs
-        # Scalar index starting face ID and boundary condition face IDs range
-        CUDA.@allowscalar start_ID = mesh.boundaries[BC.ID].IDs_range[1]
-        CUDA.@allowscalar facesID_range = mesh.boundaries[BC.ID].IDs_range
+        # Copy to CPU
+        facesID_range = get_boundaries(BC, mesh.boundaries)
+        start_ID = facesID_range[1]
 
-        # Call apply boundary conditions kernel
+        # Execute apply boundary conditions kernel
         kernel! = apply_boundary_conditions_kernel!(backend)
         kernel!(
             model, BC, model.terms, faces, cells, start_ID, boundary_cellsID, rowval, colptr, nzval, b, ione, ndrange=length(facesID_range)
@@ -40,6 +40,21 @@ function _apply_boundary_conditions!(
         KernelAbstractions.synchronize(backend)
     end
     nothing
+end
+
+# Function to prevent redundant CPU copy
+function get_boundaries(BC, boundaries::Array)
+    facesID_range = boundaries[BC.ID].IDs_range
+    return facesID_range
+end
+
+# Function to copy from GPU to CPU
+function get_boundaries(BC, boundaries::CuArray)
+    # Copy boundaries to CPU
+    boundaries_cpu = Array{eltype(boundaries)}(undef, length(boundaries))
+    copyto!(boundaries_cpu, boundaries)
+    facesID_range = boundaries_cpu[BC.ID].IDs_range
+    return facesID_range
 end
 
 # Apply boundary conditions kernel definition

@@ -1,13 +1,13 @@
-using Plots
+# using Plots
 using FVM_1D
 using Krylov
 using CUDA
-
+using KernelAbstractions
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
-mesh_file = "unv_sample_meshes/cylinder_d10mm_2mm.unv"
-mesh_file = "unv_sample_meshes/cylinder_d10mm_10-7.5-2mm.unv"
+# mesh_file = "unv_sample_meshes/cylinder_d10mm_2mm.unv"
+# mesh_file = "unv_sample_meshes/cylinder_d10mm_10-7.5-2mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 # mesh = update_mesh_format(mesh, integer=Int32, float=Float32)
 mesh = update_mesh_format(mesh)
@@ -59,7 +59,7 @@ schemes = (
     p = set_schemes(divergence=Upwind, gradient=Midpoint)
 )
 
-runtime = set_runtime(iterations=2000, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=2000, write_interval=-1, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -69,7 +69,7 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-backend = CUDABackend() # 357 s
+backend = CUDABackend()
 # backend = CPU()
 
 Rx, Ry, Rp, model1 = simple!(model, config, backend); #, pref=0.0)

@@ -18,10 +18,12 @@ function update_nueff!(nueff, nu, turb_model)
     if turb_model === nothing
         kernel! = update_nueff_laminar!(backend)
         kernel!(nu, nueff, ndrange = length(nueff))
+        KernelAbstractions.synchronize(backend)
     else
         (; νtf) = turb_model
         kernel! = update_nueff_turbulent!(backend)
         kernel!(nu, νtf, nueff, ndrange = length(nueff))
+        KernelAbstractions.synchronize(backend)
     end
     
 end

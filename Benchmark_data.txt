@@ -1,0 +1,25 @@
+BFS 10mm mesh:
+14.572502 seconds (15.20 M CPU allocations: 942.131 MiB, 0.89% gc time) (125.45 k GPU allocations: 4.754 MiB, 1.05% memmgmt time)
+9.221563 seconds (10.75 M CPU allocations: 600.516 MiB, 0.63% gc time) (125.56 k GPU allocations: 4.759 MiB, 1.56% memmgmt time)
+9.190700 seconds (10.75 M CPU allocations: 600.501 MiB, 0.62% gc time) (125.55 k GPU allocations: 4.758 MiB, 1.63% memmgmt time)
+9.162080 seconds (10.74 M CPU allocations: 600.261 MiB, 0.63% gc time) (125.40 k GPU allocations: 4.752 MiB, 1.56% memmgmt time)
+
+Converged in 825 iterations
+
+
+BFS 5mm mesh:
+16.669418 seconds (18.89 M CPU allocations: 1.194 GiB, 0.91% gc time) (157.99 k GPU allocations: 21.352 MiB, 1.03% memmgmt time)
+11.404726 seconds (14.47 M CPU allocations: 883.681 MiB, 0.70% gc time) (158.02 k GPU allocations: 21.356 MiB, 1.74% memmgmt time)
+11.524167 seconds (14.47 M CPU allocations: 883.689 MiB, 0.70% gc time) (158.02 k GPU allocations: 21.356 MiB, 1.52% memmgmt time)
+11.243747 seconds (14.47 M CPU allocations: 883.694 MiB, 0.67% gc time) (158.01 k GPU allocations: 21.355 MiB, 1.56% memmgmt time)
+
+Converged in 1177 iterations
+
+
+BFS 2mm mesh:
+53.898780 seconds (56.81 M CPU allocations: 3.952 GiB, 0.61% gc time) (452.63 k GPU allocations: 369.087 MiB, 0.96% memmgmt time)
+47.979510 seconds (52.39 M CPU allocations: 3.622 GiB, 0.54% gc time) (452.63 k GPU allocations: 369.089 MiB, 1.17% memmgmt time)
+48.765652 seconds (52.40 M CPU allocations: 3.622 GiB, 0.54% gc time) (452.75 k GPU allocations: 369.187 MiB, 1.15% memmgmt time)
+48.027935 seconds (52.39 M CPU allocations: 3.622 GiB, 0.58% gc time) (452.66 k GPU allocations: 369.109 MiB, 1.15% memmgmt time)
+
+Converged in 3504 iterations

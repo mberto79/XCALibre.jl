@@ -184,12 +184,18 @@ function SIMPLE_RHO_K_loop(
     @time for iteration ∈ 1:iterations
 
         # Calculate Qt
-        Kf.x.values .= rhof.values.*0.5.*(Uf.x.values.*Uf.x.values .+ Uf.y.values.*Uf.y.values)
-        Kf.y.values .= rhof.values.*0.5.*(Uf.x.values.*Uf.x.values .+ Uf.y.values.*Uf.y.values)
-        Kf.z.values .= 0.0*rhof.values.*0.5.*(Uf.x.values.*Uf.x.values .+ Uf.y.values.*Uf.y.values)
+        for i ∈ eachindex(Uf)
+            K = 0.5*rhof[i]*norm(Uf[i])^2*Uf[i]
+            Kf.x.values[i] = K[1]
+            Kf.y.values[i] = K[2]
+            Kf.z.values[i] = K[3]
+        end
+        # Kf.x.values .= rhof.values.*0.5.*(Uf.x.values.*Uf.x.values .+ Uf.y.values.*Uf.y.values)
+        # Kf.y.values .= rhof.values.*0.5.*(Uf.x.values.*Uf.x.values .+ Uf.y.values.*Uf.y.values)
+        # Kf.z.values .= 0.0*rhof.values.*0.5.*(Uf.x.values.*Uf.x.values .+ Uf.y.values.*Uf.y.values)
         div!(divK, Kf)
 
-        divK.values .= 0.0
+        # divK.values .= 0.0
 
         # ASSEMBLE AND SOLVE MOMENTUM EQUATIONS for U*
         discretise!(ux_eqn, prev, runtime)
@@ -226,12 +232,12 @@ function SIMPLE_RHO_K_loop(
         run!(energy_eqn, solvers.energy)
         residual!(R_e, energy_eqn.equation, energy, iteration)
 
-        Psi.values .= Cp./(R.*energy.values)
-        interpolate!(energyf, energy)
-        correct_boundaries!(energyf, energy, energy.BCs) 
-        Psif.values .= Cp./(R.*energyf.values)
+        
+        
 
         inverse_diagonal!(rD, ux_eqn.equation)
+        Psi.values .= Cp./(R.*energy.values) # Needed here
+        rho.values .= p.values.*Psi.values # Needed here
         rhorD.values .= rD.values.*rho.values
         interpolate!(rhorDf, rhorD)
 
@@ -240,6 +246,15 @@ function SIMPLE_RHO_K_loop(
 
         interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs)
+
+        # This bit is needed to add density contribution to Uf
+        interpolate!(pf, p)   # needed for rhof
+        correct_boundaries!(pf, p, p.BCs) # needed for rhof (corrections)
+        interpolate!(energyf, energy)
+        correct_boundaries!(energyf, energy, energy.BCs) 
+        Psif.values .= Cp./(R.*energyf.values)
+        rhof.values .= pf.values.*Psif.values
+        
         Uf.x.values .*= rhof.values
         Uf.y.values .*= rhof.values
         Uf.z.values .*= rhof.values
@@ -273,12 +288,16 @@ function SIMPLE_RHO_K_loop(
             end
         end
 
-        rho.values .= p.values.*Psi.values
-        rhof.values .= pf.values.*Psif.values
+        # rho.values .= p.values.*Psi.values # not needed here
 
-        correct_velocity!(U, Hv, ∇p, rD)
+        # correct_velocity!(U, Hv, ∇p, rD)
+        correct_velocity!(U, Hv, ∇p, rhorD) # numerical artefacts go away! rho missing!
         interpolate!(Uf, U)
         correct_boundaries!(Uf, U, U.BCs)
+
+        interpolate!(pf, p)   
+        correct_boundaries!(pf, p, p.BCs)
+        rhof.values .= pf.values.*Psif.values
         flux!(mdotf, Uf, rhof)
     
         update_nueff!(mueff, nu, turbulence)

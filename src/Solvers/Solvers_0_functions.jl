@@ -145,12 +145,21 @@ begin # Extend to 3D!
             sumz += Az[cID,nID]*vz[nID]
         end
 
-        D = view(Ax, cID, cID)[1] # add check to use max of Ax or Ay)
-        rD = 1/D # should this be the max of all 3 directions of for D??????
-        # rD = volume/D
-        x[cID] = (bx[cID] - sumx)*rD
-        y[cID] = (by[cID] - sumy)*rD
-        z[cID] = (bz[cID] - sumz)*rD
+        # D = view(Ax, cID, cID)[1] # add check to use max of Ax or Ay)
+        # rD = 1/D # should this be the max of all 3 directions of for D??????
+        # x[cID] = (bx[cID] - sumx)*rD
+        # y[cID] = (by[cID] - sumy)*rD
+        # z[cID] = (bz[cID] - sumz)*rD
+
+        Dx = view(Ax, cID, cID)[1] # add check to use max of Ax or Ay)
+        Dy = view(Ay, cID, cID)[1] # add check to use max of Ax or Ay)
+        Dz = view(Az, cID, cID)[1] # add check to use max of Ax or Ay)
+        rDx = 1/Dx # should this be the max of all 3 directions of for D??????
+        rDy = 1/Dy # should this be the max of all 3 directions of for D??????
+        rDz = 1/Dz # should this be the max of all 3 directions of for D??????
+        x[cID] = (bx[cID] - sumx)*rDx
+        y[cID] = (by[cID] - sumy)*rDy
+        z[cID] = (bz[cID] - sumz)*rDz
     end
 end
 

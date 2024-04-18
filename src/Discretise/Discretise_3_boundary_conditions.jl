@@ -40,12 +40,13 @@ end
     phi = term.phi 
 
     J = term.flux[fID]
-    (; area, delta) = face 
-    phif = phi.values[cellID] + bc.value*delta
-    flux = J*area/delta
-    ap = term.sign[1]*(-flux)
-    A[cellID,cellID] += ap
-    b[cellID] += ap*phif
+    # (; area, delta) = face 
+    # phif = phi.values[cellID] + bc.value*delta
+    # flux = J*area/delta
+    # ap = term.sign[1]*(-flux)
+    # A[cellID,cellID] += ap
+    # b[cellID] += ap*phif
+    b[cellID] += -term.sign[1]*(J)*bc.value
     nothing
 end
 
@@ -167,8 +168,9 @@ end
 @inline (bc::FixedGradient)(
     term::Operator{F,P,I,Divergence{Upwind}}, 
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
-    # A[cellID,cellID] += 0.0#ap
-    # b[cellID] += 0.0
+    phi = term.phi 
+    ap = term.sign[1]*(term.flux[fID])
+    b[cellID] += -term.sign[1]*(term.flux[fID])*phi[cellID]*face.delta*(-bc.value)
     nothing
 end
 

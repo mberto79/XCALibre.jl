@@ -21,33 +21,21 @@
 #     write_vtk(name, model.mesh, args...)
 # end
 
-get_data(arr, backend::CUDABackend) = begin
-    arr_cpu = Array{eltype(arr)}(undef, length(arr))
-    copyto!(arr_cpu, arr)
-    arr_cpu
-end
-
-get_data(arr, backend::CPU) = begin
-    arr
+get_data(a, backend::CUDABackend) = begin
+    a_cpu = Array{eltype(a)}(undef, length(a))
+    copyto!(a_cpu, a)
+    a_cpu
 end
 
 function write_vtk(name, mesh::Mesh3, args...)
     filename=name*".vtu"
-
-    # Deactivate copies below for serial version of the codebase
     backend = _get_backend(mesh)
+
     nodes_cpu = get_data(mesh.nodes, backend)
     faces_cpu = get_data(mesh.faces, backend)
     cells_cpu = get_data(mesh.cells, backend)
     cell_nodes_cpu = get_data(mesh.cell_nodes, backend)
     face_nodes_cpu = get_data(mesh.face_nodes, backend)
-
-    # Serial version
-    # nodes_cpu = mesh.nodes
-    # faces_cpu = mesh.faces
-    # cells_cpu = mesh.cells
-    # cell_nodes_cpu = mesh.cell_nodes
-    # face_nodes_cpu = mesh.face_nodes
 
     open(filename,"w") do io
 
@@ -74,12 +62,11 @@ function write_vtk(name, mesh::Mesh3, args...)
         x=0
         y=0
 
-        # Not in use!
-        # #Modifying Data
-        # store_cells=zeros(Int32,length(cells_cpu))
-        # for i=1:length(cells_cpu)
-        #     store_cells[i]=length(cells_cpu[1].nodes_range)*i
-        # end
+        #Modifying Data
+        store_cells=zeros(Int32,length(cells_cpu))
+        for i=1:length(cells_cpu)
+            store_cells[i]=length(cells_cpu[1].nodes_range)*i
+        end
 
         #temp
         #temp_cells=LinRange(0,500,length(cells_cpu))
@@ -127,41 +114,17 @@ function write_vtk(name, mesh::Mesh3, args...)
         #     end
         # end
 
-        # This is needed because boundary faces are missing from cell level connectivity
         
-        # # Version 1
-        # for i=1:length(cells_cpu)
-        #     store_faces=[]
-        #     for id=1:length(faces_cpu)
-        #         if faces_cpu[id].ownerCells[1]==i || faces_cpu[id].ownerCells[2]==i
-        #             push!(store_faces,id)
-        #         end
-        #     end
-        #     write(io,"      $(length(store_faces))\n")
-        #     for ic=1:length(store_faces)
-        #     write(io,"      $(length(faces_cpu[store_faces[ic]].nodes_range)) $(join(face_nodes_cpu[faces_cpu[store_faces[ic]].nodes_range].-1," "))\n")
-        #     end
-        # end
-
-        # # Version 2 (x2.8 faster)
-        all_cell_faces = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_cpu)]
-        for fID ∈ eachindex(faces_cpu)
-            owners = faces_cpu[fID].ownerCells
-            owner1 = owners[1]
-            owner2 = owners[2]
-            # if faces_cpu[fID].ownerCells[1]==cID || faces_cpu[fID].ownerCells[2]==cID
-            push!(all_cell_faces[owner1],fID)
-            if owner1 !== owner2 #avoid duplication of cells for boundary faces
-                push!(all_cell_faces[owner2],fID)
+        for i=1:length(cells_cpu)
+            store_faces=[]
+            for id=1:length(faces_cpu)
+                if faces_cpu[id].ownerCells[1]==i || faces_cpu[id].ownerCells[2]==i
+                    push!(store_faces,id)
+                end
             end
-            # end
-        end
-        for (cID, fIDs) ∈ enumerate(all_cell_faces)
-            write(io,"\t$(length(all_cell_faces[cID]))\n")
-            for fID ∈ fIDs
-                write(
-                    io,"\t$(length(faces_cpu[fID].nodes_range)) $(join(face_nodes_cpu[faces_cpu[fID].nodes_range] .- 1," "))\n"
-                    )
+            write(io,"      $(length(store_faces))\n")
+            for ic=1:length(store_faces)
+            write(io,"      $(length(faces_cpu[store_faces[ic]].nodes_range)) $(join(face_nodes_cpu[faces_cpu[store_faces[ic]].nodes_range].-1," "))\n")
             end
         end
 
@@ -210,34 +173,19 @@ function write_vtk(name, mesh::Mesh3, args...)
             field = arg[2]
             field_type=typeof(field)
             if field_type <: ScalarField
-                write(io,"     <DataArray type=\"$(F32)\" Name=\"$(label)\" format=\"$(format)\">\n")
-                # values_cpu= copy_scalarfield_to_cpu(field.values, backend)
-                values_cpu = get_data(field.values, backend)
-                # values_cpu= field.values
+                write(io,"     <DataArray type=\"$(F32)\" Name=\"$(scalar) $(label)\" format=\"$(format)\">\n")
+                values_cpu= copy_scalarfield_to_cpu(field.values, backend)
                 for value ∈ values_cpu
                     println(io,value)
                 end
                 write(io,"     </DataArray>\n")
             elseif field_type <: VectorField
-                write(io,"     <DataArray type=\"$(F32)\" Name=\"$(label)\" format=\"$(format)\" NumberOfComponents=\"3\">\n")
-                # x_cpu, y_cpu, z_cpu = copy_to_cpu(field.x.values, field.y.values, field.z.values, backend)
-                # x_cpu, y_cpu, z_cpu = field.x.values, field.y.values, field.z.values
-                x_cpu = get_data(field.x.values, backend)
-                y_cpu = get_data(field.y.values, backend)
-                z_cpu = get_data(field.z.values, backend)
+                write(io,"     <DataArray type=\"$(F32)\" Name=\"$(vector)\" format=\"$(format)\">\n")
+                x_cpu, y_cpu, z_cpu = copy_to_cpu(field.x.values, field.y.values, field.z.values, backend)
                 for i ∈ eachindex(x_cpu)
                     println(io, x_cpu[i]," ",y_cpu[i] ," ",z_cpu[i] )
                 end
                 write(io,"     </DataArray>\n")
-
-                # write out single component
-                # println(io,"     <DataArray type=\"$(F32)\" Name=\"Ux\" format=\"$(format)\">")
-                # # x_cpu, y_cpu, z_cpu = copy_to_cpu(field.x.values, field.y.values, field.z.values, backend)
-                # x_cpu, y_cpu, z_cpu = field.x.values, field.y.values, field.z.values
-                # for i ∈ eachindex(x_cpu)
-                #     println(io, x_cpu[i])
-                # end
-                # println(io,"     </DataArray>")
             else
                 throw("""
                 Input data should be a ScalarField or VectorField e.g. ("U", U)

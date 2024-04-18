@@ -1,114 +1,83 @@
 export green_gauss!
 
-# function green_gauss!(grad::Grad, phif; source=false)
-# function green_gauss!(dx, dy, dz, phif)
-#     # (; x, y, z) = grad.result
-#     (; mesh, values) = phif
-#     # (; cells, faces) = mesh
-#     (; faces, cells, cell_faces, cell_nsign) = mesh
-#     F = _get_float(mesh)
-#     for ci ∈ eachindex(cells)
-#         # (; facesID, nsign, volume) = cells[ci]
-#         cell = cells[ci]
-#         (; volume) = cell
-#         res = SVector{3,F}(0.0,0.0,0.0)
-#         # for fi ∈ eachindex(facesID)
-#         for fi ∈ cell.faces_range
-#             # fID = facesID[fi]
-#             fID = cell_faces[fi]
-#             nsign = cell_nsign[fi]
-#             (; area, normal) = faces[fID]
-#             # res += values[fID]*(area*normal*nsign[fi])
-#             res += values[fID]*(area*normal*nsign)
-#         end
-#         res /= volume
-#         dx[ci] = res[1]
-#         dy[ci] = res[2]
-#         dz[ci] = res[3]
-#     end
-#     # Add boundary faces contribution
-#     nbfaces = length(mesh.boundary_cellsID)
-#     for i ∈ 1:nbfaces
-#         face = faces[i]
-#         (; ownerCells, area, normal) = face
-#         cID = ownerCells[1] 
-#         (; volume) = cells[cID]
-#         res = values[i]*(area*normal)
-#         res /= volume
-#         dx[cID] += res[1]
-#         dy[cID] += res[2]
-#         dz[cID] += res[3]
-#     end
-# end
+# Green gauss function definition
 
 function green_gauss!(dx, dy, dz, phif)
-    # (; x, y, z) = grad.result
+    # Retrieve required varaibles for function
     (; mesh, values) = phif
-    # (; cells, faces) = mesh
     (; faces, cells, cell_faces, cell_nsign) = mesh
-    F = _get_float(mesh)
-
     backend = _get_backend(mesh)
+
+    # Retrieve user-selected float type
+    F = _get_float(mesh)
     
+    # Launch result calculation kernel
     kernel! = result_calculation!(backend)
     kernel!(values, faces, cells, cell_nsign, cell_faces, F, dx, dy, dz, ndrange = length(cells))
     KernelAbstractions.synchronize(backend)
 
+    # Retrieve number of boundary faces
     nbfaces = length(mesh.boundary_cellsID)
     
+    # Launch boundary faces contribution kernel
     kernel! = boundary_faces_contribution!(backend)
     kernel!(values, faces, cells, F, dx, dy, dz, ndrange = nbfaces)
     KernelAbstractions.synchronize(backend)
 end
 
+# Result calculation kernel definition
+
 @kernel function result_calculation!(values, faces, cells, cell_nsign, cell_faces, F, dx, dy, dz)
     i = @index(Global)
 
     @inbounds begin
+        # Extract required fields from work item cell
         (; volume, faces_range) = cells[i]
 
-        # for fi in faces_range
-        #     fID = cell_faces[fi]
-        #     nsign = cell_nsign[fi]
-        #     (; area, normal) = faces[fID]
-        #     dx[i] += values[fID]*(area*normal[1]*nsign)
-        #     dy[i] += values[fID]*(area*normal[2]*nsign)
-        #     dz[i] += values[fID]*(area*normal[3]*nsign)
-        # end
-        # dx[i] /= volume
-        # dy[i] /= volume
-        # dz[i] /= volume
+        # Allocate static vector for results
         res = SVector{3,F}(0.0,0.0,0.0)
 
+        # Loop over cell faces to calculate result
         for fi ∈ faces_range
-            # fID = facesID[fi]
+            # Define reqquired variables
             fID = cell_faces[fi]
             nsign = cell_nsign[fi]
             (; area, normal) = faces[fID]
-            # res += values[fID]*(area*normal*nsign[fi])
+            
+            # Result calcaultion
             res += values[fID]*(area*normal*nsign)
         end
+        # Normalise results with cell volume
         res /= volume
+
+        # Store results in x, y, z value array
         dx.values[i] = res[1]
         dy.values[i] = res[2]
         dz.values[i] = res[3]
     end    
 end
 
+# Boundary faces contribution kernel definition
+
 @kernel function boundary_faces_contribution!(values, faces, cells, F, dx, dy, dz)
     i = @index(Global)
 
     @inbounds begin
+        # Extract required variables from work item face and cell
         (; ownerCells, area, normal) = faces[i]
         cID = ownerCells[1]
         (; volume) = cells[cID]
-        # Atomix.@atomic dx.values[cID] += (values[i]*(area*normal[1]))/volume
-        # Atomix.@atomic dy.values[cID] += (values[i]*(area*normal[2]))/volume
-        # Atomix.@atomic dz.values[cID] += (values[i]*(area*normal[3]))/volume
 
+        # Allocate static vector for results
         res = SVector{3,F}(0.0,0.0,0.0)
+
+        # Results calculation
         res = values[i]*(area*normal)
+
+        # Normalise results with cell volume
         res /= volume 
+        
+        # Increment x, y, z values vectors with results
         Atomix.@atomic dx.values[cID] += res[1]
         Atomix.@atomic dy.values[cID] += res[2]
         Atomix.@atomic dz.values[cID] += res[3]

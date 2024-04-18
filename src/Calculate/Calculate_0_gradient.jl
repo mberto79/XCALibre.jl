@@ -19,41 +19,40 @@ function Adapt.adapt_structure(to, itp::Grad{S}) where {S}
     mesh = Adapt.adapt_structure(to, itp.mesh); M = typeof(mesh)
     Grad{S,F,R,I,M}(field, result, correctors, correct, mesh)
 end
+
+# Grad outer constructor for scalar field definition
+
 Grad{S}(phi::ScalarField) where S= begin
+    # Retrieve mesh and define grad as vector field
     mesh = phi.mesh
     grad = VectorField(mesh)
+
+    # Retrieve user-selected types
     F = typeof(phi)
     R = typeof(grad)
     I = _get_int(mesh)
     M = typeof(mesh)
+
+    # Construct Grad
     Grad{S,F,R,I,M}(phi, grad, one(I), false, mesh)
 end
 
+# Grad outer constructor for vector field definition
+
 Grad{S}(psi::VectorField) where S = begin
+    # Retrieve mesh and define grad as tensor field
     mesh = psi.mesh
     tgrad = TensorField(mesh)
+
+    # Retrieve user-selected types
     F = typeof(psi)
     R = typeof(tgrad)
-    # I = eltype(mesh.nodes[1].neighbourCells)
     I = _get_int(mesh)
     M = typeof(mesh)
+
+    # Construct Grad
     Grad{S,F,R,I,M}(psi, tgrad, one(I), false, mesh)
 end
-
-# Grad{S}(phi::ScalarField, correctors::Integer) where S = begin 
-#     mesh = phi.mesh
-#     (; cells) = mesh
-#     ncells = length(cells)
-#     F = eltype(mesh.nodes[1].coords)
-#     I = eltype(mesh.nodes[1].neighbourCells)
-#     SF = typeof(phi)
-#     M = typeof(mesh)
-#     gradx = zeros(F, ncells)
-#     grady = zeros(F, ncells)
-#     gradz = zeros(F, ncells)
-#     Grad{S,I,F,SF,M}(phi, gradx, grady, gradz, correctors, true, mesh)
-# end
-# get_scheme(term::Grad{S,I,F}) where {S,I,F} = S
 
 Base.getindex(grad::Grad{S,F,R,I,M}, i::Integer) where {S,F,R<:VectorField,I,M} = begin
     Tf = eltype(grad.result.x.values)
@@ -100,19 +99,21 @@ end
 
 ## Orthogonal (uncorrected) gradient calculation
 
+# Vector field function definition
+
 function grad!(grad::Grad{Orthogonal,F,R,I,M}, phif, phi, BCs) where {F,R<:VectorField,I,M}
     interpolate!(phif, phi)
     correct_boundaries!(phif, phi, BCs)
     green_gauss!(grad.result.x, grad.result.y, grad.result.z, phif)
-    # for i ∈ 1:2
-    #     correct_interpolation!(grad, phif, phi)
-    #     green_gauss!(grad, phif; source)
-    # end
 end
+
+# Tensor field function definition
 
 function grad!(grad::Grad{Orthogonal,F,R,I,M}, psif, psi, BCs) where {F,R<:TensorField,I,M}
     interpolate!(psif, psi)
     correct_boundaries!(psif, psi, BCs)
+
+    # Launch green-dauss for all tensor field dimensions
     green_gauss!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x)
     green_gauss!(grad.result.xy, grad.result.yy, grad.result.zy, psif.y)
     green_gauss!(grad.result.xz, grad.result.yz, grad.result.zz, psif.z)
@@ -120,146 +121,153 @@ end
 
 ## Mid-point gradient calculation
 
-# interpolate_midpoint!(phif::FaceScalarField, phi::ScalarField) = begin
-#     mesh = phi.mesh
-#     (; faces) = mesh
-#     for i ∈ eachindex(faces)
-#         owners = faces[i].ownerCells 
-#         c1 = owners[1]
-#         c2 = owners[2]
-#         phif[i] = 0.5*(phi[c1] + phi[c2])
-#     end
-# end
+# Scalar field calculation definition
 
 function interpolate_midpoint!(phif::FaceScalarField, phi::ScalarField)
+    # Extract required variables for function
     (; mesh) = phi
     (; faces) = mesh
     backend = _get_backend(mesh)
+
+    # Launch interpolate midpoint kernel for scalar field
     kernel! = interpolate_midpoint_scalar!(backend)
     kernel!(faces, phif, phi, ndrange = length(faces))
     KernelAbstractions.synchronize(backend)
 end
 
+# Interpolate kernel for scalar field definition
+
 @kernel function interpolate_midpoint_scalar!(faces, phif, phi)
     i = @index(Global)
 
     @inbounds begin
+        # Extract required fields from work item face and define ownerCell variables
         (; ownerCells) = faces[i]
         c1 = ownerCells[1]
         c2 = ownerCells[2]
+
+        # Interpolate calculation
         phif[i] = 0.5*(phi[c1] + phi[c2])
     end
 end
 
+# Interpolate function for vector field definition (NEEDS KERNEL IMPLEMENTATION!!!!!!)
+
 interpolate_midpoint!(psif::FaceVectorField, psi::VectorField) = begin
+    # Extract individual value vectors from vector field
     (; x, y, z) = psif
+
+    # Retrieve mesh and faces
     mesh = psi.mesh
     faces = mesh.faces
+    
+    # Set initial weight
     weight = 0.5
-    @inbounds for fID ∈ eachindex(faces)
-        face = faces[fID]
-        weight = face.weight
-        ownerCells = face.ownerCells
-        c1 = ownerCells[1]; c2 = ownerCells[2]
-        x1 = psi.x[c1]; x2 = psi.x[c2]
-        y1 = psi.y[c1]; y2 = psi.y[c2]
-        z1 = psi.z[c1]; z2 = psi.z[c2]
-        x[fID] = weight*(x1 + x2)
-        y[fID] = weight*(y1 + y2)
-        z[fID] = weight*(z1 + z2)
+    
+    @inbounds begin
+        # Loop over all faces to calculate interpolation
+        for fID ∈ eachindex(faces)
+            # Retrieve face, weight and ownerCells for loop iteration
+            face = faces[fID]
+            weight = face.weight
+            ownerCells = face.ownerCells
+            c1 = ownerCells[1]; c2 = ownerCells[2]
+            
+            # Set values to interpolate between
+            x1 = psi.x[c1]; x2 = psi.x[c2]
+            y1 = psi.y[c1]; y2 = psi.y[c2]
+            z1 = psi.z[c1]; z2 = psi.z[c2]
+
+            # Interpolate calculation
+            x[fID] = weight*(x1 + x2)
+            y[fID] = weight*(y1 + y2)
+            z[fID] = weight*(z1 + z2)
+        end
     end
 end
 
-# correct_interpolation!(dx,dy,dz, phif, phi) = begin
-#     (; mesh, values) = phif
-#     (; faces, cells, nbfaces) = mesh
-#     F = _get_float(mesh)
-#     phic = phi.values
-#     # nbfaces = total_boundary_faces(mesh)
-#     start = nbfaces + 1
-#     weight = 0.5
-#     @inbounds @simd for fID ∈ start:length(faces)
-#         face = faces[fID]
-#         ownerCells = face.ownerCells
-#         owner1 = ownerCells[1]
-#         owner2 = ownerCells[2]
-#         cell1 = cells[owner1]
-#         cell2 = cells[owner2]
-#         phi1 = phic[owner1]
-#         phi2 = phic[owner2]
-#         ∇phi1 = SVector{3, F}(dx[owner1], dy[owner1], dz[owner1])
-#         ∇phi2 = SVector{3, F}(dx[owner2], dy[owner2], dz[owner2])
-#         rf = face.centre 
-#         rP = cell1.centre 
-#         rN = cell2.centre
-#         phifᵖ = weight*(phi1 + phi2)
-#         ∇phi = weight*(∇phi1 + ∇phi2)
-#         Ri = rf - weight*(rP + rN)
-#         values[fID] = phifᵖ + ∇phi⋅Ri
-#     end
-# end
+# Correct interpolation function definition
 
 function correct_interpolation!(dx, dy, dz, phif, phi)
+    # Define required variables for function
     (; mesh, values) = phif
-    (; faces, cells, boundaries) = mesh
+    (; faces, cells) = mesh
     nbfaces = length(mesh.boundary_cellsID)
-    F = _get_float(mesh)
     phic = phi.values
-    # nbfaces = total_boundary_faces(mesh)
-    # start = nbfaces+1
-    weight = 0.5
     backend = _get_backend(mesh)
+
+    # Retrieve user-selected float type
+    F = _get_float(mesh)
+    
+    # Set initial weight
+    weight = 0.5
+
+    # Launch correct interpolation kernel
     kernel! = correct_interpolation_kernel!(backend)
     kernel!(faces, cells, nbfaces, phic, F, weight, dx, dy, dz, values, ndrange = length(faces)-nbfaces)
     KernelAbstractions.synchronize(backend)
 end
 
+# Correct interpolation kernel definition
+
 @kernel function correct_interpolation_kernel!(faces, cells, nbfaces, phic, F, weight, dx, dy, dz, values)
     i = @index(Global)
+    # Set i such that it does not index boundary faces
     i += nbfaces
 
+    # Retrieve fields from work item face
     (; ownerCells, centre) = faces[i]
     centre_faces = centre
-
     owner1 = ownerCells[1]
     owner2 = ownerCells[2]
 
+    # Retrieve centre from work item cells and redefine variable name 
     (; centre) = cells[owner1]
     centre_cell1 = centre
-
     (; centre) = cells[owner2]
     centre_cell2 = centre
 
+    # Retrieve values between which to correct interpolation
     phi1 = phic[owner1]
     phi2 = phic[owner2]
 
+    # Allocate SVectors to use for gradient interpolation
     ∇phi1 = SVector{3, F}(dx[owner1], dy[owner1], dz[owner1])
     ∇phi2 = SVector{3, F}(dx[owner2], dy[owner2], dz[owner2])
 
+    # Define variables as per interpolation mathematics convention
     rf = centre_faces
     rP = centre_cell1 
     rN = centre_cell2
 
+    # Interpolate calculation
     phifᵖ = weight*(phi1 + phi2)
     ∇phi = weight*(∇phi1 + ∇phi2)
     Ri = rf - weight*(rP + rN)
-
     values[i] = phifᵖ + ∇phi⋅Ri
 end
+
+# Vector field function definition
 
 function grad!(grad::Grad{Midpoint,F,R,I,M}, phif, phi, BCs) where {F,R<:VectorField,I,M}
     interpolate_midpoint!(phif, phi)
     correct_boundaries!(phif, phi, BCs)
     green_gauss!(grad.result.x, grad.result.y, grad.result.z, phif)
+
+    # Loop to run correction and green-gauss required number of times over all dimensions
     for i ∈ 1:2
         correct_interpolation!(grad.result.x, grad.result.y, grad.result.z, phif, phi)
         green_gauss!(grad.result.x, grad.result.y, grad.result.z, phif)
     end
 end
 
+# Tensor field function definition
+
 function grad!(grad::Grad{Midpoint,F,R,I,M}, psif, psi, BCs) where {F,R<:TensorField,I,M}
     interpolate_midpoint!(psif, psi)
     correct_boundaries!(psif, psi, BCs)
+
+    # Loop to run correction and green-gauss required number of times over all dimensions
     for i ∈ 1:2
     correct_interpolation!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x, psi.x)
     green_gauss!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x)

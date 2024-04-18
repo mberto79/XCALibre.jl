@@ -8,43 +8,31 @@ function _apply_boundary_conditions!(
     model::Model{TN,SN,T,S}, BCs::B, eqn) where {T,S,TN,SN,B}
     nTerms = length(model.terms)
 
-    # Define variables for function
+    # Retriecve variables for function
     mesh = model.terms[1].phi.mesh
     A = _A(eqn)
     b = _b(eqn)
+
+    # Deconstruct mesh to required fields
     (; faces, cells, boundary_cellsID) = mesh
 
-    # Deconstruct sparse array dependent on sparse arrays type
+    # Call sparse array field accessors
     rowval = _rowval(A)
     colptr = _colptr(A)
     nzval = _nzval(A)
 
-    # Get types and create integer(one)
+    # Get user-defined integer types
     backend = _get_backend(mesh)
     integer = _get_int(mesh)
     ione = one(integer)
 
-    # Execute function to apply boundary conditions for all terms and boundaries
-    # for bci in 1:length(BCs)
-    #     for t in 1:nTerms
-    #         Execute_apply_boundary_condition_kernel!(BCs[bci], model.terms[t], 
-    #                                                 backend, boundaries, faces, cells,
-    #                                                 boundary_cellsID, ione, rowval_array,
-    #                                                 colptr_array, nzval_array, b_array)
-    #         KernelAbstractions.synchronize(backend)
-    #     end
-    # end
+    # Loop over boundary conditions to apply boundary conditions 
     for BC ∈ BCs
-        # CUDA.@allowscalar start_ID = mesh.boundaries[BC.ID].IDs_range[1]
-        # CUDA.@allowscalar facesID_range = mesh.boundaries[BC.ID].IDs_range
-        
-        
-        
-        # copyto!(boundaries_cpu, mesh.boundaries)
-        facesID_range = get_boundaries(BC, mesh.boundaries)
-        start_ID = facesID_range[1]
+        # Scalar index starting face ID and boundary condition face IDs range
+        CUDA.@allowscalar start_ID = mesh.boundaries[BC.ID].IDs_range[1]
+        CUDA.@allowscalar facesID_range = mesh.boundaries[BC.ID].IDs_range
 
-        # Execute apply boundary conditions kernel
+        # Call apply boundary conditions kernel
         kernel! = apply_boundary_conditions_kernel!(backend)
         kernel!(
             model, BC, model.terms, faces, cells, start_ID, boundary_cellsID, rowval, colptr, nzval, b, ione, ndrange=length(facesID_range)
@@ -52,40 +40,29 @@ function _apply_boundary_conditions!(
         KernelAbstractions.synchronize(backend)
     end
     nothing
-    # end
 end
 
-function get_boundaries(BC, boundaries::Array)
-    facesID_range = boundaries[BC.ID].IDs_range
-    return facesID_range
-end
-
-function get_boundaries(BC, boundaries::CuArray)
-    # Copy boundaries to CPU
-    boundaries_cpu = Array{eltype(boundaries)}(undef, length(boundaries))
-    copyto!(boundaries_cpu, boundaries)
-    facesID_range = boundaries_cpu[BC.ID].IDs_range
-    return facesID_range
-end
-
+# Apply boundary conditions kernel definition
 @kernel function apply_boundary_conditions_kernel!(
     model::Model{TN,SN,T,S}, BC, terms, 
     faces, cells, start_ID, boundary_cellsID, rowval, colptr, nzval, b, ione
     ) where {TN,SN,T,S}
-
     i = @index(Global)
-    # (; IDs_range) = boundaries[BC.ID]
+
+    # Redefine thread index to correct starting ID 
     j = i + start_ID - 1
-    # i = BC.ID
-    # (; IDs_range) = boundaries[i]
-    
     faceID = j
+
+    # Retrieve workitem cellID, cell and face
     cellID = boundary_cellsID[j]
     face = faces[faceID]
     cell = cells[cellID] 
+
+    # Call apply generated function
     apply!(model, BC, terms, rowval, colptr, nzval, b, cellID, cell, face, faceID, ione)
 end
 
+# Apply generated function definition
 @generated function apply!(
     model::Model{TN,SN,T,S}, BC, terms, 
     rowval, colptr, nzval, b, cellID, cell, face, fID, ione) where {TN,SN,T,S}
@@ -103,7 +80,10 @@ end
     end
 end
 
+# Boundary indices generated function definition
 @generated function boundary_indices(mesh::M, BCs::B) where {M<:AbstractMesh,B}
+
+    # Definition of main boundary indices loop (one per patch)
     unpacked_BCs = []
     for i ∈ 1:length(BCs.parameters)
         unpack = quote

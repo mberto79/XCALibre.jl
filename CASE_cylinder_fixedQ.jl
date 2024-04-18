@@ -10,7 +10,7 @@ mesh = update_mesh_format(mesh)
 
 # Inlet conditions
 
-velocity = [0.5, 0.0, 0.0]
+velocity = [0.25, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 pressure = 100000.0
 h_inf = 300*1005 
@@ -51,8 +51,8 @@ solvers = (
         preconditioner = DILU(),
         convergence = 1e-7,
         relax       = 0.8,
-        rtol        = 1e-2,
-        atol        = 1e-5,
+        rtol        = 1e-3,
+        atol        = 1e-6,
     ),
     p = set_solver(
         model.p;
@@ -70,7 +70,7 @@ solvers = (
         convergence = 1e-7,
         relax       = 0.8,
         rtol        = 1e-3,
-        atol        = 1e-7,
+        atol        = 1e-6,
     ),
 )
 
@@ -78,9 +78,12 @@ schemes = (
     U = set_schemes(divergence=Upwind),
     p = set_schemes(divergence=Upwind, gradient=Midpoint),
     energy = set_schemes(divergence=Upwind)
+    # U = set_schemes(divergence=Linear),
+    # p = set_schemes(divergence=Linear, gradient=Midpoint),
+    # energy = set_schemes(divergence=Linear)
 )
 
-runtime = set_runtime(iterations=2000, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=1000, write_interval=50, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

@@ -233,13 +233,23 @@ function SIMPLE_RHO_K_loop(
         residual!(R_e, energy_eqn.equation, energy, iteration)
 
         
+        # This bit is needed to add density contribution to Uf
+        interpolate!(pf, p)   # needed for rhof
+        correct_boundaries!(pf, p, p.BCs) # needed for rhof (corrections)
+        interpolate!(energyf, energy)
+        correct_boundaries!(energyf, energy, energy.BCs) 
+        Psi.values .= Cp./(R.*energy.values) # Needed here
+        rho.values .= p.values.*Psi.values # Needed here
+        Psif.values .= Cp./(R.*energyf.values)
+        rhof.values .= pf.values.*Psif.values
         
 
         inverse_diagonal!(rD, ux_eqn.equation)
-        Psi.values .= Cp./(R.*energy.values) # Needed here
-        rho.values .= p.values.*Psi.values # Needed here
-        rhorD.values .= rD.values.*rho.values
-        interpolate!(rhorDf, rhorD)
+        # Psi.values .= Cp./(R.*energy.values) # Needed here
+        # rho.values .= p.values.*Psi.values # Needed here
+        # rhorD.values .= rD.values.*rho.values
+        interpolate!(rhorDf, rD)
+        rhorDf.values .*= rhof.values
 
         remove_pressure_source!(ux_eqn, uy_eqn, uz_eqn, ∇p)
         H!(Hv, U, ux_eqn, uy_eqn, uz_eqn)
@@ -248,12 +258,12 @@ function SIMPLE_RHO_K_loop(
         correct_boundaries!(Uf, Hv, U.BCs)
 
         # This bit is needed to add density contribution to Uf
-        interpolate!(pf, p)   # needed for rhof
-        correct_boundaries!(pf, p, p.BCs) # needed for rhof (corrections)
-        interpolate!(energyf, energy)
-        correct_boundaries!(energyf, energy, energy.BCs) 
-        Psif.values .= Cp./(R.*energyf.values)
-        rhof.values .= pf.values.*Psif.values
+        # interpolate!(pf, p)   # needed for rhof
+        # correct_boundaries!(pf, p, p.BCs) # needed for rhof (corrections)
+        # interpolate!(energyf, energy)
+        # correct_boundaries!(energyf, energy, energy.BCs) 
+        # Psif.values .= Cp./(R.*energyf.values)
+        # rhof.values .= pf.values.*Psif.values
         
         Uf.x.values .*= rhof.values
         Uf.y.values .*= rhof.values
@@ -288,16 +298,38 @@ function SIMPLE_RHO_K_loop(
             end
         end
 
-        # rho.values .= p.values.*Psi.values # not needed here
+        # interpolate!(pf, p)   # needed for rhof
+        # correct_boundaries!(pf, p, p.BCs) # needed for rhof (corrections)
+        # interpolate!(energyf, energy)
+        # correct_boundaries!(energyf, energy, energy.BCs) 
+        # Psi.values .= Cp./(R.*energy.values) # Needed here
+        # rho.values .= p.values.*Psi.values # Needed here
+        # Psif.values .= Cp./(R.*energyf.values)
+        # rhof.values .= pf.values.*Psif.values
 
-        # correct_velocity!(U, Hv, ∇p, rD)
-        correct_velocity!(U, Hv, ∇p, rhorD) # numerical artefacts go away! rho missing!
+        # for i ∈ eachindex(rho.values)
+        #     Hv.x.values[i] *= rho.values[i]
+        #     Hv.y.values[i] *= rho.values[i]
+        #     Hv.z.values[i] *= rho.values[i]
+        # end
+        correct_velocity!(U, Hv, ∇p, rD)
+        # correct_velocity!(U, Hv, ∇p, rhorD) # numerical artefacts go away! rho missing!
         interpolate!(Uf, U)
         correct_boundaries!(Uf, U, U.BCs)
 
-        interpolate!(pf, p)   
-        correct_boundaries!(pf, p, p.BCs)
-        rhof.values .= pf.values.*Psif.values
+        # interpolate!(pf, p)   
+        # correct_boundaries!(pf, p, p.BCs)
+        # rhof.values .= pf.values.*Psif.values
+
+        interpolate!(pf, p)   # needed for rhof
+        correct_boundaries!(pf, p, p.BCs) # needed for rhof (corrections)
+        interpolate!(energyf, energy)
+        correct_boundaries!(energyf, energy, energy.BCs) 
+        @. Psi.values = 0.0*Psi.values + 1.0*Psi.values*Cp/(R*energy.values)
+        @. Psif.values = 0.0*Psif.values + 1.0*Psif.values*Cp/(R*energyf.values)
+        @. rho.values = 0.8*rho.values + 0.2*p.values*Psi.values # Needed here
+        @. rhof.values = 0.8*rhof.values + 0.2*pf.values*Psif.values
+
         flux!(mdotf, Uf, rhof)
     
         update_nueff!(mueff, nu, turbulence)
@@ -310,7 +342,7 @@ function SIMPLE_RHO_K_loop(
         end
 
         # Calculate keff_by_cp
-        keff_by_cp.values .= mueff.values./Pr
+        keff_by_cp.values .= rhof.values.*mueff.values./Pr
 
         # for i ∈ eachindex(divUTx)
         #     vol = mesh.cells[i].volume

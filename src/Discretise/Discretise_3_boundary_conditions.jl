@@ -161,7 +161,7 @@ end
     # b[cellID] -= ap*phi[cellID]
     ap = term.sign[1]*(term.flux[fID])
     A[cellID,cellID] += ap
-    # b[cellID] -= max(ap*phi[cellID], 0.0)
+    # b[cellID] -= ap*phi[cellID]
     nothing
 end
 

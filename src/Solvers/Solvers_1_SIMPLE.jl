@@ -217,7 +217,7 @@ function SIMPLE_loop(
         #     divUTy = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][2,1]+ gradUT[i][2,2] + gradUT[i][2,3])*vol
         # end
         
-        convergence = 1e-7
+        convergence = 1e-10
 
         if (R_ux[iteration] <= convergence && 
             R_uy[iteration] <= convergence && 

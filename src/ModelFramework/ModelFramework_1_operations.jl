@@ -3,6 +3,10 @@ export →
 Base.:+(a::Operator, b::Operator) = [a, b]
 Base.:+(a::Vector{<:Operator}, b::Operator) = [a..., b]
 
+Base.:-(a::Operator) = begin
+    @reset a.sign = -1
+    [a]
+end
 Base.:-(a::Operator, b::Operator) = begin
     @reset b.sign = -1
     [a, b]
@@ -19,7 +23,7 @@ Base.:+(a::Vector{<:Src}, b::Src) = [a..., b]
 
 Base.:-(a::Src) = begin
     @reset a.sign = -1
-    [a]
+    a
 end
 
 Base.:-(a::Src, b::Src) = begin

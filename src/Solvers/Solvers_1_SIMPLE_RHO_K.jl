@@ -29,31 +29,25 @@ function simple_rho_K!(model, config; resume=true, pref=nothing)
     ux_eqn = (
         Time{schemes.U.time}(rho, U.x)
         + Divergence{schemes.U.divergence}(mdotf, U.x) 
-        - Laplacian{schemes.U.laplacian}(mueff, U.x) 
+        - Laplacian{schemes.U.laplacian}(nu, U.x) 
         == 
         -Source(∇p.result.x)
-        # - Source(gradDivU.result.x)
-        # - Source(divU)
     ) → Equation(mesh)
     
     uy_eqn = (
         Time{schemes.U.time}(rho, U.y)
         + Divergence{schemes.U.divergence}(mdotf, U.y) 
-        - Laplacian{schemes.U.laplacian}(mueff, U.y) 
+        - Laplacian{schemes.U.laplacian}(nu, U.y) 
         == 
         -Source(∇p.result.y)
-        # - Source(gradDivU.result.y)
-        # - Source(divU)
     ) → Equation(mesh)
 
     uz_eqn = (
         Time{schemes.U.time}(rho, U.z)
         + Divergence{schemes.U.divergence}(mdotf, U.z) 
-        - Laplacian{schemes.U.laplacian}(mueff, U.z) 
+        - Laplacian{schemes.U.laplacian}(nu, U.z) 
         == 
         -Source(∇p.result.z)
-        # - Source(gradDivU.result.z)
-        # - Source(divU)
     ) → Equation(mesh)
 
     p_eqn = (
@@ -146,7 +140,7 @@ function SIMPLE_RHO_K_loop(
     pf = FaceScalarField(mesh)
     energyf = FaceScalarField(mesh)
     rhof = FaceScalarField(mesh)
-    # rDf = FaceScalarField(mesh)
+    rDf = FaceScalarField(mesh)
     gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
@@ -169,26 +163,28 @@ function SIMPLE_RHO_K_loop(
     R_p = ones(TF, iterations)
     R_e = ones(TF, iterations)
 
-    rho.values .= (p.values.*Cp)./(R.*energy.values)
-
+    
     interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, U.BCs)
-
+    
     interpolate!(energyf, energy)   
-    correct_boundaries!(energyf, energy, energy.BCs)
+    # correct_boundaries!(energyf, energy, energy.BCs)
     interpolate!(pf, p)   
-    correct_boundaries!(pf, p, p.BCs)
- 
+    # correct_boundaries!(pf, p, p.BCs)
+    
+    rho.values .= (p.values.*Cp)./(R.*energy.values)
     rhof.values .= (pf.values.*Cp)./(R.*energyf.values)
 
-    flux!(mdotf, Uf, rhof)
+    # flux!(mdotf, Uf, rhof)
+    flux!(mdotf, Uf)
     grad!(∇p, pf, p, p.BCs)
 
-    update_nueff!(mueff, nu, turbulence)
-    @. mueff.values *= rhof.values
+    # update_nueff!(mueff, nu, rhof, turbulence)
+    # update_nueff!(mueff, nu, turbulence)
+    # @. mueff.values *= rhof.values
 
     # Calculate keff_by_cp
-    keff_by_cp.values .= mueff.values./Pr
+    @. keff_by_cp.values = mueff.values/Pr
     volumes = getproperty.(mesh.cells, :volume)
 
     @info "Staring SIMPLE loops..."
@@ -196,53 +192,52 @@ function SIMPLE_RHO_K_loop(
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
     @time for iteration ∈ 1:iterations
-
-        # div!(divU, 2/3, mueff, Uf)
-        # # @. divU.values *= 2/3*rho.values
-        # @. divU.values *= rho.values
-        # interpolate!(divUf, divU)
-        # grad!(gradDivU, divUf, divU, ()) 
-
-        # Calculate Qt
-        for i ∈ eachindex(Uf)
-            Kf.values[i] = 0.5*norm(Uf[i])^2
-        end
         
-        # div!(divK, Kf)
-        # div!(divK, mdotf, Kf)
-        # @. divK.values /= volumes
-        # divnovol!(divK, Kf)
-
-        # divK.values .= 0.0
-        interpolate!(Uf, U)
-        correct_boundaries!(Uf, U, U.BCs)
-
-        # ASSEMBLE AND SOLVE MOMENTUM EQUATIONS for U*
-        discretise!(ux_eqn, prev, runtime)
-        discretise!(uy_eqn, prev, runtime)
-        discretise!(uz_eqn, prev, runtime)
-        apply_boundary_conditions!(ux_eqn, U.x.BCs)
-        apply_boundary_conditions!(uy_eqn, U.y.BCs)
-        apply_boundary_conditions!(uz_eqn, U.z.BCs)
-        # wallBC!(ux_eqn, uy_eqn, U, mesh, mueff)
+        # Set up and solve momentum equations
 
         @. prev = U.x.values
+        discretise!(ux_eqn, prev, runtime)
+        apply_boundary_conditions!(ux_eqn, U.x.BCs)
+        # ux_eqn.b .-= divUTx
         implicit_relaxation!(ux_eqn.equation, prev, solvers.U.relax)
         update_preconditioner!(ux_eqn.preconditioner)
         run!(ux_eqn, solvers.U) #opP=Pu.P, solver=solver_U)
         residual!(R_ux, ux_eqn.equation, U.x, iteration)
 
         @. prev = U.y.values
+        discretise!(uy_eqn, prev, runtime)
+        apply_boundary_conditions!(uy_eqn, U.y.BCs)
+        # uy_eqn.b .-= divUTy
         implicit_relaxation!(uy_eqn.equation, prev, solvers.U.relax)
         update_preconditioner!(uy_eqn.preconditioner)
         run!(uy_eqn, solvers.U)
         residual!(R_uy, uy_eqn.equation, U.y, iteration)
 
         @. prev = U.z.values
+        discretise!(uz_eqn, prev, runtime)
+        apply_boundary_conditions!(uz_eqn, U.z.BCs)
+        # uy_eqn.b .-= divUTy
         implicit_relaxation!(uz_eqn.equation, prev, solvers.U.relax)
         update_preconditioner!(uz_eqn.preconditioner)
         run!(uz_eqn, solvers.U)
         residual!(R_uz, uz_eqn.equation, U.z, iteration)
+
+        # inverse_diagonal!(rD, ux_eqn.equation)
+        inverse_diagonal!(rD, ux_eqn.equation, uy_eqn.equation, uz_eqn.equation)
+        interpolate!(rDf, rD)
+        @. rhorDf.values = rDf.values # no density 
+        # @. rhorDf.values = rDf.values*rhof.values
+        remove_pressure_source!(ux_eqn, uy_eqn, uy_eqn, ∇p)
+        H!(Hv, U, ux_eqn, uy_eqn, uy_eqn)
+
+        interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
+        correct_boundaries!(Uf, Hv, U.BCs)
+        # @. Uf.x.values *= rhof.values
+        # @. Uf.y.values *= rhof.values
+        # @. Uf.z.values *= rhof.values
+        div!(divHv, Uf)
+
+        # Set up and solve energy equation
 
         @. prev = energy.values
         discretise!(energy_eqn, prev, runtime)
@@ -252,150 +247,75 @@ function SIMPLE_RHO_K_loop(
         run!(energy_eqn, solvers.energy)
         residual!(R_e, energy_eqn.equation, energy, iteration)
 
-        
-        interpolate!(pf, p)   # needed for rhof
-        # correct_face_interpolation(pf, p, Uf)
-        correct_boundaries!(pf, p, p.BCs) # needed for rhof (corrections)
-        interpolate!(energyf, energy)
-        # correct_face_interpolation(energyf, energy, Uf)
-        correct_boundaries!(energyf, energy, energy.BCs) 
-        # @. Psi.values = 0.0*Psi.values + 1.0*Cp/(R*energy.values)
-        # @. Psif.values = 0.0*Psif.values + 1.0*Cp/(R*energyf.values)
-        # @. rho.values = 0.8*rho.values + 0.2*p.values*Psi.values # Needed here
-        # @. rhof.values = 0.8*rhof.values + 0.2*pf.values*Psif.values
-        # @. rho.values = p.values*Psi.values 
-        # @. rhof.values = pf.values*Psif.values
-
         @. Psi.values = Cp/(R*energy.values)
+        interpolate!(energyf, energy)   
+        correct_boundaries!(energyf, energy, energy.BCs)
         @. Psif.values = Cp/(R*energyf.values)
-        
 
-        inverse_diagonal!(rD, ux_eqn.equation)
-        # Psi.values .= Cp./(R.*energy.values) # Needed here
-        # rho.values .= p.values.*Psi.values # Needed here
-        rhorD.values .= rD.values.*rho.values
-        interpolate!(rhorDf, rD)
-        # correct_face_interpolation(rhorDf, rD, Uf)
-        # rhorDf.values .*= rhof.values
-
-        remove_pressure_source!(ux_eqn, uy_eqn, uz_eqn, ∇p)
-        H!(Hv, U, ux_eqn, uy_eqn, uz_eqn)
-
-        interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
-        # correct_face_interpolation(Uf.x, Hv.x, Uf)
-        # correct_face_interpolation(Uf.y, Hv.y, Uf)
-        # correct_face_interpolation(Uf.z, Hv.z, Uf)
-        correct_boundaries!(Uf, U, U.BCs)
-
-        # This bit is needed to add density contribution to Uf
-        # interpolate!(pf, p)   # needed for rhof
-        # correct_boundaries!(pf, p, p.BCs) # needed for rhof (corrections)
-        # interpolate!(energyf, energy)
-        # correct_boundaries!(energyf, energy, energy.BCs) 
-        # Psif.values .= Cp./(R.*energyf.values)
-        # rhof.values .= pf.values.*Psif.values
-        
-        Uf.x.values .*= rhof.values
-        Uf.y.values .*= rhof.values
-        Uf.z.values .*= rhof.values
-        div!(divHv, Uf)
-   
+        # Set up and solve pressure equation
         @. prev = p.values
         discretise!(p_eqn, prev, runtime)
         apply_boundary_conditions!(p_eqn, p.BCs)
         setReference!(p_eqn.equation, pref, 1)
         update_preconditioner!(p_eqn.preconditioner)
         run!(p_eqn, solvers.p)
-
         explicit_relaxation!(p, prev, solvers.p.relax)
         residual!(R_p, p_eqn.equation, p, iteration)
 
-        interpolate!(pf, p)   # needed for rhof
-        # correct_face_interpolation(pf, p, Uf)
-        correct_boundaries!(pf, p, p.BCs) # needed for rhof (corrections)
         grad!(∇p, pf, p, p.BCs) 
 
-        correct = false
-        if correct
-            ncorrectors = 1
-            for i ∈ 1:ncorrectors
-                discretise!(p_eqn)
-                apply_boundary_conditions!(p_eqn, p.BCs)
-                setReference!(p_eqn.equation, pref, 1)
-                # grad!(∇p, pf, p, pBCs) 
-                interpolate!(gradpf, ∇p, p)
-                nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
-                correct!(p_eqn.equation, p_model.terms.term1, pf)
-                run!(p_model, solvers.p)
-                grad!(∇p, pf, p, pBCs) 
-            end
-        end
-
-        # interpolate!(pf, p)   # needed for rhof
-        # correct_boundaries!(pf, p, p.BCs) # needed for rhof (corrections)
-        # interpolate!(energyf, energy)
-        # correct_boundaries!(energyf, energy, energy.BCs) 
-        # Psi.values .= Cp./(R.*energy.values) # Needed here
-        # rho.values .= p.values.*Psi.values # Needed here
-        # Psif.values .= Cp./(R.*energyf.values)
-        # rhof.values .= pf.values.*Psif.values
-
-        # for i ∈ eachindex(rho.values)
-        #     Hv.x.values[i] *= rho.values[i]
-        #     Hv.y.values[i] *= rho.values[i]
-        #     Hv.z.values[i] *= rho.values[i]
+        # correct = false
+        # if correct
+        #     ncorrectors = 1
+        #     for i ∈ 1:ncorrectors
+        #         discretise!(p_eqn)
+        #         apply_boundary_conditions!(p_eqn, p.BCs)
+        #         setReference!(p_eqn.equation, pref, 1)
+        #         # grad!(∇p, pf, p, pBCs) 
+        #         interpolate!(gradpf, ∇p, p)
+        #         nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
+        #         correct!(p_eqn.equation, p_model.terms.term1, pf)
+        #         run!(p_model, solvers.p)
+        #         grad!(∇p, pf, p, pBCs) 
+        #     end
         # end
-        # @. rD.values *= rho.values
-        # @. ∇p.result.x.values /= rho.values
-        # @. ∇p.result.y.values /= rho.values
-        # @. ∇p.result.z.values /= rho.values
-    
+
+        flux!(mdotf, Uf)
+        interpolate!(pf, p)   
+        correct_boundaries!(pf, p, p.BCs)
+        pgrad = face_normal_gradient(p, pf)
+        @. mdotf.values -= pgrad.values*rDf.values
+
+        # Correct velocity and mass flux
         correct_velocity!(U, Hv, ∇p, rD)
-        # correct_velocity!(U, Hv, ∇p, rhorD) # numerical artefacts go away! rho missing!
         interpolate!(Uf, U)
-        correct_face_interpolation(Uf.x, U.x, Uf)
-        correct_face_interpolation(Uf.y, U.y, Uf)
-        correct_face_interpolation(Uf.z, U.z, Uf)
         correct_boundaries!(Uf, U, U.BCs)
 
+        # @. rho.values = 0.8*rho.values + 0.2*p.values*Psi.values
         # interpolate!(pf, p)   
         # correct_boundaries!(pf, p, p.BCs)
-        # rhof.values .= pf.values.*Psif.values
+        # @. rhof.values = 0.8*rhof.values + 0.2*pf.values*Psif.values
 
-        interpolate!(pf, p)   # needed for rhof
-        # correct_face_interpolation(pf, p, Uf)
-        correct_boundaries!(pf, p, p.BCs) # needed for rhof (corrections)
-        # interpolate!(energyf, energy)
-        # correct_face_interpolation(energyf, energy, Uf)
-        # correct_boundaries!(energyf, energy, energy.BCs) 
-        # @. Psi.values = 0.8*Psi.values + 0.2*Cp/(R*energy.values)
-        # @. Psif.values = 0.8*Psif.values + 0.2*Cp/(R*energyf.values)
-        @. rho.values = 0.8*rho.values + 0.2*p.values*Psi.values # Needed here
-        @. rhof.values = 0.8*rhof.values + 0.2*pf.values*Psif.values
-        # correct_face_interpolation(rhof, rho, Uf)
-
-        flux!(mdotf, Uf, rhof)
-        grad!(∇p, pf, p, p.BCs) 
-        update_nueff!(mueff, nu, turbulence)
-        @. mueff.values *= rhof.values
+        
+        # flux!(mdotf, Uf, rhof)
+        
         
         if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs)
             turbulence!(turbulence, model, S, S2, prev) 
-            update_nueff!(mueff, nu, turbulence)
-            mueff.values .*= rhof.values
+            # update_nueff!(muff, nu, turbulence)
+            # update_nueff!(mueff, nu, rhof, turbulence)
         end
-
-        # Calculate keff_by_cp
-        @. keff_by_cp.values = mueff.values./Pr
-
-        # for i ∈ eachindex(divUTx)
-        #     vol = mesh.cells[i].volume
-        #     divUTx = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][1,1]+ gradUT[i][1,2] + gradUT[i][1,3])*vol
-        #     divUTy = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][2,1]+ gradUT[i][2,2] + gradUT[i][2,3])*vol
-        # end
         
-        convergence = 1e-7
+        # Update stuff
+        # update_nueff!(mueff, nu, rhof, turbulence)
+        for i ∈ eachindex(Uf)
+            Kf.values[i] = 0.5*norm(Uf[i])^2 #*mdotf.values[i]
+        end
+        div!(divK, Kf)
+        @. keff_by_cp.values = mueff.values./Pr
+        
+        convergence = 1e-10
 
         if (R_ux[iteration] <= convergence && 
             R_uy[iteration] <= convergence && 
@@ -427,13 +347,49 @@ function SIMPLE_RHO_K_loop(
 
         if iteration%write_interval + signbit(write_interval) == 0
             model2vtk(model, @sprintf "iteration_%.6d" iteration)
-            write_vtk((@sprintf "DIV_%.6d" iteration), mesh, ("divU", divK))
+            write_vtk((@sprintf "rho_%.6d" iteration), mesh, ("rho", rho))
             write_vtk((@sprintf "gradDivU_%.6d" iteration), mesh, ("gradDivU", gradDivU.result))
             
         end
 
     end # end for loop
     return R_ux, R_uy, R_uz, R_p, R_e
+end
+
+function face_normal_gradient(phi::ScalarField, phif::FaceScalarField)
+    mesh = phi.mesh
+    sngrad = FaceScalarField(mesh)
+    (; faces, cells) = mesh
+    nbfaces = length(mesh.boundary_cellsID) #boundary_faces(mesh)
+    start_faceID = nbfaces + 1
+    last_faceID = length(faces)
+    for fID ∈ start_faceID:last_faceID
+    # for fID ∈ eachindex(faces)
+        face = faces[fID]
+        (; area, normal, ownerCells, delta) = face 
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        cell1 = cells[cID1]
+        cell2 = cells[cID2]
+        phi1 = phi[cID1]
+        phi2 = phi[cID2]
+        face_grad = area*(phi2 - phi1)/delta
+        sngrad.values[fID] = face_grad
+    end
+    # Now deal with boundary faces
+    for fID ∈ 1:nbfaces
+        face = faces[fID]
+        (; area, normal, ownerCells, delta) = face 
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        cell1 = cells[cID1]
+        cell2 = cells[cID2]
+        phi1 = phi[cID1]
+        phi2 = phi[cID2]
+        face_grad = area*(phi2 - phi1)/delta
+        sngrad.values[fID] = face_grad
+    end
+    sngrad
 end
 
 function correct_face_interpolation(phif::FaceScalarField, phi, Uf)

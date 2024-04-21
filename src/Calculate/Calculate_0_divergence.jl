@@ -108,6 +108,39 @@ function div!(phi::ScalarField, psif::FaceVectorField)
     end
 end
 
+function div!(phi::ScalarField, phif::FaceScalarField)
+    mesh = phi.mesh
+    # (; cells, faces) = mesh
+    (; cells, cell_neighbours, cell_nsign, cell_faces, faces) = mesh
+    F = eltype(mesh.nodes[1].coords)
+
+    for ci ∈ eachindex(cells)
+        # (; facesID, nsign, volume) = cells[ci]
+        cell = cells[ci]
+        (; volume) = cell
+        phi.values[ci] = zero(F)
+        # for fi ∈ eachindex(facesID)
+        for fi ∈ cell.faces_range
+            # fID = facesID[fi]
+            fID = cell_faces[fi]
+            nsign = cell_nsign[fi]
+            (; area, normal) = faces[fID]
+            Sf = area*normal
+            phi.values[ci] += phif[fID]*nsign/volume
+        end
+    end
+    # Add boundary faces contribution
+    nbfaces = total_boundary_faces(mesh)
+    for fID ∈ 1:nbfaces
+        cID = faces[fID].ownerCells[1]
+        volume = cells[cID].volume
+        (; area, normal) = faces[fID]
+        Sf = area*normal
+        # Boundary normals are correct by definition
+        phi.values[cID] += phif[fID]/volume
+    end
+end
+
 
 function divnovol!(phi::ScalarField, psif::FaceVectorField)
     mesh = phi.mesh

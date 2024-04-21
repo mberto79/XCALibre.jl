@@ -10,18 +10,26 @@ mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
 velocity = [0.5, 0.0, 0.0]
-nu = 1E-4
-Cp = 1005
-Re = velocity[1]*1/nu
+mu = 1E-4
+R = 287.0
+Cp = 1005.0
+Pr = 0.7
+T_inf = 300
 pressure = 100000
-h_inf = 300*Cp
+rho = pressure/(R*T_inf)
+nu = mu/rho
+Re = velocity[1]*1/nu
+M = 0.5/sqrt(1.4*R*T_inf)
+h_inf = T_inf*Cp
+h_wall = 310*Cp
 
 model = RANS{Laminar_rho}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 @assign! model U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
+    # Wall(:wall, [0.0, 0.0, 0.0]),
+    Dirichlet(:wall, [0.0, 0.0, 0.0]),
     Neumann(:top, 0.0)
 )
 
@@ -35,9 +43,9 @@ model = RANS{Laminar_rho}(mesh=mesh, viscosity=ConstantScalar(nu))
 @assign! model energy (
     Dirichlet(:inlet, h_inf),
     Neumann(:outlet, 0.0),
-    # Neumann(:wall, 0.0*Cp),#,200.0*Cp),#-20.0),
-    # Dirichlet(:wall, 1.2*h_inf),#,200.0*Cp),#-20.0),
-    FixedGradient(:wall, 1.2*h_inf),#,200.0*Cp),#-20.0),
+    # Neumann(:wall, 0.0*Cp),
+    Dirichlet(:wall, h_wall),
+    # FixedGradient(:wall, 1.2*h_inf),
     Neumann(:top, 0.0)
 )
 
@@ -78,7 +86,7 @@ solvers = (
     ),
 )
 
-runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

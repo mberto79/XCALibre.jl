@@ -10,6 +10,18 @@ update_nueff!(nueff, nu, turb_model) = begin
     end
 end
 
+update_nueff!(nueff, nu, rhof, turb_model) = begin
+    if turb_model === nothing
+        for i ∈ eachindex(nueff)
+            nueff[i] = rhof[i]*nu[i]
+        end
+    else
+        for i ∈ eachindex(nueff)
+            nueff[i] = (nu[i] + turb_model.νtf[i])*rhof[i]
+        end
+    end
+end
+
 function residual!(Residual, equation, phi, iteration)
     (; A, b, R, Fx) = equation
     values = phi.values
@@ -92,6 +104,23 @@ function inverse_diagonal!(rD::S, eqn) where S<:ScalarField
     @inbounds for i ∈ eachindex(values)
         # D = view(A, i, i)[1]
         D = A[i,i]
+        volume = cells[i].volume
+        values[i] = volume/D
+    end
+end
+
+function inverse_diagonal!(rD::S, xeqn, yeqn, zeqn) where S<:ScalarField
+    (; mesh, values) = rD
+    cells = mesh.cells
+    Ax = xeqn.A
+    Ay = yeqn.A
+    Az = zeqn.A
+    @inbounds for i ∈ eachindex(values)
+        # D = view(A, i, i)[1]
+        Dx = Ax[i,i]
+        Dy = Ay[i,i]
+        Dz = Az[i,i]
+        D = max(Dx, Dy, Dz)
         volume = cells[i].volume
         values[i] = volume/D
     end

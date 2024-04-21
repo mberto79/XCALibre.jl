@@ -29,7 +29,7 @@ function simple_rho_K!(model, config; resume=true, pref=nothing)
     ux_eqn = (
         Time{schemes.U.time}(rho, U.x)
         + Divergence{schemes.U.divergence}(mdotf, U.x) 
-        - Laplacian{schemes.U.laplacian}(nu, U.x) 
+        - Laplacian{schemes.U.laplacian}(mueff, U.x) 
         == 
         -Source(∇p.result.x)
     ) → Equation(mesh)
@@ -37,7 +37,7 @@ function simple_rho_K!(model, config; resume=true, pref=nothing)
     uy_eqn = (
         Time{schemes.U.time}(rho, U.y)
         + Divergence{schemes.U.divergence}(mdotf, U.y) 
-        - Laplacian{schemes.U.laplacian}(nu, U.y) 
+        - Laplacian{schemes.U.laplacian}(mueff, U.y) 
         == 
         -Source(∇p.result.y)
     ) → Equation(mesh)
@@ -45,7 +45,7 @@ function simple_rho_K!(model, config; resume=true, pref=nothing)
     uz_eqn = (
         Time{schemes.U.time}(rho, U.z)
         + Divergence{schemes.U.divergence}(mdotf, U.z) 
-        - Laplacian{schemes.U.laplacian}(nu, U.z) 
+        - Laplacian{schemes.U.laplacian}(mueff, U.z) 
         == 
         -Source(∇p.result.z)
     ) → Equation(mesh)
@@ -175,11 +175,11 @@ function SIMPLE_RHO_K_loop(
     rho.values .= (p.values.*Cp)./(R.*energy.values)
     rhof.values .= (pf.values.*Cp)./(R.*energyf.values)
 
-    # flux!(mdotf, Uf, rhof)
-    flux!(mdotf, Uf)
+    flux!(mdotf, Uf, rhof)
+    # flux!(mdotf, Uf)
     grad!(∇p, pf, p, p.BCs)
 
-    # update_nueff!(mueff, nu, rhof, turbulence)
+    update_nueff!(mueff, nu, rhof, turbulence)
     # update_nueff!(mueff, nu, turbulence)
     # @. mueff.values *= rhof.values
 
@@ -224,6 +224,7 @@ function SIMPLE_RHO_K_loop(
 
         # inverse_diagonal!(rD, ux_eqn.equation)
         inverse_diagonal!(rD, ux_eqn.equation, uy_eqn.equation, uz_eqn.equation)
+        @. rD.values *= rho.values
         interpolate!(rDf, rD)
         @. rhorDf.values = rDf.values # no density 
         # @. rhorDf.values = rDf.values*rhof.values
@@ -236,6 +237,7 @@ function SIMPLE_RHO_K_loop(
         # @. Uf.y.values *= rhof.values
         # @. Uf.z.values *= rhof.values
         div!(divHv, Uf)
+        @. divHv.values *= rho.values
 
         # Set up and solve energy equation
 
@@ -280,7 +282,7 @@ function SIMPLE_RHO_K_loop(
         #     end
         # end
 
-        flux!(mdotf, Uf)
+        flux!(mdotf, Uf, rhof)
         interpolate!(pf, p)   
         correct_boundaries!(pf, p, p.BCs)
         pgrad = face_normal_gradient(p, pf)
@@ -304,13 +306,13 @@ function SIMPLE_RHO_K_loop(
             grad!(gradU, Uf, U, U.BCs)
             turbulence!(turbulence, model, S, S2, prev) 
             # update_nueff!(muff, nu, turbulence)
-            # update_nueff!(mueff, nu, rhof, turbulence)
+            update_nueff!(mueff, nu, rhof, turbulence)
         end
         
         # Update stuff
-        # update_nueff!(mueff, nu, rhof, turbulence)
+        update_nueff!(mueff, nu, rhof, turbulence)
         for i ∈ eachindex(Uf)
-            Kf.values[i] = 0.5*norm(Uf[i])^2 #*mdotf.values[i]
+            Kf.values[i] = 0.5*norm(Uf[i])^2*mdotf.values[i]
         end
         div!(divK, Kf)
         @. keff_by_cp.values = mueff.values./Pr

@@ -224,20 +224,20 @@ function SIMPLE_RHO_K_loop(
 
         # inverse_diagonal!(rD, ux_eqn.equation)
         inverse_diagonal!(rD, ux_eqn.equation, uy_eqn.equation, uz_eqn.equation)
-        @. rD.values *= rho.values
+        # @. rD.values *= rho.values
         interpolate!(rDf, rD)
-        @. rhorDf.values = rDf.values # no density 
-        # @. rhorDf.values = rDf.values*rhof.values
+        # @. rhorDf.values = rDf.values # no density 
+        @. rhorDf.values = rDf.values*rhof.values
         remove_pressure_source!(ux_eqn, uy_eqn, uy_eqn, ∇p)
         H!(Hv, U, ux_eqn, uy_eqn, uy_eqn)
 
         interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs)
-        # @. Uf.x.values *= rhof.values
-        # @. Uf.y.values *= rhof.values
-        # @. Uf.z.values *= rhof.values
+        @. Uf.x.values *= rhof.values
+        @. Uf.y.values *= rhof.values
+        @. Uf.z.values *= rhof.values
         div!(divHv, Uf)
-        @. divHv.values *= rho.values
+        # @. divHv.values *= rho.values
 
         # Set up and solve energy equation
 
@@ -282,21 +282,30 @@ function SIMPLE_RHO_K_loop(
         #     end
         # end
 
-        flux!(mdotf, Uf, rhof)
+        @. rho.values = 0.8*rho.values + 0.2*p.values*Psi.values
+        interpolate!(pf, p)   
+        correct_boundaries!(pf, p, p.BCs)
+        @. rhof.values = 0.8*rhof.values + 0.2*pf.values*Psif.values
+
+        # flux!(mdotf, Uf, rhof)
+        flux!(mdotf, Uf)
         interpolate!(pf, p)   
         correct_boundaries!(pf, p, p.BCs)
         pgrad = face_normal_gradient(p, pf)
-        @. mdotf.values -= pgrad.values*rDf.values
+        # @. mdotf.values -= pgrad.values*rDf.values
+        @. mdotf.values -= pgrad.values*rhorDf.values
 
         # Correct velocity and mass flux
         correct_velocity!(U, Hv, ∇p, rD)
         interpolate!(Uf, U)
         correct_boundaries!(Uf, U, U.BCs)
 
-        # @. rho.values = 0.8*rho.values + 0.2*p.values*Psi.values
+       
+
+        # @. rho.values = p.values*Psi.values
         # interpolate!(pf, p)   
         # correct_boundaries!(pf, p, p.BCs)
-        # @. rhof.values = 0.8*rhof.values + 0.2*pf.values*Psif.values
+        # @. rhof.values = pf.values*Psif.values
 
         
         # flux!(mdotf, Uf, rhof)
@@ -314,7 +323,7 @@ function SIMPLE_RHO_K_loop(
         for i ∈ eachindex(Uf)
             Kf.values[i] = 0.5*norm(Uf[i])^2*mdotf.values[i]
         end
-        div!(divK, Kf)
+        # div!(divK, Kf)
         @. keff_by_cp.values = mueff.values./Pr
         
         convergence = 1e-10

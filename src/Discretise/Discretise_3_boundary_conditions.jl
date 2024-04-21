@@ -26,7 +26,7 @@ end
 @inline (bc::Neumann)(
     term::Operator{F,P,I,Laplacian{Linear}}, 
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
-    phi = term.phi 
+    # phi = term.phi 
     # # values = phi.values
     # fzero = zero(eltype(b))
     # A[cellID,cellID] += fzero
@@ -91,6 +91,7 @@ end
 @inline (bc::Neumann)(
     term::Operator{F,P,I,Divergence{Linear}}, 
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
+    # phi = term.phi 
     ap = term.sign[1]*(term.flux[fID])
     A[cellID,cellID] += ap
     nothing

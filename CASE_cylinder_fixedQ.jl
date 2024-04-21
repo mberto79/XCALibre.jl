@@ -10,10 +10,11 @@ mesh = update_mesh_format(mesh)
 
 # Inlet conditions
 
-velocity = [0.25, 0.0, 0.0]
+velocity = [0.50, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 pressure = 100000.0
 h_inf = 300*1005 
+h_wall = 320*1005 
 nu = 1e-3
 Re = (0.2*velocity[1])/nu
 
@@ -39,7 +40,7 @@ model = RANS{Laminar_rho}(mesh=mesh, viscosity=ConstantScalar(nu))
 @assign! model energy ( 
     Dirichlet(:inlet, h_inf),
     Neumann(:outlet, 0.0),
-    Dirichlet(:cylinder, 1.05*h_inf),
+    Dirichlet(:cylinder, h_wall),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0)
 )
@@ -83,7 +84,7 @@ schemes = (
     # energy = set_schemes(divergence=Linear)
 )
 
-runtime = set_runtime(iterations=1000, write_interval=50, time_step=1)
+runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

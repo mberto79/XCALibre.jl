@@ -120,7 +120,7 @@ function inverse_diagonal!(rD::S, xeqn, yeqn, zeqn) where S<:ScalarField
         Dx = Ax[i,i]
         Dy = Ay[i,i]
         Dz = Az[i,i]
-        D = max(Dx, Dy, Dz)
+        D = max(Dx, Dy)
         volume = cells[i].volume
         values[i] = volume/D
     end

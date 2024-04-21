@@ -213,23 +213,24 @@ function SIMPLE_RHO_K_loop(
         run!(uy_eqn, solvers.U)
         residual!(R_uy, uy_eqn.equation, U.y, iteration)
 
-        @. prev = U.z.values
-        discretise!(uz_eqn, prev, runtime)
-        apply_boundary_conditions!(uz_eqn, U.z.BCs)
-        # uy_eqn.b .-= divUTy
-        implicit_relaxation!(uz_eqn.equation, prev, solvers.U.relax)
-        update_preconditioner!(uz_eqn.preconditioner)
-        run!(uz_eqn, solvers.U)
-        residual!(R_uz, uz_eqn.equation, U.z, iteration)
-
+        if typeof(mesh) <: Mesh3
+            @. prev = U.z.values
+            discretise!(uz_eqn, prev, runtime)
+            apply_boundary_conditions!(uz_eqn, U.z.BCs)
+            # uy_eqn.b .-= divUTy
+            implicit_relaxation!(uz_eqn.equation, prev, solvers.U.relax)
+            update_preconditioner!(uz_eqn.preconditioner)
+            run!(uz_eqn, solvers.U)
+            residual!(R_uz, uz_eqn.equation, U.z, iteration)
+        end
         # inverse_diagonal!(rD, ux_eqn.equation)
         inverse_diagonal!(rD, ux_eqn.equation, uy_eqn.equation, uz_eqn.equation)
         # @. rD.values *= rho.values
         interpolate!(rDf, rD)
         # @. rhorDf.values = rDf.values # no density 
         @. rhorDf.values = rDf.values*rhof.values
-        remove_pressure_source!(ux_eqn, uy_eqn, uy_eqn, ∇p)
-        H!(Hv, U, ux_eqn, uy_eqn, uy_eqn)
+        remove_pressure_source!(ux_eqn, uy_eqn, uz_eqn, ∇p)
+        H!(Hv, U, ux_eqn, uy_eqn, uz_eqn)
 
         interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs)
@@ -249,10 +250,12 @@ function SIMPLE_RHO_K_loop(
         run!(energy_eqn, solvers.energy)
         residual!(R_e, energy_eqn.equation, energy, iteration)
 
-        @. Psi.values = Cp/(R*energy.values)
-        interpolate!(energyf, energy)   
+        γ = solvers.energy.relax
+        @. Psi.values = (1-γ)*Psi.values + γ*Cp/(R*energy.values)
+        interpolate!(energyf, energy)
+        # correct_face_interpolation(energyf, energy, Uf) 
         correct_boundaries!(energyf, energy, energy.BCs)
-        @. Psif.values = Cp/(R*energyf.values)
+        @. Psif.values = (1-γ)*Psif.values + γ*Cp/(R*energyf.values)
 
         # Set up and solve pressure equation
         @. prev = p.values
@@ -282,13 +285,15 @@ function SIMPLE_RHO_K_loop(
         #     end
         # end
 
-        @. rho.values = 0.8*rho.values + 0.2*p.values*Psi.values
-        interpolate!(pf, p)   
+        γ = solvers.p.relax
+        @. rho.values = (1- γ)*rho.values + γ*p.values*Psi.values
+        interpolate!(pf, p)
+        correct_face_interpolation(pf, p, Uf)
         correct_boundaries!(pf, p, p.BCs)
-        @. rhof.values = 0.8*rhof.values + 0.2*pf.values*Psif.values
+        @. rhof.values = (1- γ)*rhof.values + γ*pf.values*Psif.values
 
         # flux!(mdotf, Uf, rhof)
-        flux!(mdotf, Uf)
+        flux!(mdotf, Uf) # Uf here is Hvf (reused memory above)
         interpolate!(pf, p)   
         correct_boundaries!(pf, p, p.BCs)
         pgrad = face_normal_gradient(p, pf)
@@ -296,6 +301,10 @@ function SIMPLE_RHO_K_loop(
         @. mdotf.values -= pgrad.values*rhorDf.values
 
         # Correct velocity and mass flux
+        # @. Hv.x.values *= rho.values
+        # @. Hv.y.values *= rho.values
+        # @. Hv.z.values *= rho.values
+        # @. rD.values *= rho.values
         correct_velocity!(U, Hv, ∇p, rD)
         interpolate!(Uf, U)
         correct_boundaries!(Uf, U, U.BCs)
@@ -323,13 +332,14 @@ function SIMPLE_RHO_K_loop(
         for i ∈ eachindex(Uf)
             Kf.values[i] = 0.5*norm(Uf[i])^2*mdotf.values[i]
         end
-        # div!(divK, Kf)
+        div!(divK, Kf)
         @. keff_by_cp.values = mueff.values./Pr
         
-        convergence = 1e-10
+        convergence = 1e-12
 
-        if (R_ux[iteration] <= convergence && 
-            R_uy[iteration] <= convergence && 
+        if (R_uz[iteration] == one(TF) &&
+            R_ux[iteration] <= convergence && 
+            R_uy[iteration] <= convergence || 
             R_uz[iteration] <= convergence && 
             R_p[iteration] <= convergence && 
             R_e[iteration] <= convergence)

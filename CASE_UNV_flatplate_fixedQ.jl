@@ -9,7 +9,7 @@ mesh_file = "unv_sample_meshes/flatplate_2D_laminar.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
-velocity = [0.5, 0.0, 0.0]
+velocity = [0.2, 0.0, 0.0]
 mu = 1E-4
 R = 287.0
 Cp = 1005.0
@@ -50,9 +50,12 @@ model = RANS{Laminar_rho}(mesh=mesh, viscosity=ConstantScalar(nu))
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind),
-    p = set_schemes(divergence=Upwind),
-    energy = set_schemes(divergence=Upwind)
+    # U = set_schemes(divergence=Upwind),
+    # p = set_schemes(divergence=Upwind),
+    # energy = set_schemes(divergence=Upwind)
+    U = set_schemes(divergence=Linear),
+    p = set_schemes(divergence=Linear),
+    energy = set_schemes(divergence=Linear)
 )
 
 
@@ -60,11 +63,11 @@ solvers = (
     U = set_solver(
         model.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = DILU(),
+        preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.8,
-        atol        = 1e-5,
-        rtol        = 1e-2,
+        relax       = 0.7,
+        atol        = 1e-6,
+        rtol        = 1e-3,
     ),
     p = set_solver(
         model.p;
@@ -78,15 +81,15 @@ solvers = (
     energy = set_solver(
         model.energy;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = DILU(),
+        preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.2,
         atol        = 1e-6,
         rtol        = 1e-3,
     ),
 )
 
-runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=4000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

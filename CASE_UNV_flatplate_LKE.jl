@@ -6,28 +6,28 @@ mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
 # Turbulence Model
-velocity = [5.4,0,0]
+velocity = [4.68,0,0]
 nu = 1.48e-5
-νR = 11.9
-Tu = 0.025
-kL_inlet = 0.007
-k_inlet = 0.068
-ω_inlet = 380
+νR = 1
+Tu = 0.0065
+kL_inlet = 1/2*(Tu*velocity[1])^2
+k_inlet = 3/2*(Tu*velocity[1])^2
+ω_inlet = k_inlet/(νR*nu)
 model = RANS{KOmegaLKE}(mesh=mesh, viscosity=ConstantScalar(nu), Tu=Tu)
 
 # Boundary Conditions
 noSlip = [0.0, 0.0, 0.0]
 
 @assign! model U (
-    Dirichlet(:inlet, velocity),
+    FVM_1D.Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Dirichlet(:wall, [0.0, 0.0, 0.0]),
+    FVM_1D.Dirichlet(:wall, [0.0, 0.0, 0.0]),
     Neumann(:top, 0.0)
 )
 
  @assign! model p (
     Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
+    FVM_1D.Dirichlet(:outlet, 0.0),
     Neumann(:wall, 0.0),
     Neumann(:top, 0.0)
 )
@@ -47,23 +47,23 @@ noSlip = [0.0, 0.0, 0.0]
 )
 
 @assign! model turbulence k (
-    Dirichlet(:inlet, k_inlet),
+    FVM_1D.Dirichlet(:inlet, k_inlet),
     Neumann(:outlet, 0.0),
-    Dirichlet(:wall, 0.0),
+    FVM_1D.Dirichlet(:wall, 0.0),
     Neumann(:top, 0.0)
 )
 
 @assign! model turbulence omega (
-    Dirichlet(:inlet, ω_inlet),
+    FVM_1D.Dirichlet(:inlet, ω_inlet),
     Neumann(:outlet, 0.0),
     OmegaWallFunction(:wall),
     Neumann(:top, 0.0)
 )
 
 @assign! model turbulence nut (
-    Dirichlet(:inlet, k_inlet/ω_inlet),
+    FVM_1D.Dirichlet(:inlet, k_inlet/ω_inlet),
     Neumann(:outlet, 0.0),
-    Dirichlet(:wall, 0.0), 
+    FVM_1D.Dirichlet(:wall, 0.0), 
     Neumann(:top, 0.0)
 )
 
@@ -104,26 +104,26 @@ solvers = (
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.4,
+        relax       = 0.2,
     ),
     k = set_solver(
         model.turbulence.k;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.2,
     ),
     omega = set_solver(
         model.turbulence.omega;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.2,
     )
 )
 
 runtime = set_runtime(
-    iterations=1000, write_interval=1, time_step=1)
+    iterations=1000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -139,6 +139,14 @@ initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
 Rx, Ry, Rp = simple!(model, config) # 9.39k allocs
+
+let
+    p = plot(; xlims=(0,runtime.iterations), ylims=(1e-10,0))
+    plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
+    plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
+    plot!(1:length(Rp), Rp, yscale=:log10, label="p")
+    display(p)
+end
 
 using DelimitedFiles
 using LinearAlgebra

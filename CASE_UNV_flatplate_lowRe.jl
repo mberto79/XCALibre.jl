@@ -1,20 +1,16 @@
-using Plots
-
-using FVM_1D
-
-using Krylov
+using Plots, FVM_1D, Krylov
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
-mesh_file = "unv_sample_meshes/flatplate_2D_lowRe.unv"
+mesh_file = "unv_sample_meshes/flatplate_2D_highRe.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
+mesh = update_mesh_format(mesh)
 
-
-velocity = [10, 0.0, 0.0]
-nu = 1e-5
-Re = velocity[1]*1/nu
-k_inlet = 0.375
-ω_inlet = 1000
-
+velocity = [4.68,0,0]
+nu = 1.48e-5
+νR = 50
+Tu = 0.025
+k_inlet = 3/2*(Tu*velocity[1])^2
+ω_inlet = k_inlet/(νR*nu)
 model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 @assign! model U (
@@ -95,7 +91,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=-1)
+runtime = set_runtime(iterations=1000, write_interval=1000, time_step = 1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -108,7 +104,7 @@ initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
-Rx, Ry, Rp = isimple!(model, config) # 9.39k allocs
+Rx, Ry, Rp = simple!(model, config) # 9.39k allocs
 
 using DelimitedFiles
 using LinearAlgebra

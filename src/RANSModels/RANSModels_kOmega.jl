@@ -113,7 +113,7 @@ function initialise_RANS(mdotf, peqn, config, model::RANS{KOmega})
 end
 
 function turbulence!( # Sort out dispatch when possible
-    KOmega::KOmegaModel, model, S, S2, prev)
+    KOmega::KOmegaModel, model, S, S2, gradU, prev)
 
     nu = model.nu
     nut = model.turbulence.nut

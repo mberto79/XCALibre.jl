@@ -2,19 +2,19 @@ using Plots, FVM_1D, Krylov, AerofoilOptimisation
 
 #%% REYNOLDS & Y+ CALCULATIONS
 chord = 100.0
-Re = 300000
+Re = 10000
 nu,ρ = 1.48e-5,1.225
 yplus_init,BL_layers = 2.0,55
 laminar = false
 velocity,BL_mesh = BL_calcs(Re,nu,ρ,chord,yplus_init,BL_layers,laminar) #Returns (BL mesh thickness, BL mesh growth rate)
 
 #%% CFD CASE SETUP & SOLVE
-iter = 4
+iter = 1
 aero_eff = Array{Float64,1}(undef,iter)
 C_l = Array{Float64,1}(undef,iter)
 C_d = Array{Float64,1}(undef,iter)
 for i ∈ 1:iter
-    α = 6+2i
+    α = i-1
     writes = α > 10 ? 50 : 1000
     # Aerofoil Mesh
     create_NACA_mesh(
@@ -155,7 +155,7 @@ for i ∈ 1:iter
     vtk_files = filter(x->endswith(x,".vtk"), readdir("vtk_results/"))
     for file ∈ vtk_files
         filepath = "vtk_results/"*file
-        dest = "vtk_loop/$(i-1)_"*file
+        dest = "vtk_loop/$(i-1)_kw_"*file
         mv(filepath, dest)
     end
 end

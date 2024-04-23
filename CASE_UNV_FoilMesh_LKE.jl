@@ -6,17 +6,17 @@ foil,ctrl_p = spline_foil(FoilDef(
     chord   = 100, #[mm]
     LE_h    = 0, #[%c, at α=0°]
     TE_h    = 0, #[%c, at α=0°]
-    peak    = [15,5], #[%c]
-    trough  = [85,-1], #[%c]
-    xover = 70, #[%c]
+    peak    = [24.13,5.69288], #[%c]
+    trough  = [90,-1], #[%c]
+    xover = 80, #[%c]
     α = 5 #[°]
 )) #Returns aerofoil MCL & control point vector (spline method)
 
 #%% REYNOLDS & Y+ CALCULATIONS
 chord = 100.0
-Re = 35000
+Re = 25000
 nu,ρ = 1.48e-5,1.225
-yplus_init,BL_layers = 2.0,50
+yplus_init,BL_layers = 2.0,35
 laminar = false
 velocity,BL_mesh = BL_calcs(Re,nu,ρ,chord,yplus_init,BL_layers,laminar) #Returns (BL mesh thickness, BL mesh growth rate)
 
@@ -29,7 +29,7 @@ lines = update_mesh(
     BL_thick = 1, #Boundary layer mesh thickness [mm]
     BL_layers = BL_layers, #Boundary layer mesh layers [-]
     BL_stretch = 1.2, #Boundary layer stretch factor (successive multiplication factor of cell thickness away from wall cell) [-]
-    ratio = 1.0,
+    ratio = 1.15,
     py_lines = (13,44,51,59,36,68,225,247,284), #SALOME python script relevant lines (notebook path, 3 B-Spline lines,chord line, thickness line, BL line .unv path)
     py_path = "/home/tim/Documents/MEng Individual Project/Julia/AerofoilOptimisation/foil_pythons/FoilMesh.py", #Path to SALOME python script
     salome_path = "/home/tim/Downloads/InstallationFiles/SALOME-9.11.0/mesa_salome", #Path to SALOME installation
@@ -46,11 +46,11 @@ mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
 # Turbulence Model
-νR = 11.9
-Tu = 0.025
-kL_inlet = 0.007
-k_inlet = 0.068
-ω_inlet = 380
+νR = 1
+Tu = 0.0065
+kL_inlet = 1/2*(Tu*velocity[1])^2
+k_inlet = 3/2*(Tu*velocity[1])^2
+ω_inlet = k_inlet/(νR*nu)
 model = RANS{KOmegaLKE}(mesh=mesh, viscosity=ConstantScalar(nu), Tu=Tu)
 
 # Boundary Conditions
@@ -150,26 +150,26 @@ solvers = (
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.05,
+        relax       = 0.2,
     ),
     k = set_solver(
         model.turbulence.k;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.1,
+        relax       = 0.2,
     ),
     omega = set_solver(
         model.turbulence.omega;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.1,
+        relax       = 0.2,
     )
 )
 
 runtime = set_runtime(
-    iterations=1000, write_interval=1, time_step=1)
+    iterations=1000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

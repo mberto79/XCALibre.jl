@@ -223,6 +223,10 @@ function turbulence!( # Sort out dispatch when possible
     Pω = get_source(ω_eqn, 1)
     dkdomegadx = get_source(ω_eqn, 2) # cross diffusion term
 
+    #Damping and trigger
+    @. fv.values = 1-exp(sqrt(k.values/(nu.values*omega.values))/coeffs.Cv)
+    @. γ.values = min((kL.values/(min(nu.values*nuL.values)*Ω.values))^2,coeffs.Ccrit)/coeffs.Ccrit
+
     #Update ω fluxes
     double_inner_product!(Pk, S, gradU) # multiplied by 2 (def of Sij) (Pk = S² at this point)
     inner_product!(dkdomegadx,∇k,∇ω)
@@ -232,10 +236,6 @@ function turbulence!( # Sort out dispatch when possible
     @. nueffωS.values = nu.values+(coeffs.σω*nut_turb.values*γ.values)
     interpolate!(nueffω,nueffωS)
     correct_boundaries!(nueffω, nueffωS, nut.BCs)
-
-    #Damping and trigger
-    @. fv.values = 1-exp(sqrt(k.values/(nu.values*omega.values))/coeffs.Cv)
-    @. γ.values = min((kL.values/(min(nu.values*nuL.values)*Ω.values))^2,coeffs.Ccrit)/coeffs.Ccrit
 
     #Update k fluxes
     @. Dkf.values = coeffs.Cμ*omega.values*γ.values

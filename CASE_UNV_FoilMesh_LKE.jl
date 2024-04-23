@@ -192,9 +192,9 @@ C_l,C_d = aero_coeffs(:foil, chord, ρ, velocity, model)
 yplus,y = y_plus(:foil,ρ,model)
 let
     plot(; xlims=(0,runtime.iterations), ylims=(1e-10,0))
-    plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-    plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-    plot!(1:length(Rp), Rp, yscale=:log10, label="p")
+    plot!(1:length(R_ux), R_ux, yscale=:log10, label="Ux")
+    plot!(1:length(R_uy), R_uy, yscale=:log10, label="Uy")
+    plot!(1:length(R_p), R_p, yscale=:log10, label="p")
 end
 paraview_vis(paraview_path = "paraview", #Path to paraview
              vtk_path = "/home/tim/Documents/MEng Individual Project/Julia/FVM_1D_TW/vtk_results/iteration_..vtk") #Path to vtk files

@@ -6,10 +6,11 @@ mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
 # Turbulence Model
-velocity = [4.68,0,0]
+velocity = [12,0,0]
 nu = 1.48e-5
-νR = 1
-Tu = 0.0065
+Re = 10*1/nu
+νR = 15
+Tu = 0.03
 kL_inlet = 1/2*(Tu*velocity[1])^2
 k_inlet = 3/2*(Tu*velocity[1])^2
 ω_inlet = k_inlet/(νR*nu)
@@ -72,7 +73,7 @@ schemes = (
     p = set_schemes(divergence=Upwind),
     k = set_schemes(divergence=Upwind),
     phi = set_schemes(gradient=Midpoint),
-    kL = set_schemes(divergence=Upwind,gradient=Midpoint),
+    kL = set_schemes(divergence=Linear,gradient=Midpoint),
     omega = set_schemes(divergence=Upwind)
 )
 
@@ -83,7 +84,7 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.7,
     ),
     p = set_solver(
         model.p;
@@ -104,26 +105,26 @@ solvers = (
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.2,
+        relax       = 0.7,
     ),
     k = set_solver(
         model.turbulence.k;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.2,
+        relax       = 0.3,
     ),
     omega = set_solver(
         model.turbulence.omega;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.2,
+        relax       = 0.3,
     )
 )
 
 runtime = set_runtime(
-    iterations=500, write_interval=100, time_step=1)
+    iterations=5000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

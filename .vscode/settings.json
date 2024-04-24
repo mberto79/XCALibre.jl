@@ -1,2 +1,6 @@
 {
+    "files.associations": {
+        "*.jmd": "juliamarkdown",
+        "kOmegaLKE.C": "cpp"
+    }
 }

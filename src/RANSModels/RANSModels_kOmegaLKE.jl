@@ -48,8 +48,8 @@ get_LKE_coeffs(FloatType) = begin
         0.52, #13/25
         0.0708,
         76500,
-        1.45,
-        0.43,
+        1.45, # 1.45
+        0.42, # 0.43
         0.5,
         0.125,
         0.0125,
@@ -125,7 +125,7 @@ function initialise_RANS(mdotf, peqn, config, model::RANS{KOmegaLKE})
             Time{schemes.kL.time}(kL)
             + Divergence{schemes.kL.divergence}(mdotf, kL) 
             - Laplacian{schemes.kL.laplacian}(nueffkL, kL) 
-            + Si(DkLf,kL) # Dkf = β⁺*omega
+            + Si(DkLf,kL) # DkLf = 2*nu/y^2
             ==
             Source(PkL)
         ) → eqn
@@ -223,40 +223,19 @@ function turbulence!( # Sort out dispatch when possible
     Pω = get_source(ω_eqn, 1)
     dkdomegadx = get_source(ω_eqn, 2) # cross diffusion term
 
-    #Damping and trigger
-    @. fv.values = 1-exp(-sqrt(k.values/(nu.values*omega.values))/coeffs.Cv)
-    # @. γ.values = min((kL.values/(min(nu.values,nuL.values)*Ω.values))^2,coeffs.Ccrit)/coeffs.Ccrit
-    @. γ.values = min((kL.values/(min(nu.values,nuL.values)*sqrt(S2.values)))^2,coeffs.Ccrit)/coeffs.Ccrit
+    magnitude2!(Pk, S, scale_factor=2.0) # this is S^2
 
-    #Update ω fluxes
-    double_inner_product!(Pk, S, gradU) # multiplied by 2 (def of Sij) (Pk = S² at this point)
-    inner_product!(dkdomegadx,∇k,∇ω)
-    @. Pω.values = coeffs.Cω1*Pk.values*nut.values*(omega.values/k.values)
-    # @. dkdomegadx.values = (coeffs.σd/omega.values)*dkdomegadx.values
-    @. Dωf.values = coeffs.Cω2*omega.values
-    @. nueffωS.values = nu.values+(coeffs.σω*nut_turb.values*γ.values)
-    interpolate!(nueffω,nueffωS)
-    correct_boundaries!(nueffω, nueffωS, nut.BCs)
+    # Update kL fluxes and terms
 
-    #Update k fluxes
-    @. Dkf.values = coeffs.Cμ*omega.values*γ.values
-    @. nueffkS.values = nu.values+(coeffs.σk*nut_turb.values*γ.values)
-    interpolate!(nueffk,nueffkS)
-    correct_boundaries!(nueffk, nueffkS, nut.BCs)
-    @. Pk.values = nut.values*Pk.values*γ.values*fv.values
-    correct_production!(Pk, k.BCs, model)
-
-    #Update kL fluxes
-    magnitude!(PkL, S,scale_factor=2.0)
-    # magnitude!(normU,U) # tim's
     for i ∈ eachindex(normU.values)
         normU.values[i] = norm(U[i])
     end
-    #norm!(normU, U)
+
+    ReLambda = @. normU.values*y.values/nu.values;
+    @. Reυ.values = (2*nu.values^2*kL.values/(y.values^2))^0.25*y.values/nu.values;
     η = coeffs.C1*tanh(coeffs.C2*(Tu^coeffs.C3)+coeffs.C4)
-    @. Reυ.values = ((((2*kL.values*(nu.values^2))/(y.values^2))^(1/4))*y.values)/nu.values
-    @. PkL.values = PkL.values*η*kL.values*(Reυ.values^(-13/10))*(((normU.values*y.values)/nu.values)^(1/2))
-    @. DkLf.values = (2*nu.values*kL.values)/(y.values^2)
+    @. PkL.values = sqrt(Pk.values)*η*kL.values*Reυ.values^(-1.30)*ReLambda^(0.5)
+    @. DkLf.values = (2*nu.values)/(y.values^2)
     @. nueffkLS.values = nu.values+(coeffs.σkL*sqrt(kL.values)*y.values)
     interpolate!(nueffkL,nueffkLS)
     correct_boundaries!(nueffkL, nueffkLS, nut.BCs)
@@ -269,6 +248,35 @@ function turbulence!( # Sort out dispatch when possible
     update_preconditioner!(kL_eqn.preconditioner)
     run!(kL_eqn, solvers.kL)
     bound!(kL, eps())
+
+    #Damping and trigger
+    @. fv.values = 1-exp(-sqrt(k.values/(nu.values*omega.values))/coeffs.Cv)
+    @. γ.values = min((kL.values/(min(nu.values,nuL.values)*sqrt(S2.values)))^2,coeffs.Ccrit)/coeffs.Ccrit
+    fSS = @. exp(-(coeffs.CSS*nu.values*sqrt(S2.values)/k.values)^2) # should be Ω but S works
+
+    #Update ω fluxes
+    # double_inner_product!(Pk, S, gradU) # multiplied by 2 (def of Sij) (Pk = S² at this point)
+    interpolate!(kf, k)
+    correct_boundaries!(νtf, k, k.BCs)
+    interpolate!(ωf, omega)
+    correct_boundaries!(νtf, omega, omega.BCs)
+    grad!(∇ω,ωf,omega,omega.BCs)
+    grad!(∇k,kf,k,k.BCs)
+    inner_product!(dkdomegadx,∇k,∇ω)
+    @. Pω.values = coeffs.Cω1*Pk.values*nut.values*(omega.values/k.values)
+    @. dkdomegadx.values = max((coeffs.σd/omega.values)*dkdomegadx.values, 0.0)
+    @. Dωf.values = coeffs.Cω2*omega.values
+    @. nueffωS.values = nu.values+(coeffs.σω*nut_turb.values*γ.values)
+    interpolate!(nueffω,nueffωS)
+    correct_boundaries!(nueffω, nueffωS, nut.BCs)
+
+    #Update k fluxes
+    @. Dkf.values = coeffs.Cμ*omega.values*γ.values
+    @. nueffkS.values = nu.values+(coeffs.σk*nut_turb.values*γ.values)
+    interpolate!(nueffk,nueffkS)
+    correct_boundaries!(nueffk, nueffkS, nut.BCs)
+    @. Pk.values = nut.values*Pk.values*γ.values*fv.values
+    correct_production!(Pk, k.BCs, model)
 
     # Solve omega equation
     prev .= omega.values
@@ -294,18 +302,19 @@ function turbulence!( # Sort out dispatch when possible
     grad!(∇k,kf,k,k.BCs)
 
     #Eddy viscosity
-    magnitude2!(S2, S, scale_factor=2.0)
-    double_inner_product!(Ω,S,S, scale_factor=2.0)
+    # magnitude2!(S2, S, scale_factor=2.0)
+    # double_inner_product!(Ω,S,S, scale_factor=2.0)
+
+    # fSS = exp(-(coeffs.CSS/(k.values/(nu.values*Ω.values)))^2)
     @. nut_turb.values = k.values/omega.values
+    # ReLambda = @. normU.values*y.values/nu.values
+    # @. Reυ.values = (2*nu.values^2*kL.values/(y.values^2))^0.25*y.values/nu.values;
+    # @. PkL.values = sqrt(Pk.values)*η*kL.values*Reυ.values^(-1.30)*ReLambda^(0.5) # update
     @. nuL.values = PkL.values/max(S2.values,(normU.values/y.values)^2)
-    @. nuts.values = exp(-(coeffs.CSS/(k.values/(nu.values*Ω.values)))^2)*(k.values/omega.values)
+
+    fSS = @. exp(-(coeffs.CSS*nu.values*sqrt(S2.values)/k.values)^2) # should be Ω but S works
+    @. nuts.values = fSS*(k.values/omega.values)
     @. nut.values = nuts.values+nuL.values
-
-    # #Damping and trigger
-    # @. fv.values = 1-exp(-sqrt(k.values/(nu.values*omega.values))/coeffs.Cv)
-    # @. γ.values = min((kL.values/(min(nu.values*nuL.values)*Ω.values))^2,coeffs.Ccrit)/coeffs.Ccrit
-
-    # @. kL.values = Reυ.values^(-13/10)
 
     interpolate!(νtf, nut)
     correct_boundaries!(νtf, nut, nut.BCs)

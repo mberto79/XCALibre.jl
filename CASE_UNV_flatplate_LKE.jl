@@ -25,7 +25,7 @@ noSlip = [0.0, 0.0, 0.0]
     Neumann(:top, 0.0)
 )
 
- @assign! model p (
+@assign! model p (
     Neumann(:inlet, 0.0),
     FVM_1D.Dirichlet(:outlet, 0.0),
     Neumann(:wall, 0.0),
@@ -123,7 +123,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=1000, write_interval=100, time_step=1)
+    iterations=500, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

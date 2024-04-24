@@ -1,5 +1,5 @@
 data/mesh.jld2
 data/fields.jld2
 #results.vtk
-#unv_sample_meshes/*
+unv_sample_meshes/*
 *.vtk

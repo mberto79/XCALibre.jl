@@ -224,14 +224,15 @@ function turbulence!( # Sort out dispatch when possible
     dkdomegadx = get_source(ω_eqn, 2) # cross diffusion term
 
     #Damping and trigger
-    @. fv.values = 1-exp(sqrt(k.values/(nu.values*omega.values))/coeffs.Cv)
-    @. γ.values = min((kL.values/(min(nu.values*nuL.values)*Ω.values))^2,coeffs.Ccrit)/coeffs.Ccrit
+    @. fv.values = 1-exp(-sqrt(k.values/(nu.values*omega.values))/coeffs.Cv)
+    # @. γ.values = min((kL.values/(min(nu.values,nuL.values)*Ω.values))^2,coeffs.Ccrit)/coeffs.Ccrit
+    @. γ.values = min((kL.values/(min(nu.values,nuL.values)*sqrt(S2.values)))^2,coeffs.Ccrit)/coeffs.Ccrit
 
     #Update ω fluxes
     double_inner_product!(Pk, S, gradU) # multiplied by 2 (def of Sij) (Pk = S² at this point)
     inner_product!(dkdomegadx,∇k,∇ω)
     @. Pω.values = coeffs.Cω1*Pk.values*nut.values*(omega.values/k.values)
-    @. dkdomegadx.values = (coeffs.σd/omega.values)*dkdomegadx.values
+    # @. dkdomegadx.values = (coeffs.σd/omega.values)*dkdomegadx.values
     @. Dωf.values = coeffs.Cω2*omega.values
     @. nueffωS.values = nu.values+(coeffs.σω*nut_turb.values*γ.values)
     interpolate!(nueffω,nueffωS)
@@ -301,7 +302,7 @@ function turbulence!( # Sort out dispatch when possible
     @. nut.values = nuts.values+nuL.values
 
     # #Damping and trigger
-    # @. fv.values = 1-exp(sqrt(k.values/(nu.values*omega.values))/coeffs.Cv)
+    # @. fv.values = 1-exp(-sqrt(k.values/(nu.values*omega.values))/coeffs.Cv)
     # @. γ.values = min((kL.values/(min(nu.values*nuL.values)*Ω.values))^2,coeffs.Ccrit)/coeffs.Ccrit
 
     # @. kL.values = Reυ.values^(-13/10)

@@ -49,7 +49,7 @@ get_LKE_coeffs(FloatType) = begin
         0.0708,
         76500,
         1.45, # 1.45
-        0.42, # 0.43
+        0.43, # 0.43
         0.5,
         0.125,
         0.0125,
@@ -305,11 +305,10 @@ function turbulence!( # Sort out dispatch when possible
     # magnitude2!(S2, S, scale_factor=2.0)
     # double_inner_product!(Ω,S,S, scale_factor=2.0)
 
-    # fSS = exp(-(coeffs.CSS/(k.values/(nu.values*Ω.values)))^2)
     @. nut_turb.values = k.values/omega.values
-    # ReLambda = @. normU.values*y.values/nu.values
-    # @. Reυ.values = (2*nu.values^2*kL.values/(y.values^2))^0.25*y.values/nu.values;
-    # @. PkL.values = sqrt(Pk.values)*η*kL.values*Reυ.values^(-1.30)*ReLambda^(0.5) # update
+    ReLambda = @. normU.values*y.values/nu.values
+    @. Reυ.values = (2*nu.values^2*kL.values/(y.values^2))^0.25*y.values/nu.values;
+    @. PkL.values = sqrt(Pk.values)*η*kL.values*Reυ.values^(-1.30)*ReLambda^(0.5) # update
     @. nuL.values = PkL.values/max(S2.values,(normU.values/y.values)^2)
 
     fSS = @. exp(-(coeffs.CSS*nu.values*sqrt(S2.values)/k.values)^2) # should be Ω but S works

@@ -9,7 +9,7 @@ using CUDA
 mesh_file = "unv_sample_meshes/3D_cylinder.unv"
 mesh_file = "unv_sample_meshes/3D_cylinder_extruded_HEX_PRISM.unv"
 mesh_file = "unv_sample_meshes/3D_cylinder_extruded_HEX_PRISM_FIXED.unv"
-mesh_file = "unv_sample_meshes/3D_cylinder_extruded_HEX_PRISM_FIXED_2mm.unv"
+mesh_file = "unv_sample_meshes/3D_cylinder_extruded_HEX_PRISM_FIXED_2mm_fine.unv"
 @time mesh = build_mesh3D(mesh_file, scale=0.001)
 
 velocity = [0.50, 0.0, 0.0]
@@ -49,12 +49,12 @@ schemes = (
 solvers = (
     U = set_solver(
         model.U;
-        solver      = CgSolver, # BicgstabSolver, GmresSolver
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.6,
-        rtol = 1e-4,
-        atol = 1e-2
+        rtol = 1e-3,
+        atol = 1e-10
     ),
     p = set_solver(
         model.p;
@@ -62,13 +62,13 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.4,
-        rtol = 1e-4,
-        atol = 1e-3
+        rtol = 1e-3,
+        atol = 1e-10
     )
 )
 
 runtime = set_runtime(
-    iterations=500, time_step=1, write_interval=500)
+    iterations=2000, time_step=1, write_interval=500)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

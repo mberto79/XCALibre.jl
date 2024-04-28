@@ -28,21 +28,21 @@ end
 @inline (bc::Neumann)(
     term::Operator{F,P,I,Laplacian{Linear}}, 
     rowval, colptr, nzval, b, cellID, cell, face, fID, ione) where {F,P,I} = begin
-    phi = term.phi 
-    # # values = phi.values
-    # fzero = zero(eltype(b))
-    # A[cellID,cellID] += fzero
-    # b[cellID] += fzero
+    # phi = term.phi 
+    # # # values = phi.values
+    # # fzero = zero(eltype(b))
+    # # A[cellID,cellID] += fzero
+    # # b[cellID] += fzero
 
-    values = phi.values
-    J = term.flux[fID]
-    (; area, delta) = face 
-    flux = J*area/delta
-    ap = term.sign[1]*(-flux)
-    # A[cellID,cellID] += ap
-    nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
-    Atomix.@atomic nzval[nIndex] += ap
-    Atomix.@atomic b[cellID] += ap*values[cellID]
+    # values = phi.values
+    # J = term.flux[fID]
+    # (; area, delta) = face 
+    # flux = J*area/delta
+    # ap = term.sign[1]*(-flux)
+    # # A[cellID,cellID] += ap
+    # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
+    # Atomix.@atomic nzval[nIndex] += ap
+    # Atomix.@atomic b[cellID] += ap*values[cellID]
     nothing
 end
 
@@ -128,8 +128,9 @@ end
     ap = term.sign[1]*(term.flux[fID])
     # A[cellID,cellID] += max(ap, 0.0)
     nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
-    Atomix.@atomic nzval[nIndex] += max(ap, 0.0)
-    Atomix.@atomic b[cellID] += max(-ap*phi[cellID], 0.0)
+    # Atomix.@atomic nzval[nIndex] += max(ap, 0.0)
+    Atomix.@atomic nzval[nIndex] += ap
+    # Atomix.@atomic b[cellID] += max(-ap*phi[cellID], 0.0)
     nothing
 end
 

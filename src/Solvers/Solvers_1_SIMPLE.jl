@@ -9,6 +9,7 @@ simple!(model_in, config, backend; resume=true, pref=nothing) = begin
     return R_ux, R_uy, R_uz, R_p, model
 end
 
+# Setup for all incompressible algorithms
 function setup_incompressible_solvers(
     solver_variant, 
     model_in, config, backend; resume=true, pref=nothing
@@ -23,7 +24,6 @@ function setup_incompressible_solvers(
     
     ∇p = Grad{schemes.p.gradient}(p)
     mdotf = FaceScalarField(mesh)
-    # nuf = ConstantScalar(nu) # Implement constant field!
     rDf = FaceScalarField(mesh)
     nueff = FaceScalarField(mesh)
     initialise!(rDf, 1.0)
@@ -60,11 +60,6 @@ function setup_incompressible_solvers(
     ) → Equation(mesh)
 
     CUDA.allowscalar(false)
-    # model = _convert_array!(model, backend)
-    # ∇p = _convert_array!(∇p, backend)
-    # ux_eqn = _convert_array!(ux_eqn, backend)
-    # uy_eqn = _convert_array!(uy_eqn, backend)
-    # p_eqn = _convert_array!(p_eqn, backend)
 
     @info "Initialising preconditioners..."
 
@@ -101,7 +96,6 @@ function SIMPLE(
     
     # Extract model variables and configuration
     (;mesh, U, p, nu) = model
-    # ux_model, uy_model = ux_eqn.model, uy_eqn.model
     p_model = p_eqn.model
     (; solvers, schemes, runtime) = config
     (; iterations, write_interval) = runtime
@@ -119,10 +113,6 @@ function SIMPLE(
     S = StrainRate(gradU, gradUT)
     S2 = ScalarField(mesh)
 
-    # Temp sources to test GradUT explicit source
-    # divUTx = zeros(Float64, length(mesh.cells))
-    # divUTy = zeros(Float64, length(mesh.cells))
-
     n_cells = length(mesh.cells)
     Uf = FaceVectorField(mesh)
     pf = FaceScalarField(mesh)
@@ -131,20 +121,17 @@ function SIMPLE(
     rD = ScalarField(mesh)
 
     # Pre-allocate auxiliary variables
-
-    # Consider using allocate from KernelAbstractions 
-    # e.g. allocate(backend, Float32, res, res)
     TF = _get_float(mesh)
     prev = zeros(TF, n_cells)
     prev = _convert_array!(prev, backend) 
 
     # Pre-allocate vectors to hold residuals 
-
     R_ux = ones(TF, iterations)
     R_uy = ones(TF, iterations)
     R_uz = ones(TF, iterations)
     R_p = ones(TF, iterations)
     
+    # Initial calculations
     interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, U.BCs)
     flux!(mdotf, Uf)
@@ -158,46 +145,47 @@ function SIMPLE(
 
     CUDA.@time for iteration ∈ 1:iterations
 
+        # X velocity calculations
         @. prev = U.x.values
-        # type = typeof(ux_eqn)
-        # println("$type")
         discretise!(ux_eqn, prev, runtime)
         apply_boundary_conditions!(ux_eqn, U.x.BCs)
-        # ux_eqn.b .-= divUTx
         implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh)
         update_preconditioner!(ux_eqn.preconditioner, mesh)
-        run!(ux_eqn, solvers.U, U.x) #opP=Pu.P, solver=solver_U)
+        run!(ux_eqn, solvers.U, U.x)
         residual!(R_ux, ux_eqn.equation, U.x, iteration)
 
+        # Y velocity calculations
         @. prev = U.y.values
         discretise!(uy_eqn, prev, runtime)
         apply_boundary_conditions!(uy_eqn, U.y.BCs)
-        # uy_eqn.b .-= divUTy
         implicit_relaxation!(uy_eqn, prev, solvers.U.relax, mesh)
         update_preconditioner!(uy_eqn.preconditioner, mesh)
         run!(uy_eqn, solvers.U, U.y)
         residual!(R_uy, uy_eqn.equation, U.y, iteration)
 
+        # Z velocity calculations (3D Mesh only)
         if typeof(mesh) <: Mesh3
             @. prev = U.z.values
             discretise!(uz_eqn, prev, runtime)
             apply_boundary_conditions!(uz_eqn, U.z.BCs)
-            # uy_eqn.b .-= divUTy
             implicit_relaxation!(uz_eqn, prev, solvers.U.relax, mesh)
             update_preconditioner!(uz_eqn.preconditioner, mesh)
             run!(uz_eqn, solvers.U, U.z)
             residual!(R_uz, uz_eqn.equation, U.z, iteration)
         end
           
+        # Pressure correction
         inverse_diagonal!(rD, ux_eqn)
         interpolate!(rDf, rD)
         remove_pressure_source!(ux_eqn, uy_eqn, uz_eqn, ∇p)
         H!(Hv, U, ux_eqn, uy_eqn, uz_eqn)
         
+        # Interpolate faces
         interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs)
         div!(divHv, Uf)
         
+        # Pressure calculations
         @. prev = p.values
         discretise!(p_eqn, prev, runtime)
         apply_boundary_conditions!(p_eqn, p.BCs)
@@ -205,9 +193,11 @@ function SIMPLE(
         update_preconditioner!(p_eqn.preconditioner, mesh)
         run!(p_eqn, solvers.p, p)
 
+        # Relaxation and residual
         explicit_relaxation!(p, prev, solvers.p.relax)
         residual!(R_p, p_eqn.equation, p, iteration)
 
+        # Gradient
         grad!(∇p, pf, p, p.BCs) 
 
         correct = false
@@ -217,7 +207,6 @@ function SIMPLE(
                 discretise!(p_eqn)
                 apply_boundary_conditions!(p_eqn, p.BCs)
                 setReference!(p_eqn.equation, pref, 1)
-                # grad!(∇p, pf, p, pBCs) 
                 interpolate!(gradpf, ∇p, p)
                 nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
                 correct!(p_eqn.equation, p_model.terms.term1, pf)
@@ -226,6 +215,7 @@ function SIMPLE(
             end
         end
 
+        # Velocity and boundaries correction
         correct_velocity!(U, Hv, ∇p, rD)
         interpolate!(Uf, U)
         correct_boundaries!(Uf, U, U.BCs)
@@ -236,12 +226,6 @@ function SIMPLE(
             turbulence!(turbulence, model, S, S2, prev) 
             update_nueff!(nueff, nu, turbulence)
         end
-        
-        # for i ∈ eachindex(divUTx)
-        #     vol = mesh.cells[i].volume
-        #     divUTx = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][1,1]+ gradUT[i][1,2] + gradUT[i][1,3])*vol
-        #     divUTy = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][2,1]+ gradUT[i][2,2] + gradUT[i][2,3])*vol
-        # end
         
         convergence = 1e-7
 

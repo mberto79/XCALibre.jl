@@ -1,23 +1,16 @@
 module ModelFramework
 
 using Accessors
-# using LinearAlgebra
 using SparseArrays
-# using StaticArrays
 using Adapt
 
 using LoopVectorization
-# using LinearAlgebra
-# using Statistics
 using Krylov
-# using LinearOperators
-# using ProgressMeter
 using KernelAbstractions
 using CUDA
 
 using FVM_1D.Mesh
 using FVM_1D.Fields
-# using FVM_1D.Discretise
 
 include("ModelFramework_0_types.jl")
 include("ModelFramework_1_operations.jl")

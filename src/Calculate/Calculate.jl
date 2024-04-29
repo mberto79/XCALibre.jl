@@ -13,7 +13,6 @@ using FVM_1D.Fields
 using FVM_1D.ModelFramework
 using FVM_1D.Discretise
 
-# include("Calculate_0_types.jl")
 include("Calculate_0_gradient.jl")
 include("Calculate_0_divergence.jl")
 include("Calculate_1_green_gauss.jl")

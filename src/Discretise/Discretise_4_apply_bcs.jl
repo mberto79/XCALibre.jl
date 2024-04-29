@@ -4,6 +4,7 @@ apply_boundary_conditions!(eqn, BCs) = begin
     _apply_boundary_conditions!(eqn.model, BCs, eqn)
 end
 
+# Apply Boundaries Function
 function _apply_boundary_conditions!(
     model::Model{TN,SN,T,S}, BCs::B, eqn) where {T,S,TN,SN,B}
     nTerms = length(model.terms)

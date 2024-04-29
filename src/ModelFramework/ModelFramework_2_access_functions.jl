@@ -3,6 +3,8 @@ export get_source, get_source_sign
 export _A, _b
 export _nzval, _rowval, _colptr
 
+## MODEL ACCESSORS
+
 get_phi(eqn::ModelEquation)  = begin 
     eqn.model.terms[1].phi
 end
@@ -19,11 +21,11 @@ get_source_sign(eqn::ModelEquation, ti::Integer) = begin
     eqn.model.sources[ti].sign
 end
 
+## SPARSE MATRIX ACCESSORS
+
 _A(eqn::ModelEquation) = eqn.equation.A
-# _A(eqn::Equation) = eqn.A
 
 _b(eqn::ModelEquation) = eqn.equation.b
-# _b(eqn::Equation) = eqn.b
 
 _nzval(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.nzVal
 _nzval(A::SparseArrays.SparseMatrixCSC) = A.nzval

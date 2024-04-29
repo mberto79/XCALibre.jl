@@ -1,5 +1,6 @@
 export discretise!
 
+# Discretise Function
 function discretise!(eqn, prev, runtime)
     # Retrieve variabels for defition
     mesh = eqn.model.terms[1].phi.mesh

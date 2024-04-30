@@ -220,51 +220,51 @@ function AMG!(res, A, b, tol)
 
     for i ∈ 1:1000
 
-    Jacobi_solver!(res, A, b, 20, tol)
+    Jacobi_solver!(res, A, b, 3, tol)
     r .= b .- A*res
 
     residual = abs(sum(r)/length(r))
     # println("Iteration $i, residual: ", residual)
     # r_L1 .= R1*(r)
     
-    r_L1 .= (R1*r)
-    dx_L1 .= 0.0 #R2*(R1*dx)
-    Jacobi_solver!(dx_L1, A_L1, r_L1, 10, 1e-4)
-    dx .= (Rt1*dx_L1)
-    res .= res .+ dx
-    Jacobi_solver!(res, A, b, 10, tol)
-    r .= b .- A*res
+    # r_L1 .= (R1*r)
+    # dx_L1 .= 0.0 #R2*(R1*dx)
+    # Jacobi_solver!(dx_L1, A_L1, r_L1, 3, 1e-4)
+    # dx .= (Rt1*dx_L1)
+    # res .= res .+ dx
+    # Jacobi_solver!(res, A, b, 5, tol)
+    # r .= b .- A*res
 
-    r_L2 .= R2*(R1*r)
-    dx_L2 .= 0.0 #R2*(R1*dx)
-    Jacobi_solver!(dx_L2, A_L2, r_L2, 10, 1e-4)
-    dx .= Rt1*(Rt2*dx_L2)
-    res .= res .+ dx
-    Jacobi_solver!(res, A, b, 10, tol)
-    r .= b .- A*res
+    # r_L2 .= R2*(R1*r)
+    # dx_L2 .= 0.0 #R2*(R1*dx)
+    # Jacobi_solver!(dx_L2, A_L2, r_L2, 10, 1e-4)
+    # dx .= Rt1*(Rt2*dx_L2)
+    # res .= res .+ dx
+    # # Jacobi_solver!(res, A, b, 5, tol)
+    # r .= b .- A*res
 
     r_L3 .= R3*R2*(R1*r)
     dx_L3 .= 0.0 #R2*(R1*dx)
-    Jacobi_solver!(dx_L3, A_L3, r_L3, 10, 1e-6)
+    Jacobi_solver!(dx_L3, A_L3, r_L3, 3, 1e-6)
     dx .= Rt1*Rt2*Rt3*dx_L3
     res .= res .+ dx
-    Jacobi_solver!(res, A, b, 10, tol)
+    Jacobi_solver!(res, A, b, 5, tol)
     r .= b .- A*res
 
-    r_L4 .= R4*R3*R2*(R1*r)
-    dx_L4 .= 0.0 #R2*(R1*dx)
-    Jacobi_solver!(dx_L4, A_L4, r_L4, 10, 1e-6)
-    dx .= Rt1*Rt2*Rt3*Rt4*dx_L4
-    res .= res .+ dx
-    Jacobi_solver!(res, A, b, 10, tol)
-    r .= b .- A*res
+    # r_L4 .= R4*R3*R2*(R1*r)
+    # dx_L4 .= 0.0 #R2*(R1*dx)
+    # Jacobi_solver!(dx_L4, A_L4, r_L4, 10, 1e-6)
+    # dx .= Rt1*Rt2*Rt3*Rt4*dx_L4
+    # res .= res .+ dx
+    # # Jacobi_solver!(res, A, b, 5, tol)
+    # r .= b .- A*res
 
     r_L5 .= R5*R4*R3*R2*(R1*r)
     dx_L5 .= 0.0 #R2*(R1*dx)
-    Jacobi_solver!(dx_L5, A_L5, r_L5, 20, 1e-6)
+    Jacobi_solver!(dx_L5, A_L5, r_L5, 5, 1e-6)
     dx .= Rt1*Rt2*Rt3*Rt4*Rt5*dx_L5
     res .= res .+ dx
-    Jacobi_solver!(res, A, b, 10, tol)
+    Jacobi_solver!(res, A, b, 5, tol)
     r .= b .- A*res
     
         if residual < tol

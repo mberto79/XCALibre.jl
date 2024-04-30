@@ -220,7 +220,7 @@ function AMG!(res, A, b, tol)
 
     for i ∈ 1:1000
 
-    Jacobi_solver!(res, A, b, 3, tol)
+    Jacobi_solver!(res, A, b, 10, tol)
     r .= b .- A*res
 
     residual = abs(sum(r)/length(r))
@@ -240,7 +240,7 @@ function AMG!(res, A, b, tol)
     # Jacobi_solver!(dx_L2, A_L2, r_L2, 10, 1e-4)
     # dx .= Rt1*(Rt2*dx_L2)
     # res .= res .+ dx
-    # # Jacobi_solver!(res, A, b, 5, tol)
+    # Jacobi_solver!(res, A, b, 5, tol)
     # r .= b .- A*res
 
     r_L3 .= R3*R2*(R1*r)
@@ -251,13 +251,13 @@ function AMG!(res, A, b, tol)
     Jacobi_solver!(res, A, b, 5, tol)
     r .= b .- A*res
 
-    # r_L4 .= R4*R3*R2*(R1*r)
-    # dx_L4 .= 0.0 #R2*(R1*dx)
-    # Jacobi_solver!(dx_L4, A_L4, r_L4, 10, 1e-6)
-    # dx .= Rt1*Rt2*Rt3*Rt4*dx_L4
-    # res .= res .+ dx
-    # # Jacobi_solver!(res, A, b, 5, tol)
-    # r .= b .- A*res
+    r_L4 .= R4*R3*R2*(R1*r)
+    dx_L4 .= 0.0 #R2*(R1*dx)
+    Jacobi_solver!(dx_L4, A_L4, r_L4, 10, 1e-6)
+    dx .= Rt1*Rt2*Rt3*Rt4*dx_L4
+    res .= res .+ dx
+    Jacobi_solver!(res, A, b, 5, tol)
+    r .= b .- A*res
 
     r_L5 .= R5*R4*R3*R2*(R1*r)
     dx_L5 .= 0.0 #R2*(R1*dx)

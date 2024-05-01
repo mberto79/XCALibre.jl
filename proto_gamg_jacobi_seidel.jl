@@ -5,6 +5,8 @@ using SparseArrays
 mesh_file = "unv_sample_meshes/quad.unv"
 mesh_file = "unv_sample_meshes/quad40.unv"
 mesh_file = "unv_sample_meshes/quad100.unv"
+mesh_file = "unv_sample_meshes/trig40.unv"
+mesh_file = "unv_sample_meshes/trig100.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
@@ -42,11 +44,6 @@ r = sum(b - A*T.values)
 
 write_vtk("direct_result", mesh, ("T", T))
 
-rD = inv(Diagonal(A))
-
-x = similar(T.values)
-x .= 100.0
-
 # Jacobi solver
 function Jacobi_solver!(res, A, b, itmax, tol)
     rD = inv(Diagonal(A))
@@ -65,42 +62,42 @@ function Jacobi_solver!(res, A, b, itmax, tol)
     # println("Residual ($itmax iterations): ", r)
 end
 
-U = UpperTriangular(A)
-D = Diagonal(A)
-L = LowerTriangular(A)
+# U = UpperTriangular(A)
+# D = Diagonal(A)
+# L = LowerTriangular(A)
 
-rowsA = rowvals(A)
-rowsL = rowvals(L)
+# rowsA = rowvals(A)
+# rowsL = rowvals(L)
 
-col1 = nzrange(A,2)
-col2 = nzrange(L,99)
+# col1 = nzrange(A,2)
+# col2 = nzrange(L,99)
 
 
-lrows = Int64[]
-for j ∈ 1:size(L)[1]
-    for i ∈ nzrange(L,j)
-        push!(lrows, rowsL[i])
-    end
-end
+# lrows = Int64[]
+# for j ∈ 1:size(L)[1]
+#     for i ∈ nzrange(L,j)
+#         push!(lrows, rowsL[i])
+#     end
+# end
 
-cell_used = zeros(Int64, length(mesh.cells))
-agglomeration = Vector{Int64}[]
+# cell_used = zeros(Int64, length(mesh.cells))
+# agglomeration = Vector{Int64}[]
 
-cellsID = Int64[]
-for j ∈ 1:size(A)[1]
-    diag_cell= rowsA[nzrange(L,j)[1]]
-    if cell_used[diag_cell] == 0
-        cellsID = Int64[]
-        for i ∈ nzrange(L,j)
-            cID = rowsL[i]
-            if cell_used[cID] == 0
-                push!(cellsID, cID)
-                cell_used[cID] = 1
-            end
-        end
-    push!(agglomeration, cellsID)
-    end 
-end
+# cellsID = Int64[]
+# for j ∈ 1:size(A)[1]
+#     diag_cell= rowsA[nzrange(L,j)[1]]
+#     if cell_used[diag_cell] == 0
+#         cellsID = Int64[]
+#         for i ∈ nzrange(L,j)
+#             cID = rowsL[i]
+#             if cell_used[cID] == 0
+#                 push!(cellsID, cID)
+#                 cell_used[cID] = 1
+#             end
+#         end
+#     push!(agglomeration, cellsID)
+#     end 
+# end
 
 function restriction(A)
     rowsA = rowvals(A)
@@ -165,10 +162,7 @@ end
 R = restriction(A)
 Rt = transpose(R)
 
-R*b
-tol = 1e-6
 
-T.values .= 100
 function AMG!(res, A, b, tol)
     R1 = restriction(A)
     Rt1 = transpose(R1)
@@ -217,73 +211,90 @@ function AMG!(res, A, b, tol)
     dx_L5 = zeros(length(r_L5))
     dx_L1 .= 0.0
 
-
-    for i ∈ 1:1000
-
-    Jacobi_solver!(res, A, b, 10, tol)
+    Jacobi_solver!(res, A, b, 50, tol)
     r .= b .- A*res
+    r_L1 .= (R1*r)
+    r_L2 .= (R2*r_L1)
+    r_L3 .= (R3*r_L2)
+    r_L4 .= (R4*r_L3)
+    r_L5 .= (R5*r_L4)
 
+
+    for i ∈ 1:500
+
+    # Jacobi_solver!(res, A, b, 20, tol)
+    r .= b .- A*res
     residual = abs(sum(r)/length(r))
+
     # println("Iteration $i, residual: ", residual)
-    # r_L1 .= R1*(r)
-    
+
     # r_L1 .= (R1*r)
-    # dx_L1 .= 0.0 #R2*(R1*dx)
-    # Jacobi_solver!(dx_L1, A_L1, r_L1, 3, 1e-4)
-    # dx .= (Rt1*dx_L1)
-    # res .= res .+ dx
-    # Jacobi_solver!(res, A, b, 5, tol)
-    # r .= b .- A*res
-
-    # r_L2 .= R2*(R1*r)
-    # dx_L2 .= 0.0 #R2*(R1*dx)
-    # Jacobi_solver!(dx_L2, A_L2, r_L2, 10, 1e-4)
-    # dx .= Rt1*(Rt2*dx_L2)
-    # res .= res .+ dx
-    # Jacobi_solver!(res, A, b, 5, tol)
-    # r .= b .- A*res
-
-    r_L3 .= R3*R2*(R1*r)
-    dx_L3 .= 0.0 #R2*(R1*dx)
-    Jacobi_solver!(dx_L3, A_L3, r_L3, 3, 1e-6)
-    dx .= Rt1*Rt2*Rt3*dx_L3
-    res .= res .+ dx
-    Jacobi_solver!(res, A, b, 5, tol)
-    r .= b .- A*res
-
-    r_L4 .= R4*R3*R2*(R1*r)
-    dx_L4 .= 0.0 #R2*(R1*dx)
-    Jacobi_solver!(dx_L4, A_L4, r_L4, 10, 1e-6)
-    dx .= Rt1*Rt2*Rt3*Rt4*dx_L4
-    res .= res .+ dx
-    Jacobi_solver!(res, A, b, 5, tol)
-    r .= b .- A*res
-
-    r_L5 .= R5*R4*R3*R2*(R1*r)
-    dx_L5 .= 0.0 #R2*(R1*dx)
-    Jacobi_solver!(dx_L5, A_L5, r_L5, 5, 1e-6)
-    dx .= Rt1*Rt2*Rt3*Rt4*Rt5*dx_L5
-    res .= res .+ dx
-    Jacobi_solver!(res, A, b, 5, tol)
-    r .= b .- A*res
+    # r_L2 .= (R2*r_L1)
+    # r_L3 .= (R3*r_L2)
+    # r_L4 .= (R4*r_L3)
+    # r_L5 .= (R5*r_L4)
     
-        if residual < tol
-            println("Converged in $i iterations!")
-            break
-            # return res
-        end
+    r_L1 .= (R1*r)
+    dx_L1 .= 0.0 # Rt2*dx_L2 # 0.0 #R2*(R1*dx)
+    Jacobi_solver!(dx_L1, A_L1, r_L1, 15, 1e-15)
+    # r_L1 .= r_L1 - A_L1*dx_L1
+    
+    r_L2 .= (R2*r_L1)
+    dx_L2 .= 0.0 # R2*dx_L1
+    Jacobi_solver!(dx_L2, A_L2, r_L2, 15, 1e-15)
+    # r_L2 .= r_L2 - A_L2*dx_L2 
+    
+    r_L3 .= (R3*r_L2)
+    dx_L3 .= 0.0 # R3*dx_L2 # 0.0
+    Jacobi_solver!(dx_L3, A_L3, r_L3, 15, 1e-15)
+    # r_L3 .= r_L3 - A_L3*dx_L3 
+    
+    r_L4 .= (R4*r_L3)
+    dx_L4 .= 0.0 # R4*dx_L3 # 0.0
+    Jacobi_solver!(dx_L4, A_L4, r_L4, 15, 1e-15)
+    # r_L4 .= r_L4 - A_L4*dx_L4 
+    
+    r_L5 .= (R5*r_L4)
+    dx_L5 .= 0.0 # R5*dx_L4 # 0.0
+    Jacobi_solver!(dx_L5, A_L5, r_L5, 200, 1e-15)
+    # r_L5 .= r_L5 - A_L5*dx_L5 
+
+    # Up to refined levels 
+
+    dx_L4 .+= Rt5*dx_L5 # correct previous solution
+    Jacobi_solver!(dx_L4, A_L4, r_L4, 3, 1e-20)
+
+    dx_L3 .+= Rt4*dx_L4 # correct previous solution
+    Jacobi_solver!(dx_L3, A_L3, r_L3, 3, 1e-20)
+
+    dx_L2 .+= Rt3*dx_L3 # correct previous solution
+    Jacobi_solver!(dx_L2, A_L2, r_L2, 3, 1e-20)
+
+    dx_L1 .+= Rt2*dx_L2 # correct previous solution
+    Jacobi_solver!(dx_L1, A_L1, r_L1, 3, 1e-20)
+
+    res .+= Rt1*dx_L1 # correct previous solution
+    Jacobi_solver!(res, A, b, 3, 1e-20)
+    
+    if residual < tol
+        println("Converged in $i iterations!")
+        break
+        # return res
+    end
     # Jacobi_solver!(res, A, b, 10000, tol)
+    # println("Residual: $residual ($i iterations)")
     end
     # return res
     nothing
 end
 
-T.values .= 100.0
+tol = 1e-6
+T.values .= 150.0
 @time AMG!(T.values, A, b, 1e-6)
 write_vtk("result_AMG", mesh, ("T", T))
 
 T.values .= 100
-@time Jacobi_solver!(T.values, A, b, 10000, 1e-6)
+@time Jacobi_solver!(T.values, A, b, 20000, 1e-6)
 write_vtk("result_Jacobi", mesh, ("T", T))
 
 colour = 0

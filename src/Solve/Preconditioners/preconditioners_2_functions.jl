@@ -1,6 +1,12 @@
 export set_preconditioner
 export update_preconditioner!
 
+set_preconditioner(PT::None, eqn, BCs, runtime
+) = 
+begin
+    None()
+end
+
 set_preconditioner(PT::T, eqn, BCs, runtime
 ) where T<:PreconditionerType = 
 begin
@@ -10,6 +16,13 @@ begin
     P = Preconditioner{T}(eqn.equation.A)
     update_preconditioner!(P)
     return P
+end
+
+update_preconditioner!(
+    P::None
+    ) =
+begin
+    nothing
 end
 
 update_preconditioner!(

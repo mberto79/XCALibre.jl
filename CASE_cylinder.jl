@@ -6,6 +6,7 @@ using Krylov
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
+mesh = update_mesh_format(mesh)
 
 # Inlet conditions
 
@@ -42,10 +43,12 @@ solvers = (
     ),
     p = set_solver(
         model.p;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = LDL(),
+        solver      = AMG, #AMG, #GmresSolver, # BicgstabSolver, GmresSolver
+        preconditioner = None(),
+        # preconditioner = LDL(),
+        atol = 1e-6,
         convergence = 1e-7,
-        relax       = 0.4,
+        relax       = 0.2,
     )
 )
 
@@ -54,7 +57,7 @@ schemes = (
     p = set_schemes(divergence=Upwind, gradient=Midpoint)
 )
 
-runtime = set_runtime(iterations=600, write_interval=-1, time_step=1)
+runtime = set_runtime(iterations=600, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

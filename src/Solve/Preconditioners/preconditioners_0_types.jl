@@ -1,6 +1,6 @@
 
 export PreconditionerType, Preconditioner
-export Jacobi, NormDiagonal, LDL, ILU0
+export Jacobi, NormDiagonal, LDL, ILU0, None
 export DILU, DILUprecon
 
 abstract type PreconditionerType end
@@ -9,6 +9,7 @@ struct Jacobi <: PreconditionerType end
 struct LDL <: PreconditionerType end
 struct ILU0 <: PreconditionerType end
 struct DILU <: PreconditionerType end
+struct None <: PreconditionerType end
 
 
 struct Preconditioner{T,M,P,S}

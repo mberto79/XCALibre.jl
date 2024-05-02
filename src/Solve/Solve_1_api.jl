@@ -30,7 +30,11 @@ set_runtime(; iterations::I, write_interval::I, time_step::N) where {I<:Integer,
 end
 
 function run!(phiEqn::ModelEquation, setup) # ; opP, solver
+    _run(phiEqn.solver, phiEqn, setup)
+    nothing
+end
 
+function _run(solver, phiEqn::ModelEquation, setup)
     (; itmax, atol, rtol) = setup
     (; A, b) = phiEqn.equation
     P = phiEqn.preconditioner
@@ -42,6 +46,15 @@ function run!(phiEqn::ModelEquation, setup) # ; opP, solver
         )
     # println(solver.stats.niter)
     @turbo values .= solver.x
+    nothing
+end
+
+function _run(solver::AMG, phiEqn::ModelEquation, setup)
+    (; itmax, atol, rtol) = setup
+    (; A, b) = phiEqn.equation
+    values = get_phi(phiEqn).values
+
+    AMG!(values, A, b, atol)
     nothing
 end
 

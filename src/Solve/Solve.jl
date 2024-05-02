@@ -13,11 +13,13 @@ using FVM_1D.ModelFramework
 using FVM_1D.Discretise
 
 using Reexport
+using Statistics
 
 @reexport using ILUZero
 
 
 include("Preconditioners/Preconditioners.jl")
+include("AMG.jl")
 include("Solve_1_api.jl")
 
 end

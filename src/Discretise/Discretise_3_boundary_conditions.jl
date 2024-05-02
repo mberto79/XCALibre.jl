@@ -26,7 +26,7 @@ end
 @inline (bc::Neumann)(
     term::Operator{F,P,I,Laplacian{Linear}}, 
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
-    phi = term.phi 
+    # phi = term.phi 
     # # values = phi.values
     # fzero = zero(eltype(b))
     # A[cellID,cellID] += fzero
@@ -106,8 +106,8 @@ end
     # A[cellID,cellID] += ap
     # b[cellID] -= ap*phi[cellID]
     ap = term.sign[1]*(term.flux[fID])
-    A[cellID,cellID] += max(ap, 0.0)
-    # b[cellID] -= max(ap*phi[cellID], 0.0)
+    # A[cellID,cellID] += max(ap, 0.0)
+    A[cellID,cellID] += ap
     nothing
 end
 

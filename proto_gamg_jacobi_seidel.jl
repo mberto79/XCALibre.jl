@@ -3,6 +3,7 @@ using LinearAlgebra
 using SparseArrays
 using Statistics
 using Krylov
+using AlgebraicMultigrid
 
 mesh_file = "unv_sample_meshes/quad.unv"
 mesh_file = "unv_sample_meshes/quad40.unv"
@@ -53,22 +54,32 @@ T.values .= xs
 write_vtk("result_Krylov", mesh, ("T", T))
 
 # Jacobi solver
-function Jacobi_solver!(res, A, b, rD, itmax, tol)
+function Jacobi_solver!(res, A, b, rD, itmax, tol; verbose=false)
     # @time rD = inv(Diagonal(A))
     x0 = similar(res)
     x0 .= res
-    r = 0.0
+    residual = 0.0
     term1 = rD*b
     term2 = I - rD*A
-    # rmean = 1/mean(res)
+    rnormb = 1/norm(b)
     for i ∈ 1:itmax
-        res .= term1 .+ (term2)*x0
-        r = abs(mean(b .- mul!(x0, A, res))/mean(res))
-        if r <= tol
-            # println("Converged! Residual ($i iterations): ", r)
+        mul!(res, term2, x0)
+        res .= term1 .+ res
+        # residual = abs(mean(b .- mul!(x0, A, res))/mean(res))
+        # residual = mean(sqrt.((b .- mul!(x0, A, res)).^2))*rnormb
+        mul!(x0, A, res)
+        x0 .= b .- x0
+        residual = norm(x0)
+        if residual <= tol
+            if verbose
+            println("Converged! Residual: $residual ($i iterations): ", residual)
+            end
             return
         end
         x0 .= res
+    end
+    if verbose
+        println("No converged! Residual: $residual ($itmax iterations)")
     end
 end
 
@@ -172,124 +183,104 @@ end
 R = restriction(A)
 Rt = transpose(R)
 
+struct Level{A,RA,R,P,V}
+    A::A
+    rDA::RA
+    R::R
+    P::P
+    res::V
+    corr::V
+end
+Level(A) = begin
+    R = restriction(A)
+    P = transpose(R)
+    res = zeros(size(R)[1])
+    corr = zeros(size(R)[1])
+    Level(A, inv(Diagonal(A)), R, P, res, corr)
+end
 
-function AMG!(res, A, b, tol)
-    rDA = inv(Diagonal(A))
-    R1 = restriction(A)
-    Rt1 = transpose(R1)
+Level(L::Level) = Level(L.R*L.A*L.P)
+Level(L::Level, x) = begin
+    A = L.R*L.A*L.P
+    # R = restriction(A)
+    R = 1
+    P = transpose(R)
+    res = zeros(size(A)[1])
+    corr = zeros(size(A)[1])
+    Level(A, inv(Diagonal(A)), R, P, res, corr)
+end
 
-    A_L1 = R1*A*Rt1
-    rDA1 = inv(Diagonal(A_L1))
-    # println("Level 1: $(size(A_L1)[1]) cells")
-    
-    R2 = restriction(A_L1)
-    Rt2 = transpose(R2)
+L0 = Level(A)
+L1 = Level(L0)
+L2 = Level(L1)
+L3 = Level(L2)
+L4 = Level(L3)
+L5 = Level(L4, 1)
+mgrid = [L0,L1,L2,L3,L4,L5]
 
-    A_L2 = R2*A_L1*Rt2
-    rDA2 = inv(Diagonal(A_L2))
-    # println("Level 2: $(size(A_L2)[1]) cells")
+function vcycle(mgrid, x, b, level, tol)
+
+    p_iter = 20
+    s_iter = 5
+    i_iter = 5
+    f_iter = 5
+
+    # println("level $level")
+
+    l = mgrid[level]
+    (; A, rDA, R, P, res, corr) = l
+
+    Jacobi_solver!(x, A, b, rDA, p_iter, 1e-20)
+    mul!(res, R, b .- A*x)
+    corr .= 0.0
+
+    if level == length(mgrid)
+        corr .= A\res
+    else
+        corr .= vcycle(mgrid, corr, res, level + 1, tol) 
+    end
+
+    # println("Post-level $level")
 
 
-    R3 = restriction(A_L2)
-    Rt3 = transpose(R3)
+    dcorr = mgrid[level].P*corr
+    x .+= dcorr
 
-    A_L3 = R3*A_L2*Rt3
-    rDA3 = inv(Diagonal(A_L3))
-    # println("Level 3: $(size(A_L3)[1]) cells")
+    Jacobi_solver!(x, A, b, rDA, f_iter, 1e-10)
+    x
+end
 
-
-    R4 = restriction(A_L3)
-    Rt4 = transpose(R4)
-
-    A_L4 = R4*A_L3*Rt4
-    rDA4 = inv(Diagonal(A_L4))
-    # println("Level 4: $(size(A_L4)[1]) cells")
-
-    R5 = restriction(A_L4)
-    Rt5 = transpose(R5)
-
-    A_L5 = R5*A_L4*Rt5
-    rDA5 = inv(Diagonal(A_L5))
-    println("Level 5: $(size(A_L5)[1]) cells")
-    
-    r = similar(b)
-    r_L1 = zeros(size(R1)[1])
-    r_L2 = zeros(size(R2)[1])
-    r_L3 = zeros(size(R3)[1])
-    r_L4 = zeros(size(R4)[1])
-    r_L5 = zeros(size(R5)[1])
-
-    dx = zeros(length(b))
-    dx_L1 = zeros(length(r_L1))
-    dx_L2 = zeros(length(r_L2))
-    dx_L3 = zeros(length(r_L3))
-    dx_L4 = zeros(length(r_L4))
-    dx_L5 = zeros(length(r_L5))
-    dx_L1 .= 0.0
-
-    Jacobi_solver!(res, A, b, rDA, 1000, 0.75)
-    r .= b .- A*res
-    # residual = abs(mean(r))/mean(res)
-
-    s_iter = 1
-    f_iter = 50
-
-    for i ∈ 1:500
-
-        r .= b .- A*res
-
-        mul!(r_L1, R1, r)
-        mul!(dx_L1, Rt2, dx_L2)
-        Jacobi_solver!(dx_L1, A_L1, r_L1, rDA1, s_iter, tol)
-        r_L1 .-= A_L1*dx_L1
-        
-        mul!(r_L2, R2, r_L1)
-        mul!(dx_L2, Rt3, dx_L3)
-        Jacobi_solver!(dx_L2, A_L2, r_L2, rDA2, s_iter, tol)
-        r_L2 .-= A_L2*dx_L2 
-
-        mul!(r_L3, R3, r_L2)
-        mul!(dx_L3, Rt4, dx_L4)
-        Jacobi_solver!(dx_L3, A_L3, r_L3, rDA3, s_iter, tol)
-        r_L3 .-= A_L3*dx_L3 
-        
-        mul!(r_L4, R4, r_L3)
-        mul!(dx_L4, Rt5, dx_L5)
-        Jacobi_solver!(dx_L4, A_L4, r_L4, rDA4, s_iter, tol)
-        r_L4 .-= A_L4*dx_L4 
-        
-        mul!(r_L5, R5, r_L4)
-        dx_L5 .= 0.0 # R5*dx_L4 # 0.0
-        Jacobi_solver!(dx_L5, A_L5, r_L5, rDA5, 1000, 1e-5)
-        r_L5 .-= A_L5*dx_L5 
-
-        # Up to refined levels 
-
-        dx_L4 .+= Rt5*dx_L5 # correct previous solution
-        dx_L3 .+= Rt4*dx_L4 # correct previous solution
-        dx_L2 .+= Rt3*dx_L3 # correct previous solution
-        dx_L1 .+= Rt2*dx_L2 # correct previous solution
-        res .+= Rt1*dx_L1 # correct previous solution
-        Jacobi_solver!(res, A, b, rDA, f_iter, 0.75)
-
-        residual = abs(mean(r)/mean(res))
-        
-        if residual < tol
-            # println("Converged! Residual: $residual in $i iterations!")
+function AMG!(mgrid, x, b, tol)
+    iterations = 100
+    residual = 0.0
+    for i ∈ 1:iterations
+        vcycle(mgrid, x, b, 1, tol)
+        residual = norm(b .- A*x)
+        if residual <= tol
+            println("Converged! Residual: $residual ($i iterations): ", residual)
             return
         end
     end
-    nothing
+    println("Not converged! Residual: $residual")
 end
 
-tol = 1e-5
-T.values .= 100.0
-@time AMG!(T.values, A, b, 1e-5)
+tol = 10
+T.values .= 100
+@time AMG!(mgrid, T.values, b, tol)
 write_vtk("result_AMG", mesh, ("T", T))
 
-T.values .= 100
-@time Jacobi_solver!(T.values, A, b, inv(Diagonal(A)), 20000, 1e-4)
+T.values .= 100.0
+@time Jacobi_solver!(T.values, A, b, inv(Diagonal(A)), 20000, 0.1, verbose=true)
 write_vtk("result_Jacobi", mesh, ("T", T))
+
+T.values .= 100.0
+@time T.values .= AlgebraicMultigrid.solve(
+    A, b, SmoothedAggregationAMG(), maxiter = 20, abstol = 1e-6)
+write_vtk("result_RugeStubenAMG", mesh, ("T", T))
+
+size(b)
+t = zeros(10000)
+b1 = reshape(t, size(b))
 
 colour = 0
 for (i, cluster) ∈ enumerate(agglomeration)

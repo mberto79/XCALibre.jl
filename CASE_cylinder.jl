@@ -46,9 +46,9 @@ solvers = (
         solver      = AMG, #AMG, #GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = None(),
         # preconditioner = LDL(),
-        atol = 1e-6,
+        atol = 1e-1,
         convergence = 1e-7,
-        relax       = 0.2,
+        relax       = 0.4,
     )
 )
 

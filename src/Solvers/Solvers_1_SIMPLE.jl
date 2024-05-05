@@ -50,7 +50,8 @@ function simple!(model, config; resume=true, pref=nothing)
      
     @reset ux_eqn.solver = solvers.U.solver(_A(ux_eqn), _b(ux_eqn))
     @reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
-    @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
+    # @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
+    @reset p_eqn.solver = solvers.p.solver(p_eqn, p.BCs, runtime)
 
     if isturbulent(model)
         @info "Initialising turbulence model..."

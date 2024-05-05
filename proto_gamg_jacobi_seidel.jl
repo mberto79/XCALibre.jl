@@ -82,7 +82,6 @@ Jacobi(ω, x::TX; iter=1) where {T, TX<:AbstractArray{T}} = Jacobi{T,TX}(ω, sim
 Jacobi(x::TX, ω=0.5; iter=1) where {T, TX<:AbstractArray{T}} = Jacobi{T,TX}(ω, similar(x), iter)
 
 function (jacobi::Jacobi)(A, x, b)
-
     ω = jacobi.ω
     one = Base.one(eltype(A))
     temp = jacobi.temp

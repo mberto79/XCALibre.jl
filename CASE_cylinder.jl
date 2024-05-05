@@ -39,7 +39,7 @@ solvers = (
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
-        relax       = 0.6,
+        relax       = 0.8,
     ),
     p = set_solver(
         model.p;
@@ -48,7 +48,7 @@ solvers = (
         # preconditioner = LDL(),
         atol = 1e-1,
         convergence = 1e-7,
-        relax       = 0.4,
+        relax       = 0.2,
     )
 )
 

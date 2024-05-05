@@ -54,7 +54,8 @@ function _run(solver::AMG, phiEqn::ModelEquation, setup)
     (; A, b) = phiEqn.equation
     values = get_phi(phiEqn).values
 
-    AMG!(values, A, b, atol)
+    # AMG!(values, A, b, atol)
+    solver(values, A, b, atol)
     nothing
 end
 

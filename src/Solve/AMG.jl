@@ -1,27 +1,97 @@
 export AMG, AMG!
 
-struct AMG end
+struct AMG{L}
+    levels::L
+end
+AMG(eqn, BCs, runtime) = begin
+    discretise!(eqn, eqn.model.terms[1].phi.values, runtime)
+    apply_boundary_conditions!(eqn, BCs)
+    A = eqn.equation.A
+    L0 = Level(A)
+    L1 = Level(L0)
+    L2 = Level(L1)
+    L3 = Level(L2)
+    L4 = Level(L3)
+    L5 = Level(L4)
+
+    levels = (L0,L1,L2,L3,L4,L5)
+
+    AMG(levels)
+end
 
 AMG(a,b) = AMG()
 
-function Jacobi_solver!(res, A, b, rD, itmax, tol)
-    # @time rD = inv(Diagonal(A))
-    x0 = similar(res)
-    x0 .= res
-    r = 0.0
-    term1 = rD*b
-    term2 = I - rD*A
-    rnormb = 1/norm(b)
-    for i ∈ 1:itmax
-        res .= term1 .+ (term2)*x0
-        # r = abs(mean(b .- mul!(x0, A, res))/mean(res))
-        # r = mean(sqrt.((b .- mul!(x0, A, res)).^2))*rnormb
-        r = mean(sqrt.((b .- mul!(x0, A, res)).^2)) #*rnormb
-        if r <= tol
-            # println("Converged! Residual ($i iterations): ", r)
-            return
+struct Level{A,RA,R,P,V}
+    A::A
+    rDA::RA
+    R::R
+    P::P
+    bc::V
+    xc::V
+end
+Level(A0) = begin
+    Agg = restriction(A0)
+    interpolation = (I - 0.65*inv(Diagonal(A0))*A0)*transpose(Agg)
+    R = transpose(interpolation) #Agg
+    P = interpolation # transpose(R)
+    A = R*A0*P
+    # P = (I - 0.4*inv(Diagonal(A0))*A0)*transpose(R)
+    bc = zeros(size(R)[1])
+    xc = zeros(size(R)[1])
+    # println("Number of cells: $(size(R)[1])")
+    Level(A, inv(Diagonal(A)), R, P, bc, xc)
+end
+
+Level(L::Level) = begin
+    A0 = L.A
+    Agg = restriction(A0)
+    interpolation = (I - 0.65*inv(Diagonal(A0))*A0)*transpose(Agg)
+    R = transpose(interpolation) #Agg
+    P = interpolation # transpose(R)
+    A = R*A0*P
+    # P = (I - 0.4*inv(Diagonal(A0))*A0)*transpose(R)
+    bc = zeros(size(R)[1])
+    xc = zeros(size(R)[1])
+    # println("Number of cells: $(size(R)[1])")
+    Level(A, inv(Diagonal(A)), R, P, bc, xc)
+end
+
+struct JacobiSolver{T,TX}
+    ω::T
+    temp::TX
+    iter::Int
+end
+JacobiSolver(ω, x::TX; iter=1) where {T, TX<:AbstractArray{T}} = JacobiSolver{T,TX}(ω, similar(x), iter)
+JacobiSolver(x::TX, ω=0.5; iter=1) where {T, TX<:AbstractArray{T}} = JacobiSolver{T,TX}(ω, similar(x), iter)
+
+function (jacobi::JacobiSolver)(A, x, b)
+    ω = jacobi.ω
+    one = Base.one(eltype(A))
+    temp = jacobi.temp
+    z = zero(eltype(A))
+
+    for i in 1:jacobi.iter
+        @inbounds for col = 1:size(x, 2)
+            for i = 1:size(A, 1)
+                temp[i, col] = x[i, col]
+            end
+
+            for i = 1:size(A, 1)
+                rsum = z
+                diag = z
+
+                for j in nzrange(A, i)
+                    row = A.rowval[j]
+                    val = A.nzval[j]
+
+                    diag = ifelse(row == i, val, diag)
+                    rsum += ifelse(row == i, z, val * temp[row, col])
+                end
+
+                xcand = (one - ω) * temp[i, col] + ω * ((b[i, col] - rsum) / diag)
+                x[i, col] = ifelse(diag == 0, x[i, col], xcand)
+            end
         end
-        x0 .= res
     end
 end
 
@@ -66,125 +136,74 @@ function restriction(A)
     return sparse(i, j, v)
 end
 
-function AMG!(res, A, b, tol)
-    rDA = inv(Diagonal(A))
-    R1 = restriction(A)
-    Rt1 = transpose(R1)
+function (amg::AMG)(res, A, b, tol)
+    L0 = Level(A)
+    L1 = Level(L0)
+    L2 = Level(L1)
+    # L3 = Level(L2)
+    # L4 = Level(L3)
+    # L5 = Level(L4)
 
-    A_L1 = R1*A*Rt1
-    rDA1 = inv(Diagonal(A_L1))
-    # println("Level 1: $(size(A_L1)[1]) cells")
+    levels = levels = (L0,L1,L2)
+    # levels = amg.levels
+
+    smoother0 = JacobiSolver(res, 0.65, iter=3)
+    smoother1 = JacobiSolver(levels[1].xc, 0.65, iter=3)
+    smoother2 = JacobiSolver(levels[2].xc, 0.65, iter=3)
+    # smoother3 = JacobiSolver(levels[3].xc, 0.65, iter=3)
+    # smoother4 = JacobiSolver(levels[4].xc, 0.65, iter=3)
+
+    for i ∈ 1:500
+
+        smoother0(A, res, b)
     
-    R2 = restriction(A_L1)
-    Rt2 = transpose(R2)
-
-    A_L2 = R2*A_L1*Rt2
-    rDA2 = inv(Diagonal(A_L2))
-    # println("Level 2: $(size(A_L2)[1]) cells")
-
-
-    R3 = restriction(A_L2)
-    Rt3 = transpose(R3)
-
-    A_L3 = R3*A_L2*Rt3
-    rDA3 = inv(Diagonal(A_L3))
-    # println("Level 3: $(size(A_L3)[1]) cells")
-
-
-    R4 = restriction(A_L3)
-    Rt4 = transpose(R4)
-
-    A_L4 = R4*A_L3*Rt4
-    rDA4 = inv(Diagonal(A_L4))
-    # println("Level 4: $(size(A_L4)[1]) cells")
-
-    R5 = restriction(A_L4)
-    Rt5 = transpose(R5)
-
-    A_L5 = R5*A_L4*Rt5
-    rDA5 = inv(Diagonal(A_L5))
-    # println("Level 5: $(size(A_L5)[1]) cells")
+        # level 1 corrections
+        levels[1].xc .= 0.0
+        mul!(levels[1].bc, levels[1].R, b .- A*res)
+        smoother1(levels[1].A, levels[1].xc, levels[1].bc)
     
-    r = similar(b)
-    r_L1 = zeros(size(R1)[1])
-    r_L2 = zeros(size(R2)[1])
-    r_L3 = zeros(size(R3)[1])
-    r_L4 = zeros(size(R4)[1])
-    r_L5 = zeros(size(R5)[1])
-
-    dx = zeros(length(b))
-    dx_L1 = zeros(length(r_L1))
-    dx_L2 = zeros(length(r_L2))
-    dx_L3 = zeros(length(r_L3))
-    dx_L4 = zeros(length(r_L4))
-    dx_L5 = zeros(length(r_L5))
-    dx_L1 .= 0.0
-
+        # level 2 corrections
+        levels[2].xc .= 0.0
+        mul!(levels[2].bc, levels[2].R, levels[1].bc .- levels[1].A*levels[1].xc)
+        smoother2(levels[2].A, levels[2].xc, levels[2].bc)
     
-    # residual = abs(mean(r))/mean(res)
+        # level 3 corrections
+        # levels[3].xc .= 0.0
+        mul!(levels[3].bc, levels[3].R, levels[2].bc .- levels[2].A*levels[2].xc)
+        # smoother3(levels[3].A, levels[3].xc, levels[3].bc)
+        levels[3].xc .= levels[3].A\levels[3].bc
+    
+    
+        # level 4 corrections
+        # mul!(levels[4].bc, levels[4].R, levels[3].bc .- levels[3].A*levels[3].xc)
+        # levels[4].xc .= levels[4].A\levels[4].bc
+    
+        # return corrections 
 
-    p_iter = 10
-    s_iter = 15
-    i_iter = 15
-    f_iter = 5
-    residual = 0.0
-    iterations = 500
-
-    for i ∈ 1:iterations
-
-        Jacobi_solver!(res, A, b, rDA, p_iter, 1e-20)
-        r .= b .- A*res
-
-        mul!(r_L1, R1, r)
-        # mul!(dx_L1, Rt2, dx_L2)
-        dx_L1 .= 0.0
-
-
-        Jacobi_solver!(dx_L1, A_L1, r_L1, rDA1, s_iter, 1e-15)
-        mul!(r_L2, R2, r_L1 .- A_L1*dx_L1)
-        dx_L2 .= 0.0
-
-        Jacobi_solver!(dx_L2, A_L2, r_L2, rDA2, s_iter, 1e-15)
-        mul!(r_L3, R3, r_L2 .- A_L2*dx_L2)
-        dx_L3 .= 0.0
-
-        Jacobi_solver!(dx_L3, A_L3, r_L3, rDA3, s_iter, 1e-15)
-        mul!(r_L4, R4, r_L3 .- A_L3*dx_L3)
-        dx_L4 .= 0.0
-
-        Jacobi_solver!(dx_L4, A_L4, r_L4, rDA4, length(r_L4), 1e-10)
-        mul!(r_L5, R5, r_L4 .- A_L4*dx_L4)
-        dx_L5 .= 0.0
-
-        Jacobi_solver!(dx_L5, A_L5, r_L5, rDA5, length(r_L5), 1e-10)           
-       
-        # Up to refined levels 
-
-        dx_L4 .+= Rt5*dx_L5 # correct previous solution
-        # Jacobi_solver!(dx_L4, A_L4, r_L4, rDA4, i_iter, 1e-15)
-
-        dx_L3 .+= Rt4*dx_L4 # correct previous solution
-        # Jacobi_solver!(dx_L3, A_L3, r_L3, rDA3, i_iter, 1e-15)
-
-        dx_L2 .+= Rt3*dx_L3 # correct previous solution
-        # Jacobi_solver!(dx_L2, A_L2, r_L2, rDA2, i_iter, 1e-15)
-
-        dx_L1 .+= Rt2*dx_L2 # correct previous solution
-        Jacobi_solver!(dx_L1, A_L1, r_L1, rDA1, i_iter, 1e-15)
-
-        res .+= Rt1*dx_L1 # correct previous solution
-        # res .= res .+ 2*Rt1*Rt2*Rt3*Rt4*Rt5*dx_L5
-        Jacobi_solver!(res, A, b, rDA, f_iter, 1e-10)
-        r .= sqrt.((b .- A*res).^2)
-        # residual = abs(mean(r)/norm(b))
-        residual = mean(r)
-        
-        if residual < tol
-            # println("Converged! Residual: $residual in $i iterations!")
+        # levels[3].xc .+= levels[4].P*levels[4].xc
+        # smoother3(levels[3].A, levels[3].xc, levels[3].bc)
+    
+    
+        levels[2].xc .+= levels[3].P*levels[3].xc
+        smoother2(levels[2].A, levels[2].xc, levels[2].bc)
+    
+    
+        levels[1].xc .+= levels[2].P*levels[2].xc
+        smoother1(levels[1].A, levels[1].xc, levels[1].bc)
+    
+    
+        res .+= levels[1].P*levels[1].xc
+        smoother0(A, res, b)
+    
+    
+        r = norm(b - A*res)/norm(b)
+        # r = norm(b - A*res)
+        # println("Residual: $r (iteration $i)")
+        if r < tol
+            # println("Converged! Residual: $r (iteration $i)")
             return
         end
-        # println("Residual: $residual in $i iterations!")
+    
     end
-    # println("Not converged! Residual: $residual in $iterations iterations!")
     nothing
 end

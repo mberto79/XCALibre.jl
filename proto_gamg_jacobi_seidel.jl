@@ -188,7 +188,7 @@ end
 Level(A) = begin
     R = restriction(A)
     # P = transpose(R)
-    P = (I - 0.65*inv(Diagonal(A))*A)*transpose(R)
+    P = (I - 0.80*inv(Diagonal(A))*A)*transpose(R)
     bc = zeros(size(R)[1])
     xc = zeros(size(R)[1])
     println("Number of cells: $(size(R)[1])")
@@ -198,7 +198,7 @@ end
 Level(L::Level) = begin
     A = L.R*L.A*transpose(L.R)
     R = restriction(A)
-    P = (I - 0.65*inv(Diagonal(A))*A)*transpose(R)
+    P = (I - 0.80*inv(Diagonal(A))*A)*transpose(R)
     # P = (I - 0.5*inv(Diagonal(A))*A)*transpose(R)
     bc = zeros(size(R)[1])
     xc = zeros(size(R)[1])
@@ -208,7 +208,7 @@ end
 Level(L::Level, x) = begin
     A = L.R*L.A*transpose(L.R)
     R = restriction(A)
-    P = (I - 0.65*inv(Diagonal(A))*A)*transpose(R)
+    P = (I - 0.80*inv(Diagonal(A))*A)*transpose(R)
     # Restriction = restriction(A)
     # R = x # Restriction
     # P = x # transpose(Restriction)
@@ -271,10 +271,11 @@ smoother0 = Jacobi(T.values, 0.85, iter=5)
 smoother1 = Jacobi(levels[1].xc, 0.85, iter=10)
 smoother2 = Jacobi(levels[2].xc, 0.85, iter=10)
 smoother3 = Jacobi(levels[3].xc, 0.85, iter=10)
+smoother4 = Jacobi(levels[3].xc, 0.85, iter=10)
 
 T.values .= 100.0
 x = T.values
-@time for i ∈ 1:50
+@time for i ∈ 1:30
     
 
     # top level smoother
@@ -293,14 +294,25 @@ x = T.values
     # Jacobi_solver!(levels[2].xc, levels[3].A, levels[2].bc, levels[3].rDA, 2/3, res_iter, 1e-20)
     smoother2(levels[3].A, levels[2].xc, levels[2].bc)
 
-
     # level 3 corrections
-    # levels[3].xc .= 0.0
+    levels[3].xc .= 0.0
     mul!(levels[3].bc, levels[3].R, levels[2].bc .- levels[3].A*levels[2].xc)
+    # Jacobi_solver!(levels[2].xc, levels[3].A, levels[2].bc, levels[3].rDA, 2/3, res_iter, 1e-20)
+    smoother3(levels[4].A, levels[3].xc, levels[3].bc)
+
+
+    # level 4 corrections
+    # levels[3].xc .= 0.0
+    mul!(levels[4].bc, levels[4].R, levels[3].bc .- levels[4].A*levels[3].xc)
 
     levels[3].xc .= levels[4].A\levels[3].bc
 
     # return corrections 
+    levels[3].xc .+= levels[4].P*levels[4].xc
+    # Jacobi_solver!(levels[2].xc, levels[3].A, levels[2].bc, levels[3].rDA, 2/3, int_iter, 1e-20)
+    smoother2(levels[4].A, levels[3].xc, levels[3].bc)
+
+
     levels[2].xc .+= levels[3].P*levels[3].xc
     # Jacobi_solver!(levels[2].xc, levels[3].A, levels[2].bc, levels[3].rDA, 2/3, int_iter, 1e-20)
     smoother2(levels[3].A, levels[2].xc, levels[2].bc)
@@ -317,6 +329,7 @@ x = T.values
 
 
     r = norm(b - A*x)/norm(b)
+    if
     println("Residual: $r (iteration $i)")
 
 end

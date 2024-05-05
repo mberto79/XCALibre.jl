@@ -185,10 +185,13 @@ struct Level{A,RA,R,P,V}
     bc::V
     xc::V
 end
-Level(A) = begin
-    R = restriction(A)
-    # P = transpose(R)
-    P = (I - 0.80*inv(Diagonal(A))*A)*transpose(R)
+Level(A0) = begin
+    Agg = restriction(A0)
+    interpolation = (I - 0.65*inv(Diagonal(A0))*A0)*transpose(Agg)
+    R = transpose(interpolation) #Agg
+    P = interpolation # transpose(R)
+    A = R*A0*P
+    # P = (I - 0.4*inv(Diagonal(A0))*A0)*transpose(R)
     bc = zeros(size(R)[1])
     xc = zeros(size(R)[1])
     println("Number of cells: $(size(R)[1])")
@@ -196,22 +199,26 @@ Level(A) = begin
 end
 
 Level(L::Level) = begin
-    A = L.R*L.A*transpose(L.R)
-    R = restriction(A)
-    P = (I - 0.80*inv(Diagonal(A))*A)*transpose(R)
-    # P = (I - 0.5*inv(Diagonal(A))*A)*transpose(R)
+    A0 = L.A
+    Agg = restriction(A0)
+    interpolation = (I - 0.65*inv(Diagonal(A0))*A0)*transpose(Agg)
+    R = transpose(interpolation) #Agg
+    P = interpolation # transpose(R)
+    A = R*A0*P
+    # P = (I - 0.4*inv(Diagonal(A0))*A0)*transpose(R)
     bc = zeros(size(R)[1])
     xc = zeros(size(R)[1])
     println("Number of cells: $(size(R)[1])")
     Level(A, inv(Diagonal(A)), R, P, bc, xc)
 end
 Level(L::Level, x) = begin
-    A = L.R*L.A*transpose(L.R)
-    R = restriction(A)
-    P = (I - 0.80*inv(Diagonal(A))*A)*transpose(R)
-    # Restriction = restriction(A)
-    # R = x # Restriction
-    # P = x # transpose(Restriction)
+    A0 = L.A
+    Agg = restriction(A0)
+    interpolation = (I - 0.65*inv(Diagonal(A0))*A0)*transpose(Agg)
+    R = transpose(interpolation) #Agg
+    P = interpolation # transpose(R)
+    A = R*A0*P
+    # P = (I - 0.4*inv(Diagonal(A0))*A0)*transpose(R)
     bc = zeros(size(R)[1])
     xc = zeros(size(R)[1])
     println("Number of cells: $(size(A)[1])")
@@ -228,6 +235,8 @@ L5 = Level(L4,1)
 L5.P
 L5.xc
 L5.R
+L5.rDA
+L5.A
 
 L4.P
 
@@ -264,73 +273,80 @@ pre_iter = 3
 res_iter = 10
 int_iter = 1
 post_iter = 3
-@time Jacobi_solver!(x, A, b, inv(Diagonal(A)), 2/3, 10, 1e-20)
-@time Jacobi_solver!(x, A, b, inv(Diagonal(A)), 1, 10, 1e-20)
+@time Jacobi_solver!(T.values, A, b, inv(Diagonal(A)), 2/3, 10, 1e-20)
+@time Jacobi_solver!(T.values, A, b, inv(Diagonal(A)), 1, 10, 1e-20)
 
-smoother0 = Jacobi(T.values, 0.85, iter=5)
-smoother1 = Jacobi(levels[1].xc, 0.85, iter=10)
-smoother2 = Jacobi(levels[2].xc, 0.85, iter=10)
-smoother3 = Jacobi(levels[3].xc, 0.85, iter=10)
-smoother4 = Jacobi(levels[3].xc, 0.85, iter=10)
+smoother0 = Jacobi(T.values, 0.65, iter=3)
+smoother1 = Jacobi(levels[1].xc, 0.65, iter=3)
+smoother2 = Jacobi(levels[2].xc, 0.65, iter=3)
+smoother3 = Jacobi(levels[3].xc, 0.65, iter=3)
+smoother4 = Jacobi(levels[4].xc, 0.65, iter=3)
 
 T.values .= 100.0
-x = T.values
-@time for i ∈ 1:30
+xfine = T.values
+tol = 1e-5
+@time for i ∈ 1:2000
     
 
     # top level smoother
     # Jacobi_solver!(x, A, b, inv(Diagonal(A)), 2/3, pre_iter, 1e-20)
-    smoother0(A, x, b)
+    smoother0(A, xfine, b)
 
     # level 1 corrections
     levels[1].xc .= 0.0
-    mul!(levels[1].bc, levels[1].R, b .- A*x)
+    mul!(levels[1].bc, levels[1].R, b .- A*xfine)
     # Jacobi_solver!(levels[1].xc, levels[2].A, levels[1].bc, levels[2].rDA, 2/3, res_iter, 1e-20)
-    smoother1(levels[2].A, levels[1].xc, levels[1].bc)
+    levels[2].A
+    levels[1].xc
+    smoother1(levels[1].A, levels[1].xc, levels[1].bc)
 
     # level 2 corrections
     levels[2].xc .= 0.0
-    mul!(levels[2].bc, levels[2].R, levels[1].bc .- levels[2].A*levels[1].xc)
+    mul!(levels[2].bc, levels[2].R, levels[1].bc .- levels[1].A*levels[1].xc)
     # Jacobi_solver!(levels[2].xc, levels[3].A, levels[2].bc, levels[3].rDA, 2/3, res_iter, 1e-20)
-    smoother2(levels[3].A, levels[2].xc, levels[2].bc)
+    smoother2(levels[2].A, levels[2].xc, levels[2].bc)
 
     # level 3 corrections
     levels[3].xc .= 0.0
-    mul!(levels[3].bc, levels[3].R, levels[2].bc .- levels[3].A*levels[2].xc)
+    mul!(levels[3].bc, levels[3].R, levels[2].bc .- levels[2].A*levels[2].xc)
     # Jacobi_solver!(levels[2].xc, levels[3].A, levels[2].bc, levels[3].rDA, 2/3, res_iter, 1e-20)
-    smoother3(levels[4].A, levels[3].xc, levels[3].bc)
+    smoother3(levels[3].A, levels[3].xc, levels[3].bc)
 
 
     # level 4 corrections
     # levels[3].xc .= 0.0
-    mul!(levels[4].bc, levels[4].R, levels[3].bc .- levels[4].A*levels[3].xc)
+    mul!(levels[4].bc, levels[4].R, levels[3].bc .- levels[3].A*levels[3].xc)
 
-    levels[3].xc .= levels[4].A\levels[3].bc
+    levels[4].xc .= levels[4].A\levels[4].bc
 
     # return corrections 
     levels[3].xc .+= levels[4].P*levels[4].xc
     # Jacobi_solver!(levels[2].xc, levels[3].A, levels[2].bc, levels[3].rDA, 2/3, int_iter, 1e-20)
-    smoother2(levels[4].A, levels[3].xc, levels[3].bc)
+    smoother3(levels[3].A, levels[3].xc, levels[3].bc)
 
 
     levels[2].xc .+= levels[3].P*levels[3].xc
     # Jacobi_solver!(levels[2].xc, levels[3].A, levels[2].bc, levels[3].rDA, 2/3, int_iter, 1e-20)
-    smoother2(levels[3].A, levels[2].xc, levels[2].bc)
+    smoother2(levels[2].A, levels[2].xc, levels[2].bc)
 
 
     levels[1].xc .+= levels[2].P*levels[2].xc
     # Jacobi_solver!(levels[1].xc, levels[2].A, levels[1].bc, levels[2].rDA, 2/3, int_iter, 1e-20)
-    smoother1(levels[2].A, levels[1].xc, levels[1].bc)
+    smoother1(levels[1].A, levels[1].xc, levels[1].bc)
 
 
-    x .+= levels[1].P*levels[1].xc
+    xfine .+= levels[1].P*levels[1].xc
     # Jacobi_solver!(x, A, b, inv(Diagonal(A)), 2/3, post_iter, 1e-20)
-    smoother0(A, x, b)
+    smoother0(A, xfine, b)
 
 
-    r = norm(b - A*x)/norm(b)
-    if
-    println("Residual: $r (iteration $i)")
+    # r = norm(b - A*xfine)/norm(b)
+    r = norm(b - A*xfine)
+    # println("Residual: $r (iteration $i)")
+    if r < tol
+        println("Converged! Residual: $r (iteration $i)")
+        break
+    end
 
 end
 write_vtk("test", mesh, ("T", T))
@@ -391,7 +407,7 @@ T.values .= 100
 write_vtk("result_AMG", mesh, ("T", T))
 
 T.values .= 100
-@time Jacobi_solver!(T.values, A, b, inv(Diagonal(A)), 1, 20000, 1e-25, verbose=true)
+@time Jacobi_solver!(T.values, A, b, inv(Diagonal(A)), 1, 20000, 1e-3, verbose=true)
 write_vtk("result_Jacobi", mesh, ("T", T))
 
 T.values .= 100
@@ -402,15 +418,16 @@ write_vtk("result_Jacobi_AMG", mesh, ("T", T))
 
 T.values .= 100.0
 @time T.values .= AlgebraicMultigrid.solve(
-    A, b, SmoothedAggregationAMG(), maxiter = 500, abstol = 1e-6)
+    A, b, SmoothedAggregationAMG(), maxiter = 2000, abstol = 1e-15)
+r = norm(b - A*T.values)
 write_vtk("result_RugeStubenAMG", mesh, ("T", T))
 
 T.values .= 100.0
 @time T.values .= A\b
+r = norm(b - A*T.values)
 write_vtk("direct_result", mesh, ("T", T))
 
 T.values .= 100.0
-@time solve!(solver, A, b, T.values)
 @time xs, stats = cg(A, b)
 @time xs, stats = bicgstab(A, b)
 T.values .= xs

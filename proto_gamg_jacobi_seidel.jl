@@ -41,30 +41,21 @@ apply_boundary_conditions!(T_eqn, T.BCs)
 
 (; A, b) = T_eqn.equation
 
-T.values .= 100.0
-@time T.values .= A\b
-write_vtk("direct_result", mesh, ("T", T))
 
-T.values .= 100.0
-solver = CgSolver(A, b)
-@time solve!(solver, A, b, T.values)
-@time xs, stats = cg(A, b)
-@time xs, stats = bicgstab(A, b)
-T.values .= xs
-write_vtk("result_Krylov", mesh, ("T", T))
 
 # Jacobi solver
-function Jacobi_solver!(res, A, b, rD, itmax, tol; verbose=false)
+function Jacobi_solver!(res, A::T, b, rD, ω, itmax, tol; verbose=false) where T
     # @time rD = inv(Diagonal(A))
-    x0 = similar(res)
-    x0 .= res
+    x0 = copy(res)
     residual = 0.0
-    term1 = rD*b
-    term2 = I - rD*A
-    rnormb = 1/norm(b)
-    for i ∈ 1:itmax
-        mul!(res, term2, x0)
-        res .= term1 .+ res
+    # ω = 2/3 # 1
+    @inbounds term1 = ω*rD*b
+    @inbounds term2 = I - ω*rD*A
+    println(typeof(term2))
+    # rnormb = 1/norm(b)
+    @inbounds for i ∈ 1:itmax
+        # mul!(res, term2, x0)
+        res .= term1 .+ term2*x0
         # residual = abs(mean(b .- mul!(x0, A, res))/mean(res))
         # residual = mean(sqrt.((b .- mul!(x0, A, res)).^2))*rnormb
         mul!(x0, A, res)
@@ -82,43 +73,6 @@ function Jacobi_solver!(res, A, b, rD, itmax, tol; verbose=false)
         println("No converged! Residual: $residual ($itmax iterations)")
     end
 end
-
-# U = UpperTriangular(A)
-# D = Diagonal(A)
-# L = LowerTriangular(A)
-
-# rowsA = rowvals(A)
-# rowsL = rowvals(L)
-
-# col1 = nzrange(A,2)
-# col2 = nzrange(L,99)
-
-
-# lrows = Int64[]
-# for j ∈ 1:size(L)[1]
-#     for i ∈ nzrange(L,j)
-#         push!(lrows, rowsL[i])
-#     end
-# end
-
-# cell_used = zeros(Int64, length(mesh.cells))
-# agglomeration = Vector{Int64}[]
-
-# cellsID = Int64[]
-# for j ∈ 1:size(A)[1]
-#     diag_cell= rowsA[nzrange(L,j)[1]]
-#     if cell_used[diag_cell] == 0
-#         cellsID = Int64[]
-#         for i ∈ nzrange(L,j)
-#             cID = rowsL[i]
-#             if cell_used[cID] == 0
-#                 push!(cellsID, cID)
-#                 cell_used[cID] = 1
-#             end
-#         end
-#     push!(agglomeration, cellsID)
-#     end 
-# end
 
 function restriction(A)
     rowsA = rowvals(A)
@@ -180,34 +134,45 @@ function restriction(A)
     return sparse(i, j, v)
 end
 
-R = restriction(A)
-Rt = transpose(R)
-
 struct Level{A,RA,R,P,V}
     A::A
     rDA::RA
     R::R
     P::P
-    res::V
-    corr::V
+    bc::V
+    xc::V
 end
 Level(A) = begin
     R = restriction(A)
-    P = transpose(R)
-    res = zeros(size(R)[1])
-    corr = zeros(size(R)[1])
-    Level(A, inv(Diagonal(A)), R, P, res, corr)
+    # P = transpose(R)
+    P = (I - 0.65*inv(Diagonal(A))*A)*transpose(R)
+    bc = zeros(size(R)[1])
+    xc = zeros(size(R)[1])
+    println("Number of cells: $(size(R)[1])")
+    Level(A, inv(Diagonal(A)), R, P, bc, xc)
 end
 
-Level(L::Level) = Level(L.R*L.A*L.P)
+Level(L::Level) = begin
+    A = L.R*L.A*transpose(L.R)
+    R = restriction(A)
+    P = (I - 0.65*inv(Diagonal(A))*A)*transpose(R)
+    # P = (I - 0.5*inv(Diagonal(A))*A)*transpose(R)
+    bc = zeros(size(R)[1])
+    xc = zeros(size(R)[1])
+    println("Number of cells: $(size(R)[1])")
+    Level(A, inv(Diagonal(A)), R, P, bc, xc)
+end
 Level(L::Level, x) = begin
-    A = L.R*L.A*L.P
-    # R = restriction(A)
-    R = 1
-    P = transpose(R)
-    res = zeros(size(A)[1])
-    corr = zeros(size(A)[1])
-    Level(A, inv(Diagonal(A)), R, P, res, corr)
+    A = L.R*L.A*transpose(L.R)
+    R = restriction(A)
+    P = (I - 0.65*inv(Diagonal(A))*A)*transpose(R)
+    # Restriction = restriction(A)
+    # R = x # Restriction
+    # P = x # transpose(Restriction)
+    bc = zeros(size(R)[1])
+    xc = zeros(size(R)[1])
+    println("Number of cells: $(size(A)[1])")
+    Level(A, inv(Diagonal(A)), R, P, bc, xc)
 end
 
 L0 = Level(A)
@@ -215,47 +180,131 @@ L1 = Level(L0)
 L2 = Level(L1)
 L3 = Level(L2)
 L4 = Level(L3)
-L5 = Level(L4, 1)
-mgrid = [L0,L1,L2,L3,L4,L5]
+L5 = Level(L4,1)
 
-function vcycle(mgrid, x, b, level, tol)
+L5.P
+L5.xc
+L5.R
 
-    p_iter = 20
+L4.P
+
+L5.xc .= [1:length(L5.xc);]./length(L5.xc)
+T.values .= L0.P*L1.P*L2.P*L3.P*L4.P*L5.P*L5.xc
+write_vtk("Level_5", mesh, ("T", T))
+
+L4.xc .= [1:length(L4.xc);]./length(L4.xc)
+T.values .= L0.P*L1.P*L2.P*L3.P*L4.P*L4.xc
+write_vtk("Level_4", mesh, ("T", T))
+
+L3.xc .= [1:length(L3.xc);]./length(L3.xc)
+T.values .= L0.P*L1.P*L2.P*L3.P*L3.xc
+write_vtk("Level_3", mesh, ("T", T))
+
+L2.xc .= [1:length(L2.xc);]./length(L2.xc)
+T.values .= L0.P*L1.P*L2.P*L2.xc
+write_vtk("Level_2", mesh, ("T", T))
+
+L1.xc .= [1:length(L1.xc);]./length(L1.xc)
+T.values .= L0.P*L1.P*L1.xc
+write_vtk("Level_1", mesh, ("T", T))
+
+L0.xc .= [1:length(L0.xc);]./length(L0.xc)
+# T.values .= (I - 0.5*inv(Diagonal(A))*A)*L0.P*L0.xc
+T.values .= L0.P*L0.xc
+write_vtk("Level_0", mesh, ("T", T))
+
+
+levels = (L0,L1,L2,L3,L4,L5)
+
+T.values .= 100.0
+x = T.values
+
+pre_iter = 3
+res_iter = 10
+int_iter = 1
+post_iter = 3
+@time Jacobi_solver!(x, A, b, inv(Diagonal(A)), 2/3, 10, 1e-20)
+@time Jacobi_solver!(x, A, b, inv(Diagonal(A)), 1, 10, 1e-20)
+
+@time for i ∈ 1:28
+
+
+    # top level smoother
+    Jacobi_solver!(x, A, b, inv(Diagonal(A)), 2/3, pre_iter, 1e-20)
+
+    # level 1 corrections
+    levels[1].xc .= 0.0
+    mul!(levels[1].bc, levels[1].R, b .- A*x)
+    Jacobi_solver!(levels[1].xc, levels[2].A, levels[1].bc, levels[2].rDA, 2/3, res_iter, 1e-20)
+
+    # level 2 corrections
+    levels[2].xc .= 0.0
+    mul!(levels[2].bc, levels[2].R, levels[1].bc .- levels[2].A*levels[1].xc)
+    Jacobi_solver!(levels[2].xc, levels[3].A, levels[2].bc, levels[3].rDA, 2/3, res_iter, 1e-20)
+
+    # level 3 corrections
+    # levels[3].xc .= 0.0
+    mul!(levels[3].bc, levels[3].R, levels[2].bc .- levels[3].A*levels[2].xc)
+    # Jacobi_solver!(levels[3].xc, levels[4].A, levels[3].bc, levels[4].rDA, 2/3, res_iter, 1e-20)
+
+    levels[3].xc .= levels[4].A\levels[3].bc
+
+    # return corrections 
+    levels[2].xc .+= levels[3].P*levels[3].xc
+    Jacobi_solver!(levels[2].xc, levels[3].A, levels[2].bc, levels[3].rDA, 2/3, int_iter, 1e-20)
+
+    levels[1].xc .+= levels[2].P*levels[2].xc
+    Jacobi_solver!(levels[1].xc, levels[2].A, levels[1].bc, levels[2].rDA, 2/3, int_iter, 1e-20)
+
+    x .+= levels[1].P*levels[1].xc
+    Jacobi_solver!(x, A, b, inv(Diagonal(A)), 2/3, post_iter, 1e-20)
+
+    r = norm(b - A*x)/norm(x)
+    println("Residual: $r (iteration $i)")
+
+end
+write_vtk("test", mesh, ("T", T))
+
+function vcycle(mgrid::M, x, b, level, tol) where M
+
+    p_iter = 15
     s_iter = 5
     i_iter = 5
     f_iter = 5
 
-    # println("level $level")
+    (; A, rDA, R, P, xc, bc) = mgrid[level]
+    mul!(bc, R, b .- A*x)
+    xc .= 0.0
 
-    l = mgrid[level]
-    (; A, rDA, R, P, res, corr) = l
-
-    Jacobi_solver!(x, A, b, rDA, p_iter, 1e-20)
-    mul!(res, R, b .- A*x)
-    corr .= 0.0
+    # println("Prelevel $level")
 
     if level == length(mgrid)
-        corr .= A\res
+        xc .= A\b
+        # Jacobi_solver!(corr, A, b, rDA, 2/3, p_iter, 1e-20)
     else
-        corr .= vcycle(mgrid, corr, res, level + 1, tol) 
+        xc .= vcycle(mgrid, xc, bc, level + 1, 1e-20) 
     end
 
-    # println("Post-level $level")
+    # println("post-level $level")
 
+    x .+= P*xc
 
-    dcorr = mgrid[level].P*corr
-    x .+= dcorr
-
-    Jacobi_solver!(x, A, b, rDA, f_iter, 1e-10)
+    Jacobi_solver!(x, A, b, rDA, 1.5, f_iter, 1e-20)
     x
 end
 
-function AMG!(mgrid, x, b, tol)
+function AMG!(mgrid::M, x, b, tol) where M
     iterations = 100
     residual = 0.0
-    for i ∈ 1:iterations
-        vcycle(mgrid, x, b, 1, tol)
-        residual = norm(b .- A*x)
+    x0 = copy(x)
+    temp = similar(x0)
+    @inbounds for i ∈ 1:iterations
+        x0 .= x
+        x .= vcycle(mgrid, x, b, 1, tol)
+        mul!(temp, A, x)
+        temp .= b .- temp
+        residual = norm(temp)
+        # residual = abs(maximum(x .- x0)/mean(x))
         if residual <= tol
             println("Converged! Residual: $residual ($i iterations): ", residual)
             return
@@ -264,33 +313,29 @@ function AMG!(mgrid, x, b, tol)
     println("Not converged! Residual: $residual")
 end
 
-tol = 10
+
+
+tol = 0.005
 T.values .= 100
 @time AMG!(mgrid, T.values, b, tol)
 write_vtk("result_AMG", mesh, ("T", T))
 
-T.values .= 100.0
-@time Jacobi_solver!(T.values, A, b, inv(Diagonal(A)), 20000, 0.1, verbose=true)
+T.values .= 100
+@time Jacobi_solver!(T.values, A, b, inv(Diagonal(A)), 1, 10, 1e-5, verbose=true)
 write_vtk("result_Jacobi", mesh, ("T", T))
 
 T.values .= 100.0
 @time T.values .= AlgebraicMultigrid.solve(
-    A, b, SmoothedAggregationAMG(), maxiter = 20, abstol = 1e-6)
+    A, b, SmoothedAggregationAMG(), maxiter = 3, abstol = 1e-6)
 write_vtk("result_RugeStubenAMG", mesh, ("T", T))
 
-size(b)
-t = zeros(10000)
-b1 = reshape(t, size(b))
+T.values .= 100.0
+@time T.values .= A\b
+write_vtk("direct_result", mesh, ("T", T))
 
-colour = 0
-for (i, cluster) ∈ enumerate(agglomeration)
-    colour = i
-    for ID ∈ cluster
-        T.values[ID] = colour
-    end
-end
-
-
-write_vtk("coloring", mesh, ("T", T))
-
-lrows
+T.values .= 100.0
+@time solve!(solver, A, b, T.values)
+@time xs, stats = cg(A, b)
+@time xs, stats = bicgstab(A, b)
+T.values .= xs
+write_vtk("result_Krylov", mesh, ("T", T))

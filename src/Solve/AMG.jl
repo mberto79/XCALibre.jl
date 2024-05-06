@@ -1,25 +1,30 @@
 export AMG, AMG!
 
-struct AMG{L}
-    levels::L
-end
-AMG(eqn, BCs, runtime) = begin
-    discretise!(eqn, eqn.model.terms[1].phi.values, runtime)
-    apply_boundary_conditions!(eqn, BCs)
-    A = eqn.equation.A
-    L0 = Level(A)
-    L1 = Level(L0)
-    L2 = Level(L1)
-    L3 = Level(L2)
-    L4 = Level(L3)
-    L5 = Level(L4)
+using SpareseArrays
 
-    levels = (L0,L1,L2,L3,L4,L5)
-
-    AMG(levels)
+struct AMG{R}
+    restrictions::R
 end
 
-AMG(a,b) = AMG()
+restriction_and_A(A0) = begin
+    R1 = restriction(A0)
+    A1 = R1*A0*transpose(R1)
+    println("Number of cells: $(size(R1)[1])")
+    R1, A1
+end
+
+AMG(A, b) = begin
+    R1, A1 = restriction_and_A(A)
+    R2, A2 = restriction_and_A(A1)
+    R3, A3 = restriction_and_A(A2)
+    R4, A4 = restriction_and_A(A3)
+    R5, A5 = restriction_and_A(A4)
+    R6, A6 = restriction_and_A(A5)
+
+    restrictions = [R1, R2, R3, R4, R5, R6]
+
+    AMG(restrictions)
+end
 
 struct Level{A,RA,R,P,V}
     A::A
@@ -35,16 +40,25 @@ Level(A0) = begin
     R = transpose(interpolation) #Agg
     P = interpolation # transpose(R)
     A = R*A0*P
-    # P = (I - 0.4*inv(Diagonal(A0))*A0)*transpose(R)
     bc = zeros(size(R)[1])
     xc = zeros(size(R)[1])
     # println("Number of cells: $(size(R)[1])")
     Level(A, inv(Diagonal(A)), R, P, bc, xc)
 end
 
-Level(L::Level) = begin
+Level(A0, R0) = begin
+    interpolation = (I - 0.65*inv(Diagonal(A0))*A0)*transpose(R0)
+    R = transpose(interpolation) #Agg
+    P = interpolation # transpose(R)
+    A = R*A0*P
+    bc = zeros(size(R)[1])
+    xc = zeros(size(R)[1])
+    # println("Number of cells: $(size(R)[1])")
+    Level(A, inv(Diagonal(A)), R, P, bc, xc)
+end
+
+Level(L::Level, Agg) = begin
     A0 = L.A
-    Agg = restriction(A0)
     interpolation = (I - 0.65*inv(Diagonal(A0))*A0)*transpose(Agg)
     R = transpose(interpolation) #Agg
     P = interpolation # transpose(R)
@@ -137,23 +151,33 @@ function restriction(A)
 end
 
 function (amg::AMG)(res, A, b, tol)
+    Rs = amg.restrictions
+
+    # L1 = Level(A, Rs[1])
+    # L2 = Level(L1, Rs[2])
+    # L3 = Level(L2, Rs[3])
+    # L4 = Level(L3, Rs[4])
+    # L5 = Level(L4, Rs[5])
+    # L6 = Level(L5, Rs[6])
+
     L0 = Level(A)
     L1 = Level(L0)
     L2 = Level(L1)
-    # L3 = Level(L2)
-    # L4 = Level(L3)
-    # L5 = Level(L4)
+    L3 = Level(L2)
+    L4 = Level(L3)
+    L5 = Level(L4)
+    L6 = Level(L5)
 
-    levels = levels = (L0,L1,L2)
-    # levels = amg.levels
+    levels = (L1,L2,L3, L4, L5, L6)
 
     smoother0 = JacobiSolver(res, 0.65, iter=3)
     smoother1 = JacobiSolver(levels[1].xc, 0.65, iter=3)
     smoother2 = JacobiSolver(levels[2].xc, 0.65, iter=3)
-    # smoother3 = JacobiSolver(levels[3].xc, 0.65, iter=3)
-    # smoother4 = JacobiSolver(levels[4].xc, 0.65, iter=3)
+    smoother3 = JacobiSolver(levels[3].xc, 0.65, iter=3)
+    smoother4 = JacobiSolver(levels[4].xc, 0.65, iter=3)
+    smoother5 = JacobiSolver(levels[5].xc, 0.65, iter=3)
 
-    for i ∈ 1:500
+    for i ∈ 1:100
 
         smoother0(A, res, b)
     
@@ -166,22 +190,38 @@ function (amg::AMG)(res, A, b, tol)
         levels[2].xc .= 0.0
         mul!(levels[2].bc, levels[2].R, levels[1].bc .- levels[1].A*levels[1].xc)
         smoother2(levels[2].A, levels[2].xc, levels[2].bc)
-    
+
         # level 3 corrections
-        # levels[3].xc .= 0.0
+        levels[3].xc .= 0.0
         mul!(levels[3].bc, levels[3].R, levels[2].bc .- levels[2].A*levels[2].xc)
-        # smoother3(levels[3].A, levels[3].xc, levels[3].bc)
-        levels[3].xc .= levels[3].A\levels[3].bc
-    
-    
+        smoother3(levels[3].A, levels[3].xc, levels[3].bc)
+
         # level 4 corrections
-        # mul!(levels[4].bc, levels[4].R, levels[3].bc .- levels[3].A*levels[3].xc)
-        # levels[4].xc .= levels[4].A\levels[4].bc
+        levels[4].xc .= 0.0
+        mul!(levels[4].bc, levels[4].R, levels[3].bc .- levels[3].A*levels[3].xc)
+        smoother4(levels[4].A, levels[4].xc, levels[4].bc)
+
+        # level 5 corrections
+        levels[5].xc .= 0.0
+        mul!(levels[5].bc, levels[5].R, levels[4].bc .- levels[4].A*levels[4].xc)
+        smoother5(levels[5].A, levels[5].xc, levels[5].bc)
+    
+        # Coarsest corrections
+        # levels[3].xc .= 0.0
+        mul!(levels[6].bc, levels[6].R, levels[5].bc .- levels[5].A*levels[5].xc)
+        # smoother3(levels[3].A, levels[3].xc, levels[3].bc)
+        levels[6].xc .= levels[6].A\levels[6].bc
     
         # return corrections 
 
-        # levels[3].xc .+= levels[4].P*levels[4].xc
-        # smoother3(levels[3].A, levels[3].xc, levels[3].bc)
+        levels[5].xc .+= levels[6].P*levels[6].xc
+        smoother5(levels[5].A, levels[5].xc, levels[5].bc)
+
+        levels[4].xc .+= levels[5].P*levels[5].xc
+        smoother4(levels[4].A, levels[4].xc, levels[4].bc)
+
+        levels[3].xc .+= levels[4].P*levels[4].xc
+        smoother3(levels[3].A, levels[3].xc, levels[3].bc)
     
     
         levels[2].xc .+= levels[3].P*levels[3].xc

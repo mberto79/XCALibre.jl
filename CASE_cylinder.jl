@@ -43,10 +43,10 @@ solvers = (
     ),
     p = set_solver(
         model.p;
-        solver      = AMG, #AMG, #GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = None(),
-        # preconditioner = LDL(),
-        atol = 1e-2,
+        solver      = GmresSolver, #AMG, #GmresSolver, # BicgstabSolver, GmresSolver
+        # preconditioner = None(),
+        preconditioner = LDL(),
+        atol = 1e-6,
         convergence = 1e-7,
         relax       = 0.2,
     )

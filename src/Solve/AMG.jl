@@ -1,8 +1,9 @@
 export AMG, AMG!
 
-struct AMG{RT}
-    # restrictions::RT
+struct AMG{S, RT, SS}
+    fine_smoother::S
     levels::RT
+    smoothers::SS
 end
 
 restriction_and_A(A0) = begin
@@ -13,18 +14,6 @@ restriction_and_A(A0) = begin
 end
 
 AMG(A, b) = begin
-    # R1, A1 = restriction_and_A(A)
-    # R2, A2 = restriction_and_A(A1)
-    # R3, A3 = restriction_and_A(A2)
-    # R4, A4 = restriction_and_A(A3)
-    # R5, A5 = restriction_and_A(A4)
-    # R6, A6 = restriction_and_A(A5)
-    # # R7, A7 = restriction_and_A(A6)
-
-    # restrictions = (R1, R2, R3, R4, R5, R6)
-
-    # AMG(restrictions)
-
     A.nzval .= 1.0
 
     L0 = Level(A)
@@ -35,8 +24,20 @@ AMG(A, b) = begin
     L5 = Level(L4)
     L6 = Level(L5)
 
-    levels = (L0, L1,L2,L3, L4, L5, L6)
-    AMG(levels)
+    levels = [L0, L1,L2,L3, L4, L5, L6]
+
+    fine_smoother = JacobiSolver(b, 0.65, iter=3)
+
+    smoother1 = JacobiSolver(levels[1].xc, 0.65, iter=3)
+    smoother2 = JacobiSolver(levels[2].xc, 0.65, iter=3)
+    smoother3 = JacobiSolver(levels[3].xc, 0.65, iter=3)
+    smoother4 = JacobiSolver(levels[4].xc, 0.65, iter=3)
+    smoother5 = JacobiSolver(levels[5].xc, 0.65, iter=3)
+    smoother6 = JacobiSolver(levels[6].xc, 0.65, iter=3)
+
+    smoothers = [smoother1, smoother2, smoother3, smoother4, smoother5, smoother6]
+
+    AMG(fine_smoother, levels, smoothers)
 end
 
 struct Level{A,RA,R1,P,V, R2}
@@ -64,12 +65,12 @@ Level(L::Level) = Level(L.A)
 
 update_level!(L::Level, A0) = begin
     (; A, rDA, R, P, RT0) = L
-    interpolation = (I - 0.65*inv(Diagonal(A0))*A0)*RT0
-    P.nzval .= interpolation.nzval
+    @inbounds interpolation = (I - 0.65*inv(Diagonal(A0))*A0)*RT0
+    @inbounds P.nzval .= interpolation.nzval
     # R = transpose(L.P) #Agg
     # P = interpolation # transpose(R)
-    A.nzval .= (R*A0*P).nzval
-    rDA.diag.nzval .= (inv(Diagonal(A))).diag.nzval
+    @inbounds A.nzval .= (R*A0*P).nzval
+    @inbounds rDA.diag.nzval .= (inv(Diagonal(A))).diag.nzval
     # bc = zeros(size(R)[1])
     # xc = zeros(size(R)[1])
     # println("Number of cells: $(size(R)[1])")
@@ -211,7 +212,7 @@ function AMG!(amg, res, A, b, tol, iteration)
 
     # levels = (L0, L1,L2,L3, L4, L5, L6)
 
-    levels = amg.levels
+    (; fine_smoother, smoothers, levels) = amg
     update_interval = 20
     if (iteration + update_interval - 1) % update_interval == 0
         update_level!(levels[1], A)
@@ -222,42 +223,42 @@ function AMG!(amg, res, A, b, tol, iteration)
         update_level!(levels[6], levels[5])
     end
 
-    smoother0 = JacobiSolver(res, 0.65, iter=3)
-    smoother1 = JacobiSolver(levels[1].xc, 0.65, iter=3)
-    smoother2 = JacobiSolver(levels[2].xc, 0.65, iter=3)
-    smoother3 = JacobiSolver(levels[3].xc, 0.65, iter=3)
-    smoother4 = JacobiSolver(levels[4].xc, 0.65, iter=3)
-    smoother5 = JacobiSolver(levels[5].xc, 0.65, iter=3)
-    smoother6 = JacobiSolver(levels[6].xc, 0.65, iter=3)
+    # smoother0 = JacobiSolver(res, 0.65, iter=3)
+    # smoother1 = JacobiSolver(levels[1].xc, 0.65, iter=3)
+    # smoother2 = JacobiSolver(levels[2].xc, 0.65, iter=3)
+    # smoother3 = JacobiSolver(levels[3].xc, 0.65, iter=3)
+    # smoother4 = JacobiSolver(levels[4].xc, 0.65, iter=3)
+    # smoother5 = JacobiSolver(levels[5].xc, 0.65, iter=3)
+    # smoother6 = JacobiSolver(levels[6].xc, 0.65, iter=3)
 
     for i ∈ 1:100
 
-        smoother0(A, res, b)
+        fine_smoother(A, res, b)
     
         # level 1 corrections
         levels[1].xc .= 0.0
         mul!(levels[1].bc, levels[1].R, b .- A*res)
-        smoother1(levels[1].A, levels[1].xc, levels[1].bc)
+        smoothers[1](levels[1].A, levels[1].xc, levels[1].bc)
     
         # level 2 corrections
         levels[2].xc .= 0.0
         mul!(levels[2].bc, levels[2].R, levels[1].bc .- levels[1].A*levels[1].xc)
-        smoother2(levels[2].A, levels[2].xc, levels[2].bc)
+        smoothers[2](levels[2].A, levels[2].xc, levels[2].bc)
 
         # level 3 corrections
         levels[3].xc .= 0.0
         mul!(levels[3].bc, levels[3].R, levels[2].bc .- levels[2].A*levels[2].xc)
-        smoother3(levels[3].A, levels[3].xc, levels[3].bc)
+        smoothers[3](levels[3].A, levels[3].xc, levels[3].bc)
 
         # level 4 corrections
         levels[4].xc .= 0.0
         mul!(levels[4].bc, levels[4].R, levels[3].bc .- levels[3].A*levels[3].xc)
-        smoother4(levels[4].A, levels[4].xc, levels[4].bc)
+        smoothers[4](levels[4].A, levels[4].xc, levels[4].bc)
 
         # level 5 corrections
         levels[5].xc .= 0.0
         mul!(levels[5].bc, levels[5].R, levels[4].bc .- levels[4].A*levels[4].xc)
-        smoother5(levels[5].A, levels[5].xc, levels[5].bc)
+        smoothers[5](levels[5].A, levels[5].xc, levels[5].bc)
     
         # Coarsest corrections
         # levels[3].xc .= 0.0
@@ -268,25 +269,25 @@ function AMG!(amg, res, A, b, tol, iteration)
         # return corrections 
 
         levels[5].xc .+= levels[6].P*levels[6].xc
-        smoother5(levels[5].A, levels[5].xc, levels[5].bc)
+        smoothers[5](levels[5].A, levels[5].xc, levels[5].bc)
 
         levels[4].xc .+= levels[5].P*levels[5].xc
-        smoother4(levels[4].A, levels[4].xc, levels[4].bc)
+        smoothers[4](levels[4].A, levels[4].xc, levels[4].bc)
 
         levels[3].xc .+= levels[4].P*levels[4].xc
-        smoother3(levels[3].A, levels[3].xc, levels[3].bc)
+        smoothers[3](levels[3].A, levels[3].xc, levels[3].bc)
     
     
         levels[2].xc .+= levels[3].P*levels[3].xc
-        smoother2(levels[2].A, levels[2].xc, levels[2].bc)
+        smoothers[2](levels[2].A, levels[2].xc, levels[2].bc)
     
     
         levels[1].xc .+= levels[2].P*levels[2].xc
-        smoother1(levels[1].A, levels[1].xc, levels[1].bc)
+        smoothers[1](levels[1].A, levels[1].xc, levels[1].bc)
     
     
         res .+= levels[1].P*levels[1].xc
-        smoother0(A, res, b)
+        fine_smoother(A, res, b)
     
     
         r = norm(b - A*res)/norm(b)

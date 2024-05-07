@@ -284,7 +284,7 @@ smoother4 = Jacobi(levels[4].xc, 0.65, iter=3)
 T.values .= 100.0
 xfine = T.values
 tol = 1e-5
-@time for i ∈ 1:2000
+@time for i ∈ 1:100
     
 
     # top level smoother
@@ -339,8 +339,8 @@ tol = 1e-5
     smoother0(A, xfine, b)
 
 
-    # r = norm(b - A*xfine)/norm(b)
-    r = norm(b - A*xfine)
+    r = norm(b - A*xfine)/norm(b)
+    # r = norm(b - A*xfine)
     # println("Residual: $r (iteration $i)")
     if r < tol
         println("Converged! Residual: $r (iteration $i)")

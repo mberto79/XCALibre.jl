@@ -3,7 +3,7 @@ using FVM_1D
 using Krylov
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
-mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
+mesh_file = "unv_sample_meshes/backwardFacingStep_2mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 # mesh = update_mesh_format(mesh; integer=Int32, float=Float32)
 mesh = update_mesh_format(mesh)
@@ -44,15 +44,16 @@ solvers = (
     ),
     p = set_solver(
         model.p;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = LDL(),
+        solver      = AMG, # AMG, # GmresSolver, # BicgstabSolver, GmresSolver
+        preconditioner = None(), # None(), # LDL(),
         convergence = 1e-7,
+        atol = 1e-2,
         relax       = 0.2,
     )
 )
 
 runtime = set_runtime(
-    iterations=1000, time_step=1, write_interval=-1)
+    iterations=1000, time_step=1, write_interval=100)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

@@ -1,9 +1,8 @@
 export AMG, AMG!
 
-using SpareseArrays
-
-struct AMG{R}
-    restrictions::R
+struct AMG{RT}
+    # restrictions::RT
+    levels::RT
 end
 
 restriction_and_A(A0) = begin
@@ -14,37 +13,70 @@ restriction_and_A(A0) = begin
 end
 
 AMG(A, b) = begin
-    R1, A1 = restriction_and_A(A)
-    R2, A2 = restriction_and_A(A1)
-    R3, A3 = restriction_and_A(A2)
-    R4, A4 = restriction_and_A(A3)
-    R5, A5 = restriction_and_A(A4)
-    R6, A6 = restriction_and_A(A5)
+    # R1, A1 = restriction_and_A(A)
+    # R2, A2 = restriction_and_A(A1)
+    # R3, A3 = restriction_and_A(A2)
+    # R4, A4 = restriction_and_A(A3)
+    # R5, A5 = restriction_and_A(A4)
+    # R6, A6 = restriction_and_A(A5)
+    # # R7, A7 = restriction_and_A(A6)
 
-    restrictions = [R1, R2, R3, R4, R5, R6]
+    # restrictions = (R1, R2, R3, R4, R5, R6)
 
-    AMG(restrictions)
+    # AMG(restrictions)
+
+    A.nzval .= 1.0
+
+    L0 = Level(A)
+    L1 = Level(L0)
+    L2 = Level(L1)
+    L3 = Level(L2)
+    L4 = Level(L3)
+    L5 = Level(L4)
+    L6 = Level(L5)
+
+    levels = (L0, L1,L2,L3, L4, L5, L6)
+    AMG(levels)
 end
 
-struct Level{A,RA,R,P,V}
+struct Level{A,RA,R1,P,V, R2}
     A::A
     rDA::RA
-    R::R
+    R::R1
     P::P
     bc::V
     xc::V
+    RT0::R2
 end
 Level(A0) = begin
-    Agg = restriction(A0)
-    interpolation = (I - 0.65*inv(Diagonal(A0))*A0)*transpose(Agg)
+    R0 = restriction(A0)
+    RT0 = transpose(R0)
+    interpolation = (I - 0.65*inv(Diagonal(A0))*A0)*RT0
     R = transpose(interpolation) #Agg
     P = interpolation # transpose(R)
     A = R*A0*P
     bc = zeros(size(R)[1])
     xc = zeros(size(R)[1])
     # println("Number of cells: $(size(R)[1])")
-    Level(A, inv(Diagonal(A)), R, P, bc, xc)
+    Level(A, inv(Diagonal(A)), R, P, bc, xc, RT0)
 end
+Level(L::Level) = Level(L.A)
+
+update_level!(L::Level, A0) = begin
+    (; A, rDA, R, P, RT0) = L
+    interpolation = (I - 0.65*inv(Diagonal(A0))*A0)*RT0
+    P.nzval .= interpolation.nzval
+    # R = transpose(L.P) #Agg
+    # P = interpolation # transpose(R)
+    A.nzval .= (R*A0*P).nzval
+    rDA.diag.nzval .= (inv(Diagonal(A))).diag.nzval
+    # bc = zeros(size(R)[1])
+    # xc = zeros(size(R)[1])
+    # println("Number of cells: $(size(R)[1])")
+    # Level(A, inv(Diagonal(A)), R, P, bc, xc, R0)
+    nothing
+end
+update_level!(L1::Level, L0::Level) = update_level!(L1, L0.A)
 
 Level(A0, R0) = begin
     interpolation = (I - 0.65*inv(Diagonal(A0))*A0)*transpose(R0)
@@ -146,29 +178,49 @@ function restriction(A)
             push!(v,1)
         end
     end
-
     return sparse(i, j, v)
 end
 
-function (amg::AMG)(res, A, b, tol)
-    Rs = amg.restrictions
+# function (amg::AMG)(res, A, b, tol)
+# function AMG!(amg, Rs, res, A, b, tol)
+function AMG!(amg, res, A, b, tol, iteration)
+    # Rs = amg.restrictions
 
-    # L1 = Level(A, Rs[1])
-    # L2 = Level(L1, Rs[2])
-    # L3 = Level(L2, Rs[3])
-    # L4 = Level(L3, Rs[4])
-    # L5 = Level(L4, Rs[5])
-    # L6 = Level(L5, Rs[6])
+    # @time begin
 
-    L0 = Level(A)
-    L1 = Level(L0)
-    L2 = Level(L1)
-    L3 = Level(L2)
-    L4 = Level(L3)
-    L5 = Level(L4)
-    L6 = Level(L5)
+    # L0 = Level(A, Rs[1])
+    # L1 = Level(L0, Rs[2])
+    # L2 = Level(L1, Rs[3])
+    # L3 = Level(L2, Rs[4])
+    # L4 = Level(L3, Rs[5])
+    # L5 = Level(L4, Rs[6])
 
-    levels = (L1,L2,L3, L4, L5, L6)
+    # end
+
+    # levels = (L0, L1,L2,L3, L4, L5)
+
+    # @time begin
+    # L0 = Level(A)
+    # L1 = Level(L0)
+    # L2 = Level(L1)
+    # L3 = Level(L2)
+    # L4 = Level(L3)
+    # L5 = Level(L4)
+    # L6 = Level(L5)
+    # end
+
+    # levels = (L0, L1,L2,L3, L4, L5, L6)
+
+    levels = amg.levels
+    update_interval = 20
+    if (iteration + update_interval - 1) % update_interval == 0
+        update_level!(levels[1], A)
+        update_level!(levels[2], levels[1])
+        update_level!(levels[3], levels[2])
+        update_level!(levels[4], levels[3])
+        update_level!(levels[5], levels[4])
+        update_level!(levels[6], levels[5])
+    end
 
     smoother0 = JacobiSolver(res, 0.65, iter=3)
     smoother1 = JacobiSolver(levels[1].xc, 0.65, iter=3)
@@ -176,6 +228,7 @@ function (amg::AMG)(res, A, b, tol)
     smoother3 = JacobiSolver(levels[3].xc, 0.65, iter=3)
     smoother4 = JacobiSolver(levels[4].xc, 0.65, iter=3)
     smoother5 = JacobiSolver(levels[5].xc, 0.65, iter=3)
+    smoother6 = JacobiSolver(levels[6].xc, 0.65, iter=3)
 
     for i ∈ 1:100
 
@@ -241,7 +294,8 @@ function (amg::AMG)(res, A, b, tol)
         # println("Residual: $r (iteration $i)")
         if r < tol
             # println("Converged! Residual: $r (iteration $i)")
-            return
+            # return
+            break
         end
     
     end

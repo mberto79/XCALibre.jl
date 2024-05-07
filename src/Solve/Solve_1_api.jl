@@ -29,12 +29,12 @@ set_runtime(; iterations::I, write_interval::I, time_step::N) where {I<:Integer,
     (iterations=iterations, dt=time_step, write_interval=write_interval)
 end
 
-function run!(phiEqn::ModelEquation, setup) # ; opP, solver
-    _run(phiEqn.solver, phiEqn, setup)
+function run!(phiEqn::ModelEquation, setup, iteration) # ; opP, solver
+    _run(phiEqn.solver, phiEqn, setup, iteration)
     nothing
 end
 
-function _run(solver, phiEqn::ModelEquation, setup)
+function _run(solver, phiEqn::ModelEquation, setup, iteration)
     (; itmax, atol, rtol) = setup
     (; A, b) = phiEqn.equation
     P = phiEqn.preconditioner
@@ -49,13 +49,15 @@ function _run(solver, phiEqn::ModelEquation, setup)
     nothing
 end
 
-function _run(solver::AMG, phiEqn::ModelEquation, setup)
+function _run(solver::AMG, phiEqn::ModelEquation, setup, iteration)
     (; itmax, atol, rtol) = setup
     (; A, b) = phiEqn.equation
     values = get_phi(phiEqn).values
 
     # AMG!(values, A, b, atol)
-    solver(values, A, b, atol)
+    # solver(values, A, b, atol)
+    # AMG!(solver, solver.restrictions, values, A, b, atol)
+    AMG!(solver, values, A, b, atol, iteration)
     nothing
 end
 

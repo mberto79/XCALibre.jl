@@ -131,7 +131,7 @@ function SIMPLE_loop(
         # ux_eqn.b .-= divUTx
         implicit_relaxation!(ux_eqn.equation, prev, solvers.U.relax)
         update_preconditioner!(ux_eqn.preconditioner)
-        run!(ux_eqn, solvers.U) #opP=Pu.P, solver=solver_U)
+        run!(ux_eqn, solvers.U, iteration) #opP=Pu.P, solver=solver_U)
         residual!(R_ux, ux_eqn.equation, U.x, iteration)
 
         @. prev = U.y.values
@@ -140,7 +140,7 @@ function SIMPLE_loop(
         # uy_eqn.b .-= divUTy
         implicit_relaxation!(uy_eqn.equation, prev, solvers.U.relax)
         update_preconditioner!(uy_eqn.preconditioner)
-        run!(uy_eqn, solvers.U)
+        run!(uy_eqn, solvers.U, iteration)
         residual!(R_uy, uy_eqn.equation, U.y, iteration)
         
         inverse_diagonal!(rD, ux_eqn.equation)
@@ -157,7 +157,7 @@ function SIMPLE_loop(
         apply_boundary_conditions!(p_eqn, p.BCs)
         setReference!(p_eqn.equation, pref, 1)
         update_preconditioner!(p_eqn.preconditioner)
-        run!(p_eqn, solvers.p)
+        run!(p_eqn, solvers.p, iteration)
 
         explicit_relaxation!(p, prev, solvers.p.relax)
         residual!(R_p, p_eqn.equation, p, iteration)
@@ -175,7 +175,7 @@ function SIMPLE_loop(
                 interpolate!(gradpf, ∇p, p)
                 nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
                 correct!(p_eqn.equation, p_model.terms.term1, pf)
-                run!(p_model, solvers.p)
+                run!(p_model, solvers.p, iteration)
                 grad!(∇p, pf, p, pBCs) 
             end
         end

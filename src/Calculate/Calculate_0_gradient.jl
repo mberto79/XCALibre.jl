@@ -221,7 +221,7 @@ end
     # (; ownerCells, centre) = faces[i]
     # centre_faces = centre
     face = faces[i]
-    centre_faces = face.centre
+    rf = face.centre
     ownerCells = face.ownerCells
 
     owner1 = ownerCells[1]
@@ -229,11 +229,11 @@ end
 
     # (; centre) = cells[owner1]
     # centre_cell1 = centre
-    centre_cell1 = cells[owner1].centre
+    rP = cells[owner1].centre
 
     # (; centre) = cells[owner2]
     # centre_cell2 = centre
-    centre_cell2 = cells[owner2].centre
+    rN = cells[owner2].centre
 
     phi1 = phic[owner1]
     phi2 = phic[owner2]
@@ -247,9 +247,9 @@ end
     # ∇phi1 = [dx[owner1], dy[owner1], dz[owner1]]
     # ∇phi2 = [dx[owner2], dy[owner2], dz[owner2]]
 
-    rf = centre_faces
-    rP = centre_cell1 
-    rN = centre_cell2
+    # rf = centre_faces
+    # rP = centre_cell1 
+    # rN = centre_cell2
 
     phifᵖ = weight*(phi1 + phi2)
     ∇phi = weight*(∇phi1 + ∇phi2)

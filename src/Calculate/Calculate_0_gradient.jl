@@ -135,7 +135,7 @@ function interpolate_midpoint!(phif::FaceScalarField, phi::ScalarField)
     (; mesh) = phi
     (; faces) = mesh
     backend = _get_backend(mesh)
-    kernel! = interpolate_midpoint_scalar!(backend)
+    kernel! = interpolate_midpoint_scalar!(backend, 2)
     kernel!(faces, phif, phi, ndrange = length(faces))
     KernelAbstractions.synchronize(backend)
 end
@@ -209,7 +209,7 @@ function correct_interpolation!(dx, dy, dz, phif, phi)
     # start = nbfaces+1
     weight = 0.5
     backend = _get_backend(mesh)
-    kernel! = correct_interpolation_kernel!(backend)
+    kernel! = correct_interpolation_kernel!(backend, 2)
     kernel!(faces, cells, nbfaces, phic, F, weight, dx, dy, dz, values, ndrange = length(faces)-nbfaces)
     KernelAbstractions.synchronize(backend)
 end
@@ -218,23 +218,34 @@ end
     i = @index(Global)
     i += nbfaces
 
-    (; ownerCells, centre) = faces[i]
-    centre_faces = centre
+    # (; ownerCells, centre) = faces[i]
+    # centre_faces = centre
+    face = faces[i]
+    centre_faces = face.centre
+    ownerCells = face.ownerCells
 
     owner1 = ownerCells[1]
     owner2 = ownerCells[2]
 
-    (; centre) = cells[owner1]
-    centre_cell1 = centre
+    # (; centre) = cells[owner1]
+    # centre_cell1 = centre
+    centre_cell1 = cells[owner1].centre
 
-    (; centre) = cells[owner2]
-    centre_cell2 = centre
+    # (; centre) = cells[owner2]
+    # centre_cell2 = centre
+    centre_cell2 = cells[owner2].centre
 
     phi1 = phic[owner1]
     phi2 = phic[owner2]
 
-    ∇phi1 = SVector{3, F}(dx[owner1], dy[owner1], dz[owner1])
-    ∇phi2 = SVector{3, F}(dx[owner2], dy[owner2], dz[owner2])
+    # ∇phi1 = @inbounds SVector{3, F}(dx[owner1], dy[owner1], dz[owner1])
+    # ∇phi2 = @inbounds SVector{3, F}(dx[owner2], dy[owner2], dz[owner2])
+
+    ∇phi1 = @inbounds SVector{3}(dx[owner1], dy[owner1], dz[owner1])
+    ∇phi2 = @inbounds SVector{3}(dx[owner2], dy[owner2], dz[owner2])
+
+    # ∇phi1 = [dx[owner1], dy[owner1], dz[owner1]]
+    # ∇phi2 = [dx[owner2], dy[owner2], dz[owner2]]
 
     rf = centre_faces
     rP = centre_cell1 

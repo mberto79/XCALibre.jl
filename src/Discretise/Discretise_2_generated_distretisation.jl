@@ -19,11 +19,11 @@ function discretise!(eqn, prev, runtime, nfaces, nbfaces)
     rowval_array = _rowval(A_array)
     colptr_array = _colptr(A_array)
 
-    kernel! = set_nzval!(backend)
+    kernel! = set_nzval!(backend, 2)
     kernel!(nzval_array, fzero, ndrange = length(nzval_array))
     KernelAbstractions.synchronize(backend)
 
-    kernel! = set_b!(backend)
+    kernel! = set_b!(backend, 2)
     kernel!(b_array, fzero, ndrange = length(b_array))
     KernelAbstractions.synchronize(backend)
 
@@ -35,11 +35,11 @@ function discretise!(eqn, prev, runtime, nfaces, nbfaces)
     # nfaces = length(mesh.faces)
     internalfaces = nfaces - nbfaces
 
-    kernel! = _discretise_face!(backend, 64, internalfaces)
+    kernel! = _discretise_face!(backend, 2, internalfaces)
     kernel!(model, model.terms, model.sources, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione; ndrange = internalfaces)
     KernelAbstractions.synchronize(backend)
 
-    kernel! = _discretise_face_sources!(backend)
+    kernel! = _discretise_face_sources!(backend, 2)
     kernel!(model, model.terms, model.sources, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione; ndrange = length(mesh.cells))
     KernelAbstractions.synchronize(backend)
 end
@@ -71,23 +71,27 @@ end
     # backend = _get_backend(mesh)
     @uniform (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
 
-    N = @groupsize()[1]
-    lface = @localmem eltype(faces) N
-    lcell1 = @localmem eltype(cells) N
-    lcell2 = @localmem eltype(cells) N
-    # # test = @localmem typeof(ione) N
+    # N = @groupsize()[1]
+    # lface = @localmem eltype(faces) N
+    # lcell1 = @localmem eltype(cells) N
+    # lcell2 = @localmem eltype(cells) N
+    # # # test = @localmem typeof(ione) N
 
-    # copy face and cells to shared memory
-    lface[li] = faces[fID]
-    face = lface[li]
+    # # copy face and cells to shared memory
+    # lface[li] = faces[fID]
+    face = faces[fID]
     owners = face.ownerCells
     cID1 = owners[1]
     cID2 = owners[2]
-    lcell1[li] = cells[cID1]
-    lcell2[li] = cells[cID2]
+    # lcell1[li] = cells[cID1]
+    # lcell2[li] = cells[cID2]
 
-    cell1 = lcell1[li]
-    cell2 = lcell2[li]
+    # cell1 = lcell1[li]
+    # cell2 = lcell2[li]
+
+    cell1 = cells[cID1]
+    cell2 = cells[cID2]
+
 
     cIndex1 = spindex(rowval_array, colptr_array, cID1, cID1)
     cIndex2 = spindex(rowval_array, colptr_array, cID2, cID2)
@@ -135,7 +139,7 @@ end
         push!(term_scheme_calls.args, func_calls.args...)
     end
     return_quote = quote
-        z = zero(typeof(face.area))
+        z = 0.0 # zero(typeof(face.area))
         Ac1 = 0.0
         Ac2 = 0.0
         An1 = 0.0 

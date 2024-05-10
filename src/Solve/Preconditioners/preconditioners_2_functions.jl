@@ -41,7 +41,7 @@ function update_preconditioner!(P::Preconditioner{NormDiagonal,M,PT,S}, mesh) wh
 
     storage = P.storage
 
-    kernel! = update_NormDiagonal!(backend)
+    kernel! = update_NormDiagonal!(backend, 2)
     kernel!(colptr_array, nzval_array, storage, ndrange = m_array)
     KernelAbstractions.synchronize(backend)
 end
@@ -91,9 +91,9 @@ function update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh) where {M
     m_array = _m(A)
 
     storage = P.storage
-    idx_diagonal = zero(eltype(m_array)) # index to diagonal element
+    idx_diagonal = 0 # zero(eltype(m_array)) # index to diagonal element
 
-    kernel! = update_Jacobi!(backend)
+    kernel! = update_Jacobi!(backend, 2)
     kernel!(rowval_array, colptr_array, nzval_array, idx_diagonal, storage, ndrange = m_array)
     KernelAbstractions.synchronize(backend)
 end

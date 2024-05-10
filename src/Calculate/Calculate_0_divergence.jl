@@ -117,7 +117,7 @@ function div!(phi::ScalarField, psif::FaceVectorField)
     # F = eltype(mesh.nodes[1].coords)
     F = _get_float(mesh)
 
-    kernel! = div_kernel!(backend)
+    kernel! = div_kernel!(backend, 2)
     kernel!(cells, F, cell_faces, cell_nsign, faces, phi, psif, ndrange = length(cells))
     KernelAbstractions.synchronize(backend)
 
@@ -125,7 +125,7 @@ function div!(phi::ScalarField, psif::FaceVectorField)
     # nbfaces = total_boundary_faces(mesh)
     nbfaces = length(mesh.boundary_cellsID)
 
-    kernel! = div_boundary_faces_contribution_kernel!(backend)
+    kernel! = div_boundary_faces_contribution_kernel!(backend, 2)
     kernel!(faces, cells, phi, psif, ndrange = nbfaces)
     KernelAbstractions.synchronize(backend)
 end
@@ -136,7 +136,7 @@ end
     @inbounds begin
         # (; facesID, nsign, volume) = cells[ci]
         (; volume, faces_range) = cells[i]
-        phi.values[i] = zero(F)
+        phi.values[i] = 0.0 #zero(F)
         # for fi ∈ eachindex(facesID)
         for fi ∈ faces_range
             # fID = facesID[fi]

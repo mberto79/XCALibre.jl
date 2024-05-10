@@ -14,9 +14,9 @@ abstract type AbstractScalarField <: AbstractField end
 abstract type AbstractVectorField <: AbstractField end
 abstract type AbstractTensorField <: AbstractField end
 
-Base.getindex(field::AbstractField, i::I) where I<:Integer = begin
-    field(i)
-end
+# Base.getindex(field::AbstractField, i::I) where I<:Integer = begin
+#     field(i)
+# end
 
 # CONSTANT FIELDS 
 
@@ -32,7 +32,8 @@ struct ConstantVector{V<:Number} <: AbstractVectorField
     z::V
 end
 Adapt.@adapt_structure ConstantVector
-Base.getindex(v::ConstantVector, i::Integer) = SVector{3, eltype(v.x)}(v.x[i], v.y[i], v.z[i])
+# Base.getindex(v::ConstantVector, i::Integer) = SVector{3, eltype(v.x)}(v.x[i], v.y[i], v.z[i])
+Base.getindex(v::ConstantVector, i::Integer) = @inbounds SVector{3}(v.x[i], v.y[i], v.z[i])
 
 # FIELDS 
 
@@ -120,7 +121,8 @@ FaceVectorField(mesh::AbstractMesh) = begin
         mesh)
 end
 
-Base.getindex(v::AbstractVectorField, i::Integer) = SVector{3, eltype(v.x)}(v.x[i], v.y[i], v.z[i])
+# Base.getindex(v::AbstractVectorField, i::Integer) = SVector{3, eltype(v.x)}(v.x[i], v.y[i], v.z[i])
+Base.getindex(v::AbstractVectorField, i::Integer) = @inbounds SVector{3}(v.x.values[i], v.y.values[i], v.z.values[i])
 Base.setindex!(v::AbstractVectorField, x::SVector{3, T}, i::Integer) where T= begin
     # length(x) == 3 || throw("Vectors must have 3 components")
     v.x[i] = x[1]

@@ -37,7 +37,7 @@ function _apply_boundary_conditions!(
     for BC ∈ BCs
         CUDA.@allowscalar start_ID = mesh.boundaries[BC.ID].IDs_range[1]
         CUDA.@allowscalar facesID_range = mesh.boundaries[BC.ID].IDs_range
-        kernel! = apply_boundary_conditions_kernel!(backend)
+        kernel! = apply_boundary_conditions_kernel!(backend, 2)
         kernel!(
             model, BC, model.terms, faces, cells, start_ID, boundary_cellsID, rowval, colptr, nzval, b, ione, ndrange=length(facesID_range)
             )

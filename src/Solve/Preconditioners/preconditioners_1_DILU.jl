@@ -13,7 +13,7 @@ export ldiv!
 function extract_diagonal!(D, Di, A::AbstractSparseArray{Tf,Ti}, backend) where {Tf,Ti}
     rowval, colptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
 
-    kernel! = extract_diagonal_kernel!(backend)
+    kernel! = extract_diagonal_kernel!(backend, 2)
     kernel!(D, Di, nzval, ndrange = n)
 end
 
@@ -172,7 +172,7 @@ function update_dilu_diagonal!(P, mesh) # must rename
     
     extract_diagonal!(D, Di, A, backend)
 
-    kernel! = update_dilu_diagonal_kernel!(backend)
+    kernel! = update_dilu_diagonal_kernel!(backend,2)
     kernel!(upper_indices_IDs, Di, colptr, Ri, rowval, D, nzval, ndrange = n)
     # D .= 1.0./D # store inverse
     nothing

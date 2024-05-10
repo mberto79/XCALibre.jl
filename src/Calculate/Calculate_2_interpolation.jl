@@ -68,7 +68,7 @@ function adjust_boundary!(backend, BC::Dirichlet, phif::FaceScalarField, phi, bo
     phif_values = phif.values
     # (; values) = phi
     phi_values = phi.values
-    kernel! = adjust_boundary_dirichlet_scalar!(backend)
+    kernel! = adjust_boundary_dirichlet_scalar!(backend, 2)
     kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = kernel_range)
     KernelAbstractions.synchronize(backend)
 end
@@ -82,7 +82,7 @@ function adjust_boundary!(backend, BC::Neumann, phif::FaceScalarField, phi, boun
     phif_values = phif.values
     # (; values) = phi
     phi_values = phi.values
-    kernel! = adjust_boundary_neumann_scalar!(backend)
+    kernel! = adjust_boundary_neumann_scalar!(backend, 2)
     kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = kernel_range)
     KernelAbstractions.synchronize(backend)
 end
@@ -225,7 +225,7 @@ function adjust_boundary!(backend, BC::Dirichlet, psif::FaceVectorField, psi::Ve
     kernel_range = length(IDs_range)
 
     (; x, y, z) = psif
-    kernel! = adjust_boundary_dirichlet_vector!(backend)
+    kernel! = adjust_boundary_dirichlet_vector!(backend, 2)
     kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = kernel_range)
     KernelAbstractions.synchronize(backend)
 end
@@ -237,7 +237,7 @@ function adjust_boundary!(backend, BC::Neumann, psif::FaceVectorField, psi::Vect
     kernel_range = length(IDs_range)
 
     (; x, y, z) = psif
-    kernel! = adjust_boundary_neumann_vector!(backend)
+    kernel! = adjust_boundary_neumann_vector!(backend, 2)
     kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = kernel_range)
     KernelAbstractions.synchronize(backend)
 end
@@ -345,7 +345,7 @@ function interpolate!(phif::FaceScalarField, phi::ScalarField)
 
     # Launch interpolate kernel
     backend = _get_backend(mesh)
-    kernel! = interpolate_Scalar!(backend)
+    kernel! = interpolate_Scalar!(backend, 2)
     kernel!(fvals, vals, faces, ndrange = length(faces))
     KernelAbstractions.synchronize(backend)
 end
@@ -413,7 +413,7 @@ function interpolate!(psif::FaceVectorField, psi::VectorField)
 
     # Launch interpolate kernel
     backend = _get_backend(mesh)
-    kernel! = interpolate_Vector!(backend)
+    kernel! = interpolate_Vector!(backend, 2)
     kernel!(xv, yv, zv, xf, yf, zf, faces, ndrange = length(faces))
     KernelAbstractions.synchronize(backend)
 end

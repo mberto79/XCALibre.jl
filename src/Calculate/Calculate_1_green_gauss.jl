@@ -50,13 +50,13 @@ function green_gauss!(dx, dy, dz, phif)
 
     backend = _get_backend(mesh)
     
-    kernel! = result_calculation!(backend)
+    kernel! = result_calculation!(backend, 2)
     kernel!(values, faces, cells, cell_nsign, cell_faces, F, dx, dy, dz, ndrange = length(cells))
     KernelAbstractions.synchronize(backend)
 
     nbfaces = length(mesh.boundary_cellsID)
     
-    kernel! = boundary_faces_contribution!(backend)
+    kernel! = boundary_faces_contribution!(backend, 2)
     kernel!(values, faces, cells, F, dx, dy, dz, ndrange = nbfaces)
     KernelAbstractions.synchronize(backend)
 end
@@ -78,7 +78,8 @@ end
         # dx[i] /= volume
         # dy[i] /= volume
         # dz[i] /= volume
-        res = SVector{3,F}(0.0,0.0,0.0)
+        # res = SVector{3,F}(0.0,0.0,0.0)
+        res = SVector{3}(0.0,0.0,0.0)
 
         for fi ∈ faces_range
             # fID = facesID[fi]
@@ -106,7 +107,8 @@ end
         # Atomix.@atomic dy.values[cID] += (values[i]*(area*normal[2]))/volume
         # Atomix.@atomic dz.values[cID] += (values[i]*(area*normal[3]))/volume
 
-        res = SVector{3,F}(0.0,0.0,0.0)
+        # res = SVector{3,F}(0.0,0.0,0.0)
+        res = SVector{3}(0.0,0.0,0.0)
         res = values[i]*(area*normal)
         res /= volume 
         Atomix.@atomic dx.values[cID] += res[1]

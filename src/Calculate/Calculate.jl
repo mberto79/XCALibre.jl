@@ -1,5 +1,7 @@
 module Calculate
 
+const WORKGROUP = 32
+
 using LinearAlgebra
 using StaticArrays
 using LoopVectorization

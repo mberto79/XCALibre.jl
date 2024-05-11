@@ -1,5 +1,7 @@
 module Solve
 
+const WORKGROUP = 32
+
 using Krylov
 using LoopVectorization
 using LinearAlgebra

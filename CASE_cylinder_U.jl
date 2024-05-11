@@ -70,7 +70,7 @@ runtime = set_runtime(
 
 # 2mm mesh use settings below (to lower Courant number)
 runtime = set_runtime(
-    iterations=500, write_interval=-1, time_step=0.0025)
+    iterations=20000, write_interval=100, time_step=0.0025)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -81,7 +81,7 @@ initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
 backend = CUDABackend()
-# backend = CPU()
+backend = CPU()
 
 Rx, Ry, Rp, model = piso!(model, config, backend); #, pref=0.0)
 

@@ -41,9 +41,12 @@ end
 ## Euler 1
 @inline function scheme!(
     term::Operator{F,P,I,Time{Euler}}, 
-    nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
-    nothing
+    cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
+    # nothing
+    z = zero(typeof(cell.volume))
+    z, z
 end
+
 @inline scheme_source!(
     term::Operator{F,P,I,Time{Euler}}, 
     b, nzval_array, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin

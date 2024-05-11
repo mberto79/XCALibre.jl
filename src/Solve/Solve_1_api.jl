@@ -102,7 +102,7 @@ end
 function explicit_relaxation!(phi, phi0, alpha)
     backend = _get_backend(phi.mesh)
 
-    kernel! = explicit_relaxation_kernel!(backend, 2)
+    kernel! = explicit_relaxation_kernel!(backend, WORKGROUP)
     kernel!(phi, phi0, alpha, ndrange = length(phi))
     KernelAbstractions.synchronize(backend)
 end
@@ -137,7 +137,7 @@ function implicit_relaxation!(eqn::E, field, alpha, mesh) where E<:ModelEquation
 
     # Get backend and define kernel
     backend = _get_backend(mesh)
-    kernel! = implicit_relaxation_kernel!(backend, 2)
+    kernel! = implicit_relaxation_kernel!(backend, WORKGROUP)
     
     # Define variable equal to 1 with same type as mesh integers
     integer = _get_int(mesh)
@@ -193,7 +193,7 @@ function setReference!(pEqn::E, pRef, cellID) where E<:ModelEquation
         colptr_array = colptr(A)
         rowval_array = rowval(A)
 
-        kernel! = setReference_kernel!(backend, 2)
+        kernel! = setReference_kernel!(backend, WORKGROUP)
         kernel!(nzval_array, colptr_array, rowval_array, b, pRef, ione, cellID, ndrange = 1)
         KernelAbstractions.synchronize(backend)
 

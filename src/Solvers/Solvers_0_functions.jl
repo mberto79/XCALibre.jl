@@ -16,11 +16,11 @@ function update_nueff!(nueff, nu, turb_model)
     (; mesh) = nueff
     backend = _get_backend(mesh)
     if turb_model === nothing
-        kernel! = update_nueff_laminar!(backend, 2)
+        kernel! = update_nueff_laminar!(backend, WORKGROUP)
         kernel!(nu, nueff, ndrange = length(nueff))
     else
         (; νtf) = turb_model
-        kernel! = update_nueff_turbulent!(backend, 2)
+        kernel! = update_nueff_turbulent!(backend, WORKGROUP)
         kernel!(nu, νtf, nueff, ndrange = length(nueff))
     end
     
@@ -115,11 +115,11 @@ function sparse_matmul!(a, b, c, backend)
     rowval_array = _rowval(a)
     fzero = zero(eltype(c))
 
-    kernel! = matmul_copy_zeros_kernel!(backend, 2)
+    kernel! = matmul_copy_zeros_kernel!(backend, WORKGROUP)
     kernel!(c, fzero, ndrange = length(c))
     KernelAbstractions.synchronize(backend)
 
-    kernel! = sparse_matmul_kernel!(backend, 2)
+    kernel! = sparse_matmul_kernel!(backend, WORKGROUP)
     kernel!(nzval_array, rowval_array, colptr_array, b, c, ndrange=length(c))
     KernelAbstractions.synchronize(backend)
 end
@@ -165,7 +165,7 @@ function flux!(phif::FS, psif::FV) where {FS<:FaceScalarField,FV<:FaceVectorFiel
     (; faces) = mesh
 
     backend = _get_backend(mesh)
-    kernel! = flux_kernel!(backend, 2)
+    kernel! = flux_kernel!(backend, WORKGROUP)
     kernel!(faces, values, psif, ndrange = length(faces))
     KernelAbstractions.synchronize(backend)
 end
@@ -205,7 +205,7 @@ function inverse_diagonal!(rD::S, eqn) where S<:ScalarField
 
     ione = one(_get_int(mesh))
 
-    kernel! = inverse_diagonal_kernel!(backend, 2)
+    kernel! = inverse_diagonal_kernel!(backend, WORKGROUP)
     kernel!(ione, colptr_array, rowval_array, nzval_array, cells, values, ndrange = length(values))
     KernelAbstractions.synchronize(backend)
 end
@@ -237,7 +237,7 @@ function correct_velocity!(U, Hv, ∇p, rD)
     dpdx = ∇p.result.x; dpdy = ∇p.result.y; dpdz = ∇p.result.z; rDvalues = rD.values
     backend = _get_backend(U.mesh)
 
-    kernel! = correct_velocity_kernel!(backend, 2)
+    kernel! = correct_velocity_kernel!(backend, WORKGROUP)
     kernel!(rDvalues, Ux, Hvx, dpdx, Uy, Hvy, dpdy, Uz, Hvz, dpdz, ndrange = length(Ux))
     KernelAbstractions.synchronize(backend)
 end
@@ -275,7 +275,7 @@ remove_pressure_source!(ux_eqn::M1, uy_eqn::M2, uz_eqn::M3, ∇p) where {M1,M2,M
     dpdx, dpdy, dpdz = ∇p.result.x, ∇p.result.y, ∇p.result.z
     bx, by, bz = ux_eqn.equation.b, uy_eqn.equation.b, uz_eqn.equation.b
 
-    kernel! = remove_pressure_source_kernel!(backend, 2)
+    kernel! = remove_pressure_source_kernel!(backend, WORKGROUP)
     kernel!(cells, source_sign, dpdx, dpdy, dpdz, bx, by, bz, ndrange = length(bx))
     KernelAbstractions.synchronize(backend)
 end
@@ -352,7 +352,7 @@ function H!(Hv, v::VF, ux_eqn, uy_eqn, uz_eqn) where VF<:VectorField # Extend to
     F = _get_float(mesh)
     ione = one(_get_int(mesh))
     
-    kernel! = H_kernel!(backend, 2)
+    kernel! = H_kernel!(backend, WORKGROUP)
     kernel!(ione, cells, F, cell_neighbours,
             nzval_x, colptr_x, rowval_x, bx, vx,
             nzval_y, colptr_y, rowval_y, by, vy,

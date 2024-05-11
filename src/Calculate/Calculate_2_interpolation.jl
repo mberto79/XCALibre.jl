@@ -61,28 +61,38 @@ end
 
 function adjust_boundary!(backend, BC::Dirichlet, phif::FaceScalarField, phi, boundaries, boundary_cellsID)
     (; boundaries) = phif.mesh
-    CUDA.@allowscalar boundary = boundaries[BC.ID]
-    (; IDs_range) = boundary
-    kernel_range = length(IDs_range)
+    # CUDA.@allowscalar boundary = boundaries[BC.ID]
+    # (; IDs_range) = boundary
+    # kernel_range = length(IDs_range)
+
+    # Copy to CPU
+    facesID_range = get_boundaries(BC, boundaries)
+    kernel_range = length(facesID_range)
+
     # (; values) = phif
     phif_values = phif.values
     # (; values) = phi
     phi_values = phi.values
-    kernel! = adjust_boundary_dirichlet_scalar!(backend, 2)
+    kernel! = adjust_boundary_dirichlet_scalar!(backend, WORKGROUP)
     kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = kernel_range)
     KernelAbstractions.synchronize(backend)
 end
 
 function adjust_boundary!(backend, BC::Neumann, phif::FaceScalarField, phi, boundaries, boundary_cellsID)
     (; boundaries) = phif.mesh
-    CUDA.@allowscalar boundary = boundaries[BC.ID]
-    (; IDs_range) = boundary
-    kernel_range = length(IDs_range)
+    # CUDA.@allowscalar boundary = boundaries[BC.ID]
+    # (; IDs_range) = boundary
+    # kernel_range = length(IDs_range)
+
+    # Copy to CPU
+    facesID_range = get_boundaries(BC, boundaries)
+    kernel_range = length(facesID_range)
+
     # (; values) = phif
     phif_values = phif.values
     # (; values) = phi
     phi_values = phi.values
-    kernel! = adjust_boundary_neumann_scalar!(backend, 2)
+    kernel! = adjust_boundary_neumann_scalar!(backend, WORKGROUP)
     kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = kernel_range)
     KernelAbstractions.synchronize(backend)
 end
@@ -225,7 +235,7 @@ function adjust_boundary!(backend, BC::Dirichlet, psif::FaceVectorField, psi::Ve
     kernel_range = length(IDs_range)
 
     (; x, y, z) = psif
-    kernel! = adjust_boundary_dirichlet_vector!(backend, 2)
+    kernel! = adjust_boundary_dirichlet_vector!(backend, WORKGROUP)
     kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = kernel_range)
     KernelAbstractions.synchronize(backend)
 end
@@ -237,7 +247,7 @@ function adjust_boundary!(backend, BC::Neumann, psif::FaceVectorField, psi::Vect
     kernel_range = length(IDs_range)
 
     (; x, y, z) = psif
-    kernel! = adjust_boundary_neumann_vector!(backend, 2)
+    kernel! = adjust_boundary_neumann_vector!(backend, WORKGROUP)
     kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = kernel_range)
     KernelAbstractions.synchronize(backend)
 end
@@ -345,7 +355,7 @@ function interpolate!(phif::FaceScalarField, phi::ScalarField)
 
     # Launch interpolate kernel
     backend = _get_backend(mesh)
-    kernel! = interpolate_Scalar!(backend, 2)
+    kernel! = interpolate_Scalar!(backend, WORKGROUP)
     kernel!(fvals, vals, faces, ndrange = length(faces))
     KernelAbstractions.synchronize(backend)
 end
@@ -413,7 +423,7 @@ function interpolate!(psif::FaceVectorField, psi::VectorField)
 
     # Launch interpolate kernel
     backend = _get_backend(mesh)
-    kernel! = interpolate_Vector!(backend, 2)
+    kernel! = interpolate_Vector!(backend, WORKGROUP)
     kernel!(xv, yv, zv, xf, yf, zf, faces, ndrange = length(faces))
     KernelAbstractions.synchronize(backend)
 end

@@ -1,5 +1,7 @@
 module Solvers
 
+const WORKGROUP = 32
+
 using Accessors
 using LoopVectorization
 using LinearAlgebra

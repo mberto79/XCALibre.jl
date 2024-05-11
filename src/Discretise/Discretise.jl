@@ -1,5 +1,7 @@
 module Discretise
 
+const WORKGROUP = 32
+
 using Accessors
 using LinearAlgebra
 using SparseArrays

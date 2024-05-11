@@ -19,11 +19,11 @@ function discretise!(eqn, prev, runtime, nfaces, nbfaces)
     rowval_array = _rowval(A_array)
     colptr_array = _colptr(A_array)
 
-    kernel! = set_nzval!(backend, 2)
+    kernel! = set_nzval!(backend, WORKGROUP)
     kernel!(nzval_array, fzero, ndrange = length(nzval_array))
     KernelAbstractions.synchronize(backend)
 
-    kernel! = set_b!(backend, 2)
+    kernel! = set_b!(backend, WORKGROUP)
     kernel!(b_array, fzero, ndrange = length(b_array))
     KernelAbstractions.synchronize(backend)
 
@@ -35,11 +35,11 @@ function discretise!(eqn, prev, runtime, nfaces, nbfaces)
     # nfaces = length(mesh.faces)
     internalfaces = nfaces - nbfaces
 
-    kernel! = _discretise_face!(backend, 2, internalfaces)
+    kernel! = _discretise_face!(backend, WORKGROUP, internalfaces)
     kernel!(model, model.terms, model.sources, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione; ndrange = internalfaces)
     KernelAbstractions.synchronize(backend)
 
-    kernel! = _discretise_face_sources!(backend, 2)
+    kernel! = _discretise_face_sources!(backend, WORKGROUP)
     kernel!(model, model.terms, model.sources, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione; ndrange = length(mesh.cells))
     KernelAbstractions.synchronize(backend)
 end

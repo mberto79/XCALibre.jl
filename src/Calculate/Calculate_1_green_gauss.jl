@@ -50,13 +50,13 @@ function green_gauss!(dx, dy, dz, phif)
 
     backend = _get_backend(mesh)
     
-    kernel! = result_calculation!(backend, 2)
+    kernel! = result_calculation!(backend, WORKGROUP)
     kernel!(values, faces, cells, cell_nsign, cell_faces, F, dx, dy, dz, ndrange = length(cells))
     KernelAbstractions.synchronize(backend)
 
     nbfaces = length(mesh.boundary_cellsID)
     
-    kernel! = boundary_faces_contribution!(backend, 2)
+    kernel! = boundary_faces_contribution!(backend, WORKGROUP)
     kernel!(values, faces, cells, F, dx, dy, dz, ndrange = nbfaces)
     KernelAbstractions.synchronize(backend)
 end

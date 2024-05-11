@@ -1,5 +1,7 @@
 module FVM_1D
 
+const WORKGROUP = 32
+
 include("UNV2/UNV2.jl")
 include("Mesh/Mesh.jl")
 include("Mesh/Plotting/0_plotting.jl")

@@ -13,7 +13,7 @@ export ldiv!
 function extract_diagonal!(D, Di, A::AbstractSparseArray{Tf,Ti}, backend) where {Tf,Ti}
     rowval, colptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
 
-    kernel! = extract_diagonal_kernel!(backend, 2)
+    kernel! = extract_diagonal_kernel!(backend, WORKGROUP)
     kernel!(D, Di, nzval, ndrange = n)
 end
 

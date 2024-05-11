@@ -214,7 +214,8 @@ function correct_interpolation!(dx, dy, dz, phif, phi)
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function correct_interpolation_kernel!(faces, cells, nbfaces, phic, F, weight, dx, dy, dz, values)
+@kernel function correct_interpolation_kernel!(
+    faces, cells::AbstractArray{Cell{TF, SV, R}}, nbfaces, phic, F, weight, dx, dy, dz, values) where {TF,SV,R}
     i = @index(Global)
     i += nbfaces
 
@@ -241,15 +242,12 @@ end
     # ∇phi1 = @inbounds SVector{3, F}(dx[owner1], dy[owner1], dz[owner1])
     # ∇phi2 = @inbounds SVector{3, F}(dx[owner2], dy[owner2], dz[owner2])
 
-    ∇phi1 = @inbounds SVector{3}(dx[owner1], dy[owner1], dz[owner1])
-    ∇phi2 = @inbounds SVector{3}(dx[owner2], dy[owner2], dz[owner2])
+    # ∇phi1 = @inbounds SVector{3}(dx[owner1], dy[owner1], dz[owner1])
+    # ∇phi2 = @inbounds SVector{3}(dx[owner2], dy[owner2], dz[owner2])
 
-    # ∇phi1 = [dx[owner1], dy[owner1], dz[owner1]]
-    # ∇phi2 = [dx[owner2], dy[owner2], dz[owner2]]
+    ∇phi1 = @SVector TF[dx[owner1], dy[owner1], dz[owner1]]
+    ∇phi2 = @SVector TF[dx[owner2], dy[owner2], dz[owner2]]
 
-    # rf = centre_faces
-    # rP = centre_cell1 
-    # rN = centre_cell2
 
     phifᵖ = weight*(phi1 + phi2)
     ∇phi = weight*(∇phi1 + ∇phi2)

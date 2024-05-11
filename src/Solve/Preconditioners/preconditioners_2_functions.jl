@@ -101,17 +101,20 @@ end
 @kernel function update_Jacobi!(rowval, colptr, nzval, idx_diagonal, storage)
     i = @index(Global)
 
+    idx = 0
+
     @inbounds begin
         idx_start = colptr[i]
         idx_next = colptr[i+1]
-        @inbounds for p ∈ idx_start:(idx_next-1)
+        for p ∈ idx_start:(idx_next-1)
             row = rowval[p]
             if row == i
-                idx_diagonal = p
+                # idx_diagonal = p
+                idx = p
                 break
             end
         end
-        storage[i] = 1/abs(nzval[idx_diagonal])
+        storage[i] = 1/abs(nzval[idx])
     end
 end
 

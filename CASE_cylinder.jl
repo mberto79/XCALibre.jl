@@ -77,7 +77,7 @@ initialise!(model.p, 0.0)
 backend = CUDABackend() # 357 s
 backend = CPU()
 
-Rx, Ry, Rp, model1 = simple!(model, config, backend); #, pref=0.0)
+Rx, Ry, Rp, model1 = simple!(model, config, backend); # GPU 24.29 k # CPU 11.12 k
 
 plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
@@ -93,7 +93,7 @@ initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
 Profile.Allocs.clear()
-Profile.Allocs.@profile sample_rate=1.5 begin 
+Profile.Allocs.@profile sample_rate=1 begin 
     Rx, Ry, Rp, model1 = simple!(model, config, backend); #, pref=0.0)
 end
 

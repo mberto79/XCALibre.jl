@@ -61,7 +61,8 @@ function green_gauss!(dx, dy, dz, phif)
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function result_calculation!(values, faces, cells, cell_nsign, cell_faces, F, dx, dy, dz)
+@kernel function result_calculation!(
+    values, faces, cells::AbstractArray{Cell{TF, SV, R}}, cell_nsign, cell_faces, F, dx, dy, dz) where {TF,SV,R}
     i = @index(Global)
 
     @inbounds begin
@@ -79,7 +80,7 @@ end
         # dy[i] /= volume
         # dz[i] /= volume
         # res = SVector{3,F}(0.0,0.0,0.0)
-        @private res = SVector{3}(0.0,0.0,0.0)
+        res = @SVector TF[0.0,0.0,0.0]
 
         for fi ∈ faces_range
             # fID = facesID[fi]
@@ -96,7 +97,8 @@ end
     end    
 end
 
-@kernel function boundary_faces_contribution!(values, faces, cells, F, dx, dy, dz)
+@kernel function boundary_faces_contribution!(
+    values, faces, cells::AbstractArray{Cell{TF, SV, R}}, F, dx, dy, dz) where {TF,SV,R}
     i = @index(Global)
 
     @inbounds begin
@@ -108,7 +110,7 @@ end
         # Atomix.@atomic dz.values[cID] += (values[i]*(area*normal[3]))/volume
 
         # res = SVector{3,F}(0.0,0.0,0.0)
-        @private res = SVector{3}(0.0,0.0,0.0)
+        # res = @SVector TF[0.0,0.0,0.0]
         res = values[i]*(area*normal)
         res /= volume 
         Atomix.@atomic dx.values[cID] += res[1]

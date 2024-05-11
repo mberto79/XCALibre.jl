@@ -47,6 +47,21 @@ function _apply_boundary_conditions!(
     # end
 end
 
+# Function to prevent redundant CPU copy
+function get_boundaries(BC, boundaries::Array)
+    facesID_range = boundaries[BC.ID].IDs_range
+    return facesID_range
+end
+
+# Function to copy from GPU to CPU
+function get_boundaries(BC, boundaries::CuArray)
+    # Copy boundaries to CPU
+    boundaries_cpu = Array{eltype(boundaries)}(undef, length(boundaries))
+    copyto!(boundaries_cpu, boundaries)
+    facesID_range = boundaries_cpu[BC.ID].IDs_range
+    return facesID_range
+end
+
    # Unpack terms that make up the model (not sources)
     # nTerms = model.parameters[3]
     # nTerms = TN

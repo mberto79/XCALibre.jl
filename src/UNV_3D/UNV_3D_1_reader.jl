@@ -2,7 +2,7 @@
 
 export load_3D
 
-function load_3D(unv_mesh)
+function load_3D(unv_mesh; scale=scale, integer=integer, float=float)
     #Defining Variables
     pointindx=0
     elementindx=0
@@ -94,7 +94,7 @@ function load_3D(unv_mesh)
     
         if length(sline)==3 && indx>pointindx && indx<elementindx
             point=[parse(Float64,sline[i]) for i=1:length(sline)]
-            push!(points,Point(SVector{3,Float64}(point)))
+            push!(points,scale*Point(SVector{3,Float64}(point)))
             continue
         end
     

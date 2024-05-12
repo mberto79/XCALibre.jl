@@ -7,7 +7,6 @@ using CUDA
 
 # bfs_unv_tet_15mm, 10mm, 5mm, 4mm, 3mm
 mesh_file = "unv_sample_meshes/bfs_unv_tet_4mm.unv"
-
 mesh_file = "unv_sample_meshes/bfs_unv_tet_10mm.unv"
 
 @time mesh = build_mesh3D(mesh_file, scale=0.001)
@@ -19,16 +18,16 @@ Re = velocity[1]*0.1/nu
 model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 @assign! model U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, [0.0, 0.0, 0.0]),
-    Dirichlet(:top, [0.0, 0.0, 0.0]),
-    Dirichlet(:sides, [0.0, 0.0, 0.0])
     # Dirichlet(:inlet, velocity),
-    # Dirichlet(:wall, [0.0, 0.0, 0.0]),
     # Neumann(:outlet, 0.0),
-    # Neumann(:top, 0.0),
-    # Neumann(:sides, 0.0)
+    # Dirichlet(:wall, [0.0, 0.0, 0.0]),
+    # Dirichlet(:top, [0.0, 0.0, 0.0]),
+    # Dirichlet(:sides, [0.0, 0.0, 0.0])
+    Dirichlet(:inlet, velocity),
+    Dirichlet(:wall, [0.0, 0.0, 0.0]),
+    Neumann(:outlet, 0.0),
+    Neumann(:top, 0.0),
+    Neumann(:sides, 0.0)
 )
 
  @assign! model p (

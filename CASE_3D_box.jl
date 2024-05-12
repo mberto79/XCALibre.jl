@@ -1,16 +1,22 @@
 using Plots
 using FVM_1D
 using Krylov
+using KernelAbstractions
 using CUDA
 
 #mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
 mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
 mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.08mm.unv"
 mesh_file="unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.03m.unv"
+mesh_file="unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.015m.unv" # Converges
 
+mesh_file="unv_sample_meshes/box_HEX_20mm.unv"
+mesh_file="unv_sample_meshes/box_HEX_10mm.unv"
+mesh_file="unv_sample_meshes/box_TET_PRISM_10mm.unv"
+mesh_file="unv_sample_meshes/box_TET_PRISM_25_5mm.unv"
+# mesh_file="unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.01m.unv"
 
-
-mesh=build_mesh3D(mesh_file)
+@time mesh=build_mesh3D(mesh_file, scale=0.001)
 
 velocity = [0.01,0.0,0.0]
 nu=1e-3
@@ -20,6 +26,12 @@ noSlip = [0.0, 0.0, 0.0]
 model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 @assign! model U (
+    Dirichlet(:inet, velocity),
+    Neumann(:outlet, 0.0),
+    Dirichlet(:bottom, noSlip),
+    Dirichlet(:top, noSlip),
+    Dirichlet(:side1, noSlip),
+    Dirichlet(:side2, noSlip)
     # Dirichlet(:inlet, velocity),
     # Neumann(:outlet, 0.0),
     # Dirichlet(:bottom, noSlip),
@@ -35,7 +47,7 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 )
 
 @assign! model p (
-    Neumann(:inlet, 0.0),
+    Neumann(:inet, 0.0),
     Dirichlet(:outlet, 0.0),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0),
@@ -49,18 +61,19 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 # )
 
 schemes = (
-    U = set_schemes(time=Steady, divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(time=Steady, divergence=Upwind, gradient=Midpoint)
+    U = set_schemes(divergence=Upwind),
+    p = set_schemes()
 )
 
 solvers = (
     U = set_solver(
         model.U;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.8,
-        rtol = 1e-4
+        relax       = 0.3,
+        rtol = 1e-4,
+        atol = 1e-4
     ),
     p = set_solver(
         model.p;
@@ -75,10 +88,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=50, time_step=1, write_interval=1)
-
-# runtime = set_runtime(
-#         iterations=100, time_step=0.01, write_interval=1)
+    iterations=10, time_step=1, write_interval=5)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -86,9 +96,11 @@ config = Configuration(
 GC.gc()
 
 initialise!(model.U, velocity)
+# initialise!(model.U, [0.0,0.0,0.0])
 initialise!(model.p, 0.0)
 
 backend = CUDABackend()
+# backend = CPU()
 
 Rx, Ry, Rz, Rp, model1 = simple!(model, config, backend)
 # Rx, Ry, Rz, Rp, model1 = piso!(model, config, backend)

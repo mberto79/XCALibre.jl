@@ -153,10 +153,9 @@ end
 
     # Set index for sparse array values at [CellID, CellID] for workitem
     nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
-
-    # Increment sparse and b arrays if required increment value is positive 
-    Atomix.@atomic nzval[nIndex] += max(ap, 0.0)
-    Atomix.@atomic b[cellID] += max(-ap*phi[cellID], 0.0)
+    # Atomix.@atomic nzval[nIndex] += max(ap, 0.0)
+    Atomix.@atomic nzval[nIndex] += ap
+    # Atomix.@atomic b[cellID] += max(-ap*phi[cellID], 0.0)
     nothing
 end
 

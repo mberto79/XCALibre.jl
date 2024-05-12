@@ -6,46 +6,47 @@ function load_3D(unv_mesh)
     #Defining Variables
     pointindx=0
     elementindx=0
-    volumeindx=0
+    cellindx=0
     boundaryindx=0
     faceindx=0
     edgeindx=0
     
     #Defining Arrays with Structs
-    points=UNV_3D.Point[]
-    edges=UNV_3D.Edge[]
-    faces=UNV_3D.Face[]
-    volumes=UNV_3D.Volume[]
-    boundaryElements=UNV_3D.BoundaryElement[]
-    elements=UNV_3D.Element[]
+    points=UNV_3D.Point{float,SVector{3,float}}[]
+    #edges=UNV_3D.Edge{integer,Vector{integer}}[]
+    faces=UNV_3D.Face{integer,Vector{integer}}[]
+    cells=UNV_3D.Cell_UNV{integer,Vector{integer}}[]
+    boundaryElements=UNV_3D.BoundaryElement{String,integer,Vector{integer}}[]
+    #elements=UNV_3D.Element{integer,Vector{integer}}[]
     
     #Defining Arrays for data collection
     #Points
-    point=[]
-    pointindex=[]
+    point=float[]
+    pointindex=integer
     
-    #Vertices
-    edge=[]
-    edgeCount=[]
-    edgeindex=[]
+    #Kept in case of future uses.
+    #Edges
+    # edge=integer[]
+    # edgeCount=integer[]
+    # edgeindex=integer[]
+    edgeindex=0
     
     #Faces
-    face=[]
-    faceindex=[]
-    faceCount=[]
+    face=integer[] # Nodes ID for face
+    faceindex=integer
+    faceCount=integer
     
-    #Volumes
-    volume=[]
-    volumeindex=[]
-    volumeCount=[]
+    #Cells
+    cell=integer[] # Nodes ID for cell
+    cellindex=integer
+    cellCount=integer
     
     #bc
-    boundary=[]
-    boundarys=[]
-    boundaryindex=[]
-    currentBoundary=0
-    boundaryNumber=0
-    section_start = false
+    boundary=integer[] # Element ID for boundary
+    boundarys=Tuple{SubString{String}, Vector{Int64}}[]
+    boundaryindex=integer
+    currentBoundary=zero(integer)
+    boundaryNumber=zero(integer)
     
     #Splits UNV file into sections
     for (indx,line) in enumerate(eachline(unv_mesh))
@@ -64,8 +65,8 @@ function load_3D(unv_mesh)
         if sline[1]=="2411" && length(sline)==1 && section_start
             pointindx=indx
         end
-        #Elements = 2412
-        if sline[1]=="2412" && length(sline)==1 && section_start
+        #Elements = 2412 (Lines, Faces, Cells)
+        if sline[1]=="2412" && length(sline)==1
             elementindx=indx
         end
         #BC=2467
@@ -75,7 +76,15 @@ function load_3D(unv_mesh)
     end
     
     #Extracting Data from UNV file
+    # To avoid UNV file jumping indexs if exporting Salome mesh from Windows.
+    edge_counter=0
+    face_counter=0
+    cell_counter=0 
+
+    #face_index_UNV=Int64[]
+
     for (indx,line) in enumerate(eachline(unv_mesh))
+        
         sline=split(line)
         #Points
         if indx>pointindx && indx<elementindx && length(sline)==4 && parse(Float64,sline[4])==11
@@ -89,99 +98,113 @@ function load_3D(unv_mesh)
             continue
         end
     
-        #Elements
-        #Lines
+        #Lines/Edges
         if length(sline)==6 && parse(Int64,sline[end])==2
-            edgeCount=parse(Int,sline[end])
-            edgeindex=parse(Int,sline[1])
+            #edgeCount=parse(Int,sline[end])
+            edge_counter=edge_counter+1
+            edgeindex=edge_counter
             edgeindx=indx
             # println(edgeindex)
             continue
         end
     
-        if length(sline)==2 && indx>elementindx
-            edge=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(edges,Edge(edgeindex,edgeCount,edge))
-            push!(elements,Element(edgeindex,edgeCount,edge))
-            continue
-        end
+        #No need to extract line data as it is not used in builder.
+        # if length(sline)==2 && indx>elementindx
+        #     edge=[parse(Int,sline[i]) for i=1:length(sline)]
+        #     push!(edges,Edge(edgeindex,edgeCount,edge))
+        #     #push!(elements,Element(edgeindex,edgeCount,edge))
+        #     continue
+        # end
     
         #Faces
-        #Tetrahedral
+        #Triangle
         if length(sline)==6 && parse(Int64,sline[2])==41 && parse(Int64,sline[end])==3
             faceCount=parse(Int,sline[end])
-            faceindex=parse(Int,sline[1])
+            face_counter=face_counter+1
+            faceindex=face_counter
             faceindx=indx
+            if parse(Int64,sline[1])-edgeindex != face_counter
+                throw("Face Index in UNV file are not in order! At UNV index = $(parse(Int64,sline[1]))")
+            end
             continue
         end
     
         if length(sline)==3 && indx>elementindx && indx==faceindx+1 #&& parse(Int,sline[end]) ≠ 1
             face=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(faces,Face(faceindex-edgeindex,faceCount,face))
-            push!(elements,Element(faceindex,faceCount,face))
+            push!(faces,Face(faceindex,faceCount,face))
             continue
         end
 
-        #Hexahedral
+        #Quad
         if length(sline)==6 && parse(Int,sline[2])==44 && parse(Int,sline[end])==4
             faceCount=parse(Int,sline[end])
-            faceindex=parse(Int,sline[1])
+            face_counter=face_counter+1
+            faceindex=face_counter
             faceindx=indx
+            if parse(Int64,sline[1])-edgeindex != face_counter
+                throw("Face Index in UNV file are not in order! At UNV index = $(parse(Int64,sline[1]))")
+            end
             continue
         end
 
         if length(sline)==4 && indx>elementindx && indx==faceindx+1
             face=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(faces,Face(faceindex-edgeindex,faceCount,face))
-            push!(elements,Element(faceindex,faceCount,face))
+            push!(faces,Face(faceindex,faceCount,face))
             continue
         end
 
-
-    
-        #Volumes
+        #Cells
         #Tetrahedral
         if length(sline)==6 && parse(Int,sline[2])==111
-            volumeCount=parse(Int,sline[end])
-            volumeindex=parse(Int,sline[1])
-            volumeindx=indx
+            cellCount=parse(Int,sline[end])
+            cell_counter=cell_counter+1
+            cellindex=cell_counter
+            cellindx=indx
+            if parse(Int64,sline[1])-faceindex-edgeindex != cell_counter
+                throw("Cell Index in UNV file are not in order! At UNV index = $(parse(Int64,sline[1]))")
+            end
             continue
         end
     
-        if length(sline)==4 && indx>elementindx
-            volume=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(volumes,Volume(volumeindex-faceindex,volumeCount,volume))
-            push!(elements,Element(volumeindex,volumeCount,volume))
+        if length(sline)==4 && indx<boundaryindx && indx>elementindx
+            cell=[parse(Int64,sline[i]) for i=1:length(sline)]
+            push!(cells,Cell_UNV(cellindex,cellCount,cell))
             continue
         end
 
         #Hexahedral
         if length(sline)==6 && parse(Int,sline[2])==115
-            volumeCount=parse(Int,sline[end])
-            volumeindex=parse(Int,sline[1])
-            volumeindx=indx
+            cellCount=parse(Int,sline[end])
+            cell_counter=cell_counter+1
+            cellindex=cell_counter
+            cellindx=indx
+            if parse(Int64,sline[1])-faceindex-edgeindex != cell_counter
+                throw("Cell Index in UNV file are not in order! At UNV index = $(parse(Int64,sline[1]))")
+            end
             continue
         end
 
-        if length(sline)==8 && indx<boundaryindx
-            volume=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(volumes,Volume(volumeindex-faceindex,volumeCount,volume))
-            push!(elements,Element(volumeindex,volumeCount,volume))
+        if length(sline)==8 && indx<boundaryindx && indx>elementindx
+            cell=[parse(Int,sline[i]) for i=1:length(sline)]
+            push!(cells,Cell_UNV(cellindex,cellCount,cell))
             continue
         end
 
         #Wedge
         if length(sline)==6 && parse(Int,sline[2])==112
-            volumeCount=parse(Int,sline[end])
-            volumeindex=parse(Int,sline[1])
-            volumeindx=indx
+            cellCount=parse(Int,sline[end])
+            cell_counter=cell_counter+1
+            cellindex=cell_counter
+            cellindx=indx
+            if parse(Int64,sline[1])-faceindex-edgeindex != cell_counter
+                throw("Cell Index in UNV file are not in order! At UNV index = $(parse(Int64,sline[1]))")
+            end
             continue
         end
 
-        if length(sline)==6 && indx<boundaryindx
-            volume=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(volumes,Volume(volumeindex-faceindex,volumeCount,volume))
-            push!(elements,Element(volumeindex,volumeCount,volume))
+        if length(sline)==6 && indx<boundaryindx && indx>elementindx
+            cell=[parse(Int,sline[i]) for i=1:length(sline)]
+            push!(cells,Cell_UNV(cellindex,cellCount,cell))
             continue
         end
     
@@ -193,24 +216,35 @@ function load_3D(unv_mesh)
             newBoundary=BoundaryElement(0)
             push!(boundaryElements, newBoundary)
             boundaryNumber=boundaryNumber+1
-            boundaryElements[currentBoundary].boundaryNumber=currentBoundary
-            boundaryElements[currentBoundary].name=boundary_name
-            # println(boundary_name," ", boundaryindex)
+            boundaryElements[currentBoundary].index=currentBoundary
+            boundaryElements[currentBoundary].name=boundaryindex
             continue
         end
+
+        #Window Users need to have this enabled
+        # dict=Dict() # To avoid UNV from skipping index, dictionary is used to assign UNV index to new face index.
+        # for (n,f) in enumerate(face_index_UNV)
+        #     dict[f] = n
+        # end
     
         if length(sline)==8 && indx>boundaryindx && parse(Int64,sline[2])!=0
-            boundary=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(boundarys,(boundaryindex,boundary)) # not being used?
-            push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[2])-edgeindex)
-            if parse(Int64,sline[6]) ≠ 0
-              push!(boundaryElements[currentBoundary].elements,parse(Int64,sline[6])-edgeindex)
-            end
-            # println(boundaryElements[currentBoundary].elements)
-            
+            boundary=[parse(Int64,sline[i]) for i=1:length(sline)]
+            push!(boundarys,(boundaryindex,boundary))
+            #push!(boundaryElements[currentBoundary].elements,dict[parse(Int64,sline[2])]) # Kept for Dict
+            push!(boundaryElements[currentBoundary].facesID,parse(Int64,sline[2])-edgeindex)
+            #push!(boundaryElements[currentBoundary].elements,dict[parse(Int64,sline[6])]) # Kept for Dict
+            push!(boundaryElements[currentBoundary].facesID,parse(Int64,sline[6])-edgeindex)
+            continue
+        end
+
+        if length(sline)==4 && indx>boundaryindx && parse(Int64,sline[2])!=0
+            boundary=[parse(Int64,sline[i]) for i=1:length(sline)]
+            push!(boundarys,(boundaryindex,boundary))
+            #push!(boundaryElements[currentBoundary].elements,dict[parse(Int64,sline[2])]) # Kept for Dict
+            push!(boundaryElements[currentBoundary].facesID,parse(Int64,sline[2])-edgeindex)
             continue
         end
     end
-    return points,edges,faces,volumes,boundaryElements
+    return points,faces,cells,boundaryElements
 
 end

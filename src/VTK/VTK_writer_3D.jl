@@ -1,6 +1,7 @@
 # function write_vtu(name,mesh)
 # export write_vtk, model2vtk
 # export copy_to_cpu
+using LinearAlgebra
 
 # function model2vtk(model::RANS{Laminar,F1,F2,V,T,E,D}, name) where {F1,F2,V,T,E,D}
 #     args = (
@@ -21,11 +22,18 @@
 #     write_vtk(name, model.mesh, args...)
 # end
 
-get_data(a, backend::CUDABackend) = begin
-    a_cpu = Array{eltype(a)}(undef, length(a))
-    copyto!(a_cpu, a)
-    a_cpu
+get_data(arr, backend::CUDABackend) = begin
+    arr_cpu = Array{eltype(arr)}(undef, length(arr))
+    copyto!(arr_cpu, arr)
+    arr_cpu
 end
+
+get_data(arr, backend::CPU) = begin
+    arr
+end
+
+segment(p1, p2) = p2 - p1
+unit_vector(vec) = vec/norm(vec)
 
 function write_vtk(name, mesh::Mesh3, args...)
     filename=name*".vtu"
@@ -54,25 +62,11 @@ function write_vtk(name, mesh::Mesh3, args...)
         faces="faces"
         face_offsets="faceoffsets"
         types="types"
-        #temp="temperature"
         scalar="scalar"
         vector="vector"
-        #pressure="pressure"
         poly=42
         x=0
         y=0
-
-        #Modifying Data
-        store_cells=zeros(Int32,length(cells_cpu))
-        for i=1:length(cells_cpu)
-            store_cells[i]=length(cells_cpu[1].nodes_range)*i
-        end
-
-        #temp
-        #temp_cells=LinRange(0,500,length(cells_cpu))
-
-        #pressure
-        #pressure_cells=LinRange(0,10000,length(cells_cpu))
 
         #Writing
         write(io,"<?xml version=\"$(one)\"?>\n")
@@ -101,8 +95,11 @@ function write_vtk(name, mesh::Mesh3, args...)
         write(io,"     <DataArray type=\"$(I64)\" Name=\"$(offsets)\" format=\"$(format)\">\n")
         #write(io,"      $(join(store_cells," "))\n")
         #write(io,"      $(length(cell_nodes_cpu)+length(cells_cpu)+1)\n")
+        node_counter=0
         for i=1:length(cells_cpu)
-            write(io,"      $(length(cells_cpu[i].nodes_range)*i)\n")
+            node_counter=node_counter+length(cells_cpu[i].nodes_range)
+            #write(io,"      $(length(cells_cpu[i].nodes_range)*i)\n")
+            write(io,"      $(node_counter)\n")
         end
         write(io,"     </DataArray>\n")
         write(io,"     <DataArray type=\"$(I64)\" Name=\"$(faces)\" format=\"$(format)\">\n")
@@ -114,17 +111,65 @@ function write_vtk(name, mesh::Mesh3, args...)
         #     end
         # end
 
+        # This is needed because boundary faces are missing from cell level connectivity
         
-        for i=1:length(cells_cpu)
-            store_faces=[]
-            for id=1:length(faces_cpu)
-                if faces_cpu[id].ownerCells[1]==i || faces_cpu[id].ownerCells[2]==i
-                    push!(store_faces,id)
+        # Version 1
+        # for i=1:length(cells_cpu)
+        #     store_faces=[]
+        #     for id=1:length(faces_cpu)
+        #         if faces_cpu[id].ownerCells[1]==i || faces_cpu[id].ownerCells[2]==i
+        #             push!(store_faces,id)
+        #         end
+        #     end
+        #     write(io,"      $(length(store_faces))\n")
+        #     for ic=1:length(store_faces)
+        #     write(io,"      $(length(faces_cpu[store_faces[ic]].nodes_range)) $(join(face_nodes_cpu[faces_cpu[store_faces[ic]].nodes_range].-1," "))\n")
+        #     end
+        # end
+
+        # Version 2 (x2.8 faster)
+        all_cell_faces = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_cpu)] # Calculating all the faces that belong to each cell
+        for fID ∈ eachindex(faces_cpu)
+            owners = faces_cpu[fID].ownerCells
+            owner1 = owners[1]
+            owner2 = owners[2]
+            #if faces_cpu[fID].ownerCells[1]==cID || faces_cpu[fID].ownerCells[2]==cID
+                push!(all_cell_faces[owner1],fID)
+                if owner1 !== owner2 #avoid duplication of cells for boundary faces
+                    push!(all_cell_faces[owner2],fID)
                 end
-            end
-            write(io,"      $(length(store_faces))\n")
-            for ic=1:length(store_faces)
-            write(io,"      $(length(faces_cpu[store_faces[ic]].nodes_range)) $(join(face_nodes_cpu[faces_cpu[store_faces[ic]].nodes_range].-1," "))\n")
+            #end
+        end
+
+        for (cID, fIDs) ∈ enumerate(all_cell_faces)
+            write(io,"\t$(length(all_cell_faces[cID]))\n") # No. of Faces for each cell
+            for fID ∈ fIDs
+                #Ordering of face nodes so that they are ordered anti-clockwise when looking at the cell from the outside
+                nIDs=face_nodes_cpu[faces_cpu[fID].nodes_range] # Get ids of nodes of face
+    
+                n1=nodes_cpu[nIDs[1]].coords # Coordinates of 3 nodes only.
+                n2=nodes_cpu[nIDs[2]].coords
+                n3=nodes_cpu[nIDs[3]].coords
+
+                points = [n1, n2, n3]
+
+                _x(n) = n[1]
+                _y(n) = n[2]
+                _z(n) = n[3]
+
+                l = segment.(Ref(points[1]), points) # surface vectors (segments connecting nodes to reference node)
+                fn = unit_vector(l[2] × l[3]) # Calculating face normal 
+                cc=cells_cpu[cID].centre
+                fc=faces_cpu[fID].centre
+                d_fc=fc-cc
+
+                if dot(d_fc,fn)<0.0
+                    nIDs=reverse(nIDs)
+                end
+                write(
+                    #io,"\t$(length(faces_cpu[fID].nodes_range)) $(join(face_nodes_cpu[faces_cpu[fID].nodes_range] .- 1," "))\n"
+                    io,"\t$(length(faces_cpu[fID].nodes_range)) $(join(nIDs .- 1," "))\n"
+                    )
             end
         end
 
@@ -139,11 +184,23 @@ function write_vtk(name, mesh::Mesh3, args...)
         # end
 
         for i=1:length(cells_cpu)
-            if length(cells_cpu[i].nodes_range)==4
-                x=17*i
+            #Tet
+            if length(cells_cpu[i].nodes_range)==4 #No. of Nodes in a Tet Cell
+                x=x+17 
+                write(io,"     $(x)\n")
+            end
+            #Hexa
+            if length(cells_cpu[i].nodes_range)==8 #No. of Nodes in a Hexa Cell
+                x=x+31
+                write(io,"     $(x)\n")
+            end
+            #PRISM
+            if length(cells_cpu[i].nodes_range)==6 # No. of Nodes in a Prism cell
+                x=x+24
                 write(io,"     $(x)\n")
             end
         end
+
         write(io,"     </DataArray>\n")
         write(io,"     <DataArray type=\"$(I64)\" Name=\"$(types)\" format=\"$(format)\">\n")
         #write(io,"      $(poly)\n")
@@ -154,13 +211,11 @@ function write_vtk(name, mesh::Mesh3, args...)
         write(io,"    </Cells>\n")
         write(io,"    <CellData>\n")
 
-
         # write(io,"     <DataArray type=\"$(F32)\" Name=\"$(temp)\" format=\"$(format)\">\n")
         # for i=1:length(temp_cells)
         #     write(io,"      $(join(temp_cells[i]," "))\n")
         # end
         # write(io,"     </DataArray>\n")
-
 
         # write(io,"     <DataArray type=\"$(F32)\" Name=\"$(pressure)\" format=\"$(format)\">\n")
         # for i=1:length(pressure_cells)

@@ -171,7 +171,7 @@ function SIMPLE(
         @. prev = U.x.values
         # type = typeof(ux_eqn)
         # println("$type")
-        if R_ux[iteration] > convergence
+        # if R_ux[iteration] > convergence
             discretise!(ux_eqn, prev, runtime, nfaces, nbfaces)
             apply_boundary_conditions!(ux_eqn, U.x.BCs)
             # ux_eqn.b .-= divUTx
@@ -179,10 +179,10 @@ function SIMPLE(
             update_preconditioner!(ux_eqn.preconditioner, mesh)
             run!(ux_eqn, solvers.U, U.x) #opP=Pu.P, solver=solver_U)
             # residual!(R_ux, ux_eqn.equation, U.x, iteration)
-        end
+        # end
 
         @. prev = U.y.values
-        if R_uy[iteration] > convergence
+        # if R_uy[iteration] > convergence
             discretise!(uy_eqn, prev, runtime, nfaces, nbfaces)
             apply_boundary_conditions!(uy_eqn, U.y.BCs)
             # uy_eqn.b .-= divUTy
@@ -190,11 +190,11 @@ function SIMPLE(
             update_preconditioner!(uy_eqn.preconditioner, mesh)
             run!(uy_eqn, solvers.U, U.y)
             # residual!(R_uy, uy_eqn.equation, U.y, iteration)
-        end
+        # end
 
         if typeof(mesh) <: Mesh3
             @. prev = U.z.values
-            if R_uz[iteration] > convergence
+            # if R_uz[iteration] > convergence
                 discretise!(uz_eqn, prev, runtime, nfaces, nbfaces)
                 apply_boundary_conditions!(uz_eqn, U.z.BCs)
                 # uy_eqn.b .-= divUTy
@@ -202,7 +202,7 @@ function SIMPLE(
                 update_preconditioner!(uz_eqn.preconditioner, mesh)
                 run!(uz_eqn, solvers.U, U.z)
                 # residual!(R_uz, uz_eqn.equation, U.z, iteration)
-            end
+            # end
         end
           
         inverse_diagonal!(rD, ux_eqn)
@@ -215,7 +215,7 @@ function SIMPLE(
         div!(divHv, Uf)
         
         @. prev = p.values
-        if R_p[iteration] > convergence
+        # if R_p[iteration] > convergence
             discretise!(p_eqn, prev, runtime, nfaces, nbfaces)
             apply_boundary_conditions!(p_eqn, p.BCs)
             setReference!(p_eqn, pref, 1)
@@ -224,7 +224,7 @@ function SIMPLE(
 
             explicit_relaxation!(p, prev, solvers.p.relax)
             # residual!(R_p, p_eqn.equation, p, iteration)
-        end
+        # end
 
         grad!(∇p, pf, p, p.BCs) 
 

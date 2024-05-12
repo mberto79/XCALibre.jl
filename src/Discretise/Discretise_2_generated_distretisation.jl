@@ -44,14 +44,15 @@ function discretise!(eqn, prev, runtime, nfaces, nbfaces)
     KernelAbstractions.synchronize(backend)
 end
 
-function spindex(rowval, colptr, i, j)
+function spindex(rowval, colptr::AbstractArray{T}, i, j) where T
     # view_range = @view rowval[colptr[j]:colptr[j+1]]
     # findnext(isequal(i), view_range, i) + colptr[j]
 
     start_ind = colptr[j]
     end_ind = colptr[j+1]
 
-    ind = zero(typeof(start_ind))
+    # ind = zero(eltype(colptr))
+    ind = zero(T)
     for nzi in start_ind:end_ind
         if rowval[nzi] == i
             ind = nzi

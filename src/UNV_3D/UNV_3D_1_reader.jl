@@ -2,7 +2,7 @@
 
 export load_3D
 
-function load_3D(unv_mesh; scale=scale, integer=integer, float=float)
+function load_3D(unv_mesh; scale, integer, float)
     #Defining Variables
     pointindx=0
     elementindx=0
@@ -51,18 +51,9 @@ function load_3D(unv_mesh; scale=scale, integer=integer, float=float)
     #Splits UNV file into sections
     for (indx,line) in enumerate(eachline(unv_mesh))
         sline=split(line)
-
-        if sline[1]=="-1" && section_start==false
-            section_start=true
-            continue
-        end
-
-        if sline[1]=="-1" && section_start==true
-            section_start=false
-        end
-
+    
         #Points = 2411
-        if sline[1]=="2411" && length(sline)==1 && section_start
+        if sline[1]=="2411" && length(sline)==1
             pointindx=indx
         end
         #Elements = 2412 (Lines, Faces, Cells)
@@ -70,7 +61,7 @@ function load_3D(unv_mesh; scale=scale, integer=integer, float=float)
             elementindx=indx
         end
         #BC=2467
-        if sline[1]== "2467" && length(sline)==1 && section_start
+        if sline[1]== "2467" && length(sline)==1
             boundaryindx=indx
         end
     end
@@ -94,7 +85,7 @@ function load_3D(unv_mesh; scale=scale, integer=integer, float=float)
     
         if length(sline)==3 && indx>pointindx && indx<elementindx
             point=[parse(Float64,sline[i]) for i=1:length(sline)]
-            push!(points,scale*Point(SVector{3,Float64}(point)))
+            push!(points,Point(scale * SVector{3,Float64}(point)))
             continue
         end
     
@@ -104,7 +95,6 @@ function load_3D(unv_mesh; scale=scale, integer=integer, float=float)
             edge_counter=edge_counter+1
             edgeindex=edge_counter
             edgeindx=indx
-            # println(edgeindex)
             continue
         end
     
@@ -210,7 +200,6 @@ function load_3D(unv_mesh; scale=scale, integer=integer, float=float)
     
         #Boundary
         if length(sline)==1 && indx>boundaryindx && typeof(tryparse(Int64,sline[1]))==Nothing
-            boundary_name=sline[1]
             boundaryindex=sline[1]
             currentBoundary=currentBoundary+1
             newBoundary=BoundaryElement(0)
@@ -244,6 +233,7 @@ function load_3D(unv_mesh; scale=scale, integer=integer, float=float)
             push!(boundaryElements[currentBoundary].facesID,parse(Int64,sline[2])-edgeindex)
             continue
         end
+    
     end
     return points,faces,cells,boundaryElements
 

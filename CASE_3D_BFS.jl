@@ -47,7 +47,7 @@ schemes = (
 solvers = (
     U = set_solver(
         model.U;
-        solver      = CgSolver, #BicgstabSolver, # BicgstabSolver, GmresSolver, #CgSolver
+        solver      = BicgstabSolver, #BicgstabSolver, # BicgstabSolver, GmresSolver, #CgSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,

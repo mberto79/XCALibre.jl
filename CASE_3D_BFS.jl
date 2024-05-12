@@ -6,7 +6,7 @@ using CUDA
 
 
 # bfs_unv_tet_15mm, 10mm, 5mm, 4mm, 3mm
-mesh_file = "unv_sample_meshes/bfs_unv_tet_5mm.unv"
+mesh_file = "unv_sample_meshes/bfs_unv_tet_4mm.unv"
 @time mesh = build_mesh3D(mesh_file, scale=0.001)
 
 velocity = [0.5, 0.0, 0.0]
@@ -61,7 +61,7 @@ solvers = (
 
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 1e-1,
+        rtol = 1e-2,
         atol = 1e-5
 
 
@@ -69,7 +69,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=500, time_step=1, write_interval=500)
+    iterations=1, time_step=1, write_interval=500)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

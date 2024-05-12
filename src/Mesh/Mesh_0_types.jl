@@ -30,6 +30,15 @@ struct Cell{F<:AbstractFloat, SV3<:SVector{3,F},UR<:UnitRange{<:Integer}}
 end
 Adapt.@adapt_structure Cell
 
+Cell(TI::T, TF::T) where T<:DataType = begin
+    Cell(
+        SVector{3,TF}(0.0,0.0,0.0),
+        zero(TF),
+        UnitRange{TI}(0,0),
+        UnitRange{TI}(0,0)
+        )
+end
+
 # 2D and 3D Face types
 
 struct Face2D{

@@ -260,5 +260,6 @@ function SIMPLE(
         end
 
     end # end for loop
-    return R_ux, R_uy, R_uz, R_p, model
+    model_out = adapt(CPU(), model)
+    return R_ux, R_uy, R_uz, R_p, model_out
 end

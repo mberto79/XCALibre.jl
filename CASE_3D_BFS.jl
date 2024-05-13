@@ -82,7 +82,7 @@ initialise!(model.p, 0.0)
 backend = CPU()
 backend = CUDABackend()
 
-Rx, Ry, Rz, Rp, model1 = simple!(model, config, backend)
+Rx, Ry, Rz, Rp, model = simple!(model, config, backend)
 
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

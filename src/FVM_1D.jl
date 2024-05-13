@@ -2,7 +2,7 @@ module FVM_1D
 
 include("UNV2/UNV2.jl")
 include("Mesh/Mesh.jl")
-include("Mesh/Plotting/0_plotting.jl")
+# include("Mesh/Plotting/0_plotting.jl")
 include("Fields/Fields.jl")
 include("ModelFramework/ModelFramework.jl")
 include("Discretise/Discretise.jl")
@@ -17,7 +17,7 @@ include("UNV_3D/UNV_3D.jl")
 
 using Reexport
 @reexport using FVM_1D.Mesh
-@reexport using FVM_1D.Plotting
+# @reexport using FVM_1D.Plotting
 @reexport using FVM_1D.Fields
 @reexport using FVM_1D.ModelFramework
 @reexport using FVM_1D.Discretise

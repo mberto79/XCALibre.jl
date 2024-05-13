@@ -71,8 +71,10 @@ solvers = (
 runtime = set_runtime(
     iterations=1000, time_step=1, write_interval=500)
 
+hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
 GC.gc()
 
@@ -82,7 +84,7 @@ initialise!(model.p, 0.0)
 backend = CPU()
 backend = CUDABackend()
 
-Rx, Ry, Rz, Rp, model = simple!(model, config, backend)
+Rx, Ry, Rz, Rp, model = simple!(model, config)
 
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

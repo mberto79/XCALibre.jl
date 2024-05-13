@@ -1,8 +1,8 @@
 export simple!
 
-simple!(model_in, config, backend; resume=true, pref=nothing) = begin
+simple!(model_in, config; resume=true, pref=nothing) = begin
     R_ux, R_uy, R_uz, R_p, model = setup_incompressible_solvers(
-        SIMPLE, model_in, config, backend;
+        SIMPLE, model_in, config;
         resume=true, pref=nothing
         )
 
@@ -12,13 +12,15 @@ end
 # Setup for all incompressible algorithms
 function setup_incompressible_solvers(
     solver_variant, 
-    model_in, config, backend; resume=true, pref=nothing
+    model_in, config; resume=true, pref=nothing
     ) 
+
+    (; solvers, schemes, runtime, hardware) = config
+    backend = hardware.backend
 
     @info "Extracting configuration and input fields..."
     model = adapt(backend, model_in)
     (; U, p, nu, mesh) = model
-    (; solvers, schemes, runtime) = config
 
     @info "Preallocating fields..."
     
@@ -86,19 +88,20 @@ function setup_incompressible_solvers(
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
 
     R_ux, R_uy, R_uz, R_p, model  = solver_variant(
-    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config, backend ; resume=resume, pref=pref)
+    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config ; resume=resume, pref=pref)
 
     return R_ux, R_uy, R_uz, R_p, model    
 end # end function
 
 function SIMPLE(
-    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config, backend ; resume, pref)
+    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config ; resume, pref)
     
     # Extract model variables and configuration
     (;mesh, U, p, nu) = model
     p_model = p_eqn.model
-    (; solvers, schemes, runtime) = config
+    (; solvers, schemes, runtime, hardware) = config
     (; iterations, write_interval) = runtime
+    (; backend) = hardware
     
     mdotf = get_flux(ux_eqn, 2)
     nueff = get_flux(ux_eqn, 3)

@@ -2,7 +2,6 @@ module Calculate
 
 using LinearAlgebra
 using StaticArrays
-using LoopVectorization
 using SparseArrays
 using Adapt
 using Atomix

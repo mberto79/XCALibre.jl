@@ -4,7 +4,6 @@ using Accessors
 using SparseArrays
 using Adapt
 
-using LoopVectorization
 using Krylov
 using KernelAbstractions
 using CUDA

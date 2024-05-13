@@ -1,7 +1,6 @@
 module Solve
 
 using Krylov
-using LoopVectorization
 using LinearAlgebra
 using SparseArrays
 using LinearOperators

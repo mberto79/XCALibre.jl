@@ -5,7 +5,6 @@ using CUDA
 using KernelAbstractions
 
 using Accessors
-using LoopVectorization
 using LinearAlgebra
 using Statistics
 using Krylov

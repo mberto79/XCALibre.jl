@@ -2,7 +2,6 @@ module Postprocess
 
 using LinearAlgebra
 using StaticArrays
-# using LoopVectorization
 # using SparseArrays
 using Adapt
 using FVM_1D.Mesh

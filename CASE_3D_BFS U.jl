@@ -51,7 +51,7 @@ solvers = (
         solver      = BicgstabSolver, #BicgstabSolver, # BicgstabSolver, GmresSolver, #CgSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 1.0,
         rtol = 1e-4,
         atol = 1e-3
     ),
@@ -60,7 +60,7 @@ solvers = (
         solver      = CgSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.2,
+        relax       = 1.0,
         rtol = 1e-4,
         atol = 1e-3
 
@@ -69,7 +69,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=1000, time_step=0.1, write_interval=10)
+    iterations=1000, time_step=0.001, write_interval=100)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 

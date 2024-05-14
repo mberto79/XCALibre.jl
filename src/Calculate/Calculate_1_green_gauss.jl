@@ -4,34 +4,32 @@ export green_gauss!
 
 function green_gauss!(dx, dy, dz, phif, config)
     # Retrieve required varaibles for function
-    (; mesh, values) = phif
-    (; faces, cells, cell_faces, cell_nsign) = mesh
-    # backend = _get_backend(mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware
-
-    # Retrieve user-selected float type
-    F = _get_float(mesh)
     
     # Launch result calculation kernel
-    kernel! = result_calculation!(backend, workgroup)
-    kernel!(values, faces, cells, cell_nsign, cell_faces, F, dx, dy, dz, ndrange = length(cells))
+    kernel! = _green_gauss!(backend, workgroup)
+    kernel!(dx, dy, dz, phif, ndrange=length(dx))
     KernelAbstractions.synchronize(backend)
 
     # Retrieve number of boundary faces
-    nbfaces = length(mesh.boundary_cellsID)
+    nbfaces = length(phif.mesh.boundary_cellsID)
     
     # Launch boundary faces contribution kernel
     kernel! = boundary_faces_contribution!(backend, workgroup)
-    kernel!(values, faces, cells, F, dx, dy, dz, ndrange = nbfaces)
+    kernel!(dx, dy, dz, phif, ndrange=nbfaces)
     KernelAbstractions.synchronize(backend)
 end
 
-# Result calculation kernel definition
-
-@kernel function result_calculation!(values, faces, cells, cell_nsign, cell_faces, F, dx, dy, dz)
+# Green Gauss kernel definition
+@kernel function _green_gauss!(dx, dy, dz, phif)
     i = @index(Global)
 
+    @uniform begin
+        (; mesh, values) = phif
+        (; faces, cells, cell_faces, cell_nsign) = mesh
+    end
+     
     @inbounds begin
         # Extract required fields from work item cell
         (; volume, faces_range) = cells[i]
@@ -61,8 +59,13 @@ end
 
 # Boundary faces contribution kernel definition
 
-@kernel function boundary_faces_contribution!(values, faces, cells, F, dx, dy, dz)
+@kernel function boundary_faces_contribution!(dx, dy, dz, phif)
     i = @index(Global)
+
+    @uniform begin
+        (; mesh, values) = phif
+        (; faces, cells) = mesh
+    end
 
     @inbounds begin
         # Extract required variables from work item face and cell

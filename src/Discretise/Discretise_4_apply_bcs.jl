@@ -1,4 +1,5 @@
 export apply_boundary_conditions!
+export get_boundaries
 
 apply_boundary_conditions!(eqn, BCs, config) = begin
     _apply_boundary_conditions!(eqn.model, BCs, eqn, config)

@@ -37,7 +37,7 @@ end
         (; volume, faces_range) = cells[i]
 
         # Allocate static vector for results
-        res = SVector{3,F}(0.0,0.0,0.0)
+        res = SVector{3}(0.0,0.0,0.0)
 
         # Loop over cell faces to calculate result
         for fi ∈ faces_range
@@ -71,7 +71,7 @@ end
         (; volume) = cells[cID]
 
         # Allocate static vector for results
-        res = SVector{3,F}(0.0,0.0,0.0)
+        res = SVector{3}(0.0,0.0,0.0)
 
         # Results calculation
         res = values[i]*(area*normal)

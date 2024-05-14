@@ -72,6 +72,7 @@ runtime = set_runtime(
     iterations=500, time_step=1, write_interval=500)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+# hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
@@ -98,7 +99,7 @@ initialise!(model.p, 0.0)
 
 Profile.Allocs.clear()
 Profile.Allocs.@profile sample_rate=1 begin 
-    Rx, Ry, Rp = simple!(model, config)
+    Rx, Ry, Rz, Rp, model = simple!(model, config)
 end
 
 PProf.Allocs.pprof()

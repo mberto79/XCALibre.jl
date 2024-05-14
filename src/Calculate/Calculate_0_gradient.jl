@@ -236,8 +236,8 @@ end
     phi2 = phic[owner2]
 
     # Allocate SVectors to use for gradient interpolation
-    ∇phi1 = SVector{3, F}(dx[owner1], dy[owner1], dz[owner1])
-    ∇phi2 = SVector{3, F}(dx[owner2], dy[owner2], dz[owner2])
+    ∇phi1 = @inbounds SVector{3}(dx[owner1], dy[owner1], dz[owner1])
+    ∇phi2 = @inbounds SVector{3}(dx[owner2], dy[owner2], dz[owner2])
 
     # Define variables as per interpolation mathematics convention
     rf = centre_faces

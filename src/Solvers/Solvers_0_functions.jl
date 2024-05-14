@@ -260,15 +260,19 @@ function H!(Hv, v::VF, ux_eqn, uy_eqn, uz_eqn, config) where VF<:VectorField # E
 end
 
 # Pressure correction kernel
-@kernel function H_kernel!(ione, cells, F, cell_neighbours,
+@kernel function H_kernel!(ione, cells::AbstractArray{Cell{TF,SV,UR}}, F, cell_neighbours,
                            nzval_x, colptr_x, rowval_x, bx, vx,
                            nzval_y, colptr_y, rowval_y, by, vy,
                            nzval_z, colptr_z, rowval_z, bz, vz,
-                           x, y, z) #Extend to 3D!
+                           x, y, z) where {TF,SV,UR}
     i = @index(Global)
-    sumx = zero(F)
-    sumy = zero(F)
-    sumz = zero(F)
+    sumx = zero(TF)
+    sumy = zero(TF)
+    sumz = zero(TF)
+
+    # sumx = 0.0
+    # sumy = 0.0
+    # sumz = 0.0
 
     @inbounds begin
         (; faces_range) = cells[i]

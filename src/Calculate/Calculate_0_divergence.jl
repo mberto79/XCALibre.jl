@@ -46,7 +46,7 @@ end
 
 # Divergence calculation kernel
 
-@kernel function div_kernel!(cells, F, cell_faces, cell_nsign, faces, phi, psif)
+@kernel function div_kernel!(cells::AbstractArray{Cell{TF,SV,UR}}, F, cell_faces, cell_nsign, faces, phi, psif) where {TF,SV,UR}
     i = @index(Global)
     
     @inbounds begin
@@ -54,7 +54,7 @@ end
         (; volume, faces_range) = cells[i]
         
         # Set work item scalar field value as zero
-        phi.values[i] = zero(F)
+        phi.values[i] = 0.0 #zero(TF)
 
         # Loop over faces to iterate work item scalar field value 
         for fi ∈ faces_range

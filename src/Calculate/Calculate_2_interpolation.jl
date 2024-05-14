@@ -1,6 +1,19 @@
 export correct_boundaries!
 export interpolate!
 
+# Temporary functions to extract boundary array
+function to_cpu(boundaries::AbstractArray)
+    return boundaries
+end
+
+# Function to copy from GPU to CPU
+function to_cpu(boundaries::AbstractGPUArray)
+    # Copy boundaries to CPU
+    boundaries_cpu = Array{eltype(boundaries)}(undef, length(boundaries))
+    KernelAbstractions.copyto!(CPU(), boundaries_cpu, boundaries)
+    return boundaries_cpu
+end
+
 # Function to correct interpolation at boundaries (expands loop to reduce allocations)
 
 @generated function correct_boundaries!(phif, phi, BCs, config)
@@ -17,8 +30,9 @@ export interpolate!
     (; boundary_cellsID, boundaries) = mesh 
     (; hardware) = config
     (; backend, workgroup) = hardware
-    b_cpu = Array{eltype(boundaries)}(undef, length(boundaries))
-    copyto!(b_cpu, boundaries)
+    # b_cpu = Array{eltype(boundaries)}(undef, length(boundaries))
+    # copyto!(b_cpu, boundaries)
+    b_cpu = to_cpu(boundaries)
 
     # backend = _get_backend(mesh)
     $(unpacked_BCs...) 

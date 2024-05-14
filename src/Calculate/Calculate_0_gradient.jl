@@ -101,36 +101,38 @@ end
 
 # Vector field function definition
 
-function grad!(grad::Grad{Orthogonal,F,R,I,M}, phif, phi, BCs) where {F,R<:VectorField,I,M}
-    interpolate!(phif, phi)
-    correct_boundaries!(phif, phi, BCs)
-    green_gauss!(grad.result.x, grad.result.y, grad.result.z, phif)
+function grad!(grad::Grad{Orthogonal,F,R,I,M}, phif, phi, BCs, config) where {F,R<:VectorField,I,M}
+    interpolate!(phif, phi, config)
+    correct_boundaries!(phif, phi, BCs, config)
+    green_gauss!(grad.result.x, grad.result.y, grad.result.z, phif, config)
 end
 
 # Tensor field function definition
 
-function grad!(grad::Grad{Orthogonal,F,R,I,M}, psif, psi, BCs) where {F,R<:TensorField,I,M}
-    interpolate!(psif, psi)
-    correct_boundaries!(psif, psi, BCs)
+function grad!(grad::Grad{Orthogonal,F,R,I,M}, psif, psi, BCs, config) where {F,R<:TensorField,I,M}
+    interpolate!(psif, psi, config)
+    correct_boundaries!(psif, psi, BCs, config)
 
     # Launch green-dauss for all tensor field dimensions
-    green_gauss!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x)
-    green_gauss!(grad.result.xy, grad.result.yy, grad.result.zy, psif.y)
-    green_gauss!(grad.result.xz, grad.result.yz, grad.result.zz, psif.z)
+    green_gauss!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x, config)
+    green_gauss!(grad.result.xy, grad.result.yy, grad.result.zy, psif.y, config)
+    green_gauss!(grad.result.xz, grad.result.yz, grad.result.zz, psif.z, config)
 end
 
 ## Mid-point gradient calculation
 
 # Scalar field calculation definition
 
-function interpolate_midpoint!(phif::FaceScalarField, phi::ScalarField)
+function interpolate_midpoint!(phif::FaceScalarField, phi::ScalarField, config)
     # Extract required variables for function
     (; mesh) = phi
     (; faces) = mesh
-    backend = _get_backend(mesh)
+    # backend = _get_backend(mesh)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
 
     # Launch interpolate midpoint kernel for scalar field
-    kernel! = interpolate_midpoint_scalar!(backend)
+    kernel! = interpolate_midpoint_scalar!(backend, workgroup)
     kernel!(faces, phif, phi, ndrange = length(faces))
     KernelAbstractions.synchronize(backend)
 end
@@ -188,13 +190,15 @@ end
 
 # Correct interpolation function definition
 
-function correct_interpolation!(dx, dy, dz, phif, phi)
+function correct_interpolation!(dx, dy, dz, phif, phi, config)
     # Define required variables for function
     (; mesh, values) = phif
     (; faces, cells) = mesh
     nbfaces = length(mesh.boundary_cellsID)
     phic = phi.values
-    backend = _get_backend(mesh)
+    # backend = _get_backend(mesh)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
 
     # Retrieve user-selected float type
     F = _get_float(mesh)
@@ -203,7 +207,7 @@ function correct_interpolation!(dx, dy, dz, phif, phi)
     weight = 0.5
 
     # Launch correct interpolation kernel
-    kernel! = correct_interpolation_kernel!(backend)
+    kernel! = correct_interpolation_kernel!(backend, workgroup)
     kernel!(faces, cells, nbfaces, phic, F, weight, dx, dy, dz, values, ndrange = length(faces)-nbfaces)
     KernelAbstractions.synchronize(backend)
 end
@@ -249,33 +253,33 @@ end
 
 # Vector field function definition
 
-function grad!(grad::Grad{Midpoint,F,R,I,M}, phif, phi, BCs) where {F,R<:VectorField,I,M}
-    interpolate_midpoint!(phif, phi)
-    correct_boundaries!(phif, phi, BCs)
-    green_gauss!(grad.result.x, grad.result.y, grad.result.z, phif)
+function grad!(grad::Grad{Midpoint,F,R,I,M}, phif, phi, BCs, config) where {F,R<:VectorField,I,M}
+    interpolate_midpoint!(phif, phi, config)
+    correct_boundaries!(phif, phi, BCs, config)
+    green_gauss!(grad.result.x, grad.result.y, grad.result.z, phif, config)
 
     # Loop to run correction and green-gauss required number of times over all dimensions
     for i ∈ 1:2
-        correct_interpolation!(grad.result.x, grad.result.y, grad.result.z, phif, phi)
-        green_gauss!(grad.result.x, grad.result.y, grad.result.z, phif)
+        correct_interpolation!(grad.result.x, grad.result.y, grad.result.z, phif, phi, config)
+        green_gauss!(grad.result.x, grad.result.y, grad.result.z, phif, config)
     end
 end
 
 # Tensor field function definition
 
-function grad!(grad::Grad{Midpoint,F,R,I,M}, psif, psi, BCs) where {F,R<:TensorField,I,M}
-    interpolate_midpoint!(psif, psi)
-    correct_boundaries!(psif, psi, BCs)
+function grad!(grad::Grad{Midpoint,F,R,I,M}, psif, psi, BCs, config) where {F,R<:TensorField,I,M}
+    interpolate_midpoint!(psif, psi, config)
+    correct_boundaries!(psif, psi, BCs, config)
 
     # Loop to run correction and green-gauss required number of times over all dimensions
     for i ∈ 1:2
-    correct_interpolation!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x, psi.x)
-    green_gauss!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x)
+    correct_interpolation!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x, psi.x, config)
+    green_gauss!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x, config)
 
-    correct_interpolation!(grad.result.xy, grad.result.yy, grad.result.zy, psif.y, psi.y)
-    green_gauss!(grad.result.xy, grad.result.yy, grad.result.zy, psif.y)
+    correct_interpolation!(grad.result.xy, grad.result.yy, grad.result.zy, psif.y, psi.y, config)
+    green_gauss!(grad.result.xy, grad.result.yy, grad.result.zy, psif.y, config)
 
-    correct_interpolation!(grad.result.xz, grad.result.yz, grad.result.zz, psif.z, psi.z)
-    green_gauss!(grad.result.xz, grad.result.yz, grad.result.zz, psif.z)
+    correct_interpolation!(grad.result.xz, grad.result.yz, grad.result.zz, psif.z, psi.z, config)
+    green_gauss!(grad.result.xz, grad.result.yz, grad.result.zz, psif.z, config)
     end
 end

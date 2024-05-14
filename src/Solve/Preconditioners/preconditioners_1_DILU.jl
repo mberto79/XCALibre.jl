@@ -10,10 +10,13 @@ export ldiv!
 #     end
 # end
 
-function extract_diagonal!(D, Di, A::AbstractSparseArray{Tf,Ti}, backend) where {Tf,Ti}
+function extract_diagonal!(D, Di, A::AbstractSparseArray{Tf,Ti}, config) where {Tf,Ti}
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    
     rowval, colptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
 
-    kernel! = extract_diagonal_kernel!(backend)
+    kernel! = extract_diagonal_kernel!(backend, workgroup)
     kernel!(D, Di, nzval, ndrange = n)
 end
 
@@ -135,7 +138,7 @@ end
 #     nothing
 # end
 
-function update_dilu_diagonal!(P, mesh) # must rename
+function update_dilu_diagonal!(P, mesh, config) # must rename
     # (; A, storage) = P
     # (; colptr, m, n, nzval, rowval) = A
     # (; Di, D) = storage
@@ -163,16 +166,19 @@ function update_dilu_diagonal!(P, mesh) # must rename
     # end
     
     # Algo 3
-    backend = _get_backend(mesh)
+    # backend = _get_backend(mesh)
+
+    (; hardware) = config
+    (; backend, workgroup) = hardware
 
     (; A, storage) = P
     # (; colptr, n, nzval, rowval) = A
     rowval, colptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
     (; Di, Ri, D, upper_indices_IDs) = storage
     
-    extract_diagonal!(D, Di, A, backend)
+    extract_diagonal!(D, Di, A, config)
 
-    kernel! = update_dilu_diagonal_kernel!(backend)
+    kernel! = update_dilu_diagonal_kernel!(backend, workgroup)
     kernel!(upper_indices_IDs, Di, colptr, Ri, rowval, D, nzval, ndrange = n)
     # D .= 1.0./D # store inverse
     nothing

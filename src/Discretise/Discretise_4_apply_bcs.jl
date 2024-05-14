@@ -1,13 +1,17 @@
 export apply_boundary_conditions!
 
-apply_boundary_conditions!(eqn, BCs) = begin
-    _apply_boundary_conditions!(eqn.model, BCs, eqn)
+apply_boundary_conditions!(eqn, BCs, config) = begin
+    _apply_boundary_conditions!(eqn.model, BCs, eqn, config)
 end
 
 # Apply Boundaries Function
 function _apply_boundary_conditions!(
-    model::Model{TN,SN,T,S}, BCs::B, eqn) where {T,S,TN,SN,B}
+    model::Model{TN,SN,T,S}, BCs::B, eqn, config) where {T,S,TN,SN,B}
     nTerms = length(model.terms)
+
+    # backend = _get_backend(mesh)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
 
     # Retriecve variables for function
     mesh = model.terms[1].phi.mesh
@@ -23,7 +27,6 @@ function _apply_boundary_conditions!(
     nzval = _nzval(A)
 
     # Get user-defined integer types
-    backend = _get_backend(mesh)
     integer = _get_int(mesh)
     ione = one(integer)
 
@@ -34,7 +37,7 @@ function _apply_boundary_conditions!(
         start_ID = facesID_range[1]
 
         # Execute apply boundary conditions kernel
-        kernel! = apply_boundary_conditions_kernel!(backend)
+        kernel! = apply_boundary_conditions_kernel!(backend, workgroup)
         kernel!(
             model, BC, model.terms, faces, cells, start_ID, boundary_cellsID, rowval, colptr, nzval, b, ione, ndrange=length(facesID_range)
             )

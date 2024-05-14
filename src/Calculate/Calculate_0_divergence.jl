@@ -19,17 +19,19 @@ end
 
 # Divergence function definition
 
-function div!(phi::ScalarField, psif::FaceVectorField)
+function div!(phi::ScalarField, psif::FaceVectorField, config)
     # Extract variables for function
     mesh = phi.mesh
-    backend = _get_backend(mesh)
+    # backend = _get_backend(mesh)
     (; cells, cell_nsign, cell_faces, faces) = mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
 
     # Retrieve user-selected float type
     F = _get_float(mesh)
 
     # Launch main calculation kernel
-    kernel! = div_kernel!(backend)
+    kernel! = div_kernel!(backend, workgroup)
     kernel!(cells, F, cell_faces, cell_nsign, faces, phi, psif, ndrange = length(cells))
     KernelAbstractions.synchronize(backend)
 
@@ -37,7 +39,7 @@ function div!(phi::ScalarField, psif::FaceVectorField)
     nbfaces = length(mesh.boundary_cellsID)
 
     # Launch boundary faces contribution kernel
-    kernel! = div_boundary_faces_contribution_kernel!(backend)
+    kernel! = div_boundary_faces_contribution_kernel!(backend, workgroup)
     kernel!(faces, cells, phi, psif, ndrange = nbfaces)
     KernelAbstractions.synchronize(backend)
 end

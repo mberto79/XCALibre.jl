@@ -1,15 +1,15 @@
 export set_preconditioner
 export update_preconditioner!
 
-set_preconditioner(PT::T, eqn, BCs, runtime
+set_preconditioner(PT::T, eqn, BCs, config
 ) where T<:PreconditionerType = 
 begin
     mesh = get_phi(eqn).mesh
     discretise!(
-        eqn, ConstantScalar(zero(_get_int(mesh))), runtime)
-    apply_boundary_conditions!(eqn, BCs)
+        eqn, ConstantScalar(zero(_get_int(mesh))), config)
+    apply_boundary_conditions!(eqn, BCs, config)
     P = Preconditioner{T}(eqn.equation.A)
-    update_preconditioner!(P, mesh)
+    update_preconditioner!(P, mesh, config)
     return P
 end
 
@@ -29,8 +29,11 @@ end
 #     end
 # end
 
-function update_preconditioner!(P::Preconditioner{NormDiagonal,M,PT,S}, mesh) where {M<:AbstractSparseArray,PT,S}
-    backend = _get_backend(mesh)
+function update_preconditioner!(P::Preconditioner{NormDiagonal,M,PT,S}, mesh, config) where {M<:AbstractSparseArray,PT,S}
+    # backend = _get_backend(mesh)
+
+    (; hardware) = config
+    (; backend, workgroup) = hardware
     
     A = P.A
     # (; colptr, m, n, nzval, rowval) = A
@@ -41,7 +44,7 @@ function update_preconditioner!(P::Preconditioner{NormDiagonal,M,PT,S}, mesh) wh
 
     storage = P.storage
 
-    kernel! = update_NormDiagonal!(backend)
+    kernel! = update_NormDiagonal!(backend, workgroup)
     kernel!(colptr_array, nzval_array, storage, ndrange = m_array)
     KernelAbstractions.synchronize(backend)
 end
@@ -79,8 +82,11 @@ end
 #     end
 # end
 
-function update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh) where {M<:AbstractSparseArray,PT,S}
-    backend = _get_backend(mesh)
+function update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh, config) where {M<:AbstractSparseArray,PT,S}
+    # backend = _get_backend(mesh)
+
+    (; hardware) = config
+    (; backend, workgroup) = hardware
 
     A = P.A
     # (; colptr, m, n, nzval, rowval) = A
@@ -93,7 +99,7 @@ function update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh) where {M
     storage = P.storage
     idx_diagonal = zero(eltype(m_array)) # index to diagonal element
 
-    kernel! = update_Jacobi!(backend)
+    kernel! = update_Jacobi!(backend, workgroup)
     kernel!(rowval_array, colptr_array, nzval_array, idx_diagonal, storage, ndrange = m_array)
     KernelAbstractions.synchronize(backend)
 end

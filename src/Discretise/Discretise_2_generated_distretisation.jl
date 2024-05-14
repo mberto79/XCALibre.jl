@@ -1,11 +1,15 @@
 export discretise!
 
 # Discretise Function
-function discretise!(eqn, prev, runtime)
+function discretise!(eqn, prev, config)
+
+    # backend = _get_backend(mesh)
+    (; hardware, runtime) = config
+    (; backend, workgroup) = hardware
+
     # Retrieve variabels for defition
     mesh = eqn.model.terms[1].phi.mesh
     model = eqn.model
-    backend = _get_backend(mesh)
     integer = _get_int(mesh)
     float = _get_float(mesh)
     fzero = zero(float)
@@ -21,17 +25,17 @@ function discretise!(eqn, prev, runtime)
     colptr_array = _colptr(A_array)
 
     # Call set nzval to zero kernel
-    kernel! = set_nzval!(backend)
+    kernel! = set_nzval!(backend, workgroup)
     kernel!(nzval_array, fzero, ndrange = length(nzval_array))
     KernelAbstractions.synchronize(backend)
 
     # Call set b to zero kernel
-    kernel! = set_b!(backend)
+    kernel! = set_b!(backend, workgroup)
     kernel!(b_array, fzero, ndrange = length(b_array))
     KernelAbstractions.synchronize(backend)
 
     # Call discretise kernel
-    kernel! = _discretise!(backend)
+    kernel! = _discretise!(backend, workgroup)
     kernel!(model, model.terms, model.sources, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione; ndrange = length(mesh.cells))
     KernelAbstractions.synchronize(backend)
 end

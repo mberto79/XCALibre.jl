@@ -3,38 +3,40 @@ export interpolate!
 
 # Function to correct interpolation at boundaries (expands loop to reduce allocations)
 
-@generated function correct_boundaries!(phif, phi, BCs)
+@generated function correct_boundaries!(phif, phi, BCs, config)
     unpacked_BCs = []
     for i ∈ 1:length(BCs.parameters)
         unpack = quote
             #KERNEL LAUNCH
-            adjust_boundary!(backend, BCs[$i], phif, phi, boundaries, boundary_cellsID)
+            adjust_boundary!(BCs[$i], phif, phi, boundaries, boundary_cellsID, backend, workgroup)
         end
         push!(unpacked_BCs, unpack)
     end
     quote
     (; mesh) = phif
     (; boundary_cellsID, boundaries) = mesh 
+    (; hardware) = config
+    (; backend, workgroup) = hardware
 
-    backend = _get_backend(mesh)
+    # backend = _get_backend(mesh)
     $(unpacked_BCs...) 
     end
 end
 
 ## GPU SCALAR ADJUST BOUNDARY FUNCTIONS AND KERNELS
 
-function adjust_boundary!(backend, BC::Dirichlet, phif::FaceScalarField, phi, boundaries, boundary_cellsID)
+function adjust_boundary!(BC::Dirichlet, phif::FaceScalarField, phi, boundaries, boundary_cellsID,  backend, workgroup)
     phif_values = phif.values
     phi_values = phi.values
-    kernel! = adjust_boundary_dirichlet_scalar!(backend)
+    kernel! = adjust_boundary_dirichlet_scalar!(backend, workgroup)
     kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = 1)
     KernelAbstractions.synchronize(backend)
 end
 
-function adjust_boundary!(backend, BC::Neumann, phif::FaceScalarField, phi, boundaries, boundary_cellsID)
+function adjust_boundary!(BC::Neumann, phif::FaceScalarField, phi, boundaries, boundary_cellsID, backend, workgroup)
     phif_values = phif.values
     phi_values = phi.values
-    kernel! = adjust_boundary_neumann_scalar!(backend)
+    kernel! = adjust_boundary_neumann_scalar!(backend, workgroup)
     kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = 1)
     KernelAbstractions.synchronize(backend)
 end
@@ -70,16 +72,16 @@ end
 
 ## GPU VECTOR ADJUST BOUNDARY FUNCTIONS AND KERNELS
 
-function adjust_boundary!(backend, BC::Dirichlet, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID)
+function adjust_boundary!(BC::Dirichlet, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, backend, workgroup)
     (; x, y, z) = psif
-    kernel! = adjust_boundary_dirichlet_vector!(backend)
+    kernel! = adjust_boundary_dirichlet_vector!(backend, workgroup)
     kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = 1)
     KernelAbstractions.synchronize(backend)
 end
 
-function adjust_boundary!(backend, BC::Neumann, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID)
+function adjust_boundary!(BC::Neumann, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, backend, workgroup)
     (; x, y, z) = psif
-    kernel! = adjust_boundary_neumann_vector!(backend)
+    kernel! = adjust_boundary_neumann_vector!(backend, workgroup)
     kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = 1)
     KernelAbstractions.synchronize(backend)
 end
@@ -117,7 +119,7 @@ end
 
 ## SCALAR INTERPOLATION
 
-function interpolate!(phif::FaceScalarField, phi::ScalarField)
+function interpolate!(phif::FaceScalarField, phi::ScalarField, config)
     # Extract values arrays from scalar fields 
     vals = phi.values
     fvals = phif.values
@@ -127,8 +129,10 @@ function interpolate!(phif::FaceScalarField, phi::ScalarField)
     faces = mesh.faces
 
     # Launch interpolate kernel
-    backend = _get_backend(mesh)
-    kernel! = interpolate_Scalar!(backend)
+    # backend = _get_backend(mesh)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    kernel! = interpolate_Scalar!(backend, workgroup)
     kernel!(fvals, vals, faces, ndrange = length(faces))
     KernelAbstractions.synchronize(backend)
 end
@@ -154,9 +158,10 @@ end
 end
 
 # VECTOR INTERPOLATION
-function interpolate!(psif::FaceVectorField, psi::VectorField)
+function interpolate!(psif::FaceVectorField, psi::VectorField, config)
     # Extract x, y, z, values from FaceVectorField
     (; mesh) = psif
+
     #Redefine x, y, z values to be used in kernel
     xf = psif.x
     yf = psif.y
@@ -171,8 +176,10 @@ function interpolate!(psif::FaceVectorField, psi::VectorField)
     faces = mesh.faces
 
     # Launch interpolate kernel
-    backend = _get_backend(mesh)
-    kernel! = interpolate_Vector!(backend)
+    # backend = _get_backend(mesh)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    kernel! = interpolate_Vector!(backend, workgroup)
     kernel!(xv, yv, zv, xf, yf, zf, faces, ndrange = length(faces))
     KernelAbstractions.synchronize(backend)
 end

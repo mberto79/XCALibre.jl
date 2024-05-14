@@ -1,9 +1,9 @@
 export piso!
 
-piso!(model_in, config, backend; resume=true, pref=nothing) = begin
+piso!(model_in, config; resume=true, pref=nothing) = begin
 
     R_ux, R_uy, R_uz, R_p, model = setup_incompressible_solvers(
-        PISO, model_in, config, backend;
+        PISO, model_in, config;
         resume=true, pref=nothing
         )
         
@@ -11,14 +11,14 @@ piso!(model_in, config, backend; resume=true, pref=nothing) = begin
 end
 
 function PISO(
-    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config, backend ; resume, pref)
+    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config ; resume, pref)
     
     # Extract model variables and configuration
     (;mesh, U, p, nu) = model
-    # ux_model, uy_model = ux_eqn.model, uy_eqn.model
     p_model = p_eqn.model
-    (; solvers, schemes, runtime) = config
+    (; solvers, schemes, runtime, hardware) = config
     (; iterations, write_interval) = runtime
+    (; backend) = hardware
     
     mdotf = get_flux(ux_eqn, 2)
     nueff = get_flux(ux_eqn, 3)
@@ -33,10 +33,6 @@ function PISO(
     S = StrainRate(gradU, gradUT)
     S2 = ScalarField(mesh)
 
-    # Temp sources to test GradUT explicit source
-    # divUTx = zeros(Float64, length(mesh.cells))
-    # divUTy = zeros(Float64, length(mesh.cells))
-
     n_cells = length(mesh.cells)
     Uf = FaceVectorField(mesh)
     pf = FaceScalarField(mesh)
@@ -45,26 +41,23 @@ function PISO(
     rD = ScalarField(mesh)
 
     # Pre-allocate auxiliary variables
-
-    # Consider using allocate from KernelAbstractions 
-    # e.g. allocate(backend, Float32, res, res)
     TF = _get_float(mesh)
     prev = zeros(TF, n_cells)
-    prev = _convert_array!(prev, backend)  
+    prev = _convert_array!(prev, backend) 
 
     # Pre-allocate vectors to hold residuals 
-
     R_ux = ones(TF, iterations)
     R_uy = ones(TF, iterations)
     R_uz = ones(TF, iterations)
     R_p = ones(TF, iterations)
     
-    interpolate!(Uf, U)   
-    correct_boundaries!(Uf, U, U.BCs)
-    flux!(mdotf, Uf)
-    grad!(∇p, pf, p, p.BCs)
+    # Initial calculations
+    interpolate!(Uf, U, config)   
+    correct_boundaries!(Uf, U, U.BCs, config)
+    flux!(mdotf, Uf, config)
+    grad!(∇p, pf, p, p.BCs, config)
 
-    update_nueff!(nueff, nu, turbulence)
+    update_nueff!(nueff, nu, turbulence, config)
 
     @info "Staring PISO loops..."
 
@@ -72,86 +65,89 @@ function PISO(
 
     @time for iteration ∈ 1:iterations
 
+        # X velocity calculations
         @. prev = U.x.values
-        discretise!(ux_eqn, prev, runtime)
-        apply_boundary_conditions!(ux_eqn, U.x.BCs)
-        # ux_eqn.b .-= divUTx
-        # implicit_relaxation!(ux_eqn.equation, prev, solvers.U.relax)
-        update_preconditioner!(ux_eqn.preconditioner, mesh)
-        run!(ux_eqn, solvers.U, U.x) #opP=Pu.P, solver=solver_U)
-        residual!(R_ux, ux_eqn.equation, U.x, iteration)
+        discretise!(ux_eqn, prev, config)
+        apply_boundary_conditions!(ux_eqn, U.x.BCs, config)
+        implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh, config)
+        update_preconditioner!(ux_eqn.preconditioner, mesh, config)
+        run!(ux_eqn, solvers.U, U.x, config)
+        residual!(R_ux, ux_eqn.equation, U.x, iteration, config)
 
+        # Y velocity calculations
         @. prev = U.y.values
-        discretise!(uy_eqn, prev, runtime)
-        apply_boundary_conditions!(uy_eqn, U.y.BCs)
-        # uy_eqn.b .-= divUTy
-        # implicit_relaxation!(uy_eqn.equation, prev, solvers.U.relax)
-        update_preconditioner!(uy_eqn.preconditioner, mesh)
-        run!(uy_eqn, solvers.U, U.y)
-        residual!(R_uy, uy_eqn.equation, U.y, iteration)
+        discretise!(uy_eqn, prev, config)
+        apply_boundary_conditions!(uy_eqn, U.y.BCs, config)
+        implicit_relaxation!(uy_eqn, prev, solvers.U.relax, mesh, config)
+        update_preconditioner!(uy_eqn.preconditioner, mesh, config)
+        run!(uy_eqn, solvers.U, U.y, config)
+        residual!(R_uy, uy_eqn.equation, U.y, iteration, config)
 
+        # Z velocity calculations (3D Mesh only)
         if typeof(mesh) <: Mesh3
             @. prev = U.z.values
-            discretise!(uz_eqn, prev, runtime)
-            apply_boundary_conditions!(uz_eqn, U.z.BCs)
-            # uy_eqn.b .-= divUTy
-            # implicit_relaxation!(uz_eqn, prev, solvers.U.relax, mesh)
-            update_preconditioner!(uz_eqn.preconditioner, mesh)
-            run!(uz_eqn, solvers.U, U.z)
-            residual!(R_uz, uz_eqn.equation, U.z, iteration)
+            discretise!(uz_eqn, prev, config)
+            apply_boundary_conditions!(uz_eqn, U.z.BCs, config)
+            implicit_relaxation!(uz_eqn, prev, solvers.U.relax, mesh, config)
+            update_preconditioner!(uz_eqn.preconditioner, mesh, config)
+            run!(uz_eqn, solvers.U, U.z, config)
+            residual!(R_uz, uz_eqn.equation, U.z, iteration, config)
         end
-        
-        inverse_diagonal!(rD, ux_eqn)
-        interpolate!(rDf, rD)
-        remove_pressure_source!(ux_eqn, uy_eqn, uz_eqn, ∇p)
+          
+        # Pressure correction
+        inverse_diagonal!(rD, ux_eqn, config)
+        interpolate!(rDf, rD, config)
+        remove_pressure_source!(ux_eqn, uy_eqn, uz_eqn, ∇p, config)
 
         for i ∈ 1:2
-        H!(Hv, U, ux_eqn, uy_eqn, uz_eqn)
-
-        interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
-        correct_boundaries!(Uf, Hv, U.BCs)
-        div!(divHv, Uf)
-   
-        @. prev = p.values
-        discretise!(p_eqn, prev, runtime)
-        apply_boundary_conditions!(p_eqn, p.BCs)
-        setReference!(p_eqn, pref, 1)
-        update_preconditioner!(p_eqn.preconditioner, mesh)
-        run!(p_eqn, solvers.p, p)
-
-        explicit_relaxation!(p, prev, solvers.p.relax)
-        residual!(R_p, p_eqn.equation, p, iteration)
-
-        grad!(∇p, pf, p, p.BCs) 
-
-        correct = false
-        if correct
-            ncorrectors = 1
-            for i ∈ 1:ncorrectors
-                discretise!(p_eqn)
-                apply_boundary_conditions!(p_eqn, p.BCs)
-                setReference!(p_eqn.equation, pref, 1)
-                # grad!(∇p, pf, p, pBCs) 
-                interpolate!(gradpf, ∇p, p)
-                nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
-                correct!(p_eqn.equation, p_model.terms.term1, pf)
-                run!(p_model, solvers.p)
-                grad!(∇p, pf, p, pBCs) 
-            end
-        end
-
-        correct_velocity!(U, Hv, ∇p, rD)
-        interpolate!(Uf, U)
-        correct_boundaries!(Uf, U, U.BCs)
-        flux!(mdotf, Uf)
-
+            H!(Hv, U, ux_eqn, uy_eqn, uz_eqn, config)
         
-        if isturbulent(model)
-            grad!(gradU, Uf, U, U.BCs)
-            turbulence!(turbulence, model, S, S2, prev) 
-            update_nueff!(nueff, nu, turbulence)
-        end
+            # Interpolate faces
+            interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
+            correct_boundaries!(Uf, Hv, U.BCs, config)
+            div!(divHv, Uf, config)
+            
+            # Pressure calculations
+            @. prev = p.values
+            discretise!(p_eqn, prev, config)
+            apply_boundary_conditions!(p_eqn, p.BCs, config)
+            setReference!(p_eqn, pref, 1, config)
+            update_preconditioner!(p_eqn.preconditioner, mesh, config)
+            run!(p_eqn, solvers.p, p, config)
 
+            # Relaxation and residual
+            explicit_relaxation!(p, prev, solvers.p.relax, config)
+            residual!(R_p, p_eqn.equation, p, iteration, config)
+
+            # Gradient
+            grad!(∇p, pf, p, p.BCs, config) 
+
+            correct = false
+            if correct
+                ncorrectors = 1
+                for i ∈ 1:ncorrectors
+                    discretise!(p_eqn)
+                    apply_boundary_conditions!(p_eqn, p.BCs)
+                    setReference!(p_eqn.equation, pref, 1)
+                    interpolate!(gradpf, ∇p, p)
+                    nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
+                    correct!(p_eqn.equation, p_model.terms.term1, pf)
+                    run!(p_model, solvers.p)
+                    grad!(∇p, pf, p, pBCs) 
+                end
+            end
+
+            # Velocity and boundaries correction
+            correct_velocity!(U, Hv, ∇p, rD, config)
+            interpolate!(Uf, U, config)
+            correct_boundaries!(Uf, U, U.BCs, config)
+            flux!(mdotf, Uf, config)
+
+            if isturbulent(model)
+                grad!(gradU, Uf, U, U.BCs, config)
+                turbulence!(turbulence, model, S, S2, prev, config) 
+                update_nueff!(nueff, nu, turbulence, config)
+            end
     end # corrector loop end
         
         # for i ∈ eachindex(divUTx)

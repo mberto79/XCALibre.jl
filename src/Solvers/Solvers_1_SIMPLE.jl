@@ -16,10 +16,9 @@ function setup_incompressible_solvers(
     ) 
 
     (; solvers, schemes, runtime, hardware) = config
-    backend = hardware.backend
 
     @info "Extracting configuration and input fields..."
-    model = adapt(backend, model_in)
+    model = adapt(hardware.backend, model_in)
     (; U, p, nu, mesh) = model
 
     @info "Preallocating fields..."
@@ -66,11 +65,11 @@ function setup_incompressible_solvers(
     @info "Initialising preconditioners..."
 
     @reset ux_eqn.preconditioner = set_preconditioner(
-                    solvers.U.preconditioner, ux_eqn, U.x.BCs, runtime)
+                    solvers.U.preconditioner, ux_eqn, U.x.BCs, config)
     @reset uy_eqn.preconditioner = ux_eqn.preconditioner
     @reset uz_eqn.preconditioner = ux_eqn.preconditioner
     @reset p_eqn.preconditioner = set_preconditioner(
-                    solvers.p.preconditioner, p_eqn, p.BCs, runtime)
+                    solvers.p.preconditioner, p_eqn, p.BCs, config)
 
     if isturbulent(model)
         @info "Initialising turbulence model..."
@@ -135,73 +134,73 @@ function SIMPLE(
     R_p = ones(TF, iterations)
     
     # Initial calculations
-    interpolate!(Uf, U)   
-    correct_boundaries!(Uf, U, U.BCs)
-    flux!(mdotf, Uf)
-    grad!(∇p, pf, p, p.BCs)
+    interpolate!(Uf, U, config)   
+    correct_boundaries!(Uf, U, U.BCs, config)
+    flux!(mdotf, Uf, config)
+    grad!(∇p, pf, p, p.BCs, config)
 
-    update_nueff!(nueff, nu, turbulence)
+    update_nueff!(nueff, nu, turbulence, config)
     
     @info "Staring SIMPLE loops..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
-    CUDA.@time for iteration ∈ 1:iterations
+    @time for iteration ∈ 1:iterations
 
         # X velocity calculations
         @. prev = U.x.values
-        discretise!(ux_eqn, prev, runtime)
-        apply_boundary_conditions!(ux_eqn, U.x.BCs)
-        implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh)
-        update_preconditioner!(ux_eqn.preconditioner, mesh)
-        run!(ux_eqn, solvers.U, U.x)
-        residual!(R_ux, ux_eqn.equation, U.x, iteration)
+        discretise!(ux_eqn, prev, config)
+        apply_boundary_conditions!(ux_eqn, U.x.BCs, config)
+        implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh, config)
+        update_preconditioner!(ux_eqn.preconditioner, mesh, config)
+        run!(ux_eqn, solvers.U, U.x, config)
+        residual!(R_ux, ux_eqn.equation, U.x, iteration, config)
 
         # Y velocity calculations
         @. prev = U.y.values
-        discretise!(uy_eqn, prev, runtime)
-        apply_boundary_conditions!(uy_eqn, U.y.BCs)
-        implicit_relaxation!(uy_eqn, prev, solvers.U.relax, mesh)
-        update_preconditioner!(uy_eqn.preconditioner, mesh)
-        run!(uy_eqn, solvers.U, U.y)
-        residual!(R_uy, uy_eqn.equation, U.y, iteration)
+        discretise!(uy_eqn, prev, config)
+        apply_boundary_conditions!(uy_eqn, U.y.BCs, config)
+        implicit_relaxation!(uy_eqn, prev, solvers.U.relax, mesh, config)
+        update_preconditioner!(uy_eqn.preconditioner, mesh, config)
+        run!(uy_eqn, solvers.U, U.y, config)
+        residual!(R_uy, uy_eqn.equation, U.y, iteration, config)
 
         # Z velocity calculations (3D Mesh only)
         if typeof(mesh) <: Mesh3
             @. prev = U.z.values
-            discretise!(uz_eqn, prev, runtime)
-            apply_boundary_conditions!(uz_eqn, U.z.BCs)
-            implicit_relaxation!(uz_eqn, prev, solvers.U.relax, mesh)
-            update_preconditioner!(uz_eqn.preconditioner, mesh)
-            run!(uz_eqn, solvers.U, U.z)
-            residual!(R_uz, uz_eqn.equation, U.z, iteration)
+            discretise!(uz_eqn, prev, config)
+            apply_boundary_conditions!(uz_eqn, U.z.BCs, config)
+            implicit_relaxation!(uz_eqn, prev, solvers.U.relax, mesh, config)
+            update_preconditioner!(uz_eqn.preconditioner, mesh, config)
+            run!(uz_eqn, solvers.U, U.z, config)
+            residual!(R_uz, uz_eqn.equation, U.z, iteration, config)
         end
           
         # Pressure correction
-        inverse_diagonal!(rD, ux_eqn)
-        interpolate!(rDf, rD)
-        remove_pressure_source!(ux_eqn, uy_eqn, uz_eqn, ∇p)
-        H!(Hv, U, ux_eqn, uy_eqn, uz_eqn)
+        inverse_diagonal!(rD, ux_eqn, config)
+        interpolate!(rDf, rD, config)
+        remove_pressure_source!(ux_eqn, uy_eqn, uz_eqn, ∇p, config)
+        H!(Hv, U, ux_eqn, uy_eqn, uz_eqn, config)
         
         # Interpolate faces
-        interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
-        correct_boundaries!(Uf, Hv, U.BCs)
-        div!(divHv, Uf)
+        interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
+        correct_boundaries!(Uf, Hv, U.BCs, config)
+        div!(divHv, Uf, config)
         
         # Pressure calculations
         @. prev = p.values
-        discretise!(p_eqn, prev, runtime)
-        apply_boundary_conditions!(p_eqn, p.BCs)
-        setReference!(p_eqn, pref, 1)
-        update_preconditioner!(p_eqn.preconditioner, mesh)
-        run!(p_eqn, solvers.p, p)
+        discretise!(p_eqn, prev, config)
+        apply_boundary_conditions!(p_eqn, p.BCs, config)
+        setReference!(p_eqn, pref, 1, config)
+        update_preconditioner!(p_eqn.preconditioner, mesh, config)
+        run!(p_eqn, solvers.p, p, config)
 
         # Relaxation and residual
-        explicit_relaxation!(p, prev, solvers.p.relax)
-        residual!(R_p, p_eqn.equation, p, iteration)
+        explicit_relaxation!(p, prev, solvers.p.relax, config)
+        residual!(R_p, p_eqn.equation, p, iteration, config)
 
         # Gradient
-        grad!(∇p, pf, p, p.BCs) 
+        grad!(∇p, pf, p, p.BCs, config) 
 
         correct = false
         if correct
@@ -219,15 +218,15 @@ function SIMPLE(
         end
 
         # Velocity and boundaries correction
-        correct_velocity!(U, Hv, ∇p, rD)
-        interpolate!(Uf, U)
-        correct_boundaries!(Uf, U, U.BCs)
-        flux!(mdotf, Uf)
+        correct_velocity!(U, Hv, ∇p, rD, config)
+        interpolate!(Uf, U, config)
+        correct_boundaries!(Uf, U, U.BCs, config)
+        flux!(mdotf, Uf, config)
 
         if isturbulent(model)
-            grad!(gradU, Uf, U, U.BCs)
-            turbulence!(turbulence, model, S, S2, prev) 
-            update_nueff!(nueff, nu, turbulence)
+            grad!(gradU, Uf, U, U.BCs, config)
+            turbulence!(turbulence, model, S, S2, prev, config) 
+            update_nueff!(nueff, nu, turbulence, config)
         end
         
         convergence = 1e-7

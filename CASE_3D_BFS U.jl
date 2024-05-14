@@ -40,8 +40,8 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind),
-    p = set_schemes()
+    U = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint),
+    p = set_schemes(time=Euler, gradient=Midpoint)
 )
 
 
@@ -69,7 +69,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=500, time_step=1, write_interval=500)
+    iterations=1000, time_step=0.1, write_interval=10)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 
@@ -81,7 +81,7 @@ GC.gc()
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-Rx, Ry, Rz, Rp, model = simple!(model, config)
+Rx, Ry, Rz, Rp, model = piso!(model, config)
 
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

@@ -29,7 +29,7 @@ set_runtime(; iterations::I, write_interval::I, time_step::N) where {I<:Integer,
     (iterations=iterations, dt=time_step, write_interval=write_interval)
 end
 
-function run!(phiEqn::ModelEquation, setup, result) # ; opP, solver
+function run!(phiEqn::ModelEquation, setup, result, config) # ; opP, solver
 
     (; itmax, atol, rtol) = setup
     (; A, b) = phiEqn.equation
@@ -37,11 +37,14 @@ function run!(phiEqn::ModelEquation, setup, result) # ; opP, solver
     (; P) = precon 
     solver = phiEqn.solver
     (; x) = solver
+
+    (; hardware) = config
+    (; backend, workgroup) = hardware
     # values_eqn = get_phi(phiEqn).values
     # values_res = result.values
     (; values) = result
 
-    backend = _get_backend(get_phi(phiEqn).mesh)
+    # backend = _get_backend(get_phi(phiEqn).mesh)
 
     solve!(
         solver, A, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
@@ -49,7 +52,7 @@ function run!(phiEqn::ModelEquation, setup, result) # ; opP, solver
     KernelAbstractions.synchronize(backend)
     # gmres!(solver, A, b, values; M=P.P, itmax=itmax, atol=atol, rtol=rtol)
     # println(solver.stats.niter)
-    kernel! = solve_copy_kernel!(backend)
+    kernel! = solve_copy_kernel!(backend, workgroup)
     kernel!(values, x, ndrange = length(values))
     # kernel!(values_eqn, x, ndrange = length(values_eqn))
     KernelAbstractions.synchronize(backend)
@@ -71,10 +74,13 @@ end
 #     end
 # end
 
-function explicit_relaxation!(phi, phi0, alpha)
-    backend = _get_backend(phi.mesh)
+function explicit_relaxation!(phi, phi0, alpha, config)
+    # backend = _get_backend(phi.mesh)
 
-    kernel! = explicit_relaxation_kernel!(backend)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    kernel! = explicit_relaxation_kernel!(backend, workgroup)
     kernel!(phi, phi0, alpha, ndrange = length(phi))
     KernelAbstractions.synchronize(backend)
 end
@@ -98,8 +104,11 @@ end
 ## IMPLICIT RELAXATION KERNEL 
 
 # Prepare variables for kernel and call
-function implicit_relaxation!(eqn::E, field, alpha, mesh) where E<:ModelEquation
+function implicit_relaxation!(eqn::E, field, alpha, mesh, config) where E<:ModelEquation
     (; A, b) = eqn.equation
+    # backend = _get_backend(mesh)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
     precon = eqn.preconditioner
     # Output sparse matrix properties and values
     # rowval, colptr, nzval = sparse_array_deconstructor(A)
@@ -108,8 +117,7 @@ function implicit_relaxation!(eqn::E, field, alpha, mesh) where E<:ModelEquation
     nzval_array = _nzval(A)
 
     # Get backend and define kernel
-    backend = _get_backend(mesh)
-    kernel! = implicit_relaxation_kernel!(backend)
+    kernel! = implicit_relaxation_kernel!(backend, workgroup)
     
     # Define variable equal to 1 with same type as mesh integers
     integer = _get_int(mesh)
@@ -154,18 +162,20 @@ end
 #     end
 # end
 
-function setReference!(pEqn::E, pRef, cellID) where E<:ModelEquation
+function setReference!(pEqn::E, pRef, cellID, config) where E<:ModelEquation
     if pRef === nothing
         return nothing
     else
-        backend = _get_backend((get_phi(pEqn)).mesh)
+        # backend = _get_backend((get_phi(pEqn)).mesh)
+        (; hardware) = config
+        (; backend, workgroup) = hardware
         ione = one(_get_int((get_phi(pEqn)).mesh))
         (; b, A) = pEqn.equation
         nzval_array = nzval(A)
         colptr_array = colptr(A)
         rowval_array = rowval(A)
 
-        kernel! = setReference_kernel!(backend)
+        kernel! = setReference_kernel!(backend, workgroup)
         kernel!(nzval_array, colptr_array, rowval_array, b, pRef, ione, cellID, ndrange = 1)
         KernelAbstractions.synchronize(backend)
 

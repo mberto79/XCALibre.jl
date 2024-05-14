@@ -6,3 +6,4 @@ results.vtk
 unv_sample_meshes/*
 *.vtk
 *.vtu
+*.pb.gz

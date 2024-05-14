@@ -71,7 +71,7 @@ end
         (; volume) = cells[cID]
 
         # Allocate static vector for results
-        res = SVector{3}(0.0,0.0,0.0)
+        # res = SVector{3}(0.0,0.0,0.0)
 
         # Results calculation
         res = values[i]*(area*normal)

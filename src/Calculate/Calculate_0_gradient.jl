@@ -55,8 +55,14 @@ Grad{S}(psi::VectorField) where S = begin
 end
 
 Base.getindex(grad::Grad{S,F,R,I,M}, i::Integer) where {S,F,R<:VectorField,I,M} = begin
-    Tf = eltype(grad.result.x.values)
-    SVector{3,Tf}(
+    # Tf = eltype(grad.result.x.values)
+    # SVector{3,Tf}(
+    #     grad.result.x[i], 
+    #     grad.result.y[i], 
+    #     grad.result.z[i]
+    #     )
+    # Tf = eltype(grad.result.x.values)
+    @inbounds SVector{3}(
         grad.result.x[i], 
         grad.result.y[i], 
         grad.result.z[i]

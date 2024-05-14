@@ -54,8 +54,8 @@ end
         (; volume, faces_range) = cells[i]
         
         # Set work item scalar field value as zero
-        phi.values[i] = 0.0 #zero(TF)
-
+        # phi.values[i] = 0.0 #zero(TF)
+        reduction = zero(TF)
         # Loop over faces to iterate work item scalar field value 
         for fi ∈ faces_range
             # Extract face ID and corresponding normal direction
@@ -67,8 +67,10 @@ end
 
             # Scalar field values calculation
             Sf = area*normal
-            Atomix.@atomic phi.values[i] += psif[fID]⋅Sf*nsign/volume
+            # Atomix.@atomic phi.values[i] += psif[fID]⋅Sf*nsign/volume
+            reduction += psif[fID]⋅Sf*nsign
         end
+        phi.values[i] = reduction/volume # divide only once
     end
 end
 
@@ -86,5 +88,6 @@ end
         # Boundary contribution calculation (boundary normals are correct by definition)
         Sf = area*normal
         Atomix.@atomic phi.values[cID] += psif[i]⋅Sf/volume
+        # phi.values[cID] += psif[i]⋅Sf/volume
     end
 end

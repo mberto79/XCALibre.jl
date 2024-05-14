@@ -30,12 +30,14 @@ end
     term::Operator{F,P,I,Time{Euler}}, 
     b, nzval_array, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
         # Retrieve cell volume and calculate time step
+        # volume = cell.volume
+        # rdt = 1/runtime.dt
         volume = cell.volume
-        rdt = 1/runtime.dt
+        vol_rdt = volume/runtime.dt
         
         # Increment sparse and b arrays 
-        Atomix.@atomic nzval_array[cIndex] += volume*rdt
-        Atomix.@atomic b[cID] += prev[cID]*volume*rdt
+        Atomix.@atomic nzval_array[cIndex] += vol_rdt
+        Atomix.@atomic b[cID] += prev[cID]*vol_rdt
     nothing
 end
 

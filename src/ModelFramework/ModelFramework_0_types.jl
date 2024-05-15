@@ -3,6 +3,7 @@ export Operator, Source, Src
 export Time, Laplacian, Divergence, Si
 export Model, Equation, ModelEquation
 export nzval_index
+export spindex
 
 # ABSTRACT TYPES 
 
@@ -90,6 +91,8 @@ end
 function Adapt.adapt_structure(to, itp::Model{TN,SN}) where {TN,SN}
     terms = Adapt.adapt_structure(to, itp.terms); T = typeof(terms)
     sources = Adapt.adapt_structure(to, itp.sources); S = typeof(sources)
+    # T = typeof(itp.terms)
+    # S = typeof(itp.sources)
     Model{TN,SN,T,S}(terms, sources)
 end
 Model{TN,SN}(terms::T, sources::S) where {TN,SN,T,S} = begin
@@ -158,6 +161,25 @@ function nzval_index(colptr, rowval, start_index, required_index, ione)
 
     # Calculate index to output
     return start + offset - ione
+end
+
+function spindex(colptr, rowval, i::T, j::T) where T
+
+    # rows = rowvals(A)
+    start_ind = colptr[j]
+    end_ind = colptr[j+1]
+
+    # ind = zero(eltype(colptr))
+    ind = zero(T)
+    for nzi in start_ind:end_ind
+    # for nzi in nzrange(A, j)
+        if rowval[nzi] == i
+            ind = nzi
+            break
+            # return ind
+        end
+    end
+    return ind
 end
 
 # Model equation type 

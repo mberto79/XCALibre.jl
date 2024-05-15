@@ -2,6 +2,7 @@ export get_phi, get_flux
 export get_source, get_source_sign
 export _A, _b
 export _nzval, _rowval, _colptr
+export get_sparse_fields
 
 ## MODEL ACCESSORS
 
@@ -34,4 +35,12 @@ _colptr(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.colPtr
 _colptr(A::SparseArrays.SparseMatrixCSC) = A.colptr
 
 _rowval(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.rowVal
-_rowval(A::SparseArrays.SparseMatrixCSC) = A.rowval 
+_rowval(A::SparseArrays.SparseMatrixCSC) = A.rowval
+
+get_sparse_fields(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = begin
+    A.nzVal, A.rowVal, A.colPtr
+end
+
+get_sparse_fields(A::SparseArrays.SparseMatrixCSC) = begin
+    A.nzval, A.rowval, A.colptr
+end

@@ -42,7 +42,7 @@ Base.:(==)(a::Vector{<:Operator}, b::Src) = begin
 end
 
 Base.:(==)(a::Operator, b::Vector{<:Src}) = begin
-    Model{1,length(b)}((a...,),(b,))
+    Model{1,length(b)}((a...,),(b...,))
 end
 
 Base.:(==)(a::Vector{<:Operator}, b::Vector{<:Src}) = begin

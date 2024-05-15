@@ -10,13 +10,13 @@ function update_nueff!(nueff, nu, turb_model, config)
 
     if turb_model === nothing
         kernel! = update_nueff_laminar!(backend, workgroup)
-        kernel!(nu, nueff, ndrange = length(nueff))
+        kernel!(nu, nueff, ndrange=length(nueff))
     else
         (; νtf) = turb_model
         kernel! = update_nueff_turbulent!(backend, workgroup)
-        kernel!(nu, νtf, nueff, ndrange = length(nueff))
+        kernel!(nu, νtf, nueff, ndrange=length(nueff))
     end
-    
+
 end
 
 @kernel function update_nueff_laminar!(nu, nueff)
@@ -29,7 +29,7 @@ end
 
 @kernel function update_nueff_turbulent!(nu, νtf, nueff)
     i = @index(Global)
-    
+
     @inbounds begin
         nueff[i] = nu[i] + νtf[i]
     end
@@ -46,14 +46,15 @@ function residual!(Residual, equation, phi, iteration, config)
 
     # backend = _get_backend(phi.mesh)
 
-    sparse_matmul!(A, values, Fx, config)
-    KernelAbstractions.synchronize(backend)
+    # sparse_matmul!(A, values, Fx, config)
+    Fx .= A * values
+    # KernelAbstractions.synchronize(backend)
 
     @inbounds @. R = abs(Fx - b)^2
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 
-    res = sqrt(mean(R))/norm(b)
-    Residual[iteration] = res
+    # res = sqrt(mean(R))/norm(b)
+    Residual[iteration] = sqrt(mean(R)) / norm(b)
     nothing
 end
 
@@ -73,7 +74,7 @@ function sparse_matmul!(a, b, c, config)
     fzero = zero(eltype(c))
 
     kernel! = matmul_copy_zeros_kernel!(backend, workgroup)
-    kernel!(c, fzero, ndrange = length(c))
+    kernel!(c, fzero, ndrange=length(c))
     KernelAbstractions.synchronize(backend)
 
     kernel! = sparse_matmul_kernel!(backend, workgroup)
@@ -109,25 +110,26 @@ end
 ## FLUX CALCULATION
 
 function flux!(phif::FS, psif::FV, config) where {FS<:FaceScalarField,FV<:FaceVectorField}
-    (; mesh, values) = phif
-    (; faces) = mesh
-
-    # backend = _get_backend(mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware
-    
+
     kernel! = flux_kernel!(backend, workgroup)
-    kernel!(faces, values, psif, ndrange = length(faces))
+    kernel!(phif, psif, ndrange=length(phif))
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function flux_kernel!(faces, values, psif)
+@kernel function flux_kernel!(phif, psif)
     i = @index(Global)
+
+    @uniform begin
+        (; mesh, values) = phif
+        (; faces) = mesh
+    end
 
     @inbounds begin
         (; area, normal) = faces[i]
-        Sf = area*normal
-        values[i] = psif[i]⋅Sf
+        Sf = area * normal
+        values[i] = psif[i] ⋅ Sf
     end
 end
 
@@ -135,60 +137,67 @@ volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 
 # INVERSE DIAGONAL CALCULATION
 
-function inverse_diagonal!(rD::S, eqn, config) where S<:ScalarField
-    (; mesh, values) = rD
-    cells = mesh.cells
-    A_array = _A(eqn)
-    nzval_array = _nzval(A_array)
-    colptr_array = _colptr(A_array)
-    rowval_array = _rowval(A_array)
-    # backend = _get_backend(mesh)
+function inverse_diagonal!(rD::S, eqn, config) where {S<:ScalarField}
     (; hardware) = config
     (; backend, workgroup) = hardware
-
-    ione = one(_get_int(mesh))
+    A = eqn.equation.A
+    nzval, rowval, colptr = get_sparse_fields(A)
 
     kernel! = inverse_diagonal_kernel!(backend, workgroup)
-    kernel!(ione, colptr_array, rowval_array, nzval_array, cells, values, ndrange = length(values))
+    kernel!(rD, nzval, rowval, colptr, ndrange=length(rD))
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function inverse_diagonal_kernel!(ione, colptr, rowval, nzval, cells, values)
+# @kernel function inverse_diagonal_kernel!(ione, colptr, rowval, nzval, cells, values)
+@kernel function inverse_diagonal_kernel!(rD, nzval, rowval, colptr)
     i = @index(Global)
 
+    @uniform begin
+        (; mesh, values) = rD
+        cells = mesh.cells
+    end
+
     @inbounds begin
-        nIndex = nzval_index(colptr, rowval, i, i, ione)
-        D = nzval[nIndex]
+        idx = spindex(colptr, rowval, i, i)
+        D = nzval[idx]
         (; volume) = cells[i]
-        values[i] = volume/D
+        values[i] = volume / D
     end
 end
 
 ## VELOCITY CORRECTION
 
 function correct_velocity!(U, Hv, ∇p, rD, config)
-    Ux = U.x; Uy = U.y; Uz = U.z; Hvx = Hv.x; Hvy = Hv.y; Hvz = Hv.z
-    dpdx = ∇p.result.x; dpdy = ∇p.result.y; dpdz = ∇p.result.z; rDvalues = rD.values
+    Ux = U.x
+    Uy = U.y
+    Uz = U.z
+    Hvx = Hv.x
+    Hvy = Hv.y
+    Hvz = Hv.z
+    dpdx = ∇p.result.x
+    dpdy = ∇p.result.y
+    dpdz = ∇p.result.z
+    rDvalues = rD.values
     # backend = _get_backend(U.mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
     kernel! = correct_velocity_kernel!(backend, workgroup)
-    kernel!(rDvalues, Ux, Hvx, dpdx, Uy, Hvy, dpdy, Uz, Hvz, dpdz, ndrange = length(Ux))
+    kernel!(rDvalues, Ux, Hvx, dpdx, Uy, Hvy, dpdy, Uz, Hvz, dpdz, ndrange=length(Ux))
     KernelAbstractions.synchronize(backend)
 end
 
 @kernel function correct_velocity_kernel!(rDvalues,
-                                          Ux, Hvx, dpdx,
-                                          Uy, Hvy, dpdy,
-                                          Uz, Hvz, dpdz)
+    Ux, Hvx, dpdx,
+    Uy, Hvy, dpdy,
+    Uz, Hvz, dpdz)
     i = @index(Global)
-    
+
     @inbounds begin
         rDvalues_i = rDvalues[i]
-        Ux[i] = Hvx[i] - dpdx[i]*rDvalues_i
-        Uy[i] = Hvy[i] - dpdy[i]*rDvalues_i
-        Uz[i] = Hvz[i] - dpdz[i]*rDvalues_i
+        Ux[i] = Hvx[i] - dpdx[i] * rDvalues_i
+        Uy[i] = Hvy[i] - dpdy[i] * rDvalues_i
+        Uz[i] = Hvz[i] - dpdz[i] * rDvalues_i
     end
 end
 
@@ -204,7 +213,7 @@ remove_pressure_source!(ux_eqn::M1, uy_eqn::M2, uz_eqn::M3, ∇p, config) where 
     bx, by, bz = ux_eqn.equation.b, uy_eqn.equation.b, uz_eqn.equation.b
 
     kernel! = remove_pressure_source_kernel!(backend, workgroup)
-    kernel!(cells, source_sign, dpdx, dpdy, dpdz, bx, by, bz, ndrange = length(bx))
+    kernel!(cells, source_sign, dpdx, dpdy, dpdz, bx, by, bz, ndrange=length(bx))
     KernelAbstractions.synchronize(backend)
 end
 
@@ -213,15 +222,15 @@ end
 
     @inbounds begin
         (; volume) = cells[i]
-        Atomix.@atomic bx[i] -= source_sign*dpdx[i]*volume
-        Atomix.@atomic by[i] -= source_sign*dpdy[i]*volume
-        Atomix.@atomic bz[i] -= source_sign*dpdz[i]*volume
+        Atomix.@atomic bx[i] -= source_sign * dpdx[i] * volume
+        Atomix.@atomic by[i] -= source_sign * dpdy[i] * volume
+        Atomix.@atomic bz[i] -= source_sign * dpdz[i] * volume
     end
 end
 
 # Pressure correction
-function H!(Hv, v::VF, ux_eqn, uy_eqn, uz_eqn, config) where VF<:VectorField # Extend to 3D!
-    (; x, y, z, mesh) = Hv 
+function H!(Hv, v::VF, ux_eqn, uy_eqn, uz_eqn, config) where {VF<:VectorField} # Extend to 3D!
+    (; x, y, z, mesh) = Hv
     (; cells, faces) = mesh
     (; cells, cell_neighbours, faces) = mesh
     # backend = _get_backend(mesh)
@@ -230,73 +239,61 @@ function H!(Hv, v::VF, ux_eqn, uy_eqn, uz_eqn, config) where VF<:VectorField # E
 
     Ax = _A(ux_eqn)
     bx = _b(ux_eqn)
-    nzval_x = _nzval(Ax)
-    colptr_x = _colptr(Ax)
-    rowval_x = _rowval(Ax)
-    
+    nzval_x, rowval_x, colptr_x = get_sparse_fields(Ax)
+
     Ay = _A(uy_eqn)
     by = _b(uy_eqn)
-    nzval_y = _nzval(Ay)
-    colptr_y = _colptr(Ay)
-    rowval_y = _rowval(Ay)
+    nzval_y, rowval_y, colptr_y = get_sparse_fields(Ay)
 
     Az = _A(uz_eqn)
     bz = _b(uz_eqn)
-    nzval_z = _nzval(Az)
-    colptr_z = _colptr(Az)
-    rowval_z = _rowval(Az)
-    
+    nzval_z, rowval_z, colptr_z = get_sparse_fields(Az)
+
     vx, vy, vz = v.x, v.y, v.z
-    F = _get_float(mesh)
-    ione = one(_get_int(mesh))
-    
+
     kernel! = H_kernel!(backend, workgroup)
-    kernel!(ione, cells, F, cell_neighbours,
-            nzval_x, colptr_x, rowval_x, bx, vx,
-            nzval_y, colptr_y, rowval_y, by, vy,
-            nzval_z, colptr_z, rowval_z, bz, vz,
-            x, y, z, ndrange = length(cells))
+    kernel!(cells, cell_neighbours,
+        nzval_x, colptr_x, rowval_x, bx, vx,
+        nzval_y, colptr_y, rowval_y, by, vy,
+        nzval_z, colptr_z, rowval_z, bz, vz,
+        x, y, z, ndrange=length(cells))
     KernelAbstractions.synchronize(backend)
 end
 
 # Pressure correction kernel
-@kernel function H_kernel!(ione, cells::AbstractArray{Cell{TF,SV,UR}}, F, cell_neighbours,
-                           nzval_x, colptr_x, rowval_x, bx, vx,
-                           nzval_y, colptr_y, rowval_y, by, vy,
-                           nzval_z, colptr_z, rowval_z, bz, vz,
-                           x, y, z) where {TF,SV,UR}
+@kernel function H_kernel!(cells::AbstractArray{Cell{TF,SV,UR}}, cell_neighbours,
+    nzval_x, colptr_x, rowval_x, bx, vx,
+    nzval_y, colptr_y, rowval_y, by, vy,
+    nzval_z, colptr_z, rowval_z, bz, vz,
+    x, y, z) where {TF,SV,UR}
     i = @index(Global)
     sumx = zero(TF)
     sumy = zero(TF)
     sumz = zero(TF)
-
-    # sumx = 0.0
-    # sumy = 0.0
-    # sumz = 0.0
 
     @inbounds begin
         (; faces_range) = cells[i]
 
         for ni ∈ faces_range
             nID = cell_neighbours[ni]
-            xIndex = nzval_index(colptr_x, rowval_x, nID, i, ione)
-            yIndex = nzval_index(colptr_y, rowval_y, nID, i, ione)
-            zIndex = nzval_index(colptr_z, rowval_z, nID, i, ione)
-            sumx += nzval_x[xIndex]*vx[nID]
-            sumy += nzval_y[yIndex]*vy[nID]
-            sumz += nzval_z[zIndex]*vz[nID]
+            xIndex = spindex(colptr_x, rowval_x, i, nID)
+            yIndex = spindex(colptr_y, rowval_y, i, nID)
+            zIndex = spindex(colptr_z, rowval_z, i, nID)
+            sumx += nzval_x[xIndex] * vx[nID]
+            sumy += nzval_y[yIndex] * vy[nID]
+            sumz += nzval_z[zIndex] * vz[nID]
         end
 
         # D = view(Ax, i, i)[1] # add check to use max of Ax or Ay)
-        DIndex = nzval_index(colptr_x, rowval_x, i, i, ione)
+        DIndex = spindex(colptr_x, rowval_x, i, i)
         Dx = nzval_x[DIndex]
         Dy = nzval_y[DIndex]
         Dz = nzval_z[DIndex]
-        Dmax = max(Dx,Dy,Dz)
-        rD = 1/Dmax
-        x[i] = (bx[i] - sumx)*rD
-        y[i] = (by[i] - sumy)*rD
-        z[i] = (bz[i] - sumz)*rD
+        Dmax = max(Dx, Dy, Dz)
+        rD = 1 / Dmax
+        x[i] = (bx[i] - sumx) * rD
+        y[i] = (by[i] - sumy) * rD
+        z[i] = (bz[i] - sumz) * rD
     end
 end
 
@@ -304,14 +301,14 @@ end
 
 courant_number(U, mesh::AbstractMesh, runtime) = begin
     F = _get_float(mesh)
-    dt = runtime.dt 
+    dt = runtime.dt
     co = zero(_get_float(mesh))
     cells = mesh.cells
     for i ∈ eachindex(U)
         umag = norm(U[i])
         volume = cells[i].volume
         dx = sqrt(volume)
-        co = max(co, umag*dt/dx)
+        co = max(co, umag * dt / dx)
     end
     return co
 end
@@ -322,5 +319,5 @@ end
     umag = norm(U[i])
     volume = cells[i].volume
     dx = sqrt(volume)
-    co = max(co, umag*dt/dx)
+    co = max(co, umag * dt / dx)
 end

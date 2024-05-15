@@ -48,11 +48,11 @@ end
     nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     # Calculate required increment
-    ap = term.sign*(-term.flux[fID] * face.area)/face.delta
+    ap = term.sign*(term.flux[fID] * face.area)/face.delta
 
     # Increment sparse array
-    Atomix.@atomic nzval_array[cIndex] += ap
-    Atomix.@atomic nzval_array[nIndex] += -ap
+    Atomix.@atomic nzval_array[cIndex] += -ap
+    Atomix.@atomic nzval_array[nIndex] += ap
     nothing
 end
 @inline scheme_source!(
@@ -125,6 +125,7 @@ end
     flux = term.sign*term.flux[cID]*cell.volume # indexed with cID
     
     # Increment sparse array by flux
-    Atomix.@atomic nzval_array[cIndex] += flux # indexed with cIndex
+    # Atomix.@atomic nzval_array[cIndex] += flux # indexed with cIndex
+    nzval_array[cIndex] += flux # indexed with cIndex
     nothing
 end

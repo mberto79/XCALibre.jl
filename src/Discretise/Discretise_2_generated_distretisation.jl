@@ -30,9 +30,9 @@ function discretise!(eqn, prev, config)
     KernelAbstractions.synchronize(backend)
 
     # Call set b to zero kernel
-    kernel! = set_b!(backend, workgroup)
-    kernel!(b_array, fzero, ndrange = length(b_array))
-    KernelAbstractions.synchronize(backend)
+    # kernel! = set_b!(backend, workgroup)
+    # kernel!(b_array, fzero, ndrange = length(b_array))
+    # KernelAbstractions.synchronize(backend)
 
     # Call discretise kernel
     kernel! = _discretise!(backend, workgroup)
@@ -53,8 +53,11 @@ end
         cell = cells[i]
         (; faces_range, volume) = cell
 
+        b_array[i] = 0.0
+
         # Set index for sparse array values on diagonal
-        cIndex = nzval_index(colptr_array, rowval_array, i, i, ione)
+        cIndex = spindex(colptr_array, rowval_array, i, i)
+        # cIndex = nzval_index(colptr_array, rowval_array, i, i, ione)
 
         # For loop over workitem cell faces
         for fi in faces_range
@@ -66,7 +69,8 @@ end
             cellN = cells[nID]
             
             # Set index for sparse array values at workitem cell neighbour index
-            nIndex = nzval_index(colptr_array, rowval_array, nID, i, ione)
+            # nIndex = nzval_index(colptr_array, rowval_array, nID, i, ione)
+            nIndex = spindex(colptr_array, rowval_array, i, nID)
 
             # Call scheme generated fucntion
             _scheme!(model, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
@@ -120,7 +124,8 @@ end
     for s in 1:SN
         expression_call_sources = quote
             (; field, sign) = sources[$s]
-            Atomix.@atomic b[cID] += sign*field[cID]*volume
+            # Atomix.@atomic b[cID] += sign*field[cID]*volume
+            b[cID] += sign*field[cID]*volume
         end
         push!(out.args, expression_call_sources)
     end

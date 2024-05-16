@@ -108,15 +108,16 @@ end
     i = @index(Global)
 
     @inbounds begin
-        idx_start = colptr[i]
-        idx_next = colptr[i+1]
-        @inbounds for p ∈ idx_start:(idx_next-1)
-            row = rowval[p]
-            if row == i
-                idx_diagonal = p
-                break
-            end
-        end
+        # idx_start = colptr[i]
+        # idx_next = colptr[i+1]
+        # @inbounds for p ∈ idx_start:(idx_next-1)
+        #     row = rowval[p]
+        #     if row == i
+        #         idx_diagonal = p
+        #         break
+        #     end
+        # end
+        idx_diagonal = spindex(colptr, rowval, i, i)
         storage[i] = 1/abs(nzval[idx_diagonal])
     end
 end

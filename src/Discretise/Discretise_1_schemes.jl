@@ -12,7 +12,8 @@ cIndex - Index of the cell based on sparse matrix. Use to index "nzval_array"
 @inline function scheme!(
     term::Operator{F,P,I,Time{Steady}}, 
     nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
-    nothing
+    # nothing
+    0.0, 0.0 # add types if this approach works
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Time{Steady}}, 
@@ -24,7 +25,8 @@ end
 @inline function scheme!(
     term::Operator{F,P,I,Time{Euler}}, 
     nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
-    nothing
+    # nothing
+    0.0, 0.0 # add types if this approach works
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Time{Euler}}, 
@@ -36,8 +38,10 @@ end
         vol_rdt = volume/runtime.dt
         
         # Increment sparse and b arrays 
-        Atomix.@atomic nzval_array[cIndex] += vol_rdt
-        Atomix.@atomic b[cID] += prev[cID]*vol_rdt
+        # Atomix.@atomic nzval_array[cIndex] += vol_rdt
+        # Atomix.@atomic b[cID] += prev[cID]*vol_rdt
+        nzval_array[cIndex] += vol_rdt
+        b[cID] += prev[cID]*vol_rdt
     nothing
 end
 
@@ -51,9 +55,12 @@ end
     ap = term.sign*(term.flux[fID] * face.area)/face.delta
 
     # Increment sparse array
-    Atomix.@atomic nzval_array[cIndex] += -ap
-    Atomix.@atomic nzval_array[nIndex] += ap
-    nothing
+    # Atomix.@atomic nzval_array[cIndex] += -ap
+    # Atomix.@atomic nzval_array[nIndex] += ap
+    # nothing
+    ac = -ap
+    an = ap
+    return ac, an
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Laplacian{Linear}}, 
@@ -81,9 +88,12 @@ end
     ap = term.sign*(term.flux[fID]*ns)
 
     # Increment sparse array
-    Atomix.@atomic nzval_array[cIndex] += ap*one_minus_weight
-    Atomix.@atomic nzval_array[nIndex] += ap*weight
-    nothing
+    # Atomix.@atomic nzval_array[cIndex] += ap*one_minus_weight
+    # Atomix.@atomic nzval_array[nIndex] += ap*weight
+    # nothing
+    ac = ap*one_minus_weight
+    an = ap*weight
+    return ac, an
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Divergence{Linear}}, 
@@ -100,9 +110,12 @@ end
     ap = term.sign*(term.flux[fID]*ns)
 
     # Increment sparse array only if ap is positive
-    Atomix.@atomic nzval_array[cIndex] += max(ap, 0.0)
-    Atomix.@atomic nzval_array[nIndex] += -max(-ap, 0.0)
-    nothing
+    # Atomix.@atomic nzval_array[cIndex] += max(ap, 0.0)
+    # Atomix.@atomic nzval_array[nIndex] += -max(-ap, 0.0)
+    # nothing
+    ac = max(ap, 0.0)
+    an = -max(-ap, 0.0)
+    return ac, an
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Divergence{Upwind}}, 

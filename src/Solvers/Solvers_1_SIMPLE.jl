@@ -19,6 +19,7 @@ function setup_incompressible_solvers(
 
     @info "Extracting configuration and input fields..."
     model = adapt(hardware.backend, model_in)
+    # model = model_in
     (; U, p, nu, mesh) = model
 
     @info "Preallocating fields..."
@@ -85,6 +86,11 @@ function setup_incompressible_solvers(
     @reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
     @reset uz_eqn.solver = solvers.U.solver(_A(uz_eqn), _b(uz_eqn))
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
+
+    ux_eqn = adapt(hardware.backend, ux_eqn)
+    uy_eqn = adapt(hardware.backend, uy_eqn)
+    uz_eqn = adapt(hardware.backend, uz_eqn)
+    p_eqn = adapt(hardware.backend, p_eqn)
 
     R_ux, R_uy, R_uz, R_p, model  = solver_variant(
     model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config ; resume=resume, pref=pref)

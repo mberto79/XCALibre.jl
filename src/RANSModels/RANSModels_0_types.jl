@@ -8,12 +8,14 @@ abstract type AbstractTurbulenceModel end
 
 # Models 
 struct Laminar <: AbstractMomentumModel end 
+Adapt.@adapt_structure Laminar
 
 struct boundary_info{I<:Integer, S<:Symbol}
     ID::I
     Name::S
 end
 Adapt.@adapt_structure boundary_info
+
 struct RANS{M,F1,F2,V,T,E,D,BI}
     model::M
     U::F1 

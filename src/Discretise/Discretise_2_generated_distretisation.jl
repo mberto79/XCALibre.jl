@@ -10,10 +10,8 @@ function discretise!(eqn, prev, config)
     # Retrieve variabels for defition
     mesh = eqn.model.terms[1].phi.mesh
     model = eqn.model
-    integer = _get_int(mesh)
-    float = _get_float(mesh)
-    fzero = zero(float)
-    ione = one(integer)
+    # float = _get_float(mesh)
+    # fzero = zero(float)
 
     # Sparse array and b accessor call
     A_array = _A(eqn)
@@ -26,7 +24,8 @@ function discretise!(eqn, prev, config)
 
     # Call set nzval to zero kernel
     kernel! = set_nzval!(backend, workgroup)
-    kernel!(nzval_array, fzero, ndrange = length(nzval_array))
+    # kernel!(nzval_array, fzero, ndrange = length(nzval_array))
+    kernel!(nzval_array, ndrange = length(nzval_array))
     KernelAbstractions.synchronize(backend)
 
     # Call set b to zero kernel
@@ -36,13 +35,13 @@ function discretise!(eqn, prev, config)
 
     # Call discretise kernel
     kernel! = _discretise!(backend, workgroup)
-    kernel!(model, model.terms, model.sources, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione; ndrange = length(mesh.cells))
+    kernel!(model, model.terms, model.sources, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime; ndrange = length(mesh.cells))
     KernelAbstractions.synchronize(backend)
 end
 
 # Discretise kernel function
 @kernel function _discretise!(
-    model::Model{TN,SN,T,S}, terms, sources, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime, fzero, ione) where {TN,SN,T,S}
+    model::Model{TN,SN,T,S}, terms, sources, mesh, nzval_array::AbstractArray{F}, rowval_array, colptr_array, b_array, prev, runtime) where {TN,SN,T,S,F}
     i = @index(Global)
     
     # Extract mesh fields for kernel
@@ -53,13 +52,14 @@ end
         cell = cells[i]
         (; faces_range, volume) = cell
 
-        b_array[i] = 0.0
+        b_array[i] = zero(F)
 
         # Set index for sparse array values on diagonal
         cIndex = spindex(colptr_array, rowval_array, i, i)
         # cIndex = nzval_index(colptr_array, rowval_array, i, i, ione)
 
         # For loop over workitem cell faces
+        ac_sum = zero(F)
         for fi in faces_range
             # Retrieve indices for discretisation
             fID = cell_faces[fi]
@@ -73,8 +73,13 @@ end
             nIndex = spindex(colptr_array, rowval_array, i, nID)
 
             # Call scheme generated fucntion
-            _scheme!(model, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+            # _scheme!(model, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+            ac, an = _scheme!(model, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+            ac_sum += ac
+            Atomix.@atomic nzval_array[nIndex] += an
         end
+        nzval_array[cIndex] = ac_sum
+
         # Call scheme source generated function
         _scheme_source!(model, terms, b_array, nzval_array, cell, i, cIndex, prev, runtime)
 
@@ -93,11 +98,20 @@ return_quote(x, t) = :(nothing)
     # Loop over number of terms and store scheme function in array
     for t in 1:TN
         function_call_scheme = quote
-            scheme!(terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+            # scheme!(terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+            ac, an = scheme!(terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+            AC += ac
+            AN += an
         end
         push!(out.args, function_call_scheme)
     end
-    out
+    # out
+    quote
+        AC = 0.0
+        AN = 0.0
+        $(out.args...)
+        return AC, AN
+    end
 end
 
 # Scheme source generated function definition
@@ -133,11 +147,13 @@ end
 end
 
 # Set nzval array to zero kernel
-@kernel function set_nzval!(nzval, fzero)
+# @kernel function set_nzval!(nzval, fzero)
+@kernel function set_nzval!(nzval::AbstractArray{T}) where T
     i = @index(Global)
 
     @inbounds begin
-        nzval[i] = fzero
+        # nzval[i] = fzero
+        nzval[i] = zero(T)
     end
 end
 

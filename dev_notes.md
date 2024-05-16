@@ -10,7 +10,8 @@
 - [x] Implement functions to return mesh Int and Float types easing GPU implementation
 - [x] Check Divergence BCs for Upwind scheme
 - [ ] Implement Upwind as deferred correction
-- [ ] Do mesh conversion to new format within UNV read/writer (2D and 3D meshes)
+- [x] Do mesh conversion to new format within UNV read/writer (2D and 3D meshes)
+- [ ] Add tests
 - [ ] Add documentation (becoming urgent)
 
 ### Mesh module
@@ -24,7 +25,7 @@
 - [ ] Separation of boundary and internal nodes, faces and cells (all?)
 - [x] Rethink data structure for mesh
 - [x] Write mesh to VTK format
-- [ ] Extend to 3D
+- [x] Extend to 3D
 - [ ] Write conversion tool to read grids from OpenFOAM
 - [ ] Include boundary information in VTK file for postprocessing
 
@@ -57,12 +58,14 @@
 - [x] Implement laminar solver (steady)
 - [x] Implement laminar solver (transient)
 - [x] Implement first RANS turbulence model e.g. $k-\omega$
-- [ ] Implement $k-\omega LKE$ model
+- [x] Implement $k-\omega LKE$ model
 - [x] Calculation of y for first cell (can be from mesh.delta?)
 - [ ] Calculation of wall normal distance needed for turbulence models
 - [x] Implement wall functions
 - [ ] LES solver
-- [ ] Add compressible solvers (Chris Ellis may be interested?)
+- [ ] Compressible flows: serial laminar
+- [ ] Compressible flows: serial turbulent
+
 
 ### Algorithms
 
@@ -76,8 +79,12 @@
 - [x] Implement linear system solver - IterativeSolvers.jl
 - [ ] Allow matrix free methods?
 - [ ] Write more efficient matrix build method for sparse matrix
-- [ ] Enable threading
-- [ ] Enable GPU computation
+- [x] Enable threading
+- [x] Enable GPU computation
+- [ ] Move turbulence RANS to GPU
+- [ ] Move compressible implementation to the GPU
+- [x] Implement AMG prototype solver (serial)
+- [ ] Implement AMG solver (KernelAbstraction.jl)
 
 ## Accessing data in structs
 

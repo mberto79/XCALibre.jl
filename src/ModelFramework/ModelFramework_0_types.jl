@@ -88,7 +88,7 @@ struct Model{TN,SN,T,S}
     terms::T
     sources::S
 end
-Adapt.@adapt_structure Model
+# Adapt.@adapt_structure Model
 function Adapt.adapt_structure(to, itp::Model{TN,SN,TT,SS}) where {TN,SN,TT,SS}
     terms = Adapt.adapt_structure(to, itp.terms); T = typeof(terms)
     sources = Adapt.adapt_structure(to, itp.sources); S = typeof(sources)

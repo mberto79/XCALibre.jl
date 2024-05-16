@@ -76,7 +76,8 @@ end
             # _scheme!(model, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
             ac, an = _scheme!(model, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
             ac_sum += ac
-            Atomix.@atomic nzval_array[nIndex] += an
+            # Atomix.@atomic nzval_array[nIndex] += an
+            nzval_array[nIndex] += an
         end
         nzval_array[cIndex] = ac_sum
 

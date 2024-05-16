@@ -52,8 +52,8 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
-        rtol = 1e-1,
-        atol = 1e-5
+        rtol = 1e-5,
+        atol = 1e-2
     ),
     p = set_solver(
         model.p;
@@ -61,8 +61,8 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 1e-2,
-        atol = 1e-5
+        rtol = 1e-5,
+        atol = 1e-3
 
 
     )

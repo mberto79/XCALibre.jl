@@ -3,15 +3,12 @@ export discretise!
 # Discretise Function
 function discretise!(eqn, prev, config)
 
-    # backend = _get_backend(mesh)
     (; hardware, runtime) = config
     (; backend, workgroup) = hardware
 
     # Retrieve variabels for defition
     mesh = eqn.model.terms[1].phi.mesh
     model = eqn.model
-    # float = _get_float(mesh)
-    # fzero = zero(float)
 
     # Sparse array and b accessor call
     A_array = _A(eqn)
@@ -24,14 +21,8 @@ function discretise!(eqn, prev, config)
 
     # Call set nzval to zero kernel
     kernel! = set_nzval!(backend, workgroup)
-    # kernel!(nzval_array, fzero, ndrange = length(nzval_array))
     kernel!(nzval_array, ndrange = length(nzval_array))
     KernelAbstractions.synchronize(backend)
-
-    # Call set b to zero kernel
-    # kernel! = set_b!(backend, workgroup)
-    # kernel!(b_array, fzero, ndrange = length(b_array))
-    # KernelAbstractions.synchronize(backend)
 
     # Call discretise kernel
     kernel! = _discretise!(backend, workgroup)
@@ -56,7 +47,6 @@ end
 
         # Set index for sparse array values on diagonal
         cIndex = spindex(colptr_array, rowval_array, i, i)
-        # cIndex = nzval_index(colptr_array, rowval_array, i, i, ione)
 
         # For loop over workitem cell faces
         ac_sum = zero(F)
@@ -69,14 +59,11 @@ end
             cellN = cells[nID]
             
             # Set index for sparse array values at workitem cell neighbour index
-            # nIndex = nzval_index(colptr_array, rowval_array, nID, i, ione)
             nIndex = spindex(colptr_array, rowval_array, i, nID)
 
             # Call scheme generated fucntion
-            # _scheme!(model, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
             ac, an = _scheme!(model, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
             ac_sum += ac
-            # Atomix.@atomic nzval_array[nIndex] += an
             nzval_array[nIndex] += an
         end
         nzval_array[cIndex] = ac_sum
@@ -99,7 +86,6 @@ return_quote(x, t) = :(nothing)
     # Loop over number of terms and store scheme function in array
     for t in 1:TN
         function_call_scheme = quote
-            # scheme!(terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
             ac, an = scheme!(terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
             AC += ac
             AN += an
@@ -116,7 +102,7 @@ return_quote(x, t) = :(nothing)
 end
 
 # Scheme source generated function definition
-@generated function _scheme_source!(model::Model{TN,SN,T,S}, terms, b, nzval_array, cell, cID, cIndex, prev, runtime) where {TN,SN,T,S}[]
+@generated function _scheme_source!(model::Model{TN,SN,T,S}, terms, b, nzval_array, cell, cID, cIndex, prev, runtime) where {TN,SN,T,S}
     # Allocate expression array to store scheme_source function
     out = Expr(:block)
     
@@ -139,7 +125,6 @@ end
     for s in 1:SN
         expression_call_sources = quote
             (; field, sign) = sources[$s]
-            # Atomix.@atomic b[cID] += sign*field[cID]*volume
             b[cID] += sign*field[cID]*volume
         end
         push!(out.args, expression_call_sources)
@@ -148,21 +133,10 @@ end
 end
 
 # Set nzval array to zero kernel
-# @kernel function set_nzval!(nzval, fzero)
 @kernel function set_nzval!(nzval::AbstractArray{T}) where T
     i = @index(Global)
 
     @inbounds begin
-        # nzval[i] = fzero
         nzval[i] = zero(T)
-    end
-end
-
-# Set b array to zero kernel
-@kernel function set_b!(b, fzero)
-    i = @index(Global)
-
-    @inbounds begin
-        b[i] = fzero
     end
 end

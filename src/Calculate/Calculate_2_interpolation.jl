@@ -36,6 +36,8 @@ end
 
     # backend = _get_backend(mesh)
     $(unpacked_BCs...) 
+    # Added below for testing
+    KernelAbstractions.synchronize(backend)
     end
 end
 
@@ -51,7 +53,7 @@ function adjust_boundary!(b_cpu, BC::Dirichlet, phif::FaceScalarField, phi, boun
 
     kernel! = adjust_boundary_dirichlet_scalar!(backend, workgroup)
     kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = kernel_range)
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 function adjust_boundary!(b_cpu, BC::Neumann, phif::FaceScalarField, phi, boundaries, boundary_cellsID, backend, workgroup)
@@ -63,7 +65,7 @@ function adjust_boundary!(b_cpu, BC::Neumann, phif::FaceScalarField, phi, bounda
 
     kernel! = adjust_boundary_neumann_scalar!(backend, workgroup)
     kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = kernel_range)
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 ## SCALAR BOUNDARY FUNCTIONS
@@ -108,7 +110,7 @@ function adjust_boundary!(b_cpu, BC::Dirichlet, psif::FaceVectorField, psi::Vect
 
     kernel! = adjust_boundary_dirichlet_vector!(backend, workgroup)
     kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = kernel_range)
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 function adjust_boundary!(b_cpu, BC::Neumann, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, backend, workgroup)
@@ -118,7 +120,7 @@ function adjust_boundary!(b_cpu, BC::Neumann, psif::FaceVectorField, psi::Vector
 
     kernel! = adjust_boundary_neumann_vector!(backend, workgroup)
     kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = kernel_range)
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function adjust_boundary_dirichlet_vector!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z)

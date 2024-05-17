@@ -43,14 +43,18 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.6,
+        relax       = 0.8,
+        rtol = 1e-4,
+        atol = 1e-2
     ),
     p = set_solver(
         model.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.4,
+        relax       = 0.2,
+        rtol = 1e-4,
+        atol = 1e-3
     )
 )
 
@@ -59,20 +63,20 @@ schemes = (
     p = set_schemes(divergence=Upwind, gradient=Midpoint)
 )
 
-runtime = set_runtime(iterations=2000, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
+
+hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
-GC.gc()
+GC.gc(true)
 
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-backend = CUDABackend() # 357 s
-# backend = CPU()
-
-Rx, Ry, Rp, model1 = simple!(model, config, backend); #, pref=0.0)
+Rx, Ry, Rz, Rp, model = simple!(model, config); #, pref=0.0)
 
 plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

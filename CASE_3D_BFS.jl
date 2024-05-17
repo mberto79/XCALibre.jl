@@ -77,7 +77,7 @@ hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
-GC.gc()
+GC.gc(true)
 
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)

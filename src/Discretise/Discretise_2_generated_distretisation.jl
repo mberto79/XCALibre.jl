@@ -34,7 +34,6 @@ end
 @kernel function _discretise!(
     model::Model{TN,SN,T,S}, terms, sources, mesh, nzval_array::AbstractArray{F}, rowval_array, colptr_array, b_array, prev, runtime) where {TN,SN,T,S,F}
     i = @index(Global)
-    
     # Extract mesh fields for kernel
     (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
 

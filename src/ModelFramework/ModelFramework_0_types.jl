@@ -164,7 +164,7 @@ function nzval_index(colptr, rowval, start_index, required_index, ione)
     return start + offset - ione
 end
 
-function spindex(colptr, rowval, i::T, j::T) where T
+function spindex(colptr::AbstractArray{T}, rowval, i, j) where T
 
     # rows = rowvals(A)
     start_ind = colptr[j]

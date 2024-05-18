@@ -11,7 +11,7 @@ piso!(model_in, config; resume=true, pref=nothing) = begin
 end
 
 function PISO(
-    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config ; resume, pref)
+    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config, volumes ; resume, pref)
     
     # Extract model variables and configuration
     (;mesh, U, p, nu) = model
@@ -66,29 +66,35 @@ function PISO(
     @time for iteration ∈ 1:iterations
 
         # X velocity calculations
-        @. prev = U.x.values
-        discretise!(ux_eqn, prev, config)
+        # @. prev = U.x.values
+        discretise!(ux_eqn, U.x.values, config)
+        uy_eqn.equation.A.nzVal .= ux_eqn.equation.A.nzVal
+        uz_eqn.equation.A.nzVal .= ux_eqn.equation.A.nzVal
+        # uy_eqn.equation.b .= ux_eqn.equation.b
+        # uz_eqn.equation.b .= ux_eqn.equation.b
+        uy_eqn.equation.b .= -∇p.result.y.values.*volumes .+ U.y.values.*volumes/runtime.dt
+        uz_eqn.equation.b .= -∇p.result.z.values.*volumes .+ U.z.values.*volumes/runtime.dt
         apply_boundary_conditions!(ux_eqn, U.x.BCs, config)
-        implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh, config)
+        implicit_relaxation!(ux_eqn, U.x.values, solvers.U.relax, mesh, config)
         update_preconditioner!(ux_eqn.preconditioner, mesh, config)
         run!(ux_eqn, solvers.U, U.x, config)
         residual!(R_ux, ux_eqn.equation, U.x, iteration, config)
 
         # Y velocity calculations
-        @. prev = U.y.values
-        discretise!(uy_eqn, prev, config)
+        # @. prev = U.y.values
+        # discretise!(uy_eqn, prev, config)
         apply_boundary_conditions!(uy_eqn, U.y.BCs, config)
-        implicit_relaxation!(uy_eqn, prev, solvers.U.relax, mesh, config)
+        implicit_relaxation!(uy_eqn, U.y.values, solvers.U.relax, mesh, config)
         update_preconditioner!(uy_eqn.preconditioner, mesh, config)
         run!(uy_eqn, solvers.U, U.y, config)
         residual!(R_uy, uy_eqn.equation, U.y, iteration, config)
 
         # Z velocity calculations (3D Mesh only)
         if typeof(mesh) <: Mesh3
-            @. prev = U.z.values
-            discretise!(uz_eqn, prev, config)
+            # @. prev = U.z.values
+            # discretise!(uz_eqn, prev, config)
             apply_boundary_conditions!(uz_eqn, U.z.BCs, config)
-            implicit_relaxation!(uz_eqn, prev, solvers.U.relax, mesh, config)
+            implicit_relaxation!(uz_eqn, U.z.values, solvers.U.relax, mesh, config)
             update_preconditioner!(uz_eqn.preconditioner, mesh, config)
             run!(uz_eqn, solvers.U, U.z, config)
             residual!(R_uz, uz_eqn.equation, U.z, iteration, config)

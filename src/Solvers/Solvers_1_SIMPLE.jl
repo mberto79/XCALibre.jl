@@ -18,6 +18,8 @@ function setup_incompressible_solvers(
     (; solvers, schemes, runtime, hardware) = config
 
     @info "Extracting configuration and input fields..."
+    volumes = cu((getproperty.(model_in.mesh.cells, :volume)))
+
     model = adapt(hardware.backend, model_in)
     # model = model_in
     (; U, p, nu, mesh) = model
@@ -88,13 +90,13 @@ function setup_incompressible_solvers(
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
 
     R_ux, R_uy, R_uz, R_p, model  = solver_variant(
-    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config ; resume=resume, pref=pref)
+    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config, volumes; resume=resume, pref=pref)
 
     return R_ux, R_uy, R_uz, R_p, model    
 end # end function
 
 function SIMPLE(
-    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config ; resume, pref)
+    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config, volumes ; resume, pref)
     
     # Extract model variables and configuration
     (;mesh, U, p, nu) = model
@@ -146,32 +148,41 @@ function SIMPLE(
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
+
     @time for iteration ∈ 1:iterations
 
         # X velocity calculations
-        @. prev = U.x.values
-        discretise!(ux_eqn, prev, config)
+        # @. prev = U.x.values
+        # discretise!(ux_eqn, prev, config)
+        discretise!(ux_eqn, U.x.values, config)
+        uy_eqn.equation.A.nzVal .= ux_eqn.equation.A.nzVal
+        uz_eqn.equation.A.nzVal .= ux_eqn.equation.A.nzVal
+        # uy_eqn.equation.b .= ux_eqn.equation.b
+        # uz_eqn.equation.b .= ux_eqn.equation.b
+        uy_eqn.equation.b .= -∇p.result.y.values.*volumes
+        uz_eqn.equation.b .= -∇p.result.z.values.*volumes
         apply_boundary_conditions!(ux_eqn, U.x.BCs, config)
-        implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh, config)
+        # implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh, config)
+        implicit_relaxation!(ux_eqn, U.x.values, solvers.U.relax, mesh, config)
         update_preconditioner!(ux_eqn.preconditioner, mesh, config)
         run!(ux_eqn, solvers.U, U.x, config)
         residual!(R_ux, ux_eqn.equation, U.x, iteration, config)
 
         # Y velocity calculations
-        @. prev = U.y.values
-        discretise!(uy_eqn, prev, config)
+        # @. prev = U.y.values
+        # discretise!(uy_eqn, prev, config)
         apply_boundary_conditions!(uy_eqn, U.y.BCs, config)
-        implicit_relaxation!(uy_eqn, prev, solvers.U.relax, mesh, config)
+        implicit_relaxation!(uy_eqn, U.y.values, solvers.U.relax, mesh, config)
         update_preconditioner!(uy_eqn.preconditioner, mesh, config)
         run!(uy_eqn, solvers.U, U.y, config)
         residual!(R_uy, uy_eqn.equation, U.y, iteration, config)
 
         # Z velocity calculations (3D Mesh only)
         if typeof(mesh) <: Mesh3
-            @. prev = U.z.values
-            discretise!(uz_eqn, prev, config)
+            # @. prev = U.z.values
+            # discretise!(uz_eqn, prev, config)
             apply_boundary_conditions!(uz_eqn, U.z.BCs, config)
-            implicit_relaxation!(uz_eqn, prev, solvers.U.relax, mesh, config)
+            implicit_relaxation!(uz_eqn, U.z.values, solvers.U.relax, mesh, config)
             update_preconditioner!(uz_eqn.preconditioner, mesh, config)
             run!(uz_eqn, solvers.U, U.z, config)
             residual!(R_uz, uz_eqn.equation, U.z, iteration, config)
@@ -190,7 +201,7 @@ function SIMPLE(
         
         # Pressure calculations
         @. prev = p.values
-        discretise!(p_eqn, prev, config)
+        discretise!(p_eqn, p.values, config)
         apply_boundary_conditions!(p_eqn, p.BCs, config)
         setReference!(p_eqn, pref, 1, config)
         update_preconditioner!(p_eqn.preconditioner, mesh, config)

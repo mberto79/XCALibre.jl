@@ -49,6 +49,11 @@ Base.:(==)(a::Vector{<:Operator}, b::Vector{<:Src}) = begin
     Model{length(a), length(b)}((a...,),(b...,))
 end
 
-(→)(model::Model, eqn::Equation) = begin
-    ModelEquation(model, eqn, (), ())
+(→)(model::Model{TN,SN,T,S}, eqn::AbstractEquation) where {TN,SN,T,S}= begin
+    # To-do: Add runtime check to ensure both sides are consistent (for now document)
+    if S.parameters[1].parameters[1] <: AbstractScalarField
+        ModelEquation(ScalarModel(), model, eqn, (), ())
+    elseif S.parameters[1].parameters[1] <: AbstractVectorField
+        ModelEquation(VectorModel(), model, eqn, (), ())
+    end
 end

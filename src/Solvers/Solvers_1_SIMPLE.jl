@@ -30,47 +30,58 @@ function setup_incompressible_solvers(
     mdotf = FaceScalarField(mesh)
     rDf = FaceScalarField(mesh)
     nueff = FaceScalarField(mesh)
-    initialise!(rDf, 1.0)
+    # initialise!(rDf, 1.0)
+    rDf.values .= 1.0
     divHv = ScalarField(mesh)
 
     @info "Defining models..."
 
-    ux_eqn = (
-        Time{schemes.U.time}(U.x)
-        + Divergence{schemes.U.divergence}(mdotf, U.x) 
-        - Laplacian{schemes.U.laplacian}(nueff, U.x) 
-        == 
-        -Source(∇p.result.x)
-    ) → Equation(mesh)
-    
-    uy_eqn = (
-        Time{schemes.U.time}(U.y)
-        + Divergence{schemes.U.divergence}(mdotf, U.y) 
-        - Laplacian{schemes.U.laplacian}(nueff, U.y) 
-        == 
-        -Source(∇p.result.y)
-    ) → Equation(mesh)
+    # ux_eqn = (
+    #     Time{schemes.U.time}(U.x)
+    #     + Divergence{schemes.U.divergence}(mdotf, U.x) 
+    #     - Laplacian{schemes.U.laplacian}(nueff, U.x) 
+    #     == 
+    #     -Source(∇p.result.x)
+    # ) → Equation(mesh)
 
-    uz_eqn = (
-        Time{schemes.U.time}(U.z)
-        + Divergence{schemes.U.divergence}(mdotf, U.z) 
-        - Laplacian{schemes.U.laplacian}(nueff, U.z) 
+    # uy_eqn = (
+    #     Time{schemes.U.time}(U.y)
+    #     + Divergence{schemes.U.divergence}(mdotf, U.y) 
+    #     - Laplacian{schemes.U.laplacian}(nueff, U.y) 
+    #     == 
+    #     -Source(∇p.result.y)
+    # ) → Equation(mesh)
+
+    # uz_eqn = (
+    #     Time{schemes.U.time}(U.z)
+    #     + Divergence{schemes.U.divergence}(mdotf, U.z) 
+    #     - Laplacian{schemes.U.laplacian}(nueff, U.z) 
+    #     == 
+    #     -Source(∇p.result.z)
+    # ) → Equation(mesh)
+
+    U_eqn = (
+        Time{schemes.U.time}(U)
+        + Divergence{schemes.U.divergence}(mdotf, U) 
+        - Laplacian{schemes.U.laplacian}(nueff, U) 
         == 
-        -Source(∇p.result.z)
-    ) → Equation(mesh)
+        -Source(∇p.result)
+    ) → VectorEquation(mesh)
 
     p_eqn = (
         Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
-    ) → Equation(mesh)
+    ) → ScalarEquation(mesh)
 
     CUDA.allowscalar(false)
 
     @info "Initialising preconditioners..."
 
-    @reset ux_eqn.preconditioner = set_preconditioner(
-                    solvers.U.preconditioner, ux_eqn, U.x.BCs, config)
-    @reset uy_eqn.preconditioner = ux_eqn.preconditioner
-    @reset uz_eqn.preconditioner = ux_eqn.preconditioner
+    # @reset ux_eqn.preconditioner = set_preconditioner(
+    #                 solvers.U.preconditioner, ux_eqn, U.x.BCs, config)
+    # @reset uy_eqn.preconditioner = ux_eqn.preconditioner
+    # @reset uz_eqn.preconditioner = ux_eqn.preconditioner
+    @reset U_eqn.preconditioner = set_preconditioner(
+                    solvers.U.preconditioner, U_eqn, U.BCs, config)
     @reset p_eqn.preconditioner = set_preconditioner(
                     solvers.p.preconditioner, p_eqn, p.BCs, config)
 
@@ -84,19 +95,20 @@ function setup_incompressible_solvers(
 
     @info "Pre-allocating solvers..."
      
-    @reset ux_eqn.solver = solvers.U.solver(_A(ux_eqn), _b(ux_eqn))
-    @reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
-    @reset uz_eqn.solver = solvers.U.solver(_A(uz_eqn), _b(uz_eqn))
+    # @reset ux_eqn.solver = solvers.U.solver(_A(ux_eqn), _b(ux_eqn))
+    # @reset uy_eqn.solver = solvers.U.solver(_A(uy_eqn), _b(uy_eqn))
+    # @reset uz_eqn.solver = solvers.U.solver(_A(uz_eqn), _b(uz_eqn))
+    @reset U_eqn.solver = solvers.U.solver(_A(U_eqn), _b(U_eqn, XDir()))
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
 
     R_ux, R_uy, R_uz, R_p, model  = solver_variant(
-    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config, volumes; resume=resume, pref=pref)
+    model, ∇p, U_eqn, p_eqn, turbulence, config, volumes; resume=resume, pref=pref)
 
     return R_ux, R_uy, R_uz, R_p, model    
 end # end function
 
 function SIMPLE(
-    model, ∇p, ux_eqn, uy_eqn, uz_eqn, p_eqn, turbulence, config, volumes ; resume, pref)
+    model, ∇p, U_eqn, p_eqn, turbulence, config, volumes ; resume, pref)
     
     # Extract model variables and configuration
     (;mesh, U, p, nu) = model
@@ -105,8 +117,8 @@ function SIMPLE(
     (; iterations, write_interval) = runtime
     (; backend) = hardware
     
-    mdotf = get_flux(ux_eqn, 2)
-    nueff = get_flux(ux_eqn, 3)
+    mdotf = get_flux(U_eqn, 2)
+    nueff = get_flux(U_eqn, 3)
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
     
@@ -148,51 +160,72 @@ function SIMPLE(
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
+    Atemp = similar(U_eqn.equation.A)
 
     @time for iteration ∈ 1:iterations
 
         # X velocity calculations
         # @. prev = U.x.values
         # discretise!(ux_eqn, prev, config)
-        discretise!(ux_eqn, U.x.values, config)
-        uy_eqn.equation.A.nzVal .= ux_eqn.equation.A.nzVal
-        uz_eqn.equation.A.nzVal .= ux_eqn.equation.A.nzVal
+        discretise!(U_eqn, U.x.values, config)
+        update_equation!(U_eqn, config)
+
+        # uy_eqn.equation.A.nzVal .= ux_eqn.equation.A.nzVal
+        # uz_eqn.equation.A.nzVal .= ux_eqn.equation.A.nzVal
         # uy_eqn.equation.b .= ux_eqn.equation.b
         # uz_eqn.equation.b .= ux_eqn.equation.b
-        uy_eqn.equation.b .= -∇p.result.y.values.*volumes
-        uz_eqn.equation.b .= -∇p.result.z.values.*volumes
-        apply_boundary_conditions!(ux_eqn, U.x.BCs, config)
-        # implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh, config)
-        implicit_relaxation!(ux_eqn, U.x.values, solvers.U.relax, mesh, config)
-        update_preconditioner!(ux_eqn.preconditioner, mesh, config)
-        run!(ux_eqn, solvers.U, U.x, config)
-        residual!(R_ux, ux_eqn.equation, U.x, iteration, config)
+        # uy_eqn.equation.b .= -∇p.result.y.values.*volumes
+        # uz_eqn.equation.b .= -∇p.result.z.values.*volumes
 
+        
+        # apply_boundary_conditions!(U_eqn, U.x.BCs, config)
+        apply_boundary_conditions!(U_eqn, U.x.BCs, XDir(), config)
+        implicit_relaxation!(U_eqn, U.x.values, solvers.U.relax, mesh, XDir(), config)
+        update_preconditioner!(U_eqn.preconditioner, mesh, config)
+        run!(U_eqn, solvers.U, U.x, XDir(), config)
+        residual!(R_ux, U_eqn, U.x, iteration, XDir(), config)
+        
+        
         # Y velocity calculations
         # @. prev = U.y.values
         # discretise!(uy_eqn, prev, config)
-        apply_boundary_conditions!(uy_eqn, U.y.BCs, config)
-        implicit_relaxation!(uy_eqn, U.y.values, solvers.U.relax, mesh, config)
-        update_preconditioner!(uy_eqn.preconditioner, mesh, config)
-        run!(uy_eqn, solvers.U, U.y, config)
-        residual!(R_uy, uy_eqn.equation, U.y, iteration, config)
+        # apply_boundary_conditions!(uy_eqn, U.y.BCs, config)
+        # implicit_relaxation!(uy_eqn, U.y.values, solvers.U.relax, mesh, config)
+        # update_preconditioner!(uy_eqn.preconditioner, mesh, config)
+        # run!(uy_eqn, solvers.U, U.y, config)
+        # residual!(R_uy, uy_eqn.equation, U.y, iteration, config)
+
+        update_equation!(U_eqn, config)
+        apply_boundary_conditions!(U_eqn, U.y.BCs, YDir(), config)
+        implicit_relaxation!(U_eqn, U.y.values, solvers.U.relax, mesh, YDir(), config)
+        update_preconditioner!(U_eqn.preconditioner, mesh, config)
+        run!(U_eqn, solvers.U, U.y, YDir(), config)
+        residual!(R_uy, U_eqn, U.y, iteration, YDir(), config)
 
         # Z velocity calculations (3D Mesh only)
         if typeof(mesh) <: Mesh3
-            # @. prev = U.z.values
-            # discretise!(uz_eqn, prev, config)
-            apply_boundary_conditions!(uz_eqn, U.z.BCs, config)
-            implicit_relaxation!(uz_eqn, U.z.values, solvers.U.relax, mesh, config)
-            update_preconditioner!(uz_eqn.preconditioner, mesh, config)
-            run!(uz_eqn, solvers.U, U.z, config)
-            residual!(R_uz, uz_eqn.equation, U.z, iteration, config)
+            # # @. prev = U.z.values
+            # # discretise!(uz_eqn, prev, config)
+            # apply_boundary_conditions!(uz_eqn, U.z.BCs, config)
+            # implicit_relaxation!(uz_eqn, U.z.values, solvers.U.relax, mesh, config)
+            # update_preconditioner!(uz_eqn.preconditioner, mesh, config)
+            # run!(uz_eqn, solvers.U, U.z, config)
+            # residual!(R_uz, uz_eqn.equation, U.z, iteration, config)
+
+            update_equation!(U_eqn, config)
+            apply_boundary_conditions!(U_eqn, U.z.BCs, ZDir(), config)
+            implicit_relaxation!(U_eqn, U.z.values, solvers.U.relax, mesh, ZDir(), config)
+            update_preconditioner!(U_eqn.preconditioner, mesh, config)
+            run!(U_eqn, solvers.U, U.z, ZDir(), config)
+            residual!(R_uz, U_eqn, U.z, iteration, ZDir(), config)
         end
-          
+
+        
         # Pressure correction
-        inverse_diagonal!(rD, ux_eqn, config)
+        inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rDf, rD, config)
-        remove_pressure_source!(ux_eqn, uy_eqn, uz_eqn, ∇p, config)
-        H!(Hv, U, ux_eqn, uy_eqn, uz_eqn, config)
+        remove_pressure_source!(U_eqn, ∇p, config)
+        H!(Hv, U, U_eqn, config)
         
         # Interpolate faces
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
@@ -202,15 +235,21 @@ function SIMPLE(
         # Pressure calculations
         @. prev = p.values
         discretise!(p_eqn, p.values, config)
-        apply_boundary_conditions!(p_eqn, p.BCs, config)
+        # apply_boundary_conditions!(p_eqn, p.BCs, config)
+        # setReference!(p_eqn, pref, 1, config)
+        # update_preconditioner!(p_eqn.preconditioner, mesh, config)
+        # run!(p_eqn, solvers.p, p, config)
+        
+        apply_boundary_conditions!(p_eqn, p.BCs, nothing, config)
         setReference!(p_eqn, pref, 1, config)
         update_preconditioner!(p_eqn.preconditioner, mesh, config)
-        run!(p_eqn, solvers.p, p, config)
-
+        run!(p_eqn, solvers.p, p, nothing, config)
+        
         # Relaxation and residual
         explicit_relaxation!(p, prev, solvers.p.relax, config)
-        residual!(R_p, p_eqn.equation, p, iteration, config)
-
+        # residual!(R_p, p_eqn.equation, p, iteration, config)
+        residual!(R_p, p_eqn, p, iteration, nothing, config)
+        
         # Gradient
         grad!(∇p, pf, p, p.BCs, config) 
 

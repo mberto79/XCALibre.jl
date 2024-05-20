@@ -1,13 +1,14 @@
 export apply_boundary_conditions!
 export get_boundaries
 
-apply_boundary_conditions!(eqn, BCs, config) = begin
-    _apply_boundary_conditions!(eqn.model, BCs, eqn, config)
+
+apply_boundary_conditions!(eqn, BCs, component, config) = begin
+    _apply_boundary_conditions!(eqn.model, BCs, eqn, component, config)
 end
 
 # Apply Boundaries Function
 function _apply_boundary_conditions!(
-    model::Model{TN,SN,T,S}, BCs::B, eqn, config) where {T,S,TN,SN,B}
+    model::Model{TN,SN,T,S}, BCs::B, eqn, component,config) where {TN,SN,T,S,B}
     nTerms = length(model.terms)
 
     # backend = _get_backend(mesh)
@@ -17,7 +18,7 @@ function _apply_boundary_conditions!(
     # Retriecve variables for function
     mesh = model.terms[1].phi.mesh
     A = _A(eqn)
-    b = _b(eqn)
+    b = _b(eqn, component)
 
     # Deconstruct mesh to required fields
     (; faces, cells, boundary_cellsID) = mesh
@@ -40,7 +41,7 @@ function _apply_boundary_conditions!(
         # Execute apply boundary conditions kernel
         kernel! = apply_boundary_conditions_kernel!(backend, workgroup)
         kernel!(
-            model, BC, model.terms, faces, cells, start_ID, boundary_cellsID, rowval, colptr, nzval, b, ione, ndrange=length(facesID_range)
+            model, BC, model.terms, faces, cells, start_ID, boundary_cellsID, rowval, colptr, nzval, b, ione, component, ndrange=length(facesID_range)
             )
         # KernelAbstractions.synchronize(backend)
     end
@@ -66,7 +67,7 @@ end
 # Apply boundary conditions kernel definition
 @kernel function apply_boundary_conditions_kernel!(
     model::Model{TN,SN,T,S}, BC, terms, 
-    faces, cells, start_ID, boundary_cellsID, rowval, colptr, nzval, b, ione
+    faces, cells, start_ID, boundary_cellsID, rowval, colptr, nzval, b, ione, component
     ) where {TN,SN,T,S}
     i = @index(Global)
 
@@ -80,19 +81,19 @@ end
     cell = cells[cellID] 
 
     # Call apply generated function
-    apply!(model, BC, terms, rowval, colptr, nzval, b, cellID, cell, face, faceID, ione)
+    apply!(model, BC, terms, rowval, colptr, nzval, b, cellID, cell, face, faceID, ione, component)
 end
 
 # Apply generated function definition
 @generated function apply!(
     model::Model{TN,SN,T,S}, BC, terms, 
-    rowval, colptr, nzval, b, cellID, cell, face, fID, ione) where {TN,SN,T,S}
+    rowval, colptr, nzval, b, cellID, cell, face, fID, ione, component) where {TN,SN,T,S}
 
     # Definition of main assignment loop (one per patch)
     func_calls = Expr[]
     for t ∈ 1:TN 
         call = quote
-            (BC)(terms[$t], rowval, colptr, nzval, b, cellID, cell, face, fID, ione)
+            (BC)(terms[$t], rowval, colptr, nzval, b, cellID, cell, face, fID, ione, component)
         end
         push!(func_calls, call)
     end
@@ -121,3 +122,4 @@ end
         return BC_indices
     end
 end
+

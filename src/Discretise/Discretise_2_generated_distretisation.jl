@@ -1,8 +1,7 @@
-export discretise!
+export discretise!, update_equation!
 
-# Discretise Function
-function discretise!(eqn, prev, config)
-
+function discretise!(
+    eqn::ModelEquation{T,M,E,S,P}, prev, config) where {T<:VectorModel,M,E,S,P}
     (; hardware, runtime) = config
     (; backend, workgroup) = hardware
 
@@ -11,28 +10,31 @@ function discretise!(eqn, prev, config)
     model = eqn.model
 
     # Sparse array and b accessor call
-    A_array = _A(eqn)
-    b_array = _b(eqn)
+    A = _A(eqn)
+    A0 = _A0(eqn)
+    bx = _b(eqn, XDir())
+    by = _b(eqn, YDir())
+    bz = _b(eqn, ZDir())
 
     # Sparse array fields accessors
-    nzval_array = _nzval(A_array)
-    rowval_array = _rowval(A_array)
-    colptr_array = _colptr(A_array)
+    nzval = _nzval(A)
+    nzval0 = _nzval(A0)
+    rowval = _rowval(A)
+    colptr = _colptr(A)
 
     # Call set nzval to zero kernel
-    kernel! = set_nzval!(backend, workgroup)
-    kernel!(nzval_array, ndrange = length(nzval_array))
-    KernelAbstractions.synchronize(backend)
+    # kernel! = set_nzval!(backend, workgroup)
+    # kernel!(nzval0, ndrange = length(nzval0))
+    # KernelAbstractions.synchronize(backend)
 
     # Call discretise kernel
-    kernel! = _discretise!(backend, workgroup)
-    kernel!(model, model.terms, model.sources, mesh, nzval_array, rowval_array, colptr_array, b_array, prev, runtime; ndrange = length(mesh.cells))
+    kernel! = _discretise_vector_model!(backend, workgroup)
+    kernel!(model, model.terms, model.sources, mesh, nzval0, nzval, rowval, colptr, bx, by, bz, prev, runtime; ndrange = length(mesh.cells))
     KernelAbstractions.synchronize(backend)
 end
 
-# Discretise kernel function
-@kernel function _discretise!(
-    model::Model{TN,SN,T,S}, terms, sources, mesh, nzval_array::AbstractArray{F}, rowval_array, colptr_array, b_array, prev, runtime) where {TN,SN,T,S,F}
+@kernel function _discretise_vector_model!(
+    model::Model{TN,SN,T,S}, terms, sources, mesh, nzval0::AbstractArray{F}, nzval, rowval, colptr, bx, by, bz, prev, runtime) where {TN,SN,T,S,F}
     i = @index(Global)
     # Extract mesh fields for kernel
     (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
@@ -42,10 +44,12 @@ end
         cell = cells[i]
         (; faces_range, volume) = cell
 
-        b_array[i] = zero(F)
+        bx[i] = zero(F)
+        by[i] = zero(F)
+        bz[i] = zero(F)
 
         # Set index for sparse array values on diagonal
-        cIndex = spindex(colptr_array, rowval_array, i, i)
+        cIndex = spindex(colptr, rowval, i, i)
 
         # For loop over workitem cell faces
         ac_sum = zero(F)
@@ -58,34 +62,114 @@ end
             cellN = cells[nID]
             
             # Set index for sparse array values at workitem cell neighbour index
-            nIndex = spindex(colptr_array, rowval_array, i, nID)
+            nIndex = spindex(colptr, rowval, i, nID)
+            nzval0[nIndex] = zero(F)
+            # nzval[nIndex] = zero(F)
 
             # Call scheme generated fucntion
-            ac, an = _scheme!(model, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+            ac, an = _scheme!(model, terms, nzval0, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
             ac_sum += ac
-            nzval_array[nIndex] += an
+            nzval0[nIndex] += an
+            # nzval[nIndex] += an
         end
-        nzval_array[cIndex] = ac_sum
+        nzval0[cIndex] = ac_sum
+        nzval[cIndex] = ac_sum
 
-        # Call scheme source generated function
-        _scheme_source!(model, terms, b_array, nzval_array, cell, i, cIndex, prev, runtime)
+        # Call scheme source generated function NEEDS UPDATING!
+        _scheme_source!(model, terms, bx, nzval0, cell, i, cIndex, prev, runtime)
+
 
         # Call sources generated function
-        _sources!(model, sources, b_array, volume, i)
+        bx[i], by[i], bz[i] = _sources!(model, sources, volume, i)
+    end
+end
+
+function discretise!(
+    eqn::ModelEquation{T,M,E,S,P}, prev, config) where {T<:ScalarModel,M,E,S,P}
+
+    (; hardware, runtime) = config
+    (; backend, workgroup) = hardware
+
+    # Retrieve variabels for defition
+    mesh = eqn.model.terms[1].phi.mesh
+    model = eqn.model
+
+    # Sparse array and b accessor call
+    A = _A(eqn)
+    b = _b(eqn)
+
+    # Sparse array fields accessors
+    nzval = _nzval(A)
+    rowval = _rowval(A)
+    colptr = _colptr(A)
+
+    # Call set nzval to zero kernel
+    kernel! = set_nzval!(backend, workgroup)
+    kernel!(nzval, ndrange = length(nzval))
+    KernelAbstractions.synchronize(backend)
+
+    # Call discretise kernel
+    kernel! = _discretise_scalar_model!(backend, workgroup)
+    kernel!(model, model.terms, model.sources, mesh, nzval, rowval, colptr, b, prev, runtime; ndrange = length(mesh.cells))
+    KernelAbstractions.synchronize(backend)
+end
+
+# Discretise kernel function
+@kernel function _discretise_scalar_model!(
+    model::Model{TN,SN,T,S}, terms, sources, mesh, nzval::AbstractArray{F}, rowval, colptr, b, prev, runtime) where {TN,SN,T,S,F}
+    i = @index(Global)
+    # Extract mesh fields for kernel
+    (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
+
+    @inbounds begin
+        # Define workitem cell and extract required fields
+        cell = cells[i]
+        (; faces_range, volume) = cell
+
+        b[i] = zero(F)
+
+        # Set index for sparse array values on diagonal!
+        cIndex = spindex(colptr, rowval, i, i)
+
+        # For loop over workitem cell faces
+        ac_sum = zero(F)
+        for fi in faces_range
+            # Retrieve indices for discretisation
+            fID = cell_faces[fi]
+            ns = cell_nsign[fi] # normal sign
+            face = faces[fID]
+            nID = cell_neighbours[fi]
+            cellN = cells[nID]
+            
+            # Set index for sparse array values at workitem cell neighbour index
+            nIndex = spindex(colptr, rowval, i, nID)
+
+            # Call scheme generated fucntion
+            ac, an = _scheme!(model, terms, nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+            ac_sum += ac
+            nzval[nIndex] += an
+        end
+        nzval[cIndex] = ac_sum
+
+        # Call scheme source generated function
+        _scheme_source!(model, terms, b, nzval, cell, i, cIndex, prev, runtime)
+
+        # Call sources generated function
+        b[i] = _sources!(model, sources, volume, i)
     end
 end
 
 return_quote(x, t) = :(nothing)
 
 # Scheme generated function definition
-@generated function _scheme!(model::Model{TN,SN,T,S}, terms, nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime) where {TN,SN,T,S}
+@generated function _scheme!(model::Model{TN,SN,T,S}, terms, nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime) where {TN,SN,T,S}
     # Allocate expression array to store scheme function
     out = Expr(:block)
 
     # Loop over number of terms and store scheme function in array
     for t in 1:TN
         function_call_scheme = quote
-            ac, an = scheme!(terms[$t], nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+            ac, an = scheme!(terms[$t], nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
             AC += ac
             AN += an
         end
@@ -101,14 +185,14 @@ return_quote(x, t) = :(nothing)
 end
 
 # Scheme source generated function definition
-@generated function _scheme_source!(model::Model{TN,SN,T,S}, terms, b, nzval_array, cell, cID, cIndex, prev, runtime) where {TN,SN,T,S}
+@generated function _scheme_source!(model::Model{TN,SN,T,S}, terms, b, nzval, cell, cID, cIndex, prev, runtime) where {TN,SN,T,S}
     # Allocate expression array to store scheme_source function
     out = Expr(:block)
     
     # Loop over number of terms and store scheme_source function in array
     for t in 1:TN
         function_call_scheme_source = quote
-            scheme_source!(terms[$t], b, nzval_array, cell, cID, cIndex, prev, runtime)
+            scheme_source!(terms[$t], b, nzval, cell, cID, cIndex, prev, runtime)
         end
         push!(out.args, function_call_scheme_source)
     end
@@ -116,26 +200,75 @@ end
 end
 
 # Sources generated function definition
-@generated function _sources!(model::Model{TN,SN,T,S}, sources, b, volume, cID) where {TN,SN,T,S}
+@generated function _sources!(model::Model{TN,SN,T,S}, sources, volume, cID) where {TN,SN,T,S}
     # Allocate expression array to store source function
     out = Expr(:block)
 
     # Loop over number of terms and store source function in array
-    for s in 1:SN
-        expression_call_sources = quote
-            (; field, sign) = sources[$s]
-            b[cID] += sign*field[cID]*volume
+    if S.parameters[1].parameters[1] <: AbstractScalarField
+        for s in 1:SN
+            expression_call_sources = quote
+                (; field, sign) = sources[$s]
+                B += sign*field[cID]*volume
+            end
+            push!(out.args, expression_call_sources)
         end
-        push!(out.args, expression_call_sources)
+        return quote
+            B = 0.0
+            $(out.args...)
+            return B
+        end
+    elseif S.parameters[1].parameters[1] <: AbstractVectorField
+        for s in 1:SN
+            expression_call_sources = quote
+                (; field, sign) = sources[$s]
+                Bx += sign*field.x[cID]*volume
+                By += sign*field.y[cID]*volume
+                Bz += sign*field.z[cID]*volume
+            end
+            push!(out.args, expression_call_sources)
+        end
+        return quote
+            Bx = 0.0
+            By = 0.0
+            Bz = 0.0
+            $(out.args...)
+            return Bx, By, Bz
+        end
     end
-    out
 end
 
-# Set nzval array to zero kernel
 @kernel function set_nzval!(nzval::AbstractArray{T}) where T
     i = @index(Global)
 
     @inbounds begin
         nzval[i] = zero(T)
+    end
+end
+
+# Reset main equation to reuse in segregated solver
+function update_equation!(eqn::ModelEquation{T,M,E,S,P}, config) where {T<:VectorModel,M,E,S,P}
+    (; hardware, runtime) = config
+    (; backend, workgroup) = hardware
+
+    # Sparse array and b accessor call
+    A = _A(eqn)
+    A0 = _A0(eqn)
+
+    # Sparse array fields accessors
+    nzval0 = _nzval(A0)
+    nzval = _nzval(A)
+
+    # Call set nzval to zero kernel
+    kernel! = _update_equation!(backend, workgroup)
+    kernel!(nzval, nzval0, ndrange = length(nzval0))
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _update_equation!(nzval, nzval0) 
+    i = @index(Global)
+
+    @inbounds begin
+        nzval[i] = nzval0[i]
     end
 end

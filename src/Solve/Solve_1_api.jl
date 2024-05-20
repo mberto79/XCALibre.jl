@@ -29,21 +29,22 @@ set_runtime(; iterations::I, write_interval::I, time_step::N) where {I<:Integer,
     (iterations=iterations, dt=time_step, write_interval=write_interval)
 end
 
-function run!(phiEqn::ModelEquation, setup, result, config) # ; opP, solver
+function run!(phiEqn::ModelEquation, setup, result, component, config) # ; opP, solver
 
     (; itmax, atol, rtol) = setup
-    (; A, b) = phiEqn.equation
     precon = phiEqn.preconditioner
     (; P) = precon 
     solver = phiEqn.solver
     (; x) = solver
-
+    
     (; hardware) = config
     (; backend, workgroup) = hardware
     # values_eqn = get_phi(phiEqn).values
     # values_res = result.values
     (; values) = result
-
+    
+    A = _A(phiEqn)
+    b = _b(phiEqn, component)
     # backend = _get_backend(get_phi(phiEqn).mesh)
 
     solve!(
@@ -104,14 +105,16 @@ end
 ## IMPLICIT RELAXATION KERNEL 
 
 # Prepare variables for kernel and call
-function implicit_relaxation!(eqn::E, field, alpha, mesh, config) where E<:ModelEquation
-    (; A, b) = eqn.equation
+function implicit_relaxation!(
+    phiEqn::E, field, alpha, mesh, component, config) where E<:ModelEquation
     # backend = _get_backend(mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware
-    precon = eqn.preconditioner
+    precon = phiEqn.preconditioner
     # Output sparse matrix properties and values
     # rowval, colptr, nzval = sparse_array_deconstructor(A)
+    A = _A(phiEqn)
+    b = _b(phiEqn, component)
     rowval_array = _rowval(A)
     colptr_array = _colptr(A)
     nzval_array = _nzval(A)

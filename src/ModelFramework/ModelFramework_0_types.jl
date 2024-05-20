@@ -1,7 +1,7 @@
-export AbstractOperator, AbstractSource   
+export AbstractOperator, AbstractSource, AbstractEquation   
 export Operator, Source, Src
 export Time, Laplacian, Divergence, Si
-export Model, Equation, ModelEquation
+export Model, ScalarEquation, VectorEquation, ModelEquation, ScalarModel, VectorModel
 export nzval_index
 export spindex
 
@@ -9,6 +9,7 @@ export spindex
 
 abstract type AbstractSource end
 abstract type AbstractOperator end
+abstract type AbstractEquation end
 
 # OPERATORS
 
@@ -103,21 +104,48 @@ end
 # Linear system matrix equation
 
 ## ORIGINAL STRUCTURE PARAMETERISED FOR GPU
-struct Equation{VTf<:AbstractVector, ASA<:AbstractSparseArray}
+struct ScalarEquation{VTf<:AbstractVector, ASA<:AbstractSparseArray} <: AbstractEquation
     A::ASA
     b::VTf
     R::VTf
     Fx::VTf
 end
-Adapt.@adapt_structure Equation
-Equation(mesh::AbstractMesh) = begin
+Adapt.@adapt_structure ScalarEquation
+ScalarEquation(mesh::AbstractMesh) = begin
     nCells = length(mesh.cells)
     Tf = _get_float(mesh)
-    mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution (sparse_matrix_connectivity should be kernel!!!!!!!)
-    i, j, v = sparse_matrix_connectivity(mesh_temp)
+    mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
+    i, j, v = sparse_matrix_connectivity(mesh_temp) # This needs to be a kernel
     backend = _get_backend(mesh)
-    Equation(
+    ScalarEquation(
         _convert_array!(sparse(i, j, v), backend) ,
+        _convert_array!(zeros(Tf, nCells), backend),
+        _convert_array!(zeros(Tf, nCells), backend),
+        _convert_array!(zeros(Tf, nCells), backend)
+        )
+end
+
+struct VectorEquation{VTf<:AbstractVector, ASA<:AbstractSparseArray} <: AbstractEquation
+    A0::ASA
+    A::ASA
+    bx::VTf
+    by::VTf
+    bz::VTf
+    R::VTf
+    Fx::VTf
+end
+Adapt.@adapt_structure VectorEquation
+VectorEquation(mesh::AbstractMesh) = begin
+    nCells = length(mesh.cells)
+    Tf = _get_float(mesh)
+    mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
+    i, j, v = sparse_matrix_connectivity(mesh_temp) # This needs to be a kernel
+    backend = _get_backend(mesh)
+    VectorEquation(
+        _convert_array!(sparse(i, j, v), backend) ,
+        _convert_array!(sparse(i, j, v), backend) ,
+        _convert_array!(zeros(Tf, nCells), backend),
+        _convert_array!(zeros(Tf, nCells), backend),
         _convert_array!(zeros(Tf, nCells), backend),
         _convert_array!(zeros(Tf, nCells), backend),
         _convert_array!(zeros(Tf, nCells), backend)
@@ -184,7 +212,14 @@ function spindex(colptr::AbstractArray{T}, rowval, i, j) where T
 end
 
 # Model equation type 
-struct ModelEquation{M,E,S,P}
+struct ScalarModel end
+Adapt.@adapt_structure ScalarModel
+
+struct VectorModel end
+Adapt.@adapt_structure VectorModel
+
+struct ModelEquation{T,M,E,S,P}
+    type::T
     model::M 
     equation::E 
     solver::S

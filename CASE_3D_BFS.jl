@@ -4,7 +4,6 @@ using Krylov
 using KernelAbstractions
 using CUDA
 
-
 # bfs_unv_tet_15mm, 10mm, 5mm, 4mm, 3mm
 mesh_file = "unv_sample_meshes/bfs_unv_tet_4mm.unv"
 mesh_file = "unv_sample_meshes/bfs_unv_tet_5mm.unv"
@@ -20,9 +19,7 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 @assign! model U (
     # Dirichlet(:inlet, velocity),
-    # Neumann(:outlet, 0.0),
-    # Dirichlet(:wall, [0.0, 0.0, 0.0]),
-    # Dirichlet(:top, [0.0, 0.0, 0.0]),
+    # Neumann(:outlet, 0.0),0.0]),
     # Dirichlet(:sides, [0.0, 0.0, 0.0])
     Dirichlet(:inlet, velocity),
     Dirichlet(:wall, [0.0, 0.0, 0.0]),
@@ -72,7 +69,7 @@ runtime = set_runtime(
     iterations=500, time_step=1, write_interval=500)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
@@ -103,3 +100,8 @@ Profile.Allocs.@profile sample_rate=1 begin
 end
 
 PProf.Allocs.pprof()
+
+test(::Nothing, a) = print("nothing")
+test(b, a) = print(a*a)
+
+test(nothing, 1)

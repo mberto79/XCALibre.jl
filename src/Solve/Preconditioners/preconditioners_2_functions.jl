@@ -4,10 +4,17 @@ export update_preconditioner!
 set_preconditioner(PT::T, eqn, BCs, config
 ) where T<:PreconditionerType = 
 begin
-    mesh = get_phi(eqn).mesh
+    phi = get_phi(eqn)
+    mesh = phi.mesh
     discretise!(
-        eqn, ConstantScalar(zero(_get_int(mesh))), config)
-    apply_boundary_conditions!(eqn, BCs, config)
+        eqn, ConstantScalar(zero(_get_int(mesh))), config) # should this be float?
+
+    if typeof(phi) <: AbstractVectorField
+        apply_boundary_conditions!(eqn, phi.x.BCs, XDir(1), config)
+    elseif typeof(phi) <: AbstractScalarField
+        apply_boundary_conditions!(eqn, BCs, nothing, config)
+    end
+
     P = Preconditioner{T}(eqn.equation.A)
     update_preconditioner!(P, mesh, config)
     return P
@@ -108,15 +115,6 @@ end
     i = @index(Global)
 
     @inbounds begin
-        # idx_start = colptr[i]
-        # idx_next = colptr[i+1]
-        # @inbounds for p ∈ idx_start:(idx_next-1)
-        #     row = rowval[p]
-        #     if row == i
-        #         idx_diagonal = p
-        #         break
-        #     end
-        # end
         idx_diagonal = spindex(colptr, rowval, i, i)
         storage[i] = 1/abs(nzval[idx_diagonal])
     end

@@ -37,11 +37,12 @@ end
 
 ## RESIDUAL CALCULATIONS
 
-function residual!(Residual, equation, phi, iteration, config)
+function residual!(Residual, eqn, phi, iteration, component, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    (; A, b, R, Fx) = equation
+    (; A, R, Fx) = eqn.equation
+    b = _b(eqn, component)
     values = phi.values
 
     # backend = _get_backend(phi.mesh)
@@ -140,7 +141,7 @@ volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 function inverse_diagonal!(rD::S, eqn, config) where {S<:ScalarField}
     (; hardware) = config
     (; backend, workgroup) = hardware
-    A = eqn.equation.A
+    A = eqn.equation.A # Or should I use A0
     nzval, rowval, colptr = get_sparse_fields(A)
 
     kernel! = inverse_diagonal_kernel!(backend, workgroup)
@@ -203,14 +204,14 @@ end
 
 ## PRESSURE CORRECTION AND SOURCE REMOVAL
 
-remove_pressure_source!(ux_eqn::M1, uy_eqn::M2, uz_eqn::M3, ∇p, config) where {M1,M2,M3} = begin # Extend to 3D
+remove_pressure_source!(U_eqn::ME, ∇p, config) where {ME} = begin # Extend to 3D
     # backend = _get_backend(get_phi(ux_eqn).mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware
-    cells = get_phi(ux_eqn).mesh.cells
-    source_sign = get_source_sign(ux_eqn, 1)
+    cells = get_phi(U_eqn).mesh.cells
+    source_sign = get_source_sign(U_eqn, 1)
     dpdx, dpdy, dpdz = ∇p.result.x, ∇p.result.y, ∇p.result.z
-    bx, by, bz = ux_eqn.equation.b, uy_eqn.equation.b, uz_eqn.equation.b
+    (; bx, by, bz) = U_eqn.equation
 
     kernel! = remove_pressure_source_kernel!(backend, workgroup)
     kernel!(cells, source_sign, dpdx, dpdy, dpdz, bx, by, bz, ndrange=length(bx))
@@ -222,14 +223,18 @@ end
 
     @inbounds begin
         (; volume) = cells[i]
-        Atomix.@atomic bx[i] -= source_sign * dpdx[i] * volume
-        Atomix.@atomic by[i] -= source_sign * dpdy[i] * volume
-        Atomix.@atomic bz[i] -= source_sign * dpdz[i] * volume
+        # Atomix.@atomic bx[i] -= source_sign * dpdx[i] * volume
+        # Atomix.@atomic by[i] -= source_sign * dpdy[i] * volume
+        # Atomix.@atomic bz[i] -= source_sign * dpdz[i] * volume
+
+        bx[i] -= source_sign * dpdx[i] * volume
+        by[i] -= source_sign * dpdy[i] * volume
+        bz[i] -= source_sign * dpdz[i] * volume
     end
 end
 
 # Pressure correction
-function H!(Hv, v::VF, ux_eqn, uy_eqn, uz_eqn, config) where {VF<:VectorField} # Extend to 3D!
+function H!(Hv, v::VF, U_eqn, config) where {VF<:VectorField} # Extend to 3D!
     (; x, y, z, mesh) = Hv
     (; cells, faces) = mesh
     (; cells, cell_neighbours, faces) = mesh
@@ -237,36 +242,38 @@ function H!(Hv, v::VF, ux_eqn, uy_eqn, uz_eqn, config) where {VF<:VectorField} #
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    Ax = _A(ux_eqn)
-    bx = _b(ux_eqn)
-    nzval_x, rowval_x, colptr_x = get_sparse_fields(Ax)
+    # Ax = _A(ux_eqn)
+    # bx = _b(ux_eqn)
+    # nzval_x, rowval_x, colptr_x = get_sparse_fields(Ax)
 
-    Ay = _A(uy_eqn)
-    by = _b(uy_eqn)
-    nzval_y, rowval_y, colptr_y = get_sparse_fields(Ay)
+    # Ay = _A(uy_eqn)
+    # by = _b(uy_eqn)
+    # nzval_y, rowval_y, colptr_y = get_sparse_fields(Ay)
 
-    Az = _A(uz_eqn)
-    bz = _b(uz_eqn)
-    nzval_z, rowval_z, colptr_z = get_sparse_fields(Az)
+    # Az = _A(uz_eqn)
+    # bz = _b(uz_eqn)
+    # nzval_z, rowval_z, colptr_z = get_sparse_fields(Az)
+
+    # A = _A0(U_eqn)
+    A = _A(U_eqn)
+    bx = _b(U_eqn, XDir())
+    by = _b(U_eqn, YDir())
+    bz = _b(U_eqn, ZDir())
+    nzval, rowval, colptr = get_sparse_fields(A)
 
     vx, vy, vz = v.x, v.y, v.z
 
     kernel! = H_kernel!(backend, workgroup)
     kernel!(cells, cell_neighbours,
-        nzval_x, colptr_x, rowval_x, bx, vx,
-        nzval_y, colptr_y, rowval_y, by, vy,
-        nzval_z, colptr_z, rowval_z, bz, vz,
-        x, y, z, ndrange=length(cells))
+    nzval, colptr, rowval, bx, by, bz, vx, vy, vz, x, y, z, ndrange=length(cells))
     KernelAbstractions.synchronize(backend)
 end
 
 # Pressure correction kernel
 @kernel function H_kernel!(cells::AbstractArray{Cell{TF,SV,UR}}, cell_neighbours,
-    nzval_x, colptr_x, rowval_x, bx, vx,
-    nzval_y, colptr_y, rowval_y, by, vy,
-    nzval_z, colptr_z, rowval_z, bz, vz,
-    x, y, z) where {TF,SV,UR}
+    nzval, colptr, rowval, bx, by, bz, vx, vy, vz, x, y, z) where {TF,SV,UR}
     i = @index(Global)
+
     sumx = zero(TF)
     sumy = zero(TF)
     sumz = zero(TF)
@@ -276,21 +283,22 @@ end
 
         for ni ∈ faces_range
             nID = cell_neighbours[ni]
-            xIndex = spindex(colptr_x, rowval_x, i, nID)
-            yIndex = spindex(colptr_y, rowval_y, i, nID)
-            zIndex = spindex(colptr_z, rowval_z, i, nID)
-            sumx += nzval_x[xIndex] * vx[nID]
-            sumy += nzval_y[yIndex] * vy[nID]
-            sumz += nzval_z[zIndex] * vz[nID]
+            zIndex = spindex(colptr, rowval, i, nID)
+            val = nzval[zIndex]
+            sumx += val * vx[nID]
+            sumy += val * vy[nID]
+            sumz += val * vz[nID]
         end
 
         # D = view(Ax, i, i)[1] # add check to use max of Ax or Ay)
-        DIndex = spindex(colptr_x, rowval_x, i, i)
-        Dx = nzval_x[DIndex]
-        Dy = nzval_y[DIndex]
-        Dz = nzval_z[DIndex]
-        Dmax = max(Dx, Dy, Dz)
-        rD = 1 / Dmax
+        DIndex = spindex(colptr, rowval, i, i)
+        # Dx = nzval_x[DIndex]
+        # Dy = nzval_y[DIndex]
+        # Dz = nzval_z[DIndex]
+        # Dmax = max(Dx, Dy, Dz)
+        # rD = 1 / Dmax
+        D = nzval[DIndex]
+        rD = 1/D
         x[i] = (bx[i] - sumx) * rD
         y[i] = (by[i] - sumy) * rD
         z[i] = (bz[i] - sumz) * rD

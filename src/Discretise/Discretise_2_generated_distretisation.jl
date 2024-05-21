@@ -12,9 +12,10 @@ function discretise!(
     # Sparse array and b accessor call
     A = _A(eqn)
     A0 = _A0(eqn)
-    bx = _b(eqn, XDir())
-    by = _b(eqn, YDir())
-    bz = _b(eqn, ZDir())
+    # bx = _b(eqn, XDir())
+    # by = _b(eqn, YDir())
+    # bz = _b(eqn, ZDir())
+    (; bx, by, bz) = eqn.equation
 
     # Sparse array fields accessors
     nzval = _nzval(A)
@@ -72,15 +73,18 @@ end
             nzval0[nIndex] += an
             # nzval[nIndex] += an
         end
-        nzval0[cIndex] = ac_sum
-        nzval[cIndex] = ac_sum
-
+        # nzval[cIndex] = ac_sum
+        
         # Call scheme source generated function NEEDS UPDATING!
-        _scheme_source!(model, terms, bx, nzval0, cell, i, cIndex, prev, runtime)
-
+        ac, bx1, by1, bz1 = _scheme_source!(model, terms, cell, i, cIndex, prev, runtime)
+        
+        nzval0[cIndex] = ac_sum + ac
 
         # Call sources generated function
-        bx[i], by[i], bz[i] = _sources!(model, sources, volume, i)
+        bx2, by2, bz2 = _sources!(model, sources, volume, i)
+        bx[i] = bx1 + bx2
+        by[i] = by1 + by2
+        bz[i] = bz1 + bz2 
     end
 end
 
@@ -104,9 +108,9 @@ function discretise!(
     colptr = _colptr(A)
 
     # Call set nzval to zero kernel
-    kernel! = set_nzval!(backend, workgroup)
-    kernel!(nzval, ndrange = length(nzval))
-    KernelAbstractions.synchronize(backend)
+    # kernel! = set_nzval!(backend, workgroup)
+    # kernel!(nzval, ndrange = length(nzval))
+    # KernelAbstractions.synchronize(backend)
 
     # Call discretise kernel
     kernel! = _discretise_scalar_model!(backend, workgroup)
@@ -143,19 +147,20 @@ end
             
             # Set index for sparse array values at workitem cell neighbour index
             nIndex = spindex(colptr, rowval, i, nID)
-
+            nzval[nIndex] = zero(F)
             # Call scheme generated fucntion
             ac, an = _scheme!(model, terms, nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
             ac_sum += ac
             nzval[nIndex] += an
         end
-        nzval[cIndex] = ac_sum
-
+        
         # Call scheme source generated function
-        _scheme_source!(model, terms, b, nzval, cell, i, cIndex, prev, runtime)
+        ac, b1 = _scheme_source!(model, terms, cell, i, cIndex, prev, runtime)
+        nzval[cIndex] = ac_sum + ac
 
         # Call sources generated function
-        b[i] = _sources!(model, sources, volume, i)
+        b2 = _sources!(model, sources, volume, i)
+        b[i] = b2 + b1
     end
 end
 
@@ -185,18 +190,54 @@ return_quote(x, t) = :(nothing)
 end
 
 # Scheme source generated function definition
-@generated function _scheme_source!(model::Model{TN,SN,T,S}, terms, b, nzval, cell, cID, cIndex, prev, runtime) where {TN,SN,T,S}
+@generated function _scheme_source!(model::Model{TN,SN,T,S}, terms, cell, cID, cIndex, prev, runtime) where {TN,SN,T,S}
     # Allocate expression array to store scheme_source function
     out = Expr(:block)
     
     # Loop over number of terms and store scheme_source function in array
-    for t in 1:TN
-        function_call_scheme_source = quote
-            scheme_source!(terms[$t], b, nzval, cell, cID, cIndex, prev, runtime)
+    if S.parameters[1].parameters[1] <: AbstractScalarField
+        for t in 1:TN
+            function_call_scheme_source = quote
+                ac, b = scheme_source!(terms[$t], cell, cID, cIndex, prev, runtime)
+                AC += ac
+                B += b
+            end
+            push!(out.args, function_call_scheme_source)
         end
-        push!(out.args, function_call_scheme_source)
+        return quote
+            ac = 0.0
+            b = 0.0
+            AC = 0.0
+            B = 0.0
+            $(out.args...)
+            return AC, B
+        end
+    elseif S.parameters[1].parameters[1] <: AbstractVectorField
+        for t in 1:TN
+            function_call_scheme_source = quote
+                ac, bx = scheme_source!(terms[$t], cell, cID, cIndex, prev.x, runtime)
+                ac, by = scheme_source!(terms[$t], cell, cID, cIndex, prev.y, runtime)
+                ac, bz = scheme_source!(terms[$t], cell, cID, cIndex, prev.z, runtime)
+                AC += ac # assuming ac's for all directions are equal
+                BX += bx
+                BY += by
+                BZ += bz
+            end
+            push!(out.args, function_call_scheme_source)
+        end
+        return quote
+            ac = 0.0
+            bx = 0.0
+            by = 0.0
+            bz = 0.0
+            AC = 0.0
+            BX = 0.0
+            BY = 0.0
+            BZ = 0.0
+            $(out.args...)
+            return AC, BX, BY, BZ
+        end
     end
-    out
 end
 
 # Sources generated function definition

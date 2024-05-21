@@ -18,7 +18,6 @@ function setup_incompressible_solvers(
     (; solvers, schemes, runtime, hardware) = config
 
     @info "Extracting configuration and input fields..."
-    volumes = cu((getproperty.(model_in.mesh.cells, :volume)))
 
     model = adapt(hardware.backend, model_in)
     # model = model_in
@@ -36,30 +35,6 @@ function setup_incompressible_solvers(
 
     @info "Defining models..."
 
-    # ux_eqn = (
-    #     Time{schemes.U.time}(U.x)
-    #     + Divergence{schemes.U.divergence}(mdotf, U.x) 
-    #     - Laplacian{schemes.U.laplacian}(nueff, U.x) 
-    #     == 
-    #     -Source(∇p.result.x)
-    # ) → Equation(mesh)
-
-    # uy_eqn = (
-    #     Time{schemes.U.time}(U.y)
-    #     + Divergence{schemes.U.divergence}(mdotf, U.y) 
-    #     - Laplacian{schemes.U.laplacian}(nueff, U.y) 
-    #     == 
-    #     -Source(∇p.result.y)
-    # ) → Equation(mesh)
-
-    # uz_eqn = (
-    #     Time{schemes.U.time}(U.z)
-    #     + Divergence{schemes.U.divergence}(mdotf, U.z) 
-    #     - Laplacian{schemes.U.laplacian}(nueff, U.z) 
-    #     == 
-    #     -Source(∇p.result.z)
-    # ) → Equation(mesh)
-
     U_eqn = (
         Time{schemes.U.time}(U)
         + Divergence{schemes.U.divergence}(mdotf, U) 
@@ -76,10 +51,6 @@ function setup_incompressible_solvers(
 
     @info "Initialising preconditioners..."
 
-    # @reset ux_eqn.preconditioner = set_preconditioner(
-    #                 solvers.U.preconditioner, ux_eqn, U.x.BCs, config)
-    # @reset uy_eqn.preconditioner = ux_eqn.preconditioner
-    # @reset uz_eqn.preconditioner = ux_eqn.preconditioner
     @reset U_eqn.preconditioner = set_preconditioner(
                     solvers.U.preconditioner, U_eqn, U.BCs, config)
     @reset p_eqn.preconditioner = set_preconditioner(
@@ -102,13 +73,13 @@ function setup_incompressible_solvers(
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
 
     R_ux, R_uy, R_uz, R_p, model  = solver_variant(
-    model, ∇p, U_eqn, p_eqn, turbulence, config, volumes; resume=resume, pref=pref)
+    model, ∇p, U_eqn, p_eqn, turbulence, config; resume=resume, pref=pref)
 
     return R_ux, R_uy, R_uz, R_p, model    
 end # end function
 
 function SIMPLE(
-    model, ∇p, U_eqn, p_eqn, turbulence, config, volumes ; resume, pref)
+    model, ∇p, U_eqn, p_eqn, turbulence, config ; resume, pref)
     
     # Extract model variables and configuration
     (;mesh, U, p, nu) = model
@@ -160,14 +131,12 @@ function SIMPLE(
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
-    Atemp = similar(U_eqn.equation.A)
-
     @time for iteration ∈ 1:iterations
 
         # X velocity calculations
         # @. prev = U.x.values
         # discretise!(ux_eqn, prev, config)
-        discretise!(U_eqn, U.x.values, config)
+        discretise!(U_eqn, U, config)
         update_equation!(U_eqn, config)
 
         # uy_eqn.equation.A.nzVal .= ux_eqn.equation.A.nzVal
@@ -234,7 +203,7 @@ function SIMPLE(
         
         # Pressure calculations
         @. prev = p.values
-        discretise!(p_eqn, p.values, config)
+        discretise!(p_eqn, p, config)
         # apply_boundary_conditions!(p_eqn, p.BCs, config)
         # setReference!(p_eqn, pref, 1, config)
         # update_preconditioner!(p_eqn.preconditioner, mesh, config)

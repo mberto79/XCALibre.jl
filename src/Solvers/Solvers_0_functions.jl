@@ -149,7 +149,6 @@ function inverse_diagonal!(rD::S, eqn, config) where {S<:ScalarField}
     KernelAbstractions.synchronize(backend)
 end
 
-# @kernel function inverse_diagonal_kernel!(ione, colptr, rowval, nzval, cells, values)
 @kernel function inverse_diagonal_kernel!(rD, nzval, rowval, colptr)
     i = @index(Global)
 
@@ -169,30 +168,23 @@ end
 ## VELOCITY CORRECTION
 
 function correct_velocity!(U, Hv, ∇p, rD, config)
-    Ux = U.x
-    Uy = U.y
-    Uz = U.z
-    Hvx = Hv.x
-    Hvy = Hv.y
-    Hvz = Hv.z
-    dpdx = ∇p.result.x
-    dpdy = ∇p.result.y
-    dpdz = ∇p.result.z
-    rDvalues = rD.values
-    # backend = _get_backend(U.mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    kernel! = correct_velocity_kernel!(backend, workgroup)
-    kernel!(rDvalues, Ux, Hvx, dpdx, Uy, Hvy, dpdy, Uz, Hvz, dpdz, ndrange=length(Ux))
+    kernel! = _correct_velocity!(backend, workgroup)
+    kernel!(U, Hv, ∇p, rD, ndrange=length(U))
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function correct_velocity_kernel!(rDvalues,
-    Ux, Hvx, dpdx,
-    Uy, Hvy, dpdy,
-    Uz, Hvz, dpdz)
+@kernel function _correct_velocity!(U, Hv, ∇p, rD)
     i = @index(Global)
+
+    @uniform begin
+        Ux, Uy, Uz = U.x, U.y, U.z
+        Hvx, Hvy, Hvz = Hv.x, Hv.y, Hv.z
+        dpdx, dpdy, dpdz = ∇p.result.x, ∇p.result.y, ∇p.result.z
+        rDvalues = rD.values
+    end
 
     @inbounds begin
         rDvalues_i = rDvalues[i]
@@ -210,23 +202,22 @@ remove_pressure_source!(U_eqn::ME, ∇p, config) where {ME} = begin # Extend to 
     (; backend, workgroup) = hardware
     cells = get_phi(U_eqn).mesh.cells
     source_sign = get_source_sign(U_eqn, 1)
-    dpdx, dpdy, dpdz = ∇p.result.x, ∇p.result.y, ∇p.result.z
     (; bx, by, bz) = U_eqn.equation
 
     kernel! = remove_pressure_source_kernel!(backend, workgroup)
-    kernel!(cells, source_sign, dpdx, dpdy, dpdz, bx, by, bz, ndrange=length(bx))
+    kernel!(cells, source_sign, ∇p, bx, by, bz, ndrange=length(bx))
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function remove_pressure_source_kernel!(cells, source_sign, dpdx, dpdy, dpdz, bx, by, bz) #Extend to 3D
+@kernel function remove_pressure_source_kernel!(cells, source_sign, ∇p, bx, by, bz) #Extend to 3D
     i = @index(Global)
+
+    @uniform begin
+        dpdx, dpdy, dpdz = ∇p.result.x, ∇p.result.y, ∇p.result.z
+    end
 
     @inbounds begin
         (; volume) = cells[i]
-        # Atomix.@atomic bx[i] -= source_sign * dpdx[i] * volume
-        # Atomix.@atomic by[i] -= source_sign * dpdy[i] * volume
-        # Atomix.@atomic bz[i] -= source_sign * dpdz[i] * volume
-
         bx[i] -= source_sign * dpdx[i] * volume
         by[i] -= source_sign * dpdy[i] * volume
         bz[i] -= source_sign * dpdz[i] * volume
@@ -234,45 +225,30 @@ end
 end
 
 # Pressure correction
-function H!(Hv, v::VF, U_eqn, config) where {VF<:VectorField} # Extend to 3D!
-    (; x, y, z, mesh) = Hv
-    (; cells, faces) = mesh
-    (; cells, cell_neighbours, faces) = mesh
-    # backend = _get_backend(mesh)
+function H!(Hv, U::VF, U_eqn, config) where {VF<:VectorField} # Extend to 3D!
+    (; cells, cell_neighbours) = Hv.mesh
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    # Ax = _A(ux_eqn)
-    # bx = _b(ux_eqn)
-    # nzval_x, rowval_x, colptr_x = get_sparse_fields(Ax)
-
-    # Ay = _A(uy_eqn)
-    # by = _b(uy_eqn)
-    # nzval_y, rowval_y, colptr_y = get_sparse_fields(Ay)
-
-    # Az = _A(uz_eqn)
-    # bz = _b(uz_eqn)
-    # nzval_z, rowval_z, colptr_z = get_sparse_fields(Az)
-
-    # A = _A0(U_eqn)
     A = _A(U_eqn)
-    bx = _b(U_eqn, XDir())
-    by = _b(U_eqn, YDir())
-    bz = _b(U_eqn, ZDir())
     nzval, rowval, colptr = get_sparse_fields(A)
-
-    vx, vy, vz = v.x, v.y, v.z
+    (; bx, by, bz) = U_eqn.equation
 
     kernel! = H_kernel!(backend, workgroup)
     kernel!(cells, cell_neighbours,
-    nzval, colptr, rowval, bx, by, bz, vx, vy, vz, x, y, z, ndrange=length(cells))
+    nzval, colptr, rowval, bx, by, bz, U, Hv, ndrange=length(cells))
     KernelAbstractions.synchronize(backend)
 end
 
 # Pressure correction kernel
 @kernel function H_kernel!(cells::AbstractArray{Cell{TF,SV,UR}}, cell_neighbours,
-    nzval, colptr, rowval, bx, by, bz, vx, vy, vz, x, y, z) where {TF,SV,UR}
+    nzval, colptr, rowval, bx, by, bz, U, Hv) where {TF,SV,UR}
     i = @index(Global)
+
+    @uniform begin
+        Ux, Uy, Uz = U.x, U.y, U.z
+        Hx, Hy, Hz = Hv.x, Hv.y, Hv.z
+    end
 
     sumx = zero(TF)
     sumy = zero(TF)
@@ -285,23 +261,17 @@ end
             nID = cell_neighbours[ni]
             zIndex = spindex(colptr, rowval, i, nID)
             val = nzval[zIndex]
-            sumx += val * vx[nID]
-            sumy += val * vy[nID]
-            sumz += val * vz[nID]
+            sumx += val * Ux[nID]
+            sumy += val * Uy[nID]
+            sumz += val * Uz[nID]
         end
 
-        # D = view(Ax, i, i)[1] # add check to use max of Ax or Ay)
         DIndex = spindex(colptr, rowval, i, i)
-        # Dx = nzval_x[DIndex]
-        # Dy = nzval_y[DIndex]
-        # Dz = nzval_z[DIndex]
-        # Dmax = max(Dx, Dy, Dz)
-        # rD = 1 / Dmax
         D = nzval[DIndex]
         rD = 1/D
-        x[i] = (bx[i] - sumx) * rD
-        y[i] = (by[i] - sumy) * rD
-        z[i] = (bz[i] - sumz) * rD
+        Hx[i] = (bx[i] - sumx) * rD
+        Hy[i] = (by[i] - sumy) * rD
+        Hz[i] = (bz[i] - sumz) * rD
     end
 end
 

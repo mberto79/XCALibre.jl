@@ -67,6 +67,7 @@ schemes = (
 
 runtime = set_runtime(
     iterations=10000, write_interval=50, time_step=0.005)
+    # iterations=1000, write_interval=50, time_step=0.005)
 
 # 2mm mesh use settings below (to lower Courant number)
 runtime = set_runtime(

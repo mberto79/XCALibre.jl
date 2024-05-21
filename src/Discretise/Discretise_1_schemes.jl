@@ -16,9 +16,8 @@ cIndex - Index of the cell based on sparse matrix. Use to index "nzval_array"
     0.0, 0.0 # add types if this approach works
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Time{Steady}}, 
-    b, nzval_array, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
-    nothing
+    term::Operator{F,P,I,Time{Steady}}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
+    0.0, 0.0
 end
 
 ## Euler
@@ -29,8 +28,7 @@ end
     0.0, 0.0 # add types if this approach works
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Time{Euler}}, 
-    b, nzval_array, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
+    term::Operator{F,P,I,Time{Euler}}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
         # Retrieve cell volume and calculate time step
         # volume = cell.volume
         # rdt = 1/runtime.dt
@@ -40,9 +38,9 @@ end
         # Increment sparse and b arrays 
         # Atomix.@atomic nzval_array[cIndex] += vol_rdt
         # Atomix.@atomic b[cID] += prev[cID]*vol_rdt
-        nzval_array[cIndex] += vol_rdt
-        b[cID] += prev[cID]*vol_rdt
-    nothing
+        ac = vol_rdt
+        b = prev[cID]*vol_rdt
+        return ac, b
 end
 
 # LAPLACIAN
@@ -63,9 +61,8 @@ end
     return ac, an
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Laplacian{Linear}}, 
-    b, nzval_array, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
-    nothing
+    term::Operator{F,P,I,Laplacian{Linear}}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
+    0.0, 0.0
 end
 
 # DIVERGENCE
@@ -96,9 +93,8 @@ end
     return ac, an
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Divergence{Linear}}, 
-    b, nzval_array, cell, cID, cIndex, prev, runtime) where {F,P,I} = begin
-    nothing
+    term::Operator{F,P,I,Divergence{Linear}}, cell, cID, cIndex, prev, runtime) where {F,P,I} = begin
+    0.0, 0.0
 end
 
 # Upwind
@@ -118,9 +114,8 @@ end
     return ac, an
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Divergence{Upwind}}, 
-    b, nzval_array, cell, cID, cIndex, prev, runtime) where {F,P,I} = begin
-    nothing
+    term::Operator{F,P,I,Divergence{Upwind}}, cell, cID, cIndex, prev, runtime) where {F,P,I} = begin
+    0.0, 0.0
 end
 
 # IMPLICIT SOURCE
@@ -131,14 +126,13 @@ end
     nothing
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Si}, 
-    b, nzval_array, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
+    term::Operator{F,P,I,Si}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
     
     # Retrieve and calculate flux for cell 
     flux = term.sign*term.flux[cID]*cell.volume # indexed with cID
     
     # Increment sparse array by flux
     # Atomix.@atomic nzval_array[cIndex] += flux # indexed with cIndex
-    nzval_array[cIndex] += flux # indexed with cIndex
-    nothing
+    ac = flux # indexed with cIndex
+    ac, 0.0
 end

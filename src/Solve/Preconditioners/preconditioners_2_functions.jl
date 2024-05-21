@@ -6,12 +6,19 @@ set_preconditioner(PT::T, eqn, BCs, config
 begin
     phi = get_phi(eqn)
     mesh = phi.mesh
-    discretise!(
-        eqn, ConstantScalar(zero(_get_int(mesh))), config) # should this be float?
+    # discretise!(
+        # eqn, ConstantScalar(zero(_get_int(mesh))), config) # should this be float?
 
     if typeof(phi) <: AbstractVectorField
+
+        discretise!(
+            eqn, get_phi(eqn), config) # should this be float?
+
         apply_boundary_conditions!(eqn, phi.x.BCs, XDir(1), config)
+
     elseif typeof(phi) <: AbstractScalarField
+
+        discretise!(eqn, ConstantScalar(zero(_get_int(mesh))), config) # should this be float?
         apply_boundary_conditions!(eqn, BCs, nothing, config)
     end
 

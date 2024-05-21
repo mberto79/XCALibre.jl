@@ -139,16 +139,8 @@ end
     
     @inbounds begin
 
-        # Find nzval index relating to A[i,i] (CHANGE TO WHILE LOOP, WRAP IN FUNCTION)
-        start = colptr[i]
-        offset = 0
-        for j in start:length(rowval)
-            offset += 1
-            if rowval[j] == i
-                break
-            end
-        end
-        nIndex = start + offset - ione
+        # Find nzval index relating to A[i,i]
+        nIndex = spindex(colptr, rowval, i, i)
 
         # Run implicit relaxation calculations
         nzval[nIndex] /= alpha

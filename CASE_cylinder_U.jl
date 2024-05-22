@@ -70,11 +70,11 @@ runtime = set_runtime(
     # iterations=1000, write_interval=50, time_step=0.005)
 
 # 2mm mesh use settings below (to lower Courant number)
-runtime = set_runtime(
-        iterations=5000, write_interval=250, time_step=0.001) # Only runs on 32 bit
+# runtime = set_runtime(
+    # iterations=5000, write_interval=250, time_step=0.001) # Only runs on 32 bit
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=4)
+# hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

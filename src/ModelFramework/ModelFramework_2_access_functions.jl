@@ -26,19 +26,19 @@ ZDir() = ZDir(3)
 
 ## MODEL ACCESSORS
 
-@inline get_phi(eqn::ModelEquation)  = begin 
+@inline get_phi(eqn::ModelEquation{T,M,E,S,P}) where {T,M,E,S,P} = begin 
     eqn.model.terms[1].phi
 end
 
-@inline get_flux(eqn::ModelEquation, ti::Integer) = begin 
+@inline get_flux(eqn::ModelEquation{T,M,E,S,P}, ti::Integer) where {T,M,E,S,P} = begin 
     eqn.model.terms[ti].flux
 end
 
-@inline get_source(eqn::ModelEquation, ti::Integer) = begin 
+@inline get_source(eqn::ModelEquation{T,M,E,S,P}, ti::Integer) where {T,M,E,S,P} = begin 
     eqn.model.sources[ti].field
 end
 
-@inline get_source_sign(eqn::ModelEquation, ti::Integer) = begin 
+@inline get_source_sign(eqn::ModelEquation{T,M,E,S,P}, ti::Integer) where {T,M,E,S,P} = begin 
     eqn.model.sources[ti].sign
 end
 

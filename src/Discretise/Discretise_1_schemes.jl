@@ -29,15 +29,10 @@ end
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Time{Euler}}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
-        # Retrieve cell volume and calculate time step
-        # volume = cell.volume
-        # rdt = 1/runtime.dt
         volume = cell.volume
         vol_rdt = volume/runtime.dt
         
         # Increment sparse and b arrays 
-        # Atomix.@atomic nzval_array[cIndex] += vol_rdt
-        # Atomix.@atomic b[cID] += prev[cID]*vol_rdt
         ac = vol_rdt
         b = prev[cID]*vol_rdt
         return ac, b
@@ -53,9 +48,6 @@ end
     ap = term.sign*(term.flux[fID] * face.area)/face.delta
 
     # Increment sparse array
-    # Atomix.@atomic nzval_array[cIndex] += -ap
-    # Atomix.@atomic nzval_array[nIndex] += ap
-    # nothing
     ac = -ap
     an = ap
     return ac, an
@@ -83,11 +75,6 @@ end
 
     # Calculate required increment
     ap = term.sign*(term.flux[fID]*ns)
-
-    # Increment sparse array
-    # Atomix.@atomic nzval_array[cIndex] += ap*one_minus_weight
-    # Atomix.@atomic nzval_array[nIndex] += ap*weight
-    # nothing
     ac = ap*one_minus_weight
     an = ap*weight
     return ac, an
@@ -104,11 +91,6 @@ end
     )  where {F,P,I}
     # Calculate required increment
     ap = term.sign*(term.flux[fID]*ns)
-
-    # Increment sparse array only if ap is positive
-    # Atomix.@atomic nzval_array[cIndex] += max(ap, 0.0)
-    # Atomix.@atomic nzval_array[nIndex] += -max(-ap, 0.0)
-    # nothing
     ac = max(ap, 0.0)
     an = -max(-ap, 0.0)
     return ac, an
@@ -130,9 +112,6 @@ end
     
     # Retrieve and calculate flux for cell 
     flux = term.sign*term.flux[cID]*cell.volume # indexed with cID
-    
-    # Increment sparse array by flux
-    # Atomix.@atomic nzval_array[cIndex] += flux # indexed with cIndex
     ac = flux # indexed with cIndex
     ac, 0.0
 end

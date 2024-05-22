@@ -45,9 +45,9 @@ end
         cell = cells[i]
         (; faces_range, volume) = cell
 
-        bx[i] = zero(F)
-        by[i] = zero(F)
-        bz[i] = zero(F)
+        # bx[i] = zero(F)
+        # by[i] = zero(F)
+        # bz[i] = zero(F)
 
         # Set index for sparse array values on diagonal
         cIndex = spindex(colptr, rowval, i, i)
@@ -64,13 +64,13 @@ end
             
             # Set index for sparse array values at workitem cell neighbour index
             nIndex = spindex(colptr, rowval, i, nID)
-            nzval0[nIndex] = zero(F)
+            # nzval0[nIndex] = zero(F)
             # nzval[nIndex] = zero(F)
 
             # Call scheme generated fucntion
             ac, an = _scheme!(model, terms, nzval0, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
             ac_sum += ac
-            nzval0[nIndex] += an
+            nzval0[nIndex] = an
             # nzval[nIndex] += an
         end
         # nzval[cIndex] = ac_sum
@@ -130,7 +130,7 @@ end
         cell = cells[i]
         (; faces_range, volume) = cell
 
-        b[i] = zero(F)
+        # b[i] = zero(F)
 
         # Set index for sparse array values on diagonal!
         cIndex = spindex(colptr, rowval, i, i)
@@ -147,11 +147,11 @@ end
             
             # Set index for sparse array values at workitem cell neighbour index
             nIndex = spindex(colptr, rowval, i, nID)
-            nzval[nIndex] = zero(F)
+            # nzval[nIndex] = zero(F)
             # Call scheme generated fucntion
             ac, an = _scheme!(model, terms, nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
             ac_sum += ac
-            nzval[nIndex] += an
+            nzval[nIndex] = an
         end
         
         # Call scheme source generated function

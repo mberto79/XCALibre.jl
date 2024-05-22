@@ -80,20 +80,22 @@ end
     face = faces[faceID]
     cell = cells[cellID] 
 
+    zcellID = nzval_index(colptr, rowval, cellID, cellID, ione)
+
     # Call apply generated function
-    apply!(model, BC, terms, rowval, colptr, nzval, b, cellID, cell, face, faceID, ione, component)
+    apply!(model, BC, terms, rowval, colptr, nzval, b, cellID, zcellID, cell, face, faceID, ione, component)
 end
 
 # Apply generated function definition
 @generated function apply!(
     model::Model{TN,SN,T,S}, BC, terms, 
-    rowval, colptr, nzval, b, cellID, cell, face, fID, ione, component) where {TN,SN,T,S}
+    rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, ione, component) where {TN,SN,T,S}
 
     # Definition of main assignment loop (one per patch)
     func_calls = Expr[]
     for t ∈ 1:TN 
         call = quote
-            (BC)(terms[$t], rowval, colptr, nzval, b, cellID, cell, face, fID, ione, component)
+            (BC)(terms[$t], rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, ione, component)
         end
         push!(func_calls, call)
     end

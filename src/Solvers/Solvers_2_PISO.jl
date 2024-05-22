@@ -59,8 +59,7 @@ function PISO(
 
     update_nueff!(nueff, nu, turbulence, config)
 
-    prevU = VectorField(mesh)
-    
+    xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
     @info "Staring PISO loops..."
 
@@ -68,33 +67,11 @@ function PISO(
 
     @time for iteration ∈ 1:iterations
 
-        @. prevU.x.values = U.x.values
-        @. prevU.y.values = U.y.values
-        @. prevU.z.values = U.z.values
-        discretise!(U_eqn, prevU, config)
-        update_equation!(U_eqn, config)
-
-        apply_boundary_conditions!(U_eqn, U.x.BCs, XDir(), config)
-        # implicit_relaxation!(U_eqn, U.x.values, solvers.U.relax, mesh, XDir(), config)
-        update_preconditioner!(U_eqn.preconditioner, mesh, config)
-        run!(U_eqn, solvers.U, U.x, XDir(), config)
-        residual!(R_ux, U_eqn, U.x, iteration, XDir(), config)
-        
-        update_equation!(U_eqn, config)
-        apply_boundary_conditions!(U_eqn, U.y.BCs, YDir(), config)
-        # implicit_relaxation!(U_eqn, U.y.values, solvers.U.relax, mesh, YDir(), config)
-        update_preconditioner!(U_eqn.preconditioner, mesh, config)
-        run!(U_eqn, solvers.U, U.y, YDir(), config)
-        residual!(R_uy, U_eqn, U.y, iteration, YDir(), config)
-
-        # Z velocity calculations (3D Mesh only)
+        solve_equation(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
+        residual!(R_ux, U_eqn, U.x, iteration, xdir, config)
+        residual!(R_uy, U_eqn, U.y, iteration, ydir, config)
         if typeof(mesh) <: Mesh3
-            update_equation!(U_eqn, config)
-            apply_boundary_conditions!(U_eqn, U.z.BCs, ZDir(), config)
-            # implicit_relaxation!(U_eqn, U.z.values, solvers.U.relax, mesh, ZDir(), config)
-            update_preconditioner!(U_eqn.preconditioner, mesh, config)
-            run!(U_eqn, solvers.U, U.z, ZDir(), config)
-            residual!(R_uz, U_eqn, U.z, iteration, ZDir(), config)
+            residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
         end
           
         # Pressure correction
@@ -112,14 +89,7 @@ function PISO(
             
             # Pressure calculations
             @. prev = p.values
-            discretise!(p_eqn, prev, config)
-            apply_boundary_conditions!(p_eqn, p.BCs, nothing, config)
-            setReference!(p_eqn, pref, 1, config)
-            update_preconditioner!(p_eqn.preconditioner, mesh, config)
-            run!(p_eqn, solvers.p, p, nothing, config)
-
-            # Relaxation and residual
-            # explicit_relaxation!(p, prev, solvers.p.relax, config)
+            solve_equation(p_eqn, p, solvers.p, config; ref=nothing)
             residual!(R_p, p_eqn, p, iteration, nothing, config)
 
             # Gradient

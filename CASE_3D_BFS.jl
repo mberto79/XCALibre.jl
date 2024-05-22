@@ -38,7 +38,8 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 schemes = (
     U = set_schemes(divergence=Upwind),
-    p = set_schemes(gradient=Midpoint)
+    # p = set_schemes(gradient=Midpoint)
+    p = set_schemes()
 )
 
 

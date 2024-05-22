@@ -68,11 +68,7 @@ function PISO(
     @time for iteration ∈ 1:iterations
 
         solve_equation(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
-        residual!(R_ux, U_eqn, U.x, iteration, xdir, config)
-        residual!(R_uy, U_eqn, U.y, iteration, ydir, config)
-        if typeof(mesh) <: Mesh3
-            residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
-        end
+        
           
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
@@ -90,7 +86,6 @@ function PISO(
             # Pressure calculations
             @. prev = p.values
             solve_equation(p_eqn, p, solvers.p, config; ref=nothing)
-            residual!(R_p, p_eqn, p, iteration, nothing, config)
 
             # Gradient
             grad!(∇p, pf, p, p.BCs, config) 
@@ -122,6 +117,13 @@ function PISO(
                 update_nueff!(nueff, nu, turbulence, config)
             end
     end # corrector loop end
+
+    residual!(R_ux, U_eqn, U.x, iteration, xdir, config)
+    residual!(R_uy, U_eqn, U.y, iteration, ydir, config)
+    if typeof(mesh) <: Mesh3
+        residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
+    end
+    residual!(R_p, p_eqn, p, iteration, nothing, config)
         
         # for i ∈ eachindex(divUTx)
         #     vol = mesh.cells[i].volume

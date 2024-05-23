@@ -83,7 +83,9 @@ end
     zcellID = nzval_index(colptr, rowval, cellID, cellID, ione)
 
     # Call apply generated function
-    apply!(model, BC, terms, rowval, colptr, nzval, b, cellID, zcellID, cell, face, faceID, ione, component)
+    AP, BP = apply!(model, BC, terms, rowval, colptr, nzval, b, cellID, zcellID, cell, face, faceID, ione, component)
+    Atomix.@atomic nzval[zcellID] += AP
+    Atomix.@atomic b[cellID] += BP
 end
 
 # Apply generated function definition
@@ -95,12 +97,17 @@ end
     func_calls = Expr[]
     for t ∈ 1:TN 
         call = quote
-            (BC)(terms[$t], rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, ione, component)
+            ap, bp = (BC)(terms[$t], rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, ione, component)
+            AP += ap
+            BP += bp
         end
         push!(func_calls, call)
     end
     quote
+        AP = 0.0
+        BP = 0.0
         $(func_calls...)
+        return AP, BP
     end
 end
 

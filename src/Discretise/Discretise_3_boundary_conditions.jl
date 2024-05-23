@@ -2,8 +2,7 @@ export dirichlet, neumann
 
 # TRANSIENT TERM 
 @inline (bc::AbstractBoundary)( # Used for all schemes (using "T")
-    term::Operator{F,P,I,Time{T}}, 
-    rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, ione, component=nothing
+    term::Operator{F,P,I,Time{T}}, cellID, zcellID, cell, face, fID, ione, component=nothing
     ) where {F,P,I,T} = begin
     # nothing
     0.0, 0.0 # need to add consistent return types
@@ -13,8 +12,7 @@ end
 
 # Dirichlet functor definition
 @inline (bc::Dirichlet)(
-    term::Operator{F,P,I,Laplacian{Linear}}, 
-    rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, ione, component=nothing
+    term::Operator{F,P,I,Laplacian{Linear}}, cellID, zcellID, cell, face, fID, ione, component=nothing
     ) where {F,P,I} = begin
     # Retrieve term flux and extract fields from workitem face
     J = term.flux[fID]
@@ -36,8 +34,7 @@ end
 
 # Neumann functor definition
 @inline (bc::Neumann)(
-    term::Operator{F,P,I,Laplacian{Linear}}, 
-    rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
+    term::Operator{F,P,I,Laplacian{Linear}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
     # Retrive term field and field values
     phi = term.phi 
     values = get_values(phi, component)
@@ -62,16 +59,14 @@ end
 
 # KWallFunction functor definition
 @inline (bc::KWallFunction)(
-    term::Operator{F,P,I,Laplacian{T}}, 
-    rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I,T}  = begin
+    term::Operator{F,P,I,Laplacian{T}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I,T}  = begin
     # nothing
     0.0, 0.0
 end
 
 # OmegaWallFunction functor definition
 @inline (bc::OmegaWallFunction)(
-    term::Operator{F,P,I,Laplacian{T}}, 
-    rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I,T} = begin
+    term::Operator{F,P,I,Laplacian{T}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I,T} = begin
     # nothing
     0.0, 0.0
 end
@@ -82,8 +77,7 @@ end
 
 # Dirichlet functor definition
 @inline (bc::Dirichlet)(
-    term::Operator{F,P,I,Divergence{Linear}}, 
-    rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
+    term::Operator{F,P,I,Divergence{Linear}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
     # Increment b array     
     # Atomix.@atomic b[cellID] += term.sign[1]*(-term.flux[fID]*bc.value)
     # nothing
@@ -92,8 +86,7 @@ end
 
 # Neumann functor definition
 @inline (bc::Neumann)(
-    term::Operator{F,P,I,Divergence{Linear}}, 
-    rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
+    term::Operator{F,P,I,Divergence{Linear}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
     # Calculate ap value to increment
     ap = term.sign[1]*(term.flux[fID])
 
@@ -108,8 +101,7 @@ end
 
 # KWallFunction functor definition
 @inline (bc::KWallFunction)(
-    term::Operator{F,P,I,Divergence{Linear}}, # use upwind for all
-    rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
+    term::Operator{F,P,I,Divergence{Linear}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
     # Calculate ap value to increment
     ap = term.sign[1]*(term.flux[fID])
     
@@ -124,8 +116,7 @@ end
 
 # OmegaWallFunction functor definition
 @inline (bc::OmegaWallFunction)(
-    term::Operator{F,P,I,Divergence{Linear}}, # might need to change this!!!!
-    rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I}  = begin
+    term::Operator{F,P,I,Divergence{Linear}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I}  = begin
     # Calculate ap value to increment
     ap = term.sign[1]*(term.flux[fID])
 
@@ -142,8 +133,7 @@ end
 
 # Dirichlet functor definition
 @inline (bc::Dirichlet)(
-    term::Operator{F,P,I,Divergence{Upwind}}, 
-    rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
+    term::Operator{F,P,I,Divergence{Upwind}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
     # Calculate ap value to increment
     ap = term.sign[1]*(term.flux[fID])
 
@@ -155,8 +145,7 @@ end
 
 # Neumann functor definition
 @inline (bc::Neumann)(
-    term::Operator{F,P,I,Divergence{Upwind}}, 
-    rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
+    term::Operator{F,P,I,Divergence{Upwind}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
     # Retrieve  term field and calculate ap value to increment
     phi = term.phi 
     ap = term.sign[1]*(term.flux[fID])
@@ -171,8 +160,7 @@ end
 
 # KWallFunction functor definition
 @inline (bc::KWallFunction)(
-    term::Operator{F,P,I,Divergence{Upwind}},
-    rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
+    term::Operator{F,P,I,Divergence{Upwind}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
     # Calculate ap value to increment
     ap = term.sign[1]*(term.flux[fID])
 
@@ -187,8 +175,7 @@ end
 
 # OmegaWallFunction functor definition
 @inline (bc::OmegaWallFunction)(
-    term::Operator{F,P,I,Divergence{Upwind}}, # might need to change this!!!!
-    rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I}  = begin
+    term::Operator{F,P,I,Divergence{Upwind}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I}  = begin
     # Calculate ap value to increment
     ap = term.sign[1]*(term.flux[fID])
 
@@ -205,32 +192,28 @@ end
 
 # Dirichlet functor definition
 @inline (bc::Dirichlet)(
-    term::Operator{F,P,I,Si}, 
-    rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
+    term::Operator{F,P,I,Si}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
     # nothing
     0.0, 0.0
 end
 
 # Neumann functor definition
 @inline (bc::Neumann)(
-    term::Operator{F,P,I,Si}, 
-    rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
+    term::Operator{F,P,I,Si}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
     # nothing
     0.0, 0.0
 end
 
 # KWallFunction functor definition
 @inline (bc::KWallFunction)(
-    term::Operator{F,P,I,Si}, 
-    rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
+    term::Operator{F,P,I,Si}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
     # nothing
     0.0, 0.0
 end
 
 # OmegaWallFunction functor definition
 @inline (bc::OmegaWallFunction)(
-    term::Operator{F,P,I,Si}, 
-    rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
+    term::Operator{F,P,I,Si}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
     # Retrieve workitem term field
     phi = term.phi[cellID] 
 

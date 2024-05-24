@@ -27,9 +27,10 @@ struct CrankNicolson <: AbstractScheme end
 abstract type AbstractBoundary end
 abstract type AbstractDirichlet <: AbstractBoundary end
 abstract type AbstractNeumann <: AbstractBoundary end
+abstract type AbstractWallFunction <: AbstractDirichlet end
 
 # Dirichlet structure and constructor function
-struct Dirichlet{I,V} <: AbstractBoundary
+struct Dirichlet{I,V} <: AbstractDirichlet
     ID::I
     value::V
 end
@@ -79,7 +80,7 @@ function fixedValue(BC::Neumann, ID::I, value::V) where {I<:Integer,V}
 end
 
 # Kwall function structure and constructor
-struct KWallFunction{I,V} <: AbstractBoundary
+struct KWallFunction{I,V} <: AbstractWallFunction
     ID::I 
     value::V 
 end
@@ -89,7 +90,7 @@ KWallFunction(name::Symbol) = begin
 end
 
 # Omega wall function structure and constructor
-struct OmegaWallFunction{I,V} <: AbstractBoundary
+struct OmegaWallFunction{I,V} <: AbstractWallFunction
     ID::I 
     value::V 
 end
@@ -97,9 +98,21 @@ Adapt.@adapt_structure OmegaWallFunction
 OmegaWallFunction(name::Symbol) = begin
     OmegaWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8))
 end
+function fixedValue(BC::OmegaWallFunction, ID::I, value::V) where {I<:Integer,V}
+    # Exception 1: Value is scalar
+    if V <: Number
+        return OmegaWallFunction{I,typeof(value)}(ID, value)
+        # Exception 2: value is a tupple
+    elseif V <: NamedTuple
+        return OmegaWallFunction{I,V}(ID, value)
+    # Error if value is not scalar or tuple
+    else
+        throw("The value provided should be a scalar or a tuple")
+    end
+end
 
 # Nut wall function structure and constructor
-struct NutWallFunction{I,V} <: AbstractBoundary 
+struct NutWallFunction{I,V} <: AbstractWallFunction 
     ID::I 
     value::V 
 end
@@ -182,10 +195,11 @@ assign(scalar::ScalarField, model, args...) = begin
         # Exception 2: value is a named tuple (used in wall functions)
         elseif typeof(arg.value) <: NamedTuple
             BCs_vals = arg.value
-            for entry ∈ typeof(arg.value).parameters[1] # access names
-                val = float(getproperty(arg.value, entry)) # type conversion
-                BCs_vals = set(BCs_vals, PropertyLens{entry}(), val)
-            end
+            # for entry ∈ typeof(arg.value).parameters[1] # access names
+            #     val = float(getproperty(arg.value, entry)) # type conversion
+            #     BCs_vals = set(BCs_vals, PropertyLens{entry}(), val)
+            # end
+            println(arg)
             BCs = (fixedValue(arg, idx, BCs_vals))
             @reset scalar.BCs = (scalar.BCs..., BCs)
 

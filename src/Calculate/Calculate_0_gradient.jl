@@ -161,7 +161,7 @@ end
 
 # Interpolate function for vector field definition (NEEDS KERNEL IMPLEMENTATION!!!!!!)
 
-interpolate_midpoint!(psif::FaceVectorField, psi::VectorField) = begin
+interpolate_midpoint!(psif::FaceVectorField, psi::VectorField, config) = begin
     # Extract individual value vectors from vector field
     (; x, y, z) = psif
 

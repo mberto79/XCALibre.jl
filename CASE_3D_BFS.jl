@@ -61,8 +61,6 @@ solvers = (
         relax       = 0.2,
         rtol = 1e-5,
         atol = 1e-3
-
-
     )
 )
 

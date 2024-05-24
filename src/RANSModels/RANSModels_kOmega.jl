@@ -3,7 +3,7 @@ export initialise_RANS
 export turbulence!
 
 struct KOmega <: AbstractTurbulenceModel end
-
+Adapt.@adapt_structure KOmega
 # Constructor 
 
 RANS{KOmega}(; mesh, viscosity) = begin
@@ -12,10 +12,11 @@ RANS{KOmega}(; mesh, viscosity) = begin
     V = typeof(viscosity)
     k = ScalarField(mesh); omega = ScalarField(mesh); nut = ScalarField(mesh)
     turb = (k=k , omega=omega, nut=nut); T = typeof(turb)
-    flag = false; F = typeof(flag)
+    flag = false; E = typeof(flag)
     D = typeof(mesh)
-    RANS{KOmega,F1,F2,V,T,F,D}(
-        KOmega(), U, p, viscosity, turb, flag, mesh
+    boundary_info = @time begin boundary_map(mesh) end; BI = typeof(boundary_info)
+    RANS{KOmega,F1,F2,V,T,E,D,BI}(
+        KOmega(), U, p, viscosity, turb, flag, mesh, boundary_info
     )
 end
 
@@ -26,6 +27,7 @@ struct KOmegaCoefficients{T}
     σk::T
     σω::T
 end
+Adapt.@adapt_structure KOmegaCoefficients
 
 get_coeffs(FloatType) = begin
     KOmegaCoefficients{FloatType}(
@@ -46,6 +48,7 @@ struct KOmegaModel{MK,MW,FK,FW,FN,C,S}
     coeffs::C
     config::S
 end
+Adapt.@adapt_structure KOmegaModel
 
 function initialise_RANS(mdotf, peqn, config, model)
     # unpack turbulent quantities and configuration
@@ -85,12 +88,11 @@ function initialise_RANS(mdotf, peqn, config, model)
     ) → eqn
 
     # Set up preconditioners
-
     @reset k_eqn.preconditioner = set_preconditioner(
-                solvers.k.preconditioner, k_eqn, k.BCs, runtime)
+                solvers.k.preconditioner, k_eqn, k.BCs, config)
 
     @reset ω_eqn.preconditioner = set_preconditioner(
-                solvers.omega.preconditioner, ω_eqn, omega.BCs, runtime)
+                solvers.omega.preconditioner, ω_eqn, omega.BCs, config)
     
     # preallocating solvers
 
@@ -112,7 +114,7 @@ function initialise_RANS(mdotf, peqn, config, model)
 end
 
 function turbulence!( # Sort out dispatch when possible
-    KOmega::KOmegaModel, model, S, S2, prev)
+    KOmega::KOmegaModel, model, S, S2, prev, config)
 
     nu = model.nu
     nut = model.turbulence.nut
@@ -130,6 +132,8 @@ function turbulence!( # Sort out dispatch when possible
     nueffω = get_flux(ω_eqn, 3)
     Dωf = get_flux(ω_eqn, 4)
     Pω = get_source(ω_eqn, 1)
+
+    mesh = k.mesh
 
     # double_inner_product!(Pk, S, S.gradU)
     # for i ∈ eachindex(Pk)
@@ -152,12 +156,12 @@ function turbulence!( # Sort out dispatch when possible
     # Solve omega equation
 
     prev .= omega.values
-    discretise!(ω_eqn, prev, runtime)
-    apply_boundary_conditions!(ω_eqn, omega.BCs)
-    implicit_relaxation!(ω_eqn.equation, prev, solvers.omega.relax)
+    discretise!(ω_eqn, omega, config)
+    apply_boundary_conditions!(ω_eqn, omega.BCs, nothing, config)
+    implicit_relaxation!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
     constrain_equation!(ω_eqn, omega.BCs, model) # active with WFs only
-    update_preconditioner!(ω_eqn.preconditioner)
-    run!(ω_eqn, solvers.omega)
+    update_preconditioner!(ω_eqn.preconditioner, mesh, config)
+    run!(ω_eqn, solvers.omega, omega, nothing, config)
    
     constrain_boundary!(omega, omega.BCs, model) # active with WFs only
     bound!(omega, eps())
@@ -165,18 +169,18 @@ function turbulence!( # Sort out dispatch when possible
     # Solve k equation
     
     prev .= k.values
-    discretise!(k_eqn, prev, runtime)
-    apply_boundary_conditions!(k_eqn, k.BCs)
-    implicit_relaxation!(k_eqn.equation, prev, solvers.k.relax)
-    update_preconditioner!(k_eqn.preconditioner)
-    run!(k_eqn, solvers.k)
+    discretise!(k_eqn, k, config)
+    apply_boundary_conditions!(k_eqn, k.BCs, nothing, config)
+    implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
+    update_preconditioner!(k_eqn.preconditioner, mesh, config)
+    run!(k_eqn, solvers.k, k, nothing, config)
     bound!(k, eps())
 
     update_eddy_viscosity!(nut, k, omega)
     
-    interpolate!(νtf, nut)
-    correct_boundaries!(νtf, nut, nut.BCs)
-    correct_eddy_viscosity!(νtf, nut.BCs, model)
+    interpolate!(νtf, nut, config)
+    correct_boundaries!(νtf, nut, nut.BCs, config)
+    correct_eddy_viscosity!(νtf, nut.BCs, model, config)
 end
 
 update_eddy_viscosity!(nut::F, k, omega) where F<:AbstractScalarField = begin
@@ -246,17 +250,21 @@ constraint!(eqn, BC, model) = begin
     (; kappa, beta1, cmu, B, E) = BC.value
     field = get_phi(eqn)
     mesh = field.mesh
-    (; faces, cells, boundaries) = mesh
+    # (; faces, cells, boundaries) = mesh
+    (; faces, boundary_cellsID, boundaries) = mesh
     (; A, b) = eqn.equation
-    boundary = boundaries[ID]
-    (; cellsID, facesID) = boundary
+    # boundary = boundaries[ID]
+    IDs_range = boundaries[ID].IDs_range
+    # (; cellsID, facesID) = boundary
     ylam = y_plus_laminar(E, kappa)
     ωc = zero(_get_float(mesh))
-    for i ∈ eachindex(cellsID)
-        cID = cellsID[i]
-        fID = facesID[i]
+    # for i ∈ eachindex(cellsID)
+    for fID ∈ IDs_range
+        # cID = cellsID[i]
+        cID = boundary_cellsID[fID]
+        # fID = facesID[i]
         face = faces[fID]
-        cell = cells[cID]
+        # cell = cells[cID]
         y = face.delta
         ωvis = ω_vis(nu[cID], y, beta1)
         ωlog = ω_log(k[cID], y, cmu, kappa)
@@ -300,16 +308,19 @@ set_cell_value!(field, BC, model) = begin
     k = model.turbulence.k
     (; kappa, beta1, cmu, B, E) = BC.value
     mesh = field.mesh
-    (; faces, cells, boundaries) = mesh
-    boundary = boundaries[ID]
-    (; cellsID, facesID) = boundary
+    # (; faces, cells, boundaries) = mesh
+    (; faces, boundary_cellsID, boundaries) = mesh
+    # boundary = boundaries[ID]
+    # (; cellsID, facesID) = boundary
+    IDs_range = boundaries[ID].IDs_range
     ylam = y_plus_laminar(E, kappa)
     ωc = zero(_get_float(mesh))
-    for i ∈ eachindex(cellsID)
-        cID = cellsID[i]
-        fID = facesID[i]
+    for fID ∈ IDs_range
+        # cID = cellsID[i]
+        cID = boundary_cellsID[fID]
+        # fID = facesID[i]
         face = faces[fID]
-        cell = cells[cID]
+        # cell = cells[cID]
         y = face.delta
         ωvis = ω_vis(nu[cID], y, beta1)
         ωlog = ω_log(k[cID], y, cmu, kappa)
@@ -348,16 +359,19 @@ set_production!(P, BC, model) = begin
     (; kappa, beta1, cmu, B, E) = BC.value
     (; U, nu, mesh) = model
     (; k, nut) = model.turbulence
-    (; faces, cells, boundaries) = mesh
-    boundary = boundaries[ID]
-    (; cellsID, facesID) = boundary
+    # (; faces, cells, boundaries) = mesh
+    (; faces, boundary_cellsID, boundaries) = mesh
+    # boundary = boundaries[ID]
+    # (; cellsID, facesID) = boundary
+    IDs_range = boundaries[ID].IDs_range
     ylam = y_plus_laminar(E, kappa)
     Uw = SVector{3,_get_float(mesh)}(0.0,0.0,0.0)
-    for i ∈ eachindex(cellsID)
-        cID = cellsID[i]
-        fID = facesID[i]
+    for fID ∈ IDs_range
+        # cID = cellsID[i]
+        cID = boundary_cellsID[fID]
+        # fID = facesID[i]
         face = faces[fID]
-        cell = cells[cID]
+        # cell = cells[cID]
         nuc = nu[cID]
         (; delta, normal)= face
         uStar = cmu^0.25*sqrt(k[cID])
@@ -371,7 +385,7 @@ set_production!(P, BC, model) = begin
     end
 end
 
-@generated correct_eddy_viscosity!(νtf, nutBCs, model) = begin
+@generated correct_eddy_viscosity!(νtf, nutBCs, model, config) = begin
     BCs = nutBCs.parameters
     func_calls = Expr[]
     for i ∈ eachindex(BCs)

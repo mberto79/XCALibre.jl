@@ -105,7 +105,7 @@ end
     term::Operator{F,P,I,Si}, 
     nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
-    nothing
+    0.0, 0.0
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Si}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin

@@ -81,26 +81,18 @@ function run!(phiEqn::ModelEquation, setup, result, component, config) # ; opP, 
     
     (; hardware) = config
     (; backend, workgroup) = hardware
-    # values_eqn = get_phi(phiEqn).values
-    # values_res = result.values
     (; values) = result
     
     A = _A(phiEqn)
     b = _b(phiEqn, component)
-    # backend = _get_backend(get_phi(phiEqn).mesh)
 
     solve!(
         solver, A, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
         )
     KernelAbstractions.synchronize(backend)
-    # gmres!(solver, A, b, values; M=P.P, itmax=itmax, atol=atol, rtol=rtol)
-    # println(solver.stats.niter)
     kernel! = solve_copy_kernel!(backend, workgroup)
     kernel!(values, x, ndrange = length(values))
-    # kernel!(values_eqn, x, ndrange = length(values_eqn))
     KernelAbstractions.synchronize(backend)
-    # kernel!(values_res, values_eqn, ndrange = length(values_eqn))
-    # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function solve_copy_kernel!(a, b)
@@ -111,15 +103,7 @@ end
     end
 end
 
-# function explicit_relaxation!(phi, phi0, alpha)
-#     @inbounds @simd for i ∈ eachindex(phi)
-#         phi[i] = phi0[i] + alpha*(phi[i] - phi0[i])
-#     end
-# end
-
 function explicit_relaxation!(phi, phi0, alpha, config)
-    # backend = _get_backend(phi.mesh)
-
     (; hardware) = config
     (; backend, workgroup) = hardware
 
@@ -136,26 +120,16 @@ end
     end
 end
 
-# function implicit_relaxation!(eqn::E, field, alpha) where E<:Equation
-#     (; A, b) = eqn
-#     @inbounds for i ∈ eachindex(b)
-#         A[i,i] /= alpha
-#         b[i] += (1.0 - alpha)*A[i,i]*field[i]
-#     end
-# end
-
 ## IMPLICIT RELAXATION KERNEL 
 
 # Prepare variables for kernel and call
 function implicit_relaxation!(
     phiEqn::E, field, alpha, component, config) where E<:ModelEquation
-    # backend = _get_backend(mesh)
     mesh = get_phi(phiEqn).mesh
     (; hardware) = config
     (; backend, workgroup) = hardware
     precon = phiEqn.preconditioner
     # Output sparse matrix properties and values
-    # rowval, colptr, nzval = sparse_array_deconstructor(A)
     A = _A(phiEqn)
     b = _b(phiEqn, component)
     rowval_array = _rowval(A)
@@ -190,15 +164,6 @@ end
         b[i] += (1.0 - alpha)*nzval[nIndex]*field[i]
     end
 end
-
-# function setReference!(pEqn::E, pRef, cellID) where E<:Equation
-#     if pRef === nothing
-#         return nothing
-#     else
-#         pEqn.b[cellID] += pEqn.A[cellID,cellID]*pRef
-#         pEqn.A[cellID,cellID] += pEqn.A[cellID,cellID]
-#     end
-# end
 
 function setReference!(pEqn::E, pRef, cellID, config) where E<:ModelEquation
     if pRef === nothing

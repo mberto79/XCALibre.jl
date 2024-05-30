@@ -7,6 +7,7 @@ struct StrainRate{G, GT} <: AbstractTensorField
     gradU::G
     gradUT::GT
 end
+Adapt.@adapt_structure StrainRate
 
 function (S::StrainRate)(i)
     0.5.*(S.gradU[i] .+ S.gradUT[i])
@@ -42,10 +43,25 @@ function magnitude!(magS::ScalarField, S::AbstractTensorField)
 end
 
 function magnitude2!(
-    magS::ScalarField, S::AbstractTensorField; scale_factor=1.0
+    magS::ScalarField, S::AbstractTensorField, config; scale_factor=1.0
     )
-    sum = 0.0
-    for i ∈ eachindex(magS.values)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    # Launch interpolate midpoint kernel for scalar field
+    kernel! = _magnitude2!(backend, workgroup)
+    kernel!(magS, S, scale_factor, ndrange = length(magS))
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _magnitude2!(
+    magS::ScalarField, S::AbstractTensorField, scale_factor
+    )
+    i = @index(Global)
+
+    @uniform values = magS.values
+
+    @inbounds begin
         sum = 0.0
         for j ∈ 1:3
             for k ∈ 1:3

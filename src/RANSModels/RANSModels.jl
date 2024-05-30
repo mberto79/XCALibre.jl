@@ -1,5 +1,6 @@
 module RANSModels
 
+using KernelAbstractions
 using Accessors
 using StaticArrays
 using LinearAlgebra

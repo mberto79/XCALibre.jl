@@ -145,7 +145,8 @@ end
 
 # Interpolate kernel for scalar field definition
 
-@kernel function interpolate_midpoint_scalar!(faces, phif, phi)
+@kernel function interpolate_midpoint_scalar!(
+    faces, phif::FaceScalarField, phi::ScalarField)
     i = @index(Global)
 
     @inbounds begin
@@ -161,38 +162,83 @@ end
 
 # Interpolate function for vector field definition (NEEDS KERNEL IMPLEMENTATION!!!!!!)
 
-interpolate_midpoint!(psif::FaceVectorField, psi::VectorField, config) = begin
-    # Extract individual value vectors from vector field
-    (; x, y, z) = psif
+# Scalar field calculation definition
 
-    # Retrieve mesh and faces
-    mesh = psi.mesh
-    faces = mesh.faces
-    
-    # Set initial weight
-    weight = 0.5
-    
+function interpolate_midpoint!(phif::FaceVectorField, phi::VectorField, config)
+    # Extract required variables for function
+    (; mesh) = phi
+    (; faces) = mesh
+    # backend = _get_backend(mesh)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    # Launch interpolate midpoint kernel for scalar field
+    kernel! = interpolate_midpoint_vector!(backend, workgroup)
+    kernel!(faces, phif, phi, ndrange = length(faces))
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel function interpolate_midpoint_vector!(
+    faces, psif::FaceVectorField, psi::VectorField)
+    fID = @index(Global)
+
+    @uniform begin
+        # Extract individual value vectors from vector field
+        (; x, y, z) = psif
+        weight = 0.5
+    end
+
     @inbounds begin
-        # Loop over all faces to calculate interpolation
-        for fID ∈ eachindex(faces)
-            # Retrieve face, weight and ownerCells for loop iteration
-            face = faces[fID]
-            weight = face.weight
-            ownerCells = face.ownerCells
-            c1 = ownerCells[1]; c2 = ownerCells[2]
-            
-            # Set values to interpolate between
-            x1 = psi.x[c1]; x2 = psi.x[c2]
-            y1 = psi.y[c1]; y2 = psi.y[c2]
-            z1 = psi.z[c1]; z2 = psi.z[c2]
+        # Retrieve face, weight and ownerCells for loop iteration
+        face = faces[fID]
+        # weight = face.weight
+        ownerCells = face.ownerCells
+        c1 = ownerCells[1]; c2 = ownerCells[2]
+        
+        # Set values to interpolate between
+        x1 = psi.x[c1]; x2 = psi.x[c2]
+        y1 = psi.y[c1]; y2 = psi.y[c2]
+        z1 = psi.z[c1]; z2 = psi.z[c2]
 
-            # Interpolate calculation
-            x[fID] = weight*(x1 + x2)
-            y[fID] = weight*(y1 + y2)
-            z[fID] = weight*(z1 + z2)
-        end
+        # Interpolate calculation
+        x[fID] = weight*(x1 + x2)
+        y[fID] = weight*(y1 + y2)
+        z[fID] = weight*(z1 + z2)
     end
 end
+
+# interpolate_midpoint!(psif::FaceVectorField, psi::VectorField, config) = begin
+#     # Extract individual value vectors from vector field
+#     (; x, y, z) = psif
+
+#     # Retrieve mesh and faces
+#     mesh = psi.mesh
+#     faces = mesh.faces
+    
+#     # Set initial weight
+#     weight = 0.5
+    
+#     @inbounds begin
+#         # Loop over all faces to calculate interpolation
+#         for fID ∈ eachindex(faces)
+#             # Retrieve face, weight and ownerCells for loop iteration
+#             face = faces[fID]
+#             weight = face.weight
+#             ownerCells = face.ownerCells
+#             c1 = ownerCells[1]; c2 = ownerCells[2]
+            
+#             # Set values to interpolate between
+#             x1 = psi.x[c1]; x2 = psi.x[c2]
+#             y1 = psi.y[c1]; y2 = psi.y[c2]
+#             z1 = psi.z[c1]; z2 = psi.z[c2]
+
+#             # Interpolate calculation
+#             x[fID] = weight*(x1 + x2)
+#             y[fID] = weight*(y1 + y2)
+#             z[fID] = weight*(z1 + z2)
+#         end
+#     end
+# end
 
 # Correct interpolation function definition
 

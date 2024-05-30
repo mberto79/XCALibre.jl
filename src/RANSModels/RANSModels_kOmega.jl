@@ -140,18 +140,20 @@ function turbulence!( # Sort out dispatch when possible
     #     Pk[i] *= 2.0
     # end
 
-    magnitude2!(Pk, S, scale_factor=2.0) # multiplied by 2 (def of Sij)
+    magnitude2!(Pk, S, config, scale_factor=2.0) # multiplied by 2 (def of Sij)
 
     @. Pω.values = coeffs.α1*Pk.values
     @. Dωf.values = coeffs.β1*omega.values
-    diffusion_flux!(nueffω, nu, νtf, coeffs.σω)
+    # diffusion_flux!(nueffω, nu, νtf, coeffs.σω)
+    @. nueffω.values = nu.values + coeffs.σω*νtf.values
 
     # update k fluxes
 
     @. Dkf.values = coeffs.β⁺*omega.values
-    diffusion_flux!(nueffk, nu, νtf, coeffs.σk)
+    # diffusion_flux!(nueffk, nu, νtf, coeffs.σk)
+    @. nueffk.values = nu.values + coeffs.σk*νtf.values
     @. Pk.values = nut.values*Pk.values
-    correct_production!(Pk, k.BCs, model)
+    correct_production!(Pk, k.BCs, model) # MOVE TO GPU WHEN WF ACTIVE
 
     # Solve omega equation
 

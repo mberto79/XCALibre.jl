@@ -72,27 +72,42 @@ end
     end
 end
 
-bound!(field, bound) = begin
-    mesh = field.mesh
-    (; cells, cell_neighbours) = mesh
-    for i ∈ eachindex(field)
-        sum_flux = 0.0
-        sum_area = 0
-        average = 0.0
+function bound!(field, config)
+    # Extract hardware configuration
+    (; hardware) = config
+    (; backend, workgroup) = hardware
 
+    (; values, mesh) = field
+    (; cells, cell_neighbours) = mesh
+
+    # set up and launch kernel
+    kernel! = _bound!(backend, workgroup)
+    kernel!(values, cells, cell_neighbours, ndrange = length(values))
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _bound!(values, cells, cell_neighbours)
+    i = @index(Global)
+
+    sum_flux = 0.0
+    sum_area = 0
+    average = 0.0
+    @uniform mzero = eps(eltype(values)) # machine zero
+
+    @inbounds begin
         for fi ∈ cells[i].faces_range
             cID = cell_neighbours[fi]
-            sum_flux += max(field[cID], eps()) # bounded sum
+            sum_flux += max(values[cID], mzero) # bounded sum
             sum_area += 1
         end
         average = sum_flux/sum_area
 
-        field[i] = max(
+        values[i] = max(
             max(
-                field[i],
-                average*signbit(field[i])
+                values[i],
+                average*signbit(values[i])
             ),
-            bound
+            mzero
         )
     end
 end

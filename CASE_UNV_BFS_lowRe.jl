@@ -7,7 +7,7 @@ using CUDA
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 # mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
 mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
-# mesh_file = "unv_sample_meshes/backwardFacingStep_2mm.unv"
+mesh_file = "unv_sample_meshes/backwardFacingStep_2mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
@@ -103,8 +103,8 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
-# runtime = set_runtime(iterations=1, write_interval=-1, time_step=1)
+runtime = set_runtime(iterations=2000, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=1, write_interval=-1, time_step=1)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=4)

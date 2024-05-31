@@ -1,5 +1,6 @@
 module RANSModels
 
+using Atomix
 using KernelAbstractions
 using Accessors
 using StaticArrays

@@ -161,12 +161,12 @@ function turbulence!( # Sort out dispatch when possible
     discretise!(ω_eqn, omega, config)
     apply_boundary_conditions!(ω_eqn, omega.BCs, nothing, config)
     implicit_relaxation!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
-    constrain_equation!(ω_eqn, omega.BCs, model) # active with WFs only
+    constrain_equation!(ω_eqn, omega.BCs, model, config) # active with WFs only
     update_preconditioner!(ω_eqn.preconditioner, mesh, config)
     run!(ω_eqn, solvers.omega, omega, nothing, config)
    
-    constrain_boundary!(omega, omega.BCs, model) # active with WFs only
-    bound!(omega, eps())
+    constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
+    bound!(omega, config)
 
     # Solve k equation
     
@@ -176,9 +176,12 @@ function turbulence!( # Sort out dispatch when possible
     implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
     update_preconditioner!(k_eqn.preconditioner, mesh, config)
     run!(k_eqn, solvers.k, k, nothing, config)
-    bound!(k, eps())
+    bound!(k, config)
 
-    update_eddy_viscosity!(nut, k, omega)
+    # update_eddy_viscosity!(nut, k, omega)
+    @. nut.values = k.values/omega.values
+
+    
     
     interpolate!(νtf, nut, config)
     correct_boundaries!(νtf, nut, nut.BCs, config)
@@ -227,14 +230,14 @@ nut_wall(nu, yplus, kappa, E) = begin
     max(nu*(yplus*kappa/log(max(E*yplus, 1.0 + 1e-4)) - 1), zero(typeof(E)))
 end
 
-@generated constrain_equation!(eqn, fieldBCs, model) = begin
+@generated constrain_equation!(eqn, fieldBCs, model, config) = begin
     BCs = fieldBCs.parameters
     func_calls = Expr[]
     for i ∈ eachindex(BCs)
         BC = BCs[i]
         if BC <: OmegaWallFunction
             call = quote
-                constraint!(eqn, fieldBCs[$i], model)
+                constrain!(eqn, fieldBCs[$i], model, config)
             end
             push!(func_calls, call)
         end
@@ -245,28 +248,48 @@ end
     end 
 end
 
-constraint!(eqn, BC, model) = begin
-    ID = BC.ID
-    nu = model.nu
-    k = model.turbulence.k
-    (; kappa, beta1, cmu, B, E) = BC.value
-    field = get_phi(eqn)
-    mesh = field.mesh
-    # (; faces, cells, boundaries) = mesh
-    (; faces, boundary_cellsID, boundaries) = mesh
-    (; A, b) = eqn.equation
-    # boundary = boundaries[ID]
-    IDs_range = boundaries[ID].IDs_range
-    # (; cellsID, facesID) = boundary
-    ylam = y_plus_laminar(E, kappa)
-    ωc = zero(_get_float(mesh))
-    # for i ∈ eachindex(cellsID)
-    for fID ∈ IDs_range
-        # cID = cellsID[i]
+function constrain!(eqn, BC, model, config)
+
+    # backend = _get_backend(mesh)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    # Access equation data and deconstruct sparse array
+    A = _A(eqn)
+    b = _b(eqn, nothing)
+    rowval = _rowval(A)
+    colptr = _colptr(A)
+    nzval = _nzval(A)
+    
+    # Deconstruct mesh to required fields
+    mesh = model.mesh
+    (; faces, boundaries, boundary_cellsID) = mesh
+
+    facesID_range = get_boundaries(BC, boundaries)
+    start_ID = facesID_range[1]
+
+    # Execute apply boundary conditions kernel
+    kernel! = _constrain!(backend, workgroup)
+    kernel!(
+        model, BC, faces, start_ID, boundary_cellsID, rowval, colptr, nzval, b, ndrange=length(facesID_range)
+    )
+end
+
+@kernel function _constrain!(model, BC, faces, start_ID, boundary_cellsID, rowval, colptr, nzval, b)
+    i = @index(Global)
+    fID = i + start_ID - 1 # Redefine thread index to become face ID
+
+    @uniform begin
+        nu = model.nu
+        k = model.turbulence.k
+        (; kappa, beta1, cmu, B, E) = BC.value
+        ylam = y_plus_laminar(E, kappa)
+    end
+    ωc = zero(eltype(nzval))
+    
+    @inbounds begin
         cID = boundary_cellsID[fID]
-        # fID = facesID[i]
         face = faces[fID]
-        # cell = cells[cID]
         y = face.delta
         ωvis = ω_vis(nu[cID], y, beta1)
         ωlog = ω_log(k[cID], y, cmu, kappa)
@@ -280,20 +303,25 @@ constraint!(eqn, BC, model) = begin
         # Line below is weird but worked
         # b[cID] = A[cID,cID]*ωc
 
+        
         # Classic approach
-        b[cID] += A[cID,cID]*ωc
-        A[cID,cID] += A[cID,cID]
+        # b[cID] += A[cID,cID]*ωc
+        # A[cID,cID] += A[cID,cID]
+        
+        nzIndex = spindex(colptr, rowval, cID, cID)
+        Atomix.@atomic b[cID] += nzval[nzIndex]*ωc
+        Atomix.@atomic nzval[nzIndex] += nzval[nzIndex] 
     end
 end
 
-@generated constrain_boundary!(field, fieldBCs, model) = begin
+@generated constrain_boundary!(field, fieldBCs, model, config) = begin
     BCs = fieldBCs.parameters
     func_calls = Expr[]
     for i ∈ eachindex(BCs)
         BC = BCs[i]
         if BC <: OmegaWallFunction
             call = quote
-                set_cell_value!(field, fieldBCs[$i], model)
+                set_cell_value!(field, fieldBCs[$i], model, config)
             end
             push!(func_calls, call)
         end
@@ -304,25 +332,41 @@ end
     end 
 end
 
-set_cell_value!(field, BC, model) = begin
-    ID = BC.ID
-    nu = model.nu
-    k = model.turbulence.k
-    (; kappa, beta1, cmu, B, E) = BC.value
-    mesh = field.mesh
-    # (; faces, cells, boundaries) = mesh
-    (; faces, boundary_cellsID, boundaries) = mesh
-    # boundary = boundaries[ID]
-    # (; cellsID, facesID) = boundary
-    IDs_range = boundaries[ID].IDs_range
-    ylam = y_plus_laminar(E, kappa)
-    ωc = zero(_get_float(mesh))
-    for fID ∈ IDs_range
-        # cID = cellsID[i]
+function set_cell_value!(field, BC, model, config)
+    # backend = _get_backend(mesh)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    
+    # Deconstruct mesh to required fields
+    mesh = model.mesh
+    (; faces, boundaries, boundary_cellsID) = mesh
+
+    facesID_range = get_boundaries(BC, boundaries)
+    start_ID = facesID_range[1]
+
+    # Execute apply boundary conditions kernel
+    kernel! = _set_cell_value!(backend, workgroup)
+    kernel!(
+        field, model, BC, faces, start_ID, boundary_cellsID, ndrange=length(facesID_range)
+    )
+end
+
+@kernel function _set_cell_value!(field, model, BC, faces, start_ID, boundary_cellsID)
+    i = @index(Global)
+    fID = i + start_ID - 1 # Redefine thread index to become face ID
+
+    @uniform begin
+        nu = model.nu
+        k = model.turbulence.k
+        (; kappa, beta1, cmu, B, E) = BC.value
+        (; values) = field
+        ylam = y_plus_laminar(E, kappa)
+    end
+    ωc = zero(eltype(values))
+
+    @inbounds begin
         cID = boundary_cellsID[fID]
-        # fID = facesID[i]
         face = faces[fID]
-        # cell = cells[cID]
         y = face.delta
         ωvis = ω_vis(nu[cID], y, beta1)
         ωlog = ω_log(k[cID], y, cmu, kappa)
@@ -334,7 +378,7 @@ set_cell_value!(field, BC, model) = begin
             ωc = ωvis
         end
 
-        field.values[cID] = ωc
+        values[cID] = ωc # needs to be atomic?
     end
 end
 

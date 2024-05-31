@@ -56,7 +56,8 @@ function get_boundaries(BC, boundaries::Array)
 end
 
 # Function to copy from GPU to CPU
-function get_boundaries(BC, boundaries::CuArray)
+# function get_boundaries(BC, boundaries::CuArray)
+function get_boundaries(BC, boundaries::AbstractGPUArray)
     # Copy boundaries to CPU
     boundaries_cpu = Array{eltype(boundaries)}(undef, length(boundaries))
     copyto!(boundaries_cpu, boundaries)

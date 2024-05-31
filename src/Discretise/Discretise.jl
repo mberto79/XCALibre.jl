@@ -8,6 +8,7 @@ using Adapt
 using CUDA
 using KernelAbstractions
 using Atomix
+using GPUArrays
 
 using FVM_1D.Mesh
 using FVM_1D.Fields

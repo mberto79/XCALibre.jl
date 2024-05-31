@@ -60,15 +60,51 @@ end
 # KWallFunction functor definition
 @inline (bc::KWallFunction)(
     term::Operator{F,P,I,Laplacian{T}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I,T}  = begin
+    # Retrive term field and field values
+    phi = term.phi 
+    values = get_values(phi, component)
+    J = term.flux[fID]
+
+    # Extract required fields from workitem face
+    (; area, delta) = face 
+
+    # Calculate flux and ap value for increment
+    flux = J*area/delta
+    ap = term.sign[1]*(-flux)
+
+    # Set index for sparse array values at [cellID, cellID] for workitem
+    # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
+
+    # Increment sparse and b arrays
+    # Atomix.@atomic nzval[zcellID] += ap
+    # Atomix.@atomic b[cellID] += ap*values[cellID]
     # nothing
-    0.0, 0.0
+    ap, ap*values[cellID]
 end
 
 # OmegaWallFunction functor definition
 @inline (bc::OmegaWallFunction)(
     term::Operator{F,P,I,Laplacian{T}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I,T} = begin
+    # Retrive term field and field values
+    phi = term.phi 
+    values = get_values(phi, component)
+    J = term.flux[fID]
+
+    # Extract required fields from workitem face
+    (; area, delta) = face 
+
+    # Calculate flux and ap value for increment
+    flux = J*area/delta
+    ap = term.sign[1]*(-flux)
+
+    # Set index for sparse array values at [cellID, cellID] for workitem
+    # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
+
+    # Increment sparse and b arrays
+    # Atomix.@atomic nzval[zcellID] += ap
+    # Atomix.@atomic b[cellID] += ap*values[cellID]
     # nothing
-    0.0, 0.0
+    ap, ap*values[cellID]
 end
 
 # DIVERGENCE TERM (NON-UNIFORM)
@@ -104,7 +140,7 @@ end
     term::Operator{F,P,I,Divergence{Linear}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
     # Calculate ap value to increment
     ap = term.sign[1]*(term.flux[fID])
-    
+
     # Set index for sparse array values at [cellID, cellID] for workitem
     # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
 
@@ -161,31 +197,31 @@ end
 # KWallFunction functor definition
 @inline (bc::KWallFunction)(
     term::Operator{F,P,I,Divergence{Upwind}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
-    # Calculate ap value to increment
+    # Retrieve  term field and calculate ap value to increment
+    phi = term.phi 
     ap = term.sign[1]*(term.flux[fID])
 
     # Set index for sparse array values at [CellID, CellID] for workitem
     # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
-
-    # Increment sparse array if ap value is positive
-    # Atomix.@atomic nzval[cellID, zcellID] += max(ap, 0.0)
+    # Atomix.@atomic nzval[nIndex] += max(ap, 0.0)
+    # Atomix.@atomic nzval[zcellID] += ap
     # nothing
-    max(ap, 0.0), 0.0
+    ap, 0.0
 end
 
 # OmegaWallFunction functor definition
 @inline (bc::OmegaWallFunction)(
     term::Operator{F,P,I,Divergence{Upwind}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I}  = begin
-    # Calculate ap value to increment
+    # Retrieve  term field and calculate ap value to increment
+    phi = term.phi 
     ap = term.sign[1]*(term.flux[fID])
 
     # Set index for sparse array values at [CellID, CellID] for workitem
     # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
-
-    # Increment sparse array if ap value is positive
-    # Atomix.@atomic nzval[zcellID] += max(ap, 0.0)
+    # Atomix.@atomic nzval[nIndex] += max(ap, 0.0)
+    # Atomix.@atomic nzval[zcellID] += ap
     # nothing
-    max(ap, 0.0), 0.0
+    ap, 0.0
 end
 
 # IMPLICIT SOURCE

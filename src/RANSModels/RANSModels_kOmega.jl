@@ -153,7 +153,7 @@ function turbulence!( # Sort out dispatch when possible
     # diffusion_flux!(nueffk, nu, νtf, coeffs.σk)
     @. nueffk.values = nu.values + coeffs.σk*νtf.values
     @. Pk.values = nut.values*Pk.values
-    correct_production!(Pk, k.BCs, model) # MOVE TO GPU WHEN WF ACTIVE
+    correct_production!(Pk, k.BCs, model, config)
 
     # Solve omega equation
 
@@ -382,14 +382,14 @@ end
     end
 end
 
-@generated correct_production!(P, fieldBCs, model) = begin
+@generated correct_production!(P, fieldBCs, model, config) = begin
     BCs = fieldBCs.parameters
     func_calls = Expr[]
     for i ∈ eachindex(BCs)
         BC = BCs[i]
         if BC <: KWallFunction
             call = quote
-                set_production!(P, fieldBCs[$i], model)
+                set_production!(P, fieldBCs[$i], model, config)
             end
             push!(func_calls, call)
         end
@@ -400,24 +400,38 @@ end
     end 
 end
 
-set_production!(P, BC, model) = begin
-    ID = BC.ID
-    (; kappa, beta1, cmu, B, E) = BC.value
-    (; U, nu, mesh) = model
-    (; k, nut) = model.turbulence
-    # (; faces, cells, boundaries) = mesh
+function set_production!(P, BC, model, config)
+    # backend = _get_backend(mesh)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    
+    # Deconstruct mesh to required fields
+    mesh = model.mesh
     (; faces, boundary_cellsID, boundaries) = mesh
-    # boundary = boundaries[ID]
-    # (; cellsID, facesID) = boundary
-    IDs_range = boundaries[ID].IDs_range
+
+    facesID_range = get_boundaries(BC, boundaries)
+    start_ID = facesID_range[1]
+
+    # Execute apply boundary conditions kernel
+    kernel! = _set_production!(backend, workgroup)
+    kernel!(
+        P.values, BC, model, faces, boundary_cellsID, start_ID, ndrange=length(facesID_range)
+    )
+end
+
+@kernel function _set_production!(values, BC, model, faces, boundary_cellsID, start_ID)
+    i = @index(Global)
+    fID = i + start_ID - 1 # Redefine thread index to become face ID
+
+    (; kappa, beta1, cmu, B, E) = BC.value
+    (; U, nu) = model
+    (; k, nut) = model.turbulence
+
     ylam = y_plus_laminar(E, kappa)
-    Uw = SVector{3,_get_float(mesh)}(0.0,0.0,0.0)
-    for fID ∈ IDs_range
-        # cID = cellsID[i]
+    # Uw = SVector{3,_get_float(mesh)}(0.0,0.0,0.0)
+    Uw = SVector{3}(0.0,0.0,0.0)
         cID = boundary_cellsID[fID]
-        # fID = facesID[i]
         face = faces[fID]
-        # cell = cells[cID]
         nuc = nu[cID]
         (; delta, normal)= face
         uStar = cmu^0.25*sqrt(k[cID])
@@ -426,9 +440,8 @@ set_production!(P, BC, model) = begin
         nutw = nut_wall(nuc, yplus, kappa, E)
         mag_grad_U = mag(sngrad(U[cID], Uw, delta, normal))
         if yplus > ylam
-            P.values[cID] = (nu[cID] + nutw)*mag_grad_U*dUdy
+            values[cID] = (nu[cID] + nutw)*mag_grad_U*dUdy
         end
-    end
 end
 
 @generated correct_eddy_viscosity!(νtf, nutBCs, model, config) = begin
@@ -454,19 +467,18 @@ correct_nut_wall!(νtf, BC, model) = begin
     (; kappa, beta1, cmu, B, E) = BC.value
     (; U, nu, mesh) = model
     (; k, omega, nut) = model.turbulence
-    (; faces, cells, boundaries) = mesh
-    boundary = boundaries[ID]
-    (; cellsID, facesID) = boundary
+    (; faces, cells, boundary_cellsID, boundaries) = mesh
+    facesID_range = boundaries[ID].IDs_range
+    
     ylam = y_plus_laminar(E, kappa)
-    for i ∈ eachindex(cellsID)
-        cID = cellsID[i]
-        fID = facesID[i]
+    for fID ∈ facesID_range 
+        cID = boundary_cellsID[fID]
         face = faces[fID]
-        cell = cells[cID]
-        nuf = nu[fID]
+        # nuf = nu[fID]
         (; delta, normal)= face
-        yplus = y_plus(k[cID], nuf, delta, cmu)
-        nutw = nut_wall(nuf, yplus, kappa, E)
+        # yplus = y_plus(k[cID], nuf, delta, cmu)
+        yplus = y_plus(k[cID], nu[cID], delta, cmu)
+        nutw = nut_wall(nu[cID], yplus, kappa, E)
         if yplus > ylam
             νtf.values[fID] = nutw
         end

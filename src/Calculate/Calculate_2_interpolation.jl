@@ -56,7 +56,9 @@ function adjust_boundary!(b_cpu, BC::Dirichlet, phif::FaceScalarField, phi, boun
     # KernelAbstractions.synchronize(backend)
 end
 
-function adjust_boundary!(b_cpu, BC::Neumann, phif::FaceScalarField, phi, boundaries, boundary_cellsID, backend, workgroup)
+const NEUMANN = Union{Neumann, KWallFunction, NutWallFunction}
+
+function adjust_boundary!(b_cpu, BC::NEUMANN, phif::FaceScalarField, phi, boundaries, boundary_cellsID, backend, workgroup)
     phif_values = phif.values
     phi_values = phi.values
 

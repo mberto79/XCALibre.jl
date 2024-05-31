@@ -88,6 +88,19 @@ Adapt.@adapt_structure KWallFunction
 KWallFunction(name::Symbol) = begin
     KWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8))
 end
+# NEED TO WRITE A GENERIC FUNCTION TO ASSIGN WALL FUNCTION BOUNDARY CONDITIONS!!!!
+function fixedValue(BC::KWallFunction, ID::I, value::V) where {I<:Integer,V}
+    # Exception 1: Value is scalar
+    if V <: Number
+        return KWallFunction{I,typeof(value)}(ID, value)
+        # Exception 2: value is a tupple
+    elseif V <: NamedTuple
+        return KWallFunction{I,V}(ID, value)
+    # Error if value is not scalar or tuple
+    else
+        throw("The value provided should be a scalar or a tuple")
+    end
+end
 
 # Omega wall function structure and constructor
 struct OmegaWallFunction{I,V} <: AbstractWallFunction
@@ -119,6 +132,18 @@ end
 Adapt.@adapt_structure NutWallFunction
 NutWallFunction(name::Symbol) = begin
     NutWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8))
+end
+function fixedValue(BC::NutWallFunction, ID::I, value::V) where {I<:Integer,V}
+    # Exception 1: Value is scalar
+    if V <: Number
+        return NutWallFunction{I,typeof(value)}(ID, value)
+        # Exception 2: value is a tupple
+    elseif V <: NamedTuple
+        return NutWallFunction{I,V}(ID, value)
+    # Error if value is not scalar or tuple
+    else
+        throw("The value provided should be a scalar or a tuple")
+    end
 end
 
 # Assign function definition for vector field

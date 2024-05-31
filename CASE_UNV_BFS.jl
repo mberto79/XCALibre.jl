@@ -10,30 +10,6 @@ mesh = build_mesh(mesh_file, scale=0.001)
 # mesh = update_mesh_format(mesh; integer=Int32, float=Float32)
 mesh = update_mesh_format(mesh)
 
-mesh.boundaries
-
-mesh.nodes[end].cells_range
-mesh.node_cells
-
-mesh.boundaries[end].IDs_range
-mesh.boundary_cellsID
-
-mesh.cells[end].nodes_range
-mesh.cell_nodes
-
-mesh.cells[end].faces_range
-mesh.cell_faces
-mesh.cell_neighbours
-mesh.cell_nsign
-
-mesh.faces[end].nodes_range
-mesh.face_nodes
-
-mesh.nodes
-mesh.faces
-mesh.cells
-
-
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
@@ -47,7 +23,7 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
     Dirichlet(:top, [0.0, 0.0, 0.0])
 )
 
- @assign! model p (
+@assign! model p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
     Neumann(:wall, 0.0),
@@ -67,6 +43,8 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
+        rtol = 1e-6,
+        atol = 1e-2
     ),
     p = set_solver(
         model.p;
@@ -74,23 +52,26 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
+        rtol = 1e-6,
+        atol = 1e-3
     )
 )
 
 runtime = set_runtime(
-    iterations=1000, time_step=1, write_interval=500)
+    iterations=2000, time_step=1, write_interval=500)
+
+hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
 GC.gc()
 
 initialise!(model.U, velocity)
 initialise!(model.p, 0.0)
 
-backend = CPU()
-backend = CUDABackend()
-Rx, Ry, Rz, Rp, model1 = simple!(model, config, backend) # 9.39k allocs in 184 iterations
+Rx, Ry, Rz, Rp, model = simple!(model, config) # 9.39k allocs in 184 iterations
 
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

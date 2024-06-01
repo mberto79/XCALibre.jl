@@ -65,7 +65,8 @@ end
         sum = 0.0
         for j ∈ 1:3
             for k ∈ 1:3
-                sum +=   S[i][j,k]*S[i][j,k]
+                # sum +=   S(i)[j,k]*S(i)[j,k]
+                sum +=   S(i)[j,k]*S(i)[k,j]
             end
         end
         magS.values[i] = sum*scale_factor

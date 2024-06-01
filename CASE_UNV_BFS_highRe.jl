@@ -70,7 +70,7 @@ solvers = (
         convergence = 1e-7,
         relax       = 0.6,
         rtol = 1e-6,
-        atol = 1e-2
+        atol = 1e-15
     ),
     p = set_solver(
         model.p;
@@ -79,7 +79,7 @@ solvers = (
         convergence = 1e-7,
         relax       = 0.2,
         rtol = 1e-6,
-        atol = 1e-4
+        atol = 1e-15
     ),
     k = set_solver(
         model.turbulence.k;
@@ -88,7 +88,7 @@ solvers = (
         convergence = 1e-7,
         relax       = 0.8,
         rtol = 1e-6,
-        atol = 1e-5
+        atol = 1e-15
     ),
     omega = set_solver(
         model.turbulence.omega;
@@ -96,16 +96,16 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
-        rtol = 1e-6,
-        atol = 1e-2
+        rtol = 1e-5,
+        atol = 1e-15
     )
 )
 
-runtime = set_runtime(iterations=4000, write_interval=100, time_step=1)
-# runtime = set_runtime(iterations=1, write_interval=1, time_step=1)
+runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
+# runtime = set_runtime(iterations=2, write_interval=-1, time_step=1)
 
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+# hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
@@ -131,19 +131,23 @@ plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
 plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
 plot!(1:length(Rp), Rp, yscale=:log10, label="p")
 
-# # PROFILING CODE
+# PROFILING CODE
 
-# using Profile, PProf
+using Profile, PProf
 
-# GC.gc()
-# initialise!(U, velocity)
-# initialise!(p, 0.0)
+GC.gc()
 
-# Profile.Allocs.clear()
-# Profile.Allocs.@profile sample_rate=1 begin Rx, Ry, Rp = isimple!(
-#     mesh, nu, U, p,
-#     # setup_U, setup_p, iterations, pref=0.0)
-#     setup_U, setup_p, iterations)
-# end
+initialise!(model.U, velocity)
+initialise!(model.p, 0.0)
+initialise!(model.turbulence.k, k_inlet)
+initialise!(model.turbulence.omega, ω_inlet)
+initialise!(model.turbulence.nut, νt_inlet)
 
-# PProf.Allocs.pprof()
+Rx, Ry, Rz, Rp, model = simple!(model, config)
+
+Profile.Allocs.clear()
+Profile.Allocs.@profile sample_rate=0.1 begin 
+    Rx, Ry, Rz, Rp, model = simple!(model, config)
+end
+
+PProf.Allocs.pprof()

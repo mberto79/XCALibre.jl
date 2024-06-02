@@ -206,7 +206,8 @@ end
     # Atomix.@atomic nzval[nIndex] += max(ap, 0.0)
     # Atomix.@atomic nzval[zcellID] += ap
     # nothing
-    ap, 0.0
+    # ap, 0.0
+    0.0, 0.0
 end
 
 # OmegaWallFunction functor definition
@@ -221,7 +222,8 @@ end
     # Atomix.@atomic nzval[nIndex] += max(ap, 0.0)
     # Atomix.@atomic nzval[zcellID] += ap
     # nothing
-    ap, 0.0
+    # ap, 0.0
+    0.0, 0.0
 end
 
 # IMPLICIT SOURCE
@@ -259,5 +261,6 @@ end
     # Incrememnt b array
     # Atomix.@atomic b[cellID] += flux*phi*cell.volume 
     # nothing
-    0.0, flux*phi*cell.volume
+    # 0.0, flux*phi*cell.volume
+    0.0, 0.0
 end

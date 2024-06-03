@@ -12,12 +12,12 @@ function load_3D(unv_mesh; scale, integer, float)
     edgeindx=0
     
     #Defining Arrays with Structs
-    points=UNV_3D.Point{float,SVector{3,float}}[]
-    #edges=UNV_3D.Edge{integer,Vector{integer}}[]
-    faces=UNV_3D.Face{integer,Vector{integer}}[]
-    cells=UNV_3D.Cell_UNV{integer,Vector{integer}}[]
-    boundaryElements=UNV_3D.BoundaryElement{String,integer,Vector{integer}}[]
-    #elements=UNV_3D.Element{integer,Vector{integer}}[]
+    points=UNV3.Point{float,SVector{3,float}}[]
+    #edges=UNV3.Edge{integer,Vector{integer}}[]
+    faces=UNV3.Face{integer,Vector{integer}}[]
+    cells=UNV3.Cell_UNV{integer,Vector{integer}}[]
+    boundaryElements=UNV3.BoundaryElement{String,integer,Vector{integer}}[]
+    #elements=UNV3.Element{integer,Vector{integer}}[]
     
     #Defining Arrays for data collection
     #Points

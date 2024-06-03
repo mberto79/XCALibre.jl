@@ -13,7 +13,7 @@ include("Simulate/Simulate.jl")
 include("VTK/VTK.jl")
 include("Solvers/Solvers.jl")
 include("Postprocess/Postprocess.jl")
-include("UNV_3D/UNV_3D.jl")
+include("UNV3/UNV3.jl")
 
 using Reexport
 @reexport using FVM_1D.Mesh
@@ -28,7 +28,7 @@ using Reexport
 @reexport using FVM_1D.Solvers
 @reexport using FVM_1D.Postprocess
 @reexport using FVM_1D.VTK
-@reexport using FVM_1D.UNV_3D
+@reexport using FVM_1D.UNV3
 @reexport using FVM_1D.UNV2
 
 end # module

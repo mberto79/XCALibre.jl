@@ -4,8 +4,8 @@ using Krylov
 using KernelAbstractions
 using CUDA
 
-#mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
-mesh_file="src/UNV_3D/5_cell_new_boundaries.unv"
+#mesh_file="src/UNV3/5_cell_new_boundaries.unv"
+mesh_file="src/UNV3/5_cell_new_boundaries.unv"
 mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.08mm.unv"
 mesh_file="unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.03m.unv"
 mesh_file="unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.015m.unv" # Converges

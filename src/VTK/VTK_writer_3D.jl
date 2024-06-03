@@ -1,26 +1,4 @@
-# function write_vtu(name,mesh)
-# export write_vtk, model2vtk
-# export copy_to_cpu
 using LinearAlgebra
-
-# function model2vtk(model::RANS{Laminar,F1,F2,V,T,E,D}, name) where {F1,F2,V,T,E,D}
-#     args = (
-#         ("U", model.U), 
-#         ("p", model.p)
-#     )
-#     write_vtk(name, model.mesh, args...)
-# end
-
-# function model2vtk(model::RANS{KOmega,F1,F2,V,T,E,D}, name) where {F1,F2,V,T,E,D}
-#     args = (
-#         ("U", model.U), 
-#         ("p", model.p),
-#         ("k", model.turbulence.k),
-#         ("omega", model.turbulence.omega),
-#         ("nut", model.turbulence.nut)
-#     )
-#     write_vtk(name, model.mesh, args...)
-# end
 
 get_data(arr, backend::CUDABackend) = begin
     arr_cpu = Array{eltype(arr)}(undef, length(arr))
@@ -270,8 +248,6 @@ function write_vtk(name, mesh::Mesh3, args...)
                 """)
             end
         end
-
-
         write(io,"    </CellData>\n")
         write(io,"   </Piece>\n")
         write(io,"  </UnstructuredGrid>\n")

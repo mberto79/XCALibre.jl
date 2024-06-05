@@ -41,7 +41,8 @@ end
     term::Operator{F,P,I,Laplacian{Linear}}, 
     nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
-    ap = term.sign*(-term.flux[fID] * face.area)/face.delta
+    # ap = term.sign*(-term.flux[fID] * face.area)/face.delta
+    ap = term.sign*(-term.flux[fID] * face.area)/(face.delta)
     nzval[cIndex] += ap
     nzval[nIndex] += -ap
     nothing

@@ -1,5 +1,7 @@
 using Plots
+
 using FVM_1D
+
 using Krylov
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
@@ -7,35 +9,36 @@ mesh_file = "unv_sample_meshes/flatplate_2D_laminar.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
-transonic = false
-Tref = 273.15+25
-velocity = [1.0, 0.0, 0.0]
-mu = 1E-5
+Tref = 273.25 + 25 #K reference temperature
+
+velocity = [400, 0.0, 0.0]
+mu = 1E-3
 R = 287.0
 Cp = 1005.0
 Pr = 0.7
+T_inf = 300
 pressure = 100000
-rho = pressure/(R*300)
+rho = pressure/(R*T_inf)
 nu = mu/rho
 Re = velocity[1]*1/nu
-M = 0.5/sqrt(1.4*R*300)
-h_inf = (300-Tref)*1005 
-h_wall = (320-Tref)*1005 
-
+M = 0.5/sqrt(1.4*R*T_inf)
+h_inf = T_inf*Cp
+h_wall = 100*1005
+gamma = 1.4
 model = RANS{Laminar_rho}(mesh=mesh, viscosity=ConstantScalar(nu))
-thermodel = IdealGas(gamma, Cp, Tref)
+thermodel = ThermoModel{IdealGas}(mesh=mesh, Cp=Cp, gamma=gamma)
 
 @assign! model U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     # Wall(:wall, [0.0, 0.0, 0.0]),
     Dirichlet(:wall, [0.0, 0.0, 0.0]),
-    Symmetry(:top, 0.0)
+    Neumann(:top, 0.0)
 )
 
  @assign! model p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, pressure),
+    Dirichlet(:inlet, pressure),
+    Neumann(:outlet, 0.0),
     Neumann(:wall, 0.0),
     Neumann(:top, 0.0)
 )
@@ -43,9 +46,7 @@ thermodel = IdealGas(gamma, Cp, Tref)
 @assign! model energy (
     Dirichlet(:inlet, h_inf),
     Neumann(:outlet, 0.0),
-    # Neumann(:wall, 0.0*Cp),
-    # Dirichlet(:wall, h_wall),
-    Dirichlet(:wall, h_wall),
+    Neumann(:wall, 0.0),
     Neumann(:top, 0.0)
 )
 
@@ -58,7 +59,6 @@ schemes = (
     energy = set_schemes(divergence=Upwind)
 )
 
-
 solvers = (
     U = set_solver(
         model.U;
@@ -67,16 +67,16 @@ solvers = (
         convergence = 1e-7,
         relax       = 0.7,
         atol        = 1e-6,
-        rtol        = 1e-3,
+        rtol        = 1e-2,
     ),
     p = set_solver(
         model.p;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = LDL(),
         convergence = 1e-7,
-        relax       = 0.2,
+        relax       = 0.3,
         atol        = 1e-6,
-        rtol        = 1e-3,
+        rtol        = 1e-2,
     ),
     energy = set_solver(
         model.energy;
@@ -85,11 +85,11 @@ solvers = (
         convergence = 1e-7,
         relax       = 0.7,
         atol        = 1e-6,
-        rtol        = 1e-3,
+        rtol        = 1e-2,
     ),
 )
 
-runtime = set_runtime(iterations=4000, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=100, write_interval=10, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)
@@ -100,7 +100,7 @@ initialise!(model.U, velocity)
 initialise!(model.p, pressure)
 initialise!(model.energy, h_inf)
 
-Rx, Ry, Rz, Rp, Re = simple_rho_K_transonic!(model, thermodel, config; transonic=transonic)
+Rx, Ry, Rz, Rp, Re = simple_rho_K_transonic!(model, thermodel, config)
 
 using DelimitedFiles
 using LinearAlgebra

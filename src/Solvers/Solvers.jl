@@ -16,12 +16,14 @@ using FVM_1D.Discretise
 using FVM_1D.Solve
 using FVM_1D.Calculate
 using FVM_1D.RANSModels
+using FVM_1D.ThermoModels
 using FVM_1D.VTK
 
 include("Solvers_0_functions.jl")
 include("Solvers_1_SIMPLE.jl")
 include("Solvers_1_SIMPLE_RHO.jl")
 include("Solvers_1_SIMPLE_RHO_K.jl")
+include("Solvers_1_SIMPLE_RHO_K_transonic.jl")
 include("Solvers_2_PISO.jl")
 
 end

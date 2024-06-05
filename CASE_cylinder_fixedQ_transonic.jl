@@ -9,9 +9,11 @@ mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 
 # Inlet conditions
-transonic = false
-Tref = 273.15+25
-velocity = [5.0, 0.0, 0.0]
+
+transonic = true
+Tref = 0.0#273.15+25
+
+velocity = [320, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 pressure = 100000.0
 h_inf = (300-Tref)*1005 
@@ -19,12 +21,15 @@ h_wall = (320-Tref)*1005
 nu = 1e-3
 Re = (0.2*velocity[1])/nu
 
-Cp = 1005
+Cp = 1005.0
 gamma = 1.4
 
 model = RANS{Laminar_rho}(mesh=mesh, viscosity=ConstantScalar(nu))
 
+# thermodel = IdealGas(gamma=gamma, Cp=Cp, Tref=Tref)
 thermodel = IdealGas(gamma, Cp, Tref)
+
+# thermodel = ThermoModel{ConstantRho}(mesh=mesh, rho_constant=1.2)
 
 @assign! model U ( 
     Dirichlet(:inlet, velocity),
@@ -46,7 +51,7 @@ thermodel = IdealGas(gamma, Cp, Tref)
 @assign! model energy ( 
     Dirichlet(:inlet, h_inf),
     Neumann(:outlet, 0.0),
-    Dirichlet(:cylinder, h_wall),
+    Neumann(:cylinder, 0.0),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0)
 )
@@ -57,25 +62,25 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = DILU(),
         convergence = 1e-7,
-        relax       = 0.8,
-        rtol        = 1e-3,
+        relax       = 0.7,
+        rtol        = 1e-2,
         atol        = 1e-6,
     ),
     p = set_solver(
         model.p;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = LDL(),
-        convergence = 1e-7,
-        relax       = 0.2,
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = DILU(),
+        convergence = 1e-2,
+        relax       = 0.3,
         rtol        = 1e-3,
         atol        = 1e-6,
     ),
     energy = set_solver(
         model.energy;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = DILU(),
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.7,
         rtol        = 1e-3,
         atol        = 1e-6,
     ),
@@ -83,14 +88,14 @@ solvers = (
 
 schemes = (
     U = set_schemes(divergence=Upwind),
-    p = set_schemes(divergence=Upwind, gradient=Midpoint),
+    p = set_schemes(divergence=Linear, gradient=Midpoint),
     energy = set_schemes(divergence=Upwind)
     # U = set_schemes(divergence=Linear),
     # p = set_schemes(divergence=Linear, gradient=Midpoint),
     # energy = set_schemes(divergence=Linear)
 )
 
-runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=10, write_interval=10, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime)

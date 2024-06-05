@@ -1,5 +1,5 @@
 export set_solver, set_runtime
-export explicit_relaxation!, implicit_relaxation!, setReference!
+export explicit_relaxation!, implicit_relaxation_improved!, implicit_relaxation!, setReference!
 export run!
 
 set_solver( field::AbstractField; # To do - relax inputs and correct internally
@@ -58,6 +58,25 @@ function implicit_relaxation!(eqn::E, field, alpha) where E<:Equation
         b[i] += (1.0 - alpha)*A[i,i]*field[i]
     end
 end
+
+function implicit_relaxation_improved!(eqn::E, field, alpha) where E<:Equation
+    (; A, b) = eqn
+    @inbounds for i ∈ eachindex(b)
+        D0 = A[i,i]
+        A[i,i] = max(abs(A[i,i]), sum(abs.(A[i,:])) - abs(A[i,i]))
+        A[i,i] /= alpha
+        b[i] += (A[i,i] - D0)*field[i]
+    end
+end
+
+# function implicit_relaxation_improved!(eqn::E, field, alpha) where E<:Equation
+#     (; A, b) = eqn
+#     @inbounds for i ∈ eachindex(b)
+#         D = max(abs(A[i,i]), (sum(A[i,:])-(A[i,i])))
+#         b[i] += (D/alpha - A[i,i])*field[i]
+#         A[i,i] = D/alpha
+#     end
+# end
 
 function setReference!(pEqn::E, pRef, cellID) where E<:Equation
     if pRef === nothing

@@ -8,7 +8,7 @@ mesh = build_mesh(mesh_file, scale=0.001)
 # mesh = update_mesh_format(mesh; integer=Int32, float=Float32)
 mesh = update_mesh_format(mesh)
 
-velocity = [0.5, 0.0, 0.0]
+velocity = [400.0, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
 
@@ -22,8 +22,8 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 )
 
  @assign! model p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
+    Dirichlet(:inlet, 200000),
+    Neumann(:outlet, 0.0),
     Neumann(:wall, 0.0),
     Neumann(:top, 0.0)
 )

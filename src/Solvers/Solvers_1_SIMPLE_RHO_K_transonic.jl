@@ -1,14 +1,10 @@
-export simple_rho_K!
+export simple_rho_K_transonic!
 
-function simple_rho_K!(model, thermodel, config; resume=true, pref=nothing) 
+function simple_rho_K_transonic!(model, thermodel, config; resume=true, pref=nothing, transonic=false) 
 
     @info "Extracting configuration and input fields..."
     (; U, p, energy, nu, mesh) = model
     (; solvers, schemes, runtime) = config
-
-    (; rho) = thermodel
-
-    transonic = false
 
     @info "Preallocating fields..."
     
@@ -20,7 +16,7 @@ function simple_rho_K!(model, thermodel, config; resume=true, pref=nothing)
     keff_by_cp = FaceScalarField(mesh)
     initialise!(rhorDf, 1.0)
     divHv = ScalarField(mesh)
-    # rho = ScalarField(mesh)
+    rho = ScalarField(mesh)
     initialise!(rho, 1.0)
     divK = ScalarField(mesh)
     divU = ScalarField(mesh)
@@ -52,11 +48,19 @@ function simple_rho_K!(model, thermodel, config; resume=true, pref=nothing)
         -Source(∇p.result.z)
     ) → Equation(mesh)
 
-    p_eqn = (
-        Laplacian{schemes.p.laplacian}(rhorDf, p) == Source(divHv)
-    ) → Equation(mesh)
+    if transonic
+        Psimdotrrhof = FaceScalarField(mesh)
+        p_eqn = (
+            Laplacian{schemes.p.laplacian}(rhorDf, p) 
+            - Divergence{schemes.p.divergence}(Psimdotrrhof, p) == Source(divHv)
+        ) → Equation(mesh)
+    else
+        p_eqn = (
+            Laplacian{schemes.p.laplacian}(rhorDf, p) == Source(divHv)
+        ) → Equation(mesh)
+    end
 
-    # Actually using enthalpy -> energy = cp * T
+    # Actually using enthalpy -> energy = cp * (T - Tref)
     energy_eqn = (
         Time{schemes.energy.time}(rho, energy)
         + Divergence{schemes.energy.divergence}(mdotf, energy) 
@@ -92,18 +96,18 @@ function simple_rho_K!(model, thermodel, config; resume=true, pref=nothing)
         turbulence = nothing
     end
 
-    R_ux, R_uy, R_uz, R_p, R_e = SIMPLE_RHO_K_loop(
+    R_ux, R_uy, R_uz, R_p, R_e = SIMPLE_RHO_K_transonic_loop(
     model, thermodel, ∇p, gradDivU, ux_eqn, uy_eqn, uz_eqn, p_eqn, energy_eqn, turbulence, transonic, config ; resume=resume, pref=pref)
 
     return R_ux, R_uy, R_uz, R_p, R_e     
 end # end function
 
-function SIMPLE_RHO_K_loop(
+function SIMPLE_RHO_K_transonic_loop(
     model, thermodel, ∇p, gradDivU, ux_eqn, uy_eqn, uz_eqn, p_eqn, energy_eqn, turbulence, transonic, config ; resume, pref)
     
     # Extract model variables and configuration
     (;mesh, U, p, energy, nu) = model
-    (; rho, rhof, Psi, Psif) = thermodel
+
     # ux_model, uy_model = ux_eqn.model, uy_eqn.model
     p_model = p_eqn.model
     (; solvers, schemes, runtime) = config
@@ -119,6 +123,9 @@ function SIMPLE_RHO_K_loop(
     mueff = get_flux(ux_eqn, 3)
     rhorDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
+    if transonic
+        Psimdotrrhof = get_flux(p_eqn, 2)
+    end
     keff_by_cp = get_flux(energy_eqn, 3)
     divK = get_source(energy_eqn, 1)
     
@@ -130,34 +137,41 @@ function SIMPLE_RHO_K_loop(
     S = StrainRate(gradU, gradUT)
     S2 = ScalarField(mesh)
     # ∇U = Grad{schemes.U.gradient}(U)
-    divU = gradDivU.field
-    divUf = FaceScalarField(mesh)
-    # gradDivU = Grad{schemes.U.gradient}(divU)
+    # divU = gradDivU.field
+    # divUf = FaceScalarField(mesh)
+    # # gradDivU = Grad{schemes.U.gradient}(divU)
 
     # Temp sources to test GradUT explicit source
     # divUTx = zeros(Float64, length(mesh.cells))
     # divUTy = zeros(Float64, length(mesh.cells))
 
     n_cells = length(mesh.cells)
+    n_faces = length(mesh.faces)
     Uf = FaceVectorField(mesh)
     pf = FaceScalarField(mesh)
     energyf = FaceScalarField(mesh)
-    # rhof = FaceScalarField(mesh)
     rDf = FaceScalarField(mesh)
-    gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
-    rhorD = ScalarField(mesh)
-    # Kf = FaceVectorField(mesh)
     Kf = FaceScalarField(mesh)
     K = ScalarField(mesh)
     Psi = ScalarField(mesh)
     Psif = FaceScalarField(mesh)
+    rhof = FaceScalarField(mesh)
+
+    mugradUTx = FaceScalarField(mesh)
+    mugradUTy = FaceScalarField(mesh)
+    mugradUTz = FaceScalarField(mesh)
+
+    divmugradUTx = ScalarField(mesh)
+    divmugradUTy = ScalarField(mesh)
+    # divmugradUTx = FaceScalarField(mesh)
 
     # Pre-allocate auxiliary variables
 
     TF = _get_float(mesh)
     prev = zeros(TF, n_cells)  
+    prevf = zeros(TF, n_faces)  
 
     # Pre-allocate vectors to hold residuals 
 
@@ -167,36 +181,30 @@ function SIMPLE_RHO_K_loop(
     R_p = ones(TF, iterations)
     R_e = ones(TF, iterations)
 
-    
-    interpolate!(Uf, U)   
+    # thermo_Psi!(thermodel, energy, energyf, Psi, Psif)
+
+    # thermo_rho!(thermodel, p, pf, Psi, Psif, rho, rhof)
+
+    # CE Modification: Initialise mdotf like this (think it is closer to OpenFOAM)
+    interpolate!(Uf, U)
     correct_boundaries!(Uf, U, U.BCs)
-    interpolate!(energyf, energy)   
-    correct_boundaries!(energyf, energy, energy.BCs)
-
-    thermo_Psi!(thermodel, energy, energyf, Psi, Psif)
-
-    interpolate!(pf, p)   
+    interpolate!(pf, p)
     correct_boundaries!(pf, p, p.BCs)
-
+    interpolate!(energyf, energy)
+    correct_boundaries!(energyf, energy, energy.BCs)
+    thermo_Psi!(thermodel, energy, energyf, Psi, Psif)
     thermo_rho!(thermodel, p, pf, Psi, Psif, rho, rhof)
-
+    # @. Psif.values = Cp/(R*energyf.values)
+    # @. rhof.values = pf.values*Psif.values
     flux!(mdotf, Uf, rhof)
     grad!(∇p, pf, p, p.BCs)
 
     update_nueff!(mueff, nu, rhof, turbulence)
-    
-    for i ∈ eachindex(Uf)
-        Kf.values[i] = 0.5*norm(Uf[i])^2*mdotf.values[i]
-    end
-    for i ∈ eachindex(K)
-        K.values[i] = 0.5*norm(U[i])^2
-    end
-    correct_face_interpolation!(Kf, K, Uf) 
-    div!(divK, Kf)
-
-
     # Calculate keff_by_cp
     @. keff_by_cp.values = mueff.values/Pr
+
+    println("Min keff_by_cp: ", minimum(keff_by_cp.values))
+
     volumes = getproperty.(mesh.cells, :volume)
 
     @info "Staring SIMPLE loops..."
@@ -204,26 +212,29 @@ function SIMPLE_RHO_K_loop(
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
     @time for iteration ∈ 1:iterations
-        
-        # Set up and solve momentum equations
 
-        
-        
-        # wallBC!(ux_eqn, uy_eqn, U, mesh, mueff)
-        
+        gradU = Grad{schemes.U.gradient}(U)
+        # # Set up and solve momentum equations
+        explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU)
+        divnovol!(divmugradUTx, mugradUTx)
+        divnovol!(divmugradUTy, mugradUTx)
+        divnovol!(divmugradUTx, mugradUTz)
+
         @. prev = U.x.values
-        # ux_eqn.b .-= divUTx
         discretise!(ux_eqn, prev, runtime)
         apply_boundary_conditions!(ux_eqn, U.x.BCs)
+        # ux_eqn.b .-= divUTx
+        @. ux_eqn.equation.b += divmugradUTx.values * volumes
         implicit_relaxation_improved!(ux_eqn.equation, prev, solvers.U.relax)
         update_preconditioner!(ux_eqn.preconditioner)
         run!(ux_eqn, solvers.U) #opP=Pu.P, solver=solver_U)
         residual!(R_ux, ux_eqn.equation, U.x, iteration)
 
-        @. prev = U.y.values        
-        # uy_eqn.b .-= divUTy
+        @. prev = U.y.values
         discretise!(uy_eqn, prev, runtime)
-        apply_boundary_conditions!(uy_eqn, U.y.BCs)
+        apply_boundary_conditions!(uy_eqn, U.y.BCs)     
+        @. uy_eqn.equation.b -= divmugradUTy.values * volumes
+        # uy_eqn.b .-= divUTy
         implicit_relaxation_improved!(uy_eqn.equation, prev, solvers.U.relax)
         update_preconditioner!(uy_eqn.preconditioner)
         run!(uy_eqn, solvers.U)
@@ -240,6 +251,19 @@ function SIMPLE_RHO_K_loop(
             residual!(R_uz, uz_eqn.equation, U.z, iteration)
         end
 
+        interpolate!(Uf, U)
+        correct_boundaries!(Uf, U, U.BCs)
+        for i ∈ eachindex(K)
+            K.values[i] = 0.5*(U.x.values[i]^2 + U.y.values[i]^2 + U.z.values[i]^2)
+        end
+        interpolate!(Kf, K)
+        for i ∈ eachindex(Kf)
+            Kf.values[i] = 0.5*(Uf.x.values[i]^2 + Uf.y.values[i]^2 + Uf.z.values[i]^2)
+        end
+        correct_face_interpolation!(Kf, K, mdotf)
+        @. Kf.values *= mdotf.values
+        divnovol!(divK, Kf)
+
         # Set up and solve energy equation
         @. prev = energy.values
         discretise!(energy_eqn, prev, runtime)
@@ -249,38 +273,48 @@ function SIMPLE_RHO_K_loop(
         run!(energy_eqn, solvers.energy)
         residual!(R_e, energy_eqn.equation, energy, iteration)
 
-        # γ = solvers.energy.relax
-        # γ = 1
-        # @. Psi.values = (1-γ)*Psi.values + γ*Cp/(R*energy.values)
+        thermo_clamp!(thermodel, energy, 100, 1000) # Clamp Temperature
         interpolate!(energyf, energy)
-        # correct_face_interpolation(energyf, energy, Uf) 
         correct_boundaries!(energyf, energy, energy.BCs)
-        # @. Psif.values = (1-γ)*Psif.values + γ*Cp/(R*energyf.values)
+        clamp!(energyf.values, 100*1005, 1000*1005)
 
         thermo_Psi!(thermodel, energy, energyf, Psi, Psif)
-
+        
         inverse_diagonal!(rD, ux_eqn.equation, uy_eqn.equation, uz_eqn.equation)
-        @. rD.values *= rho.values
         interpolate!(rDf, rD)
-        @. rhorDf.values = rDf.values
+        @. rhorDf.values = rDf.values * rhof.values
 
         remove_pressure_source!(ux_eqn, uy_eqn, uz_eqn, ∇p)
         H!(Hv, U, ux_eqn, uy_eqn, uz_eqn)
-
         interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs)
-        @. Uf.x.values *= rhof.values
-        @. Uf.y.values *= rhof.values
-        @. Uf.z.values *= rhof.values
-        div!(divHv, Uf)
-
+        
+        if transonic
+            flux!(Psimdotrrhof, Uf)
+            @. Psimdotrrhof.values *= Psif.values
+            flux!(mdotf, Uf)
+            @. mdotf.values *= rhof.values
+            interpolate!(pf, p)
+            correct_boundaries!(pf, p, p.BCs)
+            @. mdotf.values -= mdotf.values*Psif.values*pf.values/rhof.values
+            divnovol!(divHv, mdotf)
+        else
+            flux!(mdotf, Uf)
+            @. mdotf.values *= rhof.values
+            divnovol!(divHv, mdotf)
+        end
+        
         # Set up and solve pressure equation
         @. prev = p.values
         discretise!(p_eqn, prev, runtime)
         apply_boundary_conditions!(p_eqn, p.BCs)
+        if transonic
+            implicit_relaxation!(p_eqn.equation, prev, solvers.U.relax) # Relax for diagonal dominance
+        end
         setReference!(p_eqn.equation, pref, 1)
         update_preconditioner!(p_eqn.preconditioner)
         run!(p_eqn, solvers.p)
+        clamp!(p.values, 1000, 1000000)
         explicit_relaxation!(p, prev, solvers.p.relax)
         residual!(R_p, p_eqn.equation, p, iteration)
 
@@ -302,24 +336,19 @@ function SIMPLE_RHO_K_loop(
         #     end
         # end
 
-        # γ = solvers.p.relax
-        # γ = 1
-        # @. rho.values = (1- γ)*rho.values + γ*p.values*Psi.values
         interpolate!(pf, p)
-        correct_face_interpolation!(pf, p, Uf)
         correct_boundaries!(pf, p, p.BCs)
-        # @. rhof.values = (1- γ)*rhof.values + γ*pf.values*Psif.values
-
         thermo_rho!(thermodel, p, pf, Psi, Psif, rho, rhof)
 
-        flux!(mdotf, Uf) # Uf here is Hvf (reused memory above)
-        interpolate!(pf, p)   
+        correct_face_interpolation!(pf, p, Uf)
         correct_boundaries!(pf, p, p.BCs)
-        # interpolate!(gradpf, ∇p, p)
-        pgrad = face_normal_gradient(p, pf, ∇p, gradpf)
-        # @. mdotf.values -= pgrad.values*rhorDf.values # Not sure if this or one below
-        @. mdotf.values -= pgrad.values*rhof.values*rDf.values
+        pgrad = face_normal_gradient(p, pf)
 
+        if transonic
+            @. mdotf.values += (Psimdotrrhof.values*pf.values - pgrad.values*rhorDf.values) 
+        else
+            @. mdotf.values -= pgrad.values*rhorDf.values
+        end
 
         # Correct velocity and mass flux
         correct_velocity!(U, Hv, ∇p, rD)
@@ -335,15 +364,8 @@ function SIMPLE_RHO_K_loop(
         
         # Update stuff
         update_nueff!(mueff, nu, rhof, turbulence)
-        for i ∈ eachindex(Uf)
-            Kf.values[i] = 0.5*norm(Uf[i])^2*mdotf.values[i]
-        end
-        div!(divK, Kf)
+        @. keff_by_cp.values = mueff.values/Pr
 
-
-        @. keff_by_cp.values = mueff.values./Pr
-
-        
         convergence = 1e-12
 
         if (R_uz[iteration] == one(TF) &&
@@ -379,50 +401,63 @@ function SIMPLE_RHO_K_loop(
             model2vtk(model, @sprintf "iteration_%.6d" iteration)
             write_vtk((@sprintf "rho_%.6d" iteration), mesh, ("rho", rho))
             write_vtk((@sprintf "gradDivU_%.6d" iteration), mesh, ("gradDivU", gradDivU.result))
-            
+            write_vtk((@sprintf "divK_%.6d" iteration), mesh, ("divK", divK))
         end
 
     end # end for loop
     return R_ux, R_uy, R_uz, R_p, R_e
 end
 
-# function face_normal_gradient(phi::ScalarField, phif::FaceScalarField)
-#     mesh = phi.mesh
-#     sngrad = FaceScalarField(mesh)
-#     (; faces, cells) = mesh
-#     nbfaces = length(mesh.boundary_cellsID) #boundary_faces(mesh)
-#     start_faceID = nbfaces + 1
-#     last_faceID = length(faces)
-#     for fID ∈ start_faceID:last_faceID
-#     # for fID ∈ eachindex(faces)
-#         face = faces[fID]
-#         (; area, normal, ownerCells, delta) = face 
-#         cID1 = ownerCells[1]
-#         cID2 = ownerCells[2]
-#         cell1 = cells[cID1]
-#         cell2 = cells[cID2]
-#         phi1 = phi[cID1]
-#         phi2 = phi[cID2]
-#         face_grad = area*(phi2 - phi1)/delta
-#         sngrad.values[fID] = face_grad
-#     end
-#     # Now deal with boundary faces
-#     for fID ∈ 1:nbfaces
-#         face = faces[fID]
-#         (; area, normal, ownerCells, delta) = face 
-#         cID1 = ownerCells[1]
-#         cID2 = ownerCells[2]
-#         cell1 = cells[cID1]
-#         cell2 = cells[cID2]
-#         phi1 = phi[cID1]
-#         phi2 = phi[cID2]
-#         face_grad = area*(phi2 - phi1)/delta
-#         sngrad.values[fID] = face_grad
-#     end
-#     sngrad
-# end
+function explicit_shear_stress!(mugradUTx::FaceScalarField, mugradUTy::FaceScalarField, mugradUTz::FaceScalarField, mueff, gradU)
+    mesh = mugradUTx.mesh
+    (; faces, cells) = mesh
+    nbfaces = length(mesh.boundary_cellsID) #boundary_faces(mesh)
+    start_faceID = nbfaces + 1
+    last_faceID = length(faces)
+    for fID ∈ start_faceID:last_faceID
+        face = faces[fID]
+        (; area, normal, ownerCells, delta) = face 
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        cell1 = cells[cID1]
+        cell2 = cells[cID2]
+        gradUxxf = 0.5*(gradU.result.xx[cID1]+gradU.result.xx[cID2])
+        gradUxyf = 0.5*(gradU.result.xy[cID1]+gradU.result.xy[cID2])
+        gradUxzf = 0.5*(gradU.result.xz[cID1]+gradU.result.xz[cID2])
+        gradUyxf = 0.5*(gradU.result.yx[cID1]+gradU.result.yx[cID2])
+        gradUyyf = 0.5*(gradU.result.yy[cID1]+gradU.result.yy[cID2])
+        gradUyzf = 0.5*(gradU.result.yz[cID1]+gradU.result.yz[cID2])
+        gradUzxf = 0.5*(gradU.result.zx[cID1]+gradU.result.zx[cID2])
+        gradUzyf = 0.5*(gradU.result.zy[cID1]+gradU.result.zy[cID2])
+        gradUzzf = 0.5*(gradU.result.zz[cID1]+gradU.result.zz[cID2])
+        mugradUTx[fID] = mueff[fID] * (normal[1]*gradUxxf + normal[2]*gradUxyf + normal[3]*gradUxzf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
+        mugradUTy[fID] = mueff[fID] * (normal[1]*gradUyxf + normal[2]*gradUyyf + normal[3]*gradUyzf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
+        mugradUTz[fID] = mueff[fID] * (normal[1]*gradUzxf + normal[2]*gradUzyf + normal[3]*gradUzzf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
+    end
+    # Now deal with boundary faces
+    for fID ∈ 1:nbfaces
+        face = faces[fID]
+        (; area, normal, ownerCells, delta) = face 
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        cell1 = cells[cID1]
+        cell2 = cells[cID2]
+        gradUxxf = (gradU.result.xx[cID1])
+        gradUxyf = (gradU.result.xy[cID1])
+        gradUxzf = (gradU.result.xz[cID1])
+        gradUyxf = (gradU.result.yx[cID1])
+        gradUyyf = (gradU.result.yy[cID1])
+        gradUyzf = (gradU.result.yz[cID1])
+        gradUzxf = (gradU.result.zx[cID1])
+        gradUzyf = (gradU.result.zy[cID1])
+        gradUzzf = (gradU.result.zz[cID1])
+        mugradUTx[fID] = mueff[fID] * (normal[1]*gradUxxf + normal[2]*gradUxyf + normal[3]*gradUxzf) * area
+        mugradUTy[fID] = mueff[fID] * (normal[1]*gradUyxf + normal[2]*gradUyyf + normal[3]*gradUyzf) * area
+        mugradUTz[fID] = mueff[fID] * (normal[1]*gradUzxf + normal[2]*gradUzyf + normal[3]*gradUzzf) * area
+    end
+end 
 
-function face_normal_gradient(phi::ScalarField, phif::FaceScalarField, grad, gradf)
+function face_normal_gradient(phi::ScalarField, phif::FaceScalarField)
     mesh = phi.mesh
     sngrad = FaceScalarField(mesh)
     (; faces, cells) = mesh
@@ -431,28 +466,6 @@ function face_normal_gradient(phi::ScalarField, phif::FaceScalarField, grad, gra
     last_faceID = length(faces)
     for fID ∈ start_faceID:last_faceID
     # for fID ∈ eachindex(faces)
-        face = faces[fID]
-        (; area, e, normal, ownerCells, delta) = face 
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        cell1 = cells[cID1]
-        cell2 = cells[cID2]
-        phi1 = phi[cID1]
-        phi2 = phi[cID2]
-        gradf_face = gradf[fID]
-        # Minimum Correction approach
-        costheta = (e[1]*normal[1] + e[2]*normal[2] + e[3]*normal[3]) 
-        Ef = costheta*area
-        face_grad = Ef*(phi2 - phi1)/delta
-        Tf1 = (normal[1] - costheta*e[1])*area
-        Tf2 = (normal[2] - costheta*e[2])*area
-        Tf3 = (normal[3] - costheta*e[3])*area
-        gradf_face = 0.5*(grad[cID1] + grad[cID2])
-        face_grad_int = Tf1*gradf_face[1] + Tf2*gradf_face[2] + Tf3*gradf_face[3]
-        sngrad.values[fID] = face_grad + face_grad_int
-    end
-    # Now deal with boundary faces
-    for fID ∈ 1:nbfaces
         face = faces[fID]
         (; area, normal, ownerCells, delta) = face 
         cID1 = ownerCells[1]
@@ -464,7 +477,41 @@ function face_normal_gradient(phi::ScalarField, phif::FaceScalarField, grad, gra
         face_grad = area*(phi2 - phi1)/delta
         sngrad.values[fID] = face_grad
     end
+    # Now deal with boundary faces
+    for fID ∈ 1:nbfaces
+        face = faces[fID]
+        (; area, normal, ownerCells, delta) = face 
+        cID1 = ownerCells[1]
+        
+        cID2 = ownerCells[2]
+        cell1 = cells[cID1]
+        cell2 = cells[cID2]
+        phi1 = phi[cID1]
+        # phi2 = phi[cID2]
+        phi2 = phif[fID]
+        face_grad = area*(phi2 - phi1)/delta
+        sngrad.values[fID] = face_grad
+    end
     sngrad
+end
+
+function correct_face_interpolation!(phif::FaceScalarField, phi, Uf::FaceScalarField)
+    mesh = phif.mesh
+    (; faces, cells) = mesh
+    for fID ∈ eachindex(faces)
+        face = faces[fID]
+        (; ownerCells, area, normal) = face
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        phi1 = phi[cID1]
+        phi2 = phi[cID2]
+        flux = Uf[fID]
+        if flux >= 0.0
+            phif.values[fID] = phi1
+        else
+            phif.values[fID] = phi2
+        end
+    end
 end
 
 function correct_face_interpolation!(phif::FaceScalarField, phi, Uf)

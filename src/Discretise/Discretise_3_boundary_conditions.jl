@@ -16,7 +16,7 @@ end
     ) where {F,P,I} = begin
     J = term.flux[fID]
     (; area, delta) = face 
-    flux = J*area/delta
+    flux = J*area/(delta)
     ap = term.sign[1]*(-flux)
     A[cellID,cellID] += ap
     b[cellID] += ap*bc.value
@@ -40,13 +40,13 @@ end
     phi = term.phi 
 
     J = term.flux[fID]
-    # (; area, delta) = face 
+    (; area, delta) = face 
     # phif = phi.values[cellID] + bc.value*delta
     # flux = J*area/delta
     # ap = term.sign[1]*(-flux)
     # A[cellID,cellID] += ap
     # b[cellID] += ap*phif
-    b[cellID] += -term.sign[1]*(J)*bc.value
+    b[cellID] += -term.sign[1]*(J)*bc.value*area
     nothing
 end
 
@@ -171,7 +171,10 @@ end
     A, b, cellID, cell, face, fID) where {F,P,I} = begin
     phi = term.phi 
     ap = term.sign[1]*(term.flux[fID])
-    b[cellID] += -term.sign[1]*(term.flux[fID])*phi[cellID]*face.delta*(-bc.value)
+    A[cellID, cellID] += ap
+    b[cellID] += -term.sign[1]*(term.flux[fID])*(face.delta*(-bc.value))
+    # b[cellID] += -term.sign[1]*(term.flux[fID])*phi[cellID]*face.delta*(-bc.value)
+
     nothing
 end
 

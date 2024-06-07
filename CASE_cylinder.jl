@@ -1,6 +1,5 @@
 using Plots
 using FVM_1D
-using Krylov
 using CUDA
 
 
@@ -21,7 +20,15 @@ Re = (0.2*velocity[1])/nu
 
 model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
-@assign! model U ( 
+model = Physics(
+    time = Steady(),
+    fluid = Incompressible(nu = ConstantScalar(nu)),
+    turbulence = Laminar(),
+    energy = nothing,
+    domain = mesh
+    )
+
+@assign! model momentum U ( 
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:cylinder, noSlip),
@@ -29,7 +36,7 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
     Neumann(:top, 0.0)
 )
 
-@assign! model p (
+@assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
     Neumann(:cylinder, 0.0),
@@ -39,7 +46,7 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 solvers = (
     U = set_solver(
-        model.U;
+        model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -48,7 +55,7 @@ solvers = (
         atol = 1e-2
     ),
     p = set_solver(
-        model.p;
+        model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,

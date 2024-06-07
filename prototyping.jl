@@ -218,7 +218,7 @@ for iteration in 1:1000
     apply_boundary_conditions!(ux_eqn, U.x.BCs)
     implicit_relaxation!(ux_eqn, prev, solvers.U.relax, mesh)
     update_preconditioner!(ux_eqn.preconditioner, mesh)
-    run!(ux_eqn, solvers.U, U.x) #opP=Pu.P, solver=solver_U)
+    solve!(ux_eqn, solvers.U, U.x) #opP=Pu.P, solver=solver_U)
     residual!(R_ux, ux_eqn.equation, U.x, iteration)
 
     @. prev = U.y.values
@@ -227,7 +227,7 @@ for iteration in 1:1000
     # uy_eqn.b .-= divUTy
     implicit_relaxation!(uy_eqn, prev, solvers.U.relax, mesh)
     update_preconditioner!(uy_eqn.preconditioner, mesh)
-    run!(uy_eqn, solvers.U, U.y)
+    solve!(uy_eqn, solvers.U, U.y)
     residual!(R_uy, uy_eqn.equation, U.y, iteration)
 
     inverse_diagonal!(rD, ux_eqn)
@@ -244,7 +244,7 @@ for iteration in 1:1000
     apply_boundary_conditions!(p_eqn, p.BCs)
     setReference!(p_eqn, pref, 1)
     update_preconditioner!(p_eqn.preconditioner, mesh)
-    run!(p_eqn, solvers.p, p)
+    solve!(p_eqn, solvers.p, p)
 
     explicit_relaxation!(p, prev, solvers.p.relax)
     residual!(R_p, p_eqn.equation, p, iteration)

@@ -8,15 +8,15 @@ cIndex - Index of the cell based on sparse matrix. Use to index "nzval_array"
 
 # TIME 
 
-# Steady
+# SteadyState
 @inline function scheme!(
-    term::Operator{F,P,I,Time{Steady}}, 
+    term::Operator{F,P,I,Time{SteadyState}}, 
     nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
     # nothing
     0.0, 0.0 # add types if this approach works
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Time{Steady}}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
+    term::Operator{F,P,I,Time{SteadyState}}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
     0.0, 0.0
 end
 

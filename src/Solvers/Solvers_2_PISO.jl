@@ -100,7 +100,7 @@ function PISO(
                     interpolate!(gradpf, ∇p, p)
                     nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
                     correct!(p_eqn.equation, p_model.terms.term1, pf)
-                    run!(p_model, solvers.p)
+                    solve!(p_model, solvers.p)
                     grad!(∇p, pf, p, pBCs) 
                 end
             end

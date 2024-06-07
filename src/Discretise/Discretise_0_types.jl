@@ -3,7 +3,7 @@ export AbstractDirichlet, AbstractNeumann
 export Dirichlet, fixedValue, Neumann
 export KWallFunction, OmegaWallFunction, NutWallFunction
 export Constant, Linear, Upwind
-export Steady, Euler, CrankNicolson
+export SteadyState, Euler, CrankNicolson
 export Orthogonal, Midpoint
 export assign, @assign!
 export set_schemes
@@ -16,7 +16,7 @@ struct Linear <: AbstractScheme end
 struct Upwind <: AbstractScheme end
 struct Orthogonal <: AbstractScheme end
 struct Midpoint <: AbstractScheme end
-struct Steady <: AbstractScheme end 
+struct SteadyState <: AbstractScheme end 
 struct Euler <: AbstractScheme end 
 struct CrankNicolson <: AbstractScheme end
 
@@ -269,7 +269,7 @@ end
 
 # Set schemes function definition with default set variables
 set_schemes(;
-    time=Steady,
+    time=SteadyState,
     divergence=Linear, 
     laplacian=Linear, 
     gradient=Orthogonal) = begin

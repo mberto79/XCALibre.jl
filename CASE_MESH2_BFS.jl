@@ -90,7 +90,7 @@ setup = SolverSetup(
     )
 
 clear!(phi)
-@time run!(equation, model, BCs, setup)
+@time solve!(equation, model, BCs, setup)
 
 scatter(x(mesh), y(mesh), phi.values, color=:blue)
 
@@ -169,6 +169,6 @@ setup = SolverSetup(
     )
 
 clear!(phi)
-@time run!(equation, model, BCs, setup)
+@time solve!(equation, model, BCs, setup)
 
 scatter(x(mesh), y(mesh), phi.values, color=:blue)

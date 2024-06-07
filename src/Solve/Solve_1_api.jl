@@ -1,6 +1,6 @@
 export set_solver, set_runtime
 export explicit_relaxation!, implicit_relaxation!, setReference!
-export run!
+export solve!
 export solve_equation
 
 set_solver( field::AbstractField; # To do - relax inputs and correct internally
@@ -38,7 +38,7 @@ function solve_equation(
     apply_boundary_conditions!(eqn, phi.BCs, nothing, config)
     setReference!(eqn, ref, 1, config)
     update_preconditioner!(eqn.preconditioner, phi.mesh, config)
-    run!(eqn, solversetup, phi, nothing, config)
+    solve!(eqn, solversetup, phi, nothing, config)
 end
 
 function solve_equation(
@@ -53,13 +53,13 @@ function solve_equation(
     apply_boundary_conditions!(psiEqn, psi.x.BCs, xdir, config)
     implicit_relaxation!(psiEqn, psi.x.values, solversetup.relax, xdir, config)
     update_preconditioner!(psiEqn.preconditioner, mesh, config)
-    run!(psiEqn, solversetup, psi.x, xdir, config)
+    solve!(psiEqn, solversetup, psi.x, xdir, config)
     
     update_equation!(psiEqn, config)
     apply_boundary_conditions!(psiEqn, psi.y.BCs, ydir, config)
     implicit_relaxation!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
     update_preconditioner!(psiEqn.preconditioner, mesh, config)
-    run!(psiEqn, solversetup, psi.y, ydir, config)
+    solve!(psiEqn, solversetup, psi.y, ydir, config)
     
     # Z velocity calculations (3D Mesh only)
     if typeof(mesh) <: Mesh3
@@ -67,11 +67,11 @@ function solve_equation(
         apply_boundary_conditions!(psiEqn, psi.z.BCs, zdir, config)
         implicit_relaxation!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
         update_preconditioner!(psiEqn.preconditioner, mesh, config)
-        run!(psiEqn, solversetup, psi.z, zdir, config)
+        solve!(psiEqn, solversetup, psi.z, zdir, config)
     end
 end
 
-function run!(phiEqn::ModelEquation, setup, result, component, config) # ; opP, solver
+function solve!(phiEqn::ModelEquation, setup, result, component, config) # ; opP, solver
 
     (; itmax, atol, rtol) = setup
     precon = phiEqn.preconditioner

@@ -295,7 +295,7 @@ system.x .= 0.0
 phi.values .= 0.0
 
 @time for i ∈ 1:500
-    solve!(system, opA, equation.b, phi.values; M=opP, itmax=100, atol=1e-12, rtol=1e-2)
+    solve_system!(system, opA, equation.b, phi.values; M=opP, itmax=100, atol=1e-12, rtol=1e-2)
     relax!(phi, system, 1.0)
     update_residual!(equation, opA, phi)
     if residual(equation) <= 1e-6

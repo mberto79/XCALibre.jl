@@ -1,6 +1,5 @@
 using Plots
 using FVM_1D
-using Krylov
 using CUDA
 using KernelAbstractions
 
@@ -20,9 +19,17 @@ noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
 Re = (0.2*velocity[1])/nu
 
-model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
+# model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
-@assign! model U ( 
+model = Physics(
+    time = Transient(),
+    fluid = Incompressible(nu = ConstantScalar(nu)),
+    turbulence = Laminar(),
+    energy = nothing,
+    domain = mesh
+    )
+
+@assign! model momentum U ( 
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:cylinder, noSlip),
@@ -30,7 +37,7 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
     Neumann(:top, 0.0)
 )
 
-@assign! model p (
+@assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
     Neumann(:cylinder, 0.0),
@@ -40,7 +47,7 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 solvers = (
     U = set_solver(
-        model.U;
+        model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -49,7 +56,7 @@ solvers = (
         atol = 1e-5
     ),
     p = set_solver(
-        model.p;
+        model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), #NormDiagonal(),
         convergence = 1e-7,
@@ -74,17 +81,17 @@ runtime = set_runtime(
     # iterations=5000, write_interval=250, time_step=0.001) # Only runs on 32 bit
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
 GC.gc(true)
 
-initialise!(model.U, velocity)
-initialise!(model.p, 0.0)
+initialise!(model.momentum.U, velocity)
+initialise!(model.momentum.p, 0.0)
 
-Rx, Ry, Rz, Rp, model = piso!(model, config); #, pref=0.0)
+Rx, Ry, Rz, Rp, model = run!(model, config); #, pref=0.0)
 
 plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

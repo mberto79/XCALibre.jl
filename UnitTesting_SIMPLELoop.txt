@@ -293,7 +293,7 @@ Output the same for all benchmarks?: YES
 
 
 
-solve!() for Jacobi update for GPU (Float64 types with variables ux_eqn, solvers.U)
+solve_system!() for Jacobi update for GPU (Float64 types with variables ux_eqn, solvers.U)
 
 CPU benchmark (compilation):                0.679942 seconds (2.54 M CPU allocations: 173.592 MiB, 6.58% gc time)
 CPU benchmark (post compilation):           0.008293 seconds (5 CPU allocations: 1007.531 KiB)

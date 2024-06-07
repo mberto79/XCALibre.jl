@@ -1,7 +1,7 @@
 export set_solver, set_runtime
 export explicit_relaxation!, implicit_relaxation!, setReference!
-export solve!
-export solve_equation
+export solve_system!
+export solve_equation!
 
 set_solver( field::AbstractField; # To do - relax inputs and correct internally
     solver::S, 
@@ -30,7 +30,7 @@ set_runtime(; iterations::I, write_interval::I, time_step::N) where {I<:Integer,
     (iterations=iterations, dt=time_step, write_interval=write_interval)
 end
 
-function solve_equation(
+function solve_equation!(
     eqn::ModelEquation{T,M,E,S,P}, phi, solversetup, config; ref=nothing
     ) where {T<:ScalarModel,M,E,S,P}
 
@@ -38,10 +38,10 @@ function solve_equation(
     apply_boundary_conditions!(eqn, phi.BCs, nothing, config)
     setReference!(eqn, ref, 1, config)
     update_preconditioner!(eqn.preconditioner, phi.mesh, config)
-    solve!(eqn, solversetup, phi, nothing, config)
+    solve_system!(eqn, solversetup, phi, nothing, config)
 end
 
-function solve_equation(
+function solve_equation!(
     psiEqn::ModelEquation{T,M,E,S,P}, psi, solversetup, xdir, ydir, zdir, config
     ) where {T<:VectorModel,M,E,S,P}
 
@@ -53,13 +53,13 @@ function solve_equation(
     apply_boundary_conditions!(psiEqn, psi.x.BCs, xdir, config)
     implicit_relaxation!(psiEqn, psi.x.values, solversetup.relax, xdir, config)
     update_preconditioner!(psiEqn.preconditioner, mesh, config)
-    solve!(psiEqn, solversetup, psi.x, xdir, config)
+    solve_system!(psiEqn, solversetup, psi.x, xdir, config)
     
     update_equation!(psiEqn, config)
     apply_boundary_conditions!(psiEqn, psi.y.BCs, ydir, config)
     implicit_relaxation!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
     update_preconditioner!(psiEqn.preconditioner, mesh, config)
-    solve!(psiEqn, solversetup, psi.y, ydir, config)
+    solve_system!(psiEqn, solversetup, psi.y, ydir, config)
     
     # Z velocity calculations (3D Mesh only)
     if typeof(mesh) <: Mesh3
@@ -67,11 +67,11 @@ function solve_equation(
         apply_boundary_conditions!(psiEqn, psi.z.BCs, zdir, config)
         implicit_relaxation!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
         update_preconditioner!(psiEqn.preconditioner, mesh, config)
-        solve!(psiEqn, solversetup, psi.z, zdir, config)
+        solve_system!(psiEqn, solversetup, psi.z, zdir, config)
     end
 end
 
-function solve!(phiEqn::ModelEquation, setup, result, component, config) # ; opP, solver
+function solve_system!(phiEqn::ModelEquation, setup, result, component, config) # ; opP, solver
 
     (; itmax, atol, rtol) = setup
     precon = phiEqn.preconditioner

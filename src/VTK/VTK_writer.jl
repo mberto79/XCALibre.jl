@@ -1,24 +1,24 @@
 export write_vtk, model2vtk
 export copy_to_cpu
 
-function model2vtk(model::RANS{Laminar,F1,F2,V,T,E,D}, name) where {F1,F2,V,T,E,D}
+function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, name) where {T,F,M,Tu<:Laminar,E,D,BI}
     args = (
-        ("U", model.U), 
-        ("p", model.p)
+        ("U", model.momentum.U), 
+        ("p", model.momentum.p)
     )
-    write_vtk(name, model.mesh, args...)
+    write_vtk(name, model.domain, args...)
 end
 
-function model2vtk(model::RANS{KOmega,F1,F2,V,T,E,D}, name) where {F1,F2,V,T,E,D}
-    args = (
-        ("U", model.U), 
-        ("p", model.p),
-        ("k", model.turbulence.k),
-        ("omega", model.turbulence.omega),
-        ("nut", model.turbulence.nut)
-    )
-    write_vtk(name, model.mesh, args...)
-end
+# function model2vtk(model::RANS{KOmega,F1,F2,V,T,E,D}, name) where {F1,F2,V,T,E,D}
+#     args = (
+#         ("U", model.U), 
+#         ("p", model.p),
+#         ("k", model.turbulence.k),
+#         ("omega", model.turbulence.omega),
+#         ("nut", model.turbulence.nut)
+#     )
+#     write_vtk(name, model.mesh, args...)
+# end
 
 function write_vtk(name, mesh::Mesh2, args...) #, Ux, Uy, Uz, p)
     # UxNodes = FVM.NodeScalarField(Ux)

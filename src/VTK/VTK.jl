@@ -2,6 +2,7 @@ module VTK
 
 using FVM_1D.Mesh
 using FVM_1D.Fields
+using FVM_1D.ModelPhysics
 using FVM_1D.RANSModels
 using CUDA
 using KernelAbstractions

@@ -14,7 +14,10 @@ function PISO(
     model, ∇p, U_eqn, p_eqn, turbulence, config ; resume, pref)
     
     # Extract model variables and configuration
-    (;mesh, U, p, nu) = model
+    # (;mesh, U, p, nu) = model
+    (; U, p) = model.momentum
+    mesh = model.domain
+    nu = _nu(model.fluid)
     p_model = p_eqn.model
     (; solvers, schemes, runtime, hardware) = config
     (; iterations, write_interval) = runtime
@@ -67,7 +70,7 @@ function PISO(
 
     @time for iteration ∈ 1:iterations
 
-        solve_equation(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
+        solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
         
           
         # Pressure correction
@@ -85,7 +88,7 @@ function PISO(
             
             # Pressure calculations
             @. prev = p.values
-            solve_equation(p_eqn, p, solvers.p, config; ref=nothing)
+            solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
 
             # Gradient
             grad!(∇p, pf, p, p.BCs, config) 
@@ -100,7 +103,7 @@ function PISO(
                     interpolate!(gradpf, ∇p, p)
                     nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
                     correct!(p_eqn.equation, p_model.terms.term1, pf)
-                    solve!(p_model, solvers.p)
+                    solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
                     grad!(∇p, pf, p, pBCs) 
                 end
             end

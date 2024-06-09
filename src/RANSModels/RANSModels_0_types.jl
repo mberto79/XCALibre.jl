@@ -7,7 +7,7 @@ abstract type AbstractMomentumModel end
 abstract type AbstractTurbulenceModel end
 
 # Models 
-struct Laminar <: AbstractMomentumModel end 
+struct Laminar <: AbstractTurbulenceModel end 
 Adapt.@adapt_structure Laminar
 
 struct RANS{M,F1,F2,V,T,E,D,BI}

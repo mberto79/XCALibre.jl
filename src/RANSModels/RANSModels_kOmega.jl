@@ -2,53 +2,75 @@ export KOmega
 export initialise_RANS
 export turbulence!
 
-struct KOmega <: AbstractTurbulenceModel end
-Adapt.@adapt_structure KOmega
 # Constructor 
 
-RANS{KOmega}(; mesh, viscosity) = begin
-    U = VectorField(mesh); F1 = typeof(U)
-    p = ScalarField(mesh); F2 = typeof(p)
-    V = typeof(viscosity)
-    k = ScalarField(mesh); omega = ScalarField(mesh); nut = ScalarField(mesh)
-    turb = (k=k , omega=omega, nut=nut); T = typeof(turb)
-    flag = false; E = typeof(flag)
-    D = typeof(mesh)
-    boundary_info = @time begin boundary_map(mesh) end; BI = typeof(boundary_info)
-    RANS{KOmega,F1,F2,V,T,E,D,BI}(
-        KOmega(), U, p, viscosity, turb, flag, mesh, boundary_info
-    )
+# RANS{KOmega}(; mesh, viscosity) = begin
+#     U = VectorField(mesh); F1 = typeof(U)
+#     p = ScalarField(mesh); F2 = typeof(p)
+#     V = typeof(viscosity)
+#     k = ScalarField(mesh); omega = ScalarField(mesh); nut = ScalarField(mesh)
+#     turb = (k=k , omega=omega, nut=nut); T = typeof(turb)
+#     flag = false; E = typeof(flag)
+#     D = typeof(mesh)
+#     boundary_info = @time begin boundary_map(mesh) end; BI = typeof(boundary_info)
+#     RANS{KOmega,F1,F2,V,T,E,D,BI}(
+#         KOmega(), U, p, viscosity, turb, flag, mesh, boundary_info
+#     )
+# end
+struct KOmega <: AbstractTurbulenceModel
+    k
+    omega
+    nut
+    coeffs
+    kf
+    ωf
+    νtf
+    k_eqn
+    ω_eqn
+end
+Adapt.@adapt_structure KOmega
+
+RANS{KOmega}(mesh) = begin
+    k = ScalarField(mesh)
+    omega = ScalarField(mesh)
+    nut = ScalarField(mesh)
+    coeffs = (β⁺=0.09, α1=0.52, β1=0.072, σk=0.5, σω=0.5)
+    kf = FaceScalarField(mesh)
+    ωf = FaceScalarField(mesh)
+    νtf = FaceScalarField(mesh)
+    KOmega(k, omega, nut, coeffs, kf, ωf, νtf, (), () )
 end
 
-struct KOmegaCoefficients{T}
-    β⁺::T
-    α1::T
-    β1::T
-    σk::T
-    σω::T
-end
-Adapt.@adapt_structure KOmegaCoefficients
 
-get_coeffs(FloatType) = begin
-    KOmegaCoefficients{FloatType}(
-        0.09,
-        0.52, #5/9,
-        0.072, #3/40,
-        0.5,
-        0.5    
-    )
-end
+# struct KOmegaCoefficients{T}
+#     β⁺::T
+#     α1::T
+#     β1::T
+#     σk::T
+#     σω::T
+# end
+# Adapt.@adapt_structure KOmegaCoefficients
 
-struct KOmegaModel{MK,MW,FK,FW,FN,C,S}
-    k_eqn::MK
-    ω_eqn::MW
-    kf::FK
-    ωf::FW
-    νtf::FN
-    coeffs::C
-    config::S
-end
-Adapt.@adapt_structure KOmegaModel
+# get_coeffs(FloatType) = begin
+#     KOmegaCoefficients{FloatType}(
+#         0.09,
+#         0.52, #5/9,
+#         0.072, #3/40,
+#         0.5,
+#         0.5    
+#     )
+# end
+
+# struct KOmegaModel{MK,MW,FK,FW,FN,C,S}
+#     k_eqn::MK
+#     ω_eqn::MW
+#     kf::FK
+#     ωf::FW
+#     νtf::FN
+#     coeffs::C
+#     config::S
+# end
+# Adapt.@adapt_structure KOmegaModel
 
 function initialise_RANS(mdotf, peqn, config, model)
     # unpack turbulent quantities and configuration
@@ -58,9 +80,9 @@ function initialise_RANS(mdotf, peqn, config, model)
     mesh = mdotf.mesh
     eqn = peqn.equation
 
-    kf = FaceScalarField(mesh)
-    ωf = FaceScalarField(mesh)
-    νtf = FaceScalarField(mesh)
+    # kf = FaceScalarField(mesh)
+    # ωf = FaceScalarField(mesh)
+    # νtf = FaceScalarField(mesh)
     
     nueffk = FaceScalarField(mesh)
     nueffω = FaceScalarField(mesh)
@@ -115,7 +137,7 @@ function initialise_RANS(mdotf, peqn, config, model)
 end
 
 function turbulence!( # Sort out dispatch when possible
-    KOmega::KOmegaModel, model, S, S2, prev, config)
+    KOmega::KOmega, model, S, S2, prev, config)
 
     nu = model.nu
     nut = model.turbulence.nut

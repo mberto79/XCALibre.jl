@@ -58,40 +58,41 @@ viscous_force(patch::Symbol, U::VectorField, rho, ν, νt) = begin
     return Fv
 end
 
-wall_shear_stress(patch::Symbol, model::RANS{M,F1,F2,V,T,E,D}) where {M,F1,F2,V,T,E,D} = begin
-    # Line below needs to change to do selection based on nut BC
-    M == Laminar ? nut = ConstantScalar(0.0) : nut = model.turbulence.nut
-    (; mesh, U, nu) = model
-    (; boundaries, faces) = mesh
-    ID = boundary_index(boundaries, patch)
-    boundary = boundaries[ID]
-    (; facesID, cellsID) = boundary
-    @info "calculating viscous forces on patch: $patch at index $ID"
-    x = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
-    y = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
-    z = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
-    tauw = FaceVectorField(x,y,z, mesh)
-    Uw = zero(_get_float(mesh))
-    for i ∈ 1:length(U.BCs)
-        if ID == U.BCs[i].ID
-            Uw = U.BCs[i].value
-        end
-    end
-    surface_normal_gradient(tauw, facesID, cellsID, U, Uw)
-    pos = fill(SVector{3,Float64}(0,0,0), length(facesID))
-    for i ∈ eachindex(tauw)
-        fID = facesID[i]
-        cID = cellsID[i]
-        face = faces[fID]
-        nueff = nu[cID]  + nut[cID]
-        tauw.x[i] *= nueff # this may need using νtf? (wall funcs)
-        tauw.y[i] *= nueff
-        tauw.z[i] *= nueff
-        pos[i] = face.centre
-    end
+########### Must update
+# wall_shear_stress(patch::Symbol, model::RANS{M,F1,F2,V,T,E,D}) where {M,F1,F2,V,T,E,D} = begin
+#     # Line below needs to change to do selection based on nut BC
+#     M == Laminar ? nut = ConstantScalar(0.0) : nut = model.turbulence.nut
+#     (; mesh, U, nu) = model
+#     (; boundaries, faces) = mesh
+#     ID = boundary_index(boundaries, patch)
+#     boundary = boundaries[ID]
+#     (; facesID, cellsID) = boundary
+#     @info "calculating viscous forces on patch: $patch at index $ID"
+#     x = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
+#     y = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
+#     z = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
+#     tauw = FaceVectorField(x,y,z, mesh)
+#     Uw = zero(_get_float(mesh))
+#     for i ∈ 1:length(U.BCs)
+#         if ID == U.BCs[i].ID
+#             Uw = U.BCs[i].value
+#         end
+#     end
+#     surface_normal_gradient(tauw, facesID, cellsID, U, Uw)
+#     pos = fill(SVector{3,Float64}(0,0,0), length(facesID))
+#     for i ∈ eachindex(tauw)
+#         fID = facesID[i]
+#         cID = cellsID[i]
+#         face = faces[fID]
+#         nueff = nu[cID]  + nut[cID]
+#         tauw.x[i] *= nueff # this may need using νtf? (wall funcs)
+#         tauw.y[i] *= nueff
+#         tauw.z[i] *= nueff
+#         pos[i] = face.centre
+#     end
     
-    return tauw, pos
-end
+#     return tauw, pos
+# end
 
 stress_tensor(U, ν, νt) = begin
     gradU = Grad{Linear}(U)

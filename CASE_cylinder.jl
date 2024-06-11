@@ -18,6 +18,7 @@ noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
 Re = (0.2*velocity[1])/nu
 
+model = RANS{Laminar}()
 # model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 model = Physics(

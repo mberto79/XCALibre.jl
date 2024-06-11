@@ -23,7 +23,7 @@ function setup_incompressible_solvers(
     # model = model_in
     # (; U, p, nu, mesh) = model
     (; U, p) = model.momentum
-    nu = _nu(model.fluid)
+    # nu = _nu(model.fluid)
     mesh = model.domain
 
     @info "Preallocating fields..."
@@ -50,7 +50,7 @@ function setup_incompressible_solvers(
         Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
     ) → ScalarEquation(mesh)
 
-    CUDA.allowscalar(false)
+    # CUDA.allowscalar(false)
 
     @info "Initialising preconditioners..."
 

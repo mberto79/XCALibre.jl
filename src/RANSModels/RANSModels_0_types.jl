@@ -1,7 +1,6 @@
 export RANS
 export Laminar
 export AbstractMomentumModel, AbstractTurbulenceModel
-export isturbulent
 
 abstract type AbstractMomentumModel end
 abstract type AbstractTurbulenceModel end

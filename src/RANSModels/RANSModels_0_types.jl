@@ -38,6 +38,6 @@ RANS{Laminar}() = Laminar()
 #     )
 # end
 
-isturbulent(model) = begin
-    typeof(model).parameters[1] <: AbstractTurbulenceModel
-end
+# isturbulent(model) = begin
+#     typeof(model).parameters[1] <: AbstractTurbulenceModel
+# end

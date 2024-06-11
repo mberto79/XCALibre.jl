@@ -24,7 +24,7 @@ Re = (0.2*velocity[1])/nu
 model = Physics(
     time = Transient(),
     fluid = Incompressible(nu = ConstantScalar(nu)),
-    turbulence = Laminar(),
+    turbulence = RANS{Laminar}(),
     energy = nothing,
     domain = mesh
     )
@@ -73,8 +73,8 @@ schemes = (
 
 
 runtime = set_runtime(
-    iterations=10000, write_interval=50, time_step=0.005)
-    # iterations=1000, write_interval=50, time_step=0.005)
+    # iterations=10000, write_interval=50, time_step=0.005)
+    iterations=1, write_interval=50, time_step=0.005)
 
 # 2mm mesh use settings below (to lower Courant number)
 # runtime = set_runtime(

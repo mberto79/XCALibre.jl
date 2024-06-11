@@ -12,7 +12,7 @@ using FVM_1D.ModelFramework
 using FVM_1D.Discretise
 using FVM_1D.Solve
 using FVM_1D.Calculate
-using FVM_1D.RANSModels
+# using FVM_1D.RANSModels
 
 include("0_type_definition.jl")
 include("1_flow_types.jl")

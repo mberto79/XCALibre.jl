@@ -59,13 +59,14 @@ function setup_incompressible_solvers(
     @reset p_eqn.preconditioner = set_preconditioner(
                     solvers.p.preconditioner, p_eqn, p.BCs, config)
 
-    if isturbulent(model)
-        @info "Initialising turbulence model..."
-        turbulence = initialise_RANS(mdotf, p_eqn, config, model)
-        config = turbulence.config
-    else
-        turbulence = nothing
-    end
+    # if isturbulent(model)
+    @info "Initialising turbulence model..."
+    model = initialise_RANS(model, mdotf, p_eqn, config)
+
+    # config = turbulence.config
+    # else
+    #     turbulence = nothing
+    # end
 
     @info "Pre-allocating solvers..."
      
@@ -73,13 +74,13 @@ function setup_incompressible_solvers(
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
 
     R_ux, R_uy, R_uz, R_p, model  = solver_variant(
-    model, ∇p, U_eqn, p_eqn, turbulence, config; resume=resume, pref=pref)
+    model, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
 
     return R_ux, R_uy, R_uz, R_p, model    
 end # end function
 
 function SIMPLE(
-    model, ∇p, U_eqn, p_eqn, turbulence, config ; resume, pref)
+    model, ∇p, U_eqn, p_eqn, config ; resume, pref)
     
     # Extract model variables and configuration
     # (;mesh, U, p, nu) = model
@@ -128,7 +129,7 @@ function SIMPLE(
     flux!(mdotf, Uf, config)
     grad!(∇p, pf, p, p.BCs, config)
 
-    update_nueff!(nueff, nu, turbulence, config)
+    update_nueff!(nueff, nu, model.turbulence, config)
     
     @info "Staring SIMPLE loops..."
 
@@ -187,11 +188,11 @@ function SIMPLE(
         correct_boundaries!(Uf, U, U.BCs, config)
         flux!(mdotf, Uf, config)
 
-        if isturbulent(model)
+        # if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs, config)
-            turbulence!(turbulence, model, S, S2, prev, config) 
-            update_nueff!(nueff, nu, turbulence, config)
-        end
+            turbulence!(model, S, S2, prev, config) 
+            update_nueff!(nueff, nu, model.turbulence, config)
+        # end
         
         convergence = 1e-7
 

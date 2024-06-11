@@ -72,7 +72,9 @@ end
 # end
 # Adapt.@adapt_structure KOmegaModel
 
-function initialise_RANS(mdotf, peqn, config, model)
+function initialise_RANS(
+    model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
+    ) where {T,F,M,Tu<:KOmega,E,D,BI}
     # unpack turbulent quantities and configuration
     turbulence = model.turbulence
     (; k, omega, nut) = turbulence
@@ -122,31 +124,28 @@ function initialise_RANS(mdotf, peqn, config, model)
     @reset k_eqn.solver = solvers.k.solver(_A(k_eqn), _b(k_eqn))
     @reset ω_eqn.solver = solvers.omega.solver(_A(ω_eqn), _b(ω_eqn))
 
-    float_type = _get_float(mesh)
-    coeffs = get_coeffs(float_type)
+    # update equations in model (originally empty tuple)
+    @reset model.turbulence.k_eqn = k_eqn 
+    @reset model.turbulence.ω_eqn = ω_eqn
 
-    return KOmegaModel(
-        k_eqn,
-        ω_eqn,
-        kf,
-        ωf,
-        νtf,
-        coeffs,
-        config
-    )
+    # float_type = _get_float(mesh)
+    # coeffs = get_coeffs(float_type)
+
+    return model
 end
 
 function turbulence!( # Sort out dispatch when possible
-    KOmega::KOmega, model, S, S2, prev, config)
+    model::Physics{T,F,M,Tu,E,D,BI}, S, S2, prev, config
+    ) where {T,F,M,Tu<:KOmega,E,D,BI}
 
-    nu = model.nu
+    nu = _nu(model.fluid)
     nut = model.turbulence.nut
 
-    (;k_eqn, ω_eqn, kf, ωf, νtf, coeffs, config) = KOmega
+    (;k, omega, k_eqn, ω_eqn, kf, ωf, νtf, coeffs) = model.turbulence
     (; solvers, runtime) = config
 
-    k = get_phi(k_eqn)
-    omega = get_phi(ω_eqn)
+    # k = get_phi(k_eqn)
+    # omega = get_phi(ω_eqn)
 
     nueffk = get_flux(k_eqn, 3)
     Dkf = get_flux(k_eqn, 4)
@@ -269,7 +268,7 @@ function constrain!(eqn, BC, model, config)
     nzval = _nzval(A)
     
     # Deconstruct mesh to required fields
-    mesh = model.mesh
+    mesh = model.domain
     (; faces, boundaries, boundary_cellsID) = mesh
 
     facesID_range = get_boundaries(BC, boundaries)
@@ -287,7 +286,7 @@ end
     fID = i + start_ID - 1 # Redefine thread index to become face ID
 
     @uniform begin
-        nu = model.nu
+        nu = _nu(model.fluid)
         k = model.turbulence.k
         (; kappa, beta1, cmu, B, E) = BC.value
         ylam = y_plus_laminar(E, kappa)
@@ -345,7 +344,7 @@ function set_cell_value!(field, BC, model, config)
     (; backend, workgroup) = hardware
     
     # Deconstruct mesh to required fields
-    mesh = model.mesh
+    mesh = model.domain
     (; faces, boundaries, boundary_cellsID) = mesh
 
     facesID_range = get_boundaries(BC, boundaries)
@@ -363,7 +362,7 @@ end
     fID = i + start_ID - 1 # Redefine thread index to become face ID
 
     @uniform begin
-        nu = model.nu
+        nu = _nu(model.fluid)
         k = model.turbulence.k
         (; kappa, beta1, cmu, B, E) = BC.value
         (; values) = field
@@ -413,7 +412,7 @@ function set_production!(P, BC, model, gradU, config)
     (; backend, workgroup) = hardware
     
     # Deconstruct mesh to required fields
-    mesh = model.mesh
+    mesh = model.domain
     (; faces, boundary_cellsID, boundaries) = mesh
 
     facesID_range = get_boundaries(BC, boundaries)

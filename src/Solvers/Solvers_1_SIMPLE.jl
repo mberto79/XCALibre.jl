@@ -61,7 +61,7 @@ function setup_incompressible_solvers(
 
     # if isturbulent(model)
     @info "Initialising turbulence model..."
-    model = initialise_RANS(model, mdotf, p_eqn, config)
+    model = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     # config = turbulence.config
     # else

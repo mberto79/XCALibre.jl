@@ -2,13 +2,14 @@ export flux!, update_nueff!, residual!, inverse_diagonal!, remove_pressure_sourc
 
 ## UPDATE VISCOSITY
 
+# This function needs to be separated using multiple dispatch
 function update_nueff!(nueff, nu, turb_model, config)
     (; mesh) = nueff
     # backend = _get_backend(mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    if turb_model === nothing
+    if typeof(turb_model) <: Laminar
         kernel! = update_nueff_laminar!(backend, workgroup)
         kernel!(nu, nueff, ndrange=length(nueff))
     else

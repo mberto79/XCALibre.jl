@@ -12,7 +12,18 @@ Adapt.@adapt_structure Laminar
 struct RANS{T} end
 Adapt.Adapt.@adapt_structure RANS 
 
-RANS{Laminar}() = Laminar()
+RANS{Laminar}(mesh) = Laminar()
+
+function initialise(
+    turbulence::Laminar, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
+    ) where {T,F,M,Tu,E,D,BI}
+    return model
+end
+
+function turbulence!(model::Physics{T,F,M,Tu,E,D,BI}, S, S2, prev, config
+    ) where {T,F,M,Tu<:Laminar,E,D,BI}
+    nothing
+end
 
 # struct RANS{M,F1,F2,V,T,E,D,BI}
 #     model::M

@@ -11,7 +11,7 @@ piso!(model_in, config; resume=true, pref=nothing) = begin
 end
 
 function PISO(
-    model, ∇p, U_eqn, p_eqn, turbulence, config ; resume, pref)
+    model, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
     
     # Extract model variables and configuration
     # (;mesh, U, p, nu) = model
@@ -60,7 +60,8 @@ function PISO(
     flux!(mdotf, Uf, config)
     grad!(∇p, pf, p, p.BCs, config)
 
-    update_nueff!(nueff, nu, turbulence, config)
+    update_nueff!(nueff, nu, model.turbulence, config)
+
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
@@ -71,7 +72,6 @@ function PISO(
     @time for iteration ∈ 1:iterations
 
         solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
-        
           
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
@@ -114,11 +114,9 @@ function PISO(
             correct_boundaries!(Uf, U, U.BCs, config)
             flux!(mdotf, Uf, config)
 
-            if isturbulent(model)
-                grad!(gradU, Uf, U, U.BCs, config)
-                turbulence!(turbulence, model, S, S2, prev, config) 
-                update_nueff!(nueff, nu, turbulence, config)
-            end
+            grad!(gradU, Uf, U, U.BCs, config)
+            turbulence!(model, S, S2, prev, config) 
+            update_nueff!(nueff, nu, model.turbulence, config)
     end # corrector loop end
 
     residual!(R_ux, U_eqn, U.x, iteration, xdir, config)

@@ -1,5 +1,5 @@
 export KOmega
-export initialise_RANS
+export initialise
 export turbulence!
 
 # Constructor 
@@ -72,11 +72,11 @@ end
 # end
 # Adapt.@adapt_structure KOmegaModel
 
-function initialise_RANS(
-    model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
-    ) where {T,F,M,Tu<:KOmega,E,D,BI}
+function initialise(
+    turbulence::KOmega, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
+    ) where {T,F,M,Tu,E,D,BI}
     # unpack turbulent quantities and configuration
-    turbulence = model.turbulence
+    # turbulence = model.turbulence
     (; k, omega, nut) = turbulence
     (; solvers, schemes, runtime) = config
     mesh = mdotf.mesh

@@ -14,8 +14,9 @@ using FVM_1D.ModelPhysics
 using FVM_1D.Solve
 using FVM_1D.Calculate
 
-include("RANSModels_0_types.jl")
-include("RANSModels_functions.jl")
-include("RANSModels_kOmega.jl")
+include("RANS_types.jl")
+include("RANS_functions.jl")
+include("RANS_laminar.jl")
+include("RANS_kOmega.jl")
 
 end # end module

@@ -1,5 +1,3 @@
-using Adapt
-
 export AbstractField
 export ConstantScalar, ConstantVector
 export AbstractScalarField, ScalarField, FaceScalarField

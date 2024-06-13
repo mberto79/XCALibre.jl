@@ -20,10 +20,7 @@ function setup_incompressible_solvers(
     @info "Extracting configuration and input fields..."
 
     model = adapt(hardware.backend, model_in)
-    # model = model_in
-    # (; U, p, nu, mesh) = model
     (; U, p) = model.momentum
-    # nu = _nu(model.fluid)
     mesh = model.domain
 
     @info "Preallocating fields..."
@@ -50,8 +47,6 @@ function setup_incompressible_solvers(
         Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
     ) → ScalarEquation(mesh)
 
-    # CUDA.allowscalar(false)
-
     @info "Initialising preconditioners..."
 
     @reset U_eqn.preconditioner = set_preconditioner(
@@ -59,31 +54,25 @@ function setup_incompressible_solvers(
     @reset p_eqn.preconditioner = set_preconditioner(
                     solvers.p.preconditioner, p_eqn, p.BCs, config)
 
-    # if isturbulent(model)
-    @info "Initialising turbulence model..."
-    model = initialise(model.turbulence, model, mdotf, p_eqn, config)
-
-    # config = turbulence.config
-    # else
-    #     turbulence = nothing
-    # end
 
     @info "Pre-allocating solvers..."
      
     @reset U_eqn.solver = solvers.U.solver(_A(U_eqn), _b(U_eqn, XDir()))
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
 
+    @info "Initialising turbulence model..."
+    turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
+
     R_ux, R_uy, R_uz, R_p, model  = solver_variant(
-    model, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
+    model, turbulenceModel, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
 
     return R_ux, R_uy, R_uz, R_p, model    
 end # end function
 
 function SIMPLE(
-    model, ∇p, U_eqn, p_eqn, config ; resume, pref)
+    model, turbulenceModel, ∇p, U_eqn, p_eqn, config ; resume, pref)
     
     # Extract model variables and configuration
-    # (;mesh, U, p, nu) = model
     (; U, p) = model.momentum
     nu = _nu(model.fluid)
     mesh = model.domain
@@ -190,7 +179,7 @@ function SIMPLE(
 
         # if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs, config)
-            turbulence!(model, S, S2, prev, config) 
+            turbulence!(turbulenceModel, model, S, S2, prev, config) 
             update_nueff!(nueff, nu, model.turbulence, config)
         # end
         

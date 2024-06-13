@@ -1,24 +1,5 @@
-export write_vtk, model2vtk
+export write_vtk #, model2vtk
 export copy_to_cpu
-
-function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, name) where {T,F,M,Tu<:Laminar,E,D,BI}
-    args = (
-        ("U", model.momentum.U), 
-        ("p", model.momentum.p)
-    )
-    write_vtk(name, model.domain, args...)
-end
-
-function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, name) where {T,F,M,Tu<:KOmega,E,D,BI}
-    args = (
-        ("U", model.momentum.U), 
-        ("p", model.momentum.p),
-        ("k", model.turbulence.k),
-        ("omega", model.turbulence.omega),
-        ("nut", model.turbulence.nut)
-    )
-    write_vtk(name, model.domain, args...)
-end
 
 function write_vtk(name, mesh::Mesh2, args...) #, Ux, Uy, Uz, p)
     # UxNodes = FVM.NodeScalarField(Ux)

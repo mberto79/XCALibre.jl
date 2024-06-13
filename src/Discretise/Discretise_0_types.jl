@@ -18,7 +18,7 @@ struct Orthogonal <: AbstractScheme end
 struct Midpoint <: AbstractScheme end
 struct SteadyState <: AbstractScheme end 
 struct Euler <: AbstractScheme end 
-struct CrankNicolson <: AbstractScheme end
+struct CrankNicolson <: AbstractScheme end # not implemented yet
 
 
 

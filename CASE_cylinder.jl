@@ -1,12 +1,13 @@
 using Plots
 using FVM_1D
 using CUDA
+using KernelAbstractions
 
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
-mesh_file = "unv_sample_meshes/cylinder_d10mm_2mm.unv"
-mesh_file = "unv_sample_meshes/cylinder_d10mm_10-7.5-2mm.unv"
+# mesh_file = "unv_sample_meshes/cylinder_d10mm_2mm.unv"
+# mesh_file = "unv_sample_meshes/cylinder_d10mm_10-7.5-2mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
 # mesh = update_mesh_format(mesh, integer=Int32, float=Float32)
 mesh = update_mesh_format(mesh)
@@ -71,7 +72,7 @@ schemes = (
 runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=4)
+# hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

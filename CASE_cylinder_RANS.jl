@@ -1,11 +1,14 @@
 using Plots
 using FVM_1D
+using CUDA
+# using Accessors
+# using Adapt
 
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 mesh = build_mesh(mesh_file, scale=0.001)
-mesh = update_mesh_format(mesh, integer=Int32, float=Float32)
+# mesh = update_mesh_format(mesh, integer=Int32, float=Float32)
 mesh = update_mesh_format(mesh)
 # INLET CONDITIONS 
 
@@ -18,8 +21,6 @@ Tu = 0.01
 k_inlet = 3/2*(Tu*Umag)^2
 ω_inlet = k_inlet/(νR*nu)
 Re = (0.2*velocity[1])/nu
-
-# model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 model = Physics(
     time = Steady(),
@@ -84,35 +85,37 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.6,
+        relax       = 0.7,
     ),
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), #LDL(),
         convergence = 1e-7,
-        relax       = 0.4,
+        relax       = 0.3,
     ),
     k = set_solver(
+        # model.turbulence.fields.k;
         model.turbulence.k;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.7,
     ),
     omega = set_solver(
+        # model.turbulence.fields.omega;
         model.turbulence.omega;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver, CgSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.7,
     )
 )
 
 runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=4)
+# hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

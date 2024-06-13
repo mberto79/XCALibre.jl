@@ -21,7 +21,7 @@ struct Preconditioner{T,M,P,S}
     P::P
     storage::S
 end
-function Adapt.adapt_structure(to, itp::Preconditioner{T}) where {T}
+function Adapt.adapt_structure(to, itp::Preconditioner{T,M,Pr,S}) where {T,M,Pr,S}
     A = Adapt.adapt_structure(to, itp.A)
     P = Adapt.adapt_structure(to, itp.P)
     storage = Adapt.adapt_structure(to, itp.storage) 

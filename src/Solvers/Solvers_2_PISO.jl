@@ -11,13 +11,12 @@ piso!(model_in, config; resume=true, pref=nothing) = begin
 end
 
 function PISO(
-    model, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
+    model, turbulenceModel, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
     
     # Extract model variables and configuration
-    # (;mesh, U, p, nu) = model
     (; U, p) = model.momentum
-    mesh = model.domain
     nu = _nu(model.fluid)
+    mesh = model.domain
     p_model = p_eqn.model
     (; solvers, schemes, runtime, hardware) = config
     (; iterations, write_interval) = runtime
@@ -61,7 +60,6 @@ function PISO(
     grad!(∇p, pf, p, p.BCs, config)
 
     update_nueff!(nueff, nu, model.turbulence, config)
-
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
@@ -115,7 +113,7 @@ function PISO(
             flux!(mdotf, Uf, config)
 
             grad!(gradU, Uf, U, U.BCs, config)
-            turbulence!(model, S, S2, prev, config) 
+            turbulence!(turbulenceModel, model, S, S2, prev, config) 
             update_nueff!(nueff, nu, model.turbulence, config)
     end # corrector loop end
 

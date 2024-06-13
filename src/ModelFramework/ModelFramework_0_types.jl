@@ -82,7 +82,6 @@ Adapt.@adapt_structure Src
 struct Source end
 Adapt.@adapt_structure Source
 Source(f::T) where T = Src(f, 1)
-# Source(f::Number) = Src(f.values, 1, typeof(f)) # To implement!!
 
 # MODEL TYPE
 struct Model{TN,SN,T,S}
@@ -91,10 +90,8 @@ struct Model{TN,SN,T,S}
 end
 # Adapt.@adapt_structure Model
 function Adapt.adapt_structure(to, itp::Model{TN,SN,TT,SS}) where {TN,SN,TT,SS}
-    terms = Adapt.adapt_structure(to, itp.terms); T = typeof(terms)
-    sources = Adapt.adapt_structure(to, itp.sources); S = typeof(sources)
-    # T = typeof(itp.terms)
-    # S = typeof(itp.sources)
+    terms = Adapt.adapt(to, itp.terms); T = typeof(terms)
+    sources = Adapt.adapt(to, itp.sources); S = typeof(sources)
     Model{TN,SN,T,S}(terms, sources)
 end
 Model{TN,SN}(terms::T, sources::S) where {TN,SN,T,S} = begin
@@ -118,7 +115,7 @@ ScalarEquation(mesh::AbstractMesh) = begin
     i, j, v = sparse_matrix_connectivity(mesh_temp) # This needs to be a kernel
     backend = _get_backend(mesh)
     ScalarEquation(
-        _convert_array!(sparse(i, j, v), backend) ,
+        _convert_array!(sparse(i, j, v), backend),
         _convert_array!(zeros(Tf, nCells), backend),
         _convert_array!(zeros(Tf, nCells), backend),
         _convert_array!(zeros(Tf, nCells), backend)

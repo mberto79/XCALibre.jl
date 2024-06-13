@@ -14,7 +14,10 @@ end
 Adapt.@adapt_structure Physics
 
 struct Transient end
+Adapt.@adapt_structure Transient
+
 struct Steady end
+Adapt.@adapt_structure Steady
 
 struct Momentum{V,S,SS}
     U::V 

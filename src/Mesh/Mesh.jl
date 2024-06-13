@@ -5,6 +5,7 @@ using LinearAlgebra
 using Setfield
 using Adapt
 using KernelAbstractions
+using CUDA
 
 include("Mesh_0_types.jl")
 # include("Mesh2D/Mesh2D_0_types.jl")

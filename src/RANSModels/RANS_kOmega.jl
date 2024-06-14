@@ -1,4 +1,4 @@
-export KOmega, KOmegaModel
+export KOmega
 
 # Model type definition
 struct KOmega{S1,S2,S3,F1,F2,F3,C} <: AbstractTurbulenceModel

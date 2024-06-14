@@ -1,7 +1,7 @@
 export wall_distance
 # export residual!
 
-function wall_distance(phi, model, config)
+function wall_distance(phi, model, config; walls)
     @info "Calculating wall distance..."
 
     mesh = model.domain
@@ -14,6 +14,8 @@ function wall_distance(phi, model, config)
     phif = FaceScalarField(mesh)
     initialise!(phif, 1.0)
     initialise!(phi, 0.0)
+
+    # Assign boundary Conditions         
 
     phi_eqn = (
         Laplacian{schemes.phi.laplacian}(phif, phi) == Source(ConstantScalar(-1.0))
@@ -34,17 +36,13 @@ function wall_distance(phi, model, config)
     R_phi = ones(TF, iterations)
 
     for iteration ∈ 1:iterations
-        @. prev = phi.values
-        # discretise!(phi_eqn, prev, config)
+        # @. prev = phi.values
         discretise!(phi_eqn, phi, config)
         apply_boundary_conditions!(phi_eqn, phi.BCs, nothing, config)
         update_preconditioner!(phi_eqn.preconditioner, mesh, config)
         implicit_relaxation!(phi_eqn, phi.values, solvers.phi.relax, nothing, config)
         solve_system!(phi_eqn, solvers.phi, phi, nothing, config)
         # explicit_relaxation!(phi, prev, solvers.phi.relax, config)
-        # explicit_relaxation!(p, prev, solvers.p.relax, config)
-        # residual!(R_phi, phi_eqn.equation, phi, iteration)
-        # grad!(phiGrad, phif, phi, phi.BCs, config)
         
         residual!(R_phi, phi_eqn, phi, iteration, nothing, config)
         println("Iteration $iteration: ", R_phi[iteration])
@@ -53,21 +51,8 @@ function wall_distance(phi, model, config)
             @info "Wall distance converged!"
             break
         end
-
-
-        # phi.values .= _A(phi_eqn)\_b(phi_eqn)
-        # # discretise!(k_eqn, k, config)
-        # # apply_boundary_conditions!(k_eqn, k.BCs, nothing, config)
-        # implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
-        # # update_preconditioner!(k_eqn.preconditioner, mesh, config)
-        # # solve_system!(k_eqn, solvers.k, k, nothing, config)
-        # # bound!(k, config)
-
-        # if R_phi[iteration] < solvers.phi.convergence
-        #     @info "Wall distance converged!"
-        #     break
-        # end
     end
+    
     grad!(phiGrad, phif, phi, phi.BCs, config)
     wallDist = normalDistance(phi, phiGrad)
     y.values .= wallDist.values

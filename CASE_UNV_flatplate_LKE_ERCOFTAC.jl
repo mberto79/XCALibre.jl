@@ -29,22 +29,27 @@ model = Physics(
     energy = nothing,
     domain = mesh
     )
-phi = ScalarField(mesh)
-phi = assign(
-    phi, model,
-        Neumann(:inlet, 0.0),
-        Neumann(:outlet, 0.0),
-        Dirichlet(:wall,0.0),
-        # Neumann(:top, 0.0),
-        Neumann(:bottom, 0.0),
-        Neumann(:freestream, 0.0)
 
-        # Neumann(:inlet, 0.0),
-        # Neumann(:outlet, 0.0),
-        # Dirichlet(:cylinder, 0.0),
-        # Neumann(:bottom, 0.0),
-        # Neumann(:top, 0.0)
-)
+phi = ScalarField(mesh)
+
+# Assign boundary Conditions
+walls = (:wall, )
+BCs = []
+for boundary ∈ mesh.boundaries
+    for namedwall ∈ walls
+        if boundary.name == namedwall
+            push!(BCs, Dirichlet(boundary.name, 0.0))
+        else
+            push!(BCs, Neumann(boundary.name, 0.0))
+        end
+    end
+end
+
+BCs
+
+phi = assign(phi, model, BCs...)
+
+phi.BCs
 
 schemes = (
     phi = set_schemes(gradient=Midpoint),

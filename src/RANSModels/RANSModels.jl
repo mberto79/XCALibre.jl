@@ -20,6 +20,7 @@ include("RANS_functions.jl")
 include("RANS_tensor_algebra.jl")
 include("RANS_laminar.jl")
 include("RANS_kOmega.jl")
+include("RANS_kOmegaLKE.jl")
 
 export initialise, turbulence!, model2vtk
 

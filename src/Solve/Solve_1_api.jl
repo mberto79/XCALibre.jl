@@ -2,6 +2,7 @@ export set_solver, set_runtime
 export explicit_relaxation!, implicit_relaxation!, setReference!
 export solve_system!
 export solve_equation!
+export residual!
 
 set_solver( field::AbstractField; # To do - relax inputs and correct internally
     solver::S, 
@@ -10,7 +11,7 @@ set_solver( field::AbstractField; # To do - relax inputs and correct internally
     relax, 
     itmax::Integer=100, 
     atol=sqrt(eps(_get_float(field.mesh))),
-    rtol=_get_float(field.mesh)(1e-3)
+    rtol=_get_float(field.mesh)(1e-4)
     ) where {S,PT<:PreconditionerType} = 
 begin
     TF = _get_float(field.mesh)
@@ -193,4 +194,26 @@ end
         b[cellID] = nzval[nIndex]*pRef
         nzval[nIndex] += nzval[nIndex]
     end
+end
+
+function residual!(Residual, eqn, phi, iteration, component, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    (; A, R, Fx) = eqn.equation
+    b = _b(eqn, component)
+    values = phi.values
+
+    # backend = _get_backend(phi.mesh)
+
+    # sparse_matmul!(A, values, Fx, config)
+    Fx .= A * values
+    # KernelAbstractions.synchronize(backend)
+
+    @inbounds @. R = abs(Fx - b)^2
+    # KernelAbstractions.synchronize(backend)
+
+    # res = sqrt(mean(R))/norm(b)
+    Residual[iteration] = sqrt(mean(R)) / norm(b)
+    nothing
 end

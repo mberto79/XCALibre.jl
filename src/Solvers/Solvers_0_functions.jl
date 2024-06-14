@@ -1,4 +1,4 @@
-export flux!, update_nueff!, residual!, inverse_diagonal!, remove_pressure_source!, H!, correct_velocity!
+export flux!, update_nueff!, inverse_diagonal!, remove_pressure_source!, H!, correct_velocity!
 
 ## UPDATE VISCOSITY
 
@@ -37,28 +37,6 @@ end
 end
 
 ## RESIDUAL CALCULATIONS
-
-function residual!(Residual, eqn, phi, iteration, component, config)
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-
-    (; A, R, Fx) = eqn.equation
-    b = _b(eqn, component)
-    values = phi.values
-
-    # backend = _get_backend(phi.mesh)
-
-    # sparse_matmul!(A, values, Fx, config)
-    Fx .= A * values
-    # KernelAbstractions.synchronize(backend)
-
-    @inbounds @. R = abs(Fx - b)^2
-    # KernelAbstractions.synchronize(backend)
-
-    # res = sqrt(mean(R))/norm(b)
-    Residual[iteration] = sqrt(mean(R)) / norm(b)
-    nothing
-end
 
 # Sparse Matrix Multiplication function
 function sparse_matmul!(a, b, c, config)

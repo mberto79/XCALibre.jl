@@ -2,6 +2,7 @@ module Solve
 
 using Krylov
 using LinearAlgebra
+using Statistics
 using SparseArrays
 using LinearOperators
 using KernelAbstractions

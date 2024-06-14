@@ -34,7 +34,8 @@ end
 
 Physics(; time, fluid, turbulence, energy, domain) = begin
     momentum = Momentum(domain)
-    turbulence = typeof(turbulence)(domain)
+    # turbulence = typeof(turbulence)(domain)
+    turbulence = turbulence(domain)
     boundary_info = boundary_map(domain)
     Physics(
         time,

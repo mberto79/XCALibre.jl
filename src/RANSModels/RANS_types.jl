@@ -8,5 +8,7 @@ abstract type AbstractRANSModel <: AbstractTurbulenceModel end
 
 # Models 
 
-struct RANS{T} <:AbstractRANSModel end
-Adapt.Adapt.@adapt_structure RANS
+struct RANS{T,ARG} <:AbstractRANSModel 
+    args::ARG
+end
+# Adapt.Adapt.@adapt_structure RANS

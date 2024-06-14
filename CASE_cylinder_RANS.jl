@@ -25,7 +25,7 @@ Re = (0.2*velocity[1])/nu
 model = Physics(
     time = Steady(),
     fluid = Incompressible(nu = ConstantScalar(nu)),
-    turbulence = RANS{KOmega}(),
+    turbulence = RANS{KOmega}(β⁺=0.09),
     energy = nothing,
     domain = mesh
     )
@@ -112,7 +112,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=CPU(), workgroup=4)

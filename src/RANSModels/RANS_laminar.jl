@@ -4,12 +4,18 @@ export Laminar
 struct Laminar <: AbstractTurbulenceModel end 
 Adapt.@adapt_structure Laminar
 
-# Model type definition (hold equation definitions and data)
+# Model type definition (hold equation definitions and internal data)
 struct LaminarModel <: AbstractTurbulenceModel end 
 Adapt.@adapt_structure LaminarModel
 
-# Model API constructor
-RANS{Laminar}(mesh) = Laminar()
+# Model API constructor (pass user input as keyword arguments and process if needed)
+RANS{Laminar}() = begin # Empty constructor
+    args = (); ARG = typeof(args)
+    RANS{Laminar,ARG}(args)
+end
+
+# Functor as constructor (internally called by Physics API): Returns fields and user data
+(rans::RANS{Laminar, ARG})(mesh) where ARG = Laminar()
 
 # Model initialisation
 function initialise(

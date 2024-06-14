@@ -18,15 +18,22 @@ struct KOmegaModel{E1,E2}
 end
 Adapt.@adapt_structure KOmegaModel
 
-# Model API constructor
-RANS{KOmega}(mesh) = begin
+# Model API constructor (pass user input as keyword arguments and process as needed)
+RANS{KOmega}(; β⁺=0.09, α1=0.52, β1=0.072, σk=0.5, σω=0.5) = begin 
+    coeffs = (β⁺=β⁺, α1=α1, β1=β1, σk=σk, σω=σω)
+    ARG = typeof(coeffs)
+    RANS{KOmega,ARG}(coeffs)
+end
+
+# Functor as constructor (internally called by Physics API): Returns fields and user data
+(rans::RANS{KOmega, ARG})(mesh) where ARG = begin
     k = ScalarField(mesh)
     omega = ScalarField(mesh)
     nut = ScalarField(mesh)
     kf = FaceScalarField(mesh)
     ωf = FaceScalarField(mesh)
     νtf = FaceScalarField(mesh)
-    coeffs = (β⁺=0.09, α1=0.52, β1=0.072, σk=0.5, σω=0.5)
+    coeffs = rans.args
     KOmega(k, omega, nut, kf, ωf, νtf, coeffs)
 end
 

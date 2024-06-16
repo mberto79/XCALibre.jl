@@ -48,6 +48,7 @@ Physics(; time, fluid, turbulence, energy, domain) = begin
     )
 end
 
+# TO DO: RELOCATE TWO FUNCS BELOW TO COMMON LOCATION/MODULE AND EXPORT
 struct boundary_info{I<:Integer, S<:Symbol}
     ID::I
     Name::S

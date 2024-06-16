@@ -1,7 +1,7 @@
-export wall_distance
+export wall_distance!
 # export residual!
 
-function wall_distance(model, config)
+function wall_distance!(model, config)
     @info "Calculating wall distance..."
 
     mesh = model.domain
@@ -29,9 +29,9 @@ function wall_distance(model, config)
     phif = FaceScalarField(mesh)
     grad!(phiGrad, phif, phi, phi.BCs, config)
 
-    n_cells = length(mesh.cells)
     TF = _get_float(mesh)
-    prev = zeros(TF, n_cells)
+    # n_cells = length(mesh.cells)
+    # prev = zeros(TF, n_cells)
     R_phi = ones(TF, iterations)
 
     for iteration ∈ 1:iterations
@@ -42,29 +42,32 @@ function wall_distance(model, config)
         implicit_relaxation!(phi_eqn, phi.values, solvers.y.relax, nothing, config)
         solve_system!(phi_eqn, solvers.y, phi, nothing, config)
         # explicit_relaxation!(phi, prev, solvers.phi.relax, config)
-        
         residual!(R_phi, phi_eqn, phi, iteration, nothing, config)
-        println("Iteration $iteration: ", R_phi[iteration])
 
-        if R_phi[iteration] < solvers.y.convergence
-            @info "Wall distance converged!"
+        if R_phi[iteration] < solvers.y.convergence 
+            @info "Wall distance converged in $iteration iterations ($(R_phi[iteration]))"
             break
+        elseif iteration == iterations
+            @info "Wall distance calculation did not converged ($(R_phi[iteration]))"
         end
     end
     
     grad!(phiGrad, phif, phi, phi.BCs, config)
-    # wallDist = normalDistance(phi, phiGrad)
-    # y.values .= wallDist.values
-    y.values .= phi.values
-    return y.values
-    # return phi
+    normal_distance!(y, phi, phiGrad, config)
 end
 
-function normalDistance(phi, phiGrad)
-    wallDist = deepcopy(phi)
-    @inbounds for i ∈ 1:length(phi.values)
-        gradMag = norm(phiGrad.result[i])
-        wallDist.values[i] = -gradMag + sqrt(gradMag^2 + 2.0*phi.values[i])
-    end
-    return wallDist
+function normal_distance!(y, phi, phiGrad, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    kernel! = _normal_distance!(backend, workgroup)
+    kernel!(y, phi, phiGrad, ndrange = length(phi.values))
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _normal_distance!(y, phi, phiGrad)
+    i = @index(Global)
+
+    gradMag = norm(phiGrad.result[i])
+    y.values[i] = -gradMag + sqrt(gradMag^2 + 2*phi.values[i])
 end

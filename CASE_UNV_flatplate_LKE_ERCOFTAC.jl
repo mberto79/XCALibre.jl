@@ -109,10 +109,10 @@ solvers = (
     ),
     y = set_solver(
         model.turbulence.y;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
-        convergence = 1e-7,
-        relax       = 0.85,
+        convergence = 1e-9,
+        relax       = 0.98,
     ),
     kl = set_solver(
         model.turbulence.kl;
@@ -144,7 +144,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=100, write_interval=100, time_step=1)
+    iterations=1000, write_interval=100, time_step=1)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=4)
@@ -156,7 +156,6 @@ GC.gc()
 
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
-# initialise!(model.phi, 0.0)
 initialise!(model.turbulence.kl, kL_inlet)
 initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)

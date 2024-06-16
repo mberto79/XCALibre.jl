@@ -22,9 +22,12 @@ struct Preconditioner{T,M,P,S}
     storage::S
 end
 function Adapt.adapt_structure(to, itp::Preconditioner{T,M,Pr,S}) where {T,M,Pr,S}
-    A = Adapt.adapt_structure(to, itp.A)
-    P = Adapt.adapt_structure(to, itp.P)
-    storage = Adapt.adapt_structure(to, itp.storage) 
+    # A = Adapt.adapt_structure(to, itp.A)
+    # P = Adapt.adapt_structure(to, itp.P)
+    # storage = Adapt.adapt_structure(to, itp.storage) 
+    A = Adapt.adapt(to, itp.A)
+    P = Adapt.adapt(to, itp.P)
+    storage = Adapt.adapt(to, itp.storage) 
     Preconditioner{T,typeof(A),typeof(P),typeof(storage)}(A,P,storage)
 end
 Preconditioner{NormDiagonal}(A::AbstractSparseArray{F,I}) where {F,I} = begin

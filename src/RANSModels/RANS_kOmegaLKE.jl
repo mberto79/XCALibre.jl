@@ -1,7 +1,7 @@
 export KOmegaLKE
 
 # Model type definition (hold fields)
-struct KOmegaLKE{S1,S2,S3,S4,F1,F2,F3,F4,C1,C2} <: AbstractTurbulenceModel 
+struct KOmegaLKE{S1,S2,S3,S4,F1,F2,F3,F4,C1,C2,Y} <: AbstractTurbulenceModel 
     k::S1
     omega::S2
     kl::S3
@@ -12,12 +12,13 @@ struct KOmegaLKE{S1,S2,S3,S4,F1,F2,F3,F4,C1,C2} <: AbstractTurbulenceModel
     nutf::F4
     coeffs::C1
     Tu::C2
+    y::Y
 end 
 Adapt.@adapt_structure KOmegaLKE
 
 # Model type definition (hold equation definitions and data)
 struct KOmegaLKEModel{
-    E1,E2,E3,F1,F2,F3,S1,S2,S3,S4,S5,S6,S7,V1,V2,Y} <: AbstractTurbulenceModel
+    E1,E2,E3,F1,F2,F3,S1,S2,S3,S4,S5,S6,S7,V1,V2} <: AbstractTurbulenceModel
     k_eqn::E1
     ω_eqn::E2
     kl_eqn::E3
@@ -33,13 +34,12 @@ struct KOmegaLKEModel{
     Reυ::S7
     ∇k::V1
     ∇ω::V2
-    y::Y
 end 
 Adapt.@adapt_structure KOmegaLKEModel
 
 # Model API constructor
-RANS{KOmegaLKE}(; Tu) = begin
-    args = (Tu=Tu,)
+RANS{KOmegaLKE}(; Tu, walls) = begin
+    args = (Tu=Tu, walls=walls)
     ARG = typeof(args)
     RANS{KOmegaLKE,ARG}(args)
 end
@@ -71,7 +71,23 @@ end
         σω = 0.5
     )
     Tu = rans.args.Tu
-    KOmegaLKE(k, omega, kl, nut, kf, omegaf, klf, nutf, coeffs, Tu)
+
+    # Allocate wall distance "y" and setup boundary conditions
+    y = ScalarField(mesh)
+    walls = rans.args.walls
+    BCs = []
+    for boundary ∈ mesh.boundaries
+        for namedwall ∈ walls
+            if boundary.name == namedwall
+                push!(BCs, Dirichlet(boundary.name, 0.0))
+            else
+                push!(BCs, Neumann(boundary.name, 0.0))
+            end
+        end
+    end
+    @reset y.BCs = (BCs...,)
+
+    KOmegaLKE(k, omega, kl, nut, kf, omegaf, klf, nutf, coeffs, Tu, y)
 end
 
 # Model initialisation
@@ -82,7 +98,7 @@ function initialise(
     @info "Initialising k-ω LKE model..."
 
     # unpack turbulent quantities and configuration
-    (; k, omega, kl, kf, omegaf, klf) = model.turbulence
+    (; k, omega, kl, y, kf, omegaf, klf) = model.turbulence
     (; solvers, schemes, runtime) = config
     mesh = mdotf.mesh
     eqn = peqn.equation
@@ -164,8 +180,7 @@ function initialise(
 
     # Wall distance calculation
     # calc_wall_distance!(model, config)
-    y = ScalarField(mesh) # dummy entry for now
-    @. y.values = 0.1
+    y.values .= wall_distance(model, config)
 
     return KOmegaLKEModel(
         k_eqn,
@@ -182,8 +197,7 @@ function initialise(
         normU,
         Reυ,
         ∇k,
-        ∇ω,
-        y
+        ∇ω
     )
 end
 
@@ -193,10 +207,10 @@ function turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S,
     mesh = model.domain
     (; momentum, turbulence) = model
     U = momentum.U
-    (; k, omega, kl, nut, kf, omegaf, klf, nutf, coeffs, Tu) = turbulence
+    (; k, omega, kl, nut, y, kf, omegaf, klf, nutf, coeffs, Tu) = turbulence
     nu = _nu(model.fluid)
     
-    (; k_eqn, ω_eqn, kl_eqn, nueffkLS, nueffkS, nueffωS, nuL, nuts, Ω, γ, fv, ∇k, ∇ω, normU, Reυ, y) = rans
+    (; k_eqn, ω_eqn, kl_eqn, nueffkLS, nueffkS, nueffωS, nuL, nuts, Ω, γ, fv, ∇k, ∇ω, normU, Reυ) = rans
     (; solvers, runtime) = config
 
     nueffkL = get_flux(kl_eqn, 3)
@@ -311,7 +325,11 @@ end
 function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, name) where {T,F,M,Tu<:KOmegaLKE,E,D,BI}
     args = (
         ("U", model.momentum.U), 
-        ("p", model.momentum.p)
+        ("p", model.momentum.p),
+        ("k", model.turbulence.k),
+        ("omega", model.turbulence.omega),
+        ("kl", model.turbulence.kl),
+        ("nut", model.turbulence.nut),
     )
     write_vtk(name, model.domain, args...)
 end

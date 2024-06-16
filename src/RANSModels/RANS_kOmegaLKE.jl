@@ -85,7 +85,7 @@ end
             end
         end
     end
-    @reset y.BCs = (BCs...,)
+    y = assign(y, BCs...)
 
     KOmegaLKE(k, omega, kl, nut, kf, omegaf, klf, nutf, coeffs, Tu, y)
 end

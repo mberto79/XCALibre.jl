@@ -6,8 +6,8 @@ struct KOmega{S1,S2,S3,F1,F2,F3,C} <: AbstractTurbulenceModel
     omega::S2
     nut::S3
     kf::F1
-    ωf::F2
-    νtf::F3
+    omegaf::F2
+    nutf::F3
     coeffs::C
 end
 Adapt.@adapt_structure KOmega
@@ -31,10 +31,10 @@ end
     omega = ScalarField(mesh)
     nut = ScalarField(mesh)
     kf = FaceScalarField(mesh)
-    ωf = FaceScalarField(mesh)
-    νtf = FaceScalarField(mesh)
+    omegaf = FaceScalarField(mesh)
+    nutf = FaceScalarField(mesh)
     coeffs = rans.args
-    KOmega(k, omega, nut, kf, ωf, νtf, coeffs)
+    KOmega(k, omega, nut, kf, omegaf, nutf, coeffs)
 end
 
 # Model initialisation
@@ -94,7 +94,7 @@ function turbulence!(
 
     mesh = model.domain
     
-    (;k, omega, nut, kf, ωf, νtf, coeffs) = model.turbulence
+    (;k, omega, nut, kf, omegaf, nutf, coeffs) = model.turbulence
     (;k_eqn, ω_eqn) = rans
     (; solvers, runtime) = config
 
@@ -115,9 +115,9 @@ function turbulence!(
     @. Pω.values = coeffs.α1*Pk.values
     @. Pk.values = nut.values*Pk.values
     @. Dωf.values = coeffs.β1*omega.values
-    @. nueffω.values = nu.values + coeffs.σω*νtf.values
+    @. nueffω.values = nu.values + coeffs.σω*nutf.values
     @. Dkf.values = coeffs.β⁺*omega.values
-    @. nueffk.values = nu.values + coeffs.σk*νtf.values
+    @. nueffk.values = nu.values + coeffs.σk*nutf.values
 
     # Solve omega equation
     prev .= omega.values
@@ -142,9 +142,9 @@ function turbulence!(
 
     @. nut.values = k.values/omega.values
 
-    interpolate!(νtf, nut, config)
-    correct_boundaries!(νtf, nut, nut.BCs, config)
-    correct_eddy_viscosity!(νtf, nut.BCs, model, config)
+    interpolate!(nutf, nut, config)
+    correct_boundaries!(nutf, nut, nut.BCs, config)
+    correct_eddy_viscosity!(nutf, nut.BCs, model, config)
 end
 
 # Specialise VTK writer

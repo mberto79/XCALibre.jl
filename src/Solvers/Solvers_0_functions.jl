@@ -13,9 +13,9 @@ function update_nueff!(nueff, nu, turb_model, config)
         kernel! = update_nueff_laminar!(backend, workgroup)
         kernel!(nu, nueff, ndrange=length(nueff))
     else
-        (; νtf) = turb_model
+        (; nutf) = turb_model
         kernel! = update_nueff_turbulent!(backend, workgroup)
-        kernel!(nu, νtf, nueff, ndrange=length(nueff))
+        kernel!(nu, nutf, nueff, ndrange=length(nueff))
     end
 
 end

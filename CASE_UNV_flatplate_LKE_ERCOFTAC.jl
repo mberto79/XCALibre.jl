@@ -25,7 +25,7 @@ kL_inlet = 0.0115 #1/2*(Tu*velocity[1])^2
 model = Physics(
     time = Steady(),
     fluid = Incompressible(nu = ConstantScalar(nu)),
-    turbulence = RANS{KOmegaLKE}(),
+    turbulence = RANS{KOmegaLKE}(Tu = 0.01),
     energy = nothing,
     domain = mesh
     )
@@ -84,7 +84,7 @@ write_vtk("wallDist", model.domain, ("y", y))
 # Boundary Conditions
 noSlip = [0.0, 0.0, 0.0]
 
-@assign! model U (
+@assign! model momentum U (
     FVM_1D.Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     FVM_1D.Dirichlet(:wall, [0.0, 0.0, 0.0]),
@@ -92,7 +92,7 @@ noSlip = [0.0, 0.0, 0.0]
     Neumann(:freestream, 0.0),
 )
 
-@assign! model p (
+@assign! model momentum p (
     Neumann(:inlet, 0.0),
     FVM_1D.Dirichlet(:outlet, 0.0),
     Neumann(:wall, 0.0),
@@ -108,7 +108,7 @@ noSlip = [0.0, 0.0, 0.0]
     Neumann(:freestream, 0.0)
 )
 
-@assign! model turbulence kL (
+@assign! model turbulence kl (
     FVM_1D.Dirichlet(:inlet, kL_inlet),
     Neumann(:outlet, 0.0),
     FVM_1D.Dirichlet(:wall, 1e-15),
@@ -145,41 +145,41 @@ schemes = (
     p = set_schemes(divergence=Upwind),
     k = set_schemes(divergence=Upwind),
     phi = set_schemes(gradient=Midpoint),
-    kL = set_schemes(divergence=Upwind,gradient=Midpoint),
+    kl = set_schemes(divergence=Upwind,gradient=Midpoint),
     omega = set_schemes(divergence=Upwind)
 )
 
 
 solvers = (
     U = set_solver(
-        model.U;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0(),
+        model.momentum.U;
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
         rtol = 1e-2,
         atol = 1e-6
     ),
     p = set_solver(
-        model.p;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = LDL(),
+        model.momentum.p;
+        solver      = CgSolver, # BicgstabSolver, GmresSolver, CgSolver
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
         rtol = 1e-3,
         atol = 1e-6
     ),
-    phi = set_solver(
-        model.phi;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0(),
-        convergence = 1e-7,
-        relax       = 0.85,
-    ),
-    kL = set_solver(
-        model.turbulence.kL;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0(),
+    # phi = set_solver(
+    #     model.phi;
+    #     solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+    #     preconditioner = Jacobi(),
+    #     convergence = 1e-7,
+    #     relax       = 0.85,
+    # ),
+    kl = set_solver(
+        model.turbulence.kl;
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.6,
         rtol = 1e-2,
@@ -187,8 +187,8 @@ solvers = (
     ),
     k = set_solver(
         model.turbulence.k;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0(),
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.6,
         rtol = 1e-2,
@@ -196,8 +196,8 @@ solvers = (
     ),
     omega = set_solver(
         model.turbulence.omega;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0(),
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.6,
         rtol = 1e-2,
@@ -206,22 +206,25 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=2000, write_interval=100, time_step=1)
+    iterations=1, write_interval=1, time_step=1)
+
+hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
 GC.gc()
 
-initialise!(model.U, velocity)
-initialise!(model.p, 0.0)
-initialise!(model.phi, 0.0)
-initialise!(model.turbulence.kL, kL_inlet)
+initialise!(model.momentum.U, velocity)
+initialise!(model.momentum.p, 0.0)
+# initialise!(model.phi, 0.0)
+initialise!(model.turbulence.kl, kL_inlet)
 initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
-Rx, Ry, Rp = simple!(model, config) # 9.39k allocs
+Rx, Ry, Rz, Rp, model = run!(model, config); #, pref=0.0) # 9.39k allocs
 
 let
     p = plot(; xlims=(0,runtime.iterations), ylims=(1e-10,0))

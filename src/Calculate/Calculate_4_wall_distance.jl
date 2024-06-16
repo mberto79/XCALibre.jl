@@ -1,15 +1,14 @@
 export wall_distance
 # export residual!
 
-function wall_distance(phi, model, config; walls)
+function wall_distance(model, config; walls)
     @info "Calculating wall distance..."
 
     mesh = model.domain
     (; solvers, schemes, runtime, hardware) = config
-    # (; iterations) = runtime
-    iterations = 2000
+    iterations = 500
     
-    # phi = ScalarField(mesh)
+    phi = ScalarField(mesh)
     y = ScalarField(mesh)
     phif = FaceScalarField(mesh)
     initialise!(phif, 1.0)

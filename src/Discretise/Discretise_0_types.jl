@@ -146,11 +146,32 @@ function fixedValue(BC::NutWallFunction, ID::I, value::V) where {I<:Integer,V}
     end
 end
 
+# TO DO: RELOCATE TWO FUNCS BELOW TO COMMON LOCATION/MODULE AND EXPORT
+struct boundary_info{I<:Integer, S<:Symbol}
+    ID::I
+    Name::S
+end
+Adapt.@adapt_structure boundary_info
+
+# Create LUT to map boudnary names to indices
+function boundary_map(mesh)
+    I = Integer; S = Symbol
+    boundary_map = boundary_info{I,S}[]
+
+    for (i, boundary) in enumerate(mesh.boundaries)
+        push!(boundary_map, boundary_info{I,S}(i, boundary.name))
+    end
+
+    return boundary_map
+end
+
 # Assign function definition for vector field
-assign(vec::VectorField, model, args...) = begin
+assign(vec::VectorField, args...) = begin
     # Retrieve user selected float type and boundaries
-    float = _get_float(vec.mesh)
-    boundaries = vec.mesh.boundaries
+    mesh = vec.mesh
+    float = _get_float(mesh)
+    boundaries = mesh.boundaries
+    boundary_info = boundary_map(mesh)
 
     # Assign tuples for boundary condition vectors
     @reset vec.x.BCs = ()
@@ -162,7 +183,7 @@ assign(vec::VectorField, model, args...) = begin
     for arg ∈ args
 
         # Set boundary index and retrieve corresponding name
-        idx = boundary_index(model.boundary_info, arg.ID)
+        idx = boundary_index(boundary_info, arg.ID)
         bname = boundaries[idx].name
         println("Setting boundary $idx: ", bname)
 
@@ -195,11 +216,13 @@ assign(vec::VectorField, model, args...) = begin
 end
 
 # Assign function definition for scalar field
-assign(scalar::ScalarField, model, args...) = begin
+assign(scalar::ScalarField, args...) = begin
 
     # Retrieve user selected float type and boundaries
-    float = _get_float(scalar.mesh)
-    boundaries = scalar.mesh.boundaries
+    mesh = scalar.mesh
+    float = _get_float(mesh)
+    boundaries = mesh.boundaries
+    boundary_info = boundary_map(mesh)
 
     # Assign tuples for boundary condition scalar
     @reset scalar.BCs = ()
@@ -208,7 +231,7 @@ assign(scalar::ScalarField, model, args...) = begin
     for arg ∈ args
 
         # Set boundary index and retrieve corresponding name
-        idx = boundary_index(model.boundary_info, arg.ID)
+        idx = boundary_index(boundary_info, arg.ID)
         bname = boundaries[idx].name
         println("Setting boundary $idx: ", bname)
 
@@ -224,7 +247,6 @@ assign(scalar::ScalarField, model, args...) = begin
             #     val = float(getproperty(arg.value, entry)) # type conversion
             #     BCs_vals = set(BCs_vals, PropertyLens{entry}(), val)
             # end
-            println(arg)
             BCs = (fixedValue(arg, idx, BCs_vals))
             @reset scalar.BCs = (scalar.BCs..., BCs)
 
@@ -246,7 +268,7 @@ macro assign!(model, field, BCs)
     # Assign boundary conditions to model
     quote
         f = $emodel.$efield
-        f = assign(f, $emodel, $eBCs...)
+        f = assign(f, $eBCs...)
         $emodel = @set $emodel.$efield = f
     end
 end
@@ -262,7 +284,7 @@ macro assign!(model, turb, field, BCs)
     # Assign boundary conditions to model
     quote
         f = $emodel.$eturb.$efield
-        f = assign(f, $emodel, $eBCs...)
+        f = assign(f, $eBCs...)
         $emodel = @set $emodel.$eturb.$efield = f
     end
 end

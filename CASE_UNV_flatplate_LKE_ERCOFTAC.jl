@@ -25,31 +25,14 @@ kL_inlet = 0.0115 #1/2*(Tu*velocity[1])^2
 model = Physics(
     time = Steady(),
     fluid = Incompressible(nu = ConstantScalar(nu)),
-    turbulence = RANS{KOmegaLKE}(Tu = 0.01),
+    turbulence = RANS{KOmegaLKE}(Tu = 0.01, walls=(:wall,)),
     energy = nothing,
     domain = mesh
     )
 
+    model.turbulence.y.BCs
+
 phi = ScalarField(mesh)
-
-# Assign boundary Conditions
-walls = (:wall, )
-BCs = []
-for boundary ∈ mesh.boundaries
-    for namedwall ∈ walls
-        if boundary.name == namedwall
-            push!(BCs, Dirichlet(boundary.name, 0.0))
-        else
-            push!(BCs, Neumann(boundary.name, 0.0))
-        end
-    end
-end
-
-BCs
-
-phi = assign(phi, model, BCs...)
-
-phi.BCs
 
 schemes = (
     phi = set_schemes(gradient=Midpoint),
@@ -100,13 +83,13 @@ noSlip = [0.0, 0.0, 0.0]
     Neumann(:freestream, 0.0)
 )
 
-@assign! model phi (
-    Neumann(:inlet, 0.0),
-    Neumann(:outlet, 0.0),
-    FVM_1D.Dirichlet(:wall,0.0),
-    Neumann(:bottom, 0.0),
-    Neumann(:freestream, 0.0)
-)
+# @assign! model phi (
+#     Neumann(:inlet, 0.0),
+#     Neumann(:outlet, 0.0),
+#     FVM_1D.Dirichlet(:wall,0.0),
+#     Neumann(:bottom, 0.0),
+#     Neumann(:freestream, 0.0)
+# )
 
 @assign! model turbulence kl (
     FVM_1D.Dirichlet(:inlet, kL_inlet),
@@ -144,7 +127,7 @@ schemes = (
     U = set_schemes(divergence=Upwind),
     p = set_schemes(divergence=Upwind),
     k = set_schemes(divergence=Upwind),
-    phi = set_schemes(gradient=Midpoint),
+    y = set_schemes(gradient=Midpoint),
     kl = set_schemes(divergence=Upwind,gradient=Midpoint),
     omega = set_schemes(divergence=Upwind)
 )
@@ -169,13 +152,13 @@ solvers = (
         rtol = 1e-3,
         atol = 1e-6
     ),
-    # phi = set_solver(
-    #     model.phi;
-    #     solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-    #     preconditioner = Jacobi(),
-    #     convergence = 1e-7,
-    #     relax       = 0.85,
-    # ),
+    y = set_solver(
+        model.turbulence.y;
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(),
+        convergence = 1e-7,
+        relax       = 0.85,
+    ),
     kl = set_solver(
         model.turbulence.kl;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver

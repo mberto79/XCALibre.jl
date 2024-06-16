@@ -179,7 +179,6 @@ function initialise(
     # coeffs = get_LKE_coeffs(float_type)
 
     # Wall distance calculation
-    # calc_wall_distance!(model, config)
     y.values .= wall_distance(model, config)
 
     return KOmegaLKEModel(

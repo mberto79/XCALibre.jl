@@ -52,13 +52,15 @@ function solve_equation!(
     update_equation!(psiEqn, config)
 
     apply_boundary_conditions!(psiEqn, psi.x.BCs, xdir, config)
-    implicit_relaxation!(psiEqn, psi.x.values, solversetup.relax, xdir, config)
+    # implicit_relaxation!(psiEqn, psi.x.values, solversetup.relax, xdir, config)
+    implicit_relaxation_diagdom!(psiEqn, psi.x.values, solversetup.relax, xdir, config)
     update_preconditioner!(psiEqn.preconditioner, mesh, config)
     solve_system!(psiEqn, solversetup, psi.x, xdir, config)
     
     update_equation!(psiEqn, config)
     apply_boundary_conditions!(psiEqn, psi.y.BCs, ydir, config)
-    implicit_relaxation!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
+    # implicit_relaxation!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
+    implicit_relaxation_diagdom!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
     update_preconditioner!(psiEqn.preconditioner, mesh, config)
     solve_system!(psiEqn, solversetup, psi.y, ydir, config)
     
@@ -66,7 +68,8 @@ function solve_equation!(
     if typeof(mesh) <: Mesh3
         update_equation!(psiEqn, config)
         apply_boundary_conditions!(psiEqn, psi.z.BCs, zdir, config)
-        implicit_relaxation!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
+        # implicit_relaxation!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
+        implicit_relaxation_diagdom!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
         update_preconditioner!(psiEqn.preconditioner, mesh, config)
         solve_system!(psiEqn, solversetup, psi.z, zdir, config)
     end
@@ -165,6 +168,62 @@ end
         b[i] += (1.0 - alpha)*nzval[nIndex]*field[i]
     end
 end
+
+
+## IMPLICIT RELAXATION KERNEL with DIAGONAL DOMINANCE
+
+# Prepare variables for kernel and call
+function implicit_relaxation_diagdom!(
+    phiEqn::E, field, alpha, component, config) where E<:ModelEquation
+    mesh = get_phi(phiEqn).mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    precon = phiEqn.preconditioner
+    # Output sparse matrix properties and values
+    A = _A(phiEqn)
+    b = _b(phiEqn, component)
+    rowval_array = _rowval(A)
+    colptr_array = _colptr(A)
+    nzval_array = _nzval(A)
+
+    # Get backend and define kernel
+    kernel! = implicit_relaxation_diagdom_kernel!(backend, workgroup)
+    
+    # Define variable equal to 1 with same type as mesh integers
+    integer = _get_int(mesh)
+    ione = one(integer)
+    
+    # Execute kernel
+    kernel!(ione, rowval_array, colptr_array, nzval_array, b, field, alpha, ndrange = length(b))
+    KernelAbstractions.synchronize(backend)
+
+    # check_for_precon!(nzval_array, precon, backend)
+end
+
+@kernel function implicit_relaxation_diagdom_kernel!(ione, rowval, colptr, nzval, b, field, alpha)
+    # i defined as values from 1 to length(b)
+    i = @index(Global)
+    
+    @inbounds begin
+
+        # Find nzval index relating to A[i,i]
+        nIndex = spindex(colptr, rowval, i, i)
+        sumv = zero(TF)
+
+        (; faces_range) = cells[i]
+        for ni ∈ faces_range
+            nID = cell_neighbours[ni]
+            zIndex = spindex(colptr, rowval, i, nID)
+            sumv += abs(nzval[zIndex])
+        end
+
+        # Run implicit relaxation calculations
+        D0 = nzval[nIndex]
+        nzval[nIndex] = max(abs(D0), sumv)/alpha
+        b[i] += (nzval[nIndex] - D0)*field[i]
+    end
+end
+
 
 function setReference!(pEqn::E, pRef, cellID, config) where E<:ModelEquation
     if pRef === nothing

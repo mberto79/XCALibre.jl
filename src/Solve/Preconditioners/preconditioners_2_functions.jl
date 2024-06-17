@@ -144,18 +144,22 @@ begin
     nothing
 end
 
+const GPUCSC = Union{
+    CUDA.CUSPARSE.CuSparseMatrixCSC,
+    AMDGPU.rocSPARSE.ROCSparseMatrixCSC}
+
 function sparse_array_deconstructor_preconditioners(arr::SparseArrays.SparseMatrixCSC)
     (; rowval, colptr, nzval, m, n) = arr
     return rowval, colptr, nzval, m ,n
 end
 
-function sparse_array_deconstructor_preconditioners(arr::CUDA.CUSPARSE.CuSparseMatrixCSC)
+function sparse_array_deconstructor_preconditioners(arr::GPUCSC)
     (; rowVal, colPtr, nzVal, dims) = arr
     return rowVal, colPtr, nzVal, dims[1], dims[2]
 end
 
-_m(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.dims[1]
+_m(A::GPUCSC) = A.dims[1]
 _m(A::SparseArrays.SparseMatrixCSC) = A.m
 
-_n(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.dims[2]
+_n(A::GPUCSC) = A.dims[2]
 _n(A::SparseArrays.SparseMatrixCSC) = A.n

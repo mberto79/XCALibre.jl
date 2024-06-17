@@ -72,16 +72,20 @@ end
     eqn.equation.bz
 end
 
-@inline _nzval(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.nzVal
+const GPUCSC = Union{
+    CUDA.CUSPARSE.CuSparseMatrixCSC,
+    AMDGPU.rocSPARSE.ROCSparseMatrixCSC}
+
+@inline _nzval(A::GPUCSC) = A.nzVal
 @inline _nzval(A::SparseArrays.SparseMatrixCSC) = A.nzval
 
-@inline _colptr(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.colPtr
+@inline _colptr(A::GPUCSC) = A.colPtr
 @inline _colptr(A::SparseArrays.SparseMatrixCSC) = A.colptr
 
-@inline _rowval(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = A.rowVal
+@inline _rowval(A::GPUCSC) = A.rowVal
 @inline _rowval(A::SparseArrays.SparseMatrixCSC) = A.rowval
 
-@inline get_sparse_fields(A::CUDA.CUSPARSE.CuSparseMatrixCSC) = begin
+@inline get_sparse_fields(A::GPUCSC) = begin
     A.nzVal, A.rowVal, A.colPtr
 end
 

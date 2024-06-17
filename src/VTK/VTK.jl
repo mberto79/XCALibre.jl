@@ -2,7 +2,7 @@ module VTK
 
 using FVM_1D.Mesh
 using FVM_1D.Fields
-using CUDA
+# using CUDA
 using KernelAbstractions
 
 

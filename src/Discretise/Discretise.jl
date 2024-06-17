@@ -5,7 +5,7 @@ using LinearAlgebra
 using SparseArrays
 using StaticArrays
 using Adapt
-using CUDA
+# using CUDA
 using KernelAbstractions
 using Atomix
 using GPUArrays

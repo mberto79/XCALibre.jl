@@ -1,5 +1,3 @@
-using CUDA
-
 export mesh2_from_UNV
 
 mesh2_from_UNV(mesh; integer=Int64, float=Float64) = begin

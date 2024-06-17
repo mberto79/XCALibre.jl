@@ -1,6 +1,6 @@
 using Plots
 using FVM_1D
-# using CUDA
+using CUDA
 # using Accessors
 # using Adapt
 
@@ -114,7 +114,7 @@ solvers = (
 
 runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
 
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(

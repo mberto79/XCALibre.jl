@@ -121,7 +121,7 @@ p_eqn = (
     Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
 ) → Equation(mesh)
 
-CUDA.allowscalar(false)
+# CUDA.allowscalar(false)
 # model = _convert_array!(model, backend)
 # ∇p = _convert_array!(∇p, backend)
 # ux_eqn = _convert_array!(ux_eqn, backend)
@@ -290,7 +290,7 @@ R_p_cpu = R_p
 ∇p_resultz_cpu = ∇p.result.z.values
 
 function error_check(arr_cpu, arr_gpu, min_error)
-    CUDA.allowscalar(true)
+    # CUDA.allowscalar(true)
     
     sum = 0
 
@@ -318,7 +318,7 @@ function error_check(arr_cpu, arr_gpu, min_error)
     end
 
     println("number errored = $sum")
-    CUDA.allowscalar(false)
+    # CUDA.allowscalar(false)
 end
 
 error_check(nzval_cpu, ux_eqn.equation.A.nzVal, eps(Float64))

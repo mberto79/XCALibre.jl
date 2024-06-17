@@ -30,43 +30,6 @@ model = Physics(
     domain = mesh
     )
 
-    model.turbulence.y.BCs
-
-phi = ScalarField(mesh)
-
-schemes = (
-    phi = set_schemes(gradient=Midpoint),
-)
-
-solvers = (
-    phi = set_solver(
-        model.momentum.U;
-        solver      = BicgstabSolver,# CgSolver, BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(),
-        convergence = 1e-6,
-        itmax = 10,
-        relax = 0.99,
-        rtol = 1e-10,
-        atol = 1e-15
-    ),
-
-)
-
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=32)
-
-runtime = set_runtime(
-    iterations=2000, write_interval=100, time_step=1)
-    
-config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
-
-# y = wall_distance(model, config; walls=(:wall))
-y = wall_distance(phi, model, config)
-write_vtk("wallDist", model.domain, ("y", y))
-# Boundary Conditions
-noSlip = [0.0, 0.0, 0.0]
-
 @assign! model momentum U (
     FVM_1D.Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
@@ -82,14 +45,6 @@ noSlip = [0.0, 0.0, 0.0]
     Neumann(:bottom, 0.0),
     Neumann(:freestream, 0.0)
 )
-
-# @assign! model phi (
-#     Neumann(:inlet, 0.0),
-#     Neumann(:outlet, 0.0),
-#     FVM_1D.Dirichlet(:wall,0.0),
-#     Neumann(:bottom, 0.0),
-#     Neumann(:freestream, 0.0)
-# )
 
 @assign! model turbulence kl (
     FVM_1D.Dirichlet(:inlet, kL_inlet),
@@ -154,10 +109,10 @@ solvers = (
     ),
     y = set_solver(
         model.turbulence.y;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
-        convergence = 1e-7,
-        relax       = 0.85,
+        convergence = 1e-9,
+        relax       = 0.98,
     ),
     kl = set_solver(
         model.turbulence.kl;
@@ -189,7 +144,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=1, write_interval=1, time_step=1)
+    iterations=1000, write_interval=100, time_step=1)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=4)
@@ -201,7 +156,6 @@ GC.gc()
 
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
-# initialise!(model.phi, 0.0)
 initialise!(model.turbulence.kl, kL_inlet)
 initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)

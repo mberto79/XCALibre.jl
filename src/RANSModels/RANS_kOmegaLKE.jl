@@ -16,7 +16,7 @@ struct KOmegaLKE{S1,S2,S3,S4,F1,F2,F3,F4,C1,C2,Y} <: AbstractTurbulenceModel
 end 
 Adapt.@adapt_structure KOmegaLKE
 
-# Model type definition (hold equation definitions and data)
+# Model type definition (hold equation definitions and internal data)
 struct KOmegaLKEModel{
     E1,E2,E3,F1,F2,F3,S1,S2,S3,S4,S5,S6,S7,V1,V2} <: AbstractTurbulenceModel
     k_eqn::E1
@@ -85,7 +85,7 @@ end
             end
         end
     end
-    @reset y.BCs = (BCs...,)
+    y = assign(y, BCs...)
 
     KOmegaLKE(k, omega, kl, nut, kf, omegaf, klf, nutf, coeffs, Tu, y)
 end
@@ -179,7 +179,8 @@ function initialise(
     # coeffs = get_LKE_coeffs(float_type)
 
     # Wall distance calculation
-    y.values .= wall_distance(model, config)
+    # y.values .= wall_distance(model, config)
+    wall_distance!(model, config)
 
     return KOmegaLKEModel(
         k_eqn,
@@ -329,6 +330,7 @@ function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, name) where {T,F,M,Tu<:KOmeg
         ("omega", model.turbulence.omega),
         ("kl", model.turbulence.kl),
         ("nut", model.turbulence.nut),
+        ("y", model.turbulence.y)
     )
     write_vtk(name, model.domain, args...)
 end

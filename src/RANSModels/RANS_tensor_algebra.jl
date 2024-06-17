@@ -102,22 +102,6 @@ end
     end
 end
 
-function bound!(field, config)
-    # Extract hardware configuration
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-
-    (; values, mesh) = field
-    (; cells, cell_neighbours) = mesh
-
-    # set up and launch kernel
-    kernel! = _bound!(backend, workgroup)
-    kernel!(values, cells, cell_neighbours, ndrange = length(values))
-    KernelAbstractions.synchronize(backend)
-end
-
-
-
 # Create LUT to map boudnary names to indices
 function boundary_map(mesh)
     I = Integer; S = Symbol

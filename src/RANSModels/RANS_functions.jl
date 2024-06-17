@@ -1,4 +1,17 @@
 # TO DO: These functions needs to be organised in a more sensible manner
+function bound!(field, config)
+    # Extract hardware configuration
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    (; values, mesh) = field
+    (; cells, cell_neighbours) = mesh
+
+    # set up and launch kernel
+    kernel! = _bound!(backend, workgroup)
+    kernel!(values, cells, cell_neighbours, ndrange = length(values))
+    KernelAbstractions.synchronize(backend)
+end
 
 @kernel function _bound!(values, cells, cell_neighbours)
     i = @index(Global)

@@ -20,7 +20,7 @@ using FVM_1D.Discretise
 using FVM_1D.Solve
 using FVM_1D.Calculate
 using FVM_1D.ModelPhysics
-using FVM_1D.RANSModels
+using FVM_1D.Turbulence
 using FVM_1D.VTK
 
 include("Solvers_0_functions.jl")

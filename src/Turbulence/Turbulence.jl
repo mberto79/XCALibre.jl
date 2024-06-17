@@ -1,4 +1,4 @@
-module RANSModels
+module Turbulence
 
 using Atomix
 using KernelAbstractions

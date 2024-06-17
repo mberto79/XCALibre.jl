@@ -1,12 +1,12 @@
 using LinearAlgebra
 
-get_data(arr, backend::CUDABackend) = begin
+get_data(arr, backend::KernelAbstractions.GPU) = begin
     arr_cpu = Array{eltype(arr)}(undef, length(arr))
     copyto!(arr_cpu, arr)
     arr_cpu
 end
 
-get_data(arr, backend::CPU) = begin
+get_data(arr, backend::KernelAbstractions.CPU) = begin
     arr
 end
 

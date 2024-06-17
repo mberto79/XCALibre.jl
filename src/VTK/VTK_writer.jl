@@ -104,19 +104,19 @@ function write_vtk(name, mesh::Mesh2, args...) #, Ux, Uy, Uz, p)
     end
 end
 
-function copy_scalarfield_to_cpu(a, backend::CUDABackend)
+function copy_scalarfield_to_cpu(a, backend::KernelAbstractions.GPU)
     a_cpu = Array{eltype(a)}(undef, length(a))
     
     copyto!(a_cpu, a)
     return a_cpu
 end
 
-function copy_scalarfield_to_cpu(a, backend::CPU)
+function copy_scalarfield_to_cpu(a, backend::KernelAbstractions.CPU)
     a_cpu = a
     return a_cpu
 end
 
-function copy_to_cpu(a, b, c, backend::CUDABackend)
+function copy_to_cpu(a, b, c, backend::KernelAbstractions.GPU)
     a_cpu = Array{eltype(a)}(undef, length(a))
     b_cpu = Array{eltype(b)}(undef, length(b))
     c_cpu = Array{eltype(c)}(undef, length(c))
@@ -127,7 +127,7 @@ function copy_to_cpu(a, b, c, backend::CUDABackend)
     return a_cpu, b_cpu, c_cpu
 end
 
-function copy_to_cpu(a, b, c, backend::CPU)
+function copy_to_cpu(a, b, c, backend::KernelAbstractions.CPU)
     a_cpu = a
     b_cpu = b
     c_cpu = c

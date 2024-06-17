@@ -176,6 +176,7 @@ end
 function implicit_relaxation_diagdom!(
     phiEqn::E, field, alpha, component, config) where E<:ModelEquation
     mesh = get_phi(phiEqn).mesh
+    (; cells, cell_neighbours) = mesh
     (; hardware) = config
     (; backend, workgroup) = hardware
     precon = phiEqn.preconditioner
@@ -194,22 +195,25 @@ function implicit_relaxation_diagdom!(
     ione = one(integer)
     
     # Execute kernel
-    kernel!(ione, rowval_array, colptr_array, nzval_array, b, field, alpha, ndrange = length(b))
+    kernel!(cells, cell_neighbours, ione, rowval_array, colptr_array,
+    nzval_array, b, field, alpha, ndrange = length(b))
     KernelAbstractions.synchronize(backend)
 
     # check_for_precon!(nzval_array, precon, backend)
 end
 
-@kernel function implicit_relaxation_diagdom_kernel!(ione, rowval, colptr, nzval, b, field, alpha)
+@kernel function implicit_relaxation_diagdom_kernel!(cells::AbstractArray{Cell{TF,SV,UR}}, cell_neighbours, 
+    ione, rowval, colptr, nzval, b, field, alpha) where {TF,SV,UR}
     # i defined as values from 1 to length(b)
     i = @index(Global)
     
+    sumv = zero(TF)
+
     @inbounds begin
 
         # Find nzval index relating to A[i,i]
         nIndex = spindex(colptr, rowval, i, i)
-        sumv = zero(TF)
-
+        
         (; faces_range) = cells[i]
         for ni ∈ faces_range
             nID = cell_neighbours[ni]

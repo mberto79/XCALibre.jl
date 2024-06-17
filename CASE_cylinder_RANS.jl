@@ -1,6 +1,6 @@
 using Plots
 using FVM_1D
-using CUDA
+# using CUDA
 # using Accessors
 # using Adapt
 
@@ -12,10 +12,10 @@ mesh = build_mesh(mesh_file, scale=0.001)
 mesh = update_mesh_format(mesh)
 # INLET CONDITIONS 
 
-Umag = 5
+Umag = 30
 velocity = [Umag, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
-nu = 1e-3
+nu = 1e-5
 νR = 5
 Tu = 0.01
 k_inlet = 3/2*(Tu*Umag)^2
@@ -112,10 +112,10 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
 
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=CPU(), workgroup=4)
+# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

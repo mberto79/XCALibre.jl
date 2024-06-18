@@ -15,12 +15,18 @@ using FVM_1D.Solve
 using FVM_1D.Calculate
 using FVM_1D.VTK
 
-include("RANS_types.jl")
+include("turbulence_types.jl")
+
+# RANS models
 include("RANS_functions.jl")
 include("RANS_tensor_algebra.jl")
 include("RANS_laminar.jl")
 include("RANS_kOmega.jl")
 include("RANS_kOmegaLKE.jl")
+
+# LES models
+include("LES_functions.jl")
+include("LES_Smagorinsky.jl")
 
 export initialise, turbulence!, model2vtk
 

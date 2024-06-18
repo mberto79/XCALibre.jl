@@ -3,18 +3,15 @@ using FVM_1D
 using CUDA
 
 
-# quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
-mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
-mesh = build_mesh(mesh_file, scale=0.001)
-mesh = update_mesh_format(mesh, integer=Int32, float=Float32)
-mesh = update_mesh_format(mesh)
+mesh_file = "unv_sample_meshes/bfs_unv_hex_5mm.unv"
+mesh = build_mesh3D(mesh_file, scale=0.001)
 
 # INLET CONDITIONS 
 
-Umag = 1
+Umag = 3.5
 velocity = [Umag, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
-nu = 1e-3
+nu = 1e-5
 νR = 5
 Tu = 0.01
 k_inlet = 3/2*(Tu*Umag)^2
@@ -32,25 +29,25 @@ model = Physics(
 @assign! model momentum U ( 
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Dirichlet(:cylinder, noSlip),
-    Neumann(:bottom, 0.0),
+    Dirichlet(:wall, noSlip),
+    Neumann(:sides, 0.0),
     Neumann(:top, 0.0)
 )
 
 @assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
-    Neumann(:cylinder, 0.0),
-    Neumann(:bottom, 0.0),
+    Neumann(:wall, 0.0),
+    Neumann(:sides, 0.0),
     Neumann(:top, 0.0)
 )
 
 @assign! model turbulence nut (
     Dirichlet(:inlet, k_inlet/ω_inlet),
     Neumann(:outlet, 0.0),
-    Neumann(:top, 0.0),
-    Neumann(:bottom, 0.0), 
-    Dirichlet(:cylinder, 0.0)
+    Neumann(:sides, 0.0), 
+    Neumann(:top, 0.0), 
+    Dirichlet(:wall, 0.0)
 )
 
 schemes = (
@@ -80,7 +77,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=5000, write_interval=100, time_step=0.0001)
+    iterations=10000, write_interval=200, time_step=0.0001)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=4)

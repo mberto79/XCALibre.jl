@@ -1,14 +1,18 @@
 export AbstractMomentumModel, AbstractTurbulenceModel
-export AbstractRANSModel
-export RANS
+export AbstractRANSModel, RANS
+export AbstractLESModel, LES
 
 abstract type AbstractMomentumModel end
 abstract type AbstractTurbulenceModel end
 abstract type AbstractRANSModel <: AbstractTurbulenceModel end
+abstract type AbstractLESModel <: AbstractTurbulenceModel end
 
 # Models 
 
 struct RANS{T,ARG} <:AbstractRANSModel 
     args::ARG
 end
-# Adapt.Adapt.@adapt_structure RANS
+
+struct LES{T,ARG} <:AbstractLESModel 
+    args::ARG
+end

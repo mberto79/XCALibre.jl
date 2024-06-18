@@ -46,7 +46,8 @@ begin
     end
 end
 
-function magnitude!(magS::ScalarField, S::AbstractVectorField, config)
+# function magnitude!(magS::ScalarField, S::AbstractVectorField, config)
+function magnitude!(magS::ScalarField, S, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
@@ -55,7 +56,8 @@ function magnitude!(magS::ScalarField, S::AbstractVectorField, config)
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function _magnitude!(magS::ScalarField, S::AbstractVectorField)
+# @kernel function _magnitude!(magS::ScalarField, S::AbstractVectorField)
+@kernel function _magnitude!(magS::ScalarField, S)
     i = @index(Global)
     @uniform values = magS.values
     

@@ -11,12 +11,12 @@ _get_backend(mesh) = get_backend(mesh.cells)
 function _convert_array!(arr, backend::CPU)
     return arr
 end
-function _convert_array!(arr, backend::CUDABackend)
-    return adapt(CuArray, arr)
-end
-function _convert_array!(arr, backend::ROCBackend)
-    return adapt(ROCArray, arr)
-end
+# function _convert_array!(arr, backend::CUDABackend)
+#     return adapt(CuArray, arr)
+# end
+# function _convert_array!(arr, backend::ROCBackend)
+#     return adapt(ROCArray, arr)
+# end
 
 # function total_boundary_faces(mesh::Mesh2{I,F}) where {I,F}
 function total_boundary_faces(mesh::AbstractMesh)

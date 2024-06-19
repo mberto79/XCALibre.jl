@@ -46,7 +46,7 @@ function diagonal_indices!(Di, A::AbstractSparseArray{Tf,Ti}) where {Tf,Ti}
 end
 
 integer_type(A::SparseMatrixCSC{Tf,Ti}) where {Tf,Ti} = Ti
-integer_type(A::CUDA.CUSPARSE.CuSparseMatrixCSC{Tf,Ti}) where {Tf,Ti} = Ti
+# integer_type(A::CUDA.CUSPARSE.CuSparseMatrixCSC{Tf,Ti}) where {Tf,Ti} = Ti
 
 function upper_row_indices(A, Di) # upper triangular row column indices
     (; colptr, n, rowval) = A

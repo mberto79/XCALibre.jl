@@ -1,7 +1,7 @@
 using Adapt
 using SparseArrays
 using KernelAbstractions
-using CUDA, AMDGPU
+# using CUDA, AMDGPU
 using Atomix
 
 include("preconditioners_0_types.jl")

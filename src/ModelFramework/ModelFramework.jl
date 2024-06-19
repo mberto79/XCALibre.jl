@@ -6,7 +6,7 @@ using Adapt
 
 using Krylov
 using KernelAbstractions
-using CUDA, AMDGPU
+# using CUDA, AMDGPU
 
 using FVM_1D.Mesh
 using FVM_1D.Fields

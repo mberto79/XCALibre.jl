@@ -18,6 +18,15 @@ begin
     return Rx, Ry, Rz, Rp, model
 end
 
+# Weakly Compressible solver (steady)
+run!(
+    model::Physics{T,F,M,Tu,E,D,BI}, config
+    ) where{T<:Steady,F<:WeaklyCompressible,M,Tu,E,D,BI} = 
+begin
+    Rx, Ry, Rz, Rp, Re, model = simple_comp!(model, config); #, pref=0.0)
+    return Rx, Ry, Rz, Rp, model
+end
+
 # Compressible solver (steady)
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config

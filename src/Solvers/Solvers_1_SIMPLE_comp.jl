@@ -1,8 +1,8 @@
-export simple!
+export simple_comp!
 
-simple!(model_in, config; resume=true, pref=nothing) = begin
+simple_comp!(model_in, config; resume=true, pref=nothing) = begin
     R_ux, R_uy, R_uz, R_p, model = setup_compressible_solvers(
-        SIMPLE, model_in, config;
+        CSIMPLE, model_in, config;
         resume=true, pref=nothing
         )
 
@@ -69,7 +69,7 @@ function setup_compressible_solvers(
     return R_ux, R_uy, R_uz, R_p, model    
 end # end function
 
-function SIMPLE(
+function CSIMPLE(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config ; resume, pref)
     
     # Extract model variables and configuration

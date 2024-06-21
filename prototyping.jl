@@ -1,9 +1,9 @@
+using FVM_1D
 using FVM_1D.FoamMesh
 using StaticArrays
 
 mesh_file = "unv_sample_meshes/OF_cavity_hex/constant/polyMesh"
-@time points, face_nodes, face_nodes_range, face_neighbour_cell, face_owner_cell, bnames, bnFaces, bstartFace = load_foamMesh(mesh_file)
-@time n1,n2, n3 = load_foamMesh(mesh_file)
+@time fowners = build_foamMesh(mesh_file; integer=Int64, float=Float64)
 
 test = "4(14 140 136 15)"
 

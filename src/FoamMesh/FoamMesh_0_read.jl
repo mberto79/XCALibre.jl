@@ -1,14 +1,15 @@
-export load_foamMesh 
+function read_foamMesh(file_path; integer, float)
 
-function load_foamMesh(file_path; integer=Int64, float=Float64)
     points = read_points(joinpath(file_path,"points"), integer, float)
     face_nodes, face_nodes_range = read_faces(joinpath(file_path,"faces"), integer, float)
     face_neighbour_cell = read_neighbour(joinpath(file_path,"neighbour"), integer, float)
-    face_owner_cell = read_neighbour(joinpath(file_path,"owner"), integer, float)
-    bnames, bnFaces, bstartFace = read_boundary(
-        joinpath(file_path,"boundary"), integer, float)
-    return points, face_nodes, face_nodes_range, 
-    face_neighbour_cell, face_owner_cell, bnames, bnFaces, bstartFace
+    face_owner_cell = read_owner(joinpath(file_path,"owner"), integer, float)
+
+    bnames, bnFaces, bstartFace = begin
+        read_boundary(joinpath(file_path,"boundary"), integer, float)
+    end
+
+    return points, face_nodes, face_nodes_range, face_neighbour_cell, face_owner_cell, bnames, bnFaces, bstartFace
 end
 
 function read_boundary(file_path, TI, TF)

@@ -12,5 +12,6 @@ using FVM_1D.Mesh
 include("FoamMesh_0_read.jl")
 include("FoamMesh_1_connectivity.jl")
 include("FoamMesh_2_geometry.jl")
+include("FoamMesh_3_build_mesh.jl")
 
 end # module end

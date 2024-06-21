@@ -26,26 +26,37 @@ function setup_compressible_solvers(
     @info "Preallocating fields..."
     
     ∇p = Grad{schemes.p.gradient}(p)
+    rho= ScalarField(mesh)
     mdotf = FaceScalarField(mesh)
-    rDf = FaceScalarField(mesh)
-    nueff = FaceScalarField(mesh)
+    rhorDf = FaceScalarField(mesh)
+    mueff = FaceScalarField(mesh)
+    mueffgradUt = VectorField(mesh)
     # initialise!(rDf, 1.0)
-    rDf.values .= 1.0
+    rhorDf.values .= 1.0
     divHv = ScalarField(mesh)
 
     @info "Defining models..."
 
     U_eqn = (
-        Time{schemes.U.time}(U)
+        Time{schemes.U.time}(rho, U)
         + Divergence{schemes.U.divergence}(mdotf, U) 
-        - Laplacian{schemes.U.laplacian}(nueff, U) 
+        - Laplacian{schemes.U.laplacian}(mueff, U) 
         == 
         -Source(∇p.result)
+        +Source(mueffgradUt)
     ) → VectorEquation(mesh)
 
-    p_eqn = (
-        Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
-    ) → ScalarEquation(mesh)
+    if typeof(model.fluid) <: WeaklyCompressible
+        p_eqn = (
+            Laplacian{schemes.p.laplacian}(rhorDf, p) == Source(divHv)
+        ) → ScalarEquation(mesh)
+    elseif typeof(model.fluid) <: Compressible
+        pconv = FaceScalarField(mesh)
+        p_eqn = (
+            Laplacian{schemes.p.laplacian}(rhorDf, p) 
+            - Divergence{schemes.p.divergence}(pconv, p) == Source(divHv)
+        ) → Equation(mesh)
+    end
 
     @info "Initialising preconditioners..."
 
@@ -54,23 +65,25 @@ function setup_compressible_solvers(
     @reset p_eqn.preconditioner = set_preconditioner(
                     solvers.p.preconditioner, p_eqn, p.BCs, config)
 
-
     @info "Pre-allocating solvers..."
      
     @reset U_eqn.solver = solvers.U.solver(_A(U_eqn), _b(U_eqn, XDir()))
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
+  
+    @info "Initialising energy model..."
+    energyModel = Energy.initialise(model.energy, model, mdotf, p_eqn, config)
 
     @info "Initialising turbulence model..."
-    turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
+    turbulenceModel = Turbulence.initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     R_ux, R_uy, R_uz, R_p, model  = solver_variant(
-    model, turbulenceModel, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
+    model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
 
     return R_ux, R_uy, R_uz, R_p, model    
 end # end function
 
 function CSIMPLE(
-    model, turbulenceModel, ∇p, U_eqn, p_eqn, config ; resume, pref)
+    model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config ; resume, pref)
     
     # Extract model variables and configuration
     (; U, p) = model.momentum
@@ -171,11 +184,15 @@ function CSIMPLE(
             end
         end
 
+        energy!()
+
         # Velocity and boundaries correction
         correct_velocity!(U, Hv, ∇p, rD, config)
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, U.BCs, config)
         flux!(mdotf, Uf, config)
+
+        
 
         # if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs, config)

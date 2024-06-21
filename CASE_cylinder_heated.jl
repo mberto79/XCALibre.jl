@@ -1,6 +1,6 @@
 using Plots
 using FVM_1D
-using CUDA # Run this if using NVIDIA GPU
+# using CUDA # Run this if using NVIDIA GPU
 # using AMDGPU # Run this if using AMD GPU
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
@@ -17,12 +17,19 @@ velocity = [0.50, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
 Re = (0.2*velocity[1])/nu
+gamma = 1.4
+cp = 1005.0
+temp = 300.0
 
 model = Physics(
     time = Steady(),
-    fluid = Incompressible(nu = ConstantScalar(nu)),
+    fluid = WeaklyCompressible(
+        mu = ConstantScalar(nu),
+        cp = ConstantScalar(cp),
+        gamma = ConstantScalar(gamma)
+        ),
     turbulence = RANS{Laminar}(),
-    energy = nothing,
+    energy = ENERGY{Sensible_Enthalpy}(),
     domain = mesh
     )
 
@@ -40,6 +47,14 @@ model = Physics(
     Neumann(:cylinder, 0.0),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0)
+)
+
+@assign! model energy T (
+    Neumann(:inlet, 300.0),
+    Dirichlet(:outlet, 0.0),
+    Neumann(:cylinder, 300.0),
+    Neumann(:bottom, 300.0),
+    Neumann(:top, 300.0)
 )
 
 solvers = (
@@ -60,18 +75,28 @@ solvers = (
         relax       = 0.2,
         rtol = 1e-4,
         atol = 1e-3
+    ),
+    h = set_solver(
+        model.energy.h;
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(),
+        convergence = 1e-7,
+        relax       = 0.8,
+        rtol = 1e-4,
+        atol = 1e-2
     )
 )
 
 schemes = (
     U = set_schemes(divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(divergence=Upwind, gradient=Midpoint)
+    p = set_schemes(divergence=Upwind, gradient=Midpoint),
+    h = set_schemes(divergence=Upwind, gradient=Midpoint)
 )
 
 runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
 
-# hardware = set_hardware(backend=CPU(), workgroup=4)
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+hardware = set_hardware(backend=CPU(), workgroup=4)
+# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 
 config = Configuration(
@@ -81,10 +106,12 @@ GC.gc(true)
 
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
+initialise!(model.energy.T, temp)
 
-Rx, Ry, Rz, Rp, model = run!(model, config); #, pref=0.0)
+Rx, Ry, Rz, Rp, Rh, model = run!(model, config); #, pref=0.0)
 
 plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
 plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
 plot!(1:length(Rp), Rp, yscale=:log10, label="p")
+plot!(1:length(Rh), Rp, yscale=:log10, label="h")

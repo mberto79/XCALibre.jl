@@ -7,6 +7,7 @@ using KernelAbstractions; export CPU
 
 include("UNV2/UNV2.jl")
 include("Mesh/Mesh.jl")
+include("FoamMesh/FoamMesh.jl")
 # include("Mesh/Plotting/0_plotting.jl")
 include("Fields/Fields.jl")
 include("ModelFramework/ModelFramework.jl")
@@ -23,6 +24,7 @@ include("UNV3/UNV3.jl")
 
 using Reexport
 @reexport using FVM_1D.Mesh
+@reexport using FVM_1D.FoamMesh
 # @reexport using FVM_1D.Plotting
 @reexport using FVM_1D.Fields
 @reexport using FVM_1D.ModelFramework

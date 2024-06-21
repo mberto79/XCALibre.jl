@@ -87,7 +87,7 @@ function CSIMPLE(
     
     # Extract model variables and configuration
     (; U, p) = model.momentum
-    nu = _nu(model.fluid)
+    mu = _mu(model.fluid)
     mesh = model.domain
     p_model = p_eqn.model
     (; solvers, schemes, runtime, hardware) = config
@@ -131,7 +131,7 @@ function CSIMPLE(
     flux!(mdotf, Uf, config)
     grad!(∇p, pf, p, p.BCs, config)
 
-    update_nueff!(nueff, nu, model.turbulence, config)
+    update_nueff!(mueff, mu, model.turbulence, config)
     
     @info "Staring SIMPLE loops..."
 

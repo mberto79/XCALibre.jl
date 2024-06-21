@@ -1,4 +1,5 @@
 export Sensible_Enthalpy
+export Ttoh
 
 # Model type definition
 struct Sensible_Enthalpy{S1,S2,F1,F2,C} <: AbstractEnergyModel
@@ -17,7 +18,7 @@ Adapt.@adapt_structure Sensible_Enthalpy_Model
 
 # Model API constructor
 ENERGY{Sensible_Enthalpy}(; Tref = 288.15) = begin
-    coeffs = (Tref=Tref)
+    coeffs = (Tref=Tref, other=nothing)
     ARG = typeof(coeffs)
     ENERGY{Sensible_Enthalpy,ARG}(coeffs)
 end
@@ -45,6 +46,8 @@ function initialise(
     keff_by_cp = FaceScalarField(mesh)
     divK = ScalarField(mesh)
 
+    h = Ttoh(model, T)
+
     energy_eqn = (
         Time{schemes.h.time}(rho, h)
         + Divergence{schemes.h.divergence}(mdotf, h) 
@@ -53,25 +56,19 @@ function initialise(
         -Source(divK)
     ) → eqn
     
-    println(h.BCs)
-    println(T.BCs)
-    # Sort out BCs? -> from T to h
-    h.BCs .= T.BCs
-    
-
     # Set up preconditioners
     @reset energy_eqn.preconditioner = set_preconditioner(
-                solvers.energy.preconditioner, energy_eqn, energy.BCs, config)
+                solvers.h.preconditioner, energy_eqn, h.BCs, config)
     
     # preallocating solvers
-    @reset energy_eqn.solver = solvers.energy.solver(_A(energy_eqn), _b(energy_eqn))
+    @reset energy_eqn.solver = solvers.h.solver(_A(energy_eqn), _b(energy_eqn))
 
     return Sensible_Enthalpy_Model(energy_eqn)
 end
 
 function energy!(
     energy::Sensible_Enthalpy_Model{E1}, model::Physics{T,F,M,Tu,E,D,BI}, prev, config
-    ) where {T,F,M,Tu,E,D,BI,E1,E2}
+    ) where {T,F,M,Tu,E,D,BI,E1}
 
     mesh = model.domain
 
@@ -111,13 +108,62 @@ function energy!(
     residual!(R_e, energy_eqn.equation, energy, iteration)
 end
 
-function Psi!(h, t)
+function thermo_Psi!(
+    model::Physics{T,F,M,Tu,E,D,BI}, Psi::ScalarField, h::ScalarField
+    ) where {T,F<:AbstractCompressible,M,Tu,E,D,BI}
+    (; coeffs) = model.energy
+    (; Tref) = coeffs
+    Cp = _Cp(model.fluid); R = _R(model.fluid)
+    @. Psi.values = Cp/(R*(h.values + Cp*Tref))
+end
+
+function thermo_Psi!(
+    model::Physics{T,F,M,Tu,E,D,BI}, Psif::FaceScalarField, hf::FaceScalarField
+    ) where {T,F<:AbstractCompressible,M,Tu,E,D,BI}
+    (; coeffs) = model.energy
+    (; Tref) = coeffs
+    Cp = _Cp(model.fluid); R = _R(model.fluid)
+    @. Psif.values = Cp/(R*(hf.values + Cp*Tref))
+end
+
+
+function thermo_rho!(h, t)
 
 end
 
-function rho!(h, t)
-
+function Ttoh(
+    model::Physics{T1,F,M,Tu,E,D,BI}, T::ScalarField
+    ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
+    (; coeffs) = model.energy
+    (; Tref) = coeffs
+    h = T
+    Cp = _Cp(model.fluid)
+    @. h.values = Cp.values*(T.values-Tref)
+    return h
 end
+
+function Ttoh(
+    model::Physics{T1,F,M,Tu,E,D,BI}, T
+    ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
+    (; coeffs) = model.energy
+    (; Tref) = coeffs
+    h = ScalarField(model.domain)
+    Cp = _Cp(model.fluid)
+    h = Cp.values*(T-Tref)
+    return h
+end
+
+function htoT(
+    model::Physics{T1,F,M,Tu,E,D,BI}, h::ScalarField
+    ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
+    (; coeffs) = model.energy
+    (; Tref) = coeffs
+    h = ScalarField(model.domain)
+    Cp = _Cp(model.fluid)
+    @. T.values = (h.values/Cp) + Tref
+    return h
+end
+
 
 
 function clamp!(h, t)

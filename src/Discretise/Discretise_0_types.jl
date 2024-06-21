@@ -1,6 +1,7 @@
 export AbstractScheme, AbstractBoundary
 export AbstractDirichlet, AbstractNeumann
 export Dirichlet, fixedValue, Neumann
+export FixedTemperature
 export KWallFunction, OmegaWallFunction, NutWallFunction
 export Constant, Linear, Upwind
 export SteadyState, Euler, CrankNicolson
@@ -35,7 +36,7 @@ struct Dirichlet{I,V} <: AbstractDirichlet
     value::V
 end
 Adapt.@adapt_structure Dirichlet
-function fixedValue(BC::Dirichlet, ID::I, value::V) where {I<:Integer,V}
+function fixedValue(BC::AbstractDirichlet, ID::I, value::V) where {I<:Integer,V}
     # Exception 1: Value is scalar
     if V <: Number
         return Dirichlet{I,eltype(value)}(ID, value)
@@ -55,12 +56,12 @@ function fixedValue(BC::Dirichlet, ID::I, value::V) where {I<:Integer,V}
 end
 
 # Neumann structure and constructor function
-struct Neumann{I,V} <: AbstractBoundary
+struct Neumann{I,V} <: AbstractNeumann
     ID::I 
     value::V 
 end
 Adapt.@adapt_structure Neumann
-function fixedValue(BC::Neumann, ID::I, value::V) where {I<:Integer,V}
+function fixedValue(BC::AbstractNeumann, ID::I, value::V) where {I<:Integer,V}
     # Exception 1: value is scalar
     if V <: Number
         return Neumann{I,eltype(value)}(ID, value)
@@ -77,6 +78,16 @@ function fixedValue(BC::Neumann, ID::I, value::V) where {I<:Integer,V}
     else
         throw("The value provided should be a scalar or a vector")
     end
+end
+
+# FixedTemperature Boundary condition (temporary approach for now)
+struct FixedTemperature{I,V} <: AbstractDirichlet
+    ID::I 
+    value::V 
+end
+Adapt.@adapt_structure FixedTemperature
+FixedTemperature(name; T, model) = begin
+    FixedTemperature(name, Ttoh(model, T))
 end
 
 # Kwall function structure and constructor

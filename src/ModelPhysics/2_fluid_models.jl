@@ -1,6 +1,7 @@
+export AbstractFluid, AbstractIncompressible, AbstractCompressible
 export Incompressible, WeaklyCompressible, Compressible
 export _nu
-export _R
+export _R, _Cp, _mu
 
 abstract type AbstractFluid end
 abstract type AbstractIncompressible <: AbstractFluid end
@@ -29,3 +30,5 @@ end
 Adapt.@adapt_structure Compressible
 
 _R(fluid::AbstractCompressible) = fluid.cp*(1 - (1/fluid.gamma))
+_Cp(fluid::AbstractCompressible) = fluid.cp
+_mu(fluid::AbstractCompressible) = fluid.mu

@@ -50,11 +50,11 @@ model = Physics(
 )
 
 @assign! model energy T (
-    Neumann(:inlet, 300.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:cylinder, 300.0),
-    Neumann(:bottom, 300.0),
-    Neumann(:top, 300.0)
+    FixedTemperature(:inlet, T=300.0, model=model),
+    Neumann(:outlet, 0.0),
+    Neumann(:cylinder, 0.0),
+    Neumann(:bottom, 0.0),
+    Neumann(:top, 0.0)
 )
 
 solvers = (

@@ -1,7 +1,7 @@
 function read_foamMesh(file_path; integer, float)
 
     points = read_points(joinpath(file_path,"points"), integer, float)
-    face_nodes, face_nodes_range = read_faces(joinpath(file_path,"faces"), integer, float)
+    face_nodes = read_faces(joinpath(file_path,"faces"), integer, float)
     face_neighbour_cell = read_neighbour(joinpath(file_path,"neighbour"), integer, float)
     face_owner_cell = read_owner(joinpath(file_path,"owner"), integer, float)
 
@@ -9,7 +9,7 @@ function read_foamMesh(file_path; integer, float)
         read_boundary(joinpath(file_path,"boundary"), integer, float)
     end
 
-    return points, face_nodes, face_nodes_range, face_neighbour_cell, face_owner_cell, bnames, bnFaces, bstartFace
+    return points, face_nodes, face_neighbour_cell, face_owner_cell, bnames, bnFaces, bstartFace
 end
 
 function read_boundary(file_path, TI, TF)
@@ -78,9 +78,7 @@ function read_faces(file_path, TI, TF)
         end
     end
 
-    # extract total number of nodes and define ranges for each face to access them
-    face_nodes_range = UnitRange{TI}[1:2 for _ ∈ 1:nfaces]
-    totalFaceNodes = 0
+    face_nodes = Vector{TI}[]
     fcounter = 0
     for (n, line) ∈ enumerate(eachline(file_path)) 
         if line == ")"
@@ -88,29 +86,49 @@ function read_faces(file_path, TI, TF)
         elseif n > readfrom
             fcounter += 1
             sline = split(line, delimiters, keepempty=false)
-            nFaceNodes = parse(TI, sline[1])
-            totalFaceNodes += nFaceNodes
-            face_nodes_range[fcounter] = UnitRange{TI}(
-                totalFaceNodes - nFaceNodes + 1, totalFaceNodes)
+            # nFaceNodes = parse(TI, sline[1])
+            nodesIDs = parse.(TI, sline[2:end])
+            # totalFaceNodes += nFaceNodes
+            # face_nodes_range[fcounter] = UnitRange{TI}(
+            # totalFaceNodes - nFaceNodes + 1, totalFaceNodes)
+            push!(face_nodes, nodesIDs)
         end
     end
 
+    # extract total number of nodes and define ranges for each face to access them
+    # face_nodes_range = UnitRange{TI}[1:2 for _ ∈ 1:nfaces]
+    # totalFaceNodes = 0
+    # fcounter = 0
+    # for (n, line) ∈ enumerate(eachline(file_path)) 
+    #     if line == ")"
+    #         break 
+    #     elseif n > readfrom
+    #         fcounter += 1
+    #         sline = split(line, delimiters, keepempty=false)
+    #         nFaceNodes = parse(TI, sline[1])
+    #         totalFaceNodes += nFaceNodes
+    #         face_nodes_range[fcounter] = UnitRange{TI}(
+    #             totalFaceNodes - nFaceNodes + 1, totalFaceNodes)
+    #     end
+    # end
+
     # loop through data again and store nodes IDs
-    face_nodes = zeros(TI, totalFaceNodes)
-    nodei = 0
-    for (n, line) ∈ enumerate(eachline(file_path)) 
-        if line == ")"
-            break 
-        elseif n > readfrom
-            sline = split(line, delimiters, keepempty=false)
-            nodesIDs = parse.(TI, sline[2:end])
-            for nodeID ∈ nodesIDs
-                nodei += 1
-                face_nodes[nodei] = nodeID + one(TI) # make 1-indexed
-            end
-        end
-    end
-    return face_nodes, face_nodes_range
+    # face_nodes = zeros(TI, totalFaceNodes)
+    # nodei = 0
+    # for (n, line) ∈ enumerate(eachline(file_path)) 
+    #     if line == ")"
+    #         break 
+    #     elseif n > readfrom
+    #         sline = split(line, delimiters, keepempty=false)
+    #         nodesIDs = parse.(TI, sline[2:end])
+    #         for nodeID ∈ nodesIDs
+    #             nodei += 1
+    #             face_nodes[nodei] = nodeID + one(TI) # make 1-indexed
+    #         end
+    #     end
+    # end
+    # return face_nodes, face_nodes_range
+    return face_nodes
 end
 
 function read_neighbour(file_path, TI, TF)

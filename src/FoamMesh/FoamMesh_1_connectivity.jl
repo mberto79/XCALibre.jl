@@ -1,4 +1,6 @@
-function connect_mesh(points, face_nodes, face_nodes_range, face_neighbour_cell, face_owner_cell, bnames, bnFaces, bstartFace, TI, TF)
+export connect_mesh
+
+function connect_mesh(points, face_nodes, face_neighbour_cell, face_owner_cell, bnames, bnFaces, bstartFace, TI, TF)
 
     nbfaces = sum(bnFaces)
     nifaces = minimum(bstartFace) - one(TI)
@@ -9,9 +11,49 @@ function connect_mesh(points, face_nodes, face_nodes_range, face_neighbour_cell,
         face_owner_cell, face_neighbour_cell, nbfaces, nifaces, TI, TF
         )
     
-    face_nodes, face_nodes_range = connect_face_nodes()
+    nfaceIDs = connect_cell_faces(face_owners, face_owner_cell, face_neighbour_cell, nifaces, nbfaces, TI)
 
-    (nfowners=fowners)
+    (
+        face_owners=face_owners,
+        face_neighbour_cell=nbfaces, 
+        face_owner_cell=nfaceIDs
+    )
+end
+
+function connect_cell_faces(
+    face_owners, face_owner_cell, face_neighbour_cell, nifaces, nbfaces, TI
+    )
+    ncells = maximum(face_owner_cell)
+    cell_nfaces = zeros(TI, ncells)
+
+    # find array size to hold faceIDs and store internal face count for all cells
+    nfaceIDs = 0
+    for celli ∈ 1:ncells
+        nfaces1 = count(==(celli), face_neighbour_cell)
+        nfaces2 = count(==(celli), @view face_owner_cell[1:nifaces])
+        nfaces = nfaces1 + nfaces2
+        cell_nfaces[celli] = nfaces
+        nfaceIDs += nfaces
+    end
+
+    cell_faces = zeros(TI, nfaceIDs)
+    fcounter = 0
+    for celli ∈ 1:ncells
+        for fi ∈ 1:nifaces
+            cID1 = face_neighbour_cell[fi]
+            cID2 = face_owner_cell[fi]
+            if cID1 == celli
+                fcounter += 1
+                fID = fi + nbfaces
+                cell_faces[fcounter] = fID
+            elseif cID2 == celli
+                fcounter += 1
+                fID = fi + nbfaces
+                cell_faces[fcounter] = fID
+            end
+        end
+    end
+    cell_faces
 end
 
 function connect_face_owners(face_owner_cell, face_neighbour_cell, nbfaces, nifaces, TI, TF)

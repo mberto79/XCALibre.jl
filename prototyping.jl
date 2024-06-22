@@ -3,21 +3,24 @@ using FVM_1D.FoamMesh
 using StaticArrays
 
 mesh_file = "unv_sample_meshes/OF_cavity_hex/constant/polyMesh"
-@time fowners = build_foamMesh(mesh_file; integer=Int64, float=Float64)
 
-test = "4(14 140 136 15)"
+points, face_nodes, face_neighbour_cell, face_owner_cell, bnames, bnFaces, bstartFace = FVM_1D.FoamMesh.read_foamMesh(mesh_file; integer=Int64, float=Float64)
 
-@time s = split(test, ['(',' ', ')'], keepempty=false)
-@time s = split(test, ['('], keepempty=false)
+@time fowners = connect_mesh(points, face_nodes, face_neighbour_cell, face_owner_cell, bnames, bnFaces, bstartFace, Int64, Float64)
 
-@time @inbounds SVector{3}(parse.(Float64, s))
+fowners[2]
 
-test1 = "{"
-test2 = "walls { nFaces          125;"
+a = findall(==(1), fowners[1])
+b = findall(==(1), fowners[2])
 
-@time s = split(test1, [' ', ';', '{', '}'], keepempty=false)
-@time s = split(test2, [' ', ';', '{', '}'], keepempty=false)
+a = Vector{Int}[]
 
-length(s)
+push!(a, [1,2,3])
+a[1][3] = 5
+a
 
-parse(Int64, s[2])
+for i ∈ eachindex(a)
+    println(i)
+end
+
+fowners[2]

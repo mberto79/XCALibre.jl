@@ -4,9 +4,9 @@ using StaticArrays
 
 mesh_file = "unv_sample_meshes/OF_cavity_hex/constant/polyMesh"
 
-points, face_nodes, face_neighbour_cell, face_owner_cell, bnames, bnFaces, bstartFace = FVM_1D.FoamMesh.read_foamMesh(mesh_file; integer=Int64, float=Float64)
+foamdata = read_foamMesh(mesh_file, Int64, Float64)
 
-@time fowners = connect_mesh(points, face_nodes, face_neighbour_cell, face_owner_cell, bnames, bnFaces, bstartFace, Int64, Float64)
+@time fowners = connect_mesh(foamdata, Int64, Float64)
 
 fowners[2]
 

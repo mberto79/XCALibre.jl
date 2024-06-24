@@ -1,15 +1,82 @@
-function read_foamMesh(file_path; integer, float)
+export read_foamMesh
 
-    points = read_points(joinpath(file_path,"points"), integer, float)
-    face_nodes = read_faces(joinpath(file_path,"faces"), integer, float)
-    face_neighbour_cell = read_neighbour(joinpath(file_path,"neighbour"), integer, float)
-    face_owner_cell = read_owner(joinpath(file_path,"owner"), integer, float)
+mutable struct FoamMeshData{B,P,F,I}
+    boundaries::B
+    points::P
+    faces::F
+    n_faces::I
+    n_ifaces::I
+    n_bfaces::I
+end
+FoamMeshData(TI, TF) = FoamMeshData(
+        Boundary{TI,Symbol}[],
+        SVector{3, TF}[],
+        Face{TI}[],
+        zero(TI),
+        zero(TI),
+        zero(TI)
+    )
 
-    bnames, bnFaces, bstartFace = begin
-        read_boundary(joinpath(file_path,"boundary"), integer, float)
+mutable struct Boundary{I<:Integer, S<:Symbol}
+    name::S
+    startFace::I
+    nFaces::I
+end
+Boundary(TI) = Boundary(:default, zero(TI), zero(TI))
+
+mutable struct Face{I}
+    nodesID::Vector{I}
+    owner::I
+    neighbour::I
+end
+Face(nnodes::I) where I<:Integer = begin
+    nodesIDs = zeros(I, nnodes)
+    z = zero(I)
+    Face(nodesIDs, z, z)
+end
+
+function read_foamMesh(file_path, integer, float)
+
+    points_file = joinpath(file_path,"points")
+    faces_file = joinpath(file_path,"faces")
+    neighbour_file = joinpath(file_path,"neighbour")
+    owner_file = joinpath(file_path,"owner")
+    boundary_file = joinpath(file_path,"boundary")
+
+    foamdata = FoamMeshData(integer, float)
+
+    foamdata.points = read_points(points_file, integer, float)
+    foamdata.boundaries = read_boundary(boundary_file, integer, float)
+
+    face_nodes = read_faces(faces_file, integer, float)
+    face_neighbours = read_neighbour(neighbour_file, integer, float)
+    face_owners = read_owner(owner_file, integer, float)
+
+    assign_faces!(foamdata, face_nodes, face_neighbours, face_owners)
+
+    return foamdata
+end
+
+function assign_faces!(foamdata, face_nodes, face_neighbours, face_owners)
+    foamdata.n_faces = n_faces = length(face_owners)
+    foamdata.n_ifaces = n_ifaces = length(face_neighbours)
+    foamdata.n_bfaces = n_bfaces = foamdata.n_faces - foamdata.n_ifaces
+
+    foamdata.faces = [Face(length(nodesID)) for nodesID ∈ face_nodes]
+
+    # p1 = one(eltype(face_owners))
+
+    for (nIDs, owner, face) ∈ zip(face_nodes, face_owners, foamdata.faces)
+        face.nodesID = nIDs
+        face.owner = owner
     end
 
-    return points, face_nodes, face_neighbour_cell, face_owner_cell, bnames, bnFaces, bstartFace
+    for fID ∈ (n_ifaces + 1):n_faces
+        face = foamdata.faces[fID]
+        face.nodesID = face_nodes[fID]
+        face.neighbour = face_owners[fID]
+    end
+    
 end
 
 function read_boundary(file_path, TI, TF)
@@ -29,9 +96,7 @@ function read_boundary(file_path, TI, TF)
         end
     end
 
-    names = Symbol[:dummy for _ ∈ 1:nBoundaries] 
-    nFaces = zeros(TI, nBoundaries)
-    startFace = zeros(TI, nBoundaries)
+    boundaries = [Boundary(TI) for _ ∈ 1:nBoundaries]
 
     bcounter = 0
     for (n, line) ∈ enumerate(eachline(file_path)) 
@@ -42,23 +107,23 @@ function read_boundary(file_path, TI, TF)
 
             if length(sline) == 1
                 bcounter += 1
-                names[bcounter] = Symbol(sline[1])
+                boundaries[bcounter].name = Symbol(sline[1])
                 continue
             end
 
             if length(sline) == 2 && sline[1] == "nFaces"
-                nFaces[bcounter] = parse(TI, sline[2])
+                boundaries[bcounter].nFaces = parse(TI, sline[2])
                 continue
             end
 
             if length(sline) == 2 && sline[1] == "startFace"
-                startFace[bcounter] = parse(TI, sline[2]) + one(TI) # make 1-indexed
+                boundaries[bcounter].startFace = parse(TI, sline[2]) + one(TI) # make 1-indexed
                 continue
             end
 
         end
     end
-    return names, nFaces, startFace
+    return boundaries
 end
 
 function read_faces(file_path, TI, TF)
@@ -87,7 +152,7 @@ function read_faces(file_path, TI, TF)
             fcounter += 1
             sline = split(line, delimiters, keepempty=false)
             # nFaceNodes = parse(TI, sline[1])
-            nodesIDs = parse.(TI, sline[2:end])
+            nodesIDs = parse.(TI, sline[2:end]) .+ one(TI) # make 1-indexed
             # totalFaceNodes += nFaceNodes
             # face_nodes_range[fcounter] = UnitRange{TI}(
             # totalFaceNodes - nFaceNodes + 1, totalFaceNodes)

@@ -4,6 +4,7 @@ mutable struct FoamMeshData{B,P,F,I}
     boundaries::B
     points::P
     faces::F
+    n_cells::I
     n_faces::I
     n_ifaces::I
     n_bfaces::I
@@ -12,6 +13,7 @@ FoamMeshData(TI, TF) = FoamMeshData(
         Boundary{TI,Symbol}[],
         SVector{3, TF}[],
         Face{TI}[],
+        zero(TI),
         zero(TI),
         zero(TI),
         zero(TI)
@@ -61,19 +63,22 @@ function assign_faces!(foamdata, face_nodes, face_neighbours, face_owners)
     foamdata.n_faces = n_faces = length(face_owners)
     foamdata.n_ifaces = n_ifaces = length(face_neighbours)
     foamdata.n_bfaces = n_bfaces = foamdata.n_faces - foamdata.n_ifaces
+    foamdata.n_cells = maximum(face_owners)
 
     foamdata.faces = [Face(length(nodesID)) for nodesID ∈ face_nodes]
 
     # p1 = one(eltype(face_owners))
 
-    for (nIDs, owner, face) ∈ zip(face_nodes, face_owners, foamdata.faces)
+    for (nIDs, oID, nID, face) ∈ zip(face_nodes, face_owners, face_neighbours, foamdata.faces)
         face.nodesID = nIDs
-        face.owner = owner
+        face.owner = oID
+        face.neighbour = nID
     end
 
     for fID ∈ (n_ifaces + 1):n_faces
         face = foamdata.faces[fID]
         face.nodesID = face_nodes[fID]
+        face.owner = face_owners[fID]
         face.neighbour = face_owners[fID]
     end
     

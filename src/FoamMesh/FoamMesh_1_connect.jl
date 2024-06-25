@@ -2,29 +2,24 @@ export connect_mesh
 
 function connect_mesh(foamdata, TI, TF)
 
-    
-    # OpenFOAM provides face information: sort out face-cell connectivity first
-    
     cell_faces, cell_faces_range, cell_neighbours, cell_nsign = connect_cell_faces(foamdata, TI, TF)
     
     cell_nodes, cell_nodes_range = connect_cell_nodes(foamdata, TI, TF)
 
-    face_nodes, face_nodes_range = connect_face_nodes(foamdata, TI, TF) # to do
-    node_cells, node_cells_range = connect_node_cells(foamdata, TI, TF) # to do
-    
-    boundaries = generate_boundaries(foamdata, TI, TF)
+    node_cells, node_cells_range = connect_node_cells(
+        foamdata, cell_nodes, cell_nodes_range, TI, TF
+        )
+        
+    face_nodes, face_nodes_range = connect_face_nodes(foamdata, TI, TF)
 
-    (
-        out1 = cell_faces,
-        out2 = cell_faces_range,
-        out3 = cell_neighbours,
-        out4 = cell_nsign,
-        out5 = cell_nodes,
-        out6 = cell_nodes_range,
-        out7 = face_nodes, 
-        out8 = face_nodes_range, 
-        out9 = boundaries,
-    )
+    connectivity = (
+        ; cell_faces, cell_faces_range, cell_neighbours, cell_nsign,
+        cell_nodes, cell_nodes_range, 
+        node_cells, node_cells_range, 
+        face_nodes, face_nodes_range,
+        )
+
+    return connectivity
 end
 
 function connect_cell_faces(foamdata, TI, TF)
@@ -93,8 +88,7 @@ function connect_cell_nodes(foamdata, TI, TF)
     cell_nodesIDs = intersect.(cell_nodesIDs)
 
     # define cell nodesIDs access ranges 
-    n_nodeIDs = sum(length.(cell_nodesIDs))
-    cell_nodes_range = UnitRange{TI}[UnitRange{TI}(0,0) for _ ∈ 1:n_nodeIDs]
+    cell_nodes_range = UnitRange{TI}[UnitRange{TI}(0,0) for _ ∈ 1:n_cells]
 
     startIndex = 1
     endIndex = 0
@@ -163,26 +157,31 @@ function connect_face_nodes(foamdata, TI, TF)
     return face_nodes, face_nodes_range
 end
 
-function connect_node_cells(foamdata, TI, TF)
-    # node_cells, node_cells_range = zero(TI)
-    # return node_cells, node_cells_range
-    0, 0
-end
+function connect_node_cells(foamdata, cell_nodes, cell_nodes_range, TI, TF)
+    (; points) = foamdata
+    n_points = length(points)
+    node_cellsID = Vector{TI}[TI[] for _ ∈ 1:n_points]
 
-function generate_boundaries(foamdata, TI, TF)
-    (; n_bfaces, n_faces, n_ifaces) = foamdata
-    foamBoundaries = foamdata.boundaries
-    boundaries = Mesh.Boundary{Symbol,UnitRange{TI}}[
-        Mesh.Boundary(:default, UnitRange{TI}(0,0)) for _ ∈ eachindex(foamBoundaries)]
-
-    startIndex = 1
-    endIndex = 0
-    for (bi, foamboundary) ∈ enumerate(foamBoundaries)
-        (; name, nFaces) = foamboundary
-        endIndex = startIndex + nFaces - one(TI)
-        boundaries[bi] = Mesh.Boundary{Symbol,UnitRange{TI}}(name, startIndex:endIndex)
-        startIndex += nFaces
+    # collect cell IDs for each node
+    for (cID, node_range) ∈ enumerate(cell_nodes_range)
+        for ID ∈ @view cell_nodes[node_range]
+            push!(node_cellsID[ID], cID)
+        end 
     end
 
-    return boundaries
+    # create array range to access cell IDs 
+    node_cells_range = UnitRange{TI}[0:0 for _ ∈ 1:n_points]
+
+    startIndex = one(TI)
+    endIndex = zero(TI)
+    for (nID, cellsID) ∈ enumerate(node_cellsID)
+        n_cells = length(cellsID)
+        endIndex = startIndex + n_cells - one(TI)
+        node_cells_range[nID] = UnitRange{TI}(startIndex, endIndex)
+        startIndex += n_cells
+    end
+
+    node_cells = reduce(vcat, node_cellsID) # flatten array
+
+    return node_cells, node_cells_range
 end

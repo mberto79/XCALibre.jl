@@ -10,7 +10,7 @@ connectivity = connect_mesh(foamdata, Int64, Float64)
 
 mesh = generate_mesh(foamdata, connectivity, Int64, Float64)
 
-mesh = compute_geometry!(mesh)
+@time mesh = compute_geometry!(mesh)
 
 field = ScalarField(mesh)
 field.values .= 1:length(field.values)

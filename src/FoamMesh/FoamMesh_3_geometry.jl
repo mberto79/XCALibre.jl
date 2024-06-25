@@ -4,6 +4,8 @@ function compute_geometry!(mesh)
     mesh = calculate_cell_centres!(mesh)
     mesh = calculate_face_centres!(mesh)
     mesh = calculate_face_properties!(mesh)
+    mesh = calculate_face_areas!(mesh)
+    mesh = calculate_cell_volumes!(mesh)
     return mesh
 end
 
@@ -114,4 +116,37 @@ function calculate_face_properties!(mesh)
         faces[fID] = face
     end
     return mesh
+end
+
+function calculate_face_areas!(mesh)
+    (; nodes, faces, face_nodes) = mesh 
+    for (fID, face) = enumerate(faces)
+        nIDs = face_nodes[face.nodes_range]
+        extended_nIDs = [nIDs..., nIDs[1]] # TO DO - this is not very efficient
+        sum = zero(Float64)
+        for ni ∈ eachindex(nIDs)
+            nID1 = extended_nIDs[ni]
+            nID2 = extended_nIDs[ni+1]
+            n1 = nodes[nID1].coords
+            n2 = nodes[nID2].coords
+            f = face.centre
+
+            n1_n2 = n2 - n1
+            n1_f = f - n1
+            ec = (n1 + n2)/2 # edge centre
+            xf = ec - f
+            normal_plane = n1_f × n1_n2
+            normal_vec = normal_plane × n1_n2 
+            edgeNormal = normal_vec/norm(normal_vec)
+            edgeArea = norm(n1_n2)
+            sum += xf⋅edgeNormal*edgeArea
+        end
+        @reset face.area = 0.5*sum
+        faces[fID] = face
+    end
+    return mesh
+end
+
+function calculate_cell_volumes!(mesh)
+    mesh
 end

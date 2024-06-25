@@ -148,5 +148,42 @@ function calculate_face_areas!(mesh)
 end
 
 function calculate_cell_volumes!(mesh)
-    mesh
+    (; faces, cells, cell_faces, cell_nsign, boundaries, boundary_cellsID) = mesh
+
+    # loop over cells and their internal faces
+    for (cID, cell) ∈ enumerate(cells)
+        faceID_range = cell.faces_range
+        fIDs = @view cell_faces[faceID_range]
+        nsigns = @view cell_nsign[faceID_range]
+        sum = zero(Float64)
+        for (fID, nsign) ∈ zip(fIDs, nsigns)
+            face = faces[fID]
+            (; area, normal) = face
+            fc = face.centre
+            cc = cell.centre
+            xf = fc - cc # cc_fc
+            sum += (xf⋅normal)*nsign*area
+        end
+        @reset cell.volume = (1/3)*sum
+        cells[cID] = cell
+    end
+
+    # add contribution from boundary faces 
+    for boundary ∈ boundaries
+        IDs_range = boundary.IDs_range
+        cIDs = @view boundary_cellsID[IDs_range]
+        for (cID, fID) ∈ zip(cIDs, IDs_range)
+            face = faces[fID]
+            cell = cells[cID]
+            (; area, normal) = face
+            fc = face.centre
+            cc = cell.centre
+            xf = fc - cc # cc_fc
+            sum = (xf⋅normal)*area # boundary normals are outward facing by definition
+            @reset cell.volume += (1/3)*sum
+            cells[cID] = cell
+        end
+    end
+
+    return mesh
 end

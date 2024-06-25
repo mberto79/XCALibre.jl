@@ -9,3 +9,8 @@ foamdata = read_foamMesh(mesh_file, Int64, Float64)
 connectivity = connect_mesh(foamdata, Int64, Float64)
 
 mesh = generate_mesh(foamdata, connectivity, Int64, Float64)
+
+field = ScalarField(mesh)
+field.values .= 1:length(field.values)
+field.values
+@time write_vtk("foamMeshTest", mesh, ("F", field))

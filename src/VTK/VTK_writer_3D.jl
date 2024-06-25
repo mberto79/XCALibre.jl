@@ -24,13 +24,6 @@ function write_vtk(name, mesh::Mesh3, args...)
     cell_nodes_cpu = get_data(mesh.cell_nodes, backend)
     face_nodes_cpu = get_data(mesh.face_nodes, backend)
 
-    # Serial version
-    # nodes_cpu = mesh.nodes
-    # faces_cpu = mesh.faces
-    # cells_cpu = mesh.cells
-    # cell_nodes_cpu = mesh.cell_nodes
-    # face_nodes_cpu = mesh.face_nodes
-
     open(filename,"w") do io
 
         #Variables
@@ -48,8 +41,6 @@ function write_vtk(name, mesh::Mesh3, args...)
         faces="faces"
         face_offsets="faceoffsets"
         types="types"
-        scalar="scalar"
-        vector="vector"
         poly=42
         x=0
         y=0
@@ -67,64 +58,33 @@ function write_vtk(name, mesh::Mesh3, args...)
         write(io,"     </DataArray>\n")
         write(io,"    </Points>\n")
         write(io,"    <Cells>\n")
-        #write(io,"     <DataArray type=\"$(I64)\" Name=\"$(con)\" format=\"$(format)\">\n")
-        #write(io,"      $(join((cell_nodes_cpu.-1)," "))\n")
         write(io,"     <DataArray type=\"$(I64)\" Name=\"$(con)\" format=\"$(format)\">\n")
-        #write(io,"      $(length(cells_cpu))\n")
-        #for i=1:length(cells_cpu)
-            #write(io,"      $(length(cells_cpu[i].nodes_range)) $(join(cell_nodes_cpu[cells_cpu[i].nodes_range[1]:cells_cpu[i].nodes_range[end]].-1," "))\n")
-        #end
         for i=1:length(cells_cpu)
             write(io,"      $(join(cell_nodes_cpu[cells_cpu[i].nodes_range[1]:cells_cpu[i].nodes_range[end]].-1," "))\n")
         end
         write(io,"     </DataArray>\n")
         write(io,"     <DataArray type=\"$(I64)\" Name=\"$(offsets)\" format=\"$(format)\">\n")
-        #write(io,"      $(join(store_cells," "))\n")
-        #write(io,"      $(length(cell_nodes_cpu)+length(cells_cpu)+1)\n")
         node_counter=0
         for i=1:length(cells_cpu)
             node_counter=node_counter+length(cells_cpu[i].nodes_range)
-            #write(io,"      $(length(cells_cpu[i].nodes_range)*i)\n")
             write(io,"      $(node_counter)\n")
         end
         write(io,"     </DataArray>\n")
         write(io,"     <DataArray type=\"$(I64)\" Name=\"$(faces)\" format=\"$(format)\">\n")
-        
-        # for i=1:length(cells_cpu)
-        #     write(io,"      $(length(cells_cpu[i].faces_range))\n")
-        #     for ic=cells_cpu[i].faces_range
-        #     write(io,"      $(length(faces_cpu[i].nodes_range)) $(join(face_nodes_cpu[faces_cpu[mesh.cell_faces[ic]].nodes_range].-1," "))\n")
-        #     end
-        # end
 
         # This is needed because boundary faces are missing from cell level connectivity
-        
-        # Version 1
-        # for i=1:length(cells_cpu)
-        #     store_faces=[]
-        #     for id=1:length(faces_cpu)
-        #         if faces_cpu[id].ownerCells[1]==i || faces_cpu[id].ownerCells[2]==i
-        #             push!(store_faces,id)
-        #         end
-        #     end
-        #     write(io,"      $(length(store_faces))\n")
-        #     for ic=1:length(store_faces)
-        #     write(io,"      $(length(faces_cpu[store_faces[ic]].nodes_range)) $(join(face_nodes_cpu[faces_cpu[store_faces[ic]].nodes_range].-1," "))\n")
-        #     end
-        # end
 
         # Version 2 (x2.8 faster)
-        all_cell_faces = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_cpu)] # Calculating all the faces that belong to each cell
+        # Calculating all the faces that belong to each cell
+        all_cell_faces = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_cpu)] 
         for fID ∈ eachindex(faces_cpu)
             owners = faces_cpu[fID].ownerCells
             owner1 = owners[1]
             owner2 = owners[2]
-            #if faces_cpu[fID].ownerCells[1]==cID || faces_cpu[fID].ownerCells[2]==cID
-                push!(all_cell_faces[owner1],fID)
-                if owner1 !== owner2 #avoid duplication of cells for boundary faces
-                    push!(all_cell_faces[owner2],fID)
-                end
-            #end
+            push!(all_cell_faces[owner1],fID)
+            if owner1 !== owner2 #avoid duplication of cells for boundary faces
+                push!(all_cell_faces[owner2],fID)
+            end
         end
 
         for (cID, fIDs) ∈ enumerate(all_cell_faces)
@@ -143,7 +103,8 @@ function write_vtk(name, mesh::Mesh3, args...)
                 _y(n) = n[2]
                 _z(n) = n[3]
 
-                l = segment.(Ref(points[1]), points) # surface vectors (segments connecting nodes to reference node)
+                # surface vectors (segments connecting nodes to reference node)
+                l = segment.(Ref(points[1]), points) 
                 fn = unit_vector(l[2] × l[3]) # Calculating face normal 
                 cc=cells_cpu[cID].centre
                 fc=faces_cpu[fID].centre
@@ -153,7 +114,6 @@ function write_vtk(name, mesh::Mesh3, args...)
                     nIDs=reverse(nIDs)
                 end
                 write(
-                    #io,"\t$(length(faces_cpu[fID].nodes_range)) $(join(face_nodes_cpu[faces_cpu[fID].nodes_range] .- 1," "))\n"
                     io,"\t$(length(faces_cpu[fID].nodes_range)) $(join(nIDs .- 1," "))\n"
                     )
             end
@@ -161,13 +121,6 @@ function write_vtk(name, mesh::Mesh3, args...)
 
         write(io,"     </DataArray>\n")
         write(io,"     <DataArray type=\"$(I64)\" Name=\"$(face_offsets)\" format=\"$(format)\">\n")
-        #write(io,"      $(length(faces_cpu)*(length(faces_cpu[1].nodes_range)+1)+1)\n")
-        #write(io,"      $(length(face_nodes_cpu)+length(faces_cpu)+1)\n")
-        # for i=1:length(cells_cpu)
-        #     x=1+(length(cells_cpu[i].faces_range)+length(mesh.cell_faces[cells_cpu[i].faces_range])*3)
-        #     y=x+y
-        #     write(io,"     $(y)\n")
-        # end
 
         for i=1:length(cells_cpu)
             #Tet
@@ -197,35 +150,19 @@ function write_vtk(name, mesh::Mesh3, args...)
         write(io,"    </Cells>\n")
         write(io,"    <CellData>\n")
 
-        # write(io,"     <DataArray type=\"$(F32)\" Name=\"$(temp)\" format=\"$(format)\">\n")
-        # for i=1:length(temp_cells)
-        #     write(io,"      $(join(temp_cells[i]," "))\n")
-        # end
-        # write(io,"     </DataArray>\n")
-
-        # write(io,"     <DataArray type=\"$(F32)\" Name=\"$(pressure)\" format=\"$(format)\">\n")
-        # for i=1:length(pressure_cells)
-        #     write(io,"      $(join(pressure_cells[i]," "))\n")
-        # end
-        # write(io,"     </DataArray>\n")
-
         for arg ∈ args
             label = arg[1]
             field = arg[2]
             field_type=typeof(field)
             if field_type <: ScalarField
                 write(io,"     <DataArray type=\"$(F32)\" Name=\"$(label)\" format=\"$(format)\">\n")
-                # values_cpu= copy_scalarfield_to_cpu(field.values, backend)
                 values_cpu = get_data(field.values, backend)
-                # values_cpu= field.values
                 for value ∈ values_cpu
                     println(io,value)
                 end
                 write(io,"     </DataArray>\n")
             elseif field_type <: VectorField
                 write(io,"     <DataArray type=\"$(F32)\" Name=\"$(label)\" format=\"$(format)\" NumberOfComponents=\"3\">\n")
-                # x_cpu, y_cpu, z_cpu = copy_to_cpu(field.x.values, field.y.values, field.z.values, backend)
-                # x_cpu, y_cpu, z_cpu = field.x.values, field.y.values, field.z.values
                 x_cpu = get_data(field.x.values, backend)
                 y_cpu = get_data(field.y.values, backend)
                 z_cpu = get_data(field.z.values, backend)
@@ -233,15 +170,6 @@ function write_vtk(name, mesh::Mesh3, args...)
                     println(io, x_cpu[i]," ",y_cpu[i] ," ",z_cpu[i] )
                 end
                 write(io,"     </DataArray>\n")
-
-                # write out single component
-                # println(io,"     <DataArray type=\"$(F32)\" Name=\"Ux\" format=\"$(format)\">")
-                # # x_cpu, y_cpu, z_cpu = copy_to_cpu(field.x.values, field.y.values, field.z.values, backend)
-                # x_cpu, y_cpu, z_cpu = field.x.values, field.y.values, field.z.values
-                # for i ∈ eachindex(x_cpu)
-                #     println(io, x_cpu[i])
-                # end
-                # println(io,"     </DataArray>")
             else
                 throw("""
                 Input data should be a ScalarField or VectorField e.g. ("U", U)
@@ -253,4 +181,5 @@ function write_vtk(name, mesh::Mesh3, args...)
         write(io,"  </UnstructuredGrid>\n")
         write(io," </VTKFile>\n")
     end
+    nothing
 end

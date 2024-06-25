@@ -1,4 +1,3 @@
-export connect_mesh
 
 function connect_mesh(foamdata, TI, TF)
 

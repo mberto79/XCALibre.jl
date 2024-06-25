@@ -1,4 +1,3 @@
-export generate_mesh
 
 function generate_mesh(foamdata, connectivity, TI, TF) # TI and TF are int and float types
     boundaries = generate_boundaries(foamdata, TI, TF)

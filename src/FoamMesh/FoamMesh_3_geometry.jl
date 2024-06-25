@@ -1,4 +1,3 @@
-export compute_geometry!
 
 function compute_geometry!(mesh)
     mesh = calculate_cell_centres!(mesh)

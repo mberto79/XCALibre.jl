@@ -1,4 +1,3 @@
-export read_foamMesh
 
 mutable struct FoamMeshData{B,P,F,I}
     boundaries::B

@@ -120,27 +120,46 @@ function connect_face_nodes(foamdata, TI, TF)
     end
     
     face_nodes = zeros(TI, nFaceNodes)
+    face_nodes_range = UnitRange{TI}[0:0 for _ ∈ 1:n_faces]
 
+    # assign boundary faces nodesIDs first
     nodei = 0
+    startIndex = one(TI)
+    endIndex = zero(TI)
+    fID = zero(TI) # actual face ID to use
     for bfacei ∈ (n_ifaces + 1):n_faces # careful: use bfacei to index foam faces
+        fID += one(TI)
         face = faces[bfacei]
-        for nID ∈ face.nodesID
+        nodesID = face.nodesID
+        # assign access range
+        n_nodes = length(nodesID)
+        endIndex = startIndex + n_nodes - one(TI)
+        face_nodes_range[fID] = UnitRange{TI}(startIndex, endIndex)
+        startIndex += n_nodes
+        # assign actual node IDs values to long array
+        for nID ∈ nodesID
             nodei += 1
             face_nodes[nodei] = nID
         end
     end
 
+    # now assign internal faces nodesIDs
     for bfacei ∈ 1:n_ifaces # careful: use bfacei to index foam faces
+        fID += one(TI)
         face = faces[bfacei]
+        nodesID = face.nodesID
+        # assign access range
+        n_nodes = length(nodesID)
+        endIndex = startIndex + n_nodes - one(TI)
+        face_nodes_range[fID] = UnitRange{TI}(startIndex, endIndex)
+        startIndex += n_nodes
+        # assign actual node IDs values to long array
         for nID ∈ face.nodesID
             nodei += 1
             face_nodes[nodei] = nID
         end
     end
-            
 
-
-    face_nodes_range = zero(TI)
     return face_nodes, face_nodes_range
 end
 

@@ -8,6 +8,9 @@ function connect_mesh(foamdata, TI, TF)
     cell_faces, cell_faces_range, cell_neighbours, cell_nsign = connect_cell_faces(foamdata, TI, TF)
     
     cell_nodes, cell_nodes_range = connect_cell_nodes(foamdata, TI, TF)
+
+    face_nodes, face_nodes_range = connect_face_nodes(foamdata, TI, TF) # to do
+    node_cells, node_cells_range = connect_node_cells(foamdata, TI, TF) # to do
     
     boundaries = generate_boundaries(foamdata, TI, TF)
 
@@ -18,7 +21,9 @@ function connect_mesh(foamdata, TI, TF)
         out4 = cell_nsign,
         out5 = cell_nodes,
         out6 = cell_nodes_range,
-        out7 = boundaries,
+        out7 = face_nodes, 
+        out8 = face_nodes_range, 
+        out9 = boundaries,
     )
 end
 
@@ -104,6 +109,45 @@ function connect_cell_nodes(foamdata, TI, TF)
     cell_nodes = reduce(vcat, cell_nodesIDs)
 
     return cell_nodes, cell_nodes_range
+end
+
+function connect_face_nodes(foamdata, TI, TF)
+    (; n_ifaces, n_faces, faces) = foamdata
+
+    nFaceNodes = 0 # number of nodes to store
+    for face ∈ faces
+        nFaceNodes += length(face.nodesID)
+    end
+    
+    face_nodes = zeros(TI, nFaceNodes)
+
+    nodei = 0
+    for bfacei ∈ (n_ifaces + 1):n_faces # careful: use bfacei to index foam faces
+        face = faces[bfacei]
+        for nID ∈ face.nodesID
+            nodei += 1
+            face_nodes[nodei] = nID
+        end
+    end
+
+    for bfacei ∈ 1:n_ifaces # careful: use bfacei to index foam faces
+        face = faces[bfacei]
+        for nID ∈ face.nodesID
+            nodei += 1
+            face_nodes[nodei] = nID
+        end
+    end
+            
+
+
+    face_nodes_range = zero(TI)
+    return face_nodes, face_nodes_range
+end
+
+function connect_node_cells(foamdata, TI, TF)
+    # node_cells, node_cells_range = zero(TI)
+    # return node_cells, node_cells_range
+    0, 0
 end
 
 function generate_boundaries(foamdata, TI, TF)

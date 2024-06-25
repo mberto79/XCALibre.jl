@@ -2,12 +2,14 @@ export connect_mesh
 
 function connect_mesh(foamdata, TI, TF)
 
-
-    # OpenFOAM provides face information: sort out face connectivity first
     
-    cell_faces, cell_faces_range, cell_neighbours, cell_nsign  = connect_cell_faces(foamdata, TI, TF)
-
+    # OpenFOAM provides face information: sort out face-cell connectivity first
+    
+    cell_faces, cell_faces_range, cell_neighbours, cell_nsign = connect_cell_faces(foamdata, TI, TF)
+    
     cell_nodes, cell_nodes_range = connect_cell_nodes(foamdata, TI, TF)
+    
+    boundaries = generate_boundaries(foamdata, TI, TF)
 
     (
         out1 = cell_faces,
@@ -16,6 +18,7 @@ function connect_mesh(foamdata, TI, TF)
         out4 = cell_nsign,
         out5 = cell_nodes,
         out6 = cell_nodes_range,
+        out7 = boundaries,
     )
 end
 
@@ -103,3 +106,20 @@ function connect_cell_nodes(foamdata, TI, TF)
     return cell_nodes, cell_nodes_range
 end
 
+function generate_boundaries(foamdata, TI, TF)
+    (; n_bfaces, n_faces, n_ifaces) = foamdata
+    foamBoundaries = foamdata.boundaries
+    boundaries = Mesh.Boundary{Symbol,UnitRange{TI}}[
+        Mesh.Boundary(:default, UnitRange{TI}(0,0)) for _ ∈ eachindex(foamBoundaries)]
+
+    startIndex = 1
+    endIndex = 0
+    for (bi, foamboundary) ∈ enumerate(foamBoundaries)
+        (; name, nFaces) = foamboundary
+        endIndex = startIndex + nFaces - one(TI)
+        boundaries[bi] = Mesh.Boundary{Symbol,UnitRange{TI}}(name, startIndex:endIndex)
+        startIndex += nFaces
+    end
+
+    return boundaries
+end

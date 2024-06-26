@@ -48,6 +48,9 @@ function calculate_face_properties!(mesh)
     n_bfaces = length(boundary_cellsID)
     n_faces = length(mesh.faces)
 
+    TF = _get_float(mesh)
+    TI = _get_int(mesh)
+
     # loop over boundary faces
     for fID ∈ 1:n_bfaces
         face = faces[fID]
@@ -64,7 +67,7 @@ function calculate_face_properties!(mesh)
         normal_vec = fc_n1 × fc_n2
         normal = normal_vec/norm(normal_vec)
         if cc1_cc2 ⋅ normal < 0
-            normal *= -1
+            normal *= -one(TI)
         end
         @reset face.normal = normal
 
@@ -72,7 +75,7 @@ function calculate_face_properties!(mesh)
         cc_fc = face.centre - cell1.centre
         delta = norm(cc_fc)
         e = cc_fc/delta
-        weight = one(Float64)
+        weight = one(TF)
         @reset face.delta = delta
         @reset face.e = e
         @reset face.weight = weight
@@ -97,7 +100,7 @@ function calculate_face_properties!(mesh)
         normal_vec = fc_n1 × fc_n2
         normal = normal_vec/norm(normal_vec)
         if cc1_cc2 ⋅ normal < 0
-            normal *= -1
+            normal *= -one(TI)
         end
         @reset face.normal = normal
 
@@ -119,10 +122,14 @@ end
 
 function calculate_face_areas!(mesh)
     (; nodes, faces, face_nodes) = mesh 
+
+    TF = _get_float(mesh)
+    TI = _get_int(mesh)
+
     for (fID, face) = enumerate(faces)
         nIDs = face_nodes[face.nodes_range]
         extended_nIDs = [nIDs..., nIDs[1]] # TO DO - this is not very efficient
-        sum = zero(Float64)
+        sum = zero(TF)
         for ni ∈ eachindex(nIDs)
             nID1 = extended_nIDs[ni]
             nID2 = extended_nIDs[ni+1]
@@ -132,7 +139,7 @@ function calculate_face_areas!(mesh)
 
             n1_n2 = n2 - n1
             n1_f = f - n1
-            ec = (n1 + n2)/2 # edge centre
+            ec = (n1 + n2)/TI(2) # edge centre
             xf = ec - f
             normal_plane = n1_f × n1_n2
             normal_vec = normal_plane × n1_n2 
@@ -140,7 +147,7 @@ function calculate_face_areas!(mesh)
             edgeArea = norm(n1_n2)
             sum += xf⋅edgeNormal*edgeArea
         end
-        @reset face.area = 0.5*sum
+        @reset face.area = TF(0.5)*sum
         faces[fID] = face
     end
     return mesh
@@ -149,12 +156,17 @@ end
 function calculate_cell_volumes!(mesh)
     (; faces, cells, cell_faces, cell_nsign, boundaries, boundary_cellsID) = mesh
 
+    TF = _get_float(mesh)
+    TI = _get_int(mesh)
+
+    oneThird = TF(1/3)
+
     # loop over cells and their internal faces
     for (cID, cell) ∈ enumerate(cells)
         faceID_range = cell.faces_range
         fIDs = @view cell_faces[faceID_range]
         nsigns = @view cell_nsign[faceID_range]
-        sum = zero(Float64)
+        sum = zero(TF)
         for (fID, nsign) ∈ zip(fIDs, nsigns)
             face = faces[fID]
             (; area, normal) = face
@@ -163,7 +175,7 @@ function calculate_cell_volumes!(mesh)
             xf = fc - cc # cc_fc
             sum += (xf⋅normal)*nsign*area
         end
-        @reset cell.volume = (1/3)*sum
+        @reset cell.volume = oneThird*sum
         cells[cID] = cell
     end
 
@@ -179,7 +191,7 @@ function calculate_cell_volumes!(mesh)
             cc = cell.centre
             xf = fc - cc # cc_fc
             sum = (xf⋅normal)*area # boundary normals are outward facing by definition
-            @reset cell.volume += (1/3)*sum
+            @reset cell.volume += oneThird*sum
             cells[cID] = cell
         end
     end

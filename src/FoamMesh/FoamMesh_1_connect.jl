@@ -89,8 +89,8 @@ function connect_cell_nodes(foamdata, TI, TF)
     # define cell nodesIDs access ranges 
     cell_nodes_range = UnitRange{TI}[UnitRange{TI}(0,0) for _ ∈ 1:n_cells]
 
-    startIndex = 1
-    endIndex = 0
+    startIndex = one(TI)
+    endIndex = zero(TI)
     for (cID, nodesIDs) ∈ enumerate(cell_nodesIDs)
         n_nodeIDs = length(nodesIDs)
         endIndex = startIndex + n_nodeIDs - one(TI)

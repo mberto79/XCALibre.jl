@@ -4,7 +4,7 @@ using CUDA
 
 
 mesh_file = "unv_sample_meshes/OF_CRMHL_Wingbody_1v/polyMesh/"
-@time mesh = load_foamMesh(mesh_file, integer_type=Int32, float_type=Float32)
+@time mesh = load_foamMesh(mesh_file, scale=0.001, integer_type=Int64, float_type=Float64)
 
 # # check volume calculation
 # volumes = ScalarField(mesh)
@@ -12,11 +12,11 @@ mesh_file = "unv_sample_meshes/OF_CRMHL_Wingbody_1v/polyMesh/"
 # volumes.values .= vols
 # write_vtk("cellVolumes", mesh, ("cellVolumes", volumes))
 
-Umag = 50
+Umag = 10
 velocity = [Umag, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-05
-νR = 50
+νR = 100
 Tu = 0.01
 k_inlet = 3/2*(Tu*Umag)^2
 ω_inlet = k_inlet/(νR*nu)
@@ -26,6 +26,8 @@ model = Physics(
     time = Steady(),
     fluid = Incompressible(nu = ConstantScalar(nu)),
     turbulence = RANS{KOmega}(),
+    # turbulence = RANS{Laminar}(),
+    # turbulence = LES{Smagorinsky}(),
     energy = nothing,
     domain = mesh
     )
@@ -88,8 +90,8 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
-        rtol = 1e-1,
+        relax       = 0.8,
+        rtol = 1e-3,
         atol = 1e-10
     ),
     p = set_solver(
@@ -97,7 +99,7 @@ solvers = (
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), #LDL(),
         convergence = 1e-7,
-        relax       = 0.6,
+        relax       = 0.2,
         rtol = 1e-3,
         atol = 1e-10
     ),
@@ -108,7 +110,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
-        rtol = 1e-1,
+        rtol = 1e-3,
         atol = 1e-10
     ),
     omega = set_solver(
@@ -118,15 +120,15 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
-        rtol = 1e-1,
+        rtol = 1e-3,
         atol = 1e-10
     )
 )
 
 runtime = set_runtime(iterations=2000, write_interval=100, time_step=1)
 
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=CPU(), workgroup=4)
+# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+hardware = set_hardware(backend=CPU(), workgroup=8)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

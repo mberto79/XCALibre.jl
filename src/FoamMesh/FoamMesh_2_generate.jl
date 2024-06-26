@@ -3,8 +3,8 @@ function generate_mesh(foamdata, connectivity, TI, TF) # TI and TF are int and f
     boundaries = generate_boundaries(foamdata, TI, TF)
     nodes = Mesh.Node.(foamdata.points, connectivity.node_cells_range)
     cells = Mesh.Cell.(
-        Ref(SVector{3}(zeros(Float64, 3))),
-        Ref(0.0),
+        Ref(SVector{3}(zeros(TF, 3))),
+        Ref(zero(TF)),
         connectivity.cell_nodes_range,
         connectivity.cell_faces_range
         )

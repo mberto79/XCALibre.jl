@@ -36,7 +36,7 @@ Face(TI, nnodes::I) where I<:Integer = begin
     Face(nodesIDs, z, z)
 end
 
-function read_foamMesh(file_path, integer, float)
+function read_foamMesh(file_path, scale, integer, float)
 
     points_file = joinpath(file_path,"points")
     faces_file = joinpath(file_path,"faces")
@@ -46,7 +46,7 @@ function read_foamMesh(file_path, integer, float)
 
     foamdata = FoamMeshData(integer, float)
 
-    foamdata.points = read_points(points_file, integer, float)
+    foamdata.points = read_points(points_file, scale, integer, float)
     foamdata.boundaries = read_boundary(boundary_file, integer, float)
 
     face_nodes = read_faces(faces_file, integer, float)
@@ -238,7 +238,7 @@ function read_owner(file_path, TI, TF)
     face_owner_cell = read_neighbour(file_path, TI, TF)
 end
 
-function read_points(file_path, TI, TF)
+function read_points(file_path, scale, TI, TF)
     delimiters = ['(',' ', ')']
     npoints = 0
     readfrom = 0
@@ -262,7 +262,7 @@ function read_points(file_path, TI, TF)
         elseif n > readfrom
             pcounter += 1
             p = split(line, delimiters, keepempty=false)
-            points[pcounter] = @inbounds SVector{3}(parse.(TF, p))
+            points[pcounter] = @inbounds SVector{3}(scale*parse.(TF, p))
         end
     end
     return points

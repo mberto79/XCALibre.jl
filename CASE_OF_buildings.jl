@@ -20,7 +20,7 @@ Re = (0.2*velocity[1])/nu
 model = Physics(
     time = Steady(),
     fluid = Incompressible(nu = ConstantScalar(nu)),
-    turbulence = RANS{KOmega}(β⁺=0.09),
+    turbulence = RANS{KOmega}(),
     energy = nothing,
     domain = mesh
     )
@@ -29,7 +29,7 @@ model = Physics(
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Dirichlet(:frontAndBack, velocity),
+    Neumann(:frontAndBack, 0.0),
     Dirichlet(:ground, noSlip),
     Dirichlet(:buildings, noSlip)
 )
@@ -79,14 +79,18 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.8
+        relax       = 0.7,
+        rtol = 1e-10,
+        atol = 1e-10
     ),
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), #LDL(),
         convergence = 1e-7,
-        relax       = 0.2
+        relax       = 0.3,
+        rtol = 1e-10,
+        atol = 1e-10
     ),
     k = set_solver(
         # model.turbulence.fields.k;
@@ -94,7 +98,9 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.8
+        relax       = 0.7,
+        rtol = 1e-10,
+        atol = 1e-10
     ),
     omega = set_solver(
         # model.turbulence.fields.omega;
@@ -102,11 +108,13 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver, CgSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.8
+        relax       = 0.7,
+        rtol = 1e-10,
+        atol = 1e-10
     )
 )
 
-runtime = set_runtime(iterations=30, write_interval=10, time_step=1)
+runtime = set_runtime(iterations=40, write_interval=10, time_step=1)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=4)

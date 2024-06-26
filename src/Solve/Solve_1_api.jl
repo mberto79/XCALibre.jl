@@ -1,5 +1,6 @@
 export set_solver, set_runtime
 export explicit_relaxation!, implicit_relaxation!, setReference!
+export implicit_relaxation_diagdom!
 export solve_system!
 export solve_equation!
 export residual!

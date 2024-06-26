@@ -30,9 +30,9 @@ mutable struct Face{I}
     owner::I
     neighbour::I
 end
-Face(nnodes::I) where I<:Integer = begin
-    nodesIDs = zeros(I, nnodes)
-    z = zero(I)
+Face(TI, nnodes::I) where I<:Integer = begin
+    nodesIDs = zeros(TI, nnodes)
+    z = zero(TI)
     Face(nodesIDs, z, z)
 end
 
@@ -53,18 +53,18 @@ function read_foamMesh(file_path, integer, float)
     face_neighbours = read_neighbour(neighbour_file, integer, float)
     face_owners = read_owner(owner_file, integer, float)
 
-    assign_faces!(foamdata, face_nodes, face_neighbours, face_owners)
+    assign_faces!(foamdata, face_nodes, face_neighbours, face_owners, integer)
 
     return foamdata
 end
 
-function assign_faces!(foamdata, face_nodes, face_neighbours, face_owners)
+function assign_faces!(foamdata, face_nodes, face_neighbours, face_owners, TI)
     foamdata.n_faces = n_faces = length(face_owners)
     foamdata.n_ifaces = n_ifaces = length(face_neighbours)
     foamdata.n_bfaces = n_bfaces = foamdata.n_faces - foamdata.n_ifaces
     foamdata.n_cells = max(maximum(face_owners), maximum(face_neighbours))
 
-    foamdata.faces = [Face(length(nodesID)) for nodesID ∈ face_nodes]
+    foamdata.faces = [Face(TI, length(nodesID)) for nodesID ∈ face_nodes]
 
     # p1 = one(eltype(face_owners))
 
@@ -221,9 +221,14 @@ function read_neighbour(file_path, TI, TF)
         if line == ")"
             break 
         elseif n > readfrom
-            fcounter += 1
-            p = split(line, keepempty=false)
-            face_neighbour_cell[fcounter] = parse(TI, p[1]) + one(TI) # make 1-indexed
+            # fcounter += 1
+            line_data = split(line, keepempty=false)
+            # face_neighbour_cell[fcounter] = parse(TI, p[1]) + one(TI) # make 1-indexed
+            for data ∈ line_data 
+                fcounter += 1
+                cellID = parse(TI, data) + one(TI) # make 1-indexed
+                face_neighbour_cell[fcounter] = cellID 
+            end
         end
     end
     return face_neighbour_cell

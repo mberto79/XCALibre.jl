@@ -6,6 +6,12 @@ using CUDA
 mesh_file = "unv_sample_meshes/OF_pitzdaily/polyMesh"
 @time mesh = load_foamMesh(mesh_file, integer_type=Int64, float_type=Float64)
 
+# # check volume calculation
+# volumes = ScalarField(mesh)
+# vols = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
+# volumes.values .= vols
+# write_vtk("cellVolumes", mesh, ("cellVolumes", volumes))
+
 Umag = 10
 velocity = [Umag, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
@@ -28,7 +34,7 @@ model = Physics(
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    # Neumann(:frontAndBack, 0.0),
+    Neumann(:frontAndBack, 0.0),
     Dirichlet(:upperWall, noSlip),
     Dirichlet(:lowerWall, noSlip)
 )
@@ -36,7 +42,7 @@ model = Physics(
 @assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
-    # Neumann(:frontAndBack, 0.0),
+    Neumann(:frontAndBack, 0.0),
     Neumann(:upperWall, 0.0),
     Neumann(:lowerWall, 0.0)
 )
@@ -44,7 +50,7 @@ model = Physics(
 @assign! model turbulence k (
     Dirichlet(:inlet, k_inlet),
     Neumann(:outlet, 0.0),
-    # Neumann(:frontAndBack, 0.0),
+    Neumann(:frontAndBack, 0.0),
     KWallFunction(:upperWall),
     KWallFunction(:lowerWall)
 )
@@ -52,7 +58,7 @@ model = Physics(
 @assign! model turbulence omega (
     Dirichlet(:inlet, ω_inlet),
     Neumann(:outlet, 0.0),
-    # Neumann(:frontAndBack, 0.0),
+    Neumann(:frontAndBack, 0.0),
     OmegaWallFunction(:upperWall),
     OmegaWallFunction(:lowerWall)
 )
@@ -60,7 +66,7 @@ model = Physics(
 @assign! model turbulence nut (
     Dirichlet(:inlet, k_inlet/ω_inlet),
     Neumann(:outlet, 0.0),
-    # Neumann(:frontAndBack, 0.0),
+    Neumann(:frontAndBack, 0.0),
     NutWallFunction(:upperWall),
     NutWallFunction(:lowerWall)
 )
@@ -113,7 +119,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=2000, write_interval=100, time_step=1)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=CPU(), workgroup=4)
@@ -123,11 +129,17 @@ config = Configuration(
 
 GC.gc(true)
 
-initialise!(model.momentum.U, velocity)
+# initialise!(model.momentum.U, velocity)
+# initialise!(model.momentum.p, 0.0)
+# initialise!(model.turbulence.k, k_inlet)
+# initialise!(model.turbulence.omega, ω_inlet)
+# initialise!(model.turbulence.nut, k_inlet/ω_inlet)
+
+initialise!(model.momentum.U, [0,0,0])
 initialise!(model.momentum.p, 0.0)
 initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
-initialise!(model.turbulence.nut, k_inlet/ω_inlet)
+initialise!(model.turbulence.nut, 0.0)
 
 Rx, Ry, Rz, Rp, model = run!(model, config); #, pref=0.0)
 

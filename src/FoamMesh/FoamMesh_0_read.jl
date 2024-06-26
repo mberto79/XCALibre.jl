@@ -62,7 +62,7 @@ function assign_faces!(foamdata, face_nodes, face_neighbours, face_owners)
     foamdata.n_faces = n_faces = length(face_owners)
     foamdata.n_ifaces = n_ifaces = length(face_neighbours)
     foamdata.n_bfaces = n_bfaces = foamdata.n_faces - foamdata.n_ifaces
-    foamdata.n_cells = maximum(face_owners)
+    foamdata.n_cells = max(maximum(face_owners), maximum(face_neighbours))
 
     foamdata.faces = [Face(length(nodesID)) for nodesID ∈ face_nodes]
 
@@ -209,7 +209,7 @@ function read_neighbour(file_path, TI, TF)
         else 
             nfaces = parse(TI, line)
             readfrom = n + 1
-            println("number of faces is ", nfaces)
+            println("number of neighbours/owners is ", nfaces)
             break
         end
     end

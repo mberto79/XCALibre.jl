@@ -33,7 +33,7 @@ function connect_cell_faces(foamdata, TI, TF)
         face = faces[fi]
         ownerID = face.owner
         neighbourID = face.neighbour
-        fID = fi + n_bfaces # fID is shifted to accommodate boundary faces at the start
+        fID = fi + n_bfaces # fID is shifted to accommodate boundary faces
         push!(cell_facesIDs[ownerID], fID)
         push!(cell_facesIDs[neighbourID], fID)
 
@@ -50,7 +50,7 @@ function connect_cell_faces(foamdata, TI, TF)
     cell_neighbours = zeros(TI, n_faceIDs)
     cell_faces_range = UnitRange{TI}[UnitRange{TI}(0,0) for _ ∈ 1:n_cells]
 
-    # write to single arrays and define equivalent access ranges as UnitRange
+    # write to single arrays and define access ranges as UnitRange
     facei = 0 # face counter (not ID)
     for cID ∈ eachindex(cell_facesIDs)
         facesIDs = cell_facesIDs[cID]

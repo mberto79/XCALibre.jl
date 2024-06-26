@@ -8,4 +8,5 @@ function load_foamMesh(mesh_file; scale=1, integer_type=Int64, float_type=Float6
     mesh = compute_geometry!(mesh)
 
     return mesh
+    # return foamdata
 end

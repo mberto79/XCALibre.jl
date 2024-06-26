@@ -266,7 +266,8 @@ end
     fID = i + start_ID - 1 # Redefine thread index to become face ID
 
     (; kappa, beta1, cmu, B, E) = BC.value
-    (; U, nu) = model
+    nu = _nu(model.fluid)
+    (; U) = model.momentum
     (; k, nut) = model.turbulence
 
     ylam = y_plus_laminar(E, kappa)
@@ -313,7 +314,7 @@ function correct_nut_wall!(νtf, BC, model, config)
     (; backend, workgroup) = hardware
     
     # Deconstruct mesh to required fields
-    mesh = model.mesh
+    mesh = model.domain
     (; faces, boundary_cellsID, boundaries) = mesh
 
     facesID_range = get_boundaries(BC, boundaries)
@@ -331,7 +332,7 @@ end
     fID = i + start_ID - 1 # Redefine thread index to become face ID
 
     (; kappa, beta1, cmu, B, E) = BC.value
-    (; nu) = model
+    nu = _nu(model.fluid)
     (; k) = model.turbulence
     
     ylam = y_plus_laminar(E, kappa)

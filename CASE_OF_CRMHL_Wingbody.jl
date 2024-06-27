@@ -13,7 +13,7 @@ mesh_file = "unv_sample_meshes/OF_CRMHL_Wingbody_1v/polyMesh/"
 # volumes.values .= vols
 # write_vtk("cellVolumes", mesh, ("cellVolumes", volumes))
 
-Umag = 0.1
+Umag = 5
 velocity = [Umag, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-05
@@ -23,6 +23,8 @@ k_inlet = 3/2*(Tu*Umag)^2
 ω_inlet = k_inlet/(νR*nu)
 nut_inlet = k_inlet/ω_inlet
 
+mesh_gpu = adapt(CUDABackend(), mesh)
+
 model = Physics(
     time = Steady(),
     fluid = Incompressible(nu = ConstantScalar(nu)),
@@ -30,11 +32,10 @@ model = Physics(
     # turbulence = RANS{Laminar}(),
     # turbulence = LES{Smagorinsky}(),
     energy = nothing,
-    domain = mesh
+    # domain = mesh
+    domain = mesh_gpu
     )
-
-model = adapt(CUDABackend(), model)
-
+    
 walls = [:Fuselage, :FuselageAft, :Windshield, :WindshieldFrame, :WingLower, 
             :WingTEIB, :WingTEOB, :WingTip, :WingUpper]
 
@@ -100,7 +101,7 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.6,
         rtol = 1e-1,
         atol = 1e-15
     ),
@@ -119,7 +120,7 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.5,
         rtol = 1e-1,
         atol = 1e-15
     ),
@@ -129,16 +130,16 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver, CgSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.5,
         rtol = 1e-1,
         atol = 1e-15
     )
 )
 
-runtime = set_runtime(iterations=2000, write_interval=10, time_step=1)
+runtime = set_runtime(iterations=2000, write_interval=20, time_step=1)
 
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=8)
+hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+# hardware = set_hardware(backend=CPU(), workgroup=8)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

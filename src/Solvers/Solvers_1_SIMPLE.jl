@@ -19,7 +19,8 @@ function setup_incompressible_solvers(
 
     @info "Extracting configuration and input fields..."
 
-    model = adapt(hardware.backend, model_in)
+    # model = adapt(hardware.backend, model_in)
+    model = model_in
     (; U, p) = model.momentum
     mesh = model.domain
 

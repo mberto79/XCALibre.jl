@@ -77,8 +77,10 @@ function initialise(
     @reset k_eqn.preconditioner = set_preconditioner(
                 solvers.k.preconditioner, k_eqn, k.BCs, config)
 
-    @reset ω_eqn.preconditioner = set_preconditioner(
-                solvers.omega.preconditioner, ω_eqn, omega.BCs, config)
+    # @reset ω_eqn.preconditioner = set_preconditioner(
+    #             solvers.omega.preconditioner, ω_eqn, omega.BCs, config)
+
+    @reset ω_eqn.preconditioner = k_eqn.preconditioner
     
     # preallocating solvers
     @reset k_eqn.solver = solvers.k.solver(_A(k_eqn), _b(k_eqn))

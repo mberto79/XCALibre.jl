@@ -2,7 +2,7 @@ using Plots
 using FVM_1D
 using CUDA
 # using Accessors
-# using Adapt
+using Adapt
 
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
@@ -22,12 +22,14 @@ k_inlet = 3/2*(Tu*Umag)^2
 ω_inlet = k_inlet/(νR*nu)
 Re = (0.2*velocity[1])/nu
 
+mesh_gpu = adapt(CUDABackend(), mesh)
+
 model = Physics(
     time = Steady(),
     fluid = Incompressible(nu = ConstantScalar(nu)),
     turbulence = RANS{KOmega}(β⁺=0.09),
     energy = nothing,
-    domain = mesh
+    domain = mesh_gpu
     )
 
 @assign! model momentum U (

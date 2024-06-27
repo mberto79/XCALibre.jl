@@ -1,5 +1,6 @@
 using Plots
 using FVM_1D
+using Adapt
 using CUDA
 
 
@@ -12,12 +13,12 @@ mesh_file = "unv_sample_meshes/OF_CRMHL_Wingbody_1v/polyMesh/"
 # volumes.values .= vols
 # write_vtk("cellVolumes", mesh, ("cellVolumes", volumes))
 
-Umag = 10
+Umag = 0.1
 velocity = [Umag, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-05
 νR = 100
-Tu = 0.01
+Tu = 0.1
 k_inlet = 3/2*(Tu*Umag)^2
 ω_inlet = k_inlet/(νR*nu)
 nut_inlet = k_inlet/ω_inlet
@@ -32,6 +33,8 @@ model = Physics(
     domain = mesh
     )
 
+model = adapt(CUDABackend(), model)
+
 walls = [:Fuselage, :FuselageAft, :Windshield, :WindshieldFrame, :WingLower, 
             :WingTEIB, :WingTEOB, :WingTip, :WingUpper]
 
@@ -42,7 +45,9 @@ freestream = [:Ymax, :Zmax, :Zmin]
     Neumann(:Xmax, 0.0), # outlet
     Dirichlet.(walls, Ref(noSlip))..., # walls
     Neumann.(freestream, Ref(0.0))...,
-    Dirichlet(:Symmetry, velocity)
+    # Dirichlet(:Symmetry, velocity)
+    # Dirichlet(:Symmetry, noSlip)
+    Neumann(:Symmetry, velocity)
 )
 
 @assign! model momentum p (
@@ -56,9 +61,11 @@ freestream = [:Ymax, :Zmax, :Zmin]
 @assign! model turbulence k (
     Dirichlet(:Xmin, k_inlet), # inlet
     Neumann(:Xmax, 0.0), # outlet
-    KWallFunction.(walls)..., # walls
+    # KWallFunction.(walls)..., # walls
+    Dirichlet.(walls, Ref(0.0))..., # walls
     Neumann.(freestream, Ref(0.0))...,
     Neumann(:Symmetry, 0.0)
+    # KWallFunction(:Symmetry)
 )
 
 @assign! model turbulence omega (
@@ -67,14 +74,17 @@ freestream = [:Ymax, :Zmax, :Zmin]
     OmegaWallFunction.(walls)..., # walls
     Neumann.(freestream, Ref(0.0))...,
     Neumann(:Symmetry, 0.0)
+    # OmegaWallFunction(:Symmetry)
 )
 
 @assign! model turbulence nut (
     Dirichlet(:Xmin, k_inlet/ω_inlet), # inlet
     Neumann(:Xmax, 0.0), # outlet
-    NutWallFunction.(walls)..., # walls
+    # NutWallFunction.(walls)..., # walls
+    Dirichlet.(walls, Ref(0.0))..., # walls
     Neumann.(freestream, Ref(0.0))...,
     Neumann(:Symmetry, 0.0)
+    # NutWallFunction(:Symmetry)
 )
 
 schemes = (
@@ -91,8 +101,8 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
-        rtol = 1e-3,
-        atol = 1e-10
+        rtol = 1e-1,
+        atol = 1e-15
     ),
     p = set_solver(
         model.momentum.p;
@@ -101,7 +111,7 @@ solvers = (
         convergence = 1e-7,
         relax       = 0.2,
         rtol = 1e-3,
-        atol = 1e-10
+        atol = 1e-15
     ),
     k = set_solver(
         # model.turbulence.fields.k;
@@ -110,8 +120,8 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
-        rtol = 1e-3,
-        atol = 1e-10
+        rtol = 1e-1,
+        atol = 1e-15
     ),
     omega = set_solver(
         # model.turbulence.fields.omega;
@@ -120,12 +130,12 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
-        rtol = 1e-3,
-        atol = 1e-10
+        rtol = 1e-1,
+        atol = 1e-15
     )
 )
 
-runtime = set_runtime(iterations=2000, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=2000, write_interval=10, time_step=1)
 
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=8)

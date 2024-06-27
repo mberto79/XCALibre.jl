@@ -7,8 +7,11 @@ using CUDA
 mesh_file = "unv_sample_meshes/bfs_unv_tet_4mm.unv"
 mesh_file = "unv_sample_meshes/bfs_unv_tet_5mm.unv"
 mesh_file = "unv_sample_meshes/bfs_unv_tet_10mm.unv"
-
 @time mesh = build_mesh3D(mesh_file, scale=0.001)
+
+mesh_file = "unv_sample_meshes/bfs_OF_tet_meshes/polyMesh_5mm/"
+@time mesh = load_foamMesh(mesh_file, integer_type=Int64, float_type=Float64)
+
 mesh_gpu = adapt(CUDABackend(), mesh)
 
 velocity = [0.5, 0.0, 0.0]

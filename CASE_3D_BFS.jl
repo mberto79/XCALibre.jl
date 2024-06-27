@@ -1,6 +1,5 @@
 using Plots
 using FVM_1D
-using Adapt
 using CUDA
 
 # bfs_unv_tet_15mm, 10mm, 5mm, 4mm, 3mm
@@ -9,8 +8,8 @@ mesh_file = "unv_sample_meshes/bfs_unv_tet_5mm.unv"
 mesh_file = "unv_sample_meshes/bfs_unv_tet_10mm.unv"
 @time mesh = build_mesh3D(mesh_file, scale=0.001)
 
-mesh_file = "unv_sample_meshes/bfs_OF_tet_meshes/polyMesh_5mm/"
-@time mesh = load_foamMesh(mesh_file, integer_type=Int64, float_type=Float64)
+mesh_file = "unv_sample_meshes/bfs_OF_tet_meshes/5mm/polyMesh/"
+@time mesh = FOAM3D_mesh(mesh_file, integer_type=Int64, float_type=Float64)
 
 mesh_gpu = adapt(CUDABackend(), mesh)
 

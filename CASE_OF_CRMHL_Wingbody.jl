@@ -13,11 +13,11 @@ mesh_file = "unv_sample_meshes/OF_CRMHL_Wingbody_1v/polyMesh/"
 # volumes.values .= vols
 # write_vtk("cellVolumes", mesh, ("cellVolumes", volumes))
 
-Umag = 5
+Umag = 1
 velocity = [Umag, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-05
-νR = 100
+νR = 150
 Tu = 0.1
 k_inlet = 3/2*(Tu*Umag)^2
 ω_inlet = k_inlet/(νR*nu)
@@ -136,7 +136,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=2000, write_interval=20, time_step=1)
+runtime = set_runtime(iterations=100, write_interval=20, time_step=1)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=CPU(), workgroup=8)

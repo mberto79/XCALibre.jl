@@ -14,7 +14,7 @@ mesh_gpu = adapt(CUDABackend(), mesh)
 # volumes.values .= vols
 # write_vtk("cellVolumes", mesh, ("cellVolumes", volumes))
 
-Umag = 10
+Umag = 0.001
 velocity = [Umag, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-05
@@ -45,9 +45,9 @@ freestream = [:Ymax, :Zmax, :Zmin]
     Neumann(:Xmax, 0.0), # outlet
     Dirichlet.(walls, Ref(noSlip))..., # walls
     Neumann.(freestream, Ref(0.0))...,
-    # Dirichlet(:Symmetry, velocity)
+    Dirichlet(:Symmetry, velocity)
     # Dirichlet(:Symmetry, noSlip)
-    Neumann(:Symmetry, velocity)
+    # Neumann(:Symmetry, 0.0)
 )
 
 @assign! model momentum p (
@@ -88,7 +88,7 @@ freestream = [:Ymax, :Zmax, :Zmin]
 )
 
 schemes = (
-    U = set_schemes(Time=Euler, divergence=Upwind, gradient=Midpoint),
+    U = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint),
     p = set_schemes(gradient=Midpoint),
     k = set_schemes(divergence=Upwind, gradient=Midpoint),
     omega = set_schemes(divergence=Upwind, gradient=Midpoint)
@@ -100,8 +100,8 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.6,
-        rtol = 1e-1,
+        relax       = 1.0,
+        rtol = 1e-5,
         atol = 1e-15
     ),
     p = set_solver(
@@ -109,8 +109,8 @@ solvers = (
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), #LDL(),
         convergence = 1e-7,
-        relax       = 0.2,
-        rtol = 1e-3,
+        relax       = 1.0,
+        rtol = 1e-5,
         atol = 1e-15
     ),
     # k = set_solver(
@@ -135,7 +135,7 @@ solvers = (
     # )
 )
 
-runtime = set_runtime(iterations=100, write_interval=20, time_step=1)
+runtime = set_runtime(iterations=3, write_interval=1, time_step=1e-8)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=CPU(), workgroup=8)
@@ -147,9 +147,9 @@ GC.gc(true)
 
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
-initialise!(model.turbulence.k, k_inlet)
-initialise!(model.turbulence.omega, ω_inlet)
-initialise!(model.turbulence.nut, k_inlet/ω_inlet)
+# initialise!(model.turbulence.k, k_inlet)
+# initialise!(model.turbulence.omega, ω_inlet)
+# initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
 # initialise!(model.momentum.U, [0,0,0])
 # initialise!(model.momentum.p, 0.0)
@@ -157,7 +157,7 @@ initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 # initialise!(model.turbulence.omega, ω_inlet)
 # initialise!(model.turbulence.nut, 0.0)
 
-Rx, Ry, Rz, Rp, model = run!(model, config); #, pref=0.0)
+Rx, Ry, Rz, Rp, model_out = run!(model, config); #, pref=0.0)
 
 
 Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)

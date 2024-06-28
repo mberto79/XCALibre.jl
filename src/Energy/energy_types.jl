@@ -13,7 +13,11 @@ end
 
 struct Isothermal end
 
-ENERGY{Isothermal}() = ENERGY{Isothermal}(nothing)
+ENERGY{Isothermal}() = begin
+    args = nothing
+    ARGS = typeof(args)
+    ENERGY{Isothermal,ARGS}(args)
+end
 
 (energy::ENERGY{EnergyModel, ARG})(mesh, fluid) where {EnergyModel<:Isothermal,ARG} = begin
     nothing

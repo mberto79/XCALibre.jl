@@ -32,7 +32,7 @@ model = Physics(
         Pr = ConstantScalar(Pr)
         ),
     turbulence = RANS{Laminar}(),
-    energy = ENERGY{Sensible_Enthalpy}(),
+    energy = ENERGY{SensibleEnthalpy}(),
     domain = mesh
     )
 
@@ -53,10 +53,10 @@ model = Physics(
 )
 
 @assign! model energy T (
-    FixedTemperature(:inlet, T=300.0, model=model),
+    FixedTemperature(:inlet, T=300.0, model=model.energy),
     Neumann(:outlet, 0.0),
     # Neumann(:cylinder, 0.0),
-    FixedTemperature(:cylinder, T=330.0, model=model),
+    FixedTemperature(:cylinder, T=330.0, model=model.energy),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0)
 )

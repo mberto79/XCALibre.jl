@@ -1,15 +1,16 @@
-export Sensible_Enthalpy
+export SensibleEnthalpy
 export Ttoh, htoT!, Ttoh!, thermo_Psi!
 
 # Model type definition
-struct Sensible_Enthalpy{S1,S2,F1,F2,C} <: AbstractEnergyModel
+struct SensibleEnthalpy{S1,S2,F1,F2,F,C} <: AbstractEnergyModel
     h::S1
     T::S2
     hf::F1
     Tf::F2
+    update_BC::F
     coeffs::C
 end
-Adapt.@adapt_structure Sensible_Enthalpy
+Adapt.@adapt_structure SensibleEnthalpy
 
 struct Sensible_Enthalpy_Model{E1}
     energy_eqn::E1 
@@ -17,24 +18,44 @@ end
 Adapt.@adapt_structure Sensible_Enthalpy_Model
 
 # Model API constructor
-ENERGY{Sensible_Enthalpy}(; Tref = 288.15) = begin
+ENERGY{SensibleEnthalpy}(; Tref = 288.15) = begin
     coeffs = (Tref=Tref, other=nothing)
     ARG = typeof(coeffs)
-    ENERGY{Sensible_Enthalpy,ARG}(coeffs)
+    ENERGY{SensibleEnthalpy,ARG}(coeffs)
 end
 
 # Functor as consturctor
-(energy::ENERGY{Sensible_Enthalpy, ARG})(mesh) where ARG = begin
+(energy::ENERGY{EnergyModel, ARG})(mesh, fluid) where {EnergyModel<:SensibleEnthalpy,ARG} = begin
     h = ScalarField(mesh)
     T = ScalarField(mesh)
     hf = FaceScalarField(mesh)
     Tf = FaceScalarField(mesh)
+    update_BC =  return_thingy(EnergyModel, fluid, energy.args.Tref)
     coeffs = energy.args
-    Sensible_Enthalpy(h, T, hf, Tf, coeffs)
+    SensibleEnthalpy(h, T, hf, Tf, update_BC, coeffs)
 end
 
+return_thingy(::Type{SensibleEnthalpy}, fluid, Tref) = begin
+    function Ttoh(T)
+        Cp = _Cp(fluid)
+        h = Cp.values*(T-Tref)
+        return h
+    end
+end
+
+# function Ttoh(
+#     model::Physics{T1,F,M,Tu,E,D,BI}, T
+#     ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
+#     (; coeffs) = model.energy
+#     (; Tref) = coeffs
+#     # h = ScalarField(model.domain)
+#     Cp = _Cp(model.fluid)
+#     h = Cp.values*(T-Tref)
+#     return h
+# end
+
 function initialise(
-    energy::Sensible_Enthalpy, model::Physics{T1,F,M,Tu,E,D,BI}, mdotf, peqn, config
+    energy::SensibleEnthalpy, model::Physics{T1,F,M,Tu,E,D,BI}, mdotf, peqn, config
     ) where {T1,F,M,Tu,E,D,BI}
 
     (; h, T) = energy
@@ -49,7 +70,7 @@ function initialise(
     h = T
     Ttoh!(model, T, h)
 
-    println(h.BCs)
+    # println(h.BCs)
 
     energy_eqn = (
         Time{schemes.h.time}(rho, h)
@@ -154,16 +175,16 @@ function Ttoh!(
     @. h.values = Cp.values*(T.values-Tref)
 end
 
-function Ttoh(
-    model::Physics{T1,F,M,Tu,E,D,BI}, T
-    ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
-    (; coeffs) = model.energy
-    (; Tref) = coeffs
-    # h = ScalarField(model.domain)
-    Cp = _Cp(model.fluid)
-    h = Cp.values*(T-Tref)
-    return h
-end
+# function Ttoh(
+#     model::Physics{T1,F,M,Tu,E,D,BI}, T
+#     ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
+#     (; coeffs) = model.energy
+#     (; Tref) = coeffs
+#     # h = ScalarField(model.domain)
+#     Cp = _Cp(model.fluid)
+#     h = Cp.values*(T-Tref)
+#     return h
+# end
 
 function htoT!(
     model::Physics{T1,F,M,Tu,E,D,BI}, h::ScalarField, T::ScalarField

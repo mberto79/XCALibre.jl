@@ -328,3 +328,31 @@ end
     # 0.0, flux*phi*cell.volume
     0.0, 0.0
 end
+
+
+# fixedTempterature boundary condition
+@inline (bc::FixedTemperature)(
+    term::Operator{F,P,I,Laplacian{Linear}}, cellID, zcellID, cell, face, fID, ione, component=nothing
+    ) where {F,P,I} = begin
+    # Retrieve term flux and extract fields from workitem face
+    J = term.flux[fID]
+    (; area, delta) = face 
+
+    # extract user provided information
+    (; T, model) = BC.value
+
+    h = model.update_BC(model, T)
+
+    # Calculate flux and ap value for increment
+    flux = J*area/delta
+    ap = term.sign[1]*(-flux)
+    
+    # Set index for sparse array values at [cellID, cellID] for workitem
+    # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
+
+    # Increment sparse and b arrays
+    # Atomix.@atomic nzval[zcellID] += ap
+    # Atomix.@atomic b[cellID] += ap*bc.value
+    # nothing
+    ap, ap*h
+end

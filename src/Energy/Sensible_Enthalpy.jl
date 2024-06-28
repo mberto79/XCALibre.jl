@@ -46,7 +46,10 @@ function initialise(
     keff_by_cp = FaceScalarField(mesh)
     divK = ScalarField(mesh)
 
+    h = T
     Ttoh!(model, T, h)
+
+    println(h.BCs)
 
     energy_eqn = (
         Time{schemes.h.time}(rho, h)

@@ -9,13 +9,13 @@ mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 # mesh_file = "unv_sample_meshes/cylinder_d10mm_10-7.5-2mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-mesh_gpu = adapt(CUDABackend(), mesh)
+# mesh_gpu = adapt(CUDABackend(), mesh)
 
 # Inlet conditions
 
 velocity = [0.5, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
-nu = 1e-3
+nu = 1e-2
 Re = (0.2*velocity[1])/nu
 gamma = 1.4
 cp = 1005.0
@@ -55,8 +55,8 @@ model = Physics(
 @assign! model energy T (
     FixedTemperature(:inlet, T=300.0, model=model),
     Neumann(:outlet, 0.0),
-    Neumann(:cylinder, 0.0),
-    # FixedTemperature(:cylinder, T=310.0, model=model),
+    # Neumann(:cylinder, 0.0),
+    FixedTemperature(:cylinder, T=330.0, model=model),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0)
 )

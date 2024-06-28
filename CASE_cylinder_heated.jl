@@ -13,20 +13,23 @@ mesh = update_mesh_format(mesh)
 
 # Inlet conditions
 
-velocity = [0.50, 0.0, 0.0]
+velocity = [10, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
-nu = 1e-3
+nu = 1e-5
 Re = (0.2*velocity[1])/nu
 gamma = 1.4
 cp = 1005.0
 temp = 300.0
+pressure = 100000
+Pr = 0.7
 
 model = Physics(
     time = Steady(),
     fluid = WeaklyCompressible(
         mu = ConstantScalar(nu),
         cp = ConstantScalar(cp),
-        gamma = ConstantScalar(gamma)
+        gamma = ConstantScalar(gamma),
+        Pr = ConstantScalar(Pr)
         ),
     turbulence = RANS{Laminar}(),
     energy = ENERGY{Sensible_Enthalpy}(),
@@ -43,7 +46,7 @@ model = Physics(
 
 @assign! model momentum p (
     Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
+    Dirichlet(:outlet, pressure),
     Neumann(:cylinder, 0.0),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0)
@@ -52,7 +55,7 @@ model = Physics(
 @assign! model energy T (
     FixedTemperature(:inlet, T=300.0, model=model),
     Neumann(:outlet, 0.0),
-    Neumann(:cylinder, 0.0),
+    FixedTemperature(:cylinder, T=300.0, model=model),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0)
 )
@@ -93,7 +96,7 @@ schemes = (
     h = set_schemes(divergence=Upwind, gradient=Midpoint)
 )
 
-runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
 
 hardware = set_hardware(backend=CPU(), workgroup=4)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
@@ -105,7 +108,7 @@ config = Configuration(
 GC.gc(true)
 
 initialise!(model.momentum.U, velocity)
-initialise!(model.momentum.p, 0.0)
+initialise!(model.momentum.p, pressure)
 initialise!(model.energy.T, temp)
 
 Rx, Ry, Rz, Rp, Rh, model = run!(model, config); #, pref=0.0)

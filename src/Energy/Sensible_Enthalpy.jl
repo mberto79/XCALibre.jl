@@ -46,7 +46,7 @@ function initialise(
     keff_by_cp = FaceScalarField(mesh)
     divK = ScalarField(mesh)
 
-    h = Ttoh(model, T)
+    Ttoh!(model, T, h)
 
     energy_eqn = (
         Time{schemes.h.time}(rho, h)
@@ -67,15 +67,18 @@ function initialise(
 end
 
 function energy!(
-    energy::Sensible_Enthalpy_Model{E1}, model::Physics{T,F,M,Tu,E,D,BI}, prev, config
-    ) where {T,F,M,Tu,E,D,BI,E1}
+    energy::Sensible_Enthalpy_Model{E1}, model::Physics{T1,F,M,Tu,E,D,BI}, prev, mueff, config
+    ) where {T1,F,M,Tu,E,D,BI,E1}
 
     mesh = model.domain
 
     (;U) = model.momentum
-    (;h, hf) = model.energy
+    (;h, T) = model.energy
     (;energy_eqn) = energy
     (; solvers, runtime) = config
+
+    println("Minh ", minimum(h.values), ", Maxh ", maximum(h.values))
+
 
     mdotf = get_flux(energy_eqn, 2)
     keff_by_cp = get_flux(energy_eqn, 3)
@@ -84,43 +87,49 @@ function energy!(
     Uf = FaceVectorField(mesh)
     Kf = FaceScalarField(mesh)
     K = ScalarField(mesh)
+    Pr = _Pr(model.fluid)
 
-    interpolate!(Uf, U)
-    correct_boundaries!(Uf, U, U.BCs)
+    @. keff_by_cp.values = mueff.values/Pr.values
+
+    interpolate!(Uf, U, config)
+    correct_boundaries!(Uf, U, U.BCs, config)
     for i ∈ eachindex(K)
         K.values[i] = 0.5*(U.x.values[i]^2 + U.y.values[i]^2 + U.z.values[i]^2)
     end
-    interpolate!(Kf, K)
+    interpolate!(Kf, K, config)
     for i ∈ eachindex(Kf)
         Kf.values[i] = 0.5*(Uf.x.values[i]^2 + Uf.y.values[i]^2 + Uf.z.values[i]^2)
     end
-    correct_face_interpolation!(Kf, K, mdotf)
+    # correct_face_interpolation!(Kf, K, mdotf) # This forces KE to be upwind 
     @. Kf.values *= mdotf.values
-    divnovol!(divK, Kf)
+    div!(divK, Kf, config)
 
+    # solve_equation!(energy_eqn, h, solvers.h, config) # This doesn't work for this scalarfield yet
     # Set up and solve energy equation
     @. prev = h.values
-    discretise!(energy_eqn, prev, runtime)
-    apply_boundary_conditions!(energy_eqn, h.BCs)
-    implicit_relaxation_improved!(energy_eqn.equation, prev, solvers.energy.relax)
-    update_preconditioner!(energy_eqn.preconditioner)
-    run!(energy_eqn, solvers.energy)
-    residual!(R_e, energy_eqn.equation, energy, iteration)
+    discretise!(energy_eqn, h, config)
+    apply_boundary_conditions!(energy_eqn, h.BCs, nothing, config)
+    implicit_relaxation_diagdom!(energy_eqn, h.values, solvers.h.relax, nothing, config)
+    update_preconditioner!(energy_eqn.preconditioner, mesh, config)
+    solve_system!(energy_eqn, solvers.h, h, nothing, config)
+    
+    htoT!(model, h, T)
+
 end
 
 function thermo_Psi!(
-    model::Physics{T,F,M,Tu,E,D,BI}, Psi::ScalarField, h::ScalarField
+    model::Physics{T,F,M,Tu,E,D,BI}, Psi::ScalarField
     ) where {T,F<:AbstractCompressible,M,Tu,E,D,BI}
-    (; coeffs) = model.energy
+    (; coeffs, h) = model.energy
     (; Tref) = coeffs
     Cp = _Cp(model.fluid); R = _R(model.fluid)
     @. Psi.values = Cp/(R*(h.values + Cp*Tref))
 end
 
 function thermo_Psi!(
-    model::Physics{T,F,M,Tu,E,D,BI}, Psif::FaceScalarField, hf::FaceScalarField
+    model::Physics{T,F,M,Tu,E,D,BI}, Psif::FaceScalarField
     ) where {T,F<:AbstractCompressible,M,Tu,E,D,BI}
-    (; coeffs) = model.energy
+    (; coeffs, hf) = model.energy
     (; Tref) = coeffs
     Cp = _Cp(model.fluid); R = _R(model.fluid)
     @. Psif.values = Cp/(R*(hf.values + Cp*Tref))
@@ -131,15 +140,13 @@ function thermo_rho!(h, t)
 
 end
 
-function Ttoh(
-    model::Physics{T1,F,M,Tu,E,D,BI}, T::ScalarField
+function Ttoh!(
+    model::Physics{T1,F,M,Tu,E,D,BI}, T::ScalarField, h::ScalarField
     ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
     (; coeffs) = model.energy
     (; Tref) = coeffs
-    h = T
     Cp = _Cp(model.fluid)
     @. h.values = Cp.values*(T.values-Tref)
-    return h
 end
 
 function Ttoh(
@@ -147,21 +154,19 @@ function Ttoh(
     ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
     (; coeffs) = model.energy
     (; Tref) = coeffs
-    h = ScalarField(model.domain)
+    # h = ScalarField(model.domain)
     Cp = _Cp(model.fluid)
     h = Cp.values*(T-Tref)
     return h
 end
 
-function htoT(
-    model::Physics{T1,F,M,Tu,E,D,BI}, h::ScalarField
+function htoT!(
+    model::Physics{T1,F,M,Tu,E,D,BI}, h::ScalarField, T::ScalarField
     ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
     (; coeffs) = model.energy
     (; Tref) = coeffs
-    h = ScalarField(model.domain)
     Cp = _Cp(model.fluid)
-    @. T.values = (h.values/Cp) + Tref
-    return h
+    @. T.values = (h.values/Cp.values) + Tref
 end
 
 

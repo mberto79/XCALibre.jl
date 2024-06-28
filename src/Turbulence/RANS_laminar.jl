@@ -34,7 +34,8 @@ end
 function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, name) where {T,F,M,Tu<:Laminar,E,D,BI}
     args = (
         ("U", model.momentum.U), 
-        ("p", model.momentum.p)
+        ("p", model.momentum.p),
+        ("T", model.energy.T)
     )
     write_vtk(name, model.domain, args...)
 end

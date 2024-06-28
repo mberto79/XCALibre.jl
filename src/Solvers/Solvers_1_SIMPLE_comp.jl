@@ -43,7 +43,7 @@ function setup_compressible_solvers(
         - Laplacian{schemes.U.laplacian}(mueff, U) 
         == 
         -Source(∇p.result)
-        +Source(mueffgradUt)
+        # +Source(mueffgradUt)
     ) → VectorEquation(mesh)
 
     if typeof(model.fluid) <: WeaklyCompressible
@@ -94,11 +94,14 @@ function CSIMPLE(
     (; iterations, write_interval) = runtime
     (; backend) = hardware
     
+    rho - get_flux(U_eqn, 1)
     mdotf = get_flux(U_eqn, 2)
-    nueff = get_flux(U_eqn, 3)
-    rDf = get_flux(p_eqn, 1)
+    mueff = get_flux(U_eqn, 3)
+    rhorDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
-    
+    if typeof(model.fluid) <: Compressible
+        pconv = get_flux(p_eqn, 2)
+    end
     @info "Allocating working memory..."
 
     # Define aux fields 
@@ -113,6 +116,7 @@ function CSIMPLE(
     gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
+    rhof = FaceScalarField(mesh)
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
@@ -124,12 +128,17 @@ function CSIMPLE(
     R_uy = ones(TF, iterations)
     R_uz = ones(TF, iterations)
     R_p = ones(TF, iterations)
+    R_e = ones(TF, iterations)
     
     # Initial calculations
     interpolate!(Uf, U, config)   
     correct_boundaries!(Uf, U, U.BCs, config)
-    flux!(mdotf, Uf, config)
     grad!(∇p, pf, p, p.BCs, config)
+    thermo_Psi!(model, Psi); thermo_Psi!(model, Psif);
+    thermo_rho!(model, rho, rhof, p, pf)
+
+    flux!(mdotf, Uf, rhof, config)
+    
 
     update_nueff!(mueff, mu, model.turbulence, config)
     
@@ -142,21 +151,43 @@ function CSIMPLE(
     @time for iteration ∈ 1:iterations
 
         solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
+
+        energy!(energyModel, model, prev, mueff, config)
         
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
-        interpolate!(rDf, rD, config)
+        interpolate!(rhorDf, rD, config)
+        @. rhorDf.values *= rhof.values
         remove_pressure_source!(U_eqn, ∇p, config)
         H!(Hv, U, U_eqn, config)
         
         # Interpolate faces
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs, config)
-        div!(divHv, Uf, config)
+
+        if typeof(model.fluid) <: Compressible
+            flux!(pconv, Uf, config)
+            @. pconv.values *= Psif.values
+            flux!(mdotf, Uf, config)
+            @. mdotf.values *= rhof.values
+            # interpolate!(pf, p)
+            # correct_boundaries!(pf, p, p.BCs)
+            @. mdotf.values -= mdotf.values*Psif.values*pf.values/rhof.values
+            div!(divHv, mdotf, config)
+        elseif typeof(model.fluid) <: WeaklyCompressible
+            flux!(mdotf, Uf, config)
+            @. mdotf.values *= rhof.values
+            div!(divHv, mdotf, config)
+        end
         
         # Pressure calculations
         @. prev = p.values
-        solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
+        if typeof(model.fluid) <: Compressible
+            # Ensure diagonal dominance for hyperbolic equations
+            solve_equation!(p_eqn, p, solvers.p, config; ref=nothing, irelax=solvers.U.relax)
+        elseif typeof(model.fluid) <: WeaklyCompressible
+            solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
+        end
         explicit_relaxation!(p, prev, solvers.p.relax, config)
 
         residual!(R_ux, U_eqn, U.x, iteration, xdir, config)
@@ -165,6 +196,7 @@ function CSIMPLE(
             residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
         end
         residual!(R_p, p_eqn, p, iteration, nothing, config)
+        residual!(R_e, energyModel.energy_eqn, model.energy.h, iteration, nothing, config)
         
         # Gradient
         grad!(∇p, pf, p, p.BCs, config) 
@@ -180,24 +212,29 @@ function CSIMPLE(
                 nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
                 correct!(p_eqn.equation, p_model.terms.term1, pf)
                 solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
-                grad!(∇p, pf, p, pBCs) 
+                grad!(∇p, pf, p, pBCs)
             end
         end
-
-        energy!()
 
         # Velocity and boundaries correction
         correct_velocity!(U, Hv, ∇p, rD, config)
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, U.BCs, config)
-        flux!(mdotf, Uf, config)
 
-        
+        correct_face_interpolation!(pf, p, Uf)
+        correct_boundaries!(pf, p, p.BCs)
+        pgrad = face_normal_gradient(p, pf)
+
+        if typeof(model.fluid) <: Compressible
+            @. mdotf.values += (pconv.values*pf.values - pgrad.values*rhorDf.values)    
+        elseif typeof(model.fluid) <: WeaklyCompressible
+            @. mdotf.values -= pgrad.values*rhorDf.values
+        end
 
         # if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs, config)
             turbulence!(turbulenceModel, model, S, S2, prev, config) 
-            update_nueff!(nueff, nu, model.turbulence, config)
+            update_nueff!(mueff, mu, model.turbulence, config)
         # end
         
         convergence = 1e-7

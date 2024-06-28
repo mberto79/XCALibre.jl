@@ -113,6 +113,31 @@ end
     end
 end
 
+function flux!(phif::FS, psif::FV, rhof::FS, config) where {FS<:FaceScalarField,FV<:FaceVectorField}
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    kernel! = flux_kernel!(backend, workgroup)
+    kernel!(phif, psif, rhof, ndrange=length(phif))
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel function flux_kernel!(phif, psif, rhof)
+    i = @index(Global)
+
+    @uniform begin
+        (; mesh, values) = phif
+        (; faces) = mesh
+    end
+
+    @inbounds begin
+        (; area, normal) = faces[i]
+        Sf = area * normal
+        values[i] = (psif[i] ⋅ Sf) * rhof[i] 
+    end
+end
+
+
 volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 
 # INVERSE DIAGONAL CALCULATION

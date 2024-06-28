@@ -1,5 +1,5 @@
 export set_solver, set_runtime
-export explicit_relaxation!, implicit_relaxation!, setReference!
+export explicit_relaxation!, implicit_relaxation!, implicit_relaxation_diagdom!, setReference!
 export solve_system!
 export solve_equation!
 export residual!
@@ -38,6 +38,18 @@ function solve_equation!(
     discretise!(eqn, phi, config)       
     apply_boundary_conditions!(eqn, phi.BCs, nothing, config)
     setReference!(eqn, ref, 1, config)
+    update_preconditioner!(eqn.preconditioner, phi.mesh, config)
+    solve_system!(eqn, solversetup, phi, nothing, config)
+end
+
+function solve_equation!(
+    eqn::ModelEquation{T,M,E,S,P}, phi, solversetup, config; ref=nothing, irelax=0.0
+    ) where {T<:ScalarModel,M,E,S,P}
+
+    discretise!(eqn, phi, config)       
+    apply_boundary_conditions!(eqn, phi.BCs, nothing, config)
+    setReference!(eqn, ref, 1, config)
+    implicit_relaxation_diagdom!(eqn, phi.values, irelax, nothing, config)
     update_preconditioner!(eqn.preconditioner, phi.mesh, config)
     solve_system!(eqn, solversetup, phi, nothing, config)
 end

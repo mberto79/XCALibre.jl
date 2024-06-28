@@ -87,7 +87,20 @@ struct FixedTemperature{I,V} <: AbstractDirichlet
 end
 Adapt.@adapt_structure FixedTemperature
 FixedTemperature(name; T, model) = begin
-    FixedTemperature(name, value=(; T=T, energy_model=model))
+    FixedTemperature(name, (; T=T, energy_model=model))
+end
+
+function fixedValue(BC::FixedTemperature, ID::I, value::V) where {I<:Integer,V}
+    # Exception 1: Value is scalar
+    if V <: Number
+        return FixedTemperature{I,typeof(value)}(ID, value)
+        # Exception 2: value is a tupple
+    elseif V <: NamedTuple
+        return FixedTemperature{I,V}(ID, value)
+    # Error if value is not scalar or tuple
+    else
+        throw("The value provided should be a scalar or a tuple")
+    end
 end
 
 # Kwall function structure and constructor

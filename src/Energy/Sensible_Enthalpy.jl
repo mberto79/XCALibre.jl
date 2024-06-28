@@ -67,8 +67,12 @@ function initialise(
     keff_by_cp = FaceScalarField(mesh)
     divK = ScalarField(mesh)
 
+
+
     h = T
     Ttoh!(model, T, h)
+    println("Maxh ", maximum(T.values), " minh ", minimum(T.values))
+    
 
     # println(h.BCs)
 
@@ -101,6 +105,8 @@ function energy!(
     (;energy_eqn) = energy
     (; solvers, runtime) = config
 
+    println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
+
     keff_by_cp = get_flux(energy_eqn, 3)
     divK = get_source(energy_eqn, 1)
 
@@ -126,6 +132,8 @@ function energy!(
     @. Kf.values *= mdotf.values
     div!(divK, Kf, config)
 
+    println("Maxh ", maximum(keff_by_cp.values), " minh ", minimum(keff_by_cp.values))
+
     # solve_equation!(energy_eqn, h, solvers.h, config) # This doesn't work for this scalarfield yet
     # Set up and solve energy equation
     @. prev = h.values
@@ -135,6 +143,8 @@ function energy!(
     update_preconditioner!(energy_eqn.preconditioner, mesh, config)
     solve_system!(energy_eqn, solvers.h, h, nothing, config)
     
+    println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
+
     htoT!(model, h, T)
     interpolate!(hf, h, config)
     correct_boundaries!(hf, h, h.BCs, config)
@@ -193,6 +203,7 @@ function htoT!(
     (; Tref) = coeffs
     Cp = _Cp(model.fluid)
     @. T.values = (h.values/Cp.values) + Tref
+    println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
 end
 
 

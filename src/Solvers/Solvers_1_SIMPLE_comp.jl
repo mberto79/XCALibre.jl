@@ -153,8 +153,6 @@ function CSIMPLE(
 
     @time for iteration ∈ 1:iterations
 
-        println(U.x.BCs)
-
         solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
 
         energy!(energyModel, model, prev, mdotf, mueff, config)

@@ -1,6 +1,6 @@
 using Plots
 using FVM_1D
-using CUDA
+# using CUDA
 # using Accessors
 using Adapt
 
@@ -9,7 +9,7 @@ using Adapt
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-mesh_gpu = adapt(CUDABackend(), mesh)
+# mesh_gpu = adapt(CUDABackend(), mesh)
 
 # INLET CONDITIONS 
 
@@ -23,14 +23,14 @@ k_inlet = 3/2*(Tu*Umag)^2
 ω_inlet = k_inlet/(νR*nu)
 Re = (0.2*velocity[1])/nu
 
-mesh_gpu = adapt(CUDABackend(), mesh)
+# mesh_gpu = adapt(CPU(), mesh)
 
 model = Physics(
     time = Steady(),
     fluid = Incompressible(nu = ConstantScalar(nu)),
     turbulence = RANS{KOmega}(β⁺=0.09),
     energy = nothing,
-    domain = mesh_gpu
+    domain = mesh
     )
 
 @assign! model momentum U (
@@ -40,7 +40,7 @@ model = Physics(
     # Neumann(:bottom, 0.0),
     Dirichlet(:top, velocity),
     Dirichlet(:bottom, velocity),
-    Dirichlet(:cylinder, noSlip)
+    Wall(:cylinder, noSlip)
 )
 
 @assign! model momentum p (
@@ -117,7 +117,7 @@ solvers = (
 
 runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
 
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(

@@ -57,15 +57,25 @@ end
     ap, ap*values[cellID]
 end
 
-# Wal; functor definition
+# Wall functor definition
 @inline (bc::Wall)(
     term::Operator{F,P,I,Laplacian{Linear}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
     # Retrive term field and field values
-    phi = term.phi 
-    U_boundary = phi.BCs[bc.ID].value # user given vector
-    values = get_values(phi, component)
 
-    velocity_diff = phi[cellID] .- bc.value
+    phi = term.phi 
+
+    # # Finding U_boundary is messy, you can index with bc.ID because they aren't in order
+    # println(phi.BCs[:][1])
+    
+    # println(bc.ID)
+    # U_boundary = phi.BCs[bc.ID].value # user given vector
+    U_boundary = [0,0,0] # user given vector
+
+    # values = get_values(phi, component)
+
+    # println(phi.BCs[bc.ID])
+
+    velocity_diff = phi[cellID] .- U_boundary
 
     J = term.flux[fID]
 
@@ -78,8 +88,6 @@ end
     # Calculate flux and ap value for increment
     flux = J*area/delta
     ap = term.sign[1]*(-flux)
-
-    println(bc.value)
     
     # Set index for sparse array values at [cellID, cellID] for workitem
     # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
@@ -88,9 +96,36 @@ end
     # Atomix.@atomic nzval[zcellID] += ap
     # Atomix.@atomic b[cellID] += ap*values[cellID]
     # nothing
-    ap, ap*(bc.value[component.value] + norm_vel[component.value])
+    ap, ap*(U_boundary[component.value] + norm_vel[component.value])
 end
 
+# fixedTempterature boundary condition
+@inline (bc::FixedTemperature)(
+    term::Operator{F,P,I,Laplacian{Linear}}, cellID, zcellID, cell, face, fID, ione, component=nothing
+    ) where {F,P,I} = begin
+    # Retrieve term flux and extract fields from workitem face
+    J = term.flux[fID]
+    (; area, delta) = face 
+
+    # extract user provided information
+    (; T, energy_model) = bc.value
+
+    # h = energy_model.update_BC(energy_model, T)
+    h = energy_model.update_BC(T)
+
+    # Calculate flux and ap value for increment
+    flux = J*area/delta
+    ap = term.sign[1]*(-flux)
+    
+    # Set index for sparse array values at [cellID, cellID] for workitem
+    # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
+
+    # Increment sparse and b arrays
+    # Atomix.@atomic nzval[zcellID] += ap
+    # Atomix.@atomic b[cellID] += ap*bc.value
+    # nothing
+    ap, ap*h
+end
 
 # KWallFunction functor definition
 @inline (bc::KWallFunction)(
@@ -185,6 +220,27 @@ end
     0.0, 0.0
 end
 
+# fixedTempterature boundary condition
+@inline (bc::FixedTemperature)(
+    term::Operator{F,P,I,Divergence{Linear}}, cellID, zcellID, cell, face, fID, ione, component=nothing
+    ) where {F,P,I} = begin
+    # Retrieve term flux and extract fields from workitem face
+
+    # extract user provided information
+    (; T, energy_model) = bc.value
+
+    # h = energy_model.update_BC(energy_model, T)
+    h = energy_model.update_BC(T)
+    
+    # Set index for sparse array values at [cellID, cellID] for workitem
+    # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
+
+    # Increment b array     
+    # Atomix.@atomic b[cellID] += term.sign[1]*(-term.flux[fID]*bc.value)
+    # nothing
+    0.0, term.sign[1]*(-term.flux[fID]*h)
+end
+
 # KWallFunction functor definition
 @inline (bc::KWallFunction)(
     term::Operator{F,P,I,Divergence{Linear}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
@@ -259,6 +315,27 @@ end
     0.0, 0.0
 end
 
+# fixedTempterature boundary condition
+@inline (bc::FixedTemperature)(
+    term::Operator{F,P,I,Divergence{Upwind}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
+    # extract user provided information
+    (; T, energy_model) = bc.value
+
+    # h = energy_model.update_BC(energy_model, T)
+    h = energy_model.update_BC(T)
+
+    # Calculate ap value to increment
+    ap = term.sign[1]*(term.flux[fID])
+    
+    # Set index for sparse array values at [cellID, cellID] for workitem
+    # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
+
+    # Increment b array     
+    # Atomix.@atomic b[cellID] += term.sign[1]*(-term.flux[fID]*bc.value)
+    # nothing
+    0.0, -ap*h
+end
+
 # KWallFunction functor definition
 @inline (bc::KWallFunction)(
     term::Operator{F,P,I,Divergence{Upwind}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
@@ -331,29 +408,3 @@ end
 end
 
 
-# fixedTempterature boundary condition
-@inline (bc::FixedTemperature)(
-    term::Operator{F,P,I,Laplacian{Linear}}, cellID, zcellID, cell, face, fID, ione, component=nothing
-    ) where {F,P,I} = begin
-    # Retrieve term flux and extract fields from workitem face
-    J = term.flux[fID]
-    (; area, delta) = face 
-
-    # extract user provided information
-    (; T, model) = BC.value
-
-    h = model.update_BC(model, T)
-
-    # Calculate flux and ap value for increment
-    flux = J*area/delta
-    ap = term.sign[1]*(-flux)
-    
-    # Set index for sparse array values at [cellID, cellID] for workitem
-    # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
-
-    # Increment sparse and b arrays
-    # Atomix.@atomic nzval[zcellID] += ap
-    # Atomix.@atomic b[cellID] += ap*bc.value
-    # nothing
-    ap, ap*h
-end

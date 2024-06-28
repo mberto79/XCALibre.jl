@@ -39,8 +39,8 @@ model = Physics(
 @assign! model momentum U ( 
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    # Wall(:cylinder, noSlip),
-    Dirichlet(:cylinder, noSlip),
+    Wall(:cylinder, noSlip),
+    # Dirichlet(:cylinder, noSlip),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0)
 )
@@ -112,6 +112,8 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, pressure)
 initialise!(model.energy.T, temp)
+
+println("Maxh ", maximum(model.energy.T.values), " minh ", minimum(model.energy.T.values))
 
 Rx, Ry, Rz, Rp, Rh, model = run!(model, config); #, pref=0.0)
 

@@ -87,7 +87,7 @@ struct FixedTemperature{I,V} <: AbstractDirichlet
 end
 Adapt.@adapt_structure FixedTemperature
 FixedTemperature(name; T, model) = begin
-    FixedTemperature(name, Ttoh(model, T))
+    FixedTemperature(name, value=(; T=T, energy_model=model))
 end
 
 # Kwall function structure and constructor

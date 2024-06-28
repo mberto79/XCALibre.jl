@@ -1,6 +1,6 @@
 using Plots
 using FVM_1D
-using Krylov
+using CUDA
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 # mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
@@ -71,29 +71,29 @@ schemes = (
 solvers = (
     U = set_solver(
         model.momentum.U;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0(),
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(), # ILU0(),
         convergence = 1e-7,
         relax       = 1.0,
     ),
     p = set_solver(
         model.momentum.p;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = LDL(),
+        solver      = CgSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(), # LDL(),
         convergence = 1e-7,
         relax       = 1.0,
     ),
     k = set_solver(
         model.turbulence.k;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0(),
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(), # ILU0(),
         convergence = 1e-7,
         relax       = 1.0,
     ),
     omega = set_solver(
         model.turbulence.omega;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0(),
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(), # ILU0(),
         convergence = 1e-7,
         relax       = 1.0,
     )

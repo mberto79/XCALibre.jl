@@ -187,7 +187,7 @@ function CSIMPLE(
         @. prev = p.values
         if typeof(model.fluid) <: Compressible
             # Ensure diagonal dominance for hyperbolic equations
-            # solve_equation!(p_eqn, p, solvers.p, config; ref=nothing, irelax=solvers.U.relax)
+            solve_equation!(p_eqn, p, solvers.p, config; ref=nothing, irelax=solvers.U.relax)
         elseif typeof(model.fluid) <: WeaklyCompressible
             solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
         end
@@ -224,14 +224,12 @@ function CSIMPLE(
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, U.BCs, config)
 
-        correct_face_interpolation!(pf, p, Uf)
-        correct_boundaries!(pf, p, p.BCs, config)
-        pgrad = face_normal_gradient(p, pf)
-
         @. rho.values = Psi.values * p.values
         @. rhof.values = Psif.values * pf.values
 
-        
+        correct_face_interpolation!(pf, p, Uf)
+        correct_boundaries!(pf, p, p.BCs, config)
+        pgrad = face_normal_gradient(p, pf)
 
         if typeof(model.fluid) <: Compressible
             @. mdotf.values += (pconv.values*pf.values - pgrad.values*rhorDf.values)    

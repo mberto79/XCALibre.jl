@@ -31,28 +31,30 @@ set_runtime(; iterations::I, write_interval::I, time_step::N) where {I<:Integer,
     (iterations=iterations, dt=time_step, write_interval=write_interval)
 end
 
-function solve_equation!(
-    eqn::ModelEquation{T,M,E,S,P}, phi, solversetup, config; ref=nothing
-    ) where {T<:ScalarModel,M,E,S,P}
-
-    discretise!(eqn, phi, config)       
-    apply_boundary_conditions!(eqn, phi.BCs, nothing, config)
-    setReference!(eqn, ref, 1, config)
-    update_preconditioner!(eqn.preconditioner, phi.mesh, config)
-    solve_system!(eqn, solversetup, phi, nothing, config)
-end
-
 # function solve_equation!(
-#     eqn::ModelEquation{T,M,E,S,P}, phi, solversetup, config; ref=nothing, irelax=0.0
+#     eqn::ModelEquation{T,M,E,S,P}, phi, solversetup, config; ref=nothing
 #     ) where {T<:ScalarModel,M,E,S,P}
 
 #     discretise!(eqn, phi, config)       
 #     apply_boundary_conditions!(eqn, phi.BCs, nothing, config)
 #     setReference!(eqn, ref, 1, config)
-#     implicit_relaxation!(eqn, phi.values, irelax, nothing, config)
 #     update_preconditioner!(eqn.preconditioner, phi.mesh, config)
 #     solve_system!(eqn, solversetup, phi, nothing, config)
 # end
+
+function solve_equation!(
+    eqn::ModelEquation{T,M,E,S,P}, phi, solversetup, config; ref=nothing, irelax=nothing
+    ) where {T<:ScalarModel,M,E,S,P}
+
+    discretise!(eqn, phi, config)       
+    apply_boundary_conditions!(eqn, phi.BCs, nothing, config)
+    setReference!(eqn, ref, 1, config)
+    if !isnothing(irelax)
+        implicit_relaxation!(eqn, phi.values, irelax, nothing, config)
+    end
+    update_preconditioner!(eqn.preconditioner, phi.mesh, config)
+    solve_system!(eqn, solversetup, phi, nothing, config)
+end
 
 function solve_equation!(
     psiEqn::ModelEquation{T,M,E,S,P}, psi, solversetup, xdir, ydir, zdir, config

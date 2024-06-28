@@ -31,7 +31,7 @@ Adapt.@adapt_structure WeaklyCompressible
 end
 Adapt.@adapt_structure Compressible
 
-_R(fluid::AbstractCompressible) = fluid.cp*(1 - (1/fluid.gamma))
+_R(fluid::AbstractCompressible) = ConstantScalar(fluid.cp.values*(1.0 - (1.0/fluid.gamma.values)))
 _Cp(fluid::AbstractCompressible) = fluid.cp
 _mu(fluid::AbstractCompressible) = fluid.mu
 _Pr(fluid::AbstractCompressible) = fluid.Pr

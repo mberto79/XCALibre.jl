@@ -13,9 +13,9 @@ mesh = update_mesh_format(mesh)
 
 # Inlet conditions
 
-velocity = [10, 0.0, 0.0]
+velocity = [0.5, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
-nu = 1e-5
+nu = 1e-3
 Re = (0.2*velocity[1])/nu
 gamma = 1.4
 cp = 1005.0
@@ -55,7 +55,8 @@ model = Physics(
 @assign! model energy T (
     FixedTemperature(:inlet, T=300.0, model=model),
     Neumann(:outlet, 0.0),
-    FixedTemperature(:cylinder, T=300.0, model=model),
+    Neumann(:cylinder, 0.0),
+    # FixedTemperature(:cylinder, T=310.0, model=model),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0)
 )

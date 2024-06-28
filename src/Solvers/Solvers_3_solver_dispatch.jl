@@ -24,7 +24,7 @@ run!(
     ) where{T<:Steady,F<:WeaklyCompressible,M,Tu,E,D,BI} = 
 begin
     Rx, Ry, Rz, Rp, Re, model = simple_comp!(model, config); #, pref=0.0)
-    return Rx, Ry, Rz, Rp, model
+    return Rx, Ry, Rz, Rp, Re, model
 end
 
 # Compressible solver (steady)
@@ -33,7 +33,7 @@ run!(
     ) where{T<:Steady,F<:Compressible,M,Tu,E,D,BI} = 
 begin
     Rx, Ry, Rz, Rp, Re, model = simple_comp!(model, config); #, pref=0.0)
-    return Rx, Ry, Rz, Rp, model
+    return Rx, Ry, Rz, Rp, Re, model
 end
 
 # # Compressible solver (transient)

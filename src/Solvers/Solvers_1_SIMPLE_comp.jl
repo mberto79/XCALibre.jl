@@ -1,12 +1,12 @@
 export simple_comp!
 
 simple_comp!(model_in, config; resume=true, pref=nothing) = begin
-    R_ux, R_uy, R_uz, R_p, model = setup_compressible_solvers(
+    R_ux, R_uy, R_uz, R_p, R_e, model = setup_compressible_solvers(
         CSIMPLE, model_in, config;
         resume=true, pref=nothing
         )
 
-    return R_ux, R_uy, R_uz, R_p, model
+    return R_ux, R_uy, R_uz, R_p, R_e, model
 end
 
 # Setup for all incompressible algorithms
@@ -76,10 +76,10 @@ function setup_compressible_solvers(
     @info "Initialising turbulence model..."
     turbulenceModel = Turbulence.initialise(model.turbulence, model, mdotf, p_eqn, config)
 
-    R_ux, R_uy, R_uz, R_p, model  = solver_variant(
+    R_ux, R_uy, R_uz, R_p, R_e, model  = solver_variant(
     model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
 
-    return R_ux, R_uy, R_uz, R_p, model    
+    return R_ux, R_uy, R_uz, R_p, R_e, model    
 end # end function
 
 function CSIMPLE(
@@ -94,7 +94,7 @@ function CSIMPLE(
     (; iterations, write_interval) = runtime
     (; backend) = hardware
     
-    rho - get_flux(U_eqn, 1)
+    rho = get_flux(U_eqn, 1)
     mdotf = get_flux(U_eqn, 2)
     mueff = get_flux(U_eqn, 3)
     rhorDf = get_flux(p_eqn, 1)
@@ -117,6 +117,8 @@ function CSIMPLE(
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
     rhof = FaceScalarField(mesh)
+    Psi = ScalarField(mesh)
+    Psif = FaceScalarField(mesh)
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
@@ -134,11 +136,10 @@ function CSIMPLE(
     interpolate!(Uf, U, config)   
     correct_boundaries!(Uf, U, U.BCs, config)
     grad!(∇p, pf, p, p.BCs, config)
-    thermo_Psi!(model, Psi); thermo_Psi!(model, Psif);
-    thermo_rho!(model, rho, rhof, p, pf)
-
+    thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
+    @. rho.values = Psi.values * p.values
+    @. rhof.values = Psif.values * pf.values
     flux!(mdotf, Uf, rhof, config)
-    
 
     update_nueff!(mueff, mu, model.turbulence, config)
     
@@ -152,8 +153,10 @@ function CSIMPLE(
 
         solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
 
-        energy!(energyModel, model, prev, mueff, config)
-        
+        energy!(energyModel, model, prev, mdotf, mueff, config)
+
+        thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
+
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rhorDf, rD, config)
@@ -179,12 +182,12 @@ function CSIMPLE(
             @. mdotf.values *= rhof.values
             div!(divHv, mdotf, config)
         end
-        
+
         # Pressure calculations
         @. prev = p.values
         if typeof(model.fluid) <: Compressible
             # Ensure diagonal dominance for hyperbolic equations
-            solve_equation!(p_eqn, p, solvers.p, config; ref=nothing, irelax=solvers.U.relax)
+            # solve_equation!(p_eqn, p, solvers.p, config; ref=nothing, irelax=solvers.U.relax)
         elseif typeof(model.fluid) <: WeaklyCompressible
             solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
         end
@@ -222,8 +225,13 @@ function CSIMPLE(
         correct_boundaries!(Uf, U, U.BCs, config)
 
         correct_face_interpolation!(pf, p, Uf)
-        correct_boundaries!(pf, p, p.BCs)
+        correct_boundaries!(pf, p, p.BCs, config)
         pgrad = face_normal_gradient(p, pf)
+
+        @. rho.values = Psi.values * p.values
+        @. rhof.values = Psif.values * pf.values
+
+        
 
         if typeof(model.fluid) <: Compressible
             @. mdotf.values += (pconv.values*pf.values - pgrad.values*rhorDf.values)    
@@ -242,7 +250,8 @@ function CSIMPLE(
         if (R_ux[iteration] <= convergence && 
             R_uy[iteration] <= convergence && 
             R_uz[iteration] <= convergence &&
-            R_p[iteration] <= convergence)
+            R_p[iteration] <= convergence &&
+            R_e[iteration] <= convergence)
 
             print(
                 """
@@ -262,6 +271,7 @@ function CSIMPLE(
                 (:Uy, R_uy[iteration]),
                 (:Uz, R_uz[iteration]),
                 (:p, R_p[iteration]),
+                (:h, R_e[iteration]),
                 ]
             )
 
@@ -271,5 +281,82 @@ function CSIMPLE(
 
     end # end for loop
     model_out = adapt(CPU(), model)
-    return R_ux, R_uy, R_uz, R_p, model_out
+    return R_ux, R_uy, R_uz, R_p, R_e, model_out
+end
+
+
+function correct_face_interpolation!(phif::FaceScalarField, phi, Uf::FaceScalarField)
+    mesh = phif.mesh
+    (; faces, cells) = mesh
+    for fID ∈ eachindex(faces)
+        face = faces[fID]
+        (; ownerCells, area, normal) = face
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        phi1 = phi[cID1]
+        phi2 = phi[cID2]
+        flux = Uf[fID]
+        if flux >= 0.0
+            phif.values[fID] = phi1
+        else
+            phif.values[fID] = phi2
+        end
+    end
+end
+
+function correct_face_interpolation!(phif::FaceScalarField, phi, Uf)
+    mesh = phif.mesh
+    (; faces, cells) = mesh
+    for fID ∈ eachindex(faces)
+        face = faces[fID]
+        (; ownerCells, area, normal) = face
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        phi1 = phi[cID1]
+        phi2 = phi[cID2]
+        flux = area*normal⋅Uf[fID]
+        if flux > 0.0
+            phif.values[fID] = phi1
+        else
+            phif.values[fID] = phi2
+        end
+    end
+end
+
+function face_normal_gradient(phi::ScalarField, phif::FaceScalarField)
+    mesh = phi.mesh
+    sngrad = FaceScalarField(mesh)
+    (; faces, cells) = mesh
+    nbfaces = length(mesh.boundary_cellsID) #boundary_faces(mesh)
+    start_faceID = nbfaces + 1
+    last_faceID = length(faces)
+    for fID ∈ start_faceID:last_faceID
+    # for fID ∈ eachindex(faces)
+        face = faces[fID]
+        (; area, normal, ownerCells, delta) = face 
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        cell1 = cells[cID1]
+        cell2 = cells[cID2]
+        phi1 = phi[cID1]
+        phi2 = phi[cID2]
+        face_grad = area*(phi2 - phi1)/delta
+        sngrad.values[fID] = face_grad
+    end
+    # Now deal with boundary faces
+    for fID ∈ 1:nbfaces
+        face = faces[fID]
+        (; area, normal, ownerCells, delta) = face 
+        cID1 = ownerCells[1]
+        
+        cID2 = ownerCells[2]
+        cell1 = cells[cID1]
+        cell2 = cells[cID2]
+        phi1 = phi[cID1]
+        # phi2 = phi[cID2]
+        phi2 = phif[fID]
+        face_grad = area*(phi2 - phi1)/delta
+        sngrad.values[fID] = face_grad
+    end
+    return sngrad
 end

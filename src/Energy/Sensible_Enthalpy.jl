@@ -1,5 +1,5 @@
 export Sensible_Enthalpy
-export Ttoh
+export Ttoh, htoT!, Ttoh!, thermo_Psi!
 
 # Model type definition
 struct Sensible_Enthalpy{S1,S2,F1,F2,C} <: AbstractEnergyModel
@@ -67,20 +67,16 @@ function initialise(
 end
 
 function energy!(
-    energy::Sensible_Enthalpy_Model{E1}, model::Physics{T1,F,M,Tu,E,D,BI}, prev, mueff, config
+    energy::Sensible_Enthalpy_Model{E1}, model::Physics{T1,F,M,Tu,E,D,BI}, prev, mdotf, mueff, config
     ) where {T1,F,M,Tu,E,D,BI,E1}
 
     mesh = model.domain
 
     (;U) = model.momentum
-    (;h, T) = model.energy
+    (;h, hf, T) = model.energy
     (;energy_eqn) = energy
     (; solvers, runtime) = config
 
-    println("Minh ", minimum(h.values), ", Maxh ", maximum(h.values))
-
-
-    mdotf = get_flux(energy_eqn, 2)
     keff_by_cp = get_flux(energy_eqn, 3)
     divK = get_source(energy_eqn, 1)
 
@@ -88,6 +84,8 @@ function energy!(
     Kf = FaceScalarField(mesh)
     K = ScalarField(mesh)
     Pr = _Pr(model.fluid)
+
+    # println("Minmdot ", minimum(mdotf.values), ", Maxdoot ", maximum(mdotf.values))
 
     @. keff_by_cp.values = mueff.values/Pr.values
 
@@ -114,7 +112,8 @@ function energy!(
     solve_system!(energy_eqn, solvers.h, h, nothing, config)
     
     htoT!(model, h, T)
-
+    interpolate!(hf, h, config)
+    correct_boundaries!(hf, h, h.BCs, config)
 end
 
 function thermo_Psi!(
@@ -123,22 +122,25 @@ function thermo_Psi!(
     (; coeffs, h) = model.energy
     (; Tref) = coeffs
     Cp = _Cp(model.fluid); R = _R(model.fluid)
-    @. Psi.values = Cp/(R*(h.values + Cp*Tref))
+    @. Psi.values = Cp.values/(R.values*(h.values + Cp.values*Tref))
 end
 
 function thermo_Psi!(
-    model::Physics{T,F,M,Tu,E,D,BI}, Psif::FaceScalarField
+    model::Physics{T,F,M,Tu,E,D,BI}, Psif::FaceScalarField, config
     ) where {T,F<:AbstractCompressible,M,Tu,E,D,BI}
-    (; coeffs, hf) = model.energy
+    (; coeffs, hf, h) = model.energy
+    correct_boundaries!(hf, h, h.BCs, config)
     (; Tref) = coeffs
     Cp = _Cp(model.fluid); R = _R(model.fluid)
-    @. Psif.values = Cp/(R*(hf.values + Cp*Tref))
+    @. Psif.values = Cp.values/(R.values*(hf.values + Cp.values*Tref))
 end
 
 
-function thermo_rho!(h, t)
+# function thermo_rho!(
+#     model::Physics{T,F,M,Tu,E,D,BI}, rhof::FaceScalarField, Psif
+#     ) where {T,F<:AbstractCompressible,M,Tu,E,D,BI}
 
-end
+# end
 
 function Ttoh!(
     model::Physics{T1,F,M,Tu,E,D,BI}, T::ScalarField, h::ScalarField

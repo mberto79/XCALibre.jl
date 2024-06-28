@@ -62,6 +62,7 @@ end
     term::Operator{F,P,I,Laplacian{Linear}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
     # Retrive term field and field values
     phi = term.phi 
+    U_boundary = phi.BCs[bc.ID].value # user given vector
     values = get_values(phi, component)
 
     velocity_diff = phi[cellID] .- bc.value

@@ -1,20 +1,16 @@
-import FVM_1D.UNV2
-
-export update_mesh_format
-
-update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
+update_mesh_format(mesh::UNV2.Mesh2, integer, float) = begin
 
     # Pre-allocate memory for mesh entities
-    boundaries = Vector{Boundary{Symbol, UnitRange{integer}}}(
+    boundaries = Vector{Mesh.Boundary{Symbol, UnitRange{integer}}}(
         undef, length(mesh.boundaries)
         )
-    cells = Vector{Cell{float,SVector{3,float},UnitRange{integer}}}(
+    cells = Vector{Mesh.Cell{float,SVector{3,float},UnitRange{integer}}}(
         undef, length(mesh.cells)
         )
-    faces = Vector{Face2D{float,SVector{2,integer},SVector{3,float},UnitRange{integer}}}(
+    faces = Vector{Mesh.Face2D{float,SVector{2,integer},SVector{3,float},UnitRange{integer}}}(
         undef, length(mesh.faces)
         )
-    nodes = Vector{Node{SVector{3,float}, UnitRange{integer}}}(
+    nodes = Vector{Mesh.Node{SVector{3,float}, UnitRange{integer}}}(
         undef, length(mesh.nodes)
         )
     
@@ -22,7 +18,7 @@ update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
     
     for (i, b) ∈ enumerate(mesh.boundaries)
         IDs_range = minimum(integer.(b.facesID)):maximum(integer.(b.facesID))
-        boundaries[i] = Boundary(b.name, IDs_range)
+        boundaries[i] = Mesh.Boundary(b.name, IDs_range)
     end
     
     # Total boundary faces calculation
@@ -48,7 +44,7 @@ update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
     for (ni, node) ∈ enumerate(mesh.nodes)
         n_neighbours = length(node.neighbourCells)
         range = start_index:(start_index + n_neighbours - one(integer))
-        nodes[ni] = Node(float.(node.coords), convert(UnitRange{integer}, range))
+        nodes[ni] = Mesh.Node(float.(node.coords), convert(UnitRange{integer}, range))
         node_cells[range] .= node.neighbourCells
         start_index += n_neighbours
     end
@@ -92,7 +88,7 @@ update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
         end
     
         # cell assignment
-        cells[i] = Cell(
+        cells[i] = Mesh.Cell(
             float.(cell.centre),
             float(cell.volume),
             convert(UnitRange{integer}, nodes_range),
@@ -127,7 +123,7 @@ update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
         end
     
         # face assignment
-        faces[i] = Face2D(
+        faces[i] = Mesh.Face2D(
             convert(UnitRange{integer}, nodes_range),
             integer.(face.ownerCells),
             float.(face.centre),
@@ -140,7 +136,7 @@ update_mesh_format(mesh::UNV2.Mesh2; integer=Int64, float=Float64) = begin
     end
     
     # CONSTRUCT FINAL MESH (MESH2)
-    Mesh2(
+    Mesh.Mesh2(
         cells,
         cell_nodes,
         cell_faces,

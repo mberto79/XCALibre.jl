@@ -1,8 +1,5 @@
-#UNV Reader New Structure
 
-export load_3D
-
-function load_3D(unv_mesh; scale, integer, float)
+function read_UNV3(unv_mesh; scale, integer, float)
     #Defining Variables
     pointindx=0
     elementindx=0

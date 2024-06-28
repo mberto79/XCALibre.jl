@@ -77,8 +77,10 @@ function initialise(
     @reset k_eqn.preconditioner = set_preconditioner(
                 solvers.k.preconditioner, k_eqn, k.BCs, config)
 
-    @reset ω_eqn.preconditioner = set_preconditioner(
-                solvers.omega.preconditioner, ω_eqn, omega.BCs, config)
+    # @reset ω_eqn.preconditioner = set_preconditioner(
+    #             solvers.omega.preconditioner, ω_eqn, omega.BCs, config)
+
+    @reset ω_eqn.preconditioner = k_eqn.preconditioner
     
     # preallocating solvers
     @reset k_eqn.solver = solvers.k.solver(_A(k_eqn), _b(k_eqn))
@@ -125,6 +127,7 @@ function turbulence!(
     apply_boundary_conditions!(ω_eqn, omega.BCs, nothing, config)
     constrain_equation!(ω_eqn, omega.BCs, model, config) # active with WFs only
     implicit_relaxation!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
+    # implicit_relaxation_diagdom!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
     update_preconditioner!(ω_eqn.preconditioner, mesh, config)
     solve_system!(ω_eqn, solvers.omega, omega, nothing, config)
    
@@ -136,6 +139,7 @@ function turbulence!(
     discretise!(k_eqn, k, config)
     apply_boundary_conditions!(k_eqn, k.BCs, nothing, config)
     implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
+    # implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
     update_preconditioner!(k_eqn.preconditioner, mesh, config)
     solve_system!(k_eqn, solvers.k, k, nothing, config)
     bound!(k, config)

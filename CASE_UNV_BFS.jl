@@ -1,29 +1,33 @@
 using Plots
 using FVM_1D
-using Krylov
 using CUDA
-using KernelAbstractions
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
-mesh = build_mesh(mesh_file, scale=0.001)
-# mesh = update_mesh_format(mesh; integer=Int32, float=Float32)
-mesh = update_mesh_format(mesh)
+mesh = UNV2D_mesh(mesh_file, scale=0.001)
+
+mesh_gpu = adapt(CUDABackend(), mesh)
 
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
 
-model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
+model = Physics(
+    time = Steady(),
+    fluid = Incompressible(nu = ConstantScalar(nu)),
+    turbulence = RANS{Laminar}(),
+    energy = nothing,
+    domain = mesh_gpu
+    )
 
-@assign! model U (
+@assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:wall, [0.0, 0.0, 0.0]),
     Dirichlet(:top, [0.0, 0.0, 0.0])
 )
 
-@assign! model p (
+@assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
     Neumann(:wall, 0.0),
@@ -38,7 +42,7 @@ schemes = (
 
 solvers = (
     U = set_solver(
-        model.U;
+        model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -47,7 +51,7 @@ solvers = (
         atol = 1e-2
     ),
     p = set_solver(
-        model.p;
+        model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -68,10 +72,10 @@ config = Configuration(
 
 GC.gc()
 
-initialise!(model.U, velocity)
-initialise!(model.p, 0.0)
+initialise!(model.momentum.U, velocity)
+initialise!(model.momentum.p, 0.0)
 
-Rx, Ry, Rz, Rp, model = simple!(model, config) # 9.39k allocs in 184 iterations
+Rx, Ry, Rz, Rp, model_out = run!(model, config) # 9.39k allocs in 184 iterations
 
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
@@ -83,12 +87,12 @@ plot!(1:length(Rp), Rp, yscale=:log10, label="p")
 using Profile, PProf
 
 GC.gc()
-initialise!(model.U, velocity)
-initialise!(model.p, 0.0)
+initialise!(model.momentum.U, velocity)
+initialise!(model.momentum.p, 0.0)
 
 Profile.Allocs.clear()
 Profile.Allocs.@profile sample_rate=1 begin 
-    Rx, Ry, Rp = simple!(model, config)
+    Rx, Ry, Rz, Rp, model_out = run!(model, config)
 end
 
 PProf.Allocs.pprof()

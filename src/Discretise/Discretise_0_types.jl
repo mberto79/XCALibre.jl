@@ -169,7 +169,9 @@ function boundary_map(mesh)
     I = Integer; S = Symbol
     boundary_map = boundary_info{I,S}[]
 
-    for (i, boundary) in enumerate(mesh.boundaries)
+    mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
+
+    for (i, boundary) in enumerate(mesh_temp.boundaries)
         push!(boundary_map, boundary_info{I,S}(i, boundary.name))
     end
 
@@ -181,7 +183,8 @@ assign(vec::VectorField, args...) = begin
     # Retrieve user selected float type and boundaries
     mesh = vec.mesh
     float = _get_float(mesh)
-    boundaries = mesh.boundaries
+    mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
+    boundaries = mesh_temp.boundaries
     boundary_info = boundary_map(mesh)
 
     # Assign tuples for boundary condition vectors
@@ -232,7 +235,8 @@ assign(scalar::ScalarField, args...) = begin
     # Retrieve user selected float type and boundaries
     mesh = scalar.mesh
     float = _get_float(mesh)
-    boundaries = mesh.boundaries
+    mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
+    boundaries = mesh_temp.boundaries
     boundary_info = boundary_map(mesh)
 
     # Assign tuples for boundary condition scalar

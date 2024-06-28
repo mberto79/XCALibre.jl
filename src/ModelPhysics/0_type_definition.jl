@@ -61,7 +61,9 @@ function boundary_map(mesh)
     I = Integer; S = Symbol
     boundary_map = boundary_info{I,S}[]
 
-    for (i, boundary) in enumerate(mesh.boundaries)
+    mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
+
+    for (i, boundary) in enumerate(mesh_temp.boundaries)
         push!(boundary_map, boundary_info{I,S}(i, boundary.name))
     end
 

@@ -6,9 +6,9 @@ mesh_file = "unv_sample_meshes/flatplate_transition.unv"
 # mesh_file = "unv_sample_meshes/flatplate_2D_lowRe.unv"
 # mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 
+mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-mesh = build_mesh(mesh_file, scale=0.001)
-mesh = update_mesh_format(mesh)
+mesh_gpu = adapt(CUDABackend(), mesh)
 
 # Turbulence Model
 velocity = [5.4,0,0]

@@ -4,7 +4,9 @@ using CUDA
 
 
 mesh_file = "unv_sample_meshes/bfs_unv_hex_5mm.unv"
-mesh = build_mesh3D(mesh_file, scale=0.001)
+mesh = UNV3D_mesh(mesh_file, scale=0.001)
+
+mesh_gpu = adapt(CUDABackend(), mesh)
 
 # INLET CONDITIONS 
 
@@ -93,9 +95,9 @@ initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
 Rx, Ry, Rz, Rp, model = run!(model, config); #, pref=0.0)
 
-Reff = stress_tensor(model.U, nu, model.turbulence.nut)
-Fp = pressure_force(:cylinder, model.p, 1.25)
-Fv = viscous_force(:cylinder, model.U, 1.25, nu, model.turbulence.nut)
+Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)
+Fp = pressure_force(:cylinder, model.momentum.p, 1.25)
+Fv = viscous_force(:cylinder, model.momentum.U, 1.25, nu, model.turbulence.nut)
 
 plot(; xlims=(0,runtime.iterations), ylims=(1e-10,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

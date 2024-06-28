@@ -6,23 +6,30 @@ using CUDA
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
-mesh = build_mesh(mesh_file, scale=0.001)
-mesh = update_mesh_format(mesh)
+mesh = UNV2D_mesh(mesh_file, scale=0.001)
+
+mesh_gpu = adapt(CUDABackend(), mesh)
 
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
 
-model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
+model = Physics(
+    time = Transient(),
+    fluid = Incompressible(nu = ConstantScalar(nu)),
+    turbulence = RANS{Laminar}(),
+    energy = nothing,
+    domain = mesh_gpu
+    )
 
-@assign! model U (
+@assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:wall, [0.0, 0.0, 0.0]),
     Dirichlet(:top, [0.0, 0.0, 0.0])
 )
 
- @assign! model p (
+ @assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
     Neumann(:wall, 0.0),
@@ -37,14 +44,14 @@ schemes = (
 
 solvers = (
     U = set_solver(
-        model.U;
+        model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1.0,
     ),
     p = set_solver(
-        model.p;
+        model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -55,18 +62,21 @@ solvers = (
 runtime = set_runtime(
     iterations=1000, time_step=0.005, write_interval=10)
 
+hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+# hardware = set_hardware(backend=CPU(), workgroup=4)
+
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
 GC.gc()
 
-initialise!(model.U, velocity)
-initialise!(model.p, 0.0)
+initialise!(model.momentum.U, velocity)
+initialise!(model.momentum.p, 0.0)
 
 # backend = CUDABackend()
 backend = CPU()
 
-Rx, Ry, Rz, Rp, model1 = simple!(model, config, backend); # 9.39k allocs
+Rx, Ry, Rz, Rp, model_out = run!(model, config) # 9.39k allocs
 
 # plot(; xlims=(0,184))
 # plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

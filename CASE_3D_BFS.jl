@@ -21,8 +21,6 @@ model = Physics(
     time = Steady(),
     fluid = Incompressible(nu = ConstantScalar(nu)),
     turbulence = RANS{Laminar}(),
-    # turbulence = RANS{Laminar}(),
-    # turbulence = LES{Smagorinsky}(),
     energy = nothing,
     domain = mesh_gpu
     )
@@ -101,12 +99,12 @@ plot!(1:length(Rp), Rp, yscale=:log10, label="p")
 using Profile, PProf
 
 GC.gc()
-initialise!(model.U, velocity)
-initialise!(model.p, 0.0)
+initialise!(model.momentum.U, velocity)
+initialise!(model.momentum.p, 0.0)
 
 Profile.Allocs.clear()
 Profile.Allocs.@profile sample_rate=1 begin 
-    Rx, Ry, Rz, Rp, model = simple!(model, config)
+    Rx, Ry, Rz, Rp, model = run!(model, config)
 end
 
 PProf.Allocs.pprof()

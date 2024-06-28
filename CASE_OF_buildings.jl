@@ -6,6 +6,8 @@ using CUDA
 mesh_file = "unv_sample_meshes/OF_buildings/polyMesh/"
 @time mesh = load_foamMesh(mesh_file, integer_type=Int64, float_type=Float64)
 
+mesh_gpu = adapt(CUDABackend(), mesh)
+
 Umag = 1.5
 velocity = [Umag, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
@@ -133,9 +135,9 @@ initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 Rx, Ry, Rz, Rp, model = run!(model, config); #, pref=0.0)
 
 
-Reff = stress_tensor(model.U, nu, model.turbulence.nut)
-Fp = pressure_force(:cylinder, model.p, 1.25)
-Fv = viscous_force(:cylinder, model.U, 1.25, nu, model.turbulence.nut)
+Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)
+Fp = pressure_force(:cylinder, model.momentum.p, 1.25)
+Fv = viscous_force(:cylinder, model.momentum.U, 1.25, nu, model.turbulence.nut)
 
 plot(; xlims=(0,runtime.iterations), ylims=(1e-10,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

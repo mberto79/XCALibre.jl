@@ -6,8 +6,9 @@ using Krylov
 # mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
 mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
 # mesh_file = "unv_sample_meshes/backwardFacingStep_2mm.unv"
-mesh = build_mesh(mesh_file, scale=0.001)
-mesh = update_mesh_format(mesh)
+mesh = UNV2D_mesh(mesh_file, scale=0.001)
+
+mesh_gpu = adapt(CUDABackend(), mesh)
 
 nu = 1e-3
 u_mag = 1.5
@@ -17,16 +18,22 @@ k_inlet = 1
 ω_wall = ω_inlet
 Re = velocity[1]*0.1/nu
 
-model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
+model = Physics(
+    time = Transient(),
+    fluid = Incompressible(nu = ConstantScalar(nu)),
+    turbulence = RANS{KOmega}(),
+    energy = nothing,
+    domain = mesh_gpu
+    )
 
-@assign! model U (
+@assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:wall, [0.0, 0.0, 0.0]),
     Dirichlet(:top, [0.0, 0.0, 0.0])
 )
 
-@assign! model p (
+@assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
     Neumann(:wall, 0.0),
@@ -63,14 +70,14 @@ schemes = (
 
 solvers = (
     U = set_solver(
-        model.U;
+        model.momentum.U;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = ILU0(),
         convergence = 1e-7,
         relax       = 1.0,
     ),
     p = set_solver(
-        model.p;
+        model.momentum.p;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = LDL(),
         convergence = 1e-7,
@@ -95,22 +102,25 @@ solvers = (
 runtime = set_runtime(
     iterations=1000, write_interval=10, time_step=0.01)
 
+hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+# hardware = set_hardware(backend=CPU(), workgroup=4)
+
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
 GC.gc()
 
-initialise!(model.U, velocity)
-initialise!(model.p, 0.0)
+initialise!(model.momentum.U, velocity)
+initialise!(model.momentum.p, 0.0)
 initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
-Rx, Ry, Rp = piso!(model, config) # 36.90k allocs
+Rx, Ry, Rz, Rp, model_out = run!(model, config) # 36.90k allocs
 
-Reff = stress_tensor(model.U, nu, model.turbulence.nut)
-Fp = pressure_force(:wall, model.p, 1.25)
-Fv = viscous_force(:wall, model.U, 1.25, nu, model.turbulence.nut)
+Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)
+Fp = pressure_force(:wall, model.momentum.p, 1.25)
+Fv = viscous_force(:wall, model.momentum.U, 1.25, nu, model.turbulence.nut)
 
 
 plot(; xlims=(0,494))

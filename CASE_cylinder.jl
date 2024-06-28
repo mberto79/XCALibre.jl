@@ -8,7 +8,6 @@ mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 # mesh_file = "unv_sample_meshes/cylinder_d10mm_2mm.unv"
 # mesh_file = "unv_sample_meshes/cylinder_d10mm_10-7.5-2mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
-# mesh = update_mesh_format(mesh, integer=Int32, float=Float32)
 
 mesh_gpu = adapt(CUDABackend(), mesh)
 
@@ -83,7 +82,7 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-Rx, Ry, Rz, Rp, model_out = run!(model, config); #, pref=0.0)
+Rx, Ry, Rz, Rp, model_out = run!(model, config)
 
 plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

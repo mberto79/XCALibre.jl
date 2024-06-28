@@ -8,9 +8,9 @@ using KernelAbstractions
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 mesh_file = "unv_sample_meshes/cylinder_d10mm_2mm.unv"
 mesh_file = "unv_sample_meshes/cylinder_d10mm_10-7.5-2mm.unv"
-mesh = build_mesh(mesh_file, scale=0.001)
-mesh = update_mesh_format(mesh, integer=Int32, float=Float32)
-mesh = update_mesh_format(mesh)
+mesh = UNV2D_mesh(mesh_file, scale=0.001)
+
+mesh_gpu = adapt(CUDABackend(), mesh)
 
 # Inlet conditions
 
@@ -18,8 +18,6 @@ velocity = [0.50, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
 Re = (0.2*velocity[1])/nu
-
-# model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
 
 model = Physics(
     time = Transient(),

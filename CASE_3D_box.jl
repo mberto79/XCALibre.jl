@@ -16,16 +16,24 @@ mesh_file="unv_sample_meshes/box_TET_PRISM_10mm.unv"
 mesh_file="unv_sample_meshes/box_TET_PRISM_25_5mm.unv"
 # mesh_file="unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.01m.unv"
 
-@time mesh=build_mesh3D(mesh_file, scale=0.001)
+@time mesh=UNV3D_mesh(mesh_file, scale=0.001)
+
+mesh_gpu = adapt(CUDABackend(), mesh)
 
 velocity = [0.01,0.0,0.0]
 nu=1e-3
 Re=velocity[1]*0.1/nu
 noSlip = [0.0, 0.0, 0.0]
 
-model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
+model = Physics(
+    time = Steady(),
+    fluid = Incompressible(nu = ConstantScalar(nu)),
+    turbulence = RANS{Laminar}(),
+    energy = nothing,
+    domain = mesh_gpu
+    )
 
-@assign! model U (
+@assign! model momentum U (
     Dirichlet(:inet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:bottom, noSlip),
@@ -46,7 +54,7 @@ model = RANS{Laminar}(mesh=mesh, viscosity=ConstantScalar(nu))
     Neumann(:side2, 0.0)
 )
 
-@assign! model p (
+@assign! model momentum p (
     Neumann(:inet, 0.0),
     Dirichlet(:outlet, 0.0),
     Neumann(:bottom, 0.0),
@@ -67,7 +75,7 @@ schemes = (
 
 solvers = (
     U = set_solver(
-        model.U;
+        model.momentum.U;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -76,7 +84,7 @@ solvers = (
         atol = 1e-4
     ),
     p = set_solver(
-        model.p;
+        model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -90,20 +98,22 @@ solvers = (
 runtime = set_runtime(
     iterations=10, time_step=1, write_interval=5)
 
+hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+# hardware = set_hardware(backend=CPU(), workgroup=4)
+
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
 GC.gc()
 
-initialise!(model.U, velocity)
-# initialise!(model.U, [0.0,0.0,0.0])
-initialise!(model.p, 0.0)
+initialise!(model.momentum.U, velocity)
+# initialise!(model.momentum.U, [0.0,0.0,0.0])
+initialise!(model.momentum.p, 0.0)
 
 backend = CUDABackend()
 # backend = CPU()
 
-Rx, Ry, Rz, Rp, model1 = simple!(model, config, backend)
-# Rx, Ry, Rz, Rp, model1 = piso!(model, config, backend)
+Rx, Ry, Rz, Rp, model_out = run!(model, config)
 
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
@@ -114,12 +124,12 @@ plot!(1:length(Rp), Rp, yscale=:log10, label="p")
 using Profile, PProf
 
 GC.gc()
-initialise!(model.U, velocity)
-initialise!(model.p, 0.0)
+initialise!(model.momentum.U, velocity)
+initialise!(model.momentum.p, 0.0)
 
 Profile.Allocs.clear()
 Profile.Allocs.@profile sample_rate=1 begin 
-    Rx, Ry, Rz, Rp = simple!(model, config)
+    Rx, Ry, Rz, Rp, model_out = run!(model, config)
 end
 
 PProf.Allocs.pprof()

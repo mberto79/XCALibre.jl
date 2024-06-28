@@ -1,10 +1,10 @@
 export UNV3D_mesh
 
-function UNV3D_mesh(unv_mesh; scale=1, integer=Int64, float=Float64)
+function UNV3D_mesh(unv_mesh; scale=1, integer_type=Int64, float_type=Float64)
     stats = @timed begin
         println("Loading UNV File...")
         points, efaces, cells_UNV, boundaryElements = read_UNV3( # "volumes" changed to cells_UNV
-            unv_mesh; scale=scale, integer=integer, float=float)
+            unv_mesh; scale=scale, integer=integer_type, float=float_type)
         println("File Read Successfully")
         println("Generating Mesh...")
 

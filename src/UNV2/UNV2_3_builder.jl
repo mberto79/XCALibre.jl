@@ -1,9 +1,9 @@
 export UNV2D_mesh
 
-function UNV2D_mesh(meshFile; scale=1.0, TI=Int64, TF=Float64)
+function UNV2D_mesh(meshFile; scale=1, integer_type=Int64, float_type=Float64)
     stats = @timed begin
     println("Loading mesh...")
-    points, elements, boundaryElements = read_UNV2(meshFile, TI, TF);
+    points, elements, boundaryElements = read_UNV2(meshFile, integer_type, float_type);
     println("File read successfully")
     if scale != one(typeof(scale))
         scalePoints!(points, scale)
@@ -17,7 +17,7 @@ function UNV2D_mesh(meshFile; scale=1.0, TI=Int64, TF=Float64)
     process_geometry!(mesh)
     # mesh = Mesh.FullMesh(nodes, faces, cells, boundaries)
 
-    mesh = update_mesh_format(mesh, integer=TI, float=TF)
+    mesh = update_mesh_format(mesh, integer_type, float_type)
     end
     println("Done! Execution time: ", @sprintf "%.6f" stats.time)
     println("Mesh ready!")

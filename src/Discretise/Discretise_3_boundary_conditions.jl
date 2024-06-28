@@ -57,6 +57,40 @@ end
     ap, ap*values[cellID]
 end
 
+# Wal; functor definition
+@inline (bc::Wall)(
+    term::Operator{F,P,I,Laplacian{Linear}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
+    # Retrive term field and field values
+    phi = term.phi 
+    values = get_values(phi, component)
+
+    velocity_diff = phi[cellID] .- bc.value
+
+    J = term.flux[fID]
+
+    # Extract required fields from workitem face
+    (; area, delta, normal) = face 
+
+    # Calculate wall normal velocity at cell centre
+    norm_vel = (velocity_diff⋅normal)*normal
+
+    # Calculate flux and ap value for increment
+    flux = J*area/delta
+    ap = term.sign[1]*(-flux)
+
+    println(bc.value)
+    
+    # Set index for sparse array values at [cellID, cellID] for workitem
+    # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
+
+    # Increment sparse and b arrays
+    # Atomix.@atomic nzval[zcellID] += ap
+    # Atomix.@atomic b[cellID] += ap*values[cellID]
+    # nothing
+    ap, ap*(bc.value[component.value] + norm_vel[component.value])
+end
+
+
 # KWallFunction functor definition
 @inline (bc::KWallFunction)(
     term::Operator{F,P,I,Laplacian{T}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I,T}  = begin
@@ -135,6 +169,21 @@ end
     ap, 0.0
 end
 
+# Neumann functor definition
+@inline (bc::Wall)(
+    term::Operator{F,P,I,Divergence{Linear}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
+    # Calculate ap value to increment
+    ap = term.sign[1]*(term.flux[fID])
+
+    # Set index for sparse array values at [cellID, cellID] for workitem
+    # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
+
+    # Increment sparse array
+    # Atomix.@atomic nzval[zcellID] += ap
+    # nothing
+    0.0, 0.0
+end
+
 # KWallFunction functor definition
 @inline (bc::KWallFunction)(
     term::Operator{F,P,I,Divergence{Linear}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
@@ -192,6 +241,21 @@ end
     # Atomix.@atomic nzval[zcellID] += ap
     # nothing
     ap, 0.0
+end
+
+# Neumann functor definition
+@inline (bc::Wall)(
+    term::Operator{F,P,I,Divergence{Upwind}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
+    # Calculate ap value to increment
+    ap = term.sign[1]*(term.flux[fID])
+
+    # Set index for sparse array values at [cellID, cellID] for workitem
+    # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
+
+    # Increment sparse array
+    # Atomix.@atomic nzval[zcellID] += ap
+    # nothing
+    0.0, 0.0
 end
 
 # KWallFunction functor definition

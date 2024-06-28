@@ -35,6 +35,8 @@ function setup_compressible_solvers(
     rhorDf.values .= 1.0
     divHv = ScalarField(mesh)
 
+    println(U.BCs)
+
     @info "Defining models..."
 
     U_eqn = (
@@ -150,6 +152,8 @@ function CSIMPLE(
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
     @time for iteration ∈ 1:iterations
+
+        println(U.x.BCs)
 
         solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
 

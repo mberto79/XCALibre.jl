@@ -2,6 +2,7 @@ export AbstractScheme, AbstractBoundary
 export AbstractDirichlet, AbstractNeumann
 export Dirichlet, fixedValue, Neumann
 export FixedTemperature
+export Wall
 export KWallFunction, OmegaWallFunction, NutWallFunction
 export Constant, Linear, Upwind
 export SteadyState, Euler, CrankNicolson
@@ -89,6 +90,31 @@ Adapt.@adapt_structure FixedTemperature
 FixedTemperature(name; T, model) = begin
     FixedTemperature(name, Ttoh(model, T))
 end
+
+struct Wall{I,V} <: AbstractDirichlet
+    ID::I
+    value::V
+end
+Adapt.@adapt_structure Wall
+function fixedValue(BC::Wall, ID::I, value::V) where {I<:Integer,V}
+    # Exception 1: Value is scalar
+    if V <: Number
+        return Wall{I,eltype(value)}(ID, value)
+    # Exception 2: value is vector
+    elseif V <: Vector
+        if length(value) == 3 
+            nvalue = SVector{3, eltype(value)}(value)
+            return Wall{I,typeof(nvalue)}(ID, nvalue)
+        # Error statement if vector is invalid
+        else
+            throw("Only vectors with three components can be used")
+        end
+    # Error if value is not scalar or vector
+    else
+        throw("The value provided should be a scalar or a vector")
+    end
+end
+
 
 # Kwall function structure and constructor
 struct KWallFunction{I,V} <: AbstractWallFunction

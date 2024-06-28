@@ -43,7 +43,7 @@ end
 
 ## GPU SCALAR ADJUST BOUNDARY FUNCTIONS AND KERNELS
 
-function adjust_boundary!(b_cpu, BC::Dirichlet, phif::FaceScalarField, phi, boundaries, boundary_cellsID,  backend, workgroup)
+function adjust_boundary!(b_cpu, BC::AbstractDirichlet, phif::FaceScalarField, phi, boundaries, boundary_cellsID,  backend, workgroup)
     phif_values = phif.values
     phi_values = phi.values
 
@@ -105,7 +105,7 @@ end
 
 ## GPU VECTOR ADJUST BOUNDARY FUNCTIONS AND KERNELS
 
-function adjust_boundary!(b_cpu, BC::Dirichlet, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, backend, workgroup)
+function adjust_boundary!(b_cpu, BC::AbstractDirichlet, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, backend, workgroup)
     (; x, y, z) = psif
 
     kernel_range = length(b_cpu[BC.ID].IDs_range)

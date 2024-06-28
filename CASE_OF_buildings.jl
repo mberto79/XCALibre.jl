@@ -4,7 +4,7 @@ using CUDA
 
 
 mesh_file = "unv_sample_meshes/OF_buildings/polyMesh/"
-@time mesh = load_foamMesh(mesh_file, integer_type=Int64, float_type=Float64)
+@time mesh = FOAM3D_mesh(mesh_file, integer_type=Int64, float_type=Float64)
 
 mesh_gpu = adapt(CUDABackend(), mesh)
 

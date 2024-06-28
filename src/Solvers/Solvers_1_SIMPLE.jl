@@ -62,7 +62,7 @@ function setup_incompressible_solvers(
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
 
     @info "Initialising turbulence model..."
-    turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
+    turbulenceModel = Turbulence.initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     R_ux, R_uy, R_uz, R_p, model  = solver_variant(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)

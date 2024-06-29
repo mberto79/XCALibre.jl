@@ -43,7 +43,7 @@ freestream = [:Ymax, :Zmax, :Zmin]
 @assign! model momentum U (
     Dirichlet(:Xmin, velocity), # inlet
     Neumann(:Xmax, 0.0), # outlet
-    Dirichlet.(walls, Ref(noSlip))..., # walls
+    Wall.(walls, Ref(noSlip))..., # walls
     Neumann.(freestream, Ref(0.0))...,
     Dirichlet(:Symmetry, velocity)
     # Dirichlet(:Symmetry, noSlip)

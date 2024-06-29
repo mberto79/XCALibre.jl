@@ -2,7 +2,7 @@ export AbstractScheme, AbstractBoundary
 export AbstractDirichlet, AbstractNeumann
 export Dirichlet, fixedValue, Neumann
 export FixedTemperature
-export Wall
+export Wall, Symmetry
 export KWallFunction, OmegaWallFunction, NutWallFunction
 export Constant, Linear, Upwind
 export SteadyState, Euler, CrankNicolson
@@ -127,6 +127,31 @@ function fixedValue(BC::Wall, ID::I, value::V) where {I<:Integer,V}
         throw("The value provided should be a scalar or a vector")
     end
 end
+
+struct Symmetry{I,V} <: AbstractNeumann
+    ID::I
+    value::V
+end
+Adapt.@adapt_structure Symmetry
+function fixedValue(BC::Symmetry, ID::I, value::V) where {I<:Integer,V}
+    # Exception 1: Value is scalar
+    if V <: Number
+        return Symmetry{I,eltype(value)}(ID, value)
+    # Exception 2: value is vector
+    elseif V <: Vector
+        if length(value) == 3 
+            nvalue = SVector{3, eltype(value)}(value)
+            return Symmetry{I,typeof(nvalue)}(ID, nvalue)
+        # Error statement if vector is invalid
+        else
+            throw("Only vectors with three components can be used")
+        end
+    # Error if value is not scalar or vector
+    else
+        throw("The value provided should be a scalar or a vector")
+    end
+end
+
 
 
 # Kwall function structure and constructor

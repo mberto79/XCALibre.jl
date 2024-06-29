@@ -1,11 +1,10 @@
 using Plots
 using FVM_1D
-using Adapt
 using CUDA
 
 
 mesh_file = "unv_sample_meshes/OF_CRMHL_Wingbody_1v/polyMesh/"
-@time mesh = load_foamMesh(mesh_file, scale=0.001, integer_type=Int64, float_type=Float64)
+@time mesh = FOAM3D_mesh(mesh_file, scale=0.001, integer_type=Int64, float_type=Float64)
 
 mesh_gpu = adapt(CUDABackend(), mesh)
 
@@ -15,7 +14,7 @@ mesh_gpu = adapt(CUDABackend(), mesh)
 # volumes.values .= vols
 # write_vtk("cellVolumes", mesh, ("cellVolumes", volumes))
 
-Umag = 1
+Umag = 0.001
 velocity = [Umag, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-05
@@ -25,15 +24,13 @@ k_inlet = 3/2*(Tu*Umag)^2
 ω_inlet = k_inlet/(νR*nu)
 nut_inlet = k_inlet/ω_inlet
 
-mesh_gpu = adapt(CUDABackend(), mesh)
-
 model = Physics(
-    time = Steady(),
+    time = Transient(),
     fluid = Incompressible(nu = ConstantScalar(nu)),
-    turbulence = RANS{KOmega}(),
+    # turbulence = RANS{KOmega}(),
     # turbulence = RANS{Laminar}(),
-    # turbulence = LES{Smagorinsky}(),
-    energy = nothing,
+    turbulence = LES{Smagorinsky}(),
+    energy = ENERGY{Isothermal}(),
     # domain = mesh
     domain = mesh_gpu
     )
@@ -48,9 +45,9 @@ freestream = [:Ymax, :Zmax, :Zmin]
     Neumann(:Xmax, 0.0), # outlet
     Dirichlet.(walls, Ref(noSlip))..., # walls
     Neumann.(freestream, Ref(0.0))...,
-    # Dirichlet(:Symmetry, velocity)
+    Dirichlet(:Symmetry, velocity)
     # Dirichlet(:Symmetry, noSlip)
-    Neumann(:Symmetry, velocity)
+    # Neumann(:Symmetry, 0.0)
 )
 
 @assign! model momentum p (
@@ -91,7 +88,7 @@ freestream = [:Ymax, :Zmax, :Zmin]
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind, gradient=Midpoint),
+    U = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint),
     p = set_schemes(gradient=Midpoint),
     k = set_schemes(divergence=Upwind, gradient=Midpoint),
     omega = set_schemes(divergence=Upwind, gradient=Midpoint)
@@ -103,8 +100,8 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.6,
-        rtol = 1e-1,
+        relax       = 1.0,
+        rtol = 1e-5,
         atol = 1e-15
     ),
     p = set_solver(
@@ -112,33 +109,33 @@ solvers = (
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), #LDL(),
         convergence = 1e-7,
-        relax       = 0.2,
-        rtol = 1e-3,
+        relax       = 1.0,
+        rtol = 1e-5,
         atol = 1e-15
     ),
-    k = set_solver(
-        # model.turbulence.fields.k;
-        model.turbulence.k;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(),
-        convergence = 1e-7,
-        relax       = 0.5,
-        rtol = 1e-1,
-        atol = 1e-15
-    ),
-    omega = set_solver(
-        # model.turbulence.fields.omega;
-        model.turbulence.omega;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver, CgSolver
-        preconditioner = Jacobi(),
-        convergence = 1e-7,
-        relax       = 0.5,
-        rtol = 1e-1,
-        atol = 1e-15
-    )
+    # k = set_solver(
+    #     # model.turbulence.fields.k;
+    #     model.turbulence.k;
+    #     solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+    #     preconditioner = Jacobi(),
+    #     convergence = 1e-7,
+    #     relax       = 0.5,
+    #     rtol = 1e-1,
+    #     atol = 1e-15
+    # ),
+    # omega = set_solver(
+    #     # model.turbulence.fields.omega;
+    #     model.turbulence.omega;
+    #     solver      = BicgstabSolver, # BicgstabSolver, GmresSolver, CgSolver
+    #     preconditioner = Jacobi(),
+    #     convergence = 1e-7,
+    #     relax       = 0.5,
+    #     rtol = 1e-1,
+    #     atol = 1e-15
+    # )
 )
 
-runtime = set_runtime(iterations=100, write_interval=20, time_step=1)
+runtime = set_runtime(iterations=3, write_interval=1, time_step=1e-8)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=CPU(), workgroup=8)
@@ -150,9 +147,9 @@ GC.gc(true)
 
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
-initialise!(model.turbulence.k, k_inlet)
-initialise!(model.turbulence.omega, ω_inlet)
-initialise!(model.turbulence.nut, k_inlet/ω_inlet)
+# initialise!(model.turbulence.k, k_inlet)
+# initialise!(model.turbulence.omega, ω_inlet)
+# initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
 # initialise!(model.momentum.U, [0,0,0])
 # initialise!(model.momentum.p, 0.0)
@@ -160,7 +157,7 @@ initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 # initialise!(model.turbulence.omega, ω_inlet)
 # initialise!(model.turbulence.nut, 0.0)
 
-Rx, Ry, Rz, Rp, model = run!(model, config); #, pref=0.0)
+Rx, Ry, Rz, Rp, model_out = run!(model, config); #, pref=0.0)
 
 
 Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)

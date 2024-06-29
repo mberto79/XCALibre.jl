@@ -29,7 +29,7 @@ model = Physics(
     time = Steady(),
     fluid = Incompressible(nu = ConstantScalar(nu)),
     turbulence = RANS{KOmega}(β⁺=0.09),
-    energy = nothing,
+    energy = ENERGY{Isothermal}(),
     domain = mesh
     )
 

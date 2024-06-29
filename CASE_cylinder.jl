@@ -1,6 +1,6 @@
 using Plots
 using FVM_1D
-using CUDA # Run this if using NVIDIA GPU
+# using CUDA # Run this if using NVIDIA GPU
 # using AMDGPU # Run this if using AMD GPU
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
@@ -9,7 +9,8 @@ mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 # mesh_file = "unv_sample_meshes/cylinder_d10mm_10-7.5-2mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-mesh_gpu = adapt(CUDABackend(), mesh)
+# mesh_gpu = adapt(CUDABackend(), mesh)
+mesh_gpu = mesh #adapt(CUDABackend(), mesh)
 
 # Inlet conditions
 
@@ -22,14 +23,14 @@ model = Physics(
     time = Steady(),
     fluid = Incompressible(nu = ConstantScalar(nu)),
     turbulence = RANS{Laminar}(),
-    energy = nothing,
+    energy = ENERGY{Isothermal}(),
     domain = mesh_gpu
     )
 
 @assign! model momentum U ( 
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Dirichlet(:cylinder, noSlip),
+    Wall(:cylinder, noSlip),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0)
 )
@@ -70,8 +71,8 @@ schemes = (
 
 runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
 
-# hardware = set_hardware(backend=CPU(), workgroup=4)
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+hardware = set_hardware(backend=CPU(), workgroup=4)
+# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 
 config = Configuration(

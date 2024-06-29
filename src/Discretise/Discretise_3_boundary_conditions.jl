@@ -69,7 +69,7 @@ end
     
     # println(bc.ID)
     # U_boundary = phi.BCs[bc.ID].value # user given vector
-    U_boundary = [0,0,0] # user given vector
+    U_boundary = SVector{3}(0.0,0.0,0.0) # user given vector
 
     # values = get_values(phi, component)
 

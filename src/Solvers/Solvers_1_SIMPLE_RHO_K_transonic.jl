@@ -303,6 +303,9 @@ function SIMPLE_RHO_K_transonic_loop(
             @. mdotf.values *= rhof.values
             divnovol!(divHv, mdotf)
         end
+
+        println("MinPsi ", minimum(rhorDf.values), ", MaxPsi ", maximum(rhorDf.values))
+        println("MinPsi ", minimum(divHv.values), ", MaxPsi ", maximum(divHv.values))
         
         # Set up and solve pressure equation
         @. prev = p.values

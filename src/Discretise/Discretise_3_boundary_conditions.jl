@@ -113,9 +113,9 @@ end
     (; area, delta, normal) = face 
 
     # Calculate wall normal velocity at cell centre
-    norm_vel_ex = (velocity_cell⋅normal-velocity_cell[component.value]*normal[component.value])*normal
-
-    norm_vel_ex_comp = norm_vel_ex[component.value]
+    norm_vel_ex_comp = ((velocity_cell⋅normal)-velocity_cell[component.value]*normal[component.value])*normal[component.value]
+    
+    # norm_vel_ex_comp = norm_vel_ex[component.value]
 
     # Calculate flux and ap value for increment
     flux = J*area/delta
@@ -128,7 +128,7 @@ end
     # Atomix.@atomic nzval[zcellID] += ap
     # Atomix.@atomic b[cellID] += ap*values[cellID]
     # nothing
-    ap, ap*(norm_vel_ex_comp)
+    -ap*normal[component.value]^2, -ap*(norm_vel_ex_comp)
 end
 
 # fixedTempterature boundary condition

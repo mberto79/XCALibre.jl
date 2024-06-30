@@ -341,6 +341,7 @@ function face_normal_gradient(phi::ScalarField, phif::FaceScalarField)
         phi1 = phi[cID1]
         phi2 = phi[cID2]
         face_grad = area*(phi2 - phi1)/delta
+        # face_grad = (phi2 - phi1)/delta
         sngrad.values[fID] = face_grad
     end
     # Now deal with boundary faces
@@ -356,6 +357,7 @@ function face_normal_gradient(phi::ScalarField, phif::FaceScalarField)
         # phi2 = phi[cID2]
         phi2 = phif[fID]
         face_grad = area*(phi2 - phi1)/delta
+        # face_grad = (phi2 - phi1)/delta
         sngrad.values[fID] = face_grad
     end
     return sngrad

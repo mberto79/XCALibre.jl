@@ -7,6 +7,7 @@ mesh_file = "unv_sample_meshes/OF_CRMHL_Wingbody_1v/polyMesh/"
 @time mesh = FOAM3D_mesh(mesh_file, scale=0.001, integer_type=Int64, float_type=Float64)
 
 mesh_gpu = adapt(CUDABackend(), mesh)
+mesh_gpu = mesh
 
 # # check volume calculation
 # volumes = ScalarField(mesh)
@@ -138,7 +139,7 @@ solvers = (
 runtime = set_runtime(iterations=3, write_interval=1, time_step=1e-8)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=CPU(), workgroup=8)
+hardware = set_hardware(backend=CPU(), workgroup=8)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

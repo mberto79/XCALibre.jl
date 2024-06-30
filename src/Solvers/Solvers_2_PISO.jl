@@ -82,7 +82,10 @@ function PISO(
             # Interpolate faces
             interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
             correct_boundaries!(Uf, Hv, U.BCs, config)
-            div!(divHv, Uf, config)
+            # div!(divHv, Uf, config)
+
+            flux!(mdotf, Uf, config)
+            div!(divHv, mdotf, config)
             
             # Pressure calculations
             @. prev = p.values
@@ -110,7 +113,10 @@ function PISO(
             correct_velocity!(U, Hv, ∇p, rD, config)
             interpolate!(Uf, U, config)
             correct_boundaries!(Uf, U, U.BCs, config)
-            flux!(mdotf, Uf, config)
+            # flux!(mdotf, Uf, config)
+
+            pgrad = face_normal_gradient(p, pf)
+            @. mdotf.values -= pgrad.values*rDf.values
 
             grad!(gradU, Uf, U, U.BCs, config)
             turbulence!(turbulenceModel, model, S, S2, prev, config) 

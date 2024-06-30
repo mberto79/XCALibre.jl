@@ -140,7 +140,15 @@ function SIMPLE(
         # Interpolate faces
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs, config)
-        div!(divHv, Uf, config)
+
+        # div!(divHv, Uf, config)
+
+        flux!(mdotf, Uf, config)
+        div!(divHv, mdotf, config)
+
+        # div!(divHv, Uf, config)
+        # flux!(mdotf, Uf, config)
+        
         
         # Pressure calculations
         @. prev = p.values
@@ -176,7 +184,12 @@ function SIMPLE(
         correct_velocity!(U, Hv, ∇p, rD, config)
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, U.BCs, config)
-        flux!(mdotf, Uf, config)
+        # flux!(mdotf, Uf, config)
+
+        # correct_face_interpolation!(pf, p, Uf) # not needed?
+        # correct_boundaries!(pf, p, p.BCs, config) # not needed?
+        pgrad = face_normal_gradient(p, pf)
+        @. mdotf.values -= pgrad.values*rDf.values
 
         # if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs, config)

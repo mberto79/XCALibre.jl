@@ -12,6 +12,7 @@ end
 # Isothermal
 
 struct Isothermal end
+Adapt.Adapt.@adapt_structure Isothermal
 
 ENERGY{Isothermal}() = begin
     args = nothing

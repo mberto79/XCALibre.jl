@@ -34,10 +34,10 @@ model = Physics(
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    # Neumann(:top, 0.0),
-    # Neumann(:bottom, 0.0),
-    Dirichlet(:top, velocity),
-    Dirichlet(:bottom, velocity),
+    Neumann(:top, 0.0),
+    Neumann(:bottom, 0.0),
+    # Dirichlet(:top, velocity),
+    # Dirichlet(:bottom, velocity),
     Wall(:cylinder, noSlip)
 )
 
@@ -134,7 +134,7 @@ initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
-Rx, Ry, Rz, Rp, model = run!(model, config); #, pref=0.0)
+Rx, Ry, Rz, Rp, model_out = run!(model, config); #, pref=0.0)
 
 
 Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)

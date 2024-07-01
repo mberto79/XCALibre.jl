@@ -21,7 +21,7 @@ model = Physics(
     time = Steady(),
     fluid = Incompressible(nu = ConstantScalar(nu)),
     turbulence = RANS{Laminar}(),
-    energy = nothing,
+    energy = ENERGY{Isothermal}(),
     domain = mesh_gpu
     )
     
@@ -31,7 +31,7 @@ model = Physics(
     # Neumann(:outlet, 0.0),0.0]),
     # Dirichlet(:sides, [0.0, 0.0, 0.0])
     Dirichlet(:inlet, velocity),
-    Dirichlet(:wall, [0.0, 0.0, 0.0]),
+    Wall(:wall, [0.0, 0.0, 0.0]),
     Neumann(:outlet, 0.0),
     Neumann(:top, 0.0),
     Neumann(:sides, 0.0)

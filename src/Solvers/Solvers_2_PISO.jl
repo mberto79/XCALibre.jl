@@ -84,6 +84,7 @@ function PISO(
             correct_boundaries!(Uf, Hv, U.BCs, config)
             # div!(divHv, Uf, config)
 
+            # new approach
             flux!(mdotf, Uf, config)
             div!(divHv, mdotf, config)
             
@@ -113,10 +114,9 @@ function PISO(
             correct_velocity!(U, Hv, ∇p, rD, config)
             interpolate!(Uf, U, config)
             correct_boundaries!(Uf, U, U.BCs, config)
-            # flux!(mdotf, Uf, config)
+            # flux!(mdotf, Uf, config) # old approach
 
-            pgrad = face_normal_gradient(p, pf)
-            @. mdotf.values -= pgrad.values*rDf.values
+            correct_mass_flux(mdotf, p, pf, rDf, config)
 
             grad!(gradU, Uf, U, U.BCs, config)
             turbulence!(turbulenceModel, model, S, S2, prev, config) 

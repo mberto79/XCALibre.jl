@@ -141,8 +141,9 @@ function SIMPLE(
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs, config)
 
-        # div!(divHv, Uf, config)
+        # div!(divHv, Uf, config) # old approach
 
+        # new approach
         flux!(mdotf, Uf, config)
         div!(divHv, mdotf, config)
 
@@ -184,12 +185,16 @@ function SIMPLE(
         correct_velocity!(U, Hv, ∇p, rD, config)
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, U.BCs, config)
-        # flux!(mdotf, Uf, config)
+        # flux!(mdotf, Uf, config) # old approach
 
         # correct_face_interpolation!(pf, p, Uf) # not needed?
         # correct_boundaries!(pf, p, p.BCs, config) # not needed?
-        pgrad = face_normal_gradient(p, pf)
-        @. mdotf.values -= pgrad.values*rDf.values
+
+        # pgrad = face_normal_gradient(p, pf)
+        # @. mdotf.values -= pgrad.values*rDf.values
+
+        # new approach
+        correct_mass_flux(mdotf, p, pf, rDf, config)
 
         # if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs, config)
@@ -233,3 +238,92 @@ function SIMPLE(
     model_out = adapt(CPU(), model)
     return R_ux, R_uy, R_uz, R_p, model_out
 end
+
+### TEMP LOCATION FOR PROTOTYPING
+
+function correct_mass_flux(mdotf, p, pf, rDf, config)
+    # sngrad = FaceScalarField(mesh)
+    (; faces, cells, boundary_cellsID) = mdotf.mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    n_faces = length(faces)
+    n_bfaces = length(boundary_cellsID)
+    n_ifaces = n_faces - n_bfaces + 1
+
+    kernel! = _correct_internal_faces(backend, workgroup)
+    kernel!(mdotf, p, rDf, faces, n_bfaces, ndrange=length(n_ifaces))
+    KernelAbstractions.synchronize(backend)
+
+    # kernel! = _correct_boundary_faces(backend, workgroup)
+    # kernel!(..., ndrange=length(n_bfaces))
+    # KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _correct_internal_faces(mdotf, p, rDf, faces, n_bfaces)
+    i = @index(Global)
+    fID = i + n_bfaces
+
+    # for fID ∈ start_faceID:last_faceID
+        # for fID ∈ eachindex(faces)
+            face = faces[fID]
+            (; area, normal, ownerCells, delta) = face 
+            cID1 = ownerCells[1]
+            cID2 = ownerCells[2]
+            # cell1 = cells[cID1]
+            # cell2 = cells[cID2]
+            p1 = p[cID1]
+            p2 = p[cID2]
+            face_grad = area*(p2 - p1)/delta
+            # face_grad = (phi2 - phi1)/delta
+
+            # sngrad.values[fID] = face_grad
+
+            # mdotf.values[fID] -= face_grad*rDf.values[fID]
+            mdotf[fID] -= face_grad*rDf[fID]
+        # end
+end
+
+# @kernel function _correct_boundary_faces()
+#     i = @index(Global)
+# end
+
+# function face_normal_gradient(phi::ScalarField, phif::FaceScalarField)
+#     mesh = phi.mesh
+#     sngrad = FaceScalarField(mesh)
+#     (; faces, cells) = mesh
+#     nbfaces = length(mesh.boundary_cellsID) #boundary_faces(mesh)
+#     start_faceID = nbfaces + 1
+#     last_faceID = length(faces)
+#     for fID ∈ start_faceID:last_faceID
+#     # for fID ∈ eachindex(faces)
+#         face = faces[fID]
+#         (; area, normal, ownerCells, delta) = face 
+#         cID1 = ownerCells[1]
+#         cID2 = ownerCells[2]
+#         cell1 = cells[cID1]
+#         cell2 = cells[cID2]
+#         phi1 = phi[cID1]
+#         phi2 = phi[cID2]
+#         face_grad = area*(phi2 - phi1)/delta
+#         # face_grad = (phi2 - phi1)/delta
+#         sngrad.values[fID] = face_grad
+#     end
+#     # Now deal with boundary faces
+#     for fID ∈ 1:nbfaces
+#         face = faces[fID]
+#         (; area, normal, ownerCells, delta) = face 
+#         cID1 = ownerCells[1]
+        
+#         cID2 = ownerCells[2]
+#         cell1 = cells[cID1]
+#         cell2 = cells[cID2]
+#         phi1 = phi[cID1]
+#         # phi2 = phi[cID2]
+#         phi2 = phif[fID]
+#         face_grad = area*(phi2 - phi1)/delta
+#         # face_grad = (phi2 - phi1)/delta
+#         sngrad.values[fID] = face_grad
+#     end
+#     return sngrad
+# end

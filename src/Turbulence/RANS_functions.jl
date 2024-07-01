@@ -251,24 +251,28 @@ function set_production!(P, BC, model, gradU, config)
     mesh = model.domain
     (; faces, boundary_cellsID, boundaries) = mesh
 
+    # Extract physics models
+    (; fluid, momentum, turbulence) = model
+
     facesID_range = get_boundaries(BC, boundaries)
     start_ID = facesID_range[1]
 
     # Execute apply boundary conditions kernel
     kernel! = _set_production!(backend, workgroup)
     kernel!(
-        P.values, BC, model, faces, boundary_cellsID, start_ID, gradU, ndrange=length(facesID_range)
+        P.values, BC, fluid, momentum, turbulence, faces, boundary_cellsID, start_ID, gradU, ndrange=length(facesID_range)
     )
 end
 
-@kernel function _set_production!(values, BC, model, faces, boundary_cellsID, start_ID, gradU)
+@kernel function _set_production!(
+    values, BC, fluid, momentum, turbulence, faces, boundary_cellsID, start_ID, gradU)
     i = @index(Global)
     fID = i + start_ID - 1 # Redefine thread index to become face ID
 
     (; kappa, beta1, cmu, B, E) = BC.value
-    nu = _nu(model.fluid)
-    (; U) = model.momentum
-    (; k, nut) = model.turbulence
+    nu = _nu(fluid)
+    (; U) = momentum
+    (; k, nut) = turbulence
 
     ylam = y_plus_laminar(E, kappa)
     # Uw = SVector{3,_get_float(mesh)}(0.0,0.0,0.0)
@@ -317,23 +321,27 @@ function correct_nut_wall!(νtf, BC, model, config)
     mesh = model.domain
     (; faces, boundary_cellsID, boundaries) = mesh
 
+    # Extract physics models
+    (; fluid, turbulence) = model
+
     facesID_range = get_boundaries(BC, boundaries)
     start_ID = facesID_range[1]
 
     # Execute apply boundary conditions kernel
     kernel! = _correct_nut_wall!(backend, workgroup)
     kernel!(
-        νtf.values, model, BC, faces, boundary_cellsID, start_ID, ndrange=length(facesID_range)
+        νtf.values, fluid, turbulence, BC, faces, boundary_cellsID, start_ID, ndrange=length(facesID_range)
     )
 end
 
-@kernel function _correct_nut_wall!(values, model, BC, faces, boundary_cellsID, start_ID)
+@kernel function _correct_nut_wall!(
+    values, fluid, turbulence, BC, faces, boundary_cellsID, start_ID)
     i = @index(Global)
     fID = i + start_ID - 1 # Redefine thread index to become face ID
 
     (; kappa, beta1, cmu, B, E) = BC.value
-    nu = _nu(model.fluid)
-    (; k) = model.turbulence
+    nu = _nu(fluid)
+    (; k) = turbulence
     
     ylam = y_plus_laminar(E, kappa)
         cID = boundary_cellsID[fID]

@@ -1,6 +1,6 @@
 using Plots
 using FVM_1D
-# using CUDA # Run this if using NVIDIA GPU
+using CUDA # Run this if using NVIDIA GPU
 # using AMDGPU # Run this if using AMD GPU
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
@@ -9,12 +9,12 @@ mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 # mesh_file = "unv_sample_meshes/cylinder_d10mm_10-7.5-2mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-# mesh_gpu = adapt(CUDABackend(), mesh)
+mesh_gpu = adapt(CUDABackend(), mesh)
 mesh_gpu = mesh
 
 # Inlet conditions
 
-velocity = [0.50, 0.0, 0.0]
+velocity = [1.50, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
 Re = (0.2*velocity[1])/nu
@@ -69,10 +69,10 @@ schemes = (
     p = set_schemes(divergence=Upwind, gradient=Midpoint)
 )
 
-runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
 
-hardware = set_hardware(backend=CPU(), workgroup=4)
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+# hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 
 config = Configuration(

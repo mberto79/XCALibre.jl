@@ -1,8 +1,6 @@
 using Plots
-
 using FVM_1D
 
-using Krylov
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "unv_sample_meshes/flatplate_2D_lowRe.unv"
@@ -16,12 +14,18 @@ Re = velocity[1]*1/nu
 k_inlet = 0.375
 ω_inlet = 1000
 
-model = RANS{KOmega}(mesh=mesh, viscosity=ConstantScalar(nu))
+model = Physics(
+    time = Steady(),
+    fluid = Incompressible(nu = ConstantScalar(nu)),
+    turbulence = RANS{KOmega}(),
+    energy = ENERGY{Isothermal}(),
+    domain = mesh_gpu
+    )
 
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Dirichlet(:wall, [0.0, 0.0, 0.0]),
+    Wall(:wall, [0.0, 0.0, 0.0]),
     Neumann(:top, 0.0)
 )
 
@@ -69,34 +73,34 @@ solvers = (
     U = set_solver(
         model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0(),
+        preconditioner = Jacobi(), #ILU0(),
         convergence = 1e-7,
         relax       = 0.8,
     ),
     p = set_solver(
         model.momentum.p;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = LDL(),
+        solver      = CgSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(), #ILU0(),
         convergence = 1e-7,
         relax       = 0.2,
     ),
     k = set_solver(
         model.turbulence.k;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0(),
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(), #ILU0(),
         convergence = 1e-7,
         relax       = 0.8,
     ),
     omega = set_solver(
         model.turbulence.omega;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0(),
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(), #ILU0(),
         convergence = 1e-7,
         relax       = 0.8,
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=-1)
+runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=CPU(), workgroup=4)
@@ -112,7 +116,7 @@ initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
-Rx, Ry, Rp = isimple!(model, config) # 9.39k allocs
+Rx, Ry, Rz, Rp, model_out = run!(model, config) # 9.39k allocs
 
 using DelimitedFiles
 using LinearAlgebra

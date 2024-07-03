@@ -43,7 +43,9 @@ end
 
 ## GPU SCALAR ADJUST BOUNDARY FUNCTIONS AND KERNELS
 
-function adjust_boundary!(b_cpu, BC::AbstractDirichlet, phif::FaceScalarField, phi, boundaries, boundary_cellsID,  backend, workgroup)
+const DIRICHLET = Union{Dirichlet, Wall}
+
+function adjust_boundary!(b_cpu, BC::DIRICHLET, phif::FaceScalarField, phi, boundaries, boundary_cellsID,  backend, workgroup)
     phif_values = phif.values
     phi_values = phi.values
 
@@ -70,6 +72,31 @@ function adjust_boundary!(b_cpu, BC::NEUMANN, phif::FaceScalarField, phi, bounda
     # KernelAbstractions.synchronize(backend)
 end
 
+function adjust_boundary!(b_cpu, BC::FixedTemperature, phif::FaceScalarField, phi, boundaries, boundary_cellsID,  backend, workgroup)
+    phif_values = phif.values
+    phi_values = phi.values
+
+    # Copy to CPU
+    # facesID_range = get_boundaries(BC, boundaries)
+    kernel_range = length(b_cpu[BC.ID].IDs_range)
+
+    kernel! = adjust_boundary_fixedtemperature_scalar!(backend, workgroup)
+    kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = kernel_range)
+    # KernelAbstractions.synchronize(backend)
+end
+
+function adjust_boundary!(b_cpu, BC::Symmetry, phif::FaceScalarField, phi, boundaries, boundary_cellsID, backend, workgroup)
+    phif_values = phif.values
+    phi_values = phi.values
+
+
+    kernel_range = length(b_cpu[BC.ID].IDs_range)
+
+    kernel! = adjust_boundary_symmetry_scalar!(backend, workgroup)
+    kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = kernel_range)
+    # KernelAbstractions.synchronize(backend)
+end
+
 ## SCALAR BOUNDARY FUNCTIONS
 
 # Dirichlet
@@ -83,6 +110,24 @@ end
         fID = IDs_range[i]
         # for fID in IDs_range
             phif_values[fID] = BC.value
+        # end
+    end
+end
+
+# FixedTemperature
+@kernel function adjust_boundary_fixedtemperature_scalar!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values)
+    i = @index(Global)
+    # i = BC.ID
+
+    @inbounds begin
+        # (; IDs_range) = boundaries[BC.ID]
+        (; IDs_range) = boundaries[BC.ID]
+        fID = IDs_range[i]
+        # for fID in IDs_range
+        # extract user provided information
+        (; T, energy_model) = BC.value
+
+        phif_values[fID] = energy_model.update_BC(T)
         # end
     end
 end
@@ -103,6 +148,23 @@ end
     end
 end
 
+# Symmetry
+@kernel function adjust_boundary_symmetry_scalar!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values)
+    i = @index(Global)
+    # i = BC.ID
+
+    @inbounds begin
+        # (; IDs_range) = boundaries[i]
+        (; IDs_range) = boundaries[BC.ID]
+        # for fID in IDs_range
+        fID = IDs_range[i]
+            cID = boundary_cellsID[fID]
+            phif_values[fID] = phi_values[cID] 
+        # end
+    end
+end
+
+
 ## GPU VECTOR ADJUST BOUNDARY FUNCTIONS AND KERNELS
 
 function adjust_boundary!(b_cpu, BC::AbstractDirichlet, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, backend, workgroup)
@@ -115,12 +177,22 @@ function adjust_boundary!(b_cpu, BC::AbstractDirichlet, psif::FaceVectorField, p
     # KernelAbstractions.synchronize(backend)
 end
 
-function adjust_boundary!(b_cpu, BC::Neumann, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, backend, workgroup)
+function adjust_boundary!(b_cpu, BC::NEUMANN, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, backend, workgroup)
     (; x, y, z) = psif
 
     kernel_range = length(b_cpu[BC.ID].IDs_range)
 
     kernel! = adjust_boundary_neumann_vector!(backend, workgroup)
+    kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = kernel_range)
+    # KernelAbstractions.synchronize(backend)
+end
+
+function adjust_boundary!(b_cpu, BC::Symmetry, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, backend, workgroup)
+    (; x, y, z) = psif
+
+    kernel_range = length(b_cpu[BC.ID].IDs_range)
+
+    kernel! = adjust_boundary_symmetry_vector!(backend, workgroup)
     kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = kernel_range)
     # KernelAbstractions.synchronize(backend)
 end
@@ -156,6 +228,30 @@ end
             x[fID] = psi_cell[1]
             y[fID] = psi_cell[2]
             z[fID] = psi_cell[3]
+        # end
+    end
+end
+
+@kernel function adjust_boundary_symmetry_vector!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z)
+    i = @index(Global)
+    # i = BC.ID
+
+    @inbounds begin
+        # (; IDs_range) = boundaries[i]
+        (; IDs_range) = boundaries[BC.ID]
+        # for fID in IDs_range
+        fID = IDs_range[i]
+            cID = boundary_cellsID[fID]
+            face = psi.mesh.faces[fID]
+            (; normal, delta) = face
+
+            psi_cell = psi[cID]
+
+            psi_normal = (psi_cell⋅normal)*normal
+
+            x[fID] = psi_cell[1] - psi_normal[1]
+            y[fID] = psi_cell[2] - psi_normal[2]
+            z[fID] = psi_cell[3] - psi_normal[3]
         # end
     end
 end

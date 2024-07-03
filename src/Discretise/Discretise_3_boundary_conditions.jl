@@ -99,6 +99,38 @@ end
     ap, ap*(U_boundary[component.value] + norm_vel[component.value])
 end
 
+# Symmetry functor definition
+@inline (bc::Symmetry)(
+    term::Operator{F,P,I,Laplacian{Linear}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
+    # Retrive term field and field values
+
+    phi = term.phi 
+
+    velocity_cell = phi[cellID]
+    J = term.flux[fID]
+
+    # Extract required fields from workitem face
+    (; area, delta, normal) = face 
+
+    # Calculate wall normal velocity at cell centre
+    norm_vel_ex_comp = ((velocity_cell⋅normal)-velocity_cell[component.value]*normal[component.value])*normal[component.value]
+    
+    # norm_vel_ex_comp = norm_vel_ex[component.value]
+
+    # Calculate flux and ap value for increment
+    flux = J*area/delta
+    ap = 2.0*term.sign[1]*(-flux)
+    
+    # Set index for sparse array values at [cellID, cellID] for workitem
+    # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
+
+    # Increment sparse and b arrays
+    # Atomix.@atomic nzval[zcellID] += ap
+    # Atomix.@atomic b[cellID] += ap*values[cellID]
+    # nothing
+    -ap*normal[component.value]^2, -ap*(norm_vel_ex_comp)
+end
+
 # fixedTempterature boundary condition
 @inline (bc::FixedTemperature)(
     term::Operator{F,P,I,Laplacian{Linear}}, cellID, zcellID, cell, face, fID, ione, component=nothing
@@ -220,6 +252,21 @@ end
     0.0, 0.0
 end
 
+@inline (bc::Symmetry)(
+    term::Operator{F,P,I,Divergence{Linear}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
+    # Calculate ap value to increment
+    ap = term.sign[1]*(term.flux[fID])
+
+    # Set index for sparse array values at [cellID, cellID] for workitem
+    # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
+
+    # Increment sparse array
+    # Atomix.@atomic nzval[zcellID] += ap
+    # nothing
+    0.0, 0.0
+end
+
+
 # fixedTempterature boundary condition
 @inline (bc::FixedTemperature)(
     term::Operator{F,P,I,Divergence{Linear}}, cellID, zcellID, cell, face, fID, ione, component=nothing
@@ -302,6 +349,21 @@ end
 
 # Neumann functor definition
 @inline (bc::Wall)(
+    term::Operator{F,P,I,Divergence{Upwind}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
+    # Calculate ap value to increment
+    ap = term.sign[1]*(term.flux[fID])
+
+    # Set index for sparse array values at [cellID, cellID] for workitem
+    # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
+
+    # Increment sparse array
+    # Atomix.@atomic nzval[zcellID] += ap
+    # nothing
+    0.0, 0.0
+end
+
+# Neumann functor definition
+@inline (bc::Symmetry)(
     term::Operator{F,P,I,Divergence{Upwind}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
     # Calculate ap value to increment
     ap = term.sign[1]*(term.flux[fID])

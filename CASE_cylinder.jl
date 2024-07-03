@@ -31,8 +31,8 @@ model = Physics(
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Wall(:cylinder, noSlip),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+    Symmetry(:bottom, 0.0),
+    Symmetry(:top, 0.0)
 )
 
 @assign! model momentum p (

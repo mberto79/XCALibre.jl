@@ -59,8 +59,8 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
-        rtol = 1e-5,
-        atol = 1e-2
+        rtol = 5e-1,
+        atol = 1e-10
     ),
     p = set_solver(
         model.momentum.p;
@@ -68,8 +68,8 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 1e-5,
-        atol = 1e-3
+        rtol = 1e-1,
+        atol = 1e-10
     )
 )
 
@@ -87,7 +87,7 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-x, Ry, Rz, Rp, model = run!(model, config)
+x, Ry, Rz, Rp, model_out = run!(model, config)
 
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

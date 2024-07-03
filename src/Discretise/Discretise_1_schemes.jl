@@ -45,7 +45,9 @@ end
     nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     # Calculate required increment
-    ap = term.sign*(term.flux[fID] * face.area)/face.delta
+    # ap = term.sign*(term.flux[fID] * face.area)/face.delta
+    delta = (cellN.centre - cell.centre)*ns⋅face.normal
+    ap = term.sign*(term.flux[fID] * face.area)/delta
 
     # Increment sparse array
     ac = -ap

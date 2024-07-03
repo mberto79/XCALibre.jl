@@ -119,6 +119,9 @@ function SIMPLE(
     flux!(mdotf, Uf, config)
     grad!(∇p, pf, p, p.BCs, config)
 
+    # grad limiter test!
+    limit_gradient!(∇p, p, config)
+
     update_nueff!(nueff, nu, model.turbulence, config)
     
     @info "Staring SIMPLE loops..."
@@ -165,6 +168,9 @@ function SIMPLE(
         
         # Gradient
         grad!(∇p, pf, p, p.BCs, config) 
+
+        # grad limiter test
+        limit_gradient!(∇p, p, config)
 
         correct = false
         if correct

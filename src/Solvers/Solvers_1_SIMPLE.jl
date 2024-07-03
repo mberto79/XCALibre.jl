@@ -120,7 +120,7 @@ function SIMPLE(
     grad!(∇p, pf, p, p.BCs, config)
 
     # grad limiter test!
-    limit_gradient!(∇p, p, config)
+    # limit_gradient!(∇p, p, config)
 
     update_nueff!(nueff, nu, model.turbulence, config)
     
@@ -170,7 +170,7 @@ function SIMPLE(
         grad!(∇p, pf, p, p.BCs, config) 
 
         # grad limiter test
-        limit_gradient!(∇p, p, config)
+        # limit_gradient!(∇p, p, config)
 
         correct = false
         if correct

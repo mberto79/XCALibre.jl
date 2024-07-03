@@ -12,7 +12,7 @@ mesh_gpu = adapt(CUDABackend(), mesh)
 
 # Inlet conditions
 
-velocity = [0.50, 0.0, 0.0]
+velocity = [0.5, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
 Re = (0.2*velocity[1])/nu
@@ -28,7 +28,7 @@ model = Physics(
 @assign! model momentum U ( 
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Dirichlet(:cylinder, noSlip),
+    Wall(:cylinder, noSlip),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0)
 )
@@ -63,13 +63,13 @@ solvers = (
 )
 
 schemes = (
-    U = set_schemes(time=Euler, divergence=Linear, gradient=Midpoint),
-    p = set_schemes(time=Euler, divergence=Linear, gradient=Midpoint)
+    U = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint),
+    p = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint)
 )
 
 
 runtime = set_runtime(
-    iterations=1000, write_interval=50, time_step=0.005)
+    iterations=5000, write_interval=50, time_step=0.005)
     # iterations=1, write_interval=50, time_step=0.005)
 
 # 2mm mesh use settings below (to lower Courant number)

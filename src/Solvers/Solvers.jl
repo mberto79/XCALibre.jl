@@ -3,6 +3,7 @@ module Solvers
 using Accessors
 using LinearAlgebra
 using SparseArrays
+using StaticArrays
 using Statistics
 using Krylov
 using LinearOperators

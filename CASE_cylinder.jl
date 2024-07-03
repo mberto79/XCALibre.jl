@@ -10,11 +10,11 @@ mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 mesh_gpu = adapt(CUDABackend(), mesh)
-mesh_gpu = mesh
+# mesh_gpu = mesh
 
 # Inlet conditions
 
-velocity = [1.50, 0.0, 0.0]
+velocity = [0.2, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
 Re = (0.2*velocity[1])/nu
@@ -31,8 +31,8 @@ model = Physics(
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Wall(:cylinder, noSlip),
-    Symmetry(:bottom, 0.0),
-    Symmetry(:top, 0.0)
+    Neumann(:bottom, 0.0),
+    Neumann(:top, 0.0)
 )
 
 @assign! model momentum p (
@@ -50,8 +50,8 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
-        rtol = 1e-4,
-        atol = 1e-2
+        rtol = 1e-1,
+        atol = 1e-10
     ),
     p = set_solver(
         model.momentum.p;
@@ -59,8 +59,8 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 1e-4,
-        atol = 1e-3
+        rtol = 1e-2,
+        atol = 1e-10
     )
 )
 

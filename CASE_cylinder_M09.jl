@@ -13,34 +13,34 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 # Inlet conditions
 
-velocity = [0.5, 0.0, 0.0]
+velocity = [320, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
-nu = 1e-2
+nu = 1e-3
 Re = (0.2*velocity[1])/nu
 gamma = 1.4
 cp = 1005.0
 temp = 300.0
-pressure = 100000
+pressure = 100000.0
 Pr = 0.7
 
 model = Physics(
     time = Steady(),
-    fluid = WeaklyCompressible(
+    fluid = Compressible(
         mu = ConstantScalar(nu),
         cp = ConstantScalar(cp),
         gamma = ConstantScalar(gamma),
         Pr = ConstantScalar(Pr)
         ),
     turbulence = RANS{Laminar}(),
-    energy = ENERGY{SensibleEnthalpy}(),
+    energy = ENERGY{SensibleEnthalpy}(Tref = 0.0),
     domain = mesh
     )
 
 @assign! model momentum U ( 
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    # Wall(:cylinder, noSlip),
     Dirichlet(:cylinder, noSlip),
+    # Dirichlet(:cylinder, noSlip),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0)
 )
@@ -56,8 +56,8 @@ model = Physics(
 @assign! model energy h (
     FixedTemperature(:inlet, T=300.0, model=model.energy),
     Neumann(:outlet, 0.0),
-    # Neumann(:cylinder, 0.0),
-    FixedTemperature(:cylinder, T=330.0, model=model.energy),
+    Neumann(:cylinder, 0.0),
+    # FixedTemperature(:cylinder, T=330.0, model=model.energy),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0)
 )
@@ -68,37 +68,37 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.8,
-        rtol = 1e-4,
-        atol = 1e-2
+        relax       = 0.7,
+        rtol = 1e-2,
+        atol = 1e-4
     ),
     p = set_solver(
         model.momentum.p;
-        solver      = CgSolver, # BicgstabSolver, GmresSolver
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.2,
-        rtol = 1e-4,
-        atol = 1e-3
+        relax       = 0.3,
+        rtol = 1e-2,
+        atol = 1e-4
     ),
     h = set_solver(
         model.energy.h;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.8,
-        rtol = 1e-4,
-        atol = 1e-2
+        relax       = 0.7,
+        rtol = 1e-2,
+        atol = 1e-4
     )
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(divergence=Upwind, gradient=Midpoint),
-    h = set_schemes(divergence=Upwind, gradient=Midpoint)
+    U = set_schemes(divergence=Upwind),#, gradient=Midpoint),
+    p = set_schemes(divergence=Linear, gradient=Midpoint),
+    h = set_schemes(divergence=Upwind)#, gradient=Midpoint)
 )
 
-runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=100, write_interval=10, time_step=1)
 
 hardware = set_hardware(backend=CPU(), workgroup=4)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)

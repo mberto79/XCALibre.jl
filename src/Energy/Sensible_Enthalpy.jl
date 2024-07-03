@@ -55,7 +55,7 @@ end
 # end
 
 function initialise(
-    energy::SensibleEnthalpy, model::Physics{T1,F,M,Tu,E,D,BI}, mdotf, peqn, config
+    energy::SensibleEnthalpy, model::Physics{T1,F,M,Tu,E,D,BI}, mdotf, rho, peqn, config
     ) where {T1,F,M,Tu,E,D,BI}
 
     (; h, T) = energy
@@ -63,18 +63,11 @@ function initialise(
     mesh = mdotf.mesh
     eqn = peqn.equation
     
-    rho = ScalarField(mesh)
+    # rho = ScalarField(mesh)
     keff_by_cp = FaceScalarField(mesh)
     divK = ScalarField(mesh)
 
-
-
-    h = T
     Ttoh!(model, T, h)
-    println("Maxh ", maximum(T.values), " minh ", minimum(T.values))
-    
-
-    # println(h.BCs)
 
     energy_eqn = (
         Time{schemes.h.time}(rho, h)
@@ -95,7 +88,7 @@ function initialise(
 end
 
 function energy!(
-    energy::Sensible_Enthalpy_Model{E1}, model::Physics{T1,F,M,Tu,E,D,BI}, prev, mdotf, mueff, config
+    energy::Sensible_Enthalpy_Model{E1}, model::Physics{T1,F,M,Tu,E,D,BI}, prev, mdotf, rho, mueff, config
     ) where {T1,F,M,Tu,E,D,BI,E1}
 
     mesh = model.domain
@@ -105,8 +98,9 @@ function energy!(
     (;energy_eqn) = energy
     (; solvers, runtime) = config
 
-    println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
+    # println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
 
+    # rho = get_flux(energy_eqn, 1)
     keff_by_cp = get_flux(energy_eqn, 3)
     divK = get_source(energy_eqn, 1)
 
@@ -115,7 +109,7 @@ function energy!(
     K = ScalarField(mesh)
     Pr = _Pr(model.fluid)
 
-    # println("Minmdot ", minimum(mdotf.values), ", Maxdoot ", maximum(mdotf.values))
+    # println("Minmdot ", minimum(rho.values), ", Maxdoot ", maximum(rho.values))
 
     @. keff_by_cp.values = mueff.values/Pr.values
 
@@ -128,11 +122,11 @@ function energy!(
     for i ∈ eachindex(Kf)
         Kf.values[i] = 0.5*(Uf.x.values[i]^2 + Uf.y.values[i]^2 + Uf.z.values[i]^2)
     end
-    # correct_face_interpolation!(Kf, K, mdotf) # This forces KE to be upwind 
+    correct_face_interpolation!(Kf, K, mdotf) # This forces KE to be upwind 
     @. Kf.values *= mdotf.values
     div!(divK, Kf, config)
 
-    println("Maxh ", maximum(keff_by_cp.values), " minh ", minimum(keff_by_cp.values))
+    # println("Maxh ", maximum(keff_by_cp.values), " minh ", minimum(keff_by_cp.values))
 
     # solve_equation!(energy_eqn, h, solvers.h, config) # This doesn't work for this scalarfield yet
     # Set up and solve energy equation
@@ -143,11 +137,15 @@ function energy!(
     update_preconditioner!(energy_eqn.preconditioner, mesh, config)
     solve_system!(energy_eqn, solvers.h, h, nothing, config)
     
-    println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
+    # println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
+
+    Tmin = 100; Tmax = 1000
+    thermoClamp!(model, h, Tmin, Tmax)
 
     htoT!(model, h, T)
     interpolate!(hf, h, config)
     correct_boundaries!(hf, h, h.BCs, config)
+    thermoClamp!(model, hf, Tmin, Tmax)
 end
 
 function thermo_Psi!(
@@ -163,6 +161,7 @@ function thermo_Psi!(
     model::Physics{T,F,M,Tu,E,D,BI}, Psif::FaceScalarField, config
     ) where {T,F<:AbstractCompressible,M,Tu,E,D,BI}
     (; coeffs, hf, h) = model.energy
+    interpolate!(hf, h, config)
     correct_boundaries!(hf, h, h.BCs, config)
     (; Tref) = coeffs
     Cp = _Cp(model.fluid); R = _R(model.fluid)
@@ -203,11 +202,47 @@ function htoT!(
     (; Tref) = coeffs
     Cp = _Cp(model.fluid)
     @. T.values = (h.values/Cp.values) + Tref
-    println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
 end
 
 
 
-function clamp!(h, t)
+function thermoClamp!(
+    model::Physics{T1,F,M,Tu,E,D,BI}, h::ScalarField, Tmin, Tmax
+    ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
+    (; coeffs) = model.energy
+    (; Tref) = coeffs
+    Cp = _Cp(model.fluid)
+    hmin = Cp.values*(Tmin-Tref)
+    hmax = Cp.values*(Tmax-Tref)
+    clamp!(h.values, hmin, hmax)
+end
 
+function thermoClamp!(
+    model::Physics{T1,F,M,Tu,E,D,BI}, hf::FaceScalarField, Tmin, Tmax
+    ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
+    (; coeffs) = model.energy
+    (; Tref) = coeffs
+    Cp = _Cp(model.fluid)
+    hmin = Cp.values*(Tmin-Tref)
+    hmax = Cp.values*(Tmax-Tref)
+    clamp!(hf.values, hmin, hmax)
+end
+
+function correct_face_interpolation!(phif::FaceScalarField, phi, Uf::FaceScalarField)
+    mesh = phif.mesh
+    (; faces, cells) = mesh
+    for fID ∈ eachindex(faces)
+        face = faces[fID]
+        (; ownerCells, area, normal) = face
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        phi1 = phi[cID1]
+        phi2 = phi[cID2]
+        flux = Uf[fID]
+        if flux >= 0.0
+            phif.values[fID] = phi1
+        else
+            phif.values[fID] = phi2
+        end
+    end
 end

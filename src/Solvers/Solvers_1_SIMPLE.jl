@@ -172,6 +172,16 @@ function SIMPLE(
         # grad limiter test
         # limit_gradient!(∇p, p, config)
 
+        # non-orthogonal correction
+        corr = nonorthogonal_correction(∇p, rDf, config)
+        source_corr = nonorthogonal_source_correction(corr)
+        @. p_eqn.equation.b -= source_corr.values
+        @. prev = p.values
+        solve_system!(p_eqn, solvers.p, p, nothing, config)
+        explicit_relaxation!(p, prev, solvers.p.relax, config)
+        grad!(∇p, pf, p, p.BCs, config) 
+
+
         correct = false
         if correct
             ncorrectors = 1
@@ -243,6 +253,52 @@ function SIMPLE(
     end # end for loop
     model_out = adapt(CPU(), model)
     return R_ux, R_uy, R_uz, R_p, model_out
+end
+
+### TEMP LOCATION FOR PROTOTYPING - NONORTHOGONAL CORRECTION 
+
+function nonorthogonal_correction(grad, flux, config)
+    mesh = grad.mesh
+    (; faces, cells, boundary_cellsID) = mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    
+    n_faces = length(faces)
+    n_bfaces = length(boundary_cellsID)
+    n_ifaces = n_faces - n_bfaces + 1
+
+    corr = FaceScalarField(mesh)
+
+    for fID ∈ (n_bfaces + 1):n_faces
+        face = faces[fID]
+        (; ownerCells, weight, area, normal, e) = face
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        gradf = weight*grad[cID1] + (1 - weight)*grad[cID2]
+        T_hat = normal - (1/(normal⋅e))*e
+        corr[fID] = area*flux[fID]*gradf⋅T_hat
+    end
+    return corr
+end
+
+function nonorthogonal_source_correction(corr)
+    mesh = corr.mesh
+    (; cells, cell_faces, cell_nsign) = mesh
+
+    source_corr = ScalarField(mesh)
+    for cID ∈ eachindex(cells)
+        cell = cells[cID]
+        faces_range = cell.faces_range
+        sum = 0.0
+        for fi ∈ faces_range
+            fID = cell_faces[fi]
+            nsign = cell_nsign[fi]
+            sum += corr[fID]*nsign
+        end
+    source_corr[cID] = sum#*cell.volume
+    end
+
+    return source_corr
 end
 
 ### TEMP LOCATION FOR PROTOTYPING

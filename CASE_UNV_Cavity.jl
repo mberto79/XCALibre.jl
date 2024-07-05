@@ -1,5 +1,6 @@
 using Plots
 using FVM_1D
+using CUDA
 
 # quad and trig 40 and 100
 mesh_file = "unv_sample_meshes/trig100.unv"

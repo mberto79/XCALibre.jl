@@ -172,7 +172,7 @@ function SIMPLE(
         # grad limiter test
         # limit_gradient!(∇p, p, config)
 
-        # non-orthogonal correction
+        # # non-orthogonal correction
         # corr = nonorthogonal_correction(∇p, rDf, config)
         # source_corr = nonorthogonal_source_correction(corr)
         # @. p_eqn.equation.b -= source_corr.values
@@ -182,13 +182,17 @@ function SIMPLE(
         # explicit_relaxation!(p, prev, solvers.p.relax, config)
         # grad!(∇p, pf, p, p.BCs, config) 
 
-        source_corr = optimised_correction_loop(∇p, rDf, config)
-        @. p_eqn.equation.b -= source_corr.values
-        setReference!(p_eqn, pref, 1, config)
-        @. prev = p.values
-        solve_system!(p_eqn, solvers.p, p, nothing, config)
-        explicit_relaxation!(p, prev, solvers.p.relax, config)
-        grad!(∇p, pf, p, p.BCs, config)
+        for _ ∈ 1:1
+            discretise!(p_eqn, p, config)       
+            apply_boundary_conditions!(p_eqn, p.BCs, nothing, config)
+            setReference!(p_eqn, pref, 1, config)
+            update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+            optimised_correction_loop!(p_eqn, ∇p, rDf, config)
+            @. prev = p.values
+            solve_system!(p_eqn, solvers.p, p, nothing, config)
+            explicit_relaxation!(p, prev, solvers.p.relax, config)
+            grad!(∇p, pf, p, p.BCs, config)
+        end
 
 
         correct = false
@@ -266,20 +270,29 @@ end
 
 ### TEMP LOCATION FOR PROTOTYPING - NONORTHOGONAL CORRECTION 
 
-function optimised_correction_loop(grad, flux, config)
+function optimised_correction_loop!(eqn, grad, flux, config)
     # nothing # do loop over faces and add contribution to ownerCells in one go! NIIIICE!
     mesh = grad.mesh
-    (; faces, cells, boundary_cellsID) = mesh
+    (; faces, boundary_cellsID) = mesh
 
     (; hardware) = config
     (; backend, workgroup) = hardware
+
+    (; b) = eqn.equation
     
     n_faces = length(faces)
     n_bfaces = length(boundary_cellsID)
+    n_ifaces = n_faces - n_bfaces
 
-    correction = ScalarField(mesh)
+    kernel! = _optimised_correction_loop!(backend, workgroup)
+    kernel!(b, grad, flux, faces, n_bfaces, ndrange=n_ifaces)
+    KernelAbstractions.synchronize(backend)
+end
 
-    for fID ∈ (n_bfaces + 1):n_faces
+@kernel function _optimised_correction_loop!(b, grad, flux, faces, n_bfaces)
+    i = @index(Global)
+    fID = i + n_bfaces
+    # for fID ∈ (n_bfaces + 1):n_faces
         face = faces[fID]
         (; ownerCells, weight, area, normal, e) = face
         cID1 = ownerCells[1]
@@ -288,10 +301,13 @@ function optimised_correction_loop(grad, flux, config)
         T_hat = normal - (1/(normal⋅e))*e
         faceCorrection = area*flux[fID]*gradf⋅T_hat
 
-        correction[cID1] += faceCorrection # remember to make atomic in kernel
-        correction[cID2] += -1*faceCorrection # -1x to correct normal direction
-    end
-    return correction
+        # correction[cID1] += faceCorrection # remember to make atomic in kernel
+        # correction[cID2] += -1*faceCorrection # -1x to correct normal direction
+
+        Atomix.@atomic b[cID1] -= faceCorrection # remember to make atomic in kernel
+        Atomix.@atomic b[cID2] -= -1*faceCorrection # -1x to correct normal direction
+    # end
+    # return correction
 end
 
 function nonorthogonal_correction(grad, flux, config)

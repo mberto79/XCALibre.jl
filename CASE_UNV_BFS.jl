@@ -96,7 +96,7 @@ Profile.Allocs.@profile sample_rate=0.1 begin
     Rx, Ry, Rz, Rp, model_out = run!(model, config)
 end
 
-Profile.print(format=:flat)
+# Profile.print(format=:flat)
 
 PProf.Allocs.pprof()
 

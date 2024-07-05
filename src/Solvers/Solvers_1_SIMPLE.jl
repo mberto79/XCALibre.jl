@@ -156,7 +156,7 @@ function SIMPLE(
         
         # Pressure calculations
         @. prev = p.values
-        solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
+        solve_equation!(p_eqn, p, solvers.p, config; ref=pref)
         explicit_relaxation!(p, prev, solvers.p.relax, config)
 
         residual!(R_ux, U_eqn, U.x, iteration, xdir, config)
@@ -176,6 +176,7 @@ function SIMPLE(
         corr = nonorthogonal_correction(∇p, rDf, config)
         source_corr = nonorthogonal_source_correction(corr)
         @. p_eqn.equation.b -= source_corr.values
+        setReference!(p_eqn, pref, 1, config)
         @. prev = p.values
         solve_system!(p_eqn, solvers.p, p, nothing, config)
         explicit_relaxation!(p, prev, solvers.p.relax, config)
@@ -256,6 +257,10 @@ function SIMPLE(
 end
 
 ### TEMP LOCATION FOR PROTOTYPING - NONORTHOGONAL CORRECTION 
+
+function optimised_correction_loop()
+    nothing # do loop over faces and add contribution to ownerCells in one go! NIIIICE!
+end
 
 function nonorthogonal_correction(grad, flux, config)
     mesh = grad.mesh

@@ -4,7 +4,7 @@ piso!(model_in, config; resume=true, pref=nothing) = begin
 
     R_ux, R_uy, R_uz, R_p, model = setup_incompressible_solvers(
         PISO, model_in, config;
-        resume=true, pref=nothing
+        resume=true, pref=pref
         )
         
     return R_ux, R_uy, R_uz, R_p, model
@@ -93,7 +93,7 @@ function PISO(
             
             # Pressure calculations
             @. prev = p.values
-            solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
+            solve_equation!(p_eqn, p, solvers.p, config; ref=pref)
 
             # Gradient
             grad!(∇p, pf, p, p.BCs, config) 
@@ -111,7 +111,7 @@ function PISO(
                     interpolate!(gradpf, ∇p, p)
                     nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
                     correct!(p_eqn.equation, p_model.terms.term1, pf)
-                    solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
+                    solve_equation!(p_eqn, p, solvers.p, config; ref=pref)
                     grad!(∇p, pf, p, pBCs) 
                 end
             end

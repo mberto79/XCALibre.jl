@@ -1,15 +1,14 @@
 using Plots
 using FVM_1D
-using Krylov
 
 # quad and trig 40 and 100
-mesh_file = "unv_sample_meshes/trig40.unv"
+mesh_file = "unv_sample_meshes/trig100.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 mesh_dev = adapt(CUDABackend(), mesh)
 mesh_dev = mesh
 
-velocity = [1.5, 0.0, 0.0]
+velocity = [0.5, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
 Re = 1*velocity[1]/nu
@@ -59,7 +58,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=2000, write_interval=2000, time_step=1)
+runtime = set_runtime(iterations=1000, write_interval=1000, time_step=1)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=4)

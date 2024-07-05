@@ -173,14 +173,22 @@ function SIMPLE(
         # limit_gradient!(∇p, p, config)
 
         # non-orthogonal correction
-        corr = nonorthogonal_correction(∇p, rDf, config)
-        source_corr = nonorthogonal_source_correction(corr)
+        # corr = nonorthogonal_correction(∇p, rDf, config)
+        # source_corr = nonorthogonal_source_correction(corr)
+        # @. p_eqn.equation.b -= source_corr.values
+        # setReference!(p_eqn, pref, 1, config)
+        # @. prev = p.values
+        # solve_system!(p_eqn, solvers.p, p, nothing, config)
+        # explicit_relaxation!(p, prev, solvers.p.relax, config)
+        # grad!(∇p, pf, p, p.BCs, config) 
+
+        source_corr = optimised_correction_loop(∇p, rDf, config)
         @. p_eqn.equation.b -= source_corr.values
         setReference!(p_eqn, pref, 1, config)
         @. prev = p.values
         solve_system!(p_eqn, solvers.p, p, nothing, config)
         explicit_relaxation!(p, prev, solvers.p.relax, config)
-        grad!(∇p, pf, p, p.BCs, config) 
+        grad!(∇p, pf, p, p.BCs, config)
 
 
         correct = false
@@ -258,8 +266,32 @@ end
 
 ### TEMP LOCATION FOR PROTOTYPING - NONORTHOGONAL CORRECTION 
 
-function optimised_correction_loop()
-    nothing # do loop over faces and add contribution to ownerCells in one go! NIIIICE!
+function optimised_correction_loop(grad, flux, config)
+    # nothing # do loop over faces and add contribution to ownerCells in one go! NIIIICE!
+    mesh = grad.mesh
+    (; faces, cells, boundary_cellsID) = mesh
+
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    
+    n_faces = length(faces)
+    n_bfaces = length(boundary_cellsID)
+
+    correction = ScalarField(mesh)
+
+    for fID ∈ (n_bfaces + 1):n_faces
+        face = faces[fID]
+        (; ownerCells, weight, area, normal, e) = face
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        gradf = weight*grad[cID1] + (1 - weight)*grad[cID2]
+        T_hat = normal - (1/(normal⋅e))*e
+        faceCorrection = area*flux[fID]*gradf⋅T_hat
+
+        correction[cID1] += faceCorrection # remember to make atomic in kernel
+        correction[cID2] += -1*faceCorrection # -1x to correct normal direction
+    end
+    return correction
 end
 
 function nonorthogonal_correction(grad, flux, config)

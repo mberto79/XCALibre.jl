@@ -63,7 +63,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=2000, time_step=1, write_interval=500)
+    iterations=1, time_step=1, write_interval=500)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=4)
@@ -92,8 +92,11 @@ initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
 Profile.Allocs.clear()
-Profile.Allocs.@profile sample_rate=1 begin 
+Profile.Allocs.@profile sample_rate=0.1 begin 
     Rx, Ry, Rz, Rp, model_out = run!(model, config)
 end
 
+Profile.print(format=:flat)
+
 PProf.Allocs.pprof()
+

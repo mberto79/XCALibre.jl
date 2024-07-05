@@ -6,7 +6,8 @@ using CUDA
 mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-mesh_gpu = adapt(CUDABackend(), mesh)
+mesh_dev = adapt(CUDABackend(), mesh)
+mesh_dev = mesh
 
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
@@ -16,14 +17,14 @@ model = Physics(
     time = Steady(),
     fluid = Incompressible(nu = ConstantScalar(nu)),
     turbulence = RANS{Laminar}(),
-    energy = nothing,
-    domain = mesh_gpu
+    energy = ENERGY{Isothermal}(),
+    domain = mesh_dev
     )
 
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Dirichlet(:wall, [0.0, 0.0, 0.0]),
+    Wall(:wall, [0.0, 0.0, 0.0]),
     Dirichlet(:top, [0.0, 0.0, 0.0])
 )
 
@@ -62,7 +63,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=1000, time_step=1, write_interval=500)
+    iterations=2000, time_step=1, write_interval=500)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=4)

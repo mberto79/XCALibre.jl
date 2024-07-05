@@ -3,12 +3,13 @@ using FVM_1D
 using Krylov
 
 # quad and trig 40 and 100
-mesh_file = "unv_sample_meshes/trig100.unv"
+mesh_file = "unv_sample_meshes/trig40.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-mesh_gpu = adapt(CUDABackend(), mesh)
+mesh_dev = adapt(CUDABackend(), mesh)
+mesh_dev = mesh
 
-velocity = [0.5, 0.0, 0.0]
+velocity = [1.5, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
 Re = 1*velocity[1]/nu
@@ -17,14 +18,14 @@ model = Physics(
     time = Steady(),
     fluid = Incompressible(nu = ConstantScalar(nu)),
     turbulence = RANS{Laminar}(),
-    energy = nothing,
-    domain = mesh_gpu
+    energy = ENERGY{Isothermal}(),
+    domain = mesh_dev
     )
 
 @assign! model momentum U (
-    Dirichlet(:inlet, noSlip),
-    Dirichlet(:outlet, noSlip),
-    Dirichlet(:bottom, noSlip),
+    Wall(:inlet, noSlip),
+    Wall(:outlet, noSlip),
+    Wall(:bottom, noSlip),
     Dirichlet(:top, velocity)
 )
 
@@ -44,24 +45,24 @@ schemes = (
 solvers = (
     U = set_solver(
         model.momentum.U;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = DILU(),
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(), # DILU(),
         convergence = 1e-7,
         relax       = 0.8,
     ),
     p = set_solver(
         model.momentum.p;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = LDL(),
+        solver      = CgSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(), # LDL(),
         convergence = 1e-7,
         relax       = 0.2,
     )
 )
 
-runtime = set_runtime(iterations=2000, write_interval=2000)
+runtime = set_runtime(iterations=2000, write_interval=2000, time_step=1)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

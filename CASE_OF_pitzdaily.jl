@@ -4,9 +4,10 @@ using CUDA
 
 
 mesh_file = "unv_sample_meshes/OF_pitzdaily/polyMesh"
-@time mesh = load_foamMesh(mesh_file, integer_type=Int64, float_type=Float64)
+@time mesh = FOAM3D_mesh(mesh_file, integer_type=Int64, float_type=Float64)
 
-mesh_gpu = adapt(CUDABackend(), mesh)
+mesh_dev = adapt(CUDABackend(), mesh)
+mesh_dev = mesh
 
 # # check volume calculation
 # volumes = ScalarField(mesh)
@@ -29,16 +30,16 @@ model = Physics(
     time = Steady(),
     fluid = Incompressible(nu = ConstantScalar(nu)),
     turbulence = RANS{KOmega}(),
-    energy = nothing,
-    domain = mesh
+    energy = ENERGY{Isothermal}(),
+    domain = mesh_dev
     )
 
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Neumann(:frontAndBack, 0.0),
-    Dirichlet(:upperWall, noSlip),
-    Dirichlet(:lowerWall, noSlip)
+    Wall(:upperWall, noSlip),
+    Wall(:lowerWall, noSlip)
 )
 
 @assign! model momentum p (
@@ -87,7 +88,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
-        rtol = 1e-1,
+        rtol = 1e-2,
         atol = 1e-10
     ),
     p = set_solver(
@@ -95,7 +96,7 @@ solvers = (
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), #LDL(),
         convergence = 1e-7,
-        relax       = 0.6,
+        relax       = 0.3,
         rtol = 1e-3,
         atol = 1e-10
     ),
@@ -106,7 +107,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
-        rtol = 1e-1,
+        rtol = 1e-2,
         atol = 1e-10
     ),
     omega = set_solver(
@@ -116,15 +117,15 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
-        rtol = 1e-1,
+        rtol = 1e-2,
         atol = 1e-10
     )
 )
 
-runtime = set_runtime(iterations=2000, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=4000, write_interval=100, time_step=1)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
@@ -137,7 +138,7 @@ GC.gc(true)
 # initialise!(model.turbulence.omega, ω_inlet)
 # initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
-initialise!(model.momentum.U, [0,0,0])
+initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)

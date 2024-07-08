@@ -187,7 +187,7 @@ function SIMPLE(
             apply_boundary_conditions!(p_eqn, p.BCs, nothing, config)
             setReference!(p_eqn, pref, 1, config)
             update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-            optimised_correction_loop!(p_eqn, ∇p, rDf, config)
+            nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
             @. prev = p.values
             solve_system!(p_eqn, solvers.p, p, nothing, config)
             explicit_relaxation!(p, prev, solvers.p.relax, config)
@@ -270,7 +270,7 @@ end
 
 ### TEMP LOCATION FOR PROTOTYPING - NONORTHOGONAL CORRECTION 
 
-function optimised_correction_loop!(eqn, grad, flux, config)
+function nonorthogonal_face_correction(eqn, grad, flux, config)
     # nothing # do loop over faces and add contribution to ownerCells in one go! NIIIICE!
     mesh = grad.mesh
     (; faces, boundary_cellsID) = mesh
@@ -284,12 +284,12 @@ function optimised_correction_loop!(eqn, grad, flux, config)
     n_bfaces = length(boundary_cellsID)
     n_ifaces = n_faces - n_bfaces
 
-    kernel! = _optimised_correction_loop!(backend, workgroup)
+    kernel! = _nonorthogonal_face_correction(backend, workgroup)
     kernel!(b, grad, flux, faces, n_bfaces, ndrange=n_ifaces)
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function _optimised_correction_loop!(b, grad, flux, faces, n_bfaces)
+@kernel function _nonorthogonal_face_correction(b, grad, flux, faces, n_bfaces)
     i = @index(Global)
     fID = i + n_bfaces
     # for fID ∈ (n_bfaces + 1):n_faces

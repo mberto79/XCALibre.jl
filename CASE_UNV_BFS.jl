@@ -24,7 +24,8 @@ model = Physics(
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
+    Dirichlet(:wall, [0.0, 0.0, 0.0]),
+    # Wall(:wall, [0.0, 0.0, 0.0]),
     Dirichlet(:top, [0.0, 0.0, 0.0])
 )
 
@@ -92,7 +93,7 @@ initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
 Profile.Allocs.clear()
-Profile.Allocs.@profile sample_rate=0.1 begin 
+Profile.Allocs.@profile sample_rate=1.0 begin 
     Rx, Ry, Rz, Rp, model_out = run!(model, config)
 end
 
@@ -100,3 +101,6 @@ end
 
 PProf.Allocs.pprof()
 
+PProf.refresh()
+
+@profview_allocs Rx, Ry, Rz, Rp, model_out = run!(model, config) sample_rate=1

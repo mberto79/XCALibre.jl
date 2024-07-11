@@ -214,7 +214,7 @@ function SIMPLE(
         correct_velocity!(U, Hv, ∇p, rD, config)
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, U.BCs, config)
-        # flux!(mdotf, Uf, config) # old approach
+        flux!(mdotf, Uf, config) # old approach
 
         # correct_face_interpolation!(pf, p, Uf) # not needed?
         # correct_boundaries!(pf, p, p.BCs, config) # not needed?
@@ -223,7 +223,7 @@ function SIMPLE(
         # @. mdotf.values -= pgrad.values*rDf.values
 
         # new approach
-        correct_mass_flux(mdotf, p, pf, rDf, config)
+        # correct_mass_flux(mdotf, p, pf, rDf, config)
 
         # if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs, config)
@@ -389,8 +389,8 @@ end
             # cell2 = cells[cID2]
             p1 = p[cID1]
             p2 = p[cID2]
-            face_grad = area*(p2 - p1)/delta
-            # face_grad = (phi2 - phi1)/delta
+            # face_grad = area*(p2 - p1)/delta
+            face_grad = (p2 - p1)/delta
 
             # sngrad.values[fID] = face_grad
 

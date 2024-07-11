@@ -44,9 +44,9 @@ function _apply_boundary_conditions!(
         kernel!(
             model, BC, model.terms, faces, cells, start_ID, boundary_cellsID, rowval, colptr, nzval, b, ione, component, ndrange=kernel_range
             )
-        # KernelAbstractions.synchronize(backend)
+        KernelAbstractions.synchronize(backend)
     end
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
     nothing
 end
 

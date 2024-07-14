@@ -123,7 +123,7 @@ function SIMPLE(
     # limit_gradient!(∇p, p, config)
 
     update_nueff!(nueff, nu, model.turbulence, config)
-    
+
     @info "Staring SIMPLE loops..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
@@ -144,15 +144,12 @@ function SIMPLE(
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs, config)
 
-        # div!(divHv, Uf, config) # old approach
+        # old approach
+        # div!(divHv, Uf, config) 
 
         # new approach
         flux!(mdotf, Uf, config)
         div!(divHv, mdotf, config)
-
-        # div!(divHv, Uf, config)
-        # flux!(mdotf, Uf, config)
-        
         
         # Pressure calculations
         @. prev = p.values
@@ -182,7 +179,7 @@ function SIMPLE(
         # explicit_relaxation!(p, prev, solvers.p.relax, config)
         # grad!(∇p, pf, p, p.BCs, config) 
 
-        for _ ∈ 1:1
+        for _ ∈ 1:0
             discretise!(p_eqn, p, config)       
             apply_boundary_conditions!(p_eqn, p.BCs, nothing, config)
             setReference!(p_eqn, pref, 1, config)
@@ -211,19 +208,23 @@ function SIMPLE(
         end
 
         # Velocity and boundaries correction
+
+        # old approach
         correct_velocity!(U, Hv, ∇p, rD, config)
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, U.BCs, config)
-        flux!(mdotf, Uf, config) # old approach
+        flux!(mdotf, Uf, config) 
 
         # correct_face_interpolation!(pf, p, Uf) # not needed?
         # correct_boundaries!(pf, p, p.BCs, config) # not needed?
 
-        # pgrad = face_normal_gradient(p, pf)
-        # @. mdotf.values -= pgrad.values*rDf.values
-
         # new approach
+        # interpolate!(Uf, U, config)
+        # correct_boundaries!(Uf, U, U.BCs, config)
+        # flux!(mdotf, Uf, config)
         # correct_mass_flux(mdotf, p, pf, rDf, config)
+        
+        # correct_velocity!(U, Hv, ∇p, rD, config)
 
         # if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs, config)
@@ -364,7 +365,7 @@ function correct_mass_flux(mdotf, p, pf, rDf, config)
 
     n_faces = length(faces)
     n_bfaces = length(boundary_cellsID)
-    n_ifaces = n_faces - n_bfaces + 1
+    n_ifaces = n_faces - n_bfaces #+ 1
 
     kernel! = _correct_internal_faces(backend, workgroup)
     kernel!(mdotf, p, rDf, faces, n_bfaces, ndrange=length(n_ifaces))
@@ -389,8 +390,8 @@ end
             # cell2 = cells[cID2]
             p1 = p[cID1]
             p2 = p[cID2]
-            # face_grad = area*(p2 - p1)/delta
-            face_grad = (p2 - p1)/delta
+            face_grad = area*(p2 - p1)/delta
+            # face_grad = (p2 - p1)/delta
 
             # sngrad.values[fID] = face_grad
 

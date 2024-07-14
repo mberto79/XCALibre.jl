@@ -23,7 +23,7 @@ model = Physics(
     time = Steady(),
     fluid = Incompressible(nu = ConstantScalar(nu)),
     turbulence = RANS{KOmega}(),
-    energy = nothing,
+    energy = ENERGY{Isothermal}(),
     domain = mesh_gpu
     )
 
@@ -75,40 +75,40 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.6,
-        rtol = 1e-15,
-        atol = 1e-5
+        relax       = 0.7,
+        rtol = 1e-2,
+        atol = 1e-15
     ),
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.2,
-        rtol = 1e-15,
-        atol = 1e-5
+        relax       = 0.3,
+        rtol = 1e-3,
+        atol = 1e-15
     ),
     k = set_solver(
         model.turbulence.k;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.8,
-        rtol = 1e-15,
-        atol = 1e-5
+        relax       = 0.7,
+        rtol = 1e-2,
+        atol = 1e-15
     ),
     omega = set_solver(
         model.turbulence.omega;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.8,
-        rtol = 1e-15,
-        atol = 1e-5
+        relax       = 0.7,
+        rtol = 1e-2,
+        atol = 1e-15
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=3000, write_interval=100, time_step=1)
 # runtime = set_runtime(iterations=2, write_interval=-1, time_step=1)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)

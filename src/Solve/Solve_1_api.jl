@@ -51,6 +51,7 @@ function solve_equation!(
     setReference!(eqn, ref, 1, config)
     if !isnothing(irelax)
         implicit_relaxation!(eqn, phi.values, irelax, nothing, config)
+        # implicit_relaxation_diagdom!(eqn, phi.values, irelax, nothing, config)
     end
     update_preconditioner!(eqn.preconditioner, phi.mesh, config)
     solve_system!(eqn, solversetup, phi, nothing, config)

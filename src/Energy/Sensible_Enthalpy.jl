@@ -69,6 +69,8 @@ function initialise(
 
     Ttoh!(model, T, h)
 
+    # println(h.BCs[1])
+
     energy_eqn = (
         Time{schemes.h.time}(rho, h)
         + Divergence{schemes.h.divergence}(mdotf, h) 
@@ -98,7 +100,7 @@ function energy!(
     (;energy_eqn) = energy
     (; solvers, runtime) = config
 
-    # println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
+    println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
 
     # rho = get_flux(energy_eqn, 1)
     keff_by_cp = get_flux(energy_eqn, 3)
@@ -107,6 +109,7 @@ function energy!(
     Uf = FaceVectorField(mesh)
     Kf = FaceScalarField(mesh)
     K = ScalarField(mesh)
+    Kbounded = ScalarField(mesh)
     Pr = _Pr(model.fluid)
 
     # println("Minmdot ", minimum(rho.values), ", Maxdoot ", maximum(rho.values))
@@ -125,8 +128,10 @@ function energy!(
     correct_face_interpolation!(Kf, K, mdotf) # This forces KE to be upwind 
     @. Kf.values *= mdotf.values
     div!(divK, Kf, config)
+    div!(Kbounded, mdotf, config)
+    @. divK.values .- Kbounded.values * K.values
 
-    # println("Maxh ", maximum(keff_by_cp.values), " minh ", minimum(keff_by_cp.values))
+    println("MaxdivK ", maximum(divK.values), " mindivK ", minimum(divK.values))
 
     # solve_equation!(energy_eqn, h, solvers.h, config) # This doesn't work for this scalarfield yet
     # Set up and solve energy equation
@@ -136,16 +141,18 @@ function energy!(
     implicit_relaxation_diagdom!(energy_eqn, h.values, solvers.h.relax, nothing, config)
     update_preconditioner!(energy_eqn.preconditioner, mesh, config)
     solve_system!(energy_eqn, solvers.h, h, nothing, config)
+
+    println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
     
     # println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
 
-    Tmin = 100; Tmax = 1000
-    thermoClamp!(model, h, Tmin, Tmax)
+    # Tmin = 100.0; Tmax = 2000.0
+    # thermoClamp!(model, h, Tmin, Tmax)
 
     htoT!(model, h, T)
     interpolate!(hf, h, config)
     correct_boundaries!(hf, h, h.BCs, config)
-    thermoClamp!(model, hf, Tmin, Tmax)
+    # thermoClamp!(model, hf, Tmin, Tmax)
 end
 
 function thermo_Psi!(

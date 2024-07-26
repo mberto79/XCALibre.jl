@@ -149,6 +149,7 @@ function CSIMPLE(
     @. rho.values = Psi.values * p.values
     @. rhof.values = Psif.values * pf.values
     flux!(mdotf, Uf, rhof, config)
+    println("Minrhof ", minimum(rhof.values), ", Maxmrhof ", maximum(rhof.values))
 
     update_nueff!(mueff, mu, model.turbulence, config)
     
@@ -169,14 +170,9 @@ function CSIMPLE(
         div!(divmugradUTy, mugradUTy, config)
         div!(divmugradUTz, mugradUTz, config)
 
-        println("Minrhordf ", minimum(divmugradUTx.values), ", MaxPsi ", maximum(divmugradUTx.values))
-
         @. mueffgradUt.x.values = 0.0#divmugradUTx.values
         @. mueffgradUt.y.values = 0.0#divmugradUTy.values
         @. mueffgradUt.z.values = 0.0#divmugradUTz.values
-
-        # println("mueff ", minimum(gradU.result.xx), ", MaxPsi ", maximum(gradU.result.xx))
-        # println("mueff ", minimum(mueffgradUt.x.values), ", MaxPsi ", maximum(mueffgradUt.x.values))
 
         solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
 
@@ -240,6 +236,9 @@ function CSIMPLE(
         # Gradient
         grad!(∇p, pf, p, p.BCs, config) 
 
+        # grad limiter test!
+        limit_gradient!(∇p, p, config)
+
         correct = false
         if correct
             ncorrectors = 1
@@ -255,8 +254,14 @@ function CSIMPLE(
             end
         end
 
-        @. rho.values = Psi.values * p.values
-        @. rhof.values = Psif.values * pf.values
+        if typeof(model.fluid) <: Compressible
+            rhorelax = 1
+            @. rho.values = rho.values * (1-rhorelax) + Psi.values * p.values * rhorelax
+            @. rhof.values = rhof.values * (1-rhorelax) + Psif.values * pf.values * rhorelax
+        else
+            @. rho.values = Psi.values * p.values
+            @. rhof.values = Psif.values * pf.values
+        end
 
         # Velocity and boundaries correction
         correct_face_interpolation!(pf, p, Uf)

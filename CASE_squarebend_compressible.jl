@@ -4,23 +4,24 @@ using FVM_1D
 # using AMDGPU # Run this if using AMD GPU
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
-mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
-# mesh_file = "unv_sample_meshes/cylinder_d10mm_2mm.unv"
-# mesh_file = "unv_sample_meshes/cylinder_d10mm_10-7.5-2mm.unv"
-mesh = UNV2D_mesh(mesh_file, scale=0.001)
+mesh_file = "unv_sample_meshes/OF_squareBend_laminar/constant/polyMesh/"
+mesh = FOAM3D_mesh(mesh_file, scale=1.0, integer_type=Int64, float_type=Float64)
+
 
 # mesh_gpu = adapt(CUDABackend(), mesh)
 
 # Inlet conditions
 
-velocity = [300, 0.0, 0.0]
+# Not working
+
+velocity = [400, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
-nu = 0.0#1e-3
+nu = 1e-3
 Re = (0.2*velocity[1])/nu
 gamma = 1.4
 cp = 1005.0
-temp = 300.0
-pressure = 100000.0
+temp = 1000.0
+pressure = 110000.0
 Pr = 0.7
 
 model = Physics(
@@ -39,27 +40,19 @@ model = Physics(
 @assign! model momentum U ( 
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Dirichlet(:cylinder, noSlip),
-    # Dirichlet(:cylinder, noSlip),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+    Wall(:walls, noSlip)
 )
 
 @assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, pressure),
-    Neumann(:cylinder, 0.0),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+    Dirichlet(:inlet, pressure),
+    Neumann(:outlet, 0.0),
+    Neumann(:walls, 0.0)
 )
 
 @assign! model energy h (
-    FixedTemperature(:inlet, T=300.0, model=model.energy),
+    FixedTemperature(:inlet, T=1000.0, model=model.energy),
     Neumann(:outlet, 0.0),
-    Neumann(:cylinder, 0.0),
-    # FixedTemperature(:cylinder, T=330.0, model=model.energy),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+    Neumann(:walls, 0.0)
 )
 
 solvers = (
@@ -98,7 +91,7 @@ schemes = (
     h = set_schemes(divergence=Upwind)#, gradient=Midpoint)
 )
 
-runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=5, write_interval=1, time_step=1)
 
 hardware = set_hardware(backend=CPU(), workgroup=4)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
@@ -109,11 +102,11 @@ config = Configuration(
 
 GC.gc(true)
 
-initialise!(model.momentum.U, velocity)
+initialise!(model.momentum.U, [0.0, 0.0, 0.0])
 initialise!(model.momentum.p, pressure)
 initialise!(model.energy.T, temp)
 
-println("Maxh ", maximum(model.energy.T.values), " minh ", minimum(model.energy.T.values))
+
 
 Rx, Ry, Rz, Rp, Rh, model = run!(model, config); #, pref=0.0)
 

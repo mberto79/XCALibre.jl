@@ -113,13 +113,13 @@ end
     (; area, delta, normal) = face 
 
     # Calculate wall normal velocity at cell centre
-    norm_vel_ex_comp = ((velocity_cell⋅normal)-velocity_cell[component.value]*normal[component.value])*normal[component.value]
+    norm_vel_ex_comp = ((velocity_cell⋅normal))*normal[component.value]
     
     # norm_vel_ex_comp = norm_vel_ex[component.value]
 
     # Calculate flux and ap value for increment
     flux = J*area/delta
-    ap = 2.0*term.sign[1]*(-flux)
+    ap = term.sign[1]*(-flux)
     
     # Set index for sparse array values at [cellID, cellID] for workitem
     # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
@@ -128,7 +128,9 @@ end
     # Atomix.@atomic nzval[zcellID] += ap
     # Atomix.@atomic b[cellID] += ap*values[cellID]
     # nothing
-    -ap*normal[component.value]^2, -ap*(norm_vel_ex_comp)
+    0.0, 0.5*ap*(norm_vel_ex_comp)
+    # -ap, ap*(norm_vel_ex_comp-velocity_cell[component.value])
+    # (1.0)*ap*normal[component.value]*normal[component.value], ap*(norm_vel_ex_comp-velocity_cell[component.value]*normal[component.value]*normal[component.value])
 end
 
 # fixedTempterature boundary condition

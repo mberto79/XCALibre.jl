@@ -4,28 +4,27 @@ using FVM_1D
 # using AMDGPU # Run this if using AMD GPU
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
-mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
-# mesh_file = "unv_sample_meshes/cylinder_d10mm_2mm.unv"
-# mesh_file = "unv_sample_meshes/cylinder_d10mm_10-7.5-2mm.unv"
-mesh = UNV2D_mesh(mesh_file, scale=0.001)
+mesh_file = "unv_sample_meshes/OF_squareBend_laminar/constant/polyMesh/"
+mesh = FOAM3D_mesh(mesh_file, scale=1.0, integer_type=Int64, float_type=Float64)
+
 
 # mesh_gpu = adapt(CUDABackend(), mesh)
 
 # Inlet conditions
 
-velocity = [300, 0.0, 0.0]
+velocity = [30, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
-nu = 0.0#1e-3
+nu = 1e-3
 Re = (0.2*velocity[1])/nu
 gamma = 1.4
 cp = 1005.0
 temp = 300.0
-pressure = 100000.0
+pressure = 110000.0
 Pr = 0.7
 
 model = Physics(
     time = Steady(),
-    fluid = Compressible(
+    fluid = WeaklyCompressible(
         mu = ConstantScalar(nu),
         cp = ConstantScalar(cp),
         gamma = ConstantScalar(gamma),
@@ -39,27 +38,19 @@ model = Physics(
 @assign! model momentum U ( 
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Dirichlet(:cylinder, noSlip),
-    # Dirichlet(:cylinder, noSlip),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+    Wall(:walls, noSlip)
 )
 
 @assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, pressure),
-    Neumann(:cylinder, 0.0),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+    Neumann(:walls, 0.0)
 )
 
 @assign! model energy h (
     FixedTemperature(:inlet, T=300.0, model=model.energy),
     Neumann(:outlet, 0.0),
-    Neumann(:cylinder, 0.0),
-    # FixedTemperature(:cylinder, T=330.0, model=model.energy),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+    Neumann(:walls, 0.0)
 )
 
 solvers = (
@@ -68,7 +59,7 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.6,
         rtol = 1e-2,
         atol = 1e-4
     ),
@@ -77,7 +68,7 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.3,
+        relax       = 0.2,
         rtol = 1e-2,
         atol = 1e-4
     ),
@@ -86,7 +77,7 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.6,
         rtol = 1e-2,
         atol = 1e-4
     )
@@ -109,7 +100,7 @@ config = Configuration(
 
 GC.gc(true)
 
-initialise!(model.momentum.U, velocity)
+initialise!(model.momentum.U, [0.0, 0.0, 0.0])
 initialise!(model.momentum.p, pressure)
 initialise!(model.energy.T, temp)
 

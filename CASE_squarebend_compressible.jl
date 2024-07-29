@@ -70,7 +70,7 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.3,
+        relax       = 0.01,
         rtol = 1e-2,
         atol = 1e-4
     ),
@@ -91,7 +91,7 @@ schemes = (
     h = set_schemes(divergence=Upwind)#, gradient=Midpoint)
 )
 
-runtime = set_runtime(iterations=5, write_interval=1, time_step=1)
+runtime = set_runtime(iterations=2000, write_interval=100, time_step=1)
 
 hardware = set_hardware(backend=CPU(), workgroup=4)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)

@@ -112,6 +112,8 @@ function energy!(
     Kbounded = ScalarField(mesh)
     Pr = _Pr(model.fluid)
 
+    volumes = getproperty.(mesh.cells, :volume)
+
     # println("Minmdot ", minimum(rho.values), ", Maxdoot ", maximum(rho.values))
 
     @. keff_by_cp.values = mueff.values/Pr.values
@@ -129,8 +131,8 @@ function energy!(
     @. Kf.values *= mdotf.values
     div!(divK, Kf, config)
     div!(Kbounded, mdotf, config)
-    @. divK.values .- Kbounded.values * K.values
-
+    println("MaxdivK ", maximum(divK.values), " mindivK ", minimum(divK.values))
+    @. divK.values .- Kbounded.values * K.values # This might need dividing by the volume, unsure
     println("MaxdivK ", maximum(divK.values), " mindivK ", minimum(divK.values))
 
     # solve_equation!(energy_eqn, h, solvers.h, config) # This doesn't work for this scalarfield yet
@@ -146,8 +148,8 @@ function energy!(
     
     # println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
 
-    # Tmin = 100.0; Tmax = 2000.0
-    # thermoClamp!(model, h, Tmin, Tmax)
+    Tmin = 100.0; Tmax = 2000.0
+    thermoClamp!(model, h, Tmin, Tmax)
 
     htoT!(model, h, T)
     interpolate!(hf, h, config)

@@ -9,7 +9,7 @@ simple_comp!(model_in, config; resume=true, pref=nothing) = begin
     return R_ux, R_uy, R_uz, R_p, R_e, model
 end
 
-# Setup for all incompressible algorithms
+# Setup for all compressible algorithms
 function setup_compressible_solvers(
     solver_variant, 
     model_in, config; resume=true, pref=nothing
@@ -255,7 +255,7 @@ function CSIMPLE(
         end
 
         if typeof(model.fluid) <: Compressible
-            rhorelax = 1
+            rhorelax = 0.01
             @. rho.values = rho.values * (1-rhorelax) + Psi.values * p.values * rhorelax
             @. rhof.values = rhof.values * (1-rhorelax) + Psif.values * pf.values * rhorelax
         else

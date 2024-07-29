@@ -148,8 +148,10 @@ function energy!(
     
     # println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
 
-    Tmin = 100.0; Tmax = 2000.0
-    thermoClamp!(model, h, Tmin, Tmax)
+    if ~isempty(solvers.h.limit)
+        Tmin = solvers.h.limit[1]; Tmax = solvers.h.limit[2]
+        thermoClamp!(model, h, Tmin, Tmax)
+    end
 
     htoT!(model, h, T)
     interpolate!(hf, h, config)

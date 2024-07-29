@@ -8,7 +8,8 @@ set_solver( field::AbstractField; # To do - relax inputs and correct internally
     solver::S, 
     preconditioner::PT, 
     convergence, 
-    relax, 
+    relax,
+    limit=(),
     itmax::Integer=100, 
     atol=sqrt(eps(_get_float(field.mesh))),
     rtol=_get_float(field.mesh)(1e-4)
@@ -21,6 +22,7 @@ begin
         preconditioner=preconditioner, 
         convergence=convergence |> TF, 
         relax=relax |> TF, 
+        limit=limit,
         itmax=itmax, 
         atol=atol |> TF, 
         rtol=rtol |> TF

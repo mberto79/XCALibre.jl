@@ -20,7 +20,7 @@ nu = 1e-3
 Re = (0.2*velocity[1])/nu
 gamma = 1.4
 cp = 1005.0
-temp = 1000.0
+temp = 300.0
 pressure = 110000.0
 Pr = 0.7
 
@@ -50,7 +50,7 @@ model = Physics(
 )
 
 @assign! model energy h (
-    FixedTemperature(:inlet, T=1000.0, model=model.energy),
+    FixedTemperature(:inlet, T=300.0, model=model.energy),
     Neumann(:outlet, 0.0),
     Neumann(:walls, 0.0)
 )
@@ -61,7 +61,7 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.1,
         rtol = 1e-2,
         atol = 1e-4
     ),
@@ -71,6 +71,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.01,
+        limit = (1000.0, 1000000.0),
         rtol = 1e-2,
         atol = 1e-4
     ),
@@ -79,7 +80,8 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.1,
+        limit = (100.0, 1000.0),
         rtol = 1e-2,
         atol = 1e-4
     )

@@ -218,11 +218,16 @@ function CSIMPLE(
             # Ensure diagonal dominance for hyperbolic equations
             # solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
             solve_equation!(p_eqn, p, solvers.p, config; ref=nothing, irelax=solvers.U.relax)
-            pmin = 1000; pmax = 1000000
-            clamp!(p.values, pmin, pmax)
         elseif typeof(model.fluid) <: WeaklyCompressible
             solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
         end
+
+        if ~isempty(solvers.p.limit)
+            pmin = solvers.p.limit[1]; pmax = solvers.p.limit[2]
+            clamp!(p.values, pmin, pmax)
+        end
+
+
         explicit_relaxation!(p, prev, solvers.p.relax, config)
 
         residual!(R_ux, U_eqn, U.x, iteration, xdir, config)

@@ -99,7 +99,8 @@ end
     ap, ap*(U_boundary[component.value] + norm_vel[component.value])
 end
 
-# Symmetry functor definition
+# Symmetry functor definition - Moukalled et al. 2016 Implementation of Boundary conditions in the finite-volume pressure-based method - Part 1
+# http://dx.doi.org/10.1080/10407790.2016.1138748
 @inline (bc::Symmetry)(
     term::Operator{F,P,I,Laplacian{Linear}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
     # Retrive term field and field values
@@ -113,9 +114,10 @@ end
     (; area, delta, normal) = face 
 
     # Calculate wall normal velocity at cell centre
-    norm_vel_ex_comp = ((velocity_cell⋅normal))*normal[component.value]
-    
-    # norm_vel_ex_comp = norm_vel_ex[component.value]
+    norm_vel= (velocity_cell⋅normal)
+
+    # Normal velocty minus component contribution
+    norm_vel = norm_vel - velocity_cell[component.value]*normal[component.value]
 
     # Calculate flux and ap value for increment
     flux = J*area/delta
@@ -128,9 +130,7 @@ end
     # Atomix.@atomic nzval[zcellID] += ap
     # Atomix.@atomic b[cellID] += ap*values[cellID]
     # nothing
-    0.0, 0.5*ap*(norm_vel_ex_comp)
-    # -ap, ap*(norm_vel_ex_comp-velocity_cell[component.value])
-    # (1.0)*ap*normal[component.value]*normal[component.value], ap*(norm_vel_ex_comp-velocity_cell[component.value]*normal[component.value]*normal[component.value])
+    (2.0)*ap*normal[component.value]*normal[component.value], (2.0)*ap*(norm_vel*normal[component.value])
 end
 
 # fixedTempterature boundary condition

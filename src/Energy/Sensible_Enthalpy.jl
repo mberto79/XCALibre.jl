@@ -100,7 +100,7 @@ function energy!(
     (;energy_eqn) = energy
     (; solvers, runtime) = config
 
-    println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
+    # println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
 
     # rho = get_flux(energy_eqn, 1)
     keff_by_cp = get_flux(energy_eqn, 3)
@@ -109,7 +109,7 @@ function energy!(
     Uf = FaceVectorField(mesh)
     Kf = FaceScalarField(mesh)
     K = ScalarField(mesh)
-    Kbounded = ScalarField(mesh)
+    # Kbounded = ScalarField(mesh)
     Pr = _Pr(model.fluid)
 
     volumes = getproperty.(mesh.cells, :volume)
@@ -130,10 +130,10 @@ function energy!(
     correct_face_interpolation!(Kf, K, mdotf) # This forces KE to be upwind 
     @. Kf.values *= mdotf.values
     div!(divK, Kf, config)
-    div!(Kbounded, mdotf, config)
-    println("MaxdivK ", maximum(divK.values), " mindivK ", minimum(divK.values))
-    @. divK.values .- Kbounded.values * K.values # This might need dividing by the volume, unsure
-    println("MaxdivK ", maximum(divK.values), " mindivK ", minimum(divK.values))
+    # div!(Kbounded, mdotf, config)
+    # println("MaxdivK ", maximum(divK.values), " mindivK ", minimum(divK.values))
+    # @. divK.values .- Kbounded.values * K.values # This might need dividing by the volume, unsure
+    # println("MaxdivK ", maximum(divK.values), " mindivK ", minimum(divK.values))
 
     # solve_equation!(energy_eqn, h, solvers.h, config) # This doesn't work for this scalarfield yet
     # Set up and solve energy equation
@@ -144,7 +144,7 @@ function energy!(
     update_preconditioner!(energy_eqn.preconditioner, mesh, config)
     solve_system!(energy_eqn, solvers.h, h, nothing, config)
 
-    println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
+    # println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
     
     # println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
 

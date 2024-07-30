@@ -33,7 +33,7 @@ model = Physics(
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Symmetry(:wall, 0.0),#[0.0, 0.0, 0.0]),
+    Wall(:wall, [0.0, 0.0, 0.0]),
     Symmetry(:top, 0.0)
 )
 
@@ -47,7 +47,7 @@ model = Physics(
 @assign! model energy h (
     FixedTemperature(:inlet, T=300.0, model=model.energy),
     Neumann(:outlet, 0.0),
-    Neumann(:wall, 0.0),
+    FixedTemperature(:wall, T=330.0, model=model.energy),
     Neumann(:top, 0.0)
 )
 
@@ -64,27 +64,27 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.7,
     ),
     p = set_solver(
         model.momentum.p;
         solver      = GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.2,
+        relax       = 0.3,
     ),
     h = set_solver(
         model.energy.h;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.7,
         rtol = 1e-2,
         atol = 1e-4
     )
 )
 
-runtime = set_runtime(iterations=100, write_interval=10, time_step=1)
+runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
 
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=4)

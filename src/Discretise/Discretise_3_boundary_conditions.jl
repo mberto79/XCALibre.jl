@@ -432,6 +432,77 @@ end
     0.0, 0.0
 end
 
+# BoundedUpwind
+
+# Dirichlet functor definition
+@inline (bc::Dirichlet)(
+    term::Operator{F,P,I,Divergence{BoundedUpwind}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
+    # Calculate ap value to increment
+    ap = term.sign[1]*(term.flux[fID])
+    vol = 1#cell.volume
+
+    # Increment b array
+    # Atomix.@atomic b[cellID] -= ap*bc.value
+    # nothing
+    # 0.0, -ap*bc.value 
+    ap, -ap*bc.value
+end
+
+# Neumann functor definition
+@inline (bc::Neumann)(
+    term::Operator{F,P,I,Divergence{BoundedUpwind}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
+    # Retrieve  term field and calculate ap value to increment
+    phi = term.phi 
+    ap = term.sign[1]*(term.flux[fID])
+    vol = 1#cell.volume
+
+    # Set index for sparse array values at [CellID, CellID] for workitem
+    # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
+    # Atomix.@atomic nzval[nIndex] += max(ap, 0.0)
+    # Atomix.@atomic nzval[zcellID] += ap
+    # nothing
+    ap+ap, 0.0
+end
+
+# Neumann functor definition
+@inline (bc::Wall)(
+    term::Operator{F,P,I,Divergence{BoundedUpwind}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
+    # Calculate ap value to increment
+    ap = term.sign[1]*(term.flux[fID])
+    vol = 1#cell.volume
+
+    # Set index for sparse array values at [cellID, cellID] for workitem
+    # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
+
+    # Increment sparse array
+    # Atomix.@atomic nzval[zcellID] += ap
+    # nothing
+    ap, 0.0
+end
+
+# fixedTempterature boundary condition
+@inline (bc::FixedTemperature)(
+    term::Operator{F,P,I,Divergence{BoundedUpwind}}, cellID, zcellID, cell, face, fID, ione, component=nothing) where {F,P,I} = begin
+    # extract user provided information
+    (; T, energy_model) = bc.value
+
+    # h = energy_model.update_BC(energy_model, T)
+    h = energy_model.update_BC(T)
+
+    # Calculate ap value to increment
+    ap = term.sign[1]*(term.flux[fID])
+    vol = 1#cell.volume
+    
+    # Set index for sparse array values at [cellID, cellID] for workitem
+    # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
+
+    # Increment b array     
+    # Atomix.@atomic b[cellID] += term.sign[1]*(-term.flux[fID]*bc.value)
+    # nothing
+    ap, -ap*h
+end
+
+
 # IMPLICIT SOURCE
 
 # Dirichlet functor definition

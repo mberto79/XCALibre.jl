@@ -11,7 +11,7 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 # mesh_gpu = adapt(CUDABackend(), mesh)
 
 velocity = [0.2, 0.0, 0.0]
-nu = 1e-5
+nu = 1e-4
 Re = velocity[1]*1/nu
 cp = 1005.0
 gamma = 1.4
@@ -47,14 +47,14 @@ model = Physics(
 @assign! model energy h (
     FixedTemperature(:inlet, T=300.0, model=model.energy),
     Neumann(:outlet, 0.0),
-    FixedTemperature(:wall, T=330.0, model=model.energy),
+    FixedTemperature(:wall, T=310.0, model=model.energy),
     Neumann(:top, 0.0)
 )
 
 schemes = (
     U = set_schemes(divergence=Upwind),
     p = set_schemes(divergence=Linear),
-    h = set_schemes(divergence=Upwind)
+    h = set_schemes(divergence=Linear)
 )
 
 

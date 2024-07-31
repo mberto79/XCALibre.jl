@@ -5,6 +5,7 @@ export FixedTemperature
 export Wall, Symmetry
 export KWallFunction, OmegaWallFunction, NutWallFunction
 export Constant, Linear, Upwind
+export BoundedUpwind
 export SteadyState, Euler, CrankNicolson
 export Orthogonal, Midpoint
 export assign, @assign!
@@ -16,6 +17,7 @@ abstract type AbstractScheme end
 struct Constant <: AbstractScheme end
 struct Linear <: AbstractScheme end
 struct Upwind <: AbstractScheme end
+struct BoundedUpwind <: AbstractScheme end
 struct Orthogonal <: AbstractScheme end
 struct Midpoint <: AbstractScheme end
 struct SteadyState <: AbstractScheme end 

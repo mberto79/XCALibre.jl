@@ -170,9 +170,9 @@ function CSIMPLE(
         div!(divmugradUTy, mugradUTy, config)
         div!(divmugradUTz, mugradUTz, config)
 
-        @. mueffgradUt.x.values = 0.0#divmugradUTx.values
-        @. mueffgradUt.y.values = 0.0#divmugradUTy.values
-        @. mueffgradUt.z.values = 0.0#divmugradUTz.values
+        @. mueffgradUt.x.values = 0#divmugradUTx.values
+        @. mueffgradUt.y.values = 0#divmugradUTy.values
+        @. mueffgradUt.z.values = 0#divmugradUTz.values
 
         solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
 
@@ -260,7 +260,7 @@ function CSIMPLE(
         end
 
         if typeof(model.fluid) <: Compressible
-            rhorelax = 0.01
+            rhorelax = 1 #0.01
             @. rho.values = rho.values * (1-rhorelax) + Psi.values * p.values * rhorelax
             @. rhof.values = rhof.values * (1-rhorelax) + Psif.values * pf.values * rhorelax
         else

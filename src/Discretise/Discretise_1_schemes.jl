@@ -110,7 +110,7 @@ end
     # Calculate required increment
     volume = cell.volume
     ap = term.sign*(term.flux[fID]*ns)
-    ac = max(ap, 0.0) + term.flux[fID]#*volume 
+    ac = max(ap, 0.0) - term.flux[fID]#*volume 
     an = -max(-ap, 0.0)
     return ac, an
 end

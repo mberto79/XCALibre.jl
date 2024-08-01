@@ -445,7 +445,7 @@ end
     # Atomix.@atomic b[cellID] -= ap*bc.value
     # nothing
     # 0.0, -ap*bc.value 
-    ap, -ap*bc.value
+    -term.flux[fID], -ap*bc.value
 end
 
 # Neumann functor definition
@@ -461,7 +461,7 @@ end
     # Atomix.@atomic nzval[nIndex] += max(ap, 0.0)
     # Atomix.@atomic nzval[zcellID] += ap
     # nothing
-    ap+ap, 0.0
+    ap-term.flux[fID], 0.0
 end
 
 # Neumann functor definition
@@ -477,7 +477,7 @@ end
     # Increment sparse array
     # Atomix.@atomic nzval[zcellID] += ap
     # nothing
-    ap, 0.0
+    -term.flux[fID], 0.0
 end
 
 # fixedTempterature boundary condition
@@ -499,7 +499,7 @@ end
     # Increment b array     
     # Atomix.@atomic b[cellID] += term.sign[1]*(-term.flux[fID]*bc.value)
     # nothing
-    ap, -ap*h
+    -term.flux[fID], -ap*h
 end
 
 

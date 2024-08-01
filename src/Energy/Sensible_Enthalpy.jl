@@ -127,13 +127,15 @@ function energy!(
     for i ∈ eachindex(Kf)
         Kf.values[i] = 0.5*(Uf.x.values[i]^2 + Uf.y.values[i]^2 + Uf.z.values[i]^2)
     end
-    correct_face_interpolation!(Kf, K, mdotf) # This forces KE to be upwind 
+    # correct_face_interpolation!(Kf, K, mdotf) # This forces KE to be upwind, MIGHT NOT BE WORKING
     @. Kf.values *= mdotf.values
     div!(divK, Kf, config)
     # div!(Kbounded, mdotf, config)
-    # println("MaxdivK ", maximum(divK.values), " mindivK ", minimum(divK.values))
+    println("MaxdivK ", maximum(divK.values), " mindivK ", minimum(divK.values))
     # @. divK.values .- Kbounded.values * K.values # This might need dividing by the volume, unsure
     # println("MaxdivK ", maximum(divK.values), " mindivK ", minimum(divK.values))
+
+    println("Max h ", maximum(h.values), " min h ", minimum(h.values))
 
     # solve_equation!(energy_eqn, h, solvers.h, config) # This doesn't work for this scalarfield yet
     # Set up and solve energy equation
@@ -144,7 +146,7 @@ function energy!(
     update_preconditioner!(energy_eqn.preconditioner, mesh, config)
     solve_system!(energy_eqn, solvers.h, h, nothing, config)
 
-    # println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
+    println("Max h ", maximum(h.values), " min h ", minimum(h.values))
     
     # println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
 

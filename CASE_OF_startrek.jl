@@ -6,7 +6,7 @@ using CUDA
 mesh_file = "unv_sample_meshes/OF_startrek/polyMesh/"
 @time mesh = FOAM3D_mesh(mesh_file, scale=0.001, integer_type=Int64, float_type=Float64)
 
-mesh_dev = adapt(CPU(), mesh)
+# mesh_dev = adapt(CPU(), mesh)
 mesh_dev = adapt(CUDABackend(), mesh)
 
 # # check volume calculation
@@ -28,67 +28,67 @@ k_inlet = 3/2*(Tu*Umag)^2
 nut_inlet = k_inlet/ω_inlet
 
 model = Physics(
-    time = Steady(),
+    # time = Steady(),
+    time = Transient(),
     fluid = Incompressible(nu = ConstantScalar(nu)),
     # turbulence = RANS{KOmega}(),
-    turbulence = RANS{Laminar}(),
-    # turbulence = LES{Smagorinsky}(),
+    # turbulence = RANS{Laminar}(),
+    turbulence = LES{Smagorinsky}(),
     energy = ENERGY{Isothermal}(),
     # domain = mesh
     domain = mesh_dev
     )
 
-freestream = [:bottom, :top, :side_left, :side_right]
 
 @assign! model momentum U (
     Dirichlet(:inlet, velocity), 
     Neumann(:outlet, 0.0), 
-    # Dirichlet(:sphere, noSlip), 
-    Wall(:sphere, noSlip), 
-    Neumann.(freestream, Ref(0.0))...,
+    Wall(:enterprise, noSlip), 
+    # Neumann(:sides, 0.0)
+    Dirichlet(:sides, velocity)
 )
 
 @assign! model momentum p (
     Neumann(:inlet, 0.0), 
     Dirichlet(:outlet, 0.0), 
-    Neumann(:sphere, 0.0), 
-    Neumann.(freestream, Ref(0.0))...,
+    Neumann(:enterprise, 0.0), 
+    Neumann.(:sides, 0.0)
 )
 
-@assign! model turbulence k (
-    Dirichlet(:Xmin, k_inlet), # inlet
-    Neumann(:Xmax, 0.0), # outlet
-    # KWallFunction.(walls)..., # walls
-    Dirichlet.(walls, Ref(0.0))..., # walls
-    Neumann.(freestream, Ref(0.0))...,
-    Neumann(:Symmetry, 0.0)
-    # KWallFunction(:Symmetry)
-)
+# @assign! model turbulence k (
+#     Dirichlet(:Xmin, k_inlet), # inlet
+#     Neumann(:Xmax, 0.0), # outlet
+#     # KWallFunction.(walls)..., # walls
+#     Dirichlet.(walls, Ref(0.0))..., # walls
+#     Neumann.(freestream, Ref(0.0))...,
+#     Neumann(:Symmetry, 0.0)
+#     # KWallFunction(:Symmetry)
+# )
 
-@assign! model turbulence omega (
-    Dirichlet(:Xmin, ω_inlet), # inlet
-    Neumann(:Xmax, 0.0), # outlet
-    OmegaWallFunction.(walls)..., # walls
-    Neumann.(freestream, Ref(0.0))...,
-    Neumann(:Symmetry, 0.0)
-    # OmegaWallFunction(:Symmetry)
-)
+# @assign! model turbulence omega (
+#     Dirichlet(:Xmin, ω_inlet), # inlet
+#     Neumann(:Xmax, 0.0), # outlet
+#     OmegaWallFunction.(walls)..., # walls
+#     Neumann.(freestream, Ref(0.0))...,
+#     Neumann(:Symmetry, 0.0)
+#     # OmegaWallFunction(:Symmetry)
+# )
 
-@assign! model turbulence nut (
-    Dirichlet(:Xmin, k_inlet/ω_inlet), # inlet
-    Neumann(:Xmax, 0.0), # outlet
-    # NutWallFunction.(walls)..., # walls
-    Dirichlet.(walls, Ref(0.0))..., # walls
-    Neumann.(freestream, Ref(0.0))...,
-    Neumann(:Symmetry, 0.0)
-    # NutWallFunction(:Symmetry)
-)
+# ~@assign! model turbulence nut (
+#     Dirichlet(:Xmin, k_inlet/ω_inlet), # inlet
+#     Neumann(:Xmax, 0.0), # outlet
+#     # NutWallFunction.(walls)..., # walls
+#     Dirichlet.(walls, Ref(0.0))..., # walls
+#     Neumann.(freestream, Ref(0.0))...,
+#     Neumann(:Symmetry, 0.0)
+#     # NutWallFunction(:Symmetry)
+# )
 
 schemes = (
-    U = set_schemes(time=SteadyState, divergence=Upwind, gradient=Midpoint),
+    U = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint),
     p = set_schemes(gradient=Midpoint),
-    k = set_schemes(divergence=Upwind, gradient=Midpoint),
-    omega = set_schemes(divergence=Upwind, gradient=Midpoint)
+    # k = set_schemes(divergence=Upwind, gradient=Midpoint),
+    # omega = set_schemes(divergence=Upwind, gradient=Midpoint)
 )
 
 solvers = (
@@ -97,8 +97,9 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.8,
-        rtol = 1e-2,
+        # relax       = 0.8,
+        relax       = 1.0,
+        rtol = 1e-5,
         atol = 1e-15
     ),
     p = set_solver(
@@ -106,8 +107,10 @@ solvers = (
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), #LDL(),
         convergence = 1e-7,
-        relax       = 0.2,
-        rtol = 1e-3,
+        # relax       = 0.2,
+        relax       = 1.0,
+        # rtol = 1e-3,
+        rtol = 1e-5,
         atol = 1e-15
     ),
     # k = set_solver(
@@ -132,10 +135,11 @@ solvers = (
     # )
 )
 
-runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
+# runtime = set_runtime(iterations=1000, write_interval=500, time_step=1)
+runtime = set_runtime(iterations=5000, write_interval=50, time_step=1e-8)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=8)
+# hardware = set_hardware(backend=CPU(), workgroup=8)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
@@ -144,9 +148,9 @@ GC.gc(true)
 
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
+initialise!(model.turbulence.nut, 2*nu)
 # initialise!(model.turbulence.k, k_inlet)
 # initialise!(model.turbulence.omega, ω_inlet)
-# initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
 # initialise!(model.momentum.U, [0,0,0])
 # initialise!(model.momentum.p, 0.0)

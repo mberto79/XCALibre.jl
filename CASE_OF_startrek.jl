@@ -32,8 +32,8 @@ model = Physics(
     time = Transient(),
     fluid = Incompressible(nu = ConstantScalar(nu)),
     # turbulence = RANS{KOmega}(),
-    # turbulence = RANS{Laminar}(),
-    turbulence = LES{Smagorinsky}(),
+    turbulence = RANS{Laminar}(),
+    # turbulence = LES{Smagorinsky}(),
     energy = ENERGY{Isothermal}(),
     # domain = mesh
     domain = mesh_dev
@@ -85,8 +85,8 @@ model = Physics(
 # )
 
 schemes = (
-    U = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(gradient=Midpoint),
+    U = set_schemes(time=Euler, divergence=Linear, gradient=Midpoint),
+    p = set_schemes(time=Euler, gradient=Midpoint),
     # k = set_schemes(divergence=Upwind, gradient=Midpoint),
     # omega = set_schemes(divergence=Upwind, gradient=Midpoint)
 )
@@ -108,7 +108,7 @@ solvers = (
         preconditioner = Jacobi(), #LDL(),
         convergence = 1e-7,
         # relax       = 0.2,
-        relax       = 1.0,
+        relax       = 0.2,
         # rtol = 1e-3,
         rtol = 1e-5,
         atol = 1e-15
@@ -136,7 +136,7 @@ solvers = (
 )
 
 # runtime = set_runtime(iterations=1000, write_interval=500, time_step=1)
-runtime = set_runtime(iterations=5000, write_interval=50, time_step=1e-8)
+runtime = set_runtime(iterations=5000, write_interval=50, time_step=1e-6)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=CPU(), workgroup=8)
@@ -159,7 +159,6 @@ initialise!(model.turbulence.nut, 2*nu)
 # initialise!(model.turbulence.nut, 0.0)
 
 Rx, Ry, Rz, Rp, model_out = run!(model, config); #, pref=0.0)
-
 
 Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)
 Fp = pressure_force(:cylinder, model.momentum.p, 1.25)

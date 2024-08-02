@@ -132,24 +132,6 @@ function write_vtk(name, mesh::Mesh3, args...)
             write(io,"     $(x)\n")
         end
 
-        # for i=1:length(cells_cpu)
-        #     #Tet
-        #     if length(cells_cpu[i].nodes_range)==4 #No. of Nodes in a Tet Cell
-        #         x=x+17 
-        #         write(io,"     $(x)\n")
-        #     end
-        #     #Hexa
-        #     if length(cells_cpu[i].nodes_range)==8 #No. of Nodes in a Hexa Cell
-        #         x=x+31
-        #         write(io,"     $(x)\n")
-        #     end
-        #     #PRISM
-        #     if length(cells_cpu[i].nodes_range)==6 # No. of Nodes in a Prism cell
-        #         x=x+24
-        #         write(io,"     $(x)\n")
-        #     end
-        # end
-
         write(io,"     </DataArray>\n")
         write(io,"     <DataArray type=\"$(I64)\" Name=\"$(types)\" format=\"$(format)\">\n")
         #write(io,"      $(poly)\n")

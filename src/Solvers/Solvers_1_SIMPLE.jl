@@ -86,6 +86,10 @@ function SIMPLE(
     nueff = get_flux(U_eqn, 3)
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
+
+    @info "Initialise VTKWriter (Store mesh in host memory)"
+
+    VTKMeshData = initialise_writer(model.domain)
     
     @info "Allocating working memory..."
 
@@ -261,7 +265,7 @@ function SIMPLE(
             )
 
         if iteration%write_interval + signbit(write_interval) == 0      
-            model2vtk(model, @sprintf "iteration_%.6d" iteration)
+            model2vtk(model, VTKMeshData, @sprintf "iteration_%.6d" iteration)
         end
 
     end # end for loop

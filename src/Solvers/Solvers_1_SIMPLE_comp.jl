@@ -103,6 +103,11 @@ function CSIMPLE(
     if typeof(model.fluid) <: Compressible
         pconv = get_flux(p_eqn, 2)
     end
+
+    @info "Initialise VTKWriter (Store mesh in host memory)"
+
+    VTKMeshData = initialise_writer(model.domain)
+    
     @info "Allocating working memory..."
 
     # Define aux fields 
@@ -295,7 +300,7 @@ function CSIMPLE(
                 Simulation converged! $iteration iterations in
                 """)
                 if !signbit(write_interval)
-                    model2vtk(model, @sprintf "iteration_%.6d" iteration)
+                    model2vtk(model, VTKMeshData, @sprintf "iteration_%.6d" iteration)
                 end
             break
         end

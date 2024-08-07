@@ -27,7 +27,7 @@ function PISO(
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
 
-    @info "Initialise VTKWriter (Store mesh in memory)"
+    @info "Initialise VTKWriter (Store mesh in host memory)"
 
     VTKMeshData = initialise_writer(model.domain)
     

@@ -31,7 +31,8 @@ function turbulence!(rans::LaminarModel, model::Physics{T,F,M,Tu,E,D,BI}, S, S2,
 end
 
 # Specialise VTK writer
-function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, name) where {T,F,M,Tu<:Laminar,E,D,BI}
+function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, VTKWriter, name
+    ) where {T,F,M,Tu<:Laminar,E,D,BI}
     if typeof(model.fluid)<:AbstractCompressible
         args = (
             ("U", model.momentum.U), 
@@ -44,7 +45,7 @@ function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, name) where {T,F,M,Tu<:Lamin
             ("p", model.momentum.p)
         )
     end
-    write_vtk(name, model.domain, args...)
+    write_vtk(name, model.domain, VTKWriter, args...)
 end
 
 function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, VTKWriter, name

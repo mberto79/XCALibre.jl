@@ -9,12 +9,6 @@ mesh_file = "unv_sample_meshes/OF_startrek/polyMesh/"
 # mesh_dev = adapt(CPU(), mesh)
 mesh_dev = adapt(CUDABackend(), mesh)
 
-# # check volume calculation
-# volumes = ScalarField(mesh)
-# vols = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
-# volumes.values .= vols
-# write_vtk("cellVolumes", mesh, ("cellVolumes", volumes))
-
 Umag = 0.5
 nu = 1e-05
 d = 100e-3

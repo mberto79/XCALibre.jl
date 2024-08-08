@@ -12,7 +12,7 @@ mesh_gpu = adapt(CUDABackend(), mesh)
 
 # INLET CONDITIONS 
 
-Umag = 30
+Umag = 2.5
 velocity = [Umag, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-5
@@ -118,10 +118,10 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

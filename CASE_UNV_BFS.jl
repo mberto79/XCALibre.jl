@@ -3,10 +3,11 @@ using FVM_1D
 using CUDA
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
-mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
+mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-mesh_gpu = adapt(CUDABackend(), mesh)
+mesh_dev = adapt(CUDABackend(), mesh)
+mesh_dev = mesh
 
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
@@ -16,14 +17,15 @@ model = Physics(
     time = Steady(),
     fluid = Incompressible(nu = ConstantScalar(nu)),
     turbulence = RANS{Laminar}(),
-    energy = nothing,
-    domain = mesh_gpu
+    energy = ENERGY{Isothermal}(),
+    domain = mesh_dev
     )
 
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Dirichlet(:wall, [0.0, 0.0, 0.0]),
+    # Dirichlet(:wall, [0.0, 0.0, 0.0]),
+    Wall(:wall, [0.0, 0.0, 0.0]),
     Dirichlet(:top, [0.0, 0.0, 0.0])
 )
 
@@ -47,8 +49,8 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
-        rtol = 1e-6,
-        atol = 1e-2
+        rtol = 1e-4,
+        atol = 1e-20
     ),
     p = set_solver(
         model.momentum.p;
@@ -56,8 +58,8 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 1e-6,
-        atol = 1e-3
+        rtol = 1e-4,
+        atol = 1e-20
     )
 )
 
@@ -65,7 +67,7 @@ runtime = set_runtime(
     iterations=1000, time_step=1, write_interval=500)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = set_hardware(backend=CPU(), workgroup=32)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
@@ -91,8 +93,14 @@ initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
 Profile.Allocs.clear()
-Profile.Allocs.@profile sample_rate=1 begin 
+Profile.Allocs.@profile sample_rate=1.0 begin 
     Rx, Ry, Rz, Rp, model_out = run!(model, config)
 end
 
+# Profile.print(format=:flat)
+
 PProf.Allocs.pprof()
+
+PProf.refresh()
+
+@profview_allocs Rx, Ry, Rz, Rp, model_out = run!(model, config) sample_rate=1

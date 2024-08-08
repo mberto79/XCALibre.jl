@@ -327,11 +327,99 @@ function grad!(grad::Grad{Midpoint,F,R,I,M}, psif, psi, BCs, config) where {F,R<
     for i ∈ 1:2
     correct_interpolation!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x, psi.x, config)
     green_gauss!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x, config)
-
+    
     correct_interpolation!(grad.result.xy, grad.result.yy, grad.result.zy, psif.y, psi.y, config)
     green_gauss!(grad.result.xy, grad.result.yy, grad.result.zy, psif.y, config)
-
+    
     correct_interpolation!(grad.result.xz, grad.result.yz, grad.result.zz, psif.z, psi.z, config)
     green_gauss!(grad.result.xz, grad.result.yz, grad.result.zz, psif.z, config)
-    end
+end
+    # limit_gradient!(grad.result.xx, grad.result.yx, grad.result.zx, psi.x, config)
+    # limit_gradient!(grad.result.xy, grad.result.yy, grad.result.zy, psi.y, config)
+    # limit_gradient!(grad.result.xz, grad.result.yz, grad.result.zz, psi.z, config)
+end
+
+
+# TEMP LOCATION
+function limit_gradient!(xv, yv, zv, F, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    mesh = F.mesh
+    (; cells, cell_neighbours, cell_faces, cell_nsign, faces) = mesh
+
+    minPhi0 = maximum(F.values) # use min value so all values compared are larger
+    maxPhi0 = minimum(F.values)
+
+    kernel! = _limit_gradient!(backend, workgroup)
+    kernel!(xv, yv, zv, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi0, maxPhi0, ndrange=length(cells))
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _limit_gradient!(xv, yv, zv, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi, maxPhi)
+    cID = @index(Global)
+    # mesh = F.mesh
+    # (; cells, cell_neighbours, cell_faces, cell_nsign, faces) = mesh
+
+    # minPhi0 = maximum(F.values) # use min value so all values compared are larger
+    # maxPhi0 = minimum(F.values)
+
+    # for (cID, cell) ∈ enumerate(cells)
+        cell = cells[cID]
+        # minPhi = minPhi0 # reset for next cell
+        # maxPhi = maxPhi0
+
+        # find min and max values around cell
+        faces_range = cell.faces_range
+        
+        phiP = F[cID]
+        # minPhi = phiP # reset for next cell
+        # maxPhi = phiP
+        for fi ∈ faces_range
+            nID = cell_neighbours[fi]
+            phiN = F[nID]
+            maxPhi = max(phiN, maxPhi)
+            minPhi = min(phiN, minPhi)
+        end
+
+        # g0 = ∇F[cID]
+        x0 = xv[cID]
+        y0 = yv[cID]
+        z0 = zv[cID]
+        g0 = SVector{3}(x0,y0,z0)
+        cc = cell.centre
+
+        for fi ∈ faces_range 
+            fID = cell_faces[fi]
+            face = faces[fID]
+            nID = face.ownerCells[2]
+            # phiN = F[nID]
+            normal = face.normal
+            nsign = cell_nsign[fi]
+            na = nsign*normal
+
+            fc = face.centre 
+            cc_fc = fc - cc
+            n0 = cc_fc/norm(cc_fc)
+            gn = g0⋅n0
+            δϕ = g0⋅cc_fc
+            gτ = g0 - gn*n0
+            if (maxPhi > phiP) && (δϕ > maxPhi - phiP)
+                g0 = gτ + na*(maxPhi - phiP)
+            elseif (minPhi < phiP) && (δϕ < minPhi - phiP)
+                g0 = gτ + na*(minPhi - phiP)
+            end            
+        end
+        # ∇F.result.x.values[cID] = g0[1]
+        # ∇F.result.y.values[cID] = g0[2]
+        # ∇F.result.z.values[cID] = g0[3]
+
+        xv.values[cID] = g0[1]
+        yv.values[cID] = g0[2]
+        zv.values[cID] = g0[3]
+
+        # x[cID] = g0[1]
+        # y[cID] = g0[2]
+        # z[cID] = g0[3]
+    # end
 end

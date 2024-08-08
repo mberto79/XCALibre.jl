@@ -86,6 +86,10 @@ function SIMPLE(
     nueff = get_flux(U_eqn, 3)
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
+
+    @info "Initialise VTKWriter (Store mesh in host memory)"
+
+    VTKMeshData = initialise_writer(model.domain)
     
     @info "Allocating working memory..."
 
@@ -120,10 +124,10 @@ function SIMPLE(
     grad!(∇p, pf, p, p.BCs, config)
 
     # grad limiter test!
-    limit_gradient!(∇p, p, config)
+    # limit_gradient!(∇p, p, config)
 
     update_nueff!(nueff, nu, model.turbulence, config)
-    
+
     @info "Staring SIMPLE loops..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
@@ -144,19 +148,16 @@ function SIMPLE(
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, U.BCs, config)
 
-        # div!(divHv, Uf, config) # old approach
+        # old approach
+        # div!(divHv, Uf, config) 
 
         # new approach
         flux!(mdotf, Uf, config)
         div!(divHv, mdotf, config)
-
-        # div!(divHv, Uf, config)
-        # flux!(mdotf, Uf, config)
-        
         
         # Pressure calculations
         @. prev = p.values
-        solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
+        solve_equation!(p_eqn, p, solvers.p, config; ref=pref)
         explicit_relaxation!(p, prev, solvers.p.relax, config)
 
         residual!(R_ux, U_eqn, U.x, iteration, xdir, config)
@@ -170,7 +171,30 @@ function SIMPLE(
         grad!(∇p, pf, p, p.BCs, config) 
 
         # grad limiter test
-        limit_gradient!(∇p, p, config)
+        # limit_gradient!(∇p, p, config)
+
+        # # non-orthogonal correction
+        # corr = nonorthogonal_correction(∇p, rDf, config)
+        # source_corr = nonorthogonal_source_correction(corr)
+        # @. p_eqn.equation.b -= source_corr.values
+        # setReference!(p_eqn, pref, 1, config)
+        # @. prev = p.values
+        # solve_system!(p_eqn, solvers.p, p, nothing, config)
+        # explicit_relaxation!(p, prev, solvers.p.relax, config)
+        # grad!(∇p, pf, p, p.BCs, config) 
+
+        for _ ∈ 1:0
+            discretise!(p_eqn, p, config)       
+            apply_boundary_conditions!(p_eqn, p.BCs, nothing, config)
+            setReference!(p_eqn, pref, 1, config)
+            update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+            nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
+            @. prev = p.values
+            solve_system!(p_eqn, solvers.p, p, nothing, config)
+            explicit_relaxation!(p, prev, solvers.p.relax, config)
+            grad!(∇p, pf, p, p.BCs, config)
+        end
+
 
         correct = false
         if correct
@@ -188,19 +212,23 @@ function SIMPLE(
         end
 
         # Velocity and boundaries correction
+
+        # old approach
         correct_velocity!(U, Hv, ∇p, rD, config)
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, U.BCs, config)
-        # flux!(mdotf, Uf, config) # old approach
+        flux!(mdotf, Uf, config) 
 
         # correct_face_interpolation!(pf, p, Uf) # not needed?
         # correct_boundaries!(pf, p, p.BCs, config) # not needed?
 
-        # pgrad = face_normal_gradient(p, pf)
-        # @. mdotf.values -= pgrad.values*rDf.values
-
         # new approach
-        correct_mass_flux(mdotf, p, pf, rDf, config)
+        # interpolate!(Uf, U, config)
+        # correct_boundaries!(Uf, U, U.BCs, config)
+        # flux!(mdotf, Uf, config)
+        # correct_mass_flux(mdotf, p, pf, rDf, config)
+        
+        # correct_velocity!(U, Hv, ∇p, rD, config)
 
         # if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs, config)
@@ -237,12 +265,98 @@ function SIMPLE(
             )
 
         if iteration%write_interval + signbit(write_interval) == 0      
-            model2vtk(model, @sprintf "iteration_%.6d" iteration)
+            model2vtk(model, VTKMeshData, @sprintf "iteration_%.6d" iteration)
         end
 
     end # end for loop
     model_out = adapt(CPU(), model)
     return R_ux, R_uy, R_uz, R_p, model_out
+end
+
+### TEMP LOCATION FOR PROTOTYPING - NONORTHOGONAL CORRECTION 
+
+function nonorthogonal_face_correction(eqn, grad, flux, config)
+    # nothing # do loop over faces and add contribution to ownerCells in one go! NIIIICE!
+    mesh = grad.mesh
+    (; faces, boundary_cellsID) = mesh
+
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    (; b) = eqn.equation
+    
+    n_faces = length(faces)
+    n_bfaces = length(boundary_cellsID)
+    n_ifaces = n_faces - n_bfaces
+
+    kernel! = _nonorthogonal_face_correction(backend, workgroup)
+    kernel!(b, grad, flux, faces, n_bfaces, ndrange=n_ifaces)
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _nonorthogonal_face_correction(b, grad, flux, faces, n_bfaces)
+    i = @index(Global)
+    fID = i + n_bfaces
+    # for fID ∈ (n_bfaces + 1):n_faces
+        face = faces[fID]
+        (; ownerCells, weight, area, normal, e) = face
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        gradf = weight*grad[cID1] + (1 - weight)*grad[cID2]
+        T_hat = normal - (1/(normal⋅e))*e
+        faceCorrection = area*flux[fID]*gradf⋅T_hat
+
+        # correction[cID1] += faceCorrection # remember to make atomic in kernel
+        # correction[cID2] += -1*faceCorrection # -1x to correct normal direction
+
+        Atomix.@atomic b[cID1] -= faceCorrection # remember to make atomic in kernel
+        Atomix.@atomic b[cID2] -= -1*faceCorrection # -1x to correct normal direction
+    # end
+    # return correction
+end
+
+function nonorthogonal_correction(grad, flux, config)
+    mesh = grad.mesh
+    (; faces, cells, boundary_cellsID) = mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    
+    n_faces = length(faces)
+    n_bfaces = length(boundary_cellsID)
+    n_ifaces = n_faces - n_bfaces + 1
+
+    corr = FaceScalarField(mesh)
+
+    for fID ∈ (n_bfaces + 1):n_faces
+        face = faces[fID]
+        (; ownerCells, weight, area, normal, e) = face
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        gradf = weight*grad[cID1] + (1 - weight)*grad[cID2]
+        T_hat = normal - (1/(normal⋅e))*e
+        corr[fID] = area*flux[fID]*gradf⋅T_hat
+    end
+    return corr
+end
+
+function nonorthogonal_source_correction(corr)
+    mesh = corr.mesh
+    (; cells, cell_faces, cell_nsign) = mesh
+
+    source_corr = ScalarField(mesh)
+    for cID ∈ eachindex(cells)
+        cell = cells[cID]
+        faces_range = cell.faces_range
+        sum = 0.0
+        for fi ∈ faces_range
+            fID = cell_faces[fi]
+            nsign = cell_nsign[fi]
+            sum += corr[fID]*nsign
+        end
+    source_corr[cID] = sum#*cell.volume
+    end
+
+    return source_corr
 end
 
 ### TEMP LOCATION FOR PROTOTYPING
@@ -255,7 +369,7 @@ function correct_mass_flux(mdotf, p, pf, rDf, config)
 
     n_faces = length(faces)
     n_bfaces = length(boundary_cellsID)
-    n_ifaces = n_faces - n_bfaces + 1
+    n_ifaces = n_faces - n_bfaces #+ 1
 
     kernel! = _correct_internal_faces(backend, workgroup)
     kernel!(mdotf, p, rDf, faces, n_bfaces, ndrange=length(n_ifaces))
@@ -281,7 +395,7 @@ end
             p1 = p[cID1]
             p2 = p[cID2]
             face_grad = area*(p2 - p1)/delta
-            # face_grad = (phi2 - phi1)/delta
+            # face_grad = (p2 - p1)/delta
 
             # sngrad.values[fID] = face_grad
 

@@ -78,9 +78,9 @@ struct Face3D{
     ownerCells::SV2
     centre::SV3
     normal::SV3
-    e::SV3
+    e::SV3 # unit vector in the direction between ownerCells
     area::F
-    delta::F
+    delta::F # distance between ownerCells centres
     weight::F
 end
 Adapt.@adapt_structure Face3D

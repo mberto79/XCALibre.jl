@@ -9,13 +9,14 @@ function update_nueff!(nueff, nu, turb_model, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
+    kernel_range = length(nueff)
     if typeof(turb_model) <: Laminar
-        kernel! = update_nueff_laminar!(backend, workgroup)
-        kernel!(nu, nueff, ndrange=length(nueff))
+        kernel! = update_nueff_laminar!(backend, workgroup, kernel_range)
+        kernel!(nu, nueff, ndrange=kernel_range)
     else
         (; nutf) = turb_model
-        kernel! = update_nueff_turbulent!(backend, workgroup)
-        kernel!(nu, nutf, nueff, ndrange=length(nueff))
+        kernel! = update_nueff_turbulent!(backend, workgroup, kernel_range)
+        kernel!(nu, nutf, nueff, ndrange=kernel_range)
     end
 
 end
@@ -53,12 +54,14 @@ function sparse_matmul!(a, b, c, config)
     rowval_array = _rowval(a)
     fzero = zero(eltype(c))
 
-    kernel! = matmul_copy_zeros_kernel!(backend, workgroup)
-    kernel!(c, fzero, ndrange=length(c))
+    kernel_range = length(c)
+
+    kernel! = matmul_copy_zeros_kernel!(backend, workgroup, kernel_range)
+    kernel!(c, fzero, ndrange=kernel_range)
     KernelAbstractions.synchronize(backend)
 
-    kernel! = sparse_matmul_kernel!(backend, workgroup)
-    kernel!(nzval_array, rowval_array, colptr_array, b, c, ndrange=length(c))
+    kernel! = sparse_matmul_kernel!(backend, workgroup, kernel_range)
+    kernel!(nzval_array, rowval_array, colptr_array, b, c, ndrange=kernel_range)
     KernelAbstractions.synchronize(backend)
 end
 
@@ -93,8 +96,9 @@ function flux!(phif::FS, psif::FV, config) where {FS<:FaceScalarField,FV<:FaceVe
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    kernel! = flux_kernel!(backend, workgroup)
-    kernel!(phif, psif, ndrange=length(phif))
+    kernel_range = length(phif)
+    kernel! = flux_kernel!(backend, workgroup, kernel_range)
+    kernel!(phif, psif, ndrange=kernel_range)
     KernelAbstractions.synchronize(backend)
 end
 
@@ -117,8 +121,9 @@ function flux!(phif::FS, psif::FV, rhof::FS, config) where {FS<:FaceScalarField,
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    kernel! = flux_kernel!(backend, workgroup)
-    kernel!(phif, psif, rhof, ndrange=length(phif))
+    kernel_range = length(phif)
+    kernel! = flux_kernel!(backend, workgroup, kernel_range)
+    kernel!(phif, psif, rhof, ndrange=kernel_range)
     KernelAbstractions.synchronize(backend)
 end
 
@@ -148,8 +153,9 @@ function inverse_diagonal!(rD::S, eqn, config) where {S<:ScalarField}
     A = eqn.equation.A # Or should I use A0
     nzval, rowval, colptr = get_sparse_fields(A)
 
-    kernel! = inverse_diagonal_kernel!(backend, workgroup)
-    kernel!(rD, nzval, rowval, colptr, ndrange=length(rD))
+    kernel_range = length(rD)
+    kernel! = inverse_diagonal_kernel!(backend, workgroup, kernel_range)
+    kernel!(rD, nzval, rowval, colptr, ndrange=kernel_range)
     KernelAbstractions.synchronize(backend)
 end
 
@@ -175,8 +181,9 @@ function correct_velocity!(U, Hv, ∇p, rD, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    kernel! = _correct_velocity!(backend, workgroup)
-    kernel!(U, Hv, ∇p, rD, ndrange=length(U))
+    kernel_range = length(U)
+    kernel! = _correct_velocity!(backend, workgroup, kernel_range)
+    kernel!(U, Hv, ∇p, rD, ndrange=kernel_range)
     KernelAbstractions.synchronize(backend)
 end
 
@@ -208,8 +215,9 @@ remove_pressure_source!(U_eqn::ME, ∇p, config) where {ME} = begin # Extend to 
     source_sign = get_source_sign(U_eqn, 1)
     (; bx, by, bz) = U_eqn.equation
 
-    kernel! = remove_pressure_source_kernel!(backend, workgroup)
-    kernel!(cells, source_sign, ∇p, bx, by, bz, ndrange=length(bx))
+    kernel_range = length(bx)
+    kernel! = remove_pressure_source_kernel!(backend, workgroup, kernel_range)
+    kernel!(cells, source_sign, ∇p, bx, by, bz, ndrange=kernel_range)
     KernelAbstractions.synchronize(backend)
 end
 
@@ -238,9 +246,10 @@ function H!(Hv, U::VF, U_eqn, config) where {VF<:VectorField} # Extend to 3D!
     nzval, rowval, colptr = get_sparse_fields(A)
     (; bx, by, bz) = U_eqn.equation
 
-    kernel! = H_kernel!(backend, workgroup)
+    kernel_range = length(cells)
+    kernel! = H_kernel!(backend, workgroup, kernel_range)
     kernel!(cells, cell_neighbours,
-    nzval, colptr, rowval, bx, by, bz, U, Hv, ndrange=length(cells))
+    nzval, colptr, rowval, bx, by, bz, U, Hv, ndrange=kernel_range)
     KernelAbstractions.synchronize(backend)
 end
 

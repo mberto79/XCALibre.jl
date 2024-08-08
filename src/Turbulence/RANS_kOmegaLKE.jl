@@ -314,7 +314,7 @@ function turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S,
 
     fSS = @. exp(-(coeffs.CSS*nu.values*sqrt(S2.values)/k.values)^2) # should be Ω but S works
     @. nuts.values = fSS*(k.values/omega.values)
-    @. nut.values = nuts.values+nuL.values
+    @. nut.values = nuts.values + nuL.values
 
     interpolate!(nutf, nut, config)
     correct_boundaries!(nutf, nut, nut.BCs, config)
@@ -322,7 +322,8 @@ function turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S,
 end
 
 # Specialise VTK writer
-function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, name) where {T,F,M,Tu<:KOmegaLKE,E,D,BI}
+function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, VTKWriter, name
+    ) where {T,F,M,Tu<:KOmegaLKE,E,D,BI}
     args = (
         ("U", model.momentum.U), 
         ("p", model.momentum.p),
@@ -332,5 +333,5 @@ function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, name) where {T,F,M,Tu<:KOmeg
         ("nut", model.turbulence.nut),
         ("y", model.turbulence.y)
     )
-    write_vtk(name, model.domain, args...)
+    write_vtk(name, model.domain, VTKWriter, args...)
 end

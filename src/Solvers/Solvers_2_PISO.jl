@@ -4,7 +4,7 @@ piso!(model_in, config; resume=true, pref=nothing) = begin
 
     R_ux, R_uy, R_uz, R_p, model = setup_incompressible_solvers(
         PISO, model_in, config;
-        resume=true, pref=nothing
+        resume=true, pref=pref
         )
         
     return R_ux, R_uy, R_uz, R_p, model
@@ -26,6 +26,10 @@ function PISO(
     nueff = get_flux(U_eqn, 3)
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
+
+    @info "Initialise VTKWriter (Store mesh in host memory)"
+
+    VTKMeshData = initialise_writer(model.domain)
     
     @info "Allocating working memory..."
 
@@ -60,7 +64,7 @@ function PISO(
     grad!(∇p, pf, p, p.BCs, config)
 
     # grad limiter test
-    limit_gradient!(∇p, p, config)
+    # limit_gradient!(∇p, p, config)
 
     update_nueff!(nueff, nu, model.turbulence, config)
 
@@ -79,7 +83,8 @@ function PISO(
         interpolate!(rDf, rD, config)
         remove_pressure_source!(U_eqn, ∇p, config)
         
-        for i ∈ 1:2
+        ncorrectors = 2
+        for i ∈ 1:ncorrectors
             H!(Hv, U, U_eqn, config)
             
             # Interpolate faces
@@ -93,13 +98,18 @@ function PISO(
             
             # Pressure calculations
             @. prev = p.values
-            solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
+            solve_equation!(p_eqn, p, solvers.p, config; ref=pref)
+            if i == ncorrectors
+                explicit_relaxation!(p, prev, 0.95, config)
+            else
+                explicit_relaxation!(p, prev, solvers.p.relax, config)
+            end
 
             # Gradient
             grad!(∇p, pf, p, p.BCs, config) 
 
             # grad limiter test
-            limit_gradient!(∇p, p, config)
+            # limit_gradient!(∇p, p, config)
 
             correct = false
             if correct
@@ -111,7 +121,7 @@ function PISO(
                     interpolate!(gradpf, ∇p, p)
                     nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
                     correct!(p_eqn.equation, p_model.terms.term1, pf)
-                    solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
+                    solve_equation!(p_eqn, p, solvers.p, config; ref=pref)
                     grad!(∇p, pf, p, pBCs) 
                 end
             end
@@ -122,7 +132,7 @@ function PISO(
             correct_boundaries!(Uf, U, U.BCs, config)
             # flux!(mdotf, Uf, config) # old approach
 
-            correct_mass_flux(mdotf, p, pf, rDf, config)
+            correct_mass_flux(mdotf, p, pf, rDf, config) # new approach
 
             grad!(gradU, Uf, U, U.BCs, config)
             turbulence!(turbulenceModel, model, S, S2, prev, config) 
@@ -173,7 +183,7 @@ function PISO(
             )
 
         if iteration%write_interval + signbit(write_interval) == 0
-            model2vtk(model, @sprintf "timestep_%.6d" iteration)
+            model2vtk(model, VTKMeshData, @sprintf "timestep_%.6d" iteration)
         end
 
     end # end for loop

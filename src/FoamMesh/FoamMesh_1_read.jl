@@ -95,42 +95,47 @@ function read_boundary(file_path, TI, TF)
 end
 
 function read_faces(file_path, TI, TF)
-    delimiters = ['(',' ', ')']
+    delimiters = ['(',' ', ')', '\n']
 
-    # find the total number of faces and line to start reading data from
-    nfaces = 0
-    readfrom = 0
-    for (n, line) ∈ enumerate(eachline(file_path))
-        if isnothing(tryparse(TI, line))
-            continue
-        else 
-            nfaces = parse(TI, line)
-            readfrom = n + 1
-            println("number of faces is ", nfaces)
-            break
+    file_data = read(file_path, String)
+    data_split = split(file_data, delimiters, keepempty=false)
+    data = tryparse.(Int64, data_split)
+    dataClean = filter(!isnothing, data)
+    nfaces = dataClean[2]
+    println("number of faces is ", nfaces)
+    face_nodes = [TI[] for _ ∈ 1:nfaces]
+
+    sizeIndex = 3
+    for facei ∈ eachindex(face_nodes)
+        nnodes = dataClean[sizeIndex]
+        faceNodes = zeros(TI, nnodes)
+        for i ∈ 1:nnodes
+            faceNodes[i] = dataClean[sizeIndex + i] .+ one(TI)
         end
+        sizeIndex += nnodes + 1
+        face_nodes[facei] = faceNodes
     end
 
-    face_nodes = Vector{TI}[]
-    fcounter = 0
-    for (n, line) ∈ enumerate(eachline(file_path)) 
-        if line == ")"
-            break 
-        elseif n > readfrom
-            fcounter += 1
-            sline = split(line, delimiters, keepempty=false)
-            # nFaceNodes = parse(TI, sline[1])
-            nodesIDs = parse.(TI, sline[2:end]) .+ one(TI) # make 1-indexed
-            # totalFaceNodes += nFaceNodes
-            # face_nodes_range[fcounter] = UnitRange{TI}(
-            # totalFaceNodes - nFaceNodes + 1, totalFaceNodes)
-            push!(face_nodes, nodesIDs)
-        end
-    end
+    # OLD VERSION
 
-    # extract total number of nodes and define ranges for each face to access them
-    # face_nodes_range = UnitRange{TI}[1:2 for _ ∈ 1:nfaces]
-    # totalFaceNodes = 0
+    # delimiters = ['(',' ', ')']
+
+    # # find the total number of faces and line to start reading data from
+    # nfaces = 0
+    # readfrom = 0
+    # for (n, line) ∈ enumerate(eachline(file_path))
+    #     if isnothing(tryparse(TI, line))
+    #         continue
+    #     else 
+    #         nfaces = parse(TI, line)
+    #         readfrom = n + 1
+    #         println("number of faces is ", nfaces)
+    #         break
+    #     end
+    # end
+
+    # # face_nodes = Vector{TI}[]
+    # face_nodes = [TI[] for _ ∈ 1:nfaces]
     # fcounter = 0
     # for (n, line) ∈ enumerate(eachline(file_path)) 
     #     if line == ")"
@@ -138,29 +143,12 @@ function read_faces(file_path, TI, TF)
     #     elseif n > readfrom
     #         fcounter += 1
     #         sline = split(line, delimiters, keepempty=false)
-    #         nFaceNodes = parse(TI, sline[1])
-    #         totalFaceNodes += nFaceNodes
-    #         face_nodes_range[fcounter] = UnitRange{TI}(
-    #             totalFaceNodes - nFaceNodes + 1, totalFaceNodes)
+    #         nodesIDs = parse.(TI, sline[2:end]) .+ one(TI) # make 1-indexed
+    #         face_nodes[fcounter] = nodesIDs
     #     end
     # end
 
-    # loop through data again and store nodes IDs
-    # face_nodes = zeros(TI, totalFaceNodes)
-    # nodei = 0
-    # for (n, line) ∈ enumerate(eachline(file_path)) 
-    #     if line == ")"
-    #         break 
-    #     elseif n > readfrom
-    #         sline = split(line, delimiters, keepempty=false)
-    #         nodesIDs = parse.(TI, sline[2:end])
-    #         for nodeID ∈ nodesIDs
-    #             nodei += 1
-    #             face_nodes[nodei] = nodeID + one(TI) # make 1-indexed
-    #         end
-    #     end
-    # end
-    # return face_nodes, face_nodes_range
+    
     return face_nodes
 end
 

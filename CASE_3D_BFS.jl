@@ -46,9 +46,9 @@ model = Physics(
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind),
-    # p = set_schemes(gradient=Midpoint)
-    p = set_schemes()
+    U = set_schemes(divergence=Upwind, gradient=Midpoint),
+    p = set_schemes(gradient=Midpoint)
+    # p = set_schemes()
 )
 
 
@@ -68,7 +68,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 1e-1,
+        rtol = 2.5e-1,
         atol = 1e-10
     )
 )
@@ -87,7 +87,7 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-x, Ry, Rz, Rp, model_out = run!(model, config)
+Rx, Ry, Rz, Rp, model_out = run!(model, config)
 
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

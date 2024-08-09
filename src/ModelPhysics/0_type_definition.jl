@@ -48,24 +48,3 @@ Physics(; time, fluid, turbulence, energy, domain) = begin
         boundary_info
     )
 end
-
-# TO DO: RELOCATE TWO FUNCS BELOW TO COMMON LOCATION/MODULE AND EXPORT
-struct boundary_info{I<:Integer, S<:Symbol}
-    ID::I
-    Name::S
-end
-Adapt.@adapt_structure boundary_info
-
-# Create LUT to map boudnary names to indices
-function boundary_map(mesh)
-    I = Integer; S = Symbol
-    boundary_map = boundary_info{I,S}[]
-
-    mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
-
-    for (i, boundary) in enumerate(mesh_temp.boundaries)
-        push!(boundary_map, boundary_info{I,S}(i, boundary.name))
-    end
-
-    return boundary_map
-end

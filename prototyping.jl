@@ -1,6 +1,6 @@
 using FVM_1D
 
-mesh_file = "C:\\Users\\hmedi\\Desktop\\BFS_periodic_5mm.unv"
+mesh_file = "unv_sample_meshes/BFS_UNV_3D_hex_5mm.unv"
 
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 

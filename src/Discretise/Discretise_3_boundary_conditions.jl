@@ -1,5 +1,3 @@
-export dirichlet, neumann
-
 # TRANSIENT TERM 
 @inline (bc::AbstractBoundary)( # Used for all schemes (using "T")
     term::Operator{F,P,I,Time{T}}, cellID, zcellID, cell, face, fID, ione, component=nothing

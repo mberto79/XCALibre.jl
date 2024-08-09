@@ -2,7 +2,7 @@ export AbstractScheme, AbstractBoundary
 export AbstractDirichlet, AbstractNeumann
 export Dirichlet, fixedValue, Neumann
 export FixedTemperature
-export Wall, Symmetry, Periodic
+export Wall, Symmetry
 export KWallFunction, OmegaWallFunction, NutWallFunction
 export Constant, Linear, Upwind
 export BoundedUpwind
@@ -151,19 +151,6 @@ function fixedValue(BC::Symmetry, ID::I, value::V) where {I<:Integer,V}
     else
         throw("The value provided should be a scalar or a vector")
     end
-end
-
-# Periodic boundary
-struct Periodic{I,V} <: AbstractDirichlet
-    ID::I
-    values::V
-end
-Adapt.@adapt_structure Periodic
-
-Periodic(patch1::Symbol, patch2::Symbol) = begin
-    BC1 = Periodic(1,1)
-    BC2 = Periodic(2,2)
-    BC1, BC2
 end
 
 # Kwall function structure and constructor

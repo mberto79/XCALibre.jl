@@ -1,4 +1,5 @@
 using FVM_1D
+using LinearAlgebra
 
 mesh_file = "unv_sample_meshes/BFS_UNV_3D_hex_5mm.unv"
 
@@ -18,7 +19,36 @@ model = Physics(
     domain = mesh_dev
     )
 
-Periodic(:p1, :p2)
+function construct_periodic(
+    model, patch1::Symbol, patch2::Symbol; translation::Number, direction::Vector{<:Number}
+    )
+
+    boundary_information = boundary_map(model.domain)
+    idx1 = boundary_index(boundary_information, patch1)
+    idx2 = boundary_index(boundary_information, patch2)
+
+    faceCentres1 = getproperty.(mesh.faces[mesh.boundaries[idx1].IDs_range], :centre)
+    faceCentres2 = getproperty.(mesh.faces[mesh.boundaries[idx2].IDs_range], :centre)
+
+    values1 = 1
+    values2 = 2
+    periodic1 = Periodic(primary, values1)
+    periodic2 = Periodic(secondary, values2)
+    return periodic1, periodic2
+end
+
+fcs1 = getproperty.(mesh.faces[mesh.boundaries[5].IDs_range], :centre)
+fcs2 = getproperty.(mesh.faces[mesh.boundaries[6].IDs_range], :centre)
+
+fc1 = mesh.faces[mesh.boundaries[5].IDs_range[1]].centre
+fc2 = mesh.faces[mesh.boundaries[6].IDs_range[1]].centre
+
+fc1 - fc2
+fc2 - fc1
+norm(fc1 - fc2)
+
+periodic1, periodic2 = construct_periodic(model, :side1, :side2, translation=0.2, direction=[0,0,1])
+
 
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
@@ -26,7 +56,7 @@ Periodic(:p1, :p2)
     # Dirichlet(:wall, [0.0, 0.0, 0.0]),
     Wall(:wall, [0.0, 0.0, 0.0]),
     Dirichlet(:top, [0.0, 0.0, 0.0]),
-    Periodic(:side1, :side2)
+    periodic1, periodic2
 )
 
 @assign! model momentum p (

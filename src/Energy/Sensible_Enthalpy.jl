@@ -69,8 +69,6 @@ function initialise(
 
     Ttoh!(model, T, h)
 
-    # println(h.BCs[1])
-
     energy_eqn = (
         Time{schemes.h.time}(rho, h)
         + Divergence{schemes.h.divergence}(mdotf, h) 

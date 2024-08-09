@@ -159,12 +159,23 @@ end
 # Specialise VTK writer
 function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, VTKWriter, name
     ) where {T,F,M,Tu<:KOmega,E,D,BI}
-    args = (
-        ("U", model.momentum.U), 
-        ("p", model.momentum.p),
-        ("k", model.turbulence.k),
-        ("omega", model.turbulence.omega),
-        ("nut", model.turbulence.nut)
-    )
+    if typeof(model.fluid)<:AbstractCompressible
+        args = (
+            ("U", model.momentum.U), 
+            ("p", model.momentum.p),
+            ("T", model.energy.T),
+            ("k", model.turbulence.k),
+            ("omega", model.turbulence.omega),
+            ("nut", model.turbulence.nut)
+        )
+    else
+        args = (
+            ("U", model.momentum.U), 
+            ("p", model.momentum.p),
+            ("k", model.turbulence.k),
+            ("omega", model.turbulence.omega),
+            ("nut", model.turbulence.nut)
+        )
+    end
     write_vtk(name, model.domain, VTKWriter, args...)
 end

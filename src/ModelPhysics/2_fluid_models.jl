@@ -39,3 +39,5 @@ _Cp(fluid::AbstractCompressible) = fluid.cp
 _mu(fluid::AbstractCompressible) = fluid.mu
 _Pr(fluid::AbstractCompressible) = fluid.Pr
 _rho(fluis::AbstractCompressible) = fluid.rho
+
+_nu(fluid::AbstractCompressible) = fluid.mu / fluid.rho

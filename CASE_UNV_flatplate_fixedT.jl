@@ -23,9 +23,10 @@ model = Physics(
         mu = ConstantScalar(nu),
         cp = ConstantScalar(cp),
         gamma = ConstantScalar(gamma),
-        Pr = ConstantScalar(Pr)
+        Pr = ConstantScalar(Pr),
+        rho = ScalarField(mesh)
         ),
-    turbulence = RANS{Laminar}(),
+    turbulence = RANS{KOmega}(),
     energy = ENERGY{SensibleEnthalpy}(),
     domain = mesh
     )
@@ -52,7 +53,7 @@ model = Physics(
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind),
+    U = set_schemes(divergence=Linear),
     p = set_schemes(divergence=Linear),
     h = set_schemes(divergence=Linear)
 )

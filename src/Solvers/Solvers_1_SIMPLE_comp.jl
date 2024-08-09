@@ -21,12 +21,13 @@ function setup_compressible_solvers(
 
     model = adapt(hardware.backend, model_in)
     (; U, p) = model.momentum
+    (; rho) = model.fluid
     mesh = model.domain
 
     @info "Preallocating fields..."
     
     ∇p = Grad{schemes.p.gradient}(p)
-    rho= ScalarField(mesh)
+    # rho= ScalarField(mesh)
     mdotf = FaceScalarField(mesh)
     rhorDf = FaceScalarField(mesh)
     mueff = FaceScalarField(mesh)
@@ -87,14 +88,16 @@ function CSIMPLE(
     
     # Extract model variables and configuration
     (; U, p) = model.momentum
+    (; rho) = model.fluid
     mu = _mu(model.fluid)
+
     mesh = model.domain
     p_model = p_eqn.model
     (; solvers, schemes, runtime, hardware) = config
     (; iterations, write_interval) = runtime
     (; backend) = hardware
     
-    rho = get_flux(U_eqn, 1)
+    # rho = get_flux(U_eqn, 1)
     mdotf = get_flux(U_eqn, 2)
     mueff = get_flux(U_eqn, 3)
     mueffgradUt = get_source(U_eqn, 2)
@@ -218,16 +221,11 @@ function CSIMPLE(
             println("Max mdotf: ", maximum(mdotf.values), " Min divHv: ", minimum(mdotf.values))
             println("Max divHv: ", maximum(divHv.values), " Min divHv: ", minimum(divHv.values))
 
-
         elseif typeof(model.fluid) <: WeaklyCompressible
             flux!(mdotf, Uf, config)
             @. mdotf.values *= rhof.values
             div!(divHv, mdotf, config)
         end
-
-        # println("MinrhorDf ", minimum(rhorDf.values), ", MaxPsi ", maximum(rhorDf.values))
-        # println("Minpconv ", minimum(pconv.values), ", MaxPsi ", maximum(pconv.values))
-        # println("MinPsi ", minimum(divHv.values), ", MaxPsi ", maximum(divHv.values))
 
         # Pressure calculations
         @. prev = p.values
@@ -244,7 +242,6 @@ function CSIMPLE(
             pmin = solvers.p.limit[1]; pmax = solvers.p.limit[2]
             clamp!(p.values, pmin, pmax)
         end
-
 
         explicit_relaxation!(p, prev, solvers.p.relax, config)
 

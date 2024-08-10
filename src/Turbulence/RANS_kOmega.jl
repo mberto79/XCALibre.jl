@@ -100,7 +100,7 @@ function turbulence!(
 
     mesh = model.domain
     
-    (; rho) = model.fluid
+    (; rho, rhof, nu, nuf) = model.fluid
     (;k, omega, nut, kf, omegaf, nutf, coeffs) = model.turbulence
     (;k_eqn, ω_eqn) = rans
     (; solvers, runtime) = config
@@ -113,7 +113,7 @@ function turbulence!(
     Dωf = get_flux(ω_eqn, 4)
     Pω = get_source(ω_eqn, 1)
 
-    nu = _nu(model.fluid)
+    # nu = _nu(model.fluid)
 
     # update fluxes and sources
     magnitude2!(Pk, S, config, scale_factor=2.0) # multiplied by 2 (def of Sij)
@@ -122,9 +122,9 @@ function turbulence!(
     @. Pω.values = rho.values*coeffs.α1*Pk.values
     @. Pk.values = rho.values*nut.values*Pk.values
     @. Dωf.values = rho.values*coeffs.β1*omega.values
-    @. mueffω.values = rho.values * (nu.values + coeffs.σω*nutf.values)
+    @. mueffω.values = rhof.values * (nuf.values + coeffs.σω*nutf.values)
     @. Dkf.values = rho.values*coeffs.β⁺*omega.values
-    @. mueffk.values = rho.values * (nu.values + coeffs.σk*nutf.values)
+    @. mueffk.values = rhof.values * (nuf.values + coeffs.σk*nutf.values)
 
     # Solve omega equation
     prev .= omega.values

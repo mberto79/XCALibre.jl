@@ -75,7 +75,7 @@ function SIMPLE(
     
     # Extract model variables and configuration
     (; U, p) = model.momentum
-    nu = _nu(model.fluid)
+    (; nu) = model.fluid
     mesh = model.domain
     p_model = p_eqn.model
     (; solvers, schemes, runtime, hardware) = config

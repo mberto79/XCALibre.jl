@@ -66,6 +66,7 @@ function initialise(
     # rho = ScalarField(mesh)
     keff_by_cp = FaceScalarField(mesh)
     divK = ScalarField(mesh)
+    dKdt = ScalarField(mesh)
 
     Ttoh!(model, T, h)
 
@@ -75,6 +76,7 @@ function initialise(
         - Laplacian{schemes.h.laplacian}(keff_by_cp, h) 
         == 
         -Source(divK)
+        -Source(dKdt)
     ) → eqn
     
     # Set up preconditioners
@@ -103,6 +105,7 @@ function energy!(
     # rho = get_flux(energy_eqn, 1)
     keff_by_cp = get_flux(energy_eqn, 3)
     divK = get_source(energy_eqn, 1)
+    dKdt = get_source(energy_eqn, 2)
 
     Uf = FaceVectorField(mesh)
     Kf = FaceScalarField(mesh)
@@ -113,6 +116,12 @@ function energy!(
     volumes = getproperty.(mesh.cells, :volume)
 
     # println("Minmdot ", minimum(rho.values), ", Maxdoot ", maximum(rho.values))
+
+    if schemes.h.time <: Steady
+        @. dKdt.values = 0.0
+    else
+        @. dKdt.values = (K.values - prevK.values)/dt
+    end
 
     @. keff_by_cp.values = mueff.values/Pr.values
 

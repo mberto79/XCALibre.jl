@@ -35,8 +35,13 @@ function setup_unsteady_compressible_solvers(
     # initialise!(rDf, 1.0)
     rhorDf.values .= 1.0
     divHv = ScalarField(mesh)
+    divmdotf = ScalarField(mesh)
 
     @info "Defining models..."
+
+    rho_eqn = (
+        Time{schemes.rho.time}(rho) == -Source(divmdotf)
+    ) → ScalarEquation(mesh)
 
     U_eqn = (
         Time{schemes.U.time}(rho, U)
@@ -86,13 +91,13 @@ function setup_unsteady_compressible_solvers(
     turbulenceModel = Turbulence.initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     R_ux, R_uy, R_uz, R_p, R_e, model  = solver_variant(
-    model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
+    model, turbulenceModel, energyModel, ∇p, rho_eqn, U_eqn, p_eqn, config; resume=resume, pref=pref)
 
     return R_ux, R_uy, R_uz, R_p, R_e, model    
 end # end function
 
 function CPISO(
-    model, turbulenceModel, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
+    model, turbulenceModel, ∇p, rho_eqn, U_eqn, p_eqn, config; resume=resume, pref=pref)
     
     # Extract model variables and configuration
     (; U, p) = model.momentum
@@ -103,8 +108,9 @@ function CPISO(
     (; iterations, write_interval) = runtime
     (; backend) = hardware
     
+    divmdotf = get_source(rho_eqn, 1)
     mdotf = get_flux(U_eqn, 2)
-    nueff = get_flux(U_eqn, 3)
+    mueff = get_flux(U_eqn, 3)
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
     
@@ -151,9 +157,30 @@ function CPISO(
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
+    div!(divmdotf, mdotf, config)
+    @. prev = rho.values
+    solve_equation!(rho_eqn, rho, solvers.rho, config; ref=nothing)
+
     @time for iteration ∈ 1:iterations
 
+        ## CHECK GRADU AND EXPLICIT STRESSES
+        grad!(gradU, Uf, U, U.BCs, config)
+        
+        # Set up and solve momentum equations
+        explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU)
+        div!(divmugradUTx, mugradUTx, config)
+        div!(divmugradUTy, mugradUTy, config)
+        div!(divmugradUTz, mugradUTz, config)
+
+        @. mueffgradUt.x.values = divmugradUTx.values
+        @. mueffgradUt.y.values = divmugradUTy.values
+        @. mueffgradUt.z.values = divmugradUTz.values
+
         solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
+
+        energy!(energyModel, model, prev, mdotf, rho, mueff, config)
+
+        thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
           
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
@@ -346,3 +373,56 @@ end
         ∇F.result.z.values[cID] = g0[3]
     # end
 end
+
+function explicit_shear_stress!(mugradUTx::FaceScalarField, mugradUTy::FaceScalarField, mugradUTz::FaceScalarField, mueff, gradU)
+    mesh = mugradUTx.mesh
+    (; faces, cells) = mesh
+    nbfaces = length(mesh.boundary_cellsID) #boundary_faces(mesh)
+    start_faceID = nbfaces + 1
+    last_faceID = length(faces)
+    for fID ∈ start_faceID:last_faceID
+        face = faces[fID]
+        (; area, normal, ownerCells, delta) = face 
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        cell1 = cells[cID1]
+        cell2 = cells[cID2]
+        gradUxxf = 0.5*(gradU.result.xx[cID1]+gradU.result.xx[cID2])
+        gradUxyf = 0.5*(gradU.result.xy[cID1]+gradU.result.xy[cID2])
+        gradUxzf = 0.5*(gradU.result.xz[cID1]+gradU.result.xz[cID2])
+        gradUyxf = 0.5*(gradU.result.yx[cID1]+gradU.result.yx[cID2])
+        gradUyyf = 0.5*(gradU.result.yy[cID1]+gradU.result.yy[cID2])
+        gradUyzf = 0.5*(gradU.result.yz[cID1]+gradU.result.yz[cID2])
+        gradUzxf = 0.5*(gradU.result.zx[cID1]+gradU.result.zx[cID2])
+        gradUzyf = 0.5*(gradU.result.zy[cID1]+gradU.result.zy[cID2])
+        gradUzzf = 0.5*(gradU.result.zz[cID1]+gradU.result.zz[cID2])
+        mugradUTx[fID] = mueff[fID] * (normal[1]*gradUxxf + normal[2]*gradUyxf + normal[3]*gradUzxf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
+        mugradUTy[fID] = mueff[fID] * (normal[1]*gradUxyf + normal[2]*gradUyyf + normal[3]*gradUzyf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
+        mugradUTz[fID] = mueff[fID] * (normal[1]*gradUxzf + normal[2]*gradUyzf + normal[3]*gradUzzf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
+        # mugradUTx[fID] = mueff[fID] * (normal[1]*gradUxxf + normal[2]*gradUyxf + normal[3]*gradUzxf) * area
+        # mugradUTy[fID] = mueff[fID] * (normal[1]*gradUxyf + normal[2]*gradUyyf + normal[3]*gradUzyf) * area
+        # mugradUTz[fID] = mueff[fID] * (normal[1]*gradUxzf + normal[2]*gradUyzf + normal[3]*gradUzzf) * area
+    end
+    
+    # Now deal with boundary faces
+    for fID ∈ 1:nbfaces
+        face = faces[fID]
+        (; area, normal, ownerCells, delta) = face 
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        cell1 = cells[cID1]
+        cell2 = cells[cID2]
+        gradUxxf = (gradU.result.xx[cID1])
+        gradUxyf = (gradU.result.xy[cID1])
+        gradUxzf = (gradU.result.xz[cID1])
+        gradUyxf = (gradU.result.yx[cID1])
+        gradUyyf = (gradU.result.yy[cID1])
+        gradUyzf = (gradU.result.yz[cID1])
+        gradUzxf = (gradU.result.zx[cID1])
+        gradUzyf = (gradU.result.zy[cID1])
+        gradUzzf = (gradU.result.zz[cID1])
+        mugradUTx[fID] = mueff[fID] * (normal[1]*gradUxxf + normal[2]*gradUyxf + normal[3]*gradUzxf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
+        mugradUTy[fID] = mueff[fID] * (normal[1]*gradUxyf + normal[2]*gradUyyf + normal[3]*gradUzyf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
+        mugradUTz[fID] = mueff[fID] * (normal[1]*gradUxzf + normal[2]*gradUyzf + normal[3]*gradUzzf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
+    end
+end 

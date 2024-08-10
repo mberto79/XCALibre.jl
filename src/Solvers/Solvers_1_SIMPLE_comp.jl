@@ -88,8 +88,8 @@ function CSIMPLE(
     
     # Extract model variables and configuration
     (; U, p) = model.momentum
-    (; rho) = model.fluid
-    mu = _mu(model.fluid)
+    (; rho, rhof) = model.fluid
+    nu = _nu(model.fluid)
 
     mesh = model.domain
     p_model = p_eqn.model
@@ -127,7 +127,7 @@ function CSIMPLE(
     gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
-    rhof = FaceScalarField(mesh)
+    # rhof = FaceScalarField(mesh)
     Psi = ScalarField(mesh)
     Psif = FaceScalarField(mesh)
 
@@ -302,9 +302,10 @@ function CSIMPLE(
         # if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs, config)
             turbulence!(turbulenceModel, model, S, S2, prev, config) 
-            update_nueff!(mueff, mu, model.turbulence, config)
+            update_nueff!(nueff, nu, model.turbulence, config)
         # end
-        
+        @. mueff = rhof.values*nueff.values
+
         convergence = 1e-7
 
         if (R_ux[iteration] <= convergence && 

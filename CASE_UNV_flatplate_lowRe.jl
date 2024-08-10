@@ -17,14 +17,13 @@ k_inlet = 0.375
 
 model = Physics(
     time = Steady(),
-    fluid = Incompressible(
-        nu = ConstantScalar(nu),
-        rho = ConstantScalar(1.0)
-        ),
+    fluid = FLUID{Incompressible}(),
     turbulence = RANS{KOmega}(),
     energy = ENERGY{Isothermal}(),
     domain = mesh_gpu
     )
+
+println(typeof(model.fluid))
 
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),

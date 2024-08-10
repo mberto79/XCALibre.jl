@@ -47,6 +47,13 @@ ScalarField(mesh::AbstractMesh) =begin
     arr = _convert_array!(zeros(F,ncells), backend)
     ScalarField(arr, mesh, ())
 end
+ScalarField(values::Vector{Float64}, mesh::AbstractMesh) =begin
+    ncells  = length(mesh.cells)
+    F = _get_float(mesh)
+    backend = _get_backend(mesh)
+    arr = _convert_array!(values, backend)
+    ScalarField(arr, mesh, ())
+end
 
 struct FaceScalarField{VF,M<:AbstractMesh} <: AbstractScalarField
     values::VF#Vector{F}

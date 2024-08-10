@@ -117,9 +117,7 @@ end
     fID = i + start_ID - 1 # Redefine thread index to become face ID
 
     @uniform begin
-        # nu = _nu(model.fluid)
-        # k = model.turbulence.k
-        nu = _nu(fluid)
+        nu = fluid.nu
         k = turbulence.k
         (; kappa, beta1, cmu, B, E) = BC.value
         ylam = y_plus_laminar(E, kappa)
@@ -197,7 +195,7 @@ end
     fID = i + start_ID - 1 # Redefine thread index to become face ID
 
     @uniform begin
-        nu = _nu(fluid)
+        (; nu) = fluid
         (; k) = turbulence
         # k= _k(turbulence)
         (; kappa, beta1, cmu, B, E) = BC.value

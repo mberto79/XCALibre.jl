@@ -2,11 +2,12 @@ export SensibleEnthalpy
 export Ttoh, htoT!, Ttoh!, thermo_Psi!
 
 # Model type definition
-struct SensibleEnthalpy{S1,S2,F1,F2,F,C} <: AbstractEnergyModel
+struct SensibleEnthalpy{S1,S2,F1,F2,S3,F,C} <: AbstractEnergyModel
     h::S1
     T::S2
     hf::F1
     Tf::F2
+    K::S3
     update_BC::F
     coeffs::C
 end
@@ -30,9 +31,10 @@ end
     T = ScalarField(mesh)
     hf = FaceScalarField(mesh)
     Tf = FaceScalarField(mesh)
+    K = ScalarField(mesh)
     update_BC =  return_thingy(EnergyModel, fluid, energy.args.Tref)
     coeffs = energy.args
-    SensibleEnthalpy(h, T, hf, Tf, update_BC, coeffs)
+    SensibleEnthalpy(h, T, hf, Tf, K, update_BC, coeffs)
 end
 
 return_thingy(::Type{SensibleEnthalpy}, fluid, Tref) = begin
@@ -96,7 +98,7 @@ function energy!(
     mesh = model.domain
 
     (;U) = model.momentum
-    (;h, hf, T) = model.energy
+    (;h, hf, T, K) = model.energy
     (;energy_eqn) = energy
     (; solvers, runtime) = config
 
@@ -109,20 +111,21 @@ function energy!(
 
     Uf = FaceVectorField(mesh)
     Kf = FaceScalarField(mesh)
-    K = ScalarField(mesh)
     # Kbounded = ScalarField(mesh)
     Pr = model.fluid.Pr
 
-    volumes = getproperty.(mesh.cells, :volume)
+    dt = runtime.dt
 
-    if config.schemes.h.time <: SteadyState
-        @. dKdt.values = 0.0
-    else
-        @. dKdt.values = (K.values - prevK.values)/dt
-    end
+    # Pre-allocate auxiliary variables
+    TF = _get_float(mesh)
+    prev = zeros(TF, n_cells)
+    prev = _convert_array!(prev, backend) 
+
+    volumes = getproperty.(mesh.cells, :volume)
 
     @. keff_by_cp.values = mueff.values/Pr.values
 
+    @. prevK = K.values
     interpolate!(Uf, U, config)
     correct_boundaries!(Uf, U, U.BCs, config)
     for i ∈ eachindex(K)
@@ -135,6 +138,14 @@ function energy!(
     # correct_face_interpolation!(Kf, K, mdotf) # This forces KE to be upwind, MIGHT NOT BE WORKING
     @. Kf.values *= mdotf.values
     div!(divK, Kf, config)
+
+    if config.schemes.h.time <: SteadyState
+        @. dKdt.values = 0.0
+    else
+        @. dKdt.values = (K.values - prevK)/dt
+    end
+
+
     # div!(Kbounded, mdotf, config)
     # println("MaxdivK ", maximum(divK.values), " mindivK ", minimum(divK.values))
     # @. divK.values .- Kbounded.values * K.values # This might need dividing by the volume, unsure

@@ -57,6 +57,16 @@ assign(vec::VectorField, args...) = begin
             @reset vec.y.BCs = yBCs
             @reset vec.z.BCs = zBCs
             @reset vec.BCs = uBCs
+        elseif typeof(arg.value) <: NamedTuple
+            # Set boundary conditions
+            xBCs = (vec.x.BCs..., fixedValue(arg, idx, arg.value))
+            yBCs = (vec.y.BCs..., fixedValue(arg, idx, arg.value))
+            zBCs = (vec.z.BCs..., fixedValue(arg, idx, arg.value))
+            uBCs = (vec.BCs..., fixedValue(arg, idx, arg.value))
+            @reset vec.x.BCs = xBCs
+            @reset vec.y.BCs = yBCs
+            @reset vec.z.BCs = zBCs
+            @reset vec.BCs = uBCs
         else
             # Set boundary conditions
             xBCs = (vec.x.BCs..., fixedValue(arg, idx, float(arg.value)))

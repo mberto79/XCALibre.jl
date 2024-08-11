@@ -88,8 +88,7 @@ function CSIMPLE(
     
     # Extract model variables and configuration
     (; U, p) = model.momentum
-    (; rho, rhof) = model.fluid
-    nu = _nu(model.fluid)
+    (; nu, nuf, rho, rhof) = model.fluid
 
     mesh = model.domain
     p_model = p_eqn.model
@@ -123,6 +122,7 @@ function CSIMPLE(
     n_faces = length(mesh.faces)
     Uf = FaceVectorField(mesh)
     pf = FaceScalarField(mesh)
+    nueff = FaceScalarField(mesh)
     prevpf = FaceScalarField(mesh)
     gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
@@ -161,8 +161,9 @@ function CSIMPLE(
     flux!(mdotf, Uf, rhof, config)
     println("Minrhof ", minimum(rhof.values), ", Maxmrhof ", maximum(rhof.values))
 
-    update_nueff!(mueff, mu, model.turbulence, config)
-    
+    update_nueff!(nueff, nu, model.turbulence, config)
+    @. mueff.values = nueff.values * rhof.values
+
     @info "Staring SIMPLE loops..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
@@ -190,14 +191,14 @@ function CSIMPLE(
 
         thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
 
-        println("Max Psi: ", maximum(Psi.values), " Min Psi: ", minimum(Psi.values))
+        # println("Max Psi: ", maximum(Psi.values), " Min Psi: ", minimum(Psi.values))
 
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rhorDf, rD, config)
         @. rhorDf.values *= rhof.values
 
-        println("Max rhorD: ", maximum(rhorDf.values), " Min rhorDf: ", minimum(rhorDf.values))
+        # println("Max rhorD: ", maximum(rhorDf.values), " Min rhorDf: ", minimum(rhorDf.values))
 
         remove_pressure_source!(U_eqn, ∇p, config)
         H!(Hv, U, U_eqn, config)
@@ -216,10 +217,10 @@ function CSIMPLE(
             @. mdotf.values -= mdotf.values*Psif.values*pf.values/rhof.values
             div!(divHv, mdotf, config)
 
-            println("Max pconv: ", maximum(pconv.values), " Min pconv: ", minimum(pconv.values))
+            # println("Max pconv: ", maximum(pconv.values), " Min pconv: ", minimum(pconv.values))
 
-            println("Max mdotf: ", maximum(mdotf.values), " Min divHv: ", minimum(mdotf.values))
-            println("Max divHv: ", maximum(divHv.values), " Min divHv: ", minimum(divHv.values))
+            # println("Max mdotf: ", maximum(mdotf.values), " Min divHv: ", minimum(mdotf.values))
+            # println("Max divHv: ", maximum(divHv.values), " Min divHv: ", minimum(divHv.values))
 
         elseif typeof(model.fluid) <: WeaklyCompressible
             flux!(mdotf, Uf, config)
@@ -304,7 +305,7 @@ function CSIMPLE(
             turbulence!(turbulenceModel, model, S, S2, prev, config) 
             update_nueff!(nueff, nu, model.turbulence, config)
         # end
-        @. mueff = rhof.values*nueff.values
+        @. mueff.values = rhof.values*nueff.values
 
         convergence = 1e-7
 
@@ -337,7 +338,7 @@ function CSIMPLE(
             )
 
         if iteration%write_interval + signbit(write_interval) == 0      
-            model2vtk(model, @sprintf "iteration_%.6d" iteration)
+            model2vtk(model, VTKMeshData, @sprintf "iteration_%.6d" iteration)
         end
 
     end # end for loop

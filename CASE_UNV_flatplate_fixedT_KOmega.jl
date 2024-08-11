@@ -22,13 +22,11 @@ k_inlet = 0.375
 
 model = Physics(
     time = Steady(),
-    fluid = WeaklyCompressible(
-        nu = ConstantScalar(nu),
-        cp = ConstantScalar(cp),
-        gamma = ConstantScalar(gamma),
-        Pr = ConstantScalar(Pr),
-        rho = ScalarField(mesh),
-        rhof = FaceScalarField(mesh)
+    fluid = FLUID{WeaklyCompressible}(
+        nu = nu,
+        cp = cp,
+        gamma = gamma,
+        Pr = Pr
         ),
     turbulence = RANS{KOmega}(),
     energy = ENERGY{SensibleEnthalpy}(),

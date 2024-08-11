@@ -12,7 +12,7 @@ struct FLUID{T,ARG} <: AbstractFluid
     args::ARG
 end
 
-struct Incompressible{S1, S2, F1, F2} <: AbstractFluid
+@kwdef struct Incompressible{S1, S2, F1, F2} <: AbstractIncompressible
     nu::S1
     rho::S2
     nuf::F1
@@ -36,35 +36,83 @@ end
     Incompressible(nu, rho, nuf, rhof)
 end
 
-_nu(fluid::AbstractIncompressible) = fluid.nu
-_rho(fluid::AbstractIncompressible) = fluid.rho
-_nuf(fluid::AbstractIncompressible) = fluid.nuf
+# _nu(fluid::AbstractIncompressible) = fluid.nu
+# _rho(fluid::AbstractIncompressible) = fluid.rho
+# _nuf(fluid::AbstractIncompressible) = fluid.nuf
 
-@kwdef struct WeaklyCompressible{T, S, FS} <: AbstractCompressible
-    nu::T
+@kwdef struct WeaklyCompressible{S1, S2, F1, F2, T} <: AbstractCompressible
+    nu::S1
+    rho::S2
+    nuf::F1
+    rhof::F2
     cp::T
     gamma::T
     Pr::T
-    rho::S
-    rhof::FS
+    R::T
 end
 Adapt.@adapt_structure WeaklyCompressible
 
-@kwdef struct Compressible{T, S, FS} <: AbstractCompressible
-    nu::T
+FLUID{WeaklyCompressible}(; nu=1E-5, cp=1005.0, gamma=1.4, Pr=0.7 ) = begin
+    coeffs = (nu=nu, cp=cp, gamma=gamma, Pr=Pr)
+    ARG = typeof(coeffs)
+    FLUID{WeaklyCompressible,ARG}(coeffs)
+end
+
+(fluid::FLUID{WeaklyCompressible, ARG})(mesh) where ARG = begin
+    coeffs = fluid.args
+    (; nu, cp, gamma, Pr) = coeffs
+    cp = ConstantScalar(cp)
+    gamma = ConstantScalar(gamma)
+    Pr = ConstantScalar(Pr)
+    R = ConstantScalar(cp.values*(1.0 - (1.0/gamma.values)))
+
+    nu = ConstantScalar(nu)
+    rho = ScalarField(mesh)
+    nuf = nu
+    rhof = FaceScalarField(mesh)
+    Compressible(nu, rho, nuf, rhof, cp, gamma, Pr, R)
+end
+
+
+@kwdef struct Compressible{S1, S2, F1, F2, T} <: AbstractCompressible
+    nu::S1
+    rho::S2
+    nuf::F1
+    rhof::F2
     cp::T
     gamma::T
     Pr::T
-    rho::S
-    rhof::FS
+    R::T
 end
 Adapt.@adapt_structure Compressible
 
-_R(fluid::AbstractCompressible) = ConstantScalar(fluid.cp.values*(1.0 - (1.0/fluid.gamma.values)))
-_Cp(fluid::AbstractCompressible) = fluid.cp
-_nu(fluid::AbstractCompressible) = fluid.nu
-_Pr(fluid::AbstractCompressible) = fluid.Pr
-_rho(fluis::AbstractCompressible) = fluid.rho
+FLUID{Compressible}(; nu=1E-5, cp=1005.0, gamma=1.4, Pr=0.7 ) = begin
+    coeffs = (nu=nu, cp=cp, gamma=gamma, Pr=Pr)
+    ARG = typeof(coeffs)
+    FLUID{Compressible,ARG}(coeffs)
+end
 
-_nu(fluid::AbstractCompressible) = fluid.nu
-_nuf(fluid::AbstractCompressible) = fluid.nu
+(fluid::FLUID{Compressible, ARG})(mesh) where ARG = begin
+    coeffs = fluid.args
+    (; nu, cp, gamma, Pr) = coeffs
+    cp = ConstantScalar(cp)
+    gamma = ConstantScalar(gamma)
+    Pr = ConstantScalar(Pr)
+    R = ConstantScalar(cp.values*(1.0 - (1.0/gamma.values)))
+
+    nu = ConstantScalar(nu)
+    rho = ScalarField(mesh)
+    nuf = nu
+    rhof = FaceScalarField(mesh)
+    Compressible(nu, rho, nuf, rhof, cp, gamma, Pr, R)
+end
+
+
+# _R(fluid::AbstractCompressible) = ConstantScalar(fluid.cp.values*(1.0 - (1.0/fluid.gamma.values)))
+# _Cp(fluid::AbstractCompressible) = fluid.cp
+# _nu(fluid::AbstractCompressible) = fluid.nu
+# _Pr(fluid::AbstractCompressible) = fluid.Pr
+# _rho(fluis::AbstractCompressible) = fluid.rho
+
+# _nu(fluid::AbstractCompressible) = fluid.nu
+# _nuf(fluid::AbstractCompressible) = fluid.nu

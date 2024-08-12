@@ -1,5 +1,6 @@
 export correct_boundaries!
 export interpolate!
+export adjust_boundary!
 
 # Temporary functions to extract boundary array
 function to_cpu(boundaries::AbstractArray)
@@ -219,16 +220,13 @@ end
     # i = BC.ID
 
     @inbounds begin
-        # (; IDs_range) = boundaries[i]
         (; IDs_range) = boundaries[BC.ID]
-        # for fID in IDs_range
         fID = IDs_range[i]
-            cID = boundary_cellsID[fID]
-            psi_cell = psi[cID]
-            x[fID] = psi_cell[1]
-            y[fID] = psi_cell[2]
-            z[fID] = psi_cell[3]
-        # end
+        cID = boundary_cellsID[fID]
+        psi_cell = psi[cID]
+        x[fID] = psi_cell[1]
+        y[fID] = psi_cell[2]
+        z[fID] = psi_cell[3]
     end
 end
 
@@ -375,5 +373,67 @@ function interpolate!(
         x[fID] = grad_corr[1]
         y[fID] = grad_corr[2]
         z[fID] = grad_corr[3]
+    end
+end
+
+# Periodic boundary interpolation
+
+function adjust_boundary!(b_cpu, BC::Periodic, phif::FaceScalarField, phi, boundaries, boundary_cellsID,  backend, workgroup)
+    phif_values = phif.values
+    phi_values = phi.values
+
+    (; faces) = phif.mesh
+    face_map = BC.value.face_map
+
+    # Copy to CPU
+    # facesID_range = get_boundaries(BC, boundaries)
+    kernel_range = length(b_cpu[BC.ID].IDs_range)
+
+    kernel! = adjust_boundary_periodic_scalar!(backend, workgroup)
+    kernel!(BC, phif, phi, boundaries, boundary_cellsID, face_map, faces, phif_values, phi_values, ndrange = kernel_range)
+    # KernelAbstractions.synchronize(backend)
+end
+
+@kernel function adjust_boundary_periodic_scalar!(BC, phif, phi, boundaries, boundary_cellsID, face_map, faces, phif_values, phi_values)
+    i = @index(Global)
+    
+    @inbounds begin
+        pfID = BC.value.face_map[i] # id of periodic face
+        pface = faces[pfID]
+        pcID = pface.ownerCells[1]
+        (; IDs_range) = boundaries[BC.ID]
+        fID = IDs_range[i]
+        cID = boundary_cellsID[fID]
+        phif_values[fID] = 0.5*(phi_values[cID] + phi_values[pcID]) # linear interpolation 
+    end
+end
+
+function adjust_boundary!(b_cpu, BC::Periodic, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, backend, workgroup)
+    (; x, y, z) = psif
+
+    (; faces) = psif.mesh
+    face_map = BC.value.face_map
+
+    kernel_range = length(b_cpu[BC.ID].IDs_range)
+
+    kernel! = adjust_boundary_periodic_vector!(backend, workgroup)
+    kernel!(BC, psif, psi, boundaries, boundary_cellsID, face_map, faces, x, y, z, ndrange = kernel_range)
+    # KernelAbstractions.synchronize(backend)
+end
+
+@kernel function adjust_boundary_periodic_vector!(BC, psif, psi, boundaries, boundary_cellsID, face_map, faces, x, y, z)
+    i = @index(Global)
+
+    @inbounds begin
+        pfID = BC.value.face_map[i] # id of periodic face
+        pface = faces[pfID]
+        pcID = pface.ownerCells[1]
+        (; IDs_range) = boundaries[BC.ID]
+        fID = IDs_range[i]
+        cID = boundary_cellsID[fID]
+        psi_face = 0.5*(psi[cID] + psi[pcID]) # linear interpolation 
+        x[fID] = psi_face[1]
+        y[fID] = psi_face[2]
+        z[fID] = psi_face[3]
     end
 end

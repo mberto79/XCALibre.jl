@@ -85,21 +85,21 @@ end
     zcellID = nzval_index(colptr, rowval, cellID, cellID, ione)
 
     # Call apply generated function
-    AP, BP = apply!(model, BC, terms, cellID, zcellID, cell, face, faceID, ione, component)
+    AP, BP = apply!(model, BC, terms, cellID, zcellID, cell, face, faceID, i, component)
     Atomix.@atomic nzval[zcellID] += AP
     Atomix.@atomic b[cellID] += BP
 end
 
 # Apply generated function definition
 @generated function apply!(
-    model::Model{TN,SN,T,S}, BC, terms, cellID, zcellID, cell, face, fID, ione, component
+    model::Model{TN,SN,T,S}, BC, terms, cellID, zcellID, cell, face, fID, i, component
     ) where {TN,SN,T,S}
 
     # Definition of main assignment loop (one per patch)
     func_calls = Expr[]
     for t ∈ 1:TN 
         call = quote
-            ap, bp = (BC)(terms[$t], cellID, zcellID, cell, face, fID, ione, component)
+            ap, bp = (BC)(terms[$t], cellID, zcellID, cell, face, fID, i, component)
             AP += ap
             BP += bp
         end

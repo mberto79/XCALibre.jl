@@ -5,8 +5,6 @@ function adjust_boundary!(b_cpu, BC::Periodic, phif::FaceScalarField, phi, bound
     (; faces) = phif.mesh
     face_map = BC.value.face_map
 
-    # Copy to CPU
-    # facesID_range = get_boundaries(BC, boundaries)
     kernel_range = length(b_cpu[BC.ID].IDs_range)
 
     kernel! = adjust_boundary_periodic_scalar!(backend, workgroup)
@@ -19,7 +17,6 @@ end
     mesh = phi.mesh
     (; cells) = mesh
 
-    
     @inbounds begin
         pfID = BC.value.face_map[i] # id of periodic face
         pface = faces[pfID]

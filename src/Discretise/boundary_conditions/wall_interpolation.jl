@@ -2,8 +2,6 @@ function adjust_boundary!(b_cpu, BC::Wall, phif::FaceScalarField, phi, boundarie
     phif_values = phif.values
     phi_values = phi.values
 
-    # Copy to CPU
-    # facesID_range = get_boundaries(BC, boundaries)
     kernel_range = length(b_cpu[BC.ID].IDs_range)
 
     kernel! = adjust_boundary_dirichlet_scalar!(backend, workgroup)

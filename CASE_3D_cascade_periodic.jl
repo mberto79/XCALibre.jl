@@ -5,6 +5,9 @@ mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
 mesh_dev = mesh
 
+side1, side2 = construct_periodic(mesh_dev, :side1, :side2)
+top, bottom = construct_periodic(mesh_dev, :top, :bottom)
+
 velocity = [0.25, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
@@ -17,8 +20,7 @@ model = Physics(
     domain = mesh_dev
     )
 
-side1, side2 = construct_periodic(model, :side1, :side2)
-top, bottom = construct_periodic(model, :top, :bottom)
+
     
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
@@ -41,7 +43,7 @@ top, bottom = construct_periodic(model, :top, :bottom)
 
 schemes = (
     # U = set_schemes(divergence=Upwind, gradient=Midpoint),
-    U = set_schemes(divergence=Linear, gradient=Midpoint),
+    U = set_schemes(divergence=Upwind, gradient=Midpoint),
     p = set_schemes(gradient=Midpoint)
     # p = set_schemes()
 )
@@ -69,7 +71,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=500, time_step=1, write_interval=100)
+    iterations=100, time_step=1, write_interval=100)
 
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=4)

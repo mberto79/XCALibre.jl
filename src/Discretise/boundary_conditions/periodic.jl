@@ -8,9 +8,6 @@ struct Periodic{I,V} <: AbstractBoundary
 end
 Adapt.@adapt_structure Periodic
 
-# NutWallFunction(name::Symbol) = begin
-#     NutWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8))
-# end
 function fixedValue(BC::Periodic, ID::I, value::V) where {I<:Integer,V}
     # Exception 1: Value is scalar
     if V <: Number
@@ -25,13 +22,12 @@ function fixedValue(BC::Periodic, ID::I, value::V) where {I<:Integer,V}
 end
 
 function construct_periodic(
-    # model, patch1::Symbol, patch2::Symbol; translation::Number, direction::Vector{<:Number}
-    model, patch1::Symbol, patch2::Symbol
+    mesh, patch1::Symbol, patch2::Symbol
     )
 
-    (; faces, boundaries) = model.domain
+    (; faces, boundaries) = mesh
 
-    boundary_information = boundary_map(model.domain)
+    boundary_information = boundary_map(mesh)
     idx1 = boundary_index(boundary_information, patch1)
     idx2 = boundary_index(boundary_information, patch2)
 
@@ -70,7 +66,6 @@ end
 
 # Periodic boundary condition assignment
 
-# Dirichlet functor definition
 @inline (bc::Periodic)(
     term::Operator{F,P,I,Laplacian{Linear}}, cellID, zcellID, cell, face, fID, i, component=nothing
     ) where {F,P,I} = begin
@@ -117,14 +112,6 @@ end
     
     ap, ap*face_value
 end
-
-# @inline (bc::Dirichlet)(
-#     term::Operator{F,P,I,Divergence{Linear}}, cellID, zcellID, cell, face, fID, i, component=nothing) where {F,P,I} = begin
-#     # Increment b array     
-#     # Atomix.@atomic b[cellID] += term.sign[1]*(-term.flux[fID]*bc.value)
-#     # nothing
-#     0.0, term.sign[1]*(-term.flux[fID]*bc.value)
-# end
 
 @inline (bc::Periodic)(
     term::Operator{F,P,I,Divergence{Linear}}, cellID, zcellID, cell, face, fID, i, component=nothing) where {F,P,I} = begin

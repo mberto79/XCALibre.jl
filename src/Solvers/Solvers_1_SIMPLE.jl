@@ -196,21 +196,6 @@ function SIMPLE(
         end
 
 
-        correct = false
-        if correct
-            ncorrectors = 1
-            for i ∈ 1:ncorrectors
-                discretise!(p_eqn)
-                apply_boundary_conditions!(p_eqn, p.BCs)
-                setReference!(p_eqn.equation, pref, 1)
-                interpolate!(gradpf, ∇p, p)
-                nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
-                correct!(p_eqn.equation, p_model.terms.term1, pf)
-                solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
-                grad!(∇p, pf, p, pBCs) 
-            end
-        end
-
         # Velocity and boundaries correction
 
         # old approach

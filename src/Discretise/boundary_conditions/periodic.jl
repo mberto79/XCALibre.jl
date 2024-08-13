@@ -22,9 +22,10 @@ function fixedValue(BC::Periodic, ID::I, value::V) where {I<:Integer,V}
 end
 
 function construct_periodic(
-    mesh, patch1::Symbol, patch2::Symbol
+    mesh, backend, patch1::Symbol, patch2::Symbol
     )
 
+    # backend = _get_backend(mesh)
     (; faces, boundaries) = mesh
 
     boundary_information = boundary_map(mesh)
@@ -59,8 +60,11 @@ function construct_periodic(
 
     values1 = (distance=distance, face_map=faceAddress1)
     values2 = (distance=distance, face_map=faceAddress2)
-    periodic1 = Periodic(patch1, values1)
-    periodic2 = Periodic(patch2, values2)
+    # periodic1 = Periodic(patch1, values1)
+    # periodic2 = Periodic(patch2, values2)
+    periodic1 = adapt(backend, Periodic(patch1, values1))
+    periodic2 = adapt(backend, Periodic(patch2, values2))
+    
     return periodic1, periodic2
 end
 

@@ -1,12 +1,16 @@
 using FVM_1D
+using Adapt
+using CUDA
 
 mesh_file = "unv_sample_meshes/cascade_3D_periodic_2p5mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
-mesh_dev = mesh
+backend = CUDABackend()
+side1, side2 = construct_periodic(mesh, backend, :side1, :side2)
+top, bottom = construct_periodic(mesh, backend, :top, :bottom)
 
-side1, side2 = construct_periodic(mesh_dev, :side1, :side2)
-top, bottom = construct_periodic(mesh_dev, :top, :bottom)
+mesh_dev = adapt(CUDABackend(), mesh)
+mesh_dev = mesh
 
 velocity = [0.25, 0.0, 0.0]
 nu = 1e-3
@@ -73,7 +77,7 @@ solvers = (
 runtime = set_runtime(
     iterations=100, time_step=1, write_interval=100)
 
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(

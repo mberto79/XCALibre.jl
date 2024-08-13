@@ -76,19 +76,40 @@ end
     ) where {F,P,I} = begin
     phi = term.phi
     mesh = phi.mesh 
-    (; faces) = mesh
+    (; faces, cells) = mesh
     values = get_values(phi, component)
 
     # determine id of periodic cell and interpolate face value
     pfID = bc.value.face_map[i] # id of periodic face 
     pface = faces[pfID]
     pcellID = pface.ownerCells[1]
-    face_value = 0.5*(values[cellID] + values[pcellID])
+    pcell = cells[pcellID]
+
+    # face_value = 0.5*(values[cellID] + values[pcellID])
+    
+    # Retrieve mesh centre values
+    xf = face.centre
+    xC = cell.centre
+    xN = pcell.centre
+
+    delta1 = face.delta
+    delta2 = pface.delta
+    delta = delta1 + delta2
+    # delta = face.delta
+    
+    # Calculate weights using normal functions
+    weight = norm(xf - xC)/(norm(xN - xC) - bc.value.distance)
+    # weight = norm(xf - xC)/delta
+    # weight = delta1/delta
+    one_minus_weight = one(eltype(weight)) - weight
+
+    face_value = weight*values[cellID] + one_minus_weight*values[pcellID]
 
     # Retrieve term flux and extract fields from workitem face
     J = term.flux[fID]
-    (; area, delta) = face 
-    delta *= 2 # assumes that the distance for the matching patch is the same for now!
+    # (; area, delta) = face 
+    # delta *= 2 # assumes that the distance for the matching patch is the same for now!
+    (; area) = face 
 
     # Calculate flux and ap value for increment
     flux = J*area/delta
@@ -104,6 +125,46 @@ end
 #     # nothing
 #     0.0, term.sign[1]*(-term.flux[fID]*bc.value)
 # end
+
+@inline (bc::Periodic)(
+    term::Operator{F,P,I,Divergence{Linear}}, cellID, zcellID, cell, face, fID, i, component=nothing) where {F,P,I} = begin
+
+    phi = term.phi
+    mesh = phi.mesh 
+    (; faces, cells) = mesh
+    values = get_values(phi, component)
+
+    # determine id of periodic cell and interpolate face value
+    pfID = bc.value.face_map[i] # id of periodic face 
+    pface = faces[pfID]
+    pcellID = pface.ownerCells[1]
+    pcell = cells[pcellID]
+
+    # Retrieve mesh centre values
+    xf = face.centre
+    xC = cell.centre
+    xN = pcell.centre
+
+    # delta1 = face.delta
+    # delta2 = pface.delta
+    # delta = delta1 + delta2
+    
+    # Calculate weights using normal functions
+    weight = norm(xf - xC)/(norm(xN - xC) - bc.value.distance)
+    # weight = delta1/delta
+    one_minus_weight = one(eltype(weight)) - weight
+
+    # face_value = 0.5*(values[cellID] + values[pcellID])
+    face_value = weight*values[cellID] + one_minus_weight*values[pcellID]
+
+    # Calculate ap value to increment
+    ap = term.sign[1]*(term.flux[fID])
+
+    # Increment b array
+    # Atomix.@atomic b[cellID] -= ap*bc.value
+    # nothing
+    0.0, -ap*face_value
+end
 
 @inline (bc::Periodic)(
     term::Operator{F,P,I,Divergence{Upwind}}, cellID, zcellID, cell, face, fID, i, component=nothing) where {F,P,I} = begin

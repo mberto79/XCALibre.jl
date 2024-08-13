@@ -40,7 +40,8 @@ top, bottom = construct_periodic(model, :top, :bottom)
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind, gradient=Midpoint),
+    # U = set_schemes(divergence=Upwind, gradient=Midpoint),
+    U = set_schemes(divergence=Linear, gradient=Midpoint),
     p = set_schemes(gradient=Midpoint)
     # p = set_schemes()
 )
@@ -68,7 +69,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=2000, time_step=1, write_interval=100)
+    iterations=500, time_step=1, write_interval=100)
 
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=4)

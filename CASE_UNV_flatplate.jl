@@ -8,7 +8,8 @@ using Krylov
 mesh_file = "unv_sample_meshes/flatplate_2D_laminar.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-mesh_gpu = adapt(CUDABackend(), mesh)
+# mesh_gpu = adapt(CUDABackend(), mesh)
+mesh_gpu = mesh
 
 velocity = [0.2, 0.0, 0.0]
 nu = 1e-5
@@ -16,9 +17,12 @@ Re = velocity[1]*1/nu
 
 model = Physics(
     time = Steady(),
-    fluid = Incompressible(nu = ConstantScalar(nu)),
+    fluid = Incompressible(
+        nu = ConstantScalar(nu), 
+        rho = ConstantScalar(1.0)
+        ),
     turbulence = RANS{Laminar}(),
-    energy = nothing,
+    energy = ENERGY{Isothermal}(),
     domain = mesh_gpu
     )
 
@@ -61,8 +65,8 @@ solvers = (
 
 runtime = set_runtime(iterations=2000, write_interval=1000, time_step=1)
 
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=CPU(), workgroup=4)
+# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

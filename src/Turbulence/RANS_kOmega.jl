@@ -1,5 +1,8 @@
 export KOmega
 
+# Reference:
+# Wilcox, D. C., Turbulence Modeling for CFD, 2nd edition, DCW Industries, Inc., La Canada CA, 1998
+
 # Model type definition
 struct KOmega{S1,S2,S3,F1,F2,F3,C} <: AbstractTurbulenceModel
     k::S1
@@ -43,32 +46,33 @@ function initialise(
     ) where {T,F,M,Tu,E,D,BI}
 
     (; k, omega, nut) = turbulence
+    (; rho) = model.fluid
     (; solvers, schemes, runtime) = config
     mesh = mdotf.mesh
     eqn = peqn.equation
-    
+
     # define fluxes and sources
-    nueffk = FaceScalarField(mesh)
-    nueffω = FaceScalarField(mesh)
+    mueffk = FaceScalarField(mesh)
+    mueffω = FaceScalarField(mesh)
     Dkf = ScalarField(mesh)
     Dωf = ScalarField(mesh)
     Pk = ScalarField(mesh)
     Pω = ScalarField(mesh)
     
     k_eqn = (
-            Time{schemes.k.time}(k)
+            Time{schemes.k.time}(rho, k)
             + Divergence{schemes.k.divergence}(mdotf, k) 
-            - Laplacian{schemes.k.laplacian}(nueffk, k) 
-            + Si(Dkf,k) # Dkf = β⁺*omega
+            - Laplacian{schemes.k.laplacian}(mueffk, k) 
+            + Si(Dkf,k) # Dkf = β⁺rho*omega
             ==
             Source(Pk)
         ) → eqn
     
     ω_eqn = (
-            Time{schemes.omega.time}(omega)
+            Time{schemes.omega.time}(rho, omega)
             + Divergence{schemes.omega.divergence}(mdotf, omega) 
-            - Laplacian{schemes.omega.laplacian}(nueffω, omega) 
-            + Si(Dωf,omega)  # Dωf = β1*omega
+            - Laplacian{schemes.omega.laplacian}(mueffω, omega) 
+            + Si(Dωf,omega)  # Dωf = rho*β1*omega
             ==
             Source(Pω)
     ) → eqn
@@ -96,30 +100,31 @@ function turbulence!(
 
     mesh = model.domain
     
+    (; rho, rhof, nu, nuf) = model.fluid
     (;k, omega, nut, kf, omegaf, nutf, coeffs) = model.turbulence
     (;k_eqn, ω_eqn) = rans
     (; solvers, runtime) = config
 
-    nueffk = get_flux(k_eqn, 3)
+    mueffk = get_flux(k_eqn, 3)
     Dkf = get_flux(k_eqn, 4)
     Pk = get_source(k_eqn, 1)
 
-    nueffω = get_flux(ω_eqn, 3)
+    mueffω = get_flux(ω_eqn, 3)
     Dωf = get_flux(ω_eqn, 4)
     Pω = get_source(ω_eqn, 1)
 
-    nu = _nu(model.fluid)
+    # nu = _nu(model.fluid)
 
     # update fluxes and sources
     magnitude2!(Pk, S, config, scale_factor=2.0) # multiplied by 2 (def of Sij)
     constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
     correct_production!(Pk, k.BCs, model, S.gradU, config)
-    @. Pω.values = coeffs.α1*Pk.values
-    @. Pk.values = nut.values*Pk.values
-    @. Dωf.values = coeffs.β1*omega.values
-    @. nueffω.values = nu.values + coeffs.σω*nutf.values
-    @. Dkf.values = coeffs.β⁺*omega.values
-    @. nueffk.values = nu.values + coeffs.σk*nutf.values
+    @. Pω.values = rho.values*coeffs.α1*Pk.values
+    @. Pk.values = rho.values*nut.values*Pk.values
+    @. Dωf.values = rho.values*coeffs.β1*omega.values
+    @. mueffω.values = rhof.values * (nuf.values + coeffs.σω*nutf.values)
+    @. Dkf.values = rho.values*coeffs.β⁺*omega.values
+    @. mueffk.values = rhof.values * (nuf.values + coeffs.σk*nutf.values)
 
     # Solve omega equation
     prev .= omega.values
@@ -154,12 +159,23 @@ end
 # Specialise VTK writer
 function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, VTKWriter, name
     ) where {T,F,M,Tu<:KOmega,E,D,BI}
-    args = (
-        ("U", model.momentum.U), 
-        ("p", model.momentum.p),
-        ("k", model.turbulence.k),
-        ("omega", model.turbulence.omega),
-        ("nut", model.turbulence.nut)
-    )
+    if typeof(model.fluid)<:AbstractCompressible
+        args = (
+            ("U", model.momentum.U), 
+            ("p", model.momentum.p),
+            ("T", model.energy.T),
+            ("k", model.turbulence.k),
+            ("omega", model.turbulence.omega),
+            ("nut", model.turbulence.nut)
+        )
+    else
+        args = (
+            ("U", model.momentum.U), 
+            ("p", model.momentum.p),
+            ("k", model.turbulence.k),
+            ("omega", model.turbulence.omega),
+            ("nut", model.turbulence.nut)
+        )
+    end
     write_vtk(name, model.domain, VTKWriter, args...)
 end

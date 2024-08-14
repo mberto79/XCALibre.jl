@@ -6,7 +6,8 @@ using FVM_1D
 mesh_file = "unv_sample_meshes/flatplate_2D_lowRe.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-mesh_gpu = adapt(CUDABackend(), mesh)
+# mesh_gpu = adapt(CUDABackend(), mesh)
+mesh_gpu = mesh
 
 velocity = [10, 0.0, 0.0]
 nu = 1e-5
@@ -16,11 +17,13 @@ k_inlet = 0.375
 
 model = Physics(
     time = Steady(),
-    fluid = Incompressible(nu = ConstantScalar(nu)),
+    fluid = FLUID{Incompressible}(),
     turbulence = RANS{KOmega}(),
     energy = ENERGY{Isothermal}(),
     domain = mesh_gpu
     )
+
+println(typeof(model.fluid))
 
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
@@ -102,8 +105,8 @@ solvers = (
 
 runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
 
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=CPU(), workgroup=4)
+# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

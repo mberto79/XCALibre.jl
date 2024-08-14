@@ -10,23 +10,25 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 # mesh_gpu = adapt(CUDABackend(), mesh)
 
-velocity = [0.2, 0.0, 0.0]
+velocity = [10, 0.0, 0.0]
 nu = 1e-4
 Re = velocity[1]*1/nu
 cp = 1005.0
 gamma = 1.4
 Pr = 0.7
 
+k_inlet = 0.375
+ω_inlet = 1000
+
 model = Physics(
     time = Steady(),
-    fluid = WeaklyCompressible(
-        mu = ConstantScalar(nu),
-        cp = ConstantScalar(cp),
-        gamma = ConstantScalar(gamma),
-        Pr = ConstantScalar(Pr),
-        rho = ScalarField(mesh)
+    fluid = FLUID{WeaklyCompressible}(
+        nu = nu,
+        cp = cp,
+        gamma = gamma,
+        Pr = Pr
         ),
-    turbulence = RANS{Laminar}(),
+    turbulence = RANS{KOmega}(),
     energy = ENERGY{SensibleEnthalpy}(),
     domain = mesh
     )
@@ -52,10 +54,37 @@ model = Physics(
     Neumann(:top, 0.0)
 )
 
+@assign! model turbulence k (
+    Dirichlet(:inlet, k_inlet),
+    Neumann(:outlet, 0.0),
+    # KWallFunction(:wall),
+    # KWallFunction(:top)
+    Dirichlet(:wall, 0.0),
+    Neumann(:top, 0.0)
+)
+
+@assign! model turbulence omega (
+    Dirichlet(:inlet, ω_inlet),
+    Neumann(:outlet, 0.0),
+    OmegaWallFunction(:wall),
+    Neumann(:top, 0.0)
+    # Dirichlet(:wall, ω_wall), 
+    # Dirichlet(:top, ω_wall)
+)
+
+@assign! model turbulence nut (
+    Dirichlet(:inlet, k_inlet/ω_inlet),
+    Neumann(:outlet, 0.0),
+    Dirichlet(:wall, 0.0), 
+    Neumann(:top, 0.0)
+)
+
 schemes = (
     U = set_schemes(divergence=Linear),
     p = set_schemes(divergence=Linear),
-    h = set_schemes(divergence=Linear)
+    h = set_schemes(divergence=Linear),
+    k = set_schemes(divergence=Upwind),
+    omega = set_schemes(divergence=Upwind)
 )
 
 
@@ -82,6 +111,20 @@ solvers = (
         relax       = 0.7,
         rtol = 1e-2,
         atol = 1e-4
+    ),
+    k = set_solver(
+        model.turbulence.k;
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(), #ILU0(),
+        convergence = 1e-7,
+        relax       = 0.8,
+    ),
+    omega = set_solver(
+        model.turbulence.omega;
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(), #ILU0(),
+        convergence = 1e-7,
+        relax       = 0.8,
     )
 )
 
@@ -98,6 +141,9 @@ GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 100000.0)
 initialise!(model.energy.T, 300.0)
+initialise!(model.turbulence.k, k_inlet)
+initialise!(model.turbulence.omega, ω_inlet)
+initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
 Rx, Ry, Rz, Rp, Re, model_out = run!(model, config) # 9.39k allocs
 

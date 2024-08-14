@@ -183,17 +183,18 @@ function SIMPLE(
         # explicit_relaxation!(p, prev, solvers.p.relax, config)
         # grad!(∇p, pf, p, p.BCs, config) 
 
-        for _ ∈ 1:0
+        for _ ∈ 1:3
             discretise!(p_eqn, p, config)       
             apply_boundary_conditions!(p_eqn, p.BCs, nothing, config)
             setReference!(p_eqn, pref, 1, config)
-            update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+            # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
-            @. prev = p.values
+            # @. prev = p.values
             solve_system!(p_eqn, solvers.p, p, nothing, config)
-            explicit_relaxation!(p, prev, solvers.p.relax, config)
-            grad!(∇p, pf, p, p.BCs, config)
+            # explicit_relaxation!(p, prev, solvers.p.relax, config)
+            # grad!(∇p, pf, p, p.BCs, config)
         end
+        explicit_relaxation!(p, prev, solvers.p.relax, config)
 
 
         # Velocity and boundaries correction
@@ -263,7 +264,7 @@ end
 function nonorthogonal_face_correction(eqn, grad, flux, config)
     # nothing # do loop over faces and add contribution to ownerCells in one go! NIIIICE!
     mesh = grad.mesh
-    (; faces, boundary_cellsID) = mesh
+    (; faces, cells, boundary_cellsID) = mesh
 
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -275,11 +276,11 @@ function nonorthogonal_face_correction(eqn, grad, flux, config)
     n_ifaces = n_faces - n_bfaces
 
     kernel! = _nonorthogonal_face_correction(backend, workgroup)
-    kernel!(b, grad, flux, faces, n_bfaces, ndrange=n_ifaces)
+    kernel!(b, grad, flux, faces, cells, n_bfaces, ndrange=n_ifaces)
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function _nonorthogonal_face_correction(b, grad, flux, faces, n_bfaces)
+@kernel function _nonorthogonal_face_correction(b, grad, flux, faces, cells, n_bfaces)
     i = @index(Global)
     fID = i + n_bfaces
     # for fID ∈ (n_bfaces + 1):n_faces
@@ -287,17 +288,18 @@ end
         (; ownerCells, weight, area, normal, e) = face
         cID1 = ownerCells[1]
         cID2 = ownerCells[2]
+        cell1 = cells[cID1]
+        cell2 = cells[cID2]
         gradf = weight*grad[cID1] + (1 - weight)*grad[cID2]
         T_hat = normal - (1/(normal⋅e))*e
         faceCorrection = area*flux[fID]*gradf⋅T_hat
 
-        # correction[cID1] += faceCorrection # remember to make atomic in kernel
-        # correction[cID2] += -1*faceCorrection # -1x to correct normal direction
+        # Atomix.@atomic b[cID1] -= faceCorrection*cell1.volume # remember to make atomic in kernel
+        # Atomix.@atomic b[cID2] += faceCorrection*cell2.volume # -1x to correct normal direction
 
-        Atomix.@atomic b[cID1] -= faceCorrection # remember to make atomic in kernel
-        Atomix.@atomic b[cID2] -= -1*faceCorrection # -1x to correct normal direction
-    # end
-    # return correction
+        Atomix.@atomic b[cID1] += faceCorrection # remember to make atomic in kernel
+        Atomix.@atomic b[cID2] -= faceCorrection # -1x to correct normal direction
+        
 end
 
 function nonorthogonal_correction(grad, flux, config)

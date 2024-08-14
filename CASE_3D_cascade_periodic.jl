@@ -18,7 +18,7 @@ Re = velocity[1]*0.1/nu
 
 model = Physics(
     time = Steady(),
-    fluid = Incompressible(nu = ConstantScalar(nu)),
+    fluid = FLUID{Incompressible}(nu=nu),
     turbulence = RANS{Laminar}(),
     energy = ENERGY{Isothermal}(),
     domain = mesh_dev
@@ -75,7 +75,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=100, time_step=1, write_interval=100)
+    iterations=2000, time_step=1, write_interval=100)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=4)

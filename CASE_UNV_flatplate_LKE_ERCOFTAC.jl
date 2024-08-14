@@ -20,11 +20,11 @@ k_inlet = 0.0575 #3/2*(Tu*velocity[1])^2
 kL_inlet = 0.0115 #1/2*(Tu*velocity[1])^2
 ω_inlet = 275 #k_inlet/(νR*nu)
 
-# model = RANS{KOmegaLKE}(mesh=mesh, viscosity=ConstantScalar(nu), Tu=Tu)
+# model = RANS{KOmegaLKE}(mesh=mesh, viscosity=nu, Tu=Tu)
 
 model = Physics(
     time = Steady(),
-    fluid = Incompressible(nu = ConstantScalar(nu)),
+    fluid = FLUID{Incompressible}(nu = nu),
     turbulence = RANS{KOmegaLKE}(Tu = 0.01, walls=(:wall,)),
     energy = nothing,
     domain = mesh

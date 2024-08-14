@@ -27,7 +27,7 @@ noSlip = [0.0, 0.0, 0.0]
 
 model = Physics(
     time = Steady(),
-    fluid = Incompressible(nu = ConstantScalar(nu)),
+    fluid = FLUID{Incompressible}(nu = nu),
     turbulence = RANS{Laminar}(),
     energy = nothing,
     domain = mesh_gpu

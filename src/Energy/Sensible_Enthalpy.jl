@@ -2,12 +2,13 @@ export SensibleEnthalpy
 export Ttoh, htoT!, Ttoh!, thermo_Psi!
 
 # Model type definition
-struct SensibleEnthalpy{S1,S2,F1,F2,S3,F,C} <: AbstractEnergyModel
+struct SensibleEnthalpy{S1,S2,F1,F2,S3,S4,F,C} <: AbstractEnergyModel
     h::S1
     T::S2
     hf::F1
     Tf::F2
     K::S3
+    dpdt::S4
     update_BC::F
     coeffs::C
 end
@@ -32,9 +33,10 @@ end
     hf = FaceScalarField(mesh)
     Tf = FaceScalarField(mesh)
     K = ScalarField(mesh)
+    dpdt = ScalarField(mesh)
     update_BC =  return_thingy(EnergyModel, fluid, energy.args.Tref)
     coeffs = energy.args
-    SensibleEnthalpy(h, T, hf, Tf, K, update_BC, coeffs)
+    SensibleEnthalpy(h, T, hf, Tf, K, dpdt, update_BC, coeffs)
 end
 
 return_thingy(::Type{SensibleEnthalpy}, fluid, Tref) = begin
@@ -45,22 +47,11 @@ return_thingy(::Type{SensibleEnthalpy}, fluid, Tref) = begin
     end
 end
 
-# function Ttoh(
-#     model::Physics{T1,F,M,Tu,E,D,BI}, T
-#     ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
-#     (; coeffs) = model.energy
-#     (; Tref) = coeffs
-#     # h = ScalarField(model.domain)
-#     Cp = _Cp(model.fluid)
-#     h = Cp.values*(T-Tref)
-#     return h
-# end
-
 function initialise(
     energy::SensibleEnthalpy, model::Physics{T1,F,M,Tu,E,D,BI}, mdotf, rho, peqn, config
     ) where {T1,F,M,Tu,E,D,BI}
 
-    (; h, T) = energy
+    (; h, T, dpdt) = energy
     (; solvers, schemes, runtime) = config
     mesh = mdotf.mesh
     eqn = peqn.equation
@@ -79,6 +70,7 @@ function initialise(
         == 
         -Source(divK)
         -Source(dKdt)
+        +Source(dpdt)
     ) → eqn
     
     # Set up preconditioners
@@ -98,11 +90,11 @@ function energy!(
     mesh = model.domain
 
     (;U) = model.momentum
-    (;h, hf, T, K) = model.energy
+    (;h, hf, T, K, dpdt) = model.energy
     (;energy_eqn) = energy
-    (; solvers, runtime) = config
-
-    # println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
+    (; solvers, runtime, hardware) = config
+    (; iterations, write_interval) = runtime
+    (; backend) = hardware
 
     # rho = get_flux(energy_eqn, 1)
     keff_by_cp = get_flux(energy_eqn, 3)
@@ -118,6 +110,7 @@ function energy!(
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
+    n_cells = length(mesh.cells)
     prev = zeros(TF, n_cells)
     prev = _convert_array!(prev, backend) 
 
@@ -125,7 +118,7 @@ function energy!(
 
     @. keff_by_cp.values = mueff.values/Pr.values
 
-    @. prevK = K.values
+    @. prev = K.values
     interpolate!(Uf, U, config)
     correct_boundaries!(Uf, U, U.BCs, config)
     for i ∈ eachindex(K)
@@ -142,18 +135,11 @@ function energy!(
     if config.schemes.h.time <: SteadyState
         @. dKdt.values = 0.0
     else
-        @. dKdt.values = (K.values - prevK)/dt
+        @. dKdt.values = (K.values - prev)/dt
     end
 
+    println(maximum(h.values), ' ', minimum(h.values))
 
-    # div!(Kbounded, mdotf, config)
-    # println("MaxdivK ", maximum(divK.values), " mindivK ", minimum(divK.values))
-    # @. divK.values .- Kbounded.values * K.values # This might need dividing by the volume, unsure
-    # println("MaxdivK ", maximum(divK.values), " mindivK ", minimum(divK.values))
-
-    # println("Max h ", maximum(h.values), " min h ", minimum(h.values))
-
-    # solve_equation!(energy_eqn, h, solvers.h, config) # This doesn't work for this scalarfield yet
     # Set up and solve energy equation
     @. prev = h.values
     discretise!(energy_eqn, h, config)
@@ -162,19 +148,16 @@ function energy!(
     update_preconditioner!(energy_eqn.preconditioner, mesh, config)
     solve_system!(energy_eqn, solvers.h, h, nothing, config)
 
-    # println("Max h ", maximum(h.values), " min h ", minimum(h.values))
-    
-    # println("Maxh ", maximum(h.values), " minh ", minimum(h.values))
-
     if ~isempty(solvers.h.limit)
         Tmin = solvers.h.limit[1]; Tmax = solvers.h.limit[2]
         thermoClamp!(model, h, Tmin, Tmax)
     end
 
+    println(maximum(h.values), ' ', minimum(h.values))
+
     htoT!(model, h, T)
     interpolate!(hf, h, config)
     correct_boundaries!(hf, h, h.BCs, config)
-    # thermoClamp!(model, hf, Tmin, Tmax)
 end
 
 function thermo_Psi!(
@@ -197,13 +180,6 @@ function thermo_Psi!(
     @. Psif.values = Cp.values/(R.values*(hf.values + Cp.values*Tref))
 end
 
-
-# function thermo_rho!(
-#     model::Physics{T,F,M,Tu,E,D,BI}, rhof::FaceScalarField, Psif
-#     ) where {T,F<:AbstractCompressible,M,Tu,E,D,BI}
-
-# end
-
 function Ttoh!(
     model::Physics{T1,F,M,Tu,E,D,BI}, T::ScalarField, h::ScalarField
     ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
@@ -213,17 +189,6 @@ function Ttoh!(
     @. h.values = Cp.values*(T.values-Tref)
 end
 
-# function Ttoh(
-#     model::Physics{T1,F,M,Tu,E,D,BI}, T
-#     ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
-#     (; coeffs) = model.energy
-#     (; Tref) = coeffs
-#     # h = ScalarField(model.domain)
-#     Cp = _Cp(model.fluid)
-#     h = Cp.values*(T-Tref)
-#     return h
-# end
-
 function htoT!(
     model::Physics{T1,F,M,Tu,E,D,BI}, h::ScalarField, T::ScalarField
     ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
@@ -232,8 +197,6 @@ function htoT!(
     Cp = model.fluid.cp
     @. T.values = (h.values/Cp.values) + Tref
 end
-
-
 
 function thermoClamp!(
     model::Physics{T1,F,M,Tu,E,D,BI}, h::ScalarField, Tmin, Tmax

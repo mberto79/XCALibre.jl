@@ -70,7 +70,7 @@ end
     rho = ScalarField(mesh)
     nuf = nu
     rhof = FaceScalarField(mesh)
-    Compressible(nu, rho, nuf, rhof, cp, gamma, Pr, R)
+    WeaklyCompressible(nu, rho, nuf, rhof, cp, gamma, Pr, R)
 end
 
 

@@ -159,7 +159,6 @@ function CSIMPLE(
     @. rho.values = Psi.values * p.values
     @. rhof.values = Psif.values * pf.values
     flux!(mdotf, Uf, rhof, config)
-    println("Minrhof ", minimum(rhof.values), ", Maxmrhof ", maximum(rhof.values))
 
     update_nueff!(nueff, nu, model.turbulence, config)
     @. mueff.values = nueff.values * rhof.values

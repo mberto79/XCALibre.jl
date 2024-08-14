@@ -29,6 +29,7 @@ include("Solvers_0_functions.jl")
 include("Solvers_1_SIMPLE.jl")
 include("Solvers_1_SIMPLE_comp.jl")
 include("Solvers_2_PISO.jl")
+include("Solvers_2_PISO_comp.jl")
 include("Solvers_3_solver_dispatch.jl")
 
 end

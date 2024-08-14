@@ -22,12 +22,12 @@ function setup_unsteady_compressible_solvers(
 
     model = adapt(hardware.backend, model_in)
     (; U, p) = model.momentum
+    (; rho) = model.fluid
     mesh = model.domain
 
     @info "Preallocating fields..."
     
     ∇p = Grad{schemes.p.gradient}(p)
-    rho= ScalarField(mesh)
     mdotf = FaceScalarField(mesh)
     rhorDf = FaceScalarField(mesh)
     mueff = FaceScalarField(mesh)
@@ -35,13 +35,20 @@ function setup_unsteady_compressible_solvers(
     # initialise!(rDf, 1.0)
     rhorDf.values .= 1.0
     divHv = ScalarField(mesh)
+    ddtrho = ScalarField(mesh)
+    psidpdt = ScalarField(mesh)
     divmdotf = ScalarField(mesh)
+    psi = ScalarField(mesh)
+
 
     @info "Defining models..."
 
-    rho_eqn = (
-        Time{schemes.rho.time}(rho) == -Source(divmdotf)
-    ) → ScalarEquation(mesh)
+    # rho eqn doesn't work at the moment.
+    # rho_eqn = (
+    #     Time{schemes.rho.time}(rho) 
+    #     == 
+    #     -Source(divmdotf)
+    # ) → ScalarEquation(mesh)
 
     U_eqn = (
         Time{schemes.U.time}(rho, U)
@@ -58,7 +65,8 @@ function setup_unsteady_compressible_solvers(
             - Laplacian{schemes.p.laplacian}(rhorDf, p)
             ==
             -Source(divHv)
-            -Source(ddtrho) # Needs to capture the correction part of dPdT and the explicit drhodt
+            -Source(ddtrho)
+            +Source(psidpdt)
         ) → ScalarEquation(mesh)
     elseif typeof(model.fluid) <: Compressible
         pconv = FaceScalarField(mesh)
@@ -78,11 +86,14 @@ function setup_unsteady_compressible_solvers(
                     solvers.U.preconditioner, U_eqn, U.BCs, config)
     @reset p_eqn.preconditioner = set_preconditioner(
                     solvers.p.preconditioner, p_eqn, p.BCs, config)
+    # @reset rho_eqn.preconditioner = set_preconditioner(
+    #                 solvers.rho.preconditioner, rho_eqn, p.BCs, config)
 
     @info "Pre-allocating solvers..."
      
     @reset U_eqn.solver = solvers.U.solver(_A(U_eqn), _b(U_eqn, XDir()))
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
+    # @reset rho_eqn.solver = solvers.rho.solver(_A(rho_eqn), _b(rho_eqn))
   
     @info "Initialising energy model..."
     energyModel = Energy.initialise(model.energy, model, mdotf, rho, p_eqn, config)
@@ -91,28 +102,34 @@ function setup_unsteady_compressible_solvers(
     turbulenceModel = Turbulence.initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     R_ux, R_uy, R_uz, R_p, R_e, model  = solver_variant(
-    model, turbulenceModel, energyModel, ∇p, rho_eqn, U_eqn, p_eqn, config; resume=resume, pref=pref)
+    model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
 
     return R_ux, R_uy, R_uz, R_p, R_e, model    
 end # end function
 
 function CPISO(
-    model, turbulenceModel, ∇p, rho_eqn, U_eqn, p_eqn, config; resume=resume, pref=pref)
+    model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
     
     # Extract model variables and configuration
     (; U, p) = model.momentum
-    nu = _nu(model.fluid)
+    (; rho, rhof, nu) = model.fluid
+    (; dpdt) = model.energy
     mesh = model.domain
     p_model = p_eqn.model
     (; solvers, schemes, runtime, hardware) = config
     (; iterations, write_interval) = runtime
     (; backend) = hardware
     
-    divmdotf = get_source(rho_eqn, 1)
+    # divmdotf = get_source(rho_eqn, 1)
     mdotf = get_flux(U_eqn, 2)
     mueff = get_flux(U_eqn, 3)
-    rDf = get_flux(p_eqn, 1)
+    mueffgradUt = get_source(U_eqn, 2)
+    rhorDf = get_flux(p_eqn, 2)
     divHv = get_source(p_eqn, 1)
+
+    @info "Initialise VTKWriter (Store mesh in host memory)"
+
+    VTKMeshData = initialise_writer(model.domain)
     
     @info "Allocating working memory..."
 
@@ -125,14 +142,30 @@ function CPISO(
     n_cells = length(mesh.cells)
     Uf = FaceVectorField(mesh)
     pf = FaceScalarField(mesh)
+    nueff = FaceScalarField(mesh)
     gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
+    Psi = ScalarField(mesh)
+    Psif = FaceScalarField(mesh)
+
+    divmdotf = ScalarField(mesh)
+
+    mugradUTx = FaceScalarField(mesh)
+    mugradUTy = FaceScalarField(mesh)
+    mugradUTz = FaceScalarField(mesh)
+
+    divmugradUTx = ScalarField(mesh)
+    divmugradUTy = ScalarField(mesh)
+    divmugradUTz = ScalarField(mesh)
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
     prev = zeros(TF, n_cells)
     prev = _convert_array!(prev, backend) 
+
+    prevrho = zeros(TF, n_cells)
+    prevrho = _convert_array!(prevrho, backend) 
 
     # Pre-allocate vectors to hold residuals 
     R_ux = ones(TF, iterations)
@@ -145,11 +178,16 @@ function CPISO(
     correct_boundaries!(Uf, U, U.BCs, config)
     flux!(mdotf, Uf, config)
     grad!(∇p, pf, p, p.BCs, config)
+    thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
+    @. rho.values = Psi.values * p.values
+    @. rhof.values = Psif.values * pf.values
+    flux!(mdotf, Uf, rhof, config)
 
     # grad limiter test
     limit_gradient!(∇p, p, config)
 
     update_nueff!(nueff, nu, model.turbulence, config)
+    @. mueff.values = rhof.values*nueff.values
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
@@ -157,9 +195,13 @@ function CPISO(
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
+    volumes = getproperty.(mesh.cells, :volume)
+
     div!(divmdotf, mdotf, config)
     @. prev = rho.values
-    solve_equation!(rho_eqn, rho, solvers.rho, config; ref=nothing)
+    # solve_equation!(rho_eqn, rho, solvers.rho, config; ref=nothing)
+    @. rho.values -= divmdotf.values * runtime.dt * volumes
+    interpolate!(rhof, rho, config)
 
     @time for iteration ∈ 1:iterations
 
@@ -181,7 +223,9 @@ function CPISO(
         energy!(energyModel, model, prev, mdotf, rho, mueff, config)
 
         thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
-          
+        
+        @. prevrho = Psi.values * p.values
+
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rhorDf, rD, config)
@@ -200,22 +244,27 @@ function CPISO(
             if typeof(model.fluid) <: Compressible
                 flux!(pconv, Uf, config)
                 @. pconv.values *= Psif.values
+                corr = 0.0#fvc::ddtCorr(rho, U, phi)
                 flux!(mdotf, Uf, config)
                 @. mdotf.values *= rhof.values
+                @. mdotf.values += rhorDf.values*corr
                 interpolate!(pf, p, config)
                 correct_boundaries!(pf, p, p.BCs, config)
                 @. mdotf.values -= mdotf.values*Psif.values*pf.values/rhof.values
                 div!(divHv, mdotf, config)
 
             elseif typeof(model.fluid) <: WeaklyCompressible
+                corr = 0.0#fvc::ddtCorr(rho, U, phi)
                 flux!(mdotf, Uf, config)
                 @. mdotf.values *= rhof.values
+                @. mdotf.values += rhorDf.values*corr
                 div!(divHv, mdotf, config)
             end
             
             # Pressure calculations
             @. prev = p.values
             solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
+
 
             # Gradient
             grad!(∇p, pf, p, p.BCs, config) 
@@ -238,13 +287,41 @@ function CPISO(
                 end
             end
 
+            pgrad = face_normal_gradient(p, pf)
+        
+            if typeof(model.fluid) <: Compressible
+                @. mdotf.values += (pconv.values*(pf.values) - pgrad.values*rhorDf.values)  
+            elseif typeof(model.fluid) <: WeaklyCompressible
+                @. mdotf.values -= pgrad.values*rhorDf.values
+            end
+
+            @.rho.values += (Psi.values * p.values - prevrho)
+
+            div!(divmdotf, mdotf, config)
+            @. prev = rho.values
+            # solve_equation!(rho_eqn, rho, solvers.rho, config; ref=nothing)
+            @. rho.values -= divmdotf.values * runtime.dt * volumes
+            interpolate!(rhof, rho, config)
+
+            println(maximum(rho.values), ' ', minimum(rho.values))
+
+            explicit_relaxation!(p, prev, solvers.p.relax, config)
+
+            # if typeof(model.fluid) <: Compressible
+            #     rhorelax = 1 #0.01
+            #     @. rho.values = rho.values * (1-rhorelax) + Psi.values * p.values * rhorelax
+            #     @. rhof.values = rhof.values * (1-rhorelax) + Psif.values * pf.values * rhorelax
+            # else
+            #     @. rho.values = Psi.values * p.values
+            #     @. rhof.values = Psif.values * pf.values
+            # end
+
             # Velocity and boundaries correction
             correct_velocity!(U, Hv, ∇p, rD, config)
             interpolate!(Uf, U, config)
             correct_boundaries!(Uf, U, U.BCs, config)
-            # flux!(mdotf, Uf, config) # old approach
-
-            correct_mass_flux(mdotf, p, pf, rDf, config)
+            
+            @. dpdt.values = (p.values-prev)/runtime.dt
 
             grad!(gradU, Uf, U, U.BCs, config)
             turbulence!(turbulenceModel, model, S, S2, prev, config) 
@@ -295,7 +372,7 @@ function CPISO(
             )
 
         if iteration%write_interval + signbit(write_interval) == 0
-            model2vtk(model, @sprintf "timestep_%.6d" iteration)
+            model2vtk(model, VTKMeshData, @sprintf "timestep_%.6d" iteration)
         end
 
     end # end for loop

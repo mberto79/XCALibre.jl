@@ -22,6 +22,7 @@ include("Discretise_3_boundary_conditions.jl")
 include("Discretise_4_assign_boundaries.jl")
 include("Discretise_5_apply_bcs.jl")
 
+include("boundary_conditions/0_definition_macro.jl")
 include("boundary_conditions/dirichlet.jl")
 include("boundary_conditions/dirichlet_interpolation.jl")
 include("boundary_conditions/fixedTemperature.jl")

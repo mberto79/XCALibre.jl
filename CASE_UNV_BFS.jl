@@ -3,11 +3,11 @@ using FVM_1D
 using CUDA
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
-mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
+mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 mesh_dev = adapt(CUDABackend(), mesh)
-mesh_dev = mesh
+# mesh_dev = mesh
 
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
@@ -67,7 +67,7 @@ runtime = set_runtime(
     iterations=1000, time_step=1, write_interval=500)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=32)
+# hardware = set_hardware(backend=CPU(), workgroup=32)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

@@ -21,9 +21,7 @@ function fixedValue(BC::Periodic, ID::I, value::V) where {I<:Integer,V}
     end
 end
 
-function construct_periodic(
-    mesh, backend, patch1::Symbol, patch2::Symbol
-    )
+function construct_periodic(mesh, backend, patch1::Symbol, patch2::Symbol)
 
     # backend = _get_backend(mesh)
     (; faces, boundaries) = mesh
@@ -60,19 +58,14 @@ function construct_periodic(
 
     values1 = (distance=distance, face_map=faceAddress1)
     values2 = (distance=distance, face_map=faceAddress2)
-    # periodic1 = Periodic(patch1, values1)
-    # periodic2 = Periodic(patch2, values2)
     periodic1 = adapt(backend, Periodic(patch1, values1))
     periodic2 = adapt(backend, Periodic(patch2, values2))
     
     return periodic1, periodic2
 end
 
-# Periodic boundary condition assignment
 
-@inline (bc::Periodic)(
-    term::Operator{F,P,I,Laplacian{Linear}}, cellID, zcellID, cell, face, fID, i, component=nothing
-    ) where {F,P,I} = begin
+@define_boundary Periodic Laplacian{Linear} begin
     phi = term.phi
     mesh = phi.mesh 
     (; faces, cells) = mesh
@@ -84,8 +77,6 @@ end
     pcellID = pface.ownerCells[1]
     pcell = cells[pcellID]
 
-    # face_value = 0.5*(values[cellID] + values[pcellID])
-    
     # Retrieve mesh centre values
     xf = face.centre
     xC = cell.centre
@@ -117,9 +108,7 @@ end
     ap, ap*face_value
 end
 
-@inline (bc::Periodic)(
-    term::Operator{F,P,I,Divergence{Linear}}, cellID, zcellID, cell, face, fID, i, component=nothing) where {F,P,I} = begin
-
+@define_boundary Periodic Divergence{Linear} begin
     phi = term.phi
     mesh = phi.mesh 
     (; faces, cells) = mesh
@@ -151,15 +140,10 @@ end
     # Calculate ap value to increment
     ap = term.sign[1]*(term.flux[fID])
 
-    # Increment b array
-    # Atomix.@atomic b[cellID] -= ap*bc.value
-    # nothing
     0.0, -ap*face_value
 end
 
-@inline (bc::Periodic)(
-    term::Operator{F,P,I,Divergence{Upwind}}, cellID, zcellID, cell, face, fID, i, component=nothing) where {F,P,I} = begin
-
+@define_boundary Periodic Divergence{Upwind} begin
     phi = term.phi
     mesh = phi.mesh 
     (; faces) = mesh
@@ -174,64 +158,5 @@ end
     # Calculate ap value to increment
     ap = term.sign[1]*(term.flux[fID])
 
-    # Increment b array
-    # Atomix.@atomic b[cellID] -= ap*bc.value
-    # nothing
     0.0, -ap*face_value
 end
-
-# # Boundary interpolation
-
-# function adjust_boundary!(b_cpu, BC::Periodic, phif::FaceScalarField, phi, boundaries, boundary_cellsID,  backend, workgroup)
-#     phif_values = phif.values
-#     phi_values = phi.values
-
-#     # Copy to CPU
-#     # facesID_range = get_boundaries(BC, boundaries)
-#     kernel_range = length(b_cpu[BC.ID].IDs_range)
-
-#     kernel! = adjust_boundary_dirichlet_scalar!(backend, workgroup)
-#     kernel!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values, ndrange = kernel_range)
-#     # KernelAbstractions.synchronize(backend)
-# end
-
-# @kernel function adjust_boundary_dirichlet_scalar!(BC, phif, phi, boundaries, boundary_cellsID, phif_values, phi_values)
-#     i = @index(Global)
-#     # i = BC.ID
-
-#     @inbounds begin
-#         # (; IDs_range) = boundaries[BC.ID]
-#         (; IDs_range) = boundaries[BC.ID]
-#         fID = IDs_range[i]
-#         # for fID in IDs_range
-#             phif_values[fID] = BC.value
-#         # end
-#     end
-# end
-
-# function adjust_boundary!(b_cpu, BC::Periodic, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, backend, workgroup)
-#     (; x, y, z) = psif
-
-#     kernel_range = length(b_cpu[BC.ID].IDs_range)
-
-#     kernel! = adjust_boundary_dirichlet_vector!(backend, workgroup)
-#     kernel!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z, ndrange = kernel_range)
-#     # KernelAbstractions.synchronize(backend)
-# end
-
-# @kernel function adjust_boundary_dirichlet_vector!(BC, psif, psi, boundaries, boundary_cellsID, x, y, z)
-#     i = @index(Global)
-#     # i = BC.ID
-
-#     @inbounds begin
-#         # (; IDs_range) = boundaries[i]
-#         (; IDs_range) = boundaries[BC.ID]
-#         # for fID in IDs_range
-#         fID = IDs_range[i]
-#             # fID = IDs_range[j]
-#             x[fID] = BC.value[1]
-#             y[fID] = BC.value[2]
-#             z[fID] = BC.value[3]
-#         # end
-#     end
-# end

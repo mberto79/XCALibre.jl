@@ -173,28 +173,19 @@ function SIMPLE(
         # grad limiter test
         # limit_gradient!(∇p, p, config)
 
-        # # non-orthogonal correction
-        # corr = nonorthogonal_correction(∇p, rDf, config)
-        # source_corr = nonorthogonal_source_correction(corr)
-        # @. p_eqn.equation.b -= source_corr.values
-        # setReference!(p_eqn, pref, 1, config)
-        # @. prev = p.values
-        # solve_system!(p_eqn, solvers.p, p, nothing, config)
-        # explicit_relaxation!(p, prev, solvers.p.relax, config)
-        # grad!(∇p, pf, p, p.BCs, config) 
-
-        for _ ∈ 1:3
+        for _ ∈ 1:2
             discretise!(p_eqn, p, config)       
             apply_boundary_conditions!(p_eqn, p.BCs, nothing, config)
             setReference!(p_eqn, pref, 1, config)
             # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
-            # @. prev = p.values
+            # @. prev = p.values # this is unstable
+            # @. p.values = prev
             solve_system!(p_eqn, solvers.p, p, nothing, config)
-            # explicit_relaxation!(p, prev, solvers.p.relax, config)
-            # grad!(∇p, pf, p, p.BCs, config)
+            explicit_relaxation!(p, prev, solvers.p.relax, config)
+            grad!(∇p, pf, p, p.BCs, config)
         end
-        explicit_relaxation!(p, prev, solvers.p.relax, config)
+        # explicit_relaxation!(p, prev, solvers.p.relax, config)
 
 
         # Velocity and boundaries correction
@@ -209,12 +200,12 @@ function SIMPLE(
         # correct_boundaries!(pf, p, p.BCs, config) # not needed?
 
         # new approach
+        # correct_velocity!(U, Hv, ∇p, rD, config)
         # interpolate!(Uf, U, config)
         # correct_boundaries!(Uf, U, U.BCs, config)
         # flux!(mdotf, Uf, config)
         # correct_mass_flux(mdotf, p, pf, rDf, config)
         
-        # correct_velocity!(U, Hv, ∇p, rD, config)
 
         # if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs, config)
@@ -285,21 +276,45 @@ end
     fID = i + n_bfaces
     # for fID ∈ (n_bfaces + 1):n_faces
         face = faces[fID]
-        (; ownerCells, weight, area, normal, e) = face
+        # (; ownerCells, weight, area, normal, e, delta) = face
+        (; ownerCells, area, normal, e, delta) = face
         cID1 = ownerCells[1]
         cID2 = ownerCells[2]
         cell1 = cells[cID1]
         cell2 = cells[cID2]
-        gradf = weight*grad[cID1] + (1 - weight)*grad[cID2]
-        T_hat = normal - (1/(normal⋅e))*e
-        faceCorrection = area*flux[fID]*gradf⋅T_hat
+        # gradf = weight*grad[cID1] + (1 - weight)*grad[cID2]
+        # T_hat = normal - (1/(normal⋅e))*e
+        # faceCorrection = area*flux[fID]*gradf⋅T_hat
 
-        # Atomix.@atomic b[cID1] -= faceCorrection*cell1.volume # remember to make atomic in kernel
-        # Atomix.@atomic b[cID2] += faceCorrection*cell2.volume # -1x to correct normal direction
+        (; values) = grad.field
+        w, df = weight(cells, faces, fID)
+        gradi = w*grad[cID1] + (1 - w)*grad[cID2]
+        gradf = gradi + ((values[cID2] - values[cID1])/delta - (gradi⋅e))*e
 
-        Atomix.@atomic b[cID1] += faceCorrection # remember to make atomic in kernel
-        Atomix.@atomic b[cID2] -= faceCorrection # -1x to correct normal direction
+
+        Sf = area*normal
+        Ef = ((Sf⋅Sf)/(Sf⋅e))*e
+        T_hat = Sf - Ef
+        faceCorrection = flux[fID]*gradf⋅T_hat
+
+        Atomix.@atomic b[cID1] += faceCorrection#*cell1.volume
+        Atomix.@atomic b[cID2] += faceCorrection#*cell2.volume # should this be -ve?
         
+end
+
+function weight(cells, faces, fi)
+    (; ownerCells, centre) = faces[fi]
+    cID1 = ownerCells[1]
+    cID2 = ownerCells[2]
+    c1 = cells[cID1].centre
+    c2 = cells[cID2].centre
+    c1_f = centre - c1
+    c1_c2 = c2 - c1
+    q = (c1_f⋅c1_c2)/(c1_c2⋅c1_c2)
+    f_prime = c1 - q*(c1 - c2)
+    w = norm(c2 - f_prime)/norm(c2 - c1)
+    df = centre - f_prime
+    return w, df
 end
 
 function nonorthogonal_correction(grad, flux, config)

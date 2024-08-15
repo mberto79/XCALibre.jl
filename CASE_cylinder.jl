@@ -9,7 +9,7 @@ mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 # mesh_file = "unv_sample_meshes/cylinder_d10mm_10-7.5-2mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-mesh_gpu = adapt(CUDABackend(), mesh)
+# mesh_gpu = adapt(CUDABackend(), mesh)
 mesh_gpu = mesh
 
 # Inlet conditions
@@ -50,8 +50,8 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
-        rtol = 1e-1,
-        atol = 1e-10
+        rtol = 0.1,
+        atol = 1e-6
     ),
     p = set_solver(
         model.momentum.p;
@@ -59,21 +59,21 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 1e-1,
-        atol = 1e-10
+        rtol = 0.1,
+        atol = 1e-6
     )
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(divergence=Upwind, gradient=Midpoint)
+    U = set_schemes(divergence=Upwind, gradient=Orthogonal),
+    p = set_schemes(gradient=Orthogonal)
 )
 
 # runtime = set_runtime(iterations=20, write_interval=10, time_step=1) # for proto
 runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
 
 hardware = set_hardware(backend=CPU(), workgroup=4)
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 
 config = Configuration(

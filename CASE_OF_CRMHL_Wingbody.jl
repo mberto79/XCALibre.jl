@@ -47,7 +47,8 @@ freestream = [:Ymax, :Zmax, :Zmin]
     Neumann(:Xmax, 0.0), # outlet
     Wall.(walls, Ref(noSlip))..., # walls
     Neumann.(freestream, Ref(0.0))...,
-    Neumann(:Symmetry, velocity)
+    # Neumann(:Symmetry, velocity)
+    Symmetry(:Symmetry, velocity)
 )
 
 @assign! model momentum p (

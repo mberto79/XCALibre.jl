@@ -173,38 +173,40 @@ function SIMPLE(
         # grad limiter test
         # limit_gradient!(∇p, p, config)
 
-        for _ ∈ 1:2
-            discretise!(p_eqn, p, config)       
-            apply_boundary_conditions!(p_eqn, p.BCs, nothing, config)
-            setReference!(p_eqn, pref, 1, config)
-            # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-            nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
-            # @. prev = p.values # this is unstable
-            # @. p.values = prev
-            solve_system!(p_eqn, solvers.p, p, nothing, config)
-            explicit_relaxation!(p, prev, solvers.p.relax, config)
-            grad!(∇p, pf, p, p.BCs, config)
+        correct = true
+        if correct
+            ncorrectors = 2
+            for i ∈ 1:ncorrectors
+                discretise!(p_eqn, p, config)       
+                apply_boundary_conditions!(p_eqn, p.BCs, nothing, config)
+                setReference!(p_eqn, pref, 1, config)
+                # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+                nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
+                # @. prev = p.values # this is unstable
+                # @. p.values = prev
+                solve_system!(p_eqn, solvers.p, p, nothing, config)
+                explicit_relaxation!(p, prev, solvers.p.relax, config)
+                grad!(∇p, pf, p, p.BCs, config)
+            end
         end
-        # explicit_relaxation!(p, prev, solvers.p.relax, config)
-
 
         # Velocity and boundaries correction
 
         # old approach
-        correct_velocity!(U, Hv, ∇p, rD, config)
-        interpolate!(Uf, U, config)
-        correct_boundaries!(Uf, U, U.BCs, config)
-        flux!(mdotf, Uf, config) 
+        # correct_velocity!(U, Hv, ∇p, rD, config)
+        # interpolate!(Uf, U, config)
+        # correct_boundaries!(Uf, U, U.BCs, config)
+        # flux!(mdotf, Uf, config) 
 
         # correct_face_interpolation!(pf, p, Uf) # not needed?
         # correct_boundaries!(pf, p, p.BCs, config) # not needed?
 
         # new approach
-        # correct_velocity!(U, Hv, ∇p, rD, config)
-        # interpolate!(Uf, U, config)
-        # correct_boundaries!(Uf, U, U.BCs, config)
-        # flux!(mdotf, Uf, config)
-        # correct_mass_flux(mdotf, p, pf, rDf, config)
+        correct_velocity!(U, Hv, ∇p, rD, config)
+        interpolate!(Uf, U, config)
+        correct_boundaries!(Uf, U, U.BCs, config)
+        flux!(mdotf, Uf, config)
+        correct_mass_flux(mdotf, p, pf, rDf, config)
         
 
         # if isturbulent(model)
@@ -298,7 +300,7 @@ end
         faceCorrection = flux[fID]*gradf⋅T_hat
 
         Atomix.@atomic b[cID1] += faceCorrection#*cell1.volume
-        Atomix.@atomic b[cID2] += faceCorrection#*cell2.volume # should this be -ve?
+        Atomix.@atomic b[cID2] -= faceCorrection#*cell2.volume # should this be -ve?
         
 end
 

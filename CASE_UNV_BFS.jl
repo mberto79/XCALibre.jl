@@ -3,7 +3,7 @@ using FVM_1D
 using CUDA
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
-mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
+mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 # mesh_dev = adapt(CUDABackend(), mesh)
@@ -26,7 +26,7 @@ model = Physics(
     Neumann(:outlet, 0.0),
     # Dirichlet(:wall, [0.0, 0.0, 0.0]),
     Wall(:wall, [0.0, 0.0, 0.0]),
-    # Dirichlet(:top, [0.0, 0.0, 0.0])
+    # Wall(:top, [0.0, 0.0, 0.0])
     Symmetry(:top, 0.0)
 )
 
@@ -51,7 +51,7 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.7,
         rtol = 1e-4,
         atol = 1e-20
     ),
@@ -60,14 +60,14 @@ solvers = (
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.2,
+        relax       = 0.7,
         rtol = 1e-4,
         atol = 1e-20
     )
 )
 
 runtime = set_runtime(
-    iterations=1000, time_step=1, write_interval=500)
+    iterations=3000, time_step=1, write_interval=500)
 
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=32)

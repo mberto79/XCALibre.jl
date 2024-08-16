@@ -15,7 +15,7 @@ function PISO(
     
     # Extract model variables and configuration
     (; U, p) = model.momentum
-    nu = _nu(model.fluid)
+    (; nu) = model.fluid
     mesh = model.domain
     p_model = p_eqn.model
     (; solvers, schemes, runtime, hardware) = config
@@ -83,7 +83,7 @@ function PISO(
         interpolate!(rDf, rD, config)
         remove_pressure_source!(U_eqn, ∇p, config)
         
-        ncorrectors = 2
+        ncorrectors = 3
         for i ∈ 1:ncorrectors
             H!(Hv, U, U_eqn, config)
             
@@ -109,20 +109,23 @@ function PISO(
             grad!(∇p, pf, p, p.BCs, config) 
 
             # grad limiter test
-            # limit_gradient!(∇p, p, config)
+            limit_gradient!(∇p, p, config)
 
-            correct = false
+            correct = true
             if correct
                 ncorrectors = 1
                 for i ∈ 1:ncorrectors
-                    discretise!(p_eqn)
-                    apply_boundary_conditions!(p_eqn, p.BCs)
-                    setReference!(p_eqn.equation, pref, 1)
-                    interpolate!(gradpf, ∇p, p)
-                    nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
-                    correct!(p_eqn.equation, p_model.terms.term1, pf)
-                    solve_equation!(p_eqn, p, solvers.p, config; ref=pref)
-                    grad!(∇p, pf, p, pBCs) 
+                    discretise!(p_eqn, p, config)       
+                    apply_boundary_conditions!(p_eqn, p.BCs, nothing, config)
+                    setReference!(p_eqn, pref, 1, config)
+                    # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+                    nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
+                    # @. prev = p.values # this is unstable
+                    # @. p.values = prev
+                    solve_system!(p_eqn, solvers.p, p, nothing, config)
+                    explicit_relaxation!(p, prev, solvers.p.relax, config)
+                    grad!(∇p, pf, p, p.BCs, config)
+                    limit_gradient!(∇p, p, config)
                 end
             end
 
@@ -130,9 +133,9 @@ function PISO(
             correct_velocity!(U, Hv, ∇p, rD, config)
             interpolate!(Uf, U, config)
             correct_boundaries!(Uf, U, U.BCs, config)
-            # flux!(mdotf, Uf, config) # old approach
+            flux!(mdotf, Uf, config) # old approach
 
-            correct_mass_flux(mdotf, p, pf, rDf, config) # new approach
+            # correct_mass_flux(mdotf, p, pf, rDf, config) # new approach
 
             grad!(gradU, Uf, U, U.BCs, config)
             turbulence!(turbulenceModel, model, S, S2, prev, config) 

@@ -13,9 +13,9 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 # Inlet conditions
 
-velocity = [5, 0.0, 0.0]
+velocity = [0.5, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
-nu = 1e-3
+nu = 1e-5
 Re = (0.2*velocity[1])/nu
 gamma = 1.4
 cp = 1005.0
@@ -42,8 +42,8 @@ model = Physics(
     Neumann(:outlet, 0.0),
     Wall(:cylinder, noSlip),
     # Dirichlet(:cylinder, noSlip),
-    Symmetry(:bottom, 0.0),
-    Symmetry(:top, 0.0)
+    Neumann(:bottom, 0.0),
+    Neumann(:top, 0.0)
 )
 
 @assign! model momentum p (
@@ -58,21 +58,12 @@ model = Physics(
     FixedTemperature(:inlet, T=300.0, model=model.energy),
     Neumann(:outlet, 0.0),
     # Neumann(:cylinder, 0.0),
-    FixedTemperature(:cylinder, T=310.0, model=model.energy),
+    FixedTemperature(:cylinder, T=330.0, model=model.energy),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0)
 )
 
 solvers = (
-    rho = set_solver(
-        model.fluid.rho;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(),
-        convergence = 1e-7,
-        relax       = 1,
-        rtol = 1e-4,
-        atol = 1e-2
-    ),
     U = set_solver(
         model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
@@ -80,16 +71,17 @@ solvers = (
         convergence = 1e-7,
         relax       = 1,
         rtol = 1e-4,
-        atol = 1e-2
+        atol = 1e-5
     ),
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 1,
+        relax       = 0.3,
+        limit = (1000, 1000000),
         rtol = 1e-4,
-        atol = 1e-3
+        atol = 1e-5
     ),
     h = set_solver(
         model.energy.h;
@@ -98,18 +90,18 @@ solvers = (
         convergence = 1e-7,
         relax       = 1,
         rtol = 1e-4,
-        atol = 1e-2
+        atol = 1e-5
     )
 )
 
 schemes = (
     rho = set_schemes(time=Euler),
     U = set_schemes(divergence=Upwind, gradient=Midpoint, time=Euler),
-    p = set_schemes(divergence=Upwind, gradient=Midpoint, time=Euler),
+    p = set_schemes(gradient=Midpoint, time=Euler),
     h = set_schemes(divergence=Upwind, gradient=Midpoint, time=Euler)
 )
 
-runtime = set_runtime(iterations=5000, write_interval=100, time_step=0.0001)
+runtime = set_runtime(iterations=10000, write_interval=100, time_step=0.01)
 
 hardware = set_hardware(backend=CPU(), workgroup=4)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)

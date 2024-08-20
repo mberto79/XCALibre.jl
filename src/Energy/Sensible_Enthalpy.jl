@@ -135,10 +135,8 @@ function energy!(
     if config.schemes.h.time <: SteadyState
         @. dKdt.values = 0.0
     else
-        @. dKdt.values = (K.values - prev)/dt
+        @. dKdt.values = rho.values*(K.values - prev)/dt
     end
-
-    println(maximum(h.values), ' ', minimum(h.values))
 
     # Set up and solve energy equation
     @. prev = h.values
@@ -152,8 +150,6 @@ function energy!(
         Tmin = solvers.h.limit[1]; Tmax = solvers.h.limit[2]
         thermoClamp!(model, h, Tmin, Tmax)
     end
-
-    println(maximum(h.values), ' ', minimum(h.values))
 
     htoT!(model, h, T)
     interpolate!(hf, h, config)

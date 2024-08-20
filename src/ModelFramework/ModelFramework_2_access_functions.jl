@@ -24,6 +24,11 @@ end
 Adapt.@adapt_structure ZDir
 ZDir() = ZDir(3)
 
+# Functor to allow these structs to return a vector in the direction of the component
+(x::XDir{I})() where I = SVector{3,I}(1,0,0)
+(x::YDir{I})() where I = SVector{3,I}(0,1,0)
+(x::ZDir{I})() where I = SVector{3,I}(0,0,1)
+
 ## MODEL ACCESSORS
 
 @inline get_phi(eqn::ModelEquation{T,M,E,S,P}) where {T,M,E,S,P} = begin 

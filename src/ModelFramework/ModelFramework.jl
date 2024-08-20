@@ -2,6 +2,7 @@ module ModelFramework
 
 using Accessors
 using SparseArrays
+using StaticArrays
 using Adapt
 
 using Krylov

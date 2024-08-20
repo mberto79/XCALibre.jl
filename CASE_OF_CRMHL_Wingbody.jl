@@ -28,7 +28,7 @@ nut_inlet = k_inlet/ω_inlet
 model = Physics(
     time = Steady(),
     # time = Transient(),
-    fluid = Incompressible(nu = ConstantScalar(nu)),
+    fluid = FLUID{Incompressible}(nu = nu),
     turbulence = RANS{KOmega}(),
     # turbulence = RANS{Laminar}(),
     # turbulence = LES{Smagorinsky}(),
@@ -47,7 +47,8 @@ freestream = [:Ymax, :Zmax, :Zmin]
     Neumann(:Xmax, 0.0), # outlet
     Wall.(walls, Ref(noSlip))..., # walls
     Neumann.(freestream, Ref(0.0))...,
-    Neumann(:Symmetry, velocity)
+    # Neumann(:Symmetry, velocity)
+    Symmetry(:Symmetry, velocity)
 )
 
 @assign! model momentum p (

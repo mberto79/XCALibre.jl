@@ -19,7 +19,7 @@ Re = velocity[1]*0.1/nu
 
 model = Physics(
     time = Steady(),
-    fluid = Incompressible(nu = ConstantScalar(nu)),
+    fluid = FLUID{Incompressible}(nu = nu),
     turbulence = RANS{Laminar}(),
     energy = ENERGY{Isothermal}(),
     domain = mesh_gpu

@@ -103,15 +103,3 @@ end
         magS.values[i] = sum*scale_factor
     end
 end
-
-# Create LUT to map boudnary names to indices
-function boundary_map(mesh)
-    I = Integer; S = Symbol
-    boundary_map = boundary_info{I,S}[]
-
-    for (i, boundary) in enumerate(mesh.boundaries)
-        push!(boundary_map, boundary_info{I,S}(i, boundary.name))
-    end
-
-    return boundary_map
-end

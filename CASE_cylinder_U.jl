@@ -19,7 +19,7 @@ Re = (0.2*velocity[1])/nu
 
 model = Physics(
     time = Transient(),
-    fluid = Incompressible(nu = ConstantScalar(nu)),
+    fluid = FLUID{Incompressible}(nu = nu),
     turbulence = RANS{Laminar}(),
     energy = ENERGY{Isothermal}(),
     domain = mesh_gpu
@@ -56,20 +56,20 @@ solvers = (
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), #NormDiagonal(),
         convergence = 1e-7,
-        relax       = 1.0,
+        relax       = 0.7,
         rtol = 1e-4,
         atol = 1e-5
     )
 )
 
 schemes = (
-    U = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint)
+    U = set_schemes(time=Euler, divergence=Linear, gradient=Orthogonal),
+    p = set_schemes(time=Euler, divergence=Upwind, gradient=Orthogonal)
 )
 
 
 runtime = set_runtime(
-    iterations=5000, write_interval=50, time_step=0.005)
+    iterations=1000, write_interval=50, time_step=0.005)
     # iterations=1, write_interval=50, time_step=0.005)
 
 # 2mm mesh use settings below (to lower Courant number)

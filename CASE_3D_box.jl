@@ -27,7 +27,7 @@ noSlip = [0.0, 0.0, 0.0]
 
 model = Physics(
     time = Steady(),
-    fluid = Incompressible(nu = ConstantScalar(nu)),
+    fluid = FLUID{Incompressible}(nu = nu),
     turbulence = RANS{Laminar}(),
     energy = nothing,
     domain = mesh_gpu
@@ -39,7 +39,7 @@ model = Physics(
     Dirichlet(:bottom, noSlip),
     Dirichlet(:top, noSlip),
     Dirichlet(:side1, noSlip),
-    Dirichlet(:side2, noSlip)
+    Dirichlet(:side2, noSlip),
     # Dirichlet(:inlet, velocity),
     # Neumann(:outlet, 0.0),
     # Dirichlet(:bottom, noSlip),

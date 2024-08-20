@@ -173,62 +173,41 @@ function SIMPLE(
         # grad limiter test
         # limit_gradient!(∇p, p, config)
 
-        # # non-orthogonal correction
-        # corr = nonorthogonal_correction(∇p, rDf, config)
-        # source_corr = nonorthogonal_source_correction(corr)
-        # @. p_eqn.equation.b -= source_corr.values
-        # setReference!(p_eqn, pref, 1, config)
-        # @. prev = p.values
-        # solve_system!(p_eqn, solvers.p, p, nothing, config)
-        # explicit_relaxation!(p, prev, solvers.p.relax, config)
-        # grad!(∇p, pf, p, p.BCs, config) 
-
-        for _ ∈ 1:0
-            discretise!(p_eqn, p, config)       
-            apply_boundary_conditions!(p_eqn, p.BCs, nothing, config)
-            setReference!(p_eqn, pref, 1, config)
-            update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-            nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
-            @. prev = p.values
-            solve_system!(p_eqn, solvers.p, p, nothing, config)
-            explicit_relaxation!(p, prev, solvers.p.relax, config)
-            grad!(∇p, pf, p, p.BCs, config)
-        end
-
-
-        correct = false
+        correct = true
         if correct
-            ncorrectors = 1
+            ncorrectors = 2
             for i ∈ 1:ncorrectors
-                discretise!(p_eqn)
-                apply_boundary_conditions!(p_eqn, p.BCs)
-                setReference!(p_eqn.equation, pref, 1)
-                interpolate!(gradpf, ∇p, p)
-                nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
-                correct!(p_eqn.equation, p_model.terms.term1, pf)
-                solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
-                grad!(∇p, pf, p, pBCs) 
+                discretise!(p_eqn, p, config)       
+                apply_boundary_conditions!(p_eqn, p.BCs, nothing, config)
+                setReference!(p_eqn, pref, 1, config)
+                # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+                nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
+                # @. prev = p.values # this is unstable
+                # @. p.values = prev
+                solve_system!(p_eqn, solvers.p, p, nothing, config)
+                explicit_relaxation!(p, prev, solvers.p.relax, config)
+                grad!(∇p, pf, p, p.BCs, config)
             end
         end
 
         # Velocity and boundaries correction
 
         # old approach
-        correct_velocity!(U, Hv, ∇p, rD, config)
-        interpolate!(Uf, U, config)
-        correct_boundaries!(Uf, U, U.BCs, config)
-        flux!(mdotf, Uf, config) 
+        # correct_velocity!(U, Hv, ∇p, rD, config)
+        # interpolate!(Uf, U, config)
+        # correct_boundaries!(Uf, U, U.BCs, config)
+        # flux!(mdotf, Uf, config) 
 
         # correct_face_interpolation!(pf, p, Uf) # not needed?
         # correct_boundaries!(pf, p, p.BCs, config) # not needed?
 
         # new approach
-        # interpolate!(Uf, U, config)
-        # correct_boundaries!(Uf, U, U.BCs, config)
-        # flux!(mdotf, Uf, config)
-        # correct_mass_flux(mdotf, p, pf, rDf, config)
+        correct_velocity!(U, Hv, ∇p, rD, config)
+        interpolate!(Uf, U, config)
+        correct_boundaries!(Uf, U, U.BCs, config)
+        flux!(mdotf, Uf, config)
+        correct_mass_flux(mdotf, p, pf, rDf, config)
         
-        # correct_velocity!(U, Hv, ∇p, rD, config)
 
         # if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs, config)
@@ -278,7 +257,7 @@ end
 function nonorthogonal_face_correction(eqn, grad, flux, config)
     # nothing # do loop over faces and add contribution to ownerCells in one go! NIIIICE!
     mesh = grad.mesh
-    (; faces, boundary_cellsID) = mesh
+    (; faces, cells, boundary_cellsID) = mesh
 
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -290,29 +269,54 @@ function nonorthogonal_face_correction(eqn, grad, flux, config)
     n_ifaces = n_faces - n_bfaces
 
     kernel! = _nonorthogonal_face_correction(backend, workgroup)
-    kernel!(b, grad, flux, faces, n_bfaces, ndrange=n_ifaces)
+    kernel!(b, grad, flux, faces, cells, n_bfaces, ndrange=n_ifaces)
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function _nonorthogonal_face_correction(b, grad, flux, faces, n_bfaces)
+@kernel function _nonorthogonal_face_correction(b, grad, flux, faces, cells, n_bfaces)
     i = @index(Global)
     fID = i + n_bfaces
     # for fID ∈ (n_bfaces + 1):n_faces
         face = faces[fID]
-        (; ownerCells, weight, area, normal, e) = face
+        # (; ownerCells, weight, area, normal, e, delta) = face
+        (; ownerCells, area, normal, e, delta) = face
         cID1 = ownerCells[1]
         cID2 = ownerCells[2]
-        gradf = weight*grad[cID1] + (1 - weight)*grad[cID2]
-        T_hat = normal - (1/(normal⋅e))*e
-        faceCorrection = area*flux[fID]*gradf⋅T_hat
+        cell1 = cells[cID1]
+        cell2 = cells[cID2]
+        # gradf = weight*grad[cID1] + (1 - weight)*grad[cID2]
+        # T_hat = normal - (1/(normal⋅e))*e
+        # faceCorrection = area*flux[fID]*gradf⋅T_hat
 
-        # correction[cID1] += faceCorrection # remember to make atomic in kernel
-        # correction[cID2] += -1*faceCorrection # -1x to correct normal direction
+        (; values) = grad.field
+        w, df = weight(cells, faces, fID)
+        gradi = w*grad[cID1] + (1 - w)*grad[cID2]
+        gradf = gradi + ((values[cID2] - values[cID1])/delta - (gradi⋅e))*e
 
-        Atomix.@atomic b[cID1] -= faceCorrection # remember to make atomic in kernel
-        Atomix.@atomic b[cID2] -= -1*faceCorrection # -1x to correct normal direction
-    # end
-    # return correction
+
+        Sf = area*normal
+        Ef = ((Sf⋅Sf)/(Sf⋅e))*e
+        T_hat = Sf - Ef
+        faceCorrection = flux[fID]*gradf⋅T_hat
+
+        Atomix.@atomic b[cID1] += faceCorrection#*cell1.volume
+        Atomix.@atomic b[cID2] -= faceCorrection#*cell2.volume # should this be -ve?
+        
+end
+
+function weight(cells, faces, fi)
+    (; ownerCells, centre) = faces[fi]
+    cID1 = ownerCells[1]
+    cID2 = ownerCells[2]
+    c1 = cells[cID1].centre
+    c2 = cells[cID2].centre
+    c1_f = centre - c1
+    c1_c2 = c2 - c1
+    q = (c1_f⋅c1_c2)/(c1_c2⋅c1_c2)
+    f_prime = c1 - q*(c1 - c2)
+    w = norm(c2 - f_prime)/norm(c2 - c1)
+    df = centre - f_prime
+    return w, df
 end
 
 function nonorthogonal_correction(grad, flux, config)

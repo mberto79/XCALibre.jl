@@ -44,11 +44,16 @@ end
     term::Operator{F,P,I,Laplacian{Linear}}, 
     nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
-    # Calculate required increment
-    ap = term.sign*(term.flux[fID] * face.area)/face.delta
-    # delta = (cellN.centre - cell.centre)*ns⋅face.normal
-    # ap = term.sign*(term.flux[fID] * face.area)/delta
 
+    (; area, normal, delta, e) = face
+    Sf = ns*area*normal
+    e = ns*e
+    Ef = ((Sf⋅Sf)/(Sf⋅e))*e
+    Ef_mag = norm(Ef)
+    ap = term.sign*(term.flux[fID] * Ef_mag)/delta
+
+    # ap = term.sign*(term.flux[fID] * area)/delta
+    
     # Increment sparse array
     ac = -ap
     an = ap

@@ -6,7 +6,7 @@ using CUDA
 mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-mesh_dev = adapt(CUDABackend(), mesh)
+# mesh_dev = adapt(CUDABackend(), mesh)
 mesh_dev = mesh
 
 velocity = [0.5, 0.0, 0.0]
@@ -15,7 +15,7 @@ Re = velocity[1]*0.1/nu
 
 model = Physics(
     time = Steady(),
-    fluid = Incompressible(nu = ConstantScalar(nu)),
+    fluid = FLUID{Incompressible}(nu = nu),
     turbulence = RANS{Laminar}(),
     energy = ENERGY{Isothermal}(),
     domain = mesh_dev
@@ -26,7 +26,8 @@ model = Physics(
     Neumann(:outlet, 0.0),
     # Dirichlet(:wall, [0.0, 0.0, 0.0]),
     Wall(:wall, [0.0, 0.0, 0.0]),
-    Dirichlet(:top, [0.0, 0.0, 0.0])
+    # Wall(:top, [0.0, 0.0, 0.0])
+    Symmetry(:top, 0.0)
 )
 
 @assign! model momentum p (
@@ -34,10 +35,12 @@ model = Physics(
     Dirichlet(:outlet, 0.0),
     Neumann(:wall, 0.0),
     Neumann(:top, 0.0)
+    # Symmetry(:top, 0.0)
 )
 
 schemes = (
-    U = set_schemes(),
+    # U = set_schemes(divergence = Linear),
+    U = set_schemes(divergence = Upwind),
     p = set_schemes()
 )
 
@@ -48,7 +51,7 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.7,
         rtol = 1e-4,
         atol = 1e-20
     ),
@@ -57,16 +60,16 @@ solvers = (
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.2,
+        relax       = 0.7,
         rtol = 1e-4,
         atol = 1e-20
     )
 )
 
 runtime = set_runtime(
-    iterations=1000, time_step=1, write_interval=500)
+    iterations=3000, time_step=1, write_interval=500)
 
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=32)
 
 config = Configuration(

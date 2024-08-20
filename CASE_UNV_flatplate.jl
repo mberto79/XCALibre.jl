@@ -18,7 +18,7 @@ Re = velocity[1]*1/nu
 model = Physics(
     time = Steady(),
     fluid = Incompressible(
-        nu = ConstantScalar(nu), 
+        nu = nu, 
         rho = ConstantScalar(1.0)
         ),
     turbulence = RANS{Laminar}(),

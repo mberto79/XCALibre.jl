@@ -95,17 +95,37 @@ function read_boundary(file_path, TI, TF)
 end
 
 function read_faces(file_path, TI, TF)
-    delimiters = ['(',' ', ')', '\n']
+    # Version 3
 
-    file_data = read(file_path, String)
+    # Find line number with the entry giving total number of faces
+    startLine = 0
+    for (n, line) ∈ enumerate(eachline(file_path)) 
+        line_content = tryparse(Int64, line)
+        if line_content !== nothing
+            startLine = n
+            println("Number of faces to read: $line_content (from line: $startLine)")
+            break
+        end
+    end
+
+    # Read file contents skipping header information (using startLine from above)
+    io = IOBuffer()
+    for (n, line) ∈ enumerate(eachline(file_path)) 
+        if n >= startLine
+            println(io, line)
+        end
+    end
+
+    file_data = String(take!(io)) # Convert IOBuffer to String
+    delimiters = ['(',' ', ')', '\n']
     data_split = split(file_data, delimiters, keepempty=false)
     data = tryparse.(Int64, data_split)
     dataClean = filter(!isnothing, data)
-    nfaces = dataClean[2]
-    println("number of faces is ", nfaces)
+    nfaces = dataClean[1]
+    println("Number of faces to read: $nfaces (after cleaning file)")
     face_nodes = [TI[] for _ ∈ 1:nfaces]
 
-    sizeIndex = 3
+    sizeIndex = 2 # counter to provide index where number of nodes data is stored
     for facei ∈ eachindex(face_nodes)
         nnodes = dataClean[sizeIndex]
         faceNodes = zeros(TI, nnodes)
@@ -115,6 +135,29 @@ function read_faces(file_path, TI, TF)
         sizeIndex += nnodes + 1
         face_nodes[facei] = faceNodes
     end
+
+    
+    # Version 2
+    # delimiters = ['(',' ', ')', '\n']
+
+    # file_data = read(file_path, String)
+    # data_split = split(file_data, delimiters, keepempty=false)
+    # data = tryparse.(Int64, data_split)
+    # dataClean = filter(!isnothing, data)
+    # nfaces = dataClean[2]
+    # println("number of faces is ", nfaces)
+    # face_nodes = [TI[] for _ ∈ 1:nfaces]
+
+    # sizeIndex = 3
+    # for facei ∈ eachindex(face_nodes)
+    #     nnodes = dataClean[sizeIndex]
+    #     faceNodes = zeros(TI, nnodes)
+    #     for i ∈ 1:nnodes
+    #         faceNodes[i] = dataClean[sizeIndex + i] .+ one(TI)
+    #     end
+    #     sizeIndex += nnodes + 1
+    #     face_nodes[facei] = faceNodes
+    # end
 
     # OLD VERSION
 

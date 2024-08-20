@@ -22,7 +22,7 @@ Re = (0.2*velocity[1])/nu
 
 model = Physics(
     time = Transient(),
-    fluid = Incompressible(nu = ConstantScalar(nu)),
+    fluid = FLUID{Incompressible}(nu = nu),
     turbulence = RANS{KOmega}(),
     energy = nothing,
     domain = mesh

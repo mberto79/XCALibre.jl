@@ -29,7 +29,7 @@ nut_inlet = k_inlet/ω_inlet
 
 model = Physics(
     time = Steady(),
-    fluid = Incompressible(nu = ConstantScalar(nu)),
+    fluid = FLUID{Incompressible}(nu = nu),
     # turbulence = RANS{KOmega}(),
     turbulence = RANS{Laminar}(),
     # turbulence = LES{Smagorinsky}(),

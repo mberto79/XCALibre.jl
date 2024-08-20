@@ -24,7 +24,7 @@ nut_inlet = k_inlet/ω_inlet
 model = Physics(
     # time = Steady(),
     time = Transient(),
-    fluid = Incompressible(nu = ConstantScalar(nu)),
+    fluid = FLUID{Incompressible}(nu = nu),
     # turbulence = RANS{KOmega}(),
     turbulence = RANS{Laminar}(),
     # turbulence = LES{Smagorinsky}(),
@@ -79,7 +79,7 @@ model = Physics(
 # )
 
 schemes = (
-    U = set_schemes(time=Euler, divergence=Linear, gradient=Midpoint),
+    U = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint),
     p = set_schemes(time=Euler, gradient=Midpoint),
     # k = set_schemes(divergence=Upwind, gradient=Midpoint),
     # omega = set_schemes(divergence=Upwind, gradient=Midpoint)
@@ -93,8 +93,8 @@ solvers = (
         convergence = 1e-7,
         # relax       = 0.8,
         relax       = 1.0,
-        rtol = 1e-5,
-        atol = 1e-15
+        rtol = 1e-4,
+        atol = 1e-10
     ),
     p = set_solver(
         model.momentum.p;
@@ -102,10 +102,10 @@ solvers = (
         preconditioner = Jacobi(), #LDL(),
         convergence = 1e-7,
         # relax       = 0.2,
-        relax       = 0.2,
+        relax       = 0.7,
         # rtol = 1e-3,
-        rtol = 1e-5,
-        atol = 1e-15
+        rtol = 1e-4,
+        atol = 1e-10
     ),
     # k = set_solver(
     #     # model.turbulence.fields.k;

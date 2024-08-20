@@ -17,7 +17,7 @@ k_inlet = 0.375
 
 model = Physics(
     time = Steady(),
-    fluid = Incompressible(nu = ConstantScalar(nu)),
+    fluid = FLUID{Incompressible}(nu = nu),
     turbulence = RANS{KOmega}(),
     energy = ENERGY{Isothermal}(),
     domain = mesh_gpu

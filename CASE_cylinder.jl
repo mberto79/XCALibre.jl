@@ -21,7 +21,7 @@ Re = (0.2*velocity[1])/nu
 
 model = Physics(
     time = Steady(),
-    fluid = Incompressible(nu = ConstantScalar(nu)),
+    fluid = FLUID{Incompressible}(nu = nu),
     turbulence = RANS{Laminar}(),
     energy = ENERGY{Isothermal}(),
     domain = mesh_gpu
@@ -50,8 +50,8 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
-        rtol = 1e-1,
-        atol = 1e-10
+        rtol = 0.1,
+        atol = 1e-6
     ),
     p = set_solver(
         model.momentum.p;
@@ -59,18 +59,18 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 1e-2,
-        atol = 1e-10
+        rtol = 0.1,
+        atol = 1e-6
     )
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(divergence=Upwind, gradient=Midpoint)
+    U = set_schemes(divergence=Upwind, gradient=Orthogonal),
+    p = set_schemes(gradient=Orthogonal)
 )
 
 # runtime = set_runtime(iterations=20, write_interval=10, time_step=1) # for proto
-runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
 
 hardware = set_hardware(backend=CPU(), workgroup=4)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)

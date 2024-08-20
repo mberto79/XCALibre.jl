@@ -1,100 +1,59 @@
 using FVM_1D
-using StaticArrays
-using LinearAlgebra
-
-mesh_file = "unv_sample_meshes/quad.unv"
-mesh_file = "unv_sample_meshes/nonorthogonal_45_degrees.unv"
-mesh_file = "unv_sample_meshes/nonorthogonal_45_degrees_trig.unv"
-mesh_file = "unv_sample_meshes/nonorthogonal_90_degrees.unv"
-
-mesh = UNV2D_mesh(mesh_file, scale=0.001, integer_type=Int64, float_type=Float64)
+using FVM_1D.FoamMesh
 
 
-linear_solution!(field) = begin
-    mesh = field.mesh 
-    values = field.values
-    for (i, cell) ∈ enumerate(mesh.cells)
-        point = cell.centre
-        values[i] = 2*(point[1])
+
+file_path = "unv_sample_meshes/OF_startrek/polyMesh/"
+file_path = "unv_sample_meshes/OF_CRMHL_Wingbody_1v/polyMesh/"
+integer=Int64
+float=Float64
+scale=0.001
+
+
+points_file = joinpath(file_path,"points")
+faces_file = joinpath(file_path,"faces")
+neighbour_file = joinpath(file_path,"neighbour")
+owner_file = joinpath(file_path,"owner")
+boundary_file = joinpath(file_path,"boundary")
+
+foamdata = FoamMesh.FoamMeshData(integer, float)
+
+foamdata.points = FoamMesh.read_points(points_file, scale, integer, float)
+foamdata.boundaries = FoamMesh.read_boundary(boundary_file, integer, float)
+
+delimiters = ['(',' ', ')', '\n']
+
+file_data = read(faces_file, String)
+data_split = split(file_data, delimiters, keepempty=false)
+data = tryparse.(Int64, data_split)
+dataClean = filter(!isnothing, data)
+
+# Find line with entry for total number of faces
+startLine = 0
+for (n, line) ∈ enumerate(eachline(faces_file)) 
+    line_content = tryparse(Int64, line)
+    if line_content !== nothing
+        startLine = n
+        println("Number of faces to read: $line_content (from line: $startLine)")
+        break
     end
 end
 
-config = (; hardware=(; backend=CPU(), workgroup=4))
-
-F = ScalarField(mesh)
-Ff = FaceScalarField(mesh)
-∇F = Grad{Orthogonal}(F)
-# ∇F = Grad{Midpoint}(F)
-
-linear_solution!(F)
-
-bnames = [:left, :right, :bottom, :top]
-
-F = assign(F, Neumann.(bnames, Ref(0.0))...,)
-
-
-grad!(∇F, Ff, F, F.BCs, config)
-
-@time write_vtk("foamMeshTest", mesh, ("F", F), ("grad(F)", ∇F.result))
-
-
-limit_gradient!(∇F, F)
-
-@time write_vtk("foamMeshTest", mesh, ("F", F), ("grad(F)", ∇F.result))
-
-diff = VectorField(mesh)
-
-# Function defs
-function limit_gradient!(∇F, F)
-    mesh = F.mesh
-    (; cells, cell_neighbours, cell_faces, cell_nsign, faces) = mesh
-
-    minPhi0 = maximum(F.values) # use min value so all values compared are larger
-    maxPhi0 = minimum(F.values)
-
-    for (cID, cell) ∈ enumerate(mesh.cells)
-        minPhi = minPhi0 # reset for next cell
-        maxPhi = maxPhi0
-
-        # find min and max values around cell
-        faces_range = cell.faces_range
-        
-        phiP = F[cID]
-        # minPhi = phiP # reset for next cell
-        # maxPhi = phiP
-        for fi ∈ faces_range
-            nID = cell_neighbours[fi]
-            phiN = F[nID]
-            maxPhi = max(phiN, maxPhi)
-            minPhi = min(phiN, minPhi)
-        end
-
-        g0 = ∇F[cID]
-        cc = cell.centre
-
-        for fi ∈ faces_range 
-            fID = cell_faces[fi]
-            face = faces[fID]
-            nID = face.ownerCells[2]
-            phiN = F[nID]
-            normal = face.normal
-            nsign = cell_nsign[fi]
-            na = nsign*normal
-
-            fc = face.centre 
-            cc_fc = fc - cc
-            n0 = cc_fc/norm(cc_fc)
-            gn = g0⋅n0
-            δϕ = g0⋅cc_fc
-            gτ = g0 - gn*n0
-            if (maxPhi > phiP) && (δϕ > maxPhi - phiP)
-                g0 = gτ + na*(maxPhi - phiP)
-            elseif (minPhi < phiP) && (δϕ < minPhi - phiP)
-                g0 = gτ + na*(minPhi - phiP)
-            end            
-        end
-        ∇F.result.x.values[cID] = g0[1]
-        ∇F.result.y.values[cID] = g0[2]
-        ∇F.result.z.values[cID] = g0[3]
+# Read file contents after header information
+io = IOBuffer()
+for (n, line) ∈ enumerate(eachline(faces_file)) 
+    if n >= startLine
+        println(io, line)
     end
 end
+
+file_data = String(take!(io))
+data_split = split(file_data, delimiters, keepempty=false)
+data = tryparse.(Int64, data_split)
+dataClean = filter(!isnothing, data)
+
+face_nodes = FoamMesh.read_faces(faces_file, integer, float)
+face_neighbours = FoamMesh.read_neighbour(neighbour_file, integer, float)
+face_owners = FoamMesh.read_owner(owner_file, integer, float)
+
+FoamMesh.assign_faces!(foamdata, face_nodes, face_neighbours, face_owners, integer)

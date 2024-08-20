@@ -78,9 +78,9 @@ end
     pcell = cells[pcellID]
 
     # Retrieve mesh centre values
-    xf = face.centre
-    xC = cell.centre
-    xN = pcell.centre
+    # xf = face.centre
+    # xC = cell.centre
+    # xN = pcell.centre
 
     delta1 = face.delta
     delta2 = pface.delta
@@ -88,9 +88,10 @@ end
     # delta = face.delta
     
     # Calculate weights using normal functions
-    weight = norm(xf - xC)/(norm(xN - xC) - bc.value.distance)
+    # weight = norm(xf - xC)/(norm(xN - xC) - bc.value.distance)
+    # weight = 0.5
     # weight = norm(xf - xC)/delta
-    # weight = delta1/delta
+    weight = delta1/delta
     one_minus_weight = one(eltype(weight)) - weight
 
     face_value = weight*values[cellID] + one_minus_weight*values[pcellID]
@@ -102,10 +103,12 @@ end
     (; area) = face 
 
     # Calculate flux and ap value for increment
-    flux = J*area/delta
+    # flux = J*area/delta # original
+    flux = J*area/delta1
     ap = term.sign[1]*(-flux)
     
-    ap, ap*face_value
+    ap, ap*face_value # original
+    # weight*ap, ap*one_minus_weight*values[pcellID]
 end
 
 @define_boundary Periodic Divergence{Linear} begin
@@ -121,17 +124,17 @@ end
     pcell = cells[pcellID]
 
     # Retrieve mesh centre values
-    xf = face.centre
-    xC = cell.centre
-    xN = pcell.centre
+    # xf = face.centre
+    # xC = cell.centre
+    # xN = pcell.centre
 
-    # delta1 = face.delta
-    # delta2 = pface.delta
-    # delta = delta1 + delta2
+    delta1 = face.delta
+    delta2 = pface.delta
+    delta = delta1 + delta2
     
     # Calculate weights using normal functions
-    weight = norm(xf - xC)/(norm(xN - xC) - bc.value.distance)
-    # weight = delta1/delta
+    # weight = norm(xf - xC)/(norm(xN - xC) - bc.value.distance)
+    weight = delta1/delta
     one_minus_weight = one(eltype(weight)) - weight
 
     # face_value = 0.5*(values[cellID] + values[pcellID])
@@ -141,22 +144,41 @@ end
     ap = term.sign[1]*(term.flux[fID])
 
     0.0, -ap*face_value
+    # weight*ap, -ap*one_minus_weight*values[pcellID]
 end
 
 @define_boundary Periodic Divergence{Upwind} begin
     phi = term.phi
     mesh = phi.mesh 
-    (; faces) = mesh
+    (; faces, cells) = mesh
     values = get_values(phi, component)
 
     # determine id of periodic cell and interpolate face value
     pfID = bc.value.face_map[i] # id of periodic face 
     pface = faces[pfID]
     pcellID = pface.ownerCells[1]
-    face_value = 0.5*(values[cellID] + values[pcellID])
+    pcell = cells[pcellID]
+
+    # Retrieve mesh centre values
+    # xf = face.centre
+    # xC = cell.centre
+    # xN = pcell.centre
+
+    delta1 = face.delta
+    delta2 = pface.delta
+    delta = delta1 + delta2
+
+    # Calculate weights using normal functions
+    # weight = norm(xf - xC)/(norm(xN - xC) - bc.value.distance)
+    weight = delta1/delta
+    one_minus_weight = one(eltype(weight)) - weight
+
+    # face_value = 0.5*(values[cellID] + values[pcellID])
+    face_value = weight*values[cellID] + one_minus_weight*values[pcellID]
 
     # Calculate ap value to increment
     ap = term.sign[1]*(term.flux[fID])
 
     0.0, -ap*face_value
+    # weight*ap, -ap*one_minus_weight*values[pcellID]
 end

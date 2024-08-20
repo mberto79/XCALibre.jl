@@ -24,20 +24,21 @@ end
         pcell = cells[pcID]
         (; IDs_range) = boundaries[BC.ID]
         fID = IDs_range[i]
+        face = faces[fID]
         cID = boundary_cellsID[fID]
 
-        xf = faces[fID].centre
-        xC = cells[cID].centre
-        xN = cells[pcID].centre # probably needs translating by distance between patches!!
+        # xf = faces[fID].centre
+        # xC = cells[cID].centre
+        # xN = cells[pcID].centre # probably needs translating by distance between patches!!
 
-        # delta1 = faces[fID].delta
-        # delta2 = faces[pfID].delta
-        # delta = delta1 + delta2
+        delta1 = face.delta*norm(face.e ⋅ face.normal)
+        delta2 = pface.delta*norm(pface.e ⋅ pface.normal)
+        delta = delta1 + delta2
         
         # Calculate weights using normal functions
         # weight = norm(xf - xC)/norm(xN - xC)
-        # weight = delta1/delta
-        weight = norm(xf - xC)/(norm(xN - xC) - BC.value.distance)
+        weight = delta1/delta
+        # weight = norm(xf - xC)/(norm(xN - xC) - BC.value.distance)
         one_minus_weight = one(eltype(weight)) - weight
 
         # phif_values[fID] = 0.5*(phi_values[cID] + phi_values[pcID]) # linear interpolation 
@@ -67,8 +68,17 @@ end
         pcID = pface.ownerCells[1]
         (; IDs_range) = boundaries[BC.ID]
         fID = IDs_range[i]
+        face = faces[fID]
         cID = boundary_cellsID[fID]
-        psi_face = 0.5*(psi[cID] + psi[pcID]) # linear interpolation 
+
+        # w = 0.5
+
+        delta1 = face.delta*norm(face.e ⋅ face.normal)
+        delta2 = pface.delta*norm(pface.e ⋅ pface.normal)
+        delta = delta1 + delta2
+        w = delta1/delta
+        # psi_face = 0.5*(psi[cID] + psi[pcID]) # linear interpolation 
+        psi_face = w*psi[cID] + (1 - w)psi[pcID] # linear interpolation 
         x[fID] = psi_face[1]
         y[fID] = psi_face[2]
         z[fID] = psi_face[3]

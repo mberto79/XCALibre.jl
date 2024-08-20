@@ -83,7 +83,7 @@ function PISO(
         interpolate!(rDf, rD, config)
         remove_pressure_source!(U_eqn, ∇p, config)
         
-        ncorrectors = 3
+        ncorrectors = 2
         for i ∈ 1:ncorrectors
             H!(Hv, U, U_eqn, config)
             
@@ -109,9 +109,9 @@ function PISO(
             grad!(∇p, pf, p, p.BCs, config) 
 
             # grad limiter test
-            limit_gradient!(∇p, p, config)
+            # limit_gradient!(∇p, p, config)
 
-            correct = true
+            correct = false
             if correct
                 ncorrectors = 1
                 for i ∈ 1:ncorrectors
@@ -131,16 +131,20 @@ function PISO(
 
             # Velocity and boundaries correction
             correct_velocity!(U, Hv, ∇p, rD, config)
-            interpolate!(Uf, U, config)
-            correct_boundaries!(Uf, U, U.BCs, config)
-            flux!(mdotf, Uf, config) # old approach
+            # interpolate!(Uf, U, config)
+            # correct_boundaries!(Uf, U, U.BCs, config)
+            # flux!(mdotf, Uf, config) # old approach
 
-            # correct_mass_flux(mdotf, p, pf, rDf, config) # new approach
+            correct_mass_flux(mdotf, p, pf, rDf, config) # new approach
 
-            grad!(gradU, Uf, U, U.BCs, config)
-            turbulence!(turbulenceModel, model, S, S2, prev, config) 
-            update_nueff!(nueff, nu, model.turbulence, config)
+            # grad!(gradU, Uf, U, U.BCs, config)
+            # turbulence!(turbulenceModel, model, S, S2, prev, config) 
+            # update_nueff!(nueff, nu, model.turbulence, config)
     end # corrector loop end
+
+    grad!(gradU, Uf, U, U.BCs, config)
+    turbulence!(turbulenceModel, model, S, S2, prev, config) 
+    update_nueff!(nueff, nu, model.turbulence, config)
 
     residual!(R_ux, U_eqn, U.x, iteration, xdir, config)
     residual!(R_uy, U_eqn, U.y, iteration, ydir, config)

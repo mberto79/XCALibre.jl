@@ -10,7 +10,7 @@ side1, side2 = construct_periodic(mesh, backend, :side1, :side2)
 top, bottom = construct_periodic(mesh, backend, :top, :bottom)
 
 mesh_dev = adapt(CUDABackend(), mesh)
-mesh_dev = mesh
+# mesh_dev = mesh
 
 velocity = [0.25, 0.0, 0.0]
 nu = 1e-3
@@ -47,7 +47,7 @@ model = Physics(
 
 schemes = (
     # U = set_schemes(divergence=Upwind, gradient=Midpoint),
-    U = set_schemes(divergence=Upwind, gradient=Midpoint),
+    U = set_schemes(divergence=Linear, gradient=Midpoint),
     p = set_schemes(gradient=Midpoint)
     # p = set_schemes()
 )
@@ -78,7 +78,7 @@ runtime = set_runtime(
     iterations=2000, time_step=1, write_interval=100)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=4)
+# hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

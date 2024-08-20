@@ -3,6 +3,8 @@ using FVM_1D
 mesh_file = "unv_sample_meshes/BFS_UNV_3D_hex_5mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
+backend = CPU()
+periodic1, periodic2 = construct_periodic(mesh, backend, :side1, :side2)
 mesh_dev = mesh
 
 velocity = [0.2, 0.0, 0.5]
@@ -17,7 +19,6 @@ model = Physics(
     domain = mesh_dev
     )
 
-periodic1, periodic2 = construct_periodic(model, :side1, :side2)
     
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),

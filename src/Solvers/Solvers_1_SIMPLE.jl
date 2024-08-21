@@ -173,7 +173,7 @@ function SIMPLE(
         # grad limiter test
         # limit_gradient!(∇p, p, config)
 
-        correct = true
+        correct = false
         if correct
             ncorrectors = 2
             for i ∈ 1:ncorrectors
@@ -183,7 +183,7 @@ function SIMPLE(
                 # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
                 nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
                 # @. prev = p.values # this is unstable
-                # @. p.values = prev
+                @. p.values = prev
                 solve_system!(p_eqn, solvers.p, p, nothing, config)
                 explicit_relaxation!(p, prev, solvers.p.relax, config)
                 grad!(∇p, pf, p, p.BCs, config)
@@ -202,12 +202,12 @@ function SIMPLE(
         # correct_boundaries!(pf, p, p.BCs, config) # not needed?
 
         # new approach
-        correct_velocity!(U, Hv, ∇p, rD, config)
-        interpolate!(Uf, U, config)
+        interpolate!(Uf, U, config) # velocity from momentum equation
         correct_boundaries!(Uf, U, U.BCs, config)
         flux!(mdotf, Uf, config)
         correct_mass_flux(mdotf, p, pf, rDf, config)
         
+        correct_velocity!(U, Hv, ∇p, rD, config)
 
         # if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs, config)
@@ -375,37 +375,31 @@ function correct_mass_flux(mdotf, p, pf, rDf, config)
     n_bfaces = length(boundary_cellsID)
     n_ifaces = n_faces - n_bfaces #+ 1
 
-    kernel! = _correct_internal_faces(backend, workgroup)
-    kernel!(mdotf, p, rDf, faces, n_bfaces, ndrange=length(n_ifaces))
+    kernel! = _correct_mass_flux(backend, workgroup)
+    kernel!(mdotf, p, rDf, faces, cells, n_bfaces, ndrange=length(n_ifaces))
     KernelAbstractions.synchronize(backend)
-
-    # kernel! = _correct_boundary_faces(backend, workgroup)
-    # kernel!(..., ndrange=length(n_bfaces))
-    # KernelAbstractions.synchronize(backend)
 end
 
-@kernel function _correct_internal_faces(mdotf, p, rDf, faces, n_bfaces)
+@kernel function _correct_mass_flux(mdotf, p, rDf, faces, cells, n_bfaces)
     i = @index(Global)
     fID = i + n_bfaces
 
-    # for fID ∈ start_faceID:last_faceID
-        # for fID ∈ eachindex(faces)
-            face = faces[fID]
-            (; area, normal, ownerCells, delta) = face 
-            cID1 = ownerCells[1]
-            cID2 = ownerCells[2]
-            # cell1 = cells[cID1]
-            # cell2 = cells[cID2]
-            p1 = p[cID1]
-            p2 = p[cID2]
-            face_grad = area*(p2 - p1)/delta
-            # face_grad = (p2 - p1)/delta
+    @inbounds begin 
+        face = faces[fID]
+        (; area, normal, ownerCells, delta) = face 
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        # cell1 = cells[cID1]
+        # cell2 = cells[cID2]
+        p1 = p[cID1]
+        p2 = p[cID2]
+        face_grad = area*(p2 - p1)/delta # best option so far!
+        # face_grad = area*(p1 - p2)/delta
 
-            # sngrad.values[fID] = face_grad
-
-            # mdotf.values[fID] -= face_grad*rDf.values[fID]
-            mdotf[fID] -= face_grad*rDf[fID]
-        # end
+        # mdotf.values[fID] -= face_grad*rDf.values[fID]
+        # mdotf[fID] -= face_grad #*rDf[fID]
+        mdotf[fID] -= face_grad*rDf[fID]
+    end
 end
 
 # @kernel function _correct_boundary_faces()

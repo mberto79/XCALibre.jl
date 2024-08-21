@@ -83,7 +83,7 @@ function PISO(
         interpolate!(rDf, rD, config)
         remove_pressure_source!(U_eqn, ∇p, config)
         
-        ncorrectors = 2
+        ncorrectors = 3
         for i ∈ 1:ncorrectors
             H!(Hv, U, U_eqn, config)
             
@@ -100,7 +100,7 @@ function PISO(
             @. prev = p.values
             solve_equation!(p_eqn, p, solvers.p, config; ref=pref)
             if i == ncorrectors
-                explicit_relaxation!(p, prev, 0.95, config)
+                explicit_relaxation!(p, prev, 1.0, config)
             else
                 explicit_relaxation!(p, prev, solvers.p.relax, config)
             end
@@ -123,24 +123,29 @@ function PISO(
                     # @. prev = p.values # this is unstable
                     # @. p.values = prev
                     solve_system!(p_eqn, solvers.p, p, nothing, config)
-                    explicit_relaxation!(p, prev, solvers.p.relax, config)
+                    # explicit_relaxation!(p, prev, solvers.p.relax, config)
                     grad!(∇p, pf, p, p.BCs, config)
-                    limit_gradient!(∇p, p, config)
+                    # limit_gradient!(∇p, p, config)
                 end
             end
 
             # Velocity and boundaries correction
-            correct_velocity!(U, Hv, ∇p, rD, config)
+            # correct_velocity!(U, Hv, ∇p, rD, config)
             # interpolate!(Uf, U, config)
             # correct_boundaries!(Uf, U, U.BCs, config)
-            # flux!(mdotf, Uf, config) # old approach
+            # # flux!(mdotf, Uf, config) # old approach
 
-            correct_mass_flux(mdotf, p, pf, rDf, config) # new approach
+            # new approach
+            interpolate!(Uf, U, config) # velocity from momentum equation
+            correct_boundaries!(Uf, U, U.BCs, config)
+            flux!(mdotf, Uf, config)
+            correct_mass_flux(mdotf, p, pf, rDf, config)
+            
+            correct_velocity!(U, Hv, ∇p, rD, config)
+        end # corrector loop end
+        
+        # correct_mass_flux(mdotf, p, pf, rDf, config) # new approach
 
-            # grad!(gradU, Uf, U, U.BCs, config)
-            # turbulence!(turbulenceModel, model, S, S2, prev, config) 
-            # update_nueff!(nueff, nu, model.turbulence, config)
-    end # corrector loop end
 
     grad!(gradU, Uf, U, U.BCs, config)
     turbulence!(turbulenceModel, model, S, S2, prev, config) 

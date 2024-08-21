@@ -16,7 +16,7 @@ function write_vtk(name, mesh, meshData::VTKWriter2D, args...) #, Ux, Uy, Uz, p)
     filename = name*".vtk"
     open(filename, "w") do io
         write(io, "# vtk DataFile Version 3.0\n")
-        write(io, "jCFD simulation data\n")
+        write(io, "XCALibre.jl simulation data\n")
         write(io, "ASCII\n")
         write(io, "DATASET UNSTRUCTURED_GRID\n")
         nPoints = length(mesh.nodes)

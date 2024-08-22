@@ -9,7 +9,7 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 # mesh_dev = adapt(CUDABackend(), mesh)
 mesh_dev = mesh
 
-velocity = [0.5, 0.0, 0.0]
+velocity = [1.5, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
 
@@ -24,10 +24,11 @@ model = Physics(
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    # Dirichlet(:wall, [0.0, 0.0, 0.0]),
-    Wall(:wall, [0.0, 0.0, 0.0]),
+    Dirichlet(:wall, [0.0, 0.0, 0.0]),
+    Dirichlet(:top, [0.0, 0.0, 0.0]),
+    # Wall(:wall, [0.0, 0.0, 0.0]),
     # Wall(:top, [0.0, 0.0, 0.0])
-    Symmetry(:top, 0.0)
+    # Symmetry(:top, 0.0)
 )
 
 @assign! model momentum p (
@@ -39,8 +40,8 @@ model = Physics(
 )
 
 schemes = (
-    # U = set_schemes(divergence = Linear),
-    U = set_schemes(divergence = Upwind),
+    U = set_schemes(divergence = Linear),
+    # U = set_schemes(divergence = Upwind),
     p = set_schemes()
 )
 
@@ -53,7 +54,7 @@ solvers = (
         convergence = 1e-7,
         relax       = 0.7,
         rtol = 1e-4,
-        atol = 1e-20
+        atol = 1e-10
     ),
     p = set_solver(
         model.momentum.p;
@@ -62,12 +63,12 @@ solvers = (
         convergence = 1e-7,
         relax       = 0.7,
         rtol = 1e-4,
-        atol = 1e-20
+        atol = 1e-10
     )
 )
 
 runtime = set_runtime(
-    iterations=3000, time_step=1, write_interval=500)
+    iterations=2000, time_step=1, write_interval=100)
 
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=32)

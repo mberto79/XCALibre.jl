@@ -6,7 +6,7 @@ mesh_file = "unv_sample_meshes/cascade_3D_periodic_2p5mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
 backend = CUDABackend()
-
+# backend = CPU()
 periodic = construct_periodic(mesh, backend, :top, :bottom)
 
 mesh_dev = adapt(CUDABackend(), mesh)
@@ -30,6 +30,8 @@ model = Physics(
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Wall(:plate, [0.0, 0.0, 0.0]),
+    # Symmetry(:side1, 0.0),
+    # Symmetry(:side2, 0.0),
     Neumann(:side1, 0.0),
     Neumann(:side2, 0.0),
     periodic...
@@ -59,7 +61,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
-        rtol = 1e-2,
+        rtol = 1e-1,
         atol = 1e-10
     ),
     p = set_solver(
@@ -68,13 +70,13 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 1e-3,
+        rtol = 1e-2,
         atol = 1e-10
     )
 )
 
 runtime = set_runtime(
-    iterations=2000, time_step=1, write_interval=100)
+    iterations=500, time_step=1, write_interval=100)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=CPU(), workgroup=4)
@@ -85,6 +87,7 @@ config = Configuration(
 GC.gc(true)
 
 initialise!(model.momentum.U, velocity)
+# initialise!(model.momentum.U, [0.0, 0.0, 0.0 ])
 initialise!(model.momentum.p, 0.0)
 
 Rx, Ry, Rz, Rp, model_out = run!(model, config)

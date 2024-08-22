@@ -6,8 +6,8 @@ mesh_file = "unv_sample_meshes/cascade_3D_periodic_2p5mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
 backend = CUDABackend()
-side1, side2 = construct_periodic(mesh, backend, :side1, :side2)
-top, bottom = construct_periodic(mesh, backend, :top, :bottom)
+
+periodic = construct_periodic(mesh, backend, :top, :bottom)
 
 mesh_dev = adapt(CUDABackend(), mesh)
 # mesh_dev = mesh
@@ -32,7 +32,7 @@ model = Physics(
     Wall(:plate, [0.0, 0.0, 0.0]),
     Neumann(:side1, 0.0),
     Neumann(:side2, 0.0),
-    top, bottom
+    periodic...
 )
 
 @assign! model momentum p (
@@ -41,8 +41,7 @@ model = Physics(
     Neumann(:plate, 0.0),
     Neumann(:side1, 0.0),
     Neumann(:side2, 0.0),
-    top, bottom,
-    # side1, side2
+    periodic...
 )
 
 schemes = (
@@ -85,8 +84,7 @@ config = Configuration(
 
 GC.gc(true)
 
-# initialise!(model.momentum.U, velocity)
-initialise!(model.momentum.U, [0.0, 0.0, 0.0 ])
+initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
 Rx, Ry, Rz, Rp, model_out = run!(model, config)

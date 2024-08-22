@@ -61,7 +61,6 @@ function construct_periodic(mesh, backend, patch1::Symbol, patch2::Symbol)
 
     p1 = Periodic(patch1, values1)
     p2 = Periodic(patch2, values2)
-    connectivity = periodic_matrix_connectivity(mesh, p1, p2)
 
     periodic1 = adapt(backend, p1)
     periodic2 = adapt(backend, p2)

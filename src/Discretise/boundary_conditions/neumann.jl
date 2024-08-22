@@ -7,8 +7,8 @@
     flux = J*area/delta
     ap = term.sign[1]*(-flux)
 
-    # ap, ap*values[cellID] # original
-    0.0, 0.0 # original
+    ap, ap*values[cellID] # original
+    # 0.0, 0.0 # testing
 end
 
 @define_boundary Neumann Divergence{Linear} begin

@@ -83,7 +83,7 @@ function PISO(
         interpolate!(rDf, rD, config)
         remove_pressure_source!(U_eqn, ∇p, config)
         
-        ncorrectors = 3
+        ncorrectors = 2
         for i ∈ 1:ncorrectors
             H!(Hv, U, U_eqn, config)
             
@@ -130,18 +130,18 @@ function PISO(
             end
 
             # Velocity and boundaries correction
-            # correct_velocity!(U, Hv, ∇p, rD, config)
-            # interpolate!(Uf, U, config)
-            # correct_boundaries!(Uf, U, U.BCs, config)
-            # # flux!(mdotf, Uf, config) # old approach
+            correct_velocity!(U, Hv, ∇p, rD, config)
+            interpolate!(Uf, U, config)
+            correct_boundaries!(Uf, U, U.BCs, config)
+            flux!(mdotf, Uf, config) 
 
             # new approach
-            interpolate!(Uf, U, config) # velocity from momentum equation
-            correct_boundaries!(Uf, U, U.BCs, config)
-            flux!(mdotf, Uf, config)
-            correct_mass_flux(mdotf, p, pf, rDf, config)
+            # interpolate!(Uf, U, config) # velocity from momentum equation
+            # correct_boundaries!(Uf, U, U.BCs, config)
+            # flux!(mdotf, Uf, config)
+            # correct_mass_flux(mdotf, p, pf, rDf, config)
             
-            correct_velocity!(U, Hv, ∇p, rD, config)
+            # correct_velocity!(U, Hv, ∇p, rD, config)
         end # corrector loop end
         
         # correct_mass_flux(mdotf, p, pf, rDf, config) # new approach

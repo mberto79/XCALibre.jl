@@ -50,7 +50,7 @@ end
     e = ns*e
     Ef = ((Sf⋅Sf)/(Sf⋅e))*e
     Ef_mag = norm(Ef)
-    ap = term.sign*(term.flux[fID] * Ef_mag)/delta
+    ap = term.sign[1]*(term.flux[fID] * Ef_mag)/delta
 
     # ap = term.sign*(term.flux[fID] * area)/delta
     

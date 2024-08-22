@@ -1,59 +1,84 @@
 using FVM_1D
-using FVM_1D.FoamMesh
+using FVM_1D.ModelFramework
+using SparseArrays
+using LinearAlgebra
+
+mesh_file = "unv_sample_meshes/cascade_3D_periodic_2p5mm.unv"
+mesh = UNV3D_mesh(mesh_file, scale=0.001)
+
+periodic, connectivity = construct_periodic(mesh, CPU(), :top, :bottom)
+
+connectivity = Discretise.periodic_matrix_connectivity(mesh, periodic...)
+Ac = sparse(connectivity.i, connectivity.j, zeros(Float64, length(connectivity.i)))
+
+eqn = ScalarEquation(mesh, connectivity)
+
+(; colptr, rowval) = eqn.A
+# faces: 6321 9521
+nzcellID = spindex(colptr, rowval, 3161, 7881)
+nzcellID = spindex(colptr, rowval, 7881, 3161)
+
+# face i = 1: 6480 3280
+# cell i = 1: 3161 7881
+
+fID1 = periodic[1].value.face_map[3200]
+fID2 = periodic[2].value.face_map[3200]
+
+face1 = mesh.faces[fID1]
+face2 = mesh.faces[fID2]
+cID1 = face1.ownerCells[1]
+cID2 = face2.ownerCells[1]
+cell1 = mesh.cells[cID1]
+cell2 = mesh.cells[cID2]
+
+distance = norm((face1.centre - face2.centre)⋅face1.normal)
+distance = ((face1.centre - face2.centre))
+distance = face1.centre - face2.centre⋅face1.normal
+
+cell1.centre
+cell2.centre
+cell1.centre - cell2.centre
+
+distance = norm((cell1.centre - cell2.centre)⋅face1.normal)
+
+
+nzcellID = spindex(colptr, rowval, cID1, cID2)
+
+ip, jp = periodic_matrix_connectivity(mesh, top, bottom)
+
+
+ic = [i; ip]
+jc = [j; jp]
+vc = zeros(Float64, length(ic))
+
+Ac = sparse(ic, jc, vc)
+
+I, J, V = findnz(Ac)
+
+Ac1 = sparse(I,J,V)
 
 
 
-file_path = "unv_sample_meshes/OF_startrek/polyMesh/"
-file_path = "unv_sample_meshes/OF_CRMHL_Wingbody_1v/polyMesh/"
-integer=Int64
-float=Float64
-scale=0.001
 
+using Accessors
+IDs_range = mesh.boundaries[4].IDs_range
+mesh.faces[IDs_range[1]].normal
+# flip normals
+faces = mesh.faces
+face.normal
+face = faces[IDs_range[1]]
+@reset face.normal .+= 2
+face.normal
 
-points_file = joinpath(file_path,"points")
-faces_file = joinpath(file_path,"faces")
-neighbour_file = joinpath(file_path,"neighbour")
-owner_file = joinpath(file_path,"owner")
-boundary_file = joinpath(file_path,"boundary")
+faces = mesh.faces
 
-foamdata = FoamMesh.FoamMeshData(integer, float)
+boundary_information = boundary_map(mesh)
+idx1 = boundary_index(boundary_information, periodic[1].ID)
+idx2 = boundary_index(boundary_information, periodic[2].ID)
+IDs_range = mesh.boundaries[idx2].IDs_range
 
-foamdata.points = FoamMesh.read_points(points_file, scale, integer, float)
-foamdata.boundaries = FoamMesh.read_boundary(boundary_file, integer, float)
-
-delimiters = ['(',' ', ')', '\n']
-
-file_data = read(faces_file, String)
-data_split = split(file_data, delimiters, keepempty=false)
-data = tryparse.(Int64, data_split)
-dataClean = filter(!isnothing, data)
-
-# Find line with entry for total number of faces
-startLine = 0
-for (n, line) ∈ enumerate(eachline(faces_file)) 
-    line_content = tryparse(Int64, line)
-    if line_content !== nothing
-        startLine = n
-        println("Number of faces to read: $line_content (from line: $startLine)")
-        break
-    end
+for fID ∈ IDs_range
+    face = faces[fID]  
+    @reset face.normal *= -1 
+    faces[fID] = face
 end
-
-# Read file contents after header information
-io = IOBuffer()
-for (n, line) ∈ enumerate(eachline(faces_file)) 
-    if n >= startLine
-        println(io, line)
-    end
-end
-
-file_data = String(take!(io))
-data_split = split(file_data, delimiters, keepempty=false)
-data = tryparse.(Int64, data_split)
-dataClean = filter(!isnothing, data)
-
-face_nodes = FoamMesh.read_faces(faces_file, integer, float)
-face_neighbours = FoamMesh.read_neighbour(neighbour_file, integer, float)
-face_owners = FoamMesh.read_owner(owner_file, integer, float)
-
-FoamMesh.assign_faces!(foamdata, face_nodes, face_neighbours, face_owners, integer)

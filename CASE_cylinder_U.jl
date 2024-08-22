@@ -29,8 +29,10 @@ model = Physics(
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Wall(:cylinder, noSlip),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+    # Neumann(:bottom, 0.0),
+    # Neumann(:top, 0.0)
+    Symmetry(:bottom, 0.0),
+    Symmetry(:top, 0.0)
 )
 
 @assign! model momentum p (
@@ -48,7 +50,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1.0,
-        rtol = 1e-4,
+        rtol = 0.0,
         atol = 1e-5
     ),
     p = set_solver(
@@ -56,15 +58,15 @@ solvers = (
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), #NormDiagonal(),
         convergence = 1e-7,
-        relax       = 0.7,
-        rtol = 1e-4,
-        atol = 1e-5
+        relax       = 1.0,
+        rtol = 0.0,
+        atol = 1e-6
     )
 )
 
 schemes = (
-    U = set_schemes(time=Euler, divergence=Linear, gradient=Orthogonal),
-    p = set_schemes(time=Euler, divergence=Upwind, gradient=Orthogonal)
+    U = set_schemes(time=Euler, divergence=Linear, gradient=Midpoint),
+    p = set_schemes(time=Euler, gradient=Midpoint)
 )
 
 

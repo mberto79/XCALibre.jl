@@ -6,11 +6,12 @@ mesh_file = "unv_sample_meshes/cascade_3D_periodic_2p5mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
 backend = CUDABackend()
-side1, side2 = construct_periodic(mesh, backend, :side1, :side2)
-top, bottom = construct_periodic(mesh, backend, :top, :bottom)
+# backend = CPU()
+# sidePeriodic, sideConnectivity = construct_periodic(mesh, backend, :side1, :side2)
+periodic, connectivity, mesh_periodic = construct_periodic(mesh, backend, :top, :bottom)
 
-mesh_dev = adapt(CUDABackend(), mesh)
-# mesh_dev = mesh
+mesh_dev = adapt(CUDABackend(), mesh_periodic)
+mesh_dev = mesh_periodic
 
 velocity = [0.25, 0.0, 0.0]
 nu = 1e-3
@@ -21,7 +22,8 @@ model = Physics(
     fluid = FLUID{Incompressible}(nu=nu),
     turbulence = RANS{Laminar}(),
     energy = ENERGY{Isothermal}(),
-    domain = mesh_dev
+    domain = mesh_dev,
+    periodic = connectivity
     )
 
 
@@ -30,9 +32,11 @@ model = Physics(
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Wall(:plate, [0.0, 0.0, 0.0]),
+    # Symmetry(:side1, 0.0),
+    # Symmetry(:side2, 0.0),
     Neumann(:side1, 0.0),
     Neumann(:side2, 0.0),
-    top, bottom
+    periodic...
 )
 
 @assign! model momentum p (
@@ -41,8 +45,7 @@ model = Physics(
     Neumann(:plate, 0.0),
     Neumann(:side1, 0.0),
     Neumann(:side2, 0.0),
-    top, bottom,
-    # side1, side2
+    periodic...
 )
 
 schemes = (
@@ -75,7 +78,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=2000, time_step=1, write_interval=100)
+    iterations=500, time_step=1, write_interval=100)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=CPU(), workgroup=4)
@@ -85,8 +88,8 @@ config = Configuration(
 
 GC.gc(true)
 
-# initialise!(model.momentum.U, velocity)
-initialise!(model.momentum.U, [0.0, 0.0, 0.0 ])
+initialise!(model.momentum.U, velocity)
+# initialise!(model.momentum.U, [0.0, 0.0, 0.0 ])
 initialise!(model.momentum.p, 0.0)
 
 Rx, Ry, Rz, Rp, model_out = run!(model, config)

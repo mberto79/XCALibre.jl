@@ -2,7 +2,7 @@ export Physics
 export Transient, Steady
 
 
-struct Physics{T,F,M,Tu,E,D,BI}
+struct Physics{T,F,M,Tu,E,D,BI,P}
     time::T
     fluid::F
     momentum::M 
@@ -10,6 +10,7 @@ struct Physics{T,F,M,Tu,E,D,BI}
     energy::E
     domain::D
     boundary_info::BI
+    periodic::P
 end 
 Adapt.@adapt_structure Physics
 
@@ -32,7 +33,7 @@ Momentum(mesh::AbstractMesh) = begin
     Momentum(U, p, nothing)
 end
 
-Physics(; time, fluid, turbulence, energy, domain) = begin
+Physics(; time, fluid, turbulence, energy, domain, periodic=nothing) = begin
     momentum = Momentum(domain)
     fluid = fluid(domain)
     # turbulence = typeof(turbulence)(domain)
@@ -46,6 +47,7 @@ Physics(; time, fluid, turbulence, energy, domain) = begin
         turbulence, 
         energy,
         domain, 
-        boundary_info
+        boundary_info,
+        periodic
     )
 end

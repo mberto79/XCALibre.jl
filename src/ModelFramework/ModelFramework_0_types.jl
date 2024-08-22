@@ -108,11 +108,18 @@ struct ScalarEquation{VTf<:AbstractVector, ASA<:AbstractSparseArray} <: Abstract
     Fx::VTf
 end
 Adapt.@adapt_structure ScalarEquation
-ScalarEquation(mesh::AbstractMesh) = begin
+ScalarEquation(mesh::AbstractMesh, periodicConnectivity) = begin
     nCells = length(mesh.cells)
     Tf = _get_float(mesh)
     mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
     i, j, v = sparse_matrix_connectivity(mesh_temp) # This needs to be a kernel
+    i = [i; periodicConnectivity.i]
+    j = [j; periodicConnectivity.j]
+    v = zeros(Tf, length(j))
+    # i, j, v = sparse_matrix_connectivity(mesh_temp) # This needs to be a kernel
+    # # i = periodicConnectivity.i
+    # # j = periodicConnectivity.j
+    # v = zeros(Tf, length(j))
     backend = _get_backend(mesh)
     ScalarEquation(
         _convert_array!(sparse(i, j, v), backend),
@@ -132,11 +139,14 @@ struct VectorEquation{VTf<:AbstractVector, ASA<:AbstractSparseArray} <: Abstract
     Fx::VTf
 end
 Adapt.@adapt_structure VectorEquation
-VectorEquation(mesh::AbstractMesh) = begin
+VectorEquation(mesh::AbstractMesh, periodicConnectivity) = begin
     nCells = length(mesh.cells)
     Tf = _get_float(mesh)
     mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
     i, j, v = sparse_matrix_connectivity(mesh_temp) # This needs to be a kernel
+    i = [i; periodicConnectivity.i]
+    j = [j; periodicConnectivity.j]
+    v = zeros(Tf, length(j))
     backend = _get_backend(mesh)
     VectorEquation(
         _convert_array!(sparse(i, j, v), backend) ,
@@ -155,20 +165,38 @@ function sparse_matrix_connectivity(mesh::AbstractMesh)
     nCells = length(cells)
     TI = _get_int(mesh)
     TF = _get_float(mesh)
-    i = TI[]
-    j = TI[]
-    for cID = 1:nCells   
+    nindex  = index_array_size(mesh)
+    i = zeros(TI, nindex)
+    j = zeros(TI, nindex)
+    index = zero(TI)
+    for cID = 1:nCells
+        index  += 1
         cell = cells[cID]
-        push!(i, cID) # diagonal row index
-        push!(j, cID) # diagonal column index
+        i[index] = cID # diagonal row index
+        j[index] = cID # diagonal column index
         for fi ∈ cell.faces_range
+            index  += 1
             neighbour = cell_neighbours[fi]
-            push!(i, cID) # cell index (row)
-            push!(j, neighbour) # neighbour index (column)
+            i[index] = cID # cell index (row)
+            j[index] = neighbour # neighbour index (column)
         end
     end
-    v = zeros(TF, length(i))
+    v = zeros(TF, index)
     return i, j, v
+end
+
+function index_array_size(mesh)
+    (; cells, cell_neighbours) = mesh
+    nCells = length(cells)
+    nindex = 0
+    for cID = 1:nCells   
+        cell = cells[cID]
+        nindex += 1
+        for fi ∈ cell.faces_range
+            nindex += 1
+        end
+    end
+    nindex
 end
 
 # Nzval index function definition for sparse array

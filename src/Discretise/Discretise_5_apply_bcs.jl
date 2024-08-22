@@ -28,9 +28,9 @@ function _apply_boundary_conditions!(
     colptr = _colptr(A)
     nzval = _nzval(A)
 
-    # Get user-defined integer types
-    integer = _get_int(mesh)
-    ione = one(integer)
+    # # Get user-defined integer types
+    # integer = _get_int(mesh)
+    # ione = one(integer)
 
     # Loop over boundary conditions to apply boundary conditions 
     for BC ∈ BCs
@@ -42,7 +42,7 @@ function _apply_boundary_conditions!(
         kernel_range = length(facesID_range)
         kernel! = apply_boundary_conditions_kernel!(backend, workgroup, kernel_range)
         kernel!(
-            model, BC, model.terms, faces, cells, start_ID, boundary_cellsID, rowval, colptr, nzval, b, ione, component, ndrange=kernel_range
+            model, BC, model.terms, faces, cells, start_ID, boundary_cellsID, rowval, colptr, nzval, b, component, ndrange=kernel_range
             )
         KernelAbstractions.synchronize(backend)
     end
@@ -69,7 +69,7 @@ end
 # Apply boundary conditions kernel definition
 @kernel function apply_boundary_conditions_kernel!(
     model::Model{TN,SN,T,S}, BC, terms, 
-    faces, cells, start_ID, boundary_cellsID, rowval, colptr, nzval, b, ione, component
+    faces, cells, start_ID, boundary_cellsID, rowval, colptr, nzval, b, component
     ) where {TN,SN,T,S}
     i = @index(Global)
 
@@ -82,24 +82,25 @@ end
     face = faces[faceID]
     cell = cells[cellID] 
 
-    zcellID = nzval_index(colptr, rowval, cellID, cellID, ione)
+    # zcellID = nzval_index(colptr, rowval, cellID, cellID, ione)
+    zcellID = spindex(colptr, rowval, cellID, cellID)
 
     # Call apply generated function
-    AP, BP = apply!(model, BC, terms, cellID, zcellID, cell, face, faceID, i, component)
+    AP, BP = apply!(model, BC, terms, rowval, colptr, nzval, b, cellID, zcellID, cell, face, faceID, i, component)
     Atomix.@atomic nzval[zcellID] += AP
     Atomix.@atomic b[cellID] += BP
 end
 
 # Apply generated function definition
 @generated function apply!(
-    model::Model{TN,SN,T,S}, BC, terms, cellID, zcellID, cell, face, fID, i, component
+    model::Model{TN,SN,T,S}, BC, terms, rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, i, component
     ) where {TN,SN,T,S}
 
     # Definition of main assignment loop (one per patch)
     func_calls = Expr[]
     for t ∈ 1:TN 
         call = quote
-            ap, bp = (BC)(terms[$t], cellID, zcellID, cell, face, fID, i, component)
+            ap, bp = (BC)(terms[$t], rowval, colptr, nzval, b, cellID, zcellID, cell, face, fID, i, component)
             AP += ap
             BP += bp
         end

@@ -21,7 +21,7 @@ end
         pfID = BC.value.face_map[i] # id of periodic face
         pface = faces[pfID]
         pcID = pface.ownerCells[1]
-        pcell = cells[pcID]
+        # pcell = cells[pcID]
         (; IDs_range) = boundaries[BC.ID]
         fID = IDs_range[i]
         face = faces[fID]

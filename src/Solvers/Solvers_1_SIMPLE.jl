@@ -42,11 +42,11 @@ function setup_incompressible_solvers(
         - Laplacian{schemes.U.laplacian}(nueff, U) 
         == 
         -Source(∇p.result)
-    ) → VectorEquation(mesh)
+    ) → VectorEquation(mesh, model.periodic)
 
     p_eqn = (
         Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
-    ) → ScalarEquation(mesh)
+    ) → ScalarEquation(mesh, model.periodic)
 
     @info "Initialising preconditioners..."
 
@@ -193,21 +193,21 @@ function SIMPLE(
         # Velocity and boundaries correction
 
         # old approach
-        # correct_velocity!(U, Hv, ∇p, rD, config)
-        # interpolate!(Uf, U, config)
-        # correct_boundaries!(Uf, U, U.BCs, config)
-        # flux!(mdotf, Uf, config) 
+        correct_velocity!(U, Hv, ∇p, rD, config)
+        interpolate!(Uf, U, config)
+        correct_boundaries!(Uf, U, U.BCs, config)
+        flux!(mdotf, Uf, config) 
 
         # correct_face_interpolation!(pf, p, Uf) # not needed?
         # correct_boundaries!(pf, p, p.BCs, config) # not needed?
 
         # new approach
-        interpolate!(Uf, U, config) # velocity from momentum equation
-        correct_boundaries!(Uf, U, U.BCs, config)
-        flux!(mdotf, Uf, config)
-        correct_mass_flux(mdotf, p, pf, rDf, config)
+        # interpolate!(Uf, U, config) # velocity from momentum equation
+        # correct_boundaries!(Uf, U, U.BCs, config)
+        # flux!(mdotf, Uf, config)
+        # correct_mass_flux(mdotf, p, pf, rDf, config)
         
-        correct_velocity!(U, Hv, ∇p, rD, config)
+        # correct_velocity!(U, Hv, ∇p, rD, config)
 
         # if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs, config)

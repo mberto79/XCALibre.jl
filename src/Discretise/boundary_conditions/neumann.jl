@@ -13,15 +13,15 @@ end
 
 @define_boundary Neumann Divergence{Linear} begin
     # original
-    # ap = term.sign[1]*(term.flux[fID]) 
-    # ap, 0.0 # original
+    ap = term.sign[1]*(term.flux[fID]) 
+    ap, 0.0 # original
 
     # test
-    phi = term.phi 
-    values = get_values(phi, component)
-    ap = 0.5*term.sign[1]*(term.flux[fID])
+    # phi = term.phi 
+    # values = get_values(phi, component)
+    # ap = 0.5*term.sign[1]*(term.flux[fID])
 
-    ap, -ap*values[cellID]
+    # ap, -ap*values[cellID]
 end
 
 @define_boundary Neumann Divergence{Upwind} begin

@@ -230,8 +230,6 @@ function CPISO(
 
         thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
 
-        @. prevrho = Psi.values * p.values
-
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rhorDf, rD, config)

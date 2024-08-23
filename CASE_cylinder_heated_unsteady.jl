@@ -1,4 +1,4 @@
-using Plots
+# using Plots
 using FVM_1D
 # using CUDA # Run this if using NVIDIA GPU
 # using AMDGPU # Run this if using AMD GPU
@@ -15,7 +15,7 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 velocity = [0.5, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
-nu = 1e-5
+nu = 1e-4
 Re = (0.2*velocity[1])/nu
 gamma = 1.4
 cp = 1005.0
@@ -78,7 +78,7 @@ solvers = (
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.3,
+        relax       = 0.8,
         limit = (1000, 1000000),
         rtol = 1e-4,
         atol = 1e-5

@@ -140,5 +140,3 @@ initialise!(model.turbulence.nut, 0.0)
 
 modelSteady = adapt(backend, modelSteady)
 Rx, Ry, Rz, Rp, model_out = run!(modelSteady, config); #, pref=0.0)
-
-modelTransient.momentum.U.

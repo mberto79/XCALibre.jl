@@ -107,17 +107,17 @@ end
 
 # Vector field function definition
 
-function grad!(grad::Grad{Orthogonal,F,R,I,M}, phif, phi, BCs, config) where {F,R<:VectorField,I,M}
+function grad!(grad::Grad{Orthogonal,F,R,I,M}, phif, phi, BCs, time, config) where {F,R<:VectorField,I,M}
     interpolate!(phif, phi, config)
-    correct_boundaries!(phif, phi, BCs, config)
+    correct_boundaries!(phif, phi, BCs, time, config)
     green_gauss!(grad.result.x, grad.result.y, grad.result.z, phif, config)
 end
 
 # Tensor field function definition
 
-function grad!(grad::Grad{Orthogonal,F,R,I,M}, psif, psi, BCs, config) where {F,R<:TensorField,I,M}
+function grad!(grad::Grad{Orthogonal,F,R,I,M}, psif, psi, BCs, time, config) where {F,R<:TensorField,I,M}
     interpolate!(psif, psi, config)
-    correct_boundaries!(psif, psi, BCs, config)
+    correct_boundaries!(psif, psi, BCs, time, config)
 
     # Launch green-dauss for all tensor field dimensions
     green_gauss!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x, config)
@@ -305,9 +305,9 @@ end
 
 # Vector field function definition
 
-function grad!(grad::Grad{Midpoint,F,R,I,M}, phif, phi, BCs, config) where {F,R<:VectorField,I,M}
+function grad!(grad::Grad{Midpoint,F,R,I,M}, phif, phi, BCs, time, config) where {F,R<:VectorField,I,M}
     interpolate_midpoint!(phif, phi, config)
-    correct_boundaries!(phif, phi, BCs, config)
+    correct_boundaries!(phif, phi, BCs, time, config)
     green_gauss!(grad.result.x, grad.result.y, grad.result.z, phif, config)
 
     # Loop to run correction and green-gauss required number of times over all dimensions
@@ -319,9 +319,9 @@ end
 
 # Tensor field function definition
 
-function grad!(grad::Grad{Midpoint,F,R,I,M}, psif, psi, BCs, config) where {F,R<:TensorField,I,M}
+function grad!(grad::Grad{Midpoint,F,R,I,M}, psif, psi, BCs, time, config) where {F,R<:TensorField,I,M}
     interpolate_midpoint!(psif, psi, config)
-    correct_boundaries!(psif, psi, BCs, config)
+    correct_boundaries!(psif, psi, BCs, time, config)
 
     # Loop to run correction and green-gauss required number of times over all dimensions
     for i ∈ 1:2

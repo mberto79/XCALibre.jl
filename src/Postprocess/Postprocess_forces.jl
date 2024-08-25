@@ -98,7 +98,7 @@ stress_tensor(U, ν, νt) = begin
     gradU = Grad{Linear}(U)
     gradUT = T(gradU)
     Uf = FaceVectorField(U.mesh)
-    grad!(gradU, Uf, U, U.BCs)
+    grad!(gradU, Uf, U, U.BCs, zero(TF), config) # assuming time=0
     nueff = ScalarField(U.mesh) # temp variable
     nueff.values .= ν .+ νt.values
     Reff = TensorField(U.mesh)

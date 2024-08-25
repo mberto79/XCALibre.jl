@@ -25,7 +25,7 @@ function nonorthogonal_correction!(
     tgrad::Grad{S,I,F}, gradf::FaceVectorField{I,F}, phif::FaceScalarField{I,F}, BCs
     ) where {S,I,F}
     (; phi) = tgrad
-    grad!(tgrad, phif, phi, BCs)
+    grad!(tgrad, phif, phi, time, BCs)
     interpolate!(get_scheme(tgrad), gradf, tgrad, BCs)
     nonorthogonal_flux!(phif, gradf)
 end

@@ -25,28 +25,28 @@ end
     (; area, delta, centre) = face 
     flux = J*area/delta
     ap = term.sign*(-flux)
-    value = bc.value(centre)[component.value]
+    value = bc.value(centre, time)[component.value]
     ap, ap*value
 end
 
 @define_boundary DirichletFunction Divergence{Linear} begin
     flux = -term.flux[fID]
     ap = term.sign*(flux)
-    value = bc.value(face.centre)[component.value]
+    value = bc.value(face.centre, time)[component.value]
     0.0, ap*value
 end
 
 @define_boundary DirichletFunction Divergence{Upwind} begin
     flux = -term.flux[fID]
     ap = term.sign*(flux)
-    value = bc.value(face.centre)[component.value]
+    value = bc.value(face.centre, time)[component.value]
     0.0, ap*value
 end
 
 @define_boundary DirichletFunction Divergence{BoundedUpwind} begin
     flux = -term.flux[fID]
     ap = term.sign*(flux)
-    value = bc.value(face.centre)[component.value]
+    value = bc.value(face.centre, time)[component.value]
     flux, ap*value
 end
 

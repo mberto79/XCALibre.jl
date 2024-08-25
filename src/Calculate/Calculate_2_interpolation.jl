@@ -16,12 +16,12 @@ end
 
 # Function to correct interpolation at boundaries (expands loop to reduce allocations)
 
-@generated function correct_boundaries!(phif, phi, BCs, config)
+@generated function correct_boundaries!(phif, phi, BCs, time, config)
     unpacked_BCs = []
     for i ∈ 1:length(BCs.parameters)
         unpack = quote
             #KERNEL LAUNCH
-            adjust_boundary!(b_cpu, BCs[$i], phif, phi, boundaries, boundary_cellsID, backend, workgroup)
+            adjust_boundary!(b_cpu, BCs[$i], phif, phi, boundaries, boundary_cellsID, time, backend, workgroup)
         end
         push!(unpacked_BCs, unpack)
     end

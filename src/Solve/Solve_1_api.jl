@@ -45,11 +45,11 @@ end
 # end
 
 function solve_equation!(
-    eqn::ModelEquation{T,M,E,S,P}, phi, solversetup, config; ref=nothing, irelax=nothing
+    eqn::ModelEquation{T,M,E,S,P}, phi, solversetup, config; time=nothing, ref=nothing, irelax=nothing
     ) where {T<:ScalarModel,M,E,S,P}
 
     discretise!(eqn, phi, config)       
-    apply_boundary_conditions!(eqn, phi.BCs, nothing, config)
+    apply_boundary_conditions!(eqn, phi.BCs, nothing, time, config)
     setReference!(eqn, ref, 1, config)
     if !isnothing(irelax)
         implicit_relaxation!(eqn, phi.values, irelax, nothing, config)
@@ -60,7 +60,7 @@ function solve_equation!(
 end
 
 function solve_equation!(
-    psiEqn::ModelEquation{T,M,E,S,P}, psi, solversetup, xdir, ydir, zdir, config
+    psiEqn::ModelEquation{T,M,E,S,P}, psi, solversetup, xdir, ydir, zdir, config; time=nothing
     ) where {T<:VectorModel,M,E,S,P}
 
     mesh = psi.mesh
@@ -68,14 +68,14 @@ function solve_equation!(
     discretise!(psiEqn, psi, config)
     update_equation!(psiEqn, config)
 
-    apply_boundary_conditions!(psiEqn, psi.x.BCs, xdir, config)
+    apply_boundary_conditions!(psiEqn, psi.x.BCs, xdir, time, config)
     # implicit_relaxation!(psiEqn, psi.x.values, solversetup.relax, xdir, config)
     implicit_relaxation_diagdom!(psiEqn, psi.x.values, solversetup.relax, xdir, config)
     update_preconditioner!(psiEqn.preconditioner, mesh, config)
     solve_system!(psiEqn, solversetup, psi.x, xdir, config)
     
     update_equation!(psiEqn, config)
-    apply_boundary_conditions!(psiEqn, psi.y.BCs, ydir, config)
+    apply_boundary_conditions!(psiEqn, psi.y.BCs, ydir, time, config)
     # implicit_relaxation!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
     implicit_relaxation_diagdom!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
     update_preconditioner!(psiEqn.preconditioner, mesh, config)
@@ -84,7 +84,7 @@ function solve_equation!(
     # Z velocity calculations (3D Mesh only)
     if typeof(mesh) <: Mesh3
         update_equation!(psiEqn, config)
-        apply_boundary_conditions!(psiEqn, psi.z.BCs, zdir, config)
+        apply_boundary_conditions!(psiEqn, psi.z.BCs, zdir, time, config)
         # implicit_relaxation!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
         implicit_relaxation_diagdom!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
         update_preconditioner!(psiEqn.preconditioner, mesh, config)

@@ -48,7 +48,7 @@ end
 
 # Model solver call (implementation)
 function turbulence!(
-    les::SmagorinskyModel{E1,E2}, model::Physics{T,F,M,Tu,E,D,BI}, S, S2, prev, config
+    les::SmagorinskyModel{E1,E2}, model::Physics{T,F,M,Tu,E,D,BI}, S, S2, prev, time, config
     ) where {T,F,M,Tu<:Smagorinsky,E,D,BI,E1,E2}
 
     mesh = model.domain
@@ -64,7 +64,7 @@ function turbulence!(
     @. nut.values = coeff.C*Δ.values*magS.values # careful: here Δ = Δ²
 
     interpolate!(nutf, nut, config)
-    correct_boundaries!(nutf, nut, nut.BCs, config)
+    correct_boundaries!(nutf, nut, nut.BCs, time, config)
     correct_eddy_viscosity!(nutf, nut.BCs, model, config)
 end
 

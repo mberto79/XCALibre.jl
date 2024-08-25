@@ -25,7 +25,7 @@ function initialise(
 end
 
 # Model solver call (implementation)
-function turbulence!(rans::LaminarModel, model::Physics{T,F,M,Tu,E,D,BI}, S, S2, prev, config
+function turbulence!(rans::LaminarModel, model::Physics{T,F,M,Tu,E,D,BI}, S, S2, prev, time, config
     ) where {T,F,M,Tu<:Laminar,E,D,BI}
     nothing
 end

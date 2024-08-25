@@ -152,9 +152,10 @@ function CSIMPLE(
     R_e = ones(TF, iterations)
     
     # Initial calculations
+    time = zero(TF) # assuming time=0
     interpolate!(Uf, U, config)   
-    correct_boundaries!(Uf, U, U.BCs, config)
-    grad!(∇p, pf, p, p.BCs, config)
+    correct_boundaries!(Uf, U, U.BCs, time, config) 
+    grad!(∇p, pf, p, p.BCs, time, config)
     thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
     @. rho.values = Psi.values * p.values
     @. rhof.values = Psif.values * pf.values
@@ -170,9 +171,10 @@ function CSIMPLE(
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
     @time for iteration ∈ 1:iterations
+        time = iteration
 
         ## CHECK GRADU AND EXPLICIT STRESSES
-        grad!(gradU, Uf, U, U.BCs, config)
+        grad!(gradU, Uf, U, U.BCs, time, config)
         # println(gradU.result)
         # # Set up and solve momentum equations
         explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU)
@@ -186,7 +188,7 @@ function CSIMPLE(
 
         solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
 
-        energy!(energyModel, model, prev, mdotf, rho, mueff, config)
+        energy!(energyModel, model, prev, mdotf, rho, mueff, time, config)
 
         thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
 
@@ -204,7 +206,7 @@ function CSIMPLE(
         
         # Interpolate faces
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
-        correct_boundaries!(Uf, Hv, U.BCs, config)
+        correct_boundaries!(Uf, Hv, U.BCs, time, config)
 
         if typeof(model.fluid) <: Compressible
             flux!(pconv, Uf, config)
@@ -212,7 +214,7 @@ function CSIMPLE(
             flux!(mdotf, Uf, config)
             @. mdotf.values *= rhof.values
             interpolate!(pf, p, config)
-            correct_boundaries!(pf, p, p.BCs, config)
+            correct_boundaries!(pf, p, p.BCs, time, config)
             @. mdotf.values -= mdotf.values*Psif.values*pf.values/rhof.values
             div!(divHv, mdotf, config)
 
@@ -254,7 +256,7 @@ function CSIMPLE(
         residual!(R_e, energyModel.energy_eqn, model.energy.h, iteration, nothing, config)
         
         # Gradient
-        grad!(∇p, pf, p, p.BCs, config) 
+        grad!(∇p, pf, p, p.BCs, time, config) 
 
         # grad limiter test!
         limit_gradient!(∇p, p, config)
@@ -270,7 +272,7 @@ function CSIMPLE(
                 nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
                 correct!(p_eqn.equation, p_model.terms.term1, pf)
                 solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
-                grad!(∇p, pf, p, pBCs)
+                grad!(∇p, pf, p, pBCs, time, config)
             end
         end
 
@@ -285,7 +287,7 @@ function CSIMPLE(
 
         # Velocity and boundaries correction
         correct_face_interpolation!(pf, p, Uf)
-        correct_boundaries!(pf, p, p.BCs, config)
+        correct_boundaries!(pf, p, p.BCs, time, config)
         pgrad = face_normal_gradient(p, pf)
 
         if typeof(model.fluid) <: Compressible
@@ -296,12 +298,12 @@ function CSIMPLE(
 
         correct_velocity!(U, Hv, ∇p, rD, config)
         interpolate!(Uf, U, config)
-        correct_boundaries!(Uf, U, U.BCs, config)
+        correct_boundaries!(Uf, U, U.BCs, time, config)
 
         
         # if isturbulent(model)
-            grad!(gradU, Uf, U, U.BCs, config)
-            turbulence!(turbulenceModel, model, S, S2, prev, config) 
+            grad!(gradU, Uf, U, U.BCs, time, config)
+            turbulence!(turbulenceModel, model, S, S2, prev, time, config) 
             update_nueff!(nueff, nu, model.turbulence, config)
         # end
         @. mueff.values = rhof.values*nueff.values

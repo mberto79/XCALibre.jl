@@ -118,10 +118,11 @@ function SIMPLE(
     R_p = ones(TF, iterations)
     
     # Initial calculations
+    time = zero(TF) # assuming time=0
     interpolate!(Uf, U, config)   
-    correct_boundaries!(Uf, U, U.BCs, config)
+    correct_boundaries!(Uf, U, U.BCs, time, config)
     flux!(mdotf, Uf, config)
-    grad!(∇p, pf, p, p.BCs, config)
+    grad!(∇p, pf, p, p.BCs, time, config)
 
     # grad limiter test!
     # limit_gradient!(∇p, p, config)
@@ -135,6 +136,7 @@ function SIMPLE(
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
     @time for iteration ∈ 1:iterations
+        time = iteration
 
         solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
         
@@ -146,7 +148,7 @@ function SIMPLE(
         
         # Interpolate faces
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
-        correct_boundaries!(Uf, Hv, U.BCs, config)
+        correct_boundaries!(Uf, Hv, U.BCs, time, config)
 
         # old approach
         # div!(divHv, Uf, config) 
@@ -168,7 +170,7 @@ function SIMPLE(
         residual!(R_p, p_eqn, p, iteration, nothing, config)
         
         # Gradient
-        grad!(∇p, pf, p, p.BCs, config) 
+        grad!(∇p, pf, p, p.BCs, time, config) 
 
         # grad limiter test
         # limit_gradient!(∇p, p, config)
@@ -186,7 +188,7 @@ function SIMPLE(
                 @. p.values = prev
                 solve_system!(p_eqn, solvers.p, p, nothing, config)
                 explicit_relaxation!(p, prev, solvers.p.relax, config)
-                grad!(∇p, pf, p, p.BCs, config)
+                grad!(∇p, pf, p, p.BCs, time, config)
             end
         end
 
@@ -195,23 +197,23 @@ function SIMPLE(
         # old approach
         # correct_velocity!(U, Hv, ∇p, rD, config)
         # interpolate!(Uf, U, config)
-        # correct_boundaries!(Uf, U, U.BCs, config)
+        # correct_boundaries!(Uf, U, U.BCs, time, config)
         # flux!(mdotf, Uf, config) 
 
         # correct_face_interpolation!(pf, p, Uf) # not needed?
-        # correct_boundaries!(pf, p, p.BCs, config) # not needed?
+        # correct_boundaries!(pf, p, p.BCs, time, config) # not needed?
 
         # new approach
         interpolate!(Uf, U, config) # velocity from momentum equation
-        correct_boundaries!(Uf, U, U.BCs, config)
+        correct_boundaries!(Uf, U, U.BCs, time, config)
         flux!(mdotf, Uf, config)
         correct_mass_flux(mdotf, p, pf, rDf, config)
         
         correct_velocity!(U, Hv, ∇p, rD, config)
 
         # if isturbulent(model)
-            grad!(gradU, Uf, U, U.BCs, config)
-            turbulence!(turbulenceModel, model, S, S2, prev, config) 
+            grad!(gradU, Uf, U, U.BCs, time, config)
+            turbulence!(turbulenceModel, model, S, S2, prev, time, config) 
             update_nueff!(nueff, nu, model.turbulence, config)
         # end
         

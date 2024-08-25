@@ -172,8 +172,10 @@ function initialise(
     @reset k_eqn.solver = solvers.k.solver(_A(k_eqn), _b(k_eqn))
     @reset ω_eqn.solver = solvers.omega.solver(_A(ω_eqn), _b(ω_eqn))
 
-    grad!(∇ω, omegaf, omega, omega.BCs, config)
-    grad!(∇k, kf, k, k.BCs, config)
+    TF = _get_float(mesh)
+    time = zero(TF) # assuming time=0
+    grad!(∇ω, omegaf, omega, omega.BCs, time, config)
+    grad!(∇k, kf, k, k.BCs, time, config)
 
     # float_type = _get_float(mesh)
     # coeffs = get_LKE_coeffs(float_type)
@@ -202,7 +204,7 @@ function initialise(
 end
 
 # Model solver call (implementation)
-function turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S, S2, prev, config
+function turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S, S2, prev, time, config
     ) where {T,F,M,Turb<:KOmegaLKE,E,D,BI}
     mesh = model.domain
     (; momentum, turbulence) = model
@@ -242,7 +244,7 @@ function turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S,
     @. DkLf.values = (2*nu.values)/(y.values^2)
     @. nueffkLS.values = nu.values+(coeffs.σkL*sqrt(kl.values)*y.values)
     interpolate!(nueffkL, nueffkLS, config)
-    correct_boundaries!(nueffkL, nueffkLS, nut.BCs, config)
+    correct_boundaries!(nueffkL, nueffkLS, nut.BCs, time, config)
 
     # Solve kl equation
     prev .= kl.values
@@ -261,11 +263,11 @@ function turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S,
     #Update ω fluxes
     # double_inner_product!(Pk, S, gradU) # multiplied by 2 (def of Sij) (Pk = S² at this point)
     interpolate!(kf, k, config)
-    correct_boundaries!(nutf, k, k.BCs, config)
+    correct_boundaries!(nutf, k, k.BCs, time, config)
     interpolate!(omegaf, omega, config)
-    correct_boundaries!(nutf, omega, omega.BCs, config)
-    grad!(∇ω, omegaf, omega, omega.BCs, config)
-    grad!(∇k, kf, k, k.BCs, config)
+    correct_boundaries!(nutf, omega, omega.BCs, time, config)
+    grad!(∇ω, omegaf, omega, omega.BCs, time, config)
+    grad!(∇k, kf, k, k.BCs, time, config)
     inner_product!(dkdomegadx, ∇k, ∇ω, config)
     @. Pω.values = coeffs.Cω1 * Pk.values * nut.values * (omega.values / k.values)
     @. dkdomegadx.values = max((coeffs.σd / omega.values) * dkdomegadx.values, 0.0)
@@ -273,13 +275,13 @@ function turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S,
     # @. nueffωS.values = nu.values+(coeffs.σω*nut_turb.values*γ.values)
     @. nueffωS.values = nu.values+(coeffs.σω*(k.values/omega.values)*γ.values)
     interpolate!(nueffω, nueffωS, config)
-    correct_boundaries!(nueffω, nueffωS, nut.BCs, config)
+    correct_boundaries!(nueffω, nueffωS, nut.BCs, time, config)
 
     #Update k fluxes
     @. Dkf.values = coeffs.Cμ*omega.values*γ.values
     @. nueffkS.values = nu.values+(coeffs.σk*(k.values/omega.values)*γ.values)
     interpolate!(nueffk, nueffkS, config)
-    correct_boundaries!(nueffk, nueffkS, nut.BCs, config)
+    correct_boundaries!(nueffk, nueffkS, nut.BCs, time, config)
     @. Pk.values = nut.values*Pk.values*γ.values*fv.values
     correct_production!(Pk, k.BCs, model, S.gradU, config)
 
@@ -303,8 +305,8 @@ function turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S,
     solve_system!(k_eqn, solvers.k, k, nothing, config)
     bound!(k, config)
 
-    # grad!(∇ω, omegaf, omega, omega.BCs, config)
-    # grad!(∇k, kf, k, k.BCs, config)
+    # grad!(∇ω, omegaf, omega, omega.BCs, time, config)
+    # grad!(∇k, kf, k, k.BCs, time, config)
 
     # @. nut_turb.values = k.values/omega.values
     ReLambda = @. normU.values*y.values/nu.values
@@ -317,7 +319,7 @@ function turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S,
     @. nut.values = nuts.values + nuL.values
 
     interpolate!(nutf, nut, config)
-    correct_boundaries!(nutf, nut, nut.BCs, config)
+    correct_boundaries!(nutf, nut, nut.BCs, time, config)
     correct_eddy_viscosity!(nutf, nut.BCs, model, config)
 end
 

@@ -3,7 +3,7 @@ using FVM_1D
 using CUDA
 using StaticArrays
 
-inflow(vec) = begin
+@inline inflow(vec, t) = begin
     vmax = 0.5
     y = vec[2]
     H = 0.1
@@ -19,7 +19,7 @@ end
 mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-# mesh_dev = adapt(CUDABackend(), mesh)
+mesh_dev = adapt(CUDABackend(), mesh)
 mesh_dev = mesh
 
 velocity = [0.5, 0.0, 0.0]
@@ -36,6 +36,7 @@ model = Physics(
 
 @assign! model momentum U (
     DirichletFunction(:inlet, inflow),
+    # Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Dirichlet(:wall, [0.0, 0.0, 0.0]),
     Dirichlet(:top, [0.0, 0.0, 0.0]),
@@ -83,7 +84,7 @@ solvers = (
 runtime = set_runtime(
     iterations=2000, time_step=1, write_interval=100)
 
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=32)
 
 config = Configuration(

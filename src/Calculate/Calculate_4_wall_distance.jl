@@ -25,11 +25,12 @@ function wall_distance!(model, config)
 
     @reset phi_eqn.solver = solvers.y.solver(_A(phi_eqn), _b(phi_eqn))
 
+    TF = _get_float(mesh)
+
     phiGrad = Grad{schemes.y.gradient}(phi)
     phif = FaceScalarField(mesh)
-    grad!(phiGrad, phif, phi, phi.BCs, config)
+    grad!(phiGrad, phif, phi, phi.BCs, zero(TF), config) # assuming time=0
 
-    TF = _get_float(mesh)
     # n_cells = length(mesh.cells)
     # prev = zeros(TF, n_cells)
     R_phi = ones(TF, iterations)
@@ -52,7 +53,7 @@ function wall_distance!(model, config)
         end
     end
     
-    grad!(phiGrad, phif, phi, phi.BCs, config)
+    grad!(phiGrad, phif, phi, phi.BCs, zero(TF), config) # assuming time=0
     normal_distance!(y, phi, phiGrad, config)
 end
 

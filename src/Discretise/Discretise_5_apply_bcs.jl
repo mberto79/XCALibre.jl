@@ -2,13 +2,13 @@ export apply_boundary_conditions!
 export get_boundaries
 
 
-apply_boundary_conditions!(eqn, BCs, component, config) = begin
-    _apply_boundary_conditions!(eqn.model, BCs, eqn, component, config)
+apply_boundary_conditions!(eqn, BCs, component, time, config) = begin
+    _apply_boundary_conditions!(eqn.model, BCs, eqn, component, time, config)
 end
 
 # Apply Boundaries Function
 function _apply_boundary_conditions!(
-    model::Model{TN,SN,T,S}, BCs::B, eqn, component,config) where {TN,SN,T,S,B}
+    model::Model{TN,SN,T,S}, BCs::B, eqn, component, time, config) where {TN,SN,T,S,B}
     nTerms = length(model.terms)
 
     # backend = _get_backend(mesh)
@@ -42,7 +42,7 @@ function _apply_boundary_conditions!(
         kernel_range = length(facesID_range)
         kernel! = apply_boundary_conditions_kernel!(backend, workgroup, kernel_range)
         kernel!(
-            model, BC, model.terms, faces, cells, start_ID, boundary_cellsID, rowval, colptr, nzval, b, ione, component, ndrange=kernel_range
+            model, BC, model.terms, faces, cells, start_ID, boundary_cellsID, rowval, colptr, nzval, b, ione, component, time, ndrange=kernel_range
             )
         KernelAbstractions.synchronize(backend)
     end
@@ -69,37 +69,37 @@ end
 # Apply boundary conditions kernel definition
 @kernel function apply_boundary_conditions_kernel!(
     model::Model{TN,SN,T,S}, BC, terms, 
-    faces, cells, start_ID, boundary_cellsID, rowval, colptr, nzval, b, ione, component
+    faces, cells, start_ID, boundary_cellsID, rowval, colptr, nzval, b, ione, component, time
     ) where {TN,SN,T,S}
     i = @index(Global)
 
     # Redefine thread index to correct starting ID 
     j = i + start_ID - 1
-    faceID = j
+    fID = j
 
     # Retrieve workitem cellID, cell and face
     cellID = boundary_cellsID[j]
-    face = faces[faceID]
+    face = faces[fID]
     cell = cells[cellID] 
 
     zcellID = nzval_index(colptr, rowval, cellID, cellID, ione)
 
     # Call apply generated function
-    AP, BP = apply!(model, BC, terms, cellID, zcellID, cell, face, faceID, i, component)
+    AP, BP = apply!(model, BC, terms, cellID, zcellID, cell, face, fID, i, component, time)
     Atomix.@atomic nzval[zcellID] += AP
     Atomix.@atomic b[cellID] += BP
 end
 
 # Apply generated function definition
 @generated function apply!(
-    model::Model{TN,SN,T,S}, BC, terms, cellID, zcellID, cell, face, fID, i, component
+    model::Model{TN,SN,T,S}, BC, terms, cellID, zcellID, cell, face, fID, i, component, time
     ) where {TN,SN,T,S}
 
     # Definition of main assignment loop (one per patch)
     func_calls = Expr[]
     for t ∈ 1:TN 
         call = quote
-            ap, bp = (BC)(terms[$t], cellID, zcellID, cell, face, fID, i, component)
+            ap, bp = (BC)(terms[$t], cellID, zcellID, cell, face, fID, i, component, time)
             AP += ap
             BP += bp
         end

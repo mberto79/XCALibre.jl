@@ -183,10 +183,11 @@ function CPISO(
     R_p = ones(TF, iterations)
     
     # Initial calculations
+    time = zero(TF) # assuming time=0
     interpolate!(Uf, U, config)   
-    correct_boundaries!(Uf, U, U.BCs, config)
+    correct_boundaries!(Uf, U, U.BCs, time, config)
     flux!(mdotf, Uf, config)
-    grad!(∇p, pf, p, p.BCs, config)
+    grad!(∇p, pf, p, p.BCs, time, config)
     thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
     @. rho.values = Psi.values * p.values
     @. rhof.values = Psif.values * pf.values
@@ -207,11 +208,12 @@ function CPISO(
     volumes = getproperty.(mesh.cells, :volume)
 
     @time for iteration ∈ 1:iterations
+        time = iteration*time_step
 
         println("Max. CFL : ", maximum((U.x.values.^2+U.y.values.^2).^0.5*runtime.dt./volumes.^(1/3)))
 
         ## CHECK GRADU AND EXPLICIT STRESSES
-        grad!(gradU, Uf, U, U.BCs, config)
+        grad!(gradU, Uf, U, U.BCs, time, config)
         
         # Set up and solve momentum equations
         explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU)
@@ -225,7 +227,7 @@ function CPISO(
 
         solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
 
-        energy!(energyModel, model, prev, mdotf, rho, mueff, config)
+        energy!(energyModel, model, prev, mdotf, rho, mueff, time, config)
 
 
         thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
@@ -242,7 +244,7 @@ function CPISO(
             
             # Interpolate faces
             interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
-            correct_boundaries!(Uf, Hv, U.BCs, config)
+            correct_boundaries!(Uf, Hv, U.BCs, time, config)
 
             if typeof(model.fluid) <: Compressible
                 flux!(pconv, Uf, config)
@@ -252,7 +254,7 @@ function CPISO(
                 @. mdotf.values *= rhof.values
                 @. mdotf.values += rhorDf.values*corr
                 interpolate!(pf, p, config)
-                correct_boundaries!(pf, p, p.BCs, config)
+                correct_boundaries!(pf, p, p.BCs, time, config)
                 @. mdotf.values -= mdotf.values*Psif.values*pf.values/rhof.values
                 div!(divHv, mdotf, config)
 
@@ -271,7 +273,7 @@ function CPISO(
             solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
 
             # Gradient
-            grad!(∇p, pf, p, p.BCs, config) 
+            grad!(∇p, pf, p, p.BCs, time, config) 
 
             # grad limiter test
             limit_gradient!(∇p, p, config)
@@ -287,7 +289,7 @@ function CPISO(
                     nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
                     correct!(p_eqn.equation, p_model.terms.term1, pf)
                     solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
-                    grad!(∇p, pf, p, pBCs) 
+                    grad!(∇p, pf, p, pBCs, time, config) 
                 end
             end
 
@@ -312,12 +314,12 @@ function CPISO(
             # Velocity and boundaries correction
             correct_velocity!(U, Hv, ∇p, rD, config)
             interpolate!(Uf, U, config)
-            correct_boundaries!(Uf, U, U.BCs, config)
+            correct_boundaries!(Uf, U, U.BCs, time, config)
             
             @. dpdt.values = (p.values-prev)/runtime.dt
 
-            grad!(gradU, Uf, U, U.BCs, config)
-            turbulence!(turbulenceModel, model, S, S2, prev, config) 
+            grad!(gradU, Uf, U, U.BCs, time, config)
+            turbulence!(turbulenceModel, model, S, S2, prev, time, config) 
             update_nueff!(nueff, nu, model.turbulence, config)
         end # corrector loop end
 

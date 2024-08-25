@@ -84,7 +84,7 @@ function initialise(
 end
 
 function energy!(
-    energy::Sensible_Enthalpy_Model{E1}, model::Physics{T1,F,M,Tu,E,D,BI}, prev, mdotf, rho, mueff, config
+    energy::Sensible_Enthalpy_Model{E1}, model::Physics{T1,F,M,Tu,E,D,BI}, prev, mdotf, rho, mueff, time, config
     ) where {T1,F,M,Tu,E,D,BI,E1}
 
     mesh = model.domain
@@ -120,7 +120,7 @@ function energy!(
 
     @. prev = K.values
     interpolate!(Uf, U, config)
-    correct_boundaries!(Uf, U, U.BCs, config)
+    correct_boundaries!(Uf, U, U.BCs, time, config)
     for i ∈ eachindex(K)
         K.values[i] = 0.5*(U.x.values[i]^2 + U.y.values[i]^2 + U.z.values[i]^2)
     end
@@ -153,7 +153,7 @@ function energy!(
 
     htoT!(model, h, T)
     interpolate!(hf, h, config)
-    correct_boundaries!(hf, h, h.BCs, config)
+    correct_boundaries!(hf, h, h.BCs, time, config)
 end
 
 function thermo_Psi!(
@@ -170,7 +170,7 @@ function thermo_Psi!(
     ) where {T,F<:AbstractCompressible,M,Tu,E,D,BI}
     (; coeffs, hf, h) = model.energy
     interpolate!(hf, h, config)
-    correct_boundaries!(hf, h, h.BCs, config)
+    correct_boundaries!(hf, h, h.BCs, time, config)
     (; Tref) = coeffs
     Cp = model.fluid.cp; R = model.fluid.R
     @. Psif.values = Cp.values/(R.values*(hf.values + Cp.values*Tref))

@@ -1,4 +1,4 @@
-function adjust_boundary!(b_cpu, BC::Periodic, phif::FaceScalarField, phi, boundaries, boundary_cellsID,  backend, workgroup)
+function adjust_boundary!(b_cpu, BC::Periodic, phif::FaceScalarField, phi, boundaries, boundary_cellsID, time,  backend, workgroup)
     phif_values = phif.values
     phi_values = phi.values
 
@@ -8,11 +8,11 @@ function adjust_boundary!(b_cpu, BC::Periodic, phif::FaceScalarField, phi, bound
     kernel_range = length(b_cpu[BC.ID].IDs_range)
 
     kernel! = adjust_boundary_periodic_scalar!(backend, workgroup)
-    kernel!(BC, phif, phi, boundaries, boundary_cellsID, face_map, faces, phif_values, phi_values, ndrange = kernel_range)
+    kernel!(BC, phif, phi, boundaries, boundary_cellsID, time, face_map, faces, phif_values, phi_values, ndrange = kernel_range)
     # KernelAbstractions.synchronize(backend)
 end
 
-@kernel function adjust_boundary_periodic_scalar!(BC, phif, phi, boundaries, boundary_cellsID, face_map, faces, phif_values, phi_values)
+@kernel function adjust_boundary_periodic_scalar!(BC, phif, phi, boundaries, boundary_cellsID, time, face_map, faces, phif_values, phi_values)
     i = @index(Global)
     mesh = phi.mesh
     (; cells) = mesh
@@ -46,7 +46,7 @@ end
     end
 end
 
-function adjust_boundary!(b_cpu, BC::Periodic, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, backend, workgroup)
+function adjust_boundary!(b_cpu, BC::Periodic, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, time, backend, workgroup)
     (; x, y, z) = psif
 
     (; faces) = psif.mesh
@@ -55,11 +55,11 @@ function adjust_boundary!(b_cpu, BC::Periodic, psif::FaceVectorField, psi::Vecto
     kernel_range = length(b_cpu[BC.ID].IDs_range)
 
     kernel! = adjust_boundary_periodic_vector!(backend, workgroup)
-    kernel!(BC, psif, psi, boundaries, boundary_cellsID, face_map, faces, x, y, z, ndrange = kernel_range)
+    kernel!(BC, psif, psi, boundaries, boundary_cellsID, time, face_map, faces, x, y, z, ndrange = kernel_range)
     # KernelAbstractions.synchronize(backend)
 end
 
-@kernel function adjust_boundary_periodic_vector!(BC, psif, psi, boundaries, boundary_cellsID, face_map, faces, x, y, z)
+@kernel function adjust_boundary_periodic_vector!(BC, psif, psi, boundaries, boundary_cellsID, time, face_map, faces, x, y, z)
     i = @index(Global)
 
     @inbounds begin

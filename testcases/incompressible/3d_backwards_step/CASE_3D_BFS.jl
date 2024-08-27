@@ -1,13 +1,13 @@
 using Plots
 using FVM_1D
-# using CUDA
+# using CUDA # Run this if using NVIDIA GPU
+# using AMDGPU # Run this if using AMD GPU
 
 mesh_file = "testcases/incompressible/3d_backwards_step/bfs_unv_tet_10mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
+# mesh_gpu = adapt(CUDABackend(), mesh)  # Uncomment this if using GPU
 
-# mesh_gpu = adapt(CUDABackend(), mesh)
-
-
+# Inlet conditions
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
@@ -17,10 +17,9 @@ model = Physics(
     fluid = FLUID{Incompressible}(nu = nu),
     turbulence = RANS{Laminar}(),
     energy = ENERGY{Isothermal}(),
-    domain = mesh
+    domain = mesh # mesh_gpu  # use mesh_gpu for GPU backend
     )
     
-
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Wall(:wall, [0.0, 0.0, 0.0]),
@@ -41,7 +40,6 @@ schemes = (
     U = set_schemes(divergence=Upwind, gradient=Midpoint),
     p = set_schemes(gradient=Midpoint)
 )
-
 
 solvers = (
     U = set_solver(
@@ -67,8 +65,9 @@ solvers = (
 runtime = set_runtime(
     iterations=500, time_step=1, write_interval=500)
 
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=4)
+# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+# hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

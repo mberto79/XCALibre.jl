@@ -3,14 +3,11 @@ using FVM_1D
 # using CUDA # Run this if using NVIDIA GPU
 # using AMDGPU # Run this if using AMD GPU
 
-
 mesh_file = "testcases/compressible/2d_unsteady_heated_cylinder/cylinder_d10mm_5mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
-
-# mesh_gpu = adapt(CUDABackend(), mesh)
+# mesh_gpu = adapt(CUDABackend(), mesh)  # Uncomment this if using GPU
 
 # Inlet conditions
-
 velocity = [0.5, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-4
@@ -32,7 +29,7 @@ model = Physics(
         ),
     turbulence = RANS{Laminar}(),
     energy = ENERGY{SensibleEnthalpy}(),
-    domain = mesh
+    domain = mesh # mesh_gpu  # use mesh_gpu for GPU backend
     )
 
 @assign! model momentum U ( 

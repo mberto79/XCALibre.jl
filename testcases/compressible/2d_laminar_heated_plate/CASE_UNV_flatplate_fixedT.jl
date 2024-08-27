@@ -1,14 +1,14 @@
 using Plots
 
 using FVM_1D
-
+# using CUDA # Run this if using NVIDIA GPU
+# using AMDGPU # Run this if using AMD GPU
 using Krylov
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "testcases/compressible/2d_laminar_heated_plate/flatplate_2D_laminar.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
-
-# mesh_gpu = adapt(CUDABackend(), mesh)
+# mesh_gpu = adapt(CUDABackend(), mesh) # Uncomment this if using GPU
 
 velocity = [0.2, 0.0, 0.0]
 nu = 1e-4
@@ -28,7 +28,7 @@ model = Physics(
         ),
     turbulence = RANS{Laminar}(),
     energy = ENERGY{SensibleEnthalpy}(),
-    domain = mesh
+    domain = mesh # mesh_gpu  # use mesh_gpu for GPU backend
     )
 
 @assign! model momentum U (
@@ -58,7 +58,6 @@ schemes = (
     h = set_schemes(divergence=Linear)
 )
 
-
 solvers = (
     U = set_solver(
         model.momentum.U;
@@ -87,8 +86,9 @@ solvers = (
 
 runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
 
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=4)
+# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+# hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

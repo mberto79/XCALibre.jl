@@ -4,7 +4,7 @@ mesh_file = "unv_sample_meshes/BFS_UNV_3D_hex_5mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
 backend = CPU()
-periodic1, periodic2 = construct_periodic(mesh, backend, :side1, :side2)
+periodic = construct_periodic(mesh, backend, :side1, :side2)
 mesh_dev = mesh
 
 velocity = [0.2, 0.0, 0.5]
@@ -27,7 +27,7 @@ model = Physics(
     Wall(:wall, [0.0, 0.0, 0.0]),
     Dirichlet(:top, [0.0, 0.0, 0.0]),
     # Neumann(:top, 0.0),
-    periodic1, periodic2
+    periodic...
 )
 
 @assign! model momentum p (
@@ -35,11 +35,11 @@ model = Physics(
     Dirichlet(:outlet, 0.0),
     Neumann(:wall, 0.0),
     Neumann(:top, 0.0),
-    periodic1, periodic2
+    periodic...
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind, gradient=Midpoint),
+    U = set_schemes(divergence=LUST, gradient=Midpoint),
     p = set_schemes(gradient=Midpoint)
     # p = set_schemes()
 )

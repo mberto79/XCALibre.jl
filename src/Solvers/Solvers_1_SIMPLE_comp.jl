@@ -72,7 +72,7 @@ function setup_compressible_solvers(
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
   
     @info "Initialising energy model..."
-    energyModel = Energy.initialise(model.energy, model, mdotf, rho, p_eqn, config)
+    energyModel = ModelPhysics.initialise(model.energy, model, mdotf, rho, p_eqn, config)
 
     @info "Initialising turbulence model..."
     turbulenceModel = Turbulence.initialise(model.turbulence, model, mdotf, p_eqn, config)

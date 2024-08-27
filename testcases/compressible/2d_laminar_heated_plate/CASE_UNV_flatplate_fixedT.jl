@@ -19,12 +19,11 @@ Pr = 0.7
 
 model = Physics(
     time = Steady(),
-    fluid = WeaklyCompressible(
-        mu = nu,
-        cp = ConstantScalar(cp),
-        gamma = ConstantScalar(gamma),
-        Pr = ConstantScalar(Pr),
-        rho = ScalarField(mesh)
+    fluid =  FLUID{WeaklyCompressible}(
+        nu = nu,
+        cp = cp,
+        gamma = gamma,
+        Pr = Pr
         ),
     turbulence = RANS{Laminar}(),
     energy = ENERGY{SensibleEnthalpy}(),

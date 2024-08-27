@@ -86,7 +86,7 @@ function PISO(
         interpolate!(rDf, rD, config)
         remove_pressure_source!(U_eqn, ∇p, config)
         
-        ncorrectors = 3
+        ncorrectors = 2
         for i ∈ 1:ncorrectors
             H!(Hv, U, U_eqn, config)
             

@@ -141,7 +141,7 @@ function energy!(
     # Set up and solve energy equation
     @. prev = h.values
     discretise!(energy_eqn, h, config)
-    apply_boundary_conditions!(energy_eqn, h.BCs, nothing, config)
+    apply_boundary_conditions!(energy_eqn, h.BCs, nothing, time, config)
     implicit_relaxation_diagdom!(energy_eqn, h.values, solvers.h.relax, nothing, config)
     update_preconditioner!(energy_eqn.preconditioner, mesh, config)
     solve_system!(energy_eqn, solvers.h, h, nothing, config)

@@ -1,4 +1,4 @@
-module Energy
+# module Energy
 
 using Atomix
 using KernelAbstractions
@@ -22,4 +22,4 @@ include("Sensible_Enthalpy.jl")
 
 export initialise, energy!
 
-end # end module
+# end # end module

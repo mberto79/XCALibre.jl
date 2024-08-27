@@ -16,10 +16,10 @@ include("ModelFramework/ModelFramework.jl")
 include("Discretise/Discretise.jl")
 include("Solve/Solve.jl")
 include("Calculate/Calculate.jl")
-include("ModelPhysics/ModelPhysics.jl")
 include("VTK/VTK.jl")
+include("ModelPhysics/ModelPhysics.jl")
 include("Turbulence/Turbulence.jl")
-include("Energy/Energy.jl")
+# include("Energy/Energy.jl")
 include("Simulate/Simulate.jl")
 include("Solvers/Solvers.jl")
 include("Postprocess/Postprocess.jl")
@@ -35,7 +35,7 @@ using Reexport
 @reexport using FVM_1D.Calculate
 @reexport using FVM_1D.ModelPhysics
 @reexport using FVM_1D.Turbulence
-@reexport using FVM_1D.Energy
+# @reexport # using FVM_1D.Energy
 @reexport using FVM_1D.Simulate
 @reexport using FVM_1D.Solvers
 @reexport using FVM_1D.Postprocess

@@ -67,7 +67,7 @@ solvers = (
     ),
     p = set_solver(
         model.momentum.p;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
+        solver      = CgSolver, #GmresSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.3,

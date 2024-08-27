@@ -22,7 +22,7 @@ using FVM_1D.Solve
 using FVM_1D.Calculate
 using FVM_1D.ModelPhysics
 using FVM_1D.Turbulence
-using FVM_1D.Energy
+# using FVM_1D.Energy
 using FVM_1D.VTK
 
 include("Solvers_0_functions.jl")

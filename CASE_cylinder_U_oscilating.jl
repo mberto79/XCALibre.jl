@@ -22,7 +22,7 @@ Re = (0.2*velocity[1])/nu
 iterations = 5000
 T = iterations*δt
 
-@inline inflow(vec, t) = begin
+@inline inflow(vec, t, i) = begin
     vx = 0.25
     if t >= 8 && t <= 16
         amplitude = 0.025

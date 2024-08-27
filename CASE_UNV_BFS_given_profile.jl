@@ -3,7 +3,7 @@ using FVM_1D
 using CUDA
 using StaticArrays
 
-@inline inflow(vec, t) = begin
+@inline inflow(vec, t, i) = begin
     vmax = 0.5
     y = vec[2]
     H = 0.1

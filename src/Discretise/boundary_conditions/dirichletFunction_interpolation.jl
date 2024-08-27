@@ -1,9 +1,15 @@
 function adjust_boundary!(b_cpu, BC::DirichletFunction, phif::FaceScalarField, phi, boundaries, boundary_cellsID, time, backend, workgroup)
-    (; faces) = phi.mesh
+    (; cells, faces) = phi.mesh
     phif_values = phif.values
     phi_values = phi.values
 
-    kernel_range = length(b_cpu[BC.ID].IDs_range)
+    facesID_range = b_cpu[BC.ID].IDs_range
+    kernel_range = length(facesID_range)
+
+    if !BC.value.steady
+        config = (;hardware=(;backend=backend, workgroup=workgroup)) # temp solution
+        update_user_boundary!(BC, faces, cells, facesID_range, time, config)
+    end
 
     kernel! = adjust_boundary_dirichletFunction_scalar!(backend, workgroup)
     kernel!(BC, phif, phi, boundaries, faces, boundary_cellsID, time, phif_values, phi_values, ndrange = kernel_range)
@@ -18,15 +24,21 @@ end
         (; IDs_range) = boundaries[BC.ID]
         fID = IDs_range[i]
         face = faces[fID]
-        phif_values[fID] = BC.value(face.centre, time)
+        phif_values[fID] = BC.value(face.centre, time, i)
     end
 end
 
 function adjust_boundary!(b_cpu, BC::DirichletFunction, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, time, backend, workgroup)
     (; x, y, z) = psif
-    (; faces) = psi.mesh
+    (; cells, faces) = psi.mesh
 
-    kernel_range = length(b_cpu[BC.ID].IDs_range)
+    facesID_range = b_cpu[BC.ID].IDs_range
+    kernel_range = length(facesID_range)
+
+    if !BC.value.steady
+        config = (;hardware=(;backend=backend, workgroup=workgroup)) # temp solution
+        update_user_boundary!(BC, faces, cells, facesID_range, time, config)
+    end
 
     kernel! = adjust_boundary_dirichletFunction_vector!(backend, workgroup)
     kernel!(BC, psif, psi, boundaries, faces, boundary_cellsID, time, x, y, z, ndrange = kernel_range)
@@ -40,7 +52,7 @@ end
         (; IDs_range) = boundaries[BC.ID]
         fID = IDs_range[i]
         face = faces[fID]
-        value = BC.value(face.centre, time)
+        value = BC.value(face.centre, time, i)
         x[fID] = value[1]
         y[fID] = value[2]
         z[fID] = value[3]

@@ -38,6 +38,10 @@ function _apply_boundary_conditions!(
         facesID_range = get_boundaries(BC, mesh.boundaries)
         start_ID = facesID_range[1]
 
+        # update user defined boundary storage (if needed)
+        update_user_boundary!(BC, faces, cells, facesID_range, time, config)
+        
+
         # Execute apply boundary conditions kernel
         kernel_range = length(facesID_range)
         kernel! = apply_boundary_conditions_kernel!(backend, workgroup, kernel_range)
@@ -49,6 +53,9 @@ function _apply_boundary_conditions!(
     # KernelAbstractions.synchronize(backend)
     nothing
 end
+
+update_user_boundary!(
+    BC::AbstractBoundary, faces, cells, facesID_range, time, config) = nothing
 
 # Function to prevent redundant CPU copy
 function get_boundaries(BC, boundaries::Array)

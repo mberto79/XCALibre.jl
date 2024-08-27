@@ -13,11 +13,11 @@ periodic = construct_periodic(mesh, backend, :top, :bottom)
 mesh_dev = mesh
 
 velocity = [0.25, 0.0, 0.0]
-nu = 1e-4
+nu = 1e-3
 Re = velocity[1]*0.1/nu
 
 model = Physics(
-    time = Transient(),
+    time = Steady(),
     fluid = FLUID{Incompressible}(nu=nu),
     turbulence = RANS{Laminar}(),
     energy = ENERGY{Isothermal}(),
@@ -32,8 +32,8 @@ model = Physics(
     Wall(:plate, [0.0, 0.0, 0.0]),
     # Symmetry(:side1, 0.0),
     # Symmetry(:side2, 0.0),
-    Wall(:side1, [0.0, 0.0, 0.0]),
-    Wall(:side2, [0.0, 0.0, 0.0]),
+    Neumann(:side1, 0.0),
+    Neumann(:side2, 0.0),
     periodic...
 )
 
@@ -47,10 +47,8 @@ model = Physics(
 )
 
 schemes = (
-    # U = set_schemes(divergence=Upwind, gradient=Midpoint),
     U = set_schemes(divergence=Linear, gradient=Midpoint),
     p = set_schemes(gradient=Midpoint)
-    # p = set_schemes()
 )
 
 
@@ -76,7 +74,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=5000, time_step=0.001, write_interval=100)
+    iterations=500, time_step=1, write_interval=100)
 
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=4)
@@ -87,7 +85,6 @@ config = Configuration(
 GC.gc(true)
 
 initialise!(model.momentum.U, velocity)
-# initialise!(model.momentum.U, [0.0, 0.0, 0.0 ])
 initialise!(model.momentum.p, 0.0)
 
 Rx, Ry, Rz, Rp, model_out = run!(model, config)

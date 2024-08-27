@@ -3,7 +3,7 @@ using FVM_1D
 using CUDA
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
-mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
+mesh_file = "testcases/incompressible/2d_backwards_step/backwardFacingStep_10mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 # mesh_dev = adapt(CUDABackend(), mesh)
@@ -24,11 +24,8 @@ model = Physics(
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Dirichlet(:wall, [0.0, 0.0, 0.0]),
-    Dirichlet(:top, [0.0, 0.0, 0.0]),
-    # Wall(:wall, [0.0, 0.0, 0.0]),
-    # Wall(:top, [0.0, 0.0, 0.0])
-    # Symmetry(:top, 0.0)
+    Symmetry(:wall, [0.0, 0.0, 0.0]),
+    Symmetry(:top, [0.0, 0.0, 0.0]),
 )
 
 @assign! model momentum p (
@@ -36,12 +33,10 @@ model = Physics(
     Dirichlet(:outlet, 0.0),
     Neumann(:wall, 0.0),
     Neumann(:top, 0.0)
-    # Symmetry(:top, 0.0)
 )
 
 schemes = (
     U = set_schemes(divergence = Linear),
-    # U = set_schemes(divergence = Upwind),
     p = set_schemes()
 )
 
@@ -81,30 +76,4 @@ GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-Rx, Ry, Rz, Rp, model_out = run!(model, config) # 9.39k allocs in 184 iterations
-
-plot(; xlims=(0,1000))
-plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p")
-
-# # PROFILING CODE
-
-using Profile, PProf
-
-GC.gc()
-initialise!(model.momentum.U, velocity)
-initialise!(model.momentum.p, 0.0)
-
-Profile.Allocs.clear()
-Profile.Allocs.@profile sample_rate=1.0 begin 
-    Rx, Ry, Rz, Rp, model_out = run!(model, config)
-end
-
-# Profile.print(format=:flat)
-
-PProf.Allocs.pprof()
-
-PProf.refresh()
-
-@profview_allocs Rx, Ry, Rz, Rp, model_out = run!(model, config) sample_rate=1
+Rx, Ry, Rz, Rp, model_out = run!(model, config)

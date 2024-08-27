@@ -3,7 +3,7 @@ using FVM_1D
 using CUDA
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
-mesh_file = "unv_sample_meshes/flatplate_2D_highRe.unv"
+mesh_file = "testcases/incompressible/2d_turbulent_plate/flatplate_2D_highRe.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 mesh_gpu = mesh

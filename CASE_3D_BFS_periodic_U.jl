@@ -1,23 +1,28 @@
 using FVM_1D
+using CUDA
+using Adapt
 
 mesh_file = "unv_sample_meshes/BFS_UNV_3D_hex_5mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
-mesh_dev = mesh
+backend = CUDABackend()
+mesh_dev = adapt(backend, mesh)
+# mesh_dev = mesh
 
-velocity = [0.8, 0.0, 0.8]
+velocity = [1.5, 0.0, 0.8]
 nu = 1e-4
 Re = velocity[1]*0.1/nu
 
 model = Physics(
     time = Transient(),
     fluid = FLUID{Incompressible}(nu = nu),
-    turbulence = RANS{Laminar}(),
+    # turbulence = RANS{Laminar}(),
+    turbulence = LES{Smagorinsky}(),
     energy = ENERGY{Isothermal}(),
     domain = mesh_dev
     )
 
-periodic1, periodic2 = construct_periodic(model, :side1, :side2)
+periodic = construct_periodic(mesh, backend, :side1, :side2)
     
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
@@ -26,7 +31,7 @@ periodic1, periodic2 = construct_periodic(model, :side1, :side2)
     Wall(:wall, [0.0, 0.0, 0.0]),
     Dirichlet(:top, [0.0, 0.0, 0.0]),
     # Neumann(:top, 0.0),
-    periodic1, periodic2
+    periodic...
 )
 
 @assign! model momentum p (
@@ -34,11 +39,11 @@ periodic1, periodic2 = construct_periodic(model, :side1, :side2)
     Dirichlet(:outlet, 0.0),
     Neumann(:wall, 0.0),
     Neumann(:top, 0.0),
-    periodic1, periodic2
+    periodic...
 )
 
 schemes = (
-    U = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint),
+    U = set_schemes(time=Euler, divergence=LUST, gradient=Midpoint),
     p = set_schemes(gradient=Midpoint)
     # p = set_schemes()
 )
@@ -52,8 +57,8 @@ solvers = (
         convergence = 1e-7,
         # relax       = 0.8,
         relax       = 1.0,
-        rtol = 1e-3,
-        atol = 1e-10
+        rtol = 0.0,
+        atol = 1e-5
     ),
     p = set_solver(
         model.momentum.p;
@@ -61,17 +66,17 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         # relax       = 0.2,
-        relax       = 1.0,
-        rtol = 1e-3,
-        atol = 1e-10
+        relax       = 0.7,
+        rtol = 0.0,
+        atol = 1e-6
     )
 )
 
 runtime = set_runtime(
     iterations=2000, time_step=1e-3, write_interval=50)
 
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+# hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

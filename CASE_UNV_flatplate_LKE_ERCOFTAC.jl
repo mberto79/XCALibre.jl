@@ -24,7 +24,7 @@ kL_inlet = 0.0115 #1/2*(Tu*velocity[1])^2
 
 model = Physics(
     time = Steady(),
-    fluid = FLUID{Incompressible}(nu = nu),
+    fluid = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{KOmegaLKE}(Tu = 0.01, walls=(:wall,)),
     energy = nothing,
     domain = mesh

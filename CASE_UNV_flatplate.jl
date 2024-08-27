@@ -22,7 +22,7 @@ model = Physics(
         rho = ConstantScalar(1.0)
         ),
     turbulence = RANS{Laminar}(),
-    energy = ENERGY{Isothermal}(),
+    energy = Energy{Isothermal}(),
     domain = mesh_gpu
     )
 

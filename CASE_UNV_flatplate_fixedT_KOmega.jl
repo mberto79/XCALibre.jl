@@ -22,14 +22,14 @@ k_inlet = 0.375
 
 model = Physics(
     time = Steady(),
-    fluid = FLUID{WeaklyCompressible}(
+    fluid = Fluid{WeaklyCompressible}(
         nu = nu,
         cp = cp,
         gamma = gamma,
         Pr = Pr
         ),
     turbulence = RANS{KOmega}(),
-    energy = ENERGY{SensibleEnthalpy}(),
+    energy = Energy{SensibleEnthalpy}(),
     domain = mesh
     )
 

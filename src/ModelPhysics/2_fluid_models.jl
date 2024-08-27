@@ -1,5 +1,5 @@
 export AbstractFluid, AbstractIncompressible, AbstractCompressible
-export FLUID
+export Fluid
 export Incompressible, WeaklyCompressible, Compressible
 export _nu, _nuf, _rho
 export _R, _Cp, _mu, _Pr
@@ -8,7 +8,7 @@ abstract type AbstractFluid end
 abstract type AbstractIncompressible <: AbstractFluid end
 abstract type AbstractCompressible <: AbstractFluid end
 
-struct FLUID{T,ARG} <: AbstractFluid
+struct Fluid{T,ARG} <: AbstractFluid
     args::ARG
 end
 
@@ -20,13 +20,13 @@ end
 end
 Adapt.@adapt_structure Incompressible
 
-FLUID{Incompressible}(; nu=0.001, rho=1.0) = begin
+Fluid{Incompressible}(; nu=0.001, rho=1.0) = begin
     coeffs = (nu=nu, rho=rho)
     ARG = typeof(coeffs)
-    FLUID{Incompressible,ARG}(coeffs)
+    Fluid{Incompressible,ARG}(coeffs)
 end
 
-(fluid::FLUID{Incompressible, ARG})(mesh) where ARG = begin
+(fluid::Fluid{Incompressible, ARG})(mesh) where ARG = begin
     coeffs = fluid.args
     (; rho, nu) = coeffs
     nu = ConstantScalar(nu)
@@ -52,13 +52,13 @@ end
 end
 Adapt.@adapt_structure WeaklyCompressible
 
-FLUID{WeaklyCompressible}(; nu=1E-5, cp=1005.0, gamma=1.4, Pr=0.7 ) = begin
+Fluid{WeaklyCompressible}(; nu=1E-5, cp=1005.0, gamma=1.4, Pr=0.7 ) = begin
     coeffs = (nu=nu, cp=cp, gamma=gamma, Pr=Pr)
     ARG = typeof(coeffs)
-    FLUID{WeaklyCompressible,ARG}(coeffs)
+    Fluid{WeaklyCompressible,ARG}(coeffs)
 end
 
-(fluid::FLUID{WeaklyCompressible, ARG})(mesh) where ARG = begin
+(fluid::Fluid{WeaklyCompressible, ARG})(mesh) where ARG = begin
     coeffs = fluid.args
     (; nu, cp, gamma, Pr) = coeffs
     cp = ConstantScalar(cp)
@@ -86,13 +86,13 @@ end
 end
 Adapt.@adapt_structure Compressible
 
-FLUID{Compressible}(; nu=1E-5, cp=1005.0, gamma=1.4, Pr=0.7 ) = begin
+Fluid{Compressible}(; nu=1E-5, cp=1005.0, gamma=1.4, Pr=0.7 ) = begin
     coeffs = (nu=nu, cp=cp, gamma=gamma, Pr=Pr)
     ARG = typeof(coeffs)
-    FLUID{Compressible,ARG}(coeffs)
+    Fluid{Compressible,ARG}(coeffs)
 end
 
-(fluid::FLUID{Compressible, ARG})(mesh) where ARG = begin
+(fluid::Fluid{Compressible, ARG})(mesh) where ARG = begin
     coeffs = fluid.args
     (; nu, cp, gamma, Pr) = coeffs
     cp = ConstantScalar(cp)

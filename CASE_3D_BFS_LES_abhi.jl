@@ -35,10 +35,10 @@ Pex = Umag*δx/nu
 
 model= Physics(
     time = Steady(),
-    fluid = FLUID{Incompressible}(nu = nu),
+    fluid = Fluid{Incompressible}(nu = nu),
     # turbulence = LES{Smagorinsky}(),
     turbulence = RANS{Laminar}(),
-    energy = ENERGY{Isothermal}(),
+    energy = Energy{Isothermal}(),
     domain = mesh_dev
     )
 

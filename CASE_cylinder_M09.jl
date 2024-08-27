@@ -32,7 +32,7 @@ model = Physics(
         Pr = ConstantScalar(Pr)
         ),
     turbulence = RANS{Laminar}(),
-    energy = ENERGY{SensibleEnthalpy}(),
+    energy = Energy{SensibleEnthalpy}(),
     domain = mesh
     )
 

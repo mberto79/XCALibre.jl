@@ -19,14 +19,14 @@ Pr = 0.7
 
 model = Physics(
     time = Steady(),
-    fluid =  FLUID{WeaklyCompressible}(
+    fluid =  Fluid{WeaklyCompressible}(
         nu = nu,
         cp = cp,
         gamma = gamma,
         Pr = Pr
         ),
     turbulence = RANS{Laminar}(),
-    energy = ENERGY{SensibleEnthalpy}(),
+    energy = Energy{SensibleEnthalpy}(),
     domain = mesh # mesh_gpu  # use mesh_gpu for GPU backend
     )
 

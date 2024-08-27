@@ -1,11 +1,11 @@
-export AbstractEnergyModel, ENERGY
+export AbstractEnergyModel, Energy
 export Isothermal
 
 abstract type AbstractEnergyModel end
 
 # Models
 
-struct ENERGY{T,ARG} <: AbstractEnergyModel
+struct Energy{T,ARG} <: AbstractEnergyModel
     args::ARG
 end
 
@@ -14,12 +14,12 @@ end
 struct Isothermal end
 Adapt.Adapt.@adapt_structure Isothermal
 
-ENERGY{Isothermal}() = begin
+Energy{Isothermal}() = begin
     args = nothing
     ARGS = typeof(args)
-    ENERGY{Isothermal,ARGS}(args)
+    Energy{Isothermal,ARGS}(args)
 end
 
-(energy::ENERGY{EnergyModel, ARG})(mesh, fluid) where {EnergyModel<:Isothermal,ARG} = begin
+(energy::Energy{EnergyModel, ARG})(mesh, fluid) where {EnergyModel<:Isothermal,ARG} = begin
     nothing
 end

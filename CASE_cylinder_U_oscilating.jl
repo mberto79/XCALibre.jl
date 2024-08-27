@@ -36,9 +36,9 @@ end
 
 model = Physics(
     time = Transient(),
-    fluid = FLUID{Incompressible}(nu = nu),
+    fluid = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{Laminar}(),
-    energy = ENERGY{Isothermal}(),
+    energy = Energy{Isothermal}(),
     domain = mesh_dev
     )
 

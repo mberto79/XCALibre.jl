@@ -20,14 +20,14 @@ end
 Adapt.@adapt_structure Sensible_Enthalpy_Model
 
 # Model API constructor
-ENERGY{SensibleEnthalpy}(; Tref = 288.15) = begin
+Energy{SensibleEnthalpy}(; Tref = 288.15) = begin
     coeffs = (Tref=Tref, other=nothing)
     ARG = typeof(coeffs)
-    ENERGY{SensibleEnthalpy,ARG}(coeffs)
+    Energy{SensibleEnthalpy,ARG}(coeffs)
 end
 
 # Functor as consturctor
-(energy::ENERGY{EnergyModel, ARG})(mesh, fluid) where {EnergyModel<:SensibleEnthalpy,ARG} = begin
+(energy::Energy{EnergyModel, ARG})(mesh, fluid) where {EnergyModel<:SensibleEnthalpy,ARG} = begin
     h = ScalarField(mesh)
     T = ScalarField(mesh)
     hf = FaceScalarField(mesh)

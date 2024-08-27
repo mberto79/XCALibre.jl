@@ -27,7 +27,7 @@ model = Physics(
         rho = ScalarField(mesh)
         ),
     turbulence = RANS{Laminar}(),
-    energy = ENERGY{SensibleEnthalpy}(),
+    energy = Energy{SensibleEnthalpy}(),
     domain = mesh
     )
 

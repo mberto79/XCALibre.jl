@@ -29,11 +29,11 @@ nut_inlet = k_inlet/ω_inlet
 
 model = Physics(
     time = Steady(),
-    fluid = FLUID{Incompressible}(nu = nu),
+    fluid = Fluid{Incompressible}(nu = nu),
     # turbulence = RANS{KOmega}(),
     turbulence = RANS{Laminar}(),
     # turbulence = LES{Smagorinsky}(),
-    energy = ENERGY{Isothermal}(),
+    energy = Energy{Isothermal}(),
     # domain = mesh
     domain = mesh_dev
     )

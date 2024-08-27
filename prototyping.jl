@@ -1,59 +1,53 @@
 using FVM_1D
-using FVM_1D.FoamMesh
+using Accessors
+
+mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
+mesh = UNV2D_mesh(mesh_file, scale=0.001)
+
+# mesh_dev = adapt(CUDABackend(), mesh)
+mesh_dev = mesh
+
+velocity = [1.5, 0.0, 0.0]
+nu = 1e-3
+Re = velocity[1]*0.1/nu
+
+model = Physics(
+    time = Steady(),
+    fluid = FLUID{Incompressible}(nu = nu),
+    turbulence = RANS{Laminar}(),
+    energy = ENERGY{Isothermal}(),
+    domain = mesh_dev
+    )
 
 
+modelTransient = change(model, :time, Transient())
+modelTransient = change(model, (
+    (:time, Transient()), 
+    (:turbulence, RANS{KOmega}()(model.domain)) 
+    )
+)
 
-file_path = "unv_sample_meshes/OF_startrek/polyMesh/"
-file_path = "unv_sample_meshes/OF_CRMHL_Wingbody_1v/polyMesh/"
-integer=Int64
-float=Float64
-scale=0.001
 
+function change(model::Physics, property, value)
+    @assert property ∈ fieldnames(Physics) throw(ArgumentError(
+    """$value is not in Physics. 
+    Use "fieldnames(Physics)" to find available properties""")
+    )
 
-points_file = joinpath(file_path,"points")
-faces_file = joinpath(file_path,"faces")
-neighbour_file = joinpath(file_path,"neighbour")
-owner_file = joinpath(file_path,"owner")
-boundary_file = joinpath(file_path,"boundary")
-
-foamdata = FoamMesh.FoamMeshData(integer, float)
-
-foamdata.points = FoamMesh.read_points(points_file, scale, integer, float)
-foamdata.boundaries = FoamMesh.read_boundary(boundary_file, integer, float)
-
-delimiters = ['(',' ', ')', '\n']
-
-file_data = read(faces_file, String)
-data_split = split(file_data, delimiters, keepempty=false)
-data = tryparse.(Int64, data_split)
-dataClean = filter(!isnothing, data)
-
-# Find line with entry for total number of faces
-startLine = 0
-for (n, line) ∈ enumerate(eachline(faces_file)) 
-    line_content = tryparse(Int64, line)
-    if line_content !== nothing
-        startLine = n
-        println("Number of faces to read: $line_content (from line: $startLine)")
-        break
-    end
+    lens = opcompose(PropertyLens(property))
+    updatedModel = set(model, lens, value)
+    return updatedModel
 end
 
-# Read file contents after header information
-io = IOBuffer()
-for (n, line) ∈ enumerate(eachline(faces_file)) 
-    if n >= startLine
-        println(io, line)
+function change(model::Physics, args...)
+    updatedModel = nothing
+    for arg in args
+        updatedModel = change(model, arg...)
     end
+    return updatedModel
 end
 
-file_data = String(take!(io))
-data_split = split(file_data, delimiters, keepempty=false)
-data = tryparse.(Int64, data_split)
-dataClean = filter(!isnothing, data)
+test(a, x...) = println(a," ", x[2])
 
-face_nodes = FoamMesh.read_faces(faces_file, integer, float)
-face_neighbours = FoamMesh.read_neighbour(neighbour_file, integer, float)
-face_owners = FoamMesh.read_owner(owner_file, integer, float)
+test(1, (2,2), (3,3))
 
-FoamMesh.assign_faces!(foamdata, face_nodes, face_neighbours, face_owners, integer)

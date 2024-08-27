@@ -16,11 +16,15 @@ end
 
 # To-do: Add scala scalar variants of Wall BC in next version (currently using Neumann)
 
-@define_boundary Wall Divergence{Linear} begin
+@define_boundary Wall Divergence{Linear} begin # To-do refactor this code for reusability
     0.0, 0.0
 end
 
 @define_boundary Wall Divergence{Upwind} begin
+    0.0, 0.0
+end
+
+@define_boundary Wall Divergence{LUST} begin
     0.0, 0.0
 end
 

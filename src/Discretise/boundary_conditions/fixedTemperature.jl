@@ -15,6 +15,14 @@ end
     0.0, -ap*h
 end
 
+@define_boundary FixedTemperature Divergence{LUST} begin
+    (; T, energy_model) = bc.value
+    flux = term.flux[fID]
+    h = energy_model.update_BC(T)
+    ap = term.sign*(flux)
+    0.0, -ap*h
+end
+
 
 @define_boundary FixedTemperature Divergence{BoundedUpwind} begin
     (; T, energy_model) = bc.value

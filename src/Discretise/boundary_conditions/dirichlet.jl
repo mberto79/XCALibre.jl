@@ -18,6 +18,12 @@ end
     0.0, ap*bc.value
 end
 
+@define_boundary Dirichlet Divergence{LUST} begin
+    flux = -term.flux[fID]
+    ap = term.sign*(flux)
+    0.0, ap*bc.value
+end
+
 @define_boundary Dirichlet Divergence{BoundedUpwind} begin
     flux = -term.flux[fID]
     ap = term.sign*(flux)

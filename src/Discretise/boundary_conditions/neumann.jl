@@ -23,6 +23,12 @@ end
     ap, 0.0 # original
 end
 
+@define_boundary Neumann Divergence{LUST} begin
+    flux = term.flux[fID]
+    ap = term.sign*(flux) 
+    ap, 0.0 # original
+end
+
 @define_boundary Neumann Divergence{BoundedUpwind} begin
     flux = term.flux[fID]
     ap = term.sign*(flux)

@@ -107,6 +107,35 @@ end
     0.0, 0.0
 end
 
+# LUST
+@inline function scheme!(
+    term::Operator{F,P,I,Divergence{LUST}}, 
+    nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
+    )  where {F,P,I}
+    # Retrieve mesh centre values
+    xf = face.centre
+    xC = cell.centre
+    xN = cellN.centre
+    
+    # Calculate weights using normal functions
+    weight = norm(xf - xC)/norm(xN - xC)
+    one_minus_weight = one(eltype(weight)) - weight
+
+    # Calculate coefficients
+    ap = term.sign*(term.flux[fID]*ns)
+    acLinear = ap*one_minus_weight
+    anLinear = ap*weight
+    acUpwind = max(ap, 0.0) 
+    anUpwind = -max(-ap, 0.0)
+    ac = 0.75*acLinear + 0.25*acUpwind
+    an = 0.75*anLinear + 0.25*anUpwind
+    return ac, an
+end
+@inline scheme_source!(
+    term::Operator{F,P,I,Divergence{LUST}}, cell, cID, cIndex, prev, runtime) where {F,P,I} = begin
+    0.0, 0.0
+end
+
 # BoundedUpwind
 @inline function scheme!(
     term::Operator{F,P,I,Divergence{BoundedUpwind}}, 

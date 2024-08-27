@@ -152,3 +152,32 @@ end
     # Explicit allowing looping over slave patch
     ac, -an*values[pcellID] # explicit this works
 end
+
+@define_boundary Periodic Divergence{LUST} begin
+    phi = term.phi
+    mesh = phi.mesh 
+    (; faces, cells) = mesh
+    values = get_values(phi, component)
+
+    # determine id of periodic cell and interpolate face value
+    pfID = bc.value.face_map[i] # id of periodic face 
+    pface = faces[pfID]
+    pcellID = pface.ownerCells[1]
+
+
+    delta1 = face.delta
+    delta2 = pface.delta
+    delta = delta1 + delta2
+    
+    weight = delta1/delta
+    one_minus_weight = one(eltype(weight)) - weight
+
+    # Calculate ap value to increment
+    flux = term.flux[fID]
+    ap = term.sign*(flux)
+    ac = weight*ap
+    an = one_minus_weight*ap
+
+    # Explicit allowing looping over slave patch
+    ac, -an*values[pcellID] # explicit this works
+end

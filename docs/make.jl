@@ -4,10 +4,28 @@ using FVM_1D
 push!(LOAD_PATH,"../src/")
 
 makedocs(
-    sitename = "FVM_1D",
+    sitename = "XCALibre.jl",
     format = Documenter.HTML(),
     doctest = false, # only set to false when sorting out docs structure
-    modules = [FVM_1D]
+    modules = [FVM_1D],
+    pages = [
+        "Home" => "index.md",
+        "quick_start.md",
+        "User Guide" => Any[
+            "user_guide/workflow.md",
+            "user_guide/mesh.md",
+            "user_guide/physics.md",
+            "user_guide/boundary_conditions.md",
+            "user_guide/discretisation_schemes.md",
+            "user_guide/linear_solvers.md",
+            "user_guide/runtime_configuration.md",
+            "user_guide/flow_solvers.md"
+        ],
+        "Theory Guide" => "theory_guide/introduction.md",
+        "developer_guide.md",
+        "reference.md",
+        "release_notes.md"
+    ]
 )
 
 # Documenter can also automatically deploy documentation to gh-pages.

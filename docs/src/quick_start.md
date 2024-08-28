@@ -1,3 +1,3 @@
-# FVM_1D.jl
+# Quick Start
 
 Documentation for FVM_1D.jl

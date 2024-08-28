@@ -1,3 +1,3 @@
-# FVM_1D.jl
+# XCALibre.jl
 
-Documentation for FVM_1D.jl
+Documentation for XCALibre.jl

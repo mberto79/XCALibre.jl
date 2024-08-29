@@ -6,7 +6,7 @@ using CUDA
 mesh_file = "unv_sample_meshes/bfs_unv_hex_5mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
-mesh_gpu = adapt(CUDABackend(), mesh)
+mesh_dev = adapt(CUDABackend(), mesh)
 
 # INLET CONDITIONS 
 
@@ -24,7 +24,7 @@ model = Physics(
     time = Transient(),
     fluid = Fluid{Incompressible}(nu = nu),
     turbulence = LES{Smagorinsky}(),
-    energy = nothing,
+    energy = Energy{Isothermal}(),
     domain = mesh
     )
 

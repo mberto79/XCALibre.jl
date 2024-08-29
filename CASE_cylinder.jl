@@ -9,8 +9,8 @@ mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 # mesh_file = "unv_sample_meshes/cylinder_d10mm_10-7.5-2mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-# mesh_gpu = adapt(CUDABackend(), mesh)
-mesh_gpu = mesh
+# mesh_dev = adapt(CUDABackend(), mesh)
+mesh_dev = mesh
 
 # Inlet conditions
 
@@ -24,7 +24,7 @@ model = Physics(
     fluid = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
-    domain = mesh_gpu
+    domain = mesh_dev
     )
 
 @assign! model momentum U ( 

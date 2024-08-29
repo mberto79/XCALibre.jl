@@ -6,8 +6,8 @@ using XCALibre
 mesh_file = "unv_sample_meshes/flatplate_2D_lowRe.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-# mesh_gpu = adapt(CUDABackend(), mesh)
-mesh_gpu = mesh
+# mesh_dev = adapt(CUDABackend(), mesh)
+mesh_dev = mesh
 
 velocity = [10, 0.0, 0.0]
 nu = 1e-5
@@ -20,7 +20,7 @@ model = Physics(
     fluid = Fluid{Incompressible}(),
     turbulence = RANS{KOmega}(),
     energy = Energy{Isothermal}(),
-    domain = mesh_gpu
+    domain = mesh_dev
     )
 
 println(typeof(model.fluid))

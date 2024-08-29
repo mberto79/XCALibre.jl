@@ -10,7 +10,8 @@ mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
 mesh_file = "unv_sample_meshes/backwardFacingStep_2mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-mesh_gpu = adapt(CUDABackend(), mesh)
+mesh_dev = adapt(CUDABackend(), mesh)
+mesh_dev = mesh
 
 nu = 1e-3
 # u_mag = 3.5 # 2mm mesh
@@ -25,14 +26,14 @@ model = Physics(
     time = Steady(),
     fluid = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{KOmega}(),
-    energy = nothing,
-    domain = mesh_gpu
+    energy = Energy{Isothermal}(),
+    domain = mesh_dev
     )
 
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Dirichlet(:wall, [0.0, 0.0, 0.0]),
+    Wall(:wall, [0.0, 0.0, 0.0]),
     Dirichlet(:top, [0.0, 0.0, 0.0])
 )
 
@@ -65,7 +66,7 @@ model = Physics(
 )
 
 schemes = (
-    U = set_schemes(gradient=Midpoint),
+    U = set_schemes(divergence=LUST, gradient=Midpoint),
     p = set_schemes(gradient=Midpoint),
     k = set_schemes(gradient=Midpoint),
     omega = set_schemes(gradient=Midpoint)
@@ -78,8 +79,8 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
-        rtol = 1e-5,
-        atol = 1e-2
+        rtol = 1e-2,
+        atol = 1e-10
     ),
     p = set_solver(
         model.momentum.p;
@@ -87,26 +88,26 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.3,
-        rtol = 1e-5,
-        atol = 1e-3
+        rtol = 1e-3,
+        atol = 1e-10
     ),
     k = set_solver(
         model.turbulence.k;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
-        rtol = 1e-5,
-        atol = 1e-2
+        relax       = 0.3,
+        rtol = 1e-2,
+        atol = 1e-10
     ),
     omega = set_solver(
         model.turbulence.omega;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
-        rtol = 1e-5,
-        atol = 1e-2
+        relax       = 0.3,
+        rtol = 1e-2,
+        atol = 1e-10
     )
 )
 
@@ -130,7 +131,7 @@ initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
 Rx, Ry, Rz, Rp, model_out = run!(model, config) # 36.90k allocs
 
-Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)
+Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut, config)
 Fp = pressure_force(:wall, model.momentum.p, 1.25)
 Fv = viscous_force(:wall, model.momentum.U, 1.25, nu, model.turbulence.nut)
 

@@ -5,7 +5,7 @@ using XCALibre
 
 mesh_file = "testcases/compressible/2d_unsteady_heated_cylinder/cylinder_d10mm_5mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
-# mesh_gpu = adapt(CUDABackend(), mesh)  # Uncomment this if using GPU
+# mesh_dev = adapt(CUDABackend(), mesh)  # Uncomment this if using GPU
 
 # Inlet conditions
 velocity = [0.5, 0.0, 0.0]
@@ -29,7 +29,7 @@ model = Physics(
         ),
     turbulence = RANS{Laminar}(),
     energy = Energy{SensibleEnthalpy}(),
-    domain = mesh # mesh_gpu  # use mesh_gpu for GPU backend
+    domain = mesh # mesh_dev  # use mesh_dev for GPU backend
     )
 
 @assign! model momentum U ( 

@@ -8,7 +8,7 @@ mesh_file = "unv_sample_meshes/OF_squareBend_laminar/constant/polyMesh/"
 mesh = FOAM3D_mesh(mesh_file, scale=1.0, integer_type=Int64, float_type=Float64)
 
 
-# mesh_gpu = adapt(CUDABackend(), mesh)
+# mesh_dev = adapt(CUDABackend(), mesh)
 
 # Inlet conditions
 

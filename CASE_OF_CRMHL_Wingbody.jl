@@ -6,8 +6,8 @@ using CUDA
 mesh_file = "unv_sample_meshes/OF_CRMHL_Wingbody_1v/polyMesh/"
 @time mesh = FOAM3D_mesh(mesh_file, scale=0.001, integer_type=Int64, float_type=Float64)
 
-mesh_gpu = adapt(CUDABackend(), mesh)
-# mesh_gpu = mesh
+mesh_dev = adapt(CUDABackend(), mesh)
+# mesh_dev = mesh
 
 # # check volume calculation
 # volumes = ScalarField(mesh)
@@ -34,7 +34,7 @@ model = Physics(
     # turbulence = LES{Smagorinsky}(),
     energy = Energy{Isothermal}(),
     # domain = mesh
-    domain = mesh_gpu
+    domain = mesh_dev
     )
     
 walls = [:Fuselage, :FuselageAft, :Windshield, :WindshieldFrame, :WingLower, 

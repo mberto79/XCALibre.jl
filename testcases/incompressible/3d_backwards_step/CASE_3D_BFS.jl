@@ -5,7 +5,7 @@ using XCALibre
 
 mesh_file = "testcases/incompressible/3d_backwards_step/bfs_unv_tet_10mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
-# mesh_gpu = adapt(CUDABackend(), mesh)  # Uncomment this if using GPU
+# mesh_dev = adapt(CUDABackend(), mesh)  # Uncomment this if using GPU
 
 # Inlet conditions
 velocity = [0.5, 0.0, 0.0]
@@ -17,7 +17,7 @@ model = Physics(
     fluid = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
-    domain = mesh # mesh_gpu  # use mesh_gpu for GPU backend
+    domain = mesh # mesh_dev  # use mesh_dev for GPU backend
     )
     
 @assign! model momentum U (

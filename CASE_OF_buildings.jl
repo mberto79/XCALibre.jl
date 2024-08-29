@@ -6,7 +6,7 @@ using CUDA
 mesh_file = "unv_sample_meshes/OF_buildings/polyMesh/"
 @time mesh = FOAM3D_mesh(mesh_file, integer_type=Int64, float_type=Float64)
 
-mesh_gpu = adapt(CUDABackend(), mesh)
+mesh_dev = adapt(CUDABackend(), mesh)
 
 Umag = 1.5
 velocity = [Umag, 0.0, 0.0]
@@ -23,7 +23,7 @@ model = Physics(
     time = Steady(),
     fluid = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{KOmega}(),
-    energy = nothing,
+    energy = Energy{Isothermal}(),
     domain = mesh
     )
 

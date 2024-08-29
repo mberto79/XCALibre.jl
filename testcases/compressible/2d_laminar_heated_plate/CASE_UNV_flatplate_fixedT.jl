@@ -8,7 +8,7 @@ using Krylov
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "testcases/compressible/2d_laminar_heated_plate/flatplate_2D_laminar.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
-# mesh_gpu = adapt(CUDABackend(), mesh) # Uncomment this if using GPU
+# mesh_dev = adapt(CUDABackend(), mesh) # Uncomment this if using GPU
 
 velocity = [0.2, 0.0, 0.0]
 nu = 1e-4
@@ -27,7 +27,7 @@ model = Physics(
         ),
     turbulence = RANS{Laminar}(),
     energy = Energy{SensibleEnthalpy}(),
-    domain = mesh # mesh_gpu  # use mesh_gpu for GPU backend
+    domain = mesh # mesh_dev  # use mesh_dev for GPU backend
     )
 
 @assign! model momentum U (

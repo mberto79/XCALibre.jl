@@ -8,7 +8,7 @@ mesh = UNV3D_mesh(mesh_file, scale=0.001)
 # backend = CUDABackend() # Uncomment this if using GPU
 backend = CPU() # Uncomment this if using CPU
 periodic = construct_periodic(mesh, backend, :top, :bottom)
-# mesh_gpu = adapt(CUDABackend(), mesh)  # Uncomment this if using GPU
+# mesh_dev = adapt(CUDABackend(), mesh)  # Uncomment this if using GPU
 
 velocity = [0.25, 0.0, 0.0]
 nu = 1e-3
@@ -19,7 +19,7 @@ model = Physics(
     fluid = Fluid{Incompressible}(nu=nu),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
-    domain = mesh # mesh_gpu  # use mesh_gpu for GPU backend
+    domain = mesh # mesh_dev  # use mesh_dev for GPU backend
     )
 
 

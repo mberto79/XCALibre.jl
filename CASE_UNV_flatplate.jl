@@ -8,8 +8,8 @@ using Krylov
 mesh_file = "unv_sample_meshes/flatplate_2D_laminar.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-# mesh_gpu = adapt(CUDABackend(), mesh)
-mesh_gpu = mesh
+# mesh_dev = adapt(CUDABackend(), mesh)
+mesh_dev = mesh
 
 velocity = [0.2, 0.0, 0.0]
 nu = 1e-5
@@ -23,7 +23,7 @@ model = Physics(
         ),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
-    domain = mesh_gpu
+    domain = mesh_dev
     )
 
 @assign! model momentum U (

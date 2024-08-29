@@ -8,7 +8,8 @@ mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
 # mesh_file = "unv_sample_meshes/backwardFacingStep_2mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-mesh_gpu = adapt(CUDABackend(), mesh)
+mesh_dev = adapt(CUDABackend(), mesh)
+mesh_dev = mesh
 
 nu = 1e-3
 u_mag = 1.5
@@ -22,14 +23,14 @@ model = Physics(
     time = Transient(),
     fluid = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{KOmega}(),
-    energy = nothing,
-    domain = mesh_gpu
+    energy = Energy{Isothermal}(),
+    domain = mesh_dev
     )
 
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Dirichlet(:wall, [0.0, 0.0, 0.0]),
+    Wall(:wall, [0.0, 0.0, 0.0]),
     Dirichlet(:top, [0.0, 0.0, 0.0])
 )
 

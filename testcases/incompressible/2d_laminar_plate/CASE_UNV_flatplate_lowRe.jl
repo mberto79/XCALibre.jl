@@ -6,7 +6,7 @@ using XCALibre
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "testcases/incompressible/2d_laminar_plate/flatplate_2D_lowRe.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
-# mesh_gpu = adapt(CUDABackend(), mesh)  # Uncomment this if using GPU
+# mesh_dev = adapt(CUDABackend(), mesh)  # Uncomment this if using GPU
 
 velocity = [10, 0.0, 0.0]
 nu = 1e-5
@@ -19,7 +19,7 @@ model = Physics(
     fluid = Fluid{Incompressible}(),
     turbulence = RANS{KOmega}(),
     energy = Energy{Isothermal}(),
-    domain = mesh # mesh_gpu  # use mesh_gpu for GPU backend
+    domain = mesh # mesh_dev  # use mesh_dev for GPU backend
     )
 
 @assign! model momentum U (

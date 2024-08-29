@@ -8,7 +8,7 @@ mesh_file = "unv_sample_meshes/flatplate_transition.unv"
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-mesh_gpu = adapt(CUDABackend(), mesh)
+mesh_dev = adapt(CUDABackend(), mesh)
 
 # Turbulence Model
 velocity = [5.4,0,0]
@@ -26,7 +26,7 @@ model = Physics(
     time = Steady(),
     fluid = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{KOmegaLKE}(Tu = 0.01, walls=(:wall,)),
-    energy = nothing,
+    energy = Energy{Isothermal}(),
     domain = mesh
     )
 

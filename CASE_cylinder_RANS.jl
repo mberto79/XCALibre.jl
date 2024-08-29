@@ -7,8 +7,8 @@ using CUDA
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-mesh_gpu = mesh
-mesh_gpu = adapt(CUDABackend(), mesh)
+mesh_dev = mesh
+mesh_dev = adapt(CUDABackend(), mesh)
 
 # INLET CONDITIONS 
 
@@ -28,7 +28,7 @@ model = Physics(
     # turbulence = RANS{KOmega}(β⁺=0.09),
     turbulence = RANS{KOmega}(),
     energy = Energy{Isothermal}(),
-    domain = mesh_gpu
+    domain = mesh_dev
     )
 
 @assign! model momentum U (

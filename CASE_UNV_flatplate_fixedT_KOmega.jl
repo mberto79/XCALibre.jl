@@ -8,7 +8,7 @@ using Krylov
 mesh_file = "unv_sample_meshes/flatplate_2D_laminar.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-# mesh_gpu = adapt(CUDABackend(), mesh)
+# mesh_dev = adapt(CUDABackend(), mesh)
 
 velocity = [10, 0.0, 0.0]
 nu = 1e-4

@@ -12,7 +12,7 @@ mesh_file = "unv_sample_meshes/bfs_unv_tet_10mm.unv"
 
 @time mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
-mesh_gpu = adapt(CUDABackend(), mesh)
+mesh_dev = adapt(CUDABackend(), mesh)
 
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
@@ -22,8 +22,8 @@ model = Physics(
     time = Transient(),
     fluid = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{Laminar}(),
-    energy = nothing,
-    domain = mesh_gpu
+    energy = Energy{Isothermal}(),
+    domain = mesh_dev
     )
 
 @assign! model momentum U (

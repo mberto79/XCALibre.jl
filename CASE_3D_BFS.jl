@@ -11,7 +11,7 @@ mesh_file = "unv_sample_meshes/bfs_unv_tet_10mm.unv"
 mesh_file = "unv_sample_meshes/bfs_OF_tet_meshes/5mm/polyMesh/"
 @time mesh = FOAM3D_mesh(mesh_file, scale=0.001, integer_type=Int64, float_type=Float64)
 
-mesh_gpu = adapt(CUDABackend(), mesh)
+mesh_dev = adapt(CUDABackend(), mesh)
 
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
@@ -22,7 +22,7 @@ model = Physics(
     fluid = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
-    domain = mesh_gpu
+    domain = mesh_dev
     )
     
 

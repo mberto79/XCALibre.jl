@@ -1,5 +1,5 @@
 # using Plots
-using FVM_1D
+using XCALibre
 # using CUDA # Run this if using NVIDIA GPU
 # using AMDGPU # Run this if using AMD GPU
 

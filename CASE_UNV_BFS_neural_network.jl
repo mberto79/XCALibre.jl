@@ -1,5 +1,5 @@
 using Plots
-using FVM_1D
+using XCALibre
 using Flux
 using Statistics
 using LinearAlgebra
@@ -56,9 +56,9 @@ struct Inflow{F,I,O,N,V,B} <: XCALibreUserFunctor
 end
 Adapt.@adapt_structure Inflow
 
-# import FVM_1D.Discretise: update_boundary!
+# import XCALibre.Discretise: update_boundary!
 
-FVM_1D.Discretise.update_user_boundary!(
+XCALibre.Discretise.update_user_boundary!(
     BC::DirichletFunction{I,V}, faces, cells, facesID_range, time, config) where{I,V<:Inflow}= begin
     # if time > 1 # for this to work need to add time to steady solvers! # to do
     #     return nothing

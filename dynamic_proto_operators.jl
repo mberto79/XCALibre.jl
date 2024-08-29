@@ -6,12 +6,12 @@ using IncompleteLU
 using Krylov
 
 
-using FVM_1D.Mesh2D
-using FVM_1D.Plotting
-using FVM_1D.Discretise
-using FVM_1D.Calculate
-using FVM_1D.Models
-using FVM_1D.Solvers
+using XCALibre.Mesh2D
+using XCALibre.Plotting
+using XCALibre.Discretise
+using XCALibre.Calculate
+using XCALibre.Models
+using XCALibre.Solvers
 
 function generate_mesh()
     n_vertical      = 400 #200 #200

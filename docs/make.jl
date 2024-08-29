@@ -1,5 +1,5 @@
 using Documenter
-using FVM_1D
+using XCALibre
 
 push!(LOAD_PATH,"../src/")
 
@@ -7,7 +7,7 @@ makedocs(
     sitename = "XCALibre.jl",
     format = Documenter.HTML(),
     doctest = false, # only set to false when sorting out docs structure
-    modules = [FVM_1D],
+    modules = [XCALibre],
     pages = [
         "Home" => "index.md",
         "quick_start.md",
@@ -31,6 +31,6 @@ makedocs(
 # Documenter can also automatically deploy documentation to gh-pages.
 # See "Hosting Documentation" and deploydocs() in the Documenter manual
 # for more information.
-#=deploydocs(
-    repo = "<repository url>"
-)=#
+deploydocs(
+    repo = "github.com/mberto79/XCALibre.jl",
+)

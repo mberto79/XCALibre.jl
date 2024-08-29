@@ -6,7 +6,7 @@ using Setfield
 using Printf
 # using CUDA
 
-using FVM_1D.Mesh
+using XCALibre.Mesh
 
 include("UNV2_0_types.jl")
 include("UNV2_1_loader.jl")

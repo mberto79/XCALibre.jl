@@ -1,5 +1,5 @@
 using Plots
-using FVM_1D
+using XCALibre
 using CUDA
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40

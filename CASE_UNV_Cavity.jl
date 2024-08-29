@@ -1,5 +1,5 @@
 using Plots
-using FVM_1D
+using XCALibre
 using CUDA
 
 # quad and trig 40 and 100

@@ -6,14 +6,14 @@ using Accessors
 using StaticArrays
 using LinearAlgebra
 using Adapt
-using FVM_1D.Mesh
-using FVM_1D.Fields
-using FVM_1D.ModelFramework
-using FVM_1D.Discretise
-using FVM_1D.ModelPhysics
-using FVM_1D.Solve
-using FVM_1D.Calculate
-using FVM_1D.VTK
+using XCALibre.Mesh
+using XCALibre.Fields
+using XCALibre.ModelFramework
+using XCALibre.Discretise
+using XCALibre.ModelPhysics
+using XCALibre.Solve
+using XCALibre.Calculate
+using XCALibre.VTK
 
 include("energy_types.jl")
 

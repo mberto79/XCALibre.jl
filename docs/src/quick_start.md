@@ -1,3 +1,3 @@
 # Quick Start
 
-Documentation for FVM_1D.jl
+Documentation for XCALibre.jl

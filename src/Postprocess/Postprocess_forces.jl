@@ -7,15 +7,17 @@ pressure_force(patch::Symbol, p::ScalarField, rho) = begin
     ID = boundary_index(mesh.boundaries, patch)
     @info "calculating pressure forces on patch: $patch at index $ID"
     boundary = mesh.boundaries[ID]
-    (; facesID, cellsID) = boundary
-    x = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
-    y = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
-    z = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
+    # (; facesID, cellsID) = boundary
+    (; IDs_range) = boundary
+    x = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
+    y = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
+    z = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
     snflux = FaceVectorField(x,y,z, mesh)
-    surface_flux(snflux, facesID, cellsID, p)
+    surface_flux!(snflux, p, IDs_range)
     sumx, sumy, sumz = 0.0, 0.0, 0.0, 0.0
     for i ∈ eachindex(snflux.x)
-        fID = facesID[i]
+        # fID = facesID[i]
+        # fID = IDs_range[i]
         sumx += snflux.x[i]
         sumy += snflux.y[i]
         sumz += snflux.z[i]
@@ -27,26 +29,28 @@ end
 
 viscous_force(patch::Symbol, U::VectorField, rho, ν, νt) = begin
     mesh = U.mesh
-    faces = mesh.faces
-    boundaries = mesh.boundaries
+    (; faces, boundaries, boundary_cellsID) = mesh
     nboundaries = length(U.BCs)
-    ID = boundary_index(mesh.boundaries, patch)
+    ID = boundary_index(boundaries, patch)
     @info "calculating viscous forces on patch: $patch at index $ID"
     boundary = mesh.boundaries[ID]
-    (; facesID, cellsID) = boundary
-    x = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
-    y = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
-    z = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
+    # (; facesID, cellsID) = boundary
+    (; IDs_range) = boundary
+    x = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
+    y = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
+    z = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
     snGrad = FaceVectorField(x,y,z, mesh)
     for i ∈ 1:nboundaries
         if ID == U.BCs[i].ID
-        surface_normal_gradient(snGrad, facesID, cellsID, U, U.BCs[i].value)
+        surface_normal_gradient!(snGrad, U, U.BCs[i].value, IDs_range)
         end
     end
     sumx, sumy, sumz = 0.0, 0.0, 0.0, 0.0
     for i ∈ eachindex(snGrad)
-        fID = facesID[i]
-        cID = cellsID[i]
+        # fID = facesID[i]
+        # cID = cellsID[i]
+        fID = IDs_range[i]
+        cID = boundary_cellsID[fID]
         face = faces[fID]
         area = face.area
         sumx += snGrad.x[i]*area*(ν + νt[cID]) # this may need using νtf? (wall funcs)
@@ -94,11 +98,14 @@ end
 #     return tauw, pos
 # end
 
-stress_tensor(U, ν, νt) = begin
-    gradU = Grad{Linear}(U)
+stress_tensor(U, ν, νt, config) = begin
+    mesh = U.mesh
+    TF = _get_float(mesh)
+    gradU = Grad{Midpoint}(U)
     gradUT = T(gradU)
     Uf = FaceVectorField(U.mesh)
     grad!(gradU, Uf, U, U.BCs, zero(TF), config) # assuming time=0
+    grad!(gradU, Uf, U, U.BCs, time, config)
     nueff = ScalarField(U.mesh) # temp variable
     nueff.values .= ν .+ νt.values
     Reff = TensorField(U.mesh)

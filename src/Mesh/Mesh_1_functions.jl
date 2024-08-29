@@ -32,9 +32,9 @@ end
 function boundary_index(
     boundaries, name
     )
-    for i in eachindex(boundaries)
-        if boundaries[i].Name == name
-            return boundaries[i].ID
+    for index in eachindex(boundaries)
+        if boundaries[index].name == name
+            return index
         end
     end
 end

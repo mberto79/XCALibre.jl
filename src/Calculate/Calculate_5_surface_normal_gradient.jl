@@ -1,11 +1,15 @@
-export surface_flux, surface_normal_gradient
+export surface_flux!, surface_normal_gradient!
 
-surface_flux(snflux, facesID, cellsID, phi) = begin
+# surface_flux(snflux, facesID, cellsID, phi) = begin
+surface_flux!(snflux, phi, IDs_range) = begin
     mesh = phi.mesh
+    (; faces, boundary_cellsID) = mesh
+
     (; cells, faces) = mesh
     for i ∈ eachindex(snflux.x)
-        cID = cellsID[i]
-        fID = facesID[i]
+        # cID = cellsID[i]
+        fID = IDs_range[i]
+        cID = boundary_cellsID[fID]
         face = faces[fID]
         (; area, normal) = face
         Sf = area*normal
@@ -17,12 +21,14 @@ surface_flux(snflux, facesID, cellsID, phi) = begin
     end
 end
 
-surface_normal_gradient(snGrad, facesID, cellsID, U, Uw) = begin
+surface_normal_gradient!(snGrad, U, Uw, IDs_range) = begin
     mesh = U.mesh
-    (; faces) = mesh
+    (; faces, boundary_cellsID) = mesh
     for i ∈ eachindex(snGrad)
-        cID = cellsID[i]
-        fID = facesID[i]
+        # cID = cellsID[i]
+        # fID = facesID[i]
+        fID = IDs_range[i]
+        cID = boundary_cellsID[fID]
         face = faces[fID]
         (; normal, delta) = face
         Ui = U[cID]

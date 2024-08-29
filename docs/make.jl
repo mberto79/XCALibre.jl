@@ -1,7 +1,7 @@
 using Documenter
 using XCALibre
 
-push!(LOAD_PATH,"../src/")
+# push!(LOAD_PATH,"../src/") # for local build only
 
 makedocs(
     sitename = "XCALibre.jl",
@@ -32,6 +32,5 @@ makedocs(
 # See "Hosting Documentation" and deploydocs() in the Documenter manual
 # for more information.
 deploydocs(
-    repo = "github.com/mberto79/XCALibre.jl",
-    forcepush = "true"
+    repo = "github.com/mberto79/XCALibre.jl.git",
 )

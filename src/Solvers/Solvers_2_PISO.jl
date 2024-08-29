@@ -72,7 +72,7 @@ function PISO(
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
-    @info "Staring PISO loops..."
+    @info "Starting PISO loops..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 

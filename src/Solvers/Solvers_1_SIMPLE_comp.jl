@@ -164,7 +164,7 @@ function CSIMPLE(
     update_nueff!(nueff, nu, model.turbulence, config)
     @. mueff.values = nueff.values * rhof.values
 
-    @info "Staring SIMPLE loops..."
+    @info "Starting SIMPLE loops..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 

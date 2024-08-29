@@ -33,4 +33,5 @@ makedocs(
 # for more information.
 deploydocs(
     repo = "github.com/mberto79/XCALibre.jl",
+    forcepush = "true"
 )

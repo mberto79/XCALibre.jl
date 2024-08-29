@@ -249,7 +249,7 @@ function turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S,
     # Solve kl equation
     prev .= kl.values
     discretise!(kl_eqn, prev, config)
-    apply_boundary_conditions!(kl_eqn, kl.BCs, nothing, config)
+    apply_boundary_conditions!(kl_eqn, kl.BCs, nothing, time, config)
     implicit_relaxation!(kl_eqn, kl.values, solvers.kl.relax, nothing, config)
     update_preconditioner!(kl_eqn.preconditioner, mesh, config)
     solve_system!(kl_eqn, solvers.kl, kl, nothing, config)
@@ -288,7 +288,7 @@ function turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S,
     # Solve omega equation
     prev .= omega.values
     discretise!(ω_eqn, prev, config)
-    apply_boundary_conditions!(ω_eqn, omega.BCs, nothing, config)
+    apply_boundary_conditions!(ω_eqn, omega.BCs, nothing, time, config)
     implicit_relaxation!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
     constrain_equation!(ω_eqn, omega.BCs, model, config) # active with WFs only
     update_preconditioner!(ω_eqn.preconditioner, mesh, config)
@@ -299,7 +299,7 @@ function turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S,
     # Solve k equation
     prev .= k.values
     discretise!(k_eqn, prev, config)
-    apply_boundary_conditions!(k_eqn, k.BCs, nothing, config)
+    apply_boundary_conditions!(k_eqn, k.BCs, nothing, time, config)
     implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
     update_preconditioner!(k_eqn.preconditioner, mesh, config)
     solve_system!(k_eqn, solvers.k, k, nothing, config)

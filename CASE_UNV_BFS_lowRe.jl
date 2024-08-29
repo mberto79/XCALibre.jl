@@ -1,8 +1,7 @@
 using Plots
 using XCALibre
-using Krylov
-using KernelAbstractions
-using CUDA
+
+# using CUDA # uncomment for GPU runs with CUDA
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 # mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
@@ -10,8 +9,8 @@ mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
 mesh_file = "unv_sample_meshes/backwardFacingStep_2mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-mesh_dev = adapt(CUDABackend(), mesh)
-mesh_dev = mesh
+# mesh_dev = adapt(CUDABackend(), mesh) # uncomment for GPU runs
+mesh_dev = mesh # comment out for GPU runs
 
 nu = 1e-3
 # u_mag = 3.5 # 2mm mesh
@@ -114,8 +113,8 @@ solvers = (
 runtime = set_runtime(iterations=2000, write_interval=100, time_step=1)
 runtime = set_runtime(iterations=1, write_interval=-1, time_step=1)
 
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=4)
+# hardware = set_hardware(backend=CUDABackend(), workgroup=32) # uncomment for GPU runs
+hardware = set_hardware(backend=CPU(), workgroup=4) # comment out for GPU runs
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

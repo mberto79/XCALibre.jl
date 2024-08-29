@@ -33,4 +33,5 @@ makedocs(
 # for more information.
 deploydocs(
     repo = "github.com/mberto79/XCALibre.jl.git",
+    devbranch = "dev-0.3-main"
 )

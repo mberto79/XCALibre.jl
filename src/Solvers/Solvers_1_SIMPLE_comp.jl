@@ -1,5 +1,11 @@
 export simple_comp!
 
+"""
+    simple_comp!(model_in, config; resume=true, pref=nothing)
+
+Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport equation for 
+the energy. 
+"""
 simple_comp!(model_in, config; resume=true, pref=nothing) = begin
     R_ux, R_uy, R_uz, R_p, R_e, model = setup_compressible_solvers(
         CSIMPLE, model_in, config;

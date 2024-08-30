@@ -8,7 +8,7 @@ using XCALibre.Mesh
 using XCALibre.Fields
 using XCALibre.Calculate
 using XCALibre.Discretise
-using XCALibre.Turbulence
+# using XCALibre.Turbulence
 
 include("Postprocess_forces.jl")
 

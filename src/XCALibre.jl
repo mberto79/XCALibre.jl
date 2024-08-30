@@ -18,7 +18,7 @@ include("Solve/Solve.jl")
 include("Calculate/Calculate.jl")
 include("VTK/VTK.jl")
 include("ModelPhysics/ModelPhysics.jl")
-include("Turbulence/Turbulence.jl")
+# include("Turbulence/Turbulence.jl")
 # include("Energy/Energy.jl")
 include("Simulate/Simulate.jl")
 include("Solvers/Solvers.jl")
@@ -34,7 +34,7 @@ using Reexport
 @reexport using XCALibre.Solve
 @reexport using XCALibre.Calculate
 @reexport using XCALibre.ModelPhysics
-@reexport using XCALibre.Turbulence
+# @reexport using XCALibre.Turbulence
 # @reexport # using XCALibre.Energy
 @reexport using XCALibre.Simulate
 @reexport using XCALibre.Solvers

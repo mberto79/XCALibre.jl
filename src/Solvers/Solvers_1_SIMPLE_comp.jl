@@ -30,7 +30,7 @@ function setup_compressible_solvers(
     (; rho) = model.fluid
     mesh = model.domain
 
-    @info "Preallocating fields..."
+    @info "Pre-allocating fields..."
     
     ∇p = Grad{schemes.p.gradient}(p)
     # rho= ScalarField(mesh)

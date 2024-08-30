@@ -24,7 +24,7 @@ function setup_incompressible_solvers(
     (; U, p) = model.momentum
     mesh = model.domain
 
-    @info "Preallocating fields..."
+    @info "Pre-allocating fields..."
     
     ∇p = Grad{schemes.p.gradient}(p)
     mdotf = FaceScalarField(mesh)

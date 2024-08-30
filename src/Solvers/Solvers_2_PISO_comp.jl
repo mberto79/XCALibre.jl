@@ -25,7 +25,7 @@ function setup_unsteady_compressible_solvers(
     (; rho) = model.fluid
     mesh = model.domain
 
-    @info "Preallocating fields..."
+    @info "Pre-allocating fields..."
     
     ∇p = Grad{schemes.p.gradient}(p)
     mdotf = FaceScalarField(mesh)

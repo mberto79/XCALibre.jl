@@ -1,4 +1,5 @@
 export _get_float, _get_int, _get_backend, _convert_array!
+export boundary_info, boundary_map
 export total_boundary_faces, boundary_index
 export norm_static
 export x, y, z # access cell centres
@@ -29,12 +30,42 @@ function total_boundary_faces(mesh::AbstractMesh)
 end
 
 # Extract bundary index based on set name 
+struct boundary_info{I<:Integer, S<:Symbol}
+    ID::I
+    Name::S
+end
+Adapt.@adapt_structure boundary_info
+
+# Create LUT to map boudnary names to indices
+function boundary_map(mesh)
+    I = Integer; S = Symbol
+    boundary_map = boundary_info{I,S}[]
+
+    mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
+
+    for (i, boundary) in enumerate(mesh_temp.boundaries)
+        push!(boundary_map, boundary_info{I,S}(i, boundary.name))
+    end
+
+    return boundary_map
+end
+
 function boundary_index(
-    boundaries, name
-    )
+    boundaries::Vector{boundary_info{TI, S}}, name::S
+    ) where{TI<:Integer,S<:Symbol}
     for index in eachindex(boundaries)
+        if boundaries[index].Name == name
+            return boundaries[index].ID
+        end
+    end
+end
+
+function boundary_index(boundaries::Vector{Boundary{S, UR}}, name::S) where {S<:Symbol,UR}
+    # bci = zero(TI)
+    for index ∈ eachindex(boundaries)
+        # bci += 1
         if boundaries[index].name == name
-            return index
+            return index 
         end
     end
 end

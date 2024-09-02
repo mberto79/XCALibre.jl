@@ -1,3 +1,28 @@
+export FixedTemperature
+
+struct FixedTemperature{I,V} <: AbstractDirichlet
+    ID::I 
+    value::V 
+end
+Adapt.@adapt_structure FixedTemperature
+
+FixedTemperature(name; T, model) = begin
+    FixedTemperature(name, (; T=T, energy_model=model))
+end
+
+function fixedValue(BC::FixedTemperature, ID::I, value::V) where {I<:Integer,V}
+    # Exception 1: Value is scalar
+    if V <: Number
+        return FixedTemperature{I,typeof(value)}(ID, value)
+        # Exception 2: value is a tupple
+    elseif V <: NamedTuple
+        return FixedTemperature{I,V}(ID, value)
+    # Error if value is not scalar or tuple
+    else
+        throw("The value provided should be a scalar or a tuple")
+    end
+end
+
 @define_boundary FixedTemperature Divergence{Linear} begin
     (; T, energy_model) = bc.value
     flux = term.flux[fID]

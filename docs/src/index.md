@@ -74,23 +74,40 @@ Code example
 
 ```julia
 U_eqn = (
-
-        Time{schemes.U.time}(U)
+          Time{schemes.U.time}(U)
         + Divergence{schemes.U.divergence}(mdotf, U) 
         - Laplacian{schemes.U.laplacian}(nueff, U) 
         == 
         -Source(∇p.result)
 
-    ) → VectorEquation(mesh)
+      ) → VectorEquation(mesh)
 ```
-
-
 
 # Planned development
 ---
 
-#### Capabilities, solvers, algorithms, etc.
+### Capabilities, solvers, algorithms, models, etc.
+* Solver for highly compressible flows (including shockwaves)
+* Conjugate heat transfer
+* ``k-\epsilon`` turbulence model
+* Implement parallel versions of more efficient preconditioners
 
-#### API
+### API
+* Pass boundary conditions as a separate object. The correct approach results in some internal methods/objects not being fully compatible with GPU kernels, and results is some performance degradation (due to unnecessary data transfer between GPU and host device when boundary condition information is needed/applied). A separation of boundary conditions from field data (scalar and vector fields primarily) would address both of these issues.
+* There are no further immediate plans for changing the user API
+* Fine tuning of the public API expected based on of user feedback
 
-#### Internals
+### Internals
+* Overhaul of field data. Currently, both vectors and tensors are built on the primitive scalar field object. Whilst this was convenience during the early development stage, the package has reach a level of maturity that makes this approach hard to maintain, adding unneeded complexity when working with tensors. We plan to define separate internals (how tensors are defined and stored in memory). It is anticipated that this will ease the implementation of models working with tensors, and give some performance gains since information will be stored closer in memory.
+
+
+# Main dependencies
+---
+
+XCALibre.jl is possible (and relies) on the functionality provided by other packages in the Julia ecosystem. For a full list of direct dependencies please refer to the Project.toml file included with this repository. We are thankful to the teams that have helped develop and maintain every single of our dependencies. Major functionally is provided by the following:
+
+* KernelAbstractions.jl - provides a unified parallel programming framework for CPUs and GPUs
+* Krylov.jl - provide solvers for linear systems at the heart of XCALibre.jl
+* LinearOperators.jl - wrappers for matrices and linear operators
+* Atomix.jl - enable atomix operations to ensure race conditions are avoided in parallel kernels
+* CUDA.jl, AMD.jl, Metal.jl and OneAPI.jl - not direct dependencies but packages enable GPU usage in Julia

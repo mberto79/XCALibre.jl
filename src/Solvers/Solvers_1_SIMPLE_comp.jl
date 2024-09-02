@@ -1,7 +1,7 @@
-export simple_comp!
+export csimple!
 
 """
-    simple_comp!(model_in, config; resume=true, pref=nothing)
+    csimple!(model_in, config; resume=true, pref=nothing)
 
 Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport equation for 
 the energy. 
@@ -11,7 +11,7 @@ the energy.
 - `config`   -- Configuration structure defined by user with solvers, schemes, runtime and 
                 hardware structures set.
 - `resume`   -- True or false indicating if case is resuming or starting a new simulation.
-- `pref`     -- Reference pressure value for cases that do not have a pressure defining BC.
+- `pref`     -- Reference pressure value for cases that do not have a pressure defining BC (incompressible flows only)
 
 ### Output
 - `R_ux`  - Vector of x-velocity residuals for each iteration.
@@ -22,7 +22,7 @@ the energy.
 - `model` - Physics model output including field parameters.
 
 """
-simple_comp!(model_in, config; resume=true, pref=nothing) = begin
+csimple!(model_in, config; resume=true, pref=nothing) = begin
     R_ux, R_uy, R_uz, R_p, R_e, model = setup_compressible_solvers(
         CSIMPLE, model_in, config;
         resume=true, pref=nothing

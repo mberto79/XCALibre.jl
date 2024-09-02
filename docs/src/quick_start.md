@@ -1,3 +1,7 @@
 # Quick Start
 
-Documentation for XCALibre.jl
+# Installation
+---
+
+# Example
+---

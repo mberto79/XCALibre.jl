@@ -1,5 +1,27 @@
 export simple!
 
+"""
+    simple!(model_in, config; resume=true, pref=nothing)
+
+Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport equation for 
+the energy. 
+
+### Input
+- `model in` -- Physics model defiend by user and passed to run!.
+- `config`   -- Configuration structure defined by user with solvers, schemes, runtime and 
+                hardware structures set.
+- `resume`   -- True or false indicating if case is resuming or starting a new simulation.
+- `pref`     -- Reference pressure value for cases that do not have a pressure defining BC (incompressible flows only)
+
+### Output
+- `R_ux`  - Vector of x-velocity residuals for each iteration.
+- `R_uy`  - Vector of y-velocity residuals for each iteration.
+- `R_uz`  - Vector of y-velocity residuals for each iteration.
+- `R_p`   - Vector of pressure residuals for each iteration.
+- `R_e`   - Vector of energy residuals for each iteration.
+- `model` - Physics model output including field parameters.
+
+"""
 simple!(model_in, config; resume=true, pref=nothing) = begin
     R_ux, R_uy, R_uz, R_p, model = setup_incompressible_solvers(
         SIMPLE, model_in, config;

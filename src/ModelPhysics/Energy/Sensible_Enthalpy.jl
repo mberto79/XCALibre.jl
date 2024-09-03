@@ -224,9 +224,9 @@ Model updates the value of Psi.
 
 ### Algorithm
 Weakly compressible currently uses the ideal gas equation for establishing the
-compressibility factor where ``\rho = p * \Psi``. ``\Psi`` is calculated from the sensible 
+compressibility factor where ``\\rho = p * \\Psi``. ``\\Psi`` is calculated from the sensible 
 enthalpy, reference temperature and fluid model specified ``C_p`` and ``R`` value where 
-``R`` is calculated from ``C_p`` and ``\gamma`` specified in the fluid model.
+``R`` is calculated from ``C_p`` and ``\\gamma`` specified in the fluid model.
 """
 function thermo_Psi!(
     model::Physics{T,F,M,Tu,E,D,BI}, Psi::ScalarField
@@ -249,9 +249,9 @@ Function updates the value of Psi.
 
 ### Algorithm
 Weakly compressible currently uses the ideal gas equation for establishing the
-compressibility factor where ``\rho = p * \Psi``. ``\Psi`` is calculated from the sensible 
+compressibility factor where ``\\rho = p * \\Psi``. ``\\Psi`` is calculated from the sensible 
 enthalpy, reference temperature and fluid model specified ``C_p`` and ``R`` value where 
-``R`` is calculated from ``C_p`` and ``\gamma`` specified in the fluid model.
+``R`` is calculated from ``C_p`` and ``\\gamma`` specified in the fluid model.
 """
 function thermo_Psi!(
     model::Physics{T,F,M,Tu,E,D,BI}, Psif::FaceScalarField, config

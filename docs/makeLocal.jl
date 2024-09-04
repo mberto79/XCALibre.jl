@@ -11,6 +11,10 @@ makedocs(
     pages = [
         "Home" => "index.md",
         "quick_start.md",
+        "Verification & validation" => Any[
+            "VV/2d-isothermal-backward-facing-step.md",
+            "VV/2d-constant-temperature-flat-plate.md"
+        ],
         "User Guide" => Any[
             "user_guide/workflow.md",
             "user_guide/mesh.md",

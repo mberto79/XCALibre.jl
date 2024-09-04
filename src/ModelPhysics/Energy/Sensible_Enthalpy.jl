@@ -2,6 +2,23 @@ export SensibleEnthalpy
 export Ttoh, htoT!, Ttoh!, thermo_Psi!
 
 # Model type definition
+"""
+    SensibleEnthalpy <: AbstractEnergyModel
+
+Type that represents energy model, coefficients and respective fields.
+
+### Fields
+- 'h'    -- Sensible enthalpy ScalarField.
+- 'T'    -- Temperature ScalarField.
+- 'hf'   -- Sensible enthalpy FaceScalarField.
+- 'Tf'   -- Temperature FaceScalarField.
+- 'K'    -- Specific kinetic energy ScalarField.
+- 'dpdt' -- Pressure time derivative ScalarField.
+- 'updated_BC' -- Boundary condition function to convert temperature to sensible enthalp on 
+                    on a fixed value boudary.
+- 'coeffs' -- A tuple of model coefficients.
+
+"""
 struct SensibleEnthalpy{S1,S2,F1,F2,S3,S4,F,C} <: AbstractEnergyModel
     h::S1
     T::S2
@@ -63,7 +80,7 @@ Initialisation of energy transport equations.
               hardware structures set.
 
 ### Output
-- `Sensible_Enthalpy_Model'  -- Energy model struct containing energy equation.
+- `Sensible_Enthalpy_Model`  -- Energy model struct containing energy equation.
 
 """
 function initialise(
@@ -102,6 +119,25 @@ function initialise(
     return Sensible_Enthalpy_Model(energy_eqn)
 end
 
+
+"""
+    energy::Sensible_Enthalpy_Model{E1}, model::Physics{T1,F,M,Tu,E,D,BI}, prev, mdotf, rho, mueff, time, config
+    ) where {T1,F,M,Tu,E,D,BI,E1}
+
+Run energy transport equations.
+
+### Input
+- `energy` -- Energy model.
+- `model`  -- Physics model defined by user.
+- `prev`   -- Previous energy cell values.
+- `mdtof`  -- Face mass flow.
+- `rho`    -- Density ScalarField.
+- `mueff`  -- Effective viscosity FaceScalarField.
+- `time`   --
+- `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
+              hardware structures set.
+
+"""
 function energy!(
     energy::Sensible_Enthalpy_Model{E1}, model::Physics{T1,F,M,Tu,E,D,BI}, prev, mdotf, rho, mueff, time, config
     ) where {T1,F,M,Tu,E,D,BI,E1}
@@ -175,6 +211,23 @@ function energy!(
     correct_boundaries!(hf, h, h.BCs, time, config)
 end
 
+
+"""
+    thermo_Psi!(model::Physics{T,F,M,Tu,E,D,BI}, Psi::ScalarField) 
+    where {T,F<:AbstractCompressible,M,Tu,E,D,BI}
+
+Model updates the value of Psi.
+
+### Input
+- `model`  -- Physics model defined by user.
+- `Psi`    -- Compressibility factor ScalarField.
+
+### Algorithm
+Weakly compressible currently uses the ideal gas equation for establishing the
+compressibility factor where ``\\rho = p * \\Psi``. ``\\Psi`` is calculated from the sensible 
+enthalpy, reference temperature and fluid model specified ``C_p`` and ``R`` value where 
+``R`` is calculated from ``C_p`` and ``\\gamma`` specified in the fluid model.
+"""
 function thermo_Psi!(
     model::Physics{T,F,M,Tu,E,D,BI}, Psi::ScalarField
     ) where {T,F<:AbstractCompressible,M,Tu,E,D,BI}
@@ -184,6 +237,22 @@ function thermo_Psi!(
     @. Psi.values = Cp.values/(R.values*(h.values + Cp.values*Tref))
 end
 
+"""
+    thermo_Psi!(model::Physics{T,F,M,Tu,E,D,BI}, Psif::FaceScalarField) 
+    where {T,F<:AbstractCompressible,M,Tu,E,D,BI}
+
+Function updates the value of Psi.
+
+### Input
+- `model`  -- Physics model defined by user.
+- `Psif`    -- Compressibility factor FaceScalarField.
+
+### Algorithm
+Weakly compressible currently uses the ideal gas equation for establishing the
+compressibility factor where ``\\rho = p * \\Psi``. ``\\Psi`` is calculated from the sensible 
+enthalpy, reference temperature and fluid model specified ``C_p`` and ``R`` value where 
+``R`` is calculated from ``C_p`` and ``\\gamma`` specified in the fluid model.
+"""
 function thermo_Psi!(
     model::Physics{T,F,M,Tu,E,D,BI}, Psif::FaceScalarField, config
     ) where {T,F<:AbstractCompressible,M,Tu,E,D,BI}
@@ -195,6 +264,17 @@ function thermo_Psi!(
     @. Psif.values = Cp.values/(R.values*(hf.values + Cp.values*Tref))
 end
 
+"""
+    Ttoh!(model::Physics{T1,F,M,Tu,E,D,BI}, T::ScalarField, h::ScalarField
+    ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
+
+Function coverts temperature ScalarField to sensible enthalpy ScalarField.
+
+### Input
+- `model`  -- Physics model defined by user.
+- `T`      -- Temperature ScalarField.
+- `h`      -- Sensible enthalpy ScalarField.
+"""
 function Ttoh!(
     model::Physics{T1,F,M,Tu,E,D,BI}, T::ScalarField, h::ScalarField
     ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
@@ -204,6 +284,17 @@ function Ttoh!(
     @. h.values = Cp.values*(T.values-Tref)
 end
 
+"""
+    htoT!(model::Physics{T1,F,M,Tu,E,D,BI}, h::ScalarField, T::ScalarField
+    ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
+
+Function coverts sensible enthalpy ScalarField to temperature ScalarField.
+
+### Input
+- `model`  -- Physics model defined by user.
+- `h`      -- Sensible enthalpy ScalarField.
+- `T`      -- Temperature ScalarField.
+"""
 function htoT!(
     model::Physics{T1,F,M,Tu,E,D,BI}, h::ScalarField, T::ScalarField
     ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}

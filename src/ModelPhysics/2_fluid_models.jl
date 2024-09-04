@@ -8,10 +8,31 @@ abstract type AbstractFluid end
 abstract type AbstractIncompressible <: AbstractFluid end
 abstract type AbstractCompressible <: AbstractFluid end
 
+"""
+    Fluid <: AbstractFluid
+
+Abstract fluid model type for consturcting new fluid models.
+
+### Fields
+- 'args' -- Model arguments.
+
+"""
 struct Fluid{T,ARG} <: AbstractFluid
     args::ARG
 end
 
+"""
+    Incompressible <: AbstractIncompressible
+
+Incompressible fluid model containing fluid field parameters for incompressible flows.
+
+### Fields
+- 'nu'   -- Fluid kinematic viscosity.
+- 'rho'  -- Fluid density.
+
+### Examples
+- `Fluid{Incompressible}(nu=0.001, rho=1.0)` - Constructur with default values.
+"""
 @kwdef struct Incompressible{S1, S2, F1, F2} <: AbstractIncompressible
     nu::S1
     rho::S2
@@ -36,10 +57,21 @@ end
     Incompressible(nu, rho, nuf, rhof)
 end
 
-# _nu(fluid::AbstractIncompressible) = fluid.nu
-# _rho(fluid::AbstractIncompressible) = fluid.rho
-# _nuf(fluid::AbstractIncompressible) = fluid.nuf
+"""
+    WeaklyCompressible <: AbstractCompressible
 
+Weakly compressible fluid model containing fluid field parameters for weakly compressible 
+    flows with constant parameters - ideal gas with constant viscosity.
+
+### Fields
+- 'nu'   -- Fluid kinematic viscosity.
+- 'cp'   -- Fluid specific heat capacity.
+- `gamma` -- Ratio of specific heats.
+- `Pr`   -- Fluid Prantl number.
+
+### Examples
+- `Fluid{WeaklyCompressible}(; nu=1E-5, cp=1005.0, gamma=1.4, Pr=0.7)` - Constructur with default values.
+"""
 @kwdef struct WeaklyCompressible{S1, S2, F1, F2, T} <: AbstractCompressible
     nu::S1
     rho::S2
@@ -73,7 +105,21 @@ end
     WeaklyCompressible(nu, rho, nuf, rhof, cp, gamma, Pr, R)
 end
 
+"""
+    Compressible <: AbstractCompressible
 
+Compressible fluid model containing fluid field parameters for compressible flows with 
+    constant parameters - ideal gas with constant viscosity.
+
+### Fields
+- 'nu'   -- Fluid kinematic viscosity.
+- 'cp'   -- Fluid specific heat capacity.
+- `gamma` -- Ratio of specific heats.
+- `Pr`   -- Fluid Prantl number.
+
+### Examples
+- `Fluid{Compressible}(; nu=1E-5, cp=1005.0, gamma=1.4, Pr=0.7)` - Constructur with default values.
+"""
 @kwdef struct Compressible{S1, S2, F1, F2, T} <: AbstractCompressible
     nu::S1
     rho::S2
@@ -106,13 +152,3 @@ end
     rhof = FaceScalarField(mesh)
     Compressible(nu, rho, nuf, rhof, cp, gamma, Pr, R)
 end
-
-
-# _R(fluid::AbstractCompressible) = ConstantScalar(fluid.cp.values*(1.0 - (1.0/fluid.gamma.values)))
-# _Cp(fluid::AbstractCompressible) = fluid.cp
-# _nu(fluid::AbstractCompressible) = fluid.nu
-# _Pr(fluid::AbstractCompressible) = fluid.Pr
-# _rho(fluis::AbstractCompressible) = fluid.rho
-
-# _nu(fluid::AbstractCompressible) = fluid.nu
-# _nuf(fluid::AbstractCompressible) = fluid.nu

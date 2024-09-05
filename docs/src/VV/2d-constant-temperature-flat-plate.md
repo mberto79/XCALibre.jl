@@ -36,12 +36,8 @@ The mesh is shown in the figure below:
 
 # Case file
 ---
+
 ```jldoctest; filter = r"(?!(done))."sm => s""
-
-# r"^(?!done$).*"
-# r"[a-zA-Z]+?(?=\s*?[^\w]*?$)"
-# r"^(?!\"done\"$).*"
-
 using XCALibre
 using Krylov
 
@@ -135,8 +131,6 @@ initialise!(model.momentum.p, 100000.0)
 initialise!(model.energy.T, 300.0)
 
 Rx, Ry, Rz, Rp, Re, model_out = run!(model, config)
-
-dd\n
 ```
 
 # Results
@@ -144,7 +138,6 @@ dd\n
 
 The results of the model are compared to the theoretical correlation in the figure below:
 
-`./Nusselt_const_temp_lam_plate.png`
-
+![Nusselt number distribution results.](figures/Nusselt_const_temp_lam_plate.png)
 
 ### This is a sub-subsection

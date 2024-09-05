@@ -16,7 +16,13 @@ XCALibre's physcis model API.
 - 'boundary_info'  -- Mesh boundardy information.
 
 ### Examples
-- `Fluid{Incompressible}(nu=0.001, rho=1.0)` - Constructor with default values.
+- `Phycsics(
+    time::Union{Steady, Transient},
+    fluid::AbstractFluid, 
+    turbulence::AbstractTurbulenceModel,
+    energy::AbstractEnergyModel,
+    domain::AbstractMesh 
+    )
 """
 struct Physics{T,F,M,Tu,E,D,BI}
     time::T
@@ -29,18 +35,48 @@ struct Physics{T,F,M,Tu,E,D,BI}
 end 
 Adapt.@adapt_structure Physics
 
+"""
+    Transient
+
+Transient model for Physics model API.
+
+### Examples
+- `Transient()`
+"""
 struct Transient end
 Adapt.@adapt_structure Transient
 
+"""
+    Steady
+
+Steady model for Physics model API.
+
+### Examples
+- `Steady()`
+"""
 struct Steady end
 Adapt.@adapt_structure Steady
 
+"""
+    Momentum
+
+Momentum model containting key momentum fields.
+
+### Fields
+- 'U'        -- Velocity VectorField.
+- 'p'        -- Pressure ScalarField.
+- 'sources'  -- Momentum model sources.
+
+### Examples
+- `Momentum(mesh::AbstractMesh)
+"""
 struct Momentum{V,S,SS}
     U::V 
     p::S 
     sources::SS
 end 
 Adapt.@adapt_structure Momentum 
+
 
 Momentum(mesh::AbstractMesh) = begin
     U = VectorField(mesh)

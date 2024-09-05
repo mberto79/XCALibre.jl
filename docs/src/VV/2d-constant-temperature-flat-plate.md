@@ -7,9 +7,11 @@ compressible solver. The case provides a constant temperature boundary condition
 wall of the domain. 
 
 The results of case are compared against the theoretical local Nusselt number correlation 
-for forced convection for constant temperature flat plates.
+for forced convection on constant temperature flat plate:
 
 ``Nu_x = 0.332 Re_x^{1/2} Pr^{1/3}``
+
+The correlation is valid for Prandtl numbers greater than 0.6.
 
 
 The boundary conditions are described in the following figure:
@@ -138,6 +140,4 @@ Rx, Ry, Rz, Rp, Re, model_out = run!(model, config)
 
 The results of the model are compared to the theoretical correlation in the figure below:
 
-![Nusselt number distribution results.](figures/Nusselt_const_temp_lam_plate.png)
-
-### This is a sub-subsection
+![Nusselt number distribution results.](../figures/Nusselt_const_temp_lam_plate.png)

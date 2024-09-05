@@ -6,7 +6,7 @@ using XCALibre
 makedocs(
     sitename = "XCALibre.jl",
     format = Documenter.HTML(),
-    doctest = false, # only set to false when sorting out docs structure
+    # doctest = false, # only set to false when sorting out docs structure
     modules = [XCALibre],
     pages = [
         "Home" => "index.md",

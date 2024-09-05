@@ -1,3 +1,5 @@
+export Wall
+
 struct Wall{I,V} <: AbstractDirichlet
     ID::I
     value::V

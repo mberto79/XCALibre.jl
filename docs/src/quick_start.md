@@ -25,16 +25,14 @@ We plan to register XCALibre.jl so that is added to the General Julia Registry. 
 pkg> add XCALibre
 ```
 
-If you want to have access to GPU acceleration and your system has a compatible GPU, you will also need to install the corresponding GPU package for your hardware. See CUDA.jl, AMD.jl, oneAPI.jl for more details. XCALibre.jl will automatically precompile and load the relevant backend specific functionality (using [Julia extensions](https://pkgdocs.julialang.org/v1/creating-packages/#Conditional-loading-of-code-in-packages-(Extensions)))
+!!! note
+    
+    To enable GPU acceleration you will also need to install the corresponding GPU package for your hardware. See CUDA.jl, AMD.jl, oneAPI.jl for more details. XCALibre.jl will automatically precompile and load the relevant backend specific functionality (using [Julia extensions](https://pkgdocs.julialang.org/v1/creating-packages/#Conditional-loading-of-code-in-packages-(Extensions)))
 
 # Example
 ---
 
-```jldoctest; filter = r"(?!(done))."sm => s""
-
-# r"^(?!done$).*"
-# r"[a-zA-Z]+?(?=\s*?[^\w]*?$)"
-# r"^(?!\"done\"$).*"
+```jldoctest; filter = r"(pass)|[^p]*(?:p(?!ass)[^d]*)*" => s"\1", output = false
 
 using XCALibre
 backend = CPU()
@@ -65,8 +63,8 @@ model = Physics(
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Symmetry(:wall, [0.0, 0.0, 0.0]),
-    Symmetry(:top, [0.0, 0.0, 0.0]),
+    Wall(:wall, [0.0, 0.0, 0.0]),
+    Wall(:top, [0.0, 0.0, 0.0]),
 )
 
 @assign! model momentum p (
@@ -106,7 +104,7 @@ solvers = (
 
 # specify runtime requirements
 runtime = set_runtime(
-    iterations=2000, time_step=1, write_interval=-1) # -1 will not save results to file
+    iterations=2000, time_step=1, write_interval=2000) # -1 will not save results to file
 
 # set up backend 
 hardware = set_hardware(backend=backend, workgroup=4)
@@ -123,11 +121,12 @@ initialise!(model.momentum.p, 0.0)
 # run simulation
 Rx, Ry, Rz, Rp, model_out = run!(model, config);
 
-println("done")
-# output
+println("pass") # this line is used for doctests only
 
-dd\n
+# output
+"pass"
 ```
 
+### Output
 
-
+![Simulation result visualisation in ParaView](figures/quick_start_fig_bfs_2d_incompressible_laminar.svg)

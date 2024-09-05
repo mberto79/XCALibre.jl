@@ -1,6 +1,6 @@
 # Quick Start
 
-*Read this section for information about how to install XCALibre.jl and a basic example to showcasing the main API provided*
+*Read this section for information about how to install XCALibre.jl and an example showcasing the API*
 
 # Installation
 ---
@@ -32,25 +32,51 @@ pkg> add XCALibre
 # Example
 ---
 
+The example below illustrates the top-level API used in XCALibre.jl. It shows the key steps a user needs to follow to set up a simulation:
+
+* [Pre-processing](@ref) (steps 1 and 2)
+* [Physics and models](@ref) (steps 3 to 5)
+* [Numerical setup](@ref) (steps 6 and 7)
+* [Runtime and solvers](@ref) setup (steps 8 to 11)
+* [Post-processing](@ref) (step 12)
+
+Once you have installed Julia and XCALibre.jl, the example below can be run by copying the contents shown below and pasting them on a file. The file can be executed within vscode, the Julia REPL or from a system terminal. 
+
+* To run in vscode check the information for using [Julia in vscode](https://code.visualstudio.com/docs/languages/julia)
+* To run in the [Julia REPL](https://docs.julialang.org/en/v1/stdlib/REPL/), simply launch Julia and type `include("name_of_your_file.jl")`
+* To run from a system terminal (bash or cmd, for example), simply type `path/to/julia name_of_your_file.jl`
+
+In most cases, it is preferable to run simulations from within the Julia REPL because, in Julia, there is often a cost associated to the first run due to compilation time. By relaunching a simulation in the REPL, all previously compiled code will not be recompiled. This is particularly helpful in the prototyping stages. For long running simulations, the compilation time is normally negligible compared to the actual time needed to complete the simulation.
+
 ```jldoctest; filter = r"(pass)|[^p]*(?:p(?!ass)[^d]*)*" => s"\1", output = false
 
+# Step 0. Load libraries
 using XCALibre
-backend = CPU()
-# using CUDA; backend = CUDABackend() # Uncomment and run for NVIDIA GPUs
-# using AMDGPU; backend = ROCBackend() # Uncomment and run for AMD GPUs
+# using CUDA # Uncomment to run on NVIDIA GPUs
+# using AMDGPU # Uncomment to run on AMD GPUs
 
+
+# Step 1. Define mesh
 mesh_file = pkgdir(XCALibre, "examples/2d_incompressible_laminar_backwards_step/backward_facing_step_10mm.unv")
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
+
+# Step 2. Select backend and setup hardware
+backend = CPU()
+# backend = CUDABackend() # ru non NVIDIA GPUs
+# ackend = ROCBackend() # run on AMD GPUs
+
+hardware = set_hardware(backend=backend, workgroup=4)
+# hardware = set_hardware(backend=backend, workgroup=32) # use for GPU backends
 
 mesh_dev = mesh # use this line to run on CPU
 # mesh_dev = adapt(backend, mesh)  # Uncomment to run on GPU 
 
-# flow conditions
+# Step 3. Flow conditions
 velocity = [1.5, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
 
-# Define physics
+# Step 4. Define physics
 model = Physics(
     time = Steady(),
     fluid = Fluid{Incompressible}(nu = nu),
@@ -59,7 +85,7 @@ model = Physics(
     domain = mesh_dev
     )
 
-# define boundary conditions
+# Step 5. Define boundary conditions
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
@@ -74,13 +100,13 @@ model = Physics(
     Neumann(:top, 0.0)
 )
 
-# choose discretisation schemes
+# Step 6. Choose discretisation schemes
 schemes = (
     U = set_schemes(divergence = Linear),
     p = set_schemes() # no input provided (will use defaults)
 )
 
-# set up linear solvers and preconditioners
+# Step 7. Set up linear solvers and preconditioners
 solvers = (
     U = set_solver(
         model.momentum.U;
@@ -102,24 +128,23 @@ solvers = (
     )
 )
 
-# specify runtime requirements
+# Step 8. Specify runtime requirements
 runtime = set_runtime(
-    iterations=2000, time_step=1, write_interval=2000) # -1 will not save results to file
+    iterations=2000, time_step=1, write_interval=2000)
 
-# set up backend 
-hardware = set_hardware(backend=backend, workgroup=4)
-# hardware = set_hardware(backend=backend, workgroup=32) # use for GPU backends
-
-# construct Configuration object
+# Step 9. Construct Configuration object
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
-# Initialise fields (initial guess)
+# Step 10. Initialise fields (initial guess)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-# run simulation
+# Step 11. Run simulation
 Rx, Ry, Rz, Rp, model_out = run!(model, config);
+
+# Step 12. Post-process
+pwd() # will print location of active directory where the file "iteration_002000.vtk" can be found
 
 println("pass") # this line is used for doctests only
 
@@ -128,5 +153,7 @@ println("pass") # this line is used for doctests only
 ```
 
 ### Output
+
+If you chose to run the example above, XCALibre.jl would have written a simulation result file to your computer. The name of the file is `iteration_002000.vtk`. The file will be located in your current active directory (you can check this by running `pwd()`). This file can be open directly in ParaView for further post-processing. You can find out more about [ParaView on their website](https://www.paraview.org/). The image below is the output solution generated by XCALibre.j to the example simulation above.
 
 ![Simulation result visualisation in ParaView](figures/quick_start_fig_bfs_2d_incompressible_laminar.svg)

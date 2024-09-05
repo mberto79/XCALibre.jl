@@ -16,14 +16,12 @@ makedocs(
             "VV/2d-constant-temperature-flat-plate.md"
         ],
         "User Guide" => Any[
-            "user_guide/workflow.md",
-            "user_guide/mesh.md",
-            "user_guide/physics.md",
-            "user_guide/boundary_conditions.md",
-            "user_guide/discretisation_schemes.md",
-            "user_guide/linear_solvers.md",
-            "user_guide/runtime_configuration.md",
-            "user_guide/flow_solvers.md"
+            "user_guide/0_introduction_and_workflow.md",
+            "user_guide/1_preprocessing.md",
+            "user_guide/2_physics_and_models.md",
+            "user_guide/3_numerical_setup.md",
+            "user_guide/4_runtime_and_solvers.md",
+            "user_guide/5_postprocessing.md"
         ],
         "Theory Guide" => "theory_guide/introduction.md",
         "contributor_guide.md",

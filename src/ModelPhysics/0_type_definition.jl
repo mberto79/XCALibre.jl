@@ -1,7 +1,23 @@
 export Physics
 export Transient, Steady
 
+"""
+    Physics
 
+XCALibre's physcis model API.
+
+### Fields
+- 'time'   -- Time model.
+- 'fluid'  -- Fluid model.
+- 'momentum'  -- Momentum model.
+- 'turbulence'  -- Turbulence model.
+- 'energy'  -- Energy model.
+- 'domain'  -- Mesh.
+- 'boundary_info'  -- Mesh boundardy information.
+
+### Examples
+- `Fluid{Incompressible}(nu=0.001, rho=1.0)` - Constructor with default values.
+"""
 struct Physics{T,F,M,Tu,E,D,BI}
     time::T
     fluid::F

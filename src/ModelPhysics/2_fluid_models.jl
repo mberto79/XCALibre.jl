@@ -11,7 +11,7 @@ abstract type AbstractCompressible <: AbstractFluid end
 """
     Fluid <: AbstractFluid
 
-Abstract fluid model type for consturcting new fluid models.
+Abstract fluid model type for constructing new fluid models.
 
 ### Fields
 - 'args' -- Model arguments.
@@ -41,7 +41,7 @@ Incompressible fluid model containing fluid field parameters for incompressible 
 end
 Adapt.@adapt_structure Incompressible
 
-Fluid{Incompressible}(; nu=0.001, rho=1.0) = begin
+Fluid{Incompressible}(; nu, rho=1.0) = begin
     coeffs = (nu=nu, rho=rho)
     ARG = typeof(coeffs)
     Fluid{Incompressible,ARG}(coeffs)
@@ -85,7 +85,7 @@ default values.
 end
 Adapt.@adapt_structure WeaklyCompressible
 
-Fluid{WeaklyCompressible}(; nu=1E-5, cp=1005.0, gamma=1.4, Pr=0.7 ) = begin
+Fluid{WeaklyCompressible}(; nu, cp, gamma, Pr) = begin
     coeffs = (nu=nu, cp=cp, gamma=gamma, Pr=Pr)
     ARG = typeof(coeffs)
     Fluid{WeaklyCompressible,ARG}(coeffs)

@@ -1,14 +1,14 @@
 export Symmetry
 
 """
-    Symmetry <: AbstractNeumann
+    Symmetry <: AbstractBoundary
 
 Symmetry boundary condition model for velocity and scalar field.
 
 ### Fields
 - 'ID' -- Boundary ID
 """
-struct Symmetry{I,V} <: AbstractNeumann
+struct Symmetry{I,V} <: AbstractBoundary
     ID::I
     value::V
 end

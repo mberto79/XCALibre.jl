@@ -4,7 +4,7 @@ export DirichletFunction
 abstract type XCALibreUserFunctor end
 
 """
-    DirichletFunction <: AbstractBoundary
+    DirichletFunction <: AbstractDirichlet
 
 Dirichlet boundary condition model.
 
@@ -12,7 +12,7 @@ Dirichlet boundary condition model.
 - 'ID' -- Boundary ID
 - `value` -- Custom function for Dirichlet boundary condition.
 """
-struct DirichletFunction{I,V} <: AbstractBoundary
+struct DirichletFunction{I,V} <: AbstractDirichlet
     ID::I
     value::V
 end

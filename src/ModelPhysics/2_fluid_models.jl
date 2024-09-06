@@ -17,7 +17,7 @@ Abstract fluid model type for constructing new fluid models.
 - 'args' -- Model arguments.
 
 """
-struct Fluid{T,ARG} <: AbstractFluid
+struct Fluid{T,ARG}
     args::ARG
 end
 

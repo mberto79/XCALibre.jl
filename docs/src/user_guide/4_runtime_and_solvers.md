@@ -1,14 +1,14 @@
 # Runtime and solvers
 *super brief summary*
 
-# Runtime setup
+## Runtime setup
 ---
 
-# Configuration object
+## Configuration object
 ---
 
-# Initialising fields
+## Initialising fields
 ---
 
-# Launching flow solvers
+## Launching flow solvers
 ---

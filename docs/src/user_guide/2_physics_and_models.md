@@ -1,17 +1,17 @@
 # Physics and models
 *super brief summary*
 
-# Physics model definition
+## Physics model definition
 ---
 
-# Fluid types
+## Fluid types
 ---
 
-# Turbulence models
+## Turbulence models
 ---
 
-# Energy models
+## Energy models
 ---
 
-# Boundary conditions
+## Boundary conditions
 ---

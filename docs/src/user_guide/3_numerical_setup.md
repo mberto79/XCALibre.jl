@@ -1,8 +1,8 @@
 # Numerical setup
 *super brief summary*
 
-# Discretisation schemes
+## Discretisation schemes
 ---
 
-# Linear solvers
+## Linear solvers
 ---

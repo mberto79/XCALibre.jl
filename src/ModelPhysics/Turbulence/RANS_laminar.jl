@@ -61,7 +61,7 @@ Run turbulence model transport equations.
 - `model`  -- Physics model defined by user.
 - `S`   -- Strain rate tensor.
 - `S2`  -- Square of the strain rate magnitude.
-- `prev`  -- Effective viscosity FaceScalarField.
+- `prev`  -- Previous field.
 - `time`   -- 
 - `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
               hardware structures set.

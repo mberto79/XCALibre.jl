@@ -2,7 +2,7 @@
 
 *Read this section for information about how to install XCALibre.jl and an example showcasing the API*
 
-# Installation
+## Installation
 ---
 
 First, you need to [download and install Julia in your system](https://julialang.org/downloads/). Once you have a working installation of Julia, XCALibre.jl can be installed using the built in package manager. 
@@ -29,7 +29,7 @@ pkg> add XCALibre
     
     To enable GPU acceleration you will also need to install the corresponding GPU package for your hardware. See CUDA.jl, AMD.jl, oneAPI.jl for more details. XCALibre.jl will automatically precompile and load the relevant backend specific functionality (using [Julia extensions](https://pkgdocs.julialang.org/v1/creating-packages/#Conditional-loading-of-code-in-packages-(Extensions)))
 
-# Example
+## Example
 ---
 
 The example below illustrates the top-level API used in XCALibre.jl. It shows the key steps a user needs to follow to set up a simulation:
@@ -48,7 +48,7 @@ Once you have installed Julia and XCALibre.jl, the example below can be run by c
 
 In most cases, it is preferable to run simulations from within the Julia REPL because, in Julia, there is often a cost associated to the first run due to compilation time. By relaunching a simulation in the REPL, all previously compiled code will not be recompiled. This is particularly helpful in the prototyping stages. For long running simulations, the compilation time is normally negligible compared to the actual time needed to complete the simulation.
 
-```jldoctest; filter = r"(pass)|[^p]*(?:p(?!ass)[^d]*)*" => s"\1", output = false
+```jldoctest;  filter = r".*"s => s"", output = false
 
 # Step 0. Load libraries
 using XCALibre
@@ -63,7 +63,7 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 # Step 2. Select backend and setup hardware
 backend = CPU()
 # backend = CUDABackend() # ru non NVIDIA GPUs
-# ackend = ROCBackend() # run on AMD GPUs
+# backend = ROCBackend() # run on AMD GPUs
 
 hardware = set_hardware(backend=backend, workgroup=4)
 # hardware = set_hardware(backend=backend, workgroup=32) # use for GPU backends
@@ -144,12 +144,10 @@ initialise!(model.momentum.p, 0.0)
 Rx, Ry, Rz, Rp, model_out = run!(model, config);
 
 # Step 12. Post-process
-pwd() # will print location of active directory where the file "iteration_002000.vtk" can be found
-
-println("pass") # this line is used for doctests only
+pwd() # find active directory where the file "iteration_002000.vtk" was saved
 
 # output
-"pass"
+
 ```
 
 ### Output

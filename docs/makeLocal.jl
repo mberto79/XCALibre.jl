@@ -1,4 +1,5 @@
 using Documenter
+using AbstractTrees
 using XCALibre
 
 # push!(LOAD_PATH,"../src/") # for local build only

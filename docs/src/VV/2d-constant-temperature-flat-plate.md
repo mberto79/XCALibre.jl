@@ -14,7 +14,43 @@ for forced convection on constant temperature flat plate:
 The correlation is valid for Prandtl numbers greater than 0.6.
 
 
-The boundary conditions are described in the following figure:
+The boundaries are shown in the mesh figure and the tables below describe the boundary settings used.
+
+### Inlet
+---
+
+| Field | Boundary condition      |
+| -------  | ---------- |
+| ``U``   |  Dirichlet ([0.2, 0.0, 0.0] m/s)   |
+| ``p``   |  Neumann (Zero-gradient)      |
+| ``T ``  |  FixedTemperature (300.0 K)    |
+
+### Wall
+---
+
+| Field | Boundary condition      |
+| -------  | ---------- |
+| ``U``   |  No-slip wall   |
+| ``p``   |  Neumann (Zero-gradient)      |
+| ``T ``  |  FixedTemperature (310.0 K)    |
+
+### Outlet
+---
+
+| Field | Boundary condition      |
+| -------  | ---------- |
+| ``U``   |  Neumann (Zero-gradient)   |
+| ``p``   |  Dirichlet (0.0 Pa)     |
+| ``T ``  |  Neumann (Zero-gradient)    |
+
+### Top
+---
+
+| Field | Boundary condition      |
+| -------  | ---------- |
+| ``U``   |  Neumann (Zero-gradient)   |
+| ``p``   |  Neumann (Zero-gradient)     |
+| ``T ``  |  Neumann (Zero-gradient)    |
 
 
 # Fluid Properties
@@ -34,6 +70,10 @@ The boundary conditions are described in the following figure:
 
 The mesh is shown in the figure below:
 
+
+![Figure of mesh.](../figures/mesh.png)
+
+The streamwise cell length is 2mm with a total domain length of 1m. The near-wall cell height is 0.049mm with a domain height of 0.2m.
 
 
 # Case file

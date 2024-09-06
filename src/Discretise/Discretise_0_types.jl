@@ -27,7 +27,7 @@ struct CrankNicolson <: AbstractScheme end # not implemented yet
 abstract type AbstractBoundary end
 abstract type AbstractDirichlet <: AbstractBoundary end
 abstract type AbstractNeumann <: AbstractBoundary end
-abstract type AbstractWallFunction <: AbstractDirichlet end
+abstract type AbstractWallFunction <: AbstractBoundary end
 
 
 # Kwall function structure and constructor

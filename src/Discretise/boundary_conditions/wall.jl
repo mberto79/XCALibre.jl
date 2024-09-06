@@ -1,5 +1,13 @@
 export Wall
 
+"""
+    Wall <: AbstractDirichlet
+
+Wall boundary condition model for no-slip wall condition.
+
+### Fields
+- 'ID' -- Boundary ID
+"""
 struct Wall{I,V} <: AbstractDirichlet
     ID::I
     value::V

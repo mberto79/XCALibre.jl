@@ -2,6 +2,15 @@ export Periodic, PeriodicConnectivity
 export construct_periodic
 export adjust_boundary!
 
+
+"""
+    Periodic <: AbstractBoundary
+
+Periodic boundary condition model.
+
+### Fields
+- 'ID' -- Boundary ID
+"""
 struct Periodic{I,V} <: AbstractBoundary
     ID::I
     value::V
@@ -21,6 +30,41 @@ function fixedValue(BC::Periodic, ID::I, value::V) where {I<:Integer,V}
     end
 end
 
+"""
+    construct_periodic(mesh, backend, patch1::Symbol, patch2::Symbol)
+
+Function for construction of periodic boundary conditions.
+
+### Input
+- `mesh` -- Mesh.
+- `backend`  -- Backend configuraton.
+- `patch1`  -- Primary periodic patch ID.
+- `patch2`   -- Neighbour periodic patch ID.
+
+### Output
+- `KOmegaLKEModel(
+        k_eqn,
+        ω_eqn,
+        kl_eqn,
+        nueffkLS,
+        nueffkS,
+        nueffωS,
+        nuL,
+        nuts,
+        Ω,
+        γ,
+        fv,
+        normU,
+        Reυ,
+        ∇k,
+        ∇ω
+    )`  -- Turbulence model structure.
+
+### Example
+    - `periodic = construct_periodic(mesh, CPU(), :top, :bottom)` - Example using CPU 
+    backend with periodic boundaries named top and bottom.
+
+"""
 function construct_periodic(mesh, backend, patch1::Symbol, patch2::Symbol)
 
     (; faces, boundaries) = mesh

@@ -79,11 +79,11 @@ The streamwise cell length is 2mm with a total domain length of 1m. The near-wal
 # Case file
 ---
 
-```jldoctest; filter = r"(?!(done))."sm => s""
+```jldoctest;  filter = r".*"s => s"", output = false
 using XCALibre
 using Krylov
 
-mesh_file = "testcases/compressible/2d_laminar_heated_plate/flatplate_2D_laminar.unv"
+mesh_file = pkgdir(XCALibre, "testcases/compressible/2d_laminar_heated_plate/flatplate_2D_laminar.unv")
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 velocity = [0.2, 0.0, 0.0]
@@ -159,7 +159,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=1000, write_interval=1000, time_step=1)
 
 hardware = set_hardware(backend=CPU(), workgroup=4)
 
@@ -173,6 +173,9 @@ initialise!(model.momentum.p, 100000.0)
 initialise!(model.energy.T, 300.0)
 
 Rx, Ry, Rz, Rp, Re, model_out = run!(model, config)
+
+# output
+
 ```
 
 # Results

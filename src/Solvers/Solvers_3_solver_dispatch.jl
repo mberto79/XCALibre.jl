@@ -85,7 +85,7 @@ run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config; pref=nothing
     ) where{T<:Steady,F<:WeaklyCompressible,M,Tu,E,D,BI} = 
 begin
-    Rx, Ry, Rz, Rp, Re, model = simple_comp!(model, config, pref=pref); #, pref=0.0)
+    Rx, Ry, Rz, Rp, Re, model = csimple!(model, config, pref=pref); #, pref=0.0)
     return Rx, Ry, Rz, Rp, Re, model
 end
 
@@ -94,7 +94,7 @@ run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config; pref=nothing
     ) where{T<:Steady,F<:Compressible,M,Tu,E,D,BI} = 
 begin
-    Rx, Ry, Rz, Rp, Re, model = simple_comp!(model, config, pref=pref); #, pref=0.0)
+    Rx, Ry, Rz, Rp, Re, model = csimple!(model, config, pref=pref); #, pref=0.0)
     return Rx, Ry, Rz, Rp, Re, model
 end
 

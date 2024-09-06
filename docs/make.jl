@@ -1,12 +1,19 @@
 using Documenter
 using XCALibre
 
-# push!(LOAD_PATH,"../src/") # for local build only
+USER_GUIDE_PAGES = Any[
+    "0_introduction_and_workflow.md",
+    "1_preprocessing.md",
+    "2_physics_and_models.md",
+    "3_numerical_setup.md",
+    "4_runtime_and_solvers.md",
+    "5_postprocessing.md"
+]
 
 makedocs(
     sitename = "XCALibre.jl",
     format = Documenter.HTML(),
-    doctest = false, # only set to false when sorting out docs structure
+    # doctest = false, # only set to false when sorting out docs structure
     modules = [XCALibre],
     pages = [
         "Home" => "index.md",
@@ -15,16 +22,7 @@ makedocs(
             "VV/2d-isothermal-backward-facing-step.md",
             "VV/2d-constant-temperature-flat-plate.md"
         ],
-        "User Guide" => Any[
-            "user_guide/workflow.md",
-            "user_guide/mesh.md",
-            "user_guide/physics.md",
-            "user_guide/boundary_conditions.md",
-            "user_guide/discretisation_schemes.md",
-            "user_guide/linear_solvers.md",
-            "user_guide/runtime_configuration.md",
-            "user_guide/flow_solvers.md"
-        ],
+        "User Guide" => "user_guide/" .* USER_GUIDE_PAGES,
         "Theory Guide" => "theory_guide/introduction.md",
         "contributor_guide.md",
         "reference.md",

@@ -20,7 +20,7 @@ kOmega model containing all kOmega field parameters.
 - 'y' -- Near-wall distance for model.
 
 """
-struct KOmegaLKE{S1,S2,S3,S4,F1,F2,F3,F4,C1,C2,Y} <: AbstractTurbulenceModel 
+struct KOmegaLKE{S1,S2,S3,S4,F1,F2,F3,F4,C1,C2,Y} <: AbstractRANSModel 
     k::S1
     omega::S2
     kl::S3
@@ -37,7 +37,7 @@ Adapt.@adapt_structure KOmegaLKE
 
 # Model type definition (hold equation definitions and internal data)
 struct KOmegaLKEModel{
-    E1,E2,E3,F1,F2,F3,S1,S2,S3,S4,S5,S6,S7,V1,V2} <: AbstractTurbulenceModel
+    E1,E2,E3,F1,F2,F3,S1,S2,S3,S4,S5,S6,S7,V1,V2}
     k_eqn::E1
     ω_eqn::E2
     kl_eqn::E3

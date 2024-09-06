@@ -12,7 +12,7 @@ Smagorinsky LES model containing all Smagorinksy field parameters.
 - 'coeffs' -- Model coefficients.
 
 """
-struct Smagorinsky{S1,S2,C} <: AbstractTurbulenceModel
+struct Smagorinsky{S1,S2,C} <: AbstractLESModel
     nut::S1
     nutf::S2
     coeff::C

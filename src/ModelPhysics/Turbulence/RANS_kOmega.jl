@@ -19,7 +19,7 @@ kOmega model containing all kOmega field parameters.
 - 'coeffs' -- Model coefficients.
 
 """
-struct KOmega{S1,S2,S3,F1,F2,F3,C} <: AbstractTurbulenceModel
+struct KOmega{S1,S2,S3,F1,F2,F3,C} <: AbstractRANSModel
     k::S1
     omega::S2
     nut::S3

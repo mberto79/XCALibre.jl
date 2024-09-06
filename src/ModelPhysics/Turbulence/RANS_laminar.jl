@@ -6,11 +6,11 @@ export Laminar
 
 Laminar model definition for physcis API.
 """
-struct Laminar <: AbstractTurbulenceModel end 
+struct Laminar <: AbstractRANSModel end 
 Adapt.@adapt_structure Laminar
 
 # Model type definition (hold equation definitions and internal data)
-struct LaminarModel <: AbstractTurbulenceModel end 
+struct LaminarModel end 
 Adapt.@adapt_structure LaminarModel
 
 # Model API constructor (pass user input as keyword arguments and process if needed)

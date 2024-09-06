@@ -157,7 +157,7 @@ function SIMPLE(
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
-    @time for iteration ∈ 1:iterations
+    for iteration ∈ 1:iterations
         time = iteration
 
         solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)

@@ -5,13 +5,13 @@ abstract type AbstractEnergyModel end
 
 # Models
 
-struct Energy{T,ARG} <: AbstractEnergyModel
+struct Energy{T,ARG}
     args::ARG
 end
 
 # Isothermal
 
-struct Isothermal end
+struct Isothermal <: AbstractEnergyModel end 
 Adapt.Adapt.@adapt_structure Isothermal
 
 Energy{Isothermal}() = begin

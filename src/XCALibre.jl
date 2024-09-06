@@ -1,7 +1,7 @@
 module XCALibre
 
 using Krylov 
-export BicgstabSolver, CgSolver
+export BicgstabSolver, CgSolver, GmresSolver
 
 using KernelAbstractions; export CPU
 import Adapt: adapt; export adapt

@@ -1,5 +1,15 @@
 export Neumann
 
+
+"""
+    Neumann <: AbstractNeumann
+
+Neumann boundary condition model *(currently only configured for zero gradient)*
+
+### Fields
+- 'ID' -- Boundary ID
+- `value` -- Scalar or Vector value for Neumann boundary condition.
+"""
 struct Neumann{I,V} <: AbstractNeumann
     ID::I 
     value::V 

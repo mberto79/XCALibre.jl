@@ -31,7 +31,7 @@ Incompressible fluid model containing fluid field parameters for incompressible 
 - 'rho'  -- Fluid density.
 
 ### Examples
-- `Fluid{Incompressible}(nu=0.001, rho=1.0)` - Constructur with default values.
+- `Fluid{Incompressible}(nu=0.001, rho=1.0)` - Constructor with default values.
 """
 @kwdef struct Incompressible{S1, S2, F1, F2} <: AbstractIncompressible
     nu::S1
@@ -70,7 +70,8 @@ Weakly compressible fluid model containing fluid field parameters for weakly com
 - `Pr`   -- Fluid Prantl number.
 
 ### Examples
-- `Fluid{WeaklyCompressible}(; nu=1E-5, cp=1005.0, gamma=1.4, Pr=0.7)` - Constructur with default values.
+- `Fluid{WeaklyCompressible}(; nu=1E-5, cp=1005.0, gamma=1.4, Pr=0.7)` - Constructor with 
+default values.
 """
 @kwdef struct WeaklyCompressible{S1, S2, F1, F2, T} <: AbstractCompressible
     nu::S1

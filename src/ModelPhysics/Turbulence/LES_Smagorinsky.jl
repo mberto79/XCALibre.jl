@@ -1,6 +1,17 @@
 export Smagorinsky
 
 # Model type definition
+"""
+    Smagorinsky <: AbstractTurbulenceModel
+
+Smagorinsky LES model containing all Smagorinksy field parameters.
+
+### Fields
+- 'nut' -- Eddy viscosity ScalarField.
+- 'nutf' -- Eddy viscosity FaceScalarField.
+- 'coeffs' -- Model coefficients.
+
+"""
 struct Smagorinsky{S1,S2,C} <: AbstractTurbulenceModel
     nut::S1
     nutf::S2
@@ -30,6 +41,24 @@ end
 end
 
 # Model initialisation
+"""
+    initialise(turbulence::Smagorinsky, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
+    ) where {T,F,M,Tu,E,D,BI}
+
+Initialisation of turbulent transport equations.
+
+### Input
+- `turbulence` -- turbulence model.
+- `model`  -- Physics model defined by user.
+- `mdtof`  -- Face mass flow.
+- `peqn`   -- Pressure equation.
+- `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
+          hardware structures set.
+
+### Output
+- `SmagorinskyModel(Δ, magS)`  -- Turbulence model structure.
+
+"""
 function initialise(
     turbulence::Smagorinsky, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
     ) where {T,F,M,Tu,E,D,BI}
@@ -47,6 +76,23 @@ function initialise(
 end
 
 # Model solver call (implementation)
+"""
+    turbulence!(les::SmagorinskyModel{E1,E2}, model::Physics{T,F,M,Tu,E,D,BI}, S, S2, prev, time, config
+    ) where {T,F,M,Tu<:Smagorinsky,E,D,BI,E1,E2}
+
+Run turbulence model transport equations.
+
+### Input
+- `les::SmagorinskyModel{E1,E2}` -- Smagorinsky LES turbulence model.
+- `model`  -- Physics model defined by user.
+- `S`   -- Strain rate tensor.
+- `S2`  -- Square of the strain rate magnitude.
+- `prev`  -- Previous field.
+- `time`   -- 
+- `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
+              hardware structures set.
+
+"""
 function turbulence!(
     les::SmagorinskyModel{E1,E2}, model::Physics{T,F,M,Tu,E,D,BI}, S, S2, prev, time, config
     ) where {T,F,M,Tu<:Smagorinsky,E,D,BI,E1,E2}

@@ -1,6 +1,25 @@
 export KOmegaLKE
 
 # Model type definition (hold fields)
+"""
+    KOmegaLKE <: AbstractTurbulenceModel
+
+kOmega model containing all kOmega field parameters.
+
+### Fields
+- 'k' -- Turbulent kinetic energy ScalarField.
+- 'omega' -- Specific dissipation rate ScalarField.
+- 'kl' -- ScalarField.
+- 'nut' -- Eddy viscosity ScalarField.
+- 'kf' -- Turbulent kinetic energy FaceScalarField.
+- 'omegaf' -- Specific dissipation rate FaceScalarField.
+- 'klf' -- FaceScalarField.
+- 'nutf' -- Eddy viscosity FaceScalarField.
+- 'coeffs' -- Model coefficients.
+- 'Tu' -- Freestream turbulence intensity for model.
+- 'y' -- Near-wall distance for model.
+
+"""
 struct KOmegaLKE{S1,S2,S3,S4,F1,F2,F3,F4,C1,C2,Y} <: AbstractTurbulenceModel 
     k::S1
     omega::S2
@@ -91,6 +110,40 @@ end
 end
 
 # Model initialisation
+"""
+    initialise(turbulence::KOmegaLKE, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
+    ) where {T,F,M,Tu,E,D,BI}
+
+Initialisation of turbulent transport equations.
+
+### Input
+- `turbulence` -- turbulence model.
+- `model`  -- Physics model defined by user.
+- `mdtof`  -- Face mass flow.
+- `peqn`   -- Pressure equation.
+- `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
+          hardware structures set.
+
+### Output
+- `KOmegaLKEModel(
+        k_eqn,
+        ω_eqn,
+        kl_eqn,
+        nueffkLS,
+        nueffkS,
+        nueffωS,
+        nuL,
+        nuts,
+        Ω,
+        γ,
+        fv,
+        normU,
+        Reυ,
+        ∇k,
+        ∇ω
+    )`  -- Turbulence model structure.
+
+"""
 function initialise(
     turbulence::KOmegaLKE, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
     ) where {T,F,M,Tu,E,D,BI}
@@ -204,6 +257,23 @@ function initialise(
 end
 
 # Model solver call (implementation)
+"""
+   turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S, S2, prev, time, config
+    ) where {T,F,M,Turb<:KOmegaLKE,E,D,BI}
+
+Run turbulence model transport equations.
+
+### Input
+- `rans::KOmegaLKEModel` -- KOmega turbulence model.
+- `model`  -- Physics model defined by user.
+- `S`   -- Strain rate tensor.
+- `S2`  -- Square of the strain rate magnitude.
+- `prev`  -- Previous field.
+- `time`   -- 
+- `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
+              hardware structures set.
+
+"""
 function turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S, S2, prev, time, config
     ) where {T,F,M,Turb<:KOmegaLKE,E,D,BI}
     mesh = model.domain

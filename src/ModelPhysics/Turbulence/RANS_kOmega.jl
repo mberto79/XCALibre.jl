@@ -4,6 +4,21 @@ export KOmega
 # Wilcox, D. C., Turbulence Modeling for CFD, 2nd edition, DCW Industries, Inc., La Canada CA, 1998
 
 # Model type definition
+"""
+    KOmega <: AbstractTurbulenceModel
+
+kOmega model containing all kOmega field parameters.
+
+### Fields
+- 'k' -- Turbulent kinetic energy ScalarField.
+- 'omega' -- Specific dissipation rate ScalarField.
+- 'nut' -- Eddy viscosity ScalarField.
+- 'kf' -- Turbulent kinetic energy FaceScalarField.
+- 'omegaf' -- Specific dissipation rate FaceScalarField.
+- 'nutf' -- Eddy viscosity FaceScalarField.
+- 'coeffs' -- Model coefficients.
+
+"""
 struct KOmega{S1,S2,S3,F1,F2,F3,C} <: AbstractTurbulenceModel
     k::S1
     omega::S2
@@ -41,6 +56,24 @@ end
 end
 
 # Model initialisation
+"""
+    initialise(turbulence::KOmega, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
+    ) where {T,F,M,Tu,E,D,BI}
+
+Initialisation of turbulent transport equations.
+
+### Input
+- `turbulence` -- turbulence model.
+- `model`  -- Physics model defined by user.
+- `mdtof`  -- Face mass flow.
+- `peqn`   -- Pressure equation.
+- `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
+          hardware structures set.
+
+### Output
+- `KOmegaModel(k_eqn, ω_eqn)`  -- Turbulence model structure.
+
+"""
 function initialise(
     turbulence::KOmega, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
     ) where {T,F,M,Tu,E,D,BI}
@@ -94,6 +127,23 @@ function initialise(
 end
 
 # Model solver call (implementation)
+"""
+    turbulence!(rans::KOmegaModel{E1,E2}, model::Physics{T,F,M,Tu,E,D,BI}, S, S2, prev, time, config
+    ) where {T,F,M,Tu<:KOmega,E,D,BI,E1,E2}
+
+Run turbulence model transport equations.
+
+### Input
+- `rans::KOmegaModel{E1,E2}` -- KOmega turbulence model.
+- `model`  -- Physics model defined by user.
+- `S`   -- Strain rate tensor.
+- `S2`  -- Square of the strain rate magnitude.
+- `prev`  -- Previous field.
+- `time`   -- 
+- `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
+              hardware structures set.
+
+"""
 function turbulence!(
     rans::KOmegaModel{E1,E2}, model::Physics{T,F,M,Tu,E,D,BI}, S, S2, prev, time, config
     ) where {T,F,M,Tu<:KOmega,E,D,BI,E1,E2}

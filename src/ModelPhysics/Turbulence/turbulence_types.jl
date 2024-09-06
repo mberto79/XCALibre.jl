@@ -1,8 +1,7 @@
-export AbstractMomentumModel, AbstractTurbulenceModel
+export AbstractTurbulenceModel
 export AbstractRANSModel, RANS
 export AbstractLESModel, LES
 
-abstract type AbstractMomentumModel end
 abstract type AbstractTurbulenceModel end
 abstract type AbstractRANSModel <: AbstractTurbulenceModel end
 abstract type AbstractLESModel <: AbstractTurbulenceModel end
@@ -23,7 +22,7 @@ end
 """
     LES <: AbstractLESModel
 
-Abstract LES model type for consturcting LES models.
+Abstract LES model type for constructing LES models.
 
 ### Fields
 - 'args' -- Model arguments.

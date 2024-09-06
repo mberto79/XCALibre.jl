@@ -4,6 +4,11 @@
 ## Physics model definition
 ---
 
+```@repl 
+using XCALibre
+fieldnames(Physics)
+```
+
 ## Fluid types
 ---
 

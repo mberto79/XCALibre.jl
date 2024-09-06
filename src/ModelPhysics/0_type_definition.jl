@@ -1,28 +1,29 @@
 export Physics
+export AbstractMomentumModel
 export Transient, Steady
 
 """
-    Physics
+    struct Physics{T,F,M,Tu,E,D,BI}
+        time::T
+        fluid::F
+        momentum::M 
+        turbulence::Tu 
+        energy::E
+        domain::D
+        boundary_info::BI
+    end
 
-XCALibre's physcis model API.
+XCALibre's parametric Physics type for user-level API. Also used to dispatch flow solvers.
 
 ### Fields
-- 'time'   -- Time model.
-- 'fluid'  -- Fluid model.
+- 'time::Union{Steady, Transient}'   -- Time model.
+- 'fluid::AbstractFluid'  -- Fluid model.
 - 'momentum'  -- Momentum model.
-- 'turbulence'  -- Turbulence model.
-- 'energy'  -- Energy model.
-- 'domain'  -- Mesh.
-- 'boundary_info'  -- Mesh boundardy information.
+- 'turbulence::AbstractTurbulenceModel'  -- Turbulence model.
+- 'energy:AbstractEnergyModel'  -- Energy model.
+- 'domain::AbstractMesh '  -- Mesh.
+- 'boundary_info::boundary_info'  -- Mesh boundary information.
 
-### Examples
-- `Phycsics(
-    time::Union{Steady, Transient},
-    fluid::AbstractFluid, 
-    turbulence::AbstractTurbulenceModel,
-    energy::AbstractEnergyModel,
-    domain::AbstractMesh 
-    )
 """
 struct Physics{T,F,M,Tu,E,D,BI}
     time::T
@@ -57,10 +58,16 @@ Steady model for Physics model API.
 struct Steady end
 Adapt.@adapt_structure Steady
 
-"""
-    Momentum
+abstract type AbstractMomentumModel end
 
-Momentum model containting key momentum fields.
+"""
+    struct Momentum{V,S,SS} <: AbstractMomentumModel
+        U::V 
+        p::S 
+        sources::SS
+    end 
+
+Momentum model containing key momentum fields.
 
 ### Fields
 - 'U'        -- Velocity VectorField.
@@ -70,7 +77,7 @@ Momentum model containting key momentum fields.
 ### Examples
 - `Momentum(mesh::AbstractMesh)
 """
-struct Momentum{V,S,SS}
+struct Momentum{V,S,SS} <: AbstractMomentumModel
     U::V 
     p::S 
     sources::SS

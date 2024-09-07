@@ -51,7 +51,7 @@ Earlier in this section, the dynamic nature of Julia was mentioned in the contex
 
 ```@repl 
 using XCALibre
-import Main.subtypes as subtypes # hide
+# import Main.subtypes as subtypes # hide
 subtypes(AbstractTimeModel)
 ```
 
@@ -76,7 +76,7 @@ begin
     using XCALibre
     # using Pkg; Pkg.add("AbstractTrees") # run to install AbstractTrees
     using AbstractTrees 
-    import Main.subtypes as subtypes # hide
+    # import Main.subtypes as subtypes # hide
     AbstractTrees.children(d::DataType) = Main.subtypes(d)
     print_tree(AbstractFluid)
 end
@@ -116,7 +116,7 @@ Below is a representation the `AbstractTurbulenceModel` inheritance tree. It sho
 ```@repl
 using XCALibre # hide
 using AbstractTrees # hide
-import Main.subtypes as subtypes # hide
+# import Main.subtypes as subtypes # hide
 AbstractTrees.children(d::DataType) = Main.subtypes(d) # hide
 print_tree(AbstractTurbulenceModel) # hide
 ```
@@ -155,7 +155,7 @@ Currently, XCALibre.jl offers two options to model the energy equation. A tree o
 ```@repl
 using XCALibre # hide
 using AbstractTrees # hide
-import Main.subtypes as subtypes # hide
+# import Main.subtypes as subtypes # hide
 AbstractTrees.children(d::DataType) = Main.subtypes(d) # hide
 print_tree(AbstractEnergyModel) # hide
 ```
@@ -179,7 +179,7 @@ The final step to completely capture the physics for the simulation is to define
 ```@repl
 using XCALibre # hide
 using AbstractTrees # hide
-import Main.subtypes as subtypes # hide
+# import Main.subtypes as subtypes # hide
 AbstractTrees.children(d::DataType) = Main.subtypes(d) # hide
 print_tree(AbstractBoundary) # hide
 ```

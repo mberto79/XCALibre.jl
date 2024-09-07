@@ -408,6 +408,9 @@ model = Physics(
     Neumann(:wall, 0.0), # scalar wall - set up as zero gradient
     Neumann(:top, 0.0)   # scalar wall - set up as zero gradient
 )
+
+# output
+
 ```
 !!! hint
 

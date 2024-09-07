@@ -228,18 +228,21 @@ Neumann(name, value)
 
 ### `AbstractPhysicalConstraint` conditions
 
+`Wall`
 ```julia
 Wall(name, value)
 ```
 * `name` is a symbol providing the boundary name
 * `value` is a scalar defining the gradient normal to the boundary
 
+`Symmetry`
 ```julia
 Symmetry(name, value)
 ```
 * `name` is a symbol providing the boundary name
 * `value` is a scalar defining the gradient normal to the boundary
 
+`Periodic`
 ```julia
 Periodic(name, value)
 ```
@@ -248,20 +251,24 @@ Periodic(name, value)
 
 ### `AbstractWallFunction` conditions
 
-KWallFunction: provides a turbulent kinetic energy boundary condition for high-Reynolds models.
+`KWallFunction` provides a turbulent kinetic energy boundary condition for high-Reynolds models.
 ```julia
 KWallFunction(name)
 ```
 * `name` is a symbol providing the boundary name
 
-OmegaWallFunction: provides a value for the specific dissipation rate for both low- and high-Reynolds model.
+`OmegaWallFunction` provides a value for the specific dissipation rate for both low- and high-Reynolds model.
 ```julia
 OmegaWallFunction(name)
 ```
 * `name` is a symbol providing the boundary name
 
-NutWallFunction: provides a value for the eddy viscosity for high-Reynolds models
+`NutWallFunction` provides a value for the eddy viscosity for high-Reynolds models
 ```julia
 NutWallFunction(name)
 ```
 * `name` is a symbol providing the boundary name
+
+### Assigning conditions (macro)
+
+The `@assign` macro ....

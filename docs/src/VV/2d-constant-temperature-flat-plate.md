@@ -158,7 +158,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=1000, time_step=1)
+runtime = set_runtime(iterations=500, write_interval=500, time_step=1)
 
 hardware = set_hardware(backend=CPU(), workgroup=4)
 

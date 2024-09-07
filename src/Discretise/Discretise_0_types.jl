@@ -1,7 +1,8 @@
 export AbstractScheme, AbstractBoundary
 export AbstractDirichlet, AbstractNeumann, AbstractPhysicalConstraint
 export KWallFunction, OmegaWallFunction, NutWallFunction
-export Constant, Linear, Upwind, LUST
+# export Constant, Linear, Upwind, LUST
+export Linear, Upwind, LUST
 export BoundedUpwind
 export SteadyState, Euler, CrankNicolson
 export Orthogonal, Midpoint
@@ -10,7 +11,7 @@ export set_schemes
 # SUPPORTED DISCRETISATION SCHEMES 
 
 abstract type AbstractScheme end
-struct Constant <: AbstractScheme end
+# struct Constant <: AbstractScheme end
 struct Linear <: AbstractScheme end
 struct Upwind <: AbstractScheme end
 struct LUST <: AbstractScheme end

@@ -52,8 +52,8 @@ Earlier in this section, the dynamic nature of Julia was mentioned in the contex
 ```@repl 
 using XCALibre
 # import Main.subtypes as subtypes # hide
-    using InteractiveUtils # hide
-subtypes(AbstractTimeModel)
+using InteractiveUtils
+Main.subtypes(AbstractTimeModel)
 ```
 
 From the output it can be seen that there are two time models in XCALibre.jl for `Steady` or `Transient` simulations. These are singleton types and contain (at present) not internal fields or data. They are largely used by XCALibre.jl to dispatch either steady or transient solvers. We starting to get a picture of how the `Physics` object is constructed. For example, to specify a Steady simulation
@@ -75,10 +75,10 @@ Following from the idea of using Julia's dynamic features to explore the types a
 begin
     # Note: this code snippet will not be shown later for succinctness
     using XCALibre
+    using InteractiveUtils # Load from standard library
     # using Pkg; Pkg.add("AbstractTrees") # run to install AbstractTrees
     using AbstractTrees 
     # import Main.subtypes as subtypes # hide
-    using InteractiveUtils # hide
     AbstractTrees.children(d::DataType) = Main.subtypes(d)
     print_tree(AbstractFluid)
 end

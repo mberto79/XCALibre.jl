@@ -32,11 +32,3 @@ makedocs(
         "release_notes.md"
     ]
 )
-
-# Documenter can also automatically deploy documentation to gh-pages.
-# See "Hosting Documentation" and deploydocs() in the Documenter manual
-# for more information.
-# deploydocs(
-#     repo = "github.com/mberto79/XCALibre.jl.git",
-#     devbranch = "dev-0.3-main"
-# )

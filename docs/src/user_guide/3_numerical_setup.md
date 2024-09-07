@@ -59,11 +59,11 @@ set_schemes
 ```
 
 For example, below we set the schemes for the  `U` and `p` fields. Notice that in the first case the schemes will take their default values (entry for `p`). In the case of `U`, we are only changing the setting for the divergence scheme to `Upwind`.
+
 ```jldoctest;  filter = r".*"s => s"", output = false
 using XCALibre
-
 schemes = (
-    p = set_schemes() # no input provided (will use defaults)
+    p = set_schemes(), # no input provided (will use defaults)
     U = set_schemes(divergence = Upwind),
 )
 
@@ -107,6 +107,23 @@ print_tree(PreconditionerType) # hide
 
 Below an example is provided in context. Here, we are setting solvers for both the velocity field `U` and the pressure field `p` and packing them into a `NamedTuple` "solvers". The `Jacobi` preconditioner is use in both solvers. Notice that preconditioners are specified with an instance of their type i.e. `Jacobi()`. Internally, the preconditioner instance is used for dispatch. This tupple will then be pass on to create the final `Configuration` object.
 
+```@meta
+DocTestSetup = quote
+    using XCALibre
+    mesh_file = pkgdir(XCALibre, "examples/2d_incompressible_laminar_backwards_step/backward_facing_step_10mm.unv")
+    mesh = UNV2D_mesh(mesh_file, scale=0.001)
+    mesh_dev = mesh # use this line to run on CPU
+    nu = 1e-3
+    model = Physics(
+        time = Steady(),
+        fluid = Fluid{Incompressible}(nu = nu),
+        turbulence = RANS{Laminar}(),
+        energy = Energy{Isothermal}(),
+        domain = mesh_dev
+    )
+end
+```
+
 ```jldoctest;  filter = r".*"s => s"", output = false
 using XCALibre
 
@@ -133,4 +150,8 @@ solvers = (
 
 # output
 
+```
+
+```@meta
+DocTestSetup = nothing
 ```

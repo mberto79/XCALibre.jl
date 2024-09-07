@@ -8,7 +8,7 @@ Symmetry boundary condition model for velocity and scalar field.
 ### Fields
 - 'ID' -- Boundary ID
 """
-struct Symmetry{I,V} <: AbstractBoundary
+struct Symmetry{I,V} <: AbstractPhysicalConstraint
     ID::I
     value::V
 end

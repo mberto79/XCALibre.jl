@@ -8,7 +8,7 @@ Wall boundary condition model for no-slip wall condition.
 ### Fields
 - 'ID' -- Boundary ID
 """
-struct Wall{I,V} <: AbstractDirichlet
+struct Wall{I,V} <: AbstractPhysicalConstraint
     ID::I
     value::V
 end

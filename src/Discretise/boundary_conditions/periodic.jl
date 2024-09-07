@@ -11,7 +11,7 @@ Periodic boundary condition model.
 ### Fields
 - 'ID' -- Boundary ID
 """
-struct Periodic{I,V} <: AbstractBoundary
+struct Periodic{I,V} <: AbstractPhysicalConstraint
     ID::I
     value::V
 end

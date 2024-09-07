@@ -1,4 +1,5 @@
 using Documenter
+using InteractiveUtils
 using AbstractTrees
 using XCALibre
 

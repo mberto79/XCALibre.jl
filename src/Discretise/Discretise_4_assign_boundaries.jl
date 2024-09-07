@@ -161,13 +161,41 @@ macro assign!(model, turb, field, BCs)
 end
 
 # Set schemes function definition with default set variables
+"""
+    set_schemes(;
+        # keyword arguments and their default values
+        time=SteadyState,
+        divergence=Linear, 
+        laplacian=Linear, 
+        gradient=Orthogonal) = begin
+        
+        # Returns NamedTuple definition for scheme 
+        (
+            time=time,
+            divergence=divergence,
+            laplacian=laplacian,
+            gradient=gradient
+        )
+    end
+
+The `set_schemes` function is used at the top-level API to help users define discretisation schemes for every field solved. It offers default values, thus users can pick and choose which entry they wish to modify.
+
+# inputs
+
+- `time` is used to set the time schemes(default is `SteadyState`)
+- `divergence` is used to set the divergence scheme (default is `Linear`) 
+- `laplacian` is used to set the laplacian scheme (default is `Linear`)
+- `gradient`  is used to set the gradient scheme (default is `Orthogonal`)
+
+"""
 set_schemes(;
+    # keyword arguments and their default values
     time=SteadyState,
     divergence=Linear, 
     laplacian=Linear, 
     gradient=Orthogonal) = begin
     
-    # Tuple definition for scheme 
+    # Returns NamedTuple definition for scheme 
     (
         time=time,
         divergence=divergence,

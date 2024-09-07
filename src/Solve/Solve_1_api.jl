@@ -4,19 +4,63 @@ export solve_system!
 export solve_equation!
 export residual!
 
-set_solver( field::AbstractField; # To do - relax inputs and correct internally
-    solver::S, 
-    preconditioner::PT, 
-    convergence, 
-    relax,
-    limit=(),
-    itmax::Integer=100, 
-    atol=sqrt(eps(_get_float(field.mesh))),
-    rtol=_get_float(field.mesh)(1e-4)
-    ) where {S,PT<:PreconditionerType} = 
-begin
+"""
+    set_solver( 
+        # keyword arguments and defaults
+        field::AbstractField;
+        solver::S, 
+        preconditioner::PT, 
+        convergence, 
+        relax,
+        limit=(),
+        itmax::Integer=100, 
+        atol=(eps(_get_float(field.mesh)))^0.9,
+        rtol=_get_float(field.mesh)(1e-3)
+        ) where {S,PT<:PreconditionerType} = begin
+
+        # return NamedTuple
+        TF = _get_float(field.mesh)
+        (
+            solver=solver, 
+            preconditioner=preconditioner, 
+            convergence=convergence |> TF, 
+            relax=relax |> TF, 
+            limit=limit,
+            itmax=itmax, 
+            atol=atol |> TF, 
+            rtol=rtol |> TF
+        )
+    end
+
+This function is used to provide solver settings that will be used internally in XCALibre.jl. It returns a `NamedTuple` with solver settings that are used internally by the flow solvers. 
+
+# Input arguments
+
+- `field` reference to the field to which the solver settings will apply (used to provide integer and float types required)
+- `solver` solver object from Krylov.jl and it could be one of `BicgstabSolver`, `CgSolver`, `GmresSolver` which are reexported in XCALibre.jl
+- `preconditioner` instance of preconditioner to be used e.g. Jacobi()
+- `convergence` sets the stopping criteria of this field
+- `relax` specifies the relaxation factor to be used e.g. set to 1 for no relaxation
+- `limit` used in some solvers to bound the solution within this limits e.g. (min, max). It defaults to `()`
+- `itmax` maximum number of iterations in a single solver pass (defaults to 100) 
+- `atol` absolute tolerance for the solver (default to eps(FloatType)^0.9)
+- `rtol` set relative tolerance for the solver (defaults to 1e-3)
+"""
+set_solver( 
+        # keyword arguments and defaults
+        field::AbstractField;
+        solver::S, 
+        preconditioner::PT, 
+        convergence, 
+        relax,
+        limit=(),
+        itmax::Integer=100, 
+        atol=(eps(_get_float(field.mesh)))^0.9,
+        rtol=_get_float(field.mesh)(1e-3)
+    ) where {S,PT<:PreconditionerType} = begin
+
+    # return NamedTuple
     TF = _get_float(field.mesh)
-    # TI = _get_int(field.mesh)
     (
         solver=solver, 
         preconditioner=preconditioner, 

@@ -70,15 +70,16 @@ Physics(
 
 Following from the idea of using Julia's dynamic features to explore the types available in XCALibre.jl, in this section we will explore the fluid types available. This time, we will use a helper package `AbstractTrees` (which can be installed in the usual way, by entering into package mode in the REPL and typing `add AbstractTrees`). In XCALibre.jl all fluid types are subtypes of `AbstractFluid`. The types available are shown in the example below:
 
-```@example
-using XCALibre
-# using Pkg; Pkg.add("AbstractTrees") # uncomment this line to install AbstractTrees
-using AbstractTrees
-# import Main.subtypes as subtypes # hide
-AbstractTrees.children(d::DataType) = Main.subtypes(d)
-print_tree(AbstractFluid)
-
-# Note: this code snippet will not be shown later for succinctness
+```@repl
+begin
+    # Note: this code snippet will not be shown later for succinctness
+    using XCALibre
+    # using Pkg; Pkg.add("AbstractTrees") # run to install AbstractTrees
+    using AbstractTrees 
+    import Main.subtypes as subtypes # hide
+    AbstractTrees.children(d::DataType) = Main.subtypes(d)
+    print_tree(AbstractFluid)
+end
 ```
 
 From the subtype tree above, we can see that XCALibre.jl offers 2 major abstract fluid types, `AbstractIncompressible` and `AbstractCompressible`. The concrete fluid types are 3:
@@ -112,7 +113,7 @@ where the input variable represent the following:
 
 Below is a representation the `AbstractTurbulenceModel` inheritance tree. It shows turbulence models available. Turbulence models are defined using the `RANS` and `LES` constructors and passing a specific turbulence model type. As it will be illustrated in the flowing sections.
 
-```@example
+```@repl
 using XCALibre # hide
 using AbstractTrees # hide
 import Main.subtypes as subtypes # hide
@@ -151,7 +152,7 @@ LES{Smagorinsky}(C=0.1) # user selected value
 ---
 
 Currently, XCALibre.jl offers two options to model the energy equation. A tree of the `AbstractEnergyModel` is shown below. The top-level constructor for energy models is the `Energy` type. Specific constructor signatures are also illustrated below.
-```@example
+```@repl
 using XCALibre # hide
 using AbstractTrees # hide
 import Main.subtypes as subtypes # hide
@@ -175,7 +176,7 @@ Energy{SensibleEnthalpy}(Tref = 300)  # Users must provide a referent temperatur
 
 The final step to completely capture the physics for the simulation is to define boundary conditions in order to find a concrete solution of the model equations being solved. XCALibre.jl offers a range of boundary condition. As before, boundary conditions are specified by type and the are classified under the `AbstractBoundary` type and subdivided into 4 additional abstract types `AbstractDirichlet`, `AbstractNeumann`, `AbstractPhysicalConstraint` and `AbstractWallFunction`. The complete abstract tree is illustrated below.
 
-```@example
+```@repl
 using XCALibre # hide
 using AbstractTrees # hide
 import Main.subtypes as subtypes # hide

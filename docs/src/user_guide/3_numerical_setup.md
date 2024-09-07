@@ -127,6 +127,8 @@ end
 ```jldoctest;  filter = r".*"s => s"", output = false
 using XCALibre
 
+# Note: this example assumes a Physics object named `model` already exists
+
 solvers = (
     U = set_solver(
         model.momentum.U;

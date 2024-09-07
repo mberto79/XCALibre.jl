@@ -4,7 +4,7 @@ export Laminar
 """
     Laminar <: AbstractTurbulenceModel
 
-Laminar model definition for physcis API.
+Laminar model definition for physics API.
 """
 struct Laminar <: AbstractRANSModel end 
 Adapt.@adapt_structure Laminar
@@ -24,8 +24,11 @@ end
 
 # Model initialisation
 """
-    turbulence::Laminar, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
-    ) where {T,F,M,Tu,E,D,BI}
+    function initialise(
+        turbulence::Laminar, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
+        ) where {T,F,M,Tu,E,D,BI}
+    return LaminarModel()
+end
 
 Initialisation of turbulent transport equations.
 

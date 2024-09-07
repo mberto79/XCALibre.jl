@@ -1,5 +1,5 @@
 export AbstractScheme, AbstractBoundary
-export AbstractDirichlet, AbstractNeumann
+export AbstractDirichlet, AbstractNeumann, AbstractPhysicalConstraint
 export KWallFunction, OmegaWallFunction, NutWallFunction
 export Constant, Linear, Upwind, LUST
 export BoundedUpwind
@@ -28,6 +28,7 @@ abstract type AbstractBoundary end
 abstract type AbstractDirichlet <: AbstractBoundary end
 abstract type AbstractNeumann <: AbstractBoundary end
 abstract type AbstractWallFunction <: AbstractBoundary end
+abstract type AbstractPhysicalConstraint <: AbstractBoundary end
 
 
 # Kwall function structure and constructor

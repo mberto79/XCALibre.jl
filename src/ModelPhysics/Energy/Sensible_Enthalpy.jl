@@ -37,7 +37,7 @@ end
 Adapt.@adapt_structure Sensible_Enthalpy_Model
 
 # Model API constructor
-Energy{SensibleEnthalpy}(; Tref = 288.15) = begin
+Energy{SensibleEnthalpy}(; Tref) = begin
     coeffs = (Tref=Tref, other=nothing)
     ARG = typeof(coeffs)
     Energy{SensibleEnthalpy,ARG}(coeffs)

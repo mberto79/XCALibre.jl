@@ -4,12 +4,16 @@ export adjust_boundary!
 
 
 """
-    Periodic <: AbstractBoundary
+    struct Periodic{I,V} <: AbstractPhysicalConstraint
+        ID::I
+        value::V
+    end
 
 Periodic boundary condition model.
 
 ### Fields
 - 'ID' -- Boundary ID
+- `value` -- tuple containing information needed to apply this boundary
 """
 struct Periodic{I,V} <: AbstractPhysicalConstraint
     ID::I
@@ -42,27 +46,18 @@ Function for construction of periodic boundary conditions.
 - `patch2`   -- Neighbour periodic patch ID.
 
 ### Output
-- `KOmegaLKEModel(
-        k_eqn,
-        ω_eqn,
-        kl_eqn,
-        nueffkLS,
-        nueffkS,
-        nueffωS,
-        nuL,
-        nuts,
-        Ω,
-        γ,
-        fv,
-        normU,
-        Reυ,
-        ∇k,
-        ∇ω
-    )`  -- Turbulence model structure.
+- periodic::Tuple - tuple containing boundary defintions for `patch1` and `patch2` i.e. (periodic1, periodic2). The fields of `periodic1` and `periodic2` are 
+
+    - `ID` -- Index to access boundary information in mesh object
+    - `value` -- represents a `NamedTuple` with the following keyword arguments:
+        - index -- ID used to find boundary geometry information in the mesh object
+        - distance -- perpendicular distance between the patches
+        - face_map -- vector providing indeces to faces of match patch
+        - ismaster -- flat to identify one of the patch pairs as the main patch
 
 ### Example
     - `periodic = construct_periodic(mesh, CPU(), :top, :bottom)` - Example using CPU 
-    backend with periodic boundaries named top and bottom.
+    backend with periodic boundaries named `top` and `bottom`.
 
 """
 function construct_periodic(mesh, backend, patch1::Symbol, patch2::Symbol)

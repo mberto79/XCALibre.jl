@@ -112,10 +112,12 @@ assign(scalar::ScalarField, args...) = begin
         # Exception 2: value is a named tuple (used in wall functions)
         elseif typeof(arg.value) <: NamedTuple
             BCs_vals = arg.value
-            # for entry ∈ typeof(arg.value).parameters[1] # access names
-            #     val = float(getproperty(arg.value, entry)) # type conversion
-            #     BCs_vals = set(BCs_vals, PropertyLens{entry}(), val)
-            # end
+            BCs = (fixedValue(arg, idx, BCs_vals))
+            @reset scalar.BCs = (scalar.BCs..., BCs)
+            
+        # Exception 3: value is a function
+        elseif typeof(arg.value) <: Function
+            BCs_vals = arg.value
             BCs = (fixedValue(arg, idx, BCs_vals))
             @reset scalar.BCs = (scalar.BCs..., BCs)
 

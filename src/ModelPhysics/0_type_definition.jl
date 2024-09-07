@@ -1,5 +1,6 @@
 export Physics
 export AbstractMomentumModel
+export Momentum
 export AbstractTimeModel
 export Transient, Steady
 

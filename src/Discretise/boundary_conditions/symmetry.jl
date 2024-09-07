@@ -14,6 +14,8 @@ struct Symmetry{I,V} <: AbstractPhysicalConstraint
 end
 Adapt.@adapt_structure Symmetry
 
+Symmetry(patch::Symbol) = Symmetry(patch, 0)
+
 
 function fixedValue(BC::Symmetry, ID::I, value::V) where {I<:Integer,V}
     # Exception 1: Value is scalar

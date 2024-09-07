@@ -101,7 +101,7 @@ model = Physics(
         Pr = Pr
         ),
     turbulence = RANS{Laminar}(),
-    energy = Energy{SensibleEnthalpy}(),
+    energy = Energy{SensibleEnthalpy}(Tref = 288.15),
     domain = mesh # mesh_dev  # use mesh_dev for GPU backend
     )
 

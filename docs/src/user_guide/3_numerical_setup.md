@@ -4,10 +4,10 @@
 ## Discretisation schemes
 ---
 
-```@example
+```@repl
 using XCALibre # hide
 using AbstractTrees # hide
-# import Main.subtypes as subtypes # hide
+import Main.subtypes as subtypes # hide
 AbstractTrees.children(d::DataType) = Main.subtypes(d) # hide
 print_tree(AbstractScheme) # hide
 ```

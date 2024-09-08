@@ -110,8 +110,8 @@ schemes = (
 solvers = (
     U = set_solver(
         model.momentum.U;
-        solver      = BicgstabSolver, # GmresSolver
-        preconditioner = DILU(), # ILU0(), # Jacobi(),
+        solver      = BicgstabSolver, # Options: GmresSolver
+        preconditioner = Jacobi(), # Options: NormDiagonal(), DILU(), ILU0()
         convergence = 1e-7,
         relax       = 0.7,
         rtol = 1e-4,
@@ -119,8 +119,8 @@ solvers = (
     ),
     p = set_solver(
         model.momentum.p;
-        solver      = GmresSolver, # CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = LDL(), #Jacobi(),
+        solver      = CgSolver, # Options: CgSolver, BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(), # Options: NormDiagonal(), LDL() (with GmresSolver)
         convergence = 1e-7,
         relax       = 0.7,
         rtol = 1e-4,

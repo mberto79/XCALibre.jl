@@ -103,7 +103,7 @@ print_tree(PreconditionerType) # hide
 
 !!! note
 
-    Only the `Jacobi` and `NormDiagonal` preconditioners has GPU ready implementations. They can be used with both CPU and GPU backends. The other preconditions can only be used on the CPU. 
+    Only the `Jacobi` and `NormDiagonal` preconditioners have GPU ready implementations. At present these have the most robust implementation and they can be used with both CPU and GPU backends. The other preconditioners can only be used on the CPU. Notice that on our tests the `LDL` preconditioner only works when paired with the `GmresSolver` on the CPU. Also notice that the implementation of the `DILU` preconditioner, although functions, is only experimental. Work on improving the offering of preconditioners is ongoing.
 
 Below an example is provided in context. Here, we are setting solvers for both the velocity field `U` and the pressure field `p` and packing them into a `NamedTuple` "solvers". The `Jacobi` preconditioner is use in both solvers. Notice that preconditioners are specified with an instance of their type i.e. `Jacobi()`. Internally, the preconditioner instance is used for dispatch. This tupple will then be pass on to create the final `Configuration` object.
 

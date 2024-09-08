@@ -1,11 +1,19 @@
 # Runtime and solvers
-*super brief summary*
+*Final steps before launching a simulation*
 
 ## Runtime setup
 ---
 
+```@docs; canonical=false
+set_runtime
+```
+
 ## Configuration object
 ---
+
+```@docs; canonical=false
+Configuration
+```
 
 ## Initialising fields
 ---

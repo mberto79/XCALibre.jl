@@ -99,8 +99,10 @@ This is a convenience function to set the top-level runtime information. The inp
 
 # Example
 
-    runtime = set_runtime(
-        iterations=2000, time_step=1, write_interval=2000)
+```julia
+runtime = set_runtime(
+    iterations=2000, time_step=1, write_interval=2000)
+```
 """
 set_runtime(; iterations::I, write_interval::I, time_step::N) where {I<:Integer,N<:Number} = begin
     (iterations=iterations, dt=time_step, write_interval=write_interval)

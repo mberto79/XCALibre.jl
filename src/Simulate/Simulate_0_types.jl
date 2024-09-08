@@ -20,9 +20,10 @@ The `Configuration` type is pass to all flow solvers and provides all the releva
 
 # Example
 
-    config = Configuration(
-        solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
-
+```julia
+config = Configuration(
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+```
 """
 @kwdef struct Configuration{SC,SL,RT,HW}
     schemes::SC

@@ -18,5 +18,13 @@ Configuration
 ## Initialising fields
 ---
 
+```@docs; canonical=false
+initialise!
+```
+
 ## Launching flow solvers
+
+```@docs; canonical=false
+run!()
+```
 ---

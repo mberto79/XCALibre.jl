@@ -1,5 +1,21 @@
 export run!
 
+"""
+    residuals = run!(model::Physics, config::Configuration)
+
+Description goes here
+
+# Input arguements
+
+# Example
+
+```julia
+Something here
+```
+
+"""
+run!() = nothing # dummy function for providing general documentation
+
 # Incompressible solver (steady)
 """
     run!(
@@ -8,13 +24,13 @@ export run!
 
 Incompressible steady solver using the SIMPLE algorithm.
 
-### Input
+# Input
 - `model`  -- Physics model defiend by user and passed to run!.
 - `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
                 hardware structures set.
 - `pref`   -- Reference pressure value for cases that do not have a pressure defining BC.
 
-### Output
+# Output
 - `R_ux`  - Vector of x-velocity residuals for each iteration.
 - `R_uy`  - Vector of y-velocity residuals for each iteration.
 - `R_uz`  - Vector of y-velocity residuals for each iteration.
@@ -37,13 +53,13 @@ end
 
 Incompressible unsteady solver using the PISO algorithm.
 
-### Input
+# Input
 - `model`  -- Physics model defiend by user and passed to run!.
 - `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
                 hardware structures set.
 - `pref`   -- Reference pressure value for cases that do not have a pressure defining BC.
 
-### Output
+# Output
 - `R_ux`  - Vector of x-velocity residuals for each iteration.
 - `R_uy`  - Vector of y-velocity residuals for each iteration.
 - `R_uz`  - Vector of y-velocity residuals for each iteration.
@@ -67,13 +83,13 @@ end
 Mildly compressible steady solver using the SIMPLE algorithm for low speed cases with heat 
     transfer.
 
-### Input
+# Input
 - `model`  -- Physics model defiend by user and passed to run!.
 - `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
                 hardware structures set.
 - `pref`   -- Reference pressure value for cases that do not have a pressure defining BC.
 
-### Output
+# Output
 - `R_ux`  - Vector of x-velocity residuals for each iteration.
 - `R_uy`  - Vector of y-velocity residuals for each iteration.
 - `R_uz`  - Vector of y-velocity residuals for each iteration.

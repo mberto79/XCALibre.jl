@@ -89,7 +89,7 @@ function setup_incompressible_solvers(
     R_ux, R_uy, R_uz, R_p, model  = solver_variant(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
 
-    return R_ux, R_uy, R_uz, R_p, model    
+    return R_ux, R_uy, R_uz, R_p, model
 end # end function
 
 function SIMPLE(

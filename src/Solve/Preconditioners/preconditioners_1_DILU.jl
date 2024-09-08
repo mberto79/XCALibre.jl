@@ -83,61 +83,6 @@ function upper_row_indices(A, Di) # upper triangular row column indices
     return Ri, J, upper_indices_IDs
 end
 
-# function update_dilu_diagonal!(P, mesh) # must rename
-#     # (; A, storage) = P
-#     # (; colptr, m, n, nzval, rowval) = A
-#     # (; Di, D) = storage
-#     # extract_diagonal!(D, Di, A) 
-#     # for i ∈ 1:m
-#     #     # for j ∈ 1:(i-1)
-#     #     for j ∈ (i+1):m
-#     #         # D[i] -= A[i,j]*A[j,i]/D[j]
-#     #         D[j] -= A[i,j]*A[j,i]/D[i]
-#     #     end
-#     # end
-
-#     # Algo 2
-#     # (; A, storage) = P
-#     # (; colptr, m, n, nzval, rowval) = A
-#     # (; Di, D) = storage
-#     # extract_diagonal!(D, Di, A) 
-#     # sum = 0.0
-#     # for i ∈ 2:m
-#     #     for j ∈ 1:(i-1)
-#     #         sum += A[i,j]*A[j,i]/D[j]
-#     #     end
-#     #     D[i] -= sum
-#     #     sum = 0.0
-#     # end
-    
-#     # Algo 3
-#     backend = _get_backend(mesh)
-
-#     (; A, storage) = P
-#     # (; colptr, n, nzval, rowval) = A
-#     rowval, colptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
-#     (; Di, Ri, D, upper_indices_IDs) = storage
-    
-#     extract_diagonal!(D, Di, A, backend)
-
-#     @inbounds for i ∈ 1:n
-#         # D[i] = nzval[Di[i]]
-#         upper_index_ID = upper_indices_IDs[i] 
-#         c_start = Di[i] + 1
-#         c_end = colptr[i+1] - 1
-#         r_pointer = Ri[upper_index_ID]
-#         r_count = 0
-#         @inbounds for c_pointer ∈ c_start:c_end
-#             j = rowval[c_pointer]
-#             r_count += 1
-#             D[j] -= nzval[c_pointer]*nzval[r_pointer[r_count]]/D[i]
-#         end
-#         D[i] = 1/D[i] # store inverse
-#     end
-#     # D .= 1.0./D # store inverse
-#     nothing
-# end
-
 function update_dilu_diagonal!(P, mesh, config) # must rename
     # (; A, storage) = P
     # (; colptr, m, n, nzval, rowval) = A
@@ -166,10 +111,7 @@ function update_dilu_diagonal!(P, mesh, config) # must rename
     # end
     
     # Algo 3
-    # backend = _get_backend(mesh)
-
-    (; hardware) = config
-    (; backend, workgroup) = hardware
+    backend = _get_backend(mesh)
 
     (; A, storage) = P
     # (; colptr, n, nzval, rowval) = A
@@ -178,34 +120,93 @@ function update_dilu_diagonal!(P, mesh, config) # must rename
     
     extract_diagonal!(D, Di, A, config)
 
-    kernel! = update_dilu_diagonal_kernel!(backend, workgroup)
-    kernel!(upper_indices_IDs, Di, colptr, Ri, rowval, D, nzval, ndrange = n)
+    @inbounds for i ∈ 1:n
+        # D[i] = nzval[Di[i]]
+        upper_index_ID = upper_indices_IDs[i] 
+        c_start = Di[i] + 1
+        c_end = colptr[i+1] - 1
+        r_pointer = Ri[upper_index_ID]
+        r_count = 0
+        @inbounds for c_pointer ∈ c_start:c_end
+            j = rowval[c_pointer]
+            r_count += 1
+            D[j] -= nzval[c_pointer]*nzval[r_pointer[r_count]]/D[i]
+        end
+        D[i] = 1/D[i] # store inverse
+    end
     # D .= 1.0./D # store inverse
     nothing
 end
 
 
-@kernel function update_dilu_diagonal_kernel!(upper_indices_IDs, Di, colptr, Ri, rowval, D, nzval)
-    i = @index(Global)
+# function update_dilu_diagonal!(P, mesh, config) # must rename
+#     # (; A, storage) = P
+#     # (; colptr, m, n, nzval, rowval) = A
+#     # (; Di, D) = storage
+#     # extract_diagonal!(D, Di, A) 
+#     # for i ∈ 1:m
+#     #     # for j ∈ 1:(i-1)
+#     #     for j ∈ (i+1):m
+#     #         # D[i] -= A[i,j]*A[j,i]/D[j]
+#     #         D[j] -= A[i,j]*A[j,i]/D[i]
+#     #     end
+#     # end
+
+#     # Algo 2
+#     # (; A, storage) = P
+#     # (; colptr, m, n, nzval, rowval) = A
+#     # (; Di, D) = storage
+#     # extract_diagonal!(D, Di, A) 
+#     # sum = 0.0
+#     # for i ∈ 2:m
+#     #     for j ∈ 1:(i-1)
+#     #         sum += A[i,j]*A[j,i]/D[j]
+#     #     end
+#     #     D[i] -= sum
+#     #     sum = 0.0
+#     # end
     
-    @inbounds begin
-        # D[i] = nzval[Di[i]]
-        upper_index_ID = upper_indices_IDs[i] 
-        c_start = Di[i] + 1 
-        c_end = colptr[i+1] - 1
-        r_count = 0
-        for c_pointer ∈ c_start:c_end
-            j = rowval[c_pointer]
-            r_count += 1
-            r_pointer = Ri[upper_index_ID[r_count]]
-            nzval_c = nzval[c_pointer]
-            nzval_r = nzval[r_pointer]
-            Atomix.@atomic D[j] -= nzval_c*nzval_r/D[i]
-        end
-        @synchronize
-        D[i] = 1/D[i] # store inverse
-    end
-end
+#     # Algo 3
+#     # backend = _get_backend(mesh)
+
+#     (; hardware) = config
+#     (; backend, workgroup) = hardware
+
+#     (; A, storage) = P
+#     # (; colptr, n, nzval, rowval) = A
+#     rowval, colptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
+#     (; Di, Ri, D, upper_indices_IDs) = storage
+    
+#     extract_diagonal!(D, Di, A, config)
+
+#     kernel! = update_dilu_diagonal_kernel!(backend, workgroup)
+#     kernel!(upper_indices_IDs, Di, colptr, Ri, rowval, D, nzval, ndrange = n)
+#     # D .= 1.0./D # store inverse
+#     nothing
+# end
+
+
+# @kernel function update_dilu_diagonal_kernel!(upper_indices_IDs, Di, colptr, Ri, rowval, D, nzval)
+#     i = @index(Global)
+    
+#     @inbounds begin
+#         # D[i] = nzval[Di[i]]
+#         upper_index_ID = upper_indices_IDs[i] 
+#         c_start = Di[i] + 1 
+#         c_end = colptr[i+1] - 1
+#         r_count = 0
+#         for c_pointer ∈ c_start:c_end
+#             j = rowval[c_pointer]
+#             r_count += 1
+#             r_pointer = Ri[upper_index_ID[r_count]]
+#             nzval_c = nzval[c_pointer]
+#             nzval_r = nzval[r_pointer]
+#             Atomix.@atomic D[j] -= nzval_c*nzval_r/D[i]
+#         end
+#         @synchronize
+#         D[i] = 1/D[i] # store inverse
+#     end
+# end
 
 function forward_substitution!(x, P, b)
     (; A, D, Di, Ri, J) = P

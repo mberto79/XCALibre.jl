@@ -21,7 +21,8 @@ begin
 
     elseif typeof(phi) <: AbstractScalarField
 
-        discretise!(eqn, ConstantScalar(zero(_get_int(mesh))), config) # should this be float?
+        # discretise!(eqn, ConstantScalar(zero(_get_int(mesh))), config) # should this be float?
+        discretise!(eqn, get_phi(eqn), config) # should this be float?
         apply_boundary_conditions!(eqn, BCs, nothing, time, config)
     end
 
@@ -130,39 +131,30 @@ end
     end
 end
 
-update_preconditioner!(P::Preconditioner{LDL,M,PT,S}, mesh) where {M<:AbstractSparseArray,PT,S} =
+update_preconditioner!(P::Preconditioner{LDL,M,PT,S},  mesh, config) where {M<:AbstractSparseArray,PT,S} =
 begin
     nothing
 end
 
-update_preconditioner!(P::Preconditioner{ILU0,M,PT,S}, mesh) where {M<:AbstractSparseArray,PT,S} =
+
+update_preconditioner!(P::Preconditioner{ILU0,M,PT,S},  mesh, config) where {M<:AbstractSparseArray,PT,S} =
 begin
     ilu0!(P.storage, P.A)
     nothing
 end
 
-update_preconditioner!(P::Preconditioner{DILU,M,PT,S}, mesh) where {M<:AbstractSparseArray,PT,S} =
+update_preconditioner!(P::Preconditioner{DILU,M,PT,S},  mesh, config) where {M<:AbstractSparseArray,PT,S} =
 begin
-    update_dilu_diagonal!(P, mesh)
+    update_dilu_diagonal!(P, mesh, config)
     nothing
 end
 
-# const GPUCSC = Union{
-#     CUDA.CUSPARSE.CuSparseMatrixCSC,
-#     AMDGPU.rocSPARSE.ROCSparseMatrixCSC}
 
 function sparse_array_deconstructor_preconditioners(arr::SparseArrays.SparseMatrixCSC)
     (; rowval, colptr, nzval, m, n) = arr
     return rowval, colptr, nzval, m ,n
 end
 
-# function sparse_array_deconstructor_preconditioners(arr::GPUCSC)
-#     (; rowVal, colPtr, nzVal, dims) = arr
-#     return rowVal, colPtr, nzVal, dims[1], dims[2]
-# end
 
-# _m(A::GPUCSC) = A.dims[1]
 _m(A::SparseArrays.SparseMatrixCSC) = A.m
-
-# _n(A::GPUCSC) = A.dims[2]
 _n(A::SparseArrays.SparseMatrixCSC) = A.n

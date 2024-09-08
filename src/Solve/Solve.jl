@@ -1,13 +1,15 @@
 module Solve
 
+using Adapt
 using Krylov
 using LinearAlgebra
 using Statistics
 using SparseArrays
 using LinearOperators
+using LDLFactorizations
 using KernelAbstractions
 using Atomix
-# using ILUZero
+using ILUZero
 
 using XCALibre.Mesh
 using XCALibre.Fields
@@ -16,7 +18,7 @@ using XCALibre.Discretise
 
 using Reexport
 
-@reexport using ILUZero
+# @reexport using ILUZero
 
 
 include("Preconditioners/Preconditioners.jl")

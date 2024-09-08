@@ -111,7 +111,7 @@ solvers = (
     U = set_solver(
         model.momentum.U;
         solver      = BicgstabSolver, # GmresSolver
-        preconditioner = Jacobi(),
+        preconditioner = DILU(), # ILU0(), # Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
         rtol = 1e-4,
@@ -119,8 +119,8 @@ solvers = (
     ),
     p = set_solver(
         model.momentum.p;
-        solver      = CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(),
+        solver      = GmresSolver, # CgSolver, # BicgstabSolver, GmresSolver
+        preconditioner = LDL(), #Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
         rtol = 1e-4,

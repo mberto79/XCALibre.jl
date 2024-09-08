@@ -52,6 +52,10 @@ Preconditioner{LDL}(A::AbstractSparseArray{F,I}) where {F,I} = begin
     m, n = size(A)
     m == n || throw("Matrix not square")
     S = zeros(F, m)
+    # P = similar(A)
+    # triu!(P)
+    # P  = opLDL(P)
+    # # P  = opLDL(P)
     P  = opLDL(A)
     Preconditioner{LDL,typeof(A),typeof(P),typeof(S)}(A,P,S)
 end

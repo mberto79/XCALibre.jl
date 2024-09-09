@@ -21,10 +21,10 @@ the energy.
 - `model` - Physics model output including field parameters.
 
 """
-piso_comp!(model_in, config; resume=true, pref=nothing) = begin
+piso_comp!(model, config; resume=true, pref=nothing) = begin
 
     residuals = setup_unsteady_compressible_solvers(
-        CPISO, model_in, config;
+        CPISO, model, config;
         resume=true, pref=nothing
         )
         
@@ -33,7 +33,7 @@ end
 
 # Setup for all compressible algorithms
 function setup_unsteady_compressible_solvers(
-    solver_variant, model_in, config; resume=true, pref=nothing) 
+    solver_variant, model, config; resume=true, pref=nothing) 
 
     (; solvers, schemes, runtime, hardware) = config
 
@@ -127,7 +127,7 @@ function setup_unsteady_compressible_solvers(
     turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals  = solver_variant(
-    model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
+        model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
 
     return residuals    
 end # end function

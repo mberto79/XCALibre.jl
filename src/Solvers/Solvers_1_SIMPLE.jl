@@ -22,9 +22,9 @@ the energy.
 - `model` - Physics model output including field parameters.
 
 """
-simple!(model_in, config; resume=true, pref=nothing) = begin
+simple!(model, config; resume=true, pref=nothing) = begin
     residuals = setup_incompressible_solvers(
-        SIMPLE, model_in, config; resume=true, pref=nothing)
+        SIMPLE, model, config; resume=true, pref=nothing)
 
     return residuals
 end
@@ -32,15 +32,13 @@ end
 # Setup for all incompressible algorithms
 function setup_incompressible_solvers(
     solver_variant, 
-    model_in, config; resume=true, pref=nothing
+    model, config; resume=true, pref=nothing
     ) 
 
     (; solvers, schemes, runtime, hardware) = config
 
     @info "Extracting configuration and input fields..."
 
-    # model = adapt(hardware.backend, model_in)
-    model = model_in
     (; U, p) = model.momentum
     mesh = model.domain
 

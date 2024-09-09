@@ -73,7 +73,7 @@ Weakly compressible fluid model containing fluid field parameters for weakly com
 - `Fluid{WeaklyCompressible}(; nu=1E-5, cp=1005.0, gamma=1.4, Pr=0.7)` - Constructor with 
 default values.
 """
-@kwdef struct WeaklyCompressible{S1, S2, F1, F2, T} <: AbstractCompressible
+struct WeaklyCompressible{S1, S2, F1, F2, T} <: AbstractCompressible
     nu::S1
     rho::S2
     nuf::F1

@@ -19,15 +19,14 @@ Pr = 0.7
 
 model = Physics(
     time = Steady(),
-    fluid = WeaklyCompressible(
-        mu = nu,
-        cp = ConstantScalar(cp),
-        gamma = ConstantScalar(gamma),
-        Pr = ConstantScalar(Pr),
-        rho = ScalarField(mesh)
+    fluid = Fluid{WeaklyCompressible}(
+        nu = nu,
+        cp = cp,
+        gamma = gamma,
+        Pr = Pr
         ),
     turbulence = RANS{Laminar}(),
-    energy = Energy{SensibleEnthalpy}(),
+    energy = Energy{SensibleEnthalpy}(Tref = 288.15),
     domain = mesh
     )
 
@@ -99,7 +98,7 @@ initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 100000.0)
 initialise!(model.energy.T, 300.0)
 
-Rx, Ry, Rz, Rp, Re, model_out = run!(model, config) # 9.39k allocs
+residuals = run!(model, config) # 9.39k allocs
 
 # using DelimitedFiles
 # using LinearAlgebra

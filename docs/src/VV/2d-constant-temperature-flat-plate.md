@@ -171,7 +171,7 @@ initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 100000.0)
 initialise!(model.energy.T, 300.0)
 
-Rx, Ry, Rz, Rp, Re, model_out = run!(model, config)
+residuals = run!(model, config)
 
 # output
 

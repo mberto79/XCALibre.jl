@@ -22,15 +22,15 @@ the energy.
 - `model` - Physics model output including field parameters.
 
 """
-csimple!(model_in, config; resume=true, pref=nothing) = begin
+csimple!(model, config; resume=true, pref=nothing) = begin
     residuals = setup_compressible_solvers(
-        CSIMPLE, model_in, config; resume=true, pref=nothing)
+        CSIMPLE, model, config; resume=true, pref=nothing)
     return residuals
 end
 
 # Setup for all compressible algorithms
 function setup_compressible_solvers(
-    solver_variant, model_in, config; resume=true, pref=nothing) 
+    solver_variant, model, config; resume=true, pref=nothing) 
 
     (; solvers, schemes, runtime, hardware) = config
 

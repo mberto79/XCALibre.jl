@@ -1,13 +1,13 @@
-export piso_comp!
+export cpiso!
 
 """
-    piso_comp!(model_in, config; resume=true, pref=nothing)
+    cpiso!(model, config; resume=true, pref=nothing)
 
 Compressible variant of the PISO algorithm with a sensible enthalpy transport equation for 
 the energy. 
 
 ### Input
-- `model in` -- Physics model defiend by user and passed to run!.
+- `model` -- Physics model defiend by user and passed to run!.
 - `config`   -- Configuration structure defined by user with solvers, schemes, runtime and 
                 hardware structures set.
 - `resume`   -- True or false indicating if case is resuming or starting a new simulation.
@@ -18,10 +18,9 @@ the energy.
 - `R_uy`  - Vector of y-velocity residuals for each iteration.
 - `R_uz`  - Vector of y-velocity residuals for each iteration.
 - `R_p`   - Vector of pressure residuals for each iteration.
-- `model` - Physics model output including field parameters.
 
 """
-piso_comp!(model, config; resume=true, pref=nothing) = begin
+cpiso!(model, config; resume=true, pref=nothing) = begin
 
     residuals = setup_unsteady_compressible_solvers(
         CPISO, model, config;

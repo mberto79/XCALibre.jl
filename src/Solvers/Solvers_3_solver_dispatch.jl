@@ -117,31 +117,36 @@ end
 # Weakly Compressible solver (transient)
 """
     run!(
-    model::Physics{T,F,M,Tu,E,D,BI}, config; pref=nothing
-    ) where{T<:Transient,F<:WeaklyCompressible,M,Tu,E,D,BI}
+        model::Physics{T,F,M,Tu,E,D,BI}, config
+        ) where{T<:Transient,F<:WeaklyCompressible,M,Tu,E,D,BI} = 
+    begin
+        residuals = piso_comp!(model, config)
+        return residuals
+    end
 
-Mildly compressible unsteady solver using the PISO algorithm for low speed cases with heat 
-    transfer.
+Mildly compressible unsteady solver using the PISO algorithm for low speed cases with heatt transfer.
 
-### Input
+# Input
 - `model`  -- Physics model defiend by user and passed to run!.
 - `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
                 hardware structures set.
 - `pref`   -- Reference pressure value for cases that do not have a pressure defining BC.
 
-### Output
+# Output
+
+This function returns a `NamedTuple` for accessing the residuals with the following entries:
+
 - `R_ux`  - Vector of x-velocity residuals for each iteration.
 - `R_uy`  - Vector of y-velocity residuals for each iteration.
 - `R_uz`  - Vector of y-velocity residuals for each iteration.
 - `R_p`   - Vector of pressure residuals for each iteration.
 - `R_e`   - Vector of energy residuals for each iteration.
-- `model` - Physics model output including field parameters.
 """
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config
     ) where{T<:Transient,F<:WeaklyCompressible,M,Tu,E,D,BI} = 
 begin
-    residuals = piso_comp!(model, config); #, pref=0.0)
+    residuals = cpiso!(model, config)
     return residuals
 end
 
@@ -150,6 +155,6 @@ run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config
     ) where{T<:Transient,F<:Compressible,M,Tu,E,D,BI} = 
 begin
-    residuals = piso_comp!(model, config); #, pref=0.0)
+    residuals = cpiso!(model, config)
     return residuals
 end

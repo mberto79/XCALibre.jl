@@ -141,7 +141,7 @@ initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
 # Step 11. Run simulation
-Rx, Ry, Rz, Rp, model_out = run!(model, config);
+residuals = run!(model, config);
 
 # Step 12. Post-process
 pwd() # find active directory where the file "iteration_002000.vtk" was saved

@@ -23,12 +23,10 @@ the energy.
 
 """
 simple!(model_in, config; resume=true, pref=nothing) = begin
-    R_ux, R_uy, R_uz, R_p, model = setup_incompressible_solvers(
-        SIMPLE, model_in, config;
-        resume=true, pref=nothing
-        )
+    residuals = setup_incompressible_solvers(
+        SIMPLE, model_in, config; resume=true, pref=nothing)
 
-    return R_ux, R_uy, R_uz, R_p, model
+    return residuals
 end
 
 # Setup for all incompressible algorithms
@@ -86,10 +84,10 @@ function setup_incompressible_solvers(
     @info "Initialising turbulence model..."
     turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
-    R_ux, R_uy, R_uz, R_p, model  = solver_variant(
-    model, turbulenceModel, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
+    residuals  = solver_variant(
+        model, turbulenceModel, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
 
-    return R_ux, R_uy, R_uz, R_p, model
+    return residuals
 end # end function
 
 function SIMPLE(
@@ -99,7 +97,7 @@ function SIMPLE(
     (; U, p) = model.momentum
     (; nu) = model.fluid
     mesh = model.domain
-    p_model = p_eqn.model
+    # p_model = p_eqn.model
     (; solvers, schemes, runtime, hardware) = config
     (; iterations, write_interval) = runtime
     (; backend) = hardware
@@ -124,7 +122,7 @@ function SIMPLE(
     n_cells = length(mesh.cells)
     Uf = FaceVectorField(mesh)
     pf = FaceScalarField(mesh)
-    gradpf = FaceVectorField(mesh)
+    # gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
 
@@ -272,8 +270,8 @@ function SIMPLE(
         end
 
     end # end for loop
-    model_out = adapt(CPU(), model)
-    return R_ux, R_uy, R_uz, R_p, model_out
+    
+    return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end
 
 ### TEMP LOCATION FOR PROTOTYPING - NONORTHOGONAL CORRECTION 

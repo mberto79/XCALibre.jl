@@ -5,7 +5,7 @@ export run!
 
 Description goes here
 
-# Input arguements
+# Input arguments
 
 # Example
 
@@ -41,8 +41,8 @@ run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config; pref=nothing
     ) where{T<:Steady,F<:Incompressible,M,Tu,E,D,BI} = 
 begin
-    Rx, Ry, Rz, Rp, model = simple!(model, config, pref=pref)
-    return Rx, Ry, Rz, Rp, model
+    residuals = simple!(model, config, pref=pref)
+    return residuals
 end
 
 # Incompressible solver (transient)
@@ -54,7 +54,7 @@ end
 Incompressible unsteady solver using the PISO algorithm.
 
 # Input
-- `model`  -- Physics model defiend by user and passed to run!.
+- `model`  -- Physics model defined by user and passed to run!.
 - `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
                 hardware structures set.
 - `pref`   -- Reference pressure value for cases that do not have a pressure defining BC.
@@ -70,8 +70,8 @@ run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config; pref=nothing
     ) where{T<:Transient,F<:Incompressible,M,Tu,E,D,BI} = 
 begin
-    Rx, Ry, Rz, Rp, model = piso!(model, config, pref=pref); #, pref=0.0)
-    return Rx, Ry, Rz, Rp, model
+    residuals = piso!(model, config, pref=pref); #, pref=0.0)
+    return residuals
 end
 
 # Weakly Compressible solver (steady)
@@ -101,8 +101,8 @@ run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config; pref=nothing
     ) where{T<:Steady,F<:WeaklyCompressible,M,Tu,E,D,BI} = 
 begin
-    Rx, Ry, Rz, Rp, Re, model = csimple!(model, config, pref=pref); #, pref=0.0)
-    return Rx, Ry, Rz, Rp, Re, model
+    residuals = csimple!(model, config, pref=pref); #, pref=0.0)
+    return residuals
 end
 
 # Compressible solver (steady)
@@ -110,8 +110,8 @@ run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config; pref=nothing
     ) where{T<:Steady,F<:Compressible,M,Tu,E,D,BI} = 
 begin
-    Rx, Ry, Rz, Rp, Re, model = csimple!(model, config, pref=pref); #, pref=0.0)
-    return Rx, Ry, Rz, Rp, Re, model
+    residuals = csimple!(model, config, pref=pref); #, pref=0.0)
+    return residuals
 end
 
 # Weakly Compressible solver (transient)
@@ -141,8 +141,8 @@ run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config
     ) where{T<:Transient,F<:WeaklyCompressible,M,Tu,E,D,BI} = 
 begin
-    Rx, Ry, Rz, Rp, model = piso_comp!(model, config); #, pref=0.0)
-    return Rx, Ry, Rz, Rp, model
+    residuals = piso_comp!(model, config); #, pref=0.0)
+    return residuals
 end
 
 # Compressible solver (transient)
@@ -150,6 +150,6 @@ run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config
     ) where{T<:Transient,F<:Compressible,M,Tu,E,D,BI} = 
 begin
-    Rx, Ry, Rz, Rp, model = piso_comp!(model, config); #, pref=0.0)
-    return Rx, Ry, Rz, Rp, model
+    residuals = piso_comp!(model, config); #, pref=0.0)
+    return residuals
 end

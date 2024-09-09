@@ -23,19 +23,17 @@ the energy.
 """
 piso_comp!(model_in, config; resume=true, pref=nothing) = begin
 
-    R_ux, R_uy, R_uz, R_p, R_e, model = setup_unsteady_compressible_solvers(
+    residuals = setup_unsteady_compressible_solvers(
         CPISO, model_in, config;
         resume=true, pref=nothing
         )
         
-    return R_ux, R_uy, R_uz, R_p, model
+    return residuals
 end
 
 # Setup for all compressible algorithms
 function setup_unsteady_compressible_solvers(
-    solver_variant, 
-    model_in, config; resume=true, pref=nothing
-    ) 
+    solver_variant, model_in, config; resume=true, pref=nothing) 
 
     (; solvers, schemes, runtime, hardware) = config
 
@@ -128,10 +126,10 @@ function setup_unsteady_compressible_solvers(
     @info "Initialising turbulence model..."
     turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
-    R_ux, R_uy, R_uz, R_p, R_e, model  = solver_variant(
+    residuals  = solver_variant(
     model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
 
-    return R_ux, R_uy, R_uz, R_p, R_e, model    
+    return residuals    
 end # end function
 
 function CPISO(
@@ -392,8 +390,8 @@ function CPISO(
         end
 
     end # end for loop
-    model_out = adapt(CPU(), model)
-    return R_ux, R_uy, R_uz, R_p, model_out
+
+    return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end
 
 # function limit_gradient!(∇F, F, config)

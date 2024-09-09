@@ -2,12 +2,10 @@ export piso!
 
 piso!(model_in, config; resume=true, pref=nothing) = begin
 
-    R_ux, R_uy, R_uz, R_p, model = setup_incompressible_solvers(
-        PISO, model_in, config;
-        resume=true, pref=pref
-        )
+    residuals = setup_incompressible_solvers(
+        PISO, model_in, config; resume=true, pref=pref)
         
-    return R_ux, R_uy, R_uz, R_p, model
+    return residuals
 end
 
 function PISO(
@@ -17,7 +15,7 @@ function PISO(
     (; U, p) = model.momentum
     (; nu) = model.fluid
     mesh = model.domain
-    p_model = p_eqn.model
+    # p_model = p_eqn.model
     (; solvers, schemes, runtime, hardware) = config
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
@@ -42,7 +40,7 @@ function PISO(
     n_cells = length(mesh.cells)
     Uf = FaceVectorField(mesh)
     pf = FaceScalarField(mesh)
-    gradpf = FaceVectorField(mesh)
+    # gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
 
@@ -202,8 +200,8 @@ function PISO(
         end
 
     end # end for loop
-    model_out = adapt(CPU(), model)
-    return R_ux, R_uy, R_uz, R_p, model_out
+
+    return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end
 
 function limit_gradient!(∇F, F, config)

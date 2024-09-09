@@ -23,25 +23,20 @@ the energy.
 
 """
 csimple!(model_in, config; resume=true, pref=nothing) = begin
-    R_ux, R_uy, R_uz, R_p, R_e, model = setup_compressible_solvers(
-        CSIMPLE, model_in, config;
-        resume=true, pref=nothing
-        )
-
-    return R_ux, R_uy, R_uz, R_p, R_e, model
+    residuals = setup_compressible_solvers(
+        CSIMPLE, model_in, config; resume=true, pref=nothing)
+    return residuals
 end
 
 # Setup for all compressible algorithms
 function setup_compressible_solvers(
-    solver_variant, 
-    model_in, config; resume=true, pref=nothing
-    ) 
+    solver_variant, model_in, config; resume=true, pref=nothing) 
 
     (; solvers, schemes, runtime, hardware) = config
 
     @info "Extracting configuration and input fields..."
 
-    model = adapt(hardware.backend, model_in)
+    # model = adapt(hardware.backend, model_in)
     (; U, p) = model.momentum
     (; rho) = model.fluid
     mesh = model.domain
@@ -99,10 +94,10 @@ function setup_compressible_solvers(
     @info "Initialising turbulence model..."
     turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
-    R_ux, R_uy, R_uz, R_p, R_e, model  = solver_variant(
+    residuals  = solver_variant(
     model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
 
-    return R_ux, R_uy, R_uz, R_p, R_e, model    
+    return residuals    
 end # end function
 
 function CSIMPLE(
@@ -141,7 +136,7 @@ function CSIMPLE(
     S2 = ScalarField(mesh)
 
     n_cells = length(mesh.cells)
-    n_faces = length(mesh.faces)
+    # n_faces = length(mesh.faces)
     Uf = FaceVectorField(mesh)
     pf = FaceScalarField(mesh)
     nueff = FaceScalarField(mesh)
@@ -365,8 +360,8 @@ function CSIMPLE(
         end
 
     end # end for loop
-    model_out = adapt(CPU(), model)
-    return R_ux, R_uy, R_uz, R_p, R_e, model_out
+
+    return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p, e=R_e)
 end
 
 

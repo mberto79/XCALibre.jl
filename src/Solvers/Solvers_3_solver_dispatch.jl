@@ -1,16 +1,32 @@
 export run!
 
 """
-    residuals = run!(model::Physics, config::Configuration)
+    run!(
+        model::Physics, config; pref=nothing)  = 
+    begin
+        # here an internal function is used for solver dispatch
+        return residuals
+    end
 
-Description goes here
+This is the top level API function to initiate a simulation. It uses the user-provided `model` defined as a `Physics` object to dispatch to the appropriate solver.
 
-# Input arguments
+# Input
+- `model` represents the `Physics`` model defined by user.
+- `config` Configuration structure defined by user with solvers, schemes, runtime and hardware structures configuration details.
+- `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only.
 
-# Example
+# Output
+
+This function returns a `NamedTuple` for accessing the residuals (e.g. `residuals.Ux`). The fields available within the returned `residuals` tuple depend on the solver used. For example, for an incompressible solver, a x-momentum equation residual can be retrieved accessing the `Ux` field i.e. `residuals.Ux`. Look at reference guide for each dispatch method to find out which fields are available.
+
+# Example 
 
 ```julia
-Something here
+residuals = run!(model, config) 
+
+# to access the pressure residual
+
+residuals.p 
 ```
 
 """
@@ -19,23 +35,28 @@ run!() = nothing # dummy function for providing general documentation
 # Incompressible solver (steady)
 """
     run!(
-    model::Physics{T,F,M,Tu,E,D,BI}, config; pref=nothing
-    ) where{T<:Steady,F<:Incompressible,M,Tu,E,D,BI}
+        model::Physics{T,F,M,Tu,E,D,BI}, config; pref=nothing
+        ) where{T<:Steady,F<:Incompressible,M,Tu,E,D,BI} = 
+    begin
+        residuals = simple!(model, config, pref=pref)
+        return residuals
+    end
 
-Incompressible steady solver using the SIMPLE algorithm.
+Calls the incompressible steady solver using the SIMPLE algorithm.
 
 # Input
-- `model`  -- Physics model defiend by user and passed to run!.
-- `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
-                hardware structures set.
-- `pref`   -- Reference pressure value for cases that do not have a pressure defining BC.
+- `model` represents the `Physics`` model defined by user.
+- `config` Configuration structure defined by user with solvers, schemes, runtime and hardware structures configuration details.
+- `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only.
 
 # Output
-- `R_ux`  - Vector of x-velocity residuals for each iteration.
-- `R_uy`  - Vector of y-velocity residuals for each iteration.
-- `R_uz`  - Vector of y-velocity residuals for each iteration.
-- `R_p`   - Vector of pressure residuals for each iteration.
-- `model` - Physics model output including field parameters.
+
+This function returns a `NamedTuple` for accessing the residuals (e.g. `residuals.Ux`) with the following entries:
+
+- `Ux`  - Vector of x-velocity residuals for each iteration.
+- `Uy`  - Vector of y-velocity residuals for each iteration.
+- `Uz`  - Vector of y-velocity residuals for each iteration.
+- `p`   - Vector of pressure residuals for each iteration.
 """
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config; pref=nothing
@@ -48,23 +69,30 @@ end
 # Incompressible solver (transient)
 """
     run!(
-    model::Physics{T,F,M,Tu,E,D,BI}, config; pref=nothing
-    ) where{T<:Transient,F<:Incompressible,M,Tu,E,D,BI}
+        model::Physics{T,F,M,Tu,E,D,BI}, config; pref=nothing
+        ) where{T<:Transient,F<:Incompressible,M,Tu,E,D,BI} = 
+    begin
+        residuals = piso!(model, config, pref=pref); #, pref=0.0)
+        return residuals
+    end
 
-Incompressible unsteady solver using the PISO algorithm.
+Calls the incompressible transient solver using the PISO algorithm.
 
 # Input
-- `model`  -- Physics model defined by user and passed to run!.
-- `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
-                hardware structures set.
-- `pref`   -- Reference pressure value for cases that do not have a pressure defining BC.
+
+- `model` represents the `Physics`` model defined by user.
+- `config` Configuration structure defined by user with solvers, schemes, runtime and hardware structures configuration details.
+- `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only.
 
 # Output
-- `R_ux`  - Vector of x-velocity residuals for each iteration.
-- `R_uy`  - Vector of y-velocity residuals for each iteration.
-- `R_uz`  - Vector of y-velocity residuals for each iteration.
-- `R_p`   - Vector of pressure residuals for each iteration.
-- `model` - Physics model output including field parameters.
+
+This function returns a `NamedTuple` for accessing the residuals (e.g. `residuals.Ux`) with the following entries:
+
+- `Ux`  - Vector of x-velocity residuals for each iteration.
+- `Uy`  - Vector of y-velocity residuals for each iteration.
+- `Uz`  - Vector of y-velocity residuals for each iteration.
+- `p`   - Vector of pressure residuals for each iteration.
+
 """
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config; pref=nothing
@@ -77,25 +105,31 @@ end
 # Weakly Compressible solver (steady)
 """
     run!(
-    model::Physics{T,F,M,Tu,E,D,BI}, config; pref=nothing
-    ) where{T<:Steady,F<:WeaklyCompressible,M,Tu,E,D,BI}
+        model::Physics{T,F,M,Tu,E,D,BI}, config; pref=nothing
+        ) where{T<:Steady,F<:WeaklyCompressible,M,Tu,E,D,BI} = 
+    begin
+        residuals = csimple!(model, config, pref=pref); #, pref=0.0)
+        return residuals
+    end
 
-Mildly compressible steady solver using the SIMPLE algorithm for low speed cases with heat 
-    transfer.
+Calls the compressible steady solver using the SIMPLE algorithm for weakly compressible fluids.
 
 # Input
-- `model`  -- Physics model defiend by user and passed to run!.
-- `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
-                hardware structures set.
-- `pref`   -- Reference pressure value for cases that do not have a pressure defining BC.
+
+- `model` represents the `Physics`` model defined by user.
+- `config` Configuration structure defined by user with solvers, schemes, runtime and hardware structures configuration details.
+- `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only.
 
 # Output
-- `R_ux`  - Vector of x-velocity residuals for each iteration.
-- `R_uy`  - Vector of y-velocity residuals for each iteration.
-- `R_uz`  - Vector of y-velocity residuals for each iteration.
-- `R_p`   - Vector of pressure residuals for each iteration.
-- `R_e`   - Vector of energy residuals for each iteration.
-- `model` - Physics model output including field parameters.
+
+This function returns a `NamedTuple` for accessing the residuals (e.g. `residuals.Ux`) with the following entries:
+
+- `Ux`  - Vector of x-velocity residuals for each iteration.
+- `Uy`  - Vector of y-velocity residuals for each iteration.
+- `Uz`  - Vector of y-velocity residuals for each iteration.
+- `p`   - Vector of pressure residuals for each iteration.
+- `e`   - Vector of energy residuals for each iteration.
+
 """
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config; pref=nothing
@@ -120,27 +154,26 @@ end
         model::Physics{T,F,M,Tu,E,D,BI}, config
         ) where{T<:Transient,F<:WeaklyCompressible,M,Tu,E,D,BI} = 
     begin
-        residuals = piso_comp!(model, config)
+        residuals = cpiso!(model, config)
         return residuals
     end
 
-Mildly compressible unsteady solver using the PISO algorithm for low speed cases with heatt transfer.
+Calls the compressible transient solver using the PISO algorithm for weakly compressible fluids.
 
 # Input
-- `model`  -- Physics model defiend by user and passed to run!.
-- `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
-                hardware structures set.
-- `pref`   -- Reference pressure value for cases that do not have a pressure defining BC.
+- `model` represents the `Physics`` model defined by user.
+- `config` Configuration structure defined by user with solvers, schemes, runtime and hardware structures configuration details.
+- `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only.
 
 # Output
 
-This function returns a `NamedTuple` for accessing the residuals with the following entries:
+This function returns a `NamedTuple` for accessing the residuals (e.g. `residuals.Ux`) with the following entries:
 
-- `R_ux`  - Vector of x-velocity residuals for each iteration.
-- `R_uy`  - Vector of y-velocity residuals for each iteration.
-- `R_uz`  - Vector of y-velocity residuals for each iteration.
-- `R_p`   - Vector of pressure residuals for each iteration.
-- `R_e`   - Vector of energy residuals for each iteration.
+- `Ux`  - Vector of x-velocity residuals for each iteration.
+- `Uy`  - Vector of y-velocity residuals for each iteration.
+- `Uz`  - Vector of y-velocity residuals for each iteration.
+- `p`   - Vector of pressure residuals for each iteration.
+- `e`   - Vector of energy residuals for each iteration.
 """
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config

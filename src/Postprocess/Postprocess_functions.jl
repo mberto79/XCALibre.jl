@@ -2,7 +2,17 @@ export boundary_average
 export pressure_force, viscous_force
 export stress_tensor, wall_shear_stress
 
+"""
+    pressure_force(patch::Symbol, p::ScalarField, rho)
 
+Function to calculate the pressure force acting on a given patch/boundary.
+
+# Input arguments
+
+* `patch::Symbol` name of the boundary of interest (as a `Symbol`)
+* `p::ScalarField` pressure field
+* `rho` density. Set to 1 for incompressible solvers
+"""
 pressure_force(patch::Symbol, p::ScalarField, rho) = begin
     mesh = p.mesh
     ID = boundary_index(mesh.boundaries, patch)
@@ -25,6 +35,19 @@ pressure_force(patch::Symbol, p::ScalarField, rho) = begin
     return Fp
 end
 
+"""
+    viscous_force(patch::Symbol, U::VectorField, rho, ν, νt)
+
+Function to calculate the pressure force acting on a given patch/boundary.
+
+# Input arguments
+
+* `patch::Symbol` name of the boundary of interest (as a `Symbol`)
+* `U::VectorField` pressure field
+* `rho` density. Set to 1 for incompressible solvers
+* `ν` laminar viscosity of the fluid
+* `νt` eddy viscosity from turbulence models. Pass ConstantScalar(0) for laminar flows
+"""
 viscous_force(patch::Symbol, U::VectorField, rho, ν, νt) = begin
     mesh = U.mesh
     (; faces, boundaries, boundary_cellsID) = mesh
@@ -58,6 +81,41 @@ viscous_force(patch::Symbol, U::VectorField, rho, ν, νt) = begin
     return Fv
 end
 
+"""
+    function boundary_average(patch::Symbol, field, config; time=0)
+        # Extract mesh object
+        mesh = field.mesh
+
+        # Determine ID (index) of the boundary patch 
+        ID = boundary_index(mesh.boundaries, patch)
+        @info "calculating average on patch: \$patch at index \$ID"
+        boundary = mesh.boundaries[ID]
+        (; IDs_range) = boundary
+
+        # Create face field of same type provided by user (scalar or vector)
+        sum = nothing
+        if typeof(field) <: VectorField 
+            faceField = FaceVectorField(mesh)
+            sum = zeros(_get_float(mesh), 3) # create zero vector
+        else
+            faceField = FaceScalarField(mesh)
+            sum = zero(_get_float(mesh)) # create zero
+        end
+
+        # Interpolate CFD results to boundary
+        interpolate!(faceField, field, config)
+        correct_boundaries!(faceField, field, field.BCs, time, config)
+
+        # Calculate the average
+        for fID ∈ IDs_range
+            sum += faceField[fID]
+        end
+        ave = sum/length(IDs_range)
+
+        # return average
+        return ave
+    end
+"""
 function boundary_average(patch::Symbol, field, config; time=0)
     mesh = field.mesh
 

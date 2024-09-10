@@ -4,6 +4,9 @@
 Modules = [
     XCALibre, 
     XCALibre.Mesh, 
+    XCALibre.UNV2, 
+    XCALibre.UNV3, 
+    XCALibre.FoamMesh, 
     XCALibre.Fields,
     XCALibre.ModelFramework,
     XCALibre.Discretise, 

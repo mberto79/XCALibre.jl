@@ -118,9 +118,9 @@ XCALibre.jl is possible (and relies) on the functionality provided by other pack
 ## Related projects
 ---
 
-There are other wonderful fluids simulation packages available in the Julia ecosystems (please let us know if we missed any):
+There are other wonderful fluids simulation packages available in the Julia ecosystem (please let us know if we missed any):
 
-* Oceananigans.jl ADD LINK 
-* Waterlilly.jl ADD LINK 
-* Trixi.jl ADD LINK 
+* [Oceananigans.jl](https://github.com/CliMA/Oceananigans.jl) 
+* [Waterlilly.jl](https://github.com/WaterLily-jl/WaterLily.jl) 
+* [Trixi.jl](https://github.com/trixi-framework/Trixi.jl)
   

@@ -18,11 +18,19 @@ XCALibre.jl at present supports `.unv` mesh formats (which can be generated usin
 
 The following functions are provided for importing mesh files:
 
-```@docs
+```@docs; canonical=false
 UNV2D_mesh
 UNV3D_mesh
 FOAM3D_mesh
 ```
+
+These conversion functions will read mesh information and generate a mesh object (`Mesh2` or `Mesh3` depending on whether the mesh is 2D or 3D, respectively) with the following properties:
+
+```@docs; canonical=false
+Mesh3
+```
+
+
 
 ### Mesh limitations and requirements
 

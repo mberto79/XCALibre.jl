@@ -19,4 +19,19 @@ Although [ParaView](https://www.paraview.org/) offers considerable flexibility f
 
 !!! note
 
-    At present all postprocessing functions available in XCALibre.jl will only execute on CPUs and should be considered experimental. In time, we plan to offer a larger selection of postprocessing tools once we settle on a "sensible" (maintainable and extensible) API which is likely to include options for runtime postprocessing. Suggestion are welcome, we have opened issue [#11](@ref) for this purpose. 
+    At present all postprocessing functions available in XCALibre.jl will only execute on CPUs and should be considered experimental. Once we settle on a "sensible" (maintainable and extensible) API, we plan to offer a larger selection of postprocessing tools  which are likely to include options for runtime postprocessing.
+
+### Example: Calculate boundary average
+
+In this example, a function is shown that can be used to calculate the average on a user-provided boundary. 
+
+```@docs; canonical=false
+boundary_average
+```
+
+To calculate pressure and viscous forces. The following functions are available:
+
+```@docs; canonical=false
+pressure_force
+viscous_force
+```

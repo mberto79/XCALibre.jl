@@ -1,3 +1,4 @@
+export boundary_average
 export pressure_force, viscous_force
 export stress_tensor, wall_shear_stress
 
@@ -44,8 +45,6 @@ viscous_force(patch::Symbol, U::VectorField, rho, ν, νt) = begin
     end
     sumx, sumy, sumz = 0.0, 0.0, 0.0, 0.0
     for i ∈ eachindex(snGrad)
-        # fID = facesID[i]
-        # cID = cellsID[i]
         fID = IDs_range[i]
         cID = boundary_cellsID[fID]
         face = faces[fID]
@@ -57,6 +56,33 @@ viscous_force(patch::Symbol, U::VectorField, rho, ν, νt) = begin
     Fv = rho.*[sumx, sumy, sumz]
     print("\n Viscous force: (", Fv[1], " ", Fv[2], " ", Fv[3], ")\n")
     return Fv
+end
+
+function boundary_average(patch::Symbol, field, config; time=0)
+    mesh = field.mesh
+
+    ID = boundary_index(mesh.boundaries, patch)
+    @info "calculating average on patch: $patch at index $ID"
+    boundary = mesh.boundaries[ID]
+    (; IDs_range) = boundary
+
+    sum = nothing
+    if typeof(field) <: VectorField 
+        faceField = FaceVectorField(mesh)
+        sum = zeros(_get_float(mesh), 3) # create zero vector
+    else
+        faceField = FaceScalarField(mesh)
+        sum = zero(_get_float(mesh)) # create zero
+    end
+    interpolate!(faceField, field, config)
+    correct_boundaries!(faceField, field, field.BCs, time, config)
+
+    for fID ∈ IDs_range
+        sum += faceField[fID]
+    end
+
+    ave = sum/length(IDs_range)
+    return ave
 end
 
 ########### Must update

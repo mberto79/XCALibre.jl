@@ -7,7 +7,6 @@ pressure_force(patch::Symbol, p::ScalarField, rho) = begin
     ID = boundary_index(mesh.boundaries, patch)
     @info "calculating pressure forces on patch: $patch at index $ID"
     boundary = mesh.boundaries[ID]
-    # (; facesID, cellsID) = boundary
     (; IDs_range) = boundary
     x = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
     y = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
@@ -16,8 +15,6 @@ pressure_force(patch::Symbol, p::ScalarField, rho) = begin
     surface_flux!(snflux, p, IDs_range)
     sumx, sumy, sumz = 0.0, 0.0, 0.0, 0.0
     for i ∈ eachindex(snflux.x)
-        # fID = facesID[i]
-        # fID = IDs_range[i]
         sumx += snflux.x[i]
         sumy += snflux.y[i]
         sumz += snflux.z[i]

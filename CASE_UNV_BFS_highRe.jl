@@ -1,21 +1,22 @@
 using Plots
 using XCALibre
-using Krylov
-using KernelAbstractions
 using CUDA
 
-mesh_file = "unv_sample_meshes/backwardFacingStep_5mm_long.unv"
+# mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
+mesh_file = "unv_sample_meshes/backwardFacingStep_2mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 mesh_dev = adapt(CUDABackend(), mesh)
+mesh_dev = mesh
 
 nu = 1e-3
-u_mag = 3.5
+# u_mag = 1.5 # 5mm mesh
+u_mag = 3.5 # 2mm mesh
 velocity = [u_mag, 0.0, 0.0]
 Tu = 0.05
-nuR = 50
-k_inlet = 3/2*(Tu*u_mag)^2
-ω_inlet = k_inlet/(nuR*nu)
+nuR = 100
+k_inlet = 1 #3/2*(Tu*u_mag)^2
+ω_inlet = 1000 #k_inlet/(nuR*nu)
 νt_inlet = k_inlet/ω_inlet
 Re = velocity[1]*0.1/nu
 
@@ -30,8 +31,8 @@ model = Physics(
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Dirichlet(:wall, [0.0, 0.0, 0.0]),
-    Dirichlet(:top, [0.0, 0.0, 0.0])
+    Wall(:wall, [0.0, 0.0, 0.0]),
+    Wall(:top, [0.0, 0.0, 0.0])
 )
 
 @assign! model momentum p (
@@ -77,7 +78,7 @@ solvers = (
         convergence = 1e-7,
         relax       = 0.7,
         rtol = 1e-2,
-        atol = 1e-15
+        atol = 1e-10
     ),
     p = set_solver(
         model.momentum.p;
@@ -86,25 +87,25 @@ solvers = (
         convergence = 1e-7,
         relax       = 0.3,
         rtol = 1e-3,
-        atol = 1e-15
+        atol = 1e-10
     ),
     k = set_solver(
         model.turbulence.k;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.3,
         rtol = 1e-2,
-        atol = 1e-15
+        atol = 1e-10
     ),
     omega = set_solver(
         model.turbulence.omega;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.3,
         rtol = 1e-2,
-        atol = 1e-15
+        atol = 1e-10
     )
 )
 
@@ -112,7 +113,7 @@ runtime = set_runtime(iterations=3000, write_interval=100, time_step=1)
 # runtime = set_runtime(iterations=2, write_interval=-1, time_step=1)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
@@ -126,7 +127,7 @@ initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, νt_inlet)
 
-Rx, Ry, Rz, Rp, model_out = run!(model, config) # 36.90k allocs
+residuals = run!(model, config) # 36.90k allocs
 
 Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)
 Fp = pressure_force(:wall, model.momentum.p, 1.25)

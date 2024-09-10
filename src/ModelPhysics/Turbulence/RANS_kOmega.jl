@@ -163,8 +163,6 @@ function turbulence!(
     Dωf = get_flux(ω_eqn, 4)
     Pω = get_source(ω_eqn, 1)
 
-    # nu = _nu(model.fluid)
-
     # update fluxes and sources
     magnitude2!(Pk, S, config, scale_factor=2.0) # multiplied by 2 (def of Sij)
     constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only

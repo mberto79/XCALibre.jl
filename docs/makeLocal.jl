@@ -17,14 +17,15 @@ USER_GUIDE_PAGES = Any[
 makedocs(
     sitename = "XCALibre.jl",
     format = Documenter.HTML(),
-    # doctest = false, # only set to false when sorting out docs structure
+    doctest = false, # only set to false when sorting out docs structure
     modules = [XCALibre],
     pages = [
         "Home" => "index.md",
         "quick_start.md",
         "Verification & validation" => Any[
-            "VV/2d-isothermal-backward-facing-step.md",
-            "VV/2d-constant-temperature-flat-plate.md"
+            "VV/01_2d-isothermal-backward-facing-step.md",
+            "VV/02_2d-incompressible-transient-cylinder.md",
+            "VV/03_2d-constant-temperature-flat-plate.md"
         ],
         "User Guide" => "user_guide/" .* USER_GUIDE_PAGES,
         "Theory Guide" => "theory_guide/introduction.md",

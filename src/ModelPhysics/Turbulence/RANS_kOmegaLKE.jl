@@ -280,7 +280,7 @@ function turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S,
     (; momentum, turbulence) = model
     U = momentum.U
     (; k, omega, kl, nut, y, kf, omegaf, klf, nutf, coeffs, Tu) = turbulence
-    nu = _nu(model.fluid)
+    (; nu) = model.fluid
     
     (; k_eqn, ω_eqn, kl_eqn, nueffkLS, nueffkS, nueffωS, nuL, nuts, Ω, γ, fv, ∇k, ∇ω, normU, Reυ) = rans
     (; solvers, runtime) = config

@@ -268,7 +268,7 @@ end
     fID = i + start_ID - 1 # Redefine thread index to become face ID
 
     (; kappa, beta1, cmu, B, E) = BC.value
-    nu = _nu(fluid)
+    (; nu) = fluid
     (; U) = momentum
     (; k, nut) = turbulence
 
@@ -338,7 +338,7 @@ end
     fID = i + start_ID - 1 # Redefine thread index to become face ID
 
     (; kappa, beta1, cmu, B, E) = BC.value
-    nu = _nu(fluid)
+    (; nu) = fluid
     (; k) = turbulence
     
     ylam = y_plus_laminar(E, kappa)

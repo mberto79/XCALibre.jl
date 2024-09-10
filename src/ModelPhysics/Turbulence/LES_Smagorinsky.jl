@@ -101,7 +101,6 @@ function turbulence!(
     
     (; nut, nutf, coeff) = model.turbulence
     (; Δ, magS) = les
-    # nu = _nu(model.fluid)
 
     magnitude!(magS, S, config)
     @. magS.values *= sqrt(2) # should fuse into definition of magnitude function!

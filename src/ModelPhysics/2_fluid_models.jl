@@ -1,8 +1,6 @@
 export AbstractFluid, AbstractIncompressible, AbstractCompressible
 export Fluid
 export Incompressible, WeaklyCompressible, Compressible
-export _nu, _nuf, _rho
-export _R, _Cp, _mu, _Pr
 
 abstract type AbstractFluid end
 abstract type AbstractIncompressible <: AbstractFluid end

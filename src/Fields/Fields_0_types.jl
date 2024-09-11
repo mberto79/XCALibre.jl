@@ -33,11 +33,17 @@ Adapt.@adapt_structure ConstantVector
 Base.getindex(v::ConstantVector, i::Integer) = SVector{3, eltype(v.x)}(v.x[i], v.y[i], v.z[i])
 
 # FIELDS 
-
+"""
+    struct ScalarField{VF,M<:AbstractMesh,BC} <: AbstractScalarField
+        values::VF  # scalar values at cell centre
+        mesh::M     # reference to mesh
+        BCs::BC     # store user-provided boundary conditions
+    end
+"""
 struct ScalarField{VF,M<:AbstractMesh,BC} <: AbstractScalarField
-    values::VF#Vector{F}
-    mesh::M
-    BCs::BC
+    values::VF  # scalar values at cell centre
+    mesh::M     # reference to mesh
+    BCs::BC     # store user-provided boundary conditions
 end
 Adapt.@adapt_structure ScalarField
 ScalarField(mesh::AbstractMesh) =begin
@@ -80,6 +86,15 @@ Base.eachindex(s::AbstractScalarField) = eachindex(s.values)
 
 # VECTOR FIELD IMPLEMENTATION
 
+"""
+    struct VectorField{S1<:ScalarField,S2,S3,M<:AbstractMesh,BC} <: AbstractVectorField
+        x::S1   # x-component is itself a `ScalarField`
+        y::S2   # y-component is itself a `ScalarField`
+        z::S3   # z-component is itself a `ScalarField`
+        mesh::M
+        BCs::BC
+    end
+"""
 struct VectorField{S1<:ScalarField,S2,S3,M<:AbstractMesh,BC} <: AbstractVectorField
     x::S1
     y::S2

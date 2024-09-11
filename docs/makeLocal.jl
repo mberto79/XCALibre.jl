@@ -30,7 +30,7 @@ makedocs(
         "quick_start.md",
         "Verification & validation" => "VV/" .* VERIFICATION_VALIDATION_PAGES,
         "User Guide" => "user_guide/" .* USER_GUIDE_PAGES,
-        "Theory Guide" => "theory_guide/introduction.md",
+        hide("Theory Guide" => "theory_guide/introduction.md"),
         "contributor_guide.md",
         "reference.md",
         "release_notes.md"

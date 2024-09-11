@@ -2,8 +2,8 @@ export _get_float, _get_int, _get_backend, _convert_array!
 export boundary_info, boundary_map
 export total_boundary_faces, boundary_index
 export norm_static
-export x, y, z # access cell centres
-export xf, yf, zf # access face centres
+# export x, y, z # access cell centres
+# export xf, yf, zf # access face centres
 
 _get_int(mesh) = eltype(mesh.get_int)
 _get_float(mesh) = eltype(mesh.get_float)
@@ -70,59 +70,59 @@ function boundary_index(boundaries::Vector{Boundary{S, UR}}, name::S) where {S<:
     end
 end
 
-function x(mesh::Mesh2{I,F}) where {I,F}
-    cells = mesh.cells
-    out = zeros(F, length(cells))
-    @inbounds for i ∈ eachindex(cells)
-        out[i] = cells[i].centre[1]
-    end
-    return out
-end
+# function x(mesh::Mesh2{I,F}) where {I,F}
+#     cells = mesh.cells
+#     out = zeros(F, length(cells))
+#     @inbounds for i ∈ eachindex(cells)
+#         out[i] = cells[i].centre[1]
+#     end
+#     return out
+# end
 
-function y(mesh::Mesh2{I,F}) where {I,F}
-    cells = mesh.cells
-    out = zeros(F, length(cells))
-    @inbounds for i ∈ eachindex(cells)
-        out[i] = cells[i].centre[2]
-    end
-    return out
-end
+# function y(mesh::Mesh2{I,F}) where {I,F}
+#     cells = mesh.cells
+#     out = zeros(F, length(cells))
+#     @inbounds for i ∈ eachindex(cells)
+#         out[i] = cells[i].centre[2]
+#     end
+#     return out
+# end
 
-function z(mesh::Mesh2{I,F}) where {I,F}
-    cells = mesh.cells
-    out = zeros(F, length(cells))
-    @inbounds for i ∈ eachindex(cells)
-        out[i] = cells[i].centre[3]
-    end
-    return out
-end
+# function z(mesh::Mesh2{I,F}) where {I,F}
+#     cells = mesh.cells
+#     out = zeros(F, length(cells))
+#     @inbounds for i ∈ eachindex(cells)
+#         out[i] = cells[i].centre[3]
+#     end
+#     return out
+# end
 
-function xf(mesh::Mesh2{I,F}) where {I,F}
-    faces = mesh.faces
-    out = zeros(F, length(faces))
-    @inbounds for i ∈ eachindex(faces)
-        out[i] = faces[i].centre[1]
-    end
-    return out
-end
+# function xf(mesh::Mesh2{I,F}) where {I,F}
+#     faces = mesh.faces
+#     out = zeros(F, length(faces))
+#     @inbounds for i ∈ eachindex(faces)
+#         out[i] = faces[i].centre[1]
+#     end
+#     return out
+# end
 
-function yf(mesh::Mesh2{I,F}) where {I,F}
-    faces = mesh.faces
-    out = zeros(F, length(faces))
-    @inbounds for i ∈ eachindex(faces)
-        out[i] = faces[i].centre[2]
-    end
-    return out
-end
+# function yf(mesh::Mesh2{I,F}) where {I,F}
+#     faces = mesh.faces
+#     out = zeros(F, length(faces))
+#     @inbounds for i ∈ eachindex(faces)
+#         out[i] = faces[i].centre[2]
+#     end
+#     return out
+# end
 
-function zf(mesh::Mesh2{I,F}) where {I,F}
-    faces = mesh.faces
-    out = zeros(F, length(faces))
-    @inbounds for i ∈ eachindex(faces)
-        out[i] = faces[i].centre[3]
-    end
-    return out
-end
+# function zf(mesh::Mesh2{I,F}) where {I,F}
+#     faces = mesh.faces
+#     out = zeros(F, length(faces))
+#     @inbounds for i ∈ eachindex(faces)
+#         out[i] = faces[i].centre[3]
+#     end
+#     return out
+# end
 
 # Static normalise function
 function norm_static(arr, p = 2)

@@ -96,9 +96,9 @@ U_eqn = (
 * Implement parallel versions of more efficient preconditioners
 
 ### API
-* Pass boundary conditions as a separate object. The correct approach results in some internal methods/objects not being fully compatible with GPU kernels, and results is some performance degradation (due to unnecessary data transfer between GPU and host device when boundary condition information is needed/applied). A separation of boundary conditions from field data (scalar and vector fields primarily) would address both of these issues.
-* There are no further immediate plans for changing the user API
-* Fine tuning of the public API expected based on of user feedback
+* Pass boundary conditions as a separate object. The current approach results in some internal methods/objects not being fully compatible with GPU kernels, and results is some performance degradation (due to unnecessary data transfer between GPU and host device when boundary condition information is needed/applied). A separation of boundary conditions from field data (scalar and vector fields primarily) would address both of these issues.
+* There are no immediate plans for changing the user API
+* Fine-tuning of the public API expected based on of user feedback
 
 ### Internals
 * Overhaul of field data. Currently, both vectors and tensors are built on the primitive scalar field object. Whilst this was convenience during the early development stage, the package has reach a level of maturity that makes this approach hard to maintain, adding unneeded complexity when working with tensors. We plan to define separate internals (how tensors are defined and stored in memory). It is anticipated that this will ease the implementation of models working with tensors, and give some performance gains since information will be stored closer in memory.

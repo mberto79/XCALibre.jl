@@ -214,15 +214,23 @@ function SIMPLE(
         # nonorthogonal correction
         for i ∈ 1:ncorrectors
             discretise!(p_eqn, p, config)       
-            apply_boundary_conditions!(p_eqn, p.BCs, nothing, config)
+            apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
             setReference!(p_eqn, pref, 1, config)
-            # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
-            # @. prev = p.values # this is unstable
-            @. p.values = prev
+            update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             solve_system!(p_eqn, solvers.p, p, nothing, config)
-            explicit_relaxation!(p, prev, solvers.p.relax, config)
-            grad!(∇p, pf, p, p.BCs, time, config)
+
+            if i == ncorrectors
+                explicit_relaxation!(p, prev, 1.0, config)
+            else
+                explicit_relaxation!(p, prev, solvers.p.relax, config)
+            end
+            
+            grad!(∇p, pf, p, p.BCs, time, config) 
+
+            if limit_gradient
+                limit_gradient!(∇p, p, config)
+            end
         end
 
         # Velocity and boundaries correction

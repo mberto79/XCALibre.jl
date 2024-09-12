@@ -57,7 +57,7 @@ solvers = (
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), #NormDiagonal(),
         convergence = 1e-7,
-        relax       = 0.9,
+        relax       = 0.8,
         rtol = 1e-4,
         atol = 1e-5
     )
@@ -88,7 +88,7 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config, ncorrectors=2, outer_loops=2)
+residuals = run!(model, config, ncorrectors=1, outer_loops=2)
 
 plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

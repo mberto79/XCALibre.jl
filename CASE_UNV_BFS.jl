@@ -82,5 +82,5 @@ GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config); # 9.39k allocs in 184 iterations
+residuals = run!(model, config; ncorrectors=0); # 9.39k allocs in 184 iterations
 

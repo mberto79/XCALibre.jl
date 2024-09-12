@@ -2,12 +2,12 @@ export piso!
 
 function piso!(
     model_in, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0)
+    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=2)
 
     residuals = setup_incompressible_solvers(
         PISO, model_in, config; 
         limit_gradient=limit_gradient, 
-        pref=pref, 
+        pref=pref,
         ncorrectors=ncorrectors, 
         outer_loops=outer_loops
         )
@@ -17,7 +17,8 @@ end
 
 function PISO(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0)
+    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=2
+    )
     
     # Extract model variables and configuration
     (; U, p) = model.momentum
@@ -93,7 +94,7 @@ function PISO(
         interpolate!(rDf, rD, config)
         remove_pressure_source!(U_eqn, ∇p, config)
         
-        # PISO outer loop
+        # ncorrectors = 2
         for i ∈ 1:outer_loops
             H!(Hv, U, U_eqn, config)
             
@@ -109,7 +110,7 @@ function PISO(
             # Pressure calculations
             @. prev = p.values
             solve_equation!(p_eqn, p, solvers.p, config; ref=pref, time=time)
-            if i == ncorrectors
+            if i == outer_loops
                 explicit_relaxation!(p, prev, 1.0, config)
             else
                 explicit_relaxation!(p, prev, solvers.p.relax, config)
@@ -122,10 +123,28 @@ function PISO(
                 limit_gradient!(∇p, p, config)
             end
 
+            # correct = false
+            # if correct
+            #     ncorrectors = 1
+            #     for i ∈ 1:ncorrectors
+            #         discretise!(p_eqn, p, config)       
+            #         apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
+            #         setReference!(p_eqn, pref, 1, config)
+            #         # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+            #         nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
+            #         # @. prev = p.values # this is unstable
+            #         # @. p.values = prev
+            #         solve_system!(p_eqn, solvers.p, p, nothing, config)
+            #         # explicit_relaxation!(p, prev, solvers.p.relax, config)
+            #         grad!(∇p, pf, p, p.BCs, time, config)
+            #         # limit_gradient!(∇p, p, config)
+            #     end
+            # end
+
             # nonorthogonal correction
             for i ∈ 1:ncorrectors
                 discretise!(p_eqn, p, config)       
-                apply_boundary_conditions!(p_eqn, p.BCs, nothing, config)
+                apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
                 setReference!(p_eqn, pref, 1, config)
                 # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
                 nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
@@ -137,21 +156,20 @@ function PISO(
             end
 
             # Velocity and boundaries correction
-            correct_velocity!(U, Hv, ∇p, rD, config)
-            interpolate!(Uf, U, config)
-            correct_boundaries!(Uf, U, U.BCs, time, config)
-            flux!(mdotf, Uf, config) # old approach
+            # correct_velocity!(U, Hv, ∇p, rD, config)
+            # interpolate!(Uf, U, config)
+            # correct_boundaries!(Uf, U, U.BCs, time, config)
+            # flux!(mdotf, Uf, config) # old approach
 
             # new approach
-            # interpolate!(Uf, U, config) # velocity from momentum equation
-            # correct_boundaries!(Uf, U, U.BCs, time, config)
-            # flux!(mdotf, Uf, config)
-            # correct_mass_flux(mdotf, p, pf, rDf, config)
-            # correct_velocity!(U, Hv, ∇p, rD, config)
+            interpolate!(Uf, U, config) # velocity from momentum equation
+            correct_boundaries!(Uf, U, U.BCs, time, config)
+            flux!(mdotf, Uf, config)
+            correct_mass_flux(mdotf, p, pf, rDf, config)
+            correct_velocity!(U, Hv, ∇p, rD, config)
 
         end # corrector loop end
         
-        # flux!(mdotf, Uf, config)
         # correct_mass_flux(mdotf, p, pf, rDf, config) # new approach
 
 

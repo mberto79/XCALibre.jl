@@ -24,7 +24,6 @@ function PISO(
     (; U, p) = model.momentum
     (; nu) = model.fluid
     mesh = model.domain
-    # p_model = p_eqn.model
     (; solvers, schemes, runtime, hardware) = config
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
@@ -49,7 +48,6 @@ function PISO(
     n_cells = length(mesh.cells)
     Uf = FaceVectorField(mesh)
     pf = FaceScalarField(mesh)
-    # gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
 
@@ -94,7 +92,6 @@ function PISO(
         interpolate!(rDf, rD, config)
         remove_pressure_source!(U_eqn, ∇p, config)
         
-        # ncorrectors = 2
         for i ∈ 1:outer_loops
             H!(Hv, U, U_eqn, config)
             
@@ -107,20 +104,42 @@ function PISO(
             flux!(mdotf, Uf, config)
             div!(divHv, mdotf, config)
             
-            # Pressure calculations
+            # # Pressure calculations (previous implementation)
+            # @. prev = p.values
+            # solve_equation!(p_eqn, p, solvers.p, config; ref=pref, time=time)
+            # if i == outer_loops
+            #     explicit_relaxation!(p, prev, 1.0, config)
+            # else
+            #     explicit_relaxation!(p, prev, solvers.p.relax, config)
+            # end
+            # grad!(∇p, pf, p, p.BCs, time, config) 
+
+            # if limit_gradient
+            #     limit_gradient!(∇p, p, config)
+            # end
+
+            # test nonorthogonal correction
             @. prev = p.values
-            solve_equation!(p_eqn, p, solvers.p, config; ref=pref, time=time)
-            if i == outer_loops
-                explicit_relaxation!(p, prev, 1.0, config)
-            else
-                explicit_relaxation!(p, prev, solvers.p.relax, config)
-            end
+            for i ∈ 1:(1 + ncorrectors)
+                discretise!(p_eqn, p, config)       
+                apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
+                setReference!(p_eqn, pref, 1, config)
+                # if ncorrectors > 0
+                    nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
+                # end
+                update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+                solve_system!(p_eqn, solvers.p, p, nothing, config)
 
-            # Gradient
-            grad!(∇p, pf, p, p.BCs, time, config) 
+                if i == 1 + ncorrectors
+                    explicit_relaxation!(p, prev, 1.0, config)
+                else
+                    explicit_relaxation!(p, prev, solvers.p.relax, config)
+                end
+                grad!(∇p, pf, p, p.BCs, time, config) 
 
-            if limit_gradient
-                limit_gradient!(∇p, p, config)
+                if limit_gradient
+                    limit_gradient!(∇p, p, config)
+                end
             end
 
             # correct = false
@@ -142,18 +161,18 @@ function PISO(
             # end
 
             # nonorthogonal correction
-            for i ∈ 1:ncorrectors
-                discretise!(p_eqn, p, config)       
-                apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
-                setReference!(p_eqn, pref, 1, config)
-                # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-                nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
-                # @. prev = p.values # this is unstable
-                @. p.values = prev
-                solve_system!(p_eqn, solvers.p, p, nothing, config)
-                explicit_relaxation!(p, prev, solvers.p.relax, config)
-                grad!(∇p, pf, p, p.BCs, time, config)
-            end
+            # for i ∈ 1:ncorrectors
+            #     discretise!(p_eqn, p, config)       
+            #     apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
+            #     setReference!(p_eqn, pref, 1, config)
+            #     # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+            #     nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
+            #     # @. prev = p.values # this is unstable
+            #     # @. p.values = prev
+            #     solve_system!(p_eqn, solvers.p, p, nothing, config)
+            #     # explicit_relaxation!(p, prev, solvers.p.relax, config)
+            #     grad!(∇p, pf, p, p.BCs, time, config)
+            # end
 
             # Velocity and boundaries correction
             # correct_velocity!(U, Hv, ∇p, rD, config)

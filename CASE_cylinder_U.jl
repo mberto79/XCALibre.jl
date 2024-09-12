@@ -57,7 +57,7 @@ solvers = (
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), #NormDiagonal(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.9,
         rtol = 1e-4,
         atol = 1e-5
     )
@@ -70,7 +70,7 @@ schemes = (
 
 
 runtime = set_runtime(
-    iterations=2000, write_interval=50, time_step=0.005)
+    iterations=250, write_interval=50, time_step=0.005)
     # iterations=1, write_interval=50, time_step=0.005)
 
 # 2mm mesh use settings below (to lower Courant number)
@@ -88,7 +88,7 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-Rx, Ry, Rz, Rp, model_out = run!(model, config, ncorrectors=0); #, pref=0.0)
+residuals = run!(model, config, ncorrectors=2, outer_loops=2)
 
 plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

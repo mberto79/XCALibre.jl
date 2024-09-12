@@ -59,10 +59,17 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 - `p`   - Vector of pressure residuals for each iteration.
 """
 run!(
-    model::Physics{T,F,M,Tu,E,D,BI}, config; pref=nothing
+    model::Physics{T,F,M,Tu,E,D,BI}, config; 
+    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0
     ) where{T<:Steady,F<:Incompressible,M,Tu,E,D,BI} = 
 begin
-    residuals = simple!(model, config, pref=pref)
+    residuals = simple!(
+        model, config, 
+        limit_gradient=limit_gradient, 
+        pref=pref, 
+        ncorrectors=ncorrectors, 
+        outer_loops=outer_loops
+        )
     return residuals
 end
 
@@ -95,10 +102,16 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 
 """
 run!(
-    model::Physics{T,F,M,Tu,E,D,BI}, config; pref=nothing
+    model::Physics{T,F,M,Tu,E,D,BI}, config; 
+    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=2
     ) where{T<:Transient,F<:Incompressible,M,Tu,E,D,BI} = 
 begin
-    residuals = piso!(model, config, pref=pref); #, pref=0.0)
+    residuals = piso!(
+        model, config, 
+        limit_gradient=limit_gradient, 
+        pref=pref, 
+        ncorrectors=ncorrectors, 
+        outer_loops=outer_loops)
     return residuals
 end
 

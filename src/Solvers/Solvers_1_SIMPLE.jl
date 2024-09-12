@@ -1,38 +1,49 @@
 export simple!
 
 """
-    simple!(model_in, config; resume=true, pref=nothing)
+    simple!(model_in, config; limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0)
 
 Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport equation for 
 the energy. 
 
-### Input
+# Input
+
 - `model in` -- Physics model defiend by user and passed to run!.
 - `config`   -- Configuration structure defined by user with solvers, schemes, runtime and 
                 hardware structures set.
 - `resume`   -- True or false indicating if case is resuming or starting a new simulation.
 - `pref`     -- Reference pressure value for cases that do not have a pressure defining BC (incompressible flows only)
 
-### Output
-- `R_ux`  - Vector of x-velocity residuals for each iteration.
-- `R_uy`  - Vector of y-velocity residuals for each iteration.
-- `R_uz`  - Vector of y-velocity residuals for each iteration.
-- `R_p`   - Vector of pressure residuals for each iteration.
-- `R_e`   - Vector of energy residuals for each iteration.
-- `model` - Physics model output including field parameters.
+# Output
+
+This function returns a `NamedTuple` for accessing the residuals (e.g. `residuals.Ux`) with the following entries:
+
+- `Ux`  - Vector of x-velocity residuals for each iteration.
+- `Uy`  - Vector of y-velocity residuals for each iteration.
+- `Uz`  - Vector of y-velocity residuals for each iteration.
+- `p`   - Vector of pressure residuals for each iteration.
 
 """
-simple!(model, config; resume=true, pref=nothing) = begin
+function simple!(
+    model, config; 
+    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0
+    )
+
     residuals = setup_incompressible_solvers(
-        SIMPLE, model, config; resume=true, pref=nothing)
+        SIMPLE, model, config; 
+        limit_gradient=limit_gradient, 
+        pref=pref, 
+        ncorrectors=ncorrectors, 
+        outer_loops=outer_loops
+        )
 
     return residuals
 end
 
 # Setup for all incompressible algorithms
 function setup_incompressible_solvers(
-    solver_variant, 
-    model, config; resume=true, pref=nothing
+    solver_variant, model, config; 
+    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0
     ) 
 
     (; solvers, schemes, runtime, hardware) = config
@@ -83,13 +94,19 @@ function setup_incompressible_solvers(
     turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals  = solver_variant(
-        model, turbulenceModel, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
+        model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
+        limit_gradient=limit_gradient, 
+        pref=pref, 
+        ncorrectors=ncorrectors, 
+        outer_loops=outer_loops)
 
     return residuals
 end # end function
 
 function SIMPLE(
-    model, turbulenceModel, ∇p, U_eqn, p_eqn, config ; resume, pref)
+    model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
+    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0
+    )
     
     # Extract model variables and configuration
     (; U, p) = model.momentum
@@ -142,8 +159,9 @@ function SIMPLE(
     flux!(mdotf, Uf, config)
     grad!(∇p, pf, p, p.BCs, time, config)
 
-    # grad limiter test!
-    # limit_gradient!(∇p, p, config)
+    if limit_gradient
+        limit_gradient!(∇p, p, config)
+    end
 
     update_nueff!(nueff, nu, model.turbulence, config)
 
@@ -187,27 +205,24 @@ function SIMPLE(
         end
         residual!(R_p, p_eqn, p, iteration, nothing, config)
         
-        # Gradient
         grad!(∇p, pf, p, p.BCs, time, config) 
 
-        # grad limiter test
-        # limit_gradient!(∇p, p, config)
+        if limit_gradient
+            limit_gradient!(∇p, p, config)
+        end
 
-        correct = false
-        if correct
-            ncorrectors = 2
-            for i ∈ 1:ncorrectors
-                discretise!(p_eqn, p, config)       
-                apply_boundary_conditions!(p_eqn, p.BCs, nothing, config)
-                setReference!(p_eqn, pref, 1, config)
-                # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-                nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
-                # @. prev = p.values # this is unstable
-                @. p.values = prev
-                solve_system!(p_eqn, solvers.p, p, nothing, config)
-                explicit_relaxation!(p, prev, solvers.p.relax, config)
-                grad!(∇p, pf, p, p.BCs, time, config)
-            end
+        # nonorthogonal correction
+        for i ∈ 1:ncorrectors
+            discretise!(p_eqn, p, config)       
+            apply_boundary_conditions!(p_eqn, p.BCs, nothing, config)
+            setReference!(p_eqn, pref, 1, config)
+            # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+            nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
+            # @. prev = p.values # this is unstable
+            @. p.values = prev
+            solve_system!(p_eqn, solvers.p, p, nothing, config)
+            explicit_relaxation!(p, prev, solvers.p.relax, config)
+            grad!(∇p, pf, p, p.BCs, time, config)
         end
 
         # Velocity and boundaries correction
@@ -226,7 +241,6 @@ function SIMPLE(
         correct_boundaries!(Uf, U, U.BCs, time, config)
         flux!(mdotf, Uf, config)
         correct_mass_flux(mdotf, p, pf, rDf, config)
-        
         correct_velocity!(U, Hv, ∇p, rD, config)
 
         # if isturbulent(model)
@@ -242,11 +256,12 @@ function SIMPLE(
             R_uz[iteration] <= convergence &&
             R_p[iteration] <= convergence)
 
-            print(
-                """
-                \n\n\n\n\n
-                Simulation converged! $iteration iterations in
-                """)
+            # print(
+            #     """
+            #     \n\n\n\n\n
+            #     Simulation converged! $iteration iterations in
+            #     """)
+            @info "Simulation converged in $iteration iterations!"
                 if !signbit(write_interval)
                     model2vtk(model, @sprintf "iteration_%.6d" iteration)
                 end

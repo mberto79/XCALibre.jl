@@ -1,15 +1,23 @@
 export piso!
 
-piso!(model_in, config; resume=true, pref=nothing) = begin
+function piso!(
+    model_in, config; 
+    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0)
 
     residuals = setup_incompressible_solvers(
-        PISO, model_in, config; resume=true, pref=pref)
+        PISO, model_in, config; 
+        limit_gradient=limit_gradient, 
+        pref=pref, 
+        ncorrectors=ncorrectors, 
+        outer_loops=outer_loops
+        )
         
     return residuals
 end
 
 function PISO(
-    model, turbulenceModel, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
+    model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
+    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0)
     
     # Extract model variables and configuration
     (; U, p) = model.momentum
@@ -63,8 +71,9 @@ function PISO(
     flux!(mdotf, Uf, config)
     grad!(∇p, pf, p, p.BCs, time, config)
 
-    # grad limiter test
-    # limit_gradient!(∇p, p, config)
+    if limit_gradient
+        limit_gradient!(∇p, p, config)
+    end
 
     update_nueff!(nueff, nu, model.turbulence, config)
 
@@ -84,8 +93,8 @@ function PISO(
         interpolate!(rDf, rD, config)
         remove_pressure_source!(U_eqn, ∇p, config)
         
-        ncorrectors = 2
-        for i ∈ 1:ncorrectors
+        # PISO outer loop
+        for i ∈ 1:outer_loops
             H!(Hv, U, U_eqn, config)
             
             # Interpolate faces
@@ -109,42 +118,40 @@ function PISO(
             # Gradient
             grad!(∇p, pf, p, p.BCs, time, config) 
 
-            # grad limiter test
-            # limit_gradient!(∇p, p, config)
+            if limit_gradient
+                limit_gradient!(∇p, p, config)
+            end
 
-            correct = false
-            if correct
-                ncorrectors = 1
-                for i ∈ 1:ncorrectors
-                    discretise!(p_eqn, p, config)       
-                    apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
-                    setReference!(p_eqn, pref, 1, config)
-                    # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-                    nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
-                    # @. prev = p.values # this is unstable
-                    # @. p.values = prev
-                    solve_system!(p_eqn, solvers.p, p, nothing, config)
-                    # explicit_relaxation!(p, prev, solvers.p.relax, config)
-                    grad!(∇p, pf, p, p.BCs, time, config)
-                    # limit_gradient!(∇p, p, config)
-                end
+            # nonorthogonal correction
+            for i ∈ 1:ncorrectors
+                discretise!(p_eqn, p, config)       
+                apply_boundary_conditions!(p_eqn, p.BCs, nothing, config)
+                setReference!(p_eqn, pref, 1, config)
+                # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+                nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
+                # @. prev = p.values # this is unstable
+                @. p.values = prev
+                solve_system!(p_eqn, solvers.p, p, nothing, config)
+                explicit_relaxation!(p, prev, solvers.p.relax, config)
+                grad!(∇p, pf, p, p.BCs, time, config)
             end
 
             # Velocity and boundaries correction
-            # correct_velocity!(U, Hv, ∇p, rD, config)
-            # interpolate!(Uf, U, config)
-            # correct_boundaries!(Uf, U, U.BCs, time, config)
-            # flux!(mdotf, Uf, config) # old approach
+            correct_velocity!(U, Hv, ∇p, rD, config)
+            interpolate!(Uf, U, config)
+            correct_boundaries!(Uf, U, U.BCs, time, config)
+            flux!(mdotf, Uf, config) # old approach
 
             # new approach
-            interpolate!(Uf, U, config) # velocity from momentum equation
-            correct_boundaries!(Uf, U, U.BCs, time, config)
-            flux!(mdotf, Uf, config)
-            correct_mass_flux(mdotf, p, pf, rDf, config)
-            correct_velocity!(U, Hv, ∇p, rD, config)
+            # interpolate!(Uf, U, config) # velocity from momentum equation
+            # correct_boundaries!(Uf, U, U.BCs, time, config)
+            # flux!(mdotf, Uf, config)
+            # correct_mass_flux(mdotf, p, pf, rDf, config)
+            # correct_velocity!(U, Hv, ∇p, rD, config)
 
         end # corrector loop end
         
+        # flux!(mdotf, Uf, config)
         # correct_mass_flux(mdotf, p, pf, rDf, config) # new approach
 
 

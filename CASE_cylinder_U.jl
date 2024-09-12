@@ -8,8 +8,8 @@ mesh_file = "unv_sample_meshes/cylinder_d10mm_2mm.unv"
 mesh_file = "unv_sample_meshes/cylinder_d10mm_10-7.5-2mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-mesh_dev = adapt(CUDABackend(), mesh)
-# mesh_dev = mesh
+# mesh_dev = adapt(CUDABackend(), mesh)
+mesh_dev = mesh
 
 # Inlet conditions
 
@@ -77,8 +77,8 @@ runtime = set_runtime(
 # runtime = set_runtime(
     # iterations=5000, write_interval=250, time_step=0.001) # Only runs on 32 bit
 
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=CPU(), workgroup=4)
+# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

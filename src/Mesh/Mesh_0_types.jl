@@ -180,3 +180,28 @@ struct Mesh3{VC, VI, VF<:AbstractArray{<:Face3D}, VB, VN, SV3, UR} <: AbstractMe
     boundary_cellsID::VI
 end
 Adapt.@adapt_structure Mesh3
+
+Base.show(io::IO, mesh::AbstractMesh) = begin
+    if typeof(mesh) <: Mesh2
+        meshType = "2D"
+    elseif typeof(mesh) <: Mesh3
+        meshType = "3D"
+    end
+
+    boundaries = IOBuffer()
+    for boundary ∈ mesh.boundaries 
+        println(boundaries, "-> $(boundary.name) (faces: $(boundary.IDs_range))")
+    end
+
+
+    output = """
+    $meshType Mesh
+    -> $(length(mesh.cells)) cells
+    -> $(length(mesh.faces)) faces
+    -> $(length(mesh.nodes)) nodes
+
+    Boundaries 
+    $(String(take!(boundaries)))
+    """
+    print(io, output)
+end

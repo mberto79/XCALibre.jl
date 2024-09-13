@@ -201,7 +201,6 @@ Base.show(io::IO, mesh::AbstractMesh) = begin
     -> $(length(mesh.nodes)) nodes
 
     Boundaries 
-    $(String(take!(boundaries)))
-    """
+    $(String(take!(boundaries)))"""
     print(io, output)
 end

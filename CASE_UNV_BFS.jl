@@ -1,4 +1,3 @@
-# using Plots
 using XCALibre
 # using CUDA
 

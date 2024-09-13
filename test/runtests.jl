@@ -10,20 +10,8 @@ using Test
     mesh = UNV2D_mesh(unv2_file, scale=0.001)
     msg = IOBuffer(); println(msg, mesh)
     outputTest = String(take!(msg))
-    @testset "UNV" begin
-        @test outputTest == """
-2D Mesh
--> 1800 cells
--> 3720 faces
--> 1921 nodes
-
-Boundaries
--> inlet (faces: 1:10)
--> outlet (faces: 11:30)
--> wall (faces: 31:140)
--> top (faces: 141:240)
-"""
-    end
+    
+    @test outputTest == "2D Mesh\n-> 1800 cells\n-> 3720 faces\n-> 1921 nodes\n\nBoundaries \n-> inlet (faces: 1:10)\n-> outlet (faces: 11:30)\n-> wall (faces: 31:140)\n-> top (faces: 141:240)\n\n"
 end
 
 @testset "Gradient schemes" begin

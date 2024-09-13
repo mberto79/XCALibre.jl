@@ -290,6 +290,48 @@ end
 
 ## COURANT NUMBER
 
+max_courant_number!(cellsCourant, model, config) = begin
+    (; U) = model.momentum
+    (; mesh) = U
+    # (; cells) = mesh
+    (; hardware, runtime) = config
+    (; backend, workgroup) = hardware
+
+    kernel_range = length(cellsCourant)
+    kernel! = _max_courant_number!(backend, workgroup, kernel_range)
+    kernel!(cellsCourant, U, runtime, mesh, ndrange=kernel_range)
+    KernelAbstractions.synchronize(backend)
+    return maximum(cellsCourant)
+end
+
+@kernel function _max_courant_number!(cellsCourant, U, runtime, mesh::Mesh3)
+    i = @index(Global)
+    @uniform cells = mesh.cells
+    dt = runtime.dt
+    # for i ∈ eachindex(U)
+        umag = norm(U[i])
+        volume = cells[i].volume
+        # dx = sqrt(volume)
+        dx = volume^0.333333
+        cellsCourant[i] = umag*dt/dx
+    # end
+    # return co
+end
+
+@kernel function _max_courant_number!(cellsCourant, U, runtime, mesh::Mesh2)
+    i = @index(Global)
+    @uniform cells = mesh.cells
+    dt = runtime.dt
+    # for i ∈ eachindex(U)
+        umag = norm(U[i])
+        volume = cells[i].volume
+        # dx = sqrt(volume)
+        dx = volume^0.5
+        cellsCourant[i] = umag*dt/dx
+    # end
+    # return co
+end
+
 courant_number(U, mesh::AbstractMesh, runtime) = begin
     F = _get_float(mesh)
     dt = runtime.dt

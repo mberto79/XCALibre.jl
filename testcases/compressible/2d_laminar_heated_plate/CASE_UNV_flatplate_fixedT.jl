@@ -26,7 +26,7 @@ model = Physics(
         Pr = Pr
         ),
     turbulence = RANS{Laminar}(),
-    energy = Energy{SensibleEnthalpy}(),
+    energy = Energy{SensibleEnthalpy}(Tref=288.15),
     domain = mesh # mesh_dev  # use mesh_dev for GPU backend
     )
 
@@ -98,7 +98,7 @@ initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 100000.0)
 initialise!(model.energy.T, 300.0)
 
-Rx, Ry, Rz, Rp, Re, model_out = run!(model, config)
+residuals = run!(model, config)
 
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

@@ -85,6 +85,7 @@ function setup_compressible_solvers(
 
     @info "Pre-allocating solvers..."
      
+    println(issymmetric(_A(p_eqn)))
     @reset U_eqn.solver = solvers.U.solver(_A(U_eqn), _b(U_eqn, XDir()))
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
   

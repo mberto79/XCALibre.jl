@@ -38,7 +38,6 @@ function setup_unsteady_compressible_solvers(
 
     @info "Extracting configuration and input fields..."
 
-    model = adapt(hardware.backend, model_in)
     (; U, p) = model.momentum
     (; rho) = model.fluid
     mesh = model.domain
@@ -120,7 +119,7 @@ function setup_unsteady_compressible_solvers(
     # @reset rho_eqn.solver = solvers.rho.solver(_A(rho_eqn), _b(rho_eqn))
   
     @info "Initialising energy model..."
-    energyModel = Energy.initialise(model.energy, model, mdotf, rho, p_eqn, config)
+    energyModel = initialise(model.energy, model, mdotf, rho, p_eqn, config)
 
     @info "Initialising turbulence model..."
     turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
@@ -141,7 +140,7 @@ function CPISO(
     mesh = model.domain
     p_model = p_eqn.model
     (; solvers, schemes, runtime, hardware) = config
-    (; iterations, write_interval) = runtime
+    (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
     
     # divmdotf = get_source(rho_eqn, 1)
@@ -199,6 +198,8 @@ function CPISO(
     R_uy = ones(TF, iterations)
     R_uz = ones(TF, iterations)
     R_p = ones(TF, iterations)
+    cellsCourant =adapt(backend, zeros(TF, length(mesh.cells)))
+
     
     # Initial calculations
     time = zero(TF) # assuming time=0
@@ -223,12 +224,12 @@ function CPISO(
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
-    volumes = getproperty.(mesh.cells, :volume)
+    # volumes = getproperty.(mesh.cells, :volume)
 
     @time for iteration ∈ 1:iterations
-        time = iteration*time_step
+        time = (iteration - 1)*dt
 
-        println("Max. CFL : ", maximum((U.x.values.^2+U.y.values.^2).^0.5*runtime.dt./volumes.^(1/3)))
+        # println("Max. CFL : ", maximum((U.x.values.^2+U.y.values.^2).^0.5*runtime.dt./volumes.^(1/3)))
 
         ## CHECK GRADU AND EXPLICIT STRESSES
         grad!(gradU, Uf, U, U.BCs, time, config)
@@ -257,7 +258,7 @@ function CPISO(
 
         remove_pressure_source!(U_eqn, ∇p, config)
         
-        for i ∈ 1:10
+        for i ∈ 1:3
             H!(Hv, U, U_eqn, config)
             
             # Interpolate faces
@@ -371,12 +372,12 @@ function CPISO(
         #     break
         # end
 
-        # co = courant_number(U, mesh, runtime) # MUST IMPLEMENT!!!!!!
+        maxCourant = max_courant_number!(cellsCourant, model, config)
 
         ProgressMeter.next!(
             progress, showvalues = [
-                (:time,iteration*runtime.dt),
-                # (:Courant,co),
+                (:time, iteration*runtime.dt),
+                (:Courant, maxCourant),
                 (:Ux, R_ux[iteration]),
                 (:Uy, R_uy[iteration]),
                 (:Uz, R_uz[iteration]),

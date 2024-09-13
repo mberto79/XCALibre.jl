@@ -62,6 +62,7 @@ function PISO(
     R_uy = ones(TF, iterations)
     R_uz = ones(TF, iterations)
     R_p = ones(TF, iterations)
+    cellsCourant =adapt(backend, zeros(TF, length(mesh.cells)))
     
     # Initial calculations
     time = zero(TF) # assuming time=0
@@ -83,7 +84,7 @@ function PISO(
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
     @time for iteration ∈ 1:iterations
-        time = TI(iteration - 1)*dt
+        time = (iteration - 1)*dt
 
         solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config; time=time)
           
@@ -210,6 +211,8 @@ function PISO(
         residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
     end
     residual!(R_p, p_eqn, p, iteration, nothing, config)
+    maxCourant = max_courant_number!(cellsCourant, model, config)
+    
         
         # for i ∈ eachindex(divUTx)
         #     vol = mesh.cells[i].volume
@@ -238,8 +241,8 @@ function PISO(
 
         ProgressMeter.next!(
             progress, showvalues = [
-                (:time,iteration*runtime.dt),
-                # (:Courant,co),
+                (:time, iteration*runtime.dt),
+                (:Courant, maxCourant),
                 (:Ux, R_ux[iteration]),
                 (:Uy, R_uy[iteration]),
                 (:Uz, R_uz[iteration]),

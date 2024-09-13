@@ -2,16 +2,7 @@ using XCALibre
 using Test
 
 @testset "Mesh conversion" begin
-    examples_dir = pkgdir(XCALibre, "examples")
-    unv2_file = joinpath(
-        examples_dir, 
-        "2d_incompressible_laminar_backwards_step/backward_facing_step_10mm.unv"
-        )
-    mesh = UNV2D_mesh(unv2_file, scale=0.001)
-    msg = IOBuffer(); println(msg, mesh)
-    outputTest = String(take!(msg))
-    
-    @test outputTest == "2D Mesh\n-> 1800 cells\n-> 3720 faces\n-> 1921 nodes\n\nBoundaries \n-> inlet (faces: 1:10)\n-> outlet (faces: 11:30)\n-> wall (faces: 31:140)\n-> top (faces: 141:240)\n\n"
+    include("test_mesh_conversion.jl")
 end
 
 @testset "Gradient schemes" begin

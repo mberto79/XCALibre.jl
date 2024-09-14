@@ -111,7 +111,8 @@ begin
         limit_gradient=limit_gradient, 
         pref=pref, 
         ncorrectors=ncorrectors, 
-        outer_loops=outer_loops)
+        outer_loops=outer_loops
+        )
     return residuals
 end
 
@@ -145,19 +146,33 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 
 """
 run!(
-    model::Physics{T,F,M,Tu,E,D,BI}, config; pref=nothing
+    model::Physics{T,F,M,Tu,E,D,BI}, config; 
+    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0
     ) where{T<:Steady,F<:WeaklyCompressible,M,Tu,E,D,BI} = 
 begin
-    residuals = csimple!(model, config, pref=pref); #, pref=0.0)
+    residuals = csimple!(
+        model, config, 
+        limit_gradient=limit_gradient, 
+        pref=pref, 
+        ncorrectors=ncorrectors, 
+        outer_loops=outer_loops
+        )
     return residuals
 end
 
 # Compressible solver (steady)
 run!(
-    model::Physics{T,F,M,Tu,E,D,BI}, config; pref=nothing
+    model::Physics{T,F,M,Tu,E,D,BI}, config; 
+    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0
     ) where{T<:Steady,F<:Compressible,M,Tu,E,D,BI} = 
 begin
-    residuals = csimple!(model, config, pref=pref); #, pref=0.0)
+    residuals = csimple!(
+        model, config, 
+        limit_gradient=limit_gradient, 
+        pref=pref, 
+        ncorrectors=ncorrectors, 
+        outer_loops=outer_loops
+        )
     return residuals
 end
 
@@ -189,18 +204,32 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 - `e`   - Vector of energy residuals for each iteration.
 """
 run!(
-    model::Physics{T,F,M,Tu,E,D,BI}, config
+    model::Physics{T,F,M,Tu,E,D,BI}, config;
+    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=2
     ) where{T<:Transient,F<:WeaklyCompressible,M,Tu,E,D,BI} = 
 begin
-    residuals = cpiso!(model, config)
+    residuals = cpiso!(
+        model, config, 
+        limit_gradient=limit_gradient, 
+        pref=pref, 
+        ncorrectors=ncorrectors, 
+        outer_loops=outer_loops
+        )
     return residuals
 end
 
 # Compressible solver (transient)
 run!(
-    model::Physics{T,F,M,Tu,E,D,BI}, config
+    model::Physics{T,F,M,Tu,E,D,BI}, config;
+    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=2
     ) where{T<:Transient,F<:Compressible,M,Tu,E,D,BI} = 
 begin
-    residuals = cpiso!(model, config)
+    residuals = cpiso!(
+        model, config, 
+        limit_gradient=limit_gradient, 
+        pref=pref, 
+        ncorrectors=ncorrectors, 
+        outer_loops=outer_loops
+        )
     return residuals
 end

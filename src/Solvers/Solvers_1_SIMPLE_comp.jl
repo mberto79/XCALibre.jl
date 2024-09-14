@@ -22,15 +22,25 @@ the energy.
 - `model` - Physics model output including field parameters.
 
 """
-csimple!(model, config; resume=true, pref=nothing) = begin
+function csimple!(model, config; 
+    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0
+    ) 
+
     residuals = setup_compressible_solvers(
-        CSIMPLE, model, config; resume=true, pref=nothing)
+        CSIMPLE, model, config; 
+        limit_gradient=limit_gradient, 
+        pref=pref, 
+        ncorrectors=ncorrectors, 
+        outer_loops=outer_loops
+        )
     return residuals
 end
 
 # Setup for all compressible algorithms
 function setup_compressible_solvers(
-    solver_variant, model, config; resume=true, pref=nothing) 
+    solver_variant, model, config; 
+    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0
+    ) 
 
     (; solvers, schemes, runtime, hardware) = config
 
@@ -96,13 +106,19 @@ function setup_compressible_solvers(
     turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals  = solver_variant(
-    model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
+        model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; 
+        limit_gradient=limit_gradient, 
+        pref=pref, 
+        ncorrectors=ncorrectors, 
+        outer_loops=outer_loops)
 
     return residuals    
 end # end function
 
 function CSIMPLE(
-    model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config ; resume, pref)
+    model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config ; 
+    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0
+    )
     
     # Extract model variables and configuration
     (; U, p) = model.momentum

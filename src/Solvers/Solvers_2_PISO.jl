@@ -1,11 +1,11 @@
 export piso!
 
 function piso!(
-    model_in, config; 
+    model, config; 
     limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=2)
 
     residuals = setup_incompressible_solvers(
-        PISO, model_in, config; 
+        PISO, model, config; 
         limit_gradient=limit_gradient, 
         pref=pref,
         ncorrectors=ncorrectors, 

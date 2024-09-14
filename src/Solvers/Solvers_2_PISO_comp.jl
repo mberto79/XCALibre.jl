@@ -20,11 +20,16 @@ the energy.
 - `R_p`   - Vector of pressure residuals for each iteration.
 
 """
-cpiso!(model, config; resume=true, pref=nothing) = begin
+function cpiso!(
+    model, config; 
+    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=2) 
 
     residuals = setup_unsteady_compressible_solvers(
-        CPISO, model, config;
-        resume=true, pref=nothing
+        CPISO, model, config; 
+        limit_gradient=limit_gradient, 
+        pref=pref,
+        ncorrectors=ncorrectors, 
+        outer_loops=outer_loops
         )
         
     return residuals
@@ -32,7 +37,9 @@ end
 
 # Setup for all compressible algorithms
 function setup_unsteady_compressible_solvers(
-    solver_variant, model, config; resume=true, pref=nothing) 
+    solver_variant, model, config; 
+    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=2
+    ) 
 
     (; solvers, schemes, runtime, hardware) = config
 
@@ -125,13 +132,17 @@ function setup_unsteady_compressible_solvers(
     turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals  = solver_variant(
-        model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
+        model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; limit_gradient=limit_gradient, 
+        pref=pref, 
+        ncorrectors=ncorrectors, 
+        outer_loops=outer_loops)
 
     return residuals    
 end # end function
 
 function CPISO(
-    model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; resume=resume, pref=pref)
+    model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; 
+    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=2)
     
     # Extract model variables and configuration
     (; U, p) = model.momentum

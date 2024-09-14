@@ -111,7 +111,7 @@ initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 initialise!(model.turbulence.nut, 0.0)
 
-Rx, Ry, Rz, Rp, model_out = run!(model, config)
+residuals = run!(model, config)
 
 # Set up transient run
 
@@ -149,5 +149,5 @@ runtime = set_runtime(
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
-Rx, Ry, Rz, Rp, model_out = run!(modelTransient, config)
+residuals = run!(modelTransient, config)
 

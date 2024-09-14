@@ -77,7 +77,7 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-Rx, Ry, Rz, Rp, model_out = run!(model, config)
+residuals = run!(model, config)
 
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

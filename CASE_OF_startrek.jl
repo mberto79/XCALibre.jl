@@ -152,7 +152,7 @@ initialise!(model.turbulence.nut, 2*nu)
 # initialise!(model.turbulence.omega, ω_inlet)
 # initialise!(model.turbulence.nut, 0.0)
 
-Rx, Ry, Rz, Rp, model_out = run!(model, config); #, pref=0.0)
+residuals = run!(model, config); #, pref=0.0)
 
 Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)
 Fp = pressure_force(:cylinder, model.momentum.p, 1.25)

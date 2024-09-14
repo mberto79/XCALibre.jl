@@ -104,7 +104,7 @@ initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, pressure)
 initialise!(model.energy.T, temp)
 
-Rx, Ry, Rz, Rp, Re, model_out = run!(model, config) # 9.39k allocs in 184 iterations
+residuals = run!(model, config) # 9.39k allocs in 184 iterations
 
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
@@ -122,7 +122,7 @@ initialise!(model.momentum.p, 0.0)
 
 Profile.Allocs.clear()
 Profile.Allocs.@profile sample_rate=1 begin 
-    Rx, Ry, Rz, Rp, model_out = run!(model, config)
+    residuals = run!(model, config)
 end
 
 PProf.Allocs.pprof()

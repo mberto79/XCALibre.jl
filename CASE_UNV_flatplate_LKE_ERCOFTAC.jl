@@ -161,7 +161,7 @@ initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
-Rx, Ry, Rz, Rp, model = run!(model, config); #, pref=0.0) # 9.39k allocs
+residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
 
 let
     p = plot(; xlims=(0,runtime.iterations), ylims=(1e-10,0))

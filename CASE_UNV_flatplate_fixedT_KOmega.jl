@@ -145,7 +145,7 @@ initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
-Rx, Ry, Rz, Rp, Re, model_out = run!(model, config) # 9.39k allocs
+residuals = run!(model, config) # 9.39k allocs
 
 # using DelimitedFiles
 # using LinearAlgebra

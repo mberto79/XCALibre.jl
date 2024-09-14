@@ -76,7 +76,7 @@ GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-Rx, Ry, Rz, Rp, model_out = run!(model, config) # 9.39k allocs
+residuals = run!(model, config) # 9.39k allocs
 
 using DelimitedFiles
 using LinearAlgebra

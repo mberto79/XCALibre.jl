@@ -77,7 +77,7 @@ initialise!(model.momentum.p, 0.0)
 # backend = CUDABackend()
 backend = CPU()
 
-Rx, Ry, Rz, Rp, model_out = run!(model, config) # 9.39k allocs
+residuals = run!(model, config) # 9.39k allocs
 
 # plot(; xlims=(0,184))
 # plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

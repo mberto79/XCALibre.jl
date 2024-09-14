@@ -154,7 +154,7 @@ initialise!(model.momentum.p, 0.0)
 # initialise!(model.turbulence.omega, ω_inlet)
 # initialise!(model.turbulence.nut, 0.0)
 
-Rx, Ry, Rz, Rp, model_out = run!(model, config); #, pref=0.0)
+residuals = run!(model, config); #, pref=0.0)
 
 
 Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)

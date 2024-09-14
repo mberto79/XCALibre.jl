@@ -151,11 +151,11 @@ initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, νt_inlet)
 
-Rx, Ry, Rz, Rp, model_out = run!(model, config)
+residuals = run!(model, config)
 
 Profile.Allocs.clear()
 Profile.Allocs.@profile sample_rate=0.1 begin 
-Rx, Ry, Rz, Rp, model_out = run!(model, config)
+residuals = run!(model, config)
 end
 
 PProf.Allocs.pprof()

@@ -3,7 +3,6 @@ using Plots
 using XCALibre
 # using CUDA # Run this if using NVIDIA GPU
 # using AMDGPU # Run this if using AMD GPU
-using Krylov
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 mesh_file = "testcases/compressible/2d_laminar_heated_plate/flatplate_2D_laminar.unv"

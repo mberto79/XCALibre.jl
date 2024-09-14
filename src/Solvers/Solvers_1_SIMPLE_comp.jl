@@ -23,7 +23,7 @@ the energy.
 
 """
 function csimple!(model, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0
+    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
     ) 
 
     residuals = setup_compressible_solvers(
@@ -31,7 +31,7 @@ function csimple!(model, config;
         limit_gradient=limit_gradient, 
         pref=pref, 
         ncorrectors=ncorrectors, 
-        outer_loops=outer_loops
+        inner_loops=inner_loops
         )
     return residuals
 end
@@ -39,7 +39,7 @@ end
 # Setup for all compressible algorithms
 function setup_compressible_solvers(
     solver_variant, model, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0
+    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
     ) 
 
     (; solvers, schemes, runtime, hardware) = config
@@ -110,14 +110,14 @@ function setup_compressible_solvers(
         limit_gradient=limit_gradient, 
         pref=pref, 
         ncorrectors=ncorrectors, 
-        outer_loops=outer_loops)
+        inner_loops=inner_loops)
 
     return residuals    
 end # end function
 
 function CSIMPLE(
     model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config ; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0
+    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
     )
     
     # Extract model variables and configuration

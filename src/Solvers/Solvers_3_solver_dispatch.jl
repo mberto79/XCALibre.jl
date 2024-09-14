@@ -60,7 +60,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0
+    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
     ) where{T<:Steady,F<:Incompressible,M,Tu,E,D,BI} = 
 begin
     residuals = simple!(
@@ -68,7 +68,7 @@ begin
         limit_gradient=limit_gradient, 
         pref=pref, 
         ncorrectors=ncorrectors, 
-        outer_loops=outer_loops
+        inner_loops=inner_loops
         )
     return residuals
 end
@@ -103,7 +103,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=2
+    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=2
     ) where{T<:Transient,F<:Incompressible,M,Tu,E,D,BI} = 
 begin
     residuals = piso!(
@@ -111,7 +111,7 @@ begin
         limit_gradient=limit_gradient, 
         pref=pref, 
         ncorrectors=ncorrectors, 
-        outer_loops=outer_loops
+        inner_loops=inner_loops
         )
     return residuals
 end
@@ -147,7 +147,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0
+    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
     ) where{T<:Steady,F<:WeaklyCompressible,M,Tu,E,D,BI} = 
 begin
     residuals = csimple!(
@@ -155,7 +155,7 @@ begin
         limit_gradient=limit_gradient, 
         pref=pref, 
         ncorrectors=ncorrectors, 
-        outer_loops=outer_loops
+        inner_loops=inner_loops
         )
     return residuals
 end
@@ -163,7 +163,7 @@ end
 # Compressible solver (steady)
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0
+    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
     ) where{T<:Steady,F<:Compressible,M,Tu,E,D,BI} = 
 begin
     residuals = csimple!(
@@ -171,7 +171,7 @@ begin
         limit_gradient=limit_gradient, 
         pref=pref, 
         ncorrectors=ncorrectors, 
-        outer_loops=outer_loops
+        inner_loops=inner_loops
         )
     return residuals
 end
@@ -205,7 +205,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config;
-    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=2
+    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=2
     ) where{T<:Transient,F<:WeaklyCompressible,M,Tu,E,D,BI} = 
 begin
     residuals = cpiso!(
@@ -213,7 +213,7 @@ begin
         limit_gradient=limit_gradient, 
         pref=pref, 
         ncorrectors=ncorrectors, 
-        outer_loops=outer_loops
+        inner_loops=inner_loops
         )
     return residuals
 end
@@ -221,7 +221,7 @@ end
 # Compressible solver (transient)
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config;
-    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=2
+    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=2
     ) where{T<:Transient,F<:Compressible,M,Tu,E,D,BI} = 
 begin
     residuals = cpiso!(
@@ -229,7 +229,7 @@ begin
         limit_gradient=limit_gradient, 
         pref=pref, 
         ncorrectors=ncorrectors, 
-        outer_loops=outer_loops
+        inner_loops=inner_loops
         )
     return residuals
 end

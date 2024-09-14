@@ -22,14 +22,14 @@ the energy.
 """
 function cpiso!(
     model, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=2) 
+    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=2) 
 
     residuals = setup_unsteady_compressible_solvers(
         CPISO, model, config; 
         limit_gradient=limit_gradient, 
         pref=pref,
         ncorrectors=ncorrectors, 
-        outer_loops=outer_loops
+        inner_loops=inner_loops
         )
         
     return residuals
@@ -38,7 +38,7 @@ end
 # Setup for all compressible algorithms
 function setup_unsteady_compressible_solvers(
     solver_variant, model, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=2
+    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=2
     ) 
 
     (; solvers, schemes, runtime, hardware) = config
@@ -135,14 +135,14 @@ function setup_unsteady_compressible_solvers(
         model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; limit_gradient=limit_gradient, 
         pref=pref, 
         ncorrectors=ncorrectors, 
-        outer_loops=outer_loops)
+        inner_loops=inner_loops)
 
     return residuals    
 end # end function
 
 function CPISO(
     model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=2)
+    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=2)
     
     # Extract model variables and configuration
     (; U, p) = model.momentum
@@ -258,8 +258,6 @@ function CPISO(
         solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
 
         energy!(energyModel, model, prev, mdotf, rho, mueff, time, config)
-
-
         thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
 
         # Pressure correction
@@ -269,7 +267,7 @@ function CPISO(
 
         remove_pressure_source!(U_eqn, ∇p, config)
         
-        for i ∈ 1:3
+        for i ∈ 1:inner_loops
             H!(Hv, U, U_eqn, config)
             
             # Interpolate faces
@@ -359,172 +357,24 @@ function CPISO(
         residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
     end
     residual!(R_p, p_eqn, p, iteration, nothing, config)
-        
-        # for i ∈ eachindex(divUTx)
-        #     vol = mesh.cells[i].volume
-        #     divUTx = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][1,1]+ gradUT[i][1,2] + gradUT[i][1,3])*vol
-        #     divUTy = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][2,1]+ gradUT[i][2,2] + gradUT[i][2,3])*vol
-        # end
-        
-        # convergence = 1e-7
+    maxCourant = max_courant_number!(cellsCourant, model, config)
 
-        # if (R_ux[iteration] <= convergence && 
-        #     R_uy[iteration] <= convergence && 
-        #     R_p[iteration] <= convergence)
+    ProgressMeter.next!(
+        progress, showvalues = [
+            (:time, iteration*runtime.dt),
+            (:Courant, maxCourant),
+            (:Ux, R_ux[iteration]),
+            (:Uy, R_uy[iteration]),
+            (:Uz, R_uz[iteration]),
+            (:p, R_p[iteration]),
+            ]
+        )
 
-        #     print(
-        #         """
-        #         \n\n\n\n\n
-        #         Simulation converged! $iteration iterations in
-        #         """)
-        #         if !signbit(write_interval)
-        #             model2vtk(model, @sprintf "timestep_%.6d" iteration)
-        #         end
-        #     break
-        # end
-
-        maxCourant = max_courant_number!(cellsCourant, model, config)
-
-        ProgressMeter.next!(
-            progress, showvalues = [
-                (:time, iteration*runtime.dt),
-                (:Courant, maxCourant),
-                (:Ux, R_ux[iteration]),
-                (:Uy, R_uy[iteration]),
-                (:Uz, R_uz[iteration]),
-                (:p, R_p[iteration]),
-                ]
-            )
-
-        if iteration%write_interval + signbit(write_interval) == 0
-            model2vtk(model, VTKMeshData, @sprintf "timestep_%.6d" iteration)
-        end
+    if iteration%write_interval + signbit(write_interval) == 0
+        model2vtk(model, VTKMeshData, @sprintf "timestep_%.6d" iteration)
+    end
 
     end # end for loop
 
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end
-
-# function limit_gradient!(∇F, F, config)
-#     (; hardware) = config
-#     (; backend, workgroup) = hardware
-
-#     mesh = F.mesh
-#     (; cells, cell_neighbours, cell_faces, cell_nsign, faces) = mesh
-
-#     minPhi0 = maximum(F.values) # use min value so all values compared are larger
-#     maxPhi0 = minimum(F.values)
-
-#     kernel! = _limit_gradient!(backend, workgroup)
-#     kernel!(∇F, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi0, maxPhi0, ndrange=length(cells))
-#     KernelAbstractions.synchronize(backend)
-# end
-
-# @kernel function _limit_gradient!(∇F, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi, maxPhi)
-#     cID = @index(Global)
-#     # mesh = F.mesh
-#     # (; cells, cell_neighbours, cell_faces, cell_nsign, faces) = mesh
-
-#     # minPhi0 = maximum(F.values) # use min value so all values compared are larger
-#     # maxPhi0 = minimum(F.values)
-
-#     # for (cID, cell) ∈ enumerate(cells)
-#         cell = cells[cID]
-#         # minPhi = minPhi0 # reset for next cell
-#         # maxPhi = maxPhi0
-
-#         # find min and max values around cell
-#         faces_range = cell.faces_range
-        
-#         phiP = F[cID]
-#         # minPhi = phiP # reset for next cell
-#         # maxPhi = phiP
-#         for fi ∈ faces_range
-#             nID = cell_neighbours[fi]
-#             phiN = F[nID]
-#             maxPhi = max(phiN, maxPhi)
-#             minPhi = min(phiN, minPhi)
-#         end
-
-#         g0 = ∇F[cID]
-#         cc = cell.centre
-
-#         for fi ∈ faces_range 
-#             fID = cell_faces[fi]
-#             face = faces[fID]
-#             nID = face.ownerCells[2]
-#             # phiN = F[nID]
-#             normal = face.normal
-#             nsign = cell_nsign[fi]
-#             na = nsign*normal
-
-#             fc = face.centre 
-#             cc_fc = fc - cc
-#             n0 = cc_fc/norm(cc_fc)
-#             gn = g0⋅n0
-#             δϕ = g0⋅cc_fc
-#             gτ = g0 - gn*n0
-#             if (maxPhi > phiP) && (δϕ > maxPhi - phiP)
-#                 g0 = gτ + na*(maxPhi - phiP)
-#             elseif (minPhi < phiP) && (δϕ < minPhi - phiP)
-#                 g0 = gτ + na*(minPhi - phiP)
-#             end            
-#         end
-#         ∇F.result.x.values[cID] = g0[1]
-#         ∇F.result.y.values[cID] = g0[2]
-#         ∇F.result.z.values[cID] = g0[3]
-#     # end
-# end
-
-# function explicit_shear_stress!(mugradUTx::FaceScalarField, mugradUTy::FaceScalarField, mugradUTz::FaceScalarField, mueff, gradU)
-#     mesh = mugradUTx.mesh
-#     (; faces, cells) = mesh
-#     nbfaces = length(mesh.boundary_cellsID) #boundary_faces(mesh)
-#     start_faceID = nbfaces + 1
-#     last_faceID = length(faces)
-#     for fID ∈ start_faceID:last_faceID
-#         face = faces[fID]
-#         (; area, normal, ownerCells, delta) = face 
-#         cID1 = ownerCells[1]
-#         cID2 = ownerCells[2]
-#         cell1 = cells[cID1]
-#         cell2 = cells[cID2]
-#         gradUxxf = 0.5*(gradU.result.xx[cID1]+gradU.result.xx[cID2])
-#         gradUxyf = 0.5*(gradU.result.xy[cID1]+gradU.result.xy[cID2])
-#         gradUxzf = 0.5*(gradU.result.xz[cID1]+gradU.result.xz[cID2])
-#         gradUyxf = 0.5*(gradU.result.yx[cID1]+gradU.result.yx[cID2])
-#         gradUyyf = 0.5*(gradU.result.yy[cID1]+gradU.result.yy[cID2])
-#         gradUyzf = 0.5*(gradU.result.yz[cID1]+gradU.result.yz[cID2])
-#         gradUzxf = 0.5*(gradU.result.zx[cID1]+gradU.result.zx[cID2])
-#         gradUzyf = 0.5*(gradU.result.zy[cID1]+gradU.result.zy[cID2])
-#         gradUzzf = 0.5*(gradU.result.zz[cID1]+gradU.result.zz[cID2])
-#         mugradUTx[fID] = mueff[fID] * (normal[1]*gradUxxf + normal[2]*gradUyxf + normal[3]*gradUzxf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-#         mugradUTy[fID] = mueff[fID] * (normal[1]*gradUxyf + normal[2]*gradUyyf + normal[3]*gradUzyf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-#         mugradUTz[fID] = mueff[fID] * (normal[1]*gradUxzf + normal[2]*gradUyzf + normal[3]*gradUzzf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-#         # mugradUTx[fID] = mueff[fID] * (normal[1]*gradUxxf + normal[2]*gradUyxf + normal[3]*gradUzxf) * area
-#         # mugradUTy[fID] = mueff[fID] * (normal[1]*gradUxyf + normal[2]*gradUyyf + normal[3]*gradUzyf) * area
-#         # mugradUTz[fID] = mueff[fID] * (normal[1]*gradUxzf + normal[2]*gradUyzf + normal[3]*gradUzzf) * area
-#     end
-    
-#     # Now deal with boundary faces
-#     for fID ∈ 1:nbfaces
-#         face = faces[fID]
-#         (; area, normal, ownerCells, delta) = face 
-#         cID1 = ownerCells[1]
-#         cID2 = ownerCells[2]
-#         cell1 = cells[cID1]
-#         cell2 = cells[cID2]
-#         gradUxxf = (gradU.result.xx[cID1])
-#         gradUxyf = (gradU.result.xy[cID1])
-#         gradUxzf = (gradU.result.xz[cID1])
-#         gradUyxf = (gradU.result.yx[cID1])
-#         gradUyyf = (gradU.result.yy[cID1])
-#         gradUyzf = (gradU.result.yz[cID1])
-#         gradUzxf = (gradU.result.zx[cID1])
-#         gradUzyf = (gradU.result.zy[cID1])
-#         gradUzzf = (gradU.result.zz[cID1])
-#         mugradUTx[fID] = mueff[fID] * (normal[1]*gradUxxf + normal[2]*gradUyxf + normal[3]*gradUzxf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-#         mugradUTy[fID] = mueff[fID] * (normal[1]*gradUxyf + normal[2]*gradUyyf + normal[3]*gradUzyf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-#         mugradUTz[fID] = mueff[fID] * (normal[1]*gradUxzf + normal[2]*gradUyzf + normal[3]*gradUzzf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-#     end
-# end 

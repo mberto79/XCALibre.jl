@@ -29,7 +29,7 @@ model = Physics(
         Pr = Pr
         ),
     turbulence = RANS{KOmega}(),
-    energy = Energy{SensibleEnthalpy}(),
+    energy = Energy{SensibleEnthalpy}(Tref=288.15),
     domain = mesh
     )
 

@@ -3,7 +3,6 @@ using Plots
 using XCALibre
 # using CUDA # Run this if using NVIDIA GPU
 # using AMDGPU # Run this if using AMD GPU
-using Krylov
 
 mesh_file = "testcases/compressible/2d_turbulent_heated_plate/flatplate_2D_laminar.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
@@ -29,7 +28,7 @@ model = Physics(
         Pr = Pr
         ),
     turbulence = RANS{KOmega}(),
-    energy = Energy{SensibleEnthalpy}(),
+    energy = Energy{SensibleEnthalpy}(Tref=288.15),
     domain = mesh # mesh_dev  # use mesh_dev for GPU backend
     )
 

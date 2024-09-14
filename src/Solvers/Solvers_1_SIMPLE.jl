@@ -1,7 +1,7 @@
 export simple!
 
 """
-    simple!(model_in, config; limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0)
+    simple!(model_in, config; limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0)
 
 Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport equation for 
 the energy. 
@@ -26,7 +26,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 function simple!(
     model, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0
+    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
     )
 
     residuals = setup_incompressible_solvers(
@@ -34,7 +34,7 @@ function simple!(
         limit_gradient=limit_gradient, 
         pref=pref, 
         ncorrectors=ncorrectors, 
-        outer_loops=outer_loops
+        inner_loops=inner_loops
         )
 
     return residuals
@@ -43,7 +43,7 @@ end
 # Setup for all incompressible algorithms
 function setup_incompressible_solvers(
     solver_variant, model, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0
+    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
     ) 
 
     (; solvers, schemes, runtime, hardware) = config
@@ -98,14 +98,14 @@ function setup_incompressible_solvers(
         limit_gradient=limit_gradient, 
         pref=pref, 
         ncorrectors=ncorrectors, 
-        outer_loops=outer_loops)
+        inner_loops=inner_loops)
 
     return residuals
 end # end function
 
 function SIMPLE(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=0
+    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
     )
     
     # Extract model variables and configuration

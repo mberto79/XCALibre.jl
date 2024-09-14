@@ -2,14 +2,14 @@ export piso!
 
 function piso!(
     model, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=2)
+    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=2)
 
     residuals = setup_incompressible_solvers(
         PISO, model, config; 
         limit_gradient=limit_gradient, 
         pref=pref,
         ncorrectors=ncorrectors, 
-        outer_loops=outer_loops
+        inner_loops=inner_loops
         )
         
     return residuals
@@ -17,7 +17,7 @@ end
 
 function PISO(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, outer_loops=2
+    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=2
     )
     
     # Extract model variables and configuration
@@ -93,7 +93,7 @@ function PISO(
         interpolate!(rDf, rD, config)
         remove_pressure_source!(U_eqn, ∇p, config)
         
-        for i ∈ 1:outer_loops
+        for i ∈ 1:inner_loops
             H!(Hv, U, U_eqn, config)
             
             # Interpolate faces
@@ -108,7 +108,7 @@ function PISO(
             # Pressure calculations (previous implementation)
             @. prev = p.values
             solve_equation!(p_eqn, p, solvers.p, config; ref=pref, time=time)
-            if i == outer_loops
+            if i == inner_loops
                 explicit_relaxation!(p, prev, 1.0, config)
             else
                 explicit_relaxation!(p, prev, solvers.p.relax, config)
@@ -132,7 +132,7 @@ function PISO(
             #     solve_system!(p_eqn, solvers.p, p, nothing, config)
 
             #     # if i == 1 + ncorrectors
-            #     if i == outer_loops
+            #     if i == inner_loops
             #         explicit_relaxation!(p, prev, 1.0, config)
             #     else
             #         explicit_relaxation!(p, prev, solvers.p.relax, config)

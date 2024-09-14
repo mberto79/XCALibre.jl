@@ -1,4 +1,5 @@
 export _get_float, _get_int, _get_backend, _convert_array!
+export bounding_box
 export boundary_info, boundary_map
 export total_boundary_faces, boundary_index
 export norm_static
@@ -12,19 +13,39 @@ _get_backend(mesh) = get_backend(mesh.cells)
 function _convert_array!(arr, backend::CPU)
     return arr
 end
-# function _convert_array!(arr, backend::CUDABackend)
-#     return adapt(CuArray, arr)
-# end
-# function _convert_array!(arr, backend::ROCBackend)
-#     return adapt(ROCArray, arr)
-# end
+
+function bounding_box(mesh::AbstractMesh)
+    (; faces, nodes) = mesh
+    nbfaces = total_boundary_faces(mesh)
+    TF = _get_float(mesh)
+    z = zero(TF)
+    xmin, ymin, zmin = z, z, z
+    xmax, ymax, zmax = z, z, z
+    for fID ∈ 1:nbfaces
+        face = faces[fID]
+        for nID ∈ face.nodes_range 
+            node = nodes[nID]
+            coords = node.coords
+            xmin = min(xmin, coords[1])
+            ymin = min(ymin, coords[2])
+            zmin = min(zmin, coords[3])
+            xmax = max(xmax, coords[1])
+            ymax = max(ymax, coords[2])
+            zmax = max(zmax, coords[3])
+        end
+    end
+    pmin = (xmin, ymin, zmin)
+    pmax = (xmax, ymax, zmax)
+    return pmin, pmax
+end
+
 
 # function total_boundary_faces(mesh::Mesh2{I,F}) where {I,F}
 function total_boundary_faces(mesh::AbstractMesh)
     (; boundaries) = mesh
     nbfaces = zero(_get_int(mesh))
     @inbounds for boundary ∈ boundaries
-        nbfaces += length(boundary.facesID)
+        nbfaces += length(boundary.IDs_range)
     end
     nbfaces
 end

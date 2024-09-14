@@ -19,7 +19,8 @@ end
     flux = J*area/delta
     ap = term.sign[1]*(-flux)
 
-    ap, ap*values[cellID]
+    # ap, ap*values[cellID]
+    0.0, 0.0
 end
 
 # OmegaWallFunction
@@ -34,41 +35,68 @@ end
     flux = J*area/delta
     ap = term.sign[1]*(-flux)
 
-    ap, ap*values[cellID]
+    # ap, ap*values[cellID]
+    0.0, 0.0
 end
 
 # KWallFunction 
 @inline (bc::KWallFunction)(
     term::Operator{F,P,I,Divergence{Linear}}, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I} = begin
-
-    ap = term.sign[1]*(term.flux[fID])
-    ap, 0.0
+    flux = term.flux[fID]
+    ap = term.sign*(flux) 
+    ap, 0.0 # original
 end
 
 # OmegaWallFunction 
 @inline (bc::OmegaWallFunction)(
     term::Operator{F,P,I,Divergence{Linear}}, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I}  = begin
-
-    ap = term.sign[1]*(term.flux[fID])
-    ap, 0.0
+    flux = term.flux[fID]
+    ap = term.sign*(flux) 
+    ap, 0.0 # original
 end
 
 # KWallFunction
 @inline (bc::KWallFunction)(
-    term::Operator{F,P,I,Divergence{Upwind}}, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I} = begin
-    phi = term.phi 
-    ap = term.sign[1]*(term.flux[fID])
+    term::Operator{F,P,I,Divergence{LUST}}, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I} = begin
+    flux = term.flux[fID]
+    ap = term.sign*(flux) 
+    ap, 0.0 # original
+end
 
-    0.0, 0.0
+@inline (bc::KWallFunction)(
+    term::Operator{F,P,I,Divergence{Upwind}}, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I} = begin
+    flux = term.flux[fID]
+    ap = term.sign*(flux) 
+    ap, 0.0 # original
+end
+
+@inline (bc::KWallFunction)(
+    term::Operator{F,P,I,Divergence{BoundedUpwind}}, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I} = begin
+    flux = term.flux[fID]
+    ap = term.sign*(flux)
+    ap-flux, 0.0
 end
 
 # OmegaWallFunction
 @inline (bc::OmegaWallFunction)(
-    term::Operator{F,P,I,Divergence{Upwind}}, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I}  = begin
+    term::Operator{F,P,I,Divergence{LUST}}, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I}  = begin
+    flux = term.flux[fID]
+    ap = term.sign*(flux) 
+    ap, 0.0 # original
+end
 
-    phi = term.phi 
-    ap = term.sign[1]*(term.flux[fID])
-    0.0, 0.0
+@inline (bc::OmegaWallFunction)(
+    term::Operator{F,P,I,Divergence{Upwind}}, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I}  = begin
+    flux = term.flux[fID]
+    ap = term.sign*(flux) 
+    ap, 0.0 # original
+end
+
+@inline (bc::OmegaWallFunction)(
+    term::Operator{F,P,I,Divergence{BoundedUpwind}}, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I}  = begin
+    flux = term.flux[fID]
+    ap = term.sign*(flux)
+    ap-flux, 0.0
 end
 
 # KWallFunction 

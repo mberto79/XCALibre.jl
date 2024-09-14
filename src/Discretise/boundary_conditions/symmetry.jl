@@ -61,6 +61,11 @@ end
     0.0, 0.0
 end
 
+@define_boundary Symmetry Divergence{BoundedUpwind} begin
+    ap = term.sign[1]*(term.flux[fID])
+    0.0, 0.0
+end
+
 @define_boundary Symmetry Divergence{LUST} begin
     ap = term.sign[1]*(term.flux[fID])
     0.0, 0.0

@@ -1,27 +1,28 @@
 export simple!
 
 """
-    simple!(model_in, config; limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0)
+    simple!(model_in, config; 
+        limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0)
 
-Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport equation for 
-the energy. 
+Incompressible variant of the SIMPLE algorithm to solving coupled momentum and mass conservation equations.
 
-# Input
+# Input arguments
 
-- `model in` -- Physics model defiend by user and passed to run!.
-- `config`   -- Configuration structure defined by user with solvers, schemes, runtime and 
-                hardware structures set.
-- `resume`   -- True or false indicating if case is resuming or starting a new simulation.
-- `pref`     -- Reference pressure value for cases that do not have a pressure defining BC (incompressible flows only)
+- `model` reference to a `Physics`` model defined by the user.
+- `config` Configuration structure defined by the user with solvers, schemes, runtime and hardware structures configuration details.
+- `limit_gradient` flag use to activate gradient limiters in the solver (default = `false`)
+- `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
+- `ncorrectors` number of non-orthogonality correction loops (default = `0`)
+- `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
 
 # Output
 
 This function returns a `NamedTuple` for accessing the residuals (e.g. `residuals.Ux`) with the following entries:
 
-- `Ux`  - Vector of x-velocity residuals for each iteration.
-- `Uy`  - Vector of y-velocity residuals for each iteration.
-- `Uz`  - Vector of y-velocity residuals for each iteration.
-- `p`   - Vector of pressure residuals for each iteration.
+- `Ux` Vector of x-velocity residuals for each iteration.
+- `Uy` Vector of y-velocity residuals for each iteration.
+- `Uz` Vector of y-velocity residuals for each iteration.
+- `p` Vector of pressure residuals for each iteration.
 
 """
 function simple!(
@@ -196,22 +197,17 @@ function SIMPLE(
         # Pressure calculations
         @. prev = p.values
         solve_equation!(p_eqn, p, solvers.p, config; ref=pref)
-        explicit_relaxation!(p, prev, solvers.p.relax, config)
+        # explicit_relaxation!(p, prev, solvers.p.relax, config)
 
         residual!(R_ux, U_eqn, U.x, iteration, xdir, config)
         residual!(R_uy, U_eqn, U.y, iteration, ydir, config)
-        if typeof(mesh) <: Mesh3
-            residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
-        end
+        typeof(mesh) <: Mesh3 && residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
         residual!(R_p, p_eqn, p, iteration, nothing, config)
         
-        grad!(∇p, pf, p, p.BCs, time, config) 
+        # grad!(∇p, pf, p, p.BCs, time, config) 
+        # limit_gradient && limit_gradient!(∇p, p, config)
 
-        if limit_gradient
-            limit_gradient!(∇p, p, config)
-        end
-
-        # nonorthogonal correction
+        # non-orthogonal correction
         for i ∈ 1:ncorrectors
             discretise!(p_eqn, p, config)       
             apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
@@ -219,18 +215,10 @@ function SIMPLE(
             nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
             update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             solve_system!(p_eqn, solvers.p, p, nothing, config)
-
-            if i == ncorrectors
-                explicit_relaxation!(p, prev, 1.0, config)
-            else
-                explicit_relaxation!(p, prev, solvers.p.relax, config)
-            end
+            # explicit_relaxation!(p, prev, solvers.p.relax, config)
             
             grad!(∇p, pf, p, p.BCs, time, config) 
-
-            if limit_gradient
-                limit_gradient!(∇p, p, config)
-            end
+            limit_gradient && limit_gradient!(∇p, p, config)
         end
 
         # Velocity and boundaries correction
@@ -245,10 +233,21 @@ function SIMPLE(
         # correct_boundaries!(pf, p, p.BCs, time, config) # not needed?
 
         # new approach
-        interpolate!(Uf, U, config) # velocity from momentum equation
-        correct_boundaries!(Uf, U, U.BCs, time, config)
-        flux!(mdotf, Uf, config)
+
+        # 1. using velocity from momentum equation
+        # interpolate!(Uf, U, config)
+        # correct_boundaries!(Uf, U, U.BCs, time, config)
+        # flux!(mdotf, Uf, config)
+        # correct_mass_flux(mdotf, p, pf, rDf, config)
+        # correct_velocity!(U, Hv, ∇p, rD, config)
+
+        # 2. using Hv operator and relaxing just before U correction
         correct_mass_flux(mdotf, p, pf, rDf, config)
+
+        explicit_relaxation!(p, prev, solvers.p.relax, config)
+        grad!(∇p, pf, p, p.BCs, time, config) 
+        limit_gradient && limit_gradient!(∇p, p, config)
+
         correct_velocity!(U, Hv, ∇p, rD, config)
 
         # if isturbulent(model)

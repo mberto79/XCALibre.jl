@@ -1,25 +1,29 @@
 export csimple!
 
 """
-    csimple!(model_in, config; resume=true, pref=nothing)
+    csimple!(
+        model_in, config; 
+        limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
+    )
 
-Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport equation for 
-the energy. 
+Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport equation for the energy. 
 
-### Input
-- `model in` -- Physics model defiend by user and passed to run!.
-- `config`   -- Configuration structure defined by user with solvers, schemes, runtime and 
-                hardware structures set.
-- `resume`   -- True or false indicating if case is resuming or starting a new simulation.
-- `pref`     -- Reference pressure value for cases that do not have a pressure defining BC (incompressible flows only)
+# Input arguments
 
-### Output
-- `R_ux`  - Vector of x-velocity residuals for each iteration.
-- `R_uy`  - Vector of y-velocity residuals for each iteration.
-- `R_uz`  - Vector of y-velocity residuals for each iteration.
-- `R_p`   - Vector of pressure residuals for each iteration.
-- `R_e`   - Vector of energy residuals for each iteration.
-- `model` - Physics model output including field parameters.
+- `model` reference to a `Physics`` model defined by the user.
+- `config` Configuration structure defined by the user with solvers, schemes, runtime and hardware structures configuration details.
+- `limit_gradient` flag use to activate gradient limiters in the solver (default = `false`)
+- `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
+- `ncorrectors` number of non-orthogonality correction loops (default = `0`)
+- `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
+
+# Output
+
+- `Ux` Vector of x-velocity residuals for each iteration.
+- `Uy` Vector of y-velocity residuals for each iteration.
+- `Uz` Vector of y-velocity residuals for each iteration.
+- `p` Vector of pressure residuals for each iteration.
+- `e` Vector of energy residuals for each iteration.
 
 """
 function csimple!(model, config; 
@@ -95,7 +99,6 @@ function setup_compressible_solvers(
 
     @info "Pre-allocating solvers..."
      
-    println(issymmetric(_A(p_eqn)))
     @reset U_eqn.solver = solvers.U.solver(_A(U_eqn), _b(U_eqn, XDir()))
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
   
@@ -209,8 +212,8 @@ function CSIMPLE(
 
         ## CHECK GRADU AND EXPLICIT STRESSES
         grad!(gradU, Uf, U, U.BCs, time, config)
-        # println(gradU.result)
-        # # Set up and solve momentum equations
+
+        # Set up and solve momentum equations
         explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU)
         div!(divmugradUTx, mugradUTx, config)
         div!(divmugradUTy, mugradUTy, config)
@@ -221,19 +224,13 @@ function CSIMPLE(
         @. mueffgradUt.z.values = divmugradUTz.values
 
         solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
-
         energy!(energyModel, model, prev, mdotf, rho, mueff, time, config)
-
         thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
-
-        # println("Max Psi: ", maximum(Psi.values), " Min Psi: ", minimum(Psi.values))
 
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rhorDf, rD, config)
         @. rhorDf.values *= rhof.values
-
-        # println("Max rhorD: ", maximum(rhorDf.values), " Min rhorDf: ", minimum(rhorDf.values))
 
         remove_pressure_source!(U_eqn, ∇p, config)
         H!(Hv, U, U_eqn, config)
@@ -252,11 +249,6 @@ function CSIMPLE(
             @. mdotf.values -= mdotf.values*Psif.values*pf.values/rhof.values
             div!(divHv, mdotf, config)
 
-            # println("Max pconv: ", maximum(pconv.values), " Min pconv: ", minimum(pconv.values))
-
-            # println("Max mdotf: ", maximum(mdotf.values), " Min divHv: ", minimum(mdotf.values))
-            # println("Max divHv: ", maximum(divHv.values), " Min divHv: ", minimum(divHv.values))
-
         elseif typeof(model.fluid) <: WeaklyCompressible
             flux!(mdotf, Uf, config)
             @. mdotf.values *= rhof.values
@@ -268,7 +260,6 @@ function CSIMPLE(
         @. prevpf.values = pf.values
         if typeof(model.fluid) <: Compressible
             # Ensure diagonal dominance for hyperbolic equations
-            # solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
             solve_equation!(p_eqn, p, solvers.p, config; ref=nothing, irelax=solvers.U.relax)
         elseif typeof(model.fluid) <: WeaklyCompressible
             solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
@@ -283,31 +274,25 @@ function CSIMPLE(
 
         residual!(R_ux, U_eqn, U.x, iteration, xdir, config)
         residual!(R_uy, U_eqn, U.y, iteration, ydir, config)
-        if typeof(mesh) <: Mesh3
-            residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
-        end
+        typeof(mesh) <: Mesh3 && residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
         residual!(R_p, p_eqn, p, iteration, nothing, config)
         residual!(R_e, energyModel.energy_eqn, model.energy.h, iteration, nothing, config)
         
-        # Gradient
         grad!(∇p, pf, p, p.BCs, time, config) 
+        limit_gradient && limit_gradient!(∇p, p, config)
 
-        # grad limiter test!
-        limit_gradient!(∇p, p, config)
-
-        correct = false
-        if correct
-            ncorrectors = 1
-            for i ∈ 1:ncorrectors
-                discretise!(p_eqn)
-                apply_boundary_conditions!(p_eqn, p.BCs)
-                setReference!(p_eqn.equation, pref, 1)
-                interpolate!(gradpf, ∇p, p)
-                nonorthogonal_flux!(pf, gradpf) # careful: using pf for flux (not interpolation)
-                correct!(p_eqn.equation, p_model.terms.term1, pf)
-                solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
-                grad!(∇p, pf, p, pBCs, time, config)
-            end
+        # non-orthogonal correction
+        for i ∈ 1:ncorrectors
+            discretise!(p_eqn, p, config)       
+            apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
+            setReference!(p_eqn, pref, 1, config)
+            nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
+            update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+            solve_system!(p_eqn, solvers.p, p, nothing, config)
+            explicit_relaxation!(p, prev, solvers.p.relax, config)
+            
+            grad!(∇p, pf, p, p.BCs, time, config) 
+            limit_gradient && limit_gradient!(∇p, p, config)
         end
 
         if typeof(model.fluid) <: Compressible

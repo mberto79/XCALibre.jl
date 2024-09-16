@@ -159,10 +159,7 @@ function SIMPLE(
     correct_boundaries!(Uf, U, U.BCs, time, config)
     flux!(mdotf, Uf, config)
     grad!(∇p, pf, p, p.BCs, time, config)
-
-    if limit_gradient
-        limit_gradient!(∇p, p, config)
-    end
+    limit_gradient && limit_gradient!(∇p, p, config)
 
     update_nueff!(nueff, nu, model.turbulence, config)
 
@@ -197,15 +194,10 @@ function SIMPLE(
         # Pressure calculations
         @. prev = p.values
         solve_equation!(p_eqn, p, solvers.p, config; ref=pref)
-        # explicit_relaxation!(p, prev, solvers.p.relax, config)
-
-        residual!(R_ux, U_eqn, U.x, iteration, xdir, config)
-        residual!(R_uy, U_eqn, U.y, iteration, ydir, config)
-        typeof(mesh) <: Mesh3 && residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
-        residual!(R_p, p_eqn, p, iteration, nothing, config)
+        explicit_relaxation!(p, prev, solvers.p.relax, config)
         
-        # grad!(∇p, pf, p, p.BCs, time, config) 
-        # limit_gradient && limit_gradient!(∇p, p, config)
+        grad!(∇p, pf, p, p.BCs, time, config) 
+        limit_gradient && limit_gradient!(∇p, p, config)
 
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
@@ -216,7 +208,6 @@ function SIMPLE(
             update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             solve_system!(p_eqn, solvers.p, p, nothing, config)
             explicit_relaxation!(p, prev, solvers.p.relax, config)
-            
             grad!(∇p, pf, p, p.BCs, time, config) 
             limit_gradient && limit_gradient!(∇p, p, config)
         end
@@ -229,48 +220,35 @@ function SIMPLE(
         # correct_boundaries!(Uf, U, U.BCs, time, config)
         # flux!(mdotf, Uf, config) 
 
-        # correct_face_interpolation!(pf, p, Uf) # not needed?
-        # correct_boundaries!(pf, p, p.BCs, time, config) # not needed?
-
         # new approach
 
         # 1. using velocity from momentum equation
-        # interpolate!(Uf, U, config)
-        # correct_boundaries!(Uf, U, U.BCs, time, config)
-        # flux!(mdotf, Uf, config)
-        # correct_mass_flux(mdotf, p, pf, rDf, config)
-        # correct_velocity!(U, Hv, ∇p, rD, config)
-
-        # 2. using Hv operator and relaxing just before U correction
+        interpolate!(Uf, U, config)
+        correct_boundaries!(Uf, U, U.BCs, time, config)
+        flux!(mdotf, Uf, config)
         correct_mass_flux(mdotf, p, pf, rDf, config)
-
-        explicit_relaxation!(p, prev, solvers.p.relax, config)
-        grad!(∇p, pf, p, p.BCs, time, config) 
-        limit_gradient && limit_gradient!(∇p, p, config)
-
+        # correct_mass_flux2(mdotf, p_eqn, p, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
         # if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs, time, config)
-            if limit_gradient
-                limit_gradient!(gradU, U, config)
-            end
+            limit_gradient && limit_gradient!(gradU, U, config)
             turbulence!(turbulenceModel, model, S, S2, prev, time, config) 
             update_nueff!(nueff, nu, model.turbulence, config)
         # end
         
         convergence = 1e-7
 
+        residual!(R_ux, U_eqn, U.x, iteration, xdir, config)
+        residual!(R_uy, U_eqn, U.y, iteration, ydir, config)
+        typeof(mesh) <: Mesh3 && residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
+        residual!(R_p, p_eqn, p, iteration, nothing, config)
+
         if (R_ux[iteration] <= convergence && 
             R_uy[iteration] <= convergence && 
             R_uz[iteration] <= convergence &&
             R_p[iteration] <= convergence)
 
-            # print(
-            #     """
-            #     \n\n\n\n\n
-            #     Simulation converged! $iteration iterations in
-            #     """)
             @info "Simulation converged in $iteration iterations!"
                 if !signbit(write_interval)
                     model2vtk(model, @sprintf "iteration_%.6d" iteration)
@@ -434,15 +412,56 @@ end
         (; area, normal, ownerCells, delta) = face 
         cID1 = ownerCells[1]
         cID2 = ownerCells[2]
-        # cell1 = cells[cID1]
-        # cell2 = cells[cID2]
         p1 = p[cID1]
         p2 = p[cID2]
         face_grad = area*(p2 - p1)/delta # best option so far!
-        # face_grad = area*(p1 - p2)/delta
-
-        # mdotf.values[fID] -= face_grad*rDf.values[fID]
-        # mdotf[fID] -= face_grad #*rDf[fID]
         mdotf[fID] -= face_grad*rDf[fID]
     end
 end
+
+
+# correct mass flux version 2
+function correct_mass_flux2(mdotf, p_eqn, p, config)
+    # sngrad = FaceScalarField(mesh)
+    (; faces, cells, boundary_cellsID) = mdotf.mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    # Sparse array fields accessors
+    A = _A(p_eqn)
+    nzval = _nzval(A)
+    rowval = _rowval(A)
+    colptr = _colptr(A)
+
+    n_faces = length(faces)
+    n_bfaces = length(boundary_cellsID)
+    n_ifaces = n_faces - n_bfaces #+ 1
+
+    kernel! = _correct_mass_flux2(backend, workgroup)
+    kernel!(mdotf, p, nzval, rowval, colptr, faces, cells, n_bfaces, ndrange=length(n_ifaces))
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _correct_mass_flux2(mdotf, p, nzval, rowval, colptr, faces, cells, n_bfaces)
+    i = @index(Global)
+    fID = i + n_bfaces
+
+    @inbounds begin 
+        face = faces[fID]
+        (; area, normal, ownerCells, delta) = face 
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        p1 = p[cID1]
+        p2 = p[cID2]
+        # cIndex = spindex(colptr, rowval, cID1, cID1)
+        n1Index = spindex(colptr, rowval, cID1, cID2)
+        n2Index = spindex(colptr, rowval, cID2, cID1)
+        coeff1 = nzval[n1Index]
+        coeff2 = nzval[n2Index]
+        # face_grad = coeff*(p2 - p1) # best option so far!
+        # face_grad = coeff1*p1 - coeff2*p2 # best option so far!
+        face_grad =  coeff2*p2 - coeff1*p1# best option so far!
+        mdotf[fID] -= face_grad
+    end
+end
+

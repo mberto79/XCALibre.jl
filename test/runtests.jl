@@ -1,8 +1,24 @@
 using XCALibre
 using Test
 
+TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
+
 @testset "Mesh conversion" begin
     include("test_mesh_conversion.jl")
+end
+
+@testset "Incompressible (steady)" begin
+    test_name = "2d_incompressible_laminar_BFSjl.jl"
+    test_file = joinpath(TEST_CASES_DIR, test_name)
+    include(test_file)
+
+    test_name = "2d_incompressible_flatplate_KOmega_lowRe.jl"
+    test_file = joinpath(TEST_CASES_DIR, test_name)
+    include(test_file)
+
+    test_name = "2d_incompressible_flatplate_KOmega_HighRe.jl"
+    test_file = joinpath(TEST_CASES_DIR, test_name)
+    include(test_file)
 end
 
 @testset "Gradient schemes" begin
@@ -19,10 +35,7 @@ end
     @test 2 + 2 == 4
 end
 
-@testset "Incompressible (steady)" begin
-    # Write your own tests here.
-    @test 2 + 2 == 4
-end
+
 
 @testset "Incompressible (transient)" begin
     # Write your own tests here.
@@ -43,10 +56,3 @@ end
     # Write your own tests here.
     @test 2 + 2 == 4
 end
-
-
-a = """2D Mesh\n-> 1800 cells\n-> 3720 faces\n-> 1921 nodes\n\nBoundaries \n-> inlet (faces: 1:10)\n-> outlet (faces: 11:30)\n-> wall (faces: 31:140)\n-> top (faces: 141:240)\n\n\n"""
-
-b = """2D Mesh\n-> 1800 cells\n-> 3720 faces\n-> 1921 nodes\n\nBoundaries\n-> inlet (faces: 1:10)\n-> outlet (faces: 11:30)\n-> wall (faces: 31:140)\n-> top (faces: 141:240)\n\n\n"""
-
-a == b

@@ -11,8 +11,8 @@
 - [x] Check Divergence BCs for Upwind scheme
 - [ ] Implement Upwind as deferred correction
 - [x] Do mesh conversion to new format within UNV read/writer (2D and 3D meshes)
-- [ ] Add tests
-- [ ] Add documentation (becoming urgent)
+- [x ] Add tests
+- [x] Add documentation (becoming urgent)
 
 ### Mesh module
 
@@ -26,7 +26,7 @@
 - [x] Rethink data structure for mesh
 - [x] Write mesh to VTK format
 - [x] Extend to 3D
-- [ ] Write conversion tool to read grids from OpenFOAM
+- [x] Write conversion tool to read grids from OpenFOAM
 - [ ] Include boundary information in VTK file for postprocessing
 
 ### Solution for Convection/Diffusion equations (FVM)
@@ -37,17 +37,17 @@
 - [x] Implementation of boundary conditions (diffusion)
   - [x] Dirichlech
   - [x] Neumann
-  - [ ] Symmetry
-  - [ ] Wall
+  - [x] Symmetry
+  - [x] Wall
   - [ ] Slip
 - [x] Implementation of boundary conditions (convection)
   - [x] Dirichlech
   - [x] Neumann
-  - [ ] Symmetry
-  - [ ] Wall
+  - [x] Symmetry
+  - [x] Wall
   - [ ] Slip
-- [ ] A simple plotting to check results
-- [ ] Extend code for solution including non-orthogonal correction
+- [x] A simple plotting to check results (can use ParaView now)
+- [x] Add non-orthogonal correction (experimental)
 - [x] Implement second order upwind scheme
 - [x] Implement gradient interpolation
 - [x] Implement variable interpolation (i.e. allow variable diffusion coefficients)
@@ -60,11 +60,13 @@
 - [x] Implement first RANS turbulence model e.g. $k-\omega$
 - [x] Implement $k-\omega LKE$ model
 - [x] Calculation of y for first cell (can be from mesh.delta?)
-- [ ] Calculation of wall normal distance needed for turbulence models
+- [x] Calculation of wall normal distance needed for turbulence models
 - [x] Implement wall functions
-- [ ] LES solver
-- [ ] Compressible flows: serial laminar
-- [ ] Compressible flows: serial turbulent
+- [x] LES solver
+- [x] Weakly compressible flows: serial laminar 
+- [x] Weakly compressible flows: serial turbulent
+- [ ] shock capturing steady
+- [ ] shock capturing transient
 
 
 ### Algorithms
@@ -81,7 +83,7 @@
 - [ ] Write more efficient matrix build method for sparse matrix
 - [x] Enable threading
 - [x] Enable GPU computation
-- [ ] Move turbulence RANS to GPU
+- [x] Move turbulence RANS to GPU
 - [ ] Move compressible implementation to the GPU
 - [x] Implement AMG prototype solver (serial)
 - [ ] Implement AMG solver (KernelAbstraction.jl)

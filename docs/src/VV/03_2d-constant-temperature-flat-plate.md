@@ -1,4 +1,4 @@
-# 2D constant temperature flat plate
+# 2D Constant temperature flat plate
 
 # Overview
 ---
@@ -17,7 +17,7 @@ The correlation is valid for Prandtl numbers greater than 0.6.
 The boundaries are shown in the mesh figure and the tables below describe the boundary settings used.
 
 ### Inlet
----
+
 
 | Field | Boundary condition      |
 | -------  | ---------- |
@@ -26,7 +26,7 @@ The boundaries are shown in the mesh figure and the tables below describe the bo
 | ``T ``  |  FixedTemperature (300.0 K)    |
 
 ### Wall
----
+
 
 | Field | Boundary condition      |
 | -------  | ---------- |
@@ -35,7 +35,7 @@ The boundaries are shown in the mesh figure and the tables below describe the bo
 | ``T ``  |  FixedTemperature (310.0 K)    |
 
 ### Outlet
----
+
 
 | Field | Boundary condition      |
 | -------  | ---------- |
@@ -44,7 +44,7 @@ The boundaries are shown in the mesh figure and the tables below describe the bo
 | ``T ``  |  Neumann (Zero-gradient)    |
 
 ### Top
----
+
 
 | Field | Boundary condition      |
 | -------  | ---------- |
@@ -54,7 +54,7 @@ The boundaries are shown in the mesh figure and the tables below describe the bo
 
 
 # Fluid Properties
----
+
 
 | Property | value      |
 | -------  | ---------- |

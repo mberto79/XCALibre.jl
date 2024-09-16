@@ -215,7 +215,7 @@ function SIMPLE(
             nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
             update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             solve_system!(p_eqn, solvers.p, p, nothing, config)
-            # explicit_relaxation!(p, prev, solvers.p.relax, config)
+            explicit_relaxation!(p, prev, solvers.p.relax, config)
             
             grad!(∇p, pf, p, p.BCs, time, config) 
             limit_gradient && limit_gradient!(∇p, p, config)
@@ -252,6 +252,9 @@ function SIMPLE(
 
         # if isturbulent(model)
             grad!(gradU, Uf, U, U.BCs, time, config)
+            if limit_gradient
+                limit_gradient!(gradU, U, config)
+            end
             turbulence!(turbulenceModel, model, S, S2, prev, time, config) 
             update_nueff!(nueff, nu, model.turbulence, config)
         # end
@@ -341,8 +344,8 @@ end
         T_hat = Sf - Ef
         faceCorrection = flux[fID]*gradf⋅T_hat
 
-        Atomix.@atomic b[cID1] += faceCorrection#*cell1.volume
-        Atomix.@atomic b[cID2] -= faceCorrection#*cell2.volume # should this be -ve?
+        Atomix.@atomic b[cID1] -= faceCorrection#*cell1.volume
+        Atomix.@atomic b[cID2] += faceCorrection#*cell2.volume # should this be -ve?
         
 end
 
@@ -443,47 +446,3 @@ end
         mdotf[fID] -= face_grad*rDf[fID]
     end
 end
-
-# @kernel function _correct_boundary_faces()
-#     i = @index(Global)
-# end
-
-# function face_normal_gradient(phi::ScalarField, phif::FaceScalarField)
-#     mesh = phi.mesh
-#     sngrad = FaceScalarField(mesh)
-#     (; faces, cells) = mesh
-#     nbfaces = length(mesh.boundary_cellsID) #boundary_faces(mesh)
-#     start_faceID = nbfaces + 1
-#     last_faceID = length(faces)
-#     for fID ∈ start_faceID:last_faceID
-#     # for fID ∈ eachindex(faces)
-#         face = faces[fID]
-#         (; area, normal, ownerCells, delta) = face 
-#         cID1 = ownerCells[1]
-#         cID2 = ownerCells[2]
-#         cell1 = cells[cID1]
-#         cell2 = cells[cID2]
-#         phi1 = phi[cID1]
-#         phi2 = phi[cID2]
-#         face_grad = area*(phi2 - phi1)/delta
-#         # face_grad = (phi2 - phi1)/delta
-#         sngrad.values[fID] = face_grad
-#     end
-#     # Now deal with boundary faces
-#     for fID ∈ 1:nbfaces
-#         face = faces[fID]
-#         (; area, normal, ownerCells, delta) = face 
-#         cID1 = ownerCells[1]
-        
-#         cID2 = ownerCells[2]
-#         cell1 = cells[cID1]
-#         cell2 = cells[cID2]
-#         phi1 = phi[cID1]
-#         # phi2 = phi[cID2]
-#         phi2 = phif[fID]
-#         face_grad = area*(phi2 - phi1)/delta
-#         # face_grad = (phi2 - phi1)/delta
-#         sngrad.values[fID] = face_grad
-#     end
-#     return sngrad
-# end

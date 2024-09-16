@@ -290,13 +290,46 @@ function limit_gradient!(∇F, F, config)
 
     minPhi0 = maximum(F.values) # use min value so all values compared are larger
     maxPhi0 = minimum(F.values)
+    (; x, y, z) = ∇F.result
 
     kernel! = _limit_gradient!(backend, workgroup)
-    kernel!(∇F, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi0, maxPhi0, ndrange=length(cells))
+    kernel!(x, y, z, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi0, maxPhi0, ndrange=length(cells))
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function _limit_gradient!(∇F, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi, maxPhi)
+function limit_gradient!(∇F::Grad{S,FF,R,I,M}, F, config) where {S,FF,R<:TensorField,I,M}
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    mesh = F.mesh
+    (; cells, cell_neighbours, cell_faces, cell_nsign, faces) = mesh
+
+    # minPhi0 = maximum(F.values) # use min value so all values compared are larger
+    # maxPhi0 = minimum(F.values)
+    (; xx, yx, zx) = ∇F.result
+    (; xy, yy, zy) = ∇F.result
+    (; xz, yz, zz) = ∇F.result
+
+    minPhi0 = maximum(F.x.values) # use min value so all values compared are larger
+    maxPhi0 = minimum(F.x.values)
+    kernel! = _limit_gradient!(backend, workgroup)
+    kernel!(xx, yx, zx, F.x, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi0, maxPhi0, ndrange=length(cells))
+    KernelAbstractions.synchronize(backend)
+
+    minPhi0 = maximum(F.y.values) # use min value so all values compared are larger
+    maxPhi0 = minimum(F.y.values)
+    kernel! = _limit_gradient!(backend, workgroup)
+    kernel!(xy, yy, zy, F.y, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi0, maxPhi0, ndrange=length(cells))
+    KernelAbstractions.synchronize(backend)
+
+    minPhi0 = maximum(F.z.values) # use min value so all values compared are larger
+    maxPhi0 = minimum(F.z.values)
+    kernel! = _limit_gradient!(backend, workgroup)
+    kernel!(xz, yz, zz, F.z, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi0, maxPhi0, ndrange=length(cells))
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _limit_gradient!(x, y, z, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi, maxPhi)
     cID = @index(Global)
     # mesh = F.mesh
     # (; cells, cell_neighbours, cell_faces, cell_nsign, faces) = mesh
@@ -313,8 +346,7 @@ end
         faces_range = cell.faces_range
         
         phiP = F[cID]
-        # minPhi = phiP # reset for next cell
-        # maxPhi = phiP
+
         for fi ∈ faces_range
             nID = cell_neighbours[fi]
             phiN = F[nID]
@@ -322,7 +354,9 @@ end
             minPhi = min(phiN, minPhi)
         end
 
-        g0 = ∇F[cID]
+        # g0 = ∇F[cID]
+        g0 = SVector{3}(x[cID] , y[cID] , z[cID])
+
         cc = cell.centre
 
         for fi ∈ faces_range 
@@ -346,8 +380,8 @@ end
                 g0 = gτ + na*(minPhi - phiP)
             end            
         end
-        ∇F.result.x.values[cID] = g0[1]
-        ∇F.result.y.values[cID] = g0[2]
-        ∇F.result.z.values[cID] = g0[3]
+        x.values[cID] = g0[1]
+        y.values[cID] = g0[2]
+        z.values[cID] = g0[3]
     # end
 end

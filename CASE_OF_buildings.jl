@@ -6,34 +6,35 @@ using CUDA
 mesh_file = "unv_sample_meshes/OF_buildings/polyMesh/"
 @time mesh = FOAM3D_mesh(mesh_file, integer_type=Int64, float_type=Float64)
 
+mesh_dev = mesh
 mesh_dev = adapt(CUDABackend(), mesh)
 
-Umag = 1.5
+Umag = 10
 velocity = [Umag, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1.5e-5
-νR = 500
+νR = 50
 Tu = 0.1
 k_inlet = 3/2*(Tu*Umag)^2
 ω_inlet = k_inlet/(νR*nu)
 nut_inlet = k_inlet/ω_inlet
-Re = (0.2*velocity[1])/nu
+Re = (10*velocity[1])/nu
 
 model = Physics(
     time = Steady(),
     fluid = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{KOmega}(),
     energy = Energy{Isothermal}(),
-    domain = mesh
+    domain = mesh_dev
     )
 
 
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Neumann(:frontAndBack, 0.0),
-    Dirichlet(:ground, noSlip),
-    Dirichlet(:buildings, noSlip)
+    Symmetry(:frontAndBack, 0.0),
+    Wall(:ground, noSlip),
+    Wall(:buildings, noSlip)
 )
 
 @assign! model momentum p (
@@ -61,7 +62,7 @@ model = Physics(
 )
 
 @assign! model turbulence nut (
-    Dirichlet(:inlet, k_inlet/ω_inlet),
+    Neumann(:inlet, 0.0),
     Neumann(:outlet, 0.0),
     Neumann(:frontAndBack, 0.0),
     NutWallFunction(:ground),
@@ -81,18 +82,18 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
-        rtol = 1e-10,
-        atol = 1e-10
+        relax       = 0.4,
+        rtol = 1e-6,
+        atol = 1e-15
     ),
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), #LDL(),
         convergence = 1e-7,
-        relax       = 0.3,
-        rtol = 1e-10,
-        atol = 1e-10
+        relax       = 0.2,
+        rtol = 1e-6,
+        atol = 1e-15
     ),
     k = set_solver(
         # model.turbulence.fields.k;
@@ -100,9 +101,9 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
-        rtol = 1e-10,
-        atol = 1e-10
+        relax       = 0.2,
+        rtol = 1e-6,
+        atol = 1e-15
     ),
     omega = set_solver(
         # model.turbulence.fields.omega;
@@ -110,16 +111,16 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver, CgSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
-        rtol = 1e-10,
-        atol = 1e-10
+        relax       = 0.2,
+        rtol = 1e-6,
+        atol = 1e-15
     )
 )
 
-runtime = set_runtime(iterations=40, write_interval=10, time_step=1)
+runtime = set_runtime(iterations=500, write_interval=50, time_step=1)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=4)
+# hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
@@ -132,7 +133,7 @@ initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
-residuals = run!(model, config); #, pref=0.0)
+residuals = run!(model, config, ncorrectors=0, limit_gradient=true)
 
 
 Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)

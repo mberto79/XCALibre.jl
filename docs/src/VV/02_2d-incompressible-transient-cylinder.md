@@ -3,10 +3,7 @@
 # Introduction
 ---
 
-# This is a subsection
----
-
-### This is a sub-subsection
+To verify the correct implementation of the laminar flow solver, a simulation of a transient, laminar and incompressible cylinder was carried out and compared with OpenFOAM. The results show that the solver in XCALibre.jl generates similar results compared to the laminar solver in OpenFOAM. Simulation set up, grid and OpenFOAM case will all be made available here.
 
 ## Results
 

@@ -3,6 +3,8 @@
 # Introduction
 ---
 
+The correct implementation of the laminar solver in XCALibre.jl has been verified by quantitatively comparing results with those obtained with OpenFOAM. The simulation set up and mesh file used to run the simulation with XCALibre.jl are available in this repository. The OpenFOAM case set up and mesh will be made available as well.
+
 # Simulation setup
 ---
 

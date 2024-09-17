@@ -82,7 +82,10 @@ The streamwise cell length is 2mm with a total domain length of 1m. The near-wal
 ```jldoctest;  filter = r".*"s => s"", output = false
 using XCALibre
 
-mesh_file = pkgdir(XCALibre, "testcases/compressible/2d_laminar_heated_plate/flatplate_2D_laminar.unv")
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "flatplate_2D_laminar.unv"
+mesh_file = joinpath(grids_dir, grid)
+
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 velocity = [0.2, 0.0, 0.0]

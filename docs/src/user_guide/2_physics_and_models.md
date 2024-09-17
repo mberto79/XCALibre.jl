@@ -373,7 +373,9 @@ For example, for a laminar incompressible simulation, only the momentum equation
 ```jldoctest;  filter = r".*"s => s"", output = false
 using XCALibre
 
-mesh_file = pkgdir(XCALibre, "examples/2d_incompressible_laminar_backwards_step/backward_facing_step_10mm.unv")
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "backwardFacingStep_10mm.unv"
+mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 backend = CPU() #  run on CPU

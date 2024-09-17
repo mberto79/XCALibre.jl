@@ -110,7 +110,9 @@ Below an example is provided in context. Here, we are setting solvers for both t
 ```@meta
 DocTestSetup = quote
     using XCALibre
-    mesh_file = pkgdir(XCALibre, "examples/2d_incompressible_laminar_backwards_step/backward_facing_step_10mm.unv")
+    grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+    grid = "backwardFacingStep_10mm.unv"
+    mesh_file = joinpath(grids_dir, grid)
     mesh = UNV2D_mesh(mesh_file, scale=0.001)
     mesh_dev = mesh # use this line to run on CPU
     nu = 1e-3

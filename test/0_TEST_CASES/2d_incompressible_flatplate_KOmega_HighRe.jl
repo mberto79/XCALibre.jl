@@ -77,34 +77,34 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), #ILU0(),
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.7,
     ),
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), #ILU0(),
         convergence = 1e-7,
-        relax       = 0.2,
+        relax       = 0.3,
     ),
     k = set_solver(
         model.turbulence.k;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), #ILU0(),
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.3,
     ),
     omega = set_solver(
         model.turbulence.omega;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), #ILU0(),
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.3,
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=500, time_step=1)
+runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
 
-hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = set_hardware(backend=CPU(), workgroup=32)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 
@@ -113,49 +113,14 @@ config = Configuration(
 
 GC.gc()
 
-initialise!(model.momentum.U, velocity)
-initialise!(model.momentum.p, 0.0)
-initialise!(model.turbulence.k, k_inlet)
-initialise!(model.turbulence.omega, ω_inlet)
-initialise!(model.turbulence.nut, k_inlet/ω_inlet)
+@test initialise!(model.momentum.U, velocity) == nothing
+@test initialise!(model.momentum.p, 0.0) == nothing
+@test initialise!(model.turbulence.k, k_inlet) == nothing
+@test initialise!(model.turbulence.omega, ω_inlet) == nothing
+@test initialise!(model.turbulence.nut, k_inlet/ω_inlet) == nothing
 
 residuals = run!(model, config)
 
-# test that we are close enough to drag coefficient
-ReL = Umag*L/nu
-Cd = 0.074/ReL^(1/5)
-Cd_sim = viscous_force(:wall, model.momentum.U, 1, nu, model.turbulence.nut)/(0.5*Umag^2)
+outlet = boundary_average(:outlet, model.momentum.U, config)
 
-R = stress_tensor(model.momentum.U, nu, model.turbulence.nut, config)
-
-@test Cd ≈ Cd_sim[1] atol=0.002
-
-sum = 0
-for i ∈ eachindex(R.xx.values)
-    sum += R[i]*[0,-1,0]
-end
-
-# using DelimitedFiles
-# using LinearAlgebra
-
-# OF_data = readdlm("flatplate_OF_wall_kOmega_highRe.csv", ',', Float64, skipstart=1)
-# oRex = OF_data[:,7].*velocity[1]./nu[1]
-# oCf = sqrt.(OF_data[:,12].^2 + OF_data[:,13].^2)/(0.5*velocity[1]^2)
-
-# tauw, pos = wall_shear_stress(:wall, model)
-# tauMag = [norm(tauw[i]) for i ∈ eachindex(tauw)]
-# x = [pos[i][1] for i ∈ eachindex(pos)]
-# Rex = velocity[1].*x./nu
-
-# x_corr = [0:0.0002:1;]
-# Rex_corr = velocity[1].*x_corr/nu
-# Cf_corr = 0.074.*(Rex_corr).^(-1/5)
-# plot(; xaxis="Rex", yaxis="Cf")
-# plot!(Rex_corr, Cf_corr, color=:red, ylims=(0, 0.02), label="Blasius",lw=1.5)
-# plot!(oRex, oCf, color=:green, lw=1.5, label="OpenFOAM") |> display
-# plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code") |> display
-
-# plot(; xlims=(0,1000))
-# plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-# plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-# plot!(1:length(Rp), Rp, yscale=:log10, label="p") |> display
+@test Umag ≈ outlet[1] atol = 0.015

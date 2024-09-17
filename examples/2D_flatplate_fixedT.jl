@@ -85,7 +85,7 @@ solvers = (
 runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
 
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = set_hardware(backend=CPU(), workgroup=cld(length(mesh.faces),4))
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
@@ -96,22 +96,4 @@ initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 100000.0)
 initialise!(model.energy.T, 300.0)
 
-residuals = run!(model, config) # 9.39k allocs
-
-# using DelimitedFiles
-# using LinearAlgebra
-
-# OF_data = readdlm("flatplate_OF_wall_laminar.csv", ',', Float64, skipstart=1)
-# oRex = OF_data[:,7].*velocity[1]./nu[1]
-# oCf = sqrt.(OF_data[:,9].^2 + OF_data[:,10].^2)/(0.5*velocity[1]^2)
-
-# tauw, pos = wall_shear_stress(:wall, model)
-# tauMag = [norm(tauw[i]) for i ∈ eachindex(tauw)]
-# x = [pos[i][1] for i ∈ eachindex(pos)]
-
-# Rex = velocity[1].*x/nu[1]
-# Cf = 0.664./sqrt.(Rex)
-# plot(; xaxis="Rex", yaxis="Cf")
-# plot!(Rex, Cf, color=:red, ylims=(0, 0.05), xlims=(0,2e4), label="Blasius",lw=1.5)
-# plot!(oRex, oCf, color=:green, lw=1.5, label="OpenFOAM")
-# plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code")
+residuals = run!(model, config)

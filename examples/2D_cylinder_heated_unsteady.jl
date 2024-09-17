@@ -1,12 +1,11 @@
-# using Plots
 using XCALibre
 # using CUDA # Run this if using NVIDIA GPU
 # using AMDGPU # Run this if using AMD GPU
 
-# quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
-mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
-# mesh_file = "unv_sample_meshes/cylinder_d10mm_2mm.unv"
-# mesh_file = "unv_sample_meshes/cylinder_d10mm_10-7.5-2mm.unv"
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "cylinder_d10mm_5mm.unv"
+
+mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 # mesh_dev = adapt(CUDABackend(), mesh)
@@ -70,8 +69,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1,
-        rtol = 1e-4,
-        atol = 1e-5
+        rtol = 1e-4
     ),
     p = set_solver(
         model.momentum.p;
@@ -80,8 +78,7 @@ solvers = (
         convergence = 1e-7,
         relax       = 0.8,
         limit = (1000, 1000000),
-        rtol = 1e-4,
-        atol = 1e-5
+        rtol = 1e-4
     ),
     h = set_solver(
         model.energy.h;
@@ -89,8 +86,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1,
-        rtol = 1e-4,
-        atol = 1e-5
+        rtol = 1e-4
     )
 )
 
@@ -101,7 +97,7 @@ schemes = (
     h = set_schemes(divergence=Upwind, gradient=Midpoint, time=Euler)
 )
 
-runtime = set_runtime(iterations=10000, write_interval=100, time_step=0.01)
+runtime = set_runtime(iterations=1000, write_interval=100, time_step=0.01)
 
 hardware = set_hardware(backend=CPU(), workgroup=4)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
@@ -117,12 +113,4 @@ initialise!(model.momentum.p, pressure)
 initialise!(model.energy.T, temp)
 initialise!(model.fluid.rho, pressure/(R*temp))
 
-println("Maxh ", maximum(model.energy.T.values), " minh ", minimum(model.energy.T.values))
-
-residuals = run!(model, config); #, pref=0.0)
-
-plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
-plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p")
-plot!(1:length(Rh), Rh, yscale=:log10, label="h")
+residuals = run!(model, config)

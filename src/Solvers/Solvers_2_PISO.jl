@@ -92,10 +92,7 @@ function PISO(
     correct_boundaries!(Uf, U, U.BCs, time, config)
     flux!(mdotf, Uf, config)
     grad!(∇p, pf, p, p.BCs, time, config)
-
-    if limit_gradient
-        limit_gradient!(∇p, p, config)
-    end
+    limit_gradient && limit_gradient!(∇p, p, config)
 
     update_nueff!(nueff, nu, model.turbulence, config)
 
@@ -135,56 +132,11 @@ function PISO(
             else
                 explicit_relaxation!(p, prev, solvers.p.relax, config)
             end
+
             grad!(∇p, pf, p, p.BCs, time, config) 
+            limit_gradient && limit_gradient!(∇p, p, config)
 
-            if limit_gradient
-                limit_gradient!(∇p, p, config)
-            end
-
-            # # test nonorthogonal correction
-            # @. prev = p.values
-            # # for i ∈ 1:(1 + ncorrectors)
-            #     discretise!(p_eqn, p, config)       
-            #     apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
-            #     setReference!(p_eqn, pref, 1, config)
-            #     # if ncorrectors > 0
-            #         # nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
-            #     # end
-            #     update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-            #     solve_system!(p_eqn, solvers.p, p, nothing, config)
-
-            #     # if i == 1 + ncorrectors
-            #     if i == inner_loops
-            #         explicit_relaxation!(p, prev, 1.0, config)
-            #     else
-            #         explicit_relaxation!(p, prev, solvers.p.relax, config)
-            #     end
-            #     grad!(∇p, pf, p, p.BCs, time, config) 
-
-            #     if limit_gradient
-            #         limit_gradient!(∇p, p, config)
-            #     end
-            # # end
-
-            # correct = false
-            # if correct
-            #     ncorrectors = 1
-            #     for i ∈ 1:ncorrectors
-            #         discretise!(p_eqn, p, config)       
-            #         apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
-            #         setReference!(p_eqn, pref, 1, config)
-            #         # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-            #         nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
-            #         # @. prev = p.values # this is unstable
-            #         # @. p.values = prev
-            #         solve_system!(p_eqn, solvers.p, p, nothing, config)
-            #         # explicit_relaxation!(p, prev, solvers.p.relax, config)
-            #         grad!(∇p, pf, p, p.BCs, time, config)
-            #         # limit_gradient!(∇p, p, config)
-            #     end
-            # end
-
-            # nonorthogonal correction
+            # nonorthogonal correction (experimental)
             for i ∈ 1:ncorrectors
                 discretise!(p_eqn, p, config)       
                 apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
@@ -199,13 +151,10 @@ function PISO(
                     explicit_relaxation!(p, prev, solvers.p.relax, config)
                 end
                 grad!(∇p, pf, p, p.BCs, time, config) 
-
-                if limit_gradient
-                    limit_gradient!(∇p, p, config)
-                end
+                limit_gradient && limit_gradient!(∇p, p, config)
             end
 
-            # Velocity and boundaries correction
+            # old approach - keep for now!
             # correct_velocity!(U, Hv, ∇p, rD, config)
             # interpolate!(Uf, U, config)
             # correct_boundaries!(Uf, U, U.BCs, time, config)
@@ -215,15 +164,17 @@ function PISO(
             interpolate!(Uf, U, config) # velocity from momentum equation
             correct_boundaries!(Uf, U, U.BCs, time, config)
             flux!(mdotf, Uf, config)
-            correct_mass_flux(mdotf, p, pf, rDf, config)
+            correct_mass_flux(mdotf, p, rDf, config)
             correct_velocity!(U, Hv, ∇p, rD, config)
 
         end # corrector loop end
         
-        # correct_mass_flux(mdotf, p, pf, rDf, config) # new approach
+        # correct_mass_flux(mdotf, p, rDf, config) # new approach
 
 
     grad!(gradU, Uf, U, U.BCs, time, config)
+    limit_gradient && limit_gradient!(gradU, U, config)
+
     turbulence!(turbulenceModel, model, S, S2, prev, time, config) 
     update_nueff!(nueff, nu, model.turbulence, config)
 
@@ -234,47 +185,21 @@ function PISO(
     end
     residual!(R_p, p_eqn, p, iteration, nothing, config)
     maxCourant = max_courant_number!(cellsCourant, model, config)
-    
-        
-        # for i ∈ eachindex(divUTx)
-        #     vol = mesh.cells[i].volume
-        #     divUTx = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][1,1]+ gradUT[i][1,2] + gradUT[i][1,3])*vol
-        #     divUTy = -sqrt(2)*(nuf[i] + νt[i])*(gradUT[i][2,1]+ gradUT[i][2,2] + gradUT[i][2,3])*vol
-        # end
-        
-        # convergence = 1e-7
 
-        # if (R_ux[iteration] <= convergence && 
-        #     R_uy[iteration] <= convergence && 
-        #     R_p[iteration] <= convergence)
+    ProgressMeter.next!(
+        progress, showvalues = [
+            (:time, iteration*runtime.dt),
+            (:Courant, maxCourant),
+            (:Ux, R_ux[iteration]),
+            (:Uy, R_uy[iteration]),
+            (:Uz, R_uz[iteration]),
+            (:p, R_p[iteration]),
+            ]
+        )
 
-        #     print(
-        #         """
-        #         \n\n\n\n\n
-        #         Simulation converged! $iteration iterations in
-        #         """)
-        #         if !signbit(write_interval)
-        #             model2vtk(model, @sprintf "timestep_%.6d" iteration)
-        #         end
-        #     break
-        # end
-
-        # co = courant_number(U, mesh, runtime) # MUST IMPLEMENT!!!!!!
-
-        ProgressMeter.next!(
-            progress, showvalues = [
-                (:time, iteration*runtime.dt),
-                (:Courant, maxCourant),
-                (:Ux, R_ux[iteration]),
-                (:Uy, R_uy[iteration]),
-                (:Uz, R_uz[iteration]),
-                (:p, R_p[iteration]),
-                ]
-            )
-
-        if iteration%write_interval + signbit(write_interval) == 0
-            model2vtk(model, VTKMeshData, @sprintf "timestep_%.6d" iteration)
-        end
+    if iteration%write_interval + signbit(write_interval) == 0
+        model2vtk(model, VTKMeshData, @sprintf "timestep_%.6d" iteration)
+    end
 
     end # end for loop
 
@@ -331,57 +256,45 @@ end
 
 @kernel function _limit_gradient!(x, y, z, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi, maxPhi)
     cID = @index(Global)
-    # mesh = F.mesh
-    # (; cells, cell_neighbours, cell_faces, cell_nsign, faces) = mesh
 
-    # minPhi0 = maximum(F.values) # use min value so all values compared are larger
-    # maxPhi0 = minimum(F.values)
+    cell = cells[cID]
+    faces_range = cell.faces_range
+    phiP = F[cID]
 
-    # for (cID, cell) ∈ enumerate(cells)
-        cell = cells[cID]
-        # minPhi = minPhi0 # reset for next cell
-        # maxPhi = maxPhi0
+    for fi ∈ faces_range
+        nID = cell_neighbours[fi]
+        phiN = F[nID]
+        maxPhi = max(phiN, maxPhi)
+        minPhi = min(phiN, minPhi)
+    end
 
-        # find min and max values around cell
-        faces_range = cell.faces_range
-        
-        phiP = F[cID]
+    # g0 = ∇F[cID]
+    g0 = SVector{3}(x[cID] , y[cID] , z[cID])
 
-        for fi ∈ faces_range
-            nID = cell_neighbours[fi]
-            phiN = F[nID]
-            maxPhi = max(phiN, maxPhi)
-            minPhi = min(phiN, minPhi)
-        end
+    cc = cell.centre
 
-        # g0 = ∇F[cID]
-        g0 = SVector{3}(x[cID] , y[cID] , z[cID])
+    for fi ∈ faces_range 
+        fID = cell_faces[fi]
+        face = faces[fID]
+        nID = face.ownerCells[2]
+        # phiN = F[nID]
+        normal = face.normal
+        nsign = cell_nsign[fi]
+        na = nsign*normal
 
-        cc = cell.centre
-
-        for fi ∈ faces_range 
-            fID = cell_faces[fi]
-            face = faces[fID]
-            nID = face.ownerCells[2]
-            # phiN = F[nID]
-            normal = face.normal
-            nsign = cell_nsign[fi]
-            na = nsign*normal
-
-            fc = face.centre 
-            cc_fc = fc - cc
-            n0 = cc_fc/norm(cc_fc)
-            gn = g0⋅n0
-            δϕ = g0⋅cc_fc
-            gτ = g0 - gn*n0
-            if (maxPhi > phiP) && (δϕ > maxPhi - phiP)
-                g0 = gτ + na*(maxPhi - phiP)
-            elseif (minPhi < phiP) && (δϕ < minPhi - phiP)
-                g0 = gτ + na*(minPhi - phiP)
-            end            
-        end
-        x.values[cID] = g0[1]
-        y.values[cID] = g0[2]
-        z.values[cID] = g0[3]
-    # end
+        fc = face.centre 
+        cc_fc = fc - cc
+        n0 = cc_fc/norm(cc_fc)
+        gn = g0⋅n0
+        δϕ = g0⋅cc_fc
+        gτ = g0 - gn*n0
+        if (maxPhi > phiP) && (δϕ > maxPhi - phiP)
+            g0 = gτ + na*(maxPhi - phiP)
+        elseif (minPhi < phiP) && (δϕ < minPhi - phiP)
+            g0 = gτ + na*(minPhi - phiP)
+        end            
+    end
+    x.values[cID] = g0[1]
+    y.values[cID] = g0[2]
+    z.values[cID] = g0[3]
 end

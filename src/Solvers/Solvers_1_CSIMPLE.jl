@@ -79,15 +79,19 @@ function setup_compressible_solvers(
     ) → VectorEquation(mesh)
 
     if typeof(model.fluid) <: WeaklyCompressible
+
         p_eqn = (
             Laplacian{schemes.p.laplacian}(rhorDf, p) == Source(divHv)
         ) → ScalarEquation(mesh)
+
     elseif typeof(model.fluid) <: Compressible
+
         pconv = FaceScalarField(mesh)
         p_eqn = (
             Laplacian{schemes.p.laplacian}(rhorDf, p) 
             - Divergence{schemes.p.divergence}(pconv, p) == Source(divHv)
         ) → ScalarEquation(mesh)
+
     end
 
     @info "Initialising preconditioners..."
@@ -103,7 +107,7 @@ function setup_compressible_solvers(
     @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
   
     @info "Initialising energy model..."
-    energyModel = ModelPhysics.initialise(model.energy, model, mdotf, rho, p_eqn, config)
+    energyModel = initialise(model.energy, model, mdotf, rho, p_eqn, config)
 
     @info "Initialising turbulence model..."
     turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
@@ -201,20 +205,20 @@ function CSIMPLE(
     update_nueff!(nueff, nu, model.turbulence, config)
     @. mueff.values = nueff.values * rhof.values
 
-    @info "Starting SIMPLE loops..."
+    @info "Starting CSIMPLE loops..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
-    @time for iteration ∈ 1:iterations
+    for iteration ∈ 1:iterations
         time = iteration
 
         ## CHECK GRADU AND EXPLICIT STRESSES
         grad!(gradU, Uf, U, U.BCs, time, config)
 
         # Set up and solve momentum equations
-        explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU)
+        explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, config)
         div!(divmugradUTx, mugradUTx, config)
         div!(divmugradUTy, mugradUTy, config)
         div!(divmugradUTz, mugradUTz, config)
@@ -305,26 +309,28 @@ function CSIMPLE(
         end
 
         # Velocity and boundaries correction
-        correct_face_interpolation!(pf, p, Uf)
-        correct_boundaries!(pf, p, p.BCs, time, config)
-        pgrad = face_normal_gradient(p, pf)
+        # correct_face_interpolation!(pf, p, Uf) # not needed added upwind interpolation
+        # correct_boundaries!(pf, p, p.BCs, time, config)
+        # pgrad = face_normal_gradient(p, pf)
 
         if typeof(model.fluid) <: Compressible
-            @. mdotf.values += (pconv.values*(pf.values) - pgrad.values*rhorDf.values)  
+            # @. mdotf.values += (pconv.values*(pf.values) - pgrad.values*rhorDf.values)  
+            correct_mass_flux(mdotf, p, rhorDf, config)
+            @. mdotf.values += pconv.values*(pf.values)
         elseif typeof(model.fluid) <: WeaklyCompressible
-            @. mdotf.values -= pgrad.values*rhorDf.values
+            # @. mdotf.values -= pgrad.values*rhorDf.values
+            correct_mass_flux(mdotf, p, rhorDf, config)
         end
 
         correct_velocity!(U, Hv, ∇p, rD, config)
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, U.BCs, time, config)
-
         
-        # if isturbulent(model)
-            grad!(gradU, Uf, U, U.BCs, time, config)
-            turbulence!(turbulenceModel, model, S, S2, prev, time, config) 
-            update_nueff!(nueff, nu, model.turbulence, config)
-        # end
+        grad!(gradU, Uf, U, U.BCs, time, config)
+        limit_gradient && limit_gradient!(gradU, U, config)
+        turbulence!(turbulenceModel, model, S, S2, prev, time, config) 
+        update_nueff!(nueff, nu, model.turbulence, config)
+
         @. mueff.values = rhof.values*nueff.values
 
         convergence = 1e-7
@@ -335,11 +341,7 @@ function CSIMPLE(
             R_p[iteration] <= convergence &&
             R_e[iteration] <= convergence)
 
-            print(
-                """
-                \n\n\n\n\n
-                Simulation converged! $iteration iterations in
-                """)
+            @info "Simulation converged in $iteration iterations!"
                 if !signbit(write_interval)
                     model2vtk(model, VTKMeshData, @sprintf "iteration_%.6d" iteration)
                 end
@@ -367,133 +369,134 @@ function CSIMPLE(
 end
 
 
-function correct_face_interpolation!(phif::FaceScalarField, phi, Uf::FaceScalarField)
-    mesh = phif.mesh
-    (; faces, cells) = mesh
-    for fID ∈ eachindex(faces)
-        face = faces[fID]
-        (; ownerCells, area, normal) = face
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        phi1 = phi[cID1]
-        phi2 = phi[cID2]
-        flux = Uf[fID]
-        if flux >= 0.0
-            phif.values[fID] = phi1
-        else
-            phif.values[fID] = phi2
-        end
-    end
+function explicit_shear_stress!(mugradUTx::FaceScalarField, mugradUTy::FaceScalarField, mugradUTz::FaceScalarField, mueff, gradU, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    (; faces, boundary_cellsID) = mugradUTx.mesh
+
+    n_faces = length(faces)
+    n_bfaces = length(boundary_cellsID)
+    n_ifaces = n_faces - n_bfaces
+
+    kernel! = _explicit_shear_stress_internal!(backend, workgroup)
+    kernel!(
+        mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces, n_bfaces, ndrange=n_ifaces)
+    KernelAbstractions.synchronize(backend)
+
+    kernel! = _explicit_shear_stress_boundaries!(backend, workgroup)
+    kernel!(
+        mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces, ndrange=n_bfaces)
+    KernelAbstractions.synchronize(backend)
 end
 
-function correct_face_interpolation!(phif::FaceScalarField, phi, Uf)
-    mesh = phif.mesh
-    (; faces, cells) = mesh
-    for fID ∈ eachindex(faces)
-        face = faces[fID]
-        (; ownerCells, area, normal) = face
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        phi1 = phi[cID1]
-        phi2 = phi[cID2]
-        flux = area*normal⋅Uf[fID]
-        if flux > 0.0
-            phif.values[fID] = phi1
-        else
-            phif.values[fID] = phi2
-        end
-    end
+@kernel function _explicit_shear_stress_internal!(
+    mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces,n_bfaces)
+    i = @index(Global)
+
+    fID = i + n_bfaces
+    face = faces[fID]
+    (; area, normal, ownerCells) = face 
+    cID1 = ownerCells[1]
+    cID2 = ownerCells[2]
+    gradUf = 0.5*(gradU[cID1] + gradU[cID2]) # should this be the transpose of gradU?
+    gradUf_projection = gradUf*normal
+    trace = 2/3*sum(diag(gradUf))
+    mueffi = mueff[fID]
+    mugradUTx[fID] = mueffi*(gradUf_projection[1] - trace)*area
+    mugradUTy[fID] = mueffi*(gradUf_projection[2] - trace)*area
+    mugradUTz[fID] = mueffi*(gradUf_projection[3] - trace)*area
 end
 
-function face_normal_gradient(phi::ScalarField, phif::FaceScalarField)
-    mesh = phi.mesh
-    sngrad = FaceScalarField(mesh)
-    (; faces, cells) = mesh
-    nbfaces = length(mesh.boundary_cellsID) #boundary_faces(mesh)
-    start_faceID = nbfaces + 1
-    last_faceID = length(faces)
-    for fID ∈ start_faceID:last_faceID
-    # for fID ∈ eachindex(faces)
-        face = faces[fID]
-        (; area, normal, ownerCells, delta) = face 
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        cell1 = cells[cID1]
-        cell2 = cells[cID2]
-        phi1 = phi[cID1]
-        phi2 = phi[cID2]
-        face_grad = area*(phi2 - phi1)/delta
-        # face_grad = (phi2 - phi1)/delta
-        sngrad.values[fID] = face_grad
-    end
-    # # Now deal with boundary faces
-    # for fID ∈ 1:nbfaces
-    #     face = faces[fID]
-    #     (; area, normal, ownerCells, delta) = face 
-    #     cID1 = ownerCells[1]
+@kernel function _explicit_shear_stress_boundaries!(
+    mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces)
+    fID = @index(Global)
+
+    face = faces[fID]
+    (; area, normal, ownerCells) = face 
+    cID1 = ownerCells[1]
+    gradUi = gradU[cID1]
+    trace = 2/3*sum(diag(gradUi))
+    gradUi_projection = gradUi*normal
+    mueffi = mueff[fID]
+    mugradUTx[fID] = mueffi*(gradUi_projection[1] - trace)*area
+    mugradUTy[fID] = mueffi*(gradUi_projection[2] - trace)*area
+    mugradUTz[fID] = mueffi*(gradUi_projection[3] - trace)*area
+end
+
+######
+# CHRIS: Can you please review to make sure it is a faithful reimplementation? Ta!
+######
+
+# function explicit_shear_stress!(mugradUTx::FaceScalarField, mugradUTy::FaceScalarField, mugradUTz::FaceScalarField, mueff, gradU)
+#     mesh = mugradUTx.mesh
+#     (; faces, cells) = mesh
+#     nbfaces = length(mesh.boundary_cellsID) #boundary_faces(mesh)
+#     start_faceID = nbfaces + 1
+#     last_faceID = length(faces)
+#     for fID ∈ start_faceID:last_faceID
+#         face = faces[fID]
+#         (; area, normal, ownerCells, delta) = face 
+#         cID1 = ownerCells[1]
+#         cID2 = ownerCells[2]
+
+#         ## PREVIOUS IMPLEMENTATION
         
-    #     cID2 = ownerCells[2]
-    #     cell1 = cells[cID1]
-    #     cell2 = cells[cID2]
-    #     phi1 = phi[cID1]
-    #     # phi2 = phi[cID2]
-    #     phi2 = phif[fID]
-    #     face_grad = area*(phi2 - phi1)/delta
-    #     # face_grad = (phi2 - phi1)/delta
-    #     sngrad.values[fID] = face_grad
-    # end
-    return sngrad
-end
+#         # gradUxxf = 0.5*(gradU.result.xx[cID1]+gradU.result.xx[cID2])
+#         # gradUxyf = 0.5*(gradU.result.xy[cID1]+gradU.result.xy[cID2])
+#         # gradUxzf = 0.5*(gradU.result.xz[cID1]+gradU.result.xz[cID2])
+#         # gradUyxf = 0.5*(gradU.result.yx[cID1]+gradU.result.yx[cID2])
+#         # gradUyyf = 0.5*(gradU.result.yy[cID1]+gradU.result.yy[cID2])
+#         # gradUyzf = 0.5*(gradU.result.yz[cID1]+gradU.result.yz[cID2])
+#         # gradUzxf = 0.5*(gradU.result.zx[cID1]+gradU.result.zx[cID2])
+#         # gradUzyf = 0.5*(gradU.result.zy[cID1]+gradU.result.zy[cID2])
+#         # gradUzzf = 0.5*(gradU.result.zz[cID1]+gradU.result.zz[cID2])
+        
+#         # mugradUTx[fID] = mueff[fID] * (normal[1]*gradUxxf + normal[2]*gradUyxf + normal[3]*gradUzxf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
+#         # mugradUTy[fID] = mueff[fID] * (normal[1]*gradUxyf + normal[2]*gradUyyf + normal[3]*gradUzyf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
+#         # mugradUTz[fID] = mueff[fID] * (normal[1]*gradUxzf + normal[2]*gradUyzf + normal[3]*gradUzzf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
+        
+#         ## NEW IMPLEMENTATION
 
-function explicit_shear_stress!(mugradUTx::FaceScalarField, mugradUTy::FaceScalarField, mugradUTz::FaceScalarField, mueff, gradU)
-    mesh = mugradUTx.mesh
-    (; faces, cells) = mesh
-    nbfaces = length(mesh.boundary_cellsID) #boundary_faces(mesh)
-    start_faceID = nbfaces + 1
-    last_faceID = length(faces)
-    for fID ∈ start_faceID:last_faceID
-        face = faces[fID]
-        (; area, normal, ownerCells, delta) = face 
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        cell1 = cells[cID1]
-        cell2 = cells[cID2]
-        gradUxxf = 0.5*(gradU.result.xx[cID1]+gradU.result.xx[cID2])
-        gradUxyf = 0.5*(gradU.result.xy[cID1]+gradU.result.xy[cID2])
-        gradUxzf = 0.5*(gradU.result.xz[cID1]+gradU.result.xz[cID2])
-        gradUyxf = 0.5*(gradU.result.yx[cID1]+gradU.result.yx[cID2])
-        gradUyyf = 0.5*(gradU.result.yy[cID1]+gradU.result.yy[cID2])
-        gradUyzf = 0.5*(gradU.result.yz[cID1]+gradU.result.yz[cID2])
-        gradUzxf = 0.5*(gradU.result.zx[cID1]+gradU.result.zx[cID2])
-        gradUzyf = 0.5*(gradU.result.zy[cID1]+gradU.result.zy[cID2])
-        gradUzzf = 0.5*(gradU.result.zz[cID1]+gradU.result.zz[cID2])
-        mugradUTx[fID] = mueff[fID] * (normal[1]*gradUxxf + normal[2]*gradUyxf + normal[3]*gradUzxf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-        mugradUTy[fID] = mueff[fID] * (normal[1]*gradUxyf + normal[2]*gradUyyf + normal[3]*gradUzyf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-        mugradUTz[fID] = mueff[fID] * (normal[1]*gradUxzf + normal[2]*gradUyzf + normal[3]*gradUzzf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-        # mugradUTx[fID] = mueff[fID] * (normal[1]*gradUxxf + normal[2]*gradUyxf + normal[3]*gradUzxf) * area
-        # mugradUTy[fID] = mueff[fID] * (normal[1]*gradUxyf + normal[2]*gradUyyf + normal[3]*gradUzyf) * area
-        # mugradUTz[fID] = mueff[fID] * (normal[1]*gradUxzf + normal[2]*gradUyzf + normal[3]*gradUzzf) * area
-    end
+#         # gradUf = 0.5*(gradU[cID1] + gradU[cID2]) # should this be the transpose of gradU?
+#         # gradUf_projection = gradUf*normal
+#         # trace = 2/3*sum(diag(gradUf))
+#         # mueffi = mueff[fID]
+#         # mugradUTx[fID] = mueffi*(gradUf_projection[1] - trace)*area
+#         # mugradUTy[fID] = mueffi*(gradUf_projection[2] - trace)*area
+#         # mugradUTz[fID] = mueffi*(gradUf_projection[3] - trace)*area
+#     end
     
-    # Now deal with boundary faces
-    for fID ∈ 1:nbfaces
-        face = faces[fID]
-        (; area, normal, ownerCells, delta) = face 
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        cell1 = cells[cID1]
-        cell2 = cells[cID2]
-        gradUxxf = (gradU.result.xx[cID1])
-        gradUxyf = (gradU.result.xy[cID1])
-        gradUxzf = (gradU.result.xz[cID1])
-        gradUyxf = (gradU.result.yx[cID1])
-        gradUyyf = (gradU.result.yy[cID1])
-        gradUyzf = (gradU.result.yz[cID1])
-        gradUzxf = (gradU.result.zx[cID1])
-        gradUzyf = (gradU.result.zy[cID1])
-        gradUzzf = (gradU.result.zz[cID1])
-        mugradUTx[fID] = mueff[fID] * (normal[1]*gradUxxf + normal[2]*gradUyxf + normal[3]*gradUzxf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-        mugradUTy[fID] = mueff[fID] * (normal[1]*gradUxyf + normal[2]*gradUyyf + normal[3]*gradUzyf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-        mugradUTz[fID] = mueff[fID] * (normal[1]*gradUxzf + normal[2]*gradUyzf + normal[3]*gradUzzf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-    end
-end 
+#     # Now deal with boundary faces
+#     for fID ∈ 1:nbfaces
+#         face = faces[fID]
+#         (; area, normal, ownerCells, delta) = face 
+#         cID1 = ownerCells[1]
+#         cID2 = ownerCells[2]
+        
+#         ## PREVIOUS IMPLEMENTATION
+
+#         # gradUxxf = (gradU.result.xx[cID1])
+#         # gradUxyf = (gradU.result.xy[cID1])
+#         # gradUxzf = (gradU.result.xz[cID1])
+#         # gradUyxf = (gradU.result.yx[cID1])
+#         # gradUyyf = (gradU.result.yy[cID1])
+#         # gradUyzf = (gradU.result.yz[cID1])
+#         # gradUzxf = (gradU.result.zx[cID1])
+#         # gradUzyf = (gradU.result.zy[cID1])
+#         # gradUzzf = (gradU.result.zz[cID1])
+#         # mugradUTx[fID] = mueff[fID] * (normal[1]*gradUxxf + normal[2]*gradUyxf + normal[3]*gradUzxf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
+#         # mugradUTy[fID] = mueff[fID] * (normal[1]*gradUxyf + normal[2]*gradUyyf + normal[3]*gradUzyf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
+#         # mugradUTz[fID] = mueff[fID] * (normal[1]*gradUxzf + normal[2]*gradUyzf + normal[3]*gradUzzf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
+
+#         ## NEW IMPLEMENTATION
+
+#         # gradUi = gradU[cID1]
+#         # trace = 2/3*sum(diag(gradUi))
+#         # gradUi_projection = gradUi*normal
+#         # mueffi = mueff[fID]
+#         # mugradUTx[fID] = mueffi*(gradUi_projection[1] - trace)*area
+#         # mugradUTy[fID] = mueffi*(gradUi_projection[2] - trace)*area
+#         # mugradUTz[fID] = mueffi*(gradUi_projection[3] - trace)*area
+#     end
+# end 

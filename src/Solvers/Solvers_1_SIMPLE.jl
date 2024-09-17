@@ -226,16 +226,14 @@ function SIMPLE(
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, U.BCs, time, config)
         flux!(mdotf, Uf, config)
-        correct_mass_flux(mdotf, p, pf, rDf, config)
+        correct_mass_flux(mdotf, p, rDf, config)
         # correct_mass_flux2(mdotf, p_eqn, p, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
-        # if isturbulent(model)
-            grad!(gradU, Uf, U, U.BCs, time, config)
-            limit_gradient && limit_gradient!(gradU, U, config)
-            turbulence!(turbulenceModel, model, S, S2, prev, time, config) 
-            update_nueff!(nueff, nu, model.turbulence, config)
-        # end
+        grad!(gradU, Uf, U, U.BCs, time, config)
+        limit_gradient && limit_gradient!(gradU, U, config)
+        turbulence!(turbulenceModel, model, S, S2, prev, time, config) 
+        update_nueff!(nueff, nu, model.turbulence, config)
         
         convergence = 1e-7
 
@@ -388,7 +386,7 @@ end
 
 ### TEMP LOCATION FOR PROTOTYPING
 
-function correct_mass_flux(mdotf, p, pf, rDf, config)
+function correct_mass_flux(mdotf, p, rDf, config)
     # sngrad = FaceScalarField(mesh)
     (; faces, cells, boundary_cellsID) = mdotf.mesh
     (; hardware) = config

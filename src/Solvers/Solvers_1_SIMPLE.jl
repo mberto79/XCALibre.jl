@@ -276,7 +276,6 @@ end
 ### TEMP LOCATION FOR PROTOTYPING - NONORTHOGONAL CORRECTION 
 
 function nonorthogonal_face_correction(eqn, grad, flux, config)
-    # nothing # do loop over faces and add contribution to ownerCells in one go! NIIIICE!
     mesh = grad.mesh
     (; faces, cells, boundary_cellsID) = mesh
 
@@ -297,31 +296,26 @@ end
 @kernel function _nonorthogonal_face_correction(b, grad, flux, faces, cells, n_bfaces)
     i = @index(Global)
     fID = i + n_bfaces
-    # for fID ∈ (n_bfaces + 1):n_faces
-        face = faces[fID]
-        # (; ownerCells, weight, area, normal, e, delta) = face
-        (; ownerCells, area, normal, e, delta) = face
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        cell1 = cells[cID1]
-        cell2 = cells[cID2]
-        # gradf = weight*grad[cID1] + (1 - weight)*grad[cID2]
-        # T_hat = normal - (1/(normal⋅e))*e
-        # faceCorrection = area*flux[fID]*gradf⋅T_hat
+    face = faces[fID]
+    (; ownerCells, area, normal, e, delta) = face
+    cID1 = ownerCells[1]
+    cID2 = ownerCells[2]
+    # cell1 = cells[cID1]
+    # cell2 = cells[cID2]
 
-        (; values) = grad.field
-        w, df = weight(cells, faces, fID)
-        gradi = w*grad[cID1] + (1 - w)*grad[cID2]
-        gradf = gradi + ((values[cID2] - values[cID1])/delta - (gradi⋅e))*e
+    (; values) = grad.field
+    w, df = weight(cells, faces, fID)
+    gradi = w*grad[cID1] + (1 - w)*grad[cID2]
+    gradf = gradi + ((values[cID2] - values[cID1])/delta - (gradi⋅e))*e
 
 
-        Sf = area*normal
-        Ef = ((Sf⋅Sf)/(Sf⋅e))*e
-        T_hat = Sf - Ef
-        faceCorrection = flux[fID]*gradf⋅T_hat
+    Sf = area*normal
+    Ef = ((Sf⋅Sf)/(Sf⋅e))*e
+    T_hat = Sf - Ef
+    faceCorrection = flux[fID]*gradf⋅T_hat
 
-        Atomix.@atomic b[cID1] -= faceCorrection#*cell1.volume
-        Atomix.@atomic b[cID2] += faceCorrection#*cell2.volume # should this be -ve?
+    Atomix.@atomic b[cID1] -= faceCorrection#*cell1.volume
+    Atomix.@atomic b[cID2] += faceCorrection#*cell2.volume # should this be -ve?
         
 end
 
@@ -338,50 +332,6 @@ function weight(cells, faces, fi)
     w = norm(c2 - f_prime)/norm(c2 - c1)
     df = centre - f_prime
     return w, df
-end
-
-function nonorthogonal_correction(grad, flux, config)
-    mesh = grad.mesh
-    (; faces, cells, boundary_cellsID) = mesh
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-    
-    n_faces = length(faces)
-    n_bfaces = length(boundary_cellsID)
-    n_ifaces = n_faces - n_bfaces + 1
-
-    corr = FaceScalarField(mesh)
-
-    for fID ∈ (n_bfaces + 1):n_faces
-        face = faces[fID]
-        (; ownerCells, weight, area, normal, e) = face
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        gradf = weight*grad[cID1] + (1 - weight)*grad[cID2]
-        T_hat = normal - (1/(normal⋅e))*e
-        corr[fID] = area*flux[fID]*gradf⋅T_hat
-    end
-    return corr
-end
-
-function nonorthogonal_source_correction(corr)
-    mesh = corr.mesh
-    (; cells, cell_faces, cell_nsign) = mesh
-
-    source_corr = ScalarField(mesh)
-    for cID ∈ eachindex(cells)
-        cell = cells[cID]
-        faces_range = cell.faces_range
-        sum = 0.0
-        for fi ∈ faces_range
-            fID = cell_faces[fi]
-            nsign = cell_nsign[fi]
-            sum += corr[fID]*nsign
-        end
-    source_corr[cID] = sum#*cell.volume
-    end
-
-    return source_corr
 end
 
 ### TEMP LOCATION FOR PROTOTYPING
@@ -416,50 +366,3 @@ end
         mdotf[fID] -= face_grad*rDf[fID]
     end
 end
-
-
-# correct mass flux version 2
-function correct_mass_flux2(mdotf, p_eqn, p, config)
-    # sngrad = FaceScalarField(mesh)
-    (; faces, cells, boundary_cellsID) = mdotf.mesh
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-
-    # Sparse array fields accessors
-    A = _A(p_eqn)
-    nzval = _nzval(A)
-    rowval = _rowval(A)
-    colptr = _colptr(A)
-
-    n_faces = length(faces)
-    n_bfaces = length(boundary_cellsID)
-    n_ifaces = n_faces - n_bfaces #+ 1
-
-    kernel! = _correct_mass_flux2(backend, workgroup)
-    kernel!(mdotf, p, nzval, rowval, colptr, faces, cells, n_bfaces, ndrange=length(n_ifaces))
-    KernelAbstractions.synchronize(backend)
-end
-
-@kernel function _correct_mass_flux2(mdotf, p, nzval, rowval, colptr, faces, cells, n_bfaces)
-    i = @index(Global)
-    fID = i + n_bfaces
-
-    @inbounds begin 
-        face = faces[fID]
-        (; area, normal, ownerCells, delta) = face 
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        p1 = p[cID1]
-        p2 = p[cID2]
-        # cIndex = spindex(colptr, rowval, cID1, cID1)
-        n1Index = spindex(colptr, rowval, cID1, cID2)
-        n2Index = spindex(colptr, rowval, cID2, cID1)
-        coeff1 = nzval[n1Index]
-        coeff2 = nzval[n2Index]
-        # face_grad = coeff*(p2 - p1) # best option so far!
-        # face_grad = coeff1*p1 - coeff2*p2 # best option so far!
-        face_grad =  coeff2*p2 - coeff1*p1# best option so far!
-        mdotf[fID] -= face_grad
-    end
-end
-

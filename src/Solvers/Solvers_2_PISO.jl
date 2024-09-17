@@ -206,6 +206,8 @@ function PISO(
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end
 
+### GRADIENT LIMITER - EXPERIMENTAL
+
 function limit_gradient!(∇F, F, config)
     (; hardware) = config
     (; backend, workgroup) = hardware

@@ -3,7 +3,7 @@ export Symmetry
 """
     Symmetry <: AbstractBoundary
 
-Symmetry boundary condition model for velocity and scalar field.
+Symmetry boundary condition vector fields. For scalar fields use `Neumann`
 
 ### Fields
 - 'ID' -- Boundary ID

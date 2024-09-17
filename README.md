@@ -12,13 +12,13 @@
 *XPU CFD Algorithms and libraries*
 
 ## What is XCALibre.jl?
----
+
 
 XCALibre.jl (pronounced as the mythical sword *Excalibur*) is a general purpose Computational Fluid Dynamics (CFD) library for 2D and 3D simulations on structured/unstructured grids using the finite volume method. XCALibre.jl has been designed to act as a platform for developing, testing and using *XPU CFD Algorithms and Libraries* to give researchers in both academia and industry alike a tool that can be used to test out ideas easily within a framework that offers acceptable performance. To this end, XCALibre.jl has been implemented to offer both CPU multi-threaded capabilities or GPU acceleration using the same codebase (thanks to the unified programming framework provided by [KernelAbstractions.jl](https://juliagpu.github.io/KernelAbstractions.jl/stable/)). Additionally, XCALibre.jl also offers a friendly API for those users who are interested in running CFD simulations with the existing solvers and models built into XCALibre.jl. 
 
 
 ## Installation
----
+
 
 First, you need to [download and install Julia in your system](https://julialang.org/downloads/). Once you have a working installation of Julia, XCALibre.jl can be installed using the built in package manager. 
 
@@ -41,7 +41,7 @@ pkg> add XCALibre
 ```
 
 ## Main features
----
+
 
 * Multiple backends as supported by [KernelAbstractions.jl](https://juliagpu.github.io/KernelAbstractions.jl/stable/)
 * Ability to import *.unv* and OpenFOAM grids
@@ -68,7 +68,7 @@ U_eqn = (
 ```
 
 ## Main dependencies
----
+
 
 XCALibre.jl is possible (and relies) on the functionality provided by other packages in the Julia ecosystem. For a full list of direct dependencies please refer to the Project.toml file included with this repository. We are thankful to the teams that have helped develop and maintain every single of our dependencies. Major functionally is provided by the following:
 
@@ -79,7 +79,7 @@ XCALibre.jl is possible (and relies) on the functionality provided by other pack
 * CUDA.jl, AMD.jl, Metal.jl and OneAPI.jl - not direct dependencies but packages enable GPU usage in Julia
 
 ## Related projects
----
+
 
 There are other wonderful fluid simulation packages available in the Julia ecosystem (please let us know if we missed any):
 

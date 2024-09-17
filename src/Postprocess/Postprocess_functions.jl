@@ -64,6 +64,7 @@ viscous_force(patch::Symbol, U::VectorField, rho, ν, νt) = begin
     for i ∈ 1:nboundaries
         if ID == U.BCs[i].ID
         surface_normal_gradient!(snGrad, U, U.BCs[i].value, IDs_range)
+        
         end
     end
     sumx, sumy, sumz = 0.0, 0.0, 0.0, 0.0
@@ -144,40 +145,47 @@ function boundary_average(patch::Symbol, field, config; time=0)
 end
 
 ########### Must update
-# wall_shear_stress(patch::Symbol, model::RANS{M,F1,F2,V,T,E,D}) where {M,F1,F2,V,T,E,D} = begin
-#     # Line below needs to change to do selection based on nut BC
-#     M == Laminar ? nut = ConstantScalar(0.0) : nut = model.turbulence.nut
-#     (; mesh, U, nu) = model
-#     (; boundaries, faces) = mesh
-#     ID = boundary_index(boundaries, patch)
-#     boundary = boundaries[ID]
-#     (; facesID, cellsID) = boundary
-#     @info "calculating viscous forces on patch: $patch at index $ID"
-#     x = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
-#     y = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
-#     z = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
-#     tauw = FaceVectorField(x,y,z, mesh)
-#     Uw = zero(_get_float(mesh))
-#     for i ∈ 1:length(U.BCs)
-#         if ID == U.BCs[i].ID
-#             Uw = U.BCs[i].value
-#         end
-#     end
-#     surface_normal_gradient(tauw, facesID, cellsID, U, Uw)
-#     pos = fill(SVector{3,Float64}(0,0,0), length(facesID))
-#     for i ∈ eachindex(tauw)
-#         fID = facesID[i]
-#         cID = cellsID[i]
-#         face = faces[fID]
-#         nueff = nu[cID]  + nut[cID]
-#         tauw.x[i] *= nueff # this may need using νtf? (wall funcs)
-#         tauw.y[i] *= nueff
-#         tauw.z[i] *= nueff
-#         pos[i] = face.centre
-#     end
+wall_shear_stress(patch::Symbol, model)  = begin
+    # Line below needs to change to do selection based on nut BC
+    turbulence = model.turbulence
+
+    typeof(turbulence) <: RANS{Laminar} ? nut = ConstantScalar(0.0) : nut = model.turbulence.nut
+    mesh = model.domain
+    (; nu) = model.fluid
+    (; U) = model.momentum
+    (; boundaries, boundary_cellsID, faces) = mesh
+    ID = boundary_index(boundaries, patch)
+    boundary = boundaries[ID]
+    (; IDs_range) = boundary
+    @info "calculating viscous forces on patch: $patch at index $ID"
+    x = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
+    y = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
+    z = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
+    tauw = FaceVectorField(x,y,z, mesh)
+    Uw = zero(_get_float(mesh))
+    for i ∈ 1:length(U.BCs)
+        if ID == U.BCs[i].ID
+            Uw = U.BCs[i].value
+            surface_normal_gradient!(tauw, U, U.BCs[i].value, IDs_range)
+        end
+    end
+
+    pos = fill(SVector{3,Float64}(0,0,0), length(IDs_range))
+    for i ∈ eachindex(tauw)
+        # fID = facesID[i]
+        # cID = cellsID[i]
+        fID = IDs_range[i]
+        cID = boundary_cellsID[fID]
+        face = faces[fID]
+        nueff = nu[cID]  + nut[cID]
+        tauw.x[i] *= nueff # this may need using νtf? (wall funcs)
+        tauw.y[i] *= nueff
+        tauw.z[i] *= nueff
+        pos[i] = face.centre
+    end
     
-#     return tauw, pos
-# end
+    return tauw, pos
+end
 
 stress_tensor(U, ν, νt, config) = begin
     mesh = U.mesh
@@ -186,12 +194,13 @@ stress_tensor(U, ν, νt, config) = begin
     gradUT = T(gradU)
     Uf = FaceVectorField(U.mesh)
     grad!(gradU, Uf, U, U.BCs, zero(TF), config) # assuming time=0
-    grad!(gradU, Uf, U, U.BCs, time, config)
+    # grad!(gradU, Uf, U, U.BCs, , config)
     nueff = ScalarField(U.mesh) # temp variable
     nueff.values .= ν .+ νt.values
     Reff = TensorField(U.mesh)
     for i ∈ eachindex(Reff)
         Reff[i] = -nueff[i].*(gradU[i] .+ gradUT[i])
+        # Reff[i] = -nueff[i].*(gradU[i])# .+ gradUT[i])
     end
     return Reff
 end

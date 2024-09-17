@@ -1,11 +1,9 @@
-using Plots
-
 using XCALibre
 
-using Krylov
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "flatplate_2D_laminar.unv"
 
-# backwardFacingStep_2mm, backwardFacingStep_10mm
-mesh_file = "unv_sample_meshes/flatplate_2D_laminar.unv"
+mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 # mesh_dev = adapt(CUDABackend(), mesh)
@@ -117,9 +115,3 @@ residuals = run!(model, config) # 9.39k allocs
 # plot!(Rex, Cf, color=:red, ylims=(0, 0.05), xlims=(0,2e4), label="Blasius",lw=1.5)
 # plot!(oRex, oCf, color=:green, lw=1.5, label="OpenFOAM")
 # plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code")
-
-plot(; xlims=(0,1000))
-plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p")
-plot!(1:length(Re), Re, yscale=:log10, label="h")

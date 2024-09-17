@@ -2,7 +2,10 @@ using XCALibre
 # using CUDA
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
-mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "backwardFacingStep_5mm.unv"
+
+mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 # mesh_dev = adapt(CUDABackend(), mesh)
@@ -26,8 +29,8 @@ model = Physics(
     # Dirichlet(:wall, [0.0, 0.0, 0.0]),
     # Dirichlet(:top, [0.0, 0.0, 0.0]),
     Wall(:wall, [0.0, 0.0, 0.0]),
-    Wall(:top, [0.0, 0.0, 0.0])
-    # Symmetry(:top, 0.0)
+    # Wall(:top, [0.0, 0.0, 0.0])
+    Symmetry(:top)
 )
 
 @assign! model momentum p (
@@ -67,7 +70,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=4000, time_step=1, write_interval=4000)
+    iterations=1000, time_step=1, write_interval=1000)
     # iterations=1, time_step=1, write_interval=1)
 
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
@@ -81,5 +84,5 @@ GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config; ncorrectors=0); # 9.39k allocs in 184 iterations
+residuals = run!(model, config)
 

@@ -3,56 +3,44 @@ using Test
 
 TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
 
-@testset "Mesh conversion" begin
-    include("test_mesh_conversion.jl")
-end
+@testset "Functionality tests" begin
 
-@testset "Incompressible (steady)" begin
-    test_name = "2d_incompressible_laminar_BFSjl.jl"
-    test_file = joinpath(TEST_CASES_DIR, test_name)
-    include(test_file)
+    @testset "Mesh conversion" begin
+        include("test_mesh_conversion.jl")
+    end
 
-    test_name = "2d_incompressible_flatplate_KOmega_lowRe.jl"
-    test_file = joinpath(TEST_CASES_DIR, test_name)
-    include(test_file)
+    @testset "Incompressible" begin
 
-    test_name = "2d_incompressible_flatplate_KOmega_HighRe.jl"
-    test_file = joinpath(TEST_CASES_DIR, test_name)
-    include(test_file)
-end
+        test_files = [
+            "2d_incompressible_laminar_BFS.jl",
+            "2d_incompressible_flatplate_KOmega_lowRe.jl",
+            "2d_incompressible_flatplate_KOmega_HighRe.jl",
+            "3d_incompressible_laminar_BFS.jl",
+            "3d_incompressible_laminar_cascade_periodic.jl",
+            "2d_incompressible_transient_laminar_BFS.jl",
+            "2d_incompressible_transient_KOmega_BFS_lowRe.jl"
+        ]
 
-@testset "Gradient schemes" begin
-    # Write your own tests here.
-    @test 2 + 2 == 4
-    @test 2 + 2 == 4
-    @test 2 + 2 == 4
-end
+        for test ∈ test_files
+            test_path = joinpath(TEST_CASES_DIR, test)
+            include(test_path)
+        end
+    end
 
-@testset "Upwind schemes" begin
-    # Write your own tests here.
-    @test 2 + 2 == 4
-    @test 2 + 2 == 4
-    @test 2 + 2 == 4
-end
+    @testset "Compressible" begin
+        test_files = [
+            "2d_compressible_KOmega_flatplate_fixedT.jl",
+            "2d_compressible_laminar_flatplate_fixedT.jl",
+            "2d_compressible_transient_laminar_heated_cylinder.jl"
+        ]
 
+        for test ∈ test_files
+            test_path = joinpath(TEST_CASES_DIR, test)
+            include(test_path)
+        end
+    end
 
+    foreach(rm, filter(endswith(".vtk"), readdir(pwd(), join=true)))
+    foreach(rm, filter(endswith(".vtu"), readdir(pwd(), join=true)))
 
-@testset "Incompressible (transient)" begin
-    # Write your own tests here.
-    @test 2 + 2 == 4
-end
-
-@testset "Compressible (steady)" begin
-    # Write your own tests here.
-    @test 2 + 2 == 4
-end
-
-@testset "Compressible (transient)" begin
-    # Write your own tests here.
-    @test 2 + 2 == 4
-end
-
-@testset "Boundary conditions" begin
-    # Write your own tests here.
-    @test 2 + 2 == 4
-end
+end # end "functionality test"

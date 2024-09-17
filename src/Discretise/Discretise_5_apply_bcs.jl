@@ -41,7 +41,6 @@ function _apply_boundary_conditions!(
         # update user defined boundary storage (if needed)
         update_user_boundary!(BC, faces, cells, facesID_range, time, config)
         
-
         # Execute apply boundary conditions kernel
         kernel_range = length(facesID_range)
         kernel! = apply_boundary_conditions_kernel!(backend, workgroup, kernel_range)

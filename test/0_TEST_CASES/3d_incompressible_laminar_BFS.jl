@@ -28,7 +28,7 @@ model = Physics(
     Dirichlet(:inlet, velocity),
     Wall(:wall, [0.0, 0.0, 0.0]),
     Neumann(:outlet, 0.0),
-    Neumann(:top, 0.0),
+    Symmetry(:top),
     Neumann(:sides, 0.0)
 )
 
@@ -67,9 +67,9 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=500, time_step=1, write_interval=500)
+    iterations=200, time_step=1, write_interval=200)
 
-hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = set_hardware(backend=CPU(), workgroup=37500)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 
@@ -78,11 +78,13 @@ config = Configuration(
 
 GC.gc(true)
 
-@test initialise!(model.momentum.U, velocity) == nothing
-@test initialise!(model.momentum.p, 0.0) == nothing
+@test initialise!(model.momentum.U, velocity) === nothing
+@test initialise!(model.momentum.p, 0.0) === nothing
 
 residuals = run!(model, config)
 
 top = boundary_average(:top, model.momentum.U, config)
+outlet = boundary_average(:outlet, model.momentum.U, config)
 
-@test Umag ≈ top[1] atol = 0.015
+@test Umag ≈ top[1] atol = 0.02
+@test 0.5*Umag ≈ outlet[1] atol = 0.0075

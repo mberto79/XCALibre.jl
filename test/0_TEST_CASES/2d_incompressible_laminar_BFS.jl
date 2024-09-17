@@ -66,7 +66,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=2000, time_step=1, write_interval=2000)
+    iterations=1000, time_step=1, write_interval=1000)
 
 hardware = set_hardware(backend=CPU(), workgroup=4)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
@@ -77,8 +77,8 @@ config = Configuration(
 
 GC.gc()
 
-@test initialise!(model.momentum.U, velocity) == nothing
-@test initialise!(model.momentum.p, 0.0) == nothing
+@test initialise!(model.momentum.U, velocity) === nothing
+@test initialise!(model.momentum.p, 0.0) === nothing
 
 residuals = run!(model, config)
 

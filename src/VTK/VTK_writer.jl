@@ -1,25 +1,9 @@
-export write_vtk, model2vtk
+export write_vtk #, model2vtk
+export copy_to_cpu
 
-function model2vtk(model::RANS{Laminar,F1,F2,V,T,E,D}, name) where {F1,F2,V,T,E,D}
-    args = (
-        ("U", model.U), 
-        ("p", model.p)
-    )
-    write_vtk(name, model.mesh, args...)
-end
+initialise_writer(mesh::Mesh2) = VTKWriter2D(nothing, nothing)
 
-function model2vtk(model::RANS{KOmega,F1,F2,V,T,E,D}, name) where {F1,F2,V,T,E,D}
-    args = (
-        ("U", model.U), 
-        ("p", model.p),
-        ("k", model.turbulence.k),
-        ("omega", model.turbulence.omega),
-        ("nut", model.turbulence.nut)
-    )
-    write_vtk(name, model.mesh, args...)
-end
-
-function write_vtk(name, mesh, args...) #, Ux, Uy, Uz, p)
+function write_vtk(name, mesh, meshData::VTKWriter2D, args...) #, Ux, Uy, Uz, p)
     # UxNodes = FVM.NodeScalarField(Ux)
     # UyNodes = FVM.NodeScalarField(Uy)
     # UzNodes = FVM.NodeScalarField(Uz)
@@ -32,30 +16,34 @@ function write_vtk(name, mesh, args...) #, Ux, Uy, Uz, p)
     filename = name*".vtk"
     open(filename, "w") do io
         write(io, "# vtk DataFile Version 3.0\n")
-        write(io, "jCFD simulation data\n")
+        write(io, "XCALibre.jl simulation data\n")
         write(io, "ASCII\n")
         write(io, "DATASET UNSTRUCTURED_GRID\n")
         nPoints = length(mesh.nodes)
         nCells = length(mesh.cells)
         write(io, "POINTS $(nPoints) double\n")
-        for node ∈ mesh.nodes
+
+        backend = _get_backend(mesh)
+        nodes_cpu, cells_cpu, cell_nodes_cpu = copy_to_cpu(mesh.nodes, mesh.cells, mesh.cell_nodes, backend)
+
+        for node ∈ nodes_cpu
             (; coords) = node
             println(io, coords[1]," ", coords[2]," ", coords[3])
         end
         sumIndeces = 0
-        for cell ∈ mesh.cells
+        for cell ∈ cells_cpu
             # sumIndeces += length(cell.nodesID)
             sumIndeces += length(cell.nodes_range)
         end
         cellListSize = sumIndeces + nCells
         write(io, "CELLS $(nCells) $(cellListSize)\n")
-        for cell ∈ mesh.cells
+        for cell ∈ cells_cpu
             # nNodes = length(cell.nodesID)
             nNodes = length(cell.nodes_range)
             nodes = ""
             # for nodeID ∈ cell.nodesID 
             for ni ∈ cell.nodes_range 
-                nodeID = cell_nodes[ni]
+                nodeID = cell_nodes_cpu[ni]
                 node = "$(nodeID-1)"
                 nodes = nodes*" "*node
             end 
@@ -64,7 +52,7 @@ function write_vtk(name, mesh, args...) #, Ux, Uy, Uz, p)
 
         write(io, "CELL_TYPES $(nCells)\n")
 
-        for cell ∈ mesh.cells
+        for cell ∈ cells_cpu
             # nCellIDs = length(cell.nodesID)
             nCellIDs = length(cell.nodes_range)
             if nCellIDs == 3
@@ -86,13 +74,15 @@ function write_vtk(name, mesh, args...) #, Ux, Uy, Uz, p)
             if field_type <: ScalarField
                 write(io, "SCALARS $(label) double 1\n")
                 write(io, "LOOKUP_TABLE CellColors\n")
-                for value ∈ field.values
+                values_cpu = copy_scalarfield_to_cpu(field.values, backend)
+                for value ∈ values_cpu
                     println(io, value)
                 end
             elseif field_type <: VectorField
                 write(io, "VECTORS $(label) double\n")
-                for i ∈ eachindex(field.x)
-                    println(io, field.x[i]," ",field.y[i] ," ",field.z[i] )
+                x_cpu, y_cpu, z_cpu = copy_to_cpu(field.x.values, field.y.values, field.z.values, backend)
+                for i ∈ eachindex(x_cpu)
+                    println(io, x_cpu[i]," ",y_cpu[i] ," ",z_cpu[i] )
                 end
             else
                 throw("""
@@ -114,4 +104,34 @@ function write_vtk(name, mesh, args...) #, Ux, Uy, Uz, p)
         # # Boundary information
         # # to be implemented
     end
+end
+
+function copy_scalarfield_to_cpu(a, backend::KernelAbstractions.GPU)
+    a_cpu = Array{eltype(a)}(undef, length(a))
+    
+    copyto!(a_cpu, a)
+    return a_cpu
+end
+
+function copy_scalarfield_to_cpu(a, backend::KernelAbstractions.CPU)
+    a_cpu = a
+    return a_cpu
+end
+
+function copy_to_cpu(a, b, c, backend::KernelAbstractions.GPU)
+    a_cpu = Array{eltype(a)}(undef, length(a))
+    b_cpu = Array{eltype(b)}(undef, length(b))
+    c_cpu = Array{eltype(c)}(undef, length(c))
+    
+    copyto!(a_cpu, a)
+    copyto!(b_cpu, b)
+    copyto!(c_cpu, c)
+    return a_cpu, b_cpu, c_cpu
+end
+
+function copy_to_cpu(a, b, c, backend::KernelAbstractions.CPU)
+    a_cpu = a
+    b_cpu = b
+    c_cpu = c
+    return a_cpu, b_cpu, c_cpu
 end

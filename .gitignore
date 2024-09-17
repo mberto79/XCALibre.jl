@@ -1,6 +1,12 @@
 Manifest.toml
+test/Manifest.toml
+docs/build/*
+docs/Manifest
+.vscode/*
 data/mesh.jld2
 data/fields.jld2
 results.vtk
 unv_sample_meshes/*
 *.vtk
+*.vtu
+*.pb.gz

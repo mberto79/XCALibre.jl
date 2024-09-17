@@ -3,61 +3,29 @@ export nonorthogonal_flux!
 
 ### Non-orthogonality correction (Laplacian terms)
 
-function correct!(eqn::Equation{I,F}, term, corr_flux::FaceScalarField{I,F}) where {I,F}
-    # function correct!(b, term, non_flux::FaceScalarField{I,F}) where {I,F}
-        sign = term.sign[1]
-        J = term.J
-        mesh = corr_flux.mesh
-        (; faces, cells) = mesh
-        (; b) = eqn 
-        (; values) = corr_flux
-        for fID ∈ eachindex(faces)
-            face = faces[fID]
-            owners = face.ownerCells
-            cell1 = owners[1]
-            cell2 = owners[2]
-            correction = -sign*J(fID)*values[fID]
-            b[cell1] += correction          # normal aligns with cell1
-            b[cell2] += correction*(-1.0)   # correct normal for cell2
-        end
-        # nbfaces = total_boundary_faces(mesh)
-        # for fi ∈ 1:nbfaces
-        #     face = faces[fi]
-        #     cID = face.ownerCells[1]
-        #     b[cID] += -sign*J*corr_flux.values[fi]
-        # end
+function correct!(eqn::ScalarEquation{I,F}, term, corr_flux::FaceScalarField{I,F}) where {I,F}
+    sign = term.sign[1]
+    J = term.J
+    mesh = corr_flux.mesh
+    (; faces, cells) = mesh
+    (; b) = eqn 
+    (; values) = corr_flux
+    for fID ∈ eachindex(faces)
+        face = faces[fID]
+        owners = face.ownerCells
+        cell1 = owners[1]
+        cell2 = owners[2]
+        correction = -sign*J(fID)*values[fID]
+        b[cell1] += correction          # normal aligns with cell1
+        b[cell2] += correction*(-1.0)   # correct normal for cell2
     end
-
-# function correct!(eqn::Equation{I,F}, term, non_flux::FaceScalarField{I,F}) where {I,F}
-# # function correct!(b, term, non_flux::FaceScalarField{I,F}) where {I,F}
-#     sign = term.sign[1]
-#     J = term.J
-#     mesh = non_flux.mesh
-#     (; faces, cells) = mesh
-#     (; b) = eqn 
-#     for ci ∈ eachindex(cells)
-#         #cell stuff
-#         cell = cells[ci]
-#         (; facesID, nsign) = cell
-#         for fi ∈ eachindex(facesID)
-#             # face stuff
-#             fID = facesID[fi]
-#             b[ci] += -sign*J*non_flux.values[fID]*nsign[fi]
-#         end
-#     end
-#     nbfaces = total_boundary_faces(mesh)
-#     for fi ∈ 1:nbfaces
-#         face = faces[fi]
-#         cID = face.ownerCells[1]
-#         b[cID] += -sign*J*non_flux.values[fi]
-#     end
-# end
+end
 
 function nonorthogonal_correction!(
     tgrad::Grad{S,I,F}, gradf::FaceVectorField{I,F}, phif::FaceScalarField{I,F}, BCs
     ) where {S,I,F}
     (; phi) = tgrad
-    grad!(tgrad, phif, phi, BCs)
+    grad!(tgrad, phif, phi, time, BCs)
     interpolate!(get_scheme(tgrad), gradf, tgrad, BCs)
     nonorthogonal_flux!(phif, gradf)
 end

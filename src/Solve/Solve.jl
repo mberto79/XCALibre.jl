@@ -1,20 +1,24 @@
 module Solve
 
+using Adapt
 using Krylov
-using LoopVectorization
 using LinearAlgebra
+using Statistics
 using SparseArrays
 using LinearOperators
-# using ILUZero
+using LDLFactorizations
+using KernelAbstractions
+using Atomix
+using ILUZero
 
-using FVM_1D.Mesh
-using FVM_1D.Fields
-using FVM_1D.ModelFramework
-using FVM_1D.Discretise
+using XCALibre.Mesh
+using XCALibre.Fields
+using XCALibre.ModelFramework
+using XCALibre.Discretise
 
 using Reexport
 
-@reexport using ILUZero
+# @reexport using ILUZero
 
 
 include("Preconditioners/Preconditioners.jl")

@@ -6,12 +6,12 @@ using IncompleteLU
 using Krylov
 
 
-using FVM_1D.Mesh2D
-using FVM_1D.Plotting
-using FVM_1D.Discretise
-using FVM_1D.Calculate
-using FVM_1D.Models
-using FVM_1D.Solvers
+using XCALibre.Mesh2D
+using XCALibre.Plotting
+using XCALibre.Discretise
+using XCALibre.Calculate
+using XCALibre.Models
+using XCALibre.Solvers
 
 function generate_mesh()
     n_vertical      = 400 #200 #200
@@ -295,7 +295,7 @@ system.x .= 0.0
 phi.values .= 0.0
 
 @time for i ∈ 1:500
-    solve!(system, opA, equation.b, phi.values; M=opP, itmax=100, atol=1e-12, rtol=1e-2)
+    solve_system!(system, opA, equation.b, phi.values; M=opP, itmax=100, atol=1e-12, rtol=1e-2)
     relax!(phi, system, 1.0)
     update_residual!(equation, opA, phi)
     if residual(equation) <= 1e-6

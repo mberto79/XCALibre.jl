@@ -1,12 +1,15 @@
-export AbstractOperator, AbstractSource   
+export AbstractOperator, AbstractSource, AbstractEquation   
 export Operator, Source, Src
 export Time, Laplacian, Divergence, Si
-export Model, Equation, ModelEquation
+export Model, ScalarEquation, VectorEquation, ModelEquation, ScalarModel, VectorModel
+export nzval_index
+export spindex
 
 # ABSTRACT TYPES 
 
 abstract type AbstractSource end
 abstract type AbstractOperator end
+abstract type AbstractEquation end
 
 # OPERATORS
 
@@ -18,13 +21,29 @@ struct Operator{F,P,S,T} <: AbstractOperator
     sign::S
     type::T
 end
+Adapt.@adapt_structure Operator
 
 # operators
 
 struct Time{T} end
-struct Laplacian{T}  end
+function Adapt.adapt_structure(to, itp::Time{T}) where {T}
+    Time{T}()
+end
+
+struct Laplacian{T} end
+function Adapt.adapt_structure(to, itp::Laplacian{T}) where {T}
+    Laplacian{T}()
+end
+
 struct Divergence{T} end
+function Adapt.adapt_structure(to, itp::Divergence{T}) where {T}
+    Divergence{T}()
+end
+
 struct Si end
+function Adapt.adapt_structure(to, itp::Si)
+    Si()
+end
 
 # constructors
 
@@ -51,69 +70,98 @@ Si(flux, phi) = Operator(
 # SOURCES
 
 # Base Source
-struct Src{F,S,T} <: AbstractSource
+struct Src{F,S} <: AbstractSource
     field::F 
     sign::S 
-    type::T
+    # type::T
 end
+Adapt.@adapt_structure Src
 
 # Source types
 
 struct Source end
-
-Source(f::T) where T = Src(f, 1, typeof(f))
-# Source(f::ScalarField) = Src(f.values, 1, typeof(f))
-# Source(f::Number) = Src(f.values, 1, typeof(f)) # To implement!!
+Adapt.@adapt_structure Source
+Source(f::T) where T = Src(f, 1)
 
 # MODEL TYPE
-struct Model{T,S,TN,SN}
-    # equation::E
+struct Model{TN,SN,T,S}
     terms::T
     sources::S
 end
-Model{TN,SN}(terms::T, sources::S) where {T,S,TN,SN} = begin
-    Model{T,S,TN,SN}(terms, sources)
+# Adapt.@adapt_structure Model
+function Adapt.adapt_structure(to, itp::Model{TN,SN,TT,SS}) where {TN,SN,TT,SS}
+    terms = Adapt.adapt(to, itp.terms); T = typeof(terms)
+    sources = Adapt.adapt(to, itp.sources); S = typeof(sources)
+    Model{TN,SN,T,S}(terms, sources)
 end
-# Model(eqn::E, terms::T, sources::S, TN, SN) where {E,T,S} = begin
-#     Model{E,T,S,TN,SN}(eqn, terms, sources)
-# end
+Model{TN,SN}(terms::T, sources::S) where {TN,SN,T,S} = begin
+    Model{TN,SN,T,S}(terms, sources)
+end
 
 # Linear system matrix equation
 
-struct Equation{Ti,Tf}
-    A::SparseMatrixCSC{Tf,Ti}
-    b::Vector{Tf}
-    R::Vector{Tf}
-    Fx::Vector{Tf}
-    # mesh::Mesh2{Ti,Tf}
+## ORIGINAL STRUCTURE PARAMETERISED FOR GPU
+struct ScalarEquation{VTf<:AbstractVector, ASA<:AbstractSparseArray} <: AbstractEquation
+    A::ASA
+    b::VTf
+    R::VTf
+    Fx::VTf
 end
-Equation(mesh::Mesh2) = begin
+Adapt.@adapt_structure ScalarEquation
+ScalarEquation(mesh::AbstractMesh) = begin
     nCells = length(mesh.cells)
     Tf = _get_float(mesh)
-    i, j, v = sparse_matrix_connectivity(mesh)
-    Equation(
-        sparse(i, j, v), 
-        zeros(Tf, nCells), 
-        zeros(Tf, nCells), 
-        zeros(Tf, nCells)
-        # mesh
+    mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
+    i, j, v = sparse_matrix_connectivity(mesh_temp) # This needs to be a kernel
+    backend = _get_backend(mesh)
+    ScalarEquation(
+        _convert_array!(sparse(i, j, v), backend),
+        _convert_array!(zeros(Tf, nCells), backend),
+        _convert_array!(zeros(Tf, nCells), backend),
+        _convert_array!(zeros(Tf, nCells), backend)
         )
 end
 
-function sparse_matrix_connectivity(mesh::Mesh2)
+struct VectorEquation{VTf<:AbstractVector, ASA<:AbstractSparseArray} <: AbstractEquation
+    A0::ASA
+    A::ASA
+    bx::VTf
+    by::VTf
+    bz::VTf
+    R::VTf
+    Fx::VTf
+end
+Adapt.@adapt_structure VectorEquation
+VectorEquation(mesh::AbstractMesh) = begin
+    nCells = length(mesh.cells)
+    Tf = _get_float(mesh)
+    mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
+    i, j, v = sparse_matrix_connectivity(mesh_temp) # This needs to be a kernel
+    backend = _get_backend(mesh)
+    VectorEquation(
+        _convert_array!(sparse(i, j, v), backend) ,
+        _convert_array!(sparse(i, j, v), backend) ,
+        _convert_array!(zeros(Tf, nCells), backend),
+        _convert_array!(zeros(Tf, nCells), backend),
+        _convert_array!(zeros(Tf, nCells), backend),
+        _convert_array!(zeros(Tf, nCells), backend),
+        _convert_array!(zeros(Tf, nCells), backend)
+        )
+end
+
+# Sparse matrix connectivity function definition
+function sparse_matrix_connectivity(mesh::AbstractMesh)
     (; cells, cell_neighbours) = mesh
     nCells = length(cells)
-    TI = _get_int(mesh) # would this result in regression (type identified inside func?)
-    TF = _get_float(mesh) # would this result in regression (type identified inside func?)
+    TI = _get_int(mesh)
+    TF = _get_float(mesh)
     i = TI[]
     j = TI[]
     for cID = 1:nCells   
         cell = cells[cID]
         push!(i, cID) # diagonal row index
         push!(j, cID) # diagonal column index
-        # for fi ∈ eachindex(cell.facesID)
         for fi ∈ cell.faces_range
-            # neighbour = cell.neighbours[fi]
             neighbour = cell_neighbours[fi]
             push!(i, cID) # cell index (row)
             push!(j, neighbour) # neighbour index (column)
@@ -123,11 +171,55 @@ function sparse_matrix_connectivity(mesh::Mesh2)
     return i, j, v
 end
 
-# Model equation type 
+# Nzval index function definition for sparse array
+function nzval_index(colptr, rowval, start_index, required_index, ione)
+    # Set start value and offset to 0
+    start = colptr[start_index]
+    offset = 0
+    
+    # Loop over rowval array and increment offset until required value
+    for j in start:length(rowval)
+        offset += 1
+        if rowval[j] == required_index
+            break
+        end
+    end
 
-struct ModelEquation{M,E,S,P}
+    # Calculate index to output
+    return start + offset - ione
+end
+
+function spindex(colptr::AbstractArray{T}, rowval, i, j) where T
+
+    # rows = rowvals(A)
+    start_ind = colptr[j]
+    end_ind = colptr[j+1]
+
+    # ind = zero(eltype(colptr))
+    ind = zero(T)
+    for nzi in start_ind:end_ind
+    # for nzi in nzrange(A, j)
+        if rowval[nzi] == i
+            ind = nzi
+            break
+            # return ind
+        end
+    end
+    return ind
+end
+
+# Model equation type 
+struct ScalarModel end
+Adapt.@adapt_structure ScalarModel
+
+struct VectorModel end
+Adapt.@adapt_structure VectorModel
+
+struct ModelEquation{T,M,E,S,P}
+    type::T
     model::M 
     equation::E 
     solver::S
     preconditioner::P
 end
+Adapt.@adapt_structure ModelEquation

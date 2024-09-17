@@ -10,8 +10,9 @@
 - [x] Implement functions to return mesh Int and Float types easing GPU implementation
 - [x] Check Divergence BCs for Upwind scheme
 - [ ] Implement Upwind as deferred correction
-- [ ] Do mesh conversion to new format within UNV read/writer (2D and 3D meshes)
-- [ ] Add documentation (becoming urgent)
+- [x] Do mesh conversion to new format within UNV read/writer (2D and 3D meshes)
+- [x ] Add tests
+- [x] Add documentation (becoming urgent)
 
 ### Mesh module
 
@@ -24,8 +25,8 @@
 - [ ] Separation of boundary and internal nodes, faces and cells (all?)
 - [x] Rethink data structure for mesh
 - [x] Write mesh to VTK format
-- [ ] Extend to 3D
-- [ ] Write conversion tool to read grids from OpenFOAM
+- [x] Extend to 3D
+- [x] Write conversion tool to read grids from OpenFOAM
 - [ ] Include boundary information in VTK file for postprocessing
 
 ### Solution for Convection/Diffusion equations (FVM)
@@ -36,17 +37,17 @@
 - [x] Implementation of boundary conditions (diffusion)
   - [x] Dirichlech
   - [x] Neumann
-  - [ ] Symmetry
-  - [ ] Wall
+  - [x] Symmetry
+  - [x] Wall
   - [ ] Slip
 - [x] Implementation of boundary conditions (convection)
   - [x] Dirichlech
   - [x] Neumann
-  - [ ] Symmetry
-  - [ ] Wall
+  - [x] Symmetry
+  - [x] Wall
   - [ ] Slip
-- [ ] A simple plotting to check results
-- [ ] Extend code for solution including non-orthogonal correction
+- [x] A simple plotting to check results (can use ParaView now)
+- [x] Add non-orthogonal correction (experimental)
 - [x] Implement second order upwind scheme
 - [x] Implement gradient interpolation
 - [x] Implement variable interpolation (i.e. allow variable diffusion coefficients)
@@ -57,12 +58,16 @@
 - [x] Implement laminar solver (steady)
 - [x] Implement laminar solver (transient)
 - [x] Implement first RANS turbulence model e.g. $k-\omega$
-- [ ] Implement $k-\omega LKE$ model
+- [x] Implement $k-\omega LKE$ model
 - [x] Calculation of y for first cell (can be from mesh.delta?)
-- [ ] Calculation of wall normal distance needed for turbulence models
+- [x] Calculation of wall normal distance needed for turbulence models
 - [x] Implement wall functions
-- [ ] LES solver
-- [ ] Add compressible solvers (Chris Ellis may be interested?)
+- [x] LES solver
+- [x] Weakly compressible flows: serial laminar 
+- [x] Weakly compressible flows: serial turbulent
+- [ ] shock capturing steady
+- [ ] shock capturing transient
+
 
 ### Algorithms
 
@@ -76,8 +81,12 @@
 - [x] Implement linear system solver - IterativeSolvers.jl
 - [ ] Allow matrix free methods?
 - [ ] Write more efficient matrix build method for sparse matrix
-- [ ] Enable threading
-- [ ] Enable GPU computation
+- [x] Enable threading
+- [x] Enable GPU computation
+- [x] Move turbulence RANS to GPU
+- [ ] Move compressible implementation to the GPU
+- [x] Implement AMG prototype solver (serial)
+- [ ] Implement AMG solver (KernelAbstraction.jl)
 
 ## Accessing data in structs
 

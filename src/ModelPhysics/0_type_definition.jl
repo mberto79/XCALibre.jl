@@ -63,6 +63,8 @@ struct Steady <: AbstractTimeModel end
 Adapt.@adapt_structure Steady
 
 abstract type AbstractMomentumModel end
+Base.show(io::IO, model::AbstractMomentumModel) = print(io, typeof(model).name.wrapper)
+
 
 """
     struct Momentum{V,S,SS} <: AbstractMomentumModel
@@ -123,4 +125,14 @@ Physics(; time, fluid, turbulence, energy, domain) = begin
         domain, 
         boundary_info
     )
+end
+
+Base.show(io::IO, model::Physics) = begin
+    typeInfo = typeof(model)
+    modelDefinition = IOBuffer()
+    println(modelDefinition, typeInfo.name.wrapper)
+    for params ∈ typeInfo.parameters
+        println(modelDefinition, "-> ", params.name.wrapper)
+    end
+    print(io, String(take!(modelDefinition)))
 end

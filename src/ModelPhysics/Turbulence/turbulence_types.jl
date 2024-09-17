@@ -8,6 +8,8 @@ abstract type AbstractTurbulenceModel end
 abstract type AbstractRANSModel <: AbstractTurbulenceModel end
 abstract type AbstractLESModel <: AbstractTurbulenceModel end
 
+Base.show(io::IO, model::AbstractTurbulenceModel) = print(io, typeof(model).name.wrapper)
+
 # Models 
 """
     RANS <: AbstractRANSModel

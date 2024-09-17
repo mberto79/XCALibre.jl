@@ -6,6 +6,9 @@ abstract type AbstractFluid end
 abstract type AbstractIncompressible <: AbstractFluid end
 abstract type AbstractCompressible <: AbstractFluid end
 
+Base.show(io::IO, fluid::AbstractFluid) = print(io, typeof(fluid).name.wrapper)
+
+
 """
     Fluid <: AbstractFluid
 

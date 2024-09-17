@@ -16,6 +16,8 @@ Base.getindex(field::AbstractField, i::I) where I<:Integer = begin
     field(i)
 end
 
+Base.show(io::IO, field::AbstractField) = print(io, typeof(field).name.wrapper)
+
 # CONSTANT FIELDS 
 
 struct ConstantScalar{V<:Number} <: AbstractScalarField

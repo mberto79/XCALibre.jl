@@ -2,10 +2,8 @@ export flux!, update_nueff!, inverse_diagonal!, remove_pressure_source!, H!, cor
 
 ## UPDATE VISCOSITY
 
-# This function needs to be separated using multiple dispatch
 function update_nueff!(nueff, nu, turb_model, config)
     (; mesh) = nueff
-    # backend = _get_backend(mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
@@ -39,56 +37,56 @@ end
 
 ## RESIDUAL CALCULATIONS
 
-# Sparse Matrix Multiplication function
-function sparse_matmul!(a, b, c, config)
-    if size(a)[2] != length(b)
-        error("Matrix size mismatch!")
-        return nothing
-    end
+# # Sparse Matrix Multiplication function
+# function sparse_matmul!(a, b, c, config)
+#     if size(a)[2] != length(b)
+#         error("Matrix size mismatch!")
+#         return nothing
+#     end
 
-    (; hardware) = config
-    (; backend, workgroup) = hardware
+#     (; hardware) = config
+#     (; backend, workgroup) = hardware
 
-    nzval_array = _nzval(a)
-    colptr_array = _colptr(a)
-    rowval_array = _rowval(a)
-    fzero = zero(eltype(c))
+#     nzval_array = _nzval(a)
+#     colptr_array = _colptr(a)
+#     rowval_array = _rowval(a)
+#     fzero = zero(eltype(c))
 
-    kernel_range = length(c)
+#     kernel_range = length(c)
 
-    kernel! = matmul_copy_zeros_kernel!(backend, workgroup, kernel_range)
-    kernel!(c, fzero, ndrange=kernel_range)
-    KernelAbstractions.synchronize(backend)
+#     kernel! = matmul_copy_zeros_kernel!(backend, workgroup, kernel_range)
+#     kernel!(c, fzero, ndrange=kernel_range)
+#     KernelAbstractions.synchronize(backend)
 
-    kernel! = sparse_matmul_kernel!(backend, workgroup, kernel_range)
-    kernel!(nzval_array, rowval_array, colptr_array, b, c, ndrange=kernel_range)
-    KernelAbstractions.synchronize(backend)
-end
+#     kernel! = sparse_matmul_kernel!(backend, workgroup, kernel_range)
+#     kernel!(nzval_array, rowval_array, colptr_array, b, c, ndrange=kernel_range)
+#     KernelAbstractions.synchronize(backend)
+# end
 
-# Sparse Matrix Multiplication kernel
-@kernel function sparse_matmul_kernel!(nzval, rowval, colptr, mulvec, res)
-    i = @index(Global)
-    @inbounds begin
-        @synchronize
-        start = colptr[i]
-        fin = colptr[i+1]
+# # Sparse Matrix Multiplication kernel
+# @kernel function sparse_matmul_kernel!(nzval, rowval, colptr, mulvec, res)
+#     i = @index(Global)
+#     @inbounds begin
+#         @synchronize
+#         start = colptr[i]
+#         fin = colptr[i+1]
 
-        for j in start:fin-1
-            val = nzval[j] #A[j,i]
-            row = rowval[j] #Row index of non-zero element in A
-            Atomix.@atomic res[row] += mulvec[i] * val
-        end
-    end
-end
+#         for j in start:fin-1
+#             val = nzval[j] #A[j,i]
+#             row = rowval[j] #Row index of non-zero element in A
+#             Atomix.@atomic res[row] += mulvec[i] * val
+#         end
+#     end
+# end
 
-# Sparse Matrix Multiplication copy kernel
-@kernel function matmul_copy_zeros_kernel!(c, fzero)
-    i = @index(Global)
+# # Sparse Matrix Multiplication copy kernel
+# @kernel function matmul_copy_zeros_kernel!(c, fzero)
+#     i = @index(Global)
 
-    @inbounds begin
-        c[i] = fzero
-    end
-end
+#     @inbounds begin
+#         c[i] = fzero
+#     end
+# end
 
 ## FLUX CALCULATION
 
@@ -122,12 +120,12 @@ function flux!(phif::FS, psif::FV, rhof::FS, config) where {FS<:FaceScalarField,
     (; backend, workgroup) = hardware
 
     kernel_range = length(phif)
-    kernel! = flux_kernel!(backend, workgroup, kernel_range)
+    kernel! = _flux!(backend, workgroup, kernel_range)
     kernel!(phif, psif, rhof, ndrange=kernel_range)
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function flux_kernel!(phif, psif, rhof)
+@kernel function _flux!(phif, psif, rhof)
     i = @index(Global)
 
     @uniform begin
@@ -138,7 +136,7 @@ end
     @inbounds begin
         (; area, normal) = faces[i]
         Sf = area * normal
-        values[i] = (psif[i] ⋅ Sf) * rhof[i] 
+        values[i] = (psif[i] ⋅ Sf) * rhof[i]
     end
 end
 
@@ -154,12 +152,12 @@ function inverse_diagonal!(rD::S, eqn, config) where {S<:ScalarField}
     nzval, rowval, colptr = get_sparse_fields(A)
 
     kernel_range = length(rD)
-    kernel! = inverse_diagonal_kernel!(backend, workgroup, kernel_range)
+    kernel! = _inverse_diagonal!(backend, workgroup, kernel_range)
     kernel!(rD, nzval, rowval, colptr, ndrange=kernel_range)
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function inverse_diagonal_kernel!(rD, nzval, rowval, colptr)
+@kernel function _inverse_diagonal!(rD, nzval, rowval, colptr)
     i = @index(Global)
 
     @uniform begin
@@ -216,12 +214,12 @@ remove_pressure_source!(U_eqn::ME, ∇p, config) where {ME} = begin # Extend to 
     (; bx, by, bz) = U_eqn.equation
 
     kernel_range = length(bx)
-    kernel! = remove_pressure_source_kernel!(backend, workgroup, kernel_range)
+    kernel! = _remove_pressure_source!(backend, workgroup, kernel_range)
     kernel!(cells, source_sign, ∇p, bx, by, bz, ndrange=kernel_range)
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function remove_pressure_source_kernel!(cells, source_sign, ∇p, bx, by, bz) #Extend to 3D
+@kernel function _remove_pressure_source!(cells, source_sign, ∇p, bx, by, bz) #Extend to 3D
     i = @index(Global)
 
     @uniform begin
@@ -247,14 +245,14 @@ function H!(Hv, U::VF, U_eqn, config) where {VF<:VectorField} # Extend to 3D!
     (; bx, by, bz) = U_eqn.equation
 
     kernel_range = length(cells)
-    kernel! = H_kernel!(backend, workgroup, kernel_range)
+    kernel! = _H!(backend, workgroup, kernel_range)
     kernel!(cells, cell_neighbours,
-    nzval, colptr, rowval, bx, by, bz, U, Hv, ndrange=kernel_range)
+        nzval, colptr, rowval, bx, by, bz, U, Hv, ndrange=kernel_range)
     KernelAbstractions.synchronize(backend)
 end
 
 # Pressure correction kernel
-@kernel function H_kernel!(cells::AbstractArray{Cell{TF,SV,UR}}, cell_neighbours,
+@kernel function _H!(cells::AbstractArray{Cell{TF,SV,UR}}, cell_neighbours,
     nzval, colptr, rowval, bx, by, bz, U, Hv) where {TF,SV,UR}
     i = @index(Global)
 
@@ -281,7 +279,7 @@ end
 
         DIndex = spindex(colptr, rowval, i, i)
         D = nzval[DIndex]
-        rD = 1/D
+        rD = 1 / D
         Hx[i] = (bx[i] - sumx) * rD
         Hy[i] = (by[i] - sumy) * rD
         Hz[i] = (bz[i] - sumz) * rD
@@ -308,49 +306,18 @@ end
     i = @index(Global)
     @uniform cells = mesh.cells
     dt = runtime.dt
-    # for i ∈ eachindex(U)
-        umag = norm(U[i])
-        volume = cells[i].volume
-        # dx = sqrt(volume)
-        dx = volume^0.333333
-        cellsCourant[i] = umag*dt/dx
-    # end
-    # return co
+    umag = norm(U[i])
+    volume = cells[i].volume
+    dx = volume^0.333333
+    cellsCourant[i] = umag * dt / dx
 end
 
 @kernel function _max_courant_number!(cellsCourant, U, runtime, mesh::Mesh2)
     i = @index(Global)
     @uniform cells = mesh.cells
     dt = runtime.dt
-    # for i ∈ eachindex(U)
-        umag = norm(U[i])
-        volume = cells[i].volume
-        # dx = sqrt(volume)
-        dx = volume^0.5
-        cellsCourant[i] = umag*dt/dx
-    # end
-    # return co
-end
-
-courant_number(U, mesh::AbstractMesh, runtime) = begin
-    F = _get_float(mesh)
-    dt = runtime.dt
-    co = zero(_get_float(mesh))
-    cells = mesh.cells
-    for i ∈ eachindex(U)
-        umag = norm(U[i])
-        volume = cells[i].volume
-        dx = sqrt(volume)
-        co = max(co, umag * dt / dx)
-    end
-    return co
-end
-
-@kernel function courant_number_kernel(U, cells, dt, F)
-    i = @index(Global)
-    co = zero(F)
     umag = norm(U[i])
     volume = cells[i].volume
-    dx = sqrt(volume)
-    co = max(co, umag * dt / dx)
+    dx = volume^0.5
+    cellsCourant[i] = umag * dt / dx
 end

@@ -280,7 +280,7 @@ function implicit_relaxation_diagdom!(
     nzval_array = _nzval(A)
 
     # Get backend and define kernel
-    kernel! = implicit_relaxation_diagdom_kernel!(backend, workgroup)
+    kernel! = _implicit_relaxation_diagdom!(backend, workgroup)
     
     # Define variable equal to 1 with same type as mesh integers
     integer = _get_int(mesh)
@@ -290,11 +290,9 @@ function implicit_relaxation_diagdom!(
     kernel!(cells, cell_neighbours, ione, rowval_array, colptr_array,
     nzval_array, b, field, alpha, ndrange = length(b))
     KernelAbstractions.synchronize(backend)
-
-    # check_for_precon!(nzval_array, precon, backend)
 end
 
-@kernel function implicit_relaxation_diagdom_kernel!(cells::AbstractArray{Cell{TF,SV,UR}}, cell_neighbours, 
+@kernel function _implicit_relaxation_diagdom!(cells::AbstractArray{Cell{TF,SV,UR}}, cell_neighbours, 
     ione, rowval, colptr, nzval, b, field, alpha) where {TF,SV,UR}
     # i defined as values from 1 to length(b)
     i = @index(Global)
@@ -325,7 +323,6 @@ function setReference!(pEqn::E, pRef, cellID, config) where E<:ModelEquation
     if pRef === nothing
         return nothing
     else
-        # backend = _get_backend((get_phi(pEqn)).mesh)
         (; hardware) = config
         (; backend, workgroup) = hardware
         ione = one(_get_int((get_phi(pEqn)).mesh))
@@ -334,14 +331,14 @@ function setReference!(pEqn::E, pRef, cellID, config) where E<:ModelEquation
         colptr_array = colptr(A)
         rowval_array = rowval(A)
 
-        kernel! = setReference_kernel!(backend, workgroup)
+        kernel! = _setReference!(backend, workgroup)
         kernel!(nzval_array, colptr_array, rowval_array, b, pRef, ione, cellID, ndrange = 1)
         KernelAbstractions.synchronize(backend)
 
     end
 end
 
-@kernel function setReference_kernel!(nzval, colptr, rowval, b, pRef, ione, cellID)
+@kernel function _setReference!(nzval, colptr, rowval, b, pRef, ione, cellID)
     i = @index(Global)
 
     @inbounds begin
@@ -358,17 +355,9 @@ function residual!(Residual, eqn, phi, iteration, component, config)
     (; A, R, Fx) = eqn.equation
     b = _b(eqn, component)
     values = phi.values
-
-    # backend = _get_backend(phi.mesh)
-
-    # sparse_matmul!(A, values, Fx, config)
     Fx .= A * values
-    # KernelAbstractions.synchronize(backend)
-
-    @inbounds @. R = abs(Fx - b)^2
-    # KernelAbstractions.synchronize(backend)
-
-    # res = sqrt(mean(R))/norm(b)
+    @inbounds @. R = (b - Fx)^2
     Residual[iteration] = sqrt(mean(R)) / norm(b)
+    # Residual[iteration] = sqrt(mean(R)) / min(mean(values), mean(abs.(b)) )
     nothing
 end

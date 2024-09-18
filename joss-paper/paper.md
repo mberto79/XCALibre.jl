@@ -1,5 +1,5 @@
 ---
-title: 'XCALIBRE.jl: A Python package for galactic dynamics'
+title: 'TEST.jl: A Python package for galactic dynamics'
 tags:
   - Python
   - astronomy

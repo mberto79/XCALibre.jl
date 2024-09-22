@@ -60,13 +60,14 @@ The Julia programming language offers a fresh approach to scientific computing, 
 
 # Key features
 
-`XCALibre.jl`, although a young package, is a feature-rich CFD solver. In this section the main features available in version `0.3.x` are highlighted.
+`XCALibre.jl`, for a young package, is a feature-rich CFD solver. In this section a brief summary of the main features available in version `0.3.x` are highlighted. Users are encouraged to explore the latest version of [the user guide](https://mberto79.github.io/XCALibre.jl/stable/).
 
-* **XPU computation**
-* **Mesh formats**
-* **Flow solvers**
-* **Turbulence models**
-* **Miscellaneous**
+* **XPU computation** `XCALibre.jl` is implemented using `KernelAbstractions.jl` which allows it to support both CPU and GPU calculations. 
+* **Mesh formats** In `XCALibre.jl` both `.unv ` and `OpenFOAM` mesh formats can be used. When using the `.unv` mesh format both 2D and 3D are supported.`OpenOAM` mesh files can also be converted and used (3D only).
+* **Flow solvers** steady and transient solvers are availabe in `XCALibre.jl` using the SIMPLE and PISO algorithms for steady and transient simulations, respectively. Incompressible and weakly compressible (using a sensible energy model) fluids can be simulated.
+* **Turbulence models** RANS and LES turbulence models are implemented. RANS models include the standard Wilcox $k-\omega$ model (add ref) and the transitional $k-\omega LKE$ model (add ref). The classic Smagorinsky LES model is also available.
+* **VTK simulation output** simulation results are written to `vtk` files for 2D cases and `vtu` for 3D meshs. At present post-processing can only be done in `ParaView`.
+* **Miscellaneous** a range of RANs and LES 
 
 # Sample results
 

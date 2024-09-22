@@ -71,27 +71,28 @@ A brief summary of the main features available in the first public release (vers
 
 # Example: laminar flow over  a backward facing step
 
-quick description of flow and domain
+The use of `XCALibre.jl` is now illustrated using simple backward-facing step configuration with 4 boundaries as depicted in figure \ref{fig:domain}. The flow will be considered as incompressible and laminar the `:wall` and `:top` boundaries will be considered as solid wall boundaries. The inflow velocity is 1.5 $m/s$ and the outlet boundary is set up as a pressure outlet (i.e. a `Dirichlet` condition with a reference value of 0 $Pa$). Notice that this case uses a structured grid for simplicity, however, in `XCALibre.jl` the grid connectivity information is unstructured and complex geometries can be used. Here the simulation is setup to run on the CPU, the steps needed to run on GPUs can be found in the documentation (REF).
 
-![My figure](domain_mesh.png){ width=80% }
+![My figure](domain_mesh.png\label{fig:domain}){ width=80% }
 
-
+The corresponding simulation setup is shown below:
 
 ```Julia
 using XCALibre
 
+# Get path to mesh file
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "backwardFacingStep_10mm.unv"
 mesh_file = joinpath(grids_dir, grid)
 
+# Convert and load mesh
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-hardware = set_hardware(backend=CPU(), workgroup=4)
+# Define flow variables & do checks
+velocity = [1.5, 0.0, 0.0]; nu = 1e-3; H = 0.1
+Re = velocity[1]*H/nu # check Reynolds number
 
-velocity = [1.5, 0.0, 0.0]
-nu = 1e-3
-Re = velocity[1]*0.1/nu
-
+# Define models
 model = Physics(
     time = Steady(),
     fluid = Fluid{Incompressible}(nu = nu),
@@ -100,6 +101,7 @@ model = Physics(
     domain = mesh
     )
 
+# Assign boundary conditions
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
@@ -114,11 +116,13 @@ model = Physics(
     Neumann(:top, 0.0)
 )
 
+# Specify discretisation schemes
 schemes = (
     U = set_schemes(divergence = Linear),
     p = set_schemes() # no input provided (will use defaults)
 )
 
+# Configuration: linear solvers
 solvers = (
     U = set_solver(
         model.momentum.U;
@@ -140,14 +144,19 @@ solvers = (
     )
 )
 
+# Configuration: runtime and hardware information
 runtime = set_runtime(iterations=2000, time_step=1, write_interval=2000)
+hardware = set_hardware(backend=CPU(), workgroup=4)
 
+# Configuration: build Configuration object
 config = Configuration(
-solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+  solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
+# Initialise fields
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
+# Run simulation
 residuals = run!(model, config);
 ```
 
@@ -155,15 +164,8 @@ Quick narrative of results
 
 ![My figure](BFS_verification.svg){ width=80% }
 
-# Other examples
+# Advanced examples
 
-Quick text to point to advanced examples in the documentation
-
-
-
-# Acknowledgements
-
-We acknowledge contributions from Brigitta Sipocz, Syrtis Major, and Semyeong
-Oh, and support from Kathryn Johnston during the genesis of this project.
+Users are referred to the documentation where more advanced examples for using `XCALibre.jl` are provided, including flow optimisation, and integration with the `Flux.jl` machine learning framework. 
 
 # References

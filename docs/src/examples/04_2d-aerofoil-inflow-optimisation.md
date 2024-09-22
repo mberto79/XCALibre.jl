@@ -1,4 +1,4 @@
-# 2D Constant temperature flat plate
+# Advanced: 2D Aerofoil inflow optimisation
 
 # Overview
 ---

@@ -15,35 +15,27 @@ authors:
     affiliation: 1
   - name: Chris Ellis
     orcid: 0000-0000-0000-0000
-    corresponding: true
     affiliation: 1
   - name: Tom Mazin
     orcid: 0000-0000-0000-0000
-    corresponding: true
     affiliation: 1
   - name: Oscar Osborne
     orcid: 0000-0000-0000-0000
-    corresponding: true
     affiliation: 1
   - name: Timothy Ward
     orcid: 0000-0000-0000-0000
-    corresponding: true
     affiliation: 1
   - name: Stephen Ambrose
     orcid: 0000-0000-0000-0000
-    corresponding: true
     affiliation: 1
   - name: Svetlana Aleksandrova
     orcid: 0000-0000-0000-0000
-    corresponding: true
-    affiliation: 1
+    affiliation: 2
   - name: Benjamin Rothwell
     orcid: 0000-0000-0000-0000
-    corresponding: true
     affiliation: 1
   - name: Carol Eastwick
     orcid: 0000-0000-0000-0000
-    corresponding: true
     affiliation: 1
 affiliations:
  - name: The University of Nottingham, UK
@@ -62,12 +54,9 @@ Understanding the behaviour of fluid flow, such as air over a wing, water in a p
 
 # Statement of need
 
-- Existing CFD solvers
-- Commercial and open-source
-- General limitations
-- Existing CFD solvers in the Julia ecosystem
-- How we fill the gap
-- What XCALibre.jl offers
+Given the importance of fluid flow simulation in engineering applications, it is not surprising that there is a wealth of CFD solvers available, both open-source and commercially available. Well established open-source codes include: OpenFOAM, SU2, CODE_SATURN, Gerris, etc. It is a testament to the open-source philosophy, and their developers, that some of these codes offer almost feature parity with commercial codes. However, the more feature-rich open-source codes have large codebases and, for performance reasons, have been implemented in statically compiled languages which makes it difficult to adapt and incorporate recent trends in scientific computing, for example, GPU computing and interfacing with machine learning frameworks, which is also the case for commercial codes (to a larger extent due to their closed source nature where interfaces to code internals can be quite rigid – although thanks to access to more resources commercial codes have been steadily ported to work on GPUs). As a result, the research community has been actively developing new CFD codes, which is evident within the Julia ecosystem. 
+The Julia programming language offers a fresh approach to scientific computing, with the benefits of dynamism whilst retaining the performance of statically typed languages thanks to its just-in-time compilation approach (using LLVM compiler technology). Thus, Julia makes it easy to prototype and test new ideas whilst producing machine code that is performant. This simplicity-performance dualism has resulted in a remarkable growth in its ecosystem offering for scientific computing, which includes state-of-the-art packages for solving differential equations (`DifferentialEquations.jl`), building machine learning models (`Flux.jl`, `Knet.jl` and `Lux.jl`), optimisation frameworks (`JUMP.jl`, XXX and XXX, and more), automatic differentiation (), etc. Likewise, CFD packages have also been developed, most notoriously: `Oceananigans.jl`, which provides tools for ocean modelling, `Trixi.jl` which provides high-order for solvers using the Discontinuous Garlekin method, and `Waterlilly.jl` which implements the immerse boundary method on structured grids using a staggered finite volume method. In this context, `XCALibre.jl` aims to complement and extend the Julia ecosystem by providing a cell-centred and unstructured finite volume CFD framework for the simulation of both incompressible and weakly compressible flows. 
+
 
 
 `Gala` is an Astropy-affiliated Python package for galactic dynamics. Python

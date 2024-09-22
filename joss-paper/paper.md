@@ -13,7 +13,7 @@ authors:
     orcid: 0000-0001-5691-9292
     corresponding: true
     affiliation: 1
-  - name: Chris Ellis
+  - name: Christopher D. Ellis
     orcid: 0000-0000-0000-0000
     affiliation: 1
   - name: Tom Mazin

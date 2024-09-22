@@ -10,7 +10,7 @@ tags:
   - RANS
 authors:
   - name: Humberto Medina
-    orcid: 0000-0000-0000-0000
+    orcid: 0000-0001-5691-9292
     corresponding: true
     affiliation: 1
   - name: Chris Ellis
@@ -60,78 +60,106 @@ The Julia programming language offers a fresh approach to scientific computing, 
 
 # Key features
 
-`XCALibre.jl`, for a young package, is a feature-rich CFD solver. In this section a brief summary of the main features available in version `0.3.x` are highlighted. Users are encouraged to explore the latest version of [the user guide](https://mberto79.github.io/XCALibre.jl/stable/).
+A brief summary of the main features available in the first public release (version `0.3.x`) are highlighted. Users are also encouraged to explore the latest version of [the user guide](https://mberto79.github.io/XCALibre.jl/stable/) where the public API and current features are documented. 
 
-* **XPU computation** `XCALibre.jl` is implemented using `KernelAbstractions.jl` which allows it to support both CPU and GPU calculations. 
-* **Mesh formats** In `XCALibre.jl` both `.unv ` and `OpenFOAM` mesh formats can be used. When using the `.unv` mesh format both 2D and 3D are supported.`OpenOAM` mesh files can also be converted and used (3D only).
-* **Flow solvers** steady and transient solvers are availabe in `XCALibre.jl` using the SIMPLE and PISO algorithms for steady and transient simulations, respectively. Incompressible and weakly compressible (using a sensible energy model) fluids can be simulated.
-* **Turbulence models** RANS and LES turbulence models are implemented. RANS models include the standard Wilcox $k-\omega$ model (add ref) and the transitional $k-\omega LKE$ model (add ref). The classic Smagorinsky LES model is also available.
-* **VTK simulation output** simulation results are written to `vtk` files for 2D cases and `vtu` for 3D meshs. At present post-processing can only be done in `ParaView`.
-* **Miscellaneous** a range of RANs and LES 
+* **XPU computation** `XCALibre.jl` is implemented using `KernelAbstractions.jl` which allows it to support both multi-threaded CPU and GPU calculations. 
+* **Unstructured grids and formats** `XCALIbre.jl` is implemented to support unstructured meshes using the Finite Volume method for equation discretisation. Thus, arbitrary polyhedral cells are supported, enabling the representation and simulation of complex geometries. `XCALibre.jl` provides mesh conversion functions to load externally generated grid. Currently, the Ideas (`unv `) and `OpenFOAM` mesh formats can be used. The `.unv` mesh format supports both 2D and 3D grids (note that the `.unv` format only supports prisms, tetrahedral, and hexahedral cells). The `OpenOAM` mesh format can be used for 3D simulations (the mesh `OpenFOAM` mesh format has no cell restrictions and support arbitrary polyhedral cells).
+* **Flow solvers** Steady and transient solvers are available, which use the SIMPLE and PISO algorithms for steady and transient simulations, respectively. These solvers support simulation of both Incompressible and weakly compressible fluids (using a sensible energy model).
+* **Turbulence models** RANS and LES turbulence models are supported. RANS models available in the current release include: the standard Wilcox $k-\omega$ model (add ref) and the transitional $k-\omega LKE$ model (add ref). For LES simulations the classic `Smagorinsky` model is available.
+* **VTK simulation output** simulation results are written to `vtk` files for 2D cases and `vtu` for 3D simulations. This allows to perform simulation post-processing in `ParaView`, which is the leading open-source project for scientific visualisation.
+* **Linear solvers and discretisation schemes** in `XCALibre.jl` users are able to select from a growing range of pre-defined discretisation schemes, e.g. `Upwind`, `Linear` and `LUST` for discretising divergence terms. By design, the choice of discretisation strategy is made on a term-by-term basis offering great flexibility. Users must also select and configure the linear solvers used to solve the discretised equations.  Linear solvers are provided by `Krylov.jl` (REF) and reexported in `XCALibre.jl` for convenience (please refer to the user guide for details on exported solvers). 
 
-# Sample results
+# Example: laminar flow over  a backward facing step
+
+quick description of flow and domain
+
+![My figure](domain_mesh.png){ width=80% }
+
+
+
+```Julia
+using XCALibre
+
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "backwardFacingStep_10mm.unv"
+mesh_file = joinpath(grids_dir, grid)
+
+mesh = UNV2D_mesh(mesh_file, scale=0.001)
+
+hardware = set_hardware(backend=CPU(), workgroup=4)
+
+velocity = [1.5, 0.0, 0.0]
+nu = 1e-3
+Re = velocity[1]*0.1/nu
+
+model = Physics(
+    time = Steady(),
+    fluid = Fluid{Incompressible}(nu = nu),
+    turbulence = RANS{Laminar}(),
+    energy = Energy{Isothermal}(),
+    domain = mesh
+    )
+
+@assign! model momentum U (
+    Dirichlet(:inlet, velocity),
+    Neumann(:outlet, 0.0),
+    Wall(:wall, [0.0, 0.0, 0.0]),
+    Wall(:top, [0.0, 0.0, 0.0]),
+)
+
+@assign! model momentum p (
+    Neumann(:inlet, 0.0),
+    Dirichlet(:outlet, 0.0),
+    Neumann(:wall, 0.0),
+    Neumann(:top, 0.0)
+)
+
+schemes = (
+    U = set_schemes(divergence = Linear),
+    p = set_schemes() # no input provided (will use defaults)
+)
+
+solvers = (
+    U = set_solver(
+        model.momentum.U;
+        solver      = BicgstabSolver, 
+        preconditioner = Jacobi(), 
+        convergence = 1e-7,
+        relax       = 0.7,
+        rtol = 1e-4,
+        atol = 1e-10
+    ),
+    p = set_solver(
+        model.momentum.p;
+        solver      = CgSolver, 
+        preconditioner = Jacobi(), 
+        convergence = 1e-7,
+        relax       = 0.7,
+        rtol = 1e-4,
+        atol = 1e-10
+    )
+)
+
+runtime = set_runtime(iterations=2000, time_step=1, write_interval=2000)
+
+config = Configuration(
+solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+
+initialise!(model.momentum.U, velocity)
+initialise!(model.momentum.p, 0.0)
+
+residuals = run!(model, config);
+```
+
+Quick narrative of results 
 
 ![My figure](BFS_verification.svg){ width=80% }
 
-`Gala` is an Astropy-affiliated Python package for galactic dynamics. Python
-enables wrapping low-level languages (e.g., C) for speed without losing
-flexibility or ease-of-use in the user-interface. The API for `Gala` was
-designed to provide a class-based and user-friendly interface to fast (C or
-Cython-optimized) implementations of common operations such as gravitational
-potential and force evaluation, orbit integration, dynamical transformations,
-and chaos indicators for nonlinear dynamics. `Gala` also relies heavily on and
-interfaces well with the implementations of physical units and astronomical
-coordinate systems in the `Astropy` package [@astropy] (`astropy.units` and
-`astropy.coordinates`).
+# Other examples
 
-`Gala` was designed to be used by both astronomical researchers and by
-students in courses on gravitational dynamics or astronomy. It has already been
-used in a number of scientific publications [@Pearson:2017] and has also been
-used in graduate courses on Galactic dynamics to, e.g., provide interactive
-visualizations of textbook material [@Binney:2008]. The combination of speed,
-design, and support for Astropy functionality in `Gala` will enable exciting
-scientific explorations of forthcoming data releases from the *Gaia* mission
-[@gaia] by students and experts alike.
+Quick text to point to advanced examples in the documentation
 
-# Mathematics
 
-Single dollars ($) are required for inline mathematics e.g. $f(x) = e^{\pi/x}$
-
-Double dollars make self-standing equations:
-
-$$\Theta(x) = \left\{\begin{array}{l}
-0\textrm{ if } x < 0\cr
-1\textrm{ else}
-\end{array}\right.$$
-
-You can also use plain \LaTeX for equations
-\begin{equation}\label{eq:fourier}
-\hat f(\omega) = \int_{-\infty}^{\infty} f(x) e^{i\omega x} dx
-\end{equation}
-and refer to \autoref{eq:fourier} from text.
-
-# Citations
-
-Citations to entries in paper.bib should be in
-[rMarkdown](http://rmarkdown.rstudio.com/authoring_bibliographies_and_citations.html)
-format.
-
-If you want to cite a software repository URL (e.g. something on GitHub without a preferred
-citation) then you can do it with the example BibTeX entry below for @fidgit.
-
-For a quick reference, the following citation commands can be used:
-- `@author:2001`  ->  "Author et al. (2001)"
-- `[@author:2001]` -> "(Author et al., 2001)"
-- `[@author1:2001; @author2:2001]` -> "(Author1 et al., 2001; Author2 et al., 2002)"
-
-# Figures
-
-Figures can be included like this:
-![Caption for example figure.\label{fig:example}](figure.png)
-and referenced from text using \autoref{fig:example}.
-
-Figure sizes can be customized by adding an optional second parameter:
-![Caption for example figure.](figure.png){ width=20% }
 
 # Acknowledgements
 

@@ -12,9 +12,13 @@ scatter!(vel, XL[:,1], XL[:,8], color=:tomato, label=false)
 plot!(vel, OF[:,2], OF[:,8], label="Uy", color=:black, linestyle=:dash)
 scatter!(vel, XL[:,2], XL[:,8], color=:tomato, label=false)
 
-p = plot(OF[:,4], OF[:,8], label="OpenFOAM", xlabel="p [Pa]", color=:skyblue2)
+p = plot(OF[:,4], OF[:,8], label="OpenFOAM", xlabel="Pressure [Pa]", color=:skyblue2)
 scatter!(p, XL[:,4], XL[:,8], color=:tomato, label="XCALibre")
 
-plot(vel, p, size=(750,420), layout = (1, 2), ylim=(-0.1,0.10),foreground_color_legend = nothing)
+plot(
+    vel, p, size=(750,420),
+     layout = (1, 2), ylim=(-0.1,0.10),
+     frame_style=:box,
+     foreground_color_legend = nothing)
 
 savefig("BFS_verification.svg")

@@ -60,7 +60,13 @@ The Julia programming language offers a fresh approach to scientific computing, 
 
 # Key features
 
-![My figure](BFS_verification.svg){ width=100% }
+## XPU computation
+
+## Mesh formats
+
+## Flow solvers
+
+![My figure](BFS_verification.svg){ width=80% }
 
 `Gala` is an Astropy-affiliated Python package for galactic dynamics. Python
 enables wrapping low-level languages (e.g., C) for speed without losing

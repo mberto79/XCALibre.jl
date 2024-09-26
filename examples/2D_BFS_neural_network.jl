@@ -1,13 +1,12 @@
 using Plots
 using XCALibre
 using Flux
+using StaticArrays
 using Statistics
 using LinearAlgebra
-using CUDA
-using StaticArrays
-using Adapt
-using Cthulhu
 using KernelAbstractions
+using Adapt
+# using CUDA
 
 actual(y) = begin
     H = 1 # channel height
@@ -40,9 +39,9 @@ loss(inflowNetwork, data[1]...,)
 scatter(y_train', inflowNetwork(y_train)', legend=:none)
 scatter!(vec(y_train), actual.(vec(y_train)), legend=:none)
 
-inflowNetwork([1])
-inflowNetwork_dev = inflowNetwork |> gpu
-inflowNetwork_dev(SVector{1}(1))
+# inflowNetwork([1])
+# inflowNetwork_dev = inflowNetwork |> gpu
+# inflowNetwork_dev(SVector{1}(1))
 
 
 struct Inflow{F,I,O,N,V,B} <: XCALibreUserFunctor
@@ -82,11 +81,17 @@ end
     BC.value.input[i] = coords[2]/BC.value.H
 end
 
-# inlet = Inflow(0.5f0, 0.1f0, Float32[1.0, 0.0, 0.0])
-nfaces = 10 # mesh.boundaries[1].IDs_range |> length
+
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "backwardFacingStep_5mm.unv"
+mesh_file = joinpath(grids_dir, grid)
+
+mesh = UNV2D_mesh(mesh_file, scale=0.001)
+
+nfaces = mesh.boundaries[1].IDs_range |> length
 U = 0.5
 H = 0.1
-input = zeros(1,10)
+input = zeros(1,nfaces)
 input .= (H/2)/H
 output = U.*inflowNetwork(input).*[1 0 0]'
 @view output[:,2]
@@ -102,7 +107,8 @@ inlet= Inflow(
 )
 
 # test = adapt(CUDABackend(), Storage([0.0], [0.0,0.0,0.0]))
-inlet_dev = adapt(CUDABackend(), inlet)
+inlet_dev = inlet
+# inlet_dev = adapt(CUDABackend(), inlet)
 
 (bc::Inflow)(vec, t, i) = begin
     velocity = @view bc.output[:,i]
@@ -110,19 +116,17 @@ inlet_dev = adapt(CUDABackend(), inlet)
     # return @inbounds SVector{3}(velocity)
 end
 
-inlet.update!(inlet, (0,0.0,0),0,2)
+# inlet.update!(inlet, (0,0.0,0),0,2)
 
 
 res = inlet(SVector{3}(0,0.05,0),0,2)
 res = inlet_dev(SVector{3}(0,0.05,0),0,2)
 CUDA.@allowscalar res = inlet_dev(SVector{3}(0,0.05,0),0,2)
 
-# backwardFacingStep_2mm, backwardFacingStep_10mm
-mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
-mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-mesh_dev = adapt(CUDABackend(), mesh)
-# mesh_dev = mesh
+
+# mesh_dev = adapt(CUDABackend(), mesh)
+mesh_dev = mesh
 
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
@@ -187,8 +191,8 @@ solvers = (
 runtime = set_runtime(
     iterations=1000, time_step=1, write_interval=100)
 
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=CPU(), workgroup=32)
+# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+hardware = set_hardware(backend=CPU(), workgroup=1024)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
@@ -199,29 +203,3 @@ initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
 residuals = run!(model, config)# 9.39k allocs in 184 iterations
-
-plot(; xlims=(0,1000))
-plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p")
-
-# # PROFILING CODE
-
-using Profile, PProf
-
-GC.gc()
-initialise!(model.momentum.U, velocity)
-initialise!(model.momentum.p, 0.0)
-
-Profile.Allocs.clear()
-Profile.Allocs.@profile sample_rate=1.0 begin 
-    residuals = run!(model, config)
-end
-
-# Profile.print(format=:flat)
-
-PProf.Allocs.pprof()
-
-PProf.refresh()
-
-@profview_allocs residuals = run!(model, config) sample_rate=1

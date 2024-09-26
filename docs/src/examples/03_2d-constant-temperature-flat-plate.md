@@ -1,6 +1,6 @@
 # Validation: 2D Constant temperature flat plate
 
-# Overview
+# Introduction
 ---
 A 2D constant temperature laminar flat plate case has been used to validate the weakly 
 compressible solver. The case provides a constant temperature boundary condition along the 

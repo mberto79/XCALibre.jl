@@ -5,7 +5,7 @@ export Dirichlet
 
 Dirichlet boundary condition model.
 
-### Fields
+# Fields
 - 'ID' -- Boundary ID
 - `value` -- Scalar or Vector value for Dirichlet boundary condition.
 """

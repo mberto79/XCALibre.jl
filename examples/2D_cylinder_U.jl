@@ -1,18 +1,16 @@
-using Plots
 using XCALibre
-using CUDA
+# using CUDA # uncomment to run on GPU
 
-# quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
-mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
-mesh_file = "unv_sample_meshes/cylinder_d10mm_2mm.unv"
-mesh_file = "unv_sample_meshes/cylinder_d10mm_10-7.5-2mm.unv"
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "cylinder_d10mm_5mm.unv"
+mesh_file = joinpath(grids_dir, grid)
+
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-# mesh_dev = adapt(CUDABackend(), mesh)
 mesh_dev = mesh
+# mesh_dev = adapt(CUDABackend(), mesh) # uncomment to run on GPU
 
 # Inlet conditions
-
 velocity = [0.5, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
@@ -70,15 +68,11 @@ schemes = (
 
 
 runtime = set_runtime(
-    iterations=250, write_interval=50, time_step=0.005)
-    # iterations=1, write_interval=50, time_step=0.005)
+    # iterations=1000, write_interval=50, time_step=0.005) # uncomment to save files
+    iterations=1000, write_interval=-1, time_step=0.005) # used to run only
 
-# 2mm mesh use settings below (to lower Courant number)
-# runtime = set_runtime(
-    # iterations=5000, write_interval=250, time_step=0.001) # Only runs on 32 bit
-
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = set_hardware(backend=CPU(), workgroup=1024)
+# hardware = set_hardware(backend=CUDABackend(), workgroup=32) # uncomment to run on GPU
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
@@ -88,9 +82,4 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config, ncorrectors=1, inner_loops=2)
-
-plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
-plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p")
+residuals = run!(model, config)

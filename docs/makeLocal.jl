@@ -4,6 +4,7 @@ using AbstractTrees
 using XCALibre
 
 # push!(LOAD_PATH,"../src/") # for local build only
+ENV["GKSwstype"] = "100"
 
 USER_GUIDE_PAGES = Any[
     "0_introduction_and_workflow.md",
@@ -39,5 +40,5 @@ makedocs(
     ]
 )
 
-foreach(rm, filter(endswith(".vtk"), readdir("docs", join=true)))
-foreach(rm, filter(endswith(".vtu"), readdir("docs", join=true)))
+# foreach(rm, filter(endswith(".vtk"), readdir("docs", join=true)))
+# foreach(rm, filter(endswith(".vtu"), readdir("docs", join=true)))

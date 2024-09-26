@@ -79,7 +79,10 @@ vx_train = actual.(y_train)
 y_test = hcat(rand(0:(0.1/100):0.1, 100)...)./0.1
 vx_untrained = inflowNetwork(y_test)
 
-plot(y_actual, vx_actual, label="Actual", frame_style=:box, foreground_color_legend = nothing)
+plot(
+    y_actual, vx_actual, label="Actual", 
+    frame_style=:box, foreground_color_legend = nothing,
+    xlabel="Dimensionless distance", ylabel="Normalised velocity")
 scatter!(y_train', vx_train', label="Training data")
 scatter!(y_test', vx_untrained', label="Untrained output")
 savefig("flux_comparison_untrained.svg"); nothing # hide
@@ -103,7 +106,10 @@ loss(inflowNetwork, data[1]...,)
 vx_trained = inflowNetwork(y_test)
 
 
-plot(y_actual, vx_actual, label="Actual", frame_style=:box, foreground_color_legend = nothing)
+plot(
+    y_actual, vx_actual, label="Actual", 
+    frame_style=:box, foreground_color_legend = nothing,
+    xlabel="Dimensionless distance", ylabel="Normalised velocity")
 scatter!(y_test', vx_trained', label="Trained output")
 savefig("flux_comparison.svg"); nothing # hide
 ```

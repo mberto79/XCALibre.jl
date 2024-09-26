@@ -1,12 +1,11 @@
-using Plots
 using XCALibre
 using CUDA # Run this if using NVIDIA GPU
 # using AMDGPU # Run this if using AMD GPU
 
-# quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
-mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
-# mesh_file = "unv_sample_meshes/cylinder_d10mm_2mm.unv"
-# mesh_file = "unv_sample_meshes/cylinder_d10mm_10-7.5-2mm.unv"
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "cylinder_d10mm_5mm.unv"
+mesh_file = joinpath(grids_dir, grid)
+
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 # mesh_dev = adapt(CUDABackend(), mesh)
@@ -72,7 +71,7 @@ schemes = (
 # runtime = set_runtime(iterations=20, write_interval=10, time_step=1) # for proto
 runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
 
-hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = set_hardware(backend=CPU(), workgroup=1024)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 

@@ -11,8 +11,13 @@
 - [x] Check Divergence BCs for Upwind scheme
 - [ ] Implement Upwind as deferred correction
 - [x] Do mesh conversion to new format within UNV read/writer (2D and 3D meshes)
-- [x ] Add tests
+- [x] Add tests
 - [x] Add documentation (becoming urgent)
+- [ ] Explore new ways to store output files from simulations
+  - [ ] Should this be a folder?
+  - [ ] Should we overwrite by default or warn?
+  - [ ] Should be create a new folder?
+  - [ ] Should the folder name be "results" or "iterations"/"time_steps"
 
 ### Mesh module
 

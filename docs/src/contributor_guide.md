@@ -11,7 +11,7 @@ From its humble beginning as a 1D diffusion example code to explore the features
 ## Some guidelines
 ---
 
-To help use keep the codebase consistent and allow us to merge future Pull Requests (PRs) more easily, we kindly request that contributors adhere to some basic guidelines. We are are trying to struck a balance between consistency and ease of contribution by aiming not to be overly demanding on contributors. A minimum set of guidelines is provided below (subject to review as the codebase evolves), in no particular order:
+To help use keep the codebase consistent and allow us to merge future Pull Requests (PRs) more easily, we kindly request that contributors adhere to some basic guidelines. We are trying to strike a balance between consistency and ease of contribution by aiming not to be overly demanding on contributors. A minimum set of guidelines is provided below (subject to review as the codebase evolves), in no particular order:
 
 ### Code style
 
@@ -35,12 +35,12 @@ To help use keep the codebase consistent and allow us to merge future Pull Reque
 | Module | Description |
 |:-------|:------------|
 XCALibre.Mesh | This module defines all types required to construct the mesh object used by the flow solvers. Two main mesh types are used `Mesh2` and `Mesh3` used for 2D and 3D simulations, respectively. Some access functions are also included in this module. |
-XCALibre.Fields | This module define the fields used to hold and represent the flow variable. Scalar, vector and tensor fields are defined e.g. `ScalarField`, etc. Information is stored at cell centres. These fields also have face variant where information is stored at face centres e.g. `FaceVectorField`. These fields are generally used to store fluxes. A limited set of field operations are also defined e.g. `getfield` to allow indexing field object directly. |
-XCALibre.ModelFramework | This module provides the framework used to define `scalar and vector model equations whilst storing information about the operators used. The data structure also defines sparse matrices used to storage discretisation information.  |
+XCALibre.Fields | This module defines the fields used to hold and represent the flow variable. Scalar, vector and tensor fields are defined e.g. `ScalarField`, etc. Information is stored at cell centres. These fields also have face variant where information is stored at face centres e.g. `FaceVectorField`. These fields are generally used to store fluxes. A limited set of field operations are also defined e.g. `getfield` to allow indexing field object directly. |
+XCALibre.ModelFramework | This module provides the framework used to define scalar and vector model equations whilst storing information about the operators used. The data structure also defines sparse matrices used to store discretisation information.  |
 XCALibre.Discretise | This module defines the various operators needed to represent each terms in a model equation and the main discretisation loop that linearises each term according to the schemes available. Boundary conditions are also implemented in this module. |
 XCALibre.Solve | This module includes all functions and logic needed to solve the linear system of equations that follows the equation discretisation. The internal API to solve these systems of equations is included in this module. |
 XCALibre.Calculate | Implementation of functions use to carry out calculations essential to the implementation of flow solvers is included in this module. This includes interpolation of variables from cell centroid to cell faces, gradient calculation, surface normals, etc. |
-XCALibre.ModelPhysics | This module includes the implemetations of all the physical models i.e. fluid, turbulence and energy models. |
+XCALibre.ModelPhysics | This module includes the implementations of all the physical models i.e. fluid, turbulence and energy models. |
 XCALibre.Simulate | This model contains information needed to set up a simulation, including the [`Configuration`](@ref) type used by all flow solvers. |
 XCALibre.Solvers | Implementations of the SIMPLE and PISO flow solvers from steady and unsteady solutions, including their compressible variant. |
 XCALibre.Postprocess | A limited set of functions for postprocessing are implemented in this module.  |
@@ -71,7 +71,7 @@ To fully characterise how mesh information is represented in XCALibre.jl, it is 
 * Face normals for internal faces is always pointing in the direction from the ownerCell with the smallest ID to the largest. Since the discretisation loop is cell based, for the cell with the highest ID the direction must be reversed. This information is tracked in `Mesh3.nsign` which stores 1 if the face normal is correctly aligned or -1 if the normal needs to be reversed.
 * Boundary faces (e.g. patches) are stored consecutively in `Mesh3.Faces` starting at the beginning of the array followed by all the internal faces.
 * Boundary faces are those connected only to 1 `Cell`, thus, for these faces the entry `Face3D.ownerCells` is a 2-element vector with a repeated index e.g. [3, 3]
-* Boundary cells only store information for internal faces. This improves performance for the main discretisation loop (cell based) since it can always been assumed that non of the faces will be a boundary face, which are dealt with in a separate loop.
+* Boundary cells only store information for internal faces. This improves performance for the main discretisation loop (cell based) since it can always been assumed that none of the faces will be a boundary face, which are dealt with in a separate loop.
 
 
 ### Field types

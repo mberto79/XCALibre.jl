@@ -19,7 +19,7 @@ authors:
   - name: Tom Mazin
     orcid: 0000-0000-0000-0000
     affiliation: 1
-  - name: Oscar Osborne
+  - name: Oscar Osborn
     orcid: 0000-0000-0000-0000
     affiliation: 1
   - name: Timothy Ward

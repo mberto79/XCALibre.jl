@@ -256,47 +256,97 @@ function limit_gradient!(∇F::Grad{S,FF,R,I,M}, F, config) where {S,FF,R<:Tenso
     KernelAbstractions.synchronize(backend)
 end
 
+# @kernel function _limit_gradient!(x, y, z, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi, maxPhi)
+#     cID = @index(Global)
+
+#     cell = cells[cID]
+#     faces_range = cell.faces_range
+#     phiP = F[cID]
+#     maxPhi = minPhi = phiP
+
+#     for fi ∈ faces_range
+#         nID = cell_neighbours[fi]
+#         phiN = F[nID]
+#         maxPhi = max(phiN, maxPhi)
+#         minPhi = min(phiN, minPhi)
+#     end
+
+#     # g0 = ∇F[cID]
+#     g0 = SVector{3}(x[cID] , y[cID] , z[cID])
+
+#     cc = cell.centre
+
+#     for fi ∈ faces_range 
+#         fID = cell_faces[fi]
+#         face = faces[fID]
+#         nID = face.ownerCells[2]
+#         # phiN = F[nID]
+#         normal = face.normal
+#         nsign = cell_nsign[fi]
+#         na = nsign*normal
+
+#         fc = face.centre 
+#         cc_fc = fc - cc
+#         n0 = cc_fc/norm(cc_fc)
+#         gn = g0⋅n0
+#         δϕ = g0⋅cc_fc
+#         gτ = g0 - gn*n0
+#         if (maxPhi > phiP) && (δϕ > maxPhi - phiP)
+#             g0 = gτ + na*(maxPhi - phiP)
+#         elseif (minPhi < phiP) && (δϕ < minPhi - phiP)
+#             g0 = gτ + na*(minPhi - phiP)
+#         end            
+#     end
+#     x.values[cID] = g0[1]
+#     y.values[cID] = g0[2]
+#     z.values[cID] = g0[3]
+# end
+
 @kernel function _limit_gradient!(x, y, z, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi, maxPhi)
     cID = @index(Global)
 
     cell = cells[cID]
     faces_range = cell.faces_range
     phiP = F[cID]
-
+    phiMax = phiMin = phiP
+ 
     for fi ∈ faces_range
         nID = cell_neighbours[fi]
         phiN = F[nID]
-        maxPhi = max(phiN, maxPhi)
-        minPhi = min(phiN, minPhi)
+        phiMax = max(phiN, phiMax)
+        phiMin = min(phiN, phiMin)
     end
 
     # g0 = ∇F[cID]
     g0 = SVector{3}(x[cID] , y[cID] , z[cID])
 
     cc = cell.centre
-
+    limiter = 1
+    limiterf = 1
     for fi ∈ faces_range 
         fID = cell_faces[fi]
         face = faces[fID]
         nID = face.ownerCells[2]
-        # phiN = F[nID]
+        phiN = F[nID]
         normal = face.normal
         nsign = cell_nsign[fi]
-        na = nsign*normal
+        # na = nsign*normal
 
         fc = face.centre 
-        cc_fc = fc - cc
-        n0 = cc_fc/norm(cc_fc)
-        gn = g0⋅n0
-        δϕ = g0⋅cc_fc
-        gτ = g0 - gn*n0
-        if (maxPhi > phiP) && (δϕ > maxPhi - phiP)
-            g0 = gτ + na*(maxPhi - phiP)
-        elseif (minPhi < phiP) && (δϕ < minPhi - phiP)
-            g0 = gτ + na*(minPhi - phiP)
-        end            
+        rf = fc - cc
+        δϕ = g0⋅rf
+        phif = phiP + δϕ
+        diff = phif - phiP
+        if diff > 0
+            limiterf = min(1, (phiN - phiP)/diff)
+        elseif diff < 0
+            # limiterf = min(1, (phiN - phiP)/diff)
+        elseif diff == 0
+            limiterf = 1
+        end
+        limiter = min(limiterf, limiter)
     end
-    x.values[cID] = g0[1]
-    y.values[cID] = g0[2]
-    z.values[cID] = g0[3]
+    x.values[cID] = limiter*g0[1]
+    y.values[cID] = limiter*g0[2]
+    z.values[cID] = limiter*g0[3]
 end

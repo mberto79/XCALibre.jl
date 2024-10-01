@@ -29,6 +29,7 @@ phi = assign(phi,
 ) 
 
 gradPhi = Grad{Orthogonal}(phi)
+gradPhi = Grad{Midpoint}(phi)
 phif = FaceScalarField(mesh)
 
 solvers = (
@@ -54,4 +55,16 @@ scatter(cell_xyz.⋅Ref([1,0,0]), gradPhi.result.x.values)
 
 XCALibre.Solvers.limit_gradient!(gradPhi, phi, config)
 
-scatter(cell_xyz.⋅Ref([1,0,0]), gradPhi.result.x.values)
+scatter!(cell_xyz.⋅Ref([1,0,0]), gradPhi.result.x.values, alpha=0.25)
+
+fRange = mesh.boundaries[3].IDs_range
+cIDs = mesh.boundary_cellsID[fRange]
+b1_xyz = getproperty.(mesh.cells[cIDs], :centre)
+scatter!(b1_xyz.⋅Ref([1,0,0]), gradPhi.result.x.values[cIDs], alpha=0.50)
+
+vtkWriter = initialise_writer(mesh)
+
+write_vtk("uncorrected", mesh, vtkWriter, ("gradPhi", gradPhi.result.x)) #, Ux, Uy, Uz, p)
+write_vtk("uncorrected_orthogonal", mesh, vtkWriter, ("gradPhi", gradPhi.result.x)) #, Ux, Uy, Uz, p)
+write_vtk("corrected", mesh, vtkWriter, ("gradPhi", gradPhi.result.x)) #, Ux, Uy, Uz, p)
+write_vtk("corrected_orthogonal", mesh, vtkWriter, ("gradPhi", gradPhi.result.x)) #, Ux, Uy, Uz, p)

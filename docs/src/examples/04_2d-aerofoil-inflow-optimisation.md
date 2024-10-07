@@ -223,7 +223,7 @@ Note that this code saves a single .vtk file of the last CFD iteration each time
 
 ### Configure and run the Bayesian optimisation
 
-Finally, the Bayesian optimiser must be configured before the optimisation can be performed. This example follows the BayesianOptimization.jl default configuration for the Gaussian process surrogate model, limiting input dimensions to 1 (the angle of attack). The surrogate model is then set to be optimised every 10 iterations. The inputs are limited to between 0 and 15 degrees. The problem is configured as a maximisation problem, with an initial sample period of 10 iterations and 75 maximum allowed iterations. The final line of the following code block is then run to perform the optimisation.
+Finally, the Bayesian optimiser must be configured before the optimisation can be performed. This example follows the BayesianOptimization.jl default configuration for the Gaussian process surrogate model, limiting input dimensions to 1 (the angle of attack). The surrogate model is then set to be optimised every 10 iterations. The inputs are limited to between 0 and 15 degrees. The problem is configured as a maximisation problem, with an initial sample period of 10 iterations and 50 maximum allowed iterations. The final line of the following code block is then run to perform the optimisation.
 
 ```@example optimisation
 #Bayesian Optimisation (Using BayesianOptimization.jl)
@@ -244,7 +244,7 @@ opt = BOpt(foil_optim, # Function to be optimised - encloses the CFD case
             modeloptimizer, # Model optimiser defined above
             [0.0], [15.0], # Minimum and maximum α constraints       
             repetitions = 1, # No repititions as CFD data is not noisy
-            maxiterations = 75, # Maximum iterations
+            maxiterations = 50, # Maximum iterations
             sense = Max, # Maximisation problem
             initializer_iterations = 10, # No. of initial random samples
             verbosity = Progress)
@@ -252,6 +252,7 @@ opt = BOpt(foil_optim, # Function to be optimised - encloses the CFD case
 result = boptimize!(opt) # Runs the optimisation procedure
 ```
 
-### Example Optimisation Results
+# Example Optimisation Results
+---
 
 TBC

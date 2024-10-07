@@ -21,7 +21,7 @@ add Plots, Distributions, LinearAlgebra, GaussianProcesses, BayesianOptimization
 This will download and install the required packages. Note that "CUDA" must also be added for GPU acceleration. Once installed, the packages can be loaded as follows:
 
 ```@example optimisation
-
+using Pkg; Pkg.add("BayesianOptimization") # hide
 using XCALibre, BayesianOptimization, Plots
 using LinearAlgebra, GaussianProcesses, Distributions
 #using CUDA # uncomment to run on GPU

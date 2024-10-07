@@ -29,7 +29,7 @@ add Plots, XCALibre, Flux, StaticArrays, LinearAlgebra, KernelAbstractions, Adap
 This will download and install the required packages. Once installed, the packages can be loaded as follows:
 
 ```@example flux
-
+using Pkg; Pkg.rm("BayesianOptimization"); Pkg.add("Flux") # hide
 using Plots
 using XCALibre
 using Flux

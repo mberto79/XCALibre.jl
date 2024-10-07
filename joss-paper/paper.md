@@ -14,7 +14,7 @@ authors:
     corresponding: true
     affiliation: 1
   - name: Christopher D. Ellis
-    orcid: 0000-0000-0000-0000
+    orcid: 0000-0001-5237-6673
     affiliation: 1
   - name: Tom Mazin
     orcid: 0000-0000-0000-0000
@@ -23,19 +23,19 @@ authors:
     orcid: 0000-0000-0000-0000
     affiliation: 1
   - name: Timothy Ward
-    orcid: 0000-0000-0000-0000
+    orcid: 0009-0007-4346-1754
     affiliation: 1
   - name: Stephen Ambrose
-    orcid: 0000-0000-0000-0000
+    orcid: 0000-0002-5833-4084
     affiliation: 1
   - name: Svetlana Aleksandrova
-    orcid: 0000-0000-0000-0000
+    orcid: 0000-0002-7398-6531
     affiliation: 2
   - name: Benjamin Rothwell
-    orcid: 0000-0000-0000-0000
+    orcid: 0000-0003-2503-7232
     affiliation: 1
   - name: Carol Eastwick
-    orcid: 0000-0000-0000-0000
+    orcid: 0000-0001-5773-6439
     affiliation: 1
 affiliations:
  - name: The University of Nottingham, UK

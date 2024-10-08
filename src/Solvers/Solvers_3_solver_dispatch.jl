@@ -20,9 +20,9 @@ This is the top level API function to initiate a simulation. It uses the user-pr
 - Transient weakly compressible (PISO algorithm for coupling)
 
 # Input arguments
-- `model` reference to a `Physics`` model defined by the user.
+- `model` reference to a `Physics` model defined by the user.
 - `config` Configuration structure defined by the user with solvers, schemes, runtime and hardware structures configuration details.
-- `limit_gradient` flag use to activate gradient limiters in the solver (default = `false`)
+- `limit_gradient` flag used to activate gradient limiters in the solver (default = `false`)
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)

@@ -3,7 +3,7 @@
 # Introduction
 ---
 
-In this example a simple neural network is constructed and used to define an inlet boundary condition for the x-component of the velocity vector. This example serves to illustrate how XCALibre.jl can easily integrate with the Julia ecosystem, and its functionality extended. 
+In this example a simple neural network is constructed and used to define an inlet boundary condition for the x-component of the velocity vector. This example serves to illustrate how other packages from the Julia ecosystem can be integrated into `XCALibre.jl` to extend its functionality. In particular, this example will show how to build a basic neural network using `Flux.jl` to represent a parabolic velocity profile and how this neural network can be used to define an inlet condition in `XCALibre.jl`. 
 
 The boundary condition is injected into the solution using the builtin `DirichletFunction` boundary condition, which is designed to pass arbitrary Julia functions to a given boundary.
 
@@ -40,7 +40,7 @@ using KernelAbstractions
 
 ```
 
-### Build a neural network
+### Build a neural network model
 
 Next, a neural network will be created to return a parabolic velocity profile. In this case, the training data will be generated using an analytical expression. 
 
@@ -141,7 +141,7 @@ Second, the struct above is used as a functor, defined following the requirement
 end
 ```
 
-The third step is to define a new method for the `update_user_boundary!` function from the `Discretise` module. This function offers a mechanism to update the internals of the previously defined structure by calling the user-provided neural network model. In this particular example, this is not required since the boundary values are not changing in time (it would have been sufficient to doa single inference round and to simply story the values inside the `Inflow` struct). However, this function is implemented here to illustrate the interface and provide an example of a user-defined kernel. Notice that, in this particular example, the only purpose of this function is to scale the velocity field inferred by the neural network (since it was defined between 0 and 1).
+The third step is to define a new method for the `update_user_boundary!` function from the `Discretise` module. This function offers a mechanism to update the internals of the previously defined structure by calling the user-provided neural network model. In this particular example, this is not required since the boundary values are not changing in time (it would have been sufficient to do a single inference round and to simply store the values inside the `Inflow` struct). However, this function is implemented here to illustrate the interface, and provide an example of a user-defined kernel. Notice that, in this particular example, the only purpose of this function is to scale the velocity field inferred by the neural network (since it was defined with values between 0 and 1).
 
 ```@example flux
 
@@ -186,7 +186,7 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 nfaces = mesh.boundaries[1].IDs_range |> length
 ```
 
-The `Inflow` functor is not constructed.
+The `Inflow` functor is now constructed.
 
 ```@example flux
 

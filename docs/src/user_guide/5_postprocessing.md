@@ -4,9 +4,9 @@
 ## ParaView
 ---
 
-All solvers in XCALibre.jl will write simulation results in formats that can be loaded directed in [ParaView](https://www.paraview.org/), which is the leading open-source project for scientific visualisation and postprocessing. More information about how to use [ParaView](https://www.paraview.org/) can be found in the [resources](https://www.paraview.org/resources/) page on their website.
+All solvers in XCALibre.jl will write simulation results in formats that can be loaded directly in [ParaView](https://www.paraview.org/), which is the leading open-source project for scientific visualisation and postprocessing. More information about how to use [ParaView](https://www.paraview.org/) can be found in the [resources](https://www.paraview.org/resources/) page on their website.
 
-XCALibre.jl uses two different `VTK` format depending on the type of flow solver used. For 2D simulations, the results are written to file using the `.vtk` file format. 3D simulations are written using the unstructured `VTK` file format, `.vtu`. 
+XCALibre.jl uses two different `VTK` formats depending on the type of flow solver used. For 2D simulations, the results are written to file using the `.vtk` file format. 3D simulations are written using the unstructured `VTK` file format, `.vtu`. 
 
 !!! note
 
@@ -15,7 +15,7 @@ XCALibre.jl uses two different `VTK` format depending on the type of flow solver
 ## Available functions
 ---
 
-Although [ParaView](https://www.paraview.org/) offers considerable flexibility for postprocessing results. Users may also wish to carry out more advanced or different analyses on their CFD results. At present XCALibre.jl offer a limited set of pre-defined postprocessing functions, however, defining new custom postprocessing functions is reasonably straight forward since these can be written in pure Julia. In this section, examples of postprocessing functions will be provided as an illustration. 
+Although [ParaView](https://www.paraview.org/) offers considerable flexibility for postprocessing results, users may also wish to carry out more advanced or different analyses on their CFD results. At present XCALibre.jl offers a limited set of pre-defined postprocessing functions, however, defining new custom postprocessing functions is reasonably straight-forward since these can be written in pure Julia. In this section, examples of postprocessing functions will be provided as an illustration. 
 
 !!! note
 
@@ -29,7 +29,7 @@ In this example, a function is shown that can be used to calculate the average o
 boundary_average
 ```
 
-To calculate pressure and viscous forces. The following functions are available:
+To calculate pressure and viscous forces, the following functions are available:
 
 ```@docs; canonical=false
 pressure_force

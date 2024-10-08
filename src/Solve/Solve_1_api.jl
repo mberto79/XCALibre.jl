@@ -37,7 +37,7 @@ This function is used to provide solver settings that will be used internally in
 # Input arguments
 
 - `field` reference to the field to which the solver settings will apply (used to provide integer and float types required)
-- `solver` solver object from Krylov.jl and it could be one of `BicgstabSolver`, `CgSolver`, `GmresSolver` which are reexported in XCALibre.jl
+- `solver` solver object from Krylov.jl and it could be one of `BicgstabSolver`, `CgSolver`, `GmresSolver` which are re-exported in XCALibre.jl
 - `preconditioner` instance of preconditioner to be used e.g. Jacobi()
 - `convergence` sets the stopping criteria of this field
 - `relax` specifies the relaxation factor to be used e.g. set to 1 for no relaxation
@@ -94,7 +94,7 @@ This is a convenience function to set the top-level runtime information. The inp
 # Input arguments
 
 * `iterations::Integer` specifies the number of iterations in a simulation run.
-* `write_interval::Integer` define how often simulation results are written to file. The interval is currently based on number of iterations. Set to `-1` to run without writing results to file.
+* `write_interval::Integer` defines how often simulation results are written to file (on the current working directory). The interval is currently based on number of iterations. Set to `-1` to run without writing results to file.
 * `time_step::Number` the time step to use in the simulation. Notice that for steady solvers this is simply a counter and it is recommended to simply use `1`.
 
 # Example

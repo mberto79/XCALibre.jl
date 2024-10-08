@@ -5,24 +5,24 @@
 ## Installation
 ---
 
-First, you need to [download and install Julia in your system](https://julialang.org/downloads/). Once you have a working installation of Julia, XCALibre.jl can be installed using the built in package manager. 
+First, you need to [download and install Julia on your system](https://julialang.org/downloads/). Once you have a working installation of Julia, XCALibre.jl can be installed using the built-in package manager. 
 
-To install XCALibre.jl directly from Github, open a Julia REPL, press `]` to enter the package manager. The REPL prompt icon will change from **julia>** (green) to **pkg>** (and change colour to blue) or **(myenvironment) pkg>** where `myenvironment` is the name of the currently active Juila environment. Once in package manager mode enter
+XCALibre.jl is available directly from the the General Julia Registry. Thus, to install XCALibre.jl open a Julia REPL, press `]` to enter the package manager. The REPL prompt icon will change from **julia>** (green) to **pkg>** (and change colour to blue) or **(myenvironment) pkg>** where `myenvironment` is the name of the currently active Julia environment. Once you have activated the package manager mode enter
+
+```julia
+pkg> add XCALibre
+```
+
+To install XCALibre.jl directly from Github enter the following command (for the latest release)
 
 ```julia
 pkg> add XCALibre https://github.com/mberto79/XCALibre.jl.git
 ```
 
-A specific branch can be installed by providing the branch name precided by a `#`, for example, to install the `dev-0.3-main` branch
+A specific branch can be installed by providing the branch name precided by a `#`, for example, to install the `dev-0.3-main` branch enter
 
 ```julia
 pkg> add XCALibre https://github.com/mberto79/XCALibre.jl.git#dev-0.3-main
-```
-
-We plan to register XCALibre.jl so that is added to the General Julia Registry. Once this has been completed, to install XCALibre.jl use the following command (in package mode as detailed above)
-
-```julia
-pkg> add XCALibre
 ```
 
 !!! note
@@ -40,7 +40,7 @@ The example below illustrates the top-level API used in XCALibre.jl. It shows th
 * [Runtime and solvers](@ref) setup (steps 8 to 11)
 * [Post-processing](@ref) (step 12)
 
-Once you have installed Julia and XCALibre.jl, the example below can be run by copying the contents shown below and pasting them on a file. The file can be executed within vscode, the Julia REPL or from a system terminal. 
+Once you have installed Julia and XCALibre.jl, the example below can be run by copying the contents shown below and pasting them in a file. The file can be executed within vscode, the Julia REPL or from a system terminal. 
 
 * To run in vscode check the information for using [Julia in vscode](https://code.visualstudio.com/docs/languages/julia)
 * To run in the [Julia REPL](https://docs.julialang.org/en/v1/stdlib/REPL/), simply launch Julia and type `include("name_of_your_file.jl")`

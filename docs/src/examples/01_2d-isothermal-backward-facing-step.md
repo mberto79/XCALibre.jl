@@ -3,7 +3,7 @@
 # Introduction
 ---
 
-The correct implementation of the laminar solver in XCALibre.jl has been verified by quantitatively comparing results with those obtained with OpenFOAM. The simulation set up and mesh file used to run the simulation with XCALibre.jl are available in this repository. The OpenFOAM case set up and mesh will be made available as well.
+The correct implementation of the laminar solver in XCALibre.jl has been verified by quantitatively comparing results with those obtained with OpenFOAM. The simulation set up and mesh file used to run the simulation with XCALibre.jl are available in this repository.
 
 # Simulation setup
 ---
@@ -102,8 +102,18 @@ residuals = run!(model, config);
 # Results
 ---
 
+## Domain and mesh
+
 ![Simulation domain](figures/01/domain_mesh.png)
+
+## OpenFoam solution
 ![Simulation domain](figures/01/BFS_OpenFOAM.png)
+
+## XCALibre solution
+
 ![Simulation domain](figures/01/BFS_XCALibre.png)
 
+## Quantitative comparision
+
+The figure below compares the results obtained with OpenFOAM and XCALibre.jl. The profiles are extracted along the y-direction at x = 0.5 m. 
 ![Comparison with OpenFOAM](figures/01/BFS_verification.svg)

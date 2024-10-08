@@ -1,5 +1,5 @@
 # Numerical setup
-*super brief summary*
+*Available discretisation schemes, linear solvers and preconditioners*
 
 ## Discretisation schemes
 ---
@@ -25,7 +25,7 @@ print_tree(AbstractScheme) # hide
 |:-------|:------------|
 | SteadyState | sets the time derivative to zero |
 | Euler | First order implicit Euler scheme |
-| CrankNicolson | Second order central scheme (not implemented) |
+| CrankNicolson | Second order central scheme (not implemented yet) |
 ---
 #### Laplacian schemes
 
@@ -52,7 +52,7 @@ print_tree(AbstractScheme) # hide
 ---
 ### Specifying schemes
 
-XCALibre.jl flow solvers offer considerable flexibility to users for defining discretisation schemes. However, this means that for schemes must be specified for every term of every equation solved. The schemes must be provided as a `NamedTuple` where each keyword corresponds to the fields being solved, e.g. (U = ..., p = ..., k = ..., <field> = ...). To facilitate this process, the [`set_schemes`](@ref) function is provided. Used without any inputs `set_schemes` uses the default values provided (see details below).
+XCALibre.jl flow solvers offer considerable flexibility to users for defining discretisation schemes. However, this means that discretisation schemes must be specified for every term of every equation solved. The schemes must be provided as a `NamedTuple` where each keyword corresponds to the fields being solved, e.g. (U = ..., p = ..., k = ..., <field> = ...). To facilitate this process, the [`set_schemes`](@ref) function is provided. Used without any inputs `set_schemes` uses the default values provided (see details below).
 
 ```@docs; canonical=false
 set_schemes
@@ -105,7 +105,7 @@ print_tree(PreconditionerType) # hide
 
     Only the `Jacobi` and `NormDiagonal` preconditioners have GPU ready implementations. At present these have the most robust implementation and they can be used with both CPU and GPU backends. The other preconditioners can only be used on the CPU. Notice that on our tests the `LDL` preconditioner only works when paired with the `GmresSolver` on the CPU. Also notice that the implementation of the `DILU` preconditioner, although functions, is only experimental. Work on improving the offering of preconditioners is ongoing.
 
-Below an example is provided in context. Here, we are setting solvers for both the velocity field `U` and the pressure field `p` and packing them into a `NamedTuple` "solvers". The `Jacobi` preconditioner is use in both solvers. Notice that preconditioners are specified with an instance of their type i.e. `Jacobi()`. Internally, the preconditioner instance is used for dispatch. This tupple will then be pass on to create the final `Configuration` object.
+Below an example is provided in context. Here, we are setting solvers for both the velocity field `U` and the pressure field `p` and packing them into a `NamedTuple` "solvers". The `Jacobi` preconditioner is used in both solvers. Notice that preconditioners are specified with an instance of their type i.e. `Jacobi()`. Internally, the preconditioner instance is used for dispatch. This tupple will then be passed on to create the final `Configuration` object.
 
 ```@meta
 DocTestSetup = quote

@@ -182,7 +182,7 @@ The `set_schemes` function is used at the top-level API to help users define dis
 
 # inputs
 
-- `time` is used to set the time schemes(default is `SteadyState`)
+- `time` is used to set the time schemes (default is `SteadyState`)
 - `divergence` is used to set the divergence scheme (default is `Linear`) 
 - `laplacian` is used to set the laplacian scheme (default is `Linear`)
 - `gradient`  is used to set the gradient scheme (default is `Orthogonal`)

@@ -22,7 +22,7 @@ Configuration
 ## Initialising fields
 ---
 
-The last (optional) step before running the simulation is to provide a guess for all the fields being solved. Although this step is optional, in most cases the flow solvers will perform better when initialised. To set an initial value for a field, the `initialise!` function is provided, which assigns a starting value to a given field.
+The last (optional) step before running the simulation is to provide an initial guess for all the fields being solved. Although this step is optional, in most cases the flow solvers will perform better when initialised. To set an initial value for a field, the `initialise!` function is provided, which assigns a starting value to a given field.
 
 ```@docs; canonical=false
 initialise!

@@ -9,12 +9,12 @@ abstract type XCALibreUserFunctor end
 Dirichlet boundary condition defined with user-provided function.
 
 # Input
-- 'ID' Boundary name provided as symbol e.g. :inlet
+- `ID` Boundary name provided as symbol e.g. :inlet
 - `value` Custom function for Dirichlet boundary condition.
 
 # Function requirements
 
-The function pass to this boundary condition must have the following signature:
+The function passed to this boundary condition must have the following signature:
 
     f(coords, time, index) = SVector{3}(ux, uy, uz)
 

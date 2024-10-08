@@ -5,7 +5,7 @@
 ## What is XCALibre.jl?
 ---
 
-XCALibre.jl (pronounced as the mythical sword *Excalibur*) is a general purpose Computational Fluid Dynamics (CFD) library for 2D and 3D simulations on structured/unstructured grids using the finite volume method. XCALibre.jl has been designed to act as a platform for developing, testing and using *XPU CFD Algorithms and Libraries* to give researchers in both academia and industry alike a tool that can be used to test out ideas easily within a framework that offers acceptable performance. To this end, XCALibre.jl has been implemented to offer both CPU multi-threaded capabilities or GPU acceleration using the same codebase (thanks to the unified programming framework provided by [KernelAbstractions.jl](https://juliagpu.github.io/KernelAbstractions.jl/stable/)). Additionally, XCALibre.jl also offers a friendly API for those users who are interested in running CFD simulations with the existing solvers and models built into XCALibre.jl. 
+XCALibre.jl (pronounced as the mythical sword *Excalibur*) is a general purpose Computational Fluid Dynamics (CFD) library for 2D and 3D simulations on structured/unstructured grids using the finite volume method. XCALibre.jl has been designed to act as a platform for developing, testing and using *XPU CFD Algorithms and Libraries* to give researchers in both academia and industry alike a tool that can be used to test out ideas easily within a framework that offers acceptable performance. To this end, XCALibre.jl has been implemented to offer both CPU multi-threaded capabilities or GPU acceleration using the same codebase (thanks to the unified programming framework provided by [KernelAbstractions.jl](https://juliagpu.github.io/KernelAbstractions.jl/stable/)). XCALibre.jl also offers a friendly API for those users who are interested in running CFD simulations with the existing solvers and models built into XCALibre.jl. 
 
 ## Why XCALibre.jl?
 ---
@@ -47,7 +47,7 @@ XCALibre.jl ships with fluid solvers for steady and transient simulations, based
 
 !!! note
 
-    A solver for highly compressible flows (shock capturing) is currently in testing and will be available in the next major release. Currently the compressible solvers are use a sensible energy approach for the energy equation.
+    A solver for highly compressible flows (shock capturing) is currently in testing and will be available in the next major release. Currently the compressible solvers use a sensible energy approach for the energy equation.
 
 ### Turbulence and energy models
 The list of turbulence models available is expected to expand. The following turbulence models are already available in XCALibre.jl:

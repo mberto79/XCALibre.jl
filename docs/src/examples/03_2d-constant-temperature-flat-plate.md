@@ -6,15 +6,14 @@ A 2D constant temperature laminar flat plate case has been used to validate the 
 compressible solver. The case provides a constant temperature boundary condition along the 
 wall of the domain. 
 
-The results of case are compared against the theoretical local Nusselt number correlation 
+The Nusselt number values obtained from the simulation are compared against the theoretical local Nusselt number correlation 
 for forced convection on constant temperature flat plate:
 
 ``Nu_x = 0.332 Re_x^{1/2} Pr^{1/3}``
 
 The correlation is valid for Prandtl numbers greater than 0.6.
 
-
-The boundaries are shown in the mesh figure and the tables below describe the boundary settings used.
+## Boundary conditions
 
 ### Inlet
 
@@ -68,10 +67,10 @@ The boundaries are shown in the mesh figure and the tables below describe the bo
 # Mesh
 ---
 
-The mesh is shown in the figure below:
+The mesh is shown in the figure below. The plate is represented by the "wall" boundary. The flow moves from left to right ("inlet" to "outlet" boundaries). The x-axis is aligned with the wall boundary and the y-axis is position in the direction perpendicular to the wall.
 
 
-![Figure of mesh.](figures/03/mesh.png)
+![Figure 1](figures/03/mesh.png)
 
 The streamwise cell length is 2mm with a total domain length of 1m. The near-wall cell height is 0.049mm with a domain height of 0.2m.
 

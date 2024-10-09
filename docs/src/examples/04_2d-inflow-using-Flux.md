@@ -29,7 +29,8 @@ add Plots, XCALibre, Flux, StaticArrays, LinearAlgebra, KernelAbstractions, Adap
 This will download and install the required packages. Once installed, the packages can be loaded as follows:
 
 ```@example flux
-using Pkg; Pkg.rm("BayesianOptimization"); Pkg.add("Flux") # hide
+using Logging; Logging.disable_logging(Logging.Info) # hide
+using Pkg; Pkg.add("Flux") # hide
 using Plots
 using XCALibre
 using Flux
@@ -283,6 +284,7 @@ initialise!(model.momentum.p, 0.0)
 
 residuals = run!(model, config)
 
+Pkg.rm("Flux") # hide
 "done!" # hide
 ```
 

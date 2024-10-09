@@ -19,8 +19,7 @@ EXAMPLES_PAGES = Any[
     "01_2d-isothermal-backward-facing-step.md",
     "02_2d-incompressible-transient-cylinder.md",
     "03_2d-constant-temperature-flat-plate.md",
-    "04_2d-aerofoil-inflow-optimisation.md",
-    "05_2d-inflow-using-Flux.md"
+    "04_2d-inflow-using-Flux.md"
 ]
 
 makedocs(

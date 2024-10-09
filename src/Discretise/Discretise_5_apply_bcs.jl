@@ -33,9 +33,12 @@ function _apply_boundary_conditions!(
     ione = one(integer)
 
     # Loop over boundary conditions to apply boundary conditions 
+    boundaries_cpu = get_boundaries(mesh.boundaries)
+
     for BC ∈ BCs
         # Copy to CPU
-        facesID_range = get_boundaries(BC, mesh.boundaries)
+        # facesID_range = get_boundaries(BC, mesh.boundaries)
+        facesID_range = boundaries_cpu[BC.ID].IDs_range
         start_ID = facesID_range[1]
 
         # update user defined boundary storage (if needed)
@@ -57,19 +60,22 @@ update_user_boundary!(
     BC::AbstractBoundary, faces, cells, facesID_range, time, config) = nothing
 
 # Function to prevent redundant CPU copy
-function get_boundaries(BC, boundaries::Array)
-    facesID_range = boundaries[BC.ID].IDs_range
-    return facesID_range
+# function get_boundaries(BC, boundaries::Array)
+function get_boundaries(boundaries::Array)
+    # facesID_range = boundaries[BC.ID].IDs_range
+    # return facesID_range
+    return boundaries
 end
 
 # Function to copy from GPU to CPU
-# function get_boundaries(BC, boundaries::CuArray)
-function get_boundaries(BC, boundaries::AbstractGPUArray)
+# function get_boundaries(BC, boundaries::AbstractGPUArray)
+function get_boundaries(boundaries::AbstractGPUArray)
     # Copy boundaries to CPU
     boundaries_cpu = Array{eltype(boundaries)}(undef, length(boundaries))
     copyto!(boundaries_cpu, boundaries)
-    facesID_range = boundaries_cpu[BC.ID].IDs_range
-    return facesID_range
+    # facesID_range = boundaries_cpu[BC.ID].IDs_range
+    # return facesID_range
+    return boundaries_cpu
 end
 
 # Apply boundary conditions kernel definition

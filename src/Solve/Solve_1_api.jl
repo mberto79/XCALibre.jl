@@ -183,7 +183,7 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
     b = _b(phiEqn, component)
 
     solve!(
-        solver, A, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
+        solver, LinearOperator(A), b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
         )
     KernelAbstractions.synchronize(backend)
     kernel! = solve_copy_kernel!(backend, workgroup)

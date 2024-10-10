@@ -101,8 +101,9 @@ end
 # Linear system matrix equation
 
 ## ORIGINAL STRUCTURE PARAMETERISED FOR GPU
-struct ScalarEquation{VTf<:AbstractVector, ASA<:AbstractSparseArray} <: AbstractEquation
+struct ScalarEquation{VTf<:AbstractVector, ASA<:AbstractSparseArray, OP} <: AbstractEquation
     A::ASA
+    opA::OP
     b::VTf
     R::VTf
     Fx::VTf
@@ -114,17 +115,20 @@ ScalarEquation(mesh::AbstractMesh) = begin
     mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
     i, j, v = sparse_matrix_connectivity(mesh_temp) # This needs to be a kernel
     backend = _get_backend(mesh)
+    A = _convert_array!(sparse(i, j, v), backend)
     ScalarEquation(
-        _convert_array!(sparse(i, j, v), backend),
+        A,
+        LinearOperator(A),
         _convert_array!(zeros(Tf, nCells), backend),
         _convert_array!(zeros(Tf, nCells), backend),
         _convert_array!(zeros(Tf, nCells), backend)
         )
 end
 
-struct VectorEquation{VTf<:AbstractVector, ASA<:AbstractSparseArray} <: AbstractEquation
+struct VectorEquation{VTf<:AbstractVector, ASA<:AbstractSparseArray, OP} <: AbstractEquation
     A0::ASA
     A::ASA
+    opA::OP
     bx::VTf
     by::VTf
     bz::VTf
@@ -138,9 +142,11 @@ VectorEquation(mesh::AbstractMesh) = begin
     mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
     i, j, v = sparse_matrix_connectivity(mesh_temp) # This needs to be a kernel
     backend = _get_backend(mesh)
+    A = _convert_array!(sparse(i, j, v), backend) 
     VectorEquation(
-        _convert_array!(sparse(i, j, v), backend) ,
-        _convert_array!(sparse(i, j, v), backend) ,
+        _convert_array!(sparse(i, j, v), backend),
+        A,
+        LinearOperator(A),
         _convert_array!(zeros(Tf, nCells), backend),
         _convert_array!(zeros(Tf, nCells), backend),
         _convert_array!(zeros(Tf, nCells), backend),

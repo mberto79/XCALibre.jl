@@ -4,6 +4,7 @@ using Accessors
 using SparseArrays
 using StaticArrays
 using Adapt
+using LinearOperators
 
 using Krylov
 using KernelAbstractions

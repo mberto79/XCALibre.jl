@@ -180,11 +180,13 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
     (; values) = result
     
     A = _A(phiEqn)
+    opA = phiEqn.equation.opA
     b = _b(phiEqn, component)
 
     solve!(
         # solver, LinearOperator(A), b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
-        solver, A, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
+        # solver, A, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
+        solver, opA, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
         )
     KernelAbstractions.synchronize(backend)
     kernel! = solve_copy_kernel!(backend, workgroup)

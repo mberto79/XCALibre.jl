@@ -2,13 +2,15 @@ using Plots
 using XCALibre
 using CUDA
 
-# bfs_unv_tet_15mm, 10mm, 5mm, 4mm, 3mm
-mesh_file = "unv_sample_meshes/bfs_unv_tet_4mm.unv"
-mesh_file = "unv_sample_meshes/bfs_unv_tet_5mm.unv"
-mesh_file = "unv_sample_meshes/bfs_unv_tet_10mm.unv"
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "bfs_unv_tet_4mm.unv"
+grid = "bfs_unv_tet_5mm.unv"
+grid = "bfs_unv_tet_10mm.unv"
+
+mesh_file = joinpath(grids_dir, grid)
+
 @time mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
-mesh_file = "unv_sample_meshes/bfs_OF_tet_meshes/5mm/polyMesh/"
 @time mesh = FOAM3D_mesh(mesh_file, scale=0.001, integer_type=Int64, float_type=Float64)
 
 mesh_dev = adapt(CUDABackend(), mesh)

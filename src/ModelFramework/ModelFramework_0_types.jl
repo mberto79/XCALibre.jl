@@ -119,6 +119,8 @@ ScalarEquation(mesh::AbstractMesh) = begin
     ScalarEquation(
         A,
         LinearOperator(A),
+        # KrylovOperator(A), # small gain in performance
+        # A,
         _convert_array!(zeros(Tf, nCells), backend),
         _convert_array!(zeros(Tf, nCells), backend),
         _convert_array!(zeros(Tf, nCells), backend)
@@ -147,6 +149,8 @@ VectorEquation(mesh::AbstractMesh) = begin
         _convert_array!(sparse(i, j, v), backend),
         A,
         LinearOperator(A),
+        # KrylovOperator(A),
+        # A,
         _convert_array!(zeros(Tf, nCells), backend),
         _convert_array!(zeros(Tf, nCells), backend),
         _convert_array!(zeros(Tf, nCells), backend),

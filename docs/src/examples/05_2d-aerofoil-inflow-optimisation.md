@@ -207,7 +207,6 @@ function foil_optim(α::Vector{Float64})
 
     aero_eff = lift_to_drag(:foil, model, ρ, nu, α[1]) # Calculates lift-to-drag ratio
 
-    
     aero_eff_out = round(aero_eff,digits=3)
     α_out = round(α[1],digits=3)
     vtk_files = filter(x->endswith(x,".vtk"), readdir())
@@ -250,6 +249,10 @@ opt = BOpt(foil_optim, # Function to be optimised - encloses the CFD case
             verbosity = Progress)
 
 result = boptimize!(opt) # Runs the optimisation procedure
+
+using Pkg; Pkg.rm("BayesianOptimization") # hide
+
+"done"
 ```
 
 # Example Optimisation Results

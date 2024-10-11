@@ -29,8 +29,12 @@ add Plots, XCALibre, Flux, StaticArrays, LinearAlgebra, KernelAbstractions, Adap
 This will download and install the required packages. Once installed, the packages can be loaded as follows:
 
 ```@example flux
-using Logging; Logging.disable_logging(Logging.Info) # hide
-using Pkg; Pkg.add("Flux") # hide
+# using Logging; Logging.disable_logging(Logging.Info) # hide
+using Pkg; # hide
+installed = "BayesianOptimization" ∈ keys(Pkg.project().dependencies) # hide
+installed && Pkg.rm("BayesianOptimization", io=devnull) #hide
+Pkg.add("Flux", io=devnull) # hide
+
 using Plots
 using XCALibre
 using Flux
@@ -38,7 +42,7 @@ using StaticArrays
 using Statistics
 using LinearAlgebra
 using KernelAbstractions
-
+nothing # hide
 ```
 
 ### Build a neural network model
@@ -269,8 +273,8 @@ solvers = (
     )
 )
 
-runtime = set_runtime(
-    iterations=500, time_step=1, write_interval=500)
+runtime = set_runtime(iterations=500, time_step=1, write_interval=500)
+runtime = set_runtime(iterations=1, time_step=1, write_interval=-1) # hide
 
 hardware = set_hardware(backend=CPU(), workgroup=1024)
 
@@ -284,11 +288,12 @@ initialise!(model.momentum.p, 0.0)
 
 residuals = run!(model, config)
 
-Pkg.rm("Flux") # hide
-"done!" # hide
+Pkg.rm("Flux", io=devnull) # hide
+nothing # hide
+"done"
 ```
 
 # Simulation result
 ---
 
-Add figure here!
+![Comparison with OpenFOAM](figures/04/BFS_neural_network_profile.png)

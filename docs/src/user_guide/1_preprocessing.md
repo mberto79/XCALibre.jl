@@ -8,6 +8,10 @@ As with all CFD solvers, defining a suitable mesh is one of the most important s
 
 XCALibre.jl is an unstructured Finite Volume Method (FVM) library, therefore, we are able to support grids of arbitrary polyhedral cells. In XCALibre.jl a cell-centred FVM approach has been implemented, which is popular since it allows the representation of complex geometries and it is used by most commercial and many open source CFD solvers.
 
+!!! units
+
+    XCALIbre.jl does not enforce units strictly. Units are implicitly provided by the mesh. You can use the `scale` keyword when importing a mesh to control the units used e.g. if the mesh file was created in millimetres, set `scale=0.001` to work in metres. Thus, it is important to ensure that consistent units are used through all configuration entries. It is highly recommended that SI units are used. 
+
 ### Mesh conversion
 
 XCALibre.jl at present supports `.unv` mesh formats (which can be generated using [SALOME](https://www.salome-platform.org/)) for simulations in 2D and 3D domains. XCALibre.jl also supports the [OpenFOAM](https://openfoam.org/) mesh format for simulations in 3D only (for now). 

@@ -29,6 +29,7 @@ Pkg.add("BayesianOptimization", io=devnull) # hide
 using XCALibre, BayesianOptimization, Plots
 using LinearAlgebra, GaussianProcesses, Distributions
 # using CUDA # uncomment to run on GPU
+"done"
 nothing # hide
 ```
 

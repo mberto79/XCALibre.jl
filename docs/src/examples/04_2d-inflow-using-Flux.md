@@ -13,7 +13,10 @@ XCALibre.Discretise.DirichletFunction
 
 In this example, instead of passing a Julia function, the boundary velocity profile will be given via a simple neural network. 
 
-    !!! Notice that this interface is experimental and subject to change. Currently it can only be used for vectors.
+!!! note
+    
+    This interface is experimental and subject to change. Currently it can only be used for vectors.
+
 # Set up steps
 ---
 

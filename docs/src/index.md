@@ -42,8 +42,8 @@ XCALibre.jl ships with fluid solvers for steady and transient simulations, based
 
 * [Steady incompressible flows](@ref XCALibre.Solvers.simple!)
 * [Steady weakly compressible flows](@ref XCALibre.Solvers.csimple!)
-* Transient incompressible flows
-* Transient weakly compressible flows
+* [Transient incompressible flows](@ref XCALibre.Solvers.piso!)
+* [Transient weakly compressible flows](@ref XCALibre.Solvers.cpiso!)
 
 !!! note
 

@@ -1,5 +1,5 @@
 ---
-title: 'XCALibre.jl: an XPU general-purpose unstructured finite volume Computational Fluid Dynamics library'
+title: 'XCALibre.jl: an XPU unstructured finite volume Computational Fluid Dynamics library'
 tags:
   - Julia
   - Computational Fluid Dynamics

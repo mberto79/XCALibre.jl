@@ -1,10 +1,18 @@
 using Documenter
 using InteractiveUtils
 using AbstractTrees
+using Changelog
 using XCALibre
 
-# push!(LOAD_PATH,"../src/") # for local build only
 ENV["GKSwstype"] = "100"
+
+# Generate a Documenter-friendly changelog from CHANGELOG.md
+Changelog.generate(
+    Changelog.Documenter(),
+    joinpath(@__DIR__, "..", "CHANGELOG.md"),
+    joinpath(@__DIR__, "src", "release_notes.md");
+    repo = "github.com/mberto79/XCALibre.jl",
+)
 
 USER_GUIDE_PAGES = Any[
     "0_introduction_and_workflow.md",

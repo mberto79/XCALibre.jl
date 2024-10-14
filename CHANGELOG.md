@@ -1,13 +1,9 @@
-```@meta
-EditURL = "https://github.com/github.com/mberto79/XCALibre.jl/blob/master/CHANGELOG.md"
-```
-
 # Release notes
 
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v3.0.1` breaking changes will be recorded here. 
 
-## Version [v0.3.1](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.3.1) - 2024-10-18
+## Version [v0.3.1] - 2024-10-18
 
 ### Added
 * Vastly improved documentation with new examples provided
@@ -28,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 * No functionality has been removed
 
-## Version [v0.3.0](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.3.0) - 2024-09-21
+## Version [v0.3.0] - 2024-09-21
 
 * New name - XCALibre.jl - which is now registered in the General Julia registry
 * Can do 3D and GPU accelerated simulations
@@ -39,17 +35,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Reasonably complete "user" documentation now provided
 * Made repository public (in v0.2 the work was kept in a private repository and could only do 2D simulations)
 * Tidy up mesh type definitions by @mberto79 in #5
-* Adapt code base to work with new mesh format by @mberto79 in [#6](https://github.com/github.com/mberto79/XCALibre.jl/issues/6)
-* Mesh boundary struct changes PR by @TomMazin in [#7](https://github.com/github.com/mberto79/XCALibre.jl/issues/7)
-* Mesh boundary struct changes PR fix by @TomMazin in [#8](https://github.com/github.com/mberto79/XCALibre.jl/issues/8)
+* Adapt code base to work with new mesh format by @mberto79 in [#6]
+* Mesh boundary struct changes PR by @TomMazin in [#7]
+* Mesh boundary struct changes PR fix by @TomMazin in [#8]
 
 
-## Version [v0.2.0](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.2.0) - 2023-01-23
+## Version [v0.2.0] - 2023-01-23
 
 * New mesh format and type implemented that are GPU friendly.
 * No functionality changes
 
-## Version [v0.1.0](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.1.0) - 2023-01-23
+## Version [v0.1.0] - 2023-01-23
 
 ### Initial release
 

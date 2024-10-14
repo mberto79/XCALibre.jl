@@ -9,5 +9,5 @@ deploydocs(
     repo = "github.com/mberto79/XCALibre.jl.git",
     devurl = "dev",
     versions = ["stable" => "v^", "dev" => "dev"],
-    devbranch = "dev-0.3-main"
+    devbranch = "main"
 )

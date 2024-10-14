@@ -22,7 +22,7 @@ Configuration
 ## Initialising fields
 ---
 
-The last (optional) step before running the simulation is to provide a guess for all the fields being solved. Although this step is optional, in most cases the flow solvers will perform better when initialised. To set an initial value for a field, the `initialise!` function is provided, which assigns a starting value to a given field.
+The last (optional) step before running the simulation is to provide an initial guess for all the fields being solved. Although this step is optional, in most cases the flow solvers will perform better when initialised. To set an initial value for a field, the `initialise!` function is provided, which assigns a starting value to a given field.
 
 ```@docs; canonical=false
 initialise!
@@ -36,4 +36,14 @@ In XCALibre.jl the `run!` function is used to start a simulation, which will dis
 ```@docs; canonical=false
 run!()
 ```
+
+## Restarting simulations
 ---
+
+It should be noted that when running a simulation with `run!`, the solution fields in the `Physics` model are mutated. Thus, running the simulation from the previous solution is simply a matter of reissuing the `run!` function. At present, this has the side effect of overwriting any existing solution files (`.vtk` or `.vtu`). Users must be aware of this behaviour.
+
+In some cases, it may be desirable to solve a problem with a steady solver and use the solution to run transient simulations. This is possible using the `change` function.
+
+```@docs; canonical=false
+XCALibre.ModelPhysics.change
+```

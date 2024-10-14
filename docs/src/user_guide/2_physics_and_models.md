@@ -1,10 +1,10 @@
 # Physics and models
-*super brief summary*
+*Information about setting up a `Physics` object and boundary conditions to represent the flow physics*
 
 ## Physics model definition
 ---
 
-The `Physics` object is part of the highest level API in `XCALibre.jl`. `Physics` objects are a means for users to set up the physics and models that are relevant to their particular CFD simulation. Internally, the `Physics` model created is pass to solvers and it is used for dispatch (solvers, algorithms and models). Thus, it is important to ensure that the information provided to this object is correct and representative of the user's intentions. `Physics` models consist of a struct with the  fields shown below. All fields must be provided to the solvers otherwise the construction of the object will fail.
+The `Physics` object is part of the highest level API in `XCALibre.jl`. `Physics` objects are a means for users to set up the physics and models that are relevant to their particular CFD simulation. Internally, the `Physics` model created is passed to solvers and is used for dispatch (solvers, algorithms and models). Thus, it is important to ensure that the information provided to this object is correct and representative of the user's intentions. `Physics` models consist of a struct with the  fields shown below. All fields must be provided to the solvers otherwise the construction of the object will fail.
 
 ```julia
 struct Physics{T,F,M,Tu,E,D,BI}
@@ -47,7 +47,7 @@ This will provide users with all the fields that make up the `Physics` object. T
 ## Time models
 ---
 
-Earlier in this section, the dynamic nature of Julia was mentioned in the context of extracting fields for the `Physics` model used in XCALibre.jl. In the following sections this benefit of using Julia will be exploited further. XCALibre.jl takes advantage of Julia's rich type system and we define `Abstract` types to organise major functionality. For example, time models are subtypes of the abstract type `AbstractTimeModel`. Therefore, out-of-the-box we get for free a means to explore implemented features in XCALibre.jl. For example, to identify the time models implemented, we need simply need to type the following in the REPL:
+Earlier in this section, the dynamic nature of Julia was mentioned in the context of extracting fields for the `Physics` model used in XCALibre.jl. In the following sections this benefit of using Julia will be exploited further. XCALibre.jl takes advantage of Julia's rich type system and we define `Abstract` types to organise major functionality. For example, time models are subtypes of the abstract type `AbstractTimeModel`. Therefore, out-of-the-box we get for free a means to explore implemented features in XCALibre.jl. For example, to identify the time models implemented, we simply need to type the following in the REPL:
 
 ```@repl 
 using XCALibre
@@ -56,9 +56,9 @@ using InteractiveUtils # Load from standard library
 Main.subtypes(AbstractTimeModel)
 ```
 
-From the output it can be seen that there are two time models in XCALibre.jl for `Steady` or `Transient` simulations. These are singleton types and contain (at present) not internal fields or data. They are largely used by XCALibre.jl to dispatch either steady or transient solvers. We starting to get a picture of how the `Physics` object is constructed. For example, to specify a Steady simulation
+From the output it can be seen that there are two time models in XCALibre.jl for `Steady` or `Transient` simulations. These are singleton types and contain (at present) no internal fields or data. They are largely used by XCALibre.jl to dispatch either steady or transient solvers. We are starting to get a picture of how the `Physics` object is constructed. For example, to specify a Steady simulation
 
-For example, the time model can be specified as `Steady` as follows
+The time model can be specified as `Steady` as follows:
 ```julia
 Physics(
     time = Steady()
@@ -85,7 +85,7 @@ begin
 end
 ```
 
-From the subtype tree above, we can see that XCALibre.jl offers 2 major abstract fluid types, `AbstractIncompressible` and `AbstractCompressible`. The concrete fluid types are 3:
+From the subtype tree above, we can see that XCALibre.jl offers 2 major abstract fluid types, `AbstractIncompressible` and `AbstractCompressible`. There are 3 concrete fluid types:
 
 * `Incompressible` - for simulations were the fluid density does not change with pressure
 * `WeaklyCompressible` - for simulation were the fluid density is allowed to change (no shockwaves)
@@ -102,9 +102,9 @@ For compressible fluids (weak formulation)
 ```julia
 Fluid{WeaklyCompressible}(; nu, cp, gamma, Pr)
 ```
-where the input variable represent the following:
+where the input variables represent the following:
 
-* `nu` - viscosity
+* `nu` - kinematic viscosity
 * `rho` - fluid density
 * `gamma` - specific heat ratio
 * `Pr` - Prandlt number
@@ -122,7 +122,7 @@ Physics(
 ## Turbulence models
 ---
 
-Below is a representation the `AbstractTurbulenceModel` inheritance tree. It shows turbulence models available. Turbulence models are defined using the `RANS` and `LES` constructors and passing a specific turbulence model type. As it will be illustrated in the flowing sections.
+Below is a representation of the `AbstractTurbulenceModel` inheritance tree. It shows turbulence models available. Turbulence models are defined using the `RANS` and `LES` constructors and passing a specific turbulence model type. As it will be illustrated in the flowing sections.
 
 ```@repl
 using XCALibre # hide
@@ -139,13 +139,13 @@ Laminar model: no user input is required. This is a dummy model that does not co
 RANS{Laminar}() # only constructor needed
 ```
 
-KOmega model: the standard 2 equation Wilcox model coefficients are passed by default. This model solve an additional 3 equation for `k`, `omega` and `nut` which must be provided with boundary conditions.
+KOmega model: the standard 2 equation Wilcox model coefficients are passed by default. This model solves 2 transport equations for the turbulent kinetic energy and the specific dissipation rate,  `k` and `omega`, respectively. Subsequently, `k` and `omega` are used to update the turbulent eddy viscosity, `nut`. These 3 fields must be provided with boundary conditions. 
 ```julia
 RANS{KOmega}() # will set the default coefficient values shown below
 RANS{KOmega}(; β⁺=0.09, α1=0.52, β1=0.072, σk=0.5, σω=0.5) # set defaults
 RANS{KOmega}(β1=0.075) # user can choose to change a single coefficient
 ```
-KOmegaLKE model: the user must provide a reference turbulence intensity (`Tu`) and a tuple of symbols specifying wall boundaries. This model uses 3 equations (`k`, `kl`, `omega`) and updates the eddy viscosity (`nut`) these must be provided with boundary conditions.
+KOmegaLKE model: the user must provide a reference turbulence intensity (`Tu`) and a tuple of symbols specifying wall boundaries. This model uses 3 equations (`k`, `kl`, `omega`) to update the eddy viscosity (`nut`). These fields must be provided with boundary conditions.
 ```julia
 RANS{KOmegaLKE}(; Tu::Number, walls::Tuple) # no defaults defined
 RANS{KOmegaLKE}(Tu = 0.01, walls=(:cylinder,)) # user should provide information for Tu and walls
@@ -163,7 +163,7 @@ Physics(
 
 ### LES models
 
-Smagorinsky model: the standard model constant is pass by default. Boundary conditions for `nut` must be provided generally zero gradient conditions work well. No special wall functions for `nut` in LES mode are available.
+Smagorinsky model: the standard model constant is passed by default. Boundary conditions for `nut` must be provided, generally zero gradient conditions work well. No special wall functions for `nut` in LES mode are available.
 ```julia
 LES{Smagorinsky}() # default constructor will use value below
 LES{Smagorinsky}(; C=0.15) # default value provided by default
@@ -181,7 +181,7 @@ Physics(
 
 !!! note
 
-    In the specification above the time model was set as `Transient` since `LES` models are strictly time-resolving. A simulation might run when the `Steady` model is chosen, but the results would likely not be reliable. `XCALibre.jl` by design offers flexibility for users to customise their setup, the consequence is that is also falls on users to define a combination of models that is appropriate. Likewise, in the example above an `Isothermal` energy model would have to be selected. See [Energy models](@ref)
+    In the specification above the time model was set as `Transient` since `LES` models are strictly time-resolving. A simulation might run when the `Steady` model is chosen, but the results would likely not be reliable. `XCALibre.jl` by design offers flexibility for users to customise their setup, the consequence is that it falls on users to define a combination of models that is appropriate. Likewise, in the example above an `Isothermal` energy model would have to be selected. See [Energy models](@ref)
 
 ## Energy models
 ---
@@ -251,7 +251,7 @@ Physics(
 ## Boundary conditions
 ---
 
-The final step to completely capture the physics for the simulation is to define boundary conditions in order to find a concrete solution of the model equations being solved. XCALibre.jl offers a range of boundary condition. As before, boundary conditions are specified by type and the are classified under the `AbstractBoundary` type and subdivided into 4 additional abstract types `AbstractDirichlet`, `AbstractNeumann`, `AbstractPhysicalConstraint` and `AbstractWallFunction`. The complete abstract tree is illustrated below.
+The final step to completely capture the physics for the simulation is to define boundary conditions in order to find a concrete solution of the model equations being solved. XCALibre.jl offers a range of boundary conditions. As before, boundary conditions are specified by type and the are classified under the `AbstractBoundary` type and subdivided into 4 additional abstract types `AbstractDirichlet`, `AbstractNeumann`, `AbstractPhysicalConstraint` and `AbstractWallFunction`. The complete abstract tree is illustrated below.
 
 ```@repl
 using XCALibre # hide
@@ -264,8 +264,8 @@ print_tree(AbstractBoundary) # hide
 
 Philosophically, the four subtypes represent different physical types of boundary conditions:
 
-* `AbstractDirichlet` boundary conditions are used to assign a concrete value to a boundary.
-* `AbstractNeumann` boundaries are used to fix the gradient at the boundary.
+* `AbstractDirichlet` boundary conditions are used to assign a concrete value to field at the boundary.
+* `AbstractNeumann` boundaries are used to fix the field gradient at the boundary.
 * `AbstractPhysicalConstraint` boundaries represent physical constraints imposed on the domain.
 * `AbstractWallFunction` represent models for treating flow or turbulence quantities in wall regions.
 
@@ -282,7 +282,7 @@ FixedTemperature(name; T, model::EnergyModel<:AbstractEnergyModel)
 ```
 * `name` is a symbol providing the boundary name
 * `T` is a keyword argument to define the temperate value to be assigned at the boundary
-* `model` is a keyworkd argument that expects an instance of the energy model to be used e.g. `SensibleEnergy`
+* `model` is a keyword argument that expects an instance of the energy model to be used e.g. `SensibleEnergy`
 
 ```julia
 DirichletFunction(name, func)
@@ -290,7 +290,7 @@ DirichletFunction(name, func)
 
 * `name` is a symbol providing the boundary name
 * `func` is a function identifier. `func` is a user-defined function (but can also be a neural network) that returns a scalar or vector as a function of time and space.
-* `func` must adhere to an internal contract. See XXX for more details
+* `func` must adhere to an internal contract. See [`XCALibre.Discretise.DirichletFunction`](@ref) for more details.
 
 ### `AbstractNeumann` conditions
 
@@ -316,9 +316,9 @@ Wall(name, value)
 
 !!! note
     
-    Currently, the value provided at the wall is not used internally. This mean that this boundary condition current acts a a no slip boundary. This will be extended to allow non-slip boundaries or moving walls.
+    Currently, the value provided at the wall is not used internally. This mean that this boundary condition currently acts as a no slip boundary. This will be extended to allow slip boundaries or moving walls.
 
-`Symmetry` boundary condition can be use to assign a symmetry constraint to a given boundary patch in the domain. It can be used for both vector and scalar quantities.
+`Symmetry` boundary condition can be used to assign a symmetry constraint to a given boundary patch in the domain. It can be used for both vector and scalar quantities.
 ```julia
 Symmetry(name)
 ```
@@ -358,7 +358,7 @@ NutWallFunction(name)
 
 ### Assigning conditions (macro)
 
-XCALibre.jl requires that a boundary condition is assigned to every single patch in the domain (as defined within the mesh object) for every the fields that is part of the solution. To facilitate this process, XCALibre.jl provides the `@assign` macro for convenience. The `@assign` macro has the following signature:
+XCALibre.jl requires that a boundary condition is assigned to every single patch in the domain (as defined within the mesh object) for every field that is part of the solution. To facilitate this process, XCALibre.jl provides the `@assign` macro for convenience. The `@assign` macro has the following signature:
 
 ```julia
 @assign! model::Physics <physical model> <field> (

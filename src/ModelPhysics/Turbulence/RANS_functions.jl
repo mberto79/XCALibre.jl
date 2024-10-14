@@ -102,7 +102,9 @@ function constrain!(eqn, BC, model, config)
     # turbFields = model.turbulence.fields
     turbulence = model.turbulence
 
-    facesID_range = get_boundaries(BC, boundaries)
+    # facesID_range = get_boundaries(BC, boundaries)
+    boundaries_cpu = get_boundaries(boundaries)
+    facesID_range = boundaries_cpu[BC.ID].IDs_range
     start_ID = facesID_range[1]
 
     # Execute apply boundary conditions kernel
@@ -180,7 +182,9 @@ function set_cell_value!(field, BC, model, config)
     (; fluid, turbulence) = model
     # turbFields = turbulence.fields
 
-    facesID_range = get_boundaries(BC, boundaries)
+    # facesID_range = get_boundaries(BC, boundaries)
+    boundaries_cpu = get_boundaries(boundaries)
+    facesID_range = boundaries_cpu[BC.ID].IDs_range
     start_ID = facesID_range[1]
 
     # Execute apply boundary conditions kernel
@@ -252,7 +256,9 @@ function set_production!(P, BC, model, gradU, config)
     # Extract physics models
     (; fluid, momentum, turbulence) = model
 
-    facesID_range = get_boundaries(BC, boundaries)
+    # facesID_range = get_boundaries(BC, boundaries)
+    boundaries_cpu = get_boundaries(boundaries)
+    facesID_range = boundaries_cpu[BC.ID].IDs_range
     start_ID = facesID_range[1]
 
     # Execute apply boundary conditions kernel
@@ -322,7 +328,9 @@ function correct_nut_wall!(νtf, BC, model, config)
     # Extract physics models
     (; fluid, turbulence) = model
 
-    facesID_range = get_boundaries(BC, boundaries)
+    # facesID_range = get_boundaries(BC, boundaries)
+    boundaries_cpu = get_boundaries(boundaries)
+    facesID_range = boundaries_cpu[BC.ID].IDs_range
     start_ID = facesID_range[1]
 
     # Execute apply boundary conditions kernel

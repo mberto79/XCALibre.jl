@@ -5,12 +5,12 @@
 ## What is XCALibre.jl?
 ---
 
-XCALibre.jl (pronounced as the mythical sword *Excalibur*) is a general purpose Computational Fluid Dynamics (CFD) library for 2D and 3D simulations on structured/unstructured grids using the finite volume method. XCALibre.jl has been designed to act as a platform for developing, testing and using *XPU CFD Algorithms and Libraries* to give researchers in both academia and industry alike a tool that can be used to test out ideas easily within a framework that offers acceptable performance. To this end, XCALibre.jl has been implemented to offer both CPU multi-threaded capabilities or GPU acceleration using the same codebase (thanks to the unified programming framework provided by [KernelAbstractions.jl](https://juliagpu.github.io/KernelAbstractions.jl/stable/)). Additionally, XCALibre.jl also offers a friendly API for those users who are interested in running CFD simulations with the existing solvers and models built into XCALibre.jl. 
+XCALibre.jl (pronounced as the mythical sword *Excalibur*) is a general purpose Computational Fluid Dynamics (CFD) library for 2D and 3D simulations on structured/unstructured grids using the finite volume method. XCALibre.jl has been designed to act as a platform for developing, testing and using *XPU CFD Algorithms and Libraries* to give researchers in both academia and industry alike a tool that can be used to test out ideas easily within a framework that offers acceptable performance. To this end, XCALibre.jl has been implemented to offer both CPU multi-threaded capabilities or GPU acceleration using the same codebase (thanks to the unified programming framework provided by [KernelAbstractions.jl](https://juliagpu.github.io/KernelAbstractions.jl/stable/)). XCALibre.jl also offers a friendly API for those users who are interested in running CFD simulations with the existing solvers and models built into XCALibre.jl. 
 
 ## Why XCALibre.jl?
 ---
 
-For CFD researchers whose research involves developing new numerical methods, turbulence models, or novel CFD methodologies, the development process can be taxiing when using commercial packages and their imagination might be constrained by having to adhere to either limited access to internal code functionality or exhausted as they reformulate their ideas to fit within any interfaces provided by the code. There are excellent open source CFD packages where access to functionality or internals is available, however, they are either written in static languages such as C/C++ or dynamic languages such as Python. In static languages, the resulting code is likely highly performant but implementation can be slow and often has a high learning curve (specially if the developer/researcher has no prior knowledge of the language). On the other hand, dynamics languages such as Python can offer a nice development experience at the cost of low runtime or reduced performance. The development of XCALibre.jl was motivated when we discovered the Julia programming language, which promises an interactive and enjoyable implementation experience whilst being able to generate performant code. Thanks to the tools available in the Julia ecosystems (see [Main dependencies](@ref)) it is also possible to generate CPU and GPU code using Julia. As a side effect, XCALibre.jl can also link readily with the entire Julia ecosystem, including machine learning frameworks such as Flux.jl, Lux.jl, Knet.jl, etc. Thanks to a user-friendly API, ultimately, we hope that XCALibre.jl can be useful to anyone who has an interest in CFD. Enjoy and give us [feedback](@ref #10).
+For CFD researchers whose research involves developing new numerical methods, turbulence models, or novel CFD methodologies, the development process can be taxing when using commercial packages and their imagination might be constrained by having to adhere to either limited access to internal code functionality or exhausted as they reformulate their ideas to fit within any interfaces provided by the code. There are excellent open source CFD packages where access to functionality or internals is available, however, they are either written in static languages such as C/C++ or dynamic languages such as Python. In static languages, the resulting code is likely highly performant but implementation can be slow and often has a high learning curve (especially if the developer/researcher has no prior knowledge of the language). On the other hand, dynamic languages such as Python can offer a nice development experience at the cost of low runtime or reduced performance. The development of XCALibre.jl was motivated when we discovered the Julia programming language, which promises an interactive and enjoyable implementation experience whilst being able to generate performant code. Thanks to the tools available in the Julia ecosystems (see [Main dependencies](@ref)) it is also possible to generate CPU and GPU code using Julia. As an added bonus, XCALibre.jl can also link readily with the entire Julia ecosystem, including machine learning frameworks such as Flux.jl, Lux.jl, Knet.jl, etc. Thanks to a user-friendly API, ultimately, we hope that XCALibre.jl can be useful to anyone who has an interest in CFD. Enjoy and give us [feedback](@ref #10).
 
 
 ## Main features
@@ -42,15 +42,15 @@ XCALibre.jl ships with fluid solvers for steady and transient simulations, based
 
 * [Steady incompressible flows](@ref XCALibre.Solvers.simple!)
 * [Steady weakly compressible flows](@ref XCALibre.Solvers.csimple!)
-* Transient incompressible flows
-* Transient weakly compressible flows
+* [Transient incompressible flows](@ref XCALibre.Solvers.piso!)
+* [Transient weakly compressible flows](@ref XCALibre.Solvers.cpiso!)
 
 !!! note
 
-    A solver for highly compressible flows (shock capturing) is currently in testing and will be available in the next major release. Currently the compressible solvers are based use a sensible energy approach for the energy equation.
+    A solver for highly compressible flows (shock capturing) is currently in testing and will be available in the next major release. Currently the compressible solvers use a sensible energy approach for the energy equation.
 
 ### Turbulence and energy models
-The list of available turbulence models available is expected to expand. The following turbulence models are already available in XCALibre.jl
+The list of turbulence models available is expected to expand. The following turbulence models are already available in XCALibre.jl:
 
 * Reynolds-Averaged Navier-Stokes (RANS)
   * ``k-\omega`` - available in low-Reynolds (wall-resolving) and in high-Reynolds (wall functions) mode
@@ -101,7 +101,7 @@ U_eqn = (
 * Fine-tuning of the public API expected based on of user feedback
 
 ### Internals
-* Overhaul of field data. Currently, both vectors and tensors are built on the primitive scalar field object. Whilst this was convenience during the early development stage, the package has reach a level of maturity that makes this approach hard to maintain, adding unneeded complexity when working with tensors. We plan to define separate internals (how tensors are defined and stored in memory). It is anticipated that this will ease the implementation of models working with tensors, and give some performance gains since information will be stored closer in memory.
+* Overhaul of field data. Currently, both vectors and tensors are built on the primitive scalar field object. Whilst this was convenient during the early development stage, the package has reached a level of maturity that makes this approach hard to maintain, adding unneeded complexity when working with tensors. We plan to define separate internals (how tensors are defined and stored in memory). It is anticipated that this will ease the implementation of models working with tensors, give some performance gains and allow all fields to participate in Julia's broadcasting framework.
 
 
 ## Main dependencies

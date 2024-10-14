@@ -91,6 +91,7 @@ U_eqn = (
 
 ### Capabilities, solvers, algorithms, models, etc.
 * Solver for highly compressible flows (including shockwaves)
+* Implement multithreaded sparse-matrix multiply for better multithreaded performance
 * Conjugate heat transfer
 * ``k-\epsilon`` turbulence model
 * Implement parallel versions of more efficient preconditioners

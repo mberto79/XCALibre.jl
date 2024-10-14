@@ -6,11 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version [v0.3.1] - 2024-10-18
 
 ### Added
-* Vastly improved documentation with new examples provided
+* Vastly improved documentation with new examples provided [#12]
 * Changelog added to record changes more clearly. Record kept in [Release notes](@ref)
 
 ### Fixed
-* The calculation of gradients can be limited for stability. This functionality can be activated by passing the key work argument `limit_gradient` to the `run!` function. The implementation has been improved for robustness.
+* The calculation of gradients can be limited for stability. This functionality can be activated by passing the key work argument `limit_gradient` to the `run!` function. The implementation has been improved for robustness [#12]
+* Removed face information being printed when `Mesh` objects are created to stop printing a `ERROR: Scalar indexing is disallowed` message [#13]
 
 ### Changed
 * Master branch protected and requires PRs to push changes

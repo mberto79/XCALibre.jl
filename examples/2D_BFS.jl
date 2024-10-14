@@ -1,5 +1,5 @@
 using XCALibre
-# using CUDA
+using CUDA
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
@@ -8,7 +8,7 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-# mesh_dev = adapt(CUDABackend(), mesh)
+mesh_dev = adapt(CUDABackend(), mesh)
 mesh_dev = mesh
 
 velocity = [1.5, 0.0, 0.0]

@@ -177,18 +177,30 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
     
     (; hardware) = config
     (; backend, workgroup) = hardware
-    (; values) = result
+    (; values, mesh) = result
     
     A = _A(phiEqn)
     opA = phiEqn.equation.opA
     b = _b(phiEqn, component)
 
+    # smoother = JacobiSmoother(0, 5)
+    # apply_smoother!(smoother, values, A, b, mesh, config)
+    # x .= values
+    # apply_smoother!(smoother, x, A, b, mesh, config)
+    ldiv = false
+    typeof(P) <: KP.AbstractKrylovPreconditioner ? ldiv = true : ldiv = false
     solve!(
-        # solver, LinearOperator(A), b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
-        # solver, A, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
-        solver, opA, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
-        )
+            solver, A, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=ldiv # original
+
+            # solver, LinearOperator(A), b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
+            # solver, opA, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
+            )
+        
     KernelAbstractions.synchronize(backend)
+    
+    # apply_smoother!(smoother, values, A, b, mesh, config)
+    # apply_smoother!(smoother, x, A, b, mesh, config)
+    
     kernel! = solve_copy_kernel!(backend, workgroup)
     kernel!(values, x, ndrange = length(values))
     KernelAbstractions.synchronize(backend)

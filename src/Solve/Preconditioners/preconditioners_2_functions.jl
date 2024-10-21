@@ -47,6 +47,14 @@ end
 #     end
 # end
 
+function update_preconditioner!(P::Preconditioner{IC0GPU,M,PT,S}, mesh, config) where {M<:AbstractSparseArray,PT,S}
+    KP.update!(P.P, P.A)
+end
+
+function update_preconditioner!(P::Preconditioner{ILU0GPU,M,PT,S}, mesh, config) where {M<:AbstractSparseArray,PT,S}
+    KP.update!(P.P, P.A)
+end
+
 function update_preconditioner!(P::Preconditioner{NormDiagonal,M,PT,S}, mesh, config) where {M<:AbstractSparseArray,PT,S}
     # backend = _get_backend(mesh)
 

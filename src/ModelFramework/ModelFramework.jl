@@ -7,8 +7,8 @@ using Adapt
 using LinearOperators
 
 using Krylov
+import KrylovPreconditioners as KP
 using KernelAbstractions
-# using CUDA, AMDGPU
 
 using XCALibre.Mesh
 using XCALibre.Fields

@@ -9,7 +9,7 @@ mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 mesh_dev = adapt(CUDABackend(), mesh)
-mesh_dev = mesh
+# mesh_dev = mesh
 
 velocity = [1.5, 0.0, 0.0]
 nu = 1e-3
@@ -52,19 +52,19 @@ solvers = (
     U = set_solver(
         model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0(), #Jacobi(),
+        preconditioner = ILU0GPU(), #Jacobi(), # ILU0()
         convergence = 1e-7,
         relax       = 0.7,
-        rtol = 1e-5,
+        rtol = 1e-1,
         atol = 1e-15
     ),
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), # LDL()
+        preconditioner = IC0GPU(), # LDL() # Jacobi()
         convergence = 1e-7,
-        relax       = 0.7,
-        rtol = 1e-5,
+        relax       = 0.3,
+        rtol = 1e-2,
         atol = 1e-15
     )
 )
@@ -73,8 +73,8 @@ runtime = set_runtime(
     iterations=1000, time_step=1, write_interval=1000)
     # iterations=1, time_step=1, write_interval=1)
 
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=32)
+hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+# hardware = set_hardware(backend=CPU(), workgroup=32)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
@@ -84,5 +84,5 @@ GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config)
+@time residuals = run!(model, config)
 

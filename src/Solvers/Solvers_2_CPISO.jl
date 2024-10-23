@@ -149,7 +149,8 @@ function CPISO(
     p_model = p_eqn.model
     (; solvers, schemes, runtime, hardware) = config
     (; iterations, write_interval, dt) = runtime
-    (; backend) = hardware
+    (; backend, method) = hardware
+    activate_multithread(backend, method)
     
     mdotf = get_flux(U_eqn, 2)
     mueff = get_flux(U_eqn, 3)

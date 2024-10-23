@@ -1,6 +1,9 @@
 using XCALibre
-using CUDA # Run this if using NVIDIA GPU
+# using CUDA # Run this if using NVIDIA GPU
 # using AMDGPU # Run this if using AMD GPU
+
+# using ThreadedSparseCSR 
+# ThreadedSparseCSR.multithread_matmul(BaseThreads())
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "cylinder_d10mm_5mm.unv"

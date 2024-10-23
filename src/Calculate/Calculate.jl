@@ -8,6 +8,11 @@ using Adapt
 using Atomix
 using KernelAbstractions
 using GPUArrays
+
+# using ThreadedSparseCSR
+# ThreadedSparseCSR.multithread_matmul(BaseThreads())
+# # ThreadedSparseCSR.multithread_matmul(PolyesterThreads())
+
 # using CUDA
 using XCALibre.Mesh
 using XCALibre.Fields

@@ -1,5 +1,9 @@
 export flux!, update_nueff!, inverse_diagonal!, remove_pressure_source!, H!, correct_velocity!
 
+# must define for other backends as extensions
+activate_multithread(backend::CPU, method) = ThreadedSparseCSR.multithread_matmul(method)
+
+
 ## UPDATE VISCOSITY
 
 function update_nueff!(nueff, nu, turb_model, config)

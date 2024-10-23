@@ -5,12 +5,18 @@ using Krylov
 using LinearAlgebra
 using Statistics
 using SparseArrays
+using SparseMatricesCSR
 using LinearOperators
 using LDLFactorizations
 using KernelAbstractions
 using Atomix
 using ILUZero
 import KrylovPreconditioners as KP
+
+# using ThreadedSparseCSR
+# ThreadedSparseCSR.multithread_matmul(BaseThreads())
+# # ThreadedSparseCSR.multithread_matmul(PolyesterThreads())
+
 
 using XCALibre.Mesh
 using XCALibre.Fields

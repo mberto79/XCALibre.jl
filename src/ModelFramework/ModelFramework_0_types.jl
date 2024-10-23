@@ -100,6 +100,9 @@ end
 
 # Linear system matrix equation
 
+_build_A(backend::CPU, i, j, v, n) = sparsecsr(i, j, v, n, n)
+_build_opA(A::SparseMatricesCSR.SparseMatrixCSR) = LinearOperator(A)
+
 ## ORIGINAL STRUCTURE PARAMETERISED FOR GPU
 struct ScalarEquation{VTf<:AbstractVector, ASA<:AbstractSparseArray, OP} <: AbstractEquation
     A::ASA
@@ -115,12 +118,13 @@ ScalarEquation(mesh::AbstractMesh) = begin
     mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
     i, j, v = sparse_matrix_connectivity(mesh_temp) # This needs to be a kernel
     backend = _get_backend(mesh)
-    A = _convert_array!(sparse(i, j, v), backend)
+    # A = _convert_array!(sparse(i, j, v), backend)
+    A = _build_A(backend, i, j, v, nCells)
     ScalarEquation(
         A,
 
-        # LinearOperator(A),
-        KP.KrylovOperator(A), # small gain in performance
+       _build_opA(A),
+        # KP.KrylovOperator(A), # small gain in performance
         # A,
 
         _convert_array!(zeros(Tf, nCells), backend),
@@ -146,13 +150,19 @@ VectorEquation(mesh::AbstractMesh) = begin
     mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
     i, j, v = sparse_matrix_connectivity(mesh_temp) # This needs to be a kernel
     backend = _get_backend(mesh)
-    A = _convert_array!(sparse(i, j, v), backend) 
+    # A = _convert_array!(sparse(i, j, v), backend) 
+    # A0 = _convert_array!(sparse(i, j, v), backend)
+    # A = _convert_array!(sparsecsr(i, j, v), backend) 
+    # A0 = _convert_array!(sparsecsr(i, j, v), backend)
+
+    A = _build_A(backend, i, j, v, nCells)
+    A0 = _build_A(backend, i, j, v, nCells)
     VectorEquation(
-        _convert_array!(sparse(i, j, v), backend),
+        A0,
         A,
 
-        # LinearOperator(A),
-        KP.KrylovOperator(A),
+        _build_opA(A),
+        # KP.KrylovOperator(A),
         # A,
 
         _convert_array!(zeros(Tf, nCells), backend),
@@ -186,37 +196,48 @@ function sparse_matrix_connectivity(mesh::AbstractMesh)
 end
 
 # Nzval index function definition for sparse array
-function nzval_index(colptr, rowval, start_index, required_index, ione)
-    # Set start value and offset to 0
-    start = colptr[start_index]
-    offset = 0
+# function nzval_index(colptr, rowval, start_index, required_index, ione)
+#     # Set start value and offset to 0
+#     start = colptr[start_index]
+#     offset = 0
     
-    # Loop over rowval array and increment offset until required value
-    for j in start:length(rowval)
-        offset += 1
-        if rowval[j] == required_index
-            break
-        end
-    end
+#     # Loop over rowval array and increment offset until required value
+#     for j in start:length(rowval)
+#         offset += 1
+#         if rowval[j] == required_index
+#             break
+#         end
+#     end
 
-    # Calculate index to output
-    return start + offset - ione
-end
+#     # Calculate index to output
+#     return start + offset - ione
+# end
 
-function spindex(colptr::AbstractArray{T}, rowval, i, j) where T
+# Sparse CSC format
+# function spindex(colptr::AbstractArray{T}, rowval, i, j) where T
+#     start_ind = colptr[j]
+#     end_ind = colptr[j+1] - one(T) # changed the range (check is ok)
 
-    # rows = rowvals(A)
-    start_ind = colptr[j]
-    end_ind = colptr[j+1]
+#     ind = zero(T)
+#     for nzi in start_ind:end_ind
+#         if rowval[nzi] == i
+#             ind = nzi
+#             break
+#         end
+#     end
+#     return ind
+# end
 
-    # ind = zero(eltype(colptr))
+# Sparse CSR format
+function spindex(rowptr::AbstractArray{T}, colval, i, j) where T
+    start_ind = rowptr[i]
+    end_ind = rowptr[i+1] - one(T)
+
     ind = zero(T)
     for nzi in start_ind:end_ind
-    # for nzi in nzrange(A, j)
-        if rowval[nzi] == i
+        if colval[nzi] == j
             ind = nzi
             break
-            # return ind
         end
     end
     return ind

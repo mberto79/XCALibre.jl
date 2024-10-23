@@ -5,6 +5,8 @@ using SparseArrays
 using StaticArrays
 using Adapt
 using LinearOperators
+using SparseMatricesCSR
+using ThreadedSparseCSR
 
 using Krylov
 import KrylovPreconditioners as KP

@@ -5,6 +5,8 @@ using XCALibre.Fields
 using XCALibre.ModelFramework
 using XCALibre.Discretise
 using Adapt
+using KernelAbstractions
+using ThreadedSparseCSR
 
 include("Simulate_0_types.jl")
 

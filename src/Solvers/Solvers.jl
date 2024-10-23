@@ -14,6 +14,11 @@ using KernelAbstractions
 using Atomix
 using Adapt
 
+using ThreadedSparseCSR
+# ThreadedSparseCSR.multithread_matmul(BaseThreads())
+# # ThreadedSparseCSR.multithread_matmul(PolyesterThreads())
+
+
 using XCALibre.Mesh
 using XCALibre.Fields
 using XCALibre.ModelFramework

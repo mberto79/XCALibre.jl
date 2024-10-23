@@ -94,7 +94,8 @@ end
     face = faces[fID]
     cell = cells[cellID] 
 
-    zcellID = nzval_index(colptr, rowval, cellID, cellID, ione)
+    # zcellID = nzval_index(colptr, rowval, cellID, cellID, ione)
+    zcellID = spindex(colptr, rowval, cellID, cellID)
 
     # Call apply generated function
     AP, BP = apply!(model, BC, terms, cellID, zcellID, cell, face, fID, i, component, time)

@@ -6,6 +6,11 @@ export BicgstabSolver, CgSolver, GmresSolver
 using KernelAbstractions; export CPU
 import Adapt: adapt; export adapt
 
+# using ThreadedSparseCSR
+# ThreadedSparseCSR.multithread_matmul(BaseThreads())
+# # ThreadedSparseCSR.multithread_matmul(PolyesterThreads())
+
+
 include("Mesh/Mesh.jl")
 include("UNV2/UNV2.jl")
 include("UNV3/UNV3.jl")

@@ -166,3 +166,6 @@ end
 
 _m(A::SparseArrays.SparseMatrixCSC) = A.m
 _n(A::SparseArrays.SparseMatrixCSC) = A.n
+
+_m(A::SparseMatricesCSR.SparseMatrixCSR) = A.m
+_n(A::SparseMatricesCSR.SparseMatrixCSR) = A.n

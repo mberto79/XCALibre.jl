@@ -4,6 +4,7 @@ export _A, _A0, _b
 export _nzval, _rowval, _colptr
 export get_sparse_fields
 export XDir, YDir, ZDir, get_values
+export get_backend
 
 # Components
 struct XDir{T} 
@@ -90,13 +91,20 @@ end
 # @inline _rowval(A::GPUCSC) = A.rowVal
 @inline _rowval(A::SparseArrays.SparseMatrixCSC) = A.rowval
 
-# @inline get_sparse_fields(A::GPUCSC) = begin
-#     A.nzVal, A.rowVal, A.colPtr
-# end
-
 @inline get_sparse_fields(A::SparseArrays.SparseMatrixCSC) = begin
     A.nzval, A.rowval, A.colptr
 end
+
+# Sparse CSR (temporary hack)
+@inline _nzval(A::SparseMatricesCSR.SparseMatrixCSR) = A.nzval
+@inline _colptr(A::SparseMatricesCSR.SparseMatrixCSR) = A.rowptr 
+@inline _rowval(A::SparseMatricesCSR.SparseMatrixCSR) = A.colval
+
+@inline get_sparse_fields(A::SparseMatricesCSR.SparseMatrixCSR) = begin
+    A.nzval, A.colval, A.rowptr
+end
+
+KernelAbstractions.get_backend(A::SparseMatricesCSR.SparseMatrixCSR) = CPU()
 
 @inline get_values(phi::ScalarField, component::Nothing) = phi.values
 @inline get_values(psi::VectorField, component::XDir) = psi.x.values

@@ -357,7 +357,8 @@ end
     i = @index(Global)
 
     @inbounds begin
-        nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
+        # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
+        nIndex = spindex(colptr, rowval, cellID, cellID)
         b[cellID] = nzval[nIndex]*pRef
         nzval[nIndex] += nzval[nIndex]
     end

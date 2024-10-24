@@ -1,5 +1,5 @@
 using XCALibre
-# using CUDA # Run this if using NVIDIA GPU
+using CUDA # Run this if using NVIDIA GPU
 # using AMDGPU # Run this if using AMD GPU
 
 # using ThreadedSparseCSR 
@@ -11,8 +11,8 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-# mesh_dev = adapt(CUDABackend(), mesh)
 mesh_dev = mesh
+mesh_dev = adapt(CUDABackend(), mesh)
 
 # Inlet conditions
 
@@ -75,7 +75,7 @@ schemes = (
 runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
 
 hardware = set_hardware(backend=CPU(), workgroup=1024)
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 
 config = Configuration(
@@ -92,3 +92,22 @@ plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
 plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
 plot!(1:length(Rp), Rp, yscale=:log10, label="p")
+
+using CUDA
+using LinearAlgebra
+using SparseArrays
+using SparseMatricesCSR
+
+n = 5
+A = sprand(n,n, 0.5)
+
+i, j, v = findnz(A)
+
+Acsc = sparse(i, j, v, n ,n)
+Acsr = sparsecsr(i, j, v, n ,n)
+
+Agpu = CUSPARSE.CuSparseMatrixCSR(Acsc)
+
+i, j, v = findnz(A) |> cu
+
+Agpu = CUSPARSE.CuSparseMatrixCSR(i, j, v, (1000, 1000))

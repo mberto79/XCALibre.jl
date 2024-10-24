@@ -46,6 +46,7 @@ function _apply_boundary_conditions!(
         
         # Execute apply boundary conditions kernel
         kernel_range = length(facesID_range)
+
         kernel! = apply_boundary_conditions_kernel!(backend, workgroup, kernel_range)
         kernel!(
             model, BC, model.terms, faces, cells, start_ID, boundary_cellsID, rowval, colptr, nzval, b, ione, component, time, ndrange=kernel_range

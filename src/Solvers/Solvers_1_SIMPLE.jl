@@ -117,7 +117,7 @@ function SIMPLE(
     (; solvers, schemes, runtime, hardware) = config
     (; iterations, write_interval) = runtime
     (; backend, method) = hardware
-    activate_multithread(backend, method)
+    # activate_multithread(backend, method)
     
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)

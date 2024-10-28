@@ -13,9 +13,9 @@ export residual!
         convergence, 
         relax,
         limit=(),
-        itmax::Integer=100, 
+        itmax::Integer=500, 
         atol=(eps(_get_float(field.mesh)))^0.9,
-        rtol=_get_float(field.mesh)(1e-3)
+        rtol=_get_float(field.mesh)(1e-1)
         ) where {S,PT<:PreconditionerType} = begin
 
         # return NamedTuple
@@ -42,9 +42,9 @@ This function is used to provide solver settings that will be used internally in
 - `convergence` sets the stopping criteria of this field
 - `relax` specifies the relaxation factor to be used e.g. set to 1 for no relaxation
 - `limit` used in some solvers to bound the solution within this limits e.g. (min, max). It defaults to `()`
-- `itmax` maximum number of iterations in a single solver pass (defaults to 100) 
+- `itmax` maximum number of iterations in a single solver pass (defaults to 500) 
 - `atol` absolute tolerance for the solver (default to eps(FloatType)^0.9)
-- `rtol` set relative tolerance for the solver (defaults to 1e-3)
+- `rtol` set relative tolerance for the solver (defaults to 1e-1)
 """
 set_solver( 
         field::AbstractField;
@@ -54,9 +54,9 @@ set_solver(
         convergence, 
         relax,
         limit=(),
-        itmax::Integer=100, 
+        itmax::Integer=500, 
         atol=(eps(_get_float(field.mesh)))^0.9,
-        rtol=_get_float(field.mesh)(1e-3)
+        rtol=_get_float(field.mesh)(1e-1)
     ) where {S,PT<:PreconditionerType} = begin
 
     # return NamedTuple
@@ -183,19 +183,19 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
     opA = phiEqn.equation.opA
     b = _b(phiEqn, component)
 
-    smoother = JacobiSmoother(0, 5)
-    apply_smoother!(smoother, values, A, b, mesh, config)
+    # smoother = JacobiSmoother(0, 2)
+    # apply_smoother!(smoother, values, A, b, mesh, config)
     # x .= values
     # apply_smoother!(smoother, x, A, b, mesh, config)
 
-    ldiv = false
-    typeof(P) <: KP.AbstractKrylovPreconditioner ? ldiv = true : ldiv = false
+     
+    ldiv = typeof(P) <: KP.AbstractKrylovPreconditioner
     solve!(
         solver, opA, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=ldiv # original
             )
     # KernelAbstractions.synchronize(backend)
 
-    # println(statistics(solver).niter)
+    statistics(solver).niter == itmax && @warn "Maximum number of iteration reached!"
     
     kernel! = solve_copy_kernel!(backend, workgroup)
     kernel!(values, x, ndrange = length(values))

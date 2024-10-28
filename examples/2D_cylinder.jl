@@ -52,8 +52,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
-        rtol = 0.1,
-        atol = 1e-6
+        rtol = 0.1
     ),
     p = set_solver(
         model.momentum.p;
@@ -61,14 +60,14 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 0.1,
-        atol = 1e-6
+        rtol = 0.1
     )
 )
 
+grad = Midpoint # Midpoint # Orthogonal
 schemes = (
-    U = set_schemes(divergence=Upwind, gradient=Orthogonal),
-    p = set_schemes(gradient=Orthogonal)
+    U = set_schemes(divergence=Upwind, gradient=grad),
+    p = set_schemes(gradient=grad)
 )
 
 # runtime = set_runtime(iterations=20, write_interval=10, time_step=1) # for proto
@@ -88,10 +87,12 @@ initialise!(model.momentum.p, 0.0)
 
 residuals = run!(model, config)
 
-plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
-plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p")
+xrange = 1:runtime.iterations
+plot(; xlims=(0,runtime.iterations), ylims=(1e-7,0.2))
+plot!(xrange, residuals.Ux, yscale=:log10, label="Ux")
+plot!(xrange, residuals.Uy, yscale=:log10, label="Uy")
+plot!(xrange, residuals.p, yscale=:log10, label="p")
+
 
 using CUDA
 using LinearAlgebra

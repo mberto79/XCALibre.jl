@@ -8,6 +8,7 @@ grid = "bfs_unv_tet_5mm.unv"
 grid = "bfs_unv_tet_10mm.unv"
 
 mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_5mm.unv"
+mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_4mm.unv"
 
 # mesh_file = joinpath(grids_dir, grid)
 
@@ -52,7 +53,7 @@ model = Physics(
 
 schemes = (
     U = set_schemes(divergence=Upwind, gradient=Orthogonal),
-    p = set_schemes(gradient=Midpoint)
+    p = set_schemes(gradient=Orthogonal)
     # p = set_schemes()
 )
 
@@ -64,8 +65,7 @@ solvers = (
         preconditioner = Jacobi(), # Jacobi ILU0GPU
         convergence = 1e-7,
         relax       = 0.8,
-        rtol = 1e-2,
-        # atol = 1e-5
+        rtol = 0.1,
     ),
     p = set_solver(
         model.momentum.p;
@@ -73,14 +73,12 @@ solvers = (
         preconditioner = Jacobi(), # Jacobi IC0GPU
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 1e-1,
-        # atol = 1e-6
-        itmax = 100
+        rtol = 0.1,
     )
 )
 
 runtime = set_runtime(
-    iterations=100, time_step=1, write_interval=100)
+    iterations=1500, time_step=1, write_interval=500)
 
 hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=CPU(), workgroup=4)
@@ -93,30 +91,12 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-# residuals = run!(model, config, limit_gradient=true)
-residuals = run!(model, config, limit_gradient=false)
+residuals = run!(model, config, limit_gradient=true)
+# residuals = run!(model, config, limit_gradient=false)
 
-plot(; xlims=(0,1000))
-plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p")
-
-# # PROFILING CODE
-
-using Profile, PProf
-
-GC.gc()
-initialise!(model.momentum.U, velocity)
-initialise!(model.momentum.p, 0.0)
-
-Profile.Allocs.clear()
-Profile.Allocs.@profile sample_rate=1 begin 
-    residuals = run!(model, config)
-end
-
-PProf.Allocs.pprof()
-
-test(::Nothing, a) = print("nothing")
-test(b, a) = print(a*a)
-
-test(nothing, 1)
+xrange = 1:runtime.iterations
+plot(; xlims=(0,runtime.iterations), ylims=(1e-7,0.2))
+plot!(xrange, residuals.Ux, yscale=:log10, label="Ux")
+plot!(xrange, residuals.Uy, yscale=:log10, label="Uy")
+plot!(xrange, residuals.Uz, yscale=:log10, label="Uz")
+plot!(xrange, residuals.p, yscale=:log10, label="p")

@@ -183,23 +183,19 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
     opA = phiEqn.equation.opA
     b = _b(phiEqn, component)
 
-    # smoother = JacobiSmoother(0, 5)
-    # apply_smoother!(smoother, values, A, b, mesh, config)
+    smoother = JacobiSmoother(0, 5)
+    apply_smoother!(smoother, values, A, b, mesh, config)
     # x .= values
     # apply_smoother!(smoother, x, A, b, mesh, config)
+
     ldiv = false
     typeof(P) <: KP.AbstractKrylovPreconditioner ? ldiv = true : ldiv = false
     solve!(
-            solver, A, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=ldiv # original
-
-            # solver, LinearOperator(A), b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
-            # solver, opA, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
+        solver, opA, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=ldiv # original
             )
-        
-    KernelAbstractions.synchronize(backend)
-    
-    # apply_smoother!(smoother, values, A, b, mesh, config)
-    # apply_smoother!(smoother, x, A, b, mesh, config)
+    # KernelAbstractions.synchronize(backend)
+
+    # println(statistics(solver).niter)
     
     kernel! = solve_copy_kernel!(backend, workgroup)
     kernel!(values, x, ndrange = length(values))
@@ -328,8 +324,9 @@ end
 
         # Run implicit relaxation calculations
         D0 = nzval[nIndex]
-        nzval[nIndex] = max(abs(D0), sumv)/alpha
-        b[i] += (nzval[nIndex] - D0)*field[i]
+        D_max = max(abs(D0), sumv)/alpha
+        nzval[nIndex] = D_max
+        b[i] += (D_max - D0)*field[i]
     end
 end
 

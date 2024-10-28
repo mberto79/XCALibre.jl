@@ -57,4 +57,6 @@ end
 _m(A::SparseGPU) = A.dims[1]
 _n(A::SparseGPU) = A.dims[2]
 
-end
+end # end module
+
+

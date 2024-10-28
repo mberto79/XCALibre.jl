@@ -226,15 +226,13 @@ end
 @kernel function _remove_pressure_source!(cells, source_sign, ∇p, bx, by, bz) #Extend to 3D
     i = @index(Global)
 
-    @uniform begin
-        dpdx, dpdy, dpdz = ∇p.result.x, ∇p.result.y, ∇p.result.z
-    end
 
     @inbounds begin
         (; volume) = cells[i]
-        bx[i] -= source_sign * dpdx[i] * volume
-        by[i] -= source_sign * dpdy[i] * volume
-        bz[i] -= source_sign * dpdz[i] * volume
+        calc = source_sign*∇p[i]*volume
+        bx[i] -= calc[1]
+        by[i] -= calc[2]
+        bz[i] -= calc[3]
     end
 end
 

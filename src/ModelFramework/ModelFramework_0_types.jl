@@ -231,7 +231,7 @@ end
 # Sparse CSR format
 function spindex(rowptr::AbstractArray{T}, colval, i, j) where T
     start_ind = rowptr[i]
-    end_ind = rowptr[i+1] #- one(T)
+    end_ind = rowptr[i+1] - one(T)
 
     ind = zero(T)
     for nzi in start_ind:end_ind

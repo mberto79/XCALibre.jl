@@ -4,12 +4,11 @@ using Atomix
 using KernelAbstractions
 using Accessors
 using StaticArrays
-using LinearAlgebra
 using Adapt
 
-# using ThreadedSparseCSR
-# ThreadedSparseCSR.multithread_matmul(BaseThreads())
-# # ThreadedSparseCSR.multithread_matmul(PolyesterThreads())
+using LinearAlgebra
+using SparseMatricesCSR
+using ThreadedSparseCSR
 
 using XCALibre.Mesh
 using XCALibre.Fields

@@ -1,7 +1,6 @@
 module Solvers
 
 using Accessors
-using LinearAlgebra
 using SparseArrays
 using StaticArrays
 using Statistics
@@ -14,10 +13,9 @@ using KernelAbstractions
 using Atomix
 using Adapt
 
+using LinearAlgebra
+using SparseMatricesCSR
 using ThreadedSparseCSR
-# ThreadedSparseCSR.multithread_matmul(BaseThreads())
-# # ThreadedSparseCSR.multithread_matmul(PolyesterThreads())
-
 
 using XCALibre.Mesh
 using XCALibre.Fields

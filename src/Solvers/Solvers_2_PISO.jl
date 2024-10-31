@@ -48,8 +48,7 @@ function PISO(
     mesh = model.domain
     (; solvers, schemes, runtime, hardware) = config
     (; iterations, write_interval, dt) = runtime
-    (; backend, method) = hardware
-    activate_multithread(backend, method)
+    (; backend) = hardware
     
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)
@@ -173,8 +172,8 @@ function PISO(
         # correct_mass_flux(mdotf, p, rDf, config) # new approach
 
 
-    grad!(gradU, Uf, U, U.BCs, time, config)
-    limit_gradient && limit_gradient!(gradU, U, config)
+    # grad!(gradU, Uf, U, U.BCs, time, config)
+    # limit_gradient && limit_gradient!(gradU, U, config)
 
     turbulence!(turbulenceModel, model, S, S2, prev, time, config) 
     update_nueff!(nueff, nu, model.turbulence, config)

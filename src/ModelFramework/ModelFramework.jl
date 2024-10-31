@@ -5,6 +5,8 @@ using SparseArrays
 using StaticArrays
 using Adapt
 using LinearOperators
+
+using LinearAlgebra
 using SparseMatricesCSR
 using ThreadedSparseCSR
 

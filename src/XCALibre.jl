@@ -6,9 +6,9 @@ export BicgstabSolver, CgSolver, GmresSolver
 using KernelAbstractions; export CPU
 import Adapt: adapt; export adapt
 
-# using ThreadedSparseCSR
-# ThreadedSparseCSR.multithread_matmul(BaseThreads())
-# # ThreadedSparseCSR.multithread_matmul(PolyesterThreads())
+using LinearAlgebra
+using SparseMatricesCSR
+using ThreadedSparseCSR
 
 
 include("Mesh/Mesh.jl")
@@ -47,6 +47,10 @@ using Reexport
 @reexport using XCALibre.VTK
 @reexport using XCALibre.UNV3
 @reexport using XCALibre.UNV2
+
+# function __init__()
+#     ThreadedSparseCSR.multithread_matmul(BaseThreads())
+# end
 
 # using PrecompileTools: @setup_workload, @compile_workload
 

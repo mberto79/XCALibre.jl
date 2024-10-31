@@ -50,5 +50,6 @@ Function used to configure the backend.
 This function returns a `NamedTuple` with the fields `backend` and `workgroup` which are accessed by internally in `XCALibre.jl` to execute a given kernel.
 """
 set_hardware(;backend, workgroup, method=BaseThreads()) = begin
+    ThreadedSparseCSR.multithread_matmul(method)
     (backend=backend, workgroup=workgroup, method=method)
 end

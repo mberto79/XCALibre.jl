@@ -1,6 +1,5 @@
 module Calculate
 
-using LinearAlgebra
 using StaticArrays
 using SparseArrays
 using Accessors
@@ -9,9 +8,9 @@ using Atomix
 using KernelAbstractions
 using GPUArrays
 
-# using ThreadedSparseCSR
-# ThreadedSparseCSR.multithread_matmul(BaseThreads())
-# # ThreadedSparseCSR.multithread_matmul(PolyesterThreads())
+using LinearAlgebra
+using SparseMatricesCSR
+using ThreadedSparseCSR
 
 # using CUDA
 using XCALibre.Mesh

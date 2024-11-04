@@ -239,8 +239,8 @@ function implicit_relaxation!(
     # Output sparse matrix properties and values
     A = _A(phiEqn)
     b = _b(phiEqn, component)
-    rowval_array = _rowval(A)
-    colptr_array = _colptr(A)
+    rowval_array = _colval(A)
+    colptr_array = _rowptr(A)
     nzval_array = _nzval(A)
 
     # Get backend and define kernel
@@ -257,14 +257,14 @@ function implicit_relaxation!(
     # check_for_precon!(nzval_array, precon, backend)
 end
 
-@kernel function implicit_relaxation_kernel!(ione, rowval, colptr, nzval, b, field, alpha)
+@kernel function implicit_relaxation_kernel!(ione, colval, rowptr, nzval, b, field, alpha)
     # i defined as values from 1 to length(b)
     i = @index(Global)
     
     @inbounds begin
 
         # Find nzval index relating to A[i,i]
-        nIndex = spindex(colptr, rowval, i, i)
+        nIndex = spindex(rowptr, colval, i, i)
 
         # Run implicit relaxation calculations
         nzval[nIndex] /= alpha
@@ -286,8 +286,8 @@ function implicit_relaxation_diagdom!(
     # Output sparse matrix properties and values
     A = _A(phiEqn)
     b = _b(phiEqn, component)
-    rowval_array = _rowval(A)
-    colptr_array = _colptr(A)
+    rowval_array = _colval(A)
+    colptr_array = _rowptr(A)
     nzval_array = _nzval(A)
 
     # Get backend and define kernel
@@ -304,7 +304,7 @@ function implicit_relaxation_diagdom!(
 end
 
 @kernel function _implicit_relaxation_diagdom!(cells::AbstractArray{Cell{TF,SV,UR}}, cell_neighbours, 
-    ione, rowval, colptr, nzval, b, field, alpha) where {TF,SV,UR}
+    ione, colval, rowptr, nzval, b, field, alpha) where {TF,SV,UR}
     # i defined as values from 1 to length(b)
     i = @index(Global)
     
@@ -313,12 +313,12 @@ end
     @inbounds begin
 
         # Find nzval index relating to A[i,i]
-        nIndex = spindex(colptr, rowval, i, i)
+        nIndex = spindex(rowptr, colval, i, i)
         
         (; faces_range) = cells[i]
         for ni ∈ faces_range
             nID = cell_neighbours[ni]
-            zIndex = spindex(colptr, rowval, i, nID)
+            zIndex = spindex(rowptr, colval, i, nID)
             sumv += abs(nzval[zIndex])
         end
 
@@ -340,8 +340,8 @@ function setReference!(pEqn::E, pRef, cellID, config) where E<:ModelEquation
         ione = one(_get_int((get_phi(pEqn)).mesh))
         (; b, A) = pEqn.equation
         nzval_array = nzval(A)
-        colptr_array = colptr(A)
-        rowval_array = rowval(A)
+        colptr_array = rowptr(A)
+        rowval_array = colval(A)
 
         kernel! = _setReference!(backend, workgroup)
         kernel!(nzval_array, colptr_array, rowval_array, b, pRef, ione, cellID, ndrange = 1)
@@ -350,12 +350,11 @@ function setReference!(pEqn::E, pRef, cellID, config) where E<:ModelEquation
     end
 end
 
-@kernel function _setReference!(nzval, colptr, rowval, b, pRef, ione, cellID)
+@kernel function _setReference!(nzval, rowptr, colval, b, pRef, ione, cellID)
     i = @index(Global)
 
     @inbounds begin
-        # nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
-        nIndex = spindex(colptr, rowval, cellID, cellID)
+        nIndex = spindex(rowptr, colval, cellID, cellID)
         b[cellID] = nzval[nIndex]*pRef
         nzval[nIndex] += nzval[nIndex]
     end

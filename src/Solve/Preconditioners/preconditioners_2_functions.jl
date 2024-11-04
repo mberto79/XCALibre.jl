@@ -8,8 +8,6 @@ begin
     mesh = phi.mesh
     TF = _get_float(mesh)
     time = zero(TF) # assumes simulation starts at time = 0 (might need generalising)
-    # discretise!(
-        # eqn, ConstantScalar(zero(_get_int(mesh))), config) # should this be float?
 
     if typeof(phi) <: AbstractVectorField
 
@@ -21,7 +19,6 @@ begin
 
     elseif typeof(phi) <: AbstractScalarField
 
-        # discretise!(eqn, ConstantScalar(zero(_get_int(mesh))), config) # should this be float?
         discretise!(eqn, get_phi(eqn), config) # should this be float?
         apply_boundary_conditions!(eqn, BCs, nothing, time, config)
     end
@@ -36,12 +33,12 @@ end
 #     ) where {M<:AbstractSparseArray,PT,S} =
 # begin
 #     A = P.A
-#     # (; colptr, m, n, nzval, rowval) = A
-#     rowval, colptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
+#     # (; rowptr, m, n, nzval, colval) = A
+#     colval, rowptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
 #     storage = P.storage
 #     @inbounds for i ∈ 1:m
-#         idx_start = colptr[i]
-#         idx_next = colptr[i+1]
+#         idx_start = rowptr[i]
+#         idx_next = rowptr[i+1]
 #         column_vals = @view nzval[idx_start:(idx_next-1)] 
 #         storage[i] = 1/norm(column_vals)    
 #     end
@@ -64,10 +61,8 @@ function update_preconditioner!(P::Preconditioner{NormDiagonal,M,PT,S}, mesh, co
     (; backend, workgroup) = hardware
     
     A = P.A
-    # (; colptr, m, n, nzval, rowval) = A
-    # rowval, colptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
     nzval_array = _nzval(A)
-    colptr_array = _colptr(A)
+    colptr_array = _rowptr(A)
     m_array = _m(A)
 
     storage = P.storage
@@ -77,12 +72,12 @@ function update_preconditioner!(P::Preconditioner{NormDiagonal,M,PT,S}, mesh, co
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function update_NormDiagonal!(colptr, nzval, storage)
+@kernel function update_NormDiagonal!(rowptr, nzval, storage)
     i = @index(Global)
 
     # @inbounds begin
-        idx_start = colptr[i]
-        idx_next = colptr[i+1]
+        idx_start = rowptr[i]
+        idx_next = rowptr[i+1]
         column_vals = @view nzval[idx_start:(idx_next-1)] 
         norm = norm_static(column_vals)
         storage[i] = 1/norm
@@ -92,15 +87,15 @@ end
 # update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh) where {M<:AbstractSparseArray,PT,S} =
 # begin
 #     A = P.A
-#     # (; colptr, m, n, nzval, rowval) = A
-#     rowval, colptr, nzval, m, n = sparse_array_deconstructor_preconditioners(A)
+#     # (; rowptr, m, n, nzval, colval) = A
+#     colval, rowptr, nzval, m, n = sparse_array_deconstructor_preconditioners(A)
 #     storage = P.storage
 #     idx_diagonal = zero(eltype(m)) # index to diagonal element
 #     @inbounds for i ∈ 1:m
-#         idx_start = colptr[i]
-#         idx_next = colptr[i+1]
+#         idx_start = rowptr[i]
+#         idx_next = rowptr[i+1]
 #         @inbounds for p ∈ idx_start:(idx_next-1)
-#             row = rowval[p]
+#             row = colval[p]
 #             if row == i
 #                 idx_diagonal = p
 #                 break
@@ -117,10 +112,8 @@ function update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh, config) 
     (; backend, workgroup) = hardware
 
     A = P.A
-    # (; colptr, m, n, nzval, rowval) = A
-    # rowval, colptr, nzval, m, n = sparse_array_deconstructor_preconditioners(A)
-    rowval_array = _rowval(A)
-    colptr_array = _colptr(A)
+    rowval_array = _colval(A)
+    colptr_array = _rowptr(A)
     nzval_array = _nzval(A)
     m_array = _m(A)
 
@@ -132,11 +125,11 @@ function update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh, config) 
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function update_Jacobi!(rowval, colptr, nzval, idx_diagonal, storage)
+@kernel function update_Jacobi!(colval, rowptr, nzval, idx_diagonal, storage)
     i = @index(Global)
 
     @inbounds begin
-        idx_diagonal = spindex(colptr, rowval, i, i)
+        idx_diagonal = spindex(rowptr, colval, i, i)
         storage[i] = 1/abs(nzval[idx_diagonal])
     end
 end
@@ -161,8 +154,8 @@ end
 
 
 function sparse_array_deconstructor_preconditioners(arr::SparseArrays.SparseMatrixCSC)
-    (; rowval, colptr, nzval, m, n) = arr
-    return rowval, colptr, nzval, m ,n
+    (; colval, rowptr, nzval, m, n) = arr
+    return colval, rowptr, nzval, m ,n
 end
 
 

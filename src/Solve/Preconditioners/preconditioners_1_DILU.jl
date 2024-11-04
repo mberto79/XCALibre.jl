@@ -2,19 +2,12 @@ import LinearAlgebra.ldiv!, LinearAlgebra.\
 
 export ldiv!
 
-# extract_diagonal!(D, Di, A::AbstractSparseArray{Tf,Ti}) where {Tf,Ti} =
-# begin
-#     rowval, colptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
-#     @inbounds for i ∈ 1:n
-#         D[i] = nzval[Di[i]]
-#     end
-# end
 
 function extract_diagonal!(D, Di, A::AbstractSparseArray{Tf,Ti}, config) where {Tf,Ti}
     (; hardware) = config
     (; backend, workgroup) = hardware
     
-    rowval, colptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
+    colval, rowptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
 
     kernel! = extract_diagonal_kernel!(backend, workgroup)
     kernel!(D, Di, nzval, ndrange = n)
@@ -29,13 +22,13 @@ end
 end
 
 function diagonal_indices!(Di, A::AbstractSparseArray{Tf,Ti}) where {Tf,Ti} 
-    (; colptr, n, rowval) = A
+    (; rowptr, n, colval) = A
     idx_diagonal = zero(eltype(n)) # index to diagonal element
     @inbounds for i ∈ 1:n
-        idx_start = colptr[i]
-        idx_next = colptr[i+1]
+        idx_start = rowptr[i]
+        idx_next = rowptr[i+1]
         @inbounds for p ∈ idx_start:(idx_next-1)
-            row = rowval[p]
+            row = colval[p]
             if row == i
                 idx_diagonal = p
                 break
@@ -49,7 +42,7 @@ integer_type(A::SparseMatrixCSC{Tf,Ti}) where {Tf,Ti} = Ti
 # integer_type(A::CUDA.CUSPARSE.CuSparseMatrixCSC{Tf,Ti}) where {Tf,Ti} = Ti
 
 function upper_row_indices(A, Di) # upper triangular row column indices
-    (; colptr, n, rowval) = A
+    (; rowptr, n, colval) = A
     Ri = integer_type(A)[] # column pointers on i-th row
     J = integer_type(A)[] # column indices on i-th row
     upper_indices_IDs = UnitRange{integer_type(A)}[]
@@ -59,10 +52,10 @@ function upper_row_indices(A, Di) # upper triangular row column indices
         upper_indices_start = length(Ri)
         offset = 0
         for j = (i+1):n
-            idx_start = colptr[j]
+            idx_start = rowptr[j]
             idx_next = Di[j] # access column down to diagonal only
             @inbounds for p ∈ idx_start:idx_next
-                row = rowval[p]
+                row = colval[p]
                 if row == i
                     push!(R_temp, p) # array of pointers
                     push!(J_temp, j) # column indices
@@ -85,7 +78,7 @@ end
 
 function update_dilu_diagonal!(P, mesh, config) # must rename
     # (; A, storage) = P
-    # (; colptr, m, n, nzval, rowval) = A
+    # (; rowptr, m, n, nzval, colval) = A
     # (; Di, D) = storage
     # extract_diagonal!(D, Di, A) 
     # for i ∈ 1:m
@@ -98,7 +91,7 @@ function update_dilu_diagonal!(P, mesh, config) # must rename
 
     # Algo 2
     # (; A, storage) = P
-    # (; colptr, m, n, nzval, rowval) = A
+    # (; rowptr, m, n, nzval, colval) = A
     # (; Di, D) = storage
     # extract_diagonal!(D, Di, A) 
     # sum = 0.0
@@ -114,8 +107,8 @@ function update_dilu_diagonal!(P, mesh, config) # must rename
     backend = _get_backend(mesh)
 
     (; A, storage) = P
-    # (; colptr, n, nzval, rowval) = A
-    rowval, colptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
+    # (; rowptr, n, nzval, colval) = A
+    colval, rowptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
     (; Di, Ri, D, upper_indices_IDs) = storage
     
     extract_diagonal!(D, Di, A, config)
@@ -124,11 +117,11 @@ function update_dilu_diagonal!(P, mesh, config) # must rename
         # D[i] = nzval[Di[i]]
         upper_index_ID = upper_indices_IDs[i] 
         c_start = Di[i] + 1
-        c_end = colptr[i+1] - 1
+        c_end = rowptr[i+1] - 1
         r_pointer = Ri[upper_index_ID]
         r_count = 0
         @inbounds for c_pointer ∈ c_start:c_end
-            j = rowval[c_pointer]
+            j = colval[c_pointer]
             r_count += 1
             D[j] -= nzval[c_pointer]*nzval[r_pointer[r_count]]/D[i]
         end
@@ -141,7 +134,7 @@ end
 
 # function update_dilu_diagonal!(P, mesh, config) # must rename
 #     # (; A, storage) = P
-#     # (; colptr, m, n, nzval, rowval) = A
+#     # (; rowptr, m, n, nzval, colval) = A
 #     # (; Di, D) = storage
 #     # extract_diagonal!(D, Di, A) 
 #     # for i ∈ 1:m
@@ -154,7 +147,7 @@ end
 
 #     # Algo 2
 #     # (; A, storage) = P
-#     # (; colptr, m, n, nzval, rowval) = A
+#     # (; rowptr, m, n, nzval, colval) = A
 #     # (; Di, D) = storage
 #     # extract_diagonal!(D, Di, A) 
 #     # sum = 0.0
@@ -173,30 +166,30 @@ end
 #     (; backend, workgroup) = hardware
 
 #     (; A, storage) = P
-#     # (; colptr, n, nzval, rowval) = A
-#     rowval, colptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
+#     # (; rowptr, n, nzval, colval) = A
+#     colval, rowptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
 #     (; Di, Ri, D, upper_indices_IDs) = storage
     
 #     extract_diagonal!(D, Di, A, config)
 
 #     kernel! = update_dilu_diagonal_kernel!(backend, workgroup)
-#     kernel!(upper_indices_IDs, Di, colptr, Ri, rowval, D, nzval, ndrange = n)
+#     kernel!(upper_indices_IDs, Di, rowptr, Ri, colval, D, nzval, ndrange = n)
 #     # D .= 1.0./D # store inverse
 #     nothing
 # end
 
 
-# @kernel function update_dilu_diagonal_kernel!(upper_indices_IDs, Di, colptr, Ri, rowval, D, nzval)
+# @kernel function update_dilu_diagonal_kernel!(upper_indices_IDs, Di, rowptr, Ri, colval, D, nzval)
 #     i = @index(Global)
     
 #     @inbounds begin
 #         # D[i] = nzval[Di[i]]
 #         upper_index_ID = upper_indices_IDs[i] 
 #         c_start = Di[i] + 1 
-#         c_end = colptr[i+1] - 1
+#         c_end = rowptr[i+1] - 1
 #         r_count = 0
 #         for c_pointer ∈ c_start:c_end
-#             j = rowval[c_pointer]
+#             j = colval[c_pointer]
 #             r_count += 1
 #             r_pointer = Ri[upper_index_ID[r_count]]
 #             nzval_c = nzval[c_pointer]
@@ -210,7 +203,7 @@ end
 
 function forward_substitution!(x, P, b)
     (; A, D, Di, Ri, J) = P
-    (; colptr, n, nzval, rowval) = A
+    (; rowptr, n, nzval, colval) = A
 
     # # Algo 1
     # x .= b
@@ -227,9 +220,9 @@ function forward_substitution!(x, P, b)
     end
     @inbounds for j ∈ 1:n
         c_start = Di[j] + 1
-        c_end = colptr[j+1] - 1
+        c_end = rowptr[j+1] - 1
         @inbounds for c_pointer ∈ c_start:c_end
-            i = rowval[c_pointer]
+            i = colval[c_pointer]
             # x[i] -= nzval[c_pointer]*x[j]/D[j]
             x[i] -= nzval[c_pointer]*x[j]*D[j]
         end
@@ -238,7 +231,7 @@ end
 
 function backward_substitution!(x, P, c)
     (; A, D, Di, Ri, J, upper_indices_IDs) = P
-    (; colptr, n, nzval, rowval) = A
+    (; rowptr, n, nzval, colval) = A
 
      # Algo 1
     # x .= x./D

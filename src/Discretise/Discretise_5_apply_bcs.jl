@@ -24,8 +24,8 @@ function _apply_boundary_conditions!(
     (; faces, cells, boundary_cellsID) = mesh
 
     # Call sparse array field accessors
-    rowval = _rowval(A)
-    colptr = _colptr(A)
+    colval = _colval(A)
+    rowptr = _rowptr(A)
     nzval = _nzval(A)
 
     # Get user-defined integer types
@@ -37,7 +37,6 @@ function _apply_boundary_conditions!(
 
     for BC ∈ BCs
         # Copy to CPU
-        # facesID_range = get_boundaries(BC, mesh.boundaries)
         facesID_range = boundaries_cpu[BC.ID].IDs_range
         start_ID = facesID_range[1]
 
@@ -49,7 +48,7 @@ function _apply_boundary_conditions!(
 
         kernel! = apply_boundary_conditions_kernel!(backend, workgroup, kernel_range)
         kernel!(
-            model, BC, model.terms, faces, cells, start_ID, boundary_cellsID, rowval, colptr, nzval, b, ione, component, time, ndrange=kernel_range
+            model, BC, model.terms, faces, cells, start_ID, boundary_cellsID, colval, rowptr, nzval, b, ione, component, time, ndrange=kernel_range
             )
         KernelAbstractions.synchronize(backend)
     end
@@ -61,28 +60,23 @@ update_user_boundary!(
     BC::AbstractBoundary, faces, cells, facesID_range, time, config) = nothing
 
 # Function to prevent redundant CPU copy
-# function get_boundaries(BC, boundaries::Array)
+
 function get_boundaries(boundaries::Array)
-    # facesID_range = boundaries[BC.ID].IDs_range
-    # return facesID_range
     return boundaries
 end
 
 # Function to copy from GPU to CPU
-# function get_boundaries(BC, boundaries::AbstractGPUArray)
 function get_boundaries(boundaries::AbstractGPUArray)
     # Copy boundaries to CPU
     boundaries_cpu = Array{eltype(boundaries)}(undef, length(boundaries))
     copyto!(boundaries_cpu, boundaries)
-    # facesID_range = boundaries_cpu[BC.ID].IDs_range
-    # return facesID_range
     return boundaries_cpu
 end
 
 # Apply boundary conditions kernel definition
 @kernel function apply_boundary_conditions_kernel!(
     model::Model{TN,SN,T,S}, BC, terms, 
-    faces, cells, start_ID, boundary_cellsID, rowval, colptr, nzval, b, ione, component, time
+    faces, cells, start_ID, boundary_cellsID, colval, rowptr, nzval, b, ione, component, time
     ) where {TN,SN,T,S}
     i = @index(Global)
 
@@ -95,8 +89,8 @@ end
     face = faces[fID]
     cell = cells[cellID] 
 
-    # zcellID = nzval_index(colptr, rowval, cellID, cellID, ione)
-    zcellID = spindex(colptr, rowval, cellID, cellID)
+    # zcellID = nzval_index(rowptr, colval, cellID, cellID, ione)
+    zcellID = spindex(rowptr, colval, cellID, cellID)
 
     # Call apply generated function
     AP, BP = apply!(model, BC, terms, cellID, zcellID, cell, face, fID, i, component, time)

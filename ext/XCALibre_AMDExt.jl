@@ -6,7 +6,8 @@ else
     using ..AMDGPU
 end
 
-using XCALibre, Adapt
+using XCALibre, Adapt, SparseArrays
+import KrylovPreconditioners as KP
 
 const SparseGPU = AMDGPU.rocSPARSE.ROCSparseMatrixCSC
 
@@ -14,12 +15,21 @@ function XCALibre.Mesh._convert_array!(arr, backend::CUDABackend)
     return adapt(ROCArray, arr) # using ROCArray
 end
 
-import XCALibre.ModelFramework: _nzval, _colptr, _rowval, get_sparse_fields
+import XCALibre.ModelFramework: _nzval, _rowptr, _colval, get_sparse_fields, 
+                                _build_A, _build_opA
+
+_build_A(backend::CUDABackend, i, j, v, n) = begin
+
+    A = sparse(i, j, v, n, n)
+    SparseGPU(A)
+end
+
+_build_opA(A::SparseGPU) = KP.KrylovOperator(A)
 @inline _nzval(A::SparseGPU) = A.nzVal
-@inline _colptr(A::SparseGPU) = A.colPtr
-@inline _rowval(A::SparseGPU) = A.rowVal
+@inline _rowptr(A::SparseGPU) = A.rowPtr
+@inline _colval(A::SparseGPU) = A.colVal
 @inline get_sparse_fields(A::SparseGPU) = begin
-    A.nzVal, A.rowVal, A.colPtr
+    A.nzVal, A.colVal, A.rowPtr
 end
 
 import XCALibre.Solve: integer_type, _m, _n

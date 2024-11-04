@@ -195,38 +195,6 @@ function sparse_matrix_connectivity(mesh::AbstractMesh)
     return i, j, v
 end
 
-# Nzval index function definition for sparse array
-# function nzval_index(colptr, rowval, start_index, required_index, ione)
-#     # Set start value and offset to 0
-#     start = colptr[start_index]
-#     offset = 0
-    
-#     # Loop over rowval array and increment offset until required value
-#     for j in start:length(rowval)
-#         offset += 1
-#         if rowval[j] == required_index
-#             break
-#         end
-#     end
-
-#     # Calculate index to output
-#     return start + offset - ione
-# end
-
-# Sparse CSC format
-# function spindex(colptr::AbstractArray{T}, rowval, i, j) where T
-#     start_ind = colptr[j]
-#     end_ind = colptr[j+1] - one(T) # changed the range (check is ok)
-
-#     ind = zero(T)
-#     for nzi in start_ind:end_ind
-#         if rowval[nzi] == i
-#             ind = nzi
-#             break
-#         end
-#     end
-#     return ind
-# end
 
 # Sparse CSR format
 function spindex(rowptr::AbstractArray{T}, colval, i, j) where T

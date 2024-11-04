@@ -9,37 +9,33 @@ function apply_smoother!(smoother::JacobiSmoother, x, A, b, mesh, config)
     (; backend, workgroup) = hardware
 
     nzval = _nzval(A)
-    rowval = _rowval(A)
-    colptr = _colptr(A)
+    colval = _colval(A)
+    rowptr = _rowptr(A)
 
     kernel! = _apply_smoother!(backend, workgroup)
     for _ ∈ 1:smoother.loops
-        kernel!(x, b, nzval, rowval, colptr, mesh; ndrange = length(mesh.cells))
+        kernel!(x, b, nzval, colval, rowptr, mesh; ndrange = length(mesh.cells))
         KernelAbstractions.synchronize(backend)
     end
 end
 
-@kernel function _apply_smoother!(x, b, nzval, rowval, colptr, mesh)
+@kernel function _apply_smoother!(x, b, nzval, colval, rowptr, mesh)
     cID = @index(Global)
     (; cells, cell_neighbours) = mesh
 
     cell = cells[cID]
     (; faces_range) = cell
-    cIndex = spindex(colptr, rowval, cID, cID)
+    cIndex = spindex(rowptr, colval, cID, cID)
 
-    # for i ∈ 1:loops
-        sum = zero(_get_float(mesh))
-        # for fi ∈ faces_range
-        #     nID = cell_neighbours[fi]
-        #     nIndex = spindex(colptr, rowval, cID, nID)
-        #     sum += nzval[nIndex]*x[nID]
-        # end
-        for nzvali ∈ colptr[cID]:(colptr[cID+1] - 1)
-            j = rowval[nzvali]
-            sum += nzval[nzvali]*x[j]
-        end
-        sum -= nzval[cIndex]*x[cID] # remove multiplication with diagonal (faster than "if")
-        rD = one(_get_int(mesh))/nzval[cIndex]
-        x[cID] = rD*(b[cID] - sum)
-    # end
+
+    sum = zero(_get_float(mesh))
+
+    for nzvali ∈ rowptr[cID]:(rowptr[cID+1] - 1)
+        j = colval[nzvali]
+        sum += nzval[nzvali]*x[j]
+    end
+    sum -= nzval[cIndex]*x[cID] # remove multiplication with diagonal (faster than "if")
+    rD = one(_get_int(mesh))/nzval[cIndex]
+    x[cID] = rD*(b[cID] - sum)
+
 end

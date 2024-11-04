@@ -39,58 +39,6 @@ end
     end
 end
 
-## RESIDUAL CALCULATIONS
-
-# # Sparse Matrix Multiplication function
-# function sparse_matmul!(a, b, c, config)
-#     if size(a)[2] != length(b)
-#         error("Matrix size mismatch!")
-#         return nothing
-#     end
-
-#     (; hardware) = config
-#     (; backend, workgroup) = hardware
-
-#     nzval_array = _nzval(a)
-#     colptr_array = _colptr(a)
-#     rowval_array = _rowval(a)
-#     fzero = zero(eltype(c))
-
-#     kernel_range = length(c)
-
-#     kernel! = matmul_copy_zeros_kernel!(backend, workgroup, kernel_range)
-#     kernel!(c, fzero, ndrange=kernel_range)
-#     KernelAbstractions.synchronize(backend)
-
-#     kernel! = sparse_matmul_kernel!(backend, workgroup, kernel_range)
-#     kernel!(nzval_array, rowval_array, colptr_array, b, c, ndrange=kernel_range)
-#     KernelAbstractions.synchronize(backend)
-# end
-
-# # Sparse Matrix Multiplication kernel
-# @kernel function sparse_matmul_kernel!(nzval, rowval, colptr, mulvec, res)
-#     i = @index(Global)
-#     @inbounds begin
-#         @synchronize
-#         start = colptr[i]
-#         fin = colptr[i+1]
-
-#         for j in start:fin-1
-#             val = nzval[j] #A[j,i]
-#             row = rowval[j] #Row index of non-zero element in A
-#             Atomix.@atomic res[row] += mulvec[i] * val
-#         end
-#     end
-# end
-
-# # Sparse Matrix Multiplication copy kernel
-# @kernel function matmul_copy_zeros_kernel!(c, fzero)
-#     i = @index(Global)
-
-#     @inbounds begin
-#         c[i] = fzero
-#     end
-# end
 
 ## FLUX CALCULATION
 
@@ -153,15 +101,15 @@ function inverse_diagonal!(rD::S, eqn, config) where {S<:ScalarField}
     (; hardware) = config
     (; backend, workgroup) = hardware
     A = eqn.equation.A # Or should I use A0
-    nzval, rowval, colptr = get_sparse_fields(A)
+    nzval, colval, rowptr = get_sparse_fields(A)
 
     kernel_range = length(rD)
     kernel! = _inverse_diagonal!(backend, workgroup, kernel_range)
-    kernel!(rD, nzval, rowval, colptr, ndrange=kernel_range)
+    kernel!(rD, nzval, colval, rowptr, ndrange=kernel_range)
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function _inverse_diagonal!(rD, nzval, rowval, colptr)
+@kernel function _inverse_diagonal!(rD, nzval, colval, rowptr)
     i = @index(Global)
 
     @uniform begin
@@ -170,7 +118,7 @@ end
     end
 
     @inbounds begin
-        idx = spindex(colptr, rowval, i, i)
+        idx = spindex(rowptr, colval, i, i)
         D = nzval[idx]
         (; volume) = cells[i]
         values[i] = volume / D
@@ -243,19 +191,19 @@ function H!(Hv, U::VF, U_eqn, config) where {VF<:VectorField} # Extend to 3D!
     (; backend, workgroup) = hardware
 
     A = _A(U_eqn)
-    nzval, rowval, colptr = get_sparse_fields(A)
+    nzval, colval, rowptr = get_sparse_fields(A)
     (; bx, by, bz) = U_eqn.equation
 
     kernel_range = length(cells)
     kernel! = _H!(backend, workgroup, kernel_range)
     kernel!(cells, cell_neighbours,
-        nzval, colptr, rowval, bx, by, bz, U, Hv, ndrange=kernel_range)
+        nzval, rowptr, colval, bx, by, bz, U, Hv, ndrange=kernel_range)
     KernelAbstractions.synchronize(backend)
 end
 
 # Pressure correction kernel
 @kernel function _H!(cells::AbstractArray{Cell{TF,SV,UR}}, cell_neighbours,
-    nzval, colptr, rowval, bx, by, bz, U, Hv) where {TF,SV,UR}
+    nzval, rowptr, colval, bx, by, bz, U, Hv) where {TF,SV,UR}
     i = @index(Global)
 
     @uniform begin
@@ -272,14 +220,14 @@ end
 
         for ni ∈ faces_range
             nID = cell_neighbours[ni]
-            zIndex = spindex(colptr, rowval, i, nID)
+            zIndex = spindex(rowptr, colval, i, nID)
             val = nzval[zIndex]
             sumx += val * Ux[nID]
             sumy += val * Uy[nID]
             sumz += val * Uz[nID]
         end
 
-        DIndex = spindex(colptr, rowval, i, i)
+        DIndex = spindex(rowptr, colval, i, i)
         D = nzval[DIndex]
         rD = 1 / D
         Hx[i] = (bx[i] - sumx) * rD

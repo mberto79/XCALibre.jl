@@ -1,9 +1,51 @@
-struct JacobiSmoother{L,F,V}
+export JacobiSmoother
+
+abstract type AbstractSmoother end
+
+"""
+    struct JacobiSmoother{L,F,V} <: AbstractSmoother
+        loops::L
+        omega::F
+        x_temp::V
+    end
+
+Structure to hold information for using the weighted Jacobi smoother. 
+
+# Fields
+- `loops` represents the number of smoothing iterations.
+- `omega` represents the relaxation weight, 1 corresponds to no weighting. Typically a weight of 2/3 is used to filter high frequencies in the residual field.
+- `x_temp` is a vector used internally to store intermediate solutions.
+
+"""
+struct JacobiSmoother{L,F,V} <: AbstractSmoother
     loops::L
     omega::F
     x_temp::V
 end
 Adapt.@adapt_structure JacobiSmoother
+
+JacobiSmoother(mesh::AbstractMesh) = begin
+    x = zeros(_get_float(mesh), length(mesh.cells))
+    backend = _get_backend(mesh)
+    JacobiSmoother(5, one(_get_int(mesh)), adapt(backend, x))
+end
+
+"""
+    JacobiSmoother(; domain, loops, omega=2/3)
+
+Convenience constructor for `JacobiSmoother`.
+
+# keyword arguments
+- `domain` represents a mesh object of type `AbstractMesh`.
+- `loops` is the number of iterations to be used
+- `omega` represents the weighting factor, 1 does not relax the system, 2/3 is found to work well for smoothing high frequencies in the residual field
+"""
+JacobiSmoother(; domain, loops, omega=2/3) = begin
+    x = zeros(_get_float(domain), length(domain.cells))
+    backend = _get_backend(domain)
+    F = _get_float(domain)
+    JacobiSmoother(loops, F(omega), adapt(backend, x))
+end
 
 function apply_smoother!(smoother, x, A, b, mesh, config)
     (; hardware, runtime) = config

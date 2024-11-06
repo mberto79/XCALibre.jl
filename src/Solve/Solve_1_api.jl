@@ -25,6 +25,7 @@ export residual!
             preconditioner=preconditioner, 
             convergence=convergence |> TF, 
             relax=relax |> TF, 
+            smoother=nothing,
             limit=limit,
             itmax=itmax, 
             atol=atol |> TF, 
@@ -41,6 +42,7 @@ This function is used to provide solver settings that will be used internally in
 - `preconditioner` instance of preconditioner to be used e.g. Jacobi()
 - `convergence` sets the stopping criteria of this field
 - `relax` specifies the relaxation factor to be used e.g. set to 1 for no relaxation
+- `smoother` specifies smoothing method to be applied before discretisation. JacobiSmoother is currently the only choice (defaults to `nothing`)
 - `limit` used in some solvers to bound the solution within this limits e.g. (min, max). It defaults to `()`
 - `itmax` maximum number of iterations in a single solver pass (defaults to 1000) 
 - `atol` absolute tolerance for the solver (default to eps(FloatType)^0.9)
@@ -53,6 +55,7 @@ set_solver(
         preconditioner::PT, 
         convergence, 
         relax,
+        smoother=nothing,
         limit=(),
         itmax::Integer=1000, 
         atol=(eps(_get_float(field.mesh)))^0.9,
@@ -107,17 +110,6 @@ runtime = set_runtime(
 set_runtime(; iterations::I, write_interval::I, time_step::N) where {I<:Integer,N<:Number} = begin
     (iterations=iterations, dt=time_step, write_interval=write_interval)
 end
-
-# function solve_equation!(
-#     eqn::ModelEquation{T,M,E,S,P}, phi, solversetup, config; ref=nothing
-#     ) where {T<:ScalarModel,M,E,S,P}
-
-#     discretise!(eqn, phi, config)       
-#     apply_boundary_conditions!(eqn, phi.BCs, nothing, config)
-#     setReference!(eqn, ref, 1, config)
-#     update_preconditioner!(eqn.preconditioner, phi.mesh, config)
-#     solve_system!(eqn, solversetup, phi, nothing, config)
-# end
 
 function solve_equation!(
     eqn::ModelEquation{T,M,E,S,P}, phi, solversetup, config; time=nothing, ref=nothing, irelax=nothing

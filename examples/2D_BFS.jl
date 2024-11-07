@@ -55,8 +55,7 @@ solvers = (
         preconditioner = Jacobi(), #Jacobi(), # ILU0() # ILU0GPU
         convergence = 1e-7,
         relax       = 0.7,
-        rtol = 0.0,
-        atol = 1e-1
+        rtol = 0.1
     ),
     p = set_solver(
         model.momentum.p;
@@ -64,8 +63,7 @@ solvers = (
         preconditioner = Jacobi(), # LDL() # Jacobi() # IC0GPU
         convergence = 1e-7,
         relax       = 0.3,
-        rtol = 0.0,
-        atol = 1e-2
+        rtol = 0.01
     )
 )
 

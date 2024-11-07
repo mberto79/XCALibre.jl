@@ -52,7 +52,7 @@ solvers = (
     U = set_solver(
         model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), #Jacobi(), # ILU0() # ILU0GPU
+        preconditioner = Jacobi(), # ILU0GPU
         convergence = 1e-7,
         relax       = 0.7,
         rtol = 0.1
@@ -60,7 +60,7 @@ solvers = (
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), # LDL() # Jacobi() # IC0GPU
+        preconditioner = Jacobi(), # IC0GPU
         convergence = 1e-7,
         relax       = 0.3,
         rtol = 0.01

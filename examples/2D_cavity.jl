@@ -46,14 +46,14 @@ solvers = (
     U = set_solver(
         model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), # DILU(),
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
     ),
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), # LDL(),
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
     )

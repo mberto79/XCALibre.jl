@@ -24,8 +24,6 @@ using XCALibre.Discretise
 using XCALibre.Solve
 using XCALibre.Calculate
 using XCALibre.ModelPhysics
-# using XCALibre.Turbulence
-# using XCALibre.Energy
 using XCALibre.VTK
 
 include("Solvers_0_functions.jl")

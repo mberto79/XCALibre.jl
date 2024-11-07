@@ -175,8 +175,8 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
     opA = phiEqn.equation.opA
     b = _b(phiEqn, component)
 
-    smoother = JacobiSmoother(10,2/3,adapt(backend, zeros(length(values))))
-    apply_smoother!(smoother, values, A, b, mesh, config)
+    # smoother = JacobiSmoother(10,2/3,adapt(backend, zeros(length(values))))
+    # apply_smoother!(smoother, values, A, b, mesh, config)
      
     ldiv = typeof(P) <: KP.AbstractKrylovPreconditioner
     solve!(

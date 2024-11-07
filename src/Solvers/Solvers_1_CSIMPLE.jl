@@ -135,8 +135,7 @@ function CSIMPLE(
     p_model = p_eqn.model
     (; solvers, schemes, runtime, hardware) = config
     (; iterations, write_interval) = runtime
-    (; backend, method) = hardware
-    activate_multithread(backend, method)
+    (; backend) = hardware
     
     # rho = get_flux(U_eqn, 1)
     mdotf = get_flux(U_eqn, 2)

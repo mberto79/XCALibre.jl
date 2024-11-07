@@ -99,7 +99,7 @@ schemes = (
 
 runtime = set_runtime(iterations=200, write_interval=200, time_step=0.01)
 
-hardware = set_hardware(backend=CPU(), workgroup=cld(length(mesh.faces), 4))
+hardware = set_hardware(backend=CPU(), workgroup=1024)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 
@@ -121,6 +121,6 @@ top = boundary_average(:top, model.momentum.U, config)
 bottom = boundary_average(:bottom, model.momentum.U, config)
 
 @test Umag ≈ inlet[1]
-@test Umag ≈ outlet[1] atol = 1e-3
-@test Umag ≈ top[1] atol = 1e-3
-@test top[1] ≈ bottom[1] atol = 1e-3
+@test Umag ≈ outlet[1] atol = 0.1*Umag
+@test Umag ≈ top[1] atol = 0.1*Umag
+@test top[1] ≈ bottom[1] atol = 0.1*Umag

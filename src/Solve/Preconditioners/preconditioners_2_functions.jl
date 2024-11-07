@@ -134,17 +134,17 @@ end
     end
 end
 
-update_preconditioner!(P::Preconditioner{LDL,M,PT,S},  mesh, config) where {M<:AbstractSparseArray,PT,S} =
-begin
-    nothing
-end
+# update_preconditioner!(P::Preconditioner{LDL,M,PT,S},  mesh, config) where {M<:AbstractSparseArray,PT,S} =
+# begin
+#     nothing
+# end
 
 
-update_preconditioner!(P::Preconditioner{ILU0,M,PT,S},  mesh, config) where {M<:AbstractSparseArray,PT,S} =
-begin
-    ilu0!(P.storage, P.A)
-    nothing
-end
+# update_preconditioner!(P::Preconditioner{ILU0,M,PT,S},  mesh, config) where {M<:AbstractSparseArray,PT,S} =
+# begin
+#     ilu0!(P.storage, P.A)
+#     nothing
+# end
 
 update_preconditioner!(P::Preconditioner{DILU,M,PT,S},  mesh, config) where {M<:AbstractSparseArray,PT,S} =
 begin
@@ -153,14 +153,14 @@ begin
 end
 
 
-function sparse_array_deconstructor_preconditioners(arr::SparseArrays.SparseMatrixCSC)
+function sparse_array_deconstructor_preconditioners(arr::SparseMatricesCSR.SparseMatrixCSR)
     (; colval, rowptr, nzval, m, n) = arr
     return colval, rowptr, nzval, m ,n
 end
 
 
-_m(A::SparseArrays.SparseMatrixCSC) = A.m
-_n(A::SparseArrays.SparseMatrixCSC) = A.n
+# _m(A::SparseArrays.SparseMatrixCSC) = A.m
+# _n(A::SparseArrays.SparseMatrixCSC) = A.n
 
 _m(A::SparseMatricesCSR.SparseMatrixCSR) = A.m
 _n(A::SparseMatricesCSR.SparseMatrixCSR) = A.n

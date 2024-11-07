@@ -74,7 +74,7 @@ solvers = (
 runtime = set_runtime(
     iterations=200, time_step=1, write_interval=200)
 
-hardware = set_hardware(backend=CPU(), workgroup=cld(length(mesh.faces),4))
+hardware = set_hardware(backend=CPU(), workgroup=1024)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 

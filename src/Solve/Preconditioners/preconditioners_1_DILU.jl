@@ -2,6 +2,9 @@ import LinearAlgebra.ldiv!, LinearAlgebra.\
 
 export ldiv!
 
+# THIS WHOLE IMPLEMENTATION NEEDS TO BE CLEANED UP AND CHECKED FOR CORRECTNESS
+# NOTE ADDED ON 2024/11/07 - THIS IS LIKELY BROKEN DUE TO CHANGE TO CSR FORMAT
+
 
 function extract_diagonal!(D, Di, A::AbstractSparseArray{Tf,Ti}, config) where {Tf,Ti}
     (; hardware) = config
@@ -38,17 +41,18 @@ function diagonal_indices!(Di, A::AbstractSparseArray{Tf,Ti}) where {Tf,Ti}
     end
 end
 
-integer_type(A::SparseMatrixCSC{Tf,Ti}) where {Tf,Ti} = Ti
+# integer_type(A::SparseMatrixCSC{Tf,Ti}) where {Tf,Ti} = Ti
 # integer_type(A::CUDA.CUSPARSE.CuSparseMatrixCSC{Tf,Ti}) where {Tf,Ti} = Ti
 
 function upper_row_indices(A, Di) # upper triangular row column indices
     (; rowptr, n, colval) = A
-    Ri = integer_type(A)[] # column pointers on i-th row
-    J = integer_type(A)[] # column indices on i-th row
-    upper_indices_IDs = UnitRange{integer_type(A)}[]
+    TI = eltype(rowptr)
+    Ri = TI[] # column pointers on i-th row
+    J = TI[] # column indices on i-th row
+    upper_indices_IDs = UnitRange{TI}[]
     @inbounds for i ∈ 1:n
-        R_temp = integer_type(A)[]
-        J_temp = integer_type(A)[]
+        R_temp = TI[]
+        J_temp = TI[]
         upper_indices_start = length(Ri)
         offset = 0
         for j = (i+1):n
@@ -67,9 +71,9 @@ function upper_row_indices(A, Di) # upper triangular row column indices
         push!(Ri, R_temp...)
         push!(J, J_temp...)
         if upper_indices_end == upper_indices_start
-            IDs_range = UnitRange{integer_type(A)}(upper_indices_start:upper_indices_end)
+            IDs_range = UnitRange{TI}(upper_indices_start:upper_indices_end)
         else
-            IDs_range = UnitRange{integer_type(A)}(upper_indices_start+1:upper_indices_end)
+            IDs_range = UnitRange{TI}(upper_indices_start+1:upper_indices_end)
         end
         push!(upper_indices_IDs, IDs_range)
     end

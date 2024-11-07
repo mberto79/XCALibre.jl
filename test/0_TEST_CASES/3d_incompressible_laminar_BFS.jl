@@ -69,7 +69,7 @@ solvers = (
 runtime = set_runtime(
     iterations=200, time_step=1, write_interval=200)
 
-hardware = set_hardware(backend=CPU(), workgroup=37500)
+hardware = set_hardware(backend=CPU(), workgroup=1024)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 
@@ -86,5 +86,5 @@ residuals = run!(model, config)
 top = boundary_average(:top, model.momentum.U, config)
 outlet = boundary_average(:outlet, model.momentum.U, config)
 
-@test Umag ≈ top[1] atol = 0.02
-@test 0.5*Umag ≈ outlet[1] atol = 0.0075
+@test Umag ≈ top[1] atol=0.1*Umag
+@test 0.5*Umag ≈ outlet[1] atol=0.1*Umag

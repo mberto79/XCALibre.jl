@@ -1,6 +1,6 @@
 
 export PreconditionerType, Preconditioner
-export Jacobi, NormDiagonal, LDL, ILU0
+export Jacobi, NormDiagonal #, ILU0 # , LDL
 export DILU, DILUprecon
 export IC0GPU, ILU0GPU
 
@@ -12,11 +12,11 @@ Adapt.@adapt_structure NormDiagonal
 struct Jacobi <: PreconditionerType end
 Adapt.@adapt_structure Jacobi
 
-struct LDL <: PreconditionerType end
-Adapt.@adapt_structure LDL
+# struct LDL <: PreconditionerType end
+# Adapt.@adapt_structure LDL
 
-struct ILU0 <: PreconditionerType end
-Adapt.@adapt_structure ILU0
+# struct ILU0 <: PreconditionerType end
+# Adapt.@adapt_structure ILU0
 
 struct DILU <: PreconditionerType end
 Adapt.@adapt_structure DILU
@@ -80,27 +80,27 @@ Preconditioner{Jacobi}(A::AbstractSparseArray{F,I}) where {F,I} = begin
     Preconditioner{Jacobi,typeof(A),typeof(P),typeof(S)}(A,P,S)
 end
 
-Preconditioner{LDL}(A::AbstractSparseArray{F,I}) where {F,I} = begin
-    m, n = size(A)
-    m == n || throw("Matrix not square")
-    S = zeros(F, m)
-    # P = similar(A)
-    # triu!(P)
-    # P  = opLDL(P)
-    # # P  = opLDL(P)
-    P  = opLDL(A)
-    Preconditioner{LDL,typeof(A),typeof(P),typeof(S)}(A,P,S)
-end
+# Preconditioner{LDL}(A::AbstractSparseArray{F,I}) where {F,I} = begin
+#     m, n = size(A)
+#     m == n || throw("Matrix not square")
+#     S = zeros(F, m)
+#     # P = similar(A)
+#     # triu!(P)
+#     # P  = opLDL(P)
+#     # # P  = opLDL(P)
+#     P  = opLDL(A)
+#     Preconditioner{LDL,typeof(A),typeof(P),typeof(S)}(A,P,S)
+# end
 
-Preconditioner{ILU0}(A::AbstractSparseArray{F,I}) where {F,I} = begin
-    m, n = size(A)
-    m == n || throw("Matrix not square")
-    S = ilu0(A)
-    P  = LinearOperator(
-        F, m, n, false, false, (y, v) -> ldiv!(y, S, v)
-        )
-    Preconditioner{ILU0,typeof(A),typeof(P),typeof(S)}(A,P,S)
-end
+# Preconditioner{ILU0}(A::AbstractSparseArray{F,I}) where {F,I} = begin
+#     m, n = size(A)
+#     m == n || throw("Matrix not square")
+#     S = ilu0(A)
+#     P  = LinearOperator(
+#         F, m, n, false, false, (y, v) -> ldiv!(y, S, v)
+#         )
+#     Preconditioner{ILU0,typeof(A),typeof(P),typeof(S)}(A,P,S)
+# end
 
 struct DILUprecon{M,V,VI,VUR}
     A::M

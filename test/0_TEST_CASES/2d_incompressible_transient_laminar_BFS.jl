@@ -48,7 +48,7 @@ solvers = (
     U = set_solver(
         model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi, # DILU(), TEMPORARY!
+        preconditioner = Jacobi(), # DILU(), TEMPORARY!
         convergence = 1e-7,
         relax       = 1.0,
     ),

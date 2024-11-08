@@ -32,9 +32,7 @@ _build_opA(A::SparseGPU) = KP.KrylovOperator(A)
     A.nzVal, A.colVal, A.rowPtr
 end
 
-import XCALibre.Solve: integer_type, _m, _n
-
-integer_type(A::SparseGPU{Tf,Ti}) where {Tf,Ti} = Ti
+import XCALibre.Solve: _m, _n
 
 # function sparse_array_deconstructor_preconditioners(arr::SparseGPU)
 #     (; rowVal, colPtr, nzVal, dims) = arr

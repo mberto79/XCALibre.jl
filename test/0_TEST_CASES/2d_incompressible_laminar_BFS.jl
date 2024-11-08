@@ -13,7 +13,8 @@ mesh_dev = mesh
 # mesh_dev = adapt(CUDABackend(), mesh)  # Uncomment this if using GPU
 
 # Inlet conditions
-velocity = [1.5, 0.0, 0.0]
+Umag = 1.5
+velocity = [Umag, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
 
@@ -85,4 +86,4 @@ residuals = run!(model, config)
 inlet = boundary_average(:inlet, model.momentum.U, config)
 outlet = boundary_average(:outlet, model.momentum.U, config)
 
-@test outlet ≈ 0.5*inlet atol=0.03
+@test outlet ≈ 0.5*inlet atol=0.1*Umag

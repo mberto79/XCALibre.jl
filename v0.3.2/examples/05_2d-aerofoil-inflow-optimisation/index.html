@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Advanced: 2D Aerofoil inflow optimisation · XCALibre.jl</title><meta name="title" content="Advanced: 2D Aerofoil inflow optimisation · XCALibre.jl"/><meta property="og:title" content="Advanced: 2D Aerofoil inflow optimisation · XCALibre.jl"/><meta property="twitter:title" content="Advanced: 2D Aerofoil inflow optimisation · XCALibre.jl"/><meta name="description" content="Documentation for XCALibre.jl."/><meta property="og:description" content="Documentation for XCALibre.jl."/><meta property="twitter:description" content="Documentation for XCALibre.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">XCALibre.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><a class="tocitem" href="../../quick_start/">Quick Start</a></li><li><span class="tocitem">Examples</span><ul><li><a class="tocitem" href="../01_2d-isothermal-backward-facing-step/">Verification: 2D incompressible backward-facing step</a></li><li><a class="tocitem" href="../02_2d-incompressible-transient-cylinder/">Verification: 2D Unsteady incompressible cylinder</a></li><li><a class="tocitem" href="../03_2d-constant-temperature-flat-plate/">Validation: 2D Constant temperature flat plate</a></li><li><a class="tocitem" href="../04_2d-inflow-using-Flux/">Advanced: 2D inflow using <code>Flux.jl</code></a></li><li class="is-active"><a class="tocitem" href>Advanced: 2D Aerofoil inflow optimisation</a><ul class="internal"><li class="toplevel"><a class="tocitem" href="#Introduction"><span>Introduction</span></a></li><li class="toplevel"><a class="tocitem" href="#Optimisation-Setup"><span>Optimisation Setup</span></a></li><li class="toplevel"><a class="tocitem" href="#Example-Optimisation-Results"><span>Example Optimisation Results</span></a></li></ul></li></ul></li><li><span class="tocitem">User Guide</span><ul><li><a class="tocitem" href="../../user_guide/0_introduction_and_workflow/">Introduction</a></li><li><a class="tocitem" href="../../user_guide/1_preprocessing/">Pre-processing</a></li><li><a class="tocitem" href="../../user_guide/2_physics_and_models/">Physics and models</a></li><li><a class="tocitem" href="../../user_guide/3_numerical_setup/">Numerical setup</a></li><li><a class="tocitem" href="../../user_guide/4_runtime_and_solvers/">Runtime and solvers</a></li><li><a class="tocitem" href="../../user_guide/5_postprocessing/">Post-processing</a></li></ul></li><li><a class="tocitem" href="../../contributor_guide/">Contributor Guide</a></li><li><a class="tocitem" href="../../reference/">Reference</a></li><li><a class="tocitem" href="../../release_notes/">Release notes</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Examples</a></li><li class="is-active"><a href>Advanced: 2D Aerofoil inflow optimisation</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Advanced: 2D Aerofoil inflow optimisation</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/mberto79/XCALibre.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/mberto79/XCALibre.jl/blob/main/docs/src/examples/05_2d-aerofoil-inflow-optimisation.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Advanced:-2D-Aerofoil-inflow-optimisation"><a class="docs-heading-anchor" href="#Advanced:-2D-Aerofoil-inflow-optimisation">Advanced: 2D Aerofoil inflow optimisation</a><a id="Advanced:-2D-Aerofoil-inflow-optimisation-1"></a><a class="docs-heading-anchor-permalink" href="#Advanced:-2D-Aerofoil-inflow-optimisation" title="Permalink"></a></h1><h1 id="Introduction"><a class="docs-heading-anchor" href="#Introduction">Introduction</a><a id="Introduction-1"></a><a class="docs-heading-anchor-permalink" href="#Introduction" title="Permalink"></a></h1><hr/><p>Here, a simple optimisation is performed on a 2D NACA0012 aerofoil case. The optimal angle of attack for maximum lift-to-drag ratio is found using <code>BayesianOptimization.jl</code>. This example serves to illustrate both how <code>XCALibre.jl</code> can easily integrate with the Julia ecosystem, and the ease with which post-processing functions can be written.</p><h1 id="Optimisation-Setup"><a class="docs-heading-anchor" href="#Optimisation-Setup">Optimisation Setup</a><a id="Optimisation-Setup-1"></a><a class="docs-heading-anchor-permalink" href="#Optimisation-Setup" title="Permalink"></a></h1><hr/><p>For those interested in running this example, the optimisation can be replicated by following these steps.</p><h3 id="Install-and-load-modules"><a class="docs-heading-anchor" href="#Install-and-load-modules">Install and load modules</a><a id="Install-and-load-modules-1"></a><a class="docs-heading-anchor-permalink" href="#Install-and-load-modules" title="Permalink"></a></h3><p>To be able to run this example the following modules need to be installed. This can be done by entering into package mode (using &quot;]&quot; in the REPL) and typing the following:</p><pre><code class="language-julia hljs">add Plots, Distributions, LinearAlgebra, GaussianProcesses, BayesianOptimization</code></pre><p>This will download and install the required packages. Note that &quot;CUDA&quot; must also be added for GPU acceleration. Once installed, the packages can be loaded as follows:</p><pre><code class="language-julia hljs">using XCALibre, BayesianOptimization, Plots
+using LinearAlgebra, GaussianProcesses, Distributions
+# using CUDA # uncomment to run on GPU
+&quot;done&quot;</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Core.nothing</code></pre><h3 id="Define-post-processing-functions"><a class="docs-heading-anchor" href="#Define-post-processing-functions">Define post processing functions</a><a id="Define-post-processing-functions-1"></a><a class="docs-heading-anchor-permalink" href="#Define-post-processing-functions" title="Permalink"></a></h3><p>In order to calculate the lift-to-drag ratio, the pressure and viscous forces over the aerofoil must be calculated and summed. The lift and drag components can then be calculated (noting the rotated inflow vector to allow for different aerofoil angles of attack with the same mesh). A function returning the coefficients of lift and drag (not specifically needed for this example) is also presented for convenience.</p><pre><code class="language-julia hljs"># Lift to drag ratio calculation
+lift_to_drag(patch::Symbol, model, ρ, nu, α) = begin
+    Fp = pressure_force(patch, model.momentum.p, ρ)
+    Fv = viscous_force(patch, model.momentum.U, ρ, nu, model.turbulence.nut)
+    Ft = Fp + Fv
+    Ft = [cos(-α*π/180) -sin(-α*π/180) 0; sin(-α*π/180) cos(-α*π/180) 0; 0 0 1]*Ft # Rotation matrix to account for rotated inflow
+    aero_eff = Ft[2]/Ft[1]
+    print(&quot;Aerofoil L/D: &quot;,round(aero_eff,sigdigits = 4))
+    return aero_eff
+end
+
+# Aerodynamic coefficient calculation
+aero_coeffs(patch::Symbol, chord, velocity, model, ρ, nu, α) = begin
+    Fp = pressure_force(patch, model.momentum.p, ρ)
+    Fv = viscous_force(patch, model.momentum.U, ρ, nu, model.turbulence.nut)
+    Ft = Fp + Fv
+    Ft = [cos(-α*π/180) -sin(-α*π/180) 0; sin(-α*π/180) cos(-α*π/180) 0; 0 0 1]*Ft # Rotation matrix to account for rotated inflow
+    C_l = 2Ft[2]/(ρ*(velocity[1]^2)*chord*0.001)
+    C_d = 2Ft[1]/(ρ*(velocity[1]^2)*chord*0.001)
+    print(&quot;Lift Coefficient: &quot;,round(C_l,sigdigits = 4))
+    print(&quot;\nDrag Coefficient: &quot;,round(C_d,sigdigits = 4))
+    return C_l,C_d
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">aero_coeffs (generic function with 1 method)</code></pre><h3 id="Import-2D-aerofoil-mesh"><a class="docs-heading-anchor" href="#Import-2D-aerofoil-mesh">Import 2D aerofoil mesh</a><a id="Import-2D-aerofoil-mesh-1"></a><a class="docs-heading-anchor-permalink" href="#Import-2D-aerofoil-mesh" title="Permalink"></a></h3><p>Next, the aerofoil mesh .unv file must be imported. It must also be adapted to work with the GPU, if desired.</p><pre><code class="language-julia hljs">grids_dir = pkgdir(XCALibre, &quot;examples/0_GRIDS&quot;)
+grid = &quot;NACAMesh.unv&quot;
+mesh_file = joinpath(grids_dir, grid)
+
+mesh = UNV2D_mesh(mesh_file, scale=0.001)
+mesh_dev = mesh # running on CPU
+# mesh_dev = adapt(CUDABackend(), mesh) # uncomment to run on GPU</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">2D Mesh with:
+-&gt; 79591 cells
+-&gt; 128509 faces
+-&gt; 48918 nodes</code></pre><h3 id="Setup-the-CFD-simulation-as-a-function-to-be-optimised"><a class="docs-heading-anchor" href="#Setup-the-CFD-simulation-as-a-function-to-be-optimised">Setup the CFD simulation as a function to be optimised</a><a id="Setup-the-CFD-simulation-as-a-function-to-be-optimised-1"></a><a class="docs-heading-anchor-permalink" href="#Setup-the-CFD-simulation-as-a-function-to-be-optimised" title="Permalink"></a></h3><p>The <code>BayesianOptimization.jl</code> package can optimise a Julia function that is passed to it. To interface with XCALibre.jl, the entire CFD simulation setup must simply be wrapped within a function, which can then be passed to the optimiser. The function must take the variable to be changed (angle of attack, in this case) as its input, and must return the desired output (lift-to-drag ratio). Therefore, the post-processing step to calculate lift-to-drag ratio is also wrapped in the same function.</p><pre><code class="language-julia hljs">function foil_optim(α::Vector{Float64})
+    println(&quot;\nSelected α value: $(α[1])&quot;)
+
+    # Parameters
+    chord = 250.0
+    Re = 500000
+    nu, ρ = 1.48e-5, 1.225
+    Umag = (Re*nu)/(chord*0.001) # Calculate velocity magnitude for given Reynolds number
+    velocity = [Umag*cos(α[1]*π/180), Umag*sin(α[1]*π/180), 0.0] # Velocity calculation
+    νR = 10
+    Tu = 0.025
+    k_inlet = 3/2*(Tu*norm(velocity))^2
+    ω_inlet = k_inlet/(νR*nu)
+
+    # Boundary Conditions
+    noSlip = [0.0, 0.0, 0.0]
+
+    model = Physics(
+        time = Steady(),
+        fluid = Fluid{Incompressible}(nu = nu),
+        turbulence = RANS{KOmega}(),
+        energy = Energy{Isothermal}(),
+        domain = mesh_dev
+        )
+
+    @assign! model momentum U (
+        XCALibre.Dirichlet(:inlet, velocity),
+        XCALibre.Dirichlet(:bottom, velocity),
+        Neumann(:outlet, 0.0),
+        Neumann(:top, 0.0),
+        Wall(:foil, noSlip)
+    )
+
+    @assign! model momentum p (
+        Neumann(:inlet, 0.0),
+        Neumann(:bottom, 0.0),
+        XCALibre.Dirichlet(:outlet, 0.0),
+        XCALibre.Dirichlet(:top, 0.0),
+        Neumann(:foil, 0.0)
+    )
+
+    @assign! model turbulence k (
+        XCALibre.Dirichlet(:inlet, k_inlet),
+        Neumann(:outlet, 0.0),
+        Neumann(:top, 0.0),
+        Neumann(:bottom, 0.0),
+        XCALibre.Dirichlet(:foil, 1e-15)
+    )
+
+    @assign! model turbulence omega (
+        XCALibre.Dirichlet(:inlet, ω_inlet),
+        Neumann(:outlet, 0.0),
+        Neumann(:top, 0.0),
+        Neumann(:bottom, 0.0),
+        OmegaWallFunction(:foil)
+    )
+
+    @assign! model turbulence nut (
+        Neumann(:inlet, 0.0),
+        Neumann(:outlet, 0.0),
+        Neumann(:top, 0.0),
+        Neumann(:bottom, 0.0),
+        XCALibre.Dirichlet(:foil, 0.0)
+    )
+
+    schemes = (
+        U = set_schemes(divergence=Upwind, gradient=Midpoint),
+        p = set_schemes(divergence=Upwind),
+        k = set_schemes(divergence=Upwind, gradient=Midpoint),
+        omega = set_schemes(divergence=Upwind, gradient=Midpoint)
+    )
+
+    solvers = (
+        U = set_solver(
+            model.momentum.U;
+            solver = BicgstabSolver, # BicgstabSolver, GmresSolver
+            preconditioner = ILU0(), # Jacobi # ILU0
+            convergence = 1e-7,
+            relax = 0.6,
+            rtol = 1e-1,
+        ),
+        p = set_solver(
+            model.momentum.p;
+            solver = GmresSolver, # change to BicgstabSolver for GPU runs
+            preconditioner = LDL(), # change to Jacobi() for GPU runs
+            convergence = 1e-7,
+            relax = 0.2,
+            rtol = 1e-2,
+        ),
+        k = set_solver(
+            model.turbulence.k;
+            solver = BicgstabSolver,
+            preconditioner = ILU0(), # change to Jacobi() for GPU runs
+            convergence = 1e-7,
+            relax = 0.6,
+            rtol = 1e-1,
+        ),
+        omega = set_solver(
+            model.turbulence.omega;
+            solver      = BicgstabSolver,
+            preconditioner = ILU0(), # change to Jacobi() for GPU runs
+            convergence = 1e-7,
+            relax       = 0.6,
+            rtol = 1e-1,
+        )
+    )
+
+    runtime = set_runtime(iterations=500, write_interval=500, time_step=1)
+
+    hardware = set_hardware(backend=CPU(), workgroup=1024)
+    # hardware = set_hardware(backend=CUDABackend(), workgroup=32) # uncomment to run on GPU
+
+    config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+
+    GC.gc()
+
+    initialise!(model.momentum.U, velocity)
+    initialise!(model.momentum.p, 0.0)
+    initialise!(model.turbulence.k, k_inlet)
+    initialise!(model.turbulence.omega, ω_inlet)
+    initialise!(model.turbulence.nut, k_inlet/ω_inlet)
+
+    residuals = run!(model, config)
+
+    # Residuals Graph
+    let
+        iterations = 1:length(residuals.Ux)
+        plot(; xlims=(0,runtime.iterations), ylims=(1e-10,0))
+        plot!(iterations, residuals.Ux, yscale=:log10, label=&quot;Ux&quot;)
+        plot!(iterations, residuals.Uy, yscale=:log10, label=&quot;Uy&quot;)
+        plot!(iterations, residuals.p, yscale=:log10, label=&quot;p&quot;)
+    end
+
+    aero_eff = lift_to_drag(:foil, model, ρ, nu, α[1]) # Calculates lift-to-drag ratio
+
+    # relocate XCALibre.jl vtk output files
+    aero_eff_out = round(aero_eff,digits=3)
+    α_out = round(α[1],digits=3)
+    vtk_files = filter(x-&gt;endswith(x,&quot;.vtk&quot;), readdir())
+    for file ∈ vtk_files
+        dest = &quot;vtk_results/LD_Ratio = $(aero_eff_out), Alpha = $(α_out).vtk&quot;
+        mv(file, dest, force=true)
+    end
+
+    return aero_eff
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">foil_optim (generic function with 1 method)</code></pre><p>Note that this code saves a single .vtk file of the last CFD iteration each time the optimiser samples the function. This .vtk file is then automatically renamed with that sample&#39;s results, and sorted into a /vtk_results subfolder (<strong>which must be created before the optimisation is run</strong>).</p><h3 id="Configure-and-run-the-Bayesian-optimisation"><a class="docs-heading-anchor" href="#Configure-and-run-the-Bayesian-optimisation">Configure and run the Bayesian optimisation</a><a id="Configure-and-run-the-Bayesian-optimisation-1"></a><a class="docs-heading-anchor-permalink" href="#Configure-and-run-the-Bayesian-optimisation" title="Permalink"></a></h3><p>Finally, the Bayesian optimiser must be configured before the optimisation can be performed. This example follows the BayesianOptimization.jl default configuration for the Gaussian process surrogate model, limiting input dimensions to 1 (the angle of attack). The surrogate model is then set to be optimised every 10 iterations. The inputs are limited to between 0 and 15 degrees. The problem is configured as a maximisation problem, with an initial sample period of 10 iterations and 50 maximum allowed iterations. The final line of the following code block is then run to perform the optimisation.</p><pre><code class="language-julia hljs"># Bayesian Optimisation (using BayesianOptimization.jl)
+isdir(&quot;vtk_results&quot;) || mkdir(&quot;vtk_results&quot;)
+
+# Initialises the Gaussian process surrogate model
+model = ElasticGPE(1, #1 input dimension (α)
+                   mean = MeanConst(0.0),
+                   kernel = SEArd([0.0], 5.0),
+                   capacity = 3000)
+set_priors!(model.mean, [Normal(1, 2)])
+
+modeloptimizer = MAPGPOptimizer(every = 10, maxeval = 40) # Optimises the Gaussian process every 10 iterations
+
+# Optimisation Case Setup
+opt = BOpt(foil_optim, # Function to be optimised - encloses the CFD case
+            model, # Gaussian process surrogate model defined above
+            UpperConfidenceBound(),
+            modeloptimizer, # Model optimiser defined above
+            [0.0], [15.0], # Minimum and maximum α constraints
+            repetitions = 1, # No repititions as CFD data is not noisy
+            maxiterations = 50, # Maximum iterations
+            sense = Max, # Maximisation problem
+            initializer_iterations = 10, # No. of initial random samples
+            verbosity = Progress)
+
+            UpperConfidenceBound(),
+            [0.0], [15.0], # hide
+
+result = boptimize!(opt) # Runs the optimisation procedure
+
+
+&quot;done&quot;</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">&quot;done&quot;</code></pre><h1 id="Example-Optimisation-Results"><a class="docs-heading-anchor" href="#Example-Optimisation-Results">Example Optimisation Results</a><a id="Example-Optimisation-Results-1"></a><a class="docs-heading-anchor-permalink" href="#Example-Optimisation-Results" title="Permalink"></a></h1><hr/><p><img src="../optimisation_iterations_vs_experiment.svg" alt/></p><p><img src="../optimisation_vs_iteration.svg" alt/></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../04_2d-inflow-using-Flux/">« Advanced: 2D inflow using <code>Flux.jl</code></a><a class="docs-footer-nextpage" href="../../user_guide/0_introduction_and_workflow/">Introduction »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.7.0 on <span class="colophon-date" title="Friday 8 November 2024 04:08">Friday 8 November 2024</span>. Using Julia version 1.10.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

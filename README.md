@@ -1,6 +1,6 @@
 <meta name="google-site-verification" content="UZSnZbbvZqRUM_1_d5d9ox1IeO5z9iE8Oynt7mBjJaM" />
 
-[![][docs-stable-img]][docs-stable-url] [![][docs-dev-img]][docs-dev-url]
+[![][docs-stable-img]][docs-stable-url] [![][docs-dev-img]][docs-dev-url] [![][CI-img]][CI-url]
 
 [docs-stable-img]: https://img.shields.io/badge/docs-stable-blue.svg
 [docs-stable-url]: https://mberto79.github.io/XCALibre.jl/stable/
@@ -8,6 +8,8 @@
 [docs-dev-img]: https://img.shields.io/badge/docs-dev-blue.svg
 [docs-dev-url]: https://mberto79.github.io/XCALibre.jl/dev/
 
+[CI-img]: https://github.com/mberto79/XCALibre.jl/workflows/CI.yml/badge.svg
+[CI-url]: https://github.com/mberto79/XCALibre.jl/actions/workflows/CI.yml
 
 # XCALibre.jl
 

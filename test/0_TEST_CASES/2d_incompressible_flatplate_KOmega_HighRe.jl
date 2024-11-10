@@ -123,4 +123,4 @@ residuals = run!(model, config)
 
 outlet = boundary_average(:outlet, model.momentum.U, config)
 
-@test Umag ≈ outlet[1] atol = 0.1*Umag
+@test Umag ≈ outlet[1] atol =0.1*Umag

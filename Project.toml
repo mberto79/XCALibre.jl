@@ -33,6 +33,7 @@ XCALibre_AMDExt = "AMDGPU"
 XCALibre_CUDAExt = "CUDA"
 
 [compat]
+AMDGPU = "1"
 Accessors = "0.1.30"
 Adapt = "4.0"
 Atomix = "0.1"

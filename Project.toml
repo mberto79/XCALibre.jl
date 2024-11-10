@@ -33,10 +33,12 @@ XCALibre_AMDExt = "AMDGPU"
 XCALibre_CUDAExt = "CUDA"
 
 [compat]
+AMDGPU = "1"
 Accessors = "0.1.30"
 Adapt = "4.0"
 Atomix = "0.1"
 GPUArrays = "10.2, 11"
+CUDA = "5"
 ILUZero = "0.2"
 IncompleteLU = "0.2"
 KernelAbstractions = "0.9.25"

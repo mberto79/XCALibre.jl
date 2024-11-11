@@ -8,7 +8,7 @@
 [docs-dev-img]: https://img.shields.io/badge/docs-dev-blue.svg
 [docs-dev-url]: https://mberto79.github.io/XCALibre.jl/dev/
 
-[CI-img]: https://github.com/mberto79/XCALibre.jl/workflows/CI.yml/badge.svg
+[CI-img]: https://github.com/mberto79/XCALibre.jl/actions/workflows/CI.yml/badge.svg
 [CI-url]: https://github.com/mberto79/XCALibre.jl/actions/workflows/CI.yml
 
 # XCALibre.jl

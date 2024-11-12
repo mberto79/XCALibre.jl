@@ -60,7 +60,7 @@ solvers = (
         model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
-        smoother=JacobiSmoother(domain=mesh_dev, loops=5, omega=0.5),
+        smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
         convergence = 1e-7,
         relax       = 0.8,
         rtol = 0.1
@@ -69,7 +69,7 @@ solvers = (
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), #NormDiagonal(),
-        smoother=JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
+        smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
         convergence = 1e-7,
         relax       = 0.2,
         rtol = 0.1,
@@ -109,7 +109,7 @@ initialise!(model.momentum.p, 0.0)
 @time residuals = run!(model, config)
 
 iterations = runtime.iterations
-plot(yscale=:log10, ylims=(1e-5,1e-1))
+plot(yscale=:log10, ylims=(1e-7,1e-1))
 plot!(1:iterations, residuals.Ux, label="Ux")
 plot!(1:iterations, residuals.Uy, label="Uy")
 plot!(1:iterations, residuals.Uz, label="Uz")

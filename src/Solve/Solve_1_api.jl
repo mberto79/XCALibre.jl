@@ -140,9 +140,9 @@ function solve_equation!(
     eqn::ModelEquation{T,M,E,S,P}, phi, solversetup, config; time=nothing, ref=nothing, irelax=nothing
     ) where {T<:ScalarModel,M,E,S,P}
 
-    smoother_solve!(
-        solversetup.smoother, eqn, phi, config; time=time, ref=ref, irelax=irelax
-    )
+    # smoother_solve!(
+    #     solversetup.smoother, eqn, phi, config; time=time, ref=ref, irelax=irelax
+    # )
     discretise!(eqn, phi, config)       
     apply_boundary_conditions!(eqn, phi.BCs, nothing, time, config)
     setReference!(eqn, ref, 1, config)
@@ -195,10 +195,10 @@ function solve_equation!(
 
     mesh = psi.mesh
 
-    smoother_solve!(
-        solversetup.smoother, psiEqn, psi, solversetup, xdir, ydir, zdir, config; 
-        time=time
-        )
+    # smoother_solve!(
+    #     solversetup.smoother, psiEqn, psi, solversetup, xdir, ydir, zdir, config; 
+    #     time=time
+    #     )
 
     discretise!(psiEqn, psi, config)
     update_equation!(psiEqn, config)
@@ -242,6 +242,8 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
     A = _A(phiEqn)
     opA = phiEqn.equation.opA
     b = _b(phiEqn, component)
+
+    apply_smoother!(setup.smoother, values, A, b, hardware)
 
     ldiv = typeof(P) <: KP.AbstractKrylovPreconditioner
     solve!(
@@ -425,7 +427,9 @@ function residual!(Residual, eqn, phi, iteration, component, config)
     values = phi.values
     Fx .= A * values
     @inbounds @. R = (b - Fx)^2
-    Residual[iteration] = sqrt(mean(R)) / norm(b)
+    normb = norm(b)
+    denominator = ifelse(normb>0,normb, 1)
+    Residual[iteration] = sqrt(mean(R)) / denominator
     # Residual[iteration] = sqrt(mean(R)) / min(mean(values), mean(abs.(b)) )
     nothing
 end

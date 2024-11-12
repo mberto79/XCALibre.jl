@@ -47,8 +47,9 @@ JacobiSmoother(; domain, loops, omega=2/3) = begin
     JacobiSmoother(loops, F(omega), adapt(backend, x))
 end
 
-function apply_smoother!(smoother, x, A, b, config)
-    (; hardware) = config
+apply_smoother(smoother::Nothing, x, A, b, hardware) = nothing
+
+function apply_smoother!(smoother, x, A, b, hardware)
     (; backend, workgroup) = hardware
 
     nzval = _nzval(A)

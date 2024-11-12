@@ -43,7 +43,7 @@ This function is used to provide solver settings that will be used internally in
 - `preconditioner` instance of preconditioner to be used e.g. Jacobi()
 - `convergence` sets the stopping criteria of this field
 - `relax` specifies the relaxation factor to be used e.g. set to 1 for no relaxation
-- `smoother` specifies smoothing method to be applied before discretisation. JacobiSmoother is currently the only choice (defaults to `nothing`)
+- `smoother` specifies smoothing method to be applied before discretisation. [`JacobiSmoother`](@ref XCALibre.Solver.JacobiSmoother) is currently the only choice (defaults to `nothing`)
 - `limit` used in some solvers to bound the solution within this limits e.g. (min, max). It defaults to `()`
 - `itmax` maximum number of iterations in a single solver pass (defaults to 1000) 
 - `atol` absolute tolerance for the solver (default to eps(FloatType)^0.9)
@@ -113,36 +113,10 @@ set_runtime(; iterations::I, write_interval::I, time_step::N) where {I<:Integer,
     (iterations=iterations, dt=time_step, write_interval=write_interval)
 end
 
-function smoother_solve!(
-    smoother::Nothing, eqn::ModelEquation{T,M,E,S,P}, phi, config;
-    time, ref, irelax) where {T<:ScalarModel,M,E,S,P}
-    nothing
-end
-
-function smoother_solve!(
-    smoother, eqn::ModelEquation{T,M,E,S,P}, phi, config; 
-    time=nothing, ref=nothing, irelax=nothing
-    ) where {T<:ScalarModel,M,E,S,P}
-
-    discretise!(eqn, phi, config)       
-    apply_boundary_conditions!(eqn, phi.BCs, nothing, time, config)
-    setReference!(eqn, ref, 1, config)
-    # if !isnothing(irelax)
-    #     implicit_relaxation!(eqn, phi.values, irelax, nothing, config)
-    #     # implicit_relaxation_diagdom!(eqn, phi.values, irelax, nothing, config)
-    # end
-    A = _A(eqn)
-    b = _b(eqn, nothing)
-    apply_smoother!(smoother, phi.values, A, b, config.hardware)
-end
-
 function solve_equation!(
     eqn::ModelEquation{T,M,E,S,P}, phi, solversetup, config; time=nothing, ref=nothing, irelax=nothing
     ) where {T<:ScalarModel,M,E,S,P}
 
-    # smoother_solve!(
-    #     solversetup.smoother, eqn, phi, config; time=time, ref=ref, irelax=irelax
-    # )
     discretise!(eqn, phi, config)       
     apply_boundary_conditions!(eqn, phi.BCs, nothing, time, config)
     setReference!(eqn, ref, 1, config)
@@ -154,51 +128,11 @@ function solve_equation!(
     solve_system!(eqn, solversetup, phi, nothing, config)
 end
 
-function smoother_solve!(
-    smoother::Nothing, psiEqn::ModelEquation{T,M,E,S,P}, psi, solversetup, xdir, ydir, zdir, config; time
-    ) where {T<:VectorModel,M,E,S,P}
-    nothing
-end
-
-function smoother_solve!(
-    smoother, psiEqn::ModelEquation{T,M,E,S,P}, psi, solversetup, xdir, ydir, zdir, config; time=nothing
-    ) where {T<:VectorModel,M,E,S,P}
-
-    mesh = psi.mesh
-    discretise!(psiEqn, psi, config)
-
-    update_equation!(psiEqn, config)
-    apply_boundary_conditions!(psiEqn, psi.x.BCs, xdir, time, config)
-    implicit_relaxation_diagdom!(psiEqn, psi.x.values, solversetup.relax, xdir, config)
-    A = _A(psiEqn); b = _b(psiEqn, xdir)
-    apply_smoother!(smoother, psi.x.values, A, b, config.hardware)
-
-    update_equation!(psiEqn, config)
-    apply_boundary_conditions!(psiEqn, psi.y.BCs, ydir, time, config)
-    implicit_relaxation_diagdom!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
-    A = _A(psiEqn); b = _b(psiEqn, ydir)
-    apply_smoother!(smoother, psi.y.values, A, b, config.hardware)
-
-    # Z velocity calculations (3D Mesh only)
-    if typeof(mesh) <: Mesh3
-        update_equation!(psiEqn, config)
-        apply_boundary_conditions!(psiEqn, psi.z.BCs, zdir, time, config)
-        implicit_relaxation_diagdom!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
-        A = _A(psiEqn); b = _b(psiEqn, zdir)
-        apply_smoother!(smoother, psi.z.values, A, b, config.hardware)
-    end
-end
-
 function solve_equation!(
     psiEqn::ModelEquation{T,M,E,S,P}, psi, solversetup, xdir, ydir, zdir, config; time=nothing
     ) where {T<:VectorModel,M,E,S,P}
 
     mesh = psi.mesh
-
-    # smoother_solve!(
-    #     solversetup.smoother, psiEqn, psi, solversetup, xdir, ydir, zdir, config; 
-    #     time=time
-    #     )
 
     discretise!(psiEqn, psi, config)
     update_equation!(psiEqn, config)
@@ -245,10 +179,10 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
 
     apply_smoother!(setup.smoother, values, A, b, hardware)
 
-    ldiv = typeof(P) <: KP.AbstractKrylovPreconditioner
     solve!(
-        solver, opA, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=ldiv
-            )
+        solver, opA, b, values; 
+        M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon)
+        )
     KernelAbstractions.synchronize(backend)
 
     statistics(solver).niter == itmax && @warn "Maximum number of iteration reached!"

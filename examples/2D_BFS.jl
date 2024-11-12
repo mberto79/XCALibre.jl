@@ -53,7 +53,7 @@ solvers = (
         model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), # ILU0GPU
-        smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
+        smoother=JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
         convergence = 1e-7,
         relax       = 0.7,
         rtol = 0.1
@@ -62,7 +62,7 @@ solvers = (
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), # IC0GPU
-        smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
+        smoother=JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
         convergence = 1e-7,
         relax       = 0.3,
         rtol = 0.1

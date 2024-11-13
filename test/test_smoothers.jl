@@ -38,9 +38,9 @@ A_csr = sparsecsr(i, j, v)
 A_check = Array(A_csr)
 x_check = A_check\b
 
-config = (;hardware = (;backend=CPU(), workgroup=5))
+hardware = (;backend=CPU(), workgroup=5)
 s = JacobiSmoother(50, 1, zeros(5))
 x_test = zeros(5)
-XCALibre.Solve.apply_smoother!(s, x_test, A_csr, b, config)
+XCALibre.Solve.apply_smoother!(s, x_test, A_csr, b, hardware)
 x_test
 @test x_check ≈ x_test atol=1e-1

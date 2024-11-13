@@ -8,7 +8,7 @@ Incompressible and transient variant of the SIMPLE algorithm to solving coupled 
 
 # Input arguments
 
-- `model` reference to a `Physics`` model defined by the user.
+- `model` reference to a `Physics` model defined by the user.
 - `config` Configuration structure defined by the user with solvers, schemes, runtime and hardware structures configuration details.
 - `limit_gradient` flag use to activate gradient limiters in the solver (default = `false`)
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)

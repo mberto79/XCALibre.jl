@@ -43,7 +43,7 @@ This function is used to provide solver settings that will be used internally in
 - `preconditioner` instance of preconditioner to be used e.g. Jacobi()
 - `convergence` sets the stopping criteria of this field
 - `relax` specifies the relaxation factor to be used e.g. set to 1 for no relaxation
-- `smoother` specifies smoothing method to be applied before discretisation. [`JacobiSmoother`](@ref XCALibre.Solver.JacobiSmoother) is currently the only choice (defaults to `nothing`)
+- `smoother` specifies smoothing method to be applied before discretisation. `JacobiSmoother` is currently the only choice (defaults to `nothing`)
 - `limit` used in some solvers to bound the solution within this limits e.g. (min, max). It defaults to `()`
 - `itmax` maximum number of iterations in a single solver pass (defaults to 1000) 
 - `atol` absolute tolerance for the solver (default to eps(FloatType)^0.9)

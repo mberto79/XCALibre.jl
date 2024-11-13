@@ -13,4 +13,4 @@ Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 XCALibre = "cf91e36b-bd94-493a-8848-32508a10963c"
 
 [compat]
-Documenter = "1.6"
+Documenter = "1.7"

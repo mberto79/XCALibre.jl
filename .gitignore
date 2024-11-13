@@ -2,7 +2,6 @@ Manifest.toml
 test/Manifest.toml
 docs/build/*
 docs/Manifest
-docs/src/release_notes.md
 .vscode/*
 data/mesh.jld2
 data/fields.jld2

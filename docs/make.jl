@@ -11,3 +11,6 @@ deploydocs(
     versions = ["stable" => "v^", "dev" => "dev"],
     devbranch = "main"
 )
+
+foreach(rm, filter(endswith(".vtk"), readdir("docs", join=true)))
+foreach(rm, filter(endswith(".vtu"), readdir("docs", join=true)))

@@ -19,7 +19,9 @@ mesh_file = joinpath(grids_dir, grid)
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
 workgroup = cld(length(mesh.cells), Threads.nthreads())
-backend = CPU(); activate_multithread(backend)
+# backend = CPU(); activate_multithread(backend)
+backend = CPU()
+activate_multithread1()
 # workgroup = 32
 # backend = CUDABackend()
 
@@ -98,7 +100,7 @@ residuals = run!(model, config)
 
 # Now get timing information
 
-runtime = set_runtime(iterations=2000, write_interval=500, time_step=1)
+runtime = set_runtime(iterations=500, write_interval=500, time_step=1)
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
 GC.gc(true)

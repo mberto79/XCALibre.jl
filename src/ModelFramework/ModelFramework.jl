@@ -8,7 +8,7 @@ using LinearOperators
 
 using LinearAlgebra
 using SparseMatricesCSR
-using ThreadedSparseCSR
+# using ThreadedSparseCSR
 
 using Krylov
 import KrylovPreconditioners as KP

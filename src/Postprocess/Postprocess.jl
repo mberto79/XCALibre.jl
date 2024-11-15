@@ -4,7 +4,7 @@ using StaticArrays
 
 using LinearAlgebra
 using SparseMatricesCSR
-using ThreadedSparseCSR
+# using ThreadedSparseCSR
 
 using Adapt
 using XCALibre.Mesh

@@ -9,9 +9,12 @@ import Adapt: adapt; export adapt
 using LinearAlgebra
 using SparseMatricesCSR
 
-import ThreadedSparseCSR: BaseThreads, PolyesterThreads
-export BaseThreads
-export PolyesterThreads
+# import ThreadedSparseCSR: BaseThreads, PolyesterThreads
+# export BaseThreads
+# export PolyesterThreads
+
+import Base: *
+import LinearAlgebra: mul! 
 
 
 include("Mesh/Mesh.jl")

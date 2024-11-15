@@ -9,7 +9,7 @@ using KernelAbstractions
 
 using LinearAlgebra
 using SparseMatricesCSR
-using ThreadedSparseCSR
+# using ThreadedSparseCSR
 
 include("Simulate_0_types.jl")
 

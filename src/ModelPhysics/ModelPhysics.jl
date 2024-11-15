@@ -8,7 +8,7 @@ using Adapt
 
 using LinearAlgebra
 using SparseMatricesCSR
-using ThreadedSparseCSR
+# using ThreadedSparseCSR
 
 using XCALibre.Mesh
 using XCALibre.Fields

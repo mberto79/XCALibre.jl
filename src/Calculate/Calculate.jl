@@ -10,7 +10,7 @@ using GPUArrays
 
 using LinearAlgebra
 using SparseMatricesCSR
-using ThreadedSparseCSR
+# using ThreadedSparseCSR
 
 # using CUDA
 using XCALibre.Mesh

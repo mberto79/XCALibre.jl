@@ -20,13 +20,20 @@ Function to activate multithreading for CSR sparse matrices. In most cases, the 
 
 """
 function activate_multithread(
-    backend::CPU, nthreads=Threads.nthreads(), method=BaseThreads()
+    backend::CPU, nthreads=Threads.nthreads(), method=nothing
     )
     BLAS.set_num_threads(1)
-    ThreadedSparseCSR.set_num_threads(nthreads)
-    ThreadedSparseCSR.multithread_matmul(method)
     nothing
 end
+
+# function activate_multithread(
+#     backend::CPU, nthreads=Threads.nthreads(), method=BaseThreads()
+#     )
+#     BLAS.set_num_threads(1)
+#     ThreadedSparseCSR.set_num_threads(nthreads)
+#     ThreadedSparseCSR.multithread_matmul(method)
+#     nothing
+# end
 
 
 ## UPDATE VISCOSITY

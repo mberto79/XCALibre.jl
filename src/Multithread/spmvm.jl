@@ -28,6 +28,9 @@ export activate_multithread
 #     end
 # end
 
+# NOTE: The code below has been taken from https://github.com/BacAmorim/ThreadedSparseCSR.jl
+# ThreadedSparseCSR has not been updated in a while and precompilation fails on Julia 1.11.1
+
 struct RangeIterator
     k::Int
     d::Int

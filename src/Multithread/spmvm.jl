@@ -1,4 +1,4 @@
-export activate_multithread1 
+export activate_multithread
 
 # function xmul!(y::AbstractVector, A::SparseMatrixCSR, x::AbstractVector, alpha::Number, beta::Number)
 #     backend = get_backend(x)
@@ -75,7 +75,32 @@ end
 
 # Now add methods for Base and LinearAlgebra 
 
-function activate_multithread1()
+"""
+    function activate_multithread(backend::CPU)
+
+        BLAS.set_num_threads(1)
+
+        @eval function  mul!(y::AbstractVector, A::SparseMatrixCSR, x::AbstractVector, alpha::Number, beta::Number)
+            return xmul!(y, A, x, alpha, beta)
+        end
+
+        @eval function  mul!(y::AbstractVector, A::SparseMatrixCSR, x::AbstractVector)
+            return xmul!(y, A, x, true, false)
+        end
+
+        @eval function  *(A::SparseMatrixCSR, x::AbstractVector)
+            return xmul(A, x)
+        end
+
+        nothing
+    end
+
+Function to activate multithreading for CSR sparse matrices. The only input required is the backend (which must be `CPU()`).
+
+"""
+function activate_multithread(backend::CPU)
+
+    BLAS.set_num_threads(1)
 
     @eval function  mul!(y::AbstractVector, A::SparseMatrixCSR, x::AbstractVector, alpha::Number, beta::Number)
         return xmul!(y, A, x, alpha, beta)

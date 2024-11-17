@@ -1,40 +1,4 @@
 export flux!, update_nueff!, inverse_diagonal!, remove_pressure_source!, H!, correct_velocity!
-export activate_multithread
-
-"""
-    function activate_multithread(
-        backend::CPU, nthreads=Threads.nthreads(), method=BaseThreads()
-        )
-        BLAS.set_num_threads(1)
-        ThreadedSparseCSR.set_num_threads(nthreads)
-        ThreadedSparseCSR.multithread_matmul(method)
-        nothing
-    end
-
-Function to activate multithreading for CSR sparse matrices. In most cases, the only input required is the backend (which must be `CPU()`).
-
-# Input arguments
-- `backend` this must be the CPU() backend. The function call will error if other backends are provided
-- `nthreads` this keyword argument is used to define the number of execution threads. It defaults to `nthreads=Threads.nthreads()`
-- `method` define the parallel method to use for multithreading. The user can select either `BaseThreads()` or `PolyesterThreads()` provided by `ThreadedSparseCSR.jl`. These types are re-exported by `XCALibre.jl` for convenience. The defaul method is `BaseThreads()`
-
-"""
-function activate_multithread(
-    backend::CPU, nthreads=Threads.nthreads(), method=nothing
-    )
-    BLAS.set_num_threads(1)
-    nothing
-end
-
-# function activate_multithread(
-#     backend::CPU, nthreads=Threads.nthreads(), method=BaseThreads()
-#     )
-#     BLAS.set_num_threads(1)
-#     ThreadedSparseCSR.set_num_threads(nthreads)
-#     ThreadedSparseCSR.multithread_matmul(method)
-#     nothing
-# end
-
 
 ## UPDATE VISCOSITY
 

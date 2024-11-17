@@ -8,7 +8,7 @@ Incompressible variant of the SIMPLE algorithm to solving coupled momentum and m
 
 # Input arguments
 
-- `model` reference to a `Physics`` model defined by the user.
+- `model` reference to a `Physics` model defined by the user.
 - `config` Configuration structure defined by the user with solvers, schemes, runtime and hardware structures configuration details.
 - `limit_gradient` flag use to activate gradient limiters in the solver (default = `false`)
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
@@ -230,7 +230,7 @@ function SIMPLE(
         # correct_mass_flux2(mdotf, p_eqn, p, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
-        grad!(gradU, Uf, U, U.BCs, time, config)
+        # grad!(gradU, Uf, U, U.BCs, time, config)
         limit_gradient && limit_gradient!(gradU, U, config)
         turbulence!(turbulenceModel, model, S, S2, prev, time, config) 
         update_nueff!(nueff, nu, model.turbulence, config)

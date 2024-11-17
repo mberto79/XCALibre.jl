@@ -1,7 +1,6 @@
 module Solvers
 
 using Accessors
-using LinearAlgebra
 using SparseArrays
 using StaticArrays
 using Statistics
@@ -14,6 +13,10 @@ using KernelAbstractions
 using Atomix
 using Adapt
 
+using LinearAlgebra
+using SparseMatricesCSR
+# using ThreadedSparseCSR
+
 using XCALibre.Mesh
 using XCALibre.Fields
 using XCALibre.ModelFramework
@@ -21,8 +24,6 @@ using XCALibre.Discretise
 using XCALibre.Solve
 using XCALibre.Calculate
 using XCALibre.ModelPhysics
-# using XCALibre.Turbulence
-# using XCALibre.Energy
 using XCALibre.VTK
 
 include("Solvers_0_functions.jl")

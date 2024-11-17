@@ -196,14 +196,14 @@ end
         c1 = ownerCells[1]; c2 = ownerCells[2]
         
         # Set values to interpolate between
-        x1 = psi.x[c1]; x2 = psi.x[c2]
-        y1 = psi.y[c1]; y2 = psi.y[c2]
-        z1 = psi.z[c1]; z2 = psi.z[c2]
+        psi1 = psi[c1]
+        psi2 = psi[c2]
+        midpoint = weight*(psi1 + psi2)
 
         # Interpolate calculation
-        x[fID] = weight*(x1 + x2)
-        y[fID] = weight*(y1 + y2)
-        z[fID] = weight*(z1 + z2)
+        x[fID] = midpoint[1]
+        y[fID] = midpoint[2]
+        z[fID] = midpoint[3]
     end
 end
 

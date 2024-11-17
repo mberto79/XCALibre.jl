@@ -1,23 +1,37 @@
-using Plots
+using Plots 
+using ThreadPinning
 using XCALibre
-using CUDA
+# using CUDA
+
+pinthreads(:cores)
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "bfs_unv_tet_4mm.unv"
-grid = "bfs_unv_tet_5mm.unv"
+# grid = "bfs_unv_tet_4mm.unv"
+# grid = "bfs_unv_tet_5mm.unv"
 grid = "bfs_unv_tet_10mm.unv"
-
 mesh_file = joinpath(grids_dir, grid)
 
-@time mesh = UNV3D_mesh(mesh_file, scale=0.001)
+# mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_5mm.unv"
+# mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_4mm.unv"
 
-@time mesh = FOAM3D_mesh(mesh_file, scale=0.001, integer_type=Int64, float_type=Float64)
 
-mesh_dev = adapt(CUDABackend(), mesh)
+# mesh_file = "bfs_unv_tet_5mm.unv"
+mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
+workgroup = cld(length(mesh.cells), Threads.nthreads())
+# backend = CPU(); activate_multithread(backend)
+backend = CPU()
+activate_multithread1()
+# workgroup = 32
+# backend = CUDABackend()
+
+mesh_dev = adapt(backend, mesh)
+
+# Inlet conditions
 velocity = [0.5, 0.0, 0.0]
+noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
-Re = velocity[1]*0.1/nu
+Re = (0.2*velocity[1])/nu
 
 model = Physics(
     time = Steady(),
@@ -26,63 +40,56 @@ model = Physics(
     energy = Energy{Isothermal}(),
     domain = mesh_dev
     )
-    
 
-@assign! model momentum U (
-    # Dirichlet(:inlet, velocity),
-    # Neumann(:outlet, 0.0),0.0]),
-    # Dirichlet(:sides, [0.0, 0.0, 0.0])
+@assign! model momentum U ( 
     Dirichlet(:inlet, velocity),
-    Wall(:wall, [0.0, 0.0, 0.0]),
     Neumann(:outlet, 0.0),
-    Neumann(:top, 0.0),
-    Neumann(:sides, 0.0)
+    Wall(:wall, noSlip),
+    Neumann(:sides, 0.0),
+    Neumann(:top, 0.0)
 )
 
 @assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
     Neumann(:wall, 0.0),
-    Neumann(:top, 0.0),
-    Neumann(:sides, 0.0)
+    Neumann(:sides, 0.0),
+    Neumann(:top, 0.0)
 )
-
-schemes = (
-    U = set_schemes(divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(gradient=Midpoint)
-    # p = set_schemes()
-)
-
 
 solvers = (
     U = set_solver(
         model.momentum.U;
-        solver      = BicgstabSolver, #CgSolver, # BicgstabSolver, GmresSolver, #CgSolver
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
+        smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
         convergence = 1e-7,
         relax       = 0.8,
-        rtol = 5e-1,
-        atol = 1e-10
+        rtol = 0.1
     ),
     p = set_solver(
         model.momentum.p;
-        solver      = CgSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(),
+        solver      = CgSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(), #NormDiagonal(),
+        smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 2.5e-1,
-        atol = 1e-10
+        rtol = 0.1,
+        itmax = 1000
     )
 )
 
-runtime = set_runtime(
-    iterations=500, time_step=1, write_interval=500)
+schemes = (
+    U = set_schemes(time=SteadyState, divergence=Upwind, gradient=Midpoint),
+    p = set_schemes(time=SteadyState, gradient=Midpoint)
+)
 
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = set_hardware(backend=backend, workgroup=workgroup)
 
-config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+# Run first to pre-compile
+
+runtime = set_runtime(iterations=1, write_interval=1, time_step=1)
+config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
 GC.gc(true)
 
@@ -91,27 +98,21 @@ initialise!(model.momentum.p, 0.0)
 
 residuals = run!(model, config)
 
-plot(; xlims=(0,1000))
-plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p")
+# Now get timing information
 
-# # PROFILING CODE
+runtime = set_runtime(iterations=500, write_interval=500, time_step=1)
+config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
-using Profile, PProf
+GC.gc(true)
 
-GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-Profile.Allocs.clear()
-Profile.Allocs.@profile sample_rate=1 begin 
-    residuals = run!(model, config)
-end
+@time residuals = run!(model, config)
 
-PProf.Allocs.pprof()
-
-test(::Nothing, a) = print("nothing")
-test(b, a) = print(a*a)
-
-test(nothing, 1)
+iterations = runtime.iterations
+plot(yscale=:log10, ylims=(1e-7,1e-1))
+plot!(1:iterations, residuals.Ux, label="Ux")
+plot!(1:iterations, residuals.Uy, label="Uy")
+plot!(1:iterations, residuals.Uz, label="Uz")
+plot!(1:iterations, residuals.p, label="p")

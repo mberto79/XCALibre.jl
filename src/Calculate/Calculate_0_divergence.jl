@@ -159,7 +159,7 @@ end
         (; area, normal) = faces[i]
 
         # Boundary contribution calculation (boundary normals are correct by definition)
-        Sf = area*normal
+        # Sf = area*normal
         Atomix.@atomic phi.values[cID] += psif[i]/volume
         # phi.values[cID] += psif[i]⋅Sf/volume
     end

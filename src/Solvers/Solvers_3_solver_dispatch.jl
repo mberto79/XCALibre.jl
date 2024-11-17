@@ -58,7 +58,7 @@ run!() = nothing # dummy function for providing general documentation
 Calls the incompressible steady solver using the SIMPLE algorithm.
 
 # Input
-- `model` represents the `Physics`` model defined by user.
+- `model` represents the `Physics` model defined by user.
 - `config` Configuration structure defined by user with solvers, schemes, runtime and hardware structures configuration details.
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only.
 
@@ -101,7 +101,7 @@ Calls the incompressible transient solver using the PISO algorithm.
 
 # Input
 
-- `model` represents the `Physics`` model defined by user.
+- `model` represents the `Physics` model defined by user.
 - `config` Configuration structure defined by user with solvers, schemes, runtime and hardware structures configuration details.
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only.
 
@@ -145,7 +145,7 @@ Calls the compressible steady solver using the SIMPLE algorithm for weakly compr
 
 # Input
 
-- `model` represents the `Physics`` model defined by user.
+- `model` represents the `Physics` model defined by user.
 - `config` Configuration structure defined by user with solvers, schemes, runtime and hardware structures configuration details.
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only.
 
@@ -205,7 +205,7 @@ end
 Calls the compressible transient solver using the PISO algorithm for weakly compressible fluids.
 
 # Input
-- `model` represents the `Physics`` model defined by user.
+- `model` represents the `Physics` model defined by user.
 - `config` Configuration structure defined by user with solvers, schemes, runtime and hardware structures configuration details.
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only.
 

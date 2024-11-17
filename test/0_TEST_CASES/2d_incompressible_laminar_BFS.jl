@@ -69,7 +69,7 @@ solvers = (
 runtime = set_runtime(
     iterations=1000, time_step=1, write_interval=1000)
 
-hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = set_hardware(backend=CPU(), workgroup=1024)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 

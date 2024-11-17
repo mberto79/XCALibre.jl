@@ -1,8 +1,11 @@
 module Postprocess
 
-using LinearAlgebra
 using StaticArrays
-# using SparseArrays
+
+using LinearAlgebra
+using SparseMatricesCSR
+# using ThreadedSparseCSR
+
 using Adapt
 using XCALibre.Mesh
 using XCALibre.Fields

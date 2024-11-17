@@ -115,14 +115,14 @@ solvers = (
     k = set_solver(
         model.turbulence.k;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), #ILU0(),
+        preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 0.8,
     ),
     omega = set_solver(
         model.turbulence.omega;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), #ILU0(),
+        preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 0.8,
     )

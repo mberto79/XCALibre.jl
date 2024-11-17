@@ -1,7 +1,30 @@
 # Release notes
 
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v3.0.1` breaking changes will be recorded here. 
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v0.3.1` breaking changes will be recorded here. 
+
+## Version [v0.3.3] - 2024-XX-XX
+
+### Added
+* Added experimental support for NVIDIA ILU0 and IC0 preconditioners
+* Added `JacobiSmoother` that can be used with all linear solvers (improving initial guess).
+* New function `activate_multithread` is available to set up matrix-vector multiplication in parallel on the CPU
+
+### Fixed
+* No fixes
+
+### Changed
+* Internally the sparse matrix format has been changed to CSR. This has improved performance by 2x-4x (case dependent)
+* Multithreaded sparse matrix vector multiplication is now functional
+
+### Breaking
+* No breaking changes
+
+### Deprecated
+* No functions deprecated
+
+### Removed
+* The `DILU`, `ILU0` and `LDL` preconditioners has been temporarily removed
 
 ## Version [v0.3.2] - 2024-11-08
 

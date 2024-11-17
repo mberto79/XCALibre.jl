@@ -74,7 +74,7 @@ solvers = (
     U = set_solver(
         model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), #ILU0(),
+        preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 0.7,
         rtol = 1e-6
@@ -82,7 +82,7 @@ solvers = (
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), #ILU0(),
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.3,
         rtol = 1e-6
@@ -90,7 +90,7 @@ solvers = (
     k = set_solver(
         model.turbulence.k;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), #ILU0(),
+        preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 0.3,
         rtol = 1e-6
@@ -98,7 +98,7 @@ solvers = (
     omega = set_solver(
         model.turbulence.omega;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), #ILU0(),
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.3,
         rtol = 1e-6
@@ -107,7 +107,7 @@ solvers = (
 
 runtime = set_runtime(iterations=200, write_interval=200, time_step=1)
 
-hardware = set_hardware(backend=CPU(), workgroup=32)
+hardware = set_hardware(backend=CPU(), workgroup=1024)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 

@@ -4,8 +4,12 @@ using Atomix
 using KernelAbstractions
 using Accessors
 using StaticArrays
-using LinearAlgebra
 using Adapt
+
+using LinearAlgebra
+using SparseMatricesCSR
+# using ThreadedSparseCSR
+
 using XCALibre.Mesh
 using XCALibre.Fields
 using XCALibre.ModelFramework

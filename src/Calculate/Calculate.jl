@@ -1,6 +1,5 @@
 module Calculate
 
-using LinearAlgebra
 using StaticArrays
 using SparseArrays
 using Accessors
@@ -8,6 +7,11 @@ using Adapt
 using Atomix
 using KernelAbstractions
 using GPUArrays
+
+using LinearAlgebra
+using SparseMatricesCSR
+# using ThreadedSparseCSR
+
 # using CUDA
 using XCALibre.Mesh
 using XCALibre.Fields

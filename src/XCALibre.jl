@@ -6,6 +6,17 @@ export BicgstabSolver, CgSolver, GmresSolver
 using KernelAbstractions; export CPU
 import Adapt: adapt; export adapt
 
+using LinearAlgebra, SparseArrays
+using SparseMatricesCSR
+
+# import ThreadedSparseCSR: BaseThreads, PolyesterThreads
+# export BaseThreads
+# export PolyesterThreads
+
+import Base: *
+import LinearAlgebra: mul! 
+
+include("Multithread/spmvm.jl")
 include("Mesh/Mesh.jl")
 include("UNV2/UNV2.jl")
 include("UNV3/UNV3.jl")

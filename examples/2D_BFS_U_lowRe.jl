@@ -73,28 +73,28 @@ solvers = (
     U = set_solver(
         model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), # ILU0(),
+        preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 1.0,
     ),
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), # LDL(),
+        preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 1.0,
     ),
     k = set_solver(
         model.turbulence.k;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), # ILU0(),
+        preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 1.0,
     ),
     omega = set_solver(
         model.turbulence.omega;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), # ILU0(),
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1.0,
     )

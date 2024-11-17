@@ -90,8 +90,8 @@ function constrain!(eqn, BC, model, config)
     # Access equation data and deconstruct sparse array
     A = _A(eqn)
     b = _b(eqn, nothing)
-    rowval = _rowval(A)
-    colptr = _colptr(A)
+    colval = _colval(A)
+    rowptr = _rowptr(A)
     nzval = _nzval(A)
     
     # Deconstruct mesh to required fields
@@ -110,11 +110,11 @@ function constrain!(eqn, BC, model, config)
     # Execute apply boundary conditions kernel
     kernel! = _constrain!(backend, workgroup)
     kernel!(
-        turbulence, fluid, BC, faces, start_ID, boundary_cellsID, rowval, colptr, nzval, b, ndrange=length(facesID_range)
+        turbulence, fluid, BC, faces, start_ID, boundary_cellsID, colval, rowptr, nzval, b, ndrange=length(facesID_range)
     )
 end
 
-@kernel function _constrain!(turbulence, fluid, BC, faces, start_ID, boundary_cellsID, rowval, colptr, nzval, b)
+@kernel function _constrain!(turbulence, fluid, BC, faces, start_ID, boundary_cellsID, colval, rowptr, nzval, b)
     i = @index(Global)
     fID = i + start_ID - 1 # Redefine thread index to become face ID
 
@@ -147,7 +147,7 @@ end
         # b[cID] += A[cID,cID]*ωc
         # A[cID,cID] += A[cID,cID]
         
-        nzIndex = spindex(colptr, rowval, cID, cID)
+        nzIndex = spindex(rowptr, colval, cID, cID)
         Atomix.@atomic b[cID] += nzval[nzIndex]*ωc
         Atomix.@atomic nzval[nzIndex] += nzval[nzIndex] 
     end

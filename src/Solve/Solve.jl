@@ -2,14 +2,19 @@ module Solve
 
 using Adapt
 using Krylov
-using LinearAlgebra
 using Statistics
 using SparseArrays
 using LinearOperators
-using LDLFactorizations
+# using LDLFactorizations
 using KernelAbstractions
 using Atomix
 using ILUZero
+import KrylovPreconditioners as KP
+
+using LinearAlgebra
+using SparseMatricesCSR
+# using ThreadedSparseCSR
+
 
 using XCALibre.Mesh
 using XCALibre.Fields
@@ -22,6 +27,7 @@ using Reexport
 
 
 include("Preconditioners/Preconditioners.jl")
+include("Smoothers/Smoothers.jl")
 include("Solve_1_api.jl")
 
 end

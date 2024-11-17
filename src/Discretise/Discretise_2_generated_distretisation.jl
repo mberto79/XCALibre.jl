@@ -12,30 +12,23 @@ function discretise!(
     # Sparse array and b accessor call
     A = _A(eqn)
     A0 = _A0(eqn)
-    # bx = _b(eqn, XDir())
-    # by = _b(eqn, YDir())
-    # bz = _b(eqn, ZDir())
     (; bx, by, bz) = eqn.equation
 
     # Sparse array fields accessors
     nzval = _nzval(A)
     nzval0 = _nzval(A0)
-    rowval = _rowval(A)
-    colptr = _colptr(A)
+    colval = _colval(A)
+    rowptr = _rowptr(A)
 
-    # Call set nzval to zero kernel
-    # kernel! = set_nzval!(backend, workgroup)
-    # kernel!(nzval0, ndrange = length(nzval0))
-    # KernelAbstractions.synchronize(backend)
 
     # Call discretise kernel
     kernel! = _discretise_vector_model!(backend, workgroup)
-    kernel!(model, model.terms, model.sources, mesh, nzval0, nzval, rowval, colptr, bx, by, bz, prev, runtime; ndrange = length(mesh.cells))
+    kernel!(model, model.terms, model.sources, mesh, nzval0, nzval, colval, rowptr, bx, by, bz, prev, runtime; ndrange = length(mesh.cells))
     KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _discretise_vector_model!(
-    model::Model{TN,SN,T,S}, terms, sources, mesh, nzval0::AbstractArray{F}, nzval, rowval, colptr, bx, by, bz, prev, runtime) where {TN,SN,T,S,F}
+    model::Model{TN,SN,T,S}, terms, sources, mesh, nzval0::AbstractArray{F}, nzval, colval, rowptr, bx, by, bz, prev, runtime) where {TN,SN,T,S,F}
     i = @index(Global)
     # Extract mesh fields for kernel
     (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
@@ -45,12 +38,9 @@ end
         cell = cells[i]
         (; faces_range, volume) = cell
 
-        # bx[i] = zero(F)
-        # by[i] = zero(F)
-        # bz[i] = zero(F)
 
         # Set index for sparse array values on diagonal
-        cIndex = spindex(colptr, rowval, i, i)
+        cIndex = spindex(rowptr, colval, i, i)
 
         # For loop over workitem cell faces
         ac_sum = zero(F)
@@ -63,17 +53,16 @@ end
             cellN = cells[nID]
             
             # Set index for sparse array values at workitem cell neighbour index
-            nIndex = spindex(colptr, rowval, i, nID)
-            # nzval0[nIndex] = zero(F)
-            # nzval[nIndex] = zero(F)
+            nIndex = spindex(rowptr, colval, i, nID)
+
 
             # Call scheme generated fucntion
             ac, an = _scheme!(model, terms, nzval0, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
             ac_sum += ac
             nzval0[nIndex] = an
-            # nzval[nIndex] += an
+
         end
-        # nzval[cIndex] = ac_sum
+
         
         # Call scheme source generated function NEEDS UPDATING!
         ac, bx1, by1, bz1 = _scheme_source!(model, terms, cell, i, cIndex, prev, runtime)
@@ -104,23 +93,19 @@ function discretise!(
 
     # Sparse array fields accessors
     nzval = _nzval(A)
-    rowval = _rowval(A)
-    colptr = _colptr(A)
+    colval = _colval(A)
+    rowptr = _rowptr(A)
 
-    # Call set nzval to zero kernel
-    # kernel! = set_nzval!(backend, workgroup)
-    # kernel!(nzval, ndrange = length(nzval))
-    # KernelAbstractions.synchronize(backend)
 
     # Call discretise kernel
     kernel! = _discretise_scalar_model!(backend, workgroup)
-    kernel!(model, model.terms, model.sources, mesh, nzval, rowval, colptr, b, prev, runtime; ndrange = length(mesh.cells))
+    kernel!(model, model.terms, model.sources, mesh, nzval, colval, rowptr, b, prev, runtime; ndrange = length(mesh.cells))
     KernelAbstractions.synchronize(backend)
 end
 
 # Discretise kernel function
 @kernel function _discretise_scalar_model!(
-    model::Model{TN,SN,T,S}, terms, sources, mesh, nzval::AbstractArray{F}, rowval, colptr, b, prev, runtime) where {TN,SN,T,S,F}
+    model::Model{TN,SN,T,S}, terms, sources, mesh, nzval::AbstractArray{F}, colval, rowptr, b, prev, runtime) where {TN,SN,T,S,F}
     i = @index(Global)
     # Extract mesh fields for kernel
     (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
@@ -130,10 +115,8 @@ end
         cell = cells[i]
         (; faces_range, volume) = cell
 
-        # b[i] = zero(F)
-
         # Set index for sparse array values on diagonal!
-        cIndex = spindex(colptr, rowval, i, i)
+        cIndex = spindex(rowptr, colval, i, i)
 
         # For loop over workitem cell faces
         ac_sum = zero(F)
@@ -146,8 +129,8 @@ end
             cellN = cells[nID]
             
             # Set index for sparse array values at workitem cell neighbour index
-            nIndex = spindex(colptr, rowval, i, nID)
-            # nzval[nIndex] = zero(F)
+            nIndex = spindex(rowptr, colval, i, nID)
+
             # Call scheme generated fucntion
             ac, an = _scheme!(model, terms, nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
             ac_sum += ac

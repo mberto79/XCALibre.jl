@@ -3,10 +3,14 @@ using Test
 
 TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
 
-@testset "Functionality tests" begin
+@testset verbose = true "Functionality tests" begin
 
     @testset "Mesh conversion" begin
         include("test_mesh_conversion.jl")
+    end
+
+    @testset "Smoothers" begin
+        include("test_smoothers.jl")
     end
 
     @testset "Incompressible" begin

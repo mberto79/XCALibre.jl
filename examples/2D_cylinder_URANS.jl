@@ -6,7 +6,8 @@ using XCALibre
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-mesh_dev = adapt(CUDABackend(), mesh)
+mesh_dev = mesh
+# mesh_dev = adapt(CUDABackend(), mesh)
 
 # INLET CONDITIONS 
 

@@ -1,4 +1,5 @@
 export activate_multithread
+export *, mul!
 
 # function xmul!(y::AbstractVector, A::SparseMatrixCSR, x::AbstractVector, alpha::Number, beta::Number)
 #     backend = get_backend(x)

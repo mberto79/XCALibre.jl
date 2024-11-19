@@ -8,12 +8,12 @@ using LinearOperators
 
 using LinearAlgebra
 using SparseMatricesCSR
-# using ThreadedSparseCSR
 
 using Krylov
 import KrylovPreconditioners as KP
 using KernelAbstractions
 
+using XCALibre.Multithread
 using XCALibre.Mesh
 using XCALibre.Fields
 

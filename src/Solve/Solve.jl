@@ -13,17 +13,14 @@ import KrylovPreconditioners as KP
 
 using LinearAlgebra
 using SparseMatricesCSR
-# using ThreadedSparseCSR
 
-
+using XCALibre.Multithread
 using XCALibre.Mesh
 using XCALibre.Fields
 using XCALibre.ModelFramework
 using XCALibre.Discretise
 
 using Reexport
-
-# @reexport using ILUZero
 
 
 include("Preconditioners/Preconditioners.jl")

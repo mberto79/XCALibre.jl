@@ -8,8 +8,8 @@ using Adapt
 
 using LinearAlgebra
 using SparseMatricesCSR
-# using ThreadedSparseCSR
 
+using XCALibre.Multithread
 using XCALibre.Mesh
 using XCALibre.Fields
 using XCALibre.ModelFramework

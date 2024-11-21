@@ -7,6 +7,7 @@ using SparseMatricesCSR
 # using ThreadedSparseCSR
 
 using Adapt
+using XCALibre.Multithread
 using XCALibre.Mesh
 using XCALibre.Fields
 using XCALibre.Calculate

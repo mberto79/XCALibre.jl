@@ -7,6 +7,7 @@ using Adapt
 using Printf
 using Statistics
 
+using XCALibre.Multithread
 using XCALibre.Mesh
 
 include("FoamMesh_0_types.jl")

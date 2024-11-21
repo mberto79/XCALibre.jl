@@ -9,7 +9,7 @@ using KernelAbstractions
 
 using LinearAlgebra
 using SparseMatricesCSR
-# using ThreadedSparseCSR
+using XCALibre.Multithread
 
 include("Simulate_0_types.jl")
 

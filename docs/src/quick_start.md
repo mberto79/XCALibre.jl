@@ -132,8 +132,8 @@ solvers = (
 )
 
 # Step 8. Specify runtime requirements
-runtime = set_runtime(
-    iterations=2000, time_step=1, write_interval=2000)
+runtime = set_runtime(iterations=2000, time_step=1, write_interval=2000)
+runtime = set_runtime(iterations=1, time_step=1, write_interval=-1) # hide
 
 # Step 9. Construct Configuration object
 config = Configuration(

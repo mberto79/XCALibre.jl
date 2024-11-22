@@ -8,7 +8,6 @@ Modules = [
     XCALibre.UNV3, 
     XCALibre.FoamMesh, 
     XCALibre.Multithread,
-    XCALibre.Multithread,
     XCALibre.Fields,
     XCALibre.ModelFramework,
     XCALibre.Discretise, 

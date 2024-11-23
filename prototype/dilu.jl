@@ -32,6 +32,15 @@ Pcsc\b
 y = PL\b
 x = PU\y
 
+yDILU = zeros(n)
+@time XCALibre.Solve.forward_substitution!(yDILU, PL, b)
+yDILU ≈ y
+
+xDILU = zeros(n)
+@time XCALibre.Solve.backward_substitution!(xDILU, PU, yDILU)
+xDILU
+xDILU ≈ x 
+
 x = zeros(n)
 XCALibre.Solve.ldiv!(x, P.storage, b)
 x

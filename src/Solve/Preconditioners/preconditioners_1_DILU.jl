@@ -83,7 +83,7 @@ function update_dilu_diagonal!(P, mesh, config) # must rename
 
     for i ∈ 1:m
         for j ∈ (i+1):m
-                D[j] = D[j] - A[i,j]*A[j,i]/D[i]
+            D[j] = D[j] - A[i,j]*A[j,i]/D[i]
         end
     end
 
@@ -198,25 +198,19 @@ end
 #     end
 # end
 
-function forward_substitution!(x, P, b)
-    (; A, D, Di, Ri, J) = P
-    (; colptr, m, nzval, rowval) = A
+function forward_substitution!(y, PL, b)
+    # (; A, D, Di, Ri, J) = P
+    # (; colptr, m, nzval, rowval) = A
 
     # # Algo 1
     # x .= b
+    m, n = size(PL)
     for i ∈ 1:m
         sum = 0.0
         for j ∈ 1:(i-1) # needs serious check!
-            # x[i] -= A[i,j]*x[j]/D[j]
-            # if i == j
-            #     x[i] = A[i,j]*x[j]
-            # else
-            #     x[i] = A[i,j]*x[j]
-            # end
-            sum += A[i,j]*x[j]
+            sum += PL[i,j]*y[j]
         end
-        x[i] = (b[i] - sum)
-        # x[i] /= A[i,i] # if UnitLowerTriangular this is not needed
+        y[i] = (b[i] - sum)
     end
 
     # # Algo 2
@@ -234,24 +228,18 @@ function forward_substitution!(x, P, b)
     # end
 end
 
-function backward_substitution!(x, P, c)
-    (; A, D, Di, Ri, J, upper_indices_IDs) = P
-    (; colptr, n, nzval, rowval) = A
+function backward_substitution!(x, PU, y)
+    # (; A, D, Di, Ri, J, upper_indices_IDs) = P
+    # (; colptr, n, nzval, rowval) = A
 
-     # Algo 1
-    # x .= x./D
-    # x .= x.*D
-    # x .= c./D
+    # Algo 1
+    m, n = size(PU)
     for i ∈ (n):-1:1
         sum = 0.0
         for j ∈ (i+1):n # needs serious check!
-            # println(i, " ", j)
-            # x[i] -= A[i,j]*x[j]
-            # x[i] -= A[i,j]*x[j]*D[i]
-            sum += A[i,j]*x[j]
+            sum += PU[i,j]*x[j]
         end
-        println(i, " ", sum)
-        x[i] = (c[i] - sum)/D[i]
+        x[i] = (y[i] - sum)/PU[i,i]
     end
 
     # Algo 2
@@ -281,6 +269,15 @@ end
 
 ldiv!(x, P::DILUprecon{M,V,I}, b) where {M<:AbstractSparseArray,V,I} =
 begin
-    forward_substitution!(x, P, b)
-    backward_substitution!(x, P, x)
+    (; A, D) = P
+    D_star = Diagonal(D)
+    D_star_inv = Diagonal(1.0./D)
+    L = UnitLowerTriangular(A) - I
+    U = UnitUpperTriangular(A) - I
+
+    PL = (D_star + L)*D_star_inv
+    PU = (D_star + U)
+
+    forward_substitution!(x, PL, b)
+    backward_substitution!(x, PU, x)
 end

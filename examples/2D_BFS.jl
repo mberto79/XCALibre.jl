@@ -52,17 +52,17 @@ solvers = (
     U = set_solver(
         model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), # ILU0GPU
-        smoother=JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
+        preconditioner = DILU(), # ILU0GPU, Jacobi(), DILU
+        # smoother=JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
         convergence = 1e-7,
         relax       = 0.7,
         rtol = 0.1
     ),
     p = set_solver(
         model.momentum.p;
-        solver      = CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), # IC0GPU
-        smoother=JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
+        solver      = GmresSolver, # BicgstabSolver, GmresSolver
+        preconditioner = DILU(), # IC0GPU
+        # smoother=JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
         convergence = 1e-7,
         relax       = 0.3,
         rtol = 0.1
@@ -83,6 +83,7 @@ GC.gc()
 
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
+
 
 @time residuals = run!(model, config)
 

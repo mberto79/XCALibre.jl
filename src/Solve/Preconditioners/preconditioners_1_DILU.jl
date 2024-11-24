@@ -6,17 +6,17 @@ export ldiv!
 # NOTE ADDED ON 2024/11/07 - THIS IS LIKELY BROKEN DUE TO CHANGE TO CSR FORMAT
 
 
-function extract_diagonal!(D, Di, A::SparseMatrixCSC{Tf,Ti}, config) where {Tf,Ti}
+function extract_diagonal!(D, Di, A::AbstractSparseArray, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
     
     (; nzval, n) = A
 
-    kernel! = extract_diagonal_kernel!(backend, workgroup)
+    kernel! = _extract_diagonal!(backend, workgroup)
     kernel!(D, Di, nzval, ndrange = n)
 end
 
-@kernel function extract_diagonal_kernel!(D, Di, nzval)
+@kernel function _extract_diagonal!(D, Di, nzval)
     i = @index(Global)
     
     @inbounds begin
@@ -29,6 +29,15 @@ function diagonal_indices!(Di, A::SparseMatrixCSC{Tf,Ti}) where {Tf,Ti}
     idx_diagonal = zero(Ti) # index to diagonal element
     @inbounds for i ∈ 1:n
         idx_diagonal = spindex_csc(colptr, rowval, i, i)
+        Di[i] = idx_diagonal
+    end
+end
+
+function diagonal_indices!(Di, A::SparseMatrixCSR{N, Tf,Ti}) where {N, Tf,Ti} 
+    (; rowptr, n, colval) = A
+    idx_diagonal = zero(Ti) # index to diagonal element
+    @inbounds for i ∈ 1:n
+        idx_diagonal = spindex(rowptr, colval, i, i)
         Di[i] = idx_diagonal
     end
 end
@@ -73,58 +82,34 @@ function upper_row_indices(A, Di) # upper triangular row column indices
 end
 
 function update_dilu_diagonal!(P, mesh, config) # must rename
-    (; A, storage) = P
-    (; m) = A
-    (; Di, D) = storage
-    extract_diagonal!(D, Di, A, config)
-    for i ∈ 1:m 
-        D[i] = A[i,i]
-    end
+    # # Algo 1
+    # (; A, storage) = P
+    # (; m) = A
+    # (; D) = storage
+    # for i ∈ 1:m 
+    #     D[i] = A[i,i]
+    # end
 
-    for i ∈ 1:m
-        for j ∈ (i+1):m
-            D[j] = D[j] - A[i,j]*A[j,i]/D[i]
-        end
-    end
+    # for i ∈ 1:m
+    #     for j ∈ (i+1):m
+    #         D[j] = D[j] - A[i,j]*A[j,i]/D[i]
+    #     end
+    # end
 
     # Algo 2
-    # (; A, storage) = P
-    # (; rowptr, m, n, nzval, colval) = A
-    # (; Di, D) = storage
-    # extract_diagonal!(D, Di, A) 
-    # sum = 0.0
-    # for i ∈ 2:m
-    #     for j ∈ 1:(i-1)
-    #         sum += A[i,j]*A[j,i]/D[j]
-    #     end
-    #     D[i] -= sum
-    #     sum = 0.0
-    # end
-    
-    # # Algo 3
-    # # backend = _get_backend(mesh)
-
-    # (; A, storage) = P
-    # (; colptr, n, nzval, rowval) = A
-    # (; Di, Ri, D, upper_indices_IDs) = storage
-    
-    # extract_diagonal!(D, Di, A, config)
-
-    # for i ∈ 1:n
-    #     # D[i] = nzval[Di[i]]
-    #     upper_index_ID = upper_indices_IDs[i] 
-    #     c_start = Di[i] + 1
-    #     c_end = colptr[i+1] - 1
-    #     r_pointer = Ri[upper_index_ID]
-    #     r_count = 0
-    #     for c_pointer ∈ c_start:c_end
-    #         j = rowval[c_pointer]
-    #         r_count += 1
-    #         D[j] -= nzval[c_pointer]*nzval[r_pointer[r_count]]/D[i]
-    #     end
-    #     D[i] = 1/D[i] # store inverse
-    # end
-    # # D .= 1.0./D # store inverse
+    (; A, storage) = P 
+    (; rowptr, colval, nzval, m, n) = A
+    (; D, Di) = storage
+    extract_diagonal!(D, Di, A, config)
+    @inbounds for i ∈ 1:m
+        @inbounds for j ∈ (i+1):m
+            nzIndex1 = spindex(rowptr, colval, i, j)
+            nzIndex2 = spindex(rowptr, colval, j, i)
+            if nzIndex1 !== 0 && nzIndex2 !== 0
+                D[j] = D[j] - nzval[nzIndex1]*nzval[nzIndex2]/D[i]
+            end
+        end
+    end
     nothing
 end
 
@@ -198,86 +183,70 @@ end
 #     end
 # end
 
-function forward_substitution!(y, PL, b)
-    # (; A, D, Di, Ri, J) = P
-    # (; colptr, m, nzval, rowval) = A
-
+function forward_substitution!(y, P::DILUprecon{M,V,VI,VUR}, b) where {M,V,VI,VUR}
     # # Algo 1
-    # x .= b
-    m, n = size(PL)
+    # m, n = size(PL)
+    # for i ∈ 1:m
+    #     sum = 0.0
+    #     for j ∈ 1:(i-1)
+    #         sum += PL[i,j]*y[j]
+    #     end
+    #     y[i] = (b[i] - sum)
+    # end
+
+    # # Algo 2
+    (; A, D, Di) = P
+    (; rowptr, colval, nzval, n, m) = A
+    y .= b
     for i ∈ 1:m
+        start_index = rowptr[i]
+        end_index = Di[i] - 1
         sum = 0.0
-        for j ∈ 1:(i-1) # needs serious check!
-            sum += PL[i,j]*y[j]
+        for nzi ∈ start_index:end_index # needs serious check!
+            j = colval[nzi]
+            println("i = $i, j = $j, $start_index, $end_index")
+            # if j <= i
+                A_ij = ifelse(i == j, 1, nzval[nzi])
+                sum += A_ij*y[j]
+                # y[i] -= A_ij*y[j]
+            # end
         end
         y[i] = (b[i] - sum)
     end
-
-    # # Algo 2
-    # @inbounds for i ∈ eachindex(x)
-    #     x[i] = b[i]
-    # end
-    # @inbounds for j ∈ 1:n
-    #     c_start = Di[j] + 1
-    #     c_end = colptr[j+1] - 1
-    #     @inbounds for c_pointer ∈ c_start:c_end
-    #         i = rowval[c_pointer]
-    #         # x[i] -= nzval[c_pointer]*x[j]/D[j]
-    #         x[i] -= nzval[c_pointer]*x[j]*D[j]
-    #     end
-    # end
 end
 
-function backward_substitution!(x, PU, y)
-    # (; A, D, Di, Ri, J, upper_indices_IDs) = P
-    # (; colptr, n, nzval, rowval) = A
-
-    # Algo 1
-    m, n = size(PU)
-    for i ∈ (n):-1:1
-        sum = 0.0
-        for j ∈ (i+1):n # needs serious check!
-            sum += PU[i,j]*x[j]
-        end
-        x[i] = (y[i] - sum)/PU[i,i]
-    end
+function backward_substitution!(x, P::DILUprecon{M,V,VI,VUR}, y) where {M,V,VI,VUR}
+    # # Algo 1
+    # m, n = size(PU)
+    # for i ∈ (n):-1:1
+    #     sum = 0.0
+    #     for j ∈ (i+1):n # needs serious check!
+    #         sum += PU[i,j]*x[j]
+    #     end
+    #     x[i] = (y[i] - sum)/PU[i,i]
+    # end
 
     # Algo 2
-    # @inbounds for i ∈ eachindex(x)
-    #     # x[i] = c[i]/D[i]
-    #     x[i] = c[i]*D[i]
-    # end
-    # for i ∈ (n-1):-1:1
-    #     upper_index_ID = upper_indices_IDs[i]
-    #     # FIND A WAY NOT TO USE IF STATEMENTS
-    #     if i > 1
-    #         if upper_indices_IDs[i] == upper_indices_IDs[i-1]
-    #             c_pointers = []
-    #         else
-    #             c_pointers = Ri[upper_index_ID]
-    #         end
-    #     else
-    #         c_pointers = Ri[upper_index_ID]
-    #     end
-    #     j = J[upper_index_ID]
-    #     for (p_i, p) ∈ enumerate(c_pointers)
-    #         # x[i] -= nzval[p]*x[j[p_i]]/D[i]
-    #         x[i] -= nzval[p]*x[j[p_i]]*D[i]
-    #     end
-    # end
+    (; A, D, Di) = P
+    (; rowptr, colval, nzval, n, m) = A
+    for i ∈ n:-1:1
+        start_index = Di[i] + 1
+        end_index = rowptr[i+1] - 1
+        sum = 0.0
+        for nzi ∈ start_index:end_index # needs serious check!
+            j = colval[nzi]
+            if j >= i
+                A_ij = ifelse(i == j, D[i], nzval[nzi])
+                sum += A_ij*x[j]
+            end
+        end
+        x[i] = (y[i] - sum)/D[i]
+    end
 end
 
 ldiv!(x, P::DILUprecon{M,V,I}, b) where {M<:AbstractSparseArray,V,I} =
 begin
-    (; A, D) = P
-    D_star = Diagonal(D)
-    D_star_inv = Diagonal(1.0./D)
-    L = UnitLowerTriangular(A) - I
-    U = UnitUpperTriangular(A) - I
-
-    PL = (D_star + L)*D_star_inv
-    PU = (D_star + U)
-
-    forward_substitution!(x, PL, b)
-    backward_substitution!(x, PU, x)
+    y = zeros(length(x))
+    forward_substitution!(y, P, b)
+    backward_substitution!(x, P, y)
 end

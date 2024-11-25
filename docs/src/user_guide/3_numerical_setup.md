@@ -107,7 +107,7 @@ print_tree(PreconditionerType) # hide
 
 !!! warning
 
-    Internally the storage for sparse matrices was moved to the CSR format. Thus, temporarily, we have removed support of `LDL`, `DILU` and `ILU0` preconditioners while we work on CSR compatible implementations. 
+    Internally the storage for sparse matrices was moved to the CSR format. Thus, temporarily, we have removed support for `LDL` and `ILU0` preconditioners while we work on CSR compatible implementations. 
 
 
 

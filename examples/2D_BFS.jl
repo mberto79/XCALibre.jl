@@ -52,25 +52,25 @@ solvers = (
     U = set_solver(
         model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = DILU(), # ILU0GPU, Jacobi(), DILU
+        preconditioner = DILU(), # ILU0GPU, Jacobi, DILU
         # smoother=JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
         convergence = 1e-7,
-        relax       = 0.7,
-        rtol = 0.1
+        relax       = 0.6,
+        rtol = 1e-1
     ),
     p = set_solver(
         model.momentum.p;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = DILU(), # IC0GPU
+        solver      = CgSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(), # IC0GPU
         # smoother=JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
         convergence = 1e-7,
-        relax       = 0.3,
-        rtol = 0.1
+        relax       = 0.4,
+        rtol = 1e-1
     )
 )
 
 runtime = set_runtime(
-    iterations=1000, time_step=1, write_interval=1000)
+    iterations=2000, time_step=1, write_interval=100)
     # iterations=1, time_step=1, write_interval=1)
 
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)

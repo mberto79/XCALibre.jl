@@ -6,7 +6,7 @@ using KernelAbstractions
 using ILUZero
 
 n = 20
-Acsc = sprand(n,n,0.1) + I
+Acsc = sprand(n,n,0.1) + 0.75I
 typeof(Acsc)
 
 i, j, v = findnz(Acsc)
@@ -34,24 +34,24 @@ Pcsc\b
 y = PL\b
 x = PU\y
 
-
-
-x = zeros(n)
-@time XCALibre.Solve.ldiv!(x, P.storage, b)
-x
-
-
-XCALibre.Solve.is_ldiv(P)
-
-@time XCALibre.Solve.update_preconditioner!(P,  nothing, config)
-
 yDILU = zeros(n)
 @time XCALibre.Solve.forward_substitution!(yDILU, P.storage, b)
+yDILU
 yDILU ≈ y
 
 for i in eachindex(y); println("y = $(y[i]), ydilu = $(yDILU[i])"); end
 
 xDILU = zeros(n)
 @time XCALibre.Solve.backward_substitution!(xDILU, P.storage, yDILU)
+# @time XCALibre.Solve.backward_substitution!(xDILU, P.storage, y)
 xDILU
 xDILU ≈ x 
+
+for i in eachindex(y); println("x = $(x[i]), xdilu = $(xDILU[i])"); end
+
+xldiv = zeros(n)
+@time XCALibre.Solve.ldiv!(xldiv, P.storage, b)
+xldiv ≈ x
+
+
+XCALibre.Solve.is_ldiv(P)

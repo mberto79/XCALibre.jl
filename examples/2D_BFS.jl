@@ -60,8 +60,8 @@ solvers = (
     ),
     p = set_solver(
         model.momentum.p;
-        solver      = CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), # IC0GPU
+        solver      = CgSolver, # BicgstabSolver, GmresSolver, CgSolver
+        preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
         # smoother=JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
         convergence = 1e-7,
         relax       = 0.4,

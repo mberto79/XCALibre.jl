@@ -1,4 +1,7 @@
 using XCALibre
+using LinearAlgebra
+using SparseArrays
+using SparseMatricesCSR
 using Test
 
 TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
@@ -11,6 +14,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
 
     @testset "Smoothers" begin
         include("test_smoothers.jl")
+    end
+
+    @testset "DILU" begin
+        include("test_DILU.jl")
     end
 
     @testset "Incompressible" begin

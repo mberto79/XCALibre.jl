@@ -3,7 +3,6 @@ using LinearAlgebra
 using SparseArrays
 using SparseMatricesCSR
 using KernelAbstractions
-using ILUZero
 
 n = 20
 Acsc = sprand(n,n,0.1) + 0.75I

@@ -71,11 +71,11 @@ function setup_incompressible_solvers(
         + Divergence{schemes.U.divergence}(mdotf, U) 
         - Laplacian{schemes.U.laplacian}(nueff, U) 
         == 
-        -Source(∇p.result)
+        - Source(∇p.result)
     ) → VectorEquation(mesh)
 
     p_eqn = (
-        Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
+        - Laplacian{schemes.p.laplacian}(rDf, p) == - Source(divHv)
     ) → ScalarEquation(mesh)
 
     @info "Initialising preconditioners..."

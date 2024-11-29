@@ -2,8 +2,10 @@ using Plots
 using XCALibre
 
 
-# backwardFacingStep_2mm, backwardFacingStep_10mm
-mesh_file = "unv_sample_meshes/flatplate_2D_lowRe.unv"
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "flatplate_2D_lowRe.unv"
+
+mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 # mesh_dev = adapt(CUDABackend(), mesh)
@@ -17,7 +19,7 @@ k_inlet = 0.375
 
 model = Physics(
     time = Steady(),
-    fluid = Fluid{Incompressible}(),
+    fluid = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{KOmega}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
@@ -78,7 +80,7 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), 
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.7,
     ),
     p = set_solver(
         model.momentum.p;
@@ -92,14 +94,14 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), 
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.7,
     ),
     omega = set_solver(
         model.turbulence.omega;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), 
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.7,
     )
 )
 

@@ -93,7 +93,8 @@ function initialise(
     Pω = ScalarField(mesh)
     
     k_eqn = (
-            Time{schemes.k.time}(rho, k)
+            # Time{schemes.k.time}(rho, k)
+            Time{schemes.k.time}(k)
             + Divergence{schemes.k.divergence}(mdotf, k) 
             - Laplacian{schemes.k.laplacian}(mueffk, k) 
             + Si(Dkf,k) # Dkf = β⁺rho*omega
@@ -102,7 +103,8 @@ function initialise(
         ) → eqn
     
     ω_eqn = (
-            Time{schemes.omega.time}(rho, omega)
+            # Time{schemes.omega.time}(rho, omega)
+            Time{schemes.omega.time}(omega)
             + Divergence{schemes.omega.divergence}(mdotf, omega) 
             - Laplacian{schemes.omega.laplacian}(mueffω, omega) 
             + Si(Dωf,omega)  # Dωf = rho*β1*omega
@@ -169,9 +171,9 @@ function turbulence!(
 
     # grad!(S.gradU, Uf, U, U.BCs, time, config)
     # limit_gradient && limit_gradient!(gradU, U, config)
-    magnitude2!(Pk, S, config, scale_factor=4.0) # multiplied by 2 (def of Sij)
-    constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
-    correct_production!(Pk, k.BCs, model, S.gradU, config)
+    magnitude2!(Pk, S, config, scale_factor=2.0) # multiplied by 2 (def of Sij)
+    # constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
+    # correct_production!(Pk, k.BCs, model, S.gradU, config)
     
     @. Pω.values = rho.values*coeffs.α1*Pk.values
     @. Pk.values = rho.values*nut.values*Pk.values
@@ -184,9 +186,9 @@ function turbulence!(
     # prev .= omega.values
     discretise!(ω_eqn, omega, config)
     apply_boundary_conditions!(ω_eqn, omega.BCs, nothing, time, config)
-    constrain_equation!(ω_eqn, omega.BCs, model, config) # active with WFs only
     # implicit_relaxation!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
     implicit_relaxation_diagdom!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
+    constrain_equation!(ω_eqn, omega.BCs, model, config) # active with WFs only
     update_preconditioner!(ω_eqn.preconditioner, mesh, config)
     solve_system!(ω_eqn, solvers.omega, omega, nothing, config)
     

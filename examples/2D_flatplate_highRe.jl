@@ -1,15 +1,17 @@
 using Plots
 using XCALibre
-using CUDA
+# using CUDA
 
-# backwardFacingStep_2mm, backwardFacingStep_10mm
-mesh_file = "unv_sample_meshes/flatplate_2D_highRe.unv"
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "flatplate_2D_highRe.unv"
+
+mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 mesh_dev = mesh
-mesh_dev = adapt(CUDABackend(), mesh)
+# mesh_dev = adapt(CUDABackend(), mesh)
 
-velocity = [10, 0.0, 0.0]
+velocity = [15, 0.0, 0.0]
 nu = 1e-5
 Re = velocity[1]*1/nu
 k_inlet = 0.375
@@ -99,8 +101,8 @@ solvers = (
 
 runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
 
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=CPU(), workgroup=4)
+# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+hardware = set_hardware(backend=CPU(), workgroup=1024)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

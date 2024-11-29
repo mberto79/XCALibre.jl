@@ -164,9 +164,15 @@ function turbulence!(
     Pω = get_source(ω_eqn, 1)
 
     # update fluxes and sources
-    magnitude2!(Pk, S, config, scale_factor=2.0) # multiplied by 2 (def of Sij)
+
+    # TO-DO: Need to bring gradient calculation inside turbulence models!!!!!
+
+    # grad!(S.gradU, Uf, U, U.BCs, time, config)
+    # limit_gradient && limit_gradient!(gradU, U, config)
+    magnitude2!(Pk, S, config, scale_factor=4.0) # multiplied by 2 (def of Sij)
     constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
     correct_production!(Pk, k.BCs, model, S.gradU, config)
+    
     @. Pω.values = rho.values*coeffs.α1*Pk.values
     @. Pk.values = rho.values*nut.values*Pk.values
     @. Dωf.values = rho.values*coeffs.β1*omega.values

@@ -230,7 +230,7 @@ function SIMPLE(
         # correct_mass_flux2(mdotf, p_eqn, p, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
-        # grad!(gradU, Uf, U, U.BCs, time, config)
+        grad!(gradU, Uf, U, U.BCs, time, config)
         limit_gradient && limit_gradient!(gradU, U, config)
         turbulence!(turbulenceModel, model, S, S2, prev, time, config) 
         update_nueff!(nueff, nu, model.turbulence, config)

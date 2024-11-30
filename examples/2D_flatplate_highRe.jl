@@ -11,7 +11,7 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 mesh_dev = mesh
 # mesh_dev = adapt(CUDABackend(), mesh)
 
-velocity = [10, 0.0, 0.0]
+velocity = [15, 0.0, 0.0]
 nu = 1e-5
 Re = velocity[1]*1/nu
 k_inlet = 0.375

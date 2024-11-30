@@ -147,9 +147,17 @@ end
         # b[cID] += A[cID,cID]*ωc
         # A[cID,cID] += A[cID,cID]
         
-        nzIndex = spindex(rowptr, colval, cID, cID)
-        Atomix.@atomic b[cID] += nzval[nzIndex]*ωc
-        Atomix.@atomic nzval[nzIndex] += nzval[nzIndex] 
+        # nzIndex = spindex(rowptr, colval, cID, cID)
+        # Atomix.@atomic b[cID] += nzval[nzIndex]*ωc
+        # Atomix.@atomic nzval[nzIndex] += nzval[nzIndex] 
+
+        z = zero(eltype[nzval])
+        for nzi ∈ rowptr[cID]:(rowptr[cID+1] - 1)
+            nzval[nzi] = z
+        end
+        cIndex = spindex(rowptr, colval, cID, cID)
+        nzval[cIndex] = one(eltype[nzval])
+        b[cID] = ωc
     end
 end
 

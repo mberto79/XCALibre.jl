@@ -173,7 +173,7 @@ function turbulence!(
     # limit_gradient && limit_gradient!(gradU, U, config)
     magnitude2!(Pk, S, config, scale_factor=2.0) # multiplied by 2 (def of Sij)
     # constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
-    # correct_production!(Pk, k.BCs, model, S.gradU, config)
+    correct_production!(Pk, k.BCs, model, S.gradU, config)
     
     @. Pω.values = rho.values*coeffs.α1*Pk.values
     @. Pk.values = rho.values*nut.values*Pk.values

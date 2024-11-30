@@ -93,8 +93,7 @@ function initialise(
     Pω = ScalarField(mesh)
     
     k_eqn = (
-            # Time{schemes.k.time}(rho, k)
-            Time{schemes.k.time}(k)
+            Time{schemes.k.time}(rho, k)
             + Divergence{schemes.k.divergence}(mdotf, k) 
             - Laplacian{schemes.k.laplacian}(mueffk, k) 
             + Si(Dkf,k) # Dkf = β⁺rho*omega
@@ -103,8 +102,7 @@ function initialise(
         ) → eqn
     
     ω_eqn = (
-            # Time{schemes.omega.time}(rho, omega)
-            Time{schemes.omega.time}(omega)
+            Time{schemes.omega.time}(rho, omega)
             + Divergence{schemes.omega.divergence}(mdotf, omega) 
             - Laplacian{schemes.omega.laplacian}(mueffω, omega) 
             + Si(Dωf,omega)  # Dωf = rho*β1*omega

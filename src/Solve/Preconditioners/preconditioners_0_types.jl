@@ -1,5 +1,5 @@
 
-export PreconditionerType
+export Preconditioner, PreconditionerType
 export Jacobi, NormDiagonal #, ILU0 # , LDL
 export DILU, DILUprecon
 export IC0GPU, ILU0GPU
@@ -110,20 +110,20 @@ struct DILUprecon{M,V,VI}
 end
 Adapt.@adapt_structure DILUprecon
 
-Preconditioner{DILU}(A::AbstractSparseArray{F,I}) where {F,I} = begin
-    m, n = size(A)
-    m == n || throw("Matrix not square")
-    D = zeros(F, m)
-    Di = zeros(I, m)
-    diagonal_indices!(Di, A)
-    S = DILUprecon(A, D, Di)
-    P  = LinearOperator(
-        F, m, n, false, false, (y, v) -> ldiv!(y, S, v)
-        )
-    Preconditioner{DILU,typeof(A),typeof(P),typeof(S)}(A,P,S)
-end
+# Preconditioner{DILU}(A::AbstractSparseArray{F,I}) where {F,I} = begin
+#     m, n = size(A)
+#     m == n || throw("Matrix not square")
+#     D = zeros(F, m)
+#     Di = zeros(I, m)
+#     diagonal_indices!(Di, A)
+#     S = DILUprecon(A, D, Di)
+#     P  = LinearOperator(
+#         F, m, n, false, false, (y, v) -> ldiv!(y, S, v)
+#         )
+#     Preconditioner{DILU,typeof(A),typeof(P),typeof(S)}(A,P,S)
+# end
 
-Preconditioner{DILU}(A::SparseMatrixCSR{N, F,I}) where {N, F,I} = begin
+Preconditioner{DILU}(A::SparseMatrixCSR{N,F,I}) where {N,F,I} = begin
     m, n = size(A)
     m == n || throw("Matrix not square")
     D = zeros(F, m)

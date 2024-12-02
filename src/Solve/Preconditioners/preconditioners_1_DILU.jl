@@ -4,9 +4,11 @@ export ldiv!
 
 function extract_diagonal!(D, Di, A::AbstractSparseArray, config)
     (; hardware) = config
-    (; backend, workgroup) = hardware
-    
+    # (; backend, workgroup) = hardware
     (; nzval, n) = A
+    backend = CPU()
+    workgroup = cld(n, Threads.nthreads())
+    
 
     kernel! = _extract_diagonal!(backend, workgroup)
     kernel!(D, Di, nzval, ndrange = n)
@@ -49,8 +51,10 @@ function update_dilu_diagonal!(P, mesh, config) # must rename
     #     end
     # end
 
-    (; A, storage) = P 
-    (; rowptr, colval, nzval, m, n) = A
+    # (; A, storage) = P 
+    (; storage) = P 
+    A = storage.A
+    (; rowptr, colval, nzval, m, n) = storage.A
     (; D, Di) = storage
     extract_diagonal!(D, Di, A, config)
     @inbounds for i ∈ 1:m

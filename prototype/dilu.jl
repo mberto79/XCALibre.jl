@@ -3,6 +3,8 @@ using LinearAlgebra
 using SparseArrays
 using SparseMatricesCSR
 using KernelAbstractions
+using CUDA
+using Adapt
 
 n = 20
 Acsc = sprand(n,n,0.1) + 0.75I
@@ -10,6 +12,23 @@ typeof(Acsc)
 
 i, j, v = findnz(Acsc)
 Acsr = sparsecsr(i, j, v, n, n)
+
+# CUDA test 
+
+Acu = CUDA.CUSPARSE.CuSparseMatrixCSR(Acsc)
+i, j, v = findnz(Acu)
+ih = adapt(CPU(), i)
+jh = adapt(CPU(), j)
+vh = adapt(CPU(), v)
+n = max(maximum(ih), maximum(jh))
+Acsr_cu = sparsecsr(ih, jh, vh, n , n)
+
+test = Vector(i)
+
+P = XCALibre.Solve.Preconditioner{DILU}(Acu)
+
+KernelAbstractions.copyto!(CPU(), Acsr.nzval, Acu.nzVal)
+#
 
 P = XCALibre.Solve.Preconditioner{DILU}(Acsr)
 

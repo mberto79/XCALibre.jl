@@ -6,8 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version [v0.3.3] - 2024-XX-XX
 
 ### Added
-* Added experimental support for NVIDIA ILU0 and IC0 preconditioners
-* Added `JacobiSmoother` that can be used with all linear solvers (improving initial guess).
+* Added experimental support for NVIDIA ILU0 and IC0 preconditioners [#23]
+* Added `JacobiSmoother` that can be used with all linear solvers (improving initial guess) [#23]
 * New function `activate_multithread` is available to set up matrix-vector multiplication in parallel on the CPU
 
 ### Fixed
@@ -15,7 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 * Internally the sparse matrix format has been changed to CSR. This has improved performance by 2x-4x (case dependent)
-* Multithreaded sparse matrix vector multiplication is now functional
+* Multithreaded sparse matrix vector multiplication is now functional [#23]
+* Precompilation errors on Julia v1.11 addressed by bringing code from `ThreadedSparseCSR.jl` [#24]
+* Update compat entry for `Atomix.jl` to v1.0,0 [#24]
+* `DILU` preconditioner is now implemented to work with sparse matrices in CSR format and uses a hybrid approach (running on CPU) to allow working when using GPU backends (further work needed) [#26]
 
 ### Breaking
 * No breaking changes
@@ -24,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * No functions deprecated
 
 ### Removed
-* The `DILU`, `ILU0` and `LDL` preconditioners has been temporarily removed
+* The `ILU0` and `LDL` preconditioners has been temporarily removed [#23]
 
 ## Version [v0.3.2] - 2024-11-08
 

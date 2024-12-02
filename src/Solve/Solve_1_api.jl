@@ -305,19 +305,26 @@ end
     @inbounds begin
 
         # Find nzval index relating to A[i,i]
-        nIndex = spindex(rowptr, colval, i, i)
+        cIndex = spindex(rowptr, colval, i, i)
         
-        (; faces_range) = cells[i]
-        for ni ∈ faces_range
-            nID = cell_neighbours[ni]
-            zIndex = spindex(rowptr, colval, i, nID)
-            sumv += abs(nzval[zIndex])
+        # (; faces_range) = cells[i]
+        # for ni ∈ faces_range
+        #     nID = cell_neighbours[ni]
+        #     zIndex = spindex(rowptr, colval, i, nID)
+        #     sumv += abs(nzval[zIndex])
+        # end
+
+        start_index = rowptr[i]
+        end_index = rowptr[i+1] -1
+        for nzi ∈ start_index:end_index
+            sumv += abs(nzval[nzi])
         end
+        sumv -= abs(nzval[cIndex]) # remove diagonal contribution
 
         # Run implicit relaxation calculations
-        D0 = nzval[nIndex]
+        D0 = nzval[cIndex]
         D_max = max(abs(D0), sumv)/alpha
-        nzval[nIndex] = D_max
+        nzval[cIndex] = D_max
         b[i] += (D_max - D0)*field[i]
     end
 end

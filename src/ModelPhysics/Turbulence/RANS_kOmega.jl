@@ -164,9 +164,15 @@ function turbulence!(
     Pω = get_source(ω_eqn, 1)
 
     # update fluxes and sources
+
+    # TO-DO: Need to bring gradient calculation inside turbulence models!!!!!
+
+    # grad!(S.gradU, Uf, U, U.BCs, time, config)
+    # limit_gradient && limit_gradient!(gradU, U, config)
     magnitude2!(Pk, S, config, scale_factor=2.0) # multiplied by 2 (def of Sij)
-    constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
+    # constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
     correct_production!(Pk, k.BCs, model, S.gradU, config)
+    
     @. Pω.values = rho.values*coeffs.α1*Pk.values
     @. Pk.values = rho.values*nut.values*Pk.values
     @. Dωf.values = rho.values*coeffs.β1*omega.values
@@ -178,9 +184,9 @@ function turbulence!(
     # prev .= omega.values
     discretise!(ω_eqn, omega, config)
     apply_boundary_conditions!(ω_eqn, omega.BCs, nothing, time, config)
-    constrain_equation!(ω_eqn, omega.BCs, model, config) # active with WFs only
     # implicit_relaxation!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
     implicit_relaxation_diagdom!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
+    constrain_equation!(ω_eqn, omega.BCs, model, config) # active with WFs only
     update_preconditioner!(ω_eqn.preconditioner, mesh, config)
     solve_system!(ω_eqn, solvers.omega, omega, nothing, config)
     

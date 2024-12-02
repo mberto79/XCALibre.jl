@@ -74,14 +74,14 @@ function setup_compressible_solvers(
         + Divergence{schemes.U.divergence}(mdotf, U) 
         - Laplacian{schemes.U.laplacian}(mueff, U) 
         == 
-        -Source(∇p.result)
-        +Source(mueffgradUt)
+        - Source(∇p.result)
+        + Source(mueffgradUt)
     ) → VectorEquation(mesh)
 
     if typeof(model.fluid) <: WeaklyCompressible
 
         p_eqn = (
-            Laplacian{schemes.p.laplacian}(rhorDf, p) == Source(divHv)
+            - Laplacian{schemes.p.laplacian}(rhorDf, p) == - Source(divHv)
         ) → ScalarEquation(mesh)
 
     elseif typeof(model.fluid) <: Compressible

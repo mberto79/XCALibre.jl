@@ -1,5 +1,5 @@
 using XCALibre
-# using CUDA
+using CUDA
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
@@ -8,8 +8,10 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-# mesh_dev = adapt(CUDABackend(), mesh)
-mesh_dev = mesh
+# backend = CPU(); activate_multithread(backend)
+# mesh_dev = mesh
+backend = CUDABackend()
+mesh_dev = adapt(backend, mesh)
 
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
@@ -52,29 +54,29 @@ solvers = (
     U = set_solver(
         model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), # ILU0GPU
-        smoother=JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
+        preconditioner = Jacobi(), # ILU0GPU, Jacobi, DILU
+        # smoother=JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
         convergence = 1e-7,
-        relax       = 0.7,
-        rtol = 0.1
+        relax       = 0.6,
+        rtol = 1e-1
     ),
     p = set_solver(
         model.momentum.p;
-        solver      = CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), # IC0GPU
-        smoother=JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
+        solver      = CgSolver, # BicgstabSolver, GmresSolver, CgSolver
+        preconditioner = DILU(), # IC0GPU, Jacobi, DILU
+        # smoother=JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
         convergence = 1e-7,
-        relax       = 0.3,
-        rtol = 0.1
+        relax       = 0.4,
+        rtol = 1e-1
     )
 )
 
 runtime = set_runtime(
-    iterations=1000, time_step=1, write_interval=1000)
+    iterations=2000, time_step=1, write_interval=100)
     # iterations=1, time_step=1, write_interval=1)
 
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=32)
+hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+# hardware = set_hardware(backend=backend, workgroup=1024)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
@@ -83,6 +85,7 @@ GC.gc()
 
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
+
 
 @time residuals = run!(model, config)
 

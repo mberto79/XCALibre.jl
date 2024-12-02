@@ -42,6 +42,7 @@ makedocs(
         "Examples" => "examples/" .* EXAMPLES_PAGES,
         "User Guide" => "user_guide/" .* USER_GUIDE_PAGES,
         hide("Theory Guide" => "theory_guide/introduction.md"),
+        "benchmarks.md",
         "contributor_guide.md",
         "reference.md",
         "release_notes.md"

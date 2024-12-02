@@ -103,7 +103,7 @@ print_tree(PreconditionerType) # hide
 
 !!! note
 
-    Only the `Jacobi` and `NormDiagonal` preconditioners have GPU ready implementations. At present these have the most robust implementation and they can be used with both CPU and GPU backends. The other preconditioners can only be used on the CPU. Notice that on our tests the `LDL` preconditioner only works when paired with the `GmresSolver` on the CPU. Also notice that the implementations for `DILU` (CPU only), `IC0GPU` and `ILU0GPU` (NVIDIA only), should be considered experimental. Work on improving the offering of preconditioners is ongoing.
+    Only the `Jacobi` and `NormDiagonal` preconditioners have GPU ready implementations. At present these have the most robust implementation and they can be used with both CPU and GPU backends. The other preconditioners can only be used on the CPU. Notice that on our tests the `LDL` preconditioner only works when paired with the `GmresSolver` on the CPU. Also notice that the implementations for `DILU` (experimental), `IC0GPU` and `ILU0GPU` (NVIDIA only), should be considered experimental. Work on improving the offering of preconditioners is ongoing.
 
 !!! warning
 

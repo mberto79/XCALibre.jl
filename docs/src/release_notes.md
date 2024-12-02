@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * No functions deprecated
 
 ### Removed
-* The `DILU`, `ILU0` and `LDL` preconditioners has been temporarily removed
+* The `ILU0` and `LDL` preconditioners has been temporarily removed
 
 ## Version [v0.3.2](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.3.2) - 2024-11-08
 

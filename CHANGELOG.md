@@ -35,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Fixed tests for mesh conversion and standardised tolerances for test checks of incompressible solvers [#16]
 
 ### Changed
-* No changes
+* `DILU` preconditioner is now implemented to work with sparse matrices in CSR format and uses a hybrid approach (running on CPU) to allow working when using GPU backends (further work needed)
 
 ### Breaking
 * No breaking changes

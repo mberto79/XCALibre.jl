@@ -21,8 +21,29 @@ surface_flux!(snflux, phi, IDs_range) = begin
     end
 end
 
-surface_normal_gradient!(snGrad, U, Uw, IDs_range) = begin
-    mesh = U.mesh
+# surface_normal_gradient!(snGrad, U, Uw, IDs_range) = begin
+#     mesh = U.mesh
+#     (; faces, boundary_cellsID) = mesh
+#     for i ∈ eachindex(snGrad)
+#         # cID = cellsID[i]
+#         # fID = facesID[i]
+#         fID = IDs_range[i]
+#         cID = boundary_cellsID[fID]
+#         face = faces[fID]
+#         (; normal, delta) = face
+#         Ui = U[cID]
+#         Udiff = (Ui - Uw)
+#         Up = Udiff - (Udiff⋅normal)*normal # parallel velocity difference
+#         grad = Up/(delta)
+#         snGrad.x[i] = grad[1]
+#         snGrad.y[i] = grad[2]
+#         snGrad.z[i] = grad[3] 
+#         nothing
+#     end
+# end
+
+surface_normal_gradient!(snGrad, gradU, IDs_range) = begin
+    mesh = gradU.mesh
     (; faces, boundary_cellsID) = mesh
     for i ∈ eachindex(snGrad)
         # cID = cellsID[i]
@@ -31,10 +52,11 @@ surface_normal_gradient!(snGrad, U, Uw, IDs_range) = begin
         cID = boundary_cellsID[fID]
         face = faces[fID]
         (; normal, delta) = face
-        Ui = U[cID]
-        Udiff = (Ui - Uw)
-        Up = Udiff - (Udiff⋅normal)*normal # parallel velocity difference
-        grad = Up/(delta)
+        # Ui = U[cID]
+        # Udiff = (Ui - Uw)
+        # Up = Udiff - (Udiff⋅normal)*normal # parallel velocity difference
+        # grad = Up/(delta)
+        grad = gradU[cID]*normal
         snGrad.x[i] = grad[1]
         snGrad.y[i] = grad[2]
         snGrad.z[i] = grad[3] 

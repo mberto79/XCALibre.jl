@@ -145,7 +145,49 @@ function boundary_average(patch::Symbol, field, config; time=0)
 end
 
 ########### Must update
-wall_shear_stress(patch::Symbol, model)  = begin
+# wall_shear_stress(patch::Symbol, model)  = begin
+#     # Line below needs to change to do selection based on nut BC
+#     turbulence = model.turbulence
+
+#     typeof(turbulence) <: RANS{Laminar} ? nut = ConstantScalar(0.0) : nut = model.turbulence.nut
+#     mesh = model.domain
+#     (; nu) = model.fluid
+#     (; U) = model.momentum
+#     (; boundaries, boundary_cellsID, faces) = mesh
+#     ID = boundary_index(boundaries, patch)
+#     boundary = boundaries[ID]
+#     (; IDs_range) = boundary
+#     @info "calculating viscous forces on patch: $patch at index $ID"
+#     x = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
+#     y = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
+#     z = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
+#     tauw = FaceVectorField(x,y,z, mesh)
+#     Uw = zero(_get_float(mesh))
+#     for i ∈ 1:length(U.BCs)
+#         if ID == U.BCs[i].ID
+#             Uw = U.BCs[i].value
+#             surface_normal_gradient!(tauw, U, U.BCs[i].value, IDs_range)
+#         end
+#     end
+
+#     pos = fill(SVector{3,Float64}(0,0,0), length(IDs_range))
+#     for i ∈ eachindex(tauw)
+#         # fID = facesID[i]
+#         # cID = cellsID[i]
+#         fID = IDs_range[i]
+#         cID = boundary_cellsID[fID]
+#         face = faces[fID]
+#         nueff = nu[cID]  + nut[cID]
+#         tauw.x[i] *= nueff # this may need using νtf? (wall funcs)
+#         tauw.y[i] *= nueff
+#         tauw.z[i] *= nueff
+#         pos[i] = face.centre
+#     end
+    
+#     return tauw, pos
+# end
+
+wall_shear_stress(patch::Symbol, model, config)  = begin
     # Line below needs to change to do selection based on nut BC
     turbulence = model.turbulence
 
@@ -163,10 +205,16 @@ wall_shear_stress(patch::Symbol, model)  = begin
     z = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
     tauw = FaceVectorField(x,y,z, mesh)
     Uw = zero(_get_float(mesh))
+
+    # gradU = Grad{schemes.U.gradient}(U)
+    gradU = Grad{Midpoint}(U)
+    Uf = FaceVectorField(mesh)
+    time = 0.0 # dummy time entry
     for i ∈ 1:length(U.BCs)
         if ID == U.BCs[i].ID
             Uw = U.BCs[i].value
-            surface_normal_gradient!(tauw, U, U.BCs[i].value, IDs_range)
+            grad!(gradU, Uf, U, U.BCs, time, config)
+            surface_normal_gradient!(tauw, gradU, IDs_range)
         end
     end
 

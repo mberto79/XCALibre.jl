@@ -121,6 +121,9 @@ initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
 residuals = run!(model, config) # 9.39k allocs
 
+tauw, pos = wall_shear_stress(:wall, model, config)
+
+
 using DelimitedFiles
 using LinearAlgebra
 
@@ -139,7 +142,7 @@ Cf_corr = 0.074.*(Rex_corr).^(-1/5)
 plot(; xaxis="Rex", yaxis="Cf")
 plot!(Rex_corr, Cf_corr, color=:red, ylims=(0, 0.05), xlims=(0,2e4), label="Blasius",lw=1.5)
 plot!(oRex, oCf, color=:green, lw=1.5, label="OpenFOAM") # |> display
-plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code") |> display
+plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code") #|> display
 
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

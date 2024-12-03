@@ -289,21 +289,21 @@ end
     ylam = y_plus_laminar(E, kappa)
     # Uw = SVector{3,_get_float(mesh)}(0.0,0.0,0.0)
     Uw = SVector{3}(0.0,0.0,0.0)
-        cID = boundary_cellsID[fID]
-        face = faces[fID]
-        nuc = nu[cID]
-        (; delta, normal)= face
-        uStar = cmu^0.25*sqrt(k[cID])
-        dUdy = uStar/(kappa*delta)
-        yplus = y_plus(k[cID], nuc, delta, cmu)
-        nutw = nut_wall(nuc, yplus, kappa, E)
-        # mag_grad_U = mag(sngrad(U[cID], Uw, delta, normal))
-        mag_grad_U = mag(gradU[cID]*normal)
-        if yplus > ylam
-            values[cID] = (nu[cID] + nutw)*mag_grad_U*dUdy
-        else
-            values[cID] = 0.0
-        end
+    cID = boundary_cellsID[fID]
+    face = faces[fID]
+    nuc = nu[cID]
+    (; delta, normal)= face
+    uStar = cmu^0.25*sqrt(k[cID])
+    dUdy = uStar/(kappa*delta)
+    yplus = y_plus(k[cID], nuc, delta, cmu)
+    nutw = nut_wall(nuc, yplus, kappa, E)
+    mag_grad_U = mag(sngrad(U[cID], Uw, delta, normal))
+    # mag_grad_U = mag(gradU[cID]*normal)
+    if yplus > ylam
+        values[cID] = (nu[cID] + nutw)*mag_grad_U*dUdy
+    else
+        values[cID] = 0.0
+    end
 end
 
 @generated correct_eddy_viscosity!(νtf, nutBCs, model, config) = begin

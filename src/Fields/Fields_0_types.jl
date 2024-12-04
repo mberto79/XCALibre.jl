@@ -3,6 +3,7 @@ export ConstantScalar, ConstantVector
 export AbstractScalarField, ScalarField, FaceScalarField
 export AbstractVectorField, VectorField, FaceVectorField
 export AbstractTensorField, TensorField, T
+export StrainRate
 export initialise!
 
 # ABSTRACT TYPES
@@ -11,10 +12,6 @@ abstract type AbstractField end
 abstract type AbstractScalarField <: AbstractField end
 abstract type AbstractVectorField <: AbstractField end
 abstract type AbstractTensorField <: AbstractField end
-
-Base.getindex(field::AbstractField, i::I) where I<:Integer = begin
-    field(i)
-end
 
 Base.show(io::IO, field::AbstractField) = print(io, typeof(field).name.wrapper)
 
@@ -32,7 +29,7 @@ struct ConstantVector{V<:Number} <: AbstractVectorField
     z::V
 end
 Adapt.@adapt_structure ConstantVector
-Base.getindex(v::ConstantVector, i::Integer) = SVector{3, eltype(v.x)}(v.x[i], v.y[i], v.z[i])
+Base.getindex(v::ConstantVector, i::Integer) = SVector{3, eltype(v.x)}(v.x, v.y, v.z)
 
 # FIELDS 
 """
@@ -233,6 +230,18 @@ Base.getindex(t::T{F}, i::Integer) where F<:TensorField = begin # type calls nee
         T.zy[i],
         T.zz[i],
         )
+end
+
+struct StrainRate{G, GT, TU, TUF} <: AbstractTensorField
+    gradU::G
+    gradUT::GT
+    U::TU
+    Uf::TUF
+end
+Adapt.@adapt_structure StrainRate
+
+Base.getindex(S::StrainRate{G,GT}, i::I) where {G,GT,I<:Integer} = begin
+    0.5.*(S.gradU[i] .+ S.gradUT[i])
 end
 
 # Initialise Scalar and Vector fields

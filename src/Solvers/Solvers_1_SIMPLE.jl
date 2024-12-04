@@ -132,11 +132,10 @@ function SIMPLE(
     # Define aux fields 
     gradU = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
-    S = StrainRate(gradU, gradUT)
-    S2 = ScalarField(mesh)
+    Uf = FaceVectorField(mesh)
+    S = StrainRate(gradU, gradUT, U, Uf)
 
     n_cells = length(mesh.cells)
-    Uf = FaceVectorField(mesh)
     pf = FaceScalarField(mesh)
     # gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
@@ -230,9 +229,7 @@ function SIMPLE(
         # correct_mass_flux2(mdotf, p_eqn, p, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
-        grad!(gradU, Uf, U, U.BCs, time, config)
-        limit_gradient && limit_gradient!(gradU, U, config)
-        turbulence!(turbulenceModel, model, S, S2, prev, time, config) 
+        turbulence!(turbulenceModel, model, S, prev, time, config) 
         update_nueff!(nueff, nu, model.turbulence, config)
         
         convergence = 1e-7

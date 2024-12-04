@@ -166,12 +166,11 @@ function CPISO(
     # Define aux fields 
     gradU = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
-    S = StrainRate(gradU, gradUT)
-    S2 = ScalarField(mesh)
+    Uf = FaceVectorField(mesh)
+    S = StrainRate(gradU, gradUT, U, Uf)
 
     n_cells = length(mesh.cells)
     n_faces = length(mesh.faces)
-    Uf = FaceVectorField(mesh)
     pf = FaceScalarField(mesh)
     nueff = FaceScalarField(mesh)
     gradpf = FaceVectorField(mesh)
@@ -337,9 +336,9 @@ function CPISO(
             
             @. dpdt.values = (p.values-prev)/runtime.dt
 
-            grad!(gradU, Uf, U, U.BCs, time, config)
-            limit_gradient && limit_gradient!(gradU, U, config)
-            turbulence!(turbulenceModel, model, S, S2, prev, time, config) 
+            # grad!(gradU, Uf, U, U.BCs, time, config) # this is done inside `turbulence!`
+            # limit_gradient && limit_gradient!(gradU, U, config)
+            turbulence!(turbulenceModel, model, S, prev, time, config) 
             update_nueff!(nueff, nu, model.turbulence, config)
         end # corrector loop end
 

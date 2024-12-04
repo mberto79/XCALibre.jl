@@ -258,7 +258,7 @@ end
 
 # Model solver call (implementation)
 """
-   turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S, S2, prev, time, config
+   turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S, prev, time, config
     ) where {T,F,M,Turb<:KOmegaLKE,E,D,BI}
 
 Run turbulence model transport equations.
@@ -267,20 +267,20 @@ Run turbulence model transport equations.
 - `rans::KOmegaLKEModel` -- KOmega turbulence model.
 - `model`  -- Physics model defined by user.
 - `S`   -- Strain rate tensor.
-- `S2`  -- Square of the strain rate magnitude.
 - `prev`  -- Previous field.
 - `time`   -- 
 - `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
               hardware structures set.
 
 """
-function turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S, S2, prev, time, config
+function turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S, prev, time, config
     ) where {T,F,M,Turb<:KOmegaLKE,E,D,BI}
     mesh = model.domain
     (; momentum, turbulence) = model
     U = momentum.U
     (; k, omega, kl, nut, y, kf, omegaf, klf, nutf, coeffs, Tu) = turbulence
     (; nu) = model.fluid
+    (; U, Uf, gradU) = S
     
     (; k_eqn, ω_eqn, kl_eqn, nueffkLS, nueffkS, nueffωS, nuL, nuts, Ω, γ, fv, ∇k, ∇ω, normU, Reυ) = rans
     (; solvers, runtime) = config
@@ -298,7 +298,9 @@ function turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S,
     Pω = get_source(ω_eqn, 1)
     dkdomegadx = get_source(ω_eqn, 2) # cross diffusion term
 
-    magnitude2!(Pk, S, config, scale_factor=2.0) # this is S^2
+
+    grad!(gradU, Uf, U, U.BCs, time, config) # must update before calculating S
+    magnitude2!(Pk, S, config, scale_factor=2.0)
 
     # Update kl fluxes and terms
 

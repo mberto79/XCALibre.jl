@@ -94,14 +94,16 @@ Run turbulence model transport equations.
 
 """
 function turbulence!(
-    les::SmagorinskyModel{E1,E2}, model::Physics{T,F,M,Tu,E,D,BI}, S, S2, prev, time, config
+    les::SmagorinskyModel{E1,E2}, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
     ) where {T,F,M,Tu<:Smagorinsky,E,D,BI,E1,E2}
 
     mesh = model.domain
     
     (; nut, nutf, coeff) = model.turbulence
+    (; U, Uf, gradU) = S
     (; Δ, magS) = les
 
+    grad!(gradU, Uf, U, U.BCs, time, config) # update gradient (internal structure of S)
     magnitude!(magS, S, config)
     @. magS.values *= sqrt(2) # should fuse into definition of magnitude function!
 

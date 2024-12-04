@@ -18,7 +18,7 @@ This page will be updated as new results become available, but do bare with us, 
 
 ### Case and set up information
 
-In this first benchmark, the performance of the *laminar solver* implementation in `XCALibre.jl` is explored. The configuration corresponded to a backward-facing step geometry with a mesh with approximately 500,000 cells. The test case mesh file, along with setup files for both `XCALibre.jl` and OpenFOAM can be found [here](https://github.com/mberto79/XCALibre_benchmarks/tree/main/3D_BFS_laminar).
+In this first benchmark, the performance of the *laminar solver* implementation in `XCALibre.jl` is explored. The configuration corresponds to a backward-facing step geometry with a mesh with approximately 500,000 cells. The test case mesh file, along with setup files for both `XCALibre.jl` and OpenFOAM can be found [here](https://github.com/mberto79/XCALibre_benchmarks/tree/main/3D_BFS_laminar).
 
 The following cases were tested:
 
@@ -31,7 +31,7 @@ The following cases were tested:
 | v0.3.2 GPU | `XCALibre.jl` | v0.3.2 (Julia v0.10.6)  |  GPU |Velocity \\ Pressure | BiCGStab \\ CG | diagonal \\ diagonal |
 | v0.3.3 GPU | `XCALibre.jl` | v0.3.3 (Julia v0.10.6)  |  GPU |Velocity \\ Pressure | BiCGStab \\ CG | diagonal \\ diagonal |
 
-Notice that the `OF11 Similar` case aims to provide a configuration in OpenFOAM that is similar to the numerical setup used (and available) in `XCALibre.jl`. The `OF11 Best` uses the most performant setup available in OpenFOAM, in terms of linear solver and preconditioner combination. Discretisation schemes and solver tolerance are kept as similar as possible for all cases. The `XCALibre.jl` test cases aim to provide relative performance between difference versions and backends.
+Notice that the `OF11 Similar` case aims to provide a configuration in OpenFOAM that is comparable to the numerical setup used (and available) in `XCALibre.jl`. The `OF11 Best` uses the most performant setup available in OpenFOAM, in terms of the linear solver and preconditioner combination. Discretisation schemes and solver tolerance are kept as similar as possible for all cases. The `XCALibre.jl` test cases aim to provide relative performance between difference versions and backends.
 
 ### Hardware
 
@@ -39,7 +39,17 @@ All tests were performed on an ASUS TUF Gaming A15 FA506 with 16Gb of RAM, an AM
 
 ### Results
 
+The execution time for the various test cases is shown in the figure below. This is the total time required to complete 500 iterations. This includes memory allocation time and a single write-to-file event. The cases were run with an increasing number of CPUs, ranging from 1 to 8 CPU cores.
+
 ![Execution time](figures/benchmarks/laminar_3D_BFS/execution_time_comparision.svg)
-![Parallel scaling](figures/benchmarks/laminar_3D_BFS/parallel_scaling.svg)
+
+Firstly, the results show that there has been a substantial performance improvement in the latest version of `XCALibre.jl` (v0.3.3). In version v0.3.2, `XCALibre.jl` was generally slower than OpenFOAM when using a similar numerical setup (*OF11 Similar*), with the exception of cases where low CPU cores were used. In v0.3.3, `XCALibre.jl` is showing faster computing than the *OF11 Similar* regardless of the number of cores used. However, when OpenFOAM is setup using the more advanced solvers (i.e. GAMG) and preconditioners available (e.g. DILU), it achieves a further reduction in compute time. However, when executing on a modest NVIDIA RTX 2060 GPU backend, `XCALibre.jl` is able to complete the calculation at even lower computation times. 
+
+To better understand the performance gains achieved in `XCALibre.jl` v0.3.3, the relative computation time is plotted in the figure below. Notice that the "speed up" figures shown are found by dividing the runtime for a given case with the simulation time for a single core run when using v0.3.2. In a nutshell, the results show that v0.3.3 achieves performance gains in the range of 2-5x. Also, the most performance configuration in OpenFOAM (*OF11 Best*) has gains in the range of 2-8x. This is encouraging, but highlights that there is still room to improve performance in the CPU implementation of the laminar solver in `XCALibre.jl`. It is also encouraging to see that `XCALibre.jl` GPU performance is significantly faster that both OpenFOAM and `XCALibre.jl` (on CPU) with a speed up of approximately 17x. A considerable performance  gain for the GPU implementation is also achieved in v0.3.3 compared to v0.3.2. Internally, the major change was a change of the sparse matrix storage format from CSC to CSR, which allows the use of optimised sparse matrix operations (available in `CUDA.jl`), but also the re-implementation of some kernel to take advantage of the row storage used in the CSR format. 
+
 ![Speed up comparison](figures/benchmarks/laminar_3D_BFS/speedup_vs_v0.3.2.svg)
+
+Lastly, the scaling behaviour of the codes has been explored and shown in the figure below. In a nutshell, OpenFOAM shows the best scaling overall, specially for case *OF1 Similar*. The latest version of `XCALibre.jl` is showing a similar trend to the *OF11 Best* case, but the results point to the need to further improve the implementation in `XCALibre.jl` to improve its scaling behaviour.
+
+![Parallel scaling](figures/benchmarks/laminar_3D_BFS/parallel_scaling.svg)
 

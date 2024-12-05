@@ -171,10 +171,10 @@ function turbulence!(
     # limit_gradient && limit_gradient!(gradU, U, config)
     magnitude2!(Pk, S, config, scale_factor=2.0) # multiplied by 2 (def of Sij)
     # constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
-    correct_production!(Pk, k.BCs, model, S.gradU, config)
     
     @. Pω.values = rho.values*coeffs.α1*Pk.values
     @. Pk.values = rho.values*nut.values*Pk.values
+    correct_production!(Pk, k.BCs, model, S.gradU, config) # Must be after previous line
     @. Dωf.values = rho.values*coeffs.β1*omega.values
     @. mueffω.values = rhof.values * (nuf.values + coeffs.σω*nutf.values)
     @. Dkf.values = rho.values*coeffs.β⁺*omega.values
@@ -190,7 +190,7 @@ function turbulence!(
     update_preconditioner!(ω_eqn.preconditioner, mesh, config)
     solve_system!(ω_eqn, solvers.omega, omega, nothing, config)
     
-    constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
+    # constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
     bound!(omega, config)
     # explicit_relaxation!(omega, prev, solvers.omega.relax, config)
 

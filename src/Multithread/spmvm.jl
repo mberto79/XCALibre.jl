@@ -1,33 +1,4 @@
 export activate_multithread
-export *, mul!
-
-# function xmul!(y::AbstractVector, A::SparseMatrixCSR, x::AbstractVector, alpha::Number, beta::Number)
-#     backend = get_backend(x)
-#     workgroup = 32
-#     # workgroup = cld(length(x), Threads.nthreads())
-#     kernel = _xmul!(backend, workgroup)
-#     kernel(y, A, x, alpha, beta, ndrange=length(x))
-#     KernelAbstractions.synchronize(backend)
-#     return y
-# end
-
-# @kernel function _xmul!(y, A, x, alpha, beta)
-#     i = @index(Global)
-
-#     @uniform begin
-#         cols = colvals(A)
-#         nzval = nonzeros(A)
-#     end
-    
-#     @inbounds begin
-#         acc = zero(eltype(x))
-#         for nzi ∈ nzrange(A, i)
-#             j = cols[nzi]
-#             acc += nzval[nzi]*x[j]
-#         end
-#         y[i] = alpha*acc + beta*y[i]
-#     end
-# end
 
 # NOTE: The code below has been taken from https://github.com/BacAmorim/ThreadedSparseCSR.jl
 # ThreadedSparseCSR has not been updated in a while and precompilation fails on Julia 1.11.1
@@ -104,19 +75,21 @@ Function to activate multithreading for CSR sparse matrices. The only input requ
 """
 function activate_multithread(backend::CPU)
 
-    BLAS.set_num_threads(1)
+    LinearAlgebra.BLAS.set_num_threads(1)
 
-    @eval function  mul!(y::AbstractVector, A::SparseMatrixCSR, x::AbstractVector, alpha::Number, beta::Number)
+    @eval function  LinearAlgebra.mul!(y::AbstractVector, A::SparseMatrixCSR, x::AbstractVector, alpha::Number, beta::Number)
         return xmul!(y, A, x, alpha, beta)
     end
-
-    @eval function  mul!(y::AbstractVector, A::SparseMatrixCSR, x::AbstractVector)
+    
+    @eval function  LinearAlgebra.mul!(y::AbstractVector, A::SparseMatrixCSR, x::AbstractVector)
         return xmul!(y, A, x, true, false)
     end
-
-    @eval function  *(A::SparseMatrixCSR, x::AbstractVector)
+    
+    @eval function  Base.:*(A::SparseMatrixCSR, x::AbstractVector)
         return xmul(A, x)
     end
 
     nothing
 end
+
+

@@ -75,7 +75,7 @@ end
 # """
     function activate_multithread(backend::CPU)
 
-        BLAS.set_num_threads(1)
+        LinearAlgebra.BLAS.set_num_threads(1)
 
         # @eval function  mul!(y::AbstractVector, A::SparseMatrixCSR, x::AbstractVector, alpha::Number, beta::Number)
         #     return xmul!(y, A, x, alpha, beta)

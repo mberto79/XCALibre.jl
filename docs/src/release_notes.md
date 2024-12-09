@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Added experimental support for NVIDIA ILU0 and IC0 preconditioners [#23](https://github.com/github.com/mberto79/XCALibre.jl/issues/23)
 * Added `JacobiSmoother` that can be used with all linear solvers (improving initial guess) [#23](https://github.com/github.com/mberto79/XCALibre.jl/issues/23)
 * New function `activate_multithread` is available to set up matrix-vector multiplication in parallel on the CPU
+* Initial benchmark added in the documentation
 
 ### Fixed
 * No fixes

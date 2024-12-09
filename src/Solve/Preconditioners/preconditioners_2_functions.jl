@@ -164,3 +164,6 @@ end
 
 _m(A::SparseMatricesCSR.SparseMatrixCSR) = A.m
 _n(A::SparseMatricesCSR.SparseMatrixCSR) = A.n
+
+_m(A::SparseXCSR) = parent(A).m
+_n(A::SparseXCSR) = parent(A).n

@@ -6,6 +6,8 @@ using SparseMatricesCSR
 
 import Base
 import LinearAlgebra
+import SparseArrays
+import KernelAbstractions
 
 include("spmvm.jl")
 

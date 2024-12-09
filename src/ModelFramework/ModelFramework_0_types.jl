@@ -100,8 +100,11 @@ end
 
 # Linear system matrix equation
 
-_build_A(backend::CPU, i, j, v, n) = sparsecsr(i, j, v, n, n)
-_build_opA(A::SparseMatricesCSR.SparseMatrixCSR) = LinearOperator(A)
+# _build_A(backend::CPU, i, j, v, n) = sparsecsr(i, j, v, n, n)
+# _build_opA(A::SparseMatricesCSR.SparseMatrixCSR) = LinearOperator(A)
+
+_build_A(backend::CPU, i, j, v, n) = SparseXCSR(sparsecsr(i, j, v, n, n))
+_build_opA(A::SparseXCSR) = A
 
 ## ORIGINAL STRUCTURE PARAMETERISED FOR GPU
 struct ScalarEquation{VTf<:AbstractVector, ASA<:AbstractSparseArray, OP} <: AbstractEquation

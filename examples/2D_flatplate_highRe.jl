@@ -8,7 +8,7 @@ grid = "flatplate_2D_highRe.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-backend = CPU(); activate_multithread(backend)
+backend = CPU(); # activate_multithread(backend)
 mesh_dev = mesh
 # mesh_dev = adapt(CUDABackend(), mesh)
 

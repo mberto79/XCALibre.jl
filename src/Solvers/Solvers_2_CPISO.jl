@@ -56,10 +56,9 @@ function setup_unsteady_compressible_solvers(
     ∇p = Grad{schemes.p.gradient}(p)
     mdotf = FaceScalarField(mesh)
     rhorDf = FaceScalarField(mesh)
+    initialise!(rhorDf, 1.0)
     mueff = FaceScalarField(mesh)
     mueffgradUt = VectorField(mesh)
-    # initialise!(rDf, 1.0)
-    rhorDf.values .= 1.0
     divHv = ScalarField(mesh)
     ddtrho = ScalarField(mesh)
     psidpdt = ScalarField(mesh)
@@ -81,8 +80,8 @@ function setup_unsteady_compressible_solvers(
         + Divergence{schemes.U.divergence}(mdotf, U) 
         - Laplacian{schemes.U.laplacian}(mueff, U) 
         == 
-        -Source(∇p.result)
-        +Source(mueffgradUt)
+        - Source(∇p.result)
+        + Source(mueffgradUt)
     ) → VectorEquation(mesh)
 
     if typeof(model.fluid) <: WeaklyCompressible
@@ -91,7 +90,7 @@ function setup_unsteady_compressible_solvers(
             Time{schemes.p.time}(psi, p)  # correction(fvm::ddt(p)) means d(p)/d(t) - d(pold)/d(t)
             - Laplacian{schemes.p.laplacian}(rhorDf, p)
             ==
-            -Source(divHv)
+            - Source(divHv)
         ) → ScalarEquation(mesh)
 
     elseif typeof(model.fluid) <: Compressible
@@ -231,17 +230,18 @@ function CPISO(
         time = (iteration - 1)*dt
 
         ## CHECK GRADU AND EXPLICIT STRESSES
-        grad!(gradU, Uf, U, U.BCs, time, config)
+        # grad!(gradU, Uf, U, U.BCs, time, config) # calculated in `turbulence!`
         
-        # Set up and solve momentum equations
         explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, config)
         div!(divmugradUTx, mugradUTx, config)
         div!(divmugradUTy, mugradUTy, config)
         div!(divmugradUTz, mugradUTz, config)
-
+        
         @. mueffgradUt.x.values = divmugradUTx.values
         @. mueffgradUt.y.values = divmugradUTy.values
         @. mueffgradUt.z.values = divmugradUTz.values
+        
+        # Set up and solve momentum equations
 
         solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
 
@@ -336,9 +336,7 @@ function CPISO(
             
             @. dpdt.values = (p.values-prev)/runtime.dt
 
-            # grad!(gradU, Uf, U, U.BCs, time, config) # this is done inside `turbulence!`
-            # limit_gradient && limit_gradient!(gradU, U, config)
-            turbulence!(turbulenceModel, model, S, prev, time, config) 
+            turbulence!(turbulenceModel, model, S, prev, time, limit_gradient, config) 
             update_nueff!(nueff, nu, model.turbulence, config)
         end # corrector loop end
 

@@ -170,7 +170,7 @@ function PISO(
         
         # correct_mass_flux(mdotf, p, rDf, config) # new approach
 
-    turbulence!(turbulenceModel, model, S, prev, time, config) 
+    turbulence!(turbulenceModel, model, S, prev, time, limit_gradient, config) 
     update_nueff!(nueff, nu, model.turbulence, config)
 
     residual!(R_ux, U_eqn, U.x, iteration, xdir, config)

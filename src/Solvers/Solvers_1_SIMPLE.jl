@@ -59,9 +59,8 @@ function setup_incompressible_solvers(
     ∇p = Grad{schemes.p.gradient}(p)
     mdotf = FaceScalarField(mesh)
     rDf = FaceScalarField(mesh)
+    initialise!(rDf, 1.0)
     nueff = FaceScalarField(mesh)
-    # initialise!(rDf, 1.0)
-    rDf.values .= 1.0
     divHv = ScalarField(mesh)
 
     @info "Defining models..."
@@ -229,7 +228,7 @@ function SIMPLE(
         # correct_mass_flux2(mdotf, p_eqn, p, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
-        turbulence!(turbulenceModel, model, S, prev, time, config) 
+        turbulence!(turbulenceModel, model, S, prev, time, limit_gradient, config) 
         update_nueff!(nueff, nu, model.turbulence, config)
         
         convergence = 1e-7

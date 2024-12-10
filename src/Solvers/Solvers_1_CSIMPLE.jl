@@ -58,13 +58,11 @@ function setup_compressible_solvers(
     @info "Pre-allocating fields..."
     
     ∇p = Grad{schemes.p.gradient}(p)
-    # rho= ScalarField(mesh)
     mdotf = FaceScalarField(mesh)
     rhorDf = FaceScalarField(mesh)
+    initialise!(rhorDf, 1.0)
     mueff = FaceScalarField(mesh)
     mueffgradUt = VectorField(mesh)
-    # initialise!(rDf, 1.0)
-    rhorDf.values .= 1.0
     divHv = ScalarField(mesh)
 
     @info "Defining models..."
@@ -160,14 +158,12 @@ function CSIMPLE(
     S = StrainRate(gradU, gradUT, U, Uf)
 
     n_cells = length(mesh.cells)
-    # n_faces = length(mesh.faces)
     pf = FaceScalarField(mesh)
     nueff = FaceScalarField(mesh)
     prevpf = FaceScalarField(mesh)
     gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
-    # rhof = FaceScalarField(mesh)
     Psi = ScalarField(mesh)
     Psif = FaceScalarField(mesh)
 
@@ -214,18 +210,19 @@ function CSIMPLE(
         time = iteration
 
         ## CHECK GRADU AND EXPLICIT STRESSES
-        grad!(gradU, Uf, U, U.BCs, time, config)
+        # grad!(gradU, Uf, U, U.BCs, time, config) # calculated in `turbulence!``
 
-        # Set up and solve momentum equations
         explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, config)
         div!(divmugradUTx, mugradUTx, config)
         div!(divmugradUTy, mugradUTy, config)
         div!(divmugradUTz, mugradUTz, config)
-
+        
         @. mueffgradUt.x.values = divmugradUTx.values
         @. mueffgradUt.y.values = divmugradUTy.values
         @. mueffgradUt.z.values = divmugradUTz.values
 
+        # Set up and solve momentum equations
+        
         solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
         energy!(energyModel, model, prev, mdotf, rho, mueff, time, config)
         thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
@@ -325,9 +322,7 @@ function CSIMPLE(
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, U.BCs, time, config)
         
-        # grad!(gradU, Uf, U, U.BCs, time, config) # called insdie turbulence model
-        # limit_gradient && limit_gradient!(gradU, U, config)
-        turbulence!(turbulenceModel, model, S, prev, time, config) 
+        turbulence!(turbulenceModel, model, S, prev, time, limit_gradient, config) 
         update_nueff!(nueff, nu, model.turbulence, config)
 
         @. mueff.values = rhof.values*nueff.values

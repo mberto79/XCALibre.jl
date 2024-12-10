@@ -290,7 +290,7 @@ function initialise!(s::AbstractScalarField, value::V) where V
     if s_type <: Number
         s.values .= convert(s_type, value)
     else
-        trow("ScalarFields should be initialised with single numbers. The value provided is of type $(typeof(value))")
+        trow("ScalarFields should be initialised with numbers. The value provided is of type $(typeof(value))")
     end
     nothing
 end

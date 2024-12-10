@@ -51,8 +51,6 @@ function initialise(
 end
 
 # Model solver call (implementation)
-
-# Model solver call (implementation)
 """
     turbulence!(rans::LaminarModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
     ) where {T,F,M,Tu<:Laminar,E,D,BI}
@@ -69,8 +67,17 @@ Run turbulence model transport equations.
               hardware structures set.
 
 """
-function turbulence!(rans::LaminarModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
+function turbulence!(rans::LaminarModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, limit_gradient,config
     ) where {T,F,M,Tu<:Laminar,E,D,BI}
+    nothing
+end
+
+function turbulence!(
+    rans::LaminarModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, limit_gradient, config
+    ) where {T,F<:AbstractCompressible,M,Tu<:Laminar,E,D,BI}
+    (; U, Uf, gradU) = S
+    grad!(gradU, Uf, U, U.BCs, time, config)
+    limit_gradient && limit_gradient!(gradU, U, config)
     nothing
 end
 

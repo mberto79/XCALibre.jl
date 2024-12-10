@@ -8,7 +8,7 @@ grid = "flatplate_2D_highRe.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-backend = CPU(); activate_multithread(backend)
+backend = CPU(); # activate_multithread(backend)
 mesh_dev = mesh
 # mesh_dev = adapt(CUDABackend(), mesh)
 
@@ -91,18 +91,18 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), 
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.3,
     ),
     omega = set_solver(
         model.turbulence.omega;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), 
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.3,
     )
 )
 
-runtime = set_runtime(iterations=2000, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
 
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=backend, workgroup=1024)

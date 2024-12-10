@@ -10,33 +10,27 @@ end
 # KWallFunction
 @inline (bc::KWallFunction)(
     term::Operator{F,P,I,Laplacian{T}}, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I,T}  = begin
-
     phi = term.phi 
     values = get_values(phi, component)
     J = term.flux[fID]
     (; area, delta) = face 
-
-    flux = J*area/delta
-    ap = term.sign[1]*(-flux)
-
-    # ap, ap*values[cellID]
+    flux = -J*area/delta
+    ap = term.sign*(flux)
+    ap, ap*values[cellID] # original
     0.0, 0.0
 end
 
 # OmegaWallFunction
 @inline (bc::OmegaWallFunction)(
     term::Operator{F,P,I,Laplacian{T}}, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I,T} = begin
-    # Retrive term field and field values
     phi = term.phi 
     values = get_values(phi, component)
     J = term.flux[fID]
     (; area, delta) = face 
-
-    flux = J*area/delta
-    ap = term.sign[1]*(-flux)
-
-    # ap, ap*values[cellID]
-    0.0, 0.0
+    flux = -J*area/delta
+    ap = term.sign*(flux)
+    ap, ap*values[cellID] # original
+    # 0.0, 0.0
 end
 
 # KWallFunction 
@@ -102,7 +96,6 @@ end
 # KWallFunction 
 @inline (bc::KWallFunction)(
     term::Operator{F,P,I,Si}, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I} = begin
-
     0.0, 0.0
 end
 
@@ -110,8 +103,8 @@ end
 @inline (bc::OmegaWallFunction)(
     term::Operator{F,P,I,Si}, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I} = begin
 
-    phi = term.phi[cellID] 
-    flux = term.sign*term.flux[cellID]
+    # phi = term.phi[cellID] 
+    # flux = term.sign*term.flux[cellID]
 
     0.0, 0.0
 end

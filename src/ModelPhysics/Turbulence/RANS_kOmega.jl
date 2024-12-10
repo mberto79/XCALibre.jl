@@ -128,7 +128,7 @@ end
 
 # Model solver call (implementation)
 """
-    turbulence!(rans::KOmegaModel{E1,E2}, model::Physics{T,F,M,Tu,E,D,BI}, S, S2, prev, time, config
+    turbulence!(rans::KOmegaModel{E1,E2}, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
     ) where {T,F,M,Tu<:KOmega,E,D,BI,E1,E2}
 
 Run turbulence model transport equations.
@@ -137,7 +137,6 @@ Run turbulence model transport equations.
 - `rans::KOmegaModel{E1,E2}` -- KOmega turbulence model.
 - `model`  -- Physics model defined by user.
 - `S`   -- Strain rate tensor.
-- `S2`  -- Square of the strain rate magnitude.
 - `prev`  -- Previous field.
 - `time`   -- 
 - `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
@@ -145,13 +144,14 @@ Run turbulence model transport equations.
 
 """
 function turbulence!(
-    rans::KOmegaModel{E1,E2}, model::Physics{T,F,M,Tu,E,D,BI}, S, S2, prev, time, config
+    rans::KOmegaModel{E1,E2}, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, limit_gradient, config
     ) where {T,F,M,Tu<:KOmega,E,D,BI,E1,E2}
 
     mesh = model.domain
     
     (; rho, rhof, nu, nuf) = model.fluid
     (;k, omega, nut, kf, omegaf, nutf, coeffs) = model.turbulence
+    (; U, Uf, gradU) = S
     (;k_eqn, ω_eqn) = rans
     (; solvers, runtime) = config
 
@@ -167,8 +167,8 @@ function turbulence!(
 
     # TO-DO: Need to bring gradient calculation inside turbulence models!!!!!
 
-    # grad!(S.gradU, Uf, U, U.BCs, time, config)
-    # limit_gradient && limit_gradient!(gradU, U, config)
+    grad!(gradU, Uf, U, U.BCs, time, config)
+    limit_gradient && limit_gradient!(gradU, U, config)
     magnitude2!(Pk, S, config, scale_factor=2.0) # multiplied by 2 (def of Sij)
     # constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
     

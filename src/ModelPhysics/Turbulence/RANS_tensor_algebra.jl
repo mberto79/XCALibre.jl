@@ -1,17 +1,6 @@
-export StrainRate
 export inner_product!
 export double_inner_product!
 export magnitude!, magnitude2!
-
-struct StrainRate{G, GT} <: AbstractTensorField
-    gradU::G
-    gradUT::GT
-end
-Adapt.@adapt_structure StrainRate
-
-function (S::StrainRate)(i)
-    0.5.*(S.gradU[i] .+ S.gradUT[i])
-end
 
 inner_product!(S::F, ∇1::Grad, ∇2::Grad, config) where F<:ScalarField = begin
     (; hardware) = config
@@ -94,9 +83,10 @@ end
 
     @inbounds begin
         sum = 0.0
+        Sjk = S[i]
         for j ∈ 1:3
             for k ∈ 1:3
-                sum +=   S(i)[j,k]*S(i)[j,k]
+                sum +=   Sjk[j,k]*Sjk[j,k]
                 # sum +=   S(i)[j,k]*S(i)[k,j]
             end
         end

@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Precompilation errors on Julia v1.11 addressed by bringing code from `ThreadedSparseCSR.jl` [#24]
 * Update compat entry for `Atomix.jl` to v1.0,0 [#24]
 * `DILU` preconditioner is now implemented to work with sparse matrices in CSR format and uses a hybrid approach (running on CPU) to allow working when using GPU backends (further work needed) [#26]
+* The implementation of RANS models and wall functions has been improved for consistency (resulting in some computational gains). The calculation of `yPlusLam` is only done once when constructing the wall function objects. The calculation of the velocity gradient is now only done within the turbulence model main function (`turbulence!`) [#28]
 
 ### Breaking
 * No breaking changes

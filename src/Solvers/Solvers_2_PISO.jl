@@ -64,11 +64,10 @@ function PISO(
     # Define aux fields 
     gradU = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
-    S = StrainRate(gradU, gradUT)
-    S2 = ScalarField(mesh)
+    Uf = FaceVectorField(mesh)
+    S = StrainRate(gradU, gradUT, U, Uf)
 
     n_cells = length(mesh.cells)
-    Uf = FaceVectorField(mesh)
     pf = FaceScalarField(mesh)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
@@ -171,11 +170,7 @@ function PISO(
         
         # correct_mass_flux(mdotf, p, rDf, config) # new approach
 
-
-    # grad!(gradU, Uf, U, U.BCs, time, config)
-    # limit_gradient && limit_gradient!(gradU, U, config)
-
-    turbulence!(turbulenceModel, model, S, S2, prev, time, config) 
+    turbulence!(turbulenceModel, model, S, prev, time, limit_gradient, config) 
     update_nueff!(nueff, nu, model.turbulence, config)
 
     residual!(R_ux, U_eqn, U.x, iteration, xdir, config)
@@ -204,157 +199,4 @@ function PISO(
     end # end for loop
 
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
-end
-
-### GRADIENT LIMITER - EXPERIMENTAL
-
-function limit_gradient!(∇F, F, config)
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-
-    mesh = F.mesh
-    (; cells, cell_neighbours, cell_faces, cell_nsign, faces) = mesh
-
-    minPhi0 = maximum(F.values) # use min value so all values compared are larger
-    maxPhi0 = minimum(F.values)
-    (; x, y, z) = ∇F.result
-
-    kernel! = _limit_gradient!(backend, workgroup)
-    kernel!(x, y, z, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi0, maxPhi0, ndrange=length(cells))
-    KernelAbstractions.synchronize(backend)
-end
-
-function limit_gradient!(∇F::Grad{S,FF,R,I,M}, F, config) where {S,FF,R<:TensorField,I,M}
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-
-    mesh = F.mesh
-    (; cells, cell_neighbours, cell_faces, cell_nsign, faces) = mesh
-
-    # minPhi0 = maximum(F.values) # use min value so all values compared are larger
-    # maxPhi0 = minimum(F.values)
-    (; xx, yx, zx) = ∇F.result
-    (; xy, yy, zy) = ∇F.result
-    (; xz, yz, zz) = ∇F.result
-
-    minPhi0 = maximum(F.x.values) # use min value so all values compared are larger
-    maxPhi0 = minimum(F.x.values)
-    kernel! = _limit_gradient!(backend, workgroup)
-    kernel!(xx, yx, zx, F.x, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi0, maxPhi0, ndrange=length(cells))
-    KernelAbstractions.synchronize(backend)
-
-    minPhi0 = maximum(F.y.values) # use min value so all values compared are larger
-    maxPhi0 = minimum(F.y.values)
-    kernel! = _limit_gradient!(backend, workgroup)
-    kernel!(xy, yy, zy, F.y, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi0, maxPhi0, ndrange=length(cells))
-    KernelAbstractions.synchronize(backend)
-
-    minPhi0 = maximum(F.z.values) # use min value so all values compared are larger
-    maxPhi0 = minimum(F.z.values)
-    kernel! = _limit_gradient!(backend, workgroup)
-    kernel!(xz, yz, zz, F.z, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi0, maxPhi0, ndrange=length(cells))
-    KernelAbstractions.synchronize(backend)
-end
-
-# @kernel function _limit_gradient!(x, y, z, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi, maxPhi)
-#     cID = @index(Global)
-
-#     cell = cells[cID]
-#     faces_range = cell.faces_range
-#     phiP = F[cID]
-#     maxPhi = minPhi = phiP
-
-#     for fi ∈ faces_range
-#         nID = cell_neighbours[fi]
-#         phiN = F[nID]
-#         maxPhi = max(phiN, maxPhi)
-#         minPhi = min(phiN, minPhi)
-#     end
-
-#     # g0 = ∇F[cID]
-#     g0 = SVector{3}(x[cID] , y[cID] , z[cID])
-
-#     cc = cell.centre
-
-#     for fi ∈ faces_range 
-#         fID = cell_faces[fi]
-#         face = faces[fID]
-#         nID = face.ownerCells[2]
-#         # phiN = F[nID]
-#         normal = face.normal
-#         nsign = cell_nsign[fi]
-#         na = nsign*normal
-
-#         fc = face.centre 
-#         cc_fc = fc - cc
-#         n0 = cc_fc/norm(cc_fc)
-#         gn = g0⋅n0
-#         δϕ = g0⋅cc_fc
-#         gτ = g0 - gn*n0
-#         if (maxPhi > phiP) && (δϕ > maxPhi - phiP)
-#             g0 = gτ + na*(maxPhi - phiP)
-#         elseif (minPhi < phiP) && (δϕ < minPhi - phiP)
-#             g0 = gτ + na*(minPhi - phiP)
-#         end            
-#     end
-#     x.values[cID] = g0[1]
-#     y.values[cID] = g0[2]
-#     z.values[cID] = g0[3]
-# end
-
-@kernel function _limit_gradient!(x, y, z, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi, maxPhi)
-    cID = @index(Global)
-
-    cell = cells[cID]
-    faces_range = cell.faces_range
-    phiP = F[cID]
-    phiMax = phiMin = phiP
- 
-    for fi ∈ faces_range
-        nID = cell_neighbours[fi]
-        phiN = F[nID]
-        phiMax = max(phiN, phiMax)
-        phiMin = min(phiN, phiMin)
-    end
-
-    # g0 = ∇F[cID]
-    grad0 = SVector{3}(x[cID] , y[cID] , z[cID])
-
-    cc = cell.centre
-    limiter = 1
-    limiterf = 1
-    for fi ∈ faces_range 
-        fID = cell_faces[fi]
-        nID = cell_neighbours[fi]
-        face = faces[fID]
-        cellN = cells[nID]
-        # nID = face.ownerCells[2]
-        # phiN = F[nID]
-        normal = face.normal
-        nsign = cell_nsign[fi]
-        na = nsign*normal
-
-        # r = fc - cc
-        # fc = face.centre
-
-        nc = cellN.centre
-        r = nc - cc
-        δϕ = r⋅grad0
-
-        # rn = (nc - cc) ⋅ na
-        # gradn = grad0⋅na
-        # δϕ = rn* gradn
-        if δϕ > 0
-            limiterf = min(1, (phiMax - phiP)/δϕ)
-        elseif δϕ < 0
-            limiterf = min(1, (phiMin - phiP)/δϕ)
-        else
-            limiterf = 1
-        end
-        limiter = min(limiterf, limiter)
-    end
-    grad0 *= limiter
-    x.values[cID] = grad0[1]
-    y.values[cID] = grad0[2]
-    z.values[cID] = grad0[3]
 end

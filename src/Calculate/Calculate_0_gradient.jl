@@ -21,7 +21,6 @@ function Adapt.adapt_structure(to, itp::Grad{S}) where {S}
 end
 
 # Grad outer constructor for scalar field definition
-
 Grad{S}(phi::ScalarField) where S= begin
     # Retrieve mesh and define grad as vector field
     mesh = phi.mesh
@@ -38,7 +37,6 @@ Grad{S}(phi::ScalarField) where S= begin
 end
 
 # Grad outer constructor for vector field definition
-
 Grad{S}(psi::VectorField) where S = begin
     # Retrieve mesh and define grad as tensor field
     mesh = psi.mesh
@@ -55,13 +53,6 @@ Grad{S}(psi::VectorField) where S = begin
 end
 
 Base.getindex(grad::Grad{S,F,R,I,M}, i::Integer) where {S,F,R<:VectorField,I,M} = begin
-    # Tf = eltype(grad.result.x.values)
-    # SVector{3,Tf}(
-    #     grad.result.x[i], 
-    #     grad.result.y[i], 
-    #     grad.result.z[i]
-    #     )
-    # Tf = eltype(grad.result.x.values)
     @inbounds SVector{3}(
         grad.result.x[i], 
         grad.result.y[i], 
@@ -340,8 +331,9 @@ end
 end
 
 
-# TEMP LOCATION
-function limit_gradient!(xv, yv, zv, F, config)
+### GRADIENT LIMITER - EXPERIMENTAL
+
+function limit_gradient!(∇F, F, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
@@ -350,76 +342,90 @@ function limit_gradient!(xv, yv, zv, F, config)
 
     minPhi0 = maximum(F.values) # use min value so all values compared are larger
     maxPhi0 = minimum(F.values)
+    (; x, y, z) = ∇F.result
 
     kernel! = _limit_gradient!(backend, workgroup)
-    kernel!(xv, yv, zv, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi0, maxPhi0, ndrange=length(cells))
+    kernel!(x, y, z, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi0, maxPhi0, ndrange=length(cells))
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function _limit_gradient!(xv, yv, zv, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi, maxPhi)
+function limit_gradient!(∇F::Grad{S,FF,R,I,M}, F, config) where {S,FF,R<:TensorField,I,M}
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    mesh = F.mesh
+    (; cells, cell_neighbours, cell_faces, cell_nsign, faces) = mesh
+
+    (; xx, yx, zx) = ∇F.result
+    (; xy, yy, zy) = ∇F.result
+    (; xz, yz, zz) = ∇F.result
+
+    kernel! = _limit_gradient!(backend, workgroup)
+    kernel!(xx, yx, zx, F.x, cells, cell_neighbours, cell_faces, cell_nsign, faces, ndrange=length(cells))
+    KernelAbstractions.synchronize(backend)
+
+    kernel! = _limit_gradient!(backend, workgroup)
+    kernel!(xy, yy, zy, F.y, cells, cell_neighbours, cell_faces, cell_nsign, faces, ndrange=length(cells))
+    KernelAbstractions.synchronize(backend)
+
+    kernel! = _limit_gradient!(backend, workgroup)
+    kernel!(xz, yz, zz, F.z, cells, cell_neighbours, cell_faces, cell_nsign, faces, ndrange=length(cells))
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _limit_gradient!(x, y, z, F, cells, cell_neighbours, cell_faces, cell_nsign, faces)
     cID = @index(Global)
-    # mesh = F.mesh
-    # (; cells, cell_neighbours, cell_faces, cell_nsign, faces) = mesh
 
-    # minPhi0 = maximum(F.values) # use min value so all values compared are larger
-    # maxPhi0 = minimum(F.values)
+    cell = cells[cID]
+    faces_range = cell.faces_range
+    phiP = F[cID]
+    phiMax = phiMin = phiP
+ 
+    for fi ∈ faces_range
+        nID = cell_neighbours[fi]
+        phiN = F[nID]
+        phiMax = max(phiN, phiMax)
+        phiMin = min(phiN, phiMin)
+    end
 
-    # for (cID, cell) ∈ enumerate(cells)
-        cell = cells[cID]
-        # minPhi = minPhi0 # reset for next cell
-        # maxPhi = maxPhi0
+    # g0 = ∇F[cID]
+    grad0 = SVector{3}(x[cID] , y[cID] , z[cID])
 
-        # find min and max values around cell
-        faces_range = cell.faces_range
-        
-        phiP = F[cID]
-        # minPhi = phiP # reset for next cell
-        # maxPhi = phiP
-        for fi ∈ faces_range
-            nID = cell_neighbours[fi]
-            phiN = F[nID]
-            maxPhi = max(phiN, maxPhi)
-            minPhi = min(phiN, minPhi)
+    cc = cell.centre
+    limiter = 1
+    limiterf = 1
+    for fi ∈ faces_range 
+        fID = cell_faces[fi]
+        nID = cell_neighbours[fi]
+        face = faces[fID]
+        cellN = cells[nID]
+        # nID = face.ownerCells[2]
+        # phiN = F[nID]
+        normal = face.normal
+        nsign = cell_nsign[fi]
+        na = nsign*normal
+
+        # r = fc - cc
+        # fc = face.centre
+
+        nc = cellN.centre
+        r = nc - cc
+        δϕ = r⋅grad0
+
+        # rn = (nc - cc) ⋅ na
+        # gradn = grad0⋅na
+        # δϕ = rn* gradn
+        if δϕ > 0
+            limiterf = min(1, (phiMax - phiP)/δϕ)
+        elseif δϕ < 0
+            limiterf = min(1, (phiMin - phiP)/δϕ)
+        else
+            limiterf = 1
         end
-
-        # g0 = ∇F[cID]
-        x0 = xv[cID]
-        y0 = yv[cID]
-        z0 = zv[cID]
-        g0 = SVector{3}(x0,y0,z0)
-        cc = cell.centre
-
-        for fi ∈ faces_range 
-            fID = cell_faces[fi]
-            face = faces[fID]
-            nID = face.ownerCells[2]
-            # phiN = F[nID]
-            normal = face.normal
-            nsign = cell_nsign[fi]
-            na = nsign*normal
-
-            fc = face.centre 
-            cc_fc = fc - cc
-            n0 = cc_fc/norm(cc_fc)
-            gn = g0⋅n0
-            δϕ = g0⋅cc_fc
-            gτ = g0 - gn*n0
-            if (maxPhi > phiP) && (δϕ > maxPhi - phiP)
-                g0 = gτ + na*(maxPhi - phiP)
-            elseif (minPhi < phiP) && (δϕ < minPhi - phiP)
-                g0 = gτ + na*(minPhi - phiP)
-            end            
-        end
-        # ∇F.result.x.values[cID] = g0[1]
-        # ∇F.result.y.values[cID] = g0[2]
-        # ∇F.result.z.values[cID] = g0[3]
-
-        xv.values[cID] = g0[1]
-        yv.values[cID] = g0[2]
-        zv.values[cID] = g0[3]
-
-        # x[cID] = g0[1]
-        # y[cID] = g0[2]
-        # z[cID] = g0[3]
-    # end
+        limiter = min(limiterf, limiter)
+    end
+    grad0 *= limiter
+    x.values[cID] = grad0[1]
+    y.values[cID] = grad0[2]
+    z.values[cID] = grad0[3]
 end

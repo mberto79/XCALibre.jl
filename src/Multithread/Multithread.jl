@@ -1,11 +1,14 @@
 module Multithread
 
 using KernelAbstractions
-using LinearAlgebra, SparseArrays
+using SparseArrays
 using SparseMatricesCSR
+using LinearAlgebra
 
-import Base: *
-import LinearAlgebra: mul! 
+import Base
+import LinearAlgebra
+import SparseArrays
+import KernelAbstractions
 
 include("spmvm.jl")
 

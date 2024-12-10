@@ -1,33 +1,16 @@
+export SparseXCSR 
 export activate_multithread
-export *, mul!
 
-# function xmul!(y::AbstractVector, A::SparseMatrixCSR, x::AbstractVector, alpha::Number, beta::Number)
-#     backend = get_backend(x)
-#     workgroup = 32
-#     # workgroup = cld(length(x), Threads.nthreads())
-#     kernel = _xmul!(backend, workgroup)
-#     kernel(y, A, x, alpha, beta, ndrange=length(x))
-#     KernelAbstractions.synchronize(backend)
-#     return y
-# end
+struct SparseXCSR{Bi,Tv,Ti,N} <: AbstractSparseArray{Tv,Ti,N}
+    parent::SparseMatrixCSR{Bi,Tv,Ti}
+end
 
-# @kernel function _xmul!(y, A, x, alpha, beta)
-#     i = @index(Global)
+SparseXCSR(A::SparseMatrixCSR{Bi,Tv,Ti}) where {Bi,Tv,Ti} = SparseXCSR{Bi,Tv,Ti,2}(A)
 
-#     @uniform begin
-#         cols = colvals(A)
-#         nzval = nonzeros(A)
-#     end
-    
-#     @inbounds begin
-#         acc = zero(eltype(x))
-#         for nzi ∈ nzrange(A, i)
-#             j = cols[nzi]
-#             acc += nzval[nzi]*x[j]
-#         end
-#         y[i] = alpha*acc + beta*y[i]
-#     end
-# end
+# Now add methods for the wrapper type SparseXCSR
+Base.parent(A::SparseXCSR) = A.parent
+Base.size(A::SparseXCSR) = size(parent(A))
+KernelAbstractions.get_backend(A::SparseXCSR) = get_backend(A.parent.nzval)
 
 # NOTE: The code below has been taken from https://github.com/BacAmorim/ThreadedSparseCSR.jl
 # ThreadedSparseCSR has not been updated in a while and precompilation fails on Julia 1.11.1
@@ -44,8 +27,10 @@ endpos(it::RangeIterator, i::Int) = i*it.d+min(i,it.r)
 Base.iterate(it::RangeIterator, i::Int=1) = i>it.k ? nothing : (endpos(it,i-1)+1:endpos(it,i), i+1)
 
 
-function xmul!(y::AbstractVector, A::SparseMatrixCSR, x::AbstractVector, alpha::Number, beta::Number)
+function xmul!(
+    y::AbstractVector, Ax::SparseXCSR, x::AbstractVector, alpha::Number, beta::Number)
     
+    A = parent(Ax)
     A.n == size(x, 1) || throw(DimensionMismatch())
     A.m == size(y, 1) || throw(DimensionMismatch())
 
@@ -68,55 +53,38 @@ function xmul!(y::AbstractVector, A::SparseMatrixCSR, x::AbstractVector, alpha::
 
 end
 
-function xmul!(A::SparseMatrixCSR, x::AbstractVector)
-    xmul!(y, A, x, true, false)
+function xmul!(A::SparseXCSR, x::AbstractVector)
+    xmul!(y, parent(A), x, true, false)
 end
 
-function xmul(y::AbstractVector, A::SparseMatrixCSR, x::AbstractVector)
+function xmul(y::AbstractVector, A::SparseXCSR, x::AbstractVector)
     y = similar(x)
-    xmul!(y, A, x, true, false)
+    xmul!(y, parent(A), x, true, false)
 end
 
-# Now add methods for Base and LinearAlgebra 
-
 """
-    function activate_multithread(backend::CPU)
+    activate_multithread(backend::CPU; nthreads=1) = BLAS.set_num_threads(nthreads)
 
-        BLAS.set_num_threads(1)
+Convenience function to set number of BLAS threads. 
+    
+# Input arguments
 
-        @eval function  mul!(y::AbstractVector, A::SparseMatrixCSR, x::AbstractVector, alpha::Number, beta::Number)
-            return xmul!(y, A, x, alpha, beta)
-        end
-
-        @eval function  mul!(y::AbstractVector, A::SparseMatrixCSR, x::AbstractVector)
-            return xmul!(y, A, x, true, false)
-        end
-
-        @eval function  *(A::SparseMatrixCSR, x::AbstractVector)
-            return xmul(A, x)
-        end
-
-        nothing
-    end
-
-Function to activate multithreading for CSR sparse matrices. The only input required is the backend (which must be `CPU()`).
-
+* `backend` is the only required input which must be `CPU()` from `KernelAbstractions.jl`
+* `nthreads` can be used to set the number of BLAS cores (default `nthreads=1`)
 """
-function activate_multithread(backend::CPU)
+activate_multithread(backend::CPU; nthreads=1) = BLAS.set_num_threads(nthreads)
 
-    BLAS.set_num_threads(1)
 
-    @eval function  mul!(y::AbstractVector, A::SparseMatrixCSR, x::AbstractVector, alpha::Number, beta::Number)
-        return xmul!(y, A, x, alpha, beta)
-    end
+# Extend multiplications methods in LinearAlgebra and Base
 
-    @eval function  mul!(y::AbstractVector, A::SparseMatrixCSR, x::AbstractVector)
-        return xmul!(y, A, x, true, false)
-    end
+function  LinearAlgebra.mul!(y::AbstractVector, A::SparseXCSR, x::AbstractVector, alpha::Number, beta::Number)
+    return xmul!(y, A, x, alpha, beta)
+end
 
-    @eval function  *(A::SparseMatrixCSR, x::AbstractVector)
-        return xmul(A, x)
-    end
+function  LinearAlgebra.mul!(y::AbstractVector, A::SparseXCSR, x::AbstractVector)
+    return xmul!(y, A, x, true, false)
+end
 
-    nothing
+function  Base.:*(A::SparseMatrixCSR, x::SparseXCSR)
+    return xmul(A, x)
 end

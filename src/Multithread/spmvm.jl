@@ -7,6 +7,7 @@ end
 
 SparseXCSR(A::SparseMatrixCSR{Bi,Tv,Ti}) where {Bi,Tv,Ti} = SparseXCSR{Bi,Tv,Ti,2}(A)
 
+# Now add methods for the wrapper type SparseXCSR
 Base.parent(A::SparseXCSR) = A.parent
 Base.size(A::SparseXCSR) = size(parent(A))
 KernelAbstractions.get_backend(A::SparseXCSR) = get_backend(A.parent.nzval)
@@ -26,8 +27,8 @@ endpos(it::RangeIterator, i::Int) = i*it.d+min(i,it.r)
 Base.iterate(it::RangeIterator, i::Int=1) = i>it.k ? nothing : (endpos(it,i-1)+1:endpos(it,i), i+1)
 
 
-# function xmul!(y::AbstractVector, A::SparseMatrixCSR, x::AbstractVector, alpha::Number, beta::Number)
-function xmul!(y::AbstractVector, Ax::SparseXCSR, x::AbstractVector, alpha::Number, beta::Number)
+function xmul!(
+    y::AbstractVector, Ax::SparseXCSR, x::AbstractVector, alpha::Number, beta::Number)
     
     A = parent(Ax)
     A.n == size(x, 1) || throw(DimensionMismatch())
@@ -52,33 +53,29 @@ function xmul!(y::AbstractVector, Ax::SparseXCSR, x::AbstractVector, alpha::Numb
 
 end
 
-# function xmul!(A::SparseMatrixCSR, x::AbstractVector)
-#     xmul!(y, A, x, true, false)
-# end
-
 function xmul!(A::SparseXCSR, x::AbstractVector)
     xmul!(y, parent(A), x, true, false)
 end
-
-# function xmul(y::AbstractVector, A::SparseMatrixCSR, x::AbstractVector)
-#     y = similar(x)
-#     xmul!(y, A, x, true, false)
-# end
 
 function xmul(y::AbstractVector, A::SparseXCSR, x::AbstractVector)
     y = similar(x)
     xmul!(y, parent(A), x, true, false)
 end
 
-# Now add methods for Base and LinearAlgebra 
+"""
+    activate_multithread(backend::CPU; nthreads=1) = BLAS.set_num_threads(nthreads)
 
-# """
-    function activate_multithread(backend::CPU)
+Convenience function to set number of BLAS threads. 
+    
+# Input arguments
 
-        BLAS.set_num_threads(1)
+* `backend` is the only required input which must be `CPU()` from `KernelAbstractions.jl`
+* `nthreads` can be used to set the number of BLAS cores (default `nthreads=1`)
+"""
+activate_multithread(backend::CPU; nthreads=1) = BLAS.set_num_threads(nthreads)
 
-        nothing
-    end
+
+# Extend multiplications methods in LinearAlgebra and Base
 
 function  LinearAlgebra.mul!(y::AbstractVector, A::SparseXCSR, x::AbstractVector, alpha::Number, beta::Number)
     return xmul!(y, A, x, alpha, beta)

@@ -57,8 +57,8 @@ solvers = (
         preconditioner = Jacobi(), # ILU0GPU, Jacobi, DILU
         # smoother=JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
         convergence = 1e-7,
-        relax       = 0.7,
-        rtol = 1e-2
+        relax       = 0.8,
+        rtol = 1e-1
     ),
     p = set_solver(
         model.momentum.p;
@@ -66,8 +66,8 @@ solvers = (
         preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
         # smoother=JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
         convergence = 1e-7,
-        relax       = 0.3,
-        rtol = 1e-3
+        relax       = 0.2,
+        rtol = 1e-2
     )
 )
 

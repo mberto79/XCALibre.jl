@@ -3,6 +3,7 @@ module Multithread
 using KernelAbstractions
 using SparseArrays
 using SparseMatricesCSR
+using LinearAlgebra
 
 import Base
 import LinearAlgebra

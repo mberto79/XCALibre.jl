@@ -1,5 +1,6 @@
 export Grad
 export grad!, source!
+export limit_gradient!
 export get_scheme
 
 # Define Gradient type and functionality
@@ -333,23 +334,21 @@ end
 
 ### GRADIENT LIMITER - EXPERIMENTAL
 
-function limit_gradient!(∇F, F, config)
+function limit_gradient!(∇F, F::ScalarField, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
     mesh = F.mesh
     (; cells, cell_neighbours, cell_faces, cell_nsign, faces) = mesh
 
-    minPhi0 = maximum(F.values) # use min value so all values compared are larger
-    maxPhi0 = minimum(F.values)
     (; x, y, z) = ∇F.result
 
     kernel! = _limit_gradient!(backend, workgroup)
-    kernel!(x, y, z, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, minPhi0, maxPhi0, ndrange=length(cells))
+    kernel!(x, y, z, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, ndrange=length(cells))
     KernelAbstractions.synchronize(backend)
 end
 
-function limit_gradient!(∇F::Grad{S,FF,R,I,M}, F, config) where {S,FF,R<:TensorField,I,M}
+function limit_gradient!(∇F, F::VectorField, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 

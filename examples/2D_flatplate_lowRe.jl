@@ -2,8 +2,10 @@ using Plots
 using XCALibre
 
 
-# backwardFacingStep_2mm, backwardFacingStep_10mm
-mesh_file = "unv_sample_meshes/flatplate_2D_lowRe.unv"
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "flatplate_2D_lowRe.unv"
+
+mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 # mesh_dev = adapt(CUDABackend(), mesh)
@@ -17,13 +19,11 @@ k_inlet = 0.375
 
 model = Physics(
     time = Steady(),
-    fluid = Fluid{Incompressible}(),
+    fluid = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{KOmega}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
     )
-
-println(typeof(model.fluid))
 
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
@@ -76,37 +76,37 @@ solvers = (
     U = set_solver(
         model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), #ILU0(),
+        preconditioner = Jacobi(), 
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.7,
     ),
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), #ILU0(),
+        preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 0.2,
     ),
     k = set_solver(
         model.turbulence.k;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), #ILU0(),
+        preconditioner = Jacobi(), 
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.7,
     ),
     omega = set_solver(
         model.turbulence.omega;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), #ILU0(),
+        preconditioner = Jacobi(), 
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.7,
     )
 )
 
 runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
 
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = set_hardware(backend=CPU(), workgroup=1024)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

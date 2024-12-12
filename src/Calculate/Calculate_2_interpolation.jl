@@ -108,13 +108,13 @@ function interpolate!(psif::FaceVectorField, psi::VectorField, config)
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function interpolate_Vector!(xv, yv, zv, xf, yf, zf, faces)
+@kernel function interpolate_Vector!(@Const(xv), @Const(yv), @Const(zv), xf, yf, zf, @Const(faces))
     # Define index for thread
     i = @index(Global)
 
     @inbounds begin
         # Deconstruct faces to use weight and ownerCells in calculations
-        @synchronize
+        # @synchronize # commented out on 2024/10/24
         (; weight, ownerCells) = faces[i]
 
         # Define indices for initial x and y values from psi struct

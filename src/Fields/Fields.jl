@@ -6,6 +6,7 @@ using LinearAlgebra
 using SparseArrays
 using StaticArrays
 
+using XCALibre.Multithread
 using XCALibre.Mesh
 
 include("Fields_0_types.jl")

@@ -116,7 +116,7 @@ solvers = (
     k = set_solver(
         model.turbulence.k;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), #ILU0(),
+        preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 0.8,
         atol = 1e-6
@@ -124,7 +124,7 @@ solvers = (
     omega = set_solver(
         model.turbulence.omega;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), #ILU0(),
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
         atol = 1e-6
@@ -133,7 +133,7 @@ solvers = (
 
 runtime = set_runtime(iterations=200, write_interval=200, time_step=1)
 
-hardware = set_hardware(backend=CPU(), workgroup=cld(length(mesh.faces), 4))
+hardware = set_hardware(backend=CPU(), workgroup=1024)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 

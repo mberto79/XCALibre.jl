@@ -114,7 +114,7 @@ solvers = (
     U = set_solver(
         model.momentum.U;
         solver      = BicgstabSolver, # Options: GmresSolver
-        preconditioner = Jacobi(), # Options: NormDiagonal(), DILU(), ILU0()
+        preconditioner = Jacobi(), # Options: NormDiagonal()
         convergence = 1e-7,
         relax       = 0.7,
         rtol = 1e-4,
@@ -123,7 +123,7 @@ solvers = (
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, # Options: CgSolver, BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), # Options: NormDiagonal(), LDL() (with GmresSolver)
+        preconditioner = Jacobi(), # Options: NormDiagonal()
         convergence = 1e-7,
         relax       = 0.7,
         rtol = 1e-4,
@@ -132,8 +132,8 @@ solvers = (
 )
 
 # Step 8. Specify runtime requirements
-runtime = set_runtime(
-    iterations=2000, time_step=1, write_interval=2000)
+runtime = set_runtime(iterations=2000, time_step=1, write_interval=2000)
+runtime = set_runtime(iterations=1, time_step=1, write_interval=-1) # hide
 
 # Step 9. Construct Configuration object
 config = Configuration(

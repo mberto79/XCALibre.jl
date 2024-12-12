@@ -1,7 +1,6 @@
 module Discretise
 
 using Accessors
-using LinearAlgebra
 using SparseArrays
 using StaticArrays
 using Adapt
@@ -10,6 +9,10 @@ using KernelAbstractions
 using Atomix
 using GPUArrays
 
+using LinearAlgebra
+using SparseMatricesCSR
+
+using XCALibre.Multithread
 using XCALibre.Mesh
 using XCALibre.Fields
 using XCALibre.ModelFramework

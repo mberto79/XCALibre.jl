@@ -10,7 +10,7 @@ Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport 
 
 # Input arguments
 
-- `model` reference to a `Physics`` model defined by the user.
+- `model` reference to a `Physics` model defined by the user.
 - `config` Configuration structure defined by the user with solvers, schemes, runtime and hardware structures configuration details.
 - `limit_gradient` flag use to activate gradient limiters in the solver (default = `false`)
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
@@ -58,13 +58,11 @@ function setup_compressible_solvers(
     @info "Pre-allocating fields..."
     
     ∇p = Grad{schemes.p.gradient}(p)
-    # rho= ScalarField(mesh)
     mdotf = FaceScalarField(mesh)
     rhorDf = FaceScalarField(mesh)
+    initialise!(rhorDf, 1.0)
     mueff = FaceScalarField(mesh)
     mueffgradUt = VectorField(mesh)
-    # initialise!(rDf, 1.0)
-    rhorDf.values .= 1.0
     divHv = ScalarField(mesh)
 
     @info "Defining models..."
@@ -74,14 +72,14 @@ function setup_compressible_solvers(
         + Divergence{schemes.U.divergence}(mdotf, U) 
         - Laplacian{schemes.U.laplacian}(mueff, U) 
         == 
-        -Source(∇p.result)
-        +Source(mueffgradUt)
+        - Source(∇p.result)
+        + Source(mueffgradUt)
     ) → VectorEquation(mesh)
 
     if typeof(model.fluid) <: WeaklyCompressible
 
         p_eqn = (
-            Laplacian{schemes.p.laplacian}(rhorDf, p) == Source(divHv)
+            - Laplacian{schemes.p.laplacian}(rhorDf, p) == - Source(divHv)
         ) → ScalarEquation(mesh)
 
     elseif typeof(model.fluid) <: Compressible
@@ -156,19 +154,16 @@ function CSIMPLE(
     # Define aux fields 
     gradU = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
-    S = StrainRate(gradU, gradUT)
-    S2 = ScalarField(mesh)
+    Uf = FaceVectorField(mesh)
+    S = StrainRate(gradU, gradUT, U, Uf)
 
     n_cells = length(mesh.cells)
-    # n_faces = length(mesh.faces)
-    Uf = FaceVectorField(mesh)
     pf = FaceScalarField(mesh)
     nueff = FaceScalarField(mesh)
     prevpf = FaceScalarField(mesh)
     gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
-    # rhof = FaceScalarField(mesh)
     Psi = ScalarField(mesh)
     Psif = FaceScalarField(mesh)
 
@@ -215,18 +210,19 @@ function CSIMPLE(
         time = iteration
 
         ## CHECK GRADU AND EXPLICIT STRESSES
-        grad!(gradU, Uf, U, U.BCs, time, config)
+        # grad!(gradU, Uf, U, U.BCs, time, config) # calculated in `turbulence!``
 
-        # Set up and solve momentum equations
         explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, config)
         div!(divmugradUTx, mugradUTx, config)
         div!(divmugradUTy, mugradUTy, config)
         div!(divmugradUTz, mugradUTz, config)
-
+        
         @. mueffgradUt.x.values = divmugradUTx.values
         @. mueffgradUt.y.values = divmugradUTy.values
         @. mueffgradUt.z.values = divmugradUTz.values
 
+        # Set up and solve momentum equations
+        
         solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
         energy!(energyModel, model, prev, mdotf, rho, mueff, time, config)
         thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
@@ -326,9 +322,7 @@ function CSIMPLE(
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, U.BCs, time, config)
         
-        grad!(gradU, Uf, U, U.BCs, time, config)
-        limit_gradient && limit_gradient!(gradU, U, config)
-        turbulence!(turbulenceModel, model, S, S2, prev, time, config) 
+        turbulence!(turbulenceModel, model, S, prev, time, limit_gradient, config) 
         update_nueff!(nueff, nu, model.turbulence, config)
 
         @. mueff.values = rhof.values*nueff.values

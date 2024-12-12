@@ -44,8 +44,8 @@ end
     (; area, delta) = face 
     flux = -J*area/delta
     ap = term.sign*(flux)
-    # ap, ap*values[cellID] # original
-    0.0, 0.0 # go for this!
+    ap, ap*values[cellID] # original
+    # 0.0, 0.0 # go for this!
     # 0.0, -flux*delta*bc.value # draft implementation to test!
 end
 

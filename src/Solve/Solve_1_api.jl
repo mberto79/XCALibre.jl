@@ -12,10 +12,11 @@ export residual!
         preconditioner::PT, 
         convergence, 
         relax,
+        smoother=nothing,
         limit=(),
-        itmax::Integer=100, 
+        itmax::Integer=1000, 
         atol=(eps(_get_float(field.mesh)))^0.9,
-        rtol=_get_float(field.mesh)(1e-3)
+        rtol=_get_float(field.mesh)(1e-1)
         ) where {S,PT<:PreconditionerType} = begin
 
         # return NamedTuple
@@ -25,6 +26,7 @@ export residual!
             preconditioner=preconditioner, 
             convergence=convergence |> TF, 
             relax=relax |> TF, 
+            smoother=smoother,
             limit=limit,
             itmax=itmax, 
             atol=atol |> TF, 
@@ -41,10 +43,11 @@ This function is used to provide solver settings that will be used internally in
 - `preconditioner` instance of preconditioner to be used e.g. Jacobi()
 - `convergence` sets the stopping criteria of this field
 - `relax` specifies the relaxation factor to be used e.g. set to 1 for no relaxation
+- `smoother` specifies smoothing method to be applied before discretisation. `JacobiSmoother` is currently the only choice (defaults to `nothing`)
 - `limit` used in some solvers to bound the solution within this limits e.g. (min, max). It defaults to `()`
-- `itmax` maximum number of iterations in a single solver pass (defaults to 100) 
+- `itmax` maximum number of iterations in a single solver pass (defaults to 1000) 
 - `atol` absolute tolerance for the solver (default to eps(FloatType)^0.9)
-- `rtol` set relative tolerance for the solver (defaults to 1e-3)
+- `rtol` set relative tolerance for the solver (defaults to 1e-1)
 """
 set_solver( 
         field::AbstractField;
@@ -53,10 +56,11 @@ set_solver(
         preconditioner::PT, 
         convergence, 
         relax,
+        smoother=nothing,
         limit=(),
-        itmax::Integer=100, 
+        itmax::Integer=1000, 
         atol=(eps(_get_float(field.mesh)))^0.9,
-        rtol=_get_float(field.mesh)(1e-3)
+        rtol=_get_float(field.mesh)(1e-1)
     ) where {S,PT<:PreconditionerType} = begin
 
     # return NamedTuple
@@ -66,6 +70,7 @@ set_solver(
         preconditioner=preconditioner, 
         convergence=convergence |> TF, 
         relax=relax |> TF, 
+        smoother=smoother,
         limit=limit,
         itmax=itmax, 
         atol=atol |> TF, 
@@ -82,7 +87,7 @@ end
         time_step::N
         ) where {I<:Integer,N<:Number} = begin
         
-        # returned `NamedTuple``
+        # returned `NamedTuple`
             (
             iterations=iterations, 
             dt=time_step, 
@@ -107,17 +112,6 @@ runtime = set_runtime(
 set_runtime(; iterations::I, write_interval::I, time_step::N) where {I<:Integer,N<:Number} = begin
     (iterations=iterations, dt=time_step, write_interval=write_interval)
 end
-
-# function solve_equation!(
-#     eqn::ModelEquation{T,M,E,S,P}, phi, solversetup, config; ref=nothing
-#     ) where {T<:ScalarModel,M,E,S,P}
-
-#     discretise!(eqn, phi, config)       
-#     apply_boundary_conditions!(eqn, phi.BCs, nothing, config)
-#     setReference!(eqn, ref, 1, config)
-#     update_preconditioner!(eqn.preconditioner, phi.mesh, config)
-#     solve_system!(eqn, solversetup, phi, nothing, config)
-# end
 
 function solve_equation!(
     eqn::ModelEquation{T,M,E,S,P}, phi, solversetup, config; time=nothing, ref=nothing, irelax=nothing
@@ -177,24 +171,30 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
     
     (; hardware) = config
     (; backend, workgroup) = hardware
-    (; values) = result
+    (; values, mesh) = result
     
     A = _A(phiEqn)
     opA = phiEqn.equation.opA
     b = _b(phiEqn, component)
 
+    apply_smoother!(setup.smoother, values, A, b, hardware)
+
     solve!(
-        # solver, LinearOperator(A), b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
-        # solver, A, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
-        solver, opA, b, values; M=P, itmax=itmax, atol=atol, rtol=rtol
+        solver, opA, b, values; 
+        M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon)
         )
     KernelAbstractions.synchronize(backend)
-    kernel! = solve_copy_kernel!(backend, workgroup)
+
+    statistics(solver).niter == itmax && @warn "Maximum number of iteration reached!"
+
+    # println(statistics(solver).niter)
+    
+    kernel! = _copy!(backend, workgroup)
     kernel!(values, x, ndrange = length(values))
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function solve_copy_kernel!(a, b)
+@kernel function _copy!(a, b)
     i = @index(Global)
 
     @inbounds begin
@@ -231,8 +231,8 @@ function implicit_relaxation!(
     # Output sparse matrix properties and values
     A = _A(phiEqn)
     b = _b(phiEqn, component)
-    rowval_array = _rowval(A)
-    colptr_array = _colptr(A)
+    rowval_array = _colval(A)
+    colptr_array = _rowptr(A)
     nzval_array = _nzval(A)
 
     # Get backend and define kernel
@@ -249,14 +249,14 @@ function implicit_relaxation!(
     # check_for_precon!(nzval_array, precon, backend)
 end
 
-@kernel function implicit_relaxation_kernel!(ione, rowval, colptr, nzval, b, field, alpha)
+@kernel function implicit_relaxation_kernel!(ione, colval, rowptr, nzval, b, field, alpha)
     # i defined as values from 1 to length(b)
     i = @index(Global)
     
     @inbounds begin
 
         # Find nzval index relating to A[i,i]
-        nIndex = spindex(colptr, rowval, i, i)
+        nIndex = spindex(rowptr, colval, i, i)
 
         # Run implicit relaxation calculations
         nzval[nIndex] /= alpha
@@ -278,8 +278,8 @@ function implicit_relaxation_diagdom!(
     # Output sparse matrix properties and values
     A = _A(phiEqn)
     b = _b(phiEqn, component)
-    rowval_array = _rowval(A)
-    colptr_array = _colptr(A)
+    rowval_array = _colval(A)
+    colptr_array = _rowptr(A)
     nzval_array = _nzval(A)
 
     # Get backend and define kernel
@@ -296,7 +296,7 @@ function implicit_relaxation_diagdom!(
 end
 
 @kernel function _implicit_relaxation_diagdom!(cells::AbstractArray{Cell{TF,SV,UR}}, cell_neighbours, 
-    ione, rowval, colptr, nzval, b, field, alpha) where {TF,SV,UR}
+    ione, colval, rowptr, nzval, b, field, alpha) where {TF,SV,UR}
     # i defined as values from 1 to length(b)
     i = @index(Global)
     
@@ -305,19 +305,27 @@ end
     @inbounds begin
 
         # Find nzval index relating to A[i,i]
-        nIndex = spindex(colptr, rowval, i, i)
+        cIndex = spindex(rowptr, colval, i, i)
         
-        (; faces_range) = cells[i]
-        for ni ∈ faces_range
-            nID = cell_neighbours[ni]
-            zIndex = spindex(colptr, rowval, i, nID)
-            sumv += abs(nzval[zIndex])
+        # (; faces_range) = cells[i]
+        # for ni ∈ faces_range
+        #     nID = cell_neighbours[ni]
+        #     zIndex = spindex(rowptr, colval, i, nID)
+        #     sumv += abs(nzval[zIndex])
+        # end
+
+        start_index = rowptr[i]
+        end_index = rowptr[i+1] -1
+        for nzi ∈ start_index:end_index
+            sumv += abs(nzval[nzi])
         end
+        sumv -= abs(nzval[cIndex]) # remove diagonal contribution
 
         # Run implicit relaxation calculations
-        D0 = nzval[nIndex]
-        nzval[nIndex] = max(abs(D0), sumv)/alpha
-        b[i] += (nzval[nIndex] - D0)*field[i]
+        D0 = nzval[cIndex]
+        D_max = max(abs(D0), sumv)/alpha
+        nzval[cIndex] = D_max
+        b[i] += (D_max - D0)*field[i]
     end
 end
 
@@ -331,8 +339,8 @@ function setReference!(pEqn::E, pRef, cellID, config) where E<:ModelEquation
         ione = one(_get_int((get_phi(pEqn)).mesh))
         (; b, A) = pEqn.equation
         nzval_array = nzval(A)
-        colptr_array = colptr(A)
-        rowval_array = rowval(A)
+        colptr_array = rowptr(A)
+        rowval_array = colval(A)
 
         kernel! = _setReference!(backend, workgroup)
         kernel!(nzval_array, colptr_array, rowval_array, b, pRef, ione, cellID, ndrange = 1)
@@ -341,11 +349,11 @@ function setReference!(pEqn::E, pRef, cellID, config) where E<:ModelEquation
     end
 end
 
-@kernel function _setReference!(nzval, colptr, rowval, b, pRef, ione, cellID)
+@kernel function _setReference!(nzval, rowptr, colval, b, pRef, ione, cellID)
     i = @index(Global)
 
     @inbounds begin
-        nIndex = nzval_index(colptr, rowval, cellID, cellID, ione)
+        nIndex = spindex(rowptr, colval, cellID, cellID)
         b[cellID] = nzval[nIndex]*pRef
         nzval[nIndex] += nzval[nIndex]
     end
@@ -360,7 +368,9 @@ function residual!(Residual, eqn, phi, iteration, component, config)
     values = phi.values
     Fx .= A * values
     @inbounds @. R = (b - Fx)^2
-    Residual[iteration] = sqrt(mean(R)) / norm(b)
+    normb = norm(b)
+    denominator = ifelse(normb>0,normb, 1)
+    Residual[iteration] = sqrt(mean(R)) / denominator
     # Residual[iteration] = sqrt(mean(R)) / min(mean(values), mean(abs.(b)) )
     nothing
 end

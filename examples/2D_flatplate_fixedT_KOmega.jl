@@ -2,10 +2,10 @@ using Plots
 
 using XCALibre
 
-using Krylov
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "flatplate_2D_laminar.unv"
 
-# backwardFacingStep_2mm, backwardFacingStep_10mm
-mesh_file = "unv_sample_meshes/flatplate_2D_laminar.unv"
+mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 # mesh_dev = adapt(CUDABackend(), mesh)
@@ -37,7 +37,8 @@ model = Physics(
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Wall(:wall, [0.0, 0.0, 0.0]),
-    Symmetry(:top, 0.0)
+    # Symmetry(:top, 0.0)
+    Neumann(:top, 0.0)
 )
 
  @assign! model momentum p (
@@ -95,6 +96,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
+        atol = 1e-1
     ),
     p = set_solver(
         model.momentum.p;
@@ -102,29 +104,32 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.3,
+        atol = 1e-2
     ),
     h = set_solver(
         model.energy.h;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.3,
         rtol = 1e-2,
-        atol = 1e-4
+        atol = 1e-1
     ),
     k = set_solver(
         model.turbulence.k;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), #ILU0(),
+        preconditioner = Jacobi(), 
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.7,
+        atol = 1e-1
     ),
     omega = set_solver(
         model.turbulence.omega;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), #ILU0(),
+        preconditioner = Jacobi(), 
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.7,
+        atol = 1e-1
     )
 )
 

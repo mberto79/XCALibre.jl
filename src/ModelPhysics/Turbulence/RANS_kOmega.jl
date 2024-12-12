@@ -128,7 +128,7 @@ end
 
 # Model solver call (implementation)
 """
-    turbulence!(rans::KOmegaModel{E1,E2}, model::Physics{T,F,M,Tu,E,D,BI}, S, S2, prev, time, config
+    turbulence!(rans::KOmegaModel{E1,E2}, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
     ) where {T,F,M,Tu<:KOmega,E,D,BI,E1,E2}
 
 Run turbulence model transport equations.
@@ -137,7 +137,6 @@ Run turbulence model transport equations.
 - `rans::KOmegaModel{E1,E2}` -- KOmega turbulence model.
 - `model`  -- Physics model defined by user.
 - `S`   -- Strain rate tensor.
-- `S2`  -- Square of the strain rate magnitude.
 - `prev`  -- Previous field.
 - `time`   -- 
 - `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
@@ -145,13 +144,14 @@ Run turbulence model transport equations.
 
 """
 function turbulence!(
-    rans::KOmegaModel{E1,E2}, model::Physics{T,F,M,Tu,E,D,BI}, S, S2, prev, time, config
+    rans::KOmegaModel{E1,E2}, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, limit_gradient, config
     ) where {T,F,M,Tu<:KOmega,E,D,BI,E1,E2}
 
     mesh = model.domain
     
     (; rho, rhof, nu, nuf) = model.fluid
     (;k, omega, nut, kf, omegaf, nutf, coeffs) = model.turbulence
+    (; U, Uf, gradU) = S
     (;k_eqn, ω_eqn) = rans
     (; solvers, runtime) = config
 
@@ -164,40 +164,46 @@ function turbulence!(
     Pω = get_source(ω_eqn, 1)
 
     # update fluxes and sources
+
+    # TO-DO: Need to bring gradient calculation inside turbulence models!!!!!
+
+    grad!(gradU, Uf, U, U.BCs, time, config)
+    limit_gradient && limit_gradient!(gradU, U, config)
     magnitude2!(Pk, S, config, scale_factor=2.0) # multiplied by 2 (def of Sij)
-    constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
-    correct_production!(Pk, k.BCs, model, S.gradU, config)
+    # constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
+    
     @. Pω.values = rho.values*coeffs.α1*Pk.values
     @. Pk.values = rho.values*nut.values*Pk.values
+    correct_production!(Pk, k.BCs, model, S.gradU, config) # Must be after previous line
     @. Dωf.values = rho.values*coeffs.β1*omega.values
     @. mueffω.values = rhof.values * (nuf.values + coeffs.σω*nutf.values)
     @. Dkf.values = rho.values*coeffs.β⁺*omega.values
     @. mueffk.values = rhof.values * (nuf.values + coeffs.σk*nutf.values)
 
     # Solve omega equation
-    prev .= omega.values
+    # prev .= omega.values
     discretise!(ω_eqn, omega, config)
     apply_boundary_conditions!(ω_eqn, omega.BCs, nothing, time, config)
-    constrain_equation!(ω_eqn, omega.BCs, model, config) # active with WFs only
     # implicit_relaxation!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
-    # implicit_relaxation_diagdom!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
+    implicit_relaxation_diagdom!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
+    constrain_equation!(ω_eqn, omega.BCs, model, config) # active with WFs only
     update_preconditioner!(ω_eqn.preconditioner, mesh, config)
     solve_system!(ω_eqn, solvers.omega, omega, nothing, config)
     
-    constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
+    # constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
     bound!(omega, config)
-    explicit_relaxation!(omega, prev, solvers.omega.relax, config)
+    # explicit_relaxation!(omega, prev, solvers.omega.relax, config)
 
     # Solve k equation
-    prev .= k.values
+    # prev .= k.values
     discretise!(k_eqn, k, config)
     apply_boundary_conditions!(k_eqn, k.BCs, nothing, time, config)
     # implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
-    # implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
+    implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
     update_preconditioner!(k_eqn.preconditioner, mesh, config)
     solve_system!(k_eqn, solvers.k, k, nothing, config)
     bound!(k, config)
-    explicit_relaxation!(k, prev, solvers.k.relax, config)
+    # explicit_relaxation!(k, prev, solvers.k.relax, config)
 
     @. nut.values = k.values/omega.values
 

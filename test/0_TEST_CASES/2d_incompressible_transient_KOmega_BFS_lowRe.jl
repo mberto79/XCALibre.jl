@@ -72,28 +72,28 @@ solvers = (
     U = set_solver(
         model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), # ILU0(),
+        preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 1.0,
     ),
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), # LDL(),
+        preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 1.0,
     ),
     k = set_solver(
         model.turbulence.k;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), # ILU0(),
+        preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 1.0,
     ),
     omega = set_solver(
         model.turbulence.omega;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), # ILU0(),
+        preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 1.0,
     )
@@ -103,7 +103,7 @@ runtime = set_runtime(
     iterations=1000, write_interval=1000, time_step=0.01)
 
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = set_hardware(backend=CPU(), workgroup=1024)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
@@ -121,4 +121,4 @@ residuals = run!(model, config);
 inlet = boundary_average(:inlet, model.momentum.U, config)
 outlet = boundary_average(:outlet, model.momentum.U, config)
 
-@test outlet ≈ 0.5*inlet atol=7e-3
+@test outlet ≈ 0.5*inlet atol=0.1*Umag

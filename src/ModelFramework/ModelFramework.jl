@@ -6,10 +6,14 @@ using StaticArrays
 using Adapt
 using LinearOperators
 
-using Krylov
-using KernelAbstractions
-# using CUDA, AMDGPU
+using LinearAlgebra
+using SparseMatricesCSR
 
+using Krylov
+import KrylovPreconditioners as KP
+using KernelAbstractions
+
+using XCALibre.Multithread
 using XCALibre.Mesh
 using XCALibre.Fields
 

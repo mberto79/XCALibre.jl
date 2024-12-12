@@ -31,6 +31,10 @@ abstract type AbstractNeumann <: AbstractBoundary end
 abstract type AbstractWallFunction <: AbstractBoundary end
 abstract type AbstractPhysicalConstraint <: AbstractBoundary end
 
+y_plus_laminar(E, kappa) = begin
+    yL = 11.0; for i ∈ 1:10; yL = log(max(yL*E, 1.0))/kappa; end
+    yL
+end
 
 # Kwall function structure and constructor
 struct KWallFunction{I,V} <: AbstractWallFunction
@@ -38,8 +42,9 @@ struct KWallFunction{I,V} <: AbstractWallFunction
     value::V 
 end
 Adapt.@adapt_structure KWallFunction
-KWallFunction(name::Symbol) = begin
-    KWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8))
+KWallFunction(name::Symbol; kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8) = begin
+    yPlusLam = y_plus_laminar(E, kappa)
+    KWallFunction(name, (kappa=kappa, beta1=beta1, cmu=cmu, B=B, E=E, yPlusLam=yPlusLam))
 end
 # NEED TO WRITE A GENERIC FUNCTION TO ASSIGN WALL FUNCTION BOUNDARY CONDITIONS!!!!
 function fixedValue(BC::KWallFunction, ID::I, value::V) where {I<:Integer,V}
@@ -61,8 +66,11 @@ struct OmegaWallFunction{I,V} <: AbstractWallFunction
     value::V 
 end
 Adapt.@adapt_structure OmegaWallFunction
-OmegaWallFunction(name::Symbol) = begin
-    OmegaWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8))
+OmegaWallFunction(name::Symbol; kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8) = begin
+    yPlusLam = y_plus_laminar(E, kappa)
+    OmegaWallFunction(
+        name, (kappa=kappa, beta1=beta1, cmu=cmu, B=B, E=E, yPlusLam=yPlusLam)
+        )
 end
 
 function fixedValue(BC::OmegaWallFunction, ID::I, value::V) where {I<:Integer,V}
@@ -84,8 +92,9 @@ struct NutWallFunction{I,V} <: AbstractWallFunction
     value::V 
 end
 Adapt.@adapt_structure NutWallFunction
-NutWallFunction(name::Symbol) = begin
-    NutWallFunction(name, (kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8))
+NutWallFunction(name::Symbol; kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8) = begin
+    yPlusLam = y_plus_laminar(E, kappa)
+    NutWallFunction(name, (kappa=kappa, beta1=beta1, cmu=cmu, B=B, E=E, yPlusLam=yPlusLam))
 end
 function fixedValue(BC::NutWallFunction, ID::I, value::V) where {I<:Integer,V}
     # Exception 1: Value is scalar

@@ -90,8 +90,8 @@ function constrain!(eqn, BC, model, config)
     # Access equation data and deconstruct sparse array
     A = _A(eqn)
     b = _b(eqn, nothing)
-    rowval = _rowval(A)
-    colptr = _colptr(A)
+    colval = _colval(A)
+    rowptr = _rowptr(A)
     nzval = _nzval(A)
     
     # Deconstruct mesh to required fields
@@ -110,19 +110,18 @@ function constrain!(eqn, BC, model, config)
     # Execute apply boundary conditions kernel
     kernel! = _constrain!(backend, workgroup)
     kernel!(
-        turbulence, fluid, BC, faces, start_ID, boundary_cellsID, rowval, colptr, nzval, b, ndrange=length(facesID_range)
+        turbulence, fluid, BC, faces, start_ID, boundary_cellsID, colval, rowptr, nzval, b, ndrange=length(facesID_range)
     )
 end
 
-@kernel function _constrain!(turbulence, fluid, BC, faces, start_ID, boundary_cellsID, rowval, colptr, nzval, b)
+@kernel function _constrain!(turbulence, fluid, BC, faces, start_ID, boundary_cellsID, colval, rowptr, nzval, b)
     i = @index(Global)
     fID = i + start_ID - 1 # Redefine thread index to become face ID
 
     @uniform begin
         nu = fluid.nu
         k = turbulence.k
-        (; kappa, beta1, cmu, B, E) = BC.value
-        ylam = y_plus_laminar(E, kappa)
+        (; kappa, beta1, cmu, B, E, yPlusLam) = BC.value
     end
     ωc = zero(eltype(nzval))
     
@@ -134,7 +133,7 @@ end
         ωlog = ω_log(k[cID], y, cmu, kappa)
         yplus = y_plus(k[cID], nu[cID], y, cmu) 
 
-        if yplus > ylam 
+        if yplus > yPlusLam 
             ωc = ωlog
         else
             ωc = ωvis
@@ -147,9 +146,17 @@ end
         # b[cID] += A[cID,cID]*ωc
         # A[cID,cID] += A[cID,cID]
         
-        nzIndex = spindex(colptr, rowval, cID, cID)
-        Atomix.@atomic b[cID] += nzval[nzIndex]*ωc
-        Atomix.@atomic nzval[nzIndex] += nzval[nzIndex] 
+        # nzIndex = spindex(rowptr, colval, cID, cID)
+        # Atomix.@atomic b[cID] += nzval[nzIndex]*ωc
+        # Atomix.@atomic nzval[nzIndex] += nzval[nzIndex] 
+
+        z = zero(eltype(nzval))
+        for nzi ∈ rowptr[cID]:(rowptr[cID+1] - 1)
+            nzval[nzi] = z
+        end
+        cIndex = spindex(rowptr, colval, cID, cID)
+        nzval[cIndex] = one(eltype(nzval))
+        b[cID] = ωc
     end
 end
 
@@ -201,12 +208,11 @@ end
     @uniform begin
         (; nu) = fluid
         (; k) = turbulence
-        # k= _k(turbulence)
-        (; kappa, beta1, cmu, B, E) = BC.value
+        (; kappa, beta1, cmu, B, E, yPlusLam) = BC.value
         (; values) = field
-        ylam = y_plus_laminar(E, kappa)
+        ωc = zero(eltype(values))
     end
-    ωc = zero(eltype(values))
+
 
     @inbounds begin
         cID = boundary_cellsID[fID]
@@ -216,7 +222,7 @@ end
         ωlog = ω_log(k[cID], y, cmu, kappa)
         yplus = y_plus(k[cID], nu[cID], y, cmu) 
 
-        if yplus > ylam 
+        if yplus > yPlusLam 
             ωc = ωlog
         else
             ωc = ωvis
@@ -273,29 +279,27 @@ end
     i = @index(Global)
     fID = i + start_ID - 1 # Redefine thread index to become face ID
 
-    (; kappa, beta1, cmu, B, E) = BC.value
+    (; kappa, beta1, cmu, B, E, yPlusLam) = BC.value
     (; nu) = fluid
     (; U) = momentum
     (; k, nut) = turbulence
 
-    ylam = y_plus_laminar(E, kappa)
-    # Uw = SVector{3,_get_float(mesh)}(0.0,0.0,0.0)
     Uw = SVector{3}(0.0,0.0,0.0)
-        cID = boundary_cellsID[fID]
-        face = faces[fID]
-        nuc = nu[cID]
-        (; delta, normal)= face
-        uStar = cmu^0.25*sqrt(k[cID])
-        dUdy = uStar/(kappa*delta)
-        yplus = y_plus(k[cID], nuc, delta, cmu)
-        nutw = nut_wall(nuc, yplus, kappa, E)
-        # mag_grad_U = mag(sngrad(U[cID], Uw, delta, normal))
-        mag_grad_U = mag(gradU[cID]*normal)
-        if yplus > ylam
-            values[cID] = (nu[cID] + nutw)*mag_grad_U*dUdy
-        else
-            values[cID] = 0.0
-        end
+    cID = boundary_cellsID[fID]
+    face = faces[fID]
+    nuc = nu[cID]
+    (; delta, normal)= face
+    uStar = cmu^0.25*sqrt(k[cID])
+    dUdy = uStar/(kappa*delta)
+    yplus = y_plus(k[cID], nuc, delta, cmu)
+    nutw = nut_wall(nuc, yplus, kappa, E)
+    mag_grad_U = mag(sngrad(U[cID], Uw, delta, normal))
+    # mag_grad_U = mag(gradU[cID]*normal)
+    if yplus > yPlusLam
+        values[cID] = (nu[cID] + nutw)*mag_grad_U*dUdy
+    else
+        values[cID] = 0.0
+    end
 end
 
 @generated correct_eddy_viscosity!(νtf, nutBCs, model, config) = begin
@@ -345,22 +349,21 @@ end
     i = @index(Global)
     fID = i + start_ID - 1 # Redefine thread index to become face ID
 
-    (; kappa, beta1, cmu, B, E) = BC.value
+    (; kappa, beta1, cmu, B, E, yPlusLam) = BC.value
     (; nu) = fluid
     (; k) = turbulence
     
-    ylam = y_plus_laminar(E, kappa)
-        cID = boundary_cellsID[fID]
-        face = faces[fID]
-        # nuf = nu[fID]
-        (; delta)= face
-        # yplus = y_plus(k[cID], nuf, delta, cmu)
-        nuc = nu[cID]
-        yplus = y_plus(k[cID], nuc, delta, cmu)
-        nutw = nut_wall(nuc, yplus, kappa, E)
-        if yplus > ylam
-            values[fID] = nutw
-        else
-            values[fID] = 0.0
-        end
+    cID = boundary_cellsID[fID]
+    face = faces[fID]
+    # nuf = nu[fID]
+    (; delta)= face
+    # yplus = y_plus(k[cID], nuf, delta, cmu)
+    nuc = nu[cID]
+    yplus = y_plus(k[cID], nuc, delta, cmu)
+    nutw = nut_wall(nuc, yplus, kappa, E)
+    if yplus > yPlusLam
+        values[fID] = nutw
+    else
+        values[fID] = 0.0
+    end
 end

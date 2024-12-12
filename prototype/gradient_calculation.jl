@@ -40,6 +40,7 @@ end
 
 
 grad!(∇phi, phif, phi, phi.BCs, 0.0, config) 
+limit_gradient!(∇phi, phi, config)
 
 meshData = VTKWriter2D(nothing, nothing)
 write_vtk("output", mesh, meshData, ("phi", phi), ("gradPhi", ∇phi.result))

@@ -391,8 +391,9 @@ end
     grad0 = SVector{3}(x[cID] , y[cID] , z[cID])
 
     cc = cell.centre
-    limiter = 1
-    limiterf = 1
+    uno = one(eltype(F[cID]))
+    limiter = uno
+    limiterf = uno
     for fi ∈ faces_range 
         fID = cell_faces[fi]
         nID = cell_neighbours[fi]
@@ -415,13 +416,14 @@ end
         # gradn = grad0⋅na
         # δϕ = rn* gradn
         if δϕ > 0
-            limiterf = min(1, (phiMax - phiP)/δϕ)
+            limiterf = min(limiterf, (phiMax - phiP)/δϕ)
         elseif δϕ < 0
-            limiterf = min(1, (phiMin - phiP)/δϕ)
+            limiterf = min(limiterf, (phiMin - phiP)/δϕ)
         else
-            limiterf = 1
+            limiterf = uno
         end
-        limiter = min(limiterf, limiter)
+        # limiter = min(limiterf, limiter)
+        limiter = limiterf
     end
     grad0 *= limiter
     x.values[cID] = grad0[1]

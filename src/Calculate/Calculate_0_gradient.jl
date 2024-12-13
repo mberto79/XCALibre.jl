@@ -1,7 +1,7 @@
 export Grad
 export grad!, source!
-export limit_gradient!
 export get_scheme
+export grad_new!
 
 # Define Gradient type and functionality
 
@@ -107,14 +107,26 @@ end
 
 # Tensor field function definition
 
+function grad_old!(grad::Grad{Orthogonal,F,R,I,M}, psif, psi, BCs, time, config) where {F,R<:TensorField,I,M}
+    interpolate!(psif, psi, config)
+    correct_boundaries!(psif, psi, BCs, time, config)
+
+    # Launch green-gauss for all tensor field dimensions
+    green_gauss!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x, config)
+    green_gauss!(grad.result.xy, grad.result.yy, grad.result.zy, psif.y, config)
+    green_gauss!(grad.result.xz, grad.result.yz, grad.result.zz, psif.z, config)
+end
+
 function grad!(grad::Grad{Orthogonal,F,R,I,M}, psif, psi, BCs, time, config) where {F,R<:TensorField,I,M}
     interpolate!(psif, psi, config)
     correct_boundaries!(psif, psi, BCs, time, config)
 
-    # Launch green-dauss for all tensor field dimensions
-    green_gauss!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x, config)
-    green_gauss!(grad.result.xy, grad.result.yy, grad.result.zy, psif.y, config)
-    green_gauss!(grad.result.xz, grad.result.yz, grad.result.zz, psif.z, config)
+    # Launch green-gauss for all tensor field dimensions
+    # green_gauss!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x, config)
+    # green_gauss!(grad.result.xy, grad.result.yy, grad.result.zy, psif.y, config)
+    # green_gauss!(grad.result.xz, grad.result.yz, grad.result.zz, psif.z, config)
+
+    green_gauss!(grad, psif, config)
 end
 
 ## Mid-point gradient calculation
@@ -303,7 +315,7 @@ function grad!(grad::Grad{Midpoint,F,R,I,M}, phif, phi, BCs, time, config) where
     green_gauss!(grad.result.x, grad.result.y, grad.result.z, phif, config)
 
     # Loop to run correction and green-gauss required number of times over all dimensions
-    for i ∈ 1:2
+    for i ∈ 1:3
         correct_interpolation!(grad.result.x, grad.result.y, grad.result.z, phif, phi, config)
         green_gauss!(grad.result.x, grad.result.y, grad.result.z, phif, config)
     end
@@ -316,7 +328,7 @@ function grad!(grad::Grad{Midpoint,F,R,I,M}, psif, psi, BCs, time, config) where
     correct_boundaries!(psif, psi, BCs, time, config)
 
     # Loop to run correction and green-gauss required number of times over all dimensions
-    for i ∈ 1:2
+    for i ∈ 1:3
     correct_interpolation!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x, psi.x, config)
     green_gauss!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x, config)
     
@@ -332,101 +344,3 @@ end
 end
 
 
-### GRADIENT LIMITER - EXPERIMENTAL
-
-function limit_gradient!(∇F, F::ScalarField, config)
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-
-    mesh = F.mesh
-    (; cells, cell_neighbours, cell_faces, cell_nsign, faces) = mesh
-
-    (; x, y, z) = ∇F.result
-
-    kernel! = _limit_gradient!(backend, workgroup)
-    kernel!(x, y, z, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, ndrange=length(cells))
-    KernelAbstractions.synchronize(backend)
-end
-
-function limit_gradient!(∇F, F::VectorField, config)
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-
-    mesh = F.mesh
-    (; cells, cell_neighbours, cell_faces, cell_nsign, faces) = mesh
-
-    (; xx, yx, zx) = ∇F.result
-    (; xy, yy, zy) = ∇F.result
-    (; xz, yz, zz) = ∇F.result
-
-    kernel! = _limit_gradient!(backend, workgroup)
-    kernel!(xx, yx, zx, F.x, cells, cell_neighbours, cell_faces, cell_nsign, faces, ndrange=length(cells))
-    KernelAbstractions.synchronize(backend)
-
-    kernel! = _limit_gradient!(backend, workgroup)
-    kernel!(xy, yy, zy, F.y, cells, cell_neighbours, cell_faces, cell_nsign, faces, ndrange=length(cells))
-    KernelAbstractions.synchronize(backend)
-
-    kernel! = _limit_gradient!(backend, workgroup)
-    kernel!(xz, yz, zz, F.z, cells, cell_neighbours, cell_faces, cell_nsign, faces, ndrange=length(cells))
-    KernelAbstractions.synchronize(backend)
-end
-
-@kernel function _limit_gradient!(x, y, z, F, cells, cell_neighbours, cell_faces, cell_nsign, faces)
-    cID = @index(Global)
-
-    cell = cells[cID]
-    faces_range = cell.faces_range
-    phiP = F[cID]
-    phiMax = phiMin = phiP
- 
-    for fi ∈ faces_range
-        nID = cell_neighbours[fi]
-        phiN = F[nID]
-        phiMax = max(phiN, phiMax)
-        phiMin = min(phiN, phiMin)
-    end
-
-    # g0 = ∇F[cID]
-    grad0 = SVector{3}(x[cID] , y[cID] , z[cID])
-
-    cc = cell.centre
-    uno = one(eltype(F[cID]))
-    limiter = uno
-    limiterf = uno
-    for fi ∈ faces_range 
-        fID = cell_faces[fi]
-        nID = cell_neighbours[fi]
-        face = faces[fID]
-        cellN = cells[nID]
-        # nID = face.ownerCells[2]
-        # phiN = F[nID]
-        normal = face.normal
-        nsign = cell_nsign[fi]
-        na = nsign*normal
-
-        # r = fc - cc
-        # fc = face.centre
-
-        nc = cellN.centre
-        r = nc - cc
-        δϕ = r⋅grad0
-
-        # rn = (nc - cc) ⋅ na
-        # gradn = grad0⋅na
-        # δϕ = rn* gradn
-        if δϕ > 0
-            limiterf = min(limiterf, (phiMax - phiP)/δϕ)
-        elseif δϕ < 0
-            limiterf = min(limiterf, (phiMin - phiP)/δϕ)
-        else
-            limiterf = uno
-        end
-        # limiter = min(limiterf, limiter)
-        limiter = limiterf
-    end
-    grad0 *= limiter
-    x.values[cID] = grad0[1]
-    y.values[cID] = grad0[2]
-    z.values[cID] = grad0[3]
-end

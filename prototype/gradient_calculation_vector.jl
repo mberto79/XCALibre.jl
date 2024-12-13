@@ -11,16 +11,16 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 backend = CPU()
 
-phi = ScalarField(mesh)
-phif = FaceScalarField(mesh)
+psi = VectorField(mesh)
+psif = FaceVectorField(mesh)
 gradScheme = Orthogonal
-gradScheme = Midpoint
-∇phi = Grad{gradScheme}(phi)
+# gradScheme = Midpoint
+∇psi = Grad{gradScheme}(psi)
 
-phi = assign(
-    phi, 
-    Dirichlet(:inlet, 0.0),
-    Dirichlet(:outlet, 2.0),
+psi = assign(
+    psi, 
+    Dirichlet(:inlet, [0.0,0.0,0.0]),
+    Dirichlet(:outlet, [2.0,0.0,0.0]),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0),
     )
@@ -36,12 +36,13 @@ config = Configuration(
 
 for (cID, cell) ∈ enumerate(mesh.cells)
     cx = cell.centre[1]
-    phi.values[cID] = 2*cx
+    psi.x.values[cID] = 2*cx
 end
 
 
-grad!(∇phi, phif, phi, phi.BCs, 0.0, config) 
-# limit_gradient!(∇phi, phif, phi, config)
+grad!(∇psi, psif, psi, psi.BCs, 0.0, config) 
+grad_new!(∇psi, psif, psi, psi.BCs, 0.0, config) 
+# limit_gradient!(∇psi, psif, psi, config)
 
 meshData = VTKWriter2D(nothing, nothing)
-write_vtk("output", mesh, meshData, ("phi", phi), ("gradPhi", ∇phi.result.x))
+write_vtk("output", mesh, meshData, ("psi", psi), ("gradpsi", ∇psi.result.xx))

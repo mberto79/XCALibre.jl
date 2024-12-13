@@ -50,28 +50,55 @@ function interpolate!(phif::FaceScalarField, phi::ScalarField, config)
 
     # Extract faces from mesh
     mesh = phif.mesh
-    faces = mesh.faces
+    (; cells, faces) = mesh
 
     # Launch interpolate kernel
-    # backend = _get_backend(mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware
     kernel! = interpolate_Scalar!(backend, workgroup)
-    kernel!(fvals, vals, faces, ndrange = length(faces))
+    kernel!(fvals, vals, cells, faces, ndrange = length(faces))
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function interpolate_Scalar!(fvals, vals, faces)
+@kernel function interpolate_Scalar!(fvals, vals, cells, faces)
     # Define index for thread
     i = @index(Global)
 
     @inbounds begin
         # Deconstruct faces to use weight and ownerCells in calculations
-        (; weight, ownerCells) = faces[i]
+        face = faces[i]
+        (; weight, ownerCells, normal) = face
+        F = face.centre
 
         # Calculate initial values based on index queried from ownerCells
-        phi1 = vals[ownerCells[1]]
-        phi2 = vals[ownerCells[2]]
+        owner1 = ownerCells[1]
+        owner2 = ownerCells[2]
+        phi1 = vals[owner1]
+        phi2 = vals[owner2]
+
+        # Extract vectors
+        # cell1 = cells[owner1]
+        # cell2 = cells[owner2]
+        # P = cell1.centre
+        # N = cell2.centre 
+        # PN = N - P
+        # PF = F - P 
+
+        # option 1
+        # d = norm(PN)
+        # D = PN/d
+        # df = PF⋅D
+
+        # option 2
+        # d = PN⋅normal
+        # df = PF⋅normal
+        # weight = df/d
+
+        # option 3
+        # d = norm(PN)
+        # df = norm(PF)
+        # weight = df/d
+
 
         # Calculate one minus weight
         one_minus_weight = 1 - weight

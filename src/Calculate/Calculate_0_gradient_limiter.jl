@@ -2,7 +2,8 @@ export limit_gradient!
 
 ### GRADIENT LIMITER - EXPERIMENTAL
 
-function limit_gradient!(∇F, Ff, F::ScalarField, config)
+function limit_gradient!(∇F, F::ScalarField, config)
+# function limit_gradient!(∇F, Ff, F::ScalarField, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
@@ -12,7 +13,8 @@ function limit_gradient!(∇F, Ff, F::ScalarField, config)
     (; x, y, z) = ∇F.result
 
     kernel! = _limit_gradient!(backend, workgroup)
-    kernel!(x, y, z, Ff, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, ndrange=length(cells))
+    # kernel!(x, y, z, Ff, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, ndrange=length(cells))
+    kernel!(x, y, z, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, ndrange=length(cells))
     KernelAbstractions.synchronize(backend)
 end
 
@@ -40,7 +42,8 @@ function limit_gradient!(∇F, F::VectorField, config)
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel function _limit_gradient!(x, y, z, Ff, F, cells, cell_neighbours, cell_faces, cell_nsign, faces)
+# @kernel function _limit_gradient!(x, y, z, Ff, F, cells, cell_neighbours, cell_faces, cell_nsign, faces)
+@kernel function _limit_gradient!(x, y, z, F, cells, cell_neighbours, cell_faces, cell_nsign, faces)
     cID = @index(Global)
 
     cell = cells[cID]
@@ -49,10 +52,12 @@ end
     phiMax = phiMin = phiP
  
     for fi ∈ faces_range
-        # nID = cell_neighbours[fi]
-        # phiN = F[nID]
-        fID = cell_faces[fi]
-        phiN = Ff[fID]
+        nID = cell_neighbours[fi]
+        phiN = F[nID]
+        
+        # fID = cell_faces[fi]
+        # phiN = Ff[fID]
+
         phiMax = max(phiN, phiMax)
         phiMin = min(phiN, phiMin)
     end
@@ -78,13 +83,9 @@ end
         
         fc = face.centre
         nc = cellN.centre
-        # r = 
-        # δϕ = (nc - cc)⋅grad0
-        δϕ = (fc - cc)⋅grad0
+        δϕ = (nc - cc)⋅grad0
+        # δϕ = (fc - cc)⋅grad0
 
-        # rn = (nc - cc) ⋅ na
-        # gradn = grad0⋅na
-        # δϕ = rn* gradn
         if δϕ > 0
             limiterf = min(limiter, (phiMax - phiP)/δϕ)
         elseif δϕ < 0

@@ -1,7 +1,7 @@
 export Grad
 export grad!, source!
 export get_scheme
-export grad_new!
+export grad_old!
 
 # Define Gradient type and functionality
 
@@ -79,18 +79,7 @@ end
 
 Base.getindex(t::T{Grad{S,F,R,I,M}}, i::Integer) where {S,F,R<:AbstractTensorField,I,M} = begin
     tensor = t.parent.result
-    Tf = eltype(tensor.xx.values)
-    SMatrix{3,3,Tf,9}(
-        tensor.xx[i],
-        tensor.xy[i],
-        tensor.xz[i],
-        tensor.yx[i],
-        tensor.yy[i],
-        tensor.yz[i],
-        tensor.zx[i],
-        tensor.zy[i],
-        tensor.zz[i],
-        )
+    return tensor[i]'
 end
 
 # GRADIENT CALCULATION FUNCTIONS

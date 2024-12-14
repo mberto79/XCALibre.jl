@@ -40,9 +40,17 @@ for (cID, cell) ∈ enumerate(mesh.cells)
 end
 
 
+grad_old!(∇psi, psif, psi, psi.BCs, 0.0, config) 
 grad!(∇psi, psif, psi, psi.BCs, 0.0, config) 
-grad_new!(∇psi, psif, psi, psi.BCs, 0.0, config) 
 # limit_gradient!(∇psi, psif, psi, config)
 
 meshData = VTKWriter2D(nothing, nothing)
-write_vtk("output", mesh, meshData, ("psi", psi), ("gradpsi", ∇psi.result.xx))
+write_vtk("output", mesh, meshData, ("psi", psi), ("gradpsixx", ∇psi.result.xx), ("gradpsixy", ∇psi.result.xy))
+
+nu, ρ = 1.48e-5, 1.225
+Ux = 60.0
+νR = 10
+Tu = 0.025
+k_inlet = 3/2*(Tu*Ux)^2
+ω_inlet = k_inlet/(νR*nu)
+k_inlet/ω_inlet

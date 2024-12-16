@@ -1,6 +1,6 @@
 # using Plots
 using XCALibre
-using CUDA
+# using CUDA
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "flatplate_2D_highRe.unv"
@@ -103,7 +103,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
 
 hardware = set_hardware(backend=backend, workgroup=workgroup)
 

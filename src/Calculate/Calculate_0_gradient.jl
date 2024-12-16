@@ -240,7 +240,6 @@ function correct_interpolation!(grad, phif, phi, config)
     (; mesh) = phif
     (; faces, cells) = mesh
     nbfaces = length(mesh.boundary_cellsID)
-    phic = phi
     # backend = _get_backend(mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -253,13 +252,13 @@ function correct_interpolation!(grad, phif, phi, config)
 
     # Launch correct interpolation kernel
     kernel! = correct_interpolation_kernel!(backend, workgroup)
-    kernel!(faces, cells, nbfaces, phic, F, weight, grad, phif, ndrange = length(faces)-nbfaces)
+    kernel!(faces, cells, nbfaces, phi, F, weight, grad, phif, ndrange = length(faces)-nbfaces)
     KernelAbstractions.synchronize(backend)
 end
 
 # Correct interpolation kernel definition
 
-@kernel function correct_interpolation_kernel!(faces, cells, nbfaces, phic, F, weight, grad, phif::Field) where {Field}
+@kernel function correct_interpolation_kernel!(faces, cells, nbfaces, phi, F, weight, grad, phif::Field) where {Field}
     i = @index(Global)
     # Set i such that it does not index boundary faces
     i += nbfaces
@@ -277,8 +276,8 @@ end
     centre_cell2 = centre
 
     # Retrieve values between which to correct interpolation
-    phi1 = phic[owner1]
-    phi2 = phic[owner2]
+    phi1 = phi[owner1]
+    phi2 = phi[owner2]
 
     # Allocate SVectors to use for gradient interpolation
     # ∇phi1 = @inbounds SVector{3}(dx[owner1], dy[owner1], dz[owner1])
@@ -297,14 +296,16 @@ end
     ∇phi = weight*(∇phi1 + ∇phi2)
     Ri = rf - weight*(rP + rN)
 
-    ∇phi_normal = nothing 
+    # ∇phi_normal = nothing 
     if typeof(phif) <: AbstractScalarField
         ∇phi_normal = ∇phi⋅Ri   # vector/vector => returns scalar
+        phif[i] = phifᵖ + ∇phi_normal
     else
         ∇phi_normal = ∇phi*Ri  # tensor/vector => returns vector
+        phif[i] = phifᵖ + ∇phi_normal
     end
     
-    phif[i] = phifᵖ + ∇phi_normal  
+      
 end
 
 # Vector field function definition
@@ -326,6 +327,7 @@ end
 function grad!(grad::Grad{Midpoint,F,R,I,M}, psif, psi, BCs, time, config) where {F,R<:TensorField,I,M}
     interpolate_midpoint!(psif, psi, config)
     correct_boundaries!(psif, psi, BCs, time, config)
+    green_gauss!(grad, psif, config)
 
     # Loop to run correction and green-gauss required number of times over all dimensions
     for i ∈ 1:3

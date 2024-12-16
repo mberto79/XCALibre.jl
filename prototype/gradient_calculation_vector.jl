@@ -54,3 +54,15 @@ Tu = 0.025
 k_inlet = 3/2*(Tu*Ux)^2
 ω_inlet = k_inlet/(νR*nu)
 k_inlet/ω_inlet
+
+function test(psif::Field) where Field 
+    a = ifelse(
+        <:(Field, AbstractVectorField), 
+        "Yep, this works", 
+        "Nope, you passed soemthing else")
+    
+    println(a)
+    nothing
+end
+
+test(psif)

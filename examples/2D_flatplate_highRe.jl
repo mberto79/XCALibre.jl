@@ -1,6 +1,6 @@
 # using Plots
 using XCALibre
-# using CUDA
+using CUDA
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "flatplate_2D_highRe.unv"
@@ -9,8 +9,9 @@ mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 backend = CPU(); # activate_multithread(backend)
-mesh_dev = mesh
-# mesh_dev = adapt(CUDABackend(), mesh)
+mesh_dev = mesh; workgroup = 1024
+# backend = CUDABackend()
+# mesh_dev = adapt(backend, mesh); workgroup= 32
 
 velocity = [10, 0.0, 0.0]
 nu = 1e-5
@@ -64,10 +65,10 @@ model = Physics(
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind),
-    p = set_schemes(divergence=Upwind),
-    k = set_schemes(divergence=Upwind),
-    omega = set_schemes(divergence=Upwind)
+    U = set_schemes(divergence=Upwind, gradient=Midpoint),
+    p = set_schemes(divergence=Upwind, gradient=Midpoint),
+    k = set_schemes(divergence=Upwind, gradient=Midpoint),
+    omega = set_schemes(divergence=Upwind, gradient=Midpoint)
 )
 
 
@@ -104,8 +105,7 @@ solvers = (
 
 runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
 
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=backend, workgroup=1024)
+hardware = set_hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

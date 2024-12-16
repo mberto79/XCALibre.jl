@@ -143,9 +143,10 @@ end
 Base.getindex(v::AbstractVectorField, i::Integer) = @inbounds SVector{3}(v.x[i], v.y[i], v.z[i])
 Base.setindex!(v::AbstractVectorField, x::SVector{3, T}, i::Integer) where T= begin
     # length(x) == 3 || throw("Vectors must have 3 components")
-    v.x[i] = x[1]
-    v.y[i] = y[2]
-    v.z[i] = z[3]
+    (; x, y, z) = v
+    x[i] = x[1]
+    y[i] = y[2]
+    z[i] = z[3]
 end
 Base.length(v::AbstractVectorField) = length(v.x)
 Base.eachindex(v::AbstractVectorField) = eachindex(v.x)

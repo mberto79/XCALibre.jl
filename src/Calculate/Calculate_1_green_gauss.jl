@@ -2,20 +2,22 @@ export green_gauss!
 
 # Green gauss for FaceScalarField
 
-function green_gauss!(dx, dy, dz, phif, config)
+function green_gauss!(grad::Grad{S,F,R,I,M}, phif, config) where {S,F,R<:VectorField,I,M}
     (; hardware) = config
     (; backend, workgroup) = hardware
+
+    (; x, y, z) = grad.result
     
     # Launch result calculation kernel
     kernel! = _green_gauss!(backend, workgroup)
-    kernel!(dx, dy, dz, phif, ndrange=length(dx))
+    kernel!(x, y, z, phif, ndrange=length(x))
     KernelAbstractions.synchronize(backend)
 
     # number of boundary faces
     nbfaces = length(phif.mesh.boundary_cellsID)
     
     kernel! = boundary_faces_contribution!(backend, workgroup)
-    kernel!(dx, dy, dz, phif, ndrange=nbfaces)
+    kernel!(x, y, z, phif, ndrange=nbfaces)
     KernelAbstractions.synchronize(backend)
 end
 
@@ -75,7 +77,7 @@ end
 # Green gauss for FaceVectorField
 
 function green_gauss!(
-    grad::Grad{Orthogonal,F,R,I,M}, psif, config) where {F,R<:TensorField,I,M}
+    grad::Grad{S,F,R,I,M}, psif, config) where {S,F,R<:TensorField,I,M}
 
     (; hardware) = config
     (; backend, workgroup) = hardware

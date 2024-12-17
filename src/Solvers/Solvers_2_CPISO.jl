@@ -289,6 +289,7 @@ function CPISO(
             # Pressure calculations
             @. prev = p.values
             solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
+            explicit_relaxation!(p, prev, solvers.p.relax, config)
 
             # Gradient
             grad!(∇p, pf, p, p.BCs, time, config) 
@@ -299,15 +300,13 @@ function CPISO(
                 discretise!(p_eqn, p, config)       
                 apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
                 setReference!(p_eqn, pref, 1, config)
-                nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
+                nonorthogonal_face_correction(p_eqn, ∇p, rhorDf, config)
                 update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
                 solve_system!(p_eqn, solvers.p, p, nothing, config)
                 explicit_relaxation!(p, prev, solvers.p.relax, config)
                 grad!(∇p, pf, p, p.BCs, time, config) 
                 limit_gradient && limit_gradient!(∇p, p, config)
             end
-
-            explicit_relaxation!(p, prev, solvers.p.relax, config)
 
             if ~isempty(solvers.p.limit)
                 pmin = solvers.p.limit[1]; pmax = solvers.p.limit[2]

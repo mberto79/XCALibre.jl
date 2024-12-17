@@ -109,12 +109,6 @@ end
 function grad!(grad::Grad{Orthogonal,F,R,I,M}, psif, psi, BCs, time, config) where {F,R<:TensorField,I,M}
     interpolate!(psif, psi, config)
     correct_boundaries!(psif, psi, BCs, time, config)
-
-    # Launch green-gauss for all tensor field dimensions
-    # green_gauss!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x, config)
-    # green_gauss!(grad.result.xy, grad.result.yy, grad.result.zy, psif.y, config)
-    # green_gauss!(grad.result.xz, grad.result.yz, grad.result.zz, psif.z, config)
-
     green_gauss!(grad, psif, config)
 end
 
@@ -126,7 +120,6 @@ function interpolate_midpoint!(phif::FaceScalarField, phi::ScalarField, config)
     # Extract required variables for function
     (; mesh) = phi
     (; faces) = mesh
-    # backend = _get_backend(mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
@@ -153,15 +146,12 @@ end
     end
 end
 
-# Interpolate function for vector field definition (NEEDS KERNEL IMPLEMENTATION!!!!!!)
-
 # Scalar field calculation definition
 
 function interpolate_midpoint!(phif::FaceVectorField, phi::VectorField, config)
     # Extract required variables for function
     (; mesh) = phi
     (; faces) = mesh
-    # backend = _get_backend(mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
@@ -184,7 +174,6 @@ end
     @inbounds begin
         # Retrieve face, weight and ownerCells for loop iteration
         face = faces[fID]
-        # weight = face.weight
         ownerCells = face.ownerCells
         c1 = ownerCells[1]; c2 = ownerCells[2]
         
@@ -200,39 +189,6 @@ end
     end
 end
 
-# interpolate_midpoint!(psif::FaceVectorField, psi::VectorField, config) = begin
-#     # Extract individual value vectors from vector field
-#     (; x, y, z) = psif
-
-#     # Retrieve mesh and faces
-#     mesh = psi.mesh
-#     faces = mesh.faces
-    
-#     # Set initial weight
-#     weight = 0.5
-    
-#     @inbounds begin
-#         # Loop over all faces to calculate interpolation
-#         for fID ∈ eachindex(faces)
-#             # Retrieve face, weight and ownerCells for loop iteration
-#             face = faces[fID]
-#             weight = face.weight
-#             ownerCells = face.ownerCells
-#             c1 = ownerCells[1]; c2 = ownerCells[2]
-            
-#             # Set values to interpolate between
-#             x1 = psi.x[c1]; x2 = psi.x[c2]
-#             y1 = psi.y[c1]; y2 = psi.y[c2]
-#             z1 = psi.z[c1]; z2 = psi.z[c2]
-
-#             # Interpolate calculation
-#             x[fID] = weight*(x1 + x2)
-#             y[fID] = weight*(y1 + y2)
-#             z[fID] = weight*(z1 + z2)
-#         end
-#     end
-# end
-
 # Correct interpolation function definition
 
 function correct_interpolation!(grad, phif, phi, config)
@@ -240,7 +196,6 @@ function correct_interpolation!(grad, phif, phi, config)
     (; mesh) = phif
     (; faces, cells) = mesh
     nbfaces = length(mesh.boundary_cellsID)
-    # backend = _get_backend(mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
@@ -260,12 +215,11 @@ end
 
 @kernel function correct_interpolation_kernel!(faces, cells, nbfaces, phi, F, weight, grad, phif::Field) where {Field}
     i = @index(Global)
-    # Set i such that it does not index boundary faces
-    i += nbfaces
+    i += nbfaces # Set i such that it does not index boundary faces
 
     # Retrieve fields from work item face
     (; ownerCells, centre) = faces[i]
-    centre_faces = centre
+    centre_face = centre
     owner1 = ownerCells[1]
     owner2 = ownerCells[2]
 
@@ -279,15 +233,11 @@ end
     phi1 = phi[owner1]
     phi2 = phi[owner2]
 
-    # Allocate SVectors to use for gradient interpolation
-    # ∇phi1 = @inbounds SVector{3}(dx[owner1], dy[owner1], dz[owner1])
-    # ∇phi2 = @inbounds SVector{3}(dx[owner2], dy[owner2], dz[owner2])
-
     ∇phi1 = grad[owner1]
     ∇phi2 = grad[owner2]
 
     # Define variables as per interpolation mathematics convention
-    rf = centre_faces
+    rf = centre_face
     rP = centre_cell1 
     rN = centre_cell2
 
@@ -296,55 +246,22 @@ end
     ∇phi = weight*(∇phi1 + ∇phi2)
     Ri = rf - weight*(rP + rN)
 
-    # ∇phi_normal = nothing 
-    if typeof(phif) <: AbstractScalarField
-        ∇phi_normal = ∇phi⋅Ri   # vector/vector => returns scalar
-        phif[i] = phifᵖ + ∇phi_normal
+    if Field <: AbstractScalarField
+        phif[i] = phifᵖ + ∇phi⋅Ri   # vector/vector => returns scalar
     else
-        ∇phi_normal = ∇phi*Ri  # tensor/vector => returns vector
-        phif[i] = phifᵖ + ∇phi_normal
+        phif[i] = phifᵖ + ∇phi*Ri  # tensor/vector => returns vector
     end
-    
       
 end
 
-# Vector field function definition
-
-function grad!(grad::Grad{Midpoint,F,R,I,M}, phif, phi, BCs, time, config) where {F,R<:VectorField,I,M}
+function grad!(grad::Grad{Midpoint,F,R,I,M}, phif, phi, BCs, time, config) where {F,R,I,M}
     interpolate_midpoint!(phif, phi, config)
     correct_boundaries!(phif, phi, BCs, time, config)
     green_gauss!(grad, phif, config)
 
     # Loop to run correction and green-gauss required number of times over all dimensions
-    for i ∈ 1:3
+    for i ∈ 1:4
         correct_interpolation!(grad, phif, phi, config)
         green_gauss!(grad, phif, config)
     end
 end
-
-# Tensor field function definition
-
-function grad!(grad::Grad{Midpoint,F,R,I,M}, psif, psi, BCs, time, config) where {F,R<:TensorField,I,M}
-    interpolate_midpoint!(psif, psi, config)
-    correct_boundaries!(psif, psi, BCs, time, config)
-    green_gauss!(grad, psif, config)
-
-    # Loop to run correction and green-gauss required number of times over all dimensions
-    for i ∈ 1:3
-        correct_interpolation!(grad, psif, psi, config)
-        green_gauss!(grad, psif, config)
-    # correct_interpolation!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x, psi.x, config)
-    # green_gauss!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x, config)
-    
-    # correct_interpolation!(grad.result.xy, grad.result.yy, grad.result.zy, psif.y, psi.y, config)
-    # green_gauss!(grad.result.xy, grad.result.yy, grad.result.zy, psif.y, config)
-    
-    # correct_interpolation!(grad.result.xz, grad.result.yz, grad.result.zz, psif.z, psi.z, config)
-    # green_gauss!(grad.result.xz, grad.result.yz, grad.result.zz, psif.z, config)
-end
-    # limit_gradient!(grad.result.xx, grad.result.yx, grad.result.zx, psi.x, config)
-    # limit_gradient!(grad.result.xy, grad.result.yy, grad.result.zy, psi.y, config)
-    # limit_gradient!(grad.result.xz, grad.result.yz, grad.result.zz, psi.z, config)
-end
-
-

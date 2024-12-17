@@ -9,6 +9,7 @@ grid = "cylinder_d10mm_5mm.unv"
 # grid = "cylinder_d10mm_10-7.5-2mm.unv"
 mesh_file = joinpath(grids_dir, grid)
 
+backend=CPU(); workgroup=1024; activate_multithread(backend)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 # mesh_dev = adapt(CUDABackend(), mesh)
@@ -71,8 +72,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
-        rtol = 1e-4,
-        atol = 1e-2
+        rtol = 1e-1,
     ),
     p = set_solver(
         model.momentum.p;
@@ -80,7 +80,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 1e-4
+        rtol = 1e-2
     ),
     h = set_solver(
         model.energy.h;
@@ -88,21 +88,19 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
-        rtol = 1e-4
+        rtol = 1e-1
     )
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(divergence=Upwind, gradient=Midpoint),
-    h = set_schemes(divergence=Upwind, gradient=Midpoint)
+    U = set_schemes(divergence=LUST, gradient=Midpoint),
+    p = set_schemes(divergence=LUST, gradient=Midpoint),
+    h = set_schemes(divergence=LUST, gradient=Midpoint)
 )
 
-runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
 
-hardware = set_hardware(backend=CPU(), workgroup=1024)
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=ROCBackend(), workgroup=32)
+hardware = set_hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

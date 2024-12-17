@@ -1,5 +1,5 @@
 using XCALibre
-using CUDA # Run this if using NVIDIA GPU
+# using CUDA # Run this if using NVIDIA GPU
 # using AMDGPU # Run this if using AMD GPU
 
 # using ThreadedSparseCSR 
@@ -11,8 +11,10 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
+backend= CPU(); workgroup = 1024
 mesh_dev = mesh
-mesh_dev = adapt(CUDABackend(), mesh)
+# backend= CUDABackend(); workgroup = 32
+# mesh_dev = adapt(CUDABackend(), mesh)
 
 # Inlet conditions
 
@@ -73,9 +75,7 @@ schemes = (
 # runtime = set_runtime(iterations=20, write_interval=10, time_step=1) # for proto
 runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
 
-hardware = set_hardware(backend=CPU(), workgroup=1024)
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=ROCBackend(), workgroup=32)
+hardware = set_hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
@@ -85,7 +85,7 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config)
+residuals = run!(model, config, ncorrectors=2)
 
 xrange = 1:runtime.iterations
 plot(; xlims=(0,runtime.iterations), ylims=(1e-7,0.2))

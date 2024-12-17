@@ -86,8 +86,6 @@ end
 
 ## Orthogonal (uncorrected) gradient calculation
 
-# Vector field function definition
-
 function grad!(grad::Grad{Orthogonal,F,R,I,M}, phif, phi, BCs, time, config) where {F,R<:VectorField,I,M}
     interpolate!(phif, phi, config)
     correct_boundaries!(phif, phi, BCs, time, config)
@@ -95,16 +93,6 @@ function grad!(grad::Grad{Orthogonal,F,R,I,M}, phif, phi, BCs, time, config) whe
 end
 
 # Tensor field function definition
-
-function grad_old!(grad::Grad{Orthogonal,F,R,I,M}, psif, psi, BCs, time, config) where {F,R<:TensorField,I,M}
-    interpolate!(psif, psi, config)
-    correct_boundaries!(psif, psi, BCs, time, config)
-
-    # Launch green-gauss for all tensor field dimensions
-    green_gauss!(grad.result.xx, grad.result.yx, grad.result.zx, psif.x, config)
-    green_gauss!(grad.result.xy, grad.result.yy, grad.result.zy, psif.y, config)
-    green_gauss!(grad.result.xz, grad.result.yz, grad.result.zz, psif.z, config)
-end
 
 function grad!(grad::Grad{Orthogonal,F,R,I,M}, psif, psi, BCs, time, config) where {F,R<:TensorField,I,M}
     interpolate!(psif, psi, config)

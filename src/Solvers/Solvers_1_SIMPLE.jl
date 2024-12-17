@@ -199,7 +199,7 @@ function SIMPLE(
 
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
-            @. prev = p.values
+            # @. prev = p.values
             discretise!(p_eqn, p, config)       
             apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
             setReference!(p_eqn, pref, 1, config)
@@ -210,6 +210,8 @@ function SIMPLE(
             grad!(∇p, pf, p, p.BCs, time, config) 
             limit_gradient && limit_gradient!(∇p, p, config)
         end
+
+        # explicit_relaxation!(p, prev, solvers.p.relax, config)
 
         # Velocity and boundaries correction
 

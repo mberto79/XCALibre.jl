@@ -113,4 +113,4 @@ initialise!(model.momentum.p, pressure)
 initialise!(model.energy.T, temp)
 initialise!(model.fluid.rho, pressure/(R*temp))
 
-residuals = run!(model, config)
+residuals = run!(model, config, ncorrectors=1)

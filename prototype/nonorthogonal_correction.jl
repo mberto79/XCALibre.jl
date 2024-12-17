@@ -6,7 +6,7 @@ using Statistics
 # quad and trig 40 and 100
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "trig.unv"
-# grid = "trig40.unv"
+grid = "trig40.unv"
 # grid = "trig100.unv"
 # grid = "quad.unv"
 # grid = "quad40.unv"
@@ -48,7 +48,7 @@ solvers= (;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), 
         convergence = 1e-7,
-        relax       = 0.3,
+        relax       = 0.8,
         rtol = 0.01
     )
 )
@@ -69,7 +69,7 @@ prev = zeros(length(phi.values))
 initialise!(phi, 1)
 
 itmax = 300
-ncorrectors = 3
+ncorrectors = 1
 for iteration ∈ 1:itmax
 
     prev .= phi.values
@@ -78,13 +78,13 @@ for iteration ∈ 1:itmax
     update_preconditioner!(eqn.preconditioner, phi.mesh, config)
     solve_system!(eqn, config.solvers.phi, phi, nothing, config)
     explicit_relaxation!(phi, prev, solvers.phi.relax, config)
-    residual = mean(sqrt.((_b(eqn) - _A(eqn)*phi.values).^2))
+    # residual = mean(sqrt.((_b(eqn) - _A(eqn)*phi.values).^2))
     
     grad!(∇phi, phif, phi, phi.BCs, 0.0, config)
 
     # non-orthogonal correction
     for i ∈ 1:ncorrectors
-        prev .= phi.values
+        # prev .= phi.values
         discretise!(eqn, phi, config)   
         apply_boundary_conditions!(eqn, phi.BCs, nothing, time, config)
         XCALibre.Solvers.nonorthogonal_face_correction(eqn, ∇phi, gammaf, config)
@@ -94,6 +94,9 @@ for iteration ∈ 1:itmax
         grad!(∇phi, phif, phi, phi.BCs, 0.0, config)
         # limit_gradient && limit_gradient!(∇p, p, config)
     end
+
+    # explicit_relaxation!(phi, prev, solvers.phi.relax, config)
+    residual = mean(sqrt.((_b(eqn) - _A(eqn)*phi.values).^2))
     
     println("Iteration $iteration, residual: $residual")
     if residual < 1e-4

@@ -199,6 +199,7 @@ function SIMPLE(
 
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
+            @. prev = p.values
             discretise!(p_eqn, p, config)       
             apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
             setReference!(p_eqn, pref, 1, config)
@@ -296,26 +297,46 @@ end
     (; ownerCells, area, normal, e, delta) = face
     cID1 = ownerCells[1]
     cID2 = ownerCells[2]
-    # cell1 = cells[cID1]
-    # cell2 = cells[cID2]
+    cell1 = cells[cID1]
+    cell2 = cells[cID2]
+
+    xf = face.centre
+    xC = cell1.centre
+    xN = cell2.centre
+    
+    # Calculate weights using normal functions
+    # weight = norm(xf - xC)/norm(xN - xC)
+    # weight = norm(xf - xN)/norm(xN - xC)
+
+    dPN = cell2.centre - cell1.centre
 
     (; values) = grad.field
-    w, df = weight(cells, faces, fID)
-    gradi = w*grad[cID1] + (1 - w)*grad[cID2]
+    weight, df = correction_weight(cells, faces, fID)
+    # weight = face.weight
+    gradi = weight*grad[cID1] + (1 - weight)*grad[cID2]
     gradf = gradi + ((values[cID2] - values[cID1])/delta - (gradi⋅e))*e
-
+    # gradf = gradi
 
     Sf = area*normal
-    Ef = ((Sf⋅Sf)/(Sf⋅e))*e
-    T_hat = Sf - Ef
+    # Ef = ((Sf⋅Sf)/(Sf⋅e))*e # original
+    Ef = dPN*(norm(normal)^2/(dPN⋅normal))*area
+    T_hat = Sf - Ef # original
     faceCorrection = flux[fID]*gradf⋅T_hat
 
-    Atomix.@atomic b[cID1] -= faceCorrection#*cell1.volume
-    Atomix.@atomic b[cID2] += faceCorrection#*cell2.volume # should this be -ve?
+    Atomix.@atomic b[cID1] += faceCorrection #*cell1.volume
+    Atomix.@atomic b[cID2] -= faceCorrection #*cell2.volume # should this be -ve?
+
+    # Atomix.@atomic b[cID1] -= faceCorrection #*cell1.volume
+    # Atomix.@atomic b[cID2] += faceCorrection #*cell2.volume # should this be -ve?
         
 end
 
-function weight(cells, faces, fi)
+# +- => good match
+# -+ => looks worse at edges for gradient
+# -- => looks bad on top-right corner for gradient
+# ++ => looks bad on left grad and oscillations on the right
+
+function correction_weight(cells, faces, fi)
     (; ownerCells, centre) = faces[fi]
     cID1 = ownerCells[1]
     cID2 = ownerCells[2]

@@ -19,7 +19,8 @@ using XCALibre.Discretise
 using XCALibre.Solve
 
 include("Calculate_0_gradient.jl")
-include("Calculate_0_gradient_limiter.jl")
+include("Calculate_0_gradient_cell_limiter.jl")
+include("Calculate_0_gradient_face_limiter.jl")
 include("Calculate_0_divergence.jl")
 include("Calculate_1_green_gauss.jl")
 include("Calculate_2_interpolation.jl")

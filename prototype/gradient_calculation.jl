@@ -3,7 +3,7 @@ using XCALibre
 
 # quad and trig 40 and 100
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "trig40.unv"
+grid = "trig.unv"
 # grid = "quad100.unv"
 
 mesh_file = joinpath(grids_dir, grid)
@@ -14,7 +14,7 @@ backend = CPU()
 phi = ScalarField(mesh)
 phif = FaceScalarField(mesh)
 gradScheme = Orthogonal
-gradScheme = Midpoint
+# gradScheme = Midpoint
 ∇phi = Grad{gradScheme}(phi)
 
 phi = assign(
@@ -41,7 +41,23 @@ end
 
 
 grad!(∇phi, phif, phi, phi.BCs, 0.0, config) 
-# limit_gradient!(∇phi, phif, phi, config)
+limiter = limit_gradient!(FaceBased(), ∇phi, phi, config)
+
+# phi.values .= limiter
+
+∇phi.result.x.values .*= limiter
+∇phi.result.y.values .*= limiter
+∇phi.result.z.values .*= limiter
 
 meshData = VTKWriter2D(nothing, nothing)
-write_vtk("output", mesh, meshData, ("phi", phi), ("gradPhi", ∇phi.result.x))
+write_vtk("output", mesh, meshData, ("phi", phi), ("gradPhi", ∇phi.result))
+
+f(type::Nothing, a, b) = a + b
+
+f(nothing,2,3)
+
+using KernelAbstractions
+
+s = fill!(allocate(CPU(), Float64, (20,)), one(Float64))
+
+rk = (1.0/1 - 1.0)

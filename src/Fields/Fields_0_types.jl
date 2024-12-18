@@ -82,6 +82,7 @@ Base.setindex!(s::AbstractScalarField, x, i::I) where I<:Integer = begin
 end
 Base.length(s::AbstractScalarField) = length(s.values)
 Base.eachindex(s::AbstractScalarField) = eachindex(s.values)
+Base.eltype(s::AbstractScalarField) = eltype(s.values)
 
 # VECTOR FIELD IMPLEMENTATION
 
@@ -150,6 +151,8 @@ Base.setindex!(v::AbstractVectorField, vec::SVector{3, T}, i::Integer) where T= 
 end
 Base.length(v::AbstractVectorField) = length(v.x)
 Base.eachindex(v::AbstractVectorField) = eachindex(v.x)
+Base.eltype(v::AbstractVectorField) = eltype(v.x)
+
 
 # TENSORFIELD IMPLEMENTATION
 

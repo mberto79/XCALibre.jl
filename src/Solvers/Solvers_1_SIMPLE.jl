@@ -27,7 +27,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 function simple!(
     model, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
+    limit_gradient=nothing, pref=nothing, ncorrectors=0, inner_loops=0
     )
 
     residuals = setup_incompressible_solvers(
@@ -44,7 +44,7 @@ end
 # Setup for all incompressible algorithms
 function setup_incompressible_solvers(
     solver_variant, model, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
+    limit_gradient=nothing, pref=nothing, ncorrectors=0, inner_loops=0
     ) 
 
     (; solvers, schemes, runtime, hardware) = config
@@ -105,7 +105,7 @@ end # end function
 
 function SIMPLE(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
+    limit_gradient=nothing, pref=nothing, ncorrectors=0, inner_loops=0
     )
     
     # Extract model variables and configuration
@@ -157,7 +157,8 @@ function SIMPLE(
     correct_boundaries!(Uf, U, U.BCs, time, config)
     flux!(mdotf, Uf, config)
     grad!(∇p, pf, p, p.BCs, time, config)
-    limit_gradient && limit_gradient!(∇p, p, config)
+    limit_gradient!(limit_gradient, ∇p, p, config)
+
 
     update_nueff!(nueff, nu, model.turbulence, config)
 
@@ -195,7 +196,7 @@ function SIMPLE(
         explicit_relaxation!(p, prev, solvers.p.relax, config)
         
         grad!(∇p, pf, p, p.BCs, time, config) 
-        limit_gradient && limit_gradient!(∇p, p, config)
+        limit_gradient!(limit_gradient, ∇p, p, config)
 
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
@@ -208,7 +209,7 @@ function SIMPLE(
             solve_system!(p_eqn, solvers.p, p, nothing, config)
             explicit_relaxation!(p, prev, solvers.p.relax, config)
             grad!(∇p, pf, p, p.BCs, time, config) 
-            limit_gradient && limit_gradient!(∇p, p, config)
+            limit_gradient!(limit_gradient, ∇p, p, config)
         end
 
         # explicit_relaxation!(p, prev, solvers.p.relax, config)

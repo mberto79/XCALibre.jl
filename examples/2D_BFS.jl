@@ -31,16 +31,17 @@ model = Physics(
     # Dirichlet(:wall, [0.0, 0.0, 0.0]),
     # Dirichlet(:top, [0.0, 0.0, 0.0]),
     Wall(:wall, [0.0, 0.0, 0.0]),
-    Wall(:top, [0.0, 0.0, 0.0])
-    # Symmetry(:top)
+    # Wall(:top, [0.0, 0.0, 0.0])
+    # Neumann(:top, 0.0),
+    Symmetry(:top)
 )
 
 @assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
     Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
-    # Symmetry(:top, 0.0)
+    # Neumann(:top, 0.0)
+    Symmetry(:top, 0.0)
 )
 
 schemes = (

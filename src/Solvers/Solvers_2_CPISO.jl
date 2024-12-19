@@ -2,7 +2,7 @@ export cpiso!
 
 """
     cpiso!(model, config; 
-        limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0)
+        limit_gradient=nothing, pref=nothing, ncorrectors=0, inner_loops=0)
 
 Compressible and transient variant of the PISO algorithm with a sensible enthalpy transport equation for the energy. 
 
@@ -24,7 +24,7 @@ Compressible and transient variant of the PISO algorithm with a sensible enthalp
 """
 function cpiso!(
     model, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=2) 
+    limit_gradient=nothing, pref=nothing, ncorrectors=0, inner_loops=2) 
 
     residuals = setup_unsteady_compressible_solvers(
         CPISO, model, config; 
@@ -40,7 +40,7 @@ end
 # Setup for all compressible algorithms
 function setup_unsteady_compressible_solvers(
     solver_variant, model, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=2
+    limit_gradient=nothing, pref=nothing, ncorrectors=0, inner_loops=2
     ) 
 
     (; solvers, schemes, runtime, hardware) = config
@@ -138,7 +138,7 @@ end # end function
 
 function CPISO(
     model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=2)
+    limit_gradient=nothing, pref=nothing, ncorrectors=0, inner_loops=2)
     
     # Extract model variables and configuration
     (; U, p) = model.momentum

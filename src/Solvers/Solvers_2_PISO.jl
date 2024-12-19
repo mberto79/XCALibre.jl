@@ -2,7 +2,7 @@ export piso!
 
 """
     cpiso!(model, config; 
-        limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0)
+        limit_gradient=nothing, pref=nothing, ncorrectors=0, inner_loops=0)
 
 Incompressible and transient variant of the SIMPLE algorithm to solving coupled momentum and mass conservation equations. 
 
@@ -24,7 +24,7 @@ Incompressible and transient variant of the SIMPLE algorithm to solving coupled 
 """
 function piso!(
     model, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=2)
+    limit_gradient=nothing, pref=nothing, ncorrectors=0, inner_loops=2)
 
     residuals = setup_incompressible_solvers(
         PISO, model, config; 
@@ -39,7 +39,7 @@ end
 
 function PISO(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=2
+    limit_gradient=nothing, pref=nothing, ncorrectors=0, inner_loops=2
     )
     
     # Extract model variables and configuration

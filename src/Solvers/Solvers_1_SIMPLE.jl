@@ -2,7 +2,7 @@ export simple!
 
 """
     simple!(model_in, config; 
-        limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0)
+        limit_gradient=nothing, pref=nothing, ncorrectors=0, inner_loops=0)
 
 Incompressible variant of the SIMPLE algorithm to solving coupled momentum and mass conservation equations.
 

@@ -3,7 +3,7 @@ export csimple!
 """
     csimple!(
         model_in, config; 
-        limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
+        limit_gradient=nothing, pref=nothing, ncorrectors=0, inner_loops=0
     )
 
 Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport equation for the energy. 
@@ -27,7 +27,7 @@ Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport 
 
 """
 function csimple!(model, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
+    limit_gradient=nothing, pref=nothing, ncorrectors=0, inner_loops=0
     ) 
 
     residuals = setup_compressible_solvers(
@@ -43,7 +43,7 @@ end
 # Setup for all compressible algorithms
 function setup_compressible_solvers(
     solver_variant, model, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
+    limit_gradient=nothing, pref=nothing, ncorrectors=0, inner_loops=0
     ) 
 
     (; solvers, schemes, runtime, hardware) = config
@@ -122,7 +122,7 @@ end # end function
 
 function CSIMPLE(
     model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config ; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
+    limit_gradient=nothing, pref=nothing, ncorrectors=0, inner_loops=0
     )
     
     # Extract model variables and configuration

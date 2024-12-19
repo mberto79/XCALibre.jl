@@ -77,7 +77,7 @@ function turbulence!(
     ) where {T,F<:AbstractCompressible,M,Tu<:Laminar,E,D,BI}
     (; U, Uf, gradU) = S
     grad!(gradU, Uf, U, U.BCs, time, config)
-    limit_gradient && limit_gradient!(gradU, U, config)
+    limit_gradient!(limit_gradient, gradU, U, config)
     nothing
 end
 

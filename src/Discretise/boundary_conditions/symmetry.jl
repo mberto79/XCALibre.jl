@@ -87,3 +87,7 @@ end
     ap = term.sign[1]*(term.flux[fID])
     0.0, 0.0
 end
+
+@define_boundary Symmetry Si begin
+    0.0, 0.0
+end

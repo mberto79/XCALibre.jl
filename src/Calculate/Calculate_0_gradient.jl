@@ -114,7 +114,7 @@ function interpolate_midpoint!(phif::FaceScalarField, phi::ScalarField, config)
     # Launch interpolate midpoint kernel for scalar field
     kernel! = interpolate_midpoint_scalar!(backend, workgroup)
     kernel!(faces, phif, phi, ndrange = length(faces))
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 # Interpolate kernel for scalar field definition
@@ -146,7 +146,7 @@ function interpolate_midpoint!(phif::FaceVectorField, phi::VectorField, config)
     # Launch interpolate midpoint kernel for scalar field
     kernel! = interpolate_midpoint_vector!(backend, workgroup)
     kernel!(faces, phif, phi, ndrange = length(faces))
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function interpolate_midpoint_vector!(
@@ -196,7 +196,7 @@ function correct_interpolation!(grad, phif, phi, config)
     # Launch correct interpolation kernel
     kernel! = correct_interpolation_kernel!(backend, workgroup)
     kernel!(faces, cells, nbfaces, phi, F, weight, grad, phif, ndrange = length(faces)-nbfaces)
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 # Correct interpolation kernel definition
@@ -248,7 +248,7 @@ function grad!(grad::Grad{Midpoint,F,R,I,M}, phif, phi, BCs, time, config) where
     green_gauss!(grad, phif, config)
 
     # Loop to run correction and green-gauss required number of times over all dimensions
-    for i ∈ 1:4
+    for i ∈ 1:2
         correct_interpolation!(grad, phif, phi, config)
         green_gauss!(grad, phif, config)
     end

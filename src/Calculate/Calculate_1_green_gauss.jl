@@ -11,14 +11,14 @@ function green_gauss!(grad::Grad{S,F,R,I,M}, phif, config) where {S,F,R<:VectorF
     # Launch result calculation kernel
     kernel! = _green_gauss!(backend, workgroup)
     kernel!(x, y, z, phif, ndrange=length(x))
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 
     # number of boundary faces
     nbfaces = length(phif.mesh.boundary_cellsID)
     
     kernel! = boundary_faces_contribution!(backend, workgroup)
     kernel!(x, y, z, phif, ndrange=nbfaces)
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 # Green Gauss kernel definition
@@ -87,14 +87,14 @@ function green_gauss!(
     # Launch result calculation kernel
     kernel! = _green_gauss_vector!(backend, workgroup)
     kernel!(xx, xy, xz, yx, yy, yz, zx, zy, zz, psif, ndrange=length(xx))
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 
     # number of boundary faces
     nbfaces = length(psif.mesh.boundary_cellsID)
     
     kernel! = boundary_faces_contribution_vector!(backend, workgroup)
     kernel!(xx, xy, xz, yx, yy, yz, zx, zy, zz, psif, ndrange=nbfaces)
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 # Green Gauss kernel definition

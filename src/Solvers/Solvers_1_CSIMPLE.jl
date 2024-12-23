@@ -279,7 +279,7 @@ function CSIMPLE(
         residual!(R_e, energyModel.energy_eqn, model.energy.h, iteration, nothing, config)
         
         grad!(∇p, pf, p, p.BCs, time, config) 
-        limit_gradient && limit_gradient!(∇p, p, config)
+        limit_gradient!(limit_gradient, ∇p, p, config)
 
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
@@ -292,7 +292,7 @@ function CSIMPLE(
             explicit_relaxation!(p, prev, solvers.p.relax, config)
             
             grad!(∇p, pf, p, p.BCs, time, config) 
-            limit_gradient && limit_gradient!(∇p, p, config)
+            limit_gradient!(limit_gradient, ∇p, p, config)
         end
 
         if typeof(model.fluid) <: Compressible

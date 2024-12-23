@@ -215,7 +215,7 @@ function CPISO(
     @. rhof.values = Psif.values * pf.values
     flux!(mdotf, Uf, rhof, config)
 
-    limit_gradient && limit_gradient!(∇p, p, config)
+    limit_gradient!(limit_gradient, ∇p, p, config)
 
     update_nueff!(nueff, nu, model.turbulence, config)
     @. mueff.values = rhof.values*nueff.values
@@ -293,7 +293,7 @@ function CPISO(
 
             # Gradient
             grad!(∇p, pf, p, p.BCs, time, config) 
-            limit_gradient && limit_gradient!(∇p, p, config)
+            limit_gradient!(limit_gradient, ∇p, p, config)
 
             # non-orthogonal correction
             for i ∈ 1:ncorrectors
@@ -305,7 +305,7 @@ function CPISO(
                 solve_system!(p_eqn, solvers.p, p, nothing, config)
                 explicit_relaxation!(p, prev, solvers.p.relax, config)
                 grad!(∇p, pf, p, p.BCs, time, config) 
-                limit_gradient && limit_gradient!(∇p, p, config)
+                limit_gradient!(limit_gradient, ∇p, p, config)
             end
 
             if ~isempty(solvers.p.limit)

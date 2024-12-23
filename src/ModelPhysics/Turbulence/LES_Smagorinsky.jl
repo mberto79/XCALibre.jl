@@ -104,7 +104,7 @@ function turbulence!(
     (; Δ, magS) = les
 
     grad!(gradU, Uf, U, U.BCs, time, config) # update gradient (internal structure of S)
-    limit_gradient && limit_gradient!(gradU, U, config)
+    limit_gradient!(limit_gradient, gradU, U, config)
     magnitude!(magS, S, config)
     @. magS.values *= sqrt(2) # should fuse into definition of magnitude function!
 

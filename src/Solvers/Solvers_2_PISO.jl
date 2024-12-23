@@ -91,7 +91,7 @@ function PISO(
     correct_boundaries!(Uf, U, U.BCs, time, config)
     flux!(mdotf, Uf, config)
     grad!(∇p, pf, p, p.BCs, time, config)
-    limit_gradient && limit_gradient!(∇p, p, config)
+    limit_gradient!(limit_gradient, ∇p, p, config)
 
     update_nueff!(nueff, nu, model.turbulence, config)
 
@@ -133,7 +133,7 @@ function PISO(
             end
 
             grad!(∇p, pf, p, p.BCs, time, config) 
-            limit_gradient && limit_gradient!(∇p, p, config)
+            limit_gradient!(limit_gradient, ∇p, p, config)
 
             # nonorthogonal correction (experimental)
             for i ∈ 1:ncorrectors
@@ -150,7 +150,7 @@ function PISO(
                     explicit_relaxation!(p, prev, solvers.p.relax, config)
                 end
                 grad!(∇p, pf, p, p.BCs, time, config) 
-                limit_gradient && limit_gradient!(∇p, p, config)
+                limit_gradient!(limit_gradient, ∇p, p, config)
             end
 
             # old approach - keep for now!

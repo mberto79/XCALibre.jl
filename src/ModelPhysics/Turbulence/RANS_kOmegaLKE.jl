@@ -301,7 +301,7 @@ function turbulence!(
 
 
     grad!(gradU, Uf, U, U.BCs, time, config) # must update before calculating S
-    limit_gradient && limit_gradient!(gradU, U, config)
+    limit_gradient!(limit_gradient, gradU, U, config)
     magnitude2!(Pk, S, config, scale_factor=2.0)
 
     # Update kl fluxes and terms

@@ -1,5 +1,5 @@
 using XCALibre
-using CUDA # uncomment to run on GPU
+# using CUDA # uncomment to run on GPU
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "cylinder_d10mm_5mm.unv"
@@ -8,7 +8,7 @@ mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 mesh_dev = mesh
-mesh_dev = adapt(CUDABackend(), mesh) # uncomment to run on GPU
+# mesh_dev = adapt(CUDABackend(), mesh) # uncomment to run on GPU
 
 # Inlet conditions
 velocity = [0.5, 0.0, 0.0]
@@ -68,11 +68,11 @@ schemes = (
 
 
 runtime = set_runtime(
-    # iterations=1000, write_interval=50, time_step=0.005) # uncomment to save files
-    iterations=1000, write_interval=-1, time_step=0.005) # used to run only
+    iterations=1000, write_interval=50, time_step=0.005) # uncomment to save files
+    # iterations=1000, write_interval=-1, time_step=0.005) # used to run only
 
 hardware = set_hardware(backend=CPU(), workgroup=1024)
-hardware = set_hardware(backend=CUDABackend(), workgroup=32) # uncomment to run on GPU
+# hardware = set_hardware(backend=CUDABackend(), workgroup=32) # uncomment to run on GPU
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

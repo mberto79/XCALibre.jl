@@ -92,7 +92,7 @@ for iteration ∈ 1:itmax
         solve_system!(eqn, config.solvers.phi, phi, nothing, config)
         explicit_relaxation!(phi, prev, solvers.phi.relax, config)
         grad!(∇phi, phif, phi, phi.BCs, 0.0, config)
-        # limit_gradient && limit_gradient!(∇p, p, config)
+        # limit_gradient!(limit_gradient, ∇p, p, config)
     end
 
     # explicit_relaxation!(phi, prev, solvers.phi.relax, config)

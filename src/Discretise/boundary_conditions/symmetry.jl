@@ -40,8 +40,10 @@ end
     (; area, delta, normal) = face 
     phi = term.phi 
     J = term.flux[fID]
-    flux = J*area/(2*delta)
+    flux = 2.0*J*area/delta
+    # flux = J*area/delta
     ap = term.sign[1]*(-flux)
+
     vc = phi[cellID]
     vn = (vc⋅normal)*normal
     vp = vc - vn
@@ -54,37 +56,38 @@ end
     values = get_values(phi, component)
     J = term.flux[fID]
     (; area, delta) = face 
-    flux = -J*area/(delta)
+    flux = -J*area/delta
     ap = term.sign*(flux)
     ap, ap*values[cellID] # original
     # 0.0, 0.0 # go for this!
-    # 0.0, -flux*delta*bc.value # draft implementation to test!
 end
 
 # To-do: Add scalar variants of Wall BC in next version (currently using Neumann)
 
 @define_boundary Symmetry Divergence{Linear} begin
-    # values = get_values(term.phi, component)
-    # flux = term.flux[fID]
-    # ap = term.sign*(flux) 
-    # ap, -ap*values[cellID]
-    0.0, 0.0 # original
+    flux = term.flux[fID]
+    ap = term.sign*(flux) 
+    ap, 0.0 # original
+end
+
+@define_boundary Symmetry Divergence{Linear} VectorField begin
+
+    flux = term.flux[fID]
+    ap = term.sign*(flux) 
+    ap, 0.0 # original
 end
 
 @define_boundary Symmetry Divergence{Upwind} begin
-    # flux = term.flux[fID]
-    # ap = term.sign*(flux) 
-    # ap, 0.0
-    0.0, 0.0 # original
+    flux = term.flux[fID]
+    ap = term.sign*(flux) 
+    ap, 0.0 # original
 end
 
 @define_boundary Symmetry Divergence{BoundedUpwind} begin
-    ap = term.sign[1]*(term.flux[fID])
     0.0, 0.0
 end
 
 @define_boundary Symmetry Divergence{LUST} begin
-    ap = term.sign[1]*(term.flux[fID])
     0.0, 0.0
 end
 

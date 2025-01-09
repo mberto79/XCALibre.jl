@@ -29,19 +29,20 @@ model = Physics(
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Symmetry(:wall, [0.0, 0.0, 0.0]),
-    Symmetry(:top, [0.0, 0.0, 0.0]),
+    Symmetry(:wall),
+    Symmetry(:top)
 )
 
 @assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
+    Symmetry(:wall),
+    Symmetry(:top)
 )
 
 schemes = (
-    U = set_schemes(divergence = Linear),
+    # U = set_schemes(divergence = Linear),
+    U = set_schemes(divergence = Upwind),
     p = set_schemes()
 )
 
@@ -52,22 +53,20 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
-        rtol = 1e-4,
-        atol = 1e-10
+        rtol = 1e-2,
     ),
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
-        rtol = 1e-4,
-        atol = 1e-10
+        relax       = 0.2,
+        rtol = 1e-3,
     )
 )
 
 runtime = set_runtime(
-    iterations=1000, time_step=1, write_interval=1000)
+    iterations=2000, time_step=1, write_interval=2000)
 
 hardware = set_hardware(backend=CPU(), workgroup=1024)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)

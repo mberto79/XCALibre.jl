@@ -13,7 +13,7 @@ mesh_dev = mesh
 # mesh_dev = adapt(CUDABackend(), mesh)  # Uncomment this if using GPU
 
 # Inlet conditions
-Umag = 1.5
+Umag = 0.5
 velocity = [Umag, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
@@ -29,20 +29,20 @@ model = Physics(
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Symmetry(:wall),
+    Wall(:wall, [0.0, 0.0, 0.0]),
     Symmetry(:top)
 )
 
 @assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
-    Symmetry(:wall),
+    Neumann(:wall, 0.0),
     Symmetry(:top)
 )
 
 schemes = (
-    # U = set_schemes(divergence = Linear),
-    U = set_schemes(divergence = Upwind),
+    U = set_schemes(divergence = Linear),
+    # U = set_schemes(divergence = Upwind),
     p = set_schemes()
 )
 
@@ -52,7 +52,7 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.8,
         rtol = 1e-2,
     ),
     p = set_solver(

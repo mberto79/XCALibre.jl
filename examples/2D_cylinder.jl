@@ -35,16 +35,16 @@ model = Physics(
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Wall(:cylinder, noSlip),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+    # Neumann.([:top, :bottom], [0.0, 0.0])...,
+    Symmetry.([:top, :bottom])...,
 )
 
 @assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
     Neumann(:cylinder, 0.0),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+    # Neumann.([:top, :bottom], [0.0, 0.0])...,
+    Symmetry.([:top, :bottom])...,
 )
 
 solvers = (
@@ -68,7 +68,7 @@ solvers = (
 
 grad = Midpoint # Midpoint # Orthogonal
 schemes = (
-    U = set_schemes(divergence=Upwind, gradient=grad),
+    U = set_schemes(divergence=Linear, gradient=grad),
     p = set_schemes(gradient=grad)
 )
 
@@ -85,30 +85,10 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config, ncorrectors=2)
+residuals = run!(model, config, ncorrectors=1, limit_gradient=nothing)
 
 xrange = 1:runtime.iterations
 plot(; xlims=(0,runtime.iterations), ylims=(1e-7,0.2))
 plot!(xrange, residuals.Ux, yscale=:log10, label="Ux")
 plot!(xrange, residuals.Uy, yscale=:log10, label="Uy")
 plot!(xrange, residuals.p, yscale=:log10, label="p")
-
-
-using CUDA
-using LinearAlgebra
-using SparseArrays
-using SparseMatricesCSR
-
-n = 5
-A = sprand(n,n, 0.5)
-
-i, j, v = findnz(A)
-
-Acsc = sparse(i, j, v, n ,n)
-Acsr = sparsecsr(i, j, v, n ,n)
-
-Agpu = CUSPARSE.CuSparseMatrixCSR(Acsc)
-
-i, j, v = findnz(A) |> cu
-
-Agpu = CUSPARSE.CuSparseMatrixCSR(i, j, v, (1000, 1000))

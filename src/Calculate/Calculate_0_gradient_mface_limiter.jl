@@ -62,11 +62,12 @@ function set_limiter(
     ) where {S,F,R<:VectorField,I,M}
     gradP = ∇F[cID]
     fval = gradP⋅d
+    d2 = d⋅d
 
     if fval > δmax
-        ∇F.result[cID] = gradP + d*(δmax - fval)/(d⋅d)
+        ∇F.result[cID] = gradP + d*(δmax - fval)/(d2)
     elseif fval < δmin
-        ∇F.result[cID] = gradP + d*(δmin - fval)/(d⋅d)
+        ∇F.result[cID] = gradP + d*(δmin - fval)/(d2)
     end
 end  
 
@@ -82,23 +83,24 @@ function set_limiter(
     fvalx = gradPx⋅d
     fvaly = gradPy⋅d
     fvalz = gradPz⋅d
+    d2 = d⋅d
 
     if fvalx > δmax[1]
-        gradPx = gradPx + d*(δmax[1] - fvalx)/(d⋅d)
+        gradPx = gradPx + d*(δmax[1] - fvalx)/(d2)
     elseif fvalx < δmin[1]
-        gradPx = gradPx + d*(δmin[1] - fvalx)/(d⋅d)
+        gradPx = gradPx + d*(δmin[1] - fvalx)/(d2)
     end
 
     if fvaly > δmax[2]
-        gradPy = gradPy + d*(δmax[2] - fvaly)/(d⋅d)
+        gradPy = gradPy + d*(δmax[2] - fvaly)/(d2)
     elseif fvaly < δmin[2]
-        gradPy = gradPy + d*(δmin[2] - fvaly)/(d⋅d)
+        gradPy = gradPy + d*(δmin[2] - fvaly)/(d2)
     end
 
     if fvalz > δmax[3]
-        gradPz = gradPz + d*(δmax[3] - fvalz)/(d⋅d)
+        gradPz = gradPz + d*(δmax[3] - fvalz)/(d2)
     elseif fvalz < δmin[3]
-        gradPz = gradPz + d*(δmin[3] - fvalz)/(d⋅d)
+        gradPz = gradPz + d*(δmin[3] - fvalz)/(d2)
     end
 
     ∇F.result[cID] = SMatrix{3,3}(

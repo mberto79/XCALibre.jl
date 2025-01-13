@@ -45,9 +45,11 @@ model = Physics(
 )
 
 schemes = (
-    U = set_schemes(divergence = Linear),
+    U = set_schemes(divergence = Linear, limiter=MFaceBased(model.domain)),
     # U = set_schemes(divergence = Upwind),
-    p = set_schemes()
+    # p = set_schemes()
+    # p = set_schemes(limiter=FaceBased(model.domain))
+    p = set_schemes(limiter=MFaceBased(model.domain))
 )
 
 

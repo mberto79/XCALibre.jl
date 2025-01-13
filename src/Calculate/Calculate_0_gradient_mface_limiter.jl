@@ -2,6 +2,7 @@ export limit_gradient!
 export MFaceBased
 
 struct MFaceBased end
+MFaceBased(mesh::AbstractMesh) = MFaceBased()
 
 ### GRADIENT LIMITER - EXPERIMENTAL
 

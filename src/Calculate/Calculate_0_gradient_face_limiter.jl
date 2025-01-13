@@ -1,7 +1,17 @@
 export limit_gradient!
 export FaceBased
 
-struct FaceBased end
+struct FaceBased{T}
+    limiter::T
+end
+Adapt.@adapt_structure FaceBased
+
+FaceBased(mesh::AbstractMesh) = begin
+    backend = _get_backend(mesh)
+    F = _get_float(mesh)
+    limiter = fill!(allocate(backend, F, length(mesh.cells)), one(F))
+    FaceBased(limiter)
+end
 
 ### GRADIENT LIMITER - EXPERIMENTAL
 
@@ -11,7 +21,8 @@ function limit_gradient!(method::FaceBased, ∇F, F::ScalarField, config)
 
     (; cells, faces, boundary_cellsID,) = F.mesh
 
-    limiter = fill!(allocate(backend, eltype(F), length(cells)), one(eltype(F)))
+    # limiter = fill!(allocate(backend, eltype(F), length(cells)), one(eltype(F)))
+    limiter = method.limiter
 
     nbfaces = length(boundary_cellsID)
     internal_faces = length(faces) - nbfaces
@@ -20,33 +31,21 @@ function limit_gradient!(method::FaceBased, ∇F, F::ScalarField, config)
     kernel!(method, limiter, ∇F, F, cells, faces, nbfaces, ndrange=internal_faces)
     KernelAbstractions.synchronize(backend)
 
-    # ∇F.result .*= limiter
-    limiter
+    
+    kernel! = _update_gradient!(backend, workgroup)
+    kernel!(∇F, limiter, ndrange=length(F))
+
+    KernelAbstractions.synchronize(backend)
+    nothing
 end
 
-# function limit_gradient!(method::FaceBased, ∇F, F::VectorField, config)
-#     (; hardware) = config
-#     (; backend, workgroup) = hardware
+@kernel function _update_gradient!(grad, limiter)
+    cID = @index(Global)
 
-#     mesh = F.mesh
-#     (; cells, cell_neighbours, cell_faces, cell_nsign, faces) = mesh
-
-#     (; xx, yx, zx) = ∇F.result
-#     (; xy, yy, zy) = ∇F.result
-#     (; xz, yz, zz) = ∇F.result
-
-#     kernel! = _limit_gradient!(backend, workgroup)
-#     kernel!(method, xx, yx, zx, F.x, cells, cell_neighbours, cell_faces, cell_nsign, faces, ndrange=length(cells))
-#     KernelAbstractions.synchronize(backend)
-
-#     kernel! = _limit_gradient!(backend, workgroup)
-#     kernel!(method, xy, yy, zy, F.y, cells, cell_neighbours, cell_faces, cell_nsign, faces, ndrange=length(cells))
-#     KernelAbstractions.synchronize(backend)
-
-#     kernel! = _limit_gradient!(backend, workgroup)
-#     kernel!(method, xz, yz, zz, F.z, cells, cell_neighbours, cell_faces, cell_nsign, faces, ndrange=length(cells))
-#     KernelAbstractions.synchronize(backend)
-# end
+    @inbounds begin
+        grad.result[cID] *= limiter[cID]
+    end
+end
 
 @kernel function _limit_gradient!(::FaceBased, limiter, ∇F, F, cells, faces, nbfaces)
     i = @index(Global)

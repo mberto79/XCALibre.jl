@@ -157,7 +157,7 @@ function SIMPLE(
     correct_boundaries!(Uf, U, U.BCs, time, config)
     flux!(mdotf, Uf, config)
     grad!(∇p, pf, p, p.BCs, time, config)
-    limit_gradient!(limit_gradient, ∇p, p, config)
+    limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
 
     update_nueff!(nueff, nu, model.turbulence, config)
@@ -196,7 +196,7 @@ function SIMPLE(
         explicit_relaxation!(p, prev, solvers.p.relax, config)
         
         grad!(∇p, pf, p, p.BCs, time, config) 
-        limit_gradient!(limit_gradient, ∇p, p, config)
+        limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
@@ -209,7 +209,7 @@ function SIMPLE(
             solve_system!(p_eqn, solvers.p, p, nothing, config)
             explicit_relaxation!(p, prev, solvers.p.relax, config)
             grad!(∇p, pf, p, p.BCs, time, config) 
-            limit_gradient!(limit_gradient, ∇p, p, config)
+            limit_gradient!(schemes.p.limiter, ∇p, p, config)
         end
 
         # explicit_relaxation!(p, prev, solvers.p.relax, config)

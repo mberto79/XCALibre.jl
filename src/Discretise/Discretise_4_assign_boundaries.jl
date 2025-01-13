@@ -193,13 +193,15 @@ set_schemes(;
     time=SteadyState,
     divergence=Linear, 
     laplacian=Linear, 
-    gradient=Orthogonal) = begin
+    gradient=Orthogonal,
+    limiter=nothing) = begin
     
     # Returns NamedTuple definition for scheme 
     (
         time=time,
         divergence=divergence,
         laplacian=laplacian,
-        gradient=gradient
+        gradient=gradient,
+        limiter=limiter
     )
 end

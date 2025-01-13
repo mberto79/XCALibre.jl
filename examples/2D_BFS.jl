@@ -1,5 +1,5 @@
 using XCALibre
-# using CUDA
+using CUDA
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
@@ -8,10 +8,10 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-backend = CPU(); activate_multithread(backend)
-mesh_dev = mesh
-# backend = CUDABackend()
-# mesh_dev = adapt(backend, mesh)
+# backend = CPU(); activate_multithread(backend)
+# mesh_dev = mesh
+backend = CUDABackend()
+mesh_dev = adapt(backend, mesh)
 
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
@@ -47,9 +47,9 @@ model = Physics(
 schemes = (
     U = set_schemes(divergence = Linear, limiter=MFaceBased(model.domain)),
     # U = set_schemes(divergence = Upwind),
-    # p = set_schemes()
+    p = set_schemes()
     # p = set_schemes(limiter=FaceBased(model.domain))
-    p = set_schemes(limiter=MFaceBased(model.domain))
+    # p = set_schemes(limiter=MFaceBased(model.domain))
 )
 
 

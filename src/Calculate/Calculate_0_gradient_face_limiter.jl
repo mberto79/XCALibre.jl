@@ -23,6 +23,7 @@ function limit_gradient!(method::FaceBased, ∇F, F::ScalarField, config)
 
     # limiter = fill!(allocate(backend, eltype(F), length(cells)), one(eltype(F)))
     limiter = method.limiter
+    limiter .= one(eltype(limiter))
 
     nbfaces = length(boundary_cellsID)
     internal_faces = length(faces) - nbfaces
@@ -64,6 +65,8 @@ end
     c2 = cell2.centre
     d1 = (cf - c1)
     d2 = (cf - c2)
+    # d1 = (c1 - cf)
+    # d2 = (c2 - cf)
 
 
     F1 = F[owner1]
@@ -79,16 +82,25 @@ end
     F1_ext = d1⋅grad1
     F2_ext = d2⋅grad2
 
-    set_limiter(limiter, owner1, maxF - F1, minF - F1, F1_ext)
-    set_limiter(limiter, owner2, maxF - F2, minF - F2, F2_ext)
+    set_limiter(limiter, owner1, maxF, minF, F1_ext, F1, F2)
+    set_limiter(limiter, owner2, maxF, minF, F2_ext, F2, F1)
 end
 
-function set_limiter(limiter, cID, δmax, δmin, δF)
-    # if δF > 0 && δmax > 0 && δF > δmax
-    if δF > δmax
+function set_limiter(limiter, cID, Fmax, Fmin, δF, F, FN)
+    δmax = Fmax - F
+    δmin = Fmin - F
+    # if δF > δmax
+    #     limiter[cID] = min(limiter[cID], δmax/δF)
+    # elseif δF < δmin
+    #     limiter[cID] = min(limiter[cID], δmin/δF)
+    # end
+    # if abs(F - FN) < abs(0.01*F)
+    if abs(δF) < 0.01*abs(F)
+        limiter[cID] = one(eltype(limiter))
+    elseif δF > δmax
         limiter[cID] = min(limiter[cID], δmax/δF)
-    # elseif δF < 0 && δmin < 0 && δF < δmin
     elseif δF < δmin
         limiter[cID] = min(limiter[cID], δmin/δF)
     end
+    # println("$(limiter[cID]), $δF, $δmax, $δmin, $F, $FN")
 end  

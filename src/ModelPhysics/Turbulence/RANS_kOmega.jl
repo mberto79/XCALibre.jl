@@ -168,7 +168,7 @@ function turbulence!(
     # TO-DO: Need to bring gradient calculation inside turbulence models!!!!!
 
     grad!(gradU, Uf, U, U.BCs, time, config)
-    limit_gradient!(limit_gradient, gradU, U, config)
+    limit_gradient!(config.schemes.U.limiter, gradU, U, config)
     magnitude2!(Pk, S, config, scale_factor=2.0) # multiplied by 2 (def of Sij)
     # constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
     

@@ -1,5 +1,5 @@
 using XCALibre
-# using CUDA # Run this if using NVIDIA GPU
+using CUDA # Run this if using NVIDIA GPU
 # using AMDGPU # Run this if using AMD GPU
 
 # using ThreadedSparseCSR 
@@ -11,10 +11,10 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-backend= CPU(); workgroup = 1024
-mesh_dev = mesh
-# backend= CUDABackend(); workgroup = 32
-# mesh_dev = adapt(CUDABackend(), mesh)
+# backend= CPU(); workgroup = 1024
+# mesh_dev = mesh
+backend= CUDABackend(); workgroup = 32
+mesh_dev = adapt(CUDABackend(), mesh)
 
 # Inlet conditions
 

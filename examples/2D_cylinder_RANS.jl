@@ -76,7 +76,7 @@ model = Physics(
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind, gradient=Midpoint),
+    U = set_schemes(divergence=Upwind, gradient=Midpoint, limiter=MFaceBased(model.domain)),
     p = set_schemes(gradient=Midpoint),
     k = set_schemes(divergence=Upwind, gradient=Midpoint),
     omega = set_schemes(divergence=Upwind, gradient=Midpoint)
@@ -136,7 +136,7 @@ initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
-residuals = run!(model, config, ncorrectors=2); #, pref=0.0)
+residuals = run!(model, config, ncorrectors=1); #, pref=0.0)
 
 Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)
 Fp = pressure_force(:cylinder, model.momentum.p, 1.25)

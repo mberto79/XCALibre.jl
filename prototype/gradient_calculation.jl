@@ -18,7 +18,6 @@ gradScheme = Orthogonal
 # gradScheme = Midpoint
 ∇phi = Grad{gradScheme}(phi)
 
-
 phi = assign(
     phi, 
     Dirichlet(:inlet, 0.0),
@@ -44,7 +43,7 @@ end
 
 grad!(∇phi, phif, phi, phi.BCs, 0.0, config)
 limit_gradient!(FaceBased(mesh), ∇phi, phi, config)
-limit_gradient!(MFaceBased(mesh), ∇phi, phi, config)
+# limit_gradient!(MFaceBased(mesh), ∇phi, phi, config)
 
 meshData = VTKWriter2D(nothing, nothing)
 write_vtk("output", mesh, meshData, ("phi", phi), ("gradPhi", ∇phi.result.x))

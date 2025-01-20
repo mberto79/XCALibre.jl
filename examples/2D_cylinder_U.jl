@@ -68,8 +68,8 @@ schemes = (
 
 
 runtime = set_runtime(
-    iterations=1000, write_interval=50, time_step=0.005) # uncomment to save files
-    # iterations=1000, write_interval=-1, time_step=0.005) # used to run only
+    # iterations=1000, write_interval=50, time_step=0.005) # uncomment to save files
+    iterations=1000, write_interval=-1, time_step=0.005) # used to run only
 
 # hardware = set_hardware(backend=CPU(), workgroup=cld(length(mesh.cells), Threads.nthreads()))
 hardware = set_hardware(backend=CUDABackend(), workgroup=32) # uncomment to run on GPU

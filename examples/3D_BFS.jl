@@ -15,7 +15,8 @@ mesh_file = joinpath(grids_dir, grid)
 # mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_4mm.unv"
 # mesh_file = "bfs_unv_tet_5mm.unv"
 
-mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
+# mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
+mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
 # workgroup = cld(length(mesh.cells), Threads.nthreads())
@@ -62,7 +63,7 @@ solvers = (
         model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
-        smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
+        # smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
         convergence = 1e-7,
         relax       = 0.8,
         rtol = 0.1
@@ -71,7 +72,7 @@ solvers = (
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), #NormDiagonal(),
-        smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
+        # smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
         convergence = 1e-7,
         relax       = 0.2,
         rtol = 0.1,

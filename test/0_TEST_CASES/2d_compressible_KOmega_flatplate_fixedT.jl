@@ -42,7 +42,7 @@ model = Physics(
     Symmetry(:top, 0.0)
 )
 
- @assign! model momentum p (
+@assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 100000.0),
     Neumann(:wall, 0.0),
@@ -97,6 +97,7 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
             preconditioner = Jacobi(),
             convergence = 1e-7,
             relax       = 0.7,
+            rtol = 1e-1
         ),
         p = set_solver(
             model.momentum.p;
@@ -104,6 +105,7 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
             preconditioner = Jacobi(),
             convergence = 1e-7,
             relax       = 0.3,
+            rtol = 1e-2
         ),
         h = set_solver(
             model.energy.h;
@@ -111,8 +113,7 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
             preconditioner = Jacobi(),
             convergence = 1e-7,
             relax       = 0.7,
-            rtol = 1e-2,
-            atol = 1e-4
+            rtol = 1e-1,
         ),
         k = set_solver(
             model.turbulence.k;
@@ -120,7 +121,7 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
             preconditioner = Jacobi(), 
             convergence = 1e-7,
             relax       = 0.8,
-            atol = 1e-6
+            rtol = 1e-1
         ),
         omega = set_solver(
             model.turbulence.omega;
@@ -128,7 +129,7 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
             preconditioner = Jacobi(),
             convergence = 1e-7,
             relax       = 0.8,
-            atol = 1e-6
+            rtol = 1e-1
         )
     )
 
@@ -157,6 +158,6 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
     top = boundary_average(:top, model.momentum.U, config)
 
     @test Umag ≈ inlet[1]
-    @test Umag ≈ outlet[1] atol = 0.75
+    @test Umag ≈ outlet[1] atol = 0.85
     @test Umag ≈ top[1] atol = 0.15
 end

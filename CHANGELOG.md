@@ -6,13 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version [v0.3.4] - 2025-xx-xx
 
 ### Added
-* 
+* Implementation of `Symmetry` boundary condition for `ScalarField` types
+* New macro to help define boundary conditions that will dispatch to `Scalar` or `VectorField` types
+* Added `eltype` method for both `Scalar` and `VectorField` types to simplify the development of new kernels where type information is needed
+* New gradient limiters `FaceBased` and `MFaceBased` for limiting gradients based on cell faces, where `MFaceBased` is a multidimensional version, and it is generally recommended over `FaceBased`.
 
 ### Fixed
 * Calling `JacobiSmoother` now works on the GPU
+* Implemented `SparseXCSR` as wrapper for `SparseMatrixCSR` on the CPU to resolve display/print errors
 
 ### Changed
-* 
+* The calculation of gradients has been improved by merging computations into a single kernel, improving performance of gradient kernels by around 10-30%, most noticable for vector gradients
+* Improved calculation of non-orthogonal calculation (more tests are still needed), although tests have proven to be stable
 
 ### Breaking
 * No breaking changes

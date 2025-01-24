@@ -2,7 +2,7 @@ export simple!
 
 """
     simple!(model_in, config; 
-        limit_gradient=nothing, pref=nothing, ncorrectors=0, inner_loops=0)
+        pref=nothing, ncorrectors=0, inner_loops=0)
 
 Incompressible variant of the SIMPLE algorithm to solving coupled momentum and mass conservation equations.
 
@@ -10,7 +10,6 @@ Incompressible variant of the SIMPLE algorithm to solving coupled momentum and m
 
 - `model` reference to a `Physics` model defined by the user.
 - `config` Configuration structure defined by the user with solvers, schemes, runtime and hardware structures configuration details.
-- `limit_gradient` flag use to activate gradient limiters in the solver (default = `false`)
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
@@ -27,12 +26,11 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 function simple!(
     model, config; 
-    limit_gradient=nothing, pref=nothing, ncorrectors=0, inner_loops=0
+    pref=nothing, ncorrectors=0, inner_loops=0
     )
 
     residuals = setup_incompressible_solvers(
         SIMPLE, model, config; 
-        limit_gradient=limit_gradient, 
         pref=pref, 
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops
@@ -44,7 +42,7 @@ end
 # Setup for all incompressible algorithms
 function setup_incompressible_solvers(
     solver_variant, model, config; 
-    limit_gradient=nothing, pref=nothing, ncorrectors=0, inner_loops=0
+    pref=nothing, ncorrectors=0, inner_loops=0
     ) 
 
     (; solvers, schemes, runtime, hardware) = config
@@ -95,7 +93,6 @@ function setup_incompressible_solvers(
 
     residuals  = solver_variant(
         model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-        limit_gradient=limit_gradient, 
         pref=pref, 
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops)
@@ -105,7 +102,7 @@ end # end function
 
 function SIMPLE(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    limit_gradient=nothing, pref=nothing, ncorrectors=0, inner_loops=0
+    pref=nothing, ncorrectors=0, inner_loops=0
     )
     
     # Extract model variables and configuration
@@ -232,7 +229,7 @@ function SIMPLE(
         # correct_mass_flux2(mdotf, p_eqn, p, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
-        turbulence!(turbulenceModel, model, S, prev, time, limit_gradient, config) 
+        turbulence!(turbulenceModel, model, S, prev, time, config) 
         update_nueff!(nueff, nu, model.turbulence, config)
         
         convergence = 1e-7

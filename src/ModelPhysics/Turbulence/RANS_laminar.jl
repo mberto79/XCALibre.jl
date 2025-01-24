@@ -67,13 +67,13 @@ Run turbulence model transport equations.
               hardware structures set.
 
 """
-function turbulence!(rans::LaminarModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, limit_gradient,config
+function turbulence!(rans::LaminarModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time,config
     ) where {T,F,M,Tu<:Laminar,E,D,BI}
     nothing
 end
 
 function turbulence!(
-    rans::LaminarModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, limit_gradient, config
+    rans::LaminarModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
     ) where {T,F<:AbstractCompressible,M,Tu<:Laminar,E,D,BI}
     (; U, Uf, gradU) = S
     grad!(gradU, Uf, U, U.BCs, time, config)

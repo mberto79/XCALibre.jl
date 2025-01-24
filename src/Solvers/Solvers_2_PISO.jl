@@ -2,7 +2,7 @@ export piso!
 
 """
     cpiso!(model, config; 
-        limit_gradient=nothing, pref=nothing, ncorrectors=0, inner_loops=0)
+        pref=nothing, ncorrectors=0, inner_loops=0)
 
 Incompressible and transient variant of the SIMPLE algorithm to solving coupled momentum and mass conservation equations. 
 
@@ -10,7 +10,6 @@ Incompressible and transient variant of the SIMPLE algorithm to solving coupled 
 
 - `model` reference to a `Physics` model defined by the user.
 - `config` Configuration structure defined by the user with solvers, schemes, runtime and hardware structures configuration details.
-- `limit_gradient` flag use to activate gradient limiters in the solver (default = `false`)
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
@@ -24,11 +23,10 @@ Incompressible and transient variant of the SIMPLE algorithm to solving coupled 
 """
 function piso!(
     model, config; 
-    limit_gradient=nothing, pref=nothing, ncorrectors=0, inner_loops=2)
+    pref=nothing, ncorrectors=0, inner_loops=2)
 
     residuals = setup_incompressible_solvers(
         PISO, model, config; 
-        limit_gradient=limit_gradient, 
         pref=pref,
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops
@@ -39,7 +37,7 @@ end
 
 function PISO(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    limit_gradient=nothing, pref=nothing, ncorrectors=0, inner_loops=2
+    pref=nothing, ncorrectors=0, inner_loops=2
     )
     
     # Extract model variables and configuration
@@ -91,7 +89,7 @@ function PISO(
     correct_boundaries!(Uf, U, U.BCs, time, config)
     flux!(mdotf, Uf, config)
     grad!(∇p, pf, p, p.BCs, time, config)
-    limit_gradient!(limit_gradient, ∇p, p, config)
+    limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
     update_nueff!(nueff, nu, model.turbulence, config)
 
@@ -133,7 +131,7 @@ function PISO(
             end
 
             grad!(∇p, pf, p, p.BCs, time, config) 
-            limit_gradient!(limit_gradient, ∇p, p, config)
+            limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
             # nonorthogonal correction (experimental)
             for i ∈ 1:ncorrectors
@@ -150,7 +148,7 @@ function PISO(
                     explicit_relaxation!(p, prev, solvers.p.relax, config)
                 end
                 grad!(∇p, pf, p, p.BCs, time, config) 
-                limit_gradient!(limit_gradient, ∇p, p, config)
+                limit_gradient!(schemes.p.limiter, ∇p, p, config)
             end
 
             # old approach - keep for now!
@@ -170,7 +168,7 @@ function PISO(
         
         # correct_mass_flux(mdotf, p, rDf, config) # new approach
 
-    turbulence!(turbulenceModel, model, S, prev, time, limit_gradient, config) 
+    turbulence!(turbulenceModel, model, S, prev, time, config) 
     update_nueff!(nueff, nu, model.turbulence, config)
 
     residual!(R_ux, U_eqn, U.x, iteration, xdir, config)

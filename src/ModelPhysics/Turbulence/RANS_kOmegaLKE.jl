@@ -274,7 +274,7 @@ Run turbulence model transport equations.
 
 """
 function turbulence!(
-    rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S, prev, time, limit_gradient, config
+    rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S, prev, time, config
     ) where {T,F,M,Turb<:KOmegaLKE,E,D,BI}
     mesh = model.domain
     (; momentum, turbulence) = model
@@ -301,7 +301,7 @@ function turbulence!(
 
 
     grad!(gradU, Uf, U, U.BCs, time, config) # must update before calculating S
-    limit_gradient!(limit_gradient, gradU, U, config)
+    limit_gradient!(config.schemes.U.limiter, gradU, U, config)
     magnitude2!(Pk, S, config, scale_factor=2.0)
 
     # Update kl fluxes and terms

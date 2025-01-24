@@ -65,9 +65,6 @@ end
     c2 = cell2.centre
     d1 = (cf - c1)
     d2 = (cf - c2)
-    # d1 = (c1 - cf)
-    # d2 = (c2 - cf)
-
 
     F1 = F[owner1]
     F2 = F[owner2]
@@ -89,18 +86,9 @@ end
 function set_limiter(limiter, cID, Fmax, Fmin, δF, F, FN)
     δmax = Fmax - F
     δmin = Fmin - F
-    # if δF > δmax
-    #     limiter[cID] = min(limiter[cID], δmax/δF)
-    # elseif δF < δmin
-    #     limiter[cID] = min(limiter[cID], δmin/δF)
-    # end
-    # if abs(F - FN) < abs(0.01*F)
-    if abs(δF) < 0.01*abs(F)
-        limiter[cID] = one(eltype(limiter))
-    elseif δF > δmax
+    if δF > δmax
         limiter[cID] = min(limiter[cID], δmax/δF)
     elseif δF < δmin
         limiter[cID] = min(limiter[cID], δmin/δF)
     end
-    # println("$(limiter[cID]), $δF, $δmax, $δmin, $F, $FN")
 end  

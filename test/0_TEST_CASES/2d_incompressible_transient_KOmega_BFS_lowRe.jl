@@ -104,7 +104,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=1000, write_interval=1000, time_step=0.01)
+    iterations=500, write_interval=500, time_step=0.01)
 
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=1024)

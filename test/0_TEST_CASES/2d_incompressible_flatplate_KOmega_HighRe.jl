@@ -108,7 +108,7 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
         )
     )
 
-    local runtime = set_runtime(iterations=200, write_interval=200, time_step=1)
+    local runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
 
     local hardware = set_hardware(backend=CPU(), workgroup=1024)
     # hardware = set_hardware(backend=CUDABackend(), workgroup=32)

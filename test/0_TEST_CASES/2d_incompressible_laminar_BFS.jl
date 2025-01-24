@@ -54,7 +54,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax = 0.8,
-        rtol = 1e-2,
+        rtol = 1e-1,
     ),
     p = set_solver(
         model.momentum.p;
@@ -63,7 +63,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax = 0.2,
-        rtol = 1e-3,
+        rtol = 1e-2,
     )
 )
 

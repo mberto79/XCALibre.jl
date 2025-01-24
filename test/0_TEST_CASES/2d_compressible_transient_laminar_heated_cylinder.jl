@@ -4,7 +4,7 @@ using XCALibre
 # using AMDGPU # Run this if using AMD GPU
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "cylinder_d10mm_5mm.unv"
+grid = "cylinder_d10mm_25mm.unv"
 
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)

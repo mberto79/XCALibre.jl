@@ -79,6 +79,7 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
             preconditioner = Jacobi(), 
             convergence = 1e-7,
             relax       = 0.7,
+            rtol = 1e-1
         ),
         p = set_solver(
             model.momentum.p;
@@ -86,6 +87,7 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
             preconditioner = Jacobi(),
             convergence = 1e-7,
             relax       = 0.3,
+            rtol = 1e-2
         ),
         k = set_solver(
             model.turbulence.k;
@@ -93,6 +95,7 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
             preconditioner = Jacobi(), 
             convergence = 1e-7,
             relax       = 0.3,
+            rtol = 1e-1
         ),
         omega = set_solver(
             model.turbulence.omega;
@@ -100,6 +103,7 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
             preconditioner = Jacobi(), 
             convergence = 1e-7,
             relax       = 0.3,
+            rtol = 1e-1
         )
     )
 

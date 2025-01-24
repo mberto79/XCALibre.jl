@@ -2,7 +2,8 @@ using XCALibre
 # using CUDA
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "cascade_3D_periodic_2p5mm.unv"
+# grid = "cascade_3D_periodic_2p5mm.unv"
+grid = "cascade_3D_periodic_4mm.unv"
 
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
@@ -57,8 +58,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
-        rtol = 1e-1,
-        atol = 1e-10
+        rtol = 1e-1
     ),
     p = set_solver(
         model.momentum.p;
@@ -66,8 +66,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 1e-2,
-        atol = 1e-10
+        rtol = 1e-2
     )
 )
 

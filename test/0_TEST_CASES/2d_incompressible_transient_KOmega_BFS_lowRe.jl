@@ -75,6 +75,7 @@ solvers = (
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 1.0,
+        rtol = 1e-3
     ),
     p = set_solver(
         model.momentum.p;
@@ -82,6 +83,7 @@ solvers = (
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 1.0,
+        rtol = 1e-3
     ),
     k = set_solver(
         model.turbulence.k;
@@ -89,6 +91,7 @@ solvers = (
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 1.0,
+        rtol = 1e-3
     ),
     omega = set_solver(
         model.turbulence.omega;
@@ -96,6 +99,7 @@ solvers = (
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 1.0,
+        rtol = 1e-3
     )
 )
 

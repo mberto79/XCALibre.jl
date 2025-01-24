@@ -3,7 +3,27 @@
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v0.3.1` breaking changes will be recorded here. 
 
-## Version [v0.3.3] - 2024-XX-XX
+## Version [v0.3.4] - 2025-xx-xx
+
+### Added
+* 
+
+### Fixed
+* Calling `JacobiSmoother` now works on the GPU
+
+### Changed
+* 
+
+### Breaking
+* No breaking changes
+
+### Deprecated
+* No functions deprecated
+
+### Removed
+* No functionality has been removed
+
+## Version [v0.3.3] - 2024-12-24
 
 ### Added
 * Added experimental support for NVIDIA ILU0 and IC0 preconditioners [#23]

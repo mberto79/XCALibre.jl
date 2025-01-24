@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Improved calculation of non-orthogonal calculation (more tests are still needed), although tests have proven to be stable
 
 ### Breaking
-* No breaking changes
+* The top level API for all solvers no longer takes the keyword arguement `limit_gradient` for activating gradient limiter. New gradient limiters have been added and can be selected/configured when assigning numerical schemes with the `set_schemes` function.
 
 ### Deprecated
 * No functions deprecated

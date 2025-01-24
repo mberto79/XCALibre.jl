@@ -81,80 +81,82 @@ model = Physics(
     Neumann(:top, 0.0)
 )
 
-schemes = (
-    U = set_schemes(divergence=Linear),
-    p = set_schemes(divergence=Linear),
-    h = set_schemes(divergence=Linear),
-    k = set_schemes(divergence=Upwind),
-    omega = set_schemes(divergence=Upwind)
-)
-
-solvers = (
-    U = set_solver(
-        model.momentum.U;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(),
-        convergence = 1e-7,
-        relax       = 0.7,
-    ),
-    p = set_solver(
-        model.momentum.p;
-        solver      = GmresSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(),
-        convergence = 1e-7,
-        relax       = 0.3,
-    ),
-    h = set_solver(
-        model.energy.h;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(),
-        convergence = 1e-7,
-        relax       = 0.7,
-        rtol = 1e-2,
-        atol = 1e-4
-    ),
-    k = set_solver(
-        model.turbulence.k;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), 
-        convergence = 1e-7,
-        relax       = 0.8,
-        atol = 1e-6
-    ),
-    omega = set_solver(
-        model.turbulence.omega;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(),
-        convergence = 1e-7,
-        relax       = 0.8,
-        atol = 1e-6
+for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)]
+    schemes = (
+        U = set_schemes(divergence=Linear, limiter=grad_limiter),
+        p = set_schemes(divergence=Linear, limiter=grad_limiter),
+        h = set_schemes(divergence=Linear),
+        k = set_schemes(divergence=Upwind),
+        omega = set_schemes(divergence=Upwind)
     )
-)
 
-runtime = set_runtime(iterations=200, write_interval=200, time_step=1)
+    solvers = (
+        U = set_solver(
+            model.momentum.U;
+            solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+            preconditioner = Jacobi(),
+            convergence = 1e-7,
+            relax       = 0.7,
+        ),
+        p = set_solver(
+            model.momentum.p;
+            solver      = GmresSolver, # BicgstabSolver, GmresSolver
+            preconditioner = Jacobi(),
+            convergence = 1e-7,
+            relax       = 0.3,
+        ),
+        h = set_solver(
+            model.energy.h;
+            solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+            preconditioner = Jacobi(),
+            convergence = 1e-7,
+            relax       = 0.7,
+            rtol = 1e-2,
+            atol = 1e-4
+        ),
+        k = set_solver(
+            model.turbulence.k;
+            solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+            preconditioner = Jacobi(), 
+            convergence = 1e-7,
+            relax       = 0.8,
+            atol = 1e-6
+        ),
+        omega = set_solver(
+            model.turbulence.omega;
+            solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+            preconditioner = Jacobi(),
+            convergence = 1e-7,
+            relax       = 0.8,
+            atol = 1e-6
+        )
+    )
 
-hardware = set_hardware(backend=CPU(), workgroup=1024)
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=ROCBackend(), workgroup=32)
+    runtime = set_runtime(iterations=200, write_interval=200, time_step=1)
 
-config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    hardware = set_hardware(backend=CPU(), workgroup=1024)
+    # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+    # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 
-GC.gc()
+    config = Configuration(
+        solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
-@test initialise!(model.momentum.U, velocity) === nothing
-@test initialise!(model.momentum.p, 100000.0) === nothing
-@test initialise!(model.energy.T, 300.0) === nothing
-@test initialise!(model.turbulence.k, k_inlet) === nothing
-@test initialise!(model.turbulence.omega, ω_inlet) === nothing
-@test initialise!(model.turbulence.nut, k_inlet/ω_inlet) === nothing
+    GC.gc()
 
-residuals = run!(model, config)
+    @test initialise!(model.momentum.U, velocity) === nothing
+    @test initialise!(model.momentum.p, 100000.0) === nothing
+    @test initialise!(model.energy.T, 300.0) === nothing
+    @test initialise!(model.turbulence.k, k_inlet) === nothing
+    @test initialise!(model.turbulence.omega, ω_inlet) === nothing
+    @test initialise!(model.turbulence.nut, k_inlet/ω_inlet) === nothing
 
-inlet = boundary_average(:inlet, model.momentum.U, config)
-outlet = boundary_average(:outlet, model.momentum.U, config)
-top = boundary_average(:top, model.momentum.U, config)
+    residuals = run!(model, config)
 
-@test Umag ≈ inlet[1]
-@test Umag ≈ outlet[1] atol = 0.75
-@test Umag ≈ top[1] atol = 0.15
+    inlet = boundary_average(:inlet, model.momentum.U, config)
+    outlet = boundary_average(:outlet, model.momentum.U, config)
+    top = boundary_average(:top, model.momentum.U, config)
+
+    @test Umag ≈ inlet[1]
+    @test Umag ≈ outlet[1] atol = 0.75
+    @test Umag ≈ top[1] atol = 0.15
+end

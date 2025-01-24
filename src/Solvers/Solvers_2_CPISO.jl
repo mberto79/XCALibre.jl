@@ -2,7 +2,7 @@ export cpiso!
 
 """
     cpiso!(model, config; 
-        limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0)
+        pref=nothing, ncorrectors=0, inner_loops=0)
 
 Compressible and transient variant of the PISO algorithm with a sensible enthalpy transport equation for the energy. 
 
@@ -10,7 +10,6 @@ Compressible and transient variant of the PISO algorithm with a sensible enthalp
 
 - `model` reference to a `Physics` model defined by the user.
 - `config` Configuration structure defined by the user with solvers, schemes, runtime and hardware structures configuration details.
-- `limit_gradient` flag use to activate gradient limiters in the solver (default = `false`)
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
@@ -24,11 +23,10 @@ Compressible and transient variant of the PISO algorithm with a sensible enthalp
 """
 function cpiso!(
     model, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=2) 
+    pref=nothing, ncorrectors=0, inner_loops=2) 
 
     residuals = setup_unsteady_compressible_solvers(
         CPISO, model, config; 
-        limit_gradient=limit_gradient, 
         pref=pref,
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops
@@ -40,7 +38,7 @@ end
 # Setup for all compressible algorithms
 function setup_unsteady_compressible_solvers(
     solver_variant, model, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=2
+    pref=nothing, ncorrectors=0, inner_loops=2
     ) 
 
     (; solvers, schemes, runtime, hardware) = config
@@ -128,7 +126,7 @@ function setup_unsteady_compressible_solvers(
     turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals  = solver_variant(
-        model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; limit_gradient=limit_gradient, 
+        model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config;
         pref=pref, 
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops)
@@ -138,7 +136,7 @@ end # end function
 
 function CPISO(
     model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=2)
+    pref=nothing, ncorrectors=0, inner_loops=2)
     
     # Extract model variables and configuration
     (; U, p) = model.momentum
@@ -215,7 +213,7 @@ function CPISO(
     @. rhof.values = Psif.values * pf.values
     flux!(mdotf, Uf, rhof, config)
 
-    limit_gradient && limit_gradient!(∇p, p, config)
+    limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
     update_nueff!(nueff, nu, model.turbulence, config)
     @. mueff.values = rhof.values*nueff.values
@@ -289,25 +287,24 @@ function CPISO(
             # Pressure calculations
             @. prev = p.values
             solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
+            explicit_relaxation!(p, prev, solvers.p.relax, config)
 
             # Gradient
             grad!(∇p, pf, p, p.BCs, time, config) 
-            limit_gradient && limit_gradient!(∇p, p, config)
+            limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
             # non-orthogonal correction
             for i ∈ 1:ncorrectors
                 discretise!(p_eqn, p, config)       
                 apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
                 setReference!(p_eqn, pref, 1, config)
-                nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
+                nonorthogonal_face_correction(p_eqn, ∇p, rhorDf, config)
                 update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
                 solve_system!(p_eqn, solvers.p, p, nothing, config)
                 explicit_relaxation!(p, prev, solvers.p.relax, config)
                 grad!(∇p, pf, p, p.BCs, time, config) 
-                limit_gradient && limit_gradient!(∇p, p, config)
+                limit_gradient!(schemes.p.limiter, ∇p, p, config)
             end
-
-            explicit_relaxation!(p, prev, solvers.p.relax, config)
 
             if ~isempty(solvers.p.limit)
                 pmin = solvers.p.limit[1]; pmax = solvers.p.limit[2]
@@ -336,7 +333,7 @@ function CPISO(
             
             @. dpdt.values = (p.values-prev)/runtime.dt
 
-            turbulence!(turbulenceModel, model, S, prev, time, limit_gradient, config) 
+            turbulence!(turbulenceModel, model, S, prev, time, config) 
             update_nueff!(nueff, nu, model.turbulence, config)
         end # corrector loop end
 

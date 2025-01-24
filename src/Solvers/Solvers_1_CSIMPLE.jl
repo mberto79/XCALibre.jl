@@ -3,7 +3,7 @@ export csimple!
 """
     csimple!(
         model_in, config; 
-        limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
+        pref=nothing, ncorrectors=0, inner_loops=0
     )
 
 Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport equation for the energy. 
@@ -12,7 +12,6 @@ Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport 
 
 - `model` reference to a `Physics` model defined by the user.
 - `config` Configuration structure defined by the user with solvers, schemes, runtime and hardware structures configuration details.
-- `limit_gradient` flag use to activate gradient limiters in the solver (default = `false`)
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
@@ -26,13 +25,10 @@ Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport 
 - `e` Vector of energy residuals for each iteration.
 
 """
-function csimple!(model, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
-    ) 
+function csimple!(model, config; pref=nothing, ncorrectors=0, inner_loops=0) 
 
     residuals = setup_compressible_solvers(
         CSIMPLE, model, config; 
-        limit_gradient=limit_gradient, 
         pref=pref, 
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops
@@ -43,7 +39,7 @@ end
 # Setup for all compressible algorithms
 function setup_compressible_solvers(
     solver_variant, model, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
+    pref=nothing, ncorrectors=0, inner_loops=0
     ) 
 
     (; solvers, schemes, runtime, hardware) = config
@@ -111,8 +107,7 @@ function setup_compressible_solvers(
     turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals  = solver_variant(
-        model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; 
-        limit_gradient=limit_gradient, 
+        model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config;
         pref=pref, 
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops)
@@ -122,7 +117,7 @@ end # end function
 
 function CSIMPLE(
     model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config ; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
+    pref=nothing, ncorrectors=0, inner_loops=0
     )
     
     # Extract model variables and configuration
@@ -279,20 +274,20 @@ function CSIMPLE(
         residual!(R_e, energyModel.energy_eqn, model.energy.h, iteration, nothing, config)
         
         grad!(∇p, pf, p, p.BCs, time, config) 
-        limit_gradient && limit_gradient!(∇p, p, config)
+        limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
             discretise!(p_eqn, p, config)       
             apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
             setReference!(p_eqn, pref, 1, config)
-            nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
+            nonorthogonal_face_correction(p_eqn, ∇p, rhorDf, config)
             update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             solve_system!(p_eqn, solvers.p, p, nothing, config)
             explicit_relaxation!(p, prev, solvers.p.relax, config)
             
             grad!(∇p, pf, p, p.BCs, time, config) 
-            limit_gradient && limit_gradient!(∇p, p, config)
+            limit_gradient!(schemes.p.limiter, ∇p, p, config)
         end
 
         if typeof(model.fluid) <: Compressible
@@ -322,7 +317,7 @@ function CSIMPLE(
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, U.BCs, time, config)
         
-        turbulence!(turbulenceModel, model, S, prev, time, limit_gradient, config) 
+        turbulence!(turbulenceModel, model, S, prev, time, config) 
         update_nueff!(nueff, nu, model.turbulence, config)
 
         @. mueff.values = rhof.values*nueff.values

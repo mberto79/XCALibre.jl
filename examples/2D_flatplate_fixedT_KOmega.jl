@@ -120,7 +120,7 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), 
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.6,
         atol = 1e-1
     ),
     omega = set_solver(
@@ -128,7 +128,7 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), 
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.6,
         atol = 1e-1
     )
 )

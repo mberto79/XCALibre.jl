@@ -176,6 +176,11 @@ VectorEquation(mesh::AbstractMesh) = begin
         )
 end
 
+Base.show(io::IO, model_eqn::AbstractEquation) = begin
+    output = "Equation storage ready!"
+    print(io, output)
+end
+
 # Sparse matrix connectivity function definition
 function sparse_matrix_connectivity(mesh::AbstractMesh)
     (; cells, cell_neighbours) = mesh

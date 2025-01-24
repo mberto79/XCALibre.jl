@@ -36,11 +36,12 @@ function fixedValue(BC::Symmetry, ID::I, value::V) where {I<:Integer,V}
     end
 end
 
-@define_boundary Symmetry Laplacian{Linear} begin
+@define_boundary Symmetry Laplacian{Linear} VectorField begin
     (; area, delta, normal) = face 
     phi = term.phi 
     J = term.flux[fID]
-    flux = 2*J*area/delta
+    flux = 2.0*J*area/delta
+    # flux = J*area/delta
     ap = term.sign[1]*(-flux)
 
     vc = phi[cellID]
@@ -49,24 +50,47 @@ end
     ap, ap*vp[component.value]
 end
 
+@define_boundary Symmetry Laplacian{Linear} ScalarField begin
+    # For now this is hard-coded as zero-gradient. To-do extension to any input gradient
+    phi = term.phi 
+    values = get_values(phi, component)
+    J = term.flux[fID]
+    (; area, delta) = face 
+    flux = -J*area/delta
+    ap = term.sign*(flux)
+    ap, ap*values[cellID] # original
+    # 0.0, 0.0 # go for this!
+end
+
 # To-do: Add scalar variants of Wall BC in next version (currently using Neumann)
 
 @define_boundary Symmetry Divergence{Linear} begin
-    ap = term.sign[1]*(term.flux[fID])
-    0.0, 0.0
+    flux = term.flux[fID]
+    ap = term.sign*(flux) 
+    ap, 0.0 # original
+end
+
+@define_boundary Symmetry Divergence{Linear} VectorField begin
+
+    flux = term.flux[fID]
+    ap = term.sign*(flux) 
+    ap, 0.0 # original
 end
 
 @define_boundary Symmetry Divergence{Upwind} begin
-    ap = term.sign[1]*(term.flux[fID])
-    0.0, 0.0
+    flux = term.flux[fID]
+    ap = term.sign*(flux) 
+    ap, 0.0 # original
 end
 
 @define_boundary Symmetry Divergence{BoundedUpwind} begin
-    ap = term.sign[1]*(term.flux[fID])
     0.0, 0.0
 end
 
 @define_boundary Symmetry Divergence{LUST} begin
-    ap = term.sign[1]*(term.flux[fID])
+    0.0, 0.0
+end
+
+@define_boundary Symmetry Si begin
     0.0, 0.0
 end

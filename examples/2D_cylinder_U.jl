@@ -47,8 +47,8 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1.0,
-        rtol = 1e-6,
-        atol = 1e-15
+        rtol = 1e-3,
+        # atol = 1e-15
     ),
     p = set_solver(
         model.momentum.p;
@@ -56,8 +56,8 @@ solvers = (
         preconditioner = Jacobi(), #NormDiagonal(),
         convergence = 1e-7,
         relax       = 0.8,
-        rtol = 1e-6,
-        atol = 1e-15
+        rtol = 1e-4,
+        # atol = 1e-15
     )
 )
 
@@ -71,7 +71,7 @@ runtime = set_runtime(
     # iterations=1000, write_interval=50, time_step=0.005) # uncomment to save files
     iterations=1000, write_interval=-1, time_step=0.005) # used to run only
 
-hardware = set_hardware(backend=CPU(), workgroup=1024)
+# hardware = set_hardware(backend=CPU(), workgroup=cld(length(mesh.cells), Threads.nthreads()))
 hardware = set_hardware(backend=CUDABackend(), workgroup=32) # uncomment to run on GPU
 
 config = Configuration(

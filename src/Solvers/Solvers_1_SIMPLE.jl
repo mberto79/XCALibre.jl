@@ -287,7 +287,7 @@ function nonorthogonal_face_correction(eqn, grad, flux, config)
 
     kernel! = _nonorthogonal_face_correction(backend, workgroup)
     kernel!(b, grad, flux, faces, cells, n_bfaces, ndrange=n_ifaces)
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _nonorthogonal_face_correction(b, grad, flux, faces, cells, n_bfaces)
@@ -365,7 +365,7 @@ function correct_mass_flux(mdotf, p, rDf, config)
 
     kernel! = _correct_mass_flux(backend, workgroup)
     kernel!(mdotf, p, rDf, faces, cells, n_bfaces, ndrange=length(n_ifaces))
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _correct_mass_flux(mdotf, p, rDf, faces, cells, n_bfaces)

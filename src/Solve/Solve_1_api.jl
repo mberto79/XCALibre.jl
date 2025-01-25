@@ -183,7 +183,7 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
         solver, opA, b, values; 
         M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon)
         )
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 
     statistics(solver).niter == itmax && @warn "Maximum number of iteration reached!"
 
@@ -191,7 +191,7 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
     
     kernel! = _copy!(backend, workgroup)
     kernel!(values, x, ndrange = length(values))
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _copy!(a, b)
@@ -208,7 +208,7 @@ function explicit_relaxation!(phi, phi0, alpha, config)
 
     kernel! = explicit_relaxation_kernel!(backend, workgroup)
     kernel!(phi, phi0, alpha, ndrange = length(phi))
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function explicit_relaxation_kernel!(phi, phi0, alpha)
@@ -244,7 +244,7 @@ function implicit_relaxation!(
     
     # Execute kernel
     kernel!(ione, rowval_array, colptr_array, nzval_array, b, field, alpha, ndrange = length(b))
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 
     # check_for_precon!(nzval_array, precon, backend)
 end
@@ -292,7 +292,7 @@ function implicit_relaxation_diagdom!(
     # Execute kernel
     kernel!(cells, cell_neighbours, ione, rowval_array, colptr_array,
     nzval_array, b, field, alpha, ndrange = length(b))
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _implicit_relaxation_diagdom!(cells::AbstractArray{Cell{TF,SV,UR}}, cell_neighbours, 
@@ -344,7 +344,7 @@ function setReference!(pEqn::E, pRef, cellID, config) where E<:ModelEquation
 
         kernel! = _setReference!(backend, workgroup)
         kernel!(nzval_array, colptr_array, rowval_array, b, pRef, ione, cellID, ndrange = 1)
-        KernelAbstractions.synchronize(backend)
+        # KernelAbstractions.synchronize(backend)
 
     end
 end

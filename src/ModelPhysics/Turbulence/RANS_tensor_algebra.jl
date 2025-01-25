@@ -8,7 +8,7 @@ inner_product!(S::F, ∇1::Grad, ∇2::Grad, config) where F<:ScalarField = begi
 
     kernel! = _inner_product!(backend, workgroup)
     kernel!(S, ∇1, ∇2, ndrange = length(S))
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _inner_product!(S::F, ∇1::Grad, ∇2::Grad) where F<:ScalarField
@@ -42,7 +42,7 @@ function magnitude!(magS::ScalarField, S, config)
 
     kernel! = _magnitude!(backend, workgroup)
     kernel!(magS, S, ndrange = length(magS))
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 # @kernel function _magnitude!(magS::ScalarField, S::AbstractVectorField)
@@ -71,7 +71,7 @@ function magnitude2!(
 
     kernel! = _magnitude2!(backend, workgroup)
     kernel!(magS, S, scale_factor, ndrange = length(magS))
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _magnitude2!(

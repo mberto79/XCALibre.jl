@@ -17,7 +17,7 @@ function limit_gradient!(method::MFaceBased, ∇F, F, config)
 
     kernel! = _limit_gradient!(backend, workgroup)
     kernel!(method, ∇F, F, cells, faces, nbfaces, ndrange=internal_faces)
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 
 end
 

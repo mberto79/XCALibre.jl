@@ -10,7 +10,7 @@ function bound!(field, config)
     # set up and launch kernel
     kernel! = _bound!(backend, workgroup)
     kernel!(values, cells, cell_neighbours, ndrange = length(values))
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _bound!(values, cells, cell_neighbours)

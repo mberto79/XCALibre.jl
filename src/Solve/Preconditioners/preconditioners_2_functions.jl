@@ -69,7 +69,7 @@ function update_preconditioner!(P::Preconditioner{NormDiagonal,M,PT,S}, mesh, co
 
     kernel! = update_NormDiagonal!(backend, workgroup)
     kernel!(colptr_array, nzval_array, storage, ndrange = m_array)
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function update_NormDiagonal!(rowptr, nzval, storage)
@@ -122,7 +122,7 @@ function update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh, config) 
 
     kernel! = update_Jacobi!(backend, workgroup)
     kernel!(rowval_array, colptr_array, nzval_array, idx_diagonal, storage, ndrange = m_array)
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function update_Jacobi!(colval, rowptr, nzval, idx_diagonal, storage)

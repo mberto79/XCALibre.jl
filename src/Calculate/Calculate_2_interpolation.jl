@@ -37,7 +37,7 @@ end
     # backend = _get_backend(mesh)
     $(unpacked_BCs...) 
     # Added below for testing
-    KernelAbstractions.synchronize(backend)
+    # # KernelAbstractions.synchronize(backend)
     end
 end
 
@@ -57,7 +57,7 @@ function interpolate!(phif::FaceScalarField, phi::ScalarField, config)
     (; backend, workgroup) = hardware
     kernel! = interpolate_Scalar!(backend, workgroup)
     kernel!(fvals, vals, cells, faces, ndrange = length(faces))
-    KernelAbstractions.synchronize(backend)
+    # # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function interpolate_Scalar!(fvals, vals, cells, faces)
@@ -132,7 +132,7 @@ function interpolate!(psif::FaceVectorField, psi::VectorField, config)
     (; backend, workgroup) = hardware
     kernel! = interpolate_Vector!(backend, workgroup)
     kernel!(xv, yv, zv, xf, yf, zf, faces, ndrange = length(faces))
-    KernelAbstractions.synchronize(backend)
+    # # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function interpolate_Vector!(@Const(xv), @Const(yv), @Const(zv), xf, yf, zf, @Const(faces))

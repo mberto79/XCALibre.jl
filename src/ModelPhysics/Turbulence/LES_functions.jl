@@ -8,7 +8,7 @@ function delta!(Δ, mesh, config)
     # set up and launch kernel
     kernel! = _delta!(backend, workgroup)
     kernel!(Δ, cells, ndrange = length(cells))
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _delta!(Δ, cells) # Add types in call to get float type at compile time

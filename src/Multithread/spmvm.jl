@@ -11,6 +11,11 @@ SparseXCSR(A::SparseMatrixCSR{Bi,Tv,Ti}) where {Bi,Tv,Ti} = SparseXCSR{Bi,Tv,Ti,
 Base.parent(A::SparseXCSR) = A.parent
 Base.size(A::SparseXCSR) = size(parent(A))
 KernelAbstractions.get_backend(A::SparseXCSR) = get_backend(A.parent.nzval)
+Base.show(io::IO, A::SparseXCSR) = begin
+    print(io, "CSR Matrix with $(length(A.parent.nzval)) entries")
+end
+# Base.show(io::IO, ::MIME"text/plain", ::SparseXCSR) =
+#     print(io, "Array of CSR matrices")
 
 # NOTE: The code below has been taken from https://github.com/BacAmorim/ThreadedSparseCSR.jl
 # ThreadedSparseCSR has not been updated in a while and precompilation fails on Julia 1.11.1

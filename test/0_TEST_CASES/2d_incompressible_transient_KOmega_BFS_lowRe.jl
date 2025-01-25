@@ -75,6 +75,7 @@ solvers = (
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 1.0,
+        rtol = 1e-3
     ),
     p = set_solver(
         model.momentum.p;
@@ -82,6 +83,7 @@ solvers = (
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 1.0,
+        rtol = 1e-3
     ),
     k = set_solver(
         model.turbulence.k;
@@ -89,6 +91,7 @@ solvers = (
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 1.0,
+        rtol = 1e-3
     ),
     omega = set_solver(
         model.turbulence.omega;
@@ -96,11 +99,12 @@ solvers = (
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 1.0,
+        rtol = 1e-3
     )
 )
 
 runtime = set_runtime(
-    iterations=1000, write_interval=1000, time_step=0.01)
+    iterations=500, write_interval=500, time_step=0.01)
 
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=1024)

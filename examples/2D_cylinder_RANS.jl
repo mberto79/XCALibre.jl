@@ -1,14 +1,16 @@
 using Plots
 using XCALibre
-using CUDA
+# using CUDA
 
 
-# quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
-mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "cylinder_d10mm_5mm.unv"
+mesh_file = joinpath(grids_dir, grid)
+
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 mesh_dev = mesh
-mesh_dev = adapt(CUDABackend(), mesh)
+# mesh_dev = adapt(CUDABackend(), mesh)
 
 # INLET CONDITIONS 
 
@@ -74,7 +76,7 @@ model = Physics(
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind, gradient=Midpoint),
+    U = set_schemes(divergence=Upwind, gradient=Midpoint, limiter=MFaceBased(model.domain)),
     p = set_schemes(gradient=Midpoint),
     k = set_schemes(divergence=Upwind, gradient=Midpoint),
     omega = set_schemes(divergence=Upwind, gradient=Midpoint)
@@ -118,10 +120,10 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
 
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=4)
+# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+hardware = set_hardware(backend=CPU(), workgroup=1024)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
@@ -134,8 +136,7 @@ initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
-residuals = run!(model, config); #, pref=0.0)
-
+residuals = run!(model, config, ncorrectors=1); #, pref=0.0)
 
 Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)
 Fp = pressure_force(:cylinder, model.momentum.p, 1.25)

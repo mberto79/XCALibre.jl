@@ -49,6 +49,15 @@ print_tree(AbstractScheme) # hide
 | Orthogonal | Green-Gauss uncorrected gradient scheme |
 | Midpoint | Green-Gauss skew corrected scheme (2 iterations - hardcoded) |
 
+#### Gradient limiters
+
+| **Scheme** | **Description** |
+|:-------|:------------|
+| FaceBased | Limit gradient calculation based on face extrapolation |
+| MFaceBased | Limit gradient calculation based on face extrapolation in multiple dimensions |
+
+The construction of all gradient limiters currently requires users to pass the mesh object that will be used for the simulations e.g. `MFaceBased(mesh)`. Notice that the mesh object must be moved to the same device where the simulation will be performed. To prevent mistakes and avoid errors, it is recommended to construct the limiters using the simulation `Physics` object directly since it provide a reference to the mesh (domain) e.g. if a `Physics` object named `model` has been created, construct the limiter as `MFaceBased(model.domain)`
+
 ---
 ### Specifying schemes
 
@@ -60,11 +69,33 @@ set_schemes
 
 For example, below we set the schemes for the  `U` and `p` fields. Notice that in the first case the schemes will take their default values (entry for `p`). In the case of `U`, we are only changing the setting for the divergence scheme to `Upwind`.
 
+```@meta
+DocTestSetup = quote
+    using XCALibre
+    grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+    grid = "backwardFacingStep_10mm.unv"
+    mesh_file = joinpath(grids_dir, grid)
+    mesh = UNV2D_mesh(mesh_file, scale=0.001)
+    mesh_dev = mesh # use this line to run on CPU
+    nu = 1e-3
+    model = Physics(
+        time = Steady(),
+        fluid = Fluid{Incompressible}(nu = nu),
+        turbulence = RANS{Laminar}(),
+        energy = Energy{Isothermal}(),
+        domain = mesh_dev
+    )
+end
+```
+
 ```jldoctest;  filter = r".*"s => s"", output = false
 using XCALibre
+
+# Note: this example assumes a Physics object named `model` already exists
+
 schemes = (
     p = set_schemes(), # no input provided (will use defaults)
-    U = set_schemes(divergence = Upwind),
+    U = set_schemes(divergence = Upwind, gradient=Midpoint, limiter=MFaceBased(model.domain)),
 )
 
 # output
@@ -112,25 +143,6 @@ print_tree(PreconditionerType) # hide
 
 
 Below an example is provided in context. Here, we are setting solvers for both the velocity field `U` and the pressure field `p` and packing them into a `NamedTuple` "solvers". The `Jacobi` preconditioner is used in both solvers. Notice that preconditioners are specified with an instance of their type i.e. `Jacobi()`. Internally, the preconditioner instance is used for dispatch. This tupple will then be passed on to create the final `Configuration` object.
-
-```@meta
-DocTestSetup = quote
-    using XCALibre
-    grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-    grid = "backwardFacingStep_10mm.unv"
-    mesh_file = joinpath(grids_dir, grid)
-    mesh = UNV2D_mesh(mesh_file, scale=0.001)
-    mesh_dev = mesh # use this line to run on CPU
-    nu = 1e-3
-    model = Physics(
-        time = Steady(),
-        fluid = Fluid{Incompressible}(nu = nu),
-        turbulence = RANS{Laminar}(),
-        energy = Energy{Isothermal}(),
-        domain = mesh_dev
-    )
-end
-```
 
 ```jldoctest;  filter = r".*"s => s"", output = false
 using XCALibre

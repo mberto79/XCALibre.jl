@@ -4,7 +4,7 @@ using XCALibre
 # using AMDGPU # Run this if using AMD GPU
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "cylinder_d10mm_5mm.unv"
+grid = "cylinder_d10mm_25mm.unv"
 
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
@@ -97,7 +97,7 @@ schemes = (
     h = set_schemes(divergence=Upwind, gradient=Midpoint, time=Euler)
 )
 
-runtime = set_runtime(iterations=200, write_interval=200, time_step=0.01)
+runtime = set_runtime(iterations=100, write_interval=100, time_step=0.01)
 
 hardware = set_hardware(backend=CPU(), workgroup=1024)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)

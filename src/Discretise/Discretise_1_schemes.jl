@@ -45,10 +45,15 @@ end
     nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
 
+    
     (; area, normal, delta, e) = face
-    Sf = ns*area*normal
-    e = ns*e
-    Ef = ((Sf⋅Sf)/(Sf⋅e))*e
+    dPN = cellN.centre - cell.centre
+    n = ns*normal
+    Ef = dPN*(norm(n)^2/(dPN⋅n))*area
+
+    # Sf = ns*area*normal # original
+    # e = ns*e # original
+    # Ef = ((Sf⋅Sf)/(Sf⋅e))*e # original
     Ef_mag = norm(Ef)
     ap = term.sign*(term.flux[fID] * Ef_mag)/delta
 
@@ -77,7 +82,8 @@ end
     xN = cellN.centre
     
     # Calculate weights using normal functions
-    weight = norm(xf - xC)/norm(xN - xC)
+    # weight = norm(xf - xC)/norm(xN - xC)
+    weight = norm(xN - xf)/norm(xN - xC)
     one_minus_weight = one(eltype(weight)) - weight
 
     # Calculate required increment
@@ -118,7 +124,7 @@ end
     xN = cellN.centre
     
     # Calculate weights using normal functions
-    weight = norm(xf - xC)/norm(xN - xC)
+    weight = norm(xN - xf)/norm(xN - xC)
     one_minus_weight = one(eltype(weight)) - weight
 
     # Calculate coefficients

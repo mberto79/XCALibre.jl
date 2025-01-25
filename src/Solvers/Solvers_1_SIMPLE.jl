@@ -2,7 +2,7 @@ export simple!
 
 """
     simple!(model_in, config; 
-        limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0)
+        pref=nothing, ncorrectors=0, inner_loops=0)
 
 Incompressible variant of the SIMPLE algorithm to solving coupled momentum and mass conservation equations.
 
@@ -10,7 +10,6 @@ Incompressible variant of the SIMPLE algorithm to solving coupled momentum and m
 
 - `model` reference to a `Physics` model defined by the user.
 - `config` Configuration structure defined by the user with solvers, schemes, runtime and hardware structures configuration details.
-- `limit_gradient` flag use to activate gradient limiters in the solver (default = `false`)
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
@@ -27,12 +26,11 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 function simple!(
     model, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
+    pref=nothing, ncorrectors=0, inner_loops=0
     )
 
     residuals = setup_incompressible_solvers(
         SIMPLE, model, config; 
-        limit_gradient=limit_gradient, 
         pref=pref, 
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops
@@ -44,7 +42,7 @@ end
 # Setup for all incompressible algorithms
 function setup_incompressible_solvers(
     solver_variant, model, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
+    pref=nothing, ncorrectors=0, inner_loops=0
     ) 
 
     (; solvers, schemes, runtime, hardware) = config
@@ -95,7 +93,6 @@ function setup_incompressible_solvers(
 
     residuals  = solver_variant(
         model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-        limit_gradient=limit_gradient, 
         pref=pref, 
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops)
@@ -105,7 +102,7 @@ end # end function
 
 function SIMPLE(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    limit_gradient=false, pref=nothing, ncorrectors=0, inner_loops=0
+    pref=nothing, ncorrectors=0, inner_loops=0
     )
     
     # Extract model variables and configuration
@@ -157,7 +154,8 @@ function SIMPLE(
     correct_boundaries!(Uf, U, U.BCs, time, config)
     flux!(mdotf, Uf, config)
     grad!(∇p, pf, p, p.BCs, time, config)
-    limit_gradient && limit_gradient!(∇p, p, config)
+    limit_gradient!(schemes.p.limiter, ∇p, p, config)
+
 
     update_nueff!(nueff, nu, model.turbulence, config)
 
@@ -195,10 +193,11 @@ function SIMPLE(
         explicit_relaxation!(p, prev, solvers.p.relax, config)
         
         grad!(∇p, pf, p, p.BCs, time, config) 
-        limit_gradient && limit_gradient!(∇p, p, config)
+        limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
+            # @. prev = p.values
             discretise!(p_eqn, p, config)       
             apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
             setReference!(p_eqn, pref, 1, config)
@@ -207,8 +206,10 @@ function SIMPLE(
             solve_system!(p_eqn, solvers.p, p, nothing, config)
             explicit_relaxation!(p, prev, solvers.p.relax, config)
             grad!(∇p, pf, p, p.BCs, time, config) 
-            limit_gradient && limit_gradient!(∇p, p, config)
+            limit_gradient!(schemes.p.limiter, ∇p, p, config)
         end
+
+        # explicit_relaxation!(p, prev, solvers.p.relax, config)
 
         # Velocity and boundaries correction
 
@@ -228,7 +229,7 @@ function SIMPLE(
         # correct_mass_flux2(mdotf, p_eqn, p, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
-        turbulence!(turbulenceModel, model, S, prev, time, limit_gradient, config) 
+        turbulence!(turbulenceModel, model, S, prev, time, config) 
         update_nueff!(nueff, nu, model.turbulence, config)
         
         convergence = 1e-7
@@ -296,26 +297,46 @@ end
     (; ownerCells, area, normal, e, delta) = face
     cID1 = ownerCells[1]
     cID2 = ownerCells[2]
-    # cell1 = cells[cID1]
-    # cell2 = cells[cID2]
+    cell1 = cells[cID1]
+    cell2 = cells[cID2]
+
+    xf = face.centre
+    xC = cell1.centre
+    xN = cell2.centre
+    
+    # Calculate weights using normal functions
+    # weight = norm(xf - xC)/norm(xN - xC)
+    # weight = norm(xf - xN)/norm(xN - xC)
+
+    dPN = cell2.centre - cell1.centre
 
     (; values) = grad.field
-    w, df = weight(cells, faces, fID)
-    gradi = w*grad[cID1] + (1 - w)*grad[cID2]
+    weight, df = correction_weight(cells, faces, fID)
+    # weight = face.weight
+    gradi = weight*grad[cID1] + (1 - weight)*grad[cID2]
     gradf = gradi + ((values[cID2] - values[cID1])/delta - (gradi⋅e))*e
-
+    # gradf = gradi
 
     Sf = area*normal
-    Ef = ((Sf⋅Sf)/(Sf⋅e))*e
-    T_hat = Sf - Ef
+    # Ef = ((Sf⋅Sf)/(Sf⋅e))*e # original
+    Ef = dPN*(norm(normal)^2/(dPN⋅normal))*area
+    T_hat = Sf - Ef # original
     faceCorrection = flux[fID]*gradf⋅T_hat
 
-    Atomix.@atomic b[cID1] -= faceCorrection#*cell1.volume
-    Atomix.@atomic b[cID2] += faceCorrection#*cell2.volume # should this be -ve?
+    Atomix.@atomic b[cID1] += faceCorrection #*cell1.volume
+    Atomix.@atomic b[cID2] -= faceCorrection #*cell2.volume # should this be -ve?
+
+    # Atomix.@atomic b[cID1] -= faceCorrection #*cell1.volume
+    # Atomix.@atomic b[cID2] += faceCorrection #*cell2.volume # should this be -ve?
         
 end
 
-function weight(cells, faces, fi)
+# +- => good match
+# -+ => looks worse at edges for gradient
+# -- => looks bad on top-right corner for gradient
+# ++ => looks bad on left grad and oscillations on the right
+
+function correction_weight(cells, faces, fi)
     (; ownerCells, centre) = faces[fi]
     cID1 = ownerCells[1]
     cID2 = ownerCells[2]

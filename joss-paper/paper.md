@@ -57,7 +57,7 @@ The Julia programming language offers a fresh approach to scientific computing, 
 
 # Key features
 
-The main features available in the first public release (version `0.3.x`) are highlighted here. Users are also encouraged to explore the latest version of [the user guide](https://mberto79.github.io/XCALibre.jl/stable/) where the public API and current features are documented. 
+The main features available in the latest release (version `0.4`) are highlighted here. Users are also encouraged to explore the latest version of [the user guide](https://mberto79.github.io/XCALibre.jl/stable/) where the public API and current features are documented. 
 
 * **XPU computation** `XCALibre.jl` is implemented using `KernelAbstractions.jl` which allows it to support both multi-threaded CPU and GPU calculations. 
 * **Unstructured grids and formats** `XCALibre.jl` is implemented to support unstructured meshes using the Finite Volume method for equation discretisation. Thus, arbitrary polyhedral cells are supported, enabling the representation and simulation of complex geometries. `XCALibre.jl` provides mesh conversion functions to import externally generated grids. Currently, the Ideas (`unv `) and `OpenFOAM` mesh formats can be used. The `.unv` mesh format supports both 2D and 3D grids (note that the `.unv` format only supports prisms, tetrahedral, and hexahedral cells). The `OpenFOAM` mesh format can be used for 3D simulations (this format has no cell restrictions and supports arbitrary polyhedral cells).

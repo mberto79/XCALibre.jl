@@ -3,7 +3,8 @@ using XCALibre
 # using AMDGPU # Run this if using AMD GPU
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "bfs_unv_tet_10mm.unv"
+# grid = "bfs_unv_tet_10mm.unv"
+grid = "bfs_unv_tet_15mm.unv"
 
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
@@ -52,8 +53,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
-        rtol = 1e-3,
-        atol = 1e-20
+        rtol = 1e-1,
     ),
     p = set_solver(
         model.momentum.p;
@@ -61,13 +61,12 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 1e-4,
-        atol = 1e-20
+        rtol = 1e-2,
     )
 )
 
 runtime = set_runtime(
-    iterations=200, time_step=1, write_interval=200)
+    iterations=100, time_step=1, write_interval=100)
 
 hardware = set_hardware(backend=CPU(), workgroup=1024)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)

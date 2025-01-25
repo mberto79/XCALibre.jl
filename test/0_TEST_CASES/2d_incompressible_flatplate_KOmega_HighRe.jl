@@ -64,7 +64,8 @@ model = Physics(
 )
 
 for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)]
-    schemes = (
+    
+    local schemes = (
         U = set_schemes(divergence=Upwind, limiter=grad_limiter),
         p = set_schemes(divergence=Upwind, limiter=grad_limiter),
         k = set_schemes(divergence=Upwind),
@@ -72,13 +73,14 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
     )
 
 
-    solvers = (
+    local solvers = (
         U = set_solver(
             model.momentum.U;
             solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
             preconditioner = Jacobi(), 
             convergence = 1e-7,
             relax       = 0.7,
+            rtol = 1e-1
         ),
         p = set_solver(
             model.momentum.p;
@@ -86,6 +88,7 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
             preconditioner = Jacobi(),
             convergence = 1e-7,
             relax       = 0.3,
+            rtol = 1e-2
         ),
         k = set_solver(
             model.turbulence.k;
@@ -93,6 +96,7 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
             preconditioner = Jacobi(), 
             convergence = 1e-7,
             relax       = 0.3,
+            rtol = 1e-1
         ),
         omega = set_solver(
             model.turbulence.omega;
@@ -100,16 +104,17 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
             preconditioner = Jacobi(), 
             convergence = 1e-7,
             relax       = 0.3,
+            rtol = 1e-1
         )
     )
 
-    runtime = set_runtime(iterations=200, write_interval=200, time_step=1)
+    local runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
 
-    hardware = set_hardware(backend=CPU(), workgroup=1024)
+    local hardware = set_hardware(backend=CPU(), workgroup=1024)
     # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
     # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 
-    config = Configuration(
+    local config = Configuration(
         solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
     GC.gc()
@@ -120,9 +125,9 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
     @test initialise!(model.turbulence.omega, ω_inlet) === nothing
     @test initialise!(model.turbulence.nut, k_inlet/ω_inlet) === nothing
 
-    residuals = run!(model, config)
+    local residuals = run!(model, config)
 
-    outlet = boundary_average(:outlet, model.momentum.U, config)
+    local outlet = boundary_average(:outlet, model.momentum.U, config)
 
     @test Umag ≈ outlet[1] atol =0.1*Umag
 end

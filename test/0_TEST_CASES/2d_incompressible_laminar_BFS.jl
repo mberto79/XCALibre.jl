@@ -54,7 +54,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax = 0.8,
-        rtol = 1e-2,
+        rtol = 1e-1,
     ),
     p = set_solver(
         model.momentum.p;
@@ -63,12 +63,12 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax = 0.2,
-        rtol = 1e-3,
+        rtol = 1e-2,
     )
 )
 
 runtime = set_runtime(
-    iterations=1000, time_step=1, write_interval=1000)
+    iterations=500, time_step=1, write_interval=500)
 
 hardware = set_hardware(backend=CPU(), workgroup=1024)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)

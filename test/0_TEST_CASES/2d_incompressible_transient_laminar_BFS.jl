@@ -51,6 +51,7 @@ solvers = (
         preconditioner = Jacobi(), # DILU(), TEMPORARY!
         convergence = 1e-7,
         relax       = 1.0,
+        rtol = 1e-3
     ),
     p = set_solver(
         model.momentum.p;
@@ -58,6 +59,7 @@ solvers = (
         preconditioner = Jacobi(), #LDL(), TEMPORARY!
         convergence = 1e-7,
         relax       = 1.0,
+        rtol = 1e-3
     )
 )
 

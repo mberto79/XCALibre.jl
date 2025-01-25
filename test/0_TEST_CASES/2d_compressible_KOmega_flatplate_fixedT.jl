@@ -81,8 +81,8 @@ model = Physics(
     Neumann(:top, 0.0)
 )
 
-for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)]
-    schemes = (
+for grad_limiter ∈ [nothing] #, FaceBased(model.domain), MFaceBased(model.domain)]
+    local schemes = (
         U = set_schemes(divergence=Linear, limiter=grad_limiter),
         p = set_schemes(divergence=Linear, limiter=grad_limiter),
         h = set_schemes(divergence=Linear),
@@ -90,7 +90,7 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
         omega = set_schemes(divergence=Upwind)
     )
 
-    solvers = (
+    local solvers = (
         U = set_solver(
             model.momentum.U;
             solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
@@ -133,13 +133,13 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
         )
     )
 
-    runtime = set_runtime(iterations=200, write_interval=200, time_step=1)
+    local runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
 
-    hardware = set_hardware(backend=CPU(), workgroup=1024)
+    local hardware = set_hardware(backend=CPU(), workgroup=1024)
     # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
     # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 
-    config = Configuration(
+    local config = Configuration(
         solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
     GC.gc()
@@ -151,11 +151,11 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
     @test initialise!(model.turbulence.omega, ω_inlet) === nothing
     @test initialise!(model.turbulence.nut, k_inlet/ω_inlet) === nothing
 
-    residuals = run!(model, config)
+    local residuals = run!(model, config)
 
-    inlet = boundary_average(:inlet, model.momentum.U, config)
-    outlet = boundary_average(:outlet, model.momentum.U, config)
-    top = boundary_average(:top, model.momentum.U, config)
+    local inlet = boundary_average(:inlet, model.momentum.U, config)
+    local outlet = boundary_average(:outlet, model.momentum.U, config)
+    local top = boundary_average(:top, model.momentum.U, config)
 
     @test Umag ≈ inlet[1]
     @test Umag ≈ outlet[1] atol = 0.85

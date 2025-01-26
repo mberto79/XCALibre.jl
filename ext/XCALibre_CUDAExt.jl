@@ -7,6 +7,7 @@ else
 end
 
 using XCALibre, Adapt, SparseArrays, SparseMatricesCSR, KernelAbstractions
+using LinearAlgebra, LinearOperators
 import KrylovPreconditioners as KP
 
 const SparseGPU = CUDA.CUSPARSE.CuSparseMatrixCSR
@@ -32,7 +33,7 @@ _build_opA(A::SparseGPU) = KP.KrylovOperator(A)
     A.nzVal, A.colVal, A.rowPtr
 end
 
-import XCALibre.Solve: _m, _n
+import XCALibre.Solve: _m, _n, update_preconditioner!
 
 # function sparse_array_deconstructor_preconditioners(arr::SparseGPU)
 #     (; rowVal, colPtr, nzVal, dims) = arr
@@ -47,6 +48,7 @@ end
 _m(A::SparseGPU) = A.dims[1]
 _n(A::SparseGPU) = A.dims[2]
 
+# DILU Preconditioner (hybrid implementation for now)
 
 Preconditioner{DILU}(Agpu::SparseGPU{F,I}) where {F,I} = begin
     i, j, v = findnz(Agpu)
@@ -65,10 +67,73 @@ Preconditioner{DILU}(Agpu::SparseGPU{F,I}) where {F,I} = begin
     Preconditioner{DILU,typeof(Agpu),typeof(P),typeof(S)}(Agpu,P,S)
 end
 
-update_preconditioner!(P::Preconditioner{DILU,M,PT,S},  mesh, config) where {M<:SparseGPU,PT,S} =
+update_preconditioner!(P::Preconditioner{DILU,M,PT,S},  mesh, config) where {M,PT,S} =
 begin
     KernelAbstractions.copyto!(CPU(), P.storage.A.nzval, P.A.nzVal)
     update_dilu_diagonal!(P, mesh, config)
+    nothing
+end
+
+# IC0GPU
+
+# Preconditioner{IC0GPU}(A::AbstractSparseArray{F,I}) where {F,I} = begin
+#     backend = get_backend(A)
+#     m, n = size(A)
+#     m == n || throw("Matrix not square")
+#     # S = _convert_array!(zeros(m), backend)
+#     S = zero(I)
+#     P = KP.kp_ic0(A)
+#     Preconditioner{IC0GPU,typeof(A),typeof(P),typeof(S)}(A,P,S)
+# end
+
+# function update_preconditioner!(P::Preconditioner{ILU0GPU,M,PT,S}, mesh, config) where {M<:AbstractSparseArray,PT,S}
+#     KP.update!(P.P, P.A)
+#     nothing
+# end
+
+# IC0GPU NEW
+
+struct IC0GPUStorage{A,B,C}
+    P::A
+    L::B 
+    U::C
+end
+
+Preconditioner{IC0GPU}(A::AbstractSparseArray{F,I}) where {F,I} = begin
+    backend = get_backend(A)
+    m, n = size(A)
+    m == n || throw("Matrix not square")
+    # S = _convert_array!(zeros(m), backend)
+    # S = zero(I)
+    # P = KP.kp_ic0(A)
+    PS = CUDA.CUSPARSE.ic02(A)
+    # L = LowerTriangular(PS)
+    L = KP.TriangularOperator(PS, 'L', 'N', nrhs=1, transa='N')
+    # U = LowerTriangular(PS)'
+    U = KP.TriangularOperator(PS, 'L', 'N', nrhs=1, transa='T')
+    S = IC0GPUStorage(PS,L,U)
+
+    T = eltype(A.nzVal)
+    z = CUDA.zeros(T, n)
+
+    P = LinearOperator(T, n, n, true, true, (y, x) -> ldiv_ic0!(S, x, y, z))
+
+    Preconditioner{IC0GPU,typeof(A),typeof(P),typeof(S)}(A,P,S)
+end
+
+function ldiv_ic0!(S, x, y, z)
+    ldiv!(z, S.L, x)   # Forward substitution with L
+    ldiv!(y, S.U, z)  # Backward substitution with Lᴴ
+    return y
+end
+
+update_preconditioner!(P::Preconditioner{IC0GPU,M,PT,S},  mesh, config) where {M<:SparseGPU,PT,S} = 
+begin
+    # KP.update!(P.P, P.A)
+    P.storage.P.nzVal .= P.A.nzVal
+    CUDA.CUSPARSE.ic02!(P.storage.P)
+    KP.update!(P.storage.L, P.storage.P)
+    KP.update!(P.storage.U, P.storage.P)
     nothing
 end
 

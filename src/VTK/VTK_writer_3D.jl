@@ -29,7 +29,7 @@ function initialise_writer(mesh::Mesh3)
     version="1.0"
     format="ascii"
     byte_order="LittleEndian"
-    F32="Float32"
+    F32="Float64"
     I64="Int64"
     poly=42
     x=0

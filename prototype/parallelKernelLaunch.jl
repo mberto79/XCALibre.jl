@@ -49,7 +49,7 @@ model = Physics(
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind, gradient=Orthogonal),
+    U = set_schemes(divergence=Linear, gradient=Midpoint),
     p = set_schemes(gradient=Midpoint)
 )
 
@@ -57,18 +57,20 @@ solvers = (
     U = set_solver(
         model.momentum.U;
         solver      = BicgstabSolver, #CgSolver, BicgstabSolver, GmresSolver, 
+        # preconditioner = ILU0GPU(), # Jacobi(),
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.8,
-        rtol = 1e-1,
+        relax       = 0.7,
+        rtol = 1e-3,
     ),
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(),
+        preconditioner = IC0GPU(), # Jacobi(),
+        # preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.2,
-        rtol = 1e-2,
+        relax       = 0.3,
+        rtol = 1e-3,
     )
 )
 

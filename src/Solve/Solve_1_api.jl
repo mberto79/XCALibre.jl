@@ -174,7 +174,8 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
     (; values, mesh) = result
     
     A = _A(phiEqn)
-    opA = phiEqn.equation.opA
+    # opA = phiEqn.equation.opA
+    opA = A
     b = _b(phiEqn, component)
 
     apply_smoother!(setup.smoother, values, A, b, hardware)

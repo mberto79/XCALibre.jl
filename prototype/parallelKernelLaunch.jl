@@ -11,6 +11,11 @@ grid = "bfs_unv_tet_10mm.unv"
 
 mesh_file = joinpath(grids_dir, grid)
 
+# mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
+mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
+
+# mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
+
 # mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_5mm.unv"
 # mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_4mm.unv"
 
@@ -57,8 +62,8 @@ solvers = (
     U = set_solver(
         model.momentum.U;
         solver      = BicgstabSolver, #CgSolver, BicgstabSolver, GmresSolver, 
-        # preconditioner = ILU0GPU(), # Jacobi(),
-        preconditioner = Jacobi(),
+        preconditioner = ILU0GPU(), # Jacobi(),
+        # preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
         rtol = 1e-3,
@@ -66,8 +71,8 @@ solvers = (
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
-        # preconditioner = IC0GPU(), # Jacobi(),
-        preconditioner = Jacobi(),
+        preconditioner = IC0GPU(), # Jacobi(),
+        # preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.3,
         rtol = 1e-3,

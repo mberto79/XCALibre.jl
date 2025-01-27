@@ -137,6 +137,53 @@ begin
     nothing
 end
 
+
+# ILU0GPU NEW
+
+struct ILU0GPUStorage{A,B,C}
+    P::A
+    L::B 
+    U::C
+end
+
+Preconditioner{ILU0GPU}(A::AbstractSparseArray{F,I}) where {F,I} = begin
+    backend = get_backend(A)
+    m, n = size(A)
+    m == n || throw("Matrix not square")
+    # S = _convert_array!(zeros(m), backend)
+    # S = zero(I)
+    # P = KP.kp_ic0(A)
+    PS = CUDA.CUSPARSE.ilu02(A)
+    # L = LowerTriangular(PS)
+    L = KP.TriangularOperator(PS, 'L', 'U', nrhs=1, transa='N')
+    # U = LowerTriangular(PS)'
+    U = KP.TriangularOperator(PS, 'U', 'N', nrhs=1, transa='N')
+    S = ILU0GPUStorage(PS,L,U)
+
+    T = eltype(A.nzVal)
+    z = CUDA.zeros(T, n)
+
+    P = LinearOperator(T, n, n, true, true, (y, x) -> ldiv_ilu0!(S, x, y, z))
+
+    Preconditioner{ILU0GPU,typeof(A),typeof(P),typeof(S)}(A,P,S)
+end
+
+function ldiv_ilu0!(S, x, y, z)
+    ldiv!(z, S.L, x)   # Forward substitution with L
+    ldiv!(y, S.U, z)  # Backward substitution with Lᴴ
+    return y
+end
+
+update_preconditioner!(P::Preconditioner{ILU0GPU,M,PT,S},  mesh, config) where {M<:SparseGPU,PT,S} = 
+begin
+    # KP.update!(P.P, P.A)
+    P.storage.P.nzVal .= P.A.nzVal
+    CUDA.CUSPARSE.ilu02!(P.storage.P)
+    KP.update!(P.storage.L, P.storage.P)
+    KP.update!(P.storage.U, P.storage.P)
+    nothing
+end
+
 import LinearAlgebra.ldiv!, LinearAlgebra.\
 export ldiv!
 

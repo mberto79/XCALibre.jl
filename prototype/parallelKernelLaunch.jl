@@ -6,13 +6,13 @@ backend = CPU()
 backend = CUDABackend()
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-# grid = "bfs_unv_tet_10mm.unv"
-grid = "bfs_unv_tet_15mm.unv"
+grid = "bfs_unv_tet_10mm.unv"
+# grid = "bfs_unv_tet_15mm.unv"
 
 mesh_file = joinpath(grids_dir, grid)
 
-mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_5mm.unv"
-mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_4mm.unv"
+# mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_5mm.unv"
+# mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_4mm.unv"
 
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
@@ -66,8 +66,8 @@ solvers = (
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = IC0GPU(), # Jacobi(),
-        # preconditioner = Jacobi(),
+        # preconditioner = IC0GPU(), # Jacobi(),
+        preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.3,
         rtol = 1e-3,

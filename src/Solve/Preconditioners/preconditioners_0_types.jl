@@ -23,12 +23,6 @@ Adapt.@adapt_structure Jacobi
 struct DILU <: LDIVPreconditioner end
 Adapt.@adapt_structure DILU
 
-# struct IC0GPU <: LDIVPreconditioner end
-# Adapt.@adapt_structure IC0GPU
-
-# struct ILU0GPU <: LDIVPreconditioner end
-# Adapt.@adapt_structure ILU0GPU
-
 struct IC0GPU <: MULPreconditioner end
 Adapt.@adapt_structure IC0GPU
 
@@ -57,26 +51,6 @@ Preconditioner{NormDiagonal}(A::AbstractSparseArray{F,I}) where {F,I} = begin
     P = opDiagonal(S)
     Preconditioner{NormDiagonal,typeof(A),typeof(P),typeof(S)}(A,P,S)
 end
-
-# Preconditioner{IC0GPU}(A::AbstractSparseArray{F,I}) where {F,I} = begin
-#     backend = get_backend(A)
-#     m, n = size(A)
-#     m == n || throw("Matrix not square")
-#     # S = _convert_array!(zeros(m), backend)
-#     S = zero(I)
-#     P = KP.kp_ic0(A)
-#     Preconditioner{IC0GPU,typeof(A),typeof(P),typeof(S)}(A,P,S)
-# end
-
-# Preconditioner{ILU0GPU}(A::AbstractSparseArray{F,I}) where {F,I} = begin
-#     backend = get_backend(A)
-#     m, n = size(A)
-#     m == n || throw("Matrix not square")
-#     # S = _convert_array!(zeros(m), backend)
-#     S = zero(I)
-#     P = KP.kp_ic0(A)
-#     Preconditioner{ILU0GPU,typeof(A),typeof(P),typeof(S)}(A,P,S)
-# end
 
 Preconditioner{Jacobi}(A::AbstractSparseArray{F,I}) where {F,I} = begin
     backend = get_backend(A)
@@ -115,19 +89,6 @@ struct DILUprecon{M,V,VI}
     Di::VI
 end
 Adapt.@adapt_structure DILUprecon
-
-# Preconditioner{DILU}(A::AbstractSparseArray{F,I}) where {F,I} = begin
-#     m, n = size(A)
-#     m == n || throw("Matrix not square")
-#     D = zeros(F, m)
-#     Di = zeros(I, m)
-#     diagonal_indices!(Di, A)
-#     S = DILUprecon(A, D, Di)
-#     P  = LinearOperator(
-#         F, m, n, false, false, (y, v) -> ldiv!(y, S, v)
-#         )
-#     Preconditioner{DILU,typeof(A),typeof(P),typeof(S)}(A,P,S)
-# end
 
 Preconditioner{DILU}(A::SparseMatrixCSR{N,F,I}) where {N,F,I} = begin
     m, n = size(A)

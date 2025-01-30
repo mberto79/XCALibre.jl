@@ -35,11 +35,6 @@ end
 
 import XCALibre.Solve: _m, _n, update_preconditioner!
 
-# function sparse_array_deconstructor_preconditioners(arr::SparseGPU)
-#     (; rowVal, colPtr, nzVal, dims) = arr
-#     return rowVal, colPtr, nzVal, dims[1], dims[2]
-# end
-
 function sparse_array_deconstructor_preconditioners(arr::SparseGPU)
     (; colVal, rowPtr, nzVal, dims) = arr
     return colVal, rowPtr, nzVal, dims[1], dims[2]
@@ -74,25 +69,6 @@ begin
     nothing
 end
 
-# IC0GPU
-
-# Preconditioner{IC0GPU}(A::AbstractSparseArray{F,I}) where {F,I} = begin
-#     backend = get_backend(A)
-#     m, n = size(A)
-#     m == n || throw("Matrix not square")
-#     # S = _convert_array!(zeros(m), backend)
-#     S = zero(I)
-#     P = KP.kp_ic0(A)
-#     Preconditioner{IC0GPU,typeof(A),typeof(P),typeof(S)}(A,P,S)
-# end
-
-# function update_preconditioner!(P::Preconditioner{ILU0GPU,M,PT,S}, mesh, config) where {M<:AbstractSparseArray,PT,S}
-#     KP.update!(P.P, P.A)
-#     nothing
-# end
-
-# IC0GPU NEW
-
 struct IC0GPUStorage{A,B,C}
     P::A
     L::B 
@@ -103,13 +79,8 @@ Preconditioner{IC0GPU}(A::AbstractSparseArray{F,I}) where {F,I} = begin
     backend = get_backend(A)
     m, n = size(A)
     m == n || throw("Matrix not square")
-    # S = _convert_array!(zeros(m), backend)
-    # S = zero(I)
-    # P = KP.kp_ic0(A)
     PS = CUDA.CUSPARSE.ic02(A)
-    # L = LowerTriangular(PS)
     L = KP.TriangularOperator(PS, 'L', 'N', nrhs=1, transa='N')
-    # U = LowerTriangular(PS)'
     U = KP.TriangularOperator(PS, 'L', 'N', nrhs=1, transa='T')
     S = IC0GPUStorage(PS,L,U)
 
@@ -129,14 +100,12 @@ end
 
 update_preconditioner!(P::Preconditioner{IC0GPU,M,PT,S},  mesh, config) where {M<:SparseGPU,PT,S} = 
 begin
-    # KP.update!(P.P, P.A)
     P.storage.P.nzVal .= P.A.nzVal
     CUDA.CUSPARSE.ic02!(P.storage.P)
     KP.update!(P.storage.L, P.storage.P)
     KP.update!(P.storage.U, P.storage.P)
     nothing
 end
-
 
 # ILU0GPU NEW
 
@@ -150,13 +119,8 @@ Preconditioner{ILU0GPU}(A::AbstractSparseArray{F,I}) where {F,I} = begin
     backend = get_backend(A)
     m, n = size(A)
     m == n || throw("Matrix not square")
-    # S = _convert_array!(zeros(m), backend)
-    # S = zero(I)
-    # P = KP.kp_ic0(A)
     PS = CUDA.CUSPARSE.ilu02(A)
-    # L = LowerTriangular(PS)
     L = KP.TriangularOperator(PS, 'L', 'U', nrhs=1, transa='N')
-    # U = LowerTriangular(PS)'
     U = KP.TriangularOperator(PS, 'U', 'N', nrhs=1, transa='N')
     S = ILU0GPUStorage(PS,L,U)
 
@@ -176,7 +140,6 @@ end
 
 update_preconditioner!(P::Preconditioner{ILU0GPU,M,PT,S},  mesh, config) where {M<:SparseGPU,PT,S} = 
 begin
-    # KP.update!(P.P, P.A)
     P.storage.P.nzVal .= P.A.nzVal
     CUDA.CUSPARSE.ilu02!(P.storage.P)
     KP.update!(P.storage.L, P.storage.P)

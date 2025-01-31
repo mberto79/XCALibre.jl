@@ -10,42 +10,45 @@ using XCALibre, Adapt, SparseArrays, SparseMatricesCSR, KernelAbstractions
 using LinearAlgebra, LinearOperators
 import KrylovPreconditioners as KP
 
-const SparseGPU = CUDA.CUSPARSE.CuSparseMatrixCSR
+const SPARSEGPU = CUDA.CUSPARSE.CuSparseMatrixCSR
+const BACKEND = CUDABackend
+const GPUARRAY = CuArray
+using CUDA.CUSPARSE: ilu02, ilu02!, ic02, ic02!
 
-function XCALibre.Mesh._convert_array!(arr, backend::CUDABackend)
-    return adapt(CuArray, arr) # using CuArray
+function XCALibre.Mesh._convert_array!(arr, backend::BACKEND)
+    return adapt(GPUARRAY, arr) # using GPUARRAY
 end
 
 import XCALibre.ModelFramework: _nzval, _rowptr, _colval, get_sparse_fields, 
                                 _build_A, _build_opA
 
-_build_A(backend::CUDABackend, i, j, v, n) = begin
+_build_A(backend::BACKEND, i, j, v, n) = begin
 
     A = sparse(i, j, v, n, n)
-    SparseGPU(A)
+    SPARSEGPU(A)
 end
 
-_build_opA(A::SparseGPU) = KP.KrylovOperator(A)
-@inline _nzval(A::SparseGPU) = A.nzVal
-@inline _rowptr(A::SparseGPU) = A.rowPtr
-@inline _colval(A::SparseGPU) = A.colVal
-@inline get_sparse_fields(A::SparseGPU) = begin
+_build_opA(A::SPARSEGPU) = KP.KrylovOperator(A)
+@inline _nzval(A::SPARSEGPU) = A.nzVal
+@inline _rowptr(A::SPARSEGPU) = A.rowPtr
+@inline _colval(A::SPARSEGPU) = A.colVal
+@inline get_sparse_fields(A::SPARSEGPU) = begin
     A.nzVal, A.colVal, A.rowPtr
 end
 
 import XCALibre.Solve: _m, _n, update_preconditioner!
 
-function sparse_array_deconstructor_preconditioners(arr::SparseGPU)
+function sparse_array_deconstructor_preconditioners(arr::SPARSEGPU)
     (; colVal, rowPtr, nzVal, dims) = arr
     return colVal, rowPtr, nzVal, dims[1], dims[2]
 end
 
-_m(A::SparseGPU) = A.dims[1]
-_n(A::SparseGPU) = A.dims[2]
+_m(A::SPARSEGPU) = A.dims[1]
+_n(A::SPARSEGPU) = A.dims[2]
 
 # DILU Preconditioner (hybrid implementation for now)
 
-Preconditioner{DILU}(Agpu::SparseGPU{F,I}) where {F,I} = begin
+Preconditioner{DILU}(Agpu::SPARSEGPU{F,I}) where {F,I} = begin
     i, j, v = findnz(Agpu)
     ih = adapt(CPU(), i)
     jh = adapt(CPU(), j)
@@ -69,23 +72,24 @@ begin
     nothing
 end
 
-struct IC0GPUStorage{A,B,C}
+# IC0GPU
+
+struct GPUPredonditionerStorage{A,B,C}
     P::A
     L::B 
     U::C
 end
 
-Preconditioner{IC0GPU}(A::AbstractSparseArray{F,I}) where {F,I} = begin
-    backend = get_backend(A)
+Preconditioner{IC0GPU}(A::SPARSEGPU) = begin
     m, n = size(A)
     m == n || throw("Matrix not square")
-    PS = CUDA.CUSPARSE.ic02(A)
+    PS = ic02(A)
     L = KP.TriangularOperator(PS, 'L', 'N', nrhs=1, transa='N')
     U = KP.TriangularOperator(PS, 'L', 'N', nrhs=1, transa='T')
-    S = IC0GPUStorage(PS,L,U)
+    S = GPUPredonditionerStorage(PS,L,U)
 
     T = eltype(A.nzVal)
-    z = CUDA.zeros(T, n)
+    z = KernelAbstractions.zeros(BACKEND(), T, n)
 
     P = LinearOperator(T, n, n, true, true, (y, x) -> ldiv_ic0!(S, x, y, z))
 
@@ -98,34 +102,28 @@ function ldiv_ic0!(S, x, y, z)
     return y
 end
 
-update_preconditioner!(P::Preconditioner{IC0GPU,M,PT,S},  mesh, config) where {M<:SparseGPU,PT,S} = 
+update_preconditioner!(P::Preconditioner{IC0GPU,M,PT,S},  mesh, config) where {M<:SPARSEGPU,PT,S} = 
 begin
     P.storage.P.nzVal .= P.A.nzVal
-    CUDA.CUSPARSE.ic02!(P.storage.P)
+    ic02!(P.storage.P)
     KP.update!(P.storage.L, P.storage.P)
     KP.update!(P.storage.U, P.storage.P)
     nothing
 end
 
-# ILU0GPU NEW
+# ILU0GPU
 
-struct ILU0GPUStorage{A,B,C}
-    P::A
-    L::B 
-    U::C
-end
-
-Preconditioner{ILU0GPU}(A::AbstractSparseArray{F,I}) where {F,I} = begin
+Preconditioner{ILU0GPU}(A::SPARSEGPU) = begin
     backend = get_backend(A)
     m, n = size(A)
     m == n || throw("Matrix not square")
-    PS = CUDA.CUSPARSE.ilu02(A)
+    PS = ilu02(A)
     L = KP.TriangularOperator(PS, 'L', 'U', nrhs=1, transa='N')
     U = KP.TriangularOperator(PS, 'U', 'N', nrhs=1, transa='N')
-    S = ILU0GPUStorage(PS,L,U)
+    S = GPUPredonditionerStorage(PS,L,U)
 
     T = eltype(A.nzVal)
-    z = CUDA.zeros(T, n)
+    z = KernelAbstractions.zeros(BACKEND(), T, n)
 
     P = LinearOperator(T, n, n, true, true, (y, x) -> ldiv_ilu0!(S, x, y, z))
 
@@ -138,10 +136,10 @@ function ldiv_ilu0!(S, x, y, z)
     return y
 end
 
-update_preconditioner!(P::Preconditioner{ILU0GPU,M,PT,S},  mesh, config) where {M<:SparseGPU,PT,S} = 
+update_preconditioner!(P::Preconditioner{ILU0GPU,M,PT,S},  mesh, config) where {M<:SPARSEGPU,PT,S} = 
 begin
     P.storage.P.nzVal .= P.A.nzVal
-    CUDA.CUSPARSE.ilu02!(P.storage.P)
+    ilu02!(P.storage.P)
     KP.update!(P.storage.L, P.storage.P)
     KP.update!(P.storage.U, P.storage.P)
     nothing
@@ -150,13 +148,13 @@ end
 import LinearAlgebra.ldiv!, LinearAlgebra.\
 export ldiv!
 
-ldiv!(x::CuArray, P::DILUprecon{M,V,VI}, b) where {M<:AbstractSparseArray,V,VI} =
+ldiv!(x::GPUARRAY, P::DILUprecon{M,V,VI}, b) where {M<:AbstractSparseArray,V,VI} =
 begin
     xcpu = Vector(x)
     bcpu = Vector(b)
     XCALibre.Solve.forward_substitution!(xcpu, P, bcpu)
     XCALibre.Solve.backward_substitution!(xcpu, P, xcpu)
-    KernelAbstractions.copyto!(CUDABackend(), x, xcpu)
+    KernelAbstractions.copyto!(BACKEND(), x, xcpu)
 end
 
 end # end module

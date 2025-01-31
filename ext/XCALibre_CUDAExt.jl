@@ -23,7 +23,6 @@ import XCALibre.ModelFramework: _nzval, _rowptr, _colval, get_sparse_fields,
                                 _build_A, _build_opA
 
 _build_A(backend::BACKEND, i, j, v, n) = begin
-
     A = sparse(i, j, v, n, n)
     SPARSEGPU(A)
 end
@@ -114,7 +113,6 @@ end
 # ILU0GPU
 
 Preconditioner{ILU0GPU}(A::SPARSEGPU) = begin
-    backend = get_backend(A)
     m, n = size(A)
     m == n || throw("Matrix not square")
     PS = ilu02(A)

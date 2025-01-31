@@ -1,19 +1,19 @@
-module XCALibre_AMDExt
+module XCALibre_oneAPIExt
 
 if isdefined(Base, :get_extension)
-    using AMDGPU
+    using oneAPI
 else
-    using ..AMDGPU
+    using ..oneAPI
 end
 
 using XCALibre, Adapt, SparseArrays, SparseMatricesCSR, KernelAbstractions
 using LinearAlgebra, LinearOperators
 import KrylovPreconditioners as KP
 
-const SPARSEGPU = AMDGPU.rocSPARSE.ROCSparseMatrixCSR
-const BACKEND = ROCBackend
-const GPUARRAY = ROCArray
-using AMDGPU.rocSPARSE: ic0!, ic0, ilu0!, ilu0
+const SPARSEGPU = oneAPI.oneMKL.oneSparseMatrixCSR
+const BACKEND = oneAPIBackend
+const GPUARRAY = oneArray
+# using oneAPI.oneMKL: ilu02, ilu02!, ic02, ic02!
 
 function XCALibre.Mesh._convert_array!(arr, backend::BACKEND)
     return adapt(GPUARRAY, arr) # using GPUARRAY
@@ -23,6 +23,7 @@ import XCALibre.ModelFramework: _nzval, _rowptr, _colval, get_sparse_fields,
                                 _build_A, _build_opA
 
 _build_A(backend::BACKEND, i, j, v, n) = begin
+
     A = sparse(i, j, v, n, n)
     SPARSEGPU(A)
 end
@@ -80,67 +81,13 @@ struct GPUPredonditionerStorage{A,B,C}
 end
 
 Preconditioner{IC0GPU}(A::SPARSEGPU) = begin
-    m, n = size(A)
-    m == n || throw("Matrix not square")
-    PS = ic(A, 'O')
-    L = KP.TriangularOperator(PS, 'L', 'N', nrhs=1, transa='N')
-    U = KP.TriangularOperator(PS, 'L', 'N', nrhs=1, transa='T')
-    S = GPUPredonditionerStorage(PS,L,U)
-
-    T = eltype(A.nzVal)
-    z = KernelAbstractions.zeros(BACKEND(), T, n)
-
-    P = LinearOperator(T, n, n, true, true, (y, x) -> ldiv_ic0!(S, x, y, z))
-
-    Preconditioner{IC0GPU,typeof(A),typeof(P),typeof(S)}(A,P,S)
-end
-
-function ldiv_ic0!(S, x, y, z)
-    ldiv!(z, S.L, x)   # Forward substitution with L
-    ldiv!(y, S.U, z)  # Backward substitution with Lᴴ
-    return y
-end
-
-update_preconditioner!(P::Preconditioner{IC0GPU,M,PT,S},  mesh, config) where {M<:SPARSEGPU,PT,S} = 
-begin
-    P.storage.P.nzVal .= P.A.nzVal
-    ic!(P.storage.P, 'O')
-    KP.update!(P.storage.L, P.storage.P)
-    KP.update!(P.storage.U, P.storage.P)
-    nothing
+    error("Not yet implemented for type $(typeof(A))")
 end
 
 # ILU0GPU
 
 Preconditioner{ILU0GPU}(A::SPARSEGPU) = begin
-    m, n = size(A)
-    m == n || throw("Matrix not square")
-    PS = ilu(A, 'O')
-    L = KP.TriangularOperator(PS, 'L', 'U', nrhs=1, transa='N')
-    U = KP.TriangularOperator(PS, 'U', 'N', nrhs=1, transa='N')
-    S = GPUPredonditionerStorage(PS,L,U)
-
-    T = eltype(A.nzVal)
-    z = KernelAbstractions.zeros(BACKEND(), T, n)
-
-    P = LinearOperator(T, n, n, true, true, (y, x) -> ldiv_ilu0!(S, x, y, z))
-
-    Preconditioner{ILU0GPU,typeof(A),typeof(P),typeof(S)}(A,P,S)
-end
-
-function ldiv_ilu0!(S, x, y, z)
-    ldiv!(z, S.L, x)   # Forward substitution with L
-    ldiv!(y, S.U, z)  # Backward substitution with Lᴴ
-    return y
-end
-
-update_preconditioner!(P::Preconditioner{ILU0GPU,M,PT,S},  mesh, config) where {M<:SPARSEGPU,PT,S} = 
-begin
-    P.storage.P.nzVal .= P.A.nzVal
-    ilu!(P.storage.P, 'O')
-    KP.update!(P.storage.L, P.storage.P)
-    KP.update!(P.storage.U, P.storage.P)
-    nothing
+    error("Not yet implemented for type $(typeof(A))")
 end
 
 import LinearAlgebra.ldiv!, LinearAlgebra.\

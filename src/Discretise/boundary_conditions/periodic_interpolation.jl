@@ -9,7 +9,7 @@ function adjust_boundary!(b_cpu, BC::Periodic, phif::FaceScalarField, phi, bound
 
     kernel! = adjust_boundary_periodic_scalar!(backend, workgroup)
     kernel!(BC, phif, phi, boundaries, boundary_cellsID, time, face_map, faces, phif_values, phi_values, ndrange = kernel_range)
-    # KernelAbstractions.synchronize(backend)
+    # # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function adjust_boundary_periodic_scalar!(BC, phif, phi, boundaries, boundary_cellsID, time, face_map, faces, phif_values, phi_values)
@@ -56,7 +56,7 @@ function adjust_boundary!(b_cpu, BC::Periodic, psif::FaceVectorField, psi::Vecto
 
     kernel! = adjust_boundary_periodic_vector!(backend, workgroup)
     kernel!(BC, psif, psi, boundaries, boundary_cellsID, time, face_map, faces, x, y, z, ndrange = kernel_range)
-    # KernelAbstractions.synchronize(backend)
+    # # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function adjust_boundary_periodic_vector!(BC, psif, psi, boundaries, boundary_cellsID, time, face_map, faces, x, y, z)

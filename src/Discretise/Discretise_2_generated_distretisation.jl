@@ -24,7 +24,7 @@ function discretise!(
     # Call discretise kernel
     kernel! = _discretise_vector_model!(backend, workgroup)
     kernel!(model, model.terms, model.sources, mesh, nzval0, nzval, colval, rowptr, bx, by, bz, prev, runtime; ndrange = length(mesh.cells))
-    KernelAbstractions.synchronize(backend)
+    # # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _discretise_vector_model!(
@@ -100,7 +100,7 @@ function discretise!(
     # Call discretise kernel
     kernel! = _discretise_scalar_model!(backend, workgroup)
     kernel!(model, model.terms, model.sources, mesh, nzval, colval, rowptr, b, prev, runtime; ndrange = length(mesh.cells))
-    KernelAbstractions.synchronize(backend)
+    # # KernelAbstractions.synchronize(backend)
 end
 
 # Discretise kernel function
@@ -286,7 +286,7 @@ function update_equation!(eqn::ModelEquation{T,M,E,S,P}, config) where {T<:Vecto
     # Call set nzval to zero kernel
     kernel! = _update_equation!(backend, workgroup)
     kernel!(nzval, nzval0, ndrange = length(nzval0))
-    KernelAbstractions.synchronize(backend)
+    # # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _update_equation!(nzval, nzval0) 

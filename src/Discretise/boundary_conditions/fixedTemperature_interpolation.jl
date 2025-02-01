@@ -6,7 +6,7 @@ function adjust_boundary!(b_cpu, BC::FixedTemperature, phif::FaceScalarField, ph
 
     kernel! = adjust_boundary_fixedtemperature_scalar!(backend, workgroup)
     kernel!(BC, phif, phi, boundaries, boundary_cellsID, time, phif_values, phi_values, ndrange = kernel_range)
-    # KernelAbstractions.synchronize(backend)
+    # # KernelAbstractions.synchronize(backend)
 end
 
 # FixedTemperature

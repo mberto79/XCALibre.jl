@@ -94,7 +94,7 @@ function _smoother_launch(
     kernel! = _apply_smoother_gpu!(backend, workgroup)
     for _ ∈ 1:smoother.loops
         kernel!(smoother, x, b, nzval, colval, rowptr, ndrange = krange)
-        KernelAbstractions.synchronize(backend)
+        # KernelAbstractions.synchronize(backend)
         x .= smoother.x_temp
     end
 end

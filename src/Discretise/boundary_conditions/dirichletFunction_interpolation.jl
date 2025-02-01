@@ -13,7 +13,7 @@ function adjust_boundary!(b_cpu, BC::DirichletFunction, phif::FaceScalarField, p
 
     kernel! = adjust_boundary_dirichletFunction_scalar!(backend, workgroup)
     kernel!(BC, phif, phi, boundaries, faces, boundary_cellsID, time, phif_values, phi_values, ndrange = kernel_range)
-    # KernelAbstractions.synchronize(backend)
+    # # KernelAbstractions.synchronize(backend)
 end
 
 # DirichletFunction
@@ -42,7 +42,7 @@ function adjust_boundary!(b_cpu, BC::DirichletFunction, psif::FaceVectorField, p
 
     kernel! = adjust_boundary_dirichletFunction_vector!(backend, workgroup)
     kernel!(BC, psif, psi, boundaries, faces, boundary_cellsID, time, x, y, z, ndrange = kernel_range)
-    # KernelAbstractions.synchronize(backend)
+    # # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function adjust_boundary_dirichletFunction_vector!(BC, psif, psi, boundaries, faces, boundary_cellsID, time, x, y, z)

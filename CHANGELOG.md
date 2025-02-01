@@ -6,21 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version [v0.4.0] - 2025-xx-xx
 
 ### Added
-* Implementation of `Symmetry` boundary condition for `ScalarField` types
-* New macro to help define boundary conditions that will dispatch to `Scalar` or `VectorField` types
-* Added `eltype` method for both `Scalar` and `VectorField` types to simplify the development of new kernels where type information is needed
-* New gradient limiters `FaceBased` and `MFaceBased` for limiting gradients based on cell faces, where `MFaceBased` is a multidimensional version, and it is generally recommended over `FaceBased`.
+* Implementation of `Symmetry` boundary condition for `ScalarField` types [#30]
+* New macro to help define boundary conditions that will dispatch to `Scalar` or `VectorField` types [#30]
+* Added `eltype` method for both `Scalar` and `VectorField` types to simplify the development of new kernels where type information is needed [#30]
+* New gradient limiters `FaceBased` and `MFaceBased` for limiting gradients based on cell faces, where `MFaceBased` is a multidimensional version, and it is generally recommended over `FaceBased` [#30]
+* Support for INTEL hardware [#32]
 
 ### Fixed
-* Calling `JacobiSmoother` now works on the GPU
-* Implemented `SparseXCSR` as wrapper for `SparseMatrixCSR` on the CPU to resolve display/print errors
+* Calling `JacobiSmoother` now works on the GPU [#30]
+* Implemented `SparseXCSR` as wrapper for `SparseMatrixCSR` on the CPU to resolve display/print errors [#30]
 
 ### Changed
-* The calculation of gradients has been improved by merging computations into a single kernel, improving performance of gradient kernels by around 10-30%, most noticable for vector gradients
-* Improved calculation of non-orthogonal calculation (more tests are still needed), although tests have proven to be stable
+* The calculation of gradients has been improved by merging computations into a single kernel, improving performance of gradient kernels by around 10-30%, most noticable for vector gradients [#30]
+* Improved calculation of non-orthogonal calculation (more tests are still needed), although tests have proven to be stable [#30]
+* Improved documentation/readme on supported GPU backends/hardware and make users aware of potential `F32` limitation on some hardware
 
 ### Breaking
-* The top level API for all solvers no longer takes the keyword arguement `limit_gradient` for activating gradient limiter. New gradient limiters have been added and can be selected/configured when assigning numerical schemes with the `set_schemes` function.
+* The top level API for all solvers no longer takes the keyword arguement `limit_gradient` for activating gradient limiter. New gradient limiters have been added and can be selected/configured when assigning numerical schemes with the `set_schemes` function [#30]
 
 ### Deprecated
 * No functions deprecated

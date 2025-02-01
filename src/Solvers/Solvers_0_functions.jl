@@ -45,7 +45,7 @@ function flux!(phif::FS, psif::FV, config) where {FS<:FaceScalarField,FV<:FaceVe
     kernel_range = length(phif)
     kernel! = flux_kernel!(backend, workgroup, kernel_range)
     kernel!(phif, psif, ndrange=kernel_range)
-    KernelAbstractions.synchronize(backend)
+    # # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function flux_kernel!(phif, psif)
@@ -70,7 +70,7 @@ function flux!(phif::FS, psif::FV, rhof::FS, config) where {FS<:FaceScalarField,
     kernel_range = length(phif)
     kernel! = _flux!(backend, workgroup, kernel_range)
     kernel!(phif, psif, rhof, ndrange=kernel_range)
-    KernelAbstractions.synchronize(backend)
+    # # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _flux!(phif, psif, rhof)
@@ -102,7 +102,7 @@ function inverse_diagonal!(rD::S, eqn, config) where {S<:ScalarField}
     kernel_range = length(rD)
     kernel! = _inverse_diagonal!(backend, workgroup, kernel_range)
     kernel!(rD, nzval, colval, rowptr, ndrange=kernel_range)
-    KernelAbstractions.synchronize(backend)
+    # # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _inverse_diagonal!(rD, nzval, colval, rowptr)
@@ -130,7 +130,7 @@ function correct_velocity!(U, Hv, ∇p, rD, config)
     kernel_range = length(U)
     kernel! = _correct_velocity!(backend, workgroup, kernel_range)
     kernel!(U, Hv, ∇p, rD, ndrange=kernel_range)
-    KernelAbstractions.synchronize(backend)
+    # # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _correct_velocity!(U, Hv, ∇p, rD)
@@ -164,7 +164,7 @@ remove_pressure_source!(U_eqn::ME, ∇p, config) where {ME} = begin # Extend to 
     kernel_range = length(bx)
     kernel! = _remove_pressure_source!(backend, workgroup, kernel_range)
     kernel!(cells, source_sign, ∇p, bx, by, bz, ndrange=kernel_range)
-    KernelAbstractions.synchronize(backend)
+    # # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _remove_pressure_source!(cells, source_sign, ∇p, bx, by, bz) #Extend to 3D
@@ -194,7 +194,7 @@ function H!(Hv, U::VF, U_eqn, config) where {VF<:VectorField} # Extend to 3D!
     kernel! = _H!(backend, workgroup, kernel_range)
     kernel!(cells, cell_neighbours,
         nzval, rowptr, colval, bx, by, bz, U, Hv, ndrange=kernel_range)
-    KernelAbstractions.synchronize(backend)
+    # # KernelAbstractions.synchronize(backend)
 end
 
 # Pressure correction kernel
@@ -260,7 +260,7 @@ max_courant_number!(cellsCourant, model, config) = begin
     kernel_range = length(cellsCourant)
     kernel! = _max_courant_number!(backend, workgroup, kernel_range)
     kernel!(cellsCourant, U, runtime, mesh, ndrange=kernel_range)
-    KernelAbstractions.synchronize(backend)
+    # # KernelAbstractions.synchronize(backend)
     return maximum(cellsCourant)
 end
 

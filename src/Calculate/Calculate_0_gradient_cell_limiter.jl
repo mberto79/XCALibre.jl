@@ -22,7 +22,7 @@ function limit_gradient!(method::CellBased, ∇F, F::ScalarField, config)
     kernel! = _limit_gradient!(backend, workgroup)
     # kernel!(x, y, z, Ff, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, ndrange=length(cells))
     kernel!(method, x, y, z, F, cells, cell_neighbours, cell_faces, cell_nsign, faces, ndrange=length(cells))
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 function limit_gradient!(method::CellBased, ∇F, F::VectorField, config)
@@ -38,15 +38,15 @@ function limit_gradient!(method::CellBased, ∇F, F::VectorField, config)
 
     kernel! = _limit_gradient!(backend, workgroup)
     kernel!(method, xx, yx, zx, F.x, cells, cell_neighbours, cell_faces, cell_nsign, faces, ndrange=length(cells))
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 
     kernel! = _limit_gradient!(backend, workgroup)
     kernel!(method, xy, yy, zy, F.y, cells, cell_neighbours, cell_faces, cell_nsign, faces, ndrange=length(cells))
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 
     kernel! = _limit_gradient!(backend, workgroup)
     kernel!(method, xz, yz, zz, F.z, cells, cell_neighbours, cell_faces, cell_nsign, faces, ndrange=length(cells))
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 # @kernel function _limit_gradient!(x, y, z, Ff, F, cells, cell_neighbours, cell_faces, cell_nsign, faces)

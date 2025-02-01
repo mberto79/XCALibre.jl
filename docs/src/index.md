@@ -19,12 +19,12 @@ For CFD researchers whose research involves developing new numerical methods, tu
 ### Multiple backends
 XCALibre.jl embraces parallelism out-of-the-box on all the compute backends supported by [KernelAbstractions.jl](https://juliagpu.github.io/KernelAbstractions.jl/stable/). That is,
 
-* GPU acceleration on Nvidia, AMD, Intel and Apple hardware
+* GPU acceleration on Nvidia, AMD and Intel hardware (Apple hardware is not supported yet)
 * Multi-threaded runs on CPUs
 
 !!! note
     
-    GPU functionality has only been tested on Nvidia hardware due to availability. Although GPUs from other vendors should also work correctly. Please open an issue if this is not the case so we can investigate. Notice that Apple hardware will not work as expected due to support for sparse matrices not being implemented yet on `Metal.jl`
+    GPU functionality has only been tested on Nvidia hardware due to availability. However, AMD and INTEL GPUs should also work correctly. Please open an issue if this is not the case so we can investigate. Apple hardware is currently not supported since sparse matrices have not yet been implemented in `Metal.jl`. Notice that some hardware may only support `Float32` operations, in such cases, the mesh should be loaded using the keyword argument `float_type=Float32` (please refer to the [Pre-processing](@ref) section in the user guide). 
 
 ### Mesh formats
 XCALibre.jl uses its own mesh format to allow the geometry and boundary information to be stored in a format that is suitable for both CPU and GPU calculations. `XCALibre.jl` does not yet provide mesh generation tools. Therefore, some mesh conversion tools for the following mesh formats are provided:

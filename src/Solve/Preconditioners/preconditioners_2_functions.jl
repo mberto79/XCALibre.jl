@@ -28,32 +28,6 @@ begin
     return P
 end
 
-# update_preconditioner!(
-#     P::Preconditioner{NormDiagonal,M,PT,S}
-#     ) where {M<:AbstractSparseArray,PT,S} =
-# begin
-#     A = P.A
-#     # (; rowptr, m, n, nzval, colval) = A
-#     colval, rowptr, nzval, m ,n = sparse_array_deconstructor_preconditioners(A)
-#     storage = P.storage
-#     @inbounds for i ∈ 1:m
-#         idx_start = rowptr[i]
-#         idx_next = rowptr[i+1]
-#         column_vals = @view nzval[idx_start:(idx_next-1)] 
-#         storage[i] = 1/norm(column_vals)    
-#     end
-# end
-
-function update_preconditioner!(P::Preconditioner{IC0GPU,M,PT,S}, mesh, config) where {M<:AbstractSparseArray,PT,S}
-    KP.update!(P.P, P.A)
-    nothing
-end
-
-function update_preconditioner!(P::Preconditioner{ILU0GPU,M,PT,S}, mesh, config) where {M<:AbstractSparseArray,PT,S}
-    KP.update!(P.P, P.A)
-    nothing
-end
-
 function update_preconditioner!(P::Preconditioner{NormDiagonal,M,PT,S}, mesh, config) where {M<:AbstractSparseArray,PT,S}
     # backend = _get_backend(mesh)
 
@@ -69,7 +43,7 @@ function update_preconditioner!(P::Preconditioner{NormDiagonal,M,PT,S}, mesh, co
 
     kernel! = update_NormDiagonal!(backend, workgroup)
     kernel!(colptr_array, nzval_array, storage, ndrange = m_array)
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function update_NormDiagonal!(rowptr, nzval, storage)
@@ -83,27 +57,6 @@ end
         storage[i] = 1/norm
     # end
 end
-
-# update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh) where {M<:AbstractSparseArray,PT,S} =
-# begin
-#     A = P.A
-#     # (; rowptr, m, n, nzval, colval) = A
-#     colval, rowptr, nzval, m, n = sparse_array_deconstructor_preconditioners(A)
-#     storage = P.storage
-#     idx_diagonal = zero(eltype(m)) # index to diagonal element
-#     @inbounds for i ∈ 1:m
-#         idx_start = rowptr[i]
-#         idx_next = rowptr[i+1]
-#         @inbounds for p ∈ idx_start:(idx_next-1)
-#             row = colval[p]
-#             if row == i
-#                 idx_diagonal = p
-#                 break
-#             end
-#         end
-#         storage[i] = 1/abs(nzval[idx_diagonal])
-#     end
-# end
 
 function update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh, config) where {M<:AbstractSparseArray,PT,S}
     # backend = _get_backend(mesh)
@@ -122,7 +75,7 @@ function update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh, config) 
 
     kernel! = update_Jacobi!(backend, workgroup)
     kernel!(rowval_array, colptr_array, nzval_array, idx_diagonal, storage, ndrange = m_array)
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function update_Jacobi!(colval, rowptr, nzval, idx_diagonal, storage)
@@ -157,10 +110,6 @@ function sparse_array_deconstructor_preconditioners(arr::SparseMatricesCSR.Spars
     (; colval, rowptr, nzval, m, n) = arr
     return colval, rowptr, nzval, m ,n
 end
-
-
-# _m(A::SparseArrays.SparseMatrixCSC) = A.m
-# _n(A::SparseArrays.SparseMatrixCSC) = A.n
 
 _m(A::SparseMatricesCSR.SparseMatrixCSR) = A.m
 _n(A::SparseMatricesCSR.SparseMatrixCSR) = A.n

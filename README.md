@@ -48,7 +48,7 @@ pkg> add XCALibre https://github.com/mberto79/XCALibre.jl.git#dev-0.3-main
 ## Main features
 
 
-* Multiple compute backends - as supported by [KernelAbstractions.jl](https://juliagpu.github.io/KernelAbstractions.jl/stable/) (Except Apple hardware)
+* Multiple compute backends - as supported by [KernelAbstractions.jl](https://juliagpu.github.io/KernelAbstractions.jl/stable/) (except Apple hardware)
 * Ability to import *.unv* and OpenFOAM grids
 * Incompressible and (weakly) compressible flow solvers
 * RANS and LES turbulence modelling (`KOmega` and `KOmegaLKE` for RANS and `Smagorinsky` for LES, for now!)

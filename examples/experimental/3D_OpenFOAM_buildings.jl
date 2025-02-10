@@ -3,7 +3,11 @@ using XCALibre
 using CUDA
 
 
-mesh_file = "unv_sample_meshes/OF_buildings/polyMesh/"
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+
+grid = "OF_buildings/polyMesh"
+mesh_file = joinpath(grids_dir, grid)
+
 @time mesh = FOAM3D_mesh(mesh_file, integer_type=Int64, float_type=Float64)
 
 mesh_dev = mesh
@@ -83,16 +87,16 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.4,
-        rtol = 1e-6,
+        rtol = 1e-2,
         atol = 1e-15
     ),
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), 
+        preconditioner = IC0GPU(), #Jacobi(), 
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 1e-6,
+        rtol = 1e-2,
         atol = 1e-15
     ),
     k = set_solver(
@@ -101,8 +105,8 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.2,
-        rtol = 1e-6,
+        relax       = 0.6,
+        rtol = 1e-1,
         atol = 1e-15
     ),
     omega = set_solver(
@@ -111,8 +115,8 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver, CgSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.2,
-        rtol = 1e-6,
+        relax       = 0.6,
+        rtol = 1e-1,
         atol = 1e-15
     )
 )

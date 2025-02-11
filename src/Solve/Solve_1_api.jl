@@ -63,9 +63,23 @@ set_solver(
         rtol=_get_float(field.mesh)(1e-1)
     ) where {S,PT<:PreconditionerType} = begin
 
-    # return NamedTuple
+    # # return NamedTuple
+    # TF = _get_float(field.mesh)
+    # (
+    #     solver=solver, 
+    #     preconditioner=preconditioner, 
+    #     convergence=convergence |> TF, 
+    #     relax=relax |> TF, 
+    #     smoother=smoother,
+    #     limit=limit,
+    #     itmax=itmax, 
+    #     atol=atol |> TF, 
+    #     rtol=rtol |> TF
+    # )
+
+    # return SolverConfig
     TF = _get_float(field.mesh)
-    (
+    SolverConfig(
         solver=solver, 
         preconditioner=preconditioner, 
         convergence=convergence |> TF, 
@@ -76,6 +90,18 @@ set_solver(
         atol=atol |> TF, 
         rtol=rtol |> TF
     )
+end
+
+@kwdef mutable struct SolverConfig{F,I,Solver,Precon,Smoother,Limits}
+    solver::Solver
+    preconditioner::Precon
+    convergence::F
+    relax::F
+    smoother::Smoother
+    limit::Limits
+    itmax::I
+    atol::F
+    rtol::F 
 end
 
 

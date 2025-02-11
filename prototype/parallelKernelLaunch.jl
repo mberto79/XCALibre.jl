@@ -10,11 +10,11 @@ grid = "bfs_unv_tet_10mm.unv"
 # grid = "bfs_unv_tet_15mm.unv"
 
 mesh_file = joinpath(grids_dir, grid)
-
+0.
 # mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
 # mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
 
-mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
+mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
 
 # mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_5mm.unv"
 # mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_4mm.unv"
@@ -24,7 +24,7 @@ mesh = UNV3D_mesh(mesh_file, scale=0.001)
 mesh_dev = adapt(backend, mesh)  # Uncomment this if using GPU
 
 # Inlet conditions
-Umag = 0.5
+Umag = 0.5 
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu

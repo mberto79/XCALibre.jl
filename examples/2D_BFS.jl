@@ -8,10 +8,11 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
+hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+# hardware = set_hardware(backend=CPU(), workgroup=1024)
+
 # backend = CPU(); activate_multithread(backend)
-# mesh_dev = mesh
-backend = CUDABackend()
-mesh_dev = adapt(backend, mesh)
+mesh_dev = adapt(hardware.backend, mesh)
 
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
@@ -78,9 +79,6 @@ runtime = set_runtime(
     iterations=2000, time_step=1, write_interval=100)
     # iterations=1, time_step=1, write_interval=1)
 
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=backend, workgroup=1024)
-
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
@@ -92,10 +90,10 @@ initialise!(model.momentum.p, 0.0)
 
 @time residuals = run!(model, config)
 
-using Plots
-iterations = runtime.iterations
-plot(yscale=:log10, ylims=(1e-7,1e-1))
-plot!(1:iterations, residuals.Ux, label="Ux")
-plot!(1:iterations, residuals.Uy, label="Uy")
-plot!(1:iterations, residuals.Uz, label="Uz")
-plot!(1:iterations, residuals.p, label="p")
+# using Plots
+# iterations = runtime.iterations
+# plot(yscale=:log10, ylims=(1e-7,1e-1))
+# plot!(1:iterations, residuals.Ux, label="Ux")
+# plot!(1:iterations, residuals.Uy, label="Uy")
+# plot!(1:iterations, residuals.Uz, label="Uz")
+# plot!(1:iterations, residuals.p, label="p")

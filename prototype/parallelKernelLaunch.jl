@@ -14,7 +14,7 @@ mesh_file = joinpath(grids_dir, grid)
 # mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
 # mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
 
-mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
+mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
 
 # mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_5mm.unv"
 # mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_4mm.unv"

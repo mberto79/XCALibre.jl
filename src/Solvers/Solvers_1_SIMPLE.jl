@@ -232,21 +232,22 @@ function SIMPLE(
         turbulence!(turbulenceModel, model, S, prev, time, config) 
         update_nueff!(nueff, nu, model.turbulence, config)
         
-        convergence = 1e-7
+        # convergence = solvers.U.convergence
+        # println("Yes, use the actual convergence given!")
 
         residual!(R_ux, U_eqn, U.x, iteration, xdir, config)
         residual!(R_uy, U_eqn, U.y, iteration, ydir, config)
         typeof(mesh) <: Mesh3 && residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
         residual!(R_p, p_eqn, p, iteration, nothing, config)
 
-        if (R_ux[iteration] <= convergence && 
-            R_uy[iteration] <= convergence && 
-            R_uz[iteration] <= convergence &&
-            R_p[iteration] <= convergence)
+        if (R_ux[iteration] <= solvers.U.convergence && 
+            R_uy[iteration] <= solvers.U.convergence && 
+            # R_uz[iteration] <= solvers.U.convergence &&
+            R_p[iteration] <= solvers.p.convergence)
 
             @info "Simulation converged in $iteration iterations!"
                 if !signbit(write_interval)
-                    model2vtk(model, @sprintf "iteration_%.6d" iteration)
+                    model2vtk(model, VTKMeshData, @sprintf "iteration_%.6d" iteration)
                 end
             break
         end

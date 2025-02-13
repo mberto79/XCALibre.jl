@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 * Calling `JacobiSmoother` now works on the GPU [#30]
 * Implemented `SparseXCSR` as wrapper for `SparseMatrixCSR` on the CPU to resolve display/print errors [#30]
+* The convergence criteria for solvers is now used to stop/control simulation runtime [??]
 
 ### Changed
 * The calculation of gradients has been improved by merging computations into a single kernel, improving performance of gradient kernels by around 10-30%, most noticable for vector gradients [#30]

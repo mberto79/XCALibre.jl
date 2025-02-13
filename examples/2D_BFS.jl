@@ -45,8 +45,8 @@ model = Physics(
 )
 
 schemes = (
-    U = set_schemes(divergence = Linear, limiter=MFaceBased(model.domain)),
-    # U = set_schemes(divergence = Upwind),
+    # U = set_schemes(divergence = Linear, limiter=MFaceBased(model.domain)),
+    U = set_schemes(divergence = Upwind),
     p = set_schemes()
     # p = set_schemes(limiter=FaceBased(model.domain))
     # p = set_schemes(limiter=MFaceBased(model.domain))
@@ -57,20 +57,20 @@ solvers = (
     U = set_solver(
         model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), # ILU0GPU, Jacobi, DILU
-        smoother=JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
-        convergence = 1e-7,
-        relax       = 0.8,
-        rtol = 1e-1
+        preconditioner = ILU0GPU(), # ILU0GPU, Jacobi, DILU
+        smoother=JacobiSmoother(domain=mesh_dev, loops=3, omega=2/3),
+        convergence = 1e-5,
+        relax       = 0.7,
+        rtol = 1e-3
     ),
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver, CgSolver
-        preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
-        smoother=JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
-        convergence = 1e-7,
+        preconditioner = IC0GPU(), # IC0GPU, Jacobi, DILU
+        smoother=JacobiSmoother(domain=mesh_dev, loops=3, omega=2/3),
+        convergence = 1e-5,
         relax       = 0.2,
-        rtol = 1e-2
+        rtol = 1e-4
     )
 )
 

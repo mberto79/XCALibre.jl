@@ -168,7 +168,7 @@ function SIMPLE(
     for iteration ∈ 1:iterations
         time = iteration
 
-        solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
+        rx, ry, rz = solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
         
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
@@ -189,7 +189,7 @@ function SIMPLE(
         
         # Pressure calculations
         @. prev = p.values
-        solve_equation!(p_eqn, p, solvers.p, config; ref=pref)
+        rp = solve_equation!(p_eqn, p, solvers.p, config; ref=pref)
         explicit_relaxation!(p, prev, solvers.p.relax, config)
         
         grad!(∇p, pf, p, p.BCs, time, config) 
@@ -235,10 +235,15 @@ function SIMPLE(
         # convergence = solvers.U.convergence
         # println("Yes, use the actual convergence given!")
 
-        residual!(R_ux, U_eqn, U.x, iteration, xdir, config)
-        residual!(R_uy, U_eqn, U.y, iteration, ydir, config)
-        typeof(mesh) <: Mesh3 && residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
-        residual!(R_p, p_eqn, p, iteration, nothing, config)
+        # residual!(R_ux, U_eqn, U.x, iteration, xdir, config)
+        # residual!(R_uy, U_eqn, U.y, iteration, ydir, config)
+        # typeof(mesh) <: Mesh3 && residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
+        # residual!(R_p, p_eqn, p, iteration, nothing, config)
+
+        R_ux[iteration] = rx
+        R_uy[iteration] = ry
+        R_uz[iteration] = rz
+        R_p[iteration] = rp
 
         if (R_ux[iteration] <= solvers.U.convergence && 
             R_uy[iteration] <= solvers.U.convergence && 

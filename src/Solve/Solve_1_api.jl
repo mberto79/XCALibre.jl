@@ -126,6 +126,8 @@ function solve_equation!(
     end
     update_preconditioner!(eqn.preconditioner, phi.mesh, config)
     solve_system!(eqn, solversetup, phi, nothing, config)
+    res = residual_openfoam(eqn, phi, nothing, config)
+    return res
 end
 
 function solve_equation!(
@@ -142,6 +144,7 @@ function solve_equation!(
     implicit_relaxation_diagdom!(psiEqn, psi.x.values, solversetup.relax, xdir, config)
     update_preconditioner!(psiEqn.preconditioner, mesh, config)
     solve_system!(psiEqn, solversetup, psi.x, xdir, config)
+    resx = residual_openfoam(psiEqn, psi, xdir, config)
     
     update_equation!(psiEqn, config)
     apply_boundary_conditions!(psiEqn, psi.y.BCs, ydir, time, config)
@@ -149,8 +152,11 @@ function solve_equation!(
     implicit_relaxation_diagdom!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
     update_preconditioner!(psiEqn.preconditioner, mesh, config)
     solve_system!(psiEqn, solversetup, psi.y, ydir, config)
+    resy = residual_openfoam(psiEqn, psi, ydir, config)
+
     
     # Z velocity calculations (3D Mesh only)
+    resz = one(_get_float(mesh))
     if typeof(mesh) <: Mesh3
         update_equation!(psiEqn, config)
         apply_boundary_conditions!(psiEqn, psi.z.BCs, zdir, time, config)
@@ -158,7 +164,9 @@ function solve_equation!(
         implicit_relaxation_diagdom!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
         update_preconditioner!(psiEqn.preconditioner, mesh, config)
         solve_system!(psiEqn, solversetup, psi.z, zdir, config)
+        resz = residual_openfoam(psiEqn, psi, zdir, config)
     end
+    return resx, resy, resz
 end
 
 function solve_system!(phiEqn::ModelEquation, setup, result, component, config) # ; opP, solver
@@ -364,14 +372,41 @@ function residual!(Residual, eqn, phi, iteration, component, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
+    # (; A, R, Fx) = eqn.equation
+    # b = _b(eqn, component)
+    # values = phi.values
+    # Fx .= A * values
+    # @inbounds @. R = (b - Fx)^2
+    # normb = norm(b)
+    # denominator = ifelse(normb>0,normb, 1)
+    # Residual[iteration] = sqrt(mean(R)) / denominator
+
+
     (; A, R, Fx) = eqn.equation
     b = _b(eqn, component)
     values = phi.values
-    Fx .= A * values
-    @inbounds @. R = (b - Fx)^2
-    normb = norm(b)
-    denominator = ifelse(normb>0,normb, 1)
-    Residual[iteration] = sqrt(mean(R)) / denominator
-    # Residual[iteration] = sqrt(mean(R)) / min(mean(values), mean(abs.(b)) )
+
+    Fx .= A*values
+    R .= mean(values)
+    Fx_mean = A*R 
+    T1 = mean(norm.(b .- Fx))
+    T2 = mean(norm.(Fx .- Fx_mean))
+    T3 = mean(norm.(b .- Fx_mean))
+    Residual[iteration] = T1/(T2 + T3)
     nothing
+end
+
+function residual_openfoam(eqn, phi, component, config)
+    (; A, R, Fx) = eqn.equation
+    b = _b(eqn, component)
+    values = get_values(phi, component)
+
+    Fx .= A*values
+    R .= mean(values)
+    Fx_mean = A*R 
+    T1 = mean(norm.(b .- Fx))
+    T2 = mean(norm.(Fx .- Fx_mean))
+    T3 = mean(norm.(b .- Fx_mean))
+    Residual = T1/(T2 + T3)
+    return Residual
 end

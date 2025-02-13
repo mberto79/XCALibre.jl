@@ -9,7 +9,6 @@ mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 # backend = CPU(); activate_multithread(backend)
-# mesh_dev = mesh
 backend = CUDABackend()
 mesh_dev = adapt(backend, mesh)
 
@@ -57,25 +56,25 @@ solvers = (
     U = set_solver(
         model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0GPU(), # ILU0GPU, Jacobi, DILU
-        smoother=JacobiSmoother(domain=mesh_dev, loops=3, omega=2/3),
+        preconditioner = Jacobi(), # ILU0GPU, Jacobi, DILU
+        smoother=JacobiSmoother(domain=mesh_dev, loops=2, omega=2/3),
         convergence = 1e-5,
-        relax       = 0.7,
-        rtol = 1e-3
+        relax       = 0.8,
+        rtol = 1e-2
     ),
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver, CgSolver
-        preconditioner = IC0GPU(), # IC0GPU, Jacobi, DILU
-        smoother=JacobiSmoother(domain=mesh_dev, loops=3, omega=2/3),
+        preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
+        smoother=JacobiSmoother(domain=mesh_dev, loops=2, omega=2/3),
         convergence = 1e-5,
         relax       = 0.2,
-        rtol = 1e-4
+        rtol = 1e-3
     )
 )
 
 runtime = set_runtime(
-    iterations=2000, time_step=1, write_interval=100)
+    iterations=2000, time_step=1, write_interval=-100)
     # iterations=1, time_step=1, write_interval=1)
 
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)

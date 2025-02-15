@@ -401,12 +401,20 @@ function residual_openfoam(eqn, phi, component, config)
     b = _b(eqn, component)
     values = get_values(phi, component)
 
-    Fx .= A*values
-    R .= mean(values)
-    Fx_mean = A*R 
-    T1 = mean(norm.(b .- Fx))
-    T2 = mean(norm.(Fx .- Fx_mean))
-    T3 = mean(norm.(b .- Fx_mean))
-    Residual = T1/(T2 + T3)
+    # # Openfoam's residual definition (not optimised)
+    # Fx .= A*values
+    # R .= mean(values)
+    # Fx_mean = A*R 
+    # T1 = mean(norm.(b .- Fx))
+    # T2 = mean(norm.(Fx .- Fx_mean))
+    # T3 = mean(norm.(b .- Fx_mean))
+    # Residual = T1/(T2 + T3)
+
+    # Previous definition
+    Fx .= A * values
+    @inbounds @. R = (b - Fx)^2
+    normb = norm(b)
+    denominator = ifelse(normb>0,normb, 1)
+    Residual = sqrt(mean(R)) / denominator
     return Residual
 end

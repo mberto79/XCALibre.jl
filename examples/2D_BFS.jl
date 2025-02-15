@@ -45,7 +45,7 @@ model = Physics(
 
 schemes = (
     # U = set_schemes(divergence = Linear, limiter=MFaceBased(model.domain)),
-    U = set_schemes(divergence = Upwind),
+    U = set_schemes(divergence = LUST),
     p = set_schemes()
     # p = set_schemes(limiter=FaceBased(model.domain))
     # p = set_schemes(limiter=MFaceBased(model.domain))
@@ -57,24 +57,24 @@ solvers = (
         model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), # ILU0GPU, Jacobi, DILU
-        smoother=JacobiSmoother(domain=mesh_dev, loops=2, omega=2/3),
-        convergence = 1e-5,
+        smoother=JacobiSmoother(domain=mesh_dev, loops=8, omega=1),
+        convergence = 1e-7,
         relax       = 0.8,
-        rtol = 1e-2
+        rtol = 1e-1
     ),
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver, CgSolver
         preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
-        smoother=JacobiSmoother(domain=mesh_dev, loops=2, omega=2/3),
-        convergence = 1e-5,
+        smoother=JacobiSmoother(domain=mesh_dev, loops=8, omega=1),
+        convergence = 1e-7,
         relax       = 0.2,
-        rtol = 1e-3
+        rtol = 1e-2
     )
 )
 
 runtime = set_runtime(
-    iterations=2000, time_step=1, write_interval=-100)
+    iterations=2000, time_step=1, write_interval=1000)
     # iterations=1, time_step=1, write_interval=1)
 
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
@@ -93,7 +93,7 @@ initialise!(model.momentum.p, 0.0)
 
 using Plots
 iterations = runtime.iterations
-plot(yscale=:log10, ylims=(1e-7,1e-1))
+plot(yscale=:log10, ylims=(1e-8,1e-1))
 plot!(1:iterations, residuals.Ux, label="Ux")
 plot!(1:iterations, residuals.Uy, label="Uy")
 plot!(1:iterations, residuals.Uz, label="Uz")

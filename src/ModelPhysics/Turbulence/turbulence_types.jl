@@ -34,8 +34,3 @@ Abstract LES model type for constructing LES models.
 struct LES{T,ARG} <:AbstractModelContainer 
     args::ARG
 end
-
-mutable struct TurbulenceState{T1}
-    residuals::T1
-    converged::Bool
-end

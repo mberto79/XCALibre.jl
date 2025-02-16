@@ -241,7 +241,7 @@ function initialise(
 
     init_residuals = (:k, 1.0),(:kl, 1.0),(:omega, 1.0)
     init_convergence = false
-    state = TurbulenceState(init_residuals, init_convergence)
+    state = ModelState(init_residuals, init_convergence)
 
     return KOmegaLKEModel(
         k_eqn,

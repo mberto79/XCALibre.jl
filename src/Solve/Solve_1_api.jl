@@ -366,34 +366,6 @@ end
     end
 end
 
-function residual!(Residual, eqn, phi, iteration, component, config)
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-
-    # (; A, R, Fx) = eqn.equation
-    # b = _b(eqn, component)
-    # values = phi.values
-    # Fx .= A * values
-    # @inbounds @. R = (b - Fx)^2
-    # normb = norm(b)
-    # denominator = ifelse(normb>0,normb, 1)
-    # Residual[iteration] = sqrt(mean(R)) / denominator
-
-
-    (; A, R, Fx) = eqn.equation
-    b = _b(eqn, component)
-    values = phi.values
-
-    Fx .= A*values
-    R .= mean(values)
-    Fx_mean = A*R 
-    T1 = mean(norm.(b .- Fx))
-    T2 = mean(norm.(Fx .- Fx_mean))
-    T3 = mean(norm.(b .- Fx_mean))
-    Residual[iteration] = T1/(T2 + T3)
-    nothing
-end
-
 function residual(eqn, component, config)
     (; A, R, Fx) = eqn.equation
     b = _b(eqn, component)

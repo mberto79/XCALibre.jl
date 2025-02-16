@@ -349,8 +349,8 @@ function CSIMPLE(
                 (:Uy, R_uy[iteration]),
                 (:Uz, R_uz[iteration]),
                 (:p, R_p[iteration]),
-                # (:h, R_e[iteration]),
-                turbulenceModel.state.residuals...
+                turbulenceModel.state.residuals...,
+                energyModel.state.residuals
                 ]
             )
 

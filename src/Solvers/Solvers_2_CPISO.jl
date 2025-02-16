@@ -353,7 +353,8 @@ function CPISO(
             (:Uy, R_uy[iteration]),
             (:Uz, R_uz[iteration]),
             (:p, R_p[iteration]),
-            turbulenceModel.state.residuals...
+            turbulenceModel.state.residuals...,
+            energyModel.state.residuals
             ]
         )
 

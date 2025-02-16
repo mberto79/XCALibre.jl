@@ -73,7 +73,7 @@ function initialise(
     delta!(Δ, mesh, config)
     @. Δ.values = Δ.values^2 # store delta squared since it will be needed
     
-    return SmagorinskyModel(Δ, magS, TurbulenceState((), false))
+    return SmagorinskyModel(Δ, magS, ModelState((), false))
 end
 
 # Model solver call (implementation)

@@ -49,7 +49,7 @@ Initialisation of turbulent transport equations.
 function initialise(
     turbulence::Laminar, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
     ) where {T,F,M,Tu,E,D,BI}
-    state = TurbulenceState((), true) # stores residual and convergence information
+    state = ModelState((), true) # stores residual and convergence information
     return LaminarModel(state)
 end
 

@@ -4,6 +4,7 @@ authors = ["Humberto <h.medina@aerofluids.org>"]
 version = "0.4.0"
 
 [deps]
+AcceleratedKernels = "6a4ca0a5-0e36-4168-a932-d9be78d558f1"
 Accessors = "7d9f7c33-5ae7-4f3b-8dc6-eff91059b697"
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 Atomix = "a9b6321e-bd34-4604-b9c9-b65b8de01458"
@@ -38,6 +39,7 @@ XCALibre_oneAPIExt = "oneAPI"
 
 [compat]
 AMDGPU = "1"
+AcceleratedKernels = "0.3.0"
 Accessors = "0.1.30"
 Adapt = "4.0"
 Atomix = "0.1, 1"
@@ -50,7 +52,6 @@ Krylov = "0.9"
 KrylovPreconditioners = "0.3"
 LDLFactorizations = "0.10"
 LinearOperators = "2.8"
-oneAPI = "2"
 PrecompileTools = "1.2"
 ProgressMeter = "1.10"
 Reexport = "1.2"
@@ -59,3 +60,4 @@ SparseMatricesCSR = "0.6"
 StaticArrays = "1.9"
 Statistics = "1"
 julia = "1.8"
+oneAPI = "2"

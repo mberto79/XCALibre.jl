@@ -114,7 +114,7 @@ runtime = set_runtime(iterations=2000, write_interval=1000, time_step=1)
 # runtime = set_runtime(iterations=1, write_interval=-1, time_step=1)
 
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32) # uncomment for GPU runs
-hardware = set_hardware(backend=CPU(), workgroup=4) # comment out for GPU runs
+hardware = set_hardware(backend=CPU(), workgroup=1024) # comment out for GPU runs
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

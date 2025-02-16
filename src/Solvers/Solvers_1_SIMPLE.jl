@@ -203,7 +203,7 @@ function SIMPLE(
             setReference!(p_eqn, pref, 1, config)
             nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
             update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-            solve_system!(p_eqn, solvers.p, p, nothing, config)
+            rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
             explicit_relaxation!(p, prev, solvers.p.relax, config)
             grad!(∇p, pf, p, p.BCs, time, config) 
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
@@ -248,15 +248,20 @@ function SIMPLE(
         if (R_ux[iteration] <= solvers.U.convergence && 
             R_uy[iteration] <= solvers.U.convergence && 
             # R_uz[iteration] <= solvers.U.convergence &&
-            R_p[iteration] <= solvers.p.convergence)
+            R_p[iteration] <= solvers.p.convergence &&
+            turbulenceModel.state.converged)
 
+            progress.n = iteration
+            finish!(progress)
             @info "Simulation converged in $iteration iterations!"
-                if !signbit(write_interval)
-                    model2vtk(model, VTKMeshData, @sprintf "iteration_%.6d" iteration)
-                end
+            if !signbit(write_interval)
+                model2vtk(model, VTKMeshData, @sprintf "iteration_%.6d" iteration)
+            end
             break
         end
 
+        # residuals_turb = ((:k, 1), (:omega, 1))
+        # residuals_turb = ()
         ProgressMeter.next!(
             progress, showvalues = [
                 (:iter,iteration),
@@ -264,6 +269,7 @@ function SIMPLE(
                 (:Uy, R_uy[iteration]),
                 (:Uz, R_uz[iteration]),
                 (:p, R_p[iteration]),
+                turbulenceModel.state.residuals...
                 ]
             )
 

@@ -30,9 +30,10 @@ struct KOmega{S1,S2,S3,F1,F2,F3,C} <: AbstractRANSModel
 end
 Adapt.@adapt_structure KOmega
 
-struct KOmegaModel{E1,E2}
+struct KOmegaModel{E1,E2,S1}
     k_eqn::E1 
     ω_eqn::E2
+    state::S1
 end
 Adapt.@adapt_structure KOmegaModel
 
@@ -123,18 +124,19 @@ function initialise(
     @reset k_eqn.solver = solvers.k.solver(_A(k_eqn), _b(k_eqn))
     @reset ω_eqn.solver = solvers.omega.solver(_A(ω_eqn), _b(ω_eqn))
 
-    return KOmegaModel(k_eqn, ω_eqn)
+    initial_residual = ((:k, 1.0),(:omega, 1.0))
+    return KOmegaModel(k_eqn, ω_eqn, TurbulenceState(initial_residual, false))
 end
 
 # Model solver call (implementation)
 """
-    turbulence!(rans::KOmegaModel{E1,E2}, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
-    ) where {T,F,M,Tu<:KOmega,E,D,BI,E1,E2}
+    turbulence!(rans::KOmegaModel{E1,E2,S1}, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
+    ) where {T,F,M,Tu<:KOmega,E,D,BI,E1,E2,S1}
 
 Run turbulence model transport equations.
 
 ### Input
-- `rans::KOmegaModel{E1,E2}` -- KOmega turbulence model.
+- `rans::KOmegaModel{E1,E2,S1}` -- KOmega turbulence model.
 - `model`  -- Physics model defined by user.
 - `S`   -- Strain rate tensor.
 - `prev`  -- Previous field.
@@ -144,15 +146,15 @@ Run turbulence model transport equations.
 
 """
 function turbulence!(
-    rans::KOmegaModel{E1,E2}, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
-    ) where {T,F,M,Tu<:KOmega,E,D,BI,E1,E2}
+    rans::KOmegaModel{E1,E2,S1}, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
+    ) where {T,F,M,Tu<:KOmega,E,D,BI,E1,E2,S1}
 
     mesh = model.domain
     
     (; rho, rhof, nu, nuf) = model.fluid
     (;k, omega, nut, kf, omegaf, nutf, coeffs) = model.turbulence
     (; U, Uf, gradU) = S
-    (;k_eqn, ω_eqn) = rans
+    (;k_eqn, ω_eqn, state) = rans
     (; solvers, runtime) = config
 
     mueffk = get_flux(k_eqn, 3)
@@ -188,7 +190,7 @@ function turbulence!(
     implicit_relaxation_diagdom!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
     constrain_equation!(ω_eqn, omega.BCs, model, config) # active with WFs only
     update_preconditioner!(ω_eqn.preconditioner, mesh, config)
-    solve_system!(ω_eqn, solvers.omega, omega, nothing, config)
+    ω_res = solve_system!(ω_eqn, solvers.omega, omega, nothing, config)
     
     # constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
     bound!(omega, config)
@@ -201,7 +203,7 @@ function turbulence!(
     # implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
     implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
     update_preconditioner!(k_eqn.preconditioner, mesh, config)
-    solve_system!(k_eqn, solvers.k, k, nothing, config)
+    k_res = solve_system!(k_eqn, solvers.k, k, nothing, config)
     bound!(k, config)
     # explicit_relaxation!(k, prev, solvers.k.relax, config)
 
@@ -210,6 +212,10 @@ function turbulence!(
     interpolate!(nutf, nut, config)
     correct_boundaries!(nutf, nut, nut.BCs, time, config)
     correct_eddy_viscosity!(nutf, nut.BCs, model, config)
+
+    state.residuals = ((:k , k_res),(:omega, ω_res))
+    state.converged = k_res < solvers.k.convergence && ω_res < solvers.omega.convergence
+    return nothing
 end
 
 # Specialise VTK writer

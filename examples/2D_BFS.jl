@@ -1,15 +1,15 @@
 using XCALibre
-using CUDA
+# using CUDA
 
-# backwardFacingStep_2mm, backwardFacingStep_10mm
+# backwardFacingStep_2mm, 5mm or 10mm
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "backwardFacingStep_5mm.unv"
 mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-# backend = CPU(); activate_multithread(backend)
-backend = CUDABackend()
+backend = CPU(); activate_multithread(backend); workgroup=1024
+# backend = CUDABackend(); workgroup=32
 mesh_dev = adapt(backend, mesh)
 
 velocity = [0.5, 0.0, 0.0]
@@ -78,7 +78,7 @@ runtime = set_runtime(
     # iterations=1, time_step=1, write_interval=1)
 
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=backend, workgroup=1024)
+hardware = set_hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

@@ -125,8 +125,7 @@ function solve_equation!(
         # implicit_relaxation_diagdom!(eqn, phi.values, irelax, nothing, config)
     end
     update_preconditioner!(eqn.preconditioner, phi.mesh, config)
-    solve_system!(eqn, solversetup, phi, nothing, config)
-    res = residual_openfoam(eqn, phi, nothing, config)
+    res = solve_system!(eqn, solversetup, phi, nothing, config)
     return res
 end
 
@@ -143,17 +142,14 @@ function solve_equation!(
     # implicit_relaxation!(psiEqn, psi.x.values, solversetup.relax, xdir, config)
     implicit_relaxation_diagdom!(psiEqn, psi.x.values, solversetup.relax, xdir, config)
     update_preconditioner!(psiEqn.preconditioner, mesh, config)
-    solve_system!(psiEqn, solversetup, psi.x, xdir, config)
-    resx = residual_openfoam(psiEqn, psi, xdir, config)
+    resx = solve_system!(psiEqn, solversetup, psi.x, xdir, config)
     
     update_equation!(psiEqn, config)
     apply_boundary_conditions!(psiEqn, psi.y.BCs, ydir, time, config)
     # implicit_relaxation!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
     implicit_relaxation_diagdom!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
     update_preconditioner!(psiEqn.preconditioner, mesh, config)
-    solve_system!(psiEqn, solversetup, psi.y, ydir, config)
-    resy = residual_openfoam(psiEqn, psi, ydir, config)
-
+    resy = solve_system!(psiEqn, solversetup, psi.y, ydir, config)
     
     # Z velocity calculations (3D Mesh only)
     resz = one(_get_float(mesh))
@@ -163,8 +159,7 @@ function solve_equation!(
         # implicit_relaxation!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
         implicit_relaxation_diagdom!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
         update_preconditioner!(psiEqn.preconditioner, mesh, config)
-        solve_system!(psiEqn, solversetup, psi.z, zdir, config)
-        resz = residual_openfoam(psiEqn, psi, zdir, config)
+        resz = solve_system!(psiEqn, solversetup, psi.z, zdir, config)
     end
     return resx, resy, resz
 end
@@ -201,6 +196,9 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
     kernel! = _copy!(backend, workgroup)
     kernel!(values, x, ndrange = length(values))
     # KernelAbstractions.synchronize(backend)
+
+    res = residual(phiEqn, component, config)
+    return res
 end
 
 @kernel function _copy!(a, b)
@@ -396,10 +394,10 @@ function residual!(Residual, eqn, phi, iteration, component, config)
     nothing
 end
 
-function residual_openfoam(eqn, phi, component, config)
+function residual(eqn, component, config)
     (; A, R, Fx) = eqn.equation
     b = _b(eqn, component)
-    values = get_values(phi, component)
+    values = get_values(get_phi(eqn), component)
 
     # # Openfoam's residual definition (not optimised)
     # Fx .= A*values

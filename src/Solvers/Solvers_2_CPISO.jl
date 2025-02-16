@@ -241,7 +241,7 @@ function CPISO(
         
         # Set up and solve momentum equations
 
-        solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
+        rx, ry, rz = solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
 
         energy!(energyModel, model, prev, mdotf, rho, mueff, time, config)
         thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
@@ -253,6 +253,7 @@ function CPISO(
 
         remove_pressure_source!(U_eqn, ∇p, config)
         
+        rp = 0.0
         for i ∈ 1:inner_loops
             H!(Hv, U, U_eqn, config)
             
@@ -286,7 +287,7 @@ function CPISO(
             
             # Pressure calculations
             @. prev = p.values
-            solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
+            rp = solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
             explicit_relaxation!(p, prev, solvers.p.relax, config)
 
             # Gradient
@@ -300,7 +301,7 @@ function CPISO(
                 setReference!(p_eqn, pref, 1, config)
                 nonorthogonal_face_correction(p_eqn, ∇p, rhorDf, config)
                 update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-                solve_system!(p_eqn, solvers.p, p, nothing, config)
+                rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
                 explicit_relaxation!(p, prev, solvers.p.relax, config)
                 grad!(∇p, pf, p, p.BCs, time, config) 
                 limit_gradient!(schemes.p.limiter, ∇p, p, config)
@@ -337,13 +338,12 @@ function CPISO(
             update_nueff!(nueff, nu, model.turbulence, config)
         end # corrector loop end
 
-    residual!(R_ux, U_eqn, U.x, iteration, xdir, config)
-    residual!(R_uy, U_eqn, U.y, iteration, ydir, config)
-    if typeof(mesh) <: Mesh3
-        residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
-    end
-    residual!(R_p, p_eqn, p, iteration, nothing, config)
     maxCourant = max_courant_number!(cellsCourant, model, config)
+
+    R_ux[iteration] = rx
+    R_uy[iteration] = ry
+    R_uz[iteration] = rz
+    R_p[iteration] = rp
 
     ProgressMeter.next!(
         progress, showvalues = [
@@ -353,6 +353,7 @@ function CPISO(
             (:Uy, R_uy[iteration]),
             (:Uz, R_uz[iteration]),
             (:p, R_p[iteration]),
+            turbulenceModel.state.residuals...
             ]
         )
 

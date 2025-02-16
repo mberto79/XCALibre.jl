@@ -231,23 +231,20 @@ function SIMPLE(
 
         turbulence!(turbulenceModel, model, S, prev, time, config) 
         update_nueff!(nueff, nu, model.turbulence, config)
-        
-        # convergence = solvers.U.convergence
-        # println("Yes, use the actual convergence given!")
-
-        # residual!(R_ux, U_eqn, U.x, iteration, xdir, config)
-        # residual!(R_uy, U_eqn, U.y, iteration, ydir, config)
-        # typeof(mesh) <: Mesh3 && residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
-        # residual!(R_p, p_eqn, p, iteration, nothing, config)
 
         R_ux[iteration] = rx
         R_uy[iteration] = ry
         R_uz[iteration] = rz
         R_p[iteration] = rp
 
+        Uz_convergence = true
+        if typeof(mesh) <: Mesh3
+            Uz_convergence = rz <= solvers.U.convergence
+        end
+
         if (R_ux[iteration] <= solvers.U.convergence && 
             R_uy[iteration] <= solvers.U.convergence && 
-            # R_uz[iteration] <= solvers.U.convergence &&
+            Uz_convergence &&
             R_p[iteration] <= solvers.p.convergence &&
             turbulenceModel.state.converged)
 
@@ -260,8 +257,6 @@ function SIMPLE(
             break
         end
 
-        # residuals_turb = ((:k, 1), (:omega, 1))
-        # residuals_turb = ()
         ProgressMeter.next!(
             progress, showvalues = [
                 (:iter,iteration),

@@ -37,7 +37,7 @@ Adapt.@adapt_structure KOmegaLKE
 
 # Model type definition (hold equation definitions and internal data)
 struct KOmegaLKEModel{
-    E1,E2,E3,F1,F2,F3,S1,S2,S3,S4,S5,S6,S7,V1,V2}
+    E1,E2,E3,F1,F2,F3,S1,S2,S3,S4,S5,S6,S7,V1,V2,State}
     k_eqn::E1
     ω_eqn::E2
     kl_eqn::E3
@@ -53,6 +53,7 @@ struct KOmegaLKEModel{
     Reυ::S7
     ∇k::V1
     ∇ω::V2
+    state::State
 end 
 Adapt.@adapt_structure KOmegaLKEModel
 
@@ -140,7 +141,8 @@ Initialisation of turbulent transport equations.
         normU,
         Reυ,
         ∇k,
-        ∇ω
+        ∇ω, 
+        state
     )`  -- Turbulence model structure.
 
 """
@@ -237,6 +239,10 @@ function initialise(
     # y.values .= wall_distance(model, config)
     wall_distance!(model, config)
 
+    init_residuals = (:k, 1.0),(:kl, 1.0),(:omega, 1.0)
+    init_convergence = false
+    state = TurbulenceState(init_residuals, init_convergence)
+
     return KOmegaLKEModel(
         k_eqn,
         ω_eqn,
@@ -252,7 +258,8 @@ function initialise(
         normU,
         Reυ,
         ∇k,
-        ∇ω
+        ∇ω,
+        state
     )
 end
 
@@ -283,7 +290,7 @@ function turbulence!(
     (; nu) = model.fluid
     (; U, Uf, gradU) = S
     
-    (; k_eqn, ω_eqn, kl_eqn, nueffkLS, nueffkS, nueffωS, nuL, nuts, Ω, γ, fv, ∇k, ∇ω, normU, Reυ) = rans
+    (; k_eqn, ω_eqn, kl_eqn, nueffkLS, nueffkS, nueffωS, nuL, nuts, Ω, γ, fv, ∇k, ∇ω, normU, Reυ, state) = rans
     (; solvers, runtime) = config
 
     nueffkL = get_flux(kl_eqn, 3)
@@ -303,6 +310,8 @@ function turbulence!(
     grad!(gradU, Uf, U, U.BCs, time, config) # must update before calculating S
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
     magnitude2!(Pk, S, config, scale_factor=2.0)
+    magnitude2!(Ω, S, config, scale_factor=2.0) # 
+    S2 = Ω # using Ω to store S^2 (temporary - needs cleaning up!)
 
     # Update kl fluxes and terms
 
@@ -326,7 +335,7 @@ function turbulence!(
     apply_boundary_conditions!(kl_eqn, kl.BCs, nothing, time, config)
     implicit_relaxation!(kl_eqn, kl.values, solvers.kl.relax, nothing, config)
     update_preconditioner!(kl_eqn.preconditioner, mesh, config)
-    solve_system!(kl_eqn, solvers.kl, kl, nothing, config)
+    kl_res = solve_system!(kl_eqn, solvers.kl, kl, nothing, config)
     bound!(kl, config)
 
     #Damping and trigger
@@ -366,7 +375,7 @@ function turbulence!(
     implicit_relaxation!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
     constrain_equation!(ω_eqn, omega.BCs, model, config) # active with WFs only
     update_preconditioner!(ω_eqn.preconditioner, mesh, config)
-    solve_system!(ω_eqn, solvers.omega, omega, nothing, config)
+    ω_res = solve_system!(ω_eqn, solvers.omega, omega, nothing, config)
     constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
     bound!(omega, config)
 
@@ -376,7 +385,7 @@ function turbulence!(
     apply_boundary_conditions!(k_eqn, k.BCs, nothing, time, config)
     implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
     update_preconditioner!(k_eqn.preconditioner, mesh, config)
-    solve_system!(k_eqn, solvers.k, k, nothing, config)
+    k_res = solve_system!(k_eqn, solvers.k, k, nothing, config)
     bound!(k, config)
 
     # grad!(∇ω, omegaf, omega, omega.BCs, time, config)
@@ -395,6 +404,16 @@ function turbulence!(
     interpolate!(nutf, nut, config)
     correct_boundaries!(nutf, nut, nut.BCs, time, config)
     correct_eddy_viscosity!(nutf, nut.BCs, model, config)
+
+    # update residuals and convergence status
+    residuals = ((:k, k_res),(:kl, kl_res),(:omega, ω_res))
+    k_converged = k_res < solvers.k.convergence
+    kl_converged = kl_res < solvers.kl.convergence
+    ω_converged = ω_res < solvers.omega.convergence
+    converged = k_converged && kl_converged && ω_converged
+    state.residuals = residuals
+    state.converged = converged
+    return nothing
 end
 
 # Specialise VTK writer

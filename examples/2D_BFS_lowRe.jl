@@ -3,7 +3,7 @@ using XCALibre
 
 # backwardFacingStep_2mm, 5mm or 10mm
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "backwardFacingStep_5mm.unv"
+grid = "backwardFacingStep_2mm.unv"
 mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)

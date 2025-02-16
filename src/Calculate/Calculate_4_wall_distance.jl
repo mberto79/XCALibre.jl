@@ -17,7 +17,7 @@ function wall_distance!(model, config)
     # Assign boundary Conditions         
 
     phi_eqn = (
-        Laplacian{schemes.y.laplacian}(phif, phi) == Source(ConstantScalar(-1.0))
+        - Laplacian{schemes.y.laplacian}(phif, phi) == Source(ConstantScalar(1.0))
     ) → ScalarEquation(mesh)
 
     @reset phi_eqn.preconditioner = set_preconditioner(
@@ -33,23 +33,24 @@ function wall_distance!(model, config)
 
     # n_cells = length(mesh.cells)
     # prev = zeros(TF, n_cells)
-    R_phi = ones(TF, iterations)
+    # R_phi = ones(TF, iterations)
 
     for iteration ∈ 1:iterations
         # @. prev = phi.values
         discretise!(phi_eqn, phi, config)
-        apply_boundary_conditions!(phi_eqn, phi.BCs, nothing, config)
+        apply_boundary_conditions!(phi_eqn, phi.BCs, nothing, 0.0, config)
+
         update_preconditioner!(phi_eqn.preconditioner, mesh, config)
         implicit_relaxation!(phi_eqn, phi.values, solvers.y.relax, nothing, config)
-        solve_system!(phi_eqn, solvers.y, phi, nothing, config)
+        phi_res = solve_system!(phi_eqn, solvers.y, phi, nothing, config)
         # explicit_relaxation!(phi, prev, solvers.phi.relax, config)
-        residual!(R_phi, phi_eqn, phi, iteration, nothing, config)
+        # residual!(R_phi, phi_eqn, phi, iteration, nothing, config)
 
-        if R_phi[iteration] < solvers.y.convergence 
-            @info "Wall distance converged in $iteration iterations ($(R_phi[iteration]))"
+        if phi_res < solvers.y.convergence 
+            @info "Wall distance converged in $iteration iterations ($phi_res)"
             break
         elseif iteration == iterations
-            @info "Wall distance calculation did not converged ($(R_phi[iteration]))"
+            @info "Wall distance calculation did not converged ($phi_res)"
         end
     end
     
@@ -70,5 +71,5 @@ end
     i = @index(Global)
 
     gradMag = norm(phiGrad.result[i])
-    y.values[i] = -gradMag + sqrt(gradMag^2 + 2*phi.values[i])
+    y.values[i] = (-gradMag + sqrt(gradMag^2 + 2*phi.values[i]))
 end

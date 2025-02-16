@@ -102,13 +102,15 @@ function PISO(
     @time for iteration ∈ 1:iterations
         time = (iteration - 1)*dt
 
-        solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config; time=time)
+        rx, ry, rz = solve_equation!(
+            U_eqn, U, solvers.U, xdir, ydir, zdir, config; time=time)
           
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rDf, rD, config)
         remove_pressure_source!(U_eqn, ∇p, config)
         
+        rp = 0.0
         for i ∈ 1:inner_loops
             H!(Hv, U, U_eqn, config)
             
@@ -123,7 +125,7 @@ function PISO(
             
             # Pressure calculations (previous implementation)
             @. prev = p.values
-            solve_equation!(p_eqn, p, solvers.p, config; ref=pref, time=time)
+            rp = solve_equation!(p_eqn, p, solvers.p, config; ref=pref, time=time)
             if i == inner_loops
                 explicit_relaxation!(p, prev, 1.0, config)
             else
@@ -140,7 +142,7 @@ function PISO(
                 setReference!(p_eqn, pref, 1, config)
                 nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
                 update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-                solve_system!(p_eqn, solvers.p, p, nothing, config)
+                rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
 
                 if i == ncorrectors
                     explicit_relaxation!(p, prev, 1.0, config)
@@ -171,13 +173,15 @@ function PISO(
     turbulence!(turbulenceModel, model, S, prev, time, config) 
     update_nueff!(nueff, nu, model.turbulence, config)
 
-    residual!(R_ux, U_eqn, U.x, iteration, xdir, config)
-    residual!(R_uy, U_eqn, U.y, iteration, ydir, config)
-    if typeof(mesh) <: Mesh3
-        residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
-    end
-    residual!(R_p, p_eqn, p, iteration, nothing, config)
+    # if typeof(mesh) <: Mesh3
+    #     residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
+    # end
     maxCourant = max_courant_number!(cellsCourant, model, config)
+
+    R_ux[iteration] = rx
+    R_uy[iteration] = ry
+    R_uz[iteration] = rz
+    R_p[iteration] = rp
 
     ProgressMeter.next!(
         progress, showvalues = [
@@ -187,6 +191,7 @@ function PISO(
             (:Uy, R_uy[iteration]),
             (:Uz, R_uz[iteration]),
             (:p, R_p[iteration]),
+            turbulenceModel.state.residuals...
             ]
         )
 

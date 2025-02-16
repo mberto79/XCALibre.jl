@@ -1,16 +1,16 @@
-using Plots
 using XCALibre
+# using CUDA
 
-# using CUDA # uncomment for GPU runs with CUDA
+# backwardFacingStep_2mm, 5mm or 10mm
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "backwardFacingStep_5mm.unv"
+mesh_file = joinpath(grids_dir, grid)
 
-# backwardFacingStep_2mm, backwardFacingStep_10mm
-# mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
-mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
-mesh_file = "unv_sample_meshes/backwardFacingStep_2mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-# mesh_dev = adapt(CUDABackend(), mesh) # uncomment for GPU runs
-mesh_dev = mesh # comment out for GPU runs
+backend = CPU(); activate_multithread(backend); workgroup=1024
+# backend = CUDABackend(); workgroup=32
+mesh_dev = adapt(backend, mesh)
 
 nu = 1e-3
 # u_mag = 3.5 # 2mm mesh
@@ -110,8 +110,8 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=2000, write_interval=100, time_step=1)
-runtime = set_runtime(iterations=1, write_interval=-1, time_step=1)
+runtime = set_runtime(iterations=2000, write_interval=1000, time_step=1)
+# runtime = set_runtime(iterations=1, write_interval=-1, time_step=1)
 
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32) # uncomment for GPU runs
 hardware = set_hardware(backend=CPU(), workgroup=4) # comment out for GPU runs
@@ -130,13 +130,14 @@ initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
 residuals = run!(model, config) # 36.90k allocs
 
-# Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut, config)
-Fp = pressure_force(:wall, model.momentum.p, 1.25)
-Fv = viscous_force(:wall, model.momentum.U, 1.25, nu, model.turbulence.nut)
-ave = boundary_average(:inlet, model.momentum.U, config)
-ave = boundary_average(:outlet, model.momentum.U, config)
+# # Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut, config)
+# Fp = pressure_force(:wall, model.momentum.p, 1.25)
+# Fv = viscous_force(:wall, model.momentum.U, 1.25, nu, model.turbulence.nut)
+# ave = boundary_average(:inlet, model.momentum.U, config)
+# ave = boundary_average(:outlet, model.momentum.U, config)
 
-plot(; xlims=(0,494))
-plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p")
+# using Plots
+# plot(; ylims=(1e-8,1), xlims=(1,500))
+# plot!(1:length(residuals.Ux), residuals.Ux, yscale=:log10, label="Ux")
+# plot!(1:length(residuals.Uy), residuals.Uy, yscale=:log10, label="Uy")
+# plot!(1:length(residuals.p), residuals.p, yscale=:log10, label="p")

@@ -218,7 +218,7 @@ function CSIMPLE(
 
         # Set up and solve momentum equations
         
-        solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
+        rx, ry, rz = solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
         energy!(energyModel, model, prev, mdotf, rho, mueff, time, config)
         thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
 
@@ -251,13 +251,14 @@ function CSIMPLE(
         end
 
         # Pressure calculations
+        rp = 0.0
         @. prev = p.values
         @. prevpf.values = pf.values
         if typeof(model.fluid) <: Compressible
             # Ensure diagonal dominance for hyperbolic equations
-            solve_equation!(p_eqn, p, solvers.p, config; ref=nothing, irelax=solvers.U.relax)
+            rp = solve_equation!(p_eqn, p, solvers.p, config; ref=nothing, irelax=solvers.U.relax)
         elseif typeof(model.fluid) <: WeaklyCompressible
-            solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
+            rp = solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
         end
 
         if ~isempty(solvers.p.limit)
@@ -267,12 +268,6 @@ function CSIMPLE(
 
         explicit_relaxation!(p, prev, solvers.p.relax, config)
 
-        residual!(R_ux, U_eqn, U.x, iteration, xdir, config)
-        residual!(R_uy, U_eqn, U.y, iteration, ydir, config)
-        typeof(mesh) <: Mesh3 && residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
-        residual!(R_p, p_eqn, p, iteration, nothing, config)
-        residual!(R_e, energyModel.energy_eqn, model.energy.h, iteration, nothing, config)
-        
         grad!(∇p, pf, p, p.BCs, time, config) 
         limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
@@ -283,7 +278,7 @@ function CSIMPLE(
             setReference!(p_eqn, pref, 1, config)
             nonorthogonal_face_correction(p_eqn, ∇p, rhorDf, config)
             update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-            solve_system!(p_eqn, solvers.p, p, nothing, config)
+            rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
             explicit_relaxation!(p, prev, solvers.p.relax, config)
             
             grad!(∇p, pf, p, p.BCs, time, config) 
@@ -291,7 +286,7 @@ function CSIMPLE(
         end
 
         if typeof(model.fluid) <: Compressible
-            rhorelax = 1 #0.01
+            rhorelax = 1.0 #0.01
             @. rho.values = rho.values * (1-rhorelax) + Psi.values * p.values * rhorelax
             @. rhof.values = rhof.values * (1-rhorelax) + Psif.values * pf.values * rhorelax
         else
@@ -322,18 +317,28 @@ function CSIMPLE(
 
         @. mueff.values = rhof.values*nueff.values
 
-        convergence = 1e-7
+        R_ux[iteration] = rx
+        R_uy[iteration] = ry
+        R_uz[iteration] = rz
+        R_p[iteration] = rp
 
-        if (R_ux[iteration] <= convergence && 
-            R_uy[iteration] <= convergence && 
-            R_uz[iteration] <= convergence &&
-            R_p[iteration] <= convergence &&
-            R_e[iteration] <= convergence)
+        Uz_convergence = true
+        if typeof(mesh) <: Mesh3
+            Uz_convergence = rz <= solvers.U.convergence
+        end
 
+        if (R_ux[iteration] <= solvers.U.convergence && 
+            R_uy[iteration] <= solvers.U.convergence && 
+            Uz_convergence &&
+            R_p[iteration] <= solvers.p.convergence &&
+            turbulenceModel.state.converged)
+
+            progress.n = iteration
+            finish!(progress)
             @info "Simulation converged in $iteration iterations!"
-                if !signbit(write_interval)
-                    model2vtk(model, VTKMeshData, @sprintf "iteration_%.6d" iteration)
-                end
+            if !signbit(write_interval)
+                model2vtk(model, VTKMeshData, @sprintf "iteration_%.6d" iteration)
+            end
             break
         end
 
@@ -344,7 +349,8 @@ function CSIMPLE(
                 (:Uy, R_uy[iteration]),
                 (:Uz, R_uz[iteration]),
                 (:p, R_p[iteration]),
-                (:h, R_e[iteration]),
+                turbulenceModel.state.residuals...,
+                energyModel.state.residuals
                 ]
             )
 

@@ -10,7 +10,9 @@ struct Laminar <: AbstractRANSModel end
 Adapt.@adapt_structure Laminar
 
 # Model type definition (hold equation definitions and internal data)
-struct LaminarModel end 
+struct LaminarModel{S1}
+    state::S1 # required field for all turbulence models
+end 
 Adapt.@adapt_structure LaminarModel
 
 # Model API constructor (pass user input as keyword arguments and process if needed)
@@ -47,7 +49,8 @@ Initialisation of turbulent transport equations.
 function initialise(
     turbulence::Laminar, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
     ) where {T,F,M,Tu,E,D,BI}
-    return LaminarModel()
+    state = ModelState((), true) # stores residual and convergence information
+    return LaminarModel(state)
 end
 
 # Model solver call (implementation)

@@ -168,7 +168,7 @@ function SIMPLE(
     for iteration ∈ 1:iterations
         time = iteration
 
-        solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
+        rx, ry, rz = solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
         
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
@@ -189,7 +189,7 @@ function SIMPLE(
         
         # Pressure calculations
         @. prev = p.values
-        solve_equation!(p_eqn, p, solvers.p, config; ref=pref)
+        rp = solve_equation!(p_eqn, p, solvers.p, config; ref=pref)
         explicit_relaxation!(p, prev, solvers.p.relax, config)
         
         grad!(∇p, pf, p, p.BCs, time, config) 
@@ -203,7 +203,7 @@ function SIMPLE(
             setReference!(p_eqn, pref, 1, config)
             nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
             update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-            solve_system!(p_eqn, solvers.p, p, nothing, config)
+            rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
             explicit_relaxation!(p, prev, solvers.p.relax, config)
             grad!(∇p, pf, p, p.BCs, time, config) 
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
@@ -231,23 +231,29 @@ function SIMPLE(
 
         turbulence!(turbulenceModel, model, S, prev, time, config) 
         update_nueff!(nueff, nu, model.turbulence, config)
-        
-        convergence = 1e-7
 
-        residual!(R_ux, U_eqn, U.x, iteration, xdir, config)
-        residual!(R_uy, U_eqn, U.y, iteration, ydir, config)
-        typeof(mesh) <: Mesh3 && residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
-        residual!(R_p, p_eqn, p, iteration, nothing, config)
+        R_ux[iteration] = rx
+        R_uy[iteration] = ry
+        R_uz[iteration] = rz
+        R_p[iteration] = rp
 
-        if (R_ux[iteration] <= convergence && 
-            R_uy[iteration] <= convergence && 
-            R_uz[iteration] <= convergence &&
-            R_p[iteration] <= convergence)
+        Uz_convergence = true
+        if typeof(mesh) <: Mesh3
+            Uz_convergence = rz <= solvers.U.convergence
+        end
 
+        if (R_ux[iteration] <= solvers.U.convergence && 
+            R_uy[iteration] <= solvers.U.convergence && 
+            Uz_convergence &&
+            R_p[iteration] <= solvers.p.convergence &&
+            turbulenceModel.state.converged)
+
+            progress.n = iteration
+            finish!(progress)
             @info "Simulation converged in $iteration iterations!"
-                if !signbit(write_interval)
-                    model2vtk(model, @sprintf "iteration_%.6d" iteration)
-                end
+            if !signbit(write_interval)
+                model2vtk(model, VTKMeshData, @sprintf "iteration_%.6d" iteration)
+            end
             break
         end
 
@@ -258,6 +264,7 @@ function SIMPLE(
                 (:Uy, R_uy[iteration]),
                 (:Uz, R_uz[iteration]),
                 (:p, R_p[iteration]),
+                turbulenceModel.state.residuals...
                 ]
             )
 

@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Advanced: 2D inflow using Flux.jl · XCALibre.jl</title><meta name="title" content="Advanced: 2D inflow using Flux.jl · XCALibre.jl"/><meta property="og:title" content="Advanced: 2D inflow using Flux.jl · XCALibre.jl"/><meta property="twitter:title" content="Advanced: 2D inflow using Flux.jl · XCALibre.jl"/><meta name="description" content="Documentation for XCALibre.jl."/><meta property="og:description" content="Documentation for XCALibre.jl."/><meta property="twitter:description" content="Documentation for XCALibre.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">XCALibre.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><a class="tocitem" href="../../quick_start/">Quick Start</a></li><li><span class="tocitem">Examples</span><ul><li><a class="tocitem" href="../01_2d-isothermal-backward-facing-step/">Verification: 2D incompressible backward-facing step</a></li><li><a class="tocitem" href="../02_2d-incompressible-transient-cylinder/">Verification: 2D Unsteady incompressible cylinder</a></li><li><a class="tocitem" href="../03_2d-constant-temperature-flat-plate/">Validation: 2D Constant temperature flat plate</a></li><li class="is-active"><a class="tocitem" href>Advanced: 2D inflow using <code>Flux.jl</code></a><ul class="internal"><li class="toplevel"><a class="tocitem" href="#Introduction"><span>Introduction</span></a></li><li class="toplevel"><a class="tocitem" href="#Set-up-steps"><span>Set up steps</span></a></li><li class="toplevel"><a class="tocitem" href="#Simulation-result"><span>Simulation result</span></a></li></ul></li><li><a class="tocitem" href="../05_2d-aerofoil-inflow-optimisation/">Advanced: 2D Aerofoil inflow optimisation</a></li></ul></li><li><span class="tocitem">User Guide</span><ul><li><a class="tocitem" href="../../user_guide/0_introduction_and_workflow/">Introduction</a></li><li><a class="tocitem" href="../../user_guide/1_preprocessing/">Pre-processing</a></li><li><a class="tocitem" href="../../user_guide/2_physics_and_models/">Physics and models</a></li><li><a class="tocitem" href="../../user_guide/3_numerical_setup/">Numerical setup</a></li><li><a class="tocitem" href="../../user_guide/4_runtime_and_solvers/">Runtime and solvers</a></li><li><a class="tocitem" href="../../user_guide/5_postprocessing/">Post-processing</a></li></ul></li><li><a class="tocitem" href="../../benchmarks/">Benchmarks</a></li><li><a class="tocitem" href="../../contributor_guide/">Contributor Guide</a></li><li><a class="tocitem" href="../../reference/">Reference</a></li><li><a class="tocitem" href="../../release_notes/">Release notes</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Examples</a></li><li class="is-active"><a href>Advanced: 2D inflow using <code>Flux.jl</code></a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Advanced: 2D inflow using <code>Flux.jl</code></a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/mberto79/XCALibre.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/mberto79/XCALibre.jl/blob/main/docs/src/examples/04_2d-inflow-using-Flux.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Advanced:-2D-inflow-using-Flux.jl"><a class="docs-heading-anchor" href="#Advanced:-2D-inflow-using-Flux.jl">Advanced: 2D inflow using <code>Flux.jl</code></a><a id="Advanced:-2D-inflow-using-Flux.jl-1"></a><a class="docs-heading-anchor-permalink" href="#Advanced:-2D-inflow-using-Flux.jl" title="Permalink"></a></h1><h1 id="Introduction"><a class="docs-heading-anchor" href="#Introduction">Introduction</a><a id="Introduction-1"></a><a class="docs-heading-anchor-permalink" href="#Introduction" title="Permalink"></a></h1><hr/><p>In this example a simple neural network is constructed and used to define an inlet boundary condition for the x-component of the velocity vector. This example serves to illustrate how other packages from the Julia ecosystem can be integrated into <code>XCALibre.jl</code> to extend its functionality. In particular, this example will show how to build a basic neural network using <code>Flux.jl</code> to represent a parabolic velocity profile and how this neural network can be used to define an inlet condition in <code>XCALibre.jl</code>. </p><p>The boundary condition is injected into the solution using the builtin <code>DirichletFunction</code> boundary condition, which is designed to pass arbitrary Julia functions to a given boundary.</p><article class="docstring"><header><a class="docstring-article-toggle-button fa-solid fa-chevron-down" href="javascript:;" title="Collapse docstring"></a><a class="docstring-binding" id="XCALibre.Discretise.DirichletFunction-examples-04_2d-inflow-using-Flux" href="#XCALibre.Discretise.DirichletFunction-examples-04_2d-inflow-using-Flux"><code>XCALibre.Discretise.DirichletFunction</code></a> — <span class="docstring-category">Type</span><span class="is-flex-grow-1 docstring-article-toggle-button" title="Collapse docstring"></span></header><section><div><pre><code class="language-julia hljs">DirichletFunction(ID, value) &lt;: AbstractDirichlet</code></pre><p>Dirichlet boundary condition defined with user-provided function.</p><p><strong>Input</strong></p><ul><li><code>ID</code> Boundary name provided as symbol e.g. :inlet</li><li><code>value</code> Custom function for Dirichlet boundary condition.</li></ul><p><strong>Function requirements</strong></p><p>The function passed to this boundary condition must have the following signature:</p><pre><code class="nohighlight hljs">f(coords, time, index) = SVector{3}(ux, uy, uz)</code></pre><p>Where, <code>coords</code> is a vector containing the coordinates of a face, <code>time</code> is the current time in transient simulations (and the iteration number in steady simulations), and <code>index</code> is the local face index (from 1 to <code>N</code>, where <code>N</code> is the number of faces in a given boundary). The function must return an SVector (from StaticArrays.jl) representing the velocity vector. </p></div><a class="docs-sourcelink" target="_blank" href="https://github.com/mberto79/XCALibre.jl/blob/e02a51bf059378470714da0cb294a88b31594c39/src/Discretise/boundary_conditions/dirichletFunction.jl#L6-L22">source</a></section></article><p>In this example, instead of passing a Julia function, the boundary velocity profile will be given via a simple neural network. </p><div class="admonition is-info"><header class="admonition-header">Note</header><div class="admonition-body"><p>This interface is experimental and subject to change. Currently it can only be used for vectors.</p></div></div><h1 id="Set-up-steps"><a class="docs-heading-anchor" href="#Set-up-steps">Set up steps</a><a id="Set-up-steps-1"></a><a class="docs-heading-anchor-permalink" href="#Set-up-steps" title="Permalink"></a></h1><hr/><h3 id="Install-and-load-modules"><a class="docs-heading-anchor" href="#Install-and-load-modules">Install and load modules</a><a id="Install-and-load-modules-1"></a><a class="docs-heading-anchor-permalink" href="#Install-and-load-modules" title="Permalink"></a></h3><p>To be able to run this example the following modules need to be installed. This can be done by entering into package mode (using &quot;]&quot; in the REPL) and typing the following:</p><pre><code class="language-julia hljs">add Plots, XCALibre, Flux, StaticArrays, LinearAlgebra, KernelAbstractions, Adapt</code></pre><p>This will download and install the required packages. Once installed, the packages can be loaded as follows:</p><pre><code class="language-julia hljs">using Plots
+using XCALibre
+using Flux
+using StaticArrays
+using Statistics
+using LinearAlgebra
+using KernelAbstractions</code></pre><h3 id="Build-a-neural-network-model"><a class="docs-heading-anchor" href="#Build-a-neural-network-model">Build a neural network model</a><a id="Build-a-neural-network-model-1"></a><a class="docs-heading-anchor-permalink" href="#Build-a-neural-network-model" title="Permalink"></a></h3><p>Next, a neural network will be created to return a parabolic velocity profile. In this case, the training data will be generated using an analytical expression. </p><pre><code class="language-julia hljs">actual(y) = begin
+    H = 1 # channel height
+    H2 = H/2
+    h = y - H2
+    vx = (1 - (h/H2)^2)
+    return vx
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">actual (generic function with 1 method)</code></pre><p>And define a simple 2-layer neural network to model the inlet function:</p><pre><code class="language-julia hljs">inflowNetwork = Chain(
+    Dense(1 =&gt; 6, sigmoid),
+    Dense(6 =&gt; 1)) |&gt; f64</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Chain(
+  Dense(1 =&gt; 6, σ),                     <span class="sgr90"># 12 parameters</span>
+  Dense(6 =&gt; 1),                        <span class="sgr90"># 7 parameters</span>
+) <span class="sgr90">                  # Total: 4 arrays, </span>19 parameters, 408 bytes.</code></pre><p>Now, we generate the training and testing datasets using the analytical function. The neural network is not yet trained but it can already be used (of course, the prediction is not yet very useful). The various datasets, and initial model predictions are shown in the figure below.</p><pre><code class="language-julia hljs">y_actual = [0:0.01:1;] # array of y-values for plotting
+vx_actual = actual.(y_actual)
+
+# Generate training dataset
+y_train = hcat(rand(0:(0.1/100):0.1, 100)...)./0.1
+vx_train = actual.(y_train)
+
+# Test locations selected randomly
+y_test = hcat(rand(0:(0.1/100):0.1, 100)...)./0.1
+vx_untrained = inflowNetwork(y_test)
+
+plot(
+    y_actual, vx_actual, label=&quot;Actual&quot;,
+    frame_style=:box, foreground_color_legend = nothing,
+    xlabel=&quot;Dimensionless distance&quot;, ylabel=&quot;Normalised velocity&quot;)
+scatter!(y_train&#39;, vx_train&#39;, label=&quot;Training data&quot;)
+scatter!(y_test&#39;, vx_untrained&#39;, label=&quot;Untrained output&quot;)</code></pre><p><img src="../flux_comparison_untrained.svg" alt/></p><p>The next step is to train the model as shown below. Finally, to make sure that the model has trained correctly, it is tested with at randomly generated points and the output compared with the analytical function as shown in the figure below.</p><pre><code class="language-julia hljs">loss(inflowNetwork, y, vx) = mean(abs2.(inflowNetwork(y) .- vx))
+
+opt =  Flux.setup(Adam(), inflowNetwork)
+data = [(y_train, vx_train)]
+for epoch in 1:20000
+    Flux.train!(loss, inflowNetwork, data, opt)
+end
+loss(inflowNetwork, data[1]...,)
+
+vx_trained = inflowNetwork(y_test)
+
+
+plot(
+    y_actual, vx_actual, label=&quot;Actual&quot;,
+    frame_style=:box, foreground_color_legend = nothing,
+    xlabel=&quot;Dimensionless distance&quot;, ylabel=&quot;Normalised velocity&quot;)
+scatter!(y_test&#39;, vx_trained&#39;, label=&quot;Trained output&quot;)</code></pre><p><img src="../flux_comparison.svg" alt/></p><h3 id="Define-inlet-condition-and-interface"><a class="docs-heading-anchor" href="#Define-inlet-condition-and-interface">Define inlet condition and interface</a><a id="Define-inlet-condition-and-interface-1"></a><a class="docs-heading-anchor-permalink" href="#Define-inlet-condition-and-interface" title="Permalink"></a></h3><p>The next step is to define some interfaces to allow passing the model as if it was a simple Julia function. This requires only 3 key ingredients. First, a struct is defined that will contain any user data needed as well as the model itself. In this case, the following structure has been used (but users are completely free to define their own structures).  The only requirements are that the structure should be a subtype of <code>XCALibreUserFunctor</code> and it must contain the <code>steady</code> property.</p><pre><code class="language-julia hljs">struct Inflow{F,I,O,N,V,T} &lt;: XCALibreUserFunctor
+    U::F        # maximum velocity
+    H::F        # inlet height
+    input::I    # vector to hold input coordinates
+    output::O   # vector to hold model inferred values
+    network::N  # model itself
+    xdir::V     # struct used to define x-direction unit vector
+    steady::T   # required field! (Bool)
+end</code></pre><p>Second, the struct above is used as a functor, defined following the requirements set by the <code>DirichletFunction</code> boundary condition. Essentially, this allows for external data to be stored in the <code>Inflow</code> object, which is then made &quot;callable&quot; to behave as a simple Julia function that returns the velocity vector at a given coordinate (<code>vec</code>) and time (<code>t</code>).</p><pre><code class="language-julia hljs">(bc::Inflow)(vec, t, i) = begin
+    velocity = @view bc.output[:,i]
+    return @inbounds SVector{3}(velocity[1], velocity[2], velocity[3])
+end</code></pre><p>The third step is to define a new method for the <code>update_user_boundary!</code> function from the <code>Discretise</code> module. This function offers a mechanism to update the internals of the previously defined structure by calling the user-provided neural network model. In this particular example, this is not required since the boundary values are not changing in time (it would have been sufficient to do a single inference round and to simply store the values inside the <code>Inflow</code> struct). However, this function is implemented here to illustrate the interface, and provide an example of a user-defined kernel. Notice that, in this particular example, the only purpose of this function is to scale the velocity field inferred by the neural network (since it was defined with values between 0 and 1).</p><pre><code class="language-julia hljs">XCALibre.Discretise.update_user_boundary!(
+    BC::DirichletFunction{I,V}, faces, cells, facesID_range, time, config
+    ) where{I,V&lt;:Inflow} =
+begin
+
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    kernel_range = length(facesID_range)
+    kernel! = _update_user_boundary!(backend, workgroup, kernel_range)
+    kernel!(BC, faces, cells, facesID_range, time, ndrange=kernel_range)
+    KernelAbstractions.synchronize(backend)
+
+    (; output, input, U, network, xdir) = BC.value
+    output .= U.*network(input).*xdir # convert to vector
+end
+
+@kernel function _update_user_boundary!(BC, faces, cells, facesID_range, time)
+    i = @index(Global)
+    startID = facesID_range[1]
+    fID = i + startID - 1
+    coords = faces[fID].centre
+    BC.value.input[i] = coords[2]/BC.value.H # scale coordinates
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">_update_user_boundary! (generic function with 4 methods)</code></pre><h3 id="Create-an-instance-of-Inflow"><a class="docs-heading-anchor" href="#Create-an-instance-of-Inflow">Create an instance of  <code>Inflow</code></a><a id="Create-an-instance-of-Inflow-1"></a><a class="docs-heading-anchor-permalink" href="#Create-an-instance-of-Inflow" title="Permalink"></a></h3><p>An instance of the <code>Inflow</code> object is now created. Notice that the <code>input</code> and <code>output</code> fields contain vectors to hold the boundary face information, thus, they must be of the same size as the number of boundary faces. The mesh is, therefore, loaded first.</p><pre><code class="language-julia hljs">grids_dir = pkgdir(XCALibre, &quot;examples/0_GRIDS&quot;)
+grid = &quot;backwardFacingStep_5mm.unv&quot;
+mesh_file = joinpath(grids_dir, grid)
+
+mesh = UNV2D_mesh(mesh_file, scale=0.001)
+
+nfaces = mesh.boundaries[1].IDs_range |&gt; length</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">20</code></pre><p>The <code>Inflow</code> functor is now constructed.</p><pre><code class="language-julia hljs">U = 0.5 # maximum velocity
+H = 0.1 # inlet height
+input = zeros(1,nfaces)
+input .= (H/2)/H
+output = U.*inflowNetwork(input).*[1 0 0]&#39;
+@view output[:,2]
+
+inlet_profile= Inflow(
+    0.5,
+    0.1,
+    input,
+    output,
+    inflowNetwork,
+    [1,0,0],
+    true
+)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Main.Inflow{Float64, Matrix{Float64}, Matrix{Float64}, Flux.Chain{Tuple{Flux.Dense{typeof(NNlib.σ), Matrix{Float64}, Vector{Float64}}, Flux.Dense{typeof(identity), Matrix{Float64}, Vector{Float64}}}}, Vector{Int64}, Bool}(0.5, 0.1, [0.5 0.5 … 0.5 0.5], [0.4984357147179322 0.4984357147179322 … 0.4984357147179322 0.4984357147179322; 0.0 0.0 … 0.0 0.0; 0.0 0.0 … 0.0 0.0], Chain(Dense(1 =&gt; 6, σ), Dense(6 =&gt; 1)), [1, 0, 0], true)</code></pre><h3 id="Run-simulation"><a class="docs-heading-anchor" href="#Run-simulation">Run simulation</a><a id="Run-simulation-1"></a><a class="docs-heading-anchor-permalink" href="#Run-simulation" title="Permalink"></a></h3><p>The final step is simply to set up and run a simulation in XCALibre.jl. Notice that this does not require any special considerations, only to remember to use the <code>DirichletFunction</code> boundary condition when setting the inlet velocity. The <code>inlet_profile</code> functor object is then passed to the boundary. </p><pre><code class="language-julia hljs">velocity = [0.5, 0.0, 0.0]
+nu = 1e-3
+Re = velocity[1]*0.1/nu
+
+model = Physics(
+    time = Steady(),
+    fluid = Fluid{Incompressible}(nu = nu),
+    turbulence = RANS{Laminar}(),
+    energy = Energy{Isothermal}(),
+    domain = mesh
+    )
+
+@assign! model momentum U (
+    DirichletFunction(:inlet, inlet_profile), # Pass functor
+    Neumann(:outlet, 0.0),
+    Dirichlet(:wall, [0.0, 0.0, 0.0]),
+    Dirichlet(:top, [0.0, 0.0, 0.0]),
+)
+
+@assign! model momentum p (
+    Neumann(:inlet, 0.0),
+    Dirichlet(:outlet, 0.0),
+    Neumann(:wall, 0.0),
+    Neumann(:top, 0.0)
+)
+
+schemes = (
+    U = set_schemes(divergence = Linear),
+    p = set_schemes()
+)
+
+
+solvers = (
+    U = set_solver(
+        model.momentum.U;
+        solver      = BicgstabSolver,
+        preconditioner = Jacobi(),
+        convergence = 1e-7,
+        relax       = 0.7,
+        rtol = 1e-4,
+        atol = 1e-10
+    ),
+    p = set_solver(
+        model.momentum.p;
+        solver      = CgSolver,
+        preconditioner = Jacobi(),
+        convergence = 1e-7,
+        relax       = 0.3,
+        rtol = 1e-4,
+        atol = 1e-10
+    )
+)
+
+runtime = set_runtime(iterations=500, time_step=1, write_interval=500)
+
+hardware = set_hardware(backend=CPU(), workgroup=1024)
+
+config = Configuration(
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+
+GC.gc()
+
+initialise!(model.momentum.U, velocity)
+initialise!(model.momentum.p, 0.0)
+
+residuals = run!(model, config)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Setting boundary 1: inlet
+Setting boundary 2: outlet
+Setting boundary 3: wall
+Setting boundary 4: top
+Setting boundary 1: inlet
+Setting boundary 2: outlet
+Setting boundary 3: wall
+Setting boundary 4: top
+[ Info: Extracting configuration and input fields...
+[ Info: Pre-allocating fields...
+[ Info: Defining models...
+[ Info: Initialising preconditioners...
+[ Info: Pre-allocating solvers...
+[ Info: Initialising turbulence model...
+[ Info: Initialise VTKWriter (Store mesh in host memory)
+[ Info: Allocating working memory...
+[ Info: Starting SIMPLE loops...</code></pre><h1 id="Simulation-result"><a class="docs-heading-anchor" href="#Simulation-result">Simulation result</a><a id="Simulation-result-1"></a><a class="docs-heading-anchor-permalink" href="#Simulation-result" title="Permalink"></a></h1><hr/><p><img src="../figures/04/BFS_neural_network_profile.png" alt="Comparison with OpenFOAM"/></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../03_2d-constant-temperature-flat-plate/">« Validation: 2D Constant temperature flat plate</a><a class="docs-footer-nextpage" href="../05_2d-aerofoil-inflow-optimisation/">Advanced: 2D Aerofoil inflow optimisation »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.8.1 on <span class="colophon-date" title="Monday 17 February 2025 20:14">Monday 17 February 2025</span>. Using Julia version 1.10.8.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

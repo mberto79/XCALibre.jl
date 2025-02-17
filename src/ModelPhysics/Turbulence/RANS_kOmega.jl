@@ -155,7 +155,7 @@ function turbulence!(
     (;k, omega, nut, kf, omegaf, nutf, coeffs) = model.turbulence
     (; U, Uf, gradU) = S
     (;k_eqn, ω_eqn, state) = rans
-    (; solvers, runtime) = config
+    (; solvers, runtime, hardware) = config
 
     mueffk = get_flux(k_eqn, 3)
     Dkf = get_flux(k_eqn, 4)
@@ -174,13 +174,38 @@ function turbulence!(
     magnitude2!(Pk, S, config, scale_factor=2.0) # multiplied by 2 (def of Sij)
     # constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
     
-    @. Pω.values = rho.values*coeffs.α1*Pk.values
-    @. Pk.values = rho.values*nut.values*Pk.values
+    # @. Pω.values = rho.values*coeffs.α1*Pk.values
+    # @. Pk.values = rho.values*nut.values*Pk.values
+    # correct_production!(Pk, k.BCs, model, S.gradU, config) # Must be after previous line
+    # @. Dωf.values = rho.values*coeffs.β1*omega.values
+    # @. mueffω.values = rhof.values * (nuf.values + coeffs.σω*nutf.values)
+    # @. Dkf.values = rho.values*coeffs.β⁺*omega.values
+    # @. mueffk.values = rhof.values * (nuf.values + coeffs.σk*nutf.values)
+
+    AK.foreachindex(Pk.values, max_tasks=Threads.nthreads(), min_elems=1024, block_size=hardware.workgroup) do i
+        @inbounds begin
+            ρ = rho[i]; prodK = Pk[i]
+            Pω[i] = ρ*coeffs.α1*prodK
+            Pk[i] = ρ*nut[i]*prodK
+        end
+    end
     correct_production!(Pk, k.BCs, model, S.gradU, config) # Must be after previous line
-    @. Dωf.values = rho.values*coeffs.β1*omega.values
-    @. mueffω.values = rhof.values * (nuf.values + coeffs.σω*nutf.values)
-    @. Dkf.values = rho.values*coeffs.β⁺*omega.values
-    @. mueffk.values = rhof.values * (nuf.values + coeffs.σk*nutf.values)
+
+    AK.foreachindex(Dωf.values, max_tasks=Threads.nthreads(), min_elems=1024, block_size=hardware.workgroup) do i
+        @inbounds begin
+            ρ = rho[i]; ω = omega[i]
+            Dωf[i] = ρ*coeffs.β1*ω
+            Dkf[i] = ρ*coeffs.β⁺*ω
+        end
+    end
+
+    AK.foreachindex(mueffω.values, max_tasks=Threads.nthreads(), min_elems=1024, block_size=hardware.workgroup) do i
+        @inbounds begin
+            ρf = rhof[i]; νf = nuf[i]; νtf = nutf[i]
+            mueffω[i] = ρf*(νf + coeffs.σω*νtf)
+            mueffk[i] = ρf* (νf + coeffs.σk*νtf)
+        end
+    end
 
     # Solve omega equation
     # prev .= omega.values

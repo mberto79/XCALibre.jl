@@ -8,6 +8,7 @@ using Adapt
 
 using LinearAlgebra
 using SparseMatricesCSR
+import AcceleratedKernels as AK
 
 using XCALibre.Multithread
 using XCALibre.Mesh

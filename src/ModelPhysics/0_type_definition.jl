@@ -136,3 +136,8 @@ Base.show(io::IO, model::Physics) = begin
     end
     print(io, String(take!(modelDefinition)))
 end
+
+mutable struct ModelState{T1}
+    residuals::T1
+    converged::Bool
+end

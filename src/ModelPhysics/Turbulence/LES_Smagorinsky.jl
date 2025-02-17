@@ -19,9 +19,10 @@ struct Smagorinsky{S1,S2,C} <: AbstractLESModel
 end
 Adapt.@adapt_structure Smagorinsky
 
-struct SmagorinskyModel{D,S}
+struct SmagorinskyModel{D,S1,S2}
     Δ::D 
-    magS::S
+    magS::S1
+    state::S2
 end
 Adapt.@adapt_structure SmagorinskyModel
 
@@ -72,7 +73,7 @@ function initialise(
     delta!(Δ, mesh, config)
     @. Δ.values = Δ.values^2 # store delta squared since it will be needed
     
-    return SmagorinskyModel(Δ, magS)
+    return SmagorinskyModel(Δ, magS, ModelState((), false))
 end
 
 # Model solver call (implementation)

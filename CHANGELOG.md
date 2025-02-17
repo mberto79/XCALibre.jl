@@ -3,7 +3,7 @@
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v0.3.1` breaking changes will be recorded here. 
 
-## Version [v0.4.0] - 2025-xx-xx
+## Version [v0.4.0] - 2025-02-17
 
 ### Added
 * Implementation of `Symmetry` boundary condition for `ScalarField` types [#30]
@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 * Calling `JacobiSmoother` now works on the GPU [#30]
 * Implemented `SparseXCSR` as wrapper for `SparseMatrixCSR` on the CPU to resolve display/print errors [#30]
+* The convergence criteria for solvers is used consistently to stop/control simulation runtime [#36]
+* Consistent display of residuals on screen during simulations [#36]
+* Fixed calculation of wall distance and `apply_boundary_conditions!` arguments for `LKE` model [#36]
 
 ### Changed
 * The calculation of gradients has been improved by merging computations into a single kernel, improving performance of gradient kernels by around 10-30%, most noticable for vector gradients [#30]

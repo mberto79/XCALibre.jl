@@ -31,10 +31,11 @@ struct SensibleEnthalpy{S1,S2,F1,F2,S3,S4,F,C} <: AbstractEnergyModel
 end
 Adapt.@adapt_structure SensibleEnthalpy
 
-struct Sensible_Enthalpy_Model{E1}
+struct SensibleEnthalpyModel{E1,State}
     energy_eqn::E1 
+    state::State
 end
-Adapt.@adapt_structure Sensible_Enthalpy_Model
+Adapt.@adapt_structure SensibleEnthalpyModel
 
 # Model API constructor
 Energy{SensibleEnthalpy}(; Tref) = begin
@@ -43,7 +44,7 @@ Energy{SensibleEnthalpy}(; Tref) = begin
     Energy{SensibleEnthalpy,ARG}(coeffs)
 end
 
-# Functor as consturctor
+# Functor as constructor
 (energy::Energy{EnergyModel, ARG})(mesh, fluid) where {EnergyModel<:SensibleEnthalpy,ARG} = begin
     h = ScalarField(mesh)
     T = ScalarField(mesh)
@@ -80,7 +81,7 @@ Initialisation of energy transport equations.
               hardware structures set.
 
 ### Output
-- `Sensible_Enthalpy_Model`  -- Energy model struct containing energy equation.
+- `SensibleEnthalpyModel`  -- Energy model struct containing energy equation.
 
 """
 function initialise(
@@ -116,12 +117,16 @@ function initialise(
     # preallocating solvers
     @reset energy_eqn.solver = solvers.h.solver(_A(energy_eqn), _b(energy_eqn))
 
-    return Sensible_Enthalpy_Model(energy_eqn)
+    init_residual = (:h, 1.0)
+    init_converged = false
+    state = ModelState(init_residual, init_converged)
+
+    return SensibleEnthalpyModel(energy_eqn, state)
 end
 
 
 """
-    energy::Sensible_Enthalpy_Model{E1}, model::Physics{T1,F,M,Tu,E,D,BI}, prev, mdotf, rho, mueff, time, config
+    energy::SensibleEnthalpyModel, model::Physics{T1,F,M,Tu,E,D,BI}, prev, mdotf, rho, mueff, time, config
     ) where {T1,F,M,Tu,E,D,BI,E1}
 
 Run energy transport equations.
@@ -139,14 +144,14 @@ Run energy transport equations.
 
 """
 function energy!(
-    energy::Sensible_Enthalpy_Model{E1}, model::Physics{T1,F,M,Tu,E,D,BI}, prev, mdotf, rho, mueff, time, config
-    ) where {T1,F,M,Tu,E,D,BI,E1}
+    energy::SensibleEnthalpyModel, model::Physics{T1,F,M,Tu,E,D,BI}, prev, mdotf, rho, mueff, time, config
+    ) where {T1,F,M,Tu,E,D,BI}
 
     mesh = model.domain
 
     (;U) = model.momentum
     (;h, hf, T, K, dpdt) = model.energy
-    (;energy_eqn) = energy
+    (;energy_eqn, state) = energy
     (; solvers, runtime, hardware) = config
     (; iterations, write_interval) = runtime
     (; backend) = hardware
@@ -199,7 +204,7 @@ function energy!(
     apply_boundary_conditions!(energy_eqn, h.BCs, nothing, time, config)
     implicit_relaxation_diagdom!(energy_eqn, h.values, solvers.h.relax, nothing, config)
     update_preconditioner!(energy_eqn.preconditioner, mesh, config)
-    solve_system!(energy_eqn, solvers.h, h, nothing, config)
+    h_res = solve_system!(energy_eqn, solvers.h, h, nothing, config)
 
     if ~isempty(solvers.h.limit)
         Tmin = solvers.h.limit[1]; Tmax = solvers.h.limit[2]
@@ -209,6 +214,13 @@ function energy!(
     htoT!(model, h, T)
     interpolate!(hf, h, config)
     correct_boundaries!(hf, h, h.BCs, time, config)
+
+    residuals = (:h, h_res)
+    converged = h_res <= solvers.h.convergence
+    state.residuals = residuals
+    state.converged = converged
+
+    return nothing
 end
 
 

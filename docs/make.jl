@@ -1,13 +1,13 @@
 using Documenter
-using FVM_1D
+using XCALibre
 
 push!(LOAD_PATH,"../src/")
 
 makedocs(
-    sitename = "FVM_1D",
+    sitename = "XCALibre",
     format = Documenter.HTML(),
     doctest = false, # only set to false when sorting out docs structure
-    modules = [FVM_1D]
+    modules = [XCALibre]
 )
 
 # Documenter can also automatically deploy documentation to gh-pages.

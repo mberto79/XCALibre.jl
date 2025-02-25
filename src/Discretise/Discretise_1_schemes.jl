@@ -77,7 +77,7 @@ end
     xN = cellN.centre
     
     # Calculate weights using normal functions
-    weight = norm(xf - xC)/norm(xN - xC)
+    weight = norm(xN - xf)/norm(xN - xC)
     one_minus_weight = one(eltype(weight)) - weight
 
     # Calculate required increment

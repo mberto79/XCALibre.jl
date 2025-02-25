@@ -1,13 +1,13 @@
 using XCALibre
 # using Adapt
-using CUDA
+# using CUDA
 
 mesh_file = "unv_sample_meshes/cascade_3D_periodic_2p5mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
 # backend = CUDABackend()
 backend = CPU()
-workgroup = 1024
+workgroup = cld(length(mesh.cells), Threads.nthreads())
 # sidePeriodic, sideConnectivity = construct_periodic(mesh, backend, :side1, :side2)
 periodic, connectivity, mesh_periodic = construct_periodic(mesh, backend, :top, :bottom)
 
@@ -79,7 +79,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=300, time_step=1, write_interval=100)
+    iterations=100, time_step=1, write_interval=100)
 
 hardware = set_hardware(backend=backend, workgroup=workgroup)
 
@@ -93,28 +93,3 @@ initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
 Rx, Ry, Rz, Rp, model_out = run!(model, config)
-
-plot(; xlims=(0,1000))
-plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p")
-
-# # PROFILING CODE
-
-using Profile, PProf
-
-GC.gc()
-initialise!(model.momentum.U, velocity)
-initialise!(model.momentum.p, 0.0)
-
-Profile.Allocs.clear()
-Profile.Allocs.@profile sample_rate=1 begin 
-    Rx, Ry, Rz, Rp, model = run!(model, config)
-end
-
-PProf.Allocs.pprof()
-
-test(::Nothing, a) = print("nothing")
-test(b, a) = print(a*a)
-
-test(nothing, 1)

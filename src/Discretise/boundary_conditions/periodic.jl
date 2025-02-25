@@ -69,17 +69,20 @@ function construct_periodic(mesh, backend, patch1::Symbol, patch2::Symbol)
     p2 = Periodic(patch2, values2)
     connectivity = periodic_matrix_connectivity(mesh, p1, p2)
 
-    periodic1 = adapt(backend, p1)
-    periodic2 = adapt(backend, p2)
-
     # flip normals for patch2 
     # IDs_range = mesh.boundaries[idx2].IDs_range
 
     # for fID ∈ IDs_range
     #     face = faces[fID]  
+    #     println("before: ", face.normal)
     #     @reset face.normal *= -1 
     #     faces[fID] = face
+    #     println("after: ", face.normal)
     # end
+
+
+    periodic1 = adapt(backend, p1)
+    periodic2 = adapt(backend, p2)
     
     return (periodic1, periodic2), connectivity, mesh
 end
@@ -101,7 +104,7 @@ function periodic_matrix_connectivity(mesh, patch1, patch2)
     # j = zeros(Int, length(fmap2))
     nindex = 0
 
-    for (fID1, fID2) ∈ zip(fmap2, fmap1) # swap order to get correct fID
+    for (fID1, fID2) ∈ zip(BC1, fmap1) # swap order to get correct fID
         face1 = faces[fID1]
         face2 = faces[fID2]
         cID1 = face1.ownerCells[1]
@@ -279,11 +282,12 @@ end
 
     # Calculate ap value to increment
     ap = 0.0
-    if bc.value.ismaster
-        ap = -term.sign[1]*(term.flux[fID])
-    else
-        ap = -term.sign[1]*(term.flux[fID]) # correct face normal
-    end
+    ap = term.sign[1]*(term.flux[fID])
+    # if bc.value.ismaster
+    #     ap = -term.sign[1]*(term.flux[fID])
+    # else
+    #     ap = -term.sign[1]*(term.flux[fID]) # correct face normal
+    # end
 
     ac = weight*ap
     an = one_minus_weight*ap

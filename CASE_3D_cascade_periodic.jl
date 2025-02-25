@@ -5,12 +5,13 @@ using CUDA
 mesh_file = "unv_sample_meshes/cascade_3D_periodic_2p5mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
-backend = CUDABackend()
-# backend = CPU()
+# backend = CUDABackend()
+backend = CPU()
+workgroup = 1024
 # sidePeriodic, sideConnectivity = construct_periodic(mesh, backend, :side1, :side2)
 periodic, connectivity, mesh_periodic = construct_periodic(mesh, backend, :top, :bottom)
 
-mesh_dev = adapt(CUDABackend(), mesh_periodic)
+# mesh_dev = adapt(CUDABackend(), mesh_periodic)
 mesh_dev = mesh_periodic
 
 velocity = [0.25, 0.0, 0.0]
@@ -80,8 +81,7 @@ solvers = (
 runtime = set_runtime(
     iterations=500, time_step=1, write_interval=100)
 
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = set_hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

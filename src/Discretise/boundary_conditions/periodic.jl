@@ -101,7 +101,7 @@ function periodic_matrix_connectivity(mesh, patch1, patch2)
     # j = zeros(Int, length(fmap2))
     nindex = 0
 
-    for (fID1, fID2) ∈ zip(BC1, fmap1) # swap order to get correct fID
+    for (fID1, fID2) ∈ zip(fmap2, fmap1) # swap order to get correct fID
         face1 = faces[fID1]
         face2 = faces[fID2]
         cID1 = face1.ownerCells[1]
@@ -112,8 +112,8 @@ function periodic_matrix_connectivity(mesh, patch1, patch2)
         j[nindex] = cID2
 
         nindex += 1
-        j[nindex] = cID1
         i[nindex] = cID2
+        j[nindex] = cID1
     end
 
     # for (fID1, fID2) ∈ zip(BC2, fmap2) # swap order to get correct fID
@@ -214,10 +214,11 @@ end
     # ap, ap*face_value # when using interpolated face value
     # ap, ap*values[pcellID] # when using neighbour cell value
 
-    pzcellID = spindex(colptr, rowval, pcellID, pcellID)
-
     nzcellID = spindex(colptr, rowval, cellID, pcellID)
-    pnzcellID = spindex(colptr, rowval, pcellID, cellID)
+
+    # pzcellID = spindex(colptr, rowval, pcellID, pcellID)
+
+    # pnzcellID = spindex(colptr, rowval, pcellID, cellID)
 
     # pnzcellID = spindex(colptr, rowval, cellID, pcellID)
     # nzcellID = spindex(colptr, rowval, pcellID, cellID)
@@ -236,13 +237,13 @@ end
     # -ap, 0.0 # explicit this works
 
     # Explicit allowing looping over slave patch
-    -ap, -ap*values[pcellID] # explicit this works
+    # -ap, -ap*values[pcellID] # explicit this works
 
     # Playing with implicit version
     # Atomix.@atomic nzval[pzcellID] += -ap
     # Atomix.@atomic nzval[pnzcellID] += ap
-    # Atomix.@atomic nzval[nzcellID] += ap
-    # -ap, 0.0 
+    Atomix.@atomic nzval[nzcellID] += ap
+    -ap, 0.0
 end
 
 @define_boundary Periodic Divergence{Linear} begin
@@ -277,14 +278,20 @@ end
     face_value = weight*values[cellID] + one_minus_weight*values[pcellID]
 
     # Calculate ap value to increment
-    ap = term.sign[1]*(term.flux[fID])
+    ap = 0.0
+    if bc.value.ismaster
+        ap = -term.sign[1]*(term.flux[fID])
+    else
+        ap = -term.sign[1]*(term.flux[fID]) # correct face normal
+    end
+
     ac = weight*ap
     an = one_minus_weight*ap
 
-    pzcellID = spindex(colptr, rowval, pcellID, pcellID)
-
     nzcellID = spindex(colptr, rowval, cellID, pcellID)
-    pnzcellID = spindex(colptr, rowval, pcellID, cellID)
+    
+    # pzcellID = spindex(colptr, rowval, pcellID, pcellID)
+    # pnzcellID = spindex(colptr, rowval, pcellID, cellID)
 
     # pnzcellID = spindex(colptr, rowval, cellID, pcellID)
     # nzcellID = spindex(colptr, rowval, pcellID, cellID)
@@ -303,13 +310,12 @@ end
     # ac, 0.0 # explicits this works!
 
     # Explicit allowing looping over slave patch
-    ac, -an*values[pcellID] # explicit this works
+    # ac, -an*values[pcellID] # explicit this works
 
     # Playing around with implicit version
     # Atomix.@atomic nzval[pzcellID] += -ac
-    # Atomix.@atomic nzval[pnzcellID] += -an
-    # Atomix.@atomic nzval[nzcellID] += an
-    # ac, 0.0
+    Atomix.@atomic nzval[nzcellID] += an
+    ac, 0.0
 end
 
 @define_boundary Periodic Divergence{Upwind} begin

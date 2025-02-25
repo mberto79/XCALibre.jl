@@ -1,5 +1,5 @@
 using XCALibre
-using Adapt
+# using Adapt
 using CUDA
 
 mesh_file = "unv_sample_meshes/cascade_3D_periodic_2p5mm.unv"
@@ -79,7 +79,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=500, time_step=1, write_interval=100)
+    iterations=300, time_step=1, write_interval=100)
 
 hardware = set_hardware(backend=backend, workgroup=workgroup)
 

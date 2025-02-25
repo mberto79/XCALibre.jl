@@ -1,4 +1,4 @@
-module FVM_1D
+module XCALibre
 
 using Krylov 
 export BicgstabSolver, CgSolver
@@ -25,22 +25,22 @@ include("Solvers/Solvers.jl")
 include("Postprocess/Postprocess.jl")
 
 using Reexport
-@reexport using FVM_1D.Mesh
-@reexport using FVM_1D.FoamMesh
-# @reexport using FVM_1D.Plotting
-@reexport using FVM_1D.Fields
-@reexport using FVM_1D.ModelFramework
-@reexport using FVM_1D.Discretise
-@reexport using FVM_1D.Solve
-@reexport using FVM_1D.Calculate
-@reexport using FVM_1D.ModelPhysics
-@reexport using FVM_1D.Turbulence
-@reexport using FVM_1D.Energy
-@reexport using FVM_1D.Simulate
-@reexport using FVM_1D.Solvers
-@reexport using FVM_1D.Postprocess
-@reexport using FVM_1D.VTK
-@reexport using FVM_1D.UNV3
-@reexport using FVM_1D.UNV2
+@reexport using XCALibre.Mesh
+@reexport using XCALibre.FoamMesh
+# @reexport using XCALibre.Plotting
+@reexport using XCALibre.Fields
+@reexport using XCALibre.ModelFramework
+@reexport using XCALibre.Discretise
+@reexport using XCALibre.Solve
+@reexport using XCALibre.Calculate
+@reexport using XCALibre.ModelPhysics
+@reexport using XCALibre.Turbulence
+@reexport using XCALibre.Energy
+@reexport using XCALibre.Simulate
+@reexport using XCALibre.Solvers
+@reexport using XCALibre.Postprocess
+@reexport using XCALibre.VTK
+@reexport using XCALibre.UNV3
+@reexport using XCALibre.UNV2
 
 end # module

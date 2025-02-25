@@ -1,7 +1,7 @@
 module VTK
 
-using FVM_1D.Mesh
-using FVM_1D.Fields
+using XCALibre.Mesh
+using XCALibre.Fields
 # using CUDA
 using KernelAbstractions
 using LinearAlgebra

@@ -1,4 +1,4 @@
-using FVM_1D
+using XCALibre
 using CUDA
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
@@ -31,39 +31,39 @@ model = Physics(
     )
 
 @assign! model momentum U (
-    FVM_1D.Dirichlet(:inlet, velocity),
+    XCALibre.Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    FVM_1D.Dirichlet(:wall, [0.0, 0.0, 0.0]),
-    FVM_1D.Dirichlet(:bottom, velocity),
+    XCALibre.Dirichlet(:wall, [0.0, 0.0, 0.0]),
+    XCALibre.Dirichlet(:bottom, velocity),
     Neumann(:freestream, 0.0),
 )
 
 @assign! model momentum p (
     Neumann(:inlet, 0.0),
-    FVM_1D.Dirichlet(:outlet, 0.0),
+    XCALibre.Dirichlet(:outlet, 0.0),
     Neumann(:wall, 0.0),
     Neumann(:bottom, 0.0),
     Neumann(:freestream, 0.0)
 )
 
 @assign! model turbulence kl (
-    FVM_1D.Dirichlet(:inlet, kL_inlet),
+    XCALibre.Dirichlet(:inlet, kL_inlet),
     Neumann(:outlet, 0.0),
-    FVM_1D.Dirichlet(:wall, 1e-15),
+    XCALibre.Dirichlet(:wall, 1e-15),
     Neumann(:bottom, 0.0),
     Neumann(:freestream, 0.0)
 )
 
 @assign! model turbulence k (
-    FVM_1D.Dirichlet(:inlet, k_inlet),
+    XCALibre.Dirichlet(:inlet, k_inlet),
     Neumann(:outlet, 0.0),
-    FVM_1D.Dirichlet(:wall, 0.0),
+    XCALibre.Dirichlet(:wall, 0.0),
     Neumann(:bottom, 0.0),
     Neumann(:freestream, 0.0)
 )
 
 @assign! model turbulence omega (
-    FVM_1D.Dirichlet(:inlet, ω_inlet),
+    XCALibre.Dirichlet(:inlet, ω_inlet),
     Neumann(:outlet, 0.0),
     OmegaWallFunction(:wall),
     Neumann(:bottom, 0.0),
@@ -71,9 +71,9 @@ model = Physics(
 )
 
 @assign! model turbulence nut (
-    FVM_1D.Dirichlet(:inlet, k_inlet/ω_inlet),
+    XCALibre.Dirichlet(:inlet, k_inlet/ω_inlet),
     Neumann(:outlet, 0.0),
-    FVM_1D.Dirichlet(:wall, 0.0), 
+    XCALibre.Dirichlet(:wall, 0.0), 
     Neumann(:bottom, 0.0),
     Neumann(:freestream, 0.0),
 )

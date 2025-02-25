@@ -1,6 +1,6 @@
 # module Plotting
 
-# using FVM_1D.Mesh
+# using XCALibre.Mesh
 # using RecipesBase
 # export plotRecipe, plot_mesh
 

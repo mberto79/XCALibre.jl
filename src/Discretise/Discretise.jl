@@ -10,10 +10,10 @@ using KernelAbstractions
 using Atomix
 using GPUArrays
 
-using FVM_1D.Mesh
-using FVM_1D.Fields
-using FVM_1D.ModelFramework
-# using FVM_1D.Energy
+using XCALibre.Mesh
+using XCALibre.Fields
+using XCALibre.ModelFramework
+# using XCALibre.Energy
 
 include("Discretise_0_types.jl")
 include("Discretise_1_schemes.jl")

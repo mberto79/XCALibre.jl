@@ -9,11 +9,11 @@ using Atomix
 using KernelAbstractions
 using GPUArrays
 # using CUDA
-using FVM_1D.Mesh
-using FVM_1D.Fields
-using FVM_1D.ModelFramework
-using FVM_1D.Discretise
-using FVM_1D.Solve
+using XCALibre.Mesh
+using XCALibre.Fields
+using XCALibre.ModelFramework
+using XCALibre.Discretise
+using XCALibre.Solve
 
 include("Calculate_0_gradient.jl")
 include("Calculate_0_divergence.jl")

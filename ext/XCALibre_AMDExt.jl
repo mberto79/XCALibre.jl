@@ -1,20 +1,20 @@
-module FVM_1D_CUDAExt
+module XCALibre_AMDExt
 
 if isdefined(Base, :get_extension)
-    using CUDA
+    using AMDGPU
 else
-    using ..CUDA
+    using ..AMDGPU
 end
 
-using FVM_1D, Adapt
+using XCALibre, Adapt
 
-const SparseGPU = CUDA.CUSPARSE.CuSparseMatrixCSC
+const SparseGPU = AMDGPU.rocSPARSE.ROCSparseMatrixCSC
 
-function FVM_1D.Mesh._convert_array!(arr, backend::CUDABackend)
-    return adapt(CuArray, arr) # using CuArray
+function XCALibre.Mesh._convert_array!(arr, backend::CUDABackend)
+    return adapt(ROCArray, arr) # using ROCArray
 end
 
-import FVM_1D.ModelFramework: _nzval, _colptr, _rowval, get_sparse_fields
+import XCALibre.ModelFramework: _nzval, _colptr, _rowval, get_sparse_fields
 @inline _nzval(A::SparseGPU) = A.nzVal
 @inline _colptr(A::SparseGPU) = A.colPtr
 @inline _rowval(A::SparseGPU) = A.rowVal
@@ -22,7 +22,7 @@ import FVM_1D.ModelFramework: _nzval, _colptr, _rowval, get_sparse_fields
     A.nzVal, A.rowVal, A.colPtr
 end
 
-import FVM_1D.Solve: integer_type, _m, _n
+import XCALibre.Solve: integer_type, _m, _n
 
 integer_type(A::SparseGPU{Tf,Ti}) where {Tf,Ti} = Ti
 

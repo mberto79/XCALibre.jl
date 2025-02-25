@@ -1,5 +1,5 @@
-using FVM_1D
-using FVM_1D.ModelFramework
+using XCALibre
+using XCALibre.ModelFramework
 using SparseArrays
 using LinearAlgebra
 

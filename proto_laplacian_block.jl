@@ -1,10 +1,10 @@
 using LinearAlgebra
 using StaticArrays
 import Plots
-import FVM_1D
-using FVM_1D.Plotting
+import XCALibre
+using XCALibre.Plotting
 
-struct Point{F} <:FVM_1D.Mesh2D.AbstractPoint
+struct Point{F} <:XCALibre.Mesh2D.AbstractPoint
     coords::SVector{2,F}
 end
 

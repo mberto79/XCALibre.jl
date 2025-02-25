@@ -4,11 +4,11 @@ using LinearAlgebra
 using StaticArrays
 # using SparseArrays
 using Adapt
-using FVM_1D.Mesh
-using FVM_1D.Fields
-using FVM_1D.Calculate
-using FVM_1D.Discretise
-using FVM_1D.Turbulence
+using XCALibre.Mesh
+using XCALibre.Fields
+using XCALibre.Calculate
+using XCALibre.Discretise
+using XCALibre.Turbulence
 
 include("Postprocess_forces.jl")
 

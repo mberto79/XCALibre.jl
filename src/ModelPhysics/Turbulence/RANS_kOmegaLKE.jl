@@ -282,7 +282,7 @@ Run turbulence model transport equations.
 """
 function turbulence!(
     rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S, prev, time, config
-    ) where {T,F,M,Turb<:KOmegaLKE,E,D,BI}
+    ) where {T,F,M,Turb,E,D,BI}
     mesh = model.domain
     (; momentum, turbulence) = model
     U = momentum.U

@@ -96,7 +96,7 @@ Run turbulence model transport equations.
 """
 function turbulence!(
     les::SmagorinskyModel{E1,E2}, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
-    ) where {T,F,M,Tu<:Smagorinsky,E,D,BI,E1,E2}
+    ) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI,E1,E2}
 
     mesh = model.domain
     

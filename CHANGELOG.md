@@ -3,6 +3,26 @@
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v0.3.1` breaking changes will be recorded here. 
 
+## Version [v0.4.1] - 2025-xx-xx
+
+### Added
+* No new functionality has been added
+
+### Fixed
+* No fixes included
+
+### Changed
+* In preparation for implementation of hybrid models e.g. DES, the signature of the `turbulence!` function has been updated to use the `AbstractTurbulenceModel` [#39](@ref)
+
+### Breaking
+* No breaking changes
+
+### Deprecated
+* No functions deprecated
+
+### Removed
+* No functionality has been removed
+
 ## Version [v0.4.0] - 2025-02-17
 
 ### Added

@@ -208,7 +208,10 @@ end
     # ap = term.sign[1]*(term.flux[fID] * Ef_mag)/delta
 
     # ap = term.sign*(term.flux[fID] * area)/delta1 # worked with explicit
-    ap = term.sign*(term.flux[fID] * area)/delta # playing around
+    # ap = term.sign[1]*(term.flux[fID] * area)/delta
+    ap = term.sign[1]*(term.flux[pfID] * area)/delta
+    ac = -ap
+    an = ap
     
     # Increment sparse array
     # ac = -ap
@@ -245,8 +248,8 @@ end
     # Playing with implicit version
     # Atomix.@atomic nzval[pzcellID] += -ap
     # Atomix.@atomic nzval[pnzcellID] += ap
-    Atomix.@atomic nzval[nzcellID] += ap
-    -ap, 0.0
+    Atomix.@atomic nzval[nzcellID] += an
+    ac, 0.0
 end
 
 @define_boundary Periodic Divergence{Linear} begin
@@ -282,15 +285,19 @@ end
 
     # Calculate ap value to increment
     ap = 0.0
-    ap = term.sign[1]*(term.flux[fID])
+    # ap = term.sign*(term.flux[fID]*ns)
+    # ap = term.sign*(term.flux[fID])
+    ap = term.sign*(term.flux[pfID])
+    
+
     # if bc.value.ismaster
     #     ap = -term.sign[1]*(term.flux[fID])
     # else
     #     ap = -term.sign[1]*(term.flux[fID]) # correct face normal
     # end
 
-    ac = weight*ap
-    an = one_minus_weight*ap
+    ac = ap*one_minus_weight
+    an = ap*weight
 
     nzcellID = spindex(colptr, rowval, cellID, pcellID)
     

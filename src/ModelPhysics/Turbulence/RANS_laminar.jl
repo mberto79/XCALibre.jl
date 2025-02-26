@@ -71,13 +71,13 @@ Run turbulence model transport equations.
 
 """
 function turbulence!(rans::LaminarModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time,config
-    ) where {T,F,M,Tu,E,D,BI}
+    ) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
     nothing
 end
 
 function turbulence!(
     rans::LaminarModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
-    ) where {T,F<:AbstractCompressible,M,Tu,E,D,BI}
+    ) where {T,F<:AbstractCompressible,M,Tu<:AbstractTurbulenceModel,E,D,BI}
     (; U, Uf, gradU) = S
     grad!(gradU, Uf, U, U.BCs, time, config)
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)

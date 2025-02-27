@@ -79,7 +79,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=100, time_step=1, write_interval=100)
+    iterations=200, time_step=1, write_interval=100)
 
 hardware = set_hardware(backend=backend, workgroup=workgroup)
 

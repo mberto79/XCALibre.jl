@@ -209,13 +209,14 @@ end
 
     # ap = term.sign*(term.flux[fID] * area)/delta1 # worked with explicit
     # ap = term.sign[1]*(term.flux[fID] * area)/delta
-    ap = term.sign[1]*(term.flux[pfID] * area)/delta
+    ap = term.sign[1]*(term.flux[fID] * area)/delta
     ac = -ap
     an = ap
     
-    # Increment sparse array
-    # ac = -ap
-    # an = ap
+    if !bc.value.ismaster
+        ac = ap
+        an = ap
+    end
     
     # ap, ap*face_value # when using interpolated face value
     # ap, ap*values[pcellID] # when using neighbour cell value
@@ -284,10 +285,9 @@ end
     face_value = weight*values[cellID] + one_minus_weight*values[pcellID]
 
     # Calculate ap value to increment
-    ap = 0.0
     # ap = term.sign*(term.flux[fID]*ns)
     # ap = term.sign*(term.flux[fID])
-    ap = term.sign*(term.flux[pfID])
+    ap = term.sign*(term.flux[fID])
     
 
     # if bc.value.ismaster
@@ -307,11 +307,10 @@ end
     # pnzcellID = spindex(colptr, rowval, cellID, pcellID)
     # nzcellID = spindex(colptr, rowval, pcellID, cellID)
 
-    # if !bc.value.ismaster
-    #     # Atomix.@atomic nzval[nzcellID] += an
-    #     return ac, -an*face_value
-    #     # return 0.0, 0.0
-    # end
+    if !bc.value.ismaster
+        ac = ac
+        an = an
+    end
 
     # Explicit version working
     # Atomix.@atomic nzval[pzcellID] += -ac

@@ -152,7 +152,7 @@ function SIMPLE(
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rDf, rD, config)
-        correct_boundaries!(rDf, rD, rD.BCs, config) # Added to test effect on PERIODIC
+        # correct_boundaries!(rDf, rD, rD.BCs, config) # Added to test effect on PERIODIC
 
         remove_pressure_source!(U_eqn, ∇p, config)
         H!(Hv, U, U_eqn, config)

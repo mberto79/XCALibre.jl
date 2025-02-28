@@ -209,23 +209,20 @@ end
     ac = -ap
     an = ap
     
-    # ap, ap*face_value # when using interpolated face value
-    # ap, ap*values[pcellID] # when using neighbour cell value
 
-    # nzcellID = spindex(colptr, rowval, cellID, pcellID)
-    # pzcellID = spindex(colptr, rowval, pcellID, pcellID)
     fzcellID = spindex(colptr, rowval, cellID, pcellID)
+    # fzcellID = spindex(colptr, rowval, pcellID , cellID)
 
     # Explicit allowing looping over slave patch
-    # if !bc.value.ismaster
-    #     Atomix.@atomic nzval[fzcellID] += ap
-    #     return -ap, 0.0
-    # end
+    if !bc.value.ismaster
+        Atomix.@atomic nzval[fzcellID] = an
+        return ac, 0.0
+    end
 
     # Playing with implicit version
-    # Atomix.@atomic nzval[fzcellID] += ap
-    # -ap, 0.0
-    -ap, -ap*values[pcellID] # explicit this works
+    Atomix.@atomic nzval[fzcellID] = an
+    ac, 0.0
+    # -ap, -ap*values[pcellID] # explicit this works
 end
 
 @define_boundary Periodic Divergence{Linear} begin
@@ -275,26 +272,17 @@ end
     # end
 
     fzcellID = spindex(colptr, rowval, cellID, pcellID)
+    # fzcellID = spindex(colptr, rowval, pcellID, cellID)
     
-    # pzcellID = spindex(colptr, rowval, pcellID, pcellID)
-    # pnzcellID = spindex(colptr, rowval, pcellID, cellID)
-    # pnzcellID = spindex(colptr, rowval, cellID, pcellID)
-    # nzcellID = spindex(colptr, rowval, pcellID, cellID)
-
-    # Explicit version working
-    # Atomix.@atomic nzval[pzcellID] += -ac
-    # Atomix.@atomic b[pcellID] += an*values[cellID] # explicit this works!
-    # Atomix.@atomic b[cellID] += -an*values[pcellID] # explicit this works!
-
-    # if !bc.value.ismaster
-    #     Atomix.@atomic nzval[fzcellID] += -an
-    #     return -ac, 0.0
-    # end
+    if !bc.value.ismaster
+        Atomix.@atomic nzval[fzcellID] = -an
+        return -ac, 0.0
+    end
 
     
-    # Atomix.@atomic nzval[fzcellID] += an
-    # ac, 0.0
-    ac, -an*values[pcellID] # explicits this works!
+    Atomix.@atomic nzval[fzcellID] = an
+    ac, 0.0
+    # ac, -an*values[pcellID] # explicits this works!
 end
 
 @define_boundary Periodic Divergence{Upwind} begin

@@ -166,18 +166,17 @@ end
     
     # Retrieve term flux and extract fields from workitem face
     (; area, normal) = face
-    J = term.flux[fID]
-    flux = J*area/delta
-    ap = term.sign*(flux)
+    ap = term.sign*(term.flux[fID]*area)/delta
     ac = -ap
     an = ap
 
     # Playing with implicit version
-    fzcellID = spindex(colptr, rowval, cellID, pcellID)
-    Atomix.@atomic nzval[fzcellID] = an
-    ac, 0.0
+    # fzcellID = spindex(rowptr, colval, cellID, pcellID)
+    # # fzcellID = spindex(rowptr, colval, pcellID, cellID)
+    # Atomix.@atomic nzval[fzcellID] = an
+    # ac, 0.0
 
-    # ac, an*values[pcellID] # explicit this works
+    ac, -an*values[pcellID] # explicit this works
 end
 
 @define_boundary Periodic Divergence{Linear} begin
@@ -206,7 +205,8 @@ end
     an = one_minus_weight*ap
 
     # Playing with implicit version
-    fzcellID = spindex(colptr, rowval, cellID, pcellID)
+    fzcellID = spindex(rowptr, colval, cellID, pcellID)
+    # fzcellID = spindex(rowptr, colval, pcellID, cellID)
     Atomix.@atomic nzval[fzcellID] = an
     ac, 0.0
 

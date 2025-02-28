@@ -93,21 +93,27 @@ end
     zcellID = spindex(rowptr, colval, cellID, cellID)
 
     # Call apply generated function
-    AP, BP = apply!(model, BC, terms, cellID, zcellID, cell, face, fID, i, component, time)
+    AP, BP = apply!(
+        model, BC, terms, 
+        colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
+        )
     Atomix.@atomic nzval[zcellID] += AP
     Atomix.@atomic b[cellID] += BP
 end
 
 # Apply generated function definition
 @generated function apply!(
-    model::Model{TN,SN,T,S}, BC, terms, cellID, zcellID, cell, face, fID, i, component, time
+    model::Model{TN,SN,T,S}, BC, terms, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
     ) where {TN,SN,T,S}
 
     # Definition of main assignment loop (one per patch)
     func_calls = Expr[]
     for t ∈ 1:TN 
         call = quote
-            ap, bp = (BC)(terms[$t], cellID, zcellID, cell, face, fID, i, component, time)
+            ap, bp = BC(
+                terms[$t], 
+                colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
+                )
             AP += ap
             BP += bp
         end

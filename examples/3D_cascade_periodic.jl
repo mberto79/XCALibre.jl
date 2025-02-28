@@ -94,27 +94,27 @@ initialise!(model.momentum.p, 0.0)
 
 residuals = run!(model, config)
 
-plot(; xlims=(0,1000))
-plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p")
+# plot(; xlims=(0,1000))
+# plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
+# plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
+# plot!(1:length(Rp), Rp, yscale=:log10, label="p")
 
-# # PROFILING CODE
+# # # PROFILING CODE
 
-using Profile, PProf
+# using Profile, PProf
 
-GC.gc()
-initialise!(model.momentum.U, velocity)
-initialise!(model.momentum.p, 0.0)
+# GC.gc()
+# initialise!(model.momentum.U, velocity)
+# initialise!(model.momentum.p, 0.0)
 
-Profile.Allocs.clear()
-Profile.Allocs.@profile sample_rate=1 begin 
-    residuals = run!(model, config)
-end
+# Profile.Allocs.clear()
+# Profile.Allocs.@profile sample_rate=1 begin 
+#     residuals = run!(model, config)
+# end
 
-PProf.Allocs.pprof()
+# PProf.Allocs.pprof()
 
-test(::Nothing, a) = print("nothing")
-test(b, a) = print(a*a)
+# test(::Nothing, a) = print("nothing")
+# test(b, a) = print(a*a)
 
-test(nothing, 1)
+# test(nothing, 1)

@@ -87,6 +87,17 @@ function SIMPLE(
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
 
+    # Try to assign boundary conditions to rDf
+    periodic, connectivity, mesh_periodic = construct_periodic(mesh, backend, :side1, :side2)
+    rD = ScalarField(mesh)
+    rD = assign(rD, 
+        Neumann(:inlet, 0.0),
+        Neumann(:outlet, 0.0),
+        Neumann(:bottom, 0.0),
+        Neumann(:top, 0.0),
+        periodic...
+    )
+
     @info "Initialise VTKWriter (Store mesh in host memory)"
 
     VTKMeshData = initialise_writer(model.domain)
@@ -104,7 +115,7 @@ function SIMPLE(
     pf = FaceScalarField(mesh)
     gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
-    rD = ScalarField(mesh)
+    # rD = ScalarField(mesh)
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
@@ -141,6 +152,8 @@ function SIMPLE(
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rDf, rD, config)
+        correct_boundaries!(rDf, rD, rD.BCs, config) # Added to test effect on PERIODIC
+
         remove_pressure_source!(U_eqn, ∇p, config)
         H!(Hv, U, U_eqn, config)
         
@@ -245,6 +258,9 @@ function SIMPLE(
 
         if iteration%write_interval + signbit(write_interval) == 0      
             model2vtk(model, VTKMeshData, @sprintf "iteration_%.6d" iteration)
+            debugFields = (("divHv", divHv),("gradP", ∇p.result))
+            name = @sprintf "debug_iteration_%.6d" iteration
+            write_vtk(name, model.domain, VTKMeshData, debugFields...)
         end
 
     end # end for loop

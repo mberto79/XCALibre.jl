@@ -74,6 +74,7 @@ function solve_equation!(
     update_preconditioner!(psiEqn.preconditioner, mesh, config)
     solve_system!(psiEqn, solversetup, psi.x, xdir, config)
     
+    # discretise!(psiEqn, psi, config) # Added
     update_equation!(psiEqn, config)
     apply_boundary_conditions!(psiEqn, psi.y.BCs, ydir, config)
     # implicit_relaxation!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
@@ -83,6 +84,7 @@ function solve_equation!(
     
     # Z velocity calculations (3D Mesh only)
     if typeof(mesh) <: Mesh3
+        # discretise!(psiEqn, psi, config) # Added
         update_equation!(psiEqn, config)
         apply_boundary_conditions!(psiEqn, psi.z.BCs, zdir, config)
         # implicit_relaxation!(psiEqn, psi.z.values, solversetup.relax, zdir, config)

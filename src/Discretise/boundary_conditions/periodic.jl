@@ -98,10 +98,10 @@ function periodic_matrix_connectivity(mesh, patch1, patch2)
 
     fmap1 = patch1.value.face_map
     fmap2 = patch2.value.face_map
-    i = zeros(Int, 2*length(fmap2))
-    j = zeros(Int, 2*length(fmap2))
     # i = zeros(Int, length(fmap2))
     # j = zeros(Int, length(fmap2))
+    i = zeros(Int, 2*length(fmap2))
+    j = zeros(Int, 2*length(fmap2))
     nindex = 0
 
     for (fID1, fID2) ∈ zip(BC1, fmap1) # swap order to get correct fID
@@ -150,10 +150,6 @@ end
 
 
 @define_boundary Periodic Laplacian{Linear} begin
-
-    # if !bc.value.ismaster
-    #     return 0.0, 0.0
-    # end
 
     phi = term.phi
     mesh = phi.mesh 
@@ -213,51 +209,26 @@ end
     ac = -ap
     an = ap
     
-    if !bc.value.ismaster
-        ac = ap
-        an = ap
-    end
-    
     # ap, ap*face_value # when using interpolated face value
     # ap, ap*values[pcellID] # when using neighbour cell value
 
-    nzcellID = spindex(colptr, rowval, cellID, pcellID)
-
+    # nzcellID = spindex(colptr, rowval, cellID, pcellID)
     # pzcellID = spindex(colptr, rowval, pcellID, pcellID)
-
-    # pnzcellID = spindex(colptr, rowval, pcellID, cellID)
-
-    # pnzcellID = spindex(colptr, rowval, cellID, pcellID)
-    # nzcellID = spindex(colptr, rowval, pcellID, cellID)
-
-    # if !bc.value.ismaster
-    #     # Atomix.@atomic nzval[nzcellID] += ac
-    #     # return an, 0.0
-    #     return ac, an*values[pcellID]
-    # end
-
-    # Explicit version working!
-    # Atomix.@atomic nzval[pzcellID] += -ap
-    # Atomix.@atomic b[pcellID] += -ap*values[cellID] # explicit this works
-    # Atomix.@atomic b[cellID] += -ap*values[pcellID] # explicit this works
-    # # -ap, -ap*values[pcellID] # explicit this works
-    # -ap, 0.0 # explicit this works
+    fzcellID = spindex(colptr, rowval, cellID, pcellID)
 
     # Explicit allowing looping over slave patch
-    # -ap, -ap*values[pcellID] # explicit this works
+    # if !bc.value.ismaster
+    #     Atomix.@atomic nzval[fzcellID] += ap
+    #     return -ap, 0.0
+    # end
 
     # Playing with implicit version
-    # Atomix.@atomic nzval[pzcellID] += -ap
-    # Atomix.@atomic nzval[pnzcellID] += ap
-    Atomix.@atomic nzval[nzcellID] += an
-    ac, 0.0
+    # Atomix.@atomic nzval[fzcellID] += ap
+    # -ap, 0.0
+    -ap, -ap*values[pcellID] # explicit this works
 end
 
 @define_boundary Periodic Divergence{Linear} begin
-
-    # if !bc.value.ismaster
-    #     return 0.0, 0.0
-    # end
 
     phi = term.phi
     mesh = phi.mesh 
@@ -299,33 +270,31 @@ end
     ac = ap*one_minus_weight
     an = ap*weight
 
-    nzcellID = spindex(colptr, rowval, cellID, pcellID)
+    # if !bc.value.ismaster
+    #     return ac, -an*values[pcellID] # explicit this works
+    # end
+
+    fzcellID = spindex(colptr, rowval, cellID, pcellID)
     
     # pzcellID = spindex(colptr, rowval, pcellID, pcellID)
     # pnzcellID = spindex(colptr, rowval, pcellID, cellID)
-
     # pnzcellID = spindex(colptr, rowval, cellID, pcellID)
     # nzcellID = spindex(colptr, rowval, pcellID, cellID)
-
-    if !bc.value.ismaster
-        ac = ac
-        an = an
-    end
 
     # Explicit version working
     # Atomix.@atomic nzval[pzcellID] += -ac
     # Atomix.@atomic b[pcellID] += an*values[cellID] # explicit this works!
     # Atomix.@atomic b[cellID] += -an*values[pcellID] # explicit this works!
-    # # ac, -an*values[pcellID] # explicits this works!
-    # ac, 0.0 # explicits this works!
 
-    # Explicit allowing looping over slave patch
-    # ac, -an*values[pcellID] # explicit this works
+    # if !bc.value.ismaster
+    #     Atomix.@atomic nzval[fzcellID] += -an
+    #     return -ac, 0.0
+    # end
 
-    # Playing around with implicit version
-    # Atomix.@atomic nzval[pzcellID] += -ac
-    Atomix.@atomic nzval[nzcellID] += an
-    ac, 0.0
+    
+    # Atomix.@atomic nzval[fzcellID] += an
+    # ac, 0.0
+    ac, -an*values[pcellID] # explicits this works!
 end
 
 @define_boundary Periodic Divergence{Upwind} begin

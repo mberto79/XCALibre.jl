@@ -21,6 +21,12 @@ struct Periodic{I,V} <: AbstractPhysicalConstraint
 end
 Adapt.@adapt_structure Periodic
 
+struct PeriodicConnectivity{I}
+    i::I
+    j::I
+end
+Adapt.@adapt_structure PeriodicConnectivity
+
 function fixedValue(BC::Periodic, ID::I, value::V) where {I<:Integer,V}
     # Exception 1: Value is scalar
     if V <: Number
@@ -106,6 +112,41 @@ function construct_periodic(mesh, backend, patch1::Symbol, patch2::Symbol)
     return (periodic1, periodic2)
 end
 
+function periodic_matrix_connectivity(mesh, patch1, patch2)
+    (; faces, cells, boundaries, boundary_cellsID) = mesh
+    boundary_information = boundary_map(mesh)
+    idx1 = boundary_index(boundary_information, patch1.ID)
+    idx2 = boundary_index(boundary_information, patch2.ID)
+
+    BC1 = boundaries[idx1].IDs_range
+    BC2 = boundaries[idx2].IDs_range
+
+    fmap1 = patch1.value.face_map
+    fmap2 = patch2.value.face_map
+    # i = zeros(Int, length(fmap2))
+    # j = zeros(Int, length(fmap2))
+    i = zeros(Int, 2*length(fmap2))
+    j = zeros(Int, 2*length(fmap2))
+    nindex = 0
+
+    for (fID1, fID2) ∈ zip(BC1, fmap1) # swap order to get correct fID
+        face1 = faces[fID1]
+        face2 = faces[fID2]
+        cID1 = face1.ownerCells[1]
+        cID2 = face2.ownerCells[1]
+
+        nindex += 1
+        i[nindex] = cID1
+        j[nindex] = cID2
+
+        nindex += 1
+        i[nindex] = cID2
+        j[nindex] = cID1
+    end
+
+    PeriodicConnectivity(i , j)
+end
+
 @define_boundary Periodic Laplacian{Linear} begin
 
     phi = term.phi
@@ -127,11 +168,16 @@ end
     (; area, normal) = face
     J = term.flux[fID]
     flux = J*area/delta
-    ap = term.sign*(-flux)
+    ap = term.sign*(flux)
+    ac = -ap
+    an = ap
 
-    # Explicit allowing looping over slave patch
-    ap, ap*values[pcellID] # explicit this works
+    # Playing with implicit version
+    fzcellID = spindex(colptr, rowval, cellID, pcellID)
+    Atomix.@atomic nzval[fzcellID] = an
+    ac, 0.0
 
+    # ac, an*values[pcellID] # explicit this works
 end
 
 @define_boundary Periodic Divergence{Linear} begin
@@ -150,7 +196,7 @@ end
     delta2 = pface.delta
     delta = delta1 + delta2
     
-    weight = delta1/delta
+    weight = delta2/delta
     one_minus_weight = one(eltype(weight)) - weight
 
     # Calculate ap value to increment
@@ -159,8 +205,12 @@ end
     ac = weight*ap
     an = one_minus_weight*ap
 
-    # Explicit allowing looping over slave patch
-    ac, -an*values[pcellID] # explicit this works
+    # Playing with implicit version
+    fzcellID = spindex(colptr, rowval, cellID, pcellID)
+    Atomix.@atomic nzval[fzcellID] = an
+    ac, 0.0
+
+    # ac, -an*values[pcellID] # explicit this works
 end
 
 @define_boundary Periodic Divergence{Upwind} begin

@@ -1,16 +1,19 @@
 using XCALibre
-using Adapt
-using CUDA
+# using Adapt
+# using CUDA
 
-mesh_file = "unv_sample_meshes/cascade_3D_periodic_2p5mm.unv"
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+# grid = "cascade_3D_periodic_2p5mm.unv"
+grid = "cascade_3D_periodic_4mm.unv"
+
+mesh_file = joinpath(grids_dir, grid)
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
-backend = CUDABackend()
-# backend = CPU()
+# backend = CUDABackend(); workgroup=32
+backend = CPU(); workgroup = cld(length(mesh.cells), Threads.nthreads())
 periodic = construct_periodic(mesh, backend, :top, :bottom)
 
-mesh_dev = adapt(CUDABackend(), mesh)
-# mesh_dev = mesh
+mesh_dev = adapt(backend, mesh)
 
 velocity = [0.25, 0.0, 0.0]
 nu = 1e-3
@@ -78,8 +81,7 @@ solvers = (
 runtime = set_runtime(
     iterations=500, time_step=1, write_interval=100)
 
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = set_hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

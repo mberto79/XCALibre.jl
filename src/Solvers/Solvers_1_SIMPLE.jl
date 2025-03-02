@@ -142,16 +142,16 @@ function SIMPLE(
     rD = ScalarField(mesh)
 
     # Try to assign boundary conditions to rD for use with rDf
-    periodic = construct_periodic(mesh, backend, :top, :bottom)
-    rD = ScalarField(mesh)
-    rD = assign(rD, 
-        Neumann(:inlet, 0.0),
-        Neumann(:outlet, 0.0),
-        Neumann(:bottom, 0.0),
-        Neumann(:top, 0.0),
-        Neumann(:plate, 0.0),
-        periodic...
-    )
+    # periodic = construct_periodic(mesh, backend, :top, :bottom)
+    # rD = ScalarField(mesh)
+    # rD = assign(rD, 
+    #     Neumann(:inlet, 0.0),
+    #     Neumann(:outlet, 0.0),
+    #     Neumann(:bottom, 0.0),
+    #     Neumann(:top, 0.0),
+    #     Neumann(:plate, 0.0),
+    #     periodic...
+    # )
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
@@ -189,7 +189,7 @@ function SIMPLE(
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rDf, rD, config)
-        correct_boundaries!(rDf, rD, rD.BCs, time, config) # ADDED FOR PERIODIC BCS
+        # correct_boundaries!(rDf, rD, rD.BCs, time, config) # ADDED FOR PERIODIC BCS
         remove_pressure_source!(U_eqn, ∇p, config)
         H!(Hv, U, U_eqn, config)
         
@@ -231,19 +231,19 @@ function SIMPLE(
         # Velocity and boundaries correction
 
         # old approach
-        correct_velocity!(U, Hv, ∇p, rD, config)
-        interpolate!(Uf, U, config)
-        correct_boundaries!(Uf, U, U.BCs, time, config)
-        flux!(mdotf, Uf, config) 
+        # correct_velocity!(U, Hv, ∇p, rD, config)
+        # interpolate!(Uf, U, config)
+        # correct_boundaries!(Uf, U, U.BCs, time, config)
+        # flux!(mdotf, Uf, config) 
 
         # new approach
 
         # 1. using velocity from momentum equation
-        # interpolate!(Uf, U, config)
-        # correct_boundaries!(Uf, U, U.BCs, time, config)
-        # flux!(mdotf, Uf, config)
-        # correct_mass_flux(mdotf, p, rDf, config)
-        # correct_velocity!(U, Hv, ∇p, rD, config)
+        interpolate!(Uf, U, config)
+        correct_boundaries!(Uf, U, U.BCs, time, config)
+        flux!(mdotf, Uf, config)
+        correct_mass_flux(mdotf, p, rDf, config)
+        correct_velocity!(U, Hv, ∇p, rD, config)
 
         turbulence!(turbulenceModel, model, S, prev, time, config) 
         update_nueff!(nueff, nu, model.turbulence, config)

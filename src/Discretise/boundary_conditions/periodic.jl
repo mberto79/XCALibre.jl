@@ -171,12 +171,11 @@ end
     an = ap
 
     # Playing with implicit version
-    # fzcellID = spindex(rowptr, colval, cellID, pcellID)
-    # # fzcellID = spindex(rowptr, colval, pcellID, cellID)
-    # Atomix.@atomic nzval[fzcellID] = an
-    # ac, 0.0
+    fzcellID = spindex(rowptr, colval, cellID, pcellID)
+    Atomix.@atomic nzval[fzcellID] = an
+    ac, 0.0
 
-    ac, -an*values[pcellID] # explicit this works
+    # ac, -an*values[pcellID] # explicit this works
 end
 
 @define_boundary Periodic Divergence{Linear} begin
@@ -205,12 +204,11 @@ end
     an = one_minus_weight*ap
 
     # Playing with implicit version
-    fzcellID = spindex(rowptr, colval, cellID, pcellID)
-    # fzcellID = spindex(rowptr, colval, pcellID, cellID)
-    Atomix.@atomic nzval[fzcellID] = an
-    ac, 0.0
+    # fzcellID = spindex(rowptr, colval, cellID, pcellID)
+    # Atomix.@atomic nzval[fzcellID] = an
+    # ac, 0.0
 
-    # ac, -an*values[pcellID] # explicit this works
+    ac, -an*values[pcellID] # explicit this works
 end
 
 @define_boundary Periodic Divergence{Upwind} begin

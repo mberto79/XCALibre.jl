@@ -3,8 +3,8 @@ using XCALibre
 # using CUDA
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "cascade_3D_periodic_2p5mm.unv"
-# grid = "cascade_3D_periodic_4mm.unv"
+# grid = "cascade_3D_periodic_2p5mm.unv"
+grid = "cascade_3D_periodic_4mm.unv"
 
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
@@ -98,3 +98,7 @@ plot!(fig, 1:runtime.iterations, residuals.Ux, yscale=:log10, label="Ux")
 plot!(fig, 1:runtime.iterations, residuals.Uy, yscale=:log10, label="Uy")
 plot!(fig, 1:runtime.iterations, residuals.p, yscale=:log10, label="p")
 fig
+
+q =@macroexpand XCALibre.Discretise.@define_boundary Union{PeriodicParent,Periodic} Divergence{Upwind} begin
+    a = 0
+end

@@ -1,4 +1,4 @@
-function adjust_boundary!(b_cpu, BC::Periodic, phif::FaceScalarField, phi, boundaries, boundary_cellsID, time,  backend, workgroup)
+function adjust_boundary!(b_cpu, BC::Union{PeriodicParent,Periodic}, phif::FaceScalarField, phi, boundaries, boundary_cellsID, time,  backend, workgroup)
     phif_values = phif.values
     phi_values = phi.values
 
@@ -46,7 +46,7 @@ end
     end
 end
 
-function adjust_boundary!(b_cpu, BC::Periodic, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, time, backend, workgroup)
+function adjust_boundary!(b_cpu, BC::Union{PeriodicParent,Periodic}, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, time, backend, workgroup)
     (; x, y, z) = psif
 
     (; faces) = psif.mesh

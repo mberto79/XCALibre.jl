@@ -63,8 +63,8 @@ function setup_incompressible_solvers(
 
     @info "Defining models..."
 
-    periodic = construct_periodic(mesh, hardware.backend, :top, :bottom)
-    periodic_connect = Discretise.periodic_matrix_connectivity(mesh, periodic...)
+    # periodic = construct_periodic(mesh, hardware.backend, :top, :bottom)
+    # periodic_connect = Discretise.periodic_matrix_connectivity(mesh, periodic...)
     # periodic_connect = Discretise.PeriodicConnectivity([],[])
 
     U_eqn = (
@@ -73,11 +73,11 @@ function setup_incompressible_solvers(
         - Laplacian{schemes.U.laplacian}(nueff, U) 
         == 
         - Source(∇p.result)
-    ) → VectorEquation(mesh, periodic_connect)
+    ) → VectorEquation(U)
 
     p_eqn = (
         - Laplacian{schemes.p.laplacian}(rDf, p) == - Source(divHv)
-    ) → ScalarEquation(mesh, periodic_connect)
+    ) → ScalarEquation(p)
 
     @info "Initialising preconditioners..."
 

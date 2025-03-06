@@ -1,4 +1,4 @@
-function adjust_boundary!(b_cpu, BC::Periodic, phif::FaceScalarField, phi, boundaries, boundary_cellsID, time,  backend, workgroup)
+function adjust_boundary!(b_cpu, BC::Union{PeriodicParent,Periodic}, phif::FaceScalarField, phi, boundaries, boundary_cellsID, time,  backend, workgroup)
     phif_values = phif.values
     phi_values = phi.values
 
@@ -31,13 +31,13 @@ end
         # xC = cells[cID].centre
         # xN = cells[pcID].centre # probably needs translating by distance between patches!!
 
-        delta1 = face.delta*norm(face.e ⋅ face.normal)
-        delta2 = pface.delta*norm(pface.e ⋅ pface.normal)
+        delta1 = face.delta #*norm(face.e ⋅ face.normal)
+        delta2 = pface.delta #*norm(pface.e ⋅ pface.normal)
         delta = delta1 + delta2
         
         # Calculate weights using normal functions
         # weight = norm(xf - xC)/norm(xN - xC)
-        weight = delta1/delta
+        weight = delta2/delta
         # weight = norm(xf - xC)/(norm(xN - xC) - BC.value.distance)
         one_minus_weight = one(eltype(weight)) - weight
 
@@ -46,7 +46,7 @@ end
     end
 end
 
-function adjust_boundary!(b_cpu, BC::Periodic, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, time, backend, workgroup)
+function adjust_boundary!(b_cpu, BC::Union{PeriodicParent,Periodic}, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, time, backend, workgroup)
     (; x, y, z) = psif
 
     (; faces) = psif.mesh
@@ -73,10 +73,10 @@ end
 
         # w = 0.5
 
-        delta1 = face.delta*norm(face.e ⋅ face.normal)
-        delta2 = pface.delta*norm(pface.e ⋅ pface.normal)
+        delta1 = face.delta #*norm(face.e ⋅ face.normal)
+        delta2 = pface.delta #*norm(pface.e ⋅ pface.normal)
         delta = delta1 + delta2
-        w = delta1/delta
+        w = delta2/delta
         # psi_face = 0.5*(psi[cID] + psi[pcID]) # linear interpolation 
         psi_face = w*psi[cID] + (1 - w)psi[pcID] # linear interpolation 
         x[fID] = psi_face[1]

@@ -1,6 +1,6 @@
 using XCALibre
 # using Adapt
-# using CUDA
+using CUDA
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "cascade_3D_periodic_2p5mm.unv"
@@ -9,8 +9,9 @@ grid = "cascade_3D_periodic_2p5mm.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
-# backend = CUDABackend(); workgroup=32
-backend = CPU(); workgroup = cld(length(mesh.cells), Threads.nthreads())
+backend = CUDABackend(); workgroup=32
+# backend = CPU(); workgroup = cld(length(mesh.cells), Threads.nthreads())
+
 periodic1 = construct_periodic(mesh, backend, :top, :bottom)
 periodic2 = construct_periodic(mesh, backend, :side1, :side2)
 
@@ -73,7 +74,7 @@ solvers = (
     ),
     p = set_solver(
         model.momentum.p;
-        solver      = GmresSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
+        solver      = CgSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,

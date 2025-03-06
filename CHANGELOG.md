@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * No new functionality has been added
 
 ### Fixed
-* Remove fragile precompile statments of the form `var#*#` causing errors in Julia v1.12 [#40](@ref)
+* Remove fragile precompile statments of the form `var"#*#*"` causing errors in Julia v1.12 [#40](@ref)
 
 ### Changed
 * In preparation for implementation of hybrid models e.g. DES, the signature of the `turbulence!` function has been updated to use the `AbstractTurbulenceModel` [#39](@ref)

@@ -128,16 +128,21 @@ end
 
 function periodic_matrix_connectivity(BC::PeriodicParent, mesh)
     (; faces, boundaries) = mesh
-    BC1 = boundaries[BC.ID].IDs_range
 
-    fmap1 = BC.value.face_map
+    # Copy to CPU: this is a temporary fix and should be re-thought avoiding data transfer
+    BC_cpu = adapt(CPU(), BC)
+    faces_cpu = adapt(CPU(), faces)
+    boundaries_cpu = adapt(CPU(), boundaries)
+    BC1 = boundaries_cpu[BC.ID].IDs_range
+
+    fmap1 = BC_cpu.value.face_map
     i = zeros(Int, 2*length(fmap1))
     j = zeros(Int, 2*length(fmap1))
 
     nindex = 0
     for (fID1, fID2) ∈ zip(BC1, fmap1)
-        face1 = faces[fID1]
-        face2 = faces[fID2]
+        face1 = faces_cpu[fID1]
+        face2 = faces_cpu[fID2]
         cID1 = face1.ownerCells[1]
         cID2 = face2.ownerCells[1]
 

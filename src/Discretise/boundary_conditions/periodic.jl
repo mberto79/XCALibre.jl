@@ -183,7 +183,6 @@ end
 
     # Playing with implicit version
     fzcellID = spindex(rowptr, colval, cellID, pcellID)
-    # Atomix.@atomic nzval[fzcellID] = an
     nzval[fzcellID] = an
     ac, 0.0
 
@@ -217,7 +216,6 @@ end
 
     # Playing with implicit version
     # fzcellID = spindex(rowptr, colval, cellID, pcellID)
-    # # Atomix.@atomic nzval[fzcellID] = an
     # nzval[fzcellID] = an
     # ac, 0.0
 
@@ -225,69 +223,67 @@ end
 end
 
 @define_boundary Union{PeriodicParent,Periodic} Divergence{Upwind} begin
-phi = term.phi
-mesh = phi.mesh 
-(; faces, cells) = mesh
-values = get_values(phi, component)
+    phi = term.phi
+    mesh = phi.mesh 
+    (; faces, cells) = mesh
+    values = get_values(phi, component)
 
-# determine id of periodic cell and interpolate face value
-pfID = bc.value.face_map[i] # id of periodic face 
-pface = faces[pfID]
-pcellID = pface.ownerCells[1]
+    # determine id of periodic cell and interpolate face value
+    pfID = bc.value.face_map[i] # id of periodic face 
+    pface = faces[pfID]
+    pcellID = pface.ownerCells[1]
 
 
-delta1 = face.delta
-delta2 = pface.delta
-delta = delta1 + delta2
+    delta1 = face.delta
+    delta2 = pface.delta
+    delta = delta1 + delta2
 
-weight = delta2/delta
-one_minus_weight = one(eltype(weight)) - weight
+    weight = delta2/delta
+    one_minus_weight = one(eltype(weight)) - weight
 
-# Calculate ap value to increment
-flux = term.flux[fID]
-ap = term.sign*(flux)
-ac = weight*ap
-an = one_minus_weight*ap
+    # Calculate ap value to increment
+    flux = term.flux[fID]
+    ap = term.sign*(flux)
+    ac = weight*ap
+    an = one_minus_weight*ap
 
-# Playing with implicit version
-# fzcellID = spindex(rowptr, colval, cellID, pcellID)
-# # Atomix.@atomic nzval[fzcellID] = an
-# nzval[fzcellID] = an
-# ac, 0.0
+    # Playing with implicit version
+    # fzcellID = spindex(rowptr, colval, cellID, pcellID)
+    # nzval[fzcellID] = an
+    # ac, 0.0
 
-ac, -an*values[pcellID] # explicit this works
+    ac, -an*values[pcellID] # explicit this works
 end
 
 @define_boundary Union{PeriodicParent,Periodic} Divergence{LUST} begin
-phi = term.phi
-mesh = phi.mesh 
-(; faces, cells) = mesh
-values = get_values(phi, component)
+    phi = term.phi
+    mesh = phi.mesh 
+    (; faces, cells) = mesh
+    values = get_values(phi, component)
 
-# determine id of periodic cell and interpolate face value
-pfID = bc.value.face_map[i] # id of periodic face 
-pface = faces[pfID]
-pcellID = pface.ownerCells[1]
+    # determine id of periodic cell and interpolate face value
+    pfID = bc.value.face_map[i] # id of periodic face 
+    pface = faces[pfID]
+    pcellID = pface.ownerCells[1]
 
 
-delta1 = face.delta
-delta2 = pface.delta
-delta = delta1 + delta2
+    delta1 = face.delta
+    delta2 = pface.delta
+    delta = delta1 + delta2
 
-weight = delta2/delta
-one_minus_weight = one(eltype(weight)) - weight
+    weight = delta2/delta
+    one_minus_weight = one(eltype(weight)) - weight
 
-# Calculate ap value to increment
-flux = term.flux[fID]
-ap = term.sign*(flux)
-ac = weight*ap
-an = one_minus_weight*ap
+    # Calculate ap value to increment
+    flux = term.flux[fID]
+    ap = term.sign*(flux)
+    ac = weight*ap
+    an = one_minus_weight*ap
 
-# Playing with implicit version
-# fzcellID = spindex(rowptr, colval, cellID, pcellID)
-# # Atomix.@atomic nzval[fzcellID] = an
-# nzval[fzcellID] = an
-# ac, 0.0
+    # Playing with implicit version
+    # fzcellID = spindex(rowptr, colval, cellID, pcellID)
+    # nzval[fzcellID] = an
+    # ac, 0.0
 
-ac, -an*values[pcellID] # explicit this works
+    ac, -an*values[pcellID] # explicit this works
 end

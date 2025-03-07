@@ -3,16 +3,17 @@
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v0.3.1` breaking changes will be recorded here. 
 
-## Version [v0.4.1] - 2025-xx-xx
+## Version [v0.4.1] - 2025-03-06
 
 ### Added
 * No new functionality has been added
 
 ### Fixed
-* No fixes included
+* Remove fragile precompile statments of the form `var"#*#*"` causing errors in Julia v1.12 [#40](@ref)
 
 ### Changed
 * In preparation for implementation of hybrid models e.g. DES, the signature of the `turbulence!` function has been updated to use the `AbstractTurbulenceModel` [#39](@ref)
+* New semi-implicit implementation for periodic boundary conditions (implicit treatment of laplacian terms)[#40](@ref)
 
 ### Breaking
 * No breaking changes

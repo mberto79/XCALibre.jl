@@ -45,16 +45,24 @@ When called, this functor will return two values `ap` and `an`, where `ap` is th
 """
 macro define_boundary(boundary, operator, definition)
     quote
-        @inline (bc::$boundary)(
-            term::Operator{F,P,I,$operator}, cellID, zcellID, cell, face, fID, i, component, time
-            ) where {F,P,I} = $definition
+        @inline (bc::$boundary)(term::Operator{F,P,I,$operator}, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I} = 
+        @inbounds begin
+            $definition
+        end
     end |> esc
 end
 
 macro define_boundary(boundary, operator, FieldType, definition)
     quote
-        @inline (bc::$boundary)(
-            term::Operator{F,P,I,$operator}, cellID, zcellID, cell, face, fID, i, component, time
-            ) where {F,P<:$FieldType,I} = $definition
+        @inline (bc::$boundary)(term::Operator{F,P,I,$operator}, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time) where {F,P<:$FieldType,I} = 
+        @inbounds begin
+            $definition
+        end
     end |> esc
 end
+
+# macro define_boundary(operator, definition)
+#     quote
+#         @inline (bc::AbstractBoundary)(term::Operator{F,P,I,Op}, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I,Op<:$operator} = $definition
+#     end |> esc
+# end

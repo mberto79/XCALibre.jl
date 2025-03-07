@@ -115,11 +115,33 @@ struct ScalarEquation{VTf<:AbstractVector, ASA<:AbstractSparseArray, OP} <: Abst
     Fx::VTf
 end
 Adapt.@adapt_structure ScalarEquation
-ScalarEquation(mesh::AbstractMesh) = begin
+
+# Catch all function for fields that do not extend matrix
+extend_matrix(field, i, j) = begin
+    mesh = field.mesh
+    for BC ∈ field.BCs
+        i, j = _extend_matrix(BC, mesh, i, j) # implemented in module Discretise for each BC
+    end
+    return i, j
+end
+
+# Catch all method for all non-constraint boundary conditions i.e. do not modify matrix
+# Constraint-type BC that extend the sparse matrix should extend this method
+_extend_matrix(BC, mesh, i, j) = begin
+    return i, j
+end
+
+# ScalarEquation(mesh::AbstractMesh) = begin
+ScalarEquation(phi::ScalarField) = begin
+    mesh = phi.mesh
     nCells = length(mesh.cells)
     Tf = _get_float(mesh)
     mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
     i, j, v = sparse_matrix_connectivity(mesh_temp) # This needs to be a kernel
+    i, j = extend_matrix(phi, i, j)
+    # i = [i; periodicConnectivity.i]
+    # j = [j; periodicConnectivity.j]
+    v = zeros(Tf, length(j))
     backend = _get_backend(mesh)
     # A = _convert_array!(sparse(i, j, v), backend)
     A = _build_A(backend, i, j, v, nCells)
@@ -147,11 +169,17 @@ struct VectorEquation{VTf<:AbstractVector, ASA<:AbstractSparseArray, OP} <: Abst
     Fx::VTf
 end
 Adapt.@adapt_structure VectorEquation
-VectorEquation(mesh::AbstractMesh) = begin
+
+VectorEquation(psi::VectorField) = begin
+    mesh = psi.mesh
     nCells = length(mesh.cells)
     Tf = _get_float(mesh)
     mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
     i, j, v = sparse_matrix_connectivity(mesh_temp) # This needs to be a kernel
+    i, j = extend_matrix(psi, i, j)
+    # i = [i; periodicConnectivity.i]
+    # j = [j; periodicConnectivity.j]
+    v = zeros(Tf, length(j))
     backend = _get_backend(mesh)
     # A = _convert_array!(sparse(i, j, v), backend) 
     # A0 = _convert_array!(sparse(i, j, v), backend)

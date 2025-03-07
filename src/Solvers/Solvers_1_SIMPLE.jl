@@ -63,17 +63,21 @@ function setup_incompressible_solvers(
 
     @info "Defining models..."
 
+    # periodic = construct_periodic(mesh, hardware.backend, :top, :bottom)
+    # periodic_connect = Discretise.periodic_matrix_connectivity(mesh, periodic...)
+    # periodic_connect = Discretise.PeriodicConnectivity([],[])
+
     U_eqn = (
         Time{schemes.U.time}(U)
         + Divergence{schemes.U.divergence}(mdotf, U) 
         - Laplacian{schemes.U.laplacian}(nueff, U) 
         == 
         - Source(∇p.result)
-    ) → VectorEquation(mesh)
+    ) → VectorEquation(U)
 
     p_eqn = (
         - Laplacian{schemes.p.laplacian}(rDf, p) == - Source(divHv)
-    ) → ScalarEquation(mesh)
+    ) → ScalarEquation(p)
 
     @info "Initialising preconditioners..."
 
@@ -137,6 +141,18 @@ function SIMPLE(
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
 
+    # Try to assign boundary conditions to rD for use with rDf
+    # periodic = construct_periodic(mesh, backend, :top, :bottom)
+    # rD = ScalarField(mesh)
+    # rD = assign(rD, 
+    #     Neumann(:inlet, 0.0),
+    #     Neumann(:outlet, 0.0),
+    #     Neumann(:bottom, 0.0),
+    #     Neumann(:top, 0.0),
+    #     Neumann(:plate, 0.0),
+    #     periodic...
+    # )
+
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
     prev = zeros(TF, n_cells)
@@ -173,6 +189,7 @@ function SIMPLE(
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rDf, rD, config)
+        # correct_boundaries!(rDf, rD, rD.BCs, time, config) # ADDED FOR PERIODIC BCS
         remove_pressure_source!(U_eqn, ∇p, config)
         H!(Hv, U, U_eqn, config)
         
@@ -226,7 +243,6 @@ function SIMPLE(
         correct_boundaries!(Uf, U, U.BCs, time, config)
         flux!(mdotf, Uf, config)
         correct_mass_flux(mdotf, p, rDf, config)
-        # correct_mass_flux2(mdotf, p_eqn, p, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
         turbulence!(turbulenceModel, model, S, prev, time, config) 

@@ -46,7 +46,8 @@ model = Physics(
 @assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
-    Neumann(:plate, 0.0),
+    # Neumann(:plate, 0.0),
+    Wall(:plate, 0.0),
     # Neumann(:side1, 0.0),
     # Neumann(:side2, 0.0),
     periodic1...,

@@ -1,29 +1,29 @@
-export Wall
+export Slip
 
 """
-    Wall <: AbstractDirichlet
+    Slip <: AbstractDirichlet
 
-Wall boundary condition model for no-slip wall condition.
+Slip boundary condition model for no-slip Slip condition.
 
 ### Fields
 - 'ID' -- Boundary ID
 """
-struct Wall{I,V} <: AbstractPhysicalConstraint
+struct Slip{I,V} <: AbstractPhysicalConstraint
     ID::I
     value::V
 end
-Adapt.@adapt_structure Wall
+Adapt.@adapt_structure Slip
 
 
-function fixedValue(BC::Wall, ID::I, value::V) where {I<:Integer,V}
+function fixedValue(BC::Slip, ID::I, value::V) where {I<:Integer,V}
     # Exception 1: Value is scalar
     if V <: Number
-        return Wall{I,eltype(value)}(ID, value)
+        return Slip{I,eltype(value)}(ID, value)
     # Exception 2: value is vector
     elseif V <: Vector
         if length(value) == 3 
             nvalue = SVector{3, eltype(value)}(value)
-            return Wall{I,typeof(nvalue)}(ID, nvalue)
+            return Slip{I,typeof(nvalue)}(ID, nvalue)
         # Error statement if vector is invalid
         else
             throw("Only vectors with three components can be used")
@@ -35,7 +35,7 @@ function fixedValue(BC::Wall, ID::I, value::V) where {I<:Integer,V}
 end
 
 
-@define_boundary Wall Laplacian{Linear} VectorField begin
+@define_boundary Slip Laplacian{Linear} begin
     (; area, delta, normal) = face 
     phi = term.phi 
     J = term.flux[fID]
@@ -51,32 +51,21 @@ end
     ap, ap*(vb_p[component.value] + vc_n[component.value])
 end
 
-@define_boundary Wall Laplacian{Linear} ScalarField begin
-    phi = term.phi 
-    values = get_values(phi, component)
-    J = term.flux[fID]
-    (; area, delta) = face 
-    flux = -J*area/delta
-    ap = term.sign*(flux)
-    # ap, ap*values[cellID] # original
+# To-do: Add scala scalar variants of Slip BC in next version (currently using Neumann)
+
+@define_boundary Slip Divergence{Linear} begin # To-do refactor this code for reusability
     0.0, 0.0
 end
 
-# To-do: Add scala scalar variants of Wall BC in next version (currently using Neumann)
-
-@define_boundary Wall Divergence{Linear} begin # To-do refactor this code for reusability
+@define_boundary Slip Divergence{Upwind} begin
     0.0, 0.0
 end
 
-@define_boundary Wall Divergence{Upwind} begin
+@define_boundary Slip Divergence{LUST} begin
     0.0, 0.0
 end
 
-@define_boundary Wall Divergence{LUST} begin
-    0.0, 0.0
-end
-
-@define_boundary Wall Divergence{BoundedUpwind} begin
+@define_boundary Slip Divergence{BoundedUpwind} begin
     flux = term.flux[fID]
     ap = term.sign*(flux)
     -flux, 0.0

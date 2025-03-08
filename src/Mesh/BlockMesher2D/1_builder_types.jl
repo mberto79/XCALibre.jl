@@ -1,5 +1,5 @@
 export Point, Edge, Patch, Block
-export Wireframe, MeshBuilder2D
+export MeshBuilder2D
 
 Point(x::F, y::F, z::F) where F<:AbstractFloat = Node(SVector{3, F}(x,y,z))
 

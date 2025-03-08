@@ -1,6 +1,4 @@
 export line!, quad
-export build!
-export find_edge_in_blocks!
 
 function build!(builder::MeshBuilder2D{I,F}) where {I,F}
     mesh = preallocate_mesh(builder)

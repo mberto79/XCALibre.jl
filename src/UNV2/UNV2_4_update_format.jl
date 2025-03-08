@@ -1,4 +1,5 @@
-update_mesh_format(mesh::UNV2.Mesh2, integer, float) = begin
+# update_mesh_format(mesh::UNV2.Mesh2, integer, float) = begin
+update_mesh_format(mesh, integer, float) = begin
 
     # Pre-allocate memory for mesh entities
     boundaries = Vector{Mesh.Boundary{Symbol, UnitRange{integer}}}(

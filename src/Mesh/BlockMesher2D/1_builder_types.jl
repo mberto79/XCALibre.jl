@@ -33,7 +33,7 @@ Block(zi::I) where I<:Integer = begin
 end
 
 struct MeshBuilder2D{I<:Integer,F<:AbstractFloat}
-    points::Vector{Node{F}}
+    points::Vector{Node{I,F}}
     edges::Vector{Edge{I}}
     patches::Vector{Patch{I}}
     blocks::Vector{Block{I}}

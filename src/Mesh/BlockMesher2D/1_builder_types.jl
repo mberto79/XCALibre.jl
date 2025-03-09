@@ -1,5 +1,5 @@
 export Point, Edge, Patch, Block
-export Wireframe, MeshBuilder2D
+export MeshBuilder2D
 
 Point(x::F, y::F, z::F) where F<:AbstractFloat = Node(SVector{3, F}(x,y,z))
 
@@ -33,7 +33,7 @@ Block(zi::I) where I<:Integer = begin
 end
 
 struct MeshBuilder2D{I<:Integer,F<:AbstractFloat}
-    points::Vector{Node{F}}
+    points::Vector{Node{I,F}}
     edges::Vector{Edge{I}}
     patches::Vector{Patch{I}}
     blocks::Vector{Block{I}}

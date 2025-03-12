@@ -28,9 +28,6 @@ include("RANS_kOmegaLKE.jl")
 include("LES_functions.jl")
 include("LES_Smagorinsky.jl")
 
-# DES models
-include("DES_Menter.jl")
-
 #Functions
 include("turbulence_functions.jl")
 

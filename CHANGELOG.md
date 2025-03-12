@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * No fixes have been added
 
 ### Changed
-* No changes have been made
+* In preparation for implementation of hybrid models e.g. DES, the `turbulence!` function now uses `_nut_access` to acces eddy viscosity fields, rather than taking them directly from the model
 
 ### Breaking
 * No breaking changes

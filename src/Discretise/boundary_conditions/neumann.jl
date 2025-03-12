@@ -53,21 +53,27 @@ end
     flux = term.flux[fID]
     ap = term.sign*(flux) 
     ap, 0.0 # original
+    # phi = term.phi 
+    # values = get_values(phi, component)
+    # 0.0, -ap*values[cellID] # try this
 end
 
 @define_boundary Neumann Divergence{Upwind} begin
     flux = term.flux[fID]
     ap = term.sign*(flux) 
-    # ap, 0.0 # original
-    phi = term.phi 
-    values = get_values(phi, component)
-    0.0, -ap*values[cellID] # try this
+    ap, 0.0 # original
+    # phi = term.phi 
+    # values = get_values(phi, component)
+    # 0.0, -ap*values[cellID] # try this
 end
 
 @define_boundary Neumann Divergence{LUST} begin
     flux = term.flux[fID]
     ap = term.sign*(flux) 
     ap, 0.0 # original
+    # phi = term.phi 
+    # values = get_values(phi, component)
+    # 0.0, -ap*values[cellID] # try this
 end
 
 @define_boundary Neumann Divergence{BoundedUpwind} begin

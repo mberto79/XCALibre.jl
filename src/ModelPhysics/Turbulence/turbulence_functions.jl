@@ -1,8 +1,5 @@
 export _nut_access
 
-struct MenterF1 #This is a dummy struct to allow the νₜ access function to be written ready for DES implementation
-end
-
 """
     _nut_access(model::Physics{T,F,M,Tu,E,D,BI},turb) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 

@@ -25,7 +25,7 @@ end
 
 #Version for DES models
 function _nut_access(model::Physics{T,F,M,Tu,E,D,BI},turb) where {T,F,M,Tu<:MenterF1,E,D,BI}
-    if (turb::KOmegaModel) || (turb::KOmegaLKEModel) || (turb::LaminarModel)
+    if (turb::KOmegaModel) || (turb::KOmegaLKEModel)
         (;nut,nutf) = model.turbulence.rans
     elseif (turb::SmagorinskyModel)
         (;nut,nutf) = model.turbulence.les

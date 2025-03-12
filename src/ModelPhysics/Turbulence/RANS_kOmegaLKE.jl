@@ -286,7 +286,8 @@ function turbulence!(
     mesh = model.domain
     (; momentum, turbulence) = model
     U = momentum.U
-    (; k, omega, kl, nut, y, kf, omegaf, klf, nutf, coeffs, Tu) = turbulence
+    (; k, omega, kl, y, kf, omegaf, klf, coeffs, Tu) = turbulence
+    nut,nutf = _nut_access(model,rans)
     (; nu) = model.fluid
     (; U, Uf, gradU) = S
     

@@ -100,7 +100,8 @@ function turbulence!(
 
     mesh = model.domain
     
-    (; nut, nutf, coeff) = model.turbulence
+    (; coeff) = model.turbulence
+    nut,nutf = _nut_access(model,les)
     (; U, Uf, gradU) = S
     (; Δ, magS) = les
 

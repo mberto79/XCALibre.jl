@@ -11,21 +11,22 @@ Access νₜ field from model.
 ###
 
 ### Output
-- `nut`-- Eddy Viscosity ScalarField 
-- `nutf`-- Eddy Viscosity FaceScalarField
+- `nut` -- Eddy Viscosity ScalarField 
+- `nutf` -- Eddy Viscosity FaceScalarField
 ###
 """
-function _nut_access(model::Physics{T,F,M,Tu,E,D,BI},turb) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
-    (;nut,nutf) = model.turbulence
-    return (nut,nutf)
+function _nut_access(model::Physics{T,F,M,Tu,E,D,BI}, turb) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
+    (; nut, nutf) = model.turbulence
+    return (nut, nutf)
 end
 
-#Version for DES models
-function _nut_access(model::Physics{T,F,M,Tu,E,D,BI},turb) where {T,F,M,Tu<:MenterF1,E,D,BI}
-    if (turb::KOmegaModel) || (turb::KOmegaLKEModel)
-        (;nut,nutf) = model.turbulence.rans
-    elseif (turb::SmagorinskyModel)
-        (;nut,nutf) = model.turbulence.les
-    end
-    return (nut,nutf)
+#Versions for DES models
+function _nut_access(model::Physics{T,F,M,Tu,E,D,BI}, turb::Union{KOmegaModel,KOmegaLKEModel}) where {T,F,M,Tu<:MenterF1,E,D,BI}
+    (; nut, nutf) = model.turbulence.rans
+    return (nut, nutf)
+end
+
+function _nut_access(model::Physics{T,F,M,Tu,E,D,BI}, turb::Smagorinsky) where {T,F,M,Tu<:MenterF1,E,D,BI}
+    (; nut, nutf) = model.turbulence.les
+    return (nut, nutf)
 end

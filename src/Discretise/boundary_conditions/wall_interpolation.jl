@@ -4,7 +4,8 @@ function adjust_boundary!(b_cpu, BC::Wall, phif::FaceScalarField, phi, boundarie
 
     kernel_range = length(b_cpu[BC.ID].IDs_range)
 
-    kernel! = adjust_boundary_dirichlet_scalar!(backend, workgroup)
+    # kernel! = adjust_boundary_dirichlet_scalar!(backend, workgroup)
+    kernel! = adjust_boundary_neumann_scalar!(backend, workgroup)
     kernel!(BC, phif, phi, boundaries, boundary_cellsID, time, phif_values, phi_values, ndrange = kernel_range)
     # # KernelAbstractions.synchronize(backend)
 end

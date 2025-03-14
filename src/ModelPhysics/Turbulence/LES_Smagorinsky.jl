@@ -7,9 +7,9 @@ export Smagorinsky
 Smagorinsky LES model containing all Smagorinksy field parameters.
 
 ### Fields
-- 'nut' -- Eddy viscosity ScalarField.
-- 'nutf' -- Eddy viscosity FaceScalarField.
-- 'coeffs' -- Model coefficients.
+- `nut` -- Eddy viscosity ScalarField.
+- `nutf` -- Eddy viscosity FaceScalarField.
+- `coeffs` -- Model coefficients.
 
 """
 struct Smagorinsky{S1,S2,C} <: AbstractLESModel
@@ -19,7 +19,7 @@ struct Smagorinsky{S1,S2,C} <: AbstractLESModel
 end
 Adapt.@adapt_structure Smagorinsky
 
-struct SmagorinskyModel{T,D,S1,S2}
+struct SmagorinskyModel{T<:AbstractTurbulenceModel,D,S1,S2}
     turbulence::T
     Δ::D 
     magS::S1

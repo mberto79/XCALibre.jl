@@ -124,7 +124,7 @@ end
     xN = cellN.centre
     
     # Calculate weights using normal functions
-    weight = norm(xN - xf)/norm(xN - xC)
+    weight = norm(xN - xf)/(norm(xN - xf) + norm(xC - xf))
     one_minus_weight = one(eltype(weight)) - weight
 
     # Calculate coefficients

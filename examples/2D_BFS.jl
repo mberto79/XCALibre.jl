@@ -12,7 +12,7 @@ backend = CPU(); activate_multithread(backend); workgroup=1024
 # backend = CUDABackend(); workgroup=32
 mesh_dev = adapt(backend, mesh)
 
-velocity = [0.5, 0.0, 0.0]
+velocity = [0.5, 0.1, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
 
@@ -38,7 +38,7 @@ model = Physics(
 @assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
+    Wall(:wall, 0.0),
     # Neumann(:top, 0.0)
     Symmetry(:top)
 )
@@ -57,7 +57,7 @@ solvers = (
         model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(), # ILU0GPU, Jacobi, DILU
-        smoother=JacobiSmoother(domain=mesh_dev, loops=8, omega=1),
+        # smoother=JacobiSmoother(domain=mesh_dev, loops=8, omega=1),
         convergence = 1e-7,
         relax       = 0.8,
         rtol = 1e-1
@@ -66,7 +66,7 @@ solvers = (
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver, CgSolver
         preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
-        smoother=JacobiSmoother(domain=mesh_dev, loops=8, omega=1),
+        # smoother=JacobiSmoother(domain=mesh_dev, loops=8, omega=1),
         convergence = 1e-7,
         relax       = 0.2,
         rtol = 1e-2

@@ -49,7 +49,7 @@ model = Physics(
 @assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
+    Wall(:wall, 0.0),
     Neumann(:top, 0.0),
     # Neumann(:bottom, 0.0),
     # Neumann(:freestream, 0.0)
@@ -123,6 +123,7 @@ solvers = (
         solver      = CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-8,
+        rtol = 1e-2,
         relax       = 0.9,
     ),
     kl = set_solver(
@@ -152,7 +153,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=1000, write_interval=100, time_step=1)
+    iterations=20, write_interval=20, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

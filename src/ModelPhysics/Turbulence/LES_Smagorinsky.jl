@@ -35,10 +35,10 @@ LES{Smagorinsky}(; C=0.15) = begin
 end
 
 # Functor as constructor (internally called by Physics API): Returns fields and user data
-(rans::LES{Smagorinsky, ARG})(mesh) where ARG = begin
+(les::LES{Smagorinsky, ARG})(mesh) where ARG = begin
     nut = ScalarField(mesh)
     nutf = FaceScalarField(mesh)
-    coeffs = rans.args
+    coeffs = les.args
     Smagorinsky(nut, nutf, coeffs)
 end
 

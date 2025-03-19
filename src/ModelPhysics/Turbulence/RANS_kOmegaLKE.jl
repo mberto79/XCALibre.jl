@@ -37,7 +37,7 @@ Adapt.@adapt_structure KOmegaLKE
 
 # Model type definition (hold equation definitions and internal data)
 struct KOmegaLKEModel{
-    T<:AbstractTurbulenceModel,E1,E2,E3,F1,F2,F3,S1,S2,S3,S4,S5,S6,S7,V1,V2,State}
+    T,E1,E2,E3,F1,F2,F3,S1,S2,S3,S4,S5,S6,S7,V1,V2,State}
     turbulence::T
     k_eqn::E1
     ω_eqn::E2
@@ -128,6 +128,7 @@ Initialisation of turbulent transport equations.
 
 ### Output
 - `KOmegaLKEModel(
+        turbulence,
         k_eqn,
         ω_eqn,
         kl_eqn,

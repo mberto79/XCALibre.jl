@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * No fixes have been added
 
 ### Changed
-* No changes have been made
+* In preperaton for hybrid models, added a reference to the turbulence object within the turbulence model object to allow for more general calling of `turbulence!`[xx]
 
 ### Breaking
 * No breaking changes

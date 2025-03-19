@@ -35,7 +35,7 @@ function fixedValue(BC::Wall, ID::I, value::V) where {I<:Integer,V}
 end
 
 
-@define_boundary Wall Laplacian{Linear} begin
+@define_boundary Wall Laplacian{Linear} VectorField begin
     (; area, delta, normal) = face 
     phi = term.phi 
     J = term.flux[fID]
@@ -51,22 +51,65 @@ end
     ap, ap*(vb_p[component.value] + vc_n[component.value])
 end
 
+@define_boundary Wall Laplacian{Linear} ScalarField begin
+    phi = term.phi 
+    values = get_values(phi, component)
+    J = term.flux[fID]
+    (; area, delta) = face 
+    flux = -J*area/delta
+    ap = term.sign*(flux)
+    # ap, ap*values[cellID] # original
+    0.0, 0.0 # try this
+    # 0.0, -flux*delta*bc.value # draft implementation to test!
+end
+
 # To-do: Add scala scalar variants of Wall BC in next version (currently using Neumann)
 
-@define_boundary Wall Divergence{Linear} begin # To-do refactor this code for reusability
+@define_boundary Wall Divergence{Linear} VectorField begin # To-do refactor this code for reusability
     0.0, 0.0
 end
 
-@define_boundary Wall Divergence{Upwind} begin
+@define_boundary Wall Divergence{Upwind} VectorField begin
     0.0, 0.0
 end
 
-@define_boundary Wall Divergence{LUST} begin
+@define_boundary Wall Divergence{LUST} VectorField begin
     0.0, 0.0
 end
 
-@define_boundary Wall Divergence{BoundedUpwind} begin
+@define_boundary Wall Divergence{BoundedUpwind} VectorField begin
     flux = term.flux[fID]
     ap = term.sign*(flux)
     -flux, 0.0
+end
+
+# Scalar implementations for divergence operator
+@define_boundary Wall Divergence{Upwind} ScalarField begin
+    flux = term.flux[fID]
+    ap = term.sign*(flux) 
+    ap, 0.0 # original
+
+    # phi = term.phi 
+    # values = get_values(phi, component)
+    # 0.0, -ap*values[cellID] # try this
+end
+
+@define_boundary Wall Divergence{Linear} ScalarField begin
+    flux = term.flux[fID]
+    ap = term.sign*(flux) 
+    ap, 0.0 # original
+
+    # phi = term.phi 
+    # values = get_values(phi, component)
+    # 0.0, -ap*values[cellID] # try this
+end
+
+@define_boundary Wall Divergence{LUST} ScalarField begin
+    flux = term.flux[fID]
+    ap = term.sign*(flux) 
+    ap, 0.0 # original
+
+    # phi = term.phi 
+    # values = get_values(phi, component)
+    # 0.0, -ap*values[cellID] # try this
 end

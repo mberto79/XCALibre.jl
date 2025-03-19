@@ -102,7 +102,8 @@ end
             if boundary.name == namedwall
                 push!(BCs, Dirichlet(boundary.name, 0.0))
             else
-                push!(BCs, Neumann(boundary.name, 0.0))
+                # push!(BCs, Neumann(boundary.name, 0.0))
+                push!(BCs, Wall(boundary.name, 0.0))
             end
         end
     end

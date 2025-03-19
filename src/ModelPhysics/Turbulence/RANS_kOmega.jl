@@ -30,7 +30,7 @@ struct KOmega{S1,S2,S3,F1,F2,F3,C} <: AbstractRANSModel
 end
 Adapt.@adapt_structure KOmega
 
-struct KOmegaModel{T<:AbstractTurbulenceModel,E1,E2,S1} 
+struct KOmegaModel{T,E1,E2,S1} 
     turbulence::T
     k_eqn::E1 
     ω_eqn::E2
@@ -73,7 +73,12 @@ Initialisation of turbulent transport equations.
           hardware structures set.
 
 ### Output
-- `KOmegaModel(k_eqn, ω_eqn)`  -- Turbulence model structure.
+- `KOmegaModel(
+        turbulence,
+        k_eqn, 
+        ω_eqn,
+        state
+        )`  -- Turbulence model structure.
 
 """
 function initialise(
@@ -132,7 +137,7 @@ end
 # Model solver call (implementation)
 """
     turbulence!(rans::KOmegaModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
-    ) where {T,F,M,Tu<:KOmega,E,D,BI}
+    ) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
 Run turbulence model transport equations.
 

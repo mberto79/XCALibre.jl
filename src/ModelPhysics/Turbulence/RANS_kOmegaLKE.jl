@@ -269,7 +269,7 @@ end
 # Model solver call (implementation)
 """
    turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S, prev, time, config
-    ) where {T,F,M,Turb<:KOmegaLKE,E,D,BI}
+    ) where {T,F,M,Turb<:AbstractTurbulenceModel,E,D,BI}
 
 Run turbulence model transport equations.
 

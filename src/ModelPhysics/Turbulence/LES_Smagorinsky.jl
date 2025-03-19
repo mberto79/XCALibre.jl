@@ -19,7 +19,7 @@ struct Smagorinsky{S1,S2,C} <: AbstractLESModel
 end
 Adapt.@adapt_structure Smagorinsky
 
-struct SmagorinskyModel{T<:AbstractTurbulenceModel,D,S1,S2}
+struct SmagorinskyModel{T,D,S1,S2}
     turbulence::T
     Δ::D 
     magS::S1
@@ -90,7 +90,7 @@ end
 # Model solver call (implementation)
 """
     turbulence!(les::SmagorinskyModel, model::Physics{T,F,M,Tu,E,D,BI}, S, S2, prev, time, config
-    ) where {T,F,M,Tu<:Smagorinsky,E,D,BI}
+    ) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
 Run turbulence model transport equations.
 

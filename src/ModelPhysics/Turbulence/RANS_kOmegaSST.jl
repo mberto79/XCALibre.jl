@@ -19,28 +19,38 @@ kOmega model containing all kOmega field parameters.
 - 'coeffs' -- Model coefficients.
 
 """
-struct KOmegaSST{S1,S2,S3,F1,F2,F3,C} <: AbstractRANSModel
+struct KOmegaSST{S1,S2,S3,F1,F2,F3,C1,C2,C3,Y} <: AbstractRANSModel
     k::S1
     omega::S2
     nut::S3
     kf::F1
     omegaf::F2
     nutf::F3
-    coeffs::C
+    coeffs::C1
+    gamma1::C2
+    gamma2::C3
+    y::Y
 end
 Adapt.@adapt_structure KOmegaSST
 
-struct KOmegaSSTModel{E1,E2,S1}
+struct KOmegaSSTModel{E1,E2,S,S1,S2,S3,S4,S5,S6,S7,S8}
     k_eqn::E1 
     ω_eqn::E2
-    
-    state::S1
+    state::S
+    β::S1
+    σk::S2
+    σω::S3
+    γ::S4  
+    CDkω::S5
+    arg1::S6
+    F1::S7
+    arg2::S8
 end
 Adapt.@adapt_structure KOmegaSSTModel
 
 # Model API constructor (pass user input as keyword arguments and process as needed)
-RANS{KOmegaSST}(; β⁺=0.09, α1=0.31, σk1=0.85, σk2=1.0, σω1=0.5, σω2=0.856, β1=0.075, β2=0.0828, ̨κ=0.41) = begin 
-    coeffs = (β⁺=β⁺, α1=α1, σk1=σk1, σk2=σk2, β1=β1, σω1=σω1, σω2=σω2, β1=β1, β2=β2, κ=κ)
+RANS{KOmegaSST}(; β⁺=0.09, α1=0.31, σk1=0.85, σk2=1.0, σω1=0.5, σω2=0.856, β1=0.075, β2=0.0828, κ=0.41, walls) = begin 
+    coeffs = (β⁺=β⁺, α1=α1, σk1=σk1, σk2=σk2, σω1=σω1, σω2=σω2, β1=β1, β2=β2, κ=κ, walls=walls)
     ARG = typeof(coeffs)
     RANS{KOmegaSST,ARG}(coeffs)
 end
@@ -54,7 +64,25 @@ end
     omegaf = FaceScalarField(mesh)
     nutf = FaceScalarField(mesh)
     coeffs = rans.args
-    KOmega(k, omega, nut, kf, omegaf, nutf, coeffs)
+    gamma1 = (coeffs.β1/coeffs.β⁺) - coeffs.σω1*coeffs.κ^2/sqrt(coeffs.β⁺)
+    gamma2 = (coeffs.β2/coeffs.β⁺) - coeffs.σω2*coeffs.κ^2/sqrt(coeffs.β⁺)
+
+    # Allocate wall distance "y" and setup boundary conditions
+    y = ScalarField(mesh)
+    walls = rans.args.walls
+    BCs = []
+    for boundary ∈ mesh.boundaries
+        for namedwall ∈ walls
+            if boundary.name == namedwall
+                push!(BCs, Dirichlet(boundary.name, 0.0))
+            else
+                push!(BCs, Neumann(boundary.name, 0.0))
+            end
+        end
+    end
+    y = assign(y, BCs...)
+
+    KOmegaSST(k, omega, nut, kf, omegaf, nutf, coeffs, gamma1, gamma2, y) 
 end
 
 # Model initialisation
@@ -93,6 +121,18 @@ function initialise(
     Dωf = ScalarField(mesh)
     Pk = ScalarField(mesh)
     Pω = ScalarField(mesh)
+
+    CDkω = ScalarField(mesh)
+    arg1 = ScalarField(mesh)
+    F1 = ScalarField(mesh)
+
+    arg2 = ScalarField(mesh)
+    F2 = ScalarField(mesh)
+
+    β = ScalarField(mesh)
+    σk = ScalarField(mesh)
+    σω = ScalarField(mesh)
+    γ = ScalarField(mesh)
     
     k_eqn = (
             Time{schemes.k.time}(rho, k)
@@ -125,8 +165,10 @@ function initialise(
     @reset k_eqn.solver = solvers.k.solver(_A(k_eqn), _b(k_eqn))
     @reset ω_eqn.solver = solvers.omega.solver(_A(ω_eqn), _b(ω_eqn))
 
+    wall_distance!(model, config)
+
     initial_residual = ((:k, 1.0),(:omega, 1.0))
-    return KOmegaModel(k_eqn, ω_eqn, ModelState(initial_residual, false))
+    return KOmegaModel(k_eqn, ω_eqn, ModelState(initial_residual, false), β, σk, σω, γ, CDkω, arg1, F1, arg2, F2)
 end
 
 # Model solver call (implementation)
@@ -153,9 +195,9 @@ function turbulence!(
     mesh = model.domain
     
     (; rho, rhof, nu, nuf) = model.fluid
-    (;k, omega, nut, kf, omegaf, nutf, coeffs) = model.turbulence
+    (;k, omega, nut, kf, omegaf, nutf, coeffs, gamma1, gamma2, y) = model.turbulence
     (; U, Uf, gradU) = S
-    (;k_eqn, ω_eqn, state) = rans
+    (;k_eqn, ω_eqn, state, β, σk, σω, γ, CDkω, arg1, F1, arg2, F2) = rans
     (; solvers, runtime) = config
 
     mueffk = get_flux(k_eqn, 3)
@@ -175,15 +217,29 @@ function turbulence!(
     magnitude2!(Pk, S, config, scale_factor=2.0) # multiplied by 2 (def of Sij)
     # constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
 
-    @. arg2 = max.(2*sqrt(k.values)/(betastar*omega.values*walldist)
-    
-    @. Pω.values = rho.values*coeffs.α1*Pk.values
+    grad!(gradk, kf, k, k.BCs, time, config)
+    grad!(gradω , omegaf, omega, omega.BCs, time, config)
+     
+    @. CDkω = max.(2*rho.values*coeffs.σω2*(1.0/omega.values)*(gradk.values.x*gradω.values.x + gradk.values.y*gradω.values.y +gradk.values.z*gradω.values.z), 1e-20)
+    @. arg1 = min.(max.(sqrt(k.values)/(betastar*omega.values*y.values), 500.0*nu.values/(y.values*y.values*omega.values), 4.0*rho.values))
+    @. F2 = tanh(arg1.values^4)
+
+    @. arg2 = max.(2*sqrt(k.values)/(betastar*omega.values*y.values), 500.0*nu.values/(y.values*y.values*omega.values))
+    @. F2 = tanh(arg2.values*arg2.values)
+
+    @. σk = coeffs.σk1*F1 + (1.0 - F1)*coeffs.σk2
+    @. σω = coeffs.σω1*F1 + (1.0 - F1)*coeffs.σω2
+    @. σω = coeffs.β1*F1 + (1.0 - F1)*coeffs.β2
+    @. γ = gamma1*F1 + (1.0 - F1)*gamma2
+
+
+    @. Pω.values = rho.values*γ*Pk.values
     @. Pk.values = rho.values*nut.values*Pk.values
     correct_production!(Pk, k.BCs, model, S.gradU, config) # Must be after previous line
-    @. Dωf.values = rho.values*coeffs.β1*omega.values
-    @. mueffω.values = rhof.values * (nuf.values + coeffs.σω*nutf.values)
+    @. Dωf.values = rho.values*β.values*omega.values
+    @. mueffω.values = rhof.values * (nuf.values + σω.values*nutf.values)
     @. Dkf.values = rho.values*coeffs.β⁺*omega.values
-    @. mueffk.values = rhof.values * (nuf.values + coeffs.σk*nutf.values)
+    @. mueffk.values = rhof.values * (nuf.values + σk.values*nutf.values)
 
     # Solve omega equation
     # prev .= omega.values

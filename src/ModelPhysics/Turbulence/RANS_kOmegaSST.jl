@@ -33,7 +33,7 @@ struct KOmegaSST{S1,S2,S3,F1,F2,F3,C1,C2,C3,Y} <: AbstractRANSModel
 end
 Adapt.@adapt_structure KOmegaSST
 
-struct KOmegaSSTModel{E1,E2,S,S1,S2,S3,S4,S5,S6,S7,S8}
+struct KOmegaSSTModel{E1,E2,S,S1,S2,S3,S4,S5,S6,S7,S8,S9,S10}
     k_eqn::E1 
     ω_eqn::E2
     state::S
@@ -45,6 +45,8 @@ struct KOmegaSSTModel{E1,E2,S,S1,S2,S3,S4,S5,S6,S7,S8}
     arg1::S6
     F1::S7
     arg2::S8
+    F2::S9
+    Ω::S10
 end
 Adapt.@adapt_structure KOmegaSSTModel
 
@@ -108,7 +110,7 @@ function initialise(
     turbulence::KOmegaSST, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
     ) where {T,F,M,Tu,E,D,BI}
 
-    (; k, omega, nut) = turbulence
+    (; k, omega, nut, y) = turbulence
     (; rho) = model.fluid
     (; solvers, schemes, runtime) = config
     mesh = mdotf.mesh
@@ -121,6 +123,7 @@ function initialise(
     Dωf = ScalarField(mesh)
     Pk = ScalarField(mesh)
     Pω = ScalarField(mesh)
+    CrossDiff = ScalarField(mesh)
 
     CDkω = ScalarField(mesh)
     arg1 = ScalarField(mesh)
@@ -133,6 +136,8 @@ function initialise(
     σk = ScalarField(mesh)
     σω = ScalarField(mesh)
     γ = ScalarField(mesh)
+
+    Ω = ScalarField(mesh)
     
     k_eqn = (
             Time{schemes.k.time}(rho, k)
@@ -149,7 +154,7 @@ function initialise(
             - Laplacian{schemes.omega.laplacian}(mueffω, omega) 
             + Si(Dωf,omega)  # Dωf = rho*β1*omega
             ==
-            Source(Pω)
+            Source(Pω) + Source(CrossDiff)
     ) → eqn
 
     # Set up preconditioners
@@ -168,7 +173,7 @@ function initialise(
     wall_distance!(model, config)
 
     initial_residual = ((:k, 1.0),(:omega, 1.0))
-    return KOmegaModel(k_eqn, ω_eqn, ModelState(initial_residual, false), β, σk, σω, γ, CDkω, arg1, F1, arg2, F2)
+    return KOmegaSSTModel(k_eqn, ω_eqn, ModelState(initial_residual, false), β, σk, σω, γ, CDkω, arg1, F1, arg2, F2, Ω)
 end
 
 # Model solver call (implementation)
@@ -197,7 +202,7 @@ function turbulence!(
     (; rho, rhof, nu, nuf) = model.fluid
     (;k, omega, nut, kf, omegaf, nutf, coeffs, gamma1, gamma2, y) = model.turbulence
     (; U, Uf, gradU) = S
-    (;k_eqn, ω_eqn, state, β, σk, σω, γ, CDkω, arg1, F1, arg2, F2) = rans
+    (;k_eqn, ω_eqn, state, β, σk, σω, γ, CDkω, arg1, F1, arg2, F2, Ω) = rans
     (; solvers, runtime) = config
 
     mueffk = get_flux(k_eqn, 3)
@@ -207,6 +212,7 @@ function turbulence!(
     mueffω = get_flux(ω_eqn, 3)
     Dωf = get_flux(ω_eqn, 4)
     Pω = get_source(ω_eqn, 1)
+    CrossDiff = get_source(ω_eqn, 2)
 
     # update fluxes and sources
 
@@ -221,8 +227,8 @@ function turbulence!(
     grad!(gradω , omegaf, omega, omega.BCs, time, config)
      
     @. CDkω = max.(2*rho.values*coeffs.σω2*(1.0/omega.values)*(gradk.values.x*gradω.values.x + gradk.values.y*gradω.values.y +gradk.values.z*gradω.values.z), 1e-20)
-    @. arg1 = min.(max.(sqrt(k.values)/(betastar*omega.values*y.values), 500.0*nu.values/(y.values*y.values*omega.values), 4.0*rho.values))
-    @. F2 = tanh(arg1.values^4)
+    @. arg1 = min.(max.(sqrt(k.values)/(betastar*omega.values*y.values), 500.0*nu.values/(y.values*y.values*omega.values), 4.0*rho.values*coeffs.σω2*k.values/(CDkω*y.values*y.values)))
+    @. F1 = tanh(arg1.values^4)
 
     @. arg2 = max.(2*sqrt(k.values)/(betastar*omega.values*y.values), 500.0*nu.values/(y.values*y.values*omega.values))
     @. F2 = tanh(arg2.values*arg2.values)
@@ -235,6 +241,7 @@ function turbulence!(
 
     @. Pω.values = rho.values*γ*Pk.values
     @. Pk.values = rho.values*nut.values*Pk.values
+    @. CrossDiff.values = 2.0*(1.0-F1.values)*rho.values*coeffs.σω2*(1.0/omega.values)*(gradk.values.x*gradω.values.x + gradk.values.y*gradω.values.y +gradk.values.z*gradω.values.z)
     correct_production!(Pk, k.BCs, model, S.gradU, config) # Must be after previous line
     @. Dωf.values = rho.values*β.values*omega.values
     @. mueffω.values = rhof.values * (nuf.values + σω.values*nutf.values)
@@ -266,7 +273,8 @@ function turbulence!(
     bound!(k, config)
     # explicit_relaxation!(k, prev, solvers.k.relax, config)
 
-    @. nut.values = k.values/omega.values
+    magnitude2!(Ω, S, config, scale_factor=2.0) # 
+    @. nut.values = coeffs.a1*k.values/(max.(coeffs.a1*omega.values, F2.values*Ω.values))
 
     interpolate!(nutf, nut, config)
     correct_boundaries!(nutf, nut, nut.BCs, time, config)

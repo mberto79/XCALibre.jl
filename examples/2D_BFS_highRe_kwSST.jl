@@ -68,6 +68,7 @@ model = Physics(
 schemes = (
     U = set_schemes(divergence=Upwind),
     p = set_schemes(divergence=Upwind),
+    y = set_schemes(gradient=Midpoint),
     k = set_schemes(divergence=Upwind),
     omega = set_schemes(divergence=Upwind)
 )
@@ -90,6 +91,13 @@ solvers = (
         relax       = 0.3,
         rtol = 1e-3,
         atol = 1e-10
+    ),
+    y = set_solver(
+        model.turbulence.y;
+        solver      = CgSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(),
+        convergence = 1e-8,
+        relax       = 0.9,
     ),
     k = set_solver(
         model.turbulence.k;

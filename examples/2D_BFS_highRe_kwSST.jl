@@ -104,7 +104,7 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.3,
+        relax       = 0.7,
         rtol = 1e-2,
         atol = 1e-10
     ),
@@ -113,7 +113,7 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.3,
+        relax       = 0.7,
         rtol = 1e-2,
         atol = 1e-10
     )

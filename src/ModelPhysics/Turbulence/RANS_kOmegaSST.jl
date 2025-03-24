@@ -33,20 +33,23 @@ struct KOmegaSST{S1,S2,S3,F1,F2,F3,C1,C2,C3,Y} <: AbstractRANSModel
 end
 Adapt.@adapt_structure KOmegaSST
 
-struct KOmegaSSTModel{E1,E2,S,S1,S2,S3,S4,S5,S6,S7,S8,S9,S10}
+struct KOmegaSSTModel{E1,E2,S,S1,F1,F2,S2,S3,S4,S5,S6,F3,S7,S8,V1,V2}
     k_eqn::E1 
     ω_eqn::E2
     state::S
     β::S1
-    σk::S2
-    σω::S3
-    γ::S4  
-    CDkω::S5
-    arg1::S6
-    F1::S7
-    arg2::S8
-    F2::S9
-    Ω::S10
+    σkf::F1
+    σωf::F2
+    γ::S2
+    CDkω::S3
+    arg1::S4
+    F1::S5
+    F1f::F3
+    arg2::S6
+    F2::S7
+    Ω::S8
+    ∇k::V1
+    ∇ω::V2
 end
 Adapt.@adapt_structure KOmegaSSTModel
 
@@ -123,21 +126,25 @@ function initialise(
     Dωf = ScalarField(mesh)
     Pk = ScalarField(mesh)
     Pω = ScalarField(mesh)
-    CrossDiff = ScalarField(mesh)
+    dkdomegadx = ScalarField(mesh)
 
     CDkω = ScalarField(mesh)
     arg1 = ScalarField(mesh)
     F1 = ScalarField(mesh)
+    F1f = FaceScalarField(mesh)
 
     arg2 = ScalarField(mesh)
     F2 = ScalarField(mesh)
 
     β = ScalarField(mesh)
-    σk = ScalarField(mesh)
-    σω = ScalarField(mesh)
+    σkf = FaceScalarField(mesh)
+    σωf = FaceScalarField(mesh)
     γ = ScalarField(mesh)
 
     Ω = ScalarField(mesh)
+
+    ∇k = Grad{schemes.k.gradient}(k)
+    ∇ω = Grad{schemes.p.gradient}(omega)
     
     k_eqn = (
             Time{schemes.k.time}(rho, k)
@@ -154,7 +161,8 @@ function initialise(
             - Laplacian{schemes.omega.laplacian}(mueffω, omega) 
             + Si(Dωf,omega)  # Dωf = rho*β1*omega
             ==
-            Source(Pω) + Source(CrossDiff)
+            Source(Pω)
+            + Source(dkdomegadx)
     ) → eqn
 
     # Set up preconditioners
@@ -173,7 +181,7 @@ function initialise(
     wall_distance!(model, config)
 
     initial_residual = ((:k, 1.0),(:omega, 1.0))
-    return KOmegaSSTModel(k_eqn, ω_eqn, ModelState(initial_residual, false), β, σk, σω, γ, CDkω, arg1, F1, arg2, F2, Ω)
+    return KOmegaSSTModel(k_eqn, ω_eqn, ModelState(initial_residual, false), β, σkf, σωf, γ, CDkω, arg1, F1, F1f, arg2, F2, Ω, ∇k, ∇ω)
 end
 
 # Model solver call (implementation)
@@ -202,7 +210,7 @@ function turbulence!(
     (; rho, rhof, nu, nuf) = model.fluid
     (;k, omega, nut, kf, omegaf, nutf, coeffs, gamma1, gamma2, y) = model.turbulence
     (; U, Uf, gradU) = S
-    (;k_eqn, ω_eqn, state, β, σk, σω, γ, CDkω, arg1, F1, arg2, F2, Ω) = rans
+    (;k_eqn, ω_eqn, state, β, σkf, σωf, γ, CDkω, arg1, F1, F1f, arg2, F2, Ω, ∇k, ∇ω) = rans
     (; solvers, runtime) = config
 
     mueffk = get_flux(k_eqn, 3)
@@ -212,7 +220,7 @@ function turbulence!(
     mueffω = get_flux(ω_eqn, 3)
     Dωf = get_flux(ω_eqn, 4)
     Pω = get_source(ω_eqn, 1)
-    CrossDiff = get_source(ω_eqn, 2)
+    dkdomegadx = get_source(ω_eqn, 2)
 
     # update fluxes and sources
 
@@ -223,30 +231,36 @@ function turbulence!(
     magnitude2!(Pk, S, config, scale_factor=2.0) # multiplied by 2 (def of Sij)
     # constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
 
-    grad!(gradk, kf, k, k.BCs, time, config)
-    grad!(gradω , omegaf, omega, omega.BCs, time, config)
-     
-    @. CDkω = max.(2*rho.values*coeffs.σω2*(1.0/omega.values)*(gradk.values.x*gradω.values.x + gradk.values.y*gradω.values.y +gradk.values.z*gradω.values.z), 1e-20)
-    @. arg1 = min.(max.(sqrt(k.values)/(betastar*omega.values*y.values), 500.0*nu.values/(y.values*y.values*omega.values), 4.0*rho.values*coeffs.σω2*k.values/(CDkω*y.values*y.values)))
-    @. F1 = tanh(arg1.values^4)
+    interpolate!(kf, k, config)
+    correct_boundaries!(nutf, k, k.BCs, time, config)
+    interpolate!(omegaf, omega, config)
+    correct_boundaries!(nutf, omega, omega.BCs, time, config)
+    grad!(∇k, kf, k, k.BCs, time, config)
+    grad!(∇ω , omegaf, omega, omega.BCs, time, config)
+    
+    inner_product!(dkdomegadx, ∇k, ∇ω, config)
+    @. CDkω.values = max(2.0*rho.values*coeffs.σω2*(1.0/omega.values)*dkdomegadx.values, 1e-20)
+    @. arg1.values = min(max(sqrt(k.values)/(coeffs.β⁺*omega.values*y.values), 500.0*nu.values/(y.values*y.values*omega.values)), 4.0*rho.values*coeffs.σω2*k.values/(CDkω.values*y.values*y.values))
+    @. F1.values = tanh(arg1.values^4)
+    interpolate!(F1f, F1, config)
 
-    @. arg2 = max.(2*sqrt(k.values)/(betastar*omega.values*y.values), 500.0*nu.values/(y.values*y.values*omega.values))
-    @. F2 = tanh(arg2.values*arg2.values)
+    @. arg2.values = max.(2*sqrt(k.values)/(coeffs.β⁺*omega.values*y.values), 500.0*nu.values/(y.values*y.values*omega.values))
+    @. F2.values = tanh(arg2.values*arg2.values)
 
-    @. σk = coeffs.σk1*F1 + (1.0 - F1)*coeffs.σk2
-    @. σω = coeffs.σω1*F1 + (1.0 - F1)*coeffs.σω2
-    @. σω = coeffs.β1*F1 + (1.0 - F1)*coeffs.β2
-    @. γ = gamma1*F1 + (1.0 - F1)*gamma2
+    @. σkf.values = coeffs.σk1*F1f.values + (1.0 - F1f.values)*coeffs.σk2
+    @. σωf.values = coeffs.σω1*F1f.values + (1.0 - F1f.values)*coeffs.σω2
+    @. β.values = coeffs.β1*F1.values + (1.0 - F1.values)*coeffs.β2
+    @. γ.values = gamma1*F1.values + (1.0 - F1.values)*gamma2
 
 
-    @. Pω.values = rho.values*γ*Pk.values
+    @. Pω.values = rho.values*γ.values*Pk.values
     @. Pk.values = rho.values*nut.values*Pk.values
-    @. CrossDiff.values = 2.0*(1.0-F1.values)*rho.values*coeffs.σω2*(1.0/omega.values)*(gradk.values.x*gradω.values.x + gradk.values.y*gradω.values.y +gradk.values.z*gradω.values.z)
+    @. dkdomegadx.values = 2.0*(1.0-F1.values)*rho.values*coeffs.σω2*(1.0/omega.values)*dkdomegadx.values
     correct_production!(Pk, k.BCs, model, S.gradU, config) # Must be after previous line
     @. Dωf.values = rho.values*β.values*omega.values
-    @. mueffω.values = rhof.values * (nuf.values + σω.values*nutf.values)
+    @. mueffω.values = rhof.values * (nuf.values + σωf.values*nutf.values)
     @. Dkf.values = rho.values*coeffs.β⁺*omega.values
-    @. mueffk.values = rhof.values * (nuf.values + σk.values*nutf.values)
+    @. mueffk.values = rhof.values * (nuf.values + σkf.values*nutf.values)
 
     # Solve omega equation
     # prev .= omega.values
@@ -274,7 +288,7 @@ function turbulence!(
     # explicit_relaxation!(k, prev, solvers.k.relax, config)
 
     magnitude2!(Ω, S, config, scale_factor=2.0) # 
-    @. nut.values = coeffs.a1*k.values/(max.(coeffs.a1*omega.values, F2.values*Ω.values))
+    @. nut.values = coeffs.α1*k.values/(max(coeffs.α1*omega.values, F2.values*Ω.values))
 
     interpolate!(nutf, nut, config)
     correct_boundaries!(nutf, nut, nut.BCs, time, config)

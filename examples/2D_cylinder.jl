@@ -1,5 +1,5 @@
 using XCALibre
-using CUDA # Run this if using NVIDIA GPU
+# using CUDA # Run this if using NVIDIA GPU
 # using AMDGPU # Run this if using AMD GPU
 
 # using ThreadedSparseCSR 
@@ -11,10 +11,10 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-# backend= CPU(); workgroup = 1024
-# mesh_dev = mesh
-backend= CUDABackend(); workgroup = 32
-mesh_dev = adapt(CUDABackend(), mesh)
+backend= CPU(); workgroup = 1024
+# backend= CUDABackend(); workgroup = 32
+hardware = set_hardware(backend=backend, workgroup=workgroup)
+mesh_dev = adapt(hardware.backend, mesh)
 
 # Inlet conditions
 
@@ -62,11 +62,11 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 0.1
+        rtol = 0.01
     )
 )
 
-grad = Midpoint # Midpoint # Orthogonal
+grad = Orthogonal # Midpoint # Orthogonal
 schemes = (
     U = set_schemes(divergence=Linear, gradient=grad),
     p = set_schemes(gradient=grad)
@@ -74,8 +74,6 @@ schemes = (
 
 # runtime = set_runtime(iterations=20, write_interval=10, time_step=1) # for proto
 runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
-
-hardware = set_hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
@@ -85,7 +83,7 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config, ncorrectors=1)
+residuals = run!(model, config, ncorrectors=0)
 
 xrange = 1:runtime.iterations
 plot(; xlims=(0,runtime.iterations), ylims=(1e-7,0.2))

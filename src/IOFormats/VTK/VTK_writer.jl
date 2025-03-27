@@ -1,7 +1,7 @@
 export write_vtk #, model2vtk
 export copy_to_cpu
 
-initialise_writer(mesh::Mesh2) = VTKWriter2D(nothing, nothing)
+initialise_writer(format::VTK, mesh::Mesh2) = VTKWriter2D(nothing, nothing)
 
 function write_vtk(name, mesh, meshData::VTKWriter2D, args...) #, Ux, Uy, Uz, p)
     # UxNodes = FVM.NodeScalarField(Ux)

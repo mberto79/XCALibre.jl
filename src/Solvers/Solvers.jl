@@ -24,7 +24,7 @@ using XCALibre.Discretise
 using XCALibre.Solve
 using XCALibre.Calculate
 using XCALibre.ModelPhysics
-using XCALibre.VTK
+using XCALibre.IOFormats
 
 include("Solvers_0_functions.jl")
 include("Solvers_1_SIMPLE.jl")

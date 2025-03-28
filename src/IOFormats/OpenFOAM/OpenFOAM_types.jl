@@ -1,6 +1,6 @@
 export FOAMWriter
 
-struct VTKWriter{H,F}
+struct FOAMWriter{H,F}
     header::H
     footer::F
 end

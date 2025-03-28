@@ -225,7 +225,7 @@ function turbulence!(
 end
 
 # Specialise VTK writer
-function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, VTKWriter, name
+function write_output(model::Physics{T,F,M,Tu,E,D,BI}, VTKWriter, name
     ) where {T,F,M,Tu<:KOmega,E,D,BI}
     if typeof(model.fluid)<:AbstractCompressible
         args = (

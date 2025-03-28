@@ -1,4 +1,4 @@
-export write_vtk #, model2vtk
+export write_vtk #, write_output
 export copy_to_cpu
 
 initialise_writer(format::VTK, mesh::Mesh2) = VTKWriter2D(nothing, nothing)

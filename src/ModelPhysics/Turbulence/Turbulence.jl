@@ -28,6 +28,6 @@ include("RANS_kOmegaLKE.jl")
 include("LES_functions.jl")
 include("LES_Smagorinsky.jl")
 
-export initialise, turbulence!, model2vtk
+export initialise, turbulence!, write_output
 
 # end # end module

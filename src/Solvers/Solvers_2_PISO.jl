@@ -198,7 +198,7 @@ function PISO(
         )
 
     if iteration%write_interval + signbit(write_interval) == 0
-        model2vtk(model, outputWriter, @sprintf "timestep_%.6d" iteration)
+        write_output(model, outputWriter, @sprintf "timestep_%.6d" iteration)
     end
 
     end # end for loop

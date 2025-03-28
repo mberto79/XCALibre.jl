@@ -362,7 +362,7 @@ function CPISO(
         )
 
     if iteration%write_interval + signbit(write_interval) == 0
-        write_output(model, outputWriter, @sprintf "timestep_%.6d" iteration)
+        save_output(model, outputWriter, iteration)
     end
 
     end # end for loop

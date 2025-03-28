@@ -152,7 +152,8 @@ function initialise_writer(format::VTK, mesh::Mesh3)
 end
 
 
-function write_vtk(name, mesh, meshData::VTKWriter3D, args...)
+function write_results(iteration, mesh, meshData::VTKWriter3D, args...)
+    name = @sprintf "time_%.6d" iteration
     filename=name*".vtu"
 
     # Define backend and variables

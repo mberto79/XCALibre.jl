@@ -7,8 +7,6 @@ using Statistics
 using Krylov
 using LinearOperators
 using ProgressMeter
-using Printf
-# using CUDA
 using KernelAbstractions
 using Atomix
 using Adapt

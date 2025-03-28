@@ -4,7 +4,6 @@ The OpenFOAM format can only be used for 3D simulations. Use `output=VTK()` inst
 ")
 
 function write_results(iteration, mesh, meshData::FOAMWriter, args...)
-    name = @sprintf "time_%.6d" iteration
-    filename = name*".vtk"
-    println(filename)
+    timedir = @sprintf "%i" iteration
+    mkpath(timedir)
 end

@@ -97,8 +97,28 @@ function calculate_face_properties!(mesh)
         fc_n2 = node2.coords - face.centre 
         cc1_cc2 = cell2.centre - cell1.centre
 
-        normal_vec = fc_n1 × fc_n2
-        normal = normal_vec/norm(normal_vec)
+        # # basic normal calculation
+        # normal_vec = fc_n1 × fc_n2
+        # normal = normal_vec/norm(normal_vec)
+
+        # area-weighted face normal
+        sumArea = 0.0
+        sumNormals = SVector{3}(0.0,0.0,0.0)
+        nodeIDs = [nIDs..., nIDs[1]]
+        for nodei ∈ eachindex(face.nodes_range)
+            node1 = nodes[nodeIDs[nodei]]
+            node2 = nodes[nodeIDs[nodei+1]]
+            edge = node2.coords - node1.coords
+            areaSwepti = edge × (face.centre - node1.coords)
+            normi = norm(areaSwepti)
+            areai = 0.5*normi
+            normali = areaSwepti/normi 
+            sumNormals += areai*normali 
+            sumArea += areai
+        end
+        normal = sumNormals/sumArea
+
+        # check normal points out of cell and correct otherwise
         if cc1_cc2 ⋅ normal < 0
             normal *= -one(TI)
         end

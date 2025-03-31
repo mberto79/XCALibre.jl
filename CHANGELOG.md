@@ -7,12 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 * A very simple 2D block mesh generator has been added (not ready for general use as it needs to be documented)[#41](@ref)
+* Implementation of `Wall` boundary conditions specialised for `ScalarField` [#45](@ref)
 
 ### Fixed
-* No fixes have been added
+* Fixed the implementation for the calculation of the wall distance [#45](@ref)
 
 ### Changed
-* No changes have been made
+* In preperaton for hybrid models, added a reference to the turbulence object within the turbulence model object to allow for more general calling of `turbulence!`. This changes the implementation of `turbulence!` slightly [#46](@ref)
 
 ### Breaking
 * No breaking changes
@@ -29,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * No new functionality has been added
 
 ### Fixed
-* Remove fragile precompile statments of the form `var"#*#*"` causing errors in Julia v1.12 [#40](@ref)
+* Remove fragile precompile statements of the form `var"#*#*"` causing errors in Julia v1.12 [#40](@ref)
 
 ### Changed
 * In preparation for implementation of hybrid models e.g. DES, the signature of the `turbulence!` function has been updated to use the `AbstractTurbulenceModel` [#39](@ref)

@@ -53,7 +53,7 @@ model = Physics(
 @assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
+    Wall(:wall, 0.0),
     Neumann(:sides, 0.0),
     Neumann(:top, 0.0)
 )
@@ -62,7 +62,7 @@ solvers = (
     U = set_solver(
         model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = ILU0GPU(), # Jacobi # ILU0GPU
+        preconditioner = Jacobi(), # Jacobi # ILU0GPU
         # smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
         convergence = 1e-7,
         relax       = 0.8,
@@ -71,7 +71,7 @@ solvers = (
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = IC0GPU(), #NormDiagonal(), IC0GPU, Jacobi
+        preconditioner = Jacobi(), #NormDiagonal(), IC0GPU, Jacobi
         # smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
         convergence = 1e-7,
         relax       = 0.2,

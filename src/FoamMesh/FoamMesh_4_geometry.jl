@@ -110,7 +110,8 @@ function calculate_face_properties!(mesh)
         fc_c2 = cell2.centre - face.centre
         delta = norm(c1_c2)
         e = c1_c2/delta
-        weight = norm(fc_c2)/norm(c1_c2)
+        # weight = norm(fc_c2)/norm(c1_c2)
+        weight = norm(fc_c2)/(norm(fc_c2) + norm(fc_c1))
         @reset face.delta = delta
         @reset face.e = e
         @reset face.weight = weight

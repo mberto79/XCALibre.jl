@@ -155,9 +155,9 @@ end
 function write_results(iteration::TI, mesh, meshData::VTKWriter3D, args...) where TI
     name = ""
     if TI <: Integer
-        name = @sprintf "%i" iteration
+        name = @sprintf "iteration_%i" iteration
     else
-        name = @sprintf "iteration_%.8d" iteration
+        name = @sprintf "time_%.8f" iteration
     end
     filename=name*".vtu"
 

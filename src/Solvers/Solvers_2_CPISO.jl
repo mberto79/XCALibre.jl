@@ -228,7 +228,7 @@ function CPISO(
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
     for iteration ∈ 1:iterations
-        time = (iteration - 1)*dt
+        time = iteration *dt
 
         ## CHECK GRADU AND EXPLICIT STRESSES
         # grad!(gradU, Uf, U, U.BCs, time, config) # calculated in `turbulence!`
@@ -362,7 +362,7 @@ function CPISO(
         )
 
     if iteration%write_interval + signbit(write_interval) == 0
-        save_output(model, outputWriter, iteration)
+        save_output(model, outputWriter, time)
     end
 
     end # end for loop

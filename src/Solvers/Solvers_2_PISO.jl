@@ -102,7 +102,7 @@ function PISO(
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
     @time for iteration ∈ 1:iterations
-        time = (iteration - 1)*dt
+        time = iteration *dt
 
         rx, ry, rz = solve_equation!(
             U_eqn, U, solvers.U, xdir, ydir, zdir, config; time=time)
@@ -198,7 +198,7 @@ function PISO(
         )
 
     if iteration%write_interval + signbit(write_interval) == 0
-        save_output(model, outputWriter, iteration)
+        save_output(model, outputWriter, time)
     end
 
     end # end for loop

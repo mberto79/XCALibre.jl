@@ -6,9 +6,9 @@ initialise_writer(format::VTK, mesh::Mesh2) = VTKWriter2D(nothing, nothing)
 function write_results(iteration::TI, mesh, meshData::VTKWriter2D, args...) where TI
     name = ""
     if TI <: Integer
-        name = @sprintf "%i" iteration
+        name = @sprintf "iteration_%i" iteration
     else
-        name = @sprintf "iteration_%.8d" iteration
+        name = @sprintf "time_%.8f" iteration
     end
     filename = name*".vtk"
 

@@ -47,7 +47,7 @@ function setup_unsteady_compressible_solvers(
 
     @info "Extracting configuration and input fields..."
 
-    (; U, p) = model.momentum
+    (; U, p, Uf, pf) = model.momentum
     (; rho) = model.fluid
     mesh = model.domain
 
@@ -142,7 +142,7 @@ function CPISO(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2)
     
     # Extract model variables and configuration
-    (; U, p) = model.momentum
+    (; U, p, Uf, pf) = model.momentum
     (; rho, rhof, nu) = model.fluid
     (; dpdt) = model.energy
     mesh = model.domain

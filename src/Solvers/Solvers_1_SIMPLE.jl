@@ -51,7 +51,7 @@ function setup_incompressible_solvers(
 
     @info "Extracting configuration and input fields..."
 
-    (; U, p) = model.momentum
+    (; U, p, Uf, pf) = model.momentum
     mesh = model.domain
 
     @info "Pre-allocating fields..."
@@ -113,7 +113,7 @@ function SIMPLE(
     )
     
     # Extract model variables and configuration
-    (; U, p) = model.momentum
+    (; U, p, Uf, pf) = model.momentum
     (; nu) = model.fluid
     mesh = model.domain
     # p_model = p_eqn.model
@@ -135,11 +135,11 @@ function SIMPLE(
     # Define aux fields 
     gradU = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
-    Uf = FaceVectorField(mesh)
+    # Uf = FaceVectorField(mesh)
     S = StrainRate(gradU, gradUT, U, Uf)
 
     n_cells = length(mesh.cells)
-    pf = FaceScalarField(mesh)
+    # pf = FaceScalarField(mesh)
     # gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)

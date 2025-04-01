@@ -49,7 +49,7 @@ function setup_compressible_solvers(
     @info "Extracting configuration and input fields..."
 
     # model = adapt(hardware.backend, model_in)
-    (; U, p) = model.momentum
+    (; U, p, Uf, pf) = model.momentum
     (; rho) = model.fluid
     mesh = model.domain
 
@@ -124,7 +124,7 @@ function CSIMPLE(
     )
     
     # Extract model variables and configuration
-    (; U, p) = model.momentum
+    (; U, p, Uf, pf) = model.momentum
     (; nu, nuf, rho, rhof) = model.fluid
 
     mesh = model.domain
@@ -152,11 +152,11 @@ function CSIMPLE(
     # Define aux fields 
     gradU = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
-    Uf = FaceVectorField(mesh)
+    # Uf = FaceVectorField(mesh)
     S = StrainRate(gradU, gradUT, U, Uf)
 
     n_cells = length(mesh.cells)
-    pf = FaceScalarField(mesh)
+    # pf = FaceScalarField(mesh)
     nueff = FaceScalarField(mesh)
     prevpf = FaceScalarField(mesh)
     gradpf = FaceVectorField(mesh)

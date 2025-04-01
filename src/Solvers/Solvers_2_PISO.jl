@@ -43,7 +43,7 @@ function PISO(
     )
     
     # Extract model variables and configuration
-    (; U, p) = model.momentum
+    (; U, p, Uf, pf) = model.momentum
     (; nu) = model.fluid
     mesh = model.domain
     (; solvers, schemes, runtime, hardware) = config

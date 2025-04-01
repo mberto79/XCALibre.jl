@@ -110,7 +110,7 @@ runtime = set_runtime(
 ```
 """
 set_runtime(; iterations::I, write_interval::I, time_step::N) where {I<:Integer,N<:Number} = begin
-    (iterations=iterations, dt=time_step, write_interval=write_interval)
+    (iterations=iterations, dt=float(time_step), write_interval=write_interval)
 end
 
 function solve_equation!(

@@ -12,7 +12,7 @@ backend = CPU(); activate_multithread(backend); workgroup=1024
 # backend = CUDABackend(); workgroup=32
 mesh_dev = adapt(backend, mesh)
 
-velocity = [0.5, 0.1, 0.0]
+velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
 
@@ -45,7 +45,8 @@ model = Physics(
 
 schemes = (
     # U = set_schemes(divergence = Linear, limiter=MFaceBased(model.domain)),
-    U = set_schemes(divergence = LUST),
+    # U = set_schemes(divergence = Linear),
+    U = set_schemes(divergence = Linear),
     p = set_schemes()
     # p = set_schemes(limiter=FaceBased(model.domain))
     # p = set_schemes(limiter=MFaceBased(model.domain))

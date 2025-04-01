@@ -3,8 +3,13 @@ export copy_to_cpu
 
 initialise_writer(format::VTK, mesh::Mesh2) = VTKWriter2D(nothing, nothing)
 
-function write_results(iteration, mesh, meshData::VTKWriter2D, args...) #, Ux, Uy, Uz, p)
-    name = @sprintf "time_%.6d" iteration
+function write_results(iteration::TI, mesh, meshData::VTKWriter2D, args...) where TI
+    name = ""
+    if TI <: Integer
+        name = @sprintf "%i" iteration
+    else
+        name = @sprintf "iteration_%.8d" iteration
+    end
     filename = name*".vtk"
 
     # UxNodes = FVM.NodeScalarField(Ux)

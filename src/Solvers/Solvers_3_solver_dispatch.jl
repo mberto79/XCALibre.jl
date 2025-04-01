@@ -22,7 +22,7 @@ This is the top level API function to initiate a simulation. It uses the user-pr
 # Input arguments
 - `model` reference to a `Physics` model defined by the user.
 - `config` Configuration structure defined by the user with solvers, schemes, runtime and hardware structures configuration details.
-- `output` select the format used for simulation results from `VTK()` or `OpenFOAM` (default = `VTK()`)
+- `output` select the format used for simulation results from `VTK()` or `OpenFOAM()` (default = `VTK()`)
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
@@ -60,7 +60,7 @@ Calls the incompressible steady solver using the SIMPLE algorithm.
 # Input
 - `model` represents the `Physics` model defined by user.
 - `config` Configuration structure defined by user with solvers, schemes, runtime and hardware structures configuration details.
-- `output` select the format used for simulation results from `VTK()` or `OpenFOAM` (default = `VTK()`)
+- `output` select the format used for simulation results from `VTK()` or `OpenFOAM()` (default = `VTK()`)
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only.
 
 # Output
@@ -104,7 +104,7 @@ Calls the incompressible transient solver using the PISO algorithm.
 
 - `model` represents the `Physics` model defined by user.
 - `config` Configuration structure defined by user with solvers, schemes, runtime and hardware structures configuration details.
-- `output` select the format used for simulation results from `VTK()` or `OpenFOAM` (default = `VTK()`)
+- `output` select the format used for simulation results from `VTK()` or `OpenFOAM()` (default = `VTK()`)
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only.
 
 # Output
@@ -149,7 +149,7 @@ Calls the compressible steady solver using the SIMPLE algorithm for weakly compr
 
 - `model` represents the `Physics` model defined by user.
 - `config` Configuration structure defined by user with solvers, schemes, runtime and hardware structures configuration details.
-- `output` select the format used for simulation results from `VTK()` or `OpenFOAM` (default = `VTK()`)
+- `output` select the format used for simulation results from `VTK()` or `OpenFOAM()` (default = `VTK()`)
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only.
 
 # Output
@@ -210,7 +210,7 @@ Calls the compressible transient solver using the PISO algorithm for weakly comp
 # Input
 - `model` represents the `Physics` model defined by user.
 - `config` Configuration structure defined by user with solvers, schemes, runtime and hardware structures configuration details.
-- `output` select the format used for simulation results from `VTK()` or `OpenFOAM` (default = `VTK()`)
+- `output` select the format used for simulation results from `VTK()` or `OpenFOAM()` (default = `VTK()`)
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only.
 
 # Output

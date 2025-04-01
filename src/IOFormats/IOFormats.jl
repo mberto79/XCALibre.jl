@@ -2,8 +2,10 @@ module IOFormats
 
 using XCALibre.Mesh
 using XCALibre.Fields
+using XCALibre.Discretise
 using KernelAbstractions
 using LinearAlgebra
+using StaticArrays
 using Printf
 
 include("VTK/VTK_types.jl")

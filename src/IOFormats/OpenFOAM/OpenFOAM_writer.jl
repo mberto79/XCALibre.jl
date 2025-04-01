@@ -219,11 +219,9 @@ function write_results(iteration, mesh, meshData::FOAMWriter, args...)
 
                 println(io, "boundaryField")
                 println(io, "{")
-                for boundary ∈ boundaries_cpu
-                    println(io, "\t", boundary.name)
-                    println(io, "\t{")
-                    println(io, "\t\ttype zeroGradient;")
-                    println(io, "\t}")
+                for BC ∈ field.BCs
+                    println(io, "\t", boundaries_cpu[BC.ID].name)
+                    println(io, _foam_boundary_entry(BC))
                 end
                 println(io, "}")
             end
@@ -251,11 +249,9 @@ function write_results(iteration, mesh, meshData::FOAMWriter, args...)
 
                 println(io, "boundaryField")
                 println(io, "{")
-                for boundary ∈ boundaries_cpu
-                    println(io, "\t", boundary.name)
-                    println(io, "\t{")
-                    println(io, "\t\ttype zeroGradient;")
-                    println(io, "\t}")
+                for BC ∈ field.BCs
+                    println(io, "\t", boundaries_cpu[BC.ID].name)
+                    println(io, _foam_boundary_entry(BC))
                 end
                 println(io, "}")
             end
@@ -266,3 +262,70 @@ function write_results(iteration, mesh, meshData::FOAMWriter, args...)
         end
     end
 end
+
+_foam_boundary_entry(BC) = begin # catch all method
+    """
+    \t{
+    \t\ttype zeroGradient;
+    \t}
+    """
+end
+
+_foam_boundary_entry(BC::Neumann) = begin
+    """
+    \t{
+    \t\ttype zeroGradient;
+    \t}
+    """
+end
+
+_foam_boundary_entry(BC::Symmetry)  =  begin
+    """
+    \t{
+    \t\ttype zeroGradient;
+    \t}
+    """
+end
+
+_foam_boundary_entry(BC::Dirichlet{ID,Value}) where {ID,Value<:Number} =  begin
+    """
+    \t{
+    \t\ttype fixedValue;
+    \t\tuniform $(BC.value);
+    \t}
+    """
+end
+
+_foam_boundary_entry(BC::Dirichlet{ID,Value}) where {ID,Value<:SVector} =  begin
+    value = BC.value
+    """
+    \t{
+    \t\ttype fixedValue;
+    \t\tuniform ($(value[1]) $(value[2]) $(value[3]));
+    \t}
+    """
+end
+
+_foam_boundary_entry(BC::Wall{ID,Value}) where {ID,Value<:Number} =  begin
+    """
+    \t{
+    \t\ttype zeroGradient;
+    \t}
+    """
+end
+
+_foam_boundary_entry(BC::Wall{ID,Value}) where {ID,Value<:SVector} =  begin
+    # value = BC.value
+    # """
+    # \t{
+    # \t\ttype fixedValue;
+    # \t\tuniform ($(value[1]) $(value[2]) $(value[3]));
+    # \t}
+    # """
+    """
+    \t{
+    \t\ttype noSlip;
+    \t}
+    """
+end
+

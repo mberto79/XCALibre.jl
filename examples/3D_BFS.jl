@@ -16,7 +16,7 @@ mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_5mm.unv
 # mesh_file = "bfs_unv_tet_5mm.unv"
 
 # mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
-# mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
+mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
 # workgroup = cld(length(mesh.cells), Threads.nthreads())
@@ -101,7 +101,7 @@ residuals = run!(model, config)
 
 # Now get timing information
 
-runtime = set_runtime(iterations=100, write_interval=10, time_step=1)
+runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
 GC.gc(true)

@@ -316,20 +316,11 @@ end
 
 _foam_boundary_entry(BC::Wall{ID,Value}) where {ID,Value<:SVector} =  begin
     value = BC.value; ux = value[1]; uy = value[2]; uz = value[3]
-    z = zero(eltype(value))
-    if ux != z || uy != z || uy != z
-    return """
+    """
     \t{
     \t\ttype fixedValue;
     \t\tvalue uniform ($ux $uy $uz);
     \t}
     """
-    else
-    return """
-    \t{
-    \t\ttype noSlip;
-    \t}
-    """
-    end
 end
 

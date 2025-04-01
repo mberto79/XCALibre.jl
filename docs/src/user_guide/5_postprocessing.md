@@ -10,7 +10,7 @@ XCALibre.jl can output simulation results to either `VTK` compliant formats or `
 
 !!! note
 
-    A limitation of the current `VTK` writers in XCALibre.jl is that boundary information is stored along with internal mesh cell information, and result are stored at cell centres only. Thus, care must be taken when visualising results at boundary faces. In future releases a separation of boundary and internal mesh results is planned. 
+    A limitation of the current `VTK` writers in XCALibre.jl is that boundary information is stored along with internal mesh cell information, and results are stored at cell centres only. Thus, care must be taken when visualising results at boundary faces. Boundary information for `fixedValue` boundaries is displayed corrently when the results are saved in the `OpenFOAM` format. 
 
 ## Available functions
 ---

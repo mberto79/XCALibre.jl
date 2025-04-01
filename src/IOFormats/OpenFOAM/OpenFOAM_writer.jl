@@ -1,6 +1,6 @@
 
 initialise_writer(format::OpenFOAM, mesh::Mesh3) = begin
-    # write OpenFoam mesh
+    # create dummy file to load results in ParaView
     touch("XCALibre.foam")
 
     # Create constant directory and mesh files

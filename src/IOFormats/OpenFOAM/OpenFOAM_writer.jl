@@ -194,9 +194,9 @@ function write_results(iteration, mesh, meshData::FOAMWriter, args...)
     if iteration <: Integer
         timedir = @sprintf "%i" iteration
     else
-        timedir = @sprintf "%i" iteration
+        timedir = @sprintf "iteration_%.8d" iteration
     end
-    
+
     timedirpath = mkpath(timedir)
 
     backend = _get_backend(mesh)

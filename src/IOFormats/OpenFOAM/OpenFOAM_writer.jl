@@ -291,7 +291,7 @@ _foam_boundary_entry(BC::Dirichlet{ID,Value}) where {ID,Value<:Number} =  begin
     """
     \t{
     \t\ttype fixedValue;
-    \t\tuniform $(BC.value);
+    \t\tvalue uniform $(BC.value);
     \t}
     """
 end
@@ -301,7 +301,7 @@ _foam_boundary_entry(BC::Dirichlet{ID,Value}) where {ID,Value<:SVector} =  begin
     """
     \t{
     \t\ttype fixedValue;
-    \t\tuniform ($(value[1]) $(value[2]) $(value[3]));
+    \t\tvalue uniform ($(value[1]) $(value[2]) $(value[3]));
     \t}
     """
 end
@@ -315,17 +315,21 @@ _foam_boundary_entry(BC::Wall{ID,Value}) where {ID,Value<:Number} =  begin
 end
 
 _foam_boundary_entry(BC::Wall{ID,Value}) where {ID,Value<:SVector} =  begin
-    # value = BC.value
-    # """
-    # \t{
-    # \t\ttype fixedValue;
-    # \t\tuniform ($(value[1]) $(value[2]) $(value[3]));
-    # \t}
-    # """
+    value = BC.value; ux = value[1]; uy = value[2]; uz = value[3]
+    z = zero(eltype(value))
+    if ux != z || uy != z || uy != z
+    return """
+    \t{
+    \t\ttype fixedValue;
+    \t\tvalue uniform ($ux $uy $uz);
+    \t}
     """
+    else
+    return """
     \t{
     \t\ttype noSlip;
     \t}
     """
+    end
 end
 

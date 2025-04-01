@@ -194,7 +194,7 @@ function write_results(iteration::TI, mesh, meshData::FOAMWriter, args...) where
     if TI <: Integer
         timedir = @sprintf "%i" iteration
     else
-        timedir = @sprintf "time_%.8f" iteration
+        timedir = @sprintf "%.8f" iteration
     end
 
     timedirpath = mkpath(timedir)

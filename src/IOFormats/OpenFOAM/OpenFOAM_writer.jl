@@ -190,7 +190,13 @@ The OpenFOAM format can only be used for 3D simulations. Use `output=VTK()` inst
 ")
 
 function write_results(iteration, mesh, meshData::FOAMWriter, args...)
-    timedir = @sprintf "%i" iteration
+    timedir = ""
+    if iteration <: Integer
+        timedir = @sprintf "%i" iteration
+    else
+        timedir = @sprintf "%i" iteration
+    end
+    
     timedirpath = mkpath(timedir)
 
     backend = _get_backend(mesh)

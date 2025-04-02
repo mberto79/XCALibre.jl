@@ -13,7 +13,7 @@ mesh_dev = adapt(CUDABackend(), mesh)
 # volumes = ScalarField(mesh)
 # vols = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 # volumes.values .= vols
-# write_vtk("cellVolumes", mesh, ("cellVolumes", volumes))
+# write_results("cellVolumes", mesh, ("cellVolumes", volumes))
 
 Umag = 0.05
 nu = 1e-05

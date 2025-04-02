@@ -46,7 +46,7 @@ limit_gradient!(FaceBased(mesh), ∇phi, phi, config)
 # limit_gradient!(MFaceBased(mesh), ∇phi, phi, config)
 
 meshData = VTKWriter2D(nothing, nothing)
-write_vtk("output", mesh, meshData, ("phi", phi), ("gradPhi", ∇phi.result.x))
+write_results("output", mesh, meshData, ("phi", phi), ("gradPhi", ∇phi.result.x))
 
 f(type::Nothing, a, b) = a + b
 
@@ -95,4 +95,4 @@ grad!(∇psi, psif, psi, psi.BCs, 0.0, config)
 limit_gradient!(MFaceBased(), ∇psi, psi, config)
 
 meshData = VTKWriter2D(nothing, nothing)
-write_vtk("output", mesh, meshData, ("psi", psi), ("gradPsi", ∇psi.result.xx))
+write_results("output", mesh, meshData, ("psi", psi), ("gradPsi", ∇psi.result.xx))

@@ -85,7 +85,7 @@ function turbulence!(
 end
 
 # Specialise VTK writer
-function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, VTKWriter, name
+function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration
     ) where {T,F,M,Tu<:Laminar,E,D,BI}
     if typeof(model.fluid)<:AbstractCompressible
         args = (
@@ -99,14 +99,14 @@ function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, VTKWriter, name
             ("p", model.momentum.p)
         )
     end
-    write_vtk(name, model.domain, VTKWriter, args...)
+    write_results(iteration, model.domain, outputWriter, args...)
 end
 
-function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, VTKWriter, name
+function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration
     ) where {T,F,M,Tu<:Laminar,E<:Nothing,D,BI}
     args = (
         ("U", model.momentum.U), 
         ("p", model.momentum.p),
     )
-    write_vtk(name, model.domain, VTKWriter, args...)
+    write_results(iteration, model.domain, outputWriter, args...)
 end

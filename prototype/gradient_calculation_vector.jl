@@ -45,7 +45,7 @@ grad!(∇psi, psif, psi, psi.BCs, 0.0, config)
 # limit_gradient!(∇psi, psif, psi, config)
 
 meshData = VTKWriter2D(nothing, nothing)
-write_vtk("output", mesh, meshData, ("psi", psi), ("gradpsixx", ∇psi.result.xx), ("gradpsixy", ∇psi.result.xy))
+write_results("output", mesh, meshData, ("psi", psi), ("gradpsixx", ∇psi.result.xx), ("gradpsixy", ∇psi.result.xy))
 
 nu, ρ = 1.48e-5, 1.225
 Ux = 60.0

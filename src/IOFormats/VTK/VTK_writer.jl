@@ -1,9 +1,17 @@
-export write_vtk #, model2vtk
+export write_results #, save_output
 export copy_to_cpu
 
-initialise_writer(mesh::Mesh2) = VTKWriter2D(nothing, nothing)
+initialise_writer(format::VTK, mesh::Mesh2) = VTKWriter2D(nothing, nothing)
 
-function write_vtk(name, mesh, meshData::VTKWriter2D, args...) #, Ux, Uy, Uz, p)
+function write_results(iteration::TI, mesh, meshData::VTKWriter2D, args...) where TI
+    name = ""
+    if TI <: Integer
+        name = @sprintf "iteration_%i" iteration
+    else
+        name = @sprintf "time_%.8f" iteration
+    end
+    filename = name*".vtk"
+
     # UxNodes = FVM.NodeScalarField(Ux)
     # UyNodes = FVM.NodeScalarField(Uy)
     # UzNodes = FVM.NodeScalarField(Uz)
@@ -12,8 +20,8 @@ function write_vtk(name, mesh, meshData::VTKWriter2D, args...) #, Ux, Uy, Uz, p)
     # FVM.interpolate2nodes!(UyNodes, Uy)
     # FVM.interpolate2nodes!(UzNodes, Uz)
     # FVM.interpolate2nodes!(pNodes, p)
+
     (; cell_nodes) = mesh
-    filename = name*".vtk"
     open(filename, "w") do io
         write(io, "# vtk DataFile Version 3.0\n")
         write(io, "XCALibre.jl simulation data\n")

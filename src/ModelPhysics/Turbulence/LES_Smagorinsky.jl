@@ -129,12 +129,12 @@ function turbulence!(
 end
 
 # Specialise VTK writer
-function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, VTKWriter, name
+function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration
     ) where {T,F,M,Tu<:Smagorinsky,E,D,BI}
     args = (
         ("U", model.momentum.U), 
         ("p", model.momentum.p),
         ("nut", model.turbulence.nut)
     )
-    write_vtk(name, model.domain, VTKWriter, args...)
+    write_results(iteration, model.domain, outputWriter, args...)
 end

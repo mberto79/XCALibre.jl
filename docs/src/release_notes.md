@@ -7,24 +7,75 @@ EditURL = "https://github.com/github.com/mberto79/XCALibre.jl/blob/master/CHANGE
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v0.3.1` breaking changes will be recorded here. 
 
-## Version [v0.4.0](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.4.0) - 2025-xx-xx
+## Version [v0.4.2](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.4.2) - 2025-04-02
 
 ### Added
-* Implementation of `Symmetry` boundary condition for `ScalarField` types
-* New macro to help define boundary conditions that will dispatch to `Scalar` or `VectorField` types
-* Added `eltype` method for both `Scalar` and `VectorField` types to simplify the development of new kernels where type information is needed
-* New gradient limiters `FaceBased` and `MFaceBased` for limiting gradients based on cell faces, where `MFaceBased` is a multidimensional version, and it is generally recommended over `FaceBased`.
+* A very simple 2D block mesh generator has been added (not ready for general use as it needs to be documented)[#41](@ref)
+* Implementation of `Wall` boundary conditions specialised for `ScalarField` [#45](@ref)
+* Simulation results can now be written to `VTK` and `OpenFOAM` formats. The format can be selected using the `output` keyword argument in the `run!` function. The formats available are `VTK()` and `OpenFOAM()`
 
 ### Fixed
-* Calling `JacobiSmoother` now works on the GPU
-* Implemented `SparseXCSR` as wrapper for `SparseMatrixCSR` on the CPU to resolve display/print errors
+* Fixed the implementation for the calculation of the wall distance [#45](@ref)
 
 ### Changed
-* The calculation of gradients has been improved by merging computations into a single kernel, improving performance of gradient kernels by around 10-30%, most noticable for vector gradients
-* Improved calculation of non-orthogonal calculation (more tests are still needed), although tests have proven to be stable
+* In preparation for hybrid RANS/LES models, the object `Turbulence` is now passed to the `TurbulenceModel` object to allow for a more general call of `turbulence!`. This changes the implementation of `turbulence!` for all models slightly [#46](@ref)
+* Improved stability on meshes with warped faces by changing how face normals are calculated. XCALibre now uses an area-weighted face normal calculation based on the decomposition of faces into triangles
+* Removed `VTK` module and moved functionality to a new `IOFormats` module
+* Internally the function `model2vtk` has been replaced with `save_output` within all solvers. The specialisation for writing `ModelPhysics` models to file has also changed to `save_output`. The arguements pass to this function have also changed, the `name` of the file is not passed to the function, instead, the current runtime variable `time` is required
 
 ### Breaking
-* The top level API for all solvers no longer takes the keyword arguement `limit_gradient` for activating gradient limiter. New gradient limiters have been added and can be selected/configured when assigning numerical schemes with the `set_schemes` function.
+* No breaking changes
+
+### Deprecated
+* No functions deprecated
+
+### Removed
+* No functionality has been removed
+
+## Version [v0.4.1](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.4.1) - 2025-03-06
+
+### Added
+* No new functionality has been added
+
+### Fixed
+* Remove fragile precompile statements of the form `var"#*#*"` causing errors in Julia v1.12 [#40](@ref)
+
+### Changed
+* In preparation for implementation of hybrid models e.g. DES, the signature of the `turbulence!` function has been updated to use the `AbstractTurbulenceModel` [#39](@ref)
+* New semi-implicit implementation for periodic boundary conditions (implicit treatment of laplacian terms)[#40](@ref)
+
+### Breaking
+* No breaking changes
+
+### Deprecated
+* No functions deprecated
+
+### Removed
+* No functionality has been removed
+
+## Version [v0.4.0](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.4.0) - 2025-02-17
+
+### Added
+* Implementation of `Symmetry` boundary condition for `ScalarField` types [#30](@ref)
+* New macro to help define boundary conditions that will dispatch to `Scalar` or `VectorField` types [#30](@ref)
+* Added `eltype` method for both `Scalar` and `VectorField` types to simplify the development of new kernels where type information is needed [#30](@ref)
+* New gradient limiters `FaceBased` and `MFaceBased` for limiting gradients based on cell faces, where `MFaceBased` is a multidimensional version, and it is generally recommended over `FaceBased` [#30](@ref)
+* Support for INTEL hardware [#32](@ref)
+
+### Fixed
+* Calling `JacobiSmoother` now works on the GPU [#30](@ref)
+* Implemented `SparseXCSR` as wrapper for `SparseMatrixCSR` on the CPU to resolve display/print errors [#30](@ref)
+* The convergence criteria for solvers is used consistently to stop/control simulation runtime [#36](@ref)
+* Consistent display of residuals on screen during simulations [#36](@ref)
+* Fixed calculation of wall distance and `apply_boundary_conditions!` arguments for `LKE` model [#36](@ref)
+
+### Changed
+* The calculation of gradients has been improved by merging computations into a single kernel, improving performance of gradient kernels by around 10-30%, most noticable for vector gradients [#30](@ref)
+* Improved calculation of non-orthogonal calculation (more tests are still needed), although tests have proven to be stable [#30](@ref)
+* Improved documentation/readme on supported GPU backends/hardware and make users aware of potential `F32` limitation on some hardware
+
+### Breaking
+* The top level API for all solvers no longer takes the keyword argument `limit_gradient` for activating gradient limiter. New gradient limiters have been added and can be selected/configured when assigning numerical schemes with the `set_schemes` function [#30](@ref)
 
 ### Deprecated
 * No functions deprecated
@@ -35,8 +86,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version [v0.3.3](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.3.3) - 2024-12-24
 
 ### Added
-* Added experimental support for NVIDIA ILU0 and IC0 preconditioners [#23](https://github.com/github.com/mberto79/XCALibre.jl/issues/23)
-* Added `JacobiSmoother` that can be used with all linear solvers (improving initial guess) [#23](https://github.com/github.com/mberto79/XCALibre.jl/issues/23)
+* Added experimental support for NVIDIA ILU0 and IC0 preconditioners [#23](@ref)
+* Added `JacobiSmoother` that can be used with all linear solvers (improving initial guess) [#23](@ref)
 * New function `activate_multithread` is available to set up matrix-vector multiplication in parallel on the CPU
 * Initial benchmark added in the documentation
 
@@ -45,11 +96,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 * Internally the sparse matrix format has been changed to CSR. This has improved performance by 2x-4x (case dependent)
-* Multithreaded sparse matrix vector multiplication is now functional [#23](https://github.com/github.com/mberto79/XCALibre.jl/issues/23)
-* Precompilation errors on Julia v1.11 addressed by bringing code from `ThreadedSparseCSR.jl` [#24](https://github.com/github.com/mberto79/XCALibre.jl/issues/24)
-* Update compat entry for `Atomix.jl` to v1.0,0 [#24](https://github.com/github.com/mberto79/XCALibre.jl/issues/24)
-* `DILU` preconditioner is now implemented to work with sparse matrices in CSR format and uses a hybrid approach (running on CPU) to allow working when using GPU backends (further work needed) [#26](https://github.com/github.com/mberto79/XCALibre.jl/issues/26)
-* The implementation of RANS models and wall functions has been improved for consistency (resulting in some computational gains). The calculation of `yPlusLam` is only done once when constructing the wall function objects. The calculation of the velocity gradient is now only done within the turbulence model main function (`turbulence!`) [#28](https://github.com/github.com/mberto79/XCALibre.jl/issues/28)
+* Multithreaded sparse matrix vector multiplication is now functional [#23](@ref)
+* Precompilation errors on Julia v1.11 addressed by bringing code from `ThreadedSparseCSR.jl` [#24](@ref)
+* Update compat entry for `Atomix.jl` to v1.0,0 [#24](@ref)
+* `DILU` preconditioner is now implemented to work with sparse matrices in CSR format and uses a hybrid approach (running on CPU) to allow working when using GPU backends (further work needed) [#26](@ref)
+* The implementation of RANS models and wall functions has been improved for consistency (resulting in some computational gains). The calculation of `yPlusLam` is only done once when constructing the wall function objects. The calculation of the velocity gradient is now only done within the turbulence model main function (`turbulence!`) [#28](@ref)
 
 ### Breaking
 * No breaking changes
@@ -58,7 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * No functions deprecated
 
 ### Removed
-* The `ILU0` and `LDL` preconditioners has been temporarily removed [#23](https://github.com/github.com/mberto79/XCALibre.jl/issues/23)
+* The `ILU0` and `LDL` preconditioners has been temporarily removed [#23](@ref)
 
 ## Version [v0.3.2](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.3.2) - 2024-11-08
 
@@ -66,7 +117,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Added support for CI testing, Dependabot, and CompatHelper
 
 ### Fixed
-* Fixed tests for mesh conversion and standardised tolerances for test checks of incompressible solvers [#16](https://github.com/github.com/mberto79/XCALibre.jl/issues/16)
+* Fixed tests for mesh conversion and standardised tolerances for test checks of incompressible solvers [#16](@ref)
 
 ### Changed
 * No changes
@@ -83,12 +134,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version [v0.3.1](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.3.1) - 2024-10-18
 
 ### Added
-* Vastly improved documentation with new examples provided [#12](https://github.com/github.com/mberto79/XCALibre.jl/issues/12)
+* Vastly improved documentation with new examples provided [#12](@ref)
 * Changelog added to record changes more clearly. Record kept in [Release notes](@ref)
 
 ### Fixed
-* The calculation of gradients can be limited for stability. This functionality can be activated by passing the key work argument `limit_gradient` to the `run!` function. The implementation has been improved for robustness [#12](https://github.com/github.com/mberto79/XCALibre.jl/issues/12)
-* Removed face information being printed when `Mesh` objects are created to stop printing a `ERROR: Scalar indexing is disallowed` message [#13](https://github.com/github.com/mberto79/XCALibre.jl/issues/13)
+* The calculation of gradients can be limited for stability. This functionality can be activated by passing the key work argument `limit_gradient` to the `run!` function. The implementation has been improved for robustness [#12](@ref)
+* Removed face information being printed when `Mesh` objects are created to stop printing a `ERROR: Scalar indexing is disallowed` message [#13](@ref)
 
 ### Changed
 * Master branch protected and requires PRs to push changes
@@ -113,9 +164,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Reasonably complete "user" documentation now provided
 * Made repository public (in v0.2 the work was kept in a private repository and could only do 2D simulations)
 * Tidy up mesh type definitions by @mberto79 in #5
-* Adapt code base to work with new mesh format by @mberto79 in [#6](https://github.com/github.com/mberto79/XCALibre.jl/issues/6)
-* Mesh boundary struct changes PR by @TomMazin in [#7](https://github.com/github.com/mberto79/XCALibre.jl/issues/7)
-* Mesh boundary struct changes PR fix by @TomMazin in [#8](https://github.com/github.com/mberto79/XCALibre.jl/issues/8)
+* Adapt code base to work with new mesh format by @mberto79 in [#6](@ref)
+* Mesh boundary struct changes PR by @TomMazin in [#7](@ref)
+* Mesh boundary struct changes PR fix by @TomMazin in [#8](@ref)
 
 
 ## Version [v0.2.0](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.2.0) - 2023-01-23

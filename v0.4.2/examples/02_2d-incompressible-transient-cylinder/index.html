@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Verification: 2D Unsteady incompressible cylinder · XCALibre.jl</title><meta name="title" content="Verification: 2D Unsteady incompressible cylinder · XCALibre.jl"/><meta property="og:title" content="Verification: 2D Unsteady incompressible cylinder · XCALibre.jl"/><meta property="twitter:title" content="Verification: 2D Unsteady incompressible cylinder · XCALibre.jl"/><meta name="description" content="Documentation for XCALibre.jl."/><meta property="og:description" content="Documentation for XCALibre.jl."/><meta property="twitter:description" content="Documentation for XCALibre.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">XCALibre.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><a class="tocitem" href="../../quick_start/">Quick Start</a></li><li><span class="tocitem">Examples</span><ul><li><a class="tocitem" href="../01_2d-isothermal-backward-facing-step/">Verification: 2D incompressible backward-facing step</a></li><li class="is-active"><a class="tocitem" href>Verification: 2D Unsteady incompressible cylinder</a><ul class="internal"><li class="toplevel"><a class="tocitem" href="#Introduction"><span>Introduction</span></a></li><li><a class="tocitem" href="#Results"><span>Results</span></a></li><li><a class="tocitem" href="#Simulation-setup"><span>Simulation setup</span></a></li></ul></li><li><a class="tocitem" href="../03_2d-constant-temperature-flat-plate/">Validation: 2D Constant temperature flat plate</a></li><li><a class="tocitem" href="../04_2d-inflow-using-Flux/">Advanced: 2D inflow using <code>Flux.jl</code></a></li><li><a class="tocitem" href="../05_2d-aerofoil-inflow-optimisation/">Advanced: 2D Aerofoil inflow optimisation</a></li></ul></li><li><span class="tocitem">User Guide</span><ul><li><a class="tocitem" href="../../user_guide/0_introduction_and_workflow/">Introduction</a></li><li><a class="tocitem" href="../../user_guide/1_preprocessing/">Pre-processing</a></li><li><a class="tocitem" href="../../user_guide/2_physics_and_models/">Physics and models</a></li><li><a class="tocitem" href="../../user_guide/3_numerical_setup/">Numerical setup</a></li><li><a class="tocitem" href="../../user_guide/4_runtime_and_solvers/">Runtime and solvers</a></li><li><a class="tocitem" href="../../user_guide/5_postprocessing/">Post-processing</a></li></ul></li><li><a class="tocitem" href="../../benchmarks/">Benchmarks</a></li><li><a class="tocitem" href="../../contributor_guide/">Contributor Guide</a></li><li><a class="tocitem" href="../../reference/">Reference</a></li><li><a class="tocitem" href="../../release_notes/">Release notes</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Examples</a></li><li class="is-active"><a href>Verification: 2D Unsteady incompressible cylinder</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Verification: 2D Unsteady incompressible cylinder</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/mberto79/XCALibre.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/mberto79/XCALibre.jl/blob/main/docs/src/examples/02_2d-incompressible-transient-cylinder.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Verification:-2D-Unsteady-incompressible-cylinder"><a class="docs-heading-anchor" href="#Verification:-2D-Unsteady-incompressible-cylinder">Verification: 2D Unsteady incompressible cylinder</a><a id="Verification:-2D-Unsteady-incompressible-cylinder-1"></a><a class="docs-heading-anchor-permalink" href="#Verification:-2D-Unsteady-incompressible-cylinder" title="Permalink"></a></h1><h1 id="Introduction"><a class="docs-heading-anchor" href="#Introduction">Introduction</a><a id="Introduction-1"></a><a class="docs-heading-anchor-permalink" href="#Introduction" title="Permalink"></a></h1><hr/><p>To verify the correct implementation of the laminar flow solver, a simulation of a transient, laminar and incompressible cylinder was carried out and compared with OpenFOAM. The results show that the solver in XCALibre.jl generates similar results compared to the laminar solver in OpenFOAM. Simulation set up, grid and OpenFOAM case will all be made available here.</p><h2 id="Results"><a class="docs-heading-anchor" href="#Results">Results</a><a id="Results-1"></a><a class="docs-heading-anchor-permalink" href="#Results" title="Permalink"></a></h2><p><img src="../figures/02/cylinder_re100_comparison.gif" alt="vorticity comparison with OpenFOAM"/></p><h2 id="Simulation-setup"><a class="docs-heading-anchor" href="#Simulation-setup">Simulation setup</a><a id="Simulation-setup-1"></a><a class="docs-heading-anchor-permalink" href="#Simulation-setup" title="Permalink"></a></h2><p>For those interested in running this case, this simulation can be replicated as follows.</p><pre><code class="language-julia hljs">
+using XCALibre
+# using CUDA # uncomment to run on GPU
+
+grids_dir = pkgdir(XCALibre, &quot;examples/0_GRIDS&quot;)
+grid = &quot;cylinder_d10mm_5mm.unv&quot;
+mesh_file = joinpath(grids_dir, grid)
+
+mesh = UNV2D_mesh(mesh_file, scale=0.001)
+
+mesh_dev = mesh
+# mesh_dev = adapt(CUDABackend(), mesh) # uncomment to run on GPU
+
+# Inlet conditions
+velocity = [0.5, 0.0, 0.0]
+noSlip = [0.0, 0.0, 0.0]
+nu = 1e-3
+Re = (0.2*velocity[1])/nu
+
+model = Physics(
+    time = Transient(),
+    fluid = Fluid{Incompressible}(nu = nu),
+    turbulence = RANS{Laminar}(),
+    energy = Energy{Isothermal}(),
+    domain = mesh_dev
+    )
+
+@assign! model momentum U ( 
+    Dirichlet(:inlet, velocity),
+    Neumann(:outlet, 0.0),
+    Wall(:cylinder, noSlip),
+    Neumann(:bottom, 0.0),
+    Neumann(:top, 0.0)
+)
+
+@assign! model momentum p (
+    Neumann(:inlet, 0.0),
+    Dirichlet(:outlet, 0.0),
+    Neumann(:cylinder, 0.0),
+    Neumann(:bottom, 0.0),
+    Neumann(:top, 0.0)
+)
+
+solvers = (
+    U = set_solver(
+        model.momentum.U;
+        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(),
+        convergence = 1e-7,
+        relax       = 1.0,
+        rtol = 1e-4,
+        atol = 1e-5
+    ),
+    p = set_solver(
+        model.momentum.p;
+        solver      = CgSolver, # BicgstabSolver, GmresSolver
+        preconditioner = Jacobi(), #NormDiagonal(),
+        convergence = 1e-7,
+        relax       = 0.8,
+        rtol = 1e-4,
+        atol = 1e-5
+    )
+)
+
+schemes = (
+    U = set_schemes(time=Euler, divergence=LUST, gradient=Midpoint),
+    p = set_schemes(time=Euler, gradient=Midpoint)
+)
+
+
+runtime = set_runtime(iterations=1000, write_interval=50, time_step=0.005) 
+runtime = set_runtime(iterations=1, write_interval=-1, time_step=0.005) # hide
+
+
+hardware = set_hardware(backend=CPU(), workgroup=1024)
+# hardware = set_hardware(backend=CUDABackend(), workgroup=32) # uncomment to run on GPU
+
+config = Configuration(
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+
+GC.gc(true)
+
+initialise!(model.momentum.U, velocity)
+initialise!(model.momentum.p, 0.0)
+
+residuals = run!(model, config)</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../01_2d-isothermal-backward-facing-step/">« Verification: 2D incompressible backward-facing step</a><a class="docs-footer-nextpage" href="../03_2d-constant-temperature-flat-plate/">Validation: 2D Constant temperature flat plate »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.10.1 on <span class="colophon-date" title="Wednesday 2 April 2025 01:04">Wednesday 2 April 2025</span>. Using Julia version 1.10.9.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

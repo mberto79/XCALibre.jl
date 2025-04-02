@@ -110,5 +110,5 @@ end
 # limit_gradient!(∇phi, phif, phi, config)
 
 meshData = VTKWriter2D(nothing, nothing)
-write_vtk("output", mesh, meshData, ("phi", phi), ("gradPhi", ∇phi.result))
-# write_vtk("output_qud", mesh, meshData, ("phi", phi), ("gradPhi", ∇phi.result))
+write_results("output", mesh, meshData, ("phi", phi), ("gradPhi", ∇phi.result))
+# write_results("output_qud", mesh, meshData, ("phi", phi), ("gradPhi", ∇phi.result))

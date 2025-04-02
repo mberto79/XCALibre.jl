@@ -1,37 +1,19 @@
-using Plots 
-# using ThreadPinning
 using XCALibre
-using CUDA
 
-# pinthreads(:cores)
+mesh_file = "constant/polyMesh"
+mesh = FOAM3D_mesh(mesh_file)
 
-grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-# grid = "bfs_unv_tet_4mm.unv"
-# grid = "bfs_unv_tet_5mm.unv"
-grid = "bfs_unv_tet_10mm.unv"
-mesh_file = joinpath(grids_dir, grid)
 
-mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_5mm.unv"
-# mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_4mm.unv"
-# mesh_file = "bfs_unv_tet_5mm.unv"
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024
+hardware = set_hardware(backend=backend, workgroup=workgroup)
 
-# mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
-mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
-mesh = UNV3D_mesh(mesh_file, scale=0.001)
-
-# workgroup = cld(length(mesh.cells), Threads.nthreads())
-# backend = CPU(); activate_multithread(backend)
-# backend = CPU()
-# activate_multithread1()
-workgroup = 32
-backend = CUDABackend()
-
-mesh_dev = adapt(backend, mesh)
+mesh_dev = adapt(hardware.backend, mesh)
 
 # Inlet conditions
 velocity = [0.5, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
-nu = 1e-3
+nu = 1e-5
 Re = (0.2*velocity[1])/nu
 
 model = Physics(
@@ -45,17 +27,19 @@ model = Physics(
 @assign! model momentum U ( 
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Wall(:wall, noSlip),
-    Neumann(:sides, 0.0),
-    Neumann(:top, 0.0)
+    Wall(:bottom, noSlip),
+    Neumann(:top, 0.0),
+    Neumann(:side1, 0.0),
+    Neumann(:side2, 0.0)
 )
 
 @assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
-    Wall(:wall, 0.0),
-    Neumann(:sides, 0.0),
-    Neumann(:top, 0.0)
+    Wall(:bottom, 0.0),
+    Neumann(:top, 0.0),
+    Neumann(:side1, 0.0),
+    Neumann(:side2, 0.0)
 )
 
 solvers = (
@@ -75,7 +59,7 @@ solvers = (
         # smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 0.1,
+        rtol = 0.01,
         itmax = 1000
     )
 )
@@ -85,12 +69,6 @@ schemes = (
     p = set_schemes(time=SteadyState, gradient=Midpoint)
 )
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
-
-# Run first to pre-compile
-
-runtime = set_runtime(iterations=1, write_interval=1, time_step=1)
-config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
 GC.gc(true)
 
@@ -101,7 +79,7 @@ residuals = run!(model, config)
 
 # Now get timing information
 
-runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
+runtime = set_runtime(iterations=100, write_interval=10, time_step=1)
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
 GC.gc(true)

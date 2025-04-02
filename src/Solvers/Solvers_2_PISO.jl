@@ -2,7 +2,7 @@ export piso!
 
 """
     cpiso!(model, config; 
-        pref=nothing, ncorrectors=0, inner_loops=0)
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0)
 
 Incompressible and transient variant of the SIMPLE algorithm to solving coupled momentum and mass conservation equations. 
 
@@ -10,6 +10,7 @@ Incompressible and transient variant of the SIMPLE algorithm to solving coupled 
 
 - `model` reference to a `Physics` model defined by the user.
 - `config` Configuration structure defined by the user with solvers, schemes, runtime and hardware structures configuration details.
+- `output` select the format used for simulation results from `VTK()` or `OpenFOAM` (default = `VTK()`)
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
@@ -23,10 +24,11 @@ Incompressible and transient variant of the SIMPLE algorithm to solving coupled 
 """
 function piso!(
     model, config; 
-    pref=nothing, ncorrectors=0, inner_loops=2)
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2)
 
     residuals = setup_incompressible_solvers(
         PISO, model, config; 
+        output=output,
         pref=pref,
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops
@@ -37,11 +39,11 @@ end
 
 function PISO(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    pref=nothing, ncorrectors=0, inner_loops=2
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
     )
     
     # Extract model variables and configuration
-    (; U, p) = model.momentum
+    (; U, p, Uf, pf) = model.momentum
     (; nu) = model.fluid
     mesh = model.domain
     (; solvers, schemes, runtime, hardware) = config
@@ -53,9 +55,9 @@ function PISO(
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
 
-    @info "Initialise VTKWriter (Store mesh in host memory)"
+    @info "Initialise writer (Store mesh in host memory)"
 
-    VTKMeshData = initialise_writer(model.domain)
+    outputWriter = initialise_writer(output, model.domain)
     
     @info "Allocating working memory..."
 
@@ -100,7 +102,7 @@ function PISO(
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
     @time for iteration ∈ 1:iterations
-        time = (iteration - 1)*dt
+        time = iteration *dt
 
         rx, ry, rz = solve_equation!(
             U_eqn, U, solvers.U, xdir, ydir, zdir, config; time=time)
@@ -196,7 +198,7 @@ function PISO(
         )
 
     if iteration%write_interval + signbit(write_interval) == 0
-        model2vtk(model, VTKMeshData, @sprintf "timestep_%.6d" iteration)
+        save_output(model, outputWriter, time)
     end
 
     end # end for loop

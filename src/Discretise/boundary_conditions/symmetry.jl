@@ -40,15 +40,36 @@ end
     (; area, delta, normal) = face 
     phi = term.phi 
     J = term.flux[fID]
-    # flux = 2.0*J*area/delta
-    flux = J*area/delta
+    flux = 2.0*J*area/delta
+    # flux = J*area/delta
     ap = term.sign[1]*(-flux)
 
     vc = phi[cellID]
     vn = (vc⋅normal)*normal
     vp = vc - vn
     ap, ap*vp[component.value]
+
+    # ac, an = _symmetry_normal_stress(component, vc, flux, normal)
+    # ac, an
 end
+
+# _symmetry_normal_stress(component::XDir, vc, flux, n) = begin
+#     ac = flux*n[1]^2
+#     an = -flux*n[1]*(vc[2]*n[2] + vc[3]*n[3])
+#     ac, an
+# end 
+
+# _symmetry_normal_stress(component::YDir, vc, flux, n) = begin
+#     ac = flux*n[2]^2
+#     an = -flux*n[2]*(vc[1]*n[1] + vc[3]*n[3])
+#     ac, an
+# end 
+
+# _symmetry_normal_stress(component::ZDir, vc, flux, n) = begin
+#     ac = flux*n[3]^2
+#     an = -flux*n[3]*(vc[1]*n[1] + vc[2]*n[2])
+#     ac, an
+# end 
 
 @define_boundary Symmetry Laplacian{Linear} ScalarField begin
     # For now this is hard-coded as zero-gradient. To-do extension to any input gradient

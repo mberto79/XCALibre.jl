@@ -1,6 +1,6 @@
 <meta name="google-site-verification" content="UZSnZbbvZqRUM_1_d5d9ox1IeO5z9iE8Oynt7mBjJaM" />
 
-[![][docs-stable-img]][docs-stable-url] [![][docs-dev-img]][docs-dev-url] [![][CI-img]][CI-url]
+[![][docs-stable-img]][docs-stable-url] [![][docs-dev-img]][docs-dev-url] [![][CI-img]][CI-url] [![][JOSS-img]][JOSS-url]
 
 [docs-stable-img]: https://img.shields.io/badge/docs-stable-blue.svg
 [docs-stable-url]: https://mberto79.github.io/XCALibre.jl/stable/
@@ -11,6 +11,10 @@
 [CI-img]: https://github.com/mberto79/XCALibre.jl/actions/workflows/CI.yml/badge.svg
 [CI-url]: https://github.com/mberto79/XCALibre.jl/actions/workflows/CI.yml
 
+[JOSS-img]: https://joss.theoj.org/papers/10.21105/joss.07441/status.svg
+[JOSS-url]: https://doi.org/10.21105/joss.07441
+
+
 # XCALibre.jl
 
 *XPU CFD Algorithms and libraries*
@@ -20,7 +24,12 @@
 
 XCALibre.jl (pronounced as the mythical sword *Excalibur*) is a general purpose Computational Fluid Dynamics (CFD) library for 2D and 3D simulations on structured/unstructured grids using the finite volume method. XCALibre.jl has been designed to act as a platform for developing, testing and using *XPU CFD Algorithms and Libraries* to give researchers in both academia and industry alike a tool that can be used to test out ideas easily within a framework that offers acceptable performance. To this end, XCALibre.jl has been implemented to offer both CPU multi-threaded capabilities or GPU acceleration using the same codebase (thanks to the unified programming framework provided by [KernelAbstractions.jl](https://juliagpu.github.io/KernelAbstractions.jl/stable/)). XCALibre.jl also offers a friendly API for those users who are interested in running CFD simulations with the existing solvers and models built into XCALibre.jl. 
 
+#### Large Eddy Simulation
 ![](docs/src/figures/animated_cylinder_re1000-2x.gif)
+
+#### Reynolds-Averaged Navier-Stokes Simulation
+![](docs/src/figures/F1-RANS.png)
+(mesh file downloaded from [FetchCFD](https://fetchcfd.com/view-project/136-f1-mesh-for-simulation#))
 
 ## Installation
 
@@ -92,4 +101,23 @@ There are other wonderful fluid simulation packages available in the Julia ecosy
 * [Oceananigans.jl](https://github.com/CliMA/Oceananigans.jl) 
 * [Waterlilly.jl](https://github.com/WaterLily-jl/WaterLily.jl) 
 * [Trixi.jl](https://github.com/trixi-framework/Trixi.jl)
+
+## How to Cite
+
+If you have used XCALibre.jl in your work, please cite it using the reference below:
+
+```
+@article{Medina2025, 
+  author = {Humberto Medina and Christopher D. Ellis and Tom Mazin and Oscar Osborn and Timothy Ward and Stephen Ambrose and Svetlana Aleksandrova and Benjamin Rothwell and Carol Eastwick}, 
+  title = {XCALibre.jl: A Julia XPU unstructured finite volume Computational Fluid Dynamics library}, 
+  journal = {Journal of Open Source Software},
+  publisher = {The Open Journal}, 
+  volume = {10}, 
+  number = {107}, 
+  pages = {7441}, 
+  year = {2025}, 
+  doi = {10.21105/joss.07441}, 
+  url = {https://doi.org/10.21105/joss.07441}
+}
+```
   

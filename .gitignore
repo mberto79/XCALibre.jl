@@ -10,3 +10,6 @@ unv_sample_meshes/*
 *.vtk
 *.vtu
 *.pb.gz
+*.foam
+[0-9]*/
+constant/

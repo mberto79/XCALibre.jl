@@ -17,7 +17,7 @@ include("ModelFramework/ModelFramework.jl")
 include("Discretise/Discretise.jl")
 include("Solve/Solve.jl")
 include("Calculate/Calculate.jl")
-include("VTK/VTK.jl")
+include("IOFormats/IOFormats.jl")
 include("ModelPhysics/ModelPhysics.jl")
 include("Simulate/Simulate.jl")
 include("Solvers/Solvers.jl")
@@ -37,7 +37,7 @@ using Reexport
 @reexport using XCALibre.Simulate
 @reexport using XCALibre.Solvers
 @reexport using XCALibre.Postprocess
-@reexport using XCALibre.VTK
+@reexport using XCALibre.IOFormats
 @reexport using XCALibre.UNV3
 @reexport using XCALibre.UNV2
 @reexport using XCALibre.BlockMesher2D

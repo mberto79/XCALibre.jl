@@ -44,7 +44,7 @@ XCALibre.ModelPhysics | This module includes the implementations of all the phys
 XCALibre.Simulate | This model contains information needed to set up a simulation, including the [`Configuration`](@ref) type used by all flow solvers. |
 XCALibre.Solvers | Implementations of the SIMPLE and PISO flow solvers from steady and unsteady solutions, including their compressible variant. |
 XCALibre.Postprocess | A limited set of functions for postprocessing are implemented in this module.  |
-XCALibre.VTK | Functions to write 2D (`.vtk`) and 3D (`.vtu`) simulation results compatible with ParaView for postprocessing are implemented in this module. |
+XCALibre.IOFormats | Functionality to write simulation results to VTK or OpenFOAM output files are implemented in this module. |
 XCALibre.FoamMesh | Stand alone module to parse, process (geometry calculation) and import OpenFOAM mesh files into XCALibre.jl |
 XCALibre.UNV3 | Stand alone module to parse, process (geometry calculation) and import UNV (3D) mesh files into XCALibre.jl |
 XCALibre.UNV2 | Stand alone module to parse, process (geometry calculation) and import UNV (2D) mesh files into XCALibre.jl |

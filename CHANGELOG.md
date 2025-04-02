@@ -3,17 +3,22 @@
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v0.3.1` breaking changes will be recorded here. 
 
-## Version [v0.4.2] - 2025-xx-xx
+## Version [v0.4.2] - 2025-04-02
 
 ### Added
 * A very simple 2D block mesh generator has been added (not ready for general use as it needs to be documented)[#41](@ref)
 * Implementation of `Wall` boundary conditions specialised for `ScalarField` [#45](@ref)
+* Simulation results can now be written to `VTK` and `OpenFOAM` formats. The format can be selected using the `output` keyword argument in the `run!` function. The formats available are `VTK()` and `OpenFOAM()` [#47](@ref)
 
 ### Fixed
 * Fixed the implementation for the calculation of the wall distance [#45](@ref)
 
 ### Changed
-* In preperaton for hybrid models, added a reference to the turbulence object within the turbulence model object to allow for more general calling of `turbulence!`. This changes the implementation of `turbulence!` slightly [#46](@ref)
+* In preparation for hybrid RANS/LES models, the object `Turbulence` is now passed to the `TurbulenceModel` object to allow for a more general call of `turbulence!`. This changes the implementation of `turbulence!` for all models slightly [#46](@ref)
+* Improved stability on meshes with warped faces by changing how face normals are calculated. XCALibre now uses an area-weighted face normal calculation based on the decomposition of faces into triangles [#47](@ref)
+* Removed `VTK` module and moved functionality to a new `IOFormats` module [#47](@ref)
+* Internally the function `model2vtk` has been replaced with `save_output` within all solvers. The specialisation for writing `ModelPhysics` models to file has also changed to `save_output`. The arguements pass to this function have also changed, the `name` of the file is not passed to the function, instead, the current runtime variable `time` is required [#47](@ref)
+* The `Momentum` object, part of the `ModelPhysics` object, now includes the `FaceScalarField` and `FaveVectorField` in addition to existing fields in preparation for non-uniform boundary definition when using the `OpenFOAM` output format [#47](@ref)
 
 ### Breaking
 * No breaking changes

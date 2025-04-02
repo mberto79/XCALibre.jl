@@ -35,7 +35,7 @@ XCALibre.jl uses its own mesh format to allow the geometry and boundary informat
 
 !!! note
 
-    Although the mesh conversion tools for the OpenFOAM format can import grids designed for 2D simulations, it is not recommended to use OpenFOAM grids for 2D cases (at present, support for 2D OpenFOAM grids in progress). Instead, use a 2D grid generated in the .unv format. Also for 2D grids some requirements must be met when defining the geometry (see [Mesh generation and requirements](@ref))
+    Although the mesh conversion tools for the OpenFOAM format can import grids designed for 2D simulations, it is not possible to use OpenFOAM grids for 2D cases (at present, support for 2D OpenFOAM grids is in progress). Instead, use a 2D grid generated in the .unv format. Also for 2D grids some requirements must be met when defining the geometry (see [Mesh generation and requirements](@ref))
 
 ### Solvers
 XCALibre.jl ships with fluid solvers for steady and transient simulations, based on the SIMPLE and PISO algorithms. Currently, the following flow solvers are provided:
@@ -91,7 +91,7 @@ U_eqn = (
 
 ### Capabilities, solvers, algorithms, models, etc.
 * Solver for highly compressible flows (including shockwaves)
-* Implement multithreaded sparse-matrix multiply for better multithreaded performance
+* Implement multithreaded sparse-matrix multiply for better multithreaded performance (done in v0.3.3)
 * Conjugate heat transfer
 * ``k-\epsilon`` turbulence model
 * Implement parallel versions of more efficient preconditioners

@@ -55,8 +55,6 @@ function PISO(
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
 
-    @info "Initialise writer (Store mesh in host memory)"
-
     outputWriter = initialise_writer(output, model.domain)
     
     @info "Allocating working memory..."

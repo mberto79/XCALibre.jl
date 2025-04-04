@@ -143,8 +143,6 @@ function CSIMPLE(
         pconv = get_flux(p_eqn, 2)
     end
 
-    @info "Initialise writer (Store mesh in host memory)"
-
     outputWriter = initialise_writer(output, model.domain)
     
     @info "Allocating working memory..."

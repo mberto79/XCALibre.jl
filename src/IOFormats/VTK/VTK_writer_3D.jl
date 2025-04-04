@@ -14,6 +14,7 @@ segment(p1, p2) = p2 - p1
 unit_vector(vec) = vec/norm(vec)
 
 function initialise_writer(format::VTK, mesh::Mesh3)
+    @info "Initialise writer (Store mesh in host memory)"
     # Extract mesh information (copy to CPU if mesh in GPU format)
     backend = _get_backend(mesh)
     nodes_cpu = get_data(mesh.nodes, backend)

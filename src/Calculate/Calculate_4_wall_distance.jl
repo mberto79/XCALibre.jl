@@ -32,7 +32,7 @@ function wall_distance!(model, config)
     grad!(phiGrad, phif, phi, phi.BCs, zero(TF), config) # assuming time=0
 
     n_cells = length(mesh.cells)
-    prev = zeros(TF, n_cells)
+    prev = similar(phi.values)
     # R_phi = ones(TF, iterations)
 
     iterations = 1000

@@ -1,5 +1,5 @@
 using XCALibre
-# using CUDA
+using CUDA
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 # mesh_file = "unv_sample_meshes/flatplate_transition.unv"
@@ -12,8 +12,8 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=1024)
+hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+# hardware = set_hardware(backend=CPU(), workgroup=1024)
 
 mesh_dev = adapt(hardware.backend, mesh)
 
@@ -34,7 +34,7 @@ model = Physics(
     fluid = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{KOmegaLKE}(Tu = 0.01, walls=(:wall,)),
     energy = Energy{Isothermal}(),
-    domain = mesh
+    domain = mesh_dev
     )
 
 @assign! model momentum U (
@@ -93,11 +93,11 @@ model = Physics(
 
 schemes = (
     U = set_schemes(divergence=LUST),
-    p = set_schemes(divergence=Upwind),
-    k = set_schemes(divergence=Upwind),
+    p = set_schemes(divergence=LUST),
+    k = set_schemes(divergence=LUST),
     y = set_schemes(gradient=Midpoint),
-    kl = set_schemes(divergence=Upwind,gradient=Midpoint),
-    omega = set_schemes(divergence=Upwind)
+    kl = set_schemes(divergence=LUST),
+    omega = set_schemes(divergence=LUST)
 )
 
 
@@ -153,7 +153,7 @@ solvers = (
 )
 
 runtime = set_runtime(
-    iterations=20, write_interval=20, time_step=1)
+    iterations=1000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
@@ -169,7 +169,6 @@ initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
 residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
 
-using Plots
 
 let
     p = plot(; xlims=(0,runtime.iterations), ylims=(1e-10,0))
@@ -181,12 +180,14 @@ end
 
 using DelimitedFiles
 using LinearAlgebra
-
+using Plots 
 # OF_data = readdlm("flatplate_OF_wall_kOmega_lowRe.csv", ',', Float64, skipstart=1)
 # oRex = OF_data[:,7].*velocity[1]./nu[1]
 # oCf = sqrt.(OF_data[:,12].^2 + OF_data[:,13].^2)/(0.5*velocity[1]^2)
 
-tauw, pos = wall_shear_stress(:wall, model)
+model_cpu = adapt(CPU(), model)
+
+tauw, pos = wall_shear_stress(:wall, model_cpu)
 tauMag = [norm(tauw[i]) for i ∈ eachindex(tauw)]
 tauMag = [tauw.x[i] for i ∈ eachindex(tauw)]
 x = [pos[i][1] for i ∈ eachindex(pos)]

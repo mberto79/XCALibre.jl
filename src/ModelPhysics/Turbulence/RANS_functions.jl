@@ -285,7 +285,7 @@ end
     (; k, nut) = turbulence
 
     # Uw = SVector{3}(0.0,0.0,0.0)
-    Uw = momentum.U.BCs[BC.ID].value
+    Uw = U.BCs[BC.ID].value
     cID = boundary_cellsID[fID]
     face = faces[fID]
     nuc = nu[cID]

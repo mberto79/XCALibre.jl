@@ -43,6 +43,7 @@ end
     ap = term.sign[1]*(-flux)
     
     vb = SVector{3}(0.0,0.0,0.0) # do not hard-code in next version
+    # vb = phi.BCs[bc.ID].value # this doesn't work on GPU - structure needs sorting!
     vc = phi[cellID]
     vc_n = (vc⋅normal)*normal
     vb_n = (vb⋅normal)*normal

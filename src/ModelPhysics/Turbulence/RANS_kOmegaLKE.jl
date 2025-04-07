@@ -96,8 +96,9 @@ end
     # Allocate wall distance "y" and setup boundary conditions
     y = ScalarField(mesh)
     walls = rans.args.walls
+    boundaries_cpu = get_boundaries(mesh.boundaries)
     BCs = []
-    for boundary ∈ mesh.boundaries
+    for boundary ∈ boundaries_cpu
         for namedwall ∈ walls
             if boundary.name == namedwall
                 push!(BCs, Dirichlet(boundary.name, 0.0))

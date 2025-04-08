@@ -64,7 +64,7 @@ end
 end
 
 function magnitude2!(
-    magS::ScalarField, S::AbstractTensorField, config; scale_factor=1.0
+    magS, S, config; scale_factor=1.0
     )
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -91,5 +91,26 @@ end
             end
         end
         magS.values[i] = sum*scale_factor
+    end
+end
+
+@kernel function _magnitude2!(
+    magS::ScalarField, S::AbstractVectorField, scale_factor
+    )
+    i = @index(Global)
+
+    @uniform values = magS.values
+
+    @inbounds begin
+        # sum = 0.0
+        Si = S[i]
+        # for j ∈ 1:3
+        #     for k ∈ 1:3
+                # sum +=   Sjk[j,k]*Sjk[j,k]
+                res =   Si⋅Si
+        #     end
+        # end
+        # magS.values[i] = sum*scale_factor
+        magS.values[i] = sum*res
     end
 end

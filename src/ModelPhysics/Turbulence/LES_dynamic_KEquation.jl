@@ -88,7 +88,7 @@ function initialise(
     Dkf = FaceScalarField(mesh)
 
     delta!(Δ, mesh, config)
-    # @. Δ.values = Δ.values^2 # store delta squared since it will be needed
+    @. Δ.values = Δ.values^2 # store delta squared since it will be needed
 
     k_eqn = (
             Time{schemes.k.time}(rho, k)
@@ -133,6 +133,7 @@ function turbulence!(
 
     (; rho, rhof, nu, nuf) = model.fluid
     (; nut, nutf, coeffs) = les.turbulence
+    (; k_eqn, state) = les
     (; U, Uf, gradU) = S
     (; Δ, magS) = les
 
@@ -148,6 +149,24 @@ function turbulence!(
     @. Pk.values = rho.values*nut.values*Pk.values # corrects Pk to become actual production
     @. mueffk.values = rhof.values * (nuf.values + nutf.values)
 
+    magnitude2!(magS, U, config)
+    Uhat = ScalarField(model.domain)
+    filter!(Uhat, U, Uf, time, config)
+
+    # from Smagorinsky to get solution during prototyping
+    magnitude!(magS, S, config)
+    @. magS.values *= sqrt(2) # should fuse into definition of magnitude function!
+
+    # # Solve k equation
+    # # prev .= k.values
+    # discretise!(k_eqn, k, config)
+    # apply_boundary_conditions!(k_eqn, k.BCs, nothing, time, config)
+    # # implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
+    # implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
+    # update_preconditioner!(k_eqn.preconditioner, mesh, config)
+    # k_res = solve_system!(k_eqn, solvers.k, k, nothing, config)
+    # bound!(k, config)
+    # # explicit_relaxation!(k, prev, solvers.k.relax, config)
 
     # update eddy viscosity 
     @. nut.values = coeffs.C*Δ.values*magS.values # careful: here Δ = Δ²
@@ -155,6 +174,11 @@ function turbulence!(
     interpolate!(nutf, nut, config)
     correct_boundaries!(nutf, nut, nut.BCs, time, config)
     correct_eddy_viscosity!(nutf, nut.BCs, model, config)
+
+    # update solver state
+    # state.residuals = ((:k , k_res),)
+    # state.converged = k_res < solvers.k.convergence
+    nothing
 end
 
 # Specialise VTK writer
@@ -180,6 +204,54 @@ function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration
 end
 
 # KEquation - internal functions
+
+function filter(phiFiltered, phi, phif, time, config)
+    interpolate!(phif, phi, config)   
+    correct_boundaries!(phif, phi, phi.BCs, time, config)
+    integrate_surface!(phiFiltered, phif)
+end
+
+function integrate_surface!(phiFiltered, phif, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    (; x, y, z) = grad.result
+    
+    # # Launch result calculation kernel
+    kernel! = _integrate_surface!(backend, workgroup)
+    kernel!(phiFiltered, phif, ndrange=length(x))
+
+    # # number of boundary faces
+    # nbfaces = length(phif.mesh.boundary_cellsID)
+    
+    # kernel! = boundary_faces_contribution!(backend, workgroup)
+    # kernel!(x, y, z, phif, ndrange=nbfaces)
+end
+
+@kernel function _integrate_surface!(phiFiltered, phif)
+    i = @index(Global)
+
+    @uniform begin
+        (; mesh, values) = phif
+        (; faces, cells, cell_faces, cell_nsign) = mesh
+    end
+     
+    @inbounds begin
+        (; volume, faces_range) = cells[i]
+
+        areaSum = 0.0
+        surfaceSum = 0.0
+        for fi ∈ faces_range
+            fID = cell_faces[fi]
+            (; area) = faces[fID]
+            surfaceSum += values[fID]*area
+            areaSum += area
+        end
+        res = surfaceSum/areaSum
+
+        phiFiltered[i] = res
+    end
+end
 
 function Ck(D, KK)
     nothing

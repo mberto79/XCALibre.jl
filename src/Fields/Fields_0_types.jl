@@ -244,7 +244,7 @@ struct StrainRate{G, GT, TU, TUF} <: AbstractTensorField
 end
 Adapt.@adapt_structure StrainRate
 
-Base.getindex(S::StrainRate{G,GT}, i::I) where {G,GT,I<:Integer} = begin
+Base.getindex(S::StrainRate{G, GT, TU, TUF}, i::I) where {G, GT, TU, TUF, I<:Integer} = begin
     0.5.*(S.gradU[i] .+ S.gradUT[i])
 end
 

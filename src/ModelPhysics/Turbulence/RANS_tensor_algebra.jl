@@ -46,7 +46,7 @@ function magnitude!(magS::ScalarField, S, config)
 end
 
 # @kernel function _magnitude!(magS::ScalarField, S::AbstractVectorField)
-@kernel function _magnitude!(magS::ScalarField, S)
+@kernel function _magnitude!(magS::AbstractScalarField, S)
     i = @index(Global)
     @uniform values = magS.values
     
@@ -95,7 +95,7 @@ end
 end
 
 @kernel function _magnitude2!(
-    magS::ScalarField, S::AbstractVectorField, scale_factor
+    magS::AbstractScalarField, S::AbstractVectorField, scale_factor
     )
     i = @index(Global)
 
@@ -114,3 +114,5 @@ end
         magS.values[i] = res
     end
 end
+
+deviatoric(T) = @. T - 1/3*tr(T)*I

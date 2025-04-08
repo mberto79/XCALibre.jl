@@ -132,7 +132,7 @@ function turbulence!(
     ) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
     (; rho, rhof, nu, nuf) = model.fluid
-    (; nut, nutf, coeffs) = les.turbulence
+    (; k, kf, nut, nutf, coeffs) = les.turbulence
     (; keqn, state) = les
     (; U, Uf, gradU) = S
     (; Δ, magS) = les
@@ -149,9 +149,23 @@ function turbulence!(
     @. Pk.values = rho.values*nut.values*Pk.values # corrects Pk to become actual production
     @. mueffk.values = rhof.values * (nuf.values + nutf.values)
 
-    magnitude2!(magS, U, config)
-    Uhat = ScalarField(model.domain)
+    Umag2 = ScalarField(model.domain)
+    Umag2f = FaceScalarField(model.domain)
+    Umag2hat = ScalarField(model.domain)
+    magnitude2!(Umag2, U, config)
+    magnitude2!(Umag2f, Uf, config)
+    basic_filter!(Umag2hat, Umag2, Umag2f, time, config)
+
+    Uhat = VectorField(model.domain)
+    Uhat2 = ScalarField(model.domain)
     basic_filter!(Uhat, U, Uf, time, config)
+    magnitude2!(Uhat2, Uhat, config)
+
+    KK = ScalarField(model.domain)
+    @. KK.values = 0.5*(Umag2hat.values - Uhat2.values)
+    @. k.values = KK.values
+
+    devUgrad = TensorField(model.domain)
 
     # from Smagorinsky to get solution during prototyping
     magnitude!(magS, S, config)
@@ -228,7 +242,35 @@ function integrate_surface!(phiFiltered, phif, config)
     # kernel!(x, y, z, phif, ndrange=nbfaces)
 end
 
-@kernel function _integrate_surface!(phiFiltered, phif)
+@kernel function _integrate_surface!(phiFiltered, phif::FaceScalarField)
+    i = @index(Global)
+
+    @uniform begin
+        # (; mesh, values) = phif
+        (; mesh) = phif
+        (; faces, cells, cell_faces, cell_nsign) = mesh
+    end
+     
+    @inbounds begin
+        (; volume, faces_range) = cells[i]
+
+        areaSum = 0.0
+        # surfaceSum = SVector{3}(0.0,0.0,0.0)
+        surfaceSum = 0.0
+        for fi ∈ faces_range
+            fID = cell_faces[fi]
+            (; area) = faces[fID]
+            # surfaceSum += values[fID]*area
+            surfaceSum += phif[fID]*area
+            areaSum += area
+        end
+        res = surfaceSum/areaSum
+
+        phiFiltered[i] = res
+    end
+end
+
+@kernel function _integrate_surface!(phiFiltered, phif::FaceVectorField)
     i = @index(Global)
 
     @uniform begin
@@ -242,7 +284,7 @@ end
 
         areaSum = 0.0
         surfaceSum = SVector{3}(0.0,0.0,0.0)
-        println(typeof(surfaceSum))
+        # surfaceSum = 0.0
         for fi ∈ faces_range
             fID = cell_faces[fi]
             (; area) = faces[fID]

@@ -27,7 +27,7 @@ _build_A(backend::BACKEND, i, j, v, n) = begin
     SPARSEGPU(A)
 end
 
-_build_opA(A::SPARSEGPU) = KP.KrylovOperator(A)
+_build_opA(A::SPARSEGPU) = A # KP.KrylovOperator(A)
 @inline _nzval(A::SPARSEGPU) = A.nzVal
 @inline _rowptr(A::SPARSEGPU) = A.rowPtr
 @inline _colval(A::SPARSEGPU) = A.colVal

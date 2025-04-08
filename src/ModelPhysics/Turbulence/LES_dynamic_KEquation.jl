@@ -12,9 +12,11 @@ KEquation LES model containing all Smagorinksy field parameters.
 - `coeffs` -- Model coefficients.
 
 """
-struct KEquation{S1,S2,C} <: AbstractLESModel
+struct KEquation{S1,S2,S3,S4,C} <: AbstractLESModel
     nut::S1
     nutf::S2
+    k::S3
+    kf::S4
     coeffs::C #I know there is only one coefficient for LES but this makes the DES implementation easier
 end
 Adapt.@adapt_structure KEquation
@@ -39,8 +41,10 @@ end
 (les::LES{KEquation, ARG})(mesh) where ARG = begin
     nut = ScalarField(mesh)
     nutf = FaceScalarField(mesh)
+    k = ScalarField(mesh)
+    kf = FaceScalarField(mesh)
     coeffs = les.args
-    KEquation(nut, nutf, coeffs)
+    KEquation(nut, nutf, k, kf, coeffs)
 end
 
 # Model initialisation
@@ -73,9 +77,15 @@ function initialise(
 
     (; solvers, schemes, runtime) = config
     mesh = model.domain
+    (; k, nut) = turbulence
+    (; rho) = model.fluid
+    eqn = peqn.equation
     
     magS = ScalarField(mesh)
     Δ = ScalarField(mesh)
+    Pk = ScalarField(mesh)
+    mueffk = FaceScalarField(mesh)
+    Dkf = FaceScalarField(mesh)
 
     delta!(Δ, mesh, config)
     # @. Δ.values = Δ.values^2 # store delta squared since it will be needed
@@ -94,7 +104,7 @@ function initialise(
         turbulence, 
         Δ, 
         magS, 
-        keqn,
+        k_eqn,
         ModelState((), false)
     )
 end
@@ -121,16 +131,23 @@ function turbulence!(
     les::KEquationModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
     ) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
-    mesh = model.domain
-    
+    (; rho, rhof, nu, nuf) = model.fluid
     (; nut, nutf, coeffs) = les.turbulence
     (; U, Uf, gradU) = S
     (; Δ, magS) = les
 
-    grad!(gradU, Uf, U, U.BCs, time, config) # update gradient (internal structure of S)
+    Pk = get_source(k_eqn, 1)
+    mueffk = get_flux(k_eqn, 3)
+    Dkf = get_flux(k_eqn, 4)
+
+    grad!(gradU, Uf, U, U.BCs, time, config)
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
-    magnitude!(magS, S, config)
-    @. magS.values *= sqrt(2) # should fuse into definition of magnitude function!
+    magnitude2!(Pk, S, config, scale_factor=2.0) # mag2 written to Pk
+
+    # update fluxes 
+    @. Pk.values = rho.values*nut.values*Pk.values # corrects Pk to become actual production
+    @. mueffk.values = rhof.values * (nuf.values + nutf.values)
+    
 
     # update eddy viscosity 
     @. nut.values = coeffs.C*Δ.values*magS.values # careful: here Δ = Δ²

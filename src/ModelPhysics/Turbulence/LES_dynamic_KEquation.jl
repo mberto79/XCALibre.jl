@@ -147,7 +147,7 @@ function turbulence!(
     # update fluxes 
     @. Pk.values = rho.values*nut.values*Pk.values # corrects Pk to become actual production
     @. mueffk.values = rhof.values * (nuf.values + nutf.values)
-    
+
 
     # update eddy viscosity 
     @. nut.values = coeffs.C*Δ.values*magS.values # careful: here Δ = Δ²
@@ -160,11 +160,22 @@ end
 # Specialise VTK writer
 function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration
     ) where {T,F,M,Tu<:KEquation,E,D,BI}
-    args = (
-        ("U", model.momentum.U), 
-        ("p", model.momentum.p),
-        ("nut", model.turbulence.nut)
-    )
+    if typeof(model.fluid)<:AbstractCompressible
+        args = (
+            ("U", model.momentum.U), 
+            ("p", model.momentum.p),
+            ("k", model.turbulence.k),
+            ("nut", model.turbulence.nut),
+            ("T", model.energy.T)
+        )
+    else
+        args = (
+            ("U", model.momentum.U), 
+            ("p", model.momentum.p),
+            ("k", model.turbulence.k),
+            ("nut", model.turbulence.nut)
+        )
+    end
     write_results(iteration, model.domain, outputWriter, args...)
 end
 

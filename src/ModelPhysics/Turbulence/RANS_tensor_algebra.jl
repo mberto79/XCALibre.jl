@@ -111,6 +111,6 @@ end
         #     end
         # end
         # magS.values[i] = sum*scale_factor
-        magS.values[i] = sum*res
+        magS.values[i] = res
     end
 end

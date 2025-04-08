@@ -133,13 +133,13 @@ function turbulence!(
 
     (; rho, rhof, nu, nuf) = model.fluid
     (; nut, nutf, coeffs) = les.turbulence
-    (; k_eqn, state) = les
+    (; keqn, state) = les
     (; U, Uf, gradU) = S
     (; Δ, magS) = les
 
-    Pk = get_source(k_eqn, 1)
-    mueffk = get_flux(k_eqn, 3)
-    Dkf = get_flux(k_eqn, 4)
+    Pk = get_source(keqn, 1)
+    mueffk = get_flux(keqn, 3)
+    Dkf = get_flux(keqn, 4)
 
     grad!(gradU, Uf, U, U.BCs, time, config)
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
@@ -151,7 +151,7 @@ function turbulence!(
 
     magnitude2!(magS, U, config)
     Uhat = ScalarField(model.domain)
-    filter!(Uhat, U, Uf, time, config)
+    basic_filter!(Uhat, U, Uf, time, config)
 
     # from Smagorinsky to get solution during prototyping
     magnitude!(magS, S, config)
@@ -205,21 +205,21 @@ end
 
 # KEquation - internal functions
 
-function filter(phiFiltered, phi, phif, time, config)
+function basic_filter!(phiFiltered, phi, phif, time, config)
     interpolate!(phif, phi, config)   
     correct_boundaries!(phif, phi, phi.BCs, time, config)
-    integrate_surface!(phiFiltered, phif)
+    integrate_surface!(phiFiltered, phif, config)
 end
 
 function integrate_surface!(phiFiltered, phif, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    (; x, y, z) = grad.result
+    # (; x, y, z) = grad.result
     
     # # Launch result calculation kernel
     kernel! = _integrate_surface!(backend, workgroup)
-    kernel!(phiFiltered, phif, ndrange=length(x))
+    kernel!(phiFiltered, phif, ndrange=length(phiFiltered))
 
     # # number of boundary faces
     # nbfaces = length(phif.mesh.boundary_cellsID)
@@ -232,7 +232,8 @@ end
     i = @index(Global)
 
     @uniform begin
-        (; mesh, values) = phif
+        # (; mesh, values) = phif
+        (; mesh) = phif
         (; faces, cells, cell_faces, cell_nsign) = mesh
     end
      
@@ -240,11 +241,13 @@ end
         (; volume, faces_range) = cells[i]
 
         areaSum = 0.0
-        surfaceSum = 0.0
+        surfaceSum = SVector{3}(0.0,0.0,0.0)
+        println(typeof(surfaceSum))
         for fi ∈ faces_range
             fID = cell_faces[fi]
             (; area) = faces[fID]
-            surfaceSum += values[fID]*area
+            # surfaceSum += values[fID]*area
+            surfaceSum += phif[fID]*area
             areaSum += area
         end
         res = surfaceSum/areaSum

@@ -25,7 +25,7 @@ struct KEquationModel{T,D,S1,S2, E1}
     turbulence::T
     Δ::D 
     magS::S1
-    keqn::E1
+    k_eqn::E1
     state::S2
 end
 Adapt.@adapt_structure KEquationModel
@@ -85,7 +85,7 @@ function initialise(
     Δ = ScalarField(mesh)
     Pk = ScalarField(mesh)
     mueffk = FaceScalarField(mesh)
-    Dkf = FaceScalarField(mesh)
+    Dkf = ScalarField(mesh)
 
     delta!(Δ, mesh, config)
     @. Δ.values = Δ.values^2 # store delta squared since it will be needed
@@ -99,6 +99,11 @@ function initialise(
             ==
             Source(Pk)
         ) → eqn
+
+    @reset k_eqn.preconditioner = set_preconditioner(
+        solvers.k.preconditioner, k_eqn, k.BCs, config)
+
+    @reset k_eqn.solver = solvers.k.solver(_A(k_eqn), _b(k_eqn))
     
     return KEquationModel(
         turbulence, 
@@ -131,15 +136,17 @@ function turbulence!(
     les::KEquationModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
     ) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
+    mesh = model.domain
+    (; solvers, runtime) = config
     (; rho, rhof, nu, nuf) = model.fluid
     (; k, kf, nut, nutf, coeffs) = les.turbulence
-    (; keqn, state) = les
+    (; k_eqn, state) = les
     (; U, Uf, gradU) = S
     (; Δ, magS) = les
 
-    Pk = get_source(keqn, 1)
-    mueffk = get_flux(keqn, 3)
-    Dkf = get_flux(keqn, 4)
+    Pk = get_source(k_eqn, 1)
+    mueffk = get_flux(k_eqn, 3)
+    Dkf = get_flux(k_eqn, 4)
 
     grad!(gradU, Uf, U, U.BCs, time, config)
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
@@ -150,40 +157,104 @@ function turbulence!(
     @. mueffk.values = rhof.values * (nuf.values + nutf.values)
 
     Umag2 = ScalarField(model.domain)
-    Umag2f = FaceScalarField(model.domain)
+    # Umag2f = FaceScalarField(model.domain)
     Umag2hat = ScalarField(model.domain)
     magnitude2!(Umag2, U, config)
-    magnitude2!(Umag2f, Uf, config)
-    basic_filter!(Umag2hat, Umag2, Umag2f, time, config)
+    # magnitude2!(Umag2f, Uf, config)
+    # basic_filter!(Umag2hat, Umag2, Umag2f, time, config)
+    basic_filter!(Umag2hat, Umag2, config)
 
     Uhat = VectorField(model.domain)
     Uhat2 = ScalarField(model.domain)
-    basic_filter!(Uhat, U, Uf, time, config)
+    basic_filter!(Uhat, U, config)
     magnitude2!(Uhat2, Uhat, config)
 
     KK = ScalarField(model.domain)
-    @. KK.values = 0.5*(Umag2hat.values - Uhat2.values)
-    @. k.values = KK.values
+    @. KK.values = max(0.5*(Umag2hat.values - Uhat2.values), 1e-15)
+    @. k.values = KK.values # maybe need to add max to limit to positive numbers?
 
-    devUgrad = TensorField(model.domain)
+
+    mag2D = ScalarField(model.domain)
+    magnitude2!(mag2D, Dev(S), config)
+    mag2DF = ScalarField(model.domain)
+    basic_filter!(mag2DF, mag2D, config)
+
+
+    DevF = TensorField(model.domain)
+    basic_filter!(DevF, Dev(S), config)
+    DevF2 = ScalarField(model.domain)
+    magnitude2!(DevF2, DevF, config)
+
+    temp = ScalarField(model.domain)
+    numerator = ScalarField(model.domain)
+    denominator = ScalarField(model.domain)
+    @. temp.values = (nu.values + nut.values)*(mag2DF.values - DevF2.values)
+    basic_filter!(numerator, temp, config)
+    @. temp.values = KK.values^(1.5)/(2.0*Δ.values)
+    basic_filter!(denominator, temp, config)
+    @. temp.values = numerator.values/denominator.values
+    @. temp.values = 0.5*(norm(temp.values) + temp.values) # Ce
+
+    # The fun part of dealing with tensors LL and MM 
+    U2F = TensorField(model.domain)
+    basic_filter!(U2F, Sqr(U), config)
+
+    UhatSqr = TensorField(model.domain)
+    # @. UhatSqr = Sqr(Uhat) # this form of algebra not implemented yet, but would be nice!
+    square!(UhatSqr, Uhat, config)
+
+    T_temp = TensorField(model.domain)
+    @. T_temp.xx.values = U2F.xx.values - UhatSqr.xx.values
+    @. T_temp.xy.values = U2F.xy.values - UhatSqr.xy.values
+    @. T_temp.xz.values = U2F.xz.values - UhatSqr.xz.values
+    @. T_temp.yy.values = U2F.yy.values - UhatSqr.yy.values
+    @. T_temp.yx.values = U2F.yx.values - UhatSqr.yx.values
+    @. T_temp.yz.values = U2F.yz.values - UhatSqr.yz.values
+    @. T_temp.zz.values = U2F.zz.values - UhatSqr.zz.values
+    @. T_temp.zx.values = U2F.zx.values - UhatSqr.zx.values
+    @. T_temp.zy.values = U2F.zy.values - UhatSqr.zy.values
+
+    LL = TensorField(model.domain)
+    basic_filter!(LL, Dev(T_temp), config)
+    
+    MM = TensorField(model.domain)
+    MMi!(T_temp, KK,Δ, DevF, config)
+    basic_filter!(MM, T_temp, config)
+
+    S1_temp = ScalarField(model.domain)
+    S2_temp = ScalarField(model.domain)
+    LLMM!(S1_temp, LL, MM, config)
+    basic_filter!(S2_temp, S1_temp, config)
+    
+    
+    MM2 = ScalarField(model.domain)
+    MM2F = ScalarField(model.domain)
+    magnitude2!(MM2, MM, config)
+    basic_filter!(MM2F, MM2, config)
+    
+    Ck = ScalarField(model.domain)
+    Ck!(Ck, S2_temp, MM2F, config)
+
+    @. Dkf.values = temp.values*rho.values*sqrt(k.values)/(Δ.values*k.values)
+
+    # Solve k equation
+    # prev .= k.values
+    discretise!(k_eqn, k, config)
+    apply_boundary_conditions!(k_eqn, k.BCs, nothing, time, config)
+    # implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
+    implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
+    update_preconditioner!(k_eqn.preconditioner, mesh, config)
+    k_res = solve_system!(k_eqn, solvers.k, k, nothing, config)
+    bound!(k, config)
+    # explicit_relaxation!(k, prev, solvers.k.relax, config)
 
     # from Smagorinsky to get solution during prototyping
-    magnitude!(magS, S, config)
-    @. magS.values *= sqrt(2) # should fuse into definition of magnitude function!
+    # magnitude!(magS, S, config)
+    # @. magS.values *= sqrt(2) # should fuse into definition of magnitude function!
+    # @. nut.values = coeffs.C*Δ.values*magS.values # careful: here Δ = Δ²
 
-    # # Solve k equation
-    # # prev .= k.values
-    # discretise!(k_eqn, k, config)
-    # apply_boundary_conditions!(k_eqn, k.BCs, nothing, time, config)
-    # # implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
-    # implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
-    # update_preconditioner!(k_eqn.preconditioner, mesh, config)
-    # k_res = solve_system!(k_eqn, solvers.k, k, nothing, config)
-    # bound!(k, config)
-    # # explicit_relaxation!(k, prev, solvers.k.relax, config)
-
-    # update eddy viscosity 
-    @. nut.values = coeffs.C*Δ.values*magS.values # careful: here Δ = Δ²
+    @. nut.values = Ck.values*Δ.values*sqrt(k.values)
+    # this->nut_ = Ck(D, KK)*sqrt(k_)*this->delta()
 
     interpolate!(nutf, nut, config)
     correct_boundaries!(nutf, nut, nut.BCs, time, config)
@@ -219,87 +290,56 @@ end
 
 # KEquation - internal functions
 
-function basic_filter!(phiFiltered, phi, phif, time, config)
-    interpolate!(phif, phi, config)   
-    correct_boundaries!(phif, phi, phi.BCs, time, config)
-    integrate_surface!(phiFiltered, phif, config)
-end
-
-function integrate_surface!(phiFiltered, phif, config)
+function MMi!(MM, KK,Δ, DevF, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    # (; x, y, z) = grad.result
-    
     # # Launch result calculation kernel
-    kernel! = _integrate_surface!(backend, workgroup)
-    kernel!(phiFiltered, phif, ndrange=length(phiFiltered))
-
-    # # number of boundary faces
-    # nbfaces = length(phif.mesh.boundary_cellsID)
-    
-    # kernel! = boundary_faces_contribution!(backend, workgroup)
-    # kernel!(x, y, z, phif, ndrange=nbfaces)
+    kernel! = _MMi!(backend, workgroup)
+    kernel!(MM, KK,Δ, DevF, ndrange=length(MM))
 end
 
-@kernel function _integrate_surface!(phiFiltered, phif::FaceScalarField)
+@kernel function _MMi!(MM, KK,Δ, DevF)
     i = @index(Global)
 
-    @uniform begin
-        # (; mesh, values) = phif
-        (; mesh) = phif
-        (; faces, cells, cell_faces, cell_nsign) = mesh
-    end
-     
     @inbounds begin
-        (; volume, faces_range) = cells[i]
-
-        areaSum = 0.0
-        # surfaceSum = SVector{3}(0.0,0.0,0.0)
-        surfaceSum = 0.0
-        for fi ∈ faces_range
-            fID = cell_faces[fi]
-            (; area) = faces[fID]
-            # surfaceSum += values[fID]*area
-            surfaceSum += phif[fID]*area
-            areaSum += area
-        end
-        res = surfaceSum/areaSum
-
-        phiFiltered[i] = res
+        MM[i] = -2*Δ[i]*sqrt(max(KK[i],1e-15))*DevF[i]
     end
 end
 
-@kernel function _integrate_surface!(phiFiltered, phif::FaceVectorField)
+function LLMM!(Ck, LL, MM, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    # # Launch result calculation kernel
+    kernel! = _LLMM!(backend, workgroup)
+    kernel!(Ck, LL, MM, ndrange=length(Ck))
+end
+
+@kernel function _LLMM!(Ck, LL, MM)
     i = @index(Global)
 
-    @uniform begin
-        # (; mesh, values) = phif
-        (; mesh) = phif
-        (; faces, cells, cell_faces, cell_nsign) = mesh
-    end
-     
     @inbounds begin
-        (; volume, faces_range) = cells[i]
-
-        areaSum = 0.0
-        surfaceSum = SVector{3}(0.0,0.0,0.0)
-        # surfaceSum = 0.0
-        for fi ∈ faces_range
-            fID = cell_faces[fi]
-            (; area) = faces[fID]
-            # surfaceSum += values[fID]*area
-            surfaceSum += phif[fID]*area
-            areaSum += area
-        end
-        res = surfaceSum/areaSum
-
-        phiFiltered[i] = res
-    end
+        Ck[i] = 0.5*(LL[i] ⋅ MM[i])
+    end 
 end
 
-function Ck(D, KK)
-    nothing
+function Ck!(Ck, numerator, denominator, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    # # Launch result calculation kernel
+    kernel! = _Ck!(backend, workgroup)
+    kernel!(Ck, numerator, denominator, ndrange=length(Ck))
+end
+
+@kernel function _Ck!(Ck, numerator, denominator)
+    i = @index(Global)
+
+    @inbounds begin
+        Ck_i = numerator[i]/denominator[i]
+        Ck[i] = 0.5*(norm(Ck_i) + Ck_i)
+    end 
 end
 
 function Ce(D, KK)

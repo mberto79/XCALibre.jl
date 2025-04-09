@@ -115,4 +115,22 @@ end
     end
 end
 
-deviatoric(T) = @. T - 1/3*tr(T)*I
+function square!(psi2, psi, config; scale_factor=1.0)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    kernel! = _square!(backend, workgroup)
+    kernel!(psi2, psi, scale_factor, ndrange = length(psi2))
+    nothing
+end
+
+@kernel function _square!(
+    psi2::AbstractTensorField, psi::AbstractVectorField, scale_factor
+    )
+    i = @index(Global)
+
+    @inbounds begin
+        vi = psi[i]
+        psi2[i] = vi*vi'
+    end
+end

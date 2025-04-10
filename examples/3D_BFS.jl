@@ -15,8 +15,8 @@ mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_5mm.unv
 # mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_4mm.unv"
 # mesh_file = "bfs_unv_tet_5mm.unv"
 
-# mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
-mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
+mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
+# mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
 # workgroup = cld(length(mesh.cells), Threads.nthreads())

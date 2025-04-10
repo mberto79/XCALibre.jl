@@ -1,5 +1,5 @@
 
-const NEUMANN = Union{Neumann, KWallFunction, NutWallFunction, OmegaWallFunction, Empty}
+const NEUMANN = Union{Neumann, KWallFunction, NutWallFunction, OmegaWallFunction}
 
 function adjust_boundary!(b_cpu, BC::NEUMANN, phif::FaceScalarField, phi, boundaries, boundary_cellsID, time, backend, workgroup)
     phif_values = phif.values

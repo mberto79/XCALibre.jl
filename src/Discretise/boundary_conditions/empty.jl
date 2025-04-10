@@ -7,7 +7,7 @@ This will probably need changing once a dedicated ZeroGradient BC type is implem
 =#
 
 """
-    Empty <: AbstractEmpty
+    Empty <: AbstractNeumann
 
 Empty boundary condition model *(currently only configured for zero gradient)*
 
@@ -15,7 +15,7 @@ Empty boundary condition model *(currently only configured for zero gradient)*
 - 'ID' -- Boundary ID
 - `value` -- Scalar or Vector value for Empty boundary condition.
 """
-struct Empty{I,V} <: AbstractEmpty
+struct Empty{I,V} <: AbstractNeumann
     ID::I 
     value::V 
 end
@@ -23,7 +23,7 @@ Adapt.@adapt_structure Empty
 
 Empty(patch::Symbol) = Empty(patch, 0)
 
-function fixedValue(BC::AbstractEmpty, ID::I, value::V) where {I<:Integer,V}
+function fixedValue(BC::AbstractNeumann, ID::I, value::V) where {I<:Integer,V}
     # Exception 1: value is scalar
     if V <: Number
         return Empty{I,eltype(value)}(ID, value)

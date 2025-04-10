@@ -34,6 +34,7 @@ include("boundary_conditions/dirichletFunction_interpolation.jl")
 include("boundary_conditions/fixedTemperature.jl")
 include("boundary_conditions/fixedTemperature_interpolation.jl")
 include("boundary_conditions/neumann.jl")
+include("boundary_conditions/empty.jl")
 include("boundary_conditions/neumann_interpolation.jl")
 include("boundary_conditions/periodic.jl")
 include("boundary_conditions/periodic_interpolation.jl")
@@ -41,7 +42,6 @@ include("boundary_conditions/symmetry.jl")
 include("boundary_conditions/symmetry_interpolation.jl")
 include("boundary_conditions/wall.jl")
 include("boundary_conditions/wall_interpolation.jl")
-include("boundary_conditions/empty.jl")
 export adjust_boundary!
 
 end

@@ -41,6 +41,7 @@ include("boundary_conditions/symmetry.jl")
 include("boundary_conditions/symmetry_interpolation.jl")
 include("boundary_conditions/wall.jl")
 include("boundary_conditions/wall_interpolation.jl")
+include("boundary_conditions/empty.jl")
 export adjust_boundary!
 
 end

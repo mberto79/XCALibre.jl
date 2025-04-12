@@ -45,8 +45,8 @@ end
             # oneMinusW = 1 - w
             # phif = phi[cID1]*w + phi[cID2]*oneMinusW
 
-            phif = phi[cID1]*weight + phi[cID2]*(1 - weight)
-            # surfaceSum += values[fID]*area
+            # phif = phi[cID1]*weight + phi[cID2]*(1 - weight)
+            phif = phi[cID1]*0.5 + phi[cID2]*0.5
             surfaceSum += phif*area
             areaSum += area
         end
@@ -83,8 +83,8 @@ end
             # oneMinusW = 1 - w
             # phif = phi[cID1]*w + phi[cID2]*oneMinusW
 
-            phif = phi[cID1]*weight + phi[cID2]*(1 - weight)
-            # surfaceSum += values[fID]*area
+            # phif = phi[cID1]*weight + phi[cID2]*(1 - weight)
+            phif = phi[cID1]*0.5 + phi[cID2]*0.5
             surfaceSum += phif*area
             areaSum += area
         end
@@ -121,8 +121,8 @@ end
             # oneMinusW = 1 - w
             # phif = phi[cID1]*w + phi[cID2]*oneMinusW
 
-            phif = phi[cID1]*weight + phi[cID2]*(1 - weight)
-            # surfaceSum += values[fID]*area
+            # phif = phi[cID1]*weight + phi[cID2]*(1 - weight)
+            phif = phi[cID1]*0.5 + phi[cID2]*0.5
             surfaceSum += phif*area
             areaSum += area
         end

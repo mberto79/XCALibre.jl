@@ -23,7 +23,8 @@ function bounding_box(mesh::AbstractMesh)
     xmax, ymax, zmax = z, z, z
     for fID ∈ 1:nbfaces
         face = faces[fID]
-        for nID ∈ face.nodes_range 
+        for ni ∈ face.nodes_range 
+            nID = mesh.face_nodes[ni]
             node = nodes[nID]
             coords = node.coords
             xmin = min(xmin, coords[1])

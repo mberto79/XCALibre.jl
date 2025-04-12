@@ -86,18 +86,21 @@ function initialise(
     Pk = ScalarField(mesh)
     mueffk = FaceScalarField(mesh)
     Dkf = ScalarField(mesh)
+    divU = ScalarField(mesh)
+    kSource = ScalarField(mesh)
 
     delta!(Δ, mesh, config)
-    @. Δ.values = Δ.values^2 # store delta squared since it will be needed
+    @. Δ.values = (((Δ.values^3)/0.001)^0.5) # get 2D delta
+    # @. Δ.values = Δ.values^2 # store delta squared since it will be needed
 
     k_eqn = (
             Time{schemes.k.time}(rho, k)
             + Divergence{schemes.k.divergence}(mdotf, k) 
             - Laplacian{schemes.k.laplacian}(mueffk, k) 
-            + Si(Dkf,k) # Dkf = Ce*rho*sqrt(k)/Δ*k
-            # + Si(divU,k) # Needs adding
+            + Si(Dkf,k) # Dkf = (Ce*rho*sqrt(k)/Δ)*k
+            + Si(divU,k) # Needs adding
             ==
-            Source(Pk)
+            Source(Pk) + Source(kSource)
         ) → eqn
 
     @reset k_eqn.preconditioner = set_preconditioner(
@@ -145,23 +148,26 @@ function turbulence!(
     (; Δ, magS) = les
 
     Pk = get_source(k_eqn, 1)
+    kSource = get_source(k_eqn, 2)
     mueffk = get_flux(k_eqn, 3)
     Dkf = get_flux(k_eqn, 4)
+    divU = get_flux(k_eqn, 5)
 
     grad!(gradU, Uf, U, U.BCs, time, config)
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
-    magnitude2!(Pk, S, config, scale_factor=2.0) # mag2 written to Pk
-
+    
     # update fluxes 
-    @. Pk.values = rho.values*nut.values*Pk.values # corrects Pk to become actual production
+    # magnitude2!(Pk, S, config, scale_factor=2) # mag2 written to Pk
+    # @. Pk.values = rho.values*nut.values*Pk.values # corrects Pk to become actual production
+    production!(Pk, nut, gradU, S, config)
     @. mueffk.values = rhof.values * (nuf.values + nutf.values)
+    div!(divU, Uf, config)
+    @. divU.values = abs(2/3*rho.values*divU.values)
+    @. kSource.values = k.values # /getproperty.(mesh.cells, :volume)
 
     Umag2 = ScalarField(model.domain)
-    # Umag2f = FaceScalarField(model.domain)
     Umag2hat = ScalarField(model.domain)
     magnitude2!(Umag2, U, config)
-    # magnitude2!(Umag2f, Uf, config)
-    # basic_filter!(Umag2hat, Umag2, Umag2f, time, config)
     basic_filter!(Umag2hat, Umag2, config)
 
     Uhat = VectorField(model.domain)
@@ -171,7 +177,7 @@ function turbulence!(
 
     KK = ScalarField(model.domain)
     @. KK.values = max(0.5*(Umag2hat.values - Uhat2.values), 1e-15)
-    @. k.values = KK.values # maybe need to add max to limit to positive numbers?
+    # @. k.values = KK.values # maybe need to add max to limit to positive numbers?
 
 
     mag2D = ScalarField(model.domain)
@@ -190,12 +196,14 @@ function turbulence!(
     denominator = ScalarField(model.domain)
     @. temp.values = (nu.values + nut.values)*(mag2DF.values - DevF2.values)
     basic_filter!(numerator, temp, config)
+
     @. temp.values = KK.values^(1.5)/(2.0*Δ.values)
     basic_filter!(denominator, temp, config)
     @. temp.values = numerator.values/denominator.values
     @. temp.values = 0.5*(norm(temp.values) + temp.values) # Ce
 
     # The fun part of dealing with tensors LL and MM 
+
     U2F = TensorField(model.domain)
     basic_filter!(U2F, Sqr(U), config)
 
@@ -235,7 +243,8 @@ function turbulence!(
     Ck = ScalarField(model.domain)
     Ck!(Ck, S2_temp, MM2F, config)
 
-    @. Dkf.values = temp.values*rho.values*sqrt(k.values)/(Δ.values*k.values)
+    # @. Dkf.values = temp.values*rho.values*sqrt(k.values)/(Δ.values*k.values)
+    @. Dkf.values = temp.values*rho.values*sqrt(k.values)/(Δ.values)
 
     # Solve k equation
     # prev .= k.values
@@ -339,6 +348,23 @@ end
     @inbounds begin
         Ck_i = numerator[i]/denominator[i]
         Ck[i] = 0.5*(norm(Ck_i) + Ck_i)
+    end 
+end
+
+function production!(Pk, nut, gradU, S, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    # # Launch result calculation kernel
+    kernel! = _production!(backend, workgroup)
+    kernel!(Pk, nut, gradU, Dev(S), ndrange=length(Pk))
+end
+
+@kernel function _production!(Pk, nut, gradU, DevgradU)
+    i = @index(Global)
+
+    @inbounds begin
+        Pk[i] = 2*nut[i]*(gradU[i]⋅DevgradU[i])
     end 
 end
 

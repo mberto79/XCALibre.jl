@@ -12,11 +12,13 @@ KEquation LES model containing all Smagorinksy field parameters.
 - `coeffs` -- Model coefficients.
 
 """
-struct KEquation{S1,S2,S3,S4,C} <: AbstractLESModel
+struct KEquation{S1,S2,S3,S4,S5,V1,C} <: AbstractLESModel
     nut::S1
     nutf::S2
     k::S3
     kf::S4
+    outScalar::S5
+    outVector::V1
     coeffs::C #I know there is only one coefficient for LES but this makes the DES implementation easier
 end
 Adapt.@adapt_structure KEquation
@@ -43,8 +45,10 @@ end
     nutf = FaceScalarField(mesh)
     k = ScalarField(mesh)
     kf = FaceScalarField(mesh)
+    outScalar = ScalarField(mesh)
+    outVector = VectorField(mesh)
     coeffs = les.args
-    KEquation(nut, nutf, k, kf, coeffs)
+    KEquation(nut, nutf, k, kf, outScalar, outVector, coeffs)
 end
 
 # Model initialisation
@@ -142,7 +146,7 @@ function turbulence!(
     mesh = model.domain
     (; solvers, runtime) = config
     (; rho, rhof, nu, nuf) = model.fluid
-    (; k, kf, nut, nutf, coeffs) = les.turbulence
+    (; k, kf, nut, nutf, outScalar, outVector, coeffs) = les.turbulence
     (; k_eqn, state) = les
     (; U, Uf, gradU) = S
     (; Δ, magS) = les
@@ -165,18 +169,22 @@ function turbulence!(
     @. divU.values = abs(2/3*rho.values*divU.values)
     @. kSource.values = k.values # /getproperty.(mesh.cells, :volume)
 
-    Umag2 = ScalarField(model.domain)
+    # Umag2 = ScalarField(model.domain)
+    # magnitude2!(Umag2, U, config)
+    surfaceArea = cell_surface_area(model, config)
     Umag2hat = ScalarField(model.domain)
-    magnitude2!(Umag2, U, config)
-    basic_filter!(Umag2hat, Umag2, config)
+    # basic_filter!(Umag2hat, Umag2, config)
+    basic_filter_new!(Umag2hat, MagSqr(Uf), surfaceArea, config)
 
     Uhat = VectorField(model.domain)
     Uhat2 = ScalarField(model.domain)
-    basic_filter!(Uhat, U, config)
+    # basic_filter!(Uhat, U, config)
+    basic_filter_new!(Uhat, Uf, surfaceArea, config)
     magnitude2!(Uhat2, Uhat, config)
 
     KK = ScalarField(model.domain)
-    @. KK.values = max(0.5*(Umag2hat.values - Uhat2.values), 1e-15)
+    @. KK.values = max(0.5*(Umag2hat.values - Uhat2.values), 1e-20)
+    @. outScalar.values = sqrt(KK.values) # sqrt(KK.values)
     # @. k.values = KK.values # maybe need to add max to limit to positive numbers?
 
 
@@ -291,7 +299,9 @@ function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration
             ("U", model.momentum.U), 
             ("p", model.momentum.p),
             ("k", model.turbulence.k),
-            ("nut", model.turbulence.nut)
+            ("nut", model.turbulence.nut),
+            ("outScalar", model.turbulence.outScalar),
+            ("outVector", model.turbulence.outVector)
         )
     end
     write_results(iteration, model.domain, outputWriter, args...)
@@ -312,7 +322,7 @@ end
     i = @index(Global)
 
     @inbounds begin
-        MM[i] = -2*Δ[i]*sqrt(max(KK[i],1e-15))*DevF[i]
+        MM[i] = -2*Δ[i]*sqrt(max(KK[i],1e-30))*DevF[i]
     end
 end
 
@@ -364,6 +374,7 @@ end
     i = @index(Global)
 
     @inbounds begin
+        # Pk[i] = 2*nut[i]*(gradU[i]⋅DevgradU[i])
         Pk[i] = 2*nut[i]*(gradU[i]⋅DevgradU[i])
     end 
 end

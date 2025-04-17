@@ -3,7 +3,7 @@ export ConstantScalar, ConstantVector
 export AbstractScalarField, ScalarField, FaceScalarField
 export AbstractVectorField, VectorField, FaceVectorField
 export AbstractTensorField, TensorField, T
-export StrainRate, Dev, Sqr
+export StrainRate, Dev, Sqr, MagSqr
 export initialise!
 
 # ABSTRACT TYPES
@@ -160,12 +160,21 @@ Base.eachindex(v::AbstractVectorField) = eachindex(v.x)
 Base.eltype(v::AbstractVectorField) = eltype(v.x)
 
 struct Sqr{T<:AbstractVectorField} <: AbstractTensorField
-    vector::T 
+    parent::T 
 end
 
-Base.getindex(T::Sqr{Field}, i::I) where {Field<:AbstractVectorField,I<:Integer} = begin
-    vi = T.vector[i]
+Base.getindex(vec::Sqr{Field}, i::I) where {Field<:AbstractVectorField,I<:Integer} = begin
+    vi = vec.parent[i]
     vi*vi'
+end
+
+struct MagSqr{T<:AbstractField} <: AbstractScalarField
+    parent::T 
+end
+
+Base.getindex(vec::MagSqr{Field}, i::I) where {Field<:AbstractVectorField,I<:Integer} = begin
+    vi = vec.parent[i]
+    vi⋅vi
 end
 
 
@@ -264,12 +273,12 @@ Base.getindex(S::StrainRate{G, GT, TU, TUF}, i::I) where {G, GT, TU, TUF, I<:Int
 end
 
 struct Dev{T<:AbstractTensorField} <: AbstractTensorField
-    tensor::T 
+    parent::T 
 end
 Adapt.@adapt_structure Dev 
 
 Base.getindex(T::Dev{Tensor}, i::Idx) where {Tensor<:AbstractTensorField,Idx<:Integer} = begin
-    Ti = T.tensor[i]
+    Ti = T.parent[i]
     Ti - 1/3*tr(Ti)*I
 end
 

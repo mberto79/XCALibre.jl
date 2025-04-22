@@ -303,44 +303,15 @@ end
     end
 end
 
-# @generated correct_eddy_viscosity!(νtf, nutBCs, model, config) = begin
-#     BCs = nutBCs.parameters
-#     func_calls = Expr[]
-#     for i ∈ eachindex(BCs)
-#         BC = BCs[i]
-#         if BC <: NutWallFunction
-#             call = quote
-#                 correct_nut_wall!(BC, νtf, nutBCs[$i], model, config)
-#             end
-#             push!(func_calls, call)
-#         end
-#     end
-#     quote
-#     $(func_calls...)
-#     nothing
-#     end 
-# end
-
 @generated function correct_eddy_viscosity!(νtf, nutBCs, model, config)
-    # BCs = nutBCs.parameters
     unpacked_BCs = []
     for i ∈ 1:length(nutBCs.parameters)
-        # BC = BCs[i]
         unpack = quote
             correct_nut_wall!(νtf, nutBCs[$i], model, config)
         end
         push!(unpacked_BCs, unpack)
     end
     quote
-    # (; mesh) = phif
-    # (; boundary_cellsID, boundaries) = mesh 
-    # (; hardware) = config
-    # (; backend, workgroup) = hardware
-    # # b_cpu = Array{eltype(boundaries)}(undef, length(boundaries))
-    # # copyto!(b_cpu, boundaries)
-    # b_cpu = to_cpu(boundaries)
-
-    # backend = _get_backend(mesh)
     $(unpacked_BCs...) 
     end
 end

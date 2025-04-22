@@ -1,6 +1,6 @@
 # using Plots
 using XCALibre
-# using CUDA
+using CUDA
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "flatplate_2D_highRe.unv"
@@ -10,8 +10,8 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 backend = CPU(); # activate_multithread(backend)
 mesh_dev = mesh; workgroup = 1024
-# backend = CUDABackend()
-# mesh_dev = adapt(backend, mesh); workgroup= 32
+backend = CUDABackend()
+mesh_dev = adapt(backend, mesh); workgroup= 32
 
 velocity = [10, 0.0, 0.0]
 nu = 1e-5

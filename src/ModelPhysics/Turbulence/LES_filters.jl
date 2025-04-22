@@ -84,14 +84,14 @@ end
     @inbounds begin
         (; volume, faces_range) = cells[i]
 
-        areaSum = 0.0
+        # areaSum = 0.0
         # surfaceSum = SVector{3}(0.0,0.0,0.0)
         surfaceSum = 0.0
         for fi ∈ faces_range
             fID = cell_faces[fi]
             (; area) = faces[fID]
             surfaceSum += phif[fID]*area
-            areaSum += area
+            # areaSum += area
         end
         # res = surfaceSum/areaSum
         res = surfaceSum/surfaceArea[i]
@@ -111,14 +111,14 @@ end
     @inbounds begin
         (; volume, faces_range) = cells[i]
 
-        areaSum = 0.0
+        # areaSum = 0.0
         surfaceSum = SVector{3}(0.0,0.0,0.0)
         # surfaceSum = 0.0
         for fi ∈ faces_range
             fID = cell_faces[fi]
             (; area) = faces[fID]
             surfaceSum += phif[fID]*area
-            areaSum += area
+            # areaSum += area
         end
         # res = surfaceSum/areaSum
         res = surfaceSum/surfaceArea[i]
@@ -173,7 +173,7 @@ end
 
 
 
-function basic_filter!(phiFiltered, phi, config)
+function basic_filter!(phiFiltered, phi, surfaceArea, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
@@ -181,7 +181,7 @@ function basic_filter!(phiFiltered, phi, config)
     
     # # Launch result calculation kernel
     kernel! = _integrate_surface!(backend, workgroup)
-    kernel!(phiFiltered, phi, ndrange=length(phiFiltered))
+    kernel!(phiFiltered, phi, surfaceArea, ndrange=length(phiFiltered))
 
     # # number of boundary faces
     # nbfaces = length(phif.mesh.boundary_cellsID)
@@ -190,7 +190,7 @@ function basic_filter!(phiFiltered, phi, config)
     # kernel!(x, y, z, phif, ndrange=nbfaces)
 end
 
-@kernel function _integrate_surface!(phiFiltered, phi::ScalarField)
+@kernel function _integrate_surface!(phiFiltered, phi::ScalarField, surfaceArea)
     i = @index(Global)
 
     @uniform begin
@@ -202,7 +202,7 @@ end
     @inbounds begin
         (; volume, faces_range) = cells[i]
 
-        areaSum = 0.0
+        # areaSum = 0.0
         # surfaceSum = SVector{3}(0.0,0.0,0.0)
         surfaceSum = 0.0
         for fi ∈ faces_range
@@ -220,15 +220,13 @@ end
             # phif = phi[cID1]*weight + phi[cID2]*(1 - weight)
             phif = phi[cID1]*0.5 + phi[cID2]*0.5
             surfaceSum += phif*area
-            areaSum += area
+            # areaSum += area
         end
-        res = surfaceSum/areaSum
-
-        phiFiltered[i] = res
+        phiFiltered[i] = surfaceSum/surfaceArea[i]
     end
 end
 
-@kernel function _integrate_surface!(phiFiltered, phi::VectorField)
+@kernel function _integrate_surface!(phiFiltered, phi::VectorField, surfaceArea)
     i = @index(Global)
 
     @uniform begin
@@ -240,7 +238,7 @@ end
     @inbounds begin
         (; volume, faces_range) = cells[i]
 
-        areaSum = 0.0
+        # areaSum = 0.0
         surfaceSum = SVector{3}(0.0,0.0,0.0)
         # surfaceSum = 0.0
         for fi ∈ faces_range
@@ -258,15 +256,13 @@ end
             # phif = phi[cID1]*weight + phi[cID2]*(1 - weight)
             phif = phi[cID1]*0.5 + phi[cID2]*0.5
             surfaceSum += phif*area
-            areaSum += area
+            # areaSum += area
         end
-        res = surfaceSum/areaSum
-
-        phiFiltered[i] = res
+        phiFiltered[i] = surfaceSum/surfaceArea[i]
     end
 end
 
-@kernel function _integrate_surface!(phiFiltered, phi::AbstractTensorField)
+@kernel function _integrate_surface!(phiFiltered, phi::AbstractTensorField, surfaceArea)
     i = @index(Global)
 
     @uniform begin
@@ -278,7 +274,7 @@ end
     @inbounds begin
         (; volume, faces_range) = cells[i]
 
-        areaSum = 0.0
+        # areaSum = 0.0
         surfaceSum = SMatrix{3,3}(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
         # surfaceSum = 0.0
         for fi ∈ faces_range
@@ -296,10 +292,8 @@ end
             # phif = phi[cID1]*weight + phi[cID2]*(1 - weight)
             phif = phi[cID1]*0.5 + phi[cID2]*0.5
             surfaceSum += phif*area
-            areaSum += area
+            # areaSum += area
         end
-        res = surfaceSum/areaSum
-
-        phiFiltered[i] = res
+        phiFiltered[i] = surfaceSum/surfaceArea[i]
     end
 end

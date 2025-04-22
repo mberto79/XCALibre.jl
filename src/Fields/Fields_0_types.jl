@@ -174,7 +174,7 @@ end
 
 Base.getindex(vec::MagSqr{Field}, i::I) where {Field<:AbstractVectorField,I<:Integer} = begin
     vi = vec.parent[i]
-    vi⋅vi
+    sqrt(2)*vi⋅vi
 end
 
 

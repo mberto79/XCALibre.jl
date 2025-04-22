@@ -191,29 +191,29 @@ function turbulence!(
     mag2D = ScalarField(model.domain)
     magnitude2!(mag2D, Dev(S), config)
     mag2DF = ScalarField(model.domain)
-    basic_filter!(mag2DF, mag2D, config)
+    basic_filter!(mag2DF, mag2D, surfaceArea, config)
 
 
     DevF = TensorField(model.domain)
-    basic_filter!(DevF, Dev(S), config)
+    basic_filter!(DevF, Dev(S), surfaceArea, config)
     DevF2 = ScalarField(model.domain)
-    magnitude2!(DevF2, DevF, config)
+    magnitude2!(DevF2, DevF, config, scale_factor=sqrt(2))
 
     temp = ScalarField(model.domain)
     numerator = ScalarField(model.domain)
     denominator = ScalarField(model.domain)
     @. temp.values = (nu.values + nut.values)*(mag2DF.values - DevF2.values)
-    basic_filter!(numerator, temp, config)
+    basic_filter!(numerator, temp, surfaceArea, config)
 
     @. temp.values = KK.values^(1.5)/(2.0*Δ.values)
-    basic_filter!(denominator, temp, config)
+    basic_filter!(denominator, temp, surfaceArea, config)
     @. temp.values = numerator.values/denominator.values
     @. temp.values = 0.5*(norm(temp.values) + temp.values) # Ce
 
     # The fun part of dealing with tensors LL and MM 
 
     U2F = TensorField(model.domain)
-    basic_filter!(U2F, Sqr(U), config)
+    basic_filter!(U2F, Sqr(U), surfaceArea, config)
 
     UhatSqr = TensorField(model.domain)
     # @. UhatSqr = Sqr(Uhat) # this form of algebra not implemented yet, but would be nice!
@@ -231,22 +231,22 @@ function turbulence!(
     @. T_temp.zy.values = U2F.zy.values - UhatSqr.zy.values
 
     LL = TensorField(model.domain)
-    basic_filter!(LL, Dev(T_temp), config)
+    basic_filter!(LL, Dev(T_temp), surfaceArea, config)
     
     MM = TensorField(model.domain)
     MMi!(T_temp, KK,Δ, DevF, config)
-    basic_filter!(MM, T_temp, config)
+    basic_filter!(MM, T_temp, surfaceArea, config)
 
     S1_temp = ScalarField(model.domain)
     S2_temp = ScalarField(model.domain)
     LLMM!(S1_temp, LL, MM, config)
-    basic_filter!(S2_temp, S1_temp, config)
+    basic_filter!(S2_temp, S1_temp, surfaceArea, config)
     
     
     MM2 = ScalarField(model.domain)
     MM2F = ScalarField(model.domain)
-    magnitude2!(MM2, MM, config)
-    basic_filter!(MM2F, MM2, config)
+    magnitude2!(MM2, MM, config, scale_factor=sqrt(2))
+    basic_filter!(MM2F, MM2, surfaceArea, config)
     
     Ck = ScalarField(model.domain)
     Ck!(Ck, S2_temp, MM2F, config)

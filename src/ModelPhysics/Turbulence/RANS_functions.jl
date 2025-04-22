@@ -322,10 +322,12 @@ end
 # end
 
 @generated function correct_eddy_viscosity!(νtf, nutBCs, model, config)
+    # BCs = nutBCs.parameters
     unpacked_BCs = []
     for i ∈ 1:length(nutBCs.parameters)
+        # BC = BCs[i]
         unpack = quote
-            correct_nut_wall!(BC, νtf, nutBCs[$i], model, config)
+            correct_nut_wall!(νtf, nutBCs[$i], model, config)
         end
         push!(unpacked_BCs, unpack)
     end
@@ -343,9 +345,9 @@ end
     end
 end
 
-correct_nut_wall!(BC, νtf, BC, model, config) = nothing
+correct_nut_wall!(nutf, BC, model, config) = nothing
 
-function correct_nut_wall!(BC::NutWallFunction, νtf, BC, model, config)
+function correct_nut_wall!(νtf, BC::NutWallFunction, model, config)
     # backend = _get_backend(mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware

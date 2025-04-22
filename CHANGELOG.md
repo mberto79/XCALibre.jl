@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version [v0.4.3] - 2025-XX-XX
 
 ### Added
-* Added a missing definition for `Wall` boundary condition [#54]
+* Added a missing definition for `Wall` boundary condition [#56]
 
 ### Fixed
 * Fixed the implementation for the calculation of the wall distance to work on GPUs [#49](@ref)

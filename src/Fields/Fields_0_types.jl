@@ -71,6 +71,7 @@ struct FaceScalarField{VF,M<:AbstractMesh} <: AbstractScalarField
     mesh::M
 end
 Adapt.@adapt_structure FaceScalarField
+
 FaceScalarField(mesh::AbstractMesh) = begin
     nfaces  = length(mesh.faces)
     F = _get_float(mesh)
@@ -159,22 +160,32 @@ Base.length(v::AbstractVectorField) = length(v.x)
 Base.eachindex(v::AbstractVectorField) = eachindex(v.x)
 Base.eltype(v::AbstractVectorField) = eltype(v.x)
 
-struct Sqr{T<:AbstractVectorField} <: AbstractTensorField
+struct Sqr{N,T<:AbstractVectorField} <: AbstractTensorField
+    scale::N
     parent::T 
 end
+Adapt.@adapt_structure Sqr
 
-Base.getindex(vec::Sqr{Field}, i::I) where {Field<:AbstractVectorField,I<:Integer} = begin
+# Sqr(scale::Number, field) = Sqr(scale, field)
+Sqr(field) = Sqr(1, field)
+
+Base.getindex(vec::Sqr{N,Field}, i::I) where {N,Field<:AbstractVectorField,I<:Integer} = begin
     vi = vec.parent[i]
-    vi*vi'
+    vec.scale*vi*vi'
 end
 
-struct MagSqr{T<:AbstractField} <: AbstractScalarField
+struct MagSqr{N,T<:AbstractField} <: AbstractScalarField
+    scale::N
     parent::T 
 end
+Adapt.@adapt_structure MagSqr
 
-Base.getindex(vec::MagSqr{Field}, i::I) where {Field<:AbstractVectorField,I<:Integer} = begin
+# MagSqr(scale::Number, field) = MagSqr(scale, field)
+MagSqr(field) = MagSqr(1, field)
+
+Base.getindex(vec::MagSqr{N,Field}, i::I) where {N,Field<:AbstractVectorField,I<:Integer} = begin
     vi = vec.parent[i]
-    sqrt(2)*vi⋅vi
+    vec.scale*vi⋅vi
 end
 
 

@@ -167,7 +167,7 @@ function turbulence!(
     @. mueffk.values = rhof.values * (nuf.values + nutf.values)
     div!(divU, Uf, config)
     @. divU.values = abs(2/3*rho.values*divU.values)
-    @. kSource.values = k.values # /getproperty.(mesh.cells, :volume)
+    @. kSource.values = k.values #/getproperty.(mesh.cells, :volume)
 
     # Umag2 = ScalarField(model.domain)
     # magnitude2!(Umag2, U, config)
@@ -183,13 +183,13 @@ function turbulence!(
     magnitude2!(Uhat2, Uhat, config)
 
     KK = ScalarField(model.domain)
-    @. KK.values = max(0.5*(Umag2hat.values - Uhat2.values), 1e-20)
+    @. KK.values = max(0.5*(Umag2hat.values - Uhat2.values), 1e-30)
     @. outScalar.values = sqrt(KK.values) # sqrt(KK.values)
     # @. k.values = KK.values # maybe need to add max to limit to positive numbers?
 
 
     mag2D = ScalarField(model.domain)
-    magnitude2!(mag2D, Dev(S), config)
+    magnitude2!(mag2D, Dev(S), config, scale_factor=2)
     mag2DF = ScalarField(model.domain)
     basic_filter!(mag2DF, mag2D, surfaceArea, config)
 
@@ -197,7 +197,7 @@ function turbulence!(
     DevF = TensorField(model.domain)
     basic_filter!(DevF, Dev(S), surfaceArea, config)
     DevF2 = ScalarField(model.domain)
-    magnitude2!(DevF2, DevF, config, scale_factor=sqrt(2))
+    magnitude2!(DevF2, DevF, config, scale_factor=2)
 
     temp = ScalarField(model.domain)
     numerator = ScalarField(model.domain)
@@ -245,7 +245,7 @@ function turbulence!(
     
     MM2 = ScalarField(model.domain)
     MM2F = ScalarField(model.domain)
-    magnitude2!(MM2, MM, config, scale_factor=sqrt(2))
+    magnitude2!(MM2, MM, config, scale_factor=2)
     basic_filter!(MM2F, MM2, surfaceArea, config)
     
     Ck = ScalarField(model.domain)

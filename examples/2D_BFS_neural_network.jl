@@ -58,7 +58,7 @@ Adapt.@adapt_structure Inflow
 # import XCALibre.Discretise: update_boundary!
 
 XCALibre.Discretise.update_user_boundary!(
-    BC::DirichletFunction{I,V}, faces, cells, facesID_range, time, config) where{I,V<:Inflow}= begin
+    BC::DirichletFunction{I,V}, eqnModel, component, faces, cells, facesID_range, time, config) where{I,V<:Inflow}= begin
     # if time > 1 # for this to work need to add time to steady solvers! # to do
     #     return nothing
     # end
@@ -68,12 +68,12 @@ XCALibre.Discretise.update_user_boundary!(
 
     kernel_range = length(facesID_range)
     kernel! = _update_user_boundary!(backend, workgroup, kernel_range)
-    kernel!(BC, faces, cells, facesID_range, time, ndrange=kernel_range)
+    kernel!(BC, eqnModel, component, faces, cells, facesID_range, time, ndrange=kernel_range)
     # KernelAbstractions.synchronize(backend)
     BC.value.output .= BC.value.network(BC.value.input).*BC.value.xdir
 end
 
-@kernel function _update_user_boundary!(BC, faces, cells, facesID_range, time)
+@kernel function _update_user_boundary!(BC, eqnModel, component, faces, cells, facesID_range, time)
     i = @index(Global)
     startID = facesID_range[1]
     fID = i + startID - 1

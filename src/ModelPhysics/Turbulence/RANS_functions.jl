@@ -284,8 +284,8 @@ end
     (; U) = momentum
     (; k, nut) = turbulence
 
-    # Uw = SVector{3}(0.0,0.0,0.0)
-    Uw = U.BCs[BC.ID].value
+    Uw = SVector{3}(0.0,0.0,0.0)
+    # Uw = U.BCs[BC.ID].value
     cID = boundary_cellsID[fID]
     face = faces[fID]
     nuc = nu[cID]
@@ -303,25 +303,22 @@ end
     end
 end
 
-@generated correct_eddy_viscosity!(νtf, nutBCs, model, config) = begin
-    BCs = nutBCs.parameters
-    func_calls = Expr[]
-    for i ∈ eachindex(BCs)
-        BC = BCs[i]
-        if BC <: NutWallFunction
-            call = quote
-                correct_nut_wall!(νtf, nutBCs[$i], model, config)
-            end
-            push!(func_calls, call)
+@generated function correct_eddy_viscosity!(νtf, nutBCs, model, config)
+    unpacked_BCs = []
+    for i ∈ 1:length(nutBCs.parameters)
+        unpack = quote
+            correct_nut_wall!(νtf, nutBCs[$i], model, config)
         end
+        push!(unpacked_BCs, unpack)
     end
     quote
-    $(func_calls...)
-    nothing
-    end 
+    $(unpacked_BCs...) 
+    end
 end
 
-function correct_nut_wall!(νtf, BC, model, config)
+correct_nut_wall!(nutf, BC, model, config) = nothing
+
+function correct_nut_wall!(νtf, BC::NutWallFunction, model, config)
     # backend = _get_backend(mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware

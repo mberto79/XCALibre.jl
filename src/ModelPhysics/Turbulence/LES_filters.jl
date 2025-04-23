@@ -1,13 +1,60 @@
-function cell_surface_area(model, config)
+abstract type AbstractFilter end
+
+struct TopHatFilter{F} <: AbstractFilter
+    cellArea::F 
+end
+Adapt.@adapt_structure TopHatFilter
+
+TopHatFilter(field::AbstractField, config) = begin
+    cellArea = cell_surface_area(field, config)
+    TopHatFilter(cellArea)
+end
+
+pass(a) = a
+
+(filter::TopHatFilter)(field::FieldType, cID, operation=pass) where FieldType = begin
+    @uniform begin
+        (; mesh) = field
+        (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
+        (; cellArea) = filter
+        
+    end
+     
+    @inbounds begin
+        (; volume, faces_range) = cells[cID]
+
+        surfaceSum = nothing 
+        if FieldType <: AbstractScalarField
+            surfaceSum = 0.0
+        elseif FieldType <: AbstractVectorField
+            surfaceSum = SVector{3}(0.0,0.0,0.0)
+        elseif FieldType <: AbstractTensorField 
+            surfaceSum = SMatrix{3,3}(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        end 
+
+        for fi ∈ faces_range
+            fID = cell_faces[fi]
+            (; area) = faces[fID]
+            cID2 = cell_neighbours[fi]
+            f1 = operation(field[cID])
+            f2 = operation(field[cID2])
+            fieldf = 0.5*f1 + 0.5*f2
+            surfaceSum += fieldf*area
+        end
+        filteredField = surfaceSum/cellArea[cID]
+        return filteredField
+    end
+end
+
+function cell_surface_area(field, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
-    U = model.momentum.U
-    BCs = U.BCs
-    mesh = U.mesh
-    areaSum = _convert_array!(zeros(_get_float(mesh),length(U)), backend)
+    (; mesh, BCs) = field
+
+    areaSum = _convert_array!(zeros(_get_float(mesh),length(field)), backend)
     (; boundaries, faces) = mesh
     kernel! = _area_sum!(backend, workgroup)
-    kernel!(areaSum, mesh, ndrange=length(U))
+    kernel!(areaSum, mesh, ndrange=length(field))
 
     # add non-empty boundary contributions
     boundaries_cpu = get_boundaries(boundaries)

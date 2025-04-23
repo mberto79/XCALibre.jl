@@ -5,6 +5,7 @@ using KernelAbstractions
 using Accessors
 using StaticArrays
 using Adapt
+import AcceleratedKernels as AK
 
 using LinearAlgebra
 using SparseMatricesCSR

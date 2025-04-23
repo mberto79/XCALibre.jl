@@ -90,6 +90,7 @@ end
 Base.length(s::AbstractScalarField) = length(s.values)
 Base.eachindex(s::AbstractScalarField) = eachindex(s.values)
 Base.eltype(s::AbstractScalarField) = eltype(s.values)
+KA.get_backend(s::AbstractScalarField) = KA.get_backend(s.values)
 
 # VECTOR FIELD IMPLEMENTATION
 
@@ -159,6 +160,7 @@ end
 Base.length(v::AbstractVectorField) = length(v.x)
 Base.eachindex(v::AbstractVectorField) = eachindex(v.x)
 Base.eltype(v::AbstractVectorField) = eltype(v.x)
+KA.get_backend(v::AbstractVectorField) = KA.get_backend(v.x)
 
 struct Sqr{N,T<:AbstractVectorField} <: AbstractTensorField
     scale::N
@@ -248,6 +250,7 @@ end
 
 Base.length(t::AbstractTensorField) = length(t.xx)
 Base.eachindex(t::AbstractTensorField) = eachindex(t.xx)
+KA.get_backend(t::AbstractTensorField) = KA.get_backend(t.xx)
 
 # TRANSPOSE IMPLEMENTATION
 

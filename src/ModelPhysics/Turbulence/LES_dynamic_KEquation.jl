@@ -144,7 +144,8 @@ function turbulence!(
     ) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
     mesh = model.domain
-    (; solvers, runtime) = config
+    (; solvers, runtime, hardware) = config
+    (; workgroup) = hardware
     (; rho, rhof, nu, nuf) = model.fluid
     (; k, kf, nut, nutf, outScalar, outVector, coeffs) = les.turbulence
     (; k_eqn, state) = les
@@ -171,7 +172,8 @@ function turbulence!(
 
     # Umag2 = ScalarField(model.domain)
     # magnitude2!(Umag2, U, config)
-    surfaceArea = cell_surface_area(model, config)
+    surfaceArea = cell_surface_area(U, config)
+    filter = TopHatFilter(U, config)
     Umag2hat = ScalarField(model.domain)
     # basic_filter!(Umag2hat, Umag2, config)
     basic_filter_new!(Umag2hat, MagSqr(Uf), surfaceArea, config)
@@ -220,15 +222,9 @@ function turbulence!(
     square!(UhatSqr, Uhat, config)
 
     T_temp = TensorField(model.domain)
-    @. T_temp.xx.values = U2F.xx.values - UhatSqr.xx.values
-    @. T_temp.xy.values = U2F.xy.values - UhatSqr.xy.values
-    @. T_temp.xz.values = U2F.xz.values - UhatSqr.xz.values
-    @. T_temp.yy.values = U2F.yy.values - UhatSqr.yy.values
-    @. T_temp.yx.values = U2F.yx.values - UhatSqr.yx.values
-    @. T_temp.yz.values = U2F.yz.values - UhatSqr.yz.values
-    @. T_temp.zz.values = U2F.zz.values - UhatSqr.zz.values
-    @. T_temp.zx.values = U2F.zx.values - UhatSqr.zx.values
-    @. T_temp.zy.values = U2F.zy.values - UhatSqr.zy.values
+    AK.foreachindex(T_temp, min_elems=workgroup, block_size=workgroup) do i 
+        @inbounds T_temp[i] = U2F[i] - UhatSqr[i]
+    end
 
     LL = TensorField(model.domain)
     basic_filter!(LL, Dev(T_temp), surfaceArea, config)
@@ -236,20 +232,26 @@ function turbulence!(
     MM = TensorField(model.domain)
     MMi!(T_temp, KK,Δ, DevF, config)
     basic_filter!(MM, T_temp, surfaceArea, config)
-
-    S1_temp = ScalarField(model.domain)
-    S2_temp = ScalarField(model.domain)
-    LLMM!(S1_temp, LL, MM, config)
-    basic_filter!(S2_temp, S1_temp, surfaceArea, config)
     
     
     MM2 = ScalarField(model.domain)
     MM2F = ScalarField(model.domain)
     magnitude2!(MM2, MM, config, scale_factor=2)
     basic_filter!(MM2F, MM2, surfaceArea, config)
-    
+
+    S1_temp = ScalarField(model.domain)
+    # S2_temp = ScalarField(model.domain)
+    LLMM!(S1_temp, LL, MM, config)
     Ck = ScalarField(model.domain)
-    Ck!(Ck, S2_temp, MM2F, config)
+    # basic_filter!(S2_temp, S1_temp, surfaceArea, config)
+    AK.foreachindex(Ck, min_elems=workgroup, block_size=workgroup) do i 
+        S2_temp = filter(S1_temp, i)
+        Ck_i = S2_temp/MM2F[i]
+        Ck[i] = 0.5*(norm(Ck_i) + Ck_i)
+    end
+    
+    
+    # Ck!(Ck, S2_temp, MM2F, config)
 
     # @. Dkf.values = temp.values*rho.values*sqrt(k.values)/(Δ.values*k.values)
     @. Dkf.values = temp.values*rho.values*sqrt(k.values)/(Δ.values)

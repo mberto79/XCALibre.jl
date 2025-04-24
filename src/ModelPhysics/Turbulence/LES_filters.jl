@@ -10,38 +10,58 @@ TopHatFilter(field::AbstractField, config) = begin
     TopHatFilter(cellArea)
 end
 
-pass(a) = a
+prepass(a, i) = a[i]
+postpass(a) = a
 
-(filter::TopHatFilter)(field::FieldType, cID, operation=pass) where FieldType = begin
+accumulator(a::F) where F<:AbstractFloat = zero(F)
+
+accumulator(a::SVector{3,F}) where F = begin
+    z = zero(F)
+    SVector{3,F}(z, z, z)
+end
+
+accumulator(a::SMatrix{3,3,F,9}) where F = begin
+    z = zero(F)
+    SMatrix{3,3}(z, z, z, z, z, z, z, z, z)
+end
+
+(filter::TopHatFilter)(field::FieldType, cID; pre=prepass, post=postpass) where FieldType = begin
     @uniform begin
-        (; mesh) = field
+        mesh = _mesh(field)
         (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
         (; cellArea) = filter
-        
     end
      
     @inbounds begin
         (; volume, faces_range) = cells[cID]
 
-        surfaceSum = nothing 
-        if FieldType <: AbstractScalarField
-            surfaceSum = 0.0
-        elseif FieldType <: AbstractVectorField
-            surfaceSum = SVector{3}(0.0,0.0,0.0)
-        elseif FieldType <: AbstractTensorField 
-            surfaceSum = SMatrix{3,3}(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-        end 
+        # preType = typeof(pre(field, 1))
+
+        surfaceSum = accumulator(pre(field, 1)) 
+        # if preType <: Union{Number,AbstractScalarField}
+        #     surfaceSum = 0.0
+        # elseif preType <: Union{AbstractVector,AbstractVectorField}
+        #     surfaceSum = SVector{3}(0.0,0.0,0.0)
+        # elseif preType <: Union{AbstractMatrix,AbstractTensorField}
+        #     surfaceSum = SMatrix{3,3}(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        # end 
+
+        # println("$preType and $(typeof(surfaceSum))")
+
 
         for fi ∈ faces_range
             fID = cell_faces[fi]
-            (; area) = faces[fID]
-            cID2 = cell_neighbours[fi]
-            f1 = operation(field[cID])
-            f2 = operation(field[cID2])
+            (; area, ownerCells) = faces[fID]
+            # cID1 = ownerCells[1] #cell_neighbours[fi]
+            # cID2 = ownerCells[2]
+            cIDN = cell_neighbours[fi]
+            
+            f1 = pre(field, cID)
+            f2 = pre(field, cIDN)
             fieldf = 0.5*f1 + 0.5*f2
             surfaceSum += fieldf*area
         end
-        filteredField = surfaceSum/cellArea[cID]
+        filteredField = post(surfaceSum/cellArea[cID])
         return filteredField
     end
 end

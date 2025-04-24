@@ -4,6 +4,7 @@ export AbstractScalarField, ScalarField, FaceScalarField
 export AbstractVectorField, VectorField, FaceVectorField
 export AbstractTensorField, TensorField, T
 export StrainRate, Dev, Sqr, MagSqr
+export _mesh
 export initialise!
 
 # ABSTRACT TYPES
@@ -236,7 +237,7 @@ Base.getindex(T::TensorField, i::Integer) = begin
         )
 end
 
-Base.setindex!(T::TensorField, t::SMatrix{3,3,F,9}, i::Integer) where F= begin
+Base.setindex!(T::TensorField, t::SMatrix{3,3,F,9}, i::Integer) where F = begin
     T.xx[i] = t[1,1]
     T.yx[i] = t[2,1]
     T.zx[i] = t[3,1]
@@ -251,6 +252,7 @@ end
 Base.length(t::AbstractTensorField) = length(t.xx)
 Base.eachindex(t::AbstractTensorField) = eachindex(t.xx)
 KA.get_backend(t::AbstractTensorField) = KA.get_backend(t.xx)
+_mesh(field::AbstractField) = field.mesh # catch all accessor to mesh
 
 # TRANSPOSE IMPLEMENTATION
 
@@ -281,6 +283,7 @@ struct StrainRate{G, GT, TU, TUF} <: AbstractTensorField
     Uf::TUF
 end
 Adapt.@adapt_structure StrainRate
+_mesh(field::StrainRate) = _mesh(field.U)
 
 Base.getindex(S::StrainRate{G, GT, TU, TUF}, i::I) where {G, GT, TU, TUF, I<:Integer} = begin
     0.5.*(S.gradU[i] .+ S.gradUT[i])
@@ -295,6 +298,8 @@ Base.getindex(T::Dev{Tensor}, i::Idx) where {Tensor<:AbstractTensorField,Idx<:In
     Ti = T.parent[i]
     Ti - 1/3*tr(Ti)*I
 end
+
+_mesh(field::Dev) = _mesh(field.parent)
 
 # Initialise Scalar and Vector fields
 """

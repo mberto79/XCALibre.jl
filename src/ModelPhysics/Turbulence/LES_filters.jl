@@ -28,7 +28,7 @@ end
 (filter::TopHatFilter)(field::FieldType, cID; pre=prepass, post=postpass) where FieldType = begin
     @uniform begin
         mesh = _mesh(field)
-        (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
+        (; faces, cells, cell_faces, cell_neighbours, boundary_cellsID) = mesh
         (; cellArea) = filter
     end
      
@@ -60,6 +60,15 @@ end
             f2 = pre(field, cIDN)
             fieldf = 0.5*f1 + 0.5*f2
             surfaceSum += fieldf*area
+        end
+        # filteredField = post((surfaceSum)/cellArea[cID])
+        FIDS = findall(isequal(cID), boundary_cellsID)
+        for FID ∈ FIDS
+            if FID < 561
+            face = faces[FID]
+            f1 = pre(field, cID)
+            surfaceSum += face.area*f1
+            end
         end
         filteredField = post(surfaceSum/cellArea[cID])
         return filteredField
@@ -160,7 +169,6 @@ end
             surfaceSum += phif[fID]*area
             # areaSum += area
         end
-        # res = surfaceSum/areaSum
         res = surfaceSum/surfaceArea[i]
 
         phiFiltered[i] = res
@@ -205,7 +213,7 @@ end
     cID = boundary_cellsID[fID]
     (; faces_range) = cells[cID]
 
-    areaSum = 0.0
+    # areaSum = 0.0
     surfaceSum = nothing 
     if Field <: AbstractVectorField 
         surfaceSum = SVector{3}(0.0,0.0,0.0)
@@ -214,12 +222,12 @@ end
     end 
 
     # area = nothing
-    for fi ∈ faces_range
-        cfID = cell_faces[fi] # cell-based face ID
-        (; area) = faces[cfID]
-        # surfaceSum += phif[cfID]*area
-        areaSum += area
-    end
+    # for fi ∈ faces_range
+    #     cfID = cell_faces[fi] # cell-based face ID
+    #     (; area) = faces[cfID]
+    #     # surfaceSum += phif[cfID]*area
+    #     # areaSum += area
+    # end
     bfarea = faces[fID].area
     # areaSum += bfarea
     # surfaceSum += phif[fID]*bfarea

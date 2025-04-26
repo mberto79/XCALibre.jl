@@ -25,43 +25,33 @@ accumulator(a::SMatrix{3,3,F,9}) where F = begin
     SMatrix{3,3}(z, z, z, z, z, z, z, z, z)
 end
 
-(filter::TopHatFilter)(field::FieldType, cID; pre=prepass, post=postpass) where FieldType = begin
+(filter::TopHatFilter)(field::AbstractField, cID; pre=prepass, post=postpass) = begin
     @uniform begin
         mesh = _mesh(field)
         (; faces, cells, cell_faces, cell_neighbours, boundary_cellsID) = mesh
         (; cellArea) = filter
     end
-     
+
     @inbounds begin
         (; volume, faces_range) = cells[cID]
 
-        # preType = typeof(pre(field, 1))
-
         surfaceSum = accumulator(pre(field, 1)) 
-        # if preType <: Union{Number,AbstractScalarField}
-        #     surfaceSum = 0.0
-        # elseif preType <: Union{AbstractVector,AbstractVectorField}
-        #     surfaceSum = SVector{3}(0.0,0.0,0.0)
-        # elseif preType <: Union{AbstractMatrix,AbstractTensorField}
-        #     surfaceSum = SMatrix{3,3}(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-        # end 
-
-        # println("$preType and $(typeof(surfaceSum))")
-
 
         for fi ∈ faces_range
             fID = cell_faces[fi]
-            (; area, ownerCells) = faces[fID]
-            # cID1 = ownerCells[1] #cell_neighbours[fi]
-            # cID2 = ownerCells[2]
-            cIDN = cell_neighbours[fi]
+            (; area, weight, ownerCells) = faces[fID]
+            cID1 = ownerCells[1] 
+            cID2 = ownerCells[2]
+            # cIDN = cell_neighbours[fi]
             
-            f1 = pre(field, cID)
-            f2 = pre(field, cIDN)
+            f1 = pre(field, cID1)
+            f2 = pre(field, cID2)
+            # fieldf = weight*f1 + (1 - weight)*f2
             fieldf = 0.5*f1 + 0.5*f2
             surfaceSum += fieldf*area
         end
         # filteredField = post((surfaceSum)/cellArea[cID])
+        # return filteredField
         FIDS = findall(isequal(cID), boundary_cellsID)
         for FID ∈ FIDS
             if FID < 561
@@ -257,6 +247,7 @@ function basic_filter!(phiFiltered, phi, surfaceArea, config)
     # # Launch result calculation kernel
     kernel! = _integrate_surface!(backend, workgroup)
     kernel!(phiFiltered, phi, surfaceArea, ndrange=length(phiFiltered))
+    KernelAbstractions.synchronize(backend)
 
     # # number of boundary faces
     # nbfaces = length(phif.mesh.boundary_cellsID)

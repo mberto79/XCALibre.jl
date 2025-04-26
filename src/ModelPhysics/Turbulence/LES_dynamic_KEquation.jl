@@ -167,11 +167,11 @@ function turbulence!(
     production!(Pk, nut, gradU, S, config)
     @. mueffk.values = rhof.values * (nuf.values + nutf.values)
     div!(divU, Uf, config)
-    @. divU.values = abs(2/3*rho.values*divU.values)
+    @. divU.values = 0.0#abs(2/3*rho.values*divU.values)
     @. kSource.values = k.values #/getproperty.(mesh.cells, :volume)
 
     surfaceArea = cell_surface_area(U, config)
-    filter = TopHatFilter(U, config)
+    _filter = TopHatFilter(U, config)
 
     Umag2hat = ScalarField(model.domain)
     # basic_filter_new!(Umag2hat, MagSqr(Uf), surfaceArea, config)
@@ -186,45 +186,40 @@ function turbulence!(
     KK = ScalarField(model.domain)
     
     AK.foreachindex(U, min_elems=workgroup, block_size=workgroup) do i 
-        Uhat[i] = filter(U, i)
-        Umag2hat[i] = filter(U, i, pre = (U, i)-> U[i]⋅U[i])
-        Uhat2[i] = filter(U, i, post = (U)-> U⋅U)
+        Uhat[i] = _filter(U, i)
+        Umag2hat[i] = _filter(U, i, pre = (U, i)-> U[i]⋅U[i])
+        Uhat2[i] = _filter(U, i, post = (U)-> U⋅U)
         KK[i] = max(0.5*(Umag2hat[i] - Uhat2[i]), 1e-30)
         outScalar[i] = sqrt(KK[i])
     end
 
-    # @. KK.values = max(0.5*(Umag2hat.values - Uhat2.values), 0.0)
-    # @. outScalar.values = sqrt(KK.values) # sqrt(KK.values)
-
     DevF = TensorField(model.domain)
-   
-
     temp = ScalarField(model.domain)
+    Ce = ScalarField(model.domain)
     AK.foreachindex(DevF, min_elems=workgroup, block_size=workgroup) do i 
-        DevFi = filter(Dev(S), i);  DevF[i] =  DevFi
-        mag2DFi = filter(Dev(S), i, pre = (x, i) -> 2*x[i]⋅x[i])
-        temp[i] = max((nu[i] + nut[i])*(mag2DFi - 2*DevFi⋅DevFi), 1e-30)
+        DevFi = _filter(Dev(S), i);  DevF[i] =  DevFi
+        mag2DFi = _filter(Dev(S), i, pre = (x, i) -> 2*x[i]⋅x[i])
+        temp[i] = (nu[i] + nut[i])*(mag2DFi - 2*DevFi⋅DevFi)
+        # mag2DFi = _filter(Dev(S), i, pre = (x, i) -> x[i]⋅x[i])
+        # temp[i] = (nu[i] + nut[i])*(mag2DFi - DevFi⋅DevFi)
+        
         # outScalar[i] = temp[i]
     end
 
-    numerator = ScalarField(model.domain)
-    # denominator = ScalarField(model.domain)
-    basic_filter!(numerator, temp, surfaceArea, config)
+    # basic_filter!(numerator, temp, surfaceArea, config)
 
     AK.foreachindex(temp, min_elems=workgroup, block_size=workgroup) do i 
-        # n = filter(temp, i)
-        n = numerator[i]
-        d = filter(KK, i, pre=(KK,i)-> KK[i]^(1.5)/(2.0*Δ[i]))
-        a = n/(d + 1e-30)
-        temp[i] = 0.5*(norm(a) + a) # Ce
-        # outScalar[i] = temp[i]
+        numerator = _filter(temp, i)
+        d = _filter(KK, i, pre=(KK,i)-> KK[i]^(1.5)/(2.0*Δ[i]))
+        a = numerator/(d + 1e-30)
+        Ce[i] = 0.5*(norm(a) + a) # Ce
     end
 
     # The fun part of dealing with tensors LL and MM 
 
     T_temp = TensorField(model.domain)
     AK.foreachindex(T_temp, min_elems=workgroup, block_size=workgroup) do i 
-        U2Fi = filter(U, i, pre=(U, i)-> U[i]*U[i]')
+        U2Fi = _filter(U, i, pre=(U, i)-> U[i]*U[i]')
         @inbounds T_temp[i] = U2Fi - Uhat[i]*Uhat[i]'
     end
 
@@ -233,23 +228,27 @@ function turbulence!(
     
     MM = TensorField(model.domain)
     MMi!(T_temp, KK,Δ, DevF, config)
-    basic_filter!(MM, T_temp, surfaceArea, config)
+    # basic_filter!(MM, T_temp, surfaceArea, config)
+    AK.foreachindex(MM, min_elems=workgroup, block_size=workgroup) do i 
+        MM[i] = _filter(T_temp, i)
+    end
     
     MM2F = ScalarField(model.domain)
 
     AK.foreachindex(MM2F, min_elems=workgroup, block_size=workgroup) do i 
-        MM2F[i] = filter(MM, i, pre = (x, i) -> 2*x[i]⋅x[i])
+        # MM2F[i] = _filter(MM, i, pre = (x, i) -> 2*x[i]⋅x[i])
+        MM2F[i] = _filter(MM, i, pre = (x, i) -> x[i]⋅x[i])
     end
 
     Ck = ScalarField(model.domain)
     AK.foreachindex(Ck, min_elems=workgroup, block_size=workgroup) do i 
-        Ck_i = filter(LL, i, pre = (LL, i)-> 0.5*LL[i]⋅MM[i])/MM2F[i]
+        Ck_i = _filter(LL, i, pre = (LL, i)-> 0.5*LL[i]⋅MM[i])/MM2F[i]
         Ck[i] = 0.5*(norm(Ck_i) + Ck_i)
         # println(Ck_i)
     end
     
     # @. Dkf.values = temp.values*rho.values*sqrt(k.values)/(Δ.values*k.values)
-    @. Dkf.values = temp.values*rho.values*sqrt(k.values)/(Δ.values)
+    @. Dkf.values = Ce.values*rho.values*sqrt(k.values)/(Δ.values)
 
     # Solve k equation
     # prev .= k.values

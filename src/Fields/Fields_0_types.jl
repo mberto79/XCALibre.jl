@@ -296,6 +296,7 @@ Adapt.@adapt_structure Dev
 
 Base.getindex(T::Dev{Tensor}, i::Idx) where {Tensor<:AbstractTensorField,Idx<:Integer} = begin
     Ti = T.parent[i]
+    # Ti - 1/3*tr(Ti)*I
     Ti - 1/3*tr(Ti)*I
 end
 

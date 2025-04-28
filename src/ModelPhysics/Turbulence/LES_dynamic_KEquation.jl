@@ -104,7 +104,8 @@ function initialise(
             + Si(Dkf,k) # Dkf = (Ce*rho*sqrt(k)/Δ)*k
             + Si(divU,k) # Needs adding
             ==
-            Source(Pk) + Source(kSource)
+            # Source(Pk) + Source(kSource)
+            Source(Pk) + Source(k)
         ) → eqn
 
     @reset k_eqn.preconditioner = set_preconditioner(
@@ -154,6 +155,7 @@ function turbulence!(
 
     Pk = get_source(k_eqn, 1)
     kSource = get_source(k_eqn, 2)
+    mdotf = get_flux(k_eqn, 2)
     mueffk = get_flux(k_eqn, 3)
     Dkf = get_flux(k_eqn, 4)
     divU = get_flux(k_eqn, 5)
@@ -164,24 +166,33 @@ function turbulence!(
     # update fluxes 
     # magnitude2!(Pk, S, config, scale_factor=2) # mag2 written to Pk
     # @. Pk.values = rho.values*nut.values*Pk.values # corrects Pk to become actual production
-    production!(Pk, nut, gradU, S, config)
-    @. mueffk.values = rhof.values * (nuf.values + nutf.values)
-    div!(divU, Uf, config)
-    @. divU.values = 0.0#abs(2/3*rho.values*divU.values)
-    @. kSource.values = k.values #/getproperty.(mesh.cells, :volume)
+    # production!(Pk, nut, gradU, S, config)
+    # @. mueffk.values = rhof.values * (nuf.values + nutf.values)
+    divUf = FaceVectorField(mesh)
+    AK.foreachindex(divUf, min_elems=workgroup, block_size=workgroup) do i 
+        divUf[i] = mdotf[i]*Uf[i]
+    end
+    div!(divU, divUf, config)
 
-    surfaceArea = cell_surface_area(U, config)
+    AK.foreachindex(Pk, min_elems=workgroup, block_size=workgroup) do i 
+        Pk[i] = 2*nut[i]*(gradU[i]⋅Dev(S)[i])
+        mueffk[i] = rhof[i] * (nuf[i] + nutf[i])
+        divU[i] = 0.0*abs(2/3*rho[i]*divU[i])
+        # kSource[i] = k[i] #/getproperty.(mesh.cells, :volume)
+    end
+
+    
+
+    # @. divU.values = 0.0#abs(2/3*rho.values*divU.values)
+    # @. kSource.values = k.values #/getproperty.(mesh.cells, :volume)
+
     _filter = TopHatFilter(U, config)
 
     Umag2hat = ScalarField(model.domain)
-    # basic_filter_new!(Umag2hat, MagSqr(Uf), surfaceArea, config)
-    # @. outScalar.values = Umag2hat.values
     
 
     Uhat = VectorField(model.domain)
     Uhat2 = ScalarField(model.domain)
-    # basic_filter_new!(Uhat, Uf, surfaceArea, config)
-    # magnitude2!(Uhat2, Uhat, config)
 
     KK = ScalarField(model.domain)
     
@@ -189,21 +200,16 @@ function turbulence!(
         Uhat[i] = _filter(U, i)
         Umag2hat[i] = _filter(U, i, pre = (U, i)-> U[i]⋅U[i])
         Uhat2[i] = _filter(U, i, post = (U)-> U⋅U)
-        KK[i] = max(0.5*(Umag2hat[i] - Uhat2[i]), 1e-30)
-        outScalar[i] = sqrt(KK[i])
+        KK[i] = max(0.5*(Umag2hat[i] - Uhat2[i]), 0.0)
     end
 
     DevF = TensorField(model.domain)
     temp = ScalarField(model.domain)
     Ce = ScalarField(model.domain)
     AK.foreachindex(DevF, min_elems=workgroup, block_size=workgroup) do i 
-        DevFi = _filter(Dev(S), i);  DevF[i] =  DevFi
-        mag2DFi = _filter(Dev(S), i, pre = (x, i) -> 2*x[i]⋅x[i])
-        temp[i] = (nu[i] + nut[i])*(mag2DFi - 2*DevFi⋅DevFi)
-        # mag2DFi = _filter(Dev(S), i, pre = (x, i) -> x[i]⋅x[i])
-        # temp[i] = (nu[i] + nut[i])*(mag2DFi - DevFi⋅DevFi)
-        
-        # outScalar[i] = temp[i]
+        DevF[i] = _filter(Dev(S), i) #;  DevF[i] =  DevFi
+        mag2DFi = _filter(Dev(S), i, pre = (x, i) -> x[i]⋅x[i])
+        temp[i] = (nu[i] + nut[i])*(mag2DFi - DevF[i]⋅DevF[i])
     end
 
     # basic_filter!(numerator, temp, surfaceArea, config)
@@ -211,7 +217,7 @@ function turbulence!(
     AK.foreachindex(temp, min_elems=workgroup, block_size=workgroup) do i 
         numerator = _filter(temp, i)
         d = _filter(KK, i, pre=(KK,i)-> KK[i]^(1.5)/(2.0*Δ[i]))
-        a = numerator/(d + 1e-30)
+        a = numerator/(d)
         Ce[i] = 0.5*(norm(a) + a) # Ce
     end
 
@@ -224,10 +230,19 @@ function turbulence!(
     end
 
     LL = TensorField(model.domain)
-    basic_filter!(LL, Dev(T_temp), surfaceArea, config)
+    # basic_filter!(LL, Dev(T_temp), surfaceArea, config)
+
+    AK.foreachindex(T_temp, min_elems=workgroup, block_size=workgroup) do i 
+        LL[i] = _filter(T_temp, i, pre=(x, i)-> x[i] - 1/3*tr(x[i])*I)
+    end
     
     MM = TensorField(model.domain)
-    MMi!(T_temp, KK,Δ, DevF, config)
+    # MMi!(T_temp, KK,Δ, DevF, config)
+
+    AK.foreachindex(T_temp, min_elems=workgroup, block_size=workgroup) do i 
+        T_temp[i] = -2*Δ[i]*sqrt(KK[i])*DevF[i]
+    end
+
     # basic_filter!(MM, T_temp, surfaceArea, config)
     AK.foreachindex(MM, min_elems=workgroup, block_size=workgroup) do i 
         MM[i] = _filter(T_temp, i)
@@ -242,7 +257,8 @@ function turbulence!(
 
     Ck = ScalarField(model.domain)
     AK.foreachindex(Ck, min_elems=workgroup, block_size=workgroup) do i 
-        Ck_i = _filter(LL, i, pre = (LL, i)-> 0.5*LL[i]⋅MM[i])/MM2F[i]
+        local Ck_i = _filter(LL, i, pre = (LL, i)-> 0.5*LL[i]⋅MM[i])
+        Ck_i = Ck_i/MM2F[i]
         Ck[i] = 0.5*(norm(Ck_i) + Ck_i)
         # println(Ck_i)
     end

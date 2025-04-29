@@ -176,6 +176,7 @@ Base.getindex(vec::Sqr{N,Field}, i::I) where {N,Field<:AbstractVectorField,I<:In
     vi = vec.parent[i]
     vec.scale*vi*vi'
 end
+_mesh(field::Sqr) = _mesh(field.parent)
 
 struct MagSqr{N,T<:AbstractField} <: AbstractScalarField
     scale::N
@@ -186,10 +187,11 @@ Adapt.@adapt_structure MagSqr
 # MagSqr(scale::Number, field) = MagSqr(scale, field)
 MagSqr(field) = MagSqr(1, field)
 
-Base.getindex(vec::MagSqr{N,Field}, i::I) where {N,Field<:AbstractVectorField,I<:Integer} = begin
+Base.getindex(vec::MagSqr{N,Field}, i::I) where {N,Field<:AbstractField,I<:Integer} = begin
     vi = vec.parent[i]
     vec.scale*vi⋅vi
 end
+_mesh(field::MagSqr) = _mesh(field.parent)
 
 
 # TENSORFIELD IMPLEMENTATION
@@ -286,7 +288,8 @@ Adapt.@adapt_structure StrainRate
 _mesh(field::StrainRate) = _mesh(field.U)
 
 Base.getindex(S::StrainRate{G, GT, TU, TUF}, i::I) where {G, GT, TU, TUF, I<:Integer} = begin
-    0.5.*(S.gradU[i] .+ S.gradUT[i])
+    gradi = S.gradU[i]
+    0.5*(gradi + gradi')
 end
 
 struct Dev{T<:AbstractTensorField} <: AbstractTensorField

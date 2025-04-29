@@ -95,6 +95,7 @@ function initialise(
 
     delta!(Δ, mesh, config)
     @. Δ.values = (((Δ.values^3)/0.001)^0.5) # get 2D delta
+    # @. Δ.values = (((Δ.values^3))^0.5) # get 2D delta
     # @. Δ.values = Δ.values^2 # store delta squared since it will be needed
 
     k_eqn = (
@@ -104,8 +105,8 @@ function initialise(
             + Si(Dkf,k) # Dkf = (Ce*rho*sqrt(k)/Δ)*k
             + Si(divU,k) # Needs adding
             ==
-            # Source(Pk) + Source(kSource)
-            Source(Pk) + Source(k)
+            Source(Pk) + Source(kSource)
+            # Source(Pk) + Source(k)
         ) → eqn
 
     @reset k_eqn.preconditioner = set_preconditioner(
@@ -163,107 +164,49 @@ function turbulence!(
     grad!(gradU, Uf, U, U.BCs, time, config)
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
     
-    # update fluxes 
-    # magnitude2!(Pk, S, config, scale_factor=2) # mag2 written to Pk
-    # @. Pk.values = rho.values*nut.values*Pk.values # corrects Pk to become actual production
-    # production!(Pk, nut, gradU, S, config)
-    # @. mueffk.values = rhof.values * (nuf.values + nutf.values)
-    divUf = FaceVectorField(mesh)
-    AK.foreachindex(divUf, min_elems=workgroup, block_size=workgroup) do i 
-        divUf[i] = mdotf[i]*Uf[i]
-    end
-    div!(divU, divUf, config)
+    # update fluxes
+    # divUf = FaceVectorField(mesh)
+    # AK.foreachindex(divUf, min_elems=workgroup, block_size=workgroup) do i 
+    #     divUf[i] = mdotf[i]*Uf[i]
+    # end
+    # div!(divU, divUf, config)
 
     AK.foreachindex(Pk, min_elems=workgroup, block_size=workgroup) do i 
         Pk[i] = 2*nut[i]*(gradU[i]⋅Dev(S)[i])
+        # Pk[i] = 2*nut[i]*(gradU[i]⋅Dev(gradU.result)[i])
         mueffk[i] = rhof[i] * (nuf[i] + nutf[i])
-        divU[i] = 0.0*abs(2/3*rho[i]*divU[i])
-        # kSource[i] = k[i] #/getproperty.(mesh.cells, :volume)
+        # divU[i] = abs(2/3*rho[i]*divU[i])
+        divU[i] = 2/3*rho[i]*tr(gradU[i]) #/mesh.cells[i].volume
+        kSource[i] = k[i] #/mesh.cells[i].volume
+        outScalar[i] = mesh.cells[i].volume
     end
-
-    
-
-    # @. divU.values = 0.0#abs(2/3*rho.values*divU.values)
-    # @. kSource.values = k.values #/getproperty.(mesh.cells, :volume)
 
     _filter = TopHatFilter(U, config)
-
-    Umag2hat = ScalarField(model.domain)
-    
-
-    Uhat = VectorField(model.domain)
-    Uhat2 = ScalarField(model.domain)
-
+    # Umag2hat = ScalarField(model.domain)
+    # Uhat = VectorField(model.domain)
+    # Uhat2 = ScalarField(model.domain)
     KK = ScalarField(model.domain)
+    DevF = TensorField(model.domain)
+    mag2DF = ScalarField(model.domain)
+    Ce = ScalarField(model.domain)
+    T_temp = TensorField(model.domain)
+    LL = TensorField(model.domain)
+    MM = TensorField(model.domain)
+    # MM2F = ScalarField(model.domain)
+    Ck = ScalarField(model.domain)
+
     
     AK.foreachindex(U, min_elems=workgroup, block_size=workgroup) do i 
-        Uhat[i] = _filter(U, i)
-        Umag2hat[i] = _filter(U, i, pre = (U, i)-> U[i]⋅U[i])
-        Uhat2[i] = _filter(U, i, post = (U)-> U⋅U)
-        KK[i] = max(0.5*(Umag2hat[i] - Uhat2[i]), 0.0)
+        Umag2hati = _filter(MagSqr(U), i) 
+        Uhat2i = _filter(U, i, post=(U)-> U⋅U)
+        KK[i] = max(0.5*(Umag2hati - Uhat2i), 0.0)
     end
 
-    DevF = TensorField(model.domain)
-    temp = ScalarField(model.domain)
-    Ce = ScalarField(model.domain)
-    AK.foreachindex(DevF, min_elems=workgroup, block_size=workgroup) do i 
-        DevF[i] = _filter(Dev(S), i) #;  DevF[i] =  DevFi
-        mag2DFi = _filter(Dev(S), i, pre = (x, i) -> x[i]⋅x[i])
-        temp[i] = (nu[i] + nut[i])*(mag2DFi - DevF[i]⋅DevF[i])
-    end
-
-    # basic_filter!(numerator, temp, surfaceArea, config)
-
-    AK.foreachindex(temp, min_elems=workgroup, block_size=workgroup) do i 
-        numerator = _filter(temp, i)
-        d = _filter(KK, i, pre=(KK,i)-> KK[i]^(1.5)/(2.0*Δ[i]))
-        a = numerator/(d)
-        Ce[i] = 0.5*(norm(a) + a) # Ce
-    end
-
-    # The fun part of dealing with tensors LL and MM 
-
-    T_temp = TensorField(model.domain)
-    AK.foreachindex(T_temp, min_elems=workgroup, block_size=workgroup) do i 
-        U2Fi = _filter(U, i, pre=(U, i)-> U[i]*U[i]')
-        @inbounds T_temp[i] = U2Fi - Uhat[i]*Uhat[i]'
-    end
-
-    LL = TensorField(model.domain)
-    # basic_filter!(LL, Dev(T_temp), surfaceArea, config)
-
-    AK.foreachindex(T_temp, min_elems=workgroup, block_size=workgroup) do i 
-        LL[i] = _filter(T_temp, i, pre=(x, i)-> x[i] - 1/3*tr(x[i])*I)
-    end
+    tensorForm = Dev(S)
+    Ce!(Ce, tensorForm, KK, mag2DF, DevF, nu, nut, Δ, _filter, workgroup)
+    Ck!(Ck, gradU.result, KK, U, T_temp, DevF, Δ, LL, MM, _filter, workgroup) 
+    # goodish iwth gradU.result
     
-    MM = TensorField(model.domain)
-    # MMi!(T_temp, KK,Δ, DevF, config)
-
-    AK.foreachindex(T_temp, min_elems=workgroup, block_size=workgroup) do i 
-        T_temp[i] = -2*Δ[i]*sqrt(KK[i])*DevF[i]
-    end
-
-    # basic_filter!(MM, T_temp, surfaceArea, config)
-    AK.foreachindex(MM, min_elems=workgroup, block_size=workgroup) do i 
-        MM[i] = _filter(T_temp, i)
-    end
-    
-    MM2F = ScalarField(model.domain)
-
-    AK.foreachindex(MM2F, min_elems=workgroup, block_size=workgroup) do i 
-        # MM2F[i] = _filter(MM, i, pre = (x, i) -> 2*x[i]⋅x[i])
-        MM2F[i] = _filter(MM, i, pre = (x, i) -> x[i]⋅x[i])
-    end
-
-    Ck = ScalarField(model.domain)
-    AK.foreachindex(Ck, min_elems=workgroup, block_size=workgroup) do i 
-        local Ck_i = _filter(LL, i, pre = (LL, i)-> 0.5*LL[i]⋅MM[i])
-        Ck_i = Ck_i/MM2F[i]
-        Ck[i] = 0.5*(norm(Ck_i) + Ck_i)
-        # println(Ck_i)
-    end
-    
-    # @. Dkf.values = temp.values*rho.values*sqrt(k.values)/(Δ.values*k.values)
     @. Dkf.values = Ce.values*rho.values*sqrt(k.values)/(Δ.values)
 
     # Solve k equation
@@ -276,11 +219,6 @@ function turbulence!(
     k_res = solve_system!(k_eqn, solvers.k, k, nothing, config)
     bound!(k, config)
     # explicit_relaxation!(k, prev, solvers.k.relax, config)
-
-    # from Smagorinsky to get solution during prototyping
-    # magnitude!(magS, S, config)
-    # @. magS.values *= sqrt(2) # should fuse into definition of magnitude function!
-    # @. nut.values = coeffs.C*Δ.values*magS.values # careful: here Δ = Δ²
 
     @. nut.values = Ck.values*Δ.values*sqrt(k.values)
     # this->nut_ = Ck(D, KK)*sqrt(k_)*this->delta()
@@ -321,44 +259,49 @@ end
 
 # KEquation - internal functions
 
-function MMi!(MM, KK,Δ, DevF, config)
-    (; hardware) = config
-    (; backend, workgroup) = hardware
+function Ce!(Ce, D, KK, mag2DF, DevF, nu, nut, Δ, filter, workgroup)
+    AK.foreachindex(DevF, min_elems=workgroup, block_size=workgroup) do i 
+        mag2DF[i] = filter(MagSqr(2,D), i) # added 2
+        # mag2DF[i] = filter(MagSqr(D), i)
+        DevF[i] = filter(D, i)
+    end
 
-    # # Launch result calculation kernel
-    kernel! = _MMi!(backend, workgroup)
-    kernel!(MM, KK,Δ, DevF, ndrange=length(MM))
-end
-
-@kernel function _MMi!(MM, KK,Δ, DevF)
-    i = @index(Global)
-
-    @inbounds begin
-        MM[i] = -2*Δ[i]*sqrt(max(KK[i],1e-30))*DevF[i]
+    AK.foreachindex(Ce, min_elems=workgroup, block_size=workgroup) do i 
+        Ce_n = filter(mag2DF, i, pre=(mag2DF,i)-> Ce1(mag2DF, DevF, nu, nut, i))
+        Ce_d = filter(KK, i, pre=(KK,i)-> Ce2(KK, Δ, i) )
+        a = Ce_n/Ce_d
+        Ce[i] = 0.5*(norm(a) + a)
     end
 end
 
-function production!(Pk, nut, gradU, S, config)
-    (; hardware) = config
-    (; backend, workgroup) = hardware
+Ce1(mag2DF, DevF, nu, nut, i) = (nu[i] + nut[i])*(mag2DF[i] - 2*DevF[i]⋅DevF[i]) # added 2
+# Ce1(mag2DF, DevF, nu, nut, i) = (nu[i] + nut[i])*(mag2DF[i] - DevF[i]⋅DevF[i])
+Ce2(KK, Δ, i) = KK[i]^(1.5)/(2.0*Δ[i])
 
-    # # Launch result calculation kernel
-    kernel! = _production!(backend, workgroup)
-    kernel!(Pk, nut, gradU, Dev(S), ndrange=length(Pk))
+function Ck!(Ck, D, KK, U, T_temp, DevF, Δ, LL, MM, filter, workgroup)
+    AK.foreachindex(T_temp, min_elems=workgroup, block_size=workgroup) do i 
+        DevF[i] = filter(D, i)
+        U2Fi = filter(Sqr(U), i)
+        Uhati = filter(U, i)
+        @inbounds T_temp[i] = U2Fi - Uhati*Uhati'
+    end
+
+    AK.foreachindex(T_temp, min_elems=workgroup, block_size=workgroup) do i 
+        LL[i] = filter(Dev(T_temp), i)
+        MM[i] = filter(KK, i, pre =(KK,i) -> CkMM(KK, DevF, Δ, i))
+    end
+
+    AK.foreachindex(Ck, min_elems=workgroup, block_size=workgroup) do i 
+        Ck_n = filter(LL, i, pre=(LL,i)->Ck1(LL, MM, i))
+        # Ck_d =filter(MagSqr(2,MM), i) # added 2
+        Ck_d =filter(MagSqr(MM), i)
+        Ck_i = Ck_n/Ck_d
+        Ck[i] = 0.5*(norm(Ck_i) + Ck_i)
+    end
 end
 
-@kernel function _production!(Pk, nut, gradU, DevgradU)
-    i = @index(Global)
-
-    @inbounds begin
-        # Pk[i] = 2*nut[i]*(gradU[i]⋅DevgradU[i])
-        Pk[i] = 2*nut[i]*(gradU[i]⋅DevgradU[i])
-    end 
-end
-
-function Ce(D, KK)
-    nothing
-end
+CkMM(KK, DevF, Δ, i) = -2*Δ[i]*sqrt(KK[i])*DevF[i]
+Ck1(LL, MM, i) = 0.5*LL[i]⋅MM[i]
 
 function correct_nut!(nut, D, KK)
     nothing

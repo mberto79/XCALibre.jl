@@ -46,12 +46,14 @@ end
             
             f1 = pre(field, cID1)
             f2 = pre(field, cID2)
-            # fieldf = weight*f1 + (1 - weight)*f2
-            fieldf = 0.5*f1 + 0.5*f2
+            fieldf = weight*f1 + (1 - weight)*f2
+            # fieldf = 0.5*f1 + 0.5*f2
             surfaceSum += fieldf*area
         end
+        
         # filteredField = post((surfaceSum)/cellArea[cID])
         # return filteredField
+
         FIDS = findall(isequal(cID), boundary_cellsID)
         for FID ∈ FIDS
             if FID < 561

@@ -17,8 +17,10 @@ end
     @inbounds begin
         (; IDs_range) = boundaries[BC.ID]
         fID = IDs_range[i]
+
         # cID = boundary_cellsID[fID]
         # phif_values[fID] = phi_values[cID] 
+
         phif_values[fID] = 0.0 
     end
 end
@@ -39,11 +41,13 @@ end
     @inbounds begin
         (; IDs_range) = boundaries[BC.ID]
         fID = IDs_range[i]
+
         # cID = boundary_cellsID[fID]
         # psi_cell = psi[cID]
         # x[fID] = psi_cell[1]
         # y[fID] = psi_cell[2]
         # z[fID] = psi_cell[3]
+        
         x[fID] = 0.0
         y[fID] = 0.0
         z[fID] = 0.0

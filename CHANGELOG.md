@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 * In the calculation of wall function properties the user-provided wall velocity is now used, instead of hard-coded to no-slip (`Wall` boundary is still hard-coded until a solution for access the `terms` object on the GPU is found) [#49](@ref)
+* In preparation for the addition of a neural network-based wall functions to correct the `Pk` and `nutw` terms at the wall, the `correct_eddy_viscosity` has been modified, now using multiple dispatch as a way to inject user boundary code [#53](@ref)
+* `update_user_boundary` function has been updated, to expose the `ModelEquation` type to it, providing the framework needed for the implementation of the neural network-based wall functions [#53](@ref)
 
 ### Breaking
 * No breaking changes

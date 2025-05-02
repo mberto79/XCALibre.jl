@@ -2,13 +2,13 @@ export apply_boundary_conditions!
 export get_boundaries
 
 
-apply_boundary_conditions!(eqnModel, BCs, component, time, config) = begin
-    _apply_boundary_conditions!(eqnModel.model, BCs, eqnModel, component, time, config)
+apply_boundary_conditions!(eqn, BCs, component, time, config) = begin
+    _apply_boundary_conditions!(eqn.model, BCs, eqnModel, component, time, config)
 end
 
 # Apply Boundaries Function
 function _apply_boundary_conditions!(
-    model::Model{TN,SN,T,S}, BCs::B, eqnModel, component, time, config) where {TN,SN,T,S,B}
+    model::Model{TN,SN,T,S}, BCs::B, eqn, component, time, config) where {TN,SN,T,S,B}
     nTerms = length(model.terms)
 
     # backend = _get_backend(mesh)
@@ -17,8 +17,8 @@ function _apply_boundary_conditions!(
 
     # Retriecve variables for function
     mesh = model.terms[1].phi.mesh
-    A = _A(eqnModel)
-    b = _b(eqnModel, component)
+    A = _A(eqn)
+    b = _b(eqn, component)
 
     # Deconstruct mesh to required fields
     (; faces, cells, boundary_cellsID) = mesh
@@ -44,7 +44,7 @@ function _apply_boundary_conditions!(
         # update_user_boundary!(BC, faces, cells, facesID_range, time, config)
         #= The `model` passed here is defined in ModelFramework_0_types.jl line 87. It has two properties: terms and sources which define the equation being solved =#
         update_user_boundary!(
-            BC, eqnModel, component, faces, cells, facesID_range, time, config)
+            BC, faces, cells, facesID_range, time, config)
         
         # Execute apply boundary conditions kernel
         kernel_range = length(facesID_range)
@@ -60,7 +60,7 @@ function _apply_boundary_conditions!(
 end
 
 update_user_boundary!(
-    BC::AbstractBoundary, eqnModel, component, faces, cells, facesID_range, time, config) = nothing
+    BC::AbstractBoundary, faces, cells, facesID_range, time, config) = nothing
 
 # Function to prevent redundant CPU copy
 

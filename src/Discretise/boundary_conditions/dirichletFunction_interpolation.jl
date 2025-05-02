@@ -43,7 +43,7 @@ function adjust_boundary!(
     if !BC.value.steady
         config = (;hardware=(;backend=backend, workgroup=workgroup)) # temp solution
         update_user_boundary!(
-            BC, eqnModel, component, faces, cells, facesID_range, time, config)
+            BC, faces, cells, facesID_range, time, config)
     end
 
     kernel! = adjust_boundary_dirichletFunction_scalar!(backend, workgroup)
@@ -63,7 +63,7 @@ function adjust_boundary!(
     if !BC.value.steady
         config = (;hardware=(;backend=backend, workgroup=workgroup)) # temp solution
         update_user_boundary!(
-            BC, eqnModel, component, faces, cells, facesID_range, time, config)
+            BC, faces, cells, facesID_range, time, config)
     end
 
     kernel! = adjust_boundary_dirichletFunction_vector!(backend, workgroup)

@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * `update_user_boundary` function has been updated, to expose the `ModelEquation` type to it, providing the framework needed for the implementation of the neural network-based wall functions [#55](@ref)
 * `RANS_functions` has been updated, removing branch used in generated functions to use multiple dispatch to allow specialising the wall function framework to ease the development of new wall functions [#xx](@ref)
 * New `NeumannFunction` has been created, mirroring the DirichletFunction, providing a Neumann boundary condition defined with a user-provided function [#xx](@ref)
+* `update_user_boundary` function has been reverted, overwritting the changes made to expose the `ModelEquation` type to it in PR #55, as this is no longer needed for the implementation of the neural network-based wall functions [#xx](@ref)
 
 ### Breaking
 * No breaking changes

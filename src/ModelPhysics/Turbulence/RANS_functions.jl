@@ -67,13 +67,10 @@ end
     BCs = fieldBCs.parameters
     func_calls = Expr[]
     for i ∈ eachindex(BCs)
-        BC = BCs[i]
-        if BC <: OmegaWallFunction
-            call = quote
-                constrain!(eqn, fieldBCs[$i], model, config)
-            end
-            push!(func_calls, call)
+        call = quote
+            constrain!(eqn, fieldBCs[$i], model, config)
         end
+        push!(func_calls, call)
     end
     quote
     $(func_calls...)
@@ -81,7 +78,9 @@ end
     end 
 end
 
-function constrain!(eqn, BC, model, config)
+constrain!(eqn, BC, model, config) = nothing
+
+function constrain!(eqn, BC::OmegaWallFunction, model, config)
 
     # backend = _get_backend(mesh)
     (; hardware) = config
@@ -164,13 +163,10 @@ end
     BCs = fieldBCs.parameters
     func_calls = Expr[]
     for i ∈ eachindex(BCs)
-        BC = BCs[i]
-        if BC <: OmegaWallFunction
-            call = quote
-                set_cell_value!(field, fieldBCs[$i], model, config)
-            end
-            push!(func_calls, call)
+        call = quote
+            set_cell_value!(field, fieldBCs[$i], model, config)
         end
+        push!(func_calls, call)
     end
     quote
     $(func_calls...)
@@ -178,7 +174,9 @@ end
     end 
 end
 
-function set_cell_value!(field, BC, model, config)
+set_cell_value!(field, BC, model, config) = nothing
+
+function set_cell_value!(field, BC::OmegaWallFunction, model, config)
     # backend = _get_backend(mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware

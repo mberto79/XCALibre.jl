@@ -204,7 +204,7 @@ function turbulence!(
         KK[i] = max(0.5*(Umag2hati - Uhat2i), 0.0)
     end
 
-    tensorForm = Dev(S) # Dev(S) # gradU.result
+    tensorForm = gradU.result # Dev(S) # gradU.result
     Ck!(Ck, tensorForm, KK, U, T_temp, DevF, Δ, LL, MM, _filter, workgroup) 
     @. nut.values = Ck.values*Δ.values*sqrt(k.values)
     Ce!(Ce, tensorForm, KK, mag2DF, DevF, nu, nut, Δ, _filter, workgroup)
@@ -250,7 +250,7 @@ function turbulence!(
         KK[i] = max(0.5*(Umag2hati - Uhat2i), 0.0)
     end
 
-    tensorForm2 = Dev(S) # gradU.result
+    tensorForm2 = gradU.result # gradU.result Dev(S)
     Ck!(Ck, tensorForm2, KK, U, T_temp, DevF, Δ, LL, MM, _filter, workgroup) 
     # goodish iwth gradU.result
     @. nut.values = Ck.values*Δ.values*sqrt(k.values)
@@ -315,10 +315,8 @@ function Ck!(Ck, D, KK, U, T_temp, DevF, Δ, LL, MM, filter, workgroup)
     AK.foreachindex(T_temp, min_elems=workgroup, block_size=workgroup) do i 
         DevF[i] = filter(D, i)
         U2Fi = filter(Sqr(U), i)
-        # U2Fi = filter(U, i, pre=(U,i)-> abs.(U[i]*U[i]'))
         Uhati = filter(U, i)
         @inbounds T_temp[i] = ((U2Fi) - (Uhati*Uhati'))
-        # @inbounds T_temp[i] = ((U2Fi) - abs.(Uhati*Uhati'))
     end
 
     AK.foreachindex(T_temp, min_elems=workgroup, block_size=workgroup) do i 
@@ -335,7 +333,6 @@ function Ck!(Ck, D, KK, U, T_temp, DevF, Δ, LL, MM, filter, workgroup)
     end
 end
 
-# CkMM(KK, DevF, Δ, i) = -2*Δ[i]*sqrt(KK[i])*DevF[i]
 CkMM(KK, DevF, Δ, i) = -2*Δ[i]*sqrt(KK[i])*DevF[i]
 Ck1(LL, MM, i) = 0.5*(LL[i]⋅MM[i])
 

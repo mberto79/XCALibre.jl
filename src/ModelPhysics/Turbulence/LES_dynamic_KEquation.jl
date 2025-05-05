@@ -204,17 +204,18 @@ function turbulence!(
         KK[i] = max(0.5*(Umag2hati - Uhat2i), 0.0)
     end
 
-    tensorForm = Dev(S)
-    Ck!(Ck, gradU.result, KK, U, T_temp, DevF, Δ, LL, MM, _filter, workgroup) 
-
+    tensorForm = Dev(S) # Dev(S) # gradU.result
+    Ck!(Ck, tensorForm, KK, U, T_temp, DevF, Δ, LL, MM, _filter, workgroup) 
     @. nut.values = Ck.values*Δ.values*sqrt(k.values)
+    Ce!(Ce, tensorForm, KK, mag2DF, DevF, nu, nut, Δ, _filter, workgroup)
 
-    interpolate!(nutf, nut, config)
-    correct_boundaries!(nutf, nut, nut.BCs, time, config)
+    # @. nut.values = Ck.values*Δ.values*sqrt(k.values)
+
+    # interpolate!(nutf, nut, config)
+    # correct_boundaries!(nutf, nut, nut.BCs, time, config)
     # correct_eddy_viscosity!(nutf, nut.BCs, model, config)
 
 
-    Ce!(Ce, tensorForm, KK, mag2DF, DevF, nu, nut, Δ, _filter, workgroup)
     # goodish iwth gradU.result
 
     #
@@ -224,11 +225,12 @@ function turbulence!(
     
     AK.foreachindex(Pk, min_elems=workgroup, block_size=workgroup) do i 
         Pk[i] = 2*nut[i]*(gradU[i]⋅Dev(S)[i])
+        # Pk[i] = 2*nut[i]*(Dev(S)[i]⋅Dev(S)[i])
         # Pk[i] = 2*nut[i]*(gradU[i]⋅Dev(gradU.result)[i])
         mueffk[i] = rhof[i] * (nuf[i] + nutf[i])
         # divU[i] = abs(2/3*rho[i]*divU[i])
         divU[i] = 2/3*rho[i]*tr(gradU[i]) #/mesh.cells[i].volume
-        kSource[i] = k[i] #/mesh.cells[i].volume
+        kSource[i] = 0.0*k[i] #/mesh.cells[i].volume
         outScalar[i] = mesh.cells[i].volume
     end
     # Solve k equation
@@ -248,7 +250,8 @@ function turbulence!(
         KK[i] = max(0.5*(Umag2hati - Uhat2i), 0.0)
     end
 
-    Ck!(Ck, tensorForm, KK, U, T_temp, DevF, Δ, LL, MM, _filter, workgroup) 
+    tensorForm2 = Dev(S) # gradU.result
+    Ck!(Ck, tensorForm2, KK, U, T_temp, DevF, Δ, LL, MM, _filter, workgroup) 
     # goodish iwth gradU.result
     @. nut.values = Ck.values*Δ.values*sqrt(k.values)
     # @. nut.values = 0.094*Δ.values*sqrt(k.values)
@@ -322,7 +325,7 @@ function Ck!(Ck, D, KK, U, T_temp, DevF, Δ, LL, MM, filter, workgroup)
         LL[i] = filter(Dev(T_temp), i)
         MM[i] = filter(KK, i, pre =(KK,i) -> CkMM(KK, DevF, Δ, i))
     end
-
+    
     AK.foreachindex(Ck, min_elems=workgroup, block_size=workgroup) do i 
         Ck_n = filter(LL, i, pre=(LL,i)->Ck1(LL, MM, i))
         # Ck_d =filter(MagSqr(2,MM), i) # added 2
@@ -332,6 +335,7 @@ function Ck!(Ck, D, KK, U, T_temp, DevF, Δ, LL, MM, filter, workgroup)
     end
 end
 
+# CkMM(KK, DevF, Δ, i) = -2*Δ[i]*sqrt(KK[i])*DevF[i]
 CkMM(KK, DevF, Δ, i) = -2*Δ[i]*sqrt(KK[i])*DevF[i]
 Ck1(LL, MM, i) = 0.5*(LL[i]⋅MM[i])
 

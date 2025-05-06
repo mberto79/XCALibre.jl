@@ -68,7 +68,7 @@ XCALibre.Discretise.update_user_boundary!(
 
     kernel_range = length(facesID_range)
     kernel! = _update_user_boundary!(backend, workgroup, kernel_range)
-    kernel!(BC, eqn, component, faces, cells, facesID_range, time, ndrange=kernel_range)
+    kernel!(BC, faces, cells, facesID_range, time, ndrange=kernel_range)
     # KernelAbstractions.synchronize(backend)
     BC.value.output .= BC.value.network(BC.value.input).*BC.value.xdir
 end

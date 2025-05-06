@@ -3,7 +3,7 @@ export get_boundaries
 
 
 apply_boundary_conditions!(eqn, BCs, component, time, config) = begin
-    _apply_boundary_conditions!(eqn.model, BCs, component, time, config)
+    _apply_boundary_conditions!(eqn.model, BCs, eqn, component, time, config)
 end
 
 # Apply Boundaries Function

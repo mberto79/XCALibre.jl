@@ -99,7 +99,7 @@ function PISO(
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
     # other thing ive added 
-    mean_field = Mean(zeros(length(mesh.cells)))
+    mean_field = Mean(zeros(length(mesh.cells)),zeros(length(mesh.cells)),20160,40320)
     #mean_field = Mean(ScalarField(mesh))
 
     @time for iteration ∈ 1:iterations
@@ -207,5 +207,5 @@ function PISO(
 
     end # end for loop
 
-    return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p,mean_field.value)
+    return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p,mean_field.velocity,mean_field.second_moment)
 end

@@ -148,7 +148,7 @@ The third step is to define a new method for the `update_user_boundary!` functio
 ```@example flux
 
 XCALibre.Discretise.update_user_boundary!(
-    BC::DirichletFunction{I,V}, eqnModel, component, faces, cells, facesID_range, time, config
+    BC::DirichletFunction{I,V}, faces, cells, facesID_range, time, config
     ) where{I,V<:Inflow} = 
 begin
 
@@ -157,14 +157,14 @@ begin
 
     kernel_range = length(facesID_range)
     kernel! = _update_user_boundary!(backend, workgroup, kernel_range)
-    kernel!(BC, eqnModel, component, faces, cells, facesID_range, time, ndrange=kernel_range)
+    kernel!(BC, faces, cells, facesID_range, time, ndrange=kernel_range)
     KernelAbstractions.synchronize(backend)
 
     (; output, input, U, network, xdir) = BC.value
     output .= U.*network(input).*xdir # convert to vector
 end
 
-@kernel function _update_user_boundary!(BC, eqnModel, component, faces, cells, facesID_range, time)
+@kernel function _update_user_boundary!(BC, faces, cells, facesID_range, time)
     i = @index(Global)
     startID = facesID_range[1]
     fID = i + startID - 1

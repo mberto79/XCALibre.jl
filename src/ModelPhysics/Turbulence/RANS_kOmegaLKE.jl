@@ -381,7 +381,7 @@ function turbulence!(
     constrain_equation!(ω_eqn, omega.BCs, model, config) # active with WFs only
     update_preconditioner!(ω_eqn.preconditioner, mesh, config)
     ω_res = solve_system!(ω_eqn, solvers.omega, omega, nothing, config)
-    constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
+    # constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
     bound!(omega, config)
 
     # Solve k equation

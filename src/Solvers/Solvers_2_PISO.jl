@@ -99,7 +99,10 @@ function PISO(
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
     # other thing ive added 
-    mean_field = Mean(zeros(length(mesh.cells)),zeros(length(mesh.cells)),20160,40320)
+    mean_U = Mean(zeros(length(mesh.cells)),1,100)
+    mean_UU = Mean(zeros(length(mesh.cells)),1,100)
+    vector_of_structs = [mean_U,mean_UU]
+
     #mean_field = Mean(ScalarField(mesh))
 
     @time for iteration ∈ 1:iterations
@@ -203,9 +206,11 @@ function PISO(
     end
 
     #Here the average velocity will be calculated and stored in a struct 
-    calculate_field_average!(mean_field,model.momentum.U.x.values,iteration)
+    fields_to_average_over = [model.momentum.U.x.values,model.momentum.U.x.values .^ 2]
+    calculate_field_average!.(vector_of_structs,fields_to_average_over,iteration)
+
 
     end # end for loop
 
-    return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p,mean_field.velocity,mean_field.second_moment)
+    return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p,U=mean_U.value,UU=mean_UU.value)
 end

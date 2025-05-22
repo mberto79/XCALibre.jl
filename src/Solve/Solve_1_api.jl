@@ -183,13 +183,13 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
 
     apply_smoother!(setup.smoother, values, A, b, hardware)
 
-    solve!(
+    krylov_solve!(
         solver, opA, b, values; 
         M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon)
         )
     # KernelAbstractions.synchronize(backend)
 
-    statistics(solver).niter == itmax && @warn "Maximum number of iteration reached!"
+    Krylov.iteration_count(solver) == itmax && @warn "Maximum number of iteration reached!"
 
     # println(statistics(solver).niter)
     

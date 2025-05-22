@@ -1,7 +1,7 @@
 module XCALibre
 
-using Krylov 
-export BicgstabSolver, CgSolver, GmresSolver
+# using Krylov 
+# export BicgstabSolver, CgSolver, GmresSolver
 
 using KernelAbstractions; export CPU
 import Adapt: adapt; export adapt
@@ -45,7 +45,7 @@ using Reexport
 using StaticArrays, LinearAlgebra, SparseMatricesCSR, SparseArrays, LinearOperators
 using ProgressMeter, Printf, Adapt
 
-include("precompile.jl")
+# include("precompile.jl") need new precompile file
 
 # using PrecompileTools: @setup_workload, @compile_workload
 

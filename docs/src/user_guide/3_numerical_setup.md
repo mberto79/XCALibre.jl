@@ -107,9 +107,9 @@ schemes = (
 
 Linear solvers in XCALibre.jl are provided by [Krylov.jl](https://github.com/JuliaSmoothOptimizers/Krylov.jl). The following solvers types are re-exported in XCALibre.jl
 
-* `BicgstabSolver` is a general purpose linear solver. Works well with non-symmetric matrices e.g. for `U`.
-* `CgSolver` is particular strong with symmetric matrices e.g to solve the pressure equation.
-* `GmresSolver` is a general solver. We have found it works best on the CPU backend.
+* `Bicgstab()` is a general purpose linear solver. Works well with non-symmetric matrices e.g. for `U`.
+* `Cg()` is particular strong with symmetric matrices e.g to solve the pressure equation.
+* `Gmres()` is a general solver. We have found it works best on the CPU backend.
 
 For more information on these solvers you can review the excellent documentation provided by the [Krylov.jl](https://github.com/JuliaSmoothOptimizers/Krylov.jl) team. 
 
@@ -134,7 +134,7 @@ print_tree(PreconditionerType) # hide
 
 !!! note
 
-    Only the `Jacobi` and `NormDiagonal` preconditioners have GPU ready implementations. At present these have the most robust implementation and they can be used with both CPU and GPU backends. The other preconditioners can only be used on the CPU. Notice that on our tests the `LDL` preconditioner only works when paired with the `GmresSolver` on the CPU. Also notice that the implementations for `DILU` (experimental), `IC0GPU` and `ILU0GPU` (NVIDIA only), should be considered experimental. Work on improving the offering of preconditioners is ongoing.
+    Only the `Jacobi` and `NormDiagonal` preconditioners have GPU ready implementations. At present these have the most robust implementation and they can be used with both CPU and GPU backends. The other preconditioners can only be used on the CPU. Notice that on our tests the `LDL` preconditioner only works when paired with the `Gmres()` on the CPU. Also notice that the implementations for `DILU` (experimental), `IC0GPU` and `ILU0GPU` (NVIDIA only), should be considered experimental. Work on improving the offering of preconditioners is ongoing.
 
 !!! warning
 
@@ -152,7 +152,7 @@ using XCALibre
 solvers = (
     U = set_solver(
         model.momentum.U;
-        solver      = BicgstabSolver, # GmresSolver
+        solver      = Bicgstab(), # Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
@@ -161,7 +161,7 @@ solvers = (
     ),
     p = set_solver(
         model.momentum.p;
-        solver      = CgSolver, # BicgstabSolver, GmresSolver
+        solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,

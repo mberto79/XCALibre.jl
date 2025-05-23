@@ -5,9 +5,11 @@ using Adapt
 mesh_file = "unv_sample_meshes/BFS_UNV_3D_hex_5mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
-backend = CUDABackend()
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
+
+hardware = set_hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
-# mesh_dev = mesh
 
 velocity = [1.5, 0.0, 0.8]
 nu = 1e-4
@@ -22,7 +24,7 @@ model = Physics(
     domain = mesh_dev
     )
 
-periodic = construct_periodic(mesh, backend, :side1, :side2)
+periodic = construct_periodic(mesh, hardware.backend, :side1, :side2)
     
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
@@ -52,7 +54,7 @@ schemes = (
 solvers = (
     U = set_solver(
         model.momentum.U;
-        solver      = BicgstabSolver, #CgSolver, # BicgstabSolver, GmresSolver, #CgSolver
+        solver      = Bicgstab(), #Cg(), # Bicgstab(), Gmres(), #Cg()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         # relax       = 0.8,
@@ -62,7 +64,7 @@ solvers = (
     ),
     p = set_solver(
         model.momentum.p;
-        solver      = CgSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
+        solver      = Cg(), #Gmres(), #Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         # relax       = 0.2,
@@ -72,11 +74,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(
-    iterations=2000, time_step=1e-3, write_interval=50)
-
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=CPU(), workgroup=4)
+runtime = set_runtime(iterations=2000, time_step=1e-3, write_interval=50)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

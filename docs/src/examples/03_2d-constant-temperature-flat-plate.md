@@ -137,21 +137,21 @@ schemes = (
 solvers = (
     U = set_solver(
         model.momentum.U;
-        solver      = BicgstabSolver,
+        solver      = Bicgstab(),
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
     ),
     p = set_solver(
         model.momentum.p;
-        solver      = CgSolver,
+        solver      = Cg(),
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.3,
     ),
     h = set_solver(
         model.energy.h;
-        solver      = BicgstabSolver,
+        solver      = Bicgstab(),
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,

@@ -65,10 +65,6 @@ function setup_incompressible_solvers(
 
     @info "Defining models..."
 
-    # periodic = construct_periodic(mesh, hardware.backend, :top, :bottom)
-    # periodic_connect = Discretise.periodic_matrix_connectivity(mesh, periodic...)
-    # periodic_connect = Discretise.PeriodicConnectivity([],[])
-
     U_eqn = (
         Time{schemes.U.time}(U)
         + Divergence{schemes.U.divergence}(mdotf, U) 
@@ -90,9 +86,9 @@ function setup_incompressible_solvers(
 
 
     @info "Pre-allocating solvers..."
-     
-    @reset U_eqn.solver = solvers.U.solver(_A(U_eqn), _b(U_eqn, XDir()))
-    @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
+
+    @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()))
+    @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn))
 
     @info "Initialising turbulence model..."
     turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)

@@ -83,7 +83,7 @@ generate_boundary_conditions!(mesh, model, BCs)
 
 setup = SolverSetup(
     iterations  = 100,
-    solver      = GmresSolver,
+    solver      = Gmres(),
     tolerance   = 1e-6,
     relax       = 1.0,
     itmax       = 100
@@ -162,7 +162,7 @@ generate_boundary_conditions!(mesh, model, BCs)
 
 setup = SolverSetup(
     iterations  = 100,
-    solver      = GmresSolver,
+    solver      = Gmres(),
     tolerance   = 1e-6,
     relax       = 1.0,
     itmax       = 100

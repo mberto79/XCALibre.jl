@@ -115,7 +115,7 @@ function initialise(
                 solvers.h.preconditioner, energy_eqn, h.BCs, config)
     
     # preallocating solvers
-    @reset energy_eqn.solver = solvers.h.solver(_A(energy_eqn), _b(energy_eqn))
+    @reset energy_eqn.solver = _workspace(solvers.h.solver, _b(energy_eqn))
 
     init_residual = (:h, 1.0)
     init_converged = false

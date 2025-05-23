@@ -39,7 +39,7 @@ This function is used to provide solver settings that will be used internally in
 # Input arguments
 
 - `field` reference to the field to which the solver settings will apply (used to provide integer and float types required)
-- `solver` solver object from Krylov.jl and it could be one of `BicgstabSolver`, `CgSolver`, `GmresSolver` which are re-exported in XCALibre.jl
+- `solver` solver object from Krylov.jl and it could be one of `Bicgstab()`, `Cg()`, `Gmres()` which are re-exported in XCALibre.jl
 - `preconditioner` instance of preconditioner to be used e.g. Jacobi()
 - `convergence` sets the stopping criteria of this field
 - `relax` specifies the relaxation factor to be used e.g. set to 1 for no relaxation

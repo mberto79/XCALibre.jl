@@ -84,7 +84,7 @@ schemes = (
 solvers = (
     U = set_solver(
         model.momentum.U;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
@@ -93,7 +93,7 @@ solvers = (
     ),
     p = set_solver(
         model.momentum.p;
-        solver      = CgSolver, # BicgstabSolver, GmresSolver
+        solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.3,
@@ -103,7 +103,7 @@ solvers = (
     k = set_solver(
         # model.turbulence.fields.k;
         model.turbulence.k;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
@@ -113,7 +113,7 @@ solvers = (
     omega = set_solver(
         # model.turbulence.fields.omega;
         model.turbulence.omega;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver, CgSolver
+        solver      = Bicgstab(), # Bicgstab(), Gmres(), Cg()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,

@@ -45,7 +45,7 @@ phi = assign(
 solvers= (; 
     phi = set_solver(
         phi;
-        solver      = CgSolver, # BicgstabSolver, GmresSolver
+        solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 0.8,

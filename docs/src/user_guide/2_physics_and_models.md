@@ -163,6 +163,11 @@ Physics(
 
 ### LES models
 
+Laminar model: no user input is required. This is a dummy model that does not contribute to the momentum equation. It can be used to carry out LES simulations of laminar flows. For sufficiently refined grids, this model can be used for DNS simulations. Since `XCALibre.jl` is a Finite Volume Method solver, for complex geometries the simulation should be regarded as a quasi-DNS simulation. For second order accurate DNS simulations very high quality hex grids should be used.
+```julia
+LES{Laminar}() # only constructor needed
+```
+
 Smagorinsky model: the standard model constant is passed by default. Boundary conditions for `nut` must be provided, generally zero gradient conditions work well. No special wall functions for `nut` in LES mode are available.
 ```julia
 LES{Smagorinsky}() # default constructor will use value below

@@ -127,8 +127,8 @@ function initialise(
     @reset ω_eqn.preconditioner = k_eqn.preconditioner
     
     # preallocating solvers
-    @reset k_eqn.solver = solvers.k.solver(_A(k_eqn), _b(k_eqn))
-    @reset ω_eqn.solver = solvers.omega.solver(_A(ω_eqn), _b(ω_eqn))
+    @reset k_eqn.solver = _workspace(solvers.k.solver, _b(k_eqn))
+    @reset ω_eqn.solver = _workspace(solvers.omega.solver, _b(ω_eqn))
 
     initial_residual = ((:k, 1.0),(:omega, 1.0))
     return KOmegaModel(turbulence, k_eqn, ω_eqn, ModelState(initial_residual, false))

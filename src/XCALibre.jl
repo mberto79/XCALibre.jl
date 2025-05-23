@@ -1,7 +1,7 @@
 module XCALibre
 
-using Krylov 
-export BicgstabSolver, CgSolver, GmresSolver
+# using Krylov 
+# export Bicgstab(), Cg(), Gmres()
 
 using KernelAbstractions; export CPU
 import Adapt: adapt; export adapt
@@ -45,7 +45,7 @@ using Reexport
 using StaticArrays, LinearAlgebra, SparseMatricesCSR, SparseArrays, LinearOperators
 using ProgressMeter, Printf, Adapt
 
-include("precompile.jl")
+# include("precompile.jl") need new precompile file
 
 # using PrecompileTools: @setup_workload, @compile_workload
 
@@ -102,7 +102,7 @@ include("precompile.jl")
 #             solvers = (
 #                 U = set_solver(
 #                     model.momentum.U;
-#                     solver = BicgstabSolver, # BicgstabSolver, GmresSolver
+#                     solver = Bicgstab(), # Bicgstab(), Gmres()
 #                     smoother = JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
 #                     preconditioner = Jacobi(),
 #                     convergence = 1e-7,
@@ -111,7 +111,7 @@ include("precompile.jl")
 #                 ),
 #                 p = set_solver(
 #                     model.momentum.p;
-#                     solver = CgSolver, # BicgstabSolver, GmresSolver
+#                     solver = Cg(), # Bicgstab(), Gmres()
 #                     smoother = JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
 #                     preconditioner = Jacobi(),
 #                     convergence = 1e-7,
@@ -191,7 +191,7 @@ include("precompile.jl")
 #             solvers = (
 #                 U = set_solver(
 #                     model.momentum.U;
-#                     solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+#                     solver      = Bicgstab(), # Bicgstab(), Gmres()
 #                     preconditioner = Jacobi(), 
 #                     convergence = 1e-7,
 #                     relax       = 1.0,
@@ -199,7 +199,7 @@ include("precompile.jl")
 #                 ),
 #                 p = set_solver(
 #                     model.momentum.p;
-#                     solver      = CgSolver, # BicgstabSolver, GmresSolver
+#                     solver      = Cg(), # Bicgstab(), Gmres()
 #                     preconditioner = Jacobi(), 
 #                     convergence = 1e-7,
 #                     relax       = 1.0,
@@ -207,7 +207,7 @@ include("precompile.jl")
 #                 ),
 #                 k = set_solver(
 #                     model.turbulence.k;
-#                     solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+#                     solver      = Bicgstab(), # Bicgstab(), Gmres()
 #                     preconditioner = Jacobi(), 
 #                     convergence = 1e-7,
 #                     relax       = 1.0,
@@ -215,7 +215,7 @@ include("precompile.jl")
 #                 ),
 #                 omega = set_solver(
 #                     model.turbulence.omega;
-#                     solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+#                     solver      = Bicgstab(), # Bicgstab(), Gmres()
 #                     preconditioner = Jacobi(), 
 #                     convergence = 1e-7,
 #                     relax       = 1.0,

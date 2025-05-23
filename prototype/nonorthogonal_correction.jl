@@ -45,7 +45,7 @@ phi = assign(
 solvers= (; 
     phi = set_solver(
         phi;
-        solver      = CgSolver, # BicgstabSolver, GmresSolver
+        solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 0.8,
@@ -62,7 +62,7 @@ config = Configuration(
 
 @reset eqn.preconditioner = set_preconditioner(
     solvers.phi.preconditioner, eqn, phi.BCs, config)
-@reset eqn.solver = solvers.phi.solver(_A(eqn), _b(eqn))
+@reset eqn.solver = _workspace(solvers.phi.solver, _b(eqn))
 
 gammaf.values .= 1
 prev = zeros(length(phi.values))

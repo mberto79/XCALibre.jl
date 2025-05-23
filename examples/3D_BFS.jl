@@ -19,13 +19,10 @@ mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
 # mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
-# workgroup = cld(length(mesh.cells), Threads.nthreads())
-# backend = CPU(); activate_multithread(backend)
-# backend = CPU()
-# activate_multithread1()
-workgroup = 32
-backend = CUDABackend()
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
+hardware = set_hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 # Inlet conditions
@@ -61,7 +58,7 @@ model = Physics(
 solvers = (
     U = set_solver(
         model.momentum.U;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), # Jacobi # ILU0GPU
         # smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
         convergence = 1e-7,
@@ -70,7 +67,7 @@ solvers = (
     ),
     p = set_solver(
         model.momentum.p;
-        solver      = CgSolver, # BicgstabSolver, GmresSolver
+        solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), #NormDiagonal(), IC0GPU, Jacobi
         # smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
         convergence = 1e-7,
@@ -84,8 +81,6 @@ schemes = (
     U = set_schemes(time=SteadyState, divergence=Upwind, gradient=Midpoint),
     p = set_schemes(time=SteadyState, gradient=Midpoint)
 )
-
-hardware = set_hardware(backend=backend, workgroup=workgroup)
 
 # Run first to pre-compile
 

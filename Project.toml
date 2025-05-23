@@ -1,7 +1,7 @@
 name = "XCALibre"
 uuid = "cf91e36b-bd94-493a-8848-32508a10963c"
 authors = ["Humberto <h.medina@aerofluids.org>"]
-version = "0.4.3-DEV"
+version = "0.5.0-dev"
 
 [deps]
 AcceleratedKernels = "6a4ca0a5-0e36-4168-a932-d9be78d558f1"
@@ -46,7 +46,7 @@ CUDA = "5 - 5.7.0, 5.7.3 - 5"
 GPUArrays = "10.2, 11"
 ILUZero = "0.2"
 KernelAbstractions = "0.9.25"
-Krylov = "0.9"
+Krylov = "0.10"
 KrylovPreconditioners = "0.3"
 LDLFactorizations = "0.10"
 LinearOperators = "2.8"

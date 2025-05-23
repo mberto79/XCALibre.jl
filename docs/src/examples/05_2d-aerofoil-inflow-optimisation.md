@@ -157,7 +157,7 @@ function foil_optim(α::Vector{Float64})
     solvers = (
         U = set_solver(
             model.momentum.U;
-            solver = BicgstabSolver, # BicgstabSolver, GmresSolver
+            solver = Bicgstab(), # Bicgstab(), Gmres()
             preconditioner = Jacobi(), # Jacobi
             convergence = 1e-7,
             relax = 0.6,
@@ -165,7 +165,7 @@ function foil_optim(α::Vector{Float64})
         ),
         p = set_solver(
             model.momentum.p;
-            solver = GmresSolver, # change to BicgstabSolver for GPU runs
+            solver = Gmres(), # change to Bicgstab() for GPU runs
             preconditioner = Jacobi(), # change to Jacobi() for GPU runs
             convergence = 1e-7,
             relax = 0.2,
@@ -173,7 +173,7 @@ function foil_optim(α::Vector{Float64})
         ),
         k = set_solver(
             model.turbulence.k;
-            solver = BicgstabSolver,
+            solver = Bicgstab(),
             preconditioner = Jacobi(),
             convergence = 1e-7,
             relax = 0.6,
@@ -181,7 +181,7 @@ function foil_optim(α::Vector{Float64})
         ),
         omega = set_solver(
             model.turbulence.omega;
-            solver      = BicgstabSolver,
+            solver      = Bicgstab(),
             preconditioner = Jacobi(), 
             convergence = 1e-7,
             relax       = 0.6,

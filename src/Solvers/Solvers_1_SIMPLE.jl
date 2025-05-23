@@ -214,9 +214,9 @@ function SIMPLE(
             # @. prev = p.values
             discretise!(p_eqn, p, config)       
             apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
-            setReference!(p_eqn, pref, 1, config)
+            # setReference!(p_eqn, pref, 1, config)
             nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
-            update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+            # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
             explicit_relaxation!(p, prev, solvers.p.relax, config)
             grad!(∇p, pf, p, p.BCs, time, config) 

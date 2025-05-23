@@ -36,16 +36,17 @@ model = Physics(
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Wall(:cylinder, noSlip),
-    # Neumann.([:top, :bottom], [0.0, 0.0])...,
-    Symmetry.([:top, :bottom])...,
+    Neumann.([:top, :bottom], [0.0, 0.0])...,
+    # Symmetry.([:top, :bottom])...,
 )
 
 @assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
-    Neumann(:cylinder, 0.0),
+    Wall(:cylinder, 0.0),
     # Neumann.([:top, :bottom], [0.0, 0.0])...,
-    Symmetry.([:top, :bottom])...,
+    Wall.([:top, :bottom], [0.0, 0.0])...,
+    # Symmetry.([:top, :bottom])...,
 )
 
 solvers = (

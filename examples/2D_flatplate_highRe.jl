@@ -1,6 +1,6 @@
 # using Plots
 using XCALibre
-using CUDA
+# using CUDA
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "flatplate_2D_highRe.unv"
@@ -39,7 +39,7 @@ model = Physics(
 @assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
+    Wall(:wall, 0.0),
     Neumann(:top, 0.0)
 )
 

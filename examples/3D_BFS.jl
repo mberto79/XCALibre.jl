@@ -15,12 +15,12 @@ mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_5mm.unv
 # mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_4mm.unv"
 # mesh_file = "bfs_unv_tet_5mm.unv"
 
-mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
+# mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
 # mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
-# backend = CUDABackend(); workgroup = 32
-backend = CPU(); workgroup = 1024; activate_multithread(backend)
+backend = CUDABackend(); workgroup = 32
+# backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
 hardware = set_hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
@@ -48,7 +48,7 @@ model = Physics(
 )
 
 @assign! model momentum p (
-    Neumann(:inlet, 0.0),
+    Wall(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
     Wall(:wall, 0.0),
     Neumann(:sides, 0.0),
@@ -77,9 +77,11 @@ solvers = (
     )
 )
 
+gradScheme = Orthogonal # Midpoint
+divScheme = Upwind # Upwind
 schemes = (
-    U = set_schemes(time=SteadyState, divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(time=SteadyState, gradient=Midpoint)
+    U = set_schemes(time=SteadyState, divergence=divScheme, gradient=gradScheme),
+    p = set_schemes(time=SteadyState, gradient=gradScheme)
 )
 
 # Run first to pre-compile
@@ -104,7 +106,7 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-@time residuals = run!(model, config, output=OpenFOAM())
+@time residuals = run!(model, config, output=OpenFOAM(), ncorrectors=0)
 
 # iterations = runtime.iterations
 # plot(yscale=:log10, ylims=(1e-7,1e-1))

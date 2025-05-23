@@ -148,7 +148,7 @@ function solve_equation!(
     apply_boundary_conditions!(psiEqn, psi.y.BCs, ydir, time, config)
     # implicit_relaxation!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
     implicit_relaxation_diagdom!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
-    update_preconditioner!(psiEqn.preconditioner, mesh, config)
+    # update_preconditioner!(psiEqn.preconditioner, mesh, config)
     resy = solve_system!(psiEqn, solversetup, psi.y, ydir, config)
     
     # Z velocity calculations (3D Mesh only)
@@ -158,7 +158,7 @@ function solve_equation!(
         apply_boundary_conditions!(psiEqn, psi.z.BCs, zdir, time, config)
         # implicit_relaxation!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
         implicit_relaxation_diagdom!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
-        update_preconditioner!(psiEqn.preconditioner, mesh, config)
+        # update_preconditioner!(psiEqn.preconditioner, mesh, config)
         resz = solve_system!(psiEqn, solversetup, psi.z, zdir, config)
     end
     return resx, resy, resz

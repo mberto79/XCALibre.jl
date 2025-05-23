@@ -9,13 +9,14 @@ grid = "cascade_3D_periodic_2p5mm.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
-backend = CUDABackend(); workgroup=32
-# backend = CPU(); workgroup = cld(length(mesh.cells), Threads.nthreads())
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
+
+hardware = set_hardware(backend=backend, workgroup=workgroup)
+mesh_dev = adapt(backend, mesh)
 
 periodic1 = construct_periodic(mesh, backend, :top, :bottom)
 periodic2 = construct_periodic(mesh, backend, :side1, :side2)
-
-mesh_dev = adapt(backend, mesh)
 
 velocity = [0.25, 0.0, 0.0]
 nu = 1e-3
@@ -84,8 +85,6 @@ solvers = (
 
 runtime = set_runtime(
     iterations=1000, time_step=1, write_interval=100)
-
-hardware = set_hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

@@ -6,7 +6,11 @@ using CUDA
 mesh_file = "unv_sample_meshes/bfs_unv_hex_5mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
-mesh_dev = adapt(CUDABackend(), mesh)
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
+
+hardware = set_hardware(backend=backend, workgroup=workgroup)
+mesh_dev = adapt(backend, mesh)
 
 # INLET CONDITIONS 
 
@@ -80,9 +84,6 @@ solvers = (
 
 runtime = set_runtime(
     iterations=10000, write_interval=200, time_step=0.0001)
-
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

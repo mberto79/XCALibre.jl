@@ -10,15 +10,13 @@ mesh_file="unv_sample_meshes/3d_streamtube_1.0x0.1x0.1_0.08mm.unv"
 mesh_file="unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.03m.unv"
 mesh_file="unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.015m.unv" # Converges
 
-mesh_file="unv_sample_meshes/box_HEX_20mm.unv"
-mesh_file="unv_sample_meshes/box_HEX_10mm.unv"
-mesh_file="unv_sample_meshes/box_TET_PRISM_10mm.unv"
-mesh_file="unv_sample_meshes/box_TET_PRISM_25_5mm.unv"
-# mesh_file="unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.01m.unv"
-
 @time mesh=UNV3D_mesh(mesh_file, scale=0.001)
 
-mesh_dev = adapt(CUDABackend(), mesh)
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
+
+hardware = set_hardware(backend=backend, workgroup=workgroup)
+mesh_dev = adapt(backend, mesh)
 
 velocity = [0.01,0.0,0.0]
 nu=1e-3
@@ -95,11 +93,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(
-    iterations=10, time_step=1, write_interval=5)
-
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=CPU(), workgroup=4)
+runtime = set_runtime(iterations=10, time_step=1, write_interval=5)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

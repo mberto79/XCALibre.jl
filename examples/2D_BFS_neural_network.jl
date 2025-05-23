@@ -88,6 +88,12 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
+
+hardware = set_hardware(backend=backend, workgroup=workgroup)
+mesh_dev = adapt(backend, mesh)
+
 nfaces = mesh.boundaries[1].IDs_range |> length
 U = 0.5
 H = 0.1
@@ -123,10 +129,6 @@ res = inlet(SVector{3}(0,0.05,0),0,2)
 res = inlet_dev(SVector{3}(0,0.05,0),0,2)
 CUDA.@allowscalar res = inlet_dev(SVector{3}(0,0.05,0),0,2)
 
-
-
-# mesh_dev = adapt(CUDABackend(), mesh)
-mesh_dev = mesh
 
 velocity = [0.5, 0.0, 0.0]
 nu = 1e-3
@@ -190,9 +192,6 @@ solvers = (
 
 runtime = set_runtime(
     iterations=1000, time_step=1, write_interval=100)
-
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=1024)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

@@ -6,7 +6,11 @@ grid = "flatplate_2D_laminar.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-# mesh_dev = adapt(CUDABackend(), mesh)
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
+
+hardware = set_hardware(backend=backend, workgroup=workgroup)
+mesh_dev = adapt(backend, mesh)
 
 velocity = [0.2, 0.0, 0.0]
 nu = 1e-4
@@ -25,7 +29,7 @@ model = Physics(
         ),
     turbulence = RANS{Laminar}(),
     energy = Energy{SensibleEnthalpy}(Tref = 288.15),
-    domain = mesh
+    domain = mesh_dev
     )
 
 @assign! model momentum U (
@@ -83,9 +87,6 @@ solvers = (
 )
 
 runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
-
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=cld(length(mesh.cells),4))
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

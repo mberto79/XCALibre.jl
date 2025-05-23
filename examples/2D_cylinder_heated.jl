@@ -9,10 +9,11 @@ grid = "cylinder_d10mm_5mm.unv"
 # grid = "cylinder_d10mm_10-7.5-2mm.unv"
 mesh_file = joinpath(grids_dir, grid)
 
-backend=CPU(); workgroup=1024; activate_multithread(backend)
-mesh = UNV2D_mesh(mesh_file, scale=0.001)
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
-# mesh_dev = adapt(CUDABackend(), mesh)
+hardware = set_hardware(backend=backend, workgroup=workgroup)
+mesh_dev = adapt(backend, mesh)
 
 # Inlet conditions
 
@@ -36,7 +37,7 @@ model = Physics(
         ),
     turbulence = RANS{Laminar}(),
     energy = Energy{SensibleEnthalpy}(Tref=288.15),
-    domain = mesh
+    domain = mesh_dev
     )
 
 @assign! model momentum U ( 
@@ -99,8 +100,6 @@ schemes = (
 )
 
 runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
-
-hardware = set_hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

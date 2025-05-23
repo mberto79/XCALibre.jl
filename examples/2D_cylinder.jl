@@ -11,10 +11,11 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-backend= CPU(); workgroup = 1024
-# backend= CUDABackend(); workgroup = 32
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
+
 hardware = set_hardware(backend=backend, workgroup=workgroup)
-mesh_dev = adapt(hardware.backend, mesh)
+mesh_dev = adapt(backend, mesh)
 
 # Inlet conditions
 

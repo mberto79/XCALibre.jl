@@ -8,10 +8,11 @@ grid = "flatplate_2D_highRe.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-backend = CPU(); # activate_multithread(backend)
-mesh_dev = mesh; workgroup = 1024
-backend = CUDABackend()
-mesh_dev = adapt(backend, mesh); workgroup= 32
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
+
+hardware = set_hardware(backend=backend, workgroup=workgroup)
+mesh_dev = adapt(backend, mesh)
 
 velocity = [10, 0.0, 0.0]
 nu = 1e-5
@@ -104,8 +105,6 @@ solvers = (
 )
 
 runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
-
-hardware = set_hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

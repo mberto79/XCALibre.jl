@@ -19,13 +19,10 @@ mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
 # mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
-# workgroup = cld(length(mesh.cells), Threads.nthreads())
-# backend = CPU(); activate_multithread(backend)
-# backend = CPU()
-# activate_multithread1()
-workgroup = 32
-backend = CUDABackend()
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
+hardware = set_hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 # Inlet conditions
@@ -84,8 +81,6 @@ schemes = (
     U = set_schemes(time=SteadyState, divergence=Upwind, gradient=Midpoint),
     p = set_schemes(time=SteadyState, gradient=Midpoint)
 )
-
-hardware = set_hardware(backend=backend, workgroup=workgroup)
 
 # Run first to pre-compile
 

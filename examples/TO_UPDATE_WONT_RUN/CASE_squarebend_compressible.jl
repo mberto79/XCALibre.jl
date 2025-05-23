@@ -1,22 +1,28 @@
 using Plots
 using XCALibre
-# using CUDA
+# using CUDA # Run this if using NVIDIA GPU
+# using AMDGPU # Run this if using AMD GPU
 
-# backwardFacingStep_2mm, backwardFacingStep_10mm
-mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
-mesh = UNV2D_mesh(mesh_file, scale=0.001)
+# quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
+mesh_file = "unv_sample_meshes/OF_squareBend_laminar/constant/polyMesh/"
+mesh = FOAM3D_mesh(mesh_file, scale=1.0, integer_type=Int64, float_type=Float64)
+
 
 # mesh_dev = adapt(CUDABackend(), mesh)
 
-velocity = [600, 0.0, 0.0]
-nu = 1e-1
-Re = velocity[1]*0.1/nu
-Cp = 1005
-gamma = 1.4
-h_inf = 300*Cp
-h_wall = 320*Cp
-pressure = 150000
+# Inlet conditions
 
+# Not working
+
+velocity = [400, 0.0, 0.0]
+noSlip = [0.0, 0.0, 0.0]
+nu = 1e-3
+Re = (0.2*velocity[1])/nu
+gamma = 1.4
+cp = 1005.0
+temp = 300.0
+pressure = 110000.0
+Pr = 0.7
 
 model = Physics(
     time = Steady(),
@@ -27,36 +33,26 @@ model = Physics(
         Pr = ConstantScalar(Pr)
         ),
     turbulence = RANS{Laminar}(),
-    energy = Energy{SensibleEnthalpy}(Tref=288.15),
+    energy = Energy{SensibleEnthalpy}(Tref = 298.15),
     domain = mesh
     )
 
-
-@assign! model momentum U (
+@assign! model momentum U ( 
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Wall(:top, [0.0, 0.0, 0.0])
+    Wall(:walls, noSlip)
 )
 
 @assign! model momentum p (
     Dirichlet(:inlet, pressure),
     Neumann(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
+    Neumann(:walls, 0.0)
 )
 
 @assign! model energy h (
     FixedTemperature(:inlet, T=300.0, model=model.energy),
     Neumann(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
-)
-
-schemes = (
-    U = set_schemes(divergence=Upwind),#, gradient=Midpoint),
-    p = set_schemes(divergence=Linear, gradient=Midpoint),
-    h = set_schemes(divergence=Upwind)#, gradient=Midpoint)
+    Neumann(:walls, 0.0)
 )
 
 solvers = (
@@ -66,63 +62,56 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
-        rtol = 1e-6,
-        atol = 1e-2
+        rtol = 1e-2,
+        atol = 1e-4
     ),
     p = set_solver(
         model.momentum.p;
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.2,
-        rtol = 1e-6,
-        atol = 1e-3
+        relax       = 0.3,
+        limit = (1000.0, 1000000.0),
+        rtol = 1e-2,
+        atol = 1e-4
     ),
     h = set_solver(
         model.energy.h;
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.5,
+        relax       = 0.7,
+        # limit = (100.0, 1000.0),
         rtol = 1e-2,
         atol = 1e-4
     )
 )
 
-runtime = set_runtime(
-    iterations=1000, time_step=1, write_interval=100)
+schemes = (
+    U = set_schemes(divergence=BoundedUpwind),#, gradient=Midpoint),
+    p = set_schemes(divergence=Upwind, gradient=Midpoint),
+    h = set_schemes(divergence=BoundedUpwind)#, gradient=Midpoint)
+)
 
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+runtime = set_runtime(iterations=5, write_interval=1, time_step=1)
+
 hardware = set_hardware(backend=CPU(), workgroup=4)
+# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+# hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
-GC.gc()
+GC.gc(true)
 
-initialise!(model.momentum.U, velocity)
+initialise!(model.momentum.U, [0.0, 0.0, 0.0])
 initialise!(model.momentum.p, pressure)
 initialise!(model.energy.T, temp)
 
-residuals = run!(model, config) # 9.39k allocs in 184 iterations
+residuals = run!(model, config); #, pref=0.0)
 
-plot(; xlims=(0,1000))
+plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
 plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
 plot!(1:length(Rp), Rp, yscale=:log10, label="p")
-plot!(1:length(Re), Re, yscale=:log10, label="p")
-
-# # PROFILING CODE
-
-using Profile, PProf
-
-GC.gc()
-initialise!(model.momentum.U, velocity)
-initialise!(model.momentum.p, 0.0)
-
-Profile.Allocs.clear()
-Profile.Allocs.@profile sample_rate=1 begin 
-    residuals = run!(model, config)
-end
-
-PProf.Allocs.pprof()
+plot!(1:length(Rh), Rh, yscale=:log10, label="h")

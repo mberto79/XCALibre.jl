@@ -3,9 +3,13 @@ using XCALibre
 mesh_file = "unv_sample_meshes/BFS_UNV_3D_hex_5mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
-backend = CPU()
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
+
+hardware = set_hardware(backend=backend, workgroup=workgroup)
+mesh_dev = adapt(backend, mesh)
+
 periodic = construct_periodic(mesh, backend, :side1, :side2)
-mesh_dev = mesh
 
 velocity = [0.2, 0.0, 0.5]
 nu = 1e-3
@@ -66,11 +70,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(
-    iterations=500, time_step=1, write_interval=500)
-
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=4)
+runtime = set_runtime(iterations=500, time_step=1, write_interval=500)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

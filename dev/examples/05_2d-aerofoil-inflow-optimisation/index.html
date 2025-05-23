@@ -111,7 +111,7 @@ mesh_dev = mesh # running on CPU
     solvers = (
         U = set_solver(
             model.momentum.U;
-            solver = BicgstabSolver, # BicgstabSolver, GmresSolver
+            solver = Bicgstab(), # Bicgstab(), Gmres()
             preconditioner = Jacobi(), # Jacobi
             convergence = 1e-7,
             relax = 0.6,
@@ -119,7 +119,7 @@ mesh_dev = mesh # running on CPU
         ),
         p = set_solver(
             model.momentum.p;
-            solver = GmresSolver, # change to BicgstabSolver for GPU runs
+            solver = Gmres(), # change to Bicgstab() for GPU runs
             preconditioner = Jacobi(), # change to Jacobi() for GPU runs
             convergence = 1e-7,
             relax = 0.2,
@@ -127,7 +127,7 @@ mesh_dev = mesh # running on CPU
         ),
         k = set_solver(
             model.turbulence.k;
-            solver = BicgstabSolver,
+            solver = Bicgstab(),
             preconditioner = Jacobi(),
             convergence = 1e-7,
             relax = 0.6,
@@ -135,7 +135,7 @@ mesh_dev = mesh # running on CPU
         ),
         omega = set_solver(
             model.turbulence.omega;
-            solver      = BicgstabSolver,
+            solver      = Bicgstab(),
             preconditioner = Jacobi(), 
             convergence = 1e-7,
             relax       = 0.6,
@@ -222,4 +222,4 @@ result = boptimize!(opt) # Runs the optimisation procedure
 using Pkg; Pkg.rm(&quot;BayesianOptimization&quot;, io=devnull) # hide
 
 nothing # hide
-&quot;done&quot;</code></pre><h1 id="Example-Optimisation-Results"><a class="docs-heading-anchor" href="#Example-Optimisation-Results">Example Optimisation Results</a><a id="Example-Optimisation-Results-1"></a><a class="docs-heading-anchor-permalink" href="#Example-Optimisation-Results" title="Permalink"></a></h1><hr/><p><img src="../optimisation_iterations_vs_experiment.svg" alt/></p><p><img src="../optimisation_vs_iteration.svg" alt/></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../04_2d-inflow-using-Flux/">« Advanced: 2D inflow using <code>Flux.jl</code></a><a class="docs-footer-nextpage" href="../../user_guide/0_introduction_and_workflow/">Introduction »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.10.2 on <span class="colophon-date" title="Tuesday 6 May 2025 21:18">Tuesday 6 May 2025</span>. Using Julia version 1.10.9.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+&quot;done&quot;</code></pre><h1 id="Example-Optimisation-Results"><a class="docs-heading-anchor" href="#Example-Optimisation-Results">Example Optimisation Results</a><a id="Example-Optimisation-Results-1"></a><a class="docs-heading-anchor-permalink" href="#Example-Optimisation-Results" title="Permalink"></a></h1><hr/><p><img src="../optimisation_iterations_vs_experiment.svg" alt/></p><p><img src="../optimisation_vs_iteration.svg" alt/></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../04_2d-inflow-using-Flux/">« Advanced: 2D inflow using <code>Flux.jl</code></a><a class="docs-footer-nextpage" href="../../user_guide/0_introduction_and_workflow/">Introduction »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.11.4 on <span class="colophon-date" title="Friday 23 May 2025 20:58">Friday 23 May 2025</span>. Using Julia version 1.10.9.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

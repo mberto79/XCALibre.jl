@@ -93,7 +93,7 @@ for grad_limiter ∈ [nothing] #, FaceBased(model.domain), MFaceBased(model.doma
     local solvers = (
         U = set_solver(
             model.momentum.U;
-            solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+            solver      = Bicgstab(), # Bicgstab(), Gmres()
             preconditioner = Jacobi(),
             convergence = 1e-7,
             relax       = 0.7,
@@ -101,7 +101,7 @@ for grad_limiter ∈ [nothing] #, FaceBased(model.domain), MFaceBased(model.doma
         ),
         p = set_solver(
             model.momentum.p;
-            solver      = GmresSolver, # BicgstabSolver, GmresSolver
+            solver      = Gmres(), # Bicgstab(), Gmres()
             preconditioner = Jacobi(),
             convergence = 1e-7,
             relax       = 0.3,
@@ -109,7 +109,7 @@ for grad_limiter ∈ [nothing] #, FaceBased(model.domain), MFaceBased(model.doma
         ),
         h = set_solver(
             model.energy.h;
-            solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+            solver      = Bicgstab(), # Bicgstab(), Gmres()
             preconditioner = Jacobi(),
             convergence = 1e-7,
             relax       = 0.7,
@@ -117,7 +117,7 @@ for grad_limiter ∈ [nothing] #, FaceBased(model.domain), MFaceBased(model.doma
         ),
         k = set_solver(
             model.turbulence.k;
-            solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+            solver      = Bicgstab(), # Bicgstab(), Gmres()
             preconditioner = Jacobi(), 
             convergence = 1e-7,
             relax       = 0.8,
@@ -125,7 +125,7 @@ for grad_limiter ∈ [nothing] #, FaceBased(model.domain), MFaceBased(model.doma
         ),
         omega = set_solver(
             model.turbulence.omega;
-            solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+            solver      = Bicgstab(), # Bicgstab(), Gmres()
             preconditioner = Jacobi(),
             convergence = 1e-7,
             relax       = 0.8,

@@ -41,11 +41,11 @@ model = Physics(
 )
 
 @assign! model momentum p (
-    Neumann(:inlet, 0.0),
+    Wall(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
     Wall(:cylinder, 0.0),
     # Neumann.([:top, :bottom], [0.0, 0.0])...,
-    Wall.([:top, :bottom], [0.0, 0.0])...,
+    Neumann.([:top, :bottom], [0.0, 0.0])...,
     # Symmetry.([:top, :bottom])...,
 )
 

@@ -6,8 +6,11 @@ using XCALibre
 mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-mesh_dev = mesh
-# mesh_dev = adapt(CUDABackend(), mesh)
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
+
+hardware = set_hardware(backend=backend, workgroup=workgroup)
+mesh_dev = adapt(backend, mesh)
 
 # INLET CONDITIONS 
 
@@ -80,7 +83,7 @@ schemes = (
 solvers = (
     U = set_solver(
         model.momentum.U;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1.0,
@@ -89,7 +92,7 @@ solvers = (
     ),
     p = set_solver(
         model.momentum.p;
-        solver      = CgSolver, # BicgstabSolver, GmresSolver
+        solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1.0,
@@ -98,7 +101,7 @@ solvers = (
     ),
     k = set_solver(
         model.turbulence.k;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1.0,
@@ -107,7 +110,7 @@ solvers = (
     ),
     omega = set_solver(
         model.turbulence.omega;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1.0,
@@ -118,9 +121,6 @@ solvers = (
 
 runtime = set_runtime(
     iterations=5000, write_interval=100, time_step=0.0001)
-
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

@@ -47,7 +47,7 @@ schemes = (
 solvers = (
     U = set_solver(
         model.momentum.U;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), # DILU(), TEMPORARY!
         convergence = 1e-7,
         relax       = 1.0,
@@ -55,7 +55,7 @@ solvers = (
     ),
     p = set_solver(
         model.momentum.p;
-        solver      = GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
+        solver      = Gmres(), #Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), #LDL(), TEMPORARY!
         convergence = 1e-7,
         relax       = 1.0,

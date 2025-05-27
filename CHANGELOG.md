@@ -3,7 +3,7 @@
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v0.3.1` breaking changes will be recorded here. 
 
-## Version [v0.4.3] - 2025-XX-XX
+## Version [v0.5.0] - 2025-XX-XX
 
 ### Added
 * No functionality added
@@ -12,10 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Fixed the implementation for the calculation of the wall distance to work on GPUs [#49](@ref)
 
 ### Changed
-* In the calculation of wall function properties the user-provided wall velocity is now used, instead of hard-coded to no-slip (`Wall` boundary is still hard-coded until a solution for access the `terms` object on the GPU is found) [#49](@ref)
+* In the calculation of wall function properties the user-provided wall velocity is now used, instead of hard-coded to no-slip (`Wall` boundary is still hard-coded until a solution for access the `terms` object on the GPU is found - needed to extract the user-provided boundary value) [#49](@ref)
+* The functions `set_production!`, `set_cell_value!` and `correct_nut_wall!`, in `RANS_functions.jl` have been updated, removing conditional branch used in the generated calling them. Now these functions use multiple dispatch to allow specialising the wall function framework to ease the development of new wall functions [#57](@ref)
+* New `NeumannFunction` has been created, mirroring the DirichletFunction, providing a Neumann boundary condition defined with a user-provided struct (a generic framework accepting a function to set the gradient at the boundary is not yet available) [#57](@ref)
+* `update_user_boundary` function, extension has been reverted, overwriting the changes made to expose the `ModelEquation` type to it in [#55](@ref)
 
 ### Breaking
-* No breaking changes
+* The definition of Krylov solvers in the previous API used types exported directly from `Krylov.jl`. Now solvers are defined using instances of types defined in `XCALibre.jl`. As an example, previously the CG solver was defined using the type `CgSolver` now this solver is defined using the instance `Cg()` where the suffix "Solver" has been dropped. This applies to all previously available solver choices [#60](@ref)
 
 ### Deprecated
 * No functions deprecated

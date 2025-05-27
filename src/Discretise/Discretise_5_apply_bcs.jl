@@ -41,7 +41,10 @@ function _apply_boundary_conditions!(
         start_ID = facesID_range[1]
 
         # update user defined boundary storage (if needed)
-        update_user_boundary!(BC, faces, cells, facesID_range, time, config)
+        # update_user_boundary!(BC, faces, cells, facesID_range, time, config)
+        #= The `model` passed here is defined in ModelFramework_0_types.jl line 87. It has two properties: terms and sources which define the equation being solved =#
+        update_user_boundary!(
+            BC, faces, cells, facesID_range, time, config)
         
         # Execute apply boundary conditions kernel
         kernel_range = length(facesID_range)

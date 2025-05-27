@@ -61,7 +61,7 @@ schemes = (
 solvers = (
     U = set_solver(
         model.momentum.U;
-        solver      = BicgstabSolver, #CgSolver, BicgstabSolver, GmresSolver, 
+        solver      = Bicgstab(), #Cg(), Bicgstab(), Gmres(), 
         preconditioner = ILU0GPU(), # Jacobi(),
         # preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -70,7 +70,7 @@ solvers = (
     ),
     p = set_solver(
         model.momentum.p;
-        solver      = CgSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
+        solver      = Cg(), #Gmres(), #Cg(), # Bicgstab(), Gmres()
         preconditioner = IC0GPU(), # Jacobi(),
         # preconditioner = Jacobi(),
         convergence = 1e-7,

@@ -6,8 +6,11 @@ using CUDA
 mesh_file = "unv_sample_meshes/trig100.unv"
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-mesh_dev = adapt(CUDABackend(), mesh)
-mesh_dev = mesh
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
+
+hardware = set_hardware(backend=backend, workgroup=workgroup)
+mesh_dev = adapt(backend, mesh)
 
 velocity = [0.5, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
@@ -45,14 +48,14 @@ schemes = (
 solvers = (
     U = set_solver(
         model.momentum.U;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+        solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
     ),
     p = set_solver(
         model.momentum.p;
-        solver      = CgSolver, # BicgstabSolver, GmresSolver
+        solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
@@ -60,9 +63,6 @@ solvers = (
 )
 
 runtime = set_runtime(iterations=1000, write_interval=1000, time_step=1)
-
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)

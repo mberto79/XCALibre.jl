@@ -29,20 +29,24 @@ model = Physics(
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
+    # Zerogradient(:outlet, 0.0),
     # Dirichlet(:wall, [0.0, 0.0, 0.0]),
     # Dirichlet(:top, [0.0, 0.0, 0.0]),
     Wall(:wall, [0.0, 0.0, 0.0]),
     # Wall(:top, [0.0, 0.0, 0.0])
     # Neumann(:top, 0.0),
-    Symmetry(:top)
+    Zerogradient(:top, 0.0),
+    # Symmetry(:top)
 )
 
 @assign! model momentum p (
-    Neumann(:inlet, 0.0),
+    # Neumann(:inlet, 0.0),
+    Zerogradient(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
     Wall(:wall, 0.0),
-    # Neumann(:top, 0.0)
-    Symmetry(:top)
+    # Neumann(:top, 0.0),
+    Zerogradient(:top, 0.0)
+    # Symmetry(:top)
 )
 
 schemes = (

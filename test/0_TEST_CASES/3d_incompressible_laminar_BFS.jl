@@ -42,7 +42,7 @@ model = Physics(
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind, gradient=Orthogonal),
+    U = set_schemes(divergence=Upwind, gradient=Gauss),
     p = set_schemes(gradient=Midpoint)
 )
 

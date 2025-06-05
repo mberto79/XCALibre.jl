@@ -16,6 +16,8 @@ struct Zerogradient{I,V} <: AbstractNeumann
 end
 Adapt.@adapt_structure Zerogradient
 
+Zerogradient(name::Symbol) = Zerogradient(name , 0)
+
 
 function fixedValue(BC::Zerogradient, ID::I, value::V) where {I<:Integer,V}
     # Exception 1: value is scalar

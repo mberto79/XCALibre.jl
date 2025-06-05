@@ -14,6 +14,7 @@ struct Wall{I,V} <: AbstractPhysicalConstraint
 end
 Adapt.@adapt_structure Wall
 
+Wall(name::Symbol) = Wall(name, 0)
 
 function fixedValue(BC::Wall, ID::I, value::V) where {I<:Integer,V}
     # Exception 1: Value is scalar

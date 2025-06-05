@@ -16,7 +16,7 @@ struct Extrapolated{I,V} <: AbstractNeumann
 end
 Adapt.@adapt_structure Extrapolated
 
-Extrapolated(name::Symbol) = Extrapolated(name, 0.0)
+Extrapolated(name::Symbol) = Extrapolated(name , 0)
 
 """
     fixedValue(BC::AbstractNeumann, ID::I, value::V) where {I<:Integer,V}

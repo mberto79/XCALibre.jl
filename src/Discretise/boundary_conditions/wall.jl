@@ -53,12 +53,12 @@ end
 end
 
 @define_boundary Wall Laplacian{Linear} ScalarField begin
-    phi = term.phi 
-    values = get_values(phi, component)
-    J = term.flux[fID]
-    (; area, delta) = face 
-    flux = -J*area/delta
-    ap = term.sign*(flux)
+    # phi = term.phi 
+    # values = get_values(phi, component)
+    # J = term.flux[fID]
+    # (; area, delta) = face 
+    # flux = -J*area/delta
+    # ap = term.sign*(flux)
     # ap, ap*values[cellID] # original
     0.0, 0.0 # try this
     # 0.0, -flux*delta*bc.value # draft implementation to test!

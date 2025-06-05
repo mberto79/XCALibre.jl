@@ -41,14 +41,14 @@ model = Physics(
 
 @assign! model momentum U ( 
     Dirichlet(:inlet, velocity),
-    # Neumann(:outlet, 0.0),
-    Extrapolated(:outlet),
+    Zerogradient(:outlet),
+    # Extrapolated(:outlet),
     Wall(:wall, noSlip),
     # Neumann(:sides, 0.0),
     # Neumann(:top, 0.0)
-    Extrapolated(:sides),
+    # Extrapolated(:sides),
     # Extrapolated(:top)
-    # Zerogradient(:sides, 0.0),
+    Zerogradient(:sides), # faster!
     Zerogradient(:top)
 )
 
@@ -59,9 +59,9 @@ model = Physics(
     # Neumann(:sides, 0.0),
     # Neumann(:top, 0.0)
     Extrapolated(:sides),
-    # Extrapolated(:top)
-    # Zerogradient(:sides, 0.0),
-    Zerogradient(:top)
+    Extrapolated(:top)
+    # Zerogradient(:sides), # slower!
+    # Zerogradient(:top)
 )
 
 solvers = (

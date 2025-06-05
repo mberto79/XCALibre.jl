@@ -57,9 +57,9 @@ model = Physics(
 schemes = (
     # U = set_schemes(divergence=Linear, gradient=Midpoint),
     # U = set_schemes(divergence=Upwind, gradient=Midpoint),
-    U = set_schemes(divergence=Linear, gradient=Orthogonal),
+    U = set_schemes(divergence=Linear, gradient=Gauss),
     # p = set_schemes(gradient=Midpoint)
-    p = set_schemes(gradient=Orthogonal)
+    p = set_schemes(gradient=Gauss)
     # p = set_schemes()
 )
 

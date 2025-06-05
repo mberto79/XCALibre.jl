@@ -5,7 +5,7 @@ export KWallFunction, OmegaWallFunction, NutWallFunction
 export Linear, Upwind, LUST
 export BoundedUpwind
 export SteadyState, Euler, CrankNicolson
-export Orthogonal, Midpoint
+export Gauss, Midpoint
 export set_schemes
 
 # SUPPORTED DISCRETISATION SCHEMES 
@@ -16,7 +16,7 @@ struct Linear <: AbstractScheme end
 struct Upwind <: AbstractScheme end
 struct LUST <: AbstractScheme end
 struct BoundedUpwind <: AbstractScheme end
-struct Orthogonal <: AbstractScheme end
+struct Gauss <: AbstractScheme end
 struct Midpoint <: AbstractScheme end
 struct SteadyState <: AbstractScheme end 
 struct Euler <: AbstractScheme end 

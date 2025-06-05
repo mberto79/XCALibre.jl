@@ -86,7 +86,7 @@ solvers = (
     )
 )
 
-gradScheme = Orthogonal # Midpoint
+gradScheme = Gauss # Midpoint
 divScheme = Upwind # Upwind
 schemes = (
     U = set_schemes(time=SteadyState, divergence=divScheme, gradient=gradScheme),

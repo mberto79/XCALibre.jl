@@ -66,7 +66,7 @@ solvers = (
     )
 )
 
-grad = Midpoint # Midpoint # Orthogonal
+grad = Midpoint # Midpoint # Gauss
 schemes = (
     U = set_schemes(divergence=Linear, gradient=grad),
     p = set_schemes(gradient=grad)

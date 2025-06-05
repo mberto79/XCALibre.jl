@@ -14,7 +14,7 @@ backend = CPU()
 
 phi = ScalarField(mesh)
 phif = FaceScalarField(mesh)
-gradScheme = Orthogonal
+gradScheme = Gauss
 # gradScheme = Midpoint
 ∇phi = Grad{gradScheme}(phi)
 
@@ -63,7 +63,7 @@ rk = (1.0/k - 1.0)
 
 psi = VectorField(mesh)
 psif = FaceVectorField(mesh)
-gradScheme = Orthogonal
+gradScheme = Gauss
 # gradScheme = Midpoint
 ∇psi = Grad{gradScheme}(psi)
 

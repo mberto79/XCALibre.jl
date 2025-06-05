@@ -88,8 +88,8 @@ solvers = (
 )
 
 schemes = (
-    U = set_schemes(time=Euler, divergence=Upwind, gradient=Orthogonal),
-    p = set_schemes(time=Euler, divergence=Upwind, gradient=Orthogonal)
+    U = set_schemes(time=Euler, divergence=Upwind, gradient=Gauss),
+    p = set_schemes(time=Euler, divergence=Upwind, gradient=Gauss)
 )
 
 

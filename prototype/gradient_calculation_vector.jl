@@ -13,7 +13,7 @@ backend = CPU()
 
 psi = VectorField(mesh)
 psif = FaceVectorField(mesh)
-gradScheme = Orthogonal
+gradScheme = Gauss
 gradScheme = Midpoint
 ∇psi = Grad{gradScheme}(psi)
 

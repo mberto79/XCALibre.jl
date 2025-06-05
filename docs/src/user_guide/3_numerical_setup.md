@@ -46,7 +46,7 @@ print_tree(AbstractScheme) # hide
 
 | **Scheme** | **Description** |
 |:-------|:------------|
-| Orthogonal | Green-Gauss uncorrected gradient scheme |
+| Gauss | Green-Gauss uncorrected gradient scheme |
 | Midpoint | Green-Gauss skew corrected scheme (2 iterations - hardcoded) |
 
 #### Gradient limiters

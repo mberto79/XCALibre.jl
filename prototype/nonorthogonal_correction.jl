@@ -21,7 +21,7 @@ phi = ScalarField(mesh)
 phif = FaceScalarField(mesh)
 q = ScalarField(mesh)
 gammaf = FaceScalarField(mesh)
-# gradScheme = Orthogonal
+# gradScheme = Gauss
 gradScheme = Midpoint
 ∇phi = Grad{gradScheme}(phi)
 

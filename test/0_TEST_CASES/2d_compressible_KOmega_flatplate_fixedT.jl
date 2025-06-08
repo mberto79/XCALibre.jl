@@ -37,60 +37,79 @@ model = Physics(
 
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
+    # Neumann(:outlet, 0.0),
+    # Extrapolated(:outlet),
+    Zerogradient(:outlet),
     Wall(:wall, [0.0, 0.0, 0.0]),
-    Symmetry(:top, 0.0)
+    # Symmetry(:top)
+    Extrapolated(:top)
 )
 
 @assign! model momentum p (
-    Neumann(:inlet, 0.0),
+    # Neumann(:inlet, 0.0),
+    Zerogradient(:inlet),
+    # Extrapolated(:inlet),
     Dirichlet(:outlet, 100000.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
+    # Neumann(:wall, 0.0),
+    Wall(:wall),
+    # Neumann(:top, 0.0)
+    # Extrapolated(:top)
+    # Zerogradient(:top)
+    # Symmetry(:top)
+    Extrapolated(:top)
 )
 
 @assign! model energy h (
     FixedTemperature(:inlet, T=300.0, model=model.energy),
-    Neumann(:outlet, 0.0),
+    # Neumann(:outlet, 0.0),
+    # Extrapolated(:outlet),
+    Zerogradient(:outlet),
     FixedTemperature(:wall, T=310.0, model=model.energy),
-    Neumann(:top, 0.0)
+    # Neumann(:top, 0.0)
+    # Extrapolated(:top)
+    # Symmetry(:top)
+    Extrapolated(:top)
 )
 
 @assign! model turbulence k (
     Dirichlet(:inlet, k_inlet),
-    Neumann(:outlet, 0.0),
-    # KWallFunction(:wall),
-    # KWallFunction(:top)
+    # Neumann(:outlet, 0.0),
+    Extrapolated(:outlet),
     Dirichlet(:wall, 0.0),
-    Neumann(:top, 0.0)
+    # Neumann(:top, 0.0)
+    # Extrapolated(:top)
+    # Symmetry(:top)
+    Extrapolated(:top)
 )
 
 @assign! model turbulence omega (
     Dirichlet(:inlet, ω_inlet),
-    Neumann(:outlet, 0.0),
+    # Neumann(:outlet, 0.0),
+    Extrapolated(:outlet),
     OmegaWallFunction(:wall),
-    Neumann(:top, 0.0)
-    # Dirichlet(:wall, ω_wall), 
-    # Dirichlet(:top, ω_wall)
+    # Neumann(:top, 0.0)
+    # Extrapolated(:top)
+    # Symmetry(:top)
+    Extrapolated(:top)
 )
 
 @assign! model turbulence nut (
-    Neumann(:inlet, 0.0),
-    Neumann(:outlet, 0.0),
     Dirichlet(:wall, 0.0), 
-    Neumann(:top, 0.0)
+    # Neumann.([:inlet, :outlet, :top], Ref(0.0))...
+    Extrapolated.([:inlet, :outlet, :top])...
 )
 
-for grad_limiter ∈ [nothing] #, FaceBased(model.domain), MFaceBased(model.domain)]
-    local schemes = (
-        U = set_schemes(divergence=Linear, limiter=grad_limiter),
-        p = set_schemes(divergence=Linear, limiter=grad_limiter),
-        h = set_schemes(divergence=Linear),
+# for grad_limiter ∈ [nothing] #, FaceBased(model.domain), MFaceBased(model.domain)]
+    grad_limiter = nothing
+      schemes = (
+        U = set_schemes(divergence=Upwind, limiter=grad_limiter),
+        p = set_schemes(divergence=Upwind, limiter=grad_limiter),
+        h = set_schemes(divergence=Upwind),
         k = set_schemes(divergence=Upwind),
         omega = set_schemes(divergence=Upwind)
     )
 
-    local solvers = (
+      solvers = (
         U = set_solver(
             model.momentum.U;
             solver      = Bicgstab(), # Bicgstab(), Gmres()
@@ -101,8 +120,8 @@ for grad_limiter ∈ [nothing] #, FaceBased(model.domain), MFaceBased(model.doma
         ),
         p = set_solver(
             model.momentum.p;
-            solver      = Gmres(), # Bicgstab(), Gmres()
-            preconditioner = Jacobi(),
+            solver      = Cg(), # Bicgstab(), Gmres()
+            preconditioner = DILU(), #Jacobi(),
             convergence = 1e-7,
             relax       = 0.3,
             rtol = 1e-2
@@ -110,17 +129,17 @@ for grad_limiter ∈ [nothing] #, FaceBased(model.domain), MFaceBased(model.doma
         h = set_solver(
             model.energy.h;
             solver      = Bicgstab(), # Bicgstab(), Gmres()
-            preconditioner = Jacobi(),
+            preconditioner = DILU(),
             convergence = 1e-7,
-            relax       = 0.7,
-            rtol = 1e-1,
+            relax       = 0.3,
+            rtol = 1e-4,
         ),
         k = set_solver(
             model.turbulence.k;
             solver      = Bicgstab(), # Bicgstab(), Gmres()
             preconditioner = Jacobi(), 
             convergence = 1e-7,
-            relax       = 0.8,
+            relax       = 0.7,
             rtol = 1e-1
         ),
         omega = set_solver(
@@ -128,18 +147,18 @@ for grad_limiter ∈ [nothing] #, FaceBased(model.domain), MFaceBased(model.doma
             solver      = Bicgstab(), # Bicgstab(), Gmres()
             preconditioner = Jacobi(),
             convergence = 1e-7,
-            relax       = 0.8,
+            relax       = 0.7,
             rtol = 1e-1
         )
     )
 
-    local runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
+      runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
 
-    local hardware = set_hardware(backend=CPU(), workgroup=1024)
+      hardware = set_hardware(backend=CPU(), workgroup=1024)
     # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
     # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 
-    local config = Configuration(
+      config = Configuration(
         solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
     GC.gc()
@@ -151,13 +170,13 @@ for grad_limiter ∈ [nothing] #, FaceBased(model.domain), MFaceBased(model.doma
     @test initialise!(model.turbulence.omega, ω_inlet) === nothing
     @test initialise!(model.turbulence.nut, k_inlet/ω_inlet) === nothing
 
-    local residuals = run!(model, config)
+      residuals = run!(model, config)
 
-    local inlet = boundary_average(:inlet, model.momentum.U, config)
-    local outlet = boundary_average(:outlet, model.momentum.U, config)
-    local top = boundary_average(:top, model.momentum.U, config)
+      inlet = boundary_average(:inlet, model.momentum.U, config)
+      outlet = boundary_average(:outlet, model.momentum.U, config)
+      top = boundary_average(:top, model.momentum.U, config)
 
     @test Umag ≈ inlet[1]
     @test Umag ≈ outlet[1] atol = 0.85
     @test Umag ≈ top[1] atol = 0.15
-end
+# end

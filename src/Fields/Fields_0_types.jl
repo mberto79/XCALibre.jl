@@ -42,7 +42,7 @@ Base.getindex(v::ConstantVector, i::Integer) = SVector{3, eltype(v.x)}(v.x, v.y,
 struct ScalarField{VF,M<:AbstractMesh,BC} <: AbstractScalarField
     values::VF  # scalar values at cell centre
     mesh::M     # reference to mesh
-    BCs::BC     # store user-provided boundary conditions
+    # BCs::BC     # store user-provided boundary conditions
 end
 Adapt.@adapt_structure ScalarField
 ScalarField(mesh::AbstractMesh) =begin
@@ -50,14 +50,16 @@ ScalarField(mesh::AbstractMesh) =begin
     F = _get_float(mesh)
     backend = _get_backend(mesh)
     arr = _convert_array!(zeros(F,ncells), backend)
-    ScalarField(arr, mesh, ())
+    # ScalarField(arr, mesh, ())
+    ScalarField(arr, mesh)
 end
 ScalarField(values::Vector{Float64}, mesh::AbstractMesh) =begin
     ncells  = length(mesh.cells)
     F = _get_float(mesh)
     backend = _get_backend(mesh)
     arr = _convert_array!(values, backend)
-    ScalarField(arr, mesh, ())
+    # ScalarField(arr, mesh, ())
+    ScalarField(arr, mesh)
 end
 
 struct FaceScalarField{VF,M<:AbstractMesh} <: AbstractScalarField
@@ -100,7 +102,7 @@ struct VectorField{S1<:ScalarField,S2,S3,M<:AbstractMesh,BC} <: AbstractVectorFi
     y::S2
     z::S3
     mesh::M
-    BCs::BC
+    # BCs::BC
 end
 Adapt.@adapt_structure VectorField
 VectorField(mesh::AbstractMesh) = begin
@@ -111,11 +113,14 @@ VectorField(mesh::AbstractMesh) = begin
     arr2 = _convert_array!(zeros(F,ncells), backend)
     arr3 = _convert_array!(zeros(F,ncells), backend)
     VectorField(
+        # ScalarField(arr1, mesh, ()),
+        # ScalarField(arr2, mesh, ()), 
+        # ScalarField(arr3, mesh, ()), 
         ScalarField(arr1, mesh, ()),
         ScalarField(arr2, mesh, ()), 
         ScalarField(arr3, mesh, ()), 
         mesh,
-        () # to hold x, y, z and combined BCs
+        # () # to hold x, y, z and combined BCs
         )
 end
 

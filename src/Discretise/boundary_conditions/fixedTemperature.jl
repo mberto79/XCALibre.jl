@@ -15,9 +15,11 @@ temperature that can be translated to the energy specific model, such as sensivl
 ### Examples
     FixedTemperature(:inlet, T=300.0, model=model.energy),
 """
-struct FixedTemperature{I,V} <: AbstractDirichlet
+struct FixedTemperature{S,V,I} <: AbstractDirichlet
+    name::S
+    value::V
     ID::I 
-    value::V 
+    IDs_range::UnitRange{I} 
 end
 Adapt.@adapt_structure FixedTemperature
 

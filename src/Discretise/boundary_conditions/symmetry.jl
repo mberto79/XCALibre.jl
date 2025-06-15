@@ -8,9 +8,11 @@ Symmetry boundary condition vector fields. For scalar fields use `Neumann`
 ### Fields
 - 'ID' -- Boundary ID
 """
-struct Symmetry{I,V} <: AbstractPhysicalConstraint
-    ID::I
+struct Symmetry{S,V,I} <: AbstractPhysicalConstraint
+    name::S
     value::V
+    ID::I 
+    IDs_range::UnitRange{I}
 end
 Adapt.@adapt_structure Symmetry
 

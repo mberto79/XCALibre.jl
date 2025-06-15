@@ -10,9 +10,11 @@ Neumann boundary condition model *(currently only configured for zero gradient)*
 - 'ID' -- Boundary ID
 - `value` -- Scalar or Vector value for Neumann boundary condition.
 """
-struct Neumann{I,V} <: AbstractNeumann
+struct Neumann{S,V,I} <: AbstractNeumann
+    name::S
+    value::V
     ID::I 
-    value::V 
+    IDs_range::UnitRange{I}
 end
 Adapt.@adapt_structure Neumann
 

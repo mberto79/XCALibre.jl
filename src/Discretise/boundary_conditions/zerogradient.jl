@@ -10,9 +10,11 @@ Zerogradient boundary condition model *(currently only configured for zero gradi
 - 'ID' -- Boundary ID
 - `value` -- Scalar or Vector value for Zerogradient boundary condition.
 """
-struct Zerogradient{I,V} <: AbstractNeumann
+struct Zerogradient{S,V,I} <: AbstractNeumann
+    name::S
+    value::V
     ID::I 
-    value::V 
+    IDs_range::UnitRange{I}
 end
 Adapt.@adapt_structure Zerogradient
 

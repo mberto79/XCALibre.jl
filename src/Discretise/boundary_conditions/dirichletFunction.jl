@@ -20,9 +20,11 @@ The function passed to this boundary condition must have the following signature
 
 Where, `coords` is a vector containing the coordinates of a face, `time` is the current time in transient simulations (and the iteration number in steady simulations), and `index` is the local face index (from 1 to `N`, where `N` is the number of faces in a given boundary). The function must return an SVector (from StaticArrays.jl) representing the velocity vector. 
 """
-struct DirichletFunction{I,V} <: AbstractDirichlet
-    ID::I
+struct DirichletFunction{S,V,I} <: AbstractDirichlet
+    name::S
     value::V
+    ID::I 
+    IDs_range::UnitRange{I}
 end
 Adapt.@adapt_structure DirichletFunction
 

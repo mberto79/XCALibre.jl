@@ -37,9 +37,11 @@ y_plus_laminar(E, kappa) = begin
 end
 
 # Kwall function structure and constructor
-struct KWallFunction{I,V} <: AbstractWallFunction
+struct KWallFunction{S,V,I} <: AbstractWallFunction
+    name::S
+    value::V
     ID::I 
-    value::V 
+    IDs_range::UnitRange{I}
 end
 Adapt.@adapt_structure KWallFunction
 KWallFunction(name::Symbol; kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8) = begin
@@ -61,9 +63,11 @@ function fixedValue(BC::KWallFunction, ID::I, value::V) where {I<:Integer,V}
 end
 
 # Omega wall function structure and constructor
-struct OmegaWallFunction{I,V} <: AbstractWallFunction
+struct OmegaWallFunction{S,V,I} <: AbstractWallFunction
+    name::S
+    value::V
     ID::I 
-    value::V 
+    IDs_range::UnitRange{I}
 end
 Adapt.@adapt_structure OmegaWallFunction
 OmegaWallFunction(name::Symbol; kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8) = begin
@@ -87,9 +91,11 @@ function fixedValue(BC::OmegaWallFunction, ID::I, value::V) where {I<:Integer,V}
 end
 
 # Nut wall function structure and constructor
-struct NutWallFunction{I,V} <: AbstractWallFunction 
+struct NutWallFunction{S,V,I} <: AbstractWallFunction 
+    name::S
+    value::V
     ID::I 
-    value::V 
+    IDs_range::UnitRange{I}
 end
 Adapt.@adapt_structure NutWallFunction
 NutWallFunction(name::Symbol; kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8) = begin

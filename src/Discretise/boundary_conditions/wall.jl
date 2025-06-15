@@ -8,9 +8,11 @@ Wall boundary condition model for no-slip wall condition.
 ### Fields
 - 'ID' -- Boundary ID
 """
-struct Wall{I,V} <: AbstractPhysicalConstraint
-    ID::I
+struct Wall{S,V,I} <: AbstractPhysicalConstraint
+    name::S
     value::V
+    ID::I 
+    IDs_range::UnitRange{I}
 end
 Adapt.@adapt_structure Wall
 

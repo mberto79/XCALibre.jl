@@ -10,9 +10,11 @@ This boundary condition extrapolates the face value using the interior cell valu
 - 'ID' -- Boundary ID
 - `value` -- Scalar or Vector value for Extrapolated boundary condition.
 """
-struct Extrapolated{I,V} <: AbstractNeumann
+struct Extrapolated{S,V,I} <: AbstractNeumann
+    name::S
+    value::V
     ID::I 
-    value::V 
+    IDs_range::UnitRange{I}
 end
 Adapt.@adapt_structure Extrapolated
 

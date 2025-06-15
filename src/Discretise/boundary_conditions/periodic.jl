@@ -18,15 +18,19 @@ Periodic boundary condition model.
 - 'ID' -- Boundary ID
 - `value` -- tuple containing information needed to apply this boundary
 """
-struct Periodic{I,V} <: AbstractPeriodic
-    ID::I
+struct Periodic{S,V,I} <: AbstractPeriodic
+    name::S
     value::V
+    ID::I 
+    IDs_range::UnitRange{I}
 end
 Adapt.@adapt_structure Periodic
 
-struct PeriodicParent{I,V} <: AbstractPeriodic
-    ID::I
+struct PeriodicParent{S,V,I} <: AbstractPeriodic
+    name::S
     value::V
+    ID::I 
+    IDs_range::UnitRange{I}
 end
 Adapt.@adapt_structure PeriodicParent
 

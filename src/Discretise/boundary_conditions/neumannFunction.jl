@@ -15,9 +15,11 @@ Neumann boundary condition defined with user-provided function.
 
 The function passed to this boundary condition has not yet been implemented. However, users can pass a custom struct to specialise the internal implementations of many functions. By default, as present, this function will assign a zero gradient boundary condition on all fields.
 """
-struct NeumannFunction{I,V} <: AbstractNeumann
+struct NeumannFunction{S,V,I} <: AbstractNeumann
+    name::S
+    value::V
     ID::I 
-    value::V 
+    IDs_range::UnitRange{I}
 end
 Adapt.@adapt_structure NeumannFunction
 

@@ -86,7 +86,7 @@ runtime = set_runtime(iterations=2000, time_step=1, write_interval=2000)
 
 # Step 9. Construct Configuration object
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 # Step 10. Initialise fields (initial guess)
 initialise!(model.momentum.U, velocity)

@@ -6,7 +6,7 @@ function wall_distance!(model, config)
 
     mesh = model.domain
     y = model.turbulence.y
-    (; solvers, schemes, runtime, hardware) = config
+    (; solvers, schemes, runtime, hardware, boundaries) = config
     
     phi = ScalarField(mesh)
     # phif = FaceScalarField(mesh)
@@ -18,10 +18,10 @@ function wall_distance!(model, config)
         -Laplacian{schemes.y.laplacian}(ConstantScalar(1.0), phi) 
         == 
         Source(ConstantScalar(1.0))
-    ) → ScalarEquation(phi, config.boundaries.phi)
+    ) → ScalarEquation(phi, boundaries.phi)
 
     @reset phi_eqn.preconditioner = set_preconditioner(
-        solvers.y.preconditioner, phi_eqn, phi.BCs, config)
+        solvers.y.preconditioner, phi_eqn, boundaries.phi, config)
 
     @reset phi_eqn.solver = _workspace(solvers.y.solver, _b(phi_eqn))
 

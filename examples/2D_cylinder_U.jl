@@ -75,7 +75,7 @@ runtime = set_runtime(
     # iterations=1000, write_interval=-1, time_step=0.005) # used to run only
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc(true)
 

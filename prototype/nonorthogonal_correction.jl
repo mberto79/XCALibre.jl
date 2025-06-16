@@ -31,15 +31,17 @@ eqn = (
         - Laplacian{Linear}(gammaf, phi) == Source(q)
     ) → ScalarEquation(mesh)
 
-phi = assign(
-    phi, 
-    # Dirichlet(:inlet, 0.0),
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    # Dirichlet(:bottom, 0.0),
-    Neumann(:bottom, 0.0),
-    Dirichlet(:top, 2.0),
+phi = assign(region=mesh,
+    (
+    phi = [
+        Neumann(:inlet, 0.0),
+        Dirichlet(:outlet, 0.0),
+        # Dirichlet(:bottom, 0.0),
+        Neumann(:bottom, 0.0),
+        Dirichlet(:top, 2.0)
+    ]
     )
+)
 
 
 solvers= (; 
@@ -58,10 +60,10 @@ runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
 hardware = set_hardware(backend=backend, workgroup=1024)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 @reset eqn.preconditioner = set_preconditioner(
-    solvers.phi.preconditioner, eqn, phi.BCs, config)
+    solvers.phi.preconditioner, eqn, boundaries.phi, config)
 @reset eqn.solver = _workspace(solvers.phi.solver, _b(eqn))
 
 gammaf.values .= 1

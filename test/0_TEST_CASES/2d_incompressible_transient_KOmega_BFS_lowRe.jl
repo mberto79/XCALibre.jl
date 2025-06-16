@@ -26,39 +26,40 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Dirichlet(:top, [0.0, 0.0, 0.0])
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model turbulence k (
-    Dirichlet(:inlet, k_inlet),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, 0.0),
-    Dirichlet(:top, 0.0)
-)
-
-@assign! model turbulence omega (
-    Dirichlet(:inlet, ω_inlet),
-    Neumann(:outlet, 0.0),
-    OmegaWallFunction(:wall),
-    OmegaWallFunction(:top)
-)
-
-@assign! model turbulence nut (
-    Dirichlet(:inlet, k_inlet/ω_inlet),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, 0.0), 
-    Dirichlet(:top, 0.0)
+BCs = assign(
+    region=mesh_dev,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Neumann(:outlet, 0.0),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Dirichlet(:top, [0.0, 0.0, 0.0])
+        ],
+        p = [
+            Neumann(:inlet, 0.0),
+            Dirichlet(:outlet, 0.0),
+            Neumann(:wall, 0.0),
+            Neumann(:top, 0.0)
+        ],
+        k = [
+            Dirichlet(:inlet, k_inlet),
+            Neumann(:outlet, 0.0),
+            Dirichlet(:wall, 0.0),
+            Dirichlet(:top, 0.0)
+        ],
+        omega = [
+            Dirichlet(:inlet, ω_inlet),
+            Neumann(:outlet, 0.0),
+            OmegaWallFunction(:wall),
+            OmegaWallFunction(:top)
+        ],
+        nut = [
+            Dirichlet(:inlet, k_inlet/ω_inlet),
+            Neumann(:outlet, 0.0),
+            Dirichlet(:wall, 0.0), 
+            Dirichlet(:top, 0.0)
+        ],
+    )
 )
 
 schemes = (
@@ -110,7 +111,7 @@ runtime = set_runtime(
 hardware = set_hardware(backend=CPU(), workgroup=1024)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc()
 

@@ -67,10 +67,30 @@ struct OmegaWallFunction{I,V,R<:UnitRange} <: AbstractWallFunction
     IDs_range::R
 end
 Adapt.@adapt_structure OmegaWallFunction
+
+@kwdef struct OmegaWallFunctionValue{F<:AbstractFloat}
+    kappa::F
+    beta1::F
+    cmu::F
+    B::F
+    E::F
+    yPlusLam::F
+end
+Adapt.@adapt_structure OmegaWallFunctionValue
+
+adapt_value(value::OmegaWallFunctionValue, mesh) = begin
+    F = _get_float(mesh)
+    (; kappa, beta1, cmu, B, E, yPlusLam) = value
+    OmegaWallFunctionValue{F}(
+            kappa=kappa, beta1=beta1, cmu=cmu, B=B, E=E, yPlusLam=yPlusLam
+            )
+end
+
 OmegaWallFunction(name::Symbol; kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8) = begin
     yPlusLam = y_plus_laminar(E, kappa)
     OmegaWallFunction(
-        name, (kappa=kappa, beta1=beta1, cmu=cmu, B=B, E=E, yPlusLam=yPlusLam)
+        name, OmegaWallFunctionValue(
+            kappa=kappa, beta1=beta1, cmu=cmu, B=B, E=E, yPlusLam=yPlusLam)
         )
 end
 

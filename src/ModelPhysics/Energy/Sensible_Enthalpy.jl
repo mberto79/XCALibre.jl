@@ -89,7 +89,7 @@ function initialise(
     ) where {T1,F,M,Tu,E,D,BI}
 
     (; h, T, dpdt) = energy
-    (; solvers, schemes, runtime) = config
+    (; solvers, schemes, runtime, boundaries) = config
     mesh = mdotf.mesh
     eqn = peqn.equation
     
@@ -112,7 +112,7 @@ function initialise(
     
     # Set up preconditioners
     @reset energy_eqn.preconditioner = set_preconditioner(
-                solvers.h.preconditioner, energy_eqn, h.BCs, config)
+                solvers.h.preconditioner, energy_eqn, boundaries.h, config)
     
     # preallocating solvers
     @reset energy_eqn.solver = _workspace(solvers.h.solver, _b(energy_eqn))
@@ -152,7 +152,7 @@ function energy!(
     (;U) = model.momentum
     (;h, hf, T, K, dpdt) = model.energy
     (;energy_eqn, state) = energy
-    (; solvers, runtime, hardware) = config
+    (; solvers, runtime, hardware, boundaries) = config
     (; iterations, write_interval) = runtime
     (; backend) = hardware
 
@@ -180,7 +180,7 @@ function energy!(
 
     @. prev = K.values
     interpolate!(Uf, U, config)
-    correct_boundaries!(Uf, U, U.BCs, time, config)
+    correct_boundaries!(Uf, U, boundaries.U, time, config)
     for i ∈ eachindex(K)
         K.values[i] = 0.5*(U.x.values[i]^2 + U.y.values[i]^2 + U.z.values[i]^2)
     end

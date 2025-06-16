@@ -219,7 +219,7 @@ function SIMPLE(
             # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
             explicit_relaxation!(p, prev, solvers.p.relax, config)
-            grad!(∇p, pf, p, p.BCs, time, config) 
+            grad!(∇p, pf, p, boundaries.p, time, config) 
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
         end
 
@@ -230,7 +230,7 @@ function SIMPLE(
         # old approach
         # correct_velocity!(U, Hv, ∇p, rD, config)
         # interpolate!(Uf, U, config)
-        # correct_boundaries!(Uf, U, U.BCs, time, config)
+        # correct_boundaries!(Uf, U, boundaries.U, time, config)
         # flux!(mdotf, Uf, config) 
 
         # new approach

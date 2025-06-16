@@ -65,7 +65,7 @@ solvers = (
 runtime = set_runtime(iterations=1000, write_interval=1000, time_step=1)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc()
 

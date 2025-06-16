@@ -126,7 +126,7 @@ using ProgressMeter, Printf, Adapt
 #             hardware = set_hardware(backend=CPU(), workgroup=1024)
             
 #             config = Configuration(
-#                 solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+#                 solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
             
 #             initialise!(model.momentum.U, velocity) === nothing
 #             initialise!(model.momentum.p, 0.0) === nothing
@@ -230,7 +230,7 @@ using ProgressMeter, Printf, Adapt
 #             hardware = set_hardware(backend=CPU(), workgroup=1024)
 
 #             config = Configuration(
-#                 solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+#                 solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 #             GC.gc()
 

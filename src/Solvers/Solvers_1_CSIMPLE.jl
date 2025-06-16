@@ -93,9 +93,9 @@ function setup_compressible_solvers(
     @info "Initialising preconditioners..."
 
     @reset U_eqn.preconditioner = set_preconditioner(
-                    solvers.U.preconditioner, U_eqn, U.BCs, config)
+                    solvers.U.preconditioner, U_eqn, boundaries.U, config)
     @reset p_eqn.preconditioner = set_preconditioner(
-                    solvers.p.preconditioner, p_eqn, p.BCs, config)
+                    solvers.p.preconditioner, p_eqn, boundaries.p, config)
 
     @info "Pre-allocating solvers..."
      
@@ -129,7 +129,7 @@ function CSIMPLE(
 
     mesh = model.domain
     p_model = p_eqn.model
-    (; solvers, schemes, runtime, hardware) = config
+    (; solvers, schemes, runtime, hardware, boundaries) = config
     (; iterations, write_interval) = runtime
     (; backend) = hardware
     
@@ -186,8 +186,8 @@ function CSIMPLE(
     # Initial calculations
     time = zero(TF) # assuming time=0
     interpolate!(Uf, U, config)   
-    correct_boundaries!(Uf, U, U.BCs, time, config) 
-    grad!(∇p, pf, p, p.BCs, time, config)
+    correct_boundaries!(Uf, U, boundaries.U, time, config) 
+    grad!(∇p, pf, p, boundaries.p, time, config)
     thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
     @. rho.values = Psi.values * p.values
     @. rhof.values = Psif.values * pf.values
@@ -206,7 +206,7 @@ function CSIMPLE(
         time = iteration
 
         ## CHECK GRADU AND EXPLICIT STRESSES
-        # grad!(gradU, Uf, U, U.BCs, time, config) # calculated in `turbulence!``
+        # grad!(gradU, Uf, U, boundaries.U, time, config) # calculated in `turbulence!``
 
         explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, config)
         div!(divmugradUTx, mugradUTx, config)
@@ -219,7 +219,7 @@ function CSIMPLE(
 
         # Set up and solve momentum equations
         
-        rx, ry, rz = solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
+        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
         energy!(energyModel, model, prev, mdotf, rho, mueff, time, config)
         thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
 
@@ -233,7 +233,7 @@ function CSIMPLE(
         
         # Interpolate faces
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
-        correct_boundaries!(Uf, Hv, U.BCs, time, config)
+        correct_boundaries!(Uf, Hv, boundaries.U, time, config)
 
         if typeof(model.fluid) <: Compressible
             flux!(pconv, Uf, config)
@@ -241,7 +241,7 @@ function CSIMPLE(
             flux!(mdotf, Uf, config)
             @. mdotf.values *= rhof.values
             interpolate!(pf, p, config)
-            correct_boundaries!(pf, p, p.BCs, time, config)
+            correct_boundaries!(pf, p, boundaries.p, time, config)
             @. mdotf.values -= mdotf.values*Psif.values*pf.values/rhof.values
             div!(divHv, mdotf, config)
 
@@ -257,9 +257,9 @@ function CSIMPLE(
         @. prevpf.values = pf.values
         if typeof(model.fluid) <: Compressible
             # Ensure diagonal dominance for hyperbolic equations
-            rp = solve_equation!(p_eqn, p, solvers.p, config; ref=nothing, irelax=solvers.U.relax)
+            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing, irelax=solvers.U.relax)
         elseif typeof(model.fluid) <: WeaklyCompressible
-            rp = solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
+            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing)
         end
 
         if ~isempty(solvers.p.limit)
@@ -269,20 +269,20 @@ function CSIMPLE(
 
         explicit_relaxation!(p, prev, solvers.p.relax, config)
 
-        grad!(∇p, pf, p, p.BCs, time, config) 
+        grad!(∇p, pf, p, boundaries.p, time, config) 
         limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
             discretise!(p_eqn, p, config)       
-            apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
+            apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
             setReference!(p_eqn, pref, 1, config)
             nonorthogonal_face_correction(p_eqn, ∇p, rhorDf, config)
             update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
             explicit_relaxation!(p, prev, solvers.p.relax, config)
             
-            grad!(∇p, pf, p, p.BCs, time, config) 
+            grad!(∇p, pf, p, boundaries.p, time, config) 
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
         end
 
@@ -297,7 +297,7 @@ function CSIMPLE(
 
         # Velocity and boundaries correction
         # correct_face_interpolation!(pf, p, Uf) # not needed added upwind interpolation
-        # correct_boundaries!(pf, p, p.BCs, time, config)
+        # correct_boundaries!(pf, p, boundaries.p, time, config)
         # pgrad = face_normal_gradient(p, pf)
 
         if typeof(model.fluid) <: Compressible
@@ -311,7 +311,7 @@ function CSIMPLE(
 
         correct_velocity!(U, Hv, ∇p, rD, config)
         interpolate!(Uf, U, config)
-        correct_boundaries!(Uf, U, U.BCs, time, config)
+        correct_boundaries!(Uf, U, boundaries.U, time, config)
         
         turbulence!(turbulenceModel, model, S, prev, time, config) 
         update_nueff!(nueff, nu, model.turbulence, config)
@@ -338,7 +338,7 @@ function CSIMPLE(
             finish!(progress)
             @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
-                save_output(model, outputWriter, time)
+                save_output(model, outputWriter, time, config)
             end
             break
         end
@@ -356,7 +356,7 @@ function CSIMPLE(
             )
 
         if iteration%write_interval + signbit(write_interval) == 0      
-            save_output(model, outputWriter, time)
+            save_output(model, outputWriter, time, config)
         end
 
     end # end for loop

@@ -22,7 +22,7 @@ The `Configuration` type is passed to all flow solvers and provides all the rele
 
 ```julia
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 ```
 """
 @kwdef struct Configuration{SC,SL,RT,HW,BC}

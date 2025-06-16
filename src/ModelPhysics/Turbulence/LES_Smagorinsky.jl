@@ -70,7 +70,7 @@ function initialise(
     turbulence::Smagorinsky, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
     ) where {T,F,M,Tu,E,D,BI}
 
-    (; solvers, schemes, runtime) = config
+    (; solvers, schemes, runtime, boundaries) = config
     mesh = model.domain
     
     magS = ScalarField(mesh)
@@ -115,7 +115,7 @@ function turbulence!(
     (; U, Uf, gradU) = S
     (; Δ, magS) = les
 
-    grad!(gradU, Uf, U, U.BCs, time, config) # update gradient (internal structure of S)
+    grad!(gradU, Uf, U, boundaries.U, time, config) # update gradient (internal structure of S)
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
     magnitude!(magS, S, config)
     @. magS.values *= sqrt(2) # should fuse into definition of magnitude function!
@@ -124,8 +124,8 @@ function turbulence!(
     @. nut.values = coeffs.C*Δ.values*magS.values # careful: here Δ = Δ²
 
     interpolate!(nutf, nut, config)
-    correct_boundaries!(nutf, nut, nut.BCs, time, config)
-    correct_eddy_viscosity!(nutf, nut.BCs, model, config)
+    correct_boundaries!(nutf, nut, boundaries.nut, time, config)
+    correct_eddy_viscosity!(nutf, boundaries.nut, model, config)
 end
 
 # Specialise VTK writer

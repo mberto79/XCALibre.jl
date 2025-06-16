@@ -22,7 +22,7 @@ model = Physics(
     fluid = Fluid{Incompressible}(nu=nu),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
-    domain = mesh_dev_dev
+    domain = mesh_dev
     )
 
 assign(

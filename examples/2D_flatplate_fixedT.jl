@@ -32,25 +32,28 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Symmetry(:top, 0.0)
-)
-
- @assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 100000.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model energy h (
-    FixedTemperature(:inlet, T=300.0, model=model.energy),
-    Neumann(:outlet, 0.0),
-    FixedTemperature(:wall, T=310.0, model=model.energy),
-    Neumann(:top, 0.0)
+BCs = assign(
+    region=mesh,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Extrapolated(:outlet),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Symmetry(:top)
+        ],
+        p = [
+            Extrapolated(:inlet),
+            Dirichlet(:outlet, 100000.0),
+            Wall(:wall),
+            Symmetry(:top)
+        ],
+        h = [
+            FixedTemperature(:inlet, T=300.0, model=model.energy),
+            Extrapolated(:outlet),
+            FixedTemperature(:wall, T=310.0, model=model.energy),
+            Symmetry(:top)
+        ],
+    )
 )
 
 schemes = (
@@ -67,6 +70,8 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
+        rtol = 1e-1
+
     ),
     p = set_solver(
         model.momentum.p;
@@ -74,6 +79,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.3,
+        rtol = 1e-2
     ),
     h = set_solver(
         model.energy.h;
@@ -81,8 +87,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
-        rtol = 1e-2,
-        atol = 1e-4
+        rtol = 1e-1
     )
 )
 

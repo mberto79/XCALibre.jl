@@ -265,7 +265,7 @@ function SIMPLE(
             finish!(progress)
             @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
-                save_output(model, outputWriter, time)
+                save_output(model, outputWriter, time, config)
             end
             break
         end
@@ -282,7 +282,7 @@ function SIMPLE(
             )
 
         if iteration%write_interval + signbit(write_interval) == 0      
-            save_output(model, outputWriter, time)
+            save_output(model, outputWriter, time, config)
         end
 
     end # end for loop

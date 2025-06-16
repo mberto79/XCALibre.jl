@@ -225,7 +225,7 @@ function turbulence!(
 end
 
 # Specialise VTK writer
-function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration
+function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration, config
     ) where {T,F,M,Tu<:KOmega,E,D,BI}
     if typeof(model.fluid)<:AbstractCompressible
         args = (
@@ -245,5 +245,5 @@ function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration
             ("nut", model.turbulence.nut)
         )
     end
-    write_results(iteration, model.domain, outputWriter, args...)
+    write_results(iteration, model.domain, outputWriter, config.boundaries, args...)
 end

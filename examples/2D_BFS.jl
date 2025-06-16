@@ -38,8 +38,8 @@ BCs = assign(region=mesh_dev,
 
             # Wall(:top, [0.0, 0.0, 0.0])
             # Neumann(:top, 0.0),
-            Zerogradient(:top),
-            # Symmetry(:top)
+            # Zerogradient(:top),
+            Symmetry(:top)
         ],
         p = [
             # Neumann(:inlet, 0.0),
@@ -47,8 +47,8 @@ BCs = assign(region=mesh_dev,
             Dirichlet(:outlet, 0.0),
             Wall(:wall),
             # Neumann(:top, 0.0),
-            Zerogradient(:top)
-            # Symmetry(:top)
+            # Zerogradient(:top)
+            Symmetry(:top)
         ]
     )
 )

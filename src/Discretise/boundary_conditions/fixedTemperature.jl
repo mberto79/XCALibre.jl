@@ -15,11 +15,10 @@ temperature that can be translated to the energy specific model, such as sensivl
 ### Examples
     FixedTemperature(:inlet, T=300.0, model=model.energy),
 """
-struct FixedTemperature{S,V,I} <: AbstractDirichlet
-    name::S
-    value::V
+struct FixedTemperature{I,V,R<:UnitRange} <: AbstractDirichlet
     ID::I 
-    IDs_range::UnitRange{I} 
+    value::V
+    IDs_range::R 
 end
 Adapt.@adapt_structure FixedTemperature
 
@@ -33,7 +32,7 @@ function fixedValue(BC::FixedTemperature, ID::I, value::V) where {I<:Integer,V}
         return FixedTemperature{I,typeof(value)}(ID, value)
         # Exception 2: value is a tupple
     elseif V <: NamedTuple
-        return FixedTemperature{I,V}(ID, value)
+        return FixedTemperature{I,V,R<:UnitRange}(ID, value)
     # Error if value is not scalar or tuple
     else
         throw("The value provided should be a scalar or a tuple")

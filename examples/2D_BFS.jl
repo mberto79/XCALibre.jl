@@ -35,6 +35,7 @@ BCs = assign(region=mesh_dev,
             # Dirichlet(:wall, [0.0, 0.0, 0.0]),
             # Dirichlet(:top, [0.0, 0.0, 0.0]),
             Wall(:wall, [0.0, 0.0, 0.0]),
+
             # Wall(:top, [0.0, 0.0, 0.0])
             # Neumann(:top, 0.0),
             Zerogradient(:top),
@@ -92,7 +93,7 @@ hardware = set_hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
-config = adapt(CUDABackend(), config)
+# config = adapt(CUDABackend(), config)
 
 GC.gc()
 

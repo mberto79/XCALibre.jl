@@ -15,11 +15,10 @@ Neumann boundary condition defined with user-provided function.
 
 The function passed to this boundary condition has not yet been implemented. However, users can pass a custom struct to specialise the internal implementations of many functions. By default, as present, this function will assign a zero gradient boundary condition on all fields.
 """
-struct NeumannFunction{S,V,I} <: AbstractNeumann
-    name::S
-    value::V
+struct NeumannFunction{I,V,R<:UnitRange} <: AbstractNeumann
     ID::I 
-    IDs_range::UnitRange{I}
+    value::V
+    IDs_range::R
 end
 Adapt.@adapt_structure NeumannFunction
 
@@ -39,10 +38,10 @@ function fixedValue(BC::NeumannFunction, ID::I, value::V) where {I<:Integer,V}
         end
     # Exception 3: value is a function
     elseif V <: Function
-        return NeumannFunction{I,V}(ID, value)
+        return NeumannFunction{I,V,R<:UnitRange}(ID, value)
     # Exception 4: value is a user provided XCALibre functor
     elseif V <: XCALibreUserFunctor
-        return NeumannFunction{I,V}(ID, value)
+        return NeumannFunction{I,V,R<:UnitRange}(ID, value)
     # Error if value is not scalar or vector
     else
         throw("The value provided should be a scalar or a vector")

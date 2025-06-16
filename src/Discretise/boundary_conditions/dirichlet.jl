@@ -9,11 +9,10 @@ Dirichlet boundary condition model.
 - 'ID' -- Boundary ID
 - `value` -- Scalar or Vector value for Dirichlet boundary condition.
 """
-struct Dirichlet{S,V,I} <: AbstractDirichlet
-    name::S
-    value::V
+struct Dirichlet{I,V,R<:UnitRange} <: AbstractDirichlet
     ID::I 
-    IDs_range::UnitRange{I}
+    value::V
+    IDs_range::R
 end
 Adapt.@adapt_structure Dirichlet
 

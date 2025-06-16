@@ -148,7 +148,7 @@ The third step is to define a new method for the `update_user_boundary!` functio
 ```@example flux
 
 XCALibre.Discretise.update_user_boundary!(
-    BC::DirichletFunction{I,V}, faces, cells, facesID_range, time, config
+    BC::DirichletFunction{I,V,R<:UnitRange}, faces, cells, facesID_range, time, config
     ) where{I,V<:Inflow} = 
 begin
 

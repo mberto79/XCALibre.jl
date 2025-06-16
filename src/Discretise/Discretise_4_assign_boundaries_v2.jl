@@ -1,6 +1,6 @@
 export assign
 
-(::Type{T})(name::Symbol, value) where T<:AbstractBoundary = T(name,value,0,0:0)
+(::Type{T})(name::Symbol, value) where T<:AbstractBoundary = T(name,value,0:0)
 
 function assign(args; region)
     BCs = []
@@ -22,7 +22,7 @@ function assign_patches(BCs, region)
     for (i, BC) ∈ enumerate(BCs)
         ID, IDs_range = patch_and_faces_IDs(BC, region)
         value = adapt_value(BC.value, region)
-        push!(newBCs, typeof(BC).name.wrapper(BC.name, value, ID, IDs_range))
+        push!(newBCs, typeof(BC).name.wrapper(ID, value, IDs_range))
     end
     # Tuple(newBCs)
     newBCs
@@ -33,11 +33,11 @@ function patch_and_faces_IDs(BC, mesh)
     boundaries_cpu = get_boundaries(mesh.boundaries)
     intType = _get_int(mesh)
     for (ID, boundary) ∈ enumerate(boundaries_cpu)
-        if BC.name == boundary.name
+        if BC.ID == boundary.name
             return intType(ID), boundary.IDs_range
         end
     end
-    error(""""$(BC.name)" is not a recognised boundary name""")
+    error(""""$(BC.ID)" is not a recognised boundary name""")
 end
 
 adapt_value(value::Number, mesh) = _get_float(mesh)(value)

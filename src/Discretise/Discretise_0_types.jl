@@ -36,11 +36,10 @@ y_plus_laminar(E, kappa) = begin
 end
 
 # Kwall function structure and constructor
-struct KWallFunction{S,V,I} <: AbstractWallFunction
-    name::S
-    value::V
+struct KWallFunction{I,V,R<:UnitRange} <: AbstractWallFunction
     ID::I 
-    IDs_range::UnitRange{I}
+    value::V
+    IDs_range::R
 end
 Adapt.@adapt_structure KWallFunction
 KWallFunction(name::Symbol; kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8) = begin
@@ -54,7 +53,7 @@ function fixedValue(BC::KWallFunction, ID::I, value::V) where {I<:Integer,V}
         return KWallFunction{I,typeof(value)}(ID, value)
         # Exception 2: value is a tupple
     elseif V <: NamedTuple
-        return KWallFunction{I,V}(ID, value)
+        return KWallFunction{I,V,R<:UnitRange}(ID, value)
     # Error if value is not scalar or tuple
     else
         throw("The value provided should be a scalar or a tuple")
@@ -62,11 +61,10 @@ function fixedValue(BC::KWallFunction, ID::I, value::V) where {I<:Integer,V}
 end
 
 # Omega wall function structure and constructor
-struct OmegaWallFunction{S,V,I} <: AbstractWallFunction
-    name::S
-    value::V
+struct OmegaWallFunction{I,V,R<:UnitRange} <: AbstractWallFunction
     ID::I 
-    IDs_range::UnitRange{I}
+    value::V
+    IDs_range::R
 end
 Adapt.@adapt_structure OmegaWallFunction
 OmegaWallFunction(name::Symbol; kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8) = begin
@@ -82,7 +80,7 @@ function fixedValue(BC::OmegaWallFunction, ID::I, value::V) where {I<:Integer,V}
         return OmegaWallFunction{I,typeof(value)}(ID, value)
         # Exception 2: value is a tupple
     elseif V <: NamedTuple
-        return OmegaWallFunction{I,V}(ID, value)
+        return OmegaWallFunction{I,V,R<:UnitRange}(ID, value)
     # Error if value is not scalar or tuple
     else
         throw("The value provided should be a scalar or a tuple")
@@ -90,11 +88,10 @@ function fixedValue(BC::OmegaWallFunction, ID::I, value::V) where {I<:Integer,V}
 end
 
 # Nut wall function structure and constructor
-struct NutWallFunction{S,V,I} <: AbstractWallFunction 
-    name::S
-    value::V
+struct NutWallFunction{I,V,R<:UnitRange} <: AbstractWallFunction 
     ID::I 
-    IDs_range::UnitRange{I}
+    value::V
+    IDs_range::R
 end
 Adapt.@adapt_structure NutWallFunction
 NutWallFunction(name::Symbol; kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8) = begin
@@ -107,7 +104,7 @@ function fixedValue(BC::NutWallFunction, ID::I, value::V) where {I<:Integer,V}
         return NutWallFunction{I,typeof(value)}(ID, value)
         # Exception 2: value is a tupple
     elseif V <: NamedTuple
-        return NutWallFunction{I,V}(ID, value)
+        return NutWallFunction{I,V,R<:UnitRange}(ID, value)
     # Error if value is not scalar or tuple
     else
         throw("The value provided should be a scalar or a tuple")

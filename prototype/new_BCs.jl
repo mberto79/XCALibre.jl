@@ -55,7 +55,7 @@ struct FixedValue{S,V,I} <: AbstractBoundary
     name::S
     value::V
     ID::I 
-    IDs_range::UnitRange{I}
+    IDs_range::R
 end
 Adapt.Adapt.@adapt_structure FixedValue
 
@@ -63,7 +63,7 @@ struct FixedGradient{S,V,I} <: AbstractBoundary
     name::S
     value::V
     ID::I 
-    IDs_range::UnitRange{I}
+    IDs_range::R
 end
 Adapt.Adapt.@adapt_structure FixedGradient
 

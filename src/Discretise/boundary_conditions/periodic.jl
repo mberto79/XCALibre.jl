@@ -7,7 +7,7 @@ abstract type AbstractPeriodic <: AbstractPhysicalConstraint end
 
 
 """
-    struct Periodic{I,V} <: AbstractPhysicalConstraint
+    struct Periodic{I,V,R<:UnitRange} <: AbstractPhysicalConstraint
         ID::I
         value::V
     end
@@ -18,19 +18,17 @@ Periodic boundary condition model.
 - 'ID' -- Boundary ID
 - `value` -- tuple containing information needed to apply this boundary
 """
-struct Periodic{S,V,I} <: AbstractPeriodic
-    name::S
-    value::V
+struct Periodic{I,V,R<:UnitRange} <: AbstractPeriodic
     ID::I 
-    IDs_range::UnitRange{I}
+    value::V
+    IDs_range::R
 end
 Adapt.@adapt_structure Periodic
 
-struct PeriodicParent{S,V,I} <: AbstractPeriodic
-    name::S
-    value::V
+struct PeriodicParent{I,V,R<:UnitRange} <: AbstractPeriodic
     ID::I 
-    IDs_range::UnitRange{I}
+    value::V
+    IDs_range::R
 end
 Adapt.@adapt_structure PeriodicParent
 

@@ -20,11 +20,10 @@ The function passed to this boundary condition must have the following signature
 
 Where, `coords` is a vector containing the coordinates of a face, `time` is the current time in transient simulations (and the iteration number in steady simulations), and `index` is the local face index (from 1 to `N`, where `N` is the number of faces in a given boundary). The function must return an SVector (from StaticArrays.jl) representing the velocity vector. 
 """
-struct DirichletFunction{S,V,I} <: AbstractDirichlet
-    name::S
-    value::V
+struct DirichletFunction{I,V,R<:UnitRange} <: AbstractDirichlet
     ID::I 
-    IDs_range::UnitRange{I}
+    value::V
+    IDs_range::R
 end
 Adapt.@adapt_structure DirichletFunction
 
@@ -34,10 +33,10 @@ function fixedValue(BC::DirichletFunction, ID::I, value::V) where {I<:Integer,V}
         return DirichletFunction{I,typeof(value)}(ID, value)
     # Exception 2: value is a function
     elseif V <: Function
-        return DirichletFunction{I,V}(ID, value)
+        return DirichletFunction{I,V,R<:UnitRange}(ID, value)
     # Exception 3: value is a user provided XCALibre functor
     elseif V <: XCALibreUserFunctor
-        return DirichletFunction{I,V}(ID, value)
+        return DirichletFunction{I,V,R<:UnitRange}(ID, value)
     # Error if value is not scalar or tuple
     else
         throw("The value provided should be a scalar or a tuple")

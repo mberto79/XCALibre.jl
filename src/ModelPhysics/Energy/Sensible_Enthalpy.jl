@@ -201,7 +201,7 @@ function energy!(
     # Set up and solve energy equation
     @. prev = h.values
     discretise!(energy_eqn, h, config)
-    apply_boundary_conditions!(energy_eqn, h.BCs, nothing, time, config)
+    apply_boundary_conditions!(energy_eqn, boundaries.h, nothing, time, config)
     implicit_relaxation_diagdom!(energy_eqn, h.values, solvers.h.relax, nothing, config)
     update_preconditioner!(energy_eqn.preconditioner, mesh, config)
     h_res = solve_system!(energy_eqn, solvers.h, h, nothing, config)
@@ -213,7 +213,7 @@ function energy!(
 
     htoT!(model, h, T)
     interpolate!(hf, h, config)
-    correct_boundaries!(hf, h, h.BCs, time, config)
+    correct_boundaries!(hf, h, boundaries.h, time, config)
 
     residuals = (:h, h_res)
     converged = h_res <= solvers.h.convergence
@@ -270,7 +270,7 @@ function thermo_Psi!(
     ) where {T,F<:AbstractCompressible,M,Tu,E,D,BI}
     (; coeffs, hf, h) = model.energy
     interpolate!(hf, h, config)
-    correct_boundaries!(hf, h, h.BCs, time, config)
+    correct_boundaries!(hf, h, config.boundaries.h, time, config)
     (; Tref) = coeffs
     Cp = model.fluid.cp; R = model.fluid.R
     @. Psif.values = Cp.values/(R.values*(hf.values + Cp.values*Tref))

@@ -2,7 +2,9 @@ n = 20
 Acsc = sprand(n,n,0.1) + 0.75I
 
 i, j, v = findnz(Acsc)
-Acsr = sparsecsr(i, j, v, n, n)
+Acsr_orig = sparsecsr(i, j, v, n, n)
+
+Acsr = XCALibre.Multithread.SparseXCSR(Acsr_orig)
 
 P = XCALibre.Solve.Preconditioner{DILU}(Acsr)
 

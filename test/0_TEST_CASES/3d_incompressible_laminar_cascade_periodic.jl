@@ -26,24 +26,26 @@ model = Physics(
     domain = mesh # mesh_dev  # use mesh_dev for GPU backend
     )
 
-
-    
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:plate, [0.0, 0.0, 0.0]),
-    Neumann(:side1, 0.0),
-    Neumann(:side2, 0.0),
-    periodic...
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:plate, 0.0),
-    Neumann(:side1, 0.0),
-    Neumann(:side2, 0.0),
-    periodic...
+BCs = assign(
+    region=mesh,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Neumann(:outlet, 0.0),
+            Wall(:plate, [0.0, 0.0, 0.0]),
+            Neumann(:side1, 0.0),
+            Neumann(:side2, 0.0),
+            periodic...
+        ],
+        p = [
+            Neumann(:inlet, 0.0),
+            Dirichlet(:outlet, 0.0),
+            Neumann(:plate, 0.0),
+            Neumann(:side1, 0.0),
+            Neumann(:side2, 0.0),
+            periodic...
+        ]
+    )
 )
 
 schemes = (
@@ -78,7 +80,7 @@ hardware = set_hardware(backend=CPU(), workgroup=1024)
 # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc(true)
 
@@ -88,14 +90,14 @@ GC.gc(true)
 residuals = run!(model, config)
 
 # test periodic boundaries agree (velocity)
-top = boundary_average(:top, model.momentum.U, config)
-bottom = boundary_average(:bottom, model.momentum.U, config)
+top = boundary_average(:top, model.momentum.U, BCs.U, config)
+bottom = boundary_average(:bottom, model.momentum.U, BCs.U, config)
 
 @test top ≈ bottom
 
 # test periodic boundaries agree (pressure)
-top = boundary_average(:top, model.momentum.p, config)
-bottom = boundary_average(:bottom, model.momentum.p, config)
+top = boundary_average(:top, model.momentum.p, BCs.p, config)
+bottom = boundary_average(:bottom, model.momentum.p, BCs.p, config)
 
 @test top ≈ bottom
 

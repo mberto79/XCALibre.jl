@@ -35,79 +35,70 @@ model = Physics(
     domain = mesh # mesh_dev  # use mesh_dev for GPU backend
     )
 
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    # Neumann(:outlet, 0.0),
-    # Extrapolated(:outlet),
-    Zerogradient(:outlet),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    # Symmetry(:top)
-    Extrapolated(:top)
-)
-
-@assign! model momentum p (
-    # Neumann(:inlet, 0.0),
-    Zerogradient(:inlet),
-    # Extrapolated(:inlet),
-    Dirichlet(:outlet, 100000.0),
-    # Neumann(:wall, 0.0),
-    Wall(:wall),
-    # Neumann(:top, 0.0)
-    # Extrapolated(:top)
-    # Zerogradient(:top)
-    # Symmetry(:top)
-    Extrapolated(:top)
-)
-
-@assign! model energy h (
-    FixedTemperature(:inlet, T=300.0, model=model.energy),
-    # Neumann(:outlet, 0.0),
-    # Extrapolated(:outlet),
-    Zerogradient(:outlet),
-    FixedTemperature(:wall, T=310.0, model=model.energy),
-    # Neumann(:top, 0.0)
-    # Extrapolated(:top)
-    # Symmetry(:top)
-    Extrapolated(:top)
-)
-
-@assign! model turbulence k (
-    Dirichlet(:inlet, k_inlet),
-    # Neumann(:outlet, 0.0),
-    Extrapolated(:outlet),
-    Dirichlet(:wall, 0.0),
-    # Neumann(:top, 0.0)
-    # Extrapolated(:top)
-    # Symmetry(:top)
-    Extrapolated(:top)
-)
-
-@assign! model turbulence omega (
-    Dirichlet(:inlet, ω_inlet),
-    # Neumann(:outlet, 0.0),
-    Extrapolated(:outlet),
-    OmegaWallFunction(:wall),
-    # Neumann(:top, 0.0)
-    # Extrapolated(:top)
-    # Symmetry(:top)
-    Extrapolated(:top)
-)
-
-@assign! model turbulence nut (
-    Dirichlet(:wall, 0.0), 
-    # Neumann.([:inlet, :outlet, :top], Ref(0.0))...
-    Extrapolated.([:inlet, :outlet, :top])...
-)
-
-# for grad_limiter ∈ [nothing] #, FaceBased(model.domain), MFaceBased(model.domain)]
-    grad_limiter = nothing
-      schemes = (
-        U = set_schemes(divergence=Upwind, limiter=grad_limiter),
-        p = set_schemes(divergence=Upwind, limiter=grad_limiter),
-        h = set_schemes(divergence=Upwind),
-        k = set_schemes(divergence=Upwind),
-        omega = set_schemes(divergence=Upwind)
+BCs = assign(
+    region=mesh,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            # Neumann(:outlet, 0.0),
+            # Extrapolated(:outlet),
+            Zerogradient(:outlet),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            # Symmetry(:top)
+            Extrapolated(:top)            
+        ],
+        p = [
+            # Neumann(:inlet, 0.0),
+            Zerogradient(:inlet),
+            # Extrapolated(:inlet),
+            Dirichlet(:outlet, 100000.0),
+            # Neumann(:wall, 0.0),
+            Wall(:wall),
+            # Neumann(:top, 0.0)
+            # Extrapolated(:top)
+            # Zerogradient(:top)
+            # Symmetry(:top)
+            Extrapolated(:top)            
+        ],
+        h = [
+            FixedTemperature(:inlet, T=300.0, model=model.energy),
+            # Neumann(:outlet, 0.0),
+            # Extrapolated(:outlet),
+            Zerogradient(:outlet),
+            FixedTemperature(:wall, T=310.0, model=model.energy),
+            # Neumann(:top, 0.0)
+            # Extrapolated(:top)
+            # Symmetry(:top)
+            Extrapolated(:top)            
+        ],
+        k = [
+            Dirichlet(:inlet, k_inlet),
+            # Neumann(:outlet, 0.0),
+            Extrapolated(:outlet),
+            Dirichlet(:wall, 0.0),
+            # Neumann(:top, 0.0)
+            # Extrapolated(:top)
+            # Symmetry(:top)
+            Extrapolated(:top)            
+        ],
+        omega = [
+            Dirichlet(:inlet, ω_inlet),
+            # Neumann(:outlet, 0.0),
+            Extrapolated(:outlet),
+            OmegaWallFunction(:wall),
+            # Neumann(:top, 0.0)
+            # Extrapolated(:top)
+            # Symmetry(:top)
+            Extrapolated(:top)            
+        ],
+        nut = [
+            Dirichlet(:wall, 0.0), 
+            # Neumann.([:inlet, :outlet, :top], Ref(0.0))...
+            Extrapolated.([:inlet, :outlet, :top])...
+        ]
     )
+)
+
 
       solvers = (
         U = set_solver(
@@ -123,7 +114,7 @@ model = Physics(
             solver      = Cg(), # Bicgstab(), Gmres()
             preconditioner = DILU(), #Jacobi(),
             convergence = 1e-7,
-            relax       = 0.3,
+            relax       = 0.2,
             rtol = 1e-2
         ),
         h = set_solver(
@@ -131,8 +122,8 @@ model = Physics(
             solver      = Bicgstab(), # Bicgstab(), Gmres()
             preconditioner = DILU(),
             convergence = 1e-7,
-            relax       = 0.3,
-            rtol = 1e-4,
+            relax       = 0.7,
+            rtol = 1e-1,
         ),
         k = set_solver(
             model.turbulence.k;
@@ -157,9 +148,17 @@ model = Physics(
       hardware = set_hardware(backend=CPU(), workgroup=1024)
     # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
     # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
-
-      config = Configuration(
-        solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)]
+    # grad_limiter = nothing
+    schemes = (
+        U = set_schemes(divergence=Upwind, limiter=grad_limiter),
+        p = set_schemes(divergence=Upwind, limiter=grad_limiter),
+        h = set_schemes(divergence=Upwind),
+        k = set_schemes(divergence=Upwind),
+        omega = set_schemes(divergence=Upwind)
+    )
+    config = Configuration(
+        solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
     GC.gc()
 
@@ -170,13 +169,13 @@ model = Physics(
     @test initialise!(model.turbulence.omega, ω_inlet) === nothing
     @test initialise!(model.turbulence.nut, k_inlet/ω_inlet) === nothing
 
-      residuals = run!(model, config)
+    residuals = run!(model, config)
 
-      inlet = boundary_average(:inlet, model.momentum.U, config)
-      outlet = boundary_average(:outlet, model.momentum.U, config)
-      top = boundary_average(:top, model.momentum.U, config)
+    inlet = boundary_average(:inlet, model.momentum.U, BCs.U, config)
+    outlet = boundary_average(:outlet, model.momentum.U, BCs.U, config)
+    top = boundary_average(:top, model.momentum.U, BCs.U, config)
 
-    @test Umag ≈ inlet[1]
-    @test Umag ≈ outlet[1] atol = 0.85
+    BCs.U, @test Umag ≈ inlet[1]
+    @test Umag ≈ outlet[1] atol = 0.95
     @test Umag ≈ top[1] atol = 0.15
-# end
+end

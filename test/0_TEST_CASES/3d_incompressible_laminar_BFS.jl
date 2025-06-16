@@ -24,26 +24,30 @@ model = Physics(
     energy = Energy{Isothermal}(),
     domain = mesh # mesh_dev  # use mesh_dev for GPU backend
     )
-    
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Neumann(:outlet, 0.0),
-    Symmetry(:top),
-    Neumann(:sides, 0.0)
-)
 
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0),
-    Neumann(:sides, 0.0)
+BCs = assign(
+    region=mesh,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Zerogradient(:outlet),
+            Wall(:wall, [0,0,0]),
+            Zerogradient(:sides), # faster!
+            Symmetry(:top)
+        ],
+        p = [
+            Zerogradient(:inlet),
+            Dirichlet(:outlet, 0.0),
+            Wall(:wall),
+            Extrapolated(:sides),
+            Symmetry(:top)
+        ]
+    )
 )
 
 schemes = (
     U = set_schemes(divergence=Upwind, gradient=Gauss),
-    p = set_schemes(gradient=Midpoint)
+    p = set_schemes(gradient=Gauss)
 )
 
 solvers = (
@@ -58,7 +62,7 @@ solvers = (
     p = set_solver(
         model.momentum.p;
         solver      = Cg(), #Gmres(), #Cg(), # Bicgstab(), Gmres()
-        preconditioner = Jacobi(),
+        preconditioner = Jacobi(), #DILU(), #Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
         rtol = 1e-2,
@@ -73,7 +77,7 @@ hardware = set_hardware(backend=CPU(), workgroup=1024)
 # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc(true)
 
@@ -82,8 +86,8 @@ GC.gc(true)
 
 residuals = run!(model, config)
 
-top = boundary_average(:top, model.momentum.U, config)
-outlet = boundary_average(:outlet, model.momentum.U, config)
+top = boundary_average(:top, model.momentum.U, BCs.U, config)
+outlet = boundary_average(:outlet, model.momentum.U, BCs.U, config)
 
 @test Umag ≈ top[1] atol=0.1*Umag
 @test 0.5*Umag ≈ outlet[1] atol=0.1*Umag

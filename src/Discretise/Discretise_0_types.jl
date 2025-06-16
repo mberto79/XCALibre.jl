@@ -42,9 +42,28 @@ struct KWallFunction{I,V,R<:UnitRange} <: AbstractWallFunction
     IDs_range::R
 end
 Adapt.@adapt_structure KWallFunction
+
+@kwdef struct KWallFunctionValue{F<:AbstractFloat}
+    kappa::F
+    beta1::F
+    cmu::F
+    B::F
+    E::F
+    yPlusLam::F
+end
+Adapt.@adapt_structure KWallFunctionValue
+
+adapt_value(value::KWallFunctionValue, mesh) = begin
+    F = _get_float(mesh)
+    (; kappa, beta1, cmu, B, E, yPlusLam) = value
+    KWallFunctionValue{F}(
+            kappa=kappa, beta1=beta1, cmu=cmu, B=B, E=E, yPlusLam=yPlusLam
+            )
+end
 KWallFunction(name::Symbol; kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8) = begin
     yPlusLam = y_plus_laminar(E, kappa)
-    KWallFunction(name, (kappa=kappa, beta1=beta1, cmu=cmu, B=B, E=E, yPlusLam=yPlusLam))
+    KWallFunction(name, KWallFunctionValue(
+        kappa=kappa, beta1=beta1, cmu=cmu, B=B, E=E, yPlusLam=yPlusLam))
 end
 # NEED TO WRITE A GENERIC FUNCTION TO ASSIGN WALL FUNCTION BOUNDARY CONDITIONS!!!!
 function fixedValue(BC::KWallFunction, ID::I, value::V) where {I<:Integer,V}
@@ -114,9 +133,28 @@ struct NutWallFunction{I,V,R<:UnitRange} <: AbstractWallFunction
     IDs_range::R
 end
 Adapt.@adapt_structure NutWallFunction
+
+@kwdef struct NutWallFunctionValue{F<:AbstractFloat}
+    kappa::F
+    beta1::F
+    cmu::F
+    B::F
+    E::F
+    yPlusLam::F
+end
+Adapt.Adapt.@adapt_structure NutWallFunctionValue
+
+adapt_value(value::NutWallFunctionValue, mesh) = begin
+    F = _get_float(mesh)
+    (; kappa, beta1, cmu, B, E, yPlusLam) = value
+    NutWallFunctionValue{F}(
+            kappa=kappa, beta1=beta1, cmu=cmu, B=B, E=E, yPlusLam=yPlusLam
+            )
+end
+
 NutWallFunction(name::Symbol; kappa=0.41, beta1=0.075, cmu=0.09, B=5.2, E=9.8) = begin
     yPlusLam = y_plus_laminar(E, kappa)
-    NutWallFunction(name, (kappa=kappa, beta1=beta1, cmu=cmu, B=B, E=E, yPlusLam=yPlusLam))
+    NutWallFunction(name, NutWallFunctionValue(kappa=kappa, beta1=beta1, cmu=cmu, B=B, E=E, yPlusLam=yPlusLam))
 end
 function fixedValue(BC::NutWallFunction, ID::I, value::V) where {I<:Integer,V}
     # Exception 1: Value is scalar

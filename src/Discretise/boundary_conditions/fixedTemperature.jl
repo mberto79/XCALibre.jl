@@ -22,8 +22,19 @@ struct FixedTemperature{I,V,R<:UnitRange} <: AbstractDirichlet
 end
 Adapt.@adapt_structure FixedTemperature
 
+@kwdef struct FixedTemperatureValue{F,M}
+    T::F
+    energy_model::M 
+end
+Adapt.@adapt_structure FixedTemperatureValue
+
+adapt_value(value::FixedTemperatureValue, mesh) = begin
+    F = _get_float(mesh)
+    FixedTemperatureValue(F(value.T), value.energy_model)
+end
+
 FixedTemperature(name; T, model) = begin
-    FixedTemperature(name, (; T=T, energy_model=model))
+    FixedTemperature(name, FixedTemperatureValue(T=T, energy_model=model))
 end
 
 function fixedValue(BC::FixedTemperature, ID::I, value::V) where {I<:Integer,V}

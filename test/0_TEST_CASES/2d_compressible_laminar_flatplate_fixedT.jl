@@ -31,25 +31,28 @@ model = Physics(
     domain = mesh # mesh_dev  # use mesh_dev for GPU backend
     )
 
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Symmetry(:top, 0.0)
-)
-
- @assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 100000.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model energy h (
-    FixedTemperature(:inlet, T=300.0, model=model.energy),
-    Neumann(:outlet, 0.0),
-    FixedTemperature(:wall, T=310.0, model=model.energy),
-    Neumann(:top, 0.0)
+BCs = assign(
+    region=mesh,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Neumann(:outlet, 0.0),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Symmetry(:top, 0.0)
+        ],
+        p = [
+            Neumann(:inlet, 0.0),
+            Dirichlet(:outlet, 100000.0),
+            Neumann(:wall, 0.0),
+            Neumann(:top, 0.0)
+        ],
+        h = [
+            FixedTemperature(:inlet, T=300.0, model=model.energy),
+            Neumann(:outlet, 0.0),
+            FixedTemperature(:wall, T=310.0, model=model.energy),
+            Neumann(:top, 0.0)
+        ],
+    )
 )
 
 schemes = (
@@ -92,7 +95,7 @@ hardware = set_hardware(backend=CPU(), workgroup=1024)
 # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc()
 
@@ -102,9 +105,9 @@ GC.gc()
 
 residuals = run!(model, config)
 
-inlet = boundary_average(:inlet, model.momentum.U, config)
-outlet = boundary_average(:outlet, model.momentum.U, config)
-top = boundary_average(:top, model.momentum.U, config)
+inlet = boundary_average(:inlet, model.momentum.U, BCs.U, config)
+outlet = boundary_average(:outlet, model.momentum.U, BCs.U, config)
+top = boundary_average(:top, model.momentum.U, BCs.U, config)
 
 @test Umag ≈ inlet[1]
 @test Umag ≈ outlet[1] atol = 0.07

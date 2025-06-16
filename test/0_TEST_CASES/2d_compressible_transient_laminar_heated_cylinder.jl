@@ -37,28 +37,31 @@ model = Physics(
     domain = mesh # mesh_dev  # use mesh_dev for GPU backend
     )
 
-@assign! model momentum U ( 
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:cylinder, noSlip),
-    Symmetry(:bottom, 0.0),
-    Symmetry(:top, 0.0)
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, pressure),
-    Neumann(:cylinder, 0.0),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model energy h (
-    FixedTemperature(:inlet, T=300.0, model=model.energy),
-    Neumann(:outlet, 0.0),
-    FixedTemperature(:cylinder, T=330.0, model=model.energy),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+BCs = assign(
+    region=mesh,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Neumann(:outlet, 0.0),
+            Wall(:cylinder, noSlip),
+            Symmetry(:bottom),
+            Symmetry(:top)
+        ],
+        p = [
+            Neumann(:inlet, 0.0),
+            Dirichlet(:outlet, pressure),
+            Wall(:cylinder),
+            Symmetry(:bottom),
+            Symmetry(:top)
+        ],
+        h = [
+            FixedTemperature(:inlet, T=300.0, model=model.energy),
+            Neumann(:outlet, 0.0),
+            FixedTemperature(:cylinder, T=330.0, model=model.energy),
+            Symmetry(:bottom),
+            Symmetry(:top)
+        ]
+    )
 )
 
 solvers = (
@@ -104,7 +107,7 @@ hardware = set_hardware(backend=CPU(), workgroup=1024)
 # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc(true)
 
@@ -115,10 +118,10 @@ GC.gc(true)
 
 residuals = run!(model, config)
 
-inlet = boundary_average(:inlet, model.momentum.U, config)
-outlet = boundary_average(:outlet, model.momentum.U, config)
-top = boundary_average(:top, model.momentum.U, config)
-bottom = boundary_average(:bottom, model.momentum.U, config)
+inlet = boundary_average(:inlet, model.momentum.U, BCs.U, config)
+outlet = boundary_average(:outlet, model.momentum.U, BCs.U, config)
+top = boundary_average(:top, model.momentum.U, BCs.U, config)
+bottom = boundary_average(:bottom, model.momentum.U, BCs.U, config)
 
 @test Umag ≈ inlet[1]
 @test Umag ≈ outlet[1] atol = 0.1*Umag

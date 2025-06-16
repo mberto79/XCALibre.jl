@@ -28,39 +28,40 @@ model = Physics(
     domain = mesh # mesh_dev  # use mesh_dev for GPU backend
     )
 
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Neumann(:top, 0.0)
-)
-
- @assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model turbulence k (
-    Dirichlet(:inlet, k_inlet),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model turbulence omega (
-    Dirichlet(:inlet, ω_inlet),
-    Neumann(:outlet, 0.0),
-    OmegaWallFunction(:wall),
-    Neumann(:top, 0.0)
-)
-
-@assign! model turbulence nut (
-    Neumann(:inlet, 0.0),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, 0.0), 
-    Neumann(:top, 0.0)
+BCs = assign(
+    region=mesh,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Neumann(:outlet, 0.0),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Neumann(:top, 0.0)            
+        ],
+        p = [
+            Neumann(:inlet, 0.0),
+            Dirichlet(:outlet, 0.0),
+            Neumann(:wall, 0.0),
+            Neumann(:top, 0.0)
+        ],
+        k = [
+            Dirichlet(:inlet, k_inlet),
+            Neumann(:outlet, 0.0),
+            Dirichlet(:wall, 0.0),
+            Neumann(:top, 0.0)
+        ],
+        omega = [
+            Dirichlet(:inlet, ω_inlet),
+            Neumann(:outlet, 0.0),
+            OmegaWallFunction(:wall),
+            Neumann(:top, 0.0)
+        ],
+        nut = [
+            Neumann(:inlet, 0.0),
+            Neumann(:outlet, 0.0),
+            Dirichlet(:wall, 0.0), 
+            Neumann(:top, 0.0)
+        ]
+    )
 )
 
 schemes = (
@@ -112,7 +113,7 @@ hardware = set_hardware(backend=CPU(), workgroup=1024)
 # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc()
 
@@ -127,6 +128,6 @@ residuals = run!(model, config)
 # test that we are close enough to drag coefficient
 ReL = Umag*L/nu
 Cd = 0.074/ReL^(1/5)
-Cd_sim = viscous_force(:wall, model.momentum.U, 1, nu, model.turbulence.nut)/(0.5*Umag^2)
+Cd_sim = viscous_force(:wall, model.momentum.U, 1, nu, model.turbulence.nut, BCs.U)/(0.5*Umag^2)
 
 @test Cd ≈ Cd_sim[1] atol=0.065

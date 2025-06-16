@@ -28,52 +28,43 @@ model = Physics(
     domain = mesh # mesh_dev  # use mesh_dev for GPU backend
     )
 
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Neumann(:top, 0.0)
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model turbulence k (
-    Dirichlet(:inlet, k_inlet),
-    Neumann(:outlet, 0.0),
-    KWallFunction(:wall),
-    Neumann(:top, 0.0)
-)
-
-@assign! model turbulence omega (
-    Dirichlet(:inlet, ω_inlet),
-    Neumann(:outlet, 0.0),
-    OmegaWallFunction(:wall),
-    Neumann(:top, 0.0)
-)
-
-@assign! model turbulence nut (
-    Neumann(:inlet, 0.0),
-    Neumann(:outlet, 0.0),
-    NutWallFunction(:wall), 
-    Neumann(:top, 0.0)
-)
-
-for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)]
-    
-    local schemes = (
-        U = set_schemes(divergence=Upwind, limiter=grad_limiter),
-        p = set_schemes(divergence=Upwind, limiter=grad_limiter),
-        k = set_schemes(divergence=Upwind),
-        omega = set_schemes(divergence=Upwind)
+BCs = assign(
+    region=mesh,
+    (
+        U = [    
+            Dirichlet(:inlet, velocity),
+            Neumann(:outlet, 0.0),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Neumann(:top, 0.0)
+        ],
+        p = [
+            Neumann(:inlet, 0.0),
+            Dirichlet(:outlet, 0.0),
+            Neumann(:wall, 0.0),
+            Neumann(:top, 0.0)
+        ], 
+        k = [
+            Dirichlet(:inlet, k_inlet),
+            Neumann(:outlet, 0.0),
+            KWallFunction(:wall),
+            Neumann(:top, 0.0)
+        ],
+        omega = [
+            Dirichlet(:inlet, ω_inlet),
+            Neumann(:outlet, 0.0),
+            OmegaWallFunction(:wall),
+            Neumann(:top, 0.0)
+        ],
+        nut = [
+            Neumann(:inlet, 0.0),
+            Neumann(:outlet, 0.0),
+            NutWallFunction(:wall), 
+            Neumann(:top, 0.0)
+        ]
     )
+)
 
-
-    local solvers = (
+    solvers = (
         U = set_solver(
             model.momentum.U;
             solver      = Bicgstab(), # Bicgstab(), Gmres()
@@ -108,14 +99,21 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
         )
     )
 
-    local runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
+    runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
 
-    local hardware = set_hardware(backend=CPU(), workgroup=1024)
+    hardware = set_hardware(backend=CPU(), workgroup=1024)
     # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
     # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
-
-    local config = Configuration(
-        solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)]
+    
+    schemes = (
+        U = set_schemes(divergence=Upwind, limiter=grad_limiter),
+        p = set_schemes(divergence=Upwind, limiter=grad_limiter),
+        k = set_schemes(divergence=Upwind),
+        omega = set_schemes(divergence=Upwind)
+    )
+    config = Configuration(
+        solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
     GC.gc()
 
@@ -125,9 +123,9 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
     @test initialise!(model.turbulence.omega, ω_inlet) === nothing
     @test initialise!(model.turbulence.nut, k_inlet/ω_inlet) === nothing
 
-    local residuals = run!(model, config)
+    residuals = run!(model, config)
 
-    local outlet = boundary_average(:outlet, model.momentum.U, config)
+    outlet = boundary_average(:outlet, model.momentum.U, BCs.U, config)
 
     @test Umag ≈ outlet[1] atol =0.1*Umag
 end

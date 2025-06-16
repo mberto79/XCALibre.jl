@@ -48,10 +48,10 @@ Function to calculate the pressure force acting on a given patch/boundary.
 * `ν` laminar viscosity of the fluid
 * `νt` eddy viscosity from turbulence models. Pass ConstantScalar(0) for laminar flows
 """
-viscous_force(patch::Symbol, U::VectorField, rho, ν, νt) = begin
+viscous_force(patch::Symbol, U::VectorField, rho, ν, νt, UBCs) = begin
     mesh = U.mesh
     (; faces, boundaries, boundary_cellsID) = mesh
-    nboundaries = length(boundaries.U)
+    nboundaries = length(boundaries)
     ID = boundary_index(boundaries, patch)
     @info "calculating viscous forces on patch: $patch at index $ID"
     boundary = mesh.boundaries[ID]
@@ -62,8 +62,8 @@ viscous_force(patch::Symbol, U::VectorField, rho, ν, νt) = begin
     z = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
     snGrad = FaceVectorField(x,y,z, mesh)
     for i ∈ 1:nboundaries
-        if ID == boundaries.U[i].ID
-        surface_normal_gradient!(snGrad, U, boundaries.U[i].value, IDs_range)
+        if ID == UBCs[i].ID
+        surface_normal_gradient!(snGrad, U, UBCs[i].value, IDs_range)
         
         end
     end

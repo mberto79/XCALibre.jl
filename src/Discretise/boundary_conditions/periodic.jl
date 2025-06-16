@@ -32,6 +32,21 @@ struct PeriodicParent{I,V,R<:UnitRange} <: AbstractPeriodic
 end
 Adapt.@adapt_structure PeriodicParent
 
+@kwdef struct PeriodicValue{I<:Integer,F,VI,B}
+    patchID::I
+    distance::F
+    face_map::VI
+    isparent::B
+end
+Adapt.@adapt_structure PeriodicValue
+
+adapt_value(value::PeriodicValue, mesh) = begin
+    I = _get_int(mesh)
+    F = _get_float(mesh)
+    (; patchID, distance, face_map, isparent)  = value
+    PeriodicValue(I(patchID), F(distance), I.(face_map), isparent)
+end
+
 struct PeriodicConnectivity{I}
     i::I
     j::I
@@ -111,8 +126,10 @@ function construct_periodic(mesh, backend, patch1::Symbol, patch2::Symbol)
         faceAddress2[i] = boundaries[idx1].IDs_range[idx]
     end
 
-    values1 = (patchID=idx2, distance=distance, face_map=faceAddress1, isparent=true)
-    values2 = (patchID=idx1, distance=distance, face_map=faceAddress2, isparent=false)
+    values1 = PeriodicValue(
+        patchID=idx2, distance=distance, face_map=faceAddress1, isparent=true)
+    values2 = PeriodicValue(
+        patchID=idx1, distance=distance, face_map=faceAddress2, isparent=false)
 
     p1 = PeriodicParent(patch1, values1)
     p2 = Periodic(patch2, values2)

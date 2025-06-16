@@ -6,7 +6,6 @@ export Linear, Upwind, LUST
 export BoundedUpwind
 export SteadyState, Euler, CrankNicolson
 export Gauss, Midpoint
-export set_schemes
 
 # SUPPORTED DISCRETISATION SCHEMES 
 

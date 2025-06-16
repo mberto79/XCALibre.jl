@@ -196,7 +196,8 @@ function PISO(
         )
 
     if iteration%write_interval + signbit(write_interval) == 0
-        save_output(model, outputWriter, time, config)
+        # save_output(model, outputWriter, time, config)
+        save_output(model, outputWriter, iteration, config)
     end
 
     end # end for loop

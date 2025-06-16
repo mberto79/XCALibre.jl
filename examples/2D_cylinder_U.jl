@@ -1,5 +1,5 @@
 using XCALibre
-# using CUDA # uncomment to run on GPU
+using CUDA # uncomment to run on GPU
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "cylinder_d10mm_5mm.unv"
@@ -7,8 +7,8 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-# backend = CUDABackend(); workgroup = 32
-backend = CPU(); workgroup = 1024; activate_multithread(backend)
+backend = CUDABackend(); workgroup = 32
+# backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
 hardware = set_hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
@@ -27,20 +27,24 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U ( 
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:cylinder, noSlip),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Wall(:cylinder, 0.0),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+BCs = assign(
+    region=mesh_dev,
+    (
+        U = [
+                Dirichlet(:inlet, velocity),
+                Extrapolated(:outlet),
+                Wall(:cylinder, noSlip),
+                Extrapolated(:bottom),
+                Extrapolated(:top)
+        ],
+        p = [
+                Extrapolated(:inlet),
+                Dirichlet(:outlet, 0.0),
+                Wall(:cylinder),
+                Extrapolated(:bottom),
+                Extrapolated(:top)
+        ]
+    )
 )
 
 solvers = (
@@ -50,23 +54,23 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1.0,
-        rtol = 1e-3,
-        # atol = 1e-15
+        rtol = 1e-4,
+        atol = 1e-5
     ),
     p = set_solver(
         model.momentum.p;
         solver      = Cg(), # Bicgstab(), Gmres()
-        preconditioner = Jacobi(), #NormDiagonal(),
+        preconditioner = Jacobi(), # Jacobi(), #NormDiagonal(), # DILU()
         convergence = 1e-7,
         relax       = 0.8,
         rtol = 1e-4,
-        # atol = 1e-15
+        atol = 1e-5
     )
 )
 
 schemes = (
-    U = set_schemes(time=Euler, divergence=LUST, gradient=Midpoint),
-    p = set_schemes(time=Euler, gradient=Midpoint)
+    U = set_schemes(time=Euler, divergence=LUST, gradient=Gauss),
+    p = set_schemes(time=Euler, gradient=Gauss)
 )
 
 

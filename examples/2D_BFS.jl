@@ -3,18 +3,18 @@ using CUDA
 
 # backwardFacingStep_2mm, 5mm or 10mm
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "backwardFacingStep_5mm.unv"
+grid = "backwardFacingStep_10mm.unv"
 mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-backend = CUDABackend(); workgroup = 32
-# backend = CPU(); workgroup = 1024; activate_multithread(backend)
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
 hardware = set_hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
-velocity = [0.5, 0.0, 0.0]
+velocity = [1.5, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
 
@@ -36,19 +36,19 @@ BCs = assign(region=mesh_dev,
             # Dirichlet(:top, [0.0, 0.0, 0.0]),
             Wall(:wall, [0.0, 0.0, 0.0]),
 
-            # Wall(:top, [0.0, 0.0, 0.0])
-            # Neumann(:top, 0.0),
-            # Zerogradient(:top),
-            Symmetry(:top)
+            Wall(:top)
+            # Symmetry(:top)
         ],
         p = [
             # Neumann(:inlet, 0.0),
-            Zerogradient(:inlet),
+            # Zerogradient(:inlet),
+            Extrapolated(:inlet),
             Dirichlet(:outlet, 0.0),
             Wall(:wall),
             # Neumann(:top, 0.0),
-            # Zerogradient(:top)
-            Symmetry(:top)
+
+            Wall(:top)
+            # Symmetry(:top)
         ]
     )
 )
@@ -103,12 +103,12 @@ initialise!(model.momentum.p, 0.0)
 residuals = run!(model, config)
 # @time residuals = run!(model, config)
 
-GC.gc()
+# GC.gc()
 
-initialise!(model.momentum.U, velocity)
-initialise!(model.momentum.p, 0.0)
+# initialise!(model.momentum.U, velocity)
+# initialise!(model.momentum.p, 0.0)
 
-@profview residuals = run!(model, config)
+# @profview residuals = run!(model, config)
 
 # using Plots
 # iterations = runtime.iterations

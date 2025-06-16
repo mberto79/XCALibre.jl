@@ -41,20 +41,24 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U ( 
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:cylinder, noSlip),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:cylinder, 0.0),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+BCs = assign(
+    region=mesh_dev,
+    (
+        U = [
+                Dirichlet(:inlet, velocity),
+                Extrapolated(:outlet),
+                Wall(:cylinder, noSlip),
+                Extrapolated(:bottom),
+                Extrapolated(:top)
+        ],
+        p = [
+                Extrapolated(:inlet),
+                Dirichlet(:outlet, 0.0),
+                Wall(:cylinder),
+                Extrapolated(:bottom),
+                Extrapolated(:top)
+        ]
+    )
 )
 
 solvers = (
@@ -79,8 +83,8 @@ solvers = (
 )
 
 schemes = (
-    U = set_schemes(time=Euler, divergence=LUST, gradient=Midpoint),
-    p = set_schemes(time=Euler, gradient=Midpoint)
+    U = set_schemes(time=Euler, divergence=LUST, gradient=Gauss),
+    p = set_schemes(time=Euler, gradient=Gauss)
 )
 
 

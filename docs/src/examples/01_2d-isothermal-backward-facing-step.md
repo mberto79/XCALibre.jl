@@ -25,7 +25,7 @@ backend = CPU()
 # backend = CUDABackend() # ru non NVIDIA GPUs
 # backend = ROCBackend() # run on AMD GPUs
 
-hardware = set_hardware(backend=backend, workgroup=4)
+hardware = set_hardware(backend=backend, workgroup=1024)
 # hardware = set_hardware(backend=backend, workgroup=32) # use for GPU backends
 
 mesh_dev = mesh # use this line to run on CPU
@@ -43,18 +43,22 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Wall(:top, [0.0, 0.0, 0.0]),
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
+BCs = assign(
+    region=mesh_dev,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Extrapolated(:outlet),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Wall(:top, [0.0, 0.0, 0.0]),
+        ],
+        p = [
+            Extrapolated(:inlet),
+            Dirichlet(:outlet, 0.0),
+            Wall(:wall),
+            Wall(:top)
+        ]
+    )
 )
 
 schemes = (

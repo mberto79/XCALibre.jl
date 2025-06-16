@@ -8,7 +8,10 @@ grid = "flatplate_2D_laminar.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 @test typeof(mesh) <: Mesh2
-# mesh_dev = adapt(CUDABackend(), mesh) # Uncomment this if using GPU
+
+workgroup = workgroupsize(mesh)
+backend = CPU()
+mesh_dev = adapt(backend, mesh)
 
 Umag = 0.2
 velocity = [Umag, 0.0, 0.0]
@@ -20,15 +23,10 @@ Pr = 0.7
 
 model = Physics(
     time = Steady(),
-    fluid =  Fluid{WeaklyCompressible}(
-        nu = nu,
-        cp = cp,
-        gamma = gamma,
-        Pr = Pr
-        ),
+    fluid =  Fluid{WeaklyCompressible}(nu=nu, cp=cp, gamma=gamma, Pr=Pr),
     turbulence = RANS{Laminar}(),
     energy = Energy{SensibleEnthalpy}(Tref=288.15),
-    domain = mesh # mesh_dev  # use mesh_dev for GPU backend
+    domain = mesh_dev # mesh_dev  # use mesh_dev for GPU backend
     )
 
 BCs = assign(
@@ -90,7 +88,7 @@ solvers = (
 
 runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
 
-hardware = set_hardware(backend=CPU(), workgroup=1024)
+hardware = set_hardware(backend=backend, workgroup=workgroup)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 

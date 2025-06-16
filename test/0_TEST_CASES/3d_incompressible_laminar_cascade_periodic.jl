@@ -11,8 +11,9 @@ mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
 # backend = CUDABackend() # Uncomment this if using GPU
 backend = CPU() # Uncomment this if using CPU
+workgroup = workgroupsize(mesh)
 periodic = construct_periodic(mesh, backend, :top, :bottom)
-# mesh_dev = adapt(CUDABackend(), mesh)  # Uncomment this if using GPU
+mesh_dev = adapt(backend, mesh)
 
 velocity = [0.25, 0.0, 0.0]
 nu = 1e-3
@@ -23,7 +24,7 @@ model = Physics(
     fluid = Fluid{Incompressible}(nu=nu),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
-    domain = mesh # mesh_dev  # use mesh_dev for GPU backend
+    domain = mesh_dev # mesh_dev  # use mesh_dev for GPU backend
     )
 
 BCs = assign(
@@ -75,7 +76,7 @@ solvers = (
 runtime = set_runtime(
     iterations=100, time_step=1, write_interval=100)
 
-hardware = set_hardware(backend=CPU(), workgroup=1024)
+hardware = set_hardware(backend=backend, workgroup=workgroup)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 

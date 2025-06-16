@@ -7,8 +7,9 @@ mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 @test typeof(mesh) <: Mesh2
 
-# mesh_dev = adapt(CUDABackend(), mesh)
-mesh_dev = mesh
+workgroup = workgroupsize(mesh)
+backend = CPU()
+mesh_dev = adapt(backend, mesh)
 
 nu = 1e-3
 Umag = 1.5
@@ -20,7 +21,7 @@ Re = velocity[1]*0.1/nu
 
 model = Physics(
     time = Transient(),
-    fluid = Fluid{Incompressible}(nu = nu),
+    fluid = Fluid{Incompressible}(nu=nu),
     turbulence = RANS{KOmega}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
@@ -108,7 +109,7 @@ runtime = set_runtime(
     iterations=500, write_interval=500, time_step=0.01)
 
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=1024)
+hardware = set_hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

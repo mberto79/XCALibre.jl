@@ -9,8 +9,9 @@ mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 @test typeof(mesh) <: Mesh2
 
-mesh_dev = mesh
-# mesh_dev = adapt(CUDABackend(), mesh)  # Uncomment this if using GPU
+workgroup = workgroupsize(mesh)
+backend = CPU()
+mesh_dev = adapt(backend, mesh)
 
 # Inlet conditions
 Umag = 0.5
@@ -20,10 +21,10 @@ Re = velocity[1]*0.1/nu
 
 model = Physics(
     time = Steady(),
-    fluid = Fluid{Incompressible}(nu = nu),
+    fluid = Fluid{Incompressible}(nu=nu),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
-    domain = mesh # mesh_dev  # use mesh_dev for GPU backend
+    domain = mesh_dev # mesh_dev  # use mesh_dev for GPU backend
     )
 
 BCs = assign(
@@ -74,7 +75,7 @@ solvers = (
 runtime = set_runtime(
     iterations=500, time_step=1, write_interval=500)
 
-hardware = set_hardware(backend=CPU(), workgroup=1024)
+hardware = set_hardware(backend=backend, workgroup=workgroup)
 # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 # hardware = set_hardware(backend=ROCBackend(), workgroup=32)
 

@@ -80,9 +80,9 @@ function setup_incompressible_solvers(
     @info "Initialising preconditioners..."
 
     @reset U_eqn.preconditioner = set_preconditioner(
-                    solvers.U.preconditioner, U_eqn, U.BCs, config)
+                    solvers.U.preconditioner, U_eqn, boundaries.U, config)
     @reset p_eqn.preconditioner = set_preconditioner(
-                    solvers.p.preconditioner, p_eqn, p.BCs, config)
+                    solvers.p.preconditioner, p_eqn, boundaries.p, config)
 
 
     @info "Pre-allocating solvers..."
@@ -113,7 +113,7 @@ function SIMPLE(
     (; nu) = model.fluid
     mesh = model.domain
     # p_model = p_eqn.model
-    (; solvers, schemes, runtime, hardware) = config
+    (; solvers, schemes, runtime, hardware, boundaries) = config
     (; iterations, write_interval) = runtime
     (; backend) = hardware
     
@@ -164,9 +164,9 @@ function SIMPLE(
     # Initial calculations
     time = zero(TF) # assuming time=0
     interpolate!(Uf, U, config)   
-    correct_boundaries!(Uf, U, U.BCs, time, config)
+    correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
-    grad!(∇p, pf, p, p.BCs, time, config)
+    grad!(∇p, pf, p, boundaries.p, time, config)
     limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
 
@@ -181,7 +181,7 @@ function SIMPLE(
     for iteration ∈ 1:iterations
         time = iteration
 
-        rx, ry, rz = solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
+        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
         
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
@@ -192,7 +192,7 @@ function SIMPLE(
         
         # Interpolate faces
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
-        correct_boundaries!(Uf, Hv, U.BCs, time, config)
+        correct_boundaries!(Uf, Hv, boundaries.U, time, config)
 
         # old approach
         # div!(divHv, Uf, config) 
@@ -203,17 +203,17 @@ function SIMPLE(
         
         # Pressure calculations
         @. prev = p.values
-        rp = solve_equation!(p_eqn, p, solvers.p, config; ref=pref)
+        rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
         explicit_relaxation!(p, prev, solvers.p.relax, config)
         
-        grad!(∇p, pf, p, p.BCs, time, config) 
+        grad!(∇p, pf, p, boundaries.p, time, config) 
         limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
             # @. prev = p.values
             discretise!(p_eqn, p, config)       
-            apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
+            apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
             # setReference!(p_eqn, pref, 1, config)
             nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
             # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
@@ -237,7 +237,7 @@ function SIMPLE(
 
         # 1. using velocity from momentum equation
         interpolate!(Uf, U, config)
-        correct_boundaries!(Uf, U, U.BCs, time, config)
+        correct_boundaries!(Uf, U, boundaries.U, time, config)
         flux!(mdotf, Uf, config)
         correct_mass_flux(mdotf, p, rDf, config)
         correct_velocity!(U, Hv, ∇p, rD, config)

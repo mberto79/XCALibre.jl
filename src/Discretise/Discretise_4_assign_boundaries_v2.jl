@@ -29,9 +29,10 @@ function assign_patches(BCs, region)
 end
 
 function patch_and_faces_IDs(BC, mesh)
-    (; boundaries) = mesh # needs to be a copy
+    # (; boundaries) = mesh # needs to be a copy
+    boundaries_cpu = get_boundaries(mesh.boundaries)
     intType = _get_int(mesh)
-    for (ID, boundary) ∈ enumerate(boundaries)
+    for (ID, boundary) ∈ enumerate(boundaries_cpu)
         if BC.name == boundary.name
             return intType(ID), boundary.IDs_range
         end

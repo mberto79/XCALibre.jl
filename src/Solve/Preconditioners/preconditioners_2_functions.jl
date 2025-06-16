@@ -15,7 +15,7 @@ begin
             eqn, get_phi(eqn), config) # should this be float?
 
         time = zero(TF)
-        apply_boundary_conditions!(eqn, phi.x.BCs, XDir(1), time, config)
+        apply_boundary_conditions!(eqn, BCs, XDir(1), time, config)
 
     elseif typeof(phi) <: AbstractScalarField
 

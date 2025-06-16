@@ -117,8 +117,8 @@ end
 Adapt.@adapt_structure ScalarEquation
 
 # Catch all function for fields that do not extend matrix
-extend_matrix(BCs, i, j) = begin
-    mesh = field.mesh
+extend_matrix(mesh, BCs, i, j) = begin
+    # mesh = field.mesh
     for BC ∈ BCs
         i, j = _extend_matrix(BC, mesh, i, j) # implemented in module Discretise for each BC
     end
@@ -138,7 +138,7 @@ ScalarEquation(phi::ScalarField, BCs) = begin
     Tf = _get_float(mesh)
     mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
     i, j, v = sparse_matrix_connectivity(mesh_temp) # This needs to be a kernel
-    i, j = extend_matrix(BCs, i, j)
+    i, j = extend_matrix(mesh, BCs, i, j)
     # i = [i; periodicConnectivity.i]
     # j = [j; periodicConnectivity.j]
     v = zeros(Tf, length(j))
@@ -176,7 +176,7 @@ VectorEquation(psi::VectorField, BCs) = begin
     Tf = _get_float(mesh)
     mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
     i, j, v = sparse_matrix_connectivity(mesh_temp) # This needs to be a kernel
-    i, j = extend_matrix(BCs, i, j)
+    i, j = extend_matrix(mesh, BCs, i, j)
     # i = [i; periodicConnectivity.i]
     # j = [j; periodicConnectivity.j]
     v = zeros(Tf, length(j))

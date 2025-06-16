@@ -44,7 +44,7 @@ function setup_compressible_solvers(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     ) 
 
-    (; solvers, schemes, runtime, hardware) = config
+    (; solvers, schemes, runtime, hardware, boundaries) = config
 
     @info "Extracting configuration and input fields..."
 
@@ -72,13 +72,13 @@ function setup_compressible_solvers(
         == 
         - Source(∇p.result)
         + Source(mueffgradUt)
-    ) → VectorEquation(U)
+    ) → VectorEquation(U, boundaries.U)
 
     if typeof(model.fluid) <: WeaklyCompressible
 
         p_eqn = (
             - Laplacian{schemes.p.laplacian}(rhorDf, p) == - Source(divHv)
-        ) → ScalarEquation(p)
+        ) → ScalarEquation(p, boundaries.p)
 
     elseif typeof(model.fluid) <: Compressible
 
@@ -86,7 +86,7 @@ function setup_compressible_solvers(
         p_eqn = (
             Laplacian{schemes.p.laplacian}(rhorDf, p) 
             - Divergence{schemes.p.divergence}(pconv, p) == Source(divHv)
-        ) → ScalarEquation(p)
+        ) → ScalarEquation(p, boundaries.p)
 
     end
 

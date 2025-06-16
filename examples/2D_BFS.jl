@@ -26,27 +26,30 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Extrapolated(:outlet, 0.0),
-    # Zerogradient(:outlet, 0.0),
-    # Dirichlet(:wall, [0.0, 0.0, 0.0]),
-    # Dirichlet(:top, [0.0, 0.0, 0.0]),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    # Wall(:top, [0.0, 0.0, 0.0])
-    # Neumann(:top, 0.0),
-    Zerogradient(:top),
-    # Symmetry(:top)
-)
-
-@assign! model momentum p (
-    # Neumann(:inlet, 0.0),
-    Zerogradient(:inlet),
-    Dirichlet(:outlet, 0.0),
-    Wall(:wall),
-    # Neumann(:top, 0.0),
-    Zerogradient(:top)
-    # Symmetry(:top)
+BCs = assign(region=mesh_dev,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Extrapolated(:outlet, 0.0),
+            # Zerogradient(:outlet, 0.0),
+            # Dirichlet(:wall, [0.0, 0.0, 0.0]),
+            # Dirichlet(:top, [0.0, 0.0, 0.0]),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            # Wall(:top, [0.0, 0.0, 0.0])
+            # Neumann(:top, 0.0),
+            Zerogradient(:top),
+            # Symmetry(:top)
+        ],
+        p = [
+            # Neumann(:inlet, 0.0),
+            Zerogradient(:inlet),
+            Dirichlet(:outlet, 0.0),
+            Wall(:wall),
+            # Neumann(:top, 0.0),
+            Zerogradient(:top)
+            # Symmetry(:top)
+        ]
+    )
 )
 
 schemes = (
@@ -88,7 +91,7 @@ runtime = set_runtime(
 hardware = set_hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc()
 

@@ -47,7 +47,7 @@ function setup_incompressible_solvers(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     ) 
 
-    (; solvers, schemes, runtime, hardware) = config
+    (; solvers, schemes, runtime, hardware, boundaries) = config
 
     @info "Extracting configuration and input fields..."
 
@@ -71,11 +71,11 @@ function setup_incompressible_solvers(
         - Laplacian{schemes.U.laplacian}(nueff, U) 
         == 
         - Source(∇p.result)
-    ) → VectorEquation(U)
+    ) → VectorEquation(U, boundaries.U)
 
     p_eqn = (
         - Laplacian{schemes.p.laplacian}(rDf, p) == - Source(divHv)
-    ) → ScalarEquation(p)
+    ) → ScalarEquation(p, boundaries.p)
 
     @info "Initialising preconditioners..."
 

@@ -25,11 +25,12 @@ config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 ```
 """
-@kwdef struct Configuration{SC,SL,RT,HW}
+@kwdef struct Configuration{SC,SL,RT,HW,BC}
     schemes::SC
     solvers::SL
     runtime::RT
     hardware::HW
+    boundaries::BC
 end
 Adapt.@adapt_structure Configuration
 

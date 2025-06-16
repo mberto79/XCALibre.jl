@@ -39,7 +39,7 @@ Base.getindex(v::ConstantVector, i::Integer) = SVector{3, eltype(v.x)}(v.x, v.y,
         BCs::BC     # store user-provided boundary conditions
     end
 """
-struct ScalarField{VF,M<:AbstractMesh,BC} <: AbstractScalarField
+struct ScalarField{VF,M<:AbstractMesh} <: AbstractScalarField
     values::VF  # scalar values at cell centre
     mesh::M     # reference to mesh
     # BCs::BC     # store user-provided boundary conditions
@@ -53,14 +53,14 @@ ScalarField(mesh::AbstractMesh) =begin
     # ScalarField(arr, mesh, ())
     ScalarField(arr, mesh)
 end
-ScalarField(values::Vector{Float64}, mesh::AbstractMesh) =begin
-    ncells  = length(mesh.cells)
-    F = _get_float(mesh)
-    backend = _get_backend(mesh)
-    arr = _convert_array!(values, backend)
-    # ScalarField(arr, mesh, ())
-    ScalarField(arr, mesh)
-end
+# ScalarField(values::Vector{Float64}, mesh::AbstractMesh) =begin
+#     ncells  = length(mesh.cells)
+#     F = _get_float(mesh)
+#     backend = _get_backend(mesh)
+#     arr = _convert_array!(values, backend)
+#     # ScalarField(arr, mesh, ())
+#     ScalarField(arr, mesh)
+# end
 
 struct FaceScalarField{VF,M<:AbstractMesh} <: AbstractScalarField
     values::VF#Vector{F}
@@ -75,7 +75,6 @@ FaceScalarField(mesh::AbstractMesh) = begin
     FaceScalarField(arr, mesh) #Make it pretty
 end
 
-# (s::AbstractScalarField)(i::Integer) = s.values[i]
 Base.getindex(s::AbstractScalarField, i::I) where I<:Integer = begin
     s.values[i]
 end
@@ -97,7 +96,7 @@ Base.eltype(s::AbstractScalarField) = eltype(s.values)
         BCs::BC
     end
 """
-struct VectorField{S1<:ScalarField,S2,S3,M<:AbstractMesh,BC} <: AbstractVectorField
+struct VectorField{S1<:ScalarField,S2,S3,M<:AbstractMesh} <: AbstractVectorField
     x::S1
     y::S2
     z::S3
@@ -105,6 +104,7 @@ struct VectorField{S1<:ScalarField,S2,S3,M<:AbstractMesh,BC} <: AbstractVectorFi
     # BCs::BC
 end
 Adapt.@adapt_structure VectorField
+
 VectorField(mesh::AbstractMesh) = begin
     ncells = length(mesh.cells)
     F = _get_float(mesh) #eltype(mesh.nodes[1].coords) #TEMPORARY SOLUTION, RUN BY HUMBERTO
@@ -116,9 +116,9 @@ VectorField(mesh::AbstractMesh) = begin
         # ScalarField(arr1, mesh, ()),
         # ScalarField(arr2, mesh, ()), 
         # ScalarField(arr3, mesh, ()), 
-        ScalarField(arr1, mesh, ()),
-        ScalarField(arr2, mesh, ()), 
-        ScalarField(arr3, mesh, ()), 
+        ScalarField(arr1, mesh),
+        ScalarField(arr2, mesh), 
+        ScalarField(arr3, mesh), 
         mesh,
         # () # to hold x, y, z and combined BCs
         )

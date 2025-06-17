@@ -53,19 +53,6 @@ struct PeriodicConnectivity{I}
 end
 Adapt.@adapt_structure PeriodicConnectivity
 
-function fixedValue(BC::T, ID::I, value::V) where {I<:Integer,V, T<:AbstractPeriodic}
-    # Exception 1: Value is scalar
-    if V <: Number
-        return T.name.wrapper(ID, value)
-        # Exception 2: value is a tupple
-    elseif V <: NamedTuple
-        return T.name.wrapper(ID, value)
-    # Error if value is not scalar or tuple
-    else
-        throw("The value provided should be a scalar or a tuple")
-    end
-end
-
 """
     construct_periodic(mesh, backend, patch1::Symbol, patch2::Symbol)
 

@@ -22,32 +22,6 @@ struct NeumannFunction{I,V,R<:UnitRange} <: AbstractNeumann
 end
 Adapt.@adapt_structure NeumannFunction
 
-
-function fixedValue(BC::NeumannFunction, ID::I, value::V) where {I<:Integer,V}
-    # Exception 1: value is scalar
-    if V <: Number
-        return NeumannFunction{I,eltype(value)}(ID, value)
-    # Exception 2: value is vector
-    elseif V <: Vector
-        if length(value) == 3 
-            nvalue = SVector{3, eltype(value)}(value)
-            return NeumannFunction{I,typeof(nvalue)}(ID, nvalue)
-        # Error statement if vector is invalid        
-        else
-            throw("Only vectors with three components can be used")
-        end
-    # Exception 3: value is a function
-    elseif V <: Function
-        return NeumannFunction{I,V,R<:UnitRange}(ID, value)
-    # Exception 4: value is a user provided XCALibre functor
-    elseif V <: XCALibreUserFunctor
-        return NeumannFunction{I,V,R<:UnitRange}(ID, value)
-    # Error if value is not scalar or vector
-    else
-        throw("The value provided should be a scalar or a vector")
-    end
-end
-
 @define_boundary NeumannFunction Laplacian{Linear} begin
     # For now this is hard-coded as zero-gradient. To-do extension to any input gradient
     phi = term.phi 

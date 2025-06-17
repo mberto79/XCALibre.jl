@@ -19,29 +19,6 @@ Adapt.@adapt_structure Extrapolated
 
 Extrapolated(name::Symbol) = Extrapolated(name , 0)
 
-"""
-    fixedValue(BC::AbstractNeumann, ID::I, value::V) where {I<:Integer,V}
-
-"""
-# function fixedValue(BC::AbstractNeumann, ID::I, value::V) where {I<:Integer,V}
-#     # Exception 1: value is scalar
-#     if V <: Number
-#         return Extrapolated{I,eltype(value)}(ID, value)
-#     # Exception 2: value is vector
-#     elseif V <: Vector
-#         if length(value) == 3 
-#             nvalue = SVector{3, eltype(value)}(value)
-#             return Extrapolated{I,typeof(nvalue)}(ID, nvalue)
-#         # Error statement if vector is invalid        
-#         else
-#             throw("Only vectors with three components can be used")
-#         end
-#     # Error if value is not scalar or vector
-#     else
-#         throw("The value provided should be a scalar or a vector")
-#     end
-# end
-
 @define_boundary Extrapolated Laplacian{Linear} begin
     # For now this is hard-coded as zero-gradient. To-do extension to any input gradient
     phi = term.phi 

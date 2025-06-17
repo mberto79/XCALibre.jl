@@ -31,22 +31,6 @@ adapt_value(value::XCALibreUserFunctor, mesh) = begin
     value
 end
 
-function fixedValue(BC::DirichletFunction, ID::I, value::V) where {I<:Integer,V}
-    # Exception 1: Value is scalar
-    if V <: Number
-        return DirichletFunction{I,typeof(value)}(ID, value)
-    # Exception 2: value is a function
-    elseif V <: Function
-        return DirichletFunction{I,V,R<:UnitRange}(ID, value)
-    # Exception 3: value is a user provided XCALibre functor
-    elseif V <: XCALibreUserFunctor
-        return DirichletFunction{I,V,R<:UnitRange}(ID, value)
-    # Error if value is not scalar or tuple
-    else
-        throw("The value provided should be a scalar or a tuple")
-    end
-end
-
 @define_boundary DirichletFunction Laplacian{Linear} begin
     J = term.flux[fID]
     (; area, delta, centre) = face 

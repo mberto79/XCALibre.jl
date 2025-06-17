@@ -20,25 +20,6 @@ Adapt.@adapt_structure Zerogradient
 Zerogradient(name::Symbol) = Zerogradient(name , 0)
 
 
-function fixedValue(BC::Zerogradient, ID::I, value::V) where {I<:Integer,V}
-    # Exception 1: value is scalar
-    if V <: Number
-        return Zerogradient{I,eltype(value)}(ID, value)
-    # Exception 2: value is vector
-    elseif V <: Vector
-        if length(value) == 3 
-            nvalue = SVector{3, eltype(value)}(value)
-            return Zerogradient{I,typeof(nvalue)}(ID, nvalue)
-        # Error statement if vector is invalid        
-        else
-            throw("Only vectors with three components can be used")
-        end
-    # Error if value is not scalar or vector
-    else
-        throw("The value provided should be a scalar or a vector")
-    end
-end
-
 @define_boundary Zerogradient Laplacian{Linear} begin
     # For now this is hard-coded as zero-gradient. To-do extension to any input gradient
     # phi = term.phi 

@@ -3,10 +3,16 @@ export Wall
 """
     Wall <: AbstractDirichlet
 
-Wall boundary condition model for no-slip wall condition.
+Wall boundary condition model for no-slip  or moving walls (linear motion). It should be applied to the velocity vector, and in most cases, its scalar variant should be applied to scalars.
 
-### Fields
-- 'ID' -- Boundary ID
+# Inputs
+- `ID` represents the name of the boundary given as a symbol (e.g. :inlet). Internally it gets replaced with the boundary index ID
+- `value` should be given as a vector for the velocity e.g. [10,0,0]. For scalar fields such as the pressure the value entry can be omitted or set to zero explicitly.
+
+# Examples
+    Wall(:plate, [0, 0, 0]) # no-slip wall condition for velocity
+    Wall(:plate) # corresponding definition for scalars, e.g. pressure
+    Wall(:plate, 0) # alternative definition for scalars, e.g. pressure
 """
 struct Wall{I,V,R<:UnitRange} <: AbstractPhysicalConstraint
     ID::I 

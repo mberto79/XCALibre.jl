@@ -4,11 +4,10 @@ export Extrapolated
 """
     Extrapolated <: AbstractNeumann
 
-This boundary condition extrapolates the face value using the interior cell value. 
+This boundary condition extrapolates the face value using the interior cell value. Equivalent to setting a zero gradient boundary condition (semi-implicitly). It applies to both scalar and vector fields.
 
-### Fields
-- 'ID' -- Boundary ID
-- `value` -- Scalar or Vector value for Extrapolated boundary condition.
+# Example
+    Extrapolated(:outlet)
 """
 struct Extrapolated{I,V,R<:UnitRange} <: AbstractNeumann
     ID::I 

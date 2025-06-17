@@ -3,10 +3,13 @@ export Symmetry
 """
     Symmetry <: AbstractBoundary
 
-Symmetry boundary condition vector fields. For scalar fields use `Neumann`
+Symmetry boundary condition vector and scalar fields. Notice that for scalar fields, this boundary condition applies an explicit zero gradient condition. In some rare cases, the use of an `Extrapolated` condition for scalars may be beneficial (to assign a semi-implicit zero gradient condition)
 
-### Fields
-- 'ID' -- Boundary ID
+# Input
+- `ID` Name of the boundary given as a symbol (e.g. :freestream). Internally it gets replaced with the boundary index ID
+
+# Example
+    Symmetry(:freestream)
 """
 struct Symmetry{I,V,R<:UnitRange} <: AbstractPhysicalConstraint
     ID::I 

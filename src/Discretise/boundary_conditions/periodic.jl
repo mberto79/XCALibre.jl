@@ -15,8 +15,8 @@ abstract type AbstractPeriodic <: AbstractPhysicalConstraint end
 Periodic boundary condition model.
 
 ### Fields
-- 'ID' -- Boundary ID
-- `value` -- tuple containing information needed to apply this boundary
+- `ID` is the name of the boundary given as a symbol (e.g. :inlet). Internally it gets replaced with the boundary index ID
+- `value` tuple containing information needed to apply this boundary
 """
 struct Periodic{I,V,R<:UnitRange} <: AbstractPeriodic
     ID::I 
@@ -68,7 +68,7 @@ Function for construction of periodic boundary conditions.
 - periodic::Tuple - tuple containing boundary defintions for `patch1` and `patch2` i.e. (periodic1, periodic2). The fields of `periodic1` and `periodic2` are 
 
     - `ID` -- Index to access boundary information in mesh object
-    - `value` -- represents a `NamedTuple` with the following keyword arguments:
+    - `value` represents a `NamedTuple` with the following keyword arguments:
         - index -- ID used to find boundary geometry information in the mesh object
         - distance -- perpendicular distance between the patches
         - face_map -- vector providing indeces to faces of match patch

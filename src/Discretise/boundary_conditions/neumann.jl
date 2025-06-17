@@ -4,11 +4,14 @@ export Neumann
 """
     Neumann <: AbstractNeumann
 
-Neumann boundary condition model *(currently only configured for zero gradient)*
+Neumann boundary condition model to set the gradient at the boundary explicitly *(currently only configured for zero gradient)*
 
-### Fields
-- 'ID' -- Boundary ID
-- `value` -- Scalar or Vector value for Neumann boundary condition.
+# Inputs
+- `ID` Name of the boundary given as a symbol (e.g. :inlet). Internally it gets replaced with the boundary index ID
+- `value` Scalar providing face normal gradient
+
+# Example
+    Neumann(:outlet, 0)
 """
 struct Neumann{I,V,R<:UnitRange} <: AbstractNeumann
     ID::I 

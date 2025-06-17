@@ -5,9 +5,9 @@ export Dirichlet
 
 Dirichlet boundary condition model.
 
-# Fields
-- 'ID' -- Boundary ID
-- `value` -- Scalar or Vector value for Dirichlet boundary condition.
+# Inputs
+- `ID` Name of the boundary given as a symbol (e.g. :inlet). Internally it gets replaced with the boundary index ID
+- `value` Scalar or Vector value for Dirichlet boundary condition
 """
 struct Dirichlet{I,V,R<:UnitRange} <: AbstractDirichlet
     ID::I 

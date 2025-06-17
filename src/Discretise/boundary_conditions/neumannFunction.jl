@@ -8,12 +8,12 @@ export NeumannFunction
 Neumann boundary condition defined with user-provided function.
 
 # Input
-- `ID` Boundary name provided as symbol e.g. :inlet
-- `value` Custom function for Neumann boundary condition.
+- `ID` Name of the boundary given as a symbol (e.g. :inlet). Internally it gets replaced with the boundary index ID
+- `value` Custom function defining the desired Neumann boundary condition.
 
 # Function requirements
 
-The function passed to this boundary condition has not yet been implemented. However, users can pass a custom struct to specialise the internal implementations of many functions. By default, as present, this function will assign a zero gradient boundary condition on all fields.
+The function passed to this boundary condition has not yet been implemented. However, users can pass a custom struct to specialise the internal implementations of many functions. By default, at present, this function will assign a zero gradient boundary condition.
 """
 struct NeumannFunction{I,V,R<:UnitRange} <: AbstractNeumann
     ID::I 

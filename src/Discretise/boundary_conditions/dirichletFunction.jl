@@ -9,8 +9,9 @@ abstract type XCALibreUserFunctor end
 Dirichlet boundary condition defined with user-provided function.
 
 # Input
-- `ID` Boundary name provided as symbol e.g. :inlet
-- `value` Custom function for Dirichlet boundary condition.
+- `ID` Name of the boundary given as a symbol (e.g. :inlet). Internally it gets replaced with the boundary index ID
+- `value` Custom function or struct (<:XCALibreUserFunctor) for Dirichlet boundary condition
+- `IDs_range` Range of indices to access boundary patch faces
 
 # Function requirements
 

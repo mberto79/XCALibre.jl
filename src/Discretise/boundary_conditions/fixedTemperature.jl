@@ -1,19 +1,22 @@
 export FixedTemperature
 
 """
-    FixedTemperature <: AbstractDirichlet
+    struct FixedTemperature{I,V,R<:UnitRange} <: AbstractDirichlet
+        ID::I 
+        value::V
+        IDs_range::R 
+    end
 
 Fixed temperature boundary condition model, which allows the user to specify wall
-temperature that can be translated to the energy specific model, such as sensivle enthalpy.
+temperature that can be translated to the energy specific model, such as sensible enthalpy.
 
-### Fields
-- 'ID' -- Boundary ID
-- `value` -- Scalar or Vector value for Dirichlet boundary condition.
-- `T` - Temperature value in Kelvin.
-- `model` - Energy physics model for case.
+# Inputs
+- `ID` Name of the boundary given as a symbol (e.g. :inlet). Internally it gets replaced with the boundary index ID
+- `T` is used to set the boundary temperature
+- `model` defines the underlying `Energy` model to be used
 
-### Examples
-    FixedTemperature(:inlet, T=300.0, model=model.energy),
+# Example
+    FixedTemperature(:inlet, T=300.0, model=model.energy)
 """
 struct FixedTemperature{I,V,R<:UnitRange} <: AbstractDirichlet
     ID::I 

@@ -4,11 +4,13 @@ export Zerogradient
 """
     Zerogradient <: AbstractNeumann
 
-Zerogradient boundary condition model *(currently only configured for zero gradient)*
+Zerogradient boundary condition model *(explicitly applied to the boundary)*
 
-### Fields
-- 'ID' -- Boundary ID
-- `value` -- Scalar or Vector value for Zerogradient boundary condition.
+# Input
+- `ID` Name of the boundary given as a symbol (e.g. :inlet). Internally it gets replaced with the boundary index ID
+
+# Example
+    Zerogradient(:inlet)
 """
 struct Zerogradient{I,V,R<:UnitRange} <: AbstractNeumann
     ID::I 

@@ -5,7 +5,7 @@ function wall_distance!(model, config)
     @info "Calculating wall distance..."
 
     mesh = model.domain
-    y = model.turbulence.y
+    (; y, wallBCs) = model.turbulence
     (; solvers, schemes, runtime, hardware, boundaries) = config
     
     phi = ScalarField(mesh)
@@ -18,10 +18,10 @@ function wall_distance!(model, config)
         -Laplacian{schemes.y.laplacian}(ConstantScalar(1.0), phi) 
         == 
         Source(ConstantScalar(1.0))
-    ) → ScalarEquation(phi, boundaries.phi)
+    ) → ScalarEquation(phi, wallBCs.y)
 
     @reset phi_eqn.preconditioner = set_preconditioner(
-        solvers.y.preconditioner, phi_eqn, boundaries.phi, config)
+        solvers.y.preconditioner, phi_eqn, wallBCs.y, config)
 
     @reset phi_eqn.solver = _workspace(solvers.y.solver, _b(phi_eqn))
 
@@ -29,7 +29,7 @@ function wall_distance!(model, config)
 
     phiGrad = Grad{schemes.y.gradient}(phi)
     phif = FaceScalarField(mesh)
-    grad!(phiGrad, phif, phi, phi.BCs, zero(TF), config) # assuming time=0
+    grad!(phiGrad, phif, phi, wallBCs.y, zero(TF), config) # assuming time=0
 
     n_cells = length(mesh.cells)
     prev = similar(phi.values)
@@ -39,8 +39,8 @@ function wall_distance!(model, config)
     for iteration ∈ 1:iterations
         @. prev = phi.values
         discretise!(phi_eqn, phi, config)
-        # apply_boundary_conditions!(phi_eqn, phi.BCs, nothing, 0.0, config) # wrong BCs!!
-        apply_boundary_conditions!(phi_eqn, y.BCs, nothing, 0.0, config)
+        # apply_boundary_conditions!(phi_eqn, wallBCs.y, nothing, 0.0, config) # wrong BCs!!
+        apply_boundary_conditions!(phi_eqn, wallBCs.y, nothing, 0.0, config)
 
         update_preconditioner!(phi_eqn.preconditioner, mesh, config)
         # implicit_relaxation!(phi_eqn, phi.values, solvers.y.relax, nothing, config)
@@ -55,7 +55,7 @@ function wall_distance!(model, config)
         end
     end
     
-    grad!(phiGrad, phif, phi, phi.BCs, zero(TF), config) # assuming time=0
+    grad!(phiGrad, phif, phi, wallBCs.y, zero(TF), config) # assuming time=0
     normal_distance!(y, phi, phiGrad, config)
     # y.values .= phi.values
 end

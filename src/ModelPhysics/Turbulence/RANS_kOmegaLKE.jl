@@ -20,7 +20,7 @@ kOmega model containing all kOmega field parameters.
 - `y` -- Near-wall distance for model.
 
 """
-struct KOmegaLKE{S1,S2,S3,S4,F1,F2,F3,F4,C1,C2,Y} <: AbstractRANSModel 
+struct KOmegaLKE{S1,S2,S3,S4,F1,F2,F3,F4,C1,C2,Y,BC} <: AbstractRANSModel 
     k::S1
     omega::S2
     kl::S3
@@ -32,6 +32,7 @@ struct KOmegaLKE{S1,S2,S3,S4,F1,F2,F3,F4,C1,C2,Y} <: AbstractRANSModel
     coeffs::C1
     Tu::C2
     y::Y
+    wallBCs::BC
 end 
 Adapt.@adapt_structure KOmegaLKE
 
@@ -108,9 +109,14 @@ end
             end
         end
     end
-    y = assign(y, BCs...)
+    wallBCs = assign(
+        region=mesh,
+        (
+            y = [BCs...],
+        )
+    )
 
-    KOmegaLKE(k, omega, kl, nut, kf, omegaf, klf, nutf, coeffs, Tu, y)
+    KOmegaLKE(k, omega, kl, nut, kf, omegaf, klf, nutf, coeffs, Tu, y, wallBCs)
 end
 
 # Model initialisation
@@ -157,7 +163,7 @@ function initialise(
     @info "Initialising k-ω LKE model..."
 
     # unpack turbulent quantities and configuration
-    (; k, omega, kl, y, kf, omegaf, klf) = model.turbulence
+    (; k, omega, kl, kf, omegaf, klf, y, wallBCs) = model.turbulence
     (; solvers, schemes, runtime, boundaries) = config
     mesh = mdotf.mesh
     eqn = peqn.equation
@@ -337,7 +343,7 @@ function turbulence!(
     # Solve kl equation
     prev .= kl.values
     discretise!(kl_eqn, prev, config)
-    apply_boundary_conditions!(kl_eqn, kl.BCs, nothing, time, config)
+    apply_boundary_conditions!(kl_eqn, boundaries.kl, nothing, time, config)
     implicit_relaxation!(kl_eqn, kl.values, solvers.kl.relax, nothing, config)
     update_preconditioner!(kl_eqn.preconditioner, mesh, config)
     kl_res = solve_system!(kl_eqn, solvers.kl, kl, nothing, config)

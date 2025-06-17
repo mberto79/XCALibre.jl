@@ -1,5 +1,5 @@
 using XCALibre
-using CUDA
+# using CUDA
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
 # mesh_file = "unv_sample_meshes/flatplate_transition.unv"
@@ -38,58 +38,58 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Neumann(:top, 0.0),
-    # Dirichlet(:bottom, velocity),
-    # Neumann(:freestream, 0.0),
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Wall(:wall, 0.0),
-    Neumann(:top, 0.0),
-    # Neumann(:bottom, 0.0),
-    # Neumann(:freestream, 0.0)
-)
-
-@assign! model turbulence kl (
-    Dirichlet(:inlet, kL_inlet),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, 1e-15),
-    Neumann(:top, 0.0),
-    # Neumann(:bottom, 0.0),
-    # Neumann(:freestream, 0.0)
-)
-
-@assign! model turbulence k (
-    Dirichlet(:inlet, k_inlet),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, 0.0),
-    Neumann(:top, 0.0),
-    # Neumann(:bottom, 0.0),
-    # Neumann(:freestream, 0.0)
-)
-
-@assign! model turbulence omega (
-    Dirichlet(:inlet, ω_inlet),
-    Neumann(:outlet, 0.0),
-    OmegaWallFunction(:wall),
-    Neumann(:top, 0.0),
-    # Neumann(:bottom, 0.0),
-    # Neumann(:freestream, 0.0)
-)
-
-@assign! model turbulence nut (
-    Dirichlet(:inlet, k_inlet/ω_inlet),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, 0.0), 
-    Neumann(:top, 0.0),
-    # Neumann(:bottom, 0.0),
-    # Neumann(:freestream, 0.0),
+BCs = assign(
+    region=mesh_dev,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Neumann(:outlet, 0.0),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Neumann(:top, 0.0),
+            # Dirichlet(:bottom, velocity),
+            # Neumann(:freestream, 0.0),
+        ],
+        p = [
+            Neumann(:inlet, 0.0),
+            Dirichlet(:outlet, 0.0),
+            Wall(:wall, 0.0),
+            Neumann(:top, 0.0),
+            # Neumann(:bottom, 0.0),
+            # Neumann(:freestream, 0.0)
+        ],
+        k = [
+            Dirichlet(:inlet, k_inlet),
+            Neumann(:outlet, 0.0),
+            Dirichlet(:wall, 0.0),
+            Neumann(:top, 0.0),
+            # Neumann(:bottom, 0.0),
+            # Neumann(:freestream, 0.0)
+        ],
+        kl = [
+            Dirichlet(:inlet, kL_inlet),
+            Neumann(:outlet, 0.0),
+            Dirichlet(:wall, 1e-15),
+            Neumann(:top, 0.0),
+            # Neumann(:bottom, 0.0),
+            # Neumann(:freestream, 0.0)
+        ],
+        omega = [
+            Dirichlet(:inlet, ω_inlet),
+            Neumann(:outlet, 0.0),
+            OmegaWallFunction(:wall),
+            Neumann(:top, 0.0),
+            # Neumann(:bottom, 0.0),
+            # Neumann(:freestream, 0.0)
+        ],
+        nut = [
+            Dirichlet(:inlet, k_inlet/ω_inlet),
+            Neumann(:outlet, 0.0),
+            Dirichlet(:wall, 0.0), 
+            Neumann(:top, 0.0),
+            # Neumann(:bottom, 0.0),
+            # Neumann(:freestream, 0.0),
+        ]
+    )
 )
 
 schemes = (

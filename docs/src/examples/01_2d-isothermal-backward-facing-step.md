@@ -50,7 +50,7 @@ BCs = assign(
             Dirichlet(:inlet, velocity),
             Extrapolated(:outlet),
             Wall(:wall, [0.0, 0.0, 0.0]),
-            Wall(:top, [0.0, 0.0, 0.0]),
+            Wall(:top, [0.0, 0.0, 0.0])
         ],
         p = [
             Extrapolated(:inlet),

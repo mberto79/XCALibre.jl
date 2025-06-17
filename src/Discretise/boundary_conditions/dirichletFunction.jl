@@ -27,6 +27,10 @@ struct DirichletFunction{I,V,R<:UnitRange} <: AbstractDirichlet
 end
 Adapt.@adapt_structure DirichletFunction
 
+adapt_value(value::XCALibreUserFunctor, mesh) = begin
+    value
+end
+
 function fixedValue(BC::DirichletFunction, ID::I, value::V) where {I<:Integer,V}
     # Exception 1: Value is scalar
     if V <: Number

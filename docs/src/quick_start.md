@@ -68,7 +68,7 @@ backend = CPU()
 # backend = CUDABackend() # ru non NVIDIA GPUs
 # backend = ROCBackend() # run on AMD GPUs
 
-hardware = set_hardware(backend=backend, workgroup=1024
+hardware = set_hardware(backend=backend, workgroup=1024)
 # hardware = set_hardware(backend=backend, workgroup=32) # use for GPU backends
 
 mesh_dev = mesh # use this line to run on CPU
@@ -96,7 +96,7 @@ BCs = assign(
             Dirichlet(:inlet, velocity),
             Extrapolated(:outlet),
             Wall(:wall, [0.0, 0.0, 0.0]),
-            Wall(:top, [0.0, 0.0, 0.0]),
+            Wall(:top, [0.0, 0.0, 0.0])
         ],
         p = [
             Extrapolated(:inlet),

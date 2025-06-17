@@ -402,18 +402,22 @@ model = Physics(
     )
 
 # Define boundary conditions
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Wall(:top, [0.0, 0.0, 0.0]),
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0), # scalar wall - set up as zero gradient
-    Neumann(:top, 0.0)   # scalar wall - set up as zero gradient
+BCs = assign(
+    region=mesh_dev,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Extrapolated(:outlet),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Wall(:top, [0.0, 0.0, 0.0])
+        ], 
+        p = [
+            Extrapolated(:inlet),
+            Dirichlet(:outlet, 0.0),
+            Wall(:wall), # scalar wall - set up as zero gradient
+            Wall(:top)   # scalar wall - set up as zero gradient
+        ]
+    )
 )
 
 # output

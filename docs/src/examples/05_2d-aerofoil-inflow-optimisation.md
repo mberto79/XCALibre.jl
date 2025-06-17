@@ -107,44 +107,45 @@ function foil_optim(α::Vector{Float64})
         domain = mesh_dev
         )
 
-    @assign! model momentum U ( 
-        XCALibre.Dirichlet(:inlet, velocity),
-        XCALibre.Dirichlet(:bottom, velocity),
-        Neumann(:outlet, 0.0),
-        Neumann(:top, 0.0),
-        Wall(:foil, noSlip)
-    )
-
-    @assign! model momentum p (
-        Neumann(:inlet, 0.0),
-        Neumann(:bottom, 0.0),
-        XCALibre.Dirichlet(:outlet, 0.0),
-        XCALibre.Dirichlet(:top, 0.0),
-        Neumann(:foil, 0.0)
-    )
-
-    @assign! model turbulence k (
-        XCALibre.Dirichlet(:inlet, k_inlet),
-        Neumann(:outlet, 0.0),
-        Neumann(:top, 0.0),
-        Neumann(:bottom, 0.0),
-        XCALibre.Dirichlet(:foil, 1e-15)
-    )
-
-    @assign! model turbulence omega (
-        XCALibre.Dirichlet(:inlet, ω_inlet),
-        Neumann(:outlet, 0.0),
-        Neumann(:top, 0.0),
-        Neumann(:bottom, 0.0),
-        OmegaWallFunction(:foil)
-    )
-
-    @assign! model turbulence nut (
-        Neumann(:inlet, 0.0),
-        Neumann(:outlet, 0.0),
-        Neumann(:top, 0.0),
-        Neumann(:bottom, 0.0), 
-        XCALibre.Dirichlet(:foil, 0.0)
+    BCs = assign(
+        region=mesh_dev,
+        (
+            U = [
+                XCALibre.Dirichlet(:inlet, velocity),
+                XCALibre.Dirichlet(:bottom, velocity),
+                Neumann(:outlet, 0.0),
+                Neumann(:top, 0.0),
+                Wall(:foil, noSlip)
+            ],
+            p = [
+                Neumann(:inlet, 0.0),
+                Neumann(:bottom, 0.0),
+                XCALibre.Dirichlet(:outlet, 0.0),
+                XCALibre.Dirichlet(:top, 0.0),
+                Neumann(:foil, 0.0)
+            ],
+            k = [
+                XCALibre.Dirichlet(:inlet, k_inlet),
+                Neumann(:outlet, 0.0),
+                Neumann(:top, 0.0),
+                Neumann(:bottom, 0.0),
+                XCALibre.Dirichlet(:foil, 1e-15)
+            ],
+            omega = [
+                XCALibre.Dirichlet(:inlet, ω_inlet),
+                Neumann(:outlet, 0.0),
+                Neumann(:top, 0.0),
+                Neumann(:bottom, 0.0),
+                OmegaWallFunction(:foil)
+            ],
+            nut = [
+                Neumann(:inlet, 0.0),
+                Neumann(:outlet, 0.0),
+                Neumann(:top, 0.0),
+                Neumann(:bottom, 0.0), 
+                XCALibre.Dirichlet(:foil, 0.0)
+            ]
+        )
     )
 
     schemes = (

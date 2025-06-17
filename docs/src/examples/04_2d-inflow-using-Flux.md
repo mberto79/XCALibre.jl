@@ -148,10 +148,9 @@ The third step is to define a new method for the `update_user_boundary!` functio
 ```@example flux
 
 XCALibre.Discretise.update_user_boundary!(
-    BC::DirichletFunction{I,V,R<:UnitRange}, faces, cells, facesID_range, time, config
-    ) where{I,V<:Inflow} = 
-begin
-
+    BC::DirichletFunction{I,V,R}, faces, cells, facesID_range, time, config
+    ) where {I,V<:Inflow,R} = begin
+    
     (; hardware) = config
     (; backend, workgroup) = hardware
 
@@ -229,18 +228,22 @@ model = Physics(
     domain = mesh
     )
 
-@assign! model momentum U (
-    DirichletFunction(:inlet, inlet_profile), # Pass functor
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, [0.0, 0.0, 0.0]),
-    Dirichlet(:top, [0.0, 0.0, 0.0]),
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
+BCs = assign(
+    region=mesh,
+    (
+        U = [
+            DirichletFunction(:inlet, inlet_profile), # Pass functor
+            Extrapolated(:outlet),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Wall(:top, [0.0, 0.0, 0.0])
+        ],
+        p = [
+            Extrapolated(:inlet),
+            Dirichlet(:outlet, 0.0),
+            Wall(:wall),
+            Wall(:top)
+        ]
+    )
 )
 
 schemes = (
@@ -254,19 +257,17 @@ solvers = (
         model.momentum.U;
         solver      = Bicgstab(),
         preconditioner = Jacobi(),
-        convergence = 1e-7,
+        convergence = 1e-8,
         relax       = 0.7,
-        rtol = 1e-4,
-        atol = 1e-10
+        rtol = 1e-4
     ),
     p = set_solver(
         model.momentum.p;
         solver      = Cg(),
         preconditioner = Jacobi(),
-        convergence = 1e-7,
+        convergence = 1e-8,
         relax       = 0.3,
-        rtol = 1e-4,
-        atol = 1e-10
+        rtol = 1e-4
     )
 )
 

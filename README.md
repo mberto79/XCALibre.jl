@@ -57,14 +57,14 @@ pkg> add XCALibre https://github.com/mberto79/XCALibre.jl.git#dev-0.3-main
 ## Main features
 
 
-* Multiple compute backends - as supported by [KernelAbstractions.jl](https://juliagpu.github.io/KernelAbstractions.jl/stable/) (except Apple hardware)
-* Ability to import *.unv* and OpenFOAM grids
+* Multithreaded or GPU execution with support for multiple GPU backends  (NVidia, AMD and Intel) - as supported by [KernelAbstractions.jl](https://juliagpu.github.io/KernelAbstractions.jl/stable/)(except Apple hardware)
+* Ability to import *.unv* and OpenFOAM grids. Simulation results written in `VTK` or `OpenFOAM` file formats, allowing postprocessing in [ParaView](https://www.paraview.org/)
 * Incompressible and (weakly) compressible flow solvers
 * RANS and LES turbulence modelling (`KOmega` and `KOmegaLKE` for RANS and `Smagorinsky` for LES, for now!)
 * Energy modelling using Sensible Energy model
-* Classic boundary conditions, including Direchlich, Neumann (zero gradient), Wall, etc.
+* Classic boundary conditions, including Dirichlet, Neumann, Wall, Symmetry, etc.
 * User-defined boundary conditions as neural networks or user-defined functions (source/sink terms soon)
-* Easy to link with Julia ecosystem
+* Easy to link with Julia ecosystem - making it easy to embed custom machine learning models, perform optimisation runs, etc. (see examples in the [documentation](https://mberto79.github.io/XCALibre.jl/stable/))
 * A good selection of discretisation schemes available e.g. Euler, Upwind, LUST, etc.
 * Simple API for defining new transport equations or solvers
 

@@ -1,4 +1,4 @@
-# Advanced: 2D inflow using `Flux.jl`
+# Advanced: Inflow condition using Machine Learning (`Flux.jl`)
 
 # Introduction
 ---

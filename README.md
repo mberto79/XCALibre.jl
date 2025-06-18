@@ -57,7 +57,7 @@ pkg> add XCALibre https://github.com/mberto79/XCALibre.jl.git#dev-0.3-main
 ## Main features
 
 
-* Multithreaded or GPU execution with support for multiple GPU backends  (NVidia, AMD and Intel) - as supported by [KernelAbstractions.jl](https://juliagpu.github.io/KernelAbstractions.jl/stable/)(except Apple hardware)
+* Multithreaded or GPU execution with support for multiple GPU backends  (NVidia, AMD and Intel) - as supported by [KernelAbstractions.jl](https://juliagpu.github.io/KernelAbstractions.jl/stable/) (except Apple hardware)
 * Ability to import *.unv* and OpenFOAM grids. Simulation results written in `VTK` or `OpenFOAM` file formats, allowing postprocessing in [ParaView](https://www.paraview.org/)
 * Incompressible and (weakly) compressible flow solvers
 * RANS and LES turbulence modelling (`KOmega` and `KOmegaLKE` for RANS and `Smagorinsky` for LES, for now!)

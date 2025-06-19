@@ -282,41 +282,26 @@ end
 # Prepare variables for kernel and call
 function implicit_relaxation!(
     phiEqn::E, field, alpha, component, config) where E<:ModelEquation
-    mesh = get_phi(phiEqn).mesh
     (; hardware) = config
     (; backend, workgroup) = hardware
-    precon = phiEqn.preconditioner
-    # Output sparse matrix properties and values
+
+    # Extract sparse matrix properties and values
     A = _A(phiEqn)
     b = _b(phiEqn, component)
-    rowval_array = _colval(A)
-    colptr_array = _rowptr(A)
-    nzval_array = _nzval(A)
+    colval = _colval(A)
+    rowptr = _rowptr(A)
+    nzval = _nzval(A)
 
-    # Get backend and define kernel
     kernel! = implicit_relaxation_kernel!(backend, workgroup)
-    
-    # Define variable equal to 1 with same type as mesh integers
-    integer = _get_int(mesh)
-    ione = one(integer)
-    
-    # Execute kernel
-    kernel!(ione, rowval_array, colptr_array, nzval_array, b, field, alpha, ndrange = length(b))
+    kernel!(colval, rowptr, nzval, b, field, alpha, ndrange = length(b))
     # KernelAbstractions.synchronize(backend)
-
-    # check_for_precon!(nzval_array, precon, backend)
 end
 
-@kernel function implicit_relaxation_kernel!(ione, colval, rowptr, nzval, b, field, alpha)
-    # i defined as values from 1 to length(b)
+@kernel function implicit_relaxation_kernel!(colval, rowptr, nzval, b, field, alpha)
     i = @index(Global)
     
     @inbounds begin
-
-        # Find nzval index relating to A[i,i]
         nIndex = spindex(rowptr, colval, i, i)
-
-        # Run implicit relaxation calculations
         nzval[nIndex] /= alpha
         b[i] += (1.0 - alpha)*nzval[nIndex]*field[i]
     end
@@ -328,49 +313,31 @@ end
 # Prepare variables for kernel and call
 function implicit_relaxation_diagdom!(
     phiEqn::E, field, alpha, component, config) where E<:ModelEquation
-    mesh = get_phi(phiEqn).mesh
-    (; cells, cell_neighbours) = mesh
     (; hardware) = config
     (; backend, workgroup) = hardware
-    precon = phiEqn.preconditioner
-    # Output sparse matrix properties and values
+
+    # Extract sparse matrix properties and values
     A = _A(phiEqn)
     b = _b(phiEqn, component)
-    rowval_array = _colval(A)
-    colptr_array = _rowptr(A)
-    nzval_array = _nzval(A)
+    colval = _colval(A)
+    rowptr = _rowptr(A)
+    nzval = _nzval(A)
 
-    # Get backend and define kernel
+    ndrange = length(b)
     kernel! = _implicit_relaxation_diagdom!(backend, workgroup)
-    
-    # Define variable equal to 1 with same type as mesh integers
-    integer = _get_int(mesh)
-    ione = one(integer)
-    
-    # Execute kernel
-    kernel!(cells, cell_neighbours, ione, rowval_array, colptr_array,
-    nzval_array, b, field, alpha, ndrange = length(b))
+    kernel!(colval, rowptr, nzval, b, field, alpha, ndrange=ndrange)
     # KernelAbstractions.synchronize(backend)
 end
 
-@kernel function _implicit_relaxation_diagdom!(cells::AbstractArray{Cell{TF,SV,UR}}, cell_neighbours, 
-    ione, colval, rowptr, nzval, b, field, alpha) where {TF,SV,UR}
-    # i defined as values from 1 to length(b)
+@kernel function _implicit_relaxation_diagdom!(colval, rowptr, nzval, b, field, alpha)
     i = @index(Global)
     
-    sumv = zero(TF)
+    sumv = zero(eltype(b))
 
     @inbounds begin
 
         # Find nzval index relating to A[i,i]
         cIndex = spindex(rowptr, colval, i, i)
-        
-        # (; faces_range) = cells[i]
-        # for ni ∈ faces_range
-        #     nID = cell_neighbours[ni]
-        #     zIndex = spindex(rowptr, colval, i, nID)
-        #     sumv += abs(nzval[zIndex])
-        # end
 
         start_index = rowptr[i]
         end_index = rowptr[i+1] -1
@@ -394,26 +361,23 @@ function setReference!(pEqn::E, pRef, cellID, config) where E<:ModelEquation
     else
         (; hardware) = config
         (; backend, workgroup) = hardware
-        ione = one(_get_int((get_phi(pEqn)).mesh))
         (; b, A) = pEqn.equation
-        nzval_array = nzval(A)
-        colptr_array = rowptr(A)
-        rowval_array = colval(A)
+        nzval = _nzval(A)
+        colval = _colval(A)
+        rowptr = _rowptr(A)
 
         kernel! = _setReference!(backend, workgroup)
-        kernel!(nzval_array, colptr_array, rowval_array, b, pRef, ione, cellID, ndrange = 1)
-        # KernelAbstractions.synchronize(backend)
-
+        kernel!(nzval, colval, rowptr, b, pRef, cellID, ndrange = 1)
     end
 end
 
-@kernel function _setReference!(nzval, rowptr, colval, b, pRef, ione, cellID)
+@kernel function _setReference!(nzval, colval, rowptr, b, pRef, cellID)
     i = @index(Global)
 
     @inbounds begin
-        nIndex = spindex(rowptr, colval, cellID, cellID)
-        b[cellID] = nzval[nIndex]*pRef
-        nzval[nIndex] += nzval[nIndex]
+        cIndex = spindex(rowptr, colval, cellID, cellID)
+        b[cellID] = nzval[cIndex]*pRef
+        nzval[cIndex] += nzval[cIndex]
     end
 end
 

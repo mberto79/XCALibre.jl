@@ -1,13 +1,15 @@
-using Plots
+# using Plots
 using XCALibre
 using CUDA
 
 # quad and trig 40 and 100
-mesh_file = "unv_sample_meshes/trig100.unv"
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "trig100.unv"
+mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-# backend = CUDABackend(); workgroup = 32
-backend = CPU(); workgroup = 1024; activate_multithread(backend)
+backend = CUDABackend(); workgroup = 32
+# backend = CPU(); workgroup = 1024 #; activate_multithread(backend)
 
 hardware = set_hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
@@ -25,18 +27,26 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U (
-    Wall(:inlet, noSlip),
-    Wall(:outlet, noSlip),
-    Wall(:bottom, noSlip),
-    Dirichlet(:top, velocity)
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Neumann(:outlet, 0.0),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+BCs = assign(
+    region=mesh_dev,
+    (
+        U = [
+            Wall(:top, velocity),
+            Wall(:outlet, noSlip),
+            Wall(:bottom, noSlip),
+            Wall(:inlet, noSlip)
+        ],
+        p = [
+            # Extrapolated(:top),
+            # Extrapolated(:inlet),
+            # Extrapolated(:outlet),
+            # Extrapolated(:bottom),
+            Extrapolated(:top),
+            Wall(:inlet),
+            Wall(:outlet),
+            Wall(:bottom)
+        ]
+    )
 )
 
 schemes = (
@@ -56,13 +66,13 @@ solvers = (
     p = set_solver(
         model.momentum.p;
         solver      = Cg(), # Bicgstab(), Gmres()
-        preconditioner = Jacobi(),
+        preconditioner = Jacobi(), # DILU(), # Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=1000, time_step=1)
+runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
@@ -74,6 +84,6 @@ initialise!(model.momentum.p, 0.0)
 
 residuals = run!(model, config, pref=0.0) # 9.39k allocs
 
-plot(1:runtime.iterations, Rx, yscale=:log10)
-plot!(1:runtime.iterations, Ry, yscale=:log10)
-plot!(1:runtime.iterations, Rp, yscale=:log10)
+# plot(1:runtime.iterations, Rx, yscale=:log10)
+# plot!(1:runtime.iterations, Ry, yscale=:log10)
+# plot!(1:runtime.iterations, Rp, yscale=:log10)

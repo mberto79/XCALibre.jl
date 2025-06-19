@@ -1,5 +1,5 @@
 using XCALibre
-# using CUDA # Run this if using NVIDIA GPU
+using CUDA # Run this if using NVIDIA GPU
 # using AMDGPU # Run this if using AMD GPU
 
 # using ThreadedSparseCSR 
@@ -11,8 +11,8 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-# backend = CUDABackend(); workgroup = 32
-backend = CPU(); workgroup = 1024; activate_multithread(backend)
+backend = CUDABackend(); workgroup = 32
+# backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
 hardware = set_hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
@@ -32,21 +32,24 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U ( 
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:cylinder, noSlip),
-    Neumann.([:top, :bottom], [0.0, 0.0])...,
-    # Symmetry.([:top, :bottom])...,
-)
-
-@assign! model momentum p (
-    Wall(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Wall(:cylinder, 0.0),
-    # Neumann.([:top, :bottom], [0.0, 0.0])...,
-    Neumann.([:top, :bottom], [0.0, 0.0])...,
-    # Symmetry.([:top, :bottom])...,
+BCs = assign(
+    region=mesh_dev,
+    (
+        U = [
+                Dirichlet(:inlet, velocity),
+                Extrapolated(:outlet),
+                Wall(:cylinder, noSlip),
+                Extrapolated(:bottom),
+                Extrapolated(:top)
+        ],
+        p = [
+                Extrapolated(:inlet),
+                Dirichlet(:outlet, 0.0),
+                Wall(:cylinder),
+                Extrapolated(:bottom),
+                Extrapolated(:top)
+        ]
+    )
 )
 
 solvers = (
@@ -87,8 +90,8 @@ initialise!(model.momentum.p, 0.0)
 
 residuals = run!(model, config, ncorrectors=0)
 
-xrange = 1:runtime.iterations
-plot(; xlims=(0,runtime.iterations), ylims=(1e-7,0.2))
-plot!(xrange, residuals.Ux, yscale=:log10, label="Ux")
-plot!(xrange, residuals.Uy, yscale=:log10, label="Uy")
-plot!(xrange, residuals.p, yscale=:log10, label="p")
+# xrange = 1:runtime.iterations
+# plot(; xlims=(0,runtime.iterations), ylims=(1e-7,0.2))
+# plot!(xrange, residuals.Ux, yscale=:log10, label="Ux")
+# plot!(xrange, residuals.Uy, yscale=:log10, label="Uy")
+# plot!(xrange, residuals.p, yscale=:log10, label="p")

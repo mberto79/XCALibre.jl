@@ -40,30 +40,31 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U ( 
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:cylinder, noSlip),
-    # Dirichlet(:cylinder, noSlip),
-    Symmetry(:bottom, 0.0),
-    Symmetry(:top, 0.0)
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, pressure),
-    Neumann(:cylinder, 0.0),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model energy h (
-    FixedTemperature(:inlet, T=300.0, model=model.energy),
-    Neumann(:outlet, 0.0),
-    # Neumann(:cylinder, 0.0),
-    FixedTemperature(:cylinder, T=330.0, model=model.energy),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+BCs = assign(
+    region=mesh_dev,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Neumann(:outlet, 0.0),
+            Wall(:cylinder, noSlip),
+            Symmetry(:bottom, 0.0),
+            Symmetry(:top, 0.0)
+        ],
+        p = [
+            Neumann(:inlet, 0.0),
+            Dirichlet(:outlet, pressure),
+            Wall(:cylinder, 0.0),
+            Neumann(:bottom, 0.0),
+            Neumann(:top, 0.0)
+        ],
+        h = [
+            FixedTemperature(:inlet, T=300.0, model=model.energy),
+            Neumann(:outlet, 0.0),
+            FixedTemperature(:cylinder, T=330.0, model=model.energy),
+            Neumann(:bottom, 0.0),
+            Neumann(:top, 0.0)
+        ]
+    )
 )
 
 solvers = (

@@ -111,8 +111,10 @@ function initialise(
     ) → eqn
     
     # Set up preconditioners
-    @reset energy_eqn.preconditioner = set_preconditioner(
-                solvers.h.preconditioner, energy_eqn, boundaries.h, config)
+    # @reset energy_eqn.preconditioner = set_preconditioner(
+    #             solvers.h.preconditioner, energy_eqn, boundaries.h, config)
+
+    @reset energy_eqn.preconditioner = set_preconditioner(solvers.h.preconditioner, energy_eqn)
     
     # preallocating solvers
     @reset energy_eqn.solver = _workspace(solvers.h.solver, _b(energy_eqn))

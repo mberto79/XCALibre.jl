@@ -222,14 +222,12 @@ function initialise(
     
     # Set up preconditioners
 
-    @reset kl_eqn.preconditioner = set_preconditioner(
-                solvers.kl.preconditioner, kl_eqn, boundaries.kl, config)
+    # @reset kl_eqn.preconditioner = set_preconditioner(
+    #             solvers.kl.preconditioner, kl_eqn, boundaries.kl, config)
 
-    @reset k_eqn.preconditioner = set_preconditioner(
-                solvers.k.preconditioner, k_eqn, boundaries.k, config)
-
-    @reset ω_eqn.preconditioner = set_preconditioner(
-                solvers.omega.preconditioner, ω_eqn, boundaries.omega, config)
+    @reset kl_eqn.preconditioner = set_preconditioner(solvers.kl.preconditioner, kl_eqn)
+    @reset k_eqn.preconditioner = set_preconditioner(solvers.k.preconditioner, k_eqn)
+    @reset ω_eqn.preconditioner = set_preconditioner(solvers.ω.preconditioner, ω_eqn)
     
     # preallocating solvers
 

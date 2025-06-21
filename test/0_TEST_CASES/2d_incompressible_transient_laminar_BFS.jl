@@ -8,7 +8,7 @@ mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 @test typeof(mesh) <: Mesh2
 
-workgroup = workgroupsize(mesh)
+workgroup = length(mesh.cells) ÷ Threads.nthreads() # workgroupsize(mesh)
 backend = CPU()
 mesh_dev = adapt(backend, mesh)
 
@@ -25,7 +25,7 @@ model = Physics(
     domain = mesh_dev
     )
 
-assign(
+BCs = assign(
     region=mesh_dev,
     (
         U = [

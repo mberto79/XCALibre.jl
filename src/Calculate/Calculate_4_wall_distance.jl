@@ -16,8 +16,10 @@ function wall_distance!(model, config)
         Source(ConstantScalar(1.0))
     ) → ScalarEquation(phi, wallBCs.y)
 
-    @reset phi_eqn.preconditioner = set_preconditioner(
-        solvers.y.preconditioner, phi_eqn, wallBCs.y, config)
+    # @reset phi_eqn.preconditioner = set_preconditioner(
+    #     solvers.y.preconditioner, phi_eqn, wallBCs.y, config)
+
+    @reset phi_eqn.preconditioner = set_preconditioner(solvers.y.preconditioner, phi_eqn)
 
     @reset phi_eqn.solver = _workspace(solvers.y.solver, _b(phi_eqn))
 

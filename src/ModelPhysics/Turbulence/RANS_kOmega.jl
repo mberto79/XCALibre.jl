@@ -118,12 +118,10 @@ function initialise(
     ) → eqn
 
     # Set up preconditioners
-    @reset k_eqn.preconditioner = set_preconditioner(
-                solvers.k.preconditioner, k_eqn, boundaries.k, config)
+    # @reset k_eqn.preconditioner = set_preconditioner(
+    #             solvers.k.preconditioner, k_eqn, boundaries.k, config)
 
-    # @reset ω_eqn.preconditioner = set_preconditioner(
-    #             solvers.omega.preconditioner, ω_eqn, boundaries.omega, config)
-
+    @reset k_eqn.preconditioner = set_preconditioner(solvers.k.preconditioner, k_eqn)
     @reset ω_eqn.preconditioner = k_eqn.preconditioner
     
     # preallocating solvers

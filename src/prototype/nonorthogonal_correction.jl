@@ -63,7 +63,7 @@ config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 @reset eqn.preconditioner = set_preconditioner(
-    solvers.phi.preconditioner, eqn, boundaries.phi, config)
+    solvers.phi.preconditioner, eqn)
 @reset eqn.solver = _workspace(solvers.phi.solver, _b(eqn))
 
 gammaf.values .= 1

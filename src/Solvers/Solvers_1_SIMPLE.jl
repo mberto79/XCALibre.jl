@@ -79,11 +79,13 @@ function setup_incompressible_solvers(
 
     @info "Initialising preconditioners..."
 
-    @reset U_eqn.preconditioner = set_preconditioner(
-                    solvers.U.preconditioner, U_eqn, boundaries.U, config)
-    @reset p_eqn.preconditioner = set_preconditioner(
-                    solvers.p.preconditioner, p_eqn, boundaries.p, config)
+    # @reset U_eqn.preconditioner = set_preconditioner(
+    #                 solvers.U.preconditioner, U_eqn, boundaries.U, config)
+    # @reset p_eqn.preconditioner = set_preconditioner(
+    #                 solvers.p.preconditioner, p_eqn, boundaries.p, config)
 
+    @reset U_eqn.preconditioner = set_preconditioner(solvers.U.preconditioner, U_eqn)
+    @reset p_eqn.preconditioner = set_preconditioner(solvers.p.preconditioner, p_eqn)
 
     @info "Pre-allocating solvers..."
 
@@ -112,7 +114,6 @@ function SIMPLE(
     (; U, p, Uf, pf) = model.momentum
     (; nu) = model.fluid
     mesh = model.domain
-    # p_model = p_eqn.model
     (; solvers, schemes, runtime, hardware, boundaries) = config
     (; iterations, write_interval) = runtime
     (; backend) = hardware
@@ -129,26 +130,11 @@ function SIMPLE(
     # Define aux fields 
     gradU = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
-    # Uf = FaceVectorField(mesh)
     S = StrainRate(gradU, gradUT, U, Uf)
 
     n_cells = length(mesh.cells)
-    # pf = FaceScalarField(mesh)
-    # gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
-
-    # Try to assign boundary conditions to rD for use with rDf
-    # periodic = construct_periodic(mesh, backend, :top, :bottom)
-    # rD = ScalarField(mesh)
-    # rD = assign(rD, 
-    #     Neumann(:inlet, 0.0),
-    #     Neumann(:outlet, 0.0),
-    #     Neumann(:bottom, 0.0),
-    #     Neumann(:top, 0.0),
-    #     Neumann(:plate, 0.0),
-    #     periodic...
-    # )
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)

@@ -1,6 +1,10 @@
 export set_preconditioner
 export update_preconditioner!
 
+set_preconditioner(PT::T, eqn) where T<:PreconditionerType = begin
+    Preconditioner{T}(eqn.equation.A)
+end
+
 set_preconditioner(PT::T, eqn, BCs, config
 ) where T<:PreconditionerType = 
 begin

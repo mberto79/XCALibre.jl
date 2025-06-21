@@ -33,18 +33,18 @@ function _apply_boundary_conditions!(
     ione = one(integer)
 
     # Loop over boundary conditions to apply boundary conditions 
-    boundaries_cpu = get_boundaries(mesh.boundaries)
+    # boundaries_cpu = get_boundaries(mesh.boundaries)
 
     for BC ∈ BCs
         # Copy to CPU
-        facesID_range = boundaries_cpu[BC.ID].IDs_range
+        # facesID_range = boundaries_cpu[BC.ID].IDs_range
+        facesID_range = BC.IDs_range
         start_ID = facesID_range[1]
 
         # update user defined boundary storage (if needed)
         # update_user_boundary!(BC, faces, cells, facesID_range, time, config)
         #= The `model` passed here is defined in ModelFramework_0_types.jl line 87. It has two properties: terms and sources which define the equation being solved =#
-        update_user_boundary!(
-            BC, faces, cells, facesID_range, time, config)
+        update_user_boundary!(BC, faces, cells, facesID_range, time, config)
         
         # Execute apply boundary conditions kernel
         kernel_range = length(facesID_range)
@@ -55,7 +55,6 @@ function _apply_boundary_conditions!(
             )
         # # KernelAbstractions.synchronize(backend)
     end
-    # # KernelAbstractions.synchronize(backend)
     nothing
 end
 

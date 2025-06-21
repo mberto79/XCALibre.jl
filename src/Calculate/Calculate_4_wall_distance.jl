@@ -9,10 +9,6 @@ function wall_distance!(model, config)
     (; solvers, schemes, runtime, hardware, boundaries) = config
     
     phi = ScalarField(mesh)
-    # phif = FaceScalarField(mesh)
-    # initialise!(phif, 1.0)
-    # initialise!(phi, 0.0)
-    # initialise!(phi, 1.0)
 
     phi_eqn = (
         -Laplacian{schemes.y.laplacian}(ConstantScalar(1.0), phi) 

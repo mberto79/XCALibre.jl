@@ -93,8 +93,9 @@ function set_production!(P, BC::KWallFunction, model, gradU, config)
     (; fluid, momentum, turbulence) = model
 
     # facesID_range = get_boundaries(BC, boundaries)
-    boundaries_cpu = get_boundaries(boundaries)
-    facesID_range = boundaries_cpu[BC.ID].IDs_range
+    # boundaries_cpu = get_boundaries(boundaries)
+    # facesID_range = boundaries_cpu[BC.ID].IDs_range
+    facesID_range = BC.IDs_range
     start_ID = facesID_range[1]
 
     # Execute apply boundary conditions kernel
@@ -161,8 +162,9 @@ function correct_nut_wall!(νtf, BC::NutWallFunction, model, config)
     (; fluid, turbulence) = model
 
     # facesID_range = get_boundaries(BC, boundaries)
-    boundaries_cpu = get_boundaries(boundaries)
-    facesID_range = boundaries_cpu[BC.ID].IDs_range
+    # boundaries_cpu = get_boundaries(boundaries)
+    # facesID_range = boundaries_cpu[BC.ID].IDs_range
+    facesID_range = BC.IDs_range
     start_ID = facesID_range[1]
 
     # Execute apply boundary conditions kernel
@@ -235,8 +237,9 @@ function constrain!(eqn, BC::OmegaWallFunction, model, config)
     turbulence = model.turbulence
 
     # facesID_range = get_boundaries(BC, boundaries)
-    boundaries_cpu = get_boundaries(boundaries)
-    facesID_range = boundaries_cpu[BC.ID].IDs_range
+    # boundaries_cpu = get_boundaries(boundaries)
+    # facesID_range = boundaries_cpu[BC.ID].IDs_range
+    facesID_range = BC.IDs_range
     start_ID = facesID_range[1]
 
     # Execute apply boundary conditions kernel

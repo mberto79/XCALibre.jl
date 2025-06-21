@@ -125,7 +125,8 @@ function assign2(args; region)
     return assignedBCs
 end
 
-@time BCs = assign2(region=mesh, 
+@time BCs = assign2(
+    region=mesh_dev,
     (
         U = [
             FixedValue(:outlet, [1,12.2,50]),

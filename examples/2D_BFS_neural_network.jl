@@ -145,7 +145,7 @@ model = Physics(
     )
 
 BCs = assign(
-    region=mesh,
+    region=mesh_dev,
     (
         U = [
             DirichletFunction(:inlet, inlet_profile), # Pass functor

@@ -6,9 +6,9 @@ export solve_equation!
 export residual!
 
 """
-    set_solver( 
-        field::AbstractField;
+    set_solver(; 
         # keyword arguments and defaults
+        region::AbstractMesh,
         solver::S, 
         preconditioner::PT, 
         convergence, 
@@ -16,12 +16,12 @@ export residual!
         smoother=nothing,
         limit=(),
         itmax::Integer=1000, 
-        atol=(eps(_get_float(field.mesh)))^0.9,
-        rtol=_get_float(field.mesh)(1e-1)
+        atol=(eps(_get_float(region)))^0.9,
+        rtol=_get_float(region)(1e-1)
         ) where {S,PT<:PreconditionerType} = begin
 
         # return NamedTuple
-        TF = _get_float(field.mesh)
+        TF = _get_float(region)
         (
             solver=solver, 
             preconditioner=preconditioner, 
@@ -39,7 +39,7 @@ This function is used to provide solver settings that will be used internally in
 
 # Input arguments
 
-- `field` reference to the field to which the solver settings will apply (used to provide integer and float types required)
+- `region` reference to the mesh/region to which these settings should apply (used to provide integer and float types required)
 - `solver` solver object from Krylov.jl and it could be one of `Bicgstab()`, `Cg()`, `Gmres()` which are re-exported in XCALibre.jl
 - `preconditioner` instance of preconditioner to be used e.g. Jacobi()
 - `convergence` sets the stopping criteria of this field
@@ -50,22 +50,22 @@ This function is used to provide solver settings that will be used internally in
 - `atol` absolute tolerance for the solver (default to eps(FloatType)^0.9)
 - `rtol` set relative tolerance for the solver (defaults to 1e-1)
 """
-set_solver( 
-        field::AbstractField;
-        # keyword arguments and defaults
-        solver::S, 
-        preconditioner::PT, 
-        convergence, 
-        relax,
-        smoother=nothing,
-        limit=(),
-        itmax::Integer=1000, 
-        atol=(eps(_get_float(field.mesh)))^0.9,
-        rtol=_get_float(field.mesh)(1e-1)
+set_solver(; 
+    # keyword arguments and defaults
+    region::AbstractMesh,
+    solver::S, 
+    preconditioner::PT, 
+    convergence, 
+    relax,
+    smoother=nothing,
+    limit=(),
+    itmax::Integer=1000, 
+    atol=(eps(_get_float(region)))^0.9,
+    rtol=_get_float(region)(1e-1)
     ) where {S,PT<:PreconditionerType} = begin
 
     # return NamedTuple
-    TF = _get_float(field.mesh)
+    TF = _get_float(region)
     (
         solver=solver, 
         preconditioner=preconditioner, 
@@ -79,6 +79,11 @@ set_solver(
     )
 end
 
+@kwdef struct Runtime{I<:Integer,N<:Number}
+    iterations::I
+    dt::N
+    write_interval::I
+end
 
 """
     set_runtime(; 
@@ -88,11 +93,13 @@ end
         time_step::N
         ) where {I<:Integer,N<:Number} = begin
         
-        # returned `NamedTuple`
+        # returned Runtime struct
+        Runtime{I,N}
             (
             iterations=iterations, 
             dt=time_step, 
-            write_interval=write_interval)
+            write_interval=write_interval
+            )
     end
 
 This is a convenience function to set the top-level runtime information. The inputs are all keyword arguments and provide basic information to flow solvers just before running a simulation.
@@ -111,10 +118,19 @@ runtime = set_runtime(
 ```
 """
 set_runtime(; iterations::I, write_interval::I, time_step::N) where {I<:Integer,N<:Number} = begin
-    (iterations=iterations, dt=float(time_step), write_interval=write_interval)
+    Runtime(iterations=iterations, dt=float(time_step), write_interval=write_interval)
 end
 
 # Set schemes function definition with default set variables
+
+@kwdef struct Schemes
+    time
+    divergence
+    laplacian
+    gradient
+    limiter
+end
+
 """
     set_schemes(;
         # keyword arguments and their default values
@@ -123,9 +139,10 @@ end
         laplacian=Linear, 
         gradient=Gauss,
         limiter=nothing) = begin
+
+        # Returns Schemes struct used to configure discretisation
         
-        # Returns NamedTuple definition for scheme 
-        (
+        Schemes(
             time=time,
             divergence=divergence,
             laplacian=laplacian,
@@ -153,8 +170,8 @@ set_schemes(;
     gradient=Gauss,
     limiter=nothing) = begin
     
-    # Returns NamedTuple definition for scheme 
-    (
+    # Returns Schemes struct used to drive discretisation
+    Schemes(
         time=time,
         divergence=divergence,
         laplacian=laplacian,

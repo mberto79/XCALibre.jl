@@ -18,11 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * New `NeumannFunction` has been created, mirroring the DirichletFunction, providing a Neumann boundary condition defined with a user-provided struct (a generic framework accepting a function to set the gradient at the boundary is not yet available) [#57](@ref)
 * `update_user_boundary` function, extension has been reverted, overwriting the changes made to expose the `ModelEquation` type to it in [#55](@ref)
 * User-provided boundary conditions are no longer stored within fields, instead a `NamedTuple` is constructed using the function `assign`, which is passed to solvers using the `Configuration` struct. 
+* Configuration setting provided by the user at the top-level API are now stored in predefined structs, instead of using `NamedTuples`, this change should put less pressure on the compiler.
 
 ### Breaking
 * The definition of Krylov solvers in the previous API used types exported directly from `Krylov.jl`. Now solvers are defined using instances of types defined in `XCALibre.jl`. As an example, previously the CG solver was defined using the type `CgSolver` now this solver is defined using the instance `Cg()` where the suffix "Solver" has been dropped. This applies to all previously available solver choices [#60](@ref)
 * The Green-Gauss method for calculating the gradient is now `Gauss` which is more descriptive than the previous name `Orthogonal`
 * The internals for handling user-provided boundary conditions have been updated in preparation for extending the code for handling multiple regions. Thus, the syntax for assigning boundary conditions has changed. The most noticeable change is the removal of the the `@assign!` macro, replaced by the function `assign`. See the documentation for details [xx]()
+* The first argument for the `set_solver` function used at the top level API to configure solver settings takes the keyword argument `region` where a reference to the mesh is given. This simplified the use of this function which previous required a reference to the solution field e.g. `momentum.U` which is both unnecessary and more complex (requiring knowledge of internal implementation details - which is not obvious to new users)
 
 ### Deprecated
 * No functions deprecated

@@ -33,7 +33,7 @@ model = Physics(
     )
 
 BCs = assign(
-    region=mesh,
+    region=mesh_dev,
     (
         U = [
             Dirichlet(:inlet, velocity),

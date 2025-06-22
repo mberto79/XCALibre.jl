@@ -30,13 +30,13 @@ BCs = assign(region=mesh_dev,
     (
         U = [
             Dirichlet(:inlet, velocity),
-            Extrapolated(:outlet, 0.0),
+            Extrapolated(:outlet),
             # Zerogradient(:outlet, 0.0),
             # Dirichlet(:wall, [0.0, 0.0, 0.0]),
             # Dirichlet(:top, [0.0, 0.0, 0.0]),
             Wall(:wall, [0.0, 0.0, 0.0]),
 
-            Wall(:top)
+            Wall(:top, [0.0, 0.0, 0.0])
             # Symmetry(:top)
         ],
         p = [

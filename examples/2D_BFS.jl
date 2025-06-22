@@ -65,7 +65,7 @@ schemes = (
 
 solvers = (
     U = set_solver(
-        model.momentum.U;
+        region = mesh_dev,
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), # ILU0GPU, Jacobi, DILU
         # smoother=JacobiSmoother(domain=mesh_dev, loops=8, omega=1),
@@ -74,7 +74,7 @@ solvers = (
         rtol = 1e-1
     ),
     p = set_solver(
-        model.momentum.p;
+        region = mesh_dev,
         solver      = Cg(), # Bicgstab(), Gmres(), Cg()
         preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
         # smoother=JacobiSmoother(domain=mesh_dev, loops=8, omega=1),

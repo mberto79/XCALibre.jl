@@ -95,7 +95,7 @@ schemes = (
 
 solvers = (
     U = set_solver(
-        model.momentum.U;
+        region = mesh_dev,
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -103,7 +103,7 @@ solvers = (
         atol = 1e-1
     ),
     p = set_solver(
-        model.momentum.p;
+        region = mesh_dev,
         solver      = Gmres(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -111,7 +111,7 @@ solvers = (
         atol = 1e-2
     ),
     h = set_solver(
-        model.energy.h;
+        region = mesh_dev,
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -120,7 +120,7 @@ solvers = (
         atol = 1e-1
     ),
     k = set_solver(
-        model.turbulence.k;
+        region = mesh_dev,
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
@@ -128,7 +128,7 @@ solvers = (
         atol = 1e-1
     ),
     omega = set_solver(
-        model.turbulence.omega;
+        region = mesh_dev,
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,

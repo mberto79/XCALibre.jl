@@ -49,7 +49,7 @@ BCs = assign(
 
 solvers = (
     U = set_solver(
-        model.momentum.U;
+        region = mesh_dev,
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -58,7 +58,7 @@ solvers = (
         atol = 1e-5
     ),
     p = set_solver(
-        model.momentum.p;
+        region = mesh_dev,
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), # Jacobi(), #NormDiagonal(), # DILU()
         convergence = 1e-7,

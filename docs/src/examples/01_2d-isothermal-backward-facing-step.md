@@ -68,7 +68,7 @@ schemes = (
 
 solvers = (
     U = set_solver(
-        model.momentum.U;
+        region = mesh_dev,
         solver      = Bicgstab(), # Options: Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
         convergence = 1e-7,
@@ -77,7 +77,7 @@ solvers = (
         atol = 1e-10
     ),
     p = set_solver(
-        model.momentum.p;
+        region = mesh_dev,
         solver      = Cg(), # Options: Cg(), Bicgstab(), Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
         convergence = 1e-7,

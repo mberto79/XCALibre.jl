@@ -139,7 +139,7 @@ schemes = (
 
 solvers = (
     U = set_solver(
-        model.momentum.U;
+        region = mesh,
         solver      = Bicgstab(),
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -147,7 +147,7 @@ solvers = (
         rtol = 1e-1
     ),
     p = set_solver(
-        model.momentum.p;
+        region = mesh,
         solver      = Cg(),
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -155,7 +155,7 @@ solvers = (
         rtol = 1e-1
     ),
     h = set_solver(
-        model.energy.h;
+        region = mesh,
         solver      = Bicgstab(),
         preconditioner = Jacobi(),
         convergence = 1e-7,

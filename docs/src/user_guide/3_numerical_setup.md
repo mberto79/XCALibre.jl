@@ -151,7 +151,7 @@ using XCALibre
 
 solvers = (
     U = set_solver(
-        model.momentum.U;
+        region = mesh_dev,
         solver      = Bicgstab(), # Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -160,7 +160,7 @@ solvers = (
         atol = 1e-10
     ),
     p = set_solver(
-        model.momentum.p;
+        region = mesh_dev,
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,

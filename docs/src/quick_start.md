@@ -16,13 +16,13 @@ pkg> add XCALibre
 To install XCALibre.jl directly from Github enter the following command (for the latest release)
 
 ```julia
-pkg> add XCALibre https://github.com/mberto79/XCALibre.jl.git
+pkg> add https://github.com/mberto79/XCALibre.jl.git
 ```
 
 A specific branch can be installed by providing the branch name precided by a `#`, for example, to install the `dev-0.3-main` branch enter
 
 ```julia
-pkg> add XCALibre https://github.com/mberto79/XCALibre.jl.git#dev-0.3-main
+pkg> add https://github.com/mberto79/XCALibre.jl.git#dev-0.3-main
 ```
 
 !!! note

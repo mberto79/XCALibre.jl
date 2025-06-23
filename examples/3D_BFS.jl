@@ -1,7 +1,6 @@
-using Plots 
-# using ThreadPinning
 using XCALibre
 using CUDA
+# using ThreadPinning
 
 # pinthreads(:cores)
 
@@ -61,7 +60,7 @@ BCs = assign(
 
 solvers = (
     U = set_solver(
-        model.momentum.U;
+        region=mesh_dev,
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), # Jacobi # ILU0GPU
         # smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
@@ -70,7 +69,7 @@ solvers = (
         rtol = 0.1
     ),
     p = set_solver(
-        model.momentum.p;
+        region = mesh_dev,
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), #NormDiagonal(), IC0GPU, Jacobi
         # smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
@@ -94,7 +93,7 @@ runtime = set_runtime(iterations=1, write_interval=1, time_step=1)
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
-GC.gc(true)
+GC.gc(false)
 
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
@@ -107,13 +106,14 @@ runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
-GC.gc(true)
+GC.gc(false)
 
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
 @time residuals = run!(model, config, output=OpenFOAM(), ncorrectors=0)
 
+# using Plots
 # iterations = runtime.iterations
 # plot(yscale=:log10, ylims=(1e-7,1e-1))
 # plot!(1:iterations, residuals.Ux, label="Ux")

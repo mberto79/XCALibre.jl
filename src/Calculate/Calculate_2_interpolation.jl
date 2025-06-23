@@ -1,4 +1,4 @@
-export correct_boundaries!
+# export correct_boundaries!
 export interpolate!
 
 # Temporary functions to extract boundary array
@@ -16,23 +16,24 @@ end
 
 # Function to correct interpolation at boundaries (expands loop to reduce allocations)
 
-@generated function correct_boundaries!(phif, phi, BCs, time, config)
-    unpacked_BCs = []
-    for i ∈ 1:length(BCs.parameters)
-        unpack = quote
-            #KERNEL LAUNCH
-            adjust_boundary!(BCs[$i], phif, phi, boundaries, boundary_cellsID, time, backend, workgroup)
-        end
-        push!(unpacked_BCs, unpack)
-    end
-    quote
-    (; mesh) = phif
-    (; boundary_cellsID, boundaries) = mesh 
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-    $(unpacked_BCs...) 
-    end
-end
+
+# @generated function correct_boundaries!(phif, phi, BCs, time, config)
+#     unpacked_BCs = []
+#     for i ∈ 1:length(BCs.parameters)
+#         unpack = quote
+#             #KERNEL LAUNCH
+#             adjust_boundary!(BCs[$i], phif, phi, boundaries, boundary_cellsID, time, backend, workgroup)
+#         end
+#         push!(unpacked_BCs, unpack)
+#     end
+#     quote
+#     (; mesh) = phif
+#     (; boundary_cellsID, boundaries) = mesh 
+#     (; hardware) = config
+#     (; backend, workgroup) = hardware
+#     $(unpacked_BCs...) 
+#     end
+# end
 
 ## SCALAR INTERPOLATION
 
@@ -69,34 +70,7 @@ end
         phi1 = vals[owner1]
         phi2 = vals[owner2]
 
-        # Extract vectors
-        # cell1 = cells[owner1]
-        # cell2 = cells[owner2]
-        # P = cell1.centre
-        # N = cell2.centre 
-        # PN = N - P
-        # PF = F - P 
-
-        # option 1
-        # d = norm(PN)
-        # D = PN/d
-        # df = PF⋅D
-
-        # option 2
-        # d = PN⋅normal
-        # df = PF⋅normal
-        # weight = df/d
-
-        # option 3
-        # d = norm(PN)
-        # df = norm(PF)
-        # weight = df/d
-
-
-        # Calculate one minus weight
         one_minus_weight = 1 - weight
-
-        # Update phif values array for interpolation
         fvals[i] = weight*phi1 + one_minus_weight*phi2 # check weight is used correctly!
     end
 end

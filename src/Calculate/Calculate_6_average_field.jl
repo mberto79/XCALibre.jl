@@ -12,8 +12,9 @@ end
 
 function calculate_field_average!(mean_field::Mean,current_velocity,iteration)
     if mean_field.start <= iteration && iteration <= mean_field.finish
-        calculated_mean = (iteration-1)/iteration .* mean_field.value .+ Array(current_velocity) ./iteration
-        mean_field.value .= calculated_mean
+        n = iteration - mean_field.start + 1
+        running_mean = (n-1)/n .* mean_field.value .+ Array(current_velocity) ./n
+        mean_field.value .= running_mean
     end
     return nothing 
 end

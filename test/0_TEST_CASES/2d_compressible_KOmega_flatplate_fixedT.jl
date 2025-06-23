@@ -9,7 +9,7 @@ mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 @test typeof(mesh) <: Mesh2
 
-workgroup = workgroupsize(mesh)
+workgroup = 1023 #workgroupsize(mesh)
 backend = CPU()
 mesh_dev = adapt(backend, mesh)
 

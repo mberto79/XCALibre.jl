@@ -21,7 +21,7 @@ end
     for i ∈ 1:length(BCs.parameters)
         unpack = quote
             #KERNEL LAUNCH
-            adjust_boundary!(b_cpu, BCs[$i], phif, phi, boundaries, boundary_cellsID, time, backend, workgroup)
+            adjust_boundary!(BCs[$i], phif, phi, boundaries, boundary_cellsID, time, backend, workgroup)
         end
         push!(unpacked_BCs, unpack)
     end
@@ -30,14 +30,7 @@ end
     (; boundary_cellsID, boundaries) = mesh 
     (; hardware) = config
     (; backend, workgroup) = hardware
-    # b_cpu = Array{eltype(boundaries)}(undef, length(boundaries))
-    # copyto!(b_cpu, boundaries)
-    b_cpu = to_cpu(boundaries)
-
-    # backend = _get_backend(mesh)
     $(unpacked_BCs...) 
-    # Added below for testing
-    # # KernelAbstractions.synchronize(backend)
     end
 end
 

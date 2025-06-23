@@ -65,33 +65,6 @@ function _apply_boundary_conditions!(
     #         model, BC, model.terms, faces, cells, start_ID, boundary_cellsID, colval, rowptr, nzval, b, component, time, ndrange=kernel_range
     #         )
     # end
-
-    # @sync begin
-    #     # kernel! = apply_boundary_conditions_kernel!(backend, workgroup)
-
-    #     for BC ∈ BCs
-    #         # @async begin
-    #         Threads.@spawn begin
-    #             facesID_range = BC.IDs_range
-    #             start_ID = facesID_range[1]
-                
-    #             # update user defined boundary storage (if needed)
-    #             # update_user_boundary!(BC, faces, cells, facesID_range, time, config)
-    #             #= The `model` passed here is defined in ModelFramework_0_types.jl line 87. It has two properties: terms and sources which define the equation being solved =#
-    #             update_user_boundary!(BC, faces, cells, facesID_range, time, config)
-                
-    #             # Execute apply boundary conditions kernel
-    #             kernel_range = length(facesID_range)
-    #             kernel! = apply_boundary_conditions_kernel!(
-    #                 backend, workgroup, kernel_range)
-    #             kernel!(
-    #                 model, BC, model.terms, faces, cells, start_ID, boundary_cellsID, colval, rowptr, nzval, b, ione, component, time, ndrange=kernel_range
-    #                 )
-    #             # # KernelAbstractions.synchronize(backend)
-    #             nothing
-    #         end
-    #     end
-    # end
 end
 
 update_user_boundary!(
@@ -120,15 +93,12 @@ end
     ) where {TN,SN,T,S}
     fID = @index(Global)
 
-    AP, BP, cellID, zcellID = calculate_coefficients(
-        BCs, model, terms, faces, cells, boundary_cellsID, colval, rowptr, nzval, component, time, fID)
-    Atomix.@atomic nzval[zcellID] += AP
-    Atomix.@atomic b[cellID] += BP
-    # nothing
+    calculate_coefficients(
+        BCs, model, terms, faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time, fID)
 end
 
 @generated function calculate_coefficients(
-    BCs, model, terms, faces, cells, boundary_cellsID,colval, rowptr, nzval, component, time, fID)
+    BCs, model, terms, faces, cells, boundary_cellsID,colval, rowptr, nzval, b, component, time, fID)
     N = length(BCs.parameters)
     unroll = Expr(:block)
     for bi ∈ 1:N
@@ -147,21 +117,15 @@ end
                     model, BC, terms, 
                     colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
                     )
-                return AP, BP, cellID, zcellID
-                # println("$AP, $BP, $fID, $cellID")
-                # return 0.0, 0.0, 1, 1
-
+                Atomix.@atomic nzval[zcellID] += AP
+                Atomix.@atomic b[cellID] += BP
             end
             end
         end
         push!(unroll.args, BC_checks)
     end
     return quote
-        # AP, BP, cellID, zcellID = 0.0, 0.0, 1, 1
         $(unroll.args...)
-        return AP, BP, cellID, zcellID
-        # return 0.0, 0.0, 1, 1
-        # nothing
     end
 end
 

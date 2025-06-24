@@ -8,6 +8,7 @@ grid = "cylinder_d10mm_5mm.unv"
 # grid = "cylinder_d10mm_2mm.unv"
 # grid = "cylinder_d10mm_10-7.5-2mm.unv"
 mesh_file = joinpath(grids_dir, grid)
+mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
@@ -58,9 +59,9 @@ BCs = assign(
             Neumann(:top, 0.0)
         ],
         h = [
-            FixedTemperature(:inlet, T=300.0, model=model.energy),
+            FixedTemperature(:inlet, T=300.0, Enthalpy(cp=cp, Tref=288.15)),
             Neumann(:outlet, 0.0),
-            FixedTemperature(:cylinder, T=330.0, model=model.energy),
+            FixedTemperature(:cylinder, T=330.0, Enthalpy(cp=cp, Tref=288.15)),
             Neumann(:bottom, 0.0),
             Neumann(:top, 0.0)
         ]
@@ -92,9 +93,9 @@ solvers = (
 )
 
 schemes = (
-    U = Schemes(divergence=LUST, gradient=Midpoint),
-    p = Schemes(divergence=LUST, gradient=Midpoint),
-    h = Schemes(divergence=LUST, gradient=Midpoint)
+    U = Schemes(divergence=LUST, gradient=Gauss),
+    p = Schemes(divergence=LUST, gradient=Gauss),
+    h = Schemes(divergence=LUST, gradient=Gauss)
 )
 
 runtime = Runtime(iterations=500, write_interval=100, time_step=1)

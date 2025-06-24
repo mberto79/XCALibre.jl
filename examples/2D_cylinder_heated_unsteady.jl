@@ -58,10 +58,10 @@ model = Physics(
 )
 
 @assign! model energy h (
-    FixedTemperature(:inlet, T=300.0, model=model.energy),
+    FixedTemperature(:inlet, T=300.0, Enthalpy(cp=cp, Tref=288.15)),
     Neumann(:outlet, 0.0),
     # Neumann(:cylinder, 0.0),
-    FixedTemperature(:cylinder, T=330.0, model=model.energy),
+    FixedTemperature(:cylinder, T=330.0, Enthalpy(cp=cp, Tref=288.15)),
     Neumann(:bottom, 0.0),
     Neumann(:top, 0.0)
 )

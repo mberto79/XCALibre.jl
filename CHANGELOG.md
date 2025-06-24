@@ -3,7 +3,7 @@
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v0.3.1` breaking changes will be recorded here. 
 
-## Version [v0.5.0] - 2025-06-XX
+## Version [v0.5.0] - 2025-06-24
 
 ### Added
 * No functionality added
@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * The Green-Gauss method for calculating the gradient is now `Gauss` which is more descriptive than the previous name `Orthogonal`
 * The internals for handling user-provided boundary conditions have been updated in preparation for extending the code for handling multiple regions. Thus, the syntax for assigning boundary conditions has changed. The most noticeable change is the removal of the the `@assign!` macro, replaced by the function `assign`. See the documentation for details [#61](@ref)
 * The `set_solver`, `set_hardware` and `set_runtime` top-level functions have been replaced with `SolverSetup`, `Hardware` and `Runtime` structures. This allowed storing user-provided setup information in structs instead of `NamedTuples` to reduce the burden on the compiler [#61](@ref)
+* The implementation of the `FixedTemperature` boundary condition has been simplified, resulting in a breaking change. The definition of the boundary condition now requires users to provide an `Enthalphy` model. This interface should make it easier to extend the current implementation to new forms of the energy equation [#61](@ref)
 
 ### Deprecated
 * No functions deprecated

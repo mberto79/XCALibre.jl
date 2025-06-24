@@ -8,25 +8,24 @@ export Ttoh, htoT!, Ttoh!, thermo_Psi!
 Type that represents energy model, coefficients and respective fields.
 
 ### Fields
-- 'h'    -- Sensible enthalpy ScalarField.
-- 'T'    -- Temperature ScalarField.
-- 'hf'   -- Sensible enthalpy FaceScalarField.
-- 'Tf'   -- Temperature FaceScalarField.
-- 'K'    -- Specific kinetic energy ScalarField.
-- 'dpdt' -- Pressure time derivative ScalarField.
-- 'updated_BC' -- Boundary condition function to convert temperature to sensible enthalp on 
-                    on a fixed value boudary.
-- 'coeffs' -- A tuple of model coefficients.
+- `h`: Sensible enthalpy ScalarField.
+- `T`: Terature ScalarField.
+- `hf`: Sensible enthalpy FaceScalarField.
+- `Tf`: Temperature FaceScalarField.
+- `K`: Specific kinetic energy ScalarField.
+- `dpdt`: Pressure time derivative ScalarField.
+- `coeffs`: A tuple of model coefficients.
 
 """
-struct SensibleEnthalpy{S1,S2,F1,F2,S3,S4,F,C} <: AbstractEnergyModel
+# struct SensibleEnthalpy{S1,S2,F1,F2,S3,S4,F,C} <: AbstractEnergyModel
+struct SensibleEnthalpy{S1,S2,F1,F2,S3,S4,C} <: AbstractEnergyModel
     h::S1
     T::S2
     hf::F1
     Tf::F2
     K::S3
     dpdt::S4
-    update_BC::F
+    # update_BC::F
     coeffs::C
 end
 Adapt.@adapt_structure SensibleEnthalpy
@@ -52,17 +51,10 @@ end
     Tf = FaceScalarField(mesh)
     K = ScalarField(mesh)
     dpdt = ScalarField(mesh)
-    update_BC =  return_thingy(EnergyModel, fluid, energy.args.Tref)
+    # update_BC =  return_thingy(EnergyModel, fluid, energy.args.Tref)
     coeffs = energy.args
-    SensibleEnthalpy(h, T, hf, Tf, K, dpdt, update_BC, coeffs)
-end
-
-return_thingy(::Type{SensibleEnthalpy}, fluid, Tref) = begin
-    function Ttoh(T)
-        Cp = fluid.cp
-        h = Cp.values*(T-Tref)
-        return h
-    end
+    # SensibleEnthalpy(h, T, hf, Tf, K, dpdt, update_BC, coeffs)
+    SensibleEnthalpy(h, T, hf, Tf, K, dpdt, coeffs)
 end
 
 """
@@ -71,17 +63,17 @@ end
 
 Initialisation of energy transport equations.
 
-### Input
-- `energy` -- Energy model.
-- `model`  -- Physics model defined by user.
-- `mdtof`  -- Face mass flow.
-- `rho`    -- Density ScalarField.
-- `peqn`   -- Pressure equation.
-- `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
+# Input
+- `energy`: Energy model.
+- `model`: Physics model defined by user.
+- `mdtof`: Face mass flow.
+- `rho`: Density ScalarField.
+- `peqn`: Pressure equation.
+- `config`: Configuration structure defined by user with solvers, schemes, runtime and 
               hardware structures set.
 
-### Output
-- `SensibleEnthalpyModel`  -- Energy model struct containing energy equation.
+# Output
+- `SensibleEnthalpyModel`: Energy model struct containing energy equation.
 
 """
 function initialise(
@@ -133,16 +125,15 @@ end
 
 Run energy transport equations.
 
-### Input
-- `energy` -- Energy model.
-- `model`  -- Physics model defined by user.
-- `prev`   -- Previous energy cell values.
-- `mdtof`  -- Face mass flow.
-- `rho`    -- Density ScalarField.
-- `mueff`  -- Effective viscosity FaceScalarField.
-- `time`   --
-- `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
-              hardware structures set.
+# Input
+- `energy`: Energy model.
+- `model`: Physics model defined by user.
+- `prev`: Previous energy cell values.
+- `mdtof`: Face mass flow.
+- `rho`: Density ScalarField.
+- `mueff`: Effective viscosity FaceScalarField.
+- `time`: Simulation runtime.
+- `config`: Configuration structure defined by user with solvers, schemes, runtime and hardware structures set.
 
 """
 function energy!(

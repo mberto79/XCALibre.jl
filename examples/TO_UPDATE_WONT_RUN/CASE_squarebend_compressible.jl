@@ -50,7 +50,7 @@ model = Physics(
 )
 
 @assign! model energy h (
-    FixedTemperature(:inlet, T=300.0, model=model.energy),
+    FixedTemperature(:inlet, T=300.0, Enthalpy(cp=cp, Tref=298.15)),
     Neumann(:outlet, 0.0),
     Neumann(:walls, 0.0)
 )

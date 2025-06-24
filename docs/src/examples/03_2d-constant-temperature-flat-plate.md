@@ -123,9 +123,9 @@ BCs = assign(
             Symmetry(:top)
         ],
         h = [
-            FixedTemperature(:inlet, T=300.0, model=model.energy),
+            FixedTemperature(:inlet, T=300.0, Enthalpy(cp=cp, Tref=288.15)),
             Extrapolated(:outlet),
-            FixedTemperature(:wall, T=310.0, model=model.energy),
+            FixedTemperature(:wall, T=310.0, Enthalpy(cp=cp, Tref=288.15)),
             Symmetry(:top)
         ],
     )

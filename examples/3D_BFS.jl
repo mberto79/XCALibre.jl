@@ -21,7 +21,7 @@ mesh = UNV3D_mesh(mesh_file, scale=0.001)
 backend = CUDABackend(); workgroup = 32
 # backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 # Inlet conditions
@@ -59,8 +59,7 @@ BCs = assign(
 )
 
 solvers = (
-    U = set_solver(
-        region=mesh_dev,
+    U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), # Jacobi # ILU0GPU
         # smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
@@ -68,8 +67,7 @@ solvers = (
         relax       = 0.8,
         rtol = 0.1
     ),
-    p = set_solver(
-        region = mesh_dev,
+    p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), #NormDiagonal(), IC0GPU, Jacobi
         # smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
@@ -83,13 +81,13 @@ solvers = (
 gradScheme = Gauss # Gauss # Midpoint
 divScheme = Upwind # Upwind
 schemes = (
-    U = set_schemes(time=SteadyState, divergence=divScheme, gradient=gradScheme),
-    p = set_schemes(time=SteadyState, gradient=gradScheme)
+    U = Schemes(time=SteadyState, divergence=divScheme, gradient=gradScheme),
+    p = Schemes(time=SteadyState, gradient=gradScheme)
 )
 
 # Run first to pre-compile
 
-runtime = set_runtime(iterations=1, write_interval=1, time_step=1)
+runtime = Runtime(iterations=1, write_interval=1, time_step=1)
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
@@ -102,7 +100,7 @@ residuals = run!(model, config)
 
 # Now get timing information
 
-runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
+runtime = Runtime(iterations=500, write_interval=100, time_step=1)
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 

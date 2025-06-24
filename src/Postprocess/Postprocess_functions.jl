@@ -9,9 +9,9 @@ Function to calculate the pressure force acting on a given patch/boundary.
 
 # Input arguments
 
-* `patch::Symbol` name of the boundary of interest (as a `Symbol`)
-* `p::ScalarField` pressure field
-* `rho` density. Set to 1 for incompressible solvers
+- `patch::Symbol` name of the boundary of interest (as a `Symbol`)
+- `p::ScalarField` pressure field
+- `rho` density. Set to 1 for incompressible solvers
 """
 pressure_force(patch::Symbol, p::ScalarField, rho) = begin
     mesh = p.mesh
@@ -42,11 +42,11 @@ Function to calculate the pressure force acting on a given patch/boundary.
 
 # Input arguments
 
-* `patch::Symbol` name of the boundary of interest (as a `Symbol`)
-* `U::VectorField` pressure field
-* `rho` density. Set to 1 for incompressible solvers
-* `ν` laminar viscosity of the fluid
-* `νt` eddy viscosity from turbulence models. Pass ConstantScalar(0) for laminar flows
+- `patch::Symbol` name of the boundary of interest (as a `Symbol`)
+- `U::VectorField` pressure field
+- `rho` density. Set to 1 for incompressible solvers
+- `ν` laminar viscosity of the fluid
+- `νt` eddy viscosity from turbulence models. Pass ConstantScalar(0) for laminar flows
 """
 viscous_force(patch::Symbol, U::VectorField, rho, ν, νt, UBCs) = begin
     mesh = U.mesh

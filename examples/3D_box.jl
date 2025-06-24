@@ -15,7 +15,7 @@ mesh_file="unv_sample_meshes/3d_streamtube_0.5x0.1x0.1_0.015m.unv" # Converges
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 velocity = [0.01,0.0,0.0]
@@ -62,17 +62,17 @@ model = Physics(
 )
 
 # schemes = (
-#     U = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint),
-#     p = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint)
+#     U = Schemes(time=Euler, divergence=Upwind, gradient=Midpoint),
+#     p = Schemes(time=Euler, divergence=Upwind, gradient=Midpoint)
 # )
 
 schemes = (
-    U = set_schemes(divergence=Upwind),
-    p = set_schemes()
+    U = Schemes(divergence=Upwind),
+    p = Schemes()
 )
 
 solvers = (
-    U = set_solver(
+    U = SolverSetup(
         model.momentum.U;
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
@@ -81,7 +81,7 @@ solvers = (
         rtol = 1e-4,
         atol = 1e-4
     ),
-    p = set_solver(
+    p = SolverSetup(
         model.momentum.p;
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
@@ -93,7 +93,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=10, time_step=1, write_interval=5)
+runtime = Runtime(iterations=10, time_step=1, write_interval=5)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

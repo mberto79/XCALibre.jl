@@ -42,7 +42,7 @@ model = Physics(
 )
 
 solvers = (
-    U = set_solver(
+    U = SolverSetup(
         model.momentum.U;
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
@@ -51,7 +51,7 @@ solvers = (
         rtol = 1e-4,
         atol = 1e-5
     ),
-    p = set_solver(
+    p = SolverSetup(
         model.momentum.p;
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), #NormDiagonal(),
@@ -63,21 +63,21 @@ solvers = (
 )
 
 schemes = (
-    U = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint)
+    U = Schemes(time=Euler, divergence=Upwind, gradient=Midpoint),
+    p = Schemes(time=Euler, divergence=Upwind, gradient=Midpoint)
 )
 
 
-runtime = set_runtime(
+runtime = Runtime(
     # iterations=5000, write_interval=50, time_step=0.005)
     iterations=10000, write_interval=250, time_step=0.001)
 
 # 2mm mesh use settings below (to lower Courant number)
-# runtime = set_runtime(
+# runtime = Runtime(
     # iterations=5000, write_interval=250, time_step=0.001) # Only runs on 32 bit
 
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = Hardware(backend=CUDABackend(), workgroup=32)
+# hardware = Hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

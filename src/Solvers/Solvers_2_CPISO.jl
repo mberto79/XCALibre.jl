@@ -304,7 +304,7 @@ function CPISO(
                 limit_gradient!(schemes.p.limiter, ∇p, p, config)
             end
 
-            if ~isempty(solvers.p.limit)
+            if !isnothing(solvers.p.limit)
                 pmin = solvers.p.limit[1]; pmax = solvers.p.limit[2]
                 clamp!(p.values, pmin, pmax)
             end

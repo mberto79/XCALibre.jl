@@ -11,7 +11,7 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 velocity = [1.5, 0.0, 0.0]
@@ -55,18 +55,17 @@ BCs = assign(
 )
 
 schemes = (
-    # U = set_schemes(divergence = Linear, limiter=MFaceBased(model.domain)),
-    # U = set_schemes(divergence = Linear),
-    U = set_schemes(divergence = Linear),
-    p = set_schemes()
-    # p = set_schemes(limiter=FaceBased(model.domain))
-    # p = set_schemes(limiter=MFaceBased(model.domain))
+    # U = Schemes(divergence = Linear, limiter=MFaceBased(model.domain)),
+    # U = Schemes(divergence = Linear),
+    U = Schemes(divergence = Linear),
+    p = Schemes()
+    # p = Schemes(limiter=FaceBased(model.domain))
+    # p = Schemes(limiter=MFaceBased(model.domain))
 )
 
 
 solvers = (
-    U = set_solver(
-        region = mesh_dev,
+    U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), # ILU0GPU, Jacobi, DILU
         # smoother=JacobiSmoother(domain=mesh_dev, loops=8, omega=1),
@@ -74,8 +73,7 @@ solvers = (
         relax       = 0.8,
         rtol = 1e-1
     ),
-    p = set_solver(
-        region = mesh_dev,
+    p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres(), Cg()
         preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
         # smoother=JacobiSmoother(domain=mesh_dev, loops=8, omega=1),
@@ -85,12 +83,12 @@ solvers = (
     )
 )
 
-runtime = set_runtime(
+runtime = Runtime(
     iterations=5000, time_step=1.0, write_interval=1000)
     # iterations=1, time_step=1, write_interval=1)
 
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+# hardware = Hardware(backend=CUDABackend(), workgroup=32)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

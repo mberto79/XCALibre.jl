@@ -12,7 +12,7 @@ mesh_file = joinpath(grids_dir, grid)
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 # Inlet conditions
@@ -68,24 +68,21 @@ BCs = assign(
 )
 
 solvers = (
-    U = set_solver(
-        region = mesh_dev,
+    U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
         rtol = 1e-1,
     ),
-    p = set_solver(
-        region = mesh_dev,
+    p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
         rtol = 1e-2
     ),
-    h = set_solver(
-        region = mesh_dev,
+    h = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -95,12 +92,12 @@ solvers = (
 )
 
 schemes = (
-    U = set_schemes(divergence=LUST, gradient=Midpoint),
-    p = set_schemes(divergence=LUST, gradient=Midpoint),
-    h = set_schemes(divergence=LUST, gradient=Midpoint)
+    U = Schemes(divergence=LUST, gradient=Midpoint),
+    p = Schemes(divergence=LUST, gradient=Midpoint),
+    h = Schemes(divergence=LUST, gradient=Midpoint)
 )
 
-runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
+runtime = Runtime(iterations=500, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

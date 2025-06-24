@@ -11,7 +11,7 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 nu = 1e-3
@@ -67,15 +67,14 @@ model = Physics(
 )
 
 schemes = (
-    U = set_schemes(divergence=LUST, gradient=Midpoint),
-    p = set_schemes(gradient=Midpoint),
-    k = set_schemes(gradient=Midpoint),
-    omega = set_schemes(gradient=Midpoint)
+    U = Schemes(divergence=LUST, gradient=Midpoint),
+    p = Schemes(gradient=Midpoint),
+    k = Schemes(gradient=Midpoint),
+    omega = Schemes(gradient=Midpoint)
 )
 
 solvers = (
-    U = set_solver(
-        region = mesh_dev,
+    U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -83,7 +82,7 @@ solvers = (
         rtol = 1e-2,
         atol = 1e-10
     ),
-    p = set_solver(
+    p = SolverSetupp(
         region = mesh_dev,
         solver      = Cg(), #Gmres(), #Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
@@ -92,8 +91,7 @@ solvers = (
         rtol = 1e-3,
         atol = 1e-10
     ),
-    k = set_solver(
-        region = mesh_dev,
+    k = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -101,8 +99,7 @@ solvers = (
         rtol = 1e-2,
         atol = 1e-10
     ),
-    omega = set_solver(
-        region = mesh_dev,
+    omega = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -112,8 +109,8 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=2000, write_interval=1000, time_step=1)
-# runtime = set_runtime(iterations=1, write_interval=-1, time_step=1)
+runtime = Runtime(iterations=2000, write_interval=1000, time_step=1)
+# runtime = Runtime(iterations=1, write_interval=-1, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

@@ -6,7 +6,7 @@ mesh = UNV3D_mesh(mesh_file, scale=0.001)
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 periodic = construct_periodic(mesh, backend, :side1, :side2)
@@ -43,14 +43,14 @@ model = Physics(
 )
 
 schemes = (
-    U = set_schemes(divergence=LUST, gradient=Midpoint),
-    p = set_schemes(gradient=Midpoint)
-    # p = set_schemes()
+    U = Schemes(divergence=LUST, gradient=Midpoint),
+    p = Schemes(gradient=Midpoint)
+    # p = Schemes()
 )
 
 
 solvers = (
-    U = set_solver(
+    U = SolverSetup(
         model.momentum.U;
         solver      = Bicgstab(), #Cg(), # Bicgstab(), Gmres(), #Cg()
         preconditioner = Jacobi(),
@@ -59,7 +59,7 @@ solvers = (
         rtol = 5e-1,
         atol = 1e-10
     ),
-    p = set_solver(
+    p = SolverSetup(
         model.momentum.p;
         solver      = Cg(), #Gmres(), #Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
@@ -70,7 +70,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=500, time_step=1, write_interval=500)
+runtime = Runtime(iterations=500, time_step=1, write_interval=500)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

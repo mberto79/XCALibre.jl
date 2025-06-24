@@ -63,8 +63,7 @@ BCs = assign(
 )
 
 solvers = (
-    U = set_solver(
-        region=mesh_dev,
+    U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -72,8 +71,7 @@ solvers = (
         rtol = 1e-4
             
         ),
-    p = set_solver(
-        region=mesh_dev,
+    p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -81,8 +79,7 @@ solvers = (
         limit = (1000, 1000000),
         rtol = 1e-4
     ),
-    h = set_solver(
-        region=mesh_dev,
+    h = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -92,17 +89,17 @@ solvers = (
 )
 
 schemes = (
-    rho = set_schemes(time=Euler),
-    U = set_schemes(divergence=Upwind, gradient=Midpoint, time=Euler),
-    p = set_schemes(gradient=Midpoint, time=Euler),
-    h = set_schemes(divergence=Upwind, gradient=Midpoint, time=Euler)
+    rho = Schemes(time=Euler),
+    U = Schemes(divergence=Upwind, gradient=Midpoint, time=Euler),
+    p = Schemes(gradient=Midpoint, time=Euler),
+    h = Schemes(divergence=Upwind, gradient=Midpoint, time=Euler)
 )
 
-runtime = set_runtime(iterations=100, write_interval=100, time_step=0.01)
+runtime = Runtime(iterations=100, write_interval=100, time_step=0.01)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=ROCBackend(), workgroup=32)
+hardware = Hardware(backend=backend, workgroup=workgroup)
+# hardware = Hardware(backend=CUDABackend(), workgroup=32)
+# hardware = Hardware(backend=ROCBackend(), workgroup=32)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

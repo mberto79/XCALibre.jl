@@ -6,7 +6,7 @@ mesh = FOAM3D_mesh(mesh_file)
 
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = 1024
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 
 mesh_dev = adapt(hardware.backend, mesh)
 
@@ -43,7 +43,7 @@ model = Physics(
 )
 
 solvers = (
-    U = set_solver(
+    U = SolverSetup(
         model.momentum.U;
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), # Jacobi # ILU0GPU
@@ -52,7 +52,7 @@ solvers = (
         relax       = 0.8,
         rtol = 0.1
     ),
-    p = set_solver(
+    p = SolverSetup(
         model.momentum.p;
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), #NormDiagonal(), IC0GPU, Jacobi
@@ -65,8 +65,8 @@ solvers = (
 )
 
 schemes = (
-    U = set_schemes(time=SteadyState, divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(time=SteadyState, gradient=Midpoint)
+    U = Schemes(time=SteadyState, divergence=Upwind, gradient=Midpoint),
+    p = Schemes(time=SteadyState, gradient=Midpoint)
 )
 
 
@@ -79,7 +79,7 @@ residuals = run!(model, config)
 
 # Now get timing information
 
-runtime = set_runtime(iterations=100, write_interval=10, time_step=1)
+runtime = Runtime(iterations=100, write_interval=10, time_step=1)
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc(true)

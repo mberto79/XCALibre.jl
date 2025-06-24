@@ -62,8 +62,7 @@ BCs = assign(
 )
 
 solvers = (
-    U = set_solver(
-        region = mesh_dev,
+    U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -71,8 +70,7 @@ solvers = (
         rtol = 1e-4,
         atol = 1e-5
     ),
-    p = set_solver(
-        region = mesh_dev,
+    p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), #NormDiagonal(),
         convergence = 1e-7,
@@ -83,17 +81,17 @@ solvers = (
 )
 
 schemes = (
-    U = set_schemes(time=Euler, divergence=LUST, gradient=Gauss),
-    p = set_schemes(time=Euler, gradient=Gauss)
+    U = Schemes(time=Euler, divergence=LUST, gradient=Gauss),
+    p = Schemes(time=Euler, gradient=Gauss)
 )
 
 
-runtime = set_runtime(iterations=1000, write_interval=50, time_step=0.005) 
-runtime = set_runtime(iterations=1, write_interval=-1, time_step=0.005) # hide
+runtime = Runtime(iterations=1000, write_interval=50, time_step=0.005) 
+runtime = Runtime(iterations=1, write_interval=-1, time_step=0.005) # hide
 
 
-hardware = set_hardware(backend=CPU(), workgroup=1024)
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32) # uncomment to run on GPU
+hardware = Hardware(backend=CPU(), workgroup=1024)
+# hardware = Hardware(backend=CUDABackend(), workgroup=32) # uncomment to run on GPU
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

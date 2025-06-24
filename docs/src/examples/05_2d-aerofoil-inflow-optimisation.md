@@ -149,14 +149,14 @@ function foil_optim(α::Vector{Float64})
     )
 
     schemes = (
-        U = set_schemes(divergence=Upwind, gradient=Midpoint),
-        p = set_schemes(divergence=Upwind),
-        k = set_schemes(divergence=Upwind, gradient=Midpoint),
-        omega = set_schemes(divergence=Upwind, gradient=Midpoint)
+        U = Schemes(divergence=Upwind, gradient=Midpoint),
+        p = Schemes(divergence=Upwind),
+        k = Schemes(divergence=Upwind, gradient=Midpoint),
+        omega = Schemes(divergence=Upwind, gradient=Midpoint)
     )
 
     solvers = (
-        U = set_solver(
+        U = SolverSetup(
             region = mesh_dev,
             solver = Bicgstab(), # Bicgstab(), Gmres()
             preconditioner = Jacobi(), # Jacobi
@@ -164,7 +164,7 @@ function foil_optim(α::Vector{Float64})
             relax = 0.6,
             rtol = 1e-1,
         ),
-        p = set_solver(
+        p = SolverSetup(
             region = mesh_dev,
             solver = Gmres(), # change to Bicgstab() for GPU runs
             preconditioner = Jacobi(), # change to Jacobi() for GPU runs
@@ -172,7 +172,7 @@ function foil_optim(α::Vector{Float64})
             relax = 0.2,
             rtol = 1e-2,
         ),
-        k = set_solver(
+        k = SolverSetup(
             region = mesh_dev,
             solver = Bicgstab(),
             preconditioner = Jacobi(),
@@ -180,7 +180,7 @@ function foil_optim(α::Vector{Float64})
             relax = 0.6,
             rtol = 1e-1,
         ),
-        omega = set_solver(
+        omega = SolverSetup(
             region = mesh_dev,
             solver      = Bicgstab(),
             preconditioner = Jacobi(), 
@@ -190,11 +190,11 @@ function foil_optim(α::Vector{Float64})
         )
     )
 
-    runtime = set_runtime(iterations=500, write_interval=500, time_step=1)
-    runtime = set_runtime(iterations=20, write_interval=-1, time_step=1) # hide
+    runtime = Runtime(iterations=500, write_interval=500, time_step=1)
+    runtime = Runtime(iterations=20, write_interval=-1, time_step=1) # hide
 
-    hardware = set_hardware(backend=CPU(), workgroup=1024)
-    # hardware = set_hardware(backend=CUDABackend(), workgroup=32) # uncomment to run on GPU
+    hardware = Hardware(backend=CPU(), workgroup=1024)
+    # hardware = Hardware(backend=CUDABackend(), workgroup=32) # uncomment to run on GPU
 
     config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 

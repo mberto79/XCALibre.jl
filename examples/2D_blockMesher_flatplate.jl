@@ -69,22 +69,20 @@ model = Physics(
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind),
-    p = set_schemes()
+    U = Schemes(divergence=Upwind),
+    p = Schemes()
 )
 
 
 solvers = (
-    U = set_solver(
-        region = mesh,
+    U = SolverSetup(
         solver = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax = 0.8,
         rtol = 1e-1
     ),
-    p = set_solver(
-        region = mesh,
+    p = SolverSetup(
         solver = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -93,10 +91,10 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=2000, write_interval=1000, time_step=1)
+runtime = Runtime(iterations=2000, write_interval=1000, time_step=1)
 
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=1024)
+# hardware = Hardware(backend=CUDABackend(), workgroup=32)
+hardware = Hardware(backend=CPU(), workgroup=1024)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

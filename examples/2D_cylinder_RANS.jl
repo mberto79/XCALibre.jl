@@ -12,7 +12,7 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 # INLET CONDITIONS 
@@ -79,33 +79,31 @@ model = Physics(
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind, gradient=Midpoint, limiter=MFaceBased(model.domain)),
-    p = set_schemes(gradient=Midpoint),
-    k = set_schemes(divergence=Upwind, gradient=Midpoint),
-    omega = set_schemes(divergence=Upwind, gradient=Midpoint)
+    U = Schemes(divergence=Upwind, gradient=Midpoint, limiter=MFaceBased(model.domain)),
+    p = Schemes(gradient=Midpoint),
+    k = Schemes(divergence=Upwind, gradient=Midpoint),
+    omega = Schemes(divergence=Upwind, gradient=Midpoint)
 
-    # U = set_schemes(divergence=Upwind),
-    # p = set_schemes(divergence=Upwind),
-    # k = set_schemes(divergence=Upwind),
-    # omega = set_schemes(divergence=Upwind)
+    # U = Schemes(divergence=Upwind),
+    # p = Schemes(divergence=Upwind),
+    # k = Schemes(divergence=Upwind),
+    # omega = Schemes(divergence=Upwind)
 )
 
 solvers = (
-    U = set_solver(
-        region = mesh_dev,
+    U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
     ),
-    p = set_solver(
-        region = mesh_dev,
+    p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 0.3,
     ),
-    k = set_solver(
+    k = SolverSetup(
         # model.turbulence.fields.k;
         region = mesh_dev,
         solver      = Bicgstab(), # Bicgstab(), Gmres()
@@ -113,7 +111,7 @@ solvers = (
         convergence = 1e-7,
         relax       = 0.7,
     ),
-    omega = set_solver(
+    omega = SolverSetup(
         # model.turbulence.fields.omega;
         region = mesh_dev,
         solver      = Bicgstab(), # Bicgstab(), Gmres(), Cg()
@@ -123,7 +121,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
+runtime = Runtime(iterations=1000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

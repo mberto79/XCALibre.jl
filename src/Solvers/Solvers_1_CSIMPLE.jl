@@ -265,7 +265,7 @@ function CSIMPLE(
             rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing)
         end
 
-        if ~isempty(solvers.p.limit)
+        if !isnothing(solvers.p.limit)
             pmin = solvers.p.limit[1]; pmax = solvers.p.limit[2]
             clamp!(p.values, pmin, pmax)
         end

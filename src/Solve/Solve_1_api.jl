@@ -1,104 +1,101 @@
-export set_solver, set_runtime
-export set_schemes
+export SolverSetup, Runtime, Schemes
 export explicit_relaxation!, implicit_relaxation!, implicit_relaxation_diagdom!, setReference!
 export solve_system!
 export solve_equation!
 export residual!
 
+struct SolverSetup{
+    F<:AbstractFloat,
+    I<:Integer,
+    S1<:AbstractLinearSolver,
+    S2<:Union{Nothing, AbstractSmoother},
+    PT<:PreconditionerType
+    }
+    solver::S1
+    smoother::S2
+    preconditioner::PT
+    convergence::F
+    relax::F
+    limit::Union{Nothing, Tuple{F,F}}
+    itmax::I
+    atol::F
+    rtol::F
+end
+
 """
-    set_solver(; 
-        # keyword arguments and defaults
-        region::AbstractMesh,
-        solver::S, 
-        preconditioner::PT, 
-        convergence, 
-        relax,
-        smoother=nothing,
-        limit=(),
-        itmax::Integer=1000, 
-        atol=(eps(_get_float(region)))^0.9,
-        rtol=_get_float(region)(1e-1)
+    SolverSetup(; 
+            # required keyword arguments 
+
+            solver::S, 
+            preconditioner::PT, 
+            convergence, 
+            relax,
+
+            # optional keyword arguments
+
+            float_type=Float64,
+            smoother=nothing,
+            limit=nothing,
+            itmax::Integer=1000, 
+            atol=(eps(_get_float(region)))^0.9,
+            rtol=_get_float(region)(1e-1)
+
         ) where {S,PT<:PreconditionerType} = begin
 
-        # return NamedTuple
-        TF = _get_float(region)
-        (
-            solver=solver, 
-            preconditioner=preconditioner, 
-            convergence=convergence |> TF, 
-            relax=relax |> TF, 
-            smoother=smoother,
-            limit=limit,
-            itmax=itmax, 
-            atol=atol |> TF, 
-            rtol=rtol |> TF
-        )
+            return SolverSetup(kwargs...)  
     end
 
-This function is used to provide solver settings that will be used internally in XCALibre.jl. It returns a `NamedTuple` with solver settings that are used internally by the flow solvers. 
+This function is used to provide solver settings that will be used internally in XCALibre.jl. It returns a `SolverSetup` object with solver settings that are used internally by the flow solvers. 
 
 # Input arguments
 
-- `region` reference to the mesh/region to which these settings should apply (used to provide integer and float types required)
-- `solver` solver object from Krylov.jl and it could be one of `Bicgstab()`, `Cg()`, `Gmres()` which are re-exported in XCALibre.jl
-- `preconditioner` instance of preconditioner to be used e.g. Jacobi()
+- `solver`: solver object from Krylov.jl and it could be one of `Bicgstab()`, `Cg()`, `Gmres()` which are re-exported in XCALibre.jl
+- `preconditioner`: instance of preconditioner to be used e.g. Jacobi()
 - `convergence` sets the stopping criteria of this field
-- `relax` specifies the relaxation factor to be used e.g. set to 1 for no relaxation
-- `smoother` specifies smoothing method to be applied before discretisation. `JacobiSmoother` is currently the only choice (defaults to `nothing`)
-- `limit` used in some solvers to bound the solution within this limits e.g. (min, max). It defaults to `()`
-- `itmax` maximum number of iterations in a single solver pass (defaults to 1000) 
-- `atol` absolute tolerance for the solver (default to eps(FloatType)^0.9)
-- `rtol` set relative tolerance for the solver (defaults to 1e-1)
+- `relax`: specifies the relaxation factor to be used e.g. set to 1 for no relaxation
+- `smoother`: specifies smoothing method to be applied before discretisation. `JacobiSmoother`: is currently the only choice (defaults to `nothing`)
+- `limit`: used in some solvers to bound the solution within these limits e.g. (min, max). It defaults to `nothing`
+- `itmax`: maximum number of iterations in a single solver pass (defaults to 1000) 
+- `atol`: absolute tolerance for the solver (default to eps(FloatType)^0.9)
+- `rtol`: set relative tolerance for the solver (defaults to 1e-1)
+- `float_type`: specifies the floating point type to be used by the solver. It is also used to estimate the absolute tolerance for the solver (defaults to `Float64`)
 """
-set_solver(; 
-    # keyword arguments and defaults
-    region::AbstractMesh,
-    solver::S, 
-    preconditioner::PT, 
-    convergence, 
-    relax,
-    smoother=nothing,
-    limit=(),
-    itmax::Integer=1000, 
-    atol=(eps(_get_float(region)))^0.9,
-    rtol=_get_float(region)(1e-1)
-    ) where {S,PT<:PreconditionerType} = begin
+SolverSetup(;
+        float_type=Float64,
+        solver::S1, 
+        smoother::S2=nothing,
+        preconditioner::PT, 
+        convergence, 
+        relax, 
+        limit=nothing,
+        itmax::I=1000, 
+        atol=(eps(float_type))^0.9,
+        rtol=1e-1 |> float_type
+        ) where{S1,S2,PT,I} = 
+        SolverSetup{float_type,I,S1,S2,PT}(
+            solver, smoother,preconditioner, convergence, relax, limit,itmax, atol,rtol)
 
-    # return NamedTuple
-    TF = _get_float(region)
-    (
-        solver=solver, 
-        preconditioner=preconditioner, 
-        convergence=convergence |> TF, 
-        relax=relax |> TF, 
-        smoother=smoother,
-        limit=limit,
-        itmax=itmax, 
-        atol=atol |> TF, 
-        rtol=rtol |> TF
-    )
-end
-
-@kwdef struct Runtime{I<:Integer,N<:Number}
+struct Runtime{I<:Integer,F<:AbstractFloat}
     iterations::I
-    dt::N
+    dt::F
     write_interval::I
 end
 
 """
-    set_runtime(; 
-        # keyword arguments
-        iterations::I, 
-        write_interval::I, 
-        time_step::N
+    Runtime(; 
+            # keyword arguments
+
+            iterations::I, 
+            write_interval::I, 
+            time_step::N
         ) where {I<:Integer,N<:Number} = begin
         
         # returned Runtime struct
-        Runtime{I,N}
+        Runtime{I<:Integer,F<:AbstractFloat}
             (
-            iterations=iterations, 
-            dt=time_step, 
-            write_interval=write_interval
+                iterations=iterations, 
+                dt=time_step, 
+                write_interval=write_interval
             )
     end
 
@@ -106,33 +103,23 @@ This is a convenience function to set the top-level runtime information. The inp
 
 # Input arguments
 
-* `iterations::Integer` specifies the number of iterations in a simulation run.
-* `write_interval::Integer` defines how often simulation results are written to file (on the current working directory). The interval is currently based on number of iterations. Set to `-1` to run without writing results to file.
-* `time_step::Number` the time step to use in the simulation. Notice that for steady solvers this is simply a counter and it is recommended to simply use `1`.
+- `iterations::Integer`: specifies the number of iterations in a simulation run.
+- `write_interval::Integer`: defines how often simulation results are written to file (on the current working directory). The interval is currently based on number of iterations. Set to `-1` to run without writing results to file.
+- `time_step::AbstractFloat`: the time step to use in the simulation. Notice that for steady solvers this is simply a counter and it is recommended to simply use `1`.
 
 # Example
 
 ```julia
-runtime = set_runtime(
-    iterations=2000, time_step=1, write_interval=2000)
+runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
 ```
 """
-set_runtime(; iterations::I, write_interval::I, time_step::N) where {I<:Integer,N<:Number} = begin
-    Runtime(iterations=iterations, dt=float(time_step), write_interval=write_interval)
+Runtime(; iterations::I, write_interval::I, time_step::N) where {I<:Integer,N<:Number} = begin
+    Runtime(iterations, float(time_step), write_interval)
 end
 
 # Set schemes function definition with default set variables
-
-@kwdef struct Schemes
-    time
-    divergence
-    laplacian
-    gradient
-    limiter
-end
-
 """
-    set_schemes(;
+    Schemes(;
         # keyword arguments and their default values
         time=SteadyState,
         divergence=Linear, 
@@ -151,33 +138,22 @@ end
         )   
     end
 
-The `set_schemes` function is used at the top-level API to help users define discretisation schemes for every field solved. It offers default values, thus users can pick and choose which entry they wish to modify.
+The `Schemes` struct is used at the top-level API to help users define discretisation schemes for every field solved.
 
-# inputs
+# Inputs
 
-- `time` is used to set the time schemes (default is `SteadyState`)
-- `divergence` is used to set the divergence scheme (default is `Linear`) 
-- `laplacian` is used to set the laplacian scheme (default is `Linear`)
-- `gradient`  is used to set the gradient scheme (default is `Gauss`)
-- `limiter` is used to specify if gradient limiters should be used, currently supported limiters include `FaceBased` and `MFaceBased` (default is `nothing`)
-
+- `time`: is used to set the time schemes (default is `SteadyState`)
+- `divergence`: is used to set the divergence scheme (default is `Linear`) 
+- `laplacian`: is used to set the laplacian scheme (default is `Linear`)
+- `gradient`:  is used to set the gradient scheme (default is `Gauss`)
+- `limiter`: is used to specify if gradient limiters should be used, currently supported limiters include `FaceBased` and `MFaceBased` (default is `nothing`)
 """
-set_schemes(;
-    # keyword arguments and their default values
-    time=SteadyState,
-    divergence=Linear, 
-    laplacian=Linear, 
-    gradient=Gauss,
-    limiter=nothing) = begin
-    
-    # Returns Schemes struct used to drive discretisation
-    Schemes(
-        time=time,
-        divergence=divergence,
-        laplacian=laplacian,
-        gradient=gradient,
-        limiter=limiter
-    )
+@kwdef struct Schemes
+    time=SteadyState
+    divergence=Linear
+    laplacian=Linear
+    gradient=Gauss
+    limiter=nothing
 end
 
 

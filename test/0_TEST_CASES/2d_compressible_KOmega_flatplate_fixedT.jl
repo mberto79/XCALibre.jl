@@ -98,40 +98,35 @@ BCs = assign(
 )
 
 solvers = (
-U = set_solver(
-    region=mesh_dev,
+U = SolverSetup(
     solver      = Bicgstab(), # Bicgstab(), Gmres()
     preconditioner = Jacobi(),
     convergence = 1e-7,
     relax       = 0.7,
     rtol = 1e-1
 ),
-p = set_solver(
-    region=mesh_dev,
+p = SolverSetup(
     solver      = Cg(), # Bicgstab(), Gmres()
     preconditioner = DILU(), #Jacobi(),
     convergence = 1e-7,
     relax       = 0.2,
     rtol = 1e-2
 ),
-h = set_solver(
-    region=mesh_dev,
+h = SolverSetup(
     solver      = Bicgstab(), # Bicgstab(), Gmres()
     preconditioner = DILU(),
     convergence = 1e-7,
     relax       = 0.7,
     rtol = 1e-1,
 ),
-k = set_solver(
-    region=mesh_dev,
+k = SolverSetup(
     solver      = Bicgstab(), # Bicgstab(), Gmres()
     preconditioner = Jacobi(), 
     convergence = 1e-7,
     relax       = 0.7,
     rtol = 1e-1
 ),
-omega = set_solver(
-    region=mesh_dev,
+omega = SolverSetup(
     solver      = Bicgstab(), # Bicgstab(), Gmres()
     preconditioner = Jacobi(),
     convergence = 1e-7,
@@ -140,18 +135,18 @@ omega = set_solver(
 )
 )
 
-runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
+runtime = Runtime(iterations=100, write_interval=100, time_step=1)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 
 # for grad_limiter ∈ [nothing]  #FaceBased(model.domain), MFaceBased(model.domain)]
     grad_limiter = nothing
     schemes = (
-        U = set_schemes(divergence=Upwind, limiter=grad_limiter),
-        p = set_schemes(divergence=Upwind, limiter=grad_limiter),
-        h = set_schemes(divergence=Upwind),
-        k = set_schemes(divergence=Upwind),
-        omega = set_schemes(divergence=Upwind)
+        U = Schemes(divergence=Upwind, limiter=grad_limiter),
+        p = Schemes(divergence=Upwind, limiter=grad_limiter),
+        h = Schemes(divergence=Upwind),
+        k = Schemes(divergence=Upwind),
+        omega = Schemes(divergence=Upwind)
     )
     config = Configuration(
         solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

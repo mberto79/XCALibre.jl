@@ -208,7 +208,7 @@ function energy!(
     update_preconditioner!(energy_eqn.preconditioner, mesh, config)
     h_res = solve_system!(energy_eqn, solvers.h, h, nothing, config)
 
-    if ~isempty(solvers.h.limit)
+    if !isnothing(solvers.h.limit)
         Tmin = solvers.h.limit[1]; Tmax = solvers.h.limit[2]
         thermoClamp!(model, h, Tmin, Tmax)
     end

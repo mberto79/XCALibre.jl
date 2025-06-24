@@ -11,7 +11,7 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 nu = 1e-3
@@ -66,36 +66,32 @@ model = Physics(
 )
 
 schemes = (
-    U = set_schemes(gradient=Midpoint, time=Euler),
-    p = set_schemes(gradient=Midpoint),
-    k = set_schemes(gradient=Midpoint, time=Euler),
-    omega = set_schemes(gradient=Midpoint, time=Euler)
+    U = Schemes(gradient=Midpoint, time=Euler),
+    p = Schemes(gradient=Midpoint),
+    k = Schemes(gradient=Midpoint, time=Euler),
+    omega = Schemes(gradient=Midpoint, time=Euler)
 )
 
 solvers = (
-    U = set_solver(
-        region = mesh_dev,
+    U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 1.0,
     ),
-    p = set_solver(
-        region = mesh_dev,
+    p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 1.0,
     ),
-    k = set_solver(
-        region = mesh_dev,
+    k = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 1.0,
     ),
-    omega = set_solver(
-        region = mesh_dev,
+    omega = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -103,7 +99,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(
+runtime = Runtime(
     iterations=1000, write_interval=10, time_step=0.01)
 
 config = Configuration(

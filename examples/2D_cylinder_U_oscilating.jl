@@ -16,7 +16,7 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 # Inlet conditions
@@ -67,8 +67,7 @@ model = Physics(
 )
 
 solvers = (
-    U = set_solver(
-        region = mesh_dev,
+    U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -76,8 +75,7 @@ solvers = (
         rtol = 0,
         atol = 1e-4
     ),
-    p = set_solver(
-        region = mesh_dev,
+    p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), #NormDiagonal(),
         convergence = 1e-7,
@@ -88,17 +86,17 @@ solvers = (
 )
 
 schemes = (
-    U = set_schemes(time=Euler, divergence=Upwind, gradient=Gauss),
-    p = set_schemes(time=Euler, divergence=Upwind, gradient=Gauss)
+    U = Schemes(time=Euler, divergence=Upwind, gradient=Gauss),
+    p = Schemes(time=Euler, divergence=Upwind, gradient=Gauss)
 )
 
 
-runtime = set_runtime(
+runtime = Runtime(
     iterations=iterations, write_interval=50, time_step=δt)
     # iterations=1, write_interval=50, time_step=0.005)
 
 # 2mm mesh use settings below (to lower Courant number)
-# runtime = set_runtime(
+# runtime = Runtime(
     # iterations=5000, write_interval=250, time_step=0.001) # Only runs on 32 bit
 
 config = Configuration(

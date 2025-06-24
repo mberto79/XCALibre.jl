@@ -9,7 +9,7 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 velocity = [0.2, 0.0, 0.0]
@@ -57,14 +57,14 @@ BCs = assign(
 )
 
 schemes = (
-    U = set_schemes(divergence=Linear),
-    p = set_schemes(divergence=Linear),
-    h = set_schemes(divergence=Linear)
+    U = Schemes(divergence=Linear),
+    p = Schemes(divergence=Linear),
+    h = Schemes(divergence=Linear)
 )
 
 
 solvers = (
-    U = set_solver(
+    U = SolverSetup(
         model.momentum.U;
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
@@ -73,7 +73,7 @@ solvers = (
         rtol = 1e-1
 
     ),
-    p = set_solver(
+    p = SolverSetup(
         model.momentum.p;
         solver      = Gmres(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
@@ -81,7 +81,7 @@ solvers = (
         relax       = 0.3,
         rtol = 1e-2
     ),
-    h = set_solver(
+    h = SolverSetup(
         model.energy.h;
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
@@ -91,7 +91,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
+runtime = Runtime(iterations=1000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

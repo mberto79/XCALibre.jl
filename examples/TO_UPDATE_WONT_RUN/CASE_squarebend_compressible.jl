@@ -56,7 +56,7 @@ model = Physics(
 )
 
 solvers = (
-    U = set_solver(
+    U = SolverSetup(
         model.momentum.U;
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
@@ -65,7 +65,7 @@ solvers = (
         rtol = 1e-2,
         atol = 1e-4
     ),
-    p = set_solver(
+    p = SolverSetup(
         model.momentum.p;
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
@@ -75,7 +75,7 @@ solvers = (
         rtol = 1e-2,
         atol = 1e-4
     ),
-    h = set_solver(
+    h = SolverSetup(
         model.energy.h;
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
@@ -88,16 +88,16 @@ solvers = (
 )
 
 schemes = (
-    U = set_schemes(divergence=BoundedUpwind),#, gradient=Midpoint),
-    p = set_schemes(divergence=Upwind, gradient=Midpoint),
-    h = set_schemes(divergence=BoundedUpwind)#, gradient=Midpoint)
+    U = Schemes(divergence=BoundedUpwind),#, gradient=Midpoint),
+    p = Schemes(divergence=Upwind, gradient=Midpoint),
+    h = Schemes(divergence=BoundedUpwind)#, gradient=Midpoint)
 )
 
-runtime = set_runtime(iterations=5, write_interval=1, time_step=1)
+runtime = Runtime(iterations=5, write_interval=1, time_step=1)
 
-hardware = set_hardware(backend=CPU(), workgroup=4)
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=ROCBackend(), workgroup=32)
+hardware = Hardware(backend=CPU(), workgroup=4)
+# hardware = Hardware(backend=CUDABackend(), workgroup=32)
+# hardware = Hardware(backend=ROCBackend(), workgroup=32)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

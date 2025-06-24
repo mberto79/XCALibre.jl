@@ -46,14 +46,13 @@ BCs = assign(
 )
 
 schemes = (
-    U = set_schemes(divergence = Linear),
-    # U = set_schemes(divergence = Upwind),
-    p = set_schemes()
+    U = Schemes(divergence = Linear),
+    # U = Schemes(divergence = Upwind),
+    p = Schemes()
 )
 
 solvers = (
-    U = set_solver(
-        region=mesh_dev,
+    U = SolverSetup(
         solver = Bicgstab(), # Bicgstab(), Gmres()
         smoother = JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
         preconditioner = Jacobi(),
@@ -61,8 +60,7 @@ solvers = (
         relax = 0.8,
         rtol = 1e-1,
     ),
-    p = set_solver(
-        region=mesh_dev,
+    p = SolverSetup(
         solver = Cg(), # Bicgstab(), Gmres()
         smoother = JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
         preconditioner = Jacobi(),
@@ -72,12 +70,12 @@ solvers = (
     )
 )
 
-runtime = set_runtime(
+runtime = Runtime(
     iterations=500, time_step=1, write_interval=500)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=ROCBackend(), workgroup=32)
+hardware = Hardware(backend=backend, workgroup=workgroup)
+# hardware = Hardware(backend=CUDABackend(), workgroup=32)
+# hardware = Hardware(backend=ROCBackend(), workgroup=32)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

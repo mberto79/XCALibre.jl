@@ -24,7 +24,7 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 
 mesh_dev = adapt(backend, mesh)
 
@@ -60,15 +60,14 @@ model = Physics(
 )
 
 schemes = (
-    U = set_schemes(divergence = Linear),
-    # U = set_schemes(divergence = Upwind),
-    p = set_schemes()
+    U = Schemes(divergence = Linear),
+    # U = Schemes(divergence = Upwind),
+    p = Schemes()
 )
 
 
 solvers = (
-    U = set_solver(
-        region = mesh_dev,
+    U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -76,8 +75,7 @@ solvers = (
         rtol = 1e-4,
         atol = 1e-10
     ),
-    p = set_solver(
-        region = mesh_dev,
+    p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -87,7 +85,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(
+runtime = Runtime(
     iterations=2000, time_step=1, write_interval=100)
 
 config = Configuration(

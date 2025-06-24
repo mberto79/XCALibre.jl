@@ -45,7 +45,7 @@ phi = assign(region=mesh,
 
 
 solvers= (; 
-    phi = set_solver(
+    phi = SolverSetup(
         phi;
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
@@ -55,9 +55,9 @@ solvers= (;
     )
 )
 
-schemes = (;phi = set_schemes(divergence=Upwind, gradient=Midpoint))
-runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
-hardware = set_hardware(backend=backend, workgroup=1024)
+schemes = (;phi = Schemes(divergence=Upwind, gradient=Midpoint))
+runtime = Runtime(iterations=500, write_interval=100, time_step=1)
+hardware = Hardware(backend=backend, workgroup=1024)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

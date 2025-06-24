@@ -68,8 +68,8 @@ backend = CPU()
 # backend = CUDABackend() # ru non NVIDIA GPUs
 # backend = ROCBackend() # run on AMD GPUs
 
-hardware = set_hardware(backend=backend, workgroup=1024)
-# hardware = set_hardware(backend=backend, workgroup=32) # use for GPU backends
+hardware = Hardware(backend=backend, workgroup=1024)
+# hardware = Hardware(backend=backend, workgroup=32) # use for GPU backends
 
 mesh_dev = mesh # use this line to run on CPU
 # mesh_dev = adapt(backend, mesh)  # Uncomment to run on GPU 
@@ -109,22 +109,20 @@ BCs = assign(
 
 # Step 6. Choose discretisation schemes
 schemes = (
-    U = set_schemes(divergence = Linear),
-    p = set_schemes() # no input provided (will use defaults)
+    U = Schemes(divergence = Linear),
+    p = Schemes() # no input provided (will use defaults)
 )
 
 # Step 7. Set up linear solvers and preconditioners
 solvers = (
-    U = set_solver(
-        region = mesh_dev,
+    U = SolverSetup(
         solver      = Bicgstab(), # Options: Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
         convergence = 1e-7,
         relax       = 0.7,
         rtol = 1e-1
     ),
-    p = set_solver(
-        region = mesh_dev,
+    p = SolverSetup(
         solver      = Cg(), # Options: Cg(), Bicgstab(), Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
         convergence = 1e-7,
@@ -134,8 +132,8 @@ solvers = (
 )
 
 # Step 8. Specify runtime requirements
-runtime = set_runtime(iterations=2000, time_step=1, write_interval=2000)
-runtime = set_runtime(iterations=1, time_step=1, write_interval=-1) # hide
+runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
+runtime = Runtime(iterations=1, time_step=1, write_interval=-1) # hide
 
 # Step 9. Construct Configuration object
 config = Configuration(

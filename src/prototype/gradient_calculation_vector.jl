@@ -29,7 +29,7 @@ psi = assign(
 solvers=nothing
 schemes=nothing
 runtime=nothing
-hardware = set_hardware(backend=backend, workgroup=1024)
+hardware = Hardware(backend=backend, workgroup=1024)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

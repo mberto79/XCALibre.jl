@@ -64,39 +64,35 @@ BCs = assign(
 )
 
 schemes = (
-    U = set_schemes(gradient=Midpoint, time=Euler),
-    p = set_schemes(gradient=Midpoint),
-    k = set_schemes(gradient=Midpoint, time=Euler),
-    omega = set_schemes(gradient=Midpoint, time=Euler)
+    U = Schemes(gradient=Midpoint, time=Euler),
+    p = Schemes(gradient=Midpoint),
+    k = Schemes(gradient=Midpoint, time=Euler),
+    omega = Schemes(gradient=Midpoint, time=Euler)
 )
 
 solvers = (
-    U = set_solver(
-        region=mesh_dev,
+    U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 1.0,
         rtol = 1e-3
     ),
-    p = set_solver(
-        region=mesh_dev,
+    p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 1.0,
         rtol = 1e-3
     ),
-    k = set_solver(
-        region=mesh_dev,
+    k = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 1.0,
         rtol = 1e-3
     ),
-    omega = set_solver(
-        region=mesh_dev,
+    omega = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
@@ -105,11 +101,11 @@ solvers = (
     )
 )
 
-runtime = set_runtime(
+runtime = Runtime(
     iterations=500, write_interval=500, time_step=0.01)
 
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+# hardware = Hardware(backend=CUDABackend(), workgroup=32)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

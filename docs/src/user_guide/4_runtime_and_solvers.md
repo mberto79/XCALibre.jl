@@ -4,10 +4,10 @@
 ## Runtime setup
 ---
 
-At this stage in the setup workflow, the user defines the runtime information to configure the runtime behaviour of the  flow solver, including the time step to use (only meaningful for transient solutions), as well as information about how often to write results to disk. XCALibre.jl provides a the `set_runtime` to perform this operation. 
+At this stage in the setup workflow, the user defines the runtime information to configure the runtime behaviour of the  flow solver, including the time step to use (only meaningful for transient solutions), as well as information about how often to write results to disk. XCALibre.jl provides a the `Runtime` to perform this operation. 
 
 ```@docs; canonical=false
-set_runtime
+Runtime
 ```
 
 ## Configuration object

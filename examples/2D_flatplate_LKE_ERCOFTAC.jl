@@ -15,7 +15,7 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 # Turbulence Model
@@ -93,17 +93,17 @@ BCs = assign(
 )
 
 schemes = (
-    U = set_schemes(divergence=LUST),
-    p = set_schemes(divergence=LUST),
-    k = set_schemes(divergence=LUST),
-    y = set_schemes(gradient=Midpoint),
-    kl = set_schemes(divergence=LUST),
-    omega = set_schemes(divergence=LUST)
+    U = Schemes(divergence=LUST),
+    p = Schemes(divergence=LUST),
+    k = Schemes(divergence=LUST),
+    y = Schemes(gradient=Midpoint),
+    kl = Schemes(divergence=LUST),
+    omega = Schemes(divergence=LUST)
 )
 
 
 solvers = (
-    U = set_solver(
+    U = SolverSetup(
         model.momentum.U;
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
@@ -111,7 +111,7 @@ solvers = (
         relax       = 0.7,
         rtol = 1e-2,
     ),
-    p = set_solver(
+    p = SolverSetup(
         model.momentum.p;
         solver      = Cg(), # Bicgstab(), Gmres(), Cg()
         preconditioner = Jacobi(),
@@ -119,7 +119,7 @@ solvers = (
         relax       = 0.2,
         rtol = 1e-3,
     ),
-    y = set_solver(
+    y = SolverSetup(
         model.turbulence.y;
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
@@ -127,7 +127,7 @@ solvers = (
         rtol = 1e-2,
         relax       = 0.9,
     ),
-    kl = set_solver(
+    kl = SolverSetup(
         model.turbulence.kl;
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
@@ -135,7 +135,7 @@ solvers = (
         relax       = 0.3,
         rtol = 1e-2,
     ),
-    k = set_solver(
+    k = SolverSetup(
         model.turbulence.k;
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
@@ -143,7 +143,7 @@ solvers = (
         relax       = 0.3,
         rtol = 1e-2,
     ),
-    omega = set_solver(
+    omega = SolverSetup(
         model.turbulence.omega;
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
@@ -153,7 +153,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(
+runtime = Runtime(
     iterations=1000, write_interval=100, time_step=1)
 
 config = Configuration(

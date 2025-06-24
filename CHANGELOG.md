@@ -10,27 +10,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 * Fixed the implementation for the calculation of the wall distance to work on GPUs [#49](@ref)
-* The new approach for handling user-provided boundary conditions now allows us to extract the wall velocity specified by the user for the `Wall` boundary condition.
+* The new approach for handling user-provided boundary conditions now allows extracting the wall velocity specified by the user for the `Wall` boundary condition [#61](@ref)
 
 ### Changed
 * In the calculation of wall function properties the user-provided wall velocity is now used, instead of hard-coded to no-slip [#49](@ref)
 * The functions `set_production!`, `set_cell_value!` and `correct_nut_wall!`, in `RANS_functions.jl` have been updated, removing conditional branch used in the generated calling them. Now these functions use multiple dispatch to allow specialising the wall function framework to ease the development of new wall functions [#57](@ref)
 * New `NeumannFunction` has been created, mirroring the DirichletFunction, providing a Neumann boundary condition defined with a user-provided struct (a generic framework accepting a function to set the gradient at the boundary is not yet available) [#57](@ref)
-* `update_user_boundary` function, extension has been reverted, overwriting the changes made to expose the `ModelEquation` type to it in [#55](@ref)
+- `update_user_boundary` function, extension has been reverted, overwriting the changes made to expose the `ModelEquation` type to it in [#55](@ref)
 * User-provided boundary conditions are no longer stored within fields, instead a `NamedTuple` is constructed using the function `assign`, which is passed to solvers using the `Configuration` struct. 
-* Configuration setting provided by the user at the top-level API are now stored in predefined structs, instead of using `NamedTuples`, this change should put less pressure on the compiler.
+* Configuration setting provided by the user at the top-level API are now stored in predefined structs, instead of using `NamedTuples`, this change should put less pressure on the compiler [#61](@ref)
 
 ### Breaking
 * The definition of Krylov solvers in the previous API used types exported directly from `Krylov.jl`. Now solvers are defined using instances of types defined in `XCALibre.jl`. As an example, previously the CG solver was defined using the type `CgSolver` now this solver is defined using the instance `Cg()` where the suffix "Solver" has been dropped. This applies to all previously available solver choices [#60](@ref)
 * The Green-Gauss method for calculating the gradient is now `Gauss` which is more descriptive than the previous name `Orthogonal`
-* The internals for handling user-provided boundary conditions have been updated in preparation for extending the code for handling multiple regions. Thus, the syntax for assigning boundary conditions has changed. The most noticeable change is the removal of the the `@assign!` macro, replaced by the function `assign`. See the documentation for details [xx]()
-* The first argument for the `set_solver` function used at the top level API to configure solver settings takes the keyword argument `region` where a reference to the mesh is given. This simplified the use of this function which previous required a reference to the solution field e.g. `momentum.U` which is both unnecessary and more complex (requiring knowledge of internal implementation details - which is not obvious to new users)
+* The internals for handling user-provided boundary conditions have been updated in preparation for extending the code for handling multiple regions. Thus, the syntax for assigning boundary conditions has changed. The most noticeable change is the removal of the the `@assign!` macro, replaced by the function `assign`. See the documentation for details [#61](@ref)
+* The `set_solver`, `set_hardware` and `set_runtime` top-level functions have been replaced with `SolverSetup`, `Hardware` and `Runtime` structures. This allowed storing user-provided setup information in structs instead of `NamedTuples` to reduce the burden on the compiler [#61](@ref)
 
 ### Deprecated
 * No functions deprecated
 
 ### Removed
-* No functionality has been removed
+* The functions `set_solver`, `set_runtime`, `set_hardware` and the macro `@assign!` have been removed/replaced [#61](@ref)
 
 ## Version [v0.4.2] - 2025-04-02
 
@@ -101,7 +101,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Improved documentation/readme on supported GPU backends/hardware and make users aware of potential `F32` limitation on some hardware
 
 ### Breaking
-* The top level API for all solvers no longer takes the keyword argument `limit_gradient` for activating gradient limiter. New gradient limiters have been added and can be selected/configured when assigning numerical schemes with the `set_schemes` function [#30](@ref)
+* The top level API for all solvers no longer takes the keyword argument `limit_gradient` for activating gradient limiter. New gradient limiters have been added and can be selected/configured when assigning numerical schemes with the `Schemes` function [#30](@ref)
 
 ### Deprecated
 * No functions deprecated
@@ -125,7 +125,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Multithreaded sparse matrix vector multiplication is now functional [#23](@ref)
 * Precompilation errors on Julia v1.11 addressed by bringing code from `ThreadedSparseCSR.jl` [#24](@ref)
 * Update compat entry for `Atomix.jl` to v1.0,0 [#24](@ref)
-* `DILU` preconditioner is now implemented to work with sparse matrices in CSR format and uses a hybrid approach (running on CPU) to allow working when using GPU backends (further work needed) [#26](@ref)
+- `DILU` preconditioner is now implemented to work with sparse matrices in CSR format and uses a hybrid approach (running on CPU) to allow working when using GPU backends (further work needed) [#26](@ref)
 * The implementation of RANS models and wall functions has been improved for consistency (resulting in some computational gains). The calculation of `yPlusLam` is only done once when constructing the wall function objects. The calculation of the velocity gradient is now only done within the turbulence model main function (`turbulence!`) [#28](@ref)
 
 ### Breaking

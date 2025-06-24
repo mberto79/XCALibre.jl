@@ -15,7 +15,7 @@ mesh_file = "unv_sample_meshes/bfs_unv_tet_10mm.unv"
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 velocity = [0.5, 0.0, 0.0]
@@ -52,13 +52,13 @@ model = Physics(
 )
 
 schemes = (
-    U = set_schemes(time=Euler, divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(time=Euler, gradient=Midpoint)
+    U = Schemes(time=Euler, divergence=Upwind, gradient=Midpoint),
+    p = Schemes(time=Euler, gradient=Midpoint)
 )
 
 
 solvers = (
-    U = set_solver(
+    U = SolverSetup(
         model.momentum.U;
         solver      = Bicgstab(), #Bicgstab(), # Bicgstab(), Gmres(), #Cg()
         preconditioner = Jacobi(),
@@ -67,7 +67,7 @@ solvers = (
         rtol = 1e-4,
         atol = 1e-3
     ),
-    p = set_solver(
+    p = SolverSetup(
         model.momentum.p;
         solver      = Cg(), #Gmres(), #Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
@@ -80,7 +80,7 @@ solvers = (
     )
 )
 
-runtime = set_runtime(
+runtime = Runtime(
     iterations=1000, time_step=0.001, write_interval=100)
 
 config = Configuration(

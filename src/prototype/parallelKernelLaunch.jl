@@ -54,12 +54,12 @@ model = Physics(
 )
 
 schemes = (
-    U = set_schemes(divergence=Linear, gradient=Midpoint),
-    p = set_schemes(gradient=Midpoint)
+    U = Schemes(divergence=Linear, gradient=Midpoint),
+    p = Schemes(gradient=Midpoint)
 )
 
 solvers = (
-    U = set_solver(
+    U = SolverSetup(
         model.momentum.U;
         solver      = Bicgstab(), #Cg(), Bicgstab(), Gmres(), 
         preconditioner = ILU0GPU(), # Jacobi(),
@@ -68,7 +68,7 @@ solvers = (
         relax       = 0.7,
         rtol = 1e-1,
     ),
-    p = set_solver(
+    p = SolverSetup(
         model.momentum.p;
         solver      = Cg(), #Gmres(), #Cg(), # Bicgstab(), Gmres()
         preconditioner = IC0GPU(), # Jacobi(),
@@ -79,12 +79,12 @@ solvers = (
     )
 )
 
-runtime = set_runtime(
+runtime = Runtime(
     iterations=100, time_step=1, write_interval=100)
 
-# hardware = set_hardware(backend=backend, workgroup=1024)
-hardware = set_hardware(backend=backend, workgroup=32)
-# hardware = set_hardware(backend=ROCBackend(), workgroup=32)
+# hardware = Hardware(backend=backend, workgroup=1024)
+hardware = Hardware(backend=backend, workgroup=32)
+# hardware = Hardware(backend=ROCBackend(), workgroup=32)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

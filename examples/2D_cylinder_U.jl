@@ -10,7 +10,7 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 backend = CUDABackend(); workgroup = 32
 # backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 # Inlet conditions
@@ -48,8 +48,7 @@ BCs = assign(
 )
 
 solvers = (
-    U = set_solver(
-        region = mesh_dev,
+    U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -57,8 +56,7 @@ solvers = (
         rtol = 1e-4,
         atol = 1e-5
     ),
-    p = set_solver(
-        region = mesh_dev,
+    p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), # Jacobi(), #NormDiagonal(), # DILU()
         convergence = 1e-7,
@@ -69,12 +67,12 @@ solvers = (
 )
 
 schemes = (
-    U = set_schemes(time=Euler, divergence=LUST, gradient=Gauss),
-    p = set_schemes(time=Euler, gradient=Gauss)
+    U = Schemes(time=Euler, divergence=LUST, gradient=Gauss),
+    p = Schemes(time=Euler, gradient=Gauss)
 )
 
 
-runtime = set_runtime(
+runtime = Runtime(
     iterations=1000, write_interval=50, time_step=0.005) # uncomment to save files
     # iterations=1000, write_interval=-1, time_step=0.005) # used to run only
 

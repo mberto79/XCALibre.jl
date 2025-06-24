@@ -132,30 +132,27 @@ BCs = assign(
 )
 
 schemes = (
-    U = set_schemes(divergence=Linear),
-    p = set_schemes(divergence=Linear),
-    h = set_schemes(divergence=Linear)
+    U = Schemes(divergence=Linear),
+    p = Schemes(divergence=Linear),
+    h = Schemes(divergence=Linear)
 )
 
 solvers = (
-    U = set_solver(
-        region = mesh,
+    U = SolverSetup(
         solver      = Bicgstab(),
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
         rtol = 1e-1
     ),
-    p = set_solver(
-        region = mesh,
+    p = SolverSetup(
         solver      = Cg(),
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.3,
         rtol = 1e-1
     ),
-    h = set_solver(
-        region = mesh,
+    h = SolverSetup(
         solver      = Bicgstab(),
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -164,10 +161,10 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=1000, time_step=1)
-runtime = set_runtime(iterations=1, write_interval=-1, time_step=1) # hide
+runtime = Runtime(iterations=1000, write_interval=1000, time_step=1)
+runtime = Runtime(iterations=1, write_interval=-1, time_step=1) # hide
 
-hardware = set_hardware(backend=CPU(), workgroup=4)
+hardware = Hardware(backend=CPU(), workgroup=4)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

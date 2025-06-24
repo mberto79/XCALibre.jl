@@ -95,12 +95,12 @@ using ProgressMeter, Printf, Adapt
 #             )
             
 #             schemes = (
-#                 U = set_schemes(divergence = Linear),
-#                 p = set_schemes()
+#                 U = Schemes(divergence = Linear),
+#                 p = Schemes()
 #             )
             
 #             solvers = (
-#                 U = set_solver(
+#                 U = SolverSetup(
 #                     model.momentum.U;
 #                     solver = Bicgstab(), # Bicgstab(), Gmres()
 #                     smoother = JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
@@ -109,7 +109,7 @@ using ProgressMeter, Printf, Adapt
 #                     relax = 0.8,
 #                     rtol = 1e-1,
 #                 ),
-#                 p = set_solver(
+#                 p = SolverSetup(
 #                     model.momentum.p;
 #                     solver = Cg(), # Bicgstab(), Gmres()
 #                     smoother = JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
@@ -120,10 +120,10 @@ using ProgressMeter, Printf, Adapt
 #                 )
 #             )
             
-#             runtime = set_runtime(
+#             runtime = Runtime(
 #                 iterations=10, time_step=1, write_interval=10)
             
-#             hardware = set_hardware(backend=CPU(), workgroup=1024)
+#             hardware = Hardware(backend=CPU(), workgroup=1024)
             
 #             config = Configuration(
 #                 solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
@@ -182,14 +182,14 @@ using ProgressMeter, Printf, Adapt
 #             )
 
 #             schemes = (
-#                 U = set_schemes(gradient=Midpoint, time=Euler),
-#                 p = set_schemes(gradient=Midpoint),
-#                 k = set_schemes(gradient=Midpoint, time=Euler),
-#                 omega = set_schemes(gradient=Midpoint, time=Euler)
+#                 U = Schemes(gradient=Midpoint, time=Euler),
+#                 p = Schemes(gradient=Midpoint),
+#                 k = Schemes(gradient=Midpoint, time=Euler),
+#                 omega = Schemes(gradient=Midpoint, time=Euler)
 #             )
 
 #             solvers = (
-#                 U = set_solver(
+#                 U = SolverSetup(
 #                     model.momentum.U;
 #                     solver      = Bicgstab(), # Bicgstab(), Gmres()
 #                     preconditioner = Jacobi(), 
@@ -197,7 +197,7 @@ using ProgressMeter, Printf, Adapt
 #                     relax       = 1.0,
 #                     rtol = 1e-3
 #                 ),
-#                 p = set_solver(
+#                 p = SolverSetup(
 #                     model.momentum.p;
 #                     solver      = Cg(), # Bicgstab(), Gmres()
 #                     preconditioner = Jacobi(), 
@@ -205,7 +205,7 @@ using ProgressMeter, Printf, Adapt
 #                     relax       = 1.0,
 #                     rtol = 1e-3
 #                 ),
-#                 k = set_solver(
+#                 k = SolverSetup(
 #                     model.turbulence.k;
 #                     solver      = Bicgstab(), # Bicgstab(), Gmres()
 #                     preconditioner = Jacobi(), 
@@ -213,7 +213,7 @@ using ProgressMeter, Printf, Adapt
 #                     relax       = 1.0,
 #                     rtol = 1e-3
 #                 ),
-#                 omega = set_solver(
+#                 omega = SolverSetup(
 #                     model.turbulence.omega;
 #                     solver      = Bicgstab(), # Bicgstab(), Gmres()
 #                     preconditioner = Jacobi(), 
@@ -223,11 +223,11 @@ using ProgressMeter, Printf, Adapt
 #                 )
 #             )
 
-#             runtime = set_runtime(
+#             runtime = Runtime(
 #                 iterations=10, write_interval=10, time_step=0.01)
 
-#             # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-#             hardware = set_hardware(backend=CPU(), workgroup=1024)
+#             # hardware = Hardware(backend=CUDABackend(), workgroup=32)
+#             hardware = Hardware(backend=CPU(), workgroup=1024)
 
 #             config = Configuration(
 #                 solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

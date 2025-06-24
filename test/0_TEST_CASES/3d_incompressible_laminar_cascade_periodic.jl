@@ -50,21 +50,19 @@ BCs = assign(
 )
 
 schemes = (
-    U = set_schemes(divergence=Linear, gradient=Midpoint),
-    p = set_schemes(gradient=Midpoint)
+    U = Schemes(divergence=Linear, gradient=Midpoint),
+    p = Schemes(gradient=Midpoint)
 )
 
 solvers = (
-    U = set_solver(
-        region=mesh_dev,
+    U = SolverSetup(
         solver      = Bicgstab(), #Cg(), # Bicgstab(), Gmres(), #Cg()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
         rtol = 1e-1
     ),
-    p = set_solver(
-        region=mesh_dev,
+    p = SolverSetup(
         solver      = Cg(), #Gmres(), #Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -73,12 +71,12 @@ solvers = (
     )
 )
 
-runtime = set_runtime(
+runtime = Runtime(
     iterations=100, time_step=1, write_interval=100)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=ROCBackend(), workgroup=32)
+hardware = Hardware(backend=backend, workgroup=workgroup)
+# hardware = Hardware(backend=CUDABackend(), workgroup=32)
+# hardware = Hardware(backend=ROCBackend(), workgroup=32)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

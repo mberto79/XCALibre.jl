@@ -9,7 +9,7 @@ mesh = UNV3D_mesh(mesh_file, scale=0.001)
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 # INLET CONDITIONS 
@@ -57,12 +57,12 @@ model = Physics(
 )
 
 schemes = (
-    U = set_schemes(divergence=Linear, gradient=Midpoint, time=Euler),
-    p = set_schemes(gradient=Midpoint, time=Euler)
+    U = Schemes(divergence=Linear, gradient=Midpoint, time=Euler),
+    p = Schemes(gradient=Midpoint, time=Euler)
 )
 
 solvers = (
-    U = set_solver(
+    U = SolverSetup(
         model.momentum.U;
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
@@ -71,7 +71,7 @@ solvers = (
         rtol = 1e-4,
         atol = 1e-5
     ),
-    p = set_solver(
+    p = SolverSetup(
         model.momentum.p;
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
@@ -82,7 +82,7 @@ solvers = (
     ),
 )
 
-runtime = set_runtime(
+runtime = Runtime(
     iterations=10000, write_interval=200, time_step=0.0001)
 
 config = Configuration(

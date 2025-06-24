@@ -5,6 +5,7 @@ using StaticArrays
 using Statistics
 using LinearAlgebra
 using KernelAbstractions
+using Adapt
 # using CUDA
 
 actual(y) = begin

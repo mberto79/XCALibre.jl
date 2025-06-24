@@ -3,7 +3,7 @@ using XCALibre
 
 # backwardFacingStep_2mm, 5mm or 10mm
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "backwardFacingStep_5mm.unv"
+grid = "backwardFacingStep_10mm.unv"
 mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
@@ -31,39 +31,40 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Dirichlet(:top, [0.0, 0.0, 0.0])
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model turbulence k (
-    Dirichlet(:inlet, k_inlet),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, 0.0),
-    Dirichlet(:top, 0.0)
-)
-
-@assign! model turbulence omega (
-    Dirichlet(:inlet, ω_inlet),
-    Neumann(:outlet, 0.0),
-    OmegaWallFunction(:wall),
-    OmegaWallFunction(:top)
-)
-
-@assign! model turbulence nut (
-    Dirichlet(:inlet, k_inlet/ω_inlet),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, 0.0), 
-    Dirichlet(:top, 0.0)
+BCs = assign(
+    region = mesh_dev,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Neumann(:outlet, 0.0),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Wall(:top, [0.0, 0.0, 0.0])
+        ],
+        p = [
+            Neumann(:inlet, 0.0),
+            Dirichlet(:outlet, 0.0),
+            Neumann(:wall, 0.0),
+            Neumann(:top, 0.0)
+        ],
+        k = [
+            Dirichlet(:inlet, k_inlet),
+            Neumann(:outlet, 0.0),
+            KWallFunction(:wall),
+            KWallFunction(:top)
+        ],
+        omega = [
+            Dirichlet(:inlet, ω_inlet),
+            Neumann(:outlet, 0.0),
+            OmegaWallFunction(:wall),
+            OmegaWallFunction(:top)
+        ],
+        nut = [
+            Dirichlet(:inlet, k_inlet/ω_inlet),
+            Neumann(:outlet, 0.0),
+            Dirichlet(:wall, 0.0), 
+            Dirichlet(:top, 0.0)
+        ]
+    )
 )
 
 schemes = (
@@ -82,8 +83,7 @@ solvers = (
         rtol = 1e-2,
         atol = 1e-10
     ),
-    p = SolverSetupp(
-        region = mesh_dev,
+    p = SolverSetup(
         solver      = Cg(), #Gmres(), #Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,

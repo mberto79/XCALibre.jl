@@ -27,7 +27,7 @@ nu = 1e-3
 Re = (0.2*velocity[1])/nu
 δt = 0.005
 iterations = 5000
-T = iterations*δt
+total_time = iterations*δt
 
 @inline inflow(vec, t, i) = begin
     vx = 0.25
@@ -49,21 +49,24 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U ( 
-    # Dirichlet(:inlet, velocity),
-    DirichletFunction(:inlet, inflow),
-    Neumann(:outlet, 0.0),
-    Wall(:cylinder, noSlip),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:cylinder, 0.0),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+BCs = assign(
+    region = mesh_dev,
+    (
+        U = [
+            DirichletFunction(:inlet, inflow),
+            Extrapolated(:outlet),
+            Wall(:cylinder, noSlip),
+            Extrapolated(:bottom),
+            Extrapolated(:top)
+        ],
+        p = [
+            Zerogradient(:inlet),
+            Dirichlet(:outlet, 0),
+            Wall(:cylinder),
+            Zerogradient(:bottom),
+            Zerogradient(:top)
+        ]
+    )
 )
 
 solvers = (
@@ -72,15 +75,15 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1.0,
-        rtol = 0,
-        atol = 1e-4
+        rtol = 1e-5,
+        atol = 1e-5
     ),
     p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), #NormDiagonal(),
         convergence = 1e-7,
         relax       = 0.7,
-        rtol = 0,
+        rtol = 1e-5,
         atol = 1e-5
     )
 )
@@ -109,7 +112,7 @@ initialise!(model.momentum.p, 0.0)
 
 residuals = run!(model, config); #, pref=0.0)
 
-plot(; xlims=(0,runtime.iterations), ylims=(1e-12,1e-4))
-plot!(1:length(residuals.Ux), residuals.Ux, yscale=:log10, label="Ux")
-plot!(1:length(residuals.Uy), residuals.Uy, yscale=:log10, label="Uy")
-plot!(1:length(residuals.p), residuals.p, yscale=:log10, label="p")
+# plot(; xlims=(0,runtime.iterations), ylims=(1e-12,1e-4))
+# plot!(1:length(residuals.Ux), residuals.Ux, yscale=:log10, label="Ux")
+# plot!(1:length(residuals.Uy), residuals.Uy, yscale=:log10, label="Uy")
+# plot!(1:length(residuals.p), residuals.p, yscale=:log10, label="p")

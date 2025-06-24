@@ -3,9 +3,10 @@ using XCALibre
 using CUDA
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
-# mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
-mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
-# mesh_file = "unv_sample_meshes/backwardFacingStep_2mm.unv"
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "backwardFacingStep_5mm.unv"
+mesh_file = joinpath(grids_dir, grid)
+
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 # backend = CUDABackend(); workgroup = 32
@@ -30,39 +31,40 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Dirichlet(:top, [0.0, 0.0, 0.0])
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model turbulence k (
-    Dirichlet(:inlet, k_inlet),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, 0.0),
-    Dirichlet(:top, 0.0)
-)
-
-@assign! model turbulence omega (
-    Dirichlet(:inlet, ω_inlet),
-    Neumann(:outlet, 0.0),
-    OmegaWallFunction(:wall),
-    OmegaWallFunction(:top)
-)
-
-@assign! model turbulence nut (
-    Dirichlet(:inlet, k_inlet/ω_inlet),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, 0.0), 
-    Dirichlet(:top, 0.0)
+BCs = assign(
+    region = mesh_dev,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Extrapolated(:outlet),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Wall(:top, [0.0, 0.0, 0.0])
+        ],
+        p = [
+            Extrapolated(:outlet),
+            Dirichlet(:outlet, 0.0),
+            Wall(:wall),
+            Wall(:top)
+        ],
+        k = [
+            Dirichlet(:inlet, k_inlet),
+            Extrapolated(:outlet),
+            KWallFunction(:wall),
+            KWallFunction(:top)
+        ],
+        omega = [
+            Dirichlet(:inlet, ω_inlet),
+            Extrapolated(:outlet),
+            OmegaWallFunction(:wall),
+            OmegaWallFunction(:top)
+        ],
+        nut = [
+            Dirichlet(:inlet, k_inlet/ω_inlet),
+            Extrapolated(:outlet),
+            Dirichlet(:wall, 0.0), 
+            Dirichlet(:top, 0.0)
+        ]
+    )
 )
 
 schemes = (
@@ -120,7 +122,7 @@ Fp = pressure_force(:wall, model.momentum.p, 1.25)
 Fv = viscous_force(:wall, model.momentum.U, 1.25, nu, model.turbulence.nut)
 
 
-plot(; xlims=(0,494))
-plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p")
+# plot(; xlims=(0,494))
+# plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
+# plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
+# plot!(1:length(Rp), Rp, yscale=:log10, label="p")

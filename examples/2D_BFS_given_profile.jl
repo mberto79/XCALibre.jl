@@ -15,10 +15,11 @@ using StaticArrays
     return velocity
 end
 
+# backwardFacingStep_2mm, 5mm or 10mm
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "flatplate_2D_laminar.unv"
-
+grid = "backwardFacingStep_10mm.unv"
 mesh_file = joinpath(grids_dir, grid)
+
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 # backend = CUDABackend(); workgroup = 32
@@ -40,23 +41,27 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U (
-    DirichletFunction(:inlet, inflow),
-    # Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, [0.0, 0.0, 0.0]),
-    Dirichlet(:top, [0.0, 0.0, 0.0]),
-    # Wall(:wall, [0.0, 0.0, 0.0]),
-    # Wall(:top, [0.0, 0.0, 0.0])
-    # Symmetry(:top, 0.0)
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
-    # Symmetry(:top, 0.0)
+BCs = assign(
+    region = mesh_dev,
+    (
+        U = [
+            DirichletFunction(:inlet, inflow),
+            # Dirichlet(:inlet, velocity),
+            Neumann(:outlet, 0.0),
+            Dirichlet(:wall, [0.0, 0.0, 0.0]),
+            Dirichlet(:top, [0.0, 0.0, 0.0]),
+            # Wall(:wall, [0.0, 0.0, 0.0]),
+            # Wall(:top, [0.0, 0.0, 0.0])
+            # Symmetry(:top, 0.0)
+        ],
+        p = [
+            Neumann(:inlet, 0.0),
+            Dirichlet(:outlet, 0.0),
+            Neumann(:wall, 0.0),
+            Neumann(:top, 0.0)
+            # Symmetry(:top, 0.0)
+        ]
+    )
 )
 
 schemes = (
@@ -70,7 +75,7 @@ solvers = (
     U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        convergence = 1e-7,
+        convergence = 1e-8,
         relax       = 0.7,
         rtol = 1e-4,
         atol = 1e-10
@@ -78,7 +83,7 @@ solvers = (
     p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        convergence = 1e-7,
+        convergence = 1e-8,
         relax       = 0.3,
         rtol = 1e-4,
         atol = 1e-10
@@ -98,28 +103,7 @@ initialise!(model.momentum.p, 0.0)
 
 residuals = run!(model, config) # 9.39k allocs in 184 iterations
 
-plot(; xlims=(0,1000))
-plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p")
-
-# # PROFILING CODE
-
-using Profile, PProf
-
-GC.gc()
-initialise!(model.momentum.U, velocity)
-initialise!(model.momentum.p, 0.0)
-
-Profile.Allocs.clear()
-Profile.Allocs.@profile sample_rate=1.0 begin 
-    residuals = run!(model, config)
-end
-
-# Profile.print(format=:flat)
-
-PProf.Allocs.pprof()
-
-PProf.refresh()
-
-@profview_allocs residuals = run!(model, config) sample_rate=1
+# plot(; xlims=(0,1000))
+# plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
+# plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
+# plot!(1:length(Rp), Rp, yscale=:log10, label="p")

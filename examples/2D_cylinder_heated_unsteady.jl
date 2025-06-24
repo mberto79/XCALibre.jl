@@ -40,30 +40,31 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U ( 
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:cylinder, noSlip),
-    # Dirichlet(:cylinder, noSlip),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, pressure),
-    Neumann(:cylinder, 0.0),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model energy h (
-    FixedTemperature(:inlet, T=300.0, Enthalpy(cp=cp, Tref=288.15)),
-    Neumann(:outlet, 0.0),
-    # Neumann(:cylinder, 0.0),
-    FixedTemperature(:cylinder, T=330.0, Enthalpy(cp=cp, Tref=288.15)),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+BCs =assign(
+    region =  mesh_dev,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Neumann(:outlet, 0.0),
+            Wall(:cylinder, noSlip),
+            Neumann(:bottom, 0.0),
+            Neumann(:top, 0.0)
+        ],
+        p = [
+            Neumann(:inlet, 0.0),
+            Dirichlet(:outlet, pressure),
+            Neumann(:cylinder, 0.0),
+            Neumann(:bottom, 0.0),
+            Neumann(:top, 0.0)
+        ],
+        h = [
+            FixedTemperature(:inlet, T=temp, Enthalpy(cp=cp, Tref=288.15)),
+            Neumann(:outlet, 0.0),
+            FixedTemperature(:cylinder, T=330.0, Enthalpy(cp=cp, Tref=288.15)),
+            Neumann(:bottom, 0.0),
+            Neumann(:top, 0.0)
+        ]
+    )
 )
 
 solvers = (
@@ -100,9 +101,7 @@ schemes = (
 
 runtime = Runtime(iterations=1000, write_interval=100, time_step=0.01)
 
-hardware = Hardware(backend=CPU(), workgroup=4)
-# hardware = Hardware(backend=CUDABackend(), workgroup=32)
-# hardware = Hardware(backend=ROCBackend(), workgroup=32)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

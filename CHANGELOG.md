@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version [v0.5.0] - 2025-06-24
 
 ### Added
-* No functionality added
+* New boundary conditions `Extrapolated` and `Zerogradient` have been added. Both assign a zero gradient boundary condition, however, their implementation differs. `Extrapolated` assigns the zero gradient condition semi-implicitly (using the cell centre unknown and the cell centre value from the previous iteration). `Zerogradient` assigns the gradient in the boundary faces explicitly [#61](@ref)
 
 ### Fixed
 * Fixed the implementation for the calculation of the wall distance to work on GPUs [#49](@ref)

@@ -3,7 +3,7 @@
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v0.3.1` breaking changes will be recorded here. 
 
-## Version [v0.5.0] - 2025-06-24
+## Version [v0.5.0] - 2025-06-26
 
 ### Added
 * New boundary conditions `Extrapolated` and `Zerogradient` have been added. Both assign a zero gradient boundary condition, however, their implementation differs. `Extrapolated` assigns the zero gradient condition semi-implicitly (using the cell centre unknown and the cell centre value from the previous iteration). `Zerogradient` assigns the gradient in the boundary faces explicitly [#61](@ref)

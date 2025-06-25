@@ -1,4 +1,3 @@
-using Plots
 using XCALibre
 
 
@@ -28,43 +27,50 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Neumann(:top, 0.0)
-)
-
- @assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model turbulence k (
-    Dirichlet(:inlet, k_inlet),
-    Neumann(:outlet, 0.0),
-    # KWallFunction(:wall),
-    # KWallFunction(:top)
-    Dirichlet(:wall, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model turbulence omega (
-    Dirichlet(:inlet, ω_inlet),
-    Neumann(:outlet, 0.0),
-    OmegaWallFunction(:wall),
-    Neumann(:top, 0.0)
-    # Dirichlet(:wall, ω_wall), 
-    # Dirichlet(:top, ω_wall)
-)
-
-@assign! model turbulence nut (
-    Dirichlet(:inlet, k_inlet/ω_inlet),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, 0.0), 
-    Neumann(:top, 0.0)
+BCs = assign(
+    region=mesh_dev,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Zerogradient(:outlet),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Extrapolated(:top)
+            # Zerogradient(:top)
+            # Symmetry(:top)
+        ],
+        p = [
+            Zerogradient(:inlet),
+            Dirichlet(:outlet, 0.0),
+            Wall(:wall),
+            Extrapolated(:top)
+            # Zerogradient(:top)
+            # Symmetry(:top)
+        ],
+        k = [
+            Dirichlet(:inlet, k_inlet),
+            Zerogradient(:outlet),
+            Dirichlet(:wall, 0.0),
+            Extrapolated(:top)
+            # Zerogradient(:top)
+            # Symmetry(:top)
+        ],
+        omega = [
+            Dirichlet(:inlet, ω_inlet),
+            Zerogradient(:outlet),
+            OmegaWallFunction(:wall),
+            Extrapolated(:top)
+            # Zerogradient(:top)
+            # Symmetry(:top)
+        ],
+        nut = [
+            Dirichlet(:inlet, k_inlet/ω_inlet),
+            Extrapolated(:outlet),
+            Dirichlet(:wall, 0.0), 
+            Extrapolated(:top)
+            # Zerogradient(:top)
+            # Symmetry(:top)
+        ]
+    )
 )
 
 schemes = (
@@ -77,28 +83,24 @@ schemes = (
 
 solvers = (
     U = SolverSetup(
-        model.momentum.U;
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 0.7,
     ),
     p = SolverSetup(
-        model.momentum.p;
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 0.2,
     ),
     k = SolverSetup(
-        model.turbulence.k;
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 0.7,
     ),
     omega = SolverSetup(
-        model.turbulence.omega;
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
@@ -121,27 +123,28 @@ initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
 residuals = run!(model, config) # 9.39k allocs
 
-using DelimitedFiles
-using LinearAlgebra
+# using Plots
+# using DelimitedFiles
+# using LinearAlgebra
 
-OF_data = readdlm("flatplate_OF_wall_kOmega_lowRe.csv", ',', Float64, skipstart=1)
-oRex = OF_data[:,7].*velocity[1]./nu[1]
-oCf = sqrt.(OF_data[:,12].^2 + OF_data[:,13].^2)/(0.5*velocity[1]^2)
+# OF_data = readdlm("flatplate_OF_wall_kOmega_lowRe.csv", ',', Float64, skipstart=1)
+# oRex = OF_data[:,7].*velocity[1]./nu[1]
+# oCf = sqrt.(OF_data[:,12].^2 + OF_data[:,13].^2)/(0.5*velocity[1]^2)
 
-tauw, pos = wall_shear_stress(:wall, model)
-tauMag = [norm(tauw[i]) for i ∈ eachindex(tauw)]
-x = [pos[i][1] for i ∈ eachindex(pos)]
-Rex = velocity[1].*x./nu
+# tauw, pos = wall_shear_stress(:wall, model)
+# tauMag = [norm(tauw[i]) for i ∈ eachindex(tauw)]
+# x = [pos[i][1] for i ∈ eachindex(pos)]
+# Rex = velocity[1].*x./nu
 
-x_corr = [0:0.0002:1;]
-Rex_corr = velocity[1].*x_corr/nu
-Cf_corr = 0.074.*(Rex_corr).^(-1/5)
-plot(; xaxis="Rex", yaxis="Cf")
-plot!(Rex_corr, Cf_corr, color=:red, ylims=(0, 0.05), xlims=(0,2e4), label="Blasius",lw=1.5)
-plot!(oRex, oCf, color=:green, lw=1.5, label="OpenFOAM") # |> display
-plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code") |> display
+# x_corr = [0:0.0002:1;]
+# Rex_corr = velocity[1].*x_corr/nu
+# Cf_corr = 0.074.*(Rex_corr).^(-1/5)
+# plot(; xaxis="Rex", yaxis="Cf")
+# plot!(Rex_corr, Cf_corr, color=:red, ylims=(0, 0.05), xlims=(0,2e4), label="Blasius",lw=1.5)
+# plot!(oRex, oCf, color=:green, lw=1.5, label="OpenFOAM") # |> display
+# plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code") |> display
 
-plot(; xlims=(0,1000))
-plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p") |> display
+# plot(; xlims=(0,1000))
+# plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
+# plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
+# plot!(1:length(Rp), Rp, yscale=:log10, label="p") |> display

@@ -105,7 +105,7 @@ end
                 push!(BCs, Dirichlet(boundary.name, 0.0))
             else
                 # push!(BCs, Neumann(boundary.name, 0.0))
-                push!(BCs, Wall(boundary.name, 0.0))
+                push!(BCs, Zerogradient(boundary.name))
             end
         end
     end
@@ -227,7 +227,7 @@ function initialise(
 
     @reset kl_eqn.preconditioner = set_preconditioner(solvers.kl.preconditioner, kl_eqn)
     @reset k_eqn.preconditioner = set_preconditioner(solvers.k.preconditioner, k_eqn)
-    @reset ω_eqn.preconditioner = set_preconditioner(solvers.ω.preconditioner, ω_eqn)
+    @reset ω_eqn.preconditioner = set_preconditioner(solvers.omega.preconditioner, ω_eqn)
     
     # preallocating solvers
 

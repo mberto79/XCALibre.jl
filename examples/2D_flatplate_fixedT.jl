@@ -65,7 +65,6 @@ schemes = (
 
 solvers = (
     U = SolverSetup(
-        model.momentum.U;
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -74,7 +73,6 @@ solvers = (
 
     ),
     p = SolverSetup(
-        model.momentum.p;
         solver      = Gmres(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -82,7 +80,6 @@ solvers = (
         rtol = 1e-2
     ),
     h = SolverSetup(
-        model.energy.h;
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,

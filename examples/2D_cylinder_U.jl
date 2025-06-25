@@ -1,5 +1,5 @@
 using XCALibre
-using CUDA # uncomment to run on GPU
+# using CUDA # uncomment to run on GPU
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "cylinder_d10mm_5mm.unv"
@@ -7,8 +7,8 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-backend = CUDABackend(); workgroup = 32
-# backend = CPU(); workgroup = 1024; activate_multithread(backend)
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
@@ -32,13 +32,13 @@ BCs = assign(
     (
         U = [
                 Dirichlet(:inlet, velocity),
-                Extrapolated(:outlet),
+                Zerogradient(:outlet),
                 Wall(:cylinder, noSlip),
                 Extrapolated(:bottom),
                 Extrapolated(:top)
         ],
         p = [
-                Extrapolated(:inlet),
+                Zerogradient(:inlet),
                 Dirichlet(:outlet, 0.0),
                 Wall(:cylinder),
                 Extrapolated(:bottom),

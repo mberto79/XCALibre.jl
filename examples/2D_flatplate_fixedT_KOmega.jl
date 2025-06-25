@@ -1,5 +1,3 @@
-using Plots
-
 using XCALibre
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
@@ -37,51 +35,47 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    # Symmetry(:top, 0.0)
-    Neumann(:top, 0.0)
-)
-
- @assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 100000.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model energy h (
-    FixedTemperature(:inlet, T=300.0, Enthalpy(cp=cp, Tref=288.15)),
-    Neumann(:outlet, 0.0),
-    FixedTemperature(:wall, T=310.0, Enthalpy(cp=cp, Tref=288.15)),
-    Neumann(:top, 0.0)
-)
-
-@assign! model turbulence k (
-    Dirichlet(:inlet, k_inlet),
-    Neumann(:outlet, 0.0),
-    # KWallFunction(:wall),
-    # KWallFunction(:top)
-    Dirichlet(:wall, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model turbulence omega (
-    Dirichlet(:inlet, ω_inlet),
-    Neumann(:outlet, 0.0),
-    OmegaWallFunction(:wall),
-    Neumann(:top, 0.0)
-    # Dirichlet(:wall, ω_wall), 
-    # Dirichlet(:top, ω_wall)
-)
-
-@assign! model turbulence nut (
-    Dirichlet(:inlet, k_inlet/ω_inlet),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, 0.0), 
-    Neumann(:top, 0.0)
+BCs = assign(
+    region = mesh_dev,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Zerogradient(:outlet),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Extrapolated(:top)
+            # Symmetry(:top, 0.0)
+        ],
+        p = [
+            Zerogradient(:inlet),
+            Dirichlet(:outlet, 100000.0),
+            Wall(:wall),
+            Extrapolated(:top)
+        ],
+        h = [
+            FixedTemperature(:inlet, T=300.0, Enthalpy(cp=cp, Tref=288.15)),
+            Zerogradient(:outlet),
+            FixedTemperature(:wall, T=310.0, Enthalpy(cp=cp, Tref=288.15)),
+            Extrapolated(:top)
+        ],
+        k = [
+            Dirichlet(:inlet, k_inlet),
+            Zerogradient(:outlet),
+            Dirichlet(:wall, 0.0),
+            Extrapolated(:top)
+        ],
+        omega = [
+            Dirichlet(:inlet, ω_inlet),
+            Zerogradient(:outlet),
+            OmegaWallFunction(:wall),
+            Extrapolated(:top)
+        ],
+        nut = [
+            Dirichlet(:inlet, k_inlet/ω_inlet),
+            Extrapolated(:outlet),
+            Dirichlet(:wall, 0.0), 
+            Extrapolated(:top)
+        ]
+    )
 )
 
 schemes = (
@@ -148,24 +142,7 @@ initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
 residuals = run!(model, config) # 9.39k allocs
 
-# using DelimitedFiles
-# using LinearAlgebra
-
-# OF_data = readdlm("flatplate_OF_wall_laminar.csv", ',', Float64, skipstart=1)
-# oRex = OF_data[:,7].*velocity[1]./nu[1]
-# oCf = sqrt.(OF_data[:,9].^2 + OF_data[:,10].^2)/(0.5*velocity[1]^2)
-
-# tauw, pos = wall_shear_stress(:wall, model)
-# tauMag = [norm(tauw[i]) for i ∈ eachindex(tauw)]
-# x = [pos[i][1] for i ∈ eachindex(pos)]
-
-# Rex = velocity[1].*x/nu[1]
-# Cf = 0.664./sqrt.(Rex)
-# plot(; xaxis="Rex", yaxis="Cf")
-# plot!(Rex, Cf, color=:red, ylims=(0, 0.05), xlims=(0,2e4), label="Blasius",lw=1.5)
-# plot!(oRex, oCf, color=:green, lw=1.5, label="OpenFOAM")
-# plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code")
-
+using Plots
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
 plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")

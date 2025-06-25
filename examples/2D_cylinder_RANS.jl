@@ -83,11 +83,6 @@ schemes = (
     p = Schemes(gradient=Gauss),
     k = Schemes(divergence=Upwind, gradient=Gauss),
     omega = Schemes(divergence=Upwind, gradient=Gauss)
-
-    # U = Schemes(divergence=Upwind),
-    # p = Schemes(divergence=Upwind),
-    # k = Schemes(divergence=Upwind),
-    # omega = Schemes(divergence=Upwind)
 )
 
 solvers = (

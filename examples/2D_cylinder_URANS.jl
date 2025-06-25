@@ -2,8 +2,12 @@ using Plots
 using XCALibre
 
 
-# quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
-mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "cylinder_d10mm_5mm.unv"
+# grid = "cylinder_d10mm_2mm.unv"
+# grid = "cylinder_d10mm_25mm.unv"
+mesh_file = joinpath(grids_dir, grid)
+
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 # backend = CUDABackend(); workgroup = 32
@@ -32,44 +36,45 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U ( 
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:cylinder, noSlip),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:cylinder, 0.0),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model turbulence k (
-    Dirichlet(:inlet, k_inlet),
-    Neumann(:outlet, 0.0),
-    Neumann(:top, 0.0),
-    Neumann(:bottom, 0.0),
-    Dirichlet(:cylinder, 1e-15)
-)
-
-@assign! model turbulence omega (
-    Dirichlet(:inlet, ω_inlet),
-    Neumann(:outlet, 0.0),
-    Neumann(:top, 0.0),
-    Neumann(:bottom, 0.0),
-    OmegaWallFunction(:cylinder) # need constructor to force keywords
-)
-
-@assign! model turbulence nut (
-    Dirichlet(:inlet, k_inlet/ω_inlet),
-    Neumann(:outlet, 0.0),
-    Neumann(:top, 0.0),
-    Neumann(:bottom, 0.0), 
-    Dirichlet(:cylinder, 0.0)
+BCs = assign(
+    region = mesh_dev,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Zerogradient(:outlet),
+            Wall(:cylinder, noSlip),
+            Extrapolated(:bottom),
+            Extrapolated(:top)
+        ],
+        p = [
+            Zerogradient(:inlet),
+            Dirichlet(:outlet, 0.0),
+            Wall(:cylinder),
+            Extrapolated(:bottom),
+            Extrapolated(:top)
+        ],
+        k = [
+            Dirichlet(:inlet, k_inlet),
+            Zerogradient(:outlet),
+            Extrapolated(:bottom),
+            Extrapolated(:top),
+            Dirichlet(:cylinder, 1e-15)
+        ],
+        omega = [
+            Dirichlet(:inlet, ω_inlet),
+            Zerogradient(:outlet),
+            Extrapolated(:bottom),
+            Extrapolated(:top),
+            OmegaWallFunction(:cylinder)
+        ],
+        nut = [
+            Dirichlet(:inlet, k_inlet/ω_inlet),
+            Extrapolated(:outlet),
+            Extrapolated(:top),
+            Extrapolated(:bottom), 
+            Dirichlet(:cylinder, 0.0)
+        ]
+    )
 )
 
 schemes = (
@@ -97,8 +102,7 @@ solvers = (
         rtol = 1e-4,
         atol = 1e-5
     ),
-    k = SolverSetupp(
-        region = mesh_dev,
+    k = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -136,7 +140,7 @@ Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)
 Fp = pressure_force(:cylinder, model.momentum.p, 1.25)
 Fv = viscous_force(:cylinder, model.momentum.U, 1.25, nu, model.turbulence.nut)
 
-plot(; xlims=(0,runtime.iterations), ylims=(1e-10,0))
-plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p")
+# plot(; xlims=(0,runtime.iterations), ylims=(1e-10,0))
+# plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
+# plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
+# plot!(1:length(Rp), Rp, yscale=:log10, label="p")

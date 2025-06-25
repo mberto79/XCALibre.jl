@@ -1,5 +1,5 @@
 using XCALibre
-using CUDA
+# using CUDA
 
 # backwardFacingStep_2mm, 5mm or 10mm
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
@@ -14,7 +14,7 @@ backend = CPU(); workgroup = 1024; activate_multithread(backend)
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
-velocity = [1.5, 0.0, 0.0]
+velocity = [0.0, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
 
@@ -30,26 +30,24 @@ BCs = assign(
     region = mesh_dev,
     (
         U = [
-            Dirichlet(:inlet, velocity),
-            Extrapolated(:outlet),
-            # Zerogradient(:outlet),
-            # Dirichlet(:wall, [0.0, 0.0, 0.0]),
-            # Dirichlet(:top, [0.0, 0.0, 0.0]),
+            Extrapolated(:inlet),
             Wall(:wall, [0.0, 0.0, 0.0]),
 
-            # Wall(:top, [0.0, 0.0, 0.0])
-            Symmetry(:top)
+            Extrapolated(:outlet),
+
+            Wall(:top, [0.0, 0.0, 0.0])
+            # Symmetry(:top)
         ],
         p = [
-            # Neumann(:inlet, 0.0),
-            # Zerogradient(:inlet),
-            Extrapolated(:inlet),
-            Dirichlet(:outlet, 0.0),
-            Wall(:wall),
-            # Neumann(:top, 0.0),
 
-            # Wall(:top)
-            Symmetry(:top)
+            Neumann(:inlet, -2.75),
+            Wall(:wall),
+
+            # Dirichlet(:outlet, 0.0),
+            Extrapolated(:outlet),
+
+            Wall(:top)
+            # Symmetry(:top)
         ]
     )
 )
@@ -84,7 +82,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=5000, time_step=1.0, write_interval=1000)
+    iterations=100, time_step=1.0, write_interval=1)
     # iterations=1, time_step=1, write_interval=1)
 
 # hardware = Hardware(backend=CUDABackend(), workgroup=32)
@@ -99,6 +97,7 @@ GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
+# residuals = run!(model, config, pref=0)
 residuals = run!(model, config)
 # @time residuals = run!(model, config)
 

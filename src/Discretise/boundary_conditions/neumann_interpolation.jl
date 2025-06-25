@@ -1,21 +1,21 @@
 
-const ZEROGRADIENT = Union{Neumann, Zerogradient, Extrapolated, KWallFunction, NutWallFunction, OmegaWallFunction}
-
 @inline function boundary_interpolation!(
-    BC::ZEROGRADIENT, phif::FaceScalarField, phi, boundary_cellsID, time, fID)
+    BC::Neumann, phif::FaceScalarField, phi, boundary_cellsID, time, fID)
     @inbounds begin
+        (; faces) = phi.mesh
+        face = faces[fID]
+        (; delta) = face
         cID = boundary_cellsID[fID]
-        phif[fID] = phi[cID] 
+        phif[fID] = phi[cID] + delta*BC.value 
     end
     nothing
 end
 
 
 @inline function boundary_interpolation!(
-    BC::ZEROGRADIENT, psif::FaceVectorField, psi, boundary_cellsID, time, fID)
+    BC::Neumann, psif::FaceVectorField, psi, boundary_cellsID, time, fID)
     @inbounds begin
-        cID = boundary_cellsID[fID]
-        psif[fID] = psi[cID]
+        error("Neumann boundary condition for vector fields is not implemented yet.")
     end
     nothing
 end

@@ -24,8 +24,8 @@ Symmetry(patch::Symbol) = Symmetry(patch, 0)
     (; area, delta, normal) = face 
     phi = term.phi 
     J = term.flux[fID]
-    flux = 2.0*J*area/delta
-    # flux = J*area/delta
+    # flux = 2.0*J*area/delta # previous
+    flux = J*area/delta
     ap = term.sign[1]*(-flux)
 
     vc = phi[cellID]

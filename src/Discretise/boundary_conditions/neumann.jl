@@ -20,55 +20,44 @@ struct Neumann{I,V,R<:UnitRange} <: AbstractNeumann
 end
 Adapt.@adapt_structure Neumann
 
-@define_boundary Neumann Laplacian{Linear} begin
+@define_boundary Neumann Laplacian{Linear} ScalarField begin
     # For now this is hard-coded as zero-gradient. To-do extension to any input gradient
     phi = term.phi 
     values = get_values(phi, component)
     J = term.flux[fID]
     (; area, delta) = face 
-    flux = -J*area/delta
-    ap = term.sign*(flux)
-    ap, ap*values[cellID] # original
-    # 0.0, 0.0 # try this
-    # 0.0, -flux*bc.value # draft implementation to test!
+    flux = J*area
+    0.0, flux*bc.value # draft implementation to test!
 end
 
-@define_boundary Neumann Divergence{Linear} begin
+@define_boundary Neumann Divergence{Linear} ScalarField begin
     flux = term.flux[fID]
+    (; area, delta) = face 
     ap = term.sign*(flux) 
-    ap, 0.0 # original
-
-    # phi = term.phi 
-    # values = get_values(phi, component)
-    # 0.0, -ap*values[cellID] # try this
+    ap, -bc.value*ap*delta
 end
 
-@define_boundary Neumann Divergence{Upwind} begin
+@define_boundary Neumann Divergence{Upwind} ScalarField begin
     flux = term.flux[fID]
+    (; area, delta) = face 
     ap = term.sign*(flux) 
-    ap, 0.0 # original
-
-    # phi = term.phi 
-    # values = get_values(phi, component)
-    # 0.0, -ap*values[cellID] # try this
+    ap, -bc.value*ap*delta
 end
 
-@define_boundary Neumann Divergence{LUST} begin
+@define_boundary Neumann Divergence{LUST} ScalarField begin
     flux = term.flux[fID]
+    (; area, delta) = face 
     ap = term.sign*(flux) 
-    ap, 0.0 # original
-
-    # phi = term.phi 
-    # values = get_values(phi, component)
-    # 0.0, -ap*values[cellID] # try this
+    ap, -bc.value*ap*delta
 end
 
-@define_boundary Neumann Divergence{BoundedUpwind} begin
+@define_boundary Neumann Divergence{BoundedUpwind} ScalarField begin
     flux = term.flux[fID]
-    ap = term.sign*(flux)
-    ap-flux, 0.0
+    (; area, delta) = face 
+    ap = term.sign*(flux) 
+    ap, -bc.value*ap*delta
 end
 
-@define_boundary Neumann Si begin
+@define_boundary Neumann Si ScalarField begin
     0.0, 0.0
 end

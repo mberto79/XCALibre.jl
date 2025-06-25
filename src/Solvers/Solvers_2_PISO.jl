@@ -99,8 +99,8 @@ function PISO(
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
     # other thing ive added 
-    mean_U = Mean(zeros(length(mesh.cells)),112500,375000) 
-    mean_UU = Mean(zeros(length(mesh.cells)),112500,375000)
+    mean_U = Mean(zeros(length(mesh.cells)),Int(iterations*3/10),iterations) 
+    mean_UU = Mean(zeros(length(mesh.cells)),Int(iterations*3/10),iterations)
     vector_of_structs = [mean_U,mean_UU]
 
     #mean_field = Mean(ScalarField(mesh))

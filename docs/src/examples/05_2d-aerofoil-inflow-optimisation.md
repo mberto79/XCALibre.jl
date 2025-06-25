@@ -113,36 +113,36 @@ function foil_optim(α::Vector{Float64})
             U = [
                 XCALibre.Dirichlet(:inlet, velocity),
                 XCALibre.Dirichlet(:bottom, velocity),
-                Neumann(:outlet, 0.0),
-                Neumann(:top, 0.0),
+                Extrapolated(:outlet, 0.0),
+                Extrapolated(:top, 0.0),
                 Wall(:foil, noSlip)
             ],
             p = [
-                Neumann(:inlet, 0.0),
-                Neumann(:bottom, 0.0),
+                Extrapolated(:inlet, 0.0),
+                Extrapolated(:bottom, 0.0),
                 XCALibre.Dirichlet(:outlet, 0.0),
                 XCALibre.Dirichlet(:top, 0.0),
-                Neumann(:foil, 0.0)
+                Extrapolated(:foil, 0.0)
             ],
             k = [
                 XCALibre.Dirichlet(:inlet, k_inlet),
-                Neumann(:outlet, 0.0),
-                Neumann(:top, 0.0),
-                Neumann(:bottom, 0.0),
+                Extrapolated(:outlet, 0.0),
+                Extrapolated(:top, 0.0),
+                Extrapolated(:bottom, 0.0),
                 XCALibre.Dirichlet(:foil, 1e-15)
             ],
             omega = [
                 XCALibre.Dirichlet(:inlet, ω_inlet),
-                Neumann(:outlet, 0.0),
-                Neumann(:top, 0.0),
-                Neumann(:bottom, 0.0),
+                Extrapolated(:outlet, 0.0),
+                Extrapolated(:top, 0.0),
+                Extrapolated(:bottom, 0.0),
                 OmegaWallFunction(:foil)
             ],
             nut = [
-                Neumann(:inlet, 0.0),
-                Neumann(:outlet, 0.0),
-                Neumann(:top, 0.0),
-                Neumann(:bottom, 0.0), 
+                Extrapolated(:inlet, 0.0),
+                Extrapolated(:outlet, 0.0),
+                Extrapolated(:top, 0.0),
+                Extrapolated(:bottom, 0.0), 
                 XCALibre.Dirichlet(:foil, 0.0)
             ]
         )

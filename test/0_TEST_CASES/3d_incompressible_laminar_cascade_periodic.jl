@@ -32,18 +32,18 @@ BCs = assign(
     (
         U = [
             Dirichlet(:inlet, velocity),
-            Neumann(:outlet, 0.0),
+            Extrapolated(:outlet),
             Wall(:plate, [0.0, 0.0, 0.0]),
-            Neumann(:side1, 0.0),
-            Neumann(:side2, 0.0),
+            Extrapolated(:side1),
+            Extrapolated(:side2),
             periodic...
         ],
         p = [
-            Neumann(:inlet, 0.0),
+            Extrapolated(:inlet),
             Dirichlet(:outlet, 0.0),
-            Neumann(:plate, 0.0),
-            Neumann(:side1, 0.0),
-            Neumann(:side2, 0.0),
+            Extrapolated(:plate),
+            Extrapolated(:side1),
+            Extrapolated(:side2),
             periodic...
         ]
     )

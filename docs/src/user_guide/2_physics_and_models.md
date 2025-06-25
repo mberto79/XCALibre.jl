@@ -294,7 +294,7 @@ DirichletFunction(name, func)
 ### `AbstractNeumann` conditions
 
 ```julia
-Neumann(name, value)
+Extrapolated(name, value)
 ```
 
 - `name` is a symbol providing the boundary name
@@ -302,11 +302,11 @@ Neumann(name, value)
 
 !!! warning
 
-    At present the Neumann boundary should be treated as providing a zero gradient condition only. Internally, a zero gradient value is hard-coded. This behaviour will be extended in the near future to allow arbitrary gradients to be defined.
+    At present the Extrapolated boundary should be treated as providing a zero gradient condition only. Internally, a zero gradient value is hard-coded. This behaviour will be extended in the near future to allow arbitrary gradients to be defined.
 
 ### `AbstractPhysicalConstraint` conditions
 
-`Wall` boundary conditions can be used to provide a boundary with a wall constraint. This boundary type, at present, can only be used to define vectors. For scalar quantities in wall regions a `Neumann` (zero gradient) should be imposed.
+`Wall` boundary conditions can be used to provide a boundary with a wall constraint. This boundary type, at present, can only be used to define vectors. For scalar quantities in wall regions a `Extrapolated` (zero gradient) should be imposed.
 ```julia
 Wall(name, value)
 ```

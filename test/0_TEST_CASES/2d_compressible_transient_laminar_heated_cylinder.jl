@@ -40,13 +40,13 @@ BCs = assign(
     (
         U = [
             Dirichlet(:inlet, velocity),
-            Neumann(:outlet, 0.0),
+            Extrapolated(:outlet),
             Wall(:cylinder, noSlip),
             Symmetry(:bottom),
             Symmetry(:top)
         ],
         p = [
-            Neumann(:inlet, 0.0),
+            Extrapolated(:inlet),
             Dirichlet(:outlet, pressure),
             Wall(:cylinder),
             Symmetry(:bottom),
@@ -54,7 +54,7 @@ BCs = assign(
         ],
         h = [
             FixedTemperature(:inlet, T=300.0, Enthalpy(cp=cp, Tref=288.15)),
-            Neumann(:outlet, 0.0),
+            Extrapolated(:outlet),
             FixedTemperature(:cylinder, T=330.0, Enthalpy(cp=cp, Tref=288.15)),
             Symmetry(:bottom),
             Symmetry(:top)

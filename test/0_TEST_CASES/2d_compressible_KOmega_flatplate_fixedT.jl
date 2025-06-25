@@ -38,7 +38,6 @@ BCs = assign(
     (
         U = [
             Dirichlet(:inlet, velocity),
-            # Neumann(:outlet, 0.0),
             # Extrapolated(:outlet),
             Zerogradient(:outlet),
             Wall(:wall, [0.0, 0.0, 0.0]),
@@ -46,52 +45,41 @@ BCs = assign(
             Extrapolated(:top)            
         ],
         p = [
-            # Neumann(:inlet, 0.0),
             Zerogradient(:inlet),
             # Extrapolated(:inlet),
             Dirichlet(:outlet, 100000.0),
-            # Neumann(:wall, 0.0),
             Wall(:wall),
-            # Neumann(:top, 0.0)
-            # Extrapolated(:top)
             # Zerogradient(:top)
             # Symmetry(:top)
             Extrapolated(:top)            
         ],
         h = [
             FixedTemperature(:inlet, T=300.0, Enthalpy(cp=cp, Tref=288.15)),
-            # Neumann(:outlet, 0.0),
             # Extrapolated(:outlet),
             Zerogradient(:outlet),
             FixedTemperature(:wall, T=310.0, Enthalpy(cp=cp, Tref=288.15)),
-            # Neumann(:top, 0.0)
             # Extrapolated(:top)
             # Symmetry(:top)
             Extrapolated(:top)            
         ],
         k = [
             Dirichlet(:inlet, k_inlet),
-            # Neumann(:outlet, 0.0),
             Extrapolated(:outlet),
             Dirichlet(:wall, 0.0),
-            # Neumann(:top, 0.0)
             # Extrapolated(:top)
             # Symmetry(:top)
             Extrapolated(:top)            
         ],
         omega = [
             Dirichlet(:inlet, ω_inlet),
-            # Neumann(:outlet, 0.0),
             Extrapolated(:outlet),
             OmegaWallFunction(:wall),
-            # Neumann(:top, 0.0)
             # Extrapolated(:top)
             # Symmetry(:top)
             Extrapolated(:top)            
         ],
         nut = [
             Dirichlet(:wall, 0.0), 
-            # Neumann.([:inlet, :outlet, :top], Ref(0.0))...
             Extrapolated.([:inlet, :outlet, :top])...
         ]
     )

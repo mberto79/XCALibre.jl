@@ -32,31 +32,31 @@ BCs = assign(
     (
         U = [
             Dirichlet(:inlet, velocity),
-            Neumann(:outlet, 0.0),
+            Extrapolated(:outlet),
             Wall(:wall, [0.0, 0.0, 0.0]),
             Dirichlet(:top, [0.0, 0.0, 0.0])
         ],
         p = [
-            Neumann(:inlet, 0.0),
+            Extrapolated(:inlet),
             Dirichlet(:outlet, 0.0),
-            Neumann(:wall, 0.0),
-            Neumann(:top, 0.0)
+            Extrapolated(:wall),
+            Extrapolated(:top)
         ],
         k = [
             Dirichlet(:inlet, k_inlet),
-            Neumann(:outlet, 0.0),
+            Extrapolated(:outlet),
             Dirichlet(:wall, 0.0),
             Dirichlet(:top, 0.0)
         ],
         omega = [
             Dirichlet(:inlet, ω_inlet),
-            Neumann(:outlet, 0.0),
+            Extrapolated(:outlet),
             OmegaWallFunction(:wall),
             OmegaWallFunction(:top)
         ],
         nut = [
             Dirichlet(:inlet, k_inlet/ω_inlet),
-            Neumann(:outlet, 0.0),
+            Extrapolated(:outlet),
             Dirichlet(:wall, 0.0), 
             Dirichlet(:top, 0.0)
         ],

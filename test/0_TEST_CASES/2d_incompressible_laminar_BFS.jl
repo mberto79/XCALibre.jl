@@ -32,14 +32,14 @@ BCs = assign(
     (
         U = [
             Dirichlet(:inlet, velocity),
-            Neumann(:outlet, 0.0),
+            Extrapolated(:outlet),
             Wall(:wall, [0.0, 0.0, 0.0]),
             Symmetry(:top)
         ],
         p = [
-            Neumann(:inlet, 0.0),
+            Extrapolated(:inlet),
             Dirichlet(:outlet, 0.0),
-            Neumann(:wall, 0.0),
+            Extrapolated(:wall),
             Symmetry(:top)
         ]
     )

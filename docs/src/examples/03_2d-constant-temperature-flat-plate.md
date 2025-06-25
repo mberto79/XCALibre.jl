@@ -21,7 +21,7 @@ The correlation is valid for Prandtl numbers greater than 0.6.
 | Field | Boundary condition      |
 | -------  | ---------- |
 | ``U``   |  Dirichlet ([0.2, 0.0, 0.0] m/s)   |
-| ``p``   |  Neumann (Zero-gradient)      |
+| ``p``   |  Extrapolated (Zero-gradient)      |
 | ``T ``  |  FixedTemperature (300.0 K)    |
 
 ### Wall
@@ -30,7 +30,7 @@ The correlation is valid for Prandtl numbers greater than 0.6.
 | Field | Boundary condition      |
 | -------  | ---------- |
 | ``U``   |  No-slip wall   |
-| ``p``   |  Neumann (Zero-gradient)      |
+| ``p``   |  Extrapolated (Zero-gradient)      |
 | ``T ``  |  FixedTemperature (310.0 K)    |
 
 ### Outlet
@@ -38,18 +38,18 @@ The correlation is valid for Prandtl numbers greater than 0.6.
 
 | Field | Boundary condition      |
 | -------  | ---------- |
-| ``U``   |  Neumann (Zero-gradient)   |
+| ``U``   |  Extrapolated (Zero-gradient)   |
 | ``p``   |  Dirichlet (0.0 Pa)     |
-| ``T ``  |  Neumann (Zero-gradient)    |
+| ``T ``  |  Extrapolated (Zero-gradient)    |
 
 ### Top
 
 
 | Field | Boundary condition      |
 | -------  | ---------- |
-| ``U``   |  Neumann (Zero-gradient)   |
-| ``p``   |  Neumann (Zero-gradient)     |
-| ``T ``  |  Neumann (Zero-gradient)    |
+| ``U``   |  Extrapolated (Zero-gradient)   |
+| ``p``   |  Extrapolated (Zero-gradient)     |
+| ``T ``  |  Extrapolated (Zero-gradient)    |
 
 
 # Fluid Properties

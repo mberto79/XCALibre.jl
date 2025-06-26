@@ -31,8 +31,9 @@ function div!(phi::ScalarField, psif::FaceVectorField, config)
     F = _get_float(mesh)
 
     # Launch main calculation kernel
-    kernel! = div_kernel!(backend, workgroup)
-    kernel!(cells, F, cell_faces, cell_nsign, faces, phi, psif, ndrange = length(cells))
+    ndrange = length(cells)
+    kernel! = div_kernel!(backend, _workgroup(backend, workgroup, ndrange))
+    kernel!(cells, F, cell_faces, cell_nsign, faces, phi, psif, ndrange=ndrange)
     # KernelAbstractions.synchronize(backend)
 
     # Retrieve number of boundary faces
@@ -106,16 +107,18 @@ function div!(phi::ScalarField, psif::FaceScalarField, config)
     F = _get_float(mesh)
 
     # Launch main calculation kernel
-    kernel! = div_noS_kernel!(backend, workgroup)
-    kernel!(cells, F, cell_faces, cell_nsign, faces, phi, psif, ndrange = length(cells))
+    ndrange = length(cells)
+    kernel! = div_noS_kernel!(backend, _workgroup(backend, workgroup, ndrange))
+    kernel!(cells, F, cell_faces, cell_nsign, faces, phi, psif, ndrange=ndrange)
     # KernelAbstractions.synchronize(backend)
 
     # Retrieve number of boundary faces
     nbfaces = length(mesh.boundary_cellsID)
 
     # Launch boundary faces contribution kernel
-    kernel! = div_noS_boundary_faces_contribution_kernel!(backend, workgroup)
-    kernel!(faces, cells, phi, psif, ndrange = nbfaces)
+    kernel! = div_noS_boundary_faces_contribution_kernel!(
+        backend, _workgroup(backend, workgroup, nbfaces))
+    kernel!(faces, cells, phi, psif, ndrange=nbfaces)
     # KernelAbstractions.synchronize(backend)
 end
 

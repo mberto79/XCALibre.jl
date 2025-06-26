@@ -12,4 +12,8 @@ import KernelAbstractions
 
 include("spmvm.jl")
 
+_workgroup(backend, workgroup::Integer, range) = workgroup
+_workgroup(backend::CPU, workgroup::Integer, range) = cld(range, Threads.nthreads())
+export _workgroup
+
 end # end module

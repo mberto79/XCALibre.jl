@@ -27,8 +27,10 @@ function discretise!(
     # # KernelAbstractions.synchronize(backend)
 end
 
+# @kernel function _discretise_vector_model!(
+#     model::Model{TN,SN,T,S}, terms, sources, mesh, nzval0::AbstractArray{F}, nzval, colval, rowptr, bx, by, bz, prev, runtime) where {TN,SN,T,S,F}
 @kernel function _discretise_vector_model!(
-    model::Model{TN,SN,T,S}, terms, sources, mesh, nzval0::AbstractArray{F}, nzval, colval, rowptr, bx, by, bz, prev, runtime) where {TN,SN,T,S,F}
+    model::Model{TN,SN,T,S}, terms::TERMS, sources::SRCS, mesh, nzval0::AbstractArray{F}, nzval, colval, rowptr, bx, by, bz, prev, runtime) where {TN,SN,T,S,F,TERMS,SRCS}
     i = @index(Global)
     # Extract mesh fields for kernel
     (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
@@ -104,8 +106,11 @@ function discretise!(
 end
 
 # Discretise kernel function
+# @kernel function _discretise_scalar_model!(
+#     model::Model{TN,SN,T,S}, terms, sources, mesh, nzval::AbstractArray{F}, colval, rowptr, b, prev, runtime) where {TN,SN,T,S,F}
 @kernel function _discretise_scalar_model!(
-    model::Model{TN,SN,T,S}, terms, sources, mesh, nzval::AbstractArray{F}, colval, rowptr, b, prev, runtime) where {TN,SN,T,S,F}
+    model::Model{TN,SN,T,S}, terms::TERMS, sources::SRCS, mesh, nzval::AbstractArray{F}, colval, rowptr, b, prev, runtime) where {TN,SN,T,S,F,TERMS,SRCS}
+
     i = @index(Global)
     # Extract mesh fields for kernel
     (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
@@ -150,7 +155,8 @@ end
 return_quote(x, t) = :(nothing)
 
 # Scheme generated function definition
-@generated function _scheme!(model::Model{TN,SN,T,S}, terms, nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime) where {TN,SN,T,S}
+# @generated function _scheme!(model::Model{TN,SN,T,S}, terms, nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime) where {TN,SN,T,S}
+@generated function _scheme!(model::Model{TN,SN,T,S}, terms::TERMS, nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime) where {TN,SN,T,S,TERMS}
     # Allocate expression array to store scheme function
     out = Expr(:block)
 
@@ -173,7 +179,7 @@ return_quote(x, t) = :(nothing)
 end
 
 # Scheme source generated function definition
-@generated function _scheme_source!(model::Model{TN,SN,T,S}, terms, cell, cID, cIndex, prev, runtime) where {TN,SN,T,S}
+@generated function _scheme_source!(model::Model{TN,SN,T,S}, terms::TERMS, cell, cID, cIndex, prev, runtime) where {TN,SN,T,S,TERMS}
     # Allocate expression array to store scheme_source function
     out = Expr(:block)
     
@@ -224,7 +230,7 @@ end
 end
 
 # Sources generated function definition
-@generated function _sources!(model::Model{TN,SN,T,S}, sources, volume, cID) where {TN,SN,T,S}
+@generated function _sources!(model::Model{TN,SN,T,S}, sources::SRC, volume, cID) where {TN,SN,T,S,SRC}
     # Allocate expression array to store source function
     out = Expr(:block)
 

@@ -152,9 +152,13 @@ ScalarEquation(phi::ScalarField, BCs) = begin
         # KP.KrylovOperator(A), # small gain in performance
         # A,
 
-        _convert_array!(zeros(Tf, nCells), backend),
-        _convert_array!(zeros(Tf, nCells), backend),
-        _convert_array!(zeros(Tf, nCells), backend)
+        # _convert_array!(zeros(Tf, nCells), backend),
+        # _convert_array!(zeros(Tf, nCells), backend),
+        # _convert_array!(zeros(Tf, nCells), backend)
+
+        KernelAbstractions.zeros(backend, Tf, nCells),
+        KernelAbstractions.zeros(backend, Tf, nCells),
+        KernelAbstractions.zeros(backend, Tf, nCells)
         )
 end
 
@@ -196,11 +200,17 @@ VectorEquation(psi::VectorField, BCs) = begin
         # KP.KrylovOperator(A),
         # A,
 
-        _convert_array!(zeros(Tf, nCells), backend),
-        _convert_array!(zeros(Tf, nCells), backend),
-        _convert_array!(zeros(Tf, nCells), backend),
-        _convert_array!(zeros(Tf, nCells), backend),
-        _convert_array!(zeros(Tf, nCells), backend)
+        # _convert_array!(zeros(Tf, nCells), backend),
+        # _convert_array!(zeros(Tf, nCells), backend),
+        # _convert_array!(zeros(Tf, nCells), backend),
+        # _convert_array!(zeros(Tf, nCells), backend),
+        # _convert_array!(zeros(Tf, nCells), backend)
+
+        KernelAbstractions.zeros(backend, Tf, nCells),
+        KernelAbstractions.zeros(backend, Tf, nCells),
+        KernelAbstractions.zeros(backend, Tf, nCells),
+        KernelAbstractions.zeros(backend, Tf, nCells),
+        KernelAbstractions.zeros(backend, Tf, nCells)
         )
 end
 

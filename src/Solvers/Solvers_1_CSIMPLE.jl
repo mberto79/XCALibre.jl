@@ -373,14 +373,14 @@ function explicit_shear_stress!(mugradUTx::FaceScalarField, mugradUTy::FaceScala
     n_bfaces = length(boundary_cellsID)
     n_ifaces = n_faces - n_bfaces
 
-    kernel! = _explicit_shear_stress_internal!(backend, workgroup)
-    kernel!(
-        mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces, n_bfaces, ndrange=n_ifaces)
+    ndrange = n_ifaces
+    kernel! = _explicit_shear_stress_internal!(_setup(backend, workgroup, ndrange)...)
+    kernel!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces, n_bfaces)
     # KernelAbstractions.synchronize(backend)
 
-    kernel! = _explicit_shear_stress_boundaries!(backend, workgroup)
-    kernel!(
-        mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces, ndrange=n_bfaces)
+    ndrange=n_bfaces
+    kernel! = _explicit_shear_stress_boundaries!(_setup(backend, workgroup, ndrange)...)
+    kernel!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces)
     # KernelAbstractions.synchronize(backend)
 end
 

@@ -9,15 +9,17 @@ function green_gauss!(grad::Grad{S,F,R,I,M}, phif, config) where {S,F,R<:VectorF
     (; x, y, z) = grad.result
     
     # Launch result calculation kernel
-    kernel! = _green_gauss!(backend, workgroup)
-    kernel!(x, y, z, phif, ndrange=length(x))
+    ndrange = length(x)
+    kernel! = _green_gauss!(_setup(backend, workgroup, ndrange)...)
+    kernel!(x, y, z, phif)
     # # KernelAbstractions.synchronize(backend)
 
     # number of boundary faces
     nbfaces = length(phif.mesh.boundary_cellsID)
     
-    kernel! = boundary_faces_contribution!(backend, workgroup)
-    kernel!(x, y, z, phif, ndrange=nbfaces)
+    ndrange = nbfaces
+    kernel! = boundary_faces_contribution!(_setup(backend, workgroup, ndrange)...)
+    kernel!(x, y, z, phif)
     # # KernelAbstractions.synchronize(backend)
 end
 
@@ -85,15 +87,17 @@ function green_gauss!(
     (; xx, xy, xz, yx, yy, yz, zx, zy, zz) = grad.result
     
     # Launch result calculation kernel
-    kernel! = _green_gauss_vector!(backend, workgroup)
-    kernel!(xx, xy, xz, yx, yy, yz, zx, zy, zz, psif, ndrange=length(xx))
+    ndrange = length(xx)
+    kernel! = _green_gauss_vector!(_setup(backend, workgroup, ndrange)...)
+    kernel!(xx, xy, xz, yx, yy, yz, zx, zy, zz, psif)
     # # KernelAbstractions.synchronize(backend)
 
     # number of boundary faces
     nbfaces = length(psif.mesh.boundary_cellsID)
     
-    kernel! = boundary_faces_contribution_vector!(backend, workgroup)
-    kernel!(xx, xy, xz, yx, yy, yz, zx, zy, zz, psif, ndrange=nbfaces)
+    ndrange = nbfaces
+    kernel! = boundary_faces_contribution_vector!(_setup(backend, workgroup, ndrange)...)
+    kernel!(xx, xy, xz, yx, yy, yz, zx, zy, zz, psif)
     # # KernelAbstractions.synchronize(backend)
 end
 

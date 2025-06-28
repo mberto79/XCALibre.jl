@@ -191,7 +191,7 @@ function CPISO(
 
     # corr = zeros(TF, n_faces)
     # corr = _convert_array!(corr, backend) 
-    corr = KernelAbstractions.zeros(backend, TF, n_cells) 
+    corr = KernelAbstractions.zeros(backend, TF, n_faces) 
 
     # Pre-allocate vectors to hold residuals 
     R_ux = ones(TF, iterations)

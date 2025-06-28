@@ -40,12 +40,20 @@ function _apply_boundary_conditions!(
         
     end
         # Execute apply boundary conditions kernel
-        kernel_range = nbfaces
+        # ndrange = nbfaces
+        # apply_bcs = apply_boundary_conditions_kernel!(
+        #     _setup(backend, workgroup, ndrange)...)
+        # apply_bcs(
+        #     model, BCs,model.terms, faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time, ndrange=ndrange
+        #     )
+        # KernelAbstractions.synchronize(backend)
 
-        kernel! = apply_boundary_conditions_kernel!(backend, workgroup, kernel_range)
+        ndrange = nbfaces
+        kernel! = apply_boundary_conditions_kernel!(backend, workgroup, ndrange)
         kernel!(
-            model, BCs,model.terms, faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time, ndrange=kernel_range
+            model, BCs,model.terms, faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time, ndrange=ndrange
             )
+        KernelAbstractions.synchronize(backend)
 
     # Loop over boundary conditions to apply boundary conditions 
     # for BC ∈ BCs
@@ -103,48 +111,49 @@ end
     unroll = Expr(:block)
     for bi ∈ 1:N
         BC_checks = quote
-            @inbounds begin
+            
+            z = zero(eltype(nzval))
+            AP, BP = z, z
             BC, start, stop = get_BC(BCs, $bi)
-            if start <= fID <= stop
-                i = fID - start + 1
-                cellID = boundary_cellsID[fID]
-                face = faces[fID]
-                cell = cells[cellID] 
+                if start <= fID <= stop
+                    i = fID - start + 1
+                    @inbounds cellID = boundary_cellsID[fID]
+                    @inbounds face = faces[fID]
+                    @inbounds cell = cells[cellID] 
 
-                zcellID = spindex(rowptr, colval, cellID, cellID)
+                    zcellID = spindex(rowptr, colval, cellID, cellID)
 
-                AP, BP = apply!(
-                    model, BC, terms, 
-                    colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
-                    )
-                Atomix.@atomic nzval[zcellID] += AP
-                Atomix.@atomic b[cellID] += BP
-            end
-            end
+                    AP, BP = apply!(
+                        model, BC, terms, 
+                        colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
+                        )
+                    Atomix.@atomic nzval[zcellID] += AP
+                    Atomix.@atomic b[cellID] += BP
+                end
+            
         end
         push!(unroll.args, BC_checks)
     end
-    return quote
-        $(unroll.args...)
-    end
+    # return quote
+    #     $(unroll.args...)
+    # end
+    return unroll
 end
 
 @generated function get_BC(BCs, index)
     N = length(BCs.parameters)
-    exs = Expr[] 
+    exprs = Expr(:block)
     for i ∈ 1:N
         ex = quote
             if index == $i
-                BC = @inbounds BCs[$i]
+                @inbounds BC = BCs[$i]
                 (; start, stop) = BC.IDs_range
                 return BC, start, stop
             end
         end
-        push!(exs, ex)
+        push!(exprs.args, ex)
     end
-    return quote
-        $(exs...)
-    end
+    return exprs
 end
 
 

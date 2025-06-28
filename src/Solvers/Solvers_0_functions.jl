@@ -7,14 +7,14 @@ function update_nueff!(nueff, nu, turb_model, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    kernel_range = length(nueff)
+    ndrange = length(nueff)
     if typeof(turb_model) <: Laminar
-        kernel! = update_nueff_laminar!(backend, workgroup, kernel_range)
-        kernel!(nu, nueff, ndrange=kernel_range)
+        kernel! = update_nueff_laminar!(_setup(backend, workgroup, ndrange)...)
+        kernel!(nu, nueff)
     else
         (; nutf) = turb_model
-        kernel! = update_nueff_turbulent!(backend, workgroup, kernel_range)
-        kernel!(nu, nutf, nueff, ndrange=kernel_range)
+        kernel! = update_nueff_turbulent!(_setup(backend, workgroup, ndrange)...)
+        kernel!(nu, nutf, nueff)
     end
 
 end
@@ -42,9 +42,9 @@ function flux!(phif::FS, psif::FV, config) where {FS<:FaceScalarField,FV<:FaceVe
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    kernel_range = length(phif)
-    kernel! = flux_kernel!(backend, workgroup, kernel_range)
-    kernel!(phif, psif, ndrange=kernel_range)
+    ndrange = length(phif)
+    kernel! = flux_kernel!(_setup(backend, workgroup, ndrange)...)
+    kernel!(phif, psif)
     # # KernelAbstractions.synchronize(backend)
 end
 
@@ -67,9 +67,9 @@ function flux!(phif::FS, psif::FV, rhof::FS, config) where {FS<:FaceScalarField,
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    kernel_range = length(phif)
-    kernel! = _flux!(backend, workgroup, kernel_range)
-    kernel!(phif, psif, rhof, ndrange=kernel_range)
+    ndrange = length(phif)
+    kernel! = _flux!(_setup(backend, workgroup, ndrange)...)
+    kernel!(phif, psif, rhof)
     # # KernelAbstractions.synchronize(backend)
 end
 
@@ -99,9 +99,9 @@ function inverse_diagonal!(rD::S, eqn, config) where {S<:ScalarField}
     A = eqn.equation.A # Or should I use A0
     nzval, colval, rowptr = get_sparse_fields(A)
 
-    kernel_range = length(rD)
-    kernel! = _inverse_diagonal!(backend, workgroup, kernel_range)
-    kernel!(rD, nzval, colval, rowptr, ndrange=kernel_range)
+    ndrange = length(rD)
+    kernel! = _inverse_diagonal!(_setup(backend, workgroup, ndrange)...)
+    kernel!(rD, nzval, colval, rowptr)
     # # KernelAbstractions.synchronize(backend)
 end
 
@@ -127,9 +127,9 @@ function correct_velocity!(U, Hv, ∇p, rD, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    kernel_range = length(U)
-    kernel! = _correct_velocity!(backend, workgroup, kernel_range)
-    kernel!(U, Hv, ∇p, rD, ndrange=kernel_range)
+    ndrange = length(U)
+    kernel! = _correct_velocity!(_setup(backend, workgroup, ndrange)...)
+    kernel!(U, Hv, ∇p, rD)
     # # KernelAbstractions.synchronize(backend)
 end
 
@@ -161,9 +161,9 @@ remove_pressure_source!(U_eqn::ME, ∇p, config) where {ME} = begin # Extend to 
     source_sign = get_source_sign(U_eqn, 1)
     (; bx, by, bz) = U_eqn.equation
 
-    kernel_range = length(bx)
-    kernel! = _remove_pressure_source!(backend, workgroup, kernel_range)
-    kernel!(cells, source_sign, ∇p, bx, by, bz, ndrange=kernel_range)
+    ndrange = length(bx)
+    kernel! = _remove_pressure_source!(_setup(backend, workgroup, ndrange)...)
+    kernel!(cells, source_sign, ∇p, bx, by, bz)
     # # KernelAbstractions.synchronize(backend)
 end
 
@@ -190,10 +190,10 @@ function H!(Hv, U::VF, U_eqn, config) where {VF<:VectorField} # Extend to 3D!
     nzval, colval, rowptr = get_sparse_fields(A)
     (; bx, by, bz) = U_eqn.equation
 
-    kernel_range = length(cells)
-    kernel! = _H!(backend, workgroup, kernel_range)
+    ndrange = length(cells)
+    kernel! = _H!(_setup(backend, workgroup, ndrange)...)
     kernel!(cells, cell_neighbours,
-        nzval, rowptr, colval, bx, by, bz, U, Hv, ndrange=kernel_range)
+        nzval, rowptr, colval, bx, by, bz, U, Hv)
     # # KernelAbstractions.synchronize(backend)
 end
 
@@ -257,9 +257,9 @@ max_courant_number!(cellsCourant, model, config) = begin
     (; hardware, runtime) = config
     (; backend, workgroup) = hardware
 
-    kernel_range = length(cellsCourant)
-    kernel! = _max_courant_number!(backend, workgroup, kernel_range)
-    kernel!(cellsCourant, U, runtime, mesh, ndrange=kernel_range)
+    ndrange = length(cellsCourant)
+    kernel! = _max_courant_number!(_setup(backend, workgroup, ndrange)...)
+    kernel!(cellsCourant, U, runtime, mesh)
     # # KernelAbstractions.synchronize(backend)
     return maximum(cellsCourant)
 end

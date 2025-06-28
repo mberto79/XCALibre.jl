@@ -99,7 +99,7 @@ GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-@time residuals = run!(model, config) # 1189 iterations!
+@time residuals = run!(model, config) # 1189 or 1471 iterations!
 
 # Profiling now 
 # GC.gc()

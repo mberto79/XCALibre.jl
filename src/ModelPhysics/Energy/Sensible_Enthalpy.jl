@@ -164,8 +164,9 @@ function energy!(
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
     n_cells = length(mesh.cells)
-    prev = zeros(TF, n_cells)
-    prev = _convert_array!(prev, backend) 
+    # prev = zeros(TF, n_cells)
+    # prev = _convert_array!(prev, backend)
+    prev = KernelAbstractions.zeros(backend, TF, n_cells) 
 
     volumes = getproperty.(mesh.cells, :volume)
 

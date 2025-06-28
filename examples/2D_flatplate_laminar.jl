@@ -46,9 +46,10 @@ BCs = assign(
     )
 )
 
+div = Upwind # Linear, Upwind
 schemes = (
-    U = Schemes(divergence=Linear),
-    p = Schemes(divergence=Linear)
+    U = Schemes(divergence=div),
+    p = Schemes()
 )
 
 

@@ -171,8 +171,9 @@ function CSIMPLE(
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
-    prev = zeros(TF, n_cells)
-    prev = _convert_array!(prev, backend) 
+    # prev = zeros(TF, n_cells)
+    # prev = _convert_array!(prev, backend) 
+    prev = KernelAbstractions.zeros(backend, TF, n_cells) 
 
     # Pre-allocate vectors to hold residuals 
     R_ux = ones(TF, iterations)
@@ -308,8 +309,8 @@ function CSIMPLE(
         end
 
         correct_velocity!(U, Hv, ∇p, rD, config)
-        interpolate!(Uf, U, config)
-        correct_boundaries!(Uf, U, boundaries.U, time, config)
+        # interpolate!(Uf, U, config)
+        # correct_boundaries!(Uf, U, boundaries.U, time, config)
         
         turbulence!(turbulenceModel, model, S, prev, time, config) 
         update_nueff!(nueff, nu, model.turbulence, config)
@@ -373,14 +374,14 @@ function explicit_shear_stress!(mugradUTx::FaceScalarField, mugradUTy::FaceScala
     n_bfaces = length(boundary_cellsID)
     n_ifaces = n_faces - n_bfaces
 
-    kernel! = _explicit_shear_stress_internal!(backend, workgroup)
-    kernel!(
-        mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces, n_bfaces, ndrange=n_ifaces)
+    ndrange = n_ifaces
+    kernel! = _explicit_shear_stress_internal!(_setup(backend, workgroup, ndrange)...)
+    kernel!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces, n_bfaces)
     # KernelAbstractions.synchronize(backend)
 
-    kernel! = _explicit_shear_stress_boundaries!(backend, workgroup)
-    kernel!(
-        mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces, ndrange=n_bfaces)
+    ndrange=n_bfaces
+    kernel! = _explicit_shear_stress_boundaries!(_setup(backend, workgroup, ndrange)...)
+    kernel!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces)
     # KernelAbstractions.synchronize(backend)
 end
 

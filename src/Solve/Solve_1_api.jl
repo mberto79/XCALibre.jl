@@ -237,8 +237,9 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
 
     # println(statistics(solver).niter)
     
-    kernel! = _copy!(backend, workgroup)
-    kernel!(values, x, ndrange = length(values))
+    ndrange = length(values)
+    kernel! = _copy!(_setup(backend, workgroup, ndrange)...)
+    kernel!(values, x)
     # KernelAbstractions.synchronize(backend)
 
     res = residual(phiEqn, component, config)
@@ -257,8 +258,9 @@ function explicit_relaxation!(phi, phi0, alpha, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    kernel! = explicit_relaxation_kernel!(backend, workgroup)
-    kernel!(phi, phi0, alpha, ndrange = length(phi))
+    ndrange = length(phi)
+    kernel! = explicit_relaxation_kernel!(_setup(backend, workgroup, ndrange)...)
+    kernel!(phi, phi0, alpha)
     # KernelAbstractions.synchronize(backend)
 end
 
@@ -285,8 +287,9 @@ function implicit_relaxation!(
     rowptr = _rowptr(A)
     nzval = _nzval(A)
 
-    kernel! = implicit_relaxation_kernel!(backend, workgroup)
-    kernel!(colval, rowptr, nzval, b, field, alpha, ndrange = length(b))
+    ndrange = length(b)
+    kernel! = implicit_relaxation_kernel!(_setup(backend, workgroup, ndrange)...)
+    kernel!(colval, rowptr, nzval, b, field, alpha)
     # KernelAbstractions.synchronize(backend)
 end
 
@@ -317,8 +320,8 @@ function implicit_relaxation_diagdom!(
     nzval = _nzval(A)
 
     ndrange = length(b)
-    kernel! = _implicit_relaxation_diagdom!(backend, workgroup)
-    kernel!(colval, rowptr, nzval, b, field, alpha, ndrange=ndrange)
+    kernel! = _implicit_relaxation_diagdom!(_setup(backend, workgroup, ndrange)...)
+    kernel!(colval, rowptr, nzval, b, field, alpha)
     # KernelAbstractions.synchronize(backend)
 end
 
@@ -359,8 +362,9 @@ function setReference!(pEqn::E, pRef, cellID, config) where E<:ModelEquation
         colval = _colval(A)
         rowptr = _rowptr(A)
 
-        kernel! = _setReference!(backend, workgroup)
-        kernel!(nzval, colval, rowptr, b, pRef, cellID, ndrange = 1)
+        ndrange = 1
+        kernel! = _setReference!(_setup(backend, workgroup, ndrange)...)
+        kernel!(nzval, colval, rowptr, b, pRef, cellID)
     end
 end
 

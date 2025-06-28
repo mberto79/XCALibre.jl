@@ -34,36 +34,36 @@ BCs = assign(
             Dirichlet(:inlet, velocity),
             Zerogradient(:outlet),
             Wall(:wall, [0.0, 0.0, 0.0]),
-            Extrapolated(:top)
-            # Symmetry(:top)
+            # Extrapolated(:top)
+            Symmetry(:top)
         ],
         p = [
-            Neumann(:inlet, 0.0),
+            Zerogradient(:inlet),
             Dirichlet(:outlet, 0.0),
             Wall(:wall, 0.0),
-            Extrapolated(:top)
-            # Symmetry(:top)
+            # Extrapolated(:top)
+            Symmetry(:top)
         ],
         k = [
             Dirichlet(:inlet, k_inlet),
             Zerogradient(:outlet),
             KWallFunction(:wall),
-            Extrapolated(:top)
-            # Symmetry(:top)
+            # Extrapolated(:top)
+            Symmetry(:top)
         ],
         omega = [
             Dirichlet(:inlet, ω_inlet),
             Zerogradient(:outlet),
             OmegaWallFunction(:wall),
-            Extrapolated(:top)
-            # Symmetry(:top)
+            # Extrapolated(:top)
+            Symmetry(:top)
         ],
         nut = [
             Dirichlet(:inlet, k_inlet/ω_inlet),
-            Zerogradient(:outlet),
+            Extrapolated(:outlet),
             NutWallFunction(:wall),
-            Extrapolated(:top)
-            # Symmetry(:top)
+            # Extrapolated(:top)
+            Symmetry(:top)
         ]
     )
 )
@@ -94,13 +94,13 @@ solvers = (
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
-        relax       = 0.3,
+        relax       = 0.7,
     ),
     omega = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
-        relax       = 0.3,
+        relax       = 0.7,
     )
 )
 

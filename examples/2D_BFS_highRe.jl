@@ -128,7 +128,7 @@ initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, νt_inlet)
 
-residuals = run!(model, config) # 36.90k allocs
+residuals = run!(model, config) # 145 iterations
 
 Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)
 Fp = pressure_force(:wall, model.momentum.p, 1.25)

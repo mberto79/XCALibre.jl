@@ -1,6 +1,7 @@
 module Fields
 
 using Adapt
+using KernelAbstractions
 # using CUDA
 using LinearAlgebra
 using SparseArrays

@@ -50,8 +50,8 @@ function interpolate!(phif::FaceScalarField, phi::ScalarField, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
     ndrange = length(faces)
-    kernel! = interpolate_Scalar!(backend, _workgroup(backend, workgroup, ndrange))
-    kernel!(fvals, vals, cells, faces, ndrange=ndrange)
+    kernel! = interpolate_Scalar!(_setup(backend, workgroup, ndrange)...)
+    kernel!(fvals, vals, cells, faces)
     # # KernelAbstractions.synchronize(backend)
 end
 
@@ -99,8 +99,8 @@ function interpolate!(psif::FaceVectorField, psi::VectorField, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
     ndrange = length(faces)
-    kernel! = interpolate_Vector!(backend, _workgroup(backend, workgroup, ndrange))
-    kernel!(xv, yv, zv, xf, yf, zf, faces, ndrange=ndrange)
+    kernel! = interpolate_Vector!(_setup(backend, workgroup, ndrange)...)
+    kernel!(xv, yv, zv, xf, yf, zf, faces)
     # # KernelAbstractions.synchronize(backend)
 end
 

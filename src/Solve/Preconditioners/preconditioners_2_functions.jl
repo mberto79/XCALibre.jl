@@ -41,12 +41,12 @@ function update_preconditioner!(P::Preconditioner{NormDiagonal,M,PT,S}, mesh, co
     A = P.A
     nzval_array = _nzval(A)
     colptr_array = _rowptr(A)
-    m_array = _m(A)
 
     storage = P.storage
 
-    kernel! = update_NormDiagonal!(backend, workgroup)
-    kernel!(colptr_array, nzval_array, storage, ndrange = m_array)
+    ndrange = _m(A)
+    kernel! = update_NormDiagonal!(_setup(backend, workgroup, ndrange)...)
+    kernel!(colptr_array, nzval_array, storage)
     # KernelAbstractions.synchronize(backend)
 end
 
@@ -69,16 +69,17 @@ function update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh, config) 
     (; backend, workgroup) = hardware
 
     A = P.A
-    rowval_array = _colval(A)
-    colptr_array = _rowptr(A)
-    nzval_array = _nzval(A)
-    m_array = _m(A)
+    rowval = _colval(A)
+    colptr = _rowptr(A)
+    nzval = _nzval(A)
+    m = _m(A)
 
     storage = P.storage
-    idx_diagonal = zero(eltype(m_array)) # index to diagonal element
+    idx_diagonal = zero(eltype(m)) # index to diagonal element
 
-    kernel! = update_Jacobi!(backend, workgroup)
-    kernel!(rowval_array, colptr_array, nzval_array, idx_diagonal, storage, ndrange = m_array)
+    ndrange = m
+    kernel! = update_Jacobi!(_setup(backend, workgroup, ndrange)...)
+    kernel!(rowval, colptr, nzval, idx_diagonal, storage)
     # KernelAbstractions.synchronize(backend)
 end
 

@@ -223,10 +223,10 @@ function SIMPLE(
         # new approach
 
         # 1. using velocity from momentum equation
-        interpolate!(Uf, U, config)
-        correct_boundaries!(Uf, U, boundaries.U, time, config)
-        flux!(mdotf, Uf, config)
-        # correct_mass_flux(mdotf, p, rDf, config)
+        # interpolate!(Uf, U, config)
+        # correct_boundaries!(Uf, U, boundaries.U, time, config)
+        # flux!(mdotf, Uf, config)
+        correct_mass_flux(mdotf, p, rDf, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
         turbulence!(turbulenceModel, model, S, prev, time, config) 

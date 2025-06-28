@@ -309,8 +309,8 @@ function CSIMPLE(
         end
 
         correct_velocity!(U, Hv, ∇p, rD, config)
-        interpolate!(Uf, U, config)
-        correct_boundaries!(Uf, U, boundaries.U, time, config)
+        # interpolate!(Uf, U, config)
+        # correct_boundaries!(Uf, U, boundaries.U, time, config)
         
         turbulence!(turbulenceModel, model, S, prev, time, config) 
         update_nueff!(nueff, nu, model.turbulence, config)

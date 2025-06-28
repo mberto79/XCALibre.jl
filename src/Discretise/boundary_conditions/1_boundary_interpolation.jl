@@ -7,7 +7,7 @@ function correct_boundaries!(phif, phi, BCs, time, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(boundary_cellsID)
-    kernel! = _correct_boundaries!(backend, workgroup, ndrange)
+    kernel! = _correct_boundaries!(_setup(backend, workgroup, ndrange)...)
     kernel!(BCs, phif, phi, boundaries, boundary_cellsID, time)
 end
 

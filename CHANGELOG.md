@@ -3,10 +3,11 @@
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v0.3.1` breaking changes will be recorded here. 
 
-## Version [v0.5.0] - 2025-06-26
+## Version [v0.5.0] - 2025-06-28
 
 ### Added
 * New boundary conditions `Extrapolated` and `Zerogradient` have been added. Both assign a zero gradient boundary condition, however, their implementation differs. `Extrapolated` assigns the zero gradient condition semi-implicitly (using the cell centre unknown and the cell centre value from the previous iteration). `Zerogradient` assigns the gradient in the boundary faces explicitly [#61](@ref)
+* The workgroup size for the CPU backend can now be automatically chosen when `workgroup=AutoTune()`. This uses a simple ceiling division internally where the number of elements in the kernel are divided by the number of available threads. This results in a small 10% performance gain [#61](@ref)
 
 ### Fixed
 * Fixed the implementation for the calculation of the wall distance to work on GPUs [#49](@ref)
@@ -19,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `update_user_boundary` function, extension has been reverted, overwriting the changes made to expose the `ModelEquation` type to it in [#55](@ref)
 * User-provided boundary conditions are no longer stored within fields, instead a `NamedTuple` is constructed using the function `assign`, which is passed to solvers using the `Configuration` struct. 
 * Configuration setting provided by the user at the top-level API are now stored in predefined structs, instead of using `NamedTuples`, this change should put less pressure on the compiler [#61](@ref)
+* Internally, kernel launches have been updated to use a static `NDrange`. This resulted in a 20% speed improvement on GPU backends (only NVidia GPUs tested) [#61](@ref)
 
 ### Breaking
 * The definition of Krylov solvers in the previous API used types exported directly from `Krylov.jl`. Now solvers are defined using instances of types defined in `XCALibre.jl`. As an example, previously the CG solver was defined using the type `CgSolver` now this solver is defined using the instance `Cg()` where the suffix "Solver" has been dropped. This applies to all previously available solver choices [#60](@ref)

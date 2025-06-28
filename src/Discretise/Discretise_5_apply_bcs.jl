@@ -49,7 +49,7 @@ function _apply_boundary_conditions!(
         # KernelAbstractions.synchronize(backend)
 
         ndrange = nbfaces
-        kernel! = apply_boundary_conditions_kernel!(backend, workgroup, ndrange)
+        kernel! = apply_boundary_conditions_kernel!(_setup(backend, workgroup, ndrange)...)
         kernel!(
             model, BCs,model.terms, faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time, ndrange=ndrange
             )

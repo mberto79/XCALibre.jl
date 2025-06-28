@@ -1,5 +1,6 @@
 module Multithread
 
+export AutoTune
 export _setup
 
 using KernelAbstractions
@@ -14,8 +15,9 @@ import KernelAbstractions
 
 include("spmvm.jl")
 
-_setup(backend::CPU, workgroup::I, ndrange::I) where {I<: Integer} = begin
-    # (backend, cld(ndrange, Threads.nthreads()) + one(I), ndrange)
+struct AutoTune end
+
+_setup(backend::CPU, workgroup::AutoTune, ndrange::I) where {I<: Integer} = begin
     (backend, cld(ndrange, Threads.nthreads()), ndrange)
 end
 

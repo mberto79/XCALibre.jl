@@ -303,7 +303,7 @@ function calcdeltalambda(cellcentre, nodes, facenode, facecell, numfaces, S, n)
             Pf = facecoords[i,:].-cellcentre[facecell[i][1],:]
             f1f[i, :] = Pf .- (dot(Pf, n[i,:])/dot(cellcentre[facecell[i][2],:].-cellcentre[facecell[i][1],:], n[i,:])) .* (cellcentre[facecell[i][2],:].-cellcentre[facecell[i][1],:])
             PN = cellcentre[facecell[i][2],:].-cellcentre[facecell[i][1],:]
-            facelambda[i] = 1 - (dot(Pf, n_PN)./sqrt(dot(PN, PN)))
+            facelambda[i] = 1.0 - (dot(Pf, n_PN)./sqrt(dot(PN, PN)))
         end
     end
 

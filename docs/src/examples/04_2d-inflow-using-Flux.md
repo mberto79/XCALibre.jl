@@ -49,10 +49,10 @@ Next, a neural network will be created to return a parabolic velocity profile. I
 ```@example flux
 
 actual(y) = begin
-    H = 1 # channel height
-    H2 = H/2
+    H = 1.0 # channel height
+    H2 = H/2.0
     h = y - H2
-    vx = (1 - (h/H2)^2)
+    vx = (1.0 - (h/H2)^2.0)
     return vx
 end
 

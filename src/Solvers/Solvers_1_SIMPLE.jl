@@ -321,7 +321,7 @@ end
     (; values) = grad.field
     weight, df = correction_weight(cells, faces, fID)
     # weight = face.weight
-    gradi = weight*grad[cID1] + (1 - weight)*grad[cID2]
+    gradi = weight*grad[cID1] + (1.0 - weight)*grad[cID2]
     gradf = gradi + ((values[cID2] - values[cID1])/delta - (gradi⋅e))*e
     # gradf = gradi
 

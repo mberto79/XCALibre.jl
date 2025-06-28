@@ -61,7 +61,7 @@ end
 mag(vector) = sqrt(vector[1]^2 + vector[2]^2 + vector[3]^2) 
 
 nut_wall(nu, yplus, kappa, E::T) where T = begin
-    max(nu*(yplus*kappa/log(max(E*yplus, 1.0 + 1e-4)) - 1), zero(T))
+    max(nu*(yplus*kappa/log(max(E*yplus, 1.0 + 1e-4)) - 1.0), zero(T))
 end
 
 @generated correct_production!(P, fieldBCs, model, gradU, config) = begin

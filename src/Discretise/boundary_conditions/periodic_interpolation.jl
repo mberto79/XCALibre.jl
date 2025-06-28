@@ -50,7 +50,7 @@ end
         delta = delta1 + delta2
         w = delta2/delta
         # psi_face = 0.5*(psi[cID] + psi[pcID]) # linear interpolation 
-        psif[fID] = w*psi[cID] + (1 - w)psi[pcID] # linear interpolation 
+        psif[fID] = w*psi[cID] + (1.0 - w)psi[pcID] # linear interpolation 
     end
     nothing
 end
@@ -138,7 +138,7 @@ end
 #         delta = delta1 + delta2
 #         w = delta2/delta
 #         # psi_face = 0.5*(psi[cID] + psi[pcID]) # linear interpolation 
-#         psi_face = w*psi[cID] + (1 - w)psi[pcID] # linear interpolation 
+#         psi_face = w*psi[cID] + (1.0 - w)psi[pcID] # linear interpolation 
 #         x[fID] = psi_face[1]
 #         y[fID] = psi_face[2]
 #         z[fID] = psi_face[3]

@@ -71,7 +71,7 @@ end
         phi1 = vals[owner1]
         phi2 = vals[owner2]
 
-        one_minus_weight = 1 - weight
+        one_minus_weight = 1.0 - weight
         fvals[i] = weight*phi1 + one_minus_weight*phi2 # check weight is used correctly!
     end
 end
@@ -120,7 +120,7 @@ end
         z1 = zv[cID1]; z2 = zv[cID2]
 
         # Calculate one minus weight
-        one_minus_weight = 1 - weight
+        one_minus_weight = 1.0 - weight
 
         # Update psif x and y arrays for interpolation (IMPLEMENT 3D)
         xf[i] = weight*x1 + one_minus_weight*x2 # check weight is used correctly!
@@ -148,7 +148,7 @@ function interpolate!(
         grad2 = grad(cID2)
         # get weight for current scheme
         w, df = weight(get_scheme(grad), cells, faces, fID)
-        one_minus_weight = 1 - w
+        one_minus_weight = 1.0 - w
         # calculate interpolated value
         grad_ave = w*grad1 + one_minus_weight*grad2
         # correct interpolation

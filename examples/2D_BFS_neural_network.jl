@@ -12,7 +12,7 @@ actual(y) = begin
     H = 1 # channel height
     H2 = H/2
     h = y - H2
-    vx = (1 - (h/H2)^2)
+    vx = (1.0 - (h/H2)^2.0)
     return vx
 end
 

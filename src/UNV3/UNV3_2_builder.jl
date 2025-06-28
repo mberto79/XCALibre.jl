@@ -668,7 +668,7 @@ calculate_area_and_volume!(mesh) = begin
             t2z=n3[3]-n1[3]
 
             area2=(t1y*t2z-t1z*t2y)^2+(t1x*t2z-t1z*t2x)^2+(t1y*t2x-t1x*t2y)^2
-            area=sqrt(area2)/2
+            area=sqrt(area2)*0.5
             
             @reset face.area = area
 
@@ -689,7 +689,7 @@ calculate_area_and_volume!(mesh) = begin
             t2z=n3[3]-n1[3]
 
             area2=(t1y*t2z-t1z*t2y)^2+(t1x*t2z-t1z*t2x)^2+(t1y*t2x-t1x*t2y)^2
-            area=sqrt(area2)/2
+            area=sqrt(area2)*0.5
 
             for ic=4:4 # Temp fix for quad faces only.
                 n1 = nodes[nIDs[1]].coords
@@ -705,7 +705,7 @@ calculate_area_and_volume!(mesh) = begin
                 t2z=n3[3]-n1[3]
 
                 area2=(t1y*t2z-t1z*t2y)^2+(t1x*t2z-t1z*t2x)^2+(t1y*t2x-t1x*t2y)^2
-                area=area+sqrt(area2)/2
+                area=area+sqrt(area2)*0.5
 
             end
             @reset face.area = area

@@ -7,10 +7,10 @@ using StaticArrays
     vmax = 0.5
     y = vec[2]
     H = 0.1
-    H2 = H/2
+    H2 = H/2.0
     h = y - H2
     xdir = SVector{3}(1,0,0)
-    xvel = vmax*(1 - (h/H2)^2)
+    xvel = vmax*(1.0 - (h/H2)^2.0)
     velocity = xvel*xdir
     return velocity
 end

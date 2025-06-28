@@ -371,7 +371,7 @@ function correct_mass_flux(mdotf, p, rDf, config)
     n_bfaces = length(boundary_cellsID)
     n_ifaces = n_faces - n_bfaces
 
-    ndrange = n_ifaces # length(n_ifaces) is a BUG! should be n_ifaces only!!!!
+    ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
     kernel! = _correct_mass_flux(_setup(backend, workgroup, ndrange)...)
     kernel!(mdotf, p, rDf, faces, cells, n_bfaces)
     # KernelAbstractions.synchronize(backend)

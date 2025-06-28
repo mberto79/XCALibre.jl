@@ -40,11 +40,11 @@ function _apply_boundary_conditions!(
         
     end
         # Execute apply boundary conditions kernel
-        ndrange = nbfaces
-        kernel! = apply_boundary_conditions_kernel!(
-            backend, _workgroup(backend, workgroup, ndrange))
+        kernel_range = nbfaces
+
+        kernel! = apply_boundary_conditions_kernel!(backend, workgroup, kernel_range)
         kernel!(
-            model, BCs,model.terms, faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time, ndrange=ndrange
+            model, BCs,model.terms, faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time, ndrange=kernel_range
             )
 
     # Loop over boundary conditions to apply boundary conditions 

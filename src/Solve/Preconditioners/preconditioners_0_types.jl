@@ -90,13 +90,14 @@ struct DILUprecon{M,V,VI}
 end
 Adapt.@adapt_structure DILUprecon
 
-Preconditioner{DILU}(A::SparseMatrixCSR{N,F,I}) where {N,F,I} = begin
+Preconditioner{DILU}(A::SparseXCSR{N,F,I}) where {N,F,I} = begin
     m, n = size(A)
     m == n || throw("Matrix not square")
+    Acsr = parent(A)
     D = zeros(F, m)
     Di = zeros(I, m)
-    diagonal_indices!(Di, A)
-    S = DILUprecon(A, D, Di)
+    diagonal_indices!(Di, Acsr)
+    S = DILUprecon(Acsr, D, Di)
     P = S
-    Preconditioner{DILU,typeof(A),typeof(P),typeof(S)}(A,P,S)
+    Preconditioner{DILU,typeof(Acsr),typeof(P),typeof(S)}(Acsr,P,S)
 end

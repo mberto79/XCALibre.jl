@@ -3,7 +3,7 @@ export copy_to_cpu
 
 initialise_writer(format::VTK, mesh::Mesh2) = VTKWriter2D(nothing, nothing)
 
-function write_results(iteration::TI, mesh, meshData::VTKWriter2D, args...) where TI
+function write_results(iteration::TI, mesh, meshData::VTKWriter2D, BCs, args...) where TI
     name = ""
     if TI <: Integer
         name = @sprintf "iteration_%i" iteration

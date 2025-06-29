@@ -11,8 +11,9 @@ mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
 # backend = CUDABackend() # Uncomment this if using GPU
 backend = CPU() # Uncomment this if using CPU
+workgroup = workgroupsize(mesh)
 periodic = construct_periodic(mesh, backend, :top, :bottom)
-# mesh_dev = adapt(CUDABackend(), mesh)  # Uncomment this if using GPU
+mesh_dev = adapt(backend, mesh)
 
 velocity = [0.25, 0.0, 0.0]
 nu = 1e-3
@@ -23,45 +24,45 @@ model = Physics(
     fluid = Fluid{Incompressible}(nu=nu),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
-    domain = mesh # mesh_dev  # use mesh_dev for GPU backend
+    domain = mesh_dev # mesh_dev  # use mesh_dev for GPU backend
     )
 
-
-    
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:plate, [0.0, 0.0, 0.0]),
-    Neumann(:side1, 0.0),
-    Neumann(:side2, 0.0),
-    periodic...
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:plate, 0.0),
-    Neumann(:side1, 0.0),
-    Neumann(:side2, 0.0),
-    periodic...
+BCs = assign(
+    region=mesh,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Extrapolated(:outlet),
+            Wall(:plate, [0.0, 0.0, 0.0]),
+            Extrapolated(:side1),
+            Extrapolated(:side2),
+            periodic...
+        ],
+        p = [
+            Extrapolated(:inlet),
+            Dirichlet(:outlet, 0.0),
+            Extrapolated(:plate),
+            Extrapolated(:side1),
+            Extrapolated(:side2),
+            periodic...
+        ]
+    )
 )
 
 schemes = (
-    U = set_schemes(divergence=Linear, gradient=Midpoint),
-    p = set_schemes(gradient=Midpoint)
+    U = Schemes(divergence=Linear, gradient=Midpoint),
+    p = Schemes(gradient=Midpoint)
 )
 
 solvers = (
-    U = set_solver(
-        model.momentum.U;
+    U = SolverSetup(
         solver      = Bicgstab(), #Cg(), # Bicgstab(), Gmres(), #Cg()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
         rtol = 1e-1
     ),
-    p = set_solver(
-        model.momentum.p;
+    p = SolverSetup(
         solver      = Cg(), #Gmres(), #Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -70,15 +71,15 @@ solvers = (
     )
 )
 
-runtime = set_runtime(
+runtime = Runtime(
     iterations=100, time_step=1, write_interval=100)
 
-hardware = set_hardware(backend=CPU(), workgroup=1024)
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=ROCBackend(), workgroup=32)
+hardware = Hardware(backend=backend, workgroup=workgroup)
+# hardware = Hardware(backend=CUDABackend(), workgroup=32)
+# hardware = Hardware(backend=ROCBackend(), workgroup=32)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc(true)
 
@@ -88,14 +89,14 @@ GC.gc(true)
 residuals = run!(model, config)
 
 # test periodic boundaries agree (velocity)
-top = boundary_average(:top, model.momentum.U, config)
-bottom = boundary_average(:bottom, model.momentum.U, config)
+top = boundary_average(:top, model.momentum.U, BCs.U, config)
+bottom = boundary_average(:bottom, model.momentum.U, BCs.U, config)
 
 @test top ≈ bottom
 
 # test periodic boundaries agree (pressure)
-top = boundary_average(:top, model.momentum.p, config)
-bottom = boundary_average(:bottom, model.momentum.p, config)
+top = boundary_average(:top, model.momentum.p, BCs.p, config)
+bottom = boundary_average(:bottom, model.momentum.p, BCs.p, config)
 
 @test top ≈ bottom
 

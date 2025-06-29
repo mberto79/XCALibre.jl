@@ -46,7 +46,7 @@ function PISO(
     (; U, p, Uf, pf) = model.momentum
     (; nu) = model.fluid
     mesh = model.domain
-    (; solvers, schemes, runtime, hardware) = config
+    (; solvers, schemes, runtime, hardware, boundaries) = config
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
     
@@ -73,8 +73,9 @@ function PISO(
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
     TI = _get_int(mesh)
-    prev = zeros(TF, n_cells)
-    prev = _convert_array!(prev, backend) 
+    # prev = zeros(TF, n_cells)
+    # prev = _convert_array!(prev, backend) 
+    prev = KernelAbstractions.zeros(backend, TF, n_cells)
 
     # Pre-allocate vectors to hold residuals 
     R_ux = ones(TF, iterations)
@@ -86,9 +87,9 @@ function PISO(
     # Initial calculations
     time = zero(TF) # assuming time=0
     interpolate!(Uf, U, config)   
-    correct_boundaries!(Uf, U, U.BCs, time, config)
+    correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
-    grad!(∇p, pf, p, p.BCs, time, config)
+    grad!(∇p, pf, p, boundaries.p, time, config)
     limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
     update_nueff!(nueff, nu, model.turbulence, config)
@@ -103,7 +104,7 @@ function PISO(
         time = iteration *dt
 
         rx, ry, rz = solve_equation!(
-            U_eqn, U, solvers.U, xdir, ydir, zdir, config; time=time)
+            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)
           
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
@@ -116,7 +117,7 @@ function PISO(
             
             # Interpolate faces
             interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
-            correct_boundaries!(Uf, Hv, U.BCs, time, config)
+            correct_boundaries!(Uf, Hv, boundaries.U, time, config)
             # div!(divHv, Uf, config)
 
             # new approach
@@ -125,20 +126,20 @@ function PISO(
             
             # Pressure calculations (previous implementation)
             @. prev = p.values
-            rp = solve_equation!(p_eqn, p, solvers.p, config; ref=pref, time=time)
+            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref, time=time)
             if i == inner_loops
                 explicit_relaxation!(p, prev, 1.0, config)
             else
                 explicit_relaxation!(p, prev, solvers.p.relax, config)
             end
 
-            grad!(∇p, pf, p, p.BCs, time, config) 
+            grad!(∇p, pf, p, boundaries.p, time, config) 
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
             # nonorthogonal correction (experimental)
             for i ∈ 1:ncorrectors
                 discretise!(p_eqn, p, config)       
-                apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
+                apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
                 setReference!(p_eqn, pref, 1, config)
                 nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
                 update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
@@ -149,19 +150,19 @@ function PISO(
                 else
                     explicit_relaxation!(p, prev, solvers.p.relax, config)
                 end
-                grad!(∇p, pf, p, p.BCs, time, config) 
+                grad!(∇p, pf, p, boundaries.p, time, config) 
                 limit_gradient!(schemes.p.limiter, ∇p, p, config)
             end
 
             # old approach - keep for now!
             # correct_velocity!(U, Hv, ∇p, rD, config)
             # interpolate!(Uf, U, config)
-            # correct_boundaries!(Uf, U, U.BCs, time, config)
+            # correct_boundaries!(Uf, U, boundaries.U, time, config)
             # flux!(mdotf, Uf, config) # old approach
 
             # new approach
             interpolate!(Uf, U, config) # velocity from momentum equation
-            correct_boundaries!(Uf, U, U.BCs, time, config)
+            correct_boundaries!(Uf, U, boundaries.U, time, config)
             flux!(mdotf, Uf, config)
             correct_mass_flux(mdotf, p, rDf, config)
             correct_velocity!(U, Hv, ∇p, rD, config)
@@ -196,7 +197,8 @@ function PISO(
         )
 
     if iteration%write_interval + signbit(write_interval) == 0
-        save_output(model, outputWriter, time)
+        # save_output(model, outputWriter, time, config)
+        save_output(model, outputWriter, iteration, config)
     end
 
     end # end for loop

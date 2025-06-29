@@ -98,8 +98,8 @@ mesh_dev = adapt(backend, mesh) # make mesh object backend compatible and move t
 ## Hardware configuration
 ---
 
-In order to configure the backend the `set_hardware` function can be used. 
+In order to configure the backend the `Hardware` function can be used. 
 
 ```@docs; canonical=false
-set_hardware
+Hardware
 ```

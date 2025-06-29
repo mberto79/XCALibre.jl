@@ -1,4 +1,4 @@
-export correct_boundaries!
+# export correct_boundaries!
 export interpolate!
 
 # Temporary functions to extract boundary array
@@ -16,30 +16,24 @@ end
 
 # Function to correct interpolation at boundaries (expands loop to reduce allocations)
 
-@generated function correct_boundaries!(phif, phi, BCs, time, config)
-    unpacked_BCs = []
-    for i ∈ 1:length(BCs.parameters)
-        unpack = quote
-            #KERNEL LAUNCH
-            adjust_boundary!(b_cpu, BCs[$i], phif, phi, boundaries, boundary_cellsID, time, backend, workgroup)
-        end
-        push!(unpacked_BCs, unpack)
-    end
-    quote
-    (; mesh) = phif
-    (; boundary_cellsID, boundaries) = mesh 
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-    # b_cpu = Array{eltype(boundaries)}(undef, length(boundaries))
-    # copyto!(b_cpu, boundaries)
-    b_cpu = to_cpu(boundaries)
 
-    # backend = _get_backend(mesh)
-    $(unpacked_BCs...) 
-    # Added below for testing
-    # # KernelAbstractions.synchronize(backend)
-    end
-end
+# @generated function correct_boundaries!(phif, phi, BCs, time, config)
+#     unpacked_BCs = []
+#     for i ∈ 1:length(BCs.parameters)
+#         unpack = quote
+#             #KERNEL LAUNCH
+#             adjust_boundary!(BCs[$i], phif, phi, boundaries, boundary_cellsID, time, backend, workgroup)
+#         end
+#         push!(unpacked_BCs, unpack)
+#     end
+#     quote
+#     (; mesh) = phif
+#     (; boundary_cellsID, boundaries) = mesh 
+#     (; hardware) = config
+#     (; backend, workgroup) = hardware
+#     $(unpacked_BCs...) 
+#     end
+# end
 
 ## SCALAR INTERPOLATION
 
@@ -55,8 +49,9 @@ function interpolate!(phif::FaceScalarField, phi::ScalarField, config)
     # Launch interpolate kernel
     (; hardware) = config
     (; backend, workgroup) = hardware
-    kernel! = interpolate_Scalar!(backend, workgroup)
-    kernel!(fvals, vals, cells, faces, ndrange = length(faces))
+    ndrange = length(faces)
+    kernel! = interpolate_Scalar!(_setup(backend, workgroup, ndrange)...)
+    kernel!(fvals, vals, cells, faces)
     # # KernelAbstractions.synchronize(backend)
 end
 
@@ -76,34 +71,7 @@ end
         phi1 = vals[owner1]
         phi2 = vals[owner2]
 
-        # Extract vectors
-        # cell1 = cells[owner1]
-        # cell2 = cells[owner2]
-        # P = cell1.centre
-        # N = cell2.centre 
-        # PN = N - P
-        # PF = F - P 
-
-        # option 1
-        # d = norm(PN)
-        # D = PN/d
-        # df = PF⋅D
-
-        # option 2
-        # d = PN⋅normal
-        # df = PF⋅normal
-        # weight = df/d
-
-        # option 3
-        # d = norm(PN)
-        # df = norm(PF)
-        # weight = df/d
-
-
-        # Calculate one minus weight
-        one_minus_weight = 1 - weight
-
-        # Update phif values array for interpolation
+        one_minus_weight = 1.0 - weight
         fvals[i] = weight*phi1 + one_minus_weight*phi2 # check weight is used correctly!
     end
 end
@@ -130,8 +98,9 @@ function interpolate!(psif::FaceVectorField, psi::VectorField, config)
     # backend = _get_backend(mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware
-    kernel! = interpolate_Vector!(backend, workgroup)
-    kernel!(xv, yv, zv, xf, yf, zf, faces, ndrange = length(faces))
+    ndrange = length(faces)
+    kernel! = interpolate_Vector!(_setup(backend, workgroup, ndrange)...)
+    kernel!(xv, yv, zv, xf, yf, zf, faces)
     # # KernelAbstractions.synchronize(backend)
 end
 
@@ -151,7 +120,7 @@ end
         z1 = zv[cID1]; z2 = zv[cID2]
 
         # Calculate one minus weight
-        one_minus_weight = 1 - weight
+        one_minus_weight = 1.0 - weight
 
         # Update psif x and y arrays for interpolation (IMPLEMENT 3D)
         xf[i] = weight*x1 + one_minus_weight*x2 # check weight is used correctly!
@@ -179,7 +148,7 @@ function interpolate!(
         grad2 = grad(cID2)
         # get weight for current scheme
         w, df = weight(get_scheme(grad), cells, faces, fID)
-        one_minus_weight = 1 - w
+        one_minus_weight = 1.0 - w
         # calculate interpolated value
         grad_ave = w*grad1 + one_minus_weight*grad2
         # correct interpolation

@@ -15,7 +15,7 @@ function _convert_array!(arr, backend::CPU)
 end
 
 function bounding_box(mesh::AbstractMesh)
-    (; faces, nodes) = mesh
+    (; faces, face_nodes, nodes) = mesh
     nbfaces = total_boundary_faces(mesh)
     TF = _get_float(mesh)
     z = zero(TF)
@@ -23,7 +23,7 @@ function bounding_box(mesh::AbstractMesh)
     xmax, ymax, zmax = z, z, z
     for fID ∈ 1:nbfaces
         face = faces[fID]
-        for nID ∈ face.nodes_range 
+        for nID ∈ @view face_nodes[face.nodes_range]
             node = nodes[nID]
             coords = node.coords
             xmin = min(xmin, coords[1])

@@ -9,9 +9,9 @@ function extract_diagonal!(D, Di, A::AbstractSparseArray, config)
     backend = CPU()
     workgroup = cld(n, Threads.nthreads())
     
-
-    kernel! = _extract_diagonal!(backend, workgroup)
-    kernel!(D, Di, nzval, ndrange = n)
+    ndrange = n
+    kernel! = _extract_diagonal!(_setup(backend, workgroup, ndrange)...)
+    kernel!(D, Di, nzval)
 end
 
 @kernel function _extract_diagonal!(D, Di, nzval)

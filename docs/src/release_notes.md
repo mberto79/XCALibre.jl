@@ -7,21 +7,51 @@ EditURL = "https://github.com/github.com/mberto79/XCALibre.jl/blob/master/CHANGE
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v0.3.1` breaking changes will be recorded here. 
 
+## Version [v0.5.0](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.5.0) - 2025-06-XX
+
+### Added
+* No functionality added
+
+### Fixed
+* Fixed the implementation for the calculation of the wall distance to work on GPUs [#49](@ref)
+* The new approach for handling user-provided boundary conditions now allows extracting the wall velocity specified by the user for the `Wall` boundary condition [#61](@ref)
+
+### Changed
+* In the calculation of wall function properties the user-provided wall velocity is now used, instead of hard-coded to no-slip [#49](@ref)
+* The functions `set_production!`, `set_cell_value!` and `correct_nut_wall!`, in `RANS_functions.jl` have been updated, removing conditional branch used in the generated calling them. Now these functions use multiple dispatch to allow specialising the wall function framework to ease the development of new wall functions [#57](@ref)
+* New `NeumannFunction` has been created, mirroring the DirichletFunction, providing a Neumann boundary condition defined with a user-provided struct (a generic framework accepting a function to set the gradient at the boundary is not yet available) [#57](@ref)
+- `update_user_boundary` function, extension has been reverted, overwriting the changes made to expose the `ModelEquation` type to it in [#55](@ref)
+* User-provided boundary conditions are no longer stored within fields, instead a `NamedTuple` is constructed using the function `assign`, which is passed to solvers using the `Configuration` struct. 
+* Configuration setting provided by the user at the top-level API are now stored in predefined structs, instead of using `NamedTuples`, this change should put less pressure on the compiler [#61](@ref)
+
+### Breaking
+* The definition of Krylov solvers in the previous API used types exported directly from `Krylov.jl`. Now solvers are defined using instances of types defined in `XCALibre.jl`. As an example, previously the CG solver was defined using the type `CgSolver` now this solver is defined using the instance `Cg()` where the suffix "Solver" has been dropped. This applies to all previously available solver choices [#60](@ref)
+* The Green-Gauss method for calculating the gradient is now `Gauss` which is more descriptive than the previous name `Orthogonal`
+* The internals for handling user-provided boundary conditions have been updated in preparation for extending the code for handling multiple regions. Thus, the syntax for assigning boundary conditions has changed. The most noticeable change is the removal of the the `@assign!` macro, replaced by the function `assign`. See the documentation for details [#61](@ref)
+* The `set_solver`, `set_hardware` and `set_runtime` top-level functions have been replaced with `SolverSetup`, `Hardware` and `Runtime` structures. This allowed storing user-provided setup information in structs instead of `NamedTuples` to reduce the burden on the compiler [#61](@ref)
+
+### Deprecated
+* No functions deprecated
+
+### Removed
+* The functions `set_solver`, `set_runtime`, `set_hardware` and the macro `@assign!` have been removed/replaced [#61](@ref)
+
 ## Version [v0.4.2](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.4.2) - 2025-04-02
 
 ### Added
 * A very simple 2D block mesh generator has been added (not ready for general use as it needs to be documented)[#41](@ref)
 * Implementation of `Wall` boundary conditions specialised for `ScalarField` [#45](@ref)
-* Simulation results can now be written to `VTK` and `OpenFOAM` formats. The format can be selected using the `output` keyword argument in the `run!` function. The formats available are `VTK()` and `OpenFOAM()`
+* Simulation results can now be written to `VTK` and `OpenFOAM` formats. The format can be selected using the `output` keyword argument in the `run!` function. The formats available are `VTK()` and `OpenFOAM()` [#47](@ref)
 
 ### Fixed
 * Fixed the implementation for the calculation of the wall distance [#45](@ref)
 
 ### Changed
 * In preparation for hybrid RANS/LES models, the object `Turbulence` is now passed to the `TurbulenceModel` object to allow for a more general call of `turbulence!`. This changes the implementation of `turbulence!` for all models slightly [#46](@ref)
-* Improved stability on meshes with warped faces by changing how face normals are calculated. XCALibre now uses an area-weighted face normal calculation based on the decomposition of faces into triangles
-* Removed `VTK` module and moved functionality to a new `IOFormats` module
-* Internally the function `model2vtk` has been replaced with `save_output` within all solvers. The specialisation for writing `ModelPhysics` models to file has also changed to `save_output`. The arguements pass to this function have also changed, the `name` of the file is not passed to the function, instead, the current runtime variable `time` is required
+* Improved stability on meshes with warped faces by changing how face normals are calculated. XCALibre now uses an area-weighted face normal calculation based on the decomposition of faces into triangles [#47](@ref)
+* Removed `VTK` module and moved functionality to a new `IOFormats` module [#47](@ref)
+* Internally the function `model2vtk` has been replaced with `save_output` within all solvers. The specialisation for writing `ModelPhysics` models to file has also changed to `save_output`. The arguements pass to this function have also changed, the `name` of the file is not passed to the function, instead, the current runtime variable `time` is required [#47](@ref)
+* The `Momentum` object, part of the `ModelPhysics` object, now includes the `FaceScalarField` and `FaveVectorField` in addition to existing fields in preparation for non-uniform boundary definition when using the `OpenFOAM` output format [#47](@ref)
 
 ### Breaking
 * No breaking changes
@@ -75,7 +105,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Improved documentation/readme on supported GPU backends/hardware and make users aware of potential `F32` limitation on some hardware
 
 ### Breaking
-* The top level API for all solvers no longer takes the keyword argument `limit_gradient` for activating gradient limiter. New gradient limiters have been added and can be selected/configured when assigning numerical schemes with the `set_schemes` function [#30](@ref)
+* The top level API for all solvers no longer takes the keyword argument `limit_gradient` for activating gradient limiter. New gradient limiters have been added and can be selected/configured when assigning numerical schemes with the `Schemes` function [#30](@ref)
 
 ### Deprecated
 * No functions deprecated
@@ -99,7 +129,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Multithreaded sparse matrix vector multiplication is now functional [#23](@ref)
 * Precompilation errors on Julia v1.11 addressed by bringing code from `ThreadedSparseCSR.jl` [#24](@ref)
 * Update compat entry for `Atomix.jl` to v1.0,0 [#24](@ref)
-* `DILU` preconditioner is now implemented to work with sparse matrices in CSR format and uses a hybrid approach (running on CPU) to allow working when using GPU backends (further work needed) [#26](@ref)
+- `DILU` preconditioner is now implemented to work with sparse matrices in CSR format and uses a hybrid approach (running on CPU) to allow working when using GPU backends (further work needed) [#26](@ref)
 * The implementation of RANS models and wall functions has been improved for consistency (resulting in some computational gains). The calculation of `yPlusLam` is only done once when constructing the wall function objects. The calculation of the velocity gradient is now only done within the turbulence model main function (`turbulence!`) [#28](@ref)
 
 ### Breaking

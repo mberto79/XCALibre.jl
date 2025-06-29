@@ -107,80 +107,81 @@ function foil_optim(α::Vector{Float64})
         domain = mesh_dev
         )
 
-    @assign! model momentum U ( 
-        XCALibre.Dirichlet(:inlet, velocity),
-        XCALibre.Dirichlet(:bottom, velocity),
-        Neumann(:outlet, 0.0),
-        Neumann(:top, 0.0),
-        Wall(:foil, noSlip)
-    )
-
-    @assign! model momentum p (
-        Neumann(:inlet, 0.0),
-        Neumann(:bottom, 0.0),
-        XCALibre.Dirichlet(:outlet, 0.0),
-        XCALibre.Dirichlet(:top, 0.0),
-        Neumann(:foil, 0.0)
-    )
-
-    @assign! model turbulence k (
-        XCALibre.Dirichlet(:inlet, k_inlet),
-        Neumann(:outlet, 0.0),
-        Neumann(:top, 0.0),
-        Neumann(:bottom, 0.0),
-        XCALibre.Dirichlet(:foil, 1e-15)
-    )
-
-    @assign! model turbulence omega (
-        XCALibre.Dirichlet(:inlet, ω_inlet),
-        Neumann(:outlet, 0.0),
-        Neumann(:top, 0.0),
-        Neumann(:bottom, 0.0),
-        OmegaWallFunction(:foil)
-    )
-
-    @assign! model turbulence nut (
-        Neumann(:inlet, 0.0),
-        Neumann(:outlet, 0.0),
-        Neumann(:top, 0.0),
-        Neumann(:bottom, 0.0), 
-        XCALibre.Dirichlet(:foil, 0.0)
+    BCs = assign(
+        region=mesh_dev,
+        (
+            U = [
+                XCALibre.Dirichlet(:inlet, velocity),
+                XCALibre.Dirichlet(:bottom, velocity),
+                Extrapolated(:outlet, 0.0),
+                Extrapolated(:top, 0.0),
+                Wall(:foil, noSlip)
+            ],
+            p = [
+                Extrapolated(:inlet, 0.0),
+                Extrapolated(:bottom, 0.0),
+                XCALibre.Dirichlet(:outlet, 0.0),
+                XCALibre.Dirichlet(:top, 0.0),
+                Extrapolated(:foil, 0.0)
+            ],
+            k = [
+                XCALibre.Dirichlet(:inlet, k_inlet),
+                Extrapolated(:outlet, 0.0),
+                Extrapolated(:top, 0.0),
+                Extrapolated(:bottom, 0.0),
+                XCALibre.Dirichlet(:foil, 1e-15)
+            ],
+            omega = [
+                XCALibre.Dirichlet(:inlet, ω_inlet),
+                Extrapolated(:outlet, 0.0),
+                Extrapolated(:top, 0.0),
+                Extrapolated(:bottom, 0.0),
+                OmegaWallFunction(:foil)
+            ],
+            nut = [
+                Extrapolated(:inlet, 0.0),
+                Extrapolated(:outlet, 0.0),
+                Extrapolated(:top, 0.0),
+                Extrapolated(:bottom, 0.0), 
+                XCALibre.Dirichlet(:foil, 0.0)
+            ]
+        )
     )
 
     schemes = (
-        U = set_schemes(divergence=Upwind, gradient=Midpoint),
-        p = set_schemes(divergence=Upwind),
-        k = set_schemes(divergence=Upwind, gradient=Midpoint),
-        omega = set_schemes(divergence=Upwind, gradient=Midpoint)
+        U = Schemes(divergence=Upwind, gradient=Midpoint),
+        p = Schemes(divergence=Upwind),
+        k = Schemes(divergence=Upwind, gradient=Midpoint),
+        omega = Schemes(divergence=Upwind, gradient=Midpoint)
     )
 
     solvers = (
-        U = set_solver(
-            model.momentum.U;
+        U = SolverSetup(
+            region = mesh_dev,
             solver = Bicgstab(), # Bicgstab(), Gmres()
             preconditioner = Jacobi(), # Jacobi
             convergence = 1e-7,
             relax = 0.6,
             rtol = 1e-1,
         ),
-        p = set_solver(
-            model.momentum.p;
+        p = SolverSetup(
+            region = mesh_dev,
             solver = Gmres(), # change to Bicgstab() for GPU runs
             preconditioner = Jacobi(), # change to Jacobi() for GPU runs
             convergence = 1e-7,
             relax = 0.2,
             rtol = 1e-2,
         ),
-        k = set_solver(
-            model.turbulence.k;
+        k = SolverSetup(
+            region = mesh_dev,
             solver = Bicgstab(),
             preconditioner = Jacobi(),
             convergence = 1e-7,
             relax = 0.6,
             rtol = 1e-1,
         ),
-        omega = set_solver(
-            model.turbulence.omega;
+        omega = SolverSetup(
+            region = mesh_dev,
             solver      = Bicgstab(),
             preconditioner = Jacobi(), 
             convergence = 1e-7,
@@ -189,13 +190,13 @@ function foil_optim(α::Vector{Float64})
         )
     )
 
-    runtime = set_runtime(iterations=500, write_interval=500, time_step=1)
-    runtime = set_runtime(iterations=20, write_interval=-1, time_step=1) # hide
+    runtime = Runtime(iterations=500, write_interval=500, time_step=1)
+    runtime = Runtime(iterations=20, write_interval=-1, time_step=1) # hide
 
-    hardware = set_hardware(backend=CPU(), workgroup=1024)
-    # hardware = set_hardware(backend=CUDABackend(), workgroup=32) # uncomment to run on GPU
+    hardware = Hardware(backend=CPU(), workgroup=1024)
+    # hardware = Hardware(backend=CUDABackend(), workgroup=32) # uncomment to run on GPU
 
-    config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
     GC.gc()
 

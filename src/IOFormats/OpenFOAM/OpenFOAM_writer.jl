@@ -189,7 +189,7 @@ initialise_writer(format::OpenFOAM, mesh) = error("
 The OpenFOAM format can only be used for 3D simulations. Use `output=VTK()` instead.
 ")
 
-function write_results(iteration::TI, mesh, meshData::FOAMWriter, args...) where TI
+function write_results(iteration::TI, mesh, meshData::FOAMWriter, BCs, args...) where TI
     timedir = ""
     if TI <: Integer
         timedir = @sprintf "%i" iteration
@@ -231,7 +231,8 @@ function write_results(iteration::TI, mesh, meshData::FOAMWriter, args...) where
 
                 println(io, "boundaryField")
                 println(io, "{")
-                for BC ∈ field.BCs
+                fieldBCs = getproperty(BCs, Symbol(label))
+                for BC ∈ fieldBCs
                     println(io, "\t", boundaries_cpu[BC.ID].name)
                     println(io, _foam_boundary_entry(BC))
                 end
@@ -261,7 +262,8 @@ function write_results(iteration::TI, mesh, meshData::FOAMWriter, args...) where
 
                 println(io, "boundaryField")
                 println(io, "{")
-                for BC ∈ field.BCs
+                fieldBCs = getproperty(BCs, Symbol(label))
+                for BC ∈ fieldBCs
                     println(io, "\t", boundaries_cpu[BC.ID].name)
                     println(io, _foam_boundary_entry(BC))
                 end

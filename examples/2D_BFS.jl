@@ -9,7 +9,7 @@ mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 # backend = CUDABackend(); workgroup = 32
-backend = CPU(); workgroup = 1024; activate_multithread(backend)
+backend = CPU(); workgroup = AutoTune(); activate_multithread(backend)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
@@ -71,7 +71,7 @@ solvers = (
         # smoother=JacobiSmoother(domain=mesh_dev, loops=8, omega=1),
         convergence = 1e-7,
         relax       = 0.8,
-        rtol = 1e-1
+        rtol = 1e-2
     ),
     p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres(), Cg()
@@ -79,7 +79,7 @@ solvers = (
         # smoother=JacobiSmoother(domain=mesh_dev, loops=8, omega=1),
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 1e-2
+        rtol = 1e-3
     )
 )
 
@@ -99,15 +99,16 @@ GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-@time residuals = run!(model, config) # 1189 or 1471 iterations!
+@time residuals = run!(model, config) # 1106 iterations!
 
 # Profiling now 
-# GC.gc()
+GC.gc()
 
-# initialise!(model.momentum.U, velocity)
-# initialise!(model.momentum.p, 0.0)
+initialise!(model.momentum.U, velocity)
+initialise!(model.momentum.p, 0.0)
 
 # @profview residuals = run!(model, config)
+@profview_allocs residuals = run!(model, config) sample_rate=0.00025
 
 # @time residuals = run!(model, config)
 

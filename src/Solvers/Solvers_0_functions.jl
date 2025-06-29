@@ -241,7 +241,7 @@ end
         sumy -= D*Uy[i]
         sumz -= D*Uz[i]
 
-        rD = 1/D
+        rD = 1.0/D
         Hx[i] = (bx[i] - sumx)*rD
         Hy[i] = (by[i] - sumy)*rD
         Hz[i] = (bz[i] - sumz)*rD

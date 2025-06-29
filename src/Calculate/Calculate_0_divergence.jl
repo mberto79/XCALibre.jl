@@ -48,7 +48,7 @@ end
 
 # Divergence calculation kernel
 
-@kernel function div_kernel!(cells::AbstractArray{Cell{TF,SV,UR}}, F, cell_faces, cell_nsign, faces, phi, psif) where {TF,SV,UR}
+@kernel inbounds=true function div_kernel!(cells::AbstractArray{Cell{TF,SV,UR}}, F, cell_faces, cell_nsign, faces, phi, psif) where {TF,SV,UR}
     i = @index(Global)
     
     @inbounds begin

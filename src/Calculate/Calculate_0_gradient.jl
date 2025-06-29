@@ -204,7 +204,7 @@ end
 
 # Correct interpolation kernel definition
 
-@kernel function correct_interpolation_kernel!(faces, cells, nbfaces, phi, F, weight, grad, phif::Field) where {Field}
+@kernel inbounds=true function correct_interpolation_kernel!(faces, cells, nbfaces, phi, F, weight, grad, phif::Field) where {Field}
     i = @index(Global)
     i += nbfaces # Set i such that it does not index boundary faces
 

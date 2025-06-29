@@ -109,34 +109,30 @@ end
     BCs, model, terms, faces, cells, boundary_cellsID,colval, rowptr, nzval, b, component, time, fID)
     N = length(BCs.parameters)
     unroll = Expr(:block)
-    for bi ∈ 1:N
+    for bci ∈ 1:N
         BC_checks = quote
-            
-            z = zero(eltype(nzval))
-            AP, BP = z, z
-            BC, start, stop = get_BC(BCs, $bi)
+            @inbounds begin
+                BC = BCs[$bci] 
+                (; start, stop) = BC.IDs_range
                 if start <= fID <= stop
                     i = fID - start + 1
-                    @inbounds cellID = boundary_cellsID[fID]
-                    @inbounds face = faces[fID]
-                    @inbounds cell = cells[cellID] 
+                    cellID = boundary_cellsID[fID]
+                    face = faces[fID]
+                    cell = cells[cellID] 
 
                     zcellID = spindex(rowptr, colval, cellID, cellID)
-
                     AP, BP = apply!(
                         model, BC, terms, 
                         colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
                         )
                     Atomix.@atomic nzval[zcellID] += AP
                     Atomix.@atomic b[cellID] += BP
+                    return nothing
                 end
-            
+            end
         end
         push!(unroll.args, BC_checks)
     end
-    # return quote
-    #     $(unroll.args...)
-    # end
     return unroll
 end
 

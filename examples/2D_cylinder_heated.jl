@@ -8,11 +8,12 @@ grid = "cylinder_d10mm_5mm.unv"
 # grid = "cylinder_d10mm_2mm.unv"
 # grid = "cylinder_d10mm_10-7.5-2mm.unv"
 mesh_file = joinpath(grids_dir, grid)
+mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 # Inlet conditions
@@ -40,51 +41,49 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U ( 
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:cylinder, noSlip),
-    # Dirichlet(:cylinder, noSlip),
-    Symmetry(:bottom, 0.0),
-    Symmetry(:top, 0.0)
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, pressure),
-    Neumann(:cylinder, 0.0),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model energy h (
-    FixedTemperature(:inlet, T=300.0, model=model.energy),
-    Neumann(:outlet, 0.0),
-    # Neumann(:cylinder, 0.0),
-    FixedTemperature(:cylinder, T=330.0, model=model.energy),
-    Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+BCs = assign(
+    region=mesh_dev,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Neumann(:outlet, 0.0),
+            Wall(:cylinder, noSlip),
+            Symmetry(:bottom, 0.0),
+            Symmetry(:top, 0.0)
+        ],
+        p = [
+            Neumann(:inlet, 0.0),
+            Dirichlet(:outlet, pressure),
+            Wall(:cylinder, 0.0),
+            Neumann(:bottom, 0.0),
+            Neumann(:top, 0.0)
+        ],
+        h = [
+            FixedTemperature(:inlet, T=300.0, Enthalpy(cp=cp, Tref=288.15)),
+            Neumann(:outlet, 0.0),
+            FixedTemperature(:cylinder, T=330.0, Enthalpy(cp=cp, Tref=288.15)),
+            Neumann(:bottom, 0.0),
+            Neumann(:top, 0.0)
+        ]
+    )
 )
 
 solvers = (
-    U = set_solver(
-        model.momentum.U;
+    U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
         rtol = 1e-1,
     ),
-    p = set_solver(
-        model.momentum.p;
+    p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
         rtol = 1e-2
     ),
-    h = set_solver(
-        model.energy.h;
+    h = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -94,15 +93,15 @@ solvers = (
 )
 
 schemes = (
-    U = set_schemes(divergence=LUST, gradient=Midpoint),
-    p = set_schemes(divergence=LUST, gradient=Midpoint),
-    h = set_schemes(divergence=LUST, gradient=Midpoint)
+    U = Schemes(divergence=LUST, gradient=Gauss),
+    p = Schemes(divergence=LUST, gradient=Gauss),
+    h = Schemes(divergence=LUST, gradient=Gauss)
 )
 
-runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
+runtime = Runtime(iterations=500, write_interval=100, time_step=1)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc(true)
 
@@ -114,8 +113,8 @@ println("Maxh ", maximum(model.energy.T.values), " minh ", minimum(model.energy.
 
 residuals = run!(model, config, ncorrectors=2); #, pref=0.0)
 
-plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
-plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p")
-plot!(1:length(Rh), Rh, yscale=:log10, label="h")
+# plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
+# plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
+# plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
+# plot!(1:length(Rp), Rp, yscale=:log10, label="p")
+# plot!(1:length(Rh), Rh, yscale=:log10, label="h")

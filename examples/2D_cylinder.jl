@@ -14,7 +14,7 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 # Inlet conditions
@@ -32,33 +32,35 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U ( 
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:cylinder, noSlip),
-    # Neumann.([:top, :bottom], [0.0, 0.0])...,
-    Symmetry.([:top, :bottom])...,
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:cylinder, 0.0),
-    # Neumann.([:top, :bottom], [0.0, 0.0])...,
-    Symmetry.([:top, :bottom])...,
+BCs = assign(
+    region=mesh_dev,
+    (
+        U = [
+                Dirichlet(:inlet, velocity),
+                Zerogradient(:outlet),
+                Wall(:cylinder, noSlip),
+                Extrapolated(:bottom),
+                Extrapolated(:top)
+        ],
+        p = [
+                Zerogradient(:inlet),
+                Dirichlet(:outlet, 0.0),
+                Wall(:cylinder),
+                Extrapolated(:bottom),
+                Extrapolated(:top)
+        ]
+    )
 )
 
 solvers = (
-    U = set_solver(
-        model.momentum.U;
+    U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
         rtol = 0.1
     ),
-    p = set_solver(
-        model.momentum.p;
+    p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -67,17 +69,17 @@ solvers = (
     )
 )
 
-grad = Orthogonal # Midpoint # Orthogonal
+grad = Gauss # Midpoint # Gauss
 schemes = (
-    U = set_schemes(divergence=Linear, gradient=grad),
-    p = set_schemes(gradient=grad)
+    U = Schemes(divergence=Linear, gradient=grad),
+    p = Schemes(gradient=grad)
 )
 
-# runtime = set_runtime(iterations=20, write_interval=10, time_step=1) # for proto
-runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
+# runtime = Runtime(iterations=20, write_interval=10, time_step=1) # for proto
+runtime = Runtime(iterations=500, write_interval=100, time_step=1)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc(true)
 
@@ -86,8 +88,8 @@ initialise!(model.momentum.p, 0.0)
 
 residuals = run!(model, config, ncorrectors=0)
 
-xrange = 1:runtime.iterations
-plot(; xlims=(0,runtime.iterations), ylims=(1e-7,0.2))
-plot!(xrange, residuals.Ux, yscale=:log10, label="Ux")
-plot!(xrange, residuals.Uy, yscale=:log10, label="Uy")
-plot!(xrange, residuals.p, yscale=:log10, label="p")
+# xrange = 1:runtime.iterations
+# plot(; xlims=(0,runtime.iterations), ylims=(1e-7,0.2))
+# plot!(xrange, residuals.Ux, yscale=:log10, label="Ux")
+# plot!(xrange, residuals.Uy, yscale=:log10, label="Uy")
+# plot!(xrange, residuals.p, yscale=:log10, label="p")

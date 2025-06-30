@@ -117,9 +117,9 @@ end
 Adapt.@adapt_structure ScalarEquation
 
 # Catch all function for fields that do not extend matrix
-extend_matrix(field, i, j) = begin
-    mesh = field.mesh
-    for BC ∈ field.BCs
+extend_matrix(mesh, BCs, i, j) = begin
+    # mesh = field.mesh
+    for BC ∈ BCs
         i, j = _extend_matrix(BC, mesh, i, j) # implemented in module Discretise for each BC
     end
     return i, j
@@ -132,13 +132,13 @@ _extend_matrix(BC, mesh, i, j) = begin
 end
 
 # ScalarEquation(mesh::AbstractMesh) = begin
-ScalarEquation(phi::ScalarField) = begin
+ScalarEquation(phi::ScalarField, BCs) = begin
     mesh = phi.mesh
     nCells = length(mesh.cells)
     Tf = _get_float(mesh)
     mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
     i, j, v = sparse_matrix_connectivity(mesh_temp) # This needs to be a kernel
-    i, j = extend_matrix(phi, i, j)
+    i, j = extend_matrix(mesh, BCs, i, j)
     # i = [i; periodicConnectivity.i]
     # j = [j; periodicConnectivity.j]
     v = zeros(Tf, length(j))
@@ -152,9 +152,13 @@ ScalarEquation(phi::ScalarField) = begin
         # KP.KrylovOperator(A), # small gain in performance
         # A,
 
-        _convert_array!(zeros(Tf, nCells), backend),
-        _convert_array!(zeros(Tf, nCells), backend),
-        _convert_array!(zeros(Tf, nCells), backend)
+        # _convert_array!(zeros(Tf, nCells), backend),
+        # _convert_array!(zeros(Tf, nCells), backend),
+        # _convert_array!(zeros(Tf, nCells), backend)
+
+        KernelAbstractions.zeros(backend, Tf, nCells),
+        KernelAbstractions.zeros(backend, Tf, nCells),
+        KernelAbstractions.zeros(backend, Tf, nCells)
         )
 end
 
@@ -170,13 +174,13 @@ struct VectorEquation{VTf<:AbstractVector, ASA<:AbstractSparseArray, OP} <: Abst
 end
 Adapt.@adapt_structure VectorEquation
 
-VectorEquation(psi::VectorField) = begin
+VectorEquation(psi::VectorField, BCs) = begin
     mesh = psi.mesh
     nCells = length(mesh.cells)
     Tf = _get_float(mesh)
     mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
     i, j, v = sparse_matrix_connectivity(mesh_temp) # This needs to be a kernel
-    i, j = extend_matrix(psi, i, j)
+    i, j = extend_matrix(mesh, BCs, i, j)
     # i = [i; periodicConnectivity.i]
     # j = [j; periodicConnectivity.j]
     v = zeros(Tf, length(j))
@@ -196,11 +200,17 @@ VectorEquation(psi::VectorField) = begin
         # KP.KrylovOperator(A),
         # A,
 
-        _convert_array!(zeros(Tf, nCells), backend),
-        _convert_array!(zeros(Tf, nCells), backend),
-        _convert_array!(zeros(Tf, nCells), backend),
-        _convert_array!(zeros(Tf, nCells), backend),
-        _convert_array!(zeros(Tf, nCells), backend)
+        # _convert_array!(zeros(Tf, nCells), backend),
+        # _convert_array!(zeros(Tf, nCells), backend),
+        # _convert_array!(zeros(Tf, nCells), backend),
+        # _convert_array!(zeros(Tf, nCells), backend),
+        # _convert_array!(zeros(Tf, nCells), backend)
+
+        KernelAbstractions.zeros(backend, Tf, nCells),
+        KernelAbstractions.zeros(backend, Tf, nCells),
+        KernelAbstractions.zeros(backend, Tf, nCells),
+        KernelAbstractions.zeros(backend, Tf, nCells),
+        KernelAbstractions.zeros(backend, Tf, nCells)
         )
 end
 

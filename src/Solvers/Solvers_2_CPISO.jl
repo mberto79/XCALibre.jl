@@ -43,7 +43,7 @@ function setup_unsteady_compressible_solvers(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
     ) 
 
-    (; solvers, schemes, runtime, hardware) = config
+    (; solvers, schemes, runtime, hardware, boundaries) = config
 
     @info "Extracting configuration and input fields..."
 
@@ -82,7 +82,7 @@ function setup_unsteady_compressible_solvers(
         == 
         - Source(∇p.result)
         + Source(mueffgradUt)
-    ) → VectorEquation(U)
+    ) → VectorEquation(U, boundaries.U)
 
     if typeof(model.fluid) <: WeaklyCompressible
         
@@ -91,7 +91,7 @@ function setup_unsteady_compressible_solvers(
             - Laplacian{schemes.p.laplacian}(rhorDf, p)
             ==
             - Source(divHv)
-        ) → ScalarEquation(p)
+        ) → ScalarEquation(p, boundaries.p)
 
     elseif typeof(model.fluid) <: Compressible
 
@@ -104,16 +104,13 @@ function setup_unsteady_compressible_solvers(
             ==
             -Source(divHv)
             -Source(ddtrho) # capture correction part of dPdT and explicit drhodt
-        ) → ScalarEquation(p)
+        ) → ScalarEquation(p, boundaries.p)
     end
 
     @info "Initialising preconditioners..."
 
-    @reset U_eqn.preconditioner = set_preconditioner(
-                    solvers.U.preconditioner, U_eqn, U.BCs, config)
-    @reset p_eqn.preconditioner = set_preconditioner(
-                    solvers.p.preconditioner, p_eqn, p.BCs, config)
-
+    @reset U_eqn.preconditioner = set_preconditioner(solvers.U.preconditioner, U_eqn)
+    @reset p_eqn.preconditioner = set_preconditioner(solvers.p.preconditioner, p_eqn)
 
     @info "Pre-allocating solvers..."
      
@@ -146,7 +143,7 @@ function CPISO(
     (; dpdt) = model.energy
     mesh = model.domain
     p_model = p_eqn.model
-    (; solvers, schemes, runtime, hardware) = config
+    (; solvers, schemes, runtime, hardware, boundaries) = config
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
     
@@ -188,11 +185,13 @@ function CPISO(
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
-    prev = zeros(TF, n_cells)
-    prev = _convert_array!(prev, backend) 
+    # prev = zeros(TF, n_cells)
+    # prev = _convert_array!(prev, backend) 
+    prev = KernelAbstractions.zeros(backend, TF, n_cells) 
 
-    corr = zeros(TF, n_faces)
-    corr = _convert_array!(corr, backend) 
+    # corr = zeros(TF, n_faces)
+    # corr = _convert_array!(corr, backend) 
+    corr = KernelAbstractions.zeros(backend, TF, n_faces) 
 
     # Pre-allocate vectors to hold residuals 
     R_ux = ones(TF, iterations)
@@ -205,9 +204,9 @@ function CPISO(
     # Initial calculations
     time = zero(TF) # assuming time=0
     interpolate!(Uf, U, config)   
-    correct_boundaries!(Uf, U, U.BCs, time, config)
+    correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
-    grad!(∇p, pf, p, p.BCs, time, config)
+    grad!(∇p, pf, p, boundaries.p, time, config)
     thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
     @. rho.values = Psi.values * p.values
     @. rhof.values = Psif.values * pf.values
@@ -228,7 +227,7 @@ function CPISO(
         time = iteration *dt
 
         ## CHECK GRADU AND EXPLICIT STRESSES
-        # grad!(gradU, Uf, U, U.BCs, time, config) # calculated in `turbulence!`
+        # grad!(gradU, Uf, U, boundaries.U, time, config) # calculated in `turbulence!`
         
         explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, config)
         div!(divmugradUTx, mugradUTx, config)
@@ -241,7 +240,7 @@ function CPISO(
         
         # Set up and solve momentum equations
 
-        rx, ry, rz = solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
+        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
 
         energy!(energyModel, model, prev, mdotf, rho, mueff, time, config)
         thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
@@ -259,7 +258,7 @@ function CPISO(
             
             # Interpolate faces
             interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
-            correct_boundaries!(Uf, Hv, U.BCs, time, config)
+            correct_boundaries!(Uf, Hv, boundaries.U, time, config)
 
             if typeof(model.fluid) <: Compressible
 
@@ -270,7 +269,7 @@ function CPISO(
                 @. mdotf.values *= rhof.values
                 @. mdotf.values += rhorDf.values*corr
                 interpolate!(pf, p, config)
-                correct_boundaries!(pf, p, p.BCs, time, config)
+                correct_boundaries!(pf, p, boundaries.p, time, config)
                 @. mdotf.values -= mdotf.values*Psif.values*pf.values/rhof.values
                 div!(divHv, mdotf, config)
 
@@ -287,27 +286,27 @@ function CPISO(
             
             # Pressure calculations
             @. prev = p.values
-            rp = solve_equation!(p_eqn, p, solvers.p, config; ref=nothing)
+            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing)
             explicit_relaxation!(p, prev, solvers.p.relax, config)
 
             # Gradient
-            grad!(∇p, pf, p, p.BCs, time, config) 
+            grad!(∇p, pf, p, boundaries.p, time, config) 
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
             # non-orthogonal correction
             for i ∈ 1:ncorrectors
                 discretise!(p_eqn, p, config)       
-                apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
+                apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
                 setReference!(p_eqn, pref, 1, config)
                 nonorthogonal_face_correction(p_eqn, ∇p, rhorDf, config)
                 update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
                 rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
                 explicit_relaxation!(p, prev, solvers.p.relax, config)
-                grad!(∇p, pf, p, p.BCs, time, config) 
+                grad!(∇p, pf, p, boundaries.p, time, config) 
                 limit_gradient!(schemes.p.limiter, ∇p, p, config)
             end
 
-            if ~isempty(solvers.p.limit)
+            if !isnothing(solvers.p.limit)
                 pmin = solvers.p.limit[1]; pmax = solvers.p.limit[2]
                 clamp!(p.values, pmin, pmax)
             end
@@ -330,7 +329,7 @@ function CPISO(
             # Velocity and boundaries correction
             correct_velocity!(U, Hv, ∇p, rD, config)
             interpolate!(Uf, U, config)
-            correct_boundaries!(Uf, U, U.BCs, time, config)
+            correct_boundaries!(Uf, U, boundaries.U, time, config)
             
             @. dpdt.values = (p.values-prev)/runtime.dt
 
@@ -359,7 +358,8 @@ function CPISO(
         )
 
     if iteration%write_interval + signbit(write_interval) == 0
-        save_output(model, outputWriter, time)
+        # save_output(model, outputWriter, time, config)
+        save_output(model, outputWriter, iteration, config)
     end
 
     end # end for loop

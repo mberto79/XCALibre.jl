@@ -153,7 +153,7 @@ function initialise_writer(format::VTK, mesh::Mesh3)
 end
 
 
-function write_results(iteration::TI, mesh, meshData::VTKWriter3D, args...) where TI
+function write_results(iteration::TI, mesh, meshData::VTKWriter3D, BCs, args...) where TI
     name = ""
     if TI <: Integer
         name = @sprintf "iteration_%i" iteration

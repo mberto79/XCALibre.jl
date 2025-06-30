@@ -3,45 +3,29 @@ export Symmetry
 """
     Symmetry <: AbstractBoundary
 
-Symmetry boundary condition vector fields. For scalar fields use `Neumann`
+Symmetry boundary condition vector and scalar fields. Notice that for scalar fields, this boundary condition applies an explicit zero gradient condition. In some rare cases, the use of an `Extrapolated` condition for scalars may be beneficial (to assign a semi-implicit zero gradient condition)
 
-### Fields
-- 'ID' -- Boundary ID
+# Input
+- `ID` Name of the boundary given as a symbol (e.g. :freestream). Internally it gets replaced with the boundary index ID
+
+# Example
+    Symmetry(:freestream)
 """
-struct Symmetry{I,V} <: AbstractPhysicalConstraint
-    ID::I
+struct Symmetry{I,V,R<:UnitRange} <: AbstractPhysicalConstraint
+    ID::I 
     value::V
+    IDs_range::R
 end
 Adapt.@adapt_structure Symmetry
 
 Symmetry(patch::Symbol) = Symmetry(patch, 0)
 
-
-function fixedValue(BC::Symmetry, ID::I, value::V) where {I<:Integer,V}
-    # Exception 1: Value is scalar
-    if V <: Number
-        return Symmetry{I,eltype(value)}(ID, value)
-    # Exception 2: value is vector
-    elseif V <: Vector
-        if length(value) == 3 
-            nvalue = SVector{3, eltype(value)}(value)
-            return Symmetry{I,typeof(nvalue)}(ID, nvalue)
-        # Error statement if vector is invalid
-        else
-            throw("Only vectors with three components can be used")
-        end
-    # Error if value is not scalar or vector
-    else
-        throw("The value provided should be a scalar or a vector")
-    end
-end
-
 @define_boundary Symmetry Laplacian{Linear} VectorField begin
     (; area, delta, normal) = face 
     phi = term.phi 
     J = term.flux[fID]
-    flux = 2.0*J*area/delta
-    # flux = J*area/delta
+    # flux = 2.0*J*area/delta # previous
+    flux = J*area/delta
     ap = term.sign[1]*(-flux)
 
     vc = phi[cellID]

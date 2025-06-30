@@ -329,7 +329,7 @@ function symmetric_tanh_distribution(
     normal = d/d_mag
     δx(i, β) = begin
         η = (i)/(ncells)
-        (d_mag/2)*(1.0 - tanh(β*(1-2*η))/tanh(β))
+        (d_mag*0.5)*(1.0 - tanh(β*(1-2*η))/tanh(β))
     end
     δx, normal
 end

@@ -8,8 +8,9 @@ function bound!(field, config)
     (; cells, cell_neighbours) = mesh
 
     # set up and launch kernel
-    kernel! = _bound!(backend, workgroup)
-    kernel!(values, cells, cell_neighbours, ndrange = length(values))
+    ndrange = length(values)
+    kernel! = _bound!(_setup(backend, workgroup, ndrange)...)
+    kernel!(values, cells, cell_neighbours)
     # KernelAbstractions.synchronize(backend)
 end
 
@@ -60,7 +61,7 @@ end
 mag(vector) = sqrt(vector[1]^2 + vector[2]^2 + vector[3]^2) 
 
 nut_wall(nu, yplus, kappa, E::T) where T = begin
-    max(nu*(yplus*kappa/log(max(E*yplus, 1.0 + 1e-4)) - 1), zero(T))
+    max(nu*(yplus*kappa/log(max(E*yplus, 1.0 + 1e-4)) - 1.0), zero(T))
 end
 
 @generated correct_production!(P, fieldBCs, model, gradU, config) = begin
@@ -93,14 +94,16 @@ function set_production!(P, BC::KWallFunction, model, gradU, config)
     (; fluid, momentum, turbulence) = model
 
     # facesID_range = get_boundaries(BC, boundaries)
-    boundaries_cpu = get_boundaries(boundaries)
-    facesID_range = boundaries_cpu[BC.ID].IDs_range
+    # boundaries_cpu = get_boundaries(boundaries)
+    # facesID_range = boundaries_cpu[BC.ID].IDs_range
+    facesID_range = BC.IDs_range
     start_ID = facesID_range[1]
 
     # Execute apply boundary conditions kernel
-    kernel! = _set_production!(backend, workgroup)
+    ndrange = length(facesID_range)
+    kernel! = _set_production!(_setup(backend, workgroup, ndrange)...)
     kernel!(
-        P.values, BC, fluid, momentum, turbulence, faces, boundary_cellsID, start_ID, gradU, ndrange=length(facesID_range)
+        P.values, BC, fluid, momentum, turbulence, faces, boundary_cellsID, start_ID, gradU
     )
 end
 
@@ -115,7 +118,7 @@ end
     (; k, nut) = turbulence
 
     Uw = SVector{3}(0.0,0.0,0.0)
-    # Uw = U.BCs[BC.ID].value
+    # Uw = boundaries.U[BC.ID].value
     cID = boundary_cellsID[fID]
     face = faces[fID]
     nuc = nu[cID]
@@ -161,15 +164,15 @@ function correct_nut_wall!(νtf, BC::NutWallFunction, model, config)
     (; fluid, turbulence) = model
 
     # facesID_range = get_boundaries(BC, boundaries)
-    boundaries_cpu = get_boundaries(boundaries)
-    facesID_range = boundaries_cpu[BC.ID].IDs_range
+    # boundaries_cpu = get_boundaries(boundaries)
+    # facesID_range = boundaries_cpu[BC.ID].IDs_range
+    facesID_range = BC.IDs_range
     start_ID = facesID_range[1]
 
     # Execute apply boundary conditions kernel
-    kernel! = _correct_nut_wall!(backend, workgroup)
-    kernel!(
-        νtf.values, fluid, turbulence, BC, faces, boundary_cellsID, start_ID, ndrange=length(facesID_range)
-    )
+    ndrange=length(facesID_range)
+    kernel! = _correct_nut_wall!(_setup(backend, workgroup, ndrange)...)
+    kernel!(νtf.values, fluid, turbulence, BC, faces, boundary_cellsID, start_ID)
 end
 
 @kernel function _correct_nut_wall!(
@@ -235,14 +238,16 @@ function constrain!(eqn, BC::OmegaWallFunction, model, config)
     turbulence = model.turbulence
 
     # facesID_range = get_boundaries(BC, boundaries)
-    boundaries_cpu = get_boundaries(boundaries)
-    facesID_range = boundaries_cpu[BC.ID].IDs_range
+    # boundaries_cpu = get_boundaries(boundaries)
+    # facesID_range = boundaries_cpu[BC.ID].IDs_range
+    facesID_range = BC.IDs_range
     start_ID = facesID_range[1]
 
     # Execute apply boundary conditions kernel
-    kernel! = _constrain!(backend, workgroup)
+    ndrange = length(facesID_range)
+    kernel! = _constrain!(_setup(backend, workgroup, ndrange)...)
     kernel!(
-        turbulence, fluid, BC, faces, start_ID, boundary_cellsID, colval, rowptr, nzval, b, ndrange=length(facesID_range)
+        turbulence, fluid, BC, faces, start_ID, boundary_cellsID, colval, rowptr, nzval, b
     )
 end
 
@@ -326,9 +331,10 @@ end
 #     start_ID = facesID_range[1]
 
 #     # Execute apply boundary conditions kernel
-#     kernel! = _set_cell_value!(backend, workgroup)
+        # ndrange=length(facesID_range)
+#     kernel! = _set_cell_value!(_setup(backend, workgroup, ndrange)...)
 #     kernel!(
-#         field, turbulence, fluid, BC, faces, start_ID, boundary_cellsID, ndrange=length(facesID_range)
+#         field, turbulence, fluid, BC, faces, start_ID, boundary_cellsID
 #     )
 # end
 

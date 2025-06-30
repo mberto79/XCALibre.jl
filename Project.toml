@@ -38,7 +38,7 @@ XCALibre_oneAPIExt = "oneAPI"
 
 [compat]
 AMDGPU = "1"
-AcceleratedKernels = "0.3.1"
+AcceleratedKernels = "0.4"
 Accessors = "0.1.30"
 Adapt = "4.0"
 Atomix = "0.1, 1"

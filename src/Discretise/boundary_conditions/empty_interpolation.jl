@@ -1,3 +1,20 @@
+@inline function boundary_interpolation!(
+    BC::Empty, phif::FaceScalarField, phi, boundary_cellsID, time, fID)
+    @inbounds begin
+        phif[fID] = 0.0 
+    end
+    nothing
+end
+
+
+@inline function boundary_interpolation!(
+    BC::Empty, psif::FaceVectorField, psi, boundary_cellsID, time, fID)
+    @inbounds begin
+        psif[fID] = SVector{3}(0.0,0.0,0.0)
+    end
+    nothing
+end
+
 
 function adjust_boundary!(b_cpu, BC::Empty, phif::FaceScalarField, phi, boundaries, boundary_cellsID, time, backend, workgroup)
     phif_values = phif.values

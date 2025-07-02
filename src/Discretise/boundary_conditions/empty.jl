@@ -15,9 +15,10 @@ Empty boundary condition model *(currently only configured for zero gradient)*
 - 'ID' -- Boundary ID
 - `value` -- Scalar or Vector value for Empty boundary condition.
 """
-struct Empty{I,V} <: AbstractPhysicalConstraint
+struct Empty{I,V,R<:UnitRange} <: AbstractPhysicalConstraint
     ID::I 
-    value::V 
+    value::V
+    IDs_range::R
 end
 Adapt.@adapt_structure Empty
 

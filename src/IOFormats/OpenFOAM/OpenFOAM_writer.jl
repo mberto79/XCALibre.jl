@@ -338,3 +338,11 @@ _foam_boundary_entry(BC::Wall{ID,Value}) where {ID,Value<:SVector} =  begin
     """
 end
 
+_foam_boundary_entry(BC::Empty) =  begin
+    """
+    \t{
+    \t\ttype empty;
+    \t}
+    """
+end
+

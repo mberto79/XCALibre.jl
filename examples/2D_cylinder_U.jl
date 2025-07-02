@@ -20,10 +20,10 @@ nu = 1e-3
 Re = (0.2*velocity[1])/nu
 
 model = Physics(
-    time = Transient(),
+    time = Steady(),
     fluid = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{Laminar}(),
-    energy = Energy{Isothermal}(),
+    energy = Energy{SensibleEnthalpy}(Tref=288.15),
     domain = mesh_dev
     )
 

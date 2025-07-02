@@ -19,6 +19,7 @@ include("energy_types.jl")
 
 # Energy models
 include("Sensible_Enthalpy.jl")
+include("Laplace_Energy.jl")
 
 export initialise, energy!
 

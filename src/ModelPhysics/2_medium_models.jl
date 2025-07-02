@@ -1,12 +1,42 @@
+export AbstractMedium
+export Fluid, Solid
+
 export AbstractFluid, AbstractIncompressible, AbstractCompressible
-export Fluid
 export Incompressible, WeaklyCompressible, Compressible
 
-abstract type AbstractFluid end
+export AbstractSolid, Uniform
+
+# Top‐level “medium” category
+abstract type AbstractMedium end
+
+# Sub-category Fluid OR Solid
+abstract type AbstractFluid  <: AbstractMedium end
+abstract type AbstractSolid  <: AbstractMedium end
+
+# Fluid types
 abstract type AbstractIncompressible <: AbstractFluid end
 abstract type AbstractCompressible <: AbstractFluid end
 
 Base.show(io::IO, fluid::AbstractFluid) = print(io, typeof(fluid).name.wrapper)
+
+
+
+# export Uniform
+# struct Uniform end
+
+"""
+    Solid <: AbstractSolid
+
+Abstract solid model type for constructing new solid models.
+
+### Fields
+- 'args' -- Model arguments.
+
+"""
+struct Solid{S,ARG} <: AbstractSolid
+    args::ARG
+end
+
 
 
 """
@@ -18,9 +48,52 @@ Abstract fluid model type for constructing new fluid models.
 - 'args' -- Model arguments.
 
 """
-struct Fluid{T,ARG}
+struct Fluid{T,ARG} <: AbstractFluid
     args::ARG
 end
+
+
+
+
+
+
+
+"""
+    UniformSolid <: Solid
+
+Uniform (constant k value) solid medium.
+
+### Fields
+- 'k'   -- Thermal conductivity of the material.
+
+### Examples
+- `Solid{Uniform}(k=1.0)` - Constructor with default values.
+"""
+@kwdef struct Uniform{S1, F1} <: AbstractSolid
+    k::S1
+    kf::F1
+end
+Adapt.@adapt_structure Uniform
+
+Solid{Uniform}(; k=16.2) = begin #W/(m*K) <> NEED TO VARY AS FUNCTION OF TEMPERATURE LATER IN THE SOLVER
+    coeffs = (k=k, )
+    ARG = typeof(coeffs)
+    Solid{Uniform,ARG}(coeffs)
+end
+
+(solid::Solid{Uniform, ARG})(mesh) where ARG = begin
+    coeffs = solid.args
+    (; k) = coeffs
+    k = ConstantScalar(k)
+    kf = k
+    Uniform(k, kf)
+end
+
+
+
+
+
+
 
 """
     Incompressible <: AbstractIncompressible

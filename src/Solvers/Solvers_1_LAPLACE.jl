@@ -1,4 +1,4 @@
-export simple!
+export laplace!
 
 """
     simple!(model_in, config; 
@@ -25,13 +25,18 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 - `p` Vector of pressure residuals for each iteration.
 
 """
-function simple!(
+
+
+
+
+
+function laplace!( #HOW ABOUT PASSING k value?
     model, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
 
-    residuals = setup_incompressible_solvers(
-        SIMPLE, model, config; 
+    residuals = setup_laplace_solvers(
+        LAPLACE, model, config;
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
@@ -42,40 +47,31 @@ function simple!(
 end
 
 # Setup for all incompressible algorithms
-function setup_incompressible_solvers(
+function setup_laplace_solvers(
     solver_variant, model, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     ) 
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
 
-    @info "Extracting configuration and input fields..."
-
-    (; U, p, Uf, pf) = model.momentum
+    # (; T, Tf) = model.energy
     mesh = model.domain
 
-    @info "Pre-allocating fields..."
+    rDf = FaceScalarField(mesh) #model.medium.k.values returns 16.2
+    k_val = model.medium.k.values
+    initialise!(rDf, 1.0/k_val)
     
-    ∇p = Grad{schemes.p.gradient}(p)
-    mdotf = FaceScalarField(mesh)
-    rDf = FaceScalarField(mesh)
-    initialise!(rDf, 1.0)
-    nueff = FaceScalarField(mesh)
-    divHv = ScalarField(mesh)
+    zero_field = ScalarField(mesh) #0.0 field
+    T_field = model.energy.T #initialised temp field
 
     @info "Defining models..."
 
-    U_eqn = (
-        Time{schemes.U.time}(U)
-        + Divergence{schemes.U.divergence}(mdotf, U) 
-        - Laplacian{schemes.U.laplacian}(nueff, U) 
-        == 
-        - Source(∇p.result)
-    ) → VectorEquation(U, boundaries.U)
 
-    p_eqn = (
-        - Laplacian{schemes.p.laplacian}(rDf, p) == - Source(divHv)
-    ) → ScalarEquation(p, boundaries.p)
+    T_eqn = (
+        - Laplacian{schemes.laplacian}(rDf, T_field) #k field faces, T field centres
+        ==
+        - Source(zero_field) # do I need the -ve ??
+    ) → ScalarEquation(T_field, boundaries.T)
 
     @info "Initialising preconditioners..."
 
@@ -84,19 +80,22 @@ function setup_incompressible_solvers(
     # @reset p_eqn.preconditioner = set_preconditioner(
     #                 solvers.p.preconditioner, p_eqn, boundaries.p, config)
 
-    @reset U_eqn.preconditioner = set_preconditioner(solvers.U.preconditioner, U_eqn)
-    @reset p_eqn.preconditioner = set_preconditioner(solvers.p.preconditioner, p_eqn)
+    @reset T_eqn.preconditioner = set_preconditioner(solvers.preconditioner, T_eqn)
+    # @reset U_eqn.preconditioner = set_preconditioner(solvers.U.preconditioner, U_eqn)
+    # @reset p_eqn.preconditioner = set_preconditioner(solvers.p.preconditioner, p_eqn)
 
     @info "Pre-allocating solvers..."
 
-    @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()))
-    @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn))
+    @reset T_eqn.solver = _workspace(solvers.solver, _b(T_eqn)) # What is this _b doiing????
 
-    @info "Initialising turbulence model..."
-    turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
+    # @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()))
+    # @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn))
+
+    @info "Initialising turbulence model... [NO NEED]"
+    # turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config) #Do I even need this?
 
     residuals  = solver_variant(
-        model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
+        model, T_eqn, config;  #Previously: model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
@@ -105,166 +104,82 @@ function setup_incompressible_solvers(
     return residuals
 end # end function
 
-function SIMPLE(
-    model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
+function LAPLACE(
+    model, T_eqn, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
     
-    # Extract model variables and configuration
-    (; U, p, Uf, pf) = model.momentum # cell center and face values
-    (; nu) = model.fluid
+    (; T, Tf) = model.energy
+    interpolate!(Tf, T, config)   
+    
     mesh = model.domain
+
     (; solvers, schemes, runtime, hardware, boundaries) = config
     (; iterations, write_interval) = runtime
     (; backend) = hardware
-    
-    mdotf = get_flux(U_eqn, 2)
-    nueff = get_flux(U_eqn, 3)
-    rDf = get_flux(p_eqn, 1)
-    divHv = get_source(p_eqn, 1)
 
     outputWriter = initialise_writer(output, model.domain)
     
     @info "Allocating working memory..."
 
-    # Define aux fields 
-    gradU = Grad{schemes.U.gradient}(U)
-    gradUT = T(gradU)
-    S = StrainRate(gradU, gradUT, U, Uf)
+    # Define aux fields  
 
     n_cells = length(mesh.cells)
-    Hv = VectorField(mesh)
-    rD = ScalarField(mesh)
-
-    # Pre-allocate auxiliary variables
+    rDf = FaceScalarField(mesh)
     TF = _get_float(mesh)
-    # prev = zeros(TF, n_cells)
-    # prev = _convert_array!(prev, backend) 
     prev = KernelAbstractions.zeros(backend, TF, n_cells) 
-
-    # Pre-allocate vectors to hold residuals 
-    R_ux = ones(TF, iterations)
-    R_uy = ones(TF, iterations)
-    R_uz = ones(TF, iterations)
-    R_p = ones(TF, iterations)
+    R_T = ones(TF, iterations)
     
     # Initial calculations
     time = zero(TF) # assuming time=0
-    interpolate!(Uf, U, config)   
-    correct_boundaries!(Uf, U, boundaries.U, time, config)
-    flux!(mdotf, Uf, config)
-    grad!(∇p, pf, p, boundaries.p, time, config)
-    limit_gradient!(schemes.p.limiter, ∇p, p, config)
+    # interpolate!(Tf, T, config)   
+    # correct_boundaries!(Tf, T, boundaries.T, time, config)
 
-
-    update_nueff!(nueff, nu, model.turbulence, config)
-
-    @info "Starting SIMPLE loops..."
+    @info "Starting LAPLACE loops..."
+    # println(T.values)
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
-    xdir, ydir, zdir = XDir(), YDir(), ZDir()
-
     for iteration ∈ 1:iterations
         time = iteration
+        # println(time)
 
-        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
-        
-        # Pressure correction
-        inverse_diagonal!(rD, U_eqn, config)
-        interpolate!(rDf, rD, config)
-        # correct_boundaries!(rDf, rD, rD.BCs, time, config) # ADDED FOR PERIODIC BCS
-        remove_pressure_source!(U_eqn, ∇p, config)
-        H!(Hv, U, U_eqn, config)
-        
-        # Interpolate faces
-        interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
-        correct_boundaries!(Uf, Hv, boundaries.U, time, config)
-
-        # old approach
-        # div!(divHv, Uf, config) 
-
-        # new approach
-        flux!(mdotf, Uf, config)
-        div!(divHv, mdotf, config)
-        
-        # Pressure calculations
-        @. prev = p.values
-        rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
-        explicit_relaxation!(p, prev, solvers.p.relax, config)
-        
-        grad!(∇p, pf, p, boundaries.p, time, config) 
-        limit_gradient!(schemes.p.limiter, ∇p, p, config)
+        rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config)
+      
 
         # non-orthogonal correction
-        for i ∈ 1:ncorrectors
-            # @. prev = p.values
-            discretise!(p_eqn, p, config)       
-            apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
-            # setReference!(p_eqn, pref, 1, config)
-            nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
-            # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-            rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
-            explicit_relaxation!(p, prev, solvers.p.relax, config)
-            grad!(∇p, pf, p, boundaries.p, time, config) 
-            limit_gradient!(schemes.p.limiter, ∇p, p, config)
-        end
+        # for i ∈ 1:ncorrectors
+        #     # @. prev = p.values
+        #     discretise!(p_eqn, p, config)       
+        #     apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
+        #     # setReference!(p_eqn, pref, 1, config)
+        #     nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
+        #     # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+        #     rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
+        #     explicit_relaxation!(p, prev, solvers.p.relax, config)
+        #     grad!(∇p, pf, p, boundaries.p, time, config) 
+        #     limit_gradient!(schemes.p.limiter, ∇p, p, config)
+        # end
 
-        # explicit_relaxation!(p, prev, solvers.p.relax, config)
+        R_T[iteration] = rt
+        # println(T.values)
 
-        # Velocity and boundaries correction
 
-        # old approach
-        # correct_velocity!(U, Hv, ∇p, rD, config)
-        # interpolate!(Uf, U, config)
-        # correct_boundaries!(Uf, U, boundaries.U, time, config)
-        # flux!(mdotf, Uf, config) 
-
-        # new approach
-
-        # 1. using velocity from momentum equation
-        # interpolate!(Uf, U, config)
-        # correct_boundaries!(Uf, U, boundaries.U, time, config)
-        # flux!(mdotf, Uf, config)
-        correct_mass_flux(mdotf, p, rDf, config)
-        correct_velocity!(U, Hv, ∇p, rD, config)
-
-        turbulence!(turbulenceModel, model, S, prev, time, config) 
-        update_nueff!(nueff, nu, model.turbulence, config)
-
-        R_ux[iteration] = rx
-        R_uy[iteration] = ry
-        R_uz[iteration] = rz
-        R_p[iteration] = rp
-
-        Uz_convergence = true
-        if typeof(mesh) <: Mesh3
-            Uz_convergence = rz <= solvers.U.convergence
-        end
-
-        if (R_ux[iteration] <= solvers.U.convergence && 
-            R_uy[iteration] <= solvers.U.convergence && 
-            Uz_convergence &&
-            R_p[iteration] <= solvers.p.convergence &&
-            turbulenceModel.state.converged)
-
+        if R_T[iteration] <= solvers.convergence
             progress.n = iteration
             finish!(progress)
             @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
                 save_output(model, outputWriter, time, config)
             end
+            # println(T.values)
             break
         end
 
         ProgressMeter.next!(
             progress, showvalues = [
                 (:iter,iteration),
-                (:Ux, R_ux[iteration]),
-                (:Uy, R_uy[iteration]),
-                (:Uz, R_uz[iteration]),
-                (:p, R_p[iteration]),
-                turbulenceModel.state.residuals...
+                (:T_residual, R_T[iteration])
                 ]
             )
 
@@ -274,8 +189,32 @@ function SIMPLE(
 
     end # end for loop
     
-    return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
+    return (T=R_T)
 end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ### TEMP LOCATION FOR PROTOTYPING - NONORTHOGONAL CORRECTION 
 

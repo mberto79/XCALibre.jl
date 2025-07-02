@@ -122,7 +122,7 @@ end
 # Model initialisation
 """
     initialise(turbulence::KOmegaLKE, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
-    ) where {T,F,M,Tu,E,D,BI}
+    ) where {T,ME,M,Tu,E,D,BI}
 
 Initialisation of turbulent transport equations.
 
@@ -157,8 +157,8 @@ Initialisation of turbulent transport equations.
 
 """
 function initialise(
-    turbulence::KOmegaLKE, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
-    ) where {T,F,M,Tu,E,D,BI}
+    turbulence::KOmegaLKE, model::Physics{T,ME,M,Tu,E,D,BI}, mdotf, peqn, config
+    ) where {T,ME,M,Tu,E,D,BI}
 
     @info "Initialising k-ω LKE model..."
 
@@ -275,7 +275,7 @@ end
 # Model solver call (implementation)
 """
    turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S, prev, time, config
-    ) where {T,F,M,Turb<:AbstractTurbulenceModel,E,D,BI}
+    ) where {T,ME,M,Turb<:AbstractTurbulenceModel,E,D,BI}
 
 Run turbulence model transport equations.
 
@@ -290,8 +290,8 @@ Run turbulence model transport equations.
 
 """
 function turbulence!(
-    rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S, prev, time, config
-    ) where {T,F,M,Turb<:AbstractTurbulenceModel,E,D,BI}
+    rans::KOmegaLKEModel, model::Physics{T,ME,M,Turb,E,D,BI}, S, prev, time, config
+    ) where {T,ME,M,Turb<:AbstractTurbulenceModel,E,D,BI}
     mesh = model.domain
     (; momentum) = model
     U = momentum.U
@@ -426,8 +426,8 @@ function turbulence!(
 end
 
 # Specialise VTK writer
-function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration, config
-    ) where {T,F,M,Tu<:KOmegaLKE,E,D,BI}
+function save_output(model::Physics{T,ME,M,Tu,E,D,BI}, outputWriter, iteration, config
+    ) where {T,ME,M,Tu<:KOmegaLKE,E,D,BI}
     args = (
         ("U", model.momentum.U), 
         ("p", model.momentum.p),

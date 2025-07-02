@@ -3,14 +3,26 @@ export AbstractTurbulenceModel
 export AbstractRANSModel, RANS
 export AbstractLESModel, LES
 
+# export NoTurbulence
+
 abstract type AbstractModelContainer end
 abstract type AbstractTurbulenceModel end
 abstract type AbstractRANSModel <: AbstractTurbulenceModel end
 abstract type AbstractLESModel <: AbstractTurbulenceModel end
 
+# abstract type NoTurb <: AbstractTurbulenceModel end
+
 Base.show(io::IO, model::AbstractTurbulenceModel) = print(io, typeof(model).name.wrapper)
 
 # Models 
+
+
+# struct NoTurbulence{T,ARG} <:AbstractModelContainer 
+#     args::ARG
+# end
+
+
+
 """
     RANS <: AbstractRANSModel
 

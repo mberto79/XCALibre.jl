@@ -25,6 +25,7 @@ using XCALibre.ModelPhysics
 using XCALibre.IOFormats
 
 include("Solvers_0_functions.jl")
+include("Solvers_1_LAPLACE.jl")
 include("Solvers_1_SIMPLE.jl")
 include("Solvers_1_CSIMPLE.jl")
 include("Solvers_2_PISO.jl")

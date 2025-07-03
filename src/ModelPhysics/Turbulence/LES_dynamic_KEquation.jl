@@ -287,7 +287,7 @@ function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration
             ("outVector", model.turbulence.outVector)
         )
     end
-    write_results(iteration, model.domain, outputWriter, args...)
+    write_results(iteration, time, model.domain, outputWriter, args...)
 end
 
 # KEquation - internal functions

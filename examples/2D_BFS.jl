@@ -8,8 +8,8 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-# backend = CUDABackend(); workgroup = 32
-backend = CPU(); workgroup = AutoTune(); activate_multithread(backend)
+backend = CUDABackend(); workgroup = 32
+# backend = CPU(); workgroup = AutoTune(); activate_multithread(backend)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
@@ -108,7 +108,7 @@ initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
 # @profview residuals = run!(model, config)
-@profview_allocs residuals = run!(model, config) sample_rate=0.00025
+# @profview_allocs residuals = run!(model, config) sample_rate=0.00025
 
 # @time residuals = run!(model, config)
 

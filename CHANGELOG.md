@@ -3,6 +3,27 @@
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v0.3.1` breaking changes will be recorded here. 
 
+## Version [v0.5.1] - 2025-07-03
+
+### Added
+*  New `Empty` boundary condition allowing 2D simulations with OpenFOAM 2D-compatible grids[#63](@ref)
+*  Tests for the `Smagorinsky` LES model have been included [#63](@ref)
+
+### Fixed
+* No fixes included
+  
+### Changed
+* Transient simulation results for `VTK` and `VTU` files use the format `time_<iteration>` [#63](@ref)
+
+### Breaking
+* No breaking changes
+
+### Deprecated
+* No functions deprecated
+
+### Removed
+* No functionality has been removed
+
 ## Version [v0.5.0] - 2025-06-28
 
 ### Added

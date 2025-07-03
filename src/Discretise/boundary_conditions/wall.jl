@@ -102,3 +102,11 @@ end
     # values = get_values(phi, component)
     # 0.0, -ap*values[cellID] # try this
 end
+
+# @define_boundary Symmetry Divergence{BoundedUpwind} begin
+#     0.0, 0.0
+# end
+
+@define_boundary Wall Si begin
+    0.0, 0.0
+end

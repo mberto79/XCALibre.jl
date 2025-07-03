@@ -337,7 +337,7 @@ function CSIMPLE(
             finish!(progress)
             @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
-                save_output(model, outputWriter, time, config)
+                save_output(model, outputWriter, iteration, time, config)
             end
             break
         end
@@ -355,7 +355,7 @@ function CSIMPLE(
             )
 
         if iteration%write_interval + signbit(write_interval) == 0      
-            save_output(model, outputWriter, time, config)
+            save_output(model, outputWriter, iteration, time, config)
         end
 
     end # end for loop

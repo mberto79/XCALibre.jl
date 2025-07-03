@@ -1,5 +1,5 @@
 export apply_boundary_conditions!
-export get_boundaries
+
 
 
 apply_boundary_conditions!(eqn, BCs, component, time, config) = begin
@@ -77,20 +77,6 @@ end
 
 update_user_boundary!(
     BC::AbstractBoundary, faces, cells, facesID_range, time, config) = nothing
-
-# Function to prevent redundant CPU copy
-
-function get_boundaries(boundaries::Array)
-    return boundaries
-end
-
-# Function to copy from GPU to CPU
-function get_boundaries(boundaries::AbstractGPUArray)
-    # Copy boundaries to CPU
-    boundaries_cpu = Array{eltype(boundaries)}(undef, length(boundaries))
-    copyto!(boundaries_cpu, boundaries)
-    return boundaries_cpu
-end
 
 # Apply boundary conditions kernel definition
 # Experimental implementation 

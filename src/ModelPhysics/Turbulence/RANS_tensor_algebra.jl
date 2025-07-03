@@ -48,7 +48,7 @@ function magnitude!(magS::ScalarField, S, config)
 end
 
 # @kernel function _magnitude!(magS::ScalarField, S::AbstractVectorField)
-@kernel function _magnitude!(magS::ScalarField, S)
+@kernel function _magnitude!(magS::AbstractScalarField, S)
     i = @index(Global)
     @uniform values = magS.values
     
@@ -66,7 +66,7 @@ end
 end
 
 function magnitude2!(
-    magS::ScalarField, S::AbstractTensorField, config; scale_factor=1.0
+    magS, S, config; scale_factor=1.0
     )
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -94,5 +94,46 @@ end
             end
         end
         magS.values[i] = sum*scale_factor
+    end
+end
+
+@kernel function _magnitude2!(
+    magS::AbstractScalarField, S::AbstractVectorField, scale_factor
+    )
+    i = @index(Global)
+
+    @uniform values = magS.values
+
+    @inbounds begin
+        # sum = 0.0
+        Si = S[i]
+        # for j ∈ 1:3
+        #     for k ∈ 1:3
+                # sum +=   Sjk[j,k]*Sjk[j,k]
+                res =   Si⋅Si
+        #     end
+        # end
+        # magS.values[i] = sum*scale_factor
+        magS.values[i] = res
+    end
+end
+
+function square!(psi2, psi, config; scale_factor=1.0)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    kernel! = _square!(backend, workgroup)
+    kernel!(psi2, psi, scale_factor, ndrange = length(psi2))
+    nothing
+end
+
+@kernel function _square!(
+    psi2::AbstractTensorField, psi::AbstractVectorField, scale_factor
+    )
+    i = @index(Global)
+
+    @inbounds begin
+        vi = psi[i]
+        psi2[i] = vi*vi'
     end
 end

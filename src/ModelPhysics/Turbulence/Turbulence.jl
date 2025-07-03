@@ -26,7 +26,9 @@ include("RANS_kOmegaLKE.jl")
 
 # LES models
 include("LES_functions.jl")
+include("LES_filters.jl")
 include("LES_Smagorinsky.jl")
+include("LES_dynamic_KEquation.jl")
 
 export initialise, turbulence!, save_output
 

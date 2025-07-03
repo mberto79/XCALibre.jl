@@ -189,12 +189,12 @@ initialise_writer(format::OpenFOAM, mesh) = error("
 The OpenFOAM format can only be used for 3D simulations. Use `output=VTK()` instead.
 ")
 
-function write_results(iteration::TI, mesh, meshData::FOAMWriter, BCs, args...) where TI
+function write_results(iteration::TI, time, mesh, meshData::FOAMWriter, BCs, args...) where TI
     timedir = ""
-    if TI <: Integer
+    if iteration == time
         timedir = @sprintf "%i" iteration
     else
-        timedir = @sprintf "%.8f" iteration
+        timedir = @sprintf "%.8f" time
     end
 
     timedirpath = mkpath(timedir)
@@ -334,6 +334,14 @@ _foam_boundary_entry(BC::Wall{ID,Value}) where {ID,Value<:SVector} =  begin
     \t{
     \t\ttype fixedValue;
     \t\tvalue uniform ($ux $uy $uz);
+    \t}
+    """
+end
+
+_foam_boundary_entry(BC::Empty) =  begin
+    """
+    \t{
+    \t\ttype empty;
     \t}
     """
 end

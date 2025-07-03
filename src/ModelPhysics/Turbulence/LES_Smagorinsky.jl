@@ -78,6 +78,7 @@ function initialise(
 
     delta!(Δ, mesh, config)
     @. Δ.values = Δ.values^2 # store delta squared since it will be needed
+    # @. Δ.values = (((Δ.values^3)/0.001)^0.5)^2
     
     return SmagorinskyModel(
         turbulence, 
@@ -111,17 +112,26 @@ function turbulence!(
 
     mesh = model.domain
     
+    (; boundaries, hardware) = config
+    (; workgroup) = hardware
     (; nut, nutf, coeffs) = les.turbulence
     (; U, Uf, gradU) = S
     (; Δ, magS) = les
 
     grad!(gradU, Uf, U, boundaries.U, time, config) # update gradient (internal structure of S)
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
-    magnitude!(magS, S, config)
-    @. magS.values *= sqrt(2) # should fuse into definition of magnitude function!
 
-    # update eddy viscosity 
-    @. nut.values = coeffs.C*Δ.values*magS.values # careful: here Δ = Δ²
+    # magnitude!(magS, S, config)
+    # @. magS.values *= sqrt(2) # should fuse into definition of magnitude function!
+    # @. nut.values = coeffs.C*Δ.values*magS.values # careful: here Δ = Δ²
+
+    AK.foreachindex(nut, min_elems=workgroup, block_size=workgroup) do i 
+        # gradUi = gradU[i]
+        Si = S[i] # 0.5*(gradUi + gradUi')
+        magS = sqrt(2*Si⋅Si)
+        nut[i] = coeffs.C*Δ[i]*magS
+    end
+
 
     interpolate!(nutf, nut, config)
     correct_boundaries!(nutf, nut, boundaries.nut, time, config)

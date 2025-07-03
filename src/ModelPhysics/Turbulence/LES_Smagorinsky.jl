@@ -15,7 +15,7 @@ Smagorinsky LES model containing all Smagorinksy field parameters.
 struct Smagorinsky{S1,S2,C} <: AbstractLESModel
     nut::S1
     nutf::S2
-    coeffs::C #I know there is only one coefficient for LES but this makes the DES implementation easier
+    coeffs::C
 end
 Adapt.@adapt_structure Smagorinsky
 
@@ -49,19 +49,20 @@ end
 Initialisation of turbulent transport equations.
 
 ### Input
-- `turbulence` -- turbulence model.
-- `model`  -- Physics model defined by user.
-- `mdtof`  -- Face mass flow.
-- `peqn`   -- Pressure equation.
-- `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
-          hardware structures set.
+- `turbulence`: turbulence model.
+- `model`: Physics model defined by user.
+- `mdtof`: Face mass flow.
+- `peqn`: Pressure equation.
+- `config`: Configuration structure defined by user with solvers, schemes, runtime and hardware structures set.
 
 ### Output
-- `SmagorinskyModel(
+Returns a structure holding the fields and data needed for this model
+
+    SmagorinskyModel(
         turbulence, 
         Δ, 
         ModelState((), false)
-    )`  -- Turbulence model structure.
+    )
 
 """
 function initialise(
@@ -74,7 +75,6 @@ function initialise(
     Δ = ScalarField(mesh)
 
     delta!(Δ, mesh, config)
-    # @. Δ.values = Δ.values^2 # store delta squared since it will be needed
     (; coeffs) = model.turbulence
     @. Δ.values = (Δ.values*coeffs.C)^2.0
     
@@ -93,14 +93,13 @@ end
 Run turbulence model transport equations.
 
 ### Input
-- `les::SmagorinskyModel` -- Smagorinsky LES turbulence model.
-- `model`  -- Physics model defined by user.
-- `S`   -- Strain rate tensor.
-- `S2`  -- Square of the strain rate magnitude.
-- `prev`  -- Previous field.
-- `time`   -- 
-- `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
-              hardware structures set.
+- `les::SmagorinskyModel`: `Smagorinsky` LES turbulence model.
+- `model`: Physics model defined by user.
+- `S`: Strain rate tensor.
+- `S2`: Square of the strain rate magnitude.
+- `prev`: Previous field.
+- `time`: current simulation time 
+- `config`: Configuration structure defined by user with solvers, schemes, runtime and hardware structures set.
 
 """
 function turbulence!(

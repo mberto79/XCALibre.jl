@@ -1,11 +1,18 @@
 export AbstractField
-export ConstantScalar, ConstantVector
+export ScalarFloat, ConstantScalar, ConstantVector
 export AbstractScalarField, ScalarField, FaceScalarField
 export AbstractVectorField, VectorField, FaceVectorField
 export AbstractTensorField, TensorField, T
 export StrainRate, Dev, Sqr, MagSqr
 export _mesh
 export initialise!
+
+struct ScalarFloat{DTYPE}
+    zero::DTYPE 
+end 
+
+ScalarFloat(mesh::AbstractMesh) = ScalarFloat(zero(_get_float(mesh)))
+@inline (scalar::ScalarFloat{DTYPE})(v::Number) where DTYPE = DTYPE(v)
 
 # ABSTRACT TYPES
 

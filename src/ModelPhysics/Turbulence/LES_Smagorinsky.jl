@@ -19,11 +19,10 @@ struct Smagorinsky{S1,S2,C} <: AbstractLESModel
 end
 Adapt.@adapt_structure Smagorinsky
 
-struct SmagorinskyModel{T,D,S1,S2}
+struct SmagorinskyModel{T,D,S1}
     turbulence::T
     Δ::D 
-    magS::S1
-    state::S2
+    state::S1
 end
 Adapt.@adapt_structure SmagorinskyModel
 
@@ -61,7 +60,6 @@ Initialisation of turbulent transport equations.
 - `SmagorinskyModel(
         turbulence, 
         Δ, 
-        magS, 
         ModelState((), false)
     )`  -- Turbulence model structure.
 
@@ -73,17 +71,16 @@ function initialise(
     (; solvers, schemes, runtime, boundaries) = config
     mesh = model.domain
     
-    magS = ScalarField(mesh)
     Δ = ScalarField(mesh)
 
     delta!(Δ, mesh, config)
     # @. Δ.values = Δ.values^2 # store delta squared since it will be needed
-    @. Δ.values = ((Δ.values^3)/0.001) #^0.5)^2
+    (; coeffs) = model.turbulence
+    @. Δ.values = (Δ.values*coeffs.C)^2.0
     
     return SmagorinskyModel(
         turbulence, 
         Δ, 
-        magS, 
         ModelState((), false)
     )
 end
@@ -111,27 +108,24 @@ function turbulence!(
     ) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
     mesh = model.domain
-    
+    scalar = ScalarFloat(mesh)
+
     (; boundaries, hardware) = config
-    (; workgroup) = hardware
+    (; backend, workgroup) = hardware
     (; nut, nutf, coeffs) = les.turbulence
     (; U, Uf, gradU) = S
-    (; Δ, magS) = les
+    (; Δ) = les
 
-    grad!(gradU, Uf, U, boundaries.U, time, config) # update gradient (internal structure of S)
+    
+    grad!(gradU, Uf, U, boundaries.U, time, config) # update gradient (and S)
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
-
-    # magnitude!(magS, S, config)
-    # @. magS.values *= sqrt(2) # should fuse into definition of magnitude function!
-    # @. nut.values = coeffs.C*Δ.values*magS.values # careful: here Δ = Δ²
-
-    AK.foreachindex(nut, min_elems=workgroup, block_size=workgroup) do i 
-        # gradUi = gradU[i]
+    
+    wk = _setup(backend, workgroup, length(nut))[2] # index 2 to extract the workgroup
+    AK.foreachindex(nut, min_elems=wk, block_size=wk) do i
         Si = S[i] # 0.5*(gradUi + gradUi')
-        magS = sqrt(2*Si⋅Si)
-        nut[i] = coeffs.C*Δ[i]*magS
+        magS = sqrt(scalar(2.0)*Si⋅Si)
+        nut[i] = Δ[i]*magS # Δ is (Cs*Δ)^2
     end
-
 
     interpolate!(nutf, nut, config)
     correct_boundaries!(nutf, nut, boundaries.nut, time, config)

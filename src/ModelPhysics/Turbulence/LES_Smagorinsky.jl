@@ -77,8 +77,8 @@ function initialise(
     Δ = ScalarField(mesh)
 
     delta!(Δ, mesh, config)
-    @. Δ.values = Δ.values^2 # store delta squared since it will be needed
-    # @. Δ.values = (((Δ.values^3)/0.001)^0.5)^2
+    # @. Δ.values = Δ.values^2 # store delta squared since it will be needed
+    @. Δ.values = ((Δ.values^3)/0.001) #^0.5)^2
     
     return SmagorinskyModel(
         turbulence, 

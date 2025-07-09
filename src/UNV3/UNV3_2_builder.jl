@@ -22,33 +22,36 @@ Read and convert 3D UNV mesh file into XCALibre.jl. Note that a limitation of th
 - `float_type` - select interger type to use in the mesh (Float32 may be useful on GPU runs) 
 
 """
-function UNV3D_mesh(unv_mesh; scale=1, integer_type=Int64, float_type=Float64)
+function UNV3D_mesh(unv_mesh; scale=1.0, integer_type=Int64, float_type=Float64)
+    itype = integer_type
+    ftype = float_type
     stats = @timed begin
         println("Loading UNV File...")
         points, efaces, cells_UNV, boundaryElements = read_UNV3( # "volumes" changed to cells_UNV
-            unv_mesh; scale=scale, integer=integer_type, float=float_type)
+            unv_mesh; scale=scale, integer=itype, float=ftype)
         println("File Read Successfully")
         println("Generating Mesh...")
 
-        cell_nodes, cell_nodes_range = generate_cell_nodes(cells_UNV) # Should be Hybrid compatible, tested for hexa. Using push instead of allocating vector.
-        node_cells, node_cells_range = generate_node_cells(points, cells_UNV)  # Should be Hybrid compatible, tested for hexa.
-        nodes = build_nodes(points, node_cells_range) # Hyrbid compatible, works for Tet and Hexa
-        boundaries = build_boundaries(boundaryElements) # Hybrid compatible
+        cell_nodes, cell_nodes_range = generate_cell_nodes(cells_UNV, itype, ftype) # Should be Hybrid compatible, tested for hexa. Using push instead of allocating vector.
+        node_cells, node_cells_range = generate_node_cells(points, cells_UNV, itype, ftype)  # Should be Hybrid compatible, tested for hexa.
+        nodes = build_nodes(points, node_cells_range, itype, ftype) # Hyrbid compatible, works for Tet and Hexa
+        boundaries = build_boundaries(boundaryElements, itype, ftype) # Hybrid compatible
 
         nbfaces = sum(length.(getproperty.(boundaries, :IDs_range))) # total boundary faces
 
         bface_nodes, bface_nodes_range, bface_owners_cells, boundary_cellsID = 
         begin
-            generate_boundary_faces(boundaryElements, efaces, nbfaces, node_cells, node_cells_range, cells_UNV) # Hybrid compatible, tested with hexa
+            generate_boundary_faces(boundaryElements, efaces, nbfaces, node_cells, node_cells_range, cells_UNV, itype, ftype) # Hybrid compatible, tested with hexa
         end
 
         iface_nodes, iface_nodes_range, iface_owners_cells = 
         begin 
-            generate_internal_faces(cells_UNV, nbfaces, nodes, node_cells) # Hybrid compatible, tested with hexa.
+            generate_internal_faces(cells_UNV, nbfaces, nodes, node_cells, itype, ftype) # Hybrid compatible, tested with hexa.
         end
 
         # NOTE: A function will be needed here to reorder the nodes IDs of "faces" to be geometrically sound! (not needed for tet cells though)
-        bface_nodes,iface_nodes=order_face_nodes(bface_nodes_range,iface_nodes_range,bface_nodes,iface_nodes,nodes)
+        bface_nodes,iface_nodes=order_face_nodes(
+            bface_nodes_range,iface_nodes_range,bface_nodes,iface_nodes,nodes, itype, ftype)
         #2 methods, using old as new function produced negative volumes?
         # Old method needs clean up
 
@@ -64,24 +67,29 @@ function UNV3D_mesh(unv_mesh; scale=1, integer_type=Int64, float_type=Float64)
 
         # Sort out cell to face connectivity
         cell_faces, cell_nsign, cell_faces_range, cell_neighbours = begin
-            generate_cell_face_connectivity(cells_UNV, nbfaces, face_owner_cells) # Hybrid compatible. Hexa and tet tested.
+            generate_cell_face_connectivity(
+                cells_UNV, nbfaces, face_owner_cells, itype, ftype) # Hybrid compatible. Hexa and tet tested.
         end
 
         # Build mesh (without calculation of geometry/properties)
-        cells = build_cells(cell_nodes_range, cell_faces_range) # Hybrid compatible. Hexa tested.
-        faces = build_faces(face_nodes_range, face_owner_cells) # Hybrid compatible. Hexa tested.
+        cells = build_cells(cell_nodes_range, cell_faces_range, itype, ftype) # Hybrid compatible. Hexa tested.
+        faces = build_faces(face_nodes_range, face_owner_cells, itype, ftype) # Hybrid compatible. Hexa tested.
 
         mesh = Mesh3(
             cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, 
             faces, face_nodes, boundaries, 
             nodes, node_cells,
-            SVector{3, Float64}(0.0, 0.0, 0.0), UnitRange{Int64}(0, 0), boundary_cellsID
+            SVector{3, ftype}(0.0, 0.0, 0.0), UnitRange{itype}(0, 0), boundary_cellsID
         ) # Hexa tested.
 
         # Update mesh to include all geometry calculations required
-        calculate_centres!(mesh) # Uses centroid instead of geometric. Will need changing, should work fine for regular cells and faces
-        calculate_face_properties!(mesh) # Touched up face properties, double check values.
-        calculate_area_and_volume!(mesh) # Will only work for Tet,Hexa, Prism cells
+
+        # Uses centroid instead of geometric.
+        calculate_centres!(mesh, itype, ftype)
+        # Touched up face properties, double check values.
+        calculate_face_properties!(mesh, itype, ftype) 
+        # Will only work for Tet,Hexa, Prism cells
+        calculate_area_and_volume!(mesh, itype, ftype) 
 
         return mesh
     end
@@ -103,9 +111,9 @@ alpha(v1, v2, normal) = begin
 end
 
 # BUILD mesh functions
-build_cells(cell_nodes_range, cell_faces_range) = begin
+build_cells(cell_nodes_range, cell_faces_range, itype, ftype) = begin
     # Allocate memory for cells array
-    cells = [Cell(Int64, Float64) for _ ∈ eachindex(cell_faces_range)]
+    cells = [Cell(Int64, ftype) for _ ∈ eachindex(cell_faces_range)]
 
     # update cell nodes and faces ranges (using Accessors.jl)
     for cID ∈ eachindex(cell_nodes_range)
@@ -118,9 +126,9 @@ build_cells(cell_nodes_range, cell_faces_range) = begin
     return cells
 end
 
-build_faces(face_nodes_range, face_owner_cells) = begin
+build_faces(face_nodes_range, face_owner_cells, itype, ftype) = begin
     # Allocate memory for faces array
-    faces = [Face3D(Int64, Float64) for _ ∈ eachindex(face_nodes_range)]
+    faces = [Face3D(Int64, ftype) for _ ∈ eachindex(face_nodes_range)]
 
     # Update face nodes range and owner cells
     for fID ∈ eachindex(face_nodes_range)
@@ -133,15 +141,15 @@ build_faces(face_nodes_range, face_owner_cells) = begin
     return faces
 end
 
-function build_nodes(points, node_cells_range) # Hybrid compatible. Works for Tet and Hexa
-    nodes = [Node(SVector{3, Float64}(0.0,0.0,0.0), 1:1) for _ ∈ eachindex(points)]
+function build_nodes(points, node_cells_range, itype, ftype) # Hybrid compatible. Works for Tet and Hexa
+    nodes = [Node(SVector{3, ftype}(0.0,0.0,0.0), 1:1) for _ ∈ eachindex(points)]
     @inbounds for i ∈ eachindex(points)
         nodes[i] =  Node(points[i].xyz, node_cells_range[i])
     end
     return nodes
 end
 
-function build_boundaries(boundaryElements)
+function build_boundaries(boundaryElements, itype, ftype)
     bfaces_start = 1
     boundaries = Vector{Boundary{Symbol,UnitRange{Int64}}}(undef,length(boundaryElements))
     for (i, boundaryElement) ∈ enumerate(boundaryElements)
@@ -160,7 +168,7 @@ end
 
 # GENERATE Functions
 
-function generate_cell_nodes(cells_UNV)
+function generate_cell_nodes(cells_UNV, itype, ftype)
     cell_nodes = Int64[] # cell_node length is undetermined as mesh could be hybrid, using push. Could use for and if before to preallocate vector.
     
     # Note 0: this errors with prism and hex for some reason? Reader? (volumentCount !- length(volumes))
@@ -181,7 +189,7 @@ function generate_cell_nodes(cells_UNV)
     return cell_nodes, cell_nodes_range
 end
 
-function generate_node_cells(points, cells_UNV)
+function generate_node_cells(points, cells_UNV, itype, ftype)
     temp_node_cells = [Int64[] for _ ∈ eachindex(points)] # array of vectors to hold cellIDs
 
     # Add cellID to each point that defines a "volume"
@@ -207,7 +215,7 @@ function generate_node_cells(points, cells_UNV)
 end #Tested for hexa cells, working
 
 function generate_boundary_faces(
-    boundaryElements, efaces, nbfaces, node_cells, node_cells_range, cells_UNV
+    boundaryElements, efaces, nbfaces, node_cells, node_cells_range, cells_UNV, itype, ftype
     )
     bface_nodes = Vector{Vector{Int64}}(undef, nbfaces)
     bface_nodes_range = Vector{UnitRange{Int64}}(undef, nbfaces)
@@ -251,7 +259,7 @@ function generate_boundary_faces(
     return bface_nodes, bface_nodes_range, bowners_cells, boundary_cells
 end
 
-function generate_internal_faces(cells_UNV, nbfaces, nodes, node_cells)
+function generate_internal_faces(cells_UNV, nbfaces, nodes, node_cells, itype, ftype)
     # determine total number of faces based on cell type (including duplicates)
     total_faces = 0
     for cell ∈ cells_UNV
@@ -392,7 +400,8 @@ function generate_internal_faces(cells_UNV, nbfaces, nodes, node_cells)
     return face_nodes, face_nodes_range, owners_cellIDs
 end
 
-function order_face_nodes(bface_nodes_range,iface_nodes_range,bface_nodes,iface_nodes,nodes)
+function order_face_nodes(
+    bface_nodes_range,iface_nodes_range,bface_nodes,iface_nodes,nodes, itype, ftype)
 
     n_bfaces = length(bface_nodes_range)
     n_ifaces =  length(iface_nodes_range)
@@ -452,7 +461,7 @@ function order_face_nodes(bface_nodes_range,iface_nodes_range,bface_nodes,iface_
     return bface_nodes, iface_nodes
 end
 
-function generate_cell_face_connectivity(cells_UNV, nbfaces, face_owner_cells)
+function generate_cell_face_connectivity(cells_UNV, nbfaces, face_owner_cells, itype, ftype)
     cell_faces = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_UNV)] 
     cell_nsign = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_UNV)] 
     cell_neighbours = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_UNV)] 
@@ -494,14 +503,14 @@ end
 
 # CALCULATION of geometric properties for cells and faces
 
-calculate_centres!(mesh) = begin
+calculate_centres!(mesh, itype, ftype) = begin
     (; nodes, cells, faces, cell_nodes, face_nodes) = mesh
-    sum = SVector{3, Float64}(0.0,0.0,0.0)
+    sum = SVector{3, ftype}(0.0,0.0,0.0)
 
     # calculate cell centres (geometric - not centroid - needs fixing)
     for cID ∈ eachindex(cells)
         cell = cells[cID]
-        sum = SVector{3, Float64}(0.0,0.0,0.0)
+        sum = SVector{3, ftype}(0.0,0.0,0.0)
         nodes_ID = nodeIDs(cell_nodes, cell.nodes_range)
         for nID ∈ nodes_ID
             sum += nodes[nID].coords 
@@ -513,7 +522,7 @@ calculate_centres!(mesh) = begin
     # calculate face centres (geometric - not centroid - needs fixing)
     for fID ∈ eachindex(faces)
         face = faces[fID]
-        sum = SVector{3, Float64}(0.0,0.0,0.0)
+        sum = SVector{3, ftype}(0.0,0.0,0.0)
         nodes_ID = nodeIDs(face_nodes, face.nodes_range)
         for nID ∈ nodes_ID
             sum += nodes[nID].coords 
@@ -523,7 +532,7 @@ calculate_centres!(mesh) = begin
     end        
 end
 
-calculate_face_properties!(mesh) = begin
+calculate_face_properties!(mesh, itype, ftype) = begin
     # written for Tet only for debugging
     (; nodes, cells, faces, face_nodes, boundary_cellsID) = mesh
     n_bfaces = length(boundary_cellsID)
@@ -545,7 +554,7 @@ calculate_face_properties!(mesh) = begin
         normal_vec = fc_n1 × fc_n2
         normal = normal_vec/norm(normal_vec)
         if cc1_cc2 ⋅ normal < 0
-            normal *= -1
+            normal *= -one(ftype)
             face_nodes[face.nodes_range] .= reverse(nIDs) # reorder nodes (FOAM compat)
         end
         @reset face.normal = normal
@@ -554,7 +563,7 @@ calculate_face_properties!(mesh) = begin
         cc_fc = face.centre - cell1.centre
         delta = norm(cc_fc)
         e = cc_fc/delta
-        weight = one(Float64)
+        weight = one(ftype)
         @reset face.delta = delta
         @reset face.e = e
         @reset face.weight = weight
@@ -579,7 +588,7 @@ calculate_face_properties!(mesh) = begin
         normal_vec = fc_n1 × fc_n2
         normal = normal_vec/norm(normal_vec)
         if cc1_cc2 ⋅ normal < 0
-            normal *= -1
+            normal *= -one(ftype)
             face_nodes[face.nodes_range] .= reverse(nIDs) # reorder nodes (FOAM compat)
         end
         @reset face.normal = normal
@@ -601,7 +610,7 @@ calculate_face_properties!(mesh) = begin
     end
 end
 
-calculate_area_and_volume!(mesh) = begin
+calculate_area_and_volume!(mesh, itype, ftype) = begin
     (; nodes, faces, face_nodes, cells) = mesh
 
     n_faces=length(faces)
@@ -627,7 +636,7 @@ calculate_area_and_volume!(mesh) = begin
             t2z=n3[3]-n1[3]
 
             area2=(t1y*t2z-t1z*t2y)^2+(t1x*t2z-t1z*t2x)^2+(t1y*t2x-t1x*t2y)^2
-            area=sqrt(area2)*0.5
+            area=sqrt(area2)*ftype(0.5)
             
             @reset face.area = area
 
@@ -648,7 +657,7 @@ calculate_area_and_volume!(mesh) = begin
             t2z=n3[3]-n1[3]
 
             area2=(t1y*t2z-t1z*t2y)^2+(t1x*t2z-t1z*t2x)^2+(t1y*t2x-t1x*t2y)^2
-            area=sqrt(area2)*0.5
+            area=sqrt(area2)*ftype(0.5)
 
             for ic=4:4 # Temp fix for quad faces only.
                 n1 = nodes[nIDs[1]].coords
@@ -664,7 +673,7 @@ calculate_area_and_volume!(mesh) = begin
                 t2z=n3[3]-n1[3]
 
                 area2=(t1y*t2z-t1z*t2y)^2+(t1x*t2z-t1z*t2x)^2+(t1y*t2x-t1x*t2y)^2
-                area=area+sqrt(area2)*0.5
+                area=area+sqrt(area2)*ftype(0.5)
 
             end
             @reset face.area = area
@@ -688,7 +697,7 @@ calculate_area_and_volume!(mesh) = begin
     for cID ∈ eachindex(cells)
         cell = cells[cID]
         nface = length(all_cell_faces[cID])
-        volume = 0
+        volume = zero(ftype)
         cc = cell.centre
 
         for f=1:nface
@@ -700,7 +709,7 @@ calculate_area_and_volume!(mesh) = begin
             d_fc=fc-cc
 
             if dot(d_fc,normal)<0.0
-                normal=-1.0*normal
+                normal=-one(ftype)*normal
             end
             
             volume=volume+(normal[1]*fc[1]*face.area) #Only uses x direction. For better results, can be extended to y and z.

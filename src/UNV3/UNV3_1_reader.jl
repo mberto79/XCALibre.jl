@@ -1,5 +1,6 @@
 
 function read_UNV3(unv_mesh; scale, integer, float)
+    scale = float(scale)
     #Defining Variables
     pointindx=0
     elementindx=0
@@ -10,40 +11,33 @@ function read_UNV3(unv_mesh; scale, integer, float)
     
     #Defining Arrays with Structs
     points=UNV3.Point{float,SVector{3,float}}[]
-    #edges=UNV3.Edge{integer,Vector{integer}}[]
     faces=UNV3.Face{integer,Vector{integer}}[]
     cells=UNV3.Cell_UNV{integer,Vector{integer}}[]
     boundaryElements=UNV3.BoundaryElement{String,integer,Vector{integer}}[]
-    #elements=UNV3.Element{integer,Vector{integer}}[]
     
     #Defining Arrays for data collection
     #Points
     point=float[]
-    pointindex=integer
+    pointindex=nothing
     
-    #Kept in case of future uses.
-    #Edges
-    # edge=integer[]
-    # edgeCount=integer[]
-    # edgeindex=integer[]
     edgeindex=0
     
     #Faces
     face=integer[] # Nodes ID for face
-    faceindex=integer
-    faceCount=integer
+    faceindex=nothing
+    faceCount=nothing
     
     #Cells
     cell=integer[] # Nodes ID for cell
-    cellindex=integer
-    cellCount=integer
+    cellindex=nothing
+    cellCount=nothing
     
     #bc
     boundary=integer[] # Element ID for boundary
-    boundarys=Tuple{SubString{String}, Vector{Int64}}[]
-    boundaryindex=integer
-    currentBoundary=zero(integer)
-    boundaryNumber=zero(integer)
+    boundarys=Tuple{SubString{String}, Vector{integer}}[]
+    boundaryindex=nothing
+    currentBoundary=0
+    boundaryNumber=0
     
     #Splits UNV file into sections
     for (indx,line) in enumerate(eachline(unv_mesh))
@@ -82,7 +76,7 @@ function read_UNV3(unv_mesh; scale, integer, float)
     
         if length(sline)==3 && indx>pointindx && indx<elementindx
             point=[parse(Float64,sline[i]) for i=1:length(sline)]
-            push!(points,Point(scale * SVector{3,Float64}(point)))
+            push!(points,Point(scale * SVector{3,float}(point)))
             continue
         end
     
@@ -106,7 +100,7 @@ function read_UNV3(unv_mesh; scale, integer, float)
         #Faces
         #Triangle
         if length(sline)==6 && parse(Int64,sline[2])==41 && parse(Int64,sline[end])==3
-            faceCount=parse(Int,sline[end])
+            faceCount=parse(Int64,sline[end])
             face_counter=face_counter+1
             faceindex=face_counter
             faceindx=indx
@@ -117,14 +111,14 @@ function read_UNV3(unv_mesh; scale, integer, float)
         end
     
         if length(sline)==3 && indx>elementindx && indx==faceindx+1 #&& parse(Int,sline[end]) ≠ 1
-            face=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(faces,Face(faceindex,faceCount,face))
+            face=[parse(Int64,sline[i]) for i=1:length(sline)]
+            push!(faces,Face(integer(faceindex),integer(faceCount),integer.(face)))
             continue
         end
 
         #Quad
-        if length(sline)==6 && parse(Int,sline[2])==44 && parse(Int,sline[end])==4
-            faceCount=parse(Int,sline[end])
+        if length(sline)==6 && parse(Int64,sline[2])==44 && parse(Int64,sline[end])==4
+            faceCount=parse(Int64,sline[end])
             face_counter=face_counter+1
             faceindex=face_counter
             faceindx=indx
@@ -135,15 +129,15 @@ function read_UNV3(unv_mesh; scale, integer, float)
         end
 
         if length(sline)==4 && indx>elementindx && indx==faceindx+1
-            face=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(faces,Face(faceindex,faceCount,face))
+            face=[parse(Int64,sline[i]) for i=1:length(sline)]
+            push!(faces,Face(integer(faceindex),integer(faceCount),integer.(face)))
             continue
         end
 
         #Cells
         #Tetrahedral
-        if length(sline)==6 && parse(Int,sline[2])==111
-            cellCount=parse(Int,sline[end])
+        if length(sline)==6 && parse(Int64,sline[2])==111
+            cellCount=parse(Int64,sline[end])
             cell_counter=cell_counter+1
             cellindex=cell_counter
             cellindx=indx
@@ -155,13 +149,13 @@ function read_UNV3(unv_mesh; scale, integer, float)
     
         if length(sline)==4 && indx<boundaryindx && indx>elementindx
             cell=[parse(Int64,sline[i]) for i=1:length(sline)]
-            push!(cells,Cell_UNV(cellindex,cellCount,cell))
+            push!(cells,Cell_UNV(integer(cellindex),integer(cellCount),integer.(cell)))
             continue
         end
 
         #Hexahedral
-        if length(sline)==6 && parse(Int,sline[2])==115
-            cellCount=parse(Int,sline[end])
+        if length(sline)==6 && parse(Int64,sline[2])==115
+            cellCount=parse(Int64,sline[end])
             cell_counter=cell_counter+1
             cellindex=cell_counter
             cellindx=indx
@@ -172,14 +166,14 @@ function read_UNV3(unv_mesh; scale, integer, float)
         end
 
         if length(sline)==8 && indx<boundaryindx && indx>elementindx
-            cell=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(cells,Cell_UNV(cellindex,cellCount,cell))
+            cell=[parse(Int64,sline[i]) for i=1:length(sline)]
+            push!(cells,Cell_UNV(integer(cellindex),integer(cellCount),integer.(cell)))
             continue
         end
 
         #Wedge
-        if length(sline)==6 && parse(Int,sline[2])==112
-            cellCount=parse(Int,sline[end])
+        if length(sline)==6 && parse(Int64,sline[2])==112
+            cellCount=parse(Int64,sline[end])
             cell_counter=cell_counter+1
             cellindex=cell_counter
             cellindx=indx
@@ -190,8 +184,8 @@ function read_UNV3(unv_mesh; scale, integer, float)
         end
 
         if length(sline)==6 && indx<boundaryindx && indx>elementindx
-            cell=[parse(Int,sline[i]) for i=1:length(sline)]
-            push!(cells,Cell_UNV(cellindex,cellCount,cell))
+            cell=[parse(Int64,sline[i]) for i=1:length(sline)]
+            push!(cells,Cell_UNV(integer(cellindex),integer(cellCount),integer.(cell)))
             continue
         end
     
@@ -199,11 +193,11 @@ function read_UNV3(unv_mesh; scale, integer, float)
         if length(sline)==1 && indx>boundaryindx && typeof(tryparse(Int64,sline[1]))==Nothing
             boundaryindex=sline[1]
             currentBoundary=currentBoundary+1
-            newBoundary=BoundaryElement(0)
+            newBoundary=BoundaryElement(integer(0))
             push!(boundaryElements, newBoundary)
             boundaryNumber=boundaryNumber+1
-            boundaryElements[currentBoundary].index=currentBoundary
-            boundaryElements[currentBoundary].name=boundaryindex
+            boundaryElements[currentBoundary].index = integer(currentBoundary)
+            boundaryElements[currentBoundary].name = boundaryindex
             continue
         end
 
@@ -215,19 +209,25 @@ function read_UNV3(unv_mesh; scale, integer, float)
     
         if length(sline)==8 && indx>boundaryindx && parse(Int64,sline[2])!=0
             boundary=[parse(Int64,sline[i]) for i=1:length(sline)]
-            push!(boundarys,(boundaryindex,boundary))
+            push!(boundarys,(boundaryindex,integer.(boundary)))
             #push!(boundaryElements[currentBoundary].elements,dict[parse(Int64,sline[2])]) # Kept for Dict
-            push!(boundaryElements[currentBoundary].facesID,parse(Int64,sline[2])-edgeindex)
+            push!(
+                boundaryElements[currentBoundary].facesID,
+                integer(parse(Int64,sline[2])-edgeindex))
             #push!(boundaryElements[currentBoundary].elements,dict[parse(Int64,sline[6])]) # Kept for Dict
-            push!(boundaryElements[currentBoundary].facesID,parse(Int64,sline[6])-edgeindex)
+            push!(
+                boundaryElements[currentBoundary].facesID,
+                integer(parse(Int64,sline[6])-edgeindex))
             continue
         end
 
         if length(sline)==4 && indx>boundaryindx && parse(Int64,sline[2])!=0
             boundary=[parse(Int64,sline[i]) for i=1:length(sline)]
-            push!(boundarys,(boundaryindex,boundary))
+            push!(boundarys,(boundaryindex,integer.(boundary)))
             #push!(boundaryElements[currentBoundary].elements,dict[parse(Int64,sline[2])]) # Kept for Dict
-            push!(boundaryElements[currentBoundary].facesID,parse(Int64,sline[2])-edgeindex)
+            push!(
+                boundaryElements[currentBoundary].facesID,
+                integer(parse(Int64,sline[2])-edgeindex))
             continue
         end
     

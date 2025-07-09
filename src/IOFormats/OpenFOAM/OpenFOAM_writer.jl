@@ -45,7 +45,9 @@ initialise_writer(format::OpenFOAM, mesh::Mesh3) = begin
             println(io, "(")
             for nodei ∈ eachindex(nodes)
                 coords = nodes[nodei].coords
-                println(io, "($(coords[1]) $(coords[2]) $(coords[3]))")
+                coords_str = @sprintf "(%g %g %g)" coords[1] coords[2] coords[3]
+                println(io, coords_str)
+                # println(io, "($(coords[1]) $(coords[2]) $(coords[3]))")
             end
             println(io, ")")
         end

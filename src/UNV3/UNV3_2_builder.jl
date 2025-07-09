@@ -95,14 +95,14 @@ faceIDs = get_data
 cellIDs = get_data
 
 #Functions for Face Node Order
-
 segment(p1, p2) = p2 - p1
 unit_vector(vec) = vec/norm(vec)
-angle1(s, i1, i2) = acosd( (s[i1]⋅s[i2])/(norm(s[i1])*norm(s[i2]))) #Old
-#angle1(vec1, vec2) = acosd( (vec1⋅vec2)/(norm(vec1)*norm(vec2))) # New
+alpha(v1, v2, normal) = begin
+    # multiply (v1⋅v2) by 0.999 to avoid domain error due to floating point arithmetic
+    acosd( 0.999*( v1⋅v2 ) )*sign(v1×v2⋅normal)
+end
 
 # BUILD mesh functions
-
 build_cells(cell_nodes_range, cell_faces_range) = begin
     # Allocate memory for cells array
     cells = [Cell(Int64, Float64) for _ ∈ eachindex(cell_faces_range)]
@@ -392,55 +392,34 @@ function generate_internal_faces(cells_UNV, nbfaces, nodes, node_cells)
     return face_nodes, face_nodes_range, owners_cellIDs
 end
 
-function order_face_nodes(bface_nodes_range,iface_nodes_range,bface_nodes,iface_nodes,nodes) # Old Method
+function order_face_nodes(bface_nodes_range,iface_nodes_range,bface_nodes,iface_nodes,nodes)
 
     n_bfaces = length(bface_nodes_range)
     n_ifaces =  length(iface_nodes_range)
 
-    for fID = 1:n_bfaces # Re-order Boundary Faces
-        if length(bface_nodes_range[fID]) == 4 # Only for Quad faces
-            nIDs=nodeIDs(bface_nodes,bface_nodes_range[fID]) # Get ids of nodes of face
+    # loop over boundary faces
+    for fID = 1:n_bfaces 
+        if length(bface_nodes_range[fID]) == 4 # Quad faces have only 4 nodes
+            nIDs=nodeIDs(bface_nodes,bface_nodes_range[fID]) # Get IDs of face nodes
     
-            ordered_ID=sort(nIDs) # sort them so that the lowest ID is first
+            # Get coords of face nodes
+            points = getproperty.(nodes[nIDs], :coords)
+
+            segments = points .- Ref(points[1]) # vectors to each node from pivot (p1)
+            nsegments = segments./norm.(segments) # normalised
+            ref = nsegments[2]×nsegments[3] # reference vector (determine orientation)
+            nref = (ref)/norm(ref) # normalised
+
+            angles = alpha.(Ref(nsegments[2]), nsegments, Ref(nref)) # calculate angles
+
+            # first angle needs to be removed (index from 2) but need to add 1 
+            sorted_IDs = sortperm(angles[2:end], rev=false) .+ 1 # add one to index count 
     
-            n1=nodes[ordered_ID[1]].coords # Get coords of 4 nodes
-            n2=nodes[ordered_ID[2]].coords
-            n3=nodes[ordered_ID[3]].coords
-            n4=nodes[ordered_ID[4]].coords
-    
-            points = [n1, n2, n3, n4]
-    
-            _x(n) = n[1]
-            _y(n) = n[2]
-            _z(n) = n[3]
-    
-            l = segment.(Ref(points[1]), points) # surface vectors (segments connecting nodes to reference node)
-            fn = unit_vector(l[2] × l[3]) # face normal vector
-    
-            angles=Float64[] # Vector to store angles
-            theta2 = 0.0
-            theta3 = angle1(l, 2, 3)*(signbit((l[2] × fn)⋅l[3]) ? 1 : -1)
-            theta4 = angle1(l, 2, 4)*(signbit((l[2] × fn)⋅l[4]) ? 1 : -1)
-    
-            push!(angles,theta2,theta3,theta4)
-    
-            dict=Dict() # Using dictionary to link noode IDs to angle
-            for (n,f) in enumerate(angles)
-                dict[f] = ordered_ID[n+1]
-            end
-    
-            sorted_angles=sort(angles) # Sort angles from smallest to largest. Right hand rule.
-    
-            sorted_IDs=Int64[]
-            push!(sorted_IDs,ordered_ID[1])
-            push!(sorted_IDs,dict[sorted_angles[1]])
-            push!(sorted_IDs,dict[sorted_angles[2]])
-            push!(sorted_IDs,dict[sorted_angles[3]])
-    
-            counter=0
-            for i=bface_nodes_range[fID] # Re-writing face_nodes with ordered nodes
-                counter=counter+1
-                bface_nodes[i]=sorted_IDs[counter]
+            # assign global node ID from local "ordered" indices
+            counter = 0
+            for i ∈ bface_nodes_range[fID][2:end] # i = global node ID
+                counter += 1
+                bface_nodes[i] = nIDs[sorted_IDs[counter]]
             end
         end
     end
@@ -449,46 +428,24 @@ function order_face_nodes(bface_nodes_range,iface_nodes_range,bface_nodes,iface_
         if length(iface_nodes_range[fID])==4 # Only for Quad Faces
             nIDs=nodeIDs(iface_nodes,iface_nodes_range[fID]) # Get ids of nodes of the face
     
-            ordered_ID=sort(nIDs) # Sort them so that the lowest ID is first
+            # Get coords of face nodes
+            points = getproperty.(nodes[nIDs], :coords)
+
+            segments = points .- Ref(points[1]) # vectors to each node from pivot (p1)
+            nsegments = segments./norm.(segments) # normalised
+            ref = nsegments[2]×nsegments[3] # reference vector (determine orientation)
+            nref = (ref)/norm(ref) # normalised
+
+            angles = alpha.(Ref(nsegments[2]), nsegments, Ref(nref)) # calculate angles
+
+            # first angle needs to be removed (index from 2) but need to add 1 
+            sorted_IDs = sortperm(angles[2:end], rev=false) .+ 1 # add one to index count 
     
-            n1=nodes[ordered_ID[1]].coords
-            n2=nodes[ordered_ID[2]].coords
-            n3=nodes[ordered_ID[3]].coords
-            n4=nodes[ordered_ID[4]].coords
-    
-            points = [n1, n2, n3, n4]
-    
-            _x(n) = n[1]
-            _y(n) = n[2]
-            _z(n) = n[3]
-    
-            l = segment.(Ref(points[1]), points) # surface vectors (segments connecting nodes to reference node)
-            fn = unit_vector(l[2] × l[3]) # face normal vector
-    
-            angles=Float64[]
-            theta2 = 0.0
-            theta3 = angle1(l, 2, 3)*(signbit((l[2] × fn)⋅l[3]) ? 1 : -1)
-            theta4 = angle1(l, 2, 4)*(signbit((l[2] × fn)⋅l[4]) ? 1 : -1)
-    
-            push!(angles,theta2,theta3,theta4)
-    
-            dict=Dict()
-            for (n,f) in enumerate(angles)
-                dict[f] = ordered_ID[n+1]
-            end
-    
-            sorted_angles=sort(angles)
-    
-            sorted_IDs=Int64[]
-            push!(sorted_IDs,ordered_ID[1])
-            push!(sorted_IDs,dict[sorted_angles[1]])
-            push!(sorted_IDs,dict[sorted_angles[2]])
-            push!(sorted_IDs,dict[sorted_angles[3]])
-    
-            counter=0
-            for i=iface_nodes_range[fID]
-                counter=counter+1
-                iface_nodes[i]=sorted_IDs[counter]
+            # assign global node ID from local "ordered" indices
+            counter = 0
+            for i ∈ iface_nodes_range[fID][2:end] # Re-writing face_nodes with ordered nodes
+                counter += 1
+                iface_nodes[i] = nIDs[sorted_IDs[counter]]
             end
         end
     end
@@ -589,6 +546,7 @@ calculate_face_properties!(mesh) = begin
         normal = normal_vec/norm(normal_vec)
         if cc1_cc2 ⋅ normal < 0
             normal *= -1
+            face_nodes[face.nodes_range] .= reverse(nIDs) # reorder nodes (FOAM compat)
         end
         @reset face.normal = normal
 
@@ -622,6 +580,7 @@ calculate_face_properties!(mesh) = begin
         normal = normal_vec/norm(normal_vec)
         if cc1_cc2 ⋅ normal < 0
             normal *= -1
+            face_nodes[face.nodes_range] .= reverse(nIDs) # reorder nodes (FOAM compat)
         end
         @reset face.normal = normal
 

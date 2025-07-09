@@ -27,7 +27,7 @@ function UNV3D_mesh(unv_mesh; scale=1.0, integer_type=Int64, float_type=Float64)
     ftype = float_type
     stats = @timed begin
         println("Loading UNV File...")
-        points, efaces, cells_UNV, boundaryElements = read_UNV3( # "volumes" changed to cells_UNV
+        @time points, efaces, cells_UNV, boundaryElements = read_UNV3( 
             unv_mesh; scale=scale, integer=itype, float=ftype)
         println("File Read Successfully")
         println("Generating Mesh...")
@@ -635,8 +635,8 @@ calculate_area_and_volume!(mesh, itype, ftype) = begin
             t2y=n3[2]-n1[2]
             t2z=n3[3]-n1[3]
 
-            area2=(t1y*t2z-t1z*t2y)^2+(t1x*t2z-t1z*t2x)^2+(t1y*t2x-t1x*t2y)^2
-            area=sqrt(area2)*ftype(0.5)
+            area2=(t1y*t2z-t1z*t2y)^2.0+(t1x*t2z-t1z*t2x)^2.0+(t1y*t2x-t1x*t2y)^2.0
+            area=ftype(sqrt(area2)*0.5)
             
             @reset face.area = area
 
@@ -656,8 +656,8 @@ calculate_area_and_volume!(mesh, itype, ftype) = begin
             t2y=n3[2]-n1[2]
             t2z=n3[3]-n1[3]
 
-            area2=(t1y*t2z-t1z*t2y)^2+(t1x*t2z-t1z*t2x)^2+(t1y*t2x-t1x*t2y)^2
-            area=sqrt(area2)*ftype(0.5)
+            area2=(t1y*t2z-t1z*t2y)^2.0+(t1x*t2z-t1z*t2x)^2.0+(t1y*t2x-t1x*t2y)^2.0
+            area=ftype(sqrt(area2)*0.5)
 
             for ic=4:4 # Temp fix for quad faces only.
                 n1 = nodes[nIDs[1]].coords
@@ -672,8 +672,8 @@ calculate_area_and_volume!(mesh, itype, ftype) = begin
                 t2y=n3[2]-n1[2]
                 t2z=n3[3]-n1[3]
 
-                area2=(t1y*t2z-t1z*t2y)^2+(t1x*t2z-t1z*t2x)^2+(t1y*t2x-t1x*t2y)^2
-                area=area+sqrt(area2)*ftype(0.5)
+                area2=(t1y*t2z-t1z*t2y)^2.0+(t1x*t2z-t1z*t2x)^2.0+(t1y*t2x-t1x*t2y)^2.0
+                area=ftype(area+sqrt(area2)*0.5)
 
             end
             @reset face.area = area

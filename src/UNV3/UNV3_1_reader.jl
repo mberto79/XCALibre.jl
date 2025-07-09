@@ -75,7 +75,7 @@ function read_UNV3(unv_mesh; scale, integer, float)
         end
     
         if length(sline)==3 && indx>pointindx && indx<elementindx
-            point=[parse(Float64,sline[i]) for i=1:length(sline)]
+            point=[parse(float,sline[i]) for i=1:length(sline)]
             push!(points,Point(scale * SVector{3,float}(point)))
             continue
         end

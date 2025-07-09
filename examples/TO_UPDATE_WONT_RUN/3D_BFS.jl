@@ -17,7 +17,7 @@ mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_5mm.unv
 # mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
 # mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
 @time mesh = UNV3D_mesh(mesh_file, scale=0.001) # 36 sec
-mesh = UNV3D_mesh(mesh_file, scale=0.001, float_type=Float32)
+@time mesh = UNV3D_mesh(mesh_file, scale=0.001, float_type=Float32)
 
 backend = CUDABackend(); workgroup = 32
 # backend = CPU(); workgroup = 1024; activate_multithread(backend)

@@ -635,7 +635,7 @@ calculate_area_and_volume!(mesh, itype, ftype) = begin
             t2y=n3[2]-n1[2]
             t2z=n3[3]-n1[3]
 
-            area2=(t1y*t2z-t1z*t2y)^2.0+(t1x*t2z-t1z*t2x)^2.0+(t1y*t2x-t1x*t2y)^2.0
+            area2=(t1y*t2z-t1z*t2y)^2+(t1x*t2z-t1z*t2x)^2+(t1y*t2x-t1x*t2y)^2 |> ftype
             area=ftype(sqrt(area2)*0.5)
             
             @reset face.area = area
@@ -656,7 +656,7 @@ calculate_area_and_volume!(mesh, itype, ftype) = begin
             t2y=n3[2]-n1[2]
             t2z=n3[3]-n1[3]
 
-            area2=(t1y*t2z-t1z*t2y)^2.0+(t1x*t2z-t1z*t2x)^2.0+(t1y*t2x-t1x*t2y)^2.0
+            area2=(t1y*t2z-t1z*t2y)^2+(t1x*t2z-t1z*t2x)^2+(t1y*t2x-t1x*t2y)^2 |> ftype
             area=ftype(sqrt(area2)*0.5)
 
             for ic=4:4 # Temp fix for quad faces only.
@@ -672,7 +672,7 @@ calculate_area_and_volume!(mesh, itype, ftype) = begin
                 t2y=n3[2]-n1[2]
                 t2z=n3[3]-n1[3]
 
-                area2=(t1y*t2z-t1z*t2y)^2.0+(t1x*t2z-t1z*t2x)^2.0+(t1y*t2x-t1x*t2y)^2.0
+                area2=(t1y*t2z-t1z*t2y)^2+(t1x*t2z-t1z*t2x)^2+(t1y*t2x-t1x*t2y)^2 |> ftype
                 area=ftype(area+sqrt(area2)*0.5)
 
             end

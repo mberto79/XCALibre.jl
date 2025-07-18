@@ -4,6 +4,9 @@ using SparseArrays
 using SparseMatricesCSR
 using Test
 
+BLAS.set_num_threads(1)
+workgroupsize(mesh) = length(mesh.cells) ÷ Threads.nthreads()
+
 TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
 
 @testset verbose = true "Functionality tests" begin

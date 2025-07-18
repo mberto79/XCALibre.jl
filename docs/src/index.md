@@ -53,8 +53,8 @@ XCALibre.jl ships with fluid solvers for steady and transient simulations, based
 The list of turbulence models available is expected to expand. The following turbulence models are already available in XCALibre.jl:
 
 * Reynolds-Averaged Navier-Stokes (RANS)
-  * ``k-\omega`` - available in low-Reynolds (wall-resolving) and in high-Reynolds (wall functions) mode
-  * ``k-\omega`` LKE - transitional model using the Laminar Kinetic Energy concept to model transition onset
+  - ``k-\omega`` - available in low-Reynolds (wall-resolving) and in high-Reynolds (wall functions) mode
+  - ``k-\omega`` LKE - transitional model using the Laminar Kinetic Energy concept to model transition onset
   
 * Large Eddy Simulation (LES with implicit filtering)
   * Smagorinsky - classic eddy-viscosity sub-grid scale Smagorinsky model
@@ -93,7 +93,7 @@ U_eqn = (
 * Solver for highly compressible flows (including shockwaves)
 * Implement multithreaded sparse-matrix multiply for better multithreaded performance (done in v0.3.3)
 * Conjugate heat transfer
-* ``k-\epsilon`` turbulence model
+- ``k-\epsilon`` turbulence model
 * Implement parallel versions of more efficient preconditioners
 
 ### API

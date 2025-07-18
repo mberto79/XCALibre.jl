@@ -9,7 +9,10 @@ grid = "bfs_unv_tet_15mm.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 @test typeof(mesh) <: Mesh3
-# mesh_dev = adapt(CUDABackend(), mesh)  # Uncomment this if using GPU
+
+workgroup = workgroupsize(mesh)
+backend = CPU()
+mesh_dev = adapt(backend, mesh)
 
 # Inlet conditions
 Umag = 0.5
@@ -19,61 +22,63 @@ Re = velocity[1]*0.1/nu
 
 model = Physics(
     time = Steady(),
-    fluid = Fluid{Incompressible}(nu = nu),
+    fluid = Fluid{Incompressible}(nu=nu),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
-    domain = mesh # mesh_dev  # use mesh_dev for GPU backend
+    domain = mesh_dev # mesh_dev  # use mesh_dev for GPU backend
     )
-    
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Neumann(:outlet, 0.0),
-    Symmetry(:top),
-    Neumann(:sides, 0.0)
-)
 
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0),
-    Neumann(:sides, 0.0)
+BCs = assign(
+    region=mesh,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Zerogradient(:outlet),
+            Wall(:wall, [0,0,0]),
+            Zerogradient(:sides), # faster!
+            Symmetry(:top)
+        ],
+        p = [
+            Zerogradient(:inlet),
+            Dirichlet(:outlet, 0.0),
+            Wall(:wall),
+            Extrapolated(:sides),
+            Symmetry(:top)
+        ]
+    )
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind, gradient=Orthogonal),
-    p = set_schemes(gradient=Midpoint)
+    U = Schemes(divergence=Upwind, gradient=Gauss),
+    p = Schemes(gradient=Gauss)
 )
 
 solvers = (
-    U = set_solver(
-        model.momentum.U;
+    U = SolverSetup(
         solver      = Bicgstab(), #Cg(), Bicgstab(), Gmres(), 
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.8,
         rtol = 1e-1,
     ),
-    p = set_solver(
-        model.momentum.p;
+    p = SolverSetup(
         solver      = Cg(), #Gmres(), #Cg(), # Bicgstab(), Gmres()
-        preconditioner = Jacobi(),
+        preconditioner = Jacobi(), #DILU(), #Jacobi(),
         convergence = 1e-7,
         relax       = 0.2,
         rtol = 1e-2,
     )
 )
 
-runtime = set_runtime(
+runtime = Runtime(
     iterations=100, time_step=1, write_interval=100)
 
-hardware = set_hardware(backend=CPU(), workgroup=1024)
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=ROCBackend(), workgroup=32)
+hardware = Hardware(backend=backend, workgroup=workgroup)
+# hardware = Hardware(backend=CUDABackend(), workgroup=32)
+# hardware = Hardware(backend=ROCBackend(), workgroup=32)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc(true)
 
@@ -82,8 +87,8 @@ GC.gc(true)
 
 residuals = run!(model, config)
 
-top = boundary_average(:top, model.momentum.U, config)
-outlet = boundary_average(:outlet, model.momentum.U, config)
+top = boundary_average(:top, model.momentum.U, BCs.U, config)
+outlet = boundary_average(:outlet, model.momentum.U, BCs.U, config)
 
 @test Umag ≈ top[1] atol=0.1*Umag
 @test 0.5*Umag ≈ outlet[1] atol=0.1*Umag

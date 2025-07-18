@@ -1,17 +1,18 @@
 using Plots
 using XCALibre
-using Krylov
-using KernelAbstractions
 using CUDA
 
 # backwardFacingStep_2mm, backwardFacingStep_10mm
-mesh_file = "unv_sample_meshes/backwardFacingStep_10mm.unv"
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "backwardFacingStep_10mm.unv"
+mesh_file = joinpath(grids_dir, grid)
+
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 velocity = [0.5, 0.0, 0.0]
@@ -26,36 +27,38 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Dirichlet(:top, [0.0, 0.0, 0.0])
-)
-
- @assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
+BCs = assign(
+    region = mesh_dev,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Zerogradient(:outlet),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Wall(:top, [0.0, 0.0, 0.0])
+        ],
+        p = [
+            Zerogradient(:inlet),
+            Dirichlet(:outlet, 0.0),
+            Wall(:wall),
+            Wall(:top)
+        ]
+    )
 )
 
 schemes = (
-    U = set_schemes(time=Euler),
-    p = set_schemes()
+    U = Schemes(time=Euler),
+    p = Schemes()
 )
 
 
 solvers = (
-    U = set_solver(
-        model.momentum.U;
+    U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 1.0,
     ),
-    p = set_solver(
-        model.momentum.p;
+    p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -63,19 +66,16 @@ solvers = (
     )
 )
 
-runtime = set_runtime(
+runtime = Runtime(
     iterations=1000, time_step=0.005, write_interval=10)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc()
 
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
-
-# backend = CUDABackend()
-backend = CPU()
 
 residuals = run!(model, config) # 9.39k allocs
 

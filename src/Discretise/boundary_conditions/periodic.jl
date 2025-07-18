@@ -7,7 +7,7 @@ abstract type AbstractPeriodic <: AbstractPhysicalConstraint end
 
 
 """
-    struct Periodic{I,V} <: AbstractPhysicalConstraint
+    struct Periodic{I,V,R<:UnitRange} <: AbstractPhysicalConstraint
         ID::I
         value::V
     end
@@ -15,39 +15,43 @@ abstract type AbstractPeriodic <: AbstractPhysicalConstraint end
 Periodic boundary condition model.
 
 ### Fields
-- 'ID' -- Boundary ID
-- `value` -- tuple containing information needed to apply this boundary
+- `ID` is the name of the boundary given as a symbol (e.g. :inlet). Internally it gets replaced with the boundary index ID
+- `value` tuple containing information needed to apply this boundary
 """
-struct Periodic{I,V} <: AbstractPeriodic
-    ID::I
+struct Periodic{I,V,R<:UnitRange} <: AbstractPeriodic
+    ID::I 
     value::V
+    IDs_range::R
 end
 Adapt.@adapt_structure Periodic
 
-struct PeriodicParent{I,V} <: AbstractPeriodic
-    ID::I
+struct PeriodicParent{I,V,R<:UnitRange} <: AbstractPeriodic
+    ID::I 
     value::V
+    IDs_range::R
 end
 Adapt.@adapt_structure PeriodicParent
+
+@kwdef struct PeriodicValue{I<:Integer,F,VI,B}
+    patchID::I
+    distance::F
+    face_map::VI
+    isparent::B
+end
+Adapt.@adapt_structure PeriodicValue
+
+adapt_value(value::PeriodicValue, mesh) = begin
+    I = _get_int(mesh)
+    F = _get_float(mesh)
+    (; patchID, distance, face_map, isparent)  = value
+    PeriodicValue(I(patchID), F(distance), I.(face_map), isparent)
+end
 
 struct PeriodicConnectivity{I}
     i::I
     j::I
 end
 Adapt.@adapt_structure PeriodicConnectivity
-
-function fixedValue(BC::T, ID::I, value::V) where {I<:Integer,V, T<:AbstractPeriodic}
-    # Exception 1: Value is scalar
-    if V <: Number
-        return T.name.wrapper(ID, value)
-        # Exception 2: value is a tupple
-    elseif V <: NamedTuple
-        return T.name.wrapper(ID, value)
-    # Error if value is not scalar or tuple
-    else
-        throw("The value provided should be a scalar or a tuple")
-    end
-end
 
 """
     construct_periodic(mesh, backend, patch1::Symbol, patch2::Symbol)
@@ -64,7 +68,7 @@ Function for construction of periodic boundary conditions.
 - periodic::Tuple - tuple containing boundary defintions for `patch1` and `patch2` i.e. (periodic1, periodic2). The fields of `periodic1` and `periodic2` are 
 
     - `ID` -- Index to access boundary information in mesh object
-    - `value` -- represents a `NamedTuple` with the following keyword arguments:
+    - `value` represents a `NamedTuple` with the following keyword arguments:
         - index -- ID used to find boundary geometry information in the mesh object
         - distance -- perpendicular distance between the patches
         - face_map -- vector providing indeces to faces of match patch
@@ -109,8 +113,10 @@ function construct_periodic(mesh, backend, patch1::Symbol, patch2::Symbol)
         faceAddress2[i] = boundaries[idx1].IDs_range[idx]
     end
 
-    values1 = (patchID=idx2, distance=distance, face_map=faceAddress1, isparent=true)
-    values2 = (patchID=idx1, distance=distance, face_map=faceAddress2, isparent=false)
+    values1 = PeriodicValue(
+        patchID=idx2, distance=distance, face_map=faceAddress1, isparent=true)
+    values2 = PeriodicValue(
+        patchID=idx1, distance=distance, face_map=faceAddress2, isparent=false)
 
     p1 = PeriodicParent(patch1, values1)
     p2 = Periodic(patch2, values2)

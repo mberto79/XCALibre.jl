@@ -1,7 +1,6 @@
-using Plots 
-# using ThreadPinning
 using XCALibre
 using CUDA
+# using ThreadPinning
 
 # pinthreads(:cores)
 
@@ -15,14 +14,14 @@ mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_5mm.unv
 # mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_4mm.unv"
 # mesh_file = "bfs_unv_tet_5mm.unv"
 
-mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
+# mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
 # mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
-# backend = CUDABackend(); workgroup = 32
-backend = CPU(); workgroup = 1024; activate_multithread(backend)
+backend = CUDABackend(); workgroup = 32
+# backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 # Inlet conditions
@@ -39,25 +38,28 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U ( 
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:wall, noSlip),
-    Neumann(:sides, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Wall(:wall, 0.0),
-    Neumann(:sides, 0.0),
-    Neumann(:top, 0.0)
+BCs = assign(
+    region=mesh_dev,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Zerogradient(:outlet),
+            Wall(:wall, noSlip),
+            Zerogradient(:sides), # faster!
+            Zerogradient(:top)
+        ],
+        p = [
+            Zerogradient(:inlet),
+            Dirichlet(:outlet, 0.0),
+            Wall(:wall),
+            Extrapolated(:sides),
+            Extrapolated(:top)
+        ]
+    )
 )
 
 solvers = (
-    U = set_solver(
-        model.momentum.U;
+    U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), # Jacobi # ILU0GPU
         # smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
@@ -65,8 +67,7 @@ solvers = (
         relax       = 0.8,
         rtol = 0.1
     ),
-    p = set_solver(
-        model.momentum.p;
+    p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), #NormDiagonal(), IC0GPU, Jacobi
         # smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
@@ -77,17 +78,20 @@ solvers = (
     )
 )
 
+gradScheme = Gauss # Gauss # Midpoint
+divScheme = Upwind # Upwind
 schemes = (
-    U = set_schemes(time=SteadyState, divergence=Upwind, gradient=Midpoint),
-    p = set_schemes(time=SteadyState, gradient=Midpoint)
+    U = Schemes(time=SteadyState, divergence=divScheme, gradient=gradScheme),
+    p = Schemes(time=SteadyState, gradient=gradScheme)
 )
 
 # Run first to pre-compile
 
-runtime = set_runtime(iterations=1, write_interval=1, time_step=1)
-config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+runtime = Runtime(iterations=1, write_interval=1, time_step=1)
+config = Configuration(
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
-GC.gc(true)
+GC.gc(false)
 
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
@@ -96,16 +100,18 @@ residuals = run!(model, config)
 
 # Now get timing information
 
-runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
-config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+runtime = Runtime(iterations=500, write_interval=100, time_step=1)
+config = Configuration(
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
-GC.gc(true)
+GC.gc(false)
 
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-@time residuals = run!(model, config, output=OpenFOAM())
+@time residuals = run!(model, config, output=OpenFOAM(), ncorrectors=0)
 
+# using Plots
 # iterations = runtime.iterations
 # plot(yscale=:log10, ylims=(1e-7,1e-1))
 # plot!(1:iterations, residuals.Ux, label="Ux")

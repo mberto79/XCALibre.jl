@@ -46,7 +46,7 @@ print_tree(AbstractScheme) # hide
 
 | **Scheme** | **Description** |
 |:-------|:------------|
-| Orthogonal | Green-Gauss uncorrected gradient scheme |
+| Gauss | Green-Gauss uncorrected gradient scheme |
 | Midpoint | Green-Gauss skew corrected scheme (2 iterations - hardcoded) |
 
 #### Gradient limiters
@@ -61,10 +61,10 @@ The construction of all gradient limiters currently requires users to pass the m
 ---
 ### Specifying schemes
 
-XCALibre.jl flow solvers offer considerable flexibility to users for defining discretisation schemes. However, this means that discretisation schemes must be specified for every term of every equation solved. The schemes must be provided as a `NamedTuple` where each keyword corresponds to the fields being solved, e.g. (U = ..., p = ..., k = ..., <field> = ...). To facilitate this process, the [`set_schemes`](@ref) function is provided. Used without any inputs `set_schemes` uses the default values provided (see details below).
+XCALibre.jl flow solvers offer considerable flexibility to users for defining discretisation schemes. However, this means that discretisation schemes must be specified for every term of every equation solved. The schemes must be provided as a `NamedTuple` where each keyword corresponds to the fields being solved, e.g. (U = ..., p = ..., k = ..., <field> = ...). To facilitate this process, the [`Schemes`](@ref) function is provided. Used without any inputs `Schemes` uses the default values provided (see details below).
 
 ```@docs; canonical=false
-set_schemes
+Schemes
 ```
 
 For example, below we set the schemes for the  `U` and `p` fields. Notice that in the first case the schemes will take their default values (entry for `p`). In the case of `U`, we are only changing the setting for the divergence scheme to `Upwind`.
@@ -94,8 +94,8 @@ using XCALibre
 # Note: this example assumes a Physics object named `model` already exists
 
 schemes = (
-    p = set_schemes(), # no input provided (will use defaults)
-    U = set_schemes(divergence = Upwind, gradient=Midpoint, limiter=MFaceBased(model.domain)),
+    p = Schemes(), # no input provided (will use defaults)
+    U = Schemes(divergence = Upwind, gradient=Midpoint, limiter=MFaceBased(model.domain)),
 )
 
 # output
@@ -107,16 +107,16 @@ schemes = (
 
 Linear solvers in XCALibre.jl are provided by [Krylov.jl](https://github.com/JuliaSmoothOptimizers/Krylov.jl). The following solvers types are re-exported in XCALibre.jl
 
-* `Bicgstab()` is a general purpose linear solver. Works well with non-symmetric matrices e.g. for `U`.
-* `Cg()` is particular strong with symmetric matrices e.g to solve the pressure equation.
-* `Gmres()` is a general solver. We have found it works best on the CPU backend.
+- `Bicgstab()` is a general purpose linear solver. Works well with non-symmetric matrices e.g. for `U`.
+- `Cg()` is particular strong with symmetric matrices e.g to solve the pressure equation.
+- `Gmres()` is a general solver. We have found it works best on the CPU backend.
 
 For more information on these solvers you can review the excellent documentation provided by the [Krylov.jl](https://github.com/JuliaSmoothOptimizers/Krylov.jl) team. 
 
-XCALibre.jl provides the `set_solver` convenience function for setting solvers. See details below. 
+XCALibre.jl provides the `SolverSetup` convenience function for setting solvers. See details below. 
 
 ```@docs; canonical=false
-set_solver
+SolverSetup
 ```
 
 ### Preconditioners 
@@ -150,8 +150,7 @@ using XCALibre
 # Note: this example assumes a Physics object named `model` already exists
 
 solvers = (
-    U = set_solver(
-        model.momentum.U;
+    U = SolverSetup(
         solver      = Bicgstab(), # Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -159,8 +158,7 @@ solvers = (
         rtol = 1e-4,
         atol = 1e-10
     ),
-    p = set_solver(
-        model.momentum.p;
+    p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,

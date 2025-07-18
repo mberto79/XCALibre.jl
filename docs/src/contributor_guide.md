@@ -102,7 +102,7 @@ All fields behave (mostly) like regular arrays and can be indexed using the stan
 To implement a new boundary condition the following elements are required (see source code for [`Dirichlet`](@ref), for example):
 
 * type definition: a structure containing the fields `:ID` and `:value`
-* `fixedValue` function: used to check that user provided information is suitable for this boundary being implemented
+- `fixedValue` function: used to check that user provided information is suitable for this boundary being implemented
 * Implementation of the boundary face value: functor defining the boundary condition implementation, facilitated by a macro (see details below)
 * Scalar and vector face value interpolation: kernels to specify how to transfer cell information to the boundary. 
 

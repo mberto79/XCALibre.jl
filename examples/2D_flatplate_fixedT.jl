@@ -9,7 +9,7 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
-hardware = set_hardware(backend=backend, workgroup=workgroup)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 velocity = [0.2, 0.0, 0.0]
@@ -32,64 +32,66 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Symmetry(:top, 0.0)
-)
-
- @assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 100000.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model energy h (
-    FixedTemperature(:inlet, T=300.0, model=model.energy),
-    Neumann(:outlet, 0.0),
-    FixedTemperature(:wall, T=310.0, model=model.energy),
-    Neumann(:top, 0.0)
+BCs = assign(
+    region=mesh_dev,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Extrapolated(:outlet),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Symmetry(:top)
+        ],
+        p = [
+            Extrapolated(:inlet),
+            Dirichlet(:outlet, 100000.0),
+            Wall(:wall),
+            Symmetry(:top)
+        ],
+        h = [
+            FixedTemperature(:inlet, T=300.0, Enthalpy(cp=cp, Tref=288.15)),
+            Extrapolated(:outlet),
+            FixedTemperature(:wall, T=310.0, Enthalpy(cp=cp, Tref=288.15)),
+            Symmetry(:top)
+        ],
+    )
 )
 
 schemes = (
-    U = set_schemes(divergence=Linear),
-    p = set_schemes(divergence=Linear),
-    h = set_schemes(divergence=Linear)
+    U = Schemes(divergence=Linear),
+    p = Schemes(divergence=Linear),
+    h = Schemes(divergence=Linear)
 )
 
 
 solvers = (
-    U = set_solver(
-        model.momentum.U;
+    U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
+        rtol = 1e-1
+
     ),
-    p = set_solver(
-        model.momentum.p;
+    p = SolverSetup(
         solver      = Gmres(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.3,
+        rtol = 1e-2
     ),
-    h = set_solver(
-        model.energy.h;
+    h = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
-        rtol = 1e-2,
-        atol = 1e-4
+        rtol = 1e-1
     )
 )
 
-runtime = set_runtime(iterations=1000, write_interval=100, time_step=1)
+runtime = Runtime(iterations=1000, write_interval=100, time_step=1)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc()
 

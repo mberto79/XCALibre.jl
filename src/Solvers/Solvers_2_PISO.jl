@@ -100,9 +100,11 @@ function PISO(
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
     # other thing ive added 
-    mean_U = Mean(similar(model.momentum.U.x.values),Int(ceil(iterations*3/10)),iterations) 
-    mean_UU = Mean(similar(model.momentum.U.x.values),Int(ceil(iterations*3/10)),iterations)
-    vector_of_structs = [mean_U,mean_UU]
+    mean_U = ScalarField(mesh)
+    mean_UU = ScalarField(mesh)
+    postprocess_U = PostProcess(mean_U,Int(ceil(iterations*3/10)),iterations) 
+    postprocess_UU = PostProcess(mean_UU,Int(ceil(iterations*3/10)),iterations)
+    vector_of_structs = [postprocess_U,postprocess_UU]
 
     #mean_field = Mean(ScalarField(mesh))
 
@@ -213,5 +215,5 @@ function PISO(
 
     end # end for loop
 
-    return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p,U=mean_U.value,UU=mean_UU.value)
+    return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p,U=postprocess_U.field.values,UU=postprocess_UU.field.values)
 end

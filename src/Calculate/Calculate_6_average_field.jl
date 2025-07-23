@@ -1,25 +1,28 @@
 export calculate_field_average!
-export Mean
+export PostProcess
 
-struct Mean{T<:AbstractArray,I<:Integer}
-    value::T
+struct PostProcess{T<:AbstractScalarField,I<:Integer}
+    field::T
     start::I
     finish::I
 end
 
 
-
-
-function calculate_field_average!(mean_field::Mean,current_velocity,iteration)
-    if mean_field.start <= iteration && iteration <= mean_field.finish
-        n = iteration - mean_field.start + 1
-        running_mean = (n-1)/n .* mean_field.value .+ current_velocity ./n
-        mean_field.value .= running_mean
+function calculate_field_average!(field_accumulator::PostProcess,current_field,iteration)
+    if field_accumulator.start <= iteration && iteration <= field_accumulator.finish
+        n = iteration - field_accumulator.start + 1
+        running_mean = (n-1)/n .* field_accumulator.field.values .+ current_field ./n
+        field_accumulator.field.values .= running_mean
     end
     return nothing 
 end
 
+# function postprocess(field,start,finish)
 
+
+
+#     return nothing
+# end 
 
 
 

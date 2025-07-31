@@ -6,10 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version [v0.5.2] - 2025-XX-XX
 
 ### Added
-*  No features added
+*  Initial support for mixed precision (UNV meshes only) [#67](@ref)
 
 ### Fixed
 * The `UNV3D_mesh` reader has been updated to ensure that the ordering of face nodes is determined in a more robust manner. This resolves some issues when loading a `UNV` mesh that is later used to store simulation results in the `OpenFOAM` format [#64](@ref)
+* In the construction of a `Physics` object, the `boundary_map` function returned a `boundary_info` struct which was incorrectly using an abstract type `Integer`. This resulted in a failure to convert a `Physics` object to the cpu and back to the gpu [#67](@ref)
   
 ### Changed
 * No changes included

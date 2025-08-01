@@ -76,10 +76,10 @@ Initialisation of turbulent transport equations.
 
 """
 function initialise(
-    turbulence::KEquation, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
+    turbulence::KEquation, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn
     ) where {T,F,M,Tu,E,D,BI}
 
-    (; solvers, schemes, runtime) = config
+    (; solvers, schemes, runtime) = get_configuration(CONFIG)
     mesh = model.domain
     (; k, nut) = turbulence
     (; rho) = model.fluid
@@ -93,7 +93,7 @@ function initialise(
     divU = ScalarField(mesh)
     kSource = ScalarField(mesh)
 
-    delta!(Δ, mesh, config)
+    delta!(Δ, mesh)
     @. Δ.values = (((Δ.values^3)/0.001)^0.5) # get 2D delta
     # @. Δ.values = (((Δ.values^3))^0.5) # get 2D delta
     # @. Δ.values = Δ.values^2 # store delta squared since it will be needed
@@ -125,7 +125,7 @@ end
 
 # Model solver call (implementation)
 """
-    turbulence!(les::KEquationModel, model::Physics{T,F,M,Tu,E,D,BI}, S, S2, prev, time, config
+    turbulence!(les::KEquationModel, model::Physics{T,F,M,Tu,E,D,BI}, S, S2, prev, time
     ) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
 Run turbulence model transport equations.
@@ -137,15 +137,14 @@ Run turbulence model transport equations.
 - `S2`  -- Square of the strain rate magnitude.
 - `prev`  -- Previous field.
 - `time`   -- 
-- `config` -- Configuration structure defined by user with solvers, schemes, runtime and 
-              hardware structures set.
 
 """
 function turbulence!(
-    les::KEquationModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
+    les::KEquationModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time
     ) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
     mesh = model.domain
+    config = get_configuration(CONFIG)
     (; solvers, runtime, hardware) = config
     (; workgroup) = hardware
     (; rho, rhof, nu, nuf) = model.fluid
@@ -161,8 +160,8 @@ function turbulence!(
     Dkf = get_flux(k_eqn, 4)
     divU = get_flux(k_eqn, 5)
 
-    grad!(gradU, Uf, U, U.BCs, time, config)
-    limit_gradient!(config.schemes.U.limiter, gradU, U, config)
+    grad!(gradU, Uf, U, U.BCs, time)
+    limit_gradient!(config.schemes.U.limiter, gradU, U)
     
     # update fluxes
     # divUf = FaceVectorField(mesh)
@@ -183,7 +182,7 @@ function turbulence!(
 
     #
 
-    _filter = TopHatFilter(U, config)
+    _filter = TopHatFilter(U)
     # Umag2hat = ScalarField(model.domain)
     # Uhat = VectorField(model.domain)
     # Uhat2 = ScalarField(model.domain)
@@ -235,13 +234,13 @@ function turbulence!(
     end
     # Solve k equation
     # prev .= k.values
-    discretise!(k_eqn, k, config)
-    apply_boundary_conditions!(k_eqn, k.BCs, nothing, time, config)
-    # implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
-    implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
-    update_preconditioner!(k_eqn.preconditioner, mesh, config)
-    k_res = solve_system!(k_eqn, solvers.k, k, nothing, config)
-    bound!(k, config)
+    discretise!(k_eqn, k)
+    apply_boundary_conditions!(k_eqn, k.BCs, nothing, time)
+    # implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing)
+    implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing)
+    update_preconditioner!(k_eqn.preconditioner, mesh)
+    k_res = solve_system!(k_eqn, solvers.k, k, nothing)
+    bound!(k)
     # explicit_relaxation!(k, prev, solvers.k.relax, config)
 
     AK.foreachindex(U, min_elems=workgroup, block_size=workgroup) do i 
@@ -256,9 +255,9 @@ function turbulence!(
     @. nut.values = Ck.values*Δ.values*sqrt(k.values)
     # @. nut.values = 0.094*Δ.values*sqrt(k.values)
 
-    interpolate!(nutf, nut, config)
-    correct_boundaries!(nutf, nut, nut.BCs, time, config)
-    correct_eddy_viscosity!(nutf, nut.BCs, model, config)
+    interpolate!(nutf, nut)
+    correct_boundaries!(nutf, nut, nut.BCs, time)
+    correct_eddy_viscosity!(nutf, nut.BCs, model)
 
     # update solver state
     # state.residuals = ((:k , k_res),)
@@ -267,7 +266,7 @@ function turbulence!(
 end
 
 # Specialise VTK writer
-function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration
+function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration, time
     ) where {T,F,M,Tu<:KEquation,E,D,BI}
     if typeof(model.fluid)<:AbstractCompressible
         args = (
@@ -287,7 +286,8 @@ function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration
             ("outVector", model.turbulence.outVector)
         )
     end
-    write_results(iteration, time, model.domain, outputWriter, args...)
+    config = get_configuration(CONFIG)
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end
 
 # KEquation - internal functions

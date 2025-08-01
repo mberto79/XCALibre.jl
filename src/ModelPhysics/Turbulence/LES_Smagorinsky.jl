@@ -43,7 +43,7 @@ end
 
 # Model initialisation
 """
-    initialise(turbulence::Smagorinsky, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
+    initialise(turbulence::Smagorinsky, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn
     ) where {T,F,M,Tu,E,D,BI}
 
 Initialisation of turbulent transport equations.
@@ -53,7 +53,6 @@ Initialisation of turbulent transport equations.
 - `model`: Physics model defined by user.
 - `mdtof`: Face mass flow.
 - `peqn`: Pressure equation.
-- `config`: Configuration structure defined by user with solvers, schemes, runtime and hardware structures set.
 
 ### Output
 Returns a structure holding the fields and data needed for this model
@@ -66,15 +65,15 @@ Returns a structure holding the fields and data needed for this model
 
 """
 function initialise(
-    turbulence::Smagorinsky, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
+    turbulence::Smagorinsky, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn
     ) where {T,F,M,Tu,E,D,BI}
 
-    (; solvers, schemes, runtime, boundaries) = config
+    (; solvers, schemes, runtime, boundaries) = get_configuration(CONFIG)
     mesh = model.domain
     
     Δ = ScalarField(mesh)
 
-    delta!(Δ, mesh, config)
+    delta!(Δ, mesh)
     (; coeffs) = model.turbulence
     @. Δ.values = (Δ.values*coeffs.C)^2.0
     
@@ -87,7 +86,7 @@ end
 
 # Model solver call (implementation)
 """
-    turbulence!(les::SmagorinskyModel, model::Physics{T,F,M,Tu,E,D,BI}, S, S2, prev, time, config
+    turbulence!(les::SmagorinskyModel, model::Physics{T,F,M,Tu,E,D,BI}, S, S2, prev, time
     ) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
 Run turbulence model transport equations.
@@ -98,26 +97,25 @@ Run turbulence model transport equations.
 - `S`: Strain rate tensor.
 - `S2`: Square of the strain rate magnitude.
 - `prev`: Previous field.
-- `time`: current simulation time 
-- `config`: Configuration structure defined by user with solvers, schemes, runtime and hardware structures set.
+- `time`: current simulation time
 
 """
 function turbulence!(
-    les::SmagorinskyModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
+    les::SmagorinskyModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time
     ) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
     mesh = model.domain
     scalar = ScalarFloat(mesh)
 
-    (; boundaries, hardware) = config
+    (; boundaries, hardware, schemes) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
     (; nut, nutf, coeffs) = les.turbulence
     (; U, Uf, gradU) = S
     (; Δ) = les
 
     
-    grad!(gradU, Uf, U, boundaries.U, time, config) # update gradient (and S)
-    limit_gradient!(config.schemes.U.limiter, gradU, U, config)
+    grad!(gradU, Uf, U, boundaries.U, time) # update gradient (and S)
+    limit_gradient!(schemes.U.limiter, gradU, U)
     
     wk = _setup(backend, workgroup, length(nut))[2] # index 2 to extract the workgroup
     AK.foreachindex(nut, min_elems=wk, block_size=wk) do i
@@ -126,18 +124,19 @@ function turbulence!(
         nut[i] = Δ[i]*magS # Δ is (Cs*Δ)^2
     end
 
-    interpolate!(nutf, nut, config)
-    correct_boundaries!(nutf, nut, boundaries.nut, time, config)
-    correct_eddy_viscosity!(nutf, boundaries.nut, model, config)
+    interpolate!(nutf, nut)
+    correct_boundaries!(nutf, nut, boundaries.nut, time)
+    correct_eddy_viscosity!(nutf, boundaries.nut, model)
 end
 
 # Specialise VTK writer
-function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration, time, config
+function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration, time
     ) where {T,F,M,Tu<:Smagorinsky,E,D,BI}
     args = (
         ("U", model.momentum.U), 
         ("p", model.momentum.p),
         ("nut", model.turbulence.nut)
     )
+    config = get_configuration(CONFIG)
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end

@@ -2,8 +2,8 @@ export inner_product!
 export double_inner_product!
 export magnitude!, magnitude2!
 
-inner_product!(S::F, ∇1::Grad, ∇2::Grad, config) where F<:ScalarField = begin
-    (; hardware) = config
+inner_product!(S::F, ∇1::Grad, ∇2::Grad) where F<:ScalarField = begin
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     ndrange = length(S)
@@ -36,9 +36,8 @@ begin
     end
 end
 
-# function magnitude!(magS::ScalarField, S::AbstractVectorField, config)
-function magnitude!(magS::ScalarField, S, config)
-    (; hardware) = config
+function magnitude!(magS::ScalarField, S)
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     ndrange = length(magS)
@@ -47,7 +46,6 @@ function magnitude!(magS::ScalarField, S, config)
     # KernelAbstractions.synchronize(backend)
 end
 
-# @kernel function _magnitude!(magS::ScalarField, S::AbstractVectorField)
 @kernel function _magnitude!(magS::AbstractScalarField, S)
     i = @index(Global)
     @uniform values = magS.values
@@ -66,9 +64,9 @@ end
 end
 
 function magnitude2!(
-    magS, S, config; scale_factor=1.0
+    magS, S; scale_factor=1.0
     )
-    (; hardware) = config
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     ndrange = length(magS)
@@ -118,8 +116,8 @@ end
     end
 end
 
-function square!(psi2, psi, config; scale_factor=1.0)
-    (; hardware) = config
+function square!(psi2, psi; scale_factor=1.0)
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     kernel! = _square!(backend, workgroup)

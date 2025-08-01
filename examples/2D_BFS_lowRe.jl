@@ -36,7 +36,7 @@ BCs = assign(
     (
         U = [
             Dirichlet(:inlet, velocity),
-            Neumann(:outlet, 0.0),
+            Extrapolated(:outlet),
             Wall(:wall, [0.0, 0.0, 0.0]),
             Wall(:top, [0.0, 0.0, 0.0])
         ],
@@ -114,7 +114,8 @@ runtime = Runtime(iterations=2000, write_interval=1000, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
-
+configure!(
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc()
 

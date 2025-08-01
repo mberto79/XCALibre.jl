@@ -1,10 +1,10 @@
-function delta!(Δ, mesh, config)
+function delta!(Δ, mesh)
     # Extract hardware configuration
-    (; hardware) = config
+    (; hardware, boundaries) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     (; cells) = mesh
-    distance, power = delta_scaling(mesh, config.boundaries[1])
+    distance, power = delta_scaling(mesh, boundaries[1])
 
     # set up and launch kernel
     ndrange = length(cells)

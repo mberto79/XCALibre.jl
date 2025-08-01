@@ -47,7 +47,7 @@ function setup_incompressible_solvers(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     ) 
 
-    (; solvers, schemes, runtime, hardware, boundaries) = config
+    (; solvers, schemes, runtime, hardware, boundaries) = get_configuration(CONFIG)
 
     @info "Extracting configuration and input fields..."
 
@@ -93,7 +93,7 @@ function setup_incompressible_solvers(
     @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn))
 
     @info "Initialising turbulence model..."
-    turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
+    turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn)
 
     residuals  = solver_variant(
         model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
@@ -231,7 +231,7 @@ function SIMPLE(
         correct_mass_flux(mdotf, p, rDf)
         correct_velocity!(U, Hv, ∇p, rD)
 
-        turbulence!(turbulenceModel, model, S, prev, time, config) 
+        turbulence!(turbulenceModel, model, S, prev, time) 
         update_nueff!(nueff, nu, model.turbulence)
 
         R_ux[iteration] = rx
@@ -254,7 +254,7 @@ function SIMPLE(
             finish!(progress)
             @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
-                save_output(model, outputWriter, iteration, time, config)
+                save_output(model, outputWriter, iteration, time)
             end
             break
         end
@@ -271,7 +271,7 @@ function SIMPLE(
             )
 
         if iteration%write_interval + signbit(write_interval) == 0      
-            save_output(model, outputWriter, iteration, time, config)
+            save_output(model, outputWriter, iteration, time)
         end
 
     end # end for loop
@@ -281,11 +281,11 @@ end
 
 ### TEMP LOCATION FOR PROTOTYPING - NONORTHOGONAL CORRECTION 
 
-function nonorthogonal_face_correction(eqn, grad, flux, config)
+function nonorthogonal_face_correction(eqn, grad, flux)
     mesh = grad.mesh
     (; faces, cells, boundary_cellsID) = mesh
 
-    (; hardware) = config
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     (; b) = eqn.equation

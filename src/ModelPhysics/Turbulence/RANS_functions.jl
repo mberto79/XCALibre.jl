@@ -1,7 +1,7 @@
 # TO DO: These functions needs to be organised in a more sensible manner
-function bound!(field, config)
+function bound!(field)
     # Extract hardware configuration
-    (; hardware) = config
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     (; values, mesh) = field
@@ -64,12 +64,12 @@ nut_wall(nu, yplus, kappa, E::T) where T = begin
     max(nu*(yplus*kappa/log(max(E*yplus, 1.0 + 1e-4)) - 1.0), zero(T))
 end
 
-@generated correct_production!(P, fieldBCs, model, gradU, config) = begin
+@generated correct_production!(P, fieldBCs, model, gradU) = begin
     BCs = fieldBCs.parameters
     func_calls = Expr[]
     for i ∈ eachindex(BCs)
         call = quote
-            set_production!(P, fieldBCs[$i], model, gradU, config)
+            set_production!(P, fieldBCs[$i], model, gradU)
         end
         push!(func_calls, call)
     end
@@ -79,11 +79,11 @@ end
     end 
 end
 
-set_production!(P, BC, model, gradU, config) = nothing
+set_production!(P, BC, model, gradU) = nothing
 
-function set_production!(P, BC::KWallFunction, model, gradU, config)
+function set_production!(P, BC::KWallFunction, model, gradU)
     # backend = _get_backend(mesh)
-    (; hardware) = config
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
     
     # Deconstruct mesh to required fields
@@ -136,11 +136,11 @@ end
     end
 end
 
-@generated function correct_eddy_viscosity!(νtf, nutBCs, model, config)
+@generated function correct_eddy_viscosity!(νtf, nutBCs, model)
     unpacked_BCs = []
     for i ∈ 1:length(nutBCs.parameters)
         unpack = quote
-            correct_nut_wall!(νtf, nutBCs[$i], model, config)
+            correct_nut_wall!(νtf, nutBCs[$i], model)
         end
         push!(unpacked_BCs, unpack)
     end
@@ -149,11 +149,11 @@ end
     end
 end
 
-correct_nut_wall!(nutf, BC, model, config) = nothing
+correct_nut_wall!(nutf, BC, model) = nothing
 
-function correct_nut_wall!(νtf, BC::NutWallFunction, model, config)
+function correct_nut_wall!(νtf, BC::NutWallFunction, model)
     # backend = _get_backend(mesh)
-    (; hardware) = config
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
     
     # Deconstruct mesh to required fields
@@ -199,12 +199,12 @@ end
     end
 end
 
-@generated constrain_equation!(eqn, fieldBCs, model, config) = begin
+@generated constrain_equation!(eqn, fieldBCs, model) = begin
     BCs = fieldBCs.parameters
     func_calls = Expr[]
     for i ∈ eachindex(BCs)
         call = quote
-            constrain!(eqn, fieldBCs[$i], model, config)
+            constrain!(eqn, fieldBCs[$i], model)
         end
         push!(func_calls, call)
     end
@@ -214,12 +214,10 @@ end
     end 
 end
 
-constrain!(eqn, BC, model, config) = nothing
+constrain!(eqn, BC, model) = nothing
 
-function constrain!(eqn, BC::OmegaWallFunction, model, config)
-
-    # backend = _get_backend(mesh)
-    (; hardware) = config
+function constrain!(eqn, BC::OmegaWallFunction, model)
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     # Access equation data and deconstruct sparse array

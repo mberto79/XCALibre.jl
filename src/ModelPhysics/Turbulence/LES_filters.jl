@@ -5,8 +5,8 @@ struct TopHatFilter{F} <: AbstractFilter
 end
 Adapt.@adapt_structure TopHatFilter
 
-TopHatFilter(field::AbstractField, config) = begin
-    cellArea = cell_surface_area(field, config)
+TopHatFilter(field::AbstractField) = begin
+    cellArea = cell_surface_area(field)
     TopHatFilter(cellArea)
 end
 
@@ -67,8 +67,8 @@ end
     end
 end
 
-function cell_surface_area(field, config)
-    (; hardware) = config
+function cell_surface_area(field)
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
     (; mesh, BCs) = field
 
@@ -127,8 +127,8 @@ end
 end
 
 
-function basic_filter_new!(phiFiltered, phif, surfaceArea, config)
-    (; hardware) = config
+function basic_filter_new!(phiFiltered, phif, surfaceArea)
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
     (; boundary_cellsID) = phiFiltered.mesh
     
@@ -240,8 +240,8 @@ end
 
 
 
-function basic_filter!(phiFiltered, phi, surfaceArea, config)
-    (; hardware) = config
+function basic_filter!(phiFiltered, phi, surfaceArea)
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     # (; x, y, z) = grad.result

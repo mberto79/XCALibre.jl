@@ -1,8 +1,8 @@
-function basic_filter!(phiFiltered, phi, config)
-    # interpolate!(phif, phi, config)   
-    # correct_boundaries!(phif, phi, phi.BCs, time, config)
-    # integrate_surface!(phiFiltered, phif, config)
-    (; hardware) = config
+function basic_filter!(phiFiltered, phi)
+    # interpolate!(phif, phi)   
+    # correct_boundaries!(phif, phi, phi.BCs, time)
+    # integrate_surface!(phiFiltered, phif)
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     # (; x, y, z) = grad.result

@@ -2,7 +2,7 @@ module XCALibre
 
 global CONFIG = nothing
 
-export set_configuration
+export set_configuration!
 # using Krylov 
 # export Bicgstab(), Cg(), Gmres()
 
@@ -46,7 +46,7 @@ using Reexport
 @reexport using XCALibre.BlockMesher2D
 
 using Base.ScopedValues
-set_configuration(; solvers, schemes, runtime, hardware, boundaries) = begin
+set_configuration!(; solvers, schemes, runtime, hardware, boundaries) = begin
     config = ScopedValue(Configuration(
         solvers=solvers, 
         schemes=schemes, 

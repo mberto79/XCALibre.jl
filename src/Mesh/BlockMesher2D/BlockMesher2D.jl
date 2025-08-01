@@ -1,5 +1,7 @@
 module BlockMesher2D
 
+import XCALibre: CONFIG
+
 using StaticArrays
 using LinearAlgebra
 using Accessors

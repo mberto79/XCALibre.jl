@@ -1,5 +1,7 @@
 module Postprocess
 
+import XCALibre: CONFIG
+
 using StaticArrays
 
 using LinearAlgebra

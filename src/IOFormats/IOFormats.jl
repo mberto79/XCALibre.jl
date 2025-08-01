@@ -1,5 +1,7 @@
 module IOFormats
 
+import XCALibre: CONFIG
+
 using XCALibre.Mesh
 using XCALibre.Fields
 using XCALibre.Discretise

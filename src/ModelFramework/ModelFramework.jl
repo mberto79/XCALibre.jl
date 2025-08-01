@@ -1,5 +1,7 @@
 module ModelFramework
 
+import XCALibre: CONFIG
+
 using Accessors
 using SparseArrays
 using StaticArrays

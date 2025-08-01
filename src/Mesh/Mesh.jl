@@ -1,5 +1,7 @@
 module Mesh
 
+import XCALibre: CONFIG
+
 using StaticArrays
 using LinearAlgebra
 using Setfield

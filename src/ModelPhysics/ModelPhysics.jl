@@ -1,5 +1,7 @@
 module ModelPhysics
 
+import XCALibre: CONFIG
+
 using Atomix
 using KernelAbstractions
 using Accessors

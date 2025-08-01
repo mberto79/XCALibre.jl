@@ -1,5 +1,7 @@
 module Calculate
 
+import XCALibre: CONFIG
+
 using StaticArrays
 using SparseArrays
 using Accessors

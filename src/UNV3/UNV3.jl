@@ -1,5 +1,7 @@
 module UNV3
 
+import XCALibre: CONFIG
+
 using StaticArrays
 using LinearAlgebra
 using Accessors

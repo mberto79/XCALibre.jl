@@ -1,5 +1,7 @@
 module Fields
 
+import XCALibre: CONFIG
+
 using Adapt
 using KernelAbstractions
 # using CUDA

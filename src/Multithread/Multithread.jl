@@ -3,6 +3,8 @@ module Multithread
 export AutoTune
 export _setup
 
+import XCALibre: CONFIG
+
 using KernelAbstractions
 using SparseArrays
 using SparseMatricesCSR

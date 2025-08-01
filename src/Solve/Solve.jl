@@ -1,5 +1,7 @@
 module Solve
 
+import XCALibre: CONFIG
+
 using Adapt
 using Krylov
 using Statistics

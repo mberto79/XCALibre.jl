@@ -2,8 +2,8 @@ export green_gauss!
 
 # Green gauss for FaceScalarField
 
-function green_gauss!(grad::Grad{S,F,R,I,M}, phif, config) where {S,F,R<:VectorField,I,M}
-    (; hardware) = config
+function green_gauss!(grad::Grad{S,F,R,I,M}, phif) where {S,F,R<:VectorField,I,M}
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     (; x, y, z) = grad.result
@@ -79,9 +79,9 @@ end
 # Green gauss for FaceVectorField
 
 function green_gauss!(
-    grad::Grad{S,F,R,I,M}, psif, config) where {S,F,R<:TensorField,I,M}
+    grad::Grad{S,F,R,I,M}, psif) where {S,F,R<:TensorField,I,M}
 
-    (; hardware) = config
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     (; xx, xy, xz, yx, yy, yz, zx, zy, zz) = grad.result

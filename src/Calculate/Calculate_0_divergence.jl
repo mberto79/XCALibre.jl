@@ -19,12 +19,12 @@ end
 
 # Divergence function definition
 
-function div!(phi::ScalarField, psif::FaceVectorField, config)
+function div!(phi::ScalarField, psif::FaceVectorField)
     # Extract variables for function
     mesh = phi.mesh
     # backend = _get_backend(mesh)
     (; cells, cell_nsign, cell_faces, faces) = mesh
-    (; hardware) = config
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     # Retrieve user-selected float type
@@ -96,12 +96,12 @@ end
 
 # Divergence function definition - FaceScalarField
 
-function div!(phi::ScalarField, psif::FaceScalarField, config)
+function div!(phi::ScalarField, psif::FaceScalarField)
     # Extract variables for function
     mesh = phi.mesh
     # backend = _get_backend(mesh)
     (; cells, cell_nsign, cell_faces, faces) = mesh
-    (; hardware) = config
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     # Retrieve user-selected float type

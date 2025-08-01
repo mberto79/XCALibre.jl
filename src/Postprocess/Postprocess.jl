@@ -1,6 +1,6 @@
 module Postprocess
 
-import XCALibre: CONFIG
+import XCALibre: CONFIG, get_configuration
 
 using StaticArrays
 

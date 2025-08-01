@@ -86,29 +86,29 @@ end
 
 ## Gauss (uncorrected) gradient calculation
 
-function grad!(grad::Grad{Gauss,F,R,I,M}, phif, phi, BCs, time, config) where {F,R<:VectorField,I,M}
-    interpolate!(phif, phi, config)
-    correct_boundaries!(phif, phi, BCs, time, config)
-    green_gauss!(grad, phif, config)
+function grad!(grad::Grad{Gauss,F,R,I,M}, phif, phi, BCs, time) where {F,R<:VectorField,I,M}
+    interpolate!(phif, phi)
+    correct_boundaries!(phif, phi, BCs, time, CONFIG[])
+    green_gauss!(grad, phif)
 end
 
 # Tensor field function definition
 
-function grad!(grad::Grad{Gauss,F,R,I,M}, psif, psi, BCs, time, config) where {F,R<:TensorField,I,M}
-    interpolate!(psif, psi, config)
-    correct_boundaries!(psif, psi, BCs, time, config)
-    green_gauss!(grad, psif, config)
+function grad!(grad::Grad{Gauss,F,R,I,M}, psif, psi, BCs, time) where {F,R<:TensorField,I,M}
+    interpolate!(psif, psi)
+    correct_boundaries!(psif, psi, BCs, time, CONFIG[])
+    green_gauss!(grad, psif)
 end
 
 ## Mid-point gradient calculation
 
 # Scalar field calculation definition
 
-function interpolate_midpoint!(phif::FaceScalarField, phi::ScalarField, config)
+function interpolate_midpoint!(phif::FaceScalarField, phi::ScalarField)
     # Extract required variables for function
     (; mesh) = phi
     (; faces) = mesh
-    (; hardware) = config
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     # Launch interpolate midpoint kernel for scalar field
@@ -137,11 +137,11 @@ end
 
 # Scalar field calculation definition
 
-function interpolate_midpoint!(phif::FaceVectorField, phi::VectorField, config)
+function interpolate_midpoint!(phif::FaceVectorField, phi::VectorField)
     # Extract required variables for function
     (; mesh) = phi
     (; faces) = mesh
-    (; hardware) = config
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     # Launch interpolate midpoint kernel for scalar field
@@ -181,12 +181,12 @@ end
 
 # Correct interpolation function definition
 
-function correct_interpolation!(grad, phif, phi, config)
+function correct_interpolation!(grad, phif, phi)
     # Define required variables for function
     (; mesh) = phif
     (; faces, cells) = mesh
     nbfaces = length(mesh.boundary_cellsID)
-    (; hardware) = config
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     # Retrieve user-selected float type
@@ -245,14 +245,14 @@ end
       
 end
 
-function grad!(grad::Grad{Midpoint,F,R,I,M}, phif, phi, BCs, time, config) where {F,R,I,M}
-    interpolate_midpoint!(phif, phi, config)
-    correct_boundaries!(phif, phi, BCs, time, config)
-    green_gauss!(grad, phif, config)
+function grad!(grad::Grad{Midpoint,F,R,I,M}, phif, phi, BCs, time) where {F,R,I,M}
+    interpolate_midpoint!(phif, phi)
+    correct_boundaries!(phif, phi, BCs, time)
+    green_gauss!(grad, phif)
 
     # Loop to run correction and green-gauss required number of times over all dimensions
     for i ∈ 1:2
-        correct_interpolation!(grad, phif, phi, config)
-        green_gauss!(grad, phif, config)
+        correct_interpolation!(grad, phif, phi)
+        green_gauss!(grad, phif)
     end
 end

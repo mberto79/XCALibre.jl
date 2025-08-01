@@ -94,7 +94,7 @@ config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 # config = adapt(CUDABackend(), config)
 
-set_configuration(
+set_configuration!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 # config = adapt(CUDABackend(), config)
 

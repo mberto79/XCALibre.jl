@@ -2,9 +2,9 @@ export flux!, update_nueff!, inverse_diagonal!, remove_pressure_source!, H!, cor
 
 ## UPDATE VISCOSITY
 
-function update_nueff!(nueff, nu, turb_model, config)
+function update_nueff!(nueff, nu, turb_model)
     (; mesh) = nueff
-    (; hardware) = config
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     ndrange = length(nueff)
@@ -38,11 +38,11 @@ end
 
 ## FLUX CALCULATION
 
-# function flux!(phif::FS, psif::FV, config) where {FS<:FaceScalarField,FV<:FaceVectorField}
+# function flux!(phif::FS, psif::FV) where {FS<:FaceScalarField,FV<:FaceVectorField}
 function flux!(phif::FS, psif::FV) where {FS<:FaceScalarField,FV<:FaceVectorField}
-    # (; hardware) = config
-    # (; backend, workgroup) = hardware
-    (; backend, workgroup) = get_hardware(CONFIG)
+    config = get_configuration(CONFIG)
+    (; hardware) = get_configuration(CONFIG)
+    (; backend, workgroup) = hardware
 
     ndrange = length(phif)
     kernel! = flux_kernel!(_setup(backend, workgroup, ndrange)...)
@@ -65,11 +65,11 @@ end
     end
 end
 
-# function flux!(phif::FS, psif::FV, rhof::FS, config) where {FS<:FaceScalarField,FV<:FaceVectorField}
+# function flux!(phif::FS, psif::FV, rhof::FS) where {FS<:FaceScalarField,FV<:FaceVectorField}
 function flux!(phif::FS, psif::FV, rhof::FS) where {FS<:FaceScalarField,FV<:FaceVectorField}
-    # (; hardware) = config
-    # (; backend, workgroup) = hardware
-    (; backend, workgroup) = get_hardware(CONFIG)
+    config = get_configuration(CONFIG)
+    (; hardware) = get_configuration(CONFIG)
+    (; backend, workgroup) = hardware
 
     ndrange = length(phif)
     kernel! = _flux!(_setup(backend, workgroup, ndrange)...)
@@ -97,15 +97,10 @@ volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 
 # INVERSE DIAGONAL CALCULATION
 
-get_hardware(config) = config[].hardware
-get_boundaries(config) = config[].boundaries
-get_configuration(config) = config
-
-# function inverse_diagonal!(rD::S, eqn, config) where {S<:ScalarField}
+# function inverse_diagonal!(rD::S, eqn) where {S<:ScalarField}
 function inverse_diagonal!(rD::S, eqn) where {S<:ScalarField}
-    # (; hardware) = config
-    # (; backend, workgroup) = hardware
-    (; backend, workgroup) = get_hardware(CONFIG)
+    (; hardware) = get_configuration(CONFIG)
+    (; backend, workgroup) = hardware
     A = eqn.equation.A # Or should I use A0
     nzval, colval, rowptr = get_sparse_fields(A)
 
@@ -133,8 +128,8 @@ end
 
 ## VELOCITY CORRECTION
 
-function correct_velocity!(U, Hv, ∇p, rD, config)
-    (; hardware) = config
+function correct_velocity!(U, Hv, ∇p, rD)
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     ndrange = length(U)
@@ -163,9 +158,9 @@ end
 
 ## PRESSURE CORRECTION AND SOURCE REMOVAL
 
-remove_pressure_source!(U_eqn::ME, ∇p, config) where {ME} = begin # Extend to 3D
+remove_pressure_source!(U_eqn::ME, ∇p) where {ME} = begin # Extend to 3D
     # backend = _get_backend(get_phi(ux_eqn).mesh)
-    (; hardware) = config
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
     cells = get_phi(U_eqn).mesh.cells
     source_sign = get_source_sign(U_eqn, 1)
@@ -191,9 +186,9 @@ end
 end
 
 # Pressure correction
-function H!(Hv, U::VF, U_eqn, config) where {VF<:VectorField} # Extend to 3D!
+function H!(Hv, U::VF, U_eqn) where {VF<:VectorField} # Extend to 3D!
     (; cells, cell_neighbours) = Hv.mesh
-    (; hardware) = config
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     A = _A(U_eqn)
@@ -260,11 +255,11 @@ end
 
 ## COURANT NUMBER
 
-max_courant_number!(cellsCourant, model, config) = begin
+max_courant_number!(cellsCourant, model) = begin
     (; U) = model.momentum
     (; mesh) = U
     # (; cells) = mesh
-    (; hardware, runtime) = config
+    (; hardware, runtime) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     ndrange = length(cellsCourant)

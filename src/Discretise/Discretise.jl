@@ -1,6 +1,6 @@
 module Discretise
 
-import XCALibre: CONFIG
+import XCALibre: CONFIG, get_configuration
 
 using Accessors
 using SparseArrays

@@ -5,13 +5,13 @@ export CellBased
 
 struct CellBased end
 
-limit_gradient!(method::Nothing, ∇F, F, config) = nothing
+limit_gradient!(method::Nothing, ∇F, F) = nothing
 
 ### GRADIENT LIMITER - EXPERIMENTAL
 
-function limit_gradient!(method::CellBased, ∇F, F::ScalarField, config)
-# function limit_gradient!(∇F, Ff, F::ScalarField, config)
-    (; hardware) = config
+function limit_gradient!(method::CellBased, ∇F, F::ScalarField)
+# function limit_gradient!(∇F, Ff, F::ScalarField)
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     mesh = F.mesh
@@ -26,8 +26,8 @@ function limit_gradient!(method::CellBased, ∇F, F::ScalarField, config)
     # KernelAbstractions.synchronize(backend)
 end
 
-function limit_gradient!(method::CellBased, ∇F, F::VectorField, config)
-    (; hardware) = config
+function limit_gradient!(method::CellBased, ∇F, F::VectorField)
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     mesh = F.mesh

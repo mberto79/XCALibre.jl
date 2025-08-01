@@ -15,8 +15,8 @@ end
 
 ### GRADIENT LIMITER - EXPERIMENTAL
 
-function limit_gradient!(method::FaceBased, ∇F, F::AbstractField, config)
-    (; hardware) = config
+function limit_gradient!(method::FaceBased, ∇F, F::AbstractField)
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     (; cells, faces, boundary_cellsID,) = F.mesh

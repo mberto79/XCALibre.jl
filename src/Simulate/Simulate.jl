@@ -1,6 +1,6 @@
 module Simulate
 
-import XCALibre: CONFIG
+import XCALibre: CONFIG, get_configuration
 
 using XCALibre.Mesh
 using XCALibre.Fields

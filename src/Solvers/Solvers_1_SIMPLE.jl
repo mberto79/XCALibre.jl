@@ -114,9 +114,7 @@ function SIMPLE(
     (; U, p, Uf, pf) = model.momentum
     (; nu) = model.fluid
     mesh = model.domain
-    # (; solvers, schemes, runtime, hardware, boundaries) = config
-    (; solvers, schemes, runtime, hardware) = config
-    boundaries = get_boundaries(CONFIG)
+    (; solvers, schemes, runtime, hardware, boundaries) = get_configuration(CONFIG)
     (; iterations, write_interval) = runtime
     (; backend) = hardware
     
@@ -152,15 +150,15 @@ function SIMPLE(
     
     # Initial calculations
     time = zero(TF) # assuming time=0
-    interpolate!(Uf, U, config)   
+    interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     # flux!(mdotf, Uf, config)
     flux!(mdotf, Uf)
-    grad!(∇p, pf, p, boundaries.p, time, config)
-    limit_gradient!(schemes.p.limiter, ∇p, p, config)
+    grad!(∇p, pf, p, boundaries.p, time)
+    limit_gradient!(schemes.p.limiter, ∇p, p)
 
 
-    update_nueff!(nueff, nu, model.turbulence, config)
+    update_nueff!(nueff, nu, model.turbulence)
 
     @info "Starting SIMPLE loops..."
 
@@ -174,32 +172,31 @@ function SIMPLE(
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
         
         # Pressure correction
-        # inverse_diagonal!(rD, U_eqn, config)
         inverse_diagonal!(rD, U_eqn)
-        interpolate!(rDf, rD, config)
+        interpolate!(rDf, rD)
         # correct_boundaries!(rDf, rD, rD.BCs, time, config) # ADDED FOR PERIODIC BCS
-        remove_pressure_source!(U_eqn, ∇p, config)
-        H!(Hv, U, U_eqn, config)
+        remove_pressure_source!(U_eqn, ∇p)
+        H!(Hv, U, U_eqn)
         
         # Interpolate faces
-        interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
+        interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, boundaries.U, time, config)
 
         # old approach
-        # div!(divHv, Uf, config) 
+        # div!(divHv, Uf) 
 
         # new approach
-        # flux!(mdotf, Uf, config)
+        # flux!(mdotf, Uf)
         flux!(mdotf, Uf)
-        div!(divHv, mdotf, config)
+        div!(divHv, mdotf)
         
         # Pressure calculations
         @. prev = p.values
         rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
         explicit_relaxation!(p, prev, solvers.p.relax, config)
         
-        grad!(∇p, pf, p, boundaries.p, time, config) 
-        limit_gradient!(schemes.p.limiter, ∇p, p, config)
+        grad!(∇p, pf, p, boundaries.p, time) 
+        limit_gradient!(schemes.p.limiter, ∇p, p)
 
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
@@ -207,12 +204,12 @@ function SIMPLE(
             discretise!(p_eqn, p, config)       
             apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
             # setReference!(p_eqn, pref, 1, config)
-            nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
+            nonorthogonal_face_correction(p_eqn, ∇p, rDf)
             # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
             explicit_relaxation!(p, prev, solvers.p.relax, config)
-            grad!(∇p, pf, p, boundaries.p, time, config) 
-            limit_gradient!(schemes.p.limiter, ∇p, p, config)
+            grad!(∇p, pf, p, boundaries.p, time) 
+            limit_gradient!(schemes.p.limiter, ∇p, p)
         end
 
         # explicit_relaxation!(p, prev, solvers.p.relax, config)
@@ -220,22 +217,22 @@ function SIMPLE(
         # Velocity and boundaries correction
 
         # old approach
-        # correct_velocity!(U, Hv, ∇p, rD, config)
-        # interpolate!(Uf, U, config)
+        # correct_velocity!(U, Hv, ∇p, rD)
+        # interpolate!(Uf, U)
         # correct_boundaries!(Uf, U, boundaries.U, time, config)
-        # flux!(mdotf, Uf, config) 
+        # flux!(mdotf, Uf) 
 
         # new approach
 
         # 1. using velocity from momentum equation
-        # interpolate!(Uf, U, config)
+        # interpolate!(Uf, U)
         # correct_boundaries!(Uf, U, boundaries.U, time, config)
-        # flux!(mdotf, Uf, config)
-        correct_mass_flux(mdotf, p, rDf, config)
-        correct_velocity!(U, Hv, ∇p, rD, config)
+        # flux!(mdotf, Uf)
+        correct_mass_flux(mdotf, p, rDf)
+        correct_velocity!(U, Hv, ∇p, rD)
 
         turbulence!(turbulenceModel, model, S, prev, time, config) 
-        update_nueff!(nueff, nu, model.turbulence, config)
+        update_nueff!(nueff, nu, model.turbulence)
 
         R_ux[iteration] = rx
         R_uy[iteration] = ry
@@ -366,10 +363,10 @@ end
 
 ### TEMP LOCATION FOR PROTOTYPING
 
-function correct_mass_flux(mdotf, p, rDf, config)
+function correct_mass_flux(mdotf, p, rDf)
     # sngrad = FaceScalarField(mesh)
     (; faces, cells, boundary_cellsID) = mdotf.mesh
-    (; hardware) = config
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     n_faces = length(faces)

@@ -17,7 +17,7 @@ end
 # Function to correct interpolation at boundaries (expands loop to reduce allocations)
 
 
-# @generated function correct_boundaries!(phif, phi, BCs, time, config)
+# @generated function correct_boundaries!(phif, phi, BCs, time)
 #     unpacked_BCs = []
 #     for i ∈ 1:length(BCs.parameters)
 #         unpack = quote
@@ -29,7 +29,7 @@ end
 #     quote
 #     (; mesh) = phif
 #     (; boundary_cellsID, boundaries) = mesh 
-#     (; hardware) = config
+#     (; hardware) = get_configuration(CONFIG)
 #     (; backend, workgroup) = hardware
 #     $(unpacked_BCs...) 
 #     end
@@ -37,7 +37,7 @@ end
 
 ## SCALAR INTERPOLATION
 
-function interpolate!(phif::FaceScalarField, phi::ScalarField, config)
+function interpolate!(phif::FaceScalarField, phi::ScalarField)
     # Extract values arrays from scalar fields 
     vals = phi.values
     fvals = phif.values
@@ -47,7 +47,7 @@ function interpolate!(phif::FaceScalarField, phi::ScalarField, config)
     (; cells, faces) = mesh
 
     # Launch interpolate kernel
-    (; hardware) = config
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
     ndrange = length(faces)
     kernel! = interpolate_Scalar!(_setup(backend, workgroup, ndrange)...)
@@ -77,7 +77,7 @@ end
 end
 
 # VECTOR INTERPOLATION
-function interpolate!(psif::FaceVectorField, psi::VectorField, config)
+function interpolate!(psif::FaceVectorField, psi::VectorField)
     # Extract x, y, z, values from FaceVectorField
     (; mesh) = psif
 
@@ -96,7 +96,7 @@ function interpolate!(psif::FaceVectorField, psi::VectorField, config)
 
     # Launch interpolate kernel
     # backend = _get_backend(mesh)
-    (; hardware) = config
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
     ndrange = length(faces)
     kernel! = interpolate_Vector!(_setup(backend, workgroup, ndrange)...)

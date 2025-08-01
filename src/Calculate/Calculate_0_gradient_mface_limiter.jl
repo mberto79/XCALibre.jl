@@ -6,8 +6,8 @@ MFaceBased(mesh::AbstractMesh) = MFaceBased()
 
 ### GRADIENT LIMITER - EXPERIMENTAL
 
-function limit_gradient!(method::MFaceBased, ∇F, F, config)
-    (; hardware) = config
+function limit_gradient!(method::MFaceBased, ∇F, F)
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     (; cells, faces, boundary_cellsID,) = F.mesh

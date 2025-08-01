@@ -64,10 +64,10 @@ Preconditioner{DILU}(Agpu::SPARSEGPU{F,I}) where {F,I} = begin
     Preconditioner{DILU,typeof(Agpu),typeof(P),typeof(S)}(Agpu,P,S)
 end
 
-update_preconditioner!(P::Preconditioner{DILU,M,PT,S},  mesh, config) where {M<:SPARSEGPU,PT,S} =
+update_preconditioner!(P::Preconditioner{DILU,M,PT,S},  mesh) where {M<:SPARSEGPU,PT,S} =
 begin
     KernelAbstractions.copyto!(CPU(), P.storage.A.nzval, P.A.nzVal)
-    update_dilu_diagonal!(P, mesh, config)
+    update_dilu_diagonal!(P, mesh)
     nothing
 end
 
@@ -101,7 +101,7 @@ function ldiv_ic0!(S, x, y, z)
     return y
 end
 
-update_preconditioner!(P::Preconditioner{IC0GPU,M,PT,S},  mesh, config) where {M<:SPARSEGPU,PT,S} = 
+update_preconditioner!(P::Preconditioner{IC0GPU,M,PT,S},  mesh) where {M<:SPARSEGPU,PT,S} = 
 begin
     P.storage.P.nzVal .= P.A.nzVal
     ic02!(P.storage.P)
@@ -134,7 +134,7 @@ function ldiv_ilu0!(S, x, y, z)
     return y
 end
 
-update_preconditioner!(P::Preconditioner{ILU0GPU,M,PT,S},  mesh, config) where {M<:SPARSEGPU,PT,S} = 
+update_preconditioner!(P::Preconditioner{ILU0GPU,M,PT,S},  mesh) where {M<:SPARSEGPU,PT,S} = 
 begin
     P.storage.P.nzVal .= P.A.nzVal
     ilu02!(P.storage.P)

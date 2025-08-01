@@ -164,23 +164,23 @@ end
 
 
 function solve_equation!(
-    eqn::ModelEquation{T,M,E,S,P}, phi, phiBCs, solversetup, config; time=nothing, ref=nothing, irelax=nothing
+    eqn::ModelEquation{T,M,E,S,P}, phi, phiBCs, solversetup; time=nothing, ref=nothing, irelax=nothing
     ) where {T<:ScalarModel,M,E,S,P}
 
     discretise!(eqn, phi)       
     apply_boundary_conditions!(eqn, phiBCs, nothing, time)
-    setReference!(eqn, ref, 1, config)
+    setReference!(eqn, ref, 1)
     if !isnothing(irelax)
-        implicit_relaxation!(eqn, phi.values, irelax, nothing, config)
-        # implicit_relaxation_diagdom!(eqn, phi.values, irelax, nothing, config)
+        implicit_relaxation!(eqn, phi.values, irelax, nothing)
+        # implicit_relaxation_diagdom!(eqn, phi.values, irelax, nothing)
     end
-    update_preconditioner!(eqn.preconditioner, phi.mesh, config)
-    res = solve_system!(eqn, solversetup, phi, nothing, config)
+    update_preconditioner!(eqn.preconditioner, phi.mesh)
+    res = solve_system!(eqn, solversetup, phi, nothing)
     return res
 end
 
 function solve_equation!(
-    psiEqn::ModelEquation{T,M,E,S,P}, psi, psiBCs, solversetup, xdir, ydir, zdir, config; time=nothing
+    psiEqn::ModelEquation{T,M,E,S,P}, psi, psiBCs, solversetup, xdir, ydir, zdir; time=nothing
     ) where {T<:VectorModel,M,E,S,P}
 
     mesh = psi.mesh
@@ -189,32 +189,32 @@ function solve_equation!(
     update_equation!(psiEqn)
 
     apply_boundary_conditions!(psiEqn, psiBCs, xdir, time)
-    # implicit_relaxation!(psiEqn, psi.x.values, solversetup.relax, xdir, config)
-    implicit_relaxation_diagdom!(psiEqn, psi.x.values, solversetup.relax, xdir, config)
-    update_preconditioner!(psiEqn.preconditioner, mesh, config)
-    resx = solve_system!(psiEqn, solversetup, psi.x, xdir, config)
+    # implicit_relaxation!(psiEqn, psi.x.values, solversetup.relax, xdir)
+    implicit_relaxation_diagdom!(psiEqn, psi.x.values, solversetup.relax, xdir)
+    update_preconditioner!(psiEqn.preconditioner, mesh)
+    resx = solve_system!(psiEqn, solversetup, psi.x, xdir)
     
     update_equation!(psiEqn)
     apply_boundary_conditions!(psiEqn, psiBCs, ydir, time)
-    # implicit_relaxation!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
-    implicit_relaxation_diagdom!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
-    # update_preconditioner!(psiEqn.preconditioner, mesh, config)
-    resy = solve_system!(psiEqn, solversetup, psi.y, ydir, config)
+    # implicit_relaxation!(psiEqn, psi.y.values, solversetup.relax, ydir)
+    implicit_relaxation_diagdom!(psiEqn, psi.y.values, solversetup.relax, ydir)
+    # update_preconditioner!(psiEqn.preconditioner, mesh)
+    resy = solve_system!(psiEqn, solversetup, psi.y, ydir)
     
     # Z velocity calculations (3D Mesh only)
     resz = one(_get_float(mesh))
     if typeof(mesh) <: Mesh3
         update_equation!(psiEqn)
         apply_boundary_conditions!(psiEqn, psiBCs, zdir, time)
-        # implicit_relaxation!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
-        implicit_relaxation_diagdom!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
-        # update_preconditioner!(psiEqn.preconditioner, mesh, config)
-        resz = solve_system!(psiEqn, solversetup, psi.z, zdir, config)
+        # implicit_relaxation!(psiEqn, psi.z.values, solversetup.relax, zdir)
+        implicit_relaxation_diagdom!(psiEqn, psi.z.values, solversetup.relax, zdir)
+        # update_preconditioner!(psiEqn.preconditioner, mesh)
+        resz = solve_system!(psiEqn, solversetup, psi.z, zdir)
     end
     return resx, resy, resz
 end
 
-function solve_system!(phiEqn::ModelEquation, setup, result, component, config) # ; opP, solver
+function solve_system!(phiEqn::ModelEquation, setup, result, component) # ; opP, solver
 
     (; itmax, atol, rtol) = setup
     precon = phiEqn.preconditioner
@@ -222,7 +222,7 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
     solver = phiEqn.solver
     (; x) = solver
     
-    (; hardware) = config
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
     (; values, mesh) = result
     
@@ -248,7 +248,7 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
     kernel!(values, x)
     # KernelAbstractions.synchronize(backend)
 
-    res = residual(phiEqn, component, config)
+    res = residual(phiEqn, component)
     return res
 end
 
@@ -260,8 +260,8 @@ end
     end
 end
 
-function explicit_relaxation!(phi, phi0, alpha, config)
-    (; hardware) = config
+function explicit_relaxation!(phi, phi0, alpha)
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     ndrange = length(phi)
@@ -282,8 +282,8 @@ end
 
 # Prepare variables for kernel and call
 function implicit_relaxation!(
-    phiEqn::E, field, alpha, component, config) where E<:ModelEquation
-    (; hardware) = config
+    phiEqn::E, field, alpha, component) where E<:ModelEquation
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     # Extract sparse matrix properties and values
@@ -314,8 +314,8 @@ end
 
 # Prepare variables for kernel and call
 function implicit_relaxation_diagdom!(
-    phiEqn::E, field, alpha, component, config) where E<:ModelEquation
-    (; hardware) = config
+    phiEqn::E, field, alpha, component) where E<:ModelEquation
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     # Extract sparse matrix properties and values
@@ -357,11 +357,11 @@ end
 end
 
 
-function setReference!(pEqn::E, pRef, cellID, config) where E<:ModelEquation
+function setReference!(pEqn::E, pRef, cellID) where E<:ModelEquation
     if pRef === nothing
         return nothing
     else
-        (; hardware) = config
+        (; hardware) = get_configuration(CONFIG)
         (; backend, workgroup) = hardware
         (; b, A) = pEqn.equation
         nzval = _nzval(A)
@@ -384,7 +384,7 @@ end
     end
 end
 
-function residual(eqn, component, config)
+function residual(eqn, component)
     (; A, R, Fx) = eqn.equation
     b = _b(eqn, component)
     values = get_values(get_phi(eqn), component)

@@ -16,26 +16,26 @@ begin
     if typeof(phi) <: AbstractVectorField
 
         discretise!(
-            eqn, get_phi(eqn), config) # should this be float?
+            eqn, get_phi(eqn)) # should this be float?
 
         time = zero(TF)
-        apply_boundary_conditions!(eqn, BCs, XDir(1), time, config)
+        apply_boundary_conditions!(eqn, BCs, XDir(1), time)
 
     elseif typeof(phi) <: AbstractScalarField
 
-        discretise!(eqn, get_phi(eqn), config) # should this be float?
-        apply_boundary_conditions!(eqn, BCs, nothing, time, config)
+        discretise!(eqn, get_phi(eqn)) # should this be float?
+        apply_boundary_conditions!(eqn, BCs, nothing, time)
     end
 
     P = Preconditioner{T}(eqn.equation.A)
-    update_preconditioner!(P, mesh, config)
+    update_preconditioner!(P, mesh)
     return P
 end
 
-function update_preconditioner!(P::Preconditioner{NormDiagonal,M,PT,S}, mesh, config) where {M<:AbstractSparseArray,PT,S}
+function update_preconditioner!(P::Preconditioner{NormDiagonal,M,PT,S}, mesh) where {M<:AbstractSparseArray,PT,S}
     # backend = _get_backend(mesh)
 
-    (; hardware) = config
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
     
     A = P.A
@@ -62,10 +62,10 @@ end
     # end
 end
 
-function update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh, config) where {M<:AbstractSparseArray,PT,S}
+function update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh) where {M<:AbstractSparseArray,PT,S}
     # backend = _get_backend(mesh)
 
-    (; hardware) = config
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     A = P.A
@@ -92,21 +92,21 @@ end
     end
 end
 
-# update_preconditioner!(P::Preconditioner{LDL,M,PT,S},  mesh, config) where {M<:AbstractSparseArray,PT,S} =
+# update_preconditioner!(P::Preconditioner{LDL,M,PT,S},  mesh) where {M<:AbstractSparseArray,PT,S} =
 # begin
 #     nothing
 # end
 
 
-# update_preconditioner!(P::Preconditioner{ILU0,M,PT,S},  mesh, config) where {M<:AbstractSparseArray,PT,S} =
+# update_preconditioner!(P::Preconditioner{ILU0,M,PT,S},  mesh) where {M<:AbstractSparseArray,PT,S} =
 # begin
 #     ilu0!(P.storage, P.A)
 #     nothing
 # end
 
-update_preconditioner!(P::Preconditioner{DILU,M,PT,S},  mesh, config) where {M<:AbstractSparseArray,PT,S} =
+update_preconditioner!(P::Preconditioner{DILU,M,PT,S},  mesh) where {M<:AbstractSparseArray,PT,S} =
 begin
-    update_dilu_diagonal!(P, mesh, config)
+    update_dilu_diagonal!(P, mesh)
     nothing
 end
 

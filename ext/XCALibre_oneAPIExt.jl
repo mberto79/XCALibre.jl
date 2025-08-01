@@ -65,10 +65,10 @@ Preconditioner{DILU}(Agpu::SPARSEGPU{F,I}) where {F,I} = begin
     Preconditioner{DILU,typeof(Agpu),typeof(P),typeof(S)}(Agpu,P,S)
 end
 
-update_preconditioner!(P::Preconditioner{DILU,M,PT,S},  mesh, config) where {M<:SPARSEGPU,PT,S} =
+update_preconditioner!(P::Preconditioner{DILU,M,PT,S},  mesh) where {M<:SPARSEGPU,PT,S} =
 begin
     KernelAbstractions.copyto!(CPU(), P.storage.A.nzval, P.A.nzVal)
-    update_dilu_diagonal!(P, mesh, config)
+    update_dilu_diagonal!(P, mesh)
     nothing
 end
 

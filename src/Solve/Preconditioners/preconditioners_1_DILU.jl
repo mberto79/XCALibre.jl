@@ -2,8 +2,8 @@ import LinearAlgebra.ldiv!, LinearAlgebra.\
 
 export ldiv!
 
-function extract_diagonal!(D, Di, A::AbstractSparseArray, config)
-    (; hardware) = config
+function extract_diagonal!(D, Di, A::AbstractSparseArray)
+    (; hardware) = get_configuration(CONFIG)
     # (; backend, workgroup) = hardware
     (; nzval, n) = A
     backend = CPU()
@@ -40,7 +40,7 @@ function diagonal_indices!(Di, A::SparseMatrixCSR{N, Tf,Ti}) where {N, Tf,Ti}
     end
 end
 
-function update_dilu_diagonal!(P, mesh, config) # must rename
+function update_dilu_diagonal!(P, mesh) # must rename
     # for i ∈ 1:m 
     #     D[i] = A[i,i]
     # end
@@ -56,7 +56,7 @@ function update_dilu_diagonal!(P, mesh, config) # must rename
     A = storage.A
     (; rowptr, colval, nzval, m, n) = storage.A
     (; D, Di) = storage
-    extract_diagonal!(D, Di, A, config)
+    extract_diagonal!(D, Di, A)
     @inbounds for i ∈ 1:m
         start_index = rowptr[i]
         end_index = rowptr[i+1] - 1

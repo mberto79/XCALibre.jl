@@ -80,9 +80,9 @@ function setup_incompressible_solvers(
     @info "Initialising preconditioners..."
 
     # @reset U_eqn.preconditioner = set_preconditioner(
-    #                 solvers.U.preconditioner, U_eqn, boundaries.U, config)
+    #                 solvers.U.preconditioner, U_eqn, boundaries.U)
     # @reset p_eqn.preconditioner = set_preconditioner(
-    #                 solvers.p.preconditioner, p_eqn, boundaries.p, config)
+    #                 solvers.p.preconditioner, p_eqn, boundaries.p)
 
     @reset U_eqn.preconditioner = set_preconditioner(solvers.U.preconditioner, U_eqn)
     @reset p_eqn.preconditioner = set_preconditioner(solvers.p.preconditioner, p_eqn)
@@ -152,7 +152,7 @@ function SIMPLE(
     time = zero(TF) # assuming time=0
     interpolate!(Uf, U)   
     correct_boundaries!(Uf, U, boundaries.U, time)
-    # flux!(mdotf, Uf, config)
+    # flux!(mdotf, Uf)
     flux!(mdotf, Uf)
     grad!(∇p, pf, p, boundaries.p, time)
     limit_gradient!(schemes.p.limiter, ∇p, p)
@@ -169,7 +169,7 @@ function SIMPLE(
     for iteration ∈ 1:iterations
         time = iteration
 
-        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
+        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir)
         
         # Pressure correction
         inverse_diagonal!(rD, U_eqn)
@@ -192,8 +192,8 @@ function SIMPLE(
         
         # Pressure calculations
         @. prev = p.values
-        rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
-        explicit_relaxation!(p, prev, solvers.p.relax, config)
+        rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p; ref=pref)
+        explicit_relaxation!(p, prev, solvers.p.relax)
         
         grad!(∇p, pf, p, boundaries.p, time) 
         limit_gradient!(schemes.p.limiter, ∇p, p)
@@ -203,16 +203,16 @@ function SIMPLE(
             # @. prev = p.values
             discretise!(p_eqn, p)       
             apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time)
-            # setReference!(p_eqn, pref, 1, config)
+            # setReference!(p_eqn, pref, 1)
             nonorthogonal_face_correction(p_eqn, ∇p, rDf)
-            # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-            rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
-            explicit_relaxation!(p, prev, solvers.p.relax, config)
+            # update_preconditioner!(p_eqn.preconditioner, p.mesh)
+            rp = solve_system!(p_eqn, solvers.p, p, nothing)
+            explicit_relaxation!(p, prev, solvers.p.relax)
             grad!(∇p, pf, p, boundaries.p, time) 
             limit_gradient!(schemes.p.limiter, ∇p, p)
         end
 
-        # explicit_relaxation!(p, prev, solvers.p.relax, config)
+        # explicit_relaxation!(p, prev, solvers.p.relax)
 
         # Velocity and boundaries correction
 

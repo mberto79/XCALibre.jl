@@ -3,7 +3,7 @@ module XCALibre
 # using Krylov 
 # export Bicgstab(), Cg(), Gmres()
 
-using KernelAbstractions; export CPU
+import KernelAbstractions: CPU; export CPU
 import Adapt: adapt; export adapt
 
 
@@ -42,8 +42,8 @@ using Reexport
 @reexport using XCALibre.UNV2
 @reexport using XCALibre.BlockMesher2D
 
-using StaticArrays, LinearAlgebra, SparseMatricesCSR, SparseArrays, LinearOperators
-using ProgressMeter, Printf, Adapt
+# using StaticArrays, LinearAlgebra, SparseMatricesCSR, SparseArrays, LinearOperators
+# using ProgressMeter, Printf, Adapt
 
 # include("precompile.jl") need new precompile file
 

@@ -2,7 +2,7 @@ module XCALibre
 
 global CONFIG = nothing
 
-export set_configuration!
+export configure!
 # using Krylov 
 # export Bicgstab(), Cg(), Gmres()
 
@@ -10,7 +10,7 @@ import KernelAbstractions: CPU; export CPU
 import Adapt: adapt; export adapt
 
 using Base.ScopedValues
-set_configuration!(; solvers, schemes, runtime, hardware, boundaries) = begin
+configure!(; solvers, schemes, runtime, hardware, boundaries) = begin
     config = ScopedValue(Configuration(
         solvers=solvers, 
         schemes=schemes, 

@@ -94,7 +94,7 @@ config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 # config = adapt(CUDABackend(), config)
 
-set_configuration!(
+configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 # config = adapt(CUDABackend(), config)
 
@@ -106,10 +106,10 @@ initialise!(model.momentum.p, 0.0)
 @time residuals = run!(model, config) # 1106 iterations!
 
 # Profiling now 
-GC.gc()
+# GC.gc()
 
-initialise!(model.momentum.U, velocity)
-initialise!(model.momentum.p, 0.0)
+# initialise!(model.momentum.U, velocity)
+# initialise!(model.momentum.p, 0.0)
 
 # @profview residuals = run!(model, config)
 # @profview_allocs residuals = run!(model, config) sample_rate=0.00025

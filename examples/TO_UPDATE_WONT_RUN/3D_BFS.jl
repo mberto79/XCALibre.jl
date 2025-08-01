@@ -1,5 +1,5 @@
 using XCALibre
-using CUDA
+# using CUDA
 # using ThreadPinning
 
 # pinthreads(:cores)
@@ -19,8 +19,8 @@ mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_5mm.unv
 @time mesh = UNV3D_mesh(mesh_file, scale=0.001) # 36 sec
 # @time mesh = UNV3D_mesh(mesh_file, scale=0.001, float_type=Float32)
 
-backend = CUDABackend(); workgroup = 32
-# backend = CPU(); workgroup = 1024; activate_multithread(backend)
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(static=static); workgroup = AutoTune(); activate_multithread(backend)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
@@ -46,11 +46,11 @@ BCs = assign(
             Dirichlet(:inlet, velocity),
             Zerogradient(:outlet),
             Wall(:wall, noSlip),
-            Zerogradient(:sides), # faster!
-            Zerogradient(:top)
+            Extrapolated(:sides),
+            Extrapolated(:top)
         ],
         p = [
-            Zerogradient(:inlet),
+            Extrapolated(:inlet),
             Dirichlet(:outlet, 0.0),
             Wall(:wall),
             Extrapolated(:sides),
@@ -94,7 +94,7 @@ runtime = Runtime(iterations=1, write_interval=1, time_step=1)
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
-set_configuration!(
+configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs
 )
 
@@ -107,10 +107,10 @@ residuals = run!(model, config)
 
 # Now get timing information
 
-runtime = Runtime(iterations=500, write_interval=100, time_step=1)
+runtime = Runtime(iterations=500, write_interval=500, time_step=1)
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
-set_configuration!(
+configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs
 )
 
@@ -121,13 +121,6 @@ initialise!(model.momentum.p, 0.0)
 
 @time residuals = run!(model, config, output=OpenFOAM(), ncorrectors=0)
 
-model_cpu = adapt(CPU(), model)
-
-model_gpu = adapt(CUDABackend(), model_cpu)
-
-
-mesh_cpu = adapt(CPU(), mesh_dev)
-mesh_gpu = adapt(CUDABackend(), mesh_cpu)
 # using Plots
 # iterations = runtime.iterations
 # plot(yscale=:log10, ylims=(1e-7,1e-1))

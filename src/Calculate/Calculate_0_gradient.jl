@@ -88,7 +88,7 @@ end
 
 function grad!(grad::Grad{Gauss,F,R,I,M}, phif, phi, BCs, time) where {F,R<:VectorField,I,M}
     interpolate!(phif, phi)
-    correct_boundaries!(phif, phi, BCs, time, CONFIG[])
+    correct_boundaries!(phif, phi, BCs, time)
     green_gauss!(grad, phif)
 end
 
@@ -96,7 +96,7 @@ end
 
 function grad!(grad::Grad{Gauss,F,R,I,M}, psif, psi, BCs, time) where {F,R<:TensorField,I,M}
     interpolate!(psif, psi)
-    correct_boundaries!(psif, psi, BCs, time, CONFIG[])
+    correct_boundaries!(psif, psi, BCs, time)
     green_gauss!(grad, psif)
 end
 

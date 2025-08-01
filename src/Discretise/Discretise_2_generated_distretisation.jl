@@ -1,8 +1,8 @@
 export discretise!, update_equation!
 
 function discretise!(
-    eqn::ModelEquation{T,M,E,S,P}, prev, config) where {T<:VectorModel,M,E,S,P}
-    (; hardware, runtime) = config
+    eqn::ModelEquation{T,M,E,S,P}, prev) where {T<:VectorModel,M,E,S,P}
+    (; hardware, runtime) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     # Retrieve variabels for defition
@@ -81,9 +81,9 @@ end
 end
 
 function discretise!(
-    eqn::ModelEquation{T,M,E,S,P}, prev, config) where {T<:ScalarModel,M,E,S,P}
+    eqn::ModelEquation{T,M,E,S,P}, prev) where {T<:ScalarModel,M,E,S,P}
 
-    (; hardware, runtime) = config
+    (; hardware, runtime) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     # Retrieve variabels for defition
@@ -279,8 +279,8 @@ end
 end
 
 # Reset main equation to reuse in segregated solver
-function update_equation!(eqn::ModelEquation{T,M,E,S,P}, config) where {T<:VectorModel,M,E,S,P}
-    (; hardware, runtime) = config
+function update_equation!(eqn::ModelEquation{T,M,E,S,P}) where {T<:VectorModel,M,E,S,P}
+    (; hardware, runtime) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     # Sparse array and b accessor call

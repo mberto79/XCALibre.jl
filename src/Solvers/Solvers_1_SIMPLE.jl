@@ -151,7 +151,7 @@ function SIMPLE(
     # Initial calculations
     time = zero(TF) # assuming time=0
     interpolate!(Uf, U)   
-    correct_boundaries!(Uf, U, boundaries.U, time, config)
+    correct_boundaries!(Uf, U, boundaries.U, time)
     # flux!(mdotf, Uf, config)
     flux!(mdotf, Uf)
     grad!(∇p, pf, p, boundaries.p, time)
@@ -174,13 +174,13 @@ function SIMPLE(
         # Pressure correction
         inverse_diagonal!(rD, U_eqn)
         interpolate!(rDf, rD)
-        # correct_boundaries!(rDf, rD, rD.BCs, time, config) # ADDED FOR PERIODIC BCS
+        # correct_boundaries!(rDf, rD, rD.BCs, time) # ADDED FOR PERIODIC BCS
         remove_pressure_source!(U_eqn, ∇p)
         H!(Hv, U, U_eqn)
         
         # Interpolate faces
         interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
-        correct_boundaries!(Uf, Hv, boundaries.U, time, config)
+        correct_boundaries!(Uf, Hv, boundaries.U, time)
 
         # old approach
         # div!(divHv, Uf) 
@@ -201,8 +201,8 @@ function SIMPLE(
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
             # @. prev = p.values
-            discretise!(p_eqn, p, config)       
-            apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
+            discretise!(p_eqn, p)       
+            apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time)
             # setReference!(p_eqn, pref, 1, config)
             nonorthogonal_face_correction(p_eqn, ∇p, rDf)
             # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
@@ -219,14 +219,14 @@ function SIMPLE(
         # old approach
         # correct_velocity!(U, Hv, ∇p, rD)
         # interpolate!(Uf, U)
-        # correct_boundaries!(Uf, U, boundaries.U, time, config)
+        # correct_boundaries!(Uf, U, boundaries.U, time)
         # flux!(mdotf, Uf) 
 
         # new approach
 
         # 1. using velocity from momentum equation
         # interpolate!(Uf, U)
-        # correct_boundaries!(Uf, U, boundaries.U, time, config)
+        # correct_boundaries!(Uf, U, boundaries.U, time)
         # flux!(mdotf, Uf)
         correct_mass_flux(mdotf, p, rDf)
         correct_velocity!(U, Hv, ∇p, rD)

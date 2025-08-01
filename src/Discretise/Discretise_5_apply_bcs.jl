@@ -2,17 +2,16 @@ export apply_boundary_conditions!
 
 
 
-apply_boundary_conditions!(eqn, BCs, component, time, config) = begin
-    _apply_boundary_conditions!(eqn.model, BCs, eqn, component, time, config)
+apply_boundary_conditions!(eqn, BCs, component, time) = begin
+    _apply_boundary_conditions!(eqn.model, BCs, eqn, component, time)
 end
 
 # Apply Boundaries Function
 function _apply_boundary_conditions!(
-    model::Model{TN,SN,T,S}, BCs::B, eqn, component, time, config) where {TN,SN,T,S,B}
+    model::Model{TN,SN,T,S}, BCs::B, eqn, component, time) where {TN,SN,T,S,B}
     nTerms = length(model.terms)
 
-    # backend = _get_backend(mesh)
-    (; hardware) = config
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     # Retriecve variables for function
@@ -36,7 +35,7 @@ function _apply_boundary_conditions!(
         # start_ID = facesID_range[1]
 
         # update user defined boundary storage (if needed)
-        update_user_boundary!(BC, faces, cells, facesID_range, time, config)
+        update_user_boundary!(BC, faces, cells, facesID_range, time)
         
     end
         # Execute apply boundary conditions kernel
@@ -61,9 +60,9 @@ function _apply_boundary_conditions!(
     #     start_ID = facesID_range[1]
 
     #     # update user defined boundary storage (if needed)
-    #     # update_user_boundary!(BC, faces, cells, facesID_range, time, config)
+    #     # update_user_boundary!(BC, faces, cells, facesID_range, time)
     #     #= The `model` passed here is defined in ModelFramework_0_types.jl line 87. It has two properties: terms and sources which define the equation being solved =#
-    #     update_user_boundary!(BC, faces, cells, facesID_range, time, config)
+    #     update_user_boundary!(BC, faces, cells, facesID_range, time)
         
     #     # Execute apply boundary conditions kernel
     #     kernel_range = length(facesID_range)
@@ -76,7 +75,7 @@ function _apply_boundary_conditions!(
 end
 
 update_user_boundary!(
-    BC::AbstractBoundary, faces, cells, facesID_range, time, config) = nothing
+    BC::AbstractBoundary, faces, cells, facesID_range, time) = nothing
 
 # Apply boundary conditions kernel definition
 # Experimental implementation 

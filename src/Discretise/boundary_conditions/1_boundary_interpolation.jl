@@ -1,9 +1,9 @@
 export correct_boundaries!
 
-function correct_boundaries!(phif, phi, BCs, time, config)
+function correct_boundaries!(phif, phi, BCs, time)
     (; mesh) = phif
     (; boundary_cellsID, boundaries) = mesh 
-    (; hardware) = config
+    (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     ndrange = length(boundary_cellsID)

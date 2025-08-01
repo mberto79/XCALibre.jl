@@ -58,7 +58,7 @@ end
 end
 
 """
-    initialise(energy::SensibleEnthalpy, model::Physics{T1,F,M,Tu,E,D,BI}, mdotf, rho, peqn, config
+    initialise(energy::SensibleEnthalpy, model::Physics{T1,F,M,Tu,E,D,BI}, mdotf, rho, peqn
     ) where {T1,F,M,Tu,E,D,BI})
 
 Initialisation of energy transport equations.
@@ -69,19 +69,17 @@ Initialisation of energy transport equations.
 - `mdtof`: Face mass flow.
 - `rho`: Density ScalarField.
 - `peqn`: Pressure equation.
-- `config`: Configuration structure defined by user with solvers, schemes, runtime and 
-              hardware structures set.
 
 # Output
 - `SensibleEnthalpyModel`: Energy model struct containing energy equation.
 
 """
 function initialise(
-    energy::SensibleEnthalpy, model::Physics{T1,F,M,Tu,E,D,BI}, mdotf, rho, peqn, config
+    energy::SensibleEnthalpy, model::Physics{T1,F,M,Tu,E,D,BI}, mdotf, rho, peqn
     ) where {T1,F,M,Tu,E,D,BI}
 
     (; h, T, dpdt) = energy
-    (; solvers, schemes, runtime, boundaries) = config
+    (; solvers, schemes, runtime, boundaries) = get_configuration(CONFIG)
     mesh = mdotf.mesh
     eqn = peqn.equation
     
@@ -104,7 +102,7 @@ function initialise(
     
     # Set up preconditioners
     # @reset energy_eqn.preconditioner = set_preconditioner(
-    #             solvers.h.preconditioner, energy_eqn, boundaries.h, config)
+    #             solvers.h.preconditioner, energy_eqn, boundaries.h)
 
     @reset energy_eqn.preconditioner = set_preconditioner(solvers.h.preconditioner, energy_eqn)
     
@@ -120,7 +118,7 @@ end
 
 
 """
-    energy::SensibleEnthalpyModel, model::Physics{T1,F,M,Tu,E,D,BI}, prev, mdotf, rho, mueff, time, config
+    energy::SensibleEnthalpyModel, model::Physics{T1,F,M,Tu,E,D,BI}, prev, mdotf, rho, mueff, time
     ) where {T1,F,M,Tu,E,D,BI,E1}
 
 Run energy transport equations.
@@ -133,11 +131,10 @@ Run energy transport equations.
 - `rho`: Density ScalarField.
 - `mueff`: Effective viscosity FaceScalarField.
 - `time`: Simulation runtime.
-- `config`: Configuration structure defined by user with solvers, schemes, runtime and hardware structures set.
 
 """
 function energy!(
-    energy::SensibleEnthalpyModel, model::Physics{T1,F,M,Tu,E,D,BI}, prev, mdotf, rho, mueff, time, config
+    energy::SensibleEnthalpyModel, model::Physics{T1,F,M,Tu,E,D,BI}, prev, mdotf, rho, mueff, time
     ) where {T1,F,M,Tu,E,D,BI}
 
     mesh = model.domain
@@ -145,7 +142,7 @@ function energy!(
     (;U) = model.momentum
     (;h, hf, T, K, dpdt) = model.energy
     (;energy_eqn, state) = energy
-    (; solvers, runtime, hardware, boundaries) = config
+    (; solvers, runtime, hardware, boundaries, schemes) = get_configuration(CONFIG)
     (; iterations, write_interval) = runtime
     (; backend) = hardware
 
@@ -173,20 +170,20 @@ function energy!(
     @. keff_by_cp.values = mueff.values/Pr.values
 
     @. prev = K.values
-    interpolate!(Uf, U, config)
-    correct_boundaries!(Uf, U, boundaries.U, time, config)
+    interpolate!(Uf, U)
+    correct_boundaries!(Uf, U, boundaries.U, time)
     for i ∈ eachindex(K)
         K.values[i] = 0.5*(U.x.values[i]^2 + U.y.values[i]^2 + U.z.values[i]^2)
     end
-    interpolate!(Kf, K, config)
+    interpolate!(Kf, K)
     for i ∈ eachindex(Kf)
         Kf.values[i] = 0.5*(Uf.x.values[i]^2 + Uf.y.values[i]^2 + Uf.z.values[i]^2)
     end
     # correct_face_interpolation!(Kf, K, mdotf) # This forces KE to be upwind, MIGHT NOT BE WORKING
     @. Kf.values *= mdotf.values
-    div!(divK, Kf, config)
+    div!(divK, Kf)
 
-    if config.schemes.h.time <: SteadyState
+    if schemes.h.time <: SteadyState
         @. dKdt.values = 0.0
     else
         @. dKdt.values = rho.values*(K.values - prev)/dt
@@ -194,11 +191,11 @@ function energy!(
 
     # Set up and solve energy equation
     @. prev = h.values
-    discretise!(energy_eqn, h, config)
-    apply_boundary_conditions!(energy_eqn, boundaries.h, nothing, time, config)
-    implicit_relaxation_diagdom!(energy_eqn, h.values, solvers.h.relax, nothing, config)
-    update_preconditioner!(energy_eqn.preconditioner, mesh, config)
-    h_res = solve_system!(energy_eqn, solvers.h, h, nothing, config)
+    discretise!(energy_eqn, h)
+    apply_boundary_conditions!(energy_eqn, boundaries.h, nothing, time)
+    implicit_relaxation_diagdom!(energy_eqn, h.values, solvers.h.relax, nothing)
+    update_preconditioner!(energy_eqn.preconditioner, mesh)
+    h_res = solve_system!(energy_eqn, solvers.h, h, nothing)
 
     if !isnothing(solvers.h.limit)
         Tmin = solvers.h.limit[1]; Tmax = solvers.h.limit[2]
@@ -206,8 +203,8 @@ function energy!(
     end
 
     htoT!(model, h, T)
-    interpolate!(hf, h, config)
-    correct_boundaries!(hf, h, boundaries.h, time, config)
+    interpolate!(hf, h)
+    correct_boundaries!(hf, h, boundaries.h, time)
 
     residuals = (:h, h_res)
     converged = h_res <= solvers.h.convergence
@@ -260,11 +257,12 @@ enthalpy, reference temperature and fluid model specified ``C_p`` and ``R`` valu
 ``R`` is calculated from ``C_p`` and ``\\gamma`` specified in the fluid model.
 """
 function thermo_Psi!(
-    model::Physics{T,F,M,Tu,E,D,BI}, Psif::FaceScalarField, config
+    model::Physics{T,F,M,Tu,E,D,BI}, Psif::FaceScalarField
     ) where {T,F<:AbstractCompressible,M,Tu,E,D,BI}
     (; coeffs, hf, h) = model.energy
-    interpolate!(hf, h, config)
-    correct_boundaries!(hf, h, config.boundaries.h, time, config)
+    (; boundaries) = get_configuration(CONFIG)
+    interpolate!(hf, h)
+    correct_boundaries!(hf, h, boundaries.h, time)
     (; Tref) = coeffs
     Cp = model.fluid.cp; R = model.fluid.R
     @. Psif.values = Cp.values/(R.values*(hf.values + Cp.values*Tref))

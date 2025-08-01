@@ -1,5 +1,7 @@
 module Solvers
 
+import XCALibre: CONFIG
+
 using Accessors
 using SparseArrays
 using StaticArrays

@@ -1,5 +1,8 @@
 module XCALibre
 
+global CONFIG = nothing
+
+export set_configuration
 # using Krylov 
 # export Bicgstab(), Cg(), Gmres()
 
@@ -41,6 +44,20 @@ using Reexport
 @reexport using XCALibre.UNV3
 @reexport using XCALibre.UNV2
 @reexport using XCALibre.BlockMesher2D
+
+using Base.ScopedValues
+set_configuration(; solvers, schemes, runtime, hardware, boundaries) = begin
+    config = ScopedValue(Configuration(
+        solvers=solvers, 
+        schemes=schemes, 
+        runtime=runtime, 
+        hardware=hardware, 
+        boundaries=boundaries
+        )
+    )
+    global CONFIG = config
+    nothing
+end
 
 # using StaticArrays, LinearAlgebra, SparseMatricesCSR, SparseArrays, LinearOperators
 # using ProgressMeter, Printf, Adapt

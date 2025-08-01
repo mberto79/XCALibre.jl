@@ -38,9 +38,11 @@ end
 
 ## FLUX CALCULATION
 
-function flux!(phif::FS, psif::FV, config) where {FS<:FaceScalarField,FV<:FaceVectorField}
-    (; hardware) = config
-    (; backend, workgroup) = hardware
+# function flux!(phif::FS, psif::FV, config) where {FS<:FaceScalarField,FV<:FaceVectorField}
+function flux!(phif::FS, psif::FV) where {FS<:FaceScalarField,FV<:FaceVectorField}
+    # (; hardware) = config
+    # (; backend, workgroup) = hardware
+    (; backend, workgroup) = get_hardware(CONFIG)
 
     ndrange = length(phif)
     kernel! = flux_kernel!(_setup(backend, workgroup, ndrange)...)
@@ -63,9 +65,11 @@ end
     end
 end
 
-function flux!(phif::FS, psif::FV, rhof::FS, config) where {FS<:FaceScalarField,FV<:FaceVectorField}
-    (; hardware) = config
-    (; backend, workgroup) = hardware
+# function flux!(phif::FS, psif::FV, rhof::FS, config) where {FS<:FaceScalarField,FV<:FaceVectorField}
+function flux!(phif::FS, psif::FV, rhof::FS) where {FS<:FaceScalarField,FV<:FaceVectorField}
+    # (; hardware) = config
+    # (; backend, workgroup) = hardware
+    (; backend, workgroup) = get_hardware(CONFIG)
 
     ndrange = length(phif)
     kernel! = _flux!(_setup(backend, workgroup, ndrange)...)
@@ -93,9 +97,15 @@ volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 
 # INVERSE DIAGONAL CALCULATION
 
-function inverse_diagonal!(rD::S, eqn, config) where {S<:ScalarField}
-    (; hardware) = config
-    (; backend, workgroup) = hardware
+get_hardware(config) = config[].hardware
+get_boundaries(config) = config[].boundaries
+get_configuration(config) = config
+
+# function inverse_diagonal!(rD::S, eqn, config) where {S<:ScalarField}
+function inverse_diagonal!(rD::S, eqn) where {S<:ScalarField}
+    # (; hardware) = config
+    # (; backend, workgroup) = hardware
+    (; backend, workgroup) = get_hardware(CONFIG)
     A = eqn.equation.A # Or should I use A0
     nzval, colval, rowptr = get_sparse_fields(A)
 

@@ -114,7 +114,9 @@ function SIMPLE(
     (; U, p, Uf, pf) = model.momentum
     (; nu) = model.fluid
     mesh = model.domain
-    (; solvers, schemes, runtime, hardware, boundaries) = config
+    # (; solvers, schemes, runtime, hardware, boundaries) = config
+    (; solvers, schemes, runtime, hardware) = config
+    boundaries = get_boundaries(CONFIG)
     (; iterations, write_interval) = runtime
     (; backend) = hardware
     
@@ -152,7 +154,8 @@ function SIMPLE(
     time = zero(TF) # assuming time=0
     interpolate!(Uf, U, config)   
     correct_boundaries!(Uf, U, boundaries.U, time, config)
-    flux!(mdotf, Uf, config)
+    # flux!(mdotf, Uf, config)
+    flux!(mdotf, Uf)
     grad!(∇p, pf, p, boundaries.p, time, config)
     limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
@@ -171,7 +174,8 @@ function SIMPLE(
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
         
         # Pressure correction
-        inverse_diagonal!(rD, U_eqn, config)
+        # inverse_diagonal!(rD, U_eqn, config)
+        inverse_diagonal!(rD, U_eqn)
         interpolate!(rDf, rD, config)
         # correct_boundaries!(rDf, rD, rD.BCs, time, config) # ADDED FOR PERIODIC BCS
         remove_pressure_source!(U_eqn, ∇p, config)
@@ -185,7 +189,8 @@ function SIMPLE(
         # div!(divHv, Uf, config) 
 
         # new approach
-        flux!(mdotf, Uf, config)
+        # flux!(mdotf, Uf, config)
+        flux!(mdotf, Uf)
         div!(divHv, mdotf, config)
         
         # Pressure calculations

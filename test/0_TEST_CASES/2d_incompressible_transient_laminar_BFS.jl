@@ -82,7 +82,7 @@ GC.gc()
 
 residuals = run!(model);
 
-inlet = boundary_average(:inlet, model.momentum.U, BCs.U, config)
-outlet = boundary_average(:outlet, model.momentum.U, BCs.U, config)
+inlet = boundary_average(:inlet, model.momentum.U, BCs.U)
+outlet = boundary_average(:outlet, model.momentum.U, BCs.U)
 
 @test outlet ≈ 0.5*inlet atol=0.1*Umag

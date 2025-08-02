@@ -83,7 +83,7 @@ viscous_force(patch::Symbol, U::VectorField, rho, ν, νt, UBCs) = begin
 end
 
 """
-    function boundary_average(patch::Symbol, field, config; time=0)
+    function boundary_average(patch::Symbol, field; time=0)
         # Extract mesh object
         mesh = field.mesh
 
@@ -104,8 +104,8 @@ end
         end
 
         # Interpolate CFD results to boundary
-        interpolate!(faceField, field, config)
-        correct_boundaries!(faceField, field, field.BCs, time, config)
+        interpolate!(faceField, field)
+        correct_boundaries!(faceField, field, field.BCs, time)
 
         # Calculate the average
         for fID ∈ IDs_range
@@ -117,9 +117,8 @@ end
         return ave
     end
 """
-function boundary_average(patch::Symbol, field, fieldBCs, config; time=0)
+function boundary_average(patch::Symbol, field, fieldBCs; time=0)
     mesh = field.mesh
-
     ID = boundary_index(mesh.boundaries, patch)
     @info "calculating average on patch: $patch at index $ID"
     boundary = mesh.boundaries[ID]
@@ -133,8 +132,8 @@ function boundary_average(patch::Symbol, field, fieldBCs, config; time=0)
         faceField = FaceScalarField(mesh)
         sum = zero(_get_float(mesh)) # create zero
     end
-    interpolate!(faceField, field, config)
-    correct_boundaries!(faceField, field, fieldBCs, time, config)
+    interpolate!(faceField, field)
+    correct_boundaries!(faceField, field, fieldBCs, time)
 
     for fID ∈ IDs_range
         sum += faceField[fID]
@@ -187,14 +186,14 @@ wall_shear_stress(patch::Symbol, model)  = begin
     return tauw, pos
 end
 
-stress_tensor(U, ν, νt, config) = begin
+stress_tensor(U, ν, νt) = begin
     mesh = U.mesh
     TF = _get_float(mesh)
     gradU = Grad{Midpoint}(U)
     gradUT = T(gradU)
     Uf = FaceVectorField(U.mesh)
-    grad!(gradU, Uf, U, boundaries.U, zero(TF), config) # assuming time=0
-    # grad!(gradU, Uf, U, boundaries.U, , config)
+    grad!(gradU, Uf, U, boundaries.U, zero(TF)) # assuming time=0
+    # grad!(gradU, Uf, U, boundaries.U)
     nueff = ScalarField(U.mesh) # temp variable
     nueff.values .= ν .+ νt.values
     Reff = TensorField(U.mesh)

@@ -113,7 +113,7 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
         omega = Schemes(divergence=Upwind)
     )
 
-    local configure!(
+    configure!(
         solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
     GC.gc()
@@ -126,7 +126,7 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
 
     local residuals = run!(model)
 
-    local outlet = boundary_average(:outlet, model.momentum.U, BCs.U, config)
+    local outlet = boundary_average(:outlet, model.momentum.U, BCs.U)
 
     @test Umag ≈ outlet[1] atol =0.1*Umag
 end

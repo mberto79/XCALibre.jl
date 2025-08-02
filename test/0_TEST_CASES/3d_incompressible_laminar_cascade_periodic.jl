@@ -89,14 +89,14 @@ GC.gc(true)
 residuals = run!(model)
 
 # test periodic boundaries agree (velocity)
-top = boundary_average(:top, model.momentum.U, BCs.U, config)
-bottom = boundary_average(:bottom, model.momentum.U, BCs.U, config)
+top = boundary_average(:top, model.momentum.U, BCs.U)
+bottom = boundary_average(:bottom, model.momentum.U, BCs.U)
 
 @test top ≈ bottom
 
 # test periodic boundaries agree (pressure)
-top = boundary_average(:top, model.momentum.p, BCs.p, config)
-bottom = boundary_average(:bottom, model.momentum.p, BCs.p, config)
+top = boundary_average(:top, model.momentum.p, BCs.p)
+bottom = boundary_average(:bottom, model.momentum.p, BCs.p)
 
 @test top ≈ bottom
 

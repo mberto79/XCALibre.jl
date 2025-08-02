@@ -87,8 +87,8 @@ GC.gc(true)
 
 residuals = run!(model)
 
-top = boundary_average(:top, model.momentum.U, BCs.U, config)
-outlet = boundary_average(:outlet, model.momentum.U, BCs.U, config)
+top = boundary_average(:top, model.momentum.U, BCs.U)
+outlet = boundary_average(:outlet, model.momentum.U, BCs.U)
 
 @test Umag ≈ top[1] atol=0.1*Umag
 @test 0.5*Umag ≈ outlet[1] atol=0.1*Umag

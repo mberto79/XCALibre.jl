@@ -295,12 +295,12 @@ end
     end
 end
 
-# @generated constrain_boundary!(field, fieldBCs, model, config) = begin
+# @generated constrain_boundary!(field, fieldBCs, model) = begin
 #     BCs = fieldBCs.parameters
 #     func_calls = Expr[]
 #     for i ∈ eachindex(BCs)
 #         call = quote
-#             set_cell_value!(field, fieldBCs[$i], model, config)
+#             set_cell_value!(field, fieldBCs[$i], model)
 #         end
 #         push!(func_calls, call)
 #     end
@@ -310,9 +310,9 @@ end
 #     end 
 # end
 
-# set_cell_value!(field, BC, model, config) = nothing
+# set_cell_value!(field, BC, model) = nothing
 
-# function set_cell_value!(field, BC::OmegaWallFunction, model, config)
+# function set_cell_value!(field, BC::OmegaWallFunction, model)
 #     # backend = _get_backend(mesh)
 #     (; hardware) = config
 #     (; backend, workgroup) = hardware

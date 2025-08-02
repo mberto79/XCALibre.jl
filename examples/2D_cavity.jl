@@ -80,7 +80,7 @@ GC.gc()
 initialise!(model.momentum.U, [0, 0, 0])
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config, pref=0.0) # 9.39k allocs
+residuals = run!(model, pref=0.0) # 9.39k allocs
 
 # plot(1:runtime.iterations, Rx, yscale=:log10)
 # plot!(1:runtime.iterations, Ry, yscale=:log10)

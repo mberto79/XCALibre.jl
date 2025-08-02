@@ -85,7 +85,7 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config, ncorrectors=1)
+residuals = run!(model, ncorrectors=1)
 
 xrange = 1:runtime.iterations
 plot(; xlims=(0,runtime.iterations), ylims=(1e-7,0.2))

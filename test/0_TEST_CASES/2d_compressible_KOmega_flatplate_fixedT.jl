@@ -150,9 +150,9 @@ hardware = Hardware(backend=backend, workgroup=workgroup)
 
     residuals = run!(model)
 
-    inlet = boundary_average(:inlet, model.momentum.U, BCs.U, config)
-    outlet = boundary_average(:outlet, model.momentum.U, BCs.U, config)
-    top = boundary_average(:top, model.momentum.U, BCs.U, config)
+    inlet = boundary_average(:inlet, model.momentum.U, BCs.U)
+    outlet = boundary_average(:outlet, model.momentum.U, BCs.U)
+    top = boundary_average(:top, model.momentum.U, BCs.U)
 
     BCs.U, @test Umag ≈ inlet[1]
     @test Umag ≈ outlet[1] atol = 0.95

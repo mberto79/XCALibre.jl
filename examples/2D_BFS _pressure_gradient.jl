@@ -97,7 +97,7 @@ GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-# residuals = run!(model, config, pref=0)
+# residuals = run!(model, pref=0)
 residuals = run!(model)
 # @time residuals = run!(model)
 

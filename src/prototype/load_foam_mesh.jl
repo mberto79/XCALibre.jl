@@ -87,7 +87,7 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-@time residuals = run!(model, config, output=OpenFOAM())
+@time residuals = run!(model, output=OpenFOAM())
 
 # iterations = runtime.iterations
 # plot(yscale=:log10, ylims=(1e-7,1e-1))

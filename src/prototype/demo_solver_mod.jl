@@ -93,7 +93,7 @@ initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
 # Step 11. Run simulation
-residuals = run!(model, config);
+residuals = run!(model);
 
 U = VectorField(mesh)
 Uf = FaceVectorField(mesh)

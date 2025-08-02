@@ -78,7 +78,7 @@ GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config) # 9.39k allocs
+residuals = run!(model) # 9.39k allocs
 
 # using Plots
 # using DelimitedFiles

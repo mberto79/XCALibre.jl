@@ -90,7 +90,7 @@ initialise!(model.momentum.p, 0.0)
 backend = CPU()
 backend = CUDABackend()
 
-residuals = run!(model, config)
+residuals = run!(model)
 
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

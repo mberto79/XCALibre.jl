@@ -111,7 +111,7 @@ GC.gc(true)
 @test initialise!(model.energy.T, temp) === nothing
 @test initialise!(model.fluid.rho, pressure/(R*temp)) === nothing
 
-residuals = run!(model, config)
+residuals = run!(model)
 
 inlet = boundary_average(:inlet, model.momentum.U, BCs.U, config)
 outlet = boundary_average(:outlet, model.momentum.U, BCs.U, config)

@@ -124,7 +124,7 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
     @test initialise!(model.turbulence.omega, ω_inlet) === nothing
     @test initialise!(model.turbulence.nut, k_inlet/ω_inlet) === nothing
 
-    local residuals = run!(model, config)
+    local residuals = run!(model)
 
     local outlet = boundary_average(:outlet, model.momentum.U, BCs.U, config)
 

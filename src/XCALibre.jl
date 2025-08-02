@@ -152,7 +152,7 @@ using Reexport
 #             initialise!(model.momentum.U, velocity) === nothing
 #             initialise!(model.momentum.p, 0.0) === nothing
             
-#             residuals = run!(model, config)
+#             residuals = run!(model)
             
 #             inlet = boundary_average(:inlet, model.momentum.U, config)
 #             outlet = boundary_average(:outlet, model.momentum.U, config)
@@ -261,7 +261,7 @@ using Reexport
 #             initialise!(model.turbulence.omega, ω_inlet) === nothing
 #             initialise!(model.turbulence.nut, k_inlet/ω_inlet) === nothing
 
-#             residuals = run!(model, config);
+#             residuals = run!(model);
 #         end
 # end
 

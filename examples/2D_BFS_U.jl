@@ -77,7 +77,7 @@ GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config) # 9.39k allocs
+residuals = run!(model) # 9.39k allocs
 
 # plot(; xlims=(0,184))
 # plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

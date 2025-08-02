@@ -80,7 +80,7 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config)
+residuals = run!(model)
 
 plot(; xlims=(0,1000))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
@@ -97,7 +97,7 @@ initialise!(model.momentum.p, 0.0)
 
 Profile.Allocs.clear()
 Profile.Allocs.@profile sample_rate=1 begin 
-    residuals = run!(model, config)
+    residuals = run!(model)
 end
 
 PProf.Allocs.pprof()

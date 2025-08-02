@@ -94,7 +94,7 @@ configure!(
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config);
+residuals = run!(model);
 
 
 # output

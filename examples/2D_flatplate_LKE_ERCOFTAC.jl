@@ -162,7 +162,7 @@ initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
-residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
+residuals = run!(model); #, pref=0.0) # 9.39k allocs
 
 
 # let

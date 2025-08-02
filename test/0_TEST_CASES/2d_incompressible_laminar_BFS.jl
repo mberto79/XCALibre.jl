@@ -85,7 +85,7 @@ GC.gc()
 @test initialise!(model.momentum.U, velocity) === nothing
 @test initialise!(model.momentum.p, 0.0) === nothing
 
-residuals = run!(model, config)
+residuals = run!(model)
 
 inlet = boundary_average(:inlet, model.momentum.U, BCs.U, config)
 outlet = boundary_average(:outlet, model.momentum.U, BCs.U, config)

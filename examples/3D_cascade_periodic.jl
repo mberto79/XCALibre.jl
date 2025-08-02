@@ -87,7 +87,7 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config) # 353 iterations!
+residuals = run!(model) # 353 iterations!
 
 # using Plots
 # fig = plot(; xlims=(0,runtime.iterations), ylims=(1e-10, 1e-4))

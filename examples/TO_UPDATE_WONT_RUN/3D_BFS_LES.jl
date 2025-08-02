@@ -94,7 +94,7 @@ initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
-residuals = run!(model, config); #, pref=0.0)
+residuals = run!(model); #, pref=0.0)
 
 Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)
 Fp = pressure_force(:cylinder, model.momentum.p, 1.25)

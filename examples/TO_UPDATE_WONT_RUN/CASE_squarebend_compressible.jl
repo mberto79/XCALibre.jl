@@ -108,7 +108,7 @@ initialise!(model.momentum.U, [0.0, 0.0, 0.0])
 initialise!(model.momentum.p, pressure)
 initialise!(model.energy.T, temp)
 
-residuals = run!(model, config); #, pref=0.0)
+residuals = run!(model); #, pref=0.0)
 
 plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
 plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

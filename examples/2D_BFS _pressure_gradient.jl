@@ -98,15 +98,15 @@ initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
 # residuals = run!(model, config, pref=0)
-residuals = run!(model, config)
-# @time residuals = run!(model, config)
+residuals = run!(model)
+# @time residuals = run!(model)
 
 # GC.gc()
 
 # initialise!(model.momentum.U, velocity)
 # initialise!(model.momentum.p, 0.0)
 
-# @profview residuals = run!(model, config)
+# @profview residuals = run!(model)
 
 # using Plots
 # iterations = runtime.iterations

@@ -86,7 +86,7 @@ GC.gc(true)
 @test initialise!(model.momentum.U, velocity) === nothing
 @test initialise!(model.momentum.p, 0.0) === nothing
 
-residuals = run!(model, config)
+residuals = run!(model)
 
 # test periodic boundaries agree (velocity)
 top = boundary_average(:top, model.momentum.U, BCs.U, config)

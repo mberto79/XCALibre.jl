@@ -148,7 +148,7 @@ hardware = Hardware(backend=backend, workgroup=workgroup)
     @test initialise!(model.turbulence.omega, ω_inlet) === nothing
     @test initialise!(model.turbulence.nut, k_inlet/ω_inlet) === nothing
 
-    residuals = run!(model, config)
+    residuals = run!(model)
 
     inlet = boundary_average(:inlet, model.momentum.U, BCs.U, config)
     outlet = boundary_average(:outlet, model.momentum.U, BCs.U, config)

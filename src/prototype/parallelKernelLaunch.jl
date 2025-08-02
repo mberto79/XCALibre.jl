@@ -94,4 +94,4 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity) === nothing
 initialise!(model.momentum.p, 0.0) === nothing
 
-residuals = run!(model, config)
+residuals = run!(model)

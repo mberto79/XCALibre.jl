@@ -206,7 +206,7 @@ function foil_optim(α::Vector{Float64})
     initialise!(model.turbulence.omega, ω_inlet)
     initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
-    residuals = run!(model, config)
+    residuals = run!(model)
 
     # Residuals Graph
     let

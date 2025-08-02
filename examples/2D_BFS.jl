@@ -104,6 +104,7 @@ phi = ScalarField(mesh)
 test = Laplacian(mdotf, phi) + Laplacian(mdotf, phi)
 test = Laplacian(mdotf, phi) + Laplacian(mdotf, phi) + Laplacian(mdotf, phi)
 test = Laplacian(mdotf, phi) == 0.0
+test = Laplacian(mdotf, phi) + Laplacian(mdotf, phi) == 0.0
 
 @time residuals = run!(model) # 1106 iterations!
 

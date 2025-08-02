@@ -49,6 +49,13 @@ Base.:(==)(t1::Union{Laplacian,Divergence,Si}, n::Number) = begin
     return Discretisation(scheme, scheme_source, source)
 end
 
+Base.:(==)(t1::LHS, n::Number) = begin
+    scheme(args...) = t1.scheme(args...)
+    scheme_source(args...) = t1.scheme_source(t1args...)
+    source(args...) = n 
+    return Discretisation(scheme, scheme_source, source)
+end
+
 
 # export →
 

@@ -1,10 +1,10 @@
 
-export Preconditioner, PreconditionerType
+# export Preconditioner, PreconditionerType
 export Jacobi, NormDiagonal #, ILU0 # , LDL
 export DILU, DILUprecon
 export IC0GPU, ILU0GPU
 
-abstract type PreconditionerType end
+# abstract type PreconditionerType end
 abstract type LDIVPreconditioner <: PreconditionerType end
 abstract type MULPreconditioner <: PreconditionerType end
 
@@ -28,18 +28,6 @@ Adapt.@adapt_structure IC0GPU
 
 struct ILU0GPU <: MULPreconditioner end
 Adapt.@adapt_structure ILU0GPU
-
-struct Preconditioner{T,M,P,S}
-    A::M
-    P::P
-    storage::S
-end
-function Adapt.adapt_structure(to, itp::Preconditioner{T,M,Pr,S}) where {T,M,Pr,S}
-    A = Adapt.adapt(to, itp.A)
-    P = Adapt.adapt(to, itp.P)
-    storage = Adapt.adapt(to, itp.storage) 
-    Preconditioner{T,typeof(A),typeof(P),typeof(storage)}(A,P,storage)
-end
 
 is_ldiv(precon::Preconditioner{T,M,P,S}) where {T,M,P,S} = T <: LDIVPreconditioner
 

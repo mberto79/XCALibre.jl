@@ -1,7 +1,8 @@
 export AbstractOperator, AbstractSource, AbstractEquation   
-export Operator, Source, Src
+export Operator, Source
+export Equation
 export Time, Laplacian, Divergence, Si
-export Model, ScalarEquation, VectorEquation, ModelEquation, ScalarModel, VectorModel
+export Model, ScalarMatrix, VectorMatrix, ScalarModel, VectorModel
 export nzval_index
 export spindex, spindex_csc
 
@@ -25,63 +26,85 @@ Adapt.@adapt_structure Operator
 
 # operators
 
-struct Time{T} end
-function Adapt.adapt_structure(to, itp::Time{T}) where {T}
-    Time{T}()
+struct Time{F,P}
+    flux::F 
+    phi::P 
 end
+Adapt.@adapt_structure Time 
 
-struct Laplacian{T} end
-function Adapt.adapt_structure(to, itp::Laplacian{T}) where {T}
-    Laplacian{T}()
+struct Laplacian{F,P}
+    flux::F 
+    phi::P 
 end
+Adapt.@adapt_structure Laplacian 
 
-struct Divergence{T} end
-function Adapt.adapt_structure(to, itp::Divergence{T}) where {T}
-    Divergence{T}()
+struct Divergence{F,P}
+    flux::F 
+    phi::P 
 end
+Adapt.@adapt_structure Divergence
 
-struct Si end
-function Adapt.adapt_structure(to, itp::Si)
-    Si()
+struct Si{F,P}
+    flux::F 
+    phi::P 
 end
+Adapt.@adapt_structure Si
+
+# struct Time{T} end
+# function Adapt.adapt_structure(to, itp::Time{T}) where {T}
+#     Time{T}()
+# end
+
+# struct Laplacian{T} end
+# function Adapt.adapt_structure(to, itp::Laplacian{T}) where {T}
+#     Laplacian{T}()
+# end
+
+# struct Divergence{T} end
+# function Adapt.adapt_structure(to, itp::Divergence{T}) where {T}
+#     Divergence{T}()
+# end
+
+# struct Si end
+# function Adapt.adapt_structure(to, itp::Si)
+#     Si()
+# end
 
 # constructors
 
-Time{T}(flux, phi) where T = Operator(
-    flux, phi, 1, Time{T}()
-    )
+# Time{T}(flux, phi) where T = Operator(
+#     flux, phi, 1, Time{T}()
+#     )
 
-Time{T}(phi) where T = Operator(
-    ConstantScalar(one(_get_int(phi.mesh))), phi, 1, Time{T}()
-    )
+# Time{T}(phi) where T = Operator(
+#     ConstantScalar(one(_get_int(phi.mesh))), phi, 1, Time{T}()
+#     )
 
-Laplacian{T}(flux, phi) where T = Operator(
-    flux, phi, 1, Laplacian{T}()
-    )
+# Laplacian{T}(flux, phi) where T = Operator(
+#     flux, phi, 1, Laplacian{T}()
+#     )
 
-Divergence{T}(flux, phi) where T = Operator(
-    flux, phi, 1, Divergence{T}()
-    )
+# Divergence{T}(flux, phi) where T = Operator(
+#     flux, phi, 1, Divergence{T}()
+#     )
 
-Si(flux, phi) = Operator(
-    flux, phi, 1, Si()
-)
+# Si(flux, phi) = Operator(
+#     flux, phi, 1, Si()
+# )
 
 # SOURCES
 
 # Base Source
-struct Src{F,S} <: AbstractSource
+struct Source{F} <: AbstractSource
     field::F 
-    sign::S 
-    # type::T
 end
-Adapt.@adapt_structure Src
+Adapt.@adapt_structure Source
 
 # Source types
 
-struct Source end
-Adapt.@adapt_structure Source
-Source(f::T) where T = Src(f, 1)
+# struct Source end
+# Adapt.@adapt_structure Source
+# Source(f::T) where T = Src(f, 1)
 
 # MODEL TYPE
 struct Model{TN,SN,T,S}
@@ -107,14 +130,14 @@ _build_A(backend::CPU, i, j, v, n) = SparseXCSR(sparsecsr(i, j, v, n, n))
 _build_opA(A::SparseXCSR) = A
 
 ## ORIGINAL STRUCTURE PARAMETERISED FOR GPU
-struct ScalarEquation{VTf<:AbstractVector, ASA<:AbstractSparseArray, OP} <: AbstractEquation
+struct ScalarMatrix{VTf<:AbstractVector, ASA<:AbstractSparseArray, OP} <: AbstractEquation
     A::ASA
     opA::OP
     b::VTf
     R::VTf
     Fx::VTf
 end
-Adapt.@adapt_structure ScalarEquation
+Adapt.@adapt_structure ScalarMatrix
 
 # Catch all function for fields that do not extend matrix
 extend_matrix(mesh, BCs, i, j) = begin
@@ -131,8 +154,8 @@ _extend_matrix(BC, mesh, i, j) = begin
     return i, j
 end
 
-# ScalarEquation(mesh::AbstractMesh) = begin
-ScalarEquation(phi::ScalarField, BCs) = begin
+# ScalarMatrix(mesh::AbstractMesh) = begin
+ScalarMatrix(phi::ScalarField, BCs) = begin
     mesh = phi.mesh
     nCells = length(mesh.cells)
     Tf = _get_float(mesh)
@@ -145,7 +168,7 @@ ScalarEquation(phi::ScalarField, BCs) = begin
     backend = _get_backend(mesh)
     # A = _convert_array!(sparse(i, j, v), backend)
     A = _build_A(backend, i, j, v, nCells)
-    ScalarEquation(
+    ScalarMatrix(
         A,
 
        _build_opA(A),
@@ -162,7 +185,7 @@ ScalarEquation(phi::ScalarField, BCs) = begin
         )
 end
 
-struct VectorEquation{VTf<:AbstractVector, ASA<:AbstractSparseArray, OP} <: AbstractEquation
+struct VectorMatrix{VTf<:AbstractVector, ASA<:AbstractSparseArray, OP} <: AbstractEquation
     A0::ASA
     A::ASA
     opA::OP
@@ -172,9 +195,9 @@ struct VectorEquation{VTf<:AbstractVector, ASA<:AbstractSparseArray, OP} <: Abst
     R::VTf
     Fx::VTf
 end
-Adapt.@adapt_structure VectorEquation
+Adapt.@adapt_structure VectorMatrix
 
-VectorEquation(psi::VectorField, BCs) = begin
+VectorMatrix(psi::VectorField, BCs) = begin
     mesh = psi.mesh
     nCells = length(mesh.cells)
     Tf = _get_float(mesh)
@@ -192,7 +215,7 @@ VectorEquation(psi::VectorField, BCs) = begin
 
     A = _build_A(backend, i, j, v, nCells)
     A0 = _build_A(backend, i, j, v, nCells)
-    VectorEquation(
+    VectorMatrix(
         A0,
         A,
 
@@ -279,11 +302,61 @@ Adapt.@adapt_structure ScalarModel
 struct VectorModel end
 Adapt.@adapt_structure VectorModel
 
-struct ModelEquation{T,M,E,S,P}
-    type::T
-    model::M 
-    equation::E 
+struct Equation{E,S,P}
+    matrix::E
     solver::S
     preconditioner::P
 end
-Adapt.@adapt_structure ModelEquation
+Adapt.@adapt_structure Equation
+
+Equation(psi::VectorField, BCs, solverSettings) = begin
+    matrix = VectorMatrix(psi, BCs) 
+    solver = _workspace(solverSettings.solver, matrix.bx)
+    preconditioner = set_preconditioner(solverSettings.preconditioner, matrix.A)
+    return Equation(matrix, solver, preconditioner)
+end
+Equation(phi::ScalarField, BCs, solverSettings) = begin
+    matrix = ScalarMatrix(phi, BCs) 
+    solver = _workspace(solverSettings.solver, matrix.b)
+    preconditioner = set_preconditioner(solverSettings.preconditioner, matrix.A)
+    return Equation(matrix, solver, preconditioner)
+end
+
+# TEMP LOCATION
+
+export AbstractLinearSolver
+export Cg, Cgs, Bicgstab, Gmres
+
+abstract type AbstractLinearSolver end
+
+struct Cg <: AbstractLinearSolver end
+struct Cgs <: AbstractLinearSolver end
+struct Bicgstab <: AbstractLinearSolver end
+struct Gmres <: AbstractLinearSolver end
+
+# Krylov.jl workspace constructors
+_workspace(::Cg, b) = CgWorkspace(KrylovConstructor(b))
+_workspace(::Cgs, b) = CgsWorkspace(KrylovConstructor(b))
+_workspace(::Bicgstab, b) = BicgstabWorkspace(KrylovConstructor(b))
+_workspace(::Gmres, b) = GmresWorkspace(KrylovConstructor(b))
+
+
+export Preconditioner, PreconditionerType
+
+abstract type PreconditionerType end
+
+struct Preconditioner{T,M,P,S}
+    A::M
+    P::P
+    storage::S
+end
+function Adapt.adapt_structure(to, itp::Preconditioner{T,M,Pr,S}) where {T,M,Pr,S}
+    A = Adapt.adapt(to, itp.A)
+    P = Adapt.adapt(to, itp.P)
+    storage = Adapt.adapt(to, itp.storage) 
+    Preconditioner{T,typeof(A),typeof(P),typeof(storage)}(A,P,storage)
+end
+
+set_preconditioner(PT::T, A) where T<:PreconditionerType = begin
+    Preconditioner{T}(A)
+end

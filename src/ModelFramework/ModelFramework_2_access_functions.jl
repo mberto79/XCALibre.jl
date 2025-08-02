@@ -32,50 +32,50 @@ ZDir() = ZDir(3)
 
 ## MODEL ACCESSORS
 
-@inline get_phi(eqn::ModelEquation{T,M,E,S,P}) where {T,M,E,S,P} = begin 
-    eqn.model.terms[1].phi
-end
+# @inline get_phi(eqn::Equation{E,S,P}) where {T,M,E,S,P} = begin 
+#     eqn.model.terms[1].phi
+# end
 
-@inline get_flux(eqn::ModelEquation{T,M,E,S,P}, ti::Integer) where {T,M,E,S,P} = begin 
-    eqn.model.terms[ti].flux
-end
+# @inline get_flux(eqn::Equation{E,S,P}, ti::Integer) where {T,M,E,S,P} = begin 
+#     eqn.model.terms[ti].flux
+# end
 
-@inline get_source(eqn::ModelEquation{T,M,E,S,P}, ti::Integer) where {T,M,E,S,P} = begin 
-    eqn.model.sources[ti].field
-end
+# @inline get_source(eqn::Equation{E,S,P}, ti::Integer) where {T,M,E,S,P} = begin 
+#     eqn.model.sources[ti].field
+# end
 
-@inline get_source_sign(eqn::ModelEquation{T,M,E,S,P}, ti::Integer) where {T,M,E,S,P} = begin 
-    eqn.model.sources[ti].sign
-end
+# @inline get_source_sign(eqn::Equation{E,S,P}, ti::Integer) where {T,M,E,S,P} = begin 
+#     eqn.model.sources[ti].sign
+# # end
 
 ## SPARSE MATRIX ACCESSORS
 
 # Access Scalar Model Equation
-@inline _A(eqn::ModelEquation{T,M,E,S,P}) where {T<:ScalarModel,M,E,S,P} = begin
-    eqn.equation.A
+@inline _A(eqn::Equation{E,S,P}) where {E<:ScalarMatrix,S,P} = begin
+    eqn.matrix.A
 end
-@inline _b(eqn::ModelEquation{T,M,E,S,P}) where {T<:ScalarModel,M,E,S,P} = begin
-    eqn.equation.b
+@inline _b(eqn::Equation{E,S,P}) where {E<:ScalarMatrix,S,P} = begin
+    eqn.matrix.b
 end
-@inline _b(eqn::ModelEquation{T,M,E,S,P},c::Nothing) where {T<:ScalarModel,M,E,S,P} = begin
-    eqn.equation.b
+@inline _b(eqn::Equation{E,S,P},c::Nothing) where {E<:ScalarMatrix,S,P} = begin
+    eqn.matrix.b
 end
 
 # Access Vector Model Equation
-@inline _A0(eqn::ModelEquation{T,M,E,S,P}) where {T<:VectorModel,M,E,S,P} = begin
-    eqn.equation.A0
+@inline _A0(eqn::Equation{E,S,P}) where {E<:VectorMatrix,S,P} = begin
+    eqn.matrix.A0
 end
-@inline _A(eqn::ModelEquation{T,M,E,S,P}) where {T<:VectorModel,M,E,S,P} = begin
-    eqn.equation.A
+@inline _A(eqn::Equation{E,S,P}) where {E<:VectorMatrix,S,P} = begin
+    eqn.matrix.A
 end
-@inline _b(eqn::ModelEquation{T,M,E,S,P}, c::XDir) where {T<:VectorModel,M,E,S,P} = begin
-    eqn.equation.bx
+@inline _b(eqn::Equation{E,S,P}, c::XDir) where {E<:VectorMatrix,S,P} = begin
+    eqn.matrix.bx
 end
-@inline _b(eqn::ModelEquation{T,M,E,S,P}, c::YDir) where {T<:VectorModel,M,E,S,P} = begin
-    eqn.equation.by
+@inline _b(eqn::Equation{E,S,P}, c::YDir) where {E<:VectorMatrix,S,P} = begin
+    eqn.matrix.by
 end
-@inline _b(eqn::ModelEquation{T,M,E,S,P}, c::ZDir) where {T<:VectorModel,M,E,S,P} = begin
-    eqn.equation.bz
+@inline _b(eqn::Equation{E,S,P}, c::ZDir) where {E<:VectorMatrix,S,P} = begin
+    eqn.matrix.bz
 end
 
 

@@ -72,7 +72,7 @@ function setup_unsteady_compressible_solvers(
     #     Time{schemes.rho.time}(rho) 
     #     == 
     #     -Source(divmdotf)
-    # ) → ScalarEquation(mesh)
+    # ) → ScalarMatrix(mesh)
 
     U_eqn = (
         Time{schemes.U.time}(rho, U)
@@ -81,7 +81,7 @@ function setup_unsteady_compressible_solvers(
         == 
         - Source(∇p.result)
         + Source(mueffgradUt)
-    ) → VectorEquation(U, boundaries.U)
+    ) → VectorMatrix(U, boundaries.U)
 
     if typeof(model.fluid) <: WeaklyCompressible
         
@@ -90,7 +90,7 @@ function setup_unsteady_compressible_solvers(
             - Laplacian{schemes.p.laplacian}(rhorDf, p)
             ==
             - Source(divHv)
-        ) → ScalarEquation(p, boundaries.p)
+        ) → ScalarMatrix(p, boundaries.p)
 
     elseif typeof(model.fluid) <: Compressible
 
@@ -103,7 +103,7 @@ function setup_unsteady_compressible_solvers(
             ==
             -Source(divHv)
             -Source(ddtrho) # capture correction part of dPdT and explicit drhodt
-        ) → ScalarEquation(p, boundaries.p)
+        ) → ScalarMatrix(p, boundaries.p)
     end
 
     @info "Initialising preconditioners..."

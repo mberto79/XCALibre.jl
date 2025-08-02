@@ -14,7 +14,7 @@ function wall_distance!(model)
         -Laplacian{schemes.y.laplacian}(ConstantScalar(1.0), phi) 
         == 
         Source(ConstantScalar(1.0))
-    ) → ScalarEquation(phi, wallBCs.y)
+    ) → ScalarMatrix(phi, wallBCs.y)
 
     # @reset phi_eqn.preconditioner = set_preconditioner(
     #     solvers.y.preconditioner, phi_eqn, wallBCs.y)

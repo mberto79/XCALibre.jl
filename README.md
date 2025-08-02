@@ -78,7 +78,7 @@ U_eqn = (
         == 
         -Source(∇p.result)
 
-      ) → VectorEquation(mesh)
+      ) → VectorMatrix(mesh)
 ```
 
 ## Main dependencies

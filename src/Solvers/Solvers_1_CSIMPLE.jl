@@ -71,13 +71,13 @@ function setup_compressible_solvers(
         == 
         - Source(∇p.result)
         + Source(mueffgradUt)
-    ) → VectorEquation(U, boundaries.U)
+    ) → VectorMatrix(U, boundaries.U)
 
     if typeof(model.fluid) <: WeaklyCompressible
 
         p_eqn = (
             - Laplacian{schemes.p.laplacian}(rhorDf, p) == - Source(divHv)
-        ) → ScalarEquation(p, boundaries.p)
+        ) → ScalarMatrix(p, boundaries.p)
 
     elseif typeof(model.fluid) <: Compressible
 
@@ -85,7 +85,7 @@ function setup_compressible_solvers(
         p_eqn = (
             Laplacian{schemes.p.laplacian}(rhorDf, p) 
             - Divergence{schemes.p.divergence}(pconv, p) == Source(divHv)
-        ) → ScalarEquation(p, boundaries.p)
+        ) → ScalarMatrix(p, boundaries.p)
 
     end
 

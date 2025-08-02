@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * In the calculation of wall function properties the user-provided wall velocity is now used, instead of hard-coded to no-slip [#49](@ref)
 * The functions `set_production!`, `set_cell_value!` and `correct_nut_wall!`, in `RANS_functions.jl` have been updated, removing conditional branch used in the generated calling them. Now these functions use multiple dispatch to allow specialising the wall function framework to ease the development of new wall functions [#57](@ref)
 * New `NeumannFunction` has been created, mirroring the DirichletFunction, providing a Neumann boundary condition defined with a user-provided struct (a generic framework accepting a function to set the gradient at the boundary is not yet available) [#57](@ref)
-- `update_user_boundary` function, extension has been reverted, overwriting the changes made to expose the `ModelEquation` type to it in [#55](@ref)
+- `update_user_boundary` function, extension has been reverted, overwriting the changes made to expose the `Equation` type to it in [#55](@ref)
 * User-provided boundary conditions are no longer stored within fields, instead a `NamedTuple` is constructed using the function `assign`, which is passed to solvers using the `Configuration` struct. 
 * Configuration setting provided by the user at the top-level API are now stored in predefined structs, instead of using `NamedTuples`, this change should put less pressure on the compiler [#61](@ref)
 

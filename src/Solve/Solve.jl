@@ -15,7 +15,6 @@ import KrylovPreconditioners as KP
 
 using LinearAlgebra
 using SparseMatricesCSR
-using Krylov
 
 using XCALibre.Multithread
 using XCALibre.Mesh

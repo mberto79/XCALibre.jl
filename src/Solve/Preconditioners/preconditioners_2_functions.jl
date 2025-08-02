@@ -1,36 +1,36 @@
-export set_preconditioner
+# export set_preconditioner
 export update_preconditioner!
 
-set_preconditioner(PT::T, eqn) where T<:PreconditionerType = begin
-    Preconditioner{T}(eqn.equation.A)
-end
+# set_preconditioner(PT::T, A) where T<:PreconditionerType = begin
+#     Preconditioner{T}(A)
+# end
 
-set_preconditioner(PT::T, eqn, BCs, config
-) where T<:PreconditionerType = 
-begin
-    phi = get_phi(eqn)
-    mesh = phi.mesh
-    TF = _get_float(mesh)
-    time = zero(TF) # assumes simulation starts at time = 0 (might need generalising)
+# set_preconditioner(PT::T, eqn, BCs, config
+# ) where T<:PreconditionerType = 
+# begin
+#     phi = get_phi(eqn)
+#     mesh = phi.mesh
+#     TF = _get_float(mesh)
+#     time = zero(TF) # assumes simulation starts at time = 0 (might need generalising)
 
-    if typeof(phi) <: AbstractVectorField
+#     if typeof(phi) <: AbstractVectorField
 
-        discretise!(
-            eqn, get_phi(eqn)) # should this be float?
+#         discretise!(
+#             eqn, get_phi(eqn)) # should this be float?
 
-        time = zero(TF)
-        apply_boundary_conditions!(eqn, BCs, XDir(1), time)
+#         time = zero(TF)
+#         apply_boundary_conditions!(eqn, BCs, XDir(1), time)
 
-    elseif typeof(phi) <: AbstractScalarField
+#     elseif typeof(phi) <: AbstractScalarField
 
-        discretise!(eqn, get_phi(eqn)) # should this be float?
-        apply_boundary_conditions!(eqn, BCs, nothing, time)
-    end
+#         discretise!(eqn, get_phi(eqn)) # should this be float?
+#         apply_boundary_conditions!(eqn, BCs, nothing, time)
+#     end
 
-    P = Preconditioner{T}(eqn.equation.A)
-    update_preconditioner!(P, mesh)
-    return P
-end
+#     P = Preconditioner{T}(eqn.equation.A)
+#     update_preconditioner!(P, mesh)
+#     return P
+# end
 
 function update_preconditioner!(P::Preconditioner{NormDiagonal,M,PT,S}, mesh) where {M<:AbstractSparseArray,PT,S}
     # backend = _get_backend(mesh)

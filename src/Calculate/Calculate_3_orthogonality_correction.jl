@@ -3,7 +3,7 @@ export nonorthogonal_flux!
 
 ### Non-orthogonality correction (Laplacian terms)
 
-function correct!(eqn::ScalarEquation{I,F}, term, corr_flux::FaceScalarField{I,F}) where {I,F}
+function correct!(eqn::ScalarMatrix{I,F}, term, corr_flux::FaceScalarField{I,F}) where {I,F}
     sign = term.sign[1]
     J = term.J
     mesh = corr_flux.mesh

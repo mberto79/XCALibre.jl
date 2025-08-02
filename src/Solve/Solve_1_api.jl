@@ -164,8 +164,8 @@ end
 
 
 function solve_equation!(
-    eqn::ModelEquation{T,M,E,S,P}, phi, phiBCs, solversetup; time=nothing, ref=nothing, irelax=nothing
-    ) where {T<:ScalarModel,M,E,S,P}
+    eqn::Equation{E,S,P}, phi, phiBCs, solversetup; time=nothing, ref=nothing, irelax=nothing
+    ) where {E<:ScalarMatrix,S,P}
 
     discretise!(eqn, phi)       
     apply_boundary_conditions!(eqn, phiBCs, nothing, time)
@@ -180,8 +180,8 @@ function solve_equation!(
 end
 
 function solve_equation!(
-    psiEqn::ModelEquation{T,M,E,S,P}, psi, psiBCs, solversetup, xdir, ydir, zdir; time=nothing
-    ) where {T<:VectorModel,M,E,S,P}
+    psiEqn::Equation{E,S,P}, psi, psiBCs, solversetup, xdir, ydir, zdir; time=nothing
+    ) where {E<:VectorMatrix,S,P}
 
     mesh = psi.mesh
 
@@ -214,7 +214,7 @@ function solve_equation!(
     return resx, resy, resz
 end
 
-function solve_system!(phiEqn::ModelEquation, setup, result, component) # ; opP, solver
+function solve_system!(phiEqn::Equation, setup, result, component) # ; opP, solver
 
     (; itmax, atol, rtol) = setup
     precon = phiEqn.preconditioner
@@ -282,7 +282,7 @@ end
 
 # Prepare variables for kernel and call
 function implicit_relaxation!(
-    phiEqn::E, field, alpha, component) where E<:ModelEquation
+    phiEqn::E, field, alpha, component) where E<:Equation
     (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
@@ -314,7 +314,7 @@ end
 
 # Prepare variables for kernel and call
 function implicit_relaxation_diagdom!(
-    phiEqn::E, field, alpha, component) where E<:ModelEquation
+    phiEqn::E, field, alpha, component) where E<:Equation
     (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
@@ -357,7 +357,7 @@ end
 end
 
 
-function setReference!(pEqn::E, pRef, cellID) where E<:ModelEquation
+function setReference!(pEqn::E, pRef, cellID) where E<:Equation
     if pRef === nothing
         return nothing
     else

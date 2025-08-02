@@ -1,7 +1,7 @@
 export discretise!, update_equation!
 
 function discretise!(
-    eqn::ModelEquation{T,M,E,S,P}, prev) where {T<:VectorModel,M,E,S,P}
+    eqn::Equation{E,S,P}, prev) where {E<:VectorMatrix,S,P}
     (; hardware, runtime) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
@@ -81,7 +81,7 @@ end
 end
 
 function discretise!(
-    eqn::ModelEquation{T,M,E,S,P}, prev) where {T<:ScalarModel,M,E,S,P}
+    eqn::Equation{E,S,P}, prev) where {E<:ScalarMatrix,S,P}
 
     (; hardware, runtime) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
@@ -279,7 +279,7 @@ end
 end
 
 # Reset main equation to reuse in segregated solver
-function update_equation!(eqn::ModelEquation{T,M,E,S,P}) where {T<:VectorModel,M,E,S,P}
+function update_equation!(eqn::Equation{E,S,P}) where {E<:VectorMatrix,S,P}
     (; hardware, runtime) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 

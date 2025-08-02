@@ -29,7 +29,7 @@ gradScheme = Midpoint
 
 eqn = (
         - Laplacian{Linear}(gammaf, phi) == Source(q)
-    ) → ScalarEquation(mesh)
+    ) → ScalarMatrix(mesh)
 
 phi = assign(region=mesh,
     (

@@ -1,7 +1,7 @@
 export piso!
 
 """
-    cpiso!(model, config; 
+    cpiso!(model; 
         output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0)
 
 Incompressible and transient variant of the SIMPLE algorithm to solving coupled momentum and mass conservation equations. 
@@ -9,7 +9,6 @@ Incompressible and transient variant of the SIMPLE algorithm to solving coupled 
 # Input arguments
 
 - `model` reference to a `Physics` model defined by the user.
-- `config` Configuration structure defined by the user with solvers, schemes, runtime and hardware structures configuration details.
 - `output` select the format used for simulation results from `VTK()` or `OpenFOAM` (default = `VTK()`)
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
@@ -23,11 +22,11 @@ Incompressible and transient variant of the SIMPLE algorithm to solving coupled 
 - `p` Vector of pressure residuals for each iteration.
 """
 function piso!(
-    model, config; 
+    model; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2)
 
     residuals = setup_incompressible_solvers(
-        PISO, model, config; 
+        PISO, model; 
         output=output,
         pref=pref,
         ncorrectors=ncorrectors, 
@@ -38,7 +37,7 @@ function piso!(
 end
 
 function PISO(
-    model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
+    model, turbulenceModel, ∇p, U_eqn, p_eqn; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
     )
     
@@ -46,7 +45,7 @@ function PISO(
     (; U, p, Uf, pf) = model.momentum
     (; nu) = model.fluid
     mesh = model.domain
-    (; solvers, schemes, runtime, hardware, boundaries) = config
+    (; solvers, schemes, runtime, hardware, boundaries) = get_configuration(CONFIG)
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
     
@@ -86,13 +85,13 @@ function PISO(
     
     # Initial calculations
     time = zero(TF) # assuming time=0
-    interpolate!(Uf, U, config)   
-    correct_boundaries!(Uf, U, boundaries.U, time, config)
-    flux!(mdotf, Uf, config)
-    grad!(∇p, pf, p, boundaries.p, time, config)
-    limit_gradient!(schemes.p.limiter, ∇p, p, config)
+    interpolate!(Uf, U)   
+    correct_boundaries!(Uf, U, boundaries.U, time)
+    flux!(mdotf, Uf)
+    grad!(∇p, pf, p, boundaries.p, time)
+    limit_gradient!(schemes.p.limiter, ∇p, p)
 
-    update_nueff!(nueff, nu, model.turbulence, config)
+    update_nueff!(nueff, nu, model.turbulence)
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
@@ -104,80 +103,80 @@ function PISO(
         time = iteration *dt
 
         rx, ry, rz = solve_equation!(
-            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)
+            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir; time=time)
           
         # Pressure correction
-        inverse_diagonal!(rD, U_eqn, config)
-        interpolate!(rDf, rD, config)
-        remove_pressure_source!(U_eqn, ∇p, config)
+        inverse_diagonal!(rD, U_eqn)
+        interpolate!(rDf, rD)
+        remove_pressure_source!(U_eqn, ∇p)
         
         rp = 0.0
         for i ∈ 1:inner_loops
-            H!(Hv, U, U_eqn, config)
+            H!(Hv, U, U_eqn)
             
             # Interpolate faces
-            interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
-            correct_boundaries!(Uf, Hv, boundaries.U, time, config)
-            # div!(divHv, Uf, config)
+            interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
+            correct_boundaries!(Uf, Hv, boundaries.U, time)
+            # div!(divHv, Uf)
 
             # new approach
-            flux!(mdotf, Uf, config)
-            div!(divHv, mdotf, config)
+            flux!(mdotf, Uf)
+            div!(divHv, mdotf)
             
             # Pressure calculations (previous implementation)
             @. prev = p.values
-            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref, time=time)
+            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p; ref=pref, time=time)
             if i == inner_loops
-                explicit_relaxation!(p, prev, 1.0, config)
+                explicit_relaxation!(p, prev, 1.0)
             else
-                explicit_relaxation!(p, prev, solvers.p.relax, config)
+                explicit_relaxation!(p, prev, solvers.p.relax)
             end
 
-            grad!(∇p, pf, p, boundaries.p, time, config) 
-            limit_gradient!(schemes.p.limiter, ∇p, p, config)
+            grad!(∇p, pf, p, boundaries.p, time) 
+            limit_gradient!(schemes.p.limiter, ∇p, p)
 
             # nonorthogonal correction (experimental)
             for i ∈ 1:ncorrectors
-                discretise!(p_eqn, p, config)       
-                apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
-                setReference!(p_eqn, pref, 1, config)
-                nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
-                update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-                rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
+                discretise!(p_eqn, p)       
+                apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time)
+                setReference!(p_eqn, pref, 1)
+                nonorthogonal_face_correction(p_eqn, ∇p, rDf)
+                update_preconditioner!(p_eqn.preconditioner, p.mesh)
+                rp = solve_system!(p_eqn, solvers.p, p, nothing)
 
                 if i == ncorrectors
-                    explicit_relaxation!(p, prev, 1.0, config)
+                    explicit_relaxation!(p, prev, 1.0)
                 else
-                    explicit_relaxation!(p, prev, solvers.p.relax, config)
+                    explicit_relaxation!(p, prev, solvers.p.relax)
                 end
-                grad!(∇p, pf, p, boundaries.p, time, config) 
-                limit_gradient!(schemes.p.limiter, ∇p, p, config)
+                grad!(∇p, pf, p, boundaries.p, time) 
+                limit_gradient!(schemes.p.limiter, ∇p, p)
             end
 
             # old approach - keep for now!
-            # correct_velocity!(U, Hv, ∇p, rD, config)
-            # interpolate!(Uf, U, config)
-            # correct_boundaries!(Uf, U, boundaries.U, time, config)
-            # flux!(mdotf, Uf, config) # old approach
+            # correct_velocity!(U, Hv, ∇p, rD)
+            # interpolate!(Uf, U)
+            # correct_boundaries!(Uf, U, boundaries.U, time)
+            # flux!(mdotf, Uf) # old approach
 
             # new approach
-            interpolate!(Uf, U, config) # velocity from momentum equation
-            correct_boundaries!(Uf, U, boundaries.U, time, config)
-            flux!(mdotf, Uf, config)
-            correct_mass_flux(mdotf, p, rDf, config)
-            correct_velocity!(U, Hv, ∇p, rD, config)
+            interpolate!(Uf, U) # velocity from momentum equation
+            correct_boundaries!(Uf, U, boundaries.U, time)
+            flux!(mdotf, Uf)
+            correct_mass_flux(mdotf, p, rDf)
+            correct_velocity!(U, Hv, ∇p, rD)
 
         end # corrector loop end
         
-        # correct_mass_flux(mdotf, p, rDf, config) # new approach
+        # correct_mass_flux(mdotf, p, rDf) # new approach
 
-    turbulence!(turbulenceModel, model, S, prev, time, config) 
-    update_nueff!(nueff, nu, model.turbulence, config)
+    turbulence!(turbulenceModel, model, S, prev, time) 
+    update_nueff!(nueff, nu, model.turbulence)
 
     # if typeof(mesh) <: Mesh3
-    #     residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
+    #     residual!(R_uz, U_eqn, U.z, iteration, zdir)
     # end
-    maxCourant = max_courant_number!(cellsCourant, model, config)
+    maxCourant = max_courant_number!(cellsCourant, model)
 
     R_ux[iteration] = rx
     R_uy[iteration] = ry
@@ -197,7 +196,7 @@ function PISO(
         )
 
     if iteration%write_interval + signbit(write_interval) == 0
-        save_output(model, outputWriter, iteration, time, config)
+        save_output(model, outputWriter, iteration, time)
     end
 
     end # end for loop

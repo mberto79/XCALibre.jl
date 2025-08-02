@@ -76,7 +76,7 @@ runtime = Runtime(
     iterations=1000, write_interval=50, time_step=0.005) # uncomment to save files
     # iterations=1000, write_interval=-1, time_step=0.005) # used to run only
 
-config = Configuration(
+configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc(true)
@@ -84,4 +84,4 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config)
+residuals = run!(model)

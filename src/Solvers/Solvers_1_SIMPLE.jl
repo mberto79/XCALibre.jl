@@ -1,7 +1,7 @@
 export simple!
 
 """
-    simple!(model_in, config; 
+    simple!(model_in; 
         output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0)
 
 Incompressible variant of the SIMPLE algorithm to solving coupled momentum and mass conservation equations.
@@ -9,7 +9,6 @@ Incompressible variant of the SIMPLE algorithm to solving coupled momentum and m
 # Input arguments
 
 - `model` reference to a `Physics` model defined by the user.
-- `config` Configuration structure defined by the user with solvers, schemes, runtime and hardware structures configuration details.
 - `output` select the format used for simulation results from `VTK()` or `OpenFOAM` (default = `VTK()`)
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
@@ -26,12 +25,11 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 
 """
 function simple!(
-    model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    model; output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
 
     residuals = setup_incompressible_solvers(
-        SIMPLE, model, config; 
+        SIMPLE, model; 
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
@@ -43,7 +41,7 @@ end
 
 # Setup for all incompressible algorithms
 function setup_incompressible_solvers(
-    solver_variant, model, config; 
+    solver_variant, model; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     ) 
 
@@ -96,7 +94,7 @@ function setup_incompressible_solvers(
     turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn)
 
     residuals  = solver_variant(
-        model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
+        model, turbulenceModel, ∇p, U_eqn, p_eqn; 
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
@@ -106,7 +104,7 @@ function setup_incompressible_solvers(
 end # end function
 
 function SIMPLE(
-    model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
+    model, turbulenceModel, ∇p, U_eqn, p_eqn; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
     

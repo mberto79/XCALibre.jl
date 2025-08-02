@@ -90,10 +90,6 @@ runtime = Runtime(
 # hardware = Hardware(backend=CUDABackend(), workgroup=32)
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
-config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
-# config = adapt(CUDABackend(), config)
-
 configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 # config = adapt(CUDABackend(), config)
@@ -103,7 +99,7 @@ GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-@time residuals = run!(model, config) # 1106 iterations!
+@time residuals = run!(model) # 1106 iterations!
 
 # Profiling now 
 # GC.gc()

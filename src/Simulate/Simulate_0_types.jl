@@ -21,7 +21,7 @@ The `Configuration` type is passed to all flow solvers and provides all the rele
 # Example
 
 ```julia
-config = Configuration(
+configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 ```
 """

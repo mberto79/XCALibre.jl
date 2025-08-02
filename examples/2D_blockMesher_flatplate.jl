@@ -100,7 +100,7 @@ runtime = Runtime(iterations=2000, write_interval=1000, time_step=1)
 # hardware = Hardware(backend=CUDABackend(), workgroup=32)
 hardware = Hardware(backend=CPU(), workgroup=1024)
 
-config = Configuration(
+configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc()

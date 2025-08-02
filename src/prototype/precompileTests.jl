@@ -77,7 +77,7 @@ runtime = Runtime(iterations=500, write_interval=100, time_step=1)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
-config = Configuration(
+configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc(true)

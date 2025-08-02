@@ -76,7 +76,7 @@ solvers = (
 
 runtime = Runtime(iterations=2000, time_step=1e-3, write_interval=50)
 
-config = Configuration(
+configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc(true)

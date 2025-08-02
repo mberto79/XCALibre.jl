@@ -86,7 +86,7 @@ runtime = Runtime(
 hardware = Hardware(backend=backend, workgroup=32)
 # hardware = Hardware(backend=ROCBackend(), workgroup=32)
 
-config = Configuration(
+configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc(true)

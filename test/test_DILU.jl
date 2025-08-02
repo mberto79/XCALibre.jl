@@ -8,9 +8,12 @@ Acsr = XCALibre.Multithread.SparseXCSR(Acsr_orig)
 
 P = XCALibre.Solve.Preconditioner{DILU}(Acsr)
 
-config = (; hardware = (backend=CPU(), workgroup=32))
+configure!(
+    hardware = (backend=CPU(), workgroup=32), 
+    solvers=nothing, schemes=nothing, runtime=nothing, boundaries=nothing
+    )
 
-XCALibre.Solve.update_preconditioner!(P,  nothing, config)
+XCALibre.Solve.update_preconditioner!(P,  nothing)
 
 D_star = Diagonal(P.storage.D)
 D_star_inv = Diagonal(1.0./P.storage.D)

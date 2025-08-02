@@ -81,7 +81,7 @@ runtime = Runtime(
 hardware = Hardware(backend=CUDABackend(), workgroup=32)
 # hardware = Hardware(backend=CPU(), workgroup=4)
 
-config = Configuration(
+configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc()

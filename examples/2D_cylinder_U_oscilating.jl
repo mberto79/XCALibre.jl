@@ -93,7 +93,7 @@ schemes = (
 
 runtime = Runtime(iterations=iterations, write_interval=50, time_step=δt)
 
-config = Configuration(
+configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc(true)

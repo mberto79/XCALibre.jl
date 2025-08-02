@@ -146,7 +146,7 @@ using Reexport
             
 #             hardware = Hardware(backend=CPU(), workgroup=1024)
             
-#             config = Configuration(
+#             configure!(
 #                 solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
             
 #             initialise!(model.momentum.U, velocity) === nothing
@@ -250,7 +250,7 @@ using Reexport
 #             # hardware = Hardware(backend=CUDABackend(), workgroup=32)
 #             hardware = Hardware(backend=CPU(), workgroup=1024)
 
-#             config = Configuration(
+#             configure!(
 #                 solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 #             GC.gc()

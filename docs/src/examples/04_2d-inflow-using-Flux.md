@@ -274,7 +274,7 @@ runtime = Runtime(iterations=1, time_step=1, write_interval=-1) # hide
 
 hardware = Hardware(backend=CPU(), workgroup=1024)
 
-config = Configuration(
+configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc()

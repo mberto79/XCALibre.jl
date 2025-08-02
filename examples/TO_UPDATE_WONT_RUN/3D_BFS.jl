@@ -91,7 +91,7 @@ schemes = (
 # Run first to pre-compile
 
 runtime = Runtime(iterations=1, write_interval=1, time_step=1)
-config = Configuration(
+configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 configure!(
@@ -108,7 +108,7 @@ residuals = run!(model, config)
 # Now get timing information
 
 runtime = Runtime(iterations=500, write_interval=500, time_step=1)
-config = Configuration(
+configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs

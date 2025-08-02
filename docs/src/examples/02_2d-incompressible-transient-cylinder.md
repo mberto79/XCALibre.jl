@@ -93,7 +93,7 @@ runtime = Runtime(iterations=1, write_interval=-1, time_step=0.005) # hide
 hardware = Hardware(backend=CPU(), workgroup=1024)
 # hardware = Hardware(backend=CUDABackend(), workgroup=32) # uncomment to run on GPU
 
-config = Configuration(
+configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc(true)

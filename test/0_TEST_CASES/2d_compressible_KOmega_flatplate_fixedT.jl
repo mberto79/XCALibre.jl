@@ -136,7 +136,7 @@ hardware = Hardware(backend=backend, workgroup=workgroup)
         k = Schemes(divergence=Upwind),
         omega = Schemes(divergence=Upwind)
     )
-    config = Configuration(
+    configure!(
         solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
     GC.gc()

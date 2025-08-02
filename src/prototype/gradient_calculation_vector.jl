@@ -31,7 +31,7 @@ schemes=nothing
 runtime=nothing
 hardware = Hardware(backend=backend, workgroup=1024)
 
-config = Configuration(
+configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 for (cID, cell) ∈ enumerate(mesh.cells)

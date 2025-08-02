@@ -118,7 +118,7 @@ runtime = Runtime(
     iterations=100, time_step=δt, write_interval=100)
 
 # Step 9. Construct Configuration object
-config = Configuration(
+configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 # Step 10. Initialise fields (initial guess)

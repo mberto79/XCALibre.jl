@@ -80,7 +80,7 @@ residuals = run!(model, config)
 # Now get timing information
 
 runtime = Runtime(iterations=100, write_interval=10, time_step=1)
-config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
+configure!(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc(true)
 

@@ -116,7 +116,7 @@ solvers = (
 runtime = Runtime(iterations=3000, write_interval=100, time_step=1)
 # runtime = Runtime(iterations=2, write_interval=-1, time_step=1)
 
-config = Configuration(
+configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 configure!(

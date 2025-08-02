@@ -113,7 +113,7 @@ for grad_limiter ∈ [nothing, FaceBased(model.domain), MFaceBased(model.domain)
         omega = Schemes(divergence=Upwind)
     )
 
-    local config = Configuration(
+    local configure!(
         solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
     GC.gc()

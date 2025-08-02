@@ -75,7 +75,7 @@ solvers = (
 runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
 # runtime = Runtime(iterations=1, time_step=1, write_interval=-1) # hide
 
-config = Configuration(
+configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 initialise!(model.momentum.U, velocity)

@@ -360,3 +360,23 @@ end
 set_preconditioner(PT::T, A) where T<:PreconditionerType = begin
     Preconditioner{T}(A)
 end
+
+# NEW TYPE TO HOLD DISCRETISATION FUNCTIONS 
+
+struct LHS{S,SS}
+    scheme::S 
+    scheme_source::SS
+end
+Adapt.@adapt_structure LHS
+
+struct RHS{SRC}
+    source::SRC
+end
+Adapt.@adapt_structure RHS
+
+struct Discretisation{S,SS,SRC}
+    scheme::S
+    scheme_source::SS
+    source::SRC
+end
+Adapt.@adapt_structure Discretisation

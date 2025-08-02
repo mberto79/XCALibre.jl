@@ -39,7 +39,6 @@ end
 end
 
 # LAPLACIAN
-
 @inline function scheme!(
     term::Operator{F,P,I,Laplacian{Linear}}, 
     nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime

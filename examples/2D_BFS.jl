@@ -99,6 +99,12 @@ GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
+mdotf = FaceScalarField(mesh)
+phi = ScalarField(mesh)
+test = Laplacian(mdotf, phi) + Laplacian(mdotf, phi)
+test = Laplacian(mdotf, phi) + Laplacian(mdotf, phi) + Laplacian(mdotf, phi)
+test = Laplacian(mdotf, phi) == 0.0
+
 @time residuals = run!(model) # 1106 iterations!
 
 # Profiling now 

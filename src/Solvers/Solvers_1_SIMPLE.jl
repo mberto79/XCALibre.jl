@@ -152,7 +152,15 @@ function SIMPLE(
     for iteration ∈ 1:iterations
         time = iteration
 
-        # rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir)
+        discretise!(U_eqn, U, mesh, (
+            Time{schemes.U.time}(U)
+            + Divergence{schemes.U.divergence}(mdotf, U) 
+            - Laplacian{schemes.U.laplacian}(nueff, U) 
+            == 
+            - Source(∇p.result)
+            )
+        )
+        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir)
         
         # # Pressure correction
         # inverse_diagonal!(rD, U_eqn)

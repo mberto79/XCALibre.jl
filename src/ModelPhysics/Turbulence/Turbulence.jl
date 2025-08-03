@@ -8,7 +8,7 @@ using LinearAlgebra
 using Adapt
 using XCALibre.Mesh
 using XCALibre.Fields
-using XCALibre.ModelFramework
+# using XCALibre.ModelFramework
 using XCALibre.Discretise
 using XCALibre.ModelPhysics
 using XCALibre.Solve

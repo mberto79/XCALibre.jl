@@ -32,7 +32,7 @@ include("UNV2/UNV2.jl")
 include("UNV3/UNV3.jl")
 include("FoamMesh/FoamMesh.jl")
 include("Fields/Fields.jl")
-include("ModelFramework/ModelFramework.jl")
+# include("ModelFramework/ModelFramework.jl")
 include("Discretise/Discretise.jl")
 include("Solve/Solve.jl")
 include("Calculate/Calculate.jl")
@@ -48,7 +48,7 @@ using Reexport
 @reexport using XCALibre.Mesh
 @reexport using XCALibre.FoamMesh
 @reexport using XCALibre.Fields
-@reexport using XCALibre.ModelFramework
+# @reexport # using XCALibre.ModelFramework
 @reexport using XCALibre.Discretise
 @reexport using XCALibre.Solve
 @reexport using XCALibre.Calculate

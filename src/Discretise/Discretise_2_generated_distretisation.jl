@@ -1,18 +1,18 @@
 export discretise!, update_equation!
 
 function discretise!(
-    eqn::Equation{E,S,P}, prev) where {E<:VectorMatrix,S,P}
+    eqn::Equation{E,S,P}, prev, mesh, discretisation) where {E<:VectorMatrix,S,P}
     (; hardware, runtime) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     # Retrieve variabels for defition
-    mesh = eqn.model.terms[1].phi.mesh
-    model = eqn.model
+    # mesh = eqn.model.terms[1].phi.mesh
+    # model = eqn.model
 
     # Sparse array and b accessor call
     A = _A(eqn)
     A0 = _A0(eqn)
-    (; bx, by, bz) = eqn.equation
+    (; bx, by, bz) = eqn.matrix
 
     # Sparse array fields accessors
     nzval = _nzval(A)
@@ -24,14 +24,14 @@ function discretise!(
     # Call discretise kernel
     ndrange = length(mesh.cells)
     kernel! = _discretise_vector_model!(_setup(backend, workgroup, ndrange)...)
-    kernel!(model, model.terms, model.sources, mesh, nzval0, nzval, colval, rowptr, bx, by, bz, prev, runtime)
-    # # KernelAbstractions.synchronize(backend)
+    kernel!(discretisation, mesh, nzval0, nzval, colval, rowptr, bx, by, bz, prev, runtime)
+    return println("so far, so good")
 end
 
 # @kernel function _discretise_vector_model!(
 #     model::Model{TN,SN,T,S}, terms, sources, mesh, nzval0::AbstractArray{F}, nzval, colval, rowptr, bx, by, bz, prev, runtime) where {TN,SN,T,S,F}
 @kernel function _discretise_vector_model!(
-    model::Model{TN,SN,T,S}, terms::TERMS, sources::SRCS, mesh, nzval0::AbstractArray{F}, nzval, colval, rowptr, bx, by, bz, prev, runtime) where {TN,SN,T,S,F,TERMS,SRCS}
+    discretisation, mesh, nzval0::AbstractArray{F}, nzval, colval, rowptr, bx, by, bz, prev, runtime) where F
     i = @index(Global)
     # Extract mesh fields for kernel
     (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
@@ -59,36 +59,38 @@ end
             nIndex = spindex(rowptr, colval, i, nID)
 
 
-            # Call scheme generated fucntion
-            ac, an = _scheme!(model, terms, nzval0, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+            # Call scheme generated function
+            ac, an = discretisation.scheme(
+                nzval0, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime
+                )
             ac_sum += ac
             nzval0[nIndex] = an
 
         end
 
         
-        # Call scheme source generated function NEEDS UPDATING!
-        ac, bx1, by1, bz1 = _scheme_source!(model, terms, cell, i, cIndex, prev, runtime)
+        # # Call scheme source generated function NEEDS UPDATING!
+        ac, bx1, by1, bz1 = discretisation.scheme_source(cell, i, cIndex, prev, runtime)
         
         nzval0[cIndex] = ac_sum + ac
 
-        # Call sources generated function
-        bx2, by2, bz2 = _sources!(model, sources, volume, i)
+        # # Call sources generated function
+        bx2, by2, bz2 = discretisation.source(volume, i)
         bx[i] = bx1 + bx2
         by[i] = by1 + by2
-        bz[i] = bz1 + bz2 
+        bz[i] = bz1 + bz2
     end
 end
 
 function discretise!(
-    eqn::Equation{E,S,P}, prev) where {E<:ScalarMatrix,S,P}
+    eqn::Equation{E,S,P}, prev, mesh, discretisation) where {E<:ScalarMatrix,S,P}
 
     (; hardware, runtime) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     # Retrieve variabels for defition
-    mesh = eqn.model.terms[1].phi.mesh
-    model = eqn.model
+    # mesh = eqn.model.terms[1].phi.mesh
+    # model = eqn.model
 
     # Sparse array and b accessor call
     A = _A(eqn)
@@ -103,7 +105,7 @@ function discretise!(
     # Call discretise kernel
     ndrange = length(mesh.cells)
     kernel! = _discretise_scalar_model!(_setup(backend, workgroup, ndrange)...)
-    kernel!(model, model.terms, model.sources, mesh, nzval, colval, rowptr, b, prev, runtime)
+    kernel!(discretisation, mesh, nzval, colval, rowptr, b, prev, runtime)
     # # KernelAbstractions.synchronize(backend)
 end
 
@@ -111,7 +113,8 @@ end
 # @kernel function _discretise_scalar_model!(
 #     model::Model{TN,SN,T,S}, terms, sources, mesh, nzval::AbstractArray{F}, colval, rowptr, b, prev, runtime) where {TN,SN,T,S,F}
 @kernel function _discretise_scalar_model!(
-    model::Model{TN,SN,T,S}, terms::TERMS, sources::SRCS, mesh, nzval::AbstractArray{F}, colval, rowptr, b, prev, runtime) where {TN,SN,T,S,F,TERMS,SRCS}
+    discretisation, mesh, nzval::AbstractArray{F}, colval, rowptr, b, prev, runtime
+    ) where {F}
 
     i = @index(Global)
     # Extract mesh fields for kernel
@@ -139,17 +142,18 @@ end
             nIndex = spindex(rowptr, colval, i, nID)
 
             # Call scheme generated fucntion
-            ac, an = _scheme!(model, terms, nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
+            ac, an = discretisation.scheme(
+                nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
             ac_sum += ac
             nzval[nIndex] = an
         end
         
         # Call scheme source generated function
-        ac, b1 = _scheme_source!(model, terms, cell, i, cIndex, prev, runtime)
+        ac, b1 = discretisation.scheme_source(cell, i, cIndex, prev, runtime)
         nzval[cIndex] = ac_sum + ac
 
         # Call sources generated function
-        b2 = _sources!(model, sources, volume, i)
+        b2 = discretisation.source(volume, i)
         b[i] = b2 + b1
     end
 end

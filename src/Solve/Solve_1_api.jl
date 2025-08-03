@@ -185,7 +185,7 @@ function solve_equation!(
 
     mesh = psi.mesh
 
-    discretise!(psiEqn, psi)
+    # discretise!(psiEqn, psi)
     update_equation!(psiEqn)
 
     apply_boundary_conditions!(psiEqn, psiBCs, xdir, time)

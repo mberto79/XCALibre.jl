@@ -2,6 +2,7 @@ module Discretise
 
 import XCALibre: CONFIG, get_configuration
 
+using Krylov
 using Accessors
 using SparseArrays
 using StaticArrays
@@ -17,9 +18,10 @@ using SparseMatricesCSR
 using XCALibre.Multithread
 using XCALibre.Mesh
 using XCALibre.Fields
-using XCALibre.ModelFramework
+# using XCALibre.ModelFramework
 # # using XCALibre.Energy
 
+include("ModelFramwork/ModelFramework.jl")
 
 include("Discretise_0_types.jl")
 include("Discretise_1_schemes.jl")
@@ -52,6 +54,5 @@ include("boundary_conditions/symmetry.jl")
 include("boundary_conditions/symmetry_interpolation.jl")
 include("boundary_conditions/wall.jl")
 include("boundary_conditions/wall_interpolation.jl")
-
 
 end

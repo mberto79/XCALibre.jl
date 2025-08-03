@@ -99,12 +99,36 @@ GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
+(; U, p, Uf, pf) = model.momentum
 mdotf = FaceScalarField(mesh)
-phi = ScalarField(mesh)
-test = Laplacian(mdotf, phi) + Laplacian(mdotf, phi)
-test = Laplacian(mdotf, phi) + Laplacian(mdotf, phi) + Laplacian(mdotf, phi)
-test = Laplacian(mdotf, phi) == 0.0
-test = Laplacian(mdotf, phi) + Laplacian(mdotf, phi) == 0.0
+nueff = FaceScalarField(mesh)
+rDf = FaceScalarField(mesh)
+∇p = Grad{schemes.p.gradient}(p)
+prev = ScalarField(mesh)
+divHv = ScalarField(mesh)
+
+XCALibre.Calculate.interpolate!(Uf, U)   
+XCALibre.Calculate.correct_boundaries!(Uf, U, BCs.U, time)
+# flux!(mdotf, Uf)
+flux!(mdotf, Uf)
+
+U_eqn = XCALibre.Discretise.Equation(U, BCs.U, solvers.U)
+
+XCALibre.Discretise.discretise!(U_eqn, mesh, prev, (
+        Time{schemes.U.time}(U)
+        + Divergence{schemes.U.divergence}(mdotf, U) 
+        - Laplacian{schemes.U.laplacian}(nueff, U) 
+        == 
+        - Source(∇p.result)
+    )
+)
+
+p_eqn = XCALibre.Discretise.Equation(p, BCs.p, solvers.p)
+
+XCALibre.Discretise.discretise!(p_eqn, mesh, prev, (
+        - Laplacian{schemes.p.laplacian}(rDf, p) == - Source(divHv)
+    )
+)
 
 @time residuals = run!(model) # 1106 iterations!
 

@@ -4,31 +4,37 @@ const OPERATORS = Union{Time, Laplacian, Divergence, Si}
 
 Base.:+(t1::OPERATORS, t2::OPERATORS) = begin
     scheme(args...) = scheme!(t1, args...) .+ scheme!(t2, args...)
-    scheme_source(args...) = scheme_source!(t1, args...) .+ scheme!(t2, args...)
+    scheme_source(args...) = scheme_source!(t1, args...) .+ scheme_source!(t2, args...)
     LHS(scheme, scheme_source)
 end
 
 Base.:+(t1::LHS, t2::OPERATORS) = begin
     scheme(args...) = t1.scheme(args...) .+ scheme!(t2, args...)
-    scheme_source(args...) = t1.scheme_source(args...) .+ scheme!(t2, args...)
+    scheme_source(args...) = t1.scheme_source(args...) .+ scheme_source!(t2, args...)
     LHS(scheme, scheme_source)
 end
 Base.:+(t1::OPERATORS, t2::LHS) = t2 + t1
 
 Base.:-(t1::OPERATORS, t2::OPERATORS) = begin
     scheme(args...) = scheme!(t1, args...) .- scheme!(t2, args...)
-    scheme_source(args...) = scheme_source!(t1, args...) .- scheme!(t2, args...)
+    scheme_source(args...) = scheme_source!(t1, args...) .- scheme_source!(t2, args...)
     LHS(scheme, scheme_source)
 end
 
 Base.:-(t1::LHS, t2::OPERATORS) = begin
     scheme(args...) = t1.scheme(args...) .- scheme!(t2, args...)
-    scheme_source(args...) = t1.scheme_source(args...) .- scheme!(t2, args...)
+    scheme_source(args...) = t1.scheme_source(args...) .- scheme_source!(t2, args...)
     LHS(scheme, scheme_source)
 end
 Base.:-(t1::OPERATORS, t2::LHS) = begin
-    scheme(args...) = scheme(t1, args...) .- t2.scheme(args...)
-    scheme_source(args...) = scheme_source(t1, args...) .- t2.scheme(args...)
+    scheme(args...) = scheme!(t1, args...) .- t2.scheme(args...)
+    scheme_source(args...) = scheme_source!(t1, args...) .- t2.scheme_source(args...)
+    LHS(scheme, scheme_source)
+end
+
+Base.:-(t1::OPERATORS) = begin
+    scheme(args...) = -1 .* scheme!(t1, args...)
+    scheme_source(args...) = -1 .* scheme_source!(t1, args...)
     LHS(scheme, scheme_source)
 end
 
@@ -42,14 +48,14 @@ end
 Base.:(==)(t1::OPERATORS, n::Number) = begin
     scheme(args...) = scheme!(t1, args...)
     scheme_source(args...) = scheme_source!(t1, args...)
-    source(args...) = n 
+    source(args...) = n
     return Discretisation(scheme, scheme_source, source)
 end
 
 Base.:(==)(t1::OPERATORS, t2::Source) = begin
     scheme(args...) = scheme!(t1, args...)
     scheme_source(args...) = scheme_source!(t1, args...)
-    source(args...) = source(t2, args...)
+    source(args...) = source!(t2, args...)
     return Discretisation(scheme, scheme_source, source)
 end
 

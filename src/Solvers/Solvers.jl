@@ -19,7 +19,7 @@ using SparseMatricesCSR
 using XCALibre.Multithread
 using XCALibre.Mesh
 using XCALibre.Fields
-using XCALibre.ModelFramework
+# using XCALibre.ModelFramework
 using XCALibre.Discretise
 using XCALibre.Solve
 using XCALibre.Calculate

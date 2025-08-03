@@ -58,7 +58,7 @@ struct Si{S,F,P}
     phi::P 
 end
 Adapt.@adapt_structure Si
-
+Si(flux, phi) = Si(nothing, flux, phi)
 
 # struct Time{T} end
 # function Adapt.adapt_structure(to, itp::Time{T}) where {T}

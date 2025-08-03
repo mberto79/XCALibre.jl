@@ -1,7 +1,7 @@
 export Periodic, PeriodicParent, PeriodicConnectivity
 export construct_periodic
 export adjust_boundary!
-import XCALibre.ModelFramework._extend_matrix
+import XCALibre.Discretise._extend_matrix
 
 abstract type AbstractPeriodic <: AbstractPhysicalConstraint end
 

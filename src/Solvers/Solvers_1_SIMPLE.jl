@@ -160,7 +160,7 @@ function SIMPLE(
             - Source(∇p.result)
             )
         )
-        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir)
+        # rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir)
         
         # # Pressure correction
         # inverse_diagonal!(rD, U_eqn)

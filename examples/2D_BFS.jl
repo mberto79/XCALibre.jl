@@ -104,7 +104,7 @@ mdotf = FaceScalarField(mesh)
 nueff = FaceScalarField(mesh)
 rDf = FaceScalarField(mesh)
 ∇p = Grad{schemes.p.gradient}(p)
-prev = ScalarField(mesh)
+prev = VectorField(mesh)
 divHv = ScalarField(mesh)
 
 XCALibre.Calculate.interpolate!(Uf, U)   
@@ -114,9 +114,9 @@ flux!(mdotf, Uf)
 
 U_eqn = XCALibre.Discretise.Equation(U, BCs.U, solvers.U)
 
-XCALibre.Discretise.discretise!(U_eqn, mesh, prev, (
+XCALibre.Discretise.discretise!(U_eqn, prev, mesh, (
         Time{schemes.U.time}(U)
-        + Divergence{schemes.U.divergence}(mdotf, U) 
+        + Divergence{schemes.U.divergence}(mdotf, U)
         - Laplacian{schemes.U.laplacian}(nueff, U) 
         == 
         - Source(∇p.result)
@@ -125,7 +125,7 @@ XCALibre.Discretise.discretise!(U_eqn, mesh, prev, (
 
 p_eqn = XCALibre.Discretise.Equation(p, BCs.p, solvers.p)
 
-XCALibre.Discretise.discretise!(p_eqn, mesh, prev, (
+XCALibre.Discretise.discretise!(p_eqn, prev, mesh, (
         - Laplacian{schemes.p.laplacian}(rDf, p) == - Source(divHv)
     )
 )

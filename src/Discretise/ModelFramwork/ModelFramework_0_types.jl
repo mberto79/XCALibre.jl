@@ -373,9 +373,10 @@ end
 
 # NEW TYPE TO HOLD DISCRETISATION FUNCTIONS 
 
-struct LHS{S,SS}
+struct LHS{S,SS,BC}
     scheme::S 
     scheme_source::SS
+    apply_BCs::BC
 end
 Adapt.@adapt_structure LHS
 
@@ -384,9 +385,10 @@ struct RHS{SRC}
 end
 Adapt.@adapt_structure RHS
 
-struct Discretisation{S,SS,SRC}
+struct Discretisation{S,SS,SRC,BC}
     scheme::S
     scheme_source::SS
     source::SRC
+    apply_BCs::BC
 end
 Adapt.@adapt_structure Discretisation

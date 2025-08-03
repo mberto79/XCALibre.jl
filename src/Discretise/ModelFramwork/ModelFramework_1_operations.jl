@@ -1,41 +1,58 @@
-# Summation
-
 const OPERATORS = Union{Time, Laplacian, Divergence, Si}
 
-Base.:+(t1::OPERATORS, t2::OPERATORS) = begin
-    scheme(args...) = scheme!(t1, args...) .+ scheme!(t2, args...)
-    scheme_source(args...) = scheme_source!(t1, args...) .+ scheme_source!(t2, args...)
-    LHS(scheme, scheme_source)
-end
+# Addition and subtraction
 
-Base.:+(t1::LHS, t2::OPERATORS) = begin
-    scheme(args...) = t1.scheme(args...) .+ scheme!(t2, args...)
-    scheme_source(args...) = t1.scheme_source(args...) .+ scheme_source!(t2, args...)
-    LHS(scheme, scheme_source)
-end
-Base.:+(t1::OPERATORS, t2::LHS) = t2 + t1
+ops = [
+    (Symbol(:+), Base.Broadcast.BroadcastFunction(+)),
+    (Symbol(:-), Base.Broadcast.BroadcastFunction(-))
+]
 
-Base.:-(t1::OPERATORS, t2::OPERATORS) = begin
-    scheme(args...) = scheme!(t1, args...) .- scheme!(t2, args...)
-    scheme_source(args...) = scheme_source!(t1, args...) .- scheme_source!(t2, args...)
-    LHS(scheme, scheme_source)
-end
+for (symbol, broadcast) ∈ ops 
+    @eval begin
+        Base.$symbol(t1::OPERATORS, t2::OPERATORS) = begin
+            scheme(args...) = $(broadcast)(
+                scheme!(t1, args...), scheme!(t2, args...)
+            )
+            scheme_source(args...) = $(broadcast)(
+                scheme_source!(t1, args...), scheme_source!(t2, args...)
+            )
+            apply_BCs(args...) = $(broadcast)(
+                apply_BCs!(t1, args...), apply_BCs!(t2, args...)
+            )
+            LHS(scheme, scheme_source, apply_BCs)
+        end
 
-Base.:-(t1::LHS, t2::OPERATORS) = begin
-    scheme(args...) = t1.scheme(args...) .- scheme!(t2, args...)
-    scheme_source(args...) = t1.scheme_source(args...) .- scheme_source!(t2, args...)
-    LHS(scheme, scheme_source)
-end
-Base.:-(t1::OPERATORS, t2::LHS) = begin
-    scheme(args...) = scheme!(t1, args...) .- t2.scheme(args...)
-    scheme_source(args...) = scheme_source!(t1, args...) .- t2.scheme_source(args...)
-    LHS(scheme, scheme_source)
+        Base.$symbol(t1::LHS, t2::OPERATORS) = begin
+            scheme(args...) = $(broadcast)(
+                t1.scheme(args...), scheme!(t2, args...)
+            )
+            scheme_source(args...) = $(broadcast)(
+                t1.scheme_source(args...),scheme_source!(t2, args...)
+            )
+            apply_BCs(args...) = $(broadcast)(
+                t1.apply_BCs(args...), apply_BCs!(t2, args...)
+            )
+            LHS(scheme, scheme_source, apply_BCs)
+        end
+        Base.$symbol(t1::OPERATORS, t2::LHS) = begin
+            scheme(args...) = $(broadcast)(
+                scheme!(t1, args...), t2.scheme(args...)
+            )
+            scheme_source(args...) = $(broadcast)(
+                scheme_source!(t1, args...), t2.scheme_source(args...)
+            )
+            apply_BCs(args...) = $(broadcast)(
+                apply_BCs!(t1, args...), t2.apply_BCs(args...)
+            )
+            LHS(scheme, scheme_source, apply_BCs)
+        end
+    end
 end
 
 Base.:-(t1::OPERATORS) = begin
     scheme(args...) = -1 .* scheme!(t1, args...)
     scheme_source(args...) = -1 .* scheme_source!(t1, args...)
-    LHS(scheme, scheme_source)
+    LHS(scheme, scheme_source, apply_BCs)
 end
 
 # Sources 
@@ -45,24 +62,11 @@ Base.:-(t1::Source) = begin
 end
 
 # Handle the equality
-Base.:(==)(t1::OPERATORS, n::Number) = begin
-    scheme(args...) = scheme!(t1, args...)
-    scheme_source(args...) = scheme_source!(t1, args...)
-    source(args...) = n
-    return Discretisation(scheme, scheme_source, source)
-end
 
 Base.:(==)(t1::OPERATORS, t2::Source) = begin
     scheme(args...) = scheme!(t1, args...)
     scheme_source(args...) = scheme_source!(t1, args...)
     source(args...) = source!(t2, args...)
-    return Discretisation(scheme, scheme_source, source)
-end
-
-Base.:(==)(t1::LHS, n::Number) = begin
-    scheme(args...) = t1.scheme(args...)
-    scheme_source(args...) = t1.scheme_source(args...)
-    source(args...) = n 
     return Discretisation(scheme, scheme_source, source)
 end
 

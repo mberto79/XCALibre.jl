@@ -10,38 +10,38 @@ ops = [
 for (symbol, broadcast) ∈ ops 
     @eval begin
         Base.$symbol(t1::OPERATORS, t2::OPERATORS) = begin
-            scheme(args...) = $(broadcast)(
+            scheme(args::Vararg{Any,N}) where N = $(broadcast)(
                 scheme!(t1, args...), scheme!(t2, args...)
             )
-            scheme_source(args...) = $(broadcast)(
+            scheme_source(args::Vararg{Any,N}) where N = $(broadcast)(
                 scheme_source!(t1, args...), scheme_source!(t2, args...)
             )
-            apply_BCs(args...) = $(broadcast)(
+            apply_BCs(args::Vararg{Any,N}) where N = $(broadcast)(
                 apply_BCs!(t1, args...), apply_BCs!(t2, args...)
             )
             LHS(scheme, scheme_source, apply_BCs)
         end
 
         Base.$symbol(t1::LHS, t2::OPERATORS) = begin
-            scheme(args...) = $(broadcast)(
+            scheme(args::Vararg{Any,N}) where N = $(broadcast)(
                 t1.scheme(args...), scheme!(t2, args...)
             )
-            scheme_source(args...) = $(broadcast)(
+            scheme_source(args::Vararg{Any,N}) where N = $(broadcast)(
                 t1.scheme_source(args...),scheme_source!(t2, args...)
             )
-            apply_BCs(args...) = $(broadcast)(
+            apply_BCs(args::Vararg{Any,N}) where N = $(broadcast)(
                 t1.apply_BCs(args...), apply_BCs!(t2, args...)
             )
             LHS(scheme, scheme_source, apply_BCs)
         end
         Base.$symbol(t1::OPERATORS, t2::LHS) = begin
-            scheme(args...) = $(broadcast)(
+            scheme(args::Vararg{Any,N}) where N = $(broadcast)(
                 scheme!(t1, args...), t2.scheme(args...)
             )
-            scheme_source(args...) = $(broadcast)(
+            scheme_source(args::Vararg{Any,N}) where N = $(broadcast)(
                 scheme_source!(t1, args...), t2.scheme_source(args...)
             )
-            apply_BCs(args...) = $(broadcast)(
+            apply_BCs(args::Vararg{Any,N}) where N = $(broadcast)(
                 apply_BCs!(t1, args...), t2.apply_BCs(args...)
             )
             LHS(scheme, scheme_source, apply_BCs)
@@ -50,41 +50,41 @@ for (symbol, broadcast) ∈ ops
 end
 
 Base.:-(t1::OPERATORS) = begin
-    scheme(args...) = -1 .* scheme!(t1, args...)
-    scheme_source(args...) = -1 .* scheme_source!(t1, args...)
-    apply_BCs(args...) = -1 .* apply_BCs!(t1, args...)
+    scheme(args::Vararg{Any,N}) where N = -1 .* scheme!(t1, args...)
+    scheme_source(args::Vararg{Any,N}) where N = -1 .* scheme_source!(t1, args...)
+    apply_BCs(args::Vararg{Any,N}) where N = -1 .* apply_BCs!(t1, args...)
     LHS(scheme, scheme_source, apply_BCs)
 end
 
 # Sources 
 Base.:-(t1::Source) = begin
-    source(args...) = -1 .* source!(t1, args...)
+    source(args::Vararg{Any,N}) where N = -1 .* source!(t1, args...)
     RHS(source)
 end
 
 # Handle the equality
 
 Base.:(==)(t1::OPERATORS, t2::Source) = begin
-    scheme(args...) = scheme!(t1, args...)
-    scheme_source(args...) = scheme_source!(t1, args...)
-    apply_BCs(args...) = apply_BCs!(t1, args...)
-    source(args...) = source!(t2, args...)
+    scheme(args::Vararg{Any,N}) where N = scheme!(t1, args...)
+    scheme_source(args::Vararg{Any,N}) where N = scheme_source!(t1, args...)
+    apply_BCs(args::Vararg{Any,N}) where N = apply_BCs!(t1, args...)
+    source(args::Vararg{Any,N}) where N = source!(t2, args...)
     return Discretisation(scheme, scheme_source, source, apply_BCs)
 end
 
 Base.:(==)(t1::LHS, t2::Source) = begin
-    scheme(args...) = t1.scheme(args...)
-    scheme_source(args...) = t1.scheme_source(args...)
-    apply_BCs(args...) = t1.apply_BCs(args...)
-    source(args...) = source!(t2, args...)
+    scheme(args::Vararg{Any,N}) where N = t1.scheme(args...)
+    scheme_source(args::Vararg{Any,N}) where N = t1.scheme_source(args...)
+    apply_BCs(args::Vararg{Any,N}) where N = t1.apply_BCs(args...)
+    source(args::Vararg{Any,N}) where N = source!(t2, args...)
     return Discretisation(scheme, scheme_source, source, apply_BCs)
 end
 
 Base.:(==)(t1::LHS, t2::RHS) = begin
-    scheme(args...) = t1.scheme(args...)
-    scheme_source(args...) = t1.scheme_source(args...)
-    apply_BCs(args...) = t1.apply_BCs(args...)
-    source(args...) = t2.source(args...)
+    scheme(args::Vararg{Any,N}) where N = t1.scheme(args...)
+    scheme_source(args::Vararg{Any,N}) where N = t1.scheme_source(args...)
+    apply_BCs(args::Vararg{Any,N}) where N = t1.apply_BCs(args...)
+    source(args::Vararg{Any,N}) where N = t2.source(args...)
     return Discretisation(scheme, scheme_source, source, apply_BCs)
 end
 

@@ -168,7 +168,7 @@ function solve_equation!(
     ) where {E<:ScalarMatrix,S,P}
 
     # discretise!(eqn, phi)       
-    apply_boundary_conditions!(eqn, phiBCs, nothing, time)
+    apply_boundary_conditions!(eqn, discretisation, phiBCs, nothing, time)
     setReference!(eqn, ref, 1)
     if !isnothing(irelax)
         implicit_relaxation!(eqn, phi.values, irelax, nothing)

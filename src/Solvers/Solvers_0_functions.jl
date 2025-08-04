@@ -101,7 +101,7 @@ volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 function inverse_diagonal!(rD::S, eqn) where {S<:ScalarField}
     (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
-    A = eqn.equation.A # Or should I use A0
+    A = eqn.matrix.A # Or should I use A0
     nzval, colval, rowptr = get_sparse_fields(A)
 
     ndrange = length(rD)
@@ -162,9 +162,9 @@ remove_pressure_source!(U_eqn::ME, ∇p) where {ME} = begin # Extend to 3D
     # backend = _get_backend(get_phi(ux_eqn).mesh)
     (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
-    cells = get_phi(U_eqn).mesh.cells
-    source_sign = get_source_sign(U_eqn, 1)
-    (; bx, by, bz) = U_eqn.equation
+    cells = U_eqn.mesh.cells
+    source_sign = -1 #get_source_sign(U_eqn, 1)
+    (; bx, by, bz) = U_eqn.matrix
 
     ndrange = length(bx)
     kernel! = _remove_pressure_source!(_setup(backend, workgroup, ndrange)...)
@@ -193,7 +193,7 @@ function H!(Hv, U::VF, U_eqn) where {VF<:VectorField} # Extend to 3D!
 
     A = _A(U_eqn)
     nzval, colval, rowptr = get_sparse_fields(A)
-    (; bx, by, bz) = U_eqn.equation
+    (; bx, by, bz) = U_eqn.matrix
 
     ndrange = length(cells)
     kernel! = _H!(_setup(backend, workgroup, ndrange)...)

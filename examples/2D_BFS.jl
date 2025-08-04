@@ -1,5 +1,5 @@
 using XCALibre
-# using CUDA
+using CUDA
 
 # backwardFacingStep_2mm, 5mm or 10mm
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
@@ -8,8 +8,8 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-# backend = CUDABackend(); workgroup = 32
-backend = CPU(); workgroup = AutoTune(); activate_multithread(backend)
+backend = CUDABackend(); workgroup = 32
+# backend = CPU(); workgroup = AutoTune(); activate_multithread(backend)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
@@ -99,36 +99,36 @@ GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-(; U, p, Uf, pf) = model.momentum
-mdotf = FaceScalarField(mesh)
-nueff = FaceScalarField(mesh)
-rDf = FaceScalarField(mesh)
-∇p = Grad{schemes.p.gradient}(p)
-prev = VectorField(mesh)
-divHv = ScalarField(mesh)
+# (; U, p, Uf, pf) = model.momentum
+# mdotf = FaceScalarField(mesh)
+# nueff = FaceScalarField(mesh)
+# rDf = FaceScalarField(mesh)
+# ∇p = Grad{schemes.p.gradient}(p)
+# prev = VectorField(mesh)
+# divHv = ScalarField(mesh)
 
-XCALibre.Calculate.interpolate!(Uf, U)   
-XCALibre.Calculate.correct_boundaries!(Uf, U, BCs.U, time)
+# XCALibre.Calculate.interpolate!(Uf, U)   
+# XCALibre.Calculate.correct_boundaries!(Uf, U, BCs.U, time)
+# # flux!(mdotf, Uf)
 # flux!(mdotf, Uf)
-flux!(mdotf, Uf)
 
-U_eqn = XCALibre.Discretise.Equation(U, BCs.U, solvers.U)
+# U_eqn = XCALibre.Discretise.Equation(U, BCs.U, solvers.U)
 
-@time discretisation = XCALibre.Discretise.discretise!(U_eqn, prev, mesh, (
-        Time{schemes.U.time}(U)
-        + Divergence{schemes.U.divergence}(mdotf, U)
-        - Laplacian{schemes.U.laplacian}(nueff, U) 
-        == 
-        - Source(∇p.result)
-    )
-);
+# @time discretisation = XCALibre.Discretise.discretise!(U_eqn, prev, mesh, (
+#         Time{schemes.U.time}(U)
+#         + Divergence{schemes.U.divergence}(mdotf, U)
+#         - Laplacian{schemes.U.laplacian}(nueff, U) 
+#         == 
+#         - Source(∇p.result)
+#     )
+# );
 
-p_eqn = XCALibre.Discretise.Equation(p, BCs.p, solvers.p)
+# p_eqn = XCALibre.Discretise.Equation(p, BCs.p, solvers.p)
 
-@time XCALibre.Discretise.discretise!(p_eqn, prev, mesh, (
-        - Laplacian{schemes.p.laplacian}(rDf, p) == - Source(divHv)
-    )
-)
+# @time XCALibre.Discretise.discretise!(p_eqn, prev, mesh, (
+#         - Laplacian{schemes.p.laplacian}(rDf, p) == - Source(divHv)
+#     )
+# )
 
 @time residuals = run!(model) # 1106 iterations!
 

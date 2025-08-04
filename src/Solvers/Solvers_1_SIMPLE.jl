@@ -149,7 +149,10 @@ function SIMPLE(
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
-    discretisation = discretise!(U_eqn, U, mesh, (
+    for iteration ∈ 1:iterations
+        time = iteration
+
+        discretisation = discretise!(U_eqn, U, mesh, (
             Time{schemes.U.time}(U)
             + Divergence{schemes.U.divergence}(mdotf, U) 
             - Laplacian{schemes.U.laplacian}(nueff, U) 
@@ -157,115 +160,116 @@ function SIMPLE(
             - Source(∇p.result)
             )
         )
-
-    for iteration ∈ 1:iterations
-        time = iteration
-
         
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, discretisation, xdir, ydir, zdir)
         
-        # # Pressure correction
-        # inverse_diagonal!(rD, U_eqn)
-        # interpolate!(rDf, rD)
-        # # correct_boundaries!(rDf, rD, rD.BCs, time) # ADDED FOR PERIODIC BCS
-        # remove_pressure_source!(U_eqn, ∇p)
-        # H!(Hv, U, U_eqn)
+        # Pressure correction
+        inverse_diagonal!(rD, U_eqn)
+        interpolate!(rDf, rD)
+        # correct_boundaries!(rDf, rD, rD.BCs, time) # ADDED FOR PERIODIC BCS
+        remove_pressure_source!(U_eqn, ∇p)
+        H!(Hv, U, U_eqn)
         
-        # # Interpolate faces
-        # interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
-        # correct_boundaries!(Uf, Hv, boundaries.U, time)
+        # Interpolate faces
+        interpolate!(Uf, Hv) # Careful: reusing Uf for interpolation
+        correct_boundaries!(Uf, Hv, boundaries.U, time)
 
-        # # old approach
-        # # div!(divHv, Uf) 
+        # old approach
+        # div!(divHv, Uf) 
 
-        # # new approach
-        # # flux!(mdotf, Uf)
+        # new approach
         # flux!(mdotf, Uf)
-        # div!(divHv, mdotf)
+        flux!(mdotf, Uf)
+        div!(divHv, mdotf)
         
-        # # Pressure calculations
-        # @. prev = p.values
-        # rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p; ref=pref)
+        # Pressure calculations
+
+        @. prev = p.values
+        pDiscretisation = discretise!(p_eqn, prev, mesh, (
+        - Laplacian{schemes.p.laplacian}(rDf, p) == - Source(divHv)
+            )
+        )
+        rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, pDiscretisation; ref=pref)
+        explicit_relaxation!(p, prev, solvers.p.relax)
+        
+        grad!(∇p, pf, p, boundaries.p, time) 
+        limit_gradient!(schemes.p.limiter, ∇p, p)
+
+        # non-orthogonal correction
+        for i ∈ 1:ncorrectors
+            # @. prev = p.values
+            discretise!(p_eqn, p)       
+            apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time)
+            # setReference!(p_eqn, pref, 1)
+            nonorthogonal_face_correction(p_eqn, ∇p, rDf)
+            # update_preconditioner!(p_eqn.preconditioner, p.mesh)
+            rp = solve_system!(p_eqn, solvers.p, p, nothing)
+            explicit_relaxation!(p, prev, solvers.p.relax)
+            grad!(∇p, pf, p, boundaries.p, time) 
+            limit_gradient!(schemes.p.limiter, ∇p, p)
+        end
+
         # explicit_relaxation!(p, prev, solvers.p.relax)
-        
-        # grad!(∇p, pf, p, boundaries.p, time) 
-        # limit_gradient!(schemes.p.limiter, ∇p, p)
 
-        # # non-orthogonal correction
-        # for i ∈ 1:ncorrectors
-        #     # @. prev = p.values
-        #     discretise!(p_eqn, p)       
-        #     apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time)
-        #     # setReference!(p_eqn, pref, 1)
-        #     nonorthogonal_face_correction(p_eqn, ∇p, rDf)
-        #     # update_preconditioner!(p_eqn.preconditioner, p.mesh)
-        #     rp = solve_system!(p_eqn, solvers.p, p, nothing)
-        #     explicit_relaxation!(p, prev, solvers.p.relax)
-        #     grad!(∇p, pf, p, boundaries.p, time) 
-        #     limit_gradient!(schemes.p.limiter, ∇p, p)
-        # end
+        # Velocity and boundaries correction
 
-        # # explicit_relaxation!(p, prev, solvers.p.relax)
-
-        # # Velocity and boundaries correction
-
-        # # old approach
-        # # correct_velocity!(U, Hv, ∇p, rD)
-        # # interpolate!(Uf, U)
-        # # correct_boundaries!(Uf, U, boundaries.U, time)
-        # # flux!(mdotf, Uf) 
-
-        # # new approach
-
-        # # 1. using velocity from momentum equation
-        # # interpolate!(Uf, U)
-        # # correct_boundaries!(Uf, U, boundaries.U, time)
-        # # flux!(mdotf, Uf)
-        # correct_mass_flux(mdotf, p, rDf)
+        # old approach
         # correct_velocity!(U, Hv, ∇p, rD)
+        # interpolate!(Uf, U)
+        # correct_boundaries!(Uf, U, boundaries.U, time)
+        # flux!(mdotf, Uf) 
 
-        # turbulence!(turbulenceModel, model, S, prev, time) 
-        # update_nueff!(nueff, nu, model.turbulence)
+        # new approach
 
-        # R_ux[iteration] = rx
-        # R_uy[iteration] = ry
-        # R_uz[iteration] = rz
-        # R_p[iteration] = rp
+        # 1. using velocity from momentum equation
+        # interpolate!(Uf, U)
+        # correct_boundaries!(Uf, U, boundaries.U, time)
+        # flux!(mdotf, Uf)
+        correct_mass_flux(mdotf, p, rDf)
+        correct_velocity!(U, Hv, ∇p, rD)
 
-        # Uz_convergence = true
-        # if typeof(mesh) <: Mesh3
-        #     Uz_convergence = rz <= solvers.U.convergence
-        # end
+        turbulence!(turbulenceModel, model, S, prev, time) 
+        update_nueff!(nueff, nu, model.turbulence)
 
-        # if (R_ux[iteration] <= solvers.U.convergence && 
-        #     R_uy[iteration] <= solvers.U.convergence && 
-        #     Uz_convergence &&
-        #     R_p[iteration] <= solvers.p.convergence &&
-        #     turbulenceModel.state.converged)
+        R_ux[iteration] = rx
+        R_uy[iteration] = ry
+        R_uz[iteration] = rz
+        R_p[iteration] = rp
 
-        #     progress.n = iteration
-        #     finish!(progress)
-        #     @info "Simulation converged in $iteration iterations!"
-        #     if !signbit(write_interval)
-        #         save_output(model, outputWriter, iteration, time)
-        #     end
-        #     break
-        # end
+        Uz_convergence = true
+        if typeof(mesh) <: Mesh3
+            Uz_convergence = rz <= solvers.U.convergence
+        end
 
-        # ProgressMeter.next!(
-        #     progress, showvalues = [
-        #         (:iter,iteration),
-        #         (:Ux, R_ux[iteration]),
-        #         (:Uy, R_uy[iteration]),
-        #         (:Uz, R_uz[iteration]),
-        #         (:p, R_p[iteration]),
-        #         turbulenceModel.state.residuals...
-        #         ]
-        #     )
+        if (R_ux[iteration] <= solvers.U.convergence && 
+            R_uy[iteration] <= solvers.U.convergence && 
+            Uz_convergence &&
+            R_p[iteration] <= solvers.p.convergence &&
+            turbulenceModel.state.converged)
 
-        # if iteration%write_interval + signbit(write_interval) == 0      
-        #     save_output(model, outputWriter, iteration, time)
-        # end
+            progress.n = iteration
+            finish!(progress)
+            @info "Simulation converged in $iteration iterations!"
+            if !signbit(write_interval)
+                save_output(model, outputWriter, iteration, time)
+            end
+            break
+        end
+
+        ProgressMeter.next!(
+            progress, showvalues = [
+                (:iter,iteration),
+                (:Ux, R_ux[iteration]),
+                (:Uy, R_uy[iteration]),
+                (:Uz, R_uz[iteration]),
+                (:p, R_p[iteration]),
+                turbulenceModel.state.residuals...
+                ]
+            )
+
+        if iteration%write_interval + signbit(write_interval) == 0      
+            save_output(model, outputWriter, iteration, time)
+        end
 
     end # end for loop
     

@@ -34,18 +34,19 @@ Solid{Uniform}(; k, cp = nothing, rho = nothing) = begin
     Solid{Uniform,ARG}(coeffs)
 end
 
-(solid::Solid{Uniform, ARG})(mesh) where ARG = begin
+(solid::Solid{Uniform, ARG})(mesh, time) where ARG = begin
     coeffs = solid.args
     (; k, cp, rho) = coeffs
+    
+    if typeof(time) == Transient
+        @assert cp !== nothing "For transient simulations cp must be provided"
+        @assert rho !== nothing "For transient simulations rho must be provided"
+    end
+
+    # Build fields for solide
     k = ConstantScalar(k)
     kf = k
-
-    if (cp !== nothing) && (rho !== nothing)
-        cp = ConstantScalar(cp)
-        rho = ConstantScalar(rho)
-    else
-        cp = ConstantScalar(0.0)
-        rho = ConstantScalar(0.0)
-    end
+    cp = ConstantScalar(cp)
+    rho = ConstantScalar(rho)
     Uniform(k, kf, cp, rho)
 end

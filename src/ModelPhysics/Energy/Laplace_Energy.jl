@@ -12,7 +12,7 @@ struct LaplaceEnergy{S1,F1,F2,S2,S3,F3,S4,S5} <: AbstractEnergyModel
 end
 Adapt.@adapt_structure LaplaceEnergy
 
-Energy{LaplaceEnergy}() = Energy{LaplaceEnergy,Nothing}(nothing)
+# Energy{LaplaceEnergy}() = Energy{LaplaceEnergy,Nothing}(nothing)
 
 
 Energy{LaplaceEnergy}() = begin

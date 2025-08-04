@@ -126,7 +126,7 @@ Physics(; time, fluid = nothing, solid = nothing, turbulence = nothing, energy, 
     end
 
     if solid !== nothing
-        solid = solid(domain)
+        solid = solid(domain, time)
         energy = energy(domain, solid)
     end
     

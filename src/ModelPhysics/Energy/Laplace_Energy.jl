@@ -26,16 +26,15 @@ end
     Tf = FaceScalarField(mesh)
 
     rDf = FaceScalarField(mesh)
-    rho  = ScalarField(mesh)
-
-    k  = ScalarField(mesh)
-    kf = FaceScalarField(mesh)
-
-    cp  = ScalarField(mesh)
-
-    rhocp  = ScalarField(mesh)
 
 
+    # These now get constructed by the Solid!
+    
+    # rho  = ScalarField(mesh)
+    # k  = ScalarField(mesh)
+    # kf = FaceScalarField(mesh)
+    # cp  = ScalarField(mesh)
+    # rhocp  = ScalarField(mesh)
 
     initialise!(rho, solid.rho.values)
     initialise!(k, solid.k.values)
@@ -54,9 +53,6 @@ function initialise(
     # k = model.solid.k
     return nothing
 end
-
-
-
 
 function energy!(
     energy::LaplaceEnergy, model::Physics{T1,F,S,M,Tu,E,D,BI}, config

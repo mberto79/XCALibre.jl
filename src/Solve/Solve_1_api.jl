@@ -73,7 +73,13 @@ SolverSetup(;
         rtol=1e-1 |> float_type
         ) where{S1,S2,PT,I} = 
         SolverSetup{float_type,I,S1,S2,PT}(
-            solver, smoother,preconditioner, convergence, relax, limit,itmax, atol,rtol)
+            solver, smoother,preconditioner, 
+            float_type(convergence), 
+            float_type(relax), 
+            limit,
+            itmax, 
+            float_type(atol),
+            float_type(rtol))
 
 struct Runtime{I<:Integer,F<:AbstractFloat}
     iterations::I

@@ -37,7 +37,7 @@ XCALibre_CUDAExt = "CUDA"
 XCALibre_oneAPIExt = "oneAPI"
 
 [compat]
-AMDGPU = "1"
+AMDGPU = "1, 2"
 AcceleratedKernels = "0.4"
 Accessors = "0.1.30"
 Adapt = "4.0"

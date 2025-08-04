@@ -125,6 +125,7 @@ Physics(; time, fluid = nothing, solid = nothing, turbulence = nothing, energy, 
     end
 
     if solid !== nothing
+        @assert 
         solid = solid(domain)
         energy = energy(domain, solid)
     end

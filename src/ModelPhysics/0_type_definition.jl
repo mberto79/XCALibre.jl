@@ -117,6 +117,7 @@ end
 
 """
 Physics(; time, fluid = nothing, solid = nothing, turbulence = nothing, energy, domain) = begin
+    # NOTE: this function will be changed if/when a "medium2 keyword is introduced. This will get rid of this ugly if statements! 
     momentum = Momentum(domain)
 
     if fluid !== nothing
@@ -125,7 +126,6 @@ Physics(; time, fluid = nothing, solid = nothing, turbulence = nothing, energy, 
     end
 
     if solid !== nothing
-        @assert 
         solid = solid(domain)
         energy = energy(domain, solid)
     end

@@ -1,11 +1,16 @@
 
 # TRANSIENT TERM 
-@inline (bc::AbstractBoundary)( # Used for all schemes (using "T")
-    term::Operator{F,P,I,Time{T}}, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
-    ) where {F,P,I,T} = begin
-    # nothing
-    0.0, 0.0 # need to add consistent return types
-end
+# @inline (bc::AbstractBoundary)( # Used for all schemes (using "T")
+#     term::Operator{F,P,I,Time{T}}, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
+#     ) where {F,P,I,T} = begin
+#     # nothing
+#     0.0, 0.0 # need to add consistent return types
+# end
+
+@inline apply_BCs!(term::Time{T}, bc, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time) where T = 
+        @inbounds begin
+            0.0, 0.0
+        end
 
 # KWallFunction
 @inline (bc::KWallFunction)(

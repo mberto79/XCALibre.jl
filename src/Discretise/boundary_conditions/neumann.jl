@@ -33,28 +33,28 @@ end
 @define_boundary Neumann Divergence{Linear} ScalarField begin
     flux = term.flux[fID]
     (; area, delta) = face 
-    ap = term.sign*(flux) 
+    ap = (flux) 
     ap, -bc.value*ap*delta
 end
 
 @define_boundary Neumann Divergence{Upwind} ScalarField begin
     flux = term.flux[fID]
     (; area, delta) = face 
-    ap = term.sign*(flux) 
+    ap = (flux) 
     ap, -bc.value*ap*delta
 end
 
 @define_boundary Neumann Divergence{LUST} ScalarField begin
     flux = term.flux[fID]
     (; area, delta) = face 
-    ap = term.sign*(flux) 
+    ap = (flux) 
     ap, -bc.value*ap*delta
 end
 
 @define_boundary Neumann Divergence{BoundedUpwind} ScalarField begin
     flux = term.flux[fID]
     (; area, delta) = face 
-    ap = term.sign*(flux) 
+    ap = (flux) 
     ap, -bc.value*ap*delta
 end
 

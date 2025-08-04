@@ -25,6 +25,7 @@ function discretise!(
     ndrange = length(mesh.cells)
     kernel! = _discretise_vector_model!(_setup(backend, workgroup, ndrange)...)
     kernel!(discretisation, mesh, nzval0, nzval, colval, rowptr, bx, by, bz, prev, runtime)
+    return discretisation
 end
 
 # @kernel function _discretise_vector_model!(
@@ -105,7 +106,7 @@ function discretise!(
     ndrange = length(mesh.cells)
     kernel! = _discretise_scalar_model!(_setup(backend, workgroup, ndrange)...)
     kernel!(discretisation, mesh, nzval, colval, rowptr, b, prev, runtime)
-    # # KernelAbstractions.synchronize(backend)
+    return discretisation
 end
 
 # Discretise kernel function

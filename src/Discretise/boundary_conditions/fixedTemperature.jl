@@ -57,7 +57,7 @@ end
 @define_boundary FixedTemperature Divergence{Linear} begin
     (; T, energy_model) = bc.value
     flux = term.flux[fID]
-    ap = term.sign*(-flux)
+    ap = (-flux)
     h = energy_model(T) # To do: find nicer way to accomplish this
     0.0, ap*h
 end
@@ -67,7 +67,7 @@ end
     (; T, energy_model) = bc.value
     flux = term.flux[fID]
     h = energy_model(T)
-    ap = term.sign*(flux)
+    ap = (flux)
     0.0, -ap*h
 end
 
@@ -75,7 +75,7 @@ end
     (; T, energy_model) = bc.value
     flux = term.flux[fID]
     h = energy_model(T)
-    ap = term.sign*(flux)
+    ap = (flux)
     0.0, -ap*h
 end
 
@@ -83,7 +83,7 @@ end
 @define_boundary FixedTemperature Divergence{BoundedUpwind} begin
     (; T, energy_model) = bc.value
     flux = term.flux[fID]
-    ap = term.sign*(flux)
+    ap = (flux)
     h = energy_model(T)
     -flux, -ap*h
 end

@@ -52,6 +52,7 @@ end
 Base.:-(t1::OPERATORS) = begin
     scheme(args...) = -1 .* scheme!(t1, args...)
     scheme_source(args...) = -1 .* scheme_source!(t1, args...)
+    apply_BCs(args...) = -1 .* apply_BCs!(t1, args...)
     LHS(scheme, scheme_source, apply_BCs)
 end
 
@@ -66,22 +67,25 @@ end
 Base.:(==)(t1::OPERATORS, t2::Source) = begin
     scheme(args...) = scheme!(t1, args...)
     scheme_source(args...) = scheme_source!(t1, args...)
+    apply_BCs(args...) = apply_BCs!(t1, args...)
     source(args...) = source!(t2, args...)
-    return Discretisation(scheme, scheme_source, source)
+    return Discretisation(scheme, scheme_source, source, apply_BCs)
 end
 
 Base.:(==)(t1::LHS, t2::Source) = begin
     scheme(args...) = t1.scheme(args...)
     scheme_source(args...) = t1.scheme_source(args...)
+    apply_BCs(args...) = t1.apply_BCs(args...)
     source(args...) = source!(t2, args...)
-    return Discretisation(scheme, scheme_source, source)
+    return Discretisation(scheme, scheme_source, source, apply_BCs)
 end
 
 Base.:(==)(t1::LHS, t2::RHS) = begin
     scheme(args...) = t1.scheme(args...)
     scheme_source(args...) = t1.scheme_source(args...)
+    apply_BCs(args...) = t1.apply_BCs(args...)
     source(args...) = t2.source(args...)
-    return Discretisation(scheme, scheme_source, source)
+    return Discretisation(scheme, scheme_source, source, apply_BCs)
 end
 
 # export →

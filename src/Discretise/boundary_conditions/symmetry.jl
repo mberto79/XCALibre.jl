@@ -26,7 +26,7 @@ Symmetry(patch::Symbol) = Symmetry(patch, 0)
     J = term.flux[fID]
     # flux = 2.0*J*area/delta # previous
     flux = J*area/delta
-    ap = term.sign[1]*(-flux)
+    ap = (-flux)
 
     vc = phi[cellID]
     vn = (vc⋅normal)*normal
@@ -62,7 +62,7 @@ end
     J = term.flux[fID]
     (; area, delta) = face 
     flux = -J*area/delta
-    ap = term.sign*(flux)
+    ap = (flux)
     # ap, ap*values[cellID] # original
     0.0, 0.0 # go for this!
 end
@@ -71,19 +71,19 @@ end
 
 @define_boundary Symmetry Divergence{Linear} ScalarField begin
     flux = term.flux[fID]
-    ap = term.sign*(flux) 
+    ap = (flux) 
     ap, 0.0 # original
 end
 
 @define_boundary Symmetry Divergence{Upwind} ScalarField begin
     flux = term.flux[fID]
-    ap = term.sign*(flux) 
+    ap = (flux) 
     ap, 0.0 # original
 end
 
 @define_boundary Symmetry Divergence{LUST} ScalarField begin
     flux = term.flux[fID]
-    ap = term.sign*(flux) 
+    ap = (flux) 
     ap, 0.0 # original
 end
 
@@ -93,7 +93,7 @@ end
     (; normal) = face 
     phi = term.phi
     flux = term.flux[fID]
-    ap = term.sign*(flux) 
+    ap = (flux) 
     vc = phi[cellID]
     vn = (vc⋅normal)*normal
     # vp = vc - vn
@@ -107,7 +107,7 @@ end
     (; normal) = face 
     phi = term.phi
     flux = term.flux[fID]
-    ap = term.sign*(flux) 
+    ap = (flux) 
     vc = phi[cellID]
     vn = (vc⋅normal)*normal
     # vp = vc - vn
@@ -121,7 +121,7 @@ end
     (; normal) = face 
     phi = term.phi
     flux = term.flux[fID]
-    ap = term.sign*(flux) 
+    ap = (flux) 
     vc = phi[cellID]
     vn = (vc⋅normal)*normal
     # vp = vc - vn

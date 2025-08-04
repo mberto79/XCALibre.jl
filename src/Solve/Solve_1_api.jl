@@ -164,10 +164,10 @@ end
 
 
 function solve_equation!(
-    eqn::Equation{E,S,P}, phi, phiBCs, solversetup; time=nothing, ref=nothing, irelax=nothing
+    eqn::Equation{E,S,P}, phi, phiBCs, solversetup, discretisation; time=nothing, ref=nothing, irelax=nothing
     ) where {E<:ScalarMatrix,S,P}
 
-    discretise!(eqn, phi)       
+    # discretise!(eqn, phi)       
     apply_boundary_conditions!(eqn, phiBCs, nothing, time)
     setReference!(eqn, ref, 1)
     if !isnothing(irelax)
@@ -180,7 +180,7 @@ function solve_equation!(
 end
 
 function solve_equation!(
-    psiEqn::Equation{E,S,P}, psi, psiBCs, solversetup, xdir, ydir, zdir; time=nothing
+    psiEqn::Equation{E,S,P}, psi, psiBCs, solversetup, discretisation, xdir, ydir, zdir; time=nothing
     ) where {E<:VectorMatrix,S,P}
 
     mesh = psi.mesh
@@ -188,14 +188,14 @@ function solve_equation!(
     # discretise!(psiEqn, psi)
     update_equation!(psiEqn)
 
-    apply_boundary_conditions!(psiEqn, psiBCs, xdir, time)
+    apply_boundary_conditions!(psiEqn, discretisation, psiBCs, xdir, time)
     # implicit_relaxation!(psiEqn, psi.x.values, solversetup.relax, xdir)
     implicit_relaxation_diagdom!(psiEqn, psi.x.values, solversetup.relax, xdir)
     update_preconditioner!(psiEqn.preconditioner, mesh)
     resx = solve_system!(psiEqn, solversetup, psi.x, xdir)
     
     update_equation!(psiEqn)
-    apply_boundary_conditions!(psiEqn, psiBCs, ydir, time)
+    apply_boundary_conditions!(psiEqn, discretisation, psiBCs, ydir, time)
     # implicit_relaxation!(psiEqn, psi.y.values, solversetup.relax, ydir)
     implicit_relaxation_diagdom!(psiEqn, psi.y.values, solversetup.relax, ydir)
     # update_preconditioner!(psiEqn.preconditioner, mesh)
@@ -205,7 +205,7 @@ function solve_equation!(
     resz = one(_get_float(mesh))
     if typeof(mesh) <: Mesh3
         update_equation!(psiEqn)
-        apply_boundary_conditions!(psiEqn, psiBCs, zdir, time)
+        apply_boundary_conditions!(psiEqn, discretisation, psiBCs, zdir, time)
         # implicit_relaxation!(psiEqn, psi.z.values, solversetup.relax, zdir)
         implicit_relaxation_diagdom!(psiEqn, psi.z.values, solversetup.relax, zdir)
         # update_preconditioner!(psiEqn.preconditioner, mesh)
@@ -248,7 +248,7 @@ function solve_system!(phiEqn::Equation, setup, result, component) # ; opP, solv
     kernel!(values, x)
     # KernelAbstractions.synchronize(backend)
 
-    res = residual(phiEqn, component)
+    res = residual(phiEqn, values, component)
     return res
 end
 
@@ -363,7 +363,7 @@ function setReference!(pEqn::E, pRef, cellID) where E<:Equation
     else
         (; hardware) = get_configuration(CONFIG)
         (; backend, workgroup) = hardware
-        (; b, A) = pEqn.equation
+        (; b, A) = pEqn.matrix
         nzval = _nzval(A)
         colval = _colval(A)
         rowptr = _rowptr(A)
@@ -384,10 +384,11 @@ end
     end
 end
 
-function residual(eqn, component)
-    (; A, R, Fx) = eqn.equation
+function residual(eqn, values, component)
+    (; A, R, Fx) = eqn.matrix
     b = _b(eqn, component)
-    values = get_values(get_phi(eqn), component)
+    # values = get_values(get_phi(eqn), component)
+    # values = get_values(phi, component)
 
     # # Openfoam's residual definition (not optimised)
     # Fx .= A*values

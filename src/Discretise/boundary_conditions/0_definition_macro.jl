@@ -45,7 +45,7 @@ When called, this functor will return two values `ap` and `an`, where `ap` is th
 """
 macro define_boundary(boundary, operator, definition)
     quote
-        @inline (bc::$boundary)(term::Operator{F,P,I,$operator}, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I} = 
+        @inline apply_BCs!(term::$operator, bc::$boundary, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time) = 
         @inbounds begin
             $definition
         end
@@ -53,16 +53,32 @@ macro define_boundary(boundary, operator, definition)
 end
 
 macro define_boundary(boundary, operator, FieldType, definition)
+    if typeof(operator) == Expr
+        push!(operator.args, :F, :P)
+    end
     quote
-        @inline (bc::$boundary)(term::Operator{F,P,I,$operator}, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time) where {F,P<:$FieldType,I} = 
+        @inline apply_BCs!(term::$operator, bc::$boundary, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time) where {F,P<:$FieldType} = 
         @inbounds begin
+            F; P
             $definition
         end
     end |> esc
 end
 
-# macro define_boundary(operator, definition)
+# macro define_boundary(boundary, operator, definition)
 #     quote
-#         @inline (bc::AbstractBoundary)(term::Operator{F,P,I,Op}, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I,Op<:$operator} = $definition
+#         @inline (bc::$boundary)(term::Operator{F,P,I,$operator}, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I} = 
+#         @inbounds begin
+#             $definition
+#         end
+#     end |> esc
+# end
+
+# macro define_boundary(boundary, operator, FieldType, definition)
+#     quote
+#         @inline (bc::$boundary)(term::Operator{F,P,I,$operator}, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time) where {F,P<:$FieldType,I} = 
+#         @inbounds begin
+#             $definition
+#         end
 #     end |> esc
 # end

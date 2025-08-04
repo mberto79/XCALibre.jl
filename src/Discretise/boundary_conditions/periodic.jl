@@ -183,7 +183,7 @@ end
     
     # Retrieve term flux and extract fields from workitem face
     (; area, normal) = face
-    ap = term.sign*(term.flux[fID]*area)/delta
+    ap = (term.flux[fID]*area)/delta
     ac = -ap
     an = ap
 
@@ -216,7 +216,7 @@ end
 
     # Calculate ap value to increment
     flux = term.flux[fID]
-    ap = term.sign*(flux)
+    ap = (flux)
     ac = weight*ap
     an = one_minus_weight*ap
 
@@ -249,7 +249,7 @@ end
 
     # Calculate ap value to increment
     flux = term.flux[fID]
-    ap = term.sign*(flux)
+    ap = (flux)
     ac = weight*ap
     an = one_minus_weight*ap
 
@@ -282,7 +282,7 @@ end
 
     # Calculate ap value to increment
     flux = term.flux[fID]
-    ap = term.sign*(flux)
+    ap = (flux)
     ac = weight*ap
     an = one_minus_weight*ap
 

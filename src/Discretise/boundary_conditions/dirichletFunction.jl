@@ -36,7 +36,7 @@ end
     J = term.flux[fID]
     (; area, delta, centre) = face 
     flux = J*area/delta
-    ap = term.sign*(-flux)
+    ap = (-flux)
     # bc.value.update!(bc.value, centre, time, i)
     value = bc.value(centre, time, i)[component.value]
     ap, ap*value
@@ -44,21 +44,21 @@ end
 
 @define_boundary DirichletFunction Divergence{Linear} begin
     flux = -term.flux[fID]
-    ap = term.sign*(flux)
+    ap = (flux)
     value = bc.value(face.centre, time, i)[component.value]
     0.0, ap*value
 end
 
 @define_boundary DirichletFunction Divergence{Upwind} begin
     flux = -term.flux[fID]
-    ap = term.sign*(flux)
+    ap = (flux)
     value = bc.value(face.centre, time, i)[component.value]
     0.0, ap*value
 end
 
 @define_boundary DirichletFunction Divergence{BoundedUpwind} begin
     flux = -term.flux[fID]
-    ap = term.sign*(flux)
+    ap = (flux)
     value = bc.value(face.centre, time, i)[component.value]
     flux, ap*value
 end

@@ -30,14 +30,14 @@ Zerogradient(name::Symbol) = Zerogradient(name , 0)
     # (; area, delta) = face 
     # # flux = -J*area/delta
     # flux = -J*area # /delta
-    # ap = term.sign*(flux)
+    # ap = (flux)
     # # ap, ap*values[cellID] # original
     0.0, 0.0 # try this
 end
 
 @define_boundary Zerogradient Divergence{Linear} begin
     flux = term.flux[fID]
-    ap = term.sign*(flux) 
+    ap = (flux) 
     ap, 0.0 # original
 
     # phi = term.phi 
@@ -47,7 +47,7 @@ end
 
 @define_boundary Zerogradient Divergence{Upwind} begin
     flux = term.flux[fID]
-    ap = term.sign*(flux) 
+    ap = (flux) 
     ap, 0.0 # original
 
     # phi = term.phi 
@@ -57,7 +57,7 @@ end
 
 @define_boundary Zerogradient Divergence{LUST} begin
     flux = term.flux[fID]
-    ap = term.sign*(flux) 
+    ap = (flux) 
     ap, 0.0 # original
 
     # phi = term.phi 
@@ -67,7 +67,7 @@ end
 
 @define_boundary Zerogradient Divergence{BoundedUpwind} begin
     flux = term.flux[fID]
-    ap = term.sign*(flux)
+    ap = (flux)
     ap-flux, 0.0
 end
 

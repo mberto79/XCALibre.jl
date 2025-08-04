@@ -28,7 +28,7 @@ Wall(name::Symbol) = Wall(name, 0)
     phi = term.phi 
     J = term.flux[fID]
     flux = J*area/delta
-    ap = term.sign[1]*(-flux)
+    ap = (-flux)
     
     # vb = SVector{3}(0.0,0.0,0.0) # do not hard-code in next version
     vb = bc.value # boundary value
@@ -46,7 +46,7 @@ end
     # J = term.flux[fID]
     # (; area, delta) = face 
     # flux = -J*area/delta
-    # ap = term.sign*(flux)
+    # ap = (flux)
     # ap, ap*values[cellID] # original
     0.0, 0.0 # try this
     # 0.0, -flux*delta*bc.value # draft implementation to test!
@@ -68,14 +68,14 @@ end
 
 @define_boundary Wall Divergence{BoundedUpwind} VectorField begin
     flux = term.flux[fID]
-    ap = term.sign*(flux)
+    ap = (flux)
     -flux, 0.0
 end
 
 # Scalar implementations for divergence operator
 @define_boundary Wall Divergence{Upwind} ScalarField begin
     flux = term.flux[fID]
-    ap = term.sign*(flux) 
+    ap = (flux) 
     ap, 0.0 # original
 
     # phi = term.phi 
@@ -85,7 +85,7 @@ end
 
 @define_boundary Wall Divergence{Linear} ScalarField begin
     flux = term.flux[fID]
-    ap = term.sign*(flux) 
+    ap = (flux) 
     ap, 0.0 # original
 
     # phi = term.phi 
@@ -95,7 +95,7 @@ end
 
 @define_boundary Wall Divergence{LUST} ScalarField begin
     flux = term.flux[fID]
-    ap = term.sign*(flux) 
+    ap = (flux) 
     ap, 0.0 # original
 
     # phi = term.phi 

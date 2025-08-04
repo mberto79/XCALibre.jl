@@ -114,18 +114,18 @@ flux!(mdotf, Uf)
 
 U_eqn = XCALibre.Discretise.Equation(U, BCs.U, solvers.U)
 
-XCALibre.Discretise.discretise!(U_eqn, prev, mesh, (
+@time discretisation = XCALibre.Discretise.discretise!(U_eqn, prev, mesh, (
         Time{schemes.U.time}(U)
         + Divergence{schemes.U.divergence}(mdotf, U)
         - Laplacian{schemes.U.laplacian}(nueff, U) 
         == 
         - Source(∇p.result)
     )
-)
+);
 
 p_eqn = XCALibre.Discretise.Equation(p, BCs.p, solvers.p)
 
-XCALibre.Discretise.discretise!(p_eqn, prev, mesh, (
+@time XCALibre.Discretise.discretise!(p_eqn, prev, mesh, (
         - Laplacian{schemes.p.laplacian}(rDf, p) == - Source(divHv)
     )
 )

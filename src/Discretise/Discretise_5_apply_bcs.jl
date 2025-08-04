@@ -2,20 +2,20 @@ export apply_boundary_conditions!
 
 
 
-apply_boundary_conditions!(eqn, BCs, component, time) = begin
-    _apply_boundary_conditions!(eqn.model, BCs, eqn, component, time)
+apply_boundary_conditions!(eqn, discretisation, BCs, component, time) = begin
+    _apply_boundary_conditions!(eqn, discretisation, BCs, component, time)
 end
 
 # Apply Boundaries Function
 function _apply_boundary_conditions!(
-    model::Model{TN,SN,T,S}, BCs::B, eqn, component, time) where {TN,SN,T,S,B}
-    nTerms = length(model.terms)
+    eqn, discretisation, BCs::B, component, time) where B
+    # nTerms = length(model.terms)
 
     (; hardware) = get_configuration(CONFIG)
     (; backend, workgroup) = hardware
 
     # Retriecve variables for function
-    mesh = model.terms[1].phi.mesh
+    mesh = eqn.mesh
     A = _A(eqn)
     b = _b(eqn, component)
 
@@ -50,7 +50,7 @@ function _apply_boundary_conditions!(
         ndrange = nbfaces
         kernel! = apply_boundary_conditions_kernel!(_setup(backend, workgroup, ndrange)...)
         kernel!(
-            model, BCs,model.terms, faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time, ndrange=ndrange
+            discretisation, BCs, faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time, ndrange=ndrange
             )
         KernelAbstractions.synchronize(backend)
 
@@ -81,17 +81,16 @@ update_user_boundary!(
 # Experimental implementation 
 
 @kernel function apply_boundary_conditions_kernel!(
-    model::Model{TN,SN,T,S}, BCs, terms, 
-    faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time
-    ) where {TN,SN,T,S}
+    discretisation, BCs, faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time
+    )
     fID = @index(Global)
 
     calculate_coefficients(
-        BCs, model, terms, faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time, fID)
+        discretisation, BCs, faces, cells, boundary_cellsID,colval, rowptr, nzval, b, component, time, fID)
 end
 
 @generated function calculate_coefficients(
-    BCs, model, terms, faces, cells, boundary_cellsID,colval, rowptr, nzval, b, component, time, fID)
+    discretisation, BCs, faces, cells, boundary_cellsID,colval, rowptr, nzval, b, component, time, fID)
     N = length(BCs.parameters)
     unroll = Expr(:block)
     for bci ∈ 1:N
@@ -106,10 +105,12 @@ end
                     cell = cells[cellID] 
 
                     zcellID = spindex(rowptr, colval, cellID, cellID)
-                    AP, BP = apply!(
-                        model, BC, terms, 
-                        colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
-                        )
+                    # AP, BP = apply!(
+                    #     model, BC, terms, 
+                    #     colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
+                    #     )
+
+                    AP, BP = discretisation.apply_BCs(BC, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time)
                     Atomix.@atomic nzval[zcellID] += AP
                     Atomix.@atomic b[cellID] += BP
                     return nothing

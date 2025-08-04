@@ -312,10 +312,11 @@ Adapt.@adapt_structure ScalarModel
 struct VectorModel end
 Adapt.@adapt_structure VectorModel
 
-struct Equation{E,S,P}
+struct Equation{E,S,P,M}
     matrix::E
     solver::S
     preconditioner::P
+    mesh::M
 end
 Adapt.@adapt_structure Equation
 
@@ -323,13 +324,15 @@ Equation(psi::VectorField, BCs, solverSettings) = begin
     matrix = VectorMatrix(psi, BCs) 
     solver = _workspace(solverSettings.solver, matrix.bx)
     preconditioner = set_preconditioner(solverSettings.preconditioner, matrix.A)
-    return Equation(matrix, solver, preconditioner)
+    mesh = psi.mesh
+    return Equation(matrix, solver, preconditioner, mesh)
 end
 Equation(phi::ScalarField, BCs, solverSettings) = begin
     matrix = ScalarMatrix(phi, BCs) 
     solver = _workspace(solverSettings.solver, matrix.b)
     preconditioner = set_preconditioner(solverSettings.preconditioner, matrix.A)
-    return Equation(matrix, solver, preconditioner)
+    mesh = phi.mesh
+    return Equation(matrix, solver, preconditioner, mesh)
 end
 
 # TEMP LOCATION

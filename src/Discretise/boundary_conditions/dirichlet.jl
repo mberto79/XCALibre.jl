@@ -20,31 +20,31 @@ Adapt.@adapt_structure Dirichlet
     J = term.flux[fID]
     (; area, delta) = face 
     flux = J*area/delta
-    ap = term.sign*(-flux)
+    ap = (-flux)
     ap, ap*bc.value
 end
 
 @define_boundary Dirichlet Divergence{Linear} begin
     flux = -term.flux[fID]
-    ap = term.sign*(flux)
+    ap = (flux)
     0.0, ap*bc.value
 end
 
 @define_boundary Dirichlet Divergence{Upwind} begin
     flux = -term.flux[fID]
-    ap = term.sign*(flux)
+    ap = (flux)
     0.0, ap*bc.value
 end
 
 @define_boundary Dirichlet Divergence{LUST} begin
     flux = -term.flux[fID]
-    ap = term.sign*(flux)
+    ap = (flux)
     0.0, ap*bc.value
 end
 
 @define_boundary Dirichlet Divergence{BoundedUpwind} begin
     flux = -term.flux[fID]
-    ap = term.sign*(flux)
+    ap = (flux)
     flux, ap*bc.value
 end
 
@@ -52,31 +52,31 @@ end
     J = term.flux[fID]
     (; area, delta) = face 
     flux = J*area/delta
-    ap = term.sign*(-flux)
+    ap = (-flux)
     ap, ap*bc.value[component.value]
 end
 
 @define_boundary Dirichlet Divergence{Linear} VectorField begin
     flux = -term.flux[fID]
-    ap = term.sign*(flux)
+    ap = (flux)
     0.0, ap*bc.value[component.value]
 end
 
 @define_boundary Dirichlet Divergence{Upwind} VectorField begin
     flux = -term.flux[fID]
-    ap = term.sign*(flux)
+    ap = (flux)
     0.0, ap*bc.value[component.value]
 end
 
 @define_boundary Dirichlet Divergence{LUST} VectorField begin
     flux = -term.flux[fID]
-    ap = term.sign*(flux)
+    ap = (flux)
     0.0, ap*bc.value[component.value]
 end
 
 @define_boundary Dirichlet Divergence{BoundedUpwind} VectorField begin
     flux = -term.flux[fID]
-    ap = term.sign*(flux)
+    ap = (flux)
     flux, ap*bc.value[component.value]
 end
 

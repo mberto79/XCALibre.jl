@@ -25,7 +25,7 @@ Extrapolated(name::Symbol) = Extrapolated(name , 0)
     J = term.flux[fID]
     (; area, delta) = face 
     flux = -J*area/delta
-    ap = term.sign*(flux)
+    ap = (flux)
     ap, ap*values[cellID] # original
     # 0.0, 0.0 # try this
     # 0.0, -flux*bc.value # draft implementation to test!
@@ -33,7 +33,7 @@ end
 
 @define_boundary Extrapolated Divergence{Linear} begin
     flux = term.flux[fID]
-    ap = term.sign*(flux) 
+    ap = (flux) 
     ap, 0.0 # original
 
     # phi = term.phi 
@@ -43,7 +43,7 @@ end
 
 @define_boundary Extrapolated Divergence{Upwind} begin
     flux = term.flux[fID]
-    ap = term.sign*(flux) 
+    ap = (flux) 
     ap, 0.0 # original
 
     # phi = term.phi 
@@ -53,7 +53,7 @@ end
 
 @define_boundary Extrapolated Divergence{LUST} begin
     flux = term.flux[fID]
-    ap = term.sign*(flux) 
+    ap = (flux) 
     ap, 0.0 # original
 
     # phi = term.phi 
@@ -63,7 +63,7 @@ end
 
 @define_boundary Extrapolated Divergence{BoundedUpwind} begin
     flux = term.flux[fID]
-    ap = term.sign*(flux)
+    ap = (flux)
     ap-flux, 0.0
 end
 

@@ -76,13 +76,17 @@ end
     nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     # Retrieve mesh centre values
-    xf = face.centre
-    xC = cell.centre
-    xN = cellN.centre
+    f = face.centre
+    P = cell.centre
+    N = cellN.centre
+
+    # calculate distance vectors
+    d_fP = P - f 
+    d_fN = N - f
     
     # Calculate weights using normal functions
     # weight = norm(xN - xf)/norm(xN - xC)
-    weight = norm(xN - xf)/(norm(xN - xf) + norm(xC - xf))
+    weight = norm(d_fN)/(norm(d_fP) + norm(d_fN))
     one_minus_weight = one(eltype(weight)) - weight
 
     # Calculate required increment

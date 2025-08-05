@@ -19,7 +19,7 @@ function XCALibre.Mesh._convert_array!(arr, backend::BACKEND)
     return adapt(GPUARRAY, arr) # using GPUARRAY
 end
 
-import XCALibre.ModelFramework: _nzval, _rowptr, _colval, get_sparse_fields, 
+import XCALibre.Discretise: _nzval, _rowptr, _colval, get_sparse_fields, 
                                 _build_A, _build_opA
 
 _build_A(backend::BACKEND, i, j, v, n) = begin

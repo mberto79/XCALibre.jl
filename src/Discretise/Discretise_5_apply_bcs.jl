@@ -47,10 +47,12 @@ function _apply_boundary_conditions!(
         #     )
         # KernelAbstractions.synchronize(backend)
 
+        apply_BCs = discretisation.apply_BCs
+
         ndrange = nbfaces
         kernel! = apply_boundary_conditions_kernel!(_setup(backend, workgroup, ndrange)...)
         kernel!(
-            discretisation, BCs, faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time, ndrange=ndrange
+            apply_BCs, BCs, faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time, ndrange=ndrange
             )
         KernelAbstractions.synchronize(backend)
 
@@ -81,16 +83,16 @@ update_user_boundary!(
 # Experimental implementation 
 
 @kernel function apply_boundary_conditions_kernel!(
-    discretisation, BCs, faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time
+    apply_BCs, BCs, faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time
     )
     fID = @index(Global)
 
     calculate_coefficients(
-        discretisation, BCs, faces, cells, boundary_cellsID,colval, rowptr, nzval, b, component, time, fID)
+        apply_BCs, BCs, faces, cells, boundary_cellsID,colval, rowptr, nzval, b, component, time, fID)
 end
 
 @generated function calculate_coefficients(
-    discretisation, BCs, faces, cells, boundary_cellsID,colval, rowptr, nzval, b, component, time, fID)
+    apply_BCs, BCs, faces, cells, boundary_cellsID,colval, rowptr, nzval, b, component, time, fID)
     N = length(BCs.parameters)
     unroll = Expr(:block)
     for bci ∈ 1:N
@@ -110,7 +112,7 @@ end
                     #     colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
                     #     )
 
-                    AP, BP = discretisation.apply_BCs(BC, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time)
+                    AP, BP = apply_BCs(BC, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time)
                     Atomix.@atomic nzval[zcellID] += AP
                     Atomix.@atomic b[cellID] += BP
                     return nothing

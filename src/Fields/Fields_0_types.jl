@@ -53,7 +53,7 @@ Base.getindex(v::ConstantVector, i::Integer) = SVector{3, eltype(v.x)}(v.x, v.y,
         BCs::BC     # store user-provided boundary conditions
     end
 """
-struct ScalarField{VF,M<:AbstractMesh} <: AbstractScalarField
+struct ScalarField{VF,M} <: AbstractScalarField
     values::VF  # scalar values at cell centre
     mesh::M     # reference to mesh
     # BCs::BC     # store user-provided boundary conditions
@@ -77,7 +77,7 @@ end
 #     ScalarField(arr, mesh)
 # end
 
-struct FaceScalarField{VF,M<:AbstractMesh} <: AbstractScalarField
+struct FaceScalarField{VF,M} <: AbstractScalarField
     values::VF#Vector{F}
     mesh::M
 end
@@ -114,7 +114,7 @@ KA.get_backend(s::AbstractScalarField) = KA.get_backend(s.values)
         BCs::BC
     end
 """
-struct VectorField{S1<:ScalarField,S2,S3,M<:AbstractMesh} <: AbstractVectorField
+struct VectorField{S1<:ScalarField,S2,S3,M} <: AbstractVectorField
     x::S1
     y::S2
     z::S3
@@ -127,22 +127,16 @@ VectorField(mesh::AbstractMesh) = begin
     ncells = length(mesh.cells)
     F = _get_float(mesh) #eltype(mesh.nodes[1].coords) #TEMPORARY SOLUTION, RUN BY HUMBERTO
     backend = _get_backend(mesh)
-    # arr1 = _convert_array!(zeros(F,ncells), backend)
-    # arr2 = _convert_array!(zeros(F,ncells), backend)
-    # arr3 = _convert_array!(zeros(F,ncells), backend)
-
     arr1 = KernelAbstractions.zeros(backend, F, ncells)
     arr2 = KernelAbstractions.zeros(backend, F, ncells)
     arr3 = KernelAbstractions.zeros(backend, F, ncells)
-
-    
     VectorField(
-        # ScalarField(arr1, mesh, ()),
-        # ScalarField(arr2, mesh, ()), 
-        # ScalarField(arr3, mesh, ()), 
-        ScalarField(arr1, mesh),
-        ScalarField(arr2, mesh), 
-        ScalarField(arr3, mesh), 
+        # ScalarField(arr1, mesh),
+        # ScalarField(arr2, mesh), 
+        # ScalarField(arr3, mesh), 
+        ScalarField(arr1, ()),
+        ScalarField(arr2, ()), 
+        ScalarField(arr3, ()), 
         mesh,
         # () # to hold x, y, z and combined BCs
         )

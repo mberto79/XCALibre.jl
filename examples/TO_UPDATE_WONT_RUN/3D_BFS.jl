@@ -19,8 +19,8 @@ mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_5mm.unv
 @time mesh = UNV3D_mesh(mesh_file, scale=0.001) # 36 sec
 # @time mesh = UNV3D_mesh(mesh_file, scale=0.001, float_type=Float32)
 
-# backend = CUDABackend(); workgroup = 32
-backend = CPU(static=static); workgroup = AutoTune(); activate_multithread(backend)
+backend = CUDABackend(); workgroup = 32
+# backend = CPU(static=static); workgroup = AutoTune(); activate_multithread(backend)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
@@ -94,10 +94,6 @@ runtime = Runtime(iterations=1, write_interval=1, time_step=1)
 configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
-configure!(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs
-)
-
 GC.gc(false)
 
 initialise!(model.momentum.U, velocity)
@@ -110,9 +106,6 @@ residuals = run!(model)
 runtime = Runtime(iterations=500, write_interval=500, time_step=1)
 configure!(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
-configure!(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs
-)
 
 GC.gc(false)
 

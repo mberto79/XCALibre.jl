@@ -98,6 +98,7 @@ GC.gc()
 
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
+@time residuals = run!(model) # 1106 iterations! 82.219 Kb 82.188
 
 # (; U, p, Uf, pf) = model.momentum
 # mdotf = FaceScalarField(mesh)
@@ -106,6 +107,30 @@ initialise!(model.momentum.p, 0.0)
 # ∇p = Grad{schemes.p.gradient}(p)
 # prev = VectorField(mesh)
 # divHv = ScalarField(mesh)
+
+# t = Laplacian{schemes.U.laplacian}(nueff, U)
+
+# struct SLaplacian{S,F,P}
+#     scheme::S
+#     flux::F
+#     phi::P 
+# end
+# SLaplacian{S}(flux, phi) where S = SLaplacian(
+#     S(), SFaceScalarField(flux), SVectorField(phi))
+
+# struct SVectorField{V}
+#     x::V
+#     y::V
+#     z::V 
+# end
+# SVectorField(vec::VectorField) = SVectorField(vec.x.values, vec.y.values, vec.z.values)
+
+# struct SFaceScalarField{V} 
+#     values::V 
+# end
+# SFaceScalarField(scalar::FaceScalarField) = SFaceScalarField(scalar.values)
+
+# ts = SLaplacian{schemes.U.laplacian}(nueff, U)
 
 # XCALibre.Calculate.interpolate!(Uf, U)   
 # XCALibre.Calculate.correct_boundaries!(Uf, U, BCs.U, time)
@@ -130,7 +155,6 @@ initialise!(model.momentum.p, 0.0)
 #     )
 # )
 
-@time residuals = run!(model) # 1106 iterations!
 
 # Profiling now 
 # GC.gc()
@@ -157,3 +181,11 @@ initialise!(model.momentum.p, 0.0)
 # plot!(1:iterations, residuals.Uy, label="Uy")
 # plot!(1:iterations, residuals.Uz, label="Uz")
 # plot!(1:iterations, residuals.p, label="p")
+
+a = 1
+b = 2 
+
+let a = a, b = b 
+    println(a)
+    println(b)
+end

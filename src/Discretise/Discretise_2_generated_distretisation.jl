@@ -10,9 +10,10 @@ function discretise!(
     # model = eqn.model
 
     # Sparse array and b accessor call
+    (; bx, by, bz) = eqn.matrix
     A = _A(eqn)
     A0 = _A0(eqn)
-    (; bx, by, bz) = eqn.matrix
+    # (; bx, by, bz) = matrix
 
     # Sparse array fields accessors
     nzval = _nzval(A)
@@ -22,16 +23,15 @@ function discretise!(
 
 
     # Call discretise kernel
+    (; scheme, scheme_source, source) = discretisation
     ndrange = length(mesh.cells)
     kernel! = _discretise_vector_model!(_setup(backend, workgroup, ndrange)...)
-    kernel!(discretisation, mesh, nzval0, nzval, colval, rowptr, bx, by, bz, prev, runtime)
+    kernel!(scheme, scheme_source, source, mesh, nzval0, colval, rowptr, bx, by, bz, prev, runtime)
     return discretisation
 end
 
-# @kernel function _discretise_vector_model!(
-#     model::Model{TN,SN,T,S}, terms, sources, mesh, nzval0::AbstractArray{F}, nzval, colval, rowptr, bx, by, bz, prev, runtime) where {TN,SN,T,S,F}
 @kernel function _discretise_vector_model!(
-    discretisation, mesh, nzval0::AbstractArray{F}, nzval, colval, rowptr, bx, by, bz, prev, runtime) where F
+    scheme, scheme_source, source, mesh, nzval0::AbstractArray{F}, colval, rowptr, bx, by, bz, prev, runtime) where F
     i = @index(Global)
     # Extract mesh fields for kernel
     (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
@@ -60,7 +60,7 @@ end
 
 
             # Call scheme generated function
-            ac, an = discretisation.scheme(
+            ac, an = scheme(
                 nzval0, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime
                 )
             ac_sum += ac
@@ -70,12 +70,12 @@ end
 
         
         # # Call scheme source generated function NEEDS UPDATING!
-        ac, bx1, by1, bz1 = discretisation.scheme_source(cell, i, cIndex, prev, runtime)
+        ac, bx1, by1, bz1 = scheme_source(cell, i, cIndex, prev, runtime)
         
         nzval0[cIndex] = ac_sum + ac
 
         # # Call sources generated function
-        bx2, by2, bz2 = discretisation.source(volume, i)
+        bx2, by2, bz2 = source(volume, i)
         bx[i] = bx1 + bx2
         by[i] = by1 + by2
         bz[i] = bz1 + bz2
@@ -103,9 +103,10 @@ function discretise!(
 
 
     # Call discretise kernel
+    (; scheme, scheme_source, source) = discretisation
     ndrange = length(mesh.cells)
     kernel! = _discretise_scalar_model!(_setup(backend, workgroup, ndrange)...)
-    kernel!(discretisation, mesh, nzval, colval, rowptr, b, prev, runtime)
+    kernel!(scheme, scheme_source, source, mesh, nzval, colval, rowptr, b, prev, runtime)
     return discretisation
 end
 
@@ -113,7 +114,7 @@ end
 # @kernel function _discretise_scalar_model!(
 #     model::Model{TN,SN,T,S}, terms, sources, mesh, nzval::AbstractArray{F}, colval, rowptr, b, prev, runtime) where {TN,SN,T,S,F}
 @kernel function _discretise_scalar_model!(
-    discretisation, mesh, nzval::AbstractArray{F}, colval, rowptr, b, prev, runtime
+    scheme, scheme_source, source, mesh, nzval::AbstractArray{F}, colval, rowptr, b, prev, runtime
     ) where {F}
 
     i = @index(Global)
@@ -142,18 +143,18 @@ end
             nIndex = spindex(rowptr, colval, i, nID)
 
             # Call scheme generated fucntion
-            ac, an = discretisation.scheme(
+            ac, an = scheme(
                 nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)
             ac_sum += ac
             nzval[nIndex] = an
         end
         
         # Call scheme source generated function
-        ac, b1 = discretisation.scheme_source(cell, i, cIndex, prev, runtime)
+        ac, b1 = scheme_source(cell, i, cIndex, prev, runtime)
         nzval[cIndex] = ac_sum + ac
 
         # Call sources generated function
-        b2 = discretisation.source(volume, i)
+        b2 = source(volume, i)
         b[i] = b2 + b1
     end
 end

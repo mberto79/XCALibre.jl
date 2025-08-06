@@ -44,6 +44,53 @@ residuals.p
 """
 run!() = nothing # dummy function for providing general documentation
 
+
+
+# Laplace solver (steady)
+"""
+    run!(
+        model::Physics{T,F,SO,M,Tu,E,D,BI}, config;
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+        ) where{T,F,SO<:Uniform,M,Tu,E,D,BI} = 
+    begin
+        residuals = laplace!(model, config, pref=pref)
+        return residuals
+    end
+
+    
+Top-level entry point for solving the Laplace (heat conduction) equation on `model.domain`.  
+Optionally runs in steady or transient mode and can call CryogenicConduction energy model for high fidelity (k and cp are recomputed at each iteration).
+
+
+# Input
+- `model` represents the `Physics` model defined by user.
+- `config` Configuration structure defined by user with solvers, schemes, runtime and hardware structures configuration details.
+- `output` select the format used for simulation results from `VTK()` or `OpenFOAM()` (default = `VTK()`)
+- `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only.
+
+# Output
+
+This function returns a `NamedTuple` for accessing the residuals (e.g. `residuals.Ux`) with the following entries:
+
+    
+- `T`   - (Vector?) of temperature residuals for each iteration.
+"""
+run!(
+    model::Physics{T,F,SO,M,Tu,E,D,BI}, config; 
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    ) where{T,F,SO<:Uniform,M,Tu,E,D,BI} = 
+begin
+    residuals = laplace!(
+        model, config, 
+        output=output,
+        pref=pref, 
+        ncorrectors=ncorrectors, 
+        inner_loops=inner_loops
+        )
+    return residuals
+end
+
+
 # Incompressible solver (steady)
 """
     run!(

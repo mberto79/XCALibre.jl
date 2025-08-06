@@ -53,8 +53,8 @@ end
 
 # Model initialisation
 """
-    initialise(turbulence::KEquation, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
-    ) where {T,F,M,Tu,E,D,BI}
+    initialise(turbulence::KEquation, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
+    ) where {T,F,SO,M,Tu,E,D,BI}
 
 Initialisation of turbulent transport equations.
 
@@ -76,8 +76,8 @@ Initialisation of turbulent transport equations.
 
 """
 function initialise(
-    turbulence::KEquation, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
-    ) where {T,F,M,Tu,E,D,BI}
+    turbulence::KEquation, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
+    ) where {T,F,SO,M,Tu,E,D,BI}
 
     (; solvers, schemes, runtime) = config
     mesh = model.domain
@@ -125,8 +125,8 @@ end
 
 # Model solver call (implementation)
 """
-    turbulence!(les::KEquationModel, model::Physics{T,F,M,Tu,E,D,BI}, S, S2, prev, time, config
-    ) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
+    turbulence!(les::KEquationModel, model::Physics{T,F,SO,M,Tu,E,D,BI}, S, S2, prev, time, config
+    ) where {T,F,SO,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
 Run turbulence model transport equations.
 
@@ -142,8 +142,8 @@ Run turbulence model transport equations.
 
 """
 function turbulence!(
-    les::KEquationModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
-    ) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
+    les::KEquationModel, model::Physics{T,F,SO,M,Tu,E,D,BI}, S, prev, time, config
+    ) where {T,F,SO,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
     mesh = model.domain
     (; solvers, runtime, hardware) = config
@@ -267,8 +267,8 @@ function turbulence!(
 end
 
 # Specialise VTK writer
-function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration
-    ) where {T,F,M,Tu<:KEquation,E,D,BI}
+function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
+    ) where {T,F,SO,M,Tu<:KEquation,E,D,BI}
     if typeof(model.fluid)<:AbstractCompressible
         args = (
             ("U", model.momentum.U), 

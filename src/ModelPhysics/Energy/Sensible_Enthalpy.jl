@@ -58,8 +58,8 @@ end
 end
 
 """
-    initialise(energy::SensibleEnthalpy, model::Physics{T1,F,M,Tu,E,D,BI}, mdotf, rho, peqn, config
-    ) where {T1,F,M,Tu,E,D,BI})
+    initialise(energy::SensibleEnthalpy, model::Physics{T1,F,SO,M,Tu,E,D,BI}, mdotf, rho, peqn, config
+    ) where {T1,F,SO,M,Tu,E,D,BI})
 
 Initialisation of energy transport equations.
 
@@ -77,8 +77,8 @@ Initialisation of energy transport equations.
 
 """
 function initialise(
-    energy::SensibleEnthalpy, model::Physics{T1,F,M,Tu,E,D,BI}, mdotf, rho, peqn, config
-    ) where {T1,F,M,Tu,E,D,BI}
+    energy::SensibleEnthalpy, model::Physics{T1,F,SO,M,Tu,E,D,BI}, mdotf, rho, peqn, config
+    ) where {T1,F,SO,M,Tu,E,D,BI}
 
     (; h, T, dpdt) = energy
     (; solvers, schemes, runtime, boundaries) = config
@@ -120,8 +120,8 @@ end
 
 
 """
-    energy::SensibleEnthalpyModel, model::Physics{T1,F,M,Tu,E,D,BI}, prev, mdotf, rho, mueff, time, config
-    ) where {T1,F,M,Tu,E,D,BI,E1}
+    energy::SensibleEnthalpyModel, model::Physics{T1,F,SO,M,Tu,E,D,BI}, prev, mdotf, rho, mueff, time, config
+    ) where {T1,F,SO,M,Tu,E,D,BI,E1}
 
 Run energy transport equations.
 
@@ -137,8 +137,8 @@ Run energy transport equations.
 
 """
 function energy!(
-    energy::SensibleEnthalpyModel, model::Physics{T1,F,M,Tu,E,D,BI}, prev, mdotf, rho, mueff, time, config
-    ) where {T1,F,M,Tu,E,D,BI}
+    energy::SensibleEnthalpyModel, model::Physics{T1,F,SO,M,Tu,E,D,BI}, prev, mdotf, rho, mueff, time, config
+    ) where {T1,F,SO,M,Tu,E,D,BI}
 
     mesh = model.domain
 
@@ -219,7 +219,7 @@ end
 
 
 """
-    thermo_Psi!(model::Physics{T,F,M,Tu,E,D,BI}, Psi::ScalarField) 
+    thermo_Psi!(model::Physics{T,F,SO,M,Tu,E,D,BI}, Psi::ScalarField) 
     where {T,F<:AbstractCompressible,M,Tu,E,D,BI}
 
 Model updates the value of Psi.
@@ -235,8 +235,8 @@ enthalpy, reference temperature and fluid model specified ``C_p`` and ``R`` valu
 ``R`` is calculated from ``C_p`` and ``\\gamma`` specified in the fluid model.
 """
 function thermo_Psi!(
-    model::Physics{T,F,M,Tu,E,D,BI}, Psi::ScalarField
-    ) where {T,F<:AbstractCompressible,M,Tu,E,D,BI}
+    model::Physics{T,F,SO,M,Tu,E,D,BI}, Psi::ScalarField
+    ) where {T,F<:AbstractCompressible,SO,M,Tu,E,D,BI}
     (; coeffs, h) = model.energy
     (; Tref) = coeffs
     Cp = model.fluid.cp; R = model.fluid.R
@@ -244,7 +244,7 @@ function thermo_Psi!(
 end
 
 """
-    thermo_Psi!(model::Physics{T,F,M,Tu,E,D,BI}, Psif::FaceScalarField) 
+    thermo_Psi!(model::Physics{T,F,SO,M,Tu,E,D,BI}, Psif::FaceScalarField) 
     where {T,F<:AbstractCompressible,M,Tu,E,D,BI}
 
 Function updates the value of Psi.
@@ -260,8 +260,8 @@ enthalpy, reference temperature and fluid model specified ``C_p`` and ``R`` valu
 ``R`` is calculated from ``C_p`` and ``\\gamma`` specified in the fluid model.
 """
 function thermo_Psi!(
-    model::Physics{T,F,M,Tu,E,D,BI}, Psif::FaceScalarField, config
-    ) where {T,F<:AbstractCompressible,M,Tu,E,D,BI}
+    model::Physics{T,F,SO,M,Tu,E,D,BI}, Psif::FaceScalarField, config
+    ) where {T,F<:AbstractCompressible,SO,M,Tu,E,D,BI}
     (; coeffs, hf, h) = model.energy
     interpolate!(hf, h, config)
     correct_boundaries!(hf, h, config.boundaries.h, time, config)
@@ -271,7 +271,7 @@ function thermo_Psi!(
 end
 
 """
-    Ttoh!(model::Physics{T1,F,M,Tu,E,D,BI}, T::ScalarField, h::ScalarField
+    Ttoh!(model::Physics{T1,F,SO,M,Tu,E,D,BI}, T::ScalarField, h::ScalarField
     ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
 
 Function coverts temperature ScalarField to sensible enthalpy ScalarField.
@@ -282,8 +282,8 @@ Function coverts temperature ScalarField to sensible enthalpy ScalarField.
 - `h`      -- Sensible enthalpy ScalarField.
 """
 function Ttoh!(
-    model::Physics{T1,F,M,Tu,E,D,BI}, T::ScalarField, h::ScalarField
-    ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
+    model::Physics{T1,F,SO,M,Tu,E,D,BI}, T::ScalarField, h::ScalarField
+    ) where {T1,F<:AbstractCompressible,SO,M,Tu,E,D,BI}
     (; coeffs) = model.energy
     (; Tref) = coeffs
     Cp = model.fluid.cp
@@ -291,7 +291,7 @@ function Ttoh!(
 end
 
 """
-    htoT!(model::Physics{T1,F,M,Tu,E,D,BI}, h::ScalarField, T::ScalarField
+    htoT!(model::Physics{T1,F,SO,M,Tu,E,D,BI}, h::ScalarField, T::ScalarField
     ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
 
 Function coverts sensible enthalpy ScalarField to temperature ScalarField.
@@ -302,8 +302,8 @@ Function coverts sensible enthalpy ScalarField to temperature ScalarField.
 - `T`      -- Temperature ScalarField.
 """
 function htoT!(
-    model::Physics{T1,F,M,Tu,E,D,BI}, h::ScalarField, T::ScalarField
-    ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
+    model::Physics{T1,F,SO,M,Tu,E,D,BI}, h::ScalarField, T::ScalarField
+    ) where {T1,F<:AbstractCompressible,SO,M,Tu,E,D,BI}
     (; coeffs) = model.energy
     (; Tref) = coeffs
     Cp = model.fluid.cp
@@ -311,8 +311,8 @@ function htoT!(
 end
 
 function thermoClamp!(
-    model::Physics{T1,F,M,Tu,E,D,BI}, h::ScalarField, Tmin, Tmax
-    ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
+    model::Physics{T1,F,SO,M,Tu,E,D,BI}, h::ScalarField, Tmin, Tmax
+    ) where {T1,F<:AbstractCompressible,SO,M,Tu,E,D,BI}
     (; coeffs) = model.energy
     (; Tref) = coeffs
     Cp = model.fluid.cp
@@ -322,8 +322,8 @@ function thermoClamp!(
 end
 
 function thermoClamp!(
-    model::Physics{T1,F,M,Tu,E,D,BI}, hf::FaceScalarField, Tmin, Tmax
-    ) where {T1,F<:AbstractCompressible,M,Tu,E,D,BI}
+    model::Physics{T1,F,SO,M,Tu,E,D,BI}, hf::FaceScalarField, Tmin, Tmax
+    ) where {T1,F<:AbstractCompressible,SO,M,Tu,E,D,BI}
     (; coeffs) = model.energy
     (; Tref) = coeffs
     Cp = model.fluid.cp

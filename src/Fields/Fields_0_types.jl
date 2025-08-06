@@ -76,9 +76,9 @@ FaceScalarField(mesh::AbstractMesh; store_mesh=true) = begin
     backend = _get_backend(mesh)
     arr = KernelAbstractions.zeros(backend, F, nfaces)
     if store_mesh
-        return ScalarField(arr, mesh)
+        return FaceScalarField(arr, mesh)
     else
-        return ScalarField(arr, ())
+        return FaceScalarField(arr, ())
     end
 end
 

@@ -23,12 +23,6 @@ abstract type AbstractTensorField <: AbstractField end
 
 Base.show(io::IO, field::AbstractField) = print(io, typeof(field).name.wrapper)
 
-# Base.iterate(field::AbstractField) = (nothing, 1)
-# function Base.iterate(field::AbstractField, state = 1)
-#     state >= length(field) && return
-#     return Base.getindex(field, state), state+1
-# end
-
 # CONSTANT FIELDS 
 
 struct ConstantScalar{V<:Number} <: AbstractScalarField
@@ -47,49 +41,45 @@ Base.getindex(v::ConstantVector, i::Integer) = SVector{3, eltype(v.x)}(v.x, v.y,
 
 # FIELDS 
 """
-    struct ScalarField{VF,M<:AbstractMesh,BC} <: AbstractScalarField
+    struct ScalarField{VF,M,BC} <: AbstractScalarField
         values::VF  # scalar values at cell centre
         mesh::M     # reference to mesh
         BCs::BC     # store user-provided boundary conditions
     end
 """
-struct ScalarField{VF,M<:AbstractMesh} <: AbstractScalarField
+struct ScalarField{VF,M} <: AbstractScalarField
     values::VF  # scalar values at cell centre
     mesh::M     # reference to mesh
-    # BCs::BC     # store user-provided boundary conditions
 end
 Adapt.@adapt_structure ScalarField
-ScalarField(mesh::AbstractMesh) =begin
+ScalarField(mesh::AbstractMesh; store_mesh=true) =begin
     ncells  = length(mesh.cells)
     F = _get_float(mesh)
     backend = _get_backend(mesh)
-    # arr = _convert_array!(zeros(F,ncells), backend)
     arr = KernelAbstractions.zeros(backend, F, ncells)
-    # ScalarField(arr, mesh, ())
-    ScalarField(arr, mesh)
+    if store_mesh
+        return ScalarField(arr, mesh)
+    else
+        return ScalarField(arr, ())
+    end
 end
-# ScalarField(values::Vector{Float64}, mesh::AbstractMesh) =begin
-#     ncells  = length(mesh.cells)
-#     F = _get_float(mesh)
-#     backend = _get_backend(mesh)
-#     arr = _convert_array!(values, backend)
-#     # ScalarField(arr, mesh, ())
-#     ScalarField(arr, mesh)
-# end
 
-struct FaceScalarField{VF,M<:AbstractMesh} <: AbstractScalarField
-    values::VF#Vector{F}
+struct FaceScalarField{VF,M} <: AbstractScalarField
+    values::VF
     mesh::M
 end
 Adapt.@adapt_structure FaceScalarField
 
-FaceScalarField(mesh::AbstractMesh) = begin
+FaceScalarField(mesh::AbstractMesh; store_mesh=true) = begin
     nfaces  = length(mesh.faces)
     F = _get_float(mesh)
     backend = _get_backend(mesh)
-    # arr = _convert_array!(zeros(F,nfaces), backend)
     arr = KernelAbstractions.zeros(backend, F, nfaces)
-    FaceScalarField(arr, mesh) #Make it pretty
+    if store_mesh
+        return FaceScalarField(arr, mesh)
+    else
+        return FaceScalarField(arr, ())
+    end
 end
 
 Base.getindex(s::AbstractScalarField, i::I) where I<:Integer = begin
@@ -124,27 +114,11 @@ end
 Adapt.@adapt_structure VectorField
 
 VectorField(mesh::AbstractMesh) = begin
-    ncells = length(mesh.cells)
-    F = _get_float(mesh) #eltype(mesh.nodes[1].coords) #TEMPORARY SOLUTION, RUN BY HUMBERTO
-    backend = _get_backend(mesh)
-    # arr1 = _convert_array!(zeros(F,ncells), backend)
-    # arr2 = _convert_array!(zeros(F,ncells), backend)
-    # arr3 = _convert_array!(zeros(F,ncells), backend)
-
-    arr1 = KernelAbstractions.zeros(backend, F, ncells)
-    arr2 = KernelAbstractions.zeros(backend, F, ncells)
-    arr3 = KernelAbstractions.zeros(backend, F, ncells)
-
-    
     VectorField(
-        # ScalarField(arr1, mesh, ()),
-        # ScalarField(arr2, mesh, ()), 
-        # ScalarField(arr3, mesh, ()), 
-        ScalarField(arr1, mesh),
-        ScalarField(arr2, mesh), 
-        ScalarField(arr3, mesh), 
+        ScalarField(mesh, store_mesh=false),
+        ScalarField(mesh, store_mesh=false), 
+        ScalarField(mesh, store_mesh=false), 
         mesh,
-        # () # to hold x, y, z and combined BCs
         )
 end
 
@@ -156,26 +130,13 @@ struct FaceVectorField{S1<:FaceScalarField,S2,S3,M} <: AbstractVectorField
 end
 Adapt.@adapt_structure FaceVectorField
 FaceVectorField(mesh::AbstractMesh) = begin
-    nfaces = length(mesh.faces)
-    F = _get_float(mesh)
-    backend = _get_backend(mesh)
-    # arr1 = _convert_array!(zeros(F,nfaces), backend)
-    # arr2 = _convert_array!(zeros(F,nfaces), backend)
-    # arr3 = _convert_array!(zeros(F,nfaces), backend)
-
-    arr1 = KernelAbstractions.zeros(backend, F, nfaces)
-    arr2 = KernelAbstractions.zeros(backend, F, nfaces)
-    arr3 = KernelAbstractions.zeros(backend, F, nfaces)
-
-    
     FaceVectorField(
-        FaceScalarField(arr1, mesh),
-        FaceScalarField(arr2, mesh), 
-        FaceScalarField(arr3, mesh),
+        FaceScalarField(mesh, store_mesh=false),
+        FaceScalarField(mesh, store_mesh=false), 
+        FaceScalarField(mesh, store_mesh=false),
         mesh)
 end
 
-# Base.getindex(v::AbstractVectorField, i::Integer) = @inbounds SVector{3, eltype(v.x)}(v.x[i], v.y[i], v.z[i])
 Base.getindex(v::AbstractVectorField, i::Integer) = @inbounds SVector{3}(v.x[i], v.y[i], v.z[i])
 Base.setindex!(v::AbstractVectorField, vec::SVector{3, T}, i::Integer) where T= begin
     # length(x) == 3 || throw("Vectors must have 3 components")
@@ -219,7 +180,6 @@ Base.getindex(vec::MagSqr{N,Field}, i::I) where {N,Field<:AbstractField,I<:Integ
 end
 _mesh(field::MagSqr) = _mesh(field.parent)
 
-
 # TENSORFIELD IMPLEMENTATION
 
 struct TensorField{S1,S2,S3,S4,S5,S6,S7,S8,S9,M} <: AbstractTensorField
@@ -237,15 +197,15 @@ end
 Adapt.@adapt_structure TensorField
 TensorField(mesh::AbstractMesh) = begin
     TensorField(
-        ScalarField(mesh),
-        ScalarField(mesh),
-        ScalarField(mesh),
-        ScalarField(mesh),
-        ScalarField(mesh),
-        ScalarField(mesh),
-        ScalarField(mesh),
-        ScalarField(mesh),
-        ScalarField(mesh),
+        ScalarField(mesh, store_mesh=false),
+        ScalarField(mesh, store_mesh=false),
+        ScalarField(mesh, store_mesh=false),
+        ScalarField(mesh, store_mesh=false),
+        ScalarField(mesh, store_mesh=false),
+        ScalarField(mesh, store_mesh=false),
+        ScalarField(mesh, store_mesh=false),
+        ScalarField(mesh, store_mesh=false),
+        ScalarField(mesh, store_mesh=false),
         mesh
     )
 end
@@ -325,7 +285,6 @@ Adapt.@adapt_structure Dev
 
 Base.getindex(T::Dev{Tensor}, i::Idx) where {Tensor<:AbstractTensorField,Idx<:Integer} = begin
     Ti = T.parent[i]
-    # Ti - 1/3*tr(Ti)*I
     Ti - 1/3*tr(Ti)*I
 end
 

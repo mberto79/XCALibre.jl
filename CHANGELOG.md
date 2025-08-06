@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * In the construction of a `Physics` object, the `boundary_map` function returned a `boundary_info` struct which was incorrectly using an abstract type `Integer`. This resulted in a failure to convert a `Physics` object to the cpu and back to the gpu [#67](@ref)
   
 ### Changed
-* No changes included
+* The constructors for `ScalarField` and `FaceScalarField` now include a `store_mesh` keyword argument to request a reference of the mesh to be stored (default) or not (setting `store_mesh=false`). This can be used to not include references to the mesh for each field in `VectorFields` and `TensorFields`. This has improved compile times and decreased simulation times (particularly on the GPU - perhaps due to freeing registers used to carry unnecessary type information) [#69](@ref)
 
 ### Breaking
 * No breaking changes

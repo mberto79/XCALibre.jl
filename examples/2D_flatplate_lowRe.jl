@@ -1,5 +1,5 @@
 using XCALibre
-using CUDA
+# using CUDA
 
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
@@ -8,8 +8,8 @@ grid = "flatplate_2D_lowRe.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-backend = CUDABackend(); workgroup = 32
-# backend = CPU(); workgroup = 1024; activate_multithread(backend)
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)

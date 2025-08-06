@@ -17,13 +17,6 @@ function calculate_field_average!(field_accumulator::PostProcess,current_field,i
     return nothing 
 end
 
-# function postprocess(field,start,finish)
-
-
-
-#     return nothing
-# end 
-
 
 
 

@@ -112,7 +112,8 @@ GC.gc(false)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-@time residuals = run!(model, config, output=OpenFOAM(), ncorrectors=0)
+# @time residuals = run!(model, config, output=OpenFOAM(), ncorrectors=0)
+@time residuals = run!(model, config, output=VTK(), ncorrectors=0)
 
 model_cpu = adapt(CPU(), model)
 

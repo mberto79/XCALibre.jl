@@ -47,17 +47,16 @@ end
 
     
     (; area, normal, delta, e) = face
-    dPN = cellN.centre - cell.centre
-    n = ns*normal
-    Ef = dPN*(norm(n)^2/(dPN⋅n))*area
+    # dPN = cellN.centre - cell.centre
+    # n = ns*normal
+    # Ef = dPN*(norm(n)^2/(dPN⋅n))*area
+    # # Sf = ns*area*normal # original
+    # # e = ns*e # original
+    # # Ef = ((Sf⋅Sf)/(Sf⋅e))*e # original
+    # Ef_mag = norm(Ef)
+    # ap = term.sign*(term.flux[fID] * Ef_mag)/delta
 
-    # Sf = ns*area*normal # original
-    # e = ns*e # original
-    # Ef = ((Sf⋅Sf)/(Sf⋅e))*e # original
-    Ef_mag = norm(Ef)
-    ap = term.sign*(term.flux[fID] * Ef_mag)/delta
-
-    # ap = term.sign*(term.flux[fID] * area)/delta
+    ap = term.sign*(term.flux[fID]*area)/delta
     
     # Increment sparse array
     ac = -ap
@@ -77,19 +76,24 @@ end
     nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     # Retrieve mesh centre values
-    xf = face.centre
-    xC = cell.centre
-    xN = cellN.centre
+    f = face.centre
+    C = cell.centre
+    N = cellN.centre
+
+    # calculate distance vectors
+    d_fC = C - f 
+    d_fN = N - f
     
     # Calculate weights using normal functions
-    # weight = norm(xN - xf)/norm(xN - xC)
-    weight = norm(xN - xf)/(norm(xN - xf) + norm(xC - xf))
+    weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
     one_minus_weight = one(eltype(weight)) - weight
 
     # Calculate required increment
     ap = term.sign*(term.flux[fID]*ns)
-    ac = ap*one_minus_weight
-    an = ap*weight
+    # ac = ap*one_minus_weight
+    # an = ap*weight
+    ac = ap*weight
+    an = ap*one_minus_weight
     return ac, an
 end
 @inline scheme_source!(
@@ -119,18 +123,24 @@ end
     nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     # Retrieve mesh centre values
-    xf = face.centre
-    xC = cell.centre
-    xN = cellN.centre
+    f = face.centre
+    C = cell.centre
+    N = cellN.centre
+
+    # calculate distance vectors
+    d_fC = C - f 
+    d_fN = N - f
     
     # Calculate weights using normal functions
-    weight = norm(xN - xf)/(norm(xN - xf) + norm(xC - xf))
+    weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
     one_minus_weight = one(eltype(weight)) - weight
 
     # Calculate coefficients
     ap = term.sign*(term.flux[fID]*ns)
-    acLinear = ap*one_minus_weight
-    anLinear = ap*weight
+    # acLinear = ap*one_minus_weight
+    # anLinear = ap*weight
+    acLinear = ap*weight 
+    anLinear = ap*one_minus_weight
     acUpwind = max(ap, 0.0) 
     anUpwind = -max(-ap, 0.0)
     ac = 0.75*acLinear + 0.25*acUpwind

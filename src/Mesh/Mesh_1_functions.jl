@@ -11,6 +11,25 @@ _get_int(mesh) = eltype(mesh.get_int)
 _get_float(mesh) = eltype(mesh.get_float)
 _get_backend(mesh) = get_backend(mesh.cells)
 
+# function to calculate internal face properties
+# C1F1 = distance vector from cell1 centre to face centre
+# C2F1 = distance vector from cell2 centre to face centre
+# C1C2 = distance vector from cell1 to cell2
+weight_delta_e(C1F1, C2F1, C1C2, normal) = begin
+    weight = norm(C2F1)/(norm(C1F1) + norm(C2F1))
+    delta = norm(C1C2)
+    e = C1C2/delta
+    return weight, delta, e
+end
+
+# function to calculate boundary face properties
+weight_delta_e(C1F1, normal) = begin
+    weight = one(eltype(C1F1))
+    delta = norm(C1F1)
+    e = C1F1/delta
+    return weight, delta, e
+end
+
 function _convert_array!(arr, backend::CPU)
     return arr
 end

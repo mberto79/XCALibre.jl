@@ -55,8 +55,8 @@ function setup_laplace_solver(
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
 
-    (; T, Tf, rDf, rhocp, k, kf, cp, rho) = model.energy
-
+    (; T, Tf, rDf, rhocp, ) = model.energy
+    (; k, kf, cp, rho) = model.solid # These come from e.g Solid{Uniform} - remove
     mesh = model.domain
 
     source_field = ScalarField(mesh) #0.0 field

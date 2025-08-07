@@ -64,3 +64,29 @@ GC.gc(true)
 initialise!(model.energy.T, 15)
 
 residuals = run!(model, config)
+
+# # Results can be seen in figures "grid_laplace.png" and "testing_laplace.png"
+
+# @kwdef struct Coeffs{T}
+#   c1::T
+#   c2::T
+#   c3::T
+#   c4::T
+#   c5::T
+#   c6::T
+#   c7::T
+#   c8::T
+#   c9::T
+# end
+
+# (c::Coeffs)(T) = c.c1.^8 + .... 
+
+# SolidMaterials # this is an absytract time
+# struct Aluminium end
+
+# get_coeffs(material::Aluminium) = Coeffs(
+#     c1 = as,
+#     c2 = 4,
+#     c3 = 4,
+#     ...
+# )

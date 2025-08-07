@@ -4,7 +4,7 @@ using XCALibre
 # using AMDGPU # Run this if using AMD GPU
 
 # quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
-mesh_file = "unv_sample_meshes/OF_squareBend_laminar/constant/polyMesh/"
+mesh_file = "unv_sample_meshes/OF_filmcooling/constant/polyMesh/"
 mesh = FOAM3D_mesh(mesh_file, scale=1.0, integer_type=Int64, float_type=Float64)
 
 

@@ -288,7 +288,7 @@ function turbulence!(
     # explicit_relaxation!(k, prev, solvers.k.relax, config)
 
     magnitude2!(Ω, S, config, scale_factor=2.0) # 
-    @. nut.values = coeffs.α1*k.values/(max(coeffs.α1*omega.values, F2.values*Ω.values))
+    @. nut.values = coeffs.α1*k.values/(rho.values*max(coeffs.α1*omega.values, F2.values*Ω.values))
 
     interpolate!(nutf, nut, config)
     correct_boundaries!(nutf, nut, nut.BCs, time, config)

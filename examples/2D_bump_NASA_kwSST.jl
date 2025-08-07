@@ -3,25 +3,26 @@ using XCALibre
 # using CUDA
 
 # mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
-mesh_file = "./examples/0_GRIDS/backwardFacingStep_2mm.unv"
-mesh = UNV2D_mesh(mesh_file, scale=0.001)
+mesh_file = "./examples/0_GRIDS/OF_bump2d/polymesh/"
+mesh = FOAM3D_mesh(mesh_file, scale=1, integer_type=Int64, float_type=Float64)
 
 # mesh_dev = adapt(CUDABackend(), mesh)
 # mesh_dev = adapt(CPUBackend(), mesh)
-mesh_dev = mesh
+mesh_dev = adapt(CPU(), mesh)
 
-nu = 1e-3
+L = 50
+nu = 2.31e-5
 # u_mag = 1.5 # 5mm mesh
-u_mag = 3.5 # 2mm mesh
+u_mag = 69.44 # 2mm mesh
 velocity = [u_mag, 0.0, 0.0]
-Tu = 0.05
+Tu = 0.01
 nuR = 100
-k_inlet = 1 #3/2*(Tu*u_mag)^2
-ω_inlet = 1000 #k_inlet/(nuR*nu)
+ReL = u_mag*L/nu
+k_inlet = 0.001*u_mag^2/ReL#3/2*(Tu*u_mag)^2
+ω_inlet = 2*u_mag/L #k_inlet/(nuR*nu)
 
 νt_inlet = k_inlet/ω_inlet
 Re = velocity[1]*0.1/nu
-
 
 model = Physics(
     time = Steady(),
@@ -31,47 +32,58 @@ model = Physics(
     domain = mesh_dev
     )
 
+
 @assign! model momentum U (
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Wall(:top, [0.0, 0.0, 0.0])
+    Symmetry(:top),
+    Symmetry(:symUp),
+    Wall(:bump, [0.0, 0.0, 0.0]),
+    Symmetry(:symDown)
 )
 
 @assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
+    Symmetry(:top, 0.0),
+    Symmetry(:symUp, 0.0),
+    Wall(:bump, 0.0),
+    Symmetry(:symDown, 0.0)
 )
 
 @assign! model turbulence k (
     Dirichlet(:inlet, k_inlet),
     Neumann(:outlet, 0.0),
-    KWallFunction(:wall),
-    KWallFunction(:top)
+    Neumann(:top, 0.0),
+    Neumann(:symUp, 0.0),
+    KWallFunction(:bump),
+    Neumann(:symDown, 0.0)
 )
 
 @assign! model turbulence omega (
     Dirichlet(:inlet, ω_inlet),
     Neumann(:outlet, 0.0),
-    OmegaWallFunction(:wall),
-    OmegaWallFunction(:top)
+    Neumann(:top, 0.0),
+    Neumann(:symUp, 0.0),
+    OmegaWallFunction(:bump),
+    Neumann(:symDown, 0.0)
 )
 
 @assign! model turbulence nut (
     Dirichlet(:inlet, νt_inlet),
     Neumann(:outlet, 0.0),
-    NutWallFunction(:wall), 
-    NutWallFunction(:top)
+    Neumann(:top, 0.0),
+    Neumann(:symUp, 0.0),
+    NutWallFunction(:bump),
+    Neumann(:symDown, 0.0)
 )
 
 schemes = (
-    U = set_schemes(divergence=Linear),
+    U = set_schemes(divergence=Upwind),
     p = set_schemes(divergence=Upwind),
     y = set_schemes(gradient=Midpoint),
-    k = set_schemes(divergence=Linear),
-    omega = set_schemes(divergence=Linear)
+    k = set_schemes(divergence=Upwind),
+    omega = set_schemes(divergence=Upwind)
 )
 
 solvers = (
@@ -80,7 +92,7 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-8,
-        relax       = 0.7,
+        relax       = 0.5,
         rtol = 1e-2,
         atol = 1e-10
     ),
@@ -89,7 +101,7 @@ solvers = (
         solver      = CgSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-8,
-        relax       = 0.3,
+        relax       = 0.2,
         rtol = 1e-3,
         atol = 1e-10
     ),
@@ -105,7 +117,7 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-8,
-        relax       = 0.5,
+        relax       = 0.3,
         rtol = 1e-3,
         atol = 1e-10
     ),
@@ -114,7 +126,7 @@ solvers = (
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
         preconditioner = Jacobi(),
         convergence = 1e-8,
-        relax       = 0.5,
+        relax       = 0.3,
         rtol = 1e-3,
         atol = 1e-10
     )
@@ -140,33 +152,33 @@ initialise!(model.turbulence.nut, νt_inlet)
 
 residuals = run!(model, config) # 36.90k allocs
 
-Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)
-Fp = pressure_force(:wall, model.momentum.p, 1.25)
-Fv = viscous_force(:wall, model.momentum.U, 1.25, nu, model.turbulence.nut)
+# Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)
+# Fp = pressure_force(:wall, model.momentum.p, 1.25)
+# Fv = viscous_force(:wall, model.momentum.U, 1.25, nu, model.turbulence.nut)
 
 
-plot(; xlims=(0,494))
-plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-plot!(1:length(Rp), Rp, yscale=:log10, label="p")
+# plot(; xlims=(0,494))
+# plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
+# plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
+# plot!(1:length(Rp), Rp, yscale=:log10, label="p")
 
-# PROFILING CODE
+# # PROFILING CODE
 
-using Profile, PProf
+# using Profile, PProf
 
-GC.gc()
+# GC.gc()
 
-initialise!(model.momentum.U, velocity)
-initialise!(model.momentum.p, 0.0)
-initialise!(model.turbulence.k, k_inlet)
-initialise!(model.turbulence.omega, ω_inlet)
-initialise!(model.turbulence.nut, νt_inlet)
+# initialise!(model.momentum.U, velocity)
+# initialise!(model.momentum.p, 0.0)
+# initialise!(model.turbulence.k, k_inlet)
+# initialise!(model.turbulence.omega, ω_inlet)
+# initialise!(model.turbulence.nut, νt_inlet)
 
-residuals = run!(model, config)
+# residuals = run!(model, config)
 
-Profile.Allocs.clear()
-Profile.Allocs.@profile sample_rate=0.1 begin 
-residuals = run!(model, config)
-end
+# Profile.Allocs.clear()
+# Profile.Allocs.@profile sample_rate=0.1 begin 
+# residuals = run!(model, config)
+# end
 
-PProf.Allocs.pprof()
+# PProf.Allocs.pprof()

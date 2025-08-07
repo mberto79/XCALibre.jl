@@ -20,7 +20,7 @@ include("energy_types.jl")
 # Energy models
 include("Sensible_Enthalpy.jl")
 include("Laplace_Energy.jl")
-include("Cryogenic_Conduction.jl")
+include("Conduction.jl")
 
 # Property Models
 include("PropertyModels/Cryogenic_metal_properties.jl")

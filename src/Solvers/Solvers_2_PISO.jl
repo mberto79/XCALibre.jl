@@ -46,7 +46,7 @@ function PISO(
     (; U, p, Uf, pf) = model.momentum
     (; nu) = model.fluid
     mesh = model.domain
-    (; solvers, schemes, runtime, hardware, boundaries) = config
+    (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
     
@@ -99,14 +99,7 @@ function PISO(
     @info "Starting PISO loops..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
-    # other thing ive added 
-    mean_U = ScalarField(mesh)
-    mean_UU = ScalarField(mesh)
-    postprocess_U = PostProcess(mean_U,Int(ceil(iterations*3/10)),iterations) 
-    postprocess_UU = PostProcess(mean_UU,Int(ceil(iterations*3/10)),iterations)
-    vector_of_structs = [postprocess_U,postprocess_UU]
 
-    #mean_field = Mean(ScalarField(mesh))
 
     @time for iteration ∈ 1:iterations
         time = iteration *dt
@@ -208,12 +201,10 @@ function PISO(
         save_output(model, outputWriter, iteration, time, config)
     end
 
-    #Here the average velocity will be calculated and stored in a struct 
-    fields_to_average_over = [model.momentum.U.x.values,model.momentum.U.x.values .^ 2]
-    calculate_field_average!.(vector_of_structs,fields_to_average_over,iteration)
+    calculate_field_average!(postprocess,model,iteration)
 
 
     end # end for loop
 
-    return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p,U=postprocess_U.field.values,UU=postprocess_UU.field.values)
+    return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p,U=postprocess.field.values)
 end

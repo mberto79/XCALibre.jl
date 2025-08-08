@@ -206,5 +206,5 @@ function PISO(
 
     end # end for loop
 
-    return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p,U=postprocess.field.values)
+    return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end

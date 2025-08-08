@@ -6,29 +6,39 @@ struct FieldAverage{FLAG,T<:AbstractScalarField,I<:Integer}
     start::I
     finish::I
 end
-function FieldAverage{FLAG}(field::T, start::I, finish::I) where
-        {FLAG,T<:AbstractScalarField,I<:Integer}
+
+struct FieldRMS{FLAG,T<:AbstractScalarField,I<:Integer}
+    field::T
+    start::I
+    finish::I
+end  
+
+
+# base constructor used by all the convenience wrappers
+function FieldAverage{FLAG}(field::T,start::I,finish::I) where {FLAG,T<:AbstractScalarField,I<:Integer}
     @assert FLAG in (:Ux, :Uy, :Uz) "Unsupported averaging tag $FLAG"
+    start  > 0      || throw(ArgumentError("start must be strictly positive (got $start)"))
+    finish > start  || throw(ArgumentError("finish ($finish) must be greater than start ($start)"))
     FieldAverage{FLAG,T,I}(field, start, finish)
 end
 
-function FieldAverage{FLAG}(field::T) where
-        {FLAG,T<:AbstractScalarField}
-    @assert FLAG in (:Ux, :Uy, :Uz) "Unsupported averaging tag $FLAG"
+#convenience wrapper for when just a field is passed
+function FieldAverage{FLAG}(field::T) where {FLAG,T<:AbstractScalarField} 
     FieldAverage{FLAG}(field, 1, typemax(Int))
 end
-
-function FieldAverage{FLAG}(mesh::M) where
-        {FLAG,M<:Mesh2}
-    @assert FLAG in (:Ux, :Uy, :Uz) "Unsupported averaging tag $FLAG"
+# convenience wrapper 2 – only a mesh
+function FieldAverage{FLAG}(mesh::M) where {FLAG,M<:Mesh2}
     field = ScalarField(mesh)
     FieldAverage{FLAG}(field, 1, typemax(Int))
 end
+#convenience wrapper 3 - mesh and start and finish 
+function FieldAverage{FLAG}(mesh::M, start::I, finish::I) where
+        {FLAG,M<:Mesh2,I<:Integer}
+    field = ScalarField(mesh)
+    FieldAverage{FLAG}(field, start, finish)
+end
 
-# function FieldAverage(fieldname::S,model) where {S<:AbstractString}
-#     field = string_into_field(fieldname,model)
-#     FieldAverage{T,Int}(field, 1, typemax(Int))
-# end
+
 
 
 #internal helper; shared arithmetic
@@ -37,17 +47,21 @@ end
 end
 
 # specialised entry points — one tiny method per component
-@inline function calculate_field_average!(fa::FieldAverage{:Ux}, model, iter::Integer)
-    n = iter - fa.start + 1
-    _update_values!(fa.field.values, model.momentum.U.x.values, n)
+@inline function calculate_field_average!(f::FieldAverage{:Ux}, model, iter::Integer)
+    n = iter - f.start + 1
+    _update_values!(f.field.values, model.momentum.U.x.values, n)
 end
 
-@inline function calculate_field_average!(fa::FieldAverage{:Uy}, model, iter::Integer)
-    n = iter - fa.start + 1
-    _update_values!(fa.field.values, model.momentum.U.y.values, n)
+@inline function calculate_field_average!(f::FieldAverage{:Uy}, model, iter::Integer)
+    n = iter - f.start + 1
+    _update_values!(f.field.values, model.momentum.U.y.values, n)
 end
 
-@inline function calculate_field_average!(fa::FieldAverage{:Uz}, model, iter::Integer)
-    n = iter - fa.start + 1
-    _update_values!(fa.field.values, model.momentum.U.z.values, n)
+@inline function calculate_field_average!(f::FieldAverage{:Uz}, model, iter::Integer)
+    n = iter - f.start + 1
+    _update_values!(f.field.values, model.momentum.U.z.values, n)
+end
+
+@inline function calculate_field_average!(f::NamedTuple{()}, model, iter::Integer)
+    return nothing
 end

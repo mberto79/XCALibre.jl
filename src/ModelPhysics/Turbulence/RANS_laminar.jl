@@ -79,13 +79,13 @@ function turbulence!(
     rans::LaminarModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
     ) where {T,F<:AbstractCompressible,M,Tu<:AbstractTurbulenceModel,E,D,BI}
     (; U, Uf, gradU) = S
-    grad!(gradU, Uf, U, U.BCs, time, config)
+    grad!(gradU, Uf, U, config.boundaries.U, time, config)
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
     nothing
 end
 
 # Specialise VTK writer
-function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, VTKWriter, name
+function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration, time, config
     ) where {T,F,M,Tu<:Laminar,E,D,BI}
     if typeof(model.fluid)<:AbstractCompressible
         args = (
@@ -99,14 +99,14 @@ function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, VTKWriter, name
             ("p", model.momentum.p)
         )
     end
-    write_vtk(name, model.domain, VTKWriter, args...)
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end
 
-function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, VTKWriter, name
+function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration, time, config
     ) where {T,F,M,Tu<:Laminar,E<:Nothing,D,BI}
     args = (
         ("U", model.momentum.U), 
         ("p", model.momentum.p),
     )
-    write_vtk(name, model.domain, VTKWriter, args...)
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end

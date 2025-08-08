@@ -9,8 +9,9 @@ mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 @test typeof(mesh) <: Mesh2
 
-mesh_dev = mesh
-# mesh_dev = adapt(CUDABackend(), mesh)  # Uncomment this if using GPU
+workgroup = workgroupsize(mesh)
+backend = CPU()
+mesh_dev = adapt(backend, mesh)
 
 # Inlet conditions
 Umag = 0.5
@@ -20,45 +21,47 @@ Re = velocity[1]*0.1/nu
 
 model = Physics(
     time = Steady(),
-    fluid = Fluid{Incompressible}(nu = nu),
+    fluid = Fluid{Incompressible}(nu=nu),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
-    domain = mesh # mesh_dev  # use mesh_dev for GPU backend
+    domain = mesh_dev # mesh_dev  # use mesh_dev for GPU backend
     )
 
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Symmetry(:top)
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Symmetry(:top)
+BCs = assign(
+    region=mesh,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Extrapolated(:outlet),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Symmetry(:top)
+        ],
+        p = [
+            Extrapolated(:inlet),
+            Dirichlet(:outlet, 0.0),
+            Extrapolated(:wall),
+            Symmetry(:top)
+        ]
+    )
 )
 
 schemes = (
-    U = set_schemes(divergence = Linear),
-    # U = set_schemes(divergence = Upwind),
-    p = set_schemes()
+    U = Schemes(divergence = Linear),
+    # U = Schemes(divergence = Upwind),
+    p = Schemes()
 )
 
 solvers = (
-    U = set_solver(
-        model.momentum.U;
-        solver = BicgstabSolver, # BicgstabSolver, GmresSolver
+    U = SolverSetup(
+        solver = Bicgstab(), # Bicgstab(), Gmres()
         smoother = JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax = 0.8,
         rtol = 1e-1,
     ),
-    p = set_solver(
-        model.momentum.p;
-        solver = CgSolver, # BicgstabSolver, GmresSolver
+    p = SolverSetup(
+        solver = Cg(), # Bicgstab(), Gmres()
         smoother = JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -67,15 +70,15 @@ solvers = (
     )
 )
 
-runtime = set_runtime(
+runtime = Runtime(
     iterations=500, time_step=1, write_interval=500)
 
-hardware = set_hardware(backend=CPU(), workgroup=1024)
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-# hardware = set_hardware(backend=ROCBackend(), workgroup=32)
+hardware = Hardware(backend=backend, workgroup=workgroup)
+# hardware = Hardware(backend=CUDABackend(), workgroup=32)
+# hardware = Hardware(backend=ROCBackend(), workgroup=32)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc()
 
@@ -84,7 +87,7 @@ GC.gc()
 
 residuals = run!(model, config)
 
-inlet = boundary_average(:inlet, model.momentum.U, config)
-outlet = boundary_average(:outlet, model.momentum.U, config)
+inlet = boundary_average(:inlet, model.momentum.U, BCs.U, config)
+outlet = boundary_average(:outlet, model.momentum.U, BCs.U, config)
 
 @test outlet ≈ 0.5*inlet atol=0.1*Umag

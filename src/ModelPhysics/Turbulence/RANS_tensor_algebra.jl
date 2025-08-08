@@ -6,8 +6,9 @@ inner_product!(S::F, ∇1::Grad, ∇2::Grad, config) where F<:ScalarField = begi
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    kernel! = _inner_product!(backend, workgroup)
-    kernel!(S, ∇1, ∇2, ndrange = length(S))
+    ndrange = length(S)
+    kernel! = _inner_product!(_setup(backend, workgroup, ndrange)...)
+    kernel!(S, ∇1, ∇2)
     # KernelAbstractions.synchronize(backend)
 end
 
@@ -40,13 +41,14 @@ function magnitude!(magS::ScalarField, S, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    kernel! = _magnitude!(backend, workgroup)
-    kernel!(magS, S, ndrange = length(magS))
+    ndrange = length(magS)
+    kernel! = _magnitude!(_setup(backend, workgroup, ndrange)...)
+    kernel!(magS, S)
     # KernelAbstractions.synchronize(backend)
 end
 
 # @kernel function _magnitude!(magS::ScalarField, S::AbstractVectorField)
-@kernel function _magnitude!(magS::ScalarField, S)
+@kernel function _magnitude!(magS::AbstractScalarField, S)
     i = @index(Global)
     @uniform values = magS.values
     
@@ -64,13 +66,14 @@ end
 end
 
 function magnitude2!(
-    magS::ScalarField, S::AbstractTensorField, config; scale_factor=1.0
+    magS, S, config; scale_factor=1.0
     )
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    kernel! = _magnitude2!(backend, workgroup)
-    kernel!(magS, S, scale_factor, ndrange = length(magS))
+    ndrange = length(magS)
+    kernel! = _magnitude2!(_setup(backend, workgroup, ndrange)...)
+    kernel!(magS, S, scale_factor)
     # KernelAbstractions.synchronize(backend)
 end
 
@@ -91,5 +94,46 @@ end
             end
         end
         magS.values[i] = sum*scale_factor
+    end
+end
+
+@kernel function _magnitude2!(
+    magS::AbstractScalarField, S::AbstractVectorField, scale_factor
+    )
+    i = @index(Global)
+
+    @uniform values = magS.values
+
+    @inbounds begin
+        # sum = 0.0
+        Si = S[i]
+        # for j ∈ 1:3
+        #     for k ∈ 1:3
+                # sum +=   Sjk[j,k]*Sjk[j,k]
+                res =   Si⋅Si
+        #     end
+        # end
+        # magS.values[i] = sum*scale_factor
+        magS.values[i] = res
+    end
+end
+
+function square!(psi2, psi, config; scale_factor=1.0)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    kernel! = _square!(backend, workgroup)
+    kernel!(psi2, psi, scale_factor, ndrange = length(psi2))
+    nothing
+end
+
+@kernel function _square!(
+    psi2::AbstractTensorField, psi::AbstractVectorField, scale_factor
+    )
+    i = @index(Global)
+
+    @inbounds begin
+        vi = psi[i]
+        psi2[i] = vi*vi'
     end
 end

@@ -6,21 +6,15 @@
 
 The `Physics` object is part of the highest level API in `XCALibre.jl`. `Physics` objects are a means for users to set up the physics and models that are relevant to their particular CFD simulation. Internally, the `Physics` model created is passed to solvers and is used for dispatch (solvers, algorithms and models). Thus, it is important to ensure that the information provided to this object is correct and representative of the user's intentions. `Physics` models consist of a struct with the  fields shown below. All fields must be provided to the solvers otherwise the construction of the object will fail.
 
-```julia
-struct Physics{T,F,M,Tu,E,D,BI}
-    time::T
-    fluid::F
-    momentum::M 
-    turbulence::Tu 
-    energy::E
-    domain::D
-    boundary_info::BI
-end 
+```@docs; canonical=false
+Physics
 ```
 
- For convenience, `XCALibre.jl` provides a more user-friendly constructor that will automatically take care of the construction of derived fields. This constructor uses keyword arguments and has the following signature (follow the link for more information)
+ For convenience, `XCALibre.jl` provides a more user-friendly constructor that will automatically take care of the construction of derived fields.
 
-[`Physics(; time, fluid, turbulence, energy, domain)`](@ref)
+```@docs; canonical=false
+Physics(; time, fluid, turbulence, energy, domain)
+```
 
 At this point, it is worth reminding users that one of the benefits of working with `Julia` is its dynamic nature. This means that objects can be dynamically interrogated. For example:
 
@@ -87,9 +81,9 @@ end
 
 From the subtype tree above, we can see that XCALibre.jl offers 2 major abstract fluid types, `AbstractIncompressible` and `AbstractCompressible`. There are 3 concrete fluid types:
 
-* `Incompressible` - for simulations were the fluid density does not change with pressure
-* `WeaklyCompressible` - for simulation were the fluid density is allowed to change (no shockwaves)
-* `Compressible` - for simulations were discontinuities may appear (not available for general use yet)
+- `Incompressible` - for simulations were the fluid density does not change with pressure
+- `WeaklyCompressible` - for simulation were the fluid density is allowed to change (no shockwaves)
+- `Compressible` - for simulations were discontinuities may appear (not available for general use yet)
 
 To specify a given fluid type, the `Fluid` wrapper type is used as a general constructor which is specialised depending depending on the fluid type from the list above provided by the user. The constructors require the following inputs:
 
@@ -104,11 +98,11 @@ Fluid{WeaklyCompressible}(; nu, cp, gamma, Pr)
 ```
 where the input variables represent the following:
 
-* `nu` - kinematic viscosity
-* `rho` - fluid density
-* `gamma` - specific heat ratio
-* `Pr` - Prandlt number
-* `cp` - specific heat at constant pressure
+- `nu` - kinematic viscosity
+- `rho` - fluid density
+- `gamma` - specific heat ratio
+- `Pr` - Prandlt number
+- `cp` - specific heat at constant pressure
 
 For example, an incompressible fluid can be specified as follows
 ```julia
@@ -162,6 +156,11 @@ Physics(
 ```
 
 ### LES models
+
+Laminar model: no user input is required. This is a dummy model that does not contribute to the momentum equation. It can be used to carry out LES simulations of laminar flows. For sufficiently refined grids, this model can be used for DNS simulations. Since `XCALibre.jl` is a Finite Volume Method solver, for complex geometries the simulation should be regarded as a quasi-DNS simulation. For second order accurate DNS simulations very high quality hex grids should be used.
+```julia
+LES{Laminar}() # only constructor needed
+```
 
 Smagorinsky model: the standard model constant is passed by default. Boundary conditions for `nut` must be provided, generally zero gradient conditions work well. No special wall functions for `nut` in LES mode are available.
 ```julia
@@ -264,55 +263,55 @@ print_tree(AbstractBoundary) # hide
 
 Philosophically, the four subtypes represent different physical types of boundary conditions:
 
-* `AbstractDirichlet` boundary conditions are used to assign a concrete value to field at the boundary.
-* `AbstractNeumann` boundaries are used to fix the field gradient at the boundary.
-* `AbstractPhysicalConstraint` boundaries represent physical constraints imposed on the domain.
-* `AbstractWallFunction` represent models for treating flow or turbulence quantities in wall regions.
+- `AbstractDirichlet` boundary conditions are used to assign a concrete value to field at the boundary.
+- `AbstractNeumann` boundaries are used to fix the field gradient at the boundary.
+- `AbstractPhysicalConstraint` boundaries represent physical constraints imposed on the domain.
+- `AbstractWallFunction` represent models for treating flow or turbulence quantities in wall regions.
 
 ### `AbstractDirichlet` conditions
 
 ```julia
 Dirichlet(name, value)
 ```
-* `name` is a symbol providing the boundary name
-* `value` is a vector or scalar defining desired value at the boundary
+- `name` is a symbol providing the boundary name
+- `value` is a vector or scalar defining desired value at the boundary
   
 ```julia
 FixedTemperature(name; T, model::EnergyModel<:AbstractEnergyModel)
 ```
-* `name` is a symbol providing the boundary name
-* `T` is a keyword argument to define the temperate value to be assigned at the boundary
-* `model` is a keyword argument that expects an instance of the energy model to be used e.g. `SensibleEnergy`
+- `name` is a symbol providing the boundary name
+- `T` is a keyword argument to define the temperate value to be assigned at the boundary
+- `model` is a keyword argument that expects an instance of the energy model to be used e.g. `SensibleEnergy`
 
 ```julia
 DirichletFunction(name, func)
 ```
 
-* `name` is a symbol providing the boundary name
-* `func` is a function identifier. `func` is a user-defined function (but can also be a neural network) that returns a scalar or vector as a function of time and space.
-* `func` must adhere to an internal contract. See [`XCALibre.Discretise.DirichletFunction`](@ref) for more details.
+- `name` is a symbol providing the boundary name
+- `func` is a function identifier. `func` is a user-defined function (but can also be a neural network) that returns a scalar or vector as a function of time and space.
+- `func` must adhere to an internal contract. See [`XCALibre.Discretise.DirichletFunction`](@ref) for more details.
 
 ### `AbstractNeumann` conditions
 
 ```julia
-Neumann(name, value)
+Extrapolated(name, value)
 ```
 
-* `name` is a symbol providing the boundary name
-* `value` is a scalar defining the gradient normal to the boundary
+- `name` is a symbol providing the boundary name
+- `value` is a scalar defining the gradient normal to the boundary
 
 !!! warning
 
-    At present the Neumann boundary should be treated as providing a zero gradient condition only. Internally, a zero gradient value is hard-coded. This behaviour will be extended in the near future to allow arbitrary gradients to be defined.
+    At present the Extrapolated boundary should be treated as providing a zero gradient condition only. Internally, a zero gradient value is hard-coded. This behaviour will be extended in the near future to allow arbitrary gradients to be defined.
 
 ### `AbstractPhysicalConstraint` conditions
 
-`Wall` boundary conditions can be used to provide a boundary with a wall constraint. This boundary type, at present, can only be used to define vectors. For scalar quantities in wall regions a `Neumann` (zero gradient) should be imposed.
+`Wall` boundary conditions can be used to provide a boundary with a wall constraint. This boundary type, at present, can only be used to define vectors. For scalar quantities in wall regions a `Extrapolated` (zero gradient) should be imposed.
 ```julia
 Wall(name, value)
 ```
-* `name` is a symbol providing the boundary name
-* `value` is a vector defining wall velocity e.g. [0, 0, 0]
+- `name` is a symbol providing the boundary name
+- `value` is a vector defining wall velocity e.g. [0, 0, 0]
 
 !!! note
     
@@ -322,7 +321,7 @@ Wall(name, value)
 ```julia
 Symmetry(name)
 ```
-* `name` is a symbol providing the boundary name
+- `name` is a symbol providing the boundary name
 
 `Periodic` boundaries consist of a pair of boundary patches that behave as if they are physically connected. The periodic boundary essentially provides a mapping between these patches and helps in calculating the face values at the interface. The construction of periodic boundaries is different to other boundary conditions because the addressing between each face for the patch pair needs to be calculated and stored. Periodic boundary can be constructed as follows:
 
@@ -330,9 +329,9 @@ Symmetry(name)
 periodic::Tuple = construct_periodic(mesh, backend, patch1::Symbol, patch2::Symbol)
 ```
 
-* `mesh` is a reference to the mesh object
-* `backend` defines the expected backend e.g. CPU(), CUDABackend, etc.
-* `patch1` and `patch2` symbols of the two patch pair we would like to flag as periodic
+- `mesh` is a reference to the mesh object
+- `backend` defines the expected backend e.g. CPU(), CUDABackend, etc.
+- `patch1` and `patch2` symbols of the two patch pair we would like to flag as periodic
 
 The output is a tuple containing two `Periodic` boundary types with information relevant to each boundary patch pair and it can be used directly to assign a periodic boundary for both patches (by splatting into the assignment macro e.g. `periodic...`)
 
@@ -342,19 +341,19 @@ The output is a tuple containing two `Periodic` boundary types with information 
 ```julia
 KWallFunction(name)
 ```
-* `name` is a symbol providing the boundary name
+- `name` is a symbol providing the boundary name
 
 `OmegaWallFunction` provides a value for the specific dissipation rate for both low- and high-Reynolds model.
 ```julia
 OmegaWallFunction(name)
 ```
-* `name` is a symbol providing the boundary name
+- `name` is a symbol providing the boundary name
 
 `NutWallFunction` provides a value for the eddy viscosity for high-Reynolds models
 ```julia
 NutWallFunction(name)
 ```
-* `name` is a symbol providing the boundary name
+- `name` is a symbol providing the boundary name
 
 ### Assigning conditions (macro)
 
@@ -379,7 +378,7 @@ mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 backend = CPU() #  run on CPU
-hardware = set_hardware(backend=backend, workgroup=4)
+hardware = Hardware(backend=backend, workgroup=4)
 mesh_dev = mesh # dummy assignment 
 
 # Flow conditions
@@ -397,18 +396,22 @@ model = Physics(
     )
 
 # Define boundary conditions
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Wall(:top, [0.0, 0.0, 0.0]),
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0), # scalar wall - set up as zero gradient
-    Neumann(:top, 0.0)   # scalar wall - set up as zero gradient
+BCs = assign(
+    region=mesh_dev,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Extrapolated(:outlet),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Wall(:top, [0.0, 0.0, 0.0])
+        ], 
+        p = [
+            Extrapolated(:inlet),
+            Dirichlet(:outlet, 0.0),
+            Wall(:wall), # scalar wall - set up as zero gradient
+            Wall(:top)   # scalar wall - set up as zero gradient
+        ]
+    )
 )
 
 # output

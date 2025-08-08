@@ -1,3 +1,4 @@
+export get_boundaries
 export _get_float, _get_int, _get_backend, _convert_array!
 export bounding_box
 export boundary_info, boundary_map
@@ -14,37 +15,58 @@ function _convert_array!(arr, backend::CPU)
     return arr
 end
 
+# Function to prevent redundant CPU copy
+function get_boundaries(boundaries::Array)
+    return boundaries
+end
+
+# Function to copy from GPU to CPU
+function get_boundaries(boundaries::AbstractGPUArray)
+    # Copy boundaries to CPU
+    boundaries_cpu = Array{eltype(boundaries)}(undef, length(boundaries))
+    copyto!(boundaries_cpu, boundaries)
+    return boundaries_cpu
+end
+
 function bounding_box(mesh::AbstractMesh)
-    (; faces, nodes) = mesh
+    (; faces, face_nodes, nodes) = mesh
     nbfaces = total_boundary_faces(mesh)
-    TF = _get_float(mesh)
-    z = zero(TF)
-    xmin, ymin, zmin = z, z, z
-    xmax, ymax, zmax = z, z, z
-    for fID ∈ 1:nbfaces
-        face = faces[fID]
-        for nID ∈ face.nodes_range 
-            node = nodes[nID]
-            coords = node.coords
-            xmin = min(xmin, coords[1])
-            ymin = min(ymin, coords[2])
-            zmin = min(zmin, coords[3])
-            xmax = max(xmax, coords[1])
-            ymax = max(ymax, coords[2])
-            zmax = max(zmax, coords[3])
-        end
-    end
-    pmin = (xmin, ymin, zmin)
-    pmax = (xmax, ymax, zmax)
+
+    backend = get_backend(faces)
+    F = _get_float(mesh)
+
+    pmin = KernelAbstractions.zeros(backend, F, 3)
+    pmax = KernelAbstractions.zeros(backend, F, 3)
+
+    ndrange = nbfaces
+    workgroup = typeof(backend) <: CPU ? cld(nbfaces, Threads.nthreads()) : 32
+    kernel! = _bounding_box(backend, workgroup, ndrange)
+    kernel!(pmin, pmax, faces, face_nodes, nodes)
     return pmin, pmax
+end
+
+@kernel function _bounding_box(pmin, pmax, faces, face_nodes, nodes)
+    fID = @index(Global)
+    @inbounds face = faces[fID]
+    (; nodes_range) = face
+
+    @inbounds for nID ∈ @view face_nodes[nodes_range]
+        node = nodes[nID]
+        coords = node.coords
+        pmin[1] = min(pmin[1], coords[1])
+        pmin[2] = min(pmin[2], coords[2])
+        pmin[3] = min(pmin[3], coords[3])
+        pmax[1] = max(pmax[1], coords[1])
+        pmax[2] = max(pmax[2], coords[2])
+        pmax[3] = max(pmax[3], coords[3])
+    end
 end
 
 
 # function total_boundary_faces(mesh::Mesh2{I,F}) where {I,F}
 function total_boundary_faces(mesh::AbstractMesh)
-    (; boundaries) = mesh
     nbfaces = zero(_get_int(mesh))
-    @inbounds for boundary ∈ boundaries
+    @inbounds for boundary ∈ get_boundaries(mesh.boundaries)
         nbfaces += length(boundary.IDs_range)
     end
     nbfaces
@@ -59,7 +81,7 @@ Adapt.@adapt_structure boundary_info
 
 # Create LUT to map boudnary names to indices
 function boundary_map(mesh)
-    I = Integer; S = Symbol
+    I = _get_int(mesh); S = Symbol
     boundary_map = boundary_info{I,S}[]
 
     mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 

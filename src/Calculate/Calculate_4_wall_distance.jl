@@ -5,42 +5,40 @@ function wall_distance!(model, config)
     @info "Calculating wall distance..."
 
     mesh = model.domain
-    y = model.turbulence.y
-    (; solvers, schemes, runtime, hardware) = config
+    (; y, wallBCs) = model.turbulence
+    (; solvers, schemes, runtime, hardware, boundaries) = config
     
     phi = ScalarField(mesh)
-    # phif = FaceScalarField(mesh)
-    # initialise!(phif, 1.0)
-    # initialise!(phi, 0.0)
-    # initialise!(phi, 1.0)
 
     phi_eqn = (
         -Laplacian{schemes.y.laplacian}(ConstantScalar(1.0), phi) 
         == 
         Source(ConstantScalar(1.0))
-    ) → ScalarEquation(phi)
+    ) → ScalarEquation(phi, wallBCs.y)
 
-    @reset phi_eqn.preconditioner = set_preconditioner(
-        solvers.y.preconditioner, phi_eqn, phi.BCs, config)
+    # @reset phi_eqn.preconditioner = set_preconditioner(
+    #     solvers.y.preconditioner, phi_eqn, wallBCs.y, config)
 
-    @reset phi_eqn.solver = solvers.y.solver(_A(phi_eqn), _b(phi_eqn))
+    @reset phi_eqn.preconditioner = set_preconditioner(solvers.y.preconditioner, phi_eqn)
+
+    @reset phi_eqn.solver = _workspace(solvers.y.solver, _b(phi_eqn))
 
     TF = _get_float(mesh)
 
     phiGrad = Grad{schemes.y.gradient}(phi)
     phif = FaceScalarField(mesh)
-    grad!(phiGrad, phif, phi, phi.BCs, zero(TF), config) # assuming time=0
+    grad!(phiGrad, phif, phi, wallBCs.y, zero(TF), config) # assuming time=0
 
     n_cells = length(mesh.cells)
-    prev = zeros(TF, n_cells)
+    prev = similar(phi.values)
     # R_phi = ones(TF, iterations)
 
     iterations = 1000
     for iteration ∈ 1:iterations
         @. prev = phi.values
         discretise!(phi_eqn, phi, config)
-        # apply_boundary_conditions!(phi_eqn, phi.BCs, nothing, 0.0, config) # wrong BCs!!
-        apply_boundary_conditions!(phi_eqn, y.BCs, nothing, 0.0, config)
+        # apply_boundary_conditions!(phi_eqn, wallBCs.y, nothing, 0.0, config) # wrong BCs!!
+        apply_boundary_conditions!(phi_eqn, wallBCs.y, nothing, 0.0, config)
 
         update_preconditioner!(phi_eqn.preconditioner, mesh, config)
         # implicit_relaxation!(phi_eqn, phi.values, solvers.y.relax, nothing, config)
@@ -55,7 +53,7 @@ function wall_distance!(model, config)
         end
     end
     
-    grad!(phiGrad, phif, phi, phi.BCs, zero(TF), config) # assuming time=0
+    grad!(phiGrad, phif, phi, wallBCs.y, zero(TF), config) # assuming time=0
     normal_distance!(y, phi, phiGrad, config)
     # y.values .= phi.values
 end
@@ -64,8 +62,9 @@ function normal_distance!(y, phi, phiGrad, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    kernel! = _normal_distance!(backend, workgroup)
-    kernel!(y, phi, phiGrad, ndrange = length(phi.values))
+    ndrange = length(phi.values)
+    kernel! = _normal_distance!(_setup(backend, workgroup, ndrange)...)
+    kernel!(y, phi, phiGrad)
     # KernelAbstractions.synchronize(backend)
 end
 

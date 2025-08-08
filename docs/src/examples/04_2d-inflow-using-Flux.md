@@ -1,4 +1,4 @@
-# Advanced: 2D inflow using `Flux.jl`
+# Advanced: Inflow condition using Machine Learning (`Flux.jl`)
 
 # Introduction
 ---
@@ -49,10 +49,10 @@ Next, a neural network will be created to return a parabolic velocity profile. I
 ```@example flux
 
 actual(y) = begin
-    H = 1 # channel height
-    H2 = H/2
+    H = 1.0 # channel height
+    H2 = H/2.0
     h = y - H2
-    vx = (1 - (h/H2)^2)
+    vx = (1.0 - (h/H2)^2.0)
     return vx
 end
 
@@ -148,10 +148,9 @@ The third step is to define a new method for the `update_user_boundary!` functio
 ```@example flux
 
 XCALibre.Discretise.update_user_boundary!(
-    BC::DirichletFunction{I,V}, faces, cells, facesID_range, time, config
-    ) where{I,V<:Inflow} = 
-begin
-
+    BC::DirichletFunction{I,V,R}, faces, cells, facesID_range, time, config
+    ) where {I,V<:Inflow,R} = begin
+    
     (; hardware) = config
     (; backend, workgroup) = hardware
 
@@ -229,54 +228,54 @@ model = Physics(
     domain = mesh
     )
 
-@assign! model momentum U (
-    DirichletFunction(:inlet, inlet_profile), # Pass functor
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, [0.0, 0.0, 0.0]),
-    Dirichlet(:top, [0.0, 0.0, 0.0]),
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
+BCs = assign(
+    region=mesh,
+    (
+        U = [
+            DirichletFunction(:inlet, inlet_profile), # Pass functor
+            Extrapolated(:outlet),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Wall(:top, [0.0, 0.0, 0.0])
+        ],
+        p = [
+            Extrapolated(:inlet),
+            Dirichlet(:outlet, 0.0),
+            Wall(:wall),
+            Wall(:top)
+        ]
+    )
 )
 
 schemes = (
-    U = set_schemes(divergence = Linear),
-    p = set_schemes()
+    U = Schemes(divergence = Linear),
+    p = Schemes()
 )
 
 
 solvers = (
-    U = set_solver(
-        model.momentum.U;
-        solver      = BicgstabSolver,
+    U = SolverSetup(
+        solver      = Bicgstab(),
         preconditioner = Jacobi(),
-        convergence = 1e-7,
+        convergence = 1e-8,
         relax       = 0.7,
-        rtol = 1e-4,
-        atol = 1e-10
+        rtol = 1e-4
     ),
-    p = set_solver(
-        model.momentum.p;
-        solver      = CgSolver,
+    p = SolverSetup(
+        solver      = Cg(),
         preconditioner = Jacobi(),
-        convergence = 1e-7,
+        convergence = 1e-8,
         relax       = 0.3,
-        rtol = 1e-4,
-        atol = 1e-10
+        rtol = 1e-4
     )
 )
 
-runtime = set_runtime(iterations=500, time_step=1, write_interval=500)
-runtime = set_runtime(iterations=1, time_step=1, write_interval=-1) # hide
+runtime = Runtime(iterations=500, time_step=1, write_interval=500)
+runtime = Runtime(iterations=1, time_step=1, write_interval=-1) # hide
 
-hardware = set_hardware(backend=CPU(), workgroup=1024)
+hardware = Hardware(backend=CPU(), workgroup=1024)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc()
 

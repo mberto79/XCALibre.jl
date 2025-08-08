@@ -35,7 +35,7 @@ XCALibre.jl uses its own mesh format to allow the geometry and boundary informat
 
 !!! note
 
-    Although the mesh conversion tools for the OpenFOAM format can import grids designed for 2D simulations, it is not recommended to use OpenFOAM grids for 2D cases (at present, support for 2D OpenFOAM grids in progress). Instead, use a 2D grid generated in the .unv format. Also for 2D grids some requirements must be met when defining the geometry (see [Mesh generation and requirements](@ref))
+    Although the mesh conversion tools for the OpenFOAM format can import grids designed for 2D simulations, it is not possible to use OpenFOAM grids for 2D cases (at present, support for 2D OpenFOAM grids is in progress). Instead, use a 2D grid generated in the .unv format. Also for 2D grids some requirements must be met when defining the geometry (see [Mesh generation and requirements](@ref))
 
 ### Solvers
 XCALibre.jl ships with fluid solvers for steady and transient simulations, based on the SIMPLE and PISO algorithms. Currently, the following flow solvers are provided:
@@ -53,8 +53,8 @@ XCALibre.jl ships with fluid solvers for steady and transient simulations, based
 The list of turbulence models available is expected to expand. The following turbulence models are already available in XCALibre.jl:
 
 * Reynolds-Averaged Navier-Stokes (RANS)
-  * ``k-\omega`` - available in low-Reynolds (wall-resolving) and in high-Reynolds (wall functions) mode
-  * ``k-\omega`` LKE - transitional model using the Laminar Kinetic Energy concept to model transition onset
+  - ``k-\omega`` - available in low-Reynolds (wall-resolving) and in high-Reynolds (wall functions) mode
+  - ``k-\omega`` LKE - transitional model using the Laminar Kinetic Energy concept to model transition onset
   
 * Large Eddy Simulation (LES with implicit filtering)
   * Smagorinsky - classic eddy-viscosity sub-grid scale Smagorinsky model
@@ -91,9 +91,9 @@ U_eqn = (
 
 ### Capabilities, solvers, algorithms, models, etc.
 * Solver for highly compressible flows (including shockwaves)
-* Implement multithreaded sparse-matrix multiply for better multithreaded performance
+* Implement multithreaded sparse-matrix multiply for better multithreaded performance (done in v0.3.3)
 * Conjugate heat transfer
-* ``k-\epsilon`` turbulence model
+- ``k-\epsilon`` turbulence model
 * Implement parallel versions of more efficient preconditioners
 
 ### API

@@ -16,13 +16,13 @@ pkg> add XCALibre
 To install XCALibre.jl directly from Github enter the following command (for the latest release)
 
 ```julia
-pkg> add XCALibre https://github.com/mberto79/XCALibre.jl.git
+pkg> add https://github.com/mberto79/XCALibre.jl.git
 ```
 
 A specific branch can be installed by providing the branch name precided by a `#`, for example, to install the `dev-0.3-main` branch enter
 
 ```julia
-pkg> add XCALibre https://github.com/mberto79/XCALibre.jl.git#dev-0.3-main
+pkg> add https://github.com/mberto79/XCALibre.jl.git#dev-0.3-main
 ```
 
 !!! note
@@ -68,8 +68,8 @@ backend = CPU()
 # backend = CUDABackend() # ru non NVIDIA GPUs
 # backend = ROCBackend() # run on AMD GPUs
 
-hardware = set_hardware(backend=backend, workgroup=4)
-# hardware = set_hardware(backend=backend, workgroup=32) # use for GPU backends
+hardware = Hardware(backend=backend, workgroup=1024)
+# hardware = Hardware(backend=backend, workgroup=32) # use for GPU backends
 
 mesh_dev = mesh # use this line to run on CPU
 # mesh_dev = adapt(backend, mesh)  # Uncomment to run on GPU 
@@ -89,55 +89,55 @@ model = Physics(
     )
 
 # Step 5. Define boundary conditions
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Wall(:top, [0.0, 0.0, 0.0]),
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
+BCs = assign(
+    region=mesh_dev,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Extrapolated(:outlet),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Wall(:top, [0.0, 0.0, 0.0])
+        ],
+        p = [
+            Extrapolated(:inlet),
+            Dirichlet(:outlet, 0.0),
+            Wall(:wall),
+            Wall(:top)
+        ]
+    )
 )
 
 # Step 6. Choose discretisation schemes
 schemes = (
-    U = set_schemes(divergence = Linear),
-    p = set_schemes() # no input provided (will use defaults)
+    U = Schemes(divergence = Linear),
+    p = Schemes() # no input provided (will use defaults)
 )
 
 # Step 7. Set up linear solvers and preconditioners
 solvers = (
-    U = set_solver(
-        model.momentum.U;
-        solver      = BicgstabSolver, # Options: GmresSolver
+    U = SolverSetup(
+        solver      = Bicgstab(), # Options: Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
         convergence = 1e-7,
         relax       = 0.7,
-        rtol = 1e-4,
-        atol = 1e-10
+        rtol = 1e-1
     ),
-    p = set_solver(
-        model.momentum.p;
-        solver      = CgSolver, # Options: CgSolver, BicgstabSolver, GmresSolver
+    p = SolverSetup(
+        solver      = Cg(), # Options: Cg(), Bicgstab(), Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
         convergence = 1e-7,
         relax       = 0.7,
-        rtol = 1e-4,
-        atol = 1e-10
+        rtol = 1e-2
     )
 )
 
 # Step 8. Specify runtime requirements
-runtime = set_runtime(iterations=2000, time_step=1, write_interval=2000)
-runtime = set_runtime(iterations=1, time_step=1, write_interval=-1) # hide
+runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
+runtime = Runtime(iterations=1, time_step=1, write_interval=-1) # hide
 
 # Step 9. Construct Configuration object
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 # Step 10. Initialise fields (initial guess)
 initialise!(model.momentum.U, velocity)

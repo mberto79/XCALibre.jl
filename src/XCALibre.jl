@@ -1,7 +1,7 @@
 module XCALibre
 
-using Krylov 
-export BicgstabSolver, CgSolver, GmresSolver
+# using Krylov 
+# export Bicgstab(), Cg(), Gmres()
 
 using KernelAbstractions; export CPU
 import Adapt: adapt; export adapt
@@ -17,7 +17,7 @@ include("ModelFramework/ModelFramework.jl")
 include("Discretise/Discretise.jl")
 include("Solve/Solve.jl")
 include("Calculate/Calculate.jl")
-include("VTK/VTK.jl")
+include("IOFormats/IOFormats.jl")
 include("ModelPhysics/ModelPhysics.jl")
 include("Simulate/Simulate.jl")
 include("Solvers/Solvers.jl")
@@ -37,7 +37,7 @@ using Reexport
 @reexport using XCALibre.Simulate
 @reexport using XCALibre.Solvers
 @reexport using XCALibre.Postprocess
-@reexport using XCALibre.VTK
+@reexport using XCALibre.IOFormats
 @reexport using XCALibre.UNV3
 @reexport using XCALibre.UNV2
 @reexport using XCALibre.BlockMesher2D
@@ -45,7 +45,7 @@ using Reexport
 using StaticArrays, LinearAlgebra, SparseMatricesCSR, SparseArrays, LinearOperators
 using ProgressMeter, Printf, Adapt
 
-include("precompile.jl")
+# include("precompile.jl") need new precompile file
 
 # using PrecompileTools: @setup_workload, @compile_workload
 
@@ -95,23 +95,23 @@ include("precompile.jl")
 #             )
             
 #             schemes = (
-#                 U = set_schemes(divergence = Linear),
-#                 p = set_schemes()
+#                 U = Schemes(divergence = Linear),
+#                 p = Schemes()
 #             )
             
 #             solvers = (
-#                 U = set_solver(
+#                 U = SolverSetup(
 #                     model.momentum.U;
-#                     solver = BicgstabSolver, # BicgstabSolver, GmresSolver
+#                     solver = Bicgstab(), # Bicgstab(), Gmres()
 #                     smoother = JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
 #                     preconditioner = Jacobi(),
 #                     convergence = 1e-7,
 #                     relax = 0.8,
 #                     rtol = 1e-1,
 #                 ),
-#                 p = set_solver(
+#                 p = SolverSetup(
 #                     model.momentum.p;
-#                     solver = CgSolver, # BicgstabSolver, GmresSolver
+#                     solver = Cg(), # Bicgstab(), Gmres()
 #                     smoother = JacobiSmoother(domain=mesh_dev, loops=5, omega=2/3),
 #                     preconditioner = Jacobi(),
 #                     convergence = 1e-7,
@@ -120,13 +120,13 @@ include("precompile.jl")
 #                 )
 #             )
             
-#             runtime = set_runtime(
+#             runtime = Runtime(
 #                 iterations=10, time_step=1, write_interval=10)
             
-#             hardware = set_hardware(backend=CPU(), workgroup=1024)
+#             hardware = Hardware(backend=CPU(), workgroup=1024)
             
 #             config = Configuration(
-#                 solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+#                 solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
             
 #             initialise!(model.momentum.U, velocity) === nothing
 #             initialise!(model.momentum.p, 0.0) === nothing
@@ -182,40 +182,40 @@ include("precompile.jl")
 #             )
 
 #             schemes = (
-#                 U = set_schemes(gradient=Midpoint, time=Euler),
-#                 p = set_schemes(gradient=Midpoint),
-#                 k = set_schemes(gradient=Midpoint, time=Euler),
-#                 omega = set_schemes(gradient=Midpoint, time=Euler)
+#                 U = Schemes(gradient=Midpoint, time=Euler),
+#                 p = Schemes(gradient=Midpoint),
+#                 k = Schemes(gradient=Midpoint, time=Euler),
+#                 omega = Schemes(gradient=Midpoint, time=Euler)
 #             )
 
 #             solvers = (
-#                 U = set_solver(
+#                 U = SolverSetup(
 #                     model.momentum.U;
-#                     solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+#                     solver      = Bicgstab(), # Bicgstab(), Gmres()
 #                     preconditioner = Jacobi(), 
 #                     convergence = 1e-7,
 #                     relax       = 1.0,
 #                     rtol = 1e-3
 #                 ),
-#                 p = set_solver(
+#                 p = SolverSetup(
 #                     model.momentum.p;
-#                     solver      = CgSolver, # BicgstabSolver, GmresSolver
+#                     solver      = Cg(), # Bicgstab(), Gmres()
 #                     preconditioner = Jacobi(), 
 #                     convergence = 1e-7,
 #                     relax       = 1.0,
 #                     rtol = 1e-3
 #                 ),
-#                 k = set_solver(
+#                 k = SolverSetup(
 #                     model.turbulence.k;
-#                     solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+#                     solver      = Bicgstab(), # Bicgstab(), Gmres()
 #                     preconditioner = Jacobi(), 
 #                     convergence = 1e-7,
 #                     relax       = 1.0,
 #                     rtol = 1e-3
 #                 ),
-#                 omega = set_solver(
+#                 omega = SolverSetup(
 #                     model.turbulence.omega;
-#                     solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+#                     solver      = Bicgstab(), # Bicgstab(), Gmres()
 #                     preconditioner = Jacobi(), 
 #                     convergence = 1e-7,
 #                     relax       = 1.0,
@@ -223,14 +223,14 @@ include("precompile.jl")
 #                 )
 #             )
 
-#             runtime = set_runtime(
+#             runtime = Runtime(
 #                 iterations=10, write_interval=10, time_step=0.01)
 
-#             # hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-#             hardware = set_hardware(backend=CPU(), workgroup=1024)
+#             # hardware = Hardware(backend=CUDABackend(), workgroup=32)
+#             hardware = Hardware(backend=CPU(), workgroup=1024)
 
 #             config = Configuration(
-#                 solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+#                 solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 #             GC.gc()
 

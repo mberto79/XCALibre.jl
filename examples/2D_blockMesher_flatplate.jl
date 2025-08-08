@@ -54,38 +54,40 @@ model = Physics(
     domain = mesh_new
     )
 
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, [0.0, 0.0, 0.0]),
-    Neumann(:top, 0.0)
-)
-
- @assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
+BCs = assign(
+    region = mesh_new,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Zerogradient(:outlet),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Extrapolated(:top)
+        ],
+        p = [
+            Zerogradient(:outlet),
+            Dirichlet(:outlet, 0.0),
+            Wall(:wall),
+            Extrapolated(:top)
+        ]
+    )
 )
 
 schemes = (
-    U = set_schemes(divergence=Upwind),
-    p = set_schemes()
+    U = Schemes(divergence=Upwind),
+    p = Schemes()
 )
 
 
 solvers = (
-    U = set_solver(
-        model.momentum.U;
-        solver = BicgstabSolver, # BicgstabSolver, GmresSolver
+    U = SolverSetup(
+        solver = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax = 0.8,
         rtol = 1e-1
     ),
-    p = set_solver(
-        model.momentum.p;
-        solver = CgSolver, # BicgstabSolver, GmresSolver
+    p = SolverSetup(
+        solver = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax = 0.2,
@@ -93,13 +95,13 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=2000, write_interval=1000, time_step=1)
+runtime = Runtime(iterations=2000, write_interval=1000, time_step=1)
 
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=1024)
+# hardware = Hardware(backend=CUDABackend(), workgroup=32)
+hardware = Hardware(backend=CPU(), workgroup=1024)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc()
 

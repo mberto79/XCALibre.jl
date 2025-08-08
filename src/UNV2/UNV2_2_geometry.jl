@@ -126,6 +126,20 @@ function cell_properties!(mesh::Mesh2{I,F}) where {I,F}
         cell = cells[celli]
         (; centre, nsign, facesID) = cell
         volume = zero(F)
+
+        # Correct cell centre (using area weighted face centres to estimate centroid)
+        cellSurfaceArea = 0.0
+        sumCentres = SVector{3}(0.0,0.0,0.0)
+        for i ∈ eachindex(facesID)
+            fID = facesID[i]
+            face = faces[fID]
+            sumCentres += face.centre*face.area 
+            cellSurfaceArea += face.area
+        end
+        cells[celli] = @set cell.centre = sumCentres/cellSurfaceArea
+
+
+
         # loop over faces: check normals and calculate volume
         for i ∈ eachindex(facesID)
             ID = facesID[i]
@@ -151,8 +165,12 @@ function correct_boundary_cell_volumes!(mesh::Mesh2{I,F}) where {I,F}
     (; boundaries, faces, cells) = mesh
     for boundary ∈ boundaries
         (; cellsID, facesID) = boundary
+
         for i ∈ eachindex(cellsID)
-            cell = cells[cellsID[i]]
+            cID = cellsID[i]
+            cell = cells[cID]
+
+            # Correct volumes for boundary cells
             centre = cell.centre
             face = faces[facesID[i]]
             fcentre = face.centre
@@ -160,7 +178,20 @@ function correct_boundary_cell_volumes!(mesh::Mesh2{I,F}) where {I,F}
             farea = face.area
             d_cf = fcentre - centre
             volume = cell.volume + 0.5*(d_cf ⋅ fnormal)*farea
-            cells[cellsID[i]] = @set cell.volume = volume
+            cells[cID] = @set cell.volume = volume
+
+            # Correct cell centroid calculation for boundary cells
+            cellSurfaceArea = 0.0
+            sumCentres = SVector{3}(0.0,0.0,0.0)
+            for fID ∈ cell.facesID
+                face = faces[fID]
+                sumCentres += face.centre*face.area 
+                cellSurfaceArea += face.area
+            end
+            bface = faces[facesID[i]]
+            sumCentres += bface.centre*bface.area 
+            cellSurfaceArea += bface.area
+            cells[cID] = @set cell.centre = sumCentres/cellSurfaceArea
         end
     end
 end

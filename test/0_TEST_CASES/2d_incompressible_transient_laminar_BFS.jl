@@ -8,8 +8,9 @@ mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 @test typeof(mesh) <: Mesh2
 
-# mesh_dev = adapt(CUDABackend(), mesh)
-mesh_dev = mesh
+workgroup = length(mesh.cells) ÷ Threads.nthreads() # workgroupsize(mesh)
+backend = CPU()
+mesh_dev = adapt(backend, mesh)
 
 Umag = 0.5
 velocity = [Umag, 0.0, 0.0]
@@ -18,44 +19,46 @@ Re = velocity[1]*0.1/nu
 
 model = Physics(
     time = Transient(),
-    fluid = Fluid{Incompressible}(nu = nu),
+    fluid = Fluid{Incompressible}(nu=nu),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
     )
 
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Dirichlet(:top, [0.0, 0.0, 0.0])
-)
-
- @assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
+BCs = assign(
+    region=mesh_dev,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Extrapolated(:outlet),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Dirichlet(:top, [0.0, 0.0, 0.0])
+    ],
+        p = [
+            Extrapolated(:inlet),
+            Dirichlet(:outlet, 0.0),
+            Extrapolated(:wall),
+            Extrapolated(:top)
+        ]
+    )
 )
 
 schemes = (
-    U = set_schemes(time=Euler),
-    p = set_schemes()
+    U = Schemes(time=Euler),
+    p = Schemes()
 )
 
 
 solvers = (
-    U = set_solver(
-        model.momentum.U;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+    U = SolverSetup(
+        solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), # DILU(), TEMPORARY!
         convergence = 1e-7,
         relax       = 1.0,
         rtol = 1e-3
     ),
-    p = set_solver(
-        model.momentum.p;
-        solver      = GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
+    p = SolverSetup(
+        solver      = Gmres(), #Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), #LDL(), TEMPORARY!
         convergence = 1e-7,
         relax       = 1.0,
@@ -63,14 +66,14 @@ solvers = (
     )
 )
 
-runtime = set_runtime(
+runtime = Runtime(
     iterations=1000, time_step=0.005, write_interval=1000)
 
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
-hardware = set_hardware(backend=CPU(), workgroup=1024)
+# hardware = Hardware(backend=CUDABackend(), workgroup=32)
+hardware = Hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 GC.gc()
 
@@ -79,7 +82,7 @@ GC.gc()
 
 residuals = run!(model, config);
 
-inlet = boundary_average(:inlet, model.momentum.U, config)
-outlet = boundary_average(:outlet, model.momentum.U, config)
+inlet = boundary_average(:inlet, model.momentum.U, BCs.U, config)
+outlet = boundary_average(:outlet, model.momentum.U, BCs.U, config)
 
 @test outlet ≈ 0.5*inlet atol=0.1*Umag

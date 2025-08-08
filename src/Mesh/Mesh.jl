@@ -5,6 +5,7 @@ using LinearAlgebra
 using Setfield
 using Adapt
 using KernelAbstractions
+using GPUArrays
 # using CUDA, AMDGPU
 
 include("Mesh_0_types.jl")

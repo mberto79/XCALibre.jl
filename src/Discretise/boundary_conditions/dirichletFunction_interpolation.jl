@@ -1,96 +1,143 @@
-# Implementation to dispatch when user provides an simple function
-function adjust_boundary!(
-    b_cpu, BC::DirichletFunction{T,Test}, phif::FaceScalarField, phi, boundaries, boundary_cellsID, time, backend, workgroup
-    ) where {T,Test<:Function}
-
-    (; cells, faces) = phi.mesh
-    phif_values = phif.values
-    phi_values = phi.values
-
-    facesID_range = b_cpu[BC.ID].IDs_range
-    kernel_range = length(facesID_range)
-
-    kernel! = adjust_boundary_dirichletFunction_scalar!(backend, workgroup)
-    kernel!(BC, phif, phi, boundaries, faces, boundary_cellsID, time, phif_values, phi_values, ndrange = kernel_range)
-end
-
-function adjust_boundary!(
-    b_cpu, BC::DirichletFunction{T,Test}, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, time, backend, workgroup
-    ) where {T,Test<:Function}
-
-    (; x, y, z) = psif
-    (; cells, faces) = psi.mesh
-
-    facesID_range = b_cpu[BC.ID].IDs_range
-    kernel_range = length(facesID_range)
-
-    kernel! = adjust_boundary_dirichletFunction_vector!(backend, workgroup)
-    kernel!(BC, psif, psi, boundaries, faces, boundary_cellsID, time, x, y, z, ndrange = kernel_range)
-end
-
-# Implementation to dispatch when user provides an XCALibreUserFunctor
-function adjust_boundary!(
-    b_cpu, BC::DirichletFunction{T,Test}, phif::FaceScalarField, phi, boundaries, boundary_cellsID, time, backend, workgroup
-    ) where {T,Test<:XCALibreUserFunctor}
-
-    (; cells, faces) = phi.mesh
-    phif_values = phif.values
-    phi_values = phi.values
-
-    facesID_range = b_cpu[BC.ID].IDs_range
-    kernel_range = length(facesID_range)
-
-    if !BC.value.steady
-        config = (;hardware=(;backend=backend, workgroup=workgroup)) # temp solution
-        update_user_boundary!(BC, faces, cells, facesID_range, time, config)
-    end
-
-    kernel! = adjust_boundary_dirichletFunction_scalar!(backend, workgroup)
-    kernel!(BC, phif, phi, boundaries, faces, boundary_cellsID, time, phif_values, phi_values, ndrange = kernel_range)
-end
-
-function adjust_boundary!(
-    b_cpu, BC::DirichletFunction{T,Test}, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, time, backend, workgroup
-    ) where {T,Test<:XCALibreUserFunctor}
-
-    (; x, y, z) = psif
-    (; cells, faces) = psi.mesh
-
-    facesID_range = b_cpu[BC.ID].IDs_range
-    kernel_range = length(facesID_range)
-
-    if !BC.value.steady
-        config = (;hardware=(;backend=backend, workgroup=workgroup)) # temp solution
-        update_user_boundary!(BC, faces, cells, facesID_range, time, config)
-    end
-
-    kernel! = adjust_boundary_dirichletFunction_vector!(backend, workgroup)
-    kernel!(BC, psif, psi, boundaries, faces, boundary_cellsID, time, x, y, z, ndrange = kernel_range)
-end
-
-# Implement interpolation for scalars and vectors
-
-@kernel function adjust_boundary_dirichletFunction_scalar!(BC, phif, phi, boundaries, faces, boundary_cellsID, time, phif_values, phi_values)
-    i = @index(Global)
-
+@inline function boundary_interpolation!(
+    BC::DirichletFunction{T,Test,R}, phif::FaceScalarField, phi, boundary_cellsID, time, fID) where {T,Test<:Function,R}
+    (; faces) = phi.mesh
     @inbounds begin
-        (; IDs_range) = boundaries[BC.ID]
-        fID = IDs_range[i]
         face = faces[fID]
-        phif_values[fID] = BC.value(face.centre, time, i)
+        i = fID - BC.IDs_range.start + 1
+        phif[fID] = BC.value(face.centre, time, i)
     end
+    nothing
 end
 
-@kernel function adjust_boundary_dirichletFunction_vector!(BC, psif, psi, boundaries, faces, boundary_cellsID, time, x, y, z)
-    i = @index(Global)
-
+@inline function boundary_interpolation!(
+    BC::DirichletFunction{T,Test,R}, psif::FaceVectorField, psi, boundary_cellsID, time, fID) where {T,Test<:Function,R}
+    (; faces) = psi.mesh
     @inbounds begin
-        (; IDs_range) = boundaries[BC.ID]
-        fID = IDs_range[i]
         face = faces[fID]
-        value = BC.value(face.centre, time, i)
-        x[fID] = value[1]
-        y[fID] = value[2]
-        z[fID] = value[3]
+        i = fID - BC.IDs_range.start + 1
+        psif[fID] = BC.value(face.centre, time, i)
     end
+    nothing
 end
+
+@inline function boundary_interpolation!(
+    BC::DirichletFunction{T,Test,R}, phif::FaceScalarField, phi, boundary_cellsID, time, fID) where {T,Test<:XCALibreUserFunctor,R}
+    (; faces) = phi.mesh
+    @inbounds begin
+        face = faces[fID]
+        i = fID - BC.IDs_range.start + 1
+        phif[fID] = BC.value(face.centre, time, i)
+    end
+    nothing
+end
+
+@inline function boundary_interpolation!(
+    BC::DirichletFunction{T,Test,R}, psif::FaceVectorField, psi, boundary_cellsID, time, fID) where {T,Test<:XCALibreUserFunctor,R}
+    (; faces) = psi.mesh
+    @inbounds begin
+        face = faces[fID]
+        i = fID - BC.IDs_range.start + 1
+        psif[fID] = BC.value(face.centre, time, i)
+    end
+    nothing
+end
+
+
+# # Implementation to dispatch when user provides an simple function
+# function adjust_boundary!(
+#     BC::DirichletFunction{T,Test}, phif::FaceScalarField, phi, boundaries, boundary_cellsID, time, backend, workgroup
+#     ) where {T,Test<:Function}
+
+#     (; cells, faces) = phi.mesh
+#     phif_values = phif.values
+#     phi_values = phi.values
+
+#     facesID_range = BC.IDs_range
+#     kernel_range = length(facesID_range)
+
+#     kernel! = adjust_boundary_dirichletFunction_scalar!(backend, workgroup)
+#     kernel!(BC, phif, phi, boundaries, faces, boundary_cellsID, time, phif_values, phi_values, ndrange = kernel_range)
+# end
+
+# function adjust_boundary!(
+#     BC::DirichletFunction{T,Test}, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, time, backend, workgroup
+#     ) where {T,Test<:Function}
+
+#     (; x, y, z) = psif
+#     (; cells, faces) = psi.mesh
+
+#     facesID_range = BC.IDs_range
+#     kernel_range = length(facesID_range)
+
+#     kernel! = adjust_boundary_dirichletFunction_vector!(backend, workgroup)
+#     kernel!(BC, psif, psi, boundaries, faces, boundary_cellsID, time, x, y, z, ndrange = kernel_range)
+# end
+
+# # Implementation to dispatch when user provides an XCALibreUserFunctor
+# function adjust_boundary!(
+#     BC::DirichletFunction{T,Test}, phif::FaceScalarField, phi, boundaries, boundary_cellsID, time, backend, workgroup
+#     ) where {T,Test<:XCALibreUserFunctor}
+
+#     (; cells, faces) = phi.mesh
+#     phif_values = phif.values
+#     phi_values = phi.values
+
+#     facesID_range = BC.IDs_range
+#     kernel_range = length(facesID_range)
+
+#     if !BC.value.steady
+#         config = (;hardware=(;backend=backend, workgroup=workgroup)) # temp solution
+#         update_user_boundary!(
+#             BC, faces, cells, facesID_range, time, config)
+#     end
+
+#     kernel! = adjust_boundary_dirichletFunction_scalar!(backend, workgroup)
+#     kernel!(BC, phif, phi, boundaries, faces, boundary_cellsID, time, phif_values, phi_values, ndrange = kernel_range)
+# end
+
+# function adjust_boundary!(
+#     BC::DirichletFunction{T,Test}, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, time, backend, workgroup
+#     ) where {T,Test<:XCALibreUserFunctor}
+
+#     (; x, y, z) = psif
+#     (; cells, faces) = psi.mesh
+
+#     facesID_range = BC.IDs_range
+#     kernel_range = length(facesID_range)
+
+#     if !BC.value.steady
+#         config = (;hardware=(;backend=backend, workgroup=workgroup)) # temp solution
+#         update_user_boundary!(
+#             BC, faces, cells, facesID_range, time, config)
+#     end
+
+#     kernel! = adjust_boundary_dirichletFunction_vector!(backend, workgroup)
+#     kernel!(BC, psif, psi, boundaries, faces, boundary_cellsID, time, x, y, z, ndrange = kernel_range)
+# end
+
+# # Implement interpolation for scalars and vectors
+
+# @kernel function adjust_boundary_dirichletFunction_scalar!(BC, phif, phi, boundaries, faces, boundary_cellsID, time, phif_values, phi_values)
+#     i = @index(Global)
+
+#     @inbounds begin
+#         (; IDs_range) = boundaries[BC.ID]
+#         fID = IDs_range[i]
+#         face = faces[fID]
+#         phif_values[fID] = BC.value(face.centre, time, i)
+#     end
+# end
+
+# @kernel function adjust_boundary_dirichletFunction_vector!(BC, psif, psi, boundaries, faces, boundary_cellsID, time, x, y, z)
+#     i = @index(Global)
+
+#     @inbounds begin
+#         (; IDs_range) = boundaries[BC.ID]
+#         fID = IDs_range[i]
+#         face = faces[fID]
+#         value = BC.value(face.centre, time, i)
+#         x[fID] = value[1]
+#         y[fID] = value[2]
+#         z[fID] = value[3]
+#     end
+# end

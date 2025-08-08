@@ -3,13 +3,15 @@ using XCALibre
 
 # backwardFacingStep_2mm, 5mm or 10mm
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "backwardFacingStep_5mm.unv"
+grid = "backwardFacingStep_10mm.unv"
 mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-backend = CPU(); activate_multithread(backend); workgroup=1024
-# backend = CUDABackend(); workgroup=32
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
+
+hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 nu = 1e-3
@@ -29,79 +31,76 @@ model = Physics(
     domain = mesh_dev
     )
 
-@assign! model momentum U (
-    Dirichlet(:inlet, velocity),
-    Neumann(:outlet, 0.0),
-    Wall(:wall, [0.0, 0.0, 0.0]),
-    Dirichlet(:top, [0.0, 0.0, 0.0])
-)
-
-@assign! model momentum p (
-    Neumann(:inlet, 0.0),
-    Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
-    Neumann(:top, 0.0)
-)
-
-@assign! model turbulence k (
-    Dirichlet(:inlet, k_inlet),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, 0.0),
-    Dirichlet(:top, 0.0)
-)
-
-@assign! model turbulence omega (
-    Dirichlet(:inlet, ω_inlet),
-    Neumann(:outlet, 0.0),
-    OmegaWallFunction(:wall),
-    OmegaWallFunction(:top)
-)
-
-@assign! model turbulence nut (
-    Dirichlet(:inlet, k_inlet/ω_inlet),
-    Neumann(:outlet, 0.0),
-    Dirichlet(:wall, 0.0), 
-    Dirichlet(:top, 0.0)
+BCs = assign(
+    region = mesh_dev,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Neumann(:outlet, 0.0),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Wall(:top, [0.0, 0.0, 0.0])
+        ],
+        p = [
+            Neumann(:inlet, 0.0),
+            Dirichlet(:outlet, 0.0),
+            Neumann(:wall, 0.0),
+            Neumann(:top, 0.0)
+        ],
+        k = [
+            Dirichlet(:inlet, k_inlet),
+            Neumann(:outlet, 0.0),
+            KWallFunction(:wall),
+            KWallFunction(:top)
+        ],
+        omega = [
+            Dirichlet(:inlet, ω_inlet),
+            Neumann(:outlet, 0.0),
+            OmegaWallFunction(:wall),
+            OmegaWallFunction(:top)
+        ],
+        nut = [
+            Dirichlet(:inlet, k_inlet/ω_inlet),
+            Neumann(:outlet, 0.0),
+            Dirichlet(:wall, 0.0), 
+            Dirichlet(:top, 0.0)
+        ]
+    )
 )
 
 schemes = (
-    U = set_schemes(divergence=LUST, gradient=Midpoint),
-    p = set_schemes(gradient=Midpoint),
-    k = set_schemes(gradient=Midpoint),
-    omega = set_schemes(gradient=Midpoint)
+    U = Schemes(divergence=LUST, gradient=Midpoint),
+    p = Schemes(gradient=Midpoint),
+    k = Schemes(gradient=Midpoint),
+    omega = Schemes(gradient=Midpoint)
 )
 
 solvers = (
-    U = set_solver(
-        model.momentum.U;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+    U = SolverSetup(
+        solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.7,
         rtol = 1e-2,
         atol = 1e-10
     ),
-    p = set_solver(
-        model.momentum.p;
-        solver      = CgSolver, #GmresSolver, #CgSolver, # BicgstabSolver, GmresSolver
+    p = SolverSetup(
+        solver      = Cg(), #Gmres(), #Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.3,
         rtol = 1e-3,
         atol = 1e-10
     ),
-    k = set_solver(
-        model.turbulence.k;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+    k = SolverSetup(
+        solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.3,
         rtol = 1e-2,
         atol = 1e-10
     ),
-    omega = set_solver(
-        model.turbulence.omega;
-        solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
+    omega = SolverSetup(
+        solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
         relax       = 0.3,
@@ -110,14 +109,11 @@ solvers = (
     )
 )
 
-runtime = set_runtime(iterations=2000, write_interval=1000, time_step=1)
-# runtime = set_runtime(iterations=1, write_interval=-1, time_step=1)
-
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32) # uncomment for GPU runs
-hardware = set_hardware(backend=CPU(), workgroup=4) # comment out for GPU runs
+runtime = Runtime(iterations=2000, write_interval=1000, time_step=1)
+# runtime = Runtime(iterations=1, write_interval=-1, time_step=1)
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 
 GC.gc()

@@ -6,11 +6,11 @@
 
 All solvers in XCALibre.jl will write simulation results in formats that can be loaded directly in [ParaView](https://www.paraview.org/), which is the leading open-source project for scientific visualisation and postprocessing. More information about how to use [ParaView](https://www.paraview.org/) can be found in the [resources](https://www.paraview.org/resources/) page on their website.
 
-XCALibre.jl uses two different `VTK` formats depending on the type of flow solver used. For 2D simulations, the results are written to file using the `.vtk` file format. 3D simulations are written using the unstructured `VTK` file format, `.vtu`. 
+XCALibre.jl can output simulation results to either `VTK` compliant formats or `OpenFOAM` format. XCALibre.jl uses two different `VTK` formats depending on the type of flow solver used. For 2D simulations, the results are written to file using the `.vtk` file format. 3D simulations are written using the unstructured `VTK` file format, `.vtu`. 
 
 !!! note
 
-    A limitation of the current `VTK` writers in XCALibre.jl is that boundary information is stored along with internal mesh cell information, and result are stored at cell centres only. Thus, care must be taken when visualising results at boundary faces. In future releases a separation of boundary and internal mesh results is planned. 
+    A limitation of the current `VTK` writers in XCALibre.jl is that boundary information is stored along with internal mesh cell information, and results are stored at cell centres only. Thus, care must be taken when visualising results at boundary faces. Boundary information for `fixedValue` boundaries is displayed corrently when the results are saved in the `OpenFOAM` format. 
 
 ## Available functions
 ---

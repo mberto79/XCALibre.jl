@@ -9,8 +9,9 @@ abstract type XCALibreUserFunctor end
 Dirichlet boundary condition defined with user-provided function.
 
 # Input
-- `ID` Boundary name provided as symbol e.g. :inlet
-- `value` Custom function for Dirichlet boundary condition.
+- `ID` Name of the boundary given as a symbol (e.g. :inlet). Internally it gets replaced with the boundary index ID
+- `value` Custom function or struct (<:XCALibreUserFunctor) for Dirichlet boundary condition
+- `IDs_range` Range of indices to access boundary patch faces
 
 # Function requirements
 
@@ -20,26 +21,15 @@ The function passed to this boundary condition must have the following signature
 
 Where, `coords` is a vector containing the coordinates of a face, `time` is the current time in transient simulations (and the iteration number in steady simulations), and `index` is the local face index (from 1 to `N`, where `N` is the number of faces in a given boundary). The function must return an SVector (from StaticArrays.jl) representing the velocity vector. 
 """
-struct DirichletFunction{I,V} <: AbstractDirichlet
-    ID::I
+struct DirichletFunction{I,V,R<:UnitRange} <: AbstractDirichlet
+    ID::I 
     value::V
+    IDs_range::R
 end
 Adapt.@adapt_structure DirichletFunction
 
-function fixedValue(BC::DirichletFunction, ID::I, value::V) where {I<:Integer,V}
-    # Exception 1: Value is scalar
-    if V <: Number
-        return DirichletFunction{I,typeof(value)}(ID, value)
-    # Exception 2: value is a function
-    elseif V <: Function
-        return DirichletFunction{I,V}(ID, value)
-    # Exception 3: value is a user provided XCALibre functor
-    elseif V <: XCALibreUserFunctor
-        return DirichletFunction{I,V}(ID, value)
-    # Error if value is not scalar or tuple
-    else
-        throw("The value provided should be a scalar or a tuple")
-    end
+adapt_value(value::XCALibreUserFunctor, mesh) = begin
+    value
 end
 
 @define_boundary DirichletFunction Laplacian{Linear} begin

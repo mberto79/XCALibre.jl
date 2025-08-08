@@ -2,7 +2,7 @@ export simple!
 
 """
     simple!(model_in, config; 
-        pref=nothing, ncorrectors=0, inner_loops=0)
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0)
 
 Incompressible variant of the SIMPLE algorithm to solving coupled momentum and mass conservation equations.
 
@@ -10,6 +10,7 @@ Incompressible variant of the SIMPLE algorithm to solving coupled momentum and m
 
 - `model` reference to a `Physics` model defined by the user.
 - `config` Configuration structure defined by the user with solvers, schemes, runtime and hardware structures configuration details.
+- `output` select the format used for simulation results from `VTK()` or `OpenFOAM` (default = `VTK()`)
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
@@ -26,11 +27,12 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 function simple!(
     model, config; 
-    pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
 
     residuals = setup_incompressible_solvers(
         SIMPLE, model, config; 
+        output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops
@@ -42,14 +44,14 @@ end
 # Setup for all incompressible algorithms
 function setup_incompressible_solvers(
     solver_variant, model, config; 
-    pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     ) 
 
-    (; solvers, schemes, runtime, hardware) = config
+    (; solvers, schemes, runtime, hardware, boundaries) = config
 
     @info "Extracting configuration and input fields..."
 
-    (; U, p) = model.momentum
+    (; U, p, Uf, pf) = model.momentum
     mesh = model.domain
 
     @info "Pre-allocating fields..."
@@ -63,40 +65,39 @@ function setup_incompressible_solvers(
 
     @info "Defining models..."
 
-    # periodic = construct_periodic(mesh, hardware.backend, :top, :bottom)
-    # periodic_connect = Discretise.periodic_matrix_connectivity(mesh, periodic...)
-    # periodic_connect = Discretise.PeriodicConnectivity([],[])
-
     U_eqn = (
         Time{schemes.U.time}(U)
         + Divergence{schemes.U.divergence}(mdotf, U) 
         - Laplacian{schemes.U.laplacian}(nueff, U) 
         == 
         - Source(∇p.result)
-    ) → VectorEquation(U)
+    ) → VectorEquation(U, boundaries.U)
 
     p_eqn = (
         - Laplacian{schemes.p.laplacian}(rDf, p) == - Source(divHv)
-    ) → ScalarEquation(p)
+    ) → ScalarEquation(p, boundaries.p)
 
     @info "Initialising preconditioners..."
 
-    @reset U_eqn.preconditioner = set_preconditioner(
-                    solvers.U.preconditioner, U_eqn, U.BCs, config)
-    @reset p_eqn.preconditioner = set_preconditioner(
-                    solvers.p.preconditioner, p_eqn, p.BCs, config)
+    # @reset U_eqn.preconditioner = set_preconditioner(
+    #                 solvers.U.preconditioner, U_eqn, boundaries.U, config)
+    # @reset p_eqn.preconditioner = set_preconditioner(
+    #                 solvers.p.preconditioner, p_eqn, boundaries.p, config)
 
+    @reset U_eqn.preconditioner = set_preconditioner(solvers.U.preconditioner, U_eqn)
+    @reset p_eqn.preconditioner = set_preconditioner(solvers.p.preconditioner, p_eqn)
 
     @info "Pre-allocating solvers..."
-     
-    @reset U_eqn.solver = solvers.U.solver(_A(U_eqn), _b(U_eqn, XDir()))
-    @reset p_eqn.solver = solvers.p.solver(_A(p_eqn), _b(p_eqn))
+
+    @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()))
+    @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn))
 
     @info "Initialising turbulence model..."
     turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals  = solver_variant(
         model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
+        output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops)
@@ -106,15 +107,14 @@ end # end function
 
 function SIMPLE(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
     
     # Extract model variables and configuration
-    (; U, p) = model.momentum
+    (; U, p, Uf, pf) = model.momentum
     (; nu) = model.fluid
     mesh = model.domain
-    # p_model = p_eqn.model
-    (; solvers, schemes, runtime, hardware) = config
+    (; solvers, schemes, runtime, hardware, boundaries) = config
     (; iterations, write_interval) = runtime
     (; backend) = hardware
     
@@ -123,40 +123,24 @@ function SIMPLE(
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
 
-    @info "Initialise VTKWriter (Store mesh in host memory)"
-
-    VTKMeshData = initialise_writer(model.domain)
+    outputWriter = initialise_writer(output, model.domain)
     
     @info "Allocating working memory..."
 
     # Define aux fields 
     gradU = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
-    Uf = FaceVectorField(mesh)
     S = StrainRate(gradU, gradUT, U, Uf)
 
     n_cells = length(mesh.cells)
-    pf = FaceScalarField(mesh)
-    # gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
 
-    # Try to assign boundary conditions to rD for use with rDf
-    # periodic = construct_periodic(mesh, backend, :top, :bottom)
-    # rD = ScalarField(mesh)
-    # rD = assign(rD, 
-    #     Neumann(:inlet, 0.0),
-    #     Neumann(:outlet, 0.0),
-    #     Neumann(:bottom, 0.0),
-    #     Neumann(:top, 0.0),
-    #     Neumann(:plate, 0.0),
-    #     periodic...
-    # )
-
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
-    prev = zeros(TF, n_cells)
-    prev = _convert_array!(prev, backend) 
+    # prev = zeros(TF, n_cells)
+    # prev = _convert_array!(prev, backend) 
+    prev = KernelAbstractions.zeros(backend, TF, n_cells) 
 
     # Pre-allocate vectors to hold residuals 
     R_ux = ones(TF, iterations)
@@ -167,9 +151,9 @@ function SIMPLE(
     # Initial calculations
     time = zero(TF) # assuming time=0
     interpolate!(Uf, U, config)   
-    correct_boundaries!(Uf, U, U.BCs, time, config)
+    correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
-    grad!(∇p, pf, p, p.BCs, time, config)
+    grad!(∇p, pf, p, boundaries.p, time, config)
     limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
 
@@ -184,7 +168,7 @@ function SIMPLE(
     for iteration ∈ 1:iterations
         time = iteration
 
-        rx, ry, rz = solve_equation!(U_eqn, U, solvers.U, xdir, ydir, zdir, config)
+        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
         
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
@@ -195,7 +179,7 @@ function SIMPLE(
         
         # Interpolate faces
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
-        correct_boundaries!(Uf, Hv, U.BCs, time, config)
+        correct_boundaries!(Uf, Hv, boundaries.U, time, config)
 
         # old approach
         # div!(divHv, Uf, config) 
@@ -206,23 +190,23 @@ function SIMPLE(
         
         # Pressure calculations
         @. prev = p.values
-        rp = solve_equation!(p_eqn, p, solvers.p, config; ref=pref)
+        rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
         explicit_relaxation!(p, prev, solvers.p.relax, config)
         
-        grad!(∇p, pf, p, p.BCs, time, config) 
+        grad!(∇p, pf, p, boundaries.p, time, config) 
         limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
             # @. prev = p.values
             discretise!(p_eqn, p, config)       
-            apply_boundary_conditions!(p_eqn, p.BCs, nothing, time, config)
-            setReference!(p_eqn, pref, 1, config)
+            apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
+            # setReference!(p_eqn, pref, 1, config)
             nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
-            update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+            # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
             explicit_relaxation!(p, prev, solvers.p.relax, config)
-            grad!(∇p, pf, p, p.BCs, time, config) 
+            grad!(∇p, pf, p, boundaries.p, time, config) 
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
         end
 
@@ -233,15 +217,15 @@ function SIMPLE(
         # old approach
         # correct_velocity!(U, Hv, ∇p, rD, config)
         # interpolate!(Uf, U, config)
-        # correct_boundaries!(Uf, U, U.BCs, time, config)
+        # correct_boundaries!(Uf, U, boundaries.U, time, config)
         # flux!(mdotf, Uf, config) 
 
         # new approach
 
         # 1. using velocity from momentum equation
-        interpolate!(Uf, U, config)
-        correct_boundaries!(Uf, U, U.BCs, time, config)
-        flux!(mdotf, Uf, config)
+        # interpolate!(Uf, U, config)
+        # correct_boundaries!(Uf, U, boundaries.U, time, config)
+        # flux!(mdotf, Uf, config)
         correct_mass_flux(mdotf, p, rDf, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
@@ -268,7 +252,7 @@ function SIMPLE(
             finish!(progress)
             @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
-                model2vtk(model, VTKMeshData, @sprintf "iteration_%.6d" iteration)
+                save_output(model, outputWriter, iteration, time, config)
             end
             break
         end
@@ -285,7 +269,7 @@ function SIMPLE(
             )
 
         if iteration%write_interval + signbit(write_interval) == 0      
-            model2vtk(model, VTKMeshData, @sprintf "iteration_%.6d" iteration)
+            save_output(model, outputWriter, iteration, time, config)
         end
 
     end # end for loop
@@ -308,8 +292,9 @@ function nonorthogonal_face_correction(eqn, grad, flux, config)
     n_bfaces = length(boundary_cellsID)
     n_ifaces = n_faces - n_bfaces
 
-    kernel! = _nonorthogonal_face_correction(backend, workgroup)
-    kernel!(b, grad, flux, faces, cells, n_bfaces, ndrange=n_ifaces)
+    ndrange = n_ifaces
+    kernel! = _nonorthogonal_face_correction(_setup(backend, workgroup, ndrange)...)
+    kernel!(b, grad, flux, faces, cells, n_bfaces)
     # KernelAbstractions.synchronize(backend)
 end
 
@@ -336,7 +321,7 @@ end
     (; values) = grad.field
     weight, df = correction_weight(cells, faces, fID)
     # weight = face.weight
-    gradi = weight*grad[cID1] + (1 - weight)*grad[cID2]
+    gradi = weight*grad[cID1] + (1.0 - weight)*grad[cID2]
     gradf = gradi + ((values[cID2] - values[cID1])/delta - (gradi⋅e))*e
     # gradf = gradi
 
@@ -384,10 +369,11 @@ function correct_mass_flux(mdotf, p, rDf, config)
 
     n_faces = length(faces)
     n_bfaces = length(boundary_cellsID)
-    n_ifaces = n_faces - n_bfaces #+ 1
+    n_ifaces = n_faces - n_bfaces
 
-    kernel! = _correct_mass_flux(backend, workgroup)
-    kernel!(mdotf, p, rDf, faces, cells, n_bfaces, ndrange=length(n_ifaces))
+    ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
+    kernel! = _correct_mass_flux(_setup(backend, workgroup, ndrange)...)
+    kernel!(mdotf, p, rDf, faces, cells, n_bfaces)
     # KernelAbstractions.synchronize(backend)
 end
 

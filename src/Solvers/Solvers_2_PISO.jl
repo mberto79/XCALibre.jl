@@ -201,9 +201,7 @@ function PISO(
         save_output(model, outputWriter, iteration, time, config)
     end
 
-    calculate_field_average!(postprocess,model,iteration,iterations)
-
-
+    calculate_field_property!.(postprocess,Ref(model),Ref(iteration),Ref(iterations))
     end # end for loop
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end

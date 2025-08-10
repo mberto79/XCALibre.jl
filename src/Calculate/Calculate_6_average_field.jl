@@ -48,8 +48,12 @@ function _update_over_averaging_window!(f::FieldAverage, current_vals, iter::Int
     end
     return nothing
 end
-# specialised entry points — one tiny method per component
 
+#make sure iter and iterations are made consistent
+#When a vector is passed, broadcast the function over all elements in the vector
+function calculate_field_property!(f::Vector, model,iter::Integer,n_iterations::Integer)
+    calculate_field_property!.(f::Vector,Ref(model),Ref(iter),Ref(n_iterations))
+end
 function calculate_field_property!(f::FieldAverage{:Ux}, model, iter::Integer, n_iterations::Integer)
     _update_over_averaging_window!(f, model.momentum.U.x.values, iter, n_iterations)
 end

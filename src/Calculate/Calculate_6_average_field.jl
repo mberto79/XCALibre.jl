@@ -1,38 +1,25 @@
 export calculate_field_property!
 export FieldAverage
 
-struct FieldAverage{FLAG,T<:AbstractScalarField,I<:Integer}
-    field::T
+@kwdef struct FieldAverage{S<:AbstractString,T<:AbstractScalarField,I<:Integer}
+    field::S
+    average::T
     start::I
-    finish::I
+    stop::I
 end
 
-# base constructor used by all the convenience wrappers
-function FieldAverage{FLAG}(field::T,start::I,finish::I) where {FLAG,T<:AbstractScalarField,I<:Integer}
-    @assert FLAG in (:Ux, :Uy, :Uz) "Unsupported averaging tag $FLAG"
-    start  > 0      || throw(ArgumentError("start must be strictly positive (got $start)"))
-    finish > start  || throw(ArgumentError("finish ($finish) must be greater than start ($start)"))
-    FieldAverage{FLAG,T,I}(field, start, finish)
+function FieldAverage(mesh::M; field::AbstractString,start::Integer=1, stop::Integer=typemax(Int)) where {M<:Mesh2}
+    @assert field in ("Ux", "Uy", "Uz") "Unsupported averaging tag $field"
+    start  > 0      || throw(ArgumentError("Start iteration must be strictly positive (got $start)"))
+    stop > 0      || throw(ArgumentError("Stop iteration must be strictly positive (got $stop)"))
+    stop > start  || throw(ArgumentError("Stop ($stop) must be greater than start ($start)"))
+    storage = ScalarField(mesh)
+    return FieldAverage(field=field, average=storage, start=start, stop=stop)
 end
 
-#convenience wrapper for when just a field is passed
-function FieldAverage{FLAG}(field::T) where {FLAG,T<:AbstractScalarField} 
-    FieldAverage{FLAG}(field, 1, typemax(Int))
-end
-# convenience wrapper 2 – only a mesh
-function FieldAverage{FLAG}(mesh::M) where {FLAG,M<:Mesh2}
-    field = ScalarField(mesh)
-    FieldAverage{FLAG}(field, 1, typemax(Int))
-end
-#convenience wrapper 3 - mesh and start and finish 
-function FieldAverage{FLAG}(mesh::M, start::I, finish::I) where
-        {FLAG,M<:Mesh2,I<:Integer}
-    field = ScalarField(mesh)
-    FieldAverage{FLAG}(field, start, finish)
-end
 
-#methods for the calculate_field_property function
-#internal helper; shared arithmetic
+# #methods for the calculate_field_property function
+# #internal helper; shared arithmetic
 function _update_running_mean!(field_vals, current_vals, n)
     a = 1.0 / n 
     b = 1.0 - a
@@ -49,11 +36,12 @@ function _update_over_averaging_window!(f::FieldAverage, current_vals, iter::Int
     return nothing
 end
 
-#make sure iter and iterations are made consistent
-#When a vector is passed, broadcast the function over all elements in the vector
+# #make sure iter and iterations are made consistent
+# #When a vector is passed, broadcast the function over all elements in the vector
 function calculate_field_property!(f::Vector, model,iter::Integer,n_iterations::Integer)
     calculate_field_property!.(f::Vector,Ref(model),Ref(iter),Ref(n_iterations))
 end
+
 function calculate_field_property!(f::FieldAverage{:Ux}, model, iter::Integer, n_iterations::Integer)
     _update_over_averaging_window!(f, model.momentum.U.x.values, iter, n_iterations)
 end

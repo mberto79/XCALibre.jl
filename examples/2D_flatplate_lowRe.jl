@@ -1,4 +1,5 @@
 using XCALibre
+# using CUDA
 
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")

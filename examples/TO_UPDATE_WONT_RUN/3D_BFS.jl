@@ -17,7 +17,7 @@ mesh_file = joinpath(grids_dir, grid)
 # mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
 mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
 @time mesh = UNV3D_mesh(mesh_file, scale=0.001) # 36 sec
-@time mesh = UNV3D_mesh(mesh_file, scale=0.001, float_type=Float32)
+# @time mesh = UNV3D_mesh(mesh_file, scale=0.001, float_type=Float32)
 
 backend = CUDABackend(); workgroup = 32
 # backend = CPU(); workgroup = 1024; activate_multithread(backend)
@@ -61,7 +61,7 @@ BCs = assign(
 
 solvers = (
     U = SolverSetup(
-        float_type = Float32,
+        # float_type = Float32,
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), # Jacobi # ILU0GPU
         # smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
@@ -70,7 +70,7 @@ solvers = (
         rtol = 0.1
     ),
     p = SolverSetup(
-        float_type = Float32,
+        # float_type = Float32,
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), #NormDiagonal(), IC0GPU, Jacobi
         # smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),

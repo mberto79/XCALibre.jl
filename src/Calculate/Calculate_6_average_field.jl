@@ -1,25 +1,65 @@
 export calculate_field_property!
 export FieldAverage
 
-@kwdef struct FieldAverage{S<:AbstractString,T<:AbstractScalarField,I<:Integer}
-    fieldname::S
-    average::T
+@kwdef struct FieldAverage{T<:AbstractField,I<:Integer}
+    field::T
+    label::Symbol
     start::I
     stop::I
 end
 
-function FieldAverage(mesh::M; fieldname::AbstractString,start::Integer=1, stop::Integer=typemax(Int)) where {M<:Mesh2}
-    @assert fieldname in ("Ux", "Uy", "Uz") "Unsupported averaging tag $field"
-    start  > 0      || throw(ArgumentError("Start iteration must be strictly positive (got $start)"))
-    stop > 0      || throw(ArgumentError("Stop iteration must be strictly positive (got $stop)"))
-    stop > start  || throw(ArgumentError("Stop ($stop) must be greater than start ($start)"))
-    storage = ScalarField(mesh)
-    return FieldAverage(fieldname=fieldname, average=storage, start=start, stop=stop)
+
+#Need to generalise the implementation to handle things like model.turbulence etc 
+
+function FieldAverage(model_momentum,symbol,start::Integer=1,stop::Integer=typemax(Int))
+    start > 0      || throw(ArgumentError("Start iteration must be a positive value (got $start)"))
+    stop  > 0      || throw(ArgumentError("Stop iteration must be a positive value (got $stop)"))
+    stop  > start  || throw(ArgumentError("Stop iteration($stop) must be greater than start ($start) iteration"))
+    #Check that the field is actually supported 
+    field = getproperty(model_momentum,symbol)
+    if field isa ScalarField
+        storage = ScalarField(field.mesh)  # Example constructor
+    elseif field isa VectorField
+        storage = VectorField(field.mesh)
+    else
+    end
+    return FieldAverage(field=storage,label=symbol,start=start,stop=stop)
+end
+
+#decided on FieldAverage(model.momentum,:=;U)
+
+#this functions job is to extract the correct property from 
+function calculate_field_property!(f::FieldAverage,model,iter::Integer,n_iterations::Integer)
+    #Need to check which string is contained in the FieldAverage fieldname 
+    label = f.label
+    field = getproperty(model.momentum,label)
+    _update_over_averaging_window!(f,field,iter,n_iterations)
+end
+
+function _update_over_averaging_window!(f::FieldAverage, current_field::VectorField,iter::Integer,n_iterations::Integer)
+    eff_stop = min(f.stop, n_iterations)
+    if iter >= f.start && iter <= eff_stop
+        n = iter - f.start + 1
+            _update_running_mean!(f.field.x.values,current_field.x.values,n)
+            _update_running_mean!(f.field.y.values,current_field.y.values,n)
+            _update_running_mean!(f.field.z.values,current_field.z.values,n)
+    end
+    return nothing 
 end
 
 
-#methods for the calculate_field_property function
-#internal helper; shared arithmetic
+function _update_over_averaging_window!(f::FieldAverage, current_field::ScalarField,iter::Integer,n_iterations::Integer)
+    eff_stop = min(f.stop, n_iterations)
+    if iter >= f.start && iter <= eff_stop
+        n = iter - f.start + 1
+            _update_running_mean!(f.field.values,current_field.values,n)
+    end
+    return nothing 
+end
+
+#Need to generalise the implementation to handle things like model.turbulence etc 
+
+# #internal helper; shared arithmetic
 function _update_running_mean!(stored_field_vals, current_vals, n)
     a = 1.0 / n 
     b = 1.0 - a
@@ -27,32 +67,8 @@ function _update_running_mean!(stored_field_vals, current_vals, n)
     return nothing 
 end
 
-function _update_over_averaging_window!(f::FieldAverage, current_vals, iter::Integer, n_iterations::Integer)
-    eff_stop = min(f.stop, n_iterations)
-    if iter >= f.start && iter <= eff_stop
-        n = iter - f.start + 1
-        _update_running_mean!(f.average.values, current_vals, n)
-    end
-    return nothing
-end
-
-#make sure iter and iterations are made consistent
-#When a vector is passed, broadcast the function over all elements in the vector
 function calculate_field_property!(f::Vector, model,iter::Integer,n_iterations::Integer)
     calculate_field_property!.(f::Vector,Ref(model),Ref(iter),Ref(n_iterations))
-end
-
-function calculate_field_property!(f::FieldAverage,model,iter::Integer,n_iterations::Integer)
-    #Need to check which string is contained in the FieldAverage fieldname 
-    fieldname = f.fieldname
-    if fieldname == "Ux"
-        field = model.momentum.U.x.values
-    elseif fieldname == "Uy"
-        field = model.momentum.U.y.values
-    elseif fieldname == "Uz"
-        field = model.momentum.U.z.values
-    end
-    _update_over_averaging_window!(f,field,iter,n_iterations)
 end
 
 function calculate_field_property!(f::NamedTuple{()}, model, iter::Integer,n_iterations)

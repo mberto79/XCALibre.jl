@@ -19,12 +19,6 @@ initialise!(T_test, 300.0)
 k_test, cp_test = XCALibre.ModelPhysics.get_coefficients(Aluminium(),T_test)
 
 
-
-
-
-using CUDA
-
-
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
@@ -51,12 +45,10 @@ BCs = assign(
     )
 )
 
-
-
 solvers = (
     T = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
-        preconditioner = DILU(), # Jacobi(), #NormDiagonal(), # DILU()
+        preconditioner = Jacobi(), # Jacobi(), #NormDiagonal(), # DILU()
         convergence = 1e-8,
         relax       = 0.8,
         rtol = 1e-4,

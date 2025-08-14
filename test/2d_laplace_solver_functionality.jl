@@ -5,8 +5,8 @@ using Test # DOESNT WORK OTHERWISE!
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 
 # grid = "finer_mesh_laplace.unv"
-# grid = "laplace_2d_mesh.unv"
-grid = "laplace_unit_3by3.unv"
+grid = "laplace_2d_mesh.unv"
+# grid = "laplace_unit_3by3.unv"
 
 mesh_file = joinpath(grids_dir, grid)
 
@@ -23,7 +23,7 @@ mesh_dev = adapt(backend, mesh)
 
 model = Physics(
     time = Steady(),
-    solid = Solid{Uniform}(k=54.0),
+    solid = Solid{Uniform}(k=10.0),
     energy = Energy{Conduction}(),
     domain = mesh_dev
     )

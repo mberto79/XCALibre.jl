@@ -1,10 +1,10 @@
-# Validation: Laplace Equation in 2D Solid Medium
+# Validation: Laplace Solver in 2D Solid Medium
 
 # Introduction
 ---
-A 2D square with two Dirichlet walls and two Neumann 0 flux walls is expected to produce a diagonal line of constant value when solving laplace equation.
+This tutorial introduces laplace solver that can operate in either steady-state or transient mode, and supports both constant material properties across the domain (`Uniform`) and spatially varying properties (`NonUniform`).
 
-This guide shows how to replicate the analytical solution, and also how to use high-fidelity `Conduction` energy model.
+The example simulation below consist of a simple 2D square domain with two Dirichlet walls and two Neumann 0 flux walls. It is expected to produce a diagonal line of constant value when solving laplace/heat equation.
 ## Boundary Conditions
 
 ### Left Wall
@@ -31,29 +31,10 @@ This guide shows how to replicate the analytical solution, and also how to use h
 | ----- | ------------------ |
 | `T`   | Zero-gradient       |
 
-# Material Properties
----
-
-The simulation is run using a **transient laplce solver**. The material is defined as a *uniform solid* with the following properties:
-
-| Property       | Value     | Units         |
-|----------------|-----------|---------------|
-| `k` (conductivity) | 54.0      | W/m·K         |
-| `ρ` (density)      | 7850.0    | kg/m³         |
-| `c_p` (specific heat) | 480.0     | J/kg·K        |
-
-Note:
-
-- For **steady-state** simulations, only `k` is required.
-- For **transient** simulations, `k`, `ρ`, and `c_p` must be provided.
-- The solid region is modeled as `Solid{Uniform}`.
-- For material-specific, high-fidelity temperature dependent properties, see `Energy{Conduction}` (not used in this case).
-- For cryogenic applications between 4–300 K, material models such as `Steel()`, `Aluminium()`, and `Copper()` are available as described in the [Cryogenic Material Properties Database by Marquardt (2002)](https://www.researchgate.net/publication/226513158_Cryogenic_Material_Properties_Database).
-
 # Mesh
 ---
 
-The domain mesh used is a structured 2D grid defined in `"finer_mesh_laplace.unv"`. The mesh represents a rectangular region with four clearly defined boundaries:
+The utilised mesh is a structured 2D grid that can either be `laplace_2d_mesh.unv` or `"finer_mesh_laplace.unv"` for more prominent behaviour when using `NonUniform` regime. The mesh represents a rectangular region with four defined boundaries:
 
 - `"left_wall"` (Dirichlet)
 - `"right_wall"` (Neumann)
@@ -67,7 +48,7 @@ The domain mesh used is a structured 2D grid defined in `"finer_mesh_laplace.unv
 using XCALibre
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "finer_mesh_laplace.unv"
+grid = "laplace_2d_mesh.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
@@ -76,19 +57,22 @@ hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 model = Physics(
-    time = Transient(),
-    solid = Solid{Uniform}(k=54.0, cp=480.0, rho=7850.0),
-    energy = Energy{LaplaceEnergy}(),
+    time = Steady(),
+    solid = Solid{Uniform}(k=10.0),
+    energy = Energy{Conduction}(),
     domain = mesh_dev
 )
+
+left_wall_temp = 0.0
+bottom_wall_temp = 1.0
 
 BCs = assign(
     region = mesh_dev,
     (
         T = [     
-            Dirichlet(:left_wall, 0),
+            Dirichlet(:left_wall, left_wall_temp),
             Zerogradient(:right_wall),
-            Dirichlet(:bottom_wall, 1),
+            Dirichlet(:bottom_wall, bottom_wall_temp),
             Zerogradient(:upper_wall)
         ],
     )
@@ -112,7 +96,7 @@ schemes = (
 runtime = Runtime(
     iterations=10,
     write_interval=10,
-    time_step=0.5
+    time_step=1
 )
 
 config = Configuration(
@@ -131,4 +115,77 @@ residuals = run!(model, config)
 # Results
 ---
 
-The results of the model are compared to the theoretical correlation in the figure below:
+The temperature field shows diagonal line of constant temperature of `0.5 K`, as expected:
+![Uniform Case Result](figures/06/uniform.png)
+
+# Material Properties
+---
+If time term is set to be transient, the solver expects not only conductivity `k`, but also density `ρ` and specific heat `c_p` values to be passed. Example:
+
+
+| Property       | Value     | Units         |
+|----------------|-----------|---------------|
+| `k` (conductivity) | 54.0      | W/m·K         |
+| `ρ` (density)      | 7850.0    | kg/m³         |
+| `c_p` (specific heat) | 480.0     | J/kg·K        |
+
+
+```julia
+solid = Solid{Uniform}(k=54.0, rho=7850.0, cp=480.0)
+```
+
+For higher fidelity simulations, `NonUniform` regime is recommended. It requires density and predefined material to be passed:
+```julia
+solid = Solid{NonUniform}(material=Aluminium(), rho=2700.0)
+```
+This will ensure that the solver computes **k** and **cp** for each cell as a function of temperature.  
+The general form of the equation for both coefficients is:
+
+``log(k) = a + b log(T) + c (log(T))^2 + d (log(T))^3 + e (log(T))^4 + f (log(T))^5 + g (log(T))^6 + h (log(T))^7 + i (log(T))^``
+
+where *a*, *b*, *c*, *d*, *e*, *f*, *g*, *h*, and *i* are the fitted coefficients, and **T** is the temperature of a cell.
+
+Currently only 3 material models are available for use: `Steel()`, `Aluminium()`, and `Copper()`. The coefficients for those materials were taken from [Cryogenic Material Properties Database by Marquardt (2002)](https://www.researchgate.net/publication/226513158_Cryogenic_Material_Properties_Database), and work well for temperatures between 4 and 300 Kelvin.
+Custom material can be defined in the following way:
+```julia
+# Define a new material type
+struct Titanium <: AbstractMaterial end
+
+# Define custom coefficients for this new material
+function XCALibre.material_coefficients(material::Titanium)
+    k_coeffs = MaterialCoefficients(
+        c1=0.12, c2=0.95, c3=-0.11, c4=0.08, c5=0.02,
+        c6=-0.03, c7=0.01, c8=-0.001, c9=0.0
+    )
+    cp_coeffs = MaterialCoefficients(
+        c1=30.0, c2=-150.0, c3=400.0, c4=-600.0, c5=550.0,
+        c6=-280.0, c7=85.0, c8=-14.0, c9=1.0
+    )
+    return k_coeffs, cp_coeffs
+end
+
+# Then pass this material as an argument
+solid = Solid{NonUniform}(material=Titanium(), rho=5000.0),
+```
+
+
+# NonUniform Results
+
+The following settings were changed for this `NonUniform` simulation:
+```julia
+grid = "finer_mesh_laplace.unv"
+
+model = Physics(
+    time = Transient(),
+    solid = Solid{NonUniform}(material=Aluminium(), rho=2700.0),
+    energy = Energy{Conduction}(),
+    domain = mesh_dev
+    )
+
+left_wall_temp = 10.0
+bottom_wall_temp = 20.0
+```
+
+![NonUniform Case Result](figures/06/nonuniform.png)
+
+The difference compared to `Uniform` solution with constant properties can be clearly seen. Temperature distribution in cryogenic range is more complex and becomes increasingly non-linear the lower you go. In fact, setting boundary conditions to 0 and 1 Kelvin as in previous case would result in divergence, which is a more realistic result considering that 0 K boundary would violate the third law of thermodynamics.

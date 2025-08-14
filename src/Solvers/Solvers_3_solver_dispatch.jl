@@ -78,7 +78,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 run!(
     model::Physics{T,F,SO,M,Tu,E,D,BI}, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
-    ) where{T,F,SO<:Uniform,M,Tu,E,D,BI} = 
+    ) where{T,F,SO,M,Tu,E<:Conduction,D,BI} = 
 begin
     residuals = laplace!(
         model, config, 

@@ -55,31 +55,24 @@ function setup_laplace_solver(
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
 
-    (; T, Tf, rDf, rhocp, ) = model.energy
-    (; k, kf, cp, rho) = model.solid # These come from e.g Solid{Uniform} - remove
+    (; T, Tf) = model.energy
+
+    (; k, kf, cp, rho, rhocp, rDf) = model.solid
+    
     mesh = model.domain
 
+    
     source_field = ScalarField(mesh) #0.0 field
    
 
     @info "Defining models..."
+    T_eqn = (
+        Time{schemes.time}(rhocp, T) #0.0 by default
+        - Laplacian{schemes.laplacian}(rDf, T)
+        ==
+        - Source(source_field)
+    ) → ScalarEquation(T, boundaries.T)
 
-    if typeof(model.time) <: Transient
-        @info "Transient"
-        T_eqn = (
-            Time{schemes.time}(rhocp, T)
-            - Laplacian{schemes.laplacian}(rDf, T)
-            ==
-            - Source(source_field)
-        ) → ScalarEquation(T, boundaries.T)
-    elseif typeof(model.time) <: Steady
-        @info "Steady"
-        T_eqn = (
-            - Laplacian{schemes.laplacian}(rDf, T)
-            ==
-            - Source(source_field)
-        ) → ScalarEquation(T, boundaries.T)
-    end
 
     @info "Initialising preconditioners..."
 
@@ -89,10 +82,8 @@ function setup_laplace_solver(
 
     @reset T_eqn.solver = _workspace(solvers.solver, _b(T_eqn))
 
-    if typeof(model.energy) <: Conduction
-        @info "Initialising energy model..."
-        energyModel = initialise(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, model.energy.material, config)
-    end
+    @info "Initialising energy model..."
+    energyModel = initialise(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, config)
 
 
     # The part that was previously inside the solver
@@ -128,11 +119,8 @@ function LAPLACE(
     outputWriter, R_T, time
     )
 
-    if typeof(model.energy) <: Conduction
-        (; T, Tf, rDf, rhocp, k, kf, cp, rho, material) = model.energy
-    else
-        (; T, Tf) = model.energy
-    end
+    (; T, Tf) = model.energy
+    (; k, kf, cp, rho, rhocp, rDf) = model.solid
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
     (; iterations, write_interval, dt) = runtime
@@ -148,8 +136,8 @@ function LAPLACE(
 
         rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config; time=time)
         
-        if typeof(model.energy) <: Conduction
-            energy!(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, material, config)
+        if typeof(model.solid) <: NonUniform
+            energy!(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, config)
         end
 
         R_T[iteration] = rt

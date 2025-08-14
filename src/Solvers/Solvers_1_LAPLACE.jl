@@ -10,7 +10,7 @@ export setup_laplace_solver
 
 
 Top-level entry point for solving the Laplace (heat conduction) equation on `model.domain`.  
-Optionally runs in steady or transient mode and can call CryogenicConduction energy model for high fidelity (k and cp are recomputed at each iteration).
+Optionally runs in steady or transient mode and can call Conduction energy model for high fidelity (k and cp are recomputed at each iteration).
 
 
 # Input arguments
@@ -29,11 +29,6 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 - `T` Vector of T residuals for each iteration.
 
 """
-
-
-
-
-
 function laplace!(
     model, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
@@ -44,8 +39,7 @@ function laplace!(
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops,
-        coupling=false
+        inner_loops=inner_loops
         )
 
     return residuals
@@ -54,38 +48,31 @@ end
 
 function setup_laplace_solver(
     solver_variant, model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, coupling=false
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     ) 
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
 
-    (; T, Tf, rDf, rhocp, k, kf, cp, rho) = model.energy
+    (; T, Tf) = model.energy
 
+    (; k, kf, cp, rho, rhocp, rDf) = model.solid
+    
     mesh = model.domain
 
+    
     source_field = ScalarField(mesh) #0.0 field
    
 
     @info "Defining models..."
+    T_eqn = (
+        Time{schemes.time}(rhocp, T) #0.0 by default
+        - Laplacian{schemes.laplacian}(rDf, T)
+        ==
+        - Source(source_field)
+    ) → ScalarEquation(T, boundaries.T)
 
-    if typeof(model.time) <: Transient
-        @info "Transient"
-        T_eqn = (
-            Time{schemes.time}(rhocp, T)
-            - Laplacian{schemes.laplacian}(rDf, T)
-            ==
-            - Source(source_field)
-        ) → ScalarEquation(T, boundaries.T)
-    elseif typeof(model.time) <: Steady
-        @info "Steady"
-        T_eqn = (
-            - Laplacian{schemes.laplacian}(rDf, T)
-            ==
-            - Source(source_field)
-        ) → ScalarEquation(T, boundaries.T)
-    end
 
     @info "Initialising preconditioners..."
 
@@ -95,10 +82,8 @@ function setup_laplace_solver(
 
     @reset T_eqn.solver = _workspace(solvers.solver, _b(T_eqn))
 
-    if typeof(model.energy) <: CryogenicConduction
-        @info "Initialising energy model..."
-        energyModel = initialise(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, model.energy.material, config)
-    end
+    @info "Initialising energy model..."
+    energyModel = initialise(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, config)
 
 
     # The part that was previously inside the solver
@@ -117,85 +102,69 @@ function setup_laplace_solver(
     time = zero(TF) # assuming time=0
 
 
+    residuals  = solver_variant(
+        model, T_eqn, config; 
+        output=output,
+        pref=pref, 
+        ncorrectors=ncorrectors, 
+        inner_loops=inner_loops,
+        outputWriter, R_T, time)
 
-    if coupling==false
-
-        residuals  = solver_variant(
-            model, T_eqn, config; 
-            output=output,
-            pref=pref, 
-            ncorrectors=ncorrectors, 
-            inner_loops=inner_loops,
-            outputWriter, R_T, time, isCoupled=false)
-
-        return residuals
-    else
-        return T_eqn, outputWriter, R_T, time
-    end
+    return residuals
 end
 
 function LAPLACE(
     model, T_eqn, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
-    outputWriter, R_T, time, isCoupled
+    outputWriter, R_T, time
     )
 
-    if typeof(model.energy) <: CryogenicConduction
-        (; T, Tf, rDf, rhocp, k, kf, cp, rho, material) = model.energy
-    else
-        (; T, Tf) = model.energy
-    end
+    (; T, Tf) = model.energy
+    (; k, kf, cp, rho, rhocp, rDf) = model.solid
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
 
+
+
     @info "Starting LAPLACE loops..."
+    progress = Progress(iterations; dt=1.0, showspeed=true)
 
-    if (isCoupled)
+    @time for iteration ∈ 1:iterations
+        time = iteration *dt
+
         rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config; time=time)
-
-        if typeof(model.energy) <: CryogenicConduction
-            energy!(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, material, config)
+        
+        if typeof(model.solid) <: NonUniform
+            energy!(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, config)
         end
-    else
-        progress = Progress(iterations; dt=1.0, showspeed=true)
 
-        @time for iteration ∈ 1:iterations
-            time = iteration *dt
+        R_T[iteration] = rt
 
-            rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config; time=time)
-            
-            if typeof(model.energy) <: CryogenicConduction
-                energy!(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, material, config)
-            end
-
-            R_T[iteration] = rt
-
-            if (R_T[iteration] <= solvers.convergence) && (typeof(model.time) <: Steady)
-                progress.n = iteration
-                finish!(progress)
-                @info "Simulation converged in $iteration iterations!"
-                if !signbit(write_interval) 
-                    save_output(model, outputWriter, iteration, time, config)
-                end
-                
-                break
-            end
-
-            ProgressMeter.next!(
-                progress, showvalues = [
-                    (:time, iteration*runtime.dt),
-                    (:T_residual, R_T[iteration])
-                    ]
-                )
-
-            if iteration%write_interval + signbit(write_interval) == 0      
+        if (R_T[iteration] <= solvers.convergence) && (typeof(model.time) <: Steady)
+            progress.n = iteration
+            finish!(progress)
+            @info "Simulation converged in $iteration iterations!"
+            if !signbit(write_interval) 
                 save_output(model, outputWriter, iteration, time, config)
             end
+            
+            break
+        end
 
-        end # end for loop
-    end
+        ProgressMeter.next!(
+            progress, showvalues = [
+                (:time, iteration*runtime.dt),
+                (:T_residual, R_T[iteration])
+                ]
+            )
+
+        if iteration%write_interval + signbit(write_interval) == 0      
+            save_output(model, outputWriter, iteration, time, config)
+        end
+
+    end # end for loop
     
     return (T=R_T)
 end

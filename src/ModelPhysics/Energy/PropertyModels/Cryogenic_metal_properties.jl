@@ -1,62 +1,77 @@
-export get_coefficients
-
-# Only Aluminium, Steel, and Copper are supported (copper is dodgy)
-
+export AbstractMaterial, Aluminium, Steel, Copper
+export get_coefficients, MaterialCoefficients, material_coefficients
 
 
-const K_COEFFS = Dict{Symbol,NTuple{9,Float64}}(
-  :Aluminium    => (  0.07918,   1.09570,  -0.07277,   0.08084,   0.02803, #Al6061_T6_Aluminum
-                           -0.09464,   0.04179,  -0.00571,   0.0     ),
+abstract type AbstractMaterial end
 
-  :Steel        => ( -1.4087,    1.3982,    0.2543,   -0.6260,    0.2334, #SS304
-                            0.4256,   -0.4658,    0.1650,   -0.0199  ),
-
-#   :Nickel       => ( -8.28921,  39.4470,  -83.4353,   98.1690,  -67.2088, #Inconel718
-#                            26.7082,   -5.72050,   0.51115,   0.0     ),
-
-  :Copper       => ( -0.50015,   1.93190,  -1.69540,   0.71218,   1.27880, #Beryllium_Copper
-                           -1.61450,   0.68722,  -0.10501,   0.0     ),
-
-#   :Titanium     => (-5107.8774,19240.422,-30789.064, 27134.756,-14226.379, #Ti6Al4V
-#                             4438.2154,-763.07767,  55.796592, 0.0     )
-)
-
-const CP_COEFFS = Dict{Symbol,NTuple{9,Float64}}(
-  :Copper        => ( -1.91844,   -0.15973,    8.61013,  -18.99640,   21.96610, #OFHC_Copper
-                           -12.73280,    3.54322,   -0.37970,    0.0     ),
-
-  :Aluminium     => (  46.6467,  -314.292,    866.662,  -1298.30,   1162.27, #Al6061_T6_Aluminum
-                           -637.795,   210.351,   -38.3094,    2.96344 ),
-
-  :Steel         => (  22.0061,  -127.5528,   303.6470,  -381.0098,   274.0328, #SS304
-                           -112.9212,   24.7593,   -2.239153,   0.0     ),
-
-#   :Fiberglass    => (  -2.4083,     7.6006,    -8.2982,     7.3301,    -4.2386, #G10
-#                               1.4294,   -0.24396,    0.015236,   0.0     ),
-
-#   :Teflon        => (  31.8825,  -166.519,    352.019,   259.981,   -104.614, #Teflon
-#                              24.9927,    -3.20792,   0.165032,   0.0     )
-)
+struct Aluminium <: AbstractMaterial end
+struct Steel <: AbstractMaterial end
+struct Copper <: AbstractMaterial end
 
 
-function get_coefficients(material::Symbol, T_field::ScalarField)
-    @assert haskey(K_COEFFS, material) "Unknown material: $material"
-    @assert haskey(CP_COEFFS, material) "Unknown material: $material"
+@kwdef struct MaterialCoefficients{T<:AbstractFloat}
+  c1::T
+  c2::T
+  c3::T
+  c4::T
+  c5::T
+  c6::T
+  c7::T
+  c8::T
+  c9::T
+end
 
-    logT = log10.(T_field.values)
-    k_coeffs  = K_COEFFS[material]
-    cp_coeffs = CP_COEFFS[material]
+(coeffs::MaterialCoefficients)(T) = begin
+  return coeffs.c1 .+ coeffs.c2 .* T .+ coeffs.c3 .* T.^2 .+ coeffs.c4 .* T.^3 .+ coeffs.c5 .* T.^4 .+
+          coeffs.c6 .* T.^5 .+ coeffs.c7 .* T.^6 .+ coeffs.c8 .* T.^7 .+ coeffs.c9 .* T.^8
+end
 
-    k_log10 = k_coeffs[1] .+ k_coeffs[2] .* logT .+ k_coeffs[3] .* logT.^2 .+
-              k_coeffs[4] .* logT.^3 .+ k_coeffs[5] .* logT.^4 .+ k_coeffs[6] .* logT.^5 .+
-              k_coeffs[7] .* logT.^6 .+ k_coeffs[8] .* logT.^7 .+ k_coeffs[9] .* logT.^8
+function material_coefficients(material::Aluminium)
+  k_coeffs = MaterialCoefficients(
+      c1=0.07918, c2=1.09570, c3=-0.07277, c4=0.08084, c5=0.02803,
+      c6=-0.09464, c7=0.04179, c8=-0.00571, c9=0.0
+  )
+  cp_coeffs = MaterialCoefficients(
+      c1=46.6467, c2=-314.292, c3=866.662, c4=-1298.30, c5=1162.27,
+      c6=-637.795, c7=210.351, c8=-38.3094, c9=2.96344
+  )
+  return k_coeffs, cp_coeffs
+end
 
-    cp_log10 = cp_coeffs[1] .+ cp_coeffs[2] .* logT .+ cp_coeffs[3] .* logT.^2 .+
-               cp_coeffs[4] .* logT.^3 .+ cp_coeffs[5] .* logT.^4 .+ cp_coeffs[6] .* logT.^5 .+
-               cp_coeffs[7] .* logT.^6 .+ cp_coeffs[8] .* logT.^7 .+ cp_coeffs[9] .* logT.^8
+function material_coefficients(material::Steel)
+  k_coeffs = MaterialCoefficients(
+      c1=-1.4087, c2=1.3982, c3=0.2543, c4=-0.6260, c5=0.2334,
+      c6=0.4256, c7=-0.4658, c8=0.1650, c9=-0.0199
+  )
+  cp_coeffs = MaterialCoefficients(
+      c1=22.0061, c2=-127.5528, c3=303.6470, c4=-381.0098, c5=274.0328,
+      c6=-112.9212, c7=24.7593, c8=-2.239153, c9=0.0
+  )
+  return k_coeffs, cp_coeffs
+end
 
-    k = 10.0 .^ k_log10
-    cp = 10.0 .^ cp_log10
+function material_coefficients(material::Copper)
+  k_coeffs = MaterialCoefficients(
+      c1=-0.50015, c2=1.93190, c3=-1.69540, c4=0.71218, c5=1.27880,
+      c6=-1.61450, c7=0.68722, c8=-0.10501, c9=0.0
+  )
+  cp_coeffs = MaterialCoefficients(
+      c1=-1.91844, c2=-0.15973, c3=8.61013, c4=-18.99640, c5=21.96610,
+      c6=-12.73280, c7=3.54322, c8=-0.37970, c9=0.0
+  )
+  return k_coeffs, cp_coeffs
+end
 
-    return k, cp
+function get_coefficients(material::AbstractMaterial, T_field::ScalarField)
+  k_coeffs, cp_coeffs = material_coefficients(material)
+
+  logT = log10.(T_field.values)
+
+  k_log10 = k_coeffs(logT)
+  cp_log10 = cp_coeffs(logT)
+
+  k = 10.0 .^ k_log10
+  cp = 10.0 .^ cp_log10
+
+  return k, cp
 end

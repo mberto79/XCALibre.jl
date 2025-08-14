@@ -116,7 +116,8 @@ end
 - `domain` - provides the mesh to used (must be adapted to the target backend device)
 
 """
-Physics(; time, fluid = nothing, solid = nothing, turbulence = nothing, energy, domain) = begin
+Physics(; time, fluid=nothing, solid=nothing, turbulence=nothing, energy, domain) = begin
+    # NOTE: this function will be changed if/when a "medium" keyword is introduced. This will get rid of this ugly if statements! 
     momentum = Momentum(domain)
 
     if fluid !== nothing
@@ -125,7 +126,7 @@ Physics(; time, fluid = nothing, solid = nothing, turbulence = nothing, energy, 
     end
 
     if solid !== nothing
-        solid = solid(domain)
+        solid = solid(domain, time)
         energy = energy(domain, solid)
     end
     

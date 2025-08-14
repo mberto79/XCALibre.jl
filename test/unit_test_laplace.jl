@@ -1,20 +1,22 @@
 using XCALibre
 using KernelAbstractions
 using Accessors
+using Test
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 
-grid = "finer_mesh_laplace.unv"
-grid = "laplace_2d_mesh.unv"
+# grid = "finer_mesh_laplace.unv"
+grid = "laplace_unit_3by3.unv"
+# grid = "laplace_unit_5by5.unv"
 
 mesh_file = joinpath(grids_dir, grid)
 
-mesh = UNV2D_mesh(mesh_file, scale=0.001)
+mesh = UNV2D_mesh(mesh_file)
 
 T_test  = ScalarField(mesh)
 initialise!(T_test, 300.0)
 
-k_test, cp_test = XCALibre.ModelPhysics.get_coefficients(:Steel,T_test)
+k_test, cp_test = XCALibre.ModelPhysics.get_coefficients(Aluminium(),T_test)
 
 
 
@@ -31,9 +33,9 @@ mesh_dev = adapt(backend, mesh)
 
 
 model = Physics(
-    time = Transient(),
-    solid = Solid{Uniform}(k=54.0, cp=480.0, rho=7850.0),
-    energy = Energy{LaplaceEnergy}(),
+    time = Steady(),
+    solid = Solid{Uniform}(k=1.0),
+    energy = Energy{Conduction}(),
     domain = mesh_dev
     )
 
@@ -41,9 +43,9 @@ BCs = assign(
     region = mesh_dev,
     (
         T = [     
-            Dirichlet(:left_wall, 0),
+            Dirichlet(:left_wall, 50.0),
             Zerogradient(:right_wall),
-            Dirichlet(:bottom_wall, 1),
+            Dirichlet(:bottom_wall, 10.0),
             Zerogradient(:upper_wall)
         ],
     )
@@ -53,7 +55,7 @@ BCs = assign(
 
 solvers = (
     T = SolverSetup(
-        solver      = Bicgstab(), # Bicgstab(), Gmres()
+        solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = DILU(), # Jacobi(), #NormDiagonal(), # DILU()
         convergence = 1e-8,
         relax       = 0.8,
@@ -79,30 +81,32 @@ config = Configuration(
 source_field = ScalarField(mesh) #0.0 field
 initialise!(model.energy.T, 15)
 
-T_eqn = (
-    Time{schemes.time}(model.energy.rhocp, model.energy.T)
-    - Laplacian{schemes.laplacian}(model.energy.rDf, model.energy.T)
-    ==
-    - Source(source_field)
-) → ScalarEquation(model.energy.T, BCs.T)
 
-
+ @info "Defining models..."
+    T_eqn = (
+        Time{schemes.time}(model.solid.rhocp, model.energy.T) #0.0 by default
+        - Laplacian{schemes.laplacian}(model.solid.rDf, model.energy.T)
+        ==
+        - Source(source_field)
+    ) → ScalarEquation(model.energy.T, config.boundaries.T)
 
 
 @info "Initialising preconditioners..."
 
-@reset T_eqn.preconditioner = XCALibre.Solve.set_preconditioner(solvers.preconditioner, T_eqn)
+@reset T_eqn.preconditioner = set_preconditioner(solvers.preconditioner, T_eqn)
 
 @info "Pre-allocating solvers..."
 
-@reset T_eqn.solver = XCALibre.Solve._workspace(solvers.solver, _b(T_eqn))
+@reset T_eqn.solver = _workspace(solvers.solver, _b(T_eqn))
 
+
+# The part that was previously inside the solver
 
 output=VTK()
-
-outputWriter = initialise_writer(output, model.domain) # needs to be passed on
-    
+outputWriter = initialise_writer(output, model.domain) 
 interpolate!(model.energy.Tf, model.energy.T, config)
+
+@info "Allocating working memory..."
 
 n_cells = length(mesh.cells)
 TF = _get_float(mesh)
@@ -115,5 +119,25 @@ time = zero(TF) # assuming time=0
 XCALibre.Solvers.LAPLACE(
     model, T_eqn, config;
     output=output, pref=nothing, ncorrectors=0, inner_loops=0,
-    outputWriter, R_T, time, isCoupled=false
+    outputWriter, R_T, time
 )
+
+solution_A_matrix = T_eqn.equation.A.parent
+solution_b_vector = T_eqn.equation.b
+
+expected_A_matrix = [
+     4.0  -1.0   0.0  -1.0   0.0   0.0   0.0   0.0   0.0;
+    -1.0   5.0  -1.0   0.0  -1.0   0.0   0.0   0.0   0.0;
+     0.0  -1.0   6.0   0.0   0.0  -1.0   0.0   0.0   0.0;
+    -1.0   0.0   0.0   3.0  -1.0   0.0  -1.0   0.0   0.0;
+     0.0  -1.0   0.0  -1.0   4.0  -1.0   0.0  -1.0   0.0;
+     0.0   0.0  -1.0   0.0  -1.0   5.0   0.0   0.0  -1.0;
+     0.0   0.0   0.0  -1.0   0.0   0.0   2.0  -1.0   0.0;
+     0.0   0.0   0.0   0.0  -1.0   0.0  -1.0   3.0  -1.0;
+     0.0   0.0   0.0   0.0   0.0  -1.0   0.0  -1.0   4.0
+]
+
+expected_b_vector = [100.0, 100.0, 120.0, 0.0, 0.0, 20.0, 0.0, 0.0, 20.0]
+
+@test solution_A_matrix ≈ expected_A_matrix atol=0.1
+@test solution_b_vector ≈ expected_b_vector

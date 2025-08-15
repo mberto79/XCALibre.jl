@@ -43,43 +43,37 @@ end
     if (typeof(time) == Transient) && (rho == 0.0 || cp == 0.0)
         @warn "Transient requested but cp/rho missing; proceeding with rhocp=0 (steady-state behavior)."
     end
-
-    k_const = k
-    cp_const = cp
-    rho_const = rho
     
-    
-    k = ConstantScalar(k_const)
-    kf = FaceScalarField(mesh) # QUESTION: Considering this is a face... should I do this?
-    initialise!(kf, k_const)
+    k = ConstantScalar(k)
+    kf = ConstantScalar(k.values[1])
 
     cp = ConstantScalar(cp)
     rho = ConstantScalar(rho)
     
-    rDf = FaceScalarField(mesh)
-    initialise!(rDf, 1.0/k_const)
+    rDf = ConstantScalar(1.0/k.values[1])
 
-    rhocp_const = rho_const * cp_const
-    rhocp  = ConstantScalar(rhocp_const)
+    rhocp = rho.values[1] * cp.values[1]
+    rhocp = ConstantScalar(rhocp)
 
     Uniform(k, kf, cp, rho, rhocp, rDf)
 end
 
 
 
-@kwdef struct NonUniform{S1, F1, S2, S3, M<:AbstractMaterial, S4, F2} <: AbstractSolid
+@kwdef struct NonUniform{S1, F1, S2, S3, C1 <: MaterialCoefficients, C2 <: MaterialCoefficients, S4, F2} <: AbstractSolid
     k::S1
     kf::F1
     cp::S2
     rho::S3
-    material::M
+    k_coeffs::C1
+    cp_coeffs::C2
     rhocp::S4
     rDf::F2
 end
 Adapt.@adapt_structure NonUniform
 
-Solid{NonUniform}(; material=nothing, k_coeffs=nothing, cp_coeffs=nothing, rho) = begin 
-    coeffs = (; material, rho, k_coeffs, cp_coeffs)
+Solid{NonUniform}(; material=nothing, k=nothing, cp=nothing, rho) = begin 
+    coeffs = (; material, rho, k, cp)
     ARG = typeof(coeffs)
     Solid{NonUniform,ARG}(coeffs)
 end
@@ -88,36 +82,23 @@ end
 
 (solid::Solid{NonUniform, ARG})(mesh, time) where ARG = begin
     coeffs = solid.args
-    (; material, k_coeffs, cp_coeffs, rho) = coeffs
+    (; material, k, cp, rho) = coeffs
 
+    k_coeffs = k
+    cp_coeffs = cp
 
-    # Very unsure if you would like those IFs!
-    if material === nothing
-        try
-            if (k_coeffs isa AbstractVector{<:AbstractFloat} && length(k_coeffs) == 9) && 
-                (cp_coeffs isa AbstractVector{<:AbstractFloat} && length(cp_coeffs) == 9)
-
-                k_new = MaterialCoefficients(k_coeffs...)
-                cp_new = MaterialCoefficients(cp_coeffs...)
-                material = UserDefinedMaterial(k_new, cp_new)
-            end
-        catch
-            println("Failed to create new material given the coefficients")
-        end
+    if material !== nothing
+        k_coeffs, cp_coeffs = material_coefficients(material)
     end
-
-    rho_const = rho
-
 
     k = ScalarField(mesh)
     kf = FaceScalarField(mesh)
 
     cp = ScalarField(mesh)
-    rho = ScalarField(mesh)
-    initialise!(rho, rho_const)
+    rho = ConstantScalar(rho)
     
     rDf = FaceScalarField(mesh)
     rhocp  = ScalarField(mesh)
 
-    NonUniform(k, kf, cp, rho, material, rhocp, rDf)
+    NonUniform(k, kf, cp, rho, k_coeffs, cp_coeffs, rhocp, rDf)
 end

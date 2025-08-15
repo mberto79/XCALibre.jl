@@ -15,8 +15,7 @@ struct Conduction{S1,F1} <: AbstractEnergyModel
 end
 Adapt.@adapt_structure Conduction
 
-#material::Symbol, rho::Float64
-Energy{Conduction}() = begin # maybe assign rho based on the material?
+Energy{Conduction}() = begin
     args = nothing
     ARGS = typeof(args)
     Energy{Conduction,ARGS}(args)
@@ -30,16 +29,12 @@ end
 end
 
 
-# Perhaps need to pass this as a list of arguments
 function initialise(
     energy::Conduction, model::Physics{T1,F,SO,M,Tu,E,D,BI}, T_field, rDf, rhocp_field, k, kf, cp, rho, config
 ) where {T1,F,SO,M,Tu,E,D,BI}
 
     if typeof(model.solid) <: NonUniform
-        k_vals, cp_vals = get_coefficients(model.solid.material, T_field)
-
-        k.values .= k_vals
-        cp.values .= cp_vals
+        update_thermo_properties!(k, cp, T_field, model.solid)
 
         interpolate_harmonic!(kf, k, config)
         initialise!(rDf, 1.0)
@@ -58,10 +53,8 @@ end
 function energy!(
     energy::Conduction, model::Physics{T1,F,SO,M,Tu,E,D,BI}, T_field, rDf, rhocp_field, k, kf, cp, rho, config
 ) where {T1,F,SO,M,Tu,E,D,BI}
-    k_vals, cp_vals = get_coefficients(model.solid.material, T_field)
 
-    k.values .= k_vals
-    cp.values .= cp_vals
+    update_thermo_properties!(k, cp, T_field, model.solid)
 
     interpolate_harmonic!(kf, k, config)
     initialise!(rDf, 1.0)
@@ -71,4 +64,14 @@ function energy!(
     @. rhocp_field.values *= cp.values
 
     return nothing
+end
+
+# Note: use kernel in the next update
+function update_thermo_properties!(k, cp, T, solid)
+    (; k_coeffs, cp_coeffs) = solid
+
+    @. k.values = k_coeffs(T.values)
+    @. cp.values = cp_coeffs(T.values)
+
+    nothing
 end

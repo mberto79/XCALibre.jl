@@ -149,11 +149,17 @@ Currently only 3 material models are available for use: `Steel()`, `Aluminium()`
 Custom material can be defined in the following way:
 ```julia
 # Define your custom coefficient vectors for k and cp:
-k_coeffs = [-1.4087, 1.3982, 0.2543, -0.6260, 0.2334, 0.4256, -0.4658, 0.1650, -0.0199]
-cp_coeffs = [22.0061, -127.5528, 303.6470, -381.0098, 274.0328, -112.9212, 24.7593, -2.239153, 0.0]
+k_coeffs = MaterialCoefficients(
+    c1=-1.4087, c2=1.3982, c3=0.2543, c4=-0.6260, c5=0.2334,
+    c6=0.4256, c7=-0.4658, c8=0.1650, c9=-0.0199
+)
+cp_coeffs = MaterialCoefficients(
+    c1=22.0061, c2=-127.5528, c3=303.6470, c4=-381.0098, c5=274.0328,
+    c6=-112.9212, c7=24.7593, c8=-2.239153, c9=0.0
+)
 
 # Pass them instead of `material`:
-solid = Solid{NonUniform}(k_coeffs=k_coeffs, cp_coeffs=cp_coeffs, rho=7850.0),
+solid = Solid{NonUniform}(k=k_coeffs, cp=cp_coeffs, rho=7850.0),
 ```
 
 

@@ -1,13 +1,11 @@
 export AbstractMaterial, Aluminium, Steel, Copper
 export get_coefficients, MaterialCoefficients, material_coefficients, UserDefinedMaterial
 
-
 abstract type AbstractMaterial end
 
 struct Aluminium <: AbstractMaterial end
 struct Steel <: AbstractMaterial end
 struct Copper <: AbstractMaterial end
-
 
 @kwdef struct MaterialCoefficients{T<:AbstractFloat}
   c1::T
@@ -21,9 +19,13 @@ struct Copper <: AbstractMaterial end
   c9::T
 end
 
-(coeffs::MaterialCoefficients)(T) = begin
-  return coeffs.c1 .+ coeffs.c2 .* T .+ coeffs.c3 .* T.^2 .+ coeffs.c4 .* T.^3 .+ coeffs.c5 .* T.^4 .+
-          coeffs.c6 .* T.^5 .+ coeffs.c7 .* T.^6 .+ coeffs.c8 .* T.^7 .+ coeffs.c9 .* T.^8
+(coeffs::MaterialCoefficients)(T0) = begin
+  T = log10(T0)
+
+  temp_polynomial = coeffs.c1 .+ coeffs.c2 .* T .+ coeffs.c3 .* T.^2 .+ coeffs.c4 .* T^3 .+ coeffs.c5 .* T^4 .+
+        coeffs.c6 .* T^5 .+ coeffs.c7 .* T^6 .+ coeffs.c8 .* T^7 .+ coeffs.c9 .* T^8
+
+  return 10.0 .^ temp_polynomial
 end
 
 function material_coefficients(material::Aluminium)
@@ -60,27 +62,4 @@ function material_coefficients(material::Copper)
       c6=-12.73280, c7=3.54322, c8=-0.37970, c9=0.0
   )
   return k_coeffs, cp_coeffs
-end
-
-
-struct UserDefinedMaterial <: AbstractMaterial
-    k::MaterialCoefficients
-    cp::MaterialCoefficients
-end
-
-material_coefficients(material::UserDefinedMaterial) = (material.k, material.cp)
-
-
-function get_coefficients(material::AbstractMaterial, T_field::ScalarField)
-  k_coeffs, cp_coeffs = material_coefficients(material)
-
-  logT = log10.(T_field.values)
-
-  k_log10 = k_coeffs(logT)
-  cp_log10 = cp_coeffs(logT)
-
-  k = 10.0 .^ k_log10
-  cp = 10.0 .^ cp_log10
-
-  return k, cp
 end

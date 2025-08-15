@@ -43,8 +43,6 @@ end
     nutf = FaceScalarField(mesh)
     k = ScalarField(mesh)
     kf = FaceScalarField(mesh)
-    outScalar = ScalarField(mesh)
-    outVector = VectorField(mesh)
     coeffs = les.args
     KEquation(nut, nutf, k, kf, coeffs)
 end
@@ -157,14 +155,18 @@ function turbulence!(
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
     
   
-    @. mueffk.values = rhof.values*(nuf.values + nutf.values)
-    
+    wk = _setup(backend, workgroup, length(mueffk))[2]
+    AK.foreachindex(mueffk, min_elems=wk, block_size=wk) do i 
+        mueffk[i] = rhof[i]*(nuf[i] + nutf[i])
+    end
+
     wk = _setup(backend, workgroup, length(Pk))[2]
     AK.foreachindex(Pk, min_elems=wk, block_size=wk) do i 
         Pk[i] = 2*nut[i]*(gradU[i]⋅Dev(S)[i])
         Dkf[i] = coeffs.ce*rho[i]*sqrt(k[i])/(Δ[i])
-        divU[i] = 2/3*rho[i]*tr(gradU[i]) #/mesh.cells[i].volume
+        divU[i] = 2/3*rho[i]*tr(gradU[i])
     end
+    
     # Solve k equation
     # prev .= k.values
     discretise!(k_eqn, k, config)
@@ -176,7 +178,10 @@ function turbulence!(
     bound!(k, config)
     # explicit_relaxation!(k, prev, solvers.k.relax, config)
 
-    @. nut.values = coeffs.ck*Δ.values*sqrt(k.values)
+    wk = _setup(backend, workgroup, length(nut))[2]
+    AK.foreachindex(nut, min_elems=wk, block_size=wk) do i 
+        nut[i] = coeffs.ck*Δ[i]*sqrt(k[i])
+    end
 
     interpolate!(nutf, nut, config)
     correct_boundaries!(nutf, nut, boundaries.nut, time, config)

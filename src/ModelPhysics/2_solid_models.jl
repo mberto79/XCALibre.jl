@@ -30,7 +30,7 @@ end
 end
 Adapt.@adapt_structure Uniform
 
-Solid{Uniform}(; k, cp=nothing, rho=nothing) = begin 
+Solid{Uniform}(; k, cp=0.0, rho=0.0) = begin 
     coeffs = (; k=k, cp, rho)
     ARG = typeof(coeffs)
     Solid{Uniform,ARG}(coeffs)
@@ -40,18 +40,13 @@ end
     coeffs = solid.args
     (; k, cp, rho) = coeffs
     
-    if typeof(time) == Transient
-        @assert cp !== nothing "For transient simulations cp must be provided"
-        @assert rho !== nothing "For transient simulations rho must be provided"
-    else
-        cp = 0.0 # in case user passed it
-        rho = 0.0 # in case user passed it
+    if (typeof(time) == Transient) && (rho == 0.0 || cp == 0.0)
+        @warn "Transient requested but cp/rho missing; proceeding with rhocp=0 (steady-state behavior)."
     end
 
     k_const = k
     cp_const = cp
     rho_const = rho
-    
     
     
     k = ConstantScalar(k_const)
@@ -83,17 +78,34 @@ end
 end
 Adapt.@adapt_structure NonUniform
 
-Solid{NonUniform}(; material, rho) = begin 
-    coeffs = (; material, rho)
+Solid{NonUniform}(; material=nothing, k_coeffs=nothing, cp_coeffs=nothing, rho) = begin 
+    coeffs = (; material, rho, k_coeffs, cp_coeffs)
     ARG = typeof(coeffs)
     Solid{NonUniform,ARG}(coeffs)
 end
 
+
+## EXAMPLE
+# k_coeffs = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+# cp_coeffs = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+
 (solid::Solid{NonUniform, ARG})(mesh, time) where ARG = begin
     coeffs = solid.args
-    (; material, rho) = coeffs
+    (; material, k_coeffs, cp_coeffs, rho) = coeffs
 
-    @assert typeof(time) !== Steady "NonUniform Solid requires transient time term"
+
+    # Very unsure if you would like these ifs!
+    if material === nothing
+        try
+            if (k_coeffs && cp_coeffs) #not nothing and also must be array of 9 Floats
+                #extract coeffs and create a new material
+            end
+
+        catch
+        end
+    end
+
+    println(material) # Non zero one!
 
     rho_const = rho
 

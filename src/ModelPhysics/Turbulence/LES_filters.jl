@@ -5,8 +5,8 @@ struct TopHatFilter{F} <: AbstractFilter
 end
 Adapt.@adapt_structure TopHatFilter
 
-TopHatFilter(field::AbstractField, config) = begin
-    cellArea = cell_surface_area(field, config)
+TopHatFilter(field::AbstractField, fieldBCs, config) = begin
+    cellArea = cell_surface_area(field, fieldBCs, config)
     TopHatFilter(cellArea)
 end
 
@@ -67,20 +67,21 @@ end
     end
 end
 
-function cell_surface_area(field, config)
+function cell_surface_area(field, fieldBCs, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
-    (; mesh, BCs) = field
+    (; mesh) = field
 
     areaSum = _convert_array!(zeros(_get_float(mesh),length(field)), backend)
     (; boundaries, faces) = mesh
-    kernel! = _area_sum!(backend, workgroup)
-    kernel!(areaSum, mesh, ndrange=length(field))
+    ndrange=length(field)
+    kernel! = _area_sum!(_setup(backend, workgroup, ndrange)...)
+    kernel!(areaSum, mesh)
 
     # add non-empty boundary contributions
     boundaries_cpu = get_boundaries(boundaries)
 
-    for BC ∈ BCs
+    for BC ∈ fieldBCs
         if typeof(BC) <: Empty
             continue
         end
@@ -89,8 +90,9 @@ function cell_surface_area(field, config)
         
         kernel_range = length(facesID_range)
 
-        kernel! = _add_boundary_area!(backend, workgroup)
-        kernel!(areaSum, start_ID, faces, ndrange=kernel_range)
+        ndrange=kernel_range
+        kernel! = _add_boundary_area!(_setup(backend, workgroup, ndrange)...)
+        kernel!(areaSum, start_ID, faces)
     end
     return areaSum
 end
@@ -132,12 +134,14 @@ function basic_filter_new!(phiFiltered, phif, surfaceArea, config)
     (; backend, workgroup) = hardware
     (; boundary_cellsID) = phiFiltered.mesh
     
-    kernel! = _surface_sum!(backend, workgroup)
-    kernel!(phiFiltered, phif, surfaceArea, ndrange=length(phiFiltered))
+    ndrange=length(phiFiltered)
+    kernel! = _surface_sum!(_setup(backend, workgroup, ndrange)...)
+    kernel!(phiFiltered, phif, surfaceArea)
 
     # boundary faces contribution 
-    kernel! = _add_boundary_faces!(backend, workgroup)
-    kernel!(phiFiltered, phif, surfaceArea, ndrange=length(boundary_cellsID))
+    ndrange=length(boundary_cellsID)
+    kernel! = _add_boundary_faces!(_setup(backend, workgroup, ndrange)...)
+    kernel!(phiFiltered, phif, surfaceArea)
 
 end
 
@@ -247,15 +251,17 @@ function basic_filter!(phiFiltered, phi, surfaceArea, config)
     # (; x, y, z) = grad.result
     
     # # Launch result calculation kernel
-    kernel! = _integrate_surface!(backend, workgroup)
-    kernel!(phiFiltered, phi, surfaceArea, ndrange=length(phiFiltered))
+    ndrange=length(phiFiltered)
+    kernel! = _integrate_surface!(_setup(backend, workgroup, ndrange)...)
+    kernel!(phiFiltered, phi, surfaceArea)
     KernelAbstractions.synchronize(backend)
 
     # # number of boundary faces
     # nbfaces = length(phif.mesh.boundary_cellsID)
     
-    # kernel! = boundary_faces_contribution!(backend, workgroup)
-    # kernel!(x, y, z, phif, ndrange=nbfaces)
+    # ndrange=nbfaces
+    # kernel! = boundary_faces_contribution!(_setup(backend, workgroup, ndrange)...)
+    # kernel!(x, y, z, phif)
 end
 
 @kernel function _integrate_surface!(phiFiltered, phi::ScalarField, surfaceArea)

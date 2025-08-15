@@ -12,13 +12,11 @@ KEquation LES model containing all Smagorinksy field parameters.
 - `coeffs` -- Model coefficients.
 
 """
-struct KEquation{S1,S2,S3,S4,S5,V1,C} <: AbstractLESModel
-    nut::S1
-    nutf::S2
-    k::S3
-    kf::S4
-    outScalar::S5
-    outVector::V1
+struct KEquation{S,SF,C} <: AbstractLESModel
+    nut::S
+    nutf::SF
+    k::S
+    kf::SF
     coeffs::C #I know there is only one coefficient for LES but this makes the DES implementation easier
 end
 Adapt.@adapt_structure KEquation
@@ -33,8 +31,8 @@ end
 Adapt.@adapt_structure KEquationModel
 
 # Model API constructor (pass user input as keyword arguments and process as needed)
-LES{KEquation}(; C=0.15) = begin 
-    coeffs = (C=C,)
+LES{KEquation}(; ck=0.094, ce=1.048) = begin 
+    coeffs = (ck=ck, ce=ce)
     ARG = typeof(coeffs)
     LES{KEquation,ARG}(coeffs)
 end
@@ -48,7 +46,7 @@ end
     outScalar = ScalarField(mesh)
     outVector = VectorField(mesh)
     coeffs = les.args
-    KEquation(nut, nutf, k, kf, outScalar, outVector, coeffs)
+    KEquation(nut, nutf, k, kf, coeffs)
 end
 
 # Model initialisation
@@ -94,9 +92,6 @@ function initialise(
     kSource = ScalarField(mesh)
 
     delta!(Δ, mesh, config)
-    @. Δ.values = (((Δ.values^3)/0.001)^0.5) # get 2D delta
-    # @. Δ.values = (((Δ.values^3))^0.5) # get 2D delta
-    # @. Δ.values = Δ.values^2 # store delta squared since it will be needed
 
     k_eqn = (
             Time{schemes.k.time}(rho, k)
@@ -105,21 +100,19 @@ function initialise(
             + Si(Dkf,k) # Dkf = (Ce*rho*sqrt(k)/Δ)*k
             + Si(divU,k) # Needs adding
             ==
-            Source(Pk) + Source(kSource)
-            # Source(Pk) + Source(k)
+            Source(Pk)
         ) → eqn
 
-    @reset k_eqn.preconditioner = set_preconditioner(
-        solvers.k.preconditioner, k_eqn, k.BCs, config)
-
-    @reset k_eqn.solver = solvers.k.solver(_A(k_eqn), _b(k_eqn))
+    @reset k_eqn.preconditioner = set_preconditioner(solvers.k.preconditioner, k_eqn)
+    @reset k_eqn.solver = _workspace(solvers.k.solver, _b(k_eqn))
     
+    initial_residual = ((:k, 1.0),)
     return KEquationModel(
         turbulence, 
         Δ, 
         magS, 
         k_eqn,
-        ModelState((), false)
+        ModelState(initial_residual, false)
     )
 end
 
@@ -146,97 +139,36 @@ function turbulence!(
     ) where {T,F,SO,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
     mesh = model.domain
-    (; solvers, runtime, hardware) = config
-    (; workgroup) = hardware
+    (; solvers, runtime, hardware, boundaries) = config
+    (; workgroup, backend) = hardware
     (; rho, rhof, nu, nuf) = model.fluid
-    (; k, kf, nut, nutf, outScalar, outVector, coeffs) = les.turbulence
+    (; k, kf, nut, nutf, coeffs) = les.turbulence
     (; k_eqn, state) = les
     (; U, Uf, gradU) = S
     (; Δ, magS) = les
 
     Pk = get_source(k_eqn, 1)
-    kSource = get_source(k_eqn, 2)
     mdotf = get_flux(k_eqn, 2)
     mueffk = get_flux(k_eqn, 3)
     Dkf = get_flux(k_eqn, 4)
     divU = get_flux(k_eqn, 5)
 
-    grad!(gradU, Uf, U, U.BCs, time, config)
+    grad!(gradU, Uf, U, boundaries.U, time, config)
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
     
-    # update fluxes
-    # divUf = FaceVectorField(mesh)
-    # AK.foreachindex(divUf, min_elems=workgroup, block_size=workgroup) do i 
-    #     divUf[i] = mdotf[i]*Uf[i]
-    # end
-    # div!(divU, divUf, config)
-
-    # AK.foreachindex(Pk, min_elems=workgroup, block_size=workgroup) do i 
-    #     Pk[i] = 2*nut[i]*(gradU[i]⋅Dev(S)[i])
-    #     # Pk[i] = 2*nut[i]*(gradU[i]⋅Dev(gradU.result)[i])
-    #     mueffk[i] = rhof[i] * (nuf[i] + nutf[i])
-    #     # divU[i] = abs(2/3*rho[i]*divU[i])
-    #     divU[i] = 2/3*rho[i]*tr(gradU[i]) #/mesh.cells[i].volume
-    #     kSource[i] = k[i] #/mesh.cells[i].volume
-    #     outScalar[i] = mesh.cells[i].volume
-    # end
-
-    #
-
-    _filter = TopHatFilter(U, config)
-    # Umag2hat = ScalarField(model.domain)
-    # Uhat = VectorField(model.domain)
-    # Uhat2 = ScalarField(model.domain)
-    KK = ScalarField(model.domain)
-    DevF = TensorField(model.domain)
-    mag2DF = ScalarField(model.domain)
-    Ce = ScalarField(model.domain)
-    T_temp = TensorField(model.domain)
-    LL = TensorField(model.domain)
-    MM = TensorField(model.domain)
-    # MM2F = ScalarField(model.domain)
-    Ck = ScalarField(model.domain)
-
+  
+    @. mueffk.values = rhof.values*(nuf.values + nutf.values)
     
-    AK.foreachindex(U, min_elems=workgroup, block_size=workgroup) do i 
-        Umag2hati = _filter(MagSqr(U), i) 
-        Uhat2i = _filter(U, i, post=(U)-> U⋅U)
-        KK[i] = max(0.5*(Umag2hati - Uhat2i), 0.0)
-    end
-
-    tensorForm = gradU.result # Dev(S) # gradU.result
-    Ck!(Ck, tensorForm, KK, U, T_temp, DevF, Δ, LL, MM, _filter, workgroup) 
-    @. nut.values = Ck.values*Δ.values*sqrt(k.values)
-    Ce!(Ce, tensorForm, KK, mag2DF, DevF, nu, nut, Δ, _filter, workgroup)
-
-    # @. nut.values = Ck.values*Δ.values*sqrt(k.values)
-
-    # interpolate!(nutf, nut, config)
-    # correct_boundaries!(nutf, nut, nut.BCs, time, config)
-    # correct_eddy_viscosity!(nutf, nut.BCs, model, config)
-
-
-    # goodish iwth gradU.result
-
-    #
-    
-    @. Dkf.values = Ce.values*rho.values*sqrt(k.values)/(Δ.values)
-    # @. Dkf.values = 1.048*rho.values*sqrt(k.values)/(Δ.values)
-    
-    AK.foreachindex(Pk, min_elems=workgroup, block_size=workgroup) do i 
+    wk = _setup(backend, workgroup, length(Pk))[2]
+    AK.foreachindex(Pk, min_elems=wk, block_size=wk) do i 
         Pk[i] = 2*nut[i]*(gradU[i]⋅Dev(S)[i])
-        # Pk[i] = 2*nut[i]*(Dev(S)[i]⋅Dev(S)[i])
-        # Pk[i] = 2*nut[i]*(gradU[i]⋅Dev(gradU.result)[i])
-        mueffk[i] = rhof[i] * (nuf[i] + nutf[i])
-        # divU[i] = abs(2/3*rho[i]*divU[i])
+        Dkf[i] = coeffs.ce*rho[i]*sqrt(k[i])/(Δ[i])
         divU[i] = 2/3*rho[i]*tr(gradU[i]) #/mesh.cells[i].volume
-        kSource[i] = 0.0*k[i] #/mesh.cells[i].volume
-        outScalar[i] = mesh.cells[i].volume
     end
     # Solve k equation
     # prev .= k.values
     discretise!(k_eqn, k, config)
-    apply_boundary_conditions!(k_eqn, k.BCs, nothing, time, config)
+    apply_boundary_conditions!(k_eqn, boundaries.k, nothing, time, config)
     # implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
     implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
     update_preconditioner!(k_eqn.preconditioner, mesh, config)
@@ -244,30 +176,20 @@ function turbulence!(
     bound!(k, config)
     # explicit_relaxation!(k, prev, solvers.k.relax, config)
 
-    AK.foreachindex(U, min_elems=workgroup, block_size=workgroup) do i 
-        Umag2hati = _filter(MagSqr(U), i) 
-        Uhat2i = _filter(U, i, post=(U)-> U⋅U)
-        KK[i] = max(0.5*(Umag2hati - Uhat2i), 0.0)
-    end
-
-    tensorForm2 = gradU.result # gradU.result Dev(S)
-    Ck!(Ck, tensorForm2, KK, U, T_temp, DevF, Δ, LL, MM, _filter, workgroup) 
-    # goodish iwth gradU.result
-    @. nut.values = Ck.values*Δ.values*sqrt(k.values)
-    # @. nut.values = 0.094*Δ.values*sqrt(k.values)
+    @. nut.values = coeffs.ck*Δ.values*sqrt(k.values)
 
     interpolate!(nutf, nut, config)
-    correct_boundaries!(nutf, nut, nut.BCs, time, config)
-    correct_eddy_viscosity!(nutf, nut.BCs, model, config)
+    correct_boundaries!(nutf, nut, boundaries.nut, time, config)
+    correct_eddy_viscosity!(nutf, boundaries.nut, model, config)
 
     # update solver state
-    # state.residuals = ((:k , k_res),)
-    # state.converged = k_res < solvers.k.convergence
+    state.residuals = ((:k , k_res),)
+    state.converged = k_res < solvers.k.convergence
     nothing
 end
 
 # Specialise VTK writer
-function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
+function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
     ) where {T,F,SO,M,Tu<:KEquation,E,D,BI}
     if typeof(model.fluid)<:AbstractCompressible
         args = (
@@ -282,60 +204,8 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
             ("U", model.momentum.U), 
             ("p", model.momentum.p),
             ("k", model.turbulence.k),
-            ("nut", model.turbulence.nut),
-            ("outScalar", model.turbulence.outScalar),
-            ("outVector", model.turbulence.outVector)
+            ("nut", model.turbulence.nut)
         )
     end
-    write_results(iteration, time, model.domain, outputWriter, args...)
-end
-
-# KEquation - internal functions
-
-function Ce!(Ce, D, KK, mag2DF, DevF, nu, nut, Δ, filter, workgroup)
-    AK.foreachindex(DevF, min_elems=workgroup, block_size=workgroup) do i 
-        # mag2DF[i] = filter(MagSqr(2,D), i) # added 2
-        mag2DF[i] = filter(MagSqr(D), i)
-        DevF[i] = filter(D, i)
-    end
-
-    AK.foreachindex(Ce, min_elems=workgroup, block_size=workgroup) do i 
-        Ce_n = filter(mag2DF, i, pre=(mag2DF,i)-> Ce1(mag2DF, DevF, nu, nut, i))
-        Ce_d = filter(KK, i, pre=(KK,i)-> Ce2(KK, Δ, i) )
-        a = Ce_n/Ce_d
-        Ce[i] = 0.5*(norm(a) + a)
-    end
-end
-
-# Ce1(mag2DF, DevF, nu, nut, i) = 2*(nu[i] + nut[i])*(mag2DF[i] - DevF[i]⋅DevF[i]) # added 2
-Ce1(mag2DF, DevF, nu, nut, i) = (nu[i] + nut[i])*(mag2DF[i] - DevF[i]⋅DevF[i])
-Ce2(KK, Δ, i) = KK[i]^(1.5)/(2.0*Δ[i])
-
-function Ck!(Ck, D, KK, U, T_temp, DevF, Δ, LL, MM, filter, workgroup)
-    AK.foreachindex(T_temp, min_elems=workgroup, block_size=workgroup) do i 
-        DevF[i] = filter(D, i)
-        U2Fi = filter(Sqr(U), i)
-        Uhati = filter(U, i)
-        @inbounds T_temp[i] = ((U2Fi) - (Uhati*Uhati'))
-    end
-
-    AK.foreachindex(T_temp, min_elems=workgroup, block_size=workgroup) do i 
-        LL[i] = filter(Dev(T_temp), i)
-        MM[i] = filter(KK, i, pre =(KK,i) -> CkMM(KK, DevF, Δ, i))
-    end
-    
-    AK.foreachindex(Ck, min_elems=workgroup, block_size=workgroup) do i 
-        Ck_n = filter(LL, i, pre=(LL,i)->Ck1(LL, MM, i))
-        # Ck_d =filter(MagSqr(2,MM), i) # added 2
-        Ck_d =filter(MagSqr(MM), i)
-        Ck_i = Ck_n/Ck_d
-        Ck[i] = 0.5*(norm(Ck_i) + Ck_i)
-    end
-end
-
-CkMM(KK, DevF, Δ, i) = -2*Δ[i]*sqrt(KK[i])*DevF[i]
-Ck1(LL, MM, i) = 0.5*(LL[i]⋅MM[i])
-
-function correct_nut!(nut, D, KK)
-    nothing
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end

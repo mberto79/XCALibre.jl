@@ -28,23 +28,17 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
     end
 
     @testset "Laplace Functionality Test" begin
-        include("2d_laplace_solver.jl")
+
+        test_files = [
+            "2d_laplace_steady.jl",
+            "2d_laplace_unsteady.jl"
+        ]
+
+        for test ∈ test_files
+            test_path = joinpath(TEST_CASES_DIR, test)
+            include(test_path)
+        end
     end
-
-
-# COMMENT: For some reason it doesnt want to include 2d_laplace_solver.jl and thus I get an error "UndefVarError: `@test` not defined in `Main`"
-
-    # @testset "Laplace Functionality Test" begin
-
-    #     test_files = [
-    #         "2d_laplace_solver.jl"
-    #     ]
-
-    #     for test ∈ test_files
-    #         test_path = joinpath(TEST_CASES_DIR, test)
-    #         include(test_path)
-    #     end
-    # end
 
     @testset "Incompressible" begin
 

@@ -149,10 +149,10 @@ Currently only 3 material models are available for use: `Steel()`, `Aluminium()`
 Custom material can be defined in the following way:
 ```julia
 # Define a new material type
-struct Titanium <: AbstractMaterial end
+struct CustomMaterial <: AbstractMaterial end
 
 # Define custom coefficients for this new material
-function XCALibre.material_coefficients(material::Titanium)
+function XCALibre.material_coefficients(material::CustomMaterial)
     k_coeffs = MaterialCoefficients(
         c1=0.12, c2=0.95, c3=-0.11, c4=0.08, c5=0.02,
         c6=-0.03, c7=0.01, c8=-0.001, c9=0.0
@@ -165,7 +165,7 @@ function XCALibre.material_coefficients(material::Titanium)
 end
 
 # Then pass this material as an argument
-solid = Solid{NonUniform}(material=Titanium(), rho=5000.0),
+solid = Solid{NonUniform}(material=CustomMaterial(), rho=5000.0),
 ```
 
 

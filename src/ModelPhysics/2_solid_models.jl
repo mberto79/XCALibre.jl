@@ -85,27 +85,26 @@ Solid{NonUniform}(; material=nothing, k_coeffs=nothing, cp_coeffs=nothing, rho) 
 end
 
 
-## EXAMPLE
-# k_coeffs = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-# cp_coeffs = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
 
 (solid::Solid{NonUniform, ARG})(mesh, time) where ARG = begin
     coeffs = solid.args
     (; material, k_coeffs, cp_coeffs, rho) = coeffs
 
 
-    # Very unsure if you would like these ifs!
+    # Very unsure if you would like those IFs!
     if material === nothing
         try
-            if (k_coeffs && cp_coeffs) #not nothing and also must be array of 9 Floats
-                #extract coeffs and create a new material
-            end
+            if (k_coeffs isa AbstractVector{<:AbstractFloat} && length(k_coeffs) == 9) && 
+                (cp_coeffs isa AbstractVector{<:AbstractFloat} && length(cp_coeffs) == 9)
 
+                k_new = MaterialCoefficients(k_coeffs...)
+                cp_new = MaterialCoefficients(cp_coeffs...)
+                material = UserDefinedMaterial(k_new, cp_new)
+            end
         catch
+            println("Failed to create new material given the coefficients")
         end
     end
-
-    println(material) # Non zero one!
 
     rho_const = rho
 

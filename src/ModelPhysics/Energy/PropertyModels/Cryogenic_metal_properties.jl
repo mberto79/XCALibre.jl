@@ -1,5 +1,5 @@
 export AbstractMaterial, Aluminium, Steel, Copper
-export get_coefficients, MaterialCoefficients, material_coefficients
+export get_coefficients, MaterialCoefficients, material_coefficients, UserDefinedMaterial
 
 
 abstract type AbstractMaterial end
@@ -61,6 +61,15 @@ function material_coefficients(material::Copper)
   )
   return k_coeffs, cp_coeffs
 end
+
+
+struct UserDefinedMaterial <: AbstractMaterial
+    k::MaterialCoefficients
+    cp::MaterialCoefficients
+end
+
+material_coefficients(material::UserDefinedMaterial) = (material.k, material.cp)
+
 
 function get_coefficients(material::AbstractMaterial, T_field::ScalarField)
   k_coeffs, cp_coeffs = material_coefficients(material)

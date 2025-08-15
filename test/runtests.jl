@@ -23,6 +23,23 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("test_DILU.jl")
     end
 
+    @testset "Laplace Unit Test" begin
+        include("unit_test_laplace.jl")
+    end
+
+    @testset "Laplace Functionality Test" begin
+
+        test_files = [
+            "2d_laplace_steady.jl",
+            "2d_laplace_unsteady.jl"
+        ]
+
+        for test ∈ test_files
+            test_path = joinpath(TEST_CASES_DIR, test)
+            include(test_path)
+        end
+    end
+
     @testset "Incompressible" begin
 
         test_files = [

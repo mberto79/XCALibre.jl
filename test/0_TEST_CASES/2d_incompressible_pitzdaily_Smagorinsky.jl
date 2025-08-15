@@ -55,16 +55,13 @@ BCs = assign(
             Wall.(wall_patches, Ref([0.0, 0.0, 0.0]))...
         ],
         p = [
-            # Neumann(:inlet, 0.0),
-            Zerogradient(:inlet), # this is zero gradient for scalars but explicit
+            Zerogradient(:inlet),
             Dirichlet(:outlet, 0.0),
             Empty(:frontAndBack),
-            # Neumann.(wall_patches, Ref(0.0))...
             Wall.(wall_patches, Ref(0.0))...
         ],
         k = [
             Dirichlet(:inlet, k_inlet),
-            # Wall(:outlet, 0.0),
             Zerogradient(:outlet),
             Empty(:frontAndBack),
             Dirichlet.(wall_patches, Ref(0.0))...
@@ -73,7 +70,7 @@ BCs = assign(
             Extrapolated(:inlet),
             Extrapolated(:outlet, 0.0),
             Empty(:frontAndBack),
-            Extrapolated.(wall_patches)...
+            Dirichlet.(wall_patches, Ref(0.0))...
         ]
     )
 )

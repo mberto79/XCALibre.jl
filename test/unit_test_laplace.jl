@@ -1,7 +1,5 @@
 using XCALibre
-using KernelAbstractions
 using Accessors
-using Test
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 

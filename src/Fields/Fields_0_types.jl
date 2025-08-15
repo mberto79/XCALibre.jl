@@ -31,6 +31,7 @@ end
 Adapt.@adapt_structure ConstantScalar
 Base.getindex(s::ConstantScalar, i::Integer) = s.values
 
+
 struct ConstantVector{V<:Number} <: AbstractVectorField
     x::V
     y::V
@@ -38,6 +39,11 @@ struct ConstantVector{V<:Number} <: AbstractVectorField
 end
 Adapt.@adapt_structure ConstantVector
 Base.getindex(v::ConstantVector, i::Integer) = SVector{3, eltype(v.x)}(v.x, v.y, v.z)
+
+# Handle cases where `Nothing` is passed to the constructor (e.g. in Solid constructor)
+ConstantScalar(value::Nothing) = nothing
+ConstantVector(value::Nothing) = nothing
+
 
 # FIELDS 
 """

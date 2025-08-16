@@ -160,11 +160,12 @@ function turbulence!(
         mueffk[i] = rhof[i]*(nuf[i] + nutf[i])
     end
 
+    twoThirds = 2/3
     wk = _setup(backend, workgroup, length(Pk))[2]
     AK.foreachindex(Pk, min_elems=wk, block_size=wk) do i 
-        Pk[i] = 2*nut[i]*(gradU[i]⋅Dev(S)[i])
+        Pk[i] = 2*nut[i]*rho[i]*(gradU[i]⋅Dev(S)[i])
         Dkf[i] = coeffs.ce*rho[i]*sqrt(k[i])/(Δ[i])
-        divU[i] = 2/3*rho[i]*tr(gradU[i])
+        divU[i] = twoThirds*rho[i]*tr(gradU[i])
     end
     
     # Solve k equation

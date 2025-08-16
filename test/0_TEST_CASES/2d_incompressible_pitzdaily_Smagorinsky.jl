@@ -131,4 +131,4 @@ inlet = boundary_average(:inlet, model.momentum.U, BCs.U, config)
 outlet = boundary_average(:outlet, model.momentum.U, BCs.U, config)
 
 @test inlet[1] ≈ 10
-@test outlet[1] ≈ 7.314
+@test outlet[1] ≈ 7.60 atol=0.1

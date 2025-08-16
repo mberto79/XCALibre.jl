@@ -1,10 +1,10 @@
-export KEquation
+export DynKEquation
 
 # Model type definition
 """
-    KEquation <: AbstractTurbulenceModel
+    DynKEquation <: AbstractTurbulenceModel
 
-KEquation LES model containing all Smagorinksy field parameters.
+DynKEquation LES model containing all Smagorinksy field parameters.
 
 ### Fields
 - `nut` -- Eddy viscosity ScalarField.
@@ -12,7 +12,7 @@ KEquation LES model containing all Smagorinksy field parameters.
 - `coeffs` -- Model coefficients.
 
 """
-struct KEquation{S1,S2,S3,S4,S5,V1,C} <: AbstractLESModel
+struct DynKEquation{S1,S2,S3,S4,S5,V1,C} <: AbstractLESModel
     nut::S1
     nutf::S2
     k::S3
@@ -21,7 +21,7 @@ struct KEquation{S1,S2,S3,S4,S5,V1,C} <: AbstractLESModel
     outVector::V1
     coeffs::C #I know there is only one coefficient for LES but this makes the DES implementation easier
 end
-Adapt.@adapt_structure KEquation
+Adapt.@adapt_structure DynKEquation
 
 struct KEquationModel{T,D,S1,S2, E1}
     turbulence::T
@@ -33,14 +33,14 @@ end
 Adapt.@adapt_structure KEquationModel
 
 # Model API constructor (pass user input as keyword arguments and process as needed)
-LES{KEquation}(; C=0.15) = begin 
+LES{DynKEquation}(; C=0.15) = begin 
     coeffs = (C=C,)
     ARG = typeof(coeffs)
-    LES{KEquation,ARG}(coeffs)
+    LES{DynKEquation,ARG}(coeffs)
 end
 
 # Functor as constructor (internally called by Physics API): Returns fields and user data
-(les::LES{KEquation, ARG})(mesh) where ARG = begin
+(les::LES{DynKEquation, ARG})(mesh) where ARG = begin
     nut = ScalarField(mesh)
     nutf = FaceScalarField(mesh)
     k = ScalarField(mesh)
@@ -48,12 +48,12 @@ end
     outScalar = ScalarField(mesh)
     outVector = VectorField(mesh)
     coeffs = les.args
-    KEquation(nut, nutf, k, kf, outScalar, outVector, coeffs)
+    DynKEquation(nut, nutf, k, kf, outScalar, outVector, coeffs)
 end
 
 # Model initialisation
 """
-    initialise(turbulence::KEquation, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
+    initialise(turbulence::DynKEquation, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
     ) where {T,F,SO,M,Tu,E,D,BI}
 
 Initialisation of turbulent transport equations.
@@ -76,7 +76,7 @@ Initialisation of turbulent transport equations.
 
 """
 function initialise(
-    turbulence::KEquation, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
+    turbulence::DynKEquation, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
     ) where {T,F,SO,M,Tu,E,D,BI}
 
     (; solvers, schemes, runtime) = config
@@ -131,7 +131,7 @@ end
 Run turbulence model transport equations.
 
 ### Input
-- `les::KEquationModel` -- KEquation LES turbulence model.
+- `les::KEquationModel` -- DynKEquation LES turbulence model.
 - `model`  -- Physics model defined by user.
 - `S`   -- Strain rate tensor.
 - `S2`  -- Square of the strain rate magnitude.
@@ -268,7 +268,7 @@ end
 
 # Specialise VTK writer
 function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
-    ) where {T,F,SO,M,Tu<:KEquation,E,D,BI}
+    ) where {T,F,SO,M,Tu<:DynKEquation,E,D,BI}
     if typeof(model.fluid)<:AbstractCompressible
         args = (
             ("U", model.momentum.U), 
@@ -290,7 +290,7 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
     write_results(iteration, time, model.domain, outputWriter, args...)
 end
 
-# KEquation - internal functions
+# DynKEquation - internal functions
 
 function Ce!(Ce, D, KK, mag2DF, DevF, nu, nut, Δ, filter, workgroup)
     AK.foreachindex(DevF, min_elems=workgroup, block_size=workgroup) do i 

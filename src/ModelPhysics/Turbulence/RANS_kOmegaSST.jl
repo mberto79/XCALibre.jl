@@ -83,7 +83,7 @@ end
             if boundary.name == namedwall
                 push!(BCs, Dirichlet(boundary.name, 0.0))
             else
-                push!(BCs, Zerogradient(boundary.name, 0.0))
+                push!(BCs, Extrapolated(boundary.name, 0.0))
             end
         end
     end

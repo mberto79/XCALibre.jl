@@ -14,15 +14,15 @@ hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(CPU(), mesh)
 
 L = 50
-nu = 2.31e-5
+nu = 1e-3
 # u_mag = 1.5 # 5mm mesh
 u_mag = 69.44 # 2mm mesh
 velocity = [u_mag, 0.0, 0.0]
 Tu = 0.01
-nuR = 100
+nuR = 10
 ReL = u_mag*L/nu
 k_inlet = 3/2*(Tu*u_mag)^2
-ω_inlet = 2*u_mag/L #k_inlet/(nuR*nu)
+ω_inlet = k_inlet/(nuR*nu)
 
 νt_inlet = k_inlet/ω_inlet
 Re = velocity[1]*0.1/nu
@@ -108,7 +108,7 @@ solvers = (
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.5,
         rtol = 1e-1
     ),
     p = SolverSetup(
@@ -122,22 +122,22 @@ solvers = (
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-10,
-        rtol = 0,
+        rtol = 0.1,
         relax       = 0.9,
     ),
     k = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
-        relax       = 0.6,
-        rtol = 1e-4
+        relax       = 0.3,
+        rtol = 1e-1
     ),
     omega = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
-        relax       = 0.6,
-        rtol = 1e-4
+        relax       = 0.3,
+        rtol = 1e-1
     )
 )
 

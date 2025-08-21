@@ -19,7 +19,7 @@ kOmega model containing all kOmega field parameters.
 - 'coeffs' -- Model coefficients.
 
 """
-struct KOmegaSST{S1,S2,S3,F1,F2,F3,C1,C2,C3,Y} <: AbstractRANSModel
+struct KOmegaSST{S1,S2,S3,F1,F2,F3,C1,C2,C3,Y,BC} <: AbstractRANSModel
     k::S1
     omega::S2
     nut::S3
@@ -30,6 +30,7 @@ struct KOmegaSST{S1,S2,S3,F1,F2,F3,C1,C2,C3,Y} <: AbstractRANSModel
     gamma1::C2
     gamma2::C3
     y::Y
+    wallBCs::BC
 end
 Adapt.@adapt_structure KOmegaSST
 
@@ -75,19 +76,25 @@ end
     # Allocate wall distance "y" and setup boundary conditions
     y = ScalarField(mesh)
     walls = rans.args.walls
+    boundaries_cpu = get_boundaries(mesh.boundaries)
     BCs = []
-    for boundary ∈ mesh.boundaries
+    for boundary ∈ boundaries_cpu
         for namedwall ∈ walls
             if boundary.name == namedwall
                 push!(BCs, Dirichlet(boundary.name, 0.0))
             else
-                push!(BCs, Neumann(boundary.name, 0.0))
+                push!(BCs, Zerogradient(boundary.name, 0.0))
             end
         end
     end
-    y = assign(y, BCs...)
+    wallBCs = assign(
+        region=mesh,
+        (
+            y = [BCs...],
+        )
+    )
 
-    KOmegaSST(k, omega, nut, kf, omegaf, nutf, coeffs, gamma1, gamma2, y) 
+    KOmegaSST(k, omega, nut, kf, omegaf, nutf, coeffs, gamma1, gamma2, y, wallBCs) 
 end
 
 # Model initialisation
@@ -113,7 +120,7 @@ function initialise(
     turbulence::KOmegaSST, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
     ) where {T,F,M,Tu,E,D,BI}
 
-    (; k, omega, nut, y) = turbulence
+    (; k, omega, nut, y, wallBCs) = turbulence
     (; rho) = model.fluid
     (; solvers, schemes, runtime) = config
     mesh = mdotf.mesh
@@ -166,17 +173,12 @@ function initialise(
     ) → eqn
 
     # Set up preconditioners
-    @reset k_eqn.preconditioner = set_preconditioner(
-                solvers.k.preconditioner, k_eqn, k.BCs, config)
-
-    # @reset ω_eqn.preconditioner = set_preconditioner(
-    #             solvers.omega.preconditioner, ω_eqn, omega.BCs, config)
-
-    @reset ω_eqn.preconditioner = k_eqn.preconditioner
+    @reset k_eqn.preconditioner = set_preconditioner(solvers.k.preconditioner, k_eqn)
+    @reset ω_eqn.preconditioner = set_preconditioner(solvers.omega.preconditioner, ω_eqn)
     
     # preallocating solvers
-    @reset k_eqn.solver = solvers.k.solver(_A(k_eqn), _b(k_eqn))
-    @reset ω_eqn.solver = solvers.omega.solver(_A(ω_eqn), _b(ω_eqn))
+    @reset k_eqn.solver = _workspace(solvers.k.solver, _b(k_eqn))
+    @reset ω_eqn.solver = _workspace(solvers.omega.solver, _b(ω_eqn))
 
     wall_distance!(model, config)
 
@@ -211,7 +213,7 @@ function turbulence!(
     (;k, omega, nut, kf, omegaf, nutf, coeffs, gamma1, gamma2, y) = model.turbulence
     (; U, Uf, gradU) = S
     (;k_eqn, ω_eqn, state, β, σkf, σωf, γ, CDkω, arg1, F1, F1f, arg2, F2, Ω, ∇k, ∇ω) = rans
-    (; solvers, runtime) = config
+    (; solvers, runtime, boundaries) = config
 
     mueffk = get_flux(k_eqn, 3)
     Dkf = get_flux(k_eqn, 4)
@@ -226,20 +228,21 @@ function turbulence!(
 
     # TO-DO: Need to bring gradient calculation inside turbulence models!!!!!
 
-    grad!(gradU, Uf, U, U.BCs, time, config)
+    grad!(gradU, Uf, U, boundaries.U, time, config)
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
     magnitude2!(Pk, S, config, scale_factor=2.0) # multiplied by 2 (def of Sij)
     # constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
+    magnitude2!(Ω, S, config, scale_factor=2.0) # 
 
     interpolate!(kf, k, config)
-    correct_boundaries!(nutf, k, k.BCs, time, config)
+    correct_boundaries!(nutf, k, boundaries.k, time, config)
     interpolate!(omegaf, omega, config)
-    correct_boundaries!(nutf, omega, omega.BCs, time, config)
-    grad!(∇k, kf, k, k.BCs, time, config)
-    grad!(∇ω , omegaf, omega, omega.BCs, time, config)
+    correct_boundaries!(nutf, omega, boundaries.omega, time, config)
+    grad!(∇ω, omegaf, omega, boundaries.omega, time, config)
+    grad!(∇k, kf, k, boundaries.k, time, config)
     
     inner_product!(dkdomegadx, ∇k, ∇ω, config)
-    @. CDkω.values = max(2.0*rho.values*coeffs.σω2*(1.0/omega.values)*dkdomegadx.values, 1e-20)
+    @. CDkω.values = max(2.0*rho.values*coeffs.σω2*(1.0/omega.values)*dkdomegadx.values, 1e-10)
     @. arg1.values = min(max(sqrt(k.values)/(coeffs.β⁺*omega.values*y.values), 500.0*nu.values/(y.values*y.values*omega.values)), 4.0*rho.values*coeffs.σω2*k.values/(CDkω.values*y.values*y.values))
     @. F1.values = tanh(arg1.values^4)
     interpolate!(F1f, F1, config)
@@ -252,11 +255,13 @@ function turbulence!(
     @. β.values = coeffs.β1*F1.values + (1.0 - F1.values)*coeffs.β2
     @. γ.values = gamma1*F1.values + (1.0 - F1.values)*gamma2
 
+    # Production limiter
+    @. Pk.values = min(Pk.values, (20.0/coeffs.α1)*coeffs.β⁺*omega.values*max(coeffs.α1*omega.values, F2.values*sqrt(Ω.values)))
 
     @. Pω.values = rho.values*γ.values*Pk.values
     @. Pk.values = rho.values*nut.values*Pk.values
     @. dkdomegadx.values = 2.0*(1.0-F1.values)*rho.values*coeffs.σω2*(1.0/omega.values)*dkdomegadx.values
-    correct_production!(Pk, k.BCs, model, S.gradU, config) # Must be after previous line
+    # correct_production!(Pk, boundaries.k, model, S.gradU, config) # Must be after previous line
     @. Dωf.values = rho.values*β.values*omega.values
     @. mueffω.values = rhof.values * (nuf.values + σωf.values*nutf.values)
     @. Dkf.values = rho.values*coeffs.β⁺*omega.values
@@ -265,10 +270,10 @@ function turbulence!(
     # Solve omega equation
     # prev .= omega.values
     discretise!(ω_eqn, omega, config)
-    apply_boundary_conditions!(ω_eqn, omega.BCs, nothing, time, config)
+    apply_boundary_conditions!(ω_eqn, boundaries.omega, nothing, time, config)
     # implicit_relaxation!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
     implicit_relaxation_diagdom!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
-    constrain_equation!(ω_eqn, omega.BCs, model, config) # active with WFs only
+    constrain_equation!(ω_eqn, boundaries.omega, model, config) # active with WFs only
     update_preconditioner!(ω_eqn.preconditioner, mesh, config)
     ω_res = solve_system!(ω_eqn, solvers.omega, omega, nothing, config)
     
@@ -279,7 +284,7 @@ function turbulence!(
     # Solve k equation
     # prev .= k.values
     discretise!(k_eqn, k, config)
-    apply_boundary_conditions!(k_eqn, k.BCs, nothing, time, config)
+    apply_boundary_conditions!(k_eqn, boundaries.k, nothing, time, config)
     # implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
     implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
     update_preconditioner!(k_eqn.preconditioner, mesh, config)
@@ -288,11 +293,11 @@ function turbulence!(
     # explicit_relaxation!(k, prev, solvers.k.relax, config)
 
     magnitude2!(Ω, S, config, scale_factor=2.0) # 
-    @. nut.values = coeffs.α1*k.values/(rho.values*max(coeffs.α1*omega.values, F2.values*Ω.values))
+    @. nut.values = coeffs.α1*k.values/(max(coeffs.α1*omega.values, F2.values*sqrt(Ω.values)))
 
     interpolate!(nutf, nut, config)
-    correct_boundaries!(nutf, nut, nut.BCs, time, config)
-    correct_eddy_viscosity!(nutf, nut.BCs, model, config)
+    correct_boundaries!(nutf, nut, boundaries.nut, time, config)
+    correct_eddy_viscosity!(nutf, boundaries.nut, model, config)
 
     state.residuals = ((:k , k_res),(:omega, ω_res))
     state.converged = k_res < solvers.k.convergence && ω_res < solvers.omega.convergence
@@ -300,25 +305,15 @@ function turbulence!(
 end
 
 # Specialise VTK writer
-function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, VTKWriter, name
+function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration, time, config
     ) where {T,F,M,Tu<:KOmegaSST,E,D,BI}
-    if typeof(model.fluid)<:AbstractCompressible
-        args = (
-            ("U", model.momentum.U), 
-            ("p", model.momentum.p),
-            ("T", model.energy.T),
-            ("k", model.turbulence.k),
-            ("omega", model.turbulence.omega),
-            ("nut", model.turbulence.nut)
-        )
-    else
-        args = (
-            ("U", model.momentum.U), 
-            ("p", model.momentum.p),
-            ("k", model.turbulence.k),
-            ("omega", model.turbulence.omega),
-            ("nut", model.turbulence.nut)
-        )
-    end
-    write_vtk(name, model.domain, VTKWriter, args...)
+    args = (
+        ("U", model.momentum.U), 
+        ("p", model.momentum.p),
+        ("k", model.turbulence.k),
+        ("omega", model.turbulence.omega),
+        ("nut", model.turbulence.nut),
+        ("y", model.turbulence.y),
+    )
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end

@@ -130,14 +130,14 @@ solvers = (
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 0.6,
-        rtol = 1e-1
+        rtol = 1e-4
     ),
     omega = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 0.6,
-        rtol = 1e-1
+        rtol = 1e-4
     )
 )
 

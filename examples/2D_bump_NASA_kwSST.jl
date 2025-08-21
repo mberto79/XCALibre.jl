@@ -16,7 +16,7 @@ hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(CPU(), mesh)
 
 L = 50
-nu = 1e-3
+nu = 1.388E-5
 # u_mag = 1.5 # 5mm mesh
 u_mag = 69.44 # 2mm mesh
 # u_mag = 5 # 2mm mesh
@@ -25,7 +25,7 @@ Tu = 0.01
 nuR = 10
 ReL = u_mag*L/nu
 k_inlet = 3/2*(Tu*u_mag)^2
-ω_inlet = k_inlet/(nuR*nu)
+ω_inlet = 8675 #k_inlet/(nuR*nu)
 
 νt_inlet = k_inlet/ω_inlet
 Re = velocity[1]*0.1/nu
@@ -160,7 +160,7 @@ GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 initialise!(model.turbulence.k, 0.0)
-initialise!(model.turbulence.k, k_inlet) # k_inlet
+# initialise!(model.turbulence.k, k_inlet) # k_inlet
 initialise!(model.turbulence.omega, ω_inlet) # ω_inlet
 initialise!(model.turbulence.nut, k_inlet/ω_inlet) # k_inlet/ω_inlet
 

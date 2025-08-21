@@ -243,11 +243,11 @@ function turbulence!(
     
     inner_product!(dkdomegadx, ∇k, ∇ω, config)
     @. CDkω.values = max(2.0*rho.values*coeffs.σω2*(1.0/omega.values)*dkdomegadx.values, 1e-10)
-    @. arg1.values = min(max(sqrt(k.values)/(coeffs.β⁺*omega.values*y.values), 500.0*nu.values/(y.values*y.values*omega.values)), 4.0*rho.values*coeffs.σω2*k.values/(CDkω.values*y.values*y.values))
+    @. arg1.values = min(max(sqrt(max(k.values, eps()))/(coeffs.β⁺*omega.values*y.values), 500.0*nu.values/(y.values*y.values*omega.values)), 4.0*rho.values*coeffs.σω2*k.values/(CDkω.values*y.values*y.values))
     @. F1.values = tanh(arg1.values^4)
     interpolate!(F1f, F1, config)
 
-    @. arg2.values = max.(2*sqrt(k.values)/(coeffs.β⁺*omega.values*y.values), 500.0*nu.values/(y.values*y.values*omega.values))
+    @. arg2.values = max.(2*sqrt(max(k.values, eps()))/(coeffs.β⁺*omega.values*y.values), 500.0*nu.values/(y.values*y.values*omega.values))
     @. F2.values = tanh(arg2.values*arg2.values)
 
     @. σkf.values = coeffs.σk1*F1f.values + (1.0 - F1f.values)*coeffs.σk2
@@ -256,7 +256,7 @@ function turbulence!(
     @. γ.values = gamma1*F1.values + (1.0 - F1.values)*gamma2
 
     # Production limiter
-    @. Pk.values = min(Pk.values, (20.0/coeffs.α1)*coeffs.β⁺*omega.values*max(coeffs.α1*omega.values, F2.values*sqrt(Ω.values)))
+    @. Pk.values = min(Pk.values, (20.0/coeffs.α1)*coeffs.β⁺*omega.values*max(coeffs.α1*omega.values, F2.values*sqrt(max(Ω.values, eps()))))
 
     @. Pω.values = rho.values*γ.values*Pk.values
     @. Pk.values = rho.values*nut.values*Pk.values

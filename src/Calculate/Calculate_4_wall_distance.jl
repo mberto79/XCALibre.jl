@@ -14,7 +14,8 @@ function wall_distance!(model, config)
         -Laplacian{schemes.y.laplacian}(ConstantScalar(1.0), phi) 
         == 
         Source(ConstantScalar(1.0))
-    ) → ScalarEquation(phi, wallBCs.y)
+    # ) → ScalarEquation(phi, wallBCs.y) # wallBCs are used when setting up BCs for the user
+    ) → ScalarEquation(phi, boundaries.y)
 
     # @reset phi_eqn.preconditioner = set_preconditioner(
     #     solvers.y.preconditioner, phi_eqn, wallBCs.y, config)
@@ -27,7 +28,8 @@ function wall_distance!(model, config)
 
     phiGrad = Grad{schemes.y.gradient}(phi)
     phif = FaceScalarField(mesh)
-    grad!(phiGrad, phif, phi, wallBCs.y, zero(TF), config) # assuming time=0
+    # grad!(phiGrad, phif, phi, wallBCs.y, zero(TF), config) # assuming time=0
+    grad!(phiGrad, phif, phi, boundaries.y, zero(TF), config) # assuming time=0
 
     n_cells = length(mesh.cells)
     prev = similar(phi.values)
@@ -38,7 +40,8 @@ function wall_distance!(model, config)
         @. prev = phi.values
         discretise!(phi_eqn, phi, config)
         # apply_boundary_conditions!(phi_eqn, wallBCs.y, nothing, 0.0, config) # wrong BCs!!
-        apply_boundary_conditions!(phi_eqn, wallBCs.y, nothing, 0.0, config)
+        # apply_boundary_conditions!(phi_eqn, wallBCs.y, nothing, 0.0, config)
+        apply_boundary_conditions!(phi_eqn, boundaries.y, nothing, 0.0, config)
 
         update_preconditioner!(phi_eqn.preconditioner, mesh, config)
         # implicit_relaxation!(phi_eqn, phi.values, solvers.y.relax, nothing, config)
@@ -53,7 +56,8 @@ function wall_distance!(model, config)
         end
     end
     
-    grad!(phiGrad, phif, phi, wallBCs.y, zero(TF), config) # assuming time=0
+    # grad!(phiGrad, phif, phi, wallBCs.y, zero(TF), config) # assuming time=0
+    grad!(phiGrad, phif, phi, boundaries.y, zero(TF), config) # assuming time=0
     normal_distance!(y, phi, phiGrad, config)
     # y.values .= phi.values
 end

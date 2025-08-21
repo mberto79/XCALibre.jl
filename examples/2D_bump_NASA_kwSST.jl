@@ -2,8 +2,10 @@ using Plots
 using XCALibre
 # using CUDA
 
-# mesh_file = "unv_sample_meshes/backwardFacingStep_5mm.unv"
-mesh_file = "./examples/0_GRIDS/OF_bump2d/polymesh/"
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "OF_bump2d/polyMesh"
+mesh_file = joinpath(grids_dir, grid)
+
 mesh = FOAM3D_mesh(mesh_file, scale=1, integer_type=Int64, float_type=Float64)
 
 # mesh_dev = adapt(CUDABackend(), mesh)
@@ -17,6 +19,7 @@ L = 50
 nu = 1e-3
 # u_mag = 1.5 # 5mm mesh
 u_mag = 69.44 # 2mm mesh
+# u_mag = 5 # 2mm mesh
 velocity = [u_mag, 0.0, 0.0]
 Tu = 0.01
 nuR = 10
@@ -40,7 +43,7 @@ BCs = assign(
     (
         U = [
             Dirichlet(:inlet, velocity),
-            Zerogradient(:outlet),
+            Extrapolated(:outlet),
             Symmetry(:top),
             Symmetry(:symUp),
             Wall(:bump, [0.0, 0.0, 0.0]),
@@ -58,16 +61,17 @@ BCs = assign(
         ],
         k = [
             Dirichlet(:inlet, k_inlet),
-            Zerogradient(:outlet),
+            Extrapolated(:outlet),
             Symmetry(:top),
             Symmetry(:symUp),
             Dirichlet(:bump, 0.0),
+            # KWallFunction(:bump),
             Symmetry(:symDown),
             Empty(:frontAndBack)
         ],
         omega = [
             Dirichlet(:inlet, ω_inlet),
-            Zerogradient(:outlet),
+            Extrapolated(:outlet),
             Symmetry(:top),
             Symmetry(:symUp),
             OmegaWallFunction(:bump),
@@ -75,22 +79,23 @@ BCs = assign(
             Empty(:frontAndBack)
         ],
         nut = [
-            Dirichlet(:inlet, k_inlet/ω_inlet),
+            Extrapolated(:inlet),
             Extrapolated(:outlet),
-            Symmetry(:top),
-            Symmetry(:symUp),
+            Extrapolated(:top),
+            Extrapolated(:symUp),
+            # NutWallFunction(:bump),
             Dirichlet(:bump, 0.0),
-            Symmetry(:symDown),
+            Extrapolated(:symDown),
             Empty(:frontAndBack)
         ],
         y = [
-            Zerogradient(:inlet, k_inlet/ω_inlet),
-            Zerogradient(:outlet),
-            Zerogradient(:top),
-            Zerogradient(:symUp),
+            Extrapolated(:inlet),
+            Extrapolated(:outlet),
+            Extrapolated(:top),
+            Extrapolated(:symUp),
             Dirichlet(:bump, 0.0),
-            Zerogradient(:symDown),
-            Zerogradient(:frontAndBack)
+            Extrapolated(:symDown),
+            Empty(:frontAndBack)
         ]
     )
 )
@@ -106,42 +111,45 @@ schemes = (
 solvers = (
     U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
-        preconditioner = Jacobi(),
+        preconditioner = DILU(),
         convergence = 1e-7,
-        relax       = 0.5,
-        rtol = 1e-1
+        relax       = 0.55,
+        rtol = 1e-2
     ),
     p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
-        preconditioner = Jacobi(),
+        # preconditioner = Jacobi(),
+        preconditioner = DILU(),
         convergence = 1e-7,
-        relax       = 0.3,
-        rtol = 1e-1
+        relax       = 0.15,
+        rtol = 1e-3,
+        itmax = 4000
     ),
     y = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-10,
-        rtol = 0.1,
-        relax       = 0.9,
+        rtol = 1e-5,
+        relax       = 0.7,
+        itmax = 5000
     ),
     k = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
-        preconditioner = Jacobi(), 
+        preconditioner = DILU(), 
         convergence = 1e-7,
-        relax       = 0.3,
-        rtol = 1e-1
+        relax       = 0.5,
+        rtol = 1e-3
     ),
     omega = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
-        preconditioner = Jacobi(), 
+        preconditioner = DILU(), 
         convergence = 1e-7,
-        relax       = 0.3,
-        rtol = 1e-1
+        relax       = 0.5,
+        rtol = 1e-3
     )
 )
 
-runtime = Runtime(iterations=2000, write_interval=100, time_step=1)
+runtime = Runtime(iterations=5000, write_interval=500, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
@@ -151,9 +159,10 @@ GC.gc()
 
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
-initialise!(model.turbulence.k, k_inlet)
-initialise!(model.turbulence.omega, ω_inlet)
-initialise!(model.turbulence.nut, k_inlet/ω_inlet)
+initialise!(model.turbulence.k, 0.0)
+initialise!(model.turbulence.k, k_inlet) # k_inlet
+initialise!(model.turbulence.omega, ω_inlet) # ω_inlet
+initialise!(model.turbulence.nut, k_inlet/ω_inlet) # k_inlet/ω_inlet
 
 residuals = run!(model, config, output=OpenFOAM()) # 36.90k allocs
 

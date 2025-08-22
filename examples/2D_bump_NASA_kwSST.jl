@@ -41,12 +41,23 @@ model = Physics(
     )
 
 patch_group = [:top, :symUp, :symDown]
+
+# set up as walls
 group_bcs_U = Wall.(patch_group, Ref([0,0,0]))
 group_bcs_p = Wall.(patch_group)
-# group_bcs_k = Dirichlet.(patch_group, Ref(0.0))
-group_bcs_k = KWallFunction.(patch_group)
+group_bcs_k = Dirichlet.(patch_group, Ref(0.0))
+# group_bcs_k = KWallFunction.(patch_group)
 group_bcs_omega = OmegaWallFunction.(patch_group)
 group_bcs_nut = Dirichlet.(patch_group, Ref(0.0))
+
+# set up as symmetric
+group_bcs_U = Symmetry.(patch_group)
+group_bcs_p = group_bcs_U
+group_bcs_k = group_bcs_U
+group_bcs_omega = group_bcs_U
+group_bcs_nut = group_bcs_U
+
+
 BCs = assign(
     region = mesh_dev,
     (
@@ -114,8 +125,8 @@ solvers = (
     U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        convergence = 1e-7,
-        relax       = 0.5,
+        convergence = 1e-8,
+        relax       = 0.7,
         rtol = 1e-2
     ),
     p = SolverSetup(
@@ -138,14 +149,14 @@ solvers = (
     k = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), # DILU Jacobi
-        convergence = 1e-7,
+        convergence = 1e-10,
         relax       = 0.7,
         rtol = 1e-2
     ),
     omega = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
-        convergence = 1e-7,
+        convergence = 1e-10,
         relax       = 0.7,
         rtol = 1e-2
     )

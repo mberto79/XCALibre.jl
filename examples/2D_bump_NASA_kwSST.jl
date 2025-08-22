@@ -18,8 +18,8 @@ mesh_dev = adapt(CPU(), mesh)
 L = 50
 nu = 1.388E-5
 # u_mag = 1.5 # 5mm mesh
-# u_mag = 69.44 # 2mm mesh
-u_mag = 5 # 2mm mesh
+u_mag = 69.44 # 2mm mesh
+# u_mag = 5 # 2mm mesh
 # u_mag = 5 # 2mm mesh
 velocity = [u_mag, 0.0, 0.0]
 Tu = 0.01
@@ -63,8 +63,8 @@ BCs = assign(
     (
         U = [
             Dirichlet(:inlet, velocity),
-            Extrapolated(:outlet),
-            # Zerogradient(:outlet),
+            # Extrapolated(:outlet),
+            Zerogradient(:outlet),
             Wall(:bump, [0.0, 0.0, 0.0]),
             Empty(:frontAndBack),
             group_bcs_U...,
@@ -78,8 +78,8 @@ BCs = assign(
         ],
         k = [
             Dirichlet(:inlet, k_inlet),
-            # Zerogradient(:outlet),
-            Extrapolated(:outlet),
+            Zerogradient(:outlet),
+            # Extrapolated(:outlet),
             # Dirichlet(:bump, 0.0),
             KWallFunction(:bump),
             Empty(:frontAndBack),
@@ -87,8 +87,8 @@ BCs = assign(
         ],
         omega = [
             Dirichlet(:inlet, ω_inlet),
-            # Zerogradient(:outlet),
-            Extrapolated(:outlet),
+            Zerogradient(:outlet),
+            # Extrapolated(:outlet),
             OmegaWallFunction(:bump),
             Empty(:frontAndBack),
             group_bcs_omega...,
@@ -126,13 +126,13 @@ solvers = (
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-8,
-        relax       = 0.7,
-        rtol = 1e-2
+        relax       = 0.6,
+        rtol = 1e-3
     ),
     p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         # preconditioner = Jacobi(),
-        preconditioner = Jacobi(),
+        preconditioner = DILU(),
         convergence = 1e-11,
         relax       = 0.2,
         rtol = 1e-3,
@@ -150,15 +150,15 @@ solvers = (
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), # DILU Jacobi
         convergence = 1e-10,
-        relax       = 0.7,
-        rtol = 1e-2
+        relax       = 0.6,
+        rtol = 1e-3
     ),
     omega = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-10,
-        relax       = 0.7,
-        rtol = 1e-2
+        relax       = 0.6,
+        rtol = 1e-3
     )
 )
 

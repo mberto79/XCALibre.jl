@@ -167,9 +167,9 @@ function initialise(
             + Divergence{schemes.omega.divergence}(mdotf, omega) 
             - Laplacian{schemes.omega.laplacian}(mueffω, omega) 
             + Si(Dωf,omega)  # Dωf = rho*β1*omega
+            + Si(dkdomegadx, omega)
             ==
-            Source(Pω)
-            + Source(dkdomegadx)
+            Source(Pω) #- Source(dkdomegadx)
     ) → eqn
 
     # Set up preconditioners
@@ -222,7 +222,8 @@ function turbulence!(
     mueffω = get_flux(ω_eqn, 3)
     Dωf = get_flux(ω_eqn, 4)
     Pω = get_source(ω_eqn, 1)
-    dkdomegadx = get_source(ω_eqn, 2)
+    # dkdomegadx = get_source(ω_eqn, 2)
+    dkdomegadx = get_flux(ω_eqn, 5)
 
     # update fluxes and sources
 
@@ -232,40 +233,72 @@ function turbulence!(
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
     magnitude2!(Pk, S, config, scale_factor=2.0) # multiplied by 2 (def of Sij)
     # constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
-    magnitude2!(Ω, S, config, scale_factor=2.0) # 
+    magnitude2!(Ω, Vorticity(U, gradU), config, scale_factor=2.0) # 
+    # @. Ω.values = sqrt(Ω.values)
+    @. Ω.values = sqrt(Pk.values)
+    # magnitude!(Ω, Vorticity(U, gradU), config, scale_factor=2.0) # 
 
-    interpolate!(kf, k, config)
-    correct_boundaries!(nutf, k, boundaries.k, time, config)
-    interpolate!(omegaf, omega, config)
-    correct_boundaries!(nutf, omega, boundaries.omega, time, config)
+    # interpolate!(kf, k, config)
+    # correct_boundaries!(kf, k, boundaries.k, time, config) # Bug here but no issue
+    # interpolate!(omegaf, omega, config)
+    # correct_boundaries!(omegaf, omega, boundaries.omega, time, config)  # same here
     grad!(∇ω, omegaf, omega, boundaries.omega, time, config)
     grad!(∇k, kf, k, boundaries.k, time, config)
-    
     inner_product!(dkdomegadx, ∇k, ∇ω, config)
-    @. CDkω.values = max.(2.0*coeffs.σω2*(1.0/omega.values)*dkdomegadx.values, 1e-20)
-    @. arg1.values = min.(min.(max.(sqrt.(max(k.values, eps()))/(coeffs.β⁺*omega.values*y.values), 500.0*nu.values/(y.values*y.values*omega.values)), 4.0*coeffs.σω2*k.values/(CDkω.values*y.values*y.values)),10.0)
-    @. F1.values = tanh.(arg1.values.^4)
+
+    @. CDkω.values = max(2*coeffs.σω2*dkdomegadx.values/omega.values, 1e-10)
+
+    @. arg1.values = min( min(
+            max(
+                sqrt(max(k.values, eps()))/(coeffs.β⁺*omega.values*y.values), 
+                500*nu.values/(omega.values*y.values^2)
+                ),
+            4*coeffs.σω2*k.values/(CDkω.values*y.values^2)) ,
+         10.0
+             )
+    
+
+    @. arg2.values = min(max(
+            2*sqrt(max(k.values, eps()))/(coeffs.β⁺*omega.values*y.values), 
+            500*nu.values/(y.values^2*omega.values)) ,
+        100.0
+        )
+
+    @. F2.values = tanh(arg2.values^2)
+    @. F1.values = tanh(arg1.values^4)
     interpolate!(F1f, F1, config)
 
-    @. arg2.values = min.(max.(2*sqrt.(max(k.values, eps()))/(coeffs.β⁺*omega.values*y.values), 500.0*nu.values/(y.values*y.values*omega.values)),100.0)
-    @. F2.values = tanh.(arg2.values*arg2.values)
+    
 
     @. σkf.values = coeffs.σk1*F1f.values + (1.0 - F1f.values)*coeffs.σk2
     @. σωf.values = coeffs.σω1*F1f.values + (1.0 - F1f.values)*coeffs.σω2
     @. β.values = coeffs.β1*F1.values + (1.0 - F1.values)*coeffs.β2
-    @. γ.values = gamma1*F1.values + (1.0 - F1.values)*gamma2
+    @. γ.values = 5/9*F1.values + (1.0 - F1.values)*0.44
+
+    @. mueffω.values = rhof.values * (nuf.values + σωf.values*nutf.values)
+    @. mueffk.values = rhof.values * (nuf.values + σkf.values*nutf.values)
+
+    @. Dωf.values = rho.values*β.values*omega.values
+    @. Dkf.values = rho.values*coeffs.β⁺*omega.values
 
     # Production limiter
-    @. Pk.values = min(Pk.values, (20.0/coeffs.α1)*coeffs.β⁺*omega.values*max.(coeffs.α1*omega.values, F2.values*sqrt.(max(Ω.values, eps()))))
+    @. Pω.values = rho.values*γ.values*min(
+        Pk.values,
+        (10/coeffs.α1)*coeffs.β⁺*omega.values*max(
+            coeffs.α1*omega.values, F2.values*Ω.values)
+    )
+    @. Pk.values = rho.values*min(
+        Pk.values*nut.values,
+        10*coeffs.β⁺*k.values*omega.values
+    )
 
-    @. Pω.values = rho.values*γ.values*Pk.values
-    @. Pk.values = rho.values*nut.values*Pk.values
-    @. dkdomegadx.values = 2.0*(1.0-F1.values)*rho.values*coeffs.σω2*(1.0/omega.values)*dkdomegadx.values
-    # correct_production!(Pk, boundaries.k, model, S.gradU, config) # Must be after previous line
-    @. Dωf.values = rho.values*β.values*omega.values
-    @. mueffω.values = rhof.values * (nuf.values + σωf.values*nutf.values)
-    @. Dkf.values = rho.values*coeffs.β⁺*omega.values
-    @. mueffk.values = rhof.values * (nuf.values + σkf.values*nutf.values)
+    correct_production!(Pk, boundaries.k, model, S.gradU, config) # Must be after Pk
+    # @. dkdomegadx.values *= 2.0*(1.0-F1.values)*rho.values*coeffs.σω2/omega.values
+    @. dkdomegadx.values = begin
+        # 2*(F1.values - 1)*rho.values*coeffs.σω2*dkdomegadx.values/omega.values # explicit 
+        2*(F1.values - 1)*rho.values*coeffs.σω2*dkdomegadx.values/omega.values/omega.values
+    end
+    
 
     # Solve omega equation
     # prev .= omega.values
@@ -283,6 +316,7 @@ function turbulence!(
 
     # Solve k equation
     # prev .= k.values
+    
     discretise!(k_eqn, k, config)
     apply_boundary_conditions!(k_eqn, boundaries.k, nothing, time, config)
     # implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
@@ -292,8 +326,12 @@ function turbulence!(
     bound!(k, config)
     # explicit_relaxation!(k, prev, solvers.k.relax, config)
 
-    magnitude2!(Ω, S, config, scale_factor=2.0) # 
-    @. nut.values = coeffs.α1*k.values/(max.(coeffs.α1*omega.values, F2.values*sqrt.(Ω.values)))
+    # magnitude2!(Ω, S, config, scale_factor=2.0) # 
+    @. nut.values = coeffs.α1*k.values/max(
+        coeffs.α1*omega.values, 
+        # F2.values*sqrt(Ω.values)
+        F2.values*Ω.values
+        )
 
     interpolate!(nutf, nut, config)
     correct_boundaries!(nutf, nut, boundaries.nut, time, config)

@@ -28,7 +28,8 @@ EXAMPLES_PAGES = Any[
     "02_2d-incompressible-transient-cylinder.md",
     "03_2d-constant-temperature-flat-plate.md",
     "04_2d-inflow-using-Flux.md",
-    "05_2d-aerofoil-inflow-optimisation.md"
+    "05_2d-aerofoil-inflow-optimisation.md",
+    "06_2d-laplace-solver.md"
 ]
 
 makedocs(

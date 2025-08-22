@@ -542,28 +542,27 @@ calculate_face_properties!(mesh, itype, ftype) = begin
     for fID ∈ 1:n_bfaces
         face = faces[fID]
         nIDs = nodeIDs(face_nodes, face.nodes_range)
+        (; ownerCells) = face
         node1 = nodes[nIDs[1]]
         node2 = nodes[nIDs[2]]
-        owners = face.ownerCells
 
-        cell1 = cells[owners[1]]
-        fc_n1 = node1.coords - face.centre
-        fc_n2 = node2.coords - face.centre 
-        cc1_cc2 = face.centre - cell1.centre
+        F1 = face.centre
+        C1 = cells[ownerCells[1]].centre 
+
+        fc_n1 = node1.coords - F1
+        fc_n2 = node2.coords - F1
+        C1F1 = F1 - C1 # distance vector from face centre to cell1 
 
         normal_vec = fc_n1 × fc_n2
         normal = normal_vec/norm(normal_vec)
-        if cc1_cc2 ⋅ normal < 0
+        if C1F1 ⋅ normal < 0
             normal *= -one(ftype)
             face_nodes[face.nodes_range] .= reverse(nIDs) # reorder nodes (FOAM compat)
         end
         @reset face.normal = normal
 
-        # delta
-        cc_fc = face.centre - cell1.centre
-        delta = norm(cc_fc)
-        e = cc_fc/delta
-        weight = one(ftype)
+        # calculate weight, delta and e 
+        weight, delta, e = Mesh.weight_delta_e(C1F1, normal)
         @reset face.delta = delta
         @reset face.e = e
         @reset face.weight = weight
@@ -575,33 +574,31 @@ calculate_face_properties!(mesh, itype, ftype) = begin
     for fID ∈ (n_bfaces + 1):n_faces
         face = faces[fID]
         nIDs = nodeIDs(face_nodes, face.nodes_range)
+        (; ownerCells) = face
         node1 = nodes[nIDs[1]]
         node2 = nodes[nIDs[2]]
     
-        owners = face.ownerCells
-        cell1 = cells[owners[1]]
-        cell2 = cells[owners[2]]
-        fc_n1 = node1.coords - face.centre
-        fc_n2 = node2.coords - face.centre 
-        cc1_cc2 = cell2.centre - cell1.centre
+        F1 = face.centre
+        C1 = cells[ownerCells[1]].centre 
+        C2 = cells[ownerCells[2]].centre 
+
+        fc_n1 = node1.coords - F1
+        fc_n2 = node2.coords - F1 
+        C1F1 = F1 - C1 # distance vector from face centre to cell1 
+        C2F1 = F1 - C2 # distance vector from face centre to cell2
+        C1C2 = C2 - C1 # distance vector from cell1 to cell2
 
         normal_vec = fc_n1 × fc_n2
         normal = normal_vec/norm(normal_vec)
-        if cc1_cc2 ⋅ normal < 0
+        if C1C2 ⋅ normal < 0
             normal *= -one(ftype)
             face_nodes[face.nodes_range] .= reverse(nIDs) # reorder nodes (FOAM compat)
         end
         @reset face.normal = normal
 
-        # delta
-        c1_c2 = cell2.centre - cell1.centre
-        fc_c1 = cell1.centre - face.centre
-        fc_c2 = cell2.centre - face.centre
-        # delta = norm(c1_c2)
-        delta = norm(fc_c1) + norm(fc_c2)
-        e = c1_c2/delta
-        # weight = norm(fc_c2)/norm(c1_c2)
-        weight = norm(fc_c2)/(norm(fc_c1) + norm(fc_c2))
+        # Calculate delta and interpolation weight
+        weight, delta, e = Mesh.weight_delta_e(C1F1, C2F1, C1C2, normal)
+
         @reset face.delta = delta
         @reset face.e = e
         @reset face.weight = weight

@@ -99,8 +99,8 @@ end
 
 # Model initialisation
 """
-    initialise(turbulence::KOmega, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
-    ) where {T,F,M,Tu,E,D,BI}
+    initialise(turbulence::KOmega, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
+    ) where {T,F,SO,M,Tu,E,D,BI}
 
 Initialisation of turbulent transport equations.
 
@@ -117,8 +117,8 @@ Initialisation of turbulent transport equations.
 
 """
 function initialise(
-    turbulence::KOmegaSST, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
-    ) where {T,F,M,Tu,E,D,BI}
+    turbulence::KOmegaSST, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
+    ) where {T,F,SO,M,Tu,E,D,BI}
 
     (; k, omega, nut, y, wallBCs) = turbulence
     (; rho) = model.fluid
@@ -188,8 +188,8 @@ end
 
 # Model solver call (implementation)
 """
-    turbulence!(rans::KOmegaModel{E1,E2,S1}, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
-    ) where {T,F,M,Tu<:KOmega,E,D,BI,E1,E2,S1}
+    turbulence!(rans::KOmegaModel{E1,E2,S1}, model::Physics{T,F,SO,M,Tu,E,D,BI}, S, prev, time, config
+    ) where {T,F,SO,M,Tu<:KOmega,E,D,BI,E1,E2,S1}
 
 Run turbulence model transport equations.
 
@@ -204,8 +204,8 @@ Run turbulence model transport equations.
 
 """
 function turbulence!(
-    rans::KOmegaSSTModel{E1,E2,S1}, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
-    ) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI,E1,E2,S1}
+    rans::KOmegaSSTModel{E1,E2,S1}, model::Physics{T,F,SO,M,Tu,E,D,BI}, S, prev, time, config
+    ) where {T,F,SO,M,Tu<:AbstractTurbulenceModel,E,D,BI,E1,E2,S1}
 
     mesh = model.domain
     
@@ -343,8 +343,8 @@ function turbulence!(
 end
 
 # Specialise VTK writer
-function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration, time, config
-    ) where {T,F,M,Tu<:KOmegaSST,E,D,BI}
+function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
+    ) where {T,F,SO,M,Tu<:KOmegaSST,E,D,BI}
     args = (
         ("U", model.momentum.U), 
         ("p", model.momentum.p),

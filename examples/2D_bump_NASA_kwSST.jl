@@ -18,13 +18,14 @@ mesh_dev = adapt(CPU(), mesh)
 L = 50
 nu = 1.388E-5
 # u_mag = 1.5 # 5mm mesh
-u_mag = 69.44 # 2mm mesh
+# u_mag = 69.44 # 2mm mesh
+u_mag = 5 # 2mm mesh
 # u_mag = 5 # 2mm mesh
 velocity = [u_mag, 0.0, 0.0]
 Tu = 0.01
 nuR = 10
 ReL = u_mag*L/nu
-k_inlet = 3/2*(Tu*u_mag)^2
+k_inlet = 0.723
 ω_inlet = 8675 #k_inlet/(nuR*nu)
 
 νt_inlet = k_inlet/ω_inlet
@@ -34,59 +35,60 @@ model = Physics(
     time = Steady(),
     fluid = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{KOmegaSST}(walls=(:bump,)),
+    # turbulence = RANS{KOmega}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
     )
 
+patch_group = [:top, :symUp, :symDown]
+group_bcs_U = Wall.(patch_group, Ref([0,0,0]))
+group_bcs_p = Wall.(patch_group)
+# group_bcs_k = Dirichlet.(patch_group, Ref(0.0))
+group_bcs_k = KWallFunction.(patch_group)
+group_bcs_omega = OmegaWallFunction.(patch_group)
+group_bcs_nut = Dirichlet.(patch_group, Ref(0.0))
 BCs = assign(
     region = mesh_dev,
     (
         U = [
             Dirichlet(:inlet, velocity),
             Extrapolated(:outlet),
-            Symmetry(:top),
-            Symmetry(:symUp),
+            # Zerogradient(:outlet),
             Wall(:bump, [0.0, 0.0, 0.0]),
-            Symmetry(:symDown),
-            Empty(:frontAndBack)
+            Empty(:frontAndBack),
+            group_bcs_U...,
         ],
         p = [
             Zerogradient(:inlet),
             Dirichlet(:outlet, 0.0),
-            Symmetry(:top),
-            Symmetry(:symUp),
             Wall(:bump),
-            Symmetry(:symDown),
-            Empty(:frontAndBack)
+            Empty(:frontAndBack),
+            group_bcs_p...,
         ],
         k = [
             Dirichlet(:inlet, k_inlet),
+            # Zerogradient(:outlet),
             Extrapolated(:outlet),
-            Symmetry(:top),
-            Symmetry(:symUp),
-            Dirichlet(:bump, 0.0),
-            # KWallFunction(:bump),
-            Symmetry(:symDown),
-            Empty(:frontAndBack)
+            # Dirichlet(:bump, 0.0),
+            KWallFunction(:bump),
+            Empty(:frontAndBack),
+            group_bcs_k...,
         ],
         omega = [
             Dirichlet(:inlet, ω_inlet),
+            # Zerogradient(:outlet),
             Extrapolated(:outlet),
-            Symmetry(:top),
-            Symmetry(:symUp),
             OmegaWallFunction(:bump),
-            Symmetry(:symDown),
-            Empty(:frontAndBack)
+            Empty(:frontAndBack),
+            group_bcs_omega...,
         ],
         nut = [
             Extrapolated(:inlet),
             Extrapolated(:outlet),
-            Extrapolated(:top),
-            Extrapolated(:symUp),
-            # NutWallFunction(:bump),
             Dirichlet(:bump, 0.0),
-            Extrapolated(:symDown),
-            Empty(:frontAndBack)
+            # NutWallFunction(:bump),
+            Empty(:frontAndBack),
+            group_bcs_nut...,
         ],
         y = [
             Extrapolated(:inlet),
@@ -111,17 +113,17 @@ schemes = (
 solvers = (
     U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
-        preconditioner = DILU(),
+        preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.55,
+        relax       = 0.5,
         rtol = 1e-2
     ),
     p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         # preconditioner = Jacobi(),
-        preconditioner = DILU(),
-        convergence = 1e-7,
-        relax       = 0.15,
+        preconditioner = Jacobi(),
+        convergence = 1e-11,
+        relax       = 0.2,
         rtol = 1e-3,
         itmax = 4000
     ),
@@ -135,21 +137,21 @@ solvers = (
     ),
     k = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
-        preconditioner = DILU(), 
+        preconditioner = Jacobi(), # DILU Jacobi
         convergence = 1e-7,
-        relax       = 0.5,
-        rtol = 1e-3
+        relax       = 0.7,
+        rtol = 1e-2
     ),
     omega = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
-        preconditioner = DILU(), 
+        preconditioner = Jacobi(), 
         convergence = 1e-7,
-        relax       = 0.5,
-        rtol = 1e-3
+        relax       = 0.7,
+        rtol = 1e-2
     )
 )
 
-runtime = Runtime(iterations=5000, write_interval=500, time_step=1)
+runtime = Runtime(iterations=5000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
@@ -159,8 +161,8 @@ GC.gc()
 
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
-initialise!(model.turbulence.k, 0.0)
-# initialise!(model.turbulence.k, k_inlet) # k_inlet
+# initialise!(model.turbulence.k, 0.0)
+initialise!(model.turbulence.k, k_inlet) # k_inlet
 initialise!(model.turbulence.omega, ω_inlet) # ω_inlet
 initialise!(model.turbulence.nut, k_inlet/ω_inlet) # k_inlet/ω_inlet
 

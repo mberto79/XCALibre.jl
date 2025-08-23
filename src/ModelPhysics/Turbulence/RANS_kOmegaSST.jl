@@ -75,24 +75,8 @@ end
 
     # Allocate wall distance "y" and setup boundary conditions
     y = ScalarField(mesh)
-    walls = rans.args.walls
-    boundaries_cpu = get_boundaries(mesh.boundaries)
-    BCs = []
-    for boundary ∈ boundaries_cpu
-        for namedwall ∈ walls
-            if boundary.name == namedwall
-                push!(BCs, Dirichlet(boundary.name, 0.0))
-            else
-                push!(BCs, Extrapolated(boundary.name, 0.0))
-            end
-        end
-    end
-    wallBCs = assign(
-        region=mesh,
-        (
-            y = [BCs...],
-        )
-    )
+    wallBCs = rans.args.walls
+   
 
     KOmegaSST(k, omega, nut, kf, omegaf, nutf, coeffs, gamma1, gamma2, y, wallBCs) 
 end
@@ -120,9 +104,11 @@ function initialise(
     turbulence::KOmegaSST, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
     ) where {T,F,SO,M,Tu,E,D,BI}
 
-    (; k, omega, nut, y, wallBCs) = turbulence
+    (; solvers, schemes, runtime, hardware) = config
+    (; k, omega, nut, wallBCs) = turbulence
+    
+
     (; rho) = model.fluid
-    (; solvers, schemes, runtime) = config
     mesh = mdotf.mesh
     eqn = peqn.equation
 
@@ -180,10 +166,10 @@ function initialise(
     @reset k_eqn.solver = _workspace(solvers.k.solver, _b(k_eqn))
     @reset ω_eqn.solver = _workspace(solvers.omega.solver, _b(ω_eqn))
 
-    wall_distance!(model, config)
+    new_config = wall_distance!(model, wallBCs, config)
 
     initial_residual = ((:k, 1.0),(:omega, 1.0))
-    return KOmegaSSTModel(k_eqn, ω_eqn, ModelState(initial_residual, false), β, σkf, σωf, γ, CDkω, arg1, F1, F1f, arg2, F2, Ω, ∇k, ∇ω)
+    return KOmegaSSTModel(k_eqn, ω_eqn, ModelState(initial_residual, false), β, σkf, σωf, γ, CDkω, arg1, F1, F1f, arg2, F2, Ω, ∇k, ∇ω), new_config
 end
 
 # Model solver call (implementation)
@@ -227,16 +213,12 @@ function turbulence!(
 
     # update fluxes and sources
 
-    # TO-DO: Need to bring gradient calculation inside turbulence models!!!!!
-
     grad!(gradU, Uf, U, boundaries.U, time, config)
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
     magnitude2!(Pk, S, config, scale_factor=2.0) # multiplied by 2 (def of Sij)
-    # constrain_boundary!(omega, omega.BCs, model, config) # active with WFs only
     magnitude2!(Ω, Vorticity(U, gradU), config, scale_factor=2.0) # 
-    # @. Ω.values = sqrt(Ω.values)
-    @. Ω.values = sqrt(Pk.values)
-    # magnitude!(Ω, Vorticity(U, gradU), config, scale_factor=2.0) # 
+    # @. Ω.values = sqrt(Ω.values) # This is for the proper NASA formulation
+    @. Ω.values = sqrt(Pk.values) # gives better comparison with OF
 
     # interpolate!(kf, k, config)
     # correct_boundaries!(kf, k, boundaries.k, time, config) # Bug here but no issue
@@ -253,7 +235,7 @@ function turbulence!(
                 sqrt(max(k.values, eps()))/(coeffs.β⁺*omega.values*y.values), 
                 500*nu.values/(omega.values*y.values^2)
                 ),
-            4*coeffs.σω2*k.values/(CDkω.values*y.values^2)) ,
+            4*coeffs.σω2*k.values/(CDkω.values*y.values^2)),
          10.0
              )
     
@@ -268,12 +250,12 @@ function turbulence!(
     @. F1.values = tanh(arg1.values^4)
     interpolate!(F1f, F1, config)
 
-    
 
     @. σkf.values = coeffs.σk1*F1f.values + (1.0 - F1f.values)*coeffs.σk2
     @. σωf.values = coeffs.σω1*F1f.values + (1.0 - F1f.values)*coeffs.σω2
     @. β.values = coeffs.β1*F1.values + (1.0 - F1.values)*coeffs.β2
-    @. γ.values = 5/9*F1.values + (1.0 - F1.values)*0.44
+    # Here I'm using hard-coded values - need to revert to proper defs used above
+    @. γ.values = 5/9*F1.values + (1.0 - F1.values)*0.44 # Chris: revert if you want
 
     @. mueffω.values = rhof.values * (nuf.values + σωf.values*nutf.values)
     @. mueffk.values = rhof.values * (nuf.values + σkf.values*nutf.values)
@@ -293,7 +275,6 @@ function turbulence!(
     )
 
     correct_production!(Pk, boundaries.k, model, S.gradU, config) # Must be after Pk
-    # @. dkdomegadx.values *= 2.0*(1.0-F1.values)*rho.values*coeffs.σω2/omega.values
     @. dkdomegadx.values = begin
         # 2*(F1.values - 1)*rho.values*coeffs.σω2*dkdomegadx.values/omega.values # explicit 
         2*(F1.values - 1)*rho.values*coeffs.σω2*dkdomegadx.values/omega.values/omega.values
@@ -316,7 +297,6 @@ function turbulence!(
 
     # Solve k equation
     # prev .= k.values
-    
     discretise!(k_eqn, k, config)
     apply_boundary_conditions!(k_eqn, boundaries.k, nothing, time, config)
     # implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
@@ -326,7 +306,6 @@ function turbulence!(
     bound!(k, config)
     # explicit_relaxation!(k, prev, solvers.k.relax, config)
 
-    # magnitude2!(Ω, S, config, scale_factor=2.0) # 
     @. nut.values = coeffs.α1*k.values/max(
         coeffs.α1*omega.values, 
         # F2.values*sqrt(Ω.values)

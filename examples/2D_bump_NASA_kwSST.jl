@@ -101,15 +101,6 @@ BCs = assign(
             Empty(:frontAndBack),
             group_bcs_nut...,
         ],
-        y = [
-            Extrapolated(:inlet),
-            Extrapolated(:outlet),
-            Extrapolated(:top),
-            Extrapolated(:symUp),
-            Dirichlet(:bump, 0.0),
-            Extrapolated(:symDown),
-            Empty(:frontAndBack)
-        ]
     )
 )
 

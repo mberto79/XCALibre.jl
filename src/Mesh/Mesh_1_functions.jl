@@ -24,7 +24,8 @@ end
 
 # function to calculate boundary face properties
 weight_delta_e(C1F1, normal) = begin
-    weight = one(eltype(C1F1))
+    # weight = one(eltype(C1F1))
+    weight = eltype(C1F1)(0.5)
     delta = norm(C1F1)
     e = C1F1/delta
     return weight, delta, e

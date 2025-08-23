@@ -161,9 +161,9 @@ function PISO(
             # flux!(mdotf, Uf, config) # old approach
 
             # new approach
-            interpolate!(Uf, U, config) # velocity from momentum equation
-            correct_boundaries!(Uf, U, boundaries.U, time, config)
-            flux!(mdotf, Uf, config)
+            # interpolate!(Uf, U, config) # velocity from momentum equation
+            # correct_boundaries!(Uf, U, boundaries.U, time, config)
+            # flux!(mdotf, Uf, config)
             correct_mass_flux(mdotf, p, rDf, config)
             correct_velocity!(U, Hv, ∇p, rD, config)
 

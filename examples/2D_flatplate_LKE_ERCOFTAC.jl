@@ -96,7 +96,7 @@ schemes = (
     U = Schemes(divergence=LUST),
     p = Schemes(divergence=LUST),
     k = Schemes(divergence=LUST),
-    y = Schemes(gradient=Midpoint),
+    y = Schemes(gradient=Gauss),
     kl = Schemes(divergence=LUST),
     omega = Schemes(divergence=LUST)
 )

@@ -8,9 +8,8 @@ export FieldAverage
     stop::I
 end
 
-
 #Need to generalise the implementation to handle things like model.turbulence etc 
-
+#Need to check that the implementation works on the GPU 
 function FieldAverage(model_momentum,symbol,start::Integer=1,stop::Integer=typemax(Int))
     start > 0      || throw(ArgumentError("Start iteration must be a positive value (got $start)"))
     stop  > 0      || throw(ArgumentError("Stop iteration must be a positive value (got $stop)"))
@@ -35,6 +34,13 @@ function calculate_field_property!(f::FieldAverage,model,iter::Integer,n_iterati
     field = getproperty(model.momentum,label)
     _update_over_averaging_window!(f,field,iter,n_iterations)
 end
+function calculate_field_property!(f::Vector, model,iter::Integer,n_iterations::Integer)
+    calculate_field_property!.(f::Vector,Ref(model),Ref(iter),Ref(n_iterations))
+end
+
+function calculate_field_property!(f::NamedTuple{()}, model, iter::Integer,n_iterations)
+    return nothing
+end
 
 function _update_over_averaging_window!(f::FieldAverage, current_field::VectorField,iter::Integer,n_iterations::Integer)
     eff_stop = min(f.stop, n_iterations)
@@ -46,7 +52,6 @@ function _update_over_averaging_window!(f::FieldAverage, current_field::VectorFi
     end
     return nothing 
 end
-
 
 function _update_over_averaging_window!(f::FieldAverage, current_field::ScalarField,iter::Integer,n_iterations::Integer)
     eff_stop = min(f.stop, n_iterations)
@@ -65,12 +70,4 @@ function _update_running_mean!(stored_field_vals, current_vals, n)
     b = 1.0 - a
     @. stored_field_vals = b * stored_field_vals + a * current_vals 
     return nothing 
-end
-
-function calculate_field_property!(f::Vector, model,iter::Integer,n_iterations::Integer)
-    calculate_field_property!.(f::Vector,Ref(model),Ref(iter),Ref(n_iterations))
-end
-
-function calculate_field_property!(f::NamedTuple{()}, model, iter::Integer,n_iterations)
-    return nothing
 end

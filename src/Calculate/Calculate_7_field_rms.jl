@@ -1,36 +1,32 @@
 export FieldRMS
-struct FieldRMS{FLAG,T<:AbstractScalarField,I<:Integer}
+@kwdef struct FieldRMS{T<:AbstractScalarField,I<:Integer}
     mean::T
     mean_sq::T
+    label::Symbol
     rms::T
     start::I
     finish::I
 end  
 
-
-function FieldRMS{FLAG}(mean::T,mean_sq::T,rms::T,start::I,finish::I) where {FLAG,T<:AbstractScalarField,I<:Integer}
-    @assert FLAG in (:Ux, :Uy, :Uz) "Unsupported averaging tag $FLAG"
-    start  > 0      || throw(ArgumentError("start must be strictly positive (got $start)"))
-    finish > start  || throw(ArgumentError("finish iteration($finish) must be greater than start iteration ($start)"))
-    FieldRMS{FLAG,T,I}(mean,mean_sq,rms,start,finish)
+function FieldRMS(model_momentum,symbol,start::Integer=1,stop::Integer=typemax(Int))
+    start > 0      || throw(ArgumentError("Start iteration must be a positive value (got $start)"))
+    stop  > 0      || throw(ArgumentError("Stop iteration must be a positive value (got $stop)"))
+    stop  > start  || throw(ArgumentError("Stop iteration($stop) must be greater than start ($start) iteration"))
+    #Check that the field is actually supported 
+    field = getproperty(model_momentum,symbol)
+    if field isa ScalarField
+        mean = ScalarField(field.mesh)
+        mean_sq = ScalarField(field.mesh)
+        rms = ScalarField(field.mesh)
+    elseif field isa VectorField
+        mean = VectorField(field.mesh)
+        mean_sq = VectorField(field.mesh)
+        rms = VectorField(field.mesh)
+    else
+    end
+    return FieldRMS(mean=mean,mean_sq=mean_sq,label=symbol,rms=rms,start=start,stop=stop)
 end
-#When just a mesh is supplied 
-function FieldRMS{FLAG}(mesh::M) where {FLAG,M<:Mesh2}
-    field1 = ScalarField(mesh)
-    field2 = ScalarField(mesh)
-    field3 = ScalarField(mesh)
-    FieldRMS{FLAG}(field1,field2,field3,1,typemax(Int))
-end
-#When a mesh is supplied with an averaging window 
-function FieldRMS{FLAG}(mesh::M, start::I, finish::I) where {FLAG,M<:Mesh2,I<:Integer}
-    field1 = ScalarField(mesh)
-    field2 = ScalarField(mesh)
-    field3 = ScalarField(mesh)
-    FieldRMS{FLAG}(field1,field2,field3,start,finish)
-end
-
 # specialised entry points — one tiny method per component
-
 
 function _update_RMS!(f::FieldRMS, current_field,current_field_sq, iter::Integer, n_iterations::Integer)
     eff_finish = min(f.finish, n_iterations)

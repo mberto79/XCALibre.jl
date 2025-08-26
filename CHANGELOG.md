@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 *  Initial support for mixed precision (UNV meshes only) [#67](@ref)
+*  New solver for simulating conduction in solids [#65](@ref)
+*  New LES turbulent kinetic energy one equation model (`KEquation`) [#71](@ref)
 
 ### Fixed
 * The `UNV3D_mesh` reader has been updated to ensure that the ordering of face nodes is determined in a more robust manner. This resolves some issues when loading a `UNV` mesh that is later used to store simulation results in the `OpenFOAM` format [#64](@ref)
@@ -15,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Added method for boundary interpolation when using `LUST` and `DirichletFunction`[#68](@ref)
   
 ### Changed
-* No changes included
+* The constructors for `ScalarField` and `FaceScalarField` now include a `store_mesh` keyword argument to request a reference of the mesh to be stored (default) or not (setting `store_mesh=false`). This can be used to not include references to the mesh for each field in `VectorFields` and `TensorFields`. This has improved compile times and decreased simulation times (particularly on the GPU - perhaps due to freeing registers used to carry unnecessary type information) [#69](@ref)
+* Internally, the calculation of interpolation weights and other geometric properties are calculated using the same function (defined in the `Mesh` module) [#69](@ref)
 
 ### Breaking
 * No breaking changes

@@ -43,8 +43,8 @@ end
 
 # Model initialisation
 """
-    initialise(turbulence::Smagorinsky, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
-    ) where {T,F,M,Tu,E,D,BI}
+    initialise(turbulence::Smagorinsky, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
+    ) where {T,F,SO,M,Tu,E,D,BI}
 
 Initialisation of turbulent transport equations.
 
@@ -66,8 +66,8 @@ Returns a structure holding the fields and data needed for this model
 
 """
 function initialise(
-    turbulence::Smagorinsky, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
-    ) where {T,F,M,Tu,E,D,BI}
+    turbulence::Smagorinsky, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
+    ) where {T,F,SO,M,Tu,E,D,BI}
 
     (; solvers, schemes, runtime, boundaries) = config
     mesh = model.domain
@@ -87,8 +87,8 @@ end
 
 # Model solver call (implementation)
 """
-    turbulence!(les::SmagorinskyModel, model::Physics{T,F,M,Tu,E,D,BI}, S, S2, prev, time, config
-    ) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
+    turbulence!(les::SmagorinskyModel, model::Physics{T,F,SO,M,Tu,E,D,BI}, S, S2, prev, time, config
+    ) where {T,F,SO,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
 Run turbulence model transport equations.
 
@@ -103,8 +103,8 @@ Run turbulence model transport equations.
 
 """
 function turbulence!(
-    les::SmagorinskyModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
-    ) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
+    les::SmagorinskyModel, model::Physics{T,F,SO,M,Tu,E,D,BI}, S, prev, time, config
+    ) where {T,F,SO,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
     mesh = model.domain
     scalar = ScalarFloat(mesh)
@@ -132,8 +132,8 @@ function turbulence!(
 end
 
 # Specialise VTK writer
-function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration, time, config
-    ) where {T,F,M,Tu<:Smagorinsky,E,D,BI}
+function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
+    ) where {T,F,SO,M,Tu<:Smagorinsky,E,D,BI}
     args = (
         ("U", model.momentum.U), 
         ("p", model.momentum.p),

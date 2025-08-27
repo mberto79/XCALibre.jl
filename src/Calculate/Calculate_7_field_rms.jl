@@ -1,13 +1,13 @@
 export FieldRMS
-@kwdef struct FieldRMS{T<:AbstractScalarField,I<:Integer}
+@kwdef struct FieldRMS{T<:AbstractField,I<:Integer}
     mean::T
     mean_sq::T
     label::Symbol
     rms::T
     start::I
-    finish::I
+    stop::I
 end  
-
+#This creates the memory for the FieldRMS 
 function FieldRMS(model_momentum,symbol,start::Integer=1,stop::Integer=typemax(Int))
     start > 0      || throw(ArgumentError("Start iteration must be a positive value (got $start)"))
     stop  > 0      || throw(ArgumentError("Stop iteration must be a positive value (got $stop)"))
@@ -27,9 +27,21 @@ function FieldRMS(model_momentum,symbol,start::Integer=1,stop::Integer=typemax(I
     return FieldRMS(mean=mean,mean_sq=mean_sq,label=symbol,rms=rms,start=start,stop=stop)
 end
 # specialised entry points — one tiny method per component
+#This updates the RMS from inside the solver loop 
+function calculate_field_property!(f::FieldRMS,model,iter::Integer,n_iterations::Integer)
+    label = f.label
+    field = getproperty(model.momentum,label)
+    _update_RMS!(f,field,model,field,iter,n_iterations)
+    # _update_over_averaging_window!(f,field,iter,n_iterations)
+end
 
-function _update_RMS!(f::FieldRMS, current_field,current_field_sq, iter::Integer, n_iterations::Integer)
+#this updates the values stored in the RMS struct depending on the type of field that is passed to it
+
+function _update_RMS!(f::FieldRMS,model, current_field::ScalarField, iter::Integer, n_iterations::Integer)
     eff_finish = min(f.finish, n_iterations)
+    #create memory for a squared version of the field
+    current_field_sq = ScalarField(current_field.mesh)
+    current_field_sq.values .= current_field.values
     if iter >= f.start && iter <= eff_finish
         n = iter - f.start + 1
         _update_running_mean!(f.mean.values, current_field, n)
@@ -44,14 +56,3 @@ function _update_RMS!(f::FieldRMS, current_field,current_field_sq, iter::Integer
     end
     return nothing
 end
-
-function calculate_field_property!(f::FieldRMS{:Ux},model,iter,n_iterations)
-    _update_RMS!(f,model.momentum.U.x.values,model.momentum.U.x.values .^2, iter,n_iterations)
-end
-function calculate_field_property!(f::FieldRMS{:Uy},model,iter,n_iterations)
-    _update_RMS!(f,model.momentum.U.y.values,model.momentum.U.y.values .^2, iter,n_iterations)
-end
-function calculate_field_property!(f::FieldRMS{:Uz},model,iter,n_iterations)
-    _update_RMS!(f,model.momentum.U.z.values,model.momentum.U.z.values .^2, iter,n_iterations)
-end
-

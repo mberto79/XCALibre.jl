@@ -1,37 +1,44 @@
 export calculate_field_property!
 export FieldAverage
-
-@kwdef struct FieldAverage{T<:AbstractField,I<:Integer}
+export get_field_from_path
+@kwdef struct FieldAverage{T<:AbstractField,N}
     field::T
-    label::Symbol
-    start::I
-    stop::I
+    path::NTuple{N,Symbol}
+    start::Integer
+    stop::Integer
 end
 
-#Need to generalise the implementation to handle things like model.turbulence etc 
+function get_field_from_path(model,path::NTuple{N,Symbol}) where {N}
+    acc = model 
+    for name in path
+        acc = getproperty(acc,name)
+    end
+    return acc
+end
+
 #Need to check that the implementation works on the GPU 
-function FieldAverage(model_momentum,symbol,start::Integer=1,stop::Integer=typemax(Int))
+function FieldAverage(model,path;start::Integer=1,stop::Integer=typemax(Int))
     start > 0      || throw(ArgumentError("Start iteration must be a positive value (got $start)"))
     stop  > 0      || throw(ArgumentError("Stop iteration must be a positive value (got $stop)"))
     stop  > start  || throw(ArgumentError("Stop iteration($stop) must be greater than start ($start) iteration"))
     #Check that the field is actually supported 
-    field = getproperty(model_momentum,symbol)
+    field = get_field_from_path(model,path)
     if field isa ScalarField
-        storage = ScalarField(field.mesh)  # Example constructor
+        storage = ScalarField(model.domain)  # Example constructor
     elseif field isa VectorField
-        storage = VectorField(field.mesh)
+        storage = VectorField(model.domain)
     else
     end
-    return FieldAverage(field=storage,label=symbol,start=start,stop=stop)
+    return FieldAverage(field=storage,path=path,start=start,stop=stop)
 end
 
 #decided on FieldAverage(model.momentum,:=;U)
 
 #this functions job is to extract the correct property from 
-function calculate_field_property!(f::FieldAverage,model,iter::Integer,n_iterations::Integer)
+function calculate_field_property!(f::FieldAverage,model,iter::Integer,n_iterations::Integer)# add a write interval 
     #Need to check which string is contained in the FieldAverage fieldname 
-    label = f.label
-    field = getproperty(model.momentum,label)
+    path = f.path
+    field = get_field_from_path(model,path)
     _update_over_averaging_window!(f,field,iter,n_iterations)
 end
 function calculate_field_property!(f::Vector, model,iter::Integer,n_iterations::Integer)

@@ -3,31 +3,31 @@ export thermal_conductivity_H2
 ###Refer to "Correlation of the Thermal Conductivity of Normal and Parahydrogen
 ###                              from the Triple Point to 1000 K and up to 100MPa", 2011
 
-using Printf
-using XCALibre
 
-struct constants_k_H2
-    T_c::Float64
-    rho_c::Float64
-    P_CRIT::Float64
-    A1::Vector{Float64}
-    A2::Vector{Float64}
-    B1::Vector{Float64}
-    B2::Vector{Float64}
-    C1::Float64
-    C2::Float64
-    C3::Float64
-    R_D::Float64
-    ν::Float64
-    γ_crit::Float64
-    xi_0::Float64
-    GAMMA_0::Float64
-    qD::Float64
-    T_ref::Float64
-    k_B::Float64
+struct constants_k_H2{T<:AbstractFloat,V<:AbstractVector}
+    T_c::T
+    rho_c::T
+    P_CRIT::T
+    A1::V
+    A2::V
+    B1::V
+    B2::V
+    C1::T
+    C2::T
+    C3::T
+    R_D::T
+    ν::T
+    γ_crit::T
+    xi_0::T
+    GAMMA_0::T
+    qD::T
+    T_ref::T
+    k_B::T
 end
+Adapt.@adapt_structure constants_k_H2
 
-function lambda0(T::Float64, constants::constants_k_H2)
+
+function lambda0(T::F, constants::constants_k_H2) where F <: AbstractFloat
     (; T_c, A1, A2) = constants
 
     T_r = T / T_c
@@ -37,13 +37,13 @@ function lambda0(T::Float64, constants::constants_k_H2)
 end
 
 
-function delta_lambda(rho::Float64, T::Float64, constants::constants_k_H2)
+function delta_lambda(rho::F, T::F, constants::constants_k_H2) where F <: AbstractFloat
     (; T_c, rho_c, B1, B2) = constants
 
     T_r = T / T_c
     rho_r = rho / rho_c
 
-    term_sum = 0.0
+    term_sum = zero(F)
     for i in 1:5
         term_sum += (B1[i] + (B2[i] * T_r) ) * (rho_r)^i
     end
@@ -51,21 +51,21 @@ function delta_lambda(rho::Float64, T::Float64, constants::constants_k_H2)
 end
 
 
-function delta_lambda_c_empirical(rho::Float64, T::Float64, constants::constants_k_H2) #The easy version
+function delta_lambda_c_empirical(rho::F, T::F, constants::constants_k_H2) where F <: AbstractFloat #The easy version
     (; T_c, rho_c, C1, C2, C3) = constants
 
-    delta_T_c   = (T / T_c) - 1
-    delta_rho_c   = (rho / rho_c) - 1
+    delta_T_c   = (T / T_c) - one(F)
+    delta_rho_c   = (rho / rho_c) - one(F)
     denominator  = C2 + abs(delta_T_c)
 
-    if denominator <= 0.0
-        return 0.0
+    if denominator <= zero(F)
+        return zero(F)
     else
         return (C1 / denominator) * exp(-(C3 * delta_rho_c)^2)
     end
 end
 
-function xi(rho::Float64, T::Float64, kT::Float64, kT_ref::Float64, constants::constants_k_H2)
+function xi(rho::F, T::F, kT::F, kT_ref::F, constants::constants_k_H2) where F <: AbstractFloat
     (; T_c, rho_c, P_CRIT, A1, A2, B1, B2, C1, C2, C3, R_D, ν, γ_crit, xi_0, GAMMA_0, qD, T_ref, k_B) = constants
     # kT = (1/rho) * (d rho / d p) at constant T
     # kT is evaluated at T passed into delta_lambda_c, while kT_ref evaluated at T_ref
@@ -76,24 +76,24 @@ function xi(rho::Float64, T::Float64, kT::Float64, kT_ref::Float64, constants::c
 
     bracket_term = rho*kT - (T_ref/T)*(rho*kT_ref)
 
-    clamping = max(0.0, bracket_term)
+    clamping = max(zero(F), bracket_term)
 
     term2 = clamping^nu_div_gamma
 
     return term1 * term2
 end
 
-function omega_0(rho::Float64, T::Float64, xi::Float64, constants::constants_k_H2)
+function omega_0(rho::F, T::F, xi::F, constants::constants_k_H2) where F <: AbstractFloat
     (; T_c, rho_c, P_CRIT, A1, A2, B1, B2, C1, C2, C3, R_D, ν, γ_crit, xi_0, GAMMA_0, qD, T_ref, k_B) = constants
 
     rhoc_div_rho = rho_c / rho
-    denom = ( (qD*xi)^(-1.0) ) + ( ( ( qD*xi*rhoc_div_rho )^2.0 )/3.0 )
-    exponent_term = -(1.0/denom)
+    denom = ( (qD*xi)^(-one(F)) ) + ( ( ( qD*xi*rhoc_div_rho )^F(2) )/F(3) )
+    exponent_term = -(one(F)/denom)
     
-    return (2.0/pi) * (1.0 - exp(exponent_term))
+    return (F(2)/pi) * (one(F) - exp(exponent_term))
 end
 
-function omega(rho::Float64, T::Float64, xi::Float64, cp::Float64, cv::Float64, constants::constants_k_H2)
+function omega(rho::F, T::F, xi::F, cp::F, cv::F, constants::constants_k_H2) where F <: AbstractFloat
     (; T_c, rho_c, P_CRIT, A1, A2, B1, B2, C1, C2, C3, R_D, ν, γ_crit, xi_0, GAMMA_0, qD, T_ref, k_B) = constants
 
     term1 = ( (cp-cv)/cp ) * atan(qD*xi)
@@ -102,12 +102,12 @@ function omega(rho::Float64, T::Float64, xi::Float64, cp::Float64, cv::Float64, 
 
     exponent_term = term1 + term2
 
-    return (2.0/pi) * (exponent_term)
+    return (F(2)/pi) * (exponent_term)
 end
 
 #The tricky one!
-function delta_lambda_c(rho::Float64, T::Float64, cp::Float64, cv::Float64, kT::Float64, 
-    kT_ref::Float64, nu_bar::Float64, constants::constants_k_H2)
+function delta_lambda_c(rho::F, T::F, cp::F, cv::F, kT::F, 
+    kT_ref::F, nu_bar::F, constants::constants_k_H2) where F <: AbstractFloat
 
     (; T_c, rho_c, P_CRIT, A1, A2, B1, B2, C1, C2, C3, R_D, ν, γ_crit, xi_0, GAMMA_0, qD, T_ref, k_B) = constants
 
@@ -115,39 +115,39 @@ function delta_lambda_c(rho::Float64, T::Float64, cp::Float64, cv::Float64, kT::
     xi_val = xi(rho, T, kT, kT_ref, constants)
 
     if (xi_val < tol)
-        return 0.0
+        return zero(F)
     end
 
     omega_0_val = omega_0(rho, T, xi_val, constants)
     omega_val = omega(rho, T, xi_val, cp, cv, constants)
 
     numerator = rho*cp*R_D*k_B*T
-    denominator = 6.0*pi*nu_bar*xi_val
+    denominator = F(6)*pi*nu_bar*xi_val
 
     return (numerator/denominator)*(omega_val-omega_0_val)
 end
 
 
-function thermal_conductivity_H2(rho::Float64, T::Float64, cp::Float64, cv::Float64, kT::Float64, 
-    kT_ref::Float64, nu_bar::Float64)
+function thermal_conductivity_H2(rho::F, T::F, cp::F, cv::F, kT::F, 
+    kT_ref::F, nu_bar::F) where F <: AbstractFloat
 
     constants = constants_k_H2(
-        32.938, #T_c
-        31.323, #rho_c
-        1.2858e6, #P_CRIT
-        [-1.245, 310.212, -331.004, 246.016, -65.781, 10.826, -0.519659, 0.0143979], #A1
-        [1.42304e4, -1.93922e4,  1.58379e4, -4.81812e3, 7.28639e2, -3.57365e1,  1.00000e0], #A2
-        [2.65975e-2, -1.33826e-3,  1.30219e-2, -5.67678e-3, -9.23380e-5], #B1
-        [-1.21727e-3,  3.66663e-3,  3.88715e-3, -9.21055e-3,  4.00723e-3], #B2
-        3.57e-4, -2.46e-2, 0.2, #C1, C2, C3
-        1.01, #R_D
-        0.63, #ν
-        1.2415, #γ_crit
-        1.5e-10, #xi_0
-        0.052, #GAMMA_0
-        1.0 / 5.0e-10, #qD
-        49.7175, #T_ref
-        1.380649e-23 #k_B
+        F(32.938), #T_c
+        F(31.323), #rho_c
+        F(1.2858e6), #P_CRIT
+        [F(-1.245), F(310.212), F(-331.004), F(246.016), F(-65.781), F(10.826), F(-0.519659), F(0.0143979)], #A1
+        [F(1.42304e4), F(-1.93922e4), F(1.58379e4), F(-4.81812e3), F(7.28639e2), F(-3.57365e1), F(1.0)], #A2
+        [F(2.65975e-2), F(-1.33826e-3), F(1.30219e-2), F(-5.67678e-3), F(-9.23380e-5)], #B1
+        [F(-1.21727e-3), F(3.66663e-3), F(3.88715e-3), F(-9.21055e-3), F(4.00723e-3)], #B2
+        F(3.57e-4), F(-2.46e-2), F(0.2), #C1, C2, C3
+        F(1.01), #R_D
+        F(0.63), #ν
+        F(1.2415), #γ_crit
+        F(1.5e-10), #xi_0
+        F(0.052), #GAMMA_0
+        F(1.0 / 5.0e-10), #qD
+        F(49.7175), #T_ref
+        F(1.380649e-23) #k_B
     )
 
     (; T_c, rho_c, P_CRIT, A1, A2, B1, B2, C1, C2, C3, R_D, ν, γ_crit, xi_0, GAMMA_0, qD, T_ref, k_B) = constants
@@ -155,9 +155,9 @@ function thermal_conductivity_H2(rho::Float64, T::Float64, cp::Float64, cv::Floa
     lambda_0_val = lambda0(T, constants)
     delta_lambda_val = delta_lambda(rho, T, constants)
 
-    lambda_crit_val = 0.0
+    lambda_crit_val = zero(F)
 
-    if abs(T_c - T) < 7.0 # If it is close to critical point (within 7 K) - use complex function
+    if abs(T_c - T) < F(7) # If it is close to critical point (within 7 K) - use complex function
         lambda_crit_val = delta_lambda_c(rho, T, cp, cv, kT, kT_ref, nu_bar, constants)
     else # Otherwise simpler function is good enough
         lambda_crit_val = delta_lambda_c_empirical(rho, T, constants)

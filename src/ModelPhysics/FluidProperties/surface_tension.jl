@@ -9,6 +9,7 @@ struct SurfaceTensionProperties{T<:AbstractFloat}
     T_min::T # Minimum valid temperature
     T_max::T # Maximum valid temperature
 end
+Adapt.@adapt_structure SurfaceTensionProperties
 
 function get_surface_tension_properties(::H2)
     return SurfaceTensionProperties(32.938, 0.005314, 1.060, 13.80, 31.00)
@@ -18,14 +19,14 @@ function get_surface_tension_properties(::N2)
     return SurfaceTensionProperties(126.192, 0.02898, 1.246, 64.80, 120.24)
 end
 
-function calculate_surface_tension(fluid::HelmholtzEnergyFluid, T::AbstractFloat)
+function calculate_surface_tension(fluid::HelmholtzEnergyFluid, T::F) where F <: AbstractFloat
     properties = get_surface_tension_properties(fluid)
 
     if !(properties.T_min <= T <= properties.T_max)
-        return 0.0
+        return zero(F)
     end
     
-    reduced_temp_term = 1.0 - (T / properties.T_c)
+    reduced_temp_term = one(F) - (T / properties.T_c)
     
     surface_tension = properties.σ_0 * (reduced_temp_term^properties.n_0)
 

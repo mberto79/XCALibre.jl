@@ -1,7 +1,5 @@
 using XCALibre
 
-include("../src/Preprocess/setFields.jl")
-
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "quad40.unv"
 mesh_file = joinpath(grids_dir, grid)

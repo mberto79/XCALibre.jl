@@ -1,29 +1,29 @@
 export calculate_field_property!
 export FieldAverage
-export get_field_from_path
+export get_field_from_path #check if this actually has to be exported because it might not have to be 
 @kwdef struct FieldAverage{T<:AbstractField,N}
     field::T
     path::NTuple{N,Symbol}
     start::Integer
     stop::Integer
+    write_interval::Integer
 end
 """
-    FieldAverage(model, path; start::Integer,stop::Integer)
-Constructor to allocate memory to store the averaged field over the averaging window (in terms of iterations)`start:stop`. 
+    FieldAverage(model, path; start::Integer,stop::Integer,write_interval::Integer)
+Constructor to allocate memory to store the averaged field over the averaging window (in terms of iterations). 
 
 # Input arguments 
 - `model` the `Physics` model object needs to be passed to allocate the right amount of memory
 - `path` tuple of symbols e.g `(:momentum,:U)` which are used to access the correct field to average
-- `start::Integer` optional keyword which specifies the start of the averaging window. Default value is 1. 
-- `stop::Integer` optional keyword which specifies the end of the averaging window. Default value is typemax(Int) (i.e just an arbitrarily large number). 
-
+- `start::Integer` optional keyword which specifies the start iteration of the averaging window. Default value is 1. 
+- `stop::Integer` optional keyword which specifies the end iteration of the averaging window. Default value is typemax(Int) (i.e just an arbitrarily large number). 
+- `write_interval::Integer` optional keyword which specifies how often the averaged field is updated and stored in solver iterations (default value is 1). 
 """
-
-#Need to check that the implementation works on the GPU 
-function FieldAverage(model,path;start::Integer=1,stop::Integer=typemax(Int))
+function FieldAverage(model,path;start::Integer=1,stop::Integer=typemax(Int),write_interval::Integer=1)
     start > 0      || throw(ArgumentError("Start iteration must be a positive value (got $start)"))
     stop  > 0      || throw(ArgumentError("Stop iteration must be a positive value (got $stop)"))
     stop  > start  || throw(ArgumentError("Stop iteration($stop) must be greater than start ($start) iteration"))
+    write_interval >= 1 || throw(ArgumentError("write interval must be ≥1 (got $write_interval)"))
     #Check that the field is actually supported 
     field = get_field_from_path(model,path)
     if field isa ScalarField
@@ -32,7 +32,7 @@ function FieldAverage(model,path;start::Integer=1,stop::Integer=typemax(Int))
         storage = VectorField(model.domain)
     else
     end
-    return FieldAverage(field=storage,path=path,start=start,stop=stop)
+    return FieldAverage(field=storage,path=path,start=start,stop=stop,write_interval=write_interval)
 end
 
 """
@@ -61,9 +61,9 @@ end
 
 
 """
-    calculate_field_property!(fa::FieldAverage, model, iter::Integer, n_iterations::Integer) -> nothing
-    calculate_field_property!(fas::AbstractVector, model, iter::Integer, n_iterations::Integer) -> nothing
-    calculate_field_property!(fas::NamedTuple,  model, iter::Integer, n_iterations::Integer) -> nothing
+    calculate_field_property!(f::FieldAverage, model, iter::Integer, n_iterations::Integer) -> nothing
+    calculate_field_property!(f::AbstractVector, model, iter::Integer, n_iterations::Integer) -> nothing
+    calculate_field_property!(f::NamedTuple,  model, iter::Integer, n_iterations::Integer) -> nothing
 
 Internal helper used inside solver loops (PISO / SIMPLE / CPISO, etc.).
 
@@ -86,27 +86,27 @@ function calculate_field_property!(f::NamedTuple{()}, model, iter::Integer,n_ite
     return nothing
 end
 """
-    _update_over_averaging_window!(fa::FieldAverage, cur::VectorField,
+    _update_over_averaging_window!(f::FieldAverage, cur::VectorField,
                                    iter::Integer, n_iterations::Integer) -> nothing
-    _update_over_averaging_window!(fa::FieldAverage, cur::ScalarField,
+    _update_over_averaging_window!(f::FieldAverage, cur::ScalarField,
                                    iter::Integer, n_iterations::Integer) -> nothing
 
-Internal helper: conditionally updates the running mean stored in `fa.field`
+Internal helper: conditionally updates the running mean stored in `f.field`
 for the current iteration. The effective averaging window is
 
-    eff_stop = min(fa.stop, n_iterations)
-    iter ∈ [fa.start, eff_stop]
+    eff_stop = min(f.stop, n_iterations)
+    iter ∈ [f.start, eff_stop]
 
 If `iter` lies in this inclusive window, the routine computes
 
-    n = iter - fa.start + 1
+    n = iter - f.start + 1
 
-and performs an in-place running-mean update of `fa.field` using
+and performs an in-place running-mean update of `f.field` using
 `_update_running_mean!`. For `VectorField`, the update is applied
 component-wise (`x`, `y`, `z`); for `ScalarField`, to `values`.
 
 Input arguments
-- `fa`: `FieldAverage` accumulator holding the destination field and window.
+- `f`: `FieldAverage` accumulator holding the destination field and window.
 - `cur`: the current source field (scalar or vector) read from the model.
 - `iter`: current solver iteration (1-based).
 - `n_iterations`: total number of iterations for the current run.
@@ -117,7 +117,7 @@ Input arguments
 
 function _update_over_averaging_window!(f::FieldAverage, current_field::VectorField,iter::Integer,n_iterations::Integer)
     eff_stop = min(f.stop, n_iterations)
-    if iter >= f.start && iter <= eff_stop
+    if iter >= f.start && iter <= eff_stop && (mod(iter - f.start, f.write_interval) == 0)
         n = iter - f.start + 1
             _update_running_mean!(f.field.x.values,current_field.x.values,n)
             _update_running_mean!(f.field.y.values,current_field.y.values,n)
@@ -128,7 +128,7 @@ end
 
 function _update_over_averaging_window!(f::FieldAverage, current_field::ScalarField,iter::Integer,n_iterations::Integer)
     eff_stop = min(f.stop, n_iterations)
-    if iter >= f.start && iter <= eff_stop
+    if iter >= f.start && iter <= eff_stop && (mod(iter - f.start, f.write_interval) == 0)
         n = iter - f.start + 1
             _update_running_mean!(f.field.values,current_field.values,n)
     end

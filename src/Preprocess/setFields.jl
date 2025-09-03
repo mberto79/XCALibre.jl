@@ -1,4 +1,4 @@
-using LinearAlgebra
+export setField_Box!, setField_Circle2D!, setField_Sphere3D!
 
 """
     setField_Box!(; mesh, field, value::F, min_corner::V, max_corner::V) where {F <: AbstractFloat, V <: AbstractVector}
@@ -37,6 +37,8 @@ function setField_Box!(; mesh, field, value::F, min_corner::V, max_corner::V) wh
     
     return length(cells_in_region)
 end
+
+
 
 
 """

@@ -49,7 +49,9 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
             "2d_incompressible_transient_KOmega_BFS_lowRe.jl",
             "2d_incompressible_transient_laminar_BFS.jl",
             "3d_incompressible_laminar_BFS.jl",
-            "3d_incompressible_laminar_cascade_periodic.jl"
+            "3d_incompressible_laminar_cascade_periodic.jl",
+            "2d_incompressible_pitzdaily_KEquation.jl",
+            "2d_incompressible_pitzdaily_Smagorinsky.jl"
         ]
 
         for test ∈ test_files
@@ -73,5 +75,7 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
 
     foreach(rm, filter(endswith(".vtk"), readdir(pwd(), join=true)))
     foreach(rm, filter(endswith(".vtu"), readdir(pwd(), join=true)))
+    foreach(x->rm(x, recursive=true), filter(contains("0."), readdir(pwd(), join=true)))
+    foreach(x->rm(x, recursive=true), filter(contains("constant"), readdir(pwd(), join=true)))
 
 end # end "functionality test"

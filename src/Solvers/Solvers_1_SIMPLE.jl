@@ -138,7 +138,6 @@ function SIMPLE(
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
-    # prev = zeros(TF, n_cells)
     # prev = _convert_array!(prev, backend) 
     prev = KernelAbstractions.zeros(backend, TF, n_cells) 
 
@@ -173,7 +172,6 @@ function SIMPLE(
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rDf, rD, config)
-        # correct_boundaries!(rDf, rD, rD.BCs, time, config) # ADDED FOR PERIODIC BCS
         remove_pressure_source!(U_eqn, ∇p, config)
         H!(Hv, U, U_eqn, config)
         
@@ -221,11 +219,6 @@ function SIMPLE(
         # flux!(mdotf, Uf, config) 
 
         # new approach
-
-        # 1. using velocity from momentum equation
-        # interpolate!(Uf, U, config)
-        # correct_boundaries!(Uf, U, boundaries.U, time, config)
-        # flux!(mdotf, Uf, config)
         correct_mass_flux(mdotf, p, rDf, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 

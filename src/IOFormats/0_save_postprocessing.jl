@@ -3,7 +3,7 @@ export save_postprocessing
 function save_postprocessing(
     field_name, iteration, time, mesh, meshData, BCs, args...)
     
-    write_results(iteration, time, mesh, meshData, BCs, args...; suffix=field_name) 
+    write_results(iteration, time, mesh, meshData, BCs, args...; suffix="_"*field_name) 
 end
 
 function save_postprocessing(

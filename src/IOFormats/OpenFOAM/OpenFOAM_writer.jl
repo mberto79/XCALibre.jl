@@ -191,7 +191,8 @@ initialise_writer(format::OpenFOAM, mesh) = error("
 The OpenFOAM format can only be used for 3D simulations. Use `output=VTK()` instead.
 ")
 
-function write_results(iteration::TI, time, mesh, meshData::FOAMWriter, BCs, args...) where TI
+function write_results(
+    iteration::TI, time, mesh, meshData::FOAMWriter, BCs, args...) where TI
     timedir = ""
     if iteration == time
         timedir = @sprintf "%i" iteration

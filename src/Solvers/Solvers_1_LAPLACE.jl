@@ -3,7 +3,6 @@ export LAPLACE
 export setup_laplace_solver
 
 
-
 """
     laplace!(model_in, config; 
         output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0)

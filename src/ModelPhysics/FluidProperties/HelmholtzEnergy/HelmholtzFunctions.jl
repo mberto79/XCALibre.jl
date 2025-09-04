@@ -202,7 +202,7 @@ end
 
 # Advanced function that accounts for discontinuities
 function find_density_advanced(T::F, P_target::F, rho_guess::F, constants;
-    max_iter=50, tol=1.0e-8) where F <: AbstractFloat
+    max_iter=100, tol=1.0e-8) where F <: AbstractFloat
 
     (; T_c, rho_c, R_univ) = constants
 
@@ -284,7 +284,7 @@ function dPsat_dT(T::F, p_pair::F, constants) where F <: AbstractFloat
 end
 
 
-function find_saturation_temperature(P_target::F, constants; max_iter=50, tol=1.0e-7) where F <: AbstractFloat
+function find_saturation_temperature(P_target::F, constants; max_iter=100, tol=1.0e-7) where F <: AbstractFloat
     (; T_c, p_c, T_triple, p_triple, vapour_N) = constants
     # Newton-Raphson method, similar to density
 
@@ -326,7 +326,11 @@ function find_saturation_temperature(P_target::F, constants; max_iter=50, tol=1.
         T = clamp(T_new, T_triple, T_c - 1e-6)
     end
     
-    error("[T_saturation Solver] Did not converge in $max_iter iterations.")
+    if abs(T - T_c) < F(1e-4)
+        return T_c # exception case where p=p_crit and T=t_crit
+    else
+        error("[T_saturation Solver] Did not converge in $max_iter iterations. TEMP: $T")
+    end
 end
 
 

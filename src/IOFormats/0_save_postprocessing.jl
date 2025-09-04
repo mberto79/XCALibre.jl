@@ -1,7 +1,7 @@
 export save_postprocessing
 
 function save_postprocessing(
-    field_name, iteration, time, mesh, meshData::VTKWriter2D, BCs, args...)
+    field_name, iteration, time, mesh, meshData, BCs, args...)
     
     write_results(iteration, time, mesh, meshData, BCs, args...; suffix=field_name) 
 end

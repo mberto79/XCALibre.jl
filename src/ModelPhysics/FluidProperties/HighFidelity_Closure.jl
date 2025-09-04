@@ -1,8 +1,8 @@
 using XCALibre
 
 
-_eos_wrapper(fluid::H2, T, P, alpha) = XCALibre.ModelPhysics.EOS_wrapper_H2(T, P, alpha)
-_eos_wrapper(fluid::N2, T, P, alpha) = XCALibre.ModelPhysics.EOS_wrapper_N2(T, P, alpha)
+_eos_wrapper(fluid::H2, T, P) = XCALibre.ModelPhysics.EOS_wrapper_H2(T, P)
+_eos_wrapper(fluid::N2, T, P) = XCALibre.ModelPhysics.EOS_wrapper_N2(T, P)
 
 _mu_high_fidelity(fluid::H2, T, rho) = XCALibre.ModelPhysics.mu_high_fidelity_H2(T, rho)
 _mu_high_fidelity(fluid::N2, T, rho) = XCALibre.ModelPhysics.mu_high_fidelity_N2(T, rho)
@@ -12,9 +12,9 @@ _thermal_conductivity(fluid::N2, args...) = XCALibre.ModelPhysics.thermal_conduc
 
 
 # This function is called per cell by kernel
-function (eos::HelmholtzEnergy)(T_input, P_input, alpha_input) # beta0 value is not tested
+(eos::HelmholtzEnergy)(T_input, P_input) = begin # beta0 value is not tested
     rho0, cv0, cp0, kT0, kT_ref, internal_energy0, 
-            enthalpy0, entropy0, beta0, latentHeat0, T_sat0, m_lv, m_vl = _eos_wrapper(eos.name, T_input, P_input, alpha_input)
+            enthalpy0, entropy0, beta0, latentHeat0, T_sat0, m_lv, m_vl = _eos_wrapper(eos.name, T_input, P_input)
         
     is_mp = true
     nu_bar_vals = [0.0, 0.0]

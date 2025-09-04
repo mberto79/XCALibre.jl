@@ -1,6 +1,5 @@
 using XCALibre
 
-
 # Current logic works in a way that when we are outside of saturation region - solver returns one physical density,
 #       and the other one is a reference at saturation. Lee model is required to bring it back to physical state.
 
@@ -20,7 +19,6 @@ _thermal_conductivity(fluid::N2, args...) = XCALibre.ModelPhysics.thermal_conduc
     rho0, cv0, cp0, kT0, kT_ref, internal_energy0, 
             enthalpy0, entropy0, beta0, latentHeat0, T_sat0 = _eos_wrapper(eos.name, T_input, P_input) #m_qp, m_pq
         
-    is_mp = true
     nu_bar_vals = [0.0, 0.0]
     k0_vals = [0.0, 0.0]
 
@@ -33,21 +31,8 @@ _thermal_conductivity(fluid::N2, args...) = XCALibre.ModelPhysics.thermal_conduc
 
     @. nu_bar_vals = nu_bar_vals * 1.0e-6 # convert to SI
 
-    return (is_mp=is_mp, rho=rho0, cv=cv0, cp=cp0, u=internal_energy0, h=enthalpy0, s=entropy0, beta=beta0,
+    return (rho=rho0, cv=cv0, cp=cp0, u=internal_energy0, h=enthalpy0, s=entropy0, beta=beta0,
             mu=nu_bar_vals, k=k0_vals, sigma=surface_tension, L_vap=latentHeat0, T_sat=T_sat0) #m_lv=m_lv, m_vl=m_vl
-
-    
-    # if !is_mp # supercritical fluid case, can be uncommented later
-    #     nu_bar = _mu_high_fidelity(eos.name, T_input, rho0)
-    #     k0 = _thermal_conductivity(eos.name, rho0, T_input, cp0, cv0, kT0, kT_ref, nu_bar)
-    #     surface_tension = calculate_surface_tension(eos.name, T_input)
-
-    #     nu_bar = nu_bar * 1.0e-6 # convert to SI
-
-    #     return (is_mp=is_mp, rho=rho0, cv=cv0, cp=cp0, u=internal_energy0, h=enthalpy0, s=entropy0, beta=beta0,
-    #             mu=nu_bar, k=k0, sigma=surface_tension, L_vap=latentHeat0, T_sat=T_sat0, m_lv=m_lv, m_vl=m_vl)
-    # else
-    # end
 end
 
 

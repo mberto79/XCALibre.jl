@@ -385,78 +385,71 @@ function EOS_wrapper_H2(T::F, pressure::F, alpha::F) where F <: AbstractFloat
 end
 
 
-function EOS_wrapper_N2(T::F, pressure::F, alpha::F) where F <: AbstractFloat
-
+function EOS_wrapper_N2(T::F, pressure::F) where F <: AbstractFloat
+    
     constants = constants_EoS_N2(
-        126.192,  # T_c
-        11.1839e3,  # rho_c, multiplied by e3 for convenience
-        28.01348e-3, # M_N2, multiplied by e-3 for convenience
-        8.314472, # R_univ
-        252.384, # T_ref = T_c * 2
-        [
-            2.5, -12.76952708, -0.00784163, -1.934819e-4, -1.247742e-5,
-            6.678326e-8, 1.012941, 26.65788
-        ], # a_nitro
-        [
-            # Polynomial Part (k=1 to 6)
-            0.924803575275, -0.492448489428, 0.661883336938, -0.192902649201e1, 
-            -0.622469309629e-1, 0.349943957581,
-            # Exponential Part (k=7 to 32)
-            0.564857472498, -0.161720005987e1, -0.481395031883, 0.421150636384,
-            -0.161962230825e-1, 0.172100994165, 0.735448924933e-2, 0.168077305479e-1,
-            -0.107626664179e-2, -0.137318088513e-1, 0.635466899859e-3, 0.304432279419e-2,
-            -0.4357623366045e-1, -0.723174889316e-1, 0.389644315272e-1, -0.212201363910e-1,
-            0.40882298181509e-2, -0.551990017984e-4, -0.462016716479e-1, -0.300311716011e-2,
-            0.368825891208e-1, -0.255856846220e-2, 0.896915264558e-2, -0.441513370350e-2,
-            0.133722924858e-2, 0.264832491957e-3,
-            # Gaussian Part (k=33 to 36)
-            0.19668894015e2, -0.209115600730e2, 0.1677883066989e-1, 0.2627675665274e4
+        F(126.192),    # T_c
+        F(11.1839e3),  # rho_c, multiplied by e3 for convenience
+        F(28.01348e-3), # M_N2, multiplied by e-3 for convenience
+        F(8.314472),   # R_univ
+        F(252.384),    # T_ref = T_c * 2
+        
+        [F(2.5), F(-12.76952708), F(-0.00784163), F(-1.934819e-4), F(-1.247742e-5),
+        F(6.678326e-8), F(1.012941), F(26.65788)], # a_nitro
+
+        [ # Polynomial Part (k=1 to 6)
+        F(0.924803575275), F(-0.492448489428), F(0.661883336938), F(-0.192902649201e1), 
+        F(-0.622469309629e-1), F(0.349943957581),
+        # Exponential Part (k=7 to 32)
+        F(0.564857472498), F(-0.161720005987e1), F(-0.481395031883), F(0.421150636384),
+        F(-0.161962230825e-1), F(0.172100994165), F(0.735448924933e-2), F(0.168077305479e-1),
+        F(-0.107626664179e-2), F(-0.137318088513e-1), F(0.635466899859e-3), F(0.304432279419e-2),
+        F(-0.4357623366045e-1), F(-0.723174889316e-1), F(0.389644315272e-1), F(-0.212201363910e-1),
+        F(0.40882298181509e-2), F(-0.551990017984e-4), F(-0.462016716479e-1), F(-0.300311716011e-2),
+        F(0.368825891208e-1), F(-0.255856846220e-2), F(0.896915264558e-2), F(-0.441513370350e-2),
+        F(0.133722924858e-2), F(0.264832491957e-3),
+        # Gaussian Part (k=33 to 36)
+        F(0.19668894015e2), F(-0.209115600730e2), F(0.1677883066989e-1), F(0.2627675665274e4)
         ], # N
-        [
-            one(F), one(F), 2.0, 2.0, 3.0, 3.0, one(F), one(F), one(F), 3.0, 3.0, 4.0, 6.0, 
-            6.0, 7.0, 7.0, 8.0, 8.0, one(F), 2.0, 3.0, 4.0, 5.0, 8.0, 4.0, 5.0, 
-            5.0, 8.0, 3.0, 5.0, 6.0, 9.0, one(F), one(F), 3.0, 2.0
-        ], # d
-        [
-            0.25, 0.875, 0.5, 0.875, 0.375, 0.75, 0.5, 0.75, 2.0, 1.25, 3.5, 
-            one(F), 0.5, 3.0, zero(F), 2.75, 0.75, 2.5, 4.0, 6.0, 6.0, 3.0, 3.0, 6.0, 
-            16.0, 11.0, 15.0, 12.0, 12.0, 7.0, 4.0, 16.0, zero(F), one(F), 2.0, 3.0
-        ], # t
-        [
-            0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 
-            2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 0, 0, 0, 0
-        ], # p
-        [
-            zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), 
-            zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), 
-            zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), 20.0, 20.0, 15.0, 25.0
-        ], # α
-        [
-            zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), 
-            zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), 
-            zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), 325.0, 325.0, 300.0, 275.0
-        ], # β
-        [
-            zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), 
-            zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), 
-            zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), 1.16, 1.16, 1.13, 1.25
-        ], # γ
-        [
-            one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), 
-            one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), 
-            one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F)
-        ],  # D
 
-        3.3958e6, # p_c
-        
-        [-6.12445284, 1.26327220, -0.765910082, -1.77570564], # vapour_N
-        
-        [one(F), 1.5, 2.5, 5.0], # vapour_k
+        [one(F), one(F), F(2.0), F(2.0), F(3.0), F(3.0), one(F), one(F), one(F), F(3.0), F(3.0), F(4.0), F(6.0), 
+        F(6.0), F(7.0), F(7.0), F(8.0), F(8.0), one(F), F(2.0), F(3.0), F(4.0), F(5.0), F(8.0), F(4.0), F(5.0), 
+        F(5.0), F(8.0), F(3.0), F(5.0), F(6.0), F(9.0), one(F), one(F), F(3.0), F(2.0)], # d
 
-        63.151, # T_triple
-        12.528e3, # p_triple
-        5.0 # Fluid dependent density guess multiplier to get liquid function
+        [F(0.25), F(0.875), F(0.5), F(0.875), F(0.375), F(0.75), F(0.5), F(0.75), F(2.0), F(1.25), F(3.5), 
+        one(F), F(0.5), F(3.0), zero(F), F(2.75), F(0.75), F(2.5), F(4.0), F(6.0), F(6.0), F(3.0), F(3.0), F(6.0), 
+        F(16.0), F(11.0), F(15.0), F(12.0), F(12.0), F(7.0), F(4.0), F(16.0), zero(F), one(F), F(2.0), F(3.0)], # t
+
+        [F(0), F(0), F(0), F(0), F(0), F(0), F(1), F(1), F(1), F(1), F(1), F(1), F(1), F(1), F(1), F(1), F(1), F(1),
+        F(2), F(2), F(2), F(2), F(2), F(2), F(3), F(3), F(3), F(3), F(4), F(4), F(4), F(4), F(0), F(0), F(0), F(0)], # p
+
+        [zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), 
+        zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), 
+        zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), F(20.0), F(20.0), F(15.0), F(25.0)], # α
+
+        [zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), 
+        zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), 
+        zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), F(325.0), F(325.0), F(300.0), F(275.0)], # β
+
+        [zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), 
+        zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), 
+        zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), F(1.16), F(1.16), F(1.13), F(1.25)], # γ
+
+        [one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), 
+        one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), 
+        one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F), one(F)],  # D
+
+        F(3.3958e6), # p_c
+        
+        [F(-6.12445284), F(1.26327220), F(-0.765910082), F(-1.77570564)], # vapour_N
+        
+        [one(F), F(1.5), F(2.5), F(5.0)], # vapour_k
+
+        F(63.151),   # T_triple
+        F(12.528e3), # p_triple
+        F(5.0)       # Fluid dependent density guess multiplier to get liquid function
     )
+
     
     
     (; T_c, rho_c, R_univ, M, T_ref, a_para, k_para, N, t, d, p, α, β, γ, D, p_c, liquid_multiplier) = constants

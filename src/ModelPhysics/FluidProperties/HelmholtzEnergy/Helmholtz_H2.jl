@@ -249,56 +249,58 @@ end
 
 
 
-function EOS_wrapper_H2(T::F, pressure::F, alpha::F) where F <: AbstractFloat
+function EOS_wrapper_H2(T::F, pressure::F) where F <: AbstractFloat
 
     constants = constants_EoS_H2(
-        32.938, # T_c
-        15.538e3, # rho_c, multiplied by e3 for convenience
-        8.314472, # R_univ
-        2.01588e-3, # M_H2, multiplied by e-3 for convenience
-        49.7175, # T_ref
+        F(32.938),    # T_c
+        F(15.538e3),  # rho_c, multiplied by e3 for convenience
+        F(8.314472),  # R_univ
+        F(2.01588e-3), # M_H2, multiplied by e-3 for convenience
+        F(49.7175),   # T_ref
         
-        [2.5, -1.4485891134, 1.884521239, 4.30256, 13.0289,
-        -47.7365, 50.0013, -18.6261, 0.993973, 0.536078], # a_para
+        [F(2.5), F(-1.4485891134), F(1.884521239), F(4.30256), F(13.0289),
+        F(-47.7365), F(50.0013), F(-18.6261), F(0.993973), F(0.536078)], # a_para
 
-        [zero(F), zero(F), zero(F), 499.0, 826.5, 970.8, 1166.2, 1341.4, 5395.0, 10185.0], # k_para
+        [zero(F), zero(F), zero(F), F(499.0), F(826.5), F(970.8), F(1166.2), F(1341.4), F(5395.0), F(10185.0)], # k_para
 
-        [-7.33375, 0.01, 2.60375, 4.66279, 0.68239, -1.47078, 0.135801,
-        -1.05327, 0.328239, -0.0577833, 0.0449743, 0.0703464, -0.0401766, 0.11951], # N
+        [F(-7.33375), F(0.01), F(2.60375), F(4.66279), F(0.68239), F(-1.47078), F(0.135801),
+        F(-1.05327), F(0.328239), F(-0.0577833), F(0.0449743), F(0.0703464), F(-0.0401766), F(0.11951)], # N
 
-        [0.6855, one(F), one(F), 0.489, 0.774, 1.133, 1.386, 1.619, 1.162, 3.96,
-        5.276, 0.99, 6.791, 3.19], # t
+        [F(0.6855), one(F), one(F), F(0.489), F(0.774), F(1.133), F(1.386), F(1.619), F(1.162), F(3.96),
+        F(5.276), F(0.99), F(6.791), F(3.19)], # t
 
-        [1, 4, 1, 1, 2, 2, 3, 1, 3, 2, 1, 3, 1, 1], # d
+        [F(1.0), F(4.0), F(1.0), F(1.0), F(2.0), F(2.0), F(3.0), F(1.0), F(3.0), F(2.0), F(1.0), F(3.0), F(1.0), F(1.0)], # d
 
-        [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0], # p
+        [F(0.0), F(0.0), F(0.0), F(0.0), F(0.0), F(0.0), F(0.0), F(1.0), F(1.0), F(0.0), F(0.0), F(0.0), F(0.0), F(0.0)], # p
+        
         [zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F),
-
-        -1.7437, -0.5516, -0.0634, -2.1341, -1.777], # α
-        [zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F),
-
-        -0.194, -0.2019, -0.0301, -0.2383, -0.3253], # β
-        [zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F),
-        0.8048, 1.5248, 0.6648, 0.6832, 1.493], # γ
+        F(-1.7437), F(-0.5516), F(-0.0634), F(-2.1341), F(-1.777)], # α
 
         [zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F),
-        1.5487, 0.1785, 1.28, 0.6319, 1.7104], # D
+        F(-0.194), F(-0.2019), F(-0.0301), F(-0.2383), F(-0.3253)], # β
 
-        1.2858e6, # p_c
+        [zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F),
+        F(0.8048), F(1.5248), F(0.6648), F(0.6832), F(1.493)], # γ
+
+        [zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F), zero(F),
+        F(1.5487), F(0.1785), F(1.28), F(0.6319), F(1.7104)], # D
+
+        F(1.2858e6), # p_c
         
-        [-4.87767, 1.03359, 0.82668, -0.129412], # vapour_N
+        [F(-4.87767), F(1.03359), F(0.82668), F(-0.129412)], # vapour_N
         
-        [one(F), 1.5, 2.65, 7.4], # vapour_k
+        [one(F), F(1.5), F(2.65), F(7.4)], # vapour_k
         
-        13.8033, # T_triple
-        7042.0, # p_triple
-        2.5 # Fluid dependent density guess multiplier to get liquid function
+        F(13.8033), # T_triple
+        F(7042.0),  # p_triple
+        F(2.5)      # Fluid dependent density guess multiplier to get liquid function
     )
+
 
     (; T_c, rho_c, R_univ, M, T_ref, a_para, k_para, N, t, d, p, α, β, γ, D, p_c, liquid_multiplier) = constants
 
     pressure_tol = 1e-4
-    alpha_tol = 1e-8
+    # alpha_tol = 1e-8
 
     rho_mol = zero(F)
     rho_list = [zero(F), zero(F)]
@@ -334,7 +336,7 @@ function EOS_wrapper_H2(T::F, pressure::F, alpha::F) where F <: AbstractFloat
             rho_list[1] = rho_liquid
             rho_list[2] = rho_mol
 
-            m_lv = c_τ_evap * alpha * rho_liquid * ( (T - T_sat)/T_sat ) # ASSUME alpha=1 is liquid
+            # m_lv = c_τ_evap * alpha * rho_liquid * ( (T - T_sat)/T_sat ) # ASSUME alpha=1 is liquid
 
         elseif pressure > P_sat # LIQUID REGION
             # println("LIQUID")
@@ -346,7 +348,7 @@ function EOS_wrapper_H2(T::F, pressure::F, alpha::F) where F <: AbstractFloat
             rho_list[1] = rho_mol
             rho_list[2] = rho_vapour
 
-            m_vl = c_τ_cond * (one(F)-alpha) * rho_vapour * ( (T_sat - T)/T_sat )# ASSUME alpha=0 is liquid vapour
+            # m_vl = c_τ_cond * (one(F)-alpha) * rho_vapour * ( (T_sat - T)/T_sat )# ASSUME alpha=0 is liquid vapour
         end
 
         if isnan(rho_mol)

@@ -61,11 +61,13 @@ function lambda0_N2(T::F, constants::constants_k_N2) where F <: AbstractFloat
     return term1 + term2 + term3
 end
 
-function lambda_r_N2(rho::F, T::F, constants::constants_k_N2, config) where F <: AbstractFloat
+### !!! I realised that this function is already called within kernel, so there is no need to do it here...
+
+function lambda_r_N2(rho::F, T::F, constants::constants_k_N2) where F <: AbstractFloat
     (; T_c, rho_c, N_LR, t_LR, d_LR, l_LR) = constants
 
-    backend = config.hardware.backend
-    workgroup = config.hardware.workgroup
+    # backend = config.hardware.backend
+    # workgroup = config.hardware.workgroup
 
     tau = T_c / T
     delta = rho / rho_c
@@ -73,33 +75,36 @@ function lambda_r_N2(rho::F, T::F, constants::constants_k_N2, config) where F <:
     term_sum = zero(F)
 
 
-    ndrange = length(N_LR)
-    kernel! = _lambda_r_N2(_setup(backend, workgroup, ndrange)...)
-    kernel!(N_LR, tau, delta, t_LR, d_LR, l_LR, term, term_sum)
+    # ndrange = length(N_LR)
+    # kernel! = _lambda_r_N2(_setup(backend, workgroup, ndrange)...)
+    # kernel!(N_LR, tau, delta, t_LR, d_LR, l_LR, term, term_sum)
 
-    # for i in eachindex(N_LR) # KERNEL!!!!!!!
-    #     term = N_LR[i] * (tau^t_LR[i]) * (delta^d_LR[i])
+    for i in eachindex(N_LR)
+        term = N_LR[i] * (tau^t_LR[i]) * (delta^d_LR[i])
 
-    #     # The paper states that an exponential term is included only when its exponent l_i is not zero..
-    #     if l_LR[i] != zero(F)
-    #         term *= exp(-(delta^l_LR[i]))
-    #     end
+        # The paper states that an exponential term is included only when its exponent l_i is not zero..
+        if l_LR[i] != zero(F)
+            term *= exp(-(delta^l_LR[i]))
+        end
 
-    #     term_sum += term
-    # end
+        term_sum += term
+    end
     return term_sum
 end
-@kernel inbounds=true function _lambda_r_N2(N_LR, tau, delta, t_LR, d_LR, l_LR, term, term_sum)
-    i = @index(Global)
 
-    term = N_LR[i] * (tau^t_LR[i]) * (delta^d_LR[i])
+### !!! I realised that this function is already called within kernel, so there is no need to do it here...
 
-    if l_LR[i] != zero(F)
-        term *= exp(-(delta^l_LR[i]))
-    end
+# @kernel inbounds=true function _lambda_r_N2(N_LR, tau, delta, t_LR, d_LR, l_LR, term, term_sum)
+#     i = @index(Global)
 
-    term_sum += term
-end
+#     term = N_LR[i] * (tau^t_LR[i]) * (delta^d_LR[i])
+
+#     if l_LR[i] != zero(F)
+#         term *= exp(-(delta^l_LR[i]))
+#     end
+
+#     term_sum += term
+# end
 
 
 
@@ -187,7 +192,7 @@ end
 
 
 function thermal_conductivity_N2(rho::F, T::F, cp::F, cv::F, kT::F, 
-    kT_ref::F, nu_bar::F, config) where F <: AbstractFloat
+    kT_ref::F, nu_bar::F) where F <: AbstractFloat
 
     constants = constants_k_N2(
         F(126.192),     # T_c (K)
@@ -217,7 +222,7 @@ function thermal_conductivity_N2(rho::F, T::F, cp::F, cv::F, kT::F,
     rho_molar = rho / constants.M
 
     lambda_0_val = lambda0_N2(T, constants)
-    lambda_r_val = lambda_r_N2(rho_molar, T, constants, config)
+    lambda_r_val = lambda_r_N2(rho_molar, T, constants)
     
     lambda_crit_val = lambda_c_N2(rho, T, cp, cv, kT, kT_ref, nu_bar, constants)
 

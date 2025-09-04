@@ -157,11 +157,32 @@ function thermal_conductivity_H2(rho::F, T::F, cp::F, cv::F, kT::F,
 
     lambda_crit_val = zero(F)
 
-    if abs(T_c - T) < F(7) # If it is close to critical point (within 7 K) - use complex function
-        lambda_crit_val = delta_lambda_c(rho, T, cp, cv, kT, kT_ref, nu_bar, constants)
-    else # Otherwise simpler function is good enough
-        lambda_crit_val = delta_lambda_c_empirical(rho, T, constants)
-    end
+    # The paper mentioned that complex model must be used for the range 5-10 Kelvin near critical point
+    # However, a parametric study revealed that there is no such thing as over-applying complex model, and it is just better to be used at all temps
+    # lambda_crit_val = delta_lambda_c(rho, T, cp, cv, kT, kT_ref, nu_bar, constants)
+
+    
+    lambda_crit_val = delta_lambda_c(rho, T, cp, cv, kT, kT_ref, nu_bar, constants)
+    # if abs(T_c - T) < F(50)
+    #     lambda_crit_val = delta_lambda_c(rho, T, cp, cv, kT, kT_ref, nu_bar, constants)
+    # else # Otherwise simpler function is good enough
+    #     lambda_crit_val = delta_lambda_c_empirical(rho, T, constants)
+    # end
 
     return lambda_0_val + delta_lambda_val + lambda_crit_val
 end
+
+# Parametric study for model switcher (at 1 bar, improvements remain for other pressures too):
+
+# [Temperature range to switch for complex function] error% at T=T_test
+# [7 K]  8.443% at T=25.75 K
+# [10 K] 6.408% at T=22.75 K
+# [14 K] 2.388% at T=47.00 K
+# [15 K] 2.181% at T=48.00 K
+# [17 K] 1.847% at T=50.00 K
+# [25 K] 1.082% at T=58.00 K
+# [50 K] 0.359% at T=83.0 K
+# [70 K] 0.216% at T=20.25 K
+# [90 K] 0.216% at T=20.25 K
+
+# [pure complex model] 0.216% at T=20.25 K

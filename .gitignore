@@ -12,5 +12,6 @@ unv_sample_meshes/*
 *.pb.gz
 *.foam
 *.csv
+!NIST_*.csv
 [0-9]*/
 constant/

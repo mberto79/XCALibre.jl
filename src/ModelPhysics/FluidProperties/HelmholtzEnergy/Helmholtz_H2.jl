@@ -308,13 +308,24 @@ function EOS_wrapper_H2(T::F, pressure::F) where F <: AbstractFloat
     latentHeat = zero(F)
     T_sat = zero(F)
 
-    m_lv = zero(F)
-    m_vl = zero(F)
+    # m_lv = zero(F)
+    # m_vl = zero(F)
 
-    # Firstly, account for supercritical fluid state
-    if (T >= T_c) && (pressure >= p_c)
+    rho_vals = [zero(F), zero(F)]
+    cv_vals = [zero(F), zero(F)]
+    cp_vals = [zero(F), zero(F)]
+    kT_vals = [zero(F), zero(F)]
+    kT_ref_vals = [zero(F), zero(F)]
+    internal_energy_vals = [zero(F), zero(F)]
+    enthalpy_vals = [zero(F), zero(F)]
+    entropy_vals = [zero(F), zero(F)]
+    beta_vals = [zero(F), zero(F)]
+
+    # Firstly, account for supercritical fluid / superheated vapour state
+    if T >= T_c
         rho_guess = pressure / (R_univ * T) # Ideal gas guess
         rho_mol = find_density_advanced(T, pressure, rho_guess, constants)
+        rho_list = [rho_mol, rho_mol] # if T > T_crit, we want to return two identical densities
 
     else # Else it is liquid/vapour
         (P_sat, T_sat, rho_l_sat, rho_v_sat) = find_saturation_properties(T, pressure, constants)
@@ -356,34 +367,13 @@ function EOS_wrapper_H2(T::F, pressure::F) where F <: AbstractFloat
         end
     end
 
-    if T >= T_c
-        # Comment out for now - we don't look into supercritical fluids for this project
-
-        # rho_val, cp_val, cv_val, kT_val, kT_ref_val, 
-        # internal_energy_val, enthalpy_val, entropy_val, beta_val = params_computation(rho_mol, T, constants)
-
-        # return rho_val, cp_val, cv_val, kT_val, kT_ref_val, 
-        #         internal_energy_val, enthalpy_val, entropy_val, beta_val, latentHeat, T_sat, m_lv, m_vl
-    else
-        rho_vals = [zero(F), zero(F)]
-        cv_vals = [zero(F), zero(F)]
-        cp_vals = [zero(F), zero(F)]
-        kT_vals = [zero(F), zero(F)]
-        kT_ref_vals = [zero(F), zero(F)]
-        internal_energy_vals = [zero(F), zero(F)]
-        enthalpy_vals = [zero(F), zero(F)]
-        entropy_vals = [zero(F), zero(F)]
-        beta_vals = [zero(F), zero(F)]
-
-        for i in eachindex(rho_list)
-            rho_vals[i], cp_vals[i], cv_vals[i], kT_vals[i], kT_ref_vals[i], 
-            internal_energy_vals[i], enthalpy_vals[i], entropy_vals[i], beta_vals[i] = params_computation(rho_list[i], T, constants)
-        end
-
-        latentHeat = enthalpy_vals[2] - enthalpy_vals[1] #enthalpy_V - enthalpy_L
-
-        return rho_vals, cp_vals, cv_vals, kT_vals, 
-                kT_ref_vals, internal_energy_vals, enthalpy_vals, beta_vals, entropy_vals, latentHeat, T_sat, m_lv, m_vl
-
+    for i in eachindex(rho_list)
+        rho_vals[i], cp_vals[i], cv_vals[i], kT_vals[i], kT_ref_vals[i], 
+        internal_energy_vals[i], enthalpy_vals[i], entropy_vals[i], beta_vals[i] = params_computation(rho_list[i], T, constants)
     end
+
+    latentHeat = enthalpy_vals[2] - enthalpy_vals[1] #enthalpy_V - enthalpy_L
+
+    return rho_vals, cp_vals, cv_vals, kT_vals, 
+            kT_ref_vals, internal_energy_vals, enthalpy_vals, beta_vals, entropy_vals, latentHeat, T_sat#, m_lv, m_vl
 end

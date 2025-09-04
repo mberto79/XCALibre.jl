@@ -16,6 +16,7 @@ Modules = [
     XCALibre.ModelPhysics,
     XCALibre.Simulate,
     XCALibre.Solvers,
-    XCALibre.Postprocess
+    XCALibre.Postprocess,
+    XCALibre.Preprocess
     ]
 ```

@@ -1,6 +1,10 @@
 using XCALibre
 
 
+# Current logic works in a way that when we are outside of saturation region - solver returns one physical density,
+#       and the other one is a reference at saturation. Lee model is required to bring it back to physical state.
+
+
 _eos_wrapper(fluid::H2, T, P) = XCALibre.ModelPhysics.EOS_wrapper_H2(T, P)
 _eos_wrapper(fluid::N2, T, P) = XCALibre.ModelPhysics.EOS_wrapper_N2(T, P)
 
@@ -14,7 +18,7 @@ _thermal_conductivity(fluid::N2, args...) = XCALibre.ModelPhysics.thermal_conduc
 # This function is called per cell by kernel
 (eos::HelmholtzEnergy)(T_input, P_input) = begin # beta0 value is not tested
     rho0, cv0, cp0, kT0, kT_ref, internal_energy0, 
-            enthalpy0, entropy0, beta0, latentHeat0, T_sat0, m_lv, m_vl = _eos_wrapper(eos.name, T_input, P_input)
+            enthalpy0, entropy0, beta0, latentHeat0, T_sat0 = _eos_wrapper(eos.name, T_input, P_input) #m_qp, m_pq
         
     is_mp = true
     nu_bar_vals = [0.0, 0.0]
@@ -30,7 +34,7 @@ _thermal_conductivity(fluid::N2, args...) = XCALibre.ModelPhysics.thermal_conduc
     @. nu_bar_vals = nu_bar_vals * 1.0e-6 # convert to SI
 
     return (is_mp=is_mp, rho=rho0, cv=cv0, cp=cp0, u=internal_energy0, h=enthalpy0, s=entropy0, beta=beta0,
-            mu=nu_bar_vals, k=k0_vals, sigma=surface_tension, L_vap=latentHeat0, T_sat=T_sat0, m_lv=m_lv, m_vl=m_vl)
+            mu=nu_bar_vals, k=k0_vals, sigma=surface_tension, L_vap=latentHeat0, T_sat=T_sat0) #m_lv=m_lv, m_vl=m_vl
 
     
     # if !is_mp # supercritical fluid case, can be uncommented later

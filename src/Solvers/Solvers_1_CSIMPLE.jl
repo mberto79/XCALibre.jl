@@ -294,11 +294,6 @@ function CSIMPLE(
             @. rhof.values = Psif.values * pf.values
         end
 
-        # Velocity and boundaries correction
-        # correct_face_interpolation!(pf, p, Uf) # not needed added upwind interpolation
-        # correct_boundaries!(pf, p, boundaries.p, time, config)
-        # pgrad = face_normal_gradient(p, pf)
-
         if typeof(model.fluid) <: Compressible
             # @. mdotf.values += (pconv.values*(pf.values) - pgrad.values*rhorDf.values)  
             correct_mass_flux(mdotf, p, rhorDf, config)
@@ -309,8 +304,6 @@ function CSIMPLE(
         end
 
         correct_velocity!(U, Hv, ∇p, rD, config)
-        # interpolate!(Uf, U, config)
-        # correct_boundaries!(Uf, U, boundaries.U, time, config)
         
         turbulence!(turbulenceModel, model, S, prev, time, config) 
         update_nueff!(nueff, nu, model.turbulence, config)

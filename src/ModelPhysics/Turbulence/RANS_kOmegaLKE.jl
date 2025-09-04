@@ -354,10 +354,12 @@ function turbulence!(
 
     #Update ω fluxes
     # double_inner_product!(Pk, S, gradU) # multiplied by 2 (def of Sij) (Pk = S² at this point)
-    interpolate!(kf, k, config)
-    correct_boundaries!(nutf, k, boundaries.k, time, config)
-    interpolate!(omegaf, omega, config)
-    correct_boundaries!(nutf, omega, boundaries.omega, time, config)
+    # interpolate!(kf, k, config)
+    # correct_boundaries!(nutf, k, boundaries.k, time, config)
+    # correct_boundaries!(kf, k, boundaries.k, time, config)
+    # interpolate!(omegaf, omega, config)
+    # correct_boundaries!(nutf, omega, boundaries.omega, time, config)
+    # correct_boundaries!(nutf, omega, boundaries.omega, time, config)
     grad!(∇ω, omegaf, omega, boundaries.omega, time, config)
     grad!(∇k, kf, k, boundaries.k, time, config)
     inner_product!(dkdomegadx, ∇k, ∇ω, config)

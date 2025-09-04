@@ -198,7 +198,7 @@ function CPISO(
     R_uy = ones(TF, iterations)
     R_uz = ones(TF, iterations)
     R_p = ones(TF, iterations)
-    cellsCourant =adapt(backend, zeros(TF, length(mesh.cells)))
+    cellsCourant = KernelAbstractions.zeros(backend, TF, n_cells)
 
     
     # Initial calculations
@@ -310,15 +310,11 @@ function CPISO(
                 pmin = solvers.p.limit[1]; pmax = solvers.p.limit[2]
                 clamp!(p.values, pmin, pmax)
             end
-
-            # pgrad = face_normal_gradient(p, pf)
         
             if typeof(model.fluid) <: Compressible
-                # @. mdotf.values += (pconv.values*(pf.values) - pgrad.values*rhorDf.values)  
                 correct_mass_flux(mdotf, p, rhorDf, config)
                 @. mdotf.values += pconv.values*(pf.values)
             elseif typeof(model.fluid) <: WeaklyCompressible
-                # @. mdotf.values -= pgrad.values*rhorDf.values
                 correct_mass_flux(mdotf, p, rhorDf, config)
             end
    
@@ -327,9 +323,11 @@ function CPISO(
             @. rhof.values = max.(Psif.values * pf.values, 0.001)
 
             # Velocity and boundaries correction
-            correct_velocity!(U, Hv, ∇p, rD, config)
-            interpolate!(Uf, U, config)
-            correct_boundaries!(Uf, U, boundaries.U, time, config)
+            correct_velocity!(U, Hv, ∇p, rD, config) # why is this not rhorD?
+
+            # Lines below should not be needed, interpolation to Uf happens in grad calcs
+            # interpolate!(Uf, U, config)
+            # correct_boundaries!(Uf, U, boundaries.U, time, config)
             
             @. dpdt.values = (p.values-prev)/runtime.dt
 

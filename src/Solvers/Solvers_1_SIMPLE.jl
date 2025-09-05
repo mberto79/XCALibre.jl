@@ -142,10 +142,15 @@ function SIMPLE(
     prev = KernelAbstractions.zeros(backend, TF, n_cells) 
 
     # Pre-allocate vectors to hold residuals 
-    R_ux = ones(TF, iterations)
-    R_uy = ones(TF, iterations)
-    R_uz = ones(TF, iterations)
-    R_p = ones(TF, iterations)
+    # R_ux = ones(TF, iterations)
+    # R_uy = ones(TF, iterations)
+    # R_uz = ones(TF, iterations)
+    # R_p = ones(TF, iterations)
+
+    R_ux = zeros(TF, iterations)
+    R_uy = zeros(TF, iterations)
+    R_uz = zeros(TF, iterations)
+    R_p = zeros(TF, iterations)
     
     # Initial calculations
     time = zero(TF) # assuming time=0

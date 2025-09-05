@@ -154,7 +154,7 @@ end
 
 
 function write_results(
-    iteration::TI, time, mesh, meshData::VTKWriter3D, BCs, args...) where TI
+    iteration::TI, time, mesh, meshData::VTKWriter3D, BCs, args...; suffix="") where TI
     name = ""
     if iteration == time
         name = @sprintf "iteration_%i" iteration
@@ -162,7 +162,7 @@ function write_results(
         # name = @sprintf "time_%.8f" iteration
         name = @sprintf "time_%i" iteration
     end
-    filename=name*".vtu"
+    filename=name*suffix*".vtu"
 
     # Define backend and variables
     backend = _get_backend(mesh)

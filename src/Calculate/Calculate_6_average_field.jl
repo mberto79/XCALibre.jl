@@ -1,82 +1,47 @@
 export calculate_field_property!
 export FieldAverage
 export get_field_from_path #check if this actually has to be exported because it might not have to be 
-@kwdef struct FieldAverage{T<:AbstractField,N}
+@kwdef struct FieldAverage{T<:AbstractField,S<:String,I}
     field::T
-    path::NTuple{N,Symbol}
-    start::Integer
-    stop::Integer
-    write_interval::Integer
+    mean::T
+    name::S
+    start::I
+    stop::I
+    write_interval::I
 end
+#new implementation is FieldAverage(model.momentum.U,:U)
 """
     FieldAverage(model, path; start::Integer,stop::Integer,write_interval::Integer)
 Constructor to allocate memory to store the averaged field over the averaging window (in terms of iterations). 
 
 # Input arguments 
-- `model` the `Physics` model object needs to be passed to allocate the right amount of memory
-- `path` tuple of symbols e.g `(:momentum,:U)` which are used to access the correct field to average
+- `field` the `VectorField` or `ScalarField` to be averaged, e.g , `model.momentum.U`.
+- `name::String` the name of the field to be averaged, e.g "U"
 - `start::Integer` optional keyword which specifies the start iteration of the averaging window. Default value is 1. 
 - `stop::Integer` optional keyword which specifies the end iteration of the averaging window. Default value is typemax(Int) (i.e just an arbitrarily large number). 
 - `write_interval::Integer` optional keyword which specifies how often the averaged field is updated and stored in solver iterations (default value is 1). 
 """
-function FieldAverage(model,path;start::Integer=1,stop::Integer=typemax(Int),write_interval::Integer=1)
+function FieldAverage(field;name::String,start::Integer=1,stop::Integer=typemax(Int),write_interval::Integer=1)
     start > 0      || throw(ArgumentError("Start iteration must be a positive value (got $start)"))
     stop  > 0      || throw(ArgumentError("Stop iteration must be a positive value (got $stop)"))
     stop  > start  || throw(ArgumentError("Stop iteration($stop) must be greater than start ($start) iteration"))
     write_interval >= 1 || throw(ArgumentError("write interval must be ≥1 (got $write_interval)"))
-    #Check that the field is actually supported 
-    field = get_field_from_path(model,path)
     if field isa ScalarField
-        storage = ScalarField(model.domain)  # Example constructor
+        storage = ScalarField(field.mesh) 
     elseif field isa VectorField
-        storage = VectorField(model.domain)
+        storage = VectorField(field.mesh)
     else
+        throw(ArgumentError("Unsupported field type: $(typeof(field))"))
     end
-    return FieldAverage(field=storage,path=path,start=start,stop=stop,write_interval=write_interval)
-end
-
-"""
-    get_field_from_path(model, path::NTuple{N,Symbol}) where {N}
-
-Internal helper: follows `path` on `model` by repeatedly calling `getproperty`
-and returns the nested object. For example,
-
-    get_field_from_path(model, (:momentum, :U)) === model.momentum.U
-
-# Input arguments
-- `model`: root object to traverse.
-- `path`: tuple of property names to follow (in order).
-
-# Returns
-The Scalar or Vector field object referenced by `model.(path...)`.
-
-"""
-function get_field_from_path(model,path::NTuple{N,Symbol}) where {N}
-    acc = model 
-    for name in path
-        acc = getproperty(acc,name)
-    end
-    return acc
+    return FieldAverage(field=field,mean=storage,name=name,start=start,stop=stop,write_interval=write_interval)
 end
 
 
-"""
-    calculate_field_property!(f::FieldAverage, model, iter::Integer, n_iterations::Integer) -> nothing
-    calculate_field_property!(f::AbstractVector, model, iter::Integer, n_iterations::Integer) -> nothing
-    calculate_field_property!(f::NamedTuple,  model, iter::Integer, n_iterations::Integer) -> nothing
 
-Internal helper used inside solver loops (PISO / SIMPLE / CPISO, etc.).
+function calculate_field_property!(f::FieldAverage,iter::Integer,n_iterations::Integer)# add a write interval 
 
-Updates the running mean stored in `f.field` for the target field at
-`model.(f.path...)` **only if** the current iteration `iter` lies within the
-inclusive averaging window `fa.start : min(fa.stop, n_iterations)`. 
-
-"""
-
-function calculate_field_property!(f::FieldAverage,model,iter::Integer,n_iterations::Integer)# add a write interval 
-    path = f.path
-    field = get_field_from_path(model,path)
-    _update_over_averaging_window!(f,field,iter,n_iterations)
+    _update_over_averaging_window!(f,iter,n_iterations)
+    return f.name,f.mean
 end
 function calculate_field_property!(f::Vector, model,iter::Integer,n_iterations::Integer)
     calculate_field_property!.(f::Vector,Ref(model),Ref(iter),Ref(n_iterations))
@@ -115,13 +80,14 @@ Input arguments
 
 
 
-function _update_over_averaging_window!(f::FieldAverage, current_field::VectorField,iter::Integer,n_iterations::Integer)
+function _update_over_averaging_window!(f::FieldAverage,iter::Integer,n_iterations::Integer)
+    current_field = f.field
     eff_stop = min(f.stop, n_iterations)
     if iter >= f.start && iter <= eff_stop && (mod(iter - f.start, f.write_interval) == 0)
         n = iter - f.start + 1
-            _update_running_mean!(f.field.x.values,current_field.x.values,n)
-            _update_running_mean!(f.field.y.values,current_field.y.values,n)
-            _update_running_mean!(f.field.z.values,current_field.z.values,n)
+            _update_running_mean!(f.mean.x.values,current_field.x.values,n)
+            _update_running_mean!(f.mean.y.values,current_field.y.values,n)
+            _update_running_mean!(f.mean.z.values,current_field.z.values,n)
     end
     return nothing 
 end
@@ -134,9 +100,6 @@ function _update_over_averaging_window!(f::FieldAverage, current_field::ScalarFi
     end
     return nothing 
 end
-
-#Need to generalise the implementation to handle things like model.turbulence etc 
-
 
 """
     _update_running_mean!(stored_field_vals, current_vals, n)

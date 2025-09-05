@@ -197,13 +197,14 @@ function PISO(
             ]
         )
 
+    args = calculate_field_property!(postprocess,iteration,iterations)
+
     if iteration%write_interval + signbit(write_interval) == 0
         # save_output(model, outputWriter, iteration, time, config,args=("Mean Ux", postprocess.field))
         save_output(model, outputWriter, iteration, time, config)
+        save_postprocessing(postprocess.name,iteration,time,mesh,outputWriter,config.boundaries,args)
     end
 
-    # calculate_field_property!.(postprocess,Ref(model),Ref(iteration),Ref(iterations))
-    calculate_field_property!(postprocess,model,iteration,iterations)
     end # end for loop
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end

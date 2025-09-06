@@ -202,7 +202,8 @@ function solve_equation!(
     resy = solve_system!(psiEqn, solversetup, psi.y, ydir, config)
     
     # Z velocity calculations (3D Mesh only)
-    resz = one(_get_float(mesh))
+    # resz = one(_get_float(mesh))
+    resz = zero(_get_float(mesh))
     if typeof(mesh) <: Mesh3
         update_equation!(psiEqn, config)
         apply_boundary_conditions!(psiEqn, psiBCs, zdir, time, config)

@@ -61,23 +61,14 @@ function lambda0_N2(T::F, constants::constants_k_N2) where F <: AbstractFloat
     return term1 + term2 + term3
 end
 
-### !!! I realised that this function is already called within kernel, so there is no need to do it here...
 
 function lambda_r_N2(rho::F, T::F, constants::constants_k_N2) where F <: AbstractFloat
     (; T_c, rho_c, N_LR, t_LR, d_LR, l_LR) = constants
-
-    # backend = config.hardware.backend
-    # workgroup = config.hardware.workgroup
 
     tau = T_c / T
     delta = rho / rho_c
 
     term_sum = zero(F)
-
-
-    # ndrange = length(N_LR)
-    # kernel! = _lambda_r_N2(_setup(backend, workgroup, ndrange)...)
-    # kernel!(N_LR, tau, delta, t_LR, d_LR, l_LR, term, term_sum)
 
     for i in eachindex(N_LR)
         term = N_LR[i] * (tau^t_LR[i]) * (delta^d_LR[i])
@@ -91,20 +82,6 @@ function lambda_r_N2(rho::F, T::F, constants::constants_k_N2) where F <: Abstrac
     end
     return term_sum
 end
-
-### !!! I realised that this function is already called within kernel, so there is no need to do it here...
-
-# @kernel inbounds=true function _lambda_r_N2(N_LR, tau, delta, t_LR, d_LR, l_LR, term, term_sum)
-#     i = @index(Global)
-
-#     term = N_LR[i] * (tau^t_LR[i]) * (delta^d_LR[i])
-
-#     if l_LR[i] != zero(F)
-#         term *= exp(-(delta^l_LR[i]))
-#     end
-
-#     term_sum += term
-# end
 
 
 
@@ -201,13 +178,13 @@ function thermal_conductivity_N2(rho::F, T::F, cp::F, cv::F, kT::F,
         F(28.01348),    # M (g/mol)
         F(98.94),       # epsilon_k (K)
         F(0.3656),      # sigma (nm)
-        [F(0.431), F(-0.4623), F(0.08406), F(0.005341), F(-0.00331)],             # b_i coefficients
-        [F(1.511), F(2.117), F(-3.332)],                                          # N_L0 (i=1 to 3)
-        [F(0.0), F(-1.0), F(-0.7)],                                               # t_L0 (i=1 to 3, t1 is not used)
-        [F(8.862), F(31.11), F(-73.13), F(20.03), F(-0.7096), F(0.2672)],         # N_LR (i=4 to 9)
-        [F(0.0), F(0.03), F(0.2), F(0.8), F(0.6), F(1.9)],                         # t_LR (i=4 to 9)
-        [F(1.0), F(2.0), F(3.0), F(4.0), F(8.0), F(10.0)],                         # d_LR (i=4 to 9)
-        [F(0.0), F(0.0), F(1.0), F(2.0), F(2.0), F(2.0)],                          # l_LR (i=4 to 9)
+        F[0.431, -0.4623, 0.08406, 0.005341, -0.00331],                         # b_i coefficients
+        F[1.511, 2.117, -3.332],                                               # N_L0 (i=1 to 3)
+        F[0.0, -1.0, -0.7],                                                    # t_L0 (i=1 to 3, t1 is not used)
+        F[8.862, 31.11, -73.13, 20.03, -0.7096, 0.2672],                        # N_LR (i=4 to 9)
+        F[0.0, 0.03, 0.2, 0.8, 0.6, 1.9],                                      # t_LR (i=4 to 9)
+        F[1.0, 2.0, 3.0, 4.0, 8.0, 10.0],                                      # d_LR (i=4 to 9)
+        F[0.0, 0.0, 1.0, 2.0, 2.0, 2.0],                                       # l_LR (i=4 to 9)
         F(1.01),        # R_D (R_0 in paper)
         F(0.63),        # nu
         F(1.2415),      # gamma_crit

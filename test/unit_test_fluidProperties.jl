@@ -1,16 +1,19 @@
 using XCALibre
 using DelimitedFiles
 
+using Test
 
 ## 4 pressure test points for H2 and N2:
 
 # H2: [1, 3, 10, 12.858] bar
 # N2: [1, 5, 15, 33.958] bar
 
-H2_pressure_configs = [1.0, 3.0, 10.0, 12.858]
+H2_para_pressure_configs = [1.0, 3.0, 10.0, 12.858]
+H2_normal_pressure_configs = [1.0, 3.0, 10.0, 12.964]
 N2_pressure_configs = [1.0, 5.0, 15.0, 33.958]
 
-H2_T_crit = 32.938
+H2_para_T_crit = 32.938
+H2_normal_T_crit = 33.145
 N2_T_crit = 126.192
 
 
@@ -24,6 +27,7 @@ N2_T_crit = 126.192
 # N2: [90 to 150 K with 1 K step]
 # N2: [150 to 500 K with 10 K step]
 
+H2_para_instance = HelmholtzEnergy(name=H2_para())
 H2_instance = HelmholtzEnergy(name=H2())
 N2_instance = HelmholtzEnergy(name=N2())
 
@@ -138,8 +142,9 @@ end
 
 
 # pressure_tag(p) = replace(string(p), "." => "-") ### false positives with this
+
 function pressure_tag(p) # handle dot names issue
-    if p in (12.858, 33.958)   # the only cases with a dot in filenames
+    if p in (12.858, 33.958, 12.964)   # the only cases with a dot in filenames
         return replace(string(p), "." => "-")   # e.g. 12.858 -> 12-858
     else
         return string(Int(p))  # e.g. 1.0 -> 1
@@ -147,13 +152,25 @@ function pressure_tag(p) # handle dot names issue
 end
 
 
-# Run H2 tests
-for p in H2_pressure_configs
+# Run H2 (parahydrogen) tests
+for p in H2_para_pressure_configs
     filename = "NIST_H2_Results_P$(pressure_tag(p))_bar.csv"
-    println("Testing H2 at $(p) bar → $(filename)")
+    println("Testing H2 (parahydrogen) at $(p) bar → $(filename)")
+    compare_model_with_baseline(
+        H2_para_instance,
+        H2_para_T_crit,
+        p,
+        joinpath(@__DIR__, "Fluids_NIST_Data", filename)
+    )
+end
+
+# Run H2 (normal hydrogen) tests
+for p in H2_normal_pressure_configs
+    filename = "NIST_H2_NORMAL_Results_P$(pressure_tag(p))_bar.csv"
+    println("Testing H2 (normal hydrogen) at $(p) bar → $(filename)")
     compare_model_with_baseline(
         H2_instance,
-        H2_T_crit,
+        H2_normal_T_crit,
         p,
         joinpath(@__DIR__, "Fluids_NIST_Data", filename)
     )

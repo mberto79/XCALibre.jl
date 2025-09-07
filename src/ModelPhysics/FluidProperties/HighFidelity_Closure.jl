@@ -1,16 +1,18 @@
 using XCALibre
 
-# Current logic works in a way that when we are outside of saturation region - solver returns one physical density,
-#       and the other one is a reference at saturation. Lee model is required to bring it back to physical state.
+#= 
+    Current logic works in a way that when we are outside of saturation region - solver returns one physical density,
+    and the other one is a reference at saturation. Lee model is required to bring it back to physical state. 
+=#
 
 
-_eos_wrapper(fluid::H2, T, P) = XCALibre.ModelPhysics.EOS_wrapper_H2(T, P)
-_eos_wrapper(fluid::N2, T, P) = XCALibre.ModelPhysics.EOS_wrapper_N2(T, P)
+_eos_wrapper(fluid::Union{H2,H2_para}, T, P) = XCALibre.ModelPhysics.EOS_wrapper_H2(fluid, T, P)
+_eos_wrapper(fluid::N2, T, P) = XCALibre.ModelPhysics.EOS_wrapper_N2(fluid, T, P)
 
-_mu_high_fidelity(fluid::H2, T, rho) = XCALibre.ModelPhysics.mu_high_fidelity_H2(T, rho)
+_mu_high_fidelity(fluid::Union{H2,H2_para}, T, rho) = XCALibre.ModelPhysics.mu_high_fidelity_H2(T, rho)
 _mu_high_fidelity(fluid::N2, T, rho) = XCALibre.ModelPhysics.mu_high_fidelity_N2(T, rho)
 
-_thermal_conductivity(fluid::H2, args...) = XCALibre.ModelPhysics.thermal_conductivity_H2(args...)
+_thermal_conductivity(fluid::Union{H2,H2_para}, args...) = XCALibre.ModelPhysics.thermal_conductivity_H2(fluid, args...)
 _thermal_conductivity(fluid::N2, args...) = XCALibre.ModelPhysics.thermal_conductivity_N2(args...)
 
 

@@ -1,8 +1,6 @@
 using XCALibre
 using DelimitedFiles
 
-using Test
-
 ## 4 pressure test points for H2 and N2:
 
 # H2: [1, 3, 10, 12.858] bar

@@ -1,18 +1,3 @@
-export EOS_wrapper_H2, EOS_wrapper_H2_para
-
-export alpha_0,
-       d_alpha_0_d_delta,
-       d2_alpha_0_d_delta2,
-       d_alpha_0_d_tau,
-       d2_alpha_0_d_tau2,
-       alpha_r,
-       d_alpha_r_d_tau,
-       d_alpha_r_d_delta,
-       d2_alpha_r_d_tau2,
-       d2_alpha_r_d_delta2,
-       d2_alpha_r_d_delta_d_tau
-
-
 ### PREPARATORY FUNCTIONS
 
 

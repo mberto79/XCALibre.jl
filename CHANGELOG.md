@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 *  Initial support for mixed precision (UNV meshes only) [#67](@ref)
 *  New solver for simulating conduction in solids [#65](@ref)
 *  New LES turbulent kinetic energy one equation model (`KEquation`) [#71](@ref)
+*  Surface tension model for fluids [#72](@ref)
+*  High fidelity viscosity models for H2 and N2 [#72](@ref)
+*  High fidelity thermal conductivity models for H2 and N2 [#72](@ref)
+*  `SetFields` utility that allows to set a field to desired value within a box / circle / sphere [#73](@ref)
+*  Helmholtz Energy equation of state and supporting framework for it for H2 and N2 [#75](@ref)
+
 
 ### Fixed
 * The `UNV3D_mesh` reader has been updated to ensure that the ordering of face nodes is determined in a more robust manner. This resolves some issues when loading a `UNV` mesh that is later used to store simulation results in the `OpenFOAM` format [#64](@ref)
@@ -20,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * The constructors for `ScalarField` and `FaceScalarField` now include a `store_mesh` keyword argument to request a reference of the mesh to be stored (default) or not (setting `store_mesh=false`). This can be used to not include references to the mesh for each field in `VectorFields` and `TensorFields`. This has improved compile times and decreased simulation times (particularly on the GPU - perhaps due to freeing registers used to carry unnecessary type information) [#69](@ref)
 * Internally, the calculation of interpolation weights and other geometric properties are calculated using the same function (defined in the `Mesh` module) [#69](@ref)
 * The default discretisation for laplacian terms uses the over-relaxed formulation by default. This will have no effect on orthogonal grids, but tends to be more robust in complex geometries at the expense of accuracy, which can be recovered by adding additional orthogonal correction loops (using the key word argument `ncorrectors` in the `run!` function) [#73](@ref)
+* Cleaned code for all solvers and improved stability of incompressible solver by removing the update of the mass flow based on the velocity field from the previous iteration. The mass flow is now corrected directly from the latest pressure solution [#76](@ref)
 
 ### Breaking
 * No breaking changes

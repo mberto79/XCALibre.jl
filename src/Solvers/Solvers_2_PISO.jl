@@ -82,7 +82,7 @@ function PISO(
     R_uy = ones(TF, iterations)
     R_uz = ones(TF, iterations)
     R_p = ones(TF, iterations)
-    cellsCourant =adapt(backend, zeros(TF, length(mesh.cells)))
+    cellsCourant = KernelAbstractions.zeros(backend, TF, n_cells)
     
     # Initial calculations
     time = zero(TF) # assuming time=0
@@ -162,9 +162,6 @@ function PISO(
             # flux!(mdotf, Uf, config) # old approach
 
             # new approach
-            interpolate!(Uf, U, config) # velocity from momentum equation
-            correct_boundaries!(Uf, U, boundaries.U, time, config)
-            flux!(mdotf, Uf, config)
             correct_mass_flux(mdotf, p, rDf, config)
             correct_velocity!(U, Hv, ∇p, rD, config)
 
@@ -175,9 +172,6 @@ function PISO(
     turbulence!(turbulenceModel, model, S, prev, time, config) 
     update_nueff!(nueff, nu, model.turbulence, config)
 
-    # if typeof(mesh) <: Mesh3
-    #     residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
-    # end
     maxCourant = max_courant_number!(cellsCourant, model, config)
 
     R_ux[iteration] = rx

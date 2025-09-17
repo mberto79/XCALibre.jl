@@ -47,7 +47,7 @@ function calculate_field_property!(f::Vector, model,iter::Integer,n_iterations::
     calculate_field_property!.(f::Vector,Ref(model),Ref(iter),Ref(n_iterations))
 end
 
-function calculate_field_property!(f::NamedTuple{()}, model, iter::Integer,n_iterations)
+function calculate_field_property!(nothing,iter::Integer,n_iterations::Integer)
     return nothing
 end
 """

@@ -31,7 +31,7 @@ config = Configuration(
     runtime::RT
     hardware::HW
     boundaries::BC
-    postprocess::PP = NamedTuple()
+    postprocess::PP = nothing
 end
 Adapt.@adapt_structure Configuration
 

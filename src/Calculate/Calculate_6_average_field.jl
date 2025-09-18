@@ -2,8 +2,8 @@ export calculate_field_property!
 export FieldAverage
 @kwdef struct FieldAverage{T<:AbstractField,S<:String,I}
     field::T
-    mean::T
     name::S
+    mean::T
     start::I
     stop::I
     write_interval::I
@@ -11,7 +11,7 @@ end
 
 """
     FieldAverage(model, path; start::Integer,stop::Integer,write_interval::Integer)
-Constructor to allocate memory to store the averaged field over the averaging window (in terms of iterations). 
+Constructor to allocate memory to store the averaged field over the averaging window (in terms of iterations). Once created, this just needs to be passed to the `Configuration` object as an argument with keyword `postprocess``
 
 ## Input arguments 
 - `field` the `VectorField` or `ScalarField` to be averaged, e.g , `model.momentum.U`.
@@ -34,18 +34,19 @@ function FieldAverage(field;name::String,start::Integer=1,stop::Integer=typemax(
     else
         throw(ArgumentError("Unsupported field type: $(typeof(field))"))
     end
-    return FieldAverage(field=field,mean=storage,name=name,start=start,stop=stop,write_interval=write_interval)
+    return FieldAverage(field=field,name=name,mean=storage,start=start,stop=stop,write_interval=write_interval)
 end
 
-function calculate_field_property!(f::FieldAverage,iter::Integer,n_iterations::Integer)# add a write interval 
+function calculate_field_property!(f::FieldAverage,iter::Integer,n_iterations::Integer) 
     _update_over_averaging_window!(f,f.field,iter,n_iterations)
-    return f.name,f.mean
+    return ((f.name,f.mean),)
 end
 function calculate_field_property!(f::Vector,iter::Integer,n_iterations::Integer)
-    calculate_field_property!.(f,Ref(iter),Ref(n_iterations))
+    vector_of_tuples = calculate_field_property!.(f,Ref(iter),Ref(n_iterations))
+    return Tuple(first.(vector_of_tuples))
 end
 
-calculate_field_property!(::nothing,::Integer,::Integer) = nothing
+calculate_field_property(::Nothing,::Integer,::Integer) = nothing
 
 function _update_over_averaging_window!(f::FieldAverage,current_field::VectorField,iter::Integer,n_iterations::Integer)
     eff_stop = min(f.stop, n_iterations)

@@ -191,12 +191,13 @@ function PISO(
             ]
         )
 
-    args = Tuple(calculate_field_property!(postprocess,iteration,iterations))
+    args = calculate_field_property!(postprocess,iteration,iterations)
 
     if iteration%write_interval + signbit(write_interval) == 0
         # save_output(model, outputWriter, iteration, time, config,args=("Mean Ux", postprocess.field))
         save_output(model, outputWriter, iteration, time, config)
         save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries,args...)
+        # @info "args is $args"
     end
 
     end # end for loop

@@ -8,7 +8,7 @@ export FieldRMS
     stop::Integer
     write_interval::Integer
 end  
-
+#this needs to be updated so that the field rms is computed every write_interval
 #This creates the memory for the FieldRMS 
 """
     FieldRMS(model, path; start::Integer,stop::Integer,write_interval::Integer)

@@ -2,7 +2,8 @@ export save_postprocessing
 
 function save_postprocessing(postprocess, iteration, time, mesh, meshData, BCs, args...)
     postprocess === nothing && return nothing
-    suffix = "_" * string(postprocess.field)  
+    # suffix = "_" * string(postprocess.name)  
+    suffix = "_postprocessed"   
     write_results(iteration, time, mesh, meshData, BCs, args...; suffix=suffix)
 end
 

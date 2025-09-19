@@ -78,10 +78,6 @@ function _update_over_averaging_window!(avg::FieldAverage,field::ScalarField,ite
     return nothing 
 end
 
-"""
-    _update_running_mean!(stored_field_vals, current_vals, n)
-Internal helper: updates `stored_field_vals` **in place** to be the running mean after `n` samples, using the latest values in `current_vals`
-"""
 function _update_running_mean!(stored_field_vals, current_vals, n)
     a = 1.0 / n 
     b = 1.0 - a

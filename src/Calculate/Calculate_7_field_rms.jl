@@ -9,10 +9,17 @@ export FieldRMS
     stop::I
     write_interval::I
 end  
-#this needs to be updated so that the field rms is computed every write_interval
 """
-    FieldRMS(model; name::String, start::Integer,stop::Integer,write_interval::Integer)
-Constructor to allocate memory to store the root mean square of the fluctuations of a field over the averaging window (in terms of iterations). 
+    FieldRMS(
+    #required arguments
+    field;
+    name::String,
+
+    #optional keyword arguments
+    start::Integer,
+    stop::Integer,
+    write_interval::Integer)
+Constructor to allocate memory to store the root mean square of the fluctuations of a field over the averaging window (in terms of iterations). Once created, should be passed to the `Configuration` object as an argument with keyword `postprocess`
 
 ## Input arguments 
 - `field` the `VectorField` or `ScalarField`, e.g , `model.momentum.U`.
@@ -27,7 +34,7 @@ Constructor to allocate memory to store the root mean square of the fluctuations
 function FieldRMS(field;name::String,start::Integer=1,stop::Integer=typemax(Int),write_interval::Integer=1)
     start > 0      || throw(ArgumentError("Start iteration must be a positive value (got $start)"))
     stop  > 0      || throw(ArgumentError("Stop iteration must be a positive value (got $stop)"))
-    stop  > start  || throw(ArgumentError("Stop iteration($stop) must be greater than start ($start) iteration"))
+    stop  >= start  || throw(ArgumentError("Stop iteration($stop) must be greater than start ($start) iteration"))
     write_interval >= 1 || throw(ArgumentError("write interval must be ≥1 (got $write_interval)")) 
     if field isa ScalarField
         mean = ScalarField(field.mesh)
@@ -45,19 +52,6 @@ end
 
 
 
-
-# specialised entry points — one tiny method per component
-#This updates the RMS from inside the solver loop 
-"""
-    calculate_field_property!(f::NamedTuple,  model, iter::Integer, n_iterations::Integer) -> nothing
-
-Internal helper used inside solver loops (PISO / SIMPLE / CPISO, etc.).
-
-Updates the running mean stored in `f.field` for the target field at
-`model.(f.path...)` **only if** the current iteration `iter` lies within the
-inclusive averaging window `fa.start : min(fa.stop, n_iterations)`. 
-
-"""
 function calculate_field_property!(f::FieldRMS,iter::Integer,n_iterations::Integer)
     _update_RMS!(f,f.field,iter,n_iterations)
     return ((f.name,f.rms),)
@@ -66,9 +60,6 @@ end
 #this updates the values stored in the RMS struct depending on the type of field that is passed to it
 function _update_RMS!(f::FieldRMS, current_field::ScalarField, iter::Integer, n_iterations::Integer)
     eff_stop = min(f.stop, n_iterations)
-    #create memory for a squared version of the field
-    # current_field_sq = ScalarField(model.domain)
-    # current_field_sq.values .= current_field.values .^2
     if iter >= f.start && iter <= eff_stop && (mod(iter - f.start, f.write_interval) == 0)
         n = div(iter - f.start,f.write_interval) + 1
         _update_running_mean!(f.mean.values, current_field.values, n)
@@ -81,35 +72,22 @@ function _update_RMS!(f::FieldRMS, current_field::ScalarField, iter::Integer, n_
     end
     return nothing
 end
-function _update_RMS!(f::FieldRMS,model, current_field::VectorField, iter::Integer, n_iterations::Integer)
+function _update_RMS!(f::FieldRMS, current_field::VectorField, iter::Integer, n_iterations::Integer)
     eff_stop = min(f.stop, n_iterations)
-    #create memory for a squared version of the field
-    current_field_sq = VectorField(model.domain)
-    current_field_sq.x.values .= current_field.x.values .^2
-    current_field_sq.y.values .= current_field.y.values .^2
-    current_field_sq.z.values .= current_field.z.values .^2
     if iter >= f.start && iter <= eff_stop && (mod(iter - f.start, f.write_interval) == 0)
-        n = iter - f.start + 1
-        #ADD the x y z versions of this and it should be done 
+        n = div(iter - f.start,f.write_interval) + 1
         _update_running_mean!(f.mean.x.values, current_field.x.values, n)
-        _update_running_mean!(f.mean_sq.x.values, current_field_sq.x.values,n)
+        _update_running_mean!(f.mean_sq.x.values, current_field.x.values .^2,n)
         _update_running_mean!(f.mean.y.values, current_field.y.values, n)
-        _update_running_mean!(f.mean_sq.y.values, current_field_sq.y.values,n)
+        _update_running_mean!(f.mean_sq.y.values, current_field.y.values .^2,n)
         _update_running_mean!(f.mean.z.values, current_field.z.values, n)
-        _update_running_mean!(f.mean_sq.z.values, current_field_sq.z.values,n)
+        _update_running_mean!(f.mean_sq.z.values, current_field.z.values .^2,n)
 
-        if iter == eff_stop
-            u_x_mean = f.mean.x.values
-            uu_x_mean = f.mean_sq.x.values
-            u_y_mean = f.mean.y.values
-            uu_y_mean = f.mean_sq.y.values
-            u_z_mean = f.mean.z.values
-            uu_z_mean = f.mean_sq.z.values
-            z = zero(eltype(f.rms.x.values))
-            @. f.rms.x.values = sqrt(max(uu_x_mean - u_x_mean^2, z)) 
-            @. f.rms.y.values = sqrt(max(uu_y_mean - u_y_mean^2, z)) 
-            @. f.rms.z.values = sqrt(max(uu_z_mean - u_z_mean^2, z)) 
-        end
+        z = zero(eltype(f.rms.x.values))
+        @. f.rms.x.values = sqrt(max(f.mean_sq.x.values - f.mean.x.values^2, z)) 
+        @. f.rms.y.values = sqrt(max(f.mean_sq.y.values - f.mean.y.values^2, z)) 
+        @. f.rms.z.values = sqrt(max(f.mean_sq.z.values - f.mean.z.values^2, z)) 
+        
     end
     return nothing
 end

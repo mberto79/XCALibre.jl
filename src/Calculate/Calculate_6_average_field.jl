@@ -10,8 +10,17 @@ export FieldAverage
 end
 
 """
-    FieldAverage(model, path; start::Integer,stop::Integer,write_interval::Integer)
-Constructor to allocate memory to store the averaged field over the averaging window (in terms of iterations). Once created, this just needs to be passed to the `Configuration` object as an argument with keyword `postprocess``
+    FieldAverage(
+    #required arguments
+    field;
+    name::String,
+
+    #optional keyword arguments
+    start::Integer,
+    stop::Integer,
+    write_interval::Integer)
+
+Constructor to allocate memory to store the averaged field over the averaging window (in terms of iterations). Once created, should be passed to the `Configuration` object as an argument with keyword `postprocess`
 
 ## Input arguments 
 - `field` the `VectorField` or `ScalarField` to be averaged, e.g , `model.momentum.U`.

@@ -13,13 +13,35 @@ XCALibre.jl can output simulation results to either `VTK` compliant formats or `
     A limitation of the current `VTK` writers in XCALibre.jl is that boundary information is stored along with internal mesh cell information, and results are stored at cell centres only. Thus, care must be taken when visualising results at boundary faces. Boundary information for `fixedValue` boundaries is displayed corrently when the results are saved in the `OpenFOAM` format. 
 
 ## Available functions
----
 
-Although [ParaView](https://www.paraview.org/) offers considerable flexibility for postprocessing results, users may also wish to carry out more advanced or different analyses on their CFD results. At present XCALibre.jl offers a limited set of pre-defined postprocessing functions, however, defining new custom postprocessing functions is reasonably straight-forward since these can be written in pure Julia. In this section, examples of postprocessing functions will be provided as an illustration. 
+Although [ParaView](https://www.paraview.org/) offers considerable flexibility for postprocessing results, users may also wish to carry out more advanced or different analyses on their CFD results. At present XCALibre.jl offers a limited set of built-in runtime postprocessing functions, currently these include time averaging a scalar or vector field over a specified range of iterations, and also the root mean square (RMS) of the fluctuations of a field. 
+### Example: Calculate time averaged field 
+As an example, to average any Scalar or Vector field an instance of `FieldAverage` must be created.
+```@docs; canonical=false
+FieldAverage
+```
+Once created this is simply passed to the `Configuration` object as an extra argument with the keyword `postprocess`. For example to average the velocity field over the whole simulation, 
+```julia
+postprocess = FieldAverage(model.momentum.U,name="U_mean")
+config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs,postprocess=postprocess)
+```
+The rest of the case would remain exactly the same. 
+### Example: Calculate field RMS 
+The RMS of a Scalar of Vector field can be obtained in a similar way to the time averaged field, instead an instance of `FieldRMS` is created which has the following definition. 
+```@docs; canonical=false
+FieldRMS
+```
+The RMS of the velocity field can be easily calculated by creating an instance of `FieldRMS` and passing it to the `Configuration` object with the keyword `postprocess`, with the rest of the case remaining unchanged.
+```julia
+postprocess = FieldRMS(model.momentum.U,name="U_rms")
+config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs,postprocess=postprocess)
+```
+
+If more functionality is required, defining new custom postprocessing functions is reasonably straight-forward since these can be written in pure Julia. In this section, examples of postprocessing functions will be provided as an illustration. 
 
 !!! note
 
-    At present all postprocessing functions available in XCALibre.jl will only execute on CPUs and should be considered experimental. Once we settle on a "sensible" (maintainable and extensible) API, we plan to offer a larger selection of postprocessing tools  which are likely to include options for runtime postprocessing.
+    At present all postprocessing functions available in XCALibre.jl shown below will only execute on CPUs and should be considered experimental. Once we settle on a "sensible" (maintainable and extensible) API, we plan to offer a larger selection of postprocessing tools  which are likely to include options for runtime postprocessing.
 
 ### Example: Calculate boundary average
 

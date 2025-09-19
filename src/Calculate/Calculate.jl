@@ -28,7 +28,5 @@ include("Calculate_2_interpolation.jl")
 include("Calculate_3_orthogonality_correction.jl")
 include("Calculate_4_wall_distance.jl")
 include("Calculate_5_surface_normal_gradient.jl")
-include("Calculate_6_average_field.jl")
-include("Calculate_7_field_rms.jl")
 
 end

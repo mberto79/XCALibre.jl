@@ -22,7 +22,7 @@ FieldAverage
 ```
 Once created this is simply passed to the `Configuration` object as an extra argument with the keyword `postprocess`. For example to average the velocity field over the whole simulation, 
 ```julia
-postprocess = FieldAverage(model.momentum.U,name="U_mean")
+postprocess = FieldAverage(model.momentum.U; name="U_mean")
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs,postprocess=postprocess)
 ```
 The rest of the case would remain exactly the same. 
@@ -33,7 +33,7 @@ FieldRMS
 ```
 The RMS of the velocity field can be easily calculated by creating an instance of `FieldRMS` and passing it to the `Configuration` object with the keyword `postprocess`, with the rest of the case remaining unchanged.
 ```julia
-postprocess = FieldRMS(model.momentum.U,name="U_rms")
+postprocess = FieldRMS(model.momentum.U; name="U_rms")
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs,postprocess=postprocess)
 ```
 

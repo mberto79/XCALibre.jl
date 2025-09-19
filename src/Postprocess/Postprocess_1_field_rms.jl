@@ -52,41 +52,41 @@ end
 
 
 
-function calculate_field_property!(f::FieldRMS,iter::Integer,n_iterations::Integer)
-    _update_RMS!(f,f.field,iter,n_iterations)
-    return ((f.name,f.rms),)
+function calculate_postprocessing!(RMS::FieldRMS,iter::Integer,n_iterations::Integer)
+    _update_RMS!(RMS,RMS.field,iter,n_iterations)
+    return ((RMS.name,RMS.rms),)
 end
 
 #this updates the values stored in the RMS struct depending on the type of field that is passed to it
-function _update_RMS!(f::FieldRMS, current_field::ScalarField, iter::Integer, n_iterations::Integer)
-    eff_stop = min(f.stop, n_iterations)
-    if iter >= f.start && iter <= eff_stop && (mod(iter - f.start, f.write_interval) == 0)
-        n = div(iter - f.start,f.write_interval) + 1
-        _update_running_mean!(f.mean.values, current_field.values, n)
-        _update_running_mean!(f.mean_sq.values, current_field.values .^2 ,n)
+function _update_RMS!(RMS::FieldRMS, current_field::ScalarField, iter::Integer, n_iterations::Integer)
+    eff_stop = min(RMS.stop, n_iterations)
+    if iter >= RMS.start && iter <= eff_stop && (mod(iter - RMS.start, RMS.write_interval) == 0)
+        n = div(iter - RMS.start,RMS.write_interval) + 1
+        _update_running_mean!(RMS.mean.values, current_field.values, n)
+        _update_running_mean!(RMS.mean_sq.values, current_field.values .^2 ,n)
 
-        u_mean  = f.mean.values
-        uu_mean = f.mean_sq.values
-        z = zero(eltype(f.rms.values))
-        @. f.rms.values = sqrt(max(uu_mean - u_mean^2, z))
+        u_mean  = RMS.mean.values
+        uu_mean = RMS.mean_sq.values
+        z = zero(eltype(RMS.rms.values))
+        @. RMS.rms.values = sqrt(max(uu_mean - u_mean^2, z))
     end
     return nothing
 end
-function _update_RMS!(f::FieldRMS, current_field::VectorField, iter::Integer, n_iterations::Integer)
-    eff_stop = min(f.stop, n_iterations)
-    if iter >= f.start && iter <= eff_stop && (mod(iter - f.start, f.write_interval) == 0)
-        n = div(iter - f.start,f.write_interval) + 1
-        _update_running_mean!(f.mean.x.values, current_field.x.values, n)
-        _update_running_mean!(f.mean_sq.x.values, current_field.x.values .^2,n)
-        _update_running_mean!(f.mean.y.values, current_field.y.values, n)
-        _update_running_mean!(f.mean_sq.y.values, current_field.y.values .^2,n)
-        _update_running_mean!(f.mean.z.values, current_field.z.values, n)
-        _update_running_mean!(f.mean_sq.z.values, current_field.z.values .^2,n)
+function _update_RMS!(RMS::FieldRMS, current_field::VectorField, iter::Integer, n_iterations::Integer)
+    eff_stop = min(RMS.stop, n_iterations)
+    if iter >= RMS.start && iter <= eff_stop && (mod(iter - RMS.start, RMS.write_interval) == 0)
+        n = div(iter - RMS.start,RMS.write_interval) + 1
+        _update_running_mean!(RMS.mean.x.values, current_field.x.values, n)
+        _update_running_mean!(RMS.mean_sq.x.values, current_field.x.values .^2,n)
+        _update_running_mean!(RMS.mean.y.values, current_field.y.values, n)
+        _update_running_mean!(RMS.mean_sq.y.values, current_field.y.values .^2,n)
+        _update_running_mean!(RMS.mean.z.values, current_field.z.values, n)
+        _update_running_mean!(RMS.mean_sq.z.values, current_field.z.values .^2,n)
 
-        z = zero(eltype(f.rms.x.values))
-        @. f.rms.x.values = sqrt(max(f.mean_sq.x.values - f.mean.x.values^2, z)) 
-        @. f.rms.y.values = sqrt(max(f.mean_sq.y.values - f.mean.y.values^2, z)) 
-        @. f.rms.z.values = sqrt(max(f.mean_sq.z.values - f.mean.z.values^2, z)) 
+        z = zero(eltype(RMS.rms.x.values))
+        @. RMS.rms.x.values = sqrt(max(RMS.mean_sq.x.values - RMS.mean.x.values^2, z)) 
+        @. RMS.rms.y.values = sqrt(max(RMS.mean_sq.y.values - RMS.mean.y.values^2, z)) 
+        @. RMS.rms.z.values = sqrt(max(RMS.mean_sq.z.values - RMS.mean.z.values^2, z)) 
         
     end
     return nothing

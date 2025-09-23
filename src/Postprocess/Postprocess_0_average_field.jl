@@ -33,7 +33,6 @@ Constructor to allocate memory to store the averaged field over the averaging wi
 """
 function FieldAverage(field;name::String,start::Integer=1,stop::Integer=typemax(Int),write_interval::Integer=1)
     start > 0      || throw(ArgumentError("Start iteration must be a positive value (got $start)"))
-    stop  > 0      || throw(ArgumentError("Stop iteration must be a positive value (got $stop)"))
     stop  > start  || throw(ArgumentError("Stop iteration($stop) must be greater than start ($start) iteration"))
     write_interval >= 1 || throw(ArgumentError("write interval must be ≥1 (got $write_interval)"))
     if field isa ScalarField
@@ -55,7 +54,7 @@ function calculate_postprocessing!(avg::Vector,iter::Integer,n_iterations::Integ
     return Tuple(first.(vector_of_tuples))
 end
 
-calculate_postprocessing(::Nothing,::Integer,::Integer) = nothing
+calculate_postprocessing!(::Nothing,::Integer,::Integer) = ()
 
 function _update_over_averaging_window!(avg::FieldAverage,current_field::VectorField,iter::Integer,n_iterations::Integer)
     eff_stop = min(avg.stop, n_iterations)

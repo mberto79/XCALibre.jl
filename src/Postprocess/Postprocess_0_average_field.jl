@@ -33,7 +33,7 @@ Constructor to allocate memory to store the averaged field over the averaging wi
 """
 function FieldAverage(field;name::String,start::Integer=1,stop::Integer=typemax(Int),write_interval::Integer=1)
     start > 0      || throw(ArgumentError("Start iteration must be a positive value (got $start)"))
-    stop  > start  || throw(ArgumentError("Stop iteration($stop) must be greater than start ($start) iteration"))
+    stop  >= start  || throw(ArgumentError("Stop iteration($stop) must be greater than or equal to start ($start) iteration"))
     write_interval >= 1 || throw(ArgumentError("write interval must be ≥1 (got $write_interval)"))
     if field isa ScalarField
         storage = ScalarField(field.mesh) 

@@ -1,5 +1,5 @@
 using XCALibre
-
+using StaticArrays
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "cylinder_d10mm_5mm.unv"
@@ -21,8 +21,6 @@ noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
 Re = (0.2*velocity[1])/nu
 δt = 0.0025
-iterations = 10000
-total_time = iterations*δt
 
 @inline inflow(vec, t, i) = begin
     vx = 0.25

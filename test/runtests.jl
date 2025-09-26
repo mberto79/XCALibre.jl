@@ -2,6 +2,7 @@ using XCALibre
 using LinearAlgebra
 using SparseArrays
 using SparseMatricesCSR
+using StaticArrays 
 using Test
 
 BLAS.set_num_threads(1)

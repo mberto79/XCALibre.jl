@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * In the construction of a `Physics` object, the `boundary_map` function returned a `boundary_info` struct which was incorrectly using an abstract type `Integer`. This resulted in a failure to convert a `Physics` object to the cpu and back to the gpu [#67](@ref)
 * Fixed calculation of interpolation weights for 2D UNV grids [#68](@ref)
 * Added method for boundary interpolation when using `LUST` and `DirichletFunction`[#68](@ref)
+* Fixed `boundary_interpolation` for `DirichletFunction` when a function is passed [#79](@ref)
   
 ### Changed
 * The constructors for `ScalarField` and `FaceScalarField` now include a `store_mesh` keyword argument to request a reference of the mesh to be stored (default) or not (setting `store_mesh=false`). This can be used to not include references to the mesh for each field in `VectorFields` and `TensorFields`. This has improved compile times and decreased simulation times (particularly on the GPU - perhaps due to freeing registers used to carry unnecessary type information) [#69](@ref)

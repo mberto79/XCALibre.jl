@@ -1,5 +1,6 @@
 using XCALibre
 using LinearAlgebra
+using StaticArrays
 using SparseArrays
 using SparseMatricesCSR
 using Test

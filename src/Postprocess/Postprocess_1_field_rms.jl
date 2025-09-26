@@ -46,7 +46,8 @@ function FieldRMS(field;name::String,start::Integer=1,stop::Integer=typemax(Int)
     else
         throw(ArgumentError("Unsupported field type: $(typeof(field))"))
     end
-    return FieldRMS(field=field,name=name,mean=mean,mean_sq=mean_sq,rms=rms,start=start,stop=stop,write_interval=write_interval)
+    FieldRMS(field=field,name=name,mean=mean,mean_sq=mean_sq,rms=rms,start=start,stop=stop,write_interval=write_interval)
+    return nothing 
 end
 
 

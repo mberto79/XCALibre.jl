@@ -42,7 +42,8 @@ function FieldAverage(field;name::String,start::Integer=1,stop::Integer=typemax(
     else
         throw(ArgumentError("Unsupported field type: $(typeof(field))"))
     end
-    return FieldAverage(field=field,name=name,mean=storage,start=start,stop=stop,write_interval=write_interval)
+    FieldAverage(field=field,name=name,mean=storage,start=start,stop=stop,write_interval=write_interval)
+    return nothing 
 end
 
 function calculate_postprocessing!(avg::FieldAverage,iter::Integer,n_iterations::Integer) 

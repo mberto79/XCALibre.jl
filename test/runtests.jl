@@ -2,6 +2,7 @@ using XCALibre
 using LinearAlgebra
 using SparseArrays
 using SparseMatricesCSR
+using StaticArrays 
 using Test
 
 BLAS.set_num_threads(1)
@@ -56,6 +57,7 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
             "2d_incompressible_laminar_BFS.jl",
             "2d_incompressible_transient_KOmega_BFS_lowRe.jl",
             "2d_incompressible_transient_laminar_BFS.jl",
+            "2d_incompressible_transient_cylinder_oscillating.jl",
             "3d_incompressible_laminar_BFS.jl",
             "3d_incompressible_laminar_cascade_periodic.jl",
             "2d_incompressible_pitzdaily_KEquation.jl",

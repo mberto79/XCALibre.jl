@@ -42,8 +42,8 @@ function FieldAverage(field;name::String,start::Integer=1,stop::Integer=typemax(
     else
         throw(ArgumentError("Unsupported field type: $(typeof(field))"))
     end
-    FieldAverage(field=field,name=name,mean=storage,start=start,stop=stop,write_interval=write_interval)
-    return nothing 
+    # FieldAverage(field=field,name=name,mean=storage,start=start,stop=stop,write_interval=write_interval)
+    return  FieldAverage(field=field,name=name,mean=storage,start=start,stop=stop,write_interval=write_interval)
 end
 
 function calculate_postprocessing!(avg::FieldAverage,iter::Integer,n_iterations::Integer) 
@@ -68,8 +68,7 @@ function _update_over_averaging_window!(avg::FieldAverage,current_field::VectorF
     return nothing 
 end
 
-function _update_over_averaging_window!(avg::FieldAverage,field::ScalarField,iter::Integer,n_iterations::Integer)
-    current_field = field
+function _update_over_averaging_window!(avg::FieldAverage,current_field::ScalarField,iter::Integer,n_iterations::Integer)
     eff_stop = min(avg.stop, n_iterations)
     if iter >= avg.start && iter <= eff_stop && (mod(iter - avg.start, avg.write_interval) == 0)
         n = div(iter - avg.start,avg.write_interval) + 1

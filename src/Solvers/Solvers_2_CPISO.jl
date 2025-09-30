@@ -143,7 +143,7 @@ function CPISO(
     (; dpdt) = model.energy
     mesh = model.domain
     p_model = p_eqn.model
-    (; solvers, schemes, runtime, hardware, boundaries) = config
+    (; solvers, schemes, runtime, hardware, boundaries,postprocess) = config
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
     

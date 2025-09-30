@@ -120,7 +120,7 @@ function LAPLACE(
 
     (; T, Tf) = model.energy
     (; k, kf, cp, rho, rhocp, rDf) = model.solid
-
+    mesh = model.domain
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware

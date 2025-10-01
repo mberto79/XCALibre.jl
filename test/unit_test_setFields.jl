@@ -6,7 +6,8 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file)
 
-backend = CPU(); workgroup = AutoTune(); activate_multithread(backend)
+# backend = CPU(); workgroup = AutoTune(); activate_multithread(backend)
+backend = CPU(); workgroup = AutoTune()
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)

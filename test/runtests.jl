@@ -3,9 +3,15 @@ using LinearAlgebra
 using SparseArrays
 using SparseMatricesCSR
 using StaticArrays 
+using ThreadPinning
 using Test
 
-BLAS.set_num_threads(1)
+# @info "Pinning Threads"
+# pinthreads(:cores)
+
+# @info "Setting BLAS threads to 1"
+# BLAS.set_num_threads(1)
+
 workgroupsize(mesh) = length(mesh.cells) ÷ Threads.nthreads()
 
 TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")

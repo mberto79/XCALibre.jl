@@ -11,7 +11,7 @@ abstract type AbstractPhysicsProperty end
 abstract type AbstractDrag <: AbstractPhysicsProperty end
 
 
-Base.@kwdef struct Drag_SchillerNaumann <: AbstractDrag end
+Base.@kwdef struct Drag_SchillerNaumann <: AbstractDrag end # not actually used yet but would be nice to define drag models in the future
 
 Base.@kwdef struct Gravity{V<:AbstractVector{<:AbstractFloat}} <: AbstractPhysicsProperty
     g::V

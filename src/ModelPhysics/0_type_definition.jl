@@ -4,6 +4,9 @@ export Momentum
 export AbstractTimeModel
 export Transient, Steady
 
+export AbstractEnergyModel
+### Convenient to define earlier (compatability with sources framework)
+
 """
     struct Physics{T,F,SO,M,Tu,E,D,BI}
         time::T
@@ -160,3 +163,7 @@ mutable struct ModelState{T1}
     residuals::T1
     converged::Bool
 end
+
+
+### Convenient to define earlier (compatability with sources framework)
+abstract type AbstractEnergyModel end

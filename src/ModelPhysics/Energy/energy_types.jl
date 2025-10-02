@@ -1,7 +1,8 @@
-export AbstractEnergyModel, Energy
+# export AbstractEnergyModel, Energy
+export Energy
 export Isothermal
 
-abstract type AbstractEnergyModel end
+# abstract type AbstractEnergyModel end
 
 # Models
 

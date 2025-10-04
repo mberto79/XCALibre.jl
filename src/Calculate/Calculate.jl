@@ -18,7 +18,7 @@ using XCALibre.Mesh
 # using XCALibre.Fields
 # using XCALibre.ModelFramework
 # using XCALibre.Discretise
-using XCALibre.Solve
+# using XCALibre.Solve
 
 include("Calculate_0_gradient.jl")
 include("Calculate_0_gradient_cell_limiter.jl")

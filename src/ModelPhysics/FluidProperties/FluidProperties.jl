@@ -14,7 +14,7 @@ using XCALibre.Mesh
 # using XCALibre.ModelFramework
 # using XCALibre.Discretise
 # using XCALibre.ModelPhysics
-using XCALibre.Solve
+# using XCALibre.Solve
 # using XCALibre.IOFormats
 # using XCALibre.Calculate
 

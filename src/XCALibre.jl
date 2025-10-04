@@ -32,7 +32,7 @@ using Reexport
 # @reexport using XCALibre.Fields
 # @reexport using XCALibre.ModelFramework
 # @reexport using XCALibre.Discretise
-@reexport using XCALibre.Solve
+# @reexport using XCALibre.Solve
 # @reexport using XCALibre.Calculate
 # @reexport using XCALibre.ModelPhysics
 # @reexport using XCALibre.Simulate

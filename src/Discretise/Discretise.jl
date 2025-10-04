@@ -1,4 +1,4 @@
-module Discretise
+# module Discretise
 
 using Accessors
 using SparseArrays
@@ -12,10 +12,10 @@ using GPUArrays
 using LinearAlgebra
 using SparseMatricesCSR
 
-using XCALibre.Multithread
+# using XCALibre.Multithread
 using XCALibre.Mesh
-using XCALibre.Fields
-using XCALibre.ModelFramework
+# using XCALibre.Fields
+# using XCALibre.ModelFramework
 # # using XCALibre.Energy
 
 
@@ -52,4 +52,4 @@ include("boundary_conditions/wall.jl")
 include("boundary_conditions/wall_interpolation.jl")
 
 
-end
+# end

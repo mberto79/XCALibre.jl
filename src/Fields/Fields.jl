@@ -1,4 +1,6 @@
-module Fields
+# module Fields
+
+using XCALibre
 
 using Adapt
 using KernelAbstractions
@@ -8,9 +10,9 @@ using SparseArrays
 using StaticArrays
 import KernelAbstractions as KA
 
-using XCALibre.Multithread
+# using XCALibre.Multithread
 using XCALibre.Mesh
 
 include("Fields_0_types.jl")
 
-end
+# end

@@ -1,5 +1,7 @@
 module UNV2
 
+using XCALibre
+
 using StaticArrays
 using LinearAlgebra
 using Setfield

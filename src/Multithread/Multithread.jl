@@ -1,4 +1,6 @@
-module Multithread
+# module Multithread
+
+using XCALibre
 
 export AutoTune
 export _setup
@@ -25,4 +27,4 @@ _setup(backend, workgroup::I, ndrange::I) where {I<: Integer} = begin
     (backend, workgroup, ndrange)
 end
 
-end # end module
+# end # end module

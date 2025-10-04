@@ -8,15 +8,15 @@ import AcceleratedKernels as AK
 using LinearAlgebra
 using SparseMatricesCSR
 
-using XCALibre.Multithread
+# using XCALibre.Multithread
 using XCALibre.Mesh
-using XCALibre.Fields
-using XCALibre.ModelFramework
-using XCALibre.Discretise
-using XCALibre.ModelPhysics
+# using XCALibre.Fields
+# using XCALibre.ModelFramework
+# using XCALibre.Discretise
+# using XCALibre.ModelPhysics
 using XCALibre.Solve
-using XCALibre.IOFormats
-using XCALibre.Calculate
+# using XCALibre.IOFormats
+# using XCALibre.Calculate
 
 include("HelmholtzEnergy/HelmholtzFunctions.jl")
 include("HelmholtzEnergy/Helmholtz_H2.jl")

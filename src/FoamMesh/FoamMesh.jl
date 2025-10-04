@@ -1,5 +1,7 @@
 module FoamMesh
 
+using XCALibre
+
 using StaticArrays
 using LinearAlgebra
 using Accessors
@@ -7,7 +9,7 @@ using Adapt
 using Printf
 using Statistics
 
-using XCALibre.Multithread
+# using XCALibre.Multithread
 using XCALibre.Mesh
 
 include("FoamMesh_0_types.jl")

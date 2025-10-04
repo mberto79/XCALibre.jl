@@ -1,8 +1,10 @@
-module IOFormats
+# module IOFormats
+
+using XCALibre
 
 using XCALibre.Mesh
-using XCALibre.Fields
-using XCALibre.Discretise
+# using XCALibre.Fields
+# using XCALibre.Discretise
 using KernelAbstractions
 using LinearAlgebra
 using StaticArrays
@@ -17,4 +19,4 @@ include("OpenFOAM/OpenFOAM_writer.jl")
 
 include("0_save_postprocessing.jl")
 
-end
+# end

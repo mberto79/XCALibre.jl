@@ -1,4 +1,6 @@
-module Calculate
+# module Calculate
+
+using XCALibre
 
 using StaticArrays
 using SparseArrays
@@ -11,11 +13,11 @@ using GPUArrays
 using LinearAlgebra
 using SparseMatricesCSR
 
-using XCALibre.Multithread
+# using XCALibre.Multithread
 using XCALibre.Mesh
-using XCALibre.Fields
-using XCALibre.ModelFramework
-using XCALibre.Discretise
+# using XCALibre.Fields
+# using XCALibre.ModelFramework
+# using XCALibre.Discretise
 using XCALibre.Solve
 
 include("Calculate_0_gradient.jl")
@@ -29,4 +31,4 @@ include("Calculate_3_orthogonality_correction.jl")
 include("Calculate_4_wall_distance.jl")
 include("Calculate_5_surface_normal_gradient.jl")
 
-end
+# end

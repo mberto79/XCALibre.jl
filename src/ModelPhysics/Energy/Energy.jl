@@ -7,13 +7,13 @@ using StaticArrays
 using LinearAlgebra
 using Adapt
 using XCALibre.Mesh
-using XCALibre.Fields
-using XCALibre.ModelFramework
-using XCALibre.Discretise
-using XCALibre.ModelPhysics
+# using XCALibre.Fields
+# using XCALibre.ModelFramework
+# using XCALibre.Discretise
+# using XCALibre.ModelPhysics
 using XCALibre.Solve
-using XCALibre.Calculate
-using XCALibre.IOFormats
+# using XCALibre.Calculate
+# using XCALibre.IOFormats
 
 include("energy_types.jl")
 

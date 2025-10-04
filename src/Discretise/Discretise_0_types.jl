@@ -30,10 +30,10 @@ abstract type AbstractNeumann <: AbstractBoundary end
 abstract type AbstractWallFunction <: AbstractBoundary end
 abstract type AbstractPhysicalConstraint <: AbstractBoundary end
 
-y_plus_laminar(E, kappa) = begin
-    yL = 11.0; for i ∈ 1:10; yL = log(max(yL*E, 1.0))/kappa; end
-    yL
-end
+# y_plus_laminar(E, kappa) = begin
+#     yL = 11.0; for i ∈ 1:10; yL = log(max(yL*E, 1.0))/kappa; end
+#     yL
+# end
 
 # Kwall function structure and constructor
 struct KWallFunction{I,V,R<:UnitRange} <: AbstractWallFunction

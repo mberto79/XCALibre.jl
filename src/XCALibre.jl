@@ -26,20 +26,20 @@ include("Preprocess/Preprocess.jl")
 include("Mesh/BlockMesher2D/BlockMesher2D.jl")
 
 using Reexport
-@reexport using XCALibre.Multithread
+# @reexport using XCALibre.Multithread
 @reexport using XCALibre.Mesh
 @reexport using XCALibre.FoamMesh
-@reexport using XCALibre.Fields
-@reexport using XCALibre.ModelFramework
-@reexport using XCALibre.Discretise
+# @reexport using XCALibre.Fields
+# @reexport using XCALibre.ModelFramework
+# @reexport using XCALibre.Discretise
 @reexport using XCALibre.Solve
-@reexport using XCALibre.Calculate
-@reexport using XCALibre.ModelPhysics
+# @reexport using XCALibre.Calculate
+# @reexport using XCALibre.ModelPhysics
 @reexport using XCALibre.Simulate
 @reexport using XCALibre.Solvers
 @reexport using XCALibre.Postprocess
 @reexport using XCALibre.Preprocess
-@reexport using XCALibre.IOFormats
+# @reexport using XCALibre.IOFormats
 @reexport using XCALibre.UNV3
 @reexport using XCALibre.UNV2
 @reexport using XCALibre.BlockMesher2D

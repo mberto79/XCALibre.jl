@@ -1,5 +1,7 @@
 module Solve
 
+using XCALibre
+
 using Adapt
 using Krylov
 using Statistics
@@ -15,11 +17,11 @@ using LinearAlgebra
 using SparseMatricesCSR
 using Krylov
 
-using XCALibre.Multithread
+# using XCALibre.Multithread
 using XCALibre.Mesh
-using XCALibre.Fields
-using XCALibre.ModelFramework
-using XCALibre.Discretise
+# using XCALibre.Fields
+# using XCALibre.ModelFramework
+# using XCALibre.Discretise
 
 # using Reexport
 

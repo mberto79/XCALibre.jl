@@ -1,4 +1,6 @@
-module ModelPhysics
+# module ModelPhysics
+
+using XCALibre
 
 using Atomix
 using KernelAbstractions
@@ -10,13 +12,13 @@ import AcceleratedKernels as AK
 using LinearAlgebra
 using SparseMatricesCSR
 
-using XCALibre.Multithread
+# using XCALibre.Multithread
 using XCALibre.Mesh
-using XCALibre.Fields
-using XCALibre.ModelFramework
-using XCALibre.Discretise
+# using XCALibre.Fields
+# using XCALibre.ModelFramework
+# using XCALibre.Discretise
 using XCALibre.Solve
-using XCALibre.Calculate
+# using XCALibre.Calculate
 
 include("0_type_definition.jl")
 include("1_flow_types.jl")
@@ -33,4 +35,4 @@ include("Turbulence/Turbulence.jl")
 include("FluidProperties/FluidProperties.jl")
 
 
-end # end module
+# end # end module

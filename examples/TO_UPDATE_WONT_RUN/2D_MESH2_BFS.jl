@@ -2,8 +2,8 @@ using Plots
 
 using XCALibre.Mesh2D
 using XCALibre.Plotting
-using XCALibre.Discretise
-using XCALibre.Calculate
+# using XCALibre.Discretise
+# using XCALibre.Calculate
 using XCALibre.Models
 using XCALibre.Solvers
 

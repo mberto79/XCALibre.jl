@@ -19,7 +19,7 @@ function XCALibre.Mesh._convert_array!(arr, backend::BACKEND)
     return adapt(GPUARRAY, arr) # using GPUARRAY
 end
 
-import XCALibre.ModelFramework: _nzval, _rowptr, _colval, get_sparse_fields, 
+import XCALibre: _nzval, _rowptr, _colval, get_sparse_fields, 
                                 _build_A, _build_opA
 
 _build_A(backend::BACKEND, i, j, v, n) = begin
@@ -36,7 +36,7 @@ _build_opA(A::SPARSEGPU) = KP.KrylovOperator(A)
     A.nzVal, A.colVal, A.rowPtr
 end
 
-import XCALibre.Solve: _m, _n, update_preconditioner!
+import XCALibre: _m, _n, update_preconditioner!
 
 function sparse_array_deconstructor_preconditioners(arr::SPARSEGPU)
     (; colVal, rowPtr, nzVal, dims) = arr

@@ -5,7 +5,7 @@ using XCALibre.Plotting
 # using XCALibre.Discretise
 # using XCALibre.Calculate
 using XCALibre.Models
-using XCALibre.Solvers
+# using XCALibre.Solvers
 
 using Krylov
 

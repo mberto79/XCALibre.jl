@@ -1,18 +1,17 @@
 export RotatingWall
 
 """
-    RotatingWall <: AbstractDirichlet
+    RotatingWall <: AbstractPhysicalConstraint
 
 RotatingWall boundary condition model for no-slip  for rotating RotatingWalls (rotating around an axis). It has been strictly implemented to work with vectors only. 
 
 # Inputs
-- `ID` represents the name of the boundary given as a symbol (e.g. :inlet). Internally it gets replaced with the boundary index ID
-- `value` should be given as a vector for the velocity e.g. [10,0,0]. For scalar fields such as the pressure the value entry can be omitted or set to zero explicitly.
+- `rpm` provides the rotating speed (internally converted to radian/second)
+- `centre` vector indicating the location of the rotation centre e.g. [0,0,0]
+- `axis` unit vector indicating the rotation axis e.g. [1,0,0]
 
-# Examples
-    RotatingWall(:plate, [0, 0, 0]) # no-slip RotatingWall condition for velocity
-    RotatingWall(:plate) # corresponding definition for scalars, e.g. pressure
-    RotatingWall(:plate, 0) # alternative definition for scalars, e.g. pressure
+# Example
+    RotatingWall(:inner_wall, rpm=100, centre=[0,0,0], axis=[0,0,1])
 """
 struct RotatingWall{I,V,R<:UnitRange} <: AbstractPhysicalConstraint
     ID::I 

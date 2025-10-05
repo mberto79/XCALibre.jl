@@ -50,6 +50,8 @@ include("boundary_conditions/symmetry.jl")
 include("boundary_conditions/symmetry_interpolation.jl")
 include("boundary_conditions/wall.jl")
 include("boundary_conditions/wall_interpolation.jl")
+include("boundary_conditions/rotating_wall.jl")
+include("boundary_conditions/rotating_wall_interpolation.jl")
 
 
 end

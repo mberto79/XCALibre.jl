@@ -1,7 +1,6 @@
 using XCALibre
 using CUDA
 
-# backwardFacingStep_2mm, 5mm or 10mm
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "taylor_couette_200_10.unv"
 mesh_file = joinpath(grids_dir, grid)
@@ -17,7 +16,6 @@ mesh_dev = adapt(backend, mesh)
 rpm = 100
 centre = [0,0,0]
 axis = [0,0,1]
-
 nu = 1e-3
 
 model = Physics(
@@ -52,7 +50,6 @@ solvers = (
     U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), # ILU0GPU, Jacobi, DILU
-        # smoother=JacobiSmoother(domain=mesh_dev, loops=8, omega=1),
         convergence = 1e-7,
         relax       = 0.8,
         rtol = 1e-2
@@ -60,53 +57,21 @@ solvers = (
     p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres(), Cg()
         preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
-        # smoother=JacobiSmoother(domain=mesh_dev, loops=8, omega=1),
         convergence = 1e-7,
         relax       = 0.2,
         rtol = 1e-3
     )
 )
 
-
 runtime = Runtime(
     iterations=5000, time_step=1, write_interval=1000)
 
-# hardware = Hardware(backend=CUDABackend(), workgroup=32)
-hardware = Hardware(backend=backend, workgroup=workgroup)
-
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
-# config = adapt(CUDABackend(), config)
 
 GC.gc()
 
 initialise!(model.momentum.U, [0,0,0])
 initialise!(model.momentum.p, 0.0)
 
-@time residuals = run!(model, config) # 1106 iterations!
-
-# Profiling now 
-GC.gc()
-
-initialise!(model.momentum.U, velocity)
-initialise!(model.momentum.p, 0.0)
-
-# @profview residuals = run!(model, config)
-# @profview_allocs residuals = run!(model, config) sample_rate=0.00025
-
-# @time residuals = run!(model, config)
-
-# GC.gc()
-
-# initialise!(model.momentum.U, velocity)
-# initialise!(model.momentum.p, 0.0)
-
-# @profview residuals = run!(model, config)
-
-# using Plots
-# iterations = runtime.iterations
-# plot(yscale=:log10, ylims=(1e-8,1e-1))
-# plot!(1:iterations, residuals.Ux, label="Ux")
-# plot!(1:iterations, residuals.Uy, label="Uy")
-# plot!(1:iterations, residuals.Uz, label="Uz")
-# plot!(1:iterations, residuals.p, label="p")
+@time residuals = run!(model, config)

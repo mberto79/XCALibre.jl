@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 *  High fidelity thermal conductivity models for H2 and N2 [#72](@ref)
 *  `SetFields` utility that allows to set a field to desired value within a box / circle / sphere [#73](@ref)
 *  Helmholtz Energy equation of state and supporting framework for it for H2 and N2 [#75](@ref)
+*  Added `RotatingWall` velocity boundary condition [#81](@ref)
 
 
 ### Fixed

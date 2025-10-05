@@ -61,7 +61,8 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
             "3d_incompressible_laminar_BFS.jl",
             "3d_incompressible_laminar_cascade_periodic.jl",
             "2d_incompressible_pitzdaily_KEquation.jl",
-            "2d_incompressible_pitzdaily_Smagorinsky.jl"
+            "2d_incompressible_pitzdaily_Smagorinsky.jl",
+            "2d_taylor_couette_laminar.jl"
         ]
 
         for test ∈ test_files

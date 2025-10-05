@@ -54,8 +54,7 @@ end
     flux = J*area/delta
     ap = term.sign[1]*(-flux)
     
-    # vb = SVector{3}(0.0,0.0,0.0) # do not hard-code in next version
-    vb = bc.value(face) # boundary value
+    vb = bc.value(face) # call functor stored in "value"
     vc = phi[cellID]
     vc_n = (vc⋅normal)*normal
     vb_n = (vb⋅normal)*normal
@@ -65,20 +64,10 @@ end
 end
 
 @define_boundary RotatingWall Laplacian{Linear} ScalarField begin
-    # phi = term.phi 
-    # values = get_values(phi, component)
-    # J = term.flux[fID]
-    # (; area, delta) = face 
-    # flux = -J*area/delta
-    # ap = term.sign*(flux)
-    # ap, ap*values[cellID] # original
-    0.0, 0.0 # try this
-    # 0.0, -flux*delta*bc.value # draft implementation to test!
+    0.0, 0.0
 end
 
-# To-do: Add scala scalar variants of RotatingWall BC in next version (currently using Neumann)
-
-@define_boundary RotatingWall Divergence{Linear} VectorField begin # To-do refactor this code for reusability
+@define_boundary RotatingWall Divergence{Linear} VectorField begin
     0.0, 0.0
 end
 

@@ -3,9 +3,32 @@ module XCALibre
 # using Krylov 
 # export Bicgstab(), Cg(), Gmres()
 
+using Accessors
+using Adapt
+using Atomix
+using ILUZero
 using KernelAbstractions; export CPU
-import Adapt: adapt; export adapt
+using Krylov
+using GPUArrays
+using SparseArrays
+using SparseMatricesCSR
+using StaticArrays
+using LinearAlgebra
+using LinearOperators
+using Printf
+using ProgressMeter
+using Statistics
 
+import AcceleratedKernels as AK
+import Adapt: adapt; export adapt
+import Base
+import LinearAlgebra
+import SparseArrays
+import KernelAbstractions as KA
+import KrylovPreconditioners as KP
+
+BLAS.set_num_threads(1)
+LinearAlgebra.BLAS.set_num_threads(1)
 
 include("Multithread/Multithread.jl")
 include("Mesh/Mesh.jl")

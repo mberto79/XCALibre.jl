@@ -1,16 +1,16 @@
 # module Discretise
 
-using Accessors
-using SparseArrays
-using StaticArrays
-using Adapt
-# using CUDA
-using KernelAbstractions
-using Atomix
-using GPUArrays
+# using Accessors
+# using SparseArrays
+# using StaticArrays
+# using Adapt
+# # using CUDA
+# using KernelAbstractions
+# using Atomix
+# using GPUArrays
 
-using LinearAlgebra
-using SparseMatricesCSR
+# using LinearAlgebra
+# using SparseMatricesCSR
 
 # using XCALibre.Multithread
 using XCALibre.Mesh

@@ -1,17 +1,17 @@
 # module Calculate
 
-using XCALibre
+# using XCALibre
 
-using StaticArrays
-using SparseArrays
-using Accessors
-using Adapt
-using Atomix
-using KernelAbstractions
-using GPUArrays
+# using StaticArrays
+# using SparseArrays
+# using Accessors
+# using Adapt
+# using Atomix
+# using KernelAbstractions
+# using GPUArrays
 
-using LinearAlgebra
-using SparseMatricesCSR
+# using LinearAlgebra
+# using SparseMatricesCSR
 
 # using XCALibre.Multithread
 using XCALibre.Mesh

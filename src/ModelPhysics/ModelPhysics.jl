@@ -1,16 +1,16 @@
 # module ModelPhysics
 
-using XCALibre
+# using XCALibre
 
-using Atomix
-using KernelAbstractions
-using Accessors
-using StaticArrays
-using Adapt
-import AcceleratedKernels as AK
+# using Atomix
+# using KernelAbstractions
+# using Accessors
+# using StaticArrays
+# using Adapt
+# import AcceleratedKernels as AK
 
-using LinearAlgebra
-using SparseMatricesCSR
+# using LinearAlgebra
+# using SparseMatricesCSR
 
 # using XCALibre.Multithread
 using XCALibre.Mesh

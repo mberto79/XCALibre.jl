@@ -1,14 +1,14 @@
 # module IOFormats
 
-using XCALibre
+# using XCALibre
 
 using XCALibre.Mesh
 # using XCALibre.Fields
 # using XCALibre.Discretise
-using KernelAbstractions
-using LinearAlgebra
-using StaticArrays
-using Printf
+# using KernelAbstractions
+# using LinearAlgebra
+# using StaticArrays
+# using Printf
 
 include("VTK/VTK_types.jl")
 include("VTK/VTK_writer.jl")

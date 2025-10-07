@@ -2,6 +2,7 @@ using XCALibre
 using LinearAlgebra
 using SparseArrays
 using SparseMatricesCSR
+using StaticArrays 
 using Test
 
 BLAS.set_num_threads(1)
@@ -31,6 +32,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_setFields.jl")
     end
 
+    @testset "Fluid Properties Unit Test" begin
+        include("unit_test_fluidProperties.jl")
+    end
+
     @testset "Laplace Functionality Test" begin
 
         test_files = [
@@ -52,10 +57,12 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
             "2d_incompressible_laminar_BFS.jl",
             "2d_incompressible_transient_KOmega_BFS_lowRe.jl",
             "2d_incompressible_transient_laminar_BFS.jl",
+            "2d_incompressible_transient_cylinder_oscillating.jl",
             "3d_incompressible_laminar_BFS.jl",
             "3d_incompressible_laminar_cascade_periodic.jl",
             "2d_incompressible_pitzdaily_KEquation.jl",
-            "2d_incompressible_pitzdaily_Smagorinsky.jl"
+            "2d_incompressible_pitzdaily_Smagorinsky.jl",
+            "2d_taylor_couette_laminar.jl"
         ]
 
         for test ∈ test_files

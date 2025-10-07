@@ -300,10 +300,6 @@ Extrapolated(name, value)
 - `name` is a symbol providing the boundary name
 - `value` is a scalar defining the gradient normal to the boundary
 
-!!! warning
-
-    At present the Extrapolated boundary should be treated as providing a zero gradient condition only. Internally, a zero gradient value is hard-coded. This behaviour will be extended in the near future to allow arbitrary gradients to be defined.
-
 ### `AbstractPhysicalConstraint` conditions
 
 `Wall` boundary conditions can be used to provide a boundary with a wall constraint. This boundary type, at present, can only be used to define vectors. For scalar quantities in wall regions a `Extrapolated` (zero gradient) should be imposed.
@@ -313,9 +309,9 @@ Wall(name, value)
 - `name` is a symbol providing the boundary name
 - `value` is a vector defining wall velocity e.g. [0, 0, 0]
 
-!!! note
-    
-    Currently, the value provided at the wall is not used internally. This mean that this boundary condition currently acts as a no slip boundary. This will be extended to allow slip boundaries or moving walls.
+```@docs; canonical=false
+RotatingWall
+```
 
 `Symmetry` boundary condition can be used to assign a symmetry constraint to a given boundary patch in the domain. It can be used for both vector and scalar quantities.
 ```julia

@@ -6,7 +6,7 @@ export FieldAverage
     mean::T
     start::I
     stop::I
-    write_interval::I
+    save_interval::I
 end
 
 """
@@ -18,7 +18,7 @@ end
     #optional keyword arguments
     start::Integer,
     stop::Integer,
-    write_interval::Integer)
+    save_interval::Integer)
 
 Constructor to allocate memory to store the averaged field over the averaging window (in terms of iterations). Once created, should be passed to the `Configuration` object as an argument with keyword `postprocess`
 
@@ -28,13 +28,13 @@ Constructor to allocate memory to store the averaged field over the averaging wi
 
 ## Optional arguments
 - `start::Integer` optional keyword which specifies the start iteration of the averaging window. Default value is 1. 
-- `stop::Integer` optional keyword which specifies the end iteration of the averaging window. Default value is typemax(Int) (i.e just an arbitrarily large number). 
-- `write_interval::Integer` optional keyword which specifies how often the averaged field is updated and stored in solver iterations (default value is 1). 
+- `stop::Integer` optional keyword which specifies the end iteration of the averaging window. Default value is the final iteration. 
+- `save_interval::Integer` optional keyword which specifies how often the averaged field is updated and stored in solver iterations (default value is 1). 
 """
-function FieldAverage(field;name::String,start::Integer=1,stop::Integer=typemax(Int),write_interval::Integer=1)
+function FieldAverage(field;name::String,start::Integer=1,stop::Integer=typemax(Int),save_interval::Integer=1)
     start > 0      || throw(ArgumentError("Start iteration must be a positive value (got $start)"))
     stop  >= start  || throw(ArgumentError("Stop iteration($stop) must be greater than or equal to start ($start) iteration"))
-    write_interval >= 1 || throw(ArgumentError("write interval must be ≥1 (got $write_interval)"))
+    save_interval >= 1 || throw(ArgumentError("save interval must be ≥1 (got $save_interval)"))
     if field isa ScalarField
         storage = ScalarField(field.mesh) 
     elseif field isa VectorField
@@ -42,8 +42,7 @@ function FieldAverage(field;name::String,start::Integer=1,stop::Integer=typemax(
     else
         throw(ArgumentError("Unsupported field type: $(typeof(field))"))
     end
-    # FieldAverage(field=field,name=name,mean=storage,start=start,stop=stop,write_interval=write_interval)
-    return  FieldAverage(field=field,name=name,mean=storage,start=start,stop=stop,write_interval=write_interval)
+    return  FieldAverage(field=field,name=name,mean=storage,start=start,stop=stop,save_interval=save_interval)
 end
 
 function calculate_postprocessing!(avg::FieldAverage,iter::Integer,n_iterations::Integer) 
@@ -59,8 +58,8 @@ calculate_postprocessing!(::Nothing,::Integer,::Integer) = ()
 
 function _update_over_averaging_window!(avg::FieldAverage,current_field::VectorField,iter::Integer,n_iterations::Integer)
     eff_stop = min(avg.stop, n_iterations)
-    if iter >= avg.start && iter <= eff_stop && (mod(iter - avg.start, avg.write_interval) == 0)
-        n = div(iter - avg.start,avg.write_interval) + 1
+    if iter >= avg.start && iter <= eff_stop && (mod(iter - avg.start, avg.save_interval) == 0)
+        n = div(iter - avg.start,avg.save_interval) + 1
             _update_running_mean!(avg.mean.x.values,current_field.x.values,n)
             _update_running_mean!(avg.mean.y.values,current_field.y.values,n)
             _update_running_mean!(avg.mean.z.values,current_field.z.values,n)
@@ -70,8 +69,8 @@ end
 
 function _update_over_averaging_window!(avg::FieldAverage,current_field::ScalarField,iter::Integer,n_iterations::Integer)
     eff_stop = min(avg.stop, n_iterations)
-    if iter >= avg.start && iter <= eff_stop && (mod(iter - avg.start, avg.write_interval) == 0)
-        n = div(iter - avg.start,avg.write_interval) + 1
+    if iter >= avg.start && iter <= eff_stop && (mod(iter - avg.start, avg.save_interval) == 0)
+        n = div(iter - avg.start,avg.save_interval) + 1
             _update_running_mean!(avg.mean.values,current_field.values,n)
     end
     return nothing 

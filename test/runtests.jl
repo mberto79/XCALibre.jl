@@ -49,6 +49,12 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         end
     end
 
+    @testset "Post-processing unit Test" begin
+        include("unit_test_field_time_average.jl")
+        include("unit_test_field_rms.jl")
+    end
+
+
     @testset "Incompressible" begin
 
         test_files = [

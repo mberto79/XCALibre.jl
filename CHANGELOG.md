@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 *  High fidelity thermal conductivity models for H2 and N2 [#72](@ref)
 *  `SetFields` utility that allows to set a field to desired value within a box / circle / sphere [#73](@ref)
 *  Helmholtz Energy equation of state and supporting framework for it for H2 and N2 [#75](@ref)
-
+*  Time-average and RMS of Vector and Scalar fields [#78]
 
 ### Fixed
 * The `UNV3D_mesh` reader has been updated to ensure that the ordering of face nodes is determined in a more robust manner. This resolves some issues when loading a `UNV` mesh that is later used to store simulation results in the `OpenFOAM` format [#64](@ref)

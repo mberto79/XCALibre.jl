@@ -82,7 +82,7 @@ solvers = (
 runtime = Runtime(iterations=iterations, time_step=timestep, write_interval=-1)
 hardware = Hardware(backend=backend,workgroup = workgroup)
 
-postprocess = FieldRMS(model.momentum.U;name="U_rms",start=start,write_interval=2)
+postprocess = FieldRMS(model.momentum.U;name="U_rms",start=start,save_interval=2)
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs,postprocess=postprocess)
 
 @test initialise!(model.momentum.U, velocity) === nothing

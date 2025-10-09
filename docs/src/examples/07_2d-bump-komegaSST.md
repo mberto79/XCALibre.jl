@@ -150,6 +150,7 @@ solvers = (
 )
 
 runtime = Runtime(iterations=5000, write_interval=100, time_step=1)
+runtime = Runtime(iterations=1, write_interval=1, time_step=1) #hide
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

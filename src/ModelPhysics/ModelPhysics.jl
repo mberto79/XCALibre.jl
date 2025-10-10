@@ -17,6 +17,7 @@ using XCALibre.ModelFramework
 using XCALibre.Discretise
 using XCALibre.Solve
 using XCALibre.Calculate
+using XCALibre.Simulate
 
 include("0_type_definition.jl")
 include("1_flow_types.jl")

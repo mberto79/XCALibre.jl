@@ -129,7 +129,9 @@ function initialise(
     @reset ω_eqn.solver = _workspace(solvers.omega.solver, _b(ω_eqn))
 
     initial_residual = ((:k, 1.0),(:omega, 1.0))
-    return KOmegaModel(turbulence, k_eqn, ω_eqn, ModelState(initial_residual, false))
+    return KOmegaModel(
+        turbulence, k_eqn, ω_eqn, ModelState(initial_residual, false)
+        ), config
 end
 
 # Model solver call (implementation)

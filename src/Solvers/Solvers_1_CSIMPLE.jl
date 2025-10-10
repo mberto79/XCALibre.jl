@@ -104,7 +104,7 @@ function setup_compressible_solvers(
     energyModel = initialise(model.energy, model, mdotf, rho, p_eqn, config)
 
     @info "Initialising turbulence model..."
-    turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
+    turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals  = solver_variant(
         model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config;

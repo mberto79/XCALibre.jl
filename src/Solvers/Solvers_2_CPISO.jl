@@ -43,7 +43,7 @@ function setup_unsteady_compressible_solvers(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
     ) 
 
-    (; solvers, schemes, runtime, hardware, boundaries) = config
+    (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
 
     @info "Extracting configuration and input fields..."
 
@@ -143,7 +143,7 @@ function CPISO(
     (; dpdt) = model.energy
     mesh = model.domain
     p_model = p_eqn.model
-    (; solvers, schemes, runtime, hardware, boundaries) = config
+    (; solvers, schemes, runtime, hardware, boundaries,postprocess) = config
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
     
@@ -354,9 +354,11 @@ function CPISO(
             energyModel.state.residuals
             ]
         )
+    args = calculate_postprocessing!(postprocess,iteration,iterations)
 
     if iteration%write_interval + signbit(write_interval) == 0
         save_output(model, outputWriter, iteration, time, config)
+        save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries,args...)
     end
 
     end # end for loop

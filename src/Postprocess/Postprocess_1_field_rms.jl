@@ -50,16 +50,9 @@ function FieldRMS(field;name::String,start::Integer=1,stop::Integer=typemax(Int)
 end
 
 
-
-function calculate_postprocessing!(RMS::FieldRMS,iter::Integer,n_iterations::Integer)
-    _update_RMS!(RMS,RMS.field,iter,n_iterations)
-    return ((RMS.name,RMS.rms),)
-end
-
-#this updates the values stored in the RMS struct depending on the type of field that is passed to it
-function _update_RMS!(RMS::FieldRMS, current_field::ScalarField, iter::Integer, n_iterations::Integer)
-    eff_stop = min(RMS.stop, n_iterations)
-    if iter >= RMS.start && iter <= eff_stop && (mod(iter - RMS.start, RMS.save_interval) == 0)
+function calculate_postprocessing!(RMS::FieldRMS{T,S,I},iter::Integer,n_iterations::Integer) where {T<:ScalarField,S,I}
+    if must_write(RMS,iter,n_iterations)
+        current_field = RMS.field
         n = div(iter - RMS.start,RMS.save_interval) + 1
         _update_running_mean!(RMS.mean.values, current_field.values, n)
         _update_running_mean!(RMS.mean_sq.values, current_field.values .^2 ,n)
@@ -69,11 +62,12 @@ function _update_RMS!(RMS::FieldRMS, current_field::ScalarField, iter::Integer, 
         z = zero(eltype(RMS.rms.values))
         @. RMS.rms.values = sqrt(max(uu_mean - u_mean^2, z))
     end
-    return nothing
+    return nothing 
 end
-function _update_RMS!(RMS::FieldRMS, current_field::VectorField, iter::Integer, n_iterations::Integer)
-    eff_stop = min(RMS.stop, n_iterations)
-    if iter >= RMS.start && iter <= eff_stop && (mod(iter - RMS.start, RMS.save_interval) == 0)
+
+function calculate_postprocessing!(RMS::FieldRMS{T,S,I},iter::Integer,n_iterations::Integer) where {T<:VectorField,S,I}
+    if must_write(RMS,iter,n_iterations)
+        current_field = RMS.field
         n = div(iter - RMS.start,RMS.save_interval) + 1
         _update_running_mean!(RMS.mean.x.values, current_field.x.values, n)
         _update_running_mean!(RMS.mean_sq.x.values, current_field.x.values .^2,n)

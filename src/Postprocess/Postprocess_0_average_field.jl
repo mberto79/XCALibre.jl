@@ -45,21 +45,20 @@ function FieldAverage(field;name::String,start::Integer=1,stop::Integer=typemax(
     return  FieldAverage(field=field,name=name,mean=storage,start=start,stop=stop,save_interval=save_interval)
 end
 
-function calculate_postprocessing!(avg::FieldAverage,iter::Integer,n_iterations::Integer) 
-    _update_over_averaging_window!(avg,avg.field,iter,n_iterations)
-    return ((avg.name,avg.mean),)
-end
-function calculate_postprocessing!(avg::Vector,iter::Integer,n_iterations::Integer)
-    vector_of_tuples = calculate_postprocessing!.(avg,Ref(iter),Ref(n_iterations))
-    return Tuple(first.(vector_of_tuples))
-end
-
-calculate_postprocessing!(::Nothing,::Integer,::Integer) = ()
-
-function _update_over_averaging_window!(avg::FieldAverage,current_field::VectorField,iter::Integer,n_iterations::Integer)
-    eff_stop = min(avg.stop, n_iterations)
-    if iter >= avg.start && iter <= eff_stop && (mod(iter - avg.start, avg.save_interval) == 0)
+function calculate_postprocessing!(avg::FieldAverage{T,S,I},iter::Integer,n_iterations::Integer) where {T<:ScalarField,S,I}
+    if must_write(avg,iter,n_iterations)
         n = div(iter - avg.start,avg.save_interval) + 1
+        current_field = avg.field
+        _update_running_mean!(avg.mean.values,current_field.values,n)
+    end
+    return nothing
+end
+
+
+function calculate_postprocessing!(avg::FieldAverage{T,S,I},iter::Integer,n_iterations::Integer) where {T<:VectorField,S,I}
+    if must_write(avg,iter,n_iterations)
+        n = div(iter - avg.start,avg.save_interval) + 1
+        current_field = avg.field
             _update_running_mean!(avg.mean.x.values,current_field.x.values,n)
             _update_running_mean!(avg.mean.y.values,current_field.y.values,n)
             _update_running_mean!(avg.mean.z.values,current_field.z.values,n)
@@ -67,14 +66,13 @@ function _update_over_averaging_window!(avg::FieldAverage,current_field::VectorF
     return nothing 
 end
 
-function _update_over_averaging_window!(avg::FieldAverage,current_field::ScalarField,iter::Integer,n_iterations::Integer)
-    eff_stop = min(avg.stop, n_iterations)
-    if iter >= avg.start && iter <= eff_stop && (mod(iter - avg.start, avg.save_interval) == 0)
-        n = div(iter - avg.start,avg.save_interval) + 1
-            _update_running_mean!(avg.mean.values,current_field.values,n)
-    end
-    return nothing 
+function calculate_postprocessing!(avg::Vector,iter::Integer,n_iterations::Integer)
+    calculate_postprocessing!.(avg,Ref(iter),Ref(n_iterations))
+    return nothing
 end
+
+calculate_postprocessing!(::Nothing,::Integer,::Integer) = ()
+
 
 function _update_running_mean!(stored_field_vals, current_vals, n)
     a = 1.0 / n 
@@ -83,11 +81,9 @@ function _update_running_mean!(stored_field_vals, current_vals, n)
     return nothing 
 end
 
-function must_write(avg::FieldAverage,iter::Integer,n_iterations::Integer)
-    eff_stop = min(avg.stop, n_iterations)
-    if iter >= avg.start && iter <= eff_stop && (mod(iter - avg.start, avg.save_interval) == 0)
-        return true
-    else
-        return false
-    end
+function must_write(field_struct,iter::Integer,n_iterations::Integer)
+    eff_stop = min(field_struct.stop, n_iterations)
+    si = field_struct.save_interval
+    start = field_struct.start
+    iter ∈ start:si:eff_stop
 end

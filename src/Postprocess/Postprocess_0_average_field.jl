@@ -82,3 +82,12 @@ function _update_running_mean!(stored_field_vals, current_vals, n)
     @. stored_field_vals = b * stored_field_vals + a * current_vals 
     return nothing 
 end
+
+function must_write(avg::FieldAverage,iter::Integer,n_iterations::Integer)
+    eff_stop = min(avg.stop, n_iterations)
+    if iter >= avg.start && iter <= eff_stop && (mod(iter - avg.start, avg.save_interval) == 0)
+        return true
+    else
+        return false
+    end
+end

@@ -266,11 +266,11 @@ function SIMPLE(
                 ]
             )
         
-        args = calculate_postprocessing!(postprocess,iteration,iterations)
+        calculate_postprocessing!(postprocess,iteration,iterations)
         
         if iteration%write_interval + signbit(write_interval) == 0      
             save_output(model, outputWriter, iteration, time, config)
-            save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries,args...)
+            save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
         end
 
     end # end for loop

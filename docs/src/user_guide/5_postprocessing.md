@@ -36,12 +36,19 @@ The RMS of the velocity field can be easily calculated by creating an instance o
 postprocess = FieldRMS(model.momentum.U; name="U_rms")
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs,postprocess=postprocess)
 ```
+### Example: Calculate time average and RMS for multiple fields at a time
+To post-process multiple fields as a time, a vector of `FieldAverage` and `FieldRMS` objects can be passed instead e.g. 
+```julia
+postprocess = [FieldRMS(model.momentum.U; name="U_rms"), FieldAverage(model.momentum.U; name ="U_mean"), FieldAverage(model.momentum.p; name ="p_mean")]
+config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs,postprocess=postprocess)
+```
+
 
 If more functionality is required, defining new custom postprocessing functions is reasonably straight-forward since these can be written in pure Julia. In this section, examples of postprocessing functions will be provided as an illustration. 
 
 !!! note
 
-    At present all postprocessing functions available in XCALibre.jl shown below will only execute on CPUs and should be considered experimental. Once we settle on a "sensible" (maintainable and extensible) API, we plan to offer a larger selection of postprocessing tools  which are likely to include options for runtime postprocessing.
+    At present postprocessing functions available in XCALibre.jl shown below will only execute on CPUs and should be considered experimental. Once we settle on a "sensible" (maintainable and extensible) API, we plan to offer a larger selection of postprocessing tools  which are likely to include options for runtime postprocessing.
 
 ### Example: Calculate boundary average
 

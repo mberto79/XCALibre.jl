@@ -1,4 +1,4 @@
-export calculate_postprocessing!
+export calculate_and_save_postprocessing!
 export FieldAverage
 @kwdef struct FieldAverage{T<:AbstractField,S<:String,I}
     field::T
@@ -29,7 +29,7 @@ Constructor to allocate memory to store the averaged field over the averaging wi
 ## Optional arguments
 - `start::Integer` optional keyword which specifies the start iteration of the averaging window. Default value is 1. 
 - `stop::Integer` optional keyword which specifies the end iteration of the averaging window. Default value is the final iteration. 
-- `save_interval::Integer` optional keyword which specifies how often the averaged field is updated and stored in solver iterations (default value is 1). 
+- `save_interval::Integer` optional keyword which specifies how often the averaged field is updated and stored in solver iterations (default value is 1). The writing logic is separate and specified by the `write_interval` in `Configuration`.
 """
 function FieldAverage(field;name::String,start::Integer=1,stop::Integer=typemax(Int),save_interval::Integer=1)
     start > 0      || throw(ArgumentError("Start iteration must be a positive value (got $start)"))
@@ -45,8 +45,8 @@ function FieldAverage(field;name::String,start::Integer=1,stop::Integer=typemax(
     return  FieldAverage(field=field,name=name,mean=storage,start=start,stop=stop,save_interval=save_interval)
 end
 
-function calculate_postprocessing!(avg::FieldAverage{T,S,I},iter::Integer,n_iterations::Integer) where {T<:ScalarField,S,I}
-    if must_write(avg,iter,n_iterations)
+function calculate_and_save_postprocessing!(avg::FieldAverage{T,S,I},iter::Integer,n_iterations::Integer) where {T<:ScalarField,S,I}
+    if must_calculate(avg,iter,n_iterations)
         n = div(iter - avg.start,avg.save_interval) + 1
         current_field = avg.field
         _update_running_mean!(avg.mean.values,current_field.values,n)
@@ -55,8 +55,8 @@ function calculate_postprocessing!(avg::FieldAverage{T,S,I},iter::Integer,n_iter
 end
 
 
-function calculate_postprocessing!(avg::FieldAverage{T,S,I},iter::Integer,n_iterations::Integer) where {T<:VectorField,S,I}
-    if must_write(avg,iter,n_iterations)
+function calculate_and_save_postprocessing!(avg::FieldAverage{T,S,I},iter::Integer,n_iterations::Integer) where {T<:VectorField,S,I}
+    if must_calculate(avg,iter,n_iterations)
         n = div(iter - avg.start,avg.save_interval) + 1
         current_field = avg.field
             _update_running_mean!(avg.mean.x.values,current_field.x.values,n)
@@ -66,12 +66,12 @@ function calculate_postprocessing!(avg::FieldAverage{T,S,I},iter::Integer,n_iter
     return nothing 
 end
 
-function calculate_postprocessing!(avg::Vector,iter::Integer,n_iterations::Integer)
-    calculate_postprocessing!.(avg,Ref(iter),Ref(n_iterations))
+function calculate_and_save_postprocessing!(avg::Vector,iter::Integer,n_iterations::Integer)
+    calculate_and_save_postprocessing!.(avg,Ref(iter),Ref(n_iterations))
     return nothing
 end
 
-calculate_postprocessing!(::Nothing,::Integer,::Integer) = ()
+calculate_and_save_postprocessing!(::Nothing,::Integer,::Integer) = ()
 
 
 function _update_running_mean!(stored_field_vals, current_vals, n)
@@ -81,7 +81,7 @@ function _update_running_mean!(stored_field_vals, current_vals, n)
     return nothing 
 end
 
-function must_write(field_struct,iter::Integer,n_iterations::Integer)
+function must_calculate(field_struct,iter::Integer,n_iterations::Integer)
     eff_stop = min(field_struct.stop, n_iterations)
     si = field_struct.save_interval
     start = field_struct.start

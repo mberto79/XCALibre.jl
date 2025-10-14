@@ -266,7 +266,7 @@ function SIMPLE(
                 ]
             )
         
-        calculate_postprocessing!(postprocess,iteration,iterations)
+        calculate_and_save_postprocessing!(postprocess,iteration,iterations)
         
         if iteration%write_interval + signbit(write_interval) == 0      
             save_output(model, outputWriter, iteration, time, config)

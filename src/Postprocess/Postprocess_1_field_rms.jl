@@ -27,9 +27,9 @@ Constructor to allocate memory to store the root mean square of the fluctuations
 
 
 ## Optional arguments
-- `start::Integer` optional keyword which specifies the start iteration of the averaging window. Default value is 1. 
-- `stop::Integer` optional keyword which specifies the end iteration of the averaging window. Default value is the final iteration. 
-- `save_interval::Integer` optional keyword which specifies how often the averaged field is updated and stored in solver iterations (default value is 1). 
+- `start::Integer` optional keyword which specifies the start iteration of the RMS calculation window. Default value is 1. 
+- `stop::Integer` optional keyword which specifies the end iteration of the RMS calculation window. Default value is the final iteration. 
+- `save_interval::Integer` optional keyword which specifies how often the RMS of the field is updated and stored in solver iterations (default value is 1). The writing logic is separate and specified by the `write_interval` in `Configuration`. 
 """
 function FieldRMS(field;name::String,start::Integer=1,stop::Integer=typemax(Int),save_interval::Integer=1)
     start > 0      || throw(ArgumentError("Start iteration must be a positive value (got $start)"))
@@ -50,8 +50,8 @@ function FieldRMS(field;name::String,start::Integer=1,stop::Integer=typemax(Int)
 end
 
 
-function calculate_postprocessing!(RMS::FieldRMS{T,S,I},iter::Integer,n_iterations::Integer) where {T<:ScalarField,S,I}
-    if must_write(RMS,iter,n_iterations)
+function calculate_and_save_postprocessing!(RMS::FieldRMS{T,S,I},iter::Integer,n_iterations::Integer) where {T<:ScalarField,S,I}
+    if must_calculate(RMS,iter,n_iterations)
         current_field = RMS.field
         n = div(iter - RMS.start,RMS.save_interval) + 1
         _update_running_mean!(RMS.mean.values, current_field.values, n)
@@ -65,8 +65,8 @@ function calculate_postprocessing!(RMS::FieldRMS{T,S,I},iter::Integer,n_iteratio
     return nothing 
 end
 
-function calculate_postprocessing!(RMS::FieldRMS{T,S,I},iter::Integer,n_iterations::Integer) where {T<:VectorField,S,I}
-    if must_write(RMS,iter,n_iterations)
+function calculate_and_save_postprocessing!(RMS::FieldRMS{T,S,I},iter::Integer,n_iterations::Integer) where {T<:VectorField,S,I}
+    if must_calculate(RMS,iter,n_iterations)
         current_field = RMS.field
         n = div(iter - RMS.start,RMS.save_interval) + 1
         _update_running_mean!(RMS.mean.x.values, current_field.x.values, n)

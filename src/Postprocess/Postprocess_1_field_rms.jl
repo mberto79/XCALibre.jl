@@ -50,7 +50,7 @@ function FieldRMS(field; name::AbstractString, start::Real=1, stop::Real=typemax
 end
 
 
-function calculate_and_save_postprocessing!(RMS::FieldRMS{T,S},iter::Integer,n_iterations::Integer) where {T<:ScalarField,S}
+function runtime_postprocessing!(RMS::FieldRMS{T,S},iter::Integer,n_iterations::Integer) where {T<:ScalarField,S}
     if must_calculate(RMS,iter,n_iterations)
         current_field = RMS.field
         n = div(iter - RMS.start,RMS.update_interval) + 1
@@ -65,7 +65,7 @@ function calculate_and_save_postprocessing!(RMS::FieldRMS{T,S},iter::Integer,n_i
     return nothing 
 end
 
-function calculate_and_save_postprocessing!(RMS::FieldRMS{T,S},iter::Integer,n_iterations::Integer) where {T<:VectorField,S}
+function runtime_postprocessing!(RMS::FieldRMS{T,S},iter::Integer,n_iterations::Integer) where {T<:VectorField,S}
     if must_calculate(RMS,iter,n_iterations)
         current_field = RMS.field
         n = div(iter - RMS.start,RMS.update_interval) + 1
@@ -85,10 +85,10 @@ function calculate_and_save_postprocessing!(RMS::FieldRMS{T,S},iter::Integer,n_i
     return nothing
 end
 
-function convert_time_to_iterations(RMS::FieldRMS, model,dt)
+function convert_time_to_iterations(RMS::FieldRMS, model,dt,iterations)
     if model.time === Transient()
         start = Int(ceil(RMS.start / dt))
-        stop = ifelse(RMS.stop == typemax(Int), typemax(Int), floor(Int, RMS.stop / dt))
+        stop = Int(min(RMS.stop,dt*iterations) / dt )
         update_interval = max(1, Int(floor(RMS.update_interval / dt)))
         update_interval >= 1 || throw(ArgumentError("update interval must be ≥1 (got $update_interval)"))
         stop >= start || throw(ArgumentError("After conversion with dt=$dt the RMS calculation window is empty (start = $start, stop = $stop)"))

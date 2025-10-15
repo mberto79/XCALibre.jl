@@ -1,4 +1,4 @@
-export calculate_and_save_postprocessing!
+export runtime_postprocessing!
 export FieldAverage
 export convert_time_to_iterations
 @kwdef struct FieldAverage{T<:AbstractField,S<:AbstractString}
@@ -48,7 +48,7 @@ end
 
 
 
-function calculate_and_save_postprocessing!(avg::FieldAverage{T,S},iter::Integer,n_iterations::Integer) where {T<:ScalarField,S}
+function runtime_postprocessing!(avg::FieldAverage{T,S},iter::Integer,n_iterations::Integer) where {T<:ScalarField,S}
     if must_calculate(avg,iter,n_iterations)
         n = div(iter - avg.start,avg.update_interval) + 1
         current_field = avg.field
@@ -58,7 +58,7 @@ function calculate_and_save_postprocessing!(avg::FieldAverage{T,S},iter::Integer
 end
 
 
-function calculate_and_save_postprocessing!(avg::FieldAverage{T,S},iter::Integer,n_iterations::Integer) where {T<:VectorField,S}
+function runtime_postprocessing!(avg::FieldAverage{T,S},iter::Integer,n_iterations::Integer) where {T<:VectorField,S}
     if must_calculate(avg,iter,n_iterations)
         n = div(iter - avg.start,avg.update_interval) + 1
         current_field = avg.field
@@ -69,12 +69,12 @@ function calculate_and_save_postprocessing!(avg::FieldAverage{T,S},iter::Integer
     return nothing 
 end
 
-function calculate_and_save_postprocessing!(avg::Vector,iter::Integer,n_iterations::Integer)
-    calculate_and_save_postprocessing!.(avg,Ref(iter),Ref(n_iterations))
+function runtime_postprocessing!(avg::Vector,iter::Integer,n_iterations::Integer)
+    runtime_postprocessing!.(avg,Ref(iter),Ref(n_iterations))
     return nothing
 end
 
-calculate_and_save_postprocessing!(::Nothing,::Integer,::Integer) = ()
+runtime_postprocessing!(::Nothing,::Integer,::Integer) = ()
 
 
 function _update_running_mean!(stored_field_vals, current_vals, n)
@@ -91,10 +91,10 @@ function must_calculate(field_struct,iter::Integer,n_iterations::Integer)
     iter ∈ start:interval:eff_stop
 end
 
-function convert_time_to_iterations(avg::FieldAverage, model,dt)
+function convert_time_to_iterations(avg::FieldAverage, model,dt,iterations)
     if model.time === Transient()
         start = Int(ceil(avg.start / dt))
-        stop = ifelse(RMS.stop == typemax(Int), typemax(Int), floor(Int, RMS.stop / dt))
+        stop = Int(min(avg.stop,dt*iterations) / dt )
         update_interval = max(1, Int(ceil(avg.update_interval / dt)))
         update_interval >= 1 || throw(ArgumentError("update interval must be ≥1 (got $update_interval)"))
         stop >= start || throw(ArgumentError("After conversion with dt=$dt the averaging window is empty (start = $start, stop = $stop)"))
@@ -106,8 +106,8 @@ function convert_time_to_iterations(avg::FieldAverage, model,dt)
     end
 end
 
-function convert_time_to_iterations(avg::Vector, model,dt)
-    convert_time_to_iterations.(avg::Vector, Ref(model),Ref(dt))
+function convert_time_to_iterations(avg::Vector, model,dt,iterations)
+    convert_time_to_iterations.(avg::Vector, Ref(model),Ref(dt),Ref(iterations))
 end
 
-convert_time_to_iterations(::Nothing,model,dt) = nothing
+convert_time_to_iterations(::Nothing,model,dt,iterations) = nothing

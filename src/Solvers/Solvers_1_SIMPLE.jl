@@ -118,7 +118,7 @@ function SIMPLE(
     (; iterations, write_interval,dt) = runtime
     (; backend) = hardware
     
-    postprocess = convert_time_to_iterations(postprocess,model,dt)
+    postprocess = convert_time_to_iterations(postprocess,model,dt,iterations)
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)
     rDf = get_flux(p_eqn, 1)
@@ -267,7 +267,7 @@ function SIMPLE(
                 ]
             )
         
-        calculate_and_save_postprocessing!(postprocess,iteration,iterations)
+        runtime_postprocessing!(postprocess,iteration,iterations)
         
         if iteration%write_interval + signbit(write_interval) == 0      
             save_output(model, outputWriter, iteration, time, config)

@@ -126,7 +126,7 @@ function LAPLACE(
     (; backend) = hardware
 
 
-    postprocess = convert_time_to_iterations(postprocess,model,dt)
+    postprocess = convert_time_to_iterations(postprocess,model,dt,iterations)
     @info "Starting LAPLACE loops..."
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
@@ -159,7 +159,7 @@ function LAPLACE(
                 ]
             )
 
-        calculate_and_save_postprocessing!(postprocess,iteration,iterations)
+        runtime_postprocessing!(postprocess,iteration,iterations)
         if iteration%write_interval + signbit(write_interval) == 0      
             save_output(model, outputWriter, iteration, time, config)
             save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)

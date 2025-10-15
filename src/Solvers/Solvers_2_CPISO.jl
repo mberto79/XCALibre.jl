@@ -147,6 +147,7 @@ function CPISO(
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
     
+    postprocess = convert_time_to_iterations(postprocess,model,dt)
     mdotf = get_flux(U_eqn, 2)
     mueff = get_flux(U_eqn, 3)
     mueffgradUt = get_source(U_eqn, 2)

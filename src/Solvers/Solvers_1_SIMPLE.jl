@@ -115,9 +115,10 @@ function SIMPLE(
     (; nu) = model.fluid
     mesh = model.domain
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
-    (; iterations, write_interval) = runtime
+    (; iterations, write_interval,dt) = runtime
     (; backend) = hardware
     
+    postprocess = convert_time_to_iterations(postprocess,model,dt)
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)
     rDf = get_flux(p_eqn, 1)

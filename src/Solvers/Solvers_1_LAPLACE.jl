@@ -126,7 +126,7 @@ function LAPLACE(
     (; backend) = hardware
 
 
-
+    postprocess = convert_time_to_iterations(postprocess,model,dt)
     @info "Starting LAPLACE loops..."
     progress = Progress(iterations; dt=1.0, showspeed=true)
 

@@ -48,7 +48,7 @@ If more functionality is required, defining new custom postprocessing functions 
 
 !!! note
 
-    At present postprocessing functions available in XCALibre.jl shown below will only execute on CPUs and should be considered experimental. Once we settle on a "sensible" (maintainable and extensible) API, we plan to offer a larger selection of postprocessing tools  which are likely to include options for runtime postprocessing.
+    At present the postprocessing functions available in XCALibre.jl shown below will only execute on CPUs and should be considered experimental. Once we settle on a "sensible" (maintainable and extensible) API, we plan to offer a larger selection of postprocessing tools which are likely to include options for runtime postprocessing.
 
 ### Example: Calculate boundary average
 

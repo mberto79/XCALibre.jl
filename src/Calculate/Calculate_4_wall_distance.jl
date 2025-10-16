@@ -7,7 +7,7 @@ function wall_distance!(model, walls, config)
     mesh = model.domain
     # (; y, wallBCs) = model.turbulence
     (; y) = model.turbulence
-    (; solvers, schemes, runtime, hardware) = config
+    (; solvers, schemes, runtime, hardware, postprocess) = config
 
     # set up boundary conditions
     BCs = []
@@ -32,7 +32,10 @@ function wall_distance!(model, walls, config)
     )
 
     updated_boundaries = (; config.boundaries..., y = wallBCs.y)
-    new_config = Configuration(schemes, solvers, runtime, hardware, updated_boundaries)
+    new_config = Configuration(
+        schemes=schemes, solvers=solvers, runtime=runtime, 
+        hardware=hardware, postprocess=postprocess, boundaries=updated_boundaries
+        )
     (; boundaries) = new_config
     
     phi = ScalarField(mesh)

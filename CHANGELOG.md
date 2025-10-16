@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 *  Helmholtz Energy equation of state and supporting framework for it for H2 and N2 [#75](@ref)
 *  Time-average and RMS of Vector and Scalar fields [#78]
 *  Added `RotatingWall` velocity boundary condition [#81](@ref)
+*  Added `KOmegaSST` turbulence model [#82](@ref)
 
 
 ### Fixed

@@ -111,7 +111,7 @@ function initialise(
         magS, 
         k_eqn,
         ModelState(initial_residual, false)
-    )
+    ), config
 end
 
 # Model solver call (implementation)

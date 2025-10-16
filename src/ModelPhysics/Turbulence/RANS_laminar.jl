@@ -29,7 +29,7 @@ end
     function initialise(
         turbulence::Laminar, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
         ) where {T,F,SO,M,Tu,E,D,BI}
-    return LaminarModel()
+    return LaminarModel(), config
 end
 
 Initialisation of turbulent transport equations.
@@ -50,7 +50,7 @@ function initialise(
     turbulence::Laminar, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
     ) where {T,F,SO,M,Tu,E,D,BI}
     state = ModelState((), true) # stores residual and convergence information
-    return LaminarModel(state)
+    return LaminarModel(state), config
 end
 
 # Model solver call (implementation)

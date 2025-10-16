@@ -1,15 +1,31 @@
 export save_postprocessing
 
-function save_postprocessing(
-    field_name, iteration, time, mesh, meshData, BCs, args...)
+function save_postprocessing(postprocess, iteration, time, mesh, meshData, BCs)
+    postprocess === nothing && return nothing
+    # suffix = "_" * string(postprocess.name)  
+    suffix = "_postprocessed"
     
-    field_name = "_"*field_name
-    write_results(iteration, time, mesh, meshData, BCs, args...; suffix=field_name) 
+    args = build_args(postprocess)
+    write_results(iteration, time, mesh, meshData, BCs, args...; suffix=suffix)
+end
+function save_postprocessing(postprocess, iteration, time, mesh, meshData::FOAMWriter, BCs)
+    postprocess === nothing && return nothing
+    args = build_args(postprocess)
+    write_results(iteration, time, mesh, meshData, BCs, args...; suffix=nothing)
 end
 
-function save_postprocessing(
-    field_name, iteration, time, mesh, meshData::FOAMWriter, BCs, args...)
+function build_args(pp)
+    pp === nothing && return ()
+    if hasproperty(pp, :rms)
+        return ((getproperty(pp, :name), getproperty(pp, :rms)),)
+    elseif hasproperty(pp, :mean)
+        return ((getproperty(pp, :name), getproperty(pp, :mean)),)
+    else
+        return ()
+    end
+end
 
-    field_name = nothing # not sure it's needed please check, if not needed remove this line
-    write_results(iteration, time, mesh, meshData, BCs, args...; suffix=nothing)
+function build_args(pp::Vector)
+    vector_of_tuples = build_args.(pp)
+    return Tuple(first.(vector_of_tuples))
 end

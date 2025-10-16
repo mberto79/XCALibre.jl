@@ -120,13 +120,13 @@ function LAPLACE(
 
     (; T, Tf) = model.energy
     (; k, kf, cp, rho, rhocp, rDf) = model.solid
-
-    (; solvers, schemes, runtime, hardware, boundaries) = config
+    mesh = model.domain
+    (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
 
 
-
+    postprocess = convert_time_to_iterations(postprocess,model,dt,iterations)
     @info "Starting LAPLACE loops..."
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
@@ -159,8 +159,10 @@ function LAPLACE(
                 ]
             )
 
+        runtime_postprocessing!(postprocess,iteration,iterations)
         if iteration%write_interval + signbit(write_interval) == 0      
             save_output(model, outputWriter, iteration, time, config)
+            save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
         end
 
     end # end for loop

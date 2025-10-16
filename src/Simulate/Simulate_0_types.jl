@@ -2,11 +2,12 @@ export Configuration
 export Hardware
 
 """
-    @kwdef struct Configuration{SC,SL,RT,HW}
+    @kwdef struct Configuration{SC,SL,RT,HW,PP}
         schemes::SC
         solvers::SL
         runtime::RT
         hardware::HW
+        postprocess::PP = nothing
     end
 
 The `Configuration` type is passed to all flow solvers and provides all the relevant information to run a simulation. 
@@ -18,6 +19,9 @@ The `Configuration` type is passed to all flow solvers and provides all the rele
 - `runtime::NamedTuple` this keyword argument is used to pass runtime information to the flow solvers. See [Runtime and solvers](@ref) for details.
 - `hardware::NamedTuple` this keyword argument is used to pass the hardware configuration and backend settings to the flow solvers. See [Pre-processing](@ref) for details.
 
+# Optional keywords
+
+- `postprocess` this keyword argument is used to pass any fields that need to be post-processed. See [Post-processing](@ref) for details.
 # Example
 
 ```julia
@@ -25,12 +29,13 @@ config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 ```
 """
-@kwdef struct Configuration{SC,SL,RT,HW,BC}
+@kwdef struct Configuration{SC,SL,RT,HW,BC,PP}
     schemes::SC
     solvers::SL
     runtime::RT
     hardware::HW
     boundaries::BC
+    postprocess::PP = nothing
 end
 Adapt.@adapt_structure Configuration
 

@@ -20,8 +20,8 @@ include("Calculate/Calculate.jl")
 include("IOFormats/IOFormats.jl")
 include("ModelPhysics/ModelPhysics.jl")
 include("Simulate/Simulate.jl")
-include("Solvers/Solvers.jl")
 include("Postprocess/Postprocess.jl")
+include("Solvers/Solvers.jl")
 include("Preprocess/Preprocess.jl")
 include("Mesh/BlockMesher2D/BlockMesher2D.jl")
 
@@ -36,8 +36,8 @@ using Reexport
 @reexport using XCALibre.Calculate
 @reexport using XCALibre.ModelPhysics
 @reexport using XCALibre.Simulate
-@reexport using XCALibre.Solvers
 @reexport using XCALibre.Postprocess
+@reexport using XCALibre.Solvers
 @reexport using XCALibre.Preprocess
 @reexport using XCALibre.IOFormats
 @reexport using XCALibre.UNV3

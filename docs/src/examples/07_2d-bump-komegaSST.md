@@ -3,7 +3,7 @@
 # Introduction
 ---
 
-The correct implementation of the k-\omega SST solver in XCALibre.jl has been verified by quantitatively comparing results with those obtained with OpenFOAM. The simulation set up and mesh file used to run the simulation with XCALibre.jl are available in this repository.
+The correct implementation of the ``k-\omega`` SST solver in XCALibre.jl has been verified by quantitatively comparing results with those obtained with OpenFOAM. The simulation set up and mesh file used to run the simulation with XCALibre.jl are available in this repository.
 
 # Simulation setup
 ---

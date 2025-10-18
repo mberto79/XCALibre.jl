@@ -38,6 +38,24 @@ end
         return ac, b
 end
 
+## Crank-Nicholson
+@inline function scheme!(
+    term::Operator{F,P,I,Time{CrankNicolson}}, 
+    nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
+    # nothing
+    0.0, 0.0 # add types if this approach works
+end
+@inline scheme_source!(
+    term::Operator{F,P,I,Time{CrankNicolson}}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
+        volume = cell.volume
+        vol_rdt = 2.0*volume/runtime.dt # advance solution by dt/2 only
+        
+        # Increment sparse and b arrays 
+        ac = vol_rdt
+        b = prev[cID]*vol_rdt
+        return ac, b
+end
+
 # LAPLACIAN
 
 @inline function scheme!(

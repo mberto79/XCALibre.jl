@@ -240,15 +240,18 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
         )
     # KernelAbstractions.synchronize(backend)
 
-    Krylov.iteration_count(solver) == itmax && @warn "Maximum number of iteration reached!"
+    # Perform explicit step for Crank-Nicholson. Otherwise simply update field with solution
+    if typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson}
+        @. x = 2.0*x - values
+    end
 
-    # println(statistics(solver).niter)
-    
     ndrange = length(values)
     kernel! = _copy!(_setup(backend, workgroup, ndrange)...)
     kernel!(values, x)
-    # KernelAbstractions.synchronize(backend)
 
+    Krylov.iteration_count(solver) == itmax && @warn "Maximum number of iteration reached!"
+
+    # println(statistics(solver).niter)
     res = residual(phiEqn, component, config)
     return res
 end

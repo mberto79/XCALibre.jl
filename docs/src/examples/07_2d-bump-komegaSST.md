@@ -1,4 +1,4 @@
-# Verification: 2D incompressible backward-facing step
+# Verification: 2D bump ``k-\omega`` SST
 
 # Introduction
 ---

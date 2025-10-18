@@ -181,6 +181,10 @@ residuals = run!(model, config, output=OpenFOAM())
 
 The figure below compares the results obtained with OpenFOAM and XCALibre.jl. The profiles are extracted along the y-direction at x = 0.75 m and 1.20 m. 
 
+### Profiles at x = 0.75 m
+
 ![Comparison with OpenFOAM - x = 0.75m](figures/07/075_2dbump_case.png)
+
+### Profiles at x = 1.20 m
 
 ![Comparison with OpenFOAM - x = 1.20m](figures/07/120_2dbump_case.png)

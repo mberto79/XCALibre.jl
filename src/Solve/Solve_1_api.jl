@@ -249,7 +249,7 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
     kernel! = _copy!(_setup(backend, workgroup, ndrange)...)
     kernel!(values, x)
 
-    Krylov.iteration_count(solver) == itmax && @warn "Maximum number of iteration reached!"
+    Krylov.iteration_count(solver) == itmax && @warn "Maximum number of iterations reached!"
 
     # println(statistics(solver).niter)
     res = residual(phiEqn, component, config)

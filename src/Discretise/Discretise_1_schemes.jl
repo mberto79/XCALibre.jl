@@ -48,7 +48,7 @@ end
 @inline scheme_source!(
     term::Operator{F,P,I,Time{CrankNicolson}}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
         volume = cell.volume
-        vol_rdt = 2.0*volume/runtime.dt # advance solution by dt/2 only
+        vol_rdt = volume/runtime.dt # advance solution by dt/2 only
         
         # Increment sparse and b arrays 
         ac = vol_rdt

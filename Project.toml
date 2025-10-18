@@ -1,7 +1,7 @@
 name = "XCALibre"
 uuid = "cf91e36b-bd94-493a-8848-32508a10963c"
 authors = ["Humberto <h.medina@aerofluids.org>"]
-version = "0.5.2-dev"
+version = "0.5.2"
 
 [deps]
 AcceleratedKernels = "6a4ca0a5-0e36-4168-a932-d9be78d558f1"

@@ -5,43 +5,28 @@
 This tutorial introduces laplace solver that can operate in either steady-state or transient mode, and supports both constant material properties across the domain (`Uniform`) and spatially varying properties (`NonUniform`).
 
 The example simulation below consist of a simple 2D square domain with two Dirichlet walls and two Neumann 0 flux walls. It is expected to produce a diagonal line of constant value when solving laplace/heat equation.
-## Boundary Conditions
-
-### Left Wall
-
-| Field | Boundary condition |
-| ----- | ------------------ |
-| `T`   | Dirichlet (0.0 K) |
-
-### Right Wall
-
-| Field | Boundary condition |
-| ----- | ------------------ |
-| `T`   | Zero-gradient       |
-
-### Bottom Wall
-
-| Field | Boundary condition |
-| ----- | ------------------ |
-| `T`   | Dirichlet (1.0 K) |
-
-### Upper Wall
-
-| Field | Boundary condition |
-| ----- | ------------------ |
-| `T`   | Zero-gradient       |
 
 # Mesh
 ---
 
-The utilised mesh is a structured 2D grid that can either be `laplace_2d_mesh.unv` or `"finer_mesh_laplace.unv"` for more prominent behaviour when using `NonUniform` regime. The mesh represents a rectangular region with four defined boundaries:
+The mesh used in this tutorial is a structured 2D grid (the mesh files `laplace_2d_mesh.unv` or `finer_mesh_laplace.unv` can be found in the `examples` directory). The mesh represents a rectangular region with four boundaries:
 
-- `"left_wall"` (Dirichlet)
-- `"right_wall"` (Neumann)
-- `"bottom_wall"` (Dirichlet)
-- `"upper_wall"` (Neumann)
+- `:left_wall`
+- `:right_wall`
+- `:bottom_wall`
+- `:upper_wall`
 
-# Case File
+## Boundary Conditions
+
+|Boundary name | Field | Boundary condition |
+| ------------ | ----- | ------------------ |
+| `:left_wall` | `T`   | Dirichlet (0.0 K) |
+| `:right_wall` | `T`   | Zero-gradient       |
+| `:bottom_wall` | `T`   | Dirichlet (1.0 K) |
+| `:upper_wall` | `T`   | Zero-gradient       |
+
+
+# Simulation Setup File
 ---
 
 ```julia
@@ -141,12 +126,12 @@ solid = Solid{NonUniform}(material=Aluminium(), rho=2700.0)
 This will ensure that the solver computes **k** and **cp** for each cell as a function of temperature.  
 The general form of the equation for both coefficients is:
 
-``log(k) = a + b log(T) + c (log(T))^2 + d (log(T))^3 + e (log(T))^4 + f (log(T))^5 + g (log(T))^6 + h (log(T))^7 + i (log(T))^``
+``\log(k) = a + b\log(T) + c \log(T)^2 + d \log(T)^3 + e \log(T)^4 + f \log(T)^5 + g \log(T)^6 + h \log(T)^7 + i \log(T)^8``
 
 where *a*, *b*, *c*, *d*, *e*, *f*, *g*, *h*, and *i* are the fitted coefficients, and **T** is the temperature of a cell.
 
-Currently only 3 material models are available for use: `Steel()`, `Aluminium()`, and `Copper()`. The coefficients for those materials were taken from [Cryogenic Material Properties Database by Marquardt (2002)](https://www.researchgate.net/publication/226513158_Cryogenic_Material_Properties_Database), and work well for temperatures between 4 and 300 Kelvin.
-Custom material can be defined in the following way:
+Currently, 3 material models are pre-defined: `Steel()`, `Aluminium()`, and `Copper()`. The coefficients for those materials were taken from [Cryogenic Material Properties Database by Marquardt (2002)](https://www.researchgate.net/publication/226513158_Cryogenic_Material_Properties_Database), and work well for temperatures between 4 and 300 Kelvin. A custom material can also be defined:
+
 ```julia
 # Define your custom coefficient vectors for k and cp:
 k_coeffs = MaterialCoefficients(
@@ -165,7 +150,8 @@ solid = Solid{NonUniform}(k=k_coeffs, cp=cp_coeffs, rho=7850.0),
 
 # NonUniform Results
 
-The following settings were changed for this `NonUniform` simulation:
+The following settings were changed for this `NonUniform` configuration:
+
 ```julia
 grid = "finer_mesh_laplace.unv"
 

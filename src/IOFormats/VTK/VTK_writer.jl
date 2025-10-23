@@ -94,7 +94,7 @@ function write_results(
                 for i ∈ eachindex(x_cpu)
                     println(io, x_cpu[i]," ",y_cpu[i] ," ",z_cpu[i] )
                 end
-            elseif field_type <: TensorField
+            elseif field_type <: SymmetricTensorField
                 write(io, "TENSORS $(label) double\n")
                 xx_cpu, xy_cpu, xz_cpu = copy_to_cpu(field.xx.values, field.xy.values, field.xz.values, backend)
                 yx_cpu, yy_cpu, yz_cpu = copy_to_cpu(field.yx.values, field.yy.values, field.yz.values, backend)

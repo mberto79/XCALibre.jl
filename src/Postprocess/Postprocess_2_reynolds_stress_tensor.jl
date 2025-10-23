@@ -15,16 +15,16 @@ function ReynoldsStress(field; name::AbstractString =  "Reynolds_Stress", start:
     stop  >= start  || throw(ArgumentError("Stop ($stop) must be greater than or equal to start ($start)"))
     update_interval > 0 || throw(ArgumentError("save interval must be >0 (got $update_interval)"))
     if field isa VectorField
-        rs = TensorField(field.mesh)
+        rs = SymmetricTensorField(field.mesh)
         mean = VectorField(field.mesh)
-        mean_sq = TensorField(field.mesh)
+        mean_sq = SymmetricTensorField(field.mesh)
     else
         throw(ArgumentError("Unsupported field type: $(typeof(field))"))
     end
     return  ReynoldsStress(field=field, name=name, rs=rs, mean=mean, mean_sq=mean_sq, start=start, stop=stop, update_interval=update_interval)
 end
 
-function runtime_postprocessing!(RS::ReynoldsStress{T,T2,S},iter::Integer,n_iterations::Integer) where {T<:VectorField,T2<:TensorField,S}
+function runtime_postprocessing!(RS::ReynoldsStress{T,T2,S},iter::Integer,n_iterations::Integer) where {T<:VectorField,T2<:SymmetricTensorField,S}
     if must_calculate(RS,iter,n_iterations)
         current_field = RS.field
         n = div(iter - RS.start,RS.update_interval) + 1
@@ -49,14 +49,10 @@ function runtime_postprocessing!(RS::ReynoldsStress{T,T2,S},iter::Integer,n_iter
 
         @. RS.rs.zz.values = RS.mean_sq.zz.values - RS.mean.z.values^2
 
-        #symmetric so no need to do extra calcs
-        @. RS.rs.yx.values = RS.rs.xy.values
-        @. RS.rs.zx.values = RS.rs.xz.values
-        @. RS.rs.zy.values = RS.rs.yz.values
-
-
-
-        
+        # #symmetric so no need to do extra calcs
+        # @. RS.rs.yx.values = RS.rs.xy.values
+        # @. RS.rs.zx.values = RS.rs.xz.values
+        # @. RS.rs.zy.values = RS.rs.yz.values
     end
     return nothing
 end

@@ -19,6 +19,6 @@ using XCALibre.Solve
 include("Postprocess_functions.jl")
 include("Postprocess_0_average_field.jl")
 include("Postprocess_1_field_rms.jl")
-include("Postprocess_2_reynolds_stress_tensor")
+include("Postprocess_2_reynolds_stress_tensor.jl")
 
 end

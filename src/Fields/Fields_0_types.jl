@@ -261,7 +261,17 @@ struct SymmetricTensorField{S1,S2,S3,S4,S5,S6,S7,S8,S9,M} <: AbstractTensorField
     zz::S9
     mesh::M
 end
-#Adapt.@adapt_structure SymmetricTensorField
+function Adapt.adapt_structure(to, S::SymmetricTensorField)
+    xx = Adapt.adapt(to, S.xx)
+    xy = Adapt.adapt(to, S.xy)
+    xz = Adapt.adapt(to, S.xz)
+    yy = Adapt.adapt(to, S.yy)
+    yz = Adapt.adapt(to, S.yz)
+    zz = Adapt.adapt(to, S.zz)
+    mesh = Adapt.adapt(to, S.mesh)
+    return SymmetricTensorField(xx, xy, xz, xy, yy, yz, xz, yz, zz, mesh)
+end
+# Adapt.@adapt_structure SymmetricTensorField
 
 SymmetricTensorField(mesh::AbstractMesh) = begin
     xx = ScalarField(mesh, store_mesh=false)
@@ -277,7 +287,6 @@ SymmetricTensorField(mesh::AbstractMesh) = begin
     zy = yz
     SymmetricTensorField(xx,xy,xz,yx,yy,yz,zx,zy,zz,mesh)
 end
-
 
 
 

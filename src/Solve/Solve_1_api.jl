@@ -186,10 +186,10 @@ function solve_equation!(
     mesh = psi.mesh
 
     discretise!(psiEqn, psi, config)
+    # temporal_discretisation!(psiEqn, psi, config, update_source=true)
     update_equation!(psiEqn, config)
     
     apply_boundary_conditions!(psiEqn, psiBCs, xdir, time, config)
-    temporal_discretisation!(psiEqn, psi, config, update_source=true)
     # implicit_relaxation!(psiEqn, psi.x.values, solversetup.relax, xdir, config)
     implicit_relaxation_diagdom!(psiEqn, psi.x.values, solversetup.relax, xdir, config)
     update_preconditioner!(psiEqn.preconditioner, mesh, config)
@@ -197,7 +197,7 @@ function solve_equation!(
     
     update_equation!(psiEqn, config)
     apply_boundary_conditions!(psiEqn, psiBCs, ydir, time, config)
-    temporal_discretisation!(psiEqn, psi, config, update_source=false)
+    # temporal_discretisation!(psiEqn, psi, config, update_source=false)
     # implicit_relaxation!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
     implicit_relaxation_diagdom!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
     # update_preconditioner!(psiEqn.preconditioner, mesh, config)
@@ -209,13 +209,13 @@ function solve_equation!(
     if typeof(mesh) <: Mesh3
         update_equation!(psiEqn, config)
         apply_boundary_conditions!(psiEqn, psiBCs, zdir, time, config)
-        temporal_discretisation!(psiEqn, psi, config, update_source=false)
+        # temporal_discretisation!(psiEqn, psi, config, update_source=false)
         # implicit_relaxation!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
         implicit_relaxation_diagdom!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
         # update_preconditioner!(psiEqn.preconditioner, mesh, config)
         resz = solve_system!(psiEqn, solversetup, psi.z, zdir, config)
     end
-    explicit_step!(psiEqn, psi, config)
+    # explicit_step!(psiEqn, psi, config)
     return resx, resy, resz
 end
 
@@ -251,7 +251,7 @@ end
         (; volume) = cells[i]
         k0 = 2 # 1 for Euler, 2 for Crank Nicolson
         vol_rdt = k0*volume/dt
-        nzval[idx] += vol_rdt
+        nzval0[idx] += vol_rdt
         psi_i = psi[i]
         if update_source
 
@@ -275,7 +275,7 @@ end
     end
 end
 
-function explicit_step!(psiEqn, psix, config)
+function explicit_step!(psiEqn, x, psix, b, config)
     (; hardware, runtime) = config
     (; backend, workgroup) = hardware
     dt = runtime.dt
@@ -287,7 +287,7 @@ function explicit_step!(psiEqn, psix, config)
     # Sparse array and b accessor call
     A = _A(psiEqn)
     A0 = _A0(psiEqn)
-    (; bx, by, bz) = psiEqn.equation
+    # (; bx, by, bz) = psiEqn.equation
 
     # Sparse array fields accessors
     nzval = _nzval(A)
@@ -297,38 +297,64 @@ function explicit_step!(psiEqn, psix, config)
 
     ndrange = length(cells)
     kernel! = _explicit_step!(_setup(backend, workgroup, ndrange)...)
-    kernel!(nzval, nzval0, colval, rowptr, bx, by, bz, dt, psix, cells)
+    kernel!(x, nzval, nzval0, colval, rowptr, b, dt, psix, cells)
 end
 
-@kernel function _explicit_step!(nzval, nzval0, colval, rowptr, bx, by, bz, dt, psi, cells)
+@kernel function _explicit_step!(x, nzval, nzval0, colval, rowptr, b, dt, psix, cells)
     i = @index(Global)
 
     @inbounds begin
         idx = spindex(rowptr, colval, i, i)
         (; volume) = cells[i]
-        k0 = 2
+        k0 = 2.0
         vol_rdt = k0*volume/dt
-        nzval[idx] += vol_rdt
-        psi_i = psi[i]
+        # nzval[idx] -= 2*vol_rdt
+        psi_i = x[i]
 
         Apsi_x = Apsi_y = Apsi_z = 0.0
         start_index = rowptr[i]
         end_index = rowptr[i+1] -1
         for nzi ∈ start_index:end_index
             j = colval[nzi]
-            psi_j = psi[j]
-            nzvali = nzval[nzi]
-            Apsi_x += nzvali*psi_j[1]
-            Apsi_y += nzvali*psi_j[2]
-            Apsi_z += nzvali*psi_j[3]
+            psi_j = x[j]
+            nzvali = nzval[nzi]                                             
+            Apsi_x += nzvali*psi_j
         end
 
         rac = 1/vol_rdt
-        psi.x[i] = (bx[i] - vol_rdt*psi_i[1] - Apsi_x)*rac
-        psi.y[i] = (by[i] - vol_rdt*psi_i[2] - Apsi_y)*rac
-        psi.z[i] = (bz[i] - vol_rdt*psi_i[3] - Apsi_z)*rac
+        x[i] = (b[i] - 0*vol_rdt*psix[i] + vol_rdt*psi_i - Apsi_x)*rac
     end
 end
+
+# @kernel function _explicit_step!(nzval, nzval0, colval, rowptr, bx, by, bz, dt, psi, cells)
+#     i = @index(Global)
+
+#     @inbounds begin
+#         idx = spindex(rowptr, colval, i, i)
+#         (; volume) = cells[i]
+#         k0 = 2
+#         vol_rdt = k0*volume/dt
+#         nzval[idx] += vol_rdt
+#         psi_i = psi[i]
+
+#         Apsi_x = Apsi_y = Apsi_z = 0.0
+#         start_index = rowptr[i]
+#         end_index = rowptr[i+1] -1
+#         for nzi ∈ start_index:end_index
+#             j = colval[nzi]
+#             psi_j = psi[j]
+#             nzvali = nzval[nzi]
+#             Apsi_x += nzvali*psi_j[1]
+#             Apsi_y += nzvali*psi_j[2]
+#             Apsi_z += nzvali*psi_j[3]
+#         end
+
+#         rac = 1/vol_rdt
+#         psi.x[i] = (bx[i] - vol_rdt*psi_i[1] - Apsi_x)*rac
+#         psi.y[i] = (by[i] - vol_rdt*psi_i[2] - Apsi_y)*rac
+#         psi.z[i] = (bz[i] - vol_rdt*psi_i[3] - Apsi_z)*rac
+#     end
+# end
 
 function solve_system!(phiEqn::ModelEquation, setup, result, component, config) # ; opP, solver
 
@@ -368,6 +394,9 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
     # Perform explicit step for Crank-Nicholson. Otherwise simply update field with solution
     if typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson}
         # @. b -= volumes/runtime.dt*values
+        # @. x = 2x - values
+        # explicit_step!(phiEqn, x, values, config)
+        # explicit_step!(phiEqn, x, values, b, config)
     end
 
     ndrange = length(values)

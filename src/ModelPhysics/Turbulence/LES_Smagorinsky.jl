@@ -82,7 +82,7 @@ function initialise(
         turbulence, 
         Δ, 
         ModelState((), false)
-    )
+    ), config
 end
 
 # Model solver call (implementation)

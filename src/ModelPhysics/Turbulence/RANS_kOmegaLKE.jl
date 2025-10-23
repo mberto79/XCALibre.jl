@@ -96,25 +96,25 @@ end
 
     # Allocate wall distance "y" and setup boundary conditions
     y = ScalarField(mesh)
-    walls = rans.args.walls
-    boundaries_cpu = get_boundaries(mesh.boundaries)
-    BCs = []
-    for boundary ∈ boundaries_cpu
-        for namedwall ∈ walls
-            if boundary.name == namedwall
-                push!(BCs, Dirichlet(boundary.name, 0.0))
-            else
-                # push!(BCs, Neumann(boundary.name, 0.0))
-                push!(BCs, Zerogradient(boundary.name))
-            end
-        end
-    end
-    wallBCs = assign(
-        region=mesh,
-        (
-            y = [BCs...],
-        )
-    )
+    wallBCs = rans.args.walls
+    # boundaries_cpu = get_boundaries(mesh.boundaries)
+    # BCs = []
+    # for boundary ∈ boundaries_cpu
+    #     for namedwall ∈ walls
+    #         if boundary.name == namedwall
+    #             push!(BCs, Dirichlet(boundary.name, 0.0))
+    #         else
+    #             # push!(BCs, Neumann(boundary.name, 0.0))
+    #             push!(BCs, Zerogradient(boundary.name))
+    #         end
+    #     end
+    # end
+    # wallBCs = assign(
+    #     region=mesh,
+    #     (
+    #         y = [BCs...],
+    #     )
+    # )
 
     KOmegaLKE(k, omega, kl, nut, kf, omegaf, klf, nutf, coeffs, Tu, y, wallBCs)
 end
@@ -245,7 +245,7 @@ function initialise(
 
     # Wall distance calculation
     # y.values .= wall_distance(model, config)
-    wall_distance!(model, config)
+    new_config = wall_distance!(model, wallBCs, config)
 
     init_residuals = (:k, 1.0),(:kl, 1.0),(:omega, 1.0)
     init_convergence = false
@@ -269,7 +269,7 @@ function initialise(
         ∇k,
         ∇ω,
         state
-    )
+    ), new_config
 end
 
 # Model solver call (implementation)

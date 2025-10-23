@@ -104,7 +104,7 @@ function setup_compressible_solvers(
     energyModel = initialise(model.energy, model, mdotf, rho, p_eqn, config)
 
     @info "Initialising turbulence model..."
-    turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
+    turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals  = solver_variant(
         model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config;
@@ -127,11 +127,12 @@ function CSIMPLE(
 
     mesh = model.domain
     p_model = p_eqn.model
-    (; solvers, schemes, runtime, hardware, boundaries) = config
-    (; iterations, write_interval) = runtime
+    (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
+    (; iterations, write_interval,dt) = runtime
     (; backend) = hardware
     
     # rho = get_flux(U_eqn, 1)
+    postprocess = convert_time_to_iterations(postprocess,model,dt,iterations)
     mdotf = get_flux(U_eqn, 2)
     mueff = get_flux(U_eqn, 3)
     mueffgradUt = get_source(U_eqn, 2)
@@ -346,9 +347,10 @@ function CSIMPLE(
                 energyModel.state.residuals
                 ]
             )
-
+        runtime_postprocessing!(postprocess,iteration,iterations)
         if iteration%write_interval + signbit(write_interval) == 0      
             save_output(model, outputWriter, iteration, time, config)
+            save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
         end
 
     end # end for loop

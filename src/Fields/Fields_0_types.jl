@@ -3,7 +3,7 @@ export ScalarFloat, ConstantScalar, ConstantVector
 export AbstractScalarField, ScalarField, FaceScalarField
 export AbstractVectorField, VectorField, FaceVectorField
 export AbstractTensorField, TensorField, T
-export StrainRate, Dev, Sqr, MagSqr
+export StrainRate, Vorticity, Dev, Sqr, MagSqr
 export _mesh
 export initialise!
 
@@ -268,6 +268,18 @@ Base.getindex(t::T{F}, i::Integer) where F<:TensorField = begin # type calls nee
         T.zy[i],
         T.zz[i],
         )
+end
+
+struct Vorticity{TU, GT} <: AbstractTensorField 
+    U::TU
+    gradU::GT 
+end
+Adapt.Adapt.@adapt_structure Vorticity
+_mesh(field::Vorticity) = _mesh(field.U)
+
+Base.getindex(S::Vorticity, i::I) where {I<:Integer} = begin
+    gradi = S.gradU[i]
+    0.5*(gradi - gradi')
 end
 
 struct StrainRate{G, GT, TU, TUF} <: AbstractTensorField

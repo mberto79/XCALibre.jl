@@ -93,7 +93,7 @@ function setup_incompressible_solvers(
     @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn))
 
     @info "Initialising turbulence model..."
-    turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
+    turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals  = solver_variant(
         model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
@@ -114,10 +114,11 @@ function SIMPLE(
     (; U, p, Uf, pf) = model.momentum
     (; nu) = model.fluid
     mesh = model.domain
-    (; solvers, schemes, runtime, hardware, boundaries) = config
-    (; iterations, write_interval) = runtime
+    (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
+    (; iterations, write_interval,dt) = runtime
     (; backend) = hardware
     
+    postprocess = convert_time_to_iterations(postprocess,model,dt,iterations)
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)
     rDf = get_flux(p_eqn, 1)
@@ -265,9 +266,12 @@ function SIMPLE(
                 turbulenceModel.state.residuals...
                 ]
             )
-
+        
+        runtime_postprocessing!(postprocess,iteration,iterations)
+        
         if iteration%write_interval + signbit(write_interval) == 0      
             save_output(model, outputWriter, iteration, time, config)
+            save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
         end
 
     end # end for loop

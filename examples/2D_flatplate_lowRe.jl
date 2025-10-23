@@ -23,7 +23,7 @@ k_inlet = 0.375
 model = Physics(
     time = Steady(),
     fluid = Fluid{Incompressible}(nu = nu),
-    turbulence = RANS{KOmega}(),
+    turbulence = RANS{KOmegaSST}(walls=(:wall,)),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
     )

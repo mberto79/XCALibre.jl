@@ -79,7 +79,7 @@ iterations = 100
 runtime = Runtime(iterations=iterations, time_step=0.05, write_interval=-1)
 hardware = Hardware(backend=backend,workgroup = workgroup)
 
-postprocess = FieldAverage(model.momentum.U;name="Umean",start = 51*0.05, update_interval = 2*0.05 )
+postprocess = TimeAverage(model.momentum.U;name="Umean",start = 51*0.05, update_interval = 2*0.05 )
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs,postprocess=postprocess)
 
 @test initialise!(model.momentum.U, velocity) === nothing

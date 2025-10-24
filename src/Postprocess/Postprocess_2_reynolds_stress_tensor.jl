@@ -1,5 +1,5 @@
 export ReynoldsStress
-@kwdef struct ReynoldsStress{T<:AbstractField,T2<:AbstractField,S<:String}
+@kwdef struct ReynoldsStress{T<:AbstractField,T2<:AbstractField,S<:AbstractString}
     field::T 
     name::S
     mean::T
@@ -9,11 +9,29 @@ export ReynoldsStress
     stop::Real
     update_interval::Real
 end  
+"""
+    ReynoldsStress(
+    #required arguments
+    model.momentum.U; 
 
-function ReynoldsStress(field; name::AbstractString =  "Reynolds_Stress", start::Real=1, stop::Real=typemax(Int),update_interval::Real=1)
+    #optional keyword arguments
+    start::Real,
+    stop::Real,
+    update_interval::Real)
+Constructor to allocate memory to store the Reynolds Stress Tensor over the calculation window. Once created, should be passed to the `Configuration` object as an argument with keyword `postprocess`
+
+## Input arguments 
+- `field` must be `model.momentum.U`
+
+## Optional arguments
+- `start::Real` optional keyword which specifies the start of the Reynolds Stress Tensor calculation window, for **steady** simulations, this is in **iterations**, for **transient** simulations it is in **flow time**.   
+- `stop::Real` optional keyword which specifies the end iteration/time of the Reynolds Stress Tensor calculation window. Default value is the last iteration/timestep. 
+- `update_interval::Real` optional keyword which specifies how often the Reynolds Stress Tensor is updated and stored (default value is 1 i.e Reynolds Stress Tensor updates every timestep/iteration). Note that the frequency of writing the post-processed fields is specified by the `write_interval` in `Configuration`. 
+"""
+function ReynoldsStress(field; name::String =  "Reynolds_Stress", start::Real=1, stop::Real=typemax(Int),update_interval::Real=1)
     start > 0      || throw(ArgumentError("Start must be a positive value (got $start)"))
     stop  >= start  || throw(ArgumentError("Stop ($stop) must be greater than or equal to start ($start)"))
-    update_interval > 0 || throw(ArgumentError("save interval must be >0 (got $update_interval)"))
+    update_interval > 0 || throw(ArgumentError("update interval must be >0 (got $update_interval)"))
     if field isa VectorField
         rs = SymmetricTensorField(field.mesh)
         mean = VectorField(field.mesh)
@@ -48,11 +66,6 @@ function runtime_postprocessing!(RS::ReynoldsStress{T,T2,S},iter::Integer,n_iter
         @. RS.rs.yz.values = RS.mean_sq.yz.values - RS.mean.y.values * RS.mean.z.values
 
         @. RS.rs.zz.values = RS.mean_sq.zz.values - RS.mean.z.values^2
-
-        # #symmetric so no need to do extra calcs
-        # @. RS.rs.yx.values = RS.rs.xy.values
-        # @. RS.rs.zx.values = RS.rs.xz.values
-        # @. RS.rs.zy.values = RS.rs.yz.values
     end
     return nothing
 end

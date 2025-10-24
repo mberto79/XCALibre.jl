@@ -1,5 +1,5 @@
 export RMS
-@kwdef struct RMS{T<:AbstractField,S<:String}
+@kwdef struct RMS{T<:AbstractField,S<:AbstractString}
     field::T 
     name::S
     mean::T
@@ -92,7 +92,7 @@ function convert_time_to_iterations(_RMS::RMS, model,dt,iterations)
         update_interval = max(1, Int(floor(_RMS.update_interval / dt)))
         update_interval >= 1 || throw(ArgumentError("update interval must be ≥1 (got $update_interval)"))
         stop >= start || throw(ArgumentError("After conversion with dt=$dt the RMS calculation window is empty (start = $start, stop = $stop)"))
-        return _RMS(field=_RMS.field,name=_RMS.name,mean=_RMS.mean,mean_sq=_RMS.mean_sq,rms = _RMS.rms, start=start,stop=stop,update_interval=update_interval)
+        return RMS(field=_RMS.field,name=_RMS.name,mean=_RMS.mean,mean_sq=_RMS.mean_sq,rms = _RMS.rms, start=start,stop=stop,update_interval=update_interval)
     else
         isinteger(_RMS.start) && isinteger(_RMS.stop) && isinteger(_RMS.update_interval) || throw(ArgumentError("For steady runs, start/stop/update_interval must be integers."))
 

@@ -36,8 +36,14 @@ The RMS of the velocity field can be easily calculated by creating an instance o
 postprocess = RMS(model.momentum.U; name="U_rms")
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs,postprocess=postprocess)
 ```
-### Example: Calculate time average and RMS for multiple fields at a time
-To post-process multiple fields as a time, a vector of `TimeAverage` and `RMS` objects can be passed instead e.g. 
+## Example: Calculate the Reynolds Stress Tensor
+The Reynolds Stress Tensor can be obtained using the constructor `ReynoldsStress`, which has to be passed to the `Configuration` object. 
+```@docs; canonical=false
+ReynoldsStress
+```
+
+### Example: Post-process multiple fields 
+To post-process multiple fields as a time, a vector of objects can be passed instead e.g. 
 ```julia
 postprocess = [RMS(model.momentum.U; name="U_rms"), TimeAverage(model.momentum.U; name ="U_mean"), TimeAverage(model.momentum.p; name ="p_mean")]
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs,postprocess=postprocess)

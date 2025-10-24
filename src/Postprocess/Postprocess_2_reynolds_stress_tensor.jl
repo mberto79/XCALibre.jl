@@ -21,7 +21,7 @@ end
 Constructor to allocate memory to store the Reynolds Stress Tensor over the calculation window. Once created, should be passed to the `Configuration` object as an argument with keyword `postprocess`
 
 ## Input arguments 
-- `field` must be `model.momentum.U`
+- `field`, must be `model.momentum.U`
 
 ## Optional arguments
 - `start::Real` optional keyword which specifies the start of the Reynolds Stress Tensor calculation window, for **steady** simulations, this is in **iterations**, for **transient** simulations it is in **flow time**.   

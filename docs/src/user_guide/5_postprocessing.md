@@ -22,25 +22,31 @@ FieldAverage
 ```
 Once created this is simply passed to the `Configuration` object as an extra argument with the keyword `postprocess`. For example to average the velocity field over the whole simulation, 
 ```julia
-postprocess = FieldAverage(model.momentum.U; name="U_mean")
-config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs,postprocess=postprocess)
+postprocess = FieldAverage(model.momentum.U; name = "U_mean")
+config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs, postprocess=postprocess)
 ```
 The rest of the case would remain exactly the same. 
 ### Example: Calculate field RMS 
-The RMS of a Scalar of Vector field can be obtained in a similar way to the time averaged field, instead an instance of `FieldRMS` is created which has the following definition. 
+The RMS of a Scalar of Vector field can be obtained in a similar way to the time averaged field, instead an instance of `RMS` is created which has the following definition. 
 ```@docs; canonical=false
 FieldRMS
 ```
 The RMS of the velocity field can be easily calculated by creating an instance of `FieldRMS` and passing it to the `Configuration` object with the keyword `postprocess`, with the rest of the case remaining unchanged.
 ```julia
-postprocess = FieldRMS(model.momentum.U; name="U_rms")
-config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs,postprocess=postprocess)
+postprocess = FieldRMS(model.momentum.U; name = "U_rms")
+config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs, postprocess=postprocess)
 ```
-### Example: Calculate time average and RMS for multiple fields at a time
-To post-process multiple fields as a time, a vector of `FieldAverage` and `FieldRMS` objects can be passed instead e.g. 
+## Example: Calculate the Reynolds Stress Tensor
+The Reynolds Stress Tensor can be obtained using the constructor `ReynoldsStress`, which has to be passed to the `Configuration` object. 
+```@docs; canonical=false
+ReynoldsStress
+```
+
+### Example: Post-process multiple fields 
+To post-process multiple fields as a time, a vector of objects can be passed instead e.g. 
 ```julia
-postprocess = [FieldRMS(model.momentum.U; name="U_rms"), FieldAverage(model.momentum.U; name ="U_mean"), FieldAverage(model.momentum.p; name ="p_mean")]
-config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs,postprocess=postprocess)
+postprocess = [FieldRMS(model.momentum.U; name = "U_rms"), FieldAverage(model.momentum.U; name = "U_mean"), FieldAverage(model.momentum.p; name = "p_mean")]
+config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs, postprocess=postprocess)
 ```
 
 

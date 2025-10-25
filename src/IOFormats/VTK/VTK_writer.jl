@@ -94,9 +94,19 @@ function write_results(
                 for i ∈ eachindex(x_cpu)
                     println(io, x_cpu[i]," ",y_cpu[i] ," ",z_cpu[i] )
                 end
+            elseif field_type <: AbstractTensorField
+                write(io, "TENSORS $(label) double\n")
+                xx_cpu, xy_cpu, xz_cpu = copy_to_cpu(field.xx.values, field.xy.values, field.xz.values, backend)
+                yx_cpu, yy_cpu, yz_cpu = copy_to_cpu(field.yx.values, field.yy.values, field.yz.values, backend)
+                zx_cpu, zy_cpu, zz_cpu = copy_to_cpu(field.zx.values, field.zy.values, field.zz.values, backend)
+                for i ∈ eachindex(xx_cpu)
+                    println(io, xx_cpu[i], " ", xy_cpu[i], " ", xz_cpu[i])
+                    println(io, yx_cpu[i], " ", yy_cpu[i], " ", yz_cpu[i])
+                    println(io, zx_cpu[i], " ", zy_cpu[i], " ", zz_cpu[i])
+                end
             else
                 throw("""
-                Input data should be a ScalarField or VectorField e.g. ("U", U)
+                Input data should be a ScalarField, VectorField or TensorField e.g. ("U", U)
                 """)
             end
         end

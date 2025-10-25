@@ -63,7 +63,7 @@ solvers = (
 
 runtime = Runtime(iterations=10, time_step=0.1, write_interval=-1)
 hardware = Hardware(backend=backend,workgroup = workgroup)
-postprocess = [TimeAverage(model.momentum.U;name = "u_mean"), RMS(model.momentum.U;name = "u_rms"), TimeAverage(model.momentum.p;name = "p_mean"), ReynoldsStress(model.momentum.U)]
+postprocess = [FieldAverage(model.momentum.U;name = "u_mean"), FieldRMS(model.momentum.U;name = "u_rms"), FieldAverage(model.momentum.p;name = "p_mean"), ReynoldsStress(model.momentum.U)]
 
 
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs,postprocess=postprocess)

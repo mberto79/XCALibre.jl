@@ -1,7 +1,7 @@
 export runtime_postprocessing!
-export TimeAverage
+export FieldAverage
 export convert_time_to_iterations
-@kwdef struct TimeAverage{T<:AbstractField,S<:AbstractString}
+@kwdef struct FieldAverage{T<:AbstractField,S<:AbstractString}
     field::T
     name::S
     mean::T
@@ -11,7 +11,7 @@ export convert_time_to_iterations
 end
 
 """
-    TimeAverage(
+    FieldAverage(
     #required arguments
     field;
     name::String,
@@ -32,7 +32,7 @@ Constructor to allocate memory to store the time averaged field. Once created, s
 - `stop::Real` optional keyword which specifies the end iteration/time of the averaging window. Default value is the last iteration/timestep. 
 - `update_interval::Real` optional keyword which specifies how often the time average of the field is updated and stored (default value is 1 i.e RMS updates every timestep/iteration). Note that the frequency of writing the post-processed fields is specified by the `write_interval` in `Configuration`. 
 """
-function TimeAverage(field; name::AbstractString, start::Real=1, stop::Real=typemax(Int),update_interval::Real=1)
+function FieldAverage(field; name::AbstractString, start::Real=1, stop::Real=typemax(Int),update_interval::Real=1)
     start > 0      || throw(ArgumentError("Start must be a positive value (got $start)"))
     stop  >= start  || throw(ArgumentError("Stop ($stop) must be greater than or equal to start ($start)"))
     update_interval > 0 || throw(ArgumentError("save interval must be >0 (got $update_interval)"))
@@ -43,12 +43,12 @@ function TimeAverage(field; name::AbstractString, start::Real=1, stop::Real=type
     else
         throw(ArgumentError("Unsupported field type: $(typeof(field))"))
     end
-    return TimeAverage(field=field, name=name, mean=storage,start=start, stop=stop, update_interval=update_interval)
+    return FieldAverage(field=field, name=name, mean=storage,start=start, stop=stop, update_interval=update_interval)
 end
 
 
 
-function runtime_postprocessing!(avg::TimeAverage{T,S},iter::Integer,n_iterations::Integer) where {T<:ScalarField,S}
+function runtime_postprocessing!(avg::FieldAverage{T,S},iter::Integer,n_iterations::Integer) where {T<:ScalarField,S}
     if must_calculate(avg,iter,n_iterations)
         n = div(iter - avg.start,avg.update_interval) + 1
         current_field = avg.field
@@ -58,7 +58,7 @@ function runtime_postprocessing!(avg::TimeAverage{T,S},iter::Integer,n_iteration
 end
 
 
-function runtime_postprocessing!(avg::TimeAverage{T,S},iter::Integer,n_iterations::Integer) where {T<:VectorField,S}
+function runtime_postprocessing!(avg::FieldAverage{T,S},iter::Integer,n_iterations::Integer) where {T<:VectorField,S}
     if must_calculate(avg,iter,n_iterations)
         n = div(iter - avg.start,avg.update_interval) + 1
         current_field = avg.field
@@ -91,14 +91,14 @@ function must_calculate(field_struct,iter::Integer,n_iterations::Integer)
     iter ∈ start:interval:eff_stop
 end
 
-function convert_time_to_iterations(avg::TimeAverage, model,dt,iterations)
+function convert_time_to_iterations(avg::FieldAverage, model,dt,iterations)
     if model.time === Transient()
         start = Int(ceil(avg.start / dt))
         stop = Int(min(avg.stop,dt*iterations) / dt )
         update_interval = max(1, Int(ceil(avg.update_interval / dt)))
         update_interval >= 1 || throw(ArgumentError("update interval must be ≥1 (got $update_interval)"))
         stop >= start || throw(ArgumentError("After conversion with dt=$dt the averaging window is empty (start = $start, stop = $stop)"))
-        return TimeAverage(field=avg.field,name=avg.name,mean=avg.mean,start=start,stop=stop,update_interval=update_interval)
+        return FieldAverage(field=avg.field,name=avg.name,mean=avg.mean,start=start,stop=stop,update_interval=update_interval)
     else
         isinteger(avg.start) && isinteger(avg.stop) && isinteger(avg.update_interval) || throw(ArgumentError("For steady runs, start/stop/update_interval must be integers."))
 

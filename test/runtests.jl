@@ -50,7 +50,7 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
     end
 
     @testset "Post-processing unit Test" begin
-        include("unit_test_field_time_average.jl")
+        include("unit_test_field_average.jl")
         include("unit_test_field_rms.jl")
         include("unit_test_reynolds_stress.jl")
         include("unit_test_post-process.jl")

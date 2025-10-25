@@ -84,7 +84,7 @@ hardware = Hardware(backend=backend,workgroup = workgroup)
 
 
 
-postprocess = [ReynoldsStress(model.momentum.U; start = start*timestep ,update_interval = 2*timestep), RMS(model.momentum.U;name="U_rms",start = start*timestep ,update_interval = 2*timestep)]
+postprocess = [ReynoldsStress(model.momentum.U; start = start*timestep ,update_interval = 2*timestep), FieldRMS(model.momentum.U;name="U_rms",start = start*timestep ,update_interval = 2*timestep)]
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs,postprocess=postprocess)
 
 @test initialise!(model.momentum.U, velocity) === nothing

@@ -76,10 +76,10 @@ function convert_time_to_iterations(RS::ReynoldsStress, model,dt,iterations)
         stop = Int(min(RS.stop,dt*iterations) / dt )
         update_interval = max(1, Int(floor(RS.update_interval / dt)))
         update_interval >= 1 || throw(ArgumentError("update interval must be ≥1 (got $update_interval)"))
-        stop >= start || throw(ArgumentError("After conversion with dt=$dt the RMS calculation window is empty (start = $start, stop = $stop)"))
+        stop >= start || throw(ArgumentError("After conversion with dt=$dt the Reynolds Stress calculation window is empty (start = $start, stop = $stop)"))
         return ReynoldsStress(field=RS.field,name=RS.name,mean=RS.mean,mean_sq=RS.mean_sq,rs = RS.rs, start=start,stop=stop,update_interval=update_interval)
     else
-        isinteger(RS.start) && isinteger(RS.stop) && isinteger(RS.update_interval) || throw(ArgumentError("For steady runs, start/stop/update_interval must be integers."))
+        isinteger(RS.start) && isinteger(RS.stop) && isinteger(RS.update_interval) || throw(ArgumentError("For steady runs, start/stop/update_interval must be given in iterations and therefore be integers."))
 
         return RS
     end

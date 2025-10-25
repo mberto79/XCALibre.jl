@@ -63,7 +63,7 @@ solvers = (
 
 runtime = Runtime(iterations=10, time_step=0.1, write_interval=-1)
 hardware = Hardware(backend=backend,workgroup = workgroup)
-postprocess = [FieldAverage(model.momentum.U;name = "u_mean"),FieldRMS(model.momentum.U;name = "u_rms"),FieldAverage(model.momentum.p;name = "p_mean")]
+postprocess = [FieldAverage(model.momentum.U;name = "u_mean"), FieldRMS(model.momentum.U;name = "u_rms"), FieldAverage(model.momentum.p;name = "p_mean"), ReynoldsStress(model.momentum.U)]
 
 
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs,postprocess=postprocess)
@@ -76,7 +76,9 @@ residuals = run!(model, config);
 @test postprocess[1].field isa VectorField
 @test postprocess[2].field isa VectorField
 @test postprocess[3].field isa ScalarField
+@test postprocess[4].field isa VectorField
 
 @test postprocess[1].mean isa VectorField
 @test postprocess[2].rms isa VectorField
 @test postprocess[3].mean isa ScalarField
+@test postprocess[4].rs isa SymmetricTensorField

@@ -1,5 +1,5 @@
 export FieldRMS
-@kwdef struct FieldRMS{T<:AbstractField,S<:String}
+@kwdef struct FieldRMS{T<:AbstractField,S<:AbstractString}
     field::T 
     name::S
     mean::T
@@ -19,11 +19,11 @@ end
     start::Real,
     stop::Real,
     update_interval::Real)
-Constructor to allocate memory to store the root mean square of the fluctuations of a field over the averaging window (in terms of iterations). Once created, should be passed to the `Configuration` object as an argument with keyword `postprocess`
+Constructor to allocate memory to store the root mean square of the fluctuations of a field over the averaging window. Once created, should be passed to the `Configuration` object as an argument with keyword `postprocess`
 
 ## Input arguments 
 - `field` the `VectorField` or `ScalarField`, e.g , `model.momentum.U`.
-- `name::String` the name/label of the field to be averaged, e.g "U_rms", this is used only when exporting to .vtk format
+- `name::String` the name/label of the field, e.g "U_rms", this is used only when exporting to .vtk format
 
 
 ## Optional arguments
@@ -34,7 +34,7 @@ Constructor to allocate memory to store the root mean square of the fluctuations
 function FieldRMS(field; name::AbstractString, start::Real=1, stop::Real=typemax(Int),update_interval::Real=1)
     start > 0      || throw(ArgumentError("Start must be a positive value (got $start)"))
     stop  >= start  || throw(ArgumentError("Stop ($stop) must be greater than or equal to start ($start)"))
-    update_interval > 0 || throw(ArgumentError("save interval must be >0 (got $update_interval)"))
+    update_interval > 0 || throw(ArgumentError("update interval must be >0 (got $update_interval)"))
     if field isa ScalarField
         mean = ScalarField(field.mesh)
         mean_sq = ScalarField(field.mesh)

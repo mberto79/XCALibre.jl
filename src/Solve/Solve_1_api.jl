@@ -373,10 +373,10 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
     opA = A
     b = _b(phiEqn, component)
 
-    phi = get_phi(phiEqn)
-    mesh = phi.mesh
-    cells = mesh.cells
-    volumes = getproperty.(cells, :volume)
+    # phi = get_phi(phiEqn)
+    # mesh = phi.mesh
+    # cells = mesh.cells
+    # volumes = getproperty.(cells, :volume)
     # vol_rdt = volumes./runtime.dt
     # if typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson}
     #     A.parent .+= vol_rdt*I
@@ -394,7 +394,7 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
     # Perform explicit step for Crank-Nicholson. Otherwise simply update field with solution
     if typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson}
         # @. b -= volumes/runtime.dt*values
-        # @. x = 2x - values
+        @. x = 2x - values
         # explicit_step!(phiEqn, x, values, config)
         # explicit_step!(phiEqn, x, values, b, config)
     end

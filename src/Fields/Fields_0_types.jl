@@ -2,7 +2,7 @@ export AbstractField
 export ScalarFloat, ConstantScalar, ConstantVector
 export AbstractScalarField, ScalarField, FaceScalarField
 export AbstractVectorField, VectorField, FaceVectorField
-export AbstractTensorField, TensorField, T, SymmetricTensorField
+export AbstractTensorField, TensorField, T
 export StrainRate, Vorticity, Dev, Sqr, MagSqr
 export _mesh
 export initialise!
@@ -247,48 +247,6 @@ Base.length(t::AbstractTensorField) = length(t.xx)
 Base.eachindex(t::AbstractTensorField) = eachindex(t.xx)
 KA.get_backend(t::AbstractTensorField) = KA.get_backend(t.xx)
 _mesh(field::AbstractField) = field.mesh # catch all accessor to mesh
-
-#Symmetric tensor 
-struct SymmetricTensorField{S1,S2,S3,S4,S5,S6,S7,S8,S9,M} <: AbstractTensorField
-    xx::S1
-    xy::S2
-    xz::S3 
-    yx::S4 
-    yy::S5 
-    yz::S6 
-    zx::S7 
-    zy::S8
-    zz::S9
-    mesh::M
-end
-function Adapt.adapt_structure(to, S::SymmetricTensorField)
-    xx = Adapt.adapt(to, S.xx)
-    xy = Adapt.adapt(to, S.xy)
-    xz = Adapt.adapt(to, S.xz)
-    yy = Adapt.adapt(to, S.yy)
-    yz = Adapt.adapt(to, S.yz)
-    zz = Adapt.adapt(to, S.zz)
-    mesh = Adapt.adapt(to, S.mesh)
-    return SymmetricTensorField(xx, xy, xz, xy, yy, yz, xz, yz, zz, mesh)
-end
-# Adapt.@adapt_structure SymmetricTensorField
-
-SymmetricTensorField(mesh::AbstractMesh) = begin
-    xx = ScalarField(mesh, store_mesh=false)
-    xy = ScalarField(mesh, store_mesh=false)
-    xz = ScalarField(mesh, store_mesh=false)
-    yy = ScalarField(mesh, store_mesh=false)
-    yz = ScalarField(mesh, store_mesh=false)
-    zz = ScalarField(mesh, store_mesh=false)
-
-    #symmetric components
-    yx = xy
-    zx = xz 
-    zy = yz
-    SymmetricTensorField(xx,xy,xz,yx,yy,yz,zx,zy,zz,mesh)
-end
-
-
 
 # TRANSPOSE IMPLEMENTATION
 

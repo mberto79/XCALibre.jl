@@ -17,10 +17,12 @@ backend = CPU(); workgroup = 1024; activate_multithread(backend)
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
+BL_cell_height = 50
+u_max = 40
 nu = 1e-3
 #u_mag = 3 # 5mm mesh
 # u_mag = 3.5 # 2mm mesh
-velocity = [u_mag, 0.0, 0.0]
+velocity = [u_max, 0.0, 0.0]
 Tu = 0.05
 nuR = 100
 k_inlet = 1 #3/2*(Tu*u_mag)^2
@@ -31,16 +33,13 @@ Re = velocity[1]*0.1/nu
 model = Physics(
     time = Steady(),
     fluid = Fluid{Incompressible}(nu = nu),
-    turbulence = RANS{KOmega}(),
+    turbulence = RANS{KOmegaSST}(walls=(:wall,)),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
     )
 
-BL_height = 100
-u_max = 4
-
 function func(coords, time, index)
-    u_loc = u_max*((index-1)/inlet_faces)^(1/6)
+    u_loc = u_max*((index-1)/BL_cell_height)^(1/7)
     value = SVector{3}(u_loc, 0, 0)
     return value
 end
@@ -85,7 +84,8 @@ schemes = (
     U = Schemes(divergence=Upwind),
     p = Schemes(divergence=Upwind),
     k = Schemes(divergence=Upwind),
-    omega = Schemes(divergence=Upwind)
+    omega = Schemes(divergence=Upwind),
+    y = Schemes(gradient=Midpoint)
 )
 
 solvers = (
@@ -120,6 +120,13 @@ solvers = (
         relax       = 0.7,
         rtol = 1e-2,
         atol = 1e-10
+    ),
+    y = SolverSetup(
+        solver      = Cg(), # Bicgstab(), Gmres()
+        preconditioner = Jacobi(),
+        convergence = 1e-8,
+        rtol = 1e-2,
+        relax       = 0.9,
     )
 )
 
@@ -144,8 +151,11 @@ Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)
 Fp = pressure_force(:wall, model.momentum.p, 1.25)
 Fv = viscous_force(:wall, model.momentum.U, 1.25, nu, model.turbulence.nut)
 
+println("Pressure forces = "+str(Fp))
+println("Viscous forces = "+str(Fv))
 
-# plot(; xlims=(0,494))
-# plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-# plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-# plot!(1:length(Rp), Rp, yscale=:log10, label="p")
+
+plot(; xlims=(0,494))
+plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
+plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
+plot!(1:length(Rp), Rp, yscale=:log10, label="p")

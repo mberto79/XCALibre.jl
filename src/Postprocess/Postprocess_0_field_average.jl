@@ -5,9 +5,9 @@ export convert_time_to_iterations
     field::T
     name::S
     mean::T
-    start::Real
-    stop::Real
-    update_interval::Real
+    start::Union{Real,Nothing}
+    stop::Union{Real,Nothing}
+    update_interval::Union{Real,Nothing}
 end
 
 """
@@ -32,7 +32,7 @@ Constructor to allocate memory to store the time averaged field. Once created, s
 - `stop::Real` optional keyword which specifies the end iteration/time of the averaging window. Default value is the last iteration/timestep. 
 - `update_interval::Real` optional keyword which specifies how often the time average of the field is updated and stored (default value is 1 i.e RMS updates every timestep/iteration). Note that the frequency of writing the post-processed fields is specified by the `write_interval` in `Configuration`. 
 """
-function FieldAverage(field; name::AbstractString, start::Real=1, stop::Real=typemax(Int),update_interval::Real=1)
+function FieldAverage(field; name::AbstractString, start::Union{Real,Nothing}=nothing, stop::Union{Real,Nothing}=nothing,update_interval::Union{Real,Nothing}=nothing)
     if field isa ScalarField
         storage = ScalarField(field.mesh) 
     elseif field isa VectorField

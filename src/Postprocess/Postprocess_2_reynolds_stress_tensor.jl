@@ -5,9 +5,9 @@ export ReynoldsStress
     mean::T
     mean_sq::T2
     rs::T2
-    start::Real
-    stop::Real
-    update_interval::Real
+    start::Union{Real,Nothing}
+    stop::Union{Real,Nothing}
+    update_interval::Union{Real,Nothing}
 end  
 """
     ReynoldsStress(
@@ -28,10 +28,7 @@ Constructor to allocate memory to store the Reynolds Stress Tensor over the calc
 - `stop::Real` optional keyword which specifies the end iteration/time of the Reynolds Stress Tensor calculation window. Default value is the last iteration/timestep. 
 - `update_interval::Real` optional keyword which specifies how often the Reynolds Stress Tensor is updated and stored (default value is 1 i.e Reynolds Stress Tensor updates every timestep/iteration). Note that the frequency of writing the post-processed fields is specified by the `write_interval` in `Configuration`. 
 """
-function ReynoldsStress(field; name::String =  "Reynolds_Stress", start::Real=1, stop::Real=typemax(Int),update_interval::Real=1)
-    start > 0      || throw(ArgumentError("Start must be a positive value (got $start)"))
-    stop  >= start  || throw(ArgumentError("Stop ($stop) must be greater than or equal to start ($start)"))
-    update_interval > 0 || throw(ArgumentError("update interval must be >0 (got $update_interval)"))
+function ReynoldsStress(field; name::String =  "Reynolds_Stress", start::Union{Real,Nothing}=nothing, stop::Union{Real,Nothing}=nothing,update_interval::Union{Real,Nothing}=nothing)
     if field isa VectorField
         rs = SymmetricTensorField(field.mesh)
         mean = VectorField(field.mesh)
@@ -69,7 +66,7 @@ function runtime_postprocessing!(RS::ReynoldsStress{T,T2,S},iter::Integer,n_iter
     end
     return nothing
 end
-function convert_time_to_iterations(RS::FieldAverage, model,dt,iterations)
+function convert_time_to_iterations(RS::ReynoldsStress, model,dt,iterations)
     if model.time === Transient()
         if RS.start === nothing
             start = 1
@@ -122,20 +119,5 @@ function convert_time_to_iterations(RS::FieldAverage, model,dt,iterations)
         stop >= start || throw(ArgumentError("stop iteration needs to be ≥ start  (got start = $start, stop = $stop)"))
         stop <= iterations || throw(ArgumentError("stop ($stop) must be ≤ iterations ($iterations)"))
         return ReynoldsStress(field=RS.field,name=RS.name,mean=RS.mean,mean_sq=RS.mean_sq,rs = RS.rs, start=start,stop=stop,update_interval=update_interval)
-    end
-end
-
-function convert_time_to_iterations(RS::ReynoldsStress, model,dt,iterations)
-    if model.time === Transient()
-        start = Int(ceil(RS.start / dt))
-        stop = Int(min(RS.stop,dt*iterations) / dt )
-        update_interval = max(1, Int(floor(RS.update_interval / dt)))
-        update_interval >= 1 || throw(ArgumentError("update interval must be ≥1 (got $update_interval)"))
-        stop >= start || throw(ArgumentError("After conversion with dt=$dt the Reynolds Stress calculation window is empty (start = $start, stop = $stop)"))
-        return ReynoldsStress(field=RS.field,name=RS.name,mean=RS.mean,mean_sq=RS.mean_sq,rs = RS.rs, start=start,stop=stop,update_interval=update_interval)
-    else
-        isinteger(RS.start) && isinteger(RS.stop) && isinteger(RS.update_interval) || throw(ArgumentError("For steady runs, start/stop/update_interval must be given in iterations and therefore be integers."))
-
-        return RS
     end
 end

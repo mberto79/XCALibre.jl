@@ -16,9 +16,9 @@ end
     name::String,
 
     #optional keyword arguments
-    start::Real,
-    stop::Real,
-    update_interval::Real)
+    start::Union{Real,Nothing},
+    stop::Union{Real,Nothing},
+    update_interval::Union{Real,Nothing})
 Constructor to allocate memory to store the root mean square of the fluctuations of a field over the averaging window. Once created, should be passed to the `Configuration` object as an argument with keyword `postprocess`
 
 ## Input arguments 
@@ -27,9 +27,9 @@ Constructor to allocate memory to store the root mean square of the fluctuations
 
 
 ## Optional arguments
-- `start::Real` optional keyword which specifies the start of the RMS calculation window, for **steady** simulations, this is in **iterations**, for **transient** simulations it is in **flow time**.   
-- `stop::Real` optional keyword which specifies the end iteration/time of the RMS calculation window. Default value is the last iteration/timestep. 
-- `update_interval::Real` optional keyword which specifies how often the RMS of the field is updated and stored (default value is 1 i.e RMS updates every timestep/iteration). Note that the frequency of writing the post-processed fields is specified by the `write_interval` in `Configuration`. 
+- `start::Union{Real,Nothing}` optional keyword which specifies the start of the RMS calculation window, for **steady** simulations, this is in **iterations**, for **transient** simulations it is in **flow time**.   
+- `stop::Union{Real,Nothing}` optional keyword which specifies the end iteration/time of the RMS calculation window. Default value is the last iteration/timestep. 
+- `update_interval::Union{Real,Nothing}` optional keyword which specifies how often the RMS of the field is updated and stored (default value is 1 i.e RMS updates every timestep/iteration). Note that the frequency of writing the post-processed fields is specified by the `write_interval` in `Configuration`. 
 """
 function FieldRMS(field; name::AbstractString, start::Union{Real,Nothing}=nothing, stop::Union{Real,Nothing}=nothing,update_interval::Union{Real,Nothing}=nothing)
     if field isa ScalarField
@@ -87,7 +87,7 @@ function convert_time_to_iterations(RMS::FieldRMS, model,dt,iterations)
         if RMS.start === nothing
             start = 1
         else 
-            RMS.start >= 0  || throw(ArgumentError("Start must be a positive value (got $(RMS.start))"))
+            RMS.start >= 0  || throw(ArgumentError("Start must be a value ≥ 0 (got $(RMS.start))"))
             start = clamp(ceil(Int, RMS.start / dt), 1, iterations) 
         end
 

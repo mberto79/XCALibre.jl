@@ -15,18 +15,18 @@ end
     model.momentum.U; 
 
     #optional keyword arguments
-    start::Real,
-    stop::Real,
-    update_interval::Real)
+    start::Union{Real,Nothing},
+    stop::Union{Real,Nothing},
+    update_interval::Union{Real,Nothing})
 Constructor to allocate memory to store the Reynolds Stress Tensor over the calculation window. Once created, should be passed to the `Configuration` object as an argument with keyword `postprocess`
 
 ## Input arguments 
 - `field`, must be `model.momentum.U`
 
 ## Optional arguments
-- `start::Real` optional keyword which specifies the start of the Reynolds Stress Tensor calculation window, for **steady** simulations, this is in **iterations**, for **transient** simulations it is in **flow time**.   
-- `stop::Real` optional keyword which specifies the end iteration/time of the Reynolds Stress Tensor calculation window. Default value is the last iteration/timestep. 
-- `update_interval::Real` optional keyword which specifies how often the Reynolds Stress Tensor is updated and stored (default value is 1 i.e Reynolds Stress Tensor updates every timestep/iteration). Note that the frequency of writing the post-processed fields is specified by the `write_interval` in `Configuration`. 
+- `start::Union{Real,Nothing}` optional keyword which specifies the start of the Reynolds Stress Tensor calculation window, for **steady** simulations, this is in **iterations**, for **transient** simulations it is in **flow time**.   
+- `stop::Union{Real,Nothing}` optional keyword which specifies the end iteration/time of the Reynolds Stress Tensor calculation window. Default value is the last iteration/timestep. 
+- `update_interval::Union{Real,Nothing}` optional keyword which specifies how often the Reynolds Stress Tensor is updated and stored (default value is 1 i.e Reynolds Stress Tensor updates every timestep/iteration). Note that the frequency of writing the post-processed fields is specified by the `write_interval` in `Configuration`. 
 """
 function ReynoldsStress(field; name::String =  "Reynolds_Stress", start::Union{Real,Nothing}=nothing, stop::Union{Real,Nothing}=nothing,update_interval::Union{Real,Nothing}=nothing)
     if field isa VectorField
@@ -71,7 +71,7 @@ function convert_time_to_iterations(RS::ReynoldsStress, model,dt,iterations)
         if RS.start === nothing
             start = 1
         else 
-            RS.start >= 0  || throw(ArgumentError("Start must be a positive value (got $(RS.start))"))
+            RS.start >= 0  || throw(ArgumentError("Start must be a value ≥ 0 (got $(RS.start))"))
             start = clamp(ceil(Int, RS.start / dt), 1, iterations) 
         end
 

@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 *  `FieldAverage` and `FieldRMS` of Vector and Scalar fields [#78]
 *  Added `RotatingWall` velocity boundary condition [#81](@ref)
 *  Added `KOmegaSST` turbulence model [#82](@ref)
-*  Added capablity to write out TensorFields to .vtk/vtu including Reynolds Stress Tensor [#84](@ref)
+*  Added capablity to write out TensorFields to .vtk/vtu including Reynolds Stress Tensor [#87](@ref)
 
 
 ### Fixed

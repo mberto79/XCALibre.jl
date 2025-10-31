@@ -17,9 +17,9 @@ end
     name::String,
 
     #optional keyword arguments
-    start::Real,
-    stop::Real,
-    update_interval::Real)
+    start::Union{Real,Nothing},
+    stop::Union{Real,Nothing},
+    update_interval::Union{Real,Nothing})
 
 Constructor to allocate memory to store the time averaged field. Once created, should be passed to the `Configuration` object as an argument with keyword `postprocess`
 
@@ -28,9 +28,9 @@ Constructor to allocate memory to store the time averaged field. Once created, s
 - `name::String` the name of the field to be averaged, e.g "U_mean", this is used only when exporting to .vtk format
 
 ## Optional arguments
-- `start::Real` optional keyword which specifies the start time/iteration of the averaging window, for **steady** simulations, this is in **iterations**, for **transient** simulations it is in **flow time**.   
-- `stop::Real` optional keyword which specifies the end iteration/time of the averaging window. Default value is the last iteration/timestep. 
-- `update_interval::Real` optional keyword which specifies how often the time average of the field is updated and stored (default value is 1 i.e RMS updates every timestep/iteration). Note that the frequency of writing the post-processed fields is specified by the `write_interval` in `Configuration`. 
+- `start::Union{Real,Nothing}` optional keyword which specifies the start time/iteration of the averaging window, for **steady** simulations, this is in **iterations**, for **transient** simulations it is in **flow time**.   
+- `stop::Union{Real,Nothing}` optional keyword which specifies the end iteration/time of the averaging window. Default value is the last iteration/timestep. 
+- `update_interval::Union{Real,Nothing}` optional keyword which specifies how often the time average of the field is updated and stored (default value is 1 i.e average updates every timestep/iteration). Note that the frequency of writing the post-processed fields is specified by the `write_interval` in `Configuration`. 
 """
 function FieldAverage(field; name::AbstractString, start::Union{Real,Nothing}=nothing, stop::Union{Real,Nothing}=nothing,update_interval::Union{Real,Nothing}=nothing)
     if field isa ScalarField
@@ -90,7 +90,7 @@ function convert_time_to_iterations(avg::FieldAverage, model,dt,iterations)
         if avg.start === nothing
             start = 1
         else 
-            avg.start >= 0  || throw(ArgumentError("Start must be a positive value (got $(avg.start))"))
+            avg.start >= 0  || throw(ArgumentError("Start must be a value ≥ 0 (got $(avg.start))"))
             start = clamp(ceil(Int, avg.start / dt), 1, iterations) 
         end
 

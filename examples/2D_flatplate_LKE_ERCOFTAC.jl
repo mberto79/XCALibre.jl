@@ -6,8 +6,8 @@ using XCALibre
 # mesh_file = "unv_sample_meshes/flatplate_2D_lowRe.unv"
 # mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 
-grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "flatplate_2D_lowRe.unv"
+grids_dir = pkgdir(XCALibre, "examples", "0_GRIDS")
+grid = "Flatplate_2D_Mesh_BSTest.unv"
 mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
@@ -42,50 +42,50 @@ BCs = assign(
     region=mesh_dev,
     (
         U = [
-            Dirichlet(:inlet, velocity),
-            Zerogradient(:outlet),
-            Wall(:wall, [0.0, 0.0, 0.0]),
-            Extrapolated(:top)
+            Dirichlet(:Bottom, velocity),
+            Zerogradient(:Top),
+            Wall(:Right, [0.0, 0.0, 0.0]),
+            Extrapolated(:Left)
             # Zerogradient(:top)
             # Symmetry(:top)
         ],
         p = [
-            Zerogradient(:inlet),
-            Dirichlet(:outlet, 0.0),
-            Wall(:wall),
-            Extrapolated(:top)
+            Zerogradient(:Bottom),
+            Dirichlet(:Top, 0.0),
+            Wall(:Right),
+            Extrapolated(:Left)
             # Zerogradient(:top)
             # Symmetry(:top)
         ],
         k = [
-            Dirichlet(:inlet, k_inlet),
-            Zerogradient(:outlet),
-            Dirichlet(:wall, 0.0),
-            Extrapolated(:top)
+            Dirichlet(:Bottom, k_inlet),
+            Zerogradient(:Top),
+            Dirichlet(:Right, 0.0),
+            Extrapolated(:Left)
             # Zerogradient(:top)
             # Symmetry(:top)
         ],
         kl = [
-            Dirichlet(:inlet, kL_inlet),
-            Zerogradient(:outlet),
-            Dirichlet(:wall, 0.0),
-            Extrapolated(:top)
+            Dirichlet(:Bottom, kL_inlet),
+            Zerogradient(:Top),
+            Dirichlet(:Right, 0.0),
+            Extrapolated(:Left)
             # Zerogradient(:top)
             # Symmetry(:top)
         ],
         omega = [
-            Dirichlet(:inlet, ω_inlet),
-            Zerogradient(:outlet),
-            OmegaWallFunction(:wall),
-            Extrapolated(:top)
+            Dirichlet(:Bottom, ω_inlet),
+            Zerogradient(:Top),
+            OmegaWallFunction(:Right),
+            Extrapolated(:Left)
             # Zerogradient(:top)
             # Symmetry(:top)
         ],
         nut = [
-            Dirichlet(:inlet, k_inlet/ω_inlet),
-            Extrapolated(:outlet),
-            Dirichlet(:wall, 0.0), 
-            Extrapolated(:top)
+            Dirichlet(:Bottom, k_inlet/ω_inlet),
+            Extrapolated(:Top),
+            Dirichlet(:Right, 0.0), 
+            Extrapolated(:Left)
             # Zerogradient(:top)
             # Symmetry(:top)
         ]

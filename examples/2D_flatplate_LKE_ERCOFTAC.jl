@@ -19,7 +19,7 @@ hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 # Turbulence Model
-velocity = [5.4,0,0]
+velocity = [0,5.4,0]
 nu = 1.48e-5
 Re = 10*1/nu
 νR = 15

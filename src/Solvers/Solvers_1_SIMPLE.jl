@@ -252,6 +252,7 @@ function SIMPLE(
             @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
                 save_output(model, outputWriter, iteration, time, config)
+                save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
             end
             break
         end

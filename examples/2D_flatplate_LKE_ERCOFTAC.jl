@@ -177,17 +177,22 @@ residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
  using DelimitedFiles
  using LinearAlgebra
  using Plots 
- OF_data = readdlm("flatplate_OF_wall_kOmega_lowRe.csv", ',', Float64, skipstart=1)
- oRex = OF_data[:,7].*velocity[1]./nu[1]
- oCf = sqrt.(OF_data[:,12].^2 + OF_data[:,13].^2)/(0.5*velocity[1]^2)
 
- #model_cpu = adapt(CPU(), model)
+ Ex_data = readdlm("T3A_Experimental_Results.csv", ',', Float64, skipstart=1)
+ eRex = Ex_data[:,1]
+ eCf = Ex_data[:,2]
 
- #tauw, pos = wall_shear_stress(:Right, model_cpu)
- #tauMag = [norm(tauw[i]) for i ∈ eachindex(tauw)]
- #tauMag = [tauw.x[i] for i ∈ eachindex(tauw)]
- #x = [pos[i][1] for i ∈ eachindex(pos)]
- #Rex = velocity[1].*x./nu
+ # OF_data = readdlm("T3A_Experimental_Results.csv", ',', Float64, skipstart=1)
+ # oRex = OF_data[:,7].*velocity[1]./nu[1]
+ # oCf = sqrt.(OF_data[:,12].^2 + OF_data[:,13].^2)/(0.5*velocity[1]^2)
+
+  model_cpu = adapt(CPU(), model)
+
+  tauw, pos = wall_shear_stress(:Wall, model_cpu)
+ # tauMag = [norm(tauw[i]) for i ∈ eachindex(tauw)]
+ # tauMag = [tauw.x[i] for i ∈ eachindex(tauw)]-
+ # x = [pos[i][1] for i ∈ eachindex(pos)]
+ # Rex = velocity[1].*x./nu
 
  x_corr = [0:0.0002:2;]
  Rex_corr = velocity[1].*x_corr/nu
@@ -197,8 +202,9 @@ residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
  plot(; xaxis="Rex", yaxis="Cf")
  plot!(Rex_corr, Cf_corr, color=:red, ylims=(0, 0.01), xlims=(0,6e5), label="Turbulent",lw=1.5)
  plot!(Rex_corr, Cf_laminar, color=:green, ylims=(0, 0.01), xlims=(0,6e5), label="Laminar",lw=1.5)
-# # plot!(oRex, oCf, color=:green, lw=1.5, label="OpenFOAM") # |> display
-# plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code") |> display
+ scatter!(eRex, eCf, color=:green, label="Experimental T3A Data") # |> display
+ # plot!(oRex, oCf, color=:green, lw=1.5,label="OpenFoam") |> display
+ # plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code") |> display
 
 # plot(; xlims=(0,1000))
 # plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

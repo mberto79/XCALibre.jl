@@ -152,24 +152,25 @@ wall_shear_stress(patch::Symbol, model)  = begin
     typeof(turbulence) <: RANS{Laminar} ? nut = ConstantScalar(0.0) : nut = model.turbulence.nut
     mesh = model.domain
     (; nu) = model.fluid
-    (; U) = model.momentum
+    (; U, Uf) = model.momentum
     (; boundaries, boundary_cellsID, faces) = mesh
     ID = boundary_index(boundaries, patch)
     boundary = boundaries[ID]
     (; IDs_range) = boundary
+
     @info "calculating viscous forces on patch: $patch at index $ID"
+    # Setting up Scalar and Vector Fields
     x = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
     y = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
     z = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
     tauw = FaceVectorField(x,y,z, mesh)
-    Uw = zero(_get_float(mesh))
-    for i ∈ 1:length(boundaries.U)
-        if ID == boundaries.U[i].ID
-            Uw = boundaries.U[i].value
-            surface_normal_gradient!(tauw, U, boundaries.U[i].value, IDs_range)
-        end
+    
+    # Iterate through face IDs of the boundary and calcualte surface friction
+    for i ∈ IDs_range
+        Uw = Uf[i]
+        surface_normal_gradient!(tauw, U, Uw, IDs_range)
     end
-
+    
     pos = fill(SVector{3,Float64}(0,0,0), length(IDs_range))
     for i ∈ eachindex(tauw)
         # fID = facesID[i]

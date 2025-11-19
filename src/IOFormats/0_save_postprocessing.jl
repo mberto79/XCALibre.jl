@@ -16,7 +16,9 @@ end
 
 function build_args(pp)
     pp === nothing && return ()
-    if hasproperty(pp, :rms)
+    if hasproperty(pp, :rs)
+        return ((getproperty(pp, :name), getproperty(pp, :rs)),)
+    elseif hasproperty(pp, :rms)
         return ((getproperty(pp, :name), getproperty(pp, :rms)),)
     elseif hasproperty(pp, :mean)
         return ((getproperty(pp, :name), getproperty(pp, :mean)),)

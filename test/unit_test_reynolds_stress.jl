@@ -80,25 +80,25 @@ timestep = 0.01
 runtime = Runtime(iterations=iterations, time_step=timestep, write_interval=-1)
 hardware = Hardware(backend=backend,workgroup = workgroup)
 
-postprocess = [FieldRMS(model.momentum.U; name="Urms"), FieldRMS(model.momentum.U;name="Urms_stop50", stop = 50*timestep,update_interval = 3*timestep), FieldRMS(model.momentum.U;name="Urms_start51", start = 51*timestep, update_interval = timestep/2)]
+postprocess = [ReynoldsStress(model.momentum.U), FieldRMS(model.momentum.U;name="U_rms")]
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs,postprocess=postprocess)
 
 @test initialise!(model.momentum.U, velocity) === nothing
 @test initialise!(model.momentum.p, 0.0) === nothing
 residuals = run!(model, config);
 
-#check middle 10 cells of inlet agree with analytical rms 
 u_rms_exact = U0*A/sqrt(2) 
 v_rms_exact = U0*A/sqrt(2)
-u_rms = sum(postprocess[1].rms.x.values[end-25:end-15])/length(postprocess[1].rms.x.values[end-25:end-15])
-v_rms = sum(postprocess[1].rms.y.values[end-25:end-15])/length(postprocess[1].rms.y.values[end-25:end-15])
+u_rms = sum(postprocess[2].rms.x.values[end-25:end-15])/length(postprocess[2].rms.x.values[end-25:end-15])
+v_rms = sum(postprocess[2].rms.y.values[end-25:end-15])/length(postprocess[2].rms.y.values[end-25:end-15])
 
 @test u_rms ≈ u_rms_exact atol = 0.005
 @test v_rms ≈ v_rms_exact atol = 0.03
 
-#testing start and end and update_interval logic
-u_rms_first_half = sum(postprocess[2].rms.x.values[end-25:end-15])/length(postprocess[2].rms.x.values[end-25:end-15])
-u_rms_second_half = sum(postprocess[3].rms.x.values[end-25:end-15])/length(postprocess[3].rms.x.values[end-25:end-15])
+#check that the square root of the diagonal values of the RST agree with the rms
+RST = postprocess[1].rs
+u_rms_RST = sqrt(sum(RST.xx.values[end-25:end-15])/length(RST.xx.values[end-25:end-15]))
+v_rms_RST = sqrt(sum(RST.yy.values[end-25:end-15])/length(RST.yy.values[end-25:end-15]))
 
-@test u_rms ≈ u_rms_first_half atol = 0.005
-@test u_rms ≈ u_rms_second_half atol = 0.005
+@test u_rms_RST ≈ u_rms atol = 0.00001
+@test v_rms_RST ≈ v_rms atol = 0.0003

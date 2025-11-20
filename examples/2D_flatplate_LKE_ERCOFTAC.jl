@@ -20,11 +20,11 @@ mesh_dev = adapt(backend, mesh)
 
 # Turbulence Model
 velocity = [5.4,0,0]
-nu = 1.48e-5
-Re = 2e5
+nu = 1.497e-5
+# Re = 10*1/nu
 νR = 13.9
 Tu = 0.03
-k_inlet = 0.0575 #3/2*(Tu*velocity[1])^2
+k_inlet = 0.0575 # k_inlet = 3/2*(Tu*velocity[1])^2
 kL_inlet = 0.0115 #1/2*(Tu*velocity[1])^2
 ω_inlet = 275 #k_inlet/(νR*nu)
 
@@ -199,12 +199,13 @@ residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
  Cf_corr = 0.0576.*(Rex_corr).^(-1/5)
  Cf_laminar = 0.664.*(Rex_corr).^(-1/2)
 
- plot(; xaxis="Rex", yaxis="Cf")
+ p = plot(; xaxis="Rex", yaxis="Cf")
  plot!(Rex_corr, Cf_corr, color=:red, ylims=(0, 0.01), xlims=(0,6e5), label="Turbulent",lw=1.5)
  plot!(Rex_corr, Cf_laminar, color=:green, ylims=(0, 0.01), xlims=(0,6e5), label="Laminar",lw=1.5)
  scatter!(eRex, eCf, color=:green, label="Experimental T3A Data") # |> display
  # plot!(oRex, oCf, color=:green, lw=1.5,label="OpenFoam") |> display
  plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code") |> display
+savefig(p,"EROFATC_Plate_1.svg")
 
 # plot(; xlims=(0,1000))
 # plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

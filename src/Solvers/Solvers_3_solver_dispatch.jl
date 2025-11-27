@@ -124,13 +124,24 @@ run!(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     ) where{T<:Steady,F<:Incompressible,M,Tu,E,D,BI} = 
 begin
-    residuals = simple!(
-        model, config, 
-        output=output,
-        pref=pref, 
-        ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+    residuals=nothing
+    #print(model.momentum)
+    #if (model.momentum==original)
+    #    residuals = simple!(
+    #    model, config, 
+    #    output=output,
+    #    pref=pref, 
+    #    ncorrectors=ncorrectors, 
+    #    inner_loops=inner_loops
+    #    )
+    #end
+
+    #if (model.momentum==FilmModel)
+        residuals=filmModel!(
+            model,config,
+            output=output
         )
+    #end
     return residuals
 end
 

@@ -32,5 +32,6 @@ include("Solvers_1_CSIMPLE.jl")
 include("Solvers_2_PISO.jl")
 include("Solvers_2_CPISO.jl")
 include("Solvers_3_solver_dispatch.jl")
+include("Solvers_1_FilmModel.jl")
 
 end

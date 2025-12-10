@@ -131,7 +131,7 @@ Adapt.@adapt_structure original
 
 
 
-struct FilmModel{V,S,Vf,Sf,SS} <: AbstractMomentumModel
+struct FilmModelMomentum{V,S,Vf,Sf,SS} <: AbstractMomentumModel
     U::V
     h::S
     Uf::Vf
@@ -140,12 +140,12 @@ struct FilmModel{V,S,Vf,Sf,SS} <: AbstractMomentumModel
 end
 Adapt.Adapt.@adapt_structure FilmModel
 
-FilmModel(mesh::AbstractMesh) = begin
+FilmModelMomentum(mesh::AbstractMesh) = begin
     U = VectorField(mesh)
     h = ScalarField(mesh)
     Uf = FaceVectorField(mesh)
     hf = FaceScalarField(mesh)
-    FilmModel(U, h, Uf, hf, nothing)
+    FilmModelMomentum(U, h, Uf, hf, nothing)
 end
 
 """
@@ -160,9 +160,10 @@ end
 - `domain` - provides the mesh to used (must be adapted to the target backend device)
 
 """
-Physics(; time, fluid=nothing, solid=nothing, turbulence=nothing, energy, domain, momentum=Momentum) = begin
+Physics(; time, fluid=nothing, solid=nothing, turbulence=nothing, energy, domain, #momentum=Momentum
+) = begin
     # NOTE: this function will be changed if/when a "medium" keyword is introduced. This will get rid of this ugly if statements! 
-    momentum = momentum(domain)
+    momentum = FilmModelMomentum(domain)
 
     if fluid !== nothing
         fluid = fluid(domain)

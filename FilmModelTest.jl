@@ -24,13 +24,13 @@ nu = 1e-3
 Re = velocity[1]*0.1/nu
 
 model = Physics(
-    momentum=FilmModel,
+    #momentum=FilmModelMomentum,
     time = Steady(),
     fluid = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
-    )
+)
 
 BCs = assign(
     region=mesh_dev,
@@ -65,7 +65,7 @@ solvers = (
         atol = 1e-10
     ),
     h = SolverSetup(
-        solver      = Cg(), # Options: Cg(), Bicgstab(), Gmres()
+        solver      = Bicgstab(), # Options: Cg(), Bicgstab(), Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
         convergence = 1e-7,
         relax       = 0.7,
@@ -74,13 +74,13 @@ solvers = (
     )
 )
 
-runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
-#runtime = Runtime(iterations=1, time_step=1, write_interval=-1) # hide
+#runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
+runtime = Runtime(iterations=2, time_step=1, write_interval=-1) # hide
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
-initialise!(model.momentum.U, velocity)
-initialise!(model.momentum.h, 0.0)
+initialise!(model.momentum.U, velocity);
+initialise!(model.momentum.h, 0.0);
 
 residuals = run!(model, config);

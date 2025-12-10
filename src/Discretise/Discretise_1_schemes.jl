@@ -24,7 +24,7 @@ end
 @inline function scheme!(
     term::Operator{F,P,I,Time{Euler}}, 
     nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
-    # nothing
+
     0.0, 0.0 # add types if this approach works
 end
 @inline scheme_source!(
@@ -42,20 +42,18 @@ end
 @inline function scheme!(
     term::Operator{F,P,I,Time{CrankNicolson}}, 
     nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
-    # nothing
+
     0.0, 0.0 # add types if this approach works
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Time{CrankNicolson}}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
-        K = 1.0
         volume = cell.volume
-        vol_rdt = K*volume/runtime.dt # advance solution by dt/2 only
+        vol_rdt = volume/runtime.dt
         
         # Increment sparse and b arrays 
         ac = vol_rdt
-        b = prev[cID]*vol_rdt # + 0.5*prev[cID]*volume/runtime.dt
+        b = prev[cID]*vol_rdt
         return ac, b
-        # return 0.0, 0.0
 end
 
 # LAPLACIAN

@@ -186,7 +186,6 @@ function solve_equation!(
     mesh = psi.mesh
 
     discretise!(psiEqn, psi, config)
-    # temporal_discretisation!(psiEqn, psi, config, update_source=true)
     update_equation!(psiEqn, config)
     
     apply_boundary_conditions!(psiEqn, psiBCs, xdir, time, config)
@@ -197,166 +196,25 @@ function solve_equation!(
     
     update_equation!(psiEqn, config)
     apply_boundary_conditions!(psiEqn, psiBCs, ydir, time, config)
-    # temporal_discretisation!(psiEqn, psi, config, update_source=false)
     # implicit_relaxation!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
     implicit_relaxation_diagdom!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
     # update_preconditioner!(psiEqn.preconditioner, mesh, config)
     resy = solve_system!(psiEqn, solversetup, psi.y, ydir, config)
     
     # Z velocity calculations (3D Mesh only)
-    # resz = one(_get_float(mesh))
     resz = zero(_get_float(mesh))
     if typeof(mesh) <: Mesh3
         update_equation!(psiEqn, config)
         apply_boundary_conditions!(psiEqn, psiBCs, zdir, time, config)
-        # temporal_discretisation!(psiEqn, psi, config, update_source=false)
         # implicit_relaxation!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
         implicit_relaxation_diagdom!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
         # update_preconditioner!(psiEqn.preconditioner, mesh, config)
         resz = solve_system!(psiEqn, solversetup, psi.z, zdir, config)
     end
-    # explicit_step!(psiEqn, psi, config)
     return resx, resy, resz
 end
 
-function temporal_discretisation!(psiEqn, psi, config; update_source)
-    (; hardware, runtime) = config
-    (; backend, workgroup) = hardware
-    dt = runtime.dt
-    # Retrieve variabels for defition
-    mesh = psi.mesh
-    (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
-
-    # Sparse array and b accessor call
-    A = _A(psiEqn)
-    A0 = _A0(psiEqn)
-    (; bx, by, bz) = psiEqn.equation
-
-    # Sparse array fields accessors
-    nzval = _nzval(A)
-    nzval0 = _nzval(A0)
-    colval = _colval(A)
-    rowptr = _rowptr(A)
-
-    ndrange = length(cells)
-    kernel! = _temporal_discretisation!(_setup(backend, workgroup, ndrange)...)
-    kernel!(nzval, nzval0, colval, rowptr, bx, by, bz, dt, psi, cells, update_source)
-end
-
-@kernel function _temporal_discretisation!(nzval, nzval0, colval, rowptr, bx, by, bz, dt, psi, cells, update_source)
-    i = @index(Global)
-
-    @inbounds begin
-        idx = spindex(rowptr, colval, i, i)
-        (; volume) = cells[i]
-        k0 = 2 # 1 for Euler, 2 for Crank Nicolson
-        vol_rdt = k0*volume/dt
-        nzval0[idx] += vol_rdt
-        psi_i = psi[i]
-        if update_source
-
-            Axi = Ayi = Azi = 0.0
-            start_index = rowptr[i]
-            end_index = rowptr[i+1] -1
-            for nzi ∈ start_index:end_index
-                j = colval[nzi]
-                psi_j = psi[j]
-                nzvali = nzval0[nzi]
-                Axi += nzvali*psi_j[1]
-                Ayi += nzvali*psi_j[2]
-                Azi += nzvali*psi_j[3]
-            end
-
-            k1 = 0.0; k2 = 0.0
-            bx[i] += vol_rdt*psi_i[1] + k1*bx[i] - k2*Axi
-            by[i] += vol_rdt*psi_i[2] + k1*by[i] - k2*Ayi
-            bz[i] += vol_rdt*psi_i[3] + k1*bz[i] - k2*Azi
-        end
-    end
-end
-
-function explicit_step!(psiEqn, x, psix, b, config)
-    (; hardware, runtime) = config
-    (; backend, workgroup) = hardware
-    dt = runtime.dt
-    # Retrieve variabels for defition
-    phi = get_phi(psiEqn)
-    mesh = phi.mesh
-    (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
-
-    # Sparse array and b accessor call
-    A = _A(psiEqn)
-    A0 = _A0(psiEqn)
-    # (; bx, by, bz) = psiEqn.equation
-
-    # Sparse array fields accessors
-    nzval = _nzval(A)
-    nzval0 = _nzval(A0)
-    colval = _colval(A)
-    rowptr = _rowptr(A)
-
-    ndrange = length(cells)
-    kernel! = _explicit_step!(_setup(backend, workgroup, ndrange)...)
-    kernel!(x, nzval, nzval0, colval, rowptr, b, dt, psix, cells)
-end
-
-@kernel function _explicit_step!(x, nzval, nzval0, colval, rowptr, b, dt, psix, cells)
-    i = @index(Global)
-
-    @inbounds begin
-        idx = spindex(rowptr, colval, i, i)
-        (; volume) = cells[i]
-        k0 = 2.0
-        vol_rdt = k0*volume/dt
-        # nzval[idx] -= 2*vol_rdt
-        psi_i = x[i]
-
-        Apsi_x = Apsi_y = Apsi_z = 0.0
-        start_index = rowptr[i]
-        end_index = rowptr[i+1] -1
-        for nzi ∈ start_index:end_index
-            j = colval[nzi]
-            psi_j = x[j]
-            nzvali = nzval[nzi]                                             
-            Apsi_x += nzvali*psi_j
-        end
-
-        rac = 1/vol_rdt
-        x[i] = (b[i] - 0*vol_rdt*psix[i] + vol_rdt*psi_i - Apsi_x)*rac
-    end
-end
-
-# @kernel function _explicit_step!(nzval, nzval0, colval, rowptr, bx, by, bz, dt, psi, cells)
-#     i = @index(Global)
-
-#     @inbounds begin
-#         idx = spindex(rowptr, colval, i, i)
-#         (; volume) = cells[i]
-#         k0 = 2
-#         vol_rdt = k0*volume/dt
-#         nzval[idx] += vol_rdt
-#         psi_i = psi[i]
-
-#         Apsi_x = Apsi_y = Apsi_z = 0.0
-#         start_index = rowptr[i]
-#         end_index = rowptr[i+1] -1
-#         for nzi ∈ start_index:end_index
-#             j = colval[nzi]
-#             psi_j = psi[j]
-#             nzvali = nzval[nzi]
-#             Apsi_x += nzvali*psi_j[1]
-#             Apsi_y += nzvali*psi_j[2]
-#             Apsi_z += nzvali*psi_j[3]
-#         end
-
-#         rac = 1/vol_rdt
-#         psi.x[i] = (bx[i] - vol_rdt*psi_i[1] - Apsi_x)*rac
-#         psi.y[i] = (by[i] - vol_rdt*psi_i[2] - Apsi_y)*rac
-#         psi.z[i] = (bz[i] - vol_rdt*psi_i[3] - Apsi_z)*rac
-#     end
-# end
-
-function solve_system!(phiEqn::ModelEquation, setup, result, component, config) # ; opP, solver
+function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
 
     (; itmax, atol, rtol) = setup
     precon = phiEqn.preconditioner
@@ -369,19 +227,8 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
     (; values, mesh) = result
     
     A = _A(phiEqn)
-    # opA = phiEqn.equation.opA
     opA = A
     b = _b(phiEqn, component)
-
-    # phi = get_phi(phiEqn)
-    # mesh = phi.mesh
-    # cells = mesh.cells
-    # volumes = getproperty.(cells, :volume)
-    # vol_rdt = volumes./runtime.dt
-    # if typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson}
-    #     A.parent .+= vol_rdt*I
-    #     b .+= result.*vol_rdt
-    # end
 
     apply_smoother!(setup.smoother, values, A, b, hardware)
 
@@ -389,14 +236,10 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
         solver, opA, b, values; 
         M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon)
         )
-    # KernelAbstractions.synchronize(backend)
 
     # Perform explicit step for Crank-Nicholson. Otherwise simply update field with solution
     if typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson}
-        # @. b -= volumes/runtime.dt*values
         @. x = 2x - values
-        # explicit_step!(phiEqn, x, values, config)
-        # explicit_step!(phiEqn, x, values, b, config)
     end
 
     ndrange = length(values)

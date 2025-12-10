@@ -67,7 +67,7 @@ solvers = (
 )
 
 timeScheme = Euler
-# timeScheme = CrankNicolson
+timeScheme = CrankNicolson
 schemes = (
     U = Schemes(time=timeScheme, divergence=LUST, gradient=Gauss),
     p = Schemes(time=timeScheme, gradient=Gauss)

@@ -239,7 +239,11 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
 
     # Perform explicit step for Crank-Nicholson. Otherwise simply update field with solution
     if typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson}
-        @. x = 2x - values
+        # @. x = 2x - values
+        AK.foreachindex(x, min_elems=workgroup, block_size=workgroup) do i 
+            # xi = @inbounds x[i]
+            x[i] = 2*x[i] - values[i]
+        end
     end
 
     ndrange = length(values)
@@ -389,6 +393,7 @@ function residual(eqn, component, config)
     (; A, R, Fx) = eqn.equation
     b = _b(eqn, component)
     values = get_values(get_phi(eqn), component)
+    (; workgroup) = config.hardware
 
     # # Openfoam's residual definition (not optimised)
     # Fx .= A*values
@@ -401,7 +406,10 @@ function residual(eqn, component, config)
 
     # Previous definition
     Fx .= A * values
-    @inbounds @. R = (b - Fx)^2
+    # @inbounds @. R = (b - Fx)^2
+    AK.foreachindex(R, min_elems=workgroup, block_size=workgroup) do i 
+            R[i] = (b[i] - Fx[i])^2
+    end
     normb = norm(b)
     denominator = ifelse(normb>0,normb, 1)
     Residual = sqrt(mean(R)) / denominator

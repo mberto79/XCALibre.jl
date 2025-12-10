@@ -7,6 +7,7 @@ using SparseArrays
 using LinearOperators
 # using LDLFactorizations
 using KernelAbstractions
+import AcceleratedKernels as AK
 using Atomix
 using ILUZero
 import KrylovPreconditioners as KP

@@ -26,9 +26,10 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     rho_l = rho
 
     @info "Pre-allocating fields..."
-    ∇p = Grad{schemes.h.gradient}(h)
+    ∇h = Grad{schemes.h.gradient}(h)
     mdotf = FaceScalarField(mesh)
     Sm = ScalarField(mesh)
+    h_prev = ScalarField(mesh)
     Si_mom = ScalarField(mesh)
     nueff = FaceScalarField(mesh)
 
@@ -37,18 +38,19 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     # Edit
     @info "U equation still need updating"
     U_eqn = (
-        Time{schemes.U.time}(U)
+        Time{schemes.U.time}(h, U)
         + Divergence{schemes.U.divergence}(mdotf,U)
-        - Laplacian{schemes.U.laplacian}(nueff, U)
+        #+ Grd{schemes.h.gradient}(h, )
+        #+ Si(nueff, U)
         ==
-        Source(∇p.result)
+        Source()
     ) → VectorEquation(U, boundaries.U)
 
     h_eqn = (
-        Time{schemes.h.time}(rho_l,h)
+        Time{schemes.h.time}(h)
         + Divergence{schemes.h.divergence}(mdotf, h)
         ==
-        Source(Sm)
+        Source(Sm)#/rho_l)
     ) → ScalarEquation(h, boundaries.h)
 
     @info "Initialising preconditioners"
@@ -66,12 +68,12 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals = solver_variant(
-        model, turbulenceModel, U_eqn, h_eqn, config
+        model, turbulenceModel, ∇h, U_eqn, h_eqn, config
     )
 end
 
 function FilmModel(
-    model, turbulenceModel, U_eqn, h_eqn, config;
+    model, turbulenceModel, ∇h, U_eqn, h_eqn, config;
     output=VTK(), ncorrectors=0
 )
 
@@ -84,7 +86,7 @@ function FilmModel(
 
     Postprocess = convert_time_to_iterations(postprocess, model, dt, iterations)
     mdotf = get_flux(U_eqn, 2)
-    nueff = get_flux(U_eqn, 3)
+    #nueff = get_flux(U_eqn, 3)
     divHv = get_source(h_eqn, 1)
     
     outputWriter = initialise_writer(output, model.domain)
@@ -115,8 +117,10 @@ function FilmModel(
     interpolate!(Uf, U, config)
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
+    grad!(∇h, hf, h, boundaries.h, time, config)
+    limit_gradient!(schemes.h.limiter, ∇h, h, config)
 
-    update_nueff!(nueff, nu, turbulenceModel, config)
+    #update_nueff!(nueff, nu, turbulenceModel, config)
 
     @info "Starting loops"
     
@@ -128,6 +132,11 @@ function FilmModel(
         time = iteration
 
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U , xdir, ydir, zdir, config)
+
+        # h correction - not sure if this is necessary but using this anyway
+        #inverse_diagonal!(rD, U_eqn, config)
+        #interpolate!(rDf, rD, config)
+        #remove_pressure_source!(U_eqn, ∇h, config)
 
         H!(Hv, U, U_eqn, config)
 
@@ -177,6 +186,7 @@ function FilmModel(
             break
         end
 
+        
         ProgressMeter.next!(
             progress, showvalues = [
                 (:iter, iteration),
@@ -191,7 +201,7 @@ function FilmModel(
         runtime_postprocessing!(postprocess, iteration, iterations)
 
         if iteration % write_interval + signbit(write_interval) == 0
-            save_output(model, outputWriter, iteration, time, config)
+            save_output_film(model, outputWriter, iteration, time, config)
             save_postprocessing(postprocess, iteration, time, mesh, outputWriter, config.boundaries)
         end
 
@@ -202,3 +212,30 @@ end
 
 function correct_mass_flux()
 end
+
+# Reworked save_output for film model
+function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
+    ) where {T,F,SO,M,Tu,E,D,BI}
+    args = (
+            ("U", model.momentum.U), 
+            ("h", model.momentum.h)
+        )
+    
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
+end
+
+#function correct_mass_flux(mdotf, h, rDf, config)
+#    (; faces, cells, boundary_cellsID) = mdotf.mesh
+#    (; hardware) = config
+#    (; backend, workgroup) = hardware
+#
+#    n_faces = length(faces)
+#    n_bfaces = lenght(boundary_cellsID)
+#    n_ifaces = n_faces - n_bfaces
+#
+#    ndrange = n_ifaces
+#    kernel! = _correct_mass_flux(_setup(backend, workgroup, ndrange)...)
+#    kernel!(mdotf, p, rDf, faces, cells, n_bfaces)
+#end
+#
+#@kernel function _correct_mass_flux(mdotf, h, rDf, faces, cells, n_bfaces)

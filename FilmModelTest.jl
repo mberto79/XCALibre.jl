@@ -22,9 +22,10 @@ mesh_dev = mesh # use this line to run on CPU
 velocity = [1.5, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
+h_inlet = 1
 
 model = Physics(
-    #momentum=FilmModelMomentum,
+    momentum=FilmModelMomentum,
     time = Steady(),
     fluid = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{Laminar}(),
@@ -42,7 +43,7 @@ BCs = assign(
             Wall(:top, [0.0, 0.0, 0.0])
         ],
         h = [
-            Extrapolated(:inlet),
+            Dirichlet(:inlet, h_inlet),
             Wall(:outlet),
             Wall(:wall),
             Wall(:top)
@@ -75,10 +76,10 @@ solvers = (
 )
 
 #runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
-runtime = Runtime(iterations=2, time_step=1, write_interval=-1) # hide
+runtime = Runtime(iterations=20, time_step=1, write_interval=1) # hide
 
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
 
 initialise!(model.momentum.U, velocity);
 initialise!(model.momentum.h, 0.0);

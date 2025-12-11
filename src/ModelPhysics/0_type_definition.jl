@@ -3,7 +3,7 @@ export AbstractMomentumModel
 export Momentum
 export AbstractTimeModel
 export Transient, Steady
-export FilmModel, original
+export FilmModelMomentum, original
 
 """
     struct Physics{T,F,SO,M,Tu,E,D,BI}
@@ -131,21 +131,21 @@ Adapt.@adapt_structure original
 
 
 
-struct FilmModelMomentum{V,S,Vf,Sf,SS} <: AbstractMomentumModel
+struct _FilmModelMomentum{V,S,Vf,Sf,SS} <: AbstractMomentumModel
     U::V
     h::S
     Uf::Vf
     hf::Sf
     sources::SS
 end
-Adapt.Adapt.@adapt_structure FilmModel
+Adapt.Adapt.@adapt_structure _FilmModelMomentum
 
 FilmModelMomentum(mesh::AbstractMesh) = begin
     U = VectorField(mesh)
     h = ScalarField(mesh)
     Uf = FaceVectorField(mesh)
     hf = FaceScalarField(mesh)
-    FilmModelMomentum(U, h, Uf, hf, nothing)
+    _FilmModelMomentum(U, h, Uf, hf, nothing)
 end
 
 """
@@ -160,7 +160,7 @@ end
 - `domain` - provides the mesh to used (must be adapted to the target backend device)
 
 """
-Physics(; time, fluid=nothing, solid=nothing, turbulence=nothing, energy, domain, #momentum=Momentum
+Physics(; time, fluid=nothing, solid=nothing, turbulence=nothing, energy, domain, momentum=Momentum
 ) = begin
     # NOTE: this function will be changed if/when a "medium" keyword is introduced. This will get rid of this ugly if statements! 
     momentum = FilmModelMomentum(domain)

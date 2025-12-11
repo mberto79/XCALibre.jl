@@ -66,7 +66,7 @@ function setup_incompressible_solvers(
     @info "Defining models..."
 
     U_eqn = (
-        Time{schemes.U.time}(U)
+        Time{schemes.U.time}(h, U)
         + Divergence{schemes.U.divergence}(mdotf, U) 
         - Laplacian{schemes.U.laplacian}(nueff, U) 
         == 

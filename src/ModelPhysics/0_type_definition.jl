@@ -1,9 +1,9 @@
 export Physics
-export AbstractMomentumModel
+export AbstractMomentumModel, AbstractMomentumContainer
 export Momentum
 export AbstractTimeModel
 export Transient, Steady
-export FilmModelMomentum, original
+export EFM, original
 
 """
     struct Physics{T,F,SO,M,Tu,E,D,BI}
@@ -87,8 +87,8 @@ Momentum model containing key momentum fields.
 ### Examples
 - `Momentum(mesh::AbstractMesh)
 """
-
-struct Momentum{T, ARG}
+abstract type AbstractMomentumContainer end
+struct Momentum{T, ARG} <: AbstractMomentumContainer
     args::ARG
 end
 
@@ -131,22 +131,31 @@ Adapt.@adapt_structure original
 
 
 
-struct _FilmModelMomentum{V,S,Vf,Sf,SS} <: AbstractMomentumModel
+struct EFM{V,S,Vf,Sf,SS,C} <: AbstractMomentumModel
     U::V
     h::S
     Uf::Vf
     hf::Sf
     sources::SS
+    coeffs::C
 end
-Adapt.Adapt.@adapt_structure _FilmModelMomentum
+Adapt.@adapt_structure EFM
 
-FilmModelMomentum(mesh::AbstractMesh) = begin
+Momentum{EFM}(;σ=0.069) = begin
+    coeffs = (σ)
+    ARG = typeof(coeffs)
+    Momentum{EFM, ARG}(coeffs)
+end
+
+(momentum::Momentum{EFM, ARG})(mesh::AbstractMesh) where ARG = begin
     U = VectorField(mesh)
     h = ScalarField(mesh)
     Uf = FaceVectorField(mesh)
     hf = FaceScalarField(mesh)
-    _FilmModelMomentum(U, h, Uf, hf, nothing)
+    coeffs = momentum.args
+    EFM(U, h, Uf, hf, nothing, coeffs)
 end
+
 
 """
     Physics(; time, fluid, solid, turbulence, energy, domain)::Physics{T,F,SO,M,Tu,E,D,BI}
@@ -160,10 +169,11 @@ end
 - `domain` - provides the mesh to used (must be adapted to the target backend device)
 
 """
-Physics(; time, fluid=nothing, solid=nothing, turbulence=nothing, energy, domain, momentum=Momentum
+Physics(;
+time, fluid=nothing, solid=nothing, turbulence=nothing, energy, domain, momentum=EFM
 ) = begin
     # NOTE: this function will be changed if/when a "medium" keyword is introduced. This will get rid of this ugly if statements! 
-    momentum = FilmModelMomentum(domain)
+    momentum = momentum(domain)
 
     if fluid !== nothing
         fluid = fluid(domain)

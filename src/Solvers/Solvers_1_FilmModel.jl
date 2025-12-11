@@ -26,12 +26,13 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     rho_l = rho
 
     @info "Pre-allocating fields..."
-    ∇h = Grad{schemes.h.gradient}(h)
     mdotf = FaceScalarField(mesh)
     Sm = ScalarField(mesh)
-    h_prev = ScalarField(mesh)
-    Si_mom = ScalarField(mesh)
-    nueff = FaceScalarField(mesh)
+    #h_prev = ScalarField(mesh)
+    #Si_mom = ScalarField(mesh)
+    #nueff = FaceScalarField(mesh)
+    test = VectorField(mesh)
+    
 
     @info "Defining models.."
 
@@ -43,14 +44,14 @@ function setup_FilmModel_Solver(solver_variant, model, config;
         #+ Grd{schemes.h.gradient}(h, )
         #+ Si(nueff, U)
         ==
-        Source()
+        Source(test)
     ) → VectorEquation(U, boundaries.U)
 
     h_eqn = (
         Time{schemes.h.time}(h)
         + Divergence{schemes.h.divergence}(mdotf, h)
         ==
-        Source(Sm)#/rho_l)
+        Source(Sm)
     ) → ScalarEquation(h, boundaries.h)
 
     @info "Initialising preconditioners"
@@ -64,47 +65,74 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     @reset h_eqn.solver = _workspace(solvers.h.solver, _b(h_eqn))
 
     @info "No turbulence model for now"
-    p_eqn = (Time{schemes.h.time}(rho_l,h)==Source(Sm)) → ScalarEquation(h, boundaries.h)
-    turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
+    #p_eqn = (Time{schemes.h.time}(rho_l,h)==Source(Sm)) → ScalarEquation(h, boundaries.h)
+    #turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals = solver_variant(
-        model, turbulenceModel, ∇h, U_eqn, h_eqn, config
+        model, #turbulenceModel,
+         U_eqn, h_eqn, config
     )
 end
 
 function FilmModel(
-    model, turbulenceModel, ∇h, U_eqn, h_eqn, config;
+    model, #turbulenceModel,
+     U_eqn, h_eqn, config;
     output=VTK(), ncorrectors=0
 )
 
+    
     (; U, h, Uf, hf) = model.momentum
-    (; nu) = model.fluid
+    (; rho, nu) = model.fluid
     mesh = model.domain
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
+    (; workgroup, backend) = hardware
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
 
     Postprocess = convert_time_to_iterations(postprocess, model, dt, iterations)
     mdotf = get_flux(U_eqn, 2)
-    #nueff = get_flux(U_eqn, 3)
-    divHv = get_source(h_eqn, 1)
+    test = get_source(U_eqn, 1)
+    Sm = get_source(h_eqn, 1)
     
     outputWriter = initialise_writer(output, model.domain)
 
     @info "Allocating working memory"
 
+    n = [0,0,1]
+    g = 9.8*[0,0,1]
+
     # Define aux fields
-    gradU = Grad{schemes.U.gradient}(U)
-    gradUT = T(gradU)
-    S = StrainRate(gradU, gradUT, U, Uf)
+    PL = ScalarField(mesh)
+    PLf = FaceScalarField(mesh)
+    ∇PL = Grad{schemes.h.gradient}(PL)
+    #∇Plf = FaceVectorField(mesh)
+    surface_tension = ScalarField(mesh)
+    ∇h = Grad{schemes.h.gradient}(h)
+    ∇hf = FaceVectorField(mesh)
+    laplh = ScalarField(mesh)
+    
+    #surface_tension = Laplacian{schemes.h.laplacian}(model.momentum.coeffs, h)
+
+    #gradU = Grad{schemes.U.gradient}(U)
+    #gradUT = T(gradU)
+    #S = StrainRate(gradU, gradUT, U, Uf)
+
 
     n_cells = length(mesh.cells)
-    Hv = VectorField(mesh) #unsure on these 2
-    rD = ScalarField(mesh)
+    #Hv = VectorField(mesh) #unsure on these 2
+    #rD = ScalarField(mesh)
+    for i ∈ model.domain.boundaries[1].IDs_range
+        # Adding some source terms to try improve simulation (didn't work)
+        Sm.values[i] = 2
+    end
+    
+    
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
     prev = KernelAbstractions.zeros(backend, TF, n_cells)
+    #PL = _get_float(mesh)
+    #PLf = _get_float(mesh)
 
     # Pre-allocate vectors to hold residuals
     R_ux = zeros(TF, iterations)
@@ -117,20 +145,46 @@ function FilmModel(
     interpolate!(Uf, U, config)
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
-    grad!(∇h, hf, h, boundaries.h, time, config)
+    
+    
     limit_gradient!(schemes.h.limiter, ∇h, h, config)
+    grad!(∇h, hf, h, boundaries.h, time, config)
+    interpolate!(∇hf, ∇h.result, config)
 
-    #update_nueff!(nueff, nu, turbulenceModel, config)
+    div!(laplh, ∇hf, config)
+    #get_surface_tension!(model, surface_tension, laplh, ∇hf, config)
+    
+    @info "need to readd Pg term"
+    # add Pg term
+    for i ∈ 1:length(laplh.values)
+        surface_tension[i] = model.momentum.coeffs*laplh[i]
+        PL[i] =  - model.momentum.coeffs*model.momentum.h[i]* (dot(n,g)) - surface_tension[i]
+    end
+    
+    #get_PL!(model, PL, surface_tension, config)
+
+    interpolate!(PLf, PL, config)
+    grad!(∇PL, PLf, PL, boundaries.h, time, config)
+    for i ∈ eachindex(h)
+
+        test[i] = h[i]*∇PL[i]
+    end
+    
+    #println(h.values)
+    
 
     @info "Starting loops"
     
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
+
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
     for iteration ∈ 1:iterations
         time = iteration
+        
 
+        
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U , xdir, ydir, zdir, config)
 
         # h correction - not sure if this is necessary but using this anyway
@@ -138,28 +192,56 @@ function FilmModel(
         #interpolate!(rDf, rD, config)
         #remove_pressure_source!(U_eqn, ∇h, config)
 
-        H!(Hv, U, U_eqn, config)
+        #H!(Hv, U, U_eqn, config)
 
-        # Interpolate faces
-        interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
-        correct_boundaries!(Uf, Hv, boundaries.U, time, config)
+        ## Interpolate faces
+        #interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
+        #correct_boundaries!(Uf, Hv, boundaries.U, time, config)
+
 
         flux!(mdotf, Uf, config)
-        div!(divHv, mdotf, config)
 
-        @. prev = h.values
+        #@. prev = h.values
+        discretise!(h_eqn, h, config)
+        
         rh = solve_equation!(h_eqn, h, boundaries.h, solvers.h, config)
-        explicit_relaxation!(h, prev, solvers.h.relax, config)
+        #explicit_relaxation!(h, prev, solvers.h.relax, config)
 
+        if (iteration == 1)
+            #println(Sm.values)
+            #println(h.values)
+        end
         for i ∈ 1:ncorrectors
 
             discretise!(h_eqn, h, config)
             apply_boundary_conditions!(h_eqn, bouundaries.h, nothing, time, config)
 
             rp = solve_system!(h_eqn, solvers.h, h, nothing, config)
-            explicit_relaxation!(h, prev, solvers.h.relax, config)
+            #explicit_relaxation!(h, prev, solvers.h.relax, config)
         end
 
+        grad!(∇h, hf, h, boundaries.h, time, config)
+        interpolate!(∇hf, ∇h.result, config)
+
+        div!(laplh, ∇hf, config)
+        #get_surface_tension!(model, surface_tension, laplh, ∇hf, config)
+        
+        
+        # add Pg term
+        for i ∈ 1:length(laplh.values)
+            surface_tension[i] = model.momentum.coeffs*laplh[i]
+            PL[i] =  - model.momentum.coeffs*model.momentum.h[i]* (dot(n,g)) - surface_tension[i]
+        end
+
+
+        interpolate!(PLf, PL, config)
+        grad!(∇PL, PLf, PL, boundaries.h, time, config)
+
+
+        for i ∈ eachindex(h)
+
+            test[i] = h[i]*∇PL[i]
+        end
         #correct_mass_flux
         #correct_velocity!()
 
@@ -180,7 +262,7 @@ function FilmModel(
             finish!(progress)
             @info "Simulation converged in $iteration iterations"
             if !signbit(write_interval)
-                save_output(model, outputWriter, iteration, time, config)
+                save_output_film(model, outputWriter, iteration, time, config)
                 save_postprocessing(postprocess, iteration, time, mesh, outputWriter, config.boundaries)
             end
             break
@@ -194,14 +276,14 @@ function FilmModel(
                 (:Uy, R_uy[iteration]),
                 (:Uz, R_uz[iteration]),
                 (:h, R_h[iteration]),
-                turbulenceModel.state.residuals...
+                #turbulenceModel.state.residuals...
             ]
         )
 
         runtime_postprocessing!(postprocess, iteration, iterations)
 
         if iteration % write_interval + signbit(write_interval) == 0
-            save_output_film(model, outputWriter, iteration, time, config)
+            save_output_film(model, outputWriter, iteration, time, config, Sm)
             save_postprocessing(postprocess, iteration, time, mesh, outputWriter, config.boundaries)
         end
 
@@ -214,18 +296,55 @@ function correct_mass_flux()
 end
 
 # Reworked save_output for film model
-function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
+function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config, Sm
     ) where {T,F,SO,M,Tu,E,D,BI}
     args = (
             ("U", model.momentum.U), 
-            ("h", model.momentum.h)
+            ("h", model.momentum.h),
+            ("Sm", Sm)
         )
     
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end
 
+#function get_surface_tension!(model, surface_tension, laplh ,∇hf, config)
+#    (; hardware) = config
+#    (; backend, workgroup) = hardware
+#    
+#    div!(laplh, ∇hf, config)
+#
+#    (; cells) = surface_tension.mesh
+#    ndrange = length(cells)
+#    kernel! = _get_surface_tension!(_setup(backend, workgroup, ndrange)...)
+#    kernel!(model, surface_tension, laplh)
+#end
+
+#@kernel function _get_surface_tension!(model, surface_tension, laplh)
+#    i = @index(Global)
+#
+#    surface_tension.values[i] = model.momentum.coeffs * laplh.values[i]
+#end
+#
+#function get_PL!(model, PL, surface_tension, config)
+#    (; hardware) = config
+#    (; backend, workgroup) = hardware
+#
+#    (; cells) = surface_tension.mesh
+#    ndrange = length(cells)
+#    kernel! = _get_PL!(_setup(backend, workgroup, ndrange)...)
+#    kernel!(model, PL, surface_tension)
+#end
+#
+#@kernel function _get_PL!(model, PL, surface_tension)
+#    i = @index(Global)
+#
+#    
+#
+#    PL[i] =  - model.momentum.coeffs*model.momentum.h[i]* (dot(n,g)) - surface_tension[i]
+#end
+#
 #function correct_mass_flux(mdotf, h, rDf, config)
-#    (; faces, cells, boundary_cellsID) = mdotf.mesh
+#   (; faces, cells, boundary_cellsID) = mdotf.mesh
 #    (; hardware) = config
 #    (; backend, workgroup) = hardware
 #

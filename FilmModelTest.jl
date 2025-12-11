@@ -19,13 +19,13 @@ hardware = Hardware(backend=backend, workgroup=1024)
 mesh_dev = mesh # use this line to run on CPU
 # mesh_dev = adapt(backend, mesh)  # Uncomment to run on GPU 
 
-velocity = [1.5, 0.0, 0.0]
+velocity = [3.5, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
 h_inlet = 1
 
 model = Physics(
-    momentum=FilmModelMomentum,
+    momentum=Momentum{EFM}(),
     time = Steady(),
     fluid = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{Laminar}(),
@@ -82,6 +82,6 @@ config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
 
 initialise!(model.momentum.U, velocity);
-initialise!(model.momentum.h, 0.0);
+initialise!(model.momentum.h, 0.1);
 
 residuals = run!(model, config);

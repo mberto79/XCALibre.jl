@@ -49,6 +49,7 @@ function PISO(
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
+    workgroup = hardware.workgroup
     
     postprocess = convert_time_to_iterations(postprocess,model,dt,iterations)
     mdotf = get_flux(U_eqn, 2)
@@ -127,7 +128,10 @@ function PISO(
             div!(divHv, mdotf, config)
             
             # Pressure calculations (previous implementation)
-            @. prev = p.values
+            # @. prev = p.values
+            AK.foreachindex(prev, min_elems=workgroup, block_size=workgroup) do i 
+                prev[i] = p[i]
+            end
             rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref, time=time)
             if i == inner_loops
                 explicit_relaxation!(p, prev, 1.0, config)

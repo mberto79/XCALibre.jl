@@ -15,8 +15,8 @@ XCALibre.jl can output simulation results to either `VTK` compliant formats or `
 ## Available functions
 
 Although [ParaView](https://www.paraview.org/) offers considerable flexibility for postprocessing results, users may also wish to carry out more advanced or different analyses on their CFD results. At present XCALibre.jl offers a limited set of built-in runtime postprocessing functions, currently these include time averaging a scalar or vector field over a specified range of iterations, and also the root mean square (RMS) of the fluctuations of a field. 
-### Example: Calculate time averaged field 
-As an example, to average any Scalar or Vector field an instance of `FieldAverage` must be created.
+### Example: Calculate runtime averaged field 
+As an example, to average any Scalar or Vector field an instance of `FieldAverage` must be created. For transient simulations this is a time average and for steady simulations it is an average over iterations. 
 ```@docs; canonical=false
 FieldAverage
 ```
@@ -54,7 +54,7 @@ If more functionality is required, defining new custom postprocessing functions 
 
 !!! note
 
-    At present the postprocessing functions available in XCALibre.jl shown below will only execute on CPUs and should be considered experimental. Once we settle on a "sensible" (maintainable and extensible) API, we plan to offer a larger selection of postprocessing tools which are likely to include options for runtime postprocessing.
+    At present the postprocessing functions available in XCALibre.jl shown below will only execute on CPUs and should be considered experimental. Once we settle on a "sensible" (maintainable and extensible) API, we plan to offer a larger selection of postprocessing tools which are likely to include more options for runtime postprocessing.
 
 ### Example: Calculate boundary average
 

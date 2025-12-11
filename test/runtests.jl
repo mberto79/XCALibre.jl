@@ -53,7 +53,8 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_field_average.jl")
         include("unit_test_field_rms.jl")
         include("unit_test_reynolds_stress.jl")
-        include("unit_test_post-process.jl")
+        include("unit_test_post-process_transient.jl")
+        include("unit_test_post-process_steady.jl")
     end
 
 

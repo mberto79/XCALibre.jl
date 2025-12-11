@@ -19,7 +19,7 @@ hardware = Hardware(backend=backend, workgroup=1024)
 mesh_dev = mesh # use this line to run on CPU
 # mesh_dev = adapt(backend, mesh)  # Uncomment to run on GPU 
 
-velocity = [3.5, 0.0, 0.0]
+velocity = [0.2, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
 h_inlet = 1
@@ -38,15 +38,21 @@ BCs = assign(
     (
         U = [
             Dirichlet(:inlet, velocity),
-            Extrapolated(:outlet),
-            Wall(:wall, [0.0, 0.0, 0.0]),
-            Wall(:top, [0.0, 0.0, 0.0])
+            #Extrapolated(:outlet),
+            Zerogradient(:outlet),
+            #Wall(:wall, [0.0, 0.0, 0.0]),
+            Zerogradient(:wall),
+            #Wall(:top, [0.0, 0.0, 0.0])
+            Zerogradient(:top)
         ],
         h = [
             Dirichlet(:inlet, h_inlet),
-            Wall(:outlet),
-            Wall(:wall),
-            Wall(:top)
+            #Wall(:outlet),
+            Zerogradient(:outlet),
+            #Wall(:wall),
+            Zerogradient(:wall),
+            #Wall(:top)
+            Zerogradient(:top)
         ]
     )
 )

@@ -24,8 +24,8 @@ print_tree(AbstractScheme) # hide
 | **Scheme** | **Description** |
 |:-------|:------------|
 | SteadyState | sets the time derivative to zero |
-| Euler | First order implicit Euler scheme |
-| CrankNicolson | Second order central scheme (not implemented yet) |
+| Euler | First order implicit Euler scheme (implicit)|
+| CrankNicolson | Second order central scheme (implicit-explicit) |
 ---
 #### Laplacian schemes
 

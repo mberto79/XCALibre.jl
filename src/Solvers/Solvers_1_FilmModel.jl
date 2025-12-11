@@ -27,6 +27,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
 
     @info "Pre-allocating fields..."
     mdotf = FaceScalarField(mesh)
+    mdotf2 = FaceScalarField(mesh)
     Sm = ScalarField(mesh)
     #h_prev = ScalarField(mesh)
     #Si_mom = ScalarField(mesh)
@@ -49,7 +50,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
 
     h_eqn = (
         Time{schemes.h.time}(h)
-        + Divergence{schemes.h.divergence}(mdotf, h)
+        + Divergence{schemes.h.divergence}(mdotf2, h)
         ==
         Source(Sm)
     ) → ScalarEquation(h, boundaries.h)
@@ -93,6 +94,7 @@ function FilmModel(
     mdotf = get_flux(U_eqn, 2)
     test = get_source(U_eqn, 1)
     Sm = get_source(h_eqn, 1)
+    mdotf2 = get_flux(h_eqn,2)
     
     outputWriter = initialise_writer(output, model.domain)
 
@@ -145,6 +147,7 @@ function FilmModel(
     interpolate!(Uf, U, config)
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
+    mdotf2=mdotf
     
     
     limit_gradient!(schemes.h.limiter, ∇h, h, config)
@@ -200,6 +203,8 @@ function FilmModel(
 
 
         flux!(mdotf, Uf, config)
+        mdotf2 = mdotf
+        
 
         #@. prev = h.values
         discretise!(h_eqn, h, config)
@@ -208,6 +213,7 @@ function FilmModel(
         #explicit_relaxation!(h, prev, solvers.h.relax, config)
 
         if (iteration == 1)
+            println(mdotf2.values)
             #println(Sm.values)
             #println(h.values)
         end

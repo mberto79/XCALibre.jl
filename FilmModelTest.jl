@@ -82,6 +82,6 @@ config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
 
 initialise!(model.momentum.U, velocity);
-initialise!(model.momentum.h, 0.1);
+initialise!(model.momentum.h, 0.0);
 
 residuals = run!(model, config);

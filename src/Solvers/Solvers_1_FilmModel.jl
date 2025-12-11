@@ -123,7 +123,7 @@ function FilmModel(
     #rD = ScalarField(mesh)
     for i ∈ model.domain.boundaries[1].IDs_range
         # Adding some source terms to try improve simulation (didn't work)
-        Sm.values[i] = 2
+        Sm.values[i] = 200
     end
     
     
@@ -300,8 +300,8 @@ function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iter
     ) where {T,F,SO,M,Tu,E,D,BI}
     args = (
             ("U", model.momentum.U), 
-            ("h", model.momentum.h),
-            ("Sm", Sm)
+            ("h", model.momentum.h)#,
+            #("Sm", Sm)
         )
     
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)

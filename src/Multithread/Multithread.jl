@@ -31,7 +31,8 @@ xcal_foreach(func, arr, config) = begin
     (; backend, workgroup) = hardware
     ndrange = length(arr)
     backend, workgroup, ndrange = _setup(backend, workgroup, ndrange)
-    AK.foreachindex(func, arr, backend, min_elems=workgroup, block_size=workgroup)
+    # AK.foreachindex(func, arr, backend, min_elems=workgroup, block_size=workgroup)
+    AK.foreachindex(func, arr, min_elems=workgroup, block_size=workgroup)
 end
 
 end # end module

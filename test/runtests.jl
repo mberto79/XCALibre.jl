@@ -56,9 +56,11 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
     end
 
     @testset "Post-processing unit Test" begin
-        include("unit_test_field_time_average.jl")
+        include("unit_test_field_average.jl")
         include("unit_test_field_rms.jl")
-        include("unit_test_post-process.jl")
+        include("unit_test_reynolds_stress.jl")
+        include("unit_test_post-process_transient.jl")
+        include("unit_test_post-process_steady.jl")
     end
 
 
@@ -70,6 +72,7 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
             "2d_incompressible_laminar_BFS.jl",
             "2d_incompressible_transient_KOmega_BFS_lowRe.jl",
             "2d_incompressible_transient_laminar_BFS.jl",
+            "2d_incompressible_transient_laminar_BFS_CrankNicolson.jl",
             "2d_incompressible_transient_cylinder_oscillating.jl",
             "3d_incompressible_laminar_BFS.jl",
             "3d_incompressible_laminar_cascade_periodic.jl",

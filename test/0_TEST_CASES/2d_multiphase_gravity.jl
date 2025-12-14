@@ -19,16 +19,20 @@ noSlipVelocity = [0.0, 0.0, 0.0]
 
 gravity = Gravity([0.0, -9.81, 0.0]) # Define gravity direction and magnitude
 
+AndradeModel = Andrade(B=2.414e-5, C=247.8) #water
+SutherlandModel = Sutherland(mu_ref=1.716e-5, S=111.0) #air
+PerfectGasModel = PerfectGas(rho=1.225, R=287.0) #air
+
 model = Physics(
     time = Transient(),
     fluid = Fluid{Multiphase}(
         phases = (
             # Phase(eosModel=ConstEos(1000.0), viscosityModel=ConstMu(1.0e-3)),       #liquid
             # Phase(eosModel=ConstEos(1.2), viscosityModel=ConstMu(1.8e-5)),          #vapour
-            Phase(eosModel=ConstEos(1000.0), viscosityModel=Andrade(B=2.414e-5, C=247.8)),                          #water
-            Phase(eosModel=PerfectGas(rho=1.225, R=287.0), viscosityModel=Sutherland(mu_ref=1.716e-5, S=111.0)),    #air
-
+            
             # Here we also test PerfectGas, Andrade, and Sutherlad models
+            Phase(eosModel=ConstEos(1000.0), viscosityModel=AndradeModel),    #water
+            Phase(eosModel=PerfectGasModel, viscosityModel=SutherlandModel),  #air
         ),
         gravity = gravity
     ),
@@ -37,7 +41,7 @@ model = Physics(
     domain = mesh_dev
     )
 
-operating_pressure = 1.0 # we define 1.0 instead of 0.0 to make sure PerfectGas EoS works
+operating_pressure = 101000 # we define 101000 instead of 0.0 to make sure PerfectGas EoS works
 
 
 BCs = assign(
@@ -103,7 +107,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=100, time_step=1.0e-4, write_interval=500)
+    iterations=100, time_step=1.0e-4, write_interval=1000)
     
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
@@ -130,5 +134,5 @@ residuals = run!(model, config)
 # With time, gravity pulls liquid down and soon most of the bottom boundary becomes closer to full water fraction
 # Thus we check if after some time the boundary average value is > 0.5
 
-# bottom_boundary = boundary_average(:bottom, model.fluid.alpha, BCs.alpha, config)
-# @test bottom_boundary > 0.5
+bottom_boundary = boundary_average(:bottom, model.fluid.alpha, BCs.alpha, config)
+@test bottom_boundary > 0.5

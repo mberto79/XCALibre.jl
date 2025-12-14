@@ -172,8 +172,6 @@ function setup_multiphase_solvers(
     @info "Initialising turbulence model..."
     turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
-    println(turbulenceModel)
-
     residuals  = solver_variant(
         model, turbulenceModel, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, alpha_eqn, gh, ghf, phi_g, phi_gf, config; 
         output=output,

@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 *  Added capablity to write out TensorFields to .vtk/vtu including Reynolds Stress Tensor [#87](@ref)
 *  Extended `DirichLetFunction` to accept functions defining boundary condition for `ScalarFields` [#89](@ref)
 *  Implemented `CrankNicolson` time scheme (second order implicit-explicit) [#90](@ref)
+*  Added `Multiphase` solver supporting gravitational effects using `p_rgh` pressure formulation [#92](@ref)
+*  Added `Perfect Gas` and cubic `Peng-Robinson` equations of state for fluids [#92](@ref)
+*  Added viscosity models such as `Sutherland's law` for gases and `Andrade's correlation` for liquids [#92](@ref)
 
 
 ### Fixed

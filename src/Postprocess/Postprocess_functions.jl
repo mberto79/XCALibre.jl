@@ -43,7 +43,7 @@ Function to calculate the pressure force acting on a given patch/boundary.
 # Input arguments
 
 - `patch::Symbol` name of the boundary of interest (as a `Symbol`)
-- `U::VectorField` pressure field
+- `U::VectorField` velocity field
 - `rho` density. Set to 1 for incompressible solvers
 - `ν` laminar viscosity of the fluid
 - `νt` eddy viscosity from turbulence models. Pass ConstantScalar(0) for laminar flows
@@ -146,7 +146,17 @@ function boundary_average(patch::Symbol, field, fieldBCs, config; time=0)
     return ave
 end
 
-########### Must update
+"""
+    wall_shear_stress(patch::Symbol, model,config)
+
+Function to calculate the wall shear stress acting on a given patch/boundary.
+
+# Input arguments
+
+- `patch::Symbol` name of the boundary of interest (as a `Symbol`)
+- `model` instance of `Physics` object needs to be passed 
+- `config` need to pass `Configuration` object as this contains the boundary conditions
+"""
 wall_shear_stress(patch::Symbol, model,config)  = begin
     # Line below needs to change to do selection based on nut BC
     turbulence = model.turbulence
@@ -188,7 +198,18 @@ wall_shear_stress(patch::Symbol, model,config)  = begin
     
     return tauw, pos
 end
+"""
+    stress_tensor(U::VectorField, ν, νt, config)
 
+Function to calculate the stress tensor.
+
+# Input arguments
+
+- `U::VectorField` velocity field
+- `ν` laminar viscosity of the fluid
+- `νt` eddy viscosity from turbulence models. Pass ConstantScalar(0) for laminar flows
+- `config` need to pass `Configuration` object as this contains the boundary conditions
+"""
 stress_tensor(U, ν, νt, config) = begin
     mesh = U.mesh
     TF = _get_float(mesh)

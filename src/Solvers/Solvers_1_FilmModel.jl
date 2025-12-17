@@ -27,11 +27,12 @@ function setup_FilmModel_Solver(solver_variant, model, config;
 
     @info "Pre-allocating fields..."
     mdotf = FaceScalarField(mesh)
-    mdotf2 = FaceScalarField(mesh)
+    hmdotf = FaceScalarField(mesh)
     Sm = ScalarField(mesh)
     #h_prev = ScalarField(mesh)
     #Si_mom = ScalarField(mesh)
     #nueff = FaceScalarField(mesh)
+    #rho_l = ScalarField(mesh)
     test = VectorField(mesh)
     
 
@@ -41,7 +42,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     @info "U equation still need updating"
     U_eqn = (
         Time{schemes.U.time}(h, U)
-        + Divergence{schemes.U.divergence}(mdotf,U)
+        + Divergence{schemes.U.divergence}(hmdotf,U)
         #+ Grd{schemes.h.gradient}(h, )
         #+ Si(nueff, U)
         ==
@@ -50,7 +51,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
 
     h_eqn = (
         Time{schemes.h.time}(h)
-        + Divergence{schemes.h.divergence}(mdotf2, h)
+        + Divergence{schemes.h.divergence}(mdotf, h)
         ==
         Source(Sm)
     ) → ScalarEquation(h, boundaries.h)
@@ -91,10 +92,11 @@ function FilmModel(
     (; backend) = hardware
 
     Postprocess = convert_time_to_iterations(postprocess, model, dt, iterations)
-    mdotf = get_flux(U_eqn, 2)
+    hmdotf = get_flux(U_eqn, 2)
     test = get_source(U_eqn, 1)
     Sm = get_source(h_eqn, 1)
-    mdotf2 = get_flux(h_eqn,2)
+    #rho_l = get_flux(h_eqn, 1)
+    mdotf = get_flux(h_eqn,2)
     
     outputWriter = initialise_writer(output, model.domain)
 
@@ -111,6 +113,7 @@ function FilmModel(
     surface_tension = ScalarField(mesh)
     ∇h = Grad{schemes.h.gradient}(h)
     ∇hf = FaceVectorField(mesh)
+    hf = FaceScalarField(mesh)
     laplh = ScalarField(mesh)
     
     #surface_tension = Laplacian{schemes.h.laplacian}(model.momentum.coeffs, h)
@@ -123,10 +126,10 @@ function FilmModel(
     n_cells = length(mesh.cells)
     #Hv = VectorField(mesh) #unsure on these 2
     #rD = ScalarField(mesh)
-    for i ∈ model.domain.boundaries[1].IDs_range
+    #for i ∈ model.domain.boundaries[1].IDs_range
         # Adding some source terms to try improve simulation (didn't work)
-        Sm.values[i] = 200
-    end
+    #    Sm.values[i] = 200
+    #end
     
     
 
@@ -147,8 +150,10 @@ function FilmModel(
     interpolate!(Uf, U, config)
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
-    mdotf2=mdotf
     
+    println(mdotf)
+    interpolate!(hf, h, config)
+    @. hmdotf.values = mdotf.values * hf.values
     
     limit_gradient!(schemes.h.limiter, ∇h, h, config)
     grad!(∇h, hf, h, boundaries.h, time, config)
@@ -163,6 +168,10 @@ function FilmModel(
         surface_tension[i] = model.momentum.coeffs*laplh[i]
         PL[i] =  - model.momentum.coeffs*model.momentum.h[i]* (dot(n,g)) - surface_tension[i]
     end
+
+    #for i ∈ 1:length(rho_l.values)
+    #    rho_l=rho
+    #end
     
     #get_PL!(model, PL, surface_tension, config)
 
@@ -182,11 +191,10 @@ function FilmModel(
 
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
+    rx, ry, rz = 1, 1, 1
 
     for iteration ∈ 1:iterations
         time = iteration
-        
-
         
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U , xdir, ydir, zdir, config)
 
@@ -200,20 +208,25 @@ function FilmModel(
         ## Interpolate faces
         #interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
         #correct_boundaries!(Uf, Hv, boundaries.U, time, config)
+        interpolate!(Uf, U, config)
+        correct_boundaries!(Uf, U, boundaries.U, time, config)
 
-
+        # h calculations
         flux!(mdotf, Uf, config)
-        mdotf2 = mdotf
+        interpolate!(hf, h, config)
+        @. hmdotf.values = mdotf.values * hf.values
         
 
         #@. prev = h.values
-        discretise!(h_eqn, h, config)
+        #discretise!(h_eqn, h, config)
         
         rh = solve_equation!(h_eqn, h, boundaries.h, solvers.h, config)
         #explicit_relaxation!(h, prev, solvers.h.relax, config)
 
+        
         if (iteration == 1)
-            println(mdotf2.values)
+            #println("$(U.x.values), $(U.y.values)")
+            #println(mdotf2.values)
             #println(Sm.values)
             #println(h.values)
         end
@@ -222,7 +235,7 @@ function FilmModel(
             discretise!(h_eqn, h, config)
             apply_boundary_conditions!(h_eqn, bouundaries.h, nothing, time, config)
 
-            rp = solve_system!(h_eqn, solvers.h, h, nothing, config)
+            rh = solve_system!(h_eqn, solvers.h, h, nothing, config)
             #explicit_relaxation!(h, prev, solvers.h.relax, config)
         end
 

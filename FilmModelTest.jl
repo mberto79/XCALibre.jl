@@ -3,7 +3,7 @@ using XCALibre
 # using AMDGPU # Uncomment to run on AMD GPUs
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "backwardFacingStep_10mm.unv"
+grid = "flatplate_2D_lowRe.unv"
 mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
@@ -22,7 +22,7 @@ mesh_dev = mesh # use this line to run on CPU
 velocity = [1.5, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
-h_inlet = 1
+h_inlet = 0.2
 
 model = Physics(
     momentum=Momentum{EFM}(),
@@ -38,21 +38,28 @@ BCs = assign(
     (
         U = [
             Dirichlet(:inlet, velocity),
-            #Extrapolated(:outlet),
-            Zerogradient(:outlet),
+            Extrapolated(:outlet),
+            #Zerogradient(:outlet),
             #Wall(:wall, [0.0, 0.0, 0.0]),
-            Zerogradient(:wall),
+            #Zerogradient(:wall),
+            Extrapolated(:wall),
             #Wall(:top, [0.0, 0.0, 0.0])
-            Zerogradient(:top)
+            #Zerogradient(:top)
+            Extrapolated(:top)
         ],
         h = [
             Dirichlet(:inlet, h_inlet),
+            #Zerogradient(:inlet),
+            #Extrapolated(:inlet),
             #Wall(:outlet),
-            Zerogradient(:outlet),
+            #Zerogradient(:outlet),
+            Extrapolated(:outlet),
             #Wall(:wall),
-            Zerogradient(:wall),
+            #Zerogradient(:wall),
+            Extrapolated(:wall),
             #Wall(:top)
-            Zerogradient(:top)
+            #Zerogradient(:top)
+            Extrapolated(:top)
         ]
     )
 )
@@ -88,6 +95,6 @@ config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
 
 initialise!(model.momentum.U, velocity);
-initialise!(model.momentum.h, 0.0);
+initialise!(model.momentum.h, 0.2);
 
 residuals = run!(model, config);

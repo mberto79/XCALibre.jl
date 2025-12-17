@@ -2,7 +2,6 @@ export HelmholtzEnergy, HelmholtzEnergyFluid, H2, H2_para, N2
 
 export Phase, Fluid, Multiphase
 export ConstEos, PerfectGas, PengRobinson, ConstMu, Sutherland, Andrade
-export Phase, physicsProperties
 
 export ConstSurfaceTension, SurfaceTensionModel, NucleateBoilingModel, Drag_SchillerNaumann
 export AbstractModel, AbstractEosModel, AbstractViscosityModel
@@ -383,10 +382,6 @@ end
 
 build_property(property, mesh) = property
 build_property(setup::Gravity, mesh) = build_gravityModel(setup, mesh)
-# build_property(setup::LeeModel, mesh) = build_leeModel(setup, mesh)
-# build_property(setup::DriftVelocity, mesh) = build_driftVelocity(setup, mesh)
-# build_property(setup::CSF, mesh) = build_CSF_Model(setup, mesh)
-# build_property(setup::ArtificialCompression, mesh) = build_ArtificialCompressionModel(setup, mesh)
 
 function build_multiphase(phase_setups::Tuple{<:AbstractPhase, <:AbstractPhase}, physics_properties_setup::NamedTuple, mesh)
     phases = map(setup -> build_phase(setup, mesh), phase_setups)

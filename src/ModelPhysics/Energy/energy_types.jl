@@ -1,8 +1,9 @@
 # export AbstractEnergyModel, Energy
 export Energy
+export AbstractEnergyModel
 export Isothermal
 
-# abstract type AbstractEnergyModel end
+abstract type AbstractEnergyModel end
 
 # Models
 
@@ -12,9 +13,14 @@ end
 
 # Isothermal
 
-struct Isothermal <: AbstractEnergyModel end 
+#### THS IS A DUMMY IMOLEENTATIUO PLEASE SORT OUT ARTEM! TA
+struct Isothermal{T<:AbstractFloat} <: AbstractEnergyModel 
+    T_iso::T
+end 
 Adapt.Adapt.@adapt_structure Isothermal
 
+
+# These constructors might need changing
 Energy{Isothermal}() = begin
     args = nothing
     ARGS = typeof(args)

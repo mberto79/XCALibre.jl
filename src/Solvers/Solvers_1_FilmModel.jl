@@ -23,16 +23,19 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     (; U, h, Uf, hf) = model.momentum
     mesh = model.domain
     (; rho) = model.fluid
-    rho_l = rho
+    
 
     @info "Pre-allocating fields..."
     mdotf = FaceScalarField(mesh)
     hmdotf = FaceScalarField(mesh)
+    hf = FaceScalarField(mesh)
     Sm = ScalarField(mesh)
+    initialise!(Sm, 0)
     #h_prev = ScalarField(mesh)
     #Si_mom = ScalarField(mesh)
     #nueff = FaceScalarField(mesh)
-    #rho_l = ScalarField(mesh)
+    rho_l = ScalarField(mesh)
+    initialise!(rho_l, rho.values)
     test = VectorField(mesh)
     
 
@@ -41,7 +44,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     # Edit
     @info "U equation still need updating"
     U_eqn = (
-        Time{schemes.U.time}(h, U)
+        Time{schemes.U.time}(hf, U)
         + Divergence{schemes.U.divergence}(hmdotf,U)
         #+ Grd{schemes.h.gradient}(h, )
         #+ Si(nueff, U)
@@ -50,7 +53,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     ) → VectorEquation(U, boundaries.U)
 
     h_eqn = (
-        Time{schemes.h.time}(h)
+        Time{schemes.h.time}(h)#rho_l, h)
         + Divergence{schemes.h.divergence}(mdotf, h)
         ==
         Source(Sm)
@@ -92,52 +95,35 @@ function FilmModel(
     (; backend) = hardware
 
     Postprocess = convert_time_to_iterations(postprocess, model, dt, iterations)
+    hf = get_flux(U_eqn, 1)
     hmdotf = get_flux(U_eqn, 2)
     test = get_source(U_eqn, 1)
-    Sm = get_source(h_eqn, 1)
-    #rho_l = get_flux(h_eqn, 1)
     mdotf = get_flux(h_eqn,2)
-    
+    mu = nu.values/rho.values
+
     outputWriter = initialise_writer(output, model.domain)
 
     @info "Allocating working memory"
 
     n = [0,0,1]
-    g = 9.8*[0,0,1]
+    g = 9.8
+    G = g*[0,0,1]
 
     # Define aux fields
     PL = ScalarField(mesh)
     PLf = FaceScalarField(mesh)
     ∇PL = Grad{schemes.h.gradient}(PL)
-    #∇Plf = FaceVectorField(mesh)
     surface_tension = ScalarField(mesh)
     ∇h = Grad{schemes.h.gradient}(h)
     ∇hf = FaceVectorField(mesh)
-    hf = FaceScalarField(mesh)
     laplh = ScalarField(mesh)
+    muv = VectorField(mesh)
     
-    #surface_tension = Laplacian{schemes.h.laplacian}(model.momentum.coeffs, h)
-
-    #gradU = Grad{schemes.U.gradient}(U)
-    #gradUT = T(gradU)
-    #S = StrainRate(gradU, gradUT, U, Uf)
-
-
     n_cells = length(mesh.cells)
-    #Hv = VectorField(mesh) #unsure on these 2
-    #rD = ScalarField(mesh)
-    #for i ∈ model.domain.boundaries[1].IDs_range
-        # Adding some source terms to try improve simulation (didn't work)
-    #    Sm.values[i] = 200
-    #end
-    
-    
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
     prev = KernelAbstractions.zeros(backend, TF, n_cells)
-    #PL = _get_float(mesh)
-    #PLf = _get_float(mesh)
 
     # Pre-allocate vectors to hold residuals
     R_ux = zeros(TF, iterations)
@@ -151,38 +137,46 @@ function FilmModel(
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
     
-    println(mdotf)
     interpolate!(hf, h, config)
+    # Getting h * mdotf for U calculation
     @. hmdotf.values = mdotf.values * hf.values
-    
     limit_gradient!(schemes.h.limiter, ∇h, h, config)
-    grad!(∇h, hf, h, boundaries.h, time, config)
-    interpolate!(∇hf, ∇h.result, config)
 
+    # Getting the laplacian of h for first U calculation
+    grad!(∇h, hf, h, boundaries.h, time, config)
+    limit_gradient!(schemes.h.limiter, ∇h, h, config)
+
+    interpolate!(∇hf, ∇h.result, config)
     div!(laplh, ∇hf, config)
-    #get_surface_tension!(model, surface_tension, laplh, ∇hf, config)
-    
+
     @info "need to readd Pg term"
     # add Pg term
     for i ∈ 1:length(laplh.values)
         surface_tension[i] = model.momentum.coeffs*laplh[i]
-        PL[i] =  - model.momentum.coeffs*model.momentum.h[i]* (dot(n,g)) - surface_tension[i]
+        PL[i] =  - model.momentum.coeffs*model.momentum.h[i]* (dot(n,G)) - surface_tension[i]
     end
-
-    #for i ∈ 1:length(rho_l.values)
-    #    rho_l=rho
-    #end
-    
-    #get_PL!(model, PL, surface_tension, config)
 
     interpolate!(PLf, PL, config)
     grad!(∇PL, PLf, PL, boundaries.h, time, config)
-    for i ∈ eachindex(h)
+    limit_gradient!(schemes.h.limiter, ∇PL, PL, config)
 
-        test[i] = h[i]*∇PL[i]
+
+    for i ∈ eachindex(muv)
+        multiplier = 3*(mu/h.values[i])
+        muv.x.values[i] = multiplier * U.x.values[i]
+        muv.y.values[i] = multiplier * U.y.values[i]
+        muv.z.values[i] = multiplier * U.z.values[i]
     end
     
-    #println(h.values)
+    for i ∈ eachindex(h)
+        test[i] = (
+             h[i]*∇PL[i]
+             #+ rho*g*h[i] # Possible incorrect term
+             # ruccently ignoring tau fs term
+             - muv[i]
+        )
+        
+    end
     
 
     @info "Starting loops"
@@ -217,18 +211,18 @@ function FilmModel(
         @. hmdotf.values = mdotf.values * hf.values
         
 
-        #@. prev = h.values
+        @. prev = h.values
         #discretise!(h_eqn, h, config)
         
         rh = solve_equation!(h_eqn, h, boundaries.h, solvers.h, config)
-        #explicit_relaxation!(h, prev, solvers.h.relax, config)
+        explicit_relaxation!(h, prev, solvers.h.relax, config)
 
         
         if (iteration == 1)
-            #println("$(U.x.values), $(U.y.values)")
-            #println(mdotf2.values)
+            println("$(U.x.values), $(U.y.values)")
+            println(mdotf.values)
             #println(Sm.values)
-            #println(h.values)
+            println(h.values)
         end
         for i ∈ 1:ncorrectors
 
@@ -236,7 +230,7 @@ function FilmModel(
             apply_boundary_conditions!(h_eqn, bouundaries.h, nothing, time, config)
 
             rh = solve_system!(h_eqn, solvers.h, h, nothing, config)
-            #explicit_relaxation!(h, prev, solvers.h.relax, config)
+            explicit_relaxation!(h, prev, solvers.h.relax, config)
         end
 
         grad!(∇h, hf, h, boundaries.h, time, config)
@@ -249,17 +243,27 @@ function FilmModel(
         # add Pg term
         for i ∈ 1:length(laplh.values)
             surface_tension[i] = model.momentum.coeffs*laplh[i]
-            PL[i] =  - model.momentum.coeffs*model.momentum.h[i]* (dot(n,g)) - surface_tension[i]
+            PL[i] =  - model.momentum.coeffs*model.momentum.h[i]* (dot(n,G)) - surface_tension[i]
         end
 
 
         interpolate!(PLf, PL, config)
         grad!(∇PL, PLf, PL, boundaries.h, time, config)
 
+        for i ∈ eachindex(muv)
+            multiplier = 3*(mu/h.values[i])
+            muv.x.values[i] = multiplier * U.x.values[i]
+            muv.y.values[i] = multiplier * U.y.values[i]
+            muv.z.values[i] = multiplier * U.z.values[i]
+        end
 
         for i ∈ eachindex(h)
-
-            test[i] = h[i]*∇PL[i]
+            test[i] = (
+             h[i]*∇PL[i]
+             #+ rho*g*h[i] # Possible incorrect term
+            
+             - muv[i]
+            )
         end
         #correct_mass_flux
         #correct_velocity!()
@@ -302,7 +306,7 @@ function FilmModel(
         runtime_postprocessing!(postprocess, iteration, iterations)
 
         if iteration % write_interval + signbit(write_interval) == 0
-            save_output_film(model, outputWriter, iteration, time, config, Sm)
+            save_output_film(model, outputWriter, iteration, time, config)
             save_postprocessing(postprocess, iteration, time, mesh, outputWriter, config.boundaries)
         end
 
@@ -315,12 +319,11 @@ function correct_mass_flux()
 end
 
 # Reworked save_output for film model
-function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config, Sm
+function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
     ) where {T,F,SO,M,Tu,E,D,BI}
     args = (
             ("U", model.momentum.U), 
-            ("h", model.momentum.h)#,
-            #("Sm", Sm)
+            ("h", model.momentum.h)
         )
     
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)

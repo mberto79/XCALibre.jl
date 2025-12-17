@@ -3,7 +3,7 @@ using XCALibre
 # using AMDGPU # Uncomment to run on AMD GPUs
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "flatplate_2D_lowRe.unv"
+grid = "quad.unv"
 mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
@@ -42,7 +42,7 @@ BCs = assign(
             #Zerogradient(:outlet),
             #Wall(:wall, [0.0, 0.0, 0.0]),
             #Zerogradient(:wall),
-            Extrapolated(:wall),
+            Extrapolated(:bottom),
             #Wall(:top, [0.0, 0.0, 0.0])
             #Zerogradient(:top)
             Extrapolated(:top)
@@ -55,11 +55,11 @@ BCs = assign(
             #Zerogradient(:outlet),
             Extrapolated(:outlet),
             #Wall(:wall),
-            #Zerogradient(:wall),
-            Extrapolated(:wall),
+            Zerogradient(:bottom),
+            #Extrapolated(:bottom),
             #Wall(:top)
-            #Zerogradient(:top)
-            Extrapolated(:top)
+            Zerogradient(:top)
+            #Extrapolated(:top)
         ]
     )
 )

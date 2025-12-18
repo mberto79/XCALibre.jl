@@ -86,18 +86,21 @@ function setup_multiphase_solvers(
 
     interpolate!(alphaf, alpha, config)
 
+    # Need to be defined before energyModel
+    p_eqn = (
+        - Laplacian{schemes.p.laplacian}(rDf, p_rgh)
+        ==
+        - Source(divHv)
+    ) → ScalarEquation(p_rgh, boundaries.p_rgh)
+
     @info "Computing Fluid Properties..."
 
+
     phase_eos = [phases[1].eosModel, phases[2].eosModel]
+    T_field = model.energy.T
 
-    if typeof(model.energy) <: Nothing # Isothermal
-        Temp = ConstantScalar(300.0) # THIS PROBABLY NEEDS TO BE DEFINED BY USER! Redesign Isothermal Energy ?
-    else
-        Temp = model.energy.T
-    end
-
-    update_phase_thermodynamics!(phase_eos[1], Val(1), nueff, Temp, model, config)
-    update_phase_thermodynamics!(phase_eos[2], Val(2), nueff, Temp, model, config)
+    update_phase_thermodynamics!(phase_eos[1], Val(1), nueff, T_field, model, config)
+    update_phase_thermodynamics!(phase_eos[2], Val(2), nueff, T_field, model, config)
 
     blend_properties!(rho, alpha, phases[1].rho, phases[2].rho)
     blend_properties!(nu, alpha, phases[1].nu, phases[2].nu)
@@ -138,12 +141,6 @@ function setup_multiphase_solvers(
         == 
         Source(ConstantScalar(0.0))
     ) → ScalarEquation(alpha, boundaries.alpha)
-
-    p_eqn = (
-        - Laplacian{schemes.p.laplacian}(rDf, p_rgh)
-        ==
-        - Source(divHv)
-    ) → ScalarEquation(p_rgh, boundaries.p_rgh)
 
     @info "Initialising preconditioners..."
 
@@ -229,14 +226,7 @@ function MULTIPHASE(
     flux!(mdotf, Uf, config)
 
     phase_eos = [phases[1].eosModel, phases[2].eosModel]
-
-    # Artem can you replace this with an initialiser-type function using multiple dispatch
-    # eg.g. extract_energy_model_temperature(model.energy)
-    if typeof(model.energy) <: Nothing # Isothermal
-        Temp = ConstantScalar(300.0) # THIS PROBABLY NEEDS TO BE DEFINED BY USER! Redesign Isothermal Energy ?
-    else
-        Temp = model.energy.T
-    end
+    T_field = model.energy.T
 
     update_nueff!(nueff, nuf, model.turbulence, config)
 
@@ -250,8 +240,8 @@ function MULTIPHASE(
     @time for iteration ∈ 1:iterations
         time = iteration *dt
 
-        update_phase_thermodynamics!(phase_eos[1], Val(1), nueff, Temp, model, config)
-        update_phase_thermodynamics!(phase_eos[2], Val(2), nueff, Temp, model, config)
+        update_phase_thermodynamics!(phase_eos[1], Val(1), nueff, T_field, model, config)
+        update_phase_thermodynamics!(phase_eos[2], Val(2), nueff, T_field, model, config)
 
         blend_properties!(rho, alpha, phases[1].rho, phases[2].rho)
         blend_properties!(nu, alpha, phases[1].nu, phases[2].nu)
@@ -348,7 +338,7 @@ function MULTIPHASE(
             (:Uz, R_uz[iteration]),
             (:p, R_p[iteration]),
             (:alpha, R_alpha[iteration]),
-            # turbulenceModel.state.residuals...
+            turbulenceModel.state.residuals...
             ]
         )
 
@@ -373,7 +363,7 @@ end
 function update_phase_thermodynamics!(EoS::Union{ConstEos, PerfectGas}, phaseIndex::Val{N}, nueff, T, model, config) where {N}
     phase = model.fluid.phases[N]
     phase.eosModel(phase, model, config)
-    phase.viscosityModel(phase, T)
+    phase.viscosityModel(phase, model)
 end
 
 """
@@ -512,10 +502,10 @@ function phi_gf!(phi_gf, rho, ghf, rDf, model, config)
 
     ndrange = n_ifaces
     kernel! = _phi_gf!(_setup(backend, workgroup, ndrange)...)
-    kernel!(phi_gf, rho, ghf, rDf, faces, cells, n_bfaces, model)
+    kernel!(phi_gf, rho, ghf, rDf, faces, cells, n_bfaces)
 end
 
-@kernel function _phi_gf!(phi_gf, rho, ghf, rDf, faces, cells, n_bfaces, model)
+@kernel function _phi_gf!(phi_gf, rho, ghf, rDf, faces, cells, n_bfaces)
     i = @index(Global)
     fID = i + n_bfaces
 

@@ -7,7 +7,7 @@ using XCALibre
 # mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 
 grids_dir = pkgdir(XCALibre, "examples", "0_GRIDS")
-grid = "EROFATC_Plate_Example.unv"
+grid = "EROFATC_Plate_Example3.unv"
 mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
@@ -27,6 +27,7 @@ Tu = 0.03
 k_inlet = 0.0575 # k_inlet = 3/2*(Tu*velocity[1])^2
 kL_inlet = 0.0115 #1/2*(Tu*velocity[1])^2
 ω_inlet = 275 #k_inlet/(νR*nu)
+rho = 1.225/1000
 
 # model = RANS{KOmegaLKE}(mesh=mesh, viscosity=nu, Tu=Tu)
 
@@ -45,7 +46,7 @@ BCs = assign(
             Dirichlet(:Inlet, velocity),
             Zerogradient(:Outlet),
             Wall(:Wall, [0.0, 0.0, 0.0]),
-            Extrapolated(:Top)
+            Extrapolated(:Freestream)
             # Zerogradient(:top)
             # Symmetry(:top)
         ],
@@ -53,7 +54,7 @@ BCs = assign(
             Zerogradient(:Inlet),
             Dirichlet(:Outlet, 0.0),
             Wall(:Wall),
-            Extrapolated(:Top)
+            Extrapolated(:Freestream)
             # Zerogradient(:top)
             # Symmetry(:top)
         ],
@@ -61,7 +62,7 @@ BCs = assign(
             Dirichlet(:Inlet, k_inlet),
             Zerogradient(:Outlet),
             Dirichlet(:Wall, 0.0),
-            Extrapolated(:Top)
+            Extrapolated(:Freestream)
             # Zerogradient(:top)
             # Symmetry(:top)
         ],
@@ -69,7 +70,7 @@ BCs = assign(
             Dirichlet(:Inlet, kL_inlet),
             Zerogradient(:Outlet),
             Dirichlet(:Wall, 0.0),
-            Extrapolated(:Top)
+            Extrapolated(:Freestream)
             # Zerogradient(:top)
             # Symmetry(:top)
         ],
@@ -77,7 +78,7 @@ BCs = assign(
             Dirichlet(:Inlet, ω_inlet),
             Zerogradient(:Outlet),
             OmegaWallFunction(:Wall),
-            Extrapolated(:Top)
+            Extrapolated(:Freestream)
             # Zerogradient(:top)
             # Symmetry(:top)
         ],
@@ -85,7 +86,7 @@ BCs = assign(
             Dirichlet(:Inlet, k_inlet/ω_inlet),
             Extrapolated(:Outlet),
             Dirichlet(:Wall, 0.0), 
-            Extrapolated(:Top)
+            Extrapolated(:Freestream)
             # Zerogradient(:top)
             # Symmetry(:top)
         ]
@@ -194,6 +195,9 @@ residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
   x = [pos[i][1] for i ∈ eachindex(pos)]
   Rex = velocity[1].*x./nu
 
+  ustar = (tauMag./rho).^(1/2); # Friction velocity
+  yplus = ((2*ustar)/nu)
+
  x_corr = [0:0.0002:2;]
  Rex_corr = velocity[1].*x_corr/nu
  Cf_corr = 0.0576.*(Rex_corr).^(-1/5)
@@ -205,7 +209,7 @@ residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
  scatter!(eRex, eCf, color=:green, label="Experimental T3A Data") # |> display
  # plot!(oRex, oCf, color=:green, lw=1.5,label="OpenFoam") |> display
  plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code") |> display
-savefig(p,"EROFATC_Plate_1.svg")
+ #savefig(p,"EROFATC_Plate_3.svg")
 
 # plot(; xlims=(0,1000))
 # plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

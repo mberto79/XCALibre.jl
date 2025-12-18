@@ -3,7 +3,6 @@ export HelmholtzEnergy, HelmholtzEnergyFluid, H2, H2_para, N2
 export Phase, Fluid, Multiphase
 export ConstEos, PerfectGas, PengRobinson, ConstMu, Sutherland, Andrade
 
-export ConstSurfaceTension, SurfaceTensionModel, NucleateBoilingModel, Drag_SchillerNaumann
 export AbstractModel, AbstractEosModel, AbstractViscosityModel
 
 
@@ -44,12 +43,12 @@ Base.@kwdef struct PerfectGas{T<:AbstractFloat} <: AbstractEosModel
 end
 (eos::PerfectGas)(phase, model, config) = begin
     (; p) = model.momentum
+    (; T) = model.energy
 
-    T_ref = 273.0
     R = phase.eosModel.R
     rho_field = phase.rho
 
-    @. rho_field.values = (p.values) / (R * T_ref) # CAREFUL WITH p=0 initialisation
+    @. rho_field.values = (p.values) / (R * T.values) # CAREFUL WITH p=0 initialisation
 end
 
 """
@@ -75,12 +74,7 @@ end
     workgroup = config.hardware.workgroup
 
     p = model.momentum.p
-
-    if typeof(model.energy) <: Nothing # Isothermal
-        T = ConstantScalar(273.0) # THIS PROBABLY NEEDS TO BE DEFINED BY USER! Redesign Isothermal Energy ?
-    else
-        T = model.energy.T
-    end
+    (; T) = model.energy
     
     rho_l_field = model.fluid.phases[1].rho
     rho_p_field = model.fluid.phases[2].rho
@@ -207,7 +201,7 @@ Constant dynamic viscosity model.
 Base.@kwdef struct ConstMu{T<:AbstractFloat} <: AbstractViscosityModel
     mu::T
 end
-(viscosityModel::ConstMu)(phase, T) = begin
+(viscosityModel::ConstMu)(phase, model) = begin
     nu_field = phase.nu
     mu_val = phase.viscosityModel.mu
     rho_val = phase.eosModel.rho
@@ -229,9 +223,10 @@ Base.@kwdef struct Sutherland{T<:AbstractFloat} <: AbstractViscosityModel
     mu_ref::T
     S::T
 end
-(viscosityModel::Sutherland)(phase, T) = begin
+(viscosityModel::Sutherland)(phase, model) = begin
     mu_ref = viscosityModel.mu_ref
     S = viscosityModel.S
+    (; T) = model.energy
 
     T_ref = 273.0
     nu_field = phase.nu
@@ -255,9 +250,10 @@ Base.@kwdef struct Andrade{T<:AbstractFloat} <: AbstractViscosityModel
     B::T
     C::T
 end
-(viscosityModel::Andrade)(phase, T) = begin
+(viscosityModel::Andrade)(phase, model) = begin
     B = viscosityModel.B
     C = viscosityModel.C
+    (; T) = model.energy
     
     nu_field = phase.nu
     rho_field = phase.rho
@@ -269,23 +265,6 @@ end
 
 Base.@kwdef struct HydrogenViscosity <: AbstractPhysicsProperty end
 Base.@kwdef struct NitrogenViscosity <: AbstractPhysicsProperty end
-
-
-"""
-    ConstSurfaceTension <: AbstractPhysicsProperty
-
-Constant surface tension property model.
-
-### Fields
-- 's' -- Surface tension coefficient [N/m].
-"""
-Base.@kwdef struct ConstSurfaceTension{T<:AbstractFloat} <: AbstractPhysicsProperty
-    s::T
-end
-
-
-Base.@kwdef struct SurfaceTensionModel <: AbstractPhysicsProperty end
-Base.@kwdef struct NucleateBoilingModel <: AbstractPhysicsProperty end
 
 
 """

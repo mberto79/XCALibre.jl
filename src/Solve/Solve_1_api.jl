@@ -187,7 +187,7 @@ function solve_equation!(
 
     discretise!(psiEqn, psi, config)
     update_equation!(psiEqn, config)
-
+    
     apply_boundary_conditions!(psiEqn, psiBCs, xdir, time, config)
     # implicit_relaxation!(psiEqn, psi.x.values, solversetup.relax, xdir, config)
     implicit_relaxation_diagdom!(psiEqn, psi.x.values, solversetup.relax, xdir, config)
@@ -202,7 +202,6 @@ function solve_equation!(
     resy = solve_system!(psiEqn, solversetup, psi.y, ydir, config)
     
     # Z velocity calculations (3D Mesh only)
-    # resz = one(_get_float(mesh))
     resz = zero(_get_float(mesh))
     if typeof(mesh) <: Mesh3
         update_equation!(psiEqn, config)
@@ -215,7 +214,7 @@ function solve_equation!(
     return resx, resy, resz
 end
 
-function solve_system!(phiEqn::ModelEquation, setup, result, component, config) # ; opP, solver
+function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
 
     (; itmax, atol, rtol) = setup
     precon = phiEqn.preconditioner
@@ -223,12 +222,11 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
     solver = phiEqn.solver
     (; x) = solver
     
-    (; hardware) = config
+    (; hardware, runtime) = config
     (; backend, workgroup) = hardware
     (; values, mesh) = result
     
     A = _A(phiEqn)
-    # opA = phiEqn.equation.opA
     opA = A
     b = _b(phiEqn, component)
 
@@ -238,17 +236,21 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
         solver, opA, b, values; 
         M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon)
         )
-    # KernelAbstractions.synchronize(backend)
 
-    Krylov.iteration_count(solver) == itmax && @warn "Maximum number of iteration reached!"
+    # Perform explicit step for Crank-Nicholson. Otherwise simply update field with solution
+    if typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson}
+        xcal_foreach(x, config) do i 
+            x[i] = 2*x[i] - values[i]
+        end
+    end
 
-    # println(statistics(solver).niter)
-    
     ndrange = length(values)
     kernel! = _copy!(_setup(backend, workgroup, ndrange)...)
     kernel!(values, x)
-    # KernelAbstractions.synchronize(backend)
 
+    Krylov.iteration_count(solver) == itmax && @warn "Maximum number of iterations reached!"
+
+    # println(statistics(solver).niter)
     res = residual(phiEqn, component, config)
     return res
 end
@@ -401,7 +403,10 @@ function residual(eqn, component, config)
 
     # Previous definition
     Fx .= A * values
-    @inbounds @. R = (b - Fx)^2
+    # @inbounds @. R = (b - Fx)^2
+    xcal_foreach(R, config) do i 
+            R[i] = (b[i] - Fx[i])^2
+    end
     normb = norm(b)
     denominator = ifelse(normb>0,normb, 1)
     Residual = sqrt(mean(R)) / denominator

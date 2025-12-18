@@ -1,5 +1,4 @@
 using XCALibre
-using CUDA
 
 # This case tests multiphase solver, gravitational effects, and fluid models such as Perfect gas, Andrade, Sutherland's
 
@@ -10,8 +9,8 @@ grid = "quad40.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=scaling)
 
-# backend = CPU(); workgroup = AutoTune(); activate_multithread(backend)
-backend = CUDABackend(); workgroup=32
+backend = CPU(); workgroup = AutoTune(); activate_multithread(backend)
+# backend = CUDABackend(); workgroup=32
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)

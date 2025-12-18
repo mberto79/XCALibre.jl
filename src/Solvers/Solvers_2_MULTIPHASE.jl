@@ -279,6 +279,8 @@ function MULTIPHASE(
 
             phi_g!(phi_g, gh, ∇rho, config)
             phi_gf!(phi_gf, rho, ghf, rDf, model, config)
+            # The solver is perfectly working as it is, but it might be worth checking if we need to update boundary faces for this field in the future.
+            
             @. mdotf.values += phi_gf.values
 
             div!(divHv, mdotf, config)
@@ -418,7 +420,7 @@ function compute_ghf!(ghf, g, config)
     kernel!(ghf, g, faces)
 end
 @kernel inbounds=true function _compute_ghf!(ghf, g, faces)
-    i = @index(Global) # ARTEM check that we don't need BfIDs added?????
+    i = @index(Global)
 
     (; centre) = faces[i]
     ghf[i] = g ⋅ centre

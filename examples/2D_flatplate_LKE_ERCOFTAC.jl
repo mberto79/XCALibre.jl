@@ -7,7 +7,7 @@ using XCALibre
 # mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 
 grids_dir = pkgdir(XCALibre, "examples", "0_GRIDS")
-grid = "EROFATC_Plate_Example3.unv"
+grid = "EROFATC_Plate_3DExample.unv"
 mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
@@ -179,9 +179,9 @@ residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
  using LinearAlgebra
  using Plots 
 
- Ex_data = readdlm("T3A_Experimental_Results.csv", ',', Float64, skipstart=1)
- eRex = Ex_data[:,1]
- eCf = Ex_data[:,2]
+ # Ex_data = readdlm("T3A_Experimental_Results.csv", ',', Float64, skipstart=1)
+ # eRex = Ex_data[:,1]
+ # eCf = Ex_data[:,2]
 
  # OF_data = readdlm("T3A_Experimental_Results.csv", ',', Float64, skipstart=1)
  # oRex = OF_data[:,7].*velocity[1]./nu[1]
@@ -198,18 +198,18 @@ residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
   ustar = (tauMag./rho).^(1/2); # Friction velocity
   yplus = ((2*ustar)/nu)
 
- x_corr = [0:0.0002:2;]
- Rex_corr = velocity[1].*x_corr/nu
- Cf_corr = 0.0576.*(Rex_corr).^(-1/5)
- Cf_laminar = 0.664.*(Rex_corr).^(-1/2)
+  x_corr = [0:0.0002:2;]
+  Rex_corr = velocity[1].*x_corr/nu
+  Cf_corr = 0.0576.*(Rex_corr).^(-1/5)
+  Cf_laminar = 0.664.*(Rex_corr).^(-1/2)
 
- p = plot(; xaxis="Rex", yaxis="Cf")
- plot!(Rex_corr, Cf_corr, color=:red, ylims=(0, 0.01), xlims=(0,6e5), label="Turbulent",lw=1.5)
- plot!(Rex_corr, Cf_laminar, color=:green, ylims=(0, 0.01), xlims=(0,6e5), label="Laminar",lw=1.5)
- scatter!(eRex, eCf, color=:green, label="Experimental T3A Data") # |> display
- # plot!(oRex, oCf, color=:green, lw=1.5,label="OpenFoam") |> display
- plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code") |> display
- #savefig(p,"EROFATC_Plate_3.svg")
+  p = plot(; xaxis="Rex", yaxis="Cf")
+  plot!(Rex_corr, Cf_corr, color=:red, ylims=(0, 0.01), xlims=(0,6e5), label="Turbulent",lw=1.5)
+  plot!(Rex_corr, Cf_laminar, color=:green, ylims=(0, 0.01), xlims=(0,6e5), label="Laminar",lw=1.5)
+# scatter!(eRex, eCf, color=:green, label="Experimental T3A Data") # |> display
+# plot!(oRex, oCf, color=:green, lw=1.5,label="OpenFoam") |> display
+  plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code") |> display
+# savefig(p,"EROFATC_Plate_3.svg")
 
 # plot(; xlims=(0,1000))
 # plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

@@ -161,7 +161,6 @@ function SIMPLE(
     grad!(∇p, pf, p, boundaries.p, time, config)
     limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
-
     update_nueff!(nueff, nu, model.turbulence, config)
 
     @info "Starting SIMPLE loops..."

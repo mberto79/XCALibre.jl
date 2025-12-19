@@ -3,9 +3,15 @@ using LinearAlgebra
 using SparseArrays
 using SparseMatricesCSR
 using StaticArrays 
+using ThreadPinning
 using Test
 
-BLAS.set_num_threads(1)
+# @info "Pinning Threads"
+# pinthreads(:cores)
+
+# @info "Setting BLAS threads to 1"
+# BLAS.set_num_threads(1)
+
 workgroupsize(mesh) = length(mesh.cells) ÷ Threads.nthreads()
 
 TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
@@ -41,6 +47,18 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         test_files = [
             "2d_laplace_steady.jl",
             "2d_laplace_unsteady.jl"
+        ]
+
+        for test ∈ test_files
+            test_path = joinpath(TEST_CASES_DIR, test)
+            include(test_path)
+        end
+    end
+
+    @testset "Multiphase Functionality Test" begin
+
+        test_files = [
+            "2d_multiphase_gravity.jl"
         ]
 
         for test ∈ test_files

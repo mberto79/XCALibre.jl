@@ -10,7 +10,8 @@ grids_dir = pkgdir(XCALibre, "examples", "0_GRIDS")
 grid = "EROFATC_Plate_3DExample.unv"
 mesh_file = joinpath(grids_dir, grid)
 
-mesh = UNV2D_mesh(mesh_file, scale=0.001)
+# mesh = UNV2D_mesh(mesh_file, scale=0.001)
+mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = 1024; activate_multithread(backend)

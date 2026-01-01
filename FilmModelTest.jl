@@ -23,13 +23,14 @@ mesh_dev = mesh; # use this line to run on CPU
 velocity = [0.5, 0.0, 0.0];
 nu = 1e-4;
 Re = velocity[1]*0.01/nu;
-h_inlet = 50;
+h_inlet = 0.5;
 rho_l = 1000;
+h_crit = 1e-10
 
 model = Physics(
-    momentum=Momentum{EFM}(),
+    momentum=Momentum{EFM}(; h_crit = h_crit, β=6.0, θm = 75),
     time = Steady(),
-    fluid = Fluid{Incompressible}(nu = nu, rho = rho_l),
+    fluid = Fluid{Incompressible}(; nu = nu, rho = rho_l),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
@@ -51,18 +52,21 @@ BCs = assign(
             #Extrapolated(:top)
         ],
         h = [
-            Dirichlet(:inlet, h_inlet),
-            #Zerogradient(:inlet),
+            #Dirichlet(:inlet, h_inlet),
+            Zerogradient(:inlet),
             #Extrapolated(:inlet),
+            #Dirichlet(:outlet, h_crit),
             #Wall(:outlet),
             Zerogradient(:outlet),
             #Extrapolated(:outlet),
             #Wall(:wall),
             Zerogradient(:bottom),
+            #Dirichlet(:bottom, h_crit),
             #Zerogradient(:wall),
             #Extrapolated(:bottom),
             #Wall(:top)
             Zerogradient(:top)
+            #Dirichlet(:top, h_crit)
             #Extrapolated(:top)
         ],
         PL = [
@@ -115,6 +119,6 @@ config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
 
 initialise!(model.momentum.U, velocity);
-initialise!(model.momentum.h, h_inlet);
+initialise!(model.momentum.h, 1e-10);
 
 residuals = run!(model, config);

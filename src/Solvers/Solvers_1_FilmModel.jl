@@ -31,12 +31,9 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     hf = FaceScalarField(mesh)
     Sm = ScalarField(mesh)
     initialise!(Sm, 0)
-    #h_prev = ScalarField(mesh)
-    #Si_mom = ScalarField(mesh)
-    #nueff = FaceScalarField(mesh)
     rho_l = ScalarField(mesh)
     initialise!(rho_l, rho.values)
-    test = VectorField(mesh)
+    RHS = VectorField(mesh)
     
 
     @info "Defining models.."
@@ -49,7 +46,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
         #+ Grd{schemes.h.gradient}(h, )
         #+ Si(nueff, U)
         ==
-        Source(test)
+        Source(RHS)
     ) → VectorEquation(U, boundaries.U)
 
     h_eqn = (
@@ -97,22 +94,23 @@ function FilmModel(
     Postprocess = convert_time_to_iterations(postprocess, model, dt, iterations)
     hf = get_flux(U_eqn, 1)
     hmdotf = get_flux(U_eqn, 2)
-    test = get_source(U_eqn, 1)
+    RHS = get_source(U_eqn, 1)
     mdotf = get_flux(h_eqn,2)
-    mu = nu.values/rho.values
+    mu = nu.values*rho.values
 
     outputWriter = initialise_writer(output, model.domain)
 
     @info "Allocating working memory"
 
-    n = [0,0,1]
+    n_non_norm = [0,0,1]
+    n = 1/(sqrt(n_non_norm[1]^2+n_non_norm[2]^2+n_non_norm[3]^2))*n_non_norm
     g = 9.8
-    G = g*[0,0,1]
+    G = g*[0,0,-1]
 
     # Define aux fields
     PL = ScalarField(mesh)
     PLf = FaceScalarField(mesh)
-    ∇PL = Grad{schemes.h.gradient}(PL)
+    ∇PL = Grad{schemes.PL.gradient}(PL)
     surface_tension = ScalarField(mesh)
     ∇h = Grad{schemes.h.gradient}(h)
     ∇hf = FaceVectorField(mesh)
@@ -140,42 +138,39 @@ function FilmModel(
     interpolate!(hf, h, config)
     # Getting h * mdotf for U calculation
     @. hmdotf.values = mdotf.values * hf.values
-    limit_gradient!(schemes.h.limiter, ∇h, h, config)
+
+    
 
     # Getting the laplacian of h for first U calculation
     grad!(∇h, hf, h, boundaries.h, time, config)
     limit_gradient!(schemes.h.limiter, ∇h, h, config)
-
     interpolate!(∇hf, ∇h.result, config)
     div!(laplh, ∇hf, config)
 
-    @info "need to readd Pg term"
+    @info "need to readd Pg term - Coupling term for other phase"
     # add Pg term
     for i ∈ 1:length(laplh.values)
         surface_tension[i] = model.momentum.coeffs*laplh[i]
-        PL[i] =  - model.momentum.coeffs*model.momentum.h[i]* (dot(n,G)) - surface_tension[i]
+        PL[i] = - (model.momentum.coeffs * model.momentum.h[i] * (dot(n,G))) - surface_tension[i]
     end
 
     interpolate!(PLf, PL, config)
-    grad!(∇PL, PLf, PL, boundaries.h, time, config)
-    limit_gradient!(schemes.h.limiter, ∇PL, PL, config)
+    grad!(∇PL, PLf, PL, boundaries.PL, time, config)
+    limit_gradient!(schemes.PL.limiter, ∇PL, PL, config)
 
-
-    for i ∈ eachindex(muv)
+    for i ∈ eachindex(h)
         multiplier = 3*(mu/h.values[i])
         muv.x.values[i] = multiplier * U.x.values[i]
         muv.y.values[i] = multiplier * U.y.values[i]
         muv.z.values[i] = multiplier * U.z.values[i]
-    end
-    
-    for i ∈ eachindex(h)
-        test[i] = (
-             h[i]*∇PL[i]
+
+        RHS[i] = (
+             - (h[i]*∇PL[i])
              #+ rho*g*h[i] # Possible incorrect term
-             # ruccently ignoring tau fs term
+             # currently ignoring tau fs term
              - muv[i]
         )
-        
+        #println("$(RHS.x.values[i]), $(RHS.y.values[i])")
     end
     
 
@@ -183,85 +178,69 @@ function FilmModel(
     
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
-
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
-    rx, ry, rz = 1, 1, 1
 
     for iteration ∈ 1:iterations
         time = iteration
         
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U , xdir, ydir, zdir, config)
 
-        # h correction - not sure if this is necessary but using this anyway
-        #inverse_diagonal!(rD, U_eqn, config)
-        #interpolate!(rDf, rD, config)
-        #remove_pressure_source!(U_eqn, ∇h, config)
-
-        #H!(Hv, U, U_eqn, config)
-
-        ## Interpolate faces
-        #interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
-        #correct_boundaries!(Uf, Hv, boundaries.U, time, config)
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, boundaries.U, time, config)
 
         # h calculations
         flux!(mdotf, Uf, config)
-        interpolate!(hf, h, config)
-        @. hmdotf.values = mdotf.values * hf.values
         
 
         @. prev = h.values
-        #discretise!(h_eqn, h, config)
-        
+
         rh = solve_equation!(h_eqn, h, boundaries.h, solvers.h, config)
         explicit_relaxation!(h, prev, solvers.h.relax, config)
 
         
         if (iteration == 1)
-            println("$(U.x.values), $(U.y.values)")
-            println(mdotf.values)
+            #println("$(U.x.values), $(U.y.values)")
+            #println(mdotf.values)
             #println(Sm.values)
-            println(h.values)
+            #println(h.values)
         end
         for i ∈ 1:ncorrectors
-
             discretise!(h_eqn, h, config)
-            apply_boundary_conditions!(h_eqn, bouundaries.h, nothing, time, config)
+            apply_boundary_conditions!(h_eqn, boundaries.h, nothing, time, config)
 
             rh = solve_system!(h_eqn, solvers.h, h, nothing, config)
             explicit_relaxation!(h, prev, solvers.h.relax, config)
         end
 
-        grad!(∇h, hf, h, boundaries.h, time, config)
-        interpolate!(∇hf, ∇h.result, config)
-
-        div!(laplh, ∇hf, config)
-        #get_surface_tension!(model, surface_tension, laplh, ∇hf, config)
         
+        interpolate!(hf, h, config)
+        @. hmdotf.values = mdotf.values * hf.values
+
+        grad!(∇h, hf, h, boundaries.h, time, config)
+        limit_gradient!(schemes.h.limiter, ∇h, h, config)
+        interpolate!(∇hf, ∇h.result, config)
+        div!(laplh, ∇hf, config)
         
         # add Pg term
         for i ∈ 1:length(laplh.values)
             surface_tension[i] = model.momentum.coeffs*laplh[i]
-            PL[i] =  - model.momentum.coeffs*model.momentum.h[i]* (dot(n,G)) - surface_tension[i]
+            PL[i] = - (model.momentum.coeffs * model.momentum.h[i] * (dot(n,G))) - surface_tension[i]
         end
 
-
         interpolate!(PLf, PL, config)
-        grad!(∇PL, PLf, PL, boundaries.h, time, config)
+        grad!(∇PL, PLf, PL, boundaries.PL, time, config)
+        limit_gradient!(schemes.PL.limiter, ∇PL, PL, config)
 
-        for i ∈ eachindex(muv)
+
+        for i ∈ eachindex(h)
             multiplier = 3*(mu/h.values[i])
             muv.x.values[i] = multiplier * U.x.values[i]
             muv.y.values[i] = multiplier * U.y.values[i]
             muv.z.values[i] = multiplier * U.z.values[i]
-        end
-
-        for i ∈ eachindex(h)
-            test[i] = (
-             h[i]*∇PL[i]
+            RHS[i] = (
+             - (h[i]*∇PL[i])
              #+ rho*g*h[i] # Possible incorrect term
-            
+             # currently ignoring tau fs term
              - muv[i]
             )
         end

@@ -98,13 +98,13 @@ function FilmModel(
     mdotf = get_flux(h_eqn,2)
     Sm = get_source(h_eqn,1)
     mu = nu.values*rho.values
+    #println(mu)
 
     outputWriter = initialise_writer(output, model.domain)
 
     @info "Allocating working memory"
 
-    n_non_norm = [0,0,1]
-    n = 1/(sqrt(n_non_norm[1]^2+n_non_norm[2]^2+n_non_norm[3]^2))*n_non_norm
+    n = [sind(coeffs.ϕ),0,cosd(coeffs.ϕ)]
     g = 9.8
     G = g*[0,0,-1]
 
@@ -116,12 +116,18 @@ function FilmModel(
     ∇h = Grad{schemes.h.gradient}(h)
     ∇hf = FaceVectorField(mesh)
     laplh = ScalarField(mesh)
-    muv = VectorField(mesh)
+    τθ = VectorField(mesh)
     w = ScalarField(mesh)
     wf = FaceScalarField(mesh)
     ∇w = Grad{schemes.h.gradient}(w)
     τθw = FaceVectorField(mesh)
-    
+    w_bc = [
+        Dirichlet(:inlet, 1),
+        Zerogradient(:outlet),
+        Zerogradient(:top),
+        Zerogradient(:bottom)
+    ]
+
     n_cells = length(mesh.cells)
 
     # Pre-allocate auxiliary variables
@@ -154,9 +160,11 @@ function FilmModel(
 
     @info "need to readd Pg term - Coupling term for other phase"
     # add Pg term
+    Pg = 0#1e5 # Test Pg term
+    @info "need to fix surface tension term"
     for i ∈ 1:length(laplh.values)
         surface_tension[i] = coeffs.σ*laplh[i]
-        PL[i] = - (coeffs.σ * model.momentum.h[i] * (dot(n,G))) - surface_tension[i]
+        PL[i] = Pg - (coeffs.σ * model.momentum.h[i] * (dot(n,G))) - surface_tension[i]
     end
 
     interpolate!(PLf, PL, config)
@@ -168,27 +176,35 @@ function FilmModel(
     end
 
     interpolate!(wf, w, config)
-    grad!(∇w, wf, w, boundaries.h, time, config)
+    grad!(∇w, wf, w, w_bc, time, config)
 
     for i ∈ eachindex(h)
         multiplier = 3*(mu/h.values[i])
-        muv.x.values[i] = multiplier * U.x.values[i]
-        muv.y.values[i] = multiplier * U.y.values[i]
-        muv.z.values[i] = multiplier * U.z.values[i]
+        τθ.x.values[i] = multiplier * U.x.values[i]
+        τθ.y.values[i] = multiplier * U.y.values[i]
+        τθ.z.values[i] = multiplier * U.z.values[i]
 
-        τθw = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) * ∇w[i]
+        τθw = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w[i]
 
         RHS[i] = (
              - (h[i]*∇PL[i])
-             #+ rho*g*h[i] # Possible incorrect term
+             + (rho.values*g*sin(coeffs.ϕ)*h[i]).*[1,0,0] # Gravity tangential to surface
              # currently ignoring tau fs term
-             - muv[i]
+             - τθ[i]
              + τθw
         )
-        #println("$(RHS.x.values[i]), $(RHS.y.values[i])")
+        
+        if abs(RHS.x.values[i]) > 1
+            #println(PL[i])
+            #println("$(∇PL[i])")
+            #println(τθw)
+            #println("$(∇w[i].x), $(∇w[i].y), $(∇w[i].z)")
+            #println("$(τθ.x.values[i]), $(τθ.y.values[i]), $(τθ.z.values[i])")
+            println("$(laplh[i])")
+            println("$(RHS.x.values[i]), $(RHS.y.values[i]), $(RHS.z.values[i])")
+        end
     end
     
-
     @info "Starting loops"
     
     progress = Progress(iterations; dt=1.0, showspeed=true)
@@ -211,11 +227,12 @@ function FilmModel(
 
         rh = solve_equation!(h_eqn, h, boundaries.h, solvers.h, config)
         explicit_relaxation!(h, prev, solvers.h.relax, config)
+        correct_boundaries!(hf, h, boundaries.h, time, config)
 
         
         if (iteration == 1)
             #println("$(U.x.values), $(U.y.values)")
-            println(mdotf.values)
+            #println(mdotf.values)
             #for i ∈ mdotf.values
             #    if i > 0.00019
             #        println(i)
@@ -248,7 +265,7 @@ function FilmModel(
         # add Pg term
         for i ∈ 1:length(laplh.values)
             surface_tension[i] = model.momentum.coeffs.σ*laplh[i]
-            PL[i] = - (model.momentum.coeffs.σ * model.momentum.h[i] * (dot(n,G))) - surface_tension[i]
+            PL[i] = - (model.momentum.coeffs.σ * model.momentum.h[i] * (dot(n,G)))# - surface_tension[i]
         end
 
         interpolate!(PLf, PL, config)
@@ -260,7 +277,7 @@ function FilmModel(
         end
 
         interpolate!(wf, w, config)
-        grad!(∇w, wf, w, boundaries.h, time, config)
+        grad!(∇w, wf, w, w_bc, time, config)
         if (iteration == 3)
             #for i ∈ eachindex(h)
             #    println("$(h.values[i]), $(w.values[i])")
@@ -269,17 +286,17 @@ function FilmModel(
 
         for i ∈ eachindex(h)
             multiplier = 3*(mu/h.values[i])
-            muv.x.values[i] = multiplier * U.x.values[i]
-            muv.y.values[i] = multiplier * U.y.values[i]
-            muv.z.values[i] = multiplier * U.z.values[i]
+            τθ.x.values[i] = multiplier * U.x.values[i]
+            τθ.y.values[i] = multiplier * U.y.values[i]
+            τθ.z.values[i] = multiplier * U.z.values[i]
 
             τθw = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) * ∇w[i]
 
             RHS[i] = (
                  - (h[i]*∇PL[i])
-                 #+ rho*g*h[i] # Possible incorrect term
+                 + (rho.values*g*sin(coeffs.ϕ)*h[i]).*[1,0,0] # Gravity tangential to surface
                  # currently ignoring tau fs term
-                 - muv[i]
+                 - τθ[i]
                  + τθw
             )
         end

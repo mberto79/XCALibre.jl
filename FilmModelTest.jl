@@ -20,15 +20,26 @@ hardware = Hardware(backend=backend, workgroup=1024);
 mesh_dev = mesh; # use this line to run on CPU
 # mesh_dev = adapt(backend, mesh)  # Uncomment to run on GPU 
 
-velocity = [0.5, 0.0, 0.0];
-nu = 1e-4;
+
+inlet_size = 0.01; # m - taken from model in Salome
+rho_l = 991.07; # Density of water @ 43°C kg/m3
+Γ=200; # g/m/s
+Γkg = Γ/1000; # kg/m/s
+inlet_flow_rate = Γkg/rho_l; # m2/s
+h_inlet = 0.005;
+inlet_speed = inlet_flow_rate/h_inlet;
+
+velocity = inlet_speed*[1, 0.0, 0.0];
+nu = 6.245e-7; # Kinematic Viscosity of water @ 43°C
 Re = velocity[1]*0.01/nu;
-h_inlet = 0.5;
-rho_l = 1000;
-h_crit = 1e-10
+
+
+h_crit = 1e-10;
+
+
 
 model = Physics(
-    momentum=Momentum{EFM}(; h_crit = h_crit, β=6.0, θm = 75),
+    momentum=Momentum{EFM}(; h_crit = h_crit, β=6.0, θm = 75, ϕ=7),
     time = Steady(),
     fluid = Fluid{Incompressible}(; nu = nu, rho = rho_l),
     turbulence = RANS{Laminar}(),
@@ -52,8 +63,8 @@ BCs = assign(
             #Extrapolated(:top)
         ],
         h = [
-            #Dirichlet(:inlet, h_inlet),
-            Zerogradient(:inlet),
+            Dirichlet(:inlet, h_inlet),
+            #Zerogradient(:inlet),
             #Extrapolated(:inlet),
             #Dirichlet(:outlet, h_crit),
             #Wall(:outlet),
@@ -119,6 +130,6 @@ config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
 
 initialise!(model.momentum.U, velocity);
-initialise!(model.momentum.h, 1e-10);
+initialise!(model.momentum.h, 1e-4);
 
 residuals = run!(model, config);

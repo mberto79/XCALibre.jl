@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 *  Added capablity to write out TensorFields to .vtk/vtu including Reynolds Stress Tensor [#87](@ref)
 *  Extended `DirichLetFunction` to accept functions defining boundary condition for `ScalarFields` [#89](@ref)
 *  Implemented `CrankNicolson` time scheme (second order implicit-explicit) [#90](@ref)
+*  Added `Multiphase` solver supporting gravitational effects using `p_rgh` pressure formulation [#92](@ref)
+*  Added `ConstEos`, `PerfectGas` and cubic `PengRobinson` equations of state for fluid density [#92](@ref)
+*  Added `ConstMu`, `Sutherland` and `Andrade` viscosity models [#92](@ref)
 
 
 ### Fixed
@@ -35,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Internally, the calculation of interpolation weights and other geometric properties are calculated using the same function (defined in the `Mesh` module) [#69](@ref)
 * The default discretisation for laplacian terms uses the over-relaxed formulation by default. This will have no effect on orthogonal grids, but tends to be more robust in complex geometries at the expense of accuracy, which can be recovered by adding additional orthogonal correction loops (using the key word argument `ncorrectors` in the `run!` function) [#73](@ref)
 * Cleaned code for all solvers and improved stability of incompressible solver by removing the update of the mass flow based on the velocity field from the previous iteration. The mass flow is now corrected directly from the latest pressure solution [#76](@ref)
+* Changed `Isothermal` energy model to let user optionally define `ConstantScalar` value for temperature field. [#92](@ref)
 
 ### Breaking
 * No breaking changes

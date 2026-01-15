@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Verification: 2D bump k-omega SST · XCALibre.jl</title><meta name="title" content="Verification: 2D bump k-omega SST · XCALibre.jl"/><meta property="og:title" content="Verification: 2D bump k-omega SST · XCALibre.jl"/><meta property="twitter:title" content="Verification: 2D bump k-omega SST · XCALibre.jl"/><meta name="description" content="Documentation for XCALibre.jl."/><meta property="og:description" content="Documentation for XCALibre.jl."/><meta property="twitter:description" content="Documentation for XCALibre.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">XCALibre.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><a class="tocitem" href="../../quick_start/">Quick Start</a></li><li><span class="tocitem">Examples</span><ul><li><a class="tocitem" href="../01_2d-isothermal-backward-facing-step/">Verification: 2D incompressible backward-facing step</a></li><li><a class="tocitem" href="../02_2d-incompressible-transient-cylinder/">Verification: 2D Unsteady incompressible cylinder</a></li><li><a class="tocitem" href="../03_2d-constant-temperature-flat-plate/">Validation: 2D Constant temperature flat plate</a></li><li><a class="tocitem" href="../04_2d-inflow-using-Flux/">Advanced: Inflow condition using Machine Learning (<code>Flux.jl</code>)</a></li><li><a class="tocitem" href="../05_2d-aerofoil-inflow-optimisation/">Advanced: 2D Aerofoil inflow optimisation</a></li><li><a class="tocitem" href="../06_2d-laplace-solver/">Validation: Laplace Solver in 2D Solid Medium</a></li><li class="is-active"><a class="tocitem" href>Verification: 2D bump <span>$k-\omega$</span> SST</a><ul class="internal"><li class="toplevel"><a class="tocitem" href="#Introduction"><span>Introduction</span></a></li><li class="toplevel"><a class="tocitem" href="#Simulation-setup"><span>Simulation setup</span></a></li><li class="toplevel"><a class="tocitem" href="#Results"><span>Results</span></a></li><li><a class="tocitem" href="#XCALibre-solution"><span>XCALibre solution</span></a></li><li><a class="tocitem" href="#Quantitative-comparision"><span>Quantitative comparision</span></a></li></ul></li></ul></li><li><span class="tocitem">User Guide</span><ul><li><a class="tocitem" href="../../user_guide/0_introduction_and_workflow/">Introduction</a></li><li><a class="tocitem" href="../../user_guide/1_preprocessing/">Pre-processing</a></li><li><a class="tocitem" href="../../user_guide/2_physics_and_models/">Physics and models</a></li><li><a class="tocitem" href="../../user_guide/3_numerical_setup/">Numerical setup</a></li><li><a class="tocitem" href="../../user_guide/4_runtime_and_solvers/">Runtime and solvers</a></li><li><a class="tocitem" href="../../user_guide/5_postprocessing/">Post-processing</a></li></ul></li><li><a class="tocitem" href="../../benchmarks/">Benchmarks</a></li><li><a class="tocitem" href="../../contributor_guide/">Contributor Guide</a></li><li><a class="tocitem" href="../../reference/">Reference</a></li><li><a class="tocitem" href="../../release_notes/">Release notes</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Examples</a></li><li class="is-active"><a href>Verification: 2D bump <span>$k-\omega$</span> SST</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Verification: 2D bump <span>$k-\omega$</span> SST</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/mberto79/XCALibre.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/mberto79/XCALibre.jl/blob/main/docs/src/examples/07_2d-bump-komegaSST.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Verification:-2D-bump-k-\\omega-SST"><a class="docs-heading-anchor" href="#Verification:-2D-bump-k-\\omega-SST">Verification: 2D bump <span>$k-\omega$</span> SST</a><a id="Verification:-2D-bump-k-\\omega-SST-1"></a><a class="docs-heading-anchor-permalink" href="#Verification:-2D-bump-k-\\omega-SST" title="Permalink"></a></h1><h1 id="Introduction"><a class="docs-heading-anchor" href="#Introduction">Introduction</a><a id="Introduction-1"></a><a class="docs-heading-anchor-permalink" href="#Introduction" title="Permalink"></a></h1><hr/><p>The correct implementation of the <span>$k-\omega$</span> SST solver in XCALibre.jl has been verified by quantitatively comparing results with those obtained with OpenFOAM. The simulation set up and mesh file used to run the simulation with XCALibre.jl are available in this repository.</p><h1 id="Simulation-setup"><a class="docs-heading-anchor" href="#Simulation-setup">Simulation setup</a><a id="Simulation-setup-1"></a><a class="docs-heading-anchor-permalink" href="#Simulation-setup" title="Permalink"></a></h1><hr/><pre><code class="language-julia hljs">
+using XCALibre
+# using CUDA # Uncomment to run on NVIDIA GPUs
+# using AMDGPU # Uncomment to run on AMD GPUs
+
+grids_dir = pkgdir(XCALibre, &quot;examples/0_GRIDS&quot;)
+grid = &quot;OF_bump2d/polyMesh&quot;
+mesh_file = joinpath(grids_dir, grid)
+
+mesh = FOAM3D_mesh(mesh_file, scale=1, integer_type=Int64, float_type=Float64)
+
+# Select backend and setup hardware
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
+# backend = CUDABackend() # ru non NVIDIA GPUs
+# backend = ROCBackend() # run on AMD GPUs
+hardware = Hardware(backend=backend, workgroup=workgroup)
+
+mesh_dev = adapt(CPU(), mesh)
+
+u_mag = 69.44
+velocity = [u_mag, 0.0, 0.0]
+nu = 1.388E-5
+k_inlet = 0.723
+ω_inlet = 8675
+
+model = Physics(
+    time = Steady(),
+    fluid = Fluid{Incompressible}(nu = nu),
+    turbulence = RANS{KOmegaSST}(walls=(:bump,)),
+    # turbulence = RANS{KOmega}(),
+    energy = Energy{Isothermal}(),
+    domain = mesh_dev
+    )
+
+patch_group = [:top, :symUp, :symDown]
+
+# set up as walls
+group_bcs_U = Wall.(patch_group, Ref([0,0,0]))
+group_bcs_p = Wall.(patch_group)
+group_bcs_k = Dirichlet.(patch_group, Ref(0.0))
+group_bcs_omega = OmegaWallFunction.(patch_group)
+group_bcs_nut = Dirichlet.(patch_group, Ref(0.0))
+
+# set up as symmetric
+group_bcs_U = Symmetry.(patch_group)
+group_bcs_p = group_bcs_U
+group_bcs_k = group_bcs_U
+group_bcs_omega = group_bcs_U
+group_bcs_nut = group_bcs_U
+
+
+BCs = assign(
+    region = mesh_dev,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Zerogradient(:outlet),
+            Wall(:bump, [0.0, 0.0, 0.0]),
+            Empty(:frontAndBack),
+            group_bcs_U...,
+        ],
+        p = [
+            Zerogradient(:inlet),
+            Dirichlet(:outlet, 0.0),
+            Wall(:bump),
+            Empty(:frontAndBack),
+            group_bcs_p...,
+        ],
+        k = [
+            Dirichlet(:inlet, k_inlet),
+            Zerogradient(:outlet),
+            KWallFunction(:bump),
+            Empty(:frontAndBack),
+            group_bcs_k...,
+        ],
+        omega = [
+            Dirichlet(:inlet, ω_inlet),
+            Zerogradient(:outlet),
+            OmegaWallFunction(:bump),
+            Empty(:frontAndBack),
+            group_bcs_omega...,
+        ],
+        nut = [
+            Extrapolated(:inlet),
+            Extrapolated(:outlet),
+            Dirichlet(:bump, 0.0),
+            Empty(:frontAndBack),
+            group_bcs_nut...,
+        ],
+    )
+)
+
+schemes = (
+    U = Schemes(divergence=Upwind),
+    p = Schemes(divergence=Upwind),
+    y = Schemes(),
+    k = Schemes(divergence=Upwind),
+    omega = Schemes(divergence=Upwind)
+)
+
+solvers = (
+    U = SolverSetup(
+        solver      = Bicgstab(),
+        preconditioner = Jacobi(),
+        convergence = 1e-8,
+        relax       = 0.6,
+        rtol = 1e-3
+    ),
+    p = SolverSetup(
+        solver      = Cg(),
+        preconditioner = DILU(),
+        convergence = 1e-11,
+        relax       = 0.2,
+        rtol = 1e-3,
+        itmax = 4000
+    ),
+    y = SolverSetup(
+        solver      = Cg(),
+        preconditioner = Jacobi(),
+        convergence = 1e-10,
+        rtol = 1e-5,
+        relax       = 0.7,
+        itmax = 5000
+    ),
+    k = SolverSetup(
+        solver      = Bicgstab(),
+        preconditioner = Jacobi(),
+        convergence = 1e-10,
+        relax       = 0.6,
+        rtol = 1e-3
+    ),
+    omega = SolverSetup(
+        solver      = Bicgstab(),
+        preconditioner = Jacobi(), 
+        convergence = 1e-10,
+        relax       = 0.6,
+        rtol = 1e-3
+    )
+)
+
+runtime = Runtime(iterations=5000, write_interval=100, time_step=1)
+runtime = Runtime(iterations=1, write_interval=1, time_step=1) #hide
+
+config = Configuration(
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
+
+GC.gc()
+
+initialise!(model.momentum.U, velocity)
+initialise!(model.momentum.p, 0.0)
+initialise!(model.turbulence.k, k_inlet)
+initialise!(model.turbulence.omega, ω_inlet)
+initialise!(model.turbulence.nut, k_inlet/ω_inlet)
+
+residuals = run!(model, config, output=OpenFOAM())</code></pre><h1 id="Results"><a class="docs-heading-anchor" href="#Results">Results</a><a id="Results-1"></a><a class="docs-heading-anchor-permalink" href="#Results" title="Permalink"></a></h1><hr/><h2 id="XCALibre-solution"><a class="docs-heading-anchor" href="#XCALibre-solution">XCALibre solution</a><a id="XCALibre-solution-1"></a><a class="docs-heading-anchor-permalink" href="#XCALibre-solution" title="Permalink"></a></h2><p><img src="../figures/07/flowfield.png" alt="Simulation domain"/></p><h2 id="Quantitative-comparision"><a class="docs-heading-anchor" href="#Quantitative-comparision">Quantitative comparision</a><a id="Quantitative-comparision-1"></a><a class="docs-heading-anchor-permalink" href="#Quantitative-comparision" title="Permalink"></a></h2><p>The figure below compares the results obtained with OpenFOAM and XCALibre.jl. The profiles are extracted along the y-direction at x = 0.75 m and 1.20 m. </p><h3 id="Profiles-at-x-0.75-m"><a class="docs-heading-anchor" href="#Profiles-at-x-0.75-m">Profiles at x = 0.75 m</a><a id="Profiles-at-x-0.75-m-1"></a><a class="docs-heading-anchor-permalink" href="#Profiles-at-x-0.75-m" title="Permalink"></a></h3><p><img src="../figures/07/075_2dbump_case.png" alt="Comparison with OpenFOAM - x = 0.75m"/></p><h3 id="Profiles-at-x-1.20-m"><a class="docs-heading-anchor" href="#Profiles-at-x-1.20-m">Profiles at x = 1.20 m</a><a id="Profiles-at-x-1.20-m-1"></a><a class="docs-heading-anchor-permalink" href="#Profiles-at-x-1.20-m" title="Permalink"></a></h3><p><img src="../figures/07/120_2dbump_case.png" alt="Comparison with OpenFOAM - x = 1.20m"/></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../06_2d-laplace-solver/">« Validation: Laplace Solver in 2D Solid Medium</a><a class="docs-footer-nextpage" href="../../user_guide/0_introduction_and_workflow/">Introduction »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Thursday 15 January 2026 10:58">Thursday 15 January 2026</span>. Using Julia version 1.10.10.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

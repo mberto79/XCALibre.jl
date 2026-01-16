@@ -293,3 +293,7 @@ end
 
     ac, -an*values[pcellID] # explicit this works
 end
+
+@define_boundary Union{PeriodicParent,Periodic} Si begin
+    0.0, 0.0
+end

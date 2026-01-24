@@ -188,11 +188,11 @@ end
     an = ap
 
     # Playing with implicit version
-    fzcellID = spindex(rowptr, colval, cellID, pcellID)
-    nzval[fzcellID] = an
-    ac, 0.0
+    # fzcellID = spindex(rowptr, colval, cellID, pcellID)
+    # nzval[fzcellID] = an
+    # ac, 0.0
 
-    # ac, -an*values[pcellID] # explicit this works
+    ac, -an*values[pcellID] # explicit this works
 end
 
 @define_boundary Union{PeriodicParent,Periodic} Divergence{Linear} begin

@@ -12,7 +12,7 @@ abstract type AbstractPeriodic <: AbstractPhysicalConstraint end
         value::V
     end
 
-Periodic boundary condition model.
+Implicit implementation of `Periodic` boundary condition. Note that to apply this condition two periodic patch pairs need to be constructed using the function `construct_periodic`. The implementation currently requires conformant patch pairs.
 
 ### Fields
 - `ID` is the name of the boundary given as a symbol (e.g. :inlet). Internally it gets replaced with the boundary index ID
@@ -65,10 +65,10 @@ Function for construction of periodic boundary conditions.
 - `patch2`   -- Neighbour periodic patch ID.
 
 ### Output
-- periodic::Tuple - tuple containing boundary defintions for `patch1` and `patch2` i.e. (periodic1, periodic2). The fields of `periodic1` and `periodic2` are 
+- periodic::Tuple - tuple containing boundary definitions for `patch1` and `patch2` i.e. (periodic1, periodic2). The fields of `periodic1` and `periodic2` are 
 
     - `ID` -- Index to access boundary information in mesh object
-    - `value` represents a `NamedTuple` with the following keyword arguments:
+    - `value` represents a `PeriodicValue` struct with the following fields:
         - index -- ID used to find boundary geometry information in the mesh object
         - distance -- perpendicular distance between the patches
         - face_map -- vector providing indeces to faces of match patch
@@ -164,37 +164,6 @@ function periodic_matrix_connectivity(BC::PeriodicParent, mesh)
     return i, j
 end
 
-# @define_boundary Union{PeriodicParent,Periodic} Laplacian{Linear} begin
-
-#     phi = term.phi
-#     mesh = phi.mesh 
-#     (; faces, cells) = mesh
-#     values = get_values(phi, component)
-
-#     # determine id of periodic cell and interpolate face value
-#     pfID = bc.value.face_map[i] # id of periodic face 
-#     pface = faces[pfID]
-#     pcellID = pface.ownerCells[1]
-
-#     # for improved accuracy this needs to include the discretisation used for noncorrection
-#     delta1 = face.delta
-#     delta2 = pface.delta
-#     delta = delta1 + delta2
-    
-#     # Retrieve term flux and extract fields from workitem face
-#     (; area, normal) = face
-#     ap = term.sign*(term.flux[fID]*area)/delta
-#     ac = -ap
-#     an = ap
-
-#     # Playing with implicit version
-#     # fzcellID = spindex(rowptr, colval, cellID, pcellID)
-#     # nzval[fzcellID] = an
-#     # ac, 0.0
-
-#     ac, -an*values[pcellID] # explicit this works
-# end
-
 @define_boundary Union{PeriodicParent,Periodic} Laplacian{Linear} begin
 
     phi = term.phi
@@ -215,15 +184,11 @@ end
     delta = norm(C1 - C2)
     
     # Use form below to ensure correctness, could be simplified for performance
-    # Sf = ns*area*normal # original
-    # e = ns*e # original
     Sf = area*normal # original
     e = e # original
     Ef = ((Sf⋅Sf)/(Sf⋅e))*e # original
     Ef_mag = norm(Ef)
     ap = term.sign*(term.flux[fID]*Ef_mag)/delta
-
-    # ap = term.sign*(term.flux[fID]*area)/delta
     
     # Increment sparse array
     ac = -ap
@@ -231,45 +196,9 @@ end
 
     fzcellID = spindex(rowptr, colval, cellID, pcellID)
     nzval[fzcellID] += an
+
     return ac, 0.0
-    # return ac, an
 end
-
-# @define_boundary Union{PeriodicParent,Periodic} Divergence{Linear} begin
-#     phi = term.phi
-#     mesh = phi.mesh 
-#     (; faces, cells) = mesh
-#     values = get_values(phi, component)
-
-#     # determine id of periodic cell and interpolate face value
-#     pfID = bc.value.face_map[i] # id of periodic face 
-#     pface = faces[pfID]
-#     pcellID = pface.ownerCells[1]
-
-
-#     delta1 = face.delta
-#     delta2 = pface.delta
-#     delta = delta1 + delta2
-    
-#     weight = delta2/delta
-#     one_minus_weight = one(eltype(weight)) - weight
-
-#     # Calculate ap value to increment
-#     flux = term.flux[fID]
-#     ap = term.sign*(flux)
-#     ac = weight*ap
-#     an = one_minus_weight*ap
-
-#     # Playing with implicit version
-#     # fzcellID = spindex(rowptr, colval, cellID, pcellID)
-#     # nzval[fzcellID] = an
-#     # ac, 0.0
-#     if typeof(bc) <: PeriodicParent
-#         return ac, -an*values[pcellID] # explicit this works
-#     else
-#         return ac, -an*values[pcellID] # explicit this works
-#     end
-# end
 
 @define_boundary Union{PeriodicParent,Periodic} Divergence{Linear} begin
     phi = term.phi
@@ -304,7 +233,6 @@ end
     nzval[fzcellID] += an
 
     return ac, 0.0
-    # ac, -an*values[pcellID] # explicit this works
 end
 
 @define_boundary Union{PeriodicParent,Periodic} Divergence{Upwind} begin
@@ -340,7 +268,6 @@ end
     nzval[fzcellID] += an
 
     return ac, 0.0
-    # ac, -an*values[pcellID] # explicit this works
 end
 
 @define_boundary Union{PeriodicParent,Periodic} Divergence{LUST} begin
@@ -380,7 +307,6 @@ end
     nzval[fzcellID] += an
 
     return ac, 0.0
-    # ac, -an*values[pcellID] # explicit this works
 end
 
 @define_boundary Union{PeriodicParent,Periodic} Si begin

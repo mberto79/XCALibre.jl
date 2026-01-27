@@ -53,7 +53,8 @@ BCs = assign(
         U = [
             Dirichlet(:inlet, velocity),
             #Extrapolated(:outlet),
-            Zerogradient(:outlet),
+            #Zerogradient(:outlet),
+            Extrapolated(:outlet),
             #Wall(:wall, [0.0, 0.0, 0.0]),
             Zerogradient(:bottom),
             #Zerogradient(:wall),

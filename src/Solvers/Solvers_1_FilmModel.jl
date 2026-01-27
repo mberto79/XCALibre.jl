@@ -30,7 +30,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     hmdotf = FaceScalarField(mesh)
     hf = FaceScalarField(mesh)
     Sm = ScalarField(mesh)
-    initialise!(Sm, 0)
+    initialise!(Sm, 1e-18)
     rho_l = ScalarField(mesh)
     initialise!(rho_l, rho.values)
     RHS = VectorField(mesh)
@@ -121,6 +121,7 @@ function FilmModel(
     wf = FaceScalarField(mesh)
     ∇w = Grad{schemes.h.gradient}(w)
     τθw = FaceVectorField(mesh)
+    Ph = FaceVectorField(mesh)
     w_bc = [
         Dirichlet(:inlet, 1),
         Zerogradient(:outlet),
@@ -184,24 +185,29 @@ function FilmModel(
         τθ.y.values[i] = multiplier * U.y.values[i]
         τθ.z.values[i] = multiplier * U.z.values[i]
 
-        τθw = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w[i]
+        Ph_local = (rho.values*g*sin(coeffs.ϕ)*h[i]).*[1,0,0]
+        Ph.x.values[i] = Ph_local[1]
+        Ph.y.values[i] = Ph_local[2]
+        Ph.z.values[i] = Ph_local[3]
+        τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w[i]
 
         RHS[i] = (
-             - (h[i]*∇PL[i])
-             + (rho.values*g*sin(coeffs.ϕ)*h[i]).*[1,0,0] # Gravity tangential to surface
+             #- (h[i]*∇PL[i])
+             + Ph[i] # Gravity tangential to surface
              # currently ignoring tau fs term
-             - τθ[i]
-             + τθw
+             #- τθ[i]
+             #+ τθw
         )
-        
+        println("mdotf = $(mdotf[i]), hmdotf = $(hmdotf[i]), ($(U.x.values[i]), $(U.y.values[i]), $(U.z.values[i])")
+        #println("$(Ph.x.values[i]), $(Ph.y.values[i]), $(Ph.z.values[i])")
         if abs(RHS.x.values[i]) > 1
             #println(PL[i])
             #println("$(∇PL[i])")
             #println(τθw)
             #println("$(∇w[i].x), $(∇w[i].y), $(∇w[i].z)")
             #println("$(τθ.x.values[i]), $(τθ.y.values[i]), $(τθ.z.values[i])")
-            println("$(laplh[i])")
-            println("$(RHS.x.values[i]), $(RHS.y.values[i]), $(RHS.z.values[i])")
+            #println("$(laplh[i])")
+            #println("$(RHS.x.values[i]), $(RHS.y.values[i]), $(RHS.z.values[i])")
         end
     end
     
@@ -290,14 +296,18 @@ function FilmModel(
             τθ.y.values[i] = multiplier * U.y.values[i]
             τθ.z.values[i] = multiplier * U.z.values[i]
 
+            Ph_local = (rho.values*g*sin(coeffs.ϕ)*h[i]).*[1,0,0]
+            Ph.x.values[i] = Ph_local[1]
+            Ph.y.values[i] = Ph_local[2]
+            Ph.z.values[i] = Ph_local[3]
             τθw = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) * ∇w[i]
 
             RHS[i] = (
-                 - (h[i]*∇PL[i])
-                 + (rho.values*g*sin(coeffs.ϕ)*h[i]).*[1,0,0] # Gravity tangential to surface
+                 #- (h[i]*∇PL[i])
+                 + Ph[i] # Gravity tangential to surface
                  # currently ignoring tau fs term
-                 - τθ[i]
-                 + τθw
+                 #- τθ[i]
+                 #+ τθw
             )
         end
         #correct_mass_flux

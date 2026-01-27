@@ -12,7 +12,7 @@ abstract type AbstractPeriodic <: AbstractPhysicalConstraint end
         value::V
     end
 
-Periodic boundary condition model.
+Implicit implementation of `Periodic` boundary condition. Note that to apply this condition two periodic patch pairs need to be constructed using the function `construct_periodic`. The implementation currently requires conformant patch pairs.
 
 ### Fields
 - `ID` is the name of the boundary given as a symbol (e.g. :inlet). Internally it gets replaced with the boundary index ID
@@ -65,10 +65,10 @@ Function for construction of periodic boundary conditions.
 - `patch2`   -- Neighbour periodic patch ID.
 
 ### Output
-- periodic::Tuple - tuple containing boundary defintions for `patch1` and `patch2` i.e. (periodic1, periodic2). The fields of `periodic1` and `periodic2` are 
+- periodic::Tuple - tuple containing boundary definitions for `patch1` and `patch2` i.e. (periodic1, periodic2). The fields of `periodic1` and `periodic2` are 
 
     - `ID` -- Index to access boundary information in mesh object
-    - `value` represents a `NamedTuple` with the following keyword arguments:
+    - `value` represents a `PeriodicValue` struct with the following fields:
         - index -- ID used to find boundary geometry information in the mesh object
         - distance -- perpendicular distance between the patches
         - face_map -- vector providing indeces to faces of match patch
@@ -170,29 +170,34 @@ end
     mesh = phi.mesh 
     (; faces, cells) = mesh
     values = get_values(phi, component)
+    
+    (; area, normal, e) = face
 
     # determine id of periodic cell and interpolate face value
     pfID = bc.value.face_map[i] # id of periodic face 
     pface = faces[pfID]
     pcellID = pface.ownerCells[1]
+    C1 = cell.centre
+    C2 = cells[pcellID].centre + normal*bc.value.distance
 
     # for improved accuracy this needs to include the discretisation used for noncorrection
-    delta1 = face.delta
-    delta2 = pface.delta
-    delta = delta1 + delta2
+    delta = norm(C1 - C2)
     
-    # Retrieve term flux and extract fields from workitem face
-    (; area, normal) = face
-    ap = term.sign*(term.flux[fID]*area)/delta
+    # Use form below to ensure correctness, could be simplified for performance
+    Sf = area*normal # original
+    e = e # original
+    Ef = ((Sf⋅Sf)/(Sf⋅e))*e # original
+    Ef_mag = norm(Ef)
+    ap = term.sign*(term.flux[fID]*Ef_mag)/delta
+    
+    # Increment sparse array
     ac = -ap
     an = ap
 
-    # Playing with implicit version
     fzcellID = spindex(rowptr, colval, cellID, pcellID)
-    nzval[fzcellID] = an
-    ac, 0.0
+    nzval[fzcellID] += an
 
-    # ac, -an*values[pcellID] # explicit this works
+    return ac, 0.0
 end
 
 @define_boundary Union{PeriodicParent,Periodic} Divergence{Linear} begin
@@ -206,26 +211,28 @@ end
     pface = faces[pfID]
     pcellID = pface.ownerCells[1]
 
+    # Retrieve mesh centre values
+    f = face.centre
+    C = cell.centre
+    N = cells[pcellID].centre + face.normal*bc.value.distance
 
-    delta1 = face.delta
-    delta2 = pface.delta
-    delta = delta1 + delta2
+    # calculate distance vectors
+    d_fC = C - f 
+    d_fN = N - f
     
-    weight = delta2/delta
+    # Calculate weights using normal functions
+    weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
     one_minus_weight = one(eltype(weight)) - weight
 
-    # Calculate ap value to increment
-    flux = term.flux[fID]
-    ap = term.sign*(flux)
-    ac = weight*ap
-    an = one_minus_weight*ap
+    # Calculate required increment
+    ap = term.sign*(term.flux[fID])
+    ac = ap*weight
+    an = ap*one_minus_weight
 
-    # Playing with implicit version
-    # fzcellID = spindex(rowptr, colval, cellID, pcellID)
-    # nzval[fzcellID] = an
-    # ac, 0.0
+    fzcellID = spindex(rowptr, colval, cellID, pcellID)
+    nzval[fzcellID] += an
 
-    ac, -an*values[pcellID] # explicit this works
+    return ac, 0.0
 end
 
 @define_boundary Union{PeriodicParent,Periodic} Divergence{Upwind} begin
@@ -239,26 +246,28 @@ end
     pface = faces[pfID]
     pcellID = pface.ownerCells[1]
 
+    # Retrieve mesh centre values
+    f = face.centre
+    C = cell.centre
+    N = cells[pcellID].centre + face.normal*bc.value.distance
 
-    delta1 = face.delta
-    delta2 = pface.delta
-    delta = delta1 + delta2
-
-    weight = delta2/delta
+    # calculate distance vectors
+    d_fC = C - f 
+    d_fN = N - f
+    
+    # Calculate weights using normal functions
+    weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
     one_minus_weight = one(eltype(weight)) - weight
 
-    # Calculate ap value to increment
-    flux = term.flux[fID]
-    ap = term.sign*(flux)
-    ac = weight*ap
-    an = one_minus_weight*ap
+    # Calculate required increment
+    ap = term.sign*(term.flux[fID])
+    ac = max(ap, 0.0) 
+    an = -max(-ap, 0.0)
 
-    # Playing with implicit version
-    # fzcellID = spindex(rowptr, colval, cellID, pcellID)
-    # nzval[fzcellID] = an
-    # ac, 0.0
+    fzcellID = spindex(rowptr, colval, cellID, pcellID)
+    nzval[fzcellID] += an
 
-    ac, -an*values[pcellID] # explicit this works
+    return ac, 0.0
 end
 
 @define_boundary Union{PeriodicParent,Periodic} Divergence{LUST} begin
@@ -272,26 +281,32 @@ end
     pface = faces[pfID]
     pcellID = pface.ownerCells[1]
 
+    # Retrieve mesh centre values
+    f = face.centre
+    C = cell.centre
+    N = cells[pcellID].centre + face.normal*bc.value.distance
 
-    delta1 = face.delta
-    delta2 = pface.delta
-    delta = delta1 + delta2
-
-    weight = delta2/delta
+    # calculate distance vectors
+    d_fC = C - f 
+    d_fN = N - f
+    
+    # Calculate weights using normal functions
+    weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
     one_minus_weight = one(eltype(weight)) - weight
 
-    # Calculate ap value to increment
-    flux = term.flux[fID]
-    ap = term.sign*(flux)
-    ac = weight*ap
-    an = one_minus_weight*ap
+    # Calculate required increment
+    ap = term.sign*(term.flux[fID])
+    acLinear = ap*weight 
+    anLinear = ap*one_minus_weight
+    acUpwind = max(ap, 0.0) 
+    anUpwind = -max(-ap, 0.0)
+    ac = 0.75*acLinear + 0.25*acUpwind
+    an = 0.75*anLinear + 0.25*anUpwind
 
-    # Playing with implicit version
-    # fzcellID = spindex(rowptr, colval, cellID, pcellID)
-    # nzval[fzcellID] = an
-    # ac, 0.0
+    fzcellID = spindex(rowptr, colval, cellID, pcellID)
+    nzval[fzcellID] += an
 
-    ac, -an*values[pcellID] # explicit this works
+    return ac, 0.0
 end
 
 @define_boundary Union{PeriodicParent,Periodic} Si begin

@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Add implementation of `Periodic` boundaries to handle the implicit source term - fixes operation of models that use `Si` terms [#95](@ref)
   
 ### Changed
-* No changes
+* Improved stability of `Periodic` boundaries by making the implementation fully implicit [#96](@ref)
 
 ### Breaking
 * No breaking changes

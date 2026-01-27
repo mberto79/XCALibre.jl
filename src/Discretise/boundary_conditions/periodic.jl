@@ -214,47 +214,21 @@ end
     # for improved accuracy this needs to include the discretisation used for noncorrection
     delta = norm(C1 - C2)
     
-    # # Use form below to ensure correctness, could be simplified for performance
-    # # Sf = ns*area*normal # original
-    # # e = ns*e # original
-    # Sf = area*normal # original
-    # e = e # original
-    # Ef = ((Sf⋅Sf)/(Sf⋅e))*e # original
-    # Ef_mag = norm(Ef)
-    # ap = term.sign*(term.flux[fID]*Ef_mag)/delta
+    # Use form below to ensure correctness, could be simplified for performance
+    # Sf = ns*area*normal # original
+    # e = ns*e # original
+    Sf = area*normal # original
+    e = e # original
+    Ef = ((Sf⋅Sf)/(Sf⋅e))*e # original
+    Ef_mag = norm(Ef)
+    ap = term.sign*(term.flux[fID]*Ef_mag)/delta
 
-    ap = term.sign*(term.flux[fID]*area)/delta
+    # ap = term.sign*(term.flux[fID]*area)/delta
     
     # Increment sparse array
     ac = -ap
     an = ap
 
-    # Playing with implicit version
-    # fzcellID = spindex(rowptr, colval, cellID, pcellID)
-    # nzval[fzcellID] += an
-    # return ac, 0.0
-
-    # if typeof(bc) <: PeriodicParent
-    #     # fzcellID = spindex(rowptr, colval, cellID, pcellID)
-    #     # nzval[fzcellID] += an
-    #     # return ac, 0.0
-
-    #     # Periodic cell
-    #     pcell_zID = spindex(rowptr, colval, pcellID, pcellID)
-    #     pneighbour_zID = spindex(rowptr, colval, pcellID, cellID)
-    #     nzval[pcell_zID] += -an
-    #     nzval[pneighbour_zID] += -ac
-
-    #     # Current Parent Cell
-    #     neighbour_zID = spindex(rowptr, colval, cellID, pcellID)
-    #     nzval[neighbour_zID] += an
-    #     return ac, 0.0
-    # else
-        # fzcellID = spindex(rowptr, colval, cellID, pcellID)
-        # nzval[fzcellID] += an
-        # return ac, 0.0
-        # return 0.0, 0.0
-    # end
     fzcellID = spindex(rowptr, colval, cellID, pcellID)
     nzval[fzcellID] += an
     return ac, 0.0
@@ -322,25 +296,14 @@ end
     one_minus_weight = one(eltype(weight)) - weight
 
     # Calculate required increment
-    # ap = term.sign*(term.flux[fID]*ns)
     ap = term.sign*(term.flux[fID])
-    # ac = ap*one_minus_weight
-    # an = ap*weight
     ac = ap*weight
     an = ap*one_minus_weight
-    # return ac, an
 
-    # Playing with implicit version
-    # if typeof(bc) <: PeriodicParent
-    #     fzcellID = spindex(rowptr, colval, cellID, pcellID)
-    #     nzval[fzcellID] += an
-    #     return ac, 0.0
-    # else
-        fzcellID = spindex(rowptr, colval, cellID, pcellID)
-        nzval[fzcellID] += an
-        return ac, 0.0
-        # return 0.0, 0.0
-    # end
+    fzcellID = spindex(rowptr, colval, cellID, pcellID)
+    nzval[fzcellID] += an
+
+    return ac, 0.0
     # ac, -an*values[pcellID] # explicit this works
 end
 
@@ -355,26 +318,29 @@ end
     pface = faces[pfID]
     pcellID = pface.ownerCells[1]
 
+    # Retrieve mesh centre values
+    f = face.centre
+    C = cell.centre
+    N = cells[pcellID].centre + face.normal*bc.value.distance
 
-    delta1 = face.delta
-    delta2 = pface.delta
-    delta = delta1 + delta2
-
-    weight = delta2/delta
+    # calculate distance vectors
+    d_fC = C - f 
+    d_fN = N - f
+    
+    # Calculate weights using normal functions
+    weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
     one_minus_weight = one(eltype(weight)) - weight
 
-    # Calculate ap value to increment
-    flux = term.flux[fID]
-    ap = term.sign*(flux)
-    ac = weight*ap
-    an = one_minus_weight*ap
+    # Calculate required increment
+    ap = term.sign*(term.flux[fID])
+    ac = max(ap, 0.0) 
+    an = -max(-ap, 0.0)
 
-    # Playing with implicit version
-    # fzcellID = spindex(rowptr, colval, cellID, pcellID)
-    # nzval[fzcellID] = an
-    # ac, 0.0
+    fzcellID = spindex(rowptr, colval, cellID, pcellID)
+    nzval[fzcellID] += an
 
-    ac, -an*values[pcellID] # explicit this works
+    return ac, 0.0
+    # ac, -an*values[pcellID] # explicit this works
 end
 
 @define_boundary Union{PeriodicParent,Periodic} Divergence{LUST} begin

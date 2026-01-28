@@ -91,26 +91,28 @@ function construct_periodic(mesh, backend, patch1::Symbol, patch2::Symbol)
     face2 = faces[boundaries[idx2].IDs_range[1]]
     distance = abs((face1.centre - face2.centre)⋅face1.normal)
 
-    nfaces = length(boundaries[idx1].IDs_range)
-    faceAddress1 = zeros(Int64, nfaces)
-    faceAddress2 = zeros(Int64, nfaces)
-    testData = zeros(Float64, nfaces)
+    # extract and check number of faces in each patch
+    nfaces1 = length(boundaries[idx1].IDs_range)
+    nfaces2 = length(boundaries[idx2].IDs_range)
+    nfaces1 == nfaces2 || error("The number of faces for periodic patches should be equal")
+
+    faceAddress1 = zeros(Int64, nfaces1)
+    faceAddress2 = zeros(Int64, nfaces1)
+    testData = zeros(Float64, nfaces1)
 
     faceCentres1 = getproperty.(faces[boundaries[idx1].IDs_range], :centre)
-    faceCentres2 = getproperty.(faces[boundaries[idx2].IDs_range], :centre)
-
     patchTranslated1 = faceCentres1 .- [distance*face1.normal]
+    ID_record = [1:nfaces1;] # use to keep record of face IDs (needed due to deleteat!)
     for (i, face) ∈ enumerate(faces[boundaries[idx2].IDs_range]) # use @view?
-        testData .= norm.(patchTranslated1 .- [face.centre])
-        val, idx = findmin(testData)
+        testData = norm.(patchTranslated1 .- [face.centre])
+        val, id = findmin(testData)
+        idx = ID_record[id] # extract the face ID from the record (cannot use id directly!)
         faceAddress1[i] = boundaries[idx2].IDs_range[idx]
-    end
+        faceAddress2[idx] = boundaries[idx1].IDs_range[i]
 
-    patchTranslated2 = faceCentres2 .- [distance*face2.normal] # use @view?
-    for (i, face) ∈ enumerate(faces[boundaries[idx1].IDs_range])
-        testData .= norm.(patchTranslated2 .- [face.centre])
-        val, idx = findmin(testData)
-        faceAddress2[i] = boundaries[idx1].IDs_range[idx]
+        # shrink search space to remove face pair already found 
+        ID_record = deleteat!(ID_record, id)
+        patchTranslated1 = deleteat!(patchTranslated1, id)
     end
 
     values1 = PeriodicValue(

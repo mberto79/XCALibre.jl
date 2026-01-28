@@ -1,5 +1,5 @@
 export Periodic, PeriodicParent, PeriodicConnectivity
-export construct_periodic, construct_periodic1
+export construct_periodic
 export adjust_boundary!
 import XCALibre.ModelFramework._extend_matrix
 

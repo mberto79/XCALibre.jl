@@ -47,7 +47,7 @@ function FieldRMS(field; name::AbstractString, start::Union{Real,Nothing}=nothin
 end
 
 
-function runtime_postprocessing!(RMS::FieldRMS{T,S},iter::Integer,n_iterations::Integer) where {T<:ScalarField,S}
+function runtime_postprocessing!(RMS::FieldRMS{T,S},iter::Integer,n_iterations::Integer,config,Str) where {T<:ScalarField,S}
     if must_calculate(RMS,iter,n_iterations)
         current_field = RMS.field
         n = div(iter - RMS.start,RMS.update_interval) + 1
@@ -62,7 +62,7 @@ function runtime_postprocessing!(RMS::FieldRMS{T,S},iter::Integer,n_iterations::
     return nothing 
 end
 
-function runtime_postprocessing!(RMS::FieldRMS{T,S},iter::Integer,n_iterations::Integer) where {T<:VectorField,S}
+function runtime_postprocessing!(RMS::FieldRMS{T,S},iter::Integer,n_iterations::Integer,config,Str) where {T<:VectorField,S}
     if must_calculate(RMS,iter,n_iterations)
         current_field = RMS.field
         n = div(iter - RMS.start,RMS.update_interval) + 1

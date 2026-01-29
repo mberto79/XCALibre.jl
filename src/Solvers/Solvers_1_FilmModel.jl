@@ -28,7 +28,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     @info "Pre-allocating fields..."
     mdotf = FaceScalarField(mesh)
     hmdotf = FaceScalarField(mesh)
-    hf = FaceScalarField(mesh)
+    rhohf = FaceScalarField(mesh)
     Sm = ScalarField(mesh)
     initialise!(Sm, 1e-18)
     rho_l = ScalarField(mesh)
@@ -41,7 +41,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     # Edit
     @info "U equation still need updating"
     U_eqn = (
-        Time{schemes.U.time}(hf, U)
+        Time{schemes.U.time}(rhohf, U)
         + Divergence{schemes.U.divergence}(hmdotf,U)
         #+ Grd{schemes.h.gradient}(h, )
         #+ Si(nueff, U)
@@ -50,7 +50,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     ) → VectorEquation(U, boundaries.U)
 
     h_eqn = (
-        Time{schemes.h.time}(h)#rho_l, h)
+        Time{schemes.h.time}(rho_l, h)
         + Divergence{schemes.h.divergence}(mdotf, h)
         ==
         Source(Sm)
@@ -92,7 +92,7 @@ function FilmModel(
     (; backend) = hardware
 
     Postprocess = convert_time_to_iterations(postprocess, model, dt, iterations)
-    hf = get_flux(U_eqn, 1)
+    rhohf = get_flux(U_eqn, 1)
     hmdotf = get_flux(U_eqn, 2)
     RHS = get_source(U_eqn, 1)
     mdotf = get_flux(h_eqn,2)
@@ -122,6 +122,10 @@ function FilmModel(
     ∇w = Grad{schemes.h.gradient}(w)
     τθw = FaceVectorField(mesh)
     Ph = FaceVectorField(mesh)
+    Hv = VectorField(mesh)
+    rD = ScalarField(mesh)
+    rDf = FaceScalarField(mesh)
+
     w_bc = [
         Dirichlet(:inlet, 1),
         Zerogradient(:outlet),
@@ -149,9 +153,8 @@ function FilmModel(
     
     interpolate!(hf, h, config)
     # Getting h * mdotf for U calculation
+    @. rhohf.values = rho.values * hf.values
     @. hmdotf.values = mdotf.values * hf.values
-
-    
 
     # Getting the laplacian of h for first U calculation
     grad!(∇h, hf, h, boundaries.h, time, config)
@@ -185,7 +188,7 @@ function FilmModel(
         τθ.y.values[i] = multiplier * U.y.values[i]
         τθ.z.values[i] = multiplier * U.z.values[i]
 
-        Ph_local = (rho.values*g*sin(coeffs.ϕ)*h[i]).*[1,0,0]
+        Ph_local = (rho.values*g*sind(coeffs.ϕ)*h[i]).*[1,0,0]
         Ph.x.values[i] = Ph_local[1]
         Ph.y.values[i] = Ph_local[2]
         Ph.z.values[i] = Ph_local[3]
@@ -198,8 +201,8 @@ function FilmModel(
              #- τθ[i]
              #+ τθw
         )
-        println("mdotf = $(mdotf[i]), hmdotf = $(hmdotf[i]), ($(U.x.values[i]), $(U.y.values[i]), $(U.z.values[i])")
-        #println("$(Ph.x.values[i]), $(Ph.y.values[i]), $(Ph.z.values[i])")
+        #println("mdotf = $(mdotf[i]), hmdotf = $(hmdotf[i]), ($(U.x.values[i]), $(U.y.values[i]), $(U.z.values[i])")
+        #println("$(Ph.x.values[i]), $(Ph.y.values[i]), $(Ph.z.values[i]), $(rho.values*g*1e-4)")
         if abs(RHS.x.values[i]) > 1
             #println(PL[i])
             #println("$(∇PL[i])")
@@ -222,6 +225,11 @@ function FilmModel(
         
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U , xdir, ydir, zdir, config)
 
+        inverse_diagonal!(rD, U_eqn, config)
+        interpolate!(rDf, rD, config)
+        #H!(Hv, U, U_eqn, config)
+        #interpolate!(Uf, Hv, config)
+        #correct_boundaries!(Uf, Hv, boundaries.U, time, config)
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, boundaries.U, time, config)
 
@@ -233,20 +241,23 @@ function FilmModel(
 
         rh = solve_equation!(h_eqn, h, boundaries.h, solvers.h, config)
         explicit_relaxation!(h, prev, solvers.h.relax, config)
-        correct_boundaries!(hf, h, boundaries.h, time, config)
 
         
         if (iteration == 1)
             #println("$(U.x.values), $(U.y.values)")
             #println(mdotf.values)
+            
             #for i ∈ mdotf.values
-            #    if i > 0.00019
-            #        println(i)
-            #    end
+                
+                #if i > 0.000000000019
+                #    println(i)
+                #end
             #end
+
             #println(Sm.values)
             #println(h.values)
             #println(hmdotf.values)
+            #println(Sm.values)
             
         end
         for i ∈ 1:ncorrectors
@@ -256,12 +267,15 @@ function FilmModel(
             rh = solve_system!(h_eqn, solvers.h, h, nothing, config)
             explicit_relaxation!(h, prev, solvers.h.relax, config)
         end
+        
+        correct_mass_flux(mdotf, PL, rDf, config)
 
         for i ∈ eachindex(h.values)
             if (h.values[i]<=0) h.values[i] = 1e-18 end
         end
         interpolate!(hf, h, config)
         @. hmdotf.values = mdotf.values * hf.values
+        @. rhohf.values = rho.values * hf.values
 
         grad!(∇h, hf, h, boundaries.h, time, config)
         limit_gradient!(schemes.h.limiter, ∇h, h, config)
@@ -296,11 +310,11 @@ function FilmModel(
             τθ.y.values[i] = multiplier * U.y.values[i]
             τθ.z.values[i] = multiplier * U.z.values[i]
 
-            Ph_local = (rho.values*g*sin(coeffs.ϕ)*h[i]).*[1,0,0]
+            Ph_local = (rho.values*g*sind(coeffs.ϕ)*h[i]).*[1,0,0]
             Ph.x.values[i] = Ph_local[1]
             Ph.y.values[i] = Ph_local[2]
             Ph.z.values[i] = Ph_local[3]
-            τθw = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) * ∇w[i]
+            τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w[i]
 
             RHS[i] = (
                  #- (h[i]*∇PL[i])

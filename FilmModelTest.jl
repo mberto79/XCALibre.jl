@@ -39,7 +39,7 @@ h_crit = 1e-10;
 
 
 model = Physics(
-    momentum=Momentum{EFM}(; h_crit = h_crit, β=6.0, θm = 75, ϕ=7),
+    momentum=Momentum{EFM}(; h_crit = h_crit, β=6.0, θm = 75, ϕ=90),
     time = Steady(),
     fluid = Fluid{Incompressible}(; nu = nu, rho = rho_l),
     turbulence = RANS{Laminar}(),
@@ -56,11 +56,12 @@ BCs = assign(
             #Zerogradient(:outlet),
             Extrapolated(:outlet),
             #Wall(:wall, [0.0, 0.0, 0.0]),
-            Zerogradient(:bottom),
+            #Zerogradient(:bottom),
             #Zerogradient(:wall),
+            Wall(:bottom, [0.0, 0.0, 0.0]),
             #Extrapolated(:bottom),
-            #Wall(:top, [0.0, 0.0, 0.0])
-            Zerogradient(:top)
+            Wall(:top, [0.0, 0.0, 0.0])
+            #Zerogradient(:top)
             #Extrapolated(:top)
         ],
         h = [
@@ -101,7 +102,7 @@ solvers = (
     U = SolverSetup(
         solver      = Bicgstab(), # Options: Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
-        convergence = 1e-7,
+        convergence = 1e-10,
         relax       = 0.7,
         rtol = 1e-4,
         atol = 1e-10
@@ -124,13 +125,13 @@ solvers = (
     )
 );
 
-#runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
-runtime = Runtime(iterations=20, time_step=1, write_interval=1); # hide
+runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
+#runtime = Runtime(iterations=20, time_step=1, write_interval=1); # hide
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
 
 initialise!(model.momentum.U, velocity);
-initialise!(model.momentum.h, 1e-4);
+initialise!(model.momentum.h, 1);
 
 residuals = run!(model, config);

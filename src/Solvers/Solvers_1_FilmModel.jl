@@ -115,7 +115,7 @@ function FilmModel(
     surface_tension = ScalarField(mesh)
     ∇h = Grad{schemes.h.gradient}(h)
     ∇hf = FaceVectorField(mesh)
-    laplh = ScalarField(mesh)
+    Δh = ScalarField(mesh)
     τθ = VectorField(mesh)
     w = ScalarField(mesh)
     wf = FaceScalarField(mesh)
@@ -151,26 +151,24 @@ function FilmModel(
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
     
-    interpolate!(hf, h, config)
-    # Getting h * mdotf for U calculation
-    @. rhohf.values = rho.values * hf.values
-    @. hmdotf.values = mdotf.values * hf.values
-
     # Getting the laplacian of h for first U calculation
     grad!(∇h, hf, h, boundaries.h, time, config)
     limit_gradient!(schemes.h.limiter, ∇h, h, config)
     interpolate!(∇hf, ∇h.result, config)
-    div!(laplh, ∇hf, config)
+    div!(Δh, ∇hf, config)
+
+    # Getting h * mdotf for U calculation
+    @. rhohf.values = rho.values * hf.values
+    @. hmdotf.values = mdotf.values * hf.values
 
     @info "need to readd Pg term - Coupling term for other phase"
     # add Pg term
     Pg = 0#1e5 # Test Pg term
     @info "need to fix surface tension term"
-    for i ∈ 1:length(laplh.values)
-        surface_tension[i] = coeffs.σ*laplh[i]
+    for i ∈ 1:length(Δh.values)
+        surface_tension[i] = coeffs.σ*Δh[i]
         PL[i] = Pg - (coeffs.σ * model.momentum.h[i] * (dot(n,G))) - surface_tension[i]
     end
-
     interpolate!(PLf, PL, config)
     grad!(∇PL, PLf, PL, boundaries.PL, time, config)
     limit_gradient!(schemes.PL.limiter, ∇PL, PL, config)
@@ -188,7 +186,8 @@ function FilmModel(
         τθ.y.values[i] = multiplier * U.y.values[i]
         τθ.z.values[i] = multiplier * U.z.values[i]
 
-        Ph_local = (rho.values*g*sind(coeffs.ϕ)*h[i]).*[1,0,0]
+        #Ph_local = (rho.values*g*sind(coeffs.ϕ)*h[i]).*[1,0,0]
+        Ph_local = (g*sind(coeffs.ϕ)*h[i]).*[1,0,0]
         Ph.x.values[i] = Ph_local[1]
         Ph.y.values[i] = Ph_local[2]
         Ph.z.values[i] = Ph_local[3]
@@ -209,7 +208,7 @@ function FilmModel(
             #println(τθw)
             #println("$(∇w[i].x), $(∇w[i].y), $(∇w[i].z)")
             #println("$(τθ.x.values[i]), $(τθ.y.values[i]), $(τθ.z.values[i])")
-            #println("$(laplh[i])")
+            #println("$(Δh[i])")
             #println("$(RHS.x.values[i]), $(RHS.y.values[i]), $(RHS.z.values[i])")
         end
     end
@@ -219,14 +218,15 @@ function FilmModel(
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
+    rh = 0
 
     for iteration ∈ 1:iterations
         time = iteration
         
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U , xdir, ydir, zdir, config)
 
-        inverse_diagonal!(rD, U_eqn, config)
-        interpolate!(rDf, rD, config)
+        #inverse_diagonal!(rD, U_eqn, config)
+        #interpolate!(rDf, rD, config)
         #H!(Hv, U, U_eqn, config)
         #interpolate!(Uf, Hv, config)
         #correct_boundaries!(Uf, Hv, boundaries.U, time, config)
@@ -239,8 +239,8 @@ function FilmModel(
 
         @. prev = h.values
 
-        rh = solve_equation!(h_eqn, h, boundaries.h, solvers.h, config)
-        explicit_relaxation!(h, prev, solvers.h.relax, config)
+        #rh = solve_equation!(h_eqn, h, boundaries.h, solvers.h, config)
+        #explicit_relaxation!(h, prev, solvers.h.relax, config)
 
         
         if (iteration == 1)
@@ -274,17 +274,17 @@ function FilmModel(
             if (h.values[i]<=0) h.values[i] = 1e-18 end
         end
         interpolate!(hf, h, config)
-        @. hmdotf.values = mdotf.values * hf.values
-        @. rhohf.values = rho.values * hf.values
+        #@. hmdotf.values = mdotf.values * hf.values
+        #@. rhohf.values = rho.values * hf.values
 
         grad!(∇h, hf, h, boundaries.h, time, config)
         limit_gradient!(schemes.h.limiter, ∇h, h, config)
         interpolate!(∇hf, ∇h.result, config)
-        div!(laplh, ∇hf, config)
+        div!(Δh, ∇hf, config)
         
         # add Pg term
-        for i ∈ 1:length(laplh.values)
-            surface_tension[i] = model.momentum.coeffs.σ*laplh[i]
+        for i ∈ 1:length(Δh.values)
+            surface_tension[i] = model.momentum.coeffs.σ*Δh[i]
             PL[i] = - (model.momentum.coeffs.σ * model.momentum.h[i] * (dot(n,G)))# - surface_tension[i]
         end
 
@@ -310,12 +310,13 @@ function FilmModel(
             τθ.y.values[i] = multiplier * U.y.values[i]
             τθ.z.values[i] = multiplier * U.z.values[i]
 
-            Ph_local = (rho.values*g*sind(coeffs.ϕ)*h[i]).*[1,0,0]
+            #Ph_local = (rho.values*g*sind(coeffs.ϕ)*h[i]).*[1,0,0]
+            Ph_local = (g*sind(coeffs.ϕ)*h[i]).*[1,0,0]
             Ph.x.values[i] = Ph_local[1]
             Ph.y.values[i] = Ph_local[2]
             Ph.z.values[i] = Ph_local[3]
             τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w[i]
-
+            
             RHS[i] = (
                  #- (h[i]*∇PL[i])
                  + Ph[i] # Gravity tangential to surface
@@ -388,22 +389,22 @@ function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iter
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end
 
-#function get_surface_tension!(model, surface_tension, laplh ,∇hf, config)
+#function get_surface_tension!(model, surface_tension, Δh ,∇hf, config)
 #    (; hardware) = config
 #    (; backend, workgroup) = hardware
 #    
-#    div!(laplh, ∇hf, config)
+#    div!(Δh, ∇hf, config)
 #
 #    (; cells) = surface_tension.mesh
 #    ndrange = length(cells)
 #    kernel! = _get_surface_tension!(_setup(backend, workgroup, ndrange)...)
-#    kernel!(model, surface_tension, laplh)
+#    kernel!(model, surface_tension, Δh)
 #end
 
-#@kernel function _get_surface_tension!(model, surface_tension, laplh)
+#@kernel function _get_surface_tension!(model, surface_tension, Δh)
 #    i = @index(Global)
 #
-#    surface_tension.values[i] = model.momentum.coeffs * laplh.values[i]
+#    surface_tension.values[i] = model.momentum.coeffs * Δh.values[i]
 #end
 #
 #function get_PL!(model, PL, surface_tension, config)

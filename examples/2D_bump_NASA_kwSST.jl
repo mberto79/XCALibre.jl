@@ -125,7 +125,7 @@ solvers = (
         # preconditioner = Jacobi(),
         preconditioner = DILU(),
         convergence = 1e-11,
-        relax       = 0.2,
+        relax       = 0.1,
         rtol = 1e-3,
         itmax = 4000
     ),

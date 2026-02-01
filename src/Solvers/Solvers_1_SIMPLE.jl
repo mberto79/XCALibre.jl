@@ -74,7 +74,7 @@ function setup_incompressible_solvers(
     ) → VectorEquation(U, boundaries.U)
 
     p_eqn = (
-        - Laplacian{schemes.p.laplacian}(rDf, p) == - Source(divHv)
+         Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
     ) → ScalarEquation(p, boundaries.p)
 
     @info "Initialising preconditioners..."
@@ -225,7 +225,9 @@ function SIMPLE(
         # flux!(mdotf, Uf, config) 
 
         # new approach
-        correct_mass_flux(mdotf, p, rDf, config)
+        # correct_mass_flux(mdotf, p, rDf, config)
+        correct_mass_flux1(mdotf, p_eqn, config)
+        correct_mass_periodic(mdotf, p_eqn, boundaries.p, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
         turbulence!(turbulenceModel, model, S, prev, time, config) 
@@ -394,4 +396,95 @@ end
         face_grad = area*(p2 - p1)/delta # best option so far!
         mdotf[fID] -= face_grad*rDf[fID]
     end
+end
+
+function correct_mass_flux1(mdotf, p_eqn, config)
+    # sngrad = FaceScalarField(mesh)
+    (; faces, cells, boundary_cellsID) = mdotf.mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    p = p_eqn.model.terms[1].phi
+    A = _A(p_eqn)
+    nzval = _nzval(A)
+    colval = _colval(A)
+    rowptr = _rowptr(A)
+
+    n_faces = length(faces)
+    n_bfaces = length(boundary_cellsID)
+    n_ifaces = n_faces - n_bfaces
+
+    ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
+    kernel! = _correct_mass_flux1(_setup(backend, workgroup, ndrange)...)
+    kernel!(mdotf, p, nzval, colval, rowptr, faces, cells, n_bfaces)
+    # KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _correct_mass_flux1(
+    mdotf, p, nzval, colval, rowptr, faces, cells, n_bfaces)
+    i = @index(Global)
+    fID = i + n_bfaces
+
+    @inbounds begin 
+        face = faces[fID]
+        (; area, normal, ownerCells, delta) = face 
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        p1 = p[cID1]
+        p2 = p[cID2]
+        # need to get aN from sparse system
+        zID = spindex(rowptr, colval, cID1, cID2)
+        aN = nzval[zID]
+        mdotf[fID] -= aN*(p2 - p1)
+    end
+end
+
+function correct_mass_periodic(mdotf, p_eqn, pBCs, config)
+    (; faces, cells, boundary_cellsID) = mdotf.mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    p = p_eqn.model.terms[1].phi
+    A = _A(p_eqn)
+    nzval = _nzval(A)
+    colval = _colval(A)
+    rowptr = _rowptr(A)
+
+    for BC ∈ pBCs
+        _correct_mass_periodic_dispatch(
+            BC, mdotf, p, nzval, colval, rowptr, faces, backend, workgroup)
+    end
+
+end
+
+_correct_mass_periodic_dispatch(arg...) = nothing
+
+function _correct_mass_periodic_dispatch(
+    BC::PeriodicParent, mdotf, p, nzval, colval, rowptr, faces, backend, workgroup)
+    (; IDs_range, value) = BC
+    (; face_map) = value
+    ndrange = length(IDs_range)
+    kernel! = _correct_mass_periodic(_setup(backend, workgroup, ndrange)...)
+    kernel!(mdotf, p, nzval, colval, rowptr, faces, IDs_range, face_map)
+end
+
+@kernel function _correct_mass_periodic(
+    mdotf, p, nzval, colval, rowptr, faces, IDs_range, face_map)
+    i = @index(Global)
+    fID = IDs_range[i]
+    pfID = face_map[i]
+
+    face = faces[fID]
+    pface = faces[pfID]
+    cID1 = face.ownerCells[1]
+    cID2 = pface.ownerCells[1]
+
+    p1 = p[cID1]
+    p2 = p[cID2]
+    # need to get aN from sparse system
+    zID = spindex(rowptr, colval, cID1, cID2)
+    aN = nzval[zID]
+    correction = aN*(p2 - p1)
+    mdotf[fID] -= correction
+    mdotf[pfID] += correction
 end

@@ -435,7 +435,7 @@ end
         # need to get aN from sparse system
         zID = spindex(rowptr, colval, cID1, cID2)
         aN = nzval[zID]
-        mdotf[fID] -= aN*(p2 - p1)
+        mdotf[fID] += aN*(p2 - p1) # positive because pressure eqn has negative sign
     end
 end
 

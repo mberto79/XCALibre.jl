@@ -74,7 +74,7 @@ function setup_incompressible_solvers(
     ) → VectorEquation(U, boundaries.U)
 
     p_eqn = (
-         Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
+        - Laplacian{schemes.p.laplacian}(rDf, p) == - Source(divHv)
     ) → ScalarEquation(p, boundaries.p)
 
     @info "Initialising preconditioners..."

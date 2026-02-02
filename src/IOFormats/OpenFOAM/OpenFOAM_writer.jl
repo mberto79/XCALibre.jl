@@ -234,7 +234,11 @@ function write_results(
 
                 println(io, "boundaryField")
                 println(io, "{")
-                fieldBCs = getproperty(BCs, Symbol(label))
+                if suffix === nothing 
+                    fieldBCs = getproperty(BCs, Symbol(label))
+                elseif suffix == ""
+                    fieldBCs = getproperty(BCs, :p)
+                end
                 for BC ∈ fieldBCs
                     println(io, "\t", boundaries_cpu[BC.ID].name)
                     println(io, _foam_boundary_entry(BC))
@@ -265,7 +269,11 @@ function write_results(
 
                 println(io, "boundaryField")
                 println(io, "{")
-                fieldBCs = getproperty(BCs, Symbol(label))
+                if suffix === nothing 
+                    fieldBCs = getproperty(BCs, Symbol(label))
+                elseif suffix == ""
+                    fieldBCs = getproperty(BCs, :U)
+                end
                 for BC ∈ fieldBCs
                     println(io, "\t", boundaries_cpu[BC.ID].name)
                     println(io, _foam_boundary_entry(BC))

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   
 ### Changed
 * Improved stability of `Periodic` boundaries by making the implementation fully implicit [#96](@ref)
+* 4x speed improvement for the method `construct_periodic` [#97](@ref)
 
 ### Breaking
 * No breaking changes

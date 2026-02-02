@@ -187,7 +187,7 @@ function FilmModel(
         τθ.z.values[i] = multiplier * U.z.values[i]
 
         #Ph_local = (rho.values*g*sind(coeffs.ϕ)*h[i]).*[1,0,0]
-        Ph_local = (g*sind(coeffs.ϕ)*h[i]).*[1,0,0]
+        Ph_local = (rho.values*g*sind(coeffs.ϕ)*h[i]).*[1,0,0]
         Ph.x.values[i] = Ph_local[1]
         Ph.y.values[i] = Ph_local[2]
         Ph.z.values[i] = Ph_local[3]
@@ -268,41 +268,41 @@ function FilmModel(
             explicit_relaxation!(h, prev, solvers.h.relax, config)
         end
         
-        correct_mass_flux(mdotf, PL, rDf, config)
+        #correct_mass_flux(mdotf, PL, rDf, config)
 
-        for i ∈ eachindex(h.values)
-            if (h.values[i]<=0) h.values[i] = 1e-18 end
-        end
-        interpolate!(hf, h, config)
+        #for i ∈ eachindex(h.values)
+        #    if (h.values[i]<=0) h.values[i] = 1e-18 end
+        #end
+        #interpolate!(hf, h, config)
         #@. hmdotf.values = mdotf.values * hf.values
         #@. rhohf.values = rho.values * hf.values
 
-        grad!(∇h, hf, h, boundaries.h, time, config)
-        limit_gradient!(schemes.h.limiter, ∇h, h, config)
-        interpolate!(∇hf, ∇h.result, config)
-        div!(Δh, ∇hf, config)
+        #grad!(∇h, hf, h, boundaries.h, time, config)
+        #limit_gradient!(schemes.h.limiter, ∇h, h, config)
+        #interpolate!(∇hf, ∇h.result, config)
+        #div!(Δh, ∇hf, config)
         
-        # add Pg term
-        for i ∈ 1:length(Δh.values)
-            surface_tension[i] = model.momentum.coeffs.σ*Δh[i]
-            PL[i] = - (model.momentum.coeffs.σ * model.momentum.h[i] * (dot(n,G)))# - surface_tension[i]
-        end
+        ## add Pg term
+        #for i ∈ 1:length(Δh.values)
+        #    surface_tension[i] = model.momentum.coeffs.σ*Δh[i]
+        #    PL[i] = - (model.momentum.coeffs.σ * model.momentum.h[i] * (dot(n,G)))# - surface_tension[i]
+        #end
 
-        interpolate!(PLf, PL, config)
-        grad!(∇PL, PLf, PL, boundaries.PL, time, config)
-        limit_gradient!(schemes.PL.limiter, ∇PL, PL, config)
+        #interpolate!(PLf, PL, config)
+        #grad!(∇PL, PLf, PL, boundaries.PL, time, config)
+        #limit_gradient!(schemes.PL.limiter, ∇PL, PL, config)
 
-        for i ∈ eachindex(h)
-            w[i] = (h.values[i] > coeffs.h_crit)
-        end
+        #for i ∈ eachindex(h)
+        #    w[i] = (h.values[i] > coeffs.h_crit)
+        #end
 
-        interpolate!(wf, w, config)
-        grad!(∇w, wf, w, w_bc, time, config)
-        if (iteration == 3)
+        #interpolate!(wf, w, config)
+        #grad!(∇w, wf, w, w_bc, time, config)
+        #if (iteration == 3)
             #for i ∈ eachindex(h)
             #    println("$(h.values[i]), $(w.values[i])")
             #end
-        end
+        #end
 
         for i ∈ eachindex(h)
             multiplier = 3*(mu/h.values[i])
@@ -311,7 +311,7 @@ function FilmModel(
             τθ.z.values[i] = multiplier * U.z.values[i]
 
             #Ph_local = (rho.values*g*sind(coeffs.ϕ)*h[i]).*[1,0,0]
-            Ph_local = (g*sind(coeffs.ϕ)*h[i]).*[1,0,0]
+            Ph_local = (rho.values*g*sind(coeffs.ϕ)*h[i]).*[1,0,0]
             Ph.x.values[i] = Ph_local[1]
             Ph.y.values[i] = Ph_local[2]
             Ph.z.values[i] = Ph_local[3]

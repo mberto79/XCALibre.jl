@@ -166,7 +166,12 @@ function periodic_matrix_connectivity(BC::PeriodicParent, mesh)
     return i, j
 end
 
-@define_boundary Union{PeriodicParent,Periodic} Laplacian{Linear} begin
+@define_boundary Periodic Laplacian{Linear} begin
+    return 0.0, 0.0
+end
+
+# @define_boundary Union{PeriodicParent,Periodic} Laplacian{Linear} begin
+@define_boundary PeriodicParent Laplacian{Linear} begin
 
     phi = term.phi
     mesh = phi.mesh 
@@ -196,10 +201,16 @@ end
     ac = -ap
     an = ap
 
-    fzcellID = spindex(rowptr, colval, cellID, pcellID)
-    nzval[fzcellID] += an
+    NN = spindex(rowptr, colval, pcellID, pcellID)
+    nzval[NN] += ac
 
-    return ac, 0.0
+    NP = spindex(rowptr, colval, pcellID, cellID)
+    nzval[NP] += an
+
+    PN = spindex(rowptr, colval, cellID, pcellID)
+    nzval[PN] += an
+
+    return ac, 0.0 # PP assigned first value returned
 end
 
 @define_boundary Union{PeriodicParent,Periodic} Divergence{Linear} begin
@@ -237,7 +248,11 @@ end
     return ac, 0.0
 end
 
-@define_boundary Union{PeriodicParent,Periodic} Divergence{Upwind} begin
+@define_boundary Periodic Divergence{Upwind} begin
+    0.0, 0.0
+end
+# @define_boundary Union{PeriodicParent,Periodic} Divergence{Upwind} begin
+@define_boundary PeriodicParent Divergence{Upwind} begin
     phi = term.phi
     mesh = phi.mesh 
     (; faces, cells) = mesh
@@ -261,14 +276,30 @@ end
     weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
     one_minus_weight = one(eltype(weight)) - weight
 
-    # Calculate required increment
-    ap = term.sign*(term.flux[fID])
-    ac = max(ap, 0.0) 
-    an = -max(-ap, 0.0)
+    # # Calculate required increment
+    # ap = term.sign*(term.flux[fID])
+    # ac = max(ap, 0.0) 
+    # an = -max(-ap, 0.0)
 
-    fzcellID = spindex(rowptr, colval, cellID, pcellID)
-    nzval[fzcellID] += an
+    # fzcellID = spindex(rowptr, colval, cellID, pcellID)
+    # nzval[fzcellID] += an
 
+    # return ac, 0.0
+
+    mdot = term.sign*(term.flux[fID])
+    ac = max(mdot, 0.0)
+    an = max(-mdot, 0.0)
+
+    NN = spindex(rowptr, colval, pcellID, pcellID)
+    NP = spindex(rowptr, colval, pcellID, cellID)
+    PN = spindex(rowptr, colval, cellID, pcellID)
+    
+    # handle shadow cell first
+    nzval[NN] += an
+    nzval[NP] -= ac
+
+    # now handle master cell 
+    nzval[PN] -= an
     return ac, 0.0
 end
 

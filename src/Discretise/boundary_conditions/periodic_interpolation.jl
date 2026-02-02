@@ -1,5 +1,11 @@
+# Catch all interpolation for Periodic
+@inline boundary_interpolation!(BC::Periodic, phif, phi, boundary_cellsID, time, fID) = 
+begin
+    nothing 
+end
+
 @inline function boundary_interpolation!(
-    BC::Union{PeriodicParent,Periodic}, phif::FaceScalarField, phi, 
+    BC::PeriodicParent, phif::FaceScalarField, phi, 
     boundary_cellsID, time, fID)
     @inbounds begin
         (; faces) = phif.mesh
@@ -25,14 +31,16 @@
         weight = delta2/delta
         one_minus_weight = one(eltype(weight)) - weight
 
-        # phif_values[fID] = 0.5*(phi_values[cID] + phi_values[pcID]) # linear interpolation 
-        phif[fID] = weight*phi[cID] + one_minus_weight*phi[pcID]
+        # phif_values[fID] = 0.5*(phi_values[cID] + phi_values[pcID]) # linear interpolation
+        phifi =  weight*phi[cID] + one_minus_weight*phi[pcID]
+        phif[fID] = phifi
+        phif[pfID] = phifi
     end
     nothing
 end
 
 @inline function boundary_interpolation!(
-    BC::Union{PeriodicParent,Periodic}, psif::FaceVectorField, psi, 
+    BC::PeriodicParent, psif::FaceVectorField, psi, 
     boundary_cellsID, time, fID)
     @inbounds begin 
         (; faces) = psif.mesh
@@ -47,7 +55,9 @@ end
         delta2 = pface.delta #*norm(pface.e ⋅ pface.normal)
         delta = delta1 + delta2
         w = delta2/delta
-        psif[fID] = w*psi[cID] + (1.0 - w)psi[pcID] # linear interpolation 
+        psifi = w*psi[cID] + (1.0 - w)psi[pcID] # linear interpolation 
+        psif[fID] = psifi
+        psif[pfID] = psifi
     end
     nothing
 end

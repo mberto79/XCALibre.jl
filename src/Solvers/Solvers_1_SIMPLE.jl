@@ -225,9 +225,7 @@ function SIMPLE(
         # flux!(mdotf, Uf, config) 
 
         # new approach
-        # correct_mass_flux(mdotf, p, rDf, config)
-        correct_mass_flux1(mdotf, p_eqn, config)
-        correct_mass_periodic(mdotf, p_eqn, boundaries.p, config)
+        correct_mass_flux(mdotf, p, rDf, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
         turbulence!(turbulenceModel, model, S, prev, time, config) 

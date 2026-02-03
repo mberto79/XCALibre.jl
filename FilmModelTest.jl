@@ -22,12 +22,13 @@ mesh_dev = mesh; # use this line to run on CPU
 
 
 inlet_size = 0.01; # m - taken from model in Salome
-rho_l = 991.07; # Density of water @ 43°C kg/m3
+rho_l = 1;#991.07; # Density of water @ 43°C kg/m3
 Γ=200; # g/m/s
 Γkg = Γ/1000; # kg/m/s
 inlet_flow_rate = Γkg/rho_l; # m2/s
 h_inlet = 0.005;
 inlet_speed = inlet_flow_rate/h_inlet;
+inlet_speed = 0.04;
 
 velocity = inlet_speed*[1, 0.0, 0.0];
 nu = 6.245e-7; # Kinematic Viscosity of water @ 43°C
@@ -53,8 +54,8 @@ BCs = assign(
         U = [
             Dirichlet(:inlet, velocity),
             #Extrapolated(:outlet),
-            #Zerogradient(:outlet),
-            Extrapolated(:outlet),
+            Zerogradient(:outlet),
+            #Extrapolated(:outlet),
             #Wall(:wall, [0.0, 0.0, 0.0]),
             #Zerogradient(:bottom),
             #Zerogradient(:wall),
@@ -102,7 +103,7 @@ solvers = (
     U = SolverSetup(
         solver      = Bicgstab(), # Options: Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
-        convergence = 1e-10,
+        convergence = 1e-12,
         relax       = 0.7,
         rtol = 1e-4,
         atol = 1e-10

@@ -33,7 +33,10 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     initialise!(Sm, 1e-18)
     rho_l = ScalarField(mesh)
     initialise!(rho_l, rho.values)
-    RHS = VectorField(mesh)
+    h∇PL = VectorField(mesh)
+    Ph = VectorField(mesh)
+    τw = VectorField(mesh)
+    τθw = VectorField(mesh)
     
 
     @info "Defining models.."
@@ -43,10 +46,11 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     U_eqn = (
         Time{schemes.U.time}(rhohf, U)
         + Divergence{schemes.U.divergence}(hmdotf,U)
-        #+ Grd{schemes.h.gradient}(h, )
-        #+ Si(nueff, U)
         ==
-        Source(RHS)
+          Source(h∇PL)
+        + Source(Ph)
+        + Source(τw)
+        + Source(τθw)
     ) → VectorEquation(U, boundaries.U)
 
     h_eqn = (
@@ -94,7 +98,12 @@ function FilmModel(
     Postprocess = convert_time_to_iterations(postprocess, model, dt, iterations)
     rhohf = get_flux(U_eqn, 1)
     hmdotf = get_flux(U_eqn, 2)
-    RHS = get_source(U_eqn, 1)
+
+    h∇PL = get_source(U_eqn, 1)
+    Ph = get_source(U_eqn,2)
+    τw = get_source(U_eqn,3)
+    τθw = get_source(U_eqn,4)
+    
     mdotf = get_flux(h_eqn,2)
     Sm = get_source(h_eqn,1)
     mu = nu.values*rho.values
@@ -109,22 +118,26 @@ function FilmModel(
     G = g*[0,0,-1]
 
     # Define aux fields
-    PL = ScalarField(mesh)
+    PL = ScalarField(mesh) # Using this until a proper fix is implemented
     PLf = FaceScalarField(mesh)
-    ∇PL = Grad{schemes.PL.gradient}(PL)
-    surface_tension = ScalarField(mesh)
+    ∇PL = Grad{schemes.PL.gradient}(PL) # Need to rework this into taking a FaceScalarField instead.
+
     ∇h = Grad{schemes.h.gradient}(h)
     ∇hf = FaceVectorField(mesh)
     Δh = ScalarField(mesh)
-    τθ = VectorField(mesh)
+
     w = ScalarField(mesh)
     wf = FaceScalarField(mesh)
     ∇w = Grad{schemes.h.gradient}(w)
-    τθw = FaceVectorField(mesh)
-    Ph = FaceVectorField(mesh)
-    Hv = VectorField(mesh)
-    rD = ScalarField(mesh)
-    rDf = FaceScalarField(mesh)
+    
+    plate_tangent_vector = [1,0,0] # temporary,  should be worked out later
+
+    #Hv = VectorField(mesh)
+    #rD = ScalarField(mesh)
+    #rDf = FaceScalarField(mesh)
+
+
+    surface_tension = ScalarField(mesh)
 
     w_bc = [
         Dirichlet(:inlet, 1),
@@ -147,6 +160,7 @@ function FilmModel(
 
     # Initial calculations
     time = zero(TF) # assuming time = 0
+
     interpolate!(Uf, U, config)
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
@@ -157,19 +171,18 @@ function FilmModel(
     interpolate!(∇hf, ∇h.result, config)
     div!(Δh, ∇hf, config)
 
-    # Getting h * mdotf for U calculation
-    @. rhohf.values = rho.values * hf.values
-    @. hmdotf.values = mdotf.values * hf.values
+    # Getting h * mdotf and rho * h for U calculation
+    # hf is calculated within grad!()
+    @. rhohf.values = rho.values[1] * hf.values
+    @. hmdotf.values = mdotf.values * hf.values * rho.values[1]
 
     @info "need to readd Pg term - Coupling term for other phase"
-    # add Pg term
-    Pg = 0#1e5 # Test Pg term
+    Pg = 0# Test Pg term set to zero, as the gradient is found this value doesn't matter
     @info "need to fix surface tension term"
     for i ∈ 1:length(Δh.values)
         surface_tension[i] = coeffs.σ*Δh[i]
-        PL[i] = Pg - (coeffs.σ * model.momentum.h[i] * (dot(n,G))) - surface_tension[i]
+        #PL[i] = Pg - (coeffs.σ * model.momentum.h[i] * (dot(n,G))) - surface_tension[i]
     end
-    interpolate!(PLf, PL, config)
     grad!(∇PL, PLf, PL, boundaries.PL, time, config)
     limit_gradient!(schemes.PL.limiter, ∇PL, PL, config)
 
@@ -177,32 +190,23 @@ function FilmModel(
         w[i] = (h.values[i] > coeffs.h_crit)
     end
 
-    interpolate!(wf, w, config)
     grad!(∇w, wf, w, w_bc, time, config)
 
-    for i ∈ eachindex(h)
+    for i ∈ eachindex(h.values)
         multiplier = 3*(mu/h.values[i])
-        τθ.x.values[i] = multiplier * U.x.values[i]
-        τθ.y.values[i] = multiplier * U.y.values[i]
-        τθ.z.values[i] = multiplier * U.z.values[i]
+        #τθ.x.values[i] = multiplier * U.x.values[i]
+        #τθ.y.values[i] = multiplier * U.y.values[i]
+        #τθ.z.values[i] = multiplier * U.z.values[i]
 
-        #Ph_local = (rho.values*g*sind(coeffs.ϕ)*h[i]).*[1,0,0]
-        Ph_local = (rho.values*g*sind(coeffs.ϕ)*h[i]).*[1,0,0]
+        Ph_local = (rho.values*g*sind(coeffs.ϕ)*h[i]) .*plate_tangent_vector
         Ph.x.values[i] = Ph_local[1]
         Ph.y.values[i] = Ph_local[2]
         Ph.z.values[i] = Ph_local[3]
-        τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w[i]
 
-        RHS[i] = (
-             #- (h[i]*∇PL[i])
-             + Ph[i] # Gravity tangential to surface
-             # currently ignoring tau fs term
-             #- τθ[i]
-             #+ τθw
-        )
-        #println("mdotf = $(mdotf[i]), hmdotf = $(hmdotf[i]), ($(U.x.values[i]), $(U.y.values[i]), $(U.z.values[i])")
-        #println("$(Ph.x.values[i]), $(Ph.y.values[i]), $(Ph.z.values[i]), $(rho.values*g*1e-4)")
-        if abs(RHS.x.values[i]) > 1
+
+        #τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w[i]
+        
+        #if abs(RHS.x.values[i]) > 1
             #println(PL[i])
             #println("$(∇PL[i])")
             #println(τθw)
@@ -210,9 +214,8 @@ function FilmModel(
             #println("$(τθ.x.values[i]), $(τθ.y.values[i]), $(τθ.z.values[i])")
             #println("$(Δh[i])")
             #println("$(RHS.x.values[i]), $(RHS.y.values[i]), $(RHS.z.values[i])")
-        end
+        #end
     end
-    
     @info "Starting loops"
     
     progress = Progress(iterations; dt=1.0, showspeed=true)
@@ -273,11 +276,11 @@ function FilmModel(
         #for i ∈ eachindex(h.values)
         #    if (h.values[i]<=0) h.values[i] = 1e-18 end
         #end
-        #interpolate!(hf, h, config)
-        #@. hmdotf.values = mdotf.values * hf.values
-        #@. rhohf.values = rho.values * hf.values
 
-        #grad!(∇h, hf, h, boundaries.h, time, config)
+        grad!(∇h, hf, h, boundaries.h, time, config)
+        @. hmdotf.values = mdotf.values * hf.values * rho.values[1]
+        @. rhohf.values = rho.values[1] * hf.values
+
         #limit_gradient!(schemes.h.limiter, ∇h, h, config)
         #interpolate!(∇hf, ∇h.result, config)
         #div!(Δh, ∇hf, config)
@@ -306,24 +309,16 @@ function FilmModel(
 
         for i ∈ eachindex(h)
             multiplier = 3*(mu/h.values[i])
-            τθ.x.values[i] = multiplier * U.x.values[i]
-            τθ.y.values[i] = multiplier * U.y.values[i]
-            τθ.z.values[i] = multiplier * U.z.values[i]
+            #τθ.x.values[i] = multiplier * U.x.values[i]
+            #τθ.y.values[i] = multiplier * U.y.values[i]
+            #τθ.z.values[i] = multiplier * U.z.values[i]
 
-            #Ph_local = (rho.values*g*sind(coeffs.ϕ)*h[i]).*[1,0,0]
-            Ph_local = (rho.values*g*sind(coeffs.ϕ)*h[i]).*[1,0,0]
+            Ph_local = (rho.values*g*sind(coeffs.ϕ)*h[i]) .*plate_tangent_vector
             Ph.x.values[i] = Ph_local[1]
             Ph.y.values[i] = Ph_local[2]
             Ph.z.values[i] = Ph_local[3]
-            τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w[i]
-            
-            RHS[i] = (
-                 #- (h[i]*∇PL[i])
-                 + Ph[i] # Gravity tangential to surface
-                 # currently ignoring tau fs term
-                 #- τθ[i]
-                 #+ τθw
-            )
+        
+            #τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w[i]
         end
         #correct_mass_flux
         #correct_velocity!()

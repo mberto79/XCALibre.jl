@@ -103,11 +103,13 @@ end
     N = cellN.centre
 
     # calculate distance vectors
-    d_fC = C - f 
+    # d_fC = C - f 
     d_fN = N - f
+    d_CN = N - C
     
     # Calculate weights using normal functions
-    weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
+    # weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
+    weight = norm(d_fN)/norm(d_CN)
     one_minus_weight = one(eltype(weight)) - weight
 
     # Calculate required increment

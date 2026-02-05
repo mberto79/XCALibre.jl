@@ -75,6 +75,8 @@ function setup_incompressible_solvers(
 
     p_eqn = (
         - Laplacian{schemes.p.laplacian}(rDf, p) == - Source(divHv)
+        # Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
+        # Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
     ) → ScalarEquation(p, boundaries.p)
 
     @info "Initialising preconditioners..."
@@ -178,12 +180,14 @@ function SIMPLE(
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rDf, rD, config)
+        # correct_interpolation_periodic(rDf, rD, boundaries.U, config)
         remove_pressure_source!(U_eqn, ∇p, config)
         H!(Hv, U, U_eqn, config)
         
         # Interpolate faces
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, boundaries.U, time, config)
+        # correct_interpolation_periodic(Uf, Hv, boundaries.U, config)
 
         # old approach
         # div!(divHv, Uf, config) 
@@ -227,7 +231,7 @@ function SIMPLE(
         # new approach
         # correct_mass_flux(mdotf, p, rDf, config)
         correct_mass_flux1(mdotf, p_eqn, config)
-        correct_mass_periodic(mdotf, p_eqn, boundaries.p, config)
+        # correct_mass_periodic(mdotf, p_eqn, boundaries.p, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
         turbulence!(turbulenceModel, model, S, prev, time, config) 
@@ -435,9 +439,12 @@ end
         # need to get aN from sparse system
         zID = spindex(rowptr, colval, cID1, cID2)
         aN = nzval[zID]
-        mdotf[fID] += aN*(p2 - p1) # positive because pressure eqn has negative sign
+        # mdotf[fID] += aN*(p2 - p1) # positive because pressure eqn has negative sign
+        mdotf[fID] += -aN*(p2 - p1) # positive because pressure eqn has negative sign
     end
 end
+
+### Correct mass flux at periodic boundaries
 
 function correct_mass_periodic(mdotf, p_eqn, pBCs, config)
     (; faces, cells, boundary_cellsID) = mdotf.mesh
@@ -452,7 +459,7 @@ function correct_mass_periodic(mdotf, p_eqn, pBCs, config)
 
     for BC ∈ pBCs
         _correct_mass_periodic_dispatch(
-            BC, mdotf, p, nzval, colval, rowptr, faces, backend, workgroup)
+            BC, mdotf, p, nzval, colval, rowptr, cells, faces, backend, workgroup)
     end
 
 end
@@ -460,16 +467,16 @@ end
 _correct_mass_periodic_dispatch(arg...) = nothing
 
 function _correct_mass_periodic_dispatch(
-    BC::PeriodicParent, mdotf, p, nzval, colval, rowptr, faces, backend, workgroup)
+    BC::PeriodicParent, mdotf, p, nzval, colval, rowptr, cells, faces, backend, workgroup)
     (; IDs_range, value) = BC
     (; face_map) = value
     ndrange = length(IDs_range)
     kernel! = _correct_mass_periodic(_setup(backend, workgroup, ndrange)...)
-    kernel!(mdotf, p, nzval, colval, rowptr, faces, IDs_range, face_map)
+    kernel!(mdotf, p, nzval, colval, rowptr, cells, faces, IDs_range, face_map)
 end
 
 @kernel function _correct_mass_periodic(
-    mdotf, p, nzval, colval, rowptr, faces, IDs_range, face_map)
+    mdotf, p, nzval, colval, rowptr, cells, faces, IDs_range, face_map)
     i = @index(Global)
     fID = IDs_range[i]
     pfID = face_map[i]
@@ -485,8 +492,74 @@ end
     zID = spindex(rowptr, colval, cID1, cID2)
     aN = nzval[zID]
     correction = aN*(p2 - p1)
-    mdotf[fID] += correction
+    mdotf[fID] += -correction
     # mdotf[pfID] += correction
     # mdotf[pfID] = -1*mdotf[fID] # maybe better?
-    mdotf[pfID] = mdotf[fID]
+    mdotf[pfID] = -mdotf[fID]
+end
+
+
+### Correct interpolation at periodic boundaries
+
+function correct_interpolation_periodic(phif, phi, BCs, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    for BC ∈ BCs
+        _correct_interpolation_periodic_dispatch(BC, phif, phi, backend, workgroup)
+    end
+
+end
+
+_correct_interpolation_periodic_dispatch(arg...) = nothing
+
+function _correct_interpolation_periodic_dispatch(
+    BC::PeriodicParent, phif, phi, backend, workgroup)
+    mesh = phif.mesh
+    (; cells, faces) = mesh
+    (; IDs_range, value) = BC
+    (; face_map, distance) = value
+    ndrange = length(IDs_range)
+    kernel! = _correct_interpolation_periodic(_setup(backend, workgroup, ndrange)...)
+    kernel!(phif, phi, cells, faces, IDs_range, face_map, distance)
+end
+
+@kernel function _correct_interpolation_periodic(phif, phi, cells, faces, IDs_range, face_map, distance)
+    i = @index(Global)
+    fID = IDs_range[i]
+    pfID = face_map[i]
+
+    face = faces[fID]
+    pface = faces[pfID]
+    cID = face.ownerCells[1]
+    pcID = pface.ownerCells[1]
+
+    phi1 = phi[cID]
+    phi2 = phi[pcID]
+    # w = 0.5 # temp weight for testing
+    # phif[fID] = w*(phi1 + phi2)
+    # phif[pfID] = w*(phi1 + phi2)
+
+
+    # delta1 = face.delta #*norm(face.e ⋅ face.normal)
+    # delta2 = pface.delta #*norm(pface.e ⋅ pface.normal)
+    # delta = delta1 + delta2
+    # w = delta2/delta
+    # w_1 = one(eltype(w)) - w
+    
+    # Calculate weights using normal functions
+    # weight = norm(xf - xC)/norm(xN - xC)
+    # weight = norm(xf - xC)/(norm(xN - xC) - BC.value.distance)
+
+    xf = face.centre
+    xC = cells[cID].centre
+    xN = cells[pcID].centre + distance*face.normal
+    w = norm(xf - xN)/norm(xN - xC)
+    one_w = one(eltype(w)) - w
+    
+
+    # phif_values[fID] = 0.5*(phi_values[cID] + phi_values[pcID]) # linear interpolation
+    phifi =  w*phi1 + w_1*phi2
+    phif[fID] = phifi
+    phif[pfID] = phifi
 end

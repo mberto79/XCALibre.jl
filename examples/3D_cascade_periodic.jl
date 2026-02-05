@@ -16,8 +16,8 @@ hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 periodic1 = construct_periodic(mesh, backend, :top, :bottom)
-# periodic2 = construct_periodic(mesh, backend, :side1, :side2)
-symmetric = Symmetry.([:side1, :side2])
+periodic2 = construct_periodic(mesh, backend, :side1, :side2)
+# symmetric = Symmetry.([:side1, :side2])
 
 velocity = [0.25, 0.0, 0.0]
 nu = 1e-3
@@ -39,16 +39,16 @@ BCs= assign(
             Zerogradient(:outlet),
             Wall(:plate, [0.0, 0.0, 0.0]),
             periodic1...,
-            symmetric...
-            # periodic2...
+            # symmetric...
+            periodic2...
         ],
         p = [
             Zerogradient(:inlet),
             Dirichlet(:outlet, 0.0),
             Wall(:plate),
             periodic1...,
-            symmetric...
-            # periodic2...
+            # symmetric...
+            periodic2...
         ]
     )
 )
@@ -63,16 +63,16 @@ solvers = (
     U = SolverSetup(
         solver      = Bicgstab(), #Cg(), # Bicgstab(), Gmres(), #Cg()
         preconditioner = Jacobi(),
-        convergence = 1e-7,
-        relax       = 0.8,
-        rtol = 1e-1
+        convergence = 1e-9,
+        relax       = 0.6,
+        rtol = 1e-4
     ),
     p = SolverSetup(
         solver      = Cg(), #Gmres(), #Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        convergence = 1e-7,
+        convergence = 1e-9,
         relax       = 0.2,
-        rtol = 1e-2
+        rtol = 1e-4
     )
 )
 

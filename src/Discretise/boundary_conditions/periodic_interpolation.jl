@@ -8,8 +8,9 @@ end
     BC::PeriodicParent, phif::FaceScalarField, phi, 
     boundary_cellsID, time, fID)
     @inbounds begin
-        (; faces, cells) = phif.mesh
         i = fID - BC.IDs_range.start + 1
+        (; transform ) = BC.value
+        (; faces, cells) = phif.mesh
         pfID = BC.value.face_map[i] # id of periodic face
         pface = faces[pfID]
         pcID = pface.ownerCells[1]
@@ -25,7 +26,7 @@ end
         # Calculate weights using normal functions
         xf = faces[fID].centre
         xC = cells[cID].centre
-        xN = cells[pcID].centre + BC.value.distance*face.normal
+        xN = cells[pcID].centre - transform.distance*transform.direction
         weight = norm(xf - xN)/norm(xN - xC)
 
         one_minus_weight = one(eltype(weight)) - weight
@@ -42,8 +43,9 @@ end
     BC::PeriodicParent, psif::FaceVectorField, psi, 
     boundary_cellsID, time, fID)
     @inbounds begin 
-        (; faces, cells) = psif.mesh
         i = fID - BC.IDs_range.start + 1
+        (; transform) = BC.value
+        (; faces, cells) = psif.mesh
         pfID = BC.value.face_map[i] # id of periodic face
         pface = faces[pfID]
         pcID = pface.ownerCells[1]
@@ -57,7 +59,7 @@ end
 
         xf = faces[fID].centre
         xC = cells[cID].centre
-        xN = cells[pcID].centre + BC.value.distance*face.normal
+        xN = cells[pcID].centre + transform.distance*transform.direction
         w = norm(xf - xN)/norm(xN - xC)
         one_w = one(eltype(w)) - w
 

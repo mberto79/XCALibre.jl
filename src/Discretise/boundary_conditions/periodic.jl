@@ -1,5 +1,6 @@
 export Periodic, PeriodicParent, PeriodicConnectivity
 export construct_periodic
+export LinearTransform
 export adjust_boundary!
 import XCALibre.ModelFramework._extend_matrix
 
@@ -32,19 +33,31 @@ struct PeriodicParent{I,V,R<:UnitRange} <: AbstractPeriodic
 end
 Adapt.@adapt_structure PeriodicParent
 
-@kwdef struct PeriodicValue{I<:Integer,F,VI,B}
+@kwdef struct PeriodicValue{I<:Integer,T,VI,B}
     patchID::I
-    distance::F
+    transform::T
     face_map::VI
     isparent::B
 end
 Adapt.@adapt_structure PeriodicValue
 
+@kwdef struct LinearTransform{D<:Number, N<:AbstractVector}
+    distance::D
+    direction::N
+end
+Adapt.Adapt.@adapt_structure LinearTransform
+
 adapt_value(value::PeriodicValue, mesh) = begin
     I = _get_int(mesh)
     F = _get_float(mesh)
-    (; patchID, distance, face_map, isparent)  = value
-    PeriodicValue(I(patchID), F(distance), I.(face_map), isparent)
+    (; patchID, transform, face_map, isparent)  = value
+    (; distance, direction) = transform
+    PeriodicValue(
+        I(patchID), 
+        LinearTransform(F(distance), SVector{3,F}(direction)), 
+        I.(face_map), 
+        isparent
+    )
 end
 
 struct PeriodicConnectivity{I}
@@ -79,7 +92,8 @@ Function for construction of periodic boundary conditions.
     backend with periodic boundaries named `top` and `bottom`.
 
 """
-function construct_periodic(mesh, backend, patch1::Symbol, patch2::Symbol)
+function construct_periodic(
+    transform::LinearTransform, mesh, backend, patch1::Symbol, patch2::Symbol)
 
     (; faces, boundaries) = mesh
 
@@ -90,6 +104,10 @@ function construct_periodic(mesh, backend, patch1::Symbol, patch2::Symbol)
     face1 = faces[boundaries[idx1].IDs_range[1]]
     face2 = faces[boundaries[idx2].IDs_range[1]]
     distance = abs((face1.centre - face2.centre)⋅face1.normal)
+    isapprox(distance, transform.distance, atol=1e-10) || error(
+        "distance given does not match patch distance within 1e-10 units")
+
+    distance = transform.distance # if user provided distance ok, use it
 
     # extract and check number of faces in each patch
     nfaces1 = length(boundaries[idx1].IDs_range)
@@ -106,9 +124,19 @@ function construct_periodic(mesh, backend, patch1::Symbol, patch2::Symbol)
     for (i, face) ∈ enumerate(faces[boundaries[idx2].IDs_range]) # use @view?
         testData = norm.(patchTranslated1 .- [face.centre])
         val, id = findmin(testData)
-        idx = ID_record[id] # extract the face ID from the record (cannot use id directly!)
-        faceAddress1[i] = boundaries[idx2].IDs_range[idx]
-        faceAddress2[idx] = boundaries[idx1].IDs_range[i]
+        idx = ID_record[id] # get the face index from the record (cannot use id directly!)
+        fID = boundaries[idx1].IDs_range[i] # master face ID
+        pfID = boundaries[idx2].IDs_range[idx] # periodic shadow face ID
+        faceAddress1[i] = pfID
+        faceAddress2[idx] = fID
+
+        # # ensure face normals for master and shadow face are exact but flipped
+        # println(face.normal)
+        # # @reset face.normal = faces[fID].normal 
+        # @reset face.normal = face.normal 
+        # faces[pfID] = face
+
+        # println("modified ", face.normal)
 
         # shrink search space to remove face pair already found 
         ID_record = deleteat!(ID_record, id)
@@ -116,9 +144,9 @@ function construct_periodic(mesh, backend, patch1::Symbol, patch2::Symbol)
     end
 
     values1 = PeriodicValue(
-        patchID=idx2, distance=distance, face_map=faceAddress1, isparent=true)
+        patchID=idx2, transform=transform, face_map=faceAddress1, isparent=true)
     values2 = PeriodicValue(
-        patchID=idx1, distance=distance, face_map=faceAddress2, isparent=false)
+        patchID=idx1, transform=transform, face_map=faceAddress2, isparent=false)
 
     p1 = PeriodicParent(patch1, values1)
     p2 = Periodic(patch2, values2)
@@ -177,6 +205,7 @@ end
     mesh = phi.mesh 
     (; faces, cells) = mesh
     values = get_values(phi, component)
+    (; transform) = bc.value
     
     (; area, normal, e) = face
 
@@ -185,27 +214,43 @@ end
     pface = faces[pfID]
     pcellID = pface.ownerCells[1]
     C1 = cell.centre
-    C2 = cells[pcellID].centre + normal*bc.value.distance
+    C2 = cells[pcellID].centre - transform.direction*transform.distance
 
     # for improved accuracy this needs to include the discretisation used for noncorrection
-    delta = norm(C1 - C2)
+    d = C2 - C1
+    Δ = norm(d)
+    Sf = area*normal # no need to flip normal direction - outwards by mesh contract
+    Af = norm(Sf)
+    
     
     # Use form below to ensure correctness, could be simplified for performance
-    Sf = area*normal # original
-    e = e # original
-    Ef = ((Sf⋅Sf)/(Sf⋅e))*e # original
+    # e = e # original
+    # Ef = ((Sf⋅Sf)/(Sf⋅e))*e # original
+    # Ef_mag = norm(Ef)
+    # ap = term.sign*(term.flux[fID]*Ef_mag)/delta
+
+    # ap = term.sign*(term.flux[fID]*Af)/Δ
+
+    # Test formulation using vector d instead of e to explore any stability benefits
+    Ef = ((Sf⋅Sf)/(Sf⋅d))*d
     Ef_mag = norm(Ef)
-    ap = term.sign*(term.flux[fID]*Ef_mag)/delta
+    ap = term.sign*(term.flux[fID]*Ef_mag)/Δ
     
     # Increment sparse array
     ac = -ap
     an = ap
 
+    # NN = spindex(rowptr, colval, pcellID, pcellID)
+    # nzval[NN] += ac
+
+    # NP = spindex(rowptr, colval, pcellID, cellID)
+    # nzval[NP] += an
+
     NN = spindex(rowptr, colval, pcellID, pcellID)
-    nzval[NN] += ac
+    nzval[NN] -= an
 
     NP = spindex(rowptr, colval, pcellID, cellID)
-    nzval[NP] += an
+    nzval[NP] -= ac
 
     PN = spindex(rowptr, colval, cellID, pcellID)
     nzval[PN] += an
@@ -218,6 +263,7 @@ end
     mesh = phi.mesh 
     (; faces, cells) = mesh
     values = get_values(phi, component)
+    (; transform) = bc.value
 
     # determine id of periodic cell and interpolate face value
     pfID = bc.value.face_map[i] # id of periodic face 
@@ -227,46 +273,8 @@ end
     # Retrieve mesh centre values
     f = face.centre
     C = cell.centre
-    N = cells[pcellID].centre + face.normal*bc.value.distance
-
-    # calculate distance vectors
-    d_fC = C - f 
-    d_fN = N - f
-    
-    # Calculate weights using normal functions
-    weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
-    one_minus_weight = one(eltype(weight)) - weight
-
-    # Calculate required increment
-    ap = term.sign*(term.flux[fID])
-    ac = ap*weight
-    an = ap*one_minus_weight
-
-    fzcellID = spindex(rowptr, colval, cellID, pcellID)
-    nzval[fzcellID] += an
-
-    return ac, 0.0
-end
-
-@define_boundary Periodic Divergence{Upwind} begin
-    0.0, 0.0
-end
-# @define_boundary Union{PeriodicParent,Periodic} Divergence{Upwind} begin
-@define_boundary PeriodicParent Divergence{Upwind} begin
-    phi = term.phi
-    mesh = phi.mesh 
-    (; faces, cells) = mesh
-    values = get_values(phi, component)
-
-    # determine id of periodic cell and interpolate face value
-    pfID = bc.value.face_map[i] # id of periodic face 
-    pface = faces[pfID]
-    pcellID = pface.ownerCells[1]
-
-    # Retrieve mesh centre values
-    f = face.centre
-    C = cell.centre
-    N = cells[pcellID].centre + face.normal*bc.value.distance
+    # N = cells[pcellID].centre + face.normal*bc.value.distance
+    N = cells[pcellID].centre - transform.direction*transform.distance
 
     # calculate distance vectors
     # d_fC = C - f 
@@ -278,19 +286,10 @@ end
     weight = norm(d_fN)/norm(d_CN)
     one_minus_weight = one(eltype(weight)) - weight
 
-    # # Calculate required increment
-    # ap = term.sign*(term.flux[fID])
-    # ac = max(ap, 0.0) 
-    # an = -max(-ap, 0.0)
-
-    # fzcellID = spindex(rowptr, colval, cellID, pcellID)
-    # nzval[fzcellID] += an
-
-    # return ac, 0.0
-
-    mdot = term.sign*(term.flux[fID])
-    ac = max(mdot, 0.0)
-    an = max(-mdot, 0.0)
+    # Calculate required increment
+    ap = term.sign*(term.flux[fID])
+    ac = ap*weight
+    an = ap*one_minus_weight
 
     NN = spindex(rowptr, colval, pcellID, pcellID)
     NP = spindex(rowptr, colval, pcellID, cellID)
@@ -305,11 +304,16 @@ end
     return ac, 0.0
 end
 
-@define_boundary Union{PeriodicParent,Periodic} Divergence{LUST} begin
+@define_boundary Periodic Divergence{Upwind} begin
+    0.0, 0.0
+end
+# @define_boundary Union{PeriodicParent,Periodic} Divergence{Upwind} begin
+@define_boundary PeriodicParent Divergence{Upwind} begin
     phi = term.phi
     mesh = phi.mesh 
     (; faces, cells) = mesh
     values = get_values(phi, component)
+    (; transform) = bc.value
 
     # determine id of periodic cell and interpolate face value
     pfID = bc.value.face_map[i] # id of periodic face 
@@ -319,28 +323,83 @@ end
     # Retrieve mesh centre values
     f = face.centre
     C = cell.centre
-    N = cells[pcellID].centre + face.normal*bc.value.distance
+    # N = cells[pcellID].centre + face.normal*bc.value.distance
+    N = cells[pcellID].centre - transform.direction*transform.distance
 
     # calculate distance vectors
-    d_fC = C - f 
+    # d_fC = C - f 
     d_fN = N - f
+    d_CN = N - C
     
     # Calculate weights using normal functions
-    weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
+    # weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
+    weight = norm(d_fN)/norm(d_CN)
+    one_minus_weight = one(eltype(weight)) - weight
+
+    mdot = term.sign*(term.flux[fID])
+    ac = max(mdot, 0.0)
+    an = -max(-mdot, 0.0)
+
+    NN = spindex(rowptr, colval, pcellID, pcellID)
+    NP = spindex(rowptr, colval, pcellID, cellID)
+    PN = spindex(rowptr, colval, cellID, pcellID)
+    
+    # handle shadow cell first
+    nzval[NN] -= an
+    nzval[NP] -= ac
+
+    # now handle master cell 
+    nzval[PN] += an
+    return ac, 0.0
+end
+
+@define_boundary Union{PeriodicParent,Periodic} Divergence{LUST} begin
+    phi = term.phi
+    mesh = phi.mesh 
+    (; faces, cells) = mesh
+    values = get_values(phi, component)
+    (; transform) = bc.value
+
+    # determine id of periodic cell and interpolate face value
+    pfID = bc.value.face_map[i] # id of periodic face 
+    pface = faces[pfID]
+    pcellID = pface.ownerCells[1]
+
+    # Retrieve mesh centre values
+    f = face.centre
+    C = cell.centre
+    # N = cells[pcellID].centre + face.normal*bc.value.distance
+    N = cells[pcellID].centre - transform.direction*transform.distance
+
+    # calculate distance vectors
+    # d_fC = C - f 
+    d_fN = N - f
+    d_CN = N - C
+    
+    # Calculate weights using normal functions
+    # weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
+    weight = norm(d_fN)/norm(d_CN)
     one_minus_weight = one(eltype(weight)) - weight
 
     # Calculate required increment
-    ap = term.sign*(term.flux[fID])
-    acLinear = ap*weight 
-    anLinear = ap*one_minus_weight
-    acUpwind = max(ap, 0.0) 
-    anUpwind = -max(-ap, 0.0)
+    mdot = term.sign*(term.flux[fID])
+    acLinear = mdot*weight 
+    anLinear = mdot*one_minus_weight
+    acUpwind = max(mdot, 0.0) 
+    anUpwind = -max(-mdot, 0.0)
     ac = 0.75*acLinear + 0.25*acUpwind
     an = 0.75*anLinear + 0.25*anUpwind
 
-    fzcellID = spindex(rowptr, colval, cellID, pcellID)
-    nzval[fzcellID] += an
+    NN = spindex(rowptr, colval, pcellID, pcellID)
+    NP = spindex(rowptr, colval, pcellID, cellID)
+    PN = spindex(rowptr, colval, cellID, pcellID)
+    
+    # handle shadow cell first
+    nzval[NN] += an
+    nzval[NP] += ac
 
+    # now handle master cell 
+    nzval[PN] += an
     return ac, 0.0
 end
 

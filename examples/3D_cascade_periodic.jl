@@ -15,9 +15,11 @@ backend = CPU(); workgroup = 1024; activate_multithread(backend)
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
-periodic1 = construct_periodic(mesh, backend, :top, :bottom)
-periodic2 = construct_periodic(mesh, backend, :side1, :side2)
-# symmetric = Symmetry.([:side1, :side2])
+periodic1 = construct_periodic(
+    LinearTransform(distance=0.1, direction=[0,-1,0]), mesh, backend, :top, :bottom)
+periodic2 = construct_periodic(
+    LinearTransform(distance=0.1, direction=[0,0,-1]), mesh, backend, :side1, :side2)
+symmetric = Symmetry.([:side1, :side2])
 
 velocity = [0.25, 0.0, 0.0]
 nu = 1e-3
@@ -39,22 +41,22 @@ BCs= assign(
             Zerogradient(:outlet),
             Wall(:plate, [0.0, 0.0, 0.0]),
             periodic1...,
-            # symmetric...
-            periodic2...
+            symmetric...
+            # periodic2...
         ],
         p = [
             Zerogradient(:inlet),
             Dirichlet(:outlet, 0.0),
             Wall(:plate),
             periodic1...,
-            # symmetric...
-            periodic2...
+            symmetric...
+            # periodic2...
         ]
     )
 )
 
 schemes = (
-    U = Schemes(divergence=Upwind, gradient=Gauss),
+    U = Schemes(divergence=Linear, gradient=Gauss),
     p = Schemes(gradient=Gauss)
 )
 
@@ -65,14 +67,14 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-9,
         relax       = 0.6,
-        rtol = 1e-4
+        rtol = 1e-3
     ),
     p = SolverSetup(
         solver      = Cg(), #Gmres(), #Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-9,
-        relax       = 0.2,
-        rtol = 1e-4
+        relax       = 0.15,
+        rtol = 1e-3
     )
 )
 
@@ -87,7 +89,7 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config) # 353 iterations!
+residuals = run!(model, config, output=OpenFOAM()) # 353 iterations!
 
 # using Plots
 # fig = plot(; xlims=(0,runtime.iterations), ylims=(1e-10, 1e-4))

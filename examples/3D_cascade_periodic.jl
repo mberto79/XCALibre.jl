@@ -56,7 +56,7 @@ BCs= assign(
 )
 
 schemes = (
-    U = Schemes(divergence=Linear, gradient=Gauss),
+    U = Schemes(divergence=Upwind, gradient=Gauss),
     p = Schemes(gradient=Gauss)
 )
 
@@ -65,14 +65,14 @@ solvers = (
     U = SolverSetup(
         solver      = Bicgstab(), #Cg(), # Bicgstab(), Gmres(), #Cg()
         preconditioner = Jacobi(),
-        convergence = 1e-9,
+        convergence = 1e-8,
         relax       = 0.6,
         rtol = 1e-3
     ),
     p = SolverSetup(
         solver      = Cg(), #Gmres(), #Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        convergence = 1e-9,
+        convergence = 1e-8,
         relax       = 0.15,
         rtol = 1e-3
     )

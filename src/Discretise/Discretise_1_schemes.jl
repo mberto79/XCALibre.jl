@@ -77,19 +77,20 @@ end
     # Ef = dPN*(one(typeof(ns))/(dPN⋅n))*area # a little faster but a few more iter
 
     # Use form below to ensure correctness, could be simplified for performance
-    # e = ns*e # original
-    # Ef = ((Sf⋅Sf)/(Sf⋅e))*e # original
-    # Ef_mag = norm(Ef)
-    # ap = term.sign*(term.flux[fID]*Ef_mag)/delta
+    e = ns*e # original
+    Ef = ((Sf⋅Sf)/(Sf⋅e))*e # original
+    Ef_mag = norm(Ef)
+    ap = term.sign*(term.flux[fID]*Ef_mag)/Δ
+
 
     # ap = term.sign*(term.flux[fID]*area)/delta # Initial form used
 
     # ap = term.sign*(term.flux[fID]*Af)/Δ # minimum correction formulation
 
     # Test formulation using vector d instead of e to explore any stability benefits
-    Ef = ((Sf⋅Sf)/(Sf⋅d))*d
-    Ef_mag = norm(Ef)
-    ap = term.sign*(term.flux[fID]*Ef_mag)/Δ
+    # Ef = ((Sf⋅Sf)/(Sf⋅d))*d
+    # Ef_mag = norm(Ef)
+    # ap = term.sign*(term.flux[fID]*Ef_mag)/Δ
     
     # Increment sparse array
     ac = -ap
@@ -108,32 +109,44 @@ end
     term::Operator{F,P,I,Divergence{Linear}}, 
     nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
-    # Retrieve mesh centre values
-    f = face.centre
-    C = cell.centre
-    N = cellN.centre
+    # # Retrieve mesh centre values
+    # f = face.centre
+    # C = cell.centre
+    # N = cellN.centre
 
-    # calculate distance vectors
-    # d_fC = C - f 
-    d_fN = N - f
-    d_CN = N - C
+    # # calculate distance vectors
+    # # d_fC = C - f 
+    # d_fN = N - f
+    # d_CN = N - C
     
-    # Calculate weights using normal functions
-    # weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
-    weight = norm(d_fN)/norm(d_CN)
-    one_minus_weight = one(eltype(weight)) - weight
+    # # Calculate weights using normal functions
+    # # weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
+    # weight = norm(d_fN)/norm(d_CN)
+    # one_minus_weight = one(eltype(weight)) - weight
 
-    # Calculate required increment
-    ap = term.sign*(term.flux[fID]*ns)
-    # ac = ap*one_minus_weight
-    # an = ap*weight
-    ac = ap*weight
-    an = ap*one_minus_weight
-    return ac, an
+    # # Calculate required increment
+    # ap = term.sign*(term.flux[fID]*ns)
+    # # ac = ap*one_minus_weight
+    # # an = ap*weight
+    # ac = ap*weight
+    # an = ap*one_minus_weight
+    # return ac, an
+
+    mdot = term.sign*(term.flux[fID])*ns
+    p_out = max(mdot, 0.0)
+    n_out = max(-mdot, 0.0)
+
+    return p_out, -n_out
+
+    
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Divergence{Linear}}, cell, cID, cIndex, prev, runtime) where {F,P,I} = begin
-    0.0, 0.0
+    # 0.0, 0.0
+
+    # scalar phiWCD = w * phi[P] + (1.0 - w) * phi[N];
+    # scalar phiUD  = (mDot > 0) ? phi[P] : phi[N]; // UD picks upstream
+    # scalar sFace  = -mDot * (phiWCD - phiUD);
 end
 
 # Upwind
@@ -141,11 +154,16 @@ end
     term::Operator{F,P,I,Divergence{Upwind}}, 
     nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
-    # Calculate required increment
-    ap = term.sign*(term.flux[fID]*ns)
-    ac = max(ap, 0.0) 
-    an = -max(-ap, 0.0)
-    return ac, an
+    # # Calculate required increment
+    # ap = term.sign*(term.flux[fID]*ns)
+    # ac = max(ap, 0.0) 
+    # an = -max(-ap, 0.0)
+    # return ac, an
+    mdot = term.sign*(term.flux[fID])*ns
+    p_out = max(mdot, 0.0) # flow leaves master
+    n_out = max(-mdot, 0.0) # flow leaves shadow
+
+    return p_out, -n_out
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Divergence{Upwind}}, cell, cID, cIndex, prev, runtime) where {F,P,I} = begin

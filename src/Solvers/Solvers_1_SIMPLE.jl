@@ -187,7 +187,7 @@ function SIMPLE(
         # Interpolate faces
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, boundaries.U, time, config)
-        correct_interpolation_periodic(Uf, Hv, boundaries.U, config)
+        # correct_interpolation_periodic(Uf, Hv, boundaries.U, config)
 
         # old approach
         # div!(divHv, Uf, config) 
@@ -491,7 +491,7 @@ end
     zID = spindex(rowptr, colval, cID1, cID2)
     aN = nzval[zID]
     correction = aN*(p2 - p1)
-    mdotf[fID] -= correction
+    mdotf[fID] += correction
     mdotf[pfID] -= correction 
 end
 

@@ -225,20 +225,20 @@ end
     
     # Use form below to ensure correctness, could be simplified for performance
     # e = e # original
-    # Ef = ((Sf⋅Sf)/(Sf⋅e))*e # original
-    # Ef_mag = norm(Ef)
-    # ap = term.sign*(term.flux[fID]*Ef_mag)/delta
+    Ef = ((Sf⋅Sf)/(Sf⋅e))*e # original
+    Ef_mag = norm(Ef)
+    gamma = -term.sign*(term.flux[fID]*Ef_mag)/Δ
 
     # ap = term.sign*(term.flux[fID]*Af)/Δ
 
     # Test formulation using vector d instead of e to explore any stability benefits
-    Ef = ((Sf⋅Sf)/(Sf⋅d))*d
-    Ef_mag = norm(Ef)
-    ap = term.sign*(term.flux[fID]*Ef_mag)/Δ
+    # Ef = ((Sf⋅Sf)/(Sf⋅d))*d
+    # Ef_mag = norm(Ef)
+    # ap = term.sign*(term.flux[fID]*Ef_mag)/Δ
     
     # Increment sparse array
-    ac = -ap
-    an = ap
+    # ac = -ap
+    # an = ap
 
     # NN = spindex(rowptr, colval, pcellID, pcellID)
     # nzval[NN] += ac
@@ -247,15 +247,15 @@ end
     # nzval[NP] += an
 
     NN = spindex(rowptr, colval, pcellID, pcellID)
-    nzval[NN] -= an
+    Atomix.@atomic nzval[NN] += gamma
 
     NP = spindex(rowptr, colval, pcellID, cellID)
-    nzval[NP] -= ac
+    Atomix.@atomic nzval[NP] += -gamma
 
     PN = spindex(rowptr, colval, cellID, pcellID)
-    nzval[PN] += an
+    Atomix.@atomic nzval[PN] += -gamma
 
-    return ac, 0.0 # PP assigned first value returned
+    return gamma, 0.0 # PP assigned first value returned
 end
 
 @define_boundary Union{PeriodicParent,Periodic} Divergence{Linear} begin
@@ -283,10 +283,12 @@ end
     
     # Calculate weights using normal functions
     # weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
-    weight = norm(d_fN)/norm(d_CN)
+    # weight = norm(d_fN)/norm(d_CN)
+    weight = 0.5
     one_minus_weight = one(eltype(weight)) - weight
 
     # Calculate required increment
+    term.flux[pfID] = -term.flux[fID] # copy flux from master to shadow (for stability)
     ap = term.sign*(term.flux[fID])
     ac = ap*weight
     an = ap*one_minus_weight
@@ -296,11 +298,12 @@ end
     PN = spindex(rowptr, colval, cellID, pcellID)
     
     # handle shadow cell first
-    nzval[NN] += an
-    nzval[NP] -= ac
+    Atomix.@atomic nzval[NN] -= an 
+    Atomix.@atomic nzval[NP] += ac
+    # pos neg works
 
     # now handle master cell 
-    nzval[PN] -= an
+    Atomix.@atomic nzval[PN] += an
     return ac, 0.0
 end
 
@@ -336,21 +339,23 @@ end
     weight = norm(d_fN)/norm(d_CN)
     one_minus_weight = one(eltype(weight)) - weight
 
+    term.flux[pfID] = -term.flux[fID] # copy flux from master to shadow (for stability)
     mdot = term.sign*(term.flux[fID])
-    ac = max(mdot, 0.0)
-    an = -max(-mdot, 0.0)
+    p_out = max(mdot, 0.0) # flow leaves master
+    n_out = max(-mdot, 0.0) # flow leaves shadow
+
 
     NN = spindex(rowptr, colval, pcellID, pcellID)
     NP = spindex(rowptr, colval, pcellID, cellID)
     PN = spindex(rowptr, colval, cellID, pcellID)
     
     # handle shadow cell first
-    nzval[NN] -= an
-    nzval[NP] -= ac
+    Atomix.@atomic nzval[NN] += n_out
+    Atomix.@atomic nzval[NP] += -p_out
 
     # now handle master cell 
-    nzval[PN] += an
-    return ac, 0.0
+    Atomix.@atomic nzval[PN] += -n_out
+    return p_out, 0.0
 end
 
 @define_boundary Union{PeriodicParent,Periodic} Divergence{LUST} begin

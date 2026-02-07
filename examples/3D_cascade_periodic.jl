@@ -41,21 +41,21 @@ BCs= assign(
             Zerogradient(:outlet),
             Wall(:plate, [0.0, 0.0, 0.0]),
             periodic1...,
-            symmetric...
-            # periodic2...
+            # symmetric...
+            periodic2...
         ],
         p = [
             Zerogradient(:inlet),
             Dirichlet(:outlet, 0.0),
             Wall(:plate),
             periodic1...,
-            symmetric...
-            # periodic2...
+            # symmetric...
+            periodic2...
         ]
     )
 )
 
-divergence = Linear # Upwind Linear
+divergence = Upwind # Upwind Linear
 schemes = (
     U = Schemes(divergence=divergence, gradient=Gauss),
     p = Schemes(gradient=Gauss)

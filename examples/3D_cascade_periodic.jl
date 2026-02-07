@@ -55,7 +55,7 @@ BCs= assign(
     )
 )
 
-divergence = Upwind # Upwind Linear
+divergence = Upwind # Upwind Linear LUST
 schemes = (
     U = Schemes(divergence=divergence, gradient=Gauss),
     p = Schemes(gradient=Gauss)

@@ -274,31 +274,13 @@ end
     pface = faces[pfID]
     pcellID = pface.ownerCells[1]
 
-    # Retrieve mesh centre values
-    f = face.centre
-    C = cell.centre
-    # N = cells[pcellID].centre + face.normal*bc.value.distance
-    N = cells[pcellID].centre - transform.direction*transform.distance
+    w = pface.delta/(face.delta + pface.delta)
 
-    # calculate distance vectors
-    # d_fC = C - f 
-    d_fN = N - f
-    d_CN = N - C
-    
-    # Calculate weights using normal functions
-    # weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
-    # weight = norm(d_fN)/norm(d_CN)
-    # weight = 0.5
-    # one_minus_weight = one(eltype(weight)) - weight
-
-    weight = pface.delta/(face.delta + pface.delta)
-    one_minus_weight = one(weight) - weight
-
-    # Calculate required increment
+    # Calculate link coefficients
     term.flux[pfID] = -term.flux[fID] # copy flux from master to shadow (for stability)
     ap = term.sign*(term.flux[fID])
-    ac = ap*weight
-    an = ap*one_minus_weight
+    ac = ap*w
+    an = ap*(one(w) - w)
 
     NN = spindex(rowptr, colval, pcellID, pcellID)
     NP = spindex(rowptr, colval, pcellID, cellID)
@@ -330,42 +312,22 @@ end
     pface = faces[pfID]
     pcellID = pface.ownerCells[1]
 
-    # Retrieve mesh centre values
-    # f = face.centre
-    # C = cell.centre
-    # N = cells[pcellID].centre + face.normal*bc.value.distance
-    # N = cells[pcellID].centre - transform.direction*transform.distance
-
-    # calculate distance vectors
-    # d_fC = C - f 
-    # d_fN = N - f
-    # d_CN = N - C
-    
-    # Calculate weights using normal functions
-    # weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
-    # weight = norm(d_fN)/norm(d_CN)
-    # one_minus_weight = one(eltype(weight)) - weight
-    
-    # weight = pface.delta/(face.delta + pface.delta)
-
-
     term.flux[pfID] = -term.flux[fID] # copy flux from master to shadow (for stability)
     mdot = term.sign*(term.flux[fID])
-    p_out = max(mdot, 0.0) # flow leaves master
-    n_out = max(-mdot, 0.0) # flow leaves shadow
-
+    ap = max(mdot, 0.0) # flow leaves master
+    an = -max(-mdot, 0.0) # flow leaves shadow
 
     NN = spindex(rowptr, colval, pcellID, pcellID)
     NP = spindex(rowptr, colval, pcellID, cellID)
     PN = spindex(rowptr, colval, cellID, pcellID)
     
     # handle shadow cell first
-    Atomix.@atomic nzval[NN] += n_out
-    Atomix.@atomic nzval[NP] += -p_out
+    Atomix.@atomic nzval[NN] += -an
+    Atomix.@atomic nzval[NP] += -ap
 
     # now handle master cell 
-    Atomix.@atomic nzval[PN] += -n_out
-    return p_out, 0.0
+    Atomix.@atomic nzval[PN] += an
+    return ap, 0.0
 end
 
 @define_boundary Periodic Divergence{LUST} begin
@@ -384,26 +346,15 @@ end
     pface = faces[pfID]
     pcellID = pface.ownerCells[1]
 
-    # Retrieve mesh centre values
-    f = face.centre
-    C = cell.centre
-    # N = cells[pcellID].centre + face.normal*bc.value.distance
-    N = cells[pcellID].centre - transform.direction*transform.distance
 
-    # calculate distance vectors
-    # d_fC = C - f 
-    d_fN = N - f
-    d_CN = N - C
-    
-    # Calculate weights using normal functions
-    # weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
-    weight = norm(d_fN)/norm(d_CN)
-    one_minus_weight = one(eltype(weight)) - weight
+    # Calculate interpoloation weight
+    w = pface.delta/(face.delta + pface.delta)
 
-    # Calculate required increment
+    # Calculate link coefficients
     mdot = term.sign*(term.flux[fID])
-    acLinear = mdot*weight 
-    anLinear = mdot*one_minus_weight
+    term.flux[pfID] = -term.flux[fID] # copy flux from master to shadow (for stability)
+    acLinear = mdot*w 
+    anLinear = mdot*(one(w) - w)
     acUpwind = max(mdot, 0.0) 
     anUpwind = -max(-mdot, 0.0)
     ac = 0.75*acLinear + 0.25*acUpwind
@@ -414,11 +365,11 @@ end
     PN = spindex(rowptr, colval, cellID, pcellID)
     
     # handle shadow cell first
-    nzval[NN] += an
-    nzval[NP] += ac
+    Atomix.@atomic nzval[NN] += -an
+    Atomix.@atomic nzval[NP] += -ac
 
     # now handle master cell 
-    nzval[PN] += an
+    Atomix.@atomic nzval[PN] += an
     return ac, 0.0
 end
 

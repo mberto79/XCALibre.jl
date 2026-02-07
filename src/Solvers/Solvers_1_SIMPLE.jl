@@ -187,7 +187,7 @@ function SIMPLE(
         # Interpolate faces
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, boundaries.U, time, config)
-        # correct_interpolation_periodic(Uf, Hv, boundaries.U, config)
+        correct_interpolation_periodic(Uf, Hv, boundaries.U, config)
 
         # old approach
         # div!(divHv, Uf, config) 
@@ -439,7 +439,8 @@ end
         # need to get aN from sparse system
         zID = spindex(rowptr, colval, cID1, cID2)
         aN = nzval[zID]
-        mdotf[fID] += -aN*(p2 - p1) # positive because pressure eqn has negative sign
+        # mdotf[fID] += -aN*(p2 - p1) # this worked well with periodics
+        mdotf[fID] += aN*(p2 - p1) # positive because pressure eqn has negative sign
     end
 end
 
@@ -491,8 +492,8 @@ end
     zID = spindex(rowptr, colval, cID1, cID2)
     aN = nzval[zID]
     correction = aN*(p2 - p1)
-    mdotf[fID] -= correction
-    # mdotf[pfID] += correction 
+    # mdotf[fID] -= correction # this worked but testing sign correctness
+    mdotf[fID] += correction
     mdotf[pfID] = -mdotf[fID] 
     
 end
@@ -536,13 +537,17 @@ end
     phi1 = phi[cID]
     phi2 = phi[pcID]
 
-    xf = face.centre
-    xC = cells[cID].centre
-    # xN = cells[pcID].centre + transform.distance*face.normal
-    xN = cells[pcID].centre - transform.distance*transform.direction
+    # xf = face.centre
+    # xC = cells[cID].centre
+    # # xN = cells[pcID].centre + transform.distance*face.normal
+    # xN = cells[pcID].centre - transform.distance*transform.direction
     
-    w = norm(xf - xN)/norm(xN - xC)
-    one_w = one(eltype(w)) - w
+    # w = norm(xf - xN)/norm(xN - xC)
+    # one_w = one(eltype(w)) - w
+
+    w = pface.delta/(face.delta + pface.delta)
+    one_w = one(w) - w
+
     
 
     phifi =  w*phi1 + one_w*phi2

@@ -18,16 +18,16 @@ end
         face = faces[fID]
         cID = boundary_cellsID[fID]
 
-        # delta1 = face.delta #*norm(face.e ⋅ face.normal)
-        # delta2 = pface.delta #*norm(pface.e ⋅ pface.normal)
-        # delta = delta1 + delta2
-        # weight = delta2/delta
+        delta1 = face.delta #*norm(face.e ⋅ face.normal)
+        delta2 = pface.delta #*norm(pface.e ⋅ pface.normal)
+        delta = delta1 + delta2
+        weight = delta2/delta
         
         # Calculate weights using normal functions
-        xf = faces[fID].centre
-        xC = cells[cID].centre
-        xN = cells[pcID].centre - transform.distance*transform.direction
-        weight = norm(xf - xN)/norm(xN - xC)
+        # xf = faces[fID].centre
+        # xC = cells[cID].centre
+        # xN = cells[pcID].centre - transform.distance*transform.direction
+        # weight = norm(xf - xN)/norm(xN - xC)
 
         one_minus_weight = one(eltype(weight)) - weight
 
@@ -52,18 +52,17 @@ end
         face = faces[fID]
         cID = boundary_cellsID[fID]
 
-        # delta1 = face.delta #*norm(face.e ⋅ face.normal)
-        # delta2 = pface.delta #*norm(pface.e ⋅ pface.normal)
-        # delta = delta1 + delta2
-        # w = delta2/delta
-
-        xf = faces[fID].centre
-        xC = cells[cID].centre
-        xN = cells[pcID].centre + transform.distance*transform.direction
-        w = norm(xf - xN)/norm(xN - xC)
+        delta1 = face.delta #*norm(face.e ⋅ face.normal)
+        delta2 = pface.delta #*norm(pface.e ⋅ pface.normal)
+        delta = delta1 + delta2
+        w = delta2/delta
         one_w = one(eltype(w)) - w
 
-
+        # xf = faces[fID].centre
+        # xC = cells[cID].centre
+        # xN = cells[pcID].centre + transform.distance*transform.direction
+        # w = norm(xf - xN)/norm(xN - xC)
+        # one_w = one(eltype(w)) - w
 
         psifi = w*psi[cID] + one_w*psi[pcID] # linear interpolation 
         psif[fID] = psifi

@@ -491,8 +491,10 @@ end
     zID = spindex(rowptr, colval, cID1, cID2)
     aN = nzval[zID]
     correction = aN*(p2 - p1)
-    mdotf[fID] += correction
-    mdotf[pfID] -= correction 
+    mdotf[fID] -= correction
+    # mdotf[pfID] += correction 
+    mdotf[pfID] = -mdotf[fID] 
+    
 end
 
 

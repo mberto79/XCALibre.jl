@@ -52,7 +52,7 @@ adapt_value(value::PeriodicValue, mesh) = begin
     F = _get_float(mesh)
     (; patchID, transform, face_map, isparent)  = value
     (; distance, direction) = transform
-    PeriodicValue(
+    @allowscalar PeriodicValue(
         I(patchID), 
         LinearTransform(F(distance), SVector{3,F}(direction)), 
         I.(face_map), 
@@ -105,7 +105,7 @@ function construct_periodic(
     face2 = faces[boundaries[idx2].IDs_range[1]]
     distance = abs((face1.centre - face2.centre)⋅face1.normal)
     isapprox(distance, transform.distance, atol=1e-10) || error(
-        "distance given does not match patch distance within 1e-10 units")
+        "distance given does not match patch distance within 1e-10 units (expected $distance)")
 
     distance = transform.distance # if user provided distance ok, use it
 
@@ -224,7 +224,7 @@ end
     
     
     # Use form below to ensure correctness, could be simplified for performance
-    # e = e # original
+    e = e # original
     Ef = ((Sf⋅Sf)/(Sf⋅e))*e # original
     Ef_mag = norm(Ef)
     gamma = -term.sign*(term.flux[fID]*Ef_mag)/Δ
@@ -258,7 +258,11 @@ end
     return gamma, 0.0 # PP assigned first value returned
 end
 
-@define_boundary Union{PeriodicParent,Periodic} Divergence{Linear} begin
+@define_boundary Periodic Divergence{Linear} begin
+    0.0, 0.0
+end
+
+@define_boundary PeriodicParent Divergence{Linear} begin
     phi = term.phi
     mesh = phi.mesh 
     (; faces, cells) = mesh
@@ -358,7 +362,11 @@ end
     return p_out, 0.0
 end
 
-@define_boundary Union{PeriodicParent,Periodic} Divergence{LUST} begin
+@define_boundary Periodic Divergence{LUST} begin
+    0.0, 0.0
+end
+
+@define_boundary PeriodicParent Divergence{LUST} begin
     phi = term.phi
     mesh = phi.mesh 
     (; faces, cells) = mesh

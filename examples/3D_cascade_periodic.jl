@@ -55,8 +55,9 @@ BCs= assign(
     )
 )
 
+divergence = Linear # Upwind Linear
 schemes = (
-    U = Schemes(divergence=Upwind, gradient=Gauss),
+    U = Schemes(divergence=divergence, gradient=Gauss),
     p = Schemes(gradient=Gauss)
 )
 

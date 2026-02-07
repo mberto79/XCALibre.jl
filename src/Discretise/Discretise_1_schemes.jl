@@ -142,11 +142,7 @@ end
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Divergence{Linear}}, cell, cID, cIndex, prev, runtime) where {F,P,I} = begin
-    # 0.0, 0.0
-
-    # scalar phiWCD = w * phi[P] + (1.0 - w) * phi[N];
-    # scalar phiUD  = (mDot > 0) ? phi[P] : phi[N]; // UD picks upstream
-    # scalar sFace  = -mDot * (phiWCD - phiUD);
+    0.0, 0.0
 end
 
 # Upwind

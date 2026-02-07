@@ -288,8 +288,11 @@ end
     # Calculate weights using normal functions
     # weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
     # weight = norm(d_fN)/norm(d_CN)
-    weight = 0.5
-    one_minus_weight = one(eltype(weight)) - weight
+    # weight = 0.5
+    # one_minus_weight = one(eltype(weight)) - weight
+
+    weight = pface.delta/(face.delta + pface.delta)
+    one_minus_weight = one(weight) - weight
 
     # Calculate required increment
     term.flux[pfID] = -term.flux[fID] # copy flux from master to shadow (for stability)
@@ -302,8 +305,8 @@ end
     PN = spindex(rowptr, colval, cellID, pcellID)
     
     # handle shadow cell first
-    Atomix.@atomic nzval[NN] -= an 
-    Atomix.@atomic nzval[NP] += ac
+    Atomix.@atomic nzval[NN] += -an 
+    Atomix.@atomic nzval[NP] += -ac
     # pos neg works
 
     # now handle master cell 
@@ -328,20 +331,23 @@ end
     pcellID = pface.ownerCells[1]
 
     # Retrieve mesh centre values
-    f = face.centre
-    C = cell.centre
+    # f = face.centre
+    # C = cell.centre
     # N = cells[pcellID].centre + face.normal*bc.value.distance
-    N = cells[pcellID].centre - transform.direction*transform.distance
+    # N = cells[pcellID].centre - transform.direction*transform.distance
 
     # calculate distance vectors
     # d_fC = C - f 
-    d_fN = N - f
-    d_CN = N - C
+    # d_fN = N - f
+    # d_CN = N - C
     
     # Calculate weights using normal functions
     # weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
-    weight = norm(d_fN)/norm(d_CN)
-    one_minus_weight = one(eltype(weight)) - weight
+    # weight = norm(d_fN)/norm(d_CN)
+    # one_minus_weight = one(eltype(weight)) - weight
+    
+    # weight = pface.delta/(face.delta + pface.delta)
+
 
     term.flux[pfID] = -term.flux[fID] # copy flux from master to shadow (for stability)
     mdot = term.sign*(term.flux[fID])

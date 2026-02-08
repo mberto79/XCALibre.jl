@@ -240,12 +240,6 @@ end
     # ac = -ap
     # an = ap
 
-    # NN = spindex(rowptr, colval, pcellID, pcellID)
-    # nzval[NN] += ac
-
-    # NP = spindex(rowptr, colval, pcellID, cellID)
-    # nzval[NP] += an
-
     NN = spindex(rowptr, colval, pcellID, pcellID)
     Atomix.@atomic nzval[NN] += gamma
 

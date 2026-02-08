@@ -107,8 +107,10 @@ end
     term::Operator{F,P,I,Divergence{Linear}}, 
     nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
-    w = face.weight
 
+    w = face.weight
+    signbit(ns) ? w = one(w) - w : w
+    
     # Calculate link coefficients
     ap = term.sign*(term.flux[fID]*ns)
     ac = ap*w
@@ -143,6 +145,7 @@ end
     )  where {F,P,I}
     
     w = face.weight
+    signbit(ns) ? w = one(w) - w : w
 
     # Calculate link coefficients
     ap = term.sign*(term.flux[fID]*ns)

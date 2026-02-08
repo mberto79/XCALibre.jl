@@ -29,7 +29,8 @@ model = Physics(
     # time = Steady(),
     time = Transient(),
     fluid = Fluid{Incompressible}(nu=nu),
-    turbulence = RANS{Laminar}(),
+    # turbulence = RANS{Laminar}(), # steady and unsteady tests
+    turbulence = LES{Smagorinsky}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
     )
@@ -52,6 +53,14 @@ BCs= assign(
             periodic1...,
             # symmetric...
             periodic2...
+        ],
+        nut = [
+            Dirichlet(:inlet, 0.0),
+            Extrapolated(:outlet),
+            Dirichlet(:plate, 0.0),
+            periodic1...,
+            # symmetric...
+            periodic2...
         ]
     )
 )
@@ -59,7 +68,8 @@ BCs= assign(
 divergence = Linear # Upwind Linear LUST
 schemes = (
     # transient schemes
-    U = Schemes(time=Euler, divergence=divergence, gradient=Gauss),
+    # U = Schemes(time=Euler, divergence=divergence, gradient=Gauss),
+    U = Schemes(time=Euler, divergence=divergence, gradient=Midpoint), # test Midpoint
     p = Schemes(gradient=Gauss)
 
     # # Steady schemes

@@ -9,8 +9,8 @@ grid = "cascade_3D_periodic_2p5mm.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
-# backend = CUDABackend(); workgroup = 32
-backend = CPU(); workgroup = 1024; activate_multithread(backend)
+backend = CUDABackend(); workgroup = 32
+# backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
@@ -26,7 +26,8 @@ nu = 1e-3
 Re = velocity[1]*0.1/nu
 
 model = Physics(
-    time = Steady(),
+    # time = Steady(),
+    time = Transient(),
     fluid = Fluid{Incompressible}(nu=nu),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
@@ -55,10 +56,15 @@ BCs= assign(
     )
 )
 
-divergence = Upwind # Upwind Linear LUST
+divergence = Linear # Upwind Linear LUST
 schemes = (
-    U = Schemes(divergence=divergence, gradient=Gauss),
+    # transient schemes
+    U = Schemes(time=Euler, divergence=divergence, gradient=Gauss),
     p = Schemes(gradient=Gauss)
+
+    # # Steady schemes
+    # U = Schemes(divergence=divergence, gradient=Gauss),
+    # p = Schemes(gradient=Gauss)
 )
 
 
@@ -67,20 +73,31 @@ solvers = (
         solver      = Bicgstab(), #Cg(), # Bicgstab(), Gmres(), #Cg()
         preconditioner = Jacobi(),
         convergence = 1e-8,
-        relax       = 0.6,
-        rtol = 1e-3
+        # transient setup
+        atol = 1e-6,
+        relax=1
+
+        # # steady setup
+        # relax       = 0.6,
+        # rtol = 1e-3
     ),
     p = SolverSetup(
         solver      = Cg(), #Gmres(), #Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-8,
-        relax       = 0.15,
-        rtol = 1e-3
+        # transient setup
+        atol = 1e-6,
+        relax=1
+
+        # # steady setup
+        # relax       = 0.15,
+        # rtol = 1e-3
     )
 )
 
 runtime = Runtime(
-    iterations=1000, time_step=1, write_interval=100)
+    # iterations=1000, time_step=1, write_interval=100) # steady
+    iterations=1000, time_step=1e-3, write_interval=100) # steady
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

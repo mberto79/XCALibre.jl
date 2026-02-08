@@ -118,15 +118,15 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-8,
         relax       = 0.6,
-        rtol = 1e-3
+        rtol = 1e-1
     ),
     p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
-        # preconditioner = Jacobi(),
-        preconditioner = DILU(),
+        preconditioner = Jacobi(),
+        # preconditioner = DILU(),
         convergence = 1e-11,
-        relax       = 0.2,
-        rtol = 1e-3,
+        relax       = 0.1,
+        rtol = 1e-2,
         itmax = 4000
     ),
     y = SolverSetup(
@@ -142,14 +142,14 @@ solvers = (
         preconditioner = Jacobi(), # DILU Jacobi
         convergence = 1e-10,
         relax       = 0.6,
-        rtol = 1e-3
+        rtol = 1e-1
     ),
     omega = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-10,
         relax       = 0.6,
-        rtol = 1e-3
+        rtol = 1e-1
     )
 )
 

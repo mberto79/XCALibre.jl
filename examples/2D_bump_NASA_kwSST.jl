@@ -96,8 +96,8 @@ BCs = assign(
         nut = [
             Extrapolated(:inlet),
             Extrapolated(:outlet),
-            Dirichlet(:bump, 0.0),
-            # NutWallFunction(:bump),
+            # Dirichlet(:bump, 0.0),
+            NutWallFunction(:bump),
             Empty(:frontAndBack),
             group_bcs_nut...,
         ],

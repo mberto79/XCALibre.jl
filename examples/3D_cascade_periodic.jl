@@ -68,8 +68,8 @@ BCs= assign(
 divergence = Linear # Upwind Linear LUST
 schemes = (
     # transient schemes
-    # U = Schemes(time=Euler, divergence=divergence, gradient=Gauss),
-    U = Schemes(time=Euler, divergence=divergence, gradient=Midpoint), # test Midpoint
+    U = Schemes(time=Euler, divergence=divergence, gradient=Gauss),
+    # U = Schemes(time=Euler, divergence=divergence, gradient=Midpoint), # test Midpoint
     p = Schemes(gradient=Gauss)
 
     # # Steady schemes

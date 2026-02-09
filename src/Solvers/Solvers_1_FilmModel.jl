@@ -173,8 +173,8 @@ function FilmModel(
 
     # Getting h * mdotf and rho * h for U calculation
     # hf is calculated within grad!()
-    @. rhohf.values = rho.values[1] * hf.values
-    @. hmdotf.values = mdotf.values * hf.values * rho.values[1]
+    @. rhohf.values = hf.values# *  rho.values[1]
+    @. hmdotf.values = mdotf.values * hf.values# * rho.values[1]
 
     @info "need to readd Pg term - Coupling term for other phase"
     Pg = 0# Test Pg term set to zero, as the gradient is found this value doesn't matter

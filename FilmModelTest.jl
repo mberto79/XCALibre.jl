@@ -5,6 +5,7 @@ using XCALibre
 grids_dir = pkgdir(XCALibre, "Test_Meshes/");
 #grid = "quad.unv";
 grid = "25x25_grid.unv"
+grid = "500x500_grid.unv"
 mesh_file = joinpath(grids_dir, grid);
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001);
@@ -103,7 +104,7 @@ solvers = (
     U = SolverSetup(
         solver      = Bicgstab(), # Options: Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
-        convergence = 1e-12,
+        convergence = 1e-10,
         relax       = 0.7,
         rtol = 1e-4,
         atol = 1e-10
@@ -133,6 +134,6 @@ config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
 
 initialise!(model.momentum.U, velocity);
-initialise!(model.momentum.h, 1);
+initialise!(model.momentum.h, 1000);
 
 residuals = run!(model, config);

@@ -26,7 +26,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     
 
     @info "Pre-allocating fields..."
-    mdotf = FaceScalarField(mesh)
+    rho_mdotf = FaceScalarField(mesh)
     hmdotf = FaceScalarField(mesh)
     rhohf = FaceScalarField(mesh)
     Sm = ScalarField(mesh)
@@ -49,13 +49,13 @@ function setup_FilmModel_Solver(solver_variant, model, config;
         ==
           Source(h∇PL)
         + Source(Ph)
-        + Source(τw)
+        - Source(τw)
         + Source(τθw)
     ) → VectorEquation(U, boundaries.U)
 
     h_eqn = (
         Time{schemes.h.time}(rho_l, h)
-        + Divergence{schemes.h.divergence}(mdotf, h)
+        + Divergence{schemes.h.divergence}(rho_mdotf, h)
         ==
         Source(Sm)
     ) → ScalarEquation(h, boundaries.h)
@@ -102,12 +102,12 @@ function FilmModel(
     h∇PL = get_source(U_eqn, 1)
     Ph = get_source(U_eqn,2)
     τw = get_source(U_eqn,3)
-    τθw = get_source(U_eqn,4)
+    #τθw = get_source(U_eqn,4)
     
-    mdotf = get_flux(h_eqn,2)
+    rho_mdotf = get_flux(h_eqn,2)
     Sm = get_source(h_eqn,1)
     mu = nu.values*rho.values
-    #println(mu)
+    println(mu)
 
     outputWriter = initialise_writer(output, model.domain)
 
@@ -118,6 +118,8 @@ function FilmModel(
     G = g*[0,0,-1]
 
     # Define aux fields
+    mdotf = FaceScalarField(mesh)
+
     PL = ScalarField(mesh) # Using this until a proper fix is implemented
     PLf = FaceScalarField(mesh)
     ∇PL = Grad{schemes.PL.gradient}(PL) # Need to rework this into taking a FaceScalarField instead.
@@ -164,6 +166,8 @@ function FilmModel(
     interpolate!(Uf, U, config)
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
+
+    #rho_mdotf = rho.values[1] .* mdotf
     
     # Getting the laplacian of h for first U calculation
     grad!(∇h, hf, h, boundaries.h, time, config)
@@ -173,8 +177,8 @@ function FilmModel(
 
     # Getting h * mdotf and rho * h for U calculation
     # hf is calculated within grad!()
-    @. rhohf.values = hf.values# *  rho.values[1]
-    @. hmdotf.values = mdotf.values * hf.values# * rho.values[1]
+    @. rhohf.values = hf.values *  rho.values[1]
+    @. hmdotf.values = mdotf.values * hf.values * rho.values[1]
 
     @info "need to readd Pg term - Coupling term for other phase"
     Pg = 0# Test Pg term set to zero, as the gradient is found this value doesn't matter
@@ -183,6 +187,7 @@ function FilmModel(
         surface_tension[i] = coeffs.σ*Δh[i]
         #PL[i] = Pg - (coeffs.σ * model.momentum.h[i] * (dot(n,G))) - surface_tension[i]
     end
+
     grad!(∇PL, PLf, PL, boundaries.PL, time, config)
     limit_gradient!(schemes.PL.limiter, ∇PL, PL, config)
 
@@ -194,15 +199,16 @@ function FilmModel(
 
     for i ∈ eachindex(h.values)
         multiplier = 3*(mu/h.values[i])
-        #τθ.x.values[i] = multiplier * U.x.values[i]
-        #τθ.y.values[i] = multiplier * U.y.values[i]
-        #τθ.z.values[i] = multiplier * U.z.values[i]
+        τw.x.values[i] = multiplier * U.x.values[i]
+        τw.y.values[i] = multiplier * U.y.values[i]
+        τw.z.values[i] = multiplier * U.z.values[i]
 
         Ph_local = (rho.values*g*sind(coeffs.ϕ)*h[i]) .*plate_tangent_vector
         Ph.x.values[i] = Ph_local[1]
         Ph.y.values[i] = Ph_local[2]
         Ph.z.values[i] = Ph_local[3]
-
+        println(multiplier)
+        println(Ph_local[1])
 
         #τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w[i]
         
@@ -211,7 +217,7 @@ function FilmModel(
             #println("$(∇PL[i])")
             #println(τθw)
             #println("$(∇w[i].x), $(∇w[i].y), $(∇w[i].z)")
-            #println("$(τθ.x.values[i]), $(τθ.y.values[i]), $(τθ.z.values[i])")
+            #println("$(τw.x.values[i]), $(τw.y.values[i]), $(τw.z.values[i])")
             #println("$(Δh[i])")
             #println("$(RHS.x.values[i]), $(RHS.y.values[i]), $(RHS.z.values[i])")
         #end
@@ -228,16 +234,13 @@ function FilmModel(
         
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U , xdir, ydir, zdir, config)
 
-        #inverse_diagonal!(rD, U_eqn, config)
-        #interpolate!(rDf, rD, config)
-        #H!(Hv, U, U_eqn, config)
-        #interpolate!(Uf, Hv, config)
-        #correct_boundaries!(Uf, Hv, boundaries.U, time, config)
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, boundaries.U, time, config)
 
         # h calculations
         flux!(mdotf, Uf, config)
+
+        #@. rho_mdotf = rho.values[1] * mdotf
         
 
         @. prev = h.values
@@ -279,7 +282,7 @@ function FilmModel(
 
         grad!(∇h, hf, h, boundaries.h, time, config)
         @. hmdotf.values = mdotf.values * hf.values * rho.values[1]
-        @. rhohf.values = rho.values[1] * hf.values
+        @. rhohf.values =  hf.values * rho.values[1]
 
         #limit_gradient!(schemes.h.limiter, ∇h, h, config)
         #interpolate!(∇hf, ∇h.result, config)
@@ -309,9 +312,9 @@ function FilmModel(
 
         for i ∈ eachindex(h)
             multiplier = 3*(mu/h.values[i])
-            #τθ.x.values[i] = multiplier * U.x.values[i]
-            #τθ.y.values[i] = multiplier * U.y.values[i]
-            #τθ.z.values[i] = multiplier * U.z.values[i]
+            τw.x.values[i] = multiplier * U.x.values[i]
+            τw.y.values[i] = multiplier * U.y.values[i]
+            τw.z.values[i] = multiplier * U.z.values[i]
 
             Ph_local = (rho.values*g*sind(coeffs.ϕ)*h[i]) .*plate_tangent_vector
             Ph.x.values[i] = Ph_local[1]

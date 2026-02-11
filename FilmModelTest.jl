@@ -5,7 +5,7 @@ using XCALibre
 grids_dir = pkgdir(XCALibre, "Test_Meshes/");
 #grid = "quad.unv";
 grid = "25x25_grid.unv"
-grid = "500x500_grid.unv"
+#grid = "500x500_grid.unv"
 mesh_file = joinpath(grids_dir, grid);
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001);
@@ -23,7 +23,7 @@ mesh_dev = mesh; # use this line to run on CPU
 
 
 inlet_size = 0.01; # m - taken from model in Salome
-rho_l = 1;#991.07; # Density of water @ 43°C kg/m3
+rho_l = 991.07; # Density of water @ 43°C kg/m3
 Γ=200; # g/m/s
 Γkg = Γ/1000; # kg/m/s
 inlet_flow_rate = Γkg/rho_l; # m2/s
@@ -127,13 +127,14 @@ solvers = (
     )
 );
 
-runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
-#runtime = Runtime(iterations=20, time_step=1, write_interval=1); # hide
+#runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
+runtime = Runtime(iterations=20, time_step=1, write_interval=1); # hide
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
 
 initialise!(model.momentum.U, velocity);
-initialise!(model.momentum.h, 1000);
+initialise!(model.momentum.h, 0.00001)
+#initialise!(model.momentum.h, 0.000005046);
 
 residuals = run!(model, config);

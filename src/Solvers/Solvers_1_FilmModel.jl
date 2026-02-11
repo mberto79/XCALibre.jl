@@ -47,10 +47,10 @@ function setup_FilmModel_Solver(solver_variant, model, config;
         Time{schemes.U.time}(rhohf, U)
         + Divergence{schemes.U.divergence}(hmdotf,U)
         ==
-          Source(h∇PL)
-        + Source(Ph)
+          #Source(h∇PL)
+         Source(Ph)
         - Source(τw)
-        + Source(τθw)
+        #+ Source(τθw)
     ) → VectorEquation(U, boundaries.U)
 
     h_eqn = (
@@ -99,9 +99,9 @@ function FilmModel(
     rhohf = get_flux(U_eqn, 1)
     hmdotf = get_flux(U_eqn, 2)
 
-    h∇PL = get_source(U_eqn, 1)
-    Ph = get_source(U_eqn,2)
-    τw = get_source(U_eqn,3)
+    #h∇PL = get_source(U_eqn, 1)
+    Ph = get_source(U_eqn,1)
+    τw = get_source(U_eqn,2)
     #τθw = get_source(U_eqn,4)
     
     rho_mdotf = get_flux(h_eqn,2)
@@ -152,6 +152,10 @@ function FilmModel(
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
+    
+    prev_u = KernelAbstractions.zeros(backend, TF, n_cells)
+    prev_v = KernelAbstractions.zeros(backend, TF, n_cells)
+    prev_w = KernelAbstractions.zeros(backend, TF, n_cells)
     prev = KernelAbstractions.zeros(backend, TF, n_cells)
 
     # Pre-allocate vectors to hold residuals
@@ -207,8 +211,6 @@ function FilmModel(
         Ph.x.values[i] = Ph_local[1]
         Ph.y.values[i] = Ph_local[2]
         Ph.z.values[i] = Ph_local[3]
-        println(multiplier)
-        println(Ph_local[1])
 
         #τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w[i]
         
@@ -232,7 +234,13 @@ function FilmModel(
     for iteration ∈ 1:iterations
         time = iteration
         
+        @. prev_u = U.x.values
+        @. prev_v = U.y.values
+        @. prev_w = U.z.values
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U , xdir, ydir, zdir, config)
+        explicit_relaxation!(U.x.values, prev_u, solvers.U.relax, config)
+        explicit_relaxation!(U.y.values, prev_v, solvers.U.relax, config)
+        explicit_relaxation!(U.z.values, prev_w, solvers.U.relax, config)
 
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, boundaries.U, time, config)
@@ -320,7 +328,9 @@ function FilmModel(
             Ph.x.values[i] = Ph_local[1]
             Ph.y.values[i] = Ph_local[2]
             Ph.z.values[i] = Ph_local[3]
-        
+            #if Ph.x.values[i] > τw.x.values[i]
+            #    println("$(Ph.x.values[i]), $(τw.x.values[i]), $iteration")
+            #end
             #τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w[i]
         end
         #correct_mass_flux

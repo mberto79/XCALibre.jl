@@ -27,7 +27,7 @@ rho_l = 991.07; # Density of water @ 43°C kg/m3
 Γ=200; # g/m/s
 Γkg = Γ/1000; # kg/m/s
 inlet_flow_rate = Γkg/rho_l; # m2/s
-h_inlet = 0.005;
+h_inlet = 0.000015;
 inlet_speed = inlet_flow_rate/h_inlet;
 inlet_speed = 0.04;
 
@@ -134,7 +134,7 @@ config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
 
 initialise!(model.momentum.U, velocity);
-initialise!(model.momentum.h, 0.00001)
+initialise!(model.momentum.h, h_inlet)
 #initialise!(model.momentum.h, 0.000005046);
 
 residuals = run!(model, config);

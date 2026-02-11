@@ -19,3 +19,14 @@ plot(x_coords, U_Viscous, label="h = 0.01m, viscous")
 plot!(x_coords, U_inviscid, label="inviscid")
 plot!(x_coords, U_Viscous_0001, label="h = 0.001m, viscous")
 plot!(x_coords, y, label="mathematical model")
+
+
+file_h0_00015 = CSV.File("h-0.00015.csv");
+U_h_0_00015 = file_h0_00015.var"U:0";
+x_coords = file_h0_00015.var"Points:0";
+
+file_h0_00025 = CSV.File("h-0.00025.csv");
+U_h_0_00025 = file_h0_00025.var"U:0";
+
+plot(x_coords, U_h_0_00015, label="h=0.00015m")
+plot!(x_coords, U_h_0_00025, label="h=0.00025m")

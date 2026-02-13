@@ -27,7 +27,7 @@ rho_l = 991.07; # Density of water @ 43°C kg/m3
 Γ=200; # g/m/s
 Γkg = Γ/1000; # kg/m/s
 inlet_flow_rate = Γkg/rho_l; # m2/s
-h_inlet = 0.000015;
+h_inlet = 0.00001;
 inlet_speed = inlet_flow_rate/h_inlet;
 inlet_speed = 0.04;
 
@@ -105,7 +105,7 @@ solvers = (
         solver      = Bicgstab(), # Options: Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
         convergence = 1e-10,
-        relax       = 0.7,
+        relax       = 0.01,
         rtol = 1e-4,
         atol = 1e-10
     ),
@@ -127,8 +127,8 @@ solvers = (
     )
 );
 
-#runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
-runtime = Runtime(iterations=20, time_step=1, write_interval=1); # hide
+runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
+#runtime = Runtime(iterations=20, time_step=1, write_interval=1); # hide
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);

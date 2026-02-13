@@ -121,7 +121,6 @@ function PISO(
             # Interpolate faces
             interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
             correct_boundaries!(Uf, Hv, boundaries.U, time, config)
-            correct_interpolation_periodic(Uf, Hv, boundaries.U, config)
 
             # div!(divHv, Uf, config)
 

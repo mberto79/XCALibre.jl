@@ -15,22 +15,19 @@ backend = CUDABackend(); workgroup = 32
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
-periodic1 = construct_periodic(
-    LinearTransform(distance=0.1, direction=[0,-1,0]), mesh, backend, :top, :bottom)
-periodic2 = construct_periodic(
-    LinearTransform(distance=0.1, direction=[0,0,-1]), mesh, backend, :side1, :side2)
-symmetric = Symmetry.([:side1, :side2])
+periodic1 = construct_periodic(mesh, backend, :top, :bottom)
+periodic2 = construct_periodic(mesh, backend, :side1, :side2)
 
 velocity = [0.25, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
 
 model = Physics(
-    # time = Steady(),
-    time = Transient(),
+    time = Steady(),
+    # time = Transient(),
     fluid = Fluid{Incompressible}(nu=nu),
-    # turbulence = RANS{Laminar}(), # steady and unsteady tests
-    turbulence = LES{Smagorinsky}(),
+    turbulence = RANS{Laminar}(), # steady and unsteady tests
+    # turbulence = LES{Smagorinsky}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
     )
@@ -43,7 +40,6 @@ BCs= assign(
             Zerogradient(:outlet),
             Wall(:plate, [0.0, 0.0, 0.0]),
             periodic1...,
-            # symmetric...
             periodic2...
         ],
         p = [
@@ -51,7 +47,6 @@ BCs= assign(
             Dirichlet(:outlet, 0.0),
             Wall(:plate),
             periodic1...,
-            # symmetric...
             periodic2...
         ],
         nut = [
@@ -59,22 +54,20 @@ BCs= assign(
             Extrapolated(:outlet),
             Dirichlet(:plate, 0.0),
             periodic1...,
-            # symmetric...
             periodic2...
         ]
     )
 )
 
-divergence = Linear # Upwind Linear LUST
+divergence = LUST # Upwind Linear LUST
 schemes = (
-    # transient schemes
-    U = Schemes(time=Euler, divergence=divergence, gradient=Gauss),
-    # U = Schemes(time=Euler, divergence=divergence, gradient=Midpoint), # test Midpoint
-    p = Schemes(gradient=Gauss)
-
-    # # Steady schemes
-    # U = Schemes(divergence=divergence, gradient=Gauss),
+    # # transient schemes
+    # U = Schemes(time=Euler, divergence=divergence, gradient=Gauss),
     # p = Schemes(gradient=Gauss)
+
+    # Steady schemes
+    U = Schemes(divergence=divergence, gradient=Gauss),
+    p = Schemes(gradient=Gauss)
 )
 
 
@@ -83,31 +76,31 @@ solvers = (
         solver      = Bicgstab(), #Cg(), # Bicgstab(), Gmres(), #Cg()
         preconditioner = Jacobi(),
         convergence = 1e-8,
-        # transient setup
-        atol = 1e-6,
-        relax=1
+        # # transient setup
+        # atol = 1e-6,
+        # relax=1
 
-        # # steady setup
-        # relax       = 0.6,
-        # rtol = 1e-3
+        # steady setup
+        relax       = 0.6,
+        rtol = 1e-3
     ),
     p = SolverSetup(
         solver      = Cg(), #Gmres(), #Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-8,
-        # transient setup
-        atol = 1e-6,
-        relax=1
+        # # transient setup
+        # atol = 1e-6,
+        # relax=1
 
-        # # steady setup
-        # relax       = 0.15,
-        # rtol = 1e-3
+        # steady setup
+        relax       = 0.15,
+        rtol = 1e-3
     )
 )
 
 runtime = Runtime(
-    # iterations=1000, time_step=1, write_interval=100) # steady
-    iterations=1000, time_step=1e-3, write_interval=100) # steady
+    iterations=1000, time_step=1, write_interval=100) # steady setup
+    # iterations=1000, time_step=1e-3, write_interval=100) # transient setup
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

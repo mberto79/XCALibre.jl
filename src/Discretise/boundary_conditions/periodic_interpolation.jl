@@ -22,14 +22,8 @@ end
         delta2 = pface.delta #*norm(pface.e ⋅ pface.normal)
         delta = delta1 + delta2
         weight = delta2/delta
-        
-        # Calculate weights using normal functions
-        # xf = faces[fID].centre
-        # xC = cells[cID].centre
-        # xN = cells[pcID].centre - transform.distance*transform.direction
-        # weight = norm(xf - xN)/norm(xN - xC)
 
-        one_minus_weight = one(eltype(weight)) - weight
+        one_minus_weight = one(weight) - weight
 
         # phif_values[fID] = 0.5*(phi_values[cID] + phi_values[pcID]) # linear interpolation
         phifi =  weight*phi[cID] + one_minus_weight*phi[pcID]
@@ -56,13 +50,7 @@ end
         delta2 = pface.delta #*norm(pface.e ⋅ pface.normal)
         delta = delta1 + delta2
         w = delta2/delta
-        one_w = one(eltype(w)) - w
-
-        # xf = faces[fID].centre
-        # xC = cells[cID].centre
-        # xN = cells[pcID].centre + transform.distance*transform.direction
-        # w = norm(xf - xN)/norm(xN - xC)
-        # one_w = one(eltype(w)) - w
+        one_w = one(w) - w
 
         psifi = w*psi[cID] + one_w*psi[pcID] # linear interpolation 
         psif[fID] = psifi

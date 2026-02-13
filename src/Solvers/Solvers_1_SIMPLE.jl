@@ -145,11 +145,6 @@ function SIMPLE(
     prev = KernelAbstractions.zeros(backend, TF, n_cells) 
 
     # Pre-allocate vectors to hold residuals 
-    # R_ux = ones(TF, iterations)
-    # R_uy = ones(TF, iterations)
-    # R_uz = ones(TF, iterations)
-    # R_p = ones(TF, iterations)
-
     R_ux = zeros(TF, iterations)
     R_uy = zeros(TF, iterations)
     R_uz = zeros(TF, iterations)
@@ -187,7 +182,6 @@ function SIMPLE(
         # Interpolate faces
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, boundaries.U, time, config)
-        correct_interpolation_periodic(Uf, Hv, boundaries.U, config)
 
         # old approach
         # div!(divHv, Uf, config) 
@@ -537,18 +531,8 @@ end
     phi1 = phi[cID]
     phi2 = phi[pcID]
 
-    # xf = face.centre
-    # xC = cells[cID].centre
-    # # xN = cells[pcID].centre + transform.distance*face.normal
-    # xN = cells[pcID].centre - transform.distance*transform.direction
-    
-    # w = norm(xf - xN)/norm(xN - xC)
-    # one_w = one(eltype(w)) - w
-
     w = pface.delta/(face.delta + pface.delta)
     one_w = one(w) - w
-
-    
 
     phifi =  w*phi1 + one_w*phi2
     phif[fID] = phifi

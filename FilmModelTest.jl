@@ -27,7 +27,7 @@ rho_l = 991.07; # Density of water @ 43°C kg/m3
 Γ=200; # g/m/s
 Γkg = Γ/1000; # kg/m/s
 inlet_flow_rate = Γkg/rho_l; # m2/s
-h_inlet = 0.00001;
+h_inlet = 0.05;
 inlet_speed = inlet_flow_rate/h_inlet;
 inlet_speed = 0.04;
 
@@ -36,12 +36,12 @@ nu = 6.245e-7; # Kinematic Viscosity of water @ 43°C
 Re = velocity[1]*0.01/nu;
 
 
-h_crit = 1e-10;
-
+#h_crit = 1e-10;
+h_crit = 1e-5
 
 
 model = Physics(
-    momentum=Momentum{EFM}(; h_crit = h_crit, β=6.0, θm = 75, ϕ=90),
+    momentum=Momentum{EFM}(;σ=0.069, h_crit = h_crit, β=6.0, θm = 70, ϕ=90),
     time = Steady(),
     fluid = Fluid{Incompressible}(; nu = nu, rho = rho_l),
     turbulence = RANS{Laminar}(),
@@ -61,8 +61,10 @@ BCs = assign(
             #Zerogradient(:bottom),
             #Zerogradient(:wall),
             Wall(:bottom, [0.0, 0.0, 0.0]),
+            #Wall(:bottom, velocity),
             #Extrapolated(:bottom),
             Wall(:top, [0.0, 0.0, 0.0])
+            #Wall(:top, velocity)
             #Zerogradient(:top)
             #Extrapolated(:top)
         ],
@@ -73,6 +75,7 @@ BCs = assign(
             #Dirichlet(:outlet, h_crit),
             #Wall(:outlet),
             Zerogradient(:outlet),
+            #Dirichlet(:bottom, 1e-18),
             #Extrapolated(:outlet),
             #Wall(:wall),
             Zerogradient(:bottom),
@@ -104,8 +107,8 @@ solvers = (
     U = SolverSetup(
         solver      = Bicgstab(), # Options: Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
-        convergence = 1e-10,
-        relax       = 0.01,
+        convergence = 1e-12,
+        relax       = 0.8,
         rtol = 1e-4,
         atol = 1e-10
     ),
@@ -127,13 +130,16 @@ solvers = (
     )
 );
 
-runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
+#runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
+#runtime = Runtime(iterations=20000, time_step=1, write_interval=20000)
 #runtime = Runtime(iterations=20, time_step=1, write_interval=1); # hide
+runtime = Runtime(iterations=2000, time_step=1, write_interval=100)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
 
-initialise!(model.momentum.U, velocity);
+initialise!(model.momentum.U, velocity/10);
+#initialise!(model.momentum.U, [1e-10,1e-10,1e-10]);
 initialise!(model.momentum.h, h_inlet)
 #initialise!(model.momentum.h, 0.000005046);
 

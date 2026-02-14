@@ -30,7 +30,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     hmdotf = FaceScalarField(mesh)
     rhohf = FaceScalarField(mesh)
     Sm = ScalarField(mesh)
-    initialise!(Sm, 1e-18)
+    initialise!(Sm, 1e-30)
     rho_l = ScalarField(mesh)
     initialise!(rho_l, rho.values)
     h∇PL = VectorField(mesh)
@@ -50,7 +50,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
           #Source(h∇PL)
          Source(Ph)
         - Source(τw)
-        #+ Source(τθw)
+        + Source(τθw)
     ) → VectorEquation(U, boundaries.U)
 
     h_eqn = (
@@ -102,12 +102,13 @@ function FilmModel(
     #h∇PL = get_source(U_eqn, 1)
     Ph = get_source(U_eqn,1)
     τw = get_source(U_eqn,2)
-    #τθw = get_source(U_eqn,4)
+    τθw = get_source(U_eqn,3)
     
     rho_mdotf = get_flux(h_eqn,2)
     Sm = get_source(h_eqn,1)
     mu = nu.values*rho.values
     println(mu)
+
 
     outputWriter = initialise_writer(output, model.domain)
 
@@ -119,6 +120,7 @@ function FilmModel(
 
     # Define aux fields
     mdotf = FaceScalarField(mesh)
+
 
     PL = ScalarField(mesh) # Using this until a proper fix is implemented
     PLf = FaceScalarField(mesh)
@@ -138,12 +140,23 @@ function FilmModel(
     #rD = ScalarField(mesh)
     #rDf = FaceScalarField(mesh)
 
-
     surface_tension = ScalarField(mesh)
+
+    h_inlet = h.values[1]
+    h_min = 1e-5
+    factor = 1.5
+    for i ∈ eachindex(h.values)
+        #h.values[i] = -(h_inlet-h_min)/(0.01*2)*mesh.cells[i].centre[1]-(h_inlet-h_min)/(0.01*2)*2*abs(mesh.cells[i].centre[2]-0.005)+h_inlet
+        a = h_inlet/2
+        c = factor
+        b = (log(h_min/a))/(0.01^c)
+        h.values[i] = a*exp(b*mesh.cells[i].centre[1]^c)#+a*exp(b*abs(mesh.cells[i].centre[2]-0.005)^c)
+    end
 
     w_bc = [
         Dirichlet(:inlet, 1),
-        Zerogradient(:outlet),
+        #Zerogradient(:outlet),
+        Dirichlet(:outlet, 0),
         Zerogradient(:top),
         Zerogradient(:bottom)
     ]
@@ -171,7 +184,7 @@ function FilmModel(
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
 
-    #rho_mdotf = rho.values[1] .* mdotf
+    rho_mdotf = mdotf.values .* rho.values[1]
     
     # Getting the laplacian of h for first U calculation
     grad!(∇h, hf, h, boundaries.h, time, config)
@@ -223,6 +236,7 @@ function FilmModel(
             #println("$(Δh[i])")
             #println("$(RHS.x.values[i]), $(RHS.y.values[i]), $(RHS.z.values[i])")
         #end
+        #println(∇w[i])
     end
     @info "Starting loops"
     
@@ -242,13 +256,15 @@ function FilmModel(
         explicit_relaxation!(U.y.values, prev_v, solvers.U.relax, config)
         explicit_relaxation!(U.z.values, prev_w, solvers.U.relax, config)
 
+        #H!(Hv, U, U_eqn, config)
+        #interpolate!(Uf, Hv, config)
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, boundaries.U, time, config)
 
         # h calculations
         flux!(mdotf, Uf, config)
 
-        #@. rho_mdotf = rho.values[1] * mdotf
+        @. rho_mdotf =  mdotf.values .* rho.values[1]
         
 
         @. prev = h.values
@@ -274,13 +290,13 @@ function FilmModel(
             #println(Sm.values)
             
         end
-        for i ∈ 1:ncorrectors
-            discretise!(h_eqn, h, config)
-            apply_boundary_conditions!(h_eqn, boundaries.h, nothing, time, config)
-
-            rh = solve_system!(h_eqn, solvers.h, h, nothing, config)
-            explicit_relaxation!(h, prev, solvers.h.relax, config)
-        end
+        #for i ∈ 1:ncorrectors
+        #    discretise!(h_eqn, h, config)
+        #    apply_boundary_conditions!(h_eqn, boundaries.h, nothing, time, config)
+#
+        #    rh = solve_system!(h_eqn, solvers.h, h, nothing, config)
+        #    explicit_relaxation!(h, prev, solvers.h.relax, config)
+        #end
         
         #correct_mass_flux(mdotf, PL, rDf, config)
 
@@ -311,7 +327,7 @@ function FilmModel(
         #end
 
         #interpolate!(wf, w, config)
-        #grad!(∇w, wf, w, w_bc, time, config)
+        grad!(∇w, wf, w, w_bc, time, config)
         #if (iteration == 3)
             #for i ∈ eachindex(h)
             #    println("$(h.values[i]), $(w.values[i])")
@@ -345,7 +361,7 @@ function FilmModel(
         #if typeof(mesh)
 
         if (R_ux[iteration] <= solvers.U.convergence &&
-            R_uy[iteration] <= solvers.U.convergence &&
+            #R_uy[iteration] <= solvers.U.convergence &&
             Uz_convergence &&
             R_h[iteration] <= solvers.h.convergence)
 
@@ -353,7 +369,7 @@ function FilmModel(
             finish!(progress)
             @info "Simulation converged in $iteration iterations"
             if !signbit(write_interval)
-                save_output_film(model, outputWriter, iteration, time, config)
+                save_output_film(model, outputWriter, iteration, time, config, w)
                 save_postprocessing(postprocess, iteration, time, mesh, outputWriter, config.boundaries)
             end
             break
@@ -374,7 +390,7 @@ function FilmModel(
         runtime_postprocessing!(postprocess, iteration, iterations)
 
         if iteration % write_interval + signbit(write_interval) == 0
-            save_output_film(model, outputWriter, iteration, time, config)
+            save_output_film(model, outputWriter, iteration, time, config, w)
             save_postprocessing(postprocess, iteration, time, mesh, outputWriter, config.boundaries)
         end
 
@@ -391,7 +407,18 @@ function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iter
     ) where {T,F,SO,M,Tu,E,D,BI}
     args = (
             ("U", model.momentum.U), 
-            ("h", model.momentum.h)
+            ("h", model.momentum.h),
+        )
+    
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
+end
+
+function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config, w
+    ) where {T,F,SO,M,Tu,E,D,BI}
+    args = (
+            ("U", model.momentum.U), 
+            ("h", model.momentum.h),
+            ("w", w)
         )
     
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)

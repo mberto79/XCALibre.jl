@@ -7,7 +7,7 @@ using XCALibre
 # mesh_file = "unv_sample_meshes/cylinder_d10mm_5mm.unv"
 
 grids_dir = pkgdir(XCALibre, "examples", "0_GRIDS")
-grid = "EROFATC_Plate_Example3.unv"
+grid = "EROFATC_Plate_Example7_2.unv"
 mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
@@ -27,17 +27,18 @@ Tu = 0.03
 k_inlet = 0.0575 # k_inlet = 3/2*(Tu*velocity[1])^2
 kL_inlet = 0.0115 #1/2*(Tu*velocity[1])^2
 ω_inlet = 275 #k_inlet/(νR*nu)
-rho = 1.225/1000
+rho = 1.225
 
 # model = RANS{KOmegaLKE}(mesh=mesh, viscosity=nu, Tu=Tu)
 
 model = Physics(
     time = Steady(),
-    fluid = Fluid{Incompressible}(nu = nu),
-    turbulence = RANS{KOmegaLKE}(Tu = 0.01, walls=(:wall,)),
+    fluid = Fluid{Incompressible}(nu = nu, rho = rho),
+    turbulence = RANS{KOmegaLKE}(Tu = Tu, walls=(:Wall,)),
+    #turbulence = RANS{KOmega}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
-    )
+)
 
 BCs = assign(
     region=mesh_dev,
@@ -46,55 +47,61 @@ BCs = assign(
             Dirichlet(:Inlet, velocity),
             Zerogradient(:Outlet),
             Wall(:Wall, [0.0, 0.0, 0.0]),
-            Extrapolated(:Freestream)
+            Extrapolated(:Freestream),
+            Extrapolated(:Freestream_Sym),
             # Zerogradient(:top)
-            # Symmetry(:top)
+            Symmetry(:Sym)
         ],
         p = [
             Zerogradient(:Inlet),
             Dirichlet(:Outlet, 0.0),
             Wall(:Wall),
-            Extrapolated(:Freestream)
+            Extrapolated(:Freestream),
+            Extrapolated(:Freestream_Sym),
             # Zerogradient(:top)
-            # Symmetry(:top)
+            Symmetry(:Sym)
         ],
         k = [
             Dirichlet(:Inlet, k_inlet),
             Zerogradient(:Outlet),
             Dirichlet(:Wall, 0.0),
-            Extrapolated(:Freestream)
+            Extrapolated(:Freestream),
+            Extrapolated(:Freestream_Sym),
             # Zerogradient(:top)
-            # Symmetry(:top)
+            Symmetry(:Sym)
         ],
         kl = [
             Dirichlet(:Inlet, kL_inlet),
             Zerogradient(:Outlet),
             Dirichlet(:Wall, 0.0),
-            Extrapolated(:Freestream)
+            Extrapolated(:Freestream),
+            Extrapolated(:Freestream_Sym),
             # Zerogradient(:top)
-            # Symmetry(:top)
+            Symmetry(:Sym)
         ],
         omega = [
             Dirichlet(:Inlet, ω_inlet),
             Zerogradient(:Outlet),
             OmegaWallFunction(:Wall),
-            Extrapolated(:Freestream)
+            Extrapolated(:Freestream),
+            Extrapolated(:Freestream_Sym),
             # Zerogradient(:top)
-            # Symmetry(:top)
+            Symmetry(:Sym)
         ],
         nut = [
             Dirichlet(:Inlet, k_inlet/ω_inlet),
             Extrapolated(:Outlet),
             Dirichlet(:Wall, 0.0), 
-            Extrapolated(:Freestream)
+            Extrapolated(:Freestream),
+            Extrapolated(:Freestream_Sym),
             # Zerogradient(:top)
-            # Symmetry(:top)
+            Symmetry(:Sym)
         ]
     )
 )
 
 schemes = (
-    U = Schemes(divergence=LUST),
+    U = Schemes(divergence=LUST, limiter=MFaceBased(mesh_dev)),
     p = Schemes(divergence=LUST),
     k = Schemes(divergence=LUST),
     y = Schemes(gradient=Midpoint),
@@ -149,7 +156,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=1000, write_interval=100, time_step=1)
+    iterations=2000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
@@ -197,6 +204,7 @@ residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
 
   ustar = (tauMag./rho).^(1/2); # Friction velocity
   yplus = ((2*ustar)/nu)
+  #print(yplus)
 
  x_corr = [0:0.0002:2;]
  Rex_corr = velocity[1].*x_corr/nu
@@ -208,7 +216,7 @@ residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
  plot!(Rex_corr, Cf_laminar, color=:green, ylims=(0, 0.01), xlims=(0,6e5), label="Laminar",lw=1.5)
  scatter!(eRex, eCf, color=:green, label="Experimental T3A Data") # |> display
  # plot!(oRex, oCf, color=:green, lw=1.5,label="OpenFoam") |> display
- plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code") |> display
+ plot!(Rex,tauMag./(0.5.*velocity[1]^2), color=:blue, lw=1.5,label="Code") |> display
  #savefig(p,"EROFATC_Plate_3.svg")
 
 # plot(; xlims=(0,1000))

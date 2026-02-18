@@ -223,9 +223,7 @@ function SIMPLE(
         # flux!(mdotf, Uf, config) 
 
         # new approach
-        # correct_mass_flux(mdotf, p, rDf, config)
-        correct_mass_flux1(mdotf, p_eqn, config)
-        correct_mass_periodic(mdotf, p_eqn, boundaries.p, config)
+        correct_mass_flux(mdotf, p_eqn, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
         turbulence!(turbulenceModel, model, S, prev, time, config) 
@@ -298,7 +296,6 @@ function nonorthogonal_face_correction(eqn, grad, flux, config)
     ndrange = n_ifaces
     kernel! = _nonorthogonal_face_correction(_setup(backend, workgroup, ndrange)...)
     kernel!(b, grad, flux, faces, cells, n_bfaces)
-    # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _nonorthogonal_face_correction(b, grad, flux, faces, cells, n_bfaces)
@@ -364,39 +361,7 @@ end
 
 ### TEMP LOCATION FOR PROTOTYPING
 
-function correct_mass_flux(mdotf, p, rDf, config)
-    # sngrad = FaceScalarField(mesh)
-    (; faces, cells, boundary_cellsID) = mdotf.mesh
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-
-    n_faces = length(faces)
-    n_bfaces = length(boundary_cellsID)
-    n_ifaces = n_faces - n_bfaces
-
-    ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
-    kernel! = _correct_mass_flux(_setup(backend, workgroup, ndrange)...)
-    kernel!(mdotf, p, rDf, faces, cells, n_bfaces)
-    # KernelAbstractions.synchronize(backend)
-end
-
-@kernel function _correct_mass_flux(mdotf, p, rDf, faces, cells, n_bfaces)
-    i = @index(Global)
-    fID = i + n_bfaces
-
-    @inbounds begin 
-        face = faces[fID]
-        (; area, normal, ownerCells, delta) = face 
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        p1 = p[cID1]
-        p2 = p[cID2]
-        face_grad = area*(p2 - p1)/delta # best option so far!
-        mdotf[fID] -= face_grad*rDf[fID]
-    end
-end
-
-function correct_mass_flux1(mdotf, p_eqn, config)
+function correct_mass_flux(mdotf, p_eqn, config)
     # sngrad = FaceScalarField(mesh)
     (; faces, cells, boundary_cellsID) = mdotf.mesh
     (; hardware) = config
@@ -413,12 +378,19 @@ function correct_mass_flux1(mdotf, p_eqn, config)
     n_ifaces = n_faces - n_bfaces
 
     ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
-    kernel! = _correct_mass_flux1(_setup(backend, workgroup, ndrange)...)
+    kernel! = _correct_mass_flux(_setup(backend, workgroup, ndrange)...)
     kernel!(mdotf, p, nzval, colval, rowptr, faces, cells, n_bfaces)
-    # KernelAbstractions.synchronize(backend)
+    KernelAbstractions.synchronize(backend)
+
+    BCs = config.boundaries[1] # assume periodics always defined by user (extract first)
+    for BC ∈ BCs
+        correct_mass_periodic(
+            BC, mdotf, p, nzval, colval, rowptr, cells, faces, backend, workgroup)
+        KernelAbstractions.synchronize(backend)
+    end
 end
 
-@kernel function _correct_mass_flux1(
+@kernel function _correct_mass_flux(
     mdotf, p, nzval, colval, rowptr, faces, cells, n_bfaces)
     i = @index(Global)
     fID = i + n_bfaces
@@ -440,27 +412,27 @@ end
 
 ### Correct mass flux at periodic boundaries
 
-function correct_mass_periodic(mdotf, p_eqn, pBCs, config)
-    (; faces, cells, boundary_cellsID) = mdotf.mesh
-    (; hardware) = config
-    (; backend, workgroup) = hardware
+# function correct_mass_periodic(mdotf, p_eqn, pBCs, config)
+#     (; faces, cells, boundary_cellsID) = mdotf.mesh
+#     (; hardware) = config
+#     (; backend, workgroup) = hardware
 
-    p = p_eqn.model.terms[1].phi
-    A = _A(p_eqn)
-    nzval = _nzval(A)
-    colval = _colval(A)
-    rowptr = _rowptr(A)
+#     p = p_eqn.model.terms[1].phi
+#     A = _A(p_eqn)
+#     nzval = _nzval(A)
+#     colval = _colval(A)
+#     rowptr = _rowptr(A)
 
-    for BC ∈ pBCs
-        _correct_mass_periodic_dispatch(
-            BC, mdotf, p, nzval, colval, rowptr, cells, faces, backend, workgroup)
-    end
+#     for BC ∈ pBCs
+#         _correct_mass_periodic_dispatch(
+#             BC, mdotf, p, nzval, colval, rowptr, cells, faces, backend, workgroup)
+#     end
 
-end
+# end
 
-_correct_mass_periodic_dispatch(arg...) = nothing
+correct_mass_periodic(arg...) = nothing
 
-function _correct_mass_periodic_dispatch(
+function correct_mass_periodic(
     BC::PeriodicParent, mdotf, p, nzval, colval, rowptr, cells, faces, backend, workgroup)
     (; IDs_range, value) = BC
     (; face_map) = value
@@ -486,7 +458,6 @@ end
     zID = spindex(rowptr, colval, cID1, cID2)
     aN = nzval[zID]
     correction = aN*(p2 - p1)
-    # mdotf[fID] -= correction # this worked but testing sign correctness
     mdotf[fID] += correction
     mdotf[pfID] = -mdotf[fID] 
     
@@ -501,6 +472,7 @@ function correct_interpolation_periodic(phif, phi, BCs, config)
 
     for BC ∈ BCs
         _correct_interpolation_periodic_dispatch(BC, phif, phi, backend, workgroup)
+        KernelAbstractions.synchronize(backend)
     end
 
 end

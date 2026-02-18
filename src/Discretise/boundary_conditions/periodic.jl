@@ -84,7 +84,7 @@ Function for construction of periodic boundary conditions.
     - `value` represents a `PeriodicValue` struct with the following fields:
         - patchID -- boundary/patch ID
         - transform -- stores information to apply the patch pair matching e.g. LinearTransform.
-        - face_map -- vector providing indeces to faces of match patch
+        - face_map -- vector providing indices to faces of match patch
         - ismaster -- flat to identify one of the patch pairs as the main patch
 
 ### Example
@@ -330,7 +330,6 @@ end
     w = pface.delta/(face.delta + pface.delta)
 
     # Calculate link coefficients
-    term.flux[pfID] = -term.flux[fID] # copy flux from master to shadow (for stability)
     ap = term.sign*(term.flux[fID])
     ac = ap*w
     an = ap*(one(w) - w)
@@ -364,7 +363,6 @@ end
     pface = faces[pfID]
     pcellID = pface.ownerCells[1]
 
-    term.flux[pfID] = -term.flux[fID] # copy flux from master to shadow (for stability)
     mdot = term.sign*(term.flux[fID])
     ap = max(mdot, 0.0) # flow leaves master
     an = -max(-mdot, 0.0) # flow leaves shadow
@@ -404,7 +402,6 @@ end
 
     # Calculate link coefficients
     mdot = term.sign*(term.flux[fID])
-    term.flux[pfID] = -term.flux[fID] # copy flux from master to shadow (for stability)
     acLinear = mdot*w 
     anLinear = mdot*(one(w) - w)
     acUpwind = max(mdot, 0.0) 

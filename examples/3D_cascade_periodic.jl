@@ -9,14 +9,15 @@ grid = "cascade_3D_periodic_2p5mm.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
-backend = CUDABackend(); workgroup = 32
-# backend = CPU(); workgroup = 1024; activate_multithread(backend)
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 periodic1 = construct_periodic(mesh, backend, :top, :bottom)
-periodic2 = construct_periodic(mesh, backend, :side1, :side2)
+# periodic2 = construct_periodic(mesh, backend, :side1, :side2)
+periodic2 = Symmetry.([:side1, :side2])
 
 velocity = [0.25, 0.0, 0.0]
 nu = 1e-3
@@ -59,7 +60,7 @@ BCs= assign(
     )
 )
 
-divergence = LUST # Upwind Linear LUST
+divergence = Linear # Upwind Linear LUST
 schemes = (
     # # transient schemes
     # U = Schemes(time=Euler, divergence=divergence, gradient=Gauss),

@@ -78,7 +78,8 @@ schemes = (
     U = Schemes(divergence=Upwind),
     p = Schemes(divergence=Upwind),
     k = Schemes(divergence=Upwind),
-    omega = Schemes(divergence=Upwind)
+    omega = Schemes(divergence=Upwind),
+    y = Schemes()
 )
 
 
@@ -94,6 +95,13 @@ solvers = (
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 0.2,
+    ),
+    y = SolverSetup(
+        solver      = Cg(), # Bicgstab(), Gmres()
+        preconditioner = Jacobi(), 
+        convergence = 1e-8,
+        relax       = 0.9,
+        itmax = 5000
     ),
     k = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()

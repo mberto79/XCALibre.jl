@@ -109,7 +109,8 @@ end
     )  where {F,P,I}
 
     w = face.weight
-    signbit(ns) ? w = one(w) - w : w
+    # signbit(ns) ? w = one(w) - w : w
+    w = 0.5 + ns*(w - 0.5)
     
     # Calculate link coefficients
     ap = term.sign*(term.flux[fID]*ns)

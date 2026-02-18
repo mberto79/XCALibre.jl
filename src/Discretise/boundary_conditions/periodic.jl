@@ -326,13 +326,23 @@ end
     pfID = bc.value.face_map[i] # id of periodic face 
     pface = faces[pfID]
     pcellID = pface.ownerCells[1]
+    C1 = cell.centre
+    C2 = cells[pcellID].centre - transform.distance
+    Cf = face.centre
+    n = face.normal
 
-    w = pface.delta/(face.delta + pface.delta)
+    Pf = Cf - C1
+    PN = C2 - C1 
+
+    wn = (Pf⋅n)/(PN⋅n)
+    w = one(wn) - wn
+    # w = pface.delta/(face.delta + pface.delta)
+    # wn = one(w) - w
 
     # Calculate link coefficients
     ap = term.sign*(term.flux[fID])
     ac = ap*w
-    an = ap*(one(w) - w)
+    an = ap*wn
 
     NN = spindex(rowptr, colval, pcellID, pcellID)
     NP = spindex(rowptr, colval, pcellID, cellID)
@@ -395,15 +405,21 @@ end
     pfID = bc.value.face_map[i] # id of periodic face 
     pface = faces[pfID]
     pcellID = pface.ownerCells[1]
+    C1 = cell.centre
+    C2 = cells[pcellID].centre - transform.distance
+    Cf = face.centre
+    n = face.normal
 
+    Pf = Cf - C1
+    PN = C2 - C1 
 
-    # Calculate interpoloation weight
-    w = pface.delta/(face.delta + pface.delta)
+    wn = (Pf⋅n)/(PN⋅n)
+    w = one(wn) - wn
 
     # Calculate link coefficients
     mdot = term.sign*(term.flux[fID])
     acLinear = mdot*w 
-    anLinear = mdot*(one(w) - w)
+    anLinear = mdot*wn
     acUpwind = max(mdot, 0.0) 
     anUpwind = -max(-mdot, 0.0)
     ac = 0.75*acLinear + 0.25*acUpwind

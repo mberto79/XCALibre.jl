@@ -82,6 +82,13 @@ SolverSetup(;
             float_type(atol),
             float_type(rtol))
 
+struct AdaptiveTimeStepping{F<:AbstractFloat}
+    maxCo::F
+    minShrink::F
+    maxGrow::F
+end
+Adapt.@adapt_structure AdaptiveTimeStepping
+
 """
     AdaptiveTimeStepping(; 
         # keyword arguments
@@ -106,13 +113,6 @@ simulations. If not provided, a fixed time step is used.
 - `maxGrow::AbstractFloat`: upper bound on the multiplicative factor applied to the
   current time step. Prevents excessive time-step growth.
 """
-struct AdaptiveTimeStepping{F<:AbstractFloat}
-    maxCo::F
-    minShrink::F
-    maxGrow::F
-end
-Adapt.@adapt_structure AdaptiveTimeStepping
-
 AdaptiveTimeStepping(;
     maxCo=0.75,
     minShrink=0.1,
@@ -159,7 +159,6 @@ This is a convenience function to set the top-level runtime information. The inp
 runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
 ```
 """
-
 Runtime(; iterations::I,
           write_interval::I,
           time_step::N,

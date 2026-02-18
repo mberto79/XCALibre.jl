@@ -118,7 +118,7 @@ function SIMPLE(
     (; iterations, write_interval,dt) = runtime
     (; backend) = hardware
     
-    postprocess = convert_time_to_iterations(postprocess,model,dt,iterations)
+    postprocess = convert_time_to_iterations(postprocess,model,dt[1],iterations)
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)
     rDf = get_flux(p_eqn, 1)

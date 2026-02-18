@@ -1,4 +1,10 @@
 using XCALibre
+using LinearAlgebra
+using SparseArrays
+using SparseMatricesCSR
+using StaticArrays 
+using ThreadPinning
+using Test
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "quad40.unv"

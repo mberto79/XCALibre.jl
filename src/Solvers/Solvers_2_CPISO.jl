@@ -280,7 +280,7 @@ function CPISO(
                 flux!(mdotf, Uf, config)
                 @. mdotf.values *= rhof.values
                 @. corr -= mdotf.values
-                @. corr *= 0.0/runtime.dt
+                @. corr *= 0.0/runtime.dt[1]
                 @. mdotf.values += rhorDf.values*corr/rhof.values
                 div!(divHv, mdotf, config)
             end
@@ -332,7 +332,7 @@ function CPISO(
             # interpolate!(Uf, U, config)
             # correct_boundaries!(Uf, U, boundaries.U, time, config)
             
-            @. dpdt.values = (p.values-prev)/runtime.dt
+            @. dpdt.values = (p.values-prev)/runtime.dt[1]
 
             turbulence!(turbulenceModel, model, S, prev, time, config) 
             update_nueff!(nueff, nu, model.turbulence, config)
@@ -347,7 +347,7 @@ function CPISO(
 
     ProgressMeter.next!(
         progress, showvalues = [
-            (:time, iteration*runtime.dt),
+            (:time, iteration*runtime.dt[1]),
             (:Courant, maxCourant),
             (:Ux, R_ux[iteration]),
             (:Uy, R_uy[iteration]),

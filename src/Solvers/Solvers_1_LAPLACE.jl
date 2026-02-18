@@ -154,7 +154,7 @@ function LAPLACE(
 
         ProgressMeter.next!(
             progress, showvalues = [
-                (:time, iteration*runtime.dt),
+                (:time, iteration*runtime.dt[1]),
                 (:T_residual, R_T[iteration])
                 ]
             )

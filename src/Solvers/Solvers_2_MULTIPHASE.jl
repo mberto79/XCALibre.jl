@@ -333,7 +333,7 @@ function MULTIPHASE(
 
     ProgressMeter.next!(
         progress, showvalues = [
-            (:time, iteration*runtime.dt),
+            (:time, iteration*runtime.dt[1]),
             (:Courant, maxCourant),
             (:Ux, R_ux[iteration]),
             (:Uy, R_uy[iteration]),

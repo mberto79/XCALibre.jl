@@ -301,7 +301,10 @@ function CSIMPLE(
             @. mdotf.values += pconv.values*(pf.values)
         elseif typeof(model.fluid) <: WeaklyCompressible
             # @. mdotf.values -= pgrad.values*rhorDf.values
-            correct_mass_flux(mdotf, p, rhorDf, config)
+            
+            # correct_mass_flux(mdotf, p, rhorDf, config)
+            correct_mass_flux1(mdotf, p_eqn, config) # uses rhorDf from  coeff matrix
+            correct_mass_periodic(mdotf, p_eqn, boundaries.p, config)
         end
 
         correct_velocity!(U, Hv, ∇p, rD, config)

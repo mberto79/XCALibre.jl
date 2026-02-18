@@ -78,7 +78,8 @@ schemes = (
     U = Schemes(divergence=Upwind),
     p = Schemes(divergence=Upwind),
     k = Schemes(divergence=Upwind),
-    omega = Schemes(divergence=Upwind)
+    omega = Schemes(divergence=Upwind),
+    y = Schemes(),#gradient=Midpoint),
 )
 
 
@@ -106,7 +107,14 @@ solvers = (
         preconditioner = Jacobi(), 
         convergence = 1e-7,
         relax       = 0.7,
-    )
+    ),
+    y = SolverSetup(
+        solver      = Cg(), # Bicgstab(), Gmres()
+        preconditioner = Jacobi(),
+        convergence = 1e-8,
+        rtol = 1e-2,
+        relax       = 0.9,
+    ),
 )
 
 runtime = Runtime(iterations=1000, write_interval=100, time_step=1)

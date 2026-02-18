@@ -316,7 +316,9 @@ function CPISO(
                 correct_mass_flux(mdotf, p, rhorDf, config)
                 @. mdotf.values += pconv.values*(pf.values)
             elseif typeof(model.fluid) <: WeaklyCompressible
-                correct_mass_flux(mdotf, p, rhorDf, config)
+                # correct_mass_flux(mdotf, p, rhorDf, config)
+                correct_mass_flux1(mdotf, p_eqn, config) # uses rhorDf from  coeff matrix
+                correct_mass_periodic(mdotf, p_eqn, boundaries.p, config)
             end
    
             # TO-DO: this needs to be exposed to users eventually

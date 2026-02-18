@@ -127,6 +127,6 @@ residuals = run!(model, config)
 # test that we are close enough to drag coefficient
 ReL = Umag*L/nu
 Cd = 0.074/ReL^(1/5)
-Cd_sim = viscous_force(:wall, model.momentum.U, 1, nu, model.turbulence.nut, BCs.U)/(0.5*Umag^2)
+Cd_sim = viscous_force(:wall, model.momentum.U, 1, nu, model.turbulence.nut, config)/(0.5*Umag^2)
 
 @test Cd ≈ Cd_sim[1] atol=0.065

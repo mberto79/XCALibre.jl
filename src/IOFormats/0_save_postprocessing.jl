@@ -11,7 +11,7 @@ end
 function save_postprocessing(postprocess, iteration, time, mesh, meshData::FOAMWriter, BCs)
     postprocess === nothing && return nothing
     args = build_args(postprocess)
-    write_results(iteration, time, mesh, meshData, BCs, args...; suffix=nothing)
+    write_results(iteration, time, mesh, meshData, BCs, args...; suffix="")
 end
 
 function build_args(pp)

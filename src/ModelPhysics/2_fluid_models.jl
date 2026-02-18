@@ -1,12 +1,10 @@
-export AbstractFluid, AbstractIncompressible, AbstractCompressible, AbstractMultiphase
+export AbstractFluid, AbstractIncompressible, AbstractCompressible
 export Fluid
 export Incompressible, WeaklyCompressible, Compressible
 
 abstract type AbstractFluid end
 abstract type AbstractIncompressible <: AbstractFluid end
 abstract type AbstractCompressible <: AbstractFluid end
-
-abstract type AbstractMultiphase <: AbstractFluid end
 
 Base.show(io::IO, fluid::AbstractFluid) = print(io, typeof(fluid).name.wrapper)
 

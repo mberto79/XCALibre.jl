@@ -103,7 +103,7 @@ function PISO(
 
 
     @time for iteration ∈ 1:iterations
-        time = iteration *dt
+        time += config.runtime.dt[1]
 
         rx, ry, rz = solve_equation!(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)
@@ -178,8 +178,12 @@ function PISO(
     turbulence!(turbulenceModel, model, S, prev, time, config) 
     update_nueff!(nueff, nu, model.turbulence, config)
 
-    maxCourant = max_courant_number!(cellsCourant, model, config)
 
+    courant = max_courant_number!(cellsCourant, model, config)
+
+    update_dt!(config.runtime, courant)
+
+    
     R_ux[iteration] = rx
     R_uy[iteration] = ry
     R_uz[iteration] = rz
@@ -187,8 +191,9 @@ function PISO(
 
     ProgressMeter.next!(
         progress, showvalues = [
-            (:time, iteration*runtime.dt),
-            (:Courant, maxCourant),
+            (:dt, config.runtime.dt[1]),
+            (:time, time),
+            (:Courant, courant),
             (:Ux, R_ux[iteration]),
             (:Uy, R_uy[iteration]),
             (:Uz, R_uz[iteration]),
@@ -206,4 +211,15 @@ function PISO(
 
     end # end for loop
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
+end
+
+
+update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,Nothing}, courant) = nothing
+
+function update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}, courant)
+    (; maxCo, maxGrow, minShrink) = runtime.adaptive
+
+    courant_factor = maxCo / (courant + eps())
+    new_dt_factor = clamp(courant_factor, minShrink, maxGrow)
+    runtime.dt[1] = runtime.dt[1] * new_dt_factor
 end

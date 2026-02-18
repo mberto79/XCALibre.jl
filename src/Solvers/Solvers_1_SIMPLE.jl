@@ -412,24 +412,6 @@ end
 
 ### Correct mass flux at periodic boundaries
 
-# function correct_mass_periodic(mdotf, p_eqn, pBCs, config)
-#     (; faces, cells, boundary_cellsID) = mdotf.mesh
-#     (; hardware) = config
-#     (; backend, workgroup) = hardware
-
-#     p = p_eqn.model.terms[1].phi
-#     A = _A(p_eqn)
-#     nzval = _nzval(A)
-#     colval = _colval(A)
-#     rowptr = _rowptr(A)
-
-#     for BC ∈ pBCs
-#         _correct_mass_periodic_dispatch(
-#             BC, mdotf, p, nzval, colval, rowptr, cells, faces, backend, workgroup)
-#     end
-
-# end
-
 correct_mass_periodic(arg...) = nothing
 
 function correct_mass_periodic(

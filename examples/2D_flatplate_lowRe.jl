@@ -35,8 +35,8 @@ BCs = assign(
             Dirichlet(:inlet, velocity),
             Zerogradient(:outlet),
             Wall(:wall, [0.0, 0.0, 0.0]),
-            Extrapolated(:top)
-            # Zerogradient(:top)
+            # Extrapolated(:top)
+            Zerogradient(:top)
             # Symmetry(:top)
         ],
         p = [
@@ -51,16 +51,16 @@ BCs = assign(
             Dirichlet(:inlet, k_inlet),
             Zerogradient(:outlet),
             Dirichlet(:wall, 0.0),
-            Extrapolated(:top)
-            # Zerogradient(:top)
+            # Extrapolated(:top)
+            Zerogradient(:top)
             # Symmetry(:top)
         ],
         omega = [
             Dirichlet(:inlet, ω_inlet),
             Zerogradient(:outlet),
             OmegaWallFunction(:wall),
-            Extrapolated(:top)
-            # Zerogradient(:top)
+            # Extrapolated(:top)
+            Zerogradient(:top)
             # Symmetry(:top)
         ],
         nut = [
@@ -88,7 +88,7 @@ solvers = (
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.8,
     ),
     p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
@@ -99,7 +99,7 @@ solvers = (
     y = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
-        convergence = 1e-8,
+        convergence = 1e-7,
         relax       = 0.9,
         itmax = 5000
     ),
@@ -107,17 +107,17 @@ solvers = (
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.6,
     ),
     omega = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-7,
-        relax       = 0.7,
+        relax       = 0.6,
     )
 )
 
-runtime = Runtime(iterations=1000, write_interval=100, time_step=1)
+runtime = Runtime(iterations=5000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

@@ -76,25 +76,25 @@ solvers = (
     U = SolverSetup(
         solver      = Bicgstab(), #Cg(), # Bicgstab(), Gmres(), #Cg()
         preconditioner = Jacobi(),
-        convergence = 1e-8,
+        convergence = 1e-7,
         # # transient setup
         # atol = 1e-6,
         # relax=1
 
         # steady setup
-        relax       = 0.6,
+        relax       = 0.7,
         rtol = 1e-3
     ),
     p = SolverSetup(
         solver      = Cg(), #Gmres(), #Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        convergence = 1e-8,
+        convergence = 1e-7,
         # # transient setup
         # atol = 1e-6,
         # relax=1
 
         # steady setup
-        relax       = 0.15,
+        relax       = 0.3,
         rtol = 1e-3
     )
 )
@@ -113,9 +113,9 @@ initialise!(model.momentum.p, 0.0)
 
 residuals = run!(model, config, output=OpenFOAM()) # 353 iterations!
 
-# using Plots
-# fig = plot(; xlims=(0,runtime.iterations), ylims=(1e-10, 1e-4))
-# plot!(fig, 1:runtime.iterations, residuals.Ux, yscale=:log10, label="Ux")
-# plot!(fig, 1:runtime.iterations, residuals.Uy, yscale=:log10, label="Uy")
-# plot!(fig, 1:runtime.iterations, residuals.p, yscale=:log10, label="p")
-# fig
+using Plots
+fig = plot(; xlims=(0,runtime.iterations), ylims=(1e-10, 1e-1))
+plot!(fig, 1:runtime.iterations, residuals.Ux, yscale=:log10, label="Ux")
+plot!(fig, 1:runtime.iterations, residuals.Uy, yscale=:log10, label="Uy")
+plot!(fig, 1:runtime.iterations, residuals.p, yscale=:log10, label="p")
+fig

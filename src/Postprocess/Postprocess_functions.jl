@@ -135,6 +135,7 @@ function boundary_average(patch::Symbol, field, fieldBCs, config; time=0)
         faceField = FaceScalarField(mesh)
         sum = zero(_get_float(mesh)) # create zero
     end
+    
     interpolate!(faceField, field, config)
     correct_boundaries!(faceField, field, fieldBCs, time, config)
 

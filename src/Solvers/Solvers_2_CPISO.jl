@@ -249,6 +249,7 @@ function CPISO(
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rhorDf, rD, config)
+        correct_interpolation_periodic(rDf, rD, boundaries.U, config)
         @. rhorDf.values *= rhof.values
 
         remove_pressure_source!(U_eqn, ∇p, config)
@@ -325,10 +326,6 @@ function CPISO(
 
             # Velocity and boundaries correction
             correct_velocity!(U, Hv, ∇p, rD, config) # why is this not rhorD?
-
-            # Lines below should not be needed, interpolation to Uf happens in grad calcs
-            # interpolate!(Uf, U, config)
-            # correct_boundaries!(Uf, U, boundaries.U, time, config)
             
             @. dpdt.values = (p.values-prev)/runtime.dt
 

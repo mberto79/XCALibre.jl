@@ -406,13 +406,12 @@ function residual(eqn, component, config)
 
     # Previous definition
     Fx .= A * values
-    # @inbounds @. R = (b - Fx)^2
     xcal_foreach(R, config) do i 
-            R[i] = (b[i] - Fx[i])^2
+            @inbounds R[i] = (b[i] - Fx[i])^2
     end
     normb = norm(b)
-    denominator = ifelse(normb>0,normb, 1)
-    Residual = sqrt(mean(R)) / denominator
+    denominator = ifelse(normb > eps(normb), normb, one(normb))
+    Residual = sqrt(sum(R)) / denominator
     return Residual
 end
 

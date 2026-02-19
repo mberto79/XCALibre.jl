@@ -226,6 +226,7 @@ function CSIMPLE(
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rhorDf, rD, config)
+        correct_interpolation_periodic(rhorDf, rD, boundaries.U, config)
         @. rhorDf.values *= rhof.values
 
         remove_pressure_source!(U_eqn, ∇p, config)
@@ -297,11 +298,11 @@ function CSIMPLE(
 
         if typeof(model.fluid) <: Compressible
             # @. mdotf.values += (pconv.values*(pf.values) - pgrad.values*rhorDf.values)  
-            correct_mass_flux(mdotf, p, rhorDf, config)
+            correct_mass_flux(mdotf, p_eqn, config)
             @. mdotf.values += pconv.values*(pf.values)
         elseif typeof(model.fluid) <: WeaklyCompressible
             # @. mdotf.values -= pgrad.values*rhorDf.values
-            correct_mass_flux(mdotf, p, rhorDf, config)
+            correct_mass_flux(mdotf, p_eqn, config)
         end
 
         correct_velocity!(U, Hv, ∇p, rD, config)

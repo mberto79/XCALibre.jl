@@ -249,6 +249,7 @@ function CPISO(
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rhorDf, rD, config)
+        correct_interpolation_periodic(rhorDf, rD, boundaries.U, config)
         @. rhorDf.values *= rhof.values
 
         remove_pressure_source!(U_eqn, ∇p, config)
@@ -313,10 +314,10 @@ function CPISO(
             end
         
             if typeof(model.fluid) <: Compressible
-                correct_mass_flux(mdotf, p, rhorDf, config)
+                correct_mass_flux(mdotf, p_eqn, config)
                 @. mdotf.values += pconv.values*(pf.values)
             elseif typeof(model.fluid) <: WeaklyCompressible
-                correct_mass_flux(mdotf, p, rhorDf, config)
+                correct_mass_flux(mdotf, p_eqn, config)
             end
    
             # TO-DO: this needs to be exposed to users eventually
@@ -325,10 +326,6 @@ function CPISO(
 
             # Velocity and boundaries correction
             correct_velocity!(U, Hv, ∇p, rD, config) # why is this not rhorD?
-
-            # Lines below should not be needed, interpolation to Uf happens in grad calcs
-            # interpolate!(Uf, U, config)
-            # correct_boundaries!(Uf, U, boundaries.U, time, config)
             
             @. dpdt.values = (p.values-prev)/runtime.dt
 

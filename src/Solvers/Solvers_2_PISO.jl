@@ -111,6 +111,7 @@ function PISO(
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rDf, rD, config)
+        correct_interpolation_periodic(rDf, rD, boundaries.U, config)
         remove_pressure_source!(U_eqn, ∇p, config)
         
         rp = 0.0
@@ -120,6 +121,7 @@ function PISO(
             # Interpolate faces
             interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
             correct_boundaries!(Uf, Hv, boundaries.U, time, config)
+
             # div!(divHv, Uf, config)
 
             # new approach
@@ -159,14 +161,8 @@ function PISO(
                 limit_gradient!(schemes.p.limiter, ∇p, p, config)
             end
 
-            # old approach - keep for now!
-            # correct_velocity!(U, Hv, ∇p, rD, config)
-            # interpolate!(Uf, U, config)
-            # correct_boundaries!(Uf, U, boundaries.U, time, config)
-            # flux!(mdotf, Uf, config) # old approach
-
             # new approach
-            correct_mass_flux(mdotf, p, rDf, config)
+            correct_mass_flux(mdotf, p_eqn, config)
             correct_velocity!(U, Hv, ∇p, rD, config)
 
         end # corrector loop end

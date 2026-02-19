@@ -169,6 +169,9 @@ function solve_equation!(
 
     discretise!(eqn, phi, config)       
     apply_boundary_conditions!(eqn, phiBCs, nothing, time, config)
+    if length(eqn.model.terms) == 1 && typeof(eqn.model.terms[1]) <: Laplacian
+        make_symmetric!(eqn, config) # added this to test stability of periodic boundaries
+    end
     setReference!(eqn, ref, 1, config)
     if !isnothing(irelax)
         implicit_relaxation!(eqn, phi.values, irelax, nothing, config)
@@ -411,4 +414,37 @@ function residual(eqn, component, config)
     denominator = ifelse(normb>0,normb, 1)
     Residual = sqrt(mean(R)) / denominator
     return Residual
+end
+
+function make_symmetric!(eqn, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    (; b, A) = eqn.equation
+    mesh = get_phi(eqn).mesh
+    (; faces) = mesh
+    nzval = _nzval(A)
+    colval = _colval(A)
+    rowptr = _rowptr(A)
+
+    nbfaces = mesh.boundary_cellsID |> length
+    ndrange = length(faces) - nbfaces
+    kernel! = _make_symmetric!(_setup(backend, workgroup, ndrange)...)
+    kernel!(colval, rowptr, nzval, faces, nbfaces)
+end
+
+@kernel function _make_symmetric!(colval, rowptr, nzval, faces, nbfaces)
+    i = @index(Global)
+    fID = i + nbfaces
+
+    face = faces[fID]
+    (; ownerCells) = face 
+    cID1 = ownerCells[1]
+    cID2 = ownerCells[2]
+
+    cIndex1 = spindex(rowptr, colval, cID1, cID2)
+    cIndex2 = spindex(rowptr, colval, cID2, cID1)
+
+    Apn = nzval[cIndex1]
+    nzval[cIndex2] = Apn
+
 end

@@ -169,7 +169,9 @@ function solve_equation!(
 
     discretise!(eqn, phi, config)       
     apply_boundary_conditions!(eqn, phiBCs, nothing, time, config)
-    make_symmetric!(eqn, config) # added this to test stability of periodic boundaries
+    if length(eqn.model.terms) == 1 && typeof(eqn.model.terms[1]) <: Laplacian
+        make_symmetric!(eqn, config) # added this to test stability of periodic boundaries
+    end
     setReference!(eqn, ref, 1, config)
     if !isnothing(irelax)
         implicit_relaxation!(eqn, phi.values, irelax, nothing, config)

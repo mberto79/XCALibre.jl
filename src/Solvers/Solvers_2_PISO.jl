@@ -161,12 +161,6 @@ function PISO(
                 limit_gradient!(schemes.p.limiter, ∇p, p, config)
             end
 
-            # old approach - keep for now!
-            # correct_velocity!(U, Hv, ∇p, rD, config)
-            # interpolate!(Uf, U, config)
-            # correct_boundaries!(Uf, U, boundaries.U, time, config)
-            # flux!(mdotf, Uf, config) # old approach
-
             # new approach
             correct_mass_flux(mdotf, p_eqn, config)
             correct_velocity!(U, Hv, ∇p, rD, config)

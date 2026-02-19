@@ -75,16 +75,9 @@ function setup_incompressible_solvers(
 
     p_eqn = (
         - Laplacian{schemes.p.laplacian}(rDf, p) == - Source(divHv)
-        # Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
-        # Laplacian{schemes.p.laplacian}(rDf, p) == Source(divHv)
     ) → ScalarEquation(p, boundaries.p)
 
     @info "Initialising preconditioners..."
-
-    # @reset U_eqn.preconditioner = set_preconditioner(
-    #                 solvers.U.preconditioner, U_eqn, boundaries.U, config)
-    # @reset p_eqn.preconditioner = set_preconditioner(
-    #                 solvers.p.preconditioner, p_eqn, boundaries.p, config)
 
     @reset U_eqn.preconditioner = set_preconditioner(solvers.U.preconditioner, U_eqn)
     @reset p_eqn.preconditioner = set_preconditioner(solvers.p.preconditioner, p_eqn)
@@ -141,7 +134,6 @@ function SIMPLE(
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
-    # prev = _convert_array!(prev, backend) 
     prev = KernelAbstractions.zeros(backend, TF, n_cells) 
 
     # Pre-allocate vectors to hold residuals 
@@ -212,17 +204,7 @@ function SIMPLE(
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
         end
 
-        # explicit_relaxation!(p, prev, solvers.p.relax, config)
-
-        # Velocity and boundaries correction
-
-        # old approach
-        # correct_velocity!(U, Hv, ∇p, rD, config)
-        # interpolate!(Uf, U, config)
-        # correct_boundaries!(Uf, U, boundaries.U, time, config)
-        # flux!(mdotf, Uf, config) 
-
-        # new approach
+        # correct mass flux and velocity
         correct_mass_flux(mdotf, p_eqn, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
@@ -278,7 +260,7 @@ function SIMPLE(
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end
 
-### TEMP LOCATION FOR PROTOTYPING - NONORTHOGONAL CORRECTION 
+### TEMP LOCATION FOR PROTOTYPING
 
 function nonorthogonal_face_correction(eqn, grad, flux, config)
     mesh = grad.mesh
@@ -331,18 +313,10 @@ end
     T_hat = Sf - Ef # original
     faceCorrection = flux[fID]*gradf⋅T_hat
 
-    Atomix.@atomic b[cID1] += faceCorrection #*cell1.volume
-    Atomix.@atomic b[cID2] -= faceCorrection #*cell2.volume # should this be -ve?
-
-    # Atomix.@atomic b[cID1] -= faceCorrection #*cell1.volume
-    # Atomix.@atomic b[cID2] += faceCorrection #*cell2.volume # should this be -ve?
-        
+    Atomix.@atomic b[cID1] += faceCorrection
+    Atomix.@atomic b[cID2] -= faceCorrection 
+      
 end
-
-# +- => good match
-# -+ => looks worse at edges for gradient
-# -- => looks bad on top-right corner for gradient
-# ++ => looks bad on left grad and oscillations on the right
 
 function correction_weight(cells, faces, fi)
     (; ownerCells, centre) = faces[fi]
@@ -405,7 +379,6 @@ end
         # need to get aN from sparse system
         zID = spindex(rowptr, colval, cID1, cID2)
         aN = nzval[zID]
-        # mdotf[fID] += -aN*(p2 - p1) # this worked well with periodics
         mdotf[fID] += aN*(p2 - p1) # positive because pressure eqn has negative sign
     end
 end
@@ -444,7 +417,6 @@ end
     mdotf[pfID] = -mdotf[fID] 
     
 end
-
 
 ### Correct interpolation at periodic boundaries
 

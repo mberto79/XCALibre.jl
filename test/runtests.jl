@@ -66,6 +66,19 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
             include(test_path)
         end
     end
+    
+    @testset "Multiphase" begin
+
+        test_files = [
+            "multiphase_dam_break.jl"
+            "multiphase_hydrostatic_column.jl"
+        ]
+
+        for test ∈ test_files
+            test_path = joinpath(TEST_CASES_DIR, test)
+            include(test_path)
+        end
+    end
 
     @testset "Post-processing unit Test" begin
         include("unit_test_field_average.jl")

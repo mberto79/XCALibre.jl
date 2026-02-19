@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * +50x speed improvement for the method `construct_periodic` and also more robust algorithm used [#100](@ref)
 * Implementation to correct mass flux uses matrix coefficients directly for better stability when using periodic boundary conditions [#100](@ref)
 * New method to enforce matrix symmetry of scalar model equations when the only term is a laplacian [#100](@ref)
+* Change calculation of face interpolation weights to use face normal aligned weights, this is more physical than the current method using face-based distances (in preparation for formal support for non-orthogonality correction)[#101](@ref)
 
 ### Breaking
 * No breaking changes

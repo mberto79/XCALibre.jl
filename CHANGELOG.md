@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 *  Added optional adaptive time stepping based on Courant number control (`AdaptiveTimeStepping`) [#98](@ref)
+*  Added `Multiphase` solver baseline supporting gravitational effects using `p_rgh` pressure formulation and `Gravity([x, y, z])`. [#99](@ref)
+*  Added `ConstMu` viscosity model. [#99](@ref)
+*  Added `ConstEoS` equation of state model. [#99](@ref)
 
 
 ### Fixed
@@ -15,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 * Improved stability of `Periodic` boundaries by making the implementation fully implicit [#96](@ref)
 * 4x speed improvement for the method `construct_periodic` [#97](@ref)
+* Changed `Isothermal` energy model to let user optionally define `ConstantScalar` value for temperature field. [#99](@ref)
+*  `AdaptiveTimeStepping` was updated to include `maxAlphaCo` criteria for multiphase solver. [#99](@ref)
 
 ### Breaking
 * No breaking changes

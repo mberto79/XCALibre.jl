@@ -124,6 +124,8 @@ function LAPLACE(
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
+    
+    rho_prev = ConstantScalar(1.0) # dummy field
 
 
     postprocess = convert_time_to_iterations(postprocess,model,dt[1],iterations)
@@ -133,7 +135,7 @@ function LAPLACE(
     @time for iteration ∈ 1:iterations
         time = iteration *dt
 
-        rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config; time=time)
+        rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config, rho_prev; time=time)
         
         if typeof(model.solid) <: NonUniform
             energy!(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, config)

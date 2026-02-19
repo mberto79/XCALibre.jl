@@ -70,6 +70,7 @@ function PISO(
     pf = FaceScalarField(mesh)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
+    rho_prev = ConstantScalar(1.0) # dummy field
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
@@ -106,7 +107,7 @@ function PISO(
         time += config.runtime.dt[1]
 
         rx, ry, rz = solve_equation!(
-            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)
+            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, rho_prev; time=time)
           
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
@@ -131,7 +132,7 @@ function PISO(
             xcal_foreach(prev, config) do i 
                 prev[i] = p[i]
             end
-            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref, time=time)
+            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config, rho_prev; ref=pref, time=time)
             if i == inner_loops
                 explicit_relaxation!(p, prev, 1.0, config)
             else
@@ -143,7 +144,7 @@ function PISO(
 
             # nonorthogonal correction (experimental)
             for i ∈ 1:ncorrectors
-                discretise!(p_eqn, p, config)       
+                discretise!(p_eqn, p, config)
                 apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
                 setReference!(p_eqn, pref, 1, config)
                 nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
@@ -211,15 +212,4 @@ function PISO(
 
     end # end for loop
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
-end
-
-
-update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,Nothing}, courant) = nothing
-
-function update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}, courant)
-    (; maxCo, maxGrow, minShrink) = runtime.adaptive
-
-    courant_factor = maxCo / (courant + eps())
-    new_dt_factor = clamp(courant_factor, minShrink, maxGrow)
-    runtime.dt[1] = runtime.dt[1] * new_dt_factor
 end

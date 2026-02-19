@@ -173,6 +173,7 @@ function CPISO(
     rD = ScalarField(mesh)
     Psi = ScalarField(mesh)
     Psif = FaceScalarField(mesh)
+    rho_prev = ConstantScalar(1.0) # dummy field
 
     divmdotf = ScalarField(mesh)
 
@@ -241,7 +242,7 @@ function CPISO(
         
         # Set up and solve momentum equations
 
-        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
+        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, rho_prev)
 
         energy!(energyModel, model, prev, mdotf, rho, mueff, time, config)
         thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
@@ -287,7 +288,7 @@ function CPISO(
             
             # Pressure calculations
             @. prev = p.values
-            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing)
+            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config, rho_prev; ref=nothing)
             explicit_relaxation!(p, prev, solvers.p.relax, config)
 
             # Gradient

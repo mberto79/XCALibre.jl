@@ -136,6 +136,7 @@ function SIMPLE(
     n_cells = length(mesh.cells)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
+    rho_prev = ConstantScalar(1.0) # dummy field
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
@@ -172,7 +173,7 @@ function SIMPLE(
     for iteration ∈ 1:iterations
         time = iteration
 
-        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
+        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, rho_prev)
         
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
@@ -193,7 +194,7 @@ function SIMPLE(
         
         # Pressure calculations
         @. prev = p.values
-        rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
+        rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config, rho_prev; ref=pref)
         explicit_relaxation!(p, prev, solvers.p.relax, config)
         
         grad!(∇p, pf, p, boundaries.p, time, config) 

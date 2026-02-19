@@ -161,6 +161,7 @@ function CSIMPLE(
     rD = ScalarField(mesh)
     Psi = ScalarField(mesh)
     Psif = FaceScalarField(mesh)
+    rho_prev = ConstantScalar(1.0) # dummy field
 
     mugradUTx = FaceScalarField(mesh)
     mugradUTy = FaceScalarField(mesh)
@@ -219,7 +220,7 @@ function CSIMPLE(
 
         # Set up and solve momentum equations
         
-        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
+        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, rho_prev)
         energy!(energyModel, model, prev, mdotf, rho, mueff, time, config)
         thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
 
@@ -257,9 +258,9 @@ function CSIMPLE(
         @. prevpf.values = pf.values
         if typeof(model.fluid) <: Compressible
             # Ensure diagonal dominance for hyperbolic equations
-            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing, irelax=solvers.U.relax)
+            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config, rho_prev; ref=nothing, irelax=solvers.U.relax)
         elseif typeof(model.fluid) <: WeaklyCompressible
-            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing)
+            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config, rho_prev; ref=nothing)
         end
 
         if !isnothing(solvers.p.limit)

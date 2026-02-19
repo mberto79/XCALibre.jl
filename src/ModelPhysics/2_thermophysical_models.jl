@@ -1,13 +1,5 @@
 export HelmholtzEnergy, HelmholtzEnergyFluid, H2, H2_para, N2
 export ConstEos, ConstMu
-export AbstractModel, AbstractEosModel, AbstractViscosityModel
-
-
-abstract type AbstractModel end
-abstract type AbstractEosModel <: AbstractModel end
-abstract type AbstractViscosityModel <: AbstractModel end
-
-abstract type AbstractPhase <: AbstractMultiphase end
 
 
 abstract type HelmholtzEnergyFluid end

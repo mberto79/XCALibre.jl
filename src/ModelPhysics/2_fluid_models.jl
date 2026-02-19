@@ -2,11 +2,17 @@ export AbstractFluid, AbstractIncompressible, AbstractCompressible
 export Fluid
 export Incompressible, WeaklyCompressible, Compressible
 export Phase, Fluid, Multiphase
+export AbstractModel, AbstractEosModel, AbstractViscosityModel
 
 abstract type AbstractFluid end
 abstract type AbstractIncompressible <: AbstractFluid end
 abstract type AbstractCompressible <: AbstractFluid end
 abstract type AbstractMultiphase <: AbstractFluid end
+
+abstract type AbstractPhase <: AbstractMultiphase end
+abstract type AbstractModel end
+abstract type AbstractEosModel <: AbstractModel end
+abstract type AbstractViscosityModel <: AbstractModel end
 
 Base.show(io::IO, fluid::AbstractFluid) = print(io, typeof(fluid).name.wrapper)
 

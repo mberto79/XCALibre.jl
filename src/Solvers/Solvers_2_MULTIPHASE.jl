@@ -344,7 +344,7 @@ function update_phase_thermodynamics!(EoS::AbstractEosModel, phaseIndex::Val{N},
     return nothing
 end
 
-function update_phase_thermodynamics!(EoS::Union{ConstEos, PerfectGas}, phaseIndex::Val{N}, nueff, T, model, config) where {N}
+function update_phase_thermodynamics!(EoS::ConstEos, phaseIndex::Val{N}, nueff, T, model, config) where {N} #EoS::Union{ConstEos, PerfectGas}
     phase = model.fluid.phases[N]
     phase.density(phase, model, config)
     phase.mu(phase, model)

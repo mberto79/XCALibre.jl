@@ -144,7 +144,7 @@ function PISO(
 
             # nonorthogonal correction (experimental)
             for i ∈ 1:ncorrectors
-                discretise!(p_eqn, p, config)
+                discretise!(p_eqn, p, config, ConstantScalar(0.0))
                 apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
                 setReference!(p_eqn, pref, 1, config)
                 nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)

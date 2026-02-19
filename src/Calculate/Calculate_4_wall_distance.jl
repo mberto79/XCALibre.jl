@@ -68,7 +68,7 @@ function wall_distance!(model, walls, config)
     iterations = 1000
     for iteration ∈ 1:iterations
         @. prev = phi.values
-        discretise!(phi_eqn, phi, config)
+        discretise!(phi_eqn, phi, config, ConstantScalar(0.0))
         # apply_boundary_conditions!(phi_eqn, wallBCs.y, nothing, 0.0, config) # wrong BCs!!
         # apply_boundary_conditions!(phi_eqn, wallBCs.y, nothing, 0.0, config)
         apply_boundary_conditions!(phi_eqn, boundaries.y, nothing, 0.0, config)

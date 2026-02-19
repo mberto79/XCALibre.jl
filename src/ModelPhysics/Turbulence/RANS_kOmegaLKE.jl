@@ -340,7 +340,7 @@ function turbulence!(
 
     # Solve kl equation
     prev .= kl.values
-    discretise!(kl_eqn, prev, config)
+    discretise!(kl_eqn, prev, config, ConstantScalar(0.0))
     apply_boundary_conditions!(kl_eqn, boundaries.kl, nothing, time, config)
     implicit_relaxation!(kl_eqn, kl.values, solvers.kl.relax, nothing, config)
     update_preconditioner!(kl_eqn.preconditioner, mesh, config)
@@ -381,7 +381,7 @@ function turbulence!(
 
     # Solve omega equation
     prev .= omega.values
-    discretise!(ω_eqn, prev, config)
+    discretise!(ω_eqn, prev, config, ConstantScalar(0.0))
     apply_boundary_conditions!(ω_eqn, boundaries.omega, nothing, time, config)
     implicit_relaxation!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
     constrain_equation!(ω_eqn, boundaries.omega, model, config) # active with WFs only
@@ -392,7 +392,7 @@ function turbulence!(
 
     # Solve k equation
     prev .= k.values
-    discretise!(k_eqn, prev, config)
+    discretise!(k_eqn, prev, config, ConstantScalar(0.0))
     apply_boundary_conditions!(k_eqn, boundaries.k, nothing, time, config)
     implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
     update_preconditioner!(k_eqn.preconditioner, mesh, config)

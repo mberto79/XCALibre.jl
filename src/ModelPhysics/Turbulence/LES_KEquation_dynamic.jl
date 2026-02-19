@@ -235,7 +235,7 @@ function turbulence!(
     end
     # Solve k equation
     # prev .= k.values
-    discretise!(k_eqn, k, config)
+    discretise!(k_eqn, k, config, ConstantScalar(0.0))
     apply_boundary_conditions!(k_eqn, k.BCs, nothing, time, config)
     # implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
     implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)

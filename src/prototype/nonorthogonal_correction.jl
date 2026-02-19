@@ -75,7 +75,7 @@ ncorrectors = 1
 for iteration ∈ 1:itmax
 
     prev .= phi.values
-    discretise!(eqn, phi, config)   
+    discretise!(eqn, phi, config, ConstantScalar(0.0))   
     apply_boundary_conditions!(eqn, phi.BCs, nothing, time, config)
     update_preconditioner!(eqn.preconditioner, phi.mesh, config)
     solve_system!(eqn, config.solvers.phi, phi, nothing, config)
@@ -87,7 +87,7 @@ for iteration ∈ 1:itmax
     # non-orthogonal correction
     for i ∈ 1:ncorrectors
         # prev .= phi.values
-        discretise!(eqn, phi, config)   
+        discretise!(eqn, phi, config, ConstantScalar(0.0))   
         apply_boundary_conditions!(eqn, phi.BCs, nothing, time, config)
         XCALibre.Solvers.nonorthogonal_face_correction(eqn, ∇phi, gammaf, config)
         update_preconditioner!(eqn.preconditioner, phi.mesh, config)

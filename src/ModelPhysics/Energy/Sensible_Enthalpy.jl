@@ -194,7 +194,7 @@ function energy!(
 
     # Set up and solve energy equation
     @. prev = h.values
-    discretise!(energy_eqn, h, config)
+    discretise!(energy_eqn, h, config, ConstantScalar(0.0))
     apply_boundary_conditions!(energy_eqn, boundaries.h, nothing, time, config)
     implicit_relaxation_diagdom!(energy_eqn, h.values, solvers.h.relax, nothing, config)
     update_preconditioner!(energy_eqn.preconditioner, mesh, config)

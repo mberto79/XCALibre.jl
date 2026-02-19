@@ -16,14 +16,14 @@ begin
     if typeof(phi) <: AbstractVectorField
 
         discretise!(
-            eqn, get_phi(eqn), config) # should this be float?
+            eqn, get_phi(eqn), config, ConstantScalar(0.0)) # should this be float?
 
         time = zero(TF)
         apply_boundary_conditions!(eqn, BCs, XDir(1), time, config)
 
     elseif typeof(phi) <: AbstractScalarField
 
-        discretise!(eqn, get_phi(eqn), config) # should this be float?
+        discretise!(eqn, get_phi(eqn), config, ConstantScalar(0.0)) # should this be float?
         apply_boundary_conditions!(eqn, BCs, nothing, time, config)
     end
 

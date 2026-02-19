@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 * Add implementation of `Periodic` boundaries to handle the implicit source term - fixes operation of models that use `Si` terms [#95](@ref)
 * Fixed implementation of implicit boundaries in [#96](@ref) which where missing atomics [#100](@ref)
-* Fixed calculation of the residuals to use the relative residual norm, norm(b - Ax)/norm(b), the numerator in this expression was calculated incorrectly previously, giving a 1/sqrt(n) relation (where n is the number of cells in the grid). whilst the operation of the solvers remains the same, user may find that convergence criteria may need to be increased (specially for larger grids)[#101](@ref)
+* Fixed calculation of the residuals to use the relative residual norm, norm(b - Ax)/norm(b), the numerator in this expression was calculated incorrectly previously, giving a 1/sqrt(n) relation (where n is the number of cells in the grid). whilst the operation of the solvers remains the same, user may find that convergence criteria may need to be increased (specially for larger grids)[#102](@ref)
   
 ### Changed
 * Improved stability of `Periodic` boundaries by making the implementation fully implicit [#96](@ref)

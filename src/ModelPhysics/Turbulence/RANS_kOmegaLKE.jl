@@ -348,7 +348,7 @@ function turbulence!(
     bound!(kl, config)
 
     #Damping and trigger
-    @. fv.values = 1-exp(-sqrt(k.values/(nu.values*omega.values))/coeffs.Cv)
+    @. fv.values = 1-exp(-sqrt(k.values/(nu.values*omega.values))/coeffs.Cv) # WHY IS THERE A NEGATIVE SQRT???
     @. γ.values = min((kl.values/(min(nu.values,nuL.values)*sqrt(S2.values)))^2,coeffs.Ccrit)/coeffs.Ccrit
     fSS = @. exp(-(coeffs.CSS*nu.values*sqrt(S2.values)/k.values)^2) # should be Ω but S works
 
@@ -363,20 +363,20 @@ function turbulence!(
     grad!(∇ω, omegaf, omega, boundaries.omega, time, config)
     grad!(∇k, kf, k, boundaries.k, time, config)
     inner_product!(dkdomegadx, ∇k, ∇ω, config)
-    @. Pω.values = coeffs.Cω1 * Pk.values * nut.values * (omega.values / k.values)
+    @. Pω.values = coeffs.Cω1 * Pk.values * nut.values * (omega.values / k.values) #Where does nut.values come from???
     @. dkdomegadx.values = max((coeffs.σd / omega.values) * dkdomegadx.values, 0.0)
-    @. Dωf.values = coeffs.Cω2 * omega.values
+    @. Dωf.values = coeffs.Cω2 * omega.values #Why isn't Omega squared???
     # @. nueffωS.values = nu.values+(coeffs.σω*nut_turb.values*γ.values)
     @. nueffωS.values = nu.values+(coeffs.σω*(k.values/omega.values)*γ.values)
     interpolate!(nueffω, nueffωS, config)
     correct_boundaries!(nueffω, nueffωS, boundaries.nut, time, config)
 
     #Update k fluxes
-    @. Dkf.values = coeffs.Cμ*omega.values*γ.values
+    @. Dkf.values = coeffs.Cμ*omega.values*γ.values #missing k.values???
     @. nueffkS.values = nu.values+(coeffs.σk*(k.values/omega.values)*γ.values)
     interpolate!(nueffk, nueffkS, config)
     correct_boundaries!(nueffk, nueffkS, boundaries.nut, time, config)
-    @. Pk.values = nut.values*Pk.values*γ.values*fv.values
+    @. Pk.values = nut.values*Pk.values*γ.values*fv.values #why is there a nut.values term here???
     correct_production!(Pk, boundaries.k, model, S.gradU, config)
 
     # Solve omega equation
@@ -405,7 +405,7 @@ function turbulence!(
     # @. nut_turb.values = k.values/omega.values
     ReLambda = @. normU.values*y.values/nu.values
     @. Reυ.values = (2*nu.values^2*kl.values/(y.values^2))^0.25*y.values/nu.values;
-    @. PkL.values = sqrt(Pk.values)*η*kl.values*Reυ.values^(-1.30)*ReLambda^(0.5) # update
+    @. PkL.values = sqrt(Pk.values)*η*kl.values*Reυ.values^(-1.30)*ReLambda^(0.5) # update # Why sqrt Pk.values here???
     @. nuL.values = PkL.values/max(S2.values,(normU.values/y.values)^2)
 
     fSS = @. exp(-(coeffs.CSS*nu.values*sqrt(S2.values)/k.values)^2) # should be Ω but S works

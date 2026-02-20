@@ -4,8 +4,8 @@ using XCALibre
 
 grids_dir = pkgdir(XCALibre, "Test_Meshes/");
 #grid = "quad.unv";
-grid = "25x25_grid.unv"
-#grid = "500x500_grid.unv"
+#grid = "25x25_grid.unv"
+grid = "500x500_grid.unv"
 mesh_file = joinpath(grids_dir, grid);
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001);
@@ -37,7 +37,7 @@ Re = velocity[1]*0.01/nu;
 
 
 #h_crit = 1e-10;
-h_crit = 1e-5
+h_crit = 5e-3
 
 
 model = Physics(
@@ -138,7 +138,7 @@ runtime = Runtime(iterations=2000, time_step=1, write_interval=100)
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
 
-initialise!(model.momentum.U, velocity/10);
+initialise!(model.momentum.U, velocity);
 #initialise!(model.momentum.U, [1e-10,1e-10,1e-10]);
 initialise!(model.momentum.h, h_inlet)
 #initialise!(model.momentum.h, 0.000005046);

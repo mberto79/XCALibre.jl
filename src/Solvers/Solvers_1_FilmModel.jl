@@ -143,7 +143,7 @@ function FilmModel(
     surface_tension = ScalarField(mesh)
 
     h_inlet = h.values[1]
-    h_min = 1e-5
+    h_min = 1e-4
     factor = 1.5
     for i ∈ eachindex(h.values)
         #h.values[i] = -(h_inlet-h_min)/(0.01*2)*mesh.cells[i].centre[1]-(h_inlet-h_min)/(0.01*2)*2*abs(mesh.cells[i].centre[2]-0.005)+h_inlet
@@ -155,8 +155,8 @@ function FilmModel(
 
     w_bc = [
         Dirichlet(:inlet, 1),
-        #Zerogradient(:outlet),
-        Dirichlet(:outlet, 0),
+        Zerogradient(:outlet),
+        #Dirichlet(:outlet, 0),
         Zerogradient(:top),
         Zerogradient(:bottom)
     ]
@@ -225,7 +225,7 @@ function FilmModel(
         Ph.y.values[i] = Ph_local[2]
         Ph.z.values[i] = Ph_local[3]
 
-        #τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w[i]
+        τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w[i]
         
         #if abs(RHS.x.values[i]) > 1
             #println(PL[i])
@@ -236,7 +236,9 @@ function FilmModel(
             #println("$(Δh[i])")
             #println("$(RHS.x.values[i]), $(RHS.y.values[i]), $(RHS.z.values[i])")
         #end
-        #println(∇w[i])
+        if (∇w[i][1] < -1e-24)
+            println(∇w[i], τθw[i])
+        end
     end
     @info "Starting loops"
     
@@ -322,9 +324,9 @@ function FilmModel(
         #grad!(∇PL, PLf, PL, boundaries.PL, time, config)
         #limit_gradient!(schemes.PL.limiter, ∇PL, PL, config)
 
-        #for i ∈ eachindex(h)
-        #    w[i] = (h.values[i] > coeffs.h_crit)
-        #end
+        for i ∈ eachindex(h)
+            w[i] = (h.values[i] > coeffs.h_crit)
+        end
 
         #interpolate!(wf, w, config)
         grad!(∇w, wf, w, w_bc, time, config)
@@ -347,7 +349,7 @@ function FilmModel(
             #if Ph.x.values[i] > τw.x.values[i]
             #    println("$(Ph.x.values[i]), $(τw.x.values[i]), $iteration")
             #end
-            #τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w[i]
+            τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w[i]
         end
         #correct_mass_flux
         #correct_velocity!()

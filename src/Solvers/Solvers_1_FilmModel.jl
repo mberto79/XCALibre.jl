@@ -30,7 +30,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     hmdotf = FaceScalarField(mesh)
     rhohf = FaceScalarField(mesh)
     Sm = ScalarField(mesh)
-    initialise!(Sm, 1e-30)
+    initialise!(Sm, 0)
     rho_l = ScalarField(mesh)
     initialise!(rho_l, rho.values)
     h∇PL = VectorField(mesh)
@@ -47,8 +47,8 @@ function setup_FilmModel_Solver(solver_variant, model, config;
         Time{schemes.U.time}(rhohf, U)
         + Divergence{schemes.U.divergence}(hmdotf,U)
         ==
-          #Source(h∇PL)
-         Source(Ph)
+          Source(h∇PL)
+        + Source(Ph)
         - Source(τw)
         + Source(τθw)
     ) → VectorEquation(U, boundaries.U)
@@ -99,16 +99,14 @@ function FilmModel(
     rhohf = get_flux(U_eqn, 1)
     hmdotf = get_flux(U_eqn, 2)
 
-    #h∇PL = get_source(U_eqn, 1)
-    Ph = get_source(U_eqn,1)
-    τw = get_source(U_eqn,2)
-    τθw = get_source(U_eqn,3)
+    h∇PL = get_source(U_eqn, 1)
+    Ph = get_source(U_eqn,2)
+    τw = get_source(U_eqn,3)
+    τθw = get_source(U_eqn,4)
     
     rho_mdotf = get_flux(h_eqn,2)
     Sm = get_source(h_eqn,1)
     mu = nu.values*rho.values
-    println(mu)
-
 
     outputWriter = initialise_writer(output, model.domain)
 
@@ -122,13 +120,14 @@ function FilmModel(
     mdotf = FaceScalarField(mesh)
 
 
-    PL = ScalarField(mesh) # Using this until a proper fix is implemented
+    #PL = ScalarField(mesh) # Using this until a proper fix is implemented
     PLf = FaceScalarField(mesh)
-    ∇PL = Grad{schemes.PL.gradient}(PL) # Need to rework this into taking a FaceScalarField instead.
+    ∇PL = Grad{Gauss}(PLf) # Need to rework this into taking a FaceScalarField instead.
 
     ∇h = Grad{schemes.h.gradient}(h)
     ∇hf = FaceVectorField(mesh)
     Δh = ScalarField(mesh)
+    Δhf = FaceScalarField(mesh)
 
     w = ScalarField(mesh)
     wf = FaceScalarField(mesh)
@@ -140,29 +139,51 @@ function FilmModel(
     #rD = ScalarField(mesh)
     #rDf = FaceScalarField(mesh)
 
-    surface_tension = ScalarField(mesh)
 
     h_inlet = h.values[1]
     h_min = 1e-4
     factor = 1.5
     for i ∈ eachindex(h.values)
-        #h.values[i] = -(h_inlet-h_min)/(0.01*2)*mesh.cells[i].centre[1]-(h_inlet-h_min)/(0.01*2)*2*abs(mesh.cells[i].centre[2]-0.005)+h_inlet
-        a = h_inlet/2
-        c = factor
-        b = (log(h_min/a))/(0.01^c)
-        h.values[i] = a*exp(b*mesh.cells[i].centre[1]^c)#+a*exp(b*abs(mesh.cells[i].centre[2]-0.005)^c)
+    #    #h.values[i] = -(h_inlet-h_min)/(0.01*2)*mesh.cells[i].centre[1]-(h_inlet-h_min)/(0.01*2)*2*abs(mesh.cells[i].centre[2]-0.005)+h_inlet
+    #    a = h_inlet/2
+    #    c = factor
+    #    b = (log(h_min/a))/(0.01^c)
+    #    h.values[i] = a*exp(b*mesh.cells[i].centre[1]^c)#+a*exp(b*abs(mesh.cells[i].centre[2]-0.005)^c)
+        #println(sqrt((0.005-mesh.cells[i].centre[1])^2+(0.005-mesh.cells[i].centre[2])^2+(0.005-mesh.cells[i].centre[3])^2))
+        if sqrt((0.005-mesh.cells[i].centre[1])^2+(0.005-mesh.cells[i].centre[2])^2+(0.005-mesh.cells[i].centre[3])^2)<0.00503
+            h.values[i] = 0.1
+        end
     end
 
     w_bc = [
-        Dirichlet(:inlet, 1),
+        #Dirichlet(:inlet, 1),
+        Zerogradient(:inlet),
         Zerogradient(:outlet),
         #Dirichlet(:outlet, 0),
+        Zerogradient(:top),
+        Zerogradient(:bottom)
+    ]
+    Δh_bc = [
+        Zerogradient(:inlet),
+        Zerogradient(:outlet),
         Zerogradient(:top),
         Zerogradient(:bottom)
     ]
 
     n_cells = length(mesh.cells)
 
+    #(;cells) = U.mesh
+    #ndrange_VF = length(cells)
+
+    #(;faces) = U.mesh
+    #ndrange_FSF = length(faces)
+    
+    #PLf_func! = _calculate_PLf!(_setup(backend, workgroup, ndrange_FSF)...)
+    #h∇PL_func! = _calculate_h∇PL!(_setup(backend, workgroup, ndrange_VF)...)
+    #Ph_func! = _calculate_Ph!(_setup(backend, workgroup, ndrange_VF)...)
+    #τw_func! = _calculate_τw!(_setup(backend, workgroup, ndrange_VF)...)
+    #τθw_func! = _calculate_τθw!(_setup(backend, workgroup, ndrange_VF)...)
+    
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
     
@@ -184,29 +205,29 @@ function FilmModel(
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
 
-    rho_mdotf = mdotf.values .* rho.values[1]
+    rho_mdotf = mdotf.values .* rho.values
     
     # Getting the laplacian of h for first U calculation
     grad!(∇h, hf, h, boundaries.h, time, config)
     limit_gradient!(schemes.h.limiter, ∇h, h, config)
-    interpolate!(∇hf, ∇h.result, config)
     div!(Δh, ∇hf, config)
+    interpolate!(Δhf, Δh, config)
+    correct_boundaries!(Δhf, Δh, Δh_bc, time, config)
 
     # Getting h * mdotf and rho * h for U calculation
     # hf is calculated within grad!()
-    @. rhohf.values = hf.values *  rho.values[1]
-    @. hmdotf.values = mdotf.values * hf.values * rho.values[1]
+    @. rhohf.values = hf.values *  rho.values
+    @. hmdotf.values = mdotf.values * hf.values * rho.values
 
     @info "need to readd Pg term - Coupling term for other phase"
     Pg = 0# Test Pg term set to zero, as the gradient is found this value doesn't matter
     @info "need to fix surface tension term"
-    for i ∈ 1:length(Δh.values)
-        surface_tension[i] = coeffs.σ*Δh[i]
-        #PL[i] = Pg - (coeffs.σ * model.momentum.h[i] * (dot(n,G))) - surface_tension[i]
+    for i ∈ 1:length(Δhf.values)
+        PLf[i] = Pg - hf.values[i]*dot(n,G) - coeffs.σ*Δhf[i]
     end
 
-    grad!(∇PL, PLf, PL, boundaries.PL, time, config)
-    limit_gradient!(schemes.PL.limiter, ∇PL, PL, config)
+    grad!(∇PL, PLf, config)
+    #limit_gradient!(schemes.PL.limiter, ∇PL, PL, config)
 
     for i ∈ eachindex(h)
         w[i] = (h.values[i] > coeffs.h_crit)
@@ -215,7 +236,7 @@ function FilmModel(
     grad!(∇w, wf, w, w_bc, time, config)
 
     for i ∈ eachindex(h.values)
-        multiplier = 3*(mu/h.values[i])
+        multiplier =0; 3*(mu/h.values[i])
         τw.x.values[i] = multiplier * U.x.values[i]
         τw.y.values[i] = multiplier * U.y.values[i]
         τw.z.values[i] = multiplier * U.z.values[i]
@@ -225,20 +246,12 @@ function FilmModel(
         Ph.y.values[i] = Ph_local[2]
         Ph.z.values[i] = Ph_local[3]
 
+        h∇PL_local = h[i]*∇PL[i]
+        h∇PL.x.values[i] = h∇PL_local[1]
+        h∇PL.y.values[i] = h∇PL_local[2]
+        h∇PL.z.values[i] = h∇PL_local[3]
+
         τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w[i]
-        
-        #if abs(RHS.x.values[i]) > 1
-            #println(PL[i])
-            #println("$(∇PL[i])")
-            #println(τθw)
-            #println("$(∇w[i].x), $(∇w[i].y), $(∇w[i].z)")
-            #println("$(τw.x.values[i]), $(τw.y.values[i]), $(τw.z.values[i])")
-            #println("$(Δh[i])")
-            #println("$(RHS.x.values[i]), $(RHS.y.values[i]), $(RHS.z.values[i])")
-        #end
-        if (∇w[i][1] < -1e-24)
-            println(∇w[i], τθw[i])
-        end
     end
     @info "Starting loops"
     
@@ -246,6 +259,7 @@ function FilmModel(
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
     rh = 0
+    #rx = ry = rz = 1
 
     for iteration ∈ 1:iterations
         time = iteration
@@ -258,15 +272,13 @@ function FilmModel(
         explicit_relaxation!(U.y.values, prev_v, solvers.U.relax, config)
         explicit_relaxation!(U.z.values, prev_w, solvers.U.relax, config)
 
-        #H!(Hv, U, U_eqn, config)
-        #interpolate!(Uf, Hv, config)
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, boundaries.U, time, config)
 
         # h calculations
         flux!(mdotf, Uf, config)
 
-        @. rho_mdotf =  mdotf.values .* rho.values[1]
+        @. rho_mdotf =  mdotf.values .* rho.values
         
 
         @. prev = h.values
@@ -276,20 +288,6 @@ function FilmModel(
 
         
         if (iteration == 1)
-            #println("$(U.x.values), $(U.y.values)")
-            #println(mdotf.values)
-            
-            #for i ∈ mdotf.values
-                
-                #if i > 0.000000000019
-                #    println(i)
-                #end
-            #end
-
-            #println(Sm.values)
-            #println(h.values)
-            #println(hmdotf.values)
-            #println(Sm.values)
             
         end
         #for i ∈ 1:ncorrectors
@@ -302,42 +300,39 @@ function FilmModel(
         
         #correct_mass_flux(mdotf, PL, rDf, config)
 
-        #for i ∈ eachindex(h.values)
-        #    if (h.values[i]<=0) h.values[i] = 1e-18 end
-        #end
+        for i ∈ eachindex(h.values)
+            if (h.values[i]<=0) h.values[i] = 1e-18 end
+        end
 
         grad!(∇h, hf, h, boundaries.h, time, config)
-        @. hmdotf.values = mdotf.values * hf.values * rho.values[1]
-        @. rhohf.values =  hf.values * rho.values[1]
+        @. hmdotf.values = mdotf.values * hf.values * rho.values
+        @. rhohf.values =  hf.values * rho.values
 
-        #limit_gradient!(schemes.h.limiter, ∇h, h, config)
-        #interpolate!(∇hf, ∇h.result, config)
-        #div!(Δh, ∇hf, config)
+        limit_gradient!(schemes.h.limiter, ∇h, h, config)
+        div!(Δh, ∇hf, config)
+        interpolate!(Δhf, Δh, config)
+        correct_boundaries!(Δhf, Δh, Δh_bc, time, config)
+
+        for i ∈ 1:length(Δhf.values)
+            PLf[i] = Pg - hf.values[i]*dot(n,G) - coeffs.σ*Δhf[i]
+        end
+
+        grad!(∇PL, PLf, config)        
         
-        ## add Pg term
-        #for i ∈ 1:length(Δh.values)
-        #    surface_tension[i] = model.momentum.coeffs.σ*Δh[i]
-        #    PL[i] = - (model.momentum.coeffs.σ * model.momentum.h[i] * (dot(n,G)))# - surface_tension[i]
-        #end
-
-        #interpolate!(PLf, PL, config)
-        #grad!(∇PL, PLf, PL, boundaries.PL, time, config)
-        #limit_gradient!(schemes.PL.limiter, ∇PL, PL, config)
 
         for i ∈ eachindex(h)
             w[i] = (h.values[i] > coeffs.h_crit)
         end
 
-        #interpolate!(wf, w, config)
         grad!(∇w, wf, w, w_bc, time, config)
-        #if (iteration == 3)
-            #for i ∈ eachindex(h)
-            #    println("$(h.values[i]), $(w.values[i])")
-            #end
-        #end
 
+        #PLf_func!(PLf, hf, Δhf, model)
+        #Ph_func!(Ph, h, model)
+        #h∇PL_func!(h∇PL, ∇PL, h)
+        #τw_func!(τw, U, h, mu)
+        #τθw_func!(τθw, ∇w, model)
         for i ∈ eachindex(h)
-            multiplier = 3*(mu/h.values[i])
+            multiplier =0; 3*(mu/h.values[i])
             τw.x.values[i] = multiplier * U.x.values[i]
             τw.y.values[i] = multiplier * U.y.values[i]
             τw.z.values[i] = multiplier * U.z.values[i]
@@ -346,9 +341,12 @@ function FilmModel(
             Ph.x.values[i] = Ph_local[1]
             Ph.y.values[i] = Ph_local[2]
             Ph.z.values[i] = Ph_local[3]
-            #if Ph.x.values[i] > τw.x.values[i]
-            #    println("$(Ph.x.values[i]), $(τw.x.values[i]), $iteration")
-            #end
+
+            h∇PL_local = h[i]*∇PL[i]
+            h∇PL.x.values[i] = h∇PL_local[1]
+            h∇PL.y.values[i] = h∇PL_local[2]
+            h∇PL.z.values[i] = h∇PL_local[3]
+            
             τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w[i]
         end
         #correct_mass_flux
@@ -425,6 +423,94 @@ function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iter
     
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end
+
+
+#@kernel function _calculate_τw!(τw, U, h, mu)
+#    i = @index(Global)
+#
+#    multiplier = 3*(mu/h.values[i])
+#    τw.x.values[i] = multiplier * U.x.values[i]
+#    τw.y.values[i] = multiplier * U.y.values[i]
+#    τw.z.values[i] = multiplier * U.z.values[i]
+#end
+#
+#@kernel function _calculate_Ph!(Ph, h, model)
+#    i = @index(Global)
+#    (; fluid, momentum) = model
+#    (; rho) = fluid
+#    (; coeffs) = momentum
+#    plate_tangent_vector = [1,0,0] # Temporary
+#    g = 9.81# Temporary
+#    Ph_local = (rho.values*g*sind(coeffs.ϕ)*h[i]) .*plate_tangent_vector
+#    Ph.x.values[i] = Ph_local[1]
+#    Ph.y.values[i] = Ph_local[2]
+#    Ph.z.values[i] = Ph_local[3]
+#end
+#
+#
+#@kernel function _calculate_PLf!(PLf, hf, Δhf, model)
+#    i = @index(Global)
+#    
+#    Pg = 0
+#    (; coeffs) = model.momentum
+#    n = [sind(coeffs.ϕ),0,cosd(coeffs.ϕ)]
+#    g = 9.8
+#    G = g*[0,0,-1] 
+#    #println(i)
+#    PLf[i] = Pg -hf.values[i]*dot(n,G) - coeffs.σ*Δhf[i];#Pg - (coeffs.σ * model.momentum.h[i] * (dot(n,G)))
+#end
+#
+#@kernel function _calculate_h∇PL!(h∇PL, ∇PL, h)
+#    i = @index(Global)
+#
+#    h∇PL_local = h[i]*∇PL[i]
+#    h∇PL.x.values[i] = h∇PL_local[1]
+#    h∇PL.y.values[i] = h∇PL_local[2]
+#    h∇PL.z.values[i] = h∇PL_local[3]
+#end
+#
+#@kernel function _calculate_τθw!(τθw, ∇w, model)
+#    i = @index(Global)
+#    (; coeffs) = model.momentum
+#    τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w[i]
+#end
+
+#function calculate_Ph!(Ph, h, model, config)
+#    (; hardware) = config
+#    (; backend, workgroup) = hardware
+#
+#    (; cells) = Ph.mesh
+#    ndrange = length(cells)
+#    kernel! = _calculate_Ph!(_setup(backend, workgroup, ndrange)...)
+#    kernel!(Ph, h, model)
+#end
+
+#function calculate_h∇PL!(h∇PL, ∇PL, PLf, hf, h, Δhf, model, config)
+#    (; hardware) = config
+#    (; backend, workgroup) = hardware
+#
+#    (;cells) = PLf.mesh
+#    ndrange = length(cells)
+#    kernel! = _calculate_PLf!(_setup(backend, workgroup, ndrange)...)
+#    kernel!(PLf, hf, Δhf, model)
+#
+#    grad!(∇PL, PLf, config)
+#
+#    (; cells) = h∇PL.mesh
+#    ndrange_h∇PL = length(cells)
+#    kernel! = _calculate_h∇PL!(_setup(backend, workgroup, ndrange_h∇PL)...)
+#    kernel!(h∇PL, ∇PL, h)
+#end
+
+#function calculate_τw!(τw, U, h, mu, config)
+#    (; hardware) = config
+#    (; backend, workgroup) = hardware
+#
+#    (; cells) = τw.mesh
+#    ndrange = length(cells)
+#    kernel! = _calculate_τw!(_setup(backend, workgroup, ndrange)...)
+#    kernel!(τw, U, h, mu)
+#end
 
 #function get_surface_tension!(model, surface_tension, Δh ,∇hf, config)
 #    (; hardware) = config

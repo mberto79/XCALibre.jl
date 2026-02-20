@@ -3,7 +3,7 @@ using XCALibre
 # using AMDGPU # Uncomment to run on AMD GPUs
 
 grids_dir = pkgdir(XCALibre, "Test_Meshes/");
-#grid = "quad.unv";
+
 #grid = "25x25_grid.unv"
 grid = "500x500_grid.unv"
 mesh_file = joinpath(grids_dir, grid);
@@ -22,19 +22,10 @@ mesh_dev = mesh; # use this line to run on CPU
 # mesh_dev = adapt(backend, mesh)  # Uncomment to run on GPU 
 
 
-inlet_size = 0.01; # m - taken from model in Salome
 rho_l = 991.07; # Density of water @ 43°C kg/m3
-Γ=200; # g/m/s
-Γkg = Γ/1000; # kg/m/s
-inlet_flow_rate = Γkg/rho_l; # m2/s
-h_inlet = 0.05;
-inlet_speed = inlet_flow_rate/h_inlet;
-inlet_speed = 0.04;
 
-velocity = inlet_speed*[1, 0.0, 0.0];
 nu = 6.245e-7; # Kinematic Viscosity of water @ 43°C
-Re = velocity[1]*0.01/nu;
-
+#Re = velocity[1]*0.01/nu;
 
 #h_crit = 1e-10;
 h_crit = 5e-3
@@ -53,45 +44,22 @@ BCs = assign(
     region=mesh_dev,
     (
         U = [
-            Dirichlet(:inlet, velocity),
-            #Extrapolated(:outlet),
-            Zerogradient(:outlet),
-            #Extrapolated(:outlet),
-            #Wall(:wall, [0.0, 0.0, 0.0]),
-            #Zerogradient(:bottom),
-            #Zerogradient(:wall),
+            Wall(:inlet, [0.0, 0.0, 0.0]),
             Wall(:bottom, [0.0, 0.0, 0.0]),
-            #Wall(:bottom, velocity),
-            #Extrapolated(:bottom),
+            Wall(:outlet, [0.0, 0.0, 0.0]),
             Wall(:top, [0.0, 0.0, 0.0])
-            #Wall(:top, velocity)
-            #Zerogradient(:top)
-            #Extrapolated(:top)
         ],
         h = [
-            Dirichlet(:inlet, h_inlet),
-            #Zerogradient(:inlet),
-            #Extrapolated(:inlet),
-            #Dirichlet(:outlet, h_crit),
-            #Wall(:outlet),
-            Zerogradient(:outlet),
-            #Dirichlet(:bottom, 1e-18),
-            #Extrapolated(:outlet),
-            #Wall(:wall),
+            Zerogradient(:inlet),
             Zerogradient(:bottom),
-            #Dirichlet(:bottom, h_crit),
-            #Zerogradient(:wall),
-            #Extrapolated(:bottom),
-            #Wall(:top)
+            Zerogradient(:outlet),
             Zerogradient(:top)
-            #Dirichlet(:top, h_crit)
-            #Extrapolated(:top)
         ]
     )
 );
 
 schemes = (
-    U = Schemes(divergence = Linear),
+    U = Schemes(),
     h = Schemes(), # no input provided (will use defaults)
 );
 
@@ -122,9 +90,7 @@ runtime = Runtime(iterations=2000, time_step=1, write_interval=100)
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
 
-initialise!(model.momentum.U, velocity);
-#initialise!(model.momentum.U, [1e-10,1e-10,1e-10]);
-initialise!(model.momentum.h, h_inlet)
-#initialise!(model.momentum.h, 0.000005046);
+initialise!(model.momentum.U, [1,1,0]);
+initialise!(model.momentum.h, h_crit/1)
 
 residuals = run!(model, config);

@@ -28,7 +28,7 @@ nu = 6.245e-7; # Kinematic Viscosity of water @ 43°C
 #Re = velocity[1]*0.01/nu;
 
 #h_crit = 1e-10;
-h_crit = 5e-3
+h_crit = 1e-10
 
 
 model = Physics(
@@ -50,17 +50,26 @@ BCs = assign(
             Wall(:top, [0.0, 0.0, 0.0])
         ],
         h = [
-            Zerogradient(:inlet),
-            Zerogradient(:bottom),
-            Zerogradient(:outlet),
-            Zerogradient(:top)
+            #Zerogradient(:inlet),
+            #Zerogradient(:bottom),
+            #Zerogradient(:outlet),
+            #Zerogradient(:top)
+            Wall(:inlet),
+            Wall(:bottom),
+            Wall(:outlet),
+            Wall(:top)
         ]
     )
 );
 
 schemes = (
-    U = Schemes(),
-    h = Schemes(), # no input provided (will use defaults)
+    U = Schemes(
+        time=SteadyState,
+        divergence=Upwind
+        ),
+    h = Schemes(
+        divergence=LUST
+    ), # no input provided (will use defaults)
 );
 
 solvers = (
@@ -84,13 +93,15 @@ solvers = (
 
 #runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
 #runtime = Runtime(iterations=20000, time_step=1, write_interval=20000)
-runtime = Runtime(iterations=20, time_step=1, write_interval=1); # hide
-#runtime = Runtime(iterations=2000, time_step=1, write_interval=100)
+#runtime = Runtime(iterations=20, time_step=1, write_interval=1); # hide
+runtime = Runtime(iterations=2000, time_step=1, write_interval=100)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
 
-initialise!(model.momentum.U, [1,1,0]);
-initialise!(model.momentum.h, h_crit/1)
+initialise!(model.momentum.U, [1e-4,1e-4,0]);
+initialise!(model.momentum.h, h_crit/100)
 
 residuals = run!(model, config);
+
+using Plots

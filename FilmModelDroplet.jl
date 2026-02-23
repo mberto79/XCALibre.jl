@@ -8,7 +8,7 @@ grids_dir = pkgdir(XCALibre, "Test_Meshes/");
 grid = "500x500_grid.unv"
 mesh_file = joinpath(grids_dir, grid);
 
-mesh = UNV2D_mesh(mesh_file, scale=0.001);
+mesh = UNV2D_mesh(mesh_file, scale=0.01);
 
 # Select backend and setup hardware
 backend = CPU();
@@ -84,8 +84,8 @@ solvers = (
 
 #runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
 #runtime = Runtime(iterations=20000, time_step=1, write_interval=20000)
-#runtime = Runtime(iterations=20, time_step=1, write_interval=1); # hide
-runtime = Runtime(iterations=2000, time_step=1, write_interval=100)
+runtime = Runtime(iterations=20, time_step=1, write_interval=1); # hide
+#runtime = Runtime(iterations=2000, time_step=1, write_interval=100)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);

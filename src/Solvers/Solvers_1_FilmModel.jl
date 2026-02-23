@@ -150,7 +150,7 @@ function FilmModel(
     #    b = (log(h_min/a))/(0.01^c)
     #    h.values[i] = a*exp(b*mesh.cells[i].centre[1]^c)#+a*exp(b*abs(mesh.cells[i].centre[2]-0.005)^c)
         #println(sqrt((0.005-mesh.cells[i].centre[1])^2+(0.005-mesh.cells[i].centre[2])^2+(0.005-mesh.cells[i].centre[3])^2))
-        if sqrt((0.005-mesh.cells[i].centre[1])^2+(0.005-mesh.cells[i].centre[2])^2+(0.005-mesh.cells[i].centre[3])^2)<0.00503
+        if sqrt((0.005-mesh.cells[i].centre[1])^2+(0.005-mesh.cells[i].centre[2])^2+(0.005-mesh.cells[i].centre[3])^2)<0.0503
             h.values[i] = 0.1
         end
     end

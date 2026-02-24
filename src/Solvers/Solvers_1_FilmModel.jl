@@ -119,10 +119,8 @@ function FilmModel(
     # Define aux fields
     mdotf = FaceScalarField(mesh)
 
-
-    #PL = ScalarField(mesh) # Using this until a proper fix is implemented
     PLf = FaceScalarField(mesh)
-    ∇PL = Grad{Gauss}(PLf) # Need to rework this into taking a FaceScalarField instead.
+    ∇PL = Grad{Gauss}(PLf)
 
     ∇h = Grad{schemes.h.gradient}(h)
     ∇hf = FaceVectorField(mesh)

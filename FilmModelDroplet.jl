@@ -64,12 +64,13 @@ BCs = assign(
 
 schemes = (
     U = Schemes(
-        time=SteadyState,
+        time=Euler,
         divergence=Upwind
         ),
     h = Schemes(
+        time=Euler,
         divergence=LUST
-    ), # no input provided (will use defaults)
+    ),
 );
 
 solvers = (

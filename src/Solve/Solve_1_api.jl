@@ -3,6 +3,7 @@ export explicit_relaxation!, implicit_relaxation!, implicit_relaxation_diagdom!,
 export solve_system!
 export solve_equation!
 export residual!
+export AdaptiveTimeStepping
 
 struct SolverSetup{
     F<:AbstractFloat,
@@ -81,11 +82,50 @@ SolverSetup(;
             float_type(atol),
             float_type(rtol))
 
-struct Runtime{I<:Integer,F<:AbstractFloat}
-    iterations::I
-    dt::F
-    write_interval::I
+struct AdaptiveTimeStepping{F<:AbstractFloat}
+    maxCo::F
+    minShrink::F
+    maxGrow::F
 end
+Adapt.@adapt_structure AdaptiveTimeStepping
+
+"""
+    AdaptiveTimeStepping(; 
+        # keyword arguments
+
+        maxCo=0.75,
+        minShrink=0.1,
+        maxGrow=1.2
+    )
+
+Constructs an `AdaptiveTimeStepping` object used to control automatic time-step adjustment
+based on the Courant number.
+
+This struct is passed optionally to `Runtime` and enables adaptive time stepping in transient
+simulations. If not provided, a fixed time step is used.
+
+# Input arguments
+
+- `maxCo::AbstractFloat`: target maximum Courant number. The time step will be adjusted
+  such that the computed Courant number approaches this value.
+- `minShrink::AbstractFloat`: lower bound on the multiplicative factor applied to the
+  current time step. Prevents excessively large reductions in a single update.
+- `maxGrow::AbstractFloat`: upper bound on the multiplicative factor applied to the
+  current time step. Prevents excessive time-step growth.
+"""
+AdaptiveTimeStepping(;
+    maxCo=0.75,
+    minShrink=0.1,
+    maxGrow=1.2
+) = AdaptiveTimeStepping(float(maxCo), float(minShrink), float(maxGrow))
+
+struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A}
+    iterations::I
+    dt::V
+    write_interval::I
+    adaptive::A
+end
+Adapt.@adapt_structure Runtime
 
 """
     Runtime(; 
@@ -119,8 +159,13 @@ This is a convenience function to set the top-level runtime information. The inp
 runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
 ```
 """
-Runtime(; iterations::I, write_interval::I, time_step::N) where {I<:Integer,N<:Number} = begin
-    Runtime(iterations, float(time_step), write_interval)
+Runtime(; iterations::I,
+          write_interval::I,
+          time_step::N,
+          adaptive=nothing) where {I<:Integer,N<:Number} = begin
+
+    val = float(time_step)
+    Runtime(iterations, [val], write_interval, adaptive)
 end
 
 # Set schemes function definition with default set variables

@@ -126,7 +126,7 @@ function LAPLACE(
     (; backend) = hardware
 
 
-    postprocess = convert_time_to_iterations(postprocess,model,dt,iterations)
+    postprocess = convert_time_to_iterations(postprocess,model,dt[1],iterations)
     @info "Starting LAPLACE loops..."
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
@@ -154,7 +154,7 @@ function LAPLACE(
 
         ProgressMeter.next!(
             progress, showvalues = [
-                (:time, iteration*runtime.dt),
+                (:time, iteration*runtime.dt[1]),
                 (:T_residual, R_T[iteration])
                 ]
             )

@@ -147,7 +147,7 @@ function CPISO(
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
     
-    postprocess = convert_time_to_iterations(postprocess,model,dt,iterations)
+    postprocess = convert_time_to_iterations(postprocess,model,dt[1],iterations)
     mdotf = get_flux(U_eqn, 2)
     mueff = get_flux(U_eqn, 3)
     mueffgradUt = get_source(U_eqn, 2)
@@ -281,7 +281,7 @@ function CPISO(
                 flux!(mdotf, Uf, config)
                 @. mdotf.values *= rhof.values
                 @. corr -= mdotf.values
-                @. corr *= 0.0/runtime.dt
+                @. corr *= 0.0/runtime.dt[1]
                 @. mdotf.values += rhorDf.values*corr/rhof.values
                 div!(divHv, mdotf, config)
             end
@@ -327,7 +327,7 @@ function CPISO(
             # Velocity and boundaries correction
             correct_velocity!(U, Hv, ∇p, rD, config) # why is this not rhorD?
             
-            @. dpdt.values = (p.values-prev)/runtime.dt
+            @. dpdt.values = (p.values-prev)/runtime.dt[1]
 
             turbulence!(turbulenceModel, model, S, prev, time, config) 
             update_nueff!(nueff, nu, model.turbulence, config)
@@ -342,7 +342,7 @@ function CPISO(
 
     ProgressMeter.next!(
         progress, showvalues = [
-            (:time, iteration*runtime.dt),
+            (:time, iteration*runtime.dt[1]),
             (:Courant, maxCourant),
             (:Ux, R_ux[iteration]),
             (:Uy, R_uy[iteration]),

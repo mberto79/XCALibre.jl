@@ -44,8 +44,6 @@ residuals.p
 """
 run!() = nothing # dummy function for providing general documentation
 
-
-
 # Laplace solver (steady)
 """
     run!(

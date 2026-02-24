@@ -267,7 +267,7 @@ end
 @kernel function _max_courant_number!(cellsCourant, U, runtime, mesh::Mesh3)
     i = @index(Global)
     @uniform cells = mesh.cells
-    dt = runtime.dt
+    dt = runtime.dt[1]
     umag = norm(U[i])
     volume = cells[i].volume
     dx = volume^0.333333
@@ -277,7 +277,7 @@ end
 @kernel function _max_courant_number!(cellsCourant, U, runtime, mesh::Mesh2)
     i = @index(Global)
     @uniform cells = mesh.cells
-    dt = runtime.dt
+    dt = runtime.dt[1]
     umag = norm(U[i])
     volume = cells[i].volume
     dx = volume^0.5

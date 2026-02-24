@@ -69,7 +69,7 @@ schemes = (
         ),
     h = Schemes(
         time=Euler,
-        divergence=LUST
+        divergence=Upwind
     ),
 );
 
@@ -94,31 +94,24 @@ solvers = (
 
 #runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
 #runtime = Runtime(iterations=20000, time_step=1, write_interval=20000)
-#runtime = Runtime(iterations=20, time_step=1, write_interval=1); # hide
-runtime = Runtime(iterations=2000, time_step=1, write_interval=100)
+runtime = Runtime(iterations=20, time_step=1, write_interval=1); # hide
+#runtime = Runtime(iterations=2000, time_step=1, write_interval=100)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
 
 initialise!(model.momentum.U, [1e-4,1e-4,0]);
-
 h_init = h_crit/100;
 initialise!(model.momentum.h, h_init)
-#h_min = 1e-4
-#factor = 1.5
-cells = mesh.cells;
-h = model.momentum.h;
-for i ∈ eachindex(h.values)
-#    #h.values[i] = -(h_inlet-h_min)/(0.01*2)*mesh.cells[i].centre[1]-(h_inlet-h_min)/(0.01*2)*2*abs(mesh.cells[i].centre[2]-0.005)+h_inlet
-#    a = h_inlet/2
-#    c = factor
-#    b = (log(h_min/a))/(0.01^c)
-#    h.values[i] = a*exp(b*mesh.cells[i].centre[1]^c)#+a*exp(b*abs(mesh.cells[i].centre[2]-0.005)^c)
-#println(sqrt((0.005-mesh.cells[i].centre[1])^2+(0.005-mesh.cells[i].centre[2])^2+(0.005-mesh.cells[i].centre[3])^2))
-    if sqrt((0.05-cells[i].centre[1])^2+(0.05-cells[i].centre[2])^2+(0.005-cells[i].centre[3])^2)<0.1^2
-        h.values[i] = 0.001
+
+for i ∈ eachindex(mesh.cells)
+    if sqrt((cells[i].centre[1]-0.05)^2+(cells[i].centre[2]-0.05)^2)<0.1^2
+        model.momentum.U.x.values[i] = 1
+        model.momentum.U.y.values[i] = 1
+        model.momentum.h[i] = 1e-3
     end
 end
+
 
 residuals = run!(model, config);
 

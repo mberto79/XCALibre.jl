@@ -8,7 +8,7 @@ grids_dir = pkgdir(XCALibre, "Test_Meshes/");
 grid = "500x500_grid.unv"
 mesh_file = joinpath(grids_dir, grid);
 
-mesh = UNV2D_mesh(mesh_file, scale=0.001);
+mesh = UNV2D_mesh(mesh_file, scale=0.01);
 
 # Select backend and setup hardware
 backend = CPU();
@@ -22,7 +22,7 @@ mesh_dev = mesh; # use this line to run on CPU
 # mesh_dev = adapt(backend, mesh)  # Uncomment to run on GPU 
 
 
-inlet_size = 0.01; # m - taken from model in Salome
+inlet_size = 0.1; # m - taken from model in Salome
 rho_l = 991.07; # Density of water @ 43°C kg/m3
 Γ=200; # g/m/s
 Γkg = Γ/1000; # kg/m/s
@@ -36,13 +36,13 @@ nu = 6.245e-7; # Kinematic Viscosity of water @ 43°C
 Re = velocity[1]*0.01/nu;
 
 
-#h_crit = 1e-10;
-h_crit = 5e-3
+h_crit = 1e-10;
+#h_crit = 5e-3
 
 
 model = Physics(
-    momentum=Momentum{EFM}(;σ=0.069, h_crit = h_crit, β=6.0, θm = 70, ϕ=0),
-    time = Steady(),
+    momentum=Momentum{EFM}(;σ=0.069, h_crit = h_crit, β=6.0, θm = 30, ϕ=10),
+    time = Transient(),
     fluid = Fluid{Incompressible}(; nu = nu, rho = rho_l),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
@@ -91,8 +91,14 @@ BCs = assign(
 );
 
 schemes = (
-    U = Schemes(divergence = Linear),
-    h = Schemes(), # no input provided (will use defaults)
+    U = Schemes(
+        time=Euler,
+        divergence=Upwind
+        ),
+    h = Schemes(
+        time=Euler,
+        divergence=Upwind
+    ),
 );
 
 solvers = (
@@ -126,5 +132,13 @@ initialise!(model.momentum.U, velocity);
 #initialise!(model.momentum.U, [1e-10,1e-10,1e-10]);
 initialise!(model.momentum.h, h_inlet)
 #initialise!(model.momentum.h, 0.000005046);
+pow = 18
+for i ∈ eachindex(model.momentum.h)
+    #model.momentum.h[i] = ((0.1-mesh.cells[i].centre[1])/0.1)^pow
+    if mesh.cells[i].centre[1] > 0.06
+        model.momentum.h[i] = h_crit/10
+    end
+#    println(cells[i].centre)
+end
 
 residuals = run!(model, config);

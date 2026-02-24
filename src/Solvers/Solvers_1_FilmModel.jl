@@ -243,8 +243,8 @@ function FilmModel(
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
-    rh = 0
-    #rx = ry = rz = 1
+    #rh = 0
+    rx = ry = rz = rh = 1
 
     for iteration ∈ 1:iterations
         time = iteration
@@ -263,18 +263,15 @@ function FilmModel(
         # h calculations
         flux!(mdotf, Uf, config)
 
-        @. rho_mdotf =  mdotf.values .* rho.values
+        @. rho_mdotf =  mdotf.values * rho.values
         
 
         @. prev = h.values
 
-        #rh = solve_equation!(h_eqn, h, boundaries.h, solvers.h, config)
+        rh = solve_equation!(h_eqn, h, boundaries.h, solvers.h, config)
         #explicit_relaxation!(h, prev, solvers.h.relax, config)
 
-        
-        if (iteration == 1)
-            
-        end
+
         #for i ∈ 1:ncorrectors
         #    discretise!(h_eqn, h, config)
         #    apply_boundary_conditions!(h_eqn, boundaries.h, nothing, time, config)

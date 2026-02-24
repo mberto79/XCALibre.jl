@@ -405,7 +405,8 @@ function turbulence!(
     # @. nut_turb.values = k.values/omega.values
     ReLambda = @. normU.values*y.values/nu.values
     @. Reυ.values = (2*nu.values^2*kl.values/(y.values^2))^0.25*y.values/nu.values;
-    @. PkL.values = sqrt(Pk.values)*η*kl.values*Reυ.values^(-1.30)*ReLambda^(0.5) # update # Why sqrt Pk.values here???
+    # @. PkL.values = sqrt(Pk.values)*η*kl.values*Reυ.values^(-1.30)*ReLambda^(0.5) # update # Why sqrt Pk.values here???
+    @. PkL.values = sqrt(S2.values)*η*kl.values*Reυ.values^(-1.30)*ReLambda^(0.5) # update # Why sqrt Pk.values here???
     @. nuL.values = PkL.values/max(S2.values,(normU.values/y.values)^2)
 
     fSS = @. exp(-(coeffs.CSS*nu.values*sqrt(S2.values)/k.values)^2) # should be Ω but S works

@@ -101,7 +101,8 @@ BCs = assign(
 )
 
 schemes = (
-    U = Schemes(divergence=LUST, limiter=MFaceBased(mesh_dev)),
+    # U = Schemes(divergence=LUST, limiter=MFaceBased(mesh_dev)),
+    U = Schemes(divergence=LUST),
     p = Schemes(divergence=LUST),
     k = Schemes(divergence=LUST),
     y = Schemes(gradient=Midpoint),
@@ -196,7 +197,7 @@ residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
 
  # model_cpu = adapt(CPU(), model)
 
-  tauw, pos = wall_shear_stress(:Wall, model)
+  tauw, pos = wall_shear_stress(:Wall, model, config)
   tauMag = [norm(tauw[i]) for i ∈ eachindex(tauw)]
   tauMag = [tauw.x[i] for i ∈ eachindex(tauw)]
   x = [pos[i][1] for i ∈ eachindex(pos)]
@@ -217,6 +218,7 @@ residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
  scatter!(eRex, eCf, color=:green, label="Experimental T3A Data") # |> display
  # plot!(oRex, oCf, color=:green, lw=1.5,label="OpenFoam") |> display
  plot!(Rex,tauMag./(0.5.*velocity[1]^2), color=:blue, lw=1.5,label="Code") |> display
+#  plot!(Rex,tauMag./(0.5.*velocity[1]^2), color=:purple, lw=1.5,label="Code") |> display
  #savefig(p,"EROFATC_Plate_3.svg")
 
 # plot(; xlims=(0,1000))

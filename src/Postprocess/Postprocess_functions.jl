@@ -145,7 +145,7 @@ function boundary_average(patch::Symbol, field, fieldBCs, config; time=0)
 end
 
 ########### Must update
-wall_shear_stress(patch::Symbol, model)  = begin
+wall_shear_stress(patch::Symbol, model, config)  = begin
     # Line below needs to change to do selection based on nut BC
     turbulence = model.turbulence
 
@@ -166,11 +166,14 @@ wall_shear_stress(patch::Symbol, model)  = begin
     tauw = FaceVectorField(x,y,z, mesh)
     
     # Iterate through face IDs of the boundary and calcualte surface friction
-    for i ∈ IDs_range
-        Uw = Uf[i]
-        surface_normal_gradient!(tauw, U, Uw, IDs_range)
-    end
+    # for i ∈ IDs_range
+        #Uw = Uf[i]
+        #surface_normal_gradient!(tauw, U, Uw, IDs_range)
+    #end
     
+    surface_normal_gradient2!(tauw,U,Uf,IDs_range)
+    # surface_normal_gradient3!(tauw,U,IDs_range,config)
+
     pos = fill(SVector{3,Float64}(0,0,0), length(IDs_range))
     for i ∈ eachindex(tauw)
         # fID = facesID[i]

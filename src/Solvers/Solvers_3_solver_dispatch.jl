@@ -125,25 +125,30 @@ run!(
     ) where{T<:Steady,F<:Incompressible,M,Tu,E,D,BI} = 
 begin
     residuals=nothing
-    #print(model.momentum)
-    #if (model.momentum==original)
-    #    residuals = simple!(
-    #    model, config, 
-    #    output=output,
-    #    pref=pref, 
-    #    ncorrectors=ncorrectors, 
-    #    inner_loops=inner_loops
-    #    )
-    #end
+    residuals = simple!(
+        model, config, 
+        output=output,
+        pref=pref, 
+        ncorrectors=ncorrectors, 
+        inner_loops=inner_loops
+    )
 
-    #if (model.momentum==FilmModel)
-        residuals=filmModel!(
-            model,config,
-            output=output
-        )
-    #end
     return residuals
 end
+
+#run!(
+#    model::Physics{T,F,M,Tu,E,D,BI}, config; 
+#    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+#    ) where{T<:Transient,F<:Incompressible,M<:EFM,Tu,E,D,BI} = 
+#begin
+#    residuals=nothing
+#
+#    residuals=filmModel!(
+#        model,config,
+#        output=output
+#    )
+#    return residuals
+#end
 
 # Incompressible solver (transient)
 """
@@ -180,13 +185,17 @@ run!(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
     ) where{T<:Transient,F<:Incompressible,M,Tu,E,D,BI} = 
 begin
-    residuals = piso!(
-        model, config, 
-        output=output,
-        pref=pref, 
-        ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
-        )
+    residuals=filmModel!(
+        model,config,
+        output=output
+    )
+    #residuals = piso!(
+    #    model, config, 
+    #    output=output,
+    #    pref=pref, 
+    #    ncorrectors=ncorrectors, 
+    #    inner_loops=inner_loops
+    #    )
     return residuals
 end
 

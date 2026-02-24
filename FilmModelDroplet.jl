@@ -33,7 +33,7 @@ h_crit = 1e-10
 
 model = Physics(
     momentum=Momentum{EFM}(;σ=0.069, h_crit = h_crit, β=6.0, θm = 70, ϕ=0),
-    time = Steady(),
+    time = Transient(),
     fluid = Fluid{Incompressible}(; nu = nu, rho = rho_l),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
@@ -101,7 +101,24 @@ config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
 
 initialise!(model.momentum.U, [1e-4,1e-4,0]);
-initialise!(model.momentum.h, h_crit/100)
+
+h_init = h_crit/100;
+initialise!(model.momentum.h, h_init)
+#h_min = 1e-4
+#factor = 1.5
+cells = mesh.cells;
+h = model.momentum.h;
+for i ∈ eachindex(h.values)
+#    #h.values[i] = -(h_inlet-h_min)/(0.01*2)*mesh.cells[i].centre[1]-(h_inlet-h_min)/(0.01*2)*2*abs(mesh.cells[i].centre[2]-0.005)+h_inlet
+#    a = h_inlet/2
+#    c = factor
+#    b = (log(h_min/a))/(0.01^c)
+#    h.values[i] = a*exp(b*mesh.cells[i].centre[1]^c)#+a*exp(b*abs(mesh.cells[i].centre[2]-0.005)^c)
+#println(sqrt((0.005-mesh.cells[i].centre[1])^2+(0.005-mesh.cells[i].centre[2])^2+(0.005-mesh.cells[i].centre[3])^2))
+    if sqrt((0.05-cells[i].centre[1])^2+(0.05-cells[i].centre[2])^2+(0.005-cells[i].centre[3])^2)<0.1^2
+        h.values[i] = 0.001
+    end
+end
 
 residuals = run!(model, config);
 

@@ -138,20 +138,7 @@ function FilmModel(
     #rDf = FaceScalarField(mesh)
 
 
-    h_inlet = h.values[1]
-    h_min = 1e-4
-    factor = 1.5
-    for i ∈ eachindex(h.values)
-    #    #h.values[i] = -(h_inlet-h_min)/(0.01*2)*mesh.cells[i].centre[1]-(h_inlet-h_min)/(0.01*2)*2*abs(mesh.cells[i].centre[2]-0.005)+h_inlet
-    #    a = h_inlet/2
-    #    c = factor
-    #    b = (log(h_min/a))/(0.01^c)
-    #    h.values[i] = a*exp(b*mesh.cells[i].centre[1]^c)#+a*exp(b*abs(mesh.cells[i].centre[2]-0.005)^c)
-        #println(sqrt((0.005-mesh.cells[i].centre[1])^2+(0.005-mesh.cells[i].centre[2])^2+(0.005-mesh.cells[i].centre[3])^2))
-        if sqrt((0.05-mesh.cells[i].centre[1])^2+(0.05-mesh.cells[i].centre[2])^2+(0.005-mesh.cells[i].centre[3])^2)<0.1^2
-            h.values[i] = 0.001
-        end
-    end
+    
 
     w_bc = [
         #Dirichlet(:inlet, 1),

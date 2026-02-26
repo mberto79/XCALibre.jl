@@ -3,14 +3,7 @@ using LinearAlgebra
 using SparseArrays
 using SparseMatricesCSR
 using StaticArrays 
-using ThreadPinning
 using Test
-
-# @info "Pinning Threads"
-# pinthreads(:cores)
-
-# @info "Setting BLAS threads to 1"
-# BLAS.set_num_threads(1)
 
 workgroupsize(mesh) = length(mesh.cells) ÷ Threads.nthreads()
 

@@ -112,8 +112,11 @@ function SIMPLE(
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
     (; iterations, write_interval,dt) = runtime
     (; backend) = hardware
+
+    dt_cpu = zeros(_get_float(mesh), 1)
+    copyto!(dt_cpu, config.runtime.dt)
     
-    postprocess = convert_time_to_iterations(postprocess,model,dt[1],iterations)
+    postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)
     rDf = get_flux(p_eqn, 1)

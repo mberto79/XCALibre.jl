@@ -49,8 +49,10 @@ function PISO(
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
+
+    dt_cpu = zeros(_get_float(mesh), 1)
     
-    postprocess = convert_time_to_iterations(postprocess,model,dt[1],iterations)
+    postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)
     rDf = get_flux(p_eqn, 1)
@@ -103,7 +105,8 @@ function PISO(
 
 
     @time for iteration ∈ 1:iterations
-        time += config.runtime.dt[1]
+        copyto!(dt_cpu, config.runtime.dt)
+        time += dt_cpu[1]
 
         rx, ry, rz = solve_equation!(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)
@@ -185,7 +188,7 @@ function PISO(
 
     ProgressMeter.next!(
         progress, showvalues = [
-            (:dt, config.runtime.dt[1]),
+            (:dt, dt_cpu[1]),
             (:time, time),
             (:Courant, courant),
             (:Ux, R_ux[iteration]),
@@ -205,15 +208,4 @@ function PISO(
 
     end # end for loop
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
-end
-
-
-update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,Nothing}, courant) = nothing
-
-function update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}, courant)
-    (; maxCo, maxGrow, minShrink) = runtime.adaptive
-
-    courant_factor = maxCo / (courant + eps())
-    new_dt_factor = clamp(courant_factor, minShrink, maxGrow)
-    runtime.dt[1] = runtime.dt[1] * new_dt_factor
 end

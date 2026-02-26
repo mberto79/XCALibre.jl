@@ -146,8 +146,10 @@ function CPISO(
     (; solvers, schemes, runtime, hardware, boundaries,postprocess) = config
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
+
+    dt_cpu = zeros(_get_float(mesh), 1)
     
-    postprocess = convert_time_to_iterations(postprocess,model,dt[1],iterations)
+    postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
     mdotf = get_flux(U_eqn, 2)
     mueff = get_flux(U_eqn, 3)
     mueffgradUt = get_source(U_eqn, 2)
@@ -225,7 +227,8 @@ function CPISO(
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
     for iteration ∈ 1:iterations
-        time = iteration *dt
+        copyto!(dt_cpu, config.runtime.dt)
+        time += dt_cpu[1]
 
         ## CHECK GRADU AND EXPLICIT STRESSES
         # grad!(gradU, Uf, U, boundaries.U, time, config) # calculated in `turbulence!`
@@ -281,7 +284,7 @@ function CPISO(
                 flux!(mdotf, Uf, config)
                 @. mdotf.values *= rhof.values
                 @. corr -= mdotf.values
-                @. corr *= 0.0/runtime.dt[1]
+                @. corr *= 0.0/dt_cpu[1]
                 @. mdotf.values += rhorDf.values*corr/rhof.values
                 div!(divHv, mdotf, config)
             end
@@ -327,13 +330,15 @@ function CPISO(
             # Velocity and boundaries correction
             correct_velocity!(U, Hv, ∇p, rD, config) # why is this not rhorD?
             
-            @. dpdt.values = (p.values-prev)/runtime.dt[1]
+            @. dpdt.values = (p.values-prev)/dt_cpu[1]
 
             turbulence!(turbulenceModel, model, S, prev, time, config) 
             update_nueff!(nueff, nu, model.turbulence, config)
         end # corrector loop end
 
     maxCourant = max_courant_number!(cellsCourant, model, config)
+    
+    update_dt!(config.runtime, courant)
 
     R_ux[iteration] = rx
     R_uy[iteration] = ry
@@ -342,7 +347,7 @@ function CPISO(
 
     ProgressMeter.next!(
         progress, showvalues = [
-            (:time, iteration*runtime.dt[1]),
+            (:time, iteration*dt_cpu[1]),
             (:Courant, maxCourant),
             (:Ux, R_ux[iteration]),
             (:Uy, R_uy[iteration]),

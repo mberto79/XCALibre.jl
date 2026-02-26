@@ -30,7 +30,7 @@ end
 @inline scheme_source!(
     term::Operator{F,P,I,Time{Euler}}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
         volume = cell.volume
-        vol_rdt = volume/runtime.dt
+        vol_rdt = volume/runtime.dt[1]
         
         # Increment sparse and b arrays 
         ac = vol_rdt
@@ -48,7 +48,7 @@ end
 @inline scheme_source!(
     term::Operator{F,P,I,Time{CrankNicolson}}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
         volume = cell.volume
-        vol_rdt = volume/runtime.dt
+        vol_rdt = volume/runtime.dt[1]
         
         # Increment sparse and b arrays 
         ac = vol_rdt

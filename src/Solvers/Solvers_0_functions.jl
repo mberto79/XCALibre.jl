@@ -267,7 +267,7 @@ end
 @kernel function _max_courant_number!(cellsCourant, U, runtime, mesh::Mesh3)
     i = @index(Global)
     @uniform cells = mesh.cells
-    dt = runtime.dt
+    dt = runtime.dt[1]
     umag = norm(U[i])
     volume = cells[i].volume
     dx = volume^0.333333
@@ -277,9 +277,20 @@ end
 @kernel function _max_courant_number!(cellsCourant, U, runtime, mesh::Mesh2)
     i = @index(Global)
     @uniform cells = mesh.cells
-    dt = runtime.dt
+    dt = runtime.dt[1]
     umag = norm(U[i])
     volume = cells[i].volume
     dx = volume^0.5
     cellsCourant[i] = umag * dt / dx
+end
+
+
+update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,Nothing}, courant) = nothing
+
+function update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}, courant)
+    (; maxCo, maxGrow, minShrink) = runtime.adaptive
+
+    courant_factor = maxCo / (courant + eps())
+    new_dt_factor = clamp(courant_factor, minShrink, maxGrow)
+    runtime.dt .= runtime.dt .* new_dt_factor
 end

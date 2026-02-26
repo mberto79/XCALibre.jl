@@ -159,7 +159,7 @@ function energy!(
     # Kbounded = ScalarField(mesh)
     Pr = model.fluid.Pr
 
-    dt = runtime.dt
+    dt = runtime.dt[1]
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)

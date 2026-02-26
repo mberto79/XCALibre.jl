@@ -256,3 +256,8 @@ function grad!(grad::Grad{Midpoint,F,R,I,M}, phif, phi, BCs, time, config) where
         green_gauss!(grad, phif, config)
     end
 end
+
+# This is a gradient method that does not take BCs as arguments (implicitly assuming the the gradient at boundaries is 0)
+function grad!(grad::Grad{Gauss,F,R,I,M}, phif, phi, time, config) where {F,R<:VectorField,I,M}
+    green_gauss!(grad, phif, config)
+end

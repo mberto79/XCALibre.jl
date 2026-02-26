@@ -2,12 +2,12 @@ export Configuration
 export Hardware
 
 """
-    @kwdef struct Configuration{SC,SL,RT,HW,PP}
+    struct Configuration{SC,SL,RT,HW,PP}
         schemes::SC
         solvers::SL
         runtime::RT
         hardware::HW
-        postprocess::PP = nothing
+        postprocess::PP
     end
 
 The `Configuration` type is passed to all flow solvers and provides all the relevant information to run a simulation. 
@@ -29,15 +29,28 @@ config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 ```
 """
-@kwdef struct Configuration{SC,SL,RT,HW,BC,PP}
+struct Configuration{SC,SL,RT,HW,BC,PP}
     schemes::SC
     solvers::SL
     runtime::RT
     hardware::HW
     boundaries::BC
-    postprocess::PP = nothing
+    postprocess::PP
 end
 Adapt.@adapt_structure Configuration
+
+Configuration(; schemes, solvers, runtime, hardware, boundaries, postprocess=nothing) = begin
+Configuration(
+    schemes,
+    solvers,
+    adapt(hardware.backend, runtime),
+    hardware,
+    boundaries,
+    postprocess
+)
+end
+
+
 
 
 """

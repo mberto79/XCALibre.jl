@@ -148,6 +148,7 @@ function CPISO(
     (; backend) = hardware
 
     dt_cpu = zeros(_get_float(mesh), 1)
+    copyto!(dt_cpu, config.runtime.dt)
     
     postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
     mdotf = get_flux(U_eqn, 2)
@@ -336,7 +337,7 @@ function CPISO(
             update_nueff!(nueff, nu, model.turbulence, config)
         end # corrector loop end
 
-    maxCourant = max_courant_number!(cellsCourant, model, config)
+    courant = max_courant_number!(cellsCourant, model, config)
     
     update_dt!(config.runtime, courant)
 
@@ -348,7 +349,7 @@ function CPISO(
     ProgressMeter.next!(
         progress, showvalues = [
             (:time, iteration*dt_cpu[1]),
-            (:Courant, maxCourant),
+            (:Courant, courant),
             (:Ux, R_ux[iteration]),
             (:Uy, R_uy[iteration]),
             (:Uz, R_uz[iteration]),

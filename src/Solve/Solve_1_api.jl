@@ -119,7 +119,7 @@ AdaptiveTimeStepping(;
     maxGrow=1.2
 ) = AdaptiveTimeStepping(float(maxCo), float(minShrink), float(maxGrow))
 
-struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A}
+struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AdaptiveTimeStepping}}
     iterations::I
     dt::V
     write_interval::I
@@ -133,7 +133,8 @@ Adapt.@adapt_structure Runtime
 
             iterations::I, 
             write_interval::I, 
-            time_step::N
+            time_step::N,
+            adaptive::A
         ) where {I<:Integer,N<:Number} = begin
         
         # returned Runtime struct
@@ -141,7 +142,8 @@ Adapt.@adapt_structure Runtime
             (
                 iterations=iterations, 
                 dt=time_step, 
-                write_interval=write_interval
+                write_interval=write_interval,
+                adaptive=adaptive
             )
     end
 
@@ -152,6 +154,7 @@ This is a convenience function to set the top-level runtime information. The inp
 - `iterations::Integer`: specifies the number of iterations in a simulation run.
 - `write_interval::Integer`: defines how often simulation results are written to file (on the current working directory). The interval is currently based on number of iterations. Set to `-1` to run without writing results to file.
 - `time_step::AbstractFloat`: the time step to use in the simulation. Notice that for steady solvers this is simply a counter and it is recommended to simply use `1`.
+- `adaptive::Union{Nothing, AdaptiveTimeStepping}`: optionally enables adaptive time stepping. Pass an `AdaptiveTimeStepping` object to automatically adjust `dt` based on the Courant number during transient simulations. Defaults to `nothing`, meaning a fixed time step is used.
 
 # Example
 

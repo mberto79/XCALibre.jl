@@ -66,10 +66,12 @@ schemes = (
     U = Schemes(
         time=Euler,
         divergence=Upwind
+        #divergence=LUST
         ),
     h = Schemes(
         time=Euler,
         divergence=Upwind
+        #divergence=LUST
     ),
 );
 
@@ -85,8 +87,8 @@ solvers = (
     h = SolverSetup(
         solver      = Bicgstab(), # Options: Cg(), Bicgstab(), Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
-        convergence = 1e-7,
-        relax       = 0.7,
+        convergence = 1e-12,
+        relax       = 0.8,
         rtol = 1e-4,
         atol = 1e-10
     )
@@ -94,21 +96,26 @@ solvers = (
 
 #runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
 #runtime = Runtime(iterations=20000, time_step=1, write_interval=20000)
-runtime = Runtime(iterations=20, time_step=1, write_interval=1); # hide
-#runtime = Runtime(iterations=2000, time_step=1, write_interval=100)
+#runtime = Runtime(iterations=20, time_step=0.01, write_interval=1); # hide
+#runtime = Runtime(iterations=2000, time_step=0.01, write_interval=100)
+runtime = Runtime(iterations=50, time_step=0.01, write_interval=5)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
 
-initialise!(model.momentum.U, [1e-4,1e-4,0]);
+initialise!(model.momentum.U, [0,0,0]);
+#initialise!(model.momentum.U, [0,0,0]);
 h_init = h_crit/100;
 initialise!(model.momentum.h, h_init)
-
+cells = mesh.cells;
+h_inner = 1e-3
+h_outer = 1e-5
 for i ∈ eachindex(mesh.cells)
     if sqrt((cells[i].centre[1]-0.05)^2+(cells[i].centre[2]-0.05)^2)<0.1^2
-        model.momentum.U.x.values[i] = 1
-        model.momentum.U.y.values[i] = 1
-        model.momentum.h[i] = 1e-3
+        #model.momentum.U.x.values[i] = 1e-3
+        #model.momentum.U.y.values[i] = 1e-3
+        
+        model.momentum.h[i] = -((h_inner-h_outer)/0.1)*sqrt((cells[i].centre[1]-0.05)^2+(cells[i].centre[2]-0.05)^2)+h_inner
     end
 end
 

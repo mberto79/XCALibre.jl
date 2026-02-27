@@ -190,7 +190,7 @@ function FilmModel(
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
 
-    rho_mdotf = mdotf.values .* rho.values
+    @. rho_mdotf.values = mdotf.values * rho.values
     
     # Getting the laplacian of h for first U calculation
     grad!(∇h, hf, h, boundaries.h, time, config)
@@ -221,7 +221,7 @@ function FilmModel(
     grad!(∇w, wf, w, w_bc, time, config)
 
     for i ∈ eachindex(h.values)
-        multiplier =0; 3*(mu/h.values[i])
+        multiplier = 3*(mu/h.values[i])
         τw.x.values[i] = multiplier * U.x.values[i]
         τw.y.values[i] = multiplier * U.y.values[i]
         τw.z.values[i] = multiplier * U.z.values[i]
@@ -263,13 +263,13 @@ function FilmModel(
         # h calculations
         flux!(mdotf, Uf, config)
 
-        @. rho_mdotf =  mdotf.values * rho.values
-        
+        @. rho_mdotf.values =  mdotf.values * rho.values
+        #println()
 
         @. prev = h.values
 
         rh = solve_equation!(h_eqn, h, boundaries.h, solvers.h, config)
-        #explicit_relaxation!(h, prev, solvers.h.relax, config)
+        explicit_relaxation!(h, prev, solvers.h.relax, config)
 
 
         #for i ∈ 1:ncorrectors
@@ -313,8 +313,8 @@ function FilmModel(
         #h∇PL_func!(h∇PL, ∇PL, h)
         #τw_func!(τw, U, h, mu)
         #τθw_func!(τθw, ∇w, model)
-        for i ∈ eachindex(h)
-            multiplier =0; 3*(mu/h.values[i])
+        for i ∈ eachindex(h.values)
+            multiplier = 3*(mu/h.values[i])
             τw.x.values[i] = multiplier * U.x.values[i]
             τw.y.values[i] = multiplier * U.y.values[i]
             τw.z.values[i] = multiplier * U.z.values[i]

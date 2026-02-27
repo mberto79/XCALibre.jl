@@ -4,8 +4,8 @@ using XCALibre
 
 grids_dir = pkgdir(XCALibre, "Test_Meshes/");
 #grid = "quad.unv";
-#grid = "25x25_grid.unv"
-grid = "500x500_grid.unv"
+grid = "25x25_grid.unv"
+#grid = "500x500_grid.unv"
 mesh_file = joinpath(grids_dir, grid);
 
 mesh = UNV2D_mesh(mesh_file, scale=0.01);
@@ -29,7 +29,7 @@ rho_l = 991.07; # Density of water @ 43°C kg/m3
 inlet_flow_rate = Γkg/rho_l; # m2/s
 h_inlet = 0.05;
 inlet_speed = inlet_flow_rate/h_inlet;
-inlet_speed = 0.04;
+#inlet_speed = 0.04;
 
 velocity = inlet_speed*[1, 0.0, 0.0];
 nu = 6.245e-7; # Kinematic Viscosity of water @ 43°C
@@ -41,7 +41,7 @@ h_crit = 1e-10;
 
 
 model = Physics(
-    momentum=Momentum{EFM}(;σ=0.069, h_crit = h_crit, β=6.0, θm = 30, ϕ=10),
+    momentum=Momentum{EFM}(;σ=0.069, h_crit = h_crit, β=1.0, θm = 30, ϕ=10),
     time = Transient(),
     fluid = Fluid{Incompressible}(; nu = nu, rho = rho_l),
     turbulence = RANS{Laminar}(),
@@ -123,22 +123,23 @@ solvers = (
 #runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
 #runtime = Runtime(iterations=20000, time_step=1, write_interval=20000)
 #runtime = Runtime(iterations=20, time_step=1, write_interval=1); # hide
-runtime = Runtime(iterations=2000, time_step=1, write_interval=100)
+runtime = Runtime(iterations=2000, time_step=0.01, write_interval=100)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
 
 initialise!(model.momentum.U, velocity);
 #initialise!(model.momentum.U, [1e-10,1e-10,1e-10]);
-initialise!(model.momentum.h, h_inlet)
+#initialise!(model.momentum.h, h_inlet)
+initialise!(model.momentum.h, h_crit/10)
 #initialise!(model.momentum.h, 0.000005046);
-pow = 18
-for i ∈ eachindex(model.momentum.h)
+#pow = 18
+#for i ∈ eachindex(model.momentum.h)
     #model.momentum.h[i] = ((0.1-mesh.cells[i].centre[1])/0.1)^pow
-    if mesh.cells[i].centre[1] > 0.06
-        model.momentum.h[i] = h_crit/10
-    end
+#    if mesh.cells[i].centre[1] > 0.06
+#        model.momentum.h[i] = h_crit/10
+#    end
 #    println(cells[i].centre)
-end
+#end
 
 residuals = run!(model, config);

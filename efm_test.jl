@@ -4,7 +4,7 @@ using CSV
 # using AMDGPU # Uncomment to run on AMD GPUs
 
 grids_dir = pkgdir(XCALibre, "Test_Meshes/");
-grid = "initial_efm_mesh3.unv";
+grid = "initial_efm_mesh4.unv";
 mesh_file = joinpath(grids_dir, grid);
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001);
@@ -20,7 +20,7 @@ hardware = Hardware(backend=backend, workgroup=1024);
 mesh_dev = mesh; # use this line to run on CPU
 # mesh_dev = adapt(backend, mesh)  # Uncomment to run on GPU 
 
-test_case = 5;
+test_case = 10;
 input_parameters = CSV.File("Model_Input.csv"); #File containing the different test cases from paper "Modeling of Partially Wetting Liquid Film Using an Enhanced Thin Film Model for Aero-Engine Bearing Chamber Applications" by Kuldeep Singh et. al
 inlet_width = 0.510; # m
 inlet_height = 0.05; # m
@@ -39,6 +39,9 @@ h_crit = 1e-10;
 σ = input_parameters.Sigma[test_case]
 θm = input_parameters.Theta_m[test_case]
 ϕ = input_parameters.Phi[test_case]
+Δt = 1e-4
+Δx = 0.006
+C=inlet_rate*Δt/Δx
 
 model = Physics(
     momentum=Momentum{EFM}(;σ=σ, h_crit = h_crit, β=β, θm = θm, ϕ=ϕ),
@@ -75,12 +78,14 @@ schemes = (
     U = Schemes(
         time=Euler,
         #time=SteadyState,
+        #divergence=Linear
         divergence=Upwind
         #divergence=LUST
         ),
     h = Schemes(
         time=Euler,
         #time=SteadyState,
+        #divergence=Linear
         divergence=Upwind
         #divergence=LUST
     ),
@@ -89,17 +94,17 @@ schemes = (
 solvers = (
     U = SolverSetup(
         solver      = Bicgstab(), # Options: Gmres()
-        preconditioner = NormDiagonal(),#Jacobi(), # Options: NormDiagonal()
-        convergence = 1e-10,
-        relax       = 0.7,
+        preconditioner = Jacobi(), # Options: NormDiagonal()
+        convergence = 1e-11,
+        relax       = 0.8,
         rtol = 1e-4,
         atol = 1e-10
     ),
     h = SolverSetup(
         solver      = Bicgstab(), # Options: Cg(), Bicgstab(), Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
-        convergence = 1e-10,
-        relax       = 0.7,
+        convergence = 1e-11,
+        relax       = 0.8,
         rtol = 1e-4,
         atol = 1e-10
     )
@@ -107,8 +112,8 @@ solvers = (
 
 #runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
 #runtime = Runtime(iterations=20000, time_step=1, write_interval=20000)
-#runtime = Runtime(iterations=20, time_step=0.0001, write_interval=1); # hide
-runtime = Runtime(iterations=2000, time_step=0.001, write_interval=100)
+#runtime = Runtime(iterations=20, time_step=Δt, write_interval=1); # hide
+runtime = Runtime(iterations=2000, time_step=Δt, write_interval=100)
 #runtime = Runtime(iterations=50, time_step=0.01, write_interval=5)
 
 config = Configuration(
@@ -116,8 +121,18 @@ config = Configuration(
 
   
 initialise!(model.momentum.U, [0,0,0]);
-h_init = 1e-4;#h_crit*100;
+h_init = 1e-11;#h_crit*100;
 initialise!(model.momentum.h, h_init)
+
+#for i ∈ eachindex(model.momentum.h.values)
+#    if abs(model.momentum.h.mesh.cells[i].centre[2]) < 0.41/2
+        #model.momentum.U.x.values[i] = inlet_velocity[1]/10;
+        #model.momentum.U.y.values[i] = inlet_velocity[2]/10;
+        #model.momentum.U.z.values[i] = inlet_velocity[3]/10;
+#        model.momentum.h.values[i] = inlet_height/10;
+#    end
+#end
+
 
 
 residuals = run!(model, config);

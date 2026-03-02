@@ -141,18 +141,20 @@ function FilmModel(
     
 
     w_bc = [
-        #Dirichlet(:inlet, 1),
-        Zerogradient(:inlet),
-        Zerogradient(:outlet),
-        #Dirichlet(:outlet, 0),
-        Zerogradient(:top),
-        Zerogradient(:bottom)
+        Dirichlet(:inlet, 1),
+        Extrapolated(:outlet),
+        Extrapolated(:inlet_sides),
+        Extrapolated(:top_of_plate),
+        Extrapolated(:side_1),
+        Extrapolated(:side_2)
     ]
     Δh_bc = [
-        Zerogradient(:inlet),
-        Zerogradient(:outlet),
-        Zerogradient(:top),
-        Zerogradient(:bottom)
+        Extrapolated(:inlet),
+        Extrapolated(:outlet),
+        Extrapolated(:inlet_sides),
+        Extrapolated(:top_of_plate),
+        Extrapolated(:side_1),
+        Extrapolated(:side_2)
     ]
 
     n_cells = length(mesh.cells)
@@ -221,7 +223,7 @@ function FilmModel(
     grad!(∇w, wf, w, w_bc, time, config)
 
     for i ∈ eachindex(h.values)
-        multiplier = 3*(mu/h.values[i])
+        multiplier = 0;#3*(mu/h.values[i])
         τw.x.values[i] = multiplier * U.x.values[i]
         τw.y.values[i] = multiplier * U.y.values[i]
         τw.z.values[i] = multiplier * U.z.values[i]
@@ -314,7 +316,7 @@ function FilmModel(
         #τw_func!(τw, U, h, mu)
         #τθw_func!(τθw, ∇w, model)
         for i ∈ eachindex(h.values)
-            multiplier = 3*(mu/h.values[i])
+            multiplier = 0;#3*(mu/h.values[i])
             τw.x.values[i] = multiplier * U.x.values[i]
             τw.y.values[i] = multiplier * U.y.values[i]
             τw.z.values[i] = multiplier * U.z.values[i]

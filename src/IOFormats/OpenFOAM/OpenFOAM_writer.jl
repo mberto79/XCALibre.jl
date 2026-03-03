@@ -4,7 +4,7 @@ initialise_writer(format::OpenFOAM, mesh::Mesh3) = begin
     touch("XCALibre.foam")
     default_dir = "constant/polyMesh"
 
-    if !isdir(default_dir)
+    # if !isdir(default_dir)
         @info "Writing mesh to constant/polyMesh..."
         # Create constant directory and mesh files
         polyMeshDir = mkpath(default_dir)
@@ -179,9 +179,9 @@ initialise_writer(format::OpenFOAM, mesh::Mesh3) = begin
             end
             println(io, ")")
         end
-    else
-        @info "Mesh file already exsists in constant/polyMesh..."
-    end
+    # else
+    #     @info "Mesh file already exsists in constant/polyMesh..."
+    # end
 
     # return dummy structure for dispatch
     FOAMWriter(nothing, nothing)

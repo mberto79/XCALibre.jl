@@ -125,8 +125,10 @@ function LAPLACE(
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
 
+    dt_cpu = zeros(_get_float(mesh), 1)
+    copyto!(dt_cpu, config.runtime.dt)
 
-    postprocess = convert_time_to_iterations(postprocess,model,dt,iterations)
+    postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
     @info "Starting LAPLACE loops..."
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
@@ -154,7 +156,7 @@ function LAPLACE(
 
         ProgressMeter.next!(
             progress, showvalues = [
-                (:time, iteration*runtime.dt),
+                (:time, iteration*dt_cpu[1]),
                 (:T_residual, R_T[iteration])
                 ]
             )

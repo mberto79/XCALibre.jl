@@ -131,8 +131,11 @@ function CSIMPLE(
     (; iterations, write_interval,dt) = runtime
     (; backend) = hardware
     
+    dt_cpu = zeros(_get_float(mesh), 1)
+    copyto!(dt_cpu, config.runtime.dt)
+    
     # rho = get_flux(U_eqn, 1)
-    postprocess = convert_time_to_iterations(postprocess,model,dt,iterations)
+    postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
     mdotf = get_flux(U_eqn, 2)
     mueff = get_flux(U_eqn, 3)
     mueffgradUt = get_source(U_eqn, 2)
@@ -226,6 +229,7 @@ function CSIMPLE(
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rhorDf, rD, config)
+        correct_interpolation_periodic(rhorDf, rD, boundaries.U, config)
         @. rhorDf.values *= rhof.values
 
         remove_pressure_source!(U_eqn, ∇p, config)
@@ -297,11 +301,11 @@ function CSIMPLE(
 
         if typeof(model.fluid) <: Compressible
             # @. mdotf.values += (pconv.values*(pf.values) - pgrad.values*rhorDf.values)  
-            correct_mass_flux(mdotf, p, rhorDf, config)
+            correct_mass_flux(mdotf, p_eqn, config)
             @. mdotf.values += pconv.values*(pf.values)
         elseif typeof(model.fluid) <: WeaklyCompressible
             # @. mdotf.values -= pgrad.values*rhorDf.values
-            correct_mass_flux(mdotf, p, rhorDf, config)
+            correct_mass_flux(mdotf, p_eqn, config)
         end
 
         correct_velocity!(U, Hv, ∇p, rD, config)

@@ -13,7 +13,8 @@ mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file)
 @test typeof(mesh) <: Mesh2
 
-backend = CPU(); workgroup = 1024; activate_multithread(backend)
+# backend = CPU(); workgroup = 1024; activate_multithread(backend)
+backend = CPU(); workgroup = 1024
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 

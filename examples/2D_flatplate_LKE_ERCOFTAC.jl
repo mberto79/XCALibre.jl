@@ -20,14 +20,15 @@ mesh_dev = adapt(backend, mesh)
 
 # Turbulence Model
 velocity = [5.4,0,0]
-nu = 1.497e-5
+nu = 1.48e-5
 # Re = 10*1/nu
 νR = 13.9
 Tu = 0.03
-k_inlet = 0.0575 # k_inlet = 3/2*(Tu*velocity[1])^2
-kL_inlet = 0.0115 #1/2*(Tu*velocity[1])^2
-ω_inlet = 275 #k_inlet/(νR*nu)
-rho = 1.225
+# k_inlet = 0.0575  
+k_inlet = 3/2*(Tu*velocity[1])^2
+kL_inlet = 1/2*(Tu*velocity[1])^2
+ω_inlet = k_inlet/(νR*nu)
+rho = 1
 
 # model = RANS{KOmegaLKE}(mesh=mesh, viscosity=nu, Tu=Tu)
 
@@ -157,7 +158,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=5000, write_interval=100, time_step=1)
+    iterations=2500, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

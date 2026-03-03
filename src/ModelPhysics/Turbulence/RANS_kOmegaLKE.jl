@@ -330,9 +330,10 @@ function turbulence!(
     magnitude!(normU, U, config)
 
     ReLambda = @. normU.values*y.values/nu.values;
-    @. Reυ.values = (2*nu.values^2*kl.values/(y.values^2))^0.25*y.values/nu.values;
+    @. Reυ.values = ((2*nu.values^2*kl.values/(y.values^2))^0.25)*y.values/nu.values;
     η = coeffs.C1*tanh(coeffs.C2*(Tu^coeffs.C3)+coeffs.C4)
-    @. PkL.values = sqrt(Pk.values)*η*kl.values*Reυ.values^(-1.30)*ReLambda^(0.5)
+    @. PkL.values = sqrt(S2.values)*η*kl.values*Reυ.values^(-1.30)*ReLambda^(0.5)
+    # @. PkL.values = sqrt(Pk.values)*η*kl.values*Reυ.values^(-1.30)*ReLambda^(0.5)
     @. DkLf.values = (2*nu.values)/(y.values^2)
     @. nueffkLS.values = nu.values+(coeffs.σkL*sqrt(kl.values)*y.values)
     interpolate!(nueffkL, nueffkLS, config)
@@ -404,7 +405,7 @@ function turbulence!(
 
     # @. nut_turb.values = k.values/omega.values
     ReLambda = @. normU.values*y.values/nu.values
-    @. Reυ.values = (2*nu.values^2*kl.values/(y.values^2))^0.25*y.values/nu.values;
+    @. Reυ.values = ((2*nu.values^2*kl.values/(y.values^2))^0.25)*y.values/nu.values;
     # @. PkL.values = sqrt(Pk.values)*η*kl.values*Reυ.values^(-1.30)*ReLambda^(0.5) # update # Why sqrt Pk.values here???
     @. PkL.values = sqrt(S2.values)*η*kl.values*Reυ.values^(-1.30)*ReLambda^(0.5) # update # Why sqrt Pk.values here???
     @. nuL.values = PkL.values/max(S2.values,(normU.values/y.values)^2)

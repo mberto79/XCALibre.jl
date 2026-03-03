@@ -11,6 +11,7 @@ using GPUArrays
 
 using LinearAlgebra
 using SparseMatricesCSR
+using Statistics
 
 using XCALibre.Multithread
 using XCALibre.Mesh

@@ -20,6 +20,12 @@ function discretise!(
     colval = _colval(A)
     rowptr = _rowptr(A)
 
+    # reset storage of sparse matrix
+    z = zero(eltype(nzval))
+    xcal_foreach(nzval, config) do i
+        nzval0[i] = z 
+    end
+
 
     # Call discretise kernel
     ndrange = length(mesh.cells)
@@ -98,6 +104,12 @@ function discretise!(
     nzval = _nzval(A)
     colval = _colval(A)
     rowptr = _rowptr(A)
+
+    # reset storage of sparse matrix
+    z = zero(eltype(nzval))
+    xcal_foreach(nzval, config) do i
+        nzval[i] = z 
+    end
 
 
     # Call discretise kernel

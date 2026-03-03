@@ -36,20 +36,22 @@ pressure_force(patch::Symbol, p::ScalarField, rho) = begin
 end
 
 """
-    viscous_force(patch::Symbol, U::VectorField, rho, ν, νt)
+    viscous_force(patch::Symbol, U::VectorField, rho, ν, νt, config)
 
 Function to calculate the pressure force acting on a given patch/boundary.
 
 # Input arguments
 
 - `patch::Symbol` name of the boundary of interest (as a `Symbol`)
-- `U::VectorField` pressure field
+- `U::VectorField` velocity field
 - `rho` density. Set to 1 for incompressible solvers
 - `ν` laminar viscosity of the fluid
 - `νt` eddy viscosity from turbulence models. Pass ConstantScalar(0) for laminar flows
+- `config` need to pass `Configuration` object as this contains the boundary conditions
 """
-viscous_force(patch::Symbol, U::VectorField, rho, ν, νt, UBCs) = begin
+viscous_force(patch::Symbol, U::VectorField, rho, ν, νt, config) = begin
     mesh = U.mesh
+    UBCs = config.boundaries.U
     (; faces, boundaries, boundary_cellsID) = mesh
     nboundaries = length(boundaries)
     ID = boundary_index(boundaries, patch)
@@ -148,8 +150,8 @@ end
 wall_shear_stress(patch::Symbol, model, config)  = begin
     # Line below needs to change to do selection based on nut BC
     turbulence = model.turbulence
-
-    typeof(turbulence) <: RANS{Laminar} ? nut = ConstantScalar(0.0) : nut = model.turbulence.nut
+    UBCs = config.boundaries.U
+    typeof(turbulence) <: Laminar ? nut = ConstantScalar(0.0) : nut = model.turbulence.nut
     mesh = model.domain
     (; nu) = model.fluid
     (; U, Uf) = model.momentum
@@ -185,14 +187,25 @@ wall_shear_stress(patch::Symbol, model, config)  = begin
     
     return tauw, pos
 end
+"""
+    stress_tensor(U::VectorField, ν, νt, config)
 
+Function to calculate the stress tensor.
+
+# Input arguments
+
+- `U::VectorField` velocity field
+- `ν` laminar viscosity of the fluid
+- `νt` eddy viscosity from turbulence models. Pass ConstantScalar(0) for laminar flows
+- `config` need to pass `Configuration` object as this contains the boundary conditions
+"""
 stress_tensor(U, ν, νt, config) = begin
     mesh = U.mesh
     TF = _get_float(mesh)
     gradU = Grad{Midpoint}(U)
     gradUT = T(gradU)
     Uf = FaceVectorField(U.mesh)
-    grad!(gradU, Uf, U, boundaries.U, zero(TF), config) # assuming time=0
+    grad!(gradU, Uf, U, config.boundaries.U, zero(TF), config) # assuming time=0
     # grad!(gradU, Uf, U, boundaries.U, , config)
     nueff = ScalarField(U.mesh) # temp variable
     nueff.values .= ν .+ νt.values

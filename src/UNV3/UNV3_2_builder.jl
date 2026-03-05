@@ -1,477 +1,554 @@
+# src/UNV3/UNV3_2_builder.jl
+
+using LinearAlgebra
+
 export UNV3D_mesh
 
-"""
-    UNV3D_mesh(unv_mesh; scale=1, integer_type=Int64, float_type=Float64)
+# ==============================================================================
+# TOP-LEVEL API
+# ==============================================================================
 
-Read and convert 3D UNV mesh file into XCALibre.jl.
+"""
+    UNV3D_mesh(unv_mesh::String; scale::Real=1.0, integer_type::Type=Int64, float_type::Type=Float64) -> Mesh3
+
+Constructs a `Mesh3` object from a Universal (UNV) file format.
+
+# Arguments
+- `unv_mesh::String`: The file path to the UNV mesh file.
+
+# Keyword Arguments
+- `scale::Real=1.0`: A scaling factor applied to the nodal coordinates.
+- `integer_type::Type=Int64`: The integer type used for topological indices and connectivity arrays.
+- `float_type::Type=Float64`: The floating-point type used for coordinates and geometric properties.
+
+# Returns
+- `Mesh3`: A fully constructed 3D mesh object containing nodes, cells, faces, boundaries, and populated geometric properties.
 """
 function UNV3D_mesh(unv_mesh; scale=1.0, integer_type=Int64, float_type=Float64)
-    itype = integer_type
-    ftype = float_type
-    stats = @timed begin
-        println("Loading UNV File...")
-        @time points, efaces, cells_UNV, boundaryElements = read_UNV3( 
-            unv_mesh; scale=scale, integer=itype, float=ftype)
-        println("File Read Successfully")
-        println("Generating Mesh...")
-
-        cell_nodes, cell_nodes_range = generate_cell_nodes(cells_UNV, itype, ftype) 
-        node_cells, node_cells_range = generate_node_cells(points, cells_UNV, itype, ftype)  
-        nodes = build_nodes(points, node_cells_range, itype, ftype) 
-        boundaries = build_boundaries(boundaryElements, itype, ftype) 
-
-        nbfaces = sum(length.(getproperty.(boundaries, :IDs_range))) 
-
-        bface_nodes, bface_nodes_range, bface_owners_cells, boundary_cellsID = 
-        begin
-            generate_boundary_faces(boundaryElements, efaces, nbfaces, node_cells, node_cells_range, cells_UNV, itype, ftype) 
-        end
-
-        iface_nodes, iface_nodes_range, iface_owners_cells = 
-        begin 
-            generate_internal_faces(cells_UNV, nbfaces, nodes, node_cells, itype, ftype) 
-        end
-
-        # REORDER NODES: Critical for area/volume accuracy.
-        # Fixes bow-tie polygons caused by identification sorting.
-        bface_nodes, iface_nodes = order_face_nodes(
-            bface_nodes_range, iface_nodes_range, bface_nodes, iface_nodes, nodes, itype, ftype)
-
-        iface_nodes_range .= [
-            iface_nodes_range[i] .+ length(bface_nodes) for i ∈ eachindex(iface_nodes_range)
-            ]
-
-        face_nodes = vcat(bface_nodes, iface_nodes)
-        face_nodes_range = vcat(bface_nodes_range, iface_nodes_range)
-        face_owner_cells = vcat(bface_owners_cells, iface_owners_cells)
-
-        cell_faces, cell_nsign, cell_faces_range, cell_neighbours = begin
-            generate_cell_face_connectivity(
-                cells_UNV, nbfaces, face_owner_cells, itype, ftype) 
-        end
-
-        cells = build_cells(cell_nodes_range, cell_faces_range, itype, ftype) 
-        faces = build_faces(face_nodes_range, face_owner_cells, itype, ftype) 
-
-        mesh = Mesh3(
-            cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, 
-            faces, face_nodes, boundaries, 
-            nodes, node_cells,
-            SVector{3, ftype}(0.0, 0.0, 0.0), UnitRange{itype}(0, 0), boundary_cellsID
-        ) 
-
-        # --- GEOMETRY PIPELINE ---
-        calculate_centres!(mesh, itype, ftype)
-        calculate_area_and_volume!(mesh, itype, ftype) 
-        calculate_face_properties!(mesh, itype, ftype) 
-
-        return mesh
-    end
-end
-
-# Helpers
-get_data(array, range, index) = @view array[range[index]]
-get_data(array, range) =  array[range] 
-nodeIDs = get_data
-faceIDs = get_data
-cellIDs = get_data
-
-function alpha_sort(v1, v2, normal)
-    m1, m2 = norm(v1), norm(v2)
-    if m1 < 1e-15 || m2 < 1e-15; return 0.0; end
-    u1, u2 = v1/m1, v2/m2
-    ang = acosd(clamp(u1 ⋅ u2, -1.0, 1.0))
-    return dot(cross(u1, u2), normal) < 0 ? 360.0 - ang : ang
-end
-
-# BUILD Functions
-build_cells(cell_nodes_range, cell_faces_range, itype, ftype) = begin
-    cells = [Cell(Int64, ftype) for _ ∈ eachindex(cell_faces_range)]
-    for cID ∈ eachindex(cell_nodes_range)
-        cell = cells[cID]
-        @reset cell.nodes_range = cell_nodes_range[cID]
-        @reset cell.faces_range = cell_faces_range[cID]
-        cells[cID] = cell
-    end
-    return cells
-end
-
-build_faces(face_nodes_range, face_owner_cells, itype, ftype) = begin
-    faces = [Face3D(Int64, ftype) for _ ∈ eachindex(face_nodes_range)]
-    for fID ∈ eachindex(face_nodes_range)
-        face = faces[fID]
-        @reset face.nodes_range = face_nodes_range[fID]
-        @reset face.ownerCells = SVector{2,Int64}(face_owner_cells[fID])
-        faces[fID] = face 
-    end
-    return faces
-end
-
-function build_nodes(points, node_cells_range, itype, ftype) 
-    nodes = [Node(SVector{3, ftype}(0.0,0.0,0.0), 1:1) for _ ∈ eachindex(points)]
-    @inbounds for i ∈ eachindex(points)
-        nodes[i] =  Node(points[i].xyz, node_cells_range[i])
-    end
-    return nodes
-end
-
-function build_boundaries(boundaryElements, itype, ftype)
-    bfaces_start = 1
-    boundaries = Vector{Boundary{Symbol,UnitRange{Int64}}}(undef,length(boundaryElements))
-    for (i, boundaryElement) ∈ enumerate(boundaryElements)
-        bfaces = length(boundaryElement.facesID)
-        bfaces_range = UnitRange{Int64}(bfaces_start:(bfaces_start + bfaces - 1))
-        boundaries[i] = Boundary(Symbol(boundaryElement.name), bfaces_range)
-        bfaces_start += bfaces
-    end
-    return boundaries
-end
-
-# GENERATE Functions
-function generate_cell_nodes(cells_UNV, itype, ftype)
-    cell_nodes = Int64[] 
-    for n = eachindex(cells_UNV)
-        for i = 1:cells_UNV[n].nodeCount
-            push!(cell_nodes,cells_UNV[n].nodesID[i])
-        end
-    end
-    cell_nodes_range = Vector{UnitRange{Int64}}(undef, length(cells_UNV)) 
-    x = 0
-    for i = eachindex(cells_UNV)
-        cell_nodes_range[i] = UnitRange(x + 1, x + length(cells_UNV[i].nodesID))
-        x = x + length(cells_UNV[i].nodesID)
-    end
-    return cell_nodes, cell_nodes_range
-end
-
-function generate_node_cells(points, cells_UNV, itype, ftype)
-    temp_node_cells = [Int64[] for _ ∈ eachindex(points)] 
-    for (cellID, cell) ∈ enumerate(cells_UNV)
-        for nodeID ∈ cell.nodesID
-            push!(temp_node_cells[nodeID], cellID)
-        end
-    end 
-    node_cells_size = sum(length.(temp_node_cells)) 
-    node_cells_index = 0 
-    node_cells = zeros(Int64, node_cells_size)
-    node_cells_range = [UnitRange{Int64}(1, 1) for _ ∈ eachindex(points)]
-    for (nodeID, cellsID) ∈ enumerate(temp_node_cells)
-        for cellID ∈ cellsID
-            node_cells_index += 1
-            node_cells[node_cells_index] = cellID
-        end
-        node_cells_range[nodeID] = UnitRange{Int64}(node_cells_index - length(cellsID) + 1, node_cells_index)
-    end
-    return node_cells, node_cells_range
-end 
-
-function generate_boundary_faces(boundaryElements, efaces, nbfaces, node_cells, node_cells_range, cells_UNV, itype, ftype)
-    bface_nodes = Vector{Vector{Int64}}(undef, nbfaces)
-    bface_nodes_range = Vector{UnitRange{Int64}}(undef, nbfaces)
-    bowners_cells = Vector{Int64}[Int64[0,0] for _ ∈ 1:nbfaces]
-    boundary_cells = Vector{Int64}(undef, nbfaces)
-    fID = 0 
-    start = 1
-    for boundary ∈ boundaryElements
-        elements = boundary.facesID
-            for bfaceID ∈ elements
-                fID += 1
-                nnodes = length(efaces[bfaceID].nodesID)
-                nodeIDs = efaces[bfaceID].nodesID 
-                bface_nodes[fID] = nodeIDs
-                bface_nodes_range[fID] = UnitRange{Int64}(start:(start + nnodes - 1))
-                start += nnodes
-                assigned = false
-                for nodeID ∈ nodeIDs
-                    cIDs = cellIDs(node_cells, node_cells_range, nodeID)
-                    for cID ∈ cIDs
-                        if intersect(nodeIDs, cells_UNV[cID].nodesID) == nodeIDs
-                            bowners_cells[fID] .= cID
-                            boundary_cells[fID] = cID
-                            assigned = true
-                            break
-                        end
-                    end
-                    if assigned; break; end
-                end
-            end
-    end
-    bface_nodes = vcat(bface_nodes...) 
-    return bface_nodes, bface_nodes_range, bowners_cells, boundary_cells
-end
-
-function generate_internal_faces(cells_UNV, nbfaces, nodes, node_cells, itype, ftype)
-    total_faces = 0
-    for cell ∈ cells_UNV
-        if cell.nodeCount == 4; total_faces += 4; end
-        if cell.nodeCount == 8; total_faces += 6; end
-        if cell.nodeCount == 6; total_faces += 5; end
-    end
-    cells_faces_nodeIDs = Vector{Vector{Int64}}[Vector{Int64}[] for _ ∈ 1:length(cells_UNV)] 
-    for (cellID, cell) ∈ enumerate(cells_UNV)
-        # Sequence nodes correctly for standard UNV elements
-        if cell.nodeCount == 4
-            nodesID = cell.nodesID
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[3]])
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[4]])
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[3], nodesID[4]])
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[2], nodesID[3], nodesID[4]])
-        end
-        if cell.nodeCount == 8
-            nodesID = cell.nodesID
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[3], nodesID[4]])
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[5], nodesID[6], nodesID[7], nodesID[8]])
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[6], nodesID[5]])
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[2], nodesID[3], nodesID[7], nodesID[6]])
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[3], nodesID[4], nodesID[8], nodesID[7]])
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[4], nodesID[1], nodesID[5], nodesID[8]])
-        end
-        if cell.nodeCount == 6
-            nodesID = cell.nodesID
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[3]])
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[4], nodesID[5], nodesID[6]])
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[1], nodesID[2], nodesID[5], nodesID[4]])
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[2], nodesID[3], nodesID[6], nodesID[5]])
-            push!(cells_faces_nodeIDs[cellID], Int64[nodesID[3], nodesID[1], nodesID[4], nodesID[6]])
-        end
-    end
-    for face_nodesID ∈ cells_faces_nodeIDs
-        for nodesID ∈ face_nodesID
-            sort!(nodesID) # For unique identification
-        end
-    end
-    owners_cellIDs = Vector{Int64}[zeros(Int64, 2) for _ ∈ 1:total_faces]
-    facei = 0 
-    for (cellID, faces_nodeIDs) ∈ enumerate(cells_faces_nodeIDs) 
-        for facei_nodeIDs ∈ faces_nodeIDs 
-            facei += 1 
-            owners_cellIDs[facei][1] = cellID 
-            for nodeID ∈ facei_nodeIDs 
-                cells_range = nodes[nodeID].cells_range
-                node_cellIDs = @view node_cells[cells_range] 
-                for nodei_cellID ∈ node_cellIDs 
-                    if nodei_cellID !== cellID 
-                        for face ∈ cells_faces_nodeIDs[nodei_cellID]
-                            if face == facei_nodeIDs
-                                owners_cellIDs[facei][2] = nodei_cellID 
-                                break
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    sort!.(owners_cellIDs) 
-    face_nodes = Vector{Int64}[Int64[] for _ ∈ 1:total_faces] 
-    fID = 0 
-    for celli_faces_nodeIDs ∈ cells_faces_nodeIDs
-        for nodesID ∈ celli_faces_nodeIDs
-            fID += 1
-            face_nodes[fID] = nodesID
-        end
-    end
-    unique_indices = unique(i -> face_nodes[i], eachindex(face_nodes))
-    unique!(face_nodes)
-    keepat!(owners_cellIDs, unique_indices)
-    total_bfaces = 0 
-    for owners ∈ owners_cellIDs
-        if owners[1] == 0; total_bfaces += 1; end
-    end
-    bfaces_indices = zeros(Int64, total_bfaces) 
-    counter = 0
-    for (i, owners) ∈ enumerate(owners_cellIDs)
-        if owners[1] == 0
-            counter += 1
-            bfaces_indices[counter] = i 
-        end
-    end
-    deleteat!(owners_cellIDs, bfaces_indices)
-    deleteat!(face_nodes, bfaces_indices)
-    face_nodes_range = Vector{UnitRange{Int64}}(undef, length(face_nodes))
-    start = 1
-    for (fID, nodesID) ∈ enumerate(face_nodes)
-        nnodes = length(nodesID)
-        face_nodes_range[fID] = UnitRange{Int64}(start:(start + nnodes - 1))
-        start += nnodes
-    end
-    face_nodes = vcat(face_nodes...) 
-    return face_nodes, face_nodes_range, owners_cellIDs
-end
-
-function order_face_nodes(bface_nodes_range, iface_nodes_range, bface_nodes, iface_nodes, nodes, itype, ftype)
-    # Generic re-ordering for polygons >= 3 nodes using angular coordinates
-    for (range, f_nodes) in [(bface_nodes_range, bface_nodes), (iface_nodes_range, iface_nodes)]
-        for fID in eachindex(range)
-            nIDs = nodeIDs(f_nodes, range[fID])
-            if length(nIDs) < 3; continue; end
-            
-            pts = getproperty.(nodes[nIDs], :coords)
-            c_f = sum(pts) / length(pts)
-            
-            # Robust normal identification independent of node order
-            v1 = pts[1] - c_f
-            max_cross = -1.0
-            best_normal = SVector{3, ftype}(0, 0, 1)
-            for i in 2:length(pts)
-                n_curr = cross(v1, pts[i] - c_f)
-                mag = norm(n_curr)
-                if mag > max_cross
-                    max_cross = mag
-                    best_normal = n_curr / mag
-                end
-            end
-            
-            angles = [alpha_sort(v1, p - c_f, best_normal) for p in pts]
-            sorted_indices = sortperm(angles)
-            
-            for (i, idx) in enumerate(range[fID])
-                f_nodes[idx] = nIDs[sorted_indices[i]]
-            end
-        end
-    end
-    return bface_nodes, iface_nodes
-end
-
-function generate_cell_face_connectivity(cells_UNV, nbfaces, face_owner_cells, itype, ftype)
-    cell_faces = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_UNV)] 
-    cell_nsign = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_UNV)] 
-    cell_neighbours = Vector{Int64}[Int64[] for _ ∈ eachindex(cells_UNV)] 
-    cell_faces_range = UnitRange{Int64}[UnitRange{Int64}(0,0) for _ ∈ eachindex(cells_UNV)] 
-    first_internal_face = nbfaces + 1
-    total_faces = length(face_owner_cells)
-    for fID ∈ first_internal_face:total_faces
-        owners = face_owner_cells[fID] 
-        owner1 = owners[1]
-        owner2 = owners[2]
-        push!(cell_faces[owner1], fID)     
-        push!(cell_faces[owner2], fID)
-        push!(cell_nsign[owner1], 1)      
-        push!(cell_nsign[owner2], -1)   
-        push!(cell_neighbours[owner1], owner2)     
-        push!(cell_neighbours[owner2], owner1)     
-    end
-    start = 1
-    for (cID, faces) ∈ enumerate(cell_faces)
-        nfaces = length(faces)
-        cell_faces_range[cID] = UnitRange{Int64}(start:(start + nfaces - 1))
-        start += nfaces
-    end
-    cell_faces = vcat(cell_faces...)
-    cell_nsign = vcat(cell_nsign...)
-    cell_neighbours = vcat(cell_neighbours...) 
-    return cell_faces, cell_nsign, cell_faces_range, cell_neighbours
-end
-
-# CALCULATION functions
-
-calculate_centres!(mesh, itype, ftype) = begin
-    (; nodes, cells, faces, cell_nodes, face_nodes) = mesh
-    for cID ∈ eachindex(cells)
-        cell = cells[cID]
-        n_ids = nodeIDs(cell_nodes, cell.nodes_range)
-        @reset cell.centre = sum(getproperty.(nodes[n_ids], :coords)) / length(n_ids)
-        cells[cID] = cell
-    end
-    for fID ∈ eachindex(faces)
-        face = faces[fID]
-        n_ids = nodeIDs(face_nodes, face.nodes_range)
-        @reset face.centre = sum(getproperty.(nodes[n_ids], :coords)) / length(n_ids)
-        faces[fID] = face
-    end        
-end
-
-calculate_face_properties!(mesh, itype, ftype) = begin
-    (; nodes, cells, faces, face_nodes, boundary_cellsID) = mesh
-    n_bfaces = length(boundary_cellsID)
-    n_faces = length(mesh.faces)
-
-    for fID ∈ 1:n_faces
-        face = faces[fID]
-        nIDs = nodeIDs(face_nodes, face.nodes_range)
-        (; ownerCells) = face
-        F1 = face.centre
-        C1 = cells[ownerCells[1]].centre 
-        normal = face.normal 
-        
-        # Consistent normal orientation: away from owner
-        if (F1 - C1) ⋅ normal < 0
-            normal *= -one(ftype)
-            face_nodes[face.nodes_range] .= reverse(nIDs)
-            @reset face.normal = normal
-        end
-
-        C1F1 = F1 - C1
-        if fID <= n_bfaces
-            weight, delta, e = Mesh.weight_delta_e(C1F1, normal)
-        else
-            C2 = cells[ownerCells[2]].centre 
-            C2F1 = F1 - C2
-            C1C2 = C2 - C1
-            weight, delta, e = Mesh.weight_delta_e(C1F1, C2F1, C1C2, normal)
-        end
-        
-        @reset face.delta = delta
-        @reset face.e = e
-        @reset face.weight = weight
-        faces[fID] = face
-    end
-end
-
-calculate_area_and_volume!(mesh, itype, ftype) = begin
-    (; nodes, faces, face_nodes, cells, cell_nodes, boundary_cellsID) = mesh
+    local points, efaces, cells_UNV, boundaryElements
     
-    # 1. Robust Area vector integration
-    for fID ∈ eachindex(faces)
-        face = faces[fID]
-        nIDs = nodeIDs(face_nodes, face.nodes_range)
-        pts = getproperty.(nodes[nIDs], :coords)
-        area_vec = SVector{3, ftype}(0.0, 0.0, 0.0)
-        fc = face.centre
-        for i in 1:length(pts)
-            p1 = pts[i] - fc
-            p2 = pts[mod1(i+1, length(pts))] - fc
-            area_vec += 0.5 * cross(p1, p2)
+    t_parse = @elapsed begin
+        points, efaces, cells_UNV, boundaryElements = read_UNV3( 
+            unv_mesh; scale=scale, integer=integer_type, float=float_type)
+    end
+    @info "UNV file parsed in $(round(t_parse, digits=3)) seconds."
+    
+    @info "Generating mesh connectivity and geometry..."
+    local mesh
+    
+    t_build = @elapsed begin
+        mesh = _build_UNV3D_mesh_core(points, efaces, cells_UNV, boundaryElements, integer_type, float_type)
+    end
+    
+    @info "Mesh constructed in $(round(t_build, digits=3)) seconds."
+    @info "Mesh entities: $(length(mesh.nodes)) nodes | $(length(mesh.faces)) faces | $(length(mesh.cells)) cells."
+    
+    return mesh
+end
+
+# ==============================================================================
+# CORE WORKFLOW ORCHESTRATOR
+# ==============================================================================
+
+function _build_UNV3D_mesh_core(points, efaces, cells_UNV, boundaryElements, ::Type{I}, ::Type{F}) where {I, F}
+    n_cells = length(cells_UNV)
+    n_points = length(points)
+
+    node_cells, node_cells_range = _build_node_to_cell_map(n_points, n_cells, cells_UNV, I)
+
+    total_faces, n_bfaces, all_owners, face_nodes, face_nodes_range, boundary_cellsID = 
+        _identify_and_concatenate_faces(cells_UNV, boundaryElements, efaces, node_cells, node_cells_range, n_cells, I)
+
+    cell_faces_vec, cell_faces_range, cell_neigh_vec, cell_nsign_vec = 
+        _build_cell_to_face_map(n_cells, total_faces, all_owners, n_bfaces, I)
+
+    mesh = _construct_mesh_entities(
+        points, cells_UNV, boundaryElements, 
+        node_cells, node_cells_range, face_nodes, face_nodes_range, all_owners,
+        cell_faces_vec, cell_faces_range, cell_neigh_vec, cell_nsign_vec, boundary_cellsID, 
+        total_faces, n_points, n_cells, I, F
+    )
+
+    # 2-Stage Geometry Pipeline
+    calculate_centres!(mesh, I, F)            # Stage 1: Estimated arithmetic means
+    calculate_face_properties!(mesh, I, F)    # Stage 2A: True area-weighted face centroids
+    calculate_area_and_volume!(mesh, I, F)    # Stage 2B: True volume-weighted cell centroids
+
+    return mesh
+end
+
+# ==============================================================================
+# CONNECTIVITY BUILDERS
+# ==============================================================================
+
+function _build_node_to_cell_map(n_points, n_cells, cells_UNV, ::Type{I}) where I
+    node_cell_counts = zeros(I, n_points)
+    for cID in 1:n_cells
+        c_nodes = cells_UNV[cID].nodesID
+        @inbounds for j in 1:length(c_nodes)
+            node_cell_counts[c_nodes[j]] += 1
         end
-        area = norm(area_vec)
-        @reset face.area = area
-        @reset face.normal = area_vec / (area + eps(ftype))
-        faces[fID] = face
     end
-
-    # 2. Map all faces (Boundary + Internal) per cell
-    all_cell_faces = [Int64[] for _ ∈ eachindex(cells)]
-    for (fID, cID) in enumerate(boundary_cellsID)
-        push!(all_cell_faces[cID], fID)
+    
+    node_cells_range, cursors_pts, total_nc = _compute_flat_offsets(node_cell_counts)
+    node_cells = Vector{I}(undef, total_nc)
+    
+    for cID in 1:n_cells
+        c_nodes = cells_UNV[cID].nodesID
+        @inbounds for j in 1:length(c_nodes)
+            nID = c_nodes[j]
+            node_cells[cursors_pts[nID]] = I(cID)
+            cursors_pts[nID] += 1
+        end
     end
-    for fID in (length(boundary_cellsID)+1):length(faces)
-        occ = faces[fID].ownerCells
-        push!(all_cell_faces[occ[1]], fID)
-        push!(all_cell_faces[occ[2]], fID)
-    end
+    
+    return node_cells, node_cells_range
+end
 
-    # 3. Robust Volume via Divergence Theorem (Pyramid decomposition)
-    for cID ∈ eachindex(cells)
-        cell = cells[cID]
-        apex = cell.centre 
-        total_vol = zero(ftype)
-        moment = SVector{3, ftype}(0.0, 0.0, 0.0)
+function _identify_and_concatenate_faces(cells_UNV, boundaryElements, efaces, node_cells, node_cells_range, n_cells, ::Type{I}) where I
+    n_bfaces = sum(b -> length(b.facesID), boundaryElements)
+    bface_nodes_list = Vector{Vector{I}}(undef, n_bfaces)
+    boundary_cellsID = Vector{I}(undef, n_bfaces)
+    bface_keys = Dict{NTuple{4, I}, I}()
+    sizehint!(bface_keys, n_bfaces)
 
-        for fID in all_cell_faces[cID]
-            face = faces[fID]
-            # Outward normal relative to this cell
-            Sf = face.normal * face.area
-            if dot((face.centre - apex), Sf) < 0
-                Sf *= -1.0
+    f_idx = 1
+    for boundary in boundaryElements
+        for b_idx in boundary.facesID
+            nIDs = efaces[b_idx].nodesID
+            owner = I(0)
+            
+            rng = node_cells_range[nIDs[1]]
+            @inbounds for ptr in rng[1]:rng[end]
+                cID = node_cells[ptr]
+                match = true
+                c_nodes = cells_UNV[cID].nodesID
+                for id in nIDs
+                    if !(id in c_nodes)
+                        match = false; break
+                    end
+                end
+                if match; owner = I(cID); break; end
             end
-            v_pyr = (1/3) * dot((face.centre - apex), Sf)
-            c_pyr = 0.75 * face.centre + 0.25 * apex
-            total_vol += v_pyr
-            moment += v_pyr * c_pyr
+            boundary_cellsID[f_idx] = owner
+            
+            # The key is sorted ONLY for hashing. 
+            if length(nIDs) == 3
+                bface_keys[make_key(I(nIDs[1]), I(nIDs[2]), I(nIDs[3]))] = f_idx
+            else
+                bface_keys[make_key(I(nIDs[1]), I(nIDs[2]), I(nIDs[3]), I(nIDs[4]))] = f_idx
+            end
+            
+            # IMPLEMENTATION NOTE: The UNV strict ordered sequence is preserved here!
+            bface_nodes_list[f_idx] = I.(nIDs)
+            f_idx += 1
+        end
+    end
+
+    maps_tet   = ((1,2,3), (1,2,4), (1,3,4), (2,3,4))
+    maps_hex   = ((1,2,3,4), (5,6,7,8), (1,2,6,5), (2,3,7,6), (3,4,8,7), (4,1,5,8))
+    maps_pri_3 = ((1,2,3), (4,5,6))
+    maps_pri_4 = ((1,2,5,4), (2,3,6,5), (3,1,4,6))
+
+    max_expected_ifaces = n_cells * 4
+    iface_nodes_list = Vector{NTuple{4, I}}(undef, max_expected_ifaces)
+    iface_sizes = Vector{I}(undef, max_expected_ifaces)
+    iface_owners = Vector{Tuple{I, I}}(undef, max_expected_ifaces)
+    iface_count = 0 
+    
+    iface_keys = Dict{NTuple{4, I}, I}()
+    sizehint!(iface_keys, n_cells * 3)
+
+    for cID in 1:n_cells
+        cell = cells_UNV[cID]
+        nc = cell.nodeCount
+        
+        # IMPLEMENTATION NOTE: cell.nodesID is extracted sequentially. 
+        # The true 3D spatial orientation of the face is natively retained.
+        if nc == 4
+            for m in maps_tet
+                @inbounds n1, n2, n3 = I(cell.nodesID[m[1]]), I(cell.nodesID[m[2]]), I(cell.nodesID[m[3]])
+                key = make_key(n1, n2, n3)
+                iface_count = _add_internal_face!(iface_nodes_list, iface_sizes, iface_owners, iface_keys, bface_keys, key, (n1, n2, n3, I(0)), I(3), I(cID), iface_count, I)
+            end
+        elseif nc == 6
+            for m in maps_pri_3
+                @inbounds n1, n2, n3 = I(cell.nodesID[m[1]]), I(cell.nodesID[m[2]]), I(cell.nodesID[m[3]])
+                key = make_key(n1, n2, n3)
+                iface_count = _add_internal_face!(iface_nodes_list, iface_sizes, iface_owners, iface_keys, bface_keys, key, (n1, n2, n3, I(0)), I(3), I(cID), iface_count, I)
+            end
+            for m in maps_pri_4
+                @inbounds n1, n2, n3, n4 = I(cell.nodesID[m[1]]), I(cell.nodesID[m[2]]), I(cell.nodesID[m[3]]), I(cell.nodesID[m[4]])
+                key = make_key(n1, n2, n3, n4)
+                iface_count = _add_internal_face!(iface_nodes_list, iface_sizes, iface_owners, iface_keys, bface_keys, key, (n1, n2, n3, n4), I(4), I(cID), iface_count, I)
+            end
+        elseif nc == 8
+            for m in maps_hex
+                @inbounds n1, n2, n3, n4 = I(cell.nodesID[m[1]]), I(cell.nodesID[m[2]]), I(cell.nodesID[m[3]]), I(cell.nodesID[m[4]])
+                key = make_key(n1, n2, n3, n4)
+                iface_count = _add_internal_face!(iface_nodes_list, iface_sizes, iface_owners, iface_keys, bface_keys, key, (n1, n2, n3, n4), I(4), I(cID), iface_count, I)
+            end
+        end
+    end
+
+    total_faces = n_bfaces + iface_count
+    all_owners = Vector{SVector{2, I}}(undef, total_faces)
+    
+    @inbounds for i in 1:n_bfaces
+        all_owners[i] = SVector{2, I}(boundary_cellsID[i], boundary_cellsID[i])
+    end
+    @inbounds for i in 1:iface_count
+        all_owners[n_bfaces + i] = SVector{2, I}(iface_owners[i][1], iface_owners[i][2])
+    end
+    
+    total_fnodes = sum(@view iface_sizes[1:iface_count])
+    for i in 1:n_bfaces; total_fnodes += length(bface_nodes_list[i]); end
+    
+    face_nodes = Vector{I}(undef, total_fnodes)
+    face_nodes_range = Vector{UnitRange{I}}(undef, total_faces)
+    
+    let cursor = I(1)
+        for i in 1:n_bfaces
+            nodes_arr = bface_nodes_list[i]
+            len = length(nodes_arr)
+            for j in 1:len
+                @inbounds face_nodes[cursor + j - 1] = nodes_arr[j]
+            end
+            face_nodes_range[i] = cursor:(cursor + I(len) - I(1))
+            cursor += I(len)
         end
         
-        @reset cell.volume = abs(total_vol)
-        @reset cell.centre = moment / (abs(total_vol) + eps(ftype))
-        cells[cID] = cell
+        for i in 1:iface_count
+            t = iface_nodes_list[i]
+            len = iface_sizes[i]
+            @inbounds face_nodes[cursor] = t[1]
+            @inbounds face_nodes[cursor+1] = t[2]
+            @inbounds face_nodes[cursor+2] = t[3]
+            if len == 4; @inbounds face_nodes[cursor+3] = t[4]; end
+            face_nodes_range[n_bfaces + i] = cursor:(cursor + len - I(1))
+            cursor += len
+        end
     end
+
+    return total_faces, n_bfaces, all_owners, face_nodes, face_nodes_range, boundary_cellsID
+end
+
+function _build_cell_to_face_map(n_cells, total_faces, all_owners, n_bfaces, ::Type{I}) where I
+    cell_f_counts = zeros(I, n_cells)
+    for fID in (n_bfaces + 1):total_faces
+        o = all_owners[fID]
+        @inbounds cell_f_counts[o[1]] += 1
+        @inbounds cell_f_counts[o[2]] += 1
+    end
+    
+    cell_faces_range, cursors_cf, total_cf = _compute_flat_offsets(cell_f_counts)
+    
+    cell_faces_vec = Vector{I}(undef, total_cf)
+    cell_nsign_vec = Vector{I}(undef, total_cf)
+    cell_neigh_vec = Vector{I}(undef, total_cf)
+    
+    for fID in (n_bfaces + 1):total_faces
+        o = all_owners[fID]
+        @inbounds begin
+            p1, p2 = cursors_cf[o[1]], cursors_cf[o[2]]
+            cell_faces_vec[p1] = fID; cell_nsign_vec[p1] = I(1);  cell_neigh_vec[p1] = o[2]
+            cell_faces_vec[p2] = fID; cell_nsign_vec[p2] = I(-1); cell_neigh_vec[p2] = o[1]
+            cursors_cf[o[1]] += 1; cursors_cf[o[2]] += 1
+        end
+    end
+    
+    return cell_faces_vec, cell_faces_range, cell_neigh_vec, cell_nsign_vec
+end
+
+function _construct_mesh_entities(points, cells_UNV, boundaryElements, 
+                                  node_cells, node_cells_range, face_nodes, face_nodes_range, all_owners,
+                                  cell_faces_vec, cell_faces_range, cell_neigh_vec, cell_nsign_vec, boundary_cellsID,
+                                  total_faces, n_points, n_cells, ::Type{I}, ::Type{F}) where {I, F}
+
+    boundaries = Vector{Boundary{Symbol, UnitRange{I}}}(undef, length(boundaryElements))
+    let cursor = I(1)
+        for i in eachindex(boundaryElements)
+            len = length(boundaryElements[i].facesID)
+            boundaries[i] = Boundary(Symbol(boundaryElements[i].name), cursor:(cursor + I(len) - I(1)))
+            cursor += I(len)
+        end
+    end
+
+    proto_node = Node(SVector{3, F}(zero(F),zero(F),zero(F)), I(1):I(0))
+    nodes = Vector{typeof(proto_node)}(undef, n_points)
+    
+    for i in 1:n_points
+        p_xyz = points[i].xyz
+        svec_coords = SVector{3, F}(F(p_xyz[1]), F(p_xyz[2]), F(p_xyz[3]))
+        @inbounds nodes[i] = Node(svec_coords, node_cells_range[i])
+    end
+
+    tot_c_nodes = sum(c -> c.nodeCount, cells_UNV)
+    all_cell_nodes = Vector{I}(undef, tot_c_nodes)
+    
+    proto_cell = Cell(SVector{3, F}(zero(F),zero(F),zero(F)), zero(F), I(1):I(0), I(1):I(0))
+    cells = Vector{typeof(proto_cell)}(undef, n_cells)
+    
+    let cursor = I(1)
+        for i in 1:n_cells
+            c_nodes = cells_UNV[i].nodesID
+            len = cells_UNV[i].nodeCount
+            for j in 1:len
+                @inbounds all_cell_nodes[cursor + j - 1] = I(c_nodes[j])
+            end
+            cells[i] = Cell(SVector{3, F}(zero(F),zero(F),zero(F)), zero(F), cursor:(cursor + I(len) - I(1)), cell_faces_range[i])
+            cursor += I(len)
+        end
+    end
+
+    proto_face = Face3D(I(1):I(0), SVector{2, I}(I(0),I(0)), 
+             SVector{3, F}(zero(F),zero(F),zero(F)), 
+             SVector{3, F}(zero(F),zero(F),zero(F)), 
+             SVector{3, F}(zero(F),zero(F),zero(F)),
+             zero(F), zero(F), zero(F))
+    faces = Vector{typeof(proto_face)}(undef, total_faces)
+    
+    for i in 1:total_faces
+        @inbounds faces[i] = Face3D(face_nodes_range[i], all_owners[i], 
+             SVector{3, F}(zero(F),zero(F),zero(F)), 
+             SVector{3, F}(zero(F),zero(F),zero(F)), 
+             SVector{3, F}(zero(F),zero(F),zero(F)),
+             zero(F), zero(F), zero(F))
+    end
+
+    return Mesh3(
+        cells, all_cell_nodes, cell_faces_vec, cell_neigh_vec, cell_nsign_vec,
+        faces, face_nodes, boundaries, nodes, node_cells,
+        SVector{3, F}(zero(F),zero(F),zero(F)), I(0):I(0), boundary_cellsID
+    )
+end
+
+# ==============================================================================
+# GEOMETRY KERNELS
+# ==============================================================================
+
+function calculate_centres!(mesh, ::Type{I}, ::Type{F}) where {I, F}
+    cells = mesh.cells
+    faces = mesh.faces
+    nodes = mesh.nodes
+    cell_nodes = mesh.cell_nodes
+    face_nodes = mesh.face_nodes
+
+    # Stage 1: Compute simple arithmetic means to serve as temporary anchors
+    # (These will be overwritten with true geometric centroids in the next stages)
+    @inbounds for i in eachindex(cells)
+        cell = cells[i]
+        rng = cell.nodes_range
+        sum_p = SVector{3, F}(zero(F), zero(F), zero(F))
+        for ptr in rng[1]:rng[end]
+            id = cell_nodes[ptr]
+            sum_p += nodes[id].coords
+        end
+        @reset cell.centre = sum_p / F(length(rng))
+        cells[i] = cell
+    end
+    
+    @inbounds for i in eachindex(faces)
+        face = faces[i]
+        rng = face.nodes_range
+        sum_p = SVector{3, F}(zero(F), zero(F), zero(F))
+        for ptr in rng[1]:rng[end]
+            id = face_nodes[ptr]
+            sum_p += nodes[id].coords
+        end
+        @reset face.centre = sum_p / F(length(rng))
+        faces[i] = face
+    end
+end
+
+function calculate_face_properties!(mesh, ::Type{I}, ::Type{F}) where {I, F}
+    cells = mesh.cells
+    faces = mesh.faces
+    nodes = mesh.nodes
+    face_nodes = mesh.face_nodes
+    n_bf = length(mesh.boundary_cellsID)
+    
+    @inbounds for i in eachindex(faces)
+        face = faces[i]
+        rng = face.nodes_range
+        len = length(rng)
+        C1 = cells[face.ownerCells[1]].centre
+        
+        # FC_est is the arithmetic mean calculated in calculate_centres!
+        FC_est = face.centre 
+        
+        area_vec = SVector{3, F}(zero(F), zero(F), zero(F))
+        true_FC = SVector{3, F}(zero(F), zero(F), zero(F))
+        sum_area = zero(F)
+        
+        # Stage 2A: Sub-triangulate to calculate TRUE Area-Weighted Face Centroid
+        for j in 1:len
+            id1 = face_nodes[rng[j]]
+            id2 = face_nodes[rng[mod1(j+1, len)]]
+            p1 = nodes[id1].coords
+            p2 = nodes[id2].coords
+            
+            a_vec = F(0.5) * cross(p1 - FC_est, p2 - FC_est)
+            a_mag = norm(a_vec)
+            
+            area_vec += a_vec
+            sum_area += a_mag
+            # Centroid of the sub-triangle
+            true_FC += a_mag * ((FC_est + p1 + p2) / F(3.0)) 
+        end
+        
+        area = norm(area_vec)
+        normal = area_vec / (area + F(1e-16))
+        FC = true_FC / (sum_area + F(1e-16)) # The true geometric face center
+
+        # IMPLEMENTATION NOTE: Enforce Right-Hand Rule (Mesh Contract)
+        # If the ordered node array produces a normal pointing inward, we physically 
+        # reverse the stored node array indices here so it permanently points outward.
+        check_vec = i <= n_bf ? (FC - C1) : (cells[face.ownerCells[2]].centre - C1)
+        if dot(check_vec, normal) < zero(F)
+            normal = -normal
+            for j in 1:(len ÷ 2)
+                idx1 = rng[j]
+                idx2 = rng[len - j + 1]
+                face_nodes[idx1], face_nodes[idx2] = face_nodes[idx2], face_nodes[idx1]
+            end
+        end
+
+        if i <= n_bf
+            w, d, e = Mesh.weight_delta_e(FC - C1, normal)
+        else
+            C2 = cells[face.ownerCells[2]].centre
+            w, d, e = Mesh.weight_delta_e(FC - C1, FC - C2, C2 - C1, normal)
+        end
+
+        @reset face.centre = FC # Overwrite arithmetic mean with true centroid
+        @reset face.normal = normal; @reset face.area = area; @reset face.weight = w
+        @reset face.delta = d; @reset face.e = e
+        faces[i] = face
+    end
+end
+
+function calculate_area_and_volume!(mesh, ::Type{I}, ::Type{F}) where {I, F}
+    cells = mesh.cells
+    faces = mesh.faces
+    n_cells = length(cells)
+    
+    map_counts = zeros(I, n_cells)
+    n_bf = length(mesh.boundary_cellsID)
+    for cID in mesh.boundary_cellsID
+        @inbounds map_counts[cID] += 1
+    end
+    for fID in (n_bf+1):length(faces)
+        o = faces[fID].ownerCells
+        @inbounds map_counts[o[1]] += 1
+        @inbounds map_counts[o[2]] += 1
+    end
+
+    all_map_range, cursors, total_maps = _compute_flat_offsets(map_counts)
+    all_map_flat = Vector{I}(undef, total_maps)
+    
+    for (fID, cID) in enumerate(mesh.boundary_cellsID)
+        @inbounds all_map_flat[cursors[cID]] = I(fID)
+        @inbounds cursors[cID] += 1
+    end
+    for fID in (n_bf+1):length(faces)
+        o = faces[fID].ownerCells
+        @inbounds all_map_flat[cursors[o[1]]] = I(fID); @inbounds cursors[o[1]] += 1
+        @inbounds all_map_flat[cursors[o[2]]] = I(fID); @inbounds cursors[o[2]] += 1
+    end
+
+    # Stage 2B: Calculate TRUE Volume-Weighted Cell Centroid using Divergence Pyramids
+    @inbounds for i in eachindex(cells)
+        cell = cells[i]
+        
+        # apex is the arithmetic mean calculated in calculate_centres!
+        apex = cell.centre 
+        
+        vol_total = zero(F)
+        true_CC = SVector{3, F}(zero(F), zero(F), zero(F))
+        
+        rng = all_map_range[i]
+        for ptr in rng[1]:rng[end]
+            fID = all_map_flat[ptr]
+            face = faces[fID]
+            FC = face.centre
+            h_vec = FC - apex
+            Sf = face.normal * face.area
+            
+            if dot(h_vec, Sf) < zero(F); Sf = -Sf; end
+            
+            # Volume of the pyramid formed by the face and the cell apex
+            vol_pyr = F(1/3) * dot(h_vec, Sf)
+            
+            # Centroid of a pyramid lies 1/4 of the way from the base (FC) to the apex
+            C_pyr = F(0.75) * FC + F(0.25) * apex
+            
+            vol_total += vol_pyr
+            true_CC += vol_pyr * C_pyr
+        end
+        
+        @reset cell.volume = abs(vol_total)
+        if vol_total > F(1e-16)
+            @reset cell.centre = true_CC / vol_total # Overwrite with true centroid
+        end
+        cells[i] = cell
+    end
+end
+
+# ==============================================================================
+# UTILITY AND AUXILIARY FUNCTIONS
+# ==============================================================================
+
+function _compute_flat_offsets(counts::Vector{I}) where I
+    n = length(counts)
+    ranges = Vector{UnitRange{I}}(undef, n)
+    cursors = zeros(I, n)
+    cursor = I(1)
+    @inbounds for i in 1:n
+        c = counts[i]
+        ranges[i] = cursor:(cursor + c - I(1))
+        cursors[i] = cursor
+        cursor += c
+    end
+    return ranges, cursors, cursor - I(1)
+end
+
+@inline function _add_internal_face!(iface_nodes_list, iface_sizes, iface_owners, iface_keys, bface_keys, key, nodes_tuple, face_size::I, cID::I, count::Int, ::Type{I}) where I
+    if haskey(bface_keys, key); return count; end
+    
+    idx = get(iface_keys, key, I(0))
+    if idx > 0
+        @inbounds iface_owners[idx] = (iface_owners[idx][1], cID)
+        return count
+    else
+        count += 1
+        if count > length(iface_nodes_list)
+            resize!(iface_nodes_list, count * 2)
+            resize!(iface_sizes, count * 2)
+            resize!(iface_owners, count * 2)
+        end
+        
+        # IMPLEMENTATION NOTE: The ordered `nodes_tuple` is stored directly!
+        @inbounds iface_nodes_list[count] = nodes_tuple
+        @inbounds iface_sizes[count] = face_size
+        @inbounds iface_owners[count] = (cID, I(0))
+        iface_keys[key] = count
+        return count
+    end
+end
+
+@inline function make_key(a::T, b::T, c::T) where T
+    if a > b; a, b = b, a; end
+    if b > c; b, c = c, b; end
+    if a > b; a, b = b, a; end
+    return (a, b, c, zero(T))
+end
+
+@inline function make_key(a::T, b::T, c::T, d::T) where T
+    if a > b; a, b = b, a; end
+    if c > d; c, d = d, c; end
+    if a > c; a, c = c, a; end
+    if b > d; b, d = d, b; end
+    if b > c; b, c = c, b; end
+    return (a, b, c, d)
 end

@@ -5,6 +5,7 @@ grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "3d_box_1000x1000x1000mm_5.unv"
 # grid = "cascade_3D_periodic_4mm.unv"
 
+
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
@@ -12,8 +13,8 @@ edge_length = 1/5
 face_area = edge_length^2
 cell_volume = edge_length^3
 
-getproperty.(mesh.cells, :volume) 
-getproperty.(mesh.faces, :area) 
+getproperty.(mesh.cells, :volume) |> extrema
+getproperty.(mesh.faces, :area) |> extrema
 
 patch_area = 1.0*1.0
 
@@ -28,7 +29,7 @@ for boundary ∈ mesh.boundaries
     push!(area_patches, areai)
 end
 
-area_patches
+area_patches|> extrema
 
 volume = 0.0
 for cell ∈ mesh.cells
@@ -41,7 +42,7 @@ for (fi, face) ∈ enumerate(mesh.faces)
     mag = norm(face.normal)
     norms[fi] = mag
 end
-
+norms |> extrema
 
     
     

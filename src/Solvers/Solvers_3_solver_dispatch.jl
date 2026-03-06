@@ -187,7 +187,8 @@ run!(
 begin
     residuals=filmModel!(
         model,config,
-        output=output
+        output=output,
+        inner_loops=inner_loops
     )
     #residuals = piso!(
     #    model, config, 

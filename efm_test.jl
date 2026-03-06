@@ -20,7 +20,7 @@ hardware = Hardware(backend=backend, workgroup=1024);
 mesh_dev = mesh; # use this line to run on CPU
 # mesh_dev = adapt(backend, mesh)  # Uncomment to run on GPU 
 
-test_case = 10;
+test_case = 5;
 input_parameters = CSV.File("Model_Input.csv"); #File containing the different test cases from paper "Modeling of Partially Wetting Liquid Film Using an Enhanced Thin Film Model for Aero-Engine Bearing Chamber Applications" by Kuldeep Singh et. al
 inlet_width = 0.510; # m
 inlet_height = 0.05; # m
@@ -39,7 +39,7 @@ h_crit = 1e-10;
 σ = input_parameters.Sigma[test_case]
 θm = input_parameters.Theta_m[test_case]
 ϕ = input_parameters.Phi[test_case]
-Δt = 1e-4
+Δt = 1e-3
 Δx = 0.006
 C=inlet_rate*Δt/Δx
 
@@ -79,15 +79,15 @@ schemes = (
         time=Euler,
         #time=SteadyState,
         #divergence=Linear
-        divergence=Upwind
-        #divergence=LUST
+        #divergence=Upwind
+        divergence=LUST
         ),
     h = Schemes(
         time=Euler,
         #time=SteadyState,
         #divergence=Linear
-        divergence=Upwind
-        #divergence=LUST
+        #divergence=Upwind
+        divergence=LUST
     ),
 );
 
@@ -96,29 +96,33 @@ solvers = (
         solver      = Bicgstab(), # Options: Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
         convergence = 1e-11,
-        relax       = 0.8,
-        rtol = 1e-4,
-        atol = 1e-10
+        relax       = 1.0,
+        rtol = 0,
+        atol = 1e-5
     ),
     h = SolverSetup(
         solver      = Bicgstab(), # Options: Cg(), Bicgstab(), Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
         convergence = 1e-11,
-        relax       = 0.8,
-        rtol = 1e-4,
-        atol = 1e-10
+        relax       = 0.9,
+        rtol = 0,
+        atol = 1e-6
     )
 );
 
 #runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
 #runtime = Runtime(iterations=20000, time_step=1, write_interval=20000)
 #runtime = Runtime(iterations=20, time_step=Δt, write_interval=1); # hide
+#runtime = Runtime(iterations=200, time_step=Δt, write_interval=10);
 runtime = Runtime(iterations=2000, time_step=Δt, write_interval=100)
-#runtime = Runtime(iterations=50, time_step=0.01, write_interval=5)
+#runtime = Runtime(iterations=8000, time_step=Δt, write_interval=400)
+#runtime = Runtime(iterations=100, time_step=Δt, write_interval=5)
+#runtime = Runtime(iterations=100000, time_step=Δt, write_interval=10000)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
 
+GC.gc(true)
   
 initialise!(model.momentum.U, [0,0,0]);
 h_init = 1e-11;#h_crit*100;
@@ -135,4 +139,4 @@ initialise!(model.momentum.h, h_init)
 
 
 
-residuals = run!(model, config);
+residuals = run!(model, config, inner_loops=4);

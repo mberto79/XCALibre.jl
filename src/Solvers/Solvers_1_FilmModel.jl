@@ -2,19 +2,21 @@ export filmModel!
 
 function filmModel!(
     model, config;
-    output=VTK()#, pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(),#, pref=nothing, ncorrectors=
+    inner_loops=2
 )
     #print("Using film model\n")
     residuals = setup_FilmModel_Solver(
         FilmModel, model, config,
-        output=output
+        output=output,
+        inner_loops=inner_loops
     )
     
     return residuals
 end
 
 function setup_FilmModel_Solver(solver_variant, model, config;
-    output=VTK())
+    output=VTK(), inner_loops=2)
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
 
@@ -29,6 +31,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     rho_mdotf = FaceScalarField(mesh)
     hmdotf = FaceScalarField(mesh)
     rhohf = FaceScalarField(mesh)
+    mu_hf = FaceScalarField(mesh)
     Sm = ScalarField(mesh)
     initialise!(Sm, 0)
     rho_l = ScalarField(mesh)
@@ -46,10 +49,11 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     U_eqn = (
         Time{schemes.U.time}(rhohf, U)
         + Divergence{schemes.U.divergence}(hmdotf,U)
+        + Si(mu_hf, U)
         ==
           Source(h∇PL)
         + Source(Ph)
-        - Source(τw)
+        #- Source(τw)
         + Source(τθw)
     ) → VectorEquation(U, boundaries.U)
 
@@ -76,14 +80,14 @@ function setup_FilmModel_Solver(solver_variant, model, config;
 
     residuals = solver_variant(
         model, #turbulenceModel,
-         U_eqn, h_eqn, config
+         U_eqn, h_eqn, config; inner_loops=inner_loops
     )
 end
 
 function FilmModel(
     model, #turbulenceModel,
      U_eqn, h_eqn, config;
-    output=VTK(), ncorrectors=0
+    output=VTK(), ncorrectors=0, inner_loops=2
 )
 
     
@@ -95,14 +99,15 @@ function FilmModel(
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
 
-    Postprocess = convert_time_to_iterations(postprocess, model, dt, iterations)
+    postprocess = convert_time_to_iterations(postprocess, model, dt, iterations)
     rhohf = get_flux(U_eqn, 1)
     hmdotf = get_flux(U_eqn, 2)
+    mu_hf = get_flux(U_eqn, 3)
 
     h∇PL = get_source(U_eqn, 1)
     Ph = get_source(U_eqn,2)
-    τw = get_source(U_eqn,3)
-    τθw = get_source(U_eqn,4)
+    #τw = get_source(U_eqn,3)
+    τθw = get_source(U_eqn,3)
     
     rho_mdotf = get_flux(h_eqn,2)
     Sm = get_source(h_eqn,1)
@@ -184,6 +189,7 @@ function FilmModel(
     R_uy = zeros(TF, iterations)
     R_uz = zeros(TF, iterations)
     R_h = zeros(TF, iterations)
+    cellsCourant = KernelAbstractions.zeros(backend, TF, n_cells)
 
     # Initial calculations
     time = zero(TF) # assuming time = 0
@@ -206,11 +212,15 @@ function FilmModel(
     @. rhohf.values = hf.values *  rho.values
     @. hmdotf.values = mdotf.values * hf.values * rho.values
 
+    
+    @. mu_hf.values = 3*mu/hf.values
     @info "need to readd Pg term - Coupling term for other phase"
     Pg = 0# Test Pg term set to zero, as the gradient is found this value doesn't matter
     @info "need to fix surface tension term"
-    for i ∈ 1:length(Δhf.values)
+    for i ∈ eachindex(Δhf.values)
         PLf[i] = Pg - hf.values[i]*dot(n,G) - coeffs.σ*Δhf[i]
+
+        #mu_hf[i] = 3*mu/hf[i]
     end
 
     grad!(∇PL, PLf, config)
@@ -223,22 +233,22 @@ function FilmModel(
     grad!(∇w, wf, w, w_bc, time, config)
 
     for i ∈ eachindex(h.values)
-        multiplier = 0;#3*(mu/h.values[i])
-        τw.x.values[i] = multiplier * U.x.values[i]
-        τw.y.values[i] = multiplier * U.y.values[i]
-        τw.z.values[i] = multiplier * U.z.values[i]
+        #multiplier = 0;#3*(mu/h.values[i])
+        #τw.x.values[i] = multiplier * U.x.values[i]
+        #τw.y.values[i] = multiplier * U.y.values[i]
+        #τw.z.values[i] = multiplier * U.z.values[i]
 
         Ph_local = (rho.values*g*sind(coeffs.ϕ)*h[i]) .*plate_tangent_vector
         Ph.x.values[i] = Ph_local[1]
         Ph.y.values[i] = Ph_local[2]
         Ph.z.values[i] = Ph_local[3]
 
-        h∇PL_local = h[i]*∇PL[i]
+        h∇PL_local = h[i].*∇PL[i]
         h∇PL.x.values[i] = h∇PL_local[1]
         h∇PL.y.values[i] = h∇PL_local[2]
         h∇PL.z.values[i] = h∇PL_local[3]
 
-        τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w[i]
+        τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w.result[i]
     end
     @info "Starting loops"
     
@@ -246,47 +256,62 @@ function FilmModel(
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
     #rh = 0
-    rx = ry = rz = rh = 1
+    #rx = ry = rz = rh = 1
 
-    for iteration ∈ 1:iterations
-        time = iteration
+    @time for iteration ∈ 1:iterations
+        time = iteration *dt
         
         @. prev_u = U.x.values
         @. prev_v = U.y.values
         @. prev_w = U.z.values
-        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U , xdir, ydir, zdir, config)
+        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U , xdir, ydir, zdir, config; time=time)
         explicit_relaxation!(U.x.values, prev_u, solvers.U.relax, config)
         explicit_relaxation!(U.y.values, prev_v, solvers.U.relax, config)
         explicit_relaxation!(U.z.values, prev_w, solvers.U.relax, config)
 
-        interpolate!(Uf, U, config)
-        correct_boundaries!(Uf, U, boundaries.U, time, config)
-
-        # h calculations
-        flux!(mdotf, Uf, config)
-
-        @. rho_mdotf.values =  mdotf.values * rho.values
-        #println()
-
-        @. prev = h.values
-
-        rh = solve_equation!(h_eqn, h, boundaries.h, solvers.h, config)
-        explicit_relaxation!(h, prev, solvers.h.relax, config)
-
-
-        #for i ∈ 1:ncorrectors
-        #    discretise!(h_eqn, h, config)
-        #    apply_boundary_conditions!(h_eqn, boundaries.h, nothing, time, config)
-#
-        #    rh = solve_system!(h_eqn, solvers.h, h, nothing, config)
-        #    explicit_relaxation!(h, prev, solvers.h.relax, config)
-        #end
         
-        #correct_mass_flux(mdotf, PL, rDf, config)
+        rh = 0;
+        for i ∈ 1:inner_loops
+            
+            #H!(Hv, U, U_eqn, config)
+            
+            #interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
+            #correct_boundaries!(Uf, Hv, boundaries.U, time, config)
+            interpolate!(Uf, U, config)
+            correct_boundaries!(Uf, U, boundaries.U, time, config)
 
-        for i ∈ eachindex(h.values)
-            if (h.values[i]<=0) h.values[i] = 1e-18 end
+            # h calculations
+            flux!(mdotf, Uf, config)
+
+            @. rho_mdotf.values =  mdotf.values * rho.values
+
+            
+            @. prev = h.values
+            rh = solve_equation!(h_eqn, h, boundaries.h, solvers.h, config; time=time)
+
+            if i == inner_loops
+                explicit_relaxation!(h, prev, 1.0, config)
+            else
+                explicit_relaxation!(h, prev, solvers.h.relax, config)
+            end
+
+            
+            #for i ∈ 1:ncorrectors
+            #    discretise!(h_eqn, h, config)
+            #    apply_boundary_conditions!(h_eqn, boundaries.h, nothing, time, config)
+#   
+            #    rh = solve_system!(h_eqn, solvers.h, h, nothing, config)
+            #    explicit_relaxation!(h, prev, solvers.h.relax, config)
+            #end
+        
+            #correct_mass_flux(mdotf, PL, rDf, config)
+            
+            for i ∈ eachindex(h.values)
+                if (h.values[i]<=0) h.values[i] = 1e-18 end
+            end
         end
+
+
 
         grad!(∇h, hf, h, boundaries.h, time, config)
         @. hmdotf.values = mdotf.values * hf.values * rho.values
@@ -297,8 +322,11 @@ function FilmModel(
         interpolate!(Δhf, Δh, config)
         correct_boundaries!(Δhf, Δh, Δh_bc, time, config)
 
-        for i ∈ 1:length(Δhf.values)
-            PLf[i] = Pg - hf.values[i]*dot(n,G) - coeffs.σ*Δhf[i]
+        @. mu_hf.values = 3*mu/hf.values
+        for i ∈ eachindex(Δhf.values)
+            PLf.values[i] = Pg - hf.values[i]*dot(n,G) - coeffs.σ*Δhf.values[i]
+            
+            #mu_hf[i] = 3*mu/hf.values[i]
         end
 
         grad!(∇PL, PLf, config)        
@@ -316,10 +344,10 @@ function FilmModel(
         #τw_func!(τw, U, h, mu)
         #τθw_func!(τθw, ∇w, model)
         for i ∈ eachindex(h.values)
-            multiplier = 0;#3*(mu/h.values[i])
-            τw.x.values[i] = multiplier * U.x.values[i]
-            τw.y.values[i] = multiplier * U.y.values[i]
-            τw.z.values[i] = multiplier * U.z.values[i]
+            #multiplier = 0;#3*(mu/h.values[i])
+            #τw.x.values[i] = multiplier * U.x.values[i]
+            #τw.y.values[i] = multiplier * U.y.values[i]
+            #τw.z.values[i] = multiplier * U.z.values[i]
 
             Ph_local = (rho.values*g*sind(coeffs.ϕ)*h[i]) .*plate_tangent_vector
             Ph.x.values[i] = Ph_local[1]
@@ -341,28 +369,31 @@ function FilmModel(
         R_uz[iteration] = rz
         R_h[iteration] = rh
 
-        Uz_convergence = true
+        #Uz_convergence = true
         #if typeof(mesh)
 
-        if (R_ux[iteration] <= solvers.U.convergence &&
+        #if (R_ux[iteration] <= solvers.U.convergence &&
             #R_uy[iteration] <= solvers.U.convergence &&
-            Uz_convergence &&
-            R_h[iteration] <= solvers.h.convergence)
+        #    Uz_convergence &&
+        #    R_h[iteration] <= solvers.h.convergence)
+#
+        #    progress.n = iterations
+        #    finish!(progress)
+        #    @info "Simulation converged in $iteration iterations"
+        #    if !signbit(write_interval)
+        #        save_output_film(model, outputWriter, iteration, time, config, w)
+        #        save_postprocessing(postprocess, iteration, time, mesh, outputWriter, config.boundaries)
+        #    end
+        #    break
+        #end
 
-            progress.n = iterations
-            finish!(progress)
-            @info "Simulation converged in $iteration iterations"
-            if !signbit(write_interval)
-                save_output_film(model, outputWriter, iteration, time, config, w)
-                save_postprocessing(postprocess, iteration, time, mesh, outputWriter, config.boundaries)
-            end
-            break
-        end
 
+        maxCourant = max_courant_number!(cellsCourant, model, config)
         
         ProgressMeter.next!(
             progress, showvalues = [
-                (:iter, iteration),
+                (:time, iteration*runtime.dt),
+                (:Courant, maxCourant),
                 (:Ux, R_ux[iteration]),
                 (:Uy, R_uy[iteration]),
                 (:Uz, R_uz[iteration]),

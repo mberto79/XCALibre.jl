@@ -66,9 +66,16 @@ end
 end
 
 @define_boundary Zerogradient Divergence{BoundedUpwind} begin
-    flux = term.flux[fID]
-    ap = term.sign*(flux)
-    ap-flux, 0.0
+    values = get_values(term.phi, component)
+    ap = term.sign*(term.flux[fID])
+    ac = max(-ap, 0.0)
+    phic = values[cellID]
+    ac, 0.0
+
+    ap = term.sign*(term.flux[fID])
+    ac = max(-ap, 0.0)
+    an = -max(-ap, 0.0)
+    ac, -an*bc.value
 end
 
 @define_boundary Zerogradient Si begin

@@ -168,10 +168,11 @@ end
     term::Operator{F,P,I,Divergence{BoundedUpwind}}, 
     nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
-    # Calculate required increment
-    volume = cell.volume
+    # $$\mathcal{D}_{bounded} = \sum_f \phi_f \psi_f - \psi_P \sum_f \phi_f$$
+    # phif =  max(phif, 0) - max(-phi_f, 0)$
+    # phif psif =  max(phif, 0) psi_P - max(-phi_f, 0)$ psi_N
     ap = term.sign*(term.flux[fID]*ns)
-    ac = max(ap, 0.0) - term.flux[fID]#*volume 
+    ac = max(-ap, 0.0)
     an = -max(-ap, 0.0)
     return ac, an
 end

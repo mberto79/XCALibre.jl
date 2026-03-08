@@ -82,10 +82,16 @@ end
 
 @define_boundary FixedTemperature Divergence{BoundedUpwind} begin
     (; T, energy_model) = bc.value
-    flux = term.flux[fID]
-    ap = term.sign*(flux)
+    # flux = term.flux[fID]
+    # ap = term.sign*(flux)
+    # ac = max(-ap, 0.0)
+    # 0.0, -ap*h
+    
+    ap = term.sign*(term.flux[fID])
+    ac = max(-ap, 0.0)
+    an = -max(-ap, 0.0)
     h = energy_model(T)
-    -flux, -ap*h
+    ac, -an*h
 end
 
 @define_boundary FixedTemperature Laplacian{Linear} begin

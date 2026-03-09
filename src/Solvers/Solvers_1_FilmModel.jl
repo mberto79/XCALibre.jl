@@ -49,7 +49,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     U_eqn = (
         Time{schemes.U.time}(rhohf, U)
         + Divergence{schemes.U.divergence}(hmdotf,U)
-        + Si(mu_hf, U)
+        #+ Si(mu_hf, U)
         ==
           Source(h∇PL)
         + Source(Ph)
@@ -102,7 +102,7 @@ function FilmModel(
     postprocess = convert_time_to_iterations(postprocess, model, dt, iterations)
     rhohf = get_flux(U_eqn, 1)
     hmdotf = get_flux(U_eqn, 2)
-    mu_hf = get_flux(U_eqn, 3)
+    #mu_hf = get_flux(U_eqn, 3)
 
     h∇PL = get_source(U_eqn, 1)
     Ph = get_source(U_eqn,2)
@@ -145,22 +145,35 @@ function FilmModel(
 
     
 
+    #w_bc = [
+    #    Dirichlet(:inlet, 1),
+    #    Extrapolated(:outlet),
+    #    Extrapolated(:inlet_sides),
+    #    Extrapolated(:top_of_plate),
+    #    Extrapolated(:side_1),
+    #    Extrapolated(:side_2)
+    #]
+    #Δh_bc = [
+    #    Extrapolated(:inlet),
+    #    Extrapolated(:outlet),
+    #    Extrapolated(:inlet_sides),
+    #    Extrapolated(:top_of_plate),
+    #    Extrapolated(:side_1),
+    #    Extrapolated(:side_2)
+    #]
     w_bc = [
         Dirichlet(:inlet, 1),
         Extrapolated(:outlet),
-        Extrapolated(:inlet_sides),
-        Extrapolated(:top_of_plate),
-        Extrapolated(:side_1),
-        Extrapolated(:side_2)
+        Extrapolated(:top),
+        Extrapolated(:bottom)
     ]
     Δh_bc = [
         Extrapolated(:inlet),
         Extrapolated(:outlet),
-        Extrapolated(:inlet_sides),
-        Extrapolated(:top_of_plate),
-        Extrapolated(:side_1),
-        Extrapolated(:side_2)
+        Extrapolated(:top),
+        Extrapolated(:bottom)
     ]
+
 
     n_cells = length(mesh.cells)
 
@@ -213,7 +226,7 @@ function FilmModel(
     @. hmdotf.values = mdotf.values * hf.values * rho.values
 
     
-    @. mu_hf.values = 3*mu/hf.values
+    #@. mu_hf.values = 3*mu/hf.values
     @info "need to readd Pg term - Coupling term for other phase"
     Pg = 0# Test Pg term set to zero, as the gradient is found this value doesn't matter
     @info "need to fix surface tension term"
@@ -322,7 +335,7 @@ function FilmModel(
         interpolate!(Δhf, Δh, config)
         correct_boundaries!(Δhf, Δh, Δh_bc, time, config)
 
-        @. mu_hf.values = 3*mu/hf.values
+        #@. mu_hf.values = 3*mu/hf.values
         for i ∈ eachindex(Δhf.values)
             PLf.values[i] = Pg - hf.values[i]*dot(n,G) - coeffs.σ*Δhf.values[i]
             

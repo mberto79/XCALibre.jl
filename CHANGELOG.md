@@ -3,17 +3,26 @@
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v0.3.1` breaking changes will be recorded here. 
 
-## Version [v0.5.2] - 2025-01-16
+## Version [v0.5.3] - 2026-03-05
 
 ### Added
-*  No new functionality added
+*  Added optional adaptive time stepping based on Courant number control (`AdaptiveTimeStepping`) [#98](@ref)
 
 
 ### Fixed
 * Add implementation of `Periodic` boundaries to handle the implicit source term - fixes operation of models that use `Si` terms [#95](@ref)
+* Fixed implementation of implicit boundaries in [#96](@ref) which where missing atomics [#100](@ref)
+* Fixed calculation of the residuals to use the relative residual norm, norm(b - Ax)/norm(b), the numerator in this expression was calculated incorrectly previously, giving a 1/sqrt(n) relation (where n is the number of cells in the grid). whilst the operation of the solvers remains the same, user may find that convergence criteria may need to be increased (specially for larger grids)[#102](@ref)
+* UNV2: Fix calculation of cell volumes and centroid for boundary cells was incorrect and missing boundary face contributions (only for 2D UNV meshes)[#106](@ref)
   
 ### Changed
 * Improved stability of `Periodic` boundaries by making the implementation fully implicit [#96](@ref)
+* 4x speed improvement for the method `construct_periodic` [#97](@ref)
+* +50x speed improvement for the method `construct_periodic` and also more robust algorithm used [#100](@ref)
+* Implementation to correct mass flux uses matrix coefficients directly for better stability when using periodic boundary conditions [#100](@ref)
+* New method to enforce matrix symmetry of scalar model equations when the only term is a laplacian [#100](@ref)
+* Change calculation of face interpolation weights to use face normal aligned weights, this is more physical than the current method using face-based distances (in preparation for formal support for non-orthogonality correction)[#101](@ref)
+* 20x improvement loading and processing 3D UNV mesh files [#106](@ref)
 
 ### Breaking
 * No breaking changes

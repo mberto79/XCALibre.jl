@@ -46,13 +46,31 @@ end
 end
 
 @define_boundary Zerogradient Divergence{Upwind} begin
+    # flux = term.flux[fID]
+    # ap = term.sign*(flux) 
+    # # ap, 0.0 # original
+
+    # # phi = term.phi 
+    # # values = get_values(phi, component)
+    # # 0.0, -ap*values[cellID] # try this
+
+    # ac = max(ap, 0.0) 
+    # an = -max(-ap, 0.0)
+    # ac, an*get_values(term.phi, component)[cellID]
+
     flux = term.flux[fID]
     ap = term.sign*(flux) 
-    ap, 0.0 # original
-
-    # phi = term.phi 
-    # values = get_values(phi, component)
-    # 0.0, -ap*values[cellID] # try this
+    
+    # 1. Flow leaving (ap > 0): 
+    # Use the cell implicitly. Adds to the diagonal, keeping matrix dominant.
+    ac = max(ap, 0.0) 
+    
+    # 2. Flow entering (ap < 0): 
+    # Evaluate explicitly to prevent negative diagonals.
+    # We need: -su = ap * phi_P  =>  su = -ap * phi_P
+    su = -min(ap, 0.0) * get_values(term.phi, component)[cellID]
+    
+    ac, su
 end
 
 @define_boundary Zerogradient Divergence{LUST} begin
@@ -66,16 +84,15 @@ end
 end
 
 @define_boundary Zerogradient Divergence{BoundedUpwind} begin
-    values = get_values(term.phi, component)
-    ap = term.sign*(term.flux[fID])
-    ac = max(-ap, 0.0)
-    phic = values[cellID]
-    ac, 0.0
-
-    ap = term.sign*(term.flux[fID])
-    ac = max(-ap, 0.0)
-    an = -max(-ap, 0.0)
-    ac, -an*bc.value
+    flux = term.flux[fID]
+    ap = term.sign*(flux)
+    
+    # Internal BoundedUpwind logic: ac = max(-ap, 0), an = -max(-ap, 0)
+    # Total Flux = ac*phi_P + an*phi_N
+    # For ZeroGradient: phi_N = phi_P
+    # Total Flux = (max(-ap, 0) - max(-ap, 0)) * phi_P = 0
+    
+    0.0, 0.0
 end
 
 @define_boundary Zerogradient Si begin

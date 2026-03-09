@@ -142,6 +142,7 @@ function CSIMPLE(
     rhorDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
 
+    pconv = nothing # assign to function global scope
     if typeof(model.fluid) <: Compressible
         pconv = get_flux(p_eqn, 2)
     end
@@ -227,9 +228,10 @@ function CSIMPLE(
             )
 
         # Solve energy equation and update thermo properties
-        energy!(energyModel, model, prev, mdotf, rho, mueff, time, config)
+        energy!(energyModel, model, prev, mdotf, gradU, ∇p, rho, mueff, time, config)
         thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
-
+        # @. rho.values = Psi.values*p.values
+        # @. rhof.values = Psif.values*pf.values
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rhorDf, rD, config)
@@ -297,12 +299,20 @@ function CSIMPLE(
         end
 
         if typeof(model.fluid) <: Compressible
-            # @. mdotf.values += (pconv.values*(pf.values) - pgrad.values*rhorDf.values)  
-            @. mdotf.values += pconv.values*(pf.values)
-            correct_mass_flux(mdotf, p_eqn, config)
+            # @. mdotf.values += pconv.values*(pf.values) # corrected in new correct_mass_flux
+            # correct_mass_flux!(model, mdotf, p_eqn, pf, pconv, config) # new call/args
+
+            # correct_mass_flux_from_matrix!(mdotf, p_eqn, p, config)
+
+            # @. mdotf.values += pconv.values*(pf.values) # corrected in new correct_mass_flux
+            # correct_mass_flux!(model, mdotf, p_eqn, pconv, config) # new call/args
+
+            @. mdotf.values += pconv.values*(pf.values) 
+            # Pass the diffusivity field (e.g., rhorDf) instead of the whole p_eqn
+            correct_mass_flux!(model, mdotf, p, pconv, rhorDf, config)
         elseif typeof(model.fluid) <: WeaklyCompressible
             # @. mdotf.values -= pgrad.values*rhorDf.values
-            correct_mass_flux(mdotf, p_eqn, config)
+            correct_mass_flux!(model, mdotf, p_eqn, pf, pconv, config) # new call/args
         end
 
 
@@ -369,6 +379,175 @@ function CSIMPLE(
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p, e=R_e)
 end
 
+### AUXILIARY FUNCTION HERE FOR DEVELOPMENT. NEED RELOCATING
+
+# function correct_mass_flux!(model, mdotf, p_eqn, pf, pconv, config)
+#     # sngrad = FaceScalarField(mesh)
+#     (; faces, cells, boundary_cellsID) = mdotf.mesh
+#     (; hardware) = config
+#     (; backend, workgroup) = hardware
+
+#     p = p_eqn.model.terms[1].phi
+#     A = _A(p_eqn)
+#     nzval = _nzval(A)
+#     colval = _colval(A)
+#     rowptr = _rowptr(A)
+
+#     n_faces = length(faces)
+#     n_bfaces = length(boundary_cellsID)
+#     n_ifaces = n_faces - n_bfaces
+
+#     ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
+#     kernel! = _correct_mass_flux_compressible(_setup(backend, workgroup, ndrange)...)
+#     kernel!(model.fluid, mdotf, p, pconv, pf, nzval, colval, rowptr, faces, cells, n_bfaces)
+#     KernelAbstractions.synchronize(backend)
+
+#     ## REMOVED FOR INITIAL DEVELOPMENT. CUSTOM VERSION OR GENERALISED VERSION NEEDED!!!!
+#     # BCs = config.boundaries[1] # assume periodics always defined by user (extract first)
+#     # for BC ∈ BCs
+#     #     correct_mass_periodic(
+#     #         BC, mdotf, p, nzval, colval, rowptr, cells, faces, backend, workgroup)
+#     #     KernelAbstractions.synchronize(backend)
+#     # end
+# end
+
+# @kernel function _correct_mass_flux_compressible(
+#     fluid, mdotf, p, pconv, pf, nzval, colval, rowptr, faces, cells, n_bfaces)
+#     i = @index(Global)
+#     fID = i + n_bfaces
+
+#     @inbounds begin 
+#         face = faces[fID]
+#         (; area, normal, ownerCells, delta) = face 
+#         cID1 = ownerCells[1]
+#         cID2 = ownerCells[2]
+#         p1 = p[cID1]
+#         p2 = p[cID2]
+#         # need to get aN from sparse system
+#         zID = spindex(rowptr, colval, cID1, cID2)
+#         aN = nzval[zID]
+#         if typeof(fluid) <: WeaklyCompressible
+#             p_diff = aN
+#             # positive because pressure eqn has negative sign
+#             mdotf[fID] += p_diff*(p2 - p1)
+#         else
+#             flux_conv = pconv[fID]
+#             ap = flux_conv
+#             ac = max(-ap, 0.0)
+#             an = -max(-ap, 0.0)
+#             # p_diff = aN - p_conv # workds
+#             p_diff = aN
+#             # positive because pressure eqn has negative sign
+#             # mdotf[fID] += p_diff*(p2 - p1) + flux_conv*pf[fID] # works
+#             # mdotf[fID] += p_diff*(p2 - p1) + ac*p1 + an*p2
+#             mdotf[fID] += p_diff*(p2 - p1)
+#         end
+#     end
+# end
+
+# function correct_mass_flux!(model, mdotf, p_eqn, pconv, config)
+#     (; faces, boundary_cellsID) = mdotf.mesh
+#     (; hardware) = config
+#     (; backend, workgroup) = hardware
+
+#     p = p_eqn.model.terms[1].phi
+#     A = _A(p_eqn)
+#     nzval = _nzval(A)
+#     colval = _colval(A)
+#     rowptr = _rowptr(A)
+
+#     n_faces = length(faces)
+#     n_bfaces = length(boundary_cellsID)
+#     n_ifaces = n_faces - n_bfaces
+
+#     kernel! = _correct_mass_flux_compressible(_setup(backend, workgroup, n_ifaces)...)
+#     kernel!(model.fluid, mdotf, p, pconv, nzval, colval, rowptr, faces, n_bfaces)
+#     KernelAbstractions.synchronize(backend)
+# end
+
+# @kernel function _correct_mass_flux_compressible(
+#     fluid, mdotf, p, pconv, nzval, colval, rowptr, faces, n_bfaces)
+    
+#     i = @index(Global)
+#     fID = i + n_bfaces
+
+#     @inbounds begin 
+#         face = faces[fID]
+#         (; ownerCells) = face 
+#         cID1 = ownerCells[1]
+#         cID2 = ownerCells[2]
+        
+#         p1 = p[cID1]
+#         p2 = p[cID2]
+        
+#         # Retrieve A_12 (Effect of cID2 on cID1 equation)
+#         zID = spindex(rowptr, colval, cID1, cID2)
+#         A_12 = nzval[zID]
+        
+#         if typeof(fluid) <: WeaklyCompressible
+#             mdotf[fID] += A_12 * (p2 - p1)
+#         else
+#             flux_c = pconv[fID]
+            
+#             # Rigorously isolate the pure Rhie-Chow diffusion coefficient (-D_f)
+#             # For XCALibre's Upwind matrix: A_12 = -D_f - max(-flux_c, 0)
+#             minus_Df = A_12 + max(-flux_c, 0.0)
+            
+#             # Add ONLY the implicit Rhie-Chow diffusion correction
+#             # (Convection was already added globally via pconv * pf)
+#             mdotf[fID] += minus_Df * (p2 - p1)
+#         end
+#     end
+# end
+
+
+function correct_mass_flux!(model, mdotf, p, pconv, gamma_f, config)
+    (; faces, boundary_cellsID) = mdotf.mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    n_faces = length(faces)
+    n_bfaces = length(boundary_cellsID)
+    n_ifaces = n_faces - n_bfaces
+
+    kernel! = _correct_mass_flux_compressible(_setup(backend, workgroup, n_ifaces)...)
+    # Notice we completely dropped the sparse matrix arguments
+    kernel!(model.fluid, mdotf, p.values, pconv.values, gamma_f.values, faces, n_bfaces)
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _correct_mass_flux_compressible(
+    fluid, mdotf, p, pconv, gamma_f, faces, n_bfaces)
+    
+    i = @index(Global)
+    fID = i + n_bfaces
+
+    @inbounds begin 
+        face = faces[fID]
+        # Unpack the geometric properties
+        (; ownerCells, area, delta) = face 
+        
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        
+        p1 = p[cID1]
+        p2 = p[cID2]
+        
+        if typeof(fluid) <: WeaklyCompressible
+            # For strictly symmetric matrices
+            minus_Df = -gamma_f[fID] * (area / delta)
+            mdotf[fID] += minus_Df * (p2 - p1)
+        else
+            # Generalized Rhie-Chow Diffusion Calculation
+            # 100% mathematically independent of the chosen Divergence scheme!
+            minus_Df = -gamma_f[fID] * (area / delta)
+            
+            # Add ONLY the implicit Rhie-Chow diffusion correction
+            # (Convection was already added globally via pconv * pf)
+            mdotf[fID] += minus_Df * (p2 - p1)
+        end
+    end
+end
 
 function explicit_shear_stress!(mugradUTx::FaceScalarField, mugradUTy::FaceScalarField, mugradUTz::FaceScalarField, mueff, gradU, config)
     (; hardware) = config
@@ -433,79 +612,73 @@ end
     mugradUTz[fID] = mueffi * projection[3] * area
 end
 
-######
-# CHRIS: Can you please review to make sure it is a faithful reimplementation? Ta!
-######
 
-# function explicit_shear_stress!(mugradUTx::FaceScalarField, mugradUTy::FaceScalarField, mugradUTz::FaceScalarField, mueff, gradU)
-#     mesh = mugradUTx.mesh
-#     (; faces, cells) = mesh
-#     nbfaces = length(mesh.boundary_cellsID) #boundary_faces(mesh)
-#     start_faceID = nbfaces + 1
-#     last_faceID = length(faces)
-#     for fID ∈ start_faceID:last_faceID
-#         face = faces[fID]
-#         (; area, normal, ownerCells, delta) = face 
-#         cID1 = ownerCells[1]
-#         cID2 = ownerCells[2]
-
-#         ## PREVIOUS IMPLEMENTATION
-        
-#         # gradUxxf = 0.5*(gradU.result.xx[cID1]+gradU.result.xx[cID2])
-#         # gradUxyf = 0.5*(gradU.result.xy[cID1]+gradU.result.xy[cID2])
-#         # gradUxzf = 0.5*(gradU.result.xz[cID1]+gradU.result.xz[cID2])
-#         # gradUyxf = 0.5*(gradU.result.yx[cID1]+gradU.result.yx[cID2])
-#         # gradUyyf = 0.5*(gradU.result.yy[cID1]+gradU.result.yy[cID2])
-#         # gradUyzf = 0.5*(gradU.result.yz[cID1]+gradU.result.yz[cID2])
-#         # gradUzxf = 0.5*(gradU.result.zx[cID1]+gradU.result.zx[cID2])
-#         # gradUzyf = 0.5*(gradU.result.zy[cID1]+gradU.result.zy[cID2])
-#         # gradUzzf = 0.5*(gradU.result.zz[cID1]+gradU.result.zz[cID2])
-        
-#         # mugradUTx[fID] = mueff[fID] * (normal[1]*gradUxxf + normal[2]*gradUyxf + normal[3]*gradUzxf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-#         # mugradUTy[fID] = mueff[fID] * (normal[1]*gradUxyf + normal[2]*gradUyyf + normal[3]*gradUzyf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-#         # mugradUTz[fID] = mueff[fID] * (normal[1]*gradUxzf + normal[2]*gradUyzf + normal[3]*gradUzzf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-        
-#         ## NEW IMPLEMENTATION
-
-#         # gradUf = 0.5*(gradU[cID1] + gradU[cID2]) # should this be the transpose of gradU?
-#         # gradUf_projection = gradUf*normal
-#         # trace = 2/3*sum(diag(gradUf))
-#         # mueffi = mueff[fID]
-#         # mugradUTx[fID] = mueffi*(gradUf_projection[1] - trace)*area
-#         # mugradUTy[fID] = mueffi*(gradUf_projection[2] - trace)*area
-#         # mugradUTz[fID] = mueffi*(gradUf_projection[3] - trace)*area
-#     end
+function correct_mass_flux_from_matrix!(mdotf::FaceScalarField, p_eqn, p::ScalarField, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
     
-#     # Now deal with boundary faces
-#     for fID ∈ 1:nbfaces
-#         face = faces[fID]
-#         (; area, normal, ownerCells, delta) = face 
-#         cID1 = ownerCells[1]
-#         cID2 = ownerCells[2]
+    mesh = mdotf.mesh
+    (; faces, cells, boundary_cellsID) = mesh
+    
+    # Extract Sparse Matrix arrays
+    A = _A(p_eqn)
+    nzval = _nzval(A)
+    colval = _colval(A)
+    rowptr = _rowptr(A)
+    
+    # We strictly only evaluate internal faces using the matrix off-diagonals.
+    # Boundary fluxes are handled by boundary condition routines.
+    nbfaces = length(boundary_cellsID)
+    internal_faces_count = length(faces) - nbfaces
+    
+    kernel! = _flux_from_matrix_kernel!(_setup(backend, workgroup, internal_faces_count)...)
+    kernel!(mdotf.values, p.values, nzval, colval, rowptr, faces, nbfaces)
+end
+
+@kernel function _flux_from_matrix_kernel!(flux, p_vals, nzval, colval, rowptr, faces, nbfaces)
+    # Thread index
+    t = @index(Global)
+    
+    # Offset to process strictly internal faces
+    fID = t + nbfaces
+    
+    @inbounds begin
+        face = faces[fID]
+        (; ownerCells) = face
         
-#         ## PREVIOUS IMPLEMENTATION
+        cID1 = ownerCells[1] # Owner
+        cID2 = ownerCells[2] # Neighbour
+        
+        # Get pressure values
+        p1 = p_vals[cID1]
+        p2 = p_vals[cID2]
+        
+        # Find A_{i,j} (Effect of cID2 on cID1's equation)
+        idx_ij = spindex(rowptr, colval, cID1, cID2)
+        A_ij = nzval[idx_ij]
+        
+        # Find A_{j,i} (Effect of cID1 on cID2's equation)
+        idx_ji = spindex(rowptr, colval, cID2, cID1)
+        A_ji = nzval[idx_ji]
+        
+        # Universal Flux Reconstruction!
+        # Because we are correcting mass flux: mdotf = mdotf* + F_corr
+        # And because p_eqn is written as (-Laplacian + Div == ...), 
+        # the assembled matrix incorporates the negative sign.
+        F_corr = (A_ij * p2) - (A_ji * p1)
+        
+        flux[fID] += F_corr
+    end
+end
 
-#         # gradUxxf = (gradU.result.xx[cID1])
-#         # gradUxyf = (gradU.result.xy[cID1])
-#         # gradUxzf = (gradU.result.xz[cID1])
-#         # gradUyxf = (gradU.result.yx[cID1])
-#         # gradUyyf = (gradU.result.yy[cID1])
-#         # gradUyzf = (gradU.result.yz[cID1])
-#         # gradUzxf = (gradU.result.zx[cID1])
-#         # gradUzyf = (gradU.result.zy[cID1])
-#         # gradUzzf = (gradU.result.zz[cID1])
-#         # mugradUTx[fID] = mueff[fID] * (normal[1]*gradUxxf + normal[2]*gradUyxf + normal[3]*gradUzxf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-#         # mugradUTy[fID] = mueff[fID] * (normal[1]*gradUxyf + normal[2]*gradUyyf + normal[3]*gradUzyf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-#         # mugradUTz[fID] = mueff[fID] * (normal[1]*gradUxzf + normal[2]*gradUyzf + normal[3]*gradUzzf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-
-#         ## NEW IMPLEMENTATION
-
-#         # gradUi = gradU[cID1]
-#         # trace = 2/3*sum(diag(gradUi))
-#         # gradUi_projection = gradUi*normal
-#         # mueffi = mueff[fID]
-#         # mugradUTx[fID] = mueffi*(gradUi_projection[1] - trace)*area
-#         # mugradUTy[fID] = mueffi*(gradUi_projection[2] - trace)*area
-#         # mugradUTz[fID] = mueffi*(gradUi_projection[3] - trace)*area
-#     end
-# end 
+# Helper function to find the index of a value in the sparse arrays
+@inline function spindex(rowptr, colval, row, col)
+    start_idx = rowptr[row]
+    end_idx = rowptr[row+1] - 1
+    for i in start_idx:end_idx
+        if colval[i] == col
+            return i
+        end
+    end
+    return 0 # Should not happen for valid face connections
+end

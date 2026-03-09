@@ -89,6 +89,7 @@ function initialise(
     keff_by_cp = FaceScalarField(mesh)
     divK = ScalarField(mesh)
     dKdt = ScalarField(mesh)
+    Phi = ScalarField(mesh)
 
     Ttoh!(model, T, h)
 
@@ -97,15 +98,13 @@ function initialise(
         + Divergence{schemes.h.divergence}(mdotf, h) 
         - Laplacian{schemes.h.laplacian}(keff_by_cp, h) 
         == 
-        -Source(divK)
-        -Source(dKdt)
-        +Source(dpdt)
+        - Source(divK)
+        - Source(dKdt)
+        # + Source(dpdt)
+        # + Source(Phi)
     ) → eqn
     
     # Set up preconditioners
-    # @reset energy_eqn.preconditioner = set_preconditioner(
-    #             solvers.h.preconditioner, energy_eqn, boundaries.h, config)
-
     @reset energy_eqn.preconditioner = set_preconditioner(solvers.h.preconditioner, energy_eqn)
     
     # preallocating solvers
@@ -137,13 +136,14 @@ Run energy transport equations.
 
 """
 function energy!(
-    energy::SensibleEnthalpyModel, model::Physics{T1,F,SO,M,Tu,E,D,BI}, prev, mdotf, rho, mueff, time, config
+    energy::SensibleEnthalpyModel, model::Physics{T1,F,SO,M,Tu,E,D,BI}, prev, mdotf, gradU, gradP, rho, mueff, time, config
     ) where {T1,F,SO,M,Tu,E,D,BI}
 
     mesh = model.domain
 
+    (; rho, nu) = model.fluid
     (;U) = model.momentum
-    (;h, hf, T, K, dpdt) = model.energy
+    (;h, hf, T, K) = model.energy
     (;energy_eqn, state) = energy
     (; solvers, runtime, hardware, boundaries) = config
     (; iterations, write_interval) = runtime
@@ -153,6 +153,8 @@ function energy!(
     keff_by_cp = get_flux(energy_eqn, 3)
     divK = get_source(energy_eqn, 1)
     dKdt = get_source(energy_eqn, 2)
+    # dpdt = get_source(energy_eqn, 3)
+    # Phi = get_source(energy_eqn, 4)
 
     Uf = FaceVectorField(mesh)
     Kf = FaceScalarField(mesh)
@@ -164,8 +166,6 @@ function energy!(
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
     n_cells = length(mesh.cells)
-    # prev = zeros(TF, n_cells)
-    # prev = _convert_array!(prev, backend)
     prev = KernelAbstractions.zeros(backend, TF, n_cells) 
 
     volumes = getproperty.(mesh.cells, :volume)
@@ -175,14 +175,12 @@ function energy!(
     @. prev = K.values
     interpolate!(Uf, U, config)
     correct_boundaries!(Uf, U, boundaries.U, time, config)
-    for i ∈ eachindex(K)
-        K.values[i] = 0.5*(U.x.values[i]^2 + U.y.values[i]^2 + U.z.values[i]^2)
-    end
-    interpolate!(Kf, K, config)
-    for i ∈ eachindex(Kf)
-        Kf.values[i] = 0.5*(Uf.x.values[i]^2 + Uf.y.values[i]^2 + Uf.z.values[i]^2)
-    end
-    # correct_face_interpolation!(Kf, K, mdotf) # This forces KE to be upwind, MIGHT NOT BE WORKING
+
+    @. K.values = 0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)
+    @. Kf.values = 0.5*(Uf.x.values^2 + Uf.y.values^2 + Uf.z.values^2) # values are correct at at boundary faces since they are taken directlyfrom the velocity vector which was corrected after the face interpolation above.
+
+    interpolate_upwind!(Kf, K, mdotf, config) # only do internal faces
+
     @. Kf.values *= mdotf.values
     div!(divK, Kf, config)
 
@@ -191,6 +189,15 @@ function energy!(
     else
         @. dKdt.values = rho.values*(K.values - prev)/dt
     end
+
+    # update the material derivative Dp/Dt 
+    # @. dpdt.values = begin
+    #     U.x.values*gradP.result.x.values 
+    #     + U.y.values*gradP.result.y.values
+    #     + U.z.values*gradP.result.z.values
+    # end
+
+    # viscous_dissipation!(Phi, nu, rho, gradU, config)
 
     # Set up and solve energy equation
     @. prev = h.values
@@ -218,6 +225,39 @@ function energy!(
 end
 
 
+function viscous_dissipation!(Phi::ScalarField, nu, rho, gradU, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    
+    mesh = Phi.mesh
+    n_cells = length(mesh.cells)
+    
+    kernel! = _viscous_dissipation_kernel!(_setup(backend, workgroup, n_cells)...)
+    kernel!(Phi.values, nu, rho, gradU.result)
+end
+
+@kernel function _viscous_dissipation_kernel!(Phi, nu, rho, gradU)
+    i = @index(Global)
+
+    # Extract the velocity gradient tensor for this specific cell
+    G = gradU[i]
+    
+    # 1. Divergence of U (Trace of the gradient tensor)
+    divU = G[1,1] + G[2,2] + G[3,3]
+    
+    # 2. Sum of the squares of the diagonal terms
+    diag_terms_sq = G[1,1]^2 + G[2,2]^2 + G[3,3]^2
+    
+    # 3. Sum of the squares of the symmetric cross terms
+    cross_terms_sq = (G[1,2] + G[2,1])^2 + 
+                     (G[1,3] + G[3,1])^2 + 
+                     (G[2,3] + G[3,2])^2
+                     
+    # 4. Final Viscous Dissipation Source Term (Phi)
+    Phi[i] = nu[i]*rho[i] * (2.0 * diag_terms_sq + cross_terms_sq - (2.0/3.0) * divU^2)
+end
+
+
 """
     thermo_Psi!(model::Physics{T,F,SO,M,Tu,E,D,BI}, Psi::ScalarField) 
     where {T,F<:AbstractCompressible,M,Tu,E,D,BI}
@@ -230,9 +270,7 @@ Model updates the value of Psi.
 
 ### Algorithm
 Weakly compressible currently uses the ideal gas equation for establishing the
-compressibility factor where ``\\rho = p * \\Psi``. ``\\Psi`` is calculated from the sensible 
-enthalpy, reference temperature and fluid model specified ``C_p`` and ``R`` value where 
-``R`` is calculated from ``C_p`` and ``\\gamma`` specified in the fluid model.
+compressibility factor where ``\\rho = p * \\Psi``. ``\\Psi`` is calculated from the sensible enthalpy, reference temperature and fluid model specified ``C_p`` and ``R`` value where ``R`` is calculated from ``C_p`` and ``\\gamma`` specified in the fluid model.
 """
 function thermo_Psi!(
     model::Physics{T,F,SO,M,Tu,E,D,BI}, Psi::ScalarField
@@ -347,6 +385,64 @@ function correct_face_interpolation!(phif::FaceScalarField, phi, Uf::FaceScalarF
             phif.values[fID] = phi1
         else
             phif.values[fID] = phi2
+        end
+    end
+end
+
+
+export interpolate_upwind!
+
+## UPWIND SCALAR INTERPOLATION
+function interpolate_upwind!(phif::FaceScalarField, phi::ScalarField, mdotf::FaceScalarField, config)
+    # Extract values arrays from scalar fields 
+    vals = phi.values
+    fvals = phif.values
+    flux = mdotf.values
+
+    # Extract faces from mesh
+    mesh = phif.mesh
+    (; cells, faces) = mesh
+    
+    # Get the number of boundary faces to skip them
+    nbfaces = length(mesh.boundary_cellsID)
+    
+    # Calculate the number of internal faces (our new ndrange)
+    internal_faces_count = length(faces) - nbfaces
+
+    # Launch interpolate kernel only for internal faces
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    
+    kernel! = interpolate_upwind_Scalar!(_setup(backend, workgroup, internal_faces_count)...)
+    kernel!(fvals, vals, flux, cells, faces, nbfaces)
+end
+
+@kernel function interpolate_upwind_Scalar!(fvals, vals, flux, cells, faces, nbfaces)
+    # Define index for thread
+    t = @index(Global)
+    
+    # Offset the index to strictly process internal faces
+    i = t + nbfaces
+
+    @inbounds begin
+        # Deconstruct faces to get ownerCells
+        face = faces[i]
+        (; ownerCells) = face
+
+        # Get cell indices
+        owner1 = ownerCells[1]
+        owner2 = ownerCells[2]
+
+        # Get cell-centered values
+        phi1 = vals[owner1]
+        phi2 = vals[owner2]
+
+        # Upwind logic: 
+        # If mass flux is positive, flow is leaving owner1 towards owner2
+        if flux[i] > 0.0
+            fvals[i] = phi1
+        else
+            fvals[i] = phi2
         end
     end
 end

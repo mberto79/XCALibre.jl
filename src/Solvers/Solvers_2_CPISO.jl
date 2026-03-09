@@ -318,10 +318,10 @@ function CPISO(
             end
         
             if typeof(model.fluid) <: Compressible
-                correct_mass_flux(mdotf, p_eqn, config)
+                correct_mass_flux!(mdotf, p_eqn, config)
                 @. mdotf.values += pconv.values*(pf.values)
             elseif typeof(model.fluid) <: WeaklyCompressible
-                correct_mass_flux(mdotf, p_eqn, config)
+                correct_mass_flux!(mdotf, p_eqn, config)
             end
    
             # TO-DO: this needs to be exposed to users eventually

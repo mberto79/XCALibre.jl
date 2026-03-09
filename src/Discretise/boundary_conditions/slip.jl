@@ -26,20 +26,97 @@ Slip(name::Symbol) = Slip(name, 0)
 end
 
 @define_boundary Slip Divergence{Upwind} VectorField begin
+    # (; normal) = face 
+    # phi = term.phi
+    # flux = term.flux[fID]
+    # ap = term.sign*(flux) 
+    # vc = phi[cellID]
+    # vn = (vc⋅normal)*normal
+    # vp = vc - vn
+    # 0.0, -ap*vp[component.value]
+
     (; normal) = face 
     phi = term.phi
     flux = term.flux[fID]
     ap = term.sign*(flux) 
+    
+    # Extract cell vector and compute strictly tangential slip vector
     vc = phi[cellID]
     vn = (vc⋅normal)*normal
     vp = vc - vn
-    0.0, -ap*vp[component.value]
+    
+    # Component-specific scalars
+    nc = normal[component.value]
+    vc_c = vc[component.value]
+    vp_c = vp[component.value]
+    
+    # 1. Flow leaving (ap > 0): Implicit tensorial split
+    # Diagonal is scaled by (1 - n^2) to strictly strip the normal contribution.
+    ac = max(ap, 0.0) * (1.0 - nc^2)
+    
+    # The remainder of the slip vector (cross-components) goes to deferred correction
+    su_leaving = -max(ap, 0.0) * (vp_c - vc_c * (1.0 - nc^2))
+    
+    # 2. Flow entering (ap < 0): Explicit Upwind Boundary evaluation
+    su_entering = -min(ap, 0.0) * vp_c
+    
+    # Total explicit source
+    su = su_entering + su_leaving
+    
+    ac, su
 end
 
 @define_boundary Slip Divergence{Upwind} ScalarField begin
-    phi = term.phi 
-    values = get_values(phi, component)
-    flux = -term.flux[fID]
+    # flux = term.flux[fID]
+    # ap = term.sign*(flux) 
+    # ap, 0.0 # original
+
+    flux = term.flux[fID]
+    ap = max(term.sign*(flux), 0.0)
+    ap, 0.0 # original
+end
+
+@define_boundary Slip Divergence{BoundedUpwind} VectorField begin
+    # (; normal) = face 
+    # phi = term.phi
+    # flux = term.flux[fID]
+    # ap = term.sign*(flux) 
+    # vc = phi[cellID]
+    # vn = (vc⋅normal)*normal
+    # vp = vc - vn
+    # 0.0, -ap*vp[component.value]
+    (; normal) = face 
+    phi = term.phi
+    flux = term.flux[fID]
     ap = term.sign*(flux) 
-    max(ap,0.0), min(ap, 0.0)*values[cellID]
+    
+    vc = phi[cellID]
+    vn = (vc⋅normal)*normal
+    vp = vc - vn
+    
+    nc = normal[component.value]
+    vc_c = vc[component.value]
+    vp_c = vp[component.value]
+
+    # BoundedUpwind logic mirrors the diagonal logic but with opposite sign 
+    # for the implicit part to match the internal term: Σ φf ψf - ψp Σ φf
+    
+    # 1. Flow entering (ap < 0): Becomes implicit on the diagonal
+    ac = max(-ap, 0.0) * (1.0 - nc^2)
+    
+    # 2. Source from entering flow
+    su_entering = max(-ap, 0.0) * vp_c
+    
+    # 3. Source correction to remove cross-components from the diagonal
+    su_correction = -max(-ap, 0.0) * (vp_c - vc_c * (1.0 - nc^2))
+    
+    ac, su_entering + su_correction
+end
+
+@define_boundary Slip Divergence{BoundedUpwind} ScalarField begin
+    # ap = term.sign*(term.flux[fID])
+    # ac = max(-ap, 0.0)
+    # an = -max(-ap, 0.0)
+    # ac, -an*bc.value
+    0.0, 0.0
 end

@@ -23,7 +23,7 @@ mesh_dev = adapt(backend, mesh)
 
 # Not working
 
-velocity = [200, 0.0, 0.0]
+velocity = [50, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
 Re = (0.2*velocity[1])/nu
@@ -54,24 +54,25 @@ boundaries = assign(
             Dirichlet(:inlet, velocity),
             Zerogradient(:outlet),
             # Extrapolated(:outlet),
-            Wall(:walls, noSlip)
+            # Wall(:walls, noSlip)
             # Symmetry(:walls)
-            # Slip(:walls)
+            Slip(:walls)
         ],
         p = [
-            # Dirichlet(:inlet, pressure),
             Zerogradient(:inlet),
-            # Extrapolated(:outlet),
             Dirichlet(:outlet, pressure),
-            Wall(:walls)
-            # Slip(:walls)
+            # Dirichlet(:inlet, pressure),
+            # Zerogradient(:outlet),
+
+            # Wall(:walls)
+            Slip(:walls)
         ],
         h = [
             FixedTemperature(:inlet, T=temp, Enthalpy(cp=cp, Tref=298.15)),
             Zerogradient(:outlet),
             # Extrapolated(:outlet),
-            Wall(:walls)
-            # Slip(:walls)
+            # Wall(:walls)
+            Slip(:walls)
         ]
     )
 )
@@ -80,19 +81,19 @@ solvers = (
     U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        convergence = 1e-7,
+        convergence = 1e-8,
         relax       = 0.6,
-        rtol = 1e-2,
+        rtol = 1e-3,
         # atol = 1e-4
     ),
     p = SolverSetup(
-        solver      = Cg(), # Bicgstab(), Gmres(), Cg() # WeaklyCompressible
-        # solver      = Bicgstab(), # Bicgstab(), Gmres(), Cg() # Compressible
-        preconditioner = Jacobi(),
+        # solver      = Cg(), # Bicgstab(), Gmres(), Cg() # WeaklyCompressible
+        solver      = Bicgstab(), # Bicgstab(), Gmres(), Cg() # Compressible
+        preconditioner = Jacobi(), # Jacobi DILU
         convergence = 1e-7,
         relax       = 0.2,
         limit = (1000.0, 1000000.0),
-        rtol = 1e-2,
+        rtol = 1e-3,
         # atol = 1e-4
     ),
     h = SolverSetup(
@@ -117,7 +118,7 @@ schemes = (
     # h = Schemes(divergence=divergence)
 )
 
-runtime = Runtime(iterations=1000, write_interval=50, time_step=1)
+runtime = Runtime(iterations=5000, write_interval=50, time_step=1)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 

@@ -53,6 +53,22 @@ Grad{S}(psi::VectorField) where S = begin
     Grad{S,F,R,I,M}(psi, tgrad, one(I), false, mesh)
 end
 
+# Grad outer constructor for face scalar field definition
+Grad{S}(phi::FaceScalarField) where S= begin
+    # Retrieve mesh and define grad as vector field
+    mesh = phi.mesh
+    grad = VectorField(mesh)
+
+    # Retrieve user-selected types
+    F = typeof(phi)
+    R = typeof(grad)
+    I = _get_int(mesh)
+    M = typeof(mesh)
+
+    # Construct Grad
+    Grad{S,F,R,I,M}(phi, grad, one(I), false, mesh)
+end
+
 Base.getindex(grad::Grad{S,F,R,I,M}, i::Integer) where {S,F,R<:VectorField,I,M} = begin
     @inbounds SVector{3}(
         grad.result.x[i], 

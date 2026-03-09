@@ -20,10 +20,10 @@ end
     update_interval::Union{Real,Nothing})
 Constructor to allocate memory to store the Reynolds Stress Tensor over the calculation window. Once created, should be passed to the `Configuration` object as an argument with keyword `postprocess`
 
-## Input arguments 
+# Input arguments 
 - `field`, must be `model.momentum.U`
 
-## Optional arguments
+# Optional arguments
 - `start::Union{Real,Nothing}` optional keyword which specifies the start of the Reynolds Stress Tensor calculation window, for **steady** simulations, this is in **iterations**, for **transient** simulations it is in **flow time**.   
 - `stop::Union{Real,Nothing}` optional keyword which specifies the end iteration/time of the Reynolds Stress Tensor calculation window. Default value is the last iteration/timestep. 
 - `update_interval::Union{Real,Nothing}` optional keyword which specifies how often the Reynolds Stress Tensor is updated and stored (default value is 1 i.e Reynolds Stress Tensor updates every timestep/iteration). Note that the frequency of writing the post-processed fields is specified by the `write_interval` in `Configuration`. 

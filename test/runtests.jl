@@ -5,7 +5,6 @@ using SparseMatricesCSR
 using StaticArrays 
 using Test
 
-BLAS.set_num_threads(1)
 workgroupsize(mesh) = length(mesh.cells) ÷ Threads.nthreads()
 
 TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
@@ -49,10 +48,24 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         end
     end
 
+    @testset "Adaptive time-stepping Test" begin
+
+        test_files = [
+            "adaptive_dt.jl"
+        ]
+
+        for test ∈ test_files
+            test_path = joinpath(TEST_CASES_DIR, test)
+            include(test_path)
+        end
+    end
+
     @testset "Post-processing unit Test" begin
-        include("unit_test_field_time_average.jl")
+        include("unit_test_field_average.jl")
         include("unit_test_field_rms.jl")
-        include("unit_test_post-process.jl")
+        include("unit_test_reynolds_stress.jl")
+        include("unit_test_post-process_transient.jl")
+        include("unit_test_post-process_steady.jl")
     end
 
 
@@ -64,6 +77,7 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
             "2d_incompressible_laminar_BFS.jl",
             "2d_incompressible_transient_KOmega_BFS_lowRe.jl",
             "2d_incompressible_transient_laminar_BFS.jl",
+            "2d_incompressible_transient_laminar_BFS_CrankNicolson.jl",
             "2d_incompressible_transient_cylinder_oscillating.jl",
             "3d_incompressible_laminar_BFS.jl",
             "3d_incompressible_laminar_cascade_periodic.jl",

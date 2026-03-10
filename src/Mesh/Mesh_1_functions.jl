@@ -16,7 +16,9 @@ _get_backend(mesh) = get_backend(mesh.cells)
 # C2F1 = distance vector from cell2 centre to face centre
 # C1C2 = distance vector from cell1 to cell2
 weight_delta_e(C1F1, C2F1, C1C2, normal) = begin
-    weight = norm(C2F1)/(norm(C1F1) + norm(C2F1))
+    # weight = norm(C2F1)/(norm(C1F1) + norm(C2F1)) # face-distance based
+    wi = (C1F1⋅normal)/(C1C2⋅normal)
+    weight = one(wi) - wi # normal aligned interpolation weight
     delta = norm(C1C2)
     e = C1C2/delta
     return weight, delta, e

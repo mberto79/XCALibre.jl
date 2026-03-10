@@ -63,8 +63,7 @@ end
     @inbounds begin
         # Deconstruct faces to use weight and ownerCells in calculations
         face = faces[i]
-        (; weight, ownerCells, normal) = face
-        F = face.centre
+        (; weight, ownerCells) = face
 
         # Calculate initial values based on index queried from ownerCells
         owner1 = ownerCells[1]
@@ -72,7 +71,7 @@ end
         phi1 = vals[owner1]
         phi2 = vals[owner2]
 
-        one_minus_weight = 1.0 - weight
+        one_minus_weight = one(weight) - weight
         fvals[i] = weight*phi1 + one_minus_weight*phi2 # check weight is used correctly!
     end
 end
@@ -106,8 +105,7 @@ end
     @inbounds begin
         # Deconstruct faces to use weight and ownerCells in calculations
         face = faces[i]
-        (; weight, ownerCells, normal) = face
-        F = face.centre
+        (; ownerCells) = face
 
         # Calculate initial values based on index queried from ownerCells
         owner1 = ownerCells[1]
@@ -115,14 +113,9 @@ end
         phi1 = vals[owner1]
         phi2 = vals[owner2]
 
-        # one_minus_weight = 1.0 - weight
-        
         fvals[i] = 2*((phi1*phi2)/(phi1+phi2))
     end
 end
-
-
-
 
 # VECTOR INTERPOLATION
 function interpolate!(psif::FaceVectorField, psi::VectorField, config)
@@ -168,7 +161,7 @@ end
         z1 = zv[cID1]; z2 = zv[cID2]
 
         # Calculate one minus weight
-        one_minus_weight = 1.0 - weight
+        one_minus_weight = one(weight) - weight
 
         # Update psif x and y arrays for interpolation (IMPLEMENT 3D)
         xf[i] = weight*x1 + one_minus_weight*x2 # check weight is used correctly!

@@ -80,25 +80,26 @@ timestep = 0.01
 runtime = Runtime(iterations=iterations, time_step=timestep, write_interval=-1)
 hardware = Hardware(backend=backend,workgroup = workgroup)
 
-postprocess = [FieldRMS(model.momentum.U; name="Urms"), FieldRMS(model.momentum.U;name="Urms_stop50", stop = 50*timestep,update_interval = 3*timestep), FieldRMS(model.momentum.U;name="Urms_start51", start = 51*timestep, update_interval = timestep/2)]
+postprocess = [FieldAverage(model.momentum.U; name="Umean"),FieldAverage(model.momentum.U; name="Umean_stop50", stop=50*timestep, update_interval = 3*timestep),FieldAverage(model.momentum.U;name="Umean_start51", start= 51*timestep, update_interval = timestep/2)]
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs,postprocess=postprocess)
 
 @test initialise!(model.momentum.U, velocity) === nothing
 @test initialise!(model.momentum.p, 0.0) === nothing
 residuals = run!(model, config);
 
-#check middle 10 cells of inlet agree with analytical rms 
-u_rms_exact = U0*A/sqrt(2) 
-v_rms_exact = U0*A/sqrt(2)
-u_rms = sum(postprocess[1].rms.x.values[end-25:end-15])/length(postprocess[1].rms.x.values[end-25:end-15])
-v_rms = sum(postprocess[1].rms.y.values[end-25:end-15])/length(postprocess[1].rms.y.values[end-25:end-15])
 
-@test u_rms ≈ u_rms_exact atol = 0.005
-@test v_rms ≈ v_rms_exact atol = 0.03
+#check middle 10 cells of inlet agree with analytical mean
+u_mean_exact = U0
+v_mean_exact = U0
+u_mean = sum(postprocess[1].mean.x.values[end-25:end-15])/length(postprocess[1].mean.x.values[end-25:end-15])
+v_mean = sum(postprocess[1].mean.y.values[end-25:end-15])/length(postprocess[1].mean.y.values[end-25:end-15])
+
+@test u_mean ≈ u_mean_exact atol = 0.005
+@test v_mean ≈ v_mean_exact atol = 0.005
 
 #testing start and end and update_interval logic
-u_rms_first_half = sum(postprocess[2].rms.x.values[end-25:end-15])/length(postprocess[2].rms.x.values[end-25:end-15])
-u_rms_second_half = sum(postprocess[3].rms.x.values[end-25:end-15])/length(postprocess[3].rms.x.values[end-25:end-15])
+u_mean_first_half = sum(postprocess[2].mean.x.values[end-25:end-15])/length(postprocess[2].mean.x.values[end-25:end-15])
+u_mean_second_half = sum(postprocess[3].mean.x.values[end-25:end-15])/length(postprocess[3].mean.x.values[end-25:end-15])
 
-@test u_rms ≈ u_rms_first_half atol = 0.005
-@test u_rms ≈ u_rms_second_half atol = 0.005
+@test u_mean ≈ u_mean_first_half atol = 0.005
+@test u_mean ≈ u_mean_second_half atol = 0.005

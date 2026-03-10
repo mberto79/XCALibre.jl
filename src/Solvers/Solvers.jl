@@ -8,6 +8,7 @@ using Krylov
 using LinearOperators
 using ProgressMeter
 using KernelAbstractions
+import AcceleratedKernels as AK
 using Atomix
 using Adapt
 

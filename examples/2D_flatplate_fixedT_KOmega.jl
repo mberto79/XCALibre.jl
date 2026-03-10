@@ -99,7 +99,8 @@ solvers = (
         solver      = Gmres(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        relax       = 0.3,
+        # relax       = 0.3,
+        relax       = 0.2,
         atol = 1e-2
     ),
     h = SolverSetup(

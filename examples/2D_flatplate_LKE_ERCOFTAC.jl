@@ -10,7 +10,8 @@ grids_dir = pkgdir(XCALibre, "examples", "0_GRIDS")
 grid = "EROFATC_Plate_Example7_2.unv"
 mesh_file = joinpath(grids_dir, grid)
 
-mesh = UNV2D_mesh(mesh_file, scale=0.001)
+# mesh = UNV2D_mesh(mesh_file, scale=0.001)
+mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
@@ -190,9 +191,9 @@ residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
  using LinearAlgebra
  using Plots 
 
- Ex_data = readdlm("T3A_Experimental_Results.csv", ',', Float64, skipstart=1)
- eRex = Ex_data[:,1]
- eCf = Ex_data[:,2]
+ # Ex_data = readdlm("T3A_Experimental_Results.csv", ',', Float64, skipstart=1)
+ # eRex = Ex_data[:,1]
+ # eCf = Ex_data[:,2]
 
  # OF_data = readdlm("T3A_Experimental_Results.csv", ',', Float64, skipstart=1)
  # oRex = OF_data[:,7].*velocity[1]./nu[1]
@@ -210,10 +211,10 @@ residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
   yplus = ((2*ustar)/nu)
   #print(yplus)
 
- x_corr = [0:0.0002:2;]
- Rex_corr = velocity[1].*x_corr/nu
- Cf_corr = 0.0576.*(Rex_corr).^(-1/5)
- Cf_laminar = 0.664.*(Rex_corr).^(-1/2)
+  x_corr = [0:0.0002:2;]
+  Rex_corr = velocity[1].*x_corr/nu
+  Cf_corr = 0.0576.*(Rex_corr).^(-1/5)
+  Cf_laminar = 0.664.*(Rex_corr).^(-1/2)
 
  p = plot(; xaxis="Rex", yaxis="Cf")
  plot!(Rex_corr, Cf_corr, color=:red, ylims=(0, 0.01), xlims=(0,6e5), label="Turbulent",lw=1.5)

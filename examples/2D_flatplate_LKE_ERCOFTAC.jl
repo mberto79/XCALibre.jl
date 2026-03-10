@@ -10,8 +10,8 @@ grids_dir = pkgdir(XCALibre, "examples", "0_GRIDS")
 grid = "EROFATC_Plate_Example7_2.unv"
 mesh_file = joinpath(grids_dir, grid)
 
-# mesh = UNV2D_mesh(mesh_file, scale=0.001)
-mesh = UNV3D_mesh(mesh_file, scale=0.001)
+ mesh = UNV2D_mesh(mesh_file, scale=0.001)
+# mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
@@ -20,11 +20,11 @@ hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 # Turbulence Model
-velocity = [19.3,0,0]
+velocity = [5.4,0,0]
 nu = 1.48e-5
 # Re = 10*1/nu
-νR = 7.8
-Tu = 0.009
+νR = 13.9
+Tu = 0.03
 # k_inlet = 0.0575  
 k_inlet = 3/2*(Tu*velocity[1])^2
 kL_inlet = 1/2*(Tu*velocity[1])^2

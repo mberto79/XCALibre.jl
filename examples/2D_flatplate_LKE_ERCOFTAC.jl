@@ -19,11 +19,11 @@ hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 # Turbulence Model
-velocity = [5.4,0,0]
+velocity = [19.3,0,0]
 nu = 1.48e-5
 # Re = 10*1/nu
-νR = 13.9
-Tu = 0.03
+νR = 7.8
+Tu = 0.009
 # k_inlet = 0.0575  
 k_inlet = 3/2*(Tu*velocity[1])^2
 kL_inlet = 1/2*(Tu*velocity[1])^2
@@ -36,7 +36,7 @@ model = Physics(
     time = Steady(),
     fluid = Fluid{Incompressible}(nu = nu, rho = rho),
     turbulence = RANS{KOmegaLKE}(Tu = Tu, walls=(:Wall,)),
-    #turbulence = RANS{KOmega}(),
+    # turbulence = RANS{KOmega}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
 )
@@ -66,6 +66,7 @@ BCs = assign(
             Dirichlet(:Inlet, k_inlet),
             Zerogradient(:Outlet),
             Dirichlet(:Wall, 0.0),
+            # KWallFunction(:Wall),
             Extrapolated(:Freestream),
             Extrapolated(:Freestream_Sym),
             # Zerogradient(:top)
@@ -92,7 +93,8 @@ BCs = assign(
         nut = [
             Dirichlet(:Inlet, k_inlet/ω_inlet),
             Extrapolated(:Outlet),
-            Dirichlet(:Wall, 0.0), 
+            Dirichlet(:Wall, 0.0),  
+            # NutWallFunction(:Wall),  
             Extrapolated(:Freestream),
             Extrapolated(:Freestream_Sym),
             # Zerogradient(:top)
@@ -116,42 +118,42 @@ solvers = (
     U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        convergence = 1e-8,
+        convergence = 3e-6,
         relax       = 0.7,
         rtol = 1e-2,
     ),
     p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres(), Cg()
         preconditioner = Jacobi(),
-        convergence = 1e-8,
+        convergence = 3e-6,
         relax       = 0.2,
         rtol = 1e-3,
     ),
     y = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        convergence = 1e-8,
+        convergence = 3e-6,
         rtol = 1e-2,
         relax       = 0.9,
     ),
     kl = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        convergence = 1e-8,
+        convergence = 3e-6,
         relax       = 0.3,
         rtol = 1e-2,
     ),
     k = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        convergence = 1e-8,
+        convergence = 3e-6,
         relax       = 0.3,
         rtol = 1e-2,
     ),
     omega = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        convergence = 1e-8,
+        convergence = 3e-6,
         relax       = 0.3,
         rtol = 1e-2,
     )
@@ -218,8 +220,11 @@ residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
  plot!(Rex_corr, Cf_laminar, color=:green, ylims=(0, 0.01), xlims=(0,6e5), label="Laminar",lw=1.5)
  scatter!(eRex, eCf, color=:green, label="Experimental T3A Data") # |> display
  # plot!(oRex, oCf, color=:green, lw=1.5,label="OpenFoam") |> display
- plot!(Rex,tauMag./(0.5.*velocity[1]^2), color=:blue, lw=1.5,label="Code") |> display
-#  plot!(Rex,tauMag./(0.5.*velocity[1]^2), color=:purple, lw=1.5,label="Code") |> display
+#  plot!(Rex,tauMag./(0.5.*velocity[1]^2), color=:blue, lw=1.5,label="Code") |> display
+  plot!(Rex,tauMag./(0.5.*velocity[1]^2), color=:blue, lw=1.5,label="Code", title = "T3A Validation Case") |> display
+#  plot!(Rex,tauMag./(0.5.*velocity[1]^2), color=:purple, lw=1.5,label="Code wth -5% damping") |> display
+#  plot!(Rex,tauMag./(0.5.*velocity[1]^2), color=:Yellow, lw=1.5,label="Code wth -10% damping", title = "T3B Damping Sensitivity Study") |> display
+
  #savefig(p,"EROFATC_Plate_3.svg")
 
 # plot(; xlims=(0,1000))

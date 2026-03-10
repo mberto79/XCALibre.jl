@@ -349,7 +349,7 @@ function turbulence!(
     bound!(kl, config)
 
     #Damping and trigger
-    @. fv.values = 1-exp(-sqrt(k.values/(nu.values*omega.values))/coeffs.Cv) # WHY IS THERE A NEGATIVE SQRT???
+    @. fv.values = 1*(1-exp(-sqrt(k.values/(nu.values*omega.values))/coeffs.Cv)) # WHY IS THERE A NEGATIVE SQRT???
     @. γ.values = min((kl.values/(min(nu.values,nuL.values)*sqrt(S2.values)))^2,coeffs.Ccrit)/coeffs.Ccrit
     fSS = @. exp(-(coeffs.CSS*nu.values*sqrt(S2.values)/k.values)^2) # should be Ω but S works
 

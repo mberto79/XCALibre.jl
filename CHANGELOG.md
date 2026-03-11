@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Fixed implementation of implicit boundaries in [#96](@ref) which where missing atomics [#100](@ref)
 * Fixed calculation of the residuals to use the relative residual norm, norm(b - Ax)/norm(b), the numerator in this expression was calculated incorrectly previously, giving a 1/sqrt(n) relation (where n is the number of cells in the grid). whilst the operation of the solvers remains the same, user may find that convergence criteria may need to be increased (specially for larger grids)[#102](@ref)
 * UNV2: Fix calculation of cell volumes and centroid for boundary cells was incorrect and missing boundary face contributions (only for 2D UNV meshes)[#106](@ref)
-* Fixed implementation of k-omega LKE transition model and how wall distance field is calculated to ensure it is GPU compatible [#108](@ref)
+* Fixed implementation of k-omega LKE transition model and how wall distance field is calculated to ensure it is GPU compatible [#109](@ref)
   
 ### Changed
 * Improved stability of `Periodic` boundaries by making the implementation fully implicit [#96](@ref)

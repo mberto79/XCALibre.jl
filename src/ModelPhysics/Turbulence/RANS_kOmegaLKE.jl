@@ -20,7 +20,7 @@ kOmega model containing all kOmega field parameters.
 - `y` -- Near-wall distance for model.
 
 """
-struct KOmegaLKE{S1,S2,S3,S4,F1,F2,F3,F4,C1,C2,Y,BC} <: AbstractRANSModel 
+struct KOmegaLKE{S1,S2,S3,S4,F1,F2,F3,F4,C1,C2,Y} <: AbstractRANSModel 
     k::S1
     omega::S2
     kl::S3
@@ -32,7 +32,6 @@ struct KOmegaLKE{S1,S2,S3,S4,F1,F2,F3,F4,C1,C2,Y,BC} <: AbstractRANSModel
     coeffs::C1
     Tu::C2
     y::Y
-    wallBCs::BC
 end 
 Adapt.@adapt_structure KOmegaLKE
 
@@ -100,8 +99,7 @@ end
 
     # Allocate wall distance "y" and setup boundary conditions
     y = ScalarField(mesh)
-    wallBCs = rans.args.walls
-    KOmegaLKE(k, omega, kl, nut, kf, omegaf, klf, nutf, coeffs, Tu, y, wallBCs)
+    KOmegaLKE(k, omega, kl, nut, kf, omegaf, klf, nutf, coeffs, Tu, y)
 end
 
 # Model initialisation
@@ -151,7 +149,7 @@ function initialise(
     @info "Initialising k-ω LKE model..."
 
     # unpack turbulent quantities and configuration
-    (; k, omega, kl, kf, omegaf, klf, y, wallBCs) = model.turbulence
+    (; k, omega, kl, kf, omegaf, klf, y) = model.turbulence
     (; solvers, schemes, runtime, boundaries) = config
     mesh = mdotf.mesh
     eqn = peqn.equation
@@ -230,7 +228,8 @@ function initialise(
     grad!(∇k, kf, k, boundaries.k, time, config)
 
     # Wall distance calculation
-    new_config = wall_distance!(model, wallBCs, config)
+    new_config = wall_distance!(model, model.wall_info, config)
+
 
     init_residuals = (:k, 1.0),(:kl, 1.0),(:omega, 1.0)
     init_convergence = false

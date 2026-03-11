@@ -38,7 +38,7 @@ Adapt.@adapt_structure KOmegaLKE
 
 # Model type definition (hold equation definitions and internal data)
 struct KOmegaLKEModel{
-    T,E1,E2,E3,F1,F2,F3,S1,S2,S3,S4,S5,S6,S7,V1,V2,State}
+    T,E1,E2,E3,F1,F2,F3,S1,S2,S3,S4,S5,S6,S7,S8,S9,S10,V1,V2,State}
     turbulence::T
     k_eqn::E1
     ω_eqn::E2
@@ -53,6 +53,9 @@ struct KOmegaLKEModel{
     fv::S5
     normU::S6
     Reυ::S7
+    divU::S8
+    S2::S9
+    ReLambda::S10
     ∇k::V1
     ∇ω::V2
     state::State
@@ -76,6 +79,7 @@ end
     omegaf = FaceScalarField(mesh)
     klf = FaceScalarField(mesh)
     nutf = FaceScalarField(mesh)
+    Tu = rans.args.Tu
     coeffs = (
         C1 = 0.02974,
         C2 = 59.79,
@@ -90,9 +94,9 @@ end
         σk = 0.5,
         σd = 0.125,
         σkL = 0.0125,
-        σω = 0.5
+        σω = 0.5,
+        η = 0.02974 * tanh(59.79 * (Tu^1.191) + 1.65e-13)
     )
-    Tu = rans.args.Tu
 
     # Allocate wall distance "y" and setup boundary conditions
     y = ScalarField(mesh)
@@ -131,8 +135,11 @@ Initialisation of turbulent transport equations.
         fv,
         normU,
         Reυ,
+        divU,
+        S2,
+        ReLambda,
         ∇k,
-        ∇ω, 
+        ∇ω,
         state
     )`  -- Turbulence model structure.
 
@@ -164,6 +171,9 @@ function initialise(
     dkdomegadx = ScalarField(mesh)
     normU = ScalarField(mesh)
     Reυ = ScalarField(mesh)
+    divU = ScalarField(mesh)
+    S2_field = ScalarField(mesh)
+    ReLambda = ScalarField(mesh)
     nuL = ScalarField(mesh)
     nuts = ScalarField(mesh)
     Ω = ScalarField(mesh)
@@ -241,6 +251,9 @@ function initialise(
         fv,
         normU,
         Reυ,
+        divU,
+        S2_field,
+        ReLambda,
         ∇k,
         ∇ω,
         state
@@ -273,7 +286,7 @@ function turbulence!(
     (; nu) = model.fluid
     (; U, Uf, gradU) = S
     
-    (; k_eqn, ω_eqn, kl_eqn, nueffkLS, nueffkS, nueffωS, nuL, nuts, Ω, γ, fv, ∇k, ∇ω, normU, Reυ, state) = rans
+    (; k_eqn, ω_eqn, kl_eqn, nueffkLS, nueffkS, nueffωS, nuL, nuts, Ω, γ, fv, ∇k, ∇ω, normU, Reυ, divU, S2, ReLambda, state) = rans
     (; solvers, runtime, boundaries) = config
 
     nueffkL = get_flux(kl_eqn, 3)
@@ -295,28 +308,27 @@ function turbulence!(
     grad!(gradU, Uf, U, boundaries.U, time, config) 
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
 
-    η = coeffs.C1 * tanh(coeffs.C2 * (Tu^coeffs.C3) + coeffs.C4)
-
-    # Temporary storage for production strain term
-    Pk_strain = ScalarField(mesh)
-    divU_field = ScalarField(mesh)
-    S2 = ScalarField(mesh)
+    η = coeffs.η
 
     xcal_foreach(k, config) do i
         g = gradU[i]
-        
+
         # Velocity divergence
-        divU_field[i] = divU = tr(g)
-        
+        divU_val = tr(g)
+        divU[i] = divU_val
+
         # Calculate strain rate, vorticity & production
-        S_dev = 0.5*(g + g') - divU/3*I # Dev(S) 
+        S_dev = 0.5*(g + g') - divU_val/3*I # Dev(S)
         S2[i] = 2.0 * sum(S_dev.^2) # S2 = 2*magSqr(dev(symm(gradU)))
         Ω[i] = sqrt(2.0 * sum((0.5*(g - g')).^2)) # Omega = sqrt(2)*mag(skew(gradU))
-        Pk_strain[i] = sum(g .* 2*S_dev) # Pk = gradU && dev(twoSymm(gradU))
-        
+        Pk[i] = sum(g .* 2*S_dev) # Pk = gradU && dev(twoSymm(gradU))
+
         # Calculate velocity magnitude
         u = U[i]
         normU[i] = sqrt(u[1]^2 + u[2]^2 + u[3]^2)
+
+        # Cache ReLambda (used in gamma, kl, and nut loops)
+        ReLambda[i] = max(normU[i], sqrt(kMin)) * y[i] / nu[i]
     end
 
     # Calculate intermediate nutL1 and gamma
@@ -327,17 +339,17 @@ function turbulence!(
         S2_val = S2[i]
         Omega_val = Ω[i]
         normU_i = normU[i]
-        
+        ReLambda_val = ReLambda[i]
+
         # Reynolds numbers
-        ReLambda = max(normU_i, sqrt(kMin)) * y_i / nu_i
         ReUpsilon = (2.0 * nu_i^2 * kl_i / (y_i^2))^0.25 * y_i / nu_i
         Reυ[i] = ReUpsilon
-        
+
         # nutL1 for ReL calculation
-        nutL1 = η * kl_i * sqrt(S2_val) * ReUpsilon^(-1.30) * ReLambda^0.5 / max(S2_val, (normU_i/y_i)^2)
-        
+        nutL1 = η * kl_i * sqrt(S2_val) * ReUpsilon^(-1.30) * ReLambda_val^0.5 / max(S2_val, (normU_i/y_i)^2)
+
         # Intermittency trigger gamma
-        ReL = min(kl_i / max(min(nu_i, nutL1), 1e-15) / max(Omega_val, 1e-10), 5000.0)
+        ReL = min(kl_i / max(min(nu_i, nutL1), 1e-15) / max(Omega_val, 1e-15), 5000.0)
         γ[i] = min(ReL^2, coeffs.Ccrit) / coeffs.Ccrit
     end
 
@@ -346,9 +358,8 @@ function turbulence!(
         nu_i = nu[i]
         y_i = y[i]
         kl_i = kl[i]
-        
-        ReLambda = max(normU[i], sqrt(kMin)) * y_i / nu_i
-        PkL[i] = sqrt(S2[i]) * η * kl_i * Reυ[i]^(-1.30) * ReLambda^0.5
+
+        PkL[i] = sqrt(S2[i]) * η * kl_i * Reυ[i]^(-1.30) * ReLambda[i]^0.5
         DkLf[i] = 2.0 * nu_i / (y_i^2)
         nueffkLS[i] = nu_i + coeffs.σkL * sqrt(kl_i) * y_i
     end
@@ -375,8 +386,8 @@ function turbulence!(
         omega_i = omega[i] 
         safe_omega = max(omega_i, 1e-15)
         
-        Pω[i] = coeffs.Cω1 * Pk_strain[i] # production
-        Pω[i] -= (2.0/3.0) * coeffs.Cω1 * divU_field[i] * omega_i # desctruction
+        Pω[i] = coeffs.Cω1 * Pk[i] # production
+        Pω[i] -= (2.0/3.0) * coeffs.Cω1 * divU[i] * omega_i # desctruction
         Dωf[i] = coeffs.Cω2 * omega_i # dissipation
         nueffωS[i] = nu[i] + coeffs.σω * (k[i] / safe_omega) # diffusion
         dkdomegadx[i] = max((coeffs.σd / (safe_omega^2)) * dkdomegadx[i], 0.0) # x-diffusion
@@ -410,9 +421,9 @@ function turbulence!(
         safe_k = max(k[i], 1e-15)
         
         # Production with limiter
-        Pk_unlimited = fv[i] * (safe_k / safe_omega) * Pk_strain[i] * gamma_val
+        Pk_unlimited = fv[i] * (safe_k / safe_omega) * Pk[i] * gamma_val
         Pk_limited = min(Pk_unlimited, 20.0 * coeffs.Cμ * safe_k * omega_i)
-        Pk[i] = Pk_limited - (2.0/3.0) * divU_field[i] * k[i]
+        Pk[i] = Pk_limited - (2.0/3.0) * divU[i] * k[i]
         
         # Destruction
         Dkf[i] = coeffs.Cμ * gamma_val * omega_i
@@ -445,9 +456,9 @@ function turbulence!(
         safe_k = max(k[i], 1e-15)
         
         # Calculate nutL
-        ReLambda = max(normU_i, sqrt(kMin)) * y_i / nu_i
+        ReLambda_val = ReLambda[i]
         ReUpsilon = (2.0 * nu_i^2 * kl_i / (y_i^2))^0.25 * y_i / nu_i
-        PkL_val = sqrt(S2_val) * η * kl_i * ReUpsilon^(-1.30) * ReLambda^0.5
+        PkL_val = sqrt(S2_val) * η * kl_i * ReUpsilon^(-1.30) * ReLambda_val^0.5
         nuL_val = PkL_val / max(S2_val, (normU_i/y_i)^2)
         nuL[i] = nuL_val
         

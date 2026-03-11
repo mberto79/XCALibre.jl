@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version [v0.5.3] - 2026-03-05
 
 ### Added
-*  Added optional adaptive time stepping based on Courant number control (`AdaptiveTimeStepping`) [#98](@ref)
+*  Added optional adaptive time stepping based on Courant number control (`AdaptiveTimeStepping`) [#103](@ref)
 
 
 ### Fixed

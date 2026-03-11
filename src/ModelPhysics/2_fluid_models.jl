@@ -1,10 +1,19 @@
 export AbstractFluid, AbstractIncompressible, AbstractCompressible
 export Fluid
 export Incompressible, WeaklyCompressible, Compressible
+export Phase, Fluid, Multiphase
+export AbstractModel, AbstractEosModel, AbstractViscosityModel
 
 abstract type AbstractFluid end
 abstract type AbstractIncompressible <: AbstractFluid end
 abstract type AbstractCompressible <: AbstractFluid end
+abstract type AbstractMultiphase <: AbstractFluid end
+
+abstract type AbstractPhase <: AbstractMultiphase end
+abstract type AbstractModel end
+abstract type AbstractEosModel <: AbstractModel end
+abstract type AbstractViscosityModel <: AbstractModel end
+
 
 Base.show(io::IO, fluid::AbstractFluid) = print(io, typeof(fluid).name.wrapper)
 
@@ -153,4 +162,127 @@ end
     nuf = nu
     rhof = FaceScalarField(mesh)
     Compressible(nu, rho, nuf, rhof, cp, gamma, Pr, R)
+end
+
+
+"""
+    Phase <: AbstractPhase
+
+Configuration structure for a single fluid phase.
+
+### Fields
+- 'eosModel'       -- Equation of State model for the phase.
+- 'mu' -- Viscosity model for the phase.
+"""
+struct Phase{E<:AbstractEosModel, V<:AbstractViscosityModel} <: AbstractPhase
+    density::E
+    mu::V
+end
+
+function Phase(; density, mu) # Covers all combinations e.g. mu=1.8e-5 or mu=SutherlandModel() etc
+    density_type = density isa AbstractFloat ? ConstEos(density) : density
+    mu_type = mu isa AbstractFloat ? ConstMu(mu) : mu
+    
+    return Phase(density_type, mu_type)
+end
+
+@kwdef struct PhaseState{E<:AbstractEosModel, V<:AbstractViscosityModel, S1,S2,S3,S4,S5} <: AbstractPhase
+    density::E
+    mu::V
+
+    rho::S1
+    nu::S2
+    k::S3
+    cp::S4
+    beta::S5
+end
+Adapt.@adapt_structure PhaseState
+
+function build_phase(phase_setup::Phase, mesh)
+    rho   = ScalarField(mesh)
+    nu    = ScalarField(mesh)
+    k     = ScalarField(mesh)
+    cp    = ScalarField(mesh)
+    beta  = ScalarField(mesh)
+
+    return PhaseState(
+        density=phase_setup.density,
+        mu=phase_setup.mu,
+        rho=rho,
+        nu=nu,
+        k=k,
+        cp=cp,
+        beta=beta
+    )
+end
+
+
+"""
+    Multiphase <: AbstractMultiphase
+
+Multiphase fluid model containing multiple phases and their interaction properties.
+
+### Fields
+- 'phases'             -- Tuple of PhaseState structures.
+- 'physics_properties' -- NamedTuple of physical models (drag, surface tension, etc.).
+- 'alpha'              -- Volume fraction ScalarField.
+- 'alphaf'             -- Volume fraction FaceScalarField.
+- 'rho'                -- Mixture density ScalarField.
+- 'rhof'               -- Mixture density FaceScalarField.
+- 'nu'                 -- Mixture kinematic viscosity ScalarField.
+- 'nuf'                -- Mixture kinematic viscosity FaceScalarField.
+- 'p_rgh'              -- Dynamic pressure ScalarField.
+- 'p_rghf'             -- Dynamic pressure FaceScalarField.
+"""
+@kwdef struct Multiphase{P1,P2,S1,F1,S2,F2,S3,F3,S4,F4} <: AbstractMultiphase
+    phases::P1
+    physics_properties::P2
+    alpha::S1
+    alphaf::F1
+    rho::S2
+    rhof::F2
+    nu::S3
+    nuf::F3
+    p_rgh::S4
+    p_rghf::F4
+end
+Adapt.@adapt_structure Multiphase
+
+Fluid{Multiphase}(; phases::Tuple, kwargs...) = begin
+    coeffs = (; phases, kwargs...)
+    ARG = typeof(coeffs)
+    Fluid{Multiphase, ARG}(coeffs)
+end
+
+
+(fluid::Fluid{Multiphase, ARG})(mesh) where {ARG} = begin
+    coeffs = fluid.args
+
+    physics_properties = Base.structdiff(coeffs, (phases = nothing,))
+
+    build_multiphase(coeffs.phases, physics_properties, mesh)
+end
+
+
+build_property(property, mesh) = property
+build_property(setup::Gravity, mesh) = build_gravityModel(setup, mesh)
+
+function build_multiphase(phase_setups::Tuple{<:AbstractPhase, <:AbstractPhase}, physics_properties_setup::NamedTuple, mesh)
+    phases = map(setup -> build_phase(setup, mesh), phase_setups)
+
+    built_properties = map(prop_setup -> build_property(prop_setup, mesh), physics_properties_setup)
+
+    alpha  = ScalarField(mesh)
+    alphaf = FaceScalarField(mesh)
+
+    rho  = ScalarField(mesh)
+    rhof = FaceScalarField(mesh)
+
+    nu  = ScalarField(mesh)
+    nuf = FaceScalarField(mesh)
+
+    p_rgh  = ScalarField(mesh)
+    p_rghf = FaceScalarField(mesh)
+    
+    Multiphase(phases=phases, physics_properties=built_properties, alpha=alpha, alphaf=alphaf, rho=rho, rhof=rhof, nu=nu, nuf=nuf, p_rgh=p_rgh, p_rghf=p_rghf)
 end

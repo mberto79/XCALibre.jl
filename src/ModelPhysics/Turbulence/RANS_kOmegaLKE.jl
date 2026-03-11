@@ -286,7 +286,7 @@ function turbulence!(
     (; nu) = model.fluid
     (; U, Uf, gradU) = S
     
-    (; k_eqn, ω_eqn, kl_eqn, nueffkLS, nueffkS, nueffωS, nuL, nuts, Ω, γ, fv, ∇k, ∇ω, normU, Reυ, divU, S2, ReLambda, state) = rans
+    (; k_eqn, ω_eqn, kl_eqn, nueffkLS, nueffkS, nueffωS, nuL, nuts, Ω, γ, ∇k, ∇ω, normU, divU, S2, ReLambda, state) = rans
     (; solvers, runtime, boundaries) = config
 
     nueffkL = get_flux(kl_eqn, 3)
@@ -331,7 +331,7 @@ function turbulence!(
         ReLambda[i] = max(normU[i], sqrt(kMin)) * y[i] / nu[i]
     end
 
-    # Calculate intermediate nutL1 and gamma
+    # Calculate gamma, PkL, DkLf, nueffkLS (fused gamma + kl setup)
     xcal_foreach(γ, config) do i
         nu_i = nu[i]
         y_i = y[i]
@@ -342,8 +342,7 @@ function turbulence!(
         ReLambda_val = ReLambda[i]
 
         # Reynolds numbers
-        ReUpsilon = (2.0 * nu_i^2 * kl_i / (y_i^2))^0.25 * y_i / nu_i
-        Reυ[i] = ReUpsilon
+        ReUpsilon = sqrt(sqrt(2.0 * nu_i^2 * kl_i / (y_i^2))) * y_i / nu_i
 
         # nutL1 for ReL calculation
         nutL1 = η * kl_i * sqrt(S2_val) * ReUpsilon^(-1.30) * ReLambda_val^0.5 / max(S2_val, (normU_i/y_i)^2)
@@ -351,15 +350,9 @@ function turbulence!(
         # Intermittency trigger gamma
         ReL = min(kl_i / max(min(nu_i, nutL1), 1e-15) / max(Omega_val, 1e-15), 5000.0)
         γ[i] = min(ReL^2, coeffs.Ccrit) / coeffs.Ccrit
-    end
 
-    # Setup and Solve kl Equation
-    xcal_foreach(kl, config) do i
-        nu_i = nu[i]
-        y_i = y[i]
-        kl_i = kl[i]
-
-        PkL[i] = sqrt(S2[i]) * η * kl_i * Reυ[i]^(-1.30) * ReLambda[i]^0.5
+        # kl equation setup
+        PkL[i] = sqrt(S2_val) * η * kl_i * ReUpsilon^(-1.30) * ReLambda_val^0.5
         DkLf[i] = 2.0 * nu_i / (y_i^2)
         nueffkLS[i] = nu_i + coeffs.σkL * sqrt(kl_i) * y_i
     end
@@ -406,28 +399,25 @@ function turbulence!(
     ω_res = solve_system!(ω_eqn, solvers.omega, omega, nothing, config)
     bound!(omega, config)
 
-    # Calculate fv
-    xcal_foreach(fv, config) do i
-        safe_omega = max(omega[i], 1e-15)
-        safe_nu = max(nu[i], 1e-15)
-        fv[i] = 1.0 - exp(-sqrt(k[i] / (safe_nu * safe_omega)) / coeffs.Cv)
-    end
-
-    # Setup and Solve k Equation
+    # Calculate fv and setup k equation (fused)
     xcal_foreach(k, config) do i
         omega_i = omega[i]
         gamma_val = γ[i]
         safe_omega = max(omega_i, 1e-15)
         safe_k = max(k[i], 1e-15)
-        
+        safe_nu = max(nu[i], 1e-15)
+
+        # fv calculation
+        fv_val = 1.0 - exp(-sqrt(safe_k / (safe_nu * safe_omega)) / coeffs.Cv)
+
         # Production with limiter
-        Pk_unlimited = fv[i] * (safe_k / safe_omega) * Pk[i] * gamma_val
+        Pk_unlimited = fv_val * (safe_k / safe_omega) * Pk[i] * gamma_val
         Pk_limited = min(Pk_unlimited, 20.0 * coeffs.Cμ * safe_k * omega_i)
         Pk[i] = Pk_limited - (2.0/3.0) * divU[i] * k[i]
-        
+
         # Destruction
         Dkf[i] = coeffs.Cμ * gamma_val * omega_i
-        
+
         # Diffusion
         nueffkS[i] = nu[i] + coeffs.σk * (safe_k / safe_omega)
     end
@@ -457,7 +447,7 @@ function turbulence!(
         
         # Calculate nutL
         ReLambda_val = ReLambda[i]
-        ReUpsilon = (2.0 * nu_i^2 * kl_i / (y_i^2))^0.25 * y_i / nu_i
+        ReUpsilon = sqrt(sqrt(2.0 * nu_i^2 * kl_i / (y_i^2))) * y_i / nu_i
         PkL_val = sqrt(S2_val) * η * kl_i * ReUpsilon^(-1.30) * ReLambda_val^0.5
         nuL_val = PkL_val / max(S2_val, (normU_i/y_i)^2)
         nuL[i] = nuL_val

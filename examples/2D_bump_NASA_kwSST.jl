@@ -1,6 +1,6 @@
 using Plots
 using XCALibre
-# using CUDA
+using CUDA
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "OF_bump2d/polyMesh"
@@ -8,12 +8,11 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = FOAM3D_mesh(mesh_file, scale=1, integer_type=Int64, float_type=Float64)
 
-# mesh_dev = adapt(CUDABackend(), mesh)
-# mesh_dev = adapt(CPUBackend(), mesh)
-backend = CPU(); workgroup = 1024; activate_multithread(backend)
+backend = CUDABackend(); workgroup = 32
+# backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
-mesh_dev = adapt(CPU(), mesh)
+mesh_dev = adapt(backend, mesh)
 
 L = 50
 nu = 1.388E-5
@@ -132,9 +131,9 @@ solvers = (
     y = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        convergence = 1e-10,
+        convergence = 1e-8,
         rtol = 1e-5,
-        relax       = 0.7,
+        relax       = 0.9,
         itmax = 5000
     ),
     k = SolverSetup(

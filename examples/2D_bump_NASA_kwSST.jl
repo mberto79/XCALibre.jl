@@ -8,8 +8,10 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = FOAM3D_mesh(mesh_file, scale=1, integer_type=Int64, float_type=Float64)
 
-backend = CUDABackend(); workgroup = 32
+# mesh_dev = adapt(CUDABackend(), mesh)
+# mesh_dev = adapt(CPUBackend(), mesh)
 # backend = CPU(); workgroup = 1024; activate_multithread(backend)
+backend = CUDABackend(); workgroup = 32
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
@@ -95,8 +97,8 @@ BCs = assign(
         nut = [
             Extrapolated(:inlet),
             Extrapolated(:outlet),
-            # Dirichlet(:bump, 0.0),
-            NutWallFunction(:bump),
+            Dirichlet(:bump, 0.0),
+            # NutWallFunction(:bump),
             Empty(:frontAndBack),
             group_bcs_nut...,
         ],
@@ -117,23 +119,23 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-8,
         relax       = 0.6,
-        rtol = 1e-1
+        rtol = 1e-3
     ),
     p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        # preconditioner = DILU(),
+        # preconditioner = DILU(), # CPU Only
         convergence = 1e-11,
         relax       = 0.1,
-        rtol = 1e-2,
+        rtol = 1e-3,
         itmax = 4000
     ),
     y = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        convergence = 1e-8,
+        convergence = 1e-10,
         rtol = 1e-5,
-        relax       = 0.9,
+        relax       = 0.7,
         itmax = 5000
     ),
     k = SolverSetup(
@@ -141,14 +143,14 @@ solvers = (
         preconditioner = Jacobi(), # DILU Jacobi
         convergence = 1e-10,
         relax       = 0.6,
-        rtol = 1e-1
+        rtol = 1e-3
     ),
     omega = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
         convergence = 1e-10,
         relax       = 0.6,
-        rtol = 1e-1
+        rtol = 1e-3
     )
 )
 

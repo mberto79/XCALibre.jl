@@ -20,7 +20,7 @@ kOmega model containing all kOmega field parameters.
 - `y` -- Near-wall distance for model.
 
 """
-struct KOmegaLKE{S1,S2,S3,S4,F1,F2,F3,F4,C1,C2,Y,BC} <: AbstractRANSModel 
+struct KOmegaLKE{S1,S2,S3,S4,F1,F2,F3,F4,C1,C2,Y} <: AbstractRANSModel 
     k::S1
     omega::S2
     kl::S3
@@ -32,13 +32,12 @@ struct KOmegaLKE{S1,S2,S3,S4,F1,F2,F3,F4,C1,C2,Y,BC} <: AbstractRANSModel
     coeffs::C1
     Tu::C2
     y::Y
-    wallBCs::BC
 end 
 Adapt.@adapt_structure KOmegaLKE
 
 # Model type definition (hold equation definitions and internal data)
 struct KOmegaLKEModel{
-    T,E1,E2,E3,F1,F2,F3,S1,S2,S3,S4,S5,S6,S7,V1,V2,State}
+    T,E1,E2,E3,F1,F2,F3,S1,S2,S3,S4,S5,S6,S7,S8,S9,S10,V1,V2,State}
     turbulence::T
     k_eqn::E1
     ω_eqn::E2
@@ -53,6 +52,9 @@ struct KOmegaLKEModel{
     fv::S5
     normU::S6
     Reυ::S7
+    divU::S8
+    S2::S9
+    ReLambda::S10
     ∇k::V1
     ∇ω::V2
     state::State
@@ -76,6 +78,7 @@ end
     omegaf = FaceScalarField(mesh)
     klf = FaceScalarField(mesh)
     nutf = FaceScalarField(mesh)
+    Tu = rans.args.Tu
     coeffs = (
         C1 = 0.02974,
         C2 = 59.79,
@@ -90,33 +93,13 @@ end
         σk = 0.5,
         σd = 0.125,
         σkL = 0.0125,
-        σω = 0.5
+        σω = 0.5,
+        η = 0.02974 * tanh(59.79 * (Tu^1.191) + 1.65e-13)
     )
-    Tu = rans.args.Tu
 
     # Allocate wall distance "y" and setup boundary conditions
     y = ScalarField(mesh)
-    wallBCs = rans.args.walls
-    # boundaries_cpu = get_boundaries(mesh.boundaries)
-    # BCs = []
-    # for boundary ∈ boundaries_cpu
-    #     for namedwall ∈ walls
-    #         if boundary.name == namedwall
-    #             push!(BCs, Dirichlet(boundary.name, 0.0))
-    #         else
-    #             # push!(BCs, Neumann(boundary.name, 0.0))
-    #             push!(BCs, Zerogradient(boundary.name))
-    #         end
-    #     end
-    # end
-    # wallBCs = assign(
-    #     region=mesh,
-    #     (
-    #         y = [BCs...],
-    #     )
-    # )
-
-    KOmegaLKE(k, omega, kl, nut, kf, omegaf, klf, nutf, coeffs, Tu, y, wallBCs)
+    KOmegaLKE(k, omega, kl, nut, kf, omegaf, klf, nutf, coeffs, Tu, y)
 end
 
 # Model initialisation
@@ -150,8 +133,11 @@ Initialisation of turbulent transport equations.
         fv,
         normU,
         Reυ,
+        divU,
+        S2,
+        ReLambda,
         ∇k,
-        ∇ω, 
+        ∇ω,
         state
     )`  -- Turbulence model structure.
 
@@ -163,7 +149,7 @@ function initialise(
     @info "Initialising k-ω LKE model..."
 
     # unpack turbulent quantities and configuration
-    (; k, omega, kl, kf, omegaf, klf, y, wallBCs) = model.turbulence
+    (; k, omega, kl, kf, omegaf, klf, y) = model.turbulence
     (; solvers, schemes, runtime, boundaries) = config
     mesh = mdotf.mesh
     eqn = peqn.equation
@@ -183,6 +169,9 @@ function initialise(
     dkdomegadx = ScalarField(mesh)
     normU = ScalarField(mesh)
     Reυ = ScalarField(mesh)
+    divU = ScalarField(mesh)
+    S2_field = ScalarField(mesh)
+    ReLambda = ScalarField(mesh)
     nuL = ScalarField(mesh)
     nuts = ScalarField(mesh)
     Ω = ScalarField(mesh)
@@ -214,16 +203,14 @@ function initialise(
             + Divergence{schemes.omega.divergence}(mdotf, omega) 
             - Laplacian{schemes.omega.laplacian}(nueffω, omega)
             + Si(Dωf,omega)  # Dωf = β1*omega
+            - Si(dkdomegadx, omega)
             ==
             Source(Pω)
-            + Source(dkdomegadx)
+            # + Source(dkdomegadx)
     ) → eqn
 
     
     # Set up preconditioners
-
-    # @reset kl_eqn.preconditioner = set_preconditioner(
-    #             solvers.kl.preconditioner, kl_eqn, boundaries.kl, config)
 
     @reset kl_eqn.preconditioner = set_preconditioner(solvers.kl.preconditioner, kl_eqn)
     @reset k_eqn.preconditioner = set_preconditioner(solvers.k.preconditioner, k_eqn)
@@ -240,12 +227,9 @@ function initialise(
     grad!(∇ω, omegaf, omega, boundaries.omega, time, config)
     grad!(∇k, kf, k, boundaries.k, time, config)
 
-    # float_type = _get_float(mesh)
-    # coeffs = get_LKE_coeffs(float_type)
-
     # Wall distance calculation
-    # y.values .= wall_distance(model, config)
-    new_config = wall_distance!(model, wallBCs, config)
+    new_config = wall_distance!(model, model.wall_info, config)
+
 
     init_residuals = (:k, 1.0),(:kl, 1.0),(:omega, 1.0)
     init_convergence = false
@@ -266,6 +250,9 @@ function initialise(
         fv,
         normU,
         Reυ,
+        divU,
+        S2_field,
+        ReLambda,
         ∇k,
         ∇ω,
         state
@@ -294,12 +281,11 @@ function turbulence!(
     ) where {T,F,SO,M,Turb<:AbstractTurbulenceModel,E,D,BI}
     mesh = model.domain
     (; momentum) = model
-    U = momentum.U
     (; k, omega, kl, nut, y, kf, omegaf, klf, nutf, coeffs, Tu) = rans.turbulence
     (; nu) = model.fluid
     (; U, Uf, gradU) = S
     
-    (; k_eqn, ω_eqn, kl_eqn, nueffkLS, nueffkS, nueffωS, nuL, nuts, Ω, γ, fv, ∇k, ∇ω, normU, Reυ, state) = rans
+    (; k_eqn, ω_eqn, kl_eqn, nueffkLS, nueffkS, nueffωS, nuL, nuts, Ω, γ, ∇k, ∇ω, normU, divU, S2, ReLambda, state) = rans
     (; solvers, runtime, boundaries) = config
 
     nueffkL = get_flux(kl_eqn, 3)
@@ -312,29 +298,64 @@ function turbulence!(
 
     nueffω = get_flux(ω_eqn, 3)
     Dωf = get_flux(ω_eqn, 4)
+    dkdomegadx = get_flux(ω_eqn, 5) # cross diffusion term
     Pω = get_source(ω_eqn, 1)
-    dkdomegadx = get_source(ω_eqn, 2) # cross diffusion term
 
+    kMin = eps()  # set kMin_ value
 
-    grad!(gradU, Uf, U, boundaries.U, time, config) # must update before calculating S
+    # Update Velocity Gradient and Calculate Flow Quantities (ONCE)
+    grad!(gradU, Uf, U, boundaries.U, time, config) 
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
-    magnitude2!(Pk, S, config, scale_factor=2.0)
-    magnitude2!(Ω, S, config, scale_factor=2.0) # 
-    S2 = Ω # using Ω to store S^2 (temporary - needs cleaning up!)
 
-    # Update kl fluxes and terms
+    η = coeffs.η
 
-    # for i ∈ eachindex(normU.values)
-    #     normU.values[i] = norm(U[i])
-    # end
-    magnitude!(normU, U, config)
+    xcal_foreach(k, config) do i
+        g = gradU[i]
 
-    ReLambda = @. normU.values*y.values/nu.values;
-    @. Reυ.values = (2*nu.values^2*kl.values/(y.values^2))^0.25*y.values/nu.values;
-    η = coeffs.C1*tanh(coeffs.C2*(Tu^coeffs.C3)+coeffs.C4)
-    @. PkL.values = sqrt(Pk.values)*η*kl.values*Reυ.values^(-1.30)*ReLambda^(0.5)
-    @. DkLf.values = (2*nu.values)/(y.values^2)
-    @. nueffkLS.values = nu.values+(coeffs.σkL*sqrt(kl.values)*y.values)
+        # Velocity divergence
+        divU_val = tr(g)
+        divU[i] = divU_val
+
+        # Calculate strain rate, vorticity & production
+        S_dev = 0.5*(g + g') - divU_val/3*I # Dev(S)
+        S2[i] = 2.0 * sum(S_dev.^2) # S2 = 2*magSqr(dev(symm(gradU)))
+        Ω[i] = sqrt(2.0 * sum((0.5*(g - g')).^2)) # Omega = sqrt(2)*mag(skew(gradU))
+        Pk[i] = sum(g .* 2*S_dev) # Pk = gradU && dev(twoSymm(gradU))
+
+        # Calculate velocity magnitude
+        u = U[i]
+        normU[i] = sqrt(u[1]^2 + u[2]^2 + u[3]^2)
+
+        # Cache ReLambda (used in gamma, kl, and nut loops)
+        ReLambda[i] = max(normU[i], sqrt(kMin)) * y[i] / nu[i]
+    end
+
+    # Calculate gamma, PkL, DkLf, nueffkLS (fused gamma + kl setup)
+    xcal_foreach(γ, config) do i
+        nu_i = nu[i]
+        y_i = y[i]
+        kl_i = kl[i]
+        S2_val = S2[i]
+        Omega_val = Ω[i]
+        normU_i = normU[i]
+        ReLambda_val = ReLambda[i]
+
+        # Reynolds numbers
+        ReUpsilon = sqrt(sqrt(2.0 * nu_i^2 * kl_i / (y_i^2))) * y_i / nu_i
+
+        # nutL1 for ReL calculation
+        nutL1 = η * kl_i * sqrt(S2_val) * ReUpsilon^(-1.30) * ReLambda_val^0.5 / max(S2_val, (normU_i/y_i)^2)
+
+        # Intermittency trigger gamma
+        ReL = min(kl_i / max(min(nu_i, nutL1), 1e-15) / max(Omega_val, 1e-15), 5000.0)
+        γ[i] = min(ReL^2, coeffs.Ccrit) / coeffs.Ccrit
+
+        # kl equation setup
+        PkL[i] = sqrt(S2_val) * η * kl_i * ReUpsilon^(-1.30) * ReLambda_val^0.5
+        DkLf[i] = 2.0 * nu_i / (y_i^2)
+        nueffkLS[i] = nu_i + coeffs.σkL * sqrt(kl_i) * y_i
+    end
+
     interpolate!(nueffkL, nueffkLS, config)
     correct_boundaries!(nueffkL, nueffkLS, boundaries.nut, time, config)
 
@@ -347,48 +368,62 @@ function turbulence!(
     kl_res = solve_system!(kl_eqn, solvers.kl, kl, nothing, config)
     bound!(kl, config)
 
-    #Damping and trigger
-    @. fv.values = 1-exp(-sqrt(k.values/(nu.values*omega.values))/coeffs.Cv)
-    @. γ.values = min((kl.values/(min(nu.values,nuL.values)*sqrt(S2.values)))^2,coeffs.Ccrit)/coeffs.Ccrit
-    fSS = @. exp(-(coeffs.CSS*nu.values*sqrt(S2.values)/k.values)^2) # should be Ω but S works
-
-    #Update ω fluxes
-    # double_inner_product!(Pk, S, gradU) # multiplied by 2 (def of Sij) (Pk = S² at this point)
-    # interpolate!(kf, k, config)
-    # correct_boundaries!(nutf, k, boundaries.k, time, config)
-    # correct_boundaries!(kf, k, boundaries.k, time, config)
-    # interpolate!(omegaf, omega, config)
-    # correct_boundaries!(nutf, omega, boundaries.omega, time, config)
-    # correct_boundaries!(nutf, omega, boundaries.omega, time, config)
+    # Calculate Gradients for Cross-Diffusion  
     grad!(∇ω, omegaf, omega, boundaries.omega, time, config)
     grad!(∇k, kf, k, boundaries.k, time, config)
     inner_product!(dkdomegadx, ∇k, ∇ω, config)
-    @. Pω.values = coeffs.Cω1 * Pk.values * nut.values * (omega.values / k.values)
-    @. dkdomegadx.values = max((coeffs.σd / omega.values) * dkdomegadx.values, 0.0)
-    @. Dωf.values = coeffs.Cω2 * omega.values
-    # @. nueffωS.values = nu.values+(coeffs.σω*nut_turb.values*γ.values)
-    @. nueffωS.values = nu.values+(coeffs.σω*(k.values/omega.values)*γ.values)
+
+    # Setup and Solve omega Equation
+    xcal_foreach(omega, config) do i
+        omega_i = omega[i] 
+        safe_omega = max(omega_i, 1e-15)
+        
+        Pω[i] = coeffs.Cω1 * Pk[i] # production
+        Pω[i] -= (2.0/3.0) * coeffs.Cω1 * divU[i] * omega_i # desctruction
+        Dωf[i] = coeffs.Cω2 * omega_i # dissipation
+        nueffωS[i] = nu[i] + coeffs.σω * (k[i] / safe_omega) # diffusion
+        dkdomegadx[i] = max((coeffs.σd / (safe_omega^2)) * dkdomegadx[i], 0.0) # x-diffusion
+    end
+
     interpolate!(nueffω, nueffωS, config)
     correct_boundaries!(nueffω, nueffωS, boundaries.nut, time, config)
-
-    #Update k fluxes
-    @. Dkf.values = coeffs.Cμ*omega.values*γ.values
-    @. nueffkS.values = nu.values+(coeffs.σk*(k.values/omega.values)*γ.values)
-    interpolate!(nueffk, nueffkS, config)
-    correct_boundaries!(nueffk, nueffkS, boundaries.nut, time, config)
-    @. Pk.values = nut.values*Pk.values*γ.values*fv.values
-    correct_production!(Pk, boundaries.k, model, S.gradU, config)
 
     # Solve omega equation
     prev .= omega.values
     discretise!(ω_eqn, prev, config)
     apply_boundary_conditions!(ω_eqn, boundaries.omega, nothing, time, config)
     implicit_relaxation!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
-    constrain_equation!(ω_eqn, boundaries.omega, model, config) # active with WFs only
+    constrain_equation!(ω_eqn, boundaries.omega, model, config) 
     update_preconditioner!(ω_eqn.preconditioner, mesh, config)
     ω_res = solve_system!(ω_eqn, solvers.omega, omega, nothing, config)
-    # constrain_boundary!(omega, boundaries.omega, model, config) # active with WFs only
     bound!(omega, config)
+
+    # Calculate fv and setup k equation (fused)
+    xcal_foreach(k, config) do i
+        omega_i = omega[i]
+        gamma_val = γ[i]
+        safe_omega = max(omega_i, 1e-15)
+        safe_k = max(k[i], 1e-15)
+        safe_nu = max(nu[i], 1e-15)
+
+        # fv calculation
+        fv_val = 1.0 - exp(-sqrt(safe_k / (safe_nu * safe_omega)) / coeffs.Cv)
+
+        # Production with limiter
+        Pk_unlimited = fv_val * (safe_k / safe_omega) * Pk[i] * gamma_val
+        Pk_limited = min(Pk_unlimited, 20.0 * coeffs.Cμ * safe_k * omega_i)
+        Pk[i] = Pk_limited - (2.0/3.0) * divU[i] * k[i]
+
+        # Destruction
+        Dkf[i] = coeffs.Cμ * gamma_val * omega_i
+
+        # Diffusion
+        nueffkS[i] = nu[i] + coeffs.σk * (safe_k / safe_omega)
+    end
+
+    interpolate!(nueffk, nueffkS, config)
+    correct_boundaries!(nueffk, nueffkS, boundaries.nut, time, config)
+    correct_production!(Pk, boundaries.k, model, S.gradU, config)
 
     # Solve k equation
     prev .= k.values
@@ -399,31 +434,47 @@ function turbulence!(
     k_res = solve_system!(k_eqn, solvers.k, k, nothing, config)
     bound!(k, config)
 
-    # grad!(∇ω, omegaf, omega, boundaries.omega, time, config)
-    # grad!(∇k, kf, k, boundaries.k, time, config)
-
-    # @. nut_turb.values = k.values/omega.values
-    ReLambda = @. normU.values*y.values/nu.values
-    @. Reυ.values = (2*nu.values^2*kl.values/(y.values^2))^0.25*y.values/nu.values;
-    @. PkL.values = sqrt(Pk.values)*η*kl.values*Reυ.values^(-1.30)*ReLambda^(0.5) # update
-    @. nuL.values = PkL.values/max(S2.values,(normU.values/y.values)^2)
-
-    fSS = @. exp(-(coeffs.CSS*nu.values*sqrt(S2.values)/k.values)^2) # should be Ω but S works
-    @. nuts.values = fSS*(k.values/omega.values)
-    @. nut.values = nuts.values + nuL.values
+    # Calculate Final nutL and nut
+    xcal_foreach(nut, config) do i
+        kl_i = kl[i]
+        nu_i = nu[i]
+        y_i = y[i]
+        S2_val = S2[i]
+        normU_i = normU[i]
+        safe_omega = max(omega[i], 1e-15)
+        safe_k = max(k[i], 1e-15)
+        
+        # Calculate nutL
+        ReLambda_val = ReLambda[i]
+        ReUpsilon = sqrt(sqrt(2.0 * nu_i^2 * kl_i / (y_i^2))) * y_i / nu_i
+        PkL_val = sqrt(S2_val) * η * kl_i * ReUpsilon^(-1.30) * ReLambda_val^0.5
+        nuL_val = PkL_val / max(S2_val, (normU_i/y_i)^2)
+        nuL[i] = nuL_val
+        
+        # Calculate fSS
+        fSS = exp(-(coeffs.CSS * nu_i * Ω[i] / safe_k)^2)
+        
+        # Turbulent eddy viscosity
+        nuts_val = fSS * (safe_k / safe_omega)
+        nuts[i] = nuts_val
+        
+        # Total eddy viscosity
+        nut[i] = nuts_val + nuL_val
+    end
 
     interpolate!(nutf, nut, config)
     correct_boundaries!(nutf, nut, boundaries.nut, time, config)
     correct_eddy_viscosity!(nutf, boundaries.nut, model, config)
 
-    # update residuals and convergence status
+    # Update Residuals and Convergence Status 
     residuals = ((:k, k_res),(:kl, kl_res),(:omega, ω_res))
-    k_converged = k_res < solvers.k.convergence
+    k_converged  = k_res  < solvers.k.convergence
     kl_converged = kl_res < solvers.kl.convergence
-    ω_converged = ω_res < solvers.omega.convergence
+    ω_converged  = ω_res  < solvers.omega.convergence
     converged = k_converged && kl_converged && ω_converged
     state.residuals = residuals
     state.converged = converged
+    
     return nothing
 end
 

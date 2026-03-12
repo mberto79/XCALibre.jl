@@ -191,9 +191,9 @@ residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
  using LinearAlgebra
  using Plots 
 
- # Ex_data = readdlm("T3A_Experimental_Results.csv", ',', Float64, skipstart=1)
- # eRex = Ex_data[:,1]
- # eCf = Ex_data[:,2]
+  Ex_data = readdlm("T3A_Experimental_Results.csv", ',', Float64, skipstart=1)
+  eRex = Ex_data[:,1]
+  eCf = Ex_data[:,2]
 
  # OF_data = readdlm("T3A_Experimental_Results.csv", ',', Float64, skipstart=1)
  # oRex = OF_data[:,7].*velocity[1]./nu[1]
@@ -208,7 +208,7 @@ residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
   Rex = velocity[1].*x./nu
 
   ustar = (tauMag./rho).^(1/2); # Friction velocity
-  yplus = ((2*ustar)/nu)
+  yplus = ustar/nu
   #print(yplus)
 
   x_corr = [0:0.0002:2;]
@@ -220,13 +220,10 @@ residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
  plot!(Rex_corr, Cf_corr, color=:red, ylims=(0, 0.01), xlims=(0,6e5), label="Turbulent",lw=1.5)
  plot!(Rex_corr, Cf_laminar, color=:green, ylims=(0, 0.01), xlims=(0,6e5), label="Laminar",lw=1.5)
  scatter!(eRex, eCf, color=:green, label="Experimental T3A Data") # |> display
- # plot!(oRex, oCf, color=:green, lw=1.5,label="OpenFoam") |> display
+#  plot!(oRex, oCf, color=:green, lw=1.5,label="OpenFoam") |> display
 #  plot!(Rex,tauMag./(0.5.*velocity[1]^2), color=:blue, lw=1.5,label="Code") |> display
   plot!(Rex,tauMag./(0.5.*velocity[1]^2), color=:blue, lw=1.5,label="Code", title = "T3A Validation Case") |> display
-#  plot!(Rex,tauMag./(0.5.*velocity[1]^2), color=:purple, lw=1.5,label="Code wth -5% damping") |> display
 #  plot!(Rex,tauMag./(0.5.*velocity[1]^2), color=:Yellow, lw=1.5,label="Code wth -10% damping", title = "T3B Damping Sensitivity Study") |> display
-
- #savefig(p,"EROFATC_Plate_3.svg")
 
 # plot(; xlims=(0,1000))
 # plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

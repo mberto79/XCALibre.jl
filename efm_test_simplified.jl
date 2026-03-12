@@ -7,7 +7,7 @@ grids_dir = pkgdir(XCALibre, "Test_Meshes/");
 grid = "100x100_Grid.unv";
 mesh_file = joinpath(grids_dir, grid);
 
-mesh = UNV2D_mesh(mesh_file, scale=0.001);
+mesh = UNV2D_mesh(mesh_file, scale=0.1);
 
 # Select backend and setup hardware
 backend = CPU();
@@ -100,7 +100,7 @@ solvers = (
         solver      = Bicgstab(), # Options: Cg(), Bicgstab(), Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
         convergence = 1e-11,
-        relax       = 0.9,
+        relax       = 0.8,
         rtol = 0,
         atol = 1e-6
     )
@@ -125,14 +125,14 @@ initialise!(model.momentum.U, [0,0,0]);
 h_init = 1e-11;#h_crit*100;
 initialise!(model.momentum.h, h_init)
 
-#for i ∈ eachindex(model.momentum.h.values)
-#    if abs(model.momentum.h.mesh.cells[i].centre[2]) < 0.41/2
+for i ∈ eachindex(model.momentum.h.values)
+    if abs(model.momentum.h.mesh.cells[i].centre[2]-0.5) < 0.41/2
         #model.momentum.U.x.values[i] = inlet_velocity[1]/10;
         #model.momentum.U.y.values[i] = inlet_velocity[2]/10;
         #model.momentum.U.z.values[i] = inlet_velocity[3]/10;
-#        model.momentum.h.values[i] = inlet_height/10;
-#    end
-#end
+        model.momentum.h.values[i] = inlet_height/10;
+    end
+end
 
 
 

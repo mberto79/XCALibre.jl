@@ -277,3 +277,7 @@ end
 function grad!(grad::Grad{Gauss,F,R,I,M}, phif, phi, time, config) where {F,R<:VectorField,I,M}
     green_gauss!(grad, phif, config)
 end
+
+function grad!(grad::Grad{Gauss,F,R,I,M}, phif, config) where {F,R<:VectorField,I,M}
+    green_gauss!(grad, phif, config)
+end

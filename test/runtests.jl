@@ -3,6 +3,7 @@ using LinearAlgebra
 using SparseArrays
 using SparseMatricesCSR
 using StaticArrays 
+using Statistics
 using Test
 
 workgroupsize(mesh) = length(mesh.cells) ÷ Threads.nthreads()

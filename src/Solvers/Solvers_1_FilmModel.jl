@@ -59,12 +59,11 @@ function setup_FilmModel_Solver(solver_variant, model, config;
         -  Source(h∇PL)
         + Source(Ph)
         + Source(τθw)
-        - Source(mu_hU)
+        
     ) → VectorEquation(U, boundaries.U)
 
     h_eqn = (
         Time{schemes.h.time}(rho, h)
-        + Divergence{schemes.h.divergence}(rho_mdotf, h)
         ==
         - Source(divPhi)
         + Source(Sm)
@@ -117,8 +116,7 @@ function FilmModel(
     h∇PL = get_source(U_eqn, 1)
     Ph = get_source(U_eqn,2)
     τθw = get_source(U_eqn,3)
-    mu_hU = get_source(U_eqn,4)
-    
+
     #rho_mdotf = get_flux(h_eqn,2)
     divPhi = get_source(h_eqn,1)
     Sm = get_source(h_eqn, 2)

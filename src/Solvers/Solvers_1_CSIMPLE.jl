@@ -228,7 +228,7 @@ function CSIMPLE(
             )
 
         # Solve energy equation and update thermo properties
-        energy!(energyModel, model, prev, mdotf, gradU, ∇p, rho, mueff, time, config)
+        energy!(energyModel, model, prev, mdotf, rho, mueff, time, config)
         thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
         # @. rho.values = Psi.values*p.values
         # @. rhof.values = Psif.values*pf.values
@@ -312,7 +312,7 @@ function CSIMPLE(
             correct_mass_flux!(model, mdotf, p, pconv, rhorDf, config)
         elseif typeof(model.fluid) <: WeaklyCompressible
             # @. mdotf.values -= pgrad.values*rhorDf.values
-            correct_mass_flux!(model, mdotf, p_eqn, pf, pconv, config) # new call/args
+            correct_mass_flux!(mdotf, p_eqn, config) # new call/args
         end
 
 

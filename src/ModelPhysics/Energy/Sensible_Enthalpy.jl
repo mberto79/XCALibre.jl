@@ -136,7 +136,7 @@ Run energy transport equations.
 
 """
 function energy!(
-    energy::SensibleEnthalpyModel, model::Physics{T1,F,SO,M,Tu,E,D,BI}, prev, mdotf, gradU, gradP, rho, mueff, time, config
+    energy::SensibleEnthalpyModel, model::Physics{T1,F,SO,M,Tu,E,D,BI}, prev, mdotf, rho, mueff, time, config
     ) where {T1,F,SO,M,Tu,E,D,BI}
 
     mesh = model.domain

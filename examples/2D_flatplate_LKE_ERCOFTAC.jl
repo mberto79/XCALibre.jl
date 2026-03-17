@@ -3,6 +3,7 @@ using XCALibre
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "EROFATC_Plate_Example7_2.unv"
+grid = "EROFATC_Plate_Example7_2.unv"
 mesh_file = joinpath(grids_dir, grid)
 
  mesh = UNV2D_mesh(mesh_file, scale=0.001)
@@ -16,6 +17,7 @@ mesh_dev = adapt(backend, mesh)
 
 # Turbulence Model
 velocity = [5.4,0,0]
+nu = 1.497e-5
 nu = 1.497e-5
 # Re = 10*1/nu
 νR = 13.9
@@ -159,6 +161,7 @@ solvers = (
 
 runtime = Runtime(
     iterations=3000, write_interval=100, time_step=1)
+    iterations=3000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
@@ -185,6 +188,7 @@ residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
  end
 
 using DelimitedFiles
+using DelimitedFiles
 using LinearAlgebra
 using Plots 
 # OF_data = readdlm("flatplate_OF_wall_kOmega_lowRe.csv", ',', Float64, skipstart=1)
@@ -199,6 +203,7 @@ Ex_data = readdlm("T3A_Experimental_Results.csv", ',', Float64, skipstart=1)
 
  # model_cpu = adapt(CPU(), model)
 
+tauw, pos = wall_shear_stress(:Wall, model, config)
 tauw, pos = wall_shear_stress(:Wall, model, config)
 tauMag = [norm(tauw[i]) for i ∈ eachindex(tauw)]
 # tauMag = [tauw.x[i] for i ∈ eachindex(tauw)]

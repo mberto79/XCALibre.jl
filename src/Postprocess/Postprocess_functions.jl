@@ -168,7 +168,12 @@ wall_shear_stress(patch::Symbol, model, config)  = begin
     tauw = FaceVectorField(x,y,z, mesh)
     
     # Iterate through face IDs of the boundary and calcualte surface friction
-    surface_normal_gradient!(tauw,U,Uf,IDs_range)
+    
+    for i ∈ IDs_range
+        Uw = Uf[i]
+        surface_normal_gradient!(tauw, U, Uw, IDs_range)
+    end
+    
     # surface_normal_gradient2!(tauw,U,IDs_range,config)
 
     pos = fill(SVector{3,Float64}(0,0,0), length(IDs_range))

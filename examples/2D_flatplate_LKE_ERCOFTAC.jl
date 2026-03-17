@@ -2,7 +2,7 @@ using XCALibre
 # using CUDA
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "flatplate_2D_lowRe.unv"
+grid = "EROFATC_Plate_Example7_2.unv"
 mesh_file = joinpath(grids_dir, grid)
 
  mesh = UNV2D_mesh(mesh_file, scale=0.001)
@@ -16,22 +16,24 @@ mesh_dev = adapt(backend, mesh)
 
 # Turbulence Model
 velocity = [5.4,0,0]
-nu = 1.48e-5
+nu = 1.497e-5
 # Re = 10*1/nu
 νR = 13.9
 Tu = 0.03
-# k_inlet = 0.0575  
-k_inlet = 3/2*(Tu*velocity[1])^2
-kL_inlet = 1/2*(Tu*velocity[1])^2
-ω_inlet = k_inlet/(νR*nu)
-rho = 1
+k_inlet = 0.0575 
+# k_inlet = 3/2*(Tu*velocity[1])^2
+kL_inlet = 0.0115
+# kL_inlet = 1/2*(Tu*velocity[1])^2
+ω_inlet = 275
+# ω_inlet = k_inlet/(νR*nu)
+
 
 # model = RANS{KOmegaLKE}(mesh=mesh, viscosity=nu, Tu=Tu)
 
 model = Physics(
     time = Steady(),
-    fluid = Fluid{Incompressible}(nu = nu, rho = rho),
-    turbulence = RANS{KOmegaLKE}(Tu = Tu, walls=(:Wall,)),
+    fluid = Fluid{Incompressible}(nu = nu),
+    turbulence = RANS{KOmegaLKE}(Tu = 0.01, walls=(:Wall,)),
     # turbulence = RANS{KOmega}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
@@ -100,8 +102,8 @@ BCs = assign(
 )
 
 schemes = (
-    # U = Schemes(divergence=LUST, limiter=MFaceBased(mesh_dev)),
-    U = Schemes(divergence=LUST),
+    U = Schemes(divergence=Linear, limiter=MFaceBased(mesh_dev)),
+    # U = Schemes(divergence=LUST),
     p = Schemes(divergence=LUST),
     k = Schemes(divergence=LUST),
     y = Schemes(gradient=Gauss),
@@ -128,7 +130,7 @@ solvers = (
     y = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        convergence = 1e-7,
+        convergence = 1e-6,
         rtol = 1e-3,
         relax       = 0.9,
     ),
@@ -142,7 +144,7 @@ solvers = (
     k = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        convergence = 3e-6,
+        convergence = 4e-6,
         relax       = 0.3,
         rtol = 1e-2,
     ),
@@ -156,7 +158,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=2500, write_interval=100, time_step=1)
+    iterations=3000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
@@ -182,16 +184,22 @@ residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
      display(p)
  end
 
-# using DelimitedFiles
+using DelimitedFiles
 using LinearAlgebra
 using Plots 
 # OF_data = readdlm("flatplate_OF_wall_kOmega_lowRe.csv", ',', Float64, skipstart=1)
 # oRex = OF_data[:,7].*velocity[1]./nu[1]
 # oCf = sqrt.(OF_data[:,12].^2 + OF_data[:,13].^2)/(0.5*velocity[1]^2)
 
+Ex_data = readdlm("T3A_Experimental_Results.csv", ',', Float64, skipstart=1)
+#  Ex_data = readdlm("T3A-_Experimental_Results.csv", ',', Float64, skipstart=1)
+#  Ex_data = readdlm("T3B_Experimental_Data.csv", ',', Float64, skipstart=1)
+ eRex = Ex_data[:,1]
+ eCf = Ex_data[:,2]
+
  # model_cpu = adapt(CPU(), model)
 
-tauw, pos = wall_shear_stress(:wall, model, config)
+tauw, pos = wall_shear_stress(:Wall, model, config)
 tauMag = [norm(tauw[i]) for i ∈ eachindex(tauw)]
 # tauMag = [tauw.x[i] for i ∈ eachindex(tauw)]
 x = [pos[i][1] for i ∈ eachindex(pos)]
@@ -206,7 +214,10 @@ plot(; xaxis="Rex", yaxis="Cf")
 plot!(Rex_corr, Cf_corr, color=:red, ylims=(0, 0.01), xlims=(0,6e5), label="Turbulent",lw=1.5)
 plot!(Rex_corr, Cf_laminar, color=:green, ylims=(0, 0.01), xlims=(0,6e5), label="Laminar",lw=1.5)
 # plot!(oRex, oCf, color=:green, lw=1.5, label="OpenFOAM") # |> display
-plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code") |> display
+scatter!(eRex, eCf, color=:green, lw=1.5, label="T3A Experimantal Data")
+plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:pink, lw=1.5,label="Case 4", title="T3A Flatplate") |> display
+# plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code", title="T3A- Flatplate") |> display
+# plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code", title="T3B Flatplate") |> display
 
 # plot(; xlims=(0,1000))
 # plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

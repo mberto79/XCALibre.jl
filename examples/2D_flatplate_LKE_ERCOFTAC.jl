@@ -3,7 +3,6 @@ using XCALibre
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "EROFATC_Plate_Example7_2.unv"
-grid = "EROFATC_Plate_Example7_2.unv"
 mesh_file = joinpath(grids_dir, grid)
 
  mesh = UNV2D_mesh(mesh_file, scale=0.001)
@@ -17,7 +16,6 @@ mesh_dev = adapt(backend, mesh)
 
 # Turbulence Model
 velocity = [5.4,0,0]
-nu = 1.497e-5
 nu = 1.497e-5
 # Re = 10*1/nu
 νR = 13.9

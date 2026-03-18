@@ -89,6 +89,7 @@ function initialise(
     keff_by_cp = FaceScalarField(mesh)
     divK = ScalarField(mesh)
     dKdt = ScalarField(mesh)
+    pressureWork = ScalarField(mesh)
     Phi = ScalarField(mesh)
 
     Ttoh!(model, T, h)
@@ -98,10 +99,9 @@ function initialise(
         + Divergence{schemes.h.divergence}(mdotf, h) 
         - Laplacian{schemes.h.laplacian}(keff_by_cp, h) 
         == 
-        - Source(divK)
-        - Source(dKdt)
-        # + Source(dpdt)
-        # + Source(Phi)
+        Source(dpdt) - Source(divK) - Source(dKdt)
+        # Source(Phi) - Source(pressureWork)
+
     ) → eqn
     
     # Set up preconditioners
@@ -136,13 +136,13 @@ Run energy transport equations.
 
 """
 function energy!(
-    energy::SensibleEnthalpyModel, model::Physics{T1,F,SO,M,Tu,E,D,BI}, prev, mdotf, rho, mueff, time, config
+    energy::SensibleEnthalpyModel, model::Physics{T1,F,SO,M,Tu,E,D,BI}, prevP, prevRhoK, mdotf, gradP, gradU, rho, mueff, time, config
     ) where {T1,F,SO,M,Tu,E,D,BI}
 
     mesh = model.domain
 
     (; rho, nu) = model.fluid
-    (;U) = model.momentum
+    (;U, p) = model.momentum
     (;h, hf, T, K) = model.energy
     (;energy_eqn, state) = energy
     (; solvers, runtime, hardware, boundaries) = config
@@ -151,10 +151,14 @@ function energy!(
 
     # rho = get_flux(energy_eqn, 1)
     keff_by_cp = get_flux(energy_eqn, 3)
-    divK = get_source(energy_eqn, 1)
-    dKdt = get_source(energy_eqn, 2)
-    # dpdt = get_source(energy_eqn, 3)
-    # Phi = get_source(energy_eqn, 4)
+
+    dpdt = get_source(energy_eqn, 1)
+    divK = get_source(energy_eqn, 2) # this worked
+    dKdt = get_source(energy_eqn, 3)
+
+    # Phi = get_source(energy_eqn, 1)
+    # pressureWork = get_source(energy_eqn, 2)
+
 
     Uf = FaceVectorField(mesh)
     Kf = FaceScalarField(mesh)
@@ -166,13 +170,14 @@ function energy!(
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
     n_cells = length(mesh.cells)
+    # prevK = KernelAbstractions.zeros(backend, TF, n_cells) 
     prev = KernelAbstractions.zeros(backend, TF, n_cells) 
 
     volumes = getproperty.(mesh.cells, :volume)
 
     @. keff_by_cp.values = mueff.values/Pr.values
 
-    @. prev = K.values
+    # @. prevK = K.values
     interpolate!(Uf, U, config)
     correct_boundaries!(Uf, U, boundaries.U, time, config)
 
@@ -184,17 +189,27 @@ function energy!(
     @. Kf.values *= mdotf.values
     div!(divK, Kf, config)
 
-    if config.schemes.h.time <: SteadyState
-        @. dKdt.values = 0.0
-    else
-        @. dKdt.values = rho.values*(K.values - prev)/dt
-    end
+    # if config.schemes.h.time <: SteadyState
+    #     @. dKdt.values = 0.0
+    # else
+    #     @. dKdt.values = rho.values*(K.values - prev)/dt
+    # end
 
-    # update the material derivative Dp/Dt 
-    # @. dpdt.values = begin
-    #     U.x.values*gradP.result.x.values 
-    #     + U.y.values*gradP.result.y.values
-    #     + U.z.values*gradP.result.z.values
+    @. dKdt.values = (rho.values*K.values - prevRhoK)/dt
+    @. dpdt.values = (p.values - prevP)/dt
+
+    # @. dKdt.values = 0.0
+    # @. dpdt.values = 0.0
+
+    # @. pressureWork.values =  begin
+    #             U.x.values * gradP.result.x.values +
+    #             U.y.values * gradP.result.y.values +
+    #             U.z.values * gradP.result.z.values
+    # end
+
+    # xcal_foreach(pressureWork, config) do i 
+    #     divU = tr(gradU[i])
+    #     pressureWork[i] = p[i]*divU
     # end
 
     # viscous_dissipation!(Phi, nu, rho, gradU, config)
@@ -206,6 +221,7 @@ function energy!(
     implicit_relaxation_diagdom!(energy_eqn, h.values, solvers.h.relax, nothing, config)
     update_preconditioner!(energy_eqn.preconditioner, mesh, config)
     h_res = solve_system!(energy_eqn, solvers.h, h, nothing, config)
+    # explicit_relaxation!(h, prev, solvers.h.relax, config)
 
     if !isnothing(solvers.h.limit)
         Tmin = solvers.h.limit[1]; Tmax = solvers.h.limit[2]
@@ -215,6 +231,9 @@ function energy!(
     htoT!(model, h, T)
     interpolate!(hf, h, config)
     correct_boundaries!(hf, h, boundaries.h, time, config)
+
+    @. prevRhoK = rho.values*0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)
+    @. prevP = p.values 
 
     residuals = (:h, h_res)
     converged = h_res <= solvers.h.convergence
@@ -389,10 +408,7 @@ function correct_face_interpolation!(phif::FaceScalarField, phi, Uf::FaceScalarF
     end
 end
 
-
-export interpolate_upwind!
-
-## UPWIND SCALAR INTERPOLATION
+# UPWIND SCALAR INTERPOLATION
 function interpolate_upwind!(phif::FaceScalarField, phi::ScalarField, mdotf::FaceScalarField, config)
     # Extract values arrays from scalar fields 
     vals = phi.values

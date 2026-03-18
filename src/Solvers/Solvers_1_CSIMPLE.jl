@@ -180,6 +180,8 @@ function CSIMPLE(
     # prev = zeros(TF, n_cells)
     # prev = _convert_array!(prev, backend) 
     prev = KernelAbstractions.zeros(backend, TF, n_cells) 
+    prevP = KernelAbstractions.zeros(backend, TF, n_cells) 
+    prevRhoK = KernelAbstractions.zeros(backend, TF, n_cells)
 
     # Pre-allocate vectors to hold residuals 
     R_ux = ones(TF, iterations)
@@ -200,6 +202,8 @@ function CSIMPLE(
 
     update_nueff!(nueff, nu, model.turbulence, config)
     @. mueff.values = nueff.values * rhof.values
+
+
 
     @info "Starting CSIMPLE loops..."
 
@@ -228,7 +232,7 @@ function CSIMPLE(
             )
 
         # Solve energy equation and update thermo properties
-        energy!(energyModel, model, prev, mdotf, rho, mueff, time, config)
+        energy!(energyModel, model, prevP, prevRhoK, mdotf, ∇p, gradU, rho, mueff, time, config)
         thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
         # @. rho.values = Psi.values*p.values
         # @. rhof.values = Psif.values*pf.values
@@ -264,7 +268,8 @@ function CSIMPLE(
 
         # Pressure calculations
         rp = 0.0
-        @. prev = p.values
+        @. prevRhoK = rho.values*0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)
+        @. prevP = p.values
         @. prevpf.values = pf.values
         if typeof(model.fluid) <: Compressible
             # Ensure diagonal dominance for hyperbolic equations
@@ -278,7 +283,7 @@ function CSIMPLE(
             clamp!(p.values, pmin, pmax)
         end
 
-        explicit_relaxation!(p, prev, solvers.p.relax, config)
+        explicit_relaxation!(p, prevP, solvers.p.relax, config)
         grad!(∇p, pf, p, boundaries.p, time, config) 
         limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
@@ -292,7 +297,7 @@ function CSIMPLE(
             nonorthogonal_face_correction(p_eqn, ∇p, rhorDf, config)
             update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
-            explicit_relaxation!(p, prev, solvers.p.relax, config)
+            explicit_relaxation!(p, prevP, solvers.p.relax, config)
             
             grad!(∇p, pf, p, boundaries.p, time, config) 
             limit_gradient!(schemes.p.limiter, ∇p, p, config)

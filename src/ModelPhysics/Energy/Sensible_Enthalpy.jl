@@ -89,8 +89,8 @@ function initialise(
     keff_by_cp = FaceScalarField(mesh)
     divK = ScalarField(mesh)
     dKdt = ScalarField(mesh)
-    pressureWork = ScalarField(mesh)
-    Phi = ScalarField(mesh)
+    # pressureWork = ScalarField(mesh)
+    # Phi = ScalarField(mesh)
 
     Ttoh!(model, T, h)
 
@@ -101,7 +101,6 @@ function initialise(
         == 
         Source(dpdt) - Source(divK) - Source(dKdt)
         # Source(Phi) - Source(pressureWork)
-
     ) → eqn
     
     # Set up preconditioners
@@ -159,10 +158,8 @@ function energy!(
     # Phi = get_source(energy_eqn, 1)
     # pressureWork = get_source(energy_eqn, 2)
 
-
     Uf = FaceVectorField(mesh)
     Kf = FaceScalarField(mesh)
-    # Kbounded = ScalarField(mesh)
     Pr = model.fluid.Pr
 
     dt = runtime.dt[1]
@@ -170,8 +167,6 @@ function energy!(
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
     n_cells = length(mesh.cells)
-    # prevK = KernelAbstractions.zeros(backend, TF, n_cells) 
-    prev = KernelAbstractions.zeros(backend, TF, n_cells) 
 
     volumes = getproperty.(mesh.cells, :volume)
 
@@ -182,24 +177,15 @@ function energy!(
     correct_boundaries!(Uf, U, boundaries.U, time, config)
 
     @. K.values = 0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)
-    @. Kf.values = 0.5*(Uf.x.values^2 + Uf.y.values^2 + Uf.z.values^2) # values are correct at at boundary faces since they are taken directlyfrom the velocity vector which was corrected after the face interpolation above.
+    @. Kf.values = 0.5*(Uf.x.values^2 + Uf.y.values^2 + Uf.z.values^2) # values are correct at at boundary faces since they are taken directly from the velocity vector which was corrected after the face interpolation above.
 
     interpolate_upwind!(Kf, K, mdotf, config) # only do internal faces
 
     @. Kf.values *= mdotf.values
     div!(divK, Kf, config)
 
-    # if config.schemes.h.time <: SteadyState
-    #     @. dKdt.values = 0.0
-    # else
-    #     @. dKdt.values = rho.values*(K.values - prev)/dt
-    # end
-
     @. dKdt.values = (rho.values*K.values - prevRhoK)/dt
     @. dpdt.values = (p.values - prevP)/dt
-
-    # @. dKdt.values = 0.0
-    # @. dpdt.values = 0.0
 
     # @. pressureWork.values =  begin
     #             U.x.values * gradP.result.x.values +
@@ -215,13 +201,11 @@ function energy!(
     # viscous_dissipation!(Phi, nu, rho, gradU, config)
 
     # Set up and solve energy equation
-    @. prev = h.values
     discretise!(energy_eqn, h, config)
     apply_boundary_conditions!(energy_eqn, boundaries.h, nothing, time, config)
     implicit_relaxation_diagdom!(energy_eqn, h.values, solvers.h.relax, nothing, config)
     update_preconditioner!(energy_eqn.preconditioner, mesh, config)
     h_res = solve_system!(energy_eqn, solvers.h, h, nothing, config)
-    # explicit_relaxation!(h, prev, solvers.h.relax, config)
 
     if !isnothing(solvers.h.limit)
         Tmin = solvers.h.limit[1]; Tmax = solvers.h.limit[2]
@@ -455,7 +439,7 @@ end
 
         # Upwind logic: 
         # If mass flux is positive, flow is leaving owner1 towards owner2
-        if flux[i] > 0.0
+        if flux[i] >= 0.0
             fvals[i] = phi1
         else
             fvals[i] = phi2

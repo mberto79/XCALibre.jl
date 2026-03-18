@@ -31,10 +31,9 @@ end
 end
 
 @define_boundary Dirichlet Divergence{Upwind} begin
-    phi = term.sign * term.flux[fID]   # signed flux, consistent with BoundedUpwind
-    ap = max(phi, 0.0)                 # outflow → diagonal (positive)
-    su = max(-phi, 0.0) * bc.value     # inflow → source (positive)
-    ap, su
+    flux = -term.flux[fID]
+    ap = term.sign*(flux)
+    0.0, ap*bc.value
 end
 
 @define_boundary Dirichlet Divergence{LUST} begin
@@ -58,10 +57,9 @@ end
 end
 
 @define_boundary Dirichlet Divergence{Upwind} VectorField begin
-    phi = term.sign * term.flux[fID]
-    ap = max(phi, 0.0)
-    su = max(-phi, 0.0) * bc.value[component.value]
-    ap, su
+    flux = -term.flux[fID]
+    ap = term.sign*(flux)
+    0.0, ap*bc.value[component.value]
 end
 
 @define_boundary Dirichlet Divergence{LUST} VectorField begin

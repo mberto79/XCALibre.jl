@@ -88,10 +88,6 @@ end
     # phi = term.phi 
     # values = get_values(phi, component)
     # 0.0, -ap*values[cellID] # try this
-
-    # flux = term.flux[fID]
-    # ap = max(term.sign*(flux), 0.0)
-    # ap, 0.0 # original
 end
 
 @define_boundary Wall Divergence{Linear} ScalarField begin

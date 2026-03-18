@@ -84,8 +84,10 @@ function setup_compressible_solvers(
 
         pconv = FaceScalarField(mesh)
         p_eqn = (
-             
-            - Laplacian{schemes.p.laplacian}(rhorDf, p) + Divergence{schemes.p.divergence}(pconv, p) == - Source(divHv)
+            - Laplacian{schemes.p.laplacian}(rhorDf, p) 
+            + Divergence{schemes.p.divergence}(pconv, p) 
+            == 
+            - Source(divHv)
         ) → ScalarEquation(p, boundaries.p)
 
     end
@@ -134,7 +136,6 @@ function CSIMPLE(
     dt_cpu = zeros(_get_float(mesh), 1)
     copyto!(dt_cpu, config.runtime.dt)
     
-    # rho = get_flux(U_eqn, 1)
     postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
     mdotf = get_flux(U_eqn, 2)
     mueff = get_flux(U_eqn, 3)
@@ -142,7 +143,7 @@ function CSIMPLE(
     rhorDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
 
-    pconv = nothing # assign to function global scope
+    pconv = nothing # assign to variable to function scope
     if typeof(model.fluid) <: Compressible
         pconv = get_flux(p_eqn, 2)
     end
@@ -154,14 +155,10 @@ function CSIMPLE(
     # Define aux fields 
     gradU = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
-    # Uf = FaceVectorField(mesh)
     S = StrainRate(gradU, gradUT, U, Uf)
 
     n_cells = length(mesh.cells)
-    # pf = FaceScalarField(mesh)
     nueff = FaceScalarField(mesh)
-    prevpf = FaceScalarField(mesh)
-    gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
     Psi = ScalarField(mesh)
@@ -177,8 +174,6 @@ function CSIMPLE(
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
-    # prev = zeros(TF, n_cells)
-    # prev = _convert_array!(prev, backend) 
     prev = KernelAbstractions.zeros(backend, TF, n_cells) 
     prevP = KernelAbstractions.zeros(backend, TF, n_cells) 
     prevRhoK = KernelAbstractions.zeros(backend, TF, n_cells)
@@ -199,10 +194,8 @@ function CSIMPLE(
     @. rho.values = Psi.values * p.values
     @. rhof.values = Psif.values * pf.values
     flux!(mdotf, Uf, rhof, config)
-
     update_nueff!(nueff, nu, model.turbulence, config)
     @. mueff.values = nueff.values * rhof.values
-
 
 
     @info "Starting CSIMPLE loops..."
@@ -214,9 +207,7 @@ function CSIMPLE(
     for iteration ∈ 1:iterations
         time = iteration
 
-        ## CHECK GRADU AND EXPLICIT STRESSES
-        # grad!(gradU, Uf, U, boundaries.U, time, config) # calculated in `turbulence!``
-
+        # gradU is updated in turbulence! function
         explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, config)
         div!(divmugradUTx, mugradUTx, config)
         div!(divmugradUTy, mugradUTy, config)
@@ -232,10 +223,11 @@ function CSIMPLE(
             )
 
         # Solve energy equation and update thermo properties
-        energy!(energyModel, model, prevP, prevRhoK, mdotf, ∇p, gradU, rho, mueff, time, config)
-        thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
-        # @. rho.values = Psi.values*p.values
-        # @. rhof.values = Psif.values*pf.values
+        energy!(
+            energyModel, model, prevP, prevRhoK, mdotf, ∇p, gradU, rho, mueff, time, config)
+        thermo_Psi!(model, Psi)
+        thermo_Psi!(model, Psif, config);
+
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rhorDf, rD, config)
@@ -266,14 +258,16 @@ function CSIMPLE(
             div!(divHv, mdotf, config)
         end
 
-        # Pressure calculations
-        rp = 0.0
+        # Store "previous" values needed to build energy source terms
         @. prevRhoK = rho.values*0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)
         @. prevP = p.values
-        @. prevpf.values = pf.values
+        
+        # Pressure calculations
+        rp = 0.0
         if typeof(model.fluid) <: Compressible
-            # Ensure diagonal dominance for hyperbolic equations
-            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing, irelax=solvers.p.relax)
+            rp = solve_equation!(
+                p_eqn, p, boundaries.p, solvers.p, config; 
+                ref=nothing, irelax=solvers.p.relax) # perform implicit relaxation
         elseif typeof(model.fluid) <: WeaklyCompressible
             rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing)
         end
@@ -289,8 +283,6 @@ function CSIMPLE(
 
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
-            # grad!(∇p, pf, p, boundaries.p, time, config) 
-        # limit_gradient!(schemes.p.limiter, ∇p, p, config)
             discretise!(p_eqn, p, config)       
             apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
             setReference!(p_eqn, pref, 1, config)
@@ -303,26 +295,18 @@ function CSIMPLE(
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
         end
 
+        # Correct mass flux and cell velocity
+
         if typeof(model.fluid) <: Compressible
-            # @. mdotf.values += pconv.values*(pf.values) # corrected in new correct_mass_flux
-            # correct_mass_flux!(model, mdotf, p_eqn, pf, pconv, config) # new call/args
-
-            # correct_mass_flux_from_matrix!(mdotf, p_eqn, p, config)
-
-            # @. mdotf.values += pconv.values*(pf.values) # corrected in new correct_mass_flux
-            # correct_mass_flux!(model, mdotf, p_eqn, pconv, config) # new call/args
-
             @. mdotf.values += pconv.values*(pf.values) 
-            # Pass the diffusivity field (e.g., rhorDf) instead of the whole p_eqn
             correct_mass_flux!(model, mdotf, p, pconv, rhorDf, config)
         elseif typeof(model.fluid) <: WeaklyCompressible
-            # @. mdotf.values -= pgrad.values*rhorDf.values
-            correct_mass_flux!(mdotf, p_eqn, config) # new call/args
+            correct_mass_flux!(mdotf, p_eqn, config) 
         end
-
 
         correct_velocity!(U, Hv, ∇p, rD, config)
         
+        # Perform turbulence calculations and update eddy viscosity
         turbulence!(turbulenceModel, model, S, prev, time, config) 
         update_nueff!(nueff, nu, model.turbulence, config)
 
@@ -335,8 +319,10 @@ function CSIMPLE(
             @. rhof.values = Psif.values * pf.values
         end
 
+        # update dynamic viscosity
         @. mueff.values = rhof.values*nueff.values
 
+        # stor residuals and check for convergence
         R_ux[iteration] = rx
         R_uy[iteration] = ry
         R_uz[iteration] = rz
@@ -373,10 +359,12 @@ function CSIMPLE(
                 energyModel.state.residuals
                 ]
             )
+            
         runtime_postprocessing!(postprocess,iteration,iterations)
         if iteration%write_interval + signbit(write_interval) == 0      
             save_output(model, outputWriter, iteration, time, config)
-            save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
+            save_postprocessing(
+                postprocess,iteration,time,mesh,outputWriter,config.boundaries)
         end
 
     end # end for loop
@@ -385,126 +373,6 @@ function CSIMPLE(
 end
 
 ### AUXILIARY FUNCTION HERE FOR DEVELOPMENT. NEED RELOCATING
-
-# function correct_mass_flux!(model, mdotf, p_eqn, pf, pconv, config)
-#     # sngrad = FaceScalarField(mesh)
-#     (; faces, cells, boundary_cellsID) = mdotf.mesh
-#     (; hardware) = config
-#     (; backend, workgroup) = hardware
-
-#     p = p_eqn.model.terms[1].phi
-#     A = _A(p_eqn)
-#     nzval = _nzval(A)
-#     colval = _colval(A)
-#     rowptr = _rowptr(A)
-
-#     n_faces = length(faces)
-#     n_bfaces = length(boundary_cellsID)
-#     n_ifaces = n_faces - n_bfaces
-
-#     ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
-#     kernel! = _correct_mass_flux_compressible(_setup(backend, workgroup, ndrange)...)
-#     kernel!(model.fluid, mdotf, p, pconv, pf, nzval, colval, rowptr, faces, cells, n_bfaces)
-#     KernelAbstractions.synchronize(backend)
-
-#     ## REMOVED FOR INITIAL DEVELOPMENT. CUSTOM VERSION OR GENERALISED VERSION NEEDED!!!!
-#     # BCs = config.boundaries[1] # assume periodics always defined by user (extract first)
-#     # for BC ∈ BCs
-#     #     correct_mass_periodic(
-#     #         BC, mdotf, p, nzval, colval, rowptr, cells, faces, backend, workgroup)
-#     #     KernelAbstractions.synchronize(backend)
-#     # end
-# end
-
-# @kernel function _correct_mass_flux_compressible(
-#     fluid, mdotf, p, pconv, pf, nzval, colval, rowptr, faces, cells, n_bfaces)
-#     i = @index(Global)
-#     fID = i + n_bfaces
-
-#     @inbounds begin 
-#         face = faces[fID]
-#         (; area, normal, ownerCells, delta) = face 
-#         cID1 = ownerCells[1]
-#         cID2 = ownerCells[2]
-#         p1 = p[cID1]
-#         p2 = p[cID2]
-#         # need to get aN from sparse system
-#         zID = spindex(rowptr, colval, cID1, cID2)
-#         aN = nzval[zID]
-#         if typeof(fluid) <: WeaklyCompressible
-#             p_diff = aN
-#             # positive because pressure eqn has negative sign
-#             mdotf[fID] += p_diff*(p2 - p1)
-#         else
-#             flux_conv = pconv[fID]
-#             ap = flux_conv
-#             ac = max(-ap, 0.0)
-#             an = -max(-ap, 0.0)
-#             # p_diff = aN - p_conv # workds
-#             p_diff = aN
-#             # positive because pressure eqn has negative sign
-#             # mdotf[fID] += p_diff*(p2 - p1) + flux_conv*pf[fID] # works
-#             # mdotf[fID] += p_diff*(p2 - p1) + ac*p1 + an*p2
-#             mdotf[fID] += p_diff*(p2 - p1)
-#         end
-#     end
-# end
-
-# function correct_mass_flux!(model, mdotf, p_eqn, pconv, config)
-#     (; faces, boundary_cellsID) = mdotf.mesh
-#     (; hardware) = config
-#     (; backend, workgroup) = hardware
-
-#     p = p_eqn.model.terms[1].phi
-#     A = _A(p_eqn)
-#     nzval = _nzval(A)
-#     colval = _colval(A)
-#     rowptr = _rowptr(A)
-
-#     n_faces = length(faces)
-#     n_bfaces = length(boundary_cellsID)
-#     n_ifaces = n_faces - n_bfaces
-
-#     kernel! = _correct_mass_flux_compressible(_setup(backend, workgroup, n_ifaces)...)
-#     kernel!(model.fluid, mdotf, p, pconv, nzval, colval, rowptr, faces, n_bfaces)
-#     KernelAbstractions.synchronize(backend)
-# end
-
-# @kernel function _correct_mass_flux_compressible(
-#     fluid, mdotf, p, pconv, nzval, colval, rowptr, faces, n_bfaces)
-    
-#     i = @index(Global)
-#     fID = i + n_bfaces
-
-#     @inbounds begin 
-#         face = faces[fID]
-#         (; ownerCells) = face 
-#         cID1 = ownerCells[1]
-#         cID2 = ownerCells[2]
-        
-#         p1 = p[cID1]
-#         p2 = p[cID2]
-        
-#         # Retrieve A_12 (Effect of cID2 on cID1 equation)
-#         zID = spindex(rowptr, colval, cID1, cID2)
-#         A_12 = nzval[zID]
-        
-#         if typeof(fluid) <: WeaklyCompressible
-#             mdotf[fID] += A_12 * (p2 - p1)
-#         else
-#             flux_c = pconv[fID]
-            
-#             # Rigorously isolate the pure Rhie-Chow diffusion coefficient (-D_f)
-#             # For XCALibre's Upwind matrix: A_12 = -D_f - max(-flux_c, 0)
-#             minus_Df = A_12 + max(-flux_c, 0.0)
-            
-#             # Add ONLY the implicit Rhie-Chow diffusion correction
-#             # (Convection was already added globally via pconv * pf)
-#             mdotf[fID] += minus_Df * (p2 - p1)
-#         end
-#     end
-# end
-
 
 function correct_mass_flux!(model, mdotf, p, pconv, gamma_f, config)
     (; faces, boundary_cellsID) = mdotf.mesh
@@ -539,14 +407,10 @@ end
         p2 = p[cID2]
         
         if typeof(fluid) <: WeaklyCompressible
-            # For strictly symmetric matrices
             minus_Df = -gamma_f[fID] * (area / delta)
             mdotf[fID] += minus_Df * (p2 - p1)
         else
-            # Generalized Rhie-Chow Diffusion Calculation
-            # 100% mathematically independent of the chosen Divergence scheme!
             minus_Df = -gamma_f[fID] * (area / delta)
-            
             # Add ONLY the implicit Rhie-Chow diffusion correction
             # (Convection was already added globally via pconv * pf)
             mdotf[fID] += minus_Df * (p2 - p1)
@@ -567,12 +431,12 @@ function explicit_shear_stress!(mugradUTx::FaceScalarField, mugradUTy::FaceScala
     ndrange = n_ifaces
     kernel! = _explicit_shear_stress_internal!(_setup(backend, workgroup, ndrange)...)
     kernel!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces, n_bfaces)
-    # KernelAbstractions.synchronize(backend)
+    KernelAbstractions.synchronize(backend)
 
     ndrange=n_bfaces
     kernel! = _explicit_shear_stress_boundaries!(_setup(backend, workgroup, ndrange)...)
     kernel!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces)
-    # KernelAbstractions.synchronize(backend)
+    KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _explicit_shear_stress_internal!(
@@ -615,75 +479,4 @@ end
     mugradUTx[fID] = mueffi * projection[1] * area
     mugradUTy[fID] = mueffi * projection[2] * area
     mugradUTz[fID] = mueffi * projection[3] * area
-end
-
-
-function correct_mass_flux_from_matrix!(mdotf::FaceScalarField, p_eqn, p::ScalarField, config)
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-    
-    mesh = mdotf.mesh
-    (; faces, cells, boundary_cellsID) = mesh
-    
-    # Extract Sparse Matrix arrays
-    A = _A(p_eqn)
-    nzval = _nzval(A)
-    colval = _colval(A)
-    rowptr = _rowptr(A)
-    
-    # We strictly only evaluate internal faces using the matrix off-diagonals.
-    # Boundary fluxes are handled by boundary condition routines.
-    nbfaces = length(boundary_cellsID)
-    internal_faces_count = length(faces) - nbfaces
-    
-    kernel! = _flux_from_matrix_kernel!(_setup(backend, workgroup, internal_faces_count)...)
-    kernel!(mdotf.values, p.values, nzval, colval, rowptr, faces, nbfaces)
-end
-
-@kernel function _flux_from_matrix_kernel!(flux, p_vals, nzval, colval, rowptr, faces, nbfaces)
-    # Thread index
-    t = @index(Global)
-    
-    # Offset to process strictly internal faces
-    fID = t + nbfaces
-    
-    @inbounds begin
-        face = faces[fID]
-        (; ownerCells) = face
-        
-        cID1 = ownerCells[1] # Owner
-        cID2 = ownerCells[2] # Neighbour
-        
-        # Get pressure values
-        p1 = p_vals[cID1]
-        p2 = p_vals[cID2]
-        
-        # Find A_{i,j} (Effect of cID2 on cID1's equation)
-        idx_ij = spindex(rowptr, colval, cID1, cID2)
-        A_ij = nzval[idx_ij]
-        
-        # Find A_{j,i} (Effect of cID1 on cID2's equation)
-        idx_ji = spindex(rowptr, colval, cID2, cID1)
-        A_ji = nzval[idx_ji]
-        
-        # Universal Flux Reconstruction!
-        # Because we are correcting mass flux: mdotf = mdotf* + F_corr
-        # And because p_eqn is written as (-Laplacian + Div == ...), 
-        # the assembled matrix incorporates the negative sign.
-        F_corr = (A_ij * p2) - (A_ji * p1)
-        
-        flux[fID] += F_corr
-    end
-end
-
-# Helper function to find the index of a value in the sparse arrays
-@inline function spindex(rowptr, colval, row, col)
-    start_idx = rowptr[row]
-    end_idx = rowptr[row+1] - 1
-    for i in start_idx:end_idx
-        if colval[i] == col
-            return i
-        end
-    end
-    return 0 # Should not happen for valid face connections
 end

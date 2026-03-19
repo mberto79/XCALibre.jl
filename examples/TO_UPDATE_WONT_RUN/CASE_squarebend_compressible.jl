@@ -67,7 +67,7 @@ boundaries = assign(
             # Wall(:walls)
             Slip(:walls)
         ],
-        h = [
+        he = [
             FixedTemperature(:inlet, T=temp, Enthalpy(cp=cp, Tref=298.15)),
             Zerogradient(:outlet),
             # Extrapolated(:outlet),
@@ -96,7 +96,7 @@ solvers = (
         rtol = 1e-3,
         # atol = 1e-4
     ),
-    h = SolverSetup(
+    he = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -111,11 +111,11 @@ divergence = Upwind # Upwind LUST
 schemes = (
     U = Schemes(divergence=BoundedUpwind),
     p = Schemes(divergence=Upwind),
-    h = Schemes(divergence=BoundedUpwind)
+    he = Schemes(divergence=BoundedUpwind)
 
     # U = Schemes(divergence=divergence),
     # p = Schemes(divergence=divergence),
-    # h = Schemes(divergence=divergence)
+    # he = Schemes(divergence=divergence)
 )
 
 runtime = Runtime(iterations=5000, write_interval=50, time_step=1)

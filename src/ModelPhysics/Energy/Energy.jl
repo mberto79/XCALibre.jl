@@ -19,6 +19,7 @@ include("energy_types.jl")
 
 # Energy models
 include("Sensible_Enthalpy.jl")
+include("Internal_Energy.jl")
 include("Conduction.jl")
 
 # Property Models

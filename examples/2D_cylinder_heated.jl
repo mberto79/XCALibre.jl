@@ -58,7 +58,7 @@ BCs = assign(
             Zerogradient(:bottom),
             Zerogradient(:top)
         ],
-        h = [
+        he = [
             FixedTemperature(:inlet, T=300.0, Enthalpy(cp=cp, Tref=288.15)),
             Zerogradient(:outlet),
             FixedTemperature(:cylinder, T=330.0, Enthalpy(cp=cp, Tref=288.15)),
@@ -83,7 +83,7 @@ solvers = (
         relax       = 0.2,
         rtol = 1e-2
     ),
-    h = SolverSetup(
+    he = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -95,7 +95,7 @@ solvers = (
 schemes = (
     U = Schemes(divergence=LUST, gradient=Gauss),
     p = Schemes(divergence=LUST, gradient=Gauss),
-    h = Schemes(divergence=LUST, gradient=Gauss)
+    he = Schemes(divergence=LUST, gradient=Gauss)
 )
 
 runtime = Runtime(iterations=500, write_interval=100, time_step=1)

@@ -18,13 +18,15 @@ Type that represents energy model, coefficients and respective fields.
 - `coeffs`: A tuple of model coefficients.
 
 """
-struct SensibleEnthalpy{S1,S2,F1,F2,S3,S4,C} <: AbstractEnergyModel
-    he::S1
-    T::S2
-    hef::F1
-    Tf::F2
-    K::S3
-    S_he::S4
+struct SensibleEnthalpy{S,FS,V,C} <: AbstractEnergyModel
+    he::S
+    T::S
+    hef::FS
+    Tf::FS
+    K::S
+    prevP::V 
+    prevRhoK::V
+    S_he::S
     coeffs::C
 end
 Adapt.@adapt_structure SensibleEnthalpy
@@ -45,13 +47,15 @@ The solved variable is `e = cv*(T - Tref)` where `cv = cp/gamma`.
 - `coeffs`: A tuple of model coefficients.
 
 """
-struct InternalEnergy{S1,S2,F1,F2,S3,S4,C} <: AbstractEnergyModel
-    he::S1
-    T::S2
-    hef::F1
-    Tf::F2
-    K::S3
-    S_he::S4
+struct InternalEnergy{S,FS,V,C} <: AbstractEnergyModel
+    he::S
+    T::S
+    hef::FS
+    Tf::FS
+    K::S
+    prevP::V 
+    prevRhoK::V
+    S_he::S
     coeffs::C
 end
 Adapt.@adapt_structure InternalEnergy
@@ -77,27 +81,32 @@ Energy{InternalEnergy}(; Tref) = begin
 end
 
 # Functor constructors
-(energy::Energy{EnergyModel, ARG})(mesh, fluid) where {EnergyModel<:SensibleEnthalpy,ARG} = begin
+(energy::Energy{EnergyModel, ARG})(mesh, fluid) where {EnergyModel,ARG} = begin
+    backend = _get_backend(mesh)
+    float_type = _get_float(mesh)
+    n_cells = length(mesh.cells)
     he = ScalarField(mesh)
     T = ScalarField(mesh)
     hef = FaceScalarField(mesh)
     Tf = FaceScalarField(mesh)
     K = ScalarField(mesh)
+    prevP = KernelAbstractions.zeros(backend, float_type, n_cells) 
+    prevRhoK = KernelAbstractions.zeros(backend, float_type, n_cells)
     S_he = ScalarField(mesh)
     coeffs = energy.args
-    SensibleEnthalpy(he, T, hef, Tf, K, S_he, coeffs)
+    EnergyModel(he, T, hef, Tf, K, prevP, prevRhoK, S_he, coeffs)
 end
 
-(energy::Energy{EnergyModel, ARG})(mesh, fluid) where {EnergyModel<:InternalEnergy,ARG} = begin
-    he = ScalarField(mesh)
-    T = ScalarField(mesh)
-    hef = FaceScalarField(mesh)
-    Tf = FaceScalarField(mesh)
-    K = ScalarField(mesh)
-    S_he = ScalarField(mesh)
-    coeffs = energy.args
-    InternalEnergy(he, T, hef, Tf, K, S_he, coeffs)
-end
+# (energy::Energy{EnergyModel, ARG})(mesh, fluid) where {EnergyModel<:InternalEnergy,ARG} = begin
+#     he = ScalarField(mesh)
+#     T = ScalarField(mesh)
+#     hef = FaceScalarField(mesh)
+#     Tf = FaceScalarField(mesh)
+#     K = ScalarField(mesh)
+#     S_he = ScalarField(mesh)
+#     coeffs = energy.args
+#     InternalEnergy(he, T, hef, Tf, K, S_he, coeffs)
+# end
 
 # Unified initialise
 function initialise(
@@ -153,14 +162,14 @@ Run energy transport equations (sensible enthalpy or internal energy).
 
 """
 function energy!(
-    energy::EnergyEquationModel, model::Physics{T1,F,SO,M,Tu,E,D,BI}, prevP, prevRhoK, mdotf, gradP, gradU, rho, mueff, time, config
+    energy::EnergyEquationModel, model::Physics{T1,F,SO,M,Tu,E,D,BI}, mdotf, gradP, gradU, mueff, time, config
     ) where {T1,F,SO,M,Tu,E,D,BI}
 
     mesh = model.domain
 
     (; rho, nu) = model.fluid
     (; U, p) = model.momentum
-    (; he, hef, T, K, S_he) = model.energy
+    (; he, hef, T, K, prevP, prevRhoK, S_he) = model.energy
     (; energy_eqn, state) = energy
     (; solvers, runtime, hardware, boundaries) = config
     (; backend) = hardware
@@ -221,9 +230,6 @@ function energy!(
     energy_to_temperature!(model, he, T)
     interpolate!(hef, he, config)
     correct_boundaries!(hef, he, boundaries.he, time, config)
-
-    @. prevRhoK = rho.values*0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)
-    @. prevP = p.values
 
     residuals = (:he, he_res)
     converged = he_res <= solvers.he.convergence

@@ -378,7 +378,7 @@ function initialise!(field, value) # dummy function for documentation
     nothing
 end
 
-function initialise!(v::AbstractVectorField, vec::AbstractVector)
+function initialise!(v::AbstractVectorField, vec::Vector{T}) where T
     n = length(vec)
     v_type = eltype(v.x.values)
     if n == 3
@@ -396,7 +396,7 @@ function initialise!(s::AbstractScalarField, value::V) where V
     if s_type <: Number
         s.values .= convert(s_type, value)
     else
-        throw("ScalarFields should be initialised with numbers. The value provided is of type $(typeof(value))")
+        trow("ScalarFields should be initialised with numbers. The value provided is of type $(typeof(value))")
     end
     nothing
 end

@@ -129,21 +129,8 @@ end
     # 0.0, ap*(vc[component.value] - vn[component.value])
 end
 
-@define_boundary Symmetry Divergence{BoundedUpwind} ScalarField begin
-    flux = term.flux[fID]
-    ap = term.sign*(flux) 
-    ap, 0.0 # original
-end
-
-@define_boundary Symmetry Divergence{BoundedUpwind} VectorField begin
-    (; normal) = face 
-    phi = term.phi
-    flux = term.flux[fID]
-    ap = term.sign*(flux) 
-    vc = phi[cellID]
-    vn = (vc⋅normal)*normal
-    # vp = vc - vn
-    ap, ap*vn[component.value]
+@define_boundary Symmetry Divergence{BoundedUpwind} begin
+    0.0, 0.0
 end
 
 @define_boundary Symmetry Si begin

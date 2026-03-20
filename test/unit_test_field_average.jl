@@ -11,11 +11,12 @@ backend = CPU()
 workgroup = 1024
 mesh_dev = adapt(backend, mesh)
 
-U0 = 0.0
-A_half = 0.25
+U0 = 0.3
+A = 0.5
 frequency = 1
-# velocity = [1.5*U0, U0, 0.0]
+velocity = [1.5*U0, U0, 0.0]
 nu = 1e-3
+Re = velocity[1]*0.1/nu
 
 model = Physics(
     time = Transient(),
@@ -24,49 +25,35 @@ model = Physics(
     energy = Energy{Isothermal}(),
     domain = mesh_dev
     )
-    
+
 @inline inflow(vec, t, i) = begin
-    u = U0 + (A_half+ A_half*cospi(2*frequency*t + 1))
-    # v = (A_half+ A_half*cospi(2*frequency*t + 1))
-    v = u
-    return SVector{3}(u, v, 0.0)
+    u = U0*(1 + A*cospi(2*frequency*t))
+    v = U0*(1+ A*sinpi(2*frequency*t))
+    return velocity = SVector{3}(u, v, 0.0)
 end
-
-velocity = inflow(0, 0, 0)
-
-Re = velocity[1]*1/nu
 
 BCs = assign(
     region=mesh_dev,
     (
         U = [
             DirichletFunction(:inlet, inflow),
-            # Extrapolated(:outlet),
-            Zerogradient(:outlet),
+            Extrapolated(:outlet),
             # Wall(:wall, [0.0, 0.0, 0.0]),
-            # Symmetry(:bottom, [0.0, 0.0, 0.0]),
-            # Symmetry(:top, [0.0, 0.0, 0.0])
-            # Zerogradient(:bottom),
-            DirichletFunction(:bottom, inflow),
-
-            Zerogradient(:top)
+            Symmetry(:bottom, [0.0, 0.0, 0.0]),
+            Symmetry(:top, [0.0, 0.0, 0.0])
     ],
         p = [
-            # Extrapolated(:inlet),
-            Zerogradient(:inlet),
+            Extrapolated(:inlet),
             Dirichlet(:outlet, 0.0),
             # Extrapolated(:wall),
-            # Symmetry(:bottom, [0.0, 0.0, 0.0]),
-            # Symmetry(:top, [0.0, 0.0, 0.0])
-            Zerogradient(:bottom),
-            # Zerogradient(:top)
-            Dirichlet(:top,0.0)
+            Symmetry(:bottom),
+            Symmetry(:top)
         ]
     )
 )
 
 schemes = (
-    U = Schemes(time=Euler, divergence=LUST),
+    U = Schemes(time=Euler),
     p = Schemes()
 )
 
@@ -77,16 +64,14 @@ solvers = (
         preconditioner = Jacobi(), # DILU(), TEMPORARY!
         convergence = 1e-7,
         relax       = 1.0,
-        rtol = 0.0,
-        atol = 1e-6
+        rtol = 1e-3
     ),
     p = SolverSetup(
         solver      = Gmres(), #Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), #LDL(), TEMPORARY!
         convergence = 1e-7,
         relax       = 1.0,
-        rtol = 0.0,
-        atol = 1e-6
+        rtol = 1e-3
     )
 )
 
@@ -95,18 +80,7 @@ timestep = 0.01
 runtime = Runtime(iterations=iterations, time_step=timestep, write_interval=-1)
 hardware = Hardware(backend=backend,workgroup = workgroup)
 
-postprocess = [
-    FieldAverage(model.momentum.U; name="Umean"),
-    FieldAverage(
-        model.momentum.U; 
-        name="Umean_stop50", stop=50*timestep #, update_interval = 3*timestep
-        ),
-    FieldAverage(
-        model.momentum.U;
-        name="Umean_start51", start= 50*timestep #, update_interval = timestep/2
-        )
-    ]
-
+postprocess = [FieldAverage(model.momentum.U; name="Umean"),FieldAverage(model.momentum.U; name="Umean_stop50", stop=50*timestep, update_interval = 3*timestep),FieldAverage(model.momentum.U;name="Umean_start51", start= 51*timestep, update_interval = timestep/2)]
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs,postprocess=postprocess)
 
 @test initialise!(model.momentum.U, velocity) === nothing
@@ -115,20 +89,17 @@ residuals = run!(model, config);
 
 
 #check middle 10 cells of inlet agree with analytical mean
-u_mean_exact = mean(map(t -> inflow(0,t,0)[1], 0.0:0.01:1))
-v_mean_exact = mean(map(t -> inflow(0,t,0)[2], 0.0:0.01:1))
+u_mean_exact = U0
+v_mean_exact = U0
+u_mean = sum(postprocess[1].mean.x.values[end-25:end-15])/length(postprocess[1].mean.x.values[end-25:end-15])
+v_mean = sum(postprocess[1].mean.y.values[end-25:end-15])/length(postprocess[1].mean.y.values[end-25:end-15])
 
-u_mean = mean(postprocess[1].mean.x.values)
-v_mean = mean(postprocess[1].mean.y.values)
+@test u_mean ≈ u_mean_exact atol = 0.005
+@test v_mean ≈ v_mean_exact atol = 0.005
 
-@test u_mean ≈ u_mean_exact atol = 0.05
-@test v_mean ≈ v_mean_exact atol = 0.05
-
-# This needs some thought
 #testing start and end and update_interval logic
-# u_mean_first_half = mean(postprocess[2].mean.x.values)
-# u_mean_second_half = mean(postprocess[3].mean.x.values)
+u_mean_first_half = sum(postprocess[2].mean.x.values[end-25:end-15])/length(postprocess[2].mean.x.values[end-25:end-15])
+u_mean_second_half = sum(postprocess[3].mean.x.values[end-25:end-15])/length(postprocess[3].mean.x.values[end-25:end-15])
 
-
-# @test u_mean ≈ u_mean_first_half atol = 0.005
-# @test u_mean ≈ u_mean_second_half atol = 0.005
+@test u_mean ≈ u_mean_first_half atol = 0.005
+@test u_mean ≈ u_mean_second_half atol = 0.005

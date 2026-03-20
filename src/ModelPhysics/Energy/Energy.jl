@@ -18,7 +18,7 @@ using XCALibre.IOFormats
 include("energy_types.jl")
 
 # Energy models
-include("he_energy.jl")
+include("Sensible_Enthalpy.jl")
 include("Conduction.jl")
 
 # Property Models

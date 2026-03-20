@@ -53,7 +53,7 @@ model = Physics(
     Neumann(:top, 0.0)
 )
 
-@assign! model energy he (
+@assign! model energy h (
     FixedTemperature(:inlet, T=300.0, Enthalpy(cp=cp, Tref=288.15)),
     Neumann(:outlet, 0.0),
     Neumann(:cylinder, 0.0),
@@ -81,8 +81,8 @@ solvers = (
         rtol = 1e-2,
         atol = 1e-4
     ),
-    he = SolverSetup(
-        model.energy.he;
+    h = SolverSetup(
+        model.energy.h;
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -95,7 +95,7 @@ solvers = (
 schemes = (
     U = Schemes(divergence=Upwind),#, gradient=Midpoint),
     p = Schemes(divergence=Linear, gradient=Midpoint),
-    he = Schemes(divergence=Upwind)#, gradient=Midpoint)
+    h = Schemes(divergence=Upwind)#, gradient=Midpoint)
 )
 
 runtime = Runtime(iterations=1000, write_interval=100, time_step=1)

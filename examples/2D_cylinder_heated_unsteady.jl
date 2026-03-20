@@ -57,7 +57,7 @@ BCs =assign(
             Zerogradient(:bottom, 0.0),
             Zerogradient(:top, 0.0)
         ],
-        he = [
+        h = [
             FixedTemperature(:inlet, T=temp, Enthalpy(cp=cp, Tref=288.15)),
             Zerogradient(:outlet, 0.0),
             FixedTemperature(:cylinder, T=330.0, Enthalpy(cp=cp, Tref=288.15)),
@@ -83,7 +83,7 @@ solvers = (
         limit = (1000, 1000000),
         rtol = 1e-4
     ),
-    he = SolverSetup(
+    h = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -96,7 +96,7 @@ schemes = (
     rho = Schemes(time=Euler),
     U = Schemes(divergence=Upwind, gradient=Midpoint, time=Euler),
     p = Schemes(gradient=Midpoint, time=Euler),
-    he = Schemes(divergence=Upwind, gradient=Midpoint, time=Euler)
+    h = Schemes(divergence=Upwind, gradient=Midpoint, time=Euler)
 )
 
 runtime = Runtime(iterations=1000, write_interval=100, time_step=0.01)

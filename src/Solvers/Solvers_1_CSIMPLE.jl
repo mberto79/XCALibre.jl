@@ -84,10 +84,8 @@ function setup_compressible_solvers(
 
         pconv = FaceScalarField(mesh)
         p_eqn = (
-            - Laplacian{schemes.p.laplacian}(rhorDf, p) 
-            + Divergence{schemes.p.divergence}(pconv, p) 
-            == 
-            - Source(divHv)
+            Laplacian{schemes.p.laplacian}(rhorDf, p) 
+            - Divergence{schemes.p.divergence}(pconv, p) == Source(divHv)
         ) → ScalarEquation(p, boundaries.p)
 
     end
@@ -136,14 +134,13 @@ function CSIMPLE(
     dt_cpu = zeros(_get_float(mesh), 1)
     copyto!(dt_cpu, config.runtime.dt)
     
+    # rho = get_flux(U_eqn, 1)
     postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
     mdotf = get_flux(U_eqn, 2)
     mueff = get_flux(U_eqn, 3)
     mueffgradUt = get_source(U_eqn, 2)
     rhorDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
-
-    pconv = nothing # assign to variable to function scope
     if typeof(model.fluid) <: Compressible
         pconv = get_flux(p_eqn, 2)
     end
@@ -155,10 +152,14 @@ function CSIMPLE(
     # Define aux fields 
     gradU = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
+    # Uf = FaceVectorField(mesh)
     S = StrainRate(gradU, gradUT, U, Uf)
 
     n_cells = length(mesh.cells)
+    # pf = FaceScalarField(mesh)
     nueff = FaceScalarField(mesh)
+    prevpf = FaceScalarField(mesh)
+    gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
     Psi = ScalarField(mesh)
@@ -174,9 +175,9 @@ function CSIMPLE(
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
+    # prev = zeros(TF, n_cells)
+    # prev = _convert_array!(prev, backend) 
     prev = KernelAbstractions.zeros(backend, TF, n_cells) 
-    prevP = KernelAbstractions.zeros(backend, TF, n_cells) 
-    prevRhoK = KernelAbstractions.zeros(backend, TF, n_cells)
 
     # Pre-allocate vectors to hold residuals 
     R_ux = ones(TF, iterations)
@@ -194,9 +195,9 @@ function CSIMPLE(
     @. rho.values = Psi.values * p.values
     @. rhof.values = Psif.values * pf.values
     flux!(mdotf, Uf, rhof, config)
+
     update_nueff!(nueff, nu, model.turbulence, config)
     @. mueff.values = nueff.values * rhof.values
-
 
     @info "Starting CSIMPLE loops..."
 
@@ -207,7 +208,9 @@ function CSIMPLE(
     for iteration ∈ 1:iterations
         time = iteration
 
-        # gradU is updated in turbulence! function
+        ## CHECK GRADU AND EXPLICIT STRESSES
+        # grad!(gradU, Uf, U, boundaries.U, time, config) # calculated in `turbulence!``
+
         explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, config)
         div!(divmugradUTx, mugradUTx, config)
         div!(divmugradUTy, mugradUTy, config)
@@ -218,15 +221,10 @@ function CSIMPLE(
         @. mueffgradUt.z.values = divmugradUTz.values
 
         # Set up and solve momentum equations
-        rx, ry, rz = solve_equation!(
-            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config
-            )
-
-        # Solve energy equation and update thermo properties
-        energy!(
-            energyModel, model, prevP, prevRhoK, mdotf, ∇p, gradU, rho, mueff, time, config)
-        thermo_Psi!(model, Psi)
-        thermo_Psi!(model, Psif, config)
+        
+        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
+        energy!(energyModel, model, prev, mdotf, rho, mueff, time, config)
+        thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
 
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
@@ -244,7 +242,6 @@ function CSIMPLE(
         if typeof(model.fluid) <: Compressible
             flux!(pconv, Uf, config)
             @. pconv.values *= Psif.values
-
             flux!(mdotf, Uf, config)
             @. mdotf.values *= rhof.values
             interpolate!(pf, p, config)
@@ -258,16 +255,13 @@ function CSIMPLE(
             div!(divHv, mdotf, config)
         end
 
-        # Store "previous" values needed to build energy source terms
-        @. prevRhoK = rho.values*0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)
-        @. prevP = p.values
-        
         # Pressure calculations
         rp = 0.0
+        @. prev = p.values
+        @. prevpf.values = pf.values
         if typeof(model.fluid) <: Compressible
-            rp = solve_equation!(
-                p_eqn, p, boundaries.p, solvers.p, config; 
-                ref=nothing, irelax=solvers.p.relax) # perform implicit relaxation
+            # Ensure diagonal dominance for hyperbolic equations
+            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing, irelax=solvers.U.relax)
         elseif typeof(model.fluid) <: WeaklyCompressible
             rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing)
         end
@@ -277,7 +271,8 @@ function CSIMPLE(
             clamp!(p.values, pmin, pmax)
         end
 
-        explicit_relaxation!(p, prevP, solvers.p.relax, config)
+        explicit_relaxation!(p, prev, solvers.p.relax, config)
+
         grad!(∇p, pf, p, boundaries.p, time, config) 
         limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
@@ -289,29 +284,14 @@ function CSIMPLE(
             nonorthogonal_face_correction(p_eqn, ∇p, rhorDf, config)
             update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
-            explicit_relaxation!(p, prevP, solvers.p.relax, config)
+            explicit_relaxation!(p, prev, solvers.p.relax, config)
             
             grad!(∇p, pf, p, boundaries.p, time, config) 
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
         end
 
-        # Correct mass flux and cell velocity
-
         if typeof(model.fluid) <: Compressible
-            @. mdotf.values += pconv.values*(pf.values) 
-            correct_mass_flux!(model, mdotf, p, pconv, rhorDf, config)
-        elseif typeof(model.fluid) <: WeaklyCompressible
-            correct_mass_flux!(mdotf, p_eqn, config) 
-        end
-
-        correct_velocity!(U, Hv, ∇p, rD, config)
-        
-        # Perform turbulence calculations and update eddy viscosity
-        turbulence!(turbulenceModel, model, S, prev, time, config) 
-        update_nueff!(nueff, nu, model.turbulence, config)
-
-        if typeof(model.fluid) <: WeaklyCompressible
-            rhorelax = solvers.p.relax
+            rhorelax = 1.0 #0.01
             @. rho.values = rho.values * (1-rhorelax) + Psi.values * p.values * rhorelax
             @. rhof.values = rhof.values * (1-rhorelax) + Psif.values * pf.values * rhorelax
         else
@@ -319,10 +299,22 @@ function CSIMPLE(
             @. rhof.values = Psif.values * pf.values
         end
 
-        # update dynamic viscosity
+        if typeof(model.fluid) <: Compressible
+            # @. mdotf.values += (pconv.values*(pf.values) - pgrad.values*rhorDf.values)  
+            correct_mass_flux(mdotf, p_eqn, config)
+            @. mdotf.values += pconv.values*(pf.values)
+        elseif typeof(model.fluid) <: WeaklyCompressible
+            # @. mdotf.values -= pgrad.values*rhorDf.values
+            correct_mass_flux(mdotf, p_eqn, config)
+        end
+
+        correct_velocity!(U, Hv, ∇p, rD, config)
+        
+        turbulence!(turbulenceModel, model, S, prev, time, config) 
+        update_nueff!(nueff, nu, model.turbulence, config)
+
         @. mueff.values = rhof.values*nueff.values
 
-        # stor residuals and check for convergence
         R_ux[iteration] = rx
         R_uy[iteration] = ry
         R_uz[iteration] = rz
@@ -359,12 +351,10 @@ function CSIMPLE(
                 energyModel.state.residuals
                 ]
             )
-            
         runtime_postprocessing!(postprocess,iteration,iterations)
         if iteration%write_interval + signbit(write_interval) == 0      
             save_output(model, outputWriter, iteration, time, config)
-            save_postprocessing(
-                postprocess,iteration,time,mesh,outputWriter,config.boundaries)
+            save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
         end
 
     end # end for loop
@@ -372,51 +362,6 @@ function CSIMPLE(
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p, e=R_e)
 end
 
-### AUXILIARY FUNCTION HERE FOR DEVELOPMENT. NEED RELOCATING
-
-function correct_mass_flux!(model, mdotf, p, pconv, gamma_f, config)
-    (; faces, boundary_cellsID) = mdotf.mesh
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-
-    n_faces = length(faces)
-    n_bfaces = length(boundary_cellsID)
-    n_ifaces = n_faces - n_bfaces
-
-    kernel! = _correct_mass_flux_compressible(_setup(backend, workgroup, n_ifaces)...)
-    # Notice we completely dropped the sparse matrix arguments
-    kernel!(model.fluid, mdotf, p.values, pconv, gamma_f.values, faces, n_bfaces)
-    KernelAbstractions.synchronize(backend)
-end
-
-@kernel function _correct_mass_flux_compressible(
-    fluid, mdotf, p, pconv, gamma_f, faces, n_bfaces)
-    
-    i = @index(Global)
-    fID = i + n_bfaces
-
-    @inbounds begin 
-        face = faces[fID]
-        # Unpack the geometric properties
-        (; ownerCells, area, delta) = face 
-        
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        
-        p1 = p[cID1]
-        p2 = p[cID2]
-        
-        if typeof(fluid) <: WeaklyCompressible
-            minus_Df = -gamma_f[fID] * (area / delta)
-            mdotf[fID] += minus_Df * (p2 - p1)
-        else
-            minus_Df = -gamma_f[fID] * (area / delta)
-            # Add ONLY the implicit Rhie-Chow diffusion correction
-            # (Convection was already added globally via pconv * pf)
-            mdotf[fID] += minus_Df * (p2 - p1)
-        end
-    end
-end
 
 function explicit_shear_stress!(mugradUTx::FaceScalarField, mugradUTy::FaceScalarField, mugradUTz::FaceScalarField, mueff, gradU, config)
     (; hardware) = config
@@ -431,16 +376,16 @@ function explicit_shear_stress!(mugradUTx::FaceScalarField, mugradUTy::FaceScala
     ndrange = n_ifaces
     kernel! = _explicit_shear_stress_internal!(_setup(backend, workgroup, ndrange)...)
     kernel!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces, n_bfaces)
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 
     ndrange=n_bfaces
     kernel! = _explicit_shear_stress_boundaries!(_setup(backend, workgroup, ndrange)...)
     kernel!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces)
-    KernelAbstractions.synchronize(backend)
+    # KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _explicit_shear_stress_internal!(
-    mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces, n_bfaces)
+    mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces,n_bfaces)
     i = @index(Global)
 
     fID = i + n_bfaces
@@ -448,18 +393,13 @@ end
     (; area, normal, ownerCells) = face 
     cID1 = ownerCells[1]
     cID2 = ownerCells[2]
-    
-    # Linear interpolation of gradU at the face
-    gradUf = 0.5 * (gradU[cID1] + gradU[cID2])
-    
-    # Explicit part of the stress projection: mu * ( (grad U)^T . n - 2/3 * (div U) * n )
-    divU = sum(diag(gradUf))
-    projection = transpose(gradUf) * normal - (2/3 * divU) * normal
-    
+    gradUf = 0.5*(gradU[cID1] + gradU[cID2]) # should this be the transpose of gradU?
+    gradUf_projection = gradUf*normal
+    trace = 2/3*sum(diag(gradUf))
     mueffi = mueff[fID]
-    mugradUTx[fID] = mueffi * projection[1] * area
-    mugradUTy[fID] = mueffi * projection[2] * area
-    mugradUTz[fID] = mueffi * projection[3] * area
+    mugradUTx[fID] = mueffi*(gradUf_projection[1] - trace)*area
+    mugradUTy[fID] = mueffi*(gradUf_projection[2] - trace)*area
+    mugradUTz[fID] = mueffi*(gradUf_projection[3] - trace)*area
 end
 
 @kernel function _explicit_shear_stress_boundaries!(
@@ -470,13 +410,87 @@ end
     (; area, normal, ownerCells) = face 
     cID1 = ownerCells[1]
     gradUi = gradU[cID1]
-    
-    # Explicit part of the stress projection at boundary: mu * ( (grad U)^T . n - 2/3 * (div U) * n )
-    divUi = sum(diag(gradUi))
-    projection = transpose(gradUi) * normal - (2/3 * divUi) * normal
-    
+    trace = 2/3*sum(diag(gradUi))
+    gradUi_projection = gradUi*normal
     mueffi = mueff[fID]
-    mugradUTx[fID] = mueffi * projection[1] * area
-    mugradUTy[fID] = mueffi * projection[2] * area
-    mugradUTz[fID] = mueffi * projection[3] * area
+    mugradUTx[fID] = mueffi*(gradUi_projection[1] - trace)*area
+    mugradUTy[fID] = mueffi*(gradUi_projection[2] - trace)*area
+    mugradUTz[fID] = mueffi*(gradUi_projection[3] - trace)*area
 end
+
+######
+# CHRIS: Can you please review to make sure it is a faithful reimplementation? Ta!
+######
+
+# function explicit_shear_stress!(mugradUTx::FaceScalarField, mugradUTy::FaceScalarField, mugradUTz::FaceScalarField, mueff, gradU)
+#     mesh = mugradUTx.mesh
+#     (; faces, cells) = mesh
+#     nbfaces = length(mesh.boundary_cellsID) #boundary_faces(mesh)
+#     start_faceID = nbfaces + 1
+#     last_faceID = length(faces)
+#     for fID ∈ start_faceID:last_faceID
+#         face = faces[fID]
+#         (; area, normal, ownerCells, delta) = face 
+#         cID1 = ownerCells[1]
+#         cID2 = ownerCells[2]
+
+#         ## PREVIOUS IMPLEMENTATION
+        
+#         # gradUxxf = 0.5*(gradU.result.xx[cID1]+gradU.result.xx[cID2])
+#         # gradUxyf = 0.5*(gradU.result.xy[cID1]+gradU.result.xy[cID2])
+#         # gradUxzf = 0.5*(gradU.result.xz[cID1]+gradU.result.xz[cID2])
+#         # gradUyxf = 0.5*(gradU.result.yx[cID1]+gradU.result.yx[cID2])
+#         # gradUyyf = 0.5*(gradU.result.yy[cID1]+gradU.result.yy[cID2])
+#         # gradUyzf = 0.5*(gradU.result.yz[cID1]+gradU.result.yz[cID2])
+#         # gradUzxf = 0.5*(gradU.result.zx[cID1]+gradU.result.zx[cID2])
+#         # gradUzyf = 0.5*(gradU.result.zy[cID1]+gradU.result.zy[cID2])
+#         # gradUzzf = 0.5*(gradU.result.zz[cID1]+gradU.result.zz[cID2])
+        
+#         # mugradUTx[fID] = mueff[fID] * (normal[1]*gradUxxf + normal[2]*gradUyxf + normal[3]*gradUzxf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
+#         # mugradUTy[fID] = mueff[fID] * (normal[1]*gradUxyf + normal[2]*gradUyyf + normal[3]*gradUzyf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
+#         # mugradUTz[fID] = mueff[fID] * (normal[1]*gradUxzf + normal[2]*gradUyzf + normal[3]*gradUzzf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
+        
+#         ## NEW IMPLEMENTATION
+
+#         # gradUf = 0.5*(gradU[cID1] + gradU[cID2]) # should this be the transpose of gradU?
+#         # gradUf_projection = gradUf*normal
+#         # trace = 2/3*sum(diag(gradUf))
+#         # mueffi = mueff[fID]
+#         # mugradUTx[fID] = mueffi*(gradUf_projection[1] - trace)*area
+#         # mugradUTy[fID] = mueffi*(gradUf_projection[2] - trace)*area
+#         # mugradUTz[fID] = mueffi*(gradUf_projection[3] - trace)*area
+#     end
+    
+#     # Now deal with boundary faces
+#     for fID ∈ 1:nbfaces
+#         face = faces[fID]
+#         (; area, normal, ownerCells, delta) = face 
+#         cID1 = ownerCells[1]
+#         cID2 = ownerCells[2]
+        
+#         ## PREVIOUS IMPLEMENTATION
+
+#         # gradUxxf = (gradU.result.xx[cID1])
+#         # gradUxyf = (gradU.result.xy[cID1])
+#         # gradUxzf = (gradU.result.xz[cID1])
+#         # gradUyxf = (gradU.result.yx[cID1])
+#         # gradUyyf = (gradU.result.yy[cID1])
+#         # gradUyzf = (gradU.result.yz[cID1])
+#         # gradUzxf = (gradU.result.zx[cID1])
+#         # gradUzyf = (gradU.result.zy[cID1])
+#         # gradUzzf = (gradU.result.zz[cID1])
+#         # mugradUTx[fID] = mueff[fID] * (normal[1]*gradUxxf + normal[2]*gradUyxf + normal[3]*gradUzxf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
+#         # mugradUTy[fID] = mueff[fID] * (normal[1]*gradUxyf + normal[2]*gradUyyf + normal[3]*gradUzyf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
+#         # mugradUTz[fID] = mueff[fID] * (normal[1]*gradUxzf + normal[2]*gradUyzf + normal[3]*gradUzzf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
+
+#         ## NEW IMPLEMENTATION
+
+#         # gradUi = gradU[cID1]
+#         # trace = 2/3*sum(diag(gradUi))
+#         # gradUi_projection = gradUi*normal
+#         # mueffi = mueff[fID]
+#         # mugradUTx[fID] = mueffi*(gradUi_projection[1] - trace)*area
+#         # mugradUTy[fID] = mueffi*(gradUi_projection[2] - trace)*area
+#         # mugradUTz[fID] = mueffi*(gradUi_projection[3] - trace)*area
+#     end
+# end 

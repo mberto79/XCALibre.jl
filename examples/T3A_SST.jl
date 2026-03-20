@@ -77,7 +77,7 @@ BCs = assign(
 schemes = (
     U = Schemes(divergence=LUST),
     p = Schemes(divergence=LUST),
-    he = Schemes(divergence=LUST),
+    h = Schemes(divergence=LUST),
     y = Schemes(gradient=Midpoint),
     k = Schemes(divergence=LUST),
     omega = Schemes(divergence=LUST)
@@ -99,7 +99,7 @@ solvers = (
         relax       = 0.3,
         rtol = 1e-1
     ),
-    he = SolverSetup(
+    h = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,

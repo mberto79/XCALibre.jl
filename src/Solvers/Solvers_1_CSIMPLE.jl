@@ -175,8 +175,6 @@ function CSIMPLE(
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
     prev = KernelAbstractions.zeros(backend, TF, n_cells) 
-    prevP = KernelAbstractions.zeros(backend, TF, n_cells) 
-    prevRhoK = KernelAbstractions.zeros(backend, TF, n_cells)
 
     # Pre-allocate vectors to hold residuals 
     R_ux = ones(TF, iterations)
@@ -217,14 +215,17 @@ function CSIMPLE(
         @. mueffgradUt.y.values = divmugradUTy.values
         @. mueffgradUt.z.values = divmugradUTz.values
 
+        # Store previous values for next time step energy source terms
+        @. model.energy.prevRhoK = rho.values*0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)
+        @. model.energy.prevP = p.values
+
         # Set up and solve momentum equations
         rx, ry, rz = solve_equation!(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config
             )
 
         # Solve energy equation and update thermo properties
-        energy!(
-            energyModel, model, prevP, prevRhoK, mdotf, ∇p, gradU, rho, mueff, time, config)
+        energy!(energyModel, model, mdotf, ∇p, gradU, mueff, time, config)
         thermo_Psi!(model, Psi)
         thermo_Psi!(model, Psif, config)
 
@@ -257,13 +258,10 @@ function CSIMPLE(
             @. mdotf.values *= rhof.values
             div!(divHv, mdotf, config)
         end
-
-        # Store "previous" values needed to build energy source terms
-        @. prevRhoK = rho.values*0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)
-        @. prevP = p.values
         
         # Pressure calculations
         rp = 0.0
+        @. prev = p.values
         if typeof(model.fluid) <: Compressible
             rp = solve_equation!(
                 p_eqn, p, boundaries.p, solvers.p, config; 
@@ -277,7 +275,7 @@ function CSIMPLE(
             clamp!(p.values, pmin, pmax)
         end
 
-        explicit_relaxation!(p, prevP, solvers.p.relax, config)
+        explicit_relaxation!(p, prev, solvers.p.relax, config)
         grad!(∇p, pf, p, boundaries.p, time, config) 
         limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
@@ -289,7 +287,7 @@ function CSIMPLE(
             nonorthogonal_face_correction(p_eqn, ∇p, rhorDf, config)
             update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
-            explicit_relaxation!(p, prevP, solvers.p.relax, config)
+            explicit_relaxation!(p, prev, solvers.p.relax, config)
             
             grad!(∇p, pf, p, boundaries.p, time, config) 
             limit_gradient!(schemes.p.limiter, ∇p, p, config)

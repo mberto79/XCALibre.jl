@@ -23,11 +23,11 @@ end
 
 Constructor to allocate memory to store the time averaged field. Once created, should be passed to the `Configuration` object as an argument with keyword `postprocess`
 
-## Input arguments 
+# Input arguments 
 - `field` the `VectorField` or `ScalarField` to be averaged, e.g , `model.momentum.U`.
 - `name::String` the name of the field to be averaged, e.g "U_mean", this is used only when exporting to .vtk format
 
-## Optional arguments
+# Optional arguments
 - `start::Union{Real,Nothing}` optional keyword which specifies the start time/iteration of the averaging window, for **steady** simulations, this is in **iterations**, for **transient** simulations it is in **flow time**.   
 - `stop::Union{Real,Nothing}` optional keyword which specifies the end iteration/time of the averaging window. Default value is the last iteration/timestep. 
 - `update_interval::Union{Real,Nothing}` optional keyword which specifies how often the time average of the field is updated and stored (default value is 1 i.e average updates every timestep/iteration). Note that the frequency of writing the post-processed fields is specified by the `write_interval` in `Configuration`. 
@@ -43,7 +43,7 @@ function FieldAverage(field; name::AbstractString, start::Union{Real,Nothing}=no
     return FieldAverage(field=field, name=name, mean=storage,start=start, stop=stop, update_interval=update_interval)
 end
 
-function runtime_postprocessing!(avg::FieldAverage{T,S},iter::Integer,n_iterations::Integer) where {T<:ScalarField,S}
+function runtime_postprocessing!(avg::FieldAverage{T,S},iter::Integer,n_iterations::Integer,Str,config) where {T<:ScalarField,S}
     if must_calculate(avg,iter,n_iterations)
         n = div(iter - avg.start,avg.update_interval) + 1
         current_field = avg.field
@@ -52,7 +52,7 @@ function runtime_postprocessing!(avg::FieldAverage{T,S},iter::Integer,n_iteratio
     return nothing
 end
 
-function runtime_postprocessing!(avg::FieldAverage{T,S},iter::Integer,n_iterations::Integer) where {T<:VectorField,S}
+function runtime_postprocessing!(avg::FieldAverage{T,S},iter::Integer,n_iterations::Integer,Str,config) where {T<:VectorField,S}
     if must_calculate(avg,iter,n_iterations)
         n = div(iter - avg.start,avg.update_interval) + 1
         current_field = avg.field
@@ -63,12 +63,12 @@ function runtime_postprocessing!(avg::FieldAverage{T,S},iter::Integer,n_iteratio
     return nothing 
 end
 
-function runtime_postprocessing!(avg::Vector,iter::Integer,n_iterations::Integer)
-    runtime_postprocessing!.(avg,Ref(iter),Ref(n_iterations))
+function runtime_postprocessing!(avg::Vector,iter::Integer,n_iterations::Integer,Str,config)
+    runtime_postprocessing!.(avg,Ref(iter),Ref(n_iterations),Ref(Str),Ref(config))
     return nothing
 end
 
-runtime_postprocessing!(::Nothing,::Integer,::Integer) = ()
+runtime_postprocessing!(::Nothing,::Integer,::Integer,S,config) = ()
 
 
 function _update_running_mean!(stored_field_vals, current_vals, n)

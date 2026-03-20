@@ -41,11 +41,7 @@ The Reynolds Stress Tensor can be obtained using the constructor `ReynoldsStress
 ```@docs; canonical=false
 ReynoldsStress
 ```
-## Example: Calculate the Q-criterion
-The Q-criterion can be obtained using the constructor `Qcriterion`, which has to be passed to the `Configuration` object. 
-```@docs; canonical=false
-Qcriterion
-```
+
 ### Example: Post-process multiple fields 
 To post-process multiple fields as a time, a vector of objects can be passed instead e.g. 
 ```julia

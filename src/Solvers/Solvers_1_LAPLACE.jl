@@ -161,7 +161,7 @@ function LAPLACE(
                 ]
             )
 
-        runtime_postprocessing!(postprocess,iteration,iterations,nothing,config)
+        runtime_postprocessing!(postprocess,iteration,iterations)
         if iteration%write_interval + signbit(write_interval) == 0      
             save_output(model, outputWriter, iteration, time, config)
             save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)

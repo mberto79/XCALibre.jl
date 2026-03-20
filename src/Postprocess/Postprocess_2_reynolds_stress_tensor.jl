@@ -20,10 +20,10 @@ end
     update_interval::Union{Real,Nothing})
 Constructor to allocate memory to store the Reynolds Stress Tensor over the calculation window. Once created, should be passed to the `Configuration` object as an argument with keyword `postprocess`
 
-# Input arguments 
+## Input arguments 
 - `field`, must be `model.momentum.U`
 
-# Optional arguments
+## Optional arguments
 - `start::Union{Real,Nothing}` optional keyword which specifies the start of the Reynolds Stress Tensor calculation window, for **steady** simulations, this is in **iterations**, for **transient** simulations it is in **flow time**.   
 - `stop::Union{Real,Nothing}` optional keyword which specifies the end iteration/time of the Reynolds Stress Tensor calculation window. Default value is the last iteration/timestep. 
 - `update_interval::Union{Real,Nothing}` optional keyword which specifies how often the Reynolds Stress Tensor is updated and stored (default value is 1 i.e Reynolds Stress Tensor updates every timestep/iteration). Note that the frequency of writing the post-processed fields is specified by the `write_interval` in `Configuration`. 
@@ -39,7 +39,7 @@ function ReynoldsStress(field; name::String =  "Reynolds_Stress", start::Union{R
     return  ReynoldsStress(field=field, name=name, rs=rs, mean=mean, mean_sq=mean_sq, start=start, stop=stop, update_interval=update_interval)
 end
 
-function runtime_postprocessing!(RS::ReynoldsStress{T,T2,S},iter::Integer,n_iterations::Integer,Str,config) where {T<:VectorField,T2<:SymmetricTensorField,S}
+function runtime_postprocessing!(RS::ReynoldsStress{T,T2,S},iter::Integer,n_iterations::Integer) where {T<:VectorField,T2<:SymmetricTensorField,S}
     if must_calculate(RS,iter,n_iterations)
         current_field = RS.field
         n = div(iter - RS.start,RS.update_interval) + 1

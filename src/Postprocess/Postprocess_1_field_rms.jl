@@ -21,12 +21,12 @@ end
     update_interval::Union{Real,Nothing})
 Constructor to allocate memory to store the root mean square of the fluctuations of a field over the averaging window. Once created, should be passed to the `Configuration` object as an argument with keyword `postprocess`
 
-# Input arguments 
+## Input arguments 
 - `field` the `VectorField` or `ScalarField`, e.g , `model.momentum.U`.
 - `name::String` the name/label of the field, e.g "U_rms", this is used only when exporting to .vtk format
 
 
-# Optional arguments
+## Optional arguments
 - `start::Union{Real,Nothing}` optional keyword which specifies the start of the RMS calculation window, for **steady** simulations, this is in **iterations**, for **transient** simulations it is in **flow time**.   
 - `stop::Union{Real,Nothing}` optional keyword which specifies the end iteration/time of the RMS calculation window. Default value is the last iteration/timestep. 
 - `update_interval::Union{Real,Nothing}` optional keyword which specifies how often the RMS of the field is updated and stored (default value is 1 i.e RMS updates every timestep/iteration). Note that the frequency of writing the post-processed fields is specified by the `write_interval` in `Configuration`. 
@@ -47,7 +47,7 @@ function FieldRMS(field; name::AbstractString, start::Union{Real,Nothing}=nothin
 end
 
 
-function runtime_postprocessing!(RMS::FieldRMS{T,S},iter::Integer,n_iterations::Integer,Str,config) where {T<:ScalarField,S}
+function runtime_postprocessing!(RMS::FieldRMS{T,S},iter::Integer,n_iterations::Integer) where {T<:ScalarField,S}
     if must_calculate(RMS,iter,n_iterations)
         current_field = RMS.field
         n = div(iter - RMS.start,RMS.update_interval) + 1
@@ -62,7 +62,7 @@ function runtime_postprocessing!(RMS::FieldRMS{T,S},iter::Integer,n_iterations::
     return nothing 
 end
 
-function runtime_postprocessing!(RMS::FieldRMS{T,S},iter::Integer,n_iterations::Integer,Str,config) where {T<:VectorField,S}
+function runtime_postprocessing!(RMS::FieldRMS{T,S},iter::Integer,n_iterations::Integer) where {T<:VectorField,S}
     if must_calculate(RMS,iter,n_iterations)
         current_field = RMS.field
         n = div(iter - RMS.start,RMS.update_interval) + 1

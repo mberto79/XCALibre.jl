@@ -162,7 +162,7 @@ Run energy transport equations (sensible enthalpy or internal energy).
 
 """
 function energy!(
-    energy::EnergyEquationModel, model::Physics{T1,F,SO,M,Tu,E,D,BI}, mdotf, gradP, gradU, mueff, time, config
+    energy::EnergyEquationModel, model::Physics{T1,F,SO,M,Tu,E,D,BI}, mdotf, gradP, gradU, mueff, time, dt, config
     ) where {T1,F,SO,M,Tu,E,D,BI}
 
     mesh = model.domain
@@ -184,7 +184,7 @@ function energy!(
     Kf = FaceScalarField(mesh)
     Pr = model.fluid.Pr
 
-    dt = runtime.dt[1]
+    # dt = runtime.dt[1]
 
     # Set diffusion coefficient based on energy model type
     if model.energy isa SensibleEnthalpy

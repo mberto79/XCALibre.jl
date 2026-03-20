@@ -239,7 +239,7 @@ function CPISO(
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
 
         # Energy after correctors so dp/dt = (p_corrected - prevP)/dt ≠ 0
-        energy!(energyModel, model, mdotf, ∇p, gradU, mueff, time, config)
+        energy!(energyModel, model, mdotf, ∇p, gradU, mueff, time, dt_cpu[1], config)
         thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
 
         # Pressure correction setup (outside corrector loop)
@@ -333,7 +333,6 @@ function CPISO(
 
         
         courant = max_courant_number!(cellsCourant, model, config)
-
         update_dt!(config.runtime, courant)
 
         R_ux[iteration] = rx

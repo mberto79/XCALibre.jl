@@ -130,7 +130,7 @@ function CSIMPLE(
     mesh = model.domain
     p_model = p_eqn.model
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
-    (; iterations, write_interval,dt) = runtime
+    (; iterations, write_interval) = runtime
     (; backend) = hardware
     
     dt_cpu = zeros(_get_float(mesh), 1)
@@ -225,7 +225,7 @@ function CSIMPLE(
             )
 
         # Solve energy equation and update thermo properties
-        energy!(energyModel, model, mdotf, ∇p, gradU, mueff, time, config)
+        energy!(energyModel, model, mdotf, ∇p, gradU, mueff, time, dt_cpu[1], config)
         thermo_Psi!(model, Psi)
         thermo_Psi!(model, Psif, config)
 

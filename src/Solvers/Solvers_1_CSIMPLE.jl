@@ -226,7 +226,7 @@ function CSIMPLE(
         energy!(
             energyModel, model, prevP, prevRhoK, mdotf, ∇p, gradU, rho, mueff, time, config)
         thermo_Psi!(model, Psi)
-        thermo_Psi!(model, Psif, config);
+        thermo_Psi!(model, Psif, config)
 
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
@@ -385,7 +385,7 @@ function correct_mass_flux!(model, mdotf, p, pconv, gamma_f, config)
 
     kernel! = _correct_mass_flux_compressible(_setup(backend, workgroup, n_ifaces)...)
     # Notice we completely dropped the sparse matrix arguments
-    kernel!(model.fluid, mdotf, p.values, pconv.values, gamma_f.values, faces, n_bfaces)
+    kernel!(model.fluid, mdotf, p.values, pconv, gamma_f.values, faces, n_bfaces)
     KernelAbstractions.synchronize(backend)
 end
 

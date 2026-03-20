@@ -15,3 +15,5 @@ unv_sample_meshes/*
 !NIST_*.csv
 [0-9]*/
 constant/
+CLAUDE.md
+.claudeignore

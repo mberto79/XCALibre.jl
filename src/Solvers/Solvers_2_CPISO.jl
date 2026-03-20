@@ -140,7 +140,6 @@ function CPISO(
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
     (; rho, rhof, nu) = model.fluid
-    (; dpdt) = model.energy
     mesh = model.domain
     p_model = p_eqn.model
     (; solvers, schemes, runtime, hardware, boundaries,postprocess) = config
@@ -190,12 +189,14 @@ function CPISO(
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
     # prev = zeros(TF, n_cells)
-    # prev = _convert_array!(prev, backend) 
-    prev = KernelAbstractions.zeros(backend, TF, n_cells) 
+    # prev = _convert_array!(prev, backend)
+    prev = KernelAbstractions.zeros(backend, TF, n_cells)
+    prevP = KernelAbstractions.zeros(backend, TF, n_cells)
+    prevRhoK = KernelAbstractions.zeros(backend, TF, n_cells)
 
     # corr = zeros(TF, n_faces)
-    # corr = _convert_array!(corr, backend) 
-    corr = KernelAbstractions.zeros(backend, TF, n_faces) 
+    # corr = _convert_array!(corr, backend)
+    corr = KernelAbstractions.zeros(backend, TF, n_faces)
 
     # Pre-allocate vectors to hold residuals 
     R_ux = ones(TF, iterations)
@@ -247,7 +248,7 @@ function CPISO(
 
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
 
-        energy!(energyModel, model, prev, mdotf, rho, mueff, time, config)
+        energy!(energyModel, model, prevP, prevRhoK, mdotf, ∇p, gradU, rho, mueff, time, config)
         thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
 
         # Pressure correction
@@ -318,10 +319,10 @@ function CPISO(
             end
         
             if typeof(model.fluid) <: Compressible
-                correct_mass_flux(mdotf, p_eqn, config)
+                correct_mass_flux!(mdotf, p_eqn, config)
                 @. mdotf.values += pconv.values*(pf.values)
             elseif typeof(model.fluid) <: WeaklyCompressible
-                correct_mass_flux(mdotf, p_eqn, config)
+                correct_mass_flux!(mdotf, p_eqn, config)
             end
    
             # TO-DO: this needs to be exposed to users eventually
@@ -331,11 +332,13 @@ function CPISO(
             # Velocity and boundaries correction
             correct_velocity!(U, Hv, ∇p, rD, config) # why is this not rhorD?
             
-            @. dpdt.values = (p.values-prev)/dt_cpu[1]
-
             turbulence!(turbulenceModel, model, S, prev, time, config) 
             update_nueff!(nueff, nu, model.turbulence, config)
         end # corrector loop end
+
+    # Store previous values for next time step energy source terms
+    @. prevRhoK = rho.values*0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)
+    @. prevP = p.values
 
     courant = max_courant_number!(cellsCourant, model, config)
     

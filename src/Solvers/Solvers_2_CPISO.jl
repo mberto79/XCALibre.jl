@@ -358,7 +358,7 @@ function CPISO(
             energyModel.state.residuals
             ]
         )
-    runtime_postprocessing!(postprocess,iteration,iterations,config,S)
+    runtime_postprocessing!(postprocess,iteration,iterations,S,config)
 
     if iteration%write_interval + signbit(write_interval) == 0
         save_output(model, outputWriter, iteration, time, config)

@@ -132,6 +132,7 @@ function FilmModel(
 
     # Define aux fields
     mdotf = FaceScalarField(mesh)
+    rephif = FaceVectorField(mesh)
 
     PLf = FaceScalarField(mesh)
     ∇PL = Grad{Gauss}(PLf)
@@ -151,13 +152,6 @@ function FilmModel(
     #plate_tangent_vector = [1,0,0] # temporary,  should be worked out later
     plate_tangent_vector = Vector{}([1,0,0])
 
-    #Hv = VectorField(mesh)
-    #rD = ScalarField(mesh)
-    #rDf = FaceScalarField(mesh)
-
-
-    
-
     w_bc = [
         Dirichlet(:inlet, 1),
         Extrapolated(:outlet),
@@ -166,6 +160,22 @@ function FilmModel(
         Extrapolated(:side_1),
         Extrapolated(:side_2)
     ]
+    ∇h_bc = [
+        #Extrapolated(:inlet),
+        Dirichlet(:inlet, [0,0,0]),
+        Dirichlet(:oulet, [0,0,0]),
+        Dirichlet(:inlet_sides, [0,0,0]),
+        Dirichlet(:top_of_plate, [0,0,0]),
+        Dirichlet(:side_1, [0,0,0]),
+        Dirichlet(:side_2, [0,0,0])
+        
+        #Dirichlet(:inlet, 0),
+        #Dirichlet(:oulet, 0),
+        #Dirichlet(:inlet_sides, 0),
+        #Dirichlet(:top_of_plate, 0),
+        #Dirichlet(:side_1, 0),
+        #Dirichlet(:side_2, 0)
+    ]
     Δh_bc = [
         Extrapolated(:inlet),
         Extrapolated(:outlet),
@@ -173,6 +183,12 @@ function FilmModel(
         Extrapolated(:top_of_plate),
         Extrapolated(:side_1),
         Extrapolated(:side_2)
+        #Dirichlet(:inlet, 0),
+        #Dirichlet(:oulet, 0),
+        #Dirichlet(:inlet_sides, 0),
+        #Dirichlet(:top_of_plate, 0),
+        #Dirichlet(:side_1, 0),
+        #Dirichlet(:side_2, 0)
     ]
     #w_bc = [
     #    Dirichlet(:inlet, 1),
@@ -227,139 +243,125 @@ function FilmModel(
     
     # Getting the laplacian of h for first U calculation
     grad!(∇h, hf, h, boundaries.h, time, config)
-    limit_gradient!(schemes.h.limiter, ∇h, h, config)
-    div!(Δh, ∇hf, config)
-    interpolate!(Δhf, Δh, config)
-    correct_boundaries!(Δhf, Δh, Δh_bc, time, config)
+    #limit_gradient!(schemes.h.limiter, ∇h, h, config)
+    #div!(Δh, ∇hf, config)
+    #interpolate!(Δhf, Δh, config)
+    #correct_boundaries!(Δhf, Δh, Δh_bc, time, config)
 
     # Getting h * mdotf and rho * h for U calculation
     # hf is calculated within grad!()
     @. rhohf.values = hf.values *  rho.values[1]
-    @. phif.values = mdotf.values * rho.values[1]
+    @. phif.values = mdotf.values * rhohf.values
+    @. rephif.x.values = Uf.x.values * rhohf.values
+    @. rephif.y.values = Uf.y.values * rhohf.values
+    @. rephif.z.values = Uf.z.values * rhohf.values
+
+
+    div!(divPhi, rephif, config)
 
     
-    @. mu_h.values = 3*mu/h.values
-    @info "need to readd Pg term - Coupling term for other phase"
+    #@. mu_h.values = 3*mu/h.values
+    #@info "need to readd Pg term - Coupling term for other phase"
     Pg = 0# Test Pg term set to zero, as the gradient is found this value doesn't matter
-    @info "need to fix surface tension term"
-    for i ∈ eachindex(Δhf.values)
-        PLf[i] = Pg - hf.values[i]*dot(n,G) - coeffs.σ*Δhf[i]
-        #mu_h.values[i] = 3*mu/hf.values[i]
-        #println(mu_h.values[i])
-    end
-
-    grad!(∇PL, PLf, config)
-
-    for i ∈ eachindex(h.values) 
-        w[i] = (h.values[i] > coeffs.h_crit)
-    end
-
-    grad!(∇w, wf, w, w_bc, time, config)
-
-    for i ∈ eachindex(h.values)
-        Ph_local = (rho.values[1]*g*sind(coeffs.ϕ)*h[i]) .*plate_tangent_vector
-        Ph.x.values[i] = Ph_local[1]
-        Ph.y.values[i] = Ph_local[2]
-        Ph.z.values[i] = Ph_local[3]
-
-        h∇PL[i] = h[i].*∇PL[i]
-
-        τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w.result[i]
-    end
+    #@info "need to fix surface tension term"
+    #for i ∈ eachindex(Δhf.values)
+    #    PLf[i] = Pg - rho.values[1]*hf.values[i]*dot(n,G) - coeffs.σ*Δhf[i]
+    #end
+#
+    #grad!(∇PL, PLf, config)
+#
+    #for i ∈ eachindex(h.values) 
+    #    w[i] = (h.values[i] > coeffs.h_crit)
+    #end
+#
+    #grad!(∇w, wf, w, w_bc, time, config)
+#
+    #for i ∈ eachindex(h.values)
+    #    Ph_local = (rho.values[1]*g*sind(coeffs.ϕ)*h[i]) .*plate_tangent_vector
+    #    Ph.x.values[i] = Ph_local[1]
+    #    Ph.y.values[i] = Ph_local[2]
+    #    Ph.z.values[i] = Ph_local[3]
+#
+    #    h∇PL[i] = h[i].*∇PL[i]
+#
+    #    τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w.result[i]
+    #end
     @info "Starting loops"
     
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
     #rh = 0
-    #rx = ry = rz = rh = 1
 
     @time for iteration ∈ 1:iterations
         copyto!(dt_cpu, config.runtime.dt)
         time += dt_cpu[1]
 
-        solve_equation!(U_eqn, U, boundaries.U, solvers.U , xdir, ydir, zdir, config; time=time)
 
-    
-        interpolate!(Uf, U, config)
-        correct_boundaries!(Uf, U, boundaries.U, time, config)
-
-        # h calculations
-        flux!(mdotf, Uf, config)
-
-        @. phif.values = mdotf.values * rhohf.values
-        div!(divPhi, phif, config)
-            
+        rx = ry = rz = rh = 0
         @. prev = h.values
-
-        rh = solve_equation!(h_eqn, h, boundaries.h, solvers.h, config; time=time)
+        
+        for i ∈ 1:inner_loops
+            rh = solve_equation!(h_eqn, h, boundaries.h, solvers.h, config, time=time)
+            limit_h!(h, config)
     
-        
-        grad!(∇h, hf, h, boundaries.h, time, config)
-        limit_gradient!(schemes.h.limiter, ∇h, h, config)
+            laplacian!(Δh, hf, h, boundaries.h, time, config, disp_warn=false)
+            #grad!(∇h, hf, h, boundaries.h, time, config)
+            #limit_gradient!(schemes.h.limiter, ∇h, h, config)
+            #interpolate!(∇hf, ∇h.result, config)
+            #correct_boundaries!(∇hf, ∇h.result, ∇h_bc, time, config)
+            #div!(Δh, ∇hf, config)
+            interpolate!(Δhf, Δh, config)
+            correct_boundaries!(Δhf, Δh, Δh_bc, time, config)
 
-        @. drhoHdt.values = -(rho.values[1]*h.values-rho.values[1]*prev)/dt_cpu
+            @. mu_h.values = 3*mu/h.values
+            for i ∈ eachindex(Δhf.values)
+                PLf[i] = Pg - rho.values[1]*hf.values[i]*dot(n,G) - coeffs.σ*Δhf[i]
+            end
 
+            grad!(∇PL, PLf, config)
 
-        @. rhohf.values =  hf.values * rho.values[1]
-        @. phif.values = mdotf.values * rhohf.values[1]
+            for i ∈ eachindex(h.values) 
+                w[i] = (h.values[i] > coeffs.h_crit)
+            end
 
-        div!(divPhi, phif, config)
-        
-        @. phi_corr.values = drhoHdt.values + divPhi.values - Sm.values
+            grad!(∇w, wf, w, w_bc, time, config)
 
+            for i ∈ eachindex(h.values)
+                Ph_local = (rho.values[1]*g*sind(coeffs.ϕ)*h[i]) .*plate_tangent_vector
+                Ph.x.values[i] = Ph_local[1]
+                Ph.y.values[i] = Ph_local[2]
+                Ph.z.values[i] = Ph_local[3]
 
-        div!(Δh, ∇hf, config)
-        interpolate!(Δhf, Δh, config)
-        correct_boundaries!(Δhf, Δh, Δh_bc, time, config)
+                h∇PL[i] = h[i].*∇PL[i]
 
-        @. mu_h.values = 3*mu/h.values
-        for i ∈ eachindex(Δhf.values)
-            PLf.values[i] = Pg - hf.values[i]*dot(n,G) - coeffs.σ*Δhf.values[i]
-        end
+                τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w.result[i]
+            end
 
-        grad!(∇PL, PLf, config)        
-        
-        for i ∈ eachindex(h.values)
-            w[i] = (h.values[i] > coeffs.h_crit)
-        end
+            @. drhoHdt.values = rho.values[1]*(prev-h.values)/dt_cpu
 
-        grad!(∇w, wf, w, w_bc, time, config)
+            #@. phi_corr.values = drhoHdt.values + divPhi.values - Sm.values
 
-        for i ∈ eachindex(h.values)
-
-            Ph_local = (rho.values[1]*g*sind(coeffs.ϕ)*h[i]) .*plate_tangent_vector
-            Ph.x.values[i] = Ph_local[1]
-            Ph.y.values[i] = Ph_local[2]
-            Ph.z.values[i] = Ph_local[3]
-
-            h∇PL[i] = h[i].*∇PL[i]
             
-            τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w.result[i]
+            @. rhohf.values = hf.values *  rho.values[1]
+
+            rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, time=time)
+
+            interpolate!(Uf, U, config)
+            correct_boundaries!(Uf, U, boundaries.U, time, config)
+
+            flux!(mdotf, Uf, config)
+            
+            @. phif.values = mdotf.values * rhohf.values
+            @. rephif.x.values = Uf.x.values * rhohf.values
+            @. rephif.y.values = Uf.y.values * rhohf.values
+            @. rephif.z.values = Uf.z.values * rhohf.values
+
+            div!(divPhi, rephif, config)
+
         end
 
-        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U , xdir, ydir, zdir, config; time=time)
-
-        interpolate!(Uf, U, config)
-        correct_boundaries!(Uf, U, boundaries.U, time, config)
-
-        # h calculations
-        flux!(mdotf, Uf, config)
-    
-
-        #for i ∈ eachindex(h.values)# built in clamp function
-        #    if (h.values[i]<=0) h.values[i] = 1e-100 end
-        #end
-        limit_h!(h,config)
-
-        #for i ∈ eachindex(phi_corr.values)
-        #    phi_corr[i] = 0;
-        #end
-
-        #phi_corr = (drhoHdt + divPhi) - Sp
-            #xcal_foreach(prev, config) do i 
-            #    prev[i] = p[i]
-            #end
+        
 
 
             #for i ∈ 1:ncorrectors
@@ -370,43 +372,6 @@ function FilmModel(
             #    explicit_relaxation!(h, prev, solvers.h.relax, config)
             #end
         
-            #correct_mass_flux(mdotf, h_eqn, config)
-            #correct_velocity!(U, Hv, ∇h, rD, config)
-            
-
-
-        @. phif.values = mdotf.values * rhohf.values
-
-        limit_gradient!(schemes.h.limiter, ∇h, h, config)
-        div!(Δh, ∇hf, config)
-        interpolate!(Δhf, Δh, config)
-        correct_boundaries!(Δhf, Δh, Δh_bc, time, config)
-
-        @. mu_h.values = 3*mu/h.values
-        for i ∈ eachindex(Δhf.values)
-            PLf.values[i] = Pg - hf.values[i]*dot(n,G) - coeffs.σ*Δhf.values[i]
-        end
-
-        grad!(∇PL, PLf, config)        
-        
-
-        for i ∈ eachindex(h.values)
-            w[i] = (h.values[i] > coeffs.h_crit)
-        end
-
-        grad!(∇w, wf, w, w_bc, time, config)
-
-        for i ∈ eachindex(h.values)
-
-            Ph_local = (rho.values[1]*g*sind(coeffs.ϕ)*h[i]) .*plate_tangent_vector
-            Ph.x.values[i] = Ph_local[1]
-            Ph.y.values[i] = Ph_local[2]
-            Ph.z.values[i] = Ph_local[3]
-
-            h∇PL[i] = h[i].*∇PL[i]
-            
-            τθw[i] =  coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w[i]
-        end
         
         R_ux[iteration] = rx
         R_uy[iteration] = ry
@@ -434,7 +399,8 @@ function FilmModel(
         runtime_postprocessing!(postprocess, iteration, iterations)
 
         if iteration % write_interval + signbit(write_interval) == 0
-            save_output_film(model, outputWriter, iteration, time, config, w)
+            #save_output_film(model, outputWriter, iteration, time, config, w)
+            save_output_film(model, outputWriter, iteration, time, config, w, Δh)
             save_postprocessing(postprocess, iteration, time, mesh, outputWriter, config.boundaries)
         end
 
@@ -466,6 +432,18 @@ function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iter
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end
 
+function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config, w, Δh
+    ) where {T,F,SO,M,Tu,E,D,BI}
+    args = (
+            ("U", model.momentum.U), 
+            ("h", model.momentum.h),
+            ("w", w),
+            ("Δh", Δh)
+        )
+    
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
+end
+
 function limit_h!(h, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -481,7 +459,7 @@ end
     i = @index(Global)
 
     @inbounds begin
-        if (h[i] <= 0) h[i] = 1e-18 end
+        if (h[i] <= 0) h[i] = 1e-100 end
     end
 end
 

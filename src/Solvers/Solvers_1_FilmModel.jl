@@ -33,7 +33,6 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     phif = FaceScalarField(mesh)
     rhohf = FaceScalarField(mesh)
     mu_h = ScalarField(mesh)
-    phi_corr = ScalarField(mesh)
     Sm = ScalarField(mesh)
     divPhi = ScalarField(mesh)
     initialise!(Sm, 0)
@@ -43,7 +42,6 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     Ph = VectorField(mesh)
     τw = VectorField(mesh)
     τθw = VectorField(mesh)
-    mu_hU = VectorField(mesh)
     
 
     @info "Defining models.."
@@ -54,9 +52,8 @@ function setup_FilmModel_Solver(solver_variant, model, config;
         Time{schemes.U.time}(rhohf, U)
         + Divergence{schemes.U.divergence}(phif,U)
         + Si(mu_h, U)
-        - Si(phi_corr, U) # this corrects for mass imbalance
         ==
-        -  Source(h∇PL)
+        - Source(h∇PL)
         + Source(Ph)
         + Source(τθw)
         
@@ -111,7 +108,6 @@ function FilmModel(
     rhohf = get_flux(U_eqn, 1)
     phif = get_flux(U_eqn, 2)
     mu_h = get_flux(U_eqn, 3)
-    phi_corr = get_flux(U_eqn, 4)
 
     h∇PL = get_source(U_eqn, 1)
     Ph = get_source(U_eqn,2)
@@ -148,6 +144,8 @@ function FilmModel(
 
     drhoHdt = ScalarField(mesh)  # this is the one you need to explicitly update after solving h equation
 
+    Hv = VectorField(mesh)
+    rD = ScalarField(mesh)
     
     #plate_tangent_vector = [1,0,0] # temporary,  should be worked out later
     plate_tangent_vector = Vector{}([1,0,0])
@@ -242,77 +240,97 @@ function FilmModel(
     flux!(mdotf, Uf, config)
     
     # Getting the laplacian of h for first U calculation
-    grad!(∇h, hf, h, boundaries.h, time, config)
+    laplacian!(Δh, hf, h, boundaries.h, time, config)
+    #grad!(∇h, hf, h, boundaries.h, time, config)
     #limit_gradient!(schemes.h.limiter, ∇h, h, config)
+    #interpolate!(∇hf, ∇h.result, config)
+    #correct_boundaries!(∇hf, ∇h.result, ∇h_bc, time, config)
     #div!(Δh, ∇hf, config)
-    #interpolate!(Δhf, Δh, config)
-    #correct_boundaries!(Δhf, Δh, Δh_bc, time, config)
-
-    # Getting h * mdotf and rho * h for U calculation
-    # hf is calculated within grad!()
-    @. rhohf.values = hf.values *  rho.values[1]
-    @. phif.values = mdotf.values * rhohf.values
-    @. rephif.x.values = Uf.x.values * rhohf.values
-    @. rephif.y.values = Uf.y.values * rhohf.values
-    @. rephif.z.values = Uf.z.values * rhohf.values
-
-
-    div!(divPhi, rephif, config)
+    interpolate!(Δhf, Δh, config)
+    correct_boundaries!(Δhf, Δh, Δh_bc, time, config)
 
     
-    #@. mu_h.values = 3*mu/h.values
+        
+    @. rhohf.values = hf.values *  rho.values[1]
+    @. phif.values = mdotf.values * rhohf.values
+
     #@info "need to readd Pg term - Coupling term for other phase"
     Pg = 0# Test Pg term set to zero, as the gradient is found this value doesn't matter
-    #@info "need to fix surface tension term"
-    #for i ∈ eachindex(Δhf.values)
-    #    PLf[i] = Pg - rho.values[1]*hf.values[i]*dot(n,G) - coeffs.σ*Δhf[i]
-    #end
-#
-    #grad!(∇PL, PLf, config)
-#
-    #for i ∈ eachindex(h.values) 
-    #    w[i] = (h.values[i] > coeffs.h_crit)
-    #end
-#
-    #grad!(∇w, wf, w, w_bc, time, config)
-#
-    #for i ∈ eachindex(h.values)
-    #    Ph_local = (rho.values[1]*g*sind(coeffs.ϕ)*h[i]) .*plate_tangent_vector
-    #    Ph.x.values[i] = Ph_local[1]
-    #    Ph.y.values[i] = Ph_local[2]
-    #    Ph.z.values[i] = Ph_local[3]
-#
-    #    h∇PL[i] = h[i].*∇PL[i]
-#
-    #    τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w.result[i]
-    #end
+
+    @. mu_h.values = 3*mu/h.values
+    for i ∈ eachindex(Δhf.values)
+        PLf[i] = Pg - rho.values[1]*hf.values[i]*dot(n,G) - coeffs.σ*Δhf[i]
+    end
+
+    grad!(∇PL, PLf, config)
+
+    for i ∈ eachindex(h.values) 
+        w[i] = (h.values[i] > coeffs.h_crit)
+    end
+
+    grad!(∇w, wf, w, w_bc, time, config)
+
+    for i ∈ eachindex(h.values)
+        Ph_local = (rho.values[1]*g*sind(coeffs.ϕ)*h[i]) .*plate_tangent_vector
+        Ph.x.values[i] = Ph_local[1]
+        Ph.y.values[i] = Ph_local[2]
+        Ph.z.values[i] = Ph_local[3]
+
+        h∇PL[i] = h[i].*∇PL[i]
+
+        τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w.result[i]
+    end
+
     @info "Starting loops"
     
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
     #rh = 0
+    rx = ry = rz = 0
 
     @time for iteration ∈ 1:iterations
         copyto!(dt_cpu, config.runtime.dt)
         time += dt_cpu[1]
 
-
-        rx = ry = rz = rh = 0
-        @. prev = h.values
+        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, time=time)
         
+        inverse_diagonal!(rD, U_eqn, config)
+
+        rh = 0
         for i ∈ 1:inner_loops
+            H!(Hv, U, U_eqn, config)
+
+            interpolate!(Uf, Hv, config)
+            correct_boundaries!(Uf, Hv, boundaries.U, time, config)
+
+            flux!(mdotf, Uf, config)
+            
+            
+            #@. rhohf.values = hf.values *  rho.values[1]
+            @. phif.values = mdotf.values * rhohf.values
+
+            div!(divPhi, phif, config)
+
+            
+            @. prev = h.values
             rh = solve_equation!(h_eqn, h, boundaries.h, solvers.h, config, time=time)
+            if i == inner_loops
+                explicit_relaxation!(h, prev, 1.0, config)
+            else
+                explicit_relaxation!(h, prev, solvers.h.relax, config)
+            end
+
             limit_h!(h, config)
-    
+
             laplacian!(Δh, hf, h, boundaries.h, time, config, disp_warn=false)
-            #grad!(∇h, hf, h, boundaries.h, time, config)
-            #limit_gradient!(schemes.h.limiter, ∇h, h, config)
-            #interpolate!(∇hf, ∇h.result, config)
-            #correct_boundaries!(∇hf, ∇h.result, ∇h_bc, time, config)
-            #div!(Δh, ∇hf, config)
+            
             interpolate!(Δhf, Δh, config)
             correct_boundaries!(Δhf, Δh, Δh_bc, time, config)
+            
+            
+            @. rhohf.values = hf.values *  rho.values[1]
+            @. phif.values = mdotf.values * rhohf.values
 
             @. mu_h.values = 3*mu/h.values
             for i ∈ eachindex(Δhf.values)
@@ -338,39 +356,17 @@ function FilmModel(
                 τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w.result[i]
             end
 
-            @. drhoHdt.values = rho.values[1]*(prev-h.values)/dt_cpu
-
-            #@. phi_corr.values = drhoHdt.values + divPhi.values - Sm.values
-
-            
-            @. rhohf.values = hf.values *  rho.values[1]
-
-            rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, time=time)
-
-            interpolate!(Uf, U, config)
-            correct_boundaries!(Uf, U, boundaries.U, time, config)
-
-            flux!(mdotf, Uf, config)
-            
-            @. phif.values = mdotf.values * rhohf.values
-            @. rephif.x.values = Uf.x.values * rhohf.values
-            @. rephif.y.values = Uf.y.values * rhohf.values
-            @. rephif.z.values = Uf.z.values * rhohf.values
-
-            div!(divPhi, rephif, config)
-
+            correct_mass_flux2!(phif, h_eqn, config)
+            correct_velocity!(U, Hv, h∇PL, Ph, τθw, rD, config)
         end
-
-        
-
-
-            #for i ∈ 1:ncorrectors
-            #    discretise!(h_eqn, h, config)
-            #    apply_boundary_conditions!(h_eqn, boundaries.h, nothing, time, config)
-#   
-            #    rh = solve_system!(h_eqn, solvers.h, h, nothing, config)
-            #    explicit_relaxation!(h, prev, solvers.h.relax, config)
-            #end
+    
+        #for i ∈ 1:ncorrectors
+        #    discretise!(h_eqn, h, config)
+        #    apply_boundary_conditions!(h_eqn, boundaries.h, nothing, time, config)
+  
+        #    rh = solve_system!(h_eqn, solvers.h, h, nothing, config)
+        #    explicit_relaxation!(h, prev, solvers.h.relax, config)
+        #end
         
         
         R_ux[iteration] = rx
@@ -463,7 +459,83 @@ end
     end
 end
 
+function correct_velocity!(U, Hv, h∇PL, Ph, τθw, rD, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
 
+    ndrange = length(U)
+    kernel! = _correct_velocity!(_setup(backend, workgroup, ndrange)...)
+    kernel!(U, Hv,  h∇PL, Ph, τθw, rD)
+    # # KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _correct_velocity!(U, Hv,  h∇PL, Ph, τθw, rD)
+    i = @index(Global)
+
+    @uniform begin
+        Ux, Uy, Uz = U.x, U.y, U.z
+        Hvx, Hvy, Hvz = Hv.x, Hv.y, Hv.z
+        valsx = -h∇PL.x.values + Ph.x.values + τθw.x.values
+        valsy = -h∇PL.y.values + Ph.y.values + τθw.y.values
+        valsz = -h∇PL.z.values + Ph.z.values + τθw.z.values
+        rDvalues = rD.values
+    end
+
+    @inbounds begin
+        rDvalues_i = rDvalues[i]
+        Ux[i] = Hvx[i] + valsx[i] * rDvalues_i
+        Uy[i] = Hvy[i] + valsy[i] * rDvalues_i
+        Uz[i] = Hvz[i] + valsz[i] * rDvalues_i
+    end
+end
+
+function correct_mass_flux2!(phif, h_eqn, config)
+    # sngrad = FaceScalarField(mesh)
+    (; faces, cells, boundary_cellsID) = phif.mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    h = h_eqn.model.terms[1].phi
+    A = _A(h_eqn)
+    nzval = _nzval(A)
+    colval = _colval(A)
+    rowptr = _rowptr(A)
+
+    n_faces = length(faces)
+    n_bfaces = length(boundary_cellsID)
+    n_ifaces = n_faces - n_bfaces
+
+    ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
+    kernel! = _correct_mass_flux(_setup(backend, workgroup, ndrange)...)
+    kernel!(phif, h, nzval, colval, rowptr, faces, cells, n_bfaces)
+    KernelAbstractions.synchronize(backend)
+
+    BCs = config.boundaries[1] # assume periodics always defined by user (extract first)
+    for BC ∈ BCs
+        correct_mass_periodic(
+            BC, phif, h, nzval, colval, rowptr, cells, faces, backend, workgroup)
+        KernelAbstractions.synchronize(backend)
+    end
+end
+
+@kernel function _correct_mass_flux2!(
+    phif, h, nzval, colval, rowptr, faces, cells, n_bfaces)
+    i = @index(Global)
+    fID = i + n_bfaces
+
+    @inbounds begin 
+        face = faces[fID]
+        (; area, normal, ownerCells, delta) = face 
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        h1 = h[cID1]
+        h2 = h[cID2]
+        # need to get aN from sparse system
+        zID = spindex(rowptr, colval, cID1, cID2)
+        aN = nzval[zID]
+        phif[fID] -= aN*(h2 - h1)
+    end
+end
 #@kernel function _calculate_τw!(τw, U, h, mu)
 #    i = @index(Global)
 #

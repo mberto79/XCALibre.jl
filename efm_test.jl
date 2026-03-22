@@ -50,7 +50,7 @@ nu = mu/rho_l;
 
 h_crit = 1e-10;
 
-Δt = 1e-3
+Δt = 1e-4
 Δx = 0.006
 C=inlet_rate*Δt/Δx
 
@@ -118,7 +118,7 @@ solvers = (
         solver      = Bicgstab(), # Options: Cg(), Bicgstab(), Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
         convergence = 1e-11,
-        relax       = 1.0,
+        relax       = 0.8,
         rtol = 0,
         atol = 1e-6
     )
@@ -127,7 +127,7 @@ solvers = (
 adaptive = AdaptiveTimeStepping(; 
     # keyword arguments
 
-    maxCo=0.75,
+    maxCo=0.2,
     minShrink=0.1,
     maxGrow=1.2
 )
@@ -135,8 +135,8 @@ begin
 #runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
 #runtime = Runtime(iterations=20000, time_step=1, write_interval=20000)
 #runtime = Runtime(iterations=20, time_step=Δt, write_interval=1, adaptive=adaptive); # hide
-#runtime = Runtime(iterations=200, time_step=Δt, write_interval=10, adaptive=adaptive);
-runtime = Runtime(iterations=2000, time_step=Δt, write_interval=100, adaptive=adaptive)
+runtime = Runtime(iterations=200, time_step=Δt, write_interval=5, adaptive=adaptive);
+#runtime = Runtime(iterations=2000, time_step=Δt, write_interval=100, adaptive=adaptive)
 #runtime = Runtime(iterations=8000, time_step=Δt, write_interval=400)
 #runtime = Runtime(iterations=100, time_step=Δt, write_interval=2, adaptive=adaptive)
 #runtime = Runtime(iterations=100000, time_step=Δt, write_interval=20, adaptive=adaptive)
@@ -144,24 +144,24 @@ runtime = Runtime(iterations=2000, time_step=Δt, write_interval=100, adaptive=a
 #runtime = Runtime(iterations=4000, time_step=Δt, write_interval=100)
 #runtime = Runtime(iterations=15000, time_step=Δt, write_interval=250)
 #runtime = Runtime(iterations=500, time_step=Δt, write_interval=50)
-#runtime = Runtime(iterations=1, time_step=Δt, write_interval=1);
+#runtime = Runtime(iterations=3, time_step=Δt, write_interval=1);
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
 
 GC.gc(true)
   
-initialise!(model.momentum.U, [0,0,0]);
+initialise!(model.momentum.U, [1e-3,0,0]);
 h_init = 1e-11;#h_crit*100;
 initialise!(model.momentum.h, h_init)
 
-#for i ∈ eachindex(model.momentum.h.values)
-#    if abs(model.momentum.h.mesh.cells[i].centre[2]) < 0.51/2
+for i ∈ eachindex(model.momentum.h.values)
+    if abs(model.momentum.h.mesh.cells[i].centre[2]) < 0.51/2
 #        model.momentum.U.x.values[i] = inlet_velocity[1];
 #        model.momentum.U.y.values[i] = inlet_velocity[2];
-#        model.momentum.h.values[i] = inlet_height;
-#    end
-#end
+        model.momentum.h.values[i] = inlet_height/100;
+    end
+end
 
 residuals = run!(model, config, inner_loops=3);
 end;
@@ -169,4 +169,4 @@ using Plots
 plot((residuals.Ux), label="Ux")
 plot!((residuals.Uy), label="Uy")
 #plot!(residuals.Uz, label="Uz")
-plot!((residuals.h), label="h", yaxis=(:log10, [1e-2, 1e-8]))
+plot!((residuals.h), label="h", yaxis=(:log10, [1e-10, 1e70]))

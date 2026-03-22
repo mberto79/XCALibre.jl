@@ -1,7 +1,7 @@
 using XCALibre
 
 grids_dir = pkgdir(XCALibre, "Test_Meshes/");
-grid = "3x3_1m_grid.unv";
+grid = "3x4_1m_grid.unv";
 mesh_file = joinpath(grids_dir, grid);
 output=VTK()
 
@@ -50,6 +50,12 @@ bc = assign(
         Dirichlet(:Right,1),
         Dirichlet(:Top,1),
         Dirichlet(:Bottom,1)
+    ],
+    F = [
+        Dirichlet(:Left, 0),
+        Extrapolated(:Right),
+        Extrapolated(:Bottom),
+        Dirichlet(:Top, 1)
     ]
     )
 )
@@ -82,12 +88,15 @@ values[6] = 1
 values[7] = 4
 values[8] = 3
 values[9] = 2
+values[10] = 5
+values[11] = 4
+values[12] = 3
 end
 
 interpolate!(valuesf, values, config)
 #correct_boundaries!(valuesf, values, bc.A, 0, config)
 #correct_boundaries!(valuesf, values, bc.B, 0, config)
-correct_boundaries!(valuesf, values, bc.E, 0, config)
+correct_boundaries!(valuesf, values, bc.F, 0, config)
 
 grad_val=Grad{Gauss}(valuesf)
 
@@ -108,15 +117,14 @@ for (i,boundary) ∈ enumerate(mesh.boundaries)
         fcentre = mesh.faces[IDs_range[i]].centre
         ccentre = mesh.cells[bcellID[i]].centre
         Δpos = 2 .*(fcentre.-ccentre)
-        dist_2 = Δpos[1]^2 + Δpos[2]^2 + Δpos[3]^2
         if abs(Δpos[1]) > 1e-10
-            vec_field.x.values[bcellID[i]] += 2*abs(mesh.faces[IDs_range[i]].normal[1])*(valuesf[IDs_range[i]]-values[bcellID[i]])/abs2(Δpos[1])#/dist_2
+            vec_field.x.values[bcellID[i]] += 2*abs(mesh.faces[IDs_range[i]].normal[1])*(valuesf[IDs_range[i]]-values[bcellID[i]])/abs2(Δpos[1])
         end
         if abs(Δpos[2]) > 1e-10
-            vec_field.y.values[bcellID[i]] += 2*abs(mesh.faces[IDs_range[i]].normal[2])*(valuesf[IDs_range[i]]-values[bcellID[i]])/abs2(Δpos[2])#/dist_2
+            vec_field.y.values[bcellID[i]] += 2*abs(mesh.faces[IDs_range[i]].normal[2])*(valuesf[IDs_range[i]]-values[bcellID[i]])/abs2(Δpos[2])
         end
         if abs(Δpos[3]) > 1e-10
-            vec_field.z.values[bcellID[i]] += 2*abs(mesh.faces[IDs_range[i]].normal[3])*(valuesf[IDs_range[i]]-values[bcellID[i]])/abs2(Δpos[3])#/dist_2
+            vec_field.z.values[bcellID[i]] += 2*abs(mesh.faces[IDs_range[i]].normal[3])*(valuesf[IDs_range[i]]-values[bcellID[i]])/abs2(Δpos[3])
         end
         println("$(fcentre), $(ccentre), $(Δpos), $(valuesf[IDs_range[i]]), $(values[bcellID[i]]), $(vec_field.x.values[bcellID[i]])")
     end
@@ -166,8 +174,8 @@ args = (
     ("b", lap_val_2),#laplacian),
     ("Cid", Cids),
     ("grad", grad_val.result),
-    ("div_init", div_test_initial),
-    ("div", div_test),
+    #("div_init", div_test_initial),
+    #("div", div_test),
     ("vec_field", vec_field),
     ("lapl", lap_val_2)
 

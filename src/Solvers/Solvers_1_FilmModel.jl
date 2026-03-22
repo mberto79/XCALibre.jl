@@ -158,35 +158,20 @@ function FilmModel(
         Extrapolated(:side_1),
         Extrapolated(:side_2)
     ]
-    ∇h_bc = [
-        #Extrapolated(:inlet),
-        Dirichlet(:inlet, [0,0,0]),
-        Dirichlet(:oulet, [0,0,0]),
-        Dirichlet(:inlet_sides, [0,0,0]),
-        Dirichlet(:top_of_plate, [0,0,0]),
-        Dirichlet(:side_1, [0,0,0]),
-        Dirichlet(:side_2, [0,0,0])
-        
-        #Dirichlet(:inlet, 0),
-        #Dirichlet(:oulet, 0),
-        #Dirichlet(:inlet_sides, 0),
-        #Dirichlet(:top_of_plate, 0),
-        #Dirichlet(:side_1, 0),
-        #Dirichlet(:side_2, 0)
-    ]
+    
     Δh_bc = [
-        Extrapolated(:inlet),
-        Extrapolated(:outlet),
-        Extrapolated(:inlet_sides),
-        Extrapolated(:top_of_plate),
-        Extrapolated(:side_1),
-        Extrapolated(:side_2)
-        #Dirichlet(:inlet, 0),
-        #Dirichlet(:oulet, 0),
-        #Dirichlet(:inlet_sides, 0),
-        #Dirichlet(:top_of_plate, 0),
-        #Dirichlet(:side_1, 0),
-        #Dirichlet(:side_2, 0)
+        #Extrapolated(:inlet),
+        #Extrapolated(:outlet),
+        #Extrapolated(:inlet_sides),
+        #Extrapolated(:top_of_plate),
+        #Extrapolated(:side_1),
+        #Extrapolated(:side_2)
+        Dirichlet(:inlet, 0),
+        Dirichlet(:outlet, 0),
+        Dirichlet(:inlet_sides, 0),
+        Dirichlet(:top_of_plate, 0),
+        Dirichlet(:side_1, 0),
+        Dirichlet(:side_2, 0)
     ]
     #w_bc = [
     #    Dirichlet(:inlet, 1),
@@ -219,11 +204,7 @@ function FilmModel(
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
     
-    prev_u = KernelAbstractions.zeros(backend, TF, n_cells)
-    prev_v = KernelAbstractions.zeros(backend, TF, n_cells)
-    prev_w = KernelAbstractions.zeros(backend, TF, n_cells)
     prev = KernelAbstractions.zeros(backend, TF, n_cells)
-    #prev_phi = VectorField(mesh)
 
     # Pre-allocate vectors to hold residuals
     R_ux = zeros(TF, iterations)
@@ -296,6 +277,9 @@ function FilmModel(
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, time=time)
         
         inverse_diagonal!(rD, U_eqn, config)
+        remove_source!(U_eqn, h∇PL, 1, config)
+        remove_source!(U_eqn, Ph, 2, config)
+        remove_source!(U_eqn, τθw, 3, config)
 
         rh = 0
         for i ∈ 1:inner_loops
@@ -315,6 +299,7 @@ function FilmModel(
             
             @. prev = h.values
             rh = solve_equation!(h_eqn, h, boundaries.h, solvers.h, config, time=time)
+
             if i == inner_loops
                 explicit_relaxation!(h, prev, 1.0, config)
             else
@@ -322,8 +307,13 @@ function FilmModel(
             end
 
             limit_h!(h, config)
-
+            
             laplacian!(Δh, hf, h, boundaries.h, time, config, disp_warn=false)
+            #grad!(∇h, hf, h, boundaries.h, time, config)
+            #limit_gradient!(schemes.h.limiter, ∇h, h, config)
+            #interpolate!(∇hf, ∇h.result, config)
+            #correct_boundaries!(∇hf, ∇h.result, ∇h_bc, time, config)
+            #div!(Δh, ∇hf, config)
             
             interpolate!(Δhf, Δh, config)
             correct_boundaries!(Δhf, Δh, Δh_bc, time, config)
@@ -356,7 +346,7 @@ function FilmModel(
                 τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w.result[i]
             end
 
-            correct_mass_flux2!(phif, h_eqn, config)
+            correct_mass_flux2!(mdotf, h_eqn, config)
             correct_velocity!(U, Hv, h∇PL, Ph, τθw, rD, config)
         end
     
@@ -459,17 +449,44 @@ end
     end
 end
 
+remove_source!(U_eqn::ME, S, Sindex, config) where {ME} = begin # Extend to 3D
+    # backend = _get_backend(get_phi(ux_eqn).mesh)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    cells = get_phi(U_eqn).mesh.cells
+    source_sign = get_source_sign(U_eqn, Sindex)
+    (; bx, by, bz) = U_eqn.equation
+
+    ndrange = length(bx)
+    kernel! = _remove_pressure_source!(_setup(backend, workgroup, ndrange)...)
+    kernel!(cells, source_sign, S, bx, by, bz)
+    # # KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _remove_source!(cells, source_sign, S, bx, by, bz) #Extend to 3D
+    i = @index(Global)
+
+
+    @inbounds begin
+        (; volume) = cells[i]
+        calc = source_sign*S[i]*volume
+        bx[i] -= calc[1]
+        by[i] -= calc[2]
+        bz[i] -= calc[3]
+    end
+end
+
 function correct_velocity!(U, Hv, h∇PL, Ph, τθw, rD, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
     ndrange = length(U)
-    kernel! = _correct_velocity!(_setup(backend, workgroup, ndrange)...)
-    kernel!(U, Hv,  h∇PL, Ph, τθw, rD)
+    kernel! = _correct_velocity_film!(_setup(backend, workgroup, ndrange)...)
+    kernel!(U, Hv, h∇PL, Ph, τθw, rD)
     # # KernelAbstractions.synchronize(backend)
 end
 
-@kernel function _correct_velocity!(U, Hv,  h∇PL, Ph, τθw, rD)
+@kernel function _correct_velocity_film!(U, Hv, h∇PL, Ph, τθw, rD)
     i = @index(Global)
 
     @uniform begin
@@ -506,7 +523,7 @@ function correct_mass_flux2!(phif, h_eqn, config)
     n_ifaces = n_faces - n_bfaces
 
     ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
-    kernel! = _correct_mass_flux(_setup(backend, workgroup, ndrange)...)
+    kernel! = _correct_mass_flux2!(_setup(backend, workgroup, ndrange)...)
     kernel!(phif, h, nzval, colval, rowptr, faces, cells, n_bfaces)
     KernelAbstractions.synchronize(backend)
 

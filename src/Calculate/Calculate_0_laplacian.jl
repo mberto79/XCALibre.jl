@@ -19,15 +19,14 @@ function laplacian!(phi_out, phif_in ,phi_in, BCs, time, config; disp_warn=true)
             fcentre = mesh.faces[IDs_range[i]].centre
             ccentre = mesh.cells[bcellID[i]].centre
             Δpos = 2 .*(fcentre.-ccentre)
-            dist_2 = Δpos[1]^2 + Δpos[2]^2 + Δpos[3]^2
             if abs(Δpos[1]) > 1e-10
-                vec_field.x.values[bcellID[i]] += 2*abs(mesh.faces[IDs_range[i]].normal[1])*(phif_in[IDs_range[i]]-phi_in[bcellID[i]])/abs2(Δpos[1])#/dist_2
+                vec_field.x.values[bcellID[i]] += 2*abs(mesh.faces[IDs_range[i]].normal[1])*(phif_in[IDs_range[i]]-phi_in[bcellID[i]])/abs2(Δpos[1])
             end
             if abs(Δpos[2]) > 1e-10
-                vec_field.y.values[bcellID[i]] += 2*abs(mesh.faces[IDs_range[i]].normal[2])*(phif_in[IDs_range[i]]-phi_in[bcellID[i]])/abs2(Δpos[2])#/dist_2
+                vec_field.y.values[bcellID[i]] += 2*abs(mesh.faces[IDs_range[i]].normal[2])*(phif_in[IDs_range[i]]-phi_in[bcellID[i]])/abs2(Δpos[2])
             end
             if abs(Δpos[3]) > 1e-10
-                vec_field.z.values[bcellID[i]] += 2*abs(mesh.faces[IDs_range[i]].normal[3])*(phif_in[IDs_range[i]]-phi_in[bcellID[i]])/abs2(Δpos[3])#/dist_2
+                vec_field.z.values[bcellID[i]] += 2*abs(mesh.faces[IDs_range[i]].normal[3])*(phif_in[IDs_range[i]]-phi_in[bcellID[i]])/abs2(Δpos[3])
             end
             #println("$(fcentre), $(ccentre), $(Δpos), $(phif_in[IDs_range[i]]), $(phi_in[bcellID[i]]), $(vec_field.x.values[bcellID[i]])")
         end
@@ -35,7 +34,6 @@ function laplacian!(phi_out, phif_in ,phi_in, BCs, time, config; disp_warn=true)
     for i ∈ eachindex(mesh.cells)
         (; faces_range, centre) = mesh.cells[i]
         main_centre = centre
-        x_y_vals = [0,0,0]
 
         for fID ∈ mesh.cell_faces[faces_range]
             (; normal, ownerCells, delta) = mesh.faces[fID]

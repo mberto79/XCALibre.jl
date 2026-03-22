@@ -4,7 +4,7 @@ using CSV
 # using AMDGPU # Uncomment to run on AMD GPUs
 
 grids_dir = pkgdir(XCALibre, "Test_Meshes/");
-grid = "initial_efm_mesh4.unv";
+grid = "initial_efm_mesh6.unv";
 mesh_file = joinpath(grids_dir, grid);
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001);
@@ -20,12 +20,13 @@ hardware = Hardware(backend=backend, workgroup=1024);
 mesh_dev = mesh; # use this line to run on CPU
 # mesh_dev = adapt(backend, mesh)  # Uncomment to run on GPU 
 
+begin # Model Info
 inlet_width = 0.510; # m
 inlet_height = 0.05; # m
 inlet_area = inlet_width*inlet_height; # m^2
 
 if isfile("Model_Input.csv")
-    test_case = 8;
+    test_case = 19;
     input_parameters = CSV.File("Model_Input.csv"); #File containing the different test cases from paper "Modeling of Partially Wetting Liquid Film Using an Enhanced Thin Film Model for Aero-Engine Bearing Chamber Applications" by Kuldeep Singh et. al
 
     inlet_flow_rate = input_parameters.Q[test_case]; # m^3/s
@@ -50,10 +51,10 @@ nu = mu/rho_l;
 
 h_crit = 1e-10;
 
-Δt = 1e-4
+Δt = 1e-5
 Δx = 0.006
 C=inlet_rate*Δt/Δx
-
+end;
 model = Physics(
     momentum=Momentum{EFM}(;σ=σ, h_crit = h_crit, β=β, θm = θm, ϕ=ϕ),
     time = Transient(),
@@ -111,7 +112,7 @@ solvers = (
         preconditioner = Jacobi(), # Options: NormDiagonal()
         convergence = 1e-11,
         relax       = 1.0,
-        rtol = 0,
+        rtol = 1e-4,
         atol = 1e-5
     ),
     h = SolverSetup(
@@ -119,7 +120,7 @@ solvers = (
         preconditioner = Jacobi(), # Options: NormDiagonal()
         convergence = 1e-11,
         relax       = 0.8,
-        rtol = 0,
+        rtol = 1e-4,
         atol = 1e-6
     )
 );
@@ -127,7 +128,7 @@ solvers = (
 adaptive = AdaptiveTimeStepping(; 
     # keyword arguments
 
-    maxCo=0.2,
+    maxCo=0.3,
     minShrink=0.1,
     maxGrow=1.2
 )
@@ -151,15 +152,15 @@ config = Configuration(
 
 GC.gc(true)
   
-initialise!(model.momentum.U, [1e-3,0,0]);
+initialise!(model.momentum.U, [0,0,0]);
 h_init = 1e-11;#h_crit*100;
 initialise!(model.momentum.h, h_init)
 
 for i ∈ eachindex(model.momentum.h.values)
-    if abs(model.momentum.h.mesh.cells[i].centre[2]) < 0.51/2
-#        model.momentum.U.x.values[i] = inlet_velocity[1];
-#        model.momentum.U.y.values[i] = inlet_velocity[2];
-        model.momentum.h.values[i] = inlet_height/100;
+    if abs(model.momentum.h.mesh.cells[i].centre[2]+0.61/2) < 0.51/2
+        model.momentum.U.x.values[i] = inlet_velocity[1];
+        model.momentum.U.y.values[i] = inlet_velocity[2];
+        model.momentum.h.values[i] = inlet_height/10;
     end
 end
 
@@ -170,3 +171,9 @@ plot((residuals.Ux), label="Ux")
 plot!((residuals.Uy), label="Uy")
 #plot!(residuals.Uz, label="Uz")
 plot!((residuals.h), label="h", yaxis=(:log10, [1e-10, 1e70]))
+
+for i ∈ eachindex(mesh.boundary_cellsID)
+    if mesh.boundary_cellsID[i] == 0
+        println("$i, $(mesh.boundary_cellsID[i])")
+    end
+end

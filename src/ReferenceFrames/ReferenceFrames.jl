@@ -3,6 +3,7 @@ module ReferenceFrames
 using Adapt
 using LinearAlgebra
 using KernelAbstractions
+using StaticArrays
 
 using XCALibre.Multithread
 using XCALibre.Mesh

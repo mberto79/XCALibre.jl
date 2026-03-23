@@ -30,7 +30,7 @@ function simple!(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
 
-    if model.REF_FRAME.type == 2
+    if !isnothing(model.reference_frames)
         residuals = setup_incompressible_solvers_MRF(
             SIMPLE_MRF, model, config; 
             output=output,
@@ -396,10 +396,10 @@ function SIMPLE_MRF(
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
-    omega = model.REF_FRAME.omega
-    rotaxis = model.REF_FRAME.rotaxis
-    x0 = model.REF_FRAME.x0
-    mask = model.REF_FRAME.mask
+    omega = model.reference_frames.omega
+    rotaxis = model.reference_frames.rotaxis
+    x0 = model.reference_frames.x0
+    mask = model.reference_frames.mask
 
     for iteration ∈ 1:iterations
         time = iteration

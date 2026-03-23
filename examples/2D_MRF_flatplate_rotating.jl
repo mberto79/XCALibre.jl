@@ -31,25 +31,35 @@ x0 = SVector{3}([0.0, 0.0, 0.0])
 mask = radial_mask(x0,  radius_inner, radius_outer, hardware, mesh)
 REF = REF_FRAME(type, omega, rotaxis, x0, mask)
 
+frame1 = RotatingFrame(
+        omega = 25,
+        rotaxis = [0.0, 0.0, 1.0],
+        x0 = [0.0, 0.0, 0.0],
+        radius_inner = 0.2,
+        radius_outer = 0.0,
+        hardware=hardware,
+        mesh=mesh
+        )
+
 model = Physics(
     time = Steady(),
     fluid = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{KOmega}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev,
-    REF_FRAME = REF
+    reference_frames = frame1
     )
 
 """
 reference_frames = (
-    frame1 = ROTATING_FRAME(
+    frame1 = RotatingFrame(
         omega = 25,
         rotaxis = [0.0, 0.0, 1.0],      # I can use the length of the rot axis to give the zone a thickness in a 3D mesh
         x0 = [0.0, 0.0, 0.0],
         radius_inner = 0.2,
         radius_outer = 0.0
         ),
-    frame2 = ROTATING_FRAME(
+    frame2 = RotatingFrame(
         omega = 15,
         rotaxis = [0.0, 0.0, 1.0],
         x0 = [2.0, 0.0, 0.0],
@@ -72,32 +82,23 @@ BCs = assign(
     region = mesh_dev,
     (
         U = [
-            #RotatingWall(:boundary, rpm= -(omega*(30/pi)), centre=x0, axis=rotaxis),
-            #Wall(:walls, [0.0, 0.0, 0.0])
-            RotatingWall(:walls, rpm= (omega*(30/pi)), centre=x0, axis=rotaxis),
-            Wall(:boundary, [0.0, 0.0, 0.0])
-            #Dirichlet(:boundary,velocity)
-            #Extrapolated(:boundary)
+            RotatingWall(:rotor, rpm= (omega*(30/pi)), centre=x0, axis=rotaxis),
+            Wall(:walls, [0.0, 0.0, 0.0])
         ],
         p = [
-            # Neumann(:Boundary, 0.0),
-            #Dirichlet(:boundary, 0.0),
-            Wall(:boundary),
+            Wall(:rotor),
             Wall(:walls)
         ],
         k = [
-            #Dirichlet(:boundary, k_inlet),
-            KWallFunction(:boundary)
+            KWallFunction(:rotor)
             KWallFunction(:walls)
         ],
         omega = [
-            #Dirichlet(:boundary, ω_inlet),
-            OmegaWallFunction(:boundary)
+            OmegaWallFunction(:rotor)
             OmegaWallFunction(:walls)
         ],
         nut = [
-            #Dirichlet(:boundary, νt_inlet),
-            NutWallFunction(:boundary)
+            NutWallFunction(:rotor)
             NutWallFunction(:walls)
         ]
     )
@@ -145,7 +146,7 @@ solvers = (
     )
 )
 
-runtime = Runtime(iterations=1000, write_interval=200, time_step=1)
+runtime = Runtime(iterations=500, write_interval=50, time_step=1)
 # runtime = Runtime(iterations=2, write_interval=-1, time_step=1)
 
 config = Configuration(
@@ -154,11 +155,8 @@ config = Configuration(
 
 GC.gc()
 
-if type == 1
-    initialise_srf!(model.momentum.U,  x0, rotaxis, omega, config)
-else
-    initialise!(model.momentum.U, velocity)
-end
+
+initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
@@ -168,18 +166,11 @@ residuals = run!(model, config)
 
 
 # Custom Output Functions
-if type == 2
-    REF_type = "MRF"
-elseif type == 1
-    REF_type = "SRF"
-else 
-    REF_type = "ABS"
-end
 mesh_name = get_mesh_name(mesh_file)
 velocity_name = string("velocity_",u_mag)*'_'
 omega_name = string("omega_",omega)*'_'
 script_name = string(@__FILE__)
-output_dir = mesh_name * omega_name *  "polarCoords_" * REF_type * "_MRFdemo"
+output_dir = mesh_name * omega_name *  "polarCoords_MRFdemo"
 pattern = "vtk"
 # pattern = "foam"
 output_directory(output_dir, script_name)

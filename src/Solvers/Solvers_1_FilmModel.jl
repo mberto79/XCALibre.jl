@@ -269,7 +269,6 @@ function FilmModel(
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
     #rh = 0
     rx = ry = rz = 0
-
     @time for iteration ∈ 1:iterations
         copyto!(dt_cpu, config.runtime.dt)
         time += dt_cpu[1]
@@ -277,9 +276,9 @@ function FilmModel(
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, time=time)
         
         inverse_diagonal!(rD, U_eqn, config)
-        remove_source!(U_eqn, h∇PL, 1, config)
-        remove_source!(U_eqn, Ph, 2, config)
-        remove_source!(U_eqn, τθw, 3, config)
+        #remove_source!(U_eqn, h∇PL, 1, config)
+        #remove_source!(U_eqn, Ph, 2, config)
+        #remove_source!(U_eqn, τθw, 3, config)
 
         rh = 0
         for i ∈ 1:inner_loops
@@ -322,9 +321,12 @@ function FilmModel(
             @. rhohf.values = hf.values *  rho.values[1]
             @. phif.values = mdotf.values * rhohf.values
 
+            
+
+
             @. mu_h.values = 3*mu/h.values
             for i ∈ eachindex(Δhf.values)
-                PLf[i] = Pg - rho.values[1]*hf.values[i]*dot(n,G) - coeffs.σ*Δhf[i]
+                PLf[i] = Pg - rhohf[i]*dot(n,G) - coeffs.σ*Δhf[i]
             end
 
             grad!(∇PL, PLf, config)
@@ -346,7 +348,7 @@ function FilmModel(
                 τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w.result[i]
             end
 
-            correct_mass_flux2!(mdotf, h_eqn, config)
+            correct_mass_flux2!(phif, h_eqn, config)
             correct_velocity!(U, Hv, h∇PL, Ph, τθw, rD, config)
         end
     
@@ -458,7 +460,7 @@ remove_source!(U_eqn::ME, S, Sindex, config) where {ME} = begin # Extend to 3D
     (; bx, by, bz) = U_eqn.equation
 
     ndrange = length(bx)
-    kernel! = _remove_pressure_source!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _remove_source!(_setup(backend, workgroup, ndrange)...)
     kernel!(cells, source_sign, S, bx, by, bz)
     # # KernelAbstractions.synchronize(backend)
 end

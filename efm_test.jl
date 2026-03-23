@@ -156,13 +156,13 @@ initialise!(model.momentum.U, [0,0,0]);
 h_init = 1e-11;#h_crit*100;
 initialise!(model.momentum.h, h_init)
 
-for i ∈ eachindex(model.momentum.h.values)
-    if abs(model.momentum.h.mesh.cells[i].centre[2]+0.61/2) < 0.51/2
-        model.momentum.U.x.values[i] = inlet_velocity[1];
-        model.momentum.U.y.values[i] = inlet_velocity[2];
-        model.momentum.h.values[i] = inlet_height/10;
-    end
-end
+#for i ∈ eachindex(model.momentum.h.values)
+#    if abs(model.momentum.h.mesh.cells[i].centre[2]+0.61/2) < 0.51/2
+#        model.momentum.U.x.values[i] = inlet_velocity[1];
+#        model.momentum.U.y.values[i] = inlet_velocity[2];
+#        model.momentum.h.values[i] = inlet_height/10;
+#    end
+#end
 
 residuals = run!(model, config, inner_loops=3);
 end;

@@ -93,9 +93,12 @@ end
 @inline function ghost_temperature(
     bc::FixedTemperature, T_int::TF, cp::TF, Tref::TF
 ) where TF
-    # Isothermal wall: T_face = T_wall → ghost = 2*T_wall - T_int
-    T_wall = TF(bc.value.T)
-    2*T_wall - T_int
+    # Isothermal wall: set ghost = T_wall directly.
+    # The 2*T_wall - T_int extrapolation is unstable at high Mach numbers
+    # because stagnation T_int >> 2*T_wall near the stagnation point.
+    # Using ghost = T_wall gives T_face = 0.5*(T_int+T_wall) which is
+    # always positive and converges to T_wall as T_int → T_wall.
+    TF(bc.value.T)
 end
 
 @inline function ghost_temperature(
@@ -470,6 +473,114 @@ end
 end
 
 # ============================================================
+# Viscous flux kernels
+# ============================================================
+
+# Internal faces — cell-based loop, same pattern as _rusanov_flux_internal!
+@kernel function _viscous_flux_internal!(
+    res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+    U, gradU, gradT, mueff, kappa_eff, mesh
+)
+    i = @index(Global)
+
+    @uniform begin
+        (; cells, faces, cell_faces, cell_nsign) = mesh
+    end
+
+    @inbounds begin
+        (; faces_range) = cells[i]
+
+        TF = eltype(res_rhoUx.values)
+        two_thirds = TF(2)/TF(3)
+
+        acc_rhoUx = zero(TF)
+        acc_rhoUy = zero(TF)
+        acc_rhoUz = zero(TF)
+        acc_rhoE  = zero(TF)
+
+        for fi ∈ faces_range
+            fID     = cell_faces[fi]
+            nsign   = TF(cell_nsign[fi])
+            (; area, normal, ownerCells) = faces[fID]
+
+            cL = ownerCells[1]
+            cR = ownerCells[2]
+
+            # Face-averaged velocity gradient and temperature gradient
+            gradU_f = TF(0.5) * (gradU[cL] + gradU[cR])
+            gradT_f = TF(0.5) * (gradT[cL] + gradT[cR])
+
+            # Velocity divergence (trace of ∇U)
+            divU = gradU_f[1,1] + gradU_f[2,2] + gradU_f[3,3]
+
+            # Viscous stress projection onto face normal: (μ*(∇U + (∇U)ᵀ - 2/3*(∇·U)I)) · n
+            mueff_f = TF(mueff[fID])
+            tau_n   = mueff_f * ((gradU_f + gradU_f') * normal - two_thirds * divU * normal)
+
+            # Face-averaged velocity
+            U_f = TF(0.5) * (U[cL] + U[cR])
+
+            # Viscous energy flux: u·(τ·n) + κ*(∇T·n)
+            kf       = TF(kappa_eff[fID])
+            F_visc_E = (U_f ⋅ tau_n) + kf * (gradT_f ⋅ normal)
+
+            # Subtract viscous contribution (RHS term → subtract from residual)
+            acc_rhoUx -= nsign * tau_n[1] * area
+            acc_rhoUy -= nsign * tau_n[2] * area
+            acc_rhoUz -= nsign * tau_n[3] * area
+            acc_rhoE  -= nsign * F_visc_E * area
+        end
+
+        res_rhoUx.values[i] += acc_rhoUx
+        res_rhoUy.values[i] += acc_rhoUy
+        res_rhoUz.values[i] += acc_rhoUz
+        res_rhoE.values[i]  += acc_rhoE
+    end
+end
+
+# Boundary faces — face-based loop with atomics, same pattern as _rusanov_bc_flux!
+@kernel function _viscous_bc_flux!(
+    res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+    U, gradU, gradT, mueff, kappa_eff, mesh
+)
+    fID = @index(Global)
+
+    @inbounds begin
+        (; faces) = mesh
+        face = faces[fID]
+        (; area, normal, ownerCells) = face
+        cID = ownerCells[1]  # interior cell
+
+        TF = eltype(res_rhoUx.values)
+        two_thirds = TF(2)/TF(3)
+
+        # One-sided gradients from interior cell
+        gradU_f = gradU[cID]
+        gradT_f = gradT[cID]
+
+        # Velocity divergence
+        divU = gradU_f[1,1] + gradU_f[2,2] + gradU_f[3,3]
+
+        # Viscous stress projection
+        mueff_f = TF(mueff[fID])
+        tau_n   = mueff_f * ((gradU_f + gradU_f') * normal - two_thirds * divU * normal)
+
+        # Interior velocity at boundary face
+        Ui = U[cID]
+
+        # Viscous energy flux
+        kf       = TF(kappa_eff[fID])
+        F_visc_E = (Ui ⋅ tau_n) + kf * (gradT_f ⋅ normal)
+
+        # Subtract viscous contribution (boundary faces are outward from cID)
+        Atomix.@atomic res_rhoUx.values[cID] -= tau_n[1] * area
+        Atomix.@atomic res_rhoUy.values[cID] -= tau_n[2] * area
+        Atomix.@atomic res_rhoUz.values[cID] -= tau_n[3] * area
+        Atomix.@atomic res_rhoE.values[cID]  -= F_visc_E * area
+    end
+end
+
+# ============================================================
 # Setup and main solver loop
 # ============================================================
 
@@ -489,10 +600,9 @@ end
 
 function _setup_density_based(model, config; output=VTK())
     (; U, p, Uf, pf) = model.momentum
-    (; rho) = model.fluid
-    T  = model.energy.T
+    (; rho, nu) = model.fluid
     mesh = model.domain
-    (; hardware, runtime) = config
+    (; hardware, runtime, schemes, boundaries) = config
     (; backend, workgroup) = hardware
 
     @info "Allocating DensityBasedWorkspace..."
@@ -514,21 +624,55 @@ function _setup_density_based(model, config; output=VTK())
         rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, Mach, dt_cell
     )
 
+    @info "Allocating viscous and turbulence fields..."
+
+    # Gradient objects: created before T is bound to temperature (T type still available)
+    gradU  = Grad{schemes.U.gradient}(U)
+    gradUT = T(gradU)
+    Uf_s   = FaceVectorField(mesh)  # Uf for StrainRate (separate from momentum Uf)
+    S      = StrainRate(gradU, gradUT, U, Uf_s)
+
+    # Temperature gradient (T_field = model.energy.T, Tf = model.energy.Tf for face values)
+    T_field = model.energy.T
+    gradT   = Grad{schemes.he.gradient}(T_field)
+
+    # Effective viscosity / conductivity on faces
+    nueff     = FaceScalarField(mesh)
+    mueff     = FaceScalarField(mesh)
+    kappa_eff = FaceScalarField(mesh)
+
+    # Mass flux for turbulence transport equations
+    mdotf = FaceScalarField(mesh)
+
+    # Scratch array for turbulence! prev argument
+    prev = KernelAbstractions.zeros(backend, TF, n_cells)
+
+    @info "Initialising turbulence model..."
+    turbulenceModel, config = initialise(model.turbulence, model, mdotf, nothing, config)
+
     @info "Initialising density from p and T..."
 
     ndrange = n_cells
     kernel! = _init_rho!(_setup(backend, workgroup, ndrange)...)
-    kernel!(rho, p, T, model.fluid)
+    kernel!(rho, p, T_field, model.fluid)
 
-    residuals = DENSITY_BASED(model, workspace, config; output=output)
+    residuals = DENSITY_BASED(
+        model, workspace, turbulenceModel,
+        S, gradT, nueff, mueff, kappa_eff, mdotf, prev,
+        config; output=output
+    )
     return residuals
 end
 
-function DENSITY_BASED(model, workspace, config; output=VTK())
-
+function DENSITY_BASED(
+    model, workspace, turbulenceModel,
+    S, gradT, nueff, mueff, kappa_eff, mdotf, prev,
+    config; output=VTK()
+)
     (; U, p, Uf, pf) = model.momentum
-    (; rho) = model.fluid
+    (; rho, nu) = model.fluid
     T  = model.energy.T
+    Tf = model.energy.Tf   # face temperature (FaceScalarField)
     mesh = model.domain
     (; solvers, schemes, runtime, hardware, boundaries) = config
     (; iterations, write_interval) = runtime
@@ -559,22 +703,57 @@ function DENSITY_BASED(model, workspace, config; output=VTK())
 
     outputWriter = initialise_writer(output, model.domain)
 
+    # Extract gradU from the StrainRate object (updated by turbulence! each iteration)
+    (; gradU) = S
+
+    # Fluid constants for thermal conductivity: κ_eff = μ_eff * cp / Pr
+    cp_val = TF(model.fluid.cp.values)
+    Pr_val = TF(model.fluid.Pr.values)
+    rhof   = model.fluid.rhof  # face density (FaceScalarField in SupersonicFlow)
+
     @info "Initialising conservative variables..."
 
     ndrange = n_cells
     kernel! = _prim_to_cons!(_setup(backend, workgroup, ndrange)...)
     kernel!(rhoU, rhoE, rho, U, p, model.fluid)
 
+    time = TF(0.0)
+
+    # Initial face interpolations for viscous fields
+    interpolate!(rhof, rho, config)
+    interpolate!(Tf, T, config)
+    update_nueff!(nueff, nu, model.turbulence, config)
+    @. mueff.values     = rhof.values * nueff.values
+    @. kappa_eff.values = mueff.values * cp_val / Pr_val
+    flux!(mdotf, Uf, config)
+    @. mdotf.values *= rhof.values
+
     # Pre-allocate residual storage
     R_rho = ones(TF, iterations)
-
-    time = TF(0.0)
 
     @info "Starting DENSITY_BASED time loop..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
     for iteration ∈ 1:iterations
+
+        # 0. Update face density and temperature, compute gradients and effective viscosity
+        interpolate!(rhof, rho, config)
+        interpolate!(Tf, T, config)
+
+        # Velocity gradients updated inside turbulence! (Laminar+Compressible calls grad! + limit_gradient!)
+        turbulence!(turbulenceModel, model, S, prev, time, config)
+
+        # Temperature gradient: T is a derived field (from cons-to-prim).
+        # Do NOT use boundaries.he — FixedTemperature would apply cp*(T-Tref) instead of T.
+        # Tf is already interpolated above; this version of grad! skips boundary correction.
+        grad!(gradT, Tf, T, time, config)
+        limit_gradient!(schemes.he.limiter, gradT, T, config)
+
+        # Effective viscosity: nueff (kinematic, on faces) → mueff = rhof * nueff
+        update_nueff!(nueff, nu, model.turbulence, config)
+        @. mueff.values     = rhof.values * nueff.values
+        @. kappa_eff.values = mueff.values * cp_val / Pr_val
 
         # 1. Zero residuals
         kernel! = _zero_residuals!(_setup(backend, workgroup, n_cells)...)
@@ -587,12 +766,26 @@ function DENSITY_BASED(model, workspace, config; output=VTK())
             rho, U, p, mesh, model.fluid
         )
 
+        # 2a. Viscous flux — internal faces (subtract from residuals)
+        kernel! = _viscous_flux_internal!(_setup(backend, workgroup, n_cells)...)
+        kernel!(
+            res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+            U, gradU, gradT, mueff, kappa_eff, mesh
+        )
+
         # 3. Rusanov flux — boundary faces (face loop, with atomics)
         kernel! = _rusanov_bc_flux!(_setup(backend, workgroup, n_bfaces)...)
         kernel!(
             boundaries.U, boundaries.p, boundaries.he,
             res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
             rho, U, p, T, mesh, model.fluid, Tref
+        )
+
+        # 3a. Viscous flux — boundary faces (subtract from residuals)
+        kernel! = _viscous_bc_flux!(_setup(backend, workgroup, n_bfaces)...)
+        kernel!(
+            res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+            U, gradU, gradT, mueff, kappa_eff, mesh
         )
 
         # 4. Compute density residual before update (L2 norm)
@@ -616,18 +809,23 @@ function DENSITY_BASED(model, workspace, config; output=VTK())
         kernel! = _cons_to_prim!(_setup(backend, workgroup, n_cells)...)
         kernel!(U, p, T, Mach, rho, rhoU, rhoE, mesh.cells, model.fluid)
 
-        # 8. Update face interpolations (needed for grad! calls if used later)
+        # 8. Update face interpolations
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, boundaries.U, time, config)
         interpolate!(pf, p, config)
         correct_boundaries!(pf, p, boundaries.p, time, config)
+
+        # 8a. Update mass flux for turbulence transport equations
+        flux!(mdotf, Uf, config)
+        @. mdotf.values *= rhof.values
 
         # 9. Progress and convergence check
         ProgressMeter.next!(
             progress, showvalues = [
                 (:iter, iteration),
                 (:dt, dt),
-                (:rho_residual, rho_res)
+                (:rho_residual, rho_res),
+                turbulenceModel.state.residuals...
             ]
         )
 

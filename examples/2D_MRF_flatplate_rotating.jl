@@ -22,27 +22,38 @@ k_inlet = 1 #3/2*(Tu*u_mag)^2
 νt_inlet = k_inlet/ω_inlet
 Re = velocity[1]*0.1/nu
 
-reference_frames = (   # Add a function here to give IDs to each rotating region and add those IDs to the mask so it can identify the correct properties 
-    frame1 = RotatingFrame(
-        omega = 25,
-        rotaxis = [0.0, 0.0, 1.0],
-        x0 = [0.0, 0.0, 0.0],
-        radius_inner = 0.2,
-        radius_outer = 0.0,
-        hardware=hardware,
-        mesh=mesh
-        ),
-    frame2 = RotatingFrame(
-        omega = 25,
-        rotaxis = [0.0, 0.0, 1.0],
-        x0 = [0.0, 0.0, 0.0],
-        radius_inner = 0.2,
-        radius_outer = 0.0,
-        hardware=hardware,
-        mesh=mesh
+reference_frames = RotatingFrame(
+    omega = 25,
+    rotaxis = [0.0, 0.0, 1.0],
+    x0 = [0.0, 0.0, 0.0],
+    radius_inner = 0.2,
+    radius_outer = 0.0,
+    hardware=hardware,
+    mesh=mesh
+    )
+
+"""
+rotating_frames = RotatingFrames(  
+    hardware=hardware,
+    mesh=mesh,
+    Frames = (
+        frame1 = (
+            omega = 25,
+            rotaxis = [0.0, 0.0, 1.0],
+            x0 = [0.0, 0.0, 0.0],
+            radius_inner = 0.2,
+            radius_outer = 0.0
+            ),
+        frame2 = (
+            omega = 15,
+            rotaxis = [1.0, 0.0, 1.0],
+            x0 = [1.0, 0.0, 0.0],
+            radius_inner = 0.2,
+            radius_outer = 0.0
+            )
         )
 )
-
+"""
 
 model = Physics(
     time = Steady(),
@@ -50,7 +61,7 @@ model = Physics(
     turbulence = RANS{KOmega}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev,
-    reference_frames = reference_frames[1]
+    reference_frames = reference_frames
     )
 
 

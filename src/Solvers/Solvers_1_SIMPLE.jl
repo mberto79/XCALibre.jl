@@ -768,20 +768,74 @@ end
     end
 end
 
-
-function update_Utemp!(U, U_temp, config)
+function new_update_mrf_sources!(omegaU, U, reference_frames, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
     mesh = U.mesh
     cells = mesh.cells 
 
     ndrange = length(cells)
-    kernel! = _update_Utemp!(_setup(backend, workgroup, ndrange)...)
-    kernel!(U, U_temp)
+    kernel! = _new_update_mrf_sources!(_setup(backend, workgroup, ndrange)...)
+    kernel!(omegaU, U, reference_frames)
 end
 
-@kernel function _update_Utemp!(U, U_temp)
+@kernel function _new_update_mrf_sources!(omegaU, U, reference_frames)
     cID = @index(Global)
 
-    U_temp[cID] = U[cID]
+    (; frames, global_mask) = reference_frames
+    (; omega, rotaxis) = frames
+
+    if global_mask[cID] != 0
+        frameID = global_mask[cID]
+    else
+        frameID = 0
+    end
+
+    if frameID == 0
+        omegaU[cID] = (Omega × U[cID]) * 0
+    elseif frameID != 0
+        Omega = omega[frameID]*rotaxis[frameID]
+        omegaU[cID] = Omega × U[cID]
+    end
+end
+
+function new_flux_mrf!(phif::FS, psif::FV, config, reference_frames) where {FS<:FaceScalarField,FV<:FaceVectorField}
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    ndrange = length(phif)
+    kernel! = _new_flux_mrf!(_setup(backend, workgroup, ndrange)...)
+    kernel!(phif, psif, reference_frames)
+    # # KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _new_flux_mrf!(phif, psif, reference_frames)
+    i = @index(Global)
+
+    @uniform begin
+        (; mesh, values) = phif
+        (; faces) = mesh
+        (; frames, global_mask) = reference_frames
+        (; omega, rotaxis, x0) = frames
+    end
+
+    @inbounds begin
+        (; area, normal, ownerCells) = faces[i]
+        if global_mask[ownerCells[1]] != 0
+            frameID = global_mask[ownerCells[1]]
+        elseif global_mask[ownerCells[2]] != 0
+            frameID = global_mask[ownerCells[1]]
+        else
+            frameID = 0
+        end
+
+        if frameID == 0
+            Sf = area * normal
+            values[i] = (psif[i] ⋅ Sf)
+        elseif frameID != 0
+            Omega = omega[frameID]*rotaxis[frameID]
+            r = faces[i].centre - x0[frameID]
+            values[i] = (psif[i] ⋅ Sf) - ((Omega × r ⋅ Sf))
+        end
+    end
 end

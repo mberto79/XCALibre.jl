@@ -23,7 +23,7 @@ T_inf = 300.0        # K
 p_inf = 101325.0     # Pa
 R_gas = cp * (1.0 - 1.0/gamma)   # ≈ 287 J/(kg·K)
 a_inf = sqrt(gamma * R_gas * T_inf)  # ≈ 347 m/s
-Mach  = 2
+Mach  = 3
 U_inf = Mach * a_inf              # ≈ 521 m/s
 
 velocity = [U_inf, 0.0, 0.0]
@@ -57,7 +57,7 @@ BCs = assign(
         he = [
             FixedTemperature(:inlet, T=T_inf, Enthalpy(cp=cp, Tref=Tref)),
             Zerogradient(:outlet),
-            FixedTemperature(:cylinder, T=100, Enthalpy(cp=cp, Tref=Tref)),
+            FixedTemperature(:cylinder, T=400, Enthalpy(cp=cp, Tref=Tref)),
             # Zerogradient(:cylinder),
             Zerogradient(:top),
             Zerogradient(:bottom)
@@ -70,11 +70,12 @@ solvers = (
     rho = (convergence = 1e-15,),
 )
 
-# Only gradient scheme is used (no convection discretisation in density-based solver)
+# gradient schemes for viscous flux gradients; flux selects the inviscid Riemann solver
 schemes = (
-    U  = Schemes(gradient=Gauss),
-    p  = Schemes(gradient=Gauss),
-    he = Schemes(gradient=Gauss),
+    U    = Schemes(gradient=Gauss),
+    p    = Schemes(gradient=Gauss),
+    he   = Schemes(gradient=Gauss),
+    flux = HLLC(),   # or Rusanov() for more dissipation
 )
 
 runtime = Runtime(

@@ -1,4 +1,14 @@
-export density_based!
+export density_based!, Rusanov, HLLC
+
+# ============================================================
+# Flux scheme selector types
+# ============================================================
+
+"""User-facing flux scheme type — selects the Rusanov (Local Lax-Friedrichs) flux."""
+struct Rusanov end
+
+"""User-facing flux scheme type — selects the HLLC (Harten-Lax-van Leer Contact) flux."""
+struct HLLC end
 
 # ============================================================
 # Workspace struct
@@ -181,6 +191,108 @@ end
 end
 
 # ============================================================
+# HLLC (Harten-Lax-van Leer Contact) flux
+# ============================================================
+
+@inline function hllc_flux(
+    UL::SV, UR::SV,
+    pL::TF, pR::TF,
+    rhoL::TF, rhoR::TF,
+    normal::SV, area::TF, gamma::TF
+) where {TF, SV<:SVector{3,TF}}
+    gm1 = gamma - one(TF)
+
+    # Normal velocities
+    unL = UL ⋅ normal
+    unR = UR ⋅ normal
+
+    # Sound speeds
+    aL = sqrt(gamma * pL / rhoL)
+    aR = sqrt(gamma * pR / rhoR)
+
+    # Conservative total energy per unit volume
+    rhoEL = pL/gm1 + TF(0.5)*rhoL*(UL ⋅ UL)
+    rhoER = pR/gm1 + TF(0.5)*rhoR*(UR ⋅ UR)
+
+    # Wave speed estimates (Einfeldt bounds)
+    SL = min(unL - aL, unR - aR)
+    SR = max(unL + aL, unR + aR)
+
+    # Contact wave speed S* (from Rankine-Hugoniot conditions)
+    Sstar = (pR - pL + rhoL*unL*(SL - unL) - rhoR*unR*(SR - unR)) /
+            (rhoL*(SL - unL) - rhoR*(SR - unR))
+
+    # Physical flux vectors F(W)·n
+    HL = (rhoEL + pL) / rhoL
+    HR = (rhoER + pR) / rhoR
+
+    FL_rho   = rhoL*unL
+    FL_rhoUx = rhoL*UL[1]*unL + pL*normal[1]
+    FL_rhoUy = rhoL*UL[2]*unL + pL*normal[2]
+    FL_rhoUz = rhoL*UL[3]*unL + pL*normal[3]
+    FL_rhoE  = rhoL*HL*unL
+
+    FR_rho   = rhoR*unR
+    FR_rhoUx = rhoR*UR[1]*unR + pR*normal[1]
+    FR_rhoUy = rhoR*UR[2]*unR + pR*normal[2]
+    FR_rhoUz = rhoR*UR[3]*unR + pR*normal[3]
+    FR_rhoE  = rhoR*HR*unR
+
+    # HLLC star states (contact-preserving correction)
+    # Left star: W* = ρK*(SL-unL)/(SL-S*) * [1, UK + (S*-unK)*n, EK/ρK + (S*-unK)*(S* + pK/(ρK*(SK-unK)))]
+    coefL   = rhoL * (SL - unL) / (SL - Sstar)
+    WL_rho  = coefL
+    WL_rhoUx = coefL * (UL[1] + (Sstar - unL)*normal[1])
+    WL_rhoUy = coefL * (UL[2] + (Sstar - unL)*normal[2])
+    WL_rhoUz = coefL * (UL[3] + (Sstar - unL)*normal[3])
+    WL_rhoE  = coefL * (rhoEL/rhoL + (Sstar - unL)*(Sstar + pL/(rhoL*(SL - unL))))
+
+    coefR   = rhoR * (SR - unR) / (SR - Sstar)
+    WR_rho  = coefR
+    WR_rhoUx = coefR * (UR[1] + (Sstar - unR)*normal[1])
+    WR_rhoUy = coefR * (UR[2] + (Sstar - unR)*normal[2])
+    WR_rhoUz = coefR * (UR[3] + (Sstar - unR)*normal[3])
+    WR_rhoE  = coefR * (rhoER/rhoR + (Sstar - unR)*(Sstar + pR/(rhoR*(SR - unR))))
+
+    # Flux region selection (Toro, §10.4)
+    if SL >= zero(TF)
+        # Entirely supersonic in +n direction
+        F_rho   = area*FL_rho
+        F_rhoUx = area*FL_rhoUx
+        F_rhoUy = area*FL_rhoUy
+        F_rhoUz = area*FL_rhoUz
+        F_rhoE  = area*FL_rhoE
+    elseif Sstar >= zero(TF)
+        # Left star region
+        F_rho   = area*(FL_rho   + SL*(WL_rho   - rhoL))
+        F_rhoUx = area*(FL_rhoUx + SL*(WL_rhoUx - rhoL*UL[1]))
+        F_rhoUy = area*(FL_rhoUy + SL*(WL_rhoUy - rhoL*UL[2]))
+        F_rhoUz = area*(FL_rhoUz + SL*(WL_rhoUz - rhoL*UL[3]))
+        F_rhoE  = area*(FL_rhoE  + SL*(WL_rhoE  - rhoEL))
+    elseif SR >= zero(TF)
+        # Right star region
+        F_rho   = area*(FR_rho   + SR*(WR_rho   - rhoR))
+        F_rhoUx = area*(FR_rhoUx + SR*(WR_rhoUx - rhoR*UR[1]))
+        F_rhoUy = area*(FR_rhoUy + SR*(WR_rhoUy - rhoR*UR[2]))
+        F_rhoUz = area*(FR_rhoUz + SR*(WR_rhoUz - rhoR*UR[3]))
+        F_rhoE  = area*(FR_rhoE  + SR*(WR_rhoE  - rhoER))
+    else
+        # Entirely supersonic in -n direction
+        F_rho   = area*FR_rho
+        F_rhoUx = area*FR_rhoUx
+        F_rhoUy = area*FR_rhoUy
+        F_rhoUz = area*FR_rhoUz
+        F_rhoE  = area*FR_rhoE
+    end
+
+    return F_rho, F_rhoUx, F_rhoUy, F_rhoUz, F_rhoE
+end
+
+# Dispatch: select flux function based on user-chosen scheme type
+@inline compute_inviscid_flux(::Rusanov, args...) = rusanov_flux(args...)
+@inline compute_inviscid_flux(::HLLC,    args...) = hllc_flux(args...)
+
+# ============================================================
 # Kernels
 # ============================================================
 
@@ -229,8 +341,9 @@ end
     end
 end
 
-# Rusanov flux at internal faces — cell-based loop, no atomics
-@kernel function _rusanov_flux_internal!(
+# Inviscid flux at internal faces — cell-based loop, no atomics
+@kernel function _inviscid_flux_internal!(
+    flux_scheme,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
     rho, U, p, mesh, fluid
 )
@@ -271,8 +384,8 @@ end
             UR   = U[cR]
             pR   = TF(p[cR])
 
-            F_rho, F_rhoUx, F_rhoUy, F_rhoUz, F_rhoE = rusanov_flux(
-                UL, UR, pL, pR, rhoL, rhoR, normal, area, gamma_tf
+            F_rho, F_rhoUx, F_rhoUy, F_rhoUz, F_rhoE = compute_inviscid_flux(
+                flux_scheme, UL, UR, pL, pR, rhoL, rhoR, normal, area, gamma_tf
             )
 
             # nsign: +1 if cell i is left (outward), -1 if right (inward)
@@ -291,24 +404,24 @@ end
     end
 end
 
-# Rusanov flux at boundary faces — face-based loop, uses atomics
-@kernel function _rusanov_bc_flux!(
-    U_BCs, p_BCs, he_BCs,
+# Inviscid flux at boundary faces — face-based loop, uses atomics
+@kernel function _inviscid_bc_flux!(
+    flux_scheme, U_BCs, p_BCs, he_BCs,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
     rho, U, p, T, mesh, fluid, Tref
 )
     fID = @index(Global)
 
-    @inbounds _rusanov_bc_dispatch!(
-        U_BCs, p_BCs, he_BCs,
+    @inbounds _inviscid_bc_dispatch!(
+        flux_scheme, U_BCs, p_BCs, he_BCs,
         res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
         rho, U, p, T, mesh, fluid, Tref, fID
     )
 end
 
 # Generated dispatch over boundary patches (compile-time loop unrolling)
-@generated function _rusanov_bc_dispatch!(
-    U_BCs, p_BCs, he_BCs,
+@generated function _inviscid_bc_dispatch!(
+    flux_scheme, U_BCs, p_BCs, he_BCs,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
     rho, U, p, T, mesh, fluid, Tref, fID
 )
@@ -321,8 +434,8 @@ end
             bc_he_i = he_BCs[$i]
             (; start, stop) = bc_U_i.IDs_range
             if start <= fID <= stop
-                _apply_rusanov_bc!(
-                    bc_U_i, bc_p_i, bc_he_i,
+                _apply_inviscid_bc!(
+                    flux_scheme, bc_U_i, bc_p_i, bc_he_i,
                     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
                     rho, U, p, T, mesh, fluid, Tref, fID
                 )
@@ -338,9 +451,9 @@ end
     end
 end
 
-# Apply Rusanov flux for a single boundary face, dispatching on BC types
-@inline function _apply_rusanov_bc!(
-    bc_U, bc_p, bc_he,
+# Apply inviscid flux for a single boundary face, dispatching on BC types
+@inline function _apply_inviscid_bc!(
+    flux_scheme, bc_U, bc_p, bc_he,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
     rho, U, p, T, mesh, fluid, Tref, fID
 )
@@ -372,9 +485,9 @@ end
     rhoR = pR / (R_gas * TR)
     rhoR = max(rhoR, TF(1e-10))
 
-    # Rusanov flux (boundary face: outward normal = face normal, no nsign correction)
-    F_rho, F_rhoUx, F_rhoUy, F_rhoUz, F_rhoE = rusanov_flux(
-        UL, UR, pL, pR, rhoL, rhoR, normal, area, gamma
+    # Inviscid flux (boundary face: outward normal = face normal, no nsign correction)
+    F_rho, F_rhoUx, F_rhoUy, F_rhoUz, F_rhoE = compute_inviscid_flux(
+        flux_scheme, UL, UR, pL, pR, rhoL, rhoR, normal, area, gamma
     )
 
     Atomix.@atomic res_rho.values[cID]  += F_rho
@@ -678,6 +791,9 @@ function DENSITY_BASED(
     (; iterations, write_interval) = runtime
     (; backend, workgroup) = hardware
 
+    # Flux scheme: user sets schemes = (..., flux = HLLC()) or flux = Rusanov(); default Rusanov
+    flux_scheme = get(schemes, :flux, Rusanov())
+
     (; rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, Mach, dt_cell) = workspace
 
     n_cells  = length(mesh.cells)
@@ -759,9 +875,10 @@ function DENSITY_BASED(
         kernel! = _zero_residuals!(_setup(backend, workgroup, n_cells)...)
         kernel!(res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE)
 
-        # 2. Rusanov flux — internal faces (cell loop, no atomics)
-        kernel! = _rusanov_flux_internal!(_setup(backend, workgroup, n_cells)...)
+        # 2. Inviscid flux — internal faces (cell loop, no atomics)
+        kernel! = _inviscid_flux_internal!(_setup(backend, workgroup, n_cells)...)
         kernel!(
+            flux_scheme,
             res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
             rho, U, p, mesh, model.fluid
         )
@@ -773,10 +890,10 @@ function DENSITY_BASED(
             U, gradU, gradT, mueff, kappa_eff, mesh
         )
 
-        # 3. Rusanov flux — boundary faces (face loop, with atomics)
-        kernel! = _rusanov_bc_flux!(_setup(backend, workgroup, n_bfaces)...)
+        # 3. Inviscid flux — boundary faces (face loop, with atomics)
+        kernel! = _inviscid_bc_flux!(_setup(backend, workgroup, n_bfaces)...)
         kernel!(
-            boundaries.U, boundaries.p, boundaries.he,
+            flux_scheme, boundaries.U, boundaries.p, boundaries.he,
             res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
             rho, U, p, T, mesh, model.fluid, Tref
         )

@@ -1,0 +1,652 @@
+export density_based!
+
+# ============================================================
+# Workspace struct
+# ============================================================
+
+struct DensityBasedWorkspace{SF<:ScalarField, VF<:VectorField, V<:AbstractVector}
+    rhoU::VF        # conservative momentum ρU
+    rhoE::SF        # conservative total energy ρE
+    res_rho::SF     # density residual accumulator
+    res_rhoUx::SF   # x-momentum residual accumulator
+    res_rhoUy::SF   # y-momentum residual accumulator
+    res_rhoUz::SF   # z-momentum residual accumulator
+    res_rhoE::SF    # energy residual accumulator
+    Mach::SF        # Mach number field
+    dt_cell::V      # per-cell adaptive time step
+end
+
+# ============================================================
+# Ghost state functions for boundary flux computation
+# ============================================================
+
+# --- Velocity ghost state ---
+
+@inline function ghost_velocity(
+    bc::Wall, U_int::SV, n::SV
+) where {TF, SV<:SVector{3,TF}}
+    # Wall: U_face = U_wall → ghost = 2*U_wall - U_int
+    U_wall = SV(TF(bc.value[1]), TF(bc.value[2]), TF(bc.value[3]))
+    2*U_wall - U_int
+end
+
+@inline function ghost_velocity(
+    bc::Symmetry, U_int::SV, n::SV
+) where {TF, SV<:SVector{3,TF}}
+    # Symmetry: reflect normal component
+    U_int - 2*(U_int ⋅ n)*n
+end
+
+@inline function ghost_velocity(
+    bc::Slip, U_int::SV, n::SV
+) where {TF, SV<:SVector{3,TF}}
+    # Slip: reflect normal component (no penetration, free-slip)
+    U_int - 2*(U_int ⋅ n)*n
+end
+
+@inline function ghost_velocity(
+    bc::AbstractDirichlet, U_int::SV, n::SV
+) where {TF, SV<:SVector{3,TF}}
+    # Dirichlet: strong BC → ghost = 2*U_bc - U_int
+    U_bc = SV(TF(bc.value[1]), TF(bc.value[2]), TF(bc.value[3]))
+    2*U_bc - U_int
+end
+
+@inline function ghost_velocity(
+    bc::AbstractNeumann, U_int::SV, n::SV
+) where {TF, SV<:SVector{3,TF}}
+    # Zero-gradient: extrapolate interior value
+    U_int
+end
+
+@inline function ghost_velocity(
+    bc::AbstractBoundary, U_int::SV, n::SV
+) where {TF, SV<:SVector{3,TF}}
+    # Fallback: extrapolate
+    U_int
+end
+
+# --- Pressure ghost state ---
+
+@inline function ghost_pressure(bc::Dirichlet, p_int::TF, n) where TF
+    # Strong Dirichlet: p_face = p_bc → ghost = 2*p_bc - p_int
+    2*TF(bc.value) - p_int
+end
+
+@inline function ghost_pressure(bc::AbstractNeumann, p_int::TF, n) where TF
+    # Zero-gradient: extrapolate
+    p_int
+end
+
+@inline function ghost_pressure(bc::AbstractPhysicalConstraint, p_int::TF, n) where TF
+    # Wall/Symmetry/Slip: zero normal gradient
+    p_int
+end
+
+@inline function ghost_pressure(bc::AbstractBoundary, p_int::TF, n) where TF
+    # Fallback: extrapolate
+    p_int
+end
+
+# --- Temperature ghost state (from he BC) ---
+
+@inline function ghost_temperature(
+    bc::FixedTemperature, T_int::TF, cp::TF, Tref::TF
+) where TF
+    # Isothermal wall: T_face = T_wall → ghost = 2*T_wall - T_int
+    T_wall = TF(bc.value.T)
+    2*T_wall - T_int
+end
+
+@inline function ghost_temperature(
+    bc::Dirichlet, T_int::TF, cp::TF, Tref::TF
+) where TF
+    # Dirichlet on he: he = cp*(T-Tref) → T = he/cp + Tref
+    TF(bc.value) / cp + Tref
+end
+
+@inline function ghost_temperature(
+    bc::AbstractBoundary, T_int::TF, cp::TF, Tref::TF
+) where TF
+    # Fallback (Zerogradient, Symmetry, Slip, Wall, etc.): extrapolate
+    T_int
+end
+
+# ============================================================
+# Rusanov (Local Lax-Friedrichs) flux
+# ============================================================
+
+@inline function rusanov_flux(
+    UL::SV, UR::SV,
+    pL::TF, pR::TF,
+    rhoL::TF, rhoR::TF,
+    normal::SV, area::TF, gamma::TF
+) where {TF, SV<:SVector{3,TF}}
+    # Normal velocities
+    unL = UL ⋅ normal
+    unR = UR ⋅ normal
+
+    # Sound speeds
+    aL = sqrt(gamma * pL / rhoL)
+    aR = sqrt(gamma * pR / rhoR)
+
+    # Local Lax-Friedrichs dissipation coefficient
+    lambda = max(abs(unL) + aL, abs(unR) + aR)
+
+    # Conservative energy variables: ρE = p/(γ-1) + 0.5*ρ|U|²
+    gm1 = gamma - one(TF)
+    rhoEL = pL/gm1 + TF(0.5)*rhoL*(UL ⋅ UL)
+    rhoER = pR/gm1 + TF(0.5)*rhoR*(UR ⋅ UR)
+
+    # Total enthalpy per unit mass: H = (ρE + p)/ρ
+    HL = (rhoEL + pL) / rhoL
+    HR = (rhoER + pR) / rhoR
+
+    # Conservative momentum variables
+    rhoUxL = rhoL*UL[1]; rhoUxR = rhoR*UR[1]
+    rhoUyL = rhoL*UL[2]; rhoUyR = rhoR*UR[2]
+    rhoUzL = rhoL*UL[3]; rhoUzR = rhoR*UR[3]
+
+    # Inviscid fluxes F(W)·n at L and R
+    # Mass flux
+    FL_rho = rhoL*unL
+    FR_rho = rhoR*unR
+
+    # Momentum flux
+    FL_rhoUx = rhoL*UL[1]*unL + pL*normal[1]
+    FR_rhoUx = rhoR*UR[1]*unR + pR*normal[1]
+
+    FL_rhoUy = rhoL*UL[2]*unL + pL*normal[2]
+    FR_rhoUy = rhoR*UR[2]*unR + pR*normal[2]
+
+    FL_rhoUz = rhoL*UL[3]*unL + pL*normal[3]
+    FR_rhoUz = rhoR*UR[3]*unR + pR*normal[3]
+
+    # Energy flux: ρH*u_n
+    FL_rhoE = rhoL*HL*unL
+    FR_rhoE = rhoR*HR*unR
+
+    # Rusanov flux (×area): 0.5*(F_L+F_R) - 0.5*λ*(W_R-W_L)
+    half = TF(0.5)
+    F_rho  = area*(half*(FL_rho  + FR_rho)  - half*lambda*(rhoR   - rhoL))
+    F_rhoUx = area*(half*(FL_rhoUx + FR_rhoUx) - half*lambda*(rhoUxR - rhoUxL))
+    F_rhoUy = area*(half*(FL_rhoUy + FR_rhoUy) - half*lambda*(rhoUyR - rhoUyL))
+    F_rhoUz = area*(half*(FL_rhoUz + FR_rhoUz) - half*lambda*(rhoUzR - rhoUzL))
+    F_rhoE = area*(half*(FL_rhoE  + FR_rhoE)  - half*lambda*(rhoER  - rhoEL))
+
+    return F_rho, F_rhoUx, F_rhoUy, F_rhoUz, F_rhoE
+end
+
+# ============================================================
+# Kernels
+# ============================================================
+
+# Primitive → conservative
+@kernel function _prim_to_cons!(rhoU, rhoE, rho, U, p, fluid)
+    i = @index(Global)
+
+    @uniform gamma = fluid.gamma.values
+
+    @inbounds begin
+        rho_i = rho[i]
+        Ui = U[i]
+        pi = p[i]
+
+        rhoU.x[i] = rho_i * Ui[1]
+        rhoU.y[i] = rho_i * Ui[2]
+        rhoU.z[i] = rho_i * Ui[3]
+
+        gm1 = gamma - one(gamma)
+        KE = Ui ⋅ Ui * oftype(rho_i, 0.5)
+        rhoE.values[i] = pi/gm1 + rho_i*KE
+    end
+end
+
+# Initialize density from p and T
+@kernel function _init_rho!(rho, p, T, fluid)
+    i = @index(Global)
+
+    @uniform R_gas = fluid.R.values
+
+    @inbounds begin
+        rho.values[i] = p[i] / (R_gas * T[i])
+    end
+end
+
+# Zero all residuals
+@kernel function _zero_residuals!(res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE)
+    i = @index(Global)
+
+    @inbounds begin
+        res_rho.values[i]  = zero(eltype(res_rho.values))
+        res_rhoUx.values[i] = zero(eltype(res_rhoUx.values))
+        res_rhoUy.values[i] = zero(eltype(res_rhoUy.values))
+        res_rhoUz.values[i] = zero(eltype(res_rhoUz.values))
+        res_rhoE.values[i] = zero(eltype(res_rhoE.values))
+    end
+end
+
+# Rusanov flux at internal faces — cell-based loop, no atomics
+@kernel function _rusanov_flux_internal!(
+    res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+    rho, U, p, mesh, fluid
+)
+    i = @index(Global)
+
+    @uniform begin
+        (; cells, faces, cell_faces, cell_nsign) = mesh
+        gamma = fluid.gamma.values
+    end
+
+    @inbounds begin
+        (; volume, faces_range) = cells[i]
+
+        TF = eltype(rho.values)
+        gamma_tf = TF(gamma)
+
+        acc_rho  = zero(TF)
+        acc_rhoUx = zero(TF)
+        acc_rhoUy = zero(TF)
+        acc_rhoUz = zero(TF)
+        acc_rhoE = zero(TF)
+
+        for fi ∈ faces_range
+            fID = cell_faces[fi]
+
+            nsign = TF(cell_nsign[fi])
+            (; area, normal, ownerCells) = faces[fID]
+
+            cL = ownerCells[1]
+            cR = ownerCells[2]
+
+            # Left and right primitive states (always L=ownerCells[1], R=ownerCells[2])
+            rhoL = TF(rho[cL])
+            UL   = U[cL]
+            pL   = TF(p[cL])
+
+            rhoR = TF(rho[cR])
+            UR   = U[cR]
+            pR   = TF(p[cR])
+
+            F_rho, F_rhoUx, F_rhoUy, F_rhoUz, F_rhoE = rusanov_flux(
+                UL, UR, pL, pR, rhoL, rhoR, normal, area, gamma_tf
+            )
+
+            # nsign: +1 if cell i is left (outward), -1 if right (inward)
+            acc_rho   += nsign * F_rho
+            acc_rhoUx += nsign * F_rhoUx
+            acc_rhoUy += nsign * F_rhoUy
+            acc_rhoUz += nsign * F_rhoUz
+            acc_rhoE  += nsign * F_rhoE
+        end
+
+        res_rho.values[i]  += acc_rho
+        res_rhoUx.values[i] += acc_rhoUx
+        res_rhoUy.values[i] += acc_rhoUy
+        res_rhoUz.values[i] += acc_rhoUz
+        res_rhoE.values[i] += acc_rhoE
+    end
+end
+
+# Rusanov flux at boundary faces — face-based loop, uses atomics
+@kernel function _rusanov_bc_flux!(
+    U_BCs, p_BCs, he_BCs,
+    res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+    rho, U, p, T, mesh, fluid, Tref
+)
+    fID = @index(Global)
+
+    @inbounds _rusanov_bc_dispatch!(
+        U_BCs, p_BCs, he_BCs,
+        res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+        rho, U, p, T, mesh, fluid, Tref, fID
+    )
+end
+
+# Generated dispatch over boundary patches (compile-time loop unrolling)
+@generated function _rusanov_bc_dispatch!(
+    U_BCs, p_BCs, he_BCs,
+    res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+    rho, U, p, T, mesh, fluid, Tref, fID
+)
+    n = length(U_BCs.parameters)
+    exprs = []
+    for i ∈ 1:n
+        ex = quote
+            bc_U_i  = U_BCs[$i]
+            bc_p_i  = p_BCs[$i]
+            bc_he_i = he_BCs[$i]
+            (; start, stop) = bc_U_i.IDs_range
+            if start <= fID <= stop
+                _apply_rusanov_bc!(
+                    bc_U_i, bc_p_i, bc_he_i,
+                    res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+                    rho, U, p, T, mesh, fluid, Tref, fID
+                )
+            end
+        end
+        push!(exprs, ex)
+    end
+    quote
+        @inbounds begin
+            $(exprs...)
+        end
+        nothing
+    end
+end
+
+# Apply Rusanov flux for a single boundary face, dispatching on BC types
+@inline function _apply_rusanov_bc!(
+    bc_U, bc_p, bc_he,
+    res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+    rho, U, p, T, mesh, fluid, Tref, fID
+)
+    (; faces) = mesh
+    face = faces[fID]
+    (; area, normal, ownerCells) = face
+    cID = ownerCells[1]   # interior cell
+
+    TF = eltype(rho.values)
+    gamma = TF(fluid.gamma.values)
+    R_gas = TF(fluid.R.values)
+    cp    = TF(fluid.cp.values)
+    Tref_tf = TF(Tref)
+
+    # Interior (left) state
+    rhoL = TF(rho[cID])
+    UL   = U[cID]
+    pL   = TF(p[cID])
+    TL   = TF(T[cID])
+
+    # Ghost (right) state from boundary conditions
+    UR = ghost_velocity(bc_U, UL, normal)
+    pR = ghost_pressure(bc_p, pL, normal)
+    TR = ghost_temperature(bc_he, TL, cp, Tref_tf)
+
+    # Clamp ghost state to physical values
+    pR   = max(pR,   TF(1e-10))
+    TR   = max(TR,   TF(1e-10))
+    rhoR = pR / (R_gas * TR)
+    rhoR = max(rhoR, TF(1e-10))
+
+    # Rusanov flux (boundary face: outward normal = face normal, no nsign correction)
+    F_rho, F_rhoUx, F_rhoUy, F_rhoUz, F_rhoE = rusanov_flux(
+        UL, UR, pL, pR, rhoL, rhoR, normal, area, gamma
+    )
+
+    Atomix.@atomic res_rho.values[cID]  += F_rho
+    Atomix.@atomic res_rhoUx.values[cID] += F_rhoUx
+    Atomix.@atomic res_rhoUy.values[cID] += F_rhoUy
+    Atomix.@atomic res_rhoUz.values[cID] += F_rhoUz
+    Atomix.@atomic res_rhoE.values[cID] += F_rhoE
+end
+
+# CFL-limited time step per cell (simple cell-size estimate)
+@kernel function _compute_dt_cell!(dt_cell, rho, U, p, cells, fluid, cfl, dim_exp)
+    i = @index(Global)
+
+    @uniform gamma = fluid.gamma.values
+
+    @inbounds begin
+        TF = eltype(rho.values)
+        rho_i = TF(rho[i])
+        Ui    = U[i]
+        pi    = TF(p[i])
+        Vi    = TF(cells[i].volume)
+
+        ai      = sqrt(TF(gamma) * pi / rho_i)
+        Umag    = sqrt(Ui ⋅ Ui)
+        lambda  = Umag + ai
+
+        dx = Vi^TF(dim_exp)
+        dt_cell[i] = TF(cfl) * dx / (lambda + TF(1e-30))
+    end
+end
+
+# Forward Euler update of conservative variables
+@kernel function _forward_euler!(rho, rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, cells, dt)
+    i = @index(Global)
+
+    @inbounds begin
+        TF = eltype(rho.values)
+        V  = TF(cells[i].volume)
+        dt_tf = TF(dt)
+        factor = dt_tf / V
+
+        rho.values[i]   -= factor * res_rho.values[i]
+        rhoU.x[i]       -= factor * res_rhoUx.values[i]
+        rhoU.y[i]       -= factor * res_rhoUy.values[i]
+        rhoU.z[i]       -= factor * res_rhoUz.values[i]
+        rhoE.values[i]  -= factor * res_rhoE.values[i]
+
+        # Clamp density to positive
+        rho.values[i] = max(rho.values[i], TF(1e-10))
+    end
+end
+
+# Conservative → primitive recovery
+@kernel function _cons_to_prim!(U, p, T, Mach, rho, rhoU, rhoE, cells, fluid)
+    i = @index(Global)
+
+    @uniform begin
+        gamma = fluid.gamma.values
+        R_gas = fluid.R.values
+    end
+
+    @inbounds begin
+        TF = eltype(rho.values)
+        gamma_tf = TF(gamma)
+        R_gas_tf = TF(R_gas)
+
+        rho_i  = TF(rho[i])
+        rhoE_i = TF(rhoE[i])
+
+        # Velocity
+        ux = rhoU.x[i] / rho_i
+        uy = rhoU.y[i] / rho_i
+        uz = rhoU.z[i] / rho_i
+
+        U.x[i] = ux
+        U.y[i] = uy
+        U.z[i] = uz
+
+        # Kinetic energy per unit volume
+        KE = TF(0.5) * (ux*ux + uy*uy + uz*uz)
+
+        # Pressure: p = (γ-1)*(ρE - ρ*KE)
+        p_i = (gamma_tf - one(TF)) * (rhoE_i - rho_i*KE)
+        p_i = max(p_i, TF(1e-10))
+        p.values[i] = p_i
+
+        # Temperature: T = p/(ρ*R)
+        T_i = p_i / (rho_i * R_gas_tf)
+        T_i = max(T_i, TF(1e-10))
+        T.values[i] = T_i
+
+        # Mach number
+        a = sqrt(gamma_tf * p_i / rho_i)
+        Mach.values[i] = sqrt(ux*ux + uy*uy + uz*uz) / (a + TF(1e-30))
+    end
+end
+
+# ============================================================
+# Setup and main solver loop
+# ============================================================
+
+"""
+    density_based!(model, config; output=VTK())
+
+Entry point for the explicit density-based compressible solver targeting
+supersonic/hypersonic flows. Uses Rusanov (Local Lax-Friedrichs) flux with
+Forward Euler time integration on conservative variables [ρ, ρU, ρE].
+
+Dispatched automatically from `run!` when `model.fluid isa SupersonicFlow`.
+"""
+function density_based!(model, config; output=VTK())
+    residuals = _setup_density_based(model, config; output=output)
+    return residuals
+end
+
+function _setup_density_based(model, config; output=VTK())
+    (; U, p, Uf, pf) = model.momentum
+    (; rho) = model.fluid
+    T  = model.energy.T
+    mesh = model.domain
+    (; hardware, runtime) = config
+    (; backend, workgroup) = hardware
+
+    @info "Allocating DensityBasedWorkspace..."
+
+    n_cells = length(mesh.cells)
+    TF = _get_float(mesh)
+
+    rhoU     = VectorField(mesh)
+    rhoE     = ScalarField(mesh)
+    res_rho  = ScalarField(mesh)
+    res_rhoUx = ScalarField(mesh)
+    res_rhoUy = ScalarField(mesh)
+    res_rhoUz = ScalarField(mesh)
+    res_rhoE = ScalarField(mesh)
+    Mach     = ScalarField(mesh)
+    dt_cell  = KernelAbstractions.zeros(backend, TF, n_cells)
+
+    workspace = DensityBasedWorkspace(
+        rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, Mach, dt_cell
+    )
+
+    @info "Initialising density from p and T..."
+
+    ndrange = n_cells
+    kernel! = _init_rho!(_setup(backend, workgroup, ndrange)...)
+    kernel!(rho, p, T, model.fluid)
+
+    residuals = DENSITY_BASED(model, workspace, config; output=output)
+    return residuals
+end
+
+function DENSITY_BASED(model, workspace, config; output=VTK())
+
+    (; U, p, Uf, pf) = model.momentum
+    (; rho) = model.fluid
+    T  = model.energy.T
+    mesh = model.domain
+    (; solvers, schemes, runtime, hardware, boundaries) = config
+    (; iterations, write_interval) = runtime
+    (; backend, workgroup) = hardware
+
+    (; rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, Mach, dt_cell) = workspace
+
+    n_cells  = length(mesh.cells)
+    n_bfaces = length(mesh.boundary_cellsID)
+    TF = _get_float(mesh)
+
+    # CFL number from adaptive time stepping or default
+    cfl = if !isnothing(runtime.adaptive)
+        TF(runtime.adaptive.maxCo)
+    else
+        TF(0.5)
+    end
+
+    # Cell size exponent: 1/2 for 2D, 1/3 for 3D
+    dim_exp = typeof(mesh) <: Mesh2 ? TF(0.5) : TF(0.333333)
+
+    # Reference temperature from energy model coefficients
+    Tref = if hasproperty(model.energy.coeffs, :Tref)
+        TF(model.energy.coeffs.Tref)
+    else
+        TF(0.0)
+    end
+
+    outputWriter = initialise_writer(output, model.domain)
+
+    @info "Initialising conservative variables..."
+
+    ndrange = n_cells
+    kernel! = _prim_to_cons!(_setup(backend, workgroup, ndrange)...)
+    kernel!(rhoU, rhoE, rho, U, p, model.fluid)
+
+    # Pre-allocate residual storage
+    R_rho = ones(TF, iterations)
+
+    time = TF(0.0)
+
+    @info "Starting DENSITY_BASED time loop..."
+
+    progress = Progress(iterations; dt=1.0, showspeed=true)
+
+    for iteration ∈ 1:iterations
+
+        # 1. Zero residuals
+        kernel! = _zero_residuals!(_setup(backend, workgroup, n_cells)...)
+        kernel!(res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE)
+
+        # 2. Rusanov flux — internal faces (cell loop, no atomics)
+        kernel! = _rusanov_flux_internal!(_setup(backend, workgroup, n_cells)...)
+        kernel!(
+            res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+            rho, U, p, mesh, model.fluid
+        )
+
+        # 3. Rusanov flux — boundary faces (face loop, with atomics)
+        kernel! = _rusanov_bc_flux!(_setup(backend, workgroup, n_bfaces)...)
+        kernel!(
+            boundaries.U, boundaries.p, boundaries.he,
+            res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+            rho, U, p, T, mesh, model.fluid, Tref
+        )
+
+        # 4. Compute density residual before update (L2 norm)
+        rho_res = norm(res_rho.values) / sqrt(TF(n_cells))
+        R_rho[iteration] = rho_res
+
+        # 5. CFL-limited global dt
+        kernel! = _compute_dt_cell!(_setup(backend, workgroup, n_cells)...)
+        kernel!(dt_cell, rho, U, p, mesh.cells, model.fluid, cfl, dim_exp)
+        dt = minimum(dt_cell)
+
+        # Update runtime dt (for output routines that need it)
+        runtime.dt .= dt
+        time += dt
+
+        # 6. Forward Euler update of conservative variables
+        kernel! = _forward_euler!(_setup(backend, workgroup, n_cells)...)
+        kernel!(rho, rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, mesh.cells, dt)
+
+        # 7. Conservative → primitive recovery
+        kernel! = _cons_to_prim!(_setup(backend, workgroup, n_cells)...)
+        kernel!(U, p, T, Mach, rho, rhoU, rhoE, mesh.cells, model.fluid)
+
+        # 8. Update face interpolations (needed for grad! calls if used later)
+        interpolate!(Uf, U, config)
+        correct_boundaries!(Uf, U, boundaries.U, time, config)
+        interpolate!(pf, p, config)
+        correct_boundaries!(pf, p, boundaries.p, time, config)
+
+        # 9. Progress and convergence check
+        ProgressMeter.next!(
+            progress, showvalues = [
+                (:iter, iteration),
+                (:dt, dt),
+                (:rho_residual, rho_res)
+            ]
+        )
+
+        if rho_res <= solvers.rho.convergence
+            progress.n = iteration
+            finish!(progress)
+            @info "Density-based solver converged in $iteration iterations!"
+            if !signbit(write_interval)
+                save_output(model, outputWriter, iteration, time, config)
+            end
+            break
+        end
+
+        # 10. Write output at specified interval
+        if iteration % write_interval + signbit(write_interval) == 0
+            save_output(model, outputWriter, iteration, time, config)
+        end
+
+    end # time loop
+
+    return (rho=R_rho,)
+end

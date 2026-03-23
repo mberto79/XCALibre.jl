@@ -22,7 +22,7 @@ k_inlet = 1 #3/2*(Tu*u_mag)^2
 νt_inlet = k_inlet/ω_inlet
 Re = velocity[1]*0.1/nu
 
-type = 2   # 0 - Absolute, 1 - SRF, 2 - MRF 
+type = 2   # 0 - Absolute, 2 - MRF 
 omega = 50.0 
 radius_outer = 0.2
 radius_inner = 0.0
@@ -39,6 +39,34 @@ model = Physics(
     domain = mesh_dev,
     REF_FRAME = REF
     )
+
+"""
+reference_frames = (
+    frame1 = ROTATING_FRAME(
+        omega = 25,
+        rotaxis = [0.0, 0.0, 1.0],      # I can use the length of the rot axis to give the zone a thickness in a 3D mesh
+        x0 = [0.0, 0.0, 0.0],
+        radius_inner = 0.2,
+        radius_outer = 0.0
+        ),
+    frame2 = ROTATING_FRAME(
+        omega = 15,
+        rotaxis = [0.0, 0.0, 1.0],
+        x0 = [2.0, 0.0, 0.0],
+        radius_inner = 0.08,
+        radius_outer = 0.0
+        ),
+)
+
+model = Physics(
+    time = Steady(),
+    fluid = Fluid{Incompressible}(nu = nu),
+    turbulence = RANS{KOmega}(),
+    energy = Energy{Isothermal}(),
+    domain = mesh_dev,
+    frames = reference_frames       # Or just dont call the frames argument to set as Absolute
+    )
+"""
 
 BCs = assign(
     region = mesh_dev,

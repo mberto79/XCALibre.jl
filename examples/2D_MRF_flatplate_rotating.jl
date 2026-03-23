@@ -1,4 +1,3 @@
-using Plots
 using XCALibre
 using StaticArrays
 
@@ -23,14 +22,13 @@ k_inlet = 1 #3/2*(Tu*u_mag)^2
 νt_inlet = k_inlet/ω_inlet
 Re = velocity[1]*0.1/nu
 
-# @enums REF_type ABS SRF MRF           Something to look into
-type = 2                             # 0 - Absolute, 1 - SRF, 2 - MRF 
+type = 2   # 0 - Absolute, 1 - SRF, 2 - MRF 
 omega = 50.0 
 radius_outer = 0.2
 radius_inner = 0.0
 rotaxis = SVector{3}([0.0, 0.0, 1.0]) 
 x0 = SVector{3}([0.0, 0.0, 0.0])
-radial_mask!(x0,  radius_inner, radius_outer, hardware, mesh)
+mask = radial_mask(x0,  radius_inner, radius_outer, hardware, mesh)
 REF = REF_FRAME(type, omega, rotaxis, x0, mask)
 
 model = Physics(

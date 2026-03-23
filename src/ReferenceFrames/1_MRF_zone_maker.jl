@@ -1,6 +1,6 @@
-export radial_mask!
+export radial_mask
 
-function radial_mask!(x0, radius_inner, radius_outer, hardware, mesh)
+function radial_mask(x0, radius_inner, radius_outer, hardware, mesh)
     (; backend, workgroup) = hardware
     cells = mesh.cells 
     mask = ScalarField(mesh)
@@ -8,6 +8,7 @@ function radial_mask!(x0, radius_inner, radius_outer, hardware, mesh)
     ndrange = length(cells)
     kernel! = _radial_mask!(_setup(backend, workgroup, ndrange)...)
     kernel!(x0, radius_inner, radius_outer, mask, cells)
+    return mask
 end
 
 @kernel function _radial_mask!(x0, radius_inner, radius_outer, mask, cells)

@@ -1,23 +1,19 @@
-export REF_FRAME
 export RotatingFrame
+#export reference_frames
+#
+#struct reference_frames
+#    Frames
+#end
 
-struct REF_FRAME_values
-    type
-    omega
-    rotaxis
-    x0
-    mask
-end
-
-REF_FRAME(type, omega, rotaxis, x0, mask) = begin
-    REF_FRAME_values(
-        type,
-        omega,
-        rotaxis,
-        x0,
-        mask
-    )
-end
+#refFrames(Frames) = begin
+#    ID = 1
+#    for frames in Frames:
+#        frames +
+#        ID = ID+1
+#    end
+#
+#    reference_frames(Frames)
+#end
 
 struct RotatingFrameStruct
     omega
@@ -42,3 +38,27 @@ RotatingFrame(; omega, rotaxis, x0, radius_inner::Float64=0.0, radius_outer::Flo
     mask
     )
 end
+
+#struct TrueRotatingFrameStruct
+#    omega
+#    rotaxis
+#    x0
+#    radius_inner
+#    radius_outer
+#    mask
+#end
+#
+#TrueRotatingFrame(Frame) = begin
+#    mask = radial_mask(x0,  radius_inner, radius_outer, hardware, mesh)
+#    rotaxis = SVector{3}(rotaxis) 
+#    x0 = SVector{3}(x0)
+#
+#    TrueRotatingFrameStruct(
+#    omega,
+#    rotaxis,
+#    x0,
+#    radius_inner,
+#    radius_outer,
+#    mask
+#    )
+#end

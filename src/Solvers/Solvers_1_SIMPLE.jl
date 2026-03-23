@@ -39,7 +39,7 @@ function simple!(
             inner_loops=inner_loops
             )
 
-        return residuals
+    return residuals
     else
         residuals = setup_incompressible_solvers(
             SIMPLE, model, config; 
@@ -49,8 +49,9 @@ function simple!(
             inner_loops=inner_loops
             )
 
-        return residuals
+    return residuals
     end
+
 end
 
 # Setup for all incompressible algorithms

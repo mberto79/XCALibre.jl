@@ -142,8 +142,8 @@ struct EFM{V,S,Vf,Sf,SS,C} <: AbstractMomentumModel
 end
 Adapt.@adapt_structure EFM
 
-Momentum{EFM}(;σ=0.069, h_crit = 1e-10, β=6.0, θm = 75, ϕ=0) = begin
-    coeffs = (σ=σ, h_crit=h_crit, β=β, θm=θm, ϕ=ϕ)
+Momentum{EFM}(;σ=0.069, h_crit=1e-10, h_floor=1e-15, β=6.0, θm = 75, ϕ=0) = begin
+    coeffs = (σ=σ, h_crit=h_crit, h_floor=h_floor, β=β, θm=θm, ϕ=ϕ)
     ARG = typeof(coeffs)
     Momentum{EFM, ARG}(coeffs)
 end

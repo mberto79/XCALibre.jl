@@ -60,7 +60,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     ) → VectorEquation(U, boundaries.U)
 
     h_eqn = (
-        Time{schemes.h.time}(rho, h)
+        Time{schemes.h.time}(rho_l, h)
         ==
         - Source(divPhi)
         + Source(Sm)
@@ -276,9 +276,9 @@ function FilmModel(
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, time=time)
         
         inverse_diagonal!(rD, U_eqn, config)
-        #remove_source!(U_eqn, h∇PL, 1, config)
-        #remove_source!(U_eqn, Ph, 2, config)
-        #remove_source!(U_eqn, τθw, 3, config)
+        remove_source!(U_eqn, h∇PL, 1, config)
+        remove_source!(U_eqn, Ph, 2, config)
+        remove_source!(U_eqn, τθw, 3, config)
 
         rh = 0
         for i ∈ 1:inner_loops
@@ -294,7 +294,6 @@ function FilmModel(
             @. phif.values = mdotf.values * rhohf.values
 
             div!(divPhi, phif, config)
-
             
             @. prev = h.values
             rh = solve_equation!(h_eqn, h, boundaries.h, solvers.h, config, time=time)
@@ -304,8 +303,8 @@ function FilmModel(
             else
                 explicit_relaxation!(h, prev, solvers.h.relax, config)
             end
-
-            limit_h!(h, config)
+            
+            limit_h!(h, coeffs.h_floor, config)
             
             laplacian!(Δh, hf, h, boundaries.h, time, config, disp_warn=false)
             #grad!(∇h, hf, h, boundaries.h, time, config)
@@ -388,7 +387,8 @@ function FilmModel(
 
         if iteration % write_interval + signbit(write_interval) == 0
             #save_output_film(model, outputWriter, iteration, time, config, w)
-            save_output_film(model, outputWriter, iteration, time, config, w, Δh)
+            #save_output_film(model, outputWriter, iteration, time, config, w, Δh)
+            save_output_film(model, outputWriter, iteration, time, config, w, Δh, h∇PL, mu_h, Ph, τθw, divPhi)
             save_postprocessing(postprocess, iteration, time, mesh, outputWriter, config.boundaries)
         end
 
@@ -420,6 +420,23 @@ function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iter
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end
 
+function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config, w, Δh, h∇PL, mu_h, Ph, τθw, divPhi
+    ) where {T,F,SO,M,Tu,E,D,BI}
+    args = (
+            ("U", model.momentum.U), 
+            ("h", model.momentum.h),
+            ("w", w),
+            ("Δh", Δh),
+            ("h∇PL", h∇PL),
+            ("mu_h", mu_h),
+            ("Ph", Ph),
+            ("τθw", τθw),
+            ("divPhi", divPhi)
+        )
+    
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
+end
+
 function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config, w, Δh
     ) where {T,F,SO,M,Tu,E,D,BI}
     args = (
@@ -432,7 +449,7 @@ function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iter
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end
 
-function limit_h!(h, config)
+function limit_h!(h, h_floor, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
@@ -440,14 +457,14 @@ function limit_h!(h, config)
     ndrange = length(cells)
 
     kernel! = _limit_h!(_setup(backend, workgroup, ndrange)...)
-    kernel!(h)
+    kernel!(h, h_floor)
 end
 
-@kernel function _limit_h!(h)
+@kernel function _limit_h!(h, h_floor)
     i = @index(Global)
 
     @inbounds begin
-        if (h[i] <= 0) h[i] = 1e-100 end
+        if (h[i] <= h_floor) h[i] = h_floor end
     end
 end
 

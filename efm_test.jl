@@ -26,7 +26,7 @@ inlet_height = 0.05; # m
 inlet_area = inlet_width*inlet_height; # m^2
 
 if isfile("Model_Input.csv")
-    test_case = 19;
+    test_case = 4;
     input_parameters = CSV.File("Model_Input.csv"); #File containing the different test cases from paper "Modeling of Partially Wetting Liquid Film Using an Enhanced Thin Film Model for Aero-Engine Bearing Chamber Applications" by Kuldeep Singh et. al
 
     inlet_flow_rate = input_parameters.Q[test_case]; # m^3/s
@@ -50,13 +50,14 @@ rho_l = 998.2; # Density of water @ 43°C kg/m3
 nu = mu/rho_l;
 
 h_crit = 1e-10;
+h_floor = 1e-15
 
-Δt = 1e-5
+Δt = 1e-4
 Δx = 0.006
 C=inlet_rate*Δt/Δx
 end;
 model = Physics(
-    momentum=Momentum{EFM}(;σ=σ, h_crit = h_crit, β=β, θm = θm, ϕ=ϕ),
+    momentum=Momentum{EFM}(;σ=σ, h_crit = h_crit, h_floor=h_floor, β=β, θm = θm, ϕ=ϕ),
     time = Transient(),
     fluid = Fluid{Incompressible}(; nu = nu, rho = rho_l),
     turbulence = RANS{Laminar}(),
@@ -136,16 +137,18 @@ begin
 #runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
 #runtime = Runtime(iterations=20000, time_step=1, write_interval=20000)
 #runtime = Runtime(iterations=20, time_step=Δt, write_interval=1, adaptive=adaptive); # hide
-runtime = Runtime(iterations=200, time_step=Δt, write_interval=5, adaptive=adaptive);
+#runtime = Runtime(iterations=200, time_step=Δt, write_interval=5, adaptive=adaptive);
 #runtime = Runtime(iterations=2000, time_step=Δt, write_interval=100, adaptive=adaptive)
+#runtime = Runtime(iterations=300, time_step=Δt, write_interval=5, adaptive=adaptive)
 #runtime = Runtime(iterations=8000, time_step=Δt, write_interval=400)
 #runtime = Runtime(iterations=100, time_step=Δt, write_interval=2, adaptive=adaptive)
 #runtime = Runtime(iterations=100000, time_step=Δt, write_interval=20, adaptive=adaptive)
 #runtime = Runtime(iterations=500, time_step=Δt, write_interval=10)
-#runtime = Runtime(iterations=4000, time_step=Δt, write_interval=100)
+runtime = Runtime(iterations=4000, time_step=Δt, write_interval=100, adaptive=adaptive)
 #runtime = Runtime(iterations=15000, time_step=Δt, write_interval=250)
 #runtime = Runtime(iterations=500, time_step=Δt, write_interval=50)
 #runtime = Runtime(iterations=3, time_step=Δt, write_interval=1);
+#runtime= Runtime(iterations=2000, time_step=Δt, write_interval=20, adaptive=adaptive)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
@@ -153,7 +156,7 @@ config = Configuration(
 GC.gc(true)
   
 initialise!(model.momentum.U, [0,0,0]);
-h_init = 1e-11;#h_crit*100;
+h_init = h_floor;#h_crit*100;
 initialise!(model.momentum.h, h_init)
 
 #for i ∈ eachindex(model.momentum.h.values)
@@ -164,16 +167,10 @@ initialise!(model.momentum.h, h_init)
 #    end
 #end
 
-residuals = run!(model, config, inner_loops=3);
+residuals = run!(model, config, inner_loops=5);
 end;
 using Plots
 plot((residuals.Ux), label="Ux")
 plot!((residuals.Uy), label="Uy")
 #plot!(residuals.Uz, label="Uz")
-plot!((residuals.h), label="h", yaxis=(:log10, [1e-10, 1e70]))
-
-for i ∈ eachindex(mesh.boundary_cellsID)
-    if mesh.boundary_cellsID[i] == 0
-        println("$i, $(mesh.boundary_cellsID[i])")
-    end
-end
+plot!((residuals.h), label="h", yaxis=(:log10, [1e-18, 1e4]))

@@ -1,13 +1,13 @@
 using XCALibre
-# using CUDA   # uncomment for NVIDIA GPU
+using CUDA   # uncomment for NVIDIA GPU
 # using AMDGPU # uncomment for AMD GPU
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 mesh_file = joinpath(grids_dir, "cylinder_d10mm_5mm.unv")
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-backend = CPU(); workgroup = 1024; activate_multithread(backend)
-# backend = CUDABackend(); workgroup = 32
+# backend = CPU(); workgroup = 1024; activate_multithread(backend)
+backend = CUDABackend(); workgroup = 32
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
@@ -23,7 +23,7 @@ T_inf = 300.0        # K
 p_inf = 101325.0     # Pa
 R_gas = cp * (1.0 - 1.0/gamma)   # ≈ 287 J/(kg·K)
 a_inf = sqrt(gamma * R_gas * T_inf)  # ≈ 347 m/s
-Mach  = 1.5
+Mach  = 1.1
 U_inf = Mach * a_inf              # ≈ 521 m/s
 
 velocity = [U_inf, 0.0, 0.0]

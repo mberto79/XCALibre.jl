@@ -857,9 +857,6 @@ function DENSITY_BASED(
         interpolate!(rhof, rho, config)
         interpolate!(Tf, T, config)
 
-        # Velocity gradients updated inside turbulence! (Laminar+Compressible calls grad! + limit_gradient!)
-        turbulence!(turbulenceModel, model, S, prev, time, config)
-
         # Temperature gradient: T is a derived field (from cons-to-prim).
         # Do NOT use boundaries.he — FixedTemperature would apply cp*(T-Tref) instead of T.
         # Tf is already interpolated above; this version of grad! skips boundary correction.
@@ -936,6 +933,11 @@ function DENSITY_BASED(
         flux!(mdotf, Uf, config)
         @. mdotf.values *= rhof.values
 
+        # Velocity gradients updated inside turbulence! (Laminar+Compressible calls grad! + limit_gradient!)
+        turbulence!(turbulenceModel, model, S, prev, time, config)
+        @. mueff.values     = rhof.values * nueff.values
+        @. kappa_eff.values = mueff.values * cp_val / Pr_val
+
         # 9. Progress and convergence check
         ProgressMeter.next!(
             progress, showvalues = [
@@ -946,15 +948,15 @@ function DENSITY_BASED(
             ]
         )
 
-        if rho_res <= solvers.rho.convergence
-            progress.n = iteration
-            finish!(progress)
-            @info "Density-based solver converged in $iteration iterations!"
-            if !signbit(write_interval)
-                save_output(model, outputWriter, iteration, time, config)
-            end
-            break
-        end
+        # if rho_res <= solvers.rho.convergence
+        #     progress.n = iteration
+        #     finish!(progress)
+        #     @info "Density-based solver converged in $iteration iterations!"
+        #     if !signbit(write_interval)
+        #         save_output(model, outputWriter, iteration, time, config)
+        #     end
+        #     break
+        # end
 
         # 10. Write output at specified interval
         if iteration % write_interval + signbit(write_interval) == 0

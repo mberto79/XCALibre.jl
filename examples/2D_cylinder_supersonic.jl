@@ -16,14 +16,14 @@ mesh_dev = adapt(backend, mesh)
 gamma = 1.4
 cp    = 1005.0       # J/(kg·K)
 Pr    = 0.7
-nu    = 1e-5      # kinematic viscosity (inviscid here, but required by fluid model)
+nu    = 1e-2      # kinematic viscosity (inviscid here, but required by fluid model)
 Tref  = 0.0          # enthalpy reference temperature
 
 T_inf = 300.0        # K
 p_inf = 101325.0     # Pa
 R_gas = cp * (1.0 - 1.0/gamma)   # ≈ 287 J/(kg·K)
 a_inf = sqrt(gamma * R_gas * T_inf)  # ≈ 347 m/s
-Mach  = 3
+Mach  = 1.5
 U_inf = Mach * a_inf              # ≈ 521 m/s
 
 velocity = [U_inf, 0.0, 0.0]
@@ -32,7 +32,8 @@ noflow   = [0.0,   0.0, 0.0]
 model = Physics(
     time      = Transient(),
     fluid     = Fluid{SupersonicFlow}(nu=nu, cp=cp, gamma=gamma, Pr=Pr),
-    turbulence = RANS{Laminar}(),
+    # turbulence = RANS{Laminar}(),
+    turbulence = LES{Smagorinsky}(),
     energy    = Energy{SensibleEnthalpy}(Tref=Tref),
     domain    = mesh_dev
 )
@@ -43,9 +44,10 @@ BCs = assign(
         U = [
             Dirichlet(:inlet,    velocity),
             Zerogradient(:outlet),
-            Wall(:cylinder, noflow),
-            Symmetry(:top),
-            Symmetry(:bottom)
+            # Wall(:cylinder, noflow),
+            Dirichlet(:cylinder, noflow),
+            Slip(:top),
+            Slip(:bottom)
         ],
         p = [
             Dirichlet(:inlet, p_inf),
@@ -57,10 +59,17 @@ BCs = assign(
         he = [
             FixedTemperature(:inlet, T=T_inf, Enthalpy(cp=cp, Tref=Tref)),
             Zerogradient(:outlet),
-            FixedTemperature(:cylinder, T=400, Enthalpy(cp=cp, Tref=Tref)),
-            # Zerogradient(:cylinder),
+            # FixedTemperature(:cylinder, T=400, Enthalpy(cp=cp, Tref=Tref)),
+            Zerogradient(:cylinder),
             Zerogradient(:top),
             Zerogradient(:bottom)
+        ],
+        nut = [
+            Extrapolated(:inlet),
+            Extrapolated(:outlet),
+            Dirichlet(:cylinder, 0.0),
+            Symmetry(:top),
+            Symmetry(:bottom)
         ]
     )
 )

@@ -8,12 +8,13 @@ end
 Adapt.@adapt_structure RotatingFrames2D
 
 RotatingFrames2D(; hardware, mesh, Frames) = begin
+    (; backend) = hardware
     ID = 1
     n = length(Frames)
-    Omega = zeros(Float64, n) # need to use kernel abstractions for this, look at how scalarfield does it
-    Rotaxis = Vector{Vector{Float64}}(undef, n)
-    X0 = Vector{Vector{Float64}}(undef, n)    # use S vectors 3
-    X1 = Vector{Vector{Float64}}(undef, n)
+    Omega = KernelAbstractions.zeros(backend, Float64, n)
+    Rotaxis = KernelAbstractions.allocate(backend, SVector{3, Float64}, n)
+    X0 = KernelAbstractions.allocate(backend, SVector{3, Float64}, n)
+    X1 = KernelAbstractions.allocate(backend, SVector{3, Float64}, n)
     global_mask = ScalarField(mesh)
 
     for frame in Frames

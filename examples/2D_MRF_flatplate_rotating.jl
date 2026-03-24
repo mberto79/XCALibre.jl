@@ -1,5 +1,4 @@
 using XCALibre
-using StaticArrays
 
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")

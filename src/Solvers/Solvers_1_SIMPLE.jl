@@ -348,11 +348,12 @@ function SIMPLE_MRF(
     (; iterations, write_interval,dt) = runtime
     (; backend) = hardware
     (; reference_frames) = model
+    (; global_mask) = reference_frames
 
-    omega = model.reference_frames.omega
-    rotaxis = model.reference_frames.rotaxis
-    x0 = model.reference_frames.x0
-    mask = model.reference_frames.mask
+    #omega = model.reference_frames.omega
+    rotaxis = reference_frames.frames.rotaxis[1]
+    x0 = reference_frames.frames.x0[1]
+    #mask = model.reference_frames.mask
 
     dt_cpu = zeros(_get_float(mesh), 1)
     copyto!(dt_cpu, config.runtime.dt)
@@ -408,8 +409,8 @@ function SIMPLE_MRF(
     for iteration ∈ 1:iterations
         time = iteration
 
-        update_mrf_sources!(omegaU, U, x0, rotaxis, omega, mask, config)
-        #new_update_mrf_sources!(omegaU, U, reference_frames, config)
+        #update_mrf_sources!(omegaU, U, x0, rotaxis, omega, mask, config)
+        new_update_mrf_sources!(omegaU, U, reference_frames, config)
 
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
         
@@ -429,8 +430,10 @@ function SIMPLE_MRF(
 
         # new approach
         # flux!(mdotf, Uf, config)
-        flux_mrf!(mdotf, Uf, config, x0, rotaxis, omega, mask)
-        #new_flux_mrf!(mdotf, Uf, config, reference_frames)
+
+        #flux_mrf!(mdotf, Uf, config, x0, rotaxis, omega, mask)
+        new_flux_mrf!(mdotf, Uf, config, reference_frames)
+
         div!(divHv, mdotf, config)
         
         # Pressure calculations
@@ -483,7 +486,7 @@ function SIMPLE_MRF(
             @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
                 #save_output(model, outputWriter, iteration, time, config)
-                save_output_polar(model, outputWriter, iteration, time, config, x0, rotaxis, mask=mask)
+                save_output_polar(model, outputWriter, iteration, time, config, x0, rotaxis, mask=global_mask)
                 save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
             end
             break
@@ -504,7 +507,7 @@ function SIMPLE_MRF(
         
         if iteration%write_interval + signbit(write_interval) == 0      
             #save_output(model, outputWriter, iteration, time, config)
-            save_output_polar(model, outputWriter, iteration, time, config, x0, rotaxis, mask=mask)
+            save_output_polar(model, outputWriter, iteration, time, config, x0, rotaxis, mask=global_mask)
             save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
         end
 
@@ -791,7 +794,7 @@ end
     (; omega, rotaxis) = frames
 
     if global_mask[cID] != 0
-        frameID = global_mask[cID]
+        frameID = Int(global_mask[cID])
         Omega = omega[frameID]*rotaxis[frameID]
         omegaU[cID] = Omega × U[cID]
     end
@@ -819,18 +822,18 @@ end
 
     @inbounds begin
         (; area, normal, ownerCells) = faces[i]
+        Sf = area * normal
         if global_mask[ownerCells[1]] != 0
-            frameID = global_mask[ownerCells[1]]
+            frameID = Int(global_mask[ownerCells[1]])
             Omega = omega[frameID]*rotaxis[frameID]
             r = faces[i].centre - x0[frameID]
             values[i] = (psif[i] ⋅ Sf) - ((Omega × r ⋅ Sf))
         elseif global_mask[ownerCells[2]] != 0
-            frameID = global_mask[ownerCells[1]]
+            frameID = Int(global_mask[ownerCells[2]])
             Omega = omega[frameID]*rotaxis[frameID]
             r = faces[i].centre - x0[frameID]
             values[i] = (psif[i] ⋅ Sf) - ((Omega × r ⋅ Sf))
         else
-            Sf = area * normal
             values[i] = (psif[i] ⋅ Sf)
         end
     end

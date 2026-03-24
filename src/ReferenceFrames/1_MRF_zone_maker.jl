@@ -1,8 +1,9 @@
-export radial_mask
+export radial_mask!
 
-radial_mask(x0, radius_inner, radius_outer, hardware, mesh; ID = 1, mask=nothing) = begin
+radial_mask!(x0, radius_inner, radius_outer, hardware, mesh; ID = 1, mask=nothing) = begin
     (; backend, workgroup) = hardware
-    cells = mesh.cells 
+    cells = mesh.cells
+
     if isnothing(mask)
         mask = ScalarField(mesh)
     end
@@ -18,6 +19,7 @@ end
 
     r = cells[cID].centre - x0
     length = norm(r)
+
     if length <= radius_outer
         if length >= radius_inner
             mask[cID] = ID

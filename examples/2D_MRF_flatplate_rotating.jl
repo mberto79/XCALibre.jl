@@ -1,5 +1,5 @@
 using XCALibre
-
+using Revise
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "spinning_rod_mesh_V3.unv"
@@ -37,21 +37,21 @@ rotating_frames = RotatingFrames2D(
     hardware=hardware,
     mesh=mesh,
     Frames = (
-        frame1 = RotatingFrame(
+        frame1 = RotatingFrameNew(
             omega = 25,
             rotaxis = [0.0, 0.0, 1.0],
             x0 = [0.0, 0.0, 0.0],
-            radius_inner = 0.2,
-            radius_outer = 0.0,
+            radius_inner = 0.0,
+            radius_outer = 0.2,
             hardware=hardware,
             mesh=mesh
             ),
-        frame2 = RotatingFrame(
+        frame2 = RotatingFrameNew(
             omega = 15,
-            x1 = [1.0, 0.0, 1.0],
-            x0 = [1.0, 0.0, 0.0],
-            radius_inner = 0.2,
-            radius_outer = 0.0,
+            rotaxis = [0.0, 0.0, 1.0],
+            x0 = [-0.4, 0.0, 0.0],
+            radius_inner = 0.0,
+            radius_outer = 0.1,
             hardware=hardware,
             mesh=mesh
             )
@@ -72,12 +72,7 @@ BCs = assign(
     region = mesh_dev,
     (
         U = [
-            RotatingWall(
-                :rotor,
-                rpm=(reference_frames.frame1.omega*(30/pi)),
-                centre=reference_frames.frame1.x0,
-                axis=reference_frames.frame1.rotaxis
-                ),
+            RotatingWall(:rotor,rpm=(25*(30/pi)),centre=[0.0,0.0,0.0],axis=[0.0,0.0,1.0]),
             Wall(:walls, [0.0, 0.0, 0.0])
         ],
         p = [
@@ -141,7 +136,7 @@ solvers = (
     )
 )
 
-runtime = Runtime(iterations=500, write_interval=50, time_step=1)
+runtime = Runtime(iterations=100, write_interval=10, time_step=1)
 # runtime = Runtime(iterations=2, write_interval=-1, time_step=1)
 
 config = Configuration(

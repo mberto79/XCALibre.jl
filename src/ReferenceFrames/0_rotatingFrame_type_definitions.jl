@@ -1,5 +1,6 @@
-export RotatingFrame
+export RotatingFrameNew
 export RotatingFrames2D
+export FramesData
 
 struct RotatingFrames2D{Data,Mask}
     frames::Data
@@ -23,18 +24,24 @@ RotatingFrames2D(; hardware, mesh, Frames) = begin
         Rotaxis[ID] = rotaxis
         X0[ID] = x0
         X1[ID] = x1
-        global_mask = radial_mask(x0, radius_inner, radius_outer, hardware, mesh, ID=ID, mask=global_mask) 
+        global_mask = radial_mask!(x0, radius_inner, radius_outer, hardware, mesh; ID=ID, mask=global_mask) 
         ID = ID+1
     end
 
-    omega = Omega
-    rotaxis = Rotaxis
-    x0 = X0
-
-    frames = (omega, rotaxis, x0)
+    frames = FramesData(Omega, Rotaxis, X0)
     RotatingFrames2D(frames, global_mask)
 end
 
+struct FrameData
+    omega::Array
+    rotaxis::Array
+    x0::Array
+end
+Adapt.@adapt_structure FrameData
+
+FramesData(omega,rotaxis,x0) = begin
+    FrameData(omega,rotaxis,x0)
+end
 
 struct RotatingFrame
     omega::Float64
@@ -48,7 +55,7 @@ end
 Adapt.@adapt_structure RotatingFrame
 
 RotatingFrame(; omega, rotaxis=nothing, x0=nothing, x1=nothing, radius_inner::Float64=0.0, radius_outer::Float64, hardware, mesh) = begin
-    mask = radial_mask(x0,  radius_inner, radius_outer, hardware, mesh)
+    mask = radial_mask!(x0,  radius_inner, radius_outer, hardware, mesh)
 
     if isnothing(rotaxis)
         if isnothing(x1)
@@ -85,5 +92,53 @@ RotatingFrame(; omega, rotaxis=nothing, x0=nothing, x1=nothing, radius_inner::Fl
     radius_inner,
     radius_outer,
     mask
+    )
+end
+
+struct RotatingFrameNew
+    omega::Float64
+    rotaxis::SVector
+    x0::SVector
+    x1::SVector
+    radius_inner::Float64
+    radius_outer::Float64
+end
+Adapt.@adapt_structure RotatingFrameNew
+
+RotatingFrameNew(; omega, rotaxis=nothing, x0=nothing, x1=nothing, radius_inner::Float64=0.0, radius_outer::Float64, hardware, mesh) = begin
+    if isnothing(rotaxis)
+        if isnothing(x1)
+            println("Error: You either need to define two points, x1 and x0, or a point and a rotation vector, x0 and rotaxis.")
+        elseif isnothing(x0)
+            println("Error: You either need to define two points, x1 and x0, or a point and a rotation vector, x0 and rotaxis.")
+        end
+        rotaxis = x1 - x0
+    elseif isnothing(x0)
+        if isnothing(x1)
+            println("Error: You either need to define two points, x1 and x0, or a point and a rotation vector, x0 and rotaxis.")
+        elseif isnothing(rotaxis)
+            println("Error: You either need to define two points, x1 and x0, or a point and a rotation vector, x0 and rotaxis.")
+        end
+        x0 = x1 - rotaxis
+    elseif isnothing(x1)
+        if isnothing(x0)
+            println("Error: You either need to define two points, x1 and x0, or a point and a rotation vector, x0 and rotaxis.")
+        elseif isnothing(rotaxis)
+            println("Error: You either need to define two points, x1 and x0, or a point and a rotation vector, x0 and rotaxis.")
+        end
+        x1 = x0 + rotaxis
+    end
+
+    rotaxis = SVector{3}(rotaxis) 
+    x0 = SVector{3}(x0)
+    x1 = SVector{3}(x1)
+
+    RotatingFrameNew(
+    omega,
+    rotaxis,
+    x0,
+    x1,
+    radius_inner,
+    radius_outer
     )
 end

@@ -145,7 +145,7 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
             ("U", model.momentum.U), 
             ("p", model.momentum.p),
             ("nut", model.turbulence.nut),
-            ("T", model.energy.T),
+            ("he", model.energy.T),
             ("rho", model.fluid.rho)
         )
 

@@ -347,6 +347,12 @@ function SIMPLE_MRF(
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
     (; iterations, write_interval,dt) = runtime
     (; backend) = hardware
+    (; reference_frames) = model
+
+    omega = model.reference_frames.omega
+    rotaxis = model.reference_frames.rotaxis
+    x0 = model.reference_frames.x0
+    mask = model.reference_frames.mask
 
     dt_cpu = zeros(_get_float(mesh), 1)
     copyto!(dt_cpu, config.runtime.dt)
@@ -397,15 +403,13 @@ function SIMPLE_MRF(
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
-    omega = model.reference_frames.omega
-    rotaxis = model.reference_frames.rotaxis
-    x0 = model.reference_frames.x0
-    mask = model.reference_frames.mask
+
 
     for iteration ∈ 1:iterations
         time = iteration
 
         update_mrf_sources!(omegaU, U, x0, rotaxis, omega, mask, config)
+        #new_update_mrf_sources!(omegaU, U, reference_frames, config)
 
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
         
@@ -426,6 +430,7 @@ function SIMPLE_MRF(
         # new approach
         # flux!(mdotf, Uf, config)
         flux_mrf!(mdotf, Uf, config, x0, rotaxis, omega, mask)
+        #new_flux_mrf!(mdotf, Uf, config, reference_frames)
         div!(divHv, mdotf, config)
         
         # Pressure calculations
@@ -787,13 +792,6 @@ end
 
     if global_mask[cID] != 0
         frameID = global_mask[cID]
-    else
-        frameID = 0
-    end
-
-    if frameID == 0
-        omegaU[cID] = (Omega × U[cID]) * 0
-    elseif frameID != 0
         Omega = omega[frameID]*rotaxis[frameID]
         omegaU[cID] = Omega × U[cID]
     end
@@ -823,19 +821,17 @@ end
         (; area, normal, ownerCells) = faces[i]
         if global_mask[ownerCells[1]] != 0
             frameID = global_mask[ownerCells[1]]
-        elseif global_mask[ownerCells[2]] != 0
-            frameID = global_mask[ownerCells[1]]
-        else
-            frameID = 0
-        end
-
-        if frameID == 0
-            Sf = area * normal
-            values[i] = (psif[i] ⋅ Sf)
-        elseif frameID != 0
             Omega = omega[frameID]*rotaxis[frameID]
             r = faces[i].centre - x0[frameID]
             values[i] = (psif[i] ⋅ Sf) - ((Omega × r ⋅ Sf))
+        elseif global_mask[ownerCells[2]] != 0
+            frameID = global_mask[ownerCells[1]]
+            Omega = omega[frameID]*rotaxis[frameID]
+            r = faces[i].centre - x0[frameID]
+            values[i] = (psif[i] ⋅ Sf) - ((Omega × r ⋅ Sf))
+        else
+            Sf = area * normal
+            values[i] = (psif[i] ⋅ Sf)
         end
     end
 end

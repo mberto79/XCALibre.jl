@@ -102,7 +102,7 @@ BCs = assign(
 )
 
 schemes = (
-    U = Schemes(divergence=Linear, limiter=MFaceBased(mesh_dev)),
+    U = Schemes(divergence=LUST, limiter=MFaceBased(mesh_dev)),
     # U = Schemes(divergence=LUST),
     p = Schemes(divergence=LUST),
     k = Schemes(divergence=LUST),
@@ -159,7 +159,6 @@ solvers = (
 
 runtime = Runtime(
     iterations=3000, write_interval=100, time_step=1)
-    iterations=3000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
@@ -186,22 +185,26 @@ residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
  end
 
 using DelimitedFiles
-using DelimitedFiles
 using LinearAlgebra
 using Plots 
 # OF_data = readdlm("flatplate_OF_wall_kOmega_lowRe.csv", ',', Float64, skipstart=1)
 # oRex = OF_data[:,7].*velocity[1]./nu[1]
 # oCf = sqrt.(OF_data[:,12].^2 + OF_data[:,13].^2)/(0.5*velocity[1]^2)
 
+# Ex_data = readdlm("T3A-_Experimental_Data.csv", ',', Float64, skipstart=1)
 Ex_data = readdlm("T3A_Experimental_Results.csv", ',', Float64, skipstart=1)
-#  Ex_data = readdlm("T3A-_Experimental_Results.csv", ',', Float64, skipstart=1)
-#  Ex_data = readdlm("T3B_Experimental_Data.csv", ',', Float64, skipstart=1)
+# Ex_data = readdlm("T3B_Experimental_Data.csv", ',', Float64, skipstart=1)
  eRex = Ex_data[:,1]
  eCf = Ex_data[:,2]
 
+#  Walt_data = readdlm("T3A-_Walters'_Data.csv", ',', Float64, skipstart=1)
+Walt_data = readdlm("T3A_Walters'_Data.csv", ',', Float64, skipstart=1)
+#  Walt_data = readdlm("T3B_Walters'_Data.csv", ',', Float64, skipstart=1)
+ wRex = Walt_data[:,1]
+ wCf = Walt_data[:,2]
+
  # model_cpu = adapt(CPU(), model)
 
-tauw, pos = wall_shear_stress(:Wall, model, config)
 tauw, pos = wall_shear_stress(:Wall, model, config)
 tauMag = [norm(tauw[i]) for i ∈ eachindex(tauw)]
 # tauMag = [tauw.x[i] for i ∈ eachindex(tauw)]
@@ -218,7 +221,8 @@ plot!(Rex_corr, Cf_corr, color=:red, ylims=(0, 0.01), xlims=(0,6e5), label="Turb
 plot!(Rex_corr, Cf_laminar, color=:green, ylims=(0, 0.01), xlims=(0,6e5), label="Laminar",lw=1.5)
 # plot!(oRex, oCf, color=:green, lw=1.5, label="OpenFOAM") # |> display
 scatter!(eRex, eCf, color=:green, lw=1.5, label="T3A Experimantal Data")
-plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:pink, lw=1.5,label="Case 4", title="T3A Flatplate") |> display
+plot!(wRex, wCf, color=:black, lw=1.5,label="Walters' Original model") |> display
+plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code", title="T3A Flatplate") |> display
 # plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code", title="T3A- Flatplate") |> display
 # plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code", title="T3B Flatplate") |> display
 

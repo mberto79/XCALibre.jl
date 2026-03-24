@@ -65,8 +65,8 @@ model = Physics(
     turbulence = RANS{KOmega}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev,
-    reference_frames = reference_frames
-    )
+    reference_frames = rotating_frames
+)
 
 
 BCs = assign(

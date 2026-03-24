@@ -1,44 +1,50 @@
 export RotatingFrame
 export RotatingFrames2D
 
-struct RotatingFrames2D
-    frames
-    global_mask
+struct RotatingFrames2D{Data,Mask}
+    frames::Data
+    global_mask::Mask
 end
+Adapt.@adapt_structure RotatingFrames2D
 
 RotatingFrames2D(; hardware, mesh, Frames) = begin
     ID = 1
     n = length(Frames)
-    Omega = zeros(Float64, n)
+    Omega = zeros(Float64, n) # need to use kernel abstractions for this, look at how scalarfield does it
     Rotaxis = Vector{Vector{Float64}}(undef, n)
-    X0 = Vector{Vector{Float64}}(undef, n)
+    X0 = Vector{Vector{Float64}}(undef, n)    # use S vectors 3
     X1 = Vector{Vector{Float64}}(undef, n)
     global_mask = ScalarField(mesh)
+
     for frame in Frames
         (; omega, rotaxis, x0, x1, radius_inner, radius_outer) = frame
         Omega[ID] = omega
         Rotaxis[ID] = rotaxis
         X0[ID] = x0
         X1[ID] = x1
-        mask = radial_mask(x0, radius_inner, radius_outer, hardware, mesh) * ID
-        global_mask = global_mask + mask
+        global_mask = radial_mask(x0, radius_inner, radius_outer, hardware, mesh, ID=ID, mask=global_mask) 
         ID = ID+1
     end
+
+    omega = Omega
+    rotaxis = Rotaxis
+    x0 = X0
 
     frames = (omega, rotaxis, x0)
     RotatingFrames2D(frames, global_mask)
 end
 
 
-struct RotatingFrameStruct
-    omega
-    rotaxis
-    x0
-    x1
-    radius_inner
-    radius_outer
-    mask
+struct RotatingFrame
+    omega::Float64
+    rotaxis::SVector
+    x0::SVector
+    x1::SVector
+    radius_inner::Float64
+    radius_outer::Float64
+    mask::AbstractScalarField
 end
+Adapt.@adapt_structure RotatingFrame
 
 RotatingFrame(; omega, rotaxis=nothing, x0=nothing, x1=nothing, radius_inner::Float64=0.0, radius_outer::Float64, hardware, mesh) = begin
     mask = radial_mask(x0,  radius_inner, radius_outer, hardware, mesh)
@@ -70,7 +76,7 @@ RotatingFrame(; omega, rotaxis=nothing, x0=nothing, x1=nothing, radius_inner::Fl
     x0 = SVector{3}(x0)
     x1 = SVector{3}(x1)
 
-    RotatingFrameStruct(
+    RotatingFrame(
     omega,
     rotaxis,
     x0,

@@ -1,5 +1,37 @@
-export RotatingFrame
+export RotatingFrames3D
 export RotatingFrames2D
+export RotatingFrame
+
+
+struct RotatingFrames3D{Data,Mask}
+    frames::Data
+    global_mask::Mask
+end
+Adapt.@adapt_structure RotatingFrames3D
+
+RotatingFrames3D(; hardware, mesh, frames) = begin
+    (; backend) = hardware
+    ID = 1
+    n = length(frames)
+    Omega = KernelAbstractions.zeros(backend, Float64, n)
+    Rotaxis = KernelAbstractions.allocate(backend, SVector{3, Float64}, n)
+    X0 = KernelAbstractions.allocate(backend, SVector{3, Float64}, n)
+    X1 = KernelAbstractions.allocate(backend, SVector{3, Float64}, n)
+    global_mask = ScalarField(mesh)
+
+    for frame in frames
+        (; omega, rotaxis, x0, x1, radius_inner, radius_outer) = frame
+        Omega[ID] = omega
+        Rotaxis[ID] = rotaxis
+        X0[ID] = x0
+        X1[ID] = x1
+        global_mask = disc_mask!(x0, x1, radius_inner, radius_outer, hardware, mesh; ID=ID, mask=global_mask) 
+        ID = ID+1
+    end
+
+    Frames = FramesData(Omega, Rotaxis, X0)
+    RotatingFrames3D(Frames, global_mask)
+end
 
 struct RotatingFrames2D{Data,Mask}
     frames::Data

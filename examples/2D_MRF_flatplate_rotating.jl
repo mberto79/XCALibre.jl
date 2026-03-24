@@ -1,5 +1,4 @@
 using XCALibre
-using Revise
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "spinning_rod_mesh_V3.unv"
@@ -21,37 +20,25 @@ k_inlet = 1 #3/2*(Tu*u_mag)^2
 νt_inlet = k_inlet/ω_inlet
 Re = velocity[1]*0.1/nu
 
-"""
-reference_frames = RotatingFrame(
-    omega = 25,
-    rotaxis = [0.0, 0.0, 1.0],
-    x0 = [0.0, 0.0, 0.0],
-    radius_inner = 0.2,
-    radius_outer = 0.0,
-    hardware=hardware,
-    mesh=mesh
-    )
-
-"""
 rotating_frames = RotatingFrames2D(  
     hardware=hardware,
     mesh=mesh,
-    Frames = (
-        frame1 = RotatingFrameNew(
-            omega = 25,
+    frames = (
+        rotor1 = RotatingFrame(
+            omega = 15,
             rotaxis = [0.0, 0.0, 1.0],
-            x0 = [0.0, 0.0, 0.0],
+            x0 = [0.1, 0.0, 0.0],
             radius_inner = 0.0,
-            radius_outer = 0.2,
+            radius_outer = 0.05,
             hardware=hardware,
             mesh=mesh
             ),
-        frame2 = RotatingFrameNew(
-            omega = 15,
+        rotor2 = RotatingFrame(
+            omega = 25,
             rotaxis = [0.0, 0.0, 1.0],
-            x0 = [-0.4, 0.0, 0.0],
+            x0 = [-0.1, 0.0, 0.0],
             radius_inner = 0.0,
-            radius_outer = 0.1,
+            radius_outer = 0.05,
             hardware=hardware,
             mesh=mesh
             )
@@ -72,7 +59,18 @@ BCs = assign(
     region = mesh_dev,
     (
         U = [
-            RotatingWall(:rotor,rpm=(25*(30/pi)),centre=[0.0,0.0,0.0],axis=[0.0,0.0,1.0]),
+            RotatingWall(
+                :rotor,
+                rpm=(30/pi)*rotating_frames.frames.omega[1],
+                centre=rotating_frames.frames.x0[1],
+                axis=rotating_frames.frames.rotaxis[1]
+                ),
+#            RotatingWall(
+#                :rotor2,
+#                rpm=(30/pi)*rotating_frames.frames.omega[2],
+#                centre=rotating_frames.frames.x0[2],
+#                axis=rotating_frames.frames.rotaxis[2]
+#                ),
             Wall(:walls, [0.0, 0.0, 0.0])
         ],
         p = [

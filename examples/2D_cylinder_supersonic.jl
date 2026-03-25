@@ -81,10 +81,11 @@ solvers = (
 
 # gradient schemes for viscous flux gradients; flux selects the inviscid Riemann solver
 schemes = (
-    U    = Schemes(gradient=Gauss),
-    p    = Schemes(gradient=Gauss),
-    he   = Schemes(gradient=Gauss),
-    flux = HLLC(),   # or Rusanov() for more dissipation
+    U             = Schemes(gradient=Gauss),
+    p             = Schemes(gradient=Gauss),
+    he            = Schemes(gradient=Gauss),
+    flux          = HLLC(),   # or Rusanov() for more dissipation
+    time_stepping = RK2(),    # or FEuler() for 1st-order Forward Euler (default)
 )
 
 runtime = Runtime(

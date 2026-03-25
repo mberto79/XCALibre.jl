@@ -1,4 +1,4 @@
-export density_based!, Rusanov, HLLC
+export density_based!, Rusanov, HLLC, FEuler, RK2
 
 # ============================================================
 # Flux scheme selector types
@@ -9,6 +9,23 @@ struct Rusanov end
 
 """User-facing flux scheme type — selects the HLLC (Harten-Lax-van Leer Contact) flux."""
 struct HLLC end
+
+# ============================================================
+# Time stepping selector types
+# ============================================================
+
+"""Forward Euler (1st order) explicit time stepping for the density-based solver."""
+struct FEuler end
+
+"""
+SSP-RK2 / Heun's method (2nd order) explicit time stepping for the density-based solver.
+
+Computes two Euler stages and averages:
+  W^(1)     = W^n   - (dt/V)*R(W^n)
+  W^(2)     = W^(1) - (dt/V)*R(W^(1))
+  W^{n+1}   = 0.5*(W^n + W^(2))
+"""
+struct RK2 end
 
 # ============================================================
 # Workspace struct
@@ -24,6 +41,12 @@ struct DensityBasedWorkspace{SF<:ScalarField, VF<:VectorField, V<:AbstractVector
     res_rhoE::SF    # energy residual accumulator
     Mach::SF        # Mach number field
     dt_cell::V      # per-cell adaptive time step
+    # RK2 stage storage (W^n saved before stage-1 Euler update)
+    rho_0::V        # ρ   at start of time step
+    rhoUx_0::V      # ρUx at start of time step
+    rhoUy_0::V      # ρUy at start of time step
+    rhoUz_0::V      # ρUz at start of time step
+    rhoE_0::V       # ρE  at start of time step
 end
 
 # ============================================================
@@ -605,6 +628,34 @@ end
     end
 end
 
+# Save conservative state W^n (for RK2 averaging)
+@kernel function _save_conservative!(rho_0, rhoUx_0, rhoUy_0, rhoUz_0, rhoE_0, rho, rhoU, rhoE)
+    i = @index(Global)
+
+    @inbounds begin
+        rho_0[i]   = rho.values[i]
+        rhoUx_0[i] = rhoU.x[i]
+        rhoUy_0[i] = rhoU.y[i]
+        rhoUz_0[i] = rhoU.z[i]
+        rhoE_0[i]  = rhoE.values[i]
+    end
+end
+
+# RK2 average: W^{n+1} = 0.5*(W^n + W^(2)), with density clamping
+@kernel function _rk2_average!(rho, rhoU, rhoE, rho_0, rhoUx_0, rhoUy_0, rhoUz_0, rhoE_0)
+    i = @index(Global)
+
+    @inbounds begin
+        TF = eltype(rho.values)
+        rho_new = TF(0.5) * (rho_0[i] + rho.values[i])
+        rho.values[i] = max(rho_new, TF(1e-10))
+        rhoU.x[i]     = TF(0.5) * (rhoUx_0[i] + rhoU.x[i])
+        rhoU.y[i]     = TF(0.5) * (rhoUy_0[i] + rhoU.y[i])
+        rhoU.z[i]     = TF(0.5) * (rhoUz_0[i] + rhoU.z[i])
+        rhoE.values[i] = TF(0.5) * (rhoE_0[i] + rhoE.values[i])
+    end
+end
+
 # Conservative → primitive recovery
 @kernel function _cons_to_prim!(U, p, T, Mach, rho, rhoU, rhoE, cells, fluid)
     i = @index(Global)
@@ -886,9 +937,15 @@ function _setup_density_based(model, config; output=VTK())
     res_rhoE = ScalarField(mesh)
     Mach     = ScalarField(mesh)
     dt_cell  = KernelAbstractions.zeros(backend, TF, n_cells)
+    rho_0    = KernelAbstractions.zeros(backend, TF, n_cells)
+    rhoUx_0  = KernelAbstractions.zeros(backend, TF, n_cells)
+    rhoUy_0  = KernelAbstractions.zeros(backend, TF, n_cells)
+    rhoUz_0  = KernelAbstractions.zeros(backend, TF, n_cells)
+    rhoE_0   = KernelAbstractions.zeros(backend, TF, n_cells)
 
     workspace = DensityBasedWorkspace(
-        rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, Mach, dt_cell
+        rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, Mach, dt_cell,
+        rho_0, rhoUx_0, rhoUy_0, rhoUz_0, rhoE_0
     )
 
     @info "Allocating viscous and turbulence fields..."
@@ -931,27 +988,193 @@ function _setup_density_based(model, config; output=VTK())
     return residuals
 end
 
+# ============================================================
+# Helper: compute all residuals from current primitive state
+# ============================================================
+
+function compute_residuals!(
+    workspace, flux_scheme, boundaries, model, gradU, gradT, mueff, kappa_eff,
+    Uf, mesh, Tref, time, config
+)
+    (; res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE) = workspace
+    (; U, p) = model.momentum
+    (; rho) = model.fluid
+    T = model.energy.T
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    n_cells  = length(mesh.cells)
+    n_bfaces = length(mesh.boundary_cellsID)
+
+    # Zero residuals
+    kernel! = _zero_residuals!(_setup(backend, workgroup, n_cells)...)
+    kernel!(res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE)
+
+    # Inviscid flux — internal faces
+    kernel! = _inviscid_flux_internal!(_setup(backend, workgroup, n_cells)...)
+    kernel!(
+        flux_scheme,
+        res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+        rho, U, p, mesh, model.fluid
+    )
+
+    # Viscous flux — internal faces
+    kernel! = _viscous_flux_internal!(_setup(backend, workgroup, n_cells)...)
+    kernel!(
+        res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+        U, gradU, gradT, mueff, kappa_eff, mesh
+    )
+
+    # Inviscid flux — boundary faces
+    kernel! = _inviscid_bc_flux!(_setup(backend, workgroup, n_bfaces)...)
+    kernel!(
+        flux_scheme, boundaries.U, boundaries.p, boundaries.he,
+        res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+        rho, U, p, T, mesh, model.fluid, Tref, time
+    )
+
+    # Viscous flux — boundary faces
+    kernel! = _viscous_bc_flux!(_setup(backend, workgroup, n_bfaces)...)
+    kernel!(
+        boundaries.U,
+        res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+        U, Uf, gradU, gradT, mueff, kappa_eff, mesh
+    )
+end
+
+# ============================================================
+# Helper: conservative → primitive + face interpolations
+# ============================================================
+
+function recover_and_interpolate!(
+    workspace, model, boundaries, rhof, mdotf, time, config
+)
+    (; rhoU, rhoE, Mach) = workspace
+    (; U, p, Uf, pf) = model.momentum
+    (; rho) = model.fluid
+    T  = model.energy.T
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    mesh = model.domain
+    n_cells = length(mesh.cells)
+
+    kernel! = _cons_to_prim!(_setup(backend, workgroup, n_cells)...)
+    kernel!(U, p, T, Mach, rho, rhoU, rhoE, mesh.cells, model.fluid)
+
+    interpolate!(Uf, U, config)
+    correct_boundaries!(Uf, U, boundaries.U, time, config)
+    interpolate!(pf, p, config)
+    correct_boundaries!(pf, p, boundaries.p, time, config)
+
+    flux!(mdotf, Uf, config)
+    @. mdotf.values *= rhof.values
+end
+
+# ============================================================
+# Time stepping dispatch: step!
+# ============================================================
+
+"""
+    step!(::FEuler, workspace, model, boundaries, flux_scheme,
+          gradU, gradT, mueff, kappa_eff, rhof, mdotf, Tref, dt, time, config)
+
+Single Forward-Euler update of the conserved variables.
+"""
+function step!(
+    ::FEuler, workspace, model, boundaries, flux_scheme,
+    gradU, gradT, mueff, kappa_eff, rhof, mdotf, Tref, dt, time, config
+)
+    (; rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE) = workspace
+    (; rho) = model.fluid
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    mesh = model.domain
+    n_cells = length(mesh.cells)
+
+    kernel! = _forward_euler!(_setup(backend, workgroup, n_cells)...)
+    kernel!(rho, rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, mesh.cells, dt)
+end
+
+"""
+    step!(::RK2, workspace, model, boundaries, flux_scheme,
+          gradU, gradT, mueff, kappa_eff, rhof, mdotf, Tref, dt, time, config)
+
+SSP-RK2 (Heun's method) update of the conserved variables:
+  W^(1)   = W^n   - (dt/V)*R(W^n)
+  W^(2)   = W^(1) - (dt/V)*R(W^(1))
+  W^{n+1} = 0.5*(W^n + W^(2))
+"""
+function step!(
+    ::RK2, workspace, model, boundaries, flux_scheme,
+    gradU, gradT, mueff, kappa_eff, rhof, mdotf, Tref, dt, time, config
+)
+    (; rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE) = workspace
+    (; rho_0, rhoUx_0, rhoUy_0, rhoUz_0, rhoE_0) = workspace
+    (; rho) = model.fluid
+    (; Uf) = model.momentum
+    T = model.energy.T
+    Tf = model.energy.Tf
+    (; hardware, schemes) = config
+    (; backend, workgroup) = hardware
+    mesh = model.domain
+    n_cells = length(mesh.cells)
+
+    # --- Stage 1: save W^n, then Euler update using R(W^n) already computed ---
+    kernel! = _save_conservative!(_setup(backend, workgroup, n_cells)...)
+    kernel!(rho_0, rhoUx_0, rhoUy_0, rhoUz_0, rhoE_0, rho, rhoU, rhoE)
+
+    kernel! = _forward_euler!(_setup(backend, workgroup, n_cells)...)
+    kernel!(rho, rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, mesh.cells, dt)
+
+    # Recover primitives and update face fields from W^(1)
+    recover_and_interpolate!(workspace, model, boundaries, rhof, mdotf, time, config)
+
+    # Update gradients and viscous fields at W^(1)
+    interpolate!(rhof, rho, config)
+    interpolate!(Tf, T, config)
+    grad!(gradT, Tf, T, time, config)
+    limit_gradient!(schemes.he.limiter, gradT, T, config)
+
+    # --- Stage 2: compute R(W^(1)), then another Euler update → W^(2) ---
+    compute_residuals!(
+        workspace, flux_scheme, boundaries, model, gradU, gradT, mueff, kappa_eff,
+        Uf, mesh, Tref, time, config
+    )
+
+    kernel! = _forward_euler!(_setup(backend, workgroup, n_cells)...)
+    kernel!(rho, rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, mesh.cells, dt)
+
+    # --- Average: W^{n+1} = 0.5*(W^n + W^(2)) ---
+    kernel! = _rk2_average!(_setup(backend, workgroup, n_cells)...)
+    kernel!(rho, rhoU, rhoE, rho_0, rhoUx_0, rhoUy_0, rhoUz_0, rhoE_0)
+end
+
+# ============================================================
+# Main solver loop
+# ============================================================
+
 function DENSITY_BASED(
     model, workspace, turbulenceModel,
     S, gradT, nueff, mueff, kappa_eff, mdotf, prev,
     config; output=VTK()
 )
-    (; U, p, Uf, pf) = model.momentum
+    (; U, p, Uf) = model.momentum
     (; rho, nu) = model.fluid
     T  = model.energy.T
     Tf = model.energy.Tf   # face temperature (FaceScalarField)
     mesh = model.domain
-    (; solvers, schemes, runtime, hardware, boundaries) = config
+    (; schemes, runtime, hardware, boundaries) = config
     (; iterations, write_interval) = runtime
     (; backend, workgroup) = hardware
 
     # Flux scheme: user sets schemes = (..., flux = HLLC()) or flux = Rusanov(); default Rusanov
     flux_scheme = get(schemes, :flux, Rusanov())
 
-    (; rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, Mach, dt_cell) = workspace
+    # Time stepping: user sets schemes = (..., time_stepping = RK2()); default FEuler
+    time_scheme = get(schemes, :time_stepping, FEuler())
 
-    n_cells  = length(mesh.cells)
-    n_bfaces = length(mesh.boundary_cellsID)
+    (; rhoU, rhoE, res_rho, dt_cell) = workspace
+
+    n_cells = length(mesh.cells)
     TF = _get_float(mesh)
 
     # CFL number from adaptive time stepping or default
@@ -1001,7 +1224,7 @@ function DENSITY_BASED(
     # Pre-allocate residual storage
     R_rho = ones(TF, iterations)
 
-    @info "Starting DENSITY_BASED time loop..."
+    @info "Starting DENSITY_BASED time loop ($(typeof(time_scheme)))..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
@@ -1022,46 +1245,17 @@ function DENSITY_BASED(
         @. mueff.values     = rhof.values * nueff.values
         @. kappa_eff.values = mueff.values * cp_val / Pr_val
 
-        # 1. Zero residuals
-        kernel! = _zero_residuals!(_setup(backend, workgroup, n_cells)...)
-        kernel!(res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE)
-
-        # 2. Inviscid flux — internal faces (cell loop, no atomics)
-        kernel! = _inviscid_flux_internal!(_setup(backend, workgroup, n_cells)...)
-        kernel!(
-            flux_scheme,
-            res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-            rho, U, p, mesh, model.fluid
+        # 1. Compute residuals R(W^n)
+        compute_residuals!(
+            workspace, flux_scheme, boundaries, model, gradU, gradT, mueff, kappa_eff,
+            Uf, mesh, Tref, time, config
         )
 
-        # 2a. Viscous flux — internal faces (subtract from residuals)
-        kernel! = _viscous_flux_internal!(_setup(backend, workgroup, n_cells)...)
-        kernel!(
-            res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-            U, gradU, gradT, mueff, kappa_eff, mesh
-        )
-
-        # 3. Inviscid flux — boundary faces (face loop, with atomics)
-        kernel! = _inviscid_bc_flux!(_setup(backend, workgroup, n_bfaces)...)
-        kernel!(
-            flux_scheme, boundaries.U, boundaries.p, boundaries.he,
-            res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-            rho, U, p, T, mesh, model.fluid, Tref, time
-        )
-
-        # 3a. Viscous flux — boundary faces (subtract from residuals)
-        kernel! = _viscous_bc_flux!(_setup(backend, workgroup, n_bfaces)...)
-        kernel!(
-            boundaries.U,
-            res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-            U, Uf, gradU, gradT, mueff, kappa_eff, mesh
-        )
-
-        # 4. Compute density residual before update (L2 norm)
+        # 2. Compute density residual before update (L2 norm)
         rho_res = norm(res_rho.values) / sqrt(TF(n_cells))
         R_rho[iteration] = rho_res
 
-        # 5. CFL-limited global dt
+        # 3. CFL-limited global dt
         kernel! = _compute_dt_cell!(_setup(backend, workgroup, n_cells)...)
         kernel!(dt_cell, rho, U, p, mesh.cells, model.fluid, cfl, dim_exp)
         dt = minimum(dt_cell)
@@ -1070,30 +1264,22 @@ function DENSITY_BASED(
         runtime.dt .= dt
         time += dt
 
-        # 6. Forward Euler update of conservative variables
-        kernel! = _forward_euler!(_setup(backend, workgroup, n_cells)...)
-        kernel!(rho, rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, mesh.cells, dt)
+        # 4. Time step update (FEuler or RK2)
+        step!(
+            time_scheme, workspace, model, boundaries, flux_scheme,
+            gradU, gradT, mueff, kappa_eff, rhof, mdotf, Tref, dt, time, config
+        )
 
-        # 7. Conservative → primitive recovery
-        kernel! = _cons_to_prim!(_setup(backend, workgroup, n_cells)...)
-        kernel!(U, p, T, Mach, rho, rhoU, rhoE, mesh.cells, model.fluid)
+        # 5. Conservative → primitive recovery + face interpolations
+        recover_and_interpolate!(workspace, model, boundaries, rhof, mdotf, time, config)
 
-        # 8. Update face interpolations
-        interpolate!(Uf, U, config)
-        correct_boundaries!(Uf, U, boundaries.U, time, config)
-        interpolate!(pf, p, config)
-        correct_boundaries!(pf, p, boundaries.p, time, config)
-
-        # 8a. Update mass flux for turbulence transport equations
-        flux!(mdotf, Uf, config)
-        @. mdotf.values *= rhof.values
-
+        # 6. Turbulence update
         # Velocity gradients updated inside turbulence! (Laminar+Compressible calls grad! + limit_gradient!)
         turbulence!(turbulenceModel, model, S, prev, time, config)
         @. mueff.values     = rhof.values * nueff.values
         @. kappa_eff.values = mueff.values * cp_val / Pr_val
 
-        # 9. Progress and convergence check
+        # 7. Progress and convergence check
         ProgressMeter.next!(
             progress, showvalues = [
                 (:iter, iteration),
@@ -1103,7 +1289,7 @@ function DENSITY_BASED(
             ]
         )
 
-        # 10. Write output at specified interval
+        # 8. Write output at specified interval
         if iteration % write_interval + signbit(write_interval) == 0
             save_output(model, outputWriter, iteration, time, config)
         end

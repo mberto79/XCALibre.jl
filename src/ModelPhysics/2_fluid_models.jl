@@ -250,29 +250,23 @@ Multiphase fluid model containing multiple phases and their interaction properti
 end
 Adapt.@adapt_structure Multiphase
 
-Fluid{Multiphase}(; phases::NamedTuple, kwargs...) = begin
+Fluid{Multiphase}(; phases::NTuple{2, Phase}, kwargs...) = begin
     coeffs = (; phases, kwargs...)
     ARG = typeof(coeffs)
     Fluid{Multiphase, ARG}(coeffs)
 end
 
-
 (fluid::Fluid{Multiphase, ARG})(mesh) where {ARG} = begin
     coeffs = fluid.args
     physics_properties = Base.structdiff(coeffs, (phases = nothing,))
 
-    phases_nt = coeffs.phases
-    @assert phases_nt isa NamedTuple "Phases must be a NamedTuple with named phases, e.g. (water=Phase(...), air=Phase(...))"
-    @assert haskey(phases_nt, :alpha) "Volume fraction definition must be assigned via alpha = , e.g. alpha=:water"
+    phase_setups = coeffs.phases
+    @assert phase_setups isa Tuple{Phase, Phase} "Phases must be a plain Tuple of exactly two Phase objects, e.g. (Phase(...), Phase(...))"
 
-    alpha_name = phases_nt.alpha
-    phase_keys = filter(!=(:alpha), keys(phases_nt))
-    phase_setups = map(k -> phases_nt[k], phase_keys)
-    volume_fraction = findfirst(==(alpha_name), phase_keys)
+    volume_fraction = 1  # First phase is always the tracked phase
 
     build_multiphase(phase_setups, physics_properties, mesh, volume_fraction)
 end
-
 
 build_property(property, mesh) = property
 build_property(setup::Gravity, mesh) = build_gravityModel(setup, mesh)

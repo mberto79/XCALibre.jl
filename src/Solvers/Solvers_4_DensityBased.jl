@@ -716,46 +716,135 @@ end
     end
 end
 
-# Boundary faces — face-based loop with atomics, same pattern as _rusanov_bc_flux!
+# Boundary faces — face-based loop with atomics, dispatches on BC type
 @kernel function _viscous_bc_flux!(
+    U_BCs,
     res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-    U, gradU, gradT, mueff, kappa_eff, mesh
+    U, Uf, gradU, gradT, mueff, kappa_eff, mesh
 )
     fID = @index(Global)
 
-    @inbounds begin
-        (; faces) = mesh
-        face = faces[fID]
-        (; area, normal, ownerCells) = face
-        cID = ownerCells[1]  # interior cell
+    @inbounds _viscous_bc_dispatch!(
+        U_BCs,
+        res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+        U, Uf, gradU, gradT, mueff, kappa_eff, mesh, fID
+    )
+end
 
-        TF = eltype(res_rhoUx.values)
-        two_thirds = TF(2)/TF(3)
-
-        # One-sided gradients from interior cell
-        gradU_f = gradU[cID]
-        gradT_f = gradT[cID]
-
-        # Velocity divergence
-        divU = gradU_f[1,1] + gradU_f[2,2] + gradU_f[3,3]
-
-        # Viscous stress projection
-        mueff_f = TF(mueff[fID])
-        tau_n   = mueff_f * ((gradU_f + gradU_f') * normal - two_thirds * divU * normal)
-
-        # Interior velocity at boundary face
-        Ui = U[cID]
-
-        # Viscous energy flux
-        kf       = TF(kappa_eff[fID])
-        F_visc_E = (Ui ⋅ tau_n) + kf * (gradT_f ⋅ normal)
-
-        # Subtract viscous contribution (boundary faces are outward from cID)
-        Atomix.@atomic res_rhoUx.values[cID] -= tau_n[1] * area
-        Atomix.@atomic res_rhoUy.values[cID] -= tau_n[2] * area
-        Atomix.@atomic res_rhoUz.values[cID] -= tau_n[3] * area
-        Atomix.@atomic res_rhoE.values[cID]  -= F_visc_E * area
+# Generated dispatch over boundary patches (compile-time loop unrolling)
+@generated function _viscous_bc_dispatch!(
+    U_BCs,
+    res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+    U, Uf, gradU, gradT, mueff, kappa_eff, mesh, fID
+)
+    n = length(U_BCs.parameters)
+    exprs = []
+    for i ∈ 1:n
+        ex = quote
+            bc_U_i = U_BCs[$i]
+            (; start, stop) = bc_U_i.IDs_range
+            if start <= fID <= stop
+                _apply_viscous_bc!(
+                    bc_U_i,
+                    res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+                    U, Uf, gradU, gradT, mueff, kappa_eff, mesh, fID
+                )
+            end
+        end
+        push!(exprs, ex)
     end
+    quote
+        @inbounds begin
+            $(exprs...)
+        end
+        nothing
+    end
+end
+
+# Generic viscous BC (Wall, Slip, Symmetry, Dirichlet, Neumann, etc.)
+# Fix 1: uses Uf[fID] (face velocity set by correct_boundaries!) instead of U[cID]
+# for the viscous energy flux, so Wall BC correctly uses U_wall (e.g. zero for
+# stationary no-slip), not the interior cell velocity.
+@inline function _apply_viscous_bc!(
+    bc_U,
+    res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+    U, Uf, gradU, gradT, mueff, kappa_eff, mesh, fID
+)
+    (; faces) = mesh
+    face = faces[fID]
+    (; area, normal, ownerCells) = face
+    cID = ownerCells[1]
+
+    TF = eltype(res_rhoUx.values)
+    two_thirds = TF(2)/TF(3)
+
+    # One-sided gradients from interior cell
+    gradU_f = gradU[cID]
+    gradT_f = gradT[cID]
+
+    # Velocity divergence
+    divU = gradU_f[1,1] + gradU_f[2,2] + gradU_f[3,3]
+
+    # Viscous stress projection
+    mueff_f = TF(mueff[fID])
+    tau_n   = mueff_f * ((gradU_f + gradU_f') * normal - two_thirds * divU * normal)
+
+    # Face velocity from correct_boundaries! (U_wall for Wall BC, interpolated for others)
+    Uf_face = Uf[fID]
+
+    # Viscous energy flux
+    kf       = TF(kappa_eff[fID])
+    F_visc_E = (Uf_face ⋅ tau_n) + kf * (gradT_f ⋅ normal)
+
+    # Subtract viscous contribution (boundary faces are outward from cID)
+    Atomix.@atomic res_rhoUx.values[cID] -= tau_n[1] * area
+    Atomix.@atomic res_rhoUy.values[cID] -= tau_n[2] * area
+    Atomix.@atomic res_rhoUz.values[cID] -= tau_n[3] * area
+    Atomix.@atomic res_rhoE.values[cID]  -= F_visc_E * area
+end
+
+# Fix 2: Periodic BC viscous flux uses two-sided (face-averaged) gradients and
+# velocity, consistent with the internal face treatment. Previously the one-sided
+# cell gradient was used, incorrectly adding wall-like drag at periodic interfaces.
+@inline function _apply_viscous_bc!(
+    bc_U::Union{PeriodicParent, Periodic},
+    res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+    U, Uf, gradU, gradT, mueff, kappa_eff, mesh, fID
+)
+    (; faces) = mesh
+    face = faces[fID]
+    (; area, normal, ownerCells) = face
+    cID = ownerCells[1]
+
+    i    = fID - bc_U.IDs_range.start + 1
+    pfID = bc_U.value.face_map[i]    # partner face ID
+    pcID = faces[pfID].ownerCells[1] # partner cell ID
+
+    TF = eltype(res_rhoUx.values)
+    two_thirds = TF(2)/TF(3)
+
+    # Two-sided face-averaged gradients (consistent with internal face treatment)
+    gradU_f = TF(0.5) * (gradU[cID] + gradU[pcID])
+    gradT_f = TF(0.5) * (gradT[cID] + gradT[pcID])
+
+    # Velocity divergence
+    divU = gradU_f[1,1] + gradU_f[2,2] + gradU_f[3,3]
+
+    # Viscous stress projection
+    mueff_f = TF(mueff[fID])
+    tau_n   = mueff_f * ((gradU_f + gradU_f') * normal - two_thirds * divU * normal)
+
+    # Face-averaged velocity
+    Uf_face = TF(0.5) * (U[cID] + U[pcID])
+
+    # Viscous energy flux
+    kf       = TF(kappa_eff[fID])
+    F_visc_E = (Uf_face ⋅ tau_n) + kf * (gradT_f ⋅ normal)
+
+    Atomix.@atomic res_rhoUx.values[cID] -= tau_n[1] * area
+    Atomix.@atomic res_rhoUy.values[cID] -= tau_n[2] * area
+    Atomix.@atomic res_rhoUz.values[cID] -= tau_n[3] * area
+    Atomix.@atomic res_rhoE.values[cID]  -= F_visc_E * area
 end
 
 # ============================================================
@@ -963,8 +1052,9 @@ function DENSITY_BASED(
         # 3a. Viscous flux — boundary faces (subtract from residuals)
         kernel! = _viscous_bc_flux!(_setup(backend, workgroup, n_bfaces)...)
         kernel!(
+            boundaries.U,
             res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-            U, gradU, gradT, mueff, kappa_eff, mesh
+            U, Uf, gradU, gradT, mueff, kappa_eff, mesh
         )
 
         # 4. Compute density residual before update (L2 norm)

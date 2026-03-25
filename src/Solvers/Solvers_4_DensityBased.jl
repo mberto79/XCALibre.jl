@@ -76,6 +76,36 @@ end
     U_int
 end
 
+# Extended ghost functions with face/time/local-index context.
+# Fallbacks delegate to the 3-arg versions above for all non-DirichletFunction BCs.
+@inline ghost_velocity(bc, face, U_int::SV, n::SV, time, i) where {TF, SV<:SVector{3,TF}} =
+    ghost_velocity(bc, U_int, n)
+
+@inline function ghost_velocity(
+    bc::DirichletFunction, face, U_int::SV, n::SV, time, i
+) where {TF, SV<:SVector{3,TF}}
+    U_bc = bc.value(face.centre, TF(time), i)
+    SV(TF(U_bc[1]), TF(U_bc[2]), TF(U_bc[3])) * 2 - U_int
+end
+
+@inline ghost_pressure(bc, face, p_int::TF, n, time, i) where TF =
+    ghost_pressure(bc, p_int, n)
+
+@inline function ghost_pressure(bc::DirichletFunction, face, p_int::TF, n, time, i) where TF
+    2*TF(bc.value(face.centre, TF(time), i)) - p_int
+end
+
+@inline ghost_temperature(bc, face, T_int::TF, cp::TF, Tref::TF, time, i) where TF =
+    ghost_temperature(bc, T_int, cp, Tref)
+
+@inline function ghost_temperature(
+    bc::DirichletFunction, face, T_int::TF, cp::TF, Tref::TF, time, i
+) where TF
+    # DirichletFunction on he: value function returns he = cp*(T-Tref)
+    he_bc = TF(bc.value(face.centre, TF(time), i))
+    he_bc / cp + Tref
+end
+
 # --- Pressure ghost state ---
 
 @inline function ghost_pressure(bc::Dirichlet, p_int::TF, n) where TF
@@ -408,14 +438,14 @@ end
 @kernel function _inviscid_bc_flux!(
     flux_scheme, U_BCs, p_BCs, he_BCs,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-    rho, U, p, T, mesh, fluid, Tref
+    rho, U, p, T, mesh, fluid, Tref, time
 )
     fID = @index(Global)
 
     @inbounds _inviscid_bc_dispatch!(
         flux_scheme, U_BCs, p_BCs, he_BCs,
         res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-        rho, U, p, T, mesh, fluid, Tref, fID
+        rho, U, p, T, mesh, fluid, Tref, fID, time
     )
 end
 
@@ -423,7 +453,7 @@ end
 @generated function _inviscid_bc_dispatch!(
     flux_scheme, U_BCs, p_BCs, he_BCs,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-    rho, U, p, T, mesh, fluid, Tref, fID
+    rho, U, p, T, mesh, fluid, Tref, fID, time
 )
     n = length(U_BCs.parameters)
     exprs = []
@@ -437,7 +467,7 @@ end
                 _apply_inviscid_bc!(
                     flux_scheme, bc_U_i, bc_p_i, bc_he_i,
                     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-                    rho, U, p, T, mesh, fluid, Tref, fID
+                    rho, U, p, T, mesh, fluid, Tref, fID, time
                 )
             end
         end
@@ -455,12 +485,13 @@ end
 @inline function _apply_inviscid_bc!(
     flux_scheme, bc_U, bc_p, bc_he,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-    rho, U, p, T, mesh, fluid, Tref, fID
+    rho, U, p, T, mesh, fluid, Tref, fID, time
 )
     (; faces) = mesh
     face = faces[fID]
     (; area, normal, ownerCells) = face
     cID = ownerCells[1]   # interior cell
+    i   = fID - bc_U.IDs_range.start + 1  # local face index within patch
 
     TF = eltype(rho.values)
     gamma = TF(fluid.gamma.values)
@@ -474,10 +505,10 @@ end
     pL   = TF(p[cID])
     TL   = TF(T[cID])
 
-    # Ghost (right) state from boundary conditions
-    UR = ghost_velocity(bc_U, UL, normal)
-    pR = ghost_pressure(bc_p, pL, normal)
-    TR = ghost_temperature(bc_he, TL, cp, Tref_tf)
+    # Ghost (right) state from boundary conditions (extended form supports DirichletFunction)
+    UR = ghost_velocity(bc_U, face, UL, normal, time, i)
+    pR = ghost_pressure(bc_p, face, pL, normal, time, i)
+    TR = ghost_temperature(bc_he, face, TL, cp, Tref_tf, time, i)
 
     # Clamp ghost state to physical values
     pR   = max(pR,   TF(1e-10))
@@ -495,6 +526,40 @@ end
     Atomix.@atomic res_rhoUy.values[cID] += F_rhoUy
     Atomix.@atomic res_rhoUz.values[cID] += F_rhoUz
     Atomix.@atomic res_rhoE.values[cID] += F_rhoE
+end
+
+# Periodic BC: use the partner cell's actual primitive state as the "right" state.
+# Both PeriodicParent and Periodic are handled identically — each patch updates its
+# own owner cell, together ensuring full conservation across the periodic interface.
+@inline function _apply_inviscid_bc!(
+    flux_scheme, bc_U::Union{PeriodicParent, Periodic}, bc_p, bc_he,
+    res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+    rho, U, p, T, mesh, fluid, Tref, fID, time
+)
+    (; faces) = mesh
+    face = faces[fID]
+    (; area, normal, ownerCells) = face
+    cID = ownerCells[1]
+
+    i    = fID - bc_U.IDs_range.start + 1
+    pfID = bc_U.value.face_map[i]   # partner face ID
+    pcID = faces[pfID].ownerCells[1] # partner cell ID
+
+    TF    = eltype(rho.values)
+    gamma = TF(fluid.gamma.values)
+
+    rhoL = TF(rho[cID]);  UL = U[cID];  pL = TF(p[cID])
+    rhoR = TF(rho[pcID]); UR = U[pcID]; pR = TF(p[pcID])
+
+    F_rho, F_rhoUx, F_rhoUy, F_rhoUz, F_rhoE = compute_inviscid_flux(
+        flux_scheme, UL, UR, pL, pR, rhoL, rhoR, normal, area, gamma
+    )
+
+    Atomix.@atomic res_rho.values[cID]   += F_rho
+    Atomix.@atomic res_rhoUx.values[cID] += F_rhoUx
+    Atomix.@atomic res_rhoUy.values[cID] += F_rhoUy
+    Atomix.@atomic res_rhoUz.values[cID] += F_rhoUz
+    Atomix.@atomic res_rhoE.values[cID]  += F_rhoE
 end
 
 # CFL-limited time step per cell (simple cell-size estimate)
@@ -892,7 +957,7 @@ function DENSITY_BASED(
         kernel!(
             flux_scheme, boundaries.U, boundaries.p, boundaries.he,
             res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-            rho, U, p, T, mesh, model.fluid, Tref
+            rho, U, p, T, mesh, model.fluid, Tref, time
         )
 
         # 3a. Viscous flux — boundary faces (subtract from residuals)
@@ -947,16 +1012,6 @@ function DENSITY_BASED(
                 turbulenceModel.state.residuals...
             ]
         )
-
-        # if rho_res <= solvers.rho.convergence
-        #     progress.n = iteration
-        #     finish!(progress)
-        #     @info "Density-based solver converged in $iteration iterations!"
-        #     if !signbit(write_interval)
-        #         save_output(model, outputWriter, iteration, time, config)
-        #     end
-        #     break
-        # end
 
         # 10. Write output at specified interval
         if iteration % write_interval + signbit(write_interval) == 0

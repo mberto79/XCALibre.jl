@@ -27,18 +27,27 @@ export density_based!, Rusanov, HLLC, FEuler, RK2
 #     → Riemann solver with the partner cell as the right state. No ghost.
 #
 #   bc_U::Outlet
-#     → Zero-gradient outflow with backflow prevention.
-#       If un_L = UL·n > 0 (outgoing): zero-gradient ghost → Riemann solver.
-#       If un_L ≤ 0 (backflow):  impermeable wall flux (zero mass/energy,
-#         pressure momentum only) — acts as a one-way valve at the outlet.
+#     → Zero-gradient outflow; reservoir-based backflow handling.
+#       If un_L = UL·n > 0 (outgoing): UR = UL (zero-gradient) → Riemann solver.
+#         With Zerogradient bc_p/bc_T: L=R → zero dissipation → exact Euler flux.
+#       If un_L ≤ 0 (backflow): UR = 0 (stagnant exterior ghost) → Riemann solver.
+#         Allows the solver to compute the physically correct backflow flux using
+#         bc_p/bc_T as the exterior thermodynamic state; avoids pressure lock-up.
 #
-#   bc_U (fallback — Dirichlet, DirichletFunction, Zerogradient, …)
+#   bc_U::AbstractDirichlet (Dirichlet, DirichletFunction)
+#     → Standard ghost-state Riemann solve: UR = 2*U_bc - UL (method of images).
+#       Recovers U_bc = 0.5*(UL + UR_ghost) from the ghost extrapolation.
+#       un_bc = U_bc·n_outward: negative = inflow, positive = outflow.
+#       If |un_bc| ≤ 1e-10: exact wall flux (tangential-only prescription).
+#       Otherwise: Riemann solve with (UL, UR_ghost, pL, pR, rhoL, rhoR).
+#       Prescribed value is always respected — no directionality check on UL.
+#       Rusanov dissipation naturally damps any reversed interior flow.
+#
+#   bc_U (fallback — Zerogradient, AbstractNeumann, Extrapolated, …)
 #     → Computes ghost velocity first, then checks the face normal velocity:
 #         un_face = 0.5*(UL + UR)·n  =  U_prescribed·n   (exact arithmetic)
-#       If |un_face| ≤ 1e-10: exact wall flux (catches Dirichlet(:wall,0)
-#         used instead of Wall(:wall,0); no warp divergence since all faces
-#         on a given patch share the same prescribed velocity).
-#       Otherwise: Riemann solver (inlets, outlets, far-field).
+#       If |un_face| ≤ 1e-10: exact wall flux.
+#       Otherwise: Riemann solver (outlets, far-field, etc.).
 #
 # ── Viscous BC hierarchy (_apply_viscous_bc!, dispatch on bc_U then bc_T) ─────
 #
@@ -653,16 +662,25 @@ end
     Atomix.@atomic res_rhoUz.values[cID] += pL * normal[3] * area
 end
 
-# ── Outlet BC: zero-gradient outflow with backflow prevention ────────────────────
+# ── Outlet BC: zero-gradient outflow with reservoir-based backflow ───────────────
 #
-# When the interior cell's normal velocity is outgoing (un_L > 0) the ghost state
-# is simply the interior state (zero-gradient), and the chosen Riemann solver
-# evaluates the physical flux normally.
+# Outflow (un_L > 0): zero-gradient ghost (UR = UL).  With Zerogradient bc_p and
+#   bc_T the left and right states are identical → zero Rusanov/HLLC dissipation →
+#   exact physical Euler flux rhoL*un_L at the face.  Drain rate is exactly right.
 #
-# When the interior normal velocity is non-positive (un_L ≤ 0, i.e. backflow),
-# an impermeable wall flux is applied instead: zero mass, zero energy, and only
-# the pressure contribution to momentum. This acts as a one-way valve that
-# prevents spurious mass ingestion through the outlet face.
+# Backflow (un_L ≤ 0): a reservoir ghost state is used for the Riemann solve.
+#   Ghost velocity = zero (stagnant exterior), ghost pressure/temperature from
+#   bc_p/bc_T (typically Zerogradient → extrapolated from interior).
+#   This allows the Riemann solver to determine the physically correct backflow
+#   flux rather than sealing the face with a pressure-only wall flux.
+#
+#   Why not the wall flux?  The wall-flux branch applies p*n*A to momentum with
+#   zero mass and energy.  When backflow builds interior pressure pL, the growing
+#   p*n term pushes momentum back into the domain, amplifying the pressure rise
+#   and driving a positive-feedback loop that eventually reverses flow at the inlet.
+#   The reservoir ghost breaks this loop: the Riemann solver admits backflow mass
+#   and energy at a thermodynamic state consistent with bc_p/bc_T, so pressure
+#   cannot accumulate without bound.
 @inline function _apply_inviscid_bc!(
     flux_scheme, bc_U::Outlet, bc_p, bc_T,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
@@ -685,21 +703,20 @@ end
 
     un_L = UL ⋅ normal
 
-    if un_L <= zero(TF)
-        # Backflow detected: impermeable wall flux (zero mass/energy, pressure momentum only)
-        Atomix.@atomic res_rhoUx.values[cID] += pL * normal[1] * area
-        Atomix.@atomic res_rhoUy.values[cID] += pL * normal[2] * area
-        Atomix.@atomic res_rhoUz.values[cID] += pL * normal[3] * area
-        return
-    end
-
-    # Outflow: zero-gradient ghost state → Riemann solve
-    UR = UL
     pR = ghost_pressure(bc_p, face, pL, normal, time, i)
     TR = ghost_temperature(bc_T, face, TL, time, i)
     pR   = max(pR,   TF(1e-10))
     TR   = max(TR,   TF(1e-10))
     rhoR = max(pR / (R_gas * TR), TF(1e-10))
+
+    if un_L <= zero(TF)
+        # Backflow: reservoir ghost — stagnant exterior at bc_p/bc_T state.
+        # Riemann solver determines the correct inflow flux; no hard sealing.
+        UR = zero(UL)
+    else
+        # Outflow: zero-gradient ghost — exact physical Euler flux (L=R → no dissipation).
+        UR = UL
+    end
 
     F_rho, F_rhoUx, F_rhoUy, F_rhoUz, F_rhoE = compute_inviscid_flux(
         flux_scheme, UL, UR, pL, pR, rhoL, rhoR, normal, area, gamma
@@ -712,24 +729,87 @@ end
     Atomix.@atomic res_rhoE.values[cID]  += F_rhoE
 end
 
+# ── Prescribed-velocity BCs (AbstractDirichlet): strong prescribed enforcement ───
+#
+# Handles Dirichlet and DirichletFunction velocity BCs.
+#
+# Ghost state: UR = 2*U_bc - UL  →  face-average = U_bc exactly.
+#   This is the standard method-of-images enforcement for Dirichlet BCs in a
+#   Riemann-solver context.  The prescribed value is respected regardless of the
+#   interior flow direction: no directionality check on UL is performed.
+#   Rusanov dissipation (∝ |UL - UR_ghost| ∝ |UL - U_bc|) naturally damps any
+#   reversed interior flow back toward the prescribed condition, providing stability
+#   without any special-cased overrides.
+#
+# Impermeability check: if |un_bc| ≤ 1e-10 the prescribed velocity is tangential
+#   (un_bc = U_bc·n_outward; n_outward is the outward-pointing face normal).
+#   The exact wall flux is applied (zero mass/energy, pressure-only momentum) —
+#   same treatment as Wall/Slip/Symmetry — avoiding spurious tangential dissipation.
+@inline function _apply_inviscid_bc!(
+    flux_scheme, bc_U::AbstractDirichlet, bc_p, bc_T,
+    res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+    rho, U, p, T, mesh, fluid, fID, time
+)
+    (; faces) = mesh
+    face = faces[fID]
+    (; area, normal, ownerCells) = face
+    cID = ownerCells[1]
+    i   = fID - bc_U.IDs_range.start + 1
+
+    TF    = eltype(rho.values)
+    gamma = TF(fluid.gamma.values)
+    R_gas = TF(fluid.R.values)
+
+    UL = U[cID]
+    pL = TF(p[cID])
+    TL = TF(T[cID])
+
+    # Ghost velocity: UR_ghost = 2*U_bc - UL  →  U_face = U_bc exactly.
+    UR_ghost = ghost_velocity(bc_U, face, UL, normal, time, i)
+
+    # Recover the prescribed velocity to check for a tangential prescription.
+    # un_bc = U_bc·n_outward: negative means inflow, positive means outflow.
+    U_bc  = TF(0.5) * (UL + UR_ghost)
+    un_bc = U_bc ⋅ normal
+
+    if abs(un_bc) <= TF(1e-10)
+        # Prescribed velocity is tangential → impermeable exact wall flux.
+        Atomix.@atomic res_rhoUx.values[cID] += pL * normal[1] * area
+        Atomix.@atomic res_rhoUy.values[cID] += pL * normal[2] * area
+        Atomix.@atomic res_rhoUz.values[cID] += pL * normal[3] * area
+        return
+    end
+
+    rhoL = TF(rho[cID])
+    pR   = ghost_pressure(bc_p, face, pL, normal, time, i)
+    TR   = ghost_temperature(bc_T, face, TL, time, i)
+    pR   = max(pR,   TF(1e-10))
+    TR   = max(TR,   TF(1e-10))
+    rhoR = max(pR / (R_gas * TR), TF(1e-10))
+
+    # Standard ghost-state Riemann solve: prescribed value always respected.
+    # No interior-flow directionality check — UR_ghost = 2*U_bc - UL ensures
+    # U_face = U_bc regardless of UL.  Rusanov dissipation damps any reversal.
+    F_rho, F_rhoUx, F_rhoUy, F_rhoUz, F_rhoE = compute_inviscid_flux(
+        flux_scheme, UL, UR_ghost, pL, pR, rhoL, rhoR, normal, area, gamma
+    )
+
+    Atomix.@atomic res_rho.values[cID]   += F_rho
+    Atomix.@atomic res_rhoUx.values[cID] += F_rhoUx
+    Atomix.@atomic res_rhoUy.values[cID] += F_rhoUy
+    Atomix.@atomic res_rhoUz.values[cID] += F_rhoUz
+    Atomix.@atomic res_rhoE.values[cID]  += F_rhoE
+end
+
 # ── Riemann-solver BCs: open-boundary fallback ──────────────────────────────────
 #
-# Handles all BC types that are not explicitly matched by a more specific method
-# (Dirichlet, Neumann/Zerogradient, Extrapolated, far-field, etc.).
+# Handles all BC types not matched by a more specific method
+# (Neumann, Zerogradient, Extrapolated, far-field, etc.).
+# AbstractDirichlet is handled by the specialised method above.
 #
-# Impermeability check: the face normal velocity is 0.5*(UL + UR)·n.  For any
-# prescribed-velocity BC (Dirichlet, DirichletFunction, Wall with non-zero U_wall,
-# …), this equals U_prescribed·n exactly in floating-point arithmetic because
-#
-#     UR = 2*U_prescribed - UL  →  0.5*(UL + UR) = U_prescribed
-#
-# When that quantity is zero the face is impermeable regardless of which BC type
-# the user chose (e.g. Dirichlet(:ramp, noflow) instead of Wall(:ramp, noflow)).
-# In that case the exact wall flux is applied rather than the Riemann solver, so
-# the spurious tangential-momentum dissipation described above is avoided.
-#
-# For genuinely open boundaries (inlets, outlets, Zerogradient with non-zero flow)
-# un_face ≠ 0 and the path falls through to the Riemann solver as intended.
+# Impermeability check: for any prescribed-velocity BC the face-average velocity
+# equals U_prescribed·n exactly (UR = 2*U_prescribed - UL).  When that is zero the
+# face is impermeable and the exact wall flux is applied.
 @inline function _apply_inviscid_bc!(
     flux_scheme, bc_U, bc_p, bc_T,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
@@ -758,15 +838,13 @@ end
 
     if abs(un_face) <= TF(1e-10)
         # Impermeable face: exact wall flux (zero mass, pressure momentum, zero energy).
-        # This catches Dirichlet / DirichletFunction BCs where the user specifies a
-        # zero or purely tangential velocity instead of using Wall/Slip/Symmetry.
         Atomix.@atomic res_rhoUx.values[cID] += pL * normal[1] * area
         Atomix.@atomic res_rhoUy.values[cID] += pL * normal[2] * area
         Atomix.@atomic res_rhoUz.values[cID] += pL * normal[3] * area
         return
     end
 
-    # Non-impermeable face: Riemann solver (inlets, outlets, far-field, …)
+    # Non-impermeable face: Riemann solver (outlets, Zerogradient, far-field, …)
     rhoL = TF(rho[cID])
     pR   = ghost_pressure(bc_p, face, pL, normal, time, i)
     TR   = ghost_temperature(bc_T, face, TL, time, i)

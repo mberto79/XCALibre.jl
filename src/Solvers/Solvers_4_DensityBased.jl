@@ -1,6 +1,87 @@
 export density_based!, Rusanov, HLLC, FEuler, RK2
 
 # ============================================================
+# Boundary condition treatment — overview
+# ============================================================
+#
+# This solver uses two independent BC dispatch chains: one for the inviscid
+# (Euler) flux and one for the viscous (Navier–Stokes) flux. Both chains
+# dispatch primarily on bc_U (the velocity BC type). bc_T drives the heat-flux
+# sub-dispatch inside the viscous Wall method. bc_p, bc_nut and all other scalar
+# BCs are irrelevant to the flux computation and do not affect dispatch.
+#
+# ── Inviscid BC hierarchy (_apply_inviscid_bc!, dispatch on bc_U) ─────────────
+#
+#   bc_U::Wall
+#     → Exact Euler wall flux: F = (0, p·n·A, 0).
+#       Bypasses the Riemann solver entirely. No ghost-cell dissipation.
+#
+#   bc_U::Union{Slip, Symmetry}
+#     → Same exact Euler wall flux as Wall.
+#       Both conditions enforce U·n = 0, so the flux is identical.
+#       The ghost-velocity functions for Slip/Symmetry (reflect normal
+#       component) are defined in this file but are NOT called by this
+#       solver — they remain for use by the pressure-based solvers.
+#
+#   bc_U::Union{PeriodicParent, Periodic}
+#     → Riemann solver with the partner cell as the right state. No ghost.
+#
+#   bc_U (fallback — Dirichlet, DirichletFunction, Zerogradient, …)
+#     → Computes ghost velocity first, then checks the face normal velocity:
+#         un_face = 0.5*(UL + UR)·n  =  U_prescribed·n   (exact arithmetic)
+#       If |un_face| ≤ 1e-10: exact wall flux (catches Dirichlet(:wall,0)
+#         used instead of Wall(:wall,0); no warp divergence since all faces
+#         on a given patch share the same prescribed velocity).
+#       Otherwise: Riemann solver (inlets, outlets, far-field).
+#
+# ── Viscous BC hierarchy (_apply_viscous_bc!, dispatch on bc_U then bc_T) ─────
+#
+#   bc_U::Wall
+#     → Stress: local two-point gradient (U_wall - U_cell)/δ ⊗ n — orthogonal,
+#         accurate, avoids CFL blowup from thin cell gradient amplification.
+#       Heat flux: dispatches on bc_T —
+#         bc_T::FixedTemperature  →  κ*(T_wall  - T_cell)/δ   (isothermal)
+#         bc_T::Dirichlet         →  κ*(T_value - T_cell)/δ   (isothermal)
+#         bc_T::AbstractNeumann   →  0                         (adiabatic)
+#         bc_T::AbstractPhysical  →  0   (Wall/Slip/Symmetry on T = adiabatic)
+#         bc_T (fallback)         →  κ*(∇T·n)  (cell-gradient projection)
+#
+#   bc_U::Union{Slip, Symmetry}
+#     → Returns nothing. Free-slip means zero tangential shear; the symmetry
+#       plane is also adiabatic by definition. bc_T is ignored entirely.
+#
+#   bc_U::Union{PeriodicParent, Periodic}
+#     → Two-sided face-averaged gradients, consistent with internal faces.
+#
+#   bc_U (fallback)
+#     → Cell-centred gradient projected onto face normal + bc_T heat flux.
+#
+# ── Scalar vs. vector field BCs: key differences ──────────────────────────────
+#
+#   Vector field U: bc_U type is the sole dispatch key for BOTH the inviscid
+#     and viscous BC chains. Using Wall gives the exact wall treatment;
+#     using Dirichlet with a zero or tangential velocity gives the same result
+#     via the fallback impermeability check.
+#
+#   Scalar field p: bc_p enters only the Riemann-solver path (ghost pressure).
+#     For Wall/Slip/Symmetry patches the Riemann solver is bypassed, so bc_p
+#     has no effect on the flux. For inlet/outlet patches bc_p sets the ghost
+#     pressure for the Riemann solve. Recommended types: Dirichlet (inlet, if
+#     prescribed), Zerogradient (outlet or wall).
+#
+#   Scalar field T: bc_T selects the wall heat-flux formula in the viscous BC
+#     when bc_U::Wall. Using Wall(:patch) gives adiabatic (zero heat flux).
+#     Using Dirichlet(:patch, T_val) or FixedTemperature gives isothermal
+#     (two-point (T_wall-T_cell)/δ). For Slip/Symmetry patches bc_T is
+#     ignored (viscous flux is zero regardless). For inlet/outlet patches bc_T
+#     enters the ghost temperature for the Riemann solve.
+#
+#   Scalar field nut: not used by either flux chain. Affects mueff/kappa_eff
+#     via turbulence! → update_nueff! → mueff = ρ*nueff. Use Zerogradient
+#     at inlets/outlets, Wall(:wall, 0.0) or Dirichlet(:wall, 0.0) at walls
+#     (both give zero eddy viscosity at the wall face; Dirichlet is explicit).
+#
+# ============================================================
 # Flux scheme selector types
 # ============================================================
 
@@ -566,11 +647,24 @@ end
     Atomix.@atomic res_rhoUz.values[cID] += pL * normal[3] * area
 end
 
-# ── Riemann-solver BCs: Dirichlet, Neumann, and other open-boundary types ───────
+# ── Riemann-solver BCs: open-boundary fallback ──────────────────────────────────
 #
-# For non-impermeable boundaries (inlets, outlets, far-field, etc.) the ghost-cell
-# Riemann approach is physically correct: fluid can pass through the face and the
-# Riemann solver provides upwind-biased numerical dissipation.
+# Handles all BC types that are not explicitly matched by a more specific method
+# (Dirichlet, Neumann/Zerogradient, Extrapolated, far-field, etc.).
+#
+# Impermeability check: the face normal velocity is 0.5*(UL + UR)·n.  For any
+# prescribed-velocity BC (Dirichlet, DirichletFunction, Wall with non-zero U_wall,
+# …), this equals U_prescribed·n exactly in floating-point arithmetic because
+#
+#     UR = 2*U_prescribed - UL  →  0.5*(UL + UR) = U_prescribed
+#
+# When that quantity is zero the face is impermeable regardless of which BC type
+# the user chose (e.g. Dirichlet(:ramp, noflow) instead of Wall(:ramp, noflow)).
+# In that case the exact wall flux is applied rather than the Riemann solver, so
+# the spurious tangential-momentum dissipation described above is avoided.
+#
+# For genuinely open boundaries (inlets, outlets, Zerogradient with non-zero flow)
+# un_face ≠ 0 and the path falls through to the Riemann solver as intended.
 @inline function _apply_inviscid_bc!(
     flux_scheme, bc_U, bc_p, bc_T,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
@@ -579,25 +673,38 @@ end
     (; faces) = mesh
     face = faces[fID]
     (; area, normal, ownerCells) = face
-    cID = ownerCells[1]   # interior cell
-    i   = fID - bc_U.IDs_range.start + 1  # local face index within patch
+    cID = ownerCells[1]
+    i   = fID - bc_U.IDs_range.start + 1
 
     TF    = eltype(rho.values)
     gamma = TF(fluid.gamma.values)
     R_gas = TF(fluid.R.values)
 
-    # Interior (left) state
-    rhoL = TF(rho[cID])
-    UL   = U[cID]
-    pL   = TF(p[cID])
-    TL   = TF(T[cID])
+    UL = U[cID]
+    pL = TF(p[cID])
+    TL = TF(T[cID])
 
-    # Ghost (right) state from boundary conditions
+    # Ghost velocity (must be computed before the impermeability check)
     UR = ghost_velocity(bc_U, face, UL, normal, time, i)
-    pR = ghost_pressure(bc_p, face, pL, normal, time, i)
-    TR = ghost_temperature(bc_T, face, TL, time, i)
 
-    # Clamp ghost state to physical values
+    # Face normal velocity from the two-state average.  For any prescribed-velocity
+    # BC this equals the prescribed velocity's normal component exactly.
+    un_face = TF(0.5) * ((UL + UR) ⋅ normal)
+
+    if abs(un_face) <= TF(1e-10)
+        # Impermeable face: exact wall flux (zero mass, pressure momentum, zero energy).
+        # This catches Dirichlet / DirichletFunction BCs where the user specifies a
+        # zero or purely tangential velocity instead of using Wall/Slip/Symmetry.
+        Atomix.@atomic res_rhoUx.values[cID] += pL * normal[1] * area
+        Atomix.@atomic res_rhoUy.values[cID] += pL * normal[2] * area
+        Atomix.@atomic res_rhoUz.values[cID] += pL * normal[3] * area
+        return
+    end
+
+    # Non-impermeable face: Riemann solver (inlets, outlets, far-field, …)
+    rhoL = TF(rho[cID])
+    pR   = ghost_pressure(bc_p, face, pL, normal, time, i)
+    TR   = ghost_temperature(bc_T, face, TL, time, i)
     pR   = max(pR,   TF(1e-10))
     TR   = max(TR,   TF(1e-10))
     rhoR = max(pR / (R_gas * TR), TF(1e-10))

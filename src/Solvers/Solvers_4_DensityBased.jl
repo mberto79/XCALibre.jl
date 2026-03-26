@@ -26,6 +26,12 @@ export density_based!, Rusanov, HLLC, FEuler, RK2
 #   bc_U::Union{PeriodicParent, Periodic}
 #     → Riemann solver with the partner cell as the right state. No ghost.
 #
+#   bc_U::Outlet
+#     → Zero-gradient outflow with backflow prevention.
+#       If un_L = UL·n > 0 (outgoing): zero-gradient ghost → Riemann solver.
+#       If un_L ≤ 0 (backflow):  impermeable wall flux (zero mass/energy,
+#         pressure momentum only) — acts as a one-way valve at the outlet.
+#
 #   bc_U (fallback — Dirichlet, DirichletFunction, Zerogradient, …)
 #     → Computes ghost velocity first, then checks the face normal velocity:
 #         un_face = 0.5*(UL + UR)·n  =  U_prescribed·n   (exact arithmetic)
@@ -645,6 +651,65 @@ end
     Atomix.@atomic res_rhoUx.values[cID] += pL * normal[1] * area
     Atomix.@atomic res_rhoUy.values[cID] += pL * normal[2] * area
     Atomix.@atomic res_rhoUz.values[cID] += pL * normal[3] * area
+end
+
+# ── Outlet BC: zero-gradient outflow with backflow prevention ────────────────────
+#
+# When the interior cell's normal velocity is outgoing (un_L > 0) the ghost state
+# is simply the interior state (zero-gradient), and the chosen Riemann solver
+# evaluates the physical flux normally.
+#
+# When the interior normal velocity is non-positive (un_L ≤ 0, i.e. backflow),
+# an impermeable wall flux is applied instead: zero mass, zero energy, and only
+# the pressure contribution to momentum. This acts as a one-way valve that
+# prevents spurious mass ingestion through the outlet face.
+@inline function _apply_inviscid_bc!(
+    flux_scheme, bc_U::Outlet, bc_p, bc_T,
+    res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+    rho, U, p, T, mesh, fluid, fID, time
+)
+    (; faces) = mesh
+    face = faces[fID]
+    (; area, normal, ownerCells) = face
+    cID = ownerCells[1]
+    i   = fID - bc_U.IDs_range.start + 1
+
+    TF    = eltype(rho.values)
+    gamma = TF(fluid.gamma.values)
+    R_gas = TF(fluid.R.values)
+
+    UL   = U[cID]
+    pL   = TF(p[cID])
+    TL   = TF(T[cID])
+    rhoL = TF(rho[cID])
+
+    un_L = UL ⋅ normal
+
+    if un_L <= zero(TF)
+        # Backflow detected: impermeable wall flux (zero mass/energy, pressure momentum only)
+        Atomix.@atomic res_rhoUx.values[cID] += pL * normal[1] * area
+        Atomix.@atomic res_rhoUy.values[cID] += pL * normal[2] * area
+        Atomix.@atomic res_rhoUz.values[cID] += pL * normal[3] * area
+        return
+    end
+
+    # Outflow: zero-gradient ghost state → Riemann solve
+    UR = UL
+    pR = ghost_pressure(bc_p, face, pL, normal, time, i)
+    TR = ghost_temperature(bc_T, face, TL, time, i)
+    pR   = max(pR,   TF(1e-10))
+    TR   = max(TR,   TF(1e-10))
+    rhoR = max(pR / (R_gas * TR), TF(1e-10))
+
+    F_rho, F_rhoUx, F_rhoUy, F_rhoUz, F_rhoE = compute_inviscid_flux(
+        flux_scheme, UL, UR, pL, pR, rhoL, rhoR, normal, area, gamma
+    )
+
+    Atomix.@atomic res_rho.values[cID]   += F_rho
+    Atomix.@atomic res_rhoUx.values[cID] += F_rhoUx
+    Atomix.@atomic res_rhoUy.values[cID] += F_rhoUy
+    Atomix.@atomic res_rhoUz.values[cID] += F_rhoUz
+    Atomix.@atomic res_rhoE.values[cID]  += F_rhoE
 end
 
 # ── Riemann-solver BCs: open-boundary fallback ──────────────────────────────────

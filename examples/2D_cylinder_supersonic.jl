@@ -17,8 +17,6 @@ gamma = 1.4
 cp    = 1005.0       # J/(kg·K)
 Pr    = 0.7
 nu    = 1e-2      # kinematic viscosity (inviscid here, but required by fluid model)
-Tref  = 0.0          # enthalpy reference temperature
-
 T_inf = 300.0        # K
 p_inf = 101325.0     # Pa
 R_gas = cp * (1.0 - 1.0/gamma)   # ≈ 287 J/(kg·K)
@@ -34,7 +32,7 @@ model = Physics(
     fluid     = Fluid{SupersonicFlow}(nu=nu, cp=cp, gamma=gamma, Pr=Pr),
     # turbulence = RANS{Laminar}(),
     turbulence = LES{Smagorinsky}(),
-    energy    = Energy{SensibleEnthalpy}(Tref=Tref),
+    energy    = Energy{SensibleEnthalpy}(Tref=0.0),
     domain    = mesh_dev
 )
 
@@ -56,11 +54,11 @@ BCs = assign(
             Zerogradient(:top),
             Zerogradient(:bottom)
         ],
-        he = [
-            FixedTemperature(:inlet, T=T_inf, Enthalpy(cp=cp, Tref=Tref)),
+        T = [
+            Dirichlet(:inlet, T_inf),
             Zerogradient(:outlet),
-            # FixedTemperature(:cylinder, T=400, Enthalpy(cp=cp, Tref=Tref)),
-            Zerogradient(:cylinder),
+            # Dirichlet(:cylinder, 400.0),   # isothermal wall at 400 K
+            Zerogradient(:cylinder),          # adiabatic wall
             Zerogradient(:top),
             Zerogradient(:bottom)
         ],
@@ -83,7 +81,7 @@ solvers = (
 schemes = (
     U             = Schemes(gradient=Gauss),
     p             = Schemes(gradient=Gauss),
-    he            = Schemes(gradient=Gauss),
+    T             = Schemes(gradient=Gauss),
     flux          = HLLC(),   # or Rusanov() for more dissipation
     time_stepping = RK2(),    # or FEuler() for 1st-order Forward Euler (default)
 )

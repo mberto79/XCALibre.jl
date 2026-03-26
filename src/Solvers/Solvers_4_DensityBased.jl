@@ -93,8 +93,7 @@ export density_based!, Rusanov, HLLC, FEuler, RK2
 #
 #   Scalar field nut: not used by either flux chain. Affects mueff/kappa_eff
 #     via turbulence! → update_nueff! → mueff = ρ*nueff. Use Zerogradient
-#     at inlets/outlets, Wall(:wall, 0.0) or Dirichlet(:wall, 0.0) at walls
-#     (both give zero eddy viscosity at the wall face; Dirichlet is explicit).
+#     at inlets/outlets, Wall(:wall, 0.0)  on scalars behaves like Zerogradient. Dirichlet(:wall, 0.0) sets the value to zero; Dirichlet is explicit).
 #
 # ============================================================
 # Flux scheme selector types

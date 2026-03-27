@@ -1,4 +1,4 @@
-const ZEROGRADIENT = Union{Zerogradient, Extrapolated, KWallFunction, NutWallFunction, OmegaWallFunction}
+const ZEROGRADIENT = Union{Zerogradient, Extrapolated, KWallFunction, NutWallFunction, OmegaWallFunction, NutMixingLengthWallFunction}
 
 @inline function boundary_interpolation!(
     BC::ZEROGRADIENT, phif::FaceScalarField, phi, boundary_cellsID, time, fID)

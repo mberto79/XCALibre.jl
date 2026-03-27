@@ -16,12 +16,12 @@ mesh_dev = adapt(backend, mesh)
 gamma = 1.4
 cp    = 1005.0       # J/(kg·K)
 Pr    = 0.7
-nu    = 1e-2      # kinematic viscosity (inviscid here, but required by fluid model)
+nu    = 1e-5      # kinematic viscosity (inviscid here, but required by fluid model)
 T_inf = 300.0        # K
 p_inf = 101325.0     # Pa
 R_gas = cp * (1.0 - 1.0/gamma)   # ≈ 287 J/(kg·K)
 a_inf = sqrt(gamma * R_gas * T_inf)  # ≈ 347 m/s
-Mach  = 1.1
+Mach  = 1.2
 U_inf = Mach * a_inf              # ≈ 521 m/s
 
 velocity = [U_inf, 0.0, 0.0]
@@ -65,7 +65,9 @@ BCs = assign(
         nut = [
             Extrapolated(:inlet),
             Extrapolated(:outlet),
-            Dirichlet(:cylinder, 0.0),
+            # Dirichlet(:cylinder, 0.0),
+            Zerogradient(:cylinder),
+            # NutMixingLengthWallFunction(:cylinder),
             Symmetry(:top),
             Symmetry(:bottom)
         ]
@@ -82,8 +84,8 @@ schemes = (
     U             = Schemes(gradient=Gauss),
     p             = Schemes(gradient=Gauss),
     T             = Schemes(gradient=Gauss),
-    flux          = HLLC(),   # or Rusanov() for more dissipation
-    time_stepping = RK2(),    # or FEuler() for 1st-order Forward Euler (default)
+    flux          = HLLC(),   # oHLLC r Rusanov() for more dissipation
+    time_stepping = FEuler(),    # RK2 or FEuler() for 1st-order Forward Euler (default)
 )
 
 runtime = Runtime(

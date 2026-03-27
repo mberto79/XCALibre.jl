@@ -1,6 +1,6 @@
 export AbstractScheme, AbstractBoundary
 export AbstractDirichlet, AbstractNeumann, AbstractPhysicalConstraint
-export KWallFunction, OmegaWallFunction, NutWallFunction
+export KWallFunction, OmegaWallFunction, NutWallFunction, NutMixingLengthWallFunction
 # export Constant, Linear, Upwind, LUST
 export Linear, Upwind, LUST
 export BoundedUpwind
@@ -168,3 +168,31 @@ end
 #         throw("The value provided should be a scalar or a tuple")
 #     end
 # end
+
+# Nut mixing-length wall function (LES wall model, no TKE required)
+struct NutMixingLengthWallFunction{I,V,R<:UnitRange} <: AbstractWallFunction
+    ID::I
+    value::V
+    IDs_range::R
+end
+Adapt.@adapt_structure NutMixingLengthWallFunction
+
+@kwdef struct NutMixingLengthWallFunctionValue{F<:AbstractFloat}
+    kappa::F
+    E::F
+    yPlusLam::F
+end
+Adapt.@adapt_structure NutMixingLengthWallFunctionValue
+
+adapt_value(value::NutMixingLengthWallFunctionValue, mesh) = begin
+    F = _get_float(mesh)
+    (; kappa, E, yPlusLam) = value
+    NutMixingLengthWallFunctionValue{F}(kappa=kappa, E=E, yPlusLam=yPlusLam)
+end
+
+NutMixingLengthWallFunction(name::Symbol; kappa=0.41, E=9.8) = begin
+    yPlusLam = y_plus_laminar(E, kappa)
+    NutMixingLengthWallFunction(
+        name, NutMixingLengthWallFunctionValue(kappa=kappa, E=E, yPlusLam=yPlusLam)
+    )
+end

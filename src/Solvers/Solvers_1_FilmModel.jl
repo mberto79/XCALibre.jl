@@ -60,7 +60,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     ) → VectorEquation(U, boundaries.U)
 
     h_eqn = (
-        Time{schemes.h.time}(rho_l, h)
+        Time{schemes.h.time}(h)
         ==
         - Source(divPhi)
         + Source(Sm)
@@ -137,6 +137,7 @@ function FilmModel(
     ∇hf = FaceVectorField(mesh)
     Δh = ScalarField(mesh)
     Δhf = FaceScalarField(mesh)
+    hmdotf = FaceScalarField(mesh)
 
     w = ScalarField(mesh)
     wf = FaceScalarField(mesh)
@@ -234,6 +235,7 @@ function FilmModel(
         
     @. rhohf.values = hf.values *  rho.values[1]
     @. phif.values = mdotf.values * rhohf.values
+    @. hmdotf.values = mdotf.values * hf.values
 
     #@info "need to readd Pg term - Coupling term for other phase"
     Pg = 0# Test Pg term set to zero, as the gradient is found this value doesn't matter
@@ -292,8 +294,9 @@ function FilmModel(
             
             #@. rhohf.values = hf.values *  rho.values[1]
             @. phif.values = mdotf.values * rhohf.values
+            @. hmdotf.values = mdotf.values * hf.values
 
-            div!(divPhi, phif, config)
+            div!(divPhi, hmdotf, config)
             
             @. prev = h.values
             rh = solve_equation!(h_eqn, h, boundaries.h, solvers.h, config, time=time)

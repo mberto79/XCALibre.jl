@@ -1042,7 +1042,7 @@ end
 # Internal faces — cell-based loop, same pattern as _rusanov_flux_internal!
 @kernel function _viscous_flux_internal!(
     res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-    U, gradU, gradT, mueff, kappa_eff, mesh
+    U, T, gradU, gradT, mueff, kappa_eff, mesh
 )
     i = @index(Global)
 
@@ -1064,7 +1064,7 @@ end
         for fi ∈ faces_range
             fID     = cell_faces[fi]
             nsign   = TF(cell_nsign[fi])
-            (; area, normal, ownerCells) = faces[fID]
+            (; area, normal, e, delta, ownerCells) = faces[fID]
 
             cL = ownerCells[1]
             cR = ownerCells[2]
@@ -1073,19 +1073,41 @@ end
             gradU_f = TF(0.5) * (gradU[cL] + gradU[cR])
             gradT_f = TF(0.5) * (gradT[cL] + gradT[cR])
 
-            # Velocity divergence (trace of ∇U)
+            # Non-orthogonal correction for ∇U·n and ∇T·n.
+            # Decompose the face-normal gradient into an orthogonal part (exact
+            # two-point compact-stencil difference) and a cross-diffusion part
+            # (explicit, from the averaged cell-centred gradients):
+            #
+            #   ∇φ·n ≈ (φ_R − φ_L)/δ · (e·n)   [orthogonal, 2nd-order compact]
+            #         + ∇φ_f · (n − (e·n)·e)     [cross-diffusion, explicit]
+            #
+            # e is the unit cell-centre-to-cell-centre vector (stored on Face3D).
+            # On orthogonal meshes e ≡ n, so the cross term vanishes exactly.
+            en = e ⋅ normal   # cos(non-orthogonality angle); scalar, type F
+
+            # Corrected ∇U·n: each element j is ∂U_j/∂n with the compact stencil.
+            # The ∇Uᵀ·n term is inherently cross-derivative and stays explicit.
+            dU_over_delta = (U[cR] - U[cL]) / TF(delta)
+            gradU_n  = dU_over_delta * TF(en) + gradU_f * (normal - TF(en) * e)
+            gradUt_n = gradU_f' * normal
+
+            # Velocity divergence (trace of ∇U, unchanged)
             divU = gradU_f[1,1] + gradU_f[2,2] + gradU_f[3,3]
 
             # Viscous stress projection onto face normal: (μ*(∇U + (∇U)ᵀ - 2/3*(∇·U)I)) · n
             mueff_f = TF(mueff[fID])
-            tau_n   = mueff_f * ((gradU_f + gradU_f') * normal - two_thirds * divU * normal)
+            tau_n   = mueff_f * (gradU_n + gradUt_n - two_thirds * divU * normal)
 
             # Face-averaged velocity
             U_f = TF(0.5) * (U[cL] + U[cR])
 
+            # Corrected ∇T·n
+            dT_over_delta = (TF(T[cR]) - TF(T[cL])) / TF(delta)
+            gradT_n = dT_over_delta * TF(en) + gradT_f ⋅ (normal - TF(en) * e)
+
             # Viscous energy flux: u·(τ·n) + κ*(∇T·n)
             kf       = TF(kappa_eff[fID])
-            F_visc_E = (U_f ⋅ tau_n) + kf * (gradT_f ⋅ normal)
+            F_visc_E = (U_f ⋅ tau_n) + kf * gradT_n
 
             # Subtract viscous contribution (RHS term → subtract from residual)
             acc_rhoUx -= nsign * tau_n[1] * area
@@ -1450,7 +1472,7 @@ function compute_residuals!(
     kernel! = _viscous_flux_internal!(_setup(backend, workgroup, n_cells)...)
     kernel!(
         res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-        U, gradU, gradT, mueff, kappa_eff, mesh
+        U, T, gradU, gradT, mueff, kappa_eff, mesh
     )
 
     # Inviscid flux — boundary faces

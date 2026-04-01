@@ -1,4 +1,4 @@
-export density_based!, Rusanov, HLLC, FEuler, RK2
+export density_based!, Rusanov, HLLC, FEuler, RK2, MUSCL, VanLeer, MinMod, Superbee
 
 # ============================================================
 # Boundary condition treatment — overview
@@ -106,6 +106,38 @@ struct Rusanov end
 struct HLLC end
 
 # ============================================================
+# Spatial reconstruction types
+# ============================================================
+
+"""
+Reconstruction limiter type — Van Leer smooth limiter.
+ψ(r) = (r + |r|) / (1 + |r|)
+"""
+struct VanLeer end
+
+"""
+Reconstruction limiter type — MinMod (most diffusive TVD limiter).
+ψ(r) = max(0, min(1, r))
+"""
+struct MinMod end
+
+"""
+Reconstruction limiter type — Superbee (least diffusive TVD limiter).
+ψ(r) = max(0, min(2r, 1), min(r, 2))
+"""
+struct Superbee end
+
+"""
+    MUSCL{L}()
+
+2nd-order MUSCL reconstruction with slope limiter `L` (one of `VanLeer`, `MinMod`, `Superbee`).
+Use in the `schemes` NamedTuple as `reconstruction = MUSCL{VanLeer}()`.
+"""
+struct MUSCL{L}
+    MUSCL{L}() where L = new{L}()
+end
+
+# ============================================================
 # Time stepping selector types
 # ============================================================
 
@@ -121,6 +153,104 @@ Computes two Euler stages and averages:
   W^{n+1}   = 0.5*(W^n + W^(2))
 """
 struct RK2 end
+
+# ============================================================
+# Limiter functions
+# ============================================================
+
+"""Van Leer smooth limiter: ψ(r) = (r + |r|) / (1 + |r|)"""
+@inline limiter_value(::VanLeer,  r::T) where T = (r + abs(r)) / (one(T) + abs(r))
+
+"""MinMod limiter: ψ(r) = max(0, min(1, r))"""
+@inline limiter_value(::MinMod,   r::T) where T = max(zero(T), min(one(T), r))
+
+"""Superbee limiter: ψ(r) = max(0, min(2r, 1), min(r, 2))"""
+@inline limiter_value(::Superbee, r::T) where T = max(zero(T), min(2*r, one(T)), min(r, 2*one(T)))
+
+# ============================================================
+# MUSCL reconstruction — scalar and vector helpers
+# ============================================================
+
+# Inner scalar reconstruction given pre-computed projections of the L and R gradients
+# onto the cell-to-cell vector dLR = face.delta * face.e.
+# Returns the reconstructed face values for the left and right states.
+@inline function _muscl_scalar(lim, φL::TF, φR::TF, projL::TF, projR::TF) where TF
+    Δ = φR - φL
+    abs(Δ) < TF(1e-30) && return φL, φR
+    rL   = TF(2) * projL / Δ - one(TF)
+    rR   = TF(2) * projR / Δ - one(TF)
+    half = TF(0.5)
+    return φL + half * limiter_value(lim, rL) * Δ,
+           φR - half * limiter_value(lim, rR) * Δ
+end
+
+# ── Reconstruct dispatch ─────────────────────────────────────────────────────
+
+"""
+    reconstruct(::Upwind, rhoL, rhoR, UL, UR, pL, pR, args...)
+
+1st-order reconstruction — returns cell-centred values unchanged.
+Used when `reconstruction = Upwind()` in the schemes tuple.
+"""
+@inline function reconstruct(
+    ::Upwind,
+    rhoL, rhoR, UL, UR, pL, pR, args...
+)
+    return rhoL, rhoR, UL, UR, pL, pR
+end
+
+"""
+    reconstruct(::MUSCL{L}, rhoL, rhoR, UL, UR, pL, pR,
+                gradRhoL, gradRhoR, gradUL, gradUR, gradPL, gradPR, dLR)
+
+2nd-order MUSCL reconstruction with slope limiter `L`.
+
+For scalars ρ and p, the slope ratio uses the standard unstructured-mesh
+formulation (Darwish & Moukalled): r = 2*(∇φ·dLR)/Δ − 1.
+
+For velocity U, each Cartesian component is reconstructed independently using
+`gradU * dLR` (matrix–vector product) to project the velocity gradient tensor.
+
+Reconstructed densities and pressures are clamped to a small positive floor
+to prevent NaN in the sound-speed computation sqrt(γp/ρ).
+"""
+@inline function reconstruct(
+    ::MUSCL{L},
+    rhoL::TF, rhoR::TF,
+    UL::SV,   UR::SV,
+    pL::TF,   pR::TF,
+    gradRhoL, gradRhoR,
+    gradUL,   gradUR,
+    gradPL,   gradPR,
+    dLR
+) where {TF, SV<:SVector{3,TF}, L}
+    lim = L()
+
+    # ── Density ──────────────────────────────────────────────
+    proj_rhoL = gradRhoL ⋅ dLR
+    proj_rhoR = gradRhoR ⋅ dLR
+    rhoLf, rhoRf = _muscl_scalar(lim, rhoL, rhoR, proj_rhoL, proj_rhoR)
+
+    # ── Pressure ─────────────────────────────────────────────
+    proj_pL = gradPL ⋅ dLR
+    proj_pR = gradPR ⋅ dLR
+    pLf, pRf = _muscl_scalar(lim, pL, pR, proj_pL, proj_pR)
+
+    # ── Velocity (component-wise) ─────────────────────────────
+    # gradUL is SMatrix{3,3}: M[i,j] = ∂U_i/∂x_j
+    # M * dLR → SVector{3}: projection of each component's gradient
+    projUL = gradUL * dLR
+    projUR = gradUR * dLR
+    UxLf, UxRf = _muscl_scalar(lim, UL[1], UR[1], projUL[1], projUR[1])
+    UyLf, UyRf = _muscl_scalar(lim, UL[2], UR[2], projUL[2], projUR[2])
+    UzLf, UzRf = _muscl_scalar(lim, UL[3], UR[3], projUL[3], projUR[3])
+
+    # ── Positivity clamp ─────────────────────────────────────
+    floor_val = TF(1e-10)
+    return max(rhoLf, floor_val), max(rhoRf, floor_val),
+           SVector{3,TF}(UxLf, UyLf, UzLf), SVector{3,TF}(UxRf, UyRf, UzRf),
+           max(pLf, floor_val), max(pRf, floor_val)
+end
 
 # ============================================================
 # Workspace struct
@@ -493,9 +623,9 @@ end
 
 # Inviscid flux at internal faces — cell-based loop, no atomics
 @kernel function _inviscid_flux_internal!(
-    flux_scheme,
+    flux_scheme, recon_scheme,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-    rho, U, p, mesh, fluid
+    rho, U, p, gradRho, gradU_recon, gradP, mesh, fluid
 )
     i = @index(Global)
 
@@ -520,7 +650,7 @@ end
             fID = cell_faces[fi]
 
             nsign = TF(cell_nsign[fi])
-            (; area, normal, ownerCells) = faces[fID]
+            (; area, normal, e, delta, ownerCells) = faces[fID]
 
             cL = ownerCells[1]
             cR = ownerCells[2]
@@ -533,6 +663,17 @@ end
             rhoR = TF(rho[cR])
             UR   = U[cR]
             pR   = TF(p[cR])
+
+            # Spatial reconstruction: Upwind returns unchanged states; MUSCL extrapolates
+            # to the face using cell-centred gradients and the cell-to-cell vector dLR.
+            dLR = TF(delta) * e
+            rhoL, rhoR, UL, UR, pL, pR = reconstruct(
+                recon_scheme, rhoL, rhoR, UL, UR, pL, pR,
+                gradRho[cL], gradRho[cR],
+                gradU_recon[cL], gradU_recon[cR],
+                gradP[cL], gradP[cR],
+                dLR
+            )
 
             F_rho, F_rhoUx, F_rhoUy, F_rhoUz, F_rhoE = compute_inviscid_flux(
                 flux_scheme, UL, UR, pL, pR, rhoL, rhoR, normal, area, gamma_tf
@@ -1411,6 +1552,12 @@ function _setup_density_based(model, config; output=VTK())
     T_field = model.energy.T
     gradT   = Grad{schemes.T.gradient}(T_field)
 
+    # Primitive-variable gradients for MUSCL reconstruction.
+    # gradU (velocity) is reused from the StrainRate object.
+    # gradRho and gradP are allocated here and computed each iteration when MUSCL is active.
+    gradRho = Grad{schemes.p.gradient}(rho)
+    gradP   = Grad{schemes.p.gradient}(p)
+
     # Effective viscosity / conductivity on faces
     nueff     = FaceScalarField(mesh)
     mueff     = FaceScalarField(mesh)
@@ -1433,7 +1580,7 @@ function _setup_density_based(model, config; output=VTK())
 
     residuals = DENSITY_BASED(
         model, workspace, turbulenceModel,
-        S, gradT, nueff, mueff, kappa_eff, mdotf, prev,
+        S, gradT, gradRho, gradP, nueff, mueff, kappa_eff, mdotf, prev,
         config; output=output
     )
     return residuals
@@ -1444,7 +1591,8 @@ end
 # ============================================================
 
 function compute_residuals!(
-    workspace, flux_scheme, boundaries, model, gradU, gradT, mueff, kappa_eff,
+    workspace, flux_scheme, recon_scheme, boundaries, model,
+    gradU, gradRho, gradP, gradT, mueff, kappa_eff,
     Uf, mesh, time, config
 )
     (; res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE) = workspace
@@ -1463,9 +1611,9 @@ function compute_residuals!(
     # Inviscid flux — internal faces
     kernel! = _inviscid_flux_internal!(_setup(backend, workgroup, n_cells)...)
     kernel!(
-        flux_scheme,
+        flux_scheme, recon_scheme,
         res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-        rho, U, p, mesh, model.fluid
+        rho, U, p, gradRho, gradU, gradP, mesh, model.fluid
     )
 
     # Viscous flux — internal faces
@@ -1553,8 +1701,8 @@ and interpolate_primitive_fields! must be called to synchronise the primitive
 and face fields with the updated conservative state.
 """
 function step!(
-    ::FEuler, workspace, model, boundaries, flux_scheme,
-    gradU, gradT, nueff, mueff, kappa_eff, rhof, mdotf, dt, time, config
+    ::FEuler, workspace, model, boundaries, flux_scheme, recon_scheme,
+    gradU, gradRho, gradP, gradT, nueff, mueff, kappa_eff, rhof, mdotf, dt, time, config
 )
     (; rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE) = workspace
     (; rho) = model.fluid
@@ -1581,13 +1729,13 @@ After this call, recover_primitives! and interpolate_primitive_fields! must be
 called to synchronise the primitive and face fields with W^{n+1}.
 """
 function step!(
-    ::RK2, workspace, model, boundaries, flux_scheme,
-    gradU, gradT, nueff, mueff, kappa_eff, rhof, mdotf, dt, time, config
+    ::RK2, workspace, model, boundaries, flux_scheme, recon_scheme,
+    gradU, gradRho, gradP, gradT, nueff, mueff, kappa_eff, rhof, mdotf, dt, time, config
 )
     (; rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE) = workspace
     (; rho_0, rhoUx_0, rhoUy_0, rhoUz_0, rhoE_0) = workspace
     (; rho) = model.fluid
-    (; U, Uf) = model.momentum
+    (; U, p, Uf, pf) = model.momentum
     (; T, Tf) = model.energy
     (; hardware, schemes) = config
     (; backend, workgroup) = hardware
@@ -1614,12 +1762,18 @@ function step!(
     limit_gradient!(schemes.T.limiter, gradT, T, config)
     grad!(gradU, Uf, U, boundaries.U, time, config)
     limit_gradient!(schemes.U.limiter, gradU, U, config)
+    # Recompute ρ and p gradients at the intermediate state (only needed for MUSCL)
+    if !(recon_scheme isa Upwind)
+        grad!(gradRho, rhof, rho, time, config)
+        grad!(gradP, pf, p, boundaries.p, time, config)
+    end
     @. mueff.values     = rhof.values * nueff.values
     @. kappa_eff.values = mueff.values * cp_val / Pr_val
 
     # --- Stage 2: compute R(W^(1)), Euler update → W^(2) ---
     compute_residuals!(
-        workspace, flux_scheme, boundaries, model, gradU, gradT, mueff, kappa_eff,
+        workspace, flux_scheme, recon_scheme, boundaries, model,
+        gradU, gradRho, gradP, gradT, mueff, kappa_eff,
         Uf, mesh, time, config
     )
 
@@ -1637,7 +1791,7 @@ end
 
 function DENSITY_BASED(
     model, workspace, turbulenceModel,
-    S, gradT, nueff, mueff, kappa_eff, mdotf, prev,
+    S, gradT, gradRho, gradP, nueff, mueff, kappa_eff, mdotf, prev,
     config; output=VTK()
 )
     (; U, p, Uf, pf) = model.momentum
@@ -1653,6 +1807,10 @@ function DENSITY_BASED(
 
     # Time stepping: user sets schemes = (..., time_stepping = RK2()); default FEuler
     time_scheme = get(schemes, :time_stepping, FEuler())
+
+    # Reconstruction: no default — user must explicitly set reconstruction = Upwind()
+    # or reconstruction = MUSCL{VanLeer}() etc.
+    recon_scheme = schemes.reconstruction
 
     (; rhoU, rhoE, res_rho, dt_cell) = workspace
 
@@ -1707,6 +1865,12 @@ function DENSITY_BASED(
     grad!(gradT, Tf, T, boundaries.T, time, config)
     limit_gradient!(schemes.T.limiter, gradT, T, config)
 
+    # Initial ρ and p gradients for MUSCL reconstruction (face fields already populated)
+    if !(recon_scheme isa Upwind)
+        grad!(gradRho, rhof, rho, time, config)
+        grad!(gradP, pf, p, boundaries.p, time, config)
+    end
+
     # Initialise cell-level nu_eff used for the diffusive CFL restriction
     @. workspace.nu_eff = nu_mol
 
@@ -1722,7 +1886,8 @@ function DENSITY_BASED(
         # 1. Compute inviscid + viscous residuals R(W^n) using current primitive
         #    fields and gradients (updated at the end of the previous iteration).
         compute_residuals!(
-            workspace, flux_scheme, boundaries, model, gradU, gradT, mueff, kappa_eff,
+            workspace, flux_scheme, recon_scheme, boundaries, model,
+            gradU, gradRho, gradP, gradT, mueff, kappa_eff,
             Uf, mesh, time, config
         )
 
@@ -1746,8 +1911,8 @@ function DENSITY_BASED(
         #    For RK2:    two-stage SSP-RK2; stage-1 primitive/face fields are
         #                recovered internally before the stage-2 residual evaluation.
         step!(
-            time_scheme, workspace, model, boundaries, flux_scheme,
-            gradU, gradT, nueff, mueff, kappa_eff, rhof, mdotf, dt, time, config
+            time_scheme, workspace, model, boundaries, flux_scheme, recon_scheme,
+            gradU, gradRho, gradP, gradT, nueff, mueff, kappa_eff, rhof, mdotf, dt, time, config
         )
 
         # 5. Recover cell-centred primitive variables from the updated W^{n+1}.
@@ -1759,6 +1924,14 @@ function DENSITY_BASED(
         # 7. Recompute temperature gradient from the updated Tf.
         grad!(gradT, Tf, T, boundaries.T, time, config)
         limit_gradient!(schemes.T.limiter, gradT, T, config)
+
+        # 7b. Recompute ρ and p gradients for MUSCL reconstruction (only when active).
+        #     gradU is updated by turbulence! in step 8, so both are available for
+        #     the next iteration's compute_residuals! call.
+        if !(recon_scheme isa Upwind)
+            grad!(gradRho, rhof, rho, time, config)
+            grad!(gradP, pf, p, boundaries.p, time, config)
+        end
 
         # 8. Turbulence update.
         #    turbulence! internally recomputes grad(U) and the strain-rate tensor S

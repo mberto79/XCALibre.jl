@@ -84,12 +84,13 @@ schemes = (
     U             = Schemes(gradient=Gauss),
     p             = Schemes(gradient=Gauss),
     T             = Schemes(gradient=Gauss),
-    flux          = HLLC(),   # oHLLC r Rusanov() for more dissipation
-    time_stepping = FEuler(),    # RK2 or FEuler() for 1st-order Forward Euler (default)
+    flux          = HLLC(),           # or Rusanov() for more dissipation
+    time_stepping = FEuler(),         # or RK2() for 2nd-order in time
+    reconstruction = MUSCL{VanLeer}() # Upwind(),        # or MUSCL{VanLeer}(), MUSCL{MinMod}(), MUSCL{Superbee}()
 )
 
 runtime = Runtime(
-    iterations     = 50000,
+    iterations     = 10000,
     write_interval = 100,
     time_step      = 1e-7,
     adaptive       = AdaptiveTimeStepping(maxCo=0.5)

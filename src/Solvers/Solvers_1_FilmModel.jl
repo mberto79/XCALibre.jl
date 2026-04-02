@@ -42,6 +42,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     Ph = VectorField(mesh)
     τw = VectorField(mesh)
     τθw = VectorField(mesh)
+    Df = FaceScalarField(mesh)
     
 
     @info "Defining models.."
@@ -61,6 +62,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
 
     h_eqn = (
         Time{schemes.h.time}(h)
+        - Laplacian{schemes.h.laplacian}(Df,h)
         ==
         - Source(divPhi)
         + Source(Sm)
@@ -114,6 +116,7 @@ function FilmModel(
     τθw = get_source(U_eqn,3)
 
     #rho_mdotf = get_flux(h_eqn,2)
+    Df = get_flux(h_eqn, 2)
     divPhi = get_source(h_eqn,1)
     Sm = get_source(h_eqn, 2)
     mu = nu.values*rho.values
@@ -132,6 +135,14 @@ function FilmModel(
 
     PLf = FaceScalarField(mesh)
     ∇PL = Grad{Gauss}(PLf)
+    P_capf = FaceScalarField(mesh)
+    P_hydrf = FaceScalarField(mesh)
+    Surf_tensionf = FaceScalarField(mesh)
+    ∇Surf_tension = Grad{Gauss}(Surf_tensionf)
+    Pf = FaceScalarField(mesh)
+    ∇P = Grad{Gauss}(Pf)
+    h∇P = VectorField(mesh)
+
 
     ∇h = Grad{schemes.h.gradient}(h)
     ∇hf = FaceVectorField(mesh)
@@ -147,6 +158,7 @@ function FilmModel(
 
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
+    rDf = FaceScalarField(mesh)
     
     #plate_tangent_vector = [1,0,0] # temporary,  should be worked out later
     plate_tangent_vector = Vector{}([1,0,0])
@@ -242,10 +254,17 @@ function FilmModel(
 
     @. mu_h.values = 3*mu/h.values
     for i ∈ eachindex(Δhf.values)
-        PLf[i] = Pg - rho.values[1]*hf.values[i]*dot(n,G) - coeffs.σ*Δhf[i]
+        P_hydrf.values[i] = rho.values[1]*hf.values[i]*dot(n,G)
+        P_capf.values[i] = Pg
+        Surf_tensionf[i] = coeffs.σ*Δhf[i]
+        PLf[i] = P_capf[i] - P_hydrf[i] - Surf_tensionf[i]
+        Pf[i] = P_capf[i] - P_hydrf[i]
     end
 
     grad!(∇PL, PLf, config)
+    grad!(∇P, Pf, config)
+
+    
 
     for i ∈ eachindex(h.values) 
         w[i] = (h.values[i] > coeffs.h_crit)
@@ -260,6 +279,7 @@ function FilmModel(
         Ph.z.values[i] = Ph_local[3]
 
         h∇PL[i] = h[i].*∇PL[i]
+        h∇P[i] =  h[i].*∇P[i]
 
         τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w.result[i]
     end
@@ -278,9 +298,8 @@ function FilmModel(
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, time=time)
         
         inverse_diagonal!(rD, U_eqn, config)
-        remove_source!(U_eqn, h∇PL, 1, config)
-        remove_source!(U_eqn, Ph, 2, config)
-        remove_source!(U_eqn, τθw, 3, config)
+        interpolate!(rDf, rD, config)
+        #remove_film_pressure_source!(U_eqn, ∇P, config)
 
         rh = 0
         for i ∈ 1:inner_loops
@@ -296,6 +315,9 @@ function FilmModel(
             @. phif.values = mdotf.values * rhohf.values
             @. hmdotf.values = mdotf.values * hf.values
 
+            for i ∈ eachindex(Df.values)
+                Df[i] = rho.values[1] * dot(n,G) * hf[i] * rDf[i]
+            end
             div!(divPhi, hmdotf, config)
             
             @. prev = h.values
@@ -309,51 +331,57 @@ function FilmModel(
             
             limit_h!(h, coeffs.h_floor, config)
             
-            laplacian!(Δh, hf, h, boundaries.h, time, config, disp_warn=false)
-            #grad!(∇h, hf, h, boundaries.h, time, config)
-            #limit_gradient!(schemes.h.limiter, ∇h, h, config)
-            #interpolate!(∇hf, ∇h.result, config)
-            #correct_boundaries!(∇hf, ∇h.result, ∇h_bc, time, config)
-            #div!(Δh, ∇hf, config)
-            
-            interpolate!(Δhf, Δh, config)
-            correct_boundaries!(Δhf, Δh, Δh_bc, time, config)
-            
-            
-            @. rhohf.values = hf.values *  rho.values[1]
-            @. phif.values = mdotf.values * rhohf.values
 
-            
-
-
-            @. mu_h.values = 3*mu/h.values
-            for i ∈ eachindex(Δhf.values)
-                PLf[i] = Pg - rhohf[i]*dot(n,G) - coeffs.σ*Δhf[i]
-            end
-
-            grad!(∇PL, PLf, config)
-
-            for i ∈ eachindex(h.values) 
-                w[i] = (h.values[i] > coeffs.h_crit)
-            end
-
-            grad!(∇w, wf, w, w_bc, time, config)
-
-            for i ∈ eachindex(h.values)
-                Ph_local = (rho.values[1]*g*sind(coeffs.ϕ)*h[i]) .*plate_tangent_vector
-                Ph.x.values[i] = Ph_local[1]
-                Ph.y.values[i] = Ph_local[2]
-                Ph.z.values[i] = Ph_local[3]
-
-                h∇PL[i] = h[i].*∇PL[i]
-
-                τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w.result[i]
-            end
-
-            correct_mass_flux2!(phif, h_eqn, config)
-            correct_velocity!(U, Hv, h∇PL, Ph, τθw, rD, config)
+            correct_velocity2!(U, Hv, h, P_hydrf, Surf_tensionf, rho.values[1], rD, config)
+            #correct_mass_flux2!(phif, h_eqn, config)
         end
     
+
+        laplacian!(Δh, hf, h, boundaries.h, time, config, disp_warn=false)
+        #grad!(∇h, hf, h, boundaries.h, time, config)
+        #limit_gradient!(schemes.h.limiter, ∇h, h, config)
+        #interpolate!(∇hf, ∇h.result, config)
+        #correct_boundaries!(∇hf, ∇h.result, ∇h_bc, time, config)
+        #div!(Δh, ∇hf, config)
+            
+        interpolate!(Δhf, Δh, config)
+        correct_boundaries!(Δhf, Δh, Δh_bc, time, config)
+            
+            
+        @. rhohf.values = hf.values *  rho.values[1]
+        @. phif.values = mdotf.values * rhohf.values
+
+            
+
+
+        @. mu_h.values = 3*mu/h.values
+        for i ∈ eachindex(Δhf.values)
+            P_hydrf.values[i] = rho.values[1]*hf.values[i]*dot(n,G)
+            P_capf.values[i] = Pg
+            Surf_tensionf.values[i] = coeffs.σ*Δhf[i]
+            PLf[i] = P_capf[i] - P_hydrf[i] - Surf_tensionf[i]
+            Pf[i] = P_capf[i] - P_hydrf[i]
+        end
+
+        grad!(∇PL, PLf, config)
+        grad!(∇P, Pf, config)
+
+        for i ∈ eachindex(h.values) 
+            w[i] = (h.values[i] > coeffs.h_crit)
+        end
+
+        grad!(∇w, wf, w, w_bc, time, config)
+
+        for i ∈ eachindex(h.values)
+            Ph_local = (rho.values[1]*g*sind(coeffs.ϕ)*h[i]) .*plate_tangent_vector
+            Ph.x.values[i] = Ph_local[1]
+            Ph.y.values[i] = Ph_local[2]
+            Ph.z.values[i] = Ph_local[3]
+            h∇PL[i] = h[i].*∇PL[i]
+            h∇P[i] =  h[i].*h∇P[i]
+            τθw[i] = coeffs.β*coeffs.σ * (1-cosd(coeffs.θm)) .* ∇w.result[i]
+        end
+
         #for i ∈ 1:ncorrectors
         #    discretise!(h_eqn, h, config)
         #    apply_boundary_conditions!(h_eqn, boundaries.h, nothing, time, config)
@@ -452,6 +480,34 @@ function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iter
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end
 
+function remove_film_pressure_source!(U_eqn, h∇P, config)
+    
+    # backend = _get_backend(get_phi(ux_eqn).mesh)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    cells = get_phi(U_eqn).mesh.cells
+    source_sign = 1
+    (; bx, by, bz) = U_eqn.equation
+
+    ndrange = length(bx)
+    kernel! = _remove_film_pressure_source!(_setup(backend, workgroup, ndrange)...)
+    kernel!(cells, source_sign, h∇P, bx, by, bz)
+    # # KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _remove_film_pressure_source!(cells, source_sign, h∇P, bx, by, bz) #Extend to 3D
+    i = @index(Global)
+
+
+    @inbounds begin
+        (; volume) = cells[i]
+        calc = source_sign*h∇P[i]*volume
+        bx[i] -= calc[1]
+        by[i] -= calc[2]
+        bz[i] -= calc[3]
+    end
+end
+
 function limit_h!(h, h_floor, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -498,33 +554,38 @@ end
     end
 end
 
-function correct_velocity!(U, Hv, h∇PL, Ph, τθw, rD, config)
+function correct_velocity2!(U, Hv, h, P_hyrdf, Surf_tensionf, rho, rD, config)
+    (; mesh) = U
     (; hardware) = config
     (; backend, workgroup) = hardware
 
+    ∇P_hydr = Grad{Gauss}(P_hyrdf)
+    ∇P_surf = Grad{Gauss}(Surf_tensionf)
+
+    grad!(∇P_hydr, P_hyrdf, config)
+    grad!(∇P_surf, Surf_tensionf, config)
+
     ndrange = length(U)
     kernel! = _correct_velocity_film!(_setup(backend, workgroup, ndrange)...)
-    kernel!(U, Hv, h∇PL, Ph, τθw, rD)
+    kernel!(U, Hv, h, ∇P_hydr, ∇P_surf, rho, rD)
     # # KernelAbstractions.synchronize(backend)
 end
 
-@kernel function _correct_velocity_film!(U, Hv, h∇PL, Ph, τθw, rD)
+@kernel function _correct_velocity_film!(U, Hv, h, ∇P_hydr, ∇P_surf, rho, rD)
     i = @index(Global)
-
     @uniform begin
         Ux, Uy, Uz = U.x, U.y, U.z
         Hvx, Hvy, Hvz = Hv.x, Hv.y, Hv.z
-        valsx = -h∇PL.x.values + Ph.x.values + τθw.x.values
-        valsy = -h∇PL.y.values + Ph.y.values + τθw.y.values
-        valsz = -h∇PL.z.values + Ph.z.values + τθw.z.values
+        ∇P_hydr_x, ∇P_hydr_y, ∇P_hydr_z = ∇P_hydr.result.x, ∇P_hydr.result.y, ∇P_hydr.result.z
+        ∇P_surf_x, ∇P_surf_y, ∇P_surf_z = ∇P_surf.result.x, ∇P_surf.result.y, ∇P_surf.result.z
         rDvalues = rD.values
     end
 
     @inbounds begin
         rDvalues_i = rDvalues[i]
-        Ux[i] = Hvx[i] + valsx[i] * rDvalues_i
-        Uy[i] = Hvy[i] + valsy[i] * rDvalues_i
-        Uz[i] = Hvz[i] + valsz[i] * rDvalues_i
+        Ux[i] = Hvx[i]/h[i] + (-∇P_hydr_x[i] + ∇P_surf_x[i]/rho) * rDvalues_i
+        Uy[i] = Hvy[i]/h[i] + (-∇P_hydr_y[i] + ∇P_surf_y[i]/rho) * rDvalues_i
+        Uz[i] = Hvz[i]/h[i] + (-∇P_hydr_z[i] + ∇P_surf_z[i]/rho) * rDvalues_i
     end
 end
 

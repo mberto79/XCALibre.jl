@@ -167,7 +167,7 @@ initialise!(model.momentum.h, h_init)
 #    end
 #end
 
-residuals = run!(model, config, inner_loops=5);
+residuals = run!(model, config, inner_loops=1);
 end;
 using Plots
 plot((residuals.Ux), label="Ux")

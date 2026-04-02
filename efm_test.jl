@@ -93,14 +93,12 @@ BCs = assign(
 schemes = (
     U = Schemes(
         time=Euler,
-        #time=SteadyState,
         #divergence=Linear
         divergence=Upwind
         #divergence=LUST
         ),
     h = Schemes(
-        time=Euler,
-        #time=SteadyState,
+        time=Euler
         #divergence=Linear
         #divergence=Upwind
         #divergence=LUST
@@ -120,7 +118,7 @@ solvers = (
         solver      = Bicgstab(), # Options: Cg(), Bicgstab(), Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
         convergence = 1e-11,
-        relax       = 0.8,
+        relax       = 1.0,
         rtol = 1e-4,
         atol = 1e-6
     )
@@ -156,7 +154,7 @@ config = Configuration(
 GC.gc(true)
   
 initialise!(model.momentum.U, [0,0,0]);
-h_init = h_floor;#h_crit*100;
+h_init = h_floor;
 initialise!(model.momentum.h, h_init)
 
 #for i ∈ eachindex(model.momentum.h.values)
@@ -167,7 +165,7 @@ initialise!(model.momentum.h, h_init)
 #    end
 #end
 
-residuals = run!(model, config, inner_loops=1);
+residuals = run!(model, config, inner_loops=4);
 end;
 using Plots
 plot((residuals.Ux), label="Ux")

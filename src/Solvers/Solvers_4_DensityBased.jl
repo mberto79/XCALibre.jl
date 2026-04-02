@@ -1,137 +1,59 @@
 export density_based!, Rusanov, HLLC, FEuler, RK2, MUSCL, VanLeer, MinMod, Superbee
 
 # ============================================================
-# Boundary condition treatment — overview
+# Boundary condition dispatch overview
 # ============================================================
 #
-# This solver uses two independent BC dispatch chains: one for the inviscid
-# (Euler) flux and one for the viscous (Navier–Stokes) flux. Both chains
-# dispatch primarily on bc_U (the velocity BC type). bc_T drives the heat-flux
-# sub-dispatch inside the viscous Wall method. bc_p, bc_nut and all other scalar
-# BCs are irrelevant to the flux computation and do not affect dispatch.
+# Two independent BC dispatch chains, both keyed on bc_U:
 #
-# ── Inviscid BC hierarchy (_apply_inviscid_bc!, dispatch on bc_U) ─────────────
+# Inviscid (_apply_inviscid_bc!):
+#   Wall / Slip / Symmetry  → exact Euler wall flux: F=(0, p·n·A, 0)
+#   PeriodicParent/Periodic → Riemann solve with partner cell state
+#   Outlet                  → outflow: UR=UL (zero-gradient); backflow: UR=0 (stagnant ghost)
+#   AbstractDirichlet       → ghost UR=2*U_bc-UL; tangential prescription → wall flux
+#   fallback                → ghost, then impermeability check → wall flux or Riemann solve
 #
-#   bc_U::Wall
-#     → Exact Euler wall flux: F = (0, p·n·A, 0).
-#       Bypasses the Riemann solver entirely. No ghost-cell dissipation.
+# Viscous (_apply_viscous_bc!, bc_U then bc_T):
+#   Wall     → τ from two-point gradient (U_wall-U_cell)/δ⊗n; bc_T selects heat flux:
+#                FixedTemperature/Dirichlet → κ*(T_wall-T_cell)/δ  (isothermal)
+#                AbstractNeumann/AbstractPhysical → 0               (adiabatic)
+#                fallback → κ*(∇T·n)
+#   Slip/Symmetry           → nothing (zero shear, adiabatic)
+#   PeriodicParent/Periodic → two-sided face-averaged gradients
+#   fallback                → cell-centred gradient + bc_T heat flux
 #
-#   bc_U::Union{Slip, Symmetry}
-#     → Same exact Euler wall flux as Wall.
-#       Both conditions enforce U·n = 0, so the flux is identical.
-#       The ghost-velocity functions for Slip/Symmetry (reflect normal
-#       component) are defined in this file but are NOT called by this
-#       solver — they remain for use by the pressure-based solvers.
-#
-#   bc_U::Union{PeriodicParent, Periodic}
-#     → Riemann solver with the partner cell as the right state. No ghost.
-#
-#   bc_U::Outlet
-#     → Zero-gradient outflow; reservoir-based backflow handling.
-#       If un_L = UL·n > 0 (outgoing): UR = UL (zero-gradient) → Riemann solver.
-#         With Zerogradient bc_p/bc_T: L=R → zero dissipation → exact Euler flux.
-#       If un_L ≤ 0 (backflow): UR = 0 (stagnant exterior ghost) → Riemann solver.
-#         Allows the solver to compute the physically correct backflow flux using
-#         bc_p/bc_T as the exterior thermodynamic state; avoids pressure lock-up.
-#
-#   bc_U::AbstractDirichlet (Dirichlet, DirichletFunction)
-#     → Standard ghost-state Riemann solve: UR = 2*U_bc - UL (method of images).
-#       Recovers U_bc = 0.5*(UL + UR_ghost) from the ghost extrapolation.
-#       un_bc = U_bc·n_outward: negative = inflow, positive = outflow.
-#       If |un_bc| ≤ 1e-10: exact wall flux (tangential-only prescription).
-#       Otherwise: Riemann solve with (UL, UR_ghost, pL, pR, rhoL, rhoR).
-#       Prescribed value is always respected — no directionality check on UL.
-#       Rusanov dissipation naturally damps any reversed interior flow.
-#
-#   bc_U (fallback — Zerogradient, AbstractNeumann, Extrapolated, …)
-#     → Computes ghost velocity first, then checks the face normal velocity:
-#         un_face = 0.5*(UL + UR)·n  =  U_prescribed·n   (exact arithmetic)
-#       If |un_face| ≤ 1e-10: exact wall flux.
-#       Otherwise: Riemann solver (outlets, far-field, etc.).
-#
-# ── Viscous BC hierarchy (_apply_viscous_bc!, dispatch on bc_U then bc_T) ─────
-#
-#   bc_U::Wall
-#     → Stress: local two-point gradient (U_wall - U_cell)/δ ⊗ n — orthogonal,
-#         accurate, avoids CFL blowup from thin cell gradient amplification.
-#       Heat flux: dispatches on bc_T —
-#         bc_T::FixedTemperature  →  κ*(T_wall  - T_cell)/δ   (isothermal)
-#         bc_T::Dirichlet         →  κ*(T_value - T_cell)/δ   (isothermal)
-#         bc_T::AbstractNeumann   →  0                         (adiabatic)
-#         bc_T::AbstractPhysical  →  0   (Wall/Slip/Symmetry on T = adiabatic)
-#         bc_T (fallback)         →  κ*(∇T·n)  (cell-gradient projection)
-#
-#   bc_U::Union{Slip, Symmetry}
-#     → Returns nothing. Free-slip means zero tangential shear; the symmetry
-#       plane is also adiabatic by definition. bc_T is ignored entirely.
-#
-#   bc_U::Union{PeriodicParent, Periodic}
-#     → Two-sided face-averaged gradients, consistent with internal faces.
-#
-#   bc_U (fallback)
-#     → Cell-centred gradient projected onto face normal + bc_T heat flux.
-#
-# ── Scalar vs. vector field BCs: key differences ──────────────────────────────
-#
-#   Vector field U: bc_U type is the sole dispatch key for BOTH the inviscid
-#     and viscous BC chains. Using Wall gives the exact wall treatment;
-#     using Dirichlet with a zero or tangential velocity gives the same result
-#     via the fallback impermeability check.
-#
-#   Scalar field p: bc_p enters only the Riemann-solver path (ghost pressure).
-#     For Wall/Slip/Symmetry patches the Riemann solver is bypassed, so bc_p
-#     has no effect on the flux. For inlet/outlet patches bc_p sets the ghost
-#     pressure for the Riemann solve. Recommended types: Dirichlet (inlet, if
-#     prescribed), Zerogradient (outlet or wall).
-#
-#   Scalar field T: bc_T selects the wall heat-flux formula in the viscous BC
-#     when bc_U::Wall. Using Wall(:patch) gives adiabatic (zero heat flux).
-#     Using Dirichlet(:patch, T_val) or FixedTemperature gives isothermal
-#     (two-point (T_wall-T_cell)/δ). For Slip/Symmetry patches bc_T is
-#     ignored (viscous flux is zero regardless). For inlet/outlet patches bc_T
-#     enters the ghost temperature for the Riemann solve.
-#
-#   Scalar field nut: not used by either flux chain. Affects mueff/kappa_eff
-#     via turbulence! → update_nueff! → mueff = ρ*nueff. Use Zerogradient
-#     at inlets/outlets, Wall(:wall, 0.0)  on scalars behaves like Zerogradient. Dirichlet(:wall, 0.0) sets the value to zero; Dirichlet is explicit).
+# bc_p: ghost pressure for Riemann paths only (irrelevant at Wall/Slip/Symmetry).
+# bc_T: ghost temperature for Riemann paths; heat-flux selector at Wall.
+# bc_nut: not used by flux chains; affects mueff via turbulence! → update_nueff!.
 #
 # ============================================================
 # Flux scheme selector types
 # ============================================================
 
-"""User-facing flux scheme type — selects the Rusanov (Local Lax-Friedrichs) flux."""
+"""Rusanov (Local Lax-Friedrichs) flux scheme."""
 struct Rusanov end
 
-"""User-facing flux scheme type — selects the HLLC (Harten-Lax-van Leer Contact) flux."""
+"""HLLC (Harten-Lax-van Leer Contact) flux scheme."""
 struct HLLC end
 
 # ============================================================
 # Spatial reconstruction types
 # ============================================================
 
-"""
-Reconstruction limiter type — Van Leer smooth limiter.
-ψ(r) = (r + |r|) / (1 + |r|)
-"""
+"""Van Leer smooth limiter: ψ(r) = (r + |r|) / (1 + |r|)"""
 struct VanLeer end
 
-"""
-Reconstruction limiter type — MinMod (most diffusive TVD limiter).
-ψ(r) = max(0, min(1, r))
-"""
+"""MinMod limiter (most diffusive TVD): ψ(r) = max(0, min(1, r))"""
 struct MinMod end
 
-"""
-Reconstruction limiter type — Superbee (least diffusive TVD limiter).
-ψ(r) = max(0, min(2r, 1), min(r, 2))
-"""
+"""Superbee limiter (least diffusive TVD): ψ(r) = max(0, min(2r, 1), min(r, 2))"""
 struct Superbee end
 
 """
     MUSCL{L}()
 
-2nd-order MUSCL reconstruction with slope limiter `L` (one of `VanLeer`, `MinMod`, `Superbee`).
-Use in the `schemes` NamedTuple as `reconstruction = MUSCL{VanLeer}()`.
+2nd-order MUSCL reconstruction with slope limiter `L` (VanLeer, MinMod, or Superbee).
+Set via `reconstruction = MUSCL{VanLeer}()` in the schemes NamedTuple.
 """
 struct MUSCL{L}
     MUSCL{L}() where L = new{L}()
@@ -141,16 +63,14 @@ end
 # Time stepping selector types
 # ============================================================
 
-"""Forward Euler (1st order) explicit time stepping for the density-based solver."""
+"""Forward Euler (1st order) explicit time stepping."""
 struct FEuler end
 
 """
-SSP-RK2 / Heun's method (2nd order) explicit time stepping for the density-based solver.
-
-Computes two Euler stages and averages:
-  W^(1)     = W^n   - (dt/V)*R(W^n)
-  W^(2)     = W^(1) - (dt/V)*R(W^(1))
-  W^{n+1}   = 0.5*(W^n + W^(2))
+SSP-RK2 / Heun's method (2nd order) explicit time stepping.
+  W^(1)   = W^n   - (dt/V)*R(W^n)
+  W^(2)   = W^(1) - (dt/V)*R(W^(1))
+  W^{n+1} = 0.5*(W^n + W^(2))
 """
 struct RK2 end
 
@@ -158,22 +78,16 @@ struct RK2 end
 # Limiter functions
 # ============================================================
 
-"""Van Leer smooth limiter: ψ(r) = (r + |r|) / (1 + |r|)"""
 @inline limiter_value(::VanLeer,  r::T) where T = (r + abs(r)) / (one(T) + abs(r))
-
-"""MinMod limiter: ψ(r) = max(0, min(1, r))"""
 @inline limiter_value(::MinMod,   r::T) where T = max(zero(T), min(one(T), r))
-
-"""Superbee limiter: ψ(r) = max(0, min(2r, 1), min(r, 2))"""
 @inline limiter_value(::Superbee, r::T) where T = max(zero(T), min(2*r, one(T)), min(r, 2*one(T)))
 
 # ============================================================
 # MUSCL reconstruction — scalar and vector helpers
 # ============================================================
 
-# Inner scalar reconstruction given pre-computed projections of the L and R gradients
-# onto the cell-to-cell vector dLR = face.delta * face.e.
-# Returns the reconstructed face values for the left and right states.
+# Scalar MUSCL reconstruction using pre-computed gradient projections onto dLR = delta*e.
+# Returns reconstructed face values (left, right) with TVD slope limiter.
 @inline function _muscl_scalar(lim, φL::TF, φR::TF, projL::TF, projR::TF) where TF
     Δ = φR - φL
     abs(Δ) < TF(1e-30) && return φL, φR
@@ -186,12 +100,7 @@ end
 
 # ── Reconstruct dispatch ─────────────────────────────────────────────────────
 
-"""
-    reconstruct(::Upwind, rhoL, rhoR, UL, UR, pL, pR, args...)
-
-1st-order reconstruction — returns cell-centred values unchanged.
-Used when `reconstruction = Upwind()` in the schemes tuple.
-"""
+"""1st-order reconstruction — returns cell-centred values unchanged."""
 @inline function reconstruct(
     ::Upwind,
     rhoL, rhoR, UL, UR, pL, pR, args...
@@ -200,19 +109,10 @@ Used when `reconstruction = Upwind()` in the schemes tuple.
 end
 
 """
-    reconstruct(::MUSCL{L}, rhoL, rhoR, UL, UR, pL, pR,
-                gradRhoL, gradRhoR, gradUL, gradUR, gradPL, gradPR, dLR)
-
 2nd-order MUSCL reconstruction with slope limiter `L`.
-
-For scalars ρ and p, the slope ratio uses the standard unstructured-mesh
-formulation (Darwish & Moukalled): r = 2*(∇φ·dLR)/Δ − 1.
-
-For velocity U, each Cartesian component is reconstructed independently using
-`gradU * dLR` (matrix–vector product) to project the velocity gradient tensor.
-
-Reconstructed densities and pressures are clamped to a small positive floor
-to prevent NaN in the sound-speed computation sqrt(γp/ρ).
+Slope ratio (Darwish & Moukalled): r = 2*(∇φ·dLR)/Δ − 1.
+Velocity components reconstructed via gradU * dLR (matrix–vector product).
+ρ and p clamped to positive floor to prevent NaN in sqrt(γp/ρ).
 """
 @inline function reconstruct(
     ::MUSCL{L},
@@ -226,26 +126,19 @@ to prevent NaN in the sound-speed computation sqrt(γp/ρ).
 ) where {TF, SV<:SVector{3,TF}, L}
     lim = L()
 
-    # ── Density ──────────────────────────────────────────────
-    proj_rhoL = gradRhoL ⋅ dLR
-    proj_rhoR = gradRhoR ⋅ dLR
-    rhoLf, rhoRf = _muscl_scalar(lim, rhoL, rhoR, proj_rhoL, proj_rhoR)
+    # Density
+    rhoLf, rhoRf = _muscl_scalar(lim, rhoL, rhoR, gradRhoL ⋅ dLR, gradRhoR ⋅ dLR)
 
-    # ── Pressure ─────────────────────────────────────────────
-    proj_pL = gradPL ⋅ dLR
-    proj_pR = gradPR ⋅ dLR
-    pLf, pRf = _muscl_scalar(lim, pL, pR, proj_pL, proj_pR)
+    # Pressure
+    pLf, pRf = _muscl_scalar(lim, pL, pR, gradPL ⋅ dLR, gradPR ⋅ dLR)
 
-    # ── Velocity (component-wise) ─────────────────────────────
-    # gradUL is SMatrix{3,3}: M[i,j] = ∂U_i/∂x_j
-    # M * dLR → SVector{3}: projection of each component's gradient
+    # Velocity: gradU is SMatrix{3,3} (M[i,j]=∂U_i/∂x_j); M*dLR projects each component
     projUL = gradUL * dLR
     projUR = gradUR * dLR
     UxLf, UxRf = _muscl_scalar(lim, UL[1], UR[1], projUL[1], projUR[1])
     UyLf, UyRf = _muscl_scalar(lim, UL[2], UR[2], projUL[2], projUR[2])
     UzLf, UzRf = _muscl_scalar(lim, UL[3], UR[3], projUL[3], projUR[3])
 
-    # ── Positivity clamp ─────────────────────────────────────
     floor_val = TF(1e-10)
     return max(rhoLf, floor_val), max(rhoRf, floor_val),
            SVector{3,TF}(UxLf, UyLf, UzLf), SVector{3,TF}(UxRf, UyRf, UzRf),
@@ -281,52 +174,30 @@ end
 
 # --- Velocity ghost state ---
 
-@inline function ghost_velocity(
-    bc::Wall, U_int::SV, n::SV
-) where {TF, SV<:SVector{3,TF}}
-    # Wall: U_face = U_wall → ghost = 2*U_wall - U_int
+@inline function ghost_velocity(bc::Wall, U_int::SV, n::SV) where {TF, SV<:SVector{3,TF}}
     U_wall = SV(TF(bc.value[1]), TF(bc.value[2]), TF(bc.value[3]))
     2*U_wall - U_int
 end
 
-@inline function ghost_velocity(
-    bc::Symmetry, U_int::SV, n::SV
-) where {TF, SV<:SVector{3,TF}}
-    # Symmetry: reflect normal component
+@inline function ghost_velocity(bc::Symmetry, U_int::SV, n::SV) where {TF, SV<:SVector{3,TF}}
+    # Reflect normal component
     U_int - 2*(U_int ⋅ n)*n
 end
 
-@inline function ghost_velocity(
-    bc::Slip, U_int::SV, n::SV
-) where {TF, SV<:SVector{3,TF}}
-    # Slip: reflect normal component (no penetration, free-slip)
+@inline function ghost_velocity(bc::Slip, U_int::SV, n::SV) where {TF, SV<:SVector{3,TF}}
+    # Reflect normal component
     U_int - 2*(U_int ⋅ n)*n
 end
 
-@inline function ghost_velocity(
-    bc::AbstractDirichlet, U_int::SV, n::SV
-) where {TF, SV<:SVector{3,TF}}
-    # Dirichlet: strong BC → ghost = 2*U_bc - U_int
+@inline function ghost_velocity(bc::AbstractDirichlet, U_int::SV, n::SV) where {TF, SV<:SVector{3,TF}}
     U_bc = SV(TF(bc.value[1]), TF(bc.value[2]), TF(bc.value[3]))
     2*U_bc - U_int
 end
 
-@inline function ghost_velocity(
-    bc::AbstractNeumann, U_int::SV, n::SV
-) where {TF, SV<:SVector{3,TF}}
-    # Zero-gradient: extrapolate interior value
-    U_int
-end
+@inline ghost_velocity(bc::AbstractNeumann, U_int::SV, n::SV) where {TF, SV<:SVector{3,TF}} = U_int
+@inline ghost_velocity(bc::AbstractBoundary, U_int::SV, n::SV) where {TF, SV<:SVector{3,TF}} = U_int
 
-@inline function ghost_velocity(
-    bc::AbstractBoundary, U_int::SV, n::SV
-) where {TF, SV<:SVector{3,TF}}
-    # Fallback: extrapolate
-    U_int
-end
-
-# Extended ghost functions with face/time/local-index context.
-# Fallbacks delegate to the 3-arg versions above for all non-DirichletFunction BCs.
+# Extended versions with face/time/index context; fallbacks delegate to 3-arg versions.
 @inline ghost_velocity(bc, face, U_int::SV, n::SV, time, i) where {TF, SV<:SVector{3,TF}} =
     ghost_velocity(bc, U_int, n)
 
@@ -344,66 +215,26 @@ end
     2*TF(bc.value(face.centre, TF(time), i)) - p_int
 end
 
-@inline ghost_temperature(bc, face, T_int::TF, time, i) where TF =
-    ghost_temperature(bc, T_int)
+@inline ghost_temperature(bc, face, T_int::TF, time, i) where TF = ghost_temperature(bc, T_int)
 
-@inline function ghost_temperature(
-    bc::DirichletFunction, face, T_int::TF, time, i
-) where TF
-    # DirichletFunction on T: value function returns T directly
+@inline function ghost_temperature(bc::DirichletFunction, face, T_int::TF, time, i) where TF
     TF(bc.value(face.centre, TF(time), i))
 end
 
 # --- Pressure ghost state ---
 
-@inline function ghost_pressure(bc::Dirichlet, p_int::TF, n) where TF
-    # Strong Dirichlet: p_face = p_bc → ghost = 2*p_bc - p_int
-    2*TF(bc.value) - p_int
-end
+@inline ghost_pressure(bc::Dirichlet, p_int::TF, n) where TF = 2*TF(bc.value) - p_int
+@inline ghost_pressure(bc::AbstractNeumann, p_int::TF, n) where TF = p_int
+@inline ghost_pressure(bc::AbstractPhysicalConstraint, p_int::TF, n) where TF = p_int
+@inline ghost_pressure(bc::AbstractBoundary, p_int::TF, n) where TF = p_int
 
-@inline function ghost_pressure(bc::AbstractNeumann, p_int::TF, n) where TF
-    # Zero-gradient: extrapolate
-    p_int
-end
+# --- Temperature ghost state ---
+# FixedTemperature/Dirichlet: ghost = T_bc (not 2*T_bc-T_int) for stability at high Mach,
+# where stagnation T_int >> T_bc near the stagnation point.
+@inline ghost_temperature(bc::FixedTemperature, T_int::TF) where TF = TF(bc.value.T)
+@inline ghost_temperature(bc::Dirichlet, T_int::TF) where TF = TF(bc.value)
 
-@inline function ghost_pressure(bc::AbstractPhysicalConstraint, p_int::TF, n) where TF
-    # Wall/Symmetry/Slip: zero normal gradient
-    p_int
-end
-
-@inline function ghost_pressure(bc::AbstractBoundary, p_int::TF, n) where TF
-    # Fallback: extrapolate
-    p_int
-end
-
-# --- Temperature ghost state (from T BC) ---
-
-@inline function ghost_temperature(
-    bc::FixedTemperature, T_int::TF
-) where TF
-    # Isothermal wall: set ghost = T_wall directly.
-    # The 2*T_wall - T_int extrapolation is unstable at high Mach numbers
-    # because stagnation T_int >> 2*T_wall near the stagnation point.
-    # Using ghost = T_wall gives T_face = 0.5*(T_int+T_wall) which is
-    # always positive and converges to T_wall as T_int → T_wall.
-    TF(bc.value.T)
-end
-
-@inline function ghost_temperature(
-    bc::Dirichlet, T_int::TF
-) where TF
-    # Dirichlet on T: bc.value is the temperature directly.
-    # Use clamped approach (ghost = T_bc) for stability at high Mach
-    # where T_int >> 2*T_bc near stagnation points.
-    TF(bc.value)
-end
-
-@inline function ghost_temperature(
-    bc::AbstractBoundary, T_int::TF
-) where TF
-    # Fallback (Zerogradient, Symmetry, Slip, Wall, etc.): extrapolate
-    T_int
-end
+@inline ghost_temperature(bc::AbstractBoundary, T_int::TF) where TF = T_int
 
 # ============================================================
 # Rusanov (Local Lax-Friedrichs) flux
@@ -415,59 +246,40 @@ end
     rhoL::TF, rhoR::TF,
     normal::SV, area::TF, gamma::TF
 ) where {TF, SV<:SVector{3,TF}}
-    # Normal velocities
     unL = UL ⋅ normal
     unR = UR ⋅ normal
 
-    # Sound speeds
     aL = sqrt(gamma * pL / rhoL)
     aR = sqrt(gamma * pR / rhoR)
 
-    # Local Lax-Friedrichs dissipation coefficient
+    # Rusanov dissipation coefficient λ = max(|u|+a)
     lambda = max(abs(unL) + aL, abs(unR) + aR)
 
-    # Conservative energy variables: ρE = p/(γ-1) + 0.5*ρ|U|²
+    # ρE = p/(γ-1) + 0.5*ρ|U|²;  H = (ρE+p)/ρ
     gm1 = gamma - one(TF)
     rhoEL = pL/gm1 + TF(0.5)*rhoL*(UL ⋅ UL)
     rhoER = pR/gm1 + TF(0.5)*rhoR*(UR ⋅ UR)
-
-    # Total enthalpy per unit mass: H = (ρE + p)/ρ
     HL = (rhoEL + pL) / rhoL
     HR = (rhoER + pR) / rhoR
 
-    # Conservative momentum variables
-    rhoUxL = rhoL*UL[1]; rhoUxR = rhoR*UR[1]
-    rhoUyL = rhoL*UL[2]; rhoUyR = rhoR*UR[2]
-    rhoUzL = rhoL*UL[3]; rhoUzR = rhoR*UR[3]
+    rhoUL = rhoL * UL
+    rhoUR = rhoR * UR
 
-    # Inviscid fluxes F(W)·n at L and R
-    # Mass flux
-    FL_rho = rhoL*unL
-    FR_rho = rhoR*unR
-
-    # Momentum flux
-    FL_rhoUx = rhoL*UL[1]*unL + pL*normal[1]
-    FR_rhoUx = rhoR*UR[1]*unR + pR*normal[1]
-
-    FL_rhoUy = rhoL*UL[2]*unL + pL*normal[2]
-    FR_rhoUy = rhoR*UR[2]*unR + pR*normal[2]
-
-    FL_rhoUz = rhoL*UL[3]*unL + pL*normal[3]
-    FR_rhoUz = rhoR*UR[3]*unR + pR*normal[3]
-
-    # Energy flux: ρH*u_n
+    # Physical fluxes F(W)·n
+    FL_rho  = rhoL*unL
+    FR_rho  = rhoR*unR
+    FL_rhoU = rhoUL*unL + pL*normal
+    FR_rhoU = rhoUR*unR + pR*normal
     FL_rhoE = rhoL*HL*unL
     FR_rhoE = rhoR*HR*unR
 
-    # Rusanov flux (×area): 0.5*(F_L+F_R) - 0.5*λ*(W_R-W_L)
-    half = TF(0.5)
-    F_rho  = area*(half*(FL_rho  + FR_rho)  - half*lambda*(rhoR   - rhoL))
-    F_rhoUx = area*(half*(FL_rhoUx + FR_rhoUx) - half*lambda*(rhoUxR - rhoUxL))
-    F_rhoUy = area*(half*(FL_rhoUy + FR_rhoUy) - half*lambda*(rhoUyR - rhoUyL))
-    F_rhoUz = area*(half*(FL_rhoUz + FR_rhoUz) - half*lambda*(rhoUzR - rhoUzL))
-    F_rhoE = area*(half*(FL_rhoE  + FR_rhoE)  - half*lambda*(rhoER  - rhoEL))
+    # F_Rusanov = 0.5*(F_L+F_R) - 0.5*λ*(W_R-W_L)
+    half   = TF(0.5)
+    F_rho  = area*(half*(FL_rho  + FR_rho)  - half*lambda*(rhoR  - rhoL))
+    F_rhoU = area*(half*(FL_rhoU + FR_rhoU) - half*lambda*(rhoUR - rhoUL))
+    F_rhoE = area*(half*(FL_rhoE + FR_rhoE) - half*lambda*(rhoER - rhoEL))
 
-    return F_rho, F_rhoUx, F_rhoUy, F_rhoUz, F_rhoE
+    return F_rho, F_rhoU, F_rhoE
 end
 
 # ============================================================
@@ -482,15 +294,13 @@ end
 ) where {TF, SV<:SVector{3,TF}}
     gm1 = gamma - one(TF)
 
-    # Normal velocities
     unL = UL ⋅ normal
     unR = UR ⋅ normal
 
-    # Sound speeds
     aL = sqrt(gamma * pL / rhoL)
     aR = sqrt(gamma * pR / rhoR)
 
-    # Conservative total energy per unit volume
+    # ρE = p/(γ-1) + 0.5*ρ|U|²
     rhoEL = pL/gm1 + TF(0.5)*rhoL*(UL ⋅ UL)
     rhoER = pR/gm1 + TF(0.5)*rhoR*(UR ⋅ UR)
 
@@ -498,77 +308,51 @@ end
     SL = min(unL - aL, unR - aR)
     SR = max(unL + aL, unR + aR)
 
-    # Contact wave speed S* (from Rankine-Hugoniot conditions)
+    # Contact wave speed S* (Rankine-Hugoniot)
     Sstar = (pR - pL + rhoL*unL*(SL - unL) - rhoR*unR*(SR - unR)) /
             (rhoL*(SL - unL) - rhoR*(SR - unR))
 
-    # Physical flux vectors F(W)·n
+    # Physical fluxes F(W)·n
     HL = (rhoEL + pL) / rhoL
     HR = (rhoER + pR) / rhoR
 
-    FL_rho   = rhoL*unL
-    FL_rhoUx = rhoL*UL[1]*unL + pL*normal[1]
-    FL_rhoUy = rhoL*UL[2]*unL + pL*normal[2]
-    FL_rhoUz = rhoL*UL[3]*unL + pL*normal[3]
-    FL_rhoE  = rhoL*HL*unL
+    FL_rho  = rhoL*unL
+    FL_rhoU = rhoL*unL*UL + pL*normal
+    FL_rhoE = rhoL*HL*unL
 
-    FR_rho   = rhoR*unR
-    FR_rhoUx = rhoR*UR[1]*unR + pR*normal[1]
-    FR_rhoUy = rhoR*UR[2]*unR + pR*normal[2]
-    FR_rhoUz = rhoR*UR[3]*unR + pR*normal[3]
-    FR_rhoE  = rhoR*HR*unR
+    FR_rho  = rhoR*unR
+    FR_rhoU = rhoR*unR*UR + pR*normal
+    FR_rhoE = rhoR*HR*unR
 
-    # HLLC star states (contact-preserving correction)
-    # Left star: W* = ρK*(SL-unL)/(SL-S*) * [1, UK + (S*-unK)*n, EK/ρK + (S*-unK)*(S* + pK/(ρK*(SK-unK)))]
+    # HLLC star states (contact-preserving)
     coefL   = rhoL * (SL - unL) / (SL - Sstar)
     WL_rho  = coefL
-    WL_rhoUx = coefL * (UL[1] + (Sstar - unL)*normal[1])
-    WL_rhoUy = coefL * (UL[2] + (Sstar - unL)*normal[2])
-    WL_rhoUz = coefL * (UL[3] + (Sstar - unL)*normal[3])
-    WL_rhoE  = coefL * (rhoEL/rhoL + (Sstar - unL)*(Sstar + pL/(rhoL*(SL - unL))))
+    WL_rhoU = coefL * (UL + (Sstar - unL)*normal)
+    WL_rhoE = coefL * (rhoEL/rhoL + (Sstar - unL)*(Sstar + pL/(rhoL*(SL - unL))))
 
     coefR   = rhoR * (SR - unR) / (SR - Sstar)
     WR_rho  = coefR
-    WR_rhoUx = coefR * (UR[1] + (Sstar - unR)*normal[1])
-    WR_rhoUy = coefR * (UR[2] + (Sstar - unR)*normal[2])
-    WR_rhoUz = coefR * (UR[3] + (Sstar - unR)*normal[3])
-    WR_rhoE  = coefR * (rhoER/rhoR + (Sstar - unR)*(Sstar + pR/(rhoR*(SR - unR))))
+    WR_rhoU = coefR * (UR + (Sstar - unR)*normal)
+    WR_rhoE = coefR * (rhoER/rhoR + (Sstar - unR)*(Sstar + pR/(rhoR*(SR - unR))))
 
-    # Flux region selection (Toro, §10.4)
-    if SL >= zero(TF)
-        # Entirely supersonic in +n direction
-        F_rho   = area*FL_rho
-        F_rhoUx = area*FL_rhoUx
-        F_rhoUy = area*FL_rhoUy
-        F_rhoUz = area*FL_rhoUz
-        F_rhoE  = area*FL_rhoE
-    elseif Sstar >= zero(TF)
-        # Left star region
-        F_rho   = area*(FL_rho   + SL*(WL_rho   - rhoL))
-        F_rhoUx = area*(FL_rhoUx + SL*(WL_rhoUx - rhoL*UL[1]))
-        F_rhoUy = area*(FL_rhoUy + SL*(WL_rhoUy - rhoL*UL[2]))
-        F_rhoUz = area*(FL_rhoUz + SL*(WL_rhoUz - rhoL*UL[3]))
-        F_rhoE  = area*(FL_rhoE  + SL*(WL_rhoE  - rhoEL))
-    elseif SR >= zero(TF)
-        # Right star region
-        F_rho   = area*(FR_rho   + SR*(WR_rho   - rhoR))
-        F_rhoUx = area*(FR_rhoUx + SR*(WR_rhoUx - rhoR*UR[1]))
-        F_rhoUy = area*(FR_rhoUy + SR*(WR_rhoUy - rhoR*UR[2]))
-        F_rhoUz = area*(FR_rhoUz + SR*(WR_rhoUz - rhoR*UR[3]))
-        F_rhoE  = area*(FR_rhoE  + SR*(WR_rhoE  - rhoER))
-    else
-        # Entirely supersonic in -n direction
-        F_rho   = area*FR_rho
-        F_rhoUx = area*FR_rhoUx
-        F_rhoUy = area*FR_rhoUy
-        F_rhoUz = area*FR_rhoUz
-        F_rhoE  = area*FR_rhoE
+    # Flux region selection (Toro §10.4)
+    if SL >= zero(TF)           # supersonic left
+        F_rho  = area*FL_rho;  F_rhoU = area*FL_rhoU;  F_rhoE = area*FL_rhoE
+    elseif Sstar >= zero(TF)    # left star region
+        F_rho  = area*(FL_rho  + SL*(WL_rho  - rhoL))
+        F_rhoU = area*(FL_rhoU + SL*(WL_rhoU - rhoL*UL))
+        F_rhoE = area*(FL_rhoE + SL*(WL_rhoE - rhoEL))
+    elseif SR >= zero(TF)       # right star region
+        F_rho  = area*(FR_rho  + SR*(WR_rho  - rhoR))
+        F_rhoU = area*(FR_rhoU + SR*(WR_rhoU - rhoR*UR))
+        F_rhoE = area*(FR_rhoE + SR*(WR_rhoE - rhoER))
+    else                        # supersonic right
+        F_rho  = area*FR_rho;  F_rhoU = area*FR_rhoU;  F_rhoE = area*FR_rhoE
     end
 
-    return F_rho, F_rhoUx, F_rhoUy, F_rhoUz, F_rhoE
+    return F_rho, F_rhoU, F_rhoE
 end
 
-# Dispatch: select flux function based on user-chosen scheme type
 @inline compute_inviscid_flux(::Rusanov, args...) = rusanov_flux(args...)
 @inline compute_inviscid_flux(::HLLC,    args...) = hllc_flux(args...)
 
@@ -576,7 +360,6 @@ end
 # Kernels
 # ============================================================
 
-# Primitive → conservative
 @kernel function _prim_to_cons!(rhoU, rhoE, rho, U, p, fluid)
     i = @index(Global)
 
@@ -587,17 +370,17 @@ end
         Ui = U[i]
         pi = p[i]
 
-        rhoU.x[i] = rho_i * Ui[1]
-        rhoU.y[i] = rho_i * Ui[2]
-        rhoU.z[i] = rho_i * Ui[3]
+        rhoUi = rho_i * Ui
+        rhoU.x[i] = rhoUi[1]
+        rhoU.y[i] = rhoUi[2]
+        rhoU.z[i] = rhoUi[3]
 
         gm1 = gamma - one(gamma)
-        KE = Ui ⋅ Ui * oftype(rho_i, 0.5)
+        KE = oftype(rho_i, 0.5) * (Ui ⋅ Ui)
         rhoE.values[i] = pi/gm1 + rho_i*KE
     end
 end
 
-# Initialize density from p and T
 @kernel function _init_rho!(rho, p, T, fluid)
     i = @index(Global)
 
@@ -608,7 +391,6 @@ end
     end
 end
 
-# Zero all residuals
 @kernel function _zero_residuals!(res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE)
     i = @index(Global)
 
@@ -621,7 +403,7 @@ end
     end
 end
 
-# Inviscid flux at internal faces — cell-based loop, no atomics
+# Inviscid flux — internal faces, cell-based loop (no atomics)
 @kernel function _inviscid_flux_internal!(
     flux_scheme, recon_scheme,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
@@ -641,9 +423,7 @@ end
         gamma_tf = TF(gamma)
 
         acc_rho  = zero(TF)
-        acc_rhoUx = zero(TF)
-        acc_rhoUy = zero(TF)
-        acc_rhoUz = zero(TF)
+        acc_rhoU = zero(SVector{3,TF})
         acc_rhoE = zero(TF)
 
         for fi ∈ faces_range
@@ -655,17 +435,10 @@ end
             cL = ownerCells[1]
             cR = ownerCells[2]
 
-            # Left and right primitive states (always L=ownerCells[1], R=ownerCells[2])
-            rhoL = TF(rho[cL])
-            UL   = U[cL]
-            pL   = TF(p[cL])
+            # L=ownerCells[1], R=ownerCells[2] (consistent orientation)
+            rhoL = TF(rho[cL]);  UL = U[cL];  pL = TF(p[cL])
+            rhoR = TF(rho[cR]);  UR = U[cR];  pR = TF(p[cR])
 
-            rhoR = TF(rho[cR])
-            UR   = U[cR]
-            pR   = TF(p[cR])
-
-            # Spatial reconstruction: Upwind returns unchanged states; MUSCL extrapolates
-            # to the face using cell-centred gradients and the cell-to-cell vector dLR.
             dLR = TF(delta) * e
             rhoL, rhoR, UL, UR, pL, pR = reconstruct(
                 recon_scheme, rhoL, rhoR, UL, UR, pL, pR,
@@ -675,27 +448,24 @@ end
                 dLR
             )
 
-            F_rho, F_rhoUx, F_rhoUy, F_rhoUz, F_rhoE = compute_inviscid_flux(
+            F_rho, F_rhoU, F_rhoE = compute_inviscid_flux(
                 flux_scheme, UL, UR, pL, pR, rhoL, rhoR, normal, area, gamma_tf
             )
 
-            # nsign: +1 if cell i is left (outward), -1 if right (inward)
-            acc_rho   += nsign * F_rho
-            acc_rhoUx += nsign * F_rhoUx
-            acc_rhoUy += nsign * F_rhoUy
-            acc_rhoUz += nsign * F_rhoUz
-            acc_rhoE  += nsign * F_rhoE
+            acc_rho  += nsign * F_rho
+            acc_rhoU += nsign * F_rhoU
+            acc_rhoE += nsign * F_rhoE
         end
 
-        res_rho.values[i]  += acc_rho
-        res_rhoUx.values[i] += acc_rhoUx
-        res_rhoUy.values[i] += acc_rhoUy
-        res_rhoUz.values[i] += acc_rhoUz
-        res_rhoE.values[i] += acc_rhoE
+        res_rho.values[i]   += acc_rho
+        res_rhoUx.values[i] += acc_rhoU[1]
+        res_rhoUy.values[i] += acc_rhoU[2]
+        res_rhoUz.values[i] += acc_rhoU[3]
+        res_rhoE.values[i]  += acc_rhoE
     end
 end
 
-# Inviscid flux at boundary faces — face-based loop, uses atomics
+# Inviscid flux — boundary faces, face-based loop (atomics)
 @kernel function _inviscid_bc_flux!(
     flux_scheme, U_BCs, p_BCs, T_BCs,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
@@ -710,7 +480,6 @@ end
     )
 end
 
-# Generated dispatch over boundary patches (compile-time loop unrolling)
 @generated function _inviscid_bc_dispatch!(
     flux_scheme, U_BCs, p_BCs, T_BCs,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
@@ -742,27 +511,10 @@ end
     end
 end
 
-# ── Impermeable wall BCs: exact Euler flux, bypassing the Riemann solver ────────
-#
-# At any impermeable boundary (Wall, Slip, Symmetry) the no-penetration condition
-# enforces U·n = 0 at the face. The exact inviscid (Euler) flux therefore reduces to:
-#
-#   F_mass     = ρ (U·n) A  =  0
-#   F_momentum = (ρ U(U·n) + p n) A  =  p n A     (pure pressure force)
-#   F_energy   = ρ H (U·n) A  =  0
-#
-# Using the Riemann solver with ghost cells at these boundaries is incorrect and
-# dangerous. For a no-slip wall with U_R = -U_L (the standard mirror ghost), the
-# Rusanov/HLLC numerical dissipation term is:
-#
-#   -½ λ (ρU_R - ρU_L)  =  λ ρ U_L        (λ ≈ |U| + a, dominated by sound speed)
-#
-# This injects spurious tangential momentum at magnitude ~ a * ρ * |U_tang|, which
-# is large near supersonic walls and causes velocity blow-up. The kinetic energy spike
-# forces pressure (and hence temperature) to drop to the clamping floor to conserve
-# total energy.
-#
-# The exact wall flux avoids all of this: zero mass, pressure-only momentum, zero energy.
+# ── Impermeable wall BCs (Wall, Slip, Symmetry): exact Euler wall flux ──────────
+# U·n=0 → F_mass=0, F_momentum=p*n*A, F_energy=0.
+# Riemann solver with mirror ghost (U_R=-U_L) injects spurious tangential momentum
+# ∝ a*ρ*|U_tang|, causing velocity blow-up at supersonic walls.
 
 @inline function _apply_inviscid_bc!(
     flux_scheme, bc_U::Wall, bc_p, bc_T,
@@ -776,11 +528,10 @@ end
 
     TF  = eltype(rho.values)
     pL  = TF(p[cID])
-
-    # F_mass = 0 (no penetration); F_energy = 0; F_momentum = p * n * area
-    Atomix.@atomic res_rhoUx.values[cID] += pL * normal[1] * area
-    Atomix.@atomic res_rhoUy.values[cID] += pL * normal[2] * area
-    Atomix.@atomic res_rhoUz.values[cID] += pL * normal[3] * area
+    Fp = pL * area * normal
+    Atomix.@atomic res_rhoUx.values[cID] += Fp[1]
+    Atomix.@atomic res_rhoUy.values[cID] += Fp[2]
+    Atomix.@atomic res_rhoUz.values[cID] += Fp[3]
 end
 
 @inline function _apply_inviscid_bc!(
@@ -795,32 +546,16 @@ end
 
     TF  = eltype(rho.values)
     pL  = TF(p[cID])
-
-    # F_mass = 0; F_energy = 0; F_momentum = p * n * area
-    Atomix.@atomic res_rhoUx.values[cID] += pL * normal[1] * area
-    Atomix.@atomic res_rhoUy.values[cID] += pL * normal[2] * area
-    Atomix.@atomic res_rhoUz.values[cID] += pL * normal[3] * area
+    Fp = pL * area * normal
+    Atomix.@atomic res_rhoUx.values[cID] += Fp[1]
+    Atomix.@atomic res_rhoUy.values[cID] += Fp[2]
+    Atomix.@atomic res_rhoUz.values[cID] += Fp[3]
 end
 
 # ── Outlet BC: zero-gradient outflow with reservoir-based backflow ───────────────
-#
-# Outflow (un_L > 0): zero-gradient ghost (UR = UL).  With Zerogradient bc_p and
-#   bc_T the left and right states are identical → zero Rusanov/HLLC dissipation →
-#   exact physical Euler flux rhoL*un_L at the face.  Drain rate is exactly right.
-#
-# Backflow (un_L ≤ 0): a reservoir ghost state is used for the Riemann solve.
-#   Ghost velocity = zero (stagnant exterior), ghost pressure/temperature from
-#   bc_p/bc_T (typically Zerogradient → extrapolated from interior).
-#   This allows the Riemann solver to determine the physically correct backflow
-#   flux rather than sealing the face with a pressure-only wall flux.
-#
-#   Why not the wall flux?  The wall-flux branch applies p*n*A to momentum with
-#   zero mass and energy.  When backflow builds interior pressure pL, the growing
-#   p*n term pushes momentum back into the domain, amplifying the pressure rise
-#   and driving a positive-feedback loop that eventually reverses flow at the inlet.
-#   The reservoir ghost breaks this loop: the Riemann solver admits backflow mass
-#   and energy at a thermodynamic state consistent with bc_p/bc_T, so pressure
-#   cannot accumulate without bound.
+# Outflow (un_L > 0): UR=UL → with Zerogradient bc_p/bc_T: L=R → zero dissipation → exact flux.
+# Backflow (un_L ≤ 0): UR=0 (stagnant ghost) at bc_p/bc_T thermodynamic state.
+# Stagnant ghost avoids wall-flux pressure lock-up (p*n*A feedback loop).
 @inline function _apply_inviscid_bc!(
     flux_scheme, bc_U::Outlet, bc_p, bc_T,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
@@ -850,41 +585,25 @@ end
     rhoR = max(pR / (R_gas * TR), TF(1e-10))
 
     if un_L <= zero(TF)
-        # Backflow: reservoir ghost — stagnant exterior at bc_p/bc_T state.
-        # Riemann solver determines the correct inflow flux; no hard sealing.
-        UR = zero(UL)
+        UR = zero(UL)   # backflow: stagnant exterior ghost
     else
-        # Outflow: zero-gradient ghost — exact physical Euler flux (L=R → no dissipation).
-        UR = UL
+        UR = UL         # outflow: zero-gradient (L=R → no dissipation)
     end
 
-    F_rho, F_rhoUx, F_rhoUy, F_rhoUz, F_rhoE = compute_inviscid_flux(
+    F_rho, F_rhoU, F_rhoE = compute_inviscid_flux(
         flux_scheme, UL, UR, pL, pR, rhoL, rhoR, normal, area, gamma
     )
 
     Atomix.@atomic res_rho.values[cID]   += F_rho
-    Atomix.@atomic res_rhoUx.values[cID] += F_rhoUx
-    Atomix.@atomic res_rhoUy.values[cID] += F_rhoUy
-    Atomix.@atomic res_rhoUz.values[cID] += F_rhoUz
+    Atomix.@atomic res_rhoUx.values[cID] += F_rhoU[1]
+    Atomix.@atomic res_rhoUy.values[cID] += F_rhoU[2]
+    Atomix.@atomic res_rhoUz.values[cID] += F_rhoU[3]
     Atomix.@atomic res_rhoE.values[cID]  += F_rhoE
 end
 
-# ── Prescribed-velocity BCs (AbstractDirichlet): strong prescribed enforcement ───
-#
-# Handles Dirichlet and DirichletFunction velocity BCs.
-#
-# Ghost state: UR = 2*U_bc - UL  →  face-average = U_bc exactly.
-#   This is the standard method-of-images enforcement for Dirichlet BCs in a
-#   Riemann-solver context.  The prescribed value is respected regardless of the
-#   interior flow direction: no directionality check on UL is performed.
-#   Rusanov dissipation (∝ |UL - UR_ghost| ∝ |UL - U_bc|) naturally damps any
-#   reversed interior flow back toward the prescribed condition, providing stability
-#   without any special-cased overrides.
-#
-# Impermeability check: if |un_bc| ≤ 1e-10 the prescribed velocity is tangential
-#   (un_bc = U_bc·n_outward; n_outward is the outward-pointing face normal).
-#   The exact wall flux is applied (zero mass/energy, pressure-only momentum) —
-#   same treatment as Wall/Slip/Symmetry — avoiding spurious tangential dissipation.
+# ── AbstractDirichlet: ghost UR = 2*U_bc - UL (method of images) ─────────────────
+# Face-average = U_bc exactly; Rusanov dissipation ∝ |UL-U_bc| damps reversed flow.
+# If |un_bc| ≤ 1e-10 (tangential prescription): exact wall flux instead of Riemann solve.
 @inline function _apply_inviscid_bc!(
     flux_scheme, bc_U::AbstractDirichlet, bc_p, bc_T,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
@@ -904,19 +623,17 @@ end
     pL = TF(p[cID])
     TL = TF(T[cID])
 
-    # Ghost velocity: UR_ghost = 2*U_bc - UL  →  U_face = U_bc exactly.
+    # Ghost: UR = 2*U_bc - UL; recover U_bc to check for tangential prescription
     UR_ghost = ghost_velocity(bc_U, face, UL, normal, time, i)
-
-    # Recover the prescribed velocity to check for a tangential prescription.
-    # un_bc = U_bc·n_outward: negative means inflow, positive means outflow.
     U_bc  = TF(0.5) * (UL + UR_ghost)
     un_bc = U_bc ⋅ normal
 
     if abs(un_bc) <= TF(1e-10)
         # Prescribed velocity is tangential → impermeable exact wall flux.
-        Atomix.@atomic res_rhoUx.values[cID] += pL * normal[1] * area
-        Atomix.@atomic res_rhoUy.values[cID] += pL * normal[2] * area
-        Atomix.@atomic res_rhoUz.values[cID] += pL * normal[3] * area
+        Fp = pL * area * normal
+        Atomix.@atomic res_rhoUx.values[cID] += Fp[1]
+        Atomix.@atomic res_rhoUy.values[cID] += Fp[2]
+        Atomix.@atomic res_rhoUz.values[cID] += Fp[3]
         return
     end
 
@@ -927,29 +644,19 @@ end
     TR   = max(TR,   TF(1e-10))
     rhoR = max(pR / (R_gas * TR), TF(1e-10))
 
-    # Standard ghost-state Riemann solve: prescribed value always respected.
-    # No interior-flow directionality check — UR_ghost = 2*U_bc - UL ensures
-    # U_face = U_bc regardless of UL.  Rusanov dissipation damps any reversal.
-    F_rho, F_rhoUx, F_rhoUy, F_rhoUz, F_rhoE = compute_inviscid_flux(
+    F_rho, F_rhoU, F_rhoE = compute_inviscid_flux(
         flux_scheme, UL, UR_ghost, pL, pR, rhoL, rhoR, normal, area, gamma
     )
 
     Atomix.@atomic res_rho.values[cID]   += F_rho
-    Atomix.@atomic res_rhoUx.values[cID] += F_rhoUx
-    Atomix.@atomic res_rhoUy.values[cID] += F_rhoUy
-    Atomix.@atomic res_rhoUz.values[cID] += F_rhoUz
+    Atomix.@atomic res_rhoUx.values[cID] += F_rhoU[1]
+    Atomix.@atomic res_rhoUy.values[cID] += F_rhoU[2]
+    Atomix.@atomic res_rhoUz.values[cID] += F_rhoU[3]
     Atomix.@atomic res_rhoE.values[cID]  += F_rhoE
 end
 
-# ── Riemann-solver BCs: open-boundary fallback ──────────────────────────────────
-#
-# Handles all BC types not matched by a more specific method
-# (Neumann, Zerogradient, Extrapolated, far-field, etc.).
-# AbstractDirichlet is handled by the specialised method above.
-#
-# Impermeability check: for any prescribed-velocity BC the face-average velocity
-# equals U_prescribed·n exactly (UR = 2*U_prescribed - UL).  When that is zero the
-# face is impermeable and the exact wall flux is applied.
+# ── Fallback: Neumann, Zerogradient, Extrapolated, far-field, etc. ──────────────
+# Impermeability check: |un_face| ≤ 1e-10 → exact wall flux; otherwise Riemann solve.
 @inline function _apply_inviscid_bc!(
     flux_scheme, bc_U, bc_p, bc_T,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
@@ -969,22 +676,18 @@ end
     pL = TF(p[cID])
     TL = TF(T[cID])
 
-    # Ghost velocity (must be computed before the impermeability check)
     UR = ghost_velocity(bc_U, face, UL, normal, time, i)
-
-    # Face normal velocity from the two-state average.  For any prescribed-velocity
-    # BC this equals the prescribed velocity's normal component exactly.
     un_face = TF(0.5) * ((UL + UR) ⋅ normal)
 
     if abs(un_face) <= TF(1e-10)
-        # Impermeable face: exact wall flux (zero mass, pressure momentum, zero energy).
-        Atomix.@atomic res_rhoUx.values[cID] += pL * normal[1] * area
-        Atomix.@atomic res_rhoUy.values[cID] += pL * normal[2] * area
-        Atomix.@atomic res_rhoUz.values[cID] += pL * normal[3] * area
+        # Impermeable: exact wall flux
+        Fp = pL * area * normal
+        Atomix.@atomic res_rhoUx.values[cID] += Fp[1]
+        Atomix.@atomic res_rhoUy.values[cID] += Fp[2]
+        Atomix.@atomic res_rhoUz.values[cID] += Fp[3]
         return
     end
 
-    # Non-impermeable face: Riemann solver (outlets, Zerogradient, far-field, …)
     rhoL = TF(rho[cID])
     pR   = ghost_pressure(bc_p, face, pL, normal, time, i)
     TR   = ghost_temperature(bc_T, face, TL, time, i)
@@ -992,20 +695,18 @@ end
     TR   = max(TR,   TF(1e-10))
     rhoR = max(pR / (R_gas * TR), TF(1e-10))
 
-    F_rho, F_rhoUx, F_rhoUy, F_rhoUz, F_rhoE = compute_inviscid_flux(
+    F_rho, F_rhoU, F_rhoE = compute_inviscid_flux(
         flux_scheme, UL, UR, pL, pR, rhoL, rhoR, normal, area, gamma
     )
 
     Atomix.@atomic res_rho.values[cID]   += F_rho
-    Atomix.@atomic res_rhoUx.values[cID] += F_rhoUx
-    Atomix.@atomic res_rhoUy.values[cID] += F_rhoUy
-    Atomix.@atomic res_rhoUz.values[cID] += F_rhoUz
+    Atomix.@atomic res_rhoUx.values[cID] += F_rhoU[1]
+    Atomix.@atomic res_rhoUy.values[cID] += F_rhoU[2]
+    Atomix.@atomic res_rhoUz.values[cID] += F_rhoU[3]
     Atomix.@atomic res_rhoE.values[cID]  += F_rhoE
 end
 
-# Periodic BC: use the partner cell's actual primitive state as the "right" state.
-# Both PeriodicParent and Periodic are handled identically — each patch updates its
-# own owner cell, together ensuring full conservation across the periodic interface.
+# Periodic BC: Riemann solve with partner cell as right state.
 @inline function _apply_inviscid_bc!(
     flux_scheme, bc_U::Union{PeriodicParent, Periodic}, bc_p, bc_T,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
@@ -1026,21 +727,18 @@ end
     rhoL = TF(rho[cID]);  UL = U[cID];  pL = TF(p[cID])
     rhoR = TF(rho[pcID]); UR = U[pcID]; pR = TF(p[pcID])
 
-    F_rho, F_rhoUx, F_rhoUy, F_rhoUz, F_rhoE = compute_inviscid_flux(
+    F_rho, F_rhoU, F_rhoE = compute_inviscid_flux(
         flux_scheme, UL, UR, pL, pR, rhoL, rhoR, normal, area, gamma
     )
 
     Atomix.@atomic res_rho.values[cID]   += F_rho
-    Atomix.@atomic res_rhoUx.values[cID] += F_rhoUx
-    Atomix.@atomic res_rhoUy.values[cID] += F_rhoUy
-    Atomix.@atomic res_rhoUz.values[cID] += F_rhoUz
+    Atomix.@atomic res_rhoUx.values[cID] += F_rhoU[1]
+    Atomix.@atomic res_rhoUy.values[cID] += F_rhoU[2]
+    Atomix.@atomic res_rhoUz.values[cID] += F_rhoU[3]
     Atomix.@atomic res_rhoE.values[cID]  += F_rhoE
 end
 
-# CFL-limited time step per cell — combined convective + diffusive restriction.
-# lambda = |U| + a + nu_eff/dx so that:
-#   convective regime (small nu_eff): dt ≈ CFL*dx/(|U|+a)
-#   diffusive regime (large nu_eff):  dt ≈ CFL*dx²/nu_eff
+# Per-cell CFL time step: λ = |U| + a + ν_eff/dx → dt = CFL*dx/λ (combined convective+diffusive)
 @kernel function _compute_dt_cell!(dt_cell, rho, U, p, cells, fluid, cfl, dim_exp, nu_eff)
     i = @index(Global)
 
@@ -1063,16 +761,12 @@ end
     end
 end
 
-# Compute cell-level effective viscosity: nu_eff[i] = nu_mol + nut[i]
 @kernel function _compute_nu_eff_cell!(nu_eff, nu_mol, nut)
     i = @index(Global)
     @inbounds nu_eff[i] = nu_mol + nut.values[i]
 end
 
-# Populate cell-level nu_eff following the same dispatch pattern as update_nueff!
-# (Solvers_0_functions.jl). turb_model = model.turbulence (the struct created by the
-# LES/RANS functor, e.g. Smagorinsky, KOmega, Laminar — NOT the initialised SmagorinskyModel).
-# Turbulent models have a nut::ScalarField field; Laminar does not.
+# Cell-level ν_eff for diffusive CFL; mirrors update_nueff! dispatch (Laminar has no nut field).
 function update_nu_eff_cell!(nu_eff, nu_mol, turb_model, backend, workgroup, n_cells)
     if typeof(turb_model) <: Laminar
         @. nu_eff = nu_mol
@@ -1082,7 +776,6 @@ function update_nu_eff_cell!(nu_eff, nu_mol, turb_model, backend, workgroup, n_c
     end
 end
 
-# Forward Euler update of conservative variables
 @kernel function _forward_euler!(rho, rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, cells, dt)
     i = @index(Global)
 
@@ -1098,12 +791,10 @@ end
         rhoU.z[i]       -= factor * res_rhoUz.values[i]
         rhoE.values[i]  -= factor * res_rhoE.values[i]
 
-        # Clamp density to positive
         rho.values[i] = max(rho.values[i], TF(1e-10))
     end
 end
 
-# Save conservative state W^n (for RK2 averaging)
 @kernel function _save_conservative!(rho_0, rhoUx_0, rhoUy_0, rhoUz_0, rhoE_0, rho, rhoU, rhoE)
     i = @index(Global)
 
@@ -1116,7 +807,6 @@ end
     end
 end
 
-# RK2 average: W^{n+1} = 0.5*(W^n + W^(2)), with density clamping
 @kernel function _rk2_average!(rho, rhoU, rhoE, rho_0, rhoUx_0, rhoUy_0, rhoUz_0, rhoE_0)
     i = @index(Global)
 
@@ -1131,7 +821,6 @@ end
     end
 end
 
-# Conservative → primitive recovery
 @kernel function _cons_to_prim!(U, p, T, Mach, rho, rhoU, rhoE, cells, fluid)
     i = @index(Global)
 
@@ -1148,31 +837,18 @@ end
         rho_i  = TF(rho[i])
         rhoE_i = TF(rhoE[i])
 
-        # Velocity
-        ux = rhoU.x[i] / rho_i
-        uy = rhoU.y[i] / rho_i
-        uz = rhoU.z[i] / rho_i
+        Ui = rhoU[i] / rho_i
+        U.x[i] = Ui[1];  U.y[i] = Ui[2];  U.z[i] = Ui[3]
 
-        U.x[i] = ux
-        U.y[i] = uy
-        U.z[i] = uz
-
-        # Kinetic energy per unit volume
-        KE = TF(0.5) * (ux*ux + uy*uy + uz*uz)
-
-        # Pressure: p = (γ-1)*(ρE - ρ*KE)
-        p_i = (gamma_tf - one(TF)) * (rhoE_i - rho_i*KE)
-        p_i = max(p_i, TF(1e-10))
+        KE  = TF(0.5) * (Ui ⋅ Ui)
+        p_i = max((gamma_tf - one(TF)) * (rhoE_i - rho_i*KE), TF(1e-10))   # p = (γ-1)*(ρE-ρKE)
         p.values[i] = p_i
 
-        # Temperature: T = p/(ρ*R)
-        T_i = p_i / (rho_i * R_gas_tf)
-        T_i = max(T_i, TF(1e-10))
+        T_i = max(p_i / (rho_i * R_gas_tf), TF(1e-10))                      # T = p/(ρR)
         T.values[i] = T_i
 
-        # Mach number
         a = sqrt(gamma_tf * p_i / rho_i)
-        Mach.values[i] = sqrt(ux*ux + uy*uy + uz*uz) / (a + TF(1e-30))
+        Mach.values[i] = sqrt(Ui ⋅ Ui) / (a + TF(1e-30))
     end
 end
 
@@ -1180,7 +856,7 @@ end
 # Viscous flux kernels
 # ============================================================
 
-# Internal faces — cell-based loop, same pattern as _rusanov_flux_internal!
+# Viscous flux — internal faces, cell-based loop (no atomics)
 @kernel function _viscous_flux_internal!(
     res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
     U, T, gradU, gradT, mueff, kappa_eff, mesh
@@ -1197,10 +873,8 @@ end
         TF = eltype(res_rhoUx.values)
         two_thirds = TF(2)/TF(3)
 
-        acc_rhoUx = zero(TF)
-        acc_rhoUy = zero(TF)
-        acc_rhoUz = zero(TF)
-        acc_rhoE  = zero(TF)
+        acc_rhoU = zero(SVector{3,TF})
+        acc_rhoE = zero(TF)
 
         for fi ∈ faces_range
             fID     = cell_faces[fi]
@@ -1210,56 +884,35 @@ end
             cL = ownerCells[1]
             cR = ownerCells[2]
 
-            # Face-averaged velocity gradient and temperature gradient
             gradU_f = TF(0.5) * (gradU[cL] + gradU[cR])
             gradT_f = TF(0.5) * (gradT[cL] + gradT[cR])
 
-            # Non-orthogonal correction for ∇U·n and ∇T·n.
-            # Decompose the face-normal gradient into an orthogonal part (exact
-            # two-point compact-stencil difference) and a cross-diffusion part
-            # (explicit, from the averaged cell-centred gradients):
-            #
-            #   ∇φ·n ≈ (φ_R − φ_L)/δ · (e·n)   [orthogonal, 2nd-order compact]
-            #         + ∇φ_f · (n − (e·n)·e)     [cross-diffusion, explicit]
-            #
-            # e is the unit cell-centre-to-cell-centre vector (stored on Face3D).
-            # On orthogonal meshes e ≡ n, so the cross term vanishes exactly.
-            en = e ⋅ normal   # cos(non-orthogonality angle); scalar, type F
+            # Non-orthogonal correction: ∇φ·n ≈ (φ_R-φ_L)/δ*(e·n) + ∇φ_f·(n-(e·n)*e)
+            en = e ⋅ normal
 
-            # Corrected ∇U·n: each element j is ∂U_j/∂n with the compact stencil.
-            # The ∇Uᵀ·n term is inherently cross-derivative and stays explicit.
             dU_over_delta = (U[cR] - U[cL]) / TF(delta)
             gradU_n  = dU_over_delta * TF(en) + gradU_f * (normal - TF(en) * e)
             gradUt_n = gradU_f' * normal
 
-            # Velocity divergence (trace of ∇U, unchanged)
-            divU = gradU_f[1,1] + gradU_f[2,2] + gradU_f[3,3]
-
-            # Viscous stress projection onto face normal: (μ*(∇U + (∇U)ᵀ - 2/3*(∇·U)I)) · n
+            divU    = gradU_f[1,1] + gradU_f[2,2] + gradU_f[3,3]
             mueff_f = TF(mueff[fID])
             tau_n   = mueff_f * (gradU_n + gradUt_n - two_thirds * divU * normal)
 
-            # Face-averaged velocity
             U_f = TF(0.5) * (U[cL] + U[cR])
 
-            # Corrected ∇T·n
             dT_over_delta = (TF(T[cR]) - TF(T[cL])) / TF(delta)
-            gradT_n = dT_over_delta * TF(en) + gradT_f ⋅ (normal - TF(en) * e)
+            gradT_n  = dT_over_delta * TF(en) + gradT_f ⋅ (normal - TF(en) * e)
 
-            # Viscous energy flux: u·(τ·n) + κ*(∇T·n)
             kf       = TF(kappa_eff[fID])
             F_visc_E = (U_f ⋅ tau_n) + kf * gradT_n
 
-            # Subtract viscous contribution (RHS term → subtract from residual)
-            acc_rhoUx -= nsign * tau_n[1] * area
-            acc_rhoUy -= nsign * tau_n[2] * area
-            acc_rhoUz -= nsign * tau_n[3] * area
-            acc_rhoE  -= nsign * F_visc_E * area
+            acc_rhoU -= nsign * tau_n * area
+            acc_rhoE -= nsign * F_visc_E * area
         end
 
-        res_rhoUx.values[i] += acc_rhoUx
-        res_rhoUy.values[i] += acc_rhoUy
-        res_rhoUz.values[i] += acc_rhoUz
+        res_rhoUx.values[i] += acc_rhoU[1]
+        res_rhoUy.values[i] += acc_rhoU[2]
+        res_rhoUz.values[i] += acc_rhoU[3]
         res_rhoE.values[i]  += acc_rhoE
     end
 end
@@ -1268,17 +921,10 @@ end
 # Wall heat flux helpers — dispatch on energy BC type
 # ============================================================
 
-# Adiabatic (Zerogradient, Extrapolated, etc.): zero heat flux through the face
-@inline wall_heat_flux(
-    ::AbstractNeumann, kf, gradT, T, normal, delta, cID, fID
-) = zero(kf)
+@inline wall_heat_flux(::AbstractNeumann, kf, gradT, T, normal, delta, cID, fID) = zero(kf)
+@inline wall_heat_flux(::AbstractPhysicalConstraint, kf, gradT, T, normal, delta, cID, fID) = zero(kf)
 
-# Adiabatic (Wall, Slip, Symmetry on T field): zero heat flux
-@inline wall_heat_flux(
-    ::AbstractPhysicalConstraint, kf, gradT, T, normal, delta, cID, fID
-) = zero(kf)
-
-# Isothermal wall (FixedTemperature): two-point orthogonal normal gradient
+# Isothermal (FixedTemperature): κ*(T_wall-T_cell)/δ
 @inline function wall_heat_flux(
     bc_T::FixedTemperature, kf, gradT, T, normal, delta, cID, fID
 )
@@ -1287,7 +933,7 @@ end
     kf * (T_wall - T_cell) / typeof(kf)(delta)
 end
 
-# Isothermal wall (Dirichlet on T): two-point orthogonal normal gradient
+# Isothermal (Dirichlet on T): κ*(T_wall-T_cell)/δ
 @inline function wall_heat_flux(
     bc_T::Dirichlet, kf, gradT, T, normal, delta, cID, fID
 )
@@ -1296,15 +942,13 @@ end
     kf * (T_wall - T_cell) / typeof(kf)(delta)
 end
 
-# Fallback: cell-centred gradient projected onto face normal
+# Fallback: κ*(∇T·n) from cell-centred gradient
 @inline function wall_heat_flux(
     bc_T, kf, gradT, T, normal, delta, cID, fID
 )
     kf * (gradT[cID] ⋅ normal)
 end
 
-# ============================================================
-# Boundary faces — face-based loop with atomics, dispatches on BC type
 @kernel function _viscous_bc_flux!(
     U_BCs, T_BCs,
     res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
@@ -1319,7 +963,6 @@ end
     )
 end
 
-# Generated dispatch over boundary patches (compile-time loop unrolling)
 @generated function _viscous_bc_dispatch!(
     U_BCs, T_BCs,
     res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
@@ -1350,10 +993,8 @@ end
     end
 end
 
-# Generic viscous BC (Dirichlet, Neumann, etc.)
-# Uses the cell-centred gradient directly (bounded for explicit solvers; the
-# 1/delta correction was removed because it amplifies stresses at thin wall cells).
-# Dispatches heat flux on the T BC type: AbstractNeumann → zero, FixedTemperature/Dirichlet → (T_wall-T_cell)/delta.
+# Generic viscous BC: cell-centred gradient (two-point 1/δ correction removed — amplifies
+# stresses at thin cells). Heat flux dispatched on bc_T.
 @inline function _apply_viscous_bc!(
     bc_U, bc_T,
     res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
@@ -1367,38 +1008,25 @@ end
     TF = eltype(res_rhoUx.values)
     two_thirds = TF(2)/TF(3)
 
-    # Face velocity from correct_boundaries! (U_wall for no-slip, interpolated for others)
     Uf_face = Uf[fID]
-
-    # Use cell-centred gradient directly (more stable than face-centred correction for
-    # explicit solvers; the 1/delta factor in (Uf-Ucell)/delta amplifies stresses for
-    # thin boundary-layer cells, causing CFL violations on the viscous update)
     gradU_f = gradU[cID]
 
-    # Velocity divergence
-    divU = gradU_f[1,1] + gradU_f[2,2] + gradU_f[3,3]
-
-    # Viscous stress projection using cell-centred gradient
+    divU    = gradU_f[1,1] + gradU_f[2,2] + gradU_f[3,3]
     mueff_f = TF(mueff[fID])
     tau_n   = mueff_f * ((gradU_f + gradU_f') * normal - two_thirds * divU * normal)
 
-    # Heat flux: dispatch on T BC type
     kf       = TF(kappa_eff[fID])
     q_wall   = wall_heat_flux(bc_T, kf, gradT, T, normal, delta, cID, fID)
-
-    # Viscous energy flux
     F_visc_E = (Uf_face ⋅ tau_n) + q_wall
 
-    # Subtract viscous contribution (boundary faces are outward from cID)
-    Atomix.@atomic res_rhoUx.values[cID] -= tau_n[1] * area
-    Atomix.@atomic res_rhoUy.values[cID] -= tau_n[2] * area
-    Atomix.@atomic res_rhoUz.values[cID] -= tau_n[3] * area
+    tau_n_area = tau_n * area
+    Atomix.@atomic res_rhoUx.values[cID] -= tau_n_area[1]
+    Atomix.@atomic res_rhoUy.values[cID] -= tau_n_area[2]
+    Atomix.@atomic res_rhoUz.values[cID] -= tau_n_area[3]
     Atomix.@atomic res_rhoE.values[cID]  -= F_visc_E * area
 end
 
-# Wall (no-slip): local two-point orthogonal normal gradient for accurate skin friction.
-# The gradient tensor is reconstructed from (U_wall - U_cell)/delta along the wall normal,
-# capturing the dominant wall-normal shear without amplifying errors from thin cells.
+# Wall (no-slip): two-point gradient (U_wall-U_cell)/δ⊗n — orthogonal, avoids thin-cell amplification.
 @inline function _apply_viscous_bc!(
     bc_U::Wall, bc_T,
     res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
@@ -1412,32 +1040,27 @@ end
     TF = eltype(res_rhoUx.values)
     two_thirds = TF(2)/TF(3)
 
-    # Known wall velocity (from BC)
-    U_wall = SVector{3,TF}(TF(bc_U.value[1]), TF(bc_U.value[2]), TF(bc_U.value[3]))
-    U_cell = U[cID]
+    U_wall  = SVector{3,TF}(TF(bc_U.value[1]), TF(bc_U.value[2]), TF(bc_U.value[3]))
+    U_cell  = U[cID]
 
-    # Local two-point gradient: gradU_ij ≈ (U_wall_i - U_cell_i) * n_j / delta
-    dU     = (U_wall - U_cell) / TF(delta)
-    gradU_f = dU * normal'   # outer product → 3×3 SMatrix
-
+    dU      = (U_wall - U_cell) / TF(delta)
+    gradU_f = dU * normal'   # outer product → ∇U_ij ≈ dU_i * n_j
     divU    = gradU_f[1,1] + gradU_f[2,2] + gradU_f[3,3]
     mueff_f = TF(mueff[fID])
     tau_n   = mueff_f * ((gradU_f + gradU_f') * normal - two_thirds * divU * normal)
 
-    # Heat flux: dispatch on T BC type
-    kf     = TF(kappa_eff[fID])
-    q_wall = wall_heat_flux(bc_T, kf, gradT, T, normal, delta, cID, fID)
-
-    # Energy flux: viscous work at wall velocity + heat conduction
+    kf       = TF(kappa_eff[fID])
+    q_wall   = wall_heat_flux(bc_T, kf, gradT, T, normal, delta, cID, fID)
     F_visc_E = (U_wall ⋅ tau_n) + q_wall
 
-    Atomix.@atomic res_rhoUx.values[cID] -= tau_n[1] * area
-    Atomix.@atomic res_rhoUy.values[cID] -= tau_n[2] * area
-    Atomix.@atomic res_rhoUz.values[cID] -= tau_n[3] * area
+    tau_n_area = tau_n * area
+    Atomix.@atomic res_rhoUx.values[cID] -= tau_n_area[1]
+    Atomix.@atomic res_rhoUy.values[cID] -= tau_n_area[2]
+    Atomix.@atomic res_rhoUz.values[cID] -= tau_n_area[3]
     Atomix.@atomic res_rhoE.values[cID]  -= F_visc_E * area
 end
 
-# Slip/Symmetry: free-slip condition → zero tangential shear + adiabatic → no viscous flux.
+# Slip/Symmetry: zero shear + adiabatic → no viscous flux.
 @inline function _apply_viscous_bc!(
     bc_U::Union{Slip, Symmetry}, bc_T,
     res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
@@ -1446,8 +1069,7 @@ end
     nothing
 end
 
-# Periodic BC viscous flux uses two-sided (face-averaged) gradients and velocity,
-# consistent with the internal face treatment.
+# Periodic: two-sided face-averaged gradients (consistent with internal faces).
 @inline function _apply_viscous_bc!(
     bc_U::Union{PeriodicParent, Periodic}, bc_T,
     res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
@@ -1465,27 +1087,21 @@ end
     TF = eltype(res_rhoUx.values)
     two_thirds = TF(2)/TF(3)
 
-    # Two-sided face-averaged gradients (consistent with internal face treatment)
     gradU_f = TF(0.5) * (gradU[cID] + gradU[pcID])
     gradT_f = TF(0.5) * (gradT[cID] + gradT[pcID])
 
-    # Velocity divergence
-    divU = gradU_f[1,1] + gradU_f[2,2] + gradU_f[3,3]
-
-    # Viscous stress projection
+    divU    = gradU_f[1,1] + gradU_f[2,2] + gradU_f[3,3]
     mueff_f = TF(mueff[fID])
     tau_n   = mueff_f * ((gradU_f + gradU_f') * normal - two_thirds * divU * normal)
 
-    # Face-averaged velocity
-    Uf_face = TF(0.5) * (U[cID] + U[pcID])
-
-    # Viscous energy flux
+    Uf_face  = TF(0.5) * (U[cID] + U[pcID])
     kf       = TF(kappa_eff[fID])
     F_visc_E = (Uf_face ⋅ tau_n) + kf * (gradT_f ⋅ normal)
 
-    Atomix.@atomic res_rhoUx.values[cID] -= tau_n[1] * area
-    Atomix.@atomic res_rhoUy.values[cID] -= tau_n[2] * area
-    Atomix.@atomic res_rhoUz.values[cID] -= tau_n[3] * area
+    tau_n_area = tau_n * area
+    Atomix.@atomic res_rhoUx.values[cID] -= tau_n_area[1]
+    Atomix.@atomic res_rhoUy.values[cID] -= tau_n_area[2]
+    Atomix.@atomic res_rhoUz.values[cID] -= tau_n_area[3]
     Atomix.@atomic res_rhoE.values[cID]  -= F_visc_E * area
 end
 
@@ -1496,11 +1112,8 @@ end
 """
     density_based!(model, config; output=VTK())
 
-Entry point for the explicit density-based compressible solver targeting
-supersonic/hypersonic flows. Uses Rusanov (Local Lax-Friedrichs) flux with
-Forward Euler time integration on conservative variables [ρ, ρU, ρE].
-
-Dispatched automatically from `run!` when `model.fluid isa SupersonicFlow`.
+Explicit density-based compressible solver on conservative variables [ρ, ρU, ρE].
+Dispatched from `run!` when `model.fluid isa SupersonicFlow`.
 """
 function density_based!(model, config; output=VTK())
     residuals = _setup_density_based(model, config; output=output)
@@ -1542,32 +1155,23 @@ function _setup_density_based(model, config; output=VTK())
 
     @info "Allocating viscous and turbulence fields..."
 
-    # Gradient objects: created before T is bound to temperature (T type still available)
     gradU  = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
-    Uf_s   = FaceVectorField(mesh)  # Uf for StrainRate (separate from momentum Uf)
+    Uf_s   = FaceVectorField(mesh)  # separate Uf for StrainRate
     S      = StrainRate(gradU, gradUT, U, Uf_s)
 
-    # Temperature gradient (T_field = model.energy.T, Tf = model.energy.Tf for face values)
     T_field = model.energy.T
     gradT   = Grad{schemes.T.gradient}(T_field)
 
-    # Primitive-variable gradients for MUSCL reconstruction.
-    # gradU (velocity) is reused from the StrainRate object.
-    # gradRho and gradP are allocated here and computed each iteration when MUSCL is active.
+    # MUSCL reconstruction gradients (gradU reused from StrainRate)
     gradRho = Grad{schemes.p.gradient}(rho)
     gradP   = Grad{schemes.p.gradient}(p)
 
-    # Effective viscosity / conductivity on faces
     nueff     = FaceScalarField(mesh)
     mueff     = FaceScalarField(mesh)
     kappa_eff = FaceScalarField(mesh)
-
-    # Mass flux for turbulence transport equations
-    mdotf = FaceScalarField(mesh)
-
-    # Scratch array for turbulence! prev argument
-    prev = KernelAbstractions.zeros(backend, TF, n_cells)
+    mdotf     = FaceScalarField(mesh)
+    prev      = KernelAbstractions.zeros(backend, TF, n_cells)
 
     @info "Initialising turbulence model..."
     turbulenceModel, config = initialise(model.turbulence, model, mdotf, nothing, config)
@@ -1586,10 +1190,6 @@ function _setup_density_based(model, config; output=VTK())
     return residuals
 end
 
-# ============================================================
-# Helper: compute all residuals from current primitive state
-# ============================================================
-
 function compute_residuals!(
     workspace, flux_scheme, recon_scheme, boundaries, model,
     gradU, gradRho, gradP, gradT, mueff, kappa_eff,
@@ -1604,49 +1204,26 @@ function compute_residuals!(
     n_cells  = length(mesh.cells)
     n_bfaces = length(mesh.boundary_cellsID)
 
-    # Zero residuals
     kernel! = _zero_residuals!(_setup(backend, workgroup, n_cells)...)
     kernel!(res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE)
 
-    # Inviscid flux — internal faces
     kernel! = _inviscid_flux_internal!(_setup(backend, workgroup, n_cells)...)
-    kernel!(
-        flux_scheme, recon_scheme,
-        res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-        rho, U, p, gradRho, gradU, gradP, mesh, model.fluid
-    )
+    kernel!(flux_scheme, recon_scheme, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+            rho, U, p, gradRho, gradU, gradP, mesh, model.fluid)
 
-    # Viscous flux — internal faces
     kernel! = _viscous_flux_internal!(_setup(backend, workgroup, n_cells)...)
-    kernel!(
-        res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-        U, T, gradU, gradT, mueff, kappa_eff, mesh
-    )
+    kernel!(res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, U, T, gradU, gradT, mueff, kappa_eff, mesh)
 
-    # Inviscid flux — boundary faces
     kernel! = _inviscid_bc_flux!(_setup(backend, workgroup, n_bfaces)...)
-    kernel!(
-        flux_scheme, boundaries.U, boundaries.p, boundaries.T,
-        res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-        rho, U, p, T, mesh, model.fluid, time
-    )
+    kernel!(flux_scheme, boundaries.U, boundaries.p, boundaries.T,
+            res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+            rho, U, p, T, mesh, model.fluid, time)
 
-    # Viscous flux — boundary faces
     kernel! = _viscous_bc_flux!(_setup(backend, workgroup, n_bfaces)...)
-    kernel!(
-        boundaries.U, boundaries.T,
-        res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-        U, Uf, gradU, gradT, T, mueff, kappa_eff, mesh
-    )
+    kernel!(boundaries.U, boundaries.T, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+            U, Uf, gradU, gradT, T, mueff, kappa_eff, mesh)
 end
 
-# ============================================================
-# Helper: conservative → primitive recovery
-# ============================================================
-
-# Recover cell-centred primitive variables (U, p, T, Mach) from the current
-# conservative state (rho, rhoU, rhoE). Must be called before any operation
-# that depends on primitive fields (face interpolations, gradient updates, etc.).
 function recover_primitives!(workspace, model, config)
     (; rhoU, rhoE, Mach) = workspace
     (; U, p) = model.momentum
@@ -1660,13 +1237,6 @@ function recover_primitives!(workspace, model, config)
     kernel!(U, p, T, Mach, rho, rhoU, rhoE, model.domain.cells, model.fluid)
 end
 
-# ============================================================
-# Helper: interpolate primitive fields to faces + update mass flux
-# ============================================================
-
-# Interpolate all cell-centred primitive fields (U, p, T, rho) to faces,
-# apply boundary corrections, and recompute the face mass flux mdotf = ρ*Uf·Sf.
-# Must be called AFTER recover_primitives! so that U, p, T, rho are current.
 function interpolate_primitive_fields!(
     model, boundaries, rhof, mdotf, time, config
 )
@@ -1687,19 +1257,7 @@ function interpolate_primitive_fields!(
     @. mdotf.values *= rhof.values
 end
 
-# ============================================================
-# Time stepping dispatch: step!
-# ============================================================
-
-"""
-    step!(::FEuler, workspace, model, boundaries, flux_scheme,
-          gradU, gradT, nueff, mueff, kappa_eff, rhof, mdotf, dt, time, config)
-
-Single Forward-Euler update of the conserved variables using the residuals
-already computed by compute_residuals!. After this call, recover_primitives!
-and interpolate_primitive_fields! must be called to synchronise the primitive
-and face fields with the updated conservative state.
-"""
+"""Forward-Euler step: W^{n+1} = W^n - (dt/V)*R(W^n). Call recover_primitives! after."""
 function step!(
     ::FEuler, workspace, model, boundaries, flux_scheme, recon_scheme,
     gradU, gradRho, gradP, gradT, nueff, mueff, kappa_eff, rhof, mdotf, dt, time, config
@@ -1716,17 +1274,8 @@ function step!(
 end
 
 """
-    step!(::RK2, workspace, model, boundaries, flux_scheme,
-          gradU, gradT, nueff, mueff, kappa_eff, rhof, mdotf, dt, time, config)
-
-SSP-RK2 (Heun's method) update of the conserved variables:
-  W^(1)   = W^n   - (dt/V)*R(W^n)
-  W^(2)   = W^(1) - (dt/V)*R(W^(1))
-  W^{n+1} = 0.5*(W^n + W^(2))
-
-R(W^n) must already be computed by compute_residuals! before calling step!.
-After this call, recover_primitives! and interpolate_primitive_fields! must be
-called to synchronise the primitive and face fields with W^{n+1}.
+SSP-RK2 step: W^(1)=W^n-(dt/V)*R(W^n), W^(2)=W^(1)-(dt/V)*R(W^(1)), W^{n+1}=0.5*(W^n+W^(2)).
+R(W^n) must be pre-computed. Call recover_primitives! after.
 """
 function step!(
     ::RK2, workspace, model, boundaries, flux_scheme, recon_scheme,
@@ -1745,24 +1294,20 @@ function step!(
     cp_val = TF(model.fluid.cp.values)
     Pr_val = TF(model.fluid.Pr.values)
 
-    # --- Stage 1: save W^n, Euler update using R(W^n) already computed ---
+    # Stage 1: save W^n, Euler update using R(W^n)
     kernel! = _save_conservative!(_setup(backend, workgroup, n_cells)...)
     kernel!(rho_0, rhoUx_0, rhoUy_0, rhoUz_0, rhoE_0, rho, rhoU, rhoE)
 
     kernel! = _forward_euler!(_setup(backend, workgroup, n_cells)...)
     kernel!(rho, rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, mesh.cells, dt)
 
-    # Recover primitives and update face fields from W^(1) so that
-    # gradients and viscous coefficients are evaluated at the intermediate state.
+    # Update primitives and face fields at W^(1) for stage-2 residual
     recover_primitives!(workspace, model, config)
     interpolate_primitive_fields!(model, boundaries, rhof, mdotf, time, config)
-
-    # Recompute gradients and viscous transport coefficients at W^(1)
     grad!(gradT, Tf, T, boundaries.T, time, config)
     limit_gradient!(schemes.T.limiter, gradT, T, config)
     grad!(gradU, Uf, U, boundaries.U, time, config)
     limit_gradient!(schemes.U.limiter, gradU, U, config)
-    # Recompute ρ and p gradients at the intermediate state (only needed for MUSCL)
     if !(recon_scheme isa Upwind)
         grad!(gradRho, rhof, rho, time, config)
         grad!(gradP, pf, p, boundaries.p, time, config)
@@ -1770,17 +1315,14 @@ function step!(
     @. mueff.values     = rhof.values * nueff.values
     @. kappa_eff.values = mueff.values * cp_val / Pr_val
 
-    # --- Stage 2: compute R(W^(1)), Euler update → W^(2) ---
-    compute_residuals!(
-        workspace, flux_scheme, recon_scheme, boundaries, model,
-        gradU, gradRho, gradP, gradT, mueff, kappa_eff,
-        Uf, mesh, time, config
-    )
+    # Stage 2: R(W^(1)), Euler update → W^(2)
+    compute_residuals!(workspace, flux_scheme, recon_scheme, boundaries, model,
+                       gradU, gradRho, gradP, gradT, mueff, kappa_eff, Uf, mesh, time, config)
 
     kernel! = _forward_euler!(_setup(backend, workgroup, n_cells)...)
     kernel!(rho, rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, mesh.cells, dt)
 
-    # --- Convex average: W^{n+1} = 0.5*(W^n + W^(2)) ---
+    # Convex average: W^{n+1} = 0.5*(W^n + W^(2))
     kernel! = _rk2_average!(_setup(backend, workgroup, n_cells)...)
     kernel!(rho, rhoU, rhoE, rho_0, rhoUx_0, rhoUy_0, rhoUz_0, rhoE_0)
 end
@@ -1796,20 +1338,14 @@ function DENSITY_BASED(
 )
     (; U, p, Uf, pf) = model.momentum
     (; rho, nu, R) = model.fluid
-    (; T, Tf) = model.energy  # face temperature (FaceScalarField)
+    (; T, Tf) = model.energy
     mesh = model.domain
     (; schemes, runtime, hardware, boundaries) = config
     (; iterations, write_interval) = runtime
     (; backend, workgroup) = hardware
 
-    # Flux scheme: user sets schemes = (..., flux = HLLC()) or flux = Rusanov(); default Rusanov
-    flux_scheme = get(schemes, :flux, Rusanov())
-
-    # Time stepping: user sets schemes = (..., time_stepping = RK2()); default FEuler
-    time_scheme = get(schemes, :time_stepping, FEuler())
-
-    # Reconstruction: no default — user must explicitly set reconstruction = Upwind()
-    # or reconstruction = MUSCL{VanLeer}() etc.
+    flux_scheme  = get(schemes, :flux, Rusanov())
+    time_scheme  = get(schemes, :time_stepping, FEuler())
     recon_scheme = schemes.reconstruction
 
     (; rhoU, rhoE, res_rho, dt_cell) = workspace
@@ -1817,25 +1353,15 @@ function DENSITY_BASED(
     n_cells = length(mesh.cells)
     TF = _get_float(mesh)
 
-    # CFL number from adaptive time stepping or default
-    cfl = if !isnothing(runtime.adaptive)
-        TF(runtime.adaptive.maxCo)
-    else
-        TF(0.5)
-    end
-
-    # Cell size exponent: 1/2 for 2D, 1/3 for 3D
-    dim_exp = typeof(mesh) <: Mesh2 ? TF(0.5) : TF(0.333333)
+    cfl     = !isnothing(runtime.adaptive) ? TF(runtime.adaptive.maxCo) : TF(0.5)
+    dim_exp = typeof(mesh) <: Mesh2 ? TF(0.5) : TF(0.333333)   # dx = V^dim_exp
 
     outputWriter = initialise_writer(output, model.domain)
 
-    # Extract gradU from the StrainRate object (updated by turbulence! each iteration)
     (; gradU) = S
-
-    # Fluid constants for thermal conductivity: κ_eff = μ_eff * cp / Pr
     cp_val = TF(model.fluid.cp.values)
     Pr_val = TF(model.fluid.Pr.values)
-    rhof   = model.fluid.rhof  # face density (FaceScalarField in SupersonicFlow)
+    rhof   = model.fluid.rhof
 
     @info "Initialising conservative variables from primitive fields..."
 
@@ -1844,37 +1370,27 @@ function DENSITY_BASED(
 
     time = TF(0.0)
 
-    # Molecular viscosity (scalar constant for SupersonicFlow)
     nu_mol = TF(model.fluid.nu.values)
 
     @info "Initialising face fields, gradients and viscous coefficients..."
 
-    # Ensure density is consistent with the initial p and T, then populate all
-    # face fields. Uf and Tf must be filled before grad! is called.
     @. rho.values = p.values / (R.values * T.values)
     interpolate_primitive_fields!(model, boundaries, rhof, mdotf, time, config)
 
-    # Initial effective viscosity: nueff (face kinematic) → mueff = ρ*νeff → κ_eff
     update_nueff!(nueff, nu, model.turbulence, config)
     @. mueff.values     = rhof.values * nueff.values
     @. kappa_eff.values = mueff.values * cp_val / Pr_val
 
-    # Initial velocity and temperature gradients (Uf and Tf are now populated)
     grad!(gradU, Uf, U, boundaries.U, time, config)
     limit_gradient!(schemes.U.limiter, gradU, U, config)
     grad!(gradT, Tf, T, boundaries.T, time, config)
     limit_gradient!(schemes.T.limiter, gradT, T, config)
-
-    # Initial ρ and p gradients for MUSCL reconstruction (face fields already populated)
     if !(recon_scheme isa Upwind)
         grad!(gradRho, rhof, rho, time, config)
         grad!(gradP, pf, p, boundaries.p, time, config)
     end
 
-    # Initialise cell-level nu_eff used for the diffusive CFL restriction
     @. workspace.nu_eff = nu_mol
-
-    # Pre-allocate residual storage
     R_rho = ones(TF, iterations)
 
     @info "Starting DENSITY_BASED time loop ($(typeof(time_scheme)))..."
@@ -1883,82 +1399,55 @@ function DENSITY_BASED(
 
     for iteration ∈ 1:iterations
 
-        # 1. Compute inviscid + viscous residuals R(W^n) using current primitive
-        #    fields and gradients (updated at the end of the previous iteration).
-        compute_residuals!(
-            workspace, flux_scheme, recon_scheme, boundaries, model,
-            gradU, gradRho, gradP, gradT, mueff, kappa_eff,
-            Uf, mesh, time, config
-        )
+        # 1. Compute R(W^n)
+        compute_residuals!(workspace, flux_scheme, recon_scheme, boundaries, model,
+                           gradU, gradRho, gradP, gradT, mueff, kappa_eff, Uf, mesh, time, config)
 
-        # 2. L2 norm of density residual (recorded before the conservative update)
+        # 2. L2 density residual (before conservative update)
         rho_res = norm(res_rho.values) / sqrt(TF(n_cells))
         R_rho[iteration] = rho_res
 
-        # 3. CFL-limited global time step (convective + diffusive restriction).
-        #    workspace.nu_eff holds the cell-level effective kinematic viscosity
-        #    updated at the end of the previous iteration.
+        # 3. CFL-limited global time step
         kernel! = _compute_dt_cell!(_setup(backend, workgroup, n_cells)...)
         kernel!(dt_cell, rho, U, p, mesh.cells, model.fluid, cfl, dim_exp, workspace.nu_eff)
         dt = minimum(dt_cell)
-
-        # Update runtime dt (used by output writers)
         runtime.dt .= dt
         time += dt
 
-        # 4. Time step: advance conservative variables W^n → W^{n+1}.
-        #    For FEuler: single Euler update using R(W^n).
-        #    For RK2:    two-stage SSP-RK2; stage-1 primitive/face fields are
-        #                recovered internally before the stage-2 residual evaluation.
-        step!(
-            time_scheme, workspace, model, boundaries, flux_scheme, recon_scheme,
-            gradU, gradRho, gradP, gradT, nueff, mueff, kappa_eff, rhof, mdotf, dt, time, config
-        )
+        # 4. Advance W^n → W^{n+1} (FEuler: single update; RK2: two-stage SSP)
+        step!(time_scheme, workspace, model, boundaries, flux_scheme, recon_scheme,
+              gradU, gradRho, gradP, gradT, nueff, mueff, kappa_eff, rhof, mdotf, dt, time, config)
 
-        # 5. Recover cell-centred primitive variables from the updated W^{n+1}.
+        # 5. Recover primitives from W^{n+1}
         recover_primitives!(workspace, model, config)
 
-        # 6. Interpolate primitive fields to faces and recompute the mass flux.
+        # 6. Face interpolation and mass flux
         interpolate_primitive_fields!(model, boundaries, rhof, mdotf, time, config)
 
-        # 7. Recompute temperature gradient from the updated Tf.
+        # 7. Gradients (gradU updated by turbulence! below)
         grad!(gradT, Tf, T, boundaries.T, time, config)
         limit_gradient!(schemes.T.limiter, gradT, T, config)
-
-        # 7b. Recompute ρ and p gradients for MUSCL reconstruction (only when active).
-        #     gradU is updated by turbulence! in step 8, so both are available for
-        #     the next iteration's compute_residuals! call.
         if !(recon_scheme isa Upwind)
             grad!(gradRho, rhof, rho, time, config)
             grad!(gradP, pf, p, boundaries.p, time, config)
         end
 
-        # 8. Turbulence update.
-        #    turbulence! internally recomputes grad(U) and the strain-rate tensor S
-        #    from the updated Uf, which is required to form the eddy-viscosity nut.
+        # 8. Turbulence update (recomputes gradU and S internally)
         turbulence!(turbulenceModel, model, S, prev, time, config)
 
-        # 9. Recompute effective viscosity on faces (nueff = nu + nut) and the
-        #    dynamic viscosity/thermal conductivity fields used in the viscous flux.
+        # 9. Effective viscosity and thermal conductivity
         update_nueff!(nueff, nu, model.turbulence, config)
         @. mueff.values     = rhof.values * nueff.values
         @. kappa_eff.values = mueff.values * cp_val / Pr_val
 
-        # 10. Update cell-level effective kinematic viscosity for the diffusive
-        #     CFL restriction at the next iteration.
+        # 10. Cell-level ν_eff for next iteration's diffusive CFL
         update_nu_eff_cell!(workspace.nu_eff, nu_mol, model.turbulence, backend, workgroup, n_cells)
 
-        # 11. Progress and convergence check
-        ProgressMeter.next!(
-            progress, showvalues = [
-                (:iter, iteration),
-                (:dt, dt),
-                (:rho_residual, rho_res),
-                turbulenceModel.state.residuals...
-            ]
-        )
+        ProgressMeter.next!(progress, showvalues = [
+            (:iter, iteration), (:dt, dt), (:rho_residual, rho_res),
+            turbulenceModel.state.residuals...
+        ])
 
-        # 12. Write output at specified interval
         if iteration % write_interval + signbit(write_interval) == 0
             save_output(model, outputWriter, iteration, time, config)
         end

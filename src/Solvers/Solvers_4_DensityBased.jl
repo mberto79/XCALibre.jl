@@ -517,7 +517,7 @@ end
 # ∝ a*ρ*|U_tang|, causing velocity blow-up at supersonic walls.
 
 @inline function _apply_inviscid_bc!(
-    flux_scheme, bc_U::Wall, bc_p, bc_T,
+    flux_scheme, bc_U::Union{Wall, Slip, Symmetry}, bc_p, bc_T,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
     rho, U, p, T, mesh, fluid, fID, time
 )
@@ -534,22 +534,17 @@ end
     Atomix.@atomic res_rhoUz.values[cID] += Fp[3]
 end
 
-@inline function _apply_inviscid_bc!(
-    flux_scheme, bc_U::Union{Slip, Symmetry}, bc_p, bc_T,
-    res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-    rho, U, p, T, mesh, fluid, fID, time
-)
-    (; faces) = mesh
-    face = faces[fID]
-    (; area, normal, ownerCells) = face
-    cID = ownerCells[1]
+# ── Shared atomic accumulation helper for Riemann-path BC handlers ───────────────
 
-    TF  = eltype(rho.values)
-    pL  = TF(p[cID])
-    Fp = pL * area * normal
-    Atomix.@atomic res_rhoUx.values[cID] += Fp[1]
-    Atomix.@atomic res_rhoUy.values[cID] += Fp[2]
-    Atomix.@atomic res_rhoUz.values[cID] += Fp[3]
+@inline function _accumulate_inviscid!(
+    res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+    cID, F_rho, F_rhoU::SVector{3}, F_rhoE
+)
+    Atomix.@atomic res_rho.values[cID]   += F_rho
+    Atomix.@atomic res_rhoUx.values[cID] += F_rhoU[1]
+    Atomix.@atomic res_rhoUy.values[cID] += F_rhoU[2]
+    Atomix.@atomic res_rhoUz.values[cID] += F_rhoU[3]
+    Atomix.@atomic res_rhoE.values[cID]  += F_rhoE
 end
 
 # ── Outlet BC: zero-gradient outflow with reservoir-based backflow ───────────────
@@ -594,11 +589,8 @@ end
         flux_scheme, UL, UR, pL, pR, rhoL, rhoR, normal, area, gamma
     )
 
-    Atomix.@atomic res_rho.values[cID]   += F_rho
-    Atomix.@atomic res_rhoUx.values[cID] += F_rhoU[1]
-    Atomix.@atomic res_rhoUy.values[cID] += F_rhoU[2]
-    Atomix.@atomic res_rhoUz.values[cID] += F_rhoU[3]
-    Atomix.@atomic res_rhoE.values[cID]  += F_rhoE
+    _accumulate_inviscid!(res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+                          cID, F_rho, F_rhoU, F_rhoE)
 end
 
 # ── AbstractDirichlet: ghost UR = 2*U_bc - UL (method of images) ─────────────────
@@ -648,11 +640,8 @@ end
         flux_scheme, UL, UR_ghost, pL, pR, rhoL, rhoR, normal, area, gamma
     )
 
-    Atomix.@atomic res_rho.values[cID]   += F_rho
-    Atomix.@atomic res_rhoUx.values[cID] += F_rhoU[1]
-    Atomix.@atomic res_rhoUy.values[cID] += F_rhoU[2]
-    Atomix.@atomic res_rhoUz.values[cID] += F_rhoU[3]
-    Atomix.@atomic res_rhoE.values[cID]  += F_rhoE
+    _accumulate_inviscid!(res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+                          cID, F_rho, F_rhoU, F_rhoE)
 end
 
 # ── Fallback: Neumann, Zerogradient, Extrapolated, far-field, etc. ──────────────
@@ -699,11 +688,8 @@ end
         flux_scheme, UL, UR, pL, pR, rhoL, rhoR, normal, area, gamma
     )
 
-    Atomix.@atomic res_rho.values[cID]   += F_rho
-    Atomix.@atomic res_rhoUx.values[cID] += F_rhoU[1]
-    Atomix.@atomic res_rhoUy.values[cID] += F_rhoU[2]
-    Atomix.@atomic res_rhoUz.values[cID] += F_rhoU[3]
-    Atomix.@atomic res_rhoE.values[cID]  += F_rhoE
+    _accumulate_inviscid!(res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+                          cID, F_rho, F_rhoU, F_rhoE)
 end
 
 # Periodic BC: Riemann solve with partner cell as right state.
@@ -731,11 +717,8 @@ end
         flux_scheme, UL, UR, pL, pR, rhoL, rhoR, normal, area, gamma
     )
 
-    Atomix.@atomic res_rho.values[cID]   += F_rho
-    Atomix.@atomic res_rhoUx.values[cID] += F_rhoU[1]
-    Atomix.@atomic res_rhoUy.values[cID] += F_rhoU[2]
-    Atomix.@atomic res_rhoUz.values[cID] += F_rhoU[3]
-    Atomix.@atomic res_rhoE.values[cID]  += F_rhoE
+    _accumulate_inviscid!(res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+                          cID, F_rho, F_rhoU, F_rhoE)
 end
 
 # Per-cell CFL time step: λ = |U| + a + ν_eff/dx → dt = CFL*dx/λ (combined convective+diffusive)
@@ -1120,6 +1103,17 @@ function density_based!(model, config; output=VTK())
     return residuals
 end
 
+function update_recon_gradients!(recon_scheme, gradRho, gradP, rhof, pf, rho, p, boundaries, time, config)
+    recon_scheme isa Upwind && return
+    grad!(gradRho, rhof, rho, time, config)
+    grad!(gradP, pf, p, boundaries.p, time, config)
+end
+
+function update_thermo_coeffs!(mueff, kappa_eff, rhof, nueff, cp_val, Pr_val)
+    @. mueff.values     = rhof.values * nueff.values
+    @. kappa_eff.values = mueff.values * cp_val / Pr_val
+end
+
 function _setup_density_based(model, config; output=VTK())
     (; U, p, Uf, pf) = model.momentum
     (; rho, nu) = model.fluid
@@ -1308,12 +1302,8 @@ function step!(
     limit_gradient!(schemes.T.limiter, gradT, T, config)
     grad!(gradU, Uf, U, boundaries.U, time, config)
     limit_gradient!(schemes.U.limiter, gradU, U, config)
-    if !(recon_scheme isa Upwind)
-        grad!(gradRho, rhof, rho, time, config)
-        grad!(gradP, pf, p, boundaries.p, time, config)
-    end
-    @. mueff.values     = rhof.values * nueff.values
-    @. kappa_eff.values = mueff.values * cp_val / Pr_val
+    update_recon_gradients!(recon_scheme, gradRho, gradP, rhof, pf, rho, p, boundaries, time, config)
+    update_thermo_coeffs!(mueff, kappa_eff, rhof, nueff, cp_val, Pr_val)
 
     # Stage 2: R(W^(1)), Euler update → W^(2)
     compute_residuals!(workspace, flux_scheme, recon_scheme, boundaries, model,
@@ -1378,17 +1368,13 @@ function DENSITY_BASED(
     interpolate_primitive_fields!(model, boundaries, rhof, mdotf, time, config)
 
     update_nueff!(nueff, nu, model.turbulence, config)
-    @. mueff.values     = rhof.values * nueff.values
-    @. kappa_eff.values = mueff.values * cp_val / Pr_val
+    update_thermo_coeffs!(mueff, kappa_eff, rhof, nueff, cp_val, Pr_val)
 
     grad!(gradU, Uf, U, boundaries.U, time, config)
     limit_gradient!(schemes.U.limiter, gradU, U, config)
     grad!(gradT, Tf, T, boundaries.T, time, config)
     limit_gradient!(schemes.T.limiter, gradT, T, config)
-    if !(recon_scheme isa Upwind)
-        grad!(gradRho, rhof, rho, time, config)
-        grad!(gradP, pf, p, boundaries.p, time, config)
-    end
+    update_recon_gradients!(recon_scheme, gradRho, gradP, rhof, pf, rho, p, boundaries, time, config)
 
     @. workspace.nu_eff = nu_mol
     R_rho = ones(TF, iterations)
@@ -1427,18 +1413,14 @@ function DENSITY_BASED(
         # 7. Gradients (gradU updated by turbulence! below)
         grad!(gradT, Tf, T, boundaries.T, time, config)
         limit_gradient!(schemes.T.limiter, gradT, T, config)
-        if !(recon_scheme isa Upwind)
-            grad!(gradRho, rhof, rho, time, config)
-            grad!(gradP, pf, p, boundaries.p, time, config)
-        end
+        update_recon_gradients!(recon_scheme, gradRho, gradP, rhof, pf, rho, p, boundaries, time, config)
 
         # 8. Turbulence update (recomputes gradU and S internally)
         turbulence!(turbulenceModel, model, S, prev, time, config)
 
         # 9. Effective viscosity and thermal conductivity
         update_nueff!(nueff, nu, model.turbulence, config)
-        @. mueff.values     = rhof.values * nueff.values
-        @. kappa_eff.values = mueff.values * cp_val / Pr_val
+        update_thermo_coeffs!(mueff, kappa_eff, rhof, nueff, cp_val, Pr_val)
 
         # 10. Cell-level ν_eff for next iteration's diffusive CFL
         update_nu_eff_cell!(workspace.nu_eff, nu_mol, model.turbulence, backend, workgroup, n_cells)

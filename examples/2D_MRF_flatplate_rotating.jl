@@ -20,29 +20,29 @@ k_inlet = 1 #3/2*(Tu*u_mag)^2
 νt_inlet = k_inlet/ω_inlet
 Re = velocity[1]*0.1/nu
 
-rotating_frames = RotatingFrames2D(  
+rotating_frames = RotatingFrames2D(          #  "rotating_frames = RotatingFrames3D("  for 3D meshes.
     hardware=hardware,
     mesh=mesh,
-    frames = (
-        rotor1 = RotatingFrame(
+    frames = [
+        RotatingFrame(
             omega = 15,
-            rotaxis = [0.0, 0.0, 1.0],
-            x0 = [0.1, 0.0, 0.0],
+            x1 = [0.0, 0.0, 1.0],
+            x0 = [0.0, 0.0, 0.0],
             radius_inner = 0.0,
             radius_outer = 0.05,
             hardware=hardware,
             mesh=mesh
-            ),
-        rotor2 = RotatingFrame(
-            omega = 25,
-            rotaxis = [0.0, 0.0, 1.0],
-            x0 = [-0.1, 0.0, 0.0],
-            radius_inner = 0.0,
-            radius_outer = 0.05,
-            hardware=hardware,
-            mesh=mesh
-            )
-        )
+        )                                # You can define multiple rotating regios, given they do not overlap and have at least 1 cell between them.
+#       RotatingFrame(
+#            omega = 25,
+#            rotaxis = [0.0, 0.0, 1.0],
+#            x0 = [-0.1, 0.0, 0.0],
+#            radius_inner = 0.0,
+#            radius_outer = 0.05,
+#            hardware=hardware,
+#            mesh=mesh
+#       )
+    ]
 )
 
 model = Physics(
@@ -54,7 +54,6 @@ model = Physics(
     reference_frames = rotating_frames
 )
 
-
 BCs = assign(
     region = mesh_dev,
     (
@@ -65,7 +64,7 @@ BCs = assign(
                 centre=rotating_frames.frames.x0[1],
                 axis=rotating_frames.frames.rotaxis[1]
                 ),
-#            RotatingWall(
+#            RotatingWall(                       # Each rotating frame needs a respective rotating wall BC for all rotating walls inside.
 #                :rotor2,
 #                rpm=(30/pi)*rotating_frames.frames.omega[2],
 #                centre=rotating_frames.frames.x0[2],
@@ -135,14 +134,12 @@ solvers = (
 )
 
 runtime = Runtime(iterations=100, write_interval=10, time_step=1)
-# runtime = Runtime(iterations=2, write_interval=-1, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 
 GC.gc()
-
 
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
@@ -151,7 +148,6 @@ initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, νt_inlet)
 
 residuals = run!(model, config)
-
 
 # Custom Output Functions
 mesh_name = get_mesh_name(mesh_file)
@@ -163,11 +159,11 @@ pattern = "vtk"
 # pattern = "foam"
 output_directory(output_dir, script_name)
 
-using Plots
-iterations = runtime.iterations
-plot(yscale=:log10, ylims=(1e-8,1e-1))
-plot!(1:iterations, residuals.Ux, label="Ux")
-plot!(1:iterations, residuals.Uy, label="Uy")
-plot!(1:iterations, residuals.Uz, label="Uz")
-plot!(1:iterations, residuals.p, label="p")
-plot!(size=(800,600))
+#using Plots
+#iterations = runtime.iterations
+#plot(yscale=:log10, ylims=(1e-8,1e-1))
+#plot!(1:iterations, residuals.Ux, label="Ux")
+#plot!(1:iterations, residuals.Uy, label="Uy")
+#plot!(1:iterations, residuals.Uz, label="Uz")
+#plot!(1:iterations, residuals.p, label="p")
+#plot!(size=(800,600))

@@ -43,6 +43,7 @@ RotatingFrames2D(; hardware, mesh, frames) = begin
     (; backend) = hardware
     ID = 1
     n = length(frames)
+
     Omega = KernelAbstractions.zeros(backend, Float64, n)
     Rotaxis = KernelAbstractions.allocate(backend, SVector{3, Float64}, n)
     X0 = KernelAbstractions.allocate(backend, SVector{3, Float64}, n)

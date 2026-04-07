@@ -44,7 +44,7 @@ BCs = assign(
             Wall(:wall),
             Symmetry(:top)
         ],
-        h = [
+        he = [
             FixedTemperature(:inlet, T=300.0, Enthalpy(cp=cp, Tref=288.15)),
             Extrapolated(:outlet),
             FixedTemperature(:wall, T=310.0, Enthalpy(cp=cp, Tref=288.15)),
@@ -56,7 +56,7 @@ BCs = assign(
 schemes = (
     U = Schemes(divergence=Linear),
     p = Schemes(divergence=Linear),
-    h = Schemes(divergence=Linear)
+    he = Schemes(divergence=Linear)
 )
 
 solvers = (
@@ -74,7 +74,7 @@ solvers = (
         relax       = 0.3,
         rtol = 1e-2
     ),
-    h = SolverSetup(
+    he = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,

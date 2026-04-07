@@ -1,6 +1,6 @@
 export AbstractFluid, AbstractIncompressible, AbstractCompressible
 export Fluid
-export Incompressible, WeaklyCompressible, Compressible
+export Incompressible, WeaklyCompressible, Compressible, SupersonicFlow
 
 abstract type AbstractFluid end
 abstract type AbstractIncompressible <: AbstractFluid end
@@ -153,4 +153,56 @@ end
     nuf = nu
     rhof = FaceScalarField(mesh)
     Compressible(nu, rho, nuf, rhof, cp, gamma, Pr, R)
+end
+
+"""
+    SupersonicFlow <: AbstractCompressible
+
+Fluid model for density-based (explicit) supersonic flow solver.
+Uses Rusanov (Local Lax-Friedrichs) flux with Forward Euler time integration.
+
+### Fields
+- `nu`    -- Kinematic viscosity (ConstantScalar).
+- `rho`   -- Density field (ScalarField, updated each iteration).
+- `nuf`   -- Face kinematic viscosity.
+- `rhof`  -- Face density field.
+- `cp`    -- Specific heat at constant pressure (ConstantScalar).
+- `gamma` -- Ratio of specific heats (ConstantScalar).
+- `Pr`    -- Prandtl number (ConstantScalar).
+- `R`     -- Specific gas constant cp*(1 - 1/gamma) (ConstantScalar).
+
+### Examples
+- `Fluid{SupersonicFlow}(nu=1E-5, cp=1005.0, gamma=1.4, Pr=0.7)` - Constructor with default values.
+"""
+struct SupersonicFlow{S1, S2, F1, F2, T} <: AbstractCompressible
+    nu::S1
+    rho::S2
+    nuf::F1
+    rhof::F2
+    cp::T
+    gamma::T
+    Pr::T
+    R::T
+end
+Adapt.@adapt_structure SupersonicFlow
+
+Fluid{SupersonicFlow}(; nu=1E-5, cp=1005.0, gamma=1.4, Pr=0.7) = begin
+    coeffs = (nu=nu, cp=cp, gamma=gamma, Pr=Pr)
+    ARG = typeof(coeffs)
+    Fluid{SupersonicFlow,ARG}(coeffs)
+end
+
+(fluid::Fluid{SupersonicFlow, ARG})(mesh) where ARG = begin
+    coeffs = fluid.args
+    (; nu, cp, gamma, Pr) = coeffs
+    cp = ConstantScalar(cp)
+    gamma = ConstantScalar(gamma)
+    Pr = ConstantScalar(Pr)
+    R = ConstantScalar(cp.values*(1.0 - (1.0/gamma.values)))
+
+    nu = ConstantScalar(nu)
+    rho = ScalarField(mesh)
+    nuf = nu
+    rhof = FaceScalarField(mesh)
+    SupersonicFlow(nu, rho, nuf, rhof, cp, gamma, Pr, R)
 end

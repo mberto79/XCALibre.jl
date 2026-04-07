@@ -110,7 +110,7 @@ function FilmModel(
     Ph = get_source(U_eqn,2)
     τθw = get_source(U_eqn,3)
 
-    Df = get_flux(h_eqn, 2)
+    Df = FaceScalarField(mesh);get_flux(h_eqn, 2)
     divPhi = get_source(h_eqn,1)
     Sm = get_source(h_eqn, 2)
     mu = nu.values*rho.values
@@ -129,10 +129,10 @@ function FilmModel(
     mdotf = FaceScalarField(mesh)
     PLf = FaceScalarField(mesh)
     ∇PL = Grad{Gauss}(PLf)
-    P_capf = FaceScalarField(mesh)
+    P_gasf = FaceScalarField(mesh)
     P_hydr = ScalarField(mesh)
     P_hydrf = FaceScalarField(mesh)
-    Surf_tensionf = FaceScalarField(mesh)
+    P_surff = FaceScalarField(mesh)
     Pf = FaceScalarField(mesh)
     ∇P = Grad{Gauss}(Pf)
     h∇P = VectorField(mesh)
@@ -225,9 +225,9 @@ function FilmModel(
     @. nu_h.values = 3*nu.values/h.values
     for i ∈ eachindex(Δhf.values)
         P_hydrf.values[i] = rho.values[1]*hf.values[i]*dot(n,G)
-        P_capf.values[i] = Pg
-        Surf_tensionf[i] = coeffs.σ*Δhf[i]
-        PLf[i] = P_capf[i] - P_hydrf[i] - Surf_tensionf[i]
+        P_gasf.values[i] = Pg
+        P_surff[i] = coeffs.σ*Δhf[i]
+        PLf[i] = P_gasf[i] - P_hydrf[i] - P_surff[i]
     end
 
     grad!(∇PL, PLf, config)
@@ -264,7 +264,7 @@ function FilmModel(
         
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rDf, rD, config)
-        remove_film_pressure_source!(U_eqn, P_hydrf, Surf_tensionf, h, rho.values[1], config)
+        remove_film_pressure_source!(U_eqn, P_hydrf, P_surff, h, config)
 
         
         for j ∈ eachindex(U)
@@ -302,20 +302,18 @@ function FilmModel(
 
             for j ∈ eachindex(Δhf.values)
                 P_hydrf.values[j] = rho.values[1]*hf.values[j]*dot(n,G)
-                Surf_tensionf.values[j] = coeffs.σ*Δhf[j]
+                P_surff.values[j] = coeffs.σ*Δhf[j]
             end
 
-            #correct_velocity2!(U, Hv, h, P_hydrf, Surf_tensionf, rho.values[1], rD, config)
-            correct_film_velocity!(U, Hv, h, hf, G, n, rho.values[1], rD, config)
+            correct_film_velocity!(U, Hv, h, P_hydrf, P_surff, rD, config)
+            correct_mass_flux2!(phif, Df, h_eqn, config)
         end
-    
-        correct_mass_flux2!(phif, Df, h_eqn, config)
 
         @. nu_h.values = 3*nu.values/h.values
         for i ∈ eachindex(Δhf.values)
-            P_capf.values[i] = Pg
+            P_gasf.values[i] = Pg
 
-            PLf[i] = P_capf[i] - P_hydrf[i] - Surf_tensionf[i]
+            PLf[i] = P_gasf[i] - P_hydrf[i] - P_surff[i]
         end
 
         grad!(∇PL, PLf, config)
@@ -325,9 +323,9 @@ function FilmModel(
         end
 
         # correct U for non-wetted
-        #for i ∈ eachindex(U.x)
-        #    U[i] = U[i] .* w[i]
-        #end
+        for i ∈ eachindex(U.x)
+            U[i] = U[i] .* w[i]
+        end
 
         grad!(∇w, wf, w, internal_BCs.w, time, config)
 
@@ -396,6 +394,8 @@ function FilmModel(
         end
         ∇P_hydr = Grad{Gauss}(P_hydrf)
         grad!(∇P_hydr, P_hydrf, config)
+        ∇P_surf = Grad{Gauss}(P_surff)
+        grad!(∇P_surf, P_surff, config)
         for i ∈ eachindex(∇h.result.x)
             ∇P_diff.x[i] = ∇P_hydr.result.x[i]-∇h.result.x[i]*rho.values[1]*dot(G, n)
             ∇P_diff.y[i] = ∇P_hydr.result.y[i]-∇h.result.y[i]*rho.values[1]*dot(G, n)
@@ -405,7 +405,7 @@ function FilmModel(
         if iteration % write_interval + signbit(write_interval) == 0
             #save_output_film(model, outputWriter, iteration, time, config, w)
             #save_output_film(model, outputWriter, iteration, time, config, w, Δh)
-            save_output_film(model, outputWriter, iteration, time, config, w, Δh, h∇PL, nu_h, Ph, τθw, divPhi, tempU, Hv, ∇P_hydr.result, P_hydr, ∇h.result, ∇P_diff)
+            save_output_film(model, outputWriter, iteration, time, config, w, Δh, h∇PL, nu_h, Ph, τθw, divPhi, tempU, Hv, ∇P_hydr.result, P_hydr, ∇h.result, ∇P_diff, ∇P_surf.result)
             save_postprocessing(postprocess, iteration, time, mesh, outputWriter, config.boundaries)
         end
 
@@ -437,7 +437,7 @@ function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iter
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end
 
-function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config, w, Δh, h∇PL, nu_h, Ph, τθw, divPhi, tempU, Hv, ∇P_hydr, P_hydr, ∇h, ∇h_diff
+function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config, w, Δh, h∇PL, nu_h, Ph, τθw, divPhi, tempU, Hv, ∇P_hydr, P_hydr, ∇h, ∇h_diff, ∇P_surf
     ) where {T,F,SO,M,Tu,E,D,BI}
 
     mesh = w.mesh
@@ -462,7 +462,8 @@ function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iter
             ("P_hydr", P_hydr),
             ("∇P_hydr", ∇P_hydr),
             ("∇h", ∇h),
-            ("∇P_diff", ∇h_diff)
+            ("∇P_diff", ∇h_diff),
+            ("∇P_surf", ∇P_surf)
         )
     
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
@@ -495,11 +496,11 @@ end
 
     @inbounds begin
         g_n = dot(g, n)
-        Df[i] = rDf[i] * hf[i] * rho * g_n
+        Df[i] = rDf[i] * hf[i] * rho * g_n * 1e-4
     end
 end
 
-function remove_film_pressure_source!(U_eqn, P_hyrdf, Surf_tensionf, h, rho, config)
+function remove_film_pressure_source!(U_eqn, P_hyrdf, P_surff, h, config)
     
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -509,18 +510,18 @@ function remove_film_pressure_source!(U_eqn, P_hyrdf, Surf_tensionf, h, rho, con
 
     
     ∇P_hydr = Grad{Gauss}(P_hyrdf)
-    ∇P_surf = Grad{Gauss}(Surf_tensionf)
+    ∇P_surf = Grad{Gauss}(P_surff)
 
     grad!(∇P_hydr, P_hyrdf, config)
-    grad!(∇P_surf, Surf_tensionf, config)
+    grad!(∇P_surf, P_surff, config)
 
     ndrange = length(bx)
     kernel! = _remove_film_pressure_source!(_setup(backend, workgroup, ndrange)...)
-    kernel!(cells, ∇P_hydr, ∇P_surf, h, rho, bx, by, bz)
+    kernel!(cells, ∇P_hydr, ∇P_surf, h, bx, by, bz)
     # # KernelAbstractions.synchronize(backend)
 end
 
-@kernel function _remove_film_pressure_source!(cells,  ∇P_hydr, ∇P_surf, h, rho, bx, by, bz) #Extend to 3D
+@kernel function _remove_film_pressure_source!(cells,  ∇P_hydr, ∇P_surf, h, bx, by, bz) #Extend to 3D
     i = @index(Global)
 
     @uniform begin
@@ -532,9 +533,9 @@ end
     @inbounds begin
         hi = _h[i]
         (; volume) = cells[i]
-        bx[i] -= hi*(∇P_hydr_x[i] + 0*∇P_surf_x[i])*volume
-        by[i] -= hi*(∇P_hydr_y[i] + 0*∇P_surf_y[i])*volume
-        bz[i] -= hi*(∇P_hydr_z[i] + 0*∇P_surf_z[i])*volume
+        bx[i] -= -hi*(∇P_hydr_x[i] + ∇P_surf_x[i])*volume
+        by[i] -= -hi*(∇P_hydr_y[i] + ∇P_surf_y[i])*volume
+        bz[i] -= -hi*(∇P_hydr_z[i] + ∇P_surf_z[i])*volume
     end
 end
 
@@ -557,82 +558,39 @@ end
     end
 end
 
-function correct_film_velocity!(U, Hv, h, hf, G, n, rho, rD,config)
+function correct_film_velocity!(U, Hv, h, P_hydrf, P_surff, rD,config)
     (; mesh) = U
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    P_hydrf = FaceScalarField(mesh)
-    for i ∈ eachindex(hf)
-        P_hydrf[i] = hf[i] * dot(G,n) * rho
-    end
-    ∇P_hydrf = Grad{Gauss}(P_hydrf)
-    grad!(∇P_hydrf, P_hydrf, config)
-    ∇h = Grad{Gauss}(hf)
-    grad!(∇h, hf, config)
-
-    g_n = dot(G, n)
+    ∇P_hydr = Grad{Gauss}(P_hydrf)
+    grad!(∇P_hydr, P_hydrf, config)
+    ∇P_surf = Grad{Gauss}(P_surff)
+    grad!(∇P_surf, P_surff, config)
 
     ndrange = length(U)
     kernel! = _correct_film_velocity!(_setup(backend, workgroup, ndrange)...)
-    kernel!(U, Hv, h, ∇h, g_n, rho, rD, ∇P_hydrf)
+    kernel!(U, Hv, h, rD, ∇P_hydr, ∇P_surf)
 end
 
-@kernel function _correct_film_velocity!(U, Hv, h, ∇h, g_n, rho, rD, ∇P_hydrf)
+@kernel function _correct_film_velocity!(U, Hv, h, rD, ∇P_hydr, ∇P_surf)
     i = @index(Global)
 
     @uniform begin
         Ux, Uy, Uz = U.x, U.y, U.z
         Hvx, Hvy, Hvz = Hv.x, Hv.y, Hv.z
         _h = h
-        dhdx, dhdy, dhdz = ∇h.result.x, ∇h.result.y, ∇h.result.z
-        dPdx, dPdy, dPdz = ∇P_hydrf.result.x, ∇P_hydrf.result.y, ∇P_hydrf.result.z
+        dPhdx, dPhdy, dPhdz = ∇P_hydr.result.x, ∇P_hydr.result.y, ∇P_hydr.result.z
+        dPsdx, dPsdy, dPsdz = ∇P_surf.result.x, ∇P_surf.result.y, ∇P_surf.result.z
         _rD = rD
     end
 
     @inbounds begin
         rDi = _rD[i]
         hi = _h[i]
-        Ux[i] = Hvx[i] + (hi * rho * g_n * dhdx[i]) * rDi
-        Uy[i] = Hvy[i] + (hi * rho * g_n * dhdy[i]) * rDi
-        Uz[i] = Hvz[i] + (hi * rho * g_n * dhdz[i]) * rDi          
-    end
-end
-
-function correct_velocity2!(U, HbyA, h, P_hyrdf, Surf_tensionf, rD, config)
-    (; mesh) = U
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-
-    hU = VectorField(mesh)
-
-    ∇P_hydr = Grad{Gauss}(P_hyrdf)
-    ∇P_surf = Grad{Gauss}(Surf_tensionf)
-
-    grad!(∇P_hydr, P_hyrdf, config)
-    grad!(∇P_surf, Surf_tensionf, config)
-
-    ndrange = length(U)
-    kernel! = _correct_velocity_film!(_setup(backend, workgroup, ndrange)...)
-    kernel!(U, HbyA, h, ∇P_hydr, ∇P_surf, rD)
-    # # KernelAbstractions.synchronize(backend)
-end
-
-@kernel function _correct_velocity_film!(U, HbyA, h, ∇P_hydr, ∇P_surf, rD)
-    i = @index(Global)
-    @uniform begin
-        Ux, Uy, Uz = U.x, U.y, U.z
-        HbyAx, HbyAy, HbyAz = HbyA.x, HbyA.y, HbyA.z
-        ∇P_hydr_x, ∇P_hydr_y, ∇P_hydr_z = ∇P_hydr.result.x, ∇P_hydr.result.y, ∇P_hydr.result.z
-        ∇P_surf_x, ∇P_surf_y, ∇P_surf_z = ∇P_surf.result.x, ∇P_surf.result.y, ∇P_surf.result.z
-        rDvalues = rD.values
-    end
-
-    @inbounds begin
-        rDvalues_i = rDvalues[i]
-        Ux[i] = HbyAx[i] - (∇P_hydr_x[i] - 0*∇P_surf_x[i]) * h[i] * rDvalues_i
-        Uy[i] = HbyAy[i] - (∇P_hydr_y[i] - 0*∇P_surf_y[i]) * h[i] * rDvalues_i
-        Uz[i] = HbyAz[i] - (∇P_hydr_z[i] - 0*∇P_surf_z[i]) * h[i] * rDvalues_i
+        Ux[i] = Hvx[i] + (dPhdx[i] + dPsdx[i]) * hi * rDi
+        Uy[i] = Hvy[i] + (dPhdy[i] + dPsdy[i]) * hi * rDi
+        Uz[i] = Hvz[i] + (dPhdz[i] + dPsdz[i]) * hi * rDi
     end
 end
 

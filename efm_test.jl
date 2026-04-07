@@ -26,7 +26,7 @@ inlet_height = 0.05; # m
 inlet_area = inlet_width*inlet_height; # m^2
 
 if isfile("Model_Input.csv")
-    test_case = 4;
+    test_case = 9;
     input_parameters = CSV.File("Model_Input.csv"); #File containing the different test cases from paper "Modeling of Partially Wetting Liquid Film Using an Enhanced Thin Film Model for Aero-Engine Bearing Chamber Applications" by Kuldeep Singh et. al
 
     inlet_flow_rate = input_parameters.Q[test_case]; # m^3/s
@@ -52,7 +52,7 @@ nu = mu/rho_l;
 h_crit = 1e-10;
 h_floor = 1e-15
 
-Δt = 1e-4
+Δt = 1e-3
 Δx = 0.006
 C=inlet_rate*Δt/Δx
 end;
@@ -135,6 +135,7 @@ begin
 #runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
 #runtime = Runtime(iterations=20000, time_step=1, write_interval=20000)
 runtime = Runtime(iterations=20, time_step=Δt, write_interval=1, adaptive=adaptive); # hide
+#runtime = Runtime(iterations=20, time_step=2e-3, write_interval=1)
 #runtime = Runtime(iterations=200, time_step=Δt, write_interval=5, adaptive=adaptive);
 #runtime = Runtime(iterations=2000, time_step=Δt, write_interval=100, adaptive=adaptive)
 #runtime = Runtime(iterations=300, time_step=Δt, write_interval=5, adaptive=adaptive)
@@ -158,14 +159,14 @@ h_init = h_floor;
 initialise!(model.momentum.h, h_init)
 
 #for i ∈ eachindex(model.momentum.h.values)
-#    if abs(model.momentum.h.mesh.cells[i].centre[2]+0.61/2) < 0.51/2
-#        model.momentum.U.x.values[i] = inlet_velocity[1];
-#        model.momentum.U.y.values[i] = inlet_velocity[2];
+#    if abs(model.momentum.h.mesh.cells[i].centre[2]-0.305)/2 < (0.51/4)
+#       model.momentum.U.x.values[i] = inlet_velocity[1];
+#        model.momentum.U.y.values[i] = 1;inlet_velocity[2];
 #        model.momentum.h.values[i] = inlet_height/10;
 #    end
 #end
 
-residuals = run!(model, config, inner_loops=4);
+residuals = run!(model, config, inner_loops=1);
 end;
 using Plots
 plot((residuals.Ux), label="Ux")

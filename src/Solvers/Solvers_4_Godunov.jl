@@ -1113,8 +1113,25 @@ end
 """
     godunov!(model, config; output=VTK())
 
-Explicit Godunov-type compressible solver on conservative variables [ρ, ρU, ρE].
-Dispatched from `run!` when `model.fluid isa SupersonicFlow`.
+Explicit Godunov-type density-based solver for compressible flows, including supersonic flows with shockwaves. Solves the Euler/Navier-Stokes equations in conservative form [ρ, ρU, ρE] using finite-volume flux reconstruction. Dispatched from `run!` when `model.fluid isa SupersonicFlow`.
+
+# Input arguments
+
+- `model` reference to a `Physics` model defined by the user with `fluid = Fluid{SupersonicFlow}(...)`.
+- `config` Configuration structure defined by the user with solvers, schemes, runtime and hardware structures configuration details.
+- `output` select the format used for simulation results from `VTK()` or `OpenFOAM` (default = `VTK()`)
+
+# Scheme options (set via `schemes` in `Configuration`)
+
+- `flux` — Riemann solver: `Rusanov()` (default) or `HLLC()`
+- `reconstruction` — spatial reconstruction: `Upwind()` (1st order, default) or `MUSCL{L}()` (2nd order) where `L` is a slope limiter: `VanLeer`, `MinMod`, or `Superbee`
+- `time_stepping` — explicit time integration: `FEuler()` (1st order, default) or `RK2()` (2nd order SSP)
+
+# Output
+
+This function returns a `NamedTuple` for accessing the residuals (e.g. `residuals.rho`) with the following entries:
+
+- `rho` Vector of density residuals for each time step.
 """
 function godunov!(model, config; output=VTK())
     residuals = _setup_godunov(model, config; output=output)

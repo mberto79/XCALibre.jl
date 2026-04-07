@@ -322,14 +322,26 @@ end
 # Specialise VTK writer
 function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
     ) where {T,F,SO,M,Tu<:KOmegaSST,E,D,BI}
-    args = (
-        ("U", model.momentum.U), 
-        ("p", model.momentum.p),
-        ("rho", model.fluid.rho),
-        ("k", model.turbulence.k),
-        ("omega", model.turbulence.omega),
-        ("nut", model.turbulence.nut),
-        ("y", model.turbulence.y),
-    )
+    if typeof(model.fluid) <: AbstractCompressible
+        args = (
+            ("U", model.momentum.U),
+            ("p", model.momentum.p),
+            ("rho", model.fluid.rho),
+            ("T", model.energy.T),
+            ("k", model.turbulence.k),
+            ("omega", model.turbulence.omega),
+            ("nut", model.turbulence.nut),
+            ("y", model.turbulence.y),
+        )
+    else
+        args = (
+            ("U", model.momentum.U),
+            ("p", model.momentum.p),
+            ("k", model.turbulence.k),
+            ("omega", model.turbulence.omega),
+            ("nut", model.turbulence.nut),
+            ("y", model.turbulence.y),
+        )
+    end
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end

@@ -324,6 +324,6 @@ run!(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     ) where{T,F<:SupersonicFlow,M,Tu,E,D,BI} =
 begin
-    residuals = density_based!(model, config, output=output)
+    residuals = godunov!(model, config, output=output)
     return residuals
 end

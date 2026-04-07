@@ -1,4 +1,4 @@
-export density_based!, Rusanov, HLLC, FEuler, RK2, MUSCL, VanLeer, MinMod, Superbee
+export godunov!, Rusanov, HLLC, FEuler, RK2, MUSCL, VanLeer, MinMod, Superbee
 
 # ============================================================
 # Boundary condition dispatch overview
@@ -149,7 +149,7 @@ end
 # Workspace struct
 # ============================================================
 
-struct DensityBasedWorkspace{SF<:ScalarField, VF<:VectorField, V<:AbstractVector}
+struct GodunovWorkspace{SF<:ScalarField, VF<:VectorField, V<:AbstractVector}
     rhoU::VF        # conservative momentum ρU
     rhoE::SF        # conservative total energy ρE
     res_rho::SF     # density residual accumulator
@@ -1111,13 +1111,13 @@ end
 # ============================================================
 
 """
-    density_based!(model, config; output=VTK())
+    godunov!(model, config; output=VTK())
 
-Explicit density-based compressible solver on conservative variables [ρ, ρU, ρE].
+Explicit Godunov-type compressible solver on conservative variables [ρ, ρU, ρE].
 Dispatched from `run!` when `model.fluid isa SupersonicFlow`.
 """
-function density_based!(model, config; output=VTK())
-    residuals = _setup_density_based(model, config; output=output)
+function godunov!(model, config; output=VTK())
+    residuals = _setup_godunov(model, config; output=output)
     return residuals
 end
 
@@ -1132,14 +1132,14 @@ function update_thermo_coeffs!(mueff, kappa_eff, rhof, nueff, cp_val, Pr_val)
     @. kappa_eff.values = mueff.values * cp_val / Pr_val
 end
 
-function _setup_density_based(model, config; output=VTK())
+function _setup_godunov(model, config; output=VTK())
     (; U, p, Uf, pf) = model.momentum
     (; rho, nu) = model.fluid
     mesh = model.domain
     (; hardware, runtime, schemes, boundaries) = config
     (; backend, workgroup) = hardware
 
-    @info "Allocating DensityBasedWorkspace..."
+    @info "Allocating GodunovWorkspace..."
 
     n_cells = length(mesh.cells)
     TF = _get_float(mesh)
@@ -1160,7 +1160,7 @@ function _setup_density_based(model, config; output=VTK())
     rhoUz_0  = KernelAbstractions.zeros(backend, TF, n_cells)
     rhoE_0   = KernelAbstractions.zeros(backend, TF, n_cells)
 
-    workspace = DensityBasedWorkspace(
+    workspace = GodunovWorkspace(
         rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, Mach, dt_cell,
         nu_eff_cell, rho_0, rhoUx_0, rhoUy_0, rhoUz_0, rhoE_0
     )
@@ -1194,7 +1194,7 @@ function _setup_density_based(model, config; output=VTK())
     kernel! = _init_rho!(_setup(backend, workgroup, ndrange)...)
     kernel!(rho, p, T_field, model.fluid)
 
-    residuals = DENSITY_BASED(
+    residuals = GODUNOV(
         model, workspace, turbulenceModel,
         S, gradT, gradRho, gradP, nueff, mueff, kappa_eff, mdotf, prev,
         config; output=output
@@ -1339,7 +1339,7 @@ end
 # Main solver loop
 # ============================================================
 
-function DENSITY_BASED(
+function GODUNOV(
     model, workspace, turbulenceModel,
     S, gradT, gradRho, gradP, nueff, mueff, kappa_eff, mdotf, prev,
     config; output=VTK()
@@ -1396,7 +1396,7 @@ function DENSITY_BASED(
     @. workspace.nu_eff = nu_mol
     R_rho = ones(TF, iterations)
 
-    @info "Starting DENSITY_BASED time loop ($(typeof(time_scheme)))..."
+    @info "Starting GODUNOV time loop ($(typeof(time_scheme)))..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
@@ -1440,7 +1440,7 @@ function DENSITY_BASED(
         update_nu_eff_cell!(workspace.nu_eff, nu_mol, model.turbulence, backend, workgroup, n_cells)
 
         ProgressMeter.next!(progress, showvalues = [
-            (:iter, iteration), (:dt, dt), (:rho_residual, rho_res),
+            (:time, time), (:iter, iteration), (:dt, dt), (:continuity_error, rho_res),
             turbulenceModel.state.residuals...
         ])
 

@@ -6,8 +6,8 @@ grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 mesh_file = joinpath(grids_dir, "cylinder_d10mm_5mm.unv")
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-# backend = CPU(); workgroup = 1024; activate_multithread(backend)
-backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = AutoTune(); activate_multithread(backend)
+# backend = CUDABackend(); workgroup = 32
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
@@ -86,7 +86,7 @@ schemes = (
     T             = Schemes(gradient=Gauss),
     flux          = HLLC(),           # or Rusanov() for more dissipation
     time_stepping = FEuler(),         # or RK2() for 2nd-order in time
-    reconstruction = MUSCL{VanLeer}() # Upwind(),        # or MUSCL{VanLeer}(), MUSCL{MinMod}(), MUSCL{Superbee}()
+    reconstruction = MUSCL{VanLeer}() # Upwind(), MUSCL{VanLeer}(), MUSCL{MinMod}(), MUSCL{Superbee}()
 )
 
 runtime = Runtime(

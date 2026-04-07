@@ -436,10 +436,10 @@ end
             cR = ownerCells[2]
 
             # L=ownerCells[1], R=ownerCells[2] (consistent orientation)
-            rhoL = TF(rho[cL]);  UL = U[cL];  pL = TF(p[cL])
-            rhoR = TF(rho[cR]);  UR = U[cR];  pR = TF(p[cR])
+            rhoL = rho[cL];  UL = U[cL];  pL = p[cL]
+            rhoR = rho[cR];  UR = U[cR];  pR = p[cR]
 
-            dLR = TF(delta) * e
+            dLR = delta * e
             rhoL, rhoR, UL, UR, pL, pR = reconstruct(
                 recon_scheme, rhoL, rhoR, UL, UR, pL, pR,
                 gradRho[cL], gradRho[cR],
@@ -526,9 +526,7 @@ end
     (; area, normal, ownerCells) = face
     cID = ownerCells[1]
 
-    TF  = eltype(rho.values)
-    pL  = TF(p[cID])
-    Fp = pL * area * normal
+    Fp = p[cID] * area * normal
     Atomix.@atomic res_rhoUx.values[cID] += Fp[1]
     Atomix.@atomic res_rhoUy.values[cID] += Fp[2]
     Atomix.@atomic res_rhoUz.values[cID] += Fp[3]
@@ -567,9 +565,9 @@ end
     R_gas = TF(fluid.R.values)
 
     UL   = U[cID]
-    pL   = TF(p[cID])
-    TL   = TF(T[cID])
-    rhoL = TF(rho[cID])
+    pL   = p[cID]
+    TL   = T[cID]
+    rhoL = rho[cID]
 
     un_L = UL ⋅ normal
 
@@ -612,8 +610,8 @@ end
     R_gas = TF(fluid.R.values)
 
     UL = U[cID]
-    pL = TF(p[cID])
-    TL = TF(T[cID])
+    pL = p[cID]
+    TL = T[cID]
 
     # Ghost: UR = 2*U_bc - UL; recover U_bc to check for tangential prescription
     UR_ghost = ghost_velocity(bc_U, face, UL, normal, time, i)
@@ -629,7 +627,7 @@ end
         return
     end
 
-    rhoL = TF(rho[cID])
+    rhoL = rho[cID]
     pR   = ghost_pressure(bc_p, face, pL, normal, time, i)
     TR   = ghost_temperature(bc_T, face, TL, time, i)
     pR   = max(pR,   TF(1e-10))
@@ -662,8 +660,8 @@ end
     R_gas = TF(fluid.R.values)
 
     UL = U[cID]
-    pL = TF(p[cID])
-    TL = TF(T[cID])
+    pL = p[cID]
+    TL = T[cID]
 
     UR = ghost_velocity(bc_U, face, UL, normal, time, i)
     un_face = TF(0.5) * ((UL + UR) ⋅ normal)
@@ -677,7 +675,7 @@ end
         return
     end
 
-    rhoL = TF(rho[cID])
+    rhoL = rho[cID]
     pR   = ghost_pressure(bc_p, face, pL, normal, time, i)
     TR   = ghost_temperature(bc_T, face, TL, time, i)
     pR   = max(pR,   TF(1e-10))
@@ -710,8 +708,8 @@ end
     TF    = eltype(rho.values)
     gamma = TF(fluid.gamma.values)
 
-    rhoL = TF(rho[cID]);  UL = U[cID];  pL = TF(p[cID])
-    rhoR = TF(rho[pcID]); UR = U[pcID]; pR = TF(p[pcID])
+    rhoL = rho[cID];  UL = U[cID];  pL = p[cID]
+    rhoR = rho[pcID]; UR = U[pcID]; pR = p[pcID]
 
     F_rho, F_rhoU, F_rhoE = compute_inviscid_flux(
         flux_scheme, UL, UR, pL, pR, rhoL, rhoR, normal, area, gamma
@@ -729,18 +727,18 @@ end
 
     @inbounds begin
         TF = eltype(rho.values)
-        rho_i    = TF(rho[i])
+        rho_i    = rho[i]
         Ui       = U[i]
-        pi       = TF(p[i])
-        Vi       = TF(cells[i].volume)
-        nu_eff_i = TF(nu_eff[i])
+        pi       = p[i]
+        Vi       = cells[i].volume
+        nu_eff_i = nu_eff[i]
 
         ai     = sqrt(TF(gamma) * pi / rho_i)
         Umag   = sqrt(Ui ⋅ Ui)
-        dx     = Vi^TF(dim_exp)
+        dx     = Vi^dim_exp
         lambda = Umag + ai + nu_eff_i / (dx + TF(1e-30))
 
-        dt_cell[i] = TF(cfl) * dx / (lambda + TF(1e-30))
+        dt_cell[i] = cfl * dx / (lambda + TF(1e-30))
     end
 end
 
@@ -759,14 +757,36 @@ function update_nu_eff_cell!(nu_eff, nu_mol, turb_model, backend, workgroup, n_c
     end
 end
 
+"""Return fixed dt from `runtime.dt[1]` (no kernel launch)."""
+function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,Nothing}, config, dim_exp)
+    TF = eltype(workspace.dt_cell)
+    return TF(runtime.dt[1])
+end
+
+"""Compute CFL-limited dt via per-cell kernel; update `runtime.dt` in place."""
+function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}, config, dim_exp)
+    TF = eltype(workspace.dt_cell)
+    cfl = TF(runtime.adaptive.maxCo)
+    (; dt_cell, nu_eff) = workspace
+    (; rho) = model.fluid
+    (; U, p) = model.momentum
+    mesh = model.domain
+    (; backend, workgroup) = config.hardware
+    n_cells = length(mesh.cells)
+    kernel! = _compute_dt_cell!(_setup(backend, workgroup, n_cells)...)
+    kernel!(dt_cell, rho, U, p, mesh.cells, model.fluid, cfl, dim_exp, nu_eff)
+    dt = minimum(dt_cell)
+    runtime.dt .= dt
+    return dt
+end
+
 @kernel function _forward_euler!(rho, rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, cells, dt)
     i = @index(Global)
 
     @inbounds begin
         TF = eltype(rho.values)
-        V  = TF(cells[i].volume)
-        dt_tf = TF(dt)
-        factor = dt_tf / V
+        V  = cells[i].volume
+        factor = dt / V
 
         rho.values[i]   -= factor * res_rho.values[i]
         rhoU.x[i]       -= factor * res_rhoUx.values[i]
@@ -817,8 +837,8 @@ end
         gamma_tf = TF(gamma)
         R_gas_tf = TF(R_gas)
 
-        rho_i  = TF(rho[i])
-        rhoE_i = TF(rhoE[i])
+        rho_i  = rho[i]
+        rhoE_i = rhoE[i]
 
         Ui = rhoU[i] / rho_i
         U.x[i] = Ui[1];  U.y[i] = Ui[2];  U.z[i] = Ui[3]
@@ -873,20 +893,20 @@ end
             # Non-orthogonal correction: ∇φ·n ≈ (φ_R-φ_L)/δ*(e·n) + ∇φ_f·(n-(e·n)*e)
             en = e ⋅ normal
 
-            dU_over_delta = (U[cR] - U[cL]) / TF(delta)
-            gradU_n  = dU_over_delta * TF(en) + gradU_f * (normal - TF(en) * e)
+            dU_over_delta = (U[cR] - U[cL]) / delta
+            gradU_n  = dU_over_delta * en + gradU_f * (normal - en * e)
             gradUt_n = gradU_f' * normal
 
             divU    = gradU_f[1,1] + gradU_f[2,2] + gradU_f[3,3]
-            mueff_f = TF(mueff[fID])
+            mueff_f = mueff[fID]
             tau_n   = mueff_f * (gradU_n + gradUt_n - two_thirds * divU * normal)
 
             U_f = TF(0.5) * (U[cL] + U[cR])
 
-            dT_over_delta = (TF(T[cR]) - TF(T[cL])) / TF(delta)
-            gradT_n  = dT_over_delta * TF(en) + gradT_f ⋅ (normal - TF(en) * e)
+            dT_over_delta = (T[cR] - T[cL]) / delta
+            gradT_n  = dT_over_delta * en + gradT_f ⋅ (normal - en * e)
 
-            kf       = TF(kappa_eff[fID])
+            kf       = kappa_eff[fID]
             F_visc_E = (U_f ⋅ tau_n) + kf * gradT_n
 
             acc_rhoU -= nsign * tau_n * area
@@ -912,8 +932,7 @@ end
     bc_T::FixedTemperature, kf, gradT, T, normal, delta, cID, fID
 )
     T_wall = typeof(kf)(bc_T.value.T)
-    T_cell = typeof(kf)(T[cID])
-    kf * (T_wall - T_cell) / typeof(kf)(delta)
+    kf * (T_wall - T[cID]) / delta
 end
 
 # Isothermal (Dirichlet on T): κ*(T_wall-T_cell)/δ
@@ -921,8 +940,7 @@ end
     bc_T::Dirichlet, kf, gradT, T, normal, delta, cID, fID
 )
     T_wall = typeof(kf)(bc_T.value)
-    T_cell = typeof(kf)(T[cID])
-    kf * (T_wall - T_cell) / typeof(kf)(delta)
+    kf * (T_wall - T[cID]) / delta
 end
 
 # Fallback: κ*(∇T·n) from cell-centred gradient
@@ -995,10 +1013,10 @@ end
     gradU_f = gradU[cID]
 
     divU    = gradU_f[1,1] + gradU_f[2,2] + gradU_f[3,3]
-    mueff_f = TF(mueff[fID])
+    mueff_f = mueff[fID]
     tau_n   = mueff_f * ((gradU_f + gradU_f') * normal - two_thirds * divU * normal)
 
-    kf       = TF(kappa_eff[fID])
+    kf       = kappa_eff[fID]
     q_wall   = wall_heat_flux(bc_T, kf, gradT, T, normal, delta, cID, fID)
     F_visc_E = (Uf_face ⋅ tau_n) + q_wall
 
@@ -1026,13 +1044,13 @@ end
     U_wall  = SVector{3,TF}(TF(bc_U.value[1]), TF(bc_U.value[2]), TF(bc_U.value[3]))
     U_cell  = U[cID]
 
-    dU      = (U_wall - U_cell) / TF(delta)
+    dU      = (U_wall - U_cell) / delta
     gradU_f = dU * normal'   # outer product → ∇U_ij ≈ dU_i * n_j
     divU    = gradU_f[1,1] + gradU_f[2,2] + gradU_f[3,3]
-    mueff_f = TF(mueff[fID])
+    mueff_f = mueff[fID]
     tau_n   = mueff_f * ((gradU_f + gradU_f') * normal - two_thirds * divU * normal)
 
-    kf       = TF(kappa_eff[fID])
+    kf       = kappa_eff[fID]
     q_wall   = wall_heat_flux(bc_T, kf, gradT, T, normal, delta, cID, fID)
     F_visc_E = (U_wall ⋅ tau_n) + q_wall
 
@@ -1074,11 +1092,11 @@ end
     gradT_f = TF(0.5) * (gradT[cID] + gradT[pcID])
 
     divU    = gradU_f[1,1] + gradU_f[2,2] + gradU_f[3,3]
-    mueff_f = TF(mueff[fID])
+    mueff_f = mueff[fID]
     tau_n   = mueff_f * ((gradU_f + gradU_f') * normal - two_thirds * divU * normal)
 
     Uf_face  = TF(0.5) * (U[cID] + U[pcID])
-    kf       = TF(kappa_eff[fID])
+    kf       = kappa_eff[fID]
     F_visc_E = (Uf_face ⋅ tau_n) + kf * (gradT_f ⋅ normal)
 
     tau_n_area = tau_n * area
@@ -1338,13 +1356,12 @@ function DENSITY_BASED(
     time_scheme  = get(schemes, :time_stepping, FEuler())
     recon_scheme = schemes.reconstruction
 
-    (; rhoU, rhoE, res_rho, dt_cell) = workspace
+    (; rhoU, rhoE, res_rho) = workspace
 
     n_cells = length(mesh.cells)
     TF = _get_float(mesh)
 
-    cfl     = !isnothing(runtime.adaptive) ? TF(runtime.adaptive.maxCo) : TF(0.5)
-    dim_exp = typeof(mesh) <: Mesh2 ? TF(0.5) : TF(0.333333)   # dx = V^dim_exp
+    dim_exp = typeof(mesh) <: Mesh2 ? TF(0.5) : TF(1/3)   # dx = V^dim_exp
 
     outputWriter = initialise_writer(output, model.domain)
 
@@ -1393,11 +1410,8 @@ function DENSITY_BASED(
         rho_res = norm(res_rho.values) / sqrt(TF(n_cells))
         R_rho[iteration] = rho_res
 
-        # 3. CFL-limited global time step
-        kernel! = _compute_dt_cell!(_setup(backend, workgroup, n_cells)...)
-        kernel!(dt_cell, rho, U, p, mesh.cells, model.fluid, cfl, dim_exp, workspace.nu_eff)
-        dt = minimum(dt_cell)
-        runtime.dt .= dt
+        # 3. Time step (adaptive CFL or fixed)
+        dt = compute_dt!(workspace, model, runtime, config, dim_exp)
         time += dt
 
         # 4. Advance W^n → W^{n+1} (FEuler: single update; RK2: two-stage SSP)

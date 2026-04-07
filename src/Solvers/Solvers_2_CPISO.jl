@@ -340,19 +340,19 @@ function CPISO(
         R_uz[iteration] = rz
         R_p[iteration] = rp
 
-        ProgressMeter.next!(
-            progress, showvalues = [
-                (:time, iteration*dt_cpu[1]),
-                (:Courant, courant),
-                (:Ux, R_ux[iteration]),
-                (:Uy, R_uy[iteration]),
-                (:Uz, R_uz[iteration]),
-                (:p, R_p[iteration]),
-                turbulenceModel.state.residuals...,
-                energyModel.state.residuals
-                ]
-            )
-        runtime_postprocessing!(postprocess,iteration,iterations)
+    ProgressMeter.next!(
+        progress, showvalues = [
+            (:time, iteration*dt_cpu[1]),
+            (:Courant, courant),
+            (:Ux, R_ux[iteration]),
+            (:Uy, R_uy[iteration]),
+            (:Uz, R_uz[iteration]),
+            (:p, R_p[iteration]),
+            turbulenceModel.state.residuals...,
+            energyModel.state.residuals
+            ]
+        )
+    runtime_postprocessing!(postprocess,iteration,iterations,S,config)
 
         if iteration%write_interval + signbit(write_interval) == 0
             save_output(model, outputWriter, iteration, time, config)

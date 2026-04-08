@@ -21,9 +21,11 @@ Type that represents energy model, coefficients and respective fields.
 struct SensibleEnthalpy{S,FS,V,C} <: AbstractEnergyModel
     he::S
     T::S
+    mueff_cell::S
     hef::FS
     Tf::FS
     K::S
+    Kf::FS
     prevP::V 
     prevRhoK::V
     S_he::S
@@ -50,9 +52,11 @@ The solved variable is `e = cv*(T - Tref)` where `cv = cp/gamma`.
 struct InternalEnergy{S,FS,V,C} <: AbstractEnergyModel
     he::S
     T::S
+    mueff_cell::S
     hef::FS
     Tf::FS
     K::S
+    Kf::FS
     prevP::V 
     prevRhoK::V
     S_he::S
@@ -87,26 +91,17 @@ end
     n_cells = length(mesh.cells)
     he = ScalarField(mesh)
     T = ScalarField(mesh)
+    mueff_cell = ScalarField(mesh)
     hef = FaceScalarField(mesh)
     Tf = FaceScalarField(mesh)
     K = ScalarField(mesh)
+    Kf = FaceScalarField(mesh)
     prevP = KernelAbstractions.zeros(backend, float_type, n_cells) 
     prevRhoK = KernelAbstractions.zeros(backend, float_type, n_cells)
     S_he = ScalarField(mesh)
     coeffs = energy.args
-    EnergyModel(he, T, hef, Tf, K, prevP, prevRhoK, S_he, coeffs)
+    EnergyModel(he, T, mueff_cell, hef, Tf, K, Kf, prevP, prevRhoK, S_he, coeffs)
 end
-
-# (energy::Energy{EnergyModel, ARG})(mesh, fluid) where {EnergyModel<:InternalEnergy,ARG} = begin
-#     he = ScalarField(mesh)
-#     T = ScalarField(mesh)
-#     hef = FaceScalarField(mesh)
-#     Tf = FaceScalarField(mesh)
-#     K = ScalarField(mesh)
-#     S_he = ScalarField(mesh)
-#     coeffs = energy.args
-#     InternalEnergy(he, T, hef, Tf, K, S_he, coeffs)
-# end
 
 # Unified initialise
 function initialise(
@@ -122,6 +117,7 @@ function initialise(
     keff = FaceScalarField(mesh)
     divK = ScalarField(mesh)
     dKdt = ScalarField(mesh)
+    Phi = ScalarField(mesh)  # viscous dissipation source τeff:∇U
 
     temperature_to_energy!(model, T, he)
 
@@ -130,7 +126,7 @@ function initialise(
         + Divergence{schemes.he.divergence}(mdotf, he)
         - Laplacian{schemes.he.laplacian}(keff, he)
         ==
-        Source(S_he) - Source(divK) - Source(dKdt)
+        Source(S_he) - Source(divK) - Source(dKdt) + Source(Phi)
     ) → eqn
 
     @reset energy_eqn.preconditioner = set_preconditioner(solvers.he.preconditioner, energy_eqn)
@@ -167,11 +163,11 @@ function energy!(
 
     mesh = model.domain
 
-    (; rho, nu) = model.fluid
-    (; U, p) = model.momentum
-    (; he, hef, T, K, prevP, prevRhoK, S_he) = model.energy
+    (; rho, nu, Pr) = model.fluid
+    (; U, p, Uf) = model.momentum
+    (; he, hef, T, K, Kf, prevP, prevRhoK, S_he, mueff_cell) = model.energy
     (; energy_eqn, state) = energy
-    (; solvers, runtime, hardware, boundaries) = config
+    (; solvers, schemes, runtime, hardware, boundaries) = config
     (; backend) = hardware
 
     keff = get_flux(energy_eqn, 3)
@@ -179,12 +175,7 @@ function energy!(
     S_he = get_source(energy_eqn, 1)
     divK = get_source(energy_eqn, 2)
     dKdt = get_source(energy_eqn, 3)
-
-    Uf = FaceVectorField(mesh)
-    Kf = FaceScalarField(mesh)
-    Pr = model.fluid.Pr
-
-    # dt = runtime.dt[1]
+    Phi = get_source(energy_eqn, 4)
 
     # Set diffusion coefficient based on energy model type
     if model.energy isa SensibleEnthalpy
@@ -196,24 +187,27 @@ function energy!(
 
     interpolate!(Uf, U, config)
     correct_boundaries!(Uf, U, boundaries.U, time, config)
-
+    
     @. K.values = 0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)
     @. Kf.values = 0.5*(Uf.x.values^2 + Uf.y.values^2 + Uf.z.values^2)
 
-    interpolate_upwind!(Kf, K, mdotf, config) # only do internal faces
-
+    # interpolate_upwind!(Kf, K, mdotf, config) # only do internal faces
+    interpolate!(Kf, K, config) # only do internal faces
     @. Kf.values *= mdotf.values
     div!(divK, Kf, config)
 
     @. dKdt.values = (rho.values*K.values - prevRhoK)/dt
 
+
     # Set source term based on energy model type
     if model.energy isa SensibleEnthalpy
         @. S_he.values = (p.values - prevP)/dt
-    else  # InternalEnergy: -p*div(U)
-        _compute_pdivU!(S_he, p, gradU, config)
+    else  
+        _compute_pdivU!(S_he, p, gradU, config) # InternalEnergy: -p*div(U)
         @. S_he.values = -S_he.values
     end
+
+    viscous_dissipation!(Phi, mueff_cell.values, gradU, config)
 
     # Set up and solve energy equation
     discretise!(energy_eqn, he, config)
@@ -228,8 +222,6 @@ function energy!(
     end
 
     energy_to_temperature!(model, he, T)
-    interpolate!(hef, he, config)
-    correct_boundaries!(hef, he, boundaries.he, time, config)
 
     residuals = (:he, he_res)
     converged = he_res <= solvers.he.convergence
@@ -239,23 +231,8 @@ function energy!(
     return nothing
 end
 
-
 # Thermodynamic dispatch functions — SensibleEnthalpy
 
-"""
-    thermo_Psi!(model::Physics{T,F,SO,M,Tu,E,D,BI}, Psi::ScalarField)
-    where {T,F<:AbstractCompressible,M,Tu,E<:SensibleEnthalpy,D,BI}
-
-Model updates the value of Psi.
-
-### Input
-- `model`  -- Physics model defined by user.
-- `Psi`    -- Compressibility factor ScalarField.
-
-### Algorithm
-Weakly compressible currently uses the ideal gas equation for establishing the
-compressibility factor where ``\\rho = p * \\Psi``. ``\\Psi`` is calculated from the sensible enthalpy, reference temperature and fluid model specified ``C_p`` and ``R`` value where ``R`` is calculated from ``C_p`` and ``\\gamma`` specified in the fluid model.
-"""
 function thermo_Psi!(
     model::Physics{T,F,SO,M,Tu,E,D,BI}, Psi::ScalarField
     ) where {T,F<:AbstractCompressible,SO,M,Tu,E<:SensibleEnthalpy,D,BI}
@@ -265,22 +242,6 @@ function thermo_Psi!(
     @. Psi.values = Cp.values/(R.values*(he.values + Cp.values*Tref))
 end
 
-"""
-    thermo_Psi!(model::Physics{T,F,SO,M,Tu,E,D,BI}, Psif::FaceScalarField, config)
-    where {T,F<:AbstractCompressible,M,Tu,E<:SensibleEnthalpy,D,BI}
-
-Function updates the value of Psi.
-
-### Input
-- `model`  -- Physics model defined by user.
-- `Psif`    -- Compressibility factor FaceScalarField.
-
-### Algorithm
-Weakly compressible currently uses the ideal gas equation for establishing the
-compressibility factor where ``\\rho = p * \\Psi``. ``\\Psi`` is calculated from the sensible
-enthalpy, reference temperature and fluid model specified ``C_p`` and ``R`` value where
-``R`` is calculated from ``C_p`` and ``\\gamma`` specified in the fluid model.
-"""
 function thermo_Psi!(
     model::Physics{T,F,SO,M,Tu,E,D,BI}, Psif::FaceScalarField, config
     ) where {T,F<:AbstractCompressible,SO,M,Tu,E<:SensibleEnthalpy,D,BI}
@@ -292,17 +253,6 @@ function thermo_Psi!(
     @. Psif.values = Cp.values/(R.values*(hef.values + Cp.values*Tref))
 end
 
-"""
-    temperature_to_energy!(model::Physics{T1,F,SO,M,Tu,E,D,BI}, T::ScalarField, he::ScalarField
-    ) where {T1,F<:AbstractCompressible,M,Tu,E<:SensibleEnthalpy,D,BI}
-
-Function converts temperature ScalarField to sensible enthalpy ScalarField.
-
-### Input
-- `model`  -- Physics model defined by user.
-- `T`      -- Temperature ScalarField.
-- `he`     -- Sensible enthalpy ScalarField.
-"""
 function temperature_to_energy!(
     model::Physics{T1,F,SO,M,Tu,E,D,BI}, T::ScalarField, he::ScalarField
     ) where {T1,F<:AbstractCompressible,SO,M,Tu,E<:SensibleEnthalpy,D,BI}
@@ -312,17 +262,7 @@ function temperature_to_energy!(
     @. he.values = Cp.values*(T.values-Tref)
 end
 
-"""
-    energy_to_temperature!(model::Physics{T1,F,SO,M,Tu,E,D,BI}, he::ScalarField, T::ScalarField
-    ) where {T1,F<:AbstractCompressible,M,Tu,E<:SensibleEnthalpy,D,BI}
 
-Function converts sensible enthalpy ScalarField to temperature ScalarField.
-
-### Input
-- `model`  -- Physics model defined by user.
-- `he`     -- Sensible enthalpy ScalarField.
-- `T`      -- Temperature ScalarField.
-"""
 function energy_to_temperature!(
     model::Physics{T1,F,SO,M,Tu,E,D,BI}, he::ScalarField, T::ScalarField
     ) where {T1,F<:AbstractCompressible,SO,M,Tu,E<:SensibleEnthalpy,D,BI}
@@ -357,16 +297,6 @@ end
 
 # Thermodynamic dispatch functions — InternalEnergy
 
-"""
-    thermo_Psi!(model::Physics{T,F,SO,M,Tu,E,D,BI}, Psi::ScalarField)
-    where {T,F<:AbstractCompressible,M,Tu,E<:InternalEnergy,D,BI}
-
-Update the compressibility factor Psi for the internal energy model.
-
-### Algorithm
-For ideal gas: rho = p * Psi. With e = cv*(T - Tref), temperature T = e/cv + Tref.
-Thus Psi = cv / (R*(e + cv*Tref)) = 1 / (R*(e/cv + Tref)) = 1 / (R*T).
-"""
 function thermo_Psi!(
     model::Physics{T,F,SO,M,Tu,E,D,BI}, Psi::ScalarField
     ) where {T,F<:AbstractCompressible,SO,M,Tu,E<:InternalEnergy,D,BI}
@@ -376,12 +306,7 @@ function thermo_Psi!(
     @. Psi.values = (Cp.values/gamma.values) / (R.values*(he.values + (Cp.values/gamma.values)*Tref))
 end
 
-"""
-    thermo_Psi!(model::Physics{T,F,SO,M,Tu,E,D,BI}, Psif::FaceScalarField, config)
-    where {T,F<:AbstractCompressible,M,Tu,E<:InternalEnergy,D,BI}
 
-Update the face compressibility factor Psif for the internal energy model.
-"""
 function thermo_Psi!(
     model::Physics{T,F,SO,M,Tu,E,D,BI}, Psif::FaceScalarField, config
     ) where {T,F<:AbstractCompressible,SO,M,Tu,E<:InternalEnergy,D,BI}
@@ -424,20 +349,18 @@ function energy_clamp!(
 end
 
 
-# Utility functions
-
-function viscous_dissipation!(Phi::ScalarField, nu, rho, gradU, config)
+function viscous_dissipation!(Phi::ScalarField, mueff_cell, gradU, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
     mesh = Phi.mesh
     n_cells = length(mesh.cells)
 
-    kernel! = _viscous_dissipation_kernel!(_setup(backend, workgroup, n_cells)...)
-    kernel!(Phi.values, nu, rho, gradU.result)
+    kernel! = _viscous_dissipation!(_setup(backend, workgroup, n_cells)...)
+    kernel!(Phi.values, mueff_cell, gradU.result)
 end
 
-@kernel function _viscous_dissipation_kernel!(Phi, nu, rho, gradU)
+@kernel function _viscous_dissipation!(Phi, mueff, gradU)
     i = @index(Global)
 
     G = gradU[i]
@@ -448,67 +371,9 @@ end
                      (G[1,3] + G[3,1])^2 +
                      (G[2,3] + G[3,2])^2
 
-    Phi[i] = nu[i]*rho[i] * (2.0 * diag_terms_sq + cross_terms_sq - (2.0/3.0) * divU^2)
+    Phi[i] = mueff[i] * (2.0 * diag_terms_sq + cross_terms_sq - (2.0/3.0) * divU^2)
 end
 
-function correct_face_interpolation!(phif::FaceScalarField, phi, Uf::FaceVectorField)
-    mesh = phif.mesh
-    (; faces, cells) = mesh
-    for fID ∈ eachindex(faces)
-        face = faces[fID]
-        (; ownerCells, area, normal) = face
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        phi1 = phi[cID1]
-        phi2 = phi[cID2]
-        flux = Uf[fID]
-        if flux >= 0.0
-            phif.values[fID] = phi1
-        else
-            phif.values[fID] = phi2
-        end
-    end
-end
-
-function interpolate_upwind!(phif::FaceScalarField, phi::ScalarField, mdotf::FaceScalarField, config)
-    vals = phi.values
-    fvals = phif.values
-    flux = mdotf.values
-
-    mesh = phif.mesh
-    (; cells, faces) = mesh
-
-    nbfaces = length(mesh.boundary_cellsID)
-    internal_faces_count = length(faces) - nbfaces
-
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-
-    kernel! = interpolate_upwind_Scalar!(_setup(backend, workgroup, internal_faces_count)...)
-    kernel!(fvals, vals, flux, cells, faces, nbfaces)
-end
-
-@kernel function interpolate_upwind_Scalar!(fvals, vals, flux, cells, faces, nbfaces)
-    t = @index(Global)
-    i = t + nbfaces
-
-    @inbounds begin
-        face = faces[i]
-        (; ownerCells) = face
-
-        owner1 = ownerCells[1]
-        owner2 = ownerCells[2]
-
-        phi1 = vals[owner1]
-        phi2 = vals[owner2]
-
-        if flux[i] >= 0.0
-            fvals[i] = phi1
-        else
-            fvals[i] = phi2
-        end
-    end
-end
 
 function _compute_pdivU!(S::ScalarField, p, gradU, config)
     (; hardware) = config
@@ -525,3 +390,43 @@ end
     divU = G[1,1] + G[2,2] + G[3,3]
     S[i] = p[i] * divU
 end
+
+# function interpolate_upwind!(phif::FaceScalarField, phi::ScalarField, mdotf::FaceScalarField, config)
+#     vals = phi.values
+#     fvals = phif.values
+#     flux = mdotf.values
+
+#     mesh = phif.mesh
+#     (; cells, faces) = mesh
+
+#     nbfaces = length(mesh.boundary_cellsID)
+#     internal_faces_count = length(faces) - nbfaces
+
+#     (; hardware) = config
+#     (; backend, workgroup) = hardware
+
+#     kernel! = interpolate_upwind_Scalar!(_setup(backend, workgroup, internal_faces_count)...)
+#     kernel!(fvals, vals, flux, cells, faces, nbfaces)
+# end
+
+# @kernel function interpolate_upwind_Scalar!(fvals, vals, flux, cells, faces, nbfaces)
+#     t = @index(Global)
+#     i = t + nbfaces
+
+#     @inbounds begin
+#         face = faces[i]
+#         (; ownerCells) = face
+
+#         owner1 = ownerCells[1]
+#         owner2 = ownerCells[2]
+
+#         phi1 = vals[owner1]
+#         phi2 = vals[owner2]
+
+#         if flux[i] >= 0.0
+#             fvals[i] = phi1
+#         else
+#             fvals[i] = phi2
+#         end
+#     end
+# end

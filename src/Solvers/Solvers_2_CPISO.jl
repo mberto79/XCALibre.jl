@@ -129,6 +129,8 @@ function CPISO(
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
     (; rho, rhof, nu) = model.fluid
+    (; nut) = model.turbulence
+
     mesh = model.domain
     p_model = p_eqn.model
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
@@ -218,9 +220,6 @@ function CPISO(
     for iteration ∈ 1:iterations
         copyto!(dt_cpu, config.runtime.dt)
         time += dt_cpu[1]
-
-        ## CHECK GRADU AND EXPLICIT STRESSES
-        # grad!(gradU, Uf, U, boundaries.U, time, config) # calculated in `turbulence!`
 
         explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, config)
         div!(divmugradUTx, mugradUTx, config)
@@ -329,7 +328,14 @@ function CPISO(
         # Turbulence outside corrector loop
         turbulence!(turbulenceModel, model, S, prev, time, config)
         update_nueff!(nueff, nu, model.turbulence, config)
+        
+        # update turbulent dynamic viscosity
         @. mueff.values = rhof.values*nueff.values
+        if model.turbulence isa Laminar 
+            @. model.energy.mueff_cell.values = rho.values*nu.values 
+        else
+            @. model.energy.mueff_cell.values = rho.values*(nu.values + nut.values)
+        end
 
         
         courant = max_courant_number!(cellsCourant, model, config)

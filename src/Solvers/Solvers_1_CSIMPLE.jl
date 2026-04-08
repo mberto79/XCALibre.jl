@@ -126,6 +126,7 @@ function CSIMPLE(
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
     (; nu, nuf, rho, rhof) = model.fluid
+    (; nut) = model.turbulence
 
     mesh = model.domain
     p_model = p_eqn.model
@@ -303,6 +304,8 @@ function CSIMPLE(
         end
 
         correct_velocity!(U, Hv, ∇p, rD, config)
+        # interpolate!(Uf, U, config) # Careful: reusing Uf for interpolation
+        # correct_boundaries!(Uf, U, boundaries.U, time, config)
         
         # Perform turbulence calculations and update eddy viscosity
         turbulence!(turbulenceModel, model, S, prev, time, config) 
@@ -317,8 +320,13 @@ function CSIMPLE(
             @. rhof.values = Psif.values * pf.values
         end
 
-        # update dynamic viscosity
+        # update turbulent dynamic viscosity
         @. mueff.values = rhof.values*nueff.values
+        if model.turbulence isa Laminar 
+            @. model.energy.mueff_cell.values = rho.values*nu.values 
+        else
+            @. model.energy.mueff_cell.values = rho.values*(nu.values + nut.values)
+        end
 
         # stor residuals and check for convergence
         R_ux[iteration] = rx

@@ -2,7 +2,6 @@ export SolverSetup, Runtime, Schemes
 export explicit_relaxation!, implicit_relaxation!, implicit_relaxation_diagdom!, setReference!
 export solve_system!
 export solve_equation!
-export residual!
 export AdaptiveTimeStepping
 
 struct SolverSetup{

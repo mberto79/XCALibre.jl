@@ -205,17 +205,14 @@ function FilmModel(
 
     interpolate!(Uf, U, config)
     correct_boundaries!(Uf, U, boundaries.U, time, config)
-    
+    flux!(mdotf, Uf, config)
     
     # Getting the laplacian of h for first U calculation
     laplacian!(Δh, hf, h, boundaries.h, time, config)
     interpolate!(Δhf, Δh, config)
     correct_boundaries!(Δhf, Δh, internal_BCs.Δh, time, config)
 
-    for i ∈ eachindex(hf.values)
-        hUf[i] = Uf[i] .* hf[i]
-    end
-    flux!(phif, hUf, config)
+    @. phif.values = mdotf.values * hf. values
 
     #@info "need to readd Pg term - Coupling term for other phase"
     Pg = 0# Test Pg term set to zero, as the gradient is found this value doesn't matter
@@ -303,9 +300,9 @@ function FilmModel(
             end
 
             correct_film_velocity!(U, Hv, h, P_hydrf, P_surff, rD, rho.values[1],  config)
+            correct_mass_flux2!(mdotf, Df, h_eqn, config)
         end
         
-        correct_mass_flux2!(mdotf, Df, h_eqn, config)
         @. phif.values = mdotf.values * hf.values 
 
         @. nu_h.values = 3*nu.values/h.values
@@ -322,21 +319,21 @@ function FilmModel(
         end
 
         # correct U for non-wetted
-        #for i ∈ eachindex(U.x)
-        #    U[i] = U[i] .* w[i]
-        #end
+        for i ∈ eachindex(U.x)
+            U[i] = U[i] .* w[i]
+        end
 
         grad!(∇w, wf, w, internal_BCs.w, time, config)
 
         for i ∈ eachindex(h.values)
             
-            P_hydr.values[i] = rho.values[1] * h.values[i] * dot(n,G)
-            Ph_local = (g*sind(coeffs.ϕ)*h[i])/rho.values[1] .*plate_tangent_vector
+            P_hydr.values[i] = h.values[i] * dot(n,G)
+            Ph_local = (g*sind(coeffs.ϕ)*h[i]) .*plate_tangent_vector
             Ph.x.values[i] = Ph_local[1]
             Ph.y.values[i] = Ph_local[2]
             Ph.z.values[i] = Ph_local[3]
 
-            h∇PL[i] = h[i].*∇PL[i]./rho.values[1]
+            h∇PL[i] = h[i].*∇PL[i]./(rho.values[1])
 
             τθw[i] = coeffs.β*coeffs.σ/rho.values[1] * (1-cosd(coeffs.θm)) .* ∇w.result[i]
         end
@@ -389,7 +386,7 @@ function FilmModel(
         interpolate!(hf, h, config)
         correct_boundaries!(hf, h, boundaries.h, time, config)
         for j ∈ eachindex(hf.values)
-            P_hydrf.values[j] = rho.values[1]*hf.values[j]*dot(n,G)
+            #P_hydrf.values[j] = rho.values[1]*hf.values[j]*dot(n,G)
         end
         ∇P_hydr = Grad{Gauss}(P_hydrf)
         grad!(∇P_hydr, P_hydrf, config)

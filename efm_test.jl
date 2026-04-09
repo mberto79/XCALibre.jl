@@ -4,7 +4,7 @@ using CSV
 # using AMDGPU # Uncomment to run on AMD GPUs
 
 grids_dir = pkgdir(XCALibre, "Test_Meshes/");
-grid = "initial_efm_mesh6.unv";
+grid = "initial_efm_mesh8.unv";
 mesh_file = joinpath(grids_dir, grid);
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001);
@@ -26,7 +26,7 @@ inlet_height = 0.05; # m
 inlet_area = inlet_width*inlet_height; # m^2
 
 if isfile("Model_Input.csv")
-    test_case = 9;
+    test_case = 8;
     input_parameters = CSV.File("Model_Input.csv"); #File containing the different test cases from paper "Modeling of Partially Wetting Liquid Film Using an Enhanced Thin Film Model for Aero-Engine Bearing Chamber Applications" by Kuldeep Singh et. al
 
     inlet_flow_rate = input_parameters.Q[test_case]; # m^3/s
@@ -35,11 +35,11 @@ if isfile("Model_Input.csv")
     θm = input_parameters.Theta_m[test_case]
     ϕ = input_parameters.Phi[test_case]
 else
-    inlet_flow_rate = 2.02e-5
-    β = 4
-    σ = 0.042
-    θm = 40
-    ϕ = 60
+    inlet_flow_rate = 25.53e-5
+    β = 3
+    σ = 0.069
+    θm = 75
+    ϕ = 90
 end
 inlet_rate = inlet_flow_rate/inlet_area; # m\s
 
@@ -127,23 +127,23 @@ solvers = (
 adaptive = AdaptiveTimeStepping(; 
     # keyword arguments
 
-    maxCo=0.1,
+    maxCo=0.3,
     minShrink=0.1,
     maxGrow=1.2
 )
 begin
 #runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
 #runtime = Runtime(iterations=20000, time_step=1, write_interval=20000)
-runtime = Runtime(iterations=20, time_step=Δt, write_interval=1, adaptive=adaptive); # hide
+#runtime = Runtime(iterations=20, time_step=Δt, write_interval=1, adaptive=adaptive); # hide
 #runtime = Runtime(iterations=20, time_step=2e-3, write_interval=1)
-#runtime = Runtime(iterations=200, time_step=Δt, write_interval=5, adaptive=adaptive);
+runtime = Runtime(iterations=200, time_step=Δt, write_interval=5, adaptive=adaptive);
 #runtime = Runtime(iterations=2000, time_step=Δt, write_interval=100, adaptive=adaptive)
 #runtime = Runtime(iterations=300, time_step=Δt, write_interval=5, adaptive=adaptive)
 #runtime = Runtime(iterations=8000, time_step=Δt, write_interval=400)
 #runtime = Runtime(iterations=100, time_step=Δt, write_interval=2, adaptive=adaptive)
 #runtime = Runtime(iterations=100000, time_step=Δt, write_interval=2000, adaptive=adaptive)
 #runtime = Runtime(iterations=500, time_step=Δt, write_interval=10)
-#runtime = Runtime(iterations=4000, time_step=Δt, write_interval=100, adaptive=adaptive)
+#runtime = Runtime(iterations=4000, time_step=Δt, write_interval=20, adaptive=adaptive)
 #runtime = Runtime(iterations=15000, time_step=Δt, write_interval=250)
 #runtime = Runtime(iterations=500, time_step=Δt, write_interval=50)
 #runtime = Runtime(iterations=3, time_step=Δt, write_interval=1);
@@ -166,7 +166,7 @@ initialise!(model.momentum.h, h_init)
 #    end
 #end
 
-residuals = run!(model, config, inner_loops=3);
+residuals = run!(model, config, inner_loops=5);
 end;
 using Plots
 plot((residuals.Ux), label="Ux")

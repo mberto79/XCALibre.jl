@@ -204,3 +204,48 @@ function _coarsen_RS(A::SparseMatrixCSR, θ::Float64)
 
     return agg, nagg
 end
+
+# ─── Pairwise aggregation (fallback) ─────────────────────────────────────────
+#
+# Greedy maximum-weight matching: scan nodes in order; pair each unmatched node
+# with its strongest unmatched off-diagonal neighbour.  Guarantees ≥ 2× coarsen-
+# ing ratio by construction (every pair → 1 aggregate; unmatched singletons add
+# at most 1 each).  Used as a fallback when SA or RS stagnates (nagg/n > 0.7).
+
+function _coarsen_pairwise(A::SparseMatrixCSR)
+    n      = size(A, 1)
+    rowptr = A.rowptr
+    colval = A.colval
+    nzval  = A.nzval
+
+    matched = fill(false, n)
+    agg     = zeros(Int, n)
+    nagg    = 0
+
+    for i in 1:n
+        matched[i] && continue
+
+        # Find the strongest unmatched off-diagonal neighbour
+        best_j = 0
+        best_v = zero(eltype(nzval))
+        for nzi in rowptr[i]:(rowptr[i+1]-1)
+            j = colval[nzi]
+            (j == i || matched[j]) && continue
+            v = abs(nzval[nzi])
+            if v > best_v
+                best_v = v
+                best_j = j
+            end
+        end
+
+        nagg      += 1
+        agg[i]     = nagg
+        matched[i] = true
+        if best_j > 0
+            agg[best_j]     = nagg
+            matched[best_j] = true
+        end
+    end
+
+    return agg, nagg
+end

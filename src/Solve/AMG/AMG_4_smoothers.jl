@@ -19,8 +19,7 @@ Uses `level.r` as the residual scratch buffer — zero allocation per sweep.
 """
 function amg_smooth!(level, n_sweeps, omega, backend, workgroup)
     for _ in 1:n_sweeps
-        amg_residual!(level.r, level.A, level.x, level.b, backend, workgroup)
-        amg_dinv_axpy!(level.x, level.Dinv, level.r, omega, backend, workgroup)
+        amg_smooth_jacobi!(level.x, level.Dinv, level.A, level.b, omega, backend, workgroup)
     end
 end
 

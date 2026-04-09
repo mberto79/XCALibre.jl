@@ -59,14 +59,14 @@ solvers = (
     p = SolverSetup(
         solver      = AMG(
                         smoother      = JacobiSmoother(2, 2/3, zeros(0)),
-                        # smoother      = Chebyshev(),
+                        # smoother      = Chebyshev(degree=2, lo=0.3, hi=1.1),
                         cycle         = VCycle(),
-                        coarsening    = :SA, # :SA :RS
+                        coarsening    = :RS, # :SA :RS
                         max_levels    = 15,
                         coarsest_size = 100,
                         pre_sweeps    = 2,
                         post_sweeps   = 2,
-                        strength      = 0.00002,
+                        strength      = 0.000005,
                      ),
         preconditioner = Jacobi(),   # ignored by AMG; kept for API compatibility
         convergence = 1e-7,

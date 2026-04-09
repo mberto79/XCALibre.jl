@@ -43,16 +43,15 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
     # AP_cpus no longer needed: the Galerkin plan encodes R·A·P directly.
     rhos      = Tv[]           # spectral radius per level
 
-    # Spectral radius is needed only for the Chebyshev smoother and for the
-    # prolongation-smoothing damping ω_P. For JacobiSmoother we use the
-    # analytic bound ω_P = 4/3 (tight for a standard Laplacian) so we can
-    # skip the 10 power-iteration calls at setup time.
+    # ω_P damping for prolongation smoothing: must use 4/(3ρ) where ρ = ρ(D⁻¹A).
+    # For a FVM pressure Laplacian, ρ ≈ 2 → ω_P ≈ 2/3. A fixed 4/3 would overshoot
+    # (the smoothing polynomial goes negative), producing suboptimal prolongators.
+    # ρ is also stored for Chebyshev eigenvalue bounds; Jacobi stores 1.0 (unused).
     use_jacobi = opts.smoother isa JacobiSmoother
-    _rho_one   = one(Tv)
 
-    D_fine = _extract_dinv_cpu(A_cpu)
-    _rho_fine  = use_jacobi ? _rho_one :
-                              Tv(estimate_spectral_radius(A_cpu, D_fine))
+    D_fine    = _extract_dinv_cpu(A_cpu)
+    ρ_fine    = Tv(estimate_spectral_radius(A_cpu, D_fine))
+    _rho_fine = use_jacobi ? one(Tv) : ρ_fine
     push!(rhos, _rho_fine)
     _fine_diag_max = maximum(inv, D_fine; init=zero(Tv))
 
@@ -62,19 +61,22 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
         n_cur <= opts.coarsest_size && break
 
         agg, nagg = amg_coarsen(A_cur, opts.strength, opts.coarsening)
-        nagg >= n_cur  && break
-        # Require at least 10% reduction per level; stop if coarsening stagnates.
+        nagg >= n_cur && break
+        # If primary coarsening stagnated (< 30% reduction), fall back to
+        # pairwise aggregation which guarantees ≥ 2× reduction.
+        if nagg > (n_cur * 7) ÷ 10
+            agg_p, nagg_p = _coarsen_pairwise(A_cur)
+            if nagg_p < nagg
+                agg, nagg = agg_p, nagg_p
+            end
+        end
+        # Stop only if even the pairwise fallback couldn't reduce size ≥ 10%.
         nagg > 0.9 * n_cur && break
 
-        # ω_P damping: use analytic bound 4/3 for Jacobi (avoids power iteration);
-        # estimate spectral radius only when Chebyshev needs the actual value.
-        ω_P = if use_jacobi
-            4.0 / 3.0
-        else
-            D_cur = _extract_dinv_cpu(A_cur)
-            ρ_cur = estimate_spectral_radius(A_cur, D_cur)
-            min(4.0 / (3.0 * max(ρ_cur, eps(Float64))), 4.0/3.0)
-        end
+        # Always compute ρ(D⁻¹A) for ω_P — independent of smoother choice.
+        D_cur = _extract_dinv_cpu(A_cur)
+        ρ_cur = estimate_spectral_radius(A_cur, D_cur)
+        ω_P   = min(4.0 / (3.0 * max(ρ_cur, eps(Float64))), 4.0/3.0)
 
         P_tent = build_tentative_P(n_cur, nagg, agg)
         P_cpu  = smooth_prolongation(A_cur, P_tent, ω_P)
@@ -96,10 +98,8 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
             init = Tv(Inf))
         Ac_diag_min < sqrt(eps(Float64)) * _fine_diag_max && break
 
-        ρ_c = use_jacobi ? _rho_one : begin
-            D_c = _extract_dinv_cpu(Ac_cpu)
-            Tv(estimate_spectral_radius(Ac_cpu, D_c))
-        end
+        D_c = _extract_dinv_cpu(Ac_cpu)
+        ρ_c = use_jacobi ? one(Tv) : Tv(estimate_spectral_radius(Ac_cpu, D_c))
 
         push!(P_cpus,  P_cpu)
         push!(R_cpus,  R_cpu)
@@ -254,13 +254,18 @@ function solve_system!(
     r0 = amg_norm(L1.r)
     r0 = ifelse(r0 > eps(r0), r0, one(r0))
 
-    # Multigrid cycle iterations — levels::Vector{LType} is typed, no dynamic dispatch
-    for _ in 1:itmax
+    # Multigrid cycle iterations — levels::Vector{LType} is typed, no dynamic dispatch.
+    # Residual is checked every check_freq cycles: computing a global norm forces a
+    # device synchronisation (GPU pipeline stall + full-vector reduction) so checking
+    # every cycle would dominate the runtime when cycles are cheap.
+    check_freq = 5
+    for k in 1:itmax
         run_cycle!(ws.levels, ws.opts, ws.opts.cycle, backend, workgroup)
-
-        amg_residual!(L1.r, L1.A, L1.x, L1.b, backend, workgroup)
-        res_norm = amg_norm(L1.r)
-        (res_norm < atol || res_norm / r0 < rtol) && break
+        if k % check_freq == 0 || k == itmax
+            amg_residual!(L1.r, L1.A, L1.x, L1.b, backend, workgroup)
+            res_norm = amg_norm(L1.r)
+            (res_norm < atol || res_norm / r0 < rtol) && break
+        end
     end
 
     # Copy solution back to the field values array

@@ -19,12 +19,21 @@ function XCALibre.Mesh._convert_array!(arr, backend::BACKEND)
     return adapt(GPUARRAY, arr) # using GPUARRAY
 end
 
-import XCALibre.ModelFramework: _nzval, _rowptr, _colval, get_sparse_fields, 
-                                _build_A, _build_opA
+import XCALibre.ModelFramework: _nzval, _rowptr, _colval, get_sparse_fields,
+                                _build_A, _build_opA, _build_sparse_device
 
 _build_A(backend::BACKEND, i, j, v, n) = begin
     A = sparse(i, j, v, n, n)
     SPARSEGPU(A)
+end
+
+function _build_sparse_device(::BACKEND,
+        rowptr::AbstractVector, colval::AbstractVector, nzval::AbstractVector{Tv},
+        m::Int, n::Int) where {Tv}
+    rowptr_gpu = adapt(GPUARRAY{Int32}, rowptr)
+    colval_gpu = adapt(GPUARRAY{Int32}, colval)
+    nzval_gpu  = adapt(GPUARRAY{Tv}, nzval)
+    return SPARSEGPU(rowptr_gpu, colval_gpu, nzval_gpu, (m, n))
 end
 
 _build_opA(A::SPARSEGPU) = KP.KrylovOperator(A)

@@ -4,6 +4,7 @@ export Time, Laplacian, Divergence, Si
 export Model, ScalarEquation, VectorEquation, ModelEquation, ScalarModel, VectorModel
 export nzval_index
 export spindex, spindex_csc
+export _build_sparse_device
 
 # ABSTRACT TYPES 
 
@@ -105,6 +106,15 @@ end
 
 _build_A(backend::CPU, i, j, v, n) = SparseXCSR(sparsecsr(i, j, v, n, n))
 _build_opA(A::SparseXCSR) = A
+
+# Rectangular sparse matrix builder — used by AMG for P, R, Ac transfers to device.
+# CPU version: wrap existing nzval/colval/rowptr into SparseXCSR (no copy).
+function _build_sparse_device(::CPU,
+        rowptr::AbstractVector{Ti}, colval::AbstractVector{Ti}, nzval::AbstractVector{Tv},
+        m::Int, n::Int) where {Tv, Ti}
+    A = SparseMatricesCSR.SparseMatrixCSR{1, Tv, Ti}(m, n, rowptr, colval, nzval)
+    return SparseXCSR(A)
+end
 
 ## ORIGINAL STRUCTURE PARAMETERISED FOR GPU
 struct ScalarEquation{VTf<:AbstractVector, ASA<:AbstractSparseArray, OP} <: AbstractEquation

@@ -95,8 +95,11 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
     n_levels = length(A_cpus)
 
     # ── Phase 2: build device matrices and MultigridLevel objects ─────────────
-    # Coarsest-level LU (dense, on CPU)
-    lu_f, lu_rhs = _build_lu(A_cpus[end], Tv)
+    # Coarsest-level LU (dense, on CPU) — only if small enough
+    n_coarsest = size(A_cpus[end], 1)
+    lu_f, lu_rhs = n_coarsest <= opts.coarsest_size ?
+                       _build_lu(A_cpus[end], Tv) :
+                       (nothing, Tv[])
 
     # Build all levels (same LType for the whole vector → typed storage)
     levels = LType[]
@@ -172,10 +175,12 @@ function update!(ws::AMGWorkspace, A_device, backend, workgroup)
         A_cur = Ac_new
     end
 
-    # Rebuild coarsest-level LU
-    lu_f, lu_rhs = _build_lu(A_cur, eltype(ws.x))
-    ws.levels[end].extras.lu_factor = lu_f
-    ws.levels[end].extras.lu_rhs    = lu_rhs
+    # Rebuild coarsest-level LU (only if it was built during setup)
+    if !isnothing(ws.levels[end].extras.lu_factor)
+        lu_f, lu_rhs = _build_lu(A_cur, eltype(ws.x))
+        ws.levels[end].extras.lu_factor = lu_f
+        ws.levels[end].extras.lu_rhs    = lu_rhs
+    end
     nothing
 end
 
@@ -254,18 +259,11 @@ function _csr_to_device(A::SparseMatricesCSR.SparseMatrixCSR{Bi,Tv,Ti},
     if backend isa CPU
         return SparseXCSR(A)
     else
-        m    = size(A, 1)
-        rows = Int[]
-        cols = Int[]
-        vals = Tv2[]
-        for i in 1:m
-            for nzi in A.rowptr[i]:(A.rowptr[i+1]-1)
-                push!(rows, i)
-                push!(cols, A.colval[nzi])
-                push!(vals, Tv2(A.nzval[nzi]))
-            end
-        end
-        return _build_A(backend, rows, cols, vals, m)
+        m, n = size(A)
+        rowptr = Vector{Int32}(A.rowptr)
+        colval = Vector{Int32}(A.colval)
+        nzval  = Vector{Tv2}(A.nzval)
+        return _build_sparse_device(backend, rowptr, colval, nzval, m, n)
     end
 end
 
@@ -306,10 +304,16 @@ function _build_lu(A_cpu::SparseMatricesCSR.SparseMatrixCSR{Bi,Tv,Ti}, ::Type{Tv
     return lu!(Adense), zeros(Tv2, n)
 end
 
-# Coarse solve via LU (host-side).
+# Coarse solve: dense LU if available, else extra Jacobi sweeps.
 function amg_coarse_solve!(level::MultigridLevel, backend)
     ex = level.extras
-    copyto!(ex.lu_rhs, level.b)
-    ldiv!(ex.lu_factor, ex.lu_rhs)
-    KernelAbstractions.copyto!(backend, level.x, ex.lu_rhs)
+    if !isnothing(ex.lu_factor)
+        copyto!(ex.lu_rhs, level.b)
+        ldiv!(ex.lu_factor, ex.lu_rhs)
+        KernelAbstractions.copyto!(backend, level.x, ex.lu_rhs)
+    else
+        # Fall back to many Jacobi sweeps when LU is too expensive
+        workgroup = 1024
+        amg_smooth!(level, 50, 2/3, backend, workgroup)
+    end
 end

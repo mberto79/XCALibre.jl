@@ -20,6 +20,7 @@ using XCALibre.Multithread
 using XCALibre.Mesh
 using XCALibre.Fields
 using XCALibre.ModelFramework
+import XCALibre.ModelFramework: _build_A, _build_sparse_device
 using XCALibre.Discretise
 
 # using Reexport

@@ -51,24 +51,27 @@ function smooth_prolongation(A::SparseMatrixCSR{Bi,Tv,Ti},
     colval_P = P_tent.colval
     nzval_P  = P_tent.nzval
 
-    # Row, col, val for smoothed P (dense pass)
+    # Row, col, val for smoothed P (sparse accumulator — avoids O(n*nc) scan)
     row_out = Int[]
     col_out = Int[]
     val_out = Tv[]
 
-    tmp = zeros(Tv, nc)   # dense accumulator, reused across rows
+    tmp  = zeros(Tv, nc)   # dense accumulator, reused across rows
+    used = Int[]            # tracks which columns were touched this row
     for i in 1:n
         # Collect contributions: P_i = P̂_i - ω * (1/a_ii) * (A_i · P̂)
         # A_i · P̂ means for each column k: sum_j A[i,j] * P̂[j,k]
         # Since P̂ has one nonzero per row: P̂[j,*] = e_{agg[j]}
         # → (A*P̂)[i,k] = sum over j where agg[j]==k of A[i,j]
 
-        fill!(tmp, zero(Tv))
         for nzi_A in rowptr_A[i]:(rowptr_A[i+1]-1)
             j = colval_A[nzi_A]
             # P̂[j, *]: find which column j maps to
             for nzi_P in rowptr_P[j]:(rowptr_P[j+1]-1)
                 k = colval_P[nzi_P]
+                if tmp[k] == zero(Tv)
+                    push!(used, k)
+                end
                 tmp[k] += nzval_A[nzi_A] * nzval_P[nzi_P]
             end
         end
@@ -78,17 +81,24 @@ function smooth_prolongation(A::SparseMatrixCSR{Bi,Tv,Ti},
         coeff = abs(d) > eps(Tv) ? ω / d : zero(Tv)
         for nzi_P in rowptr_P[i]:(rowptr_P[i+1]-1)
             k = colval_P[nzi_P]
+            if tmp[k] == zero(Tv)
+                push!(used, k)
+            end
             tmp[k] = nzval_P[nzi_P] - coeff * tmp[k]
         end
 
-        # Store nonzeros
-        for k in 1:nc
-            if abs(tmp[k]) > eps(Tv)
+        # Store nonzeros — only scan touched columns
+        sort!(used)
+        for k in used
+            v = tmp[k]
+            tmp[k] = zero(Tv)
+            if abs(v) > eps(Tv)
                 push!(row_out, i)
                 push!(col_out, k)
-                push!(val_out, tmp[k])
+                push!(val_out, v)
             end
         end
+        empty!(used)
     end
 
     return SparseMatricesCSR.sparsecsr(row_out, col_out, val_out, n, nc)

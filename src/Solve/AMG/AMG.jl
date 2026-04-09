@@ -1,0 +1,7 @@
+include("AMG_0_types.jl")
+include("AMG_1_kernels.jl")
+include("AMG_2_coarsen.jl")
+include("AMG_3_galerkin.jl")
+include("AMG_4_smoothers.jl")
+include("AMG_5_cycle.jl")
+include("AMG_6_api.jl")

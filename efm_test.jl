@@ -4,7 +4,7 @@ using CSV
 # using AMDGPU # Uncomment to run on AMD GPUs
 
 grids_dir = pkgdir(XCALibre, "Test_Meshes/");
-grid = "initial_efm_mesh7.unv";
+grid = "initial_efm_mesh6.unv";
 mesh_file = joinpath(grids_dir, grid);
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001);
@@ -127,16 +127,16 @@ solvers = (
 adaptive = AdaptiveTimeStepping(; 
     # keyword arguments
 
-    maxCo=0.3,
+    maxCo=0.1,
     minShrink=0.1,
     maxGrow=1.2
 )
 begin
 #runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
 #runtime = Runtime(iterations=20000, time_step=1, write_interval=20000)
-#runtime = Runtime(iterations=20, time_step=Δt, write_interval=1, adaptive=adaptive); # hide
+runtime = Runtime(iterations=20, time_step=Δt, write_interval=1, adaptive=adaptive); # hide
 #runtime = Runtime(iterations=20, time_step=2e-3, write_interval=1)
-runtime = Runtime(iterations=200, time_step=Δt, write_interval=5, adaptive=adaptive);
+#runtime = Runtime(iterations=200, time_step=Δt, write_interval=5, adaptive=adaptive);
 #runtime = Runtime(iterations=2000, time_step=Δt, write_interval=100, adaptive=adaptive)
 #runtime = Runtime(iterations=300, time_step=Δt, write_interval=5, adaptive=adaptive)
 #runtime = Runtime(iterations=8000, time_step=Δt, write_interval=400)
@@ -166,7 +166,7 @@ initialise!(model.momentum.h, h_init)
 #    end
 #end
 
-residuals = run!(model, config, inner_loops=10);
+residuals = run!(model, config, inner_loops=3);
 end;
 using Plots
 plot((residuals.Ux), label="Ux")

@@ -110,7 +110,7 @@ function FilmModel(
     Ph = get_source(U_eqn,2)
     τθw = get_source(U_eqn,3)
 
-    Df = FaceScalarField(mesh);get_flux(h_eqn, 2)
+    Df = get_flux(h_eqn, 2)
     divPhi = get_source(h_eqn,1)
     Sm = get_source(h_eqn, 2)
     mu = nu.values*rho.values
@@ -121,7 +121,7 @@ function FilmModel(
 
     n = [sind(coeffs.ϕ),0,cosd(coeffs.ϕ)]
     g = 9.8
-    G = g*[0,0,-1]
+    G = g.*[0,0,-1]
 
     # Define aux fields
     hUf = FaceVectorField(mesh)
@@ -134,8 +134,6 @@ function FilmModel(
     P_hydrf = FaceScalarField(mesh)
     P_surff = FaceScalarField(mesh)
     Pf = FaceScalarField(mesh)
-    ∇P = Grad{Gauss}(Pf)
-    h∇P = VectorField(mesh)
 
     tempU = VectorField(mesh)
     Δh = ScalarField(mesh)
@@ -264,7 +262,7 @@ function FilmModel(
         
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rDf, rD, config)
-        remove_film_pressure_source!(U_eqn, P_hydrf, P_surff, h, config)
+        remove_film_pressure_source!(U_eqn, P_hydrf, P_surff, rho.values[1], h, config)
 
         
         for j ∈ eachindex(U)
@@ -276,7 +274,6 @@ function FilmModel(
 
             interpolate!(Uf, Hv, config)
             correct_boundaries!(Uf, Hv, boundaries.U, time, config)
-
 
             flux!(mdotf, Uf, config)
             @. phif.values = mdotf.values * hf.values
@@ -305,9 +302,11 @@ function FilmModel(
                 P_surff.values[j] = coeffs.σ*Δhf[j]
             end
 
-            correct_film_velocity!(U, Hv, h, P_hydrf, P_surff, rD, config)
-            correct_mass_flux2!(phif, Df, h_eqn, config)
+            correct_film_velocity!(U, Hv, h, P_hydrf, P_surff, rD, rho.values[1],  config)
         end
+        
+        correct_mass_flux2!(mdotf, Df, h_eqn, config)
+        @. phif.values = mdotf.values * hf.values 
 
         @. nu_h.values = 3*nu.values/h.values
         for i ∈ eachindex(Δhf.values)
@@ -323,9 +322,9 @@ function FilmModel(
         end
 
         # correct U for non-wetted
-        for i ∈ eachindex(U.x)
-            U[i] = U[i] .* w[i]
-        end
+        #for i ∈ eachindex(U.x)
+        #    U[i] = U[i] .* w[i]
+        #end
 
         grad!(∇w, wf, w, internal_BCs.w, time, config)
 
@@ -493,14 +492,15 @@ end
 
 @kernel function _getDf!(Df, rDf, hf, rho, g, n)
     i = @index(Global)
+    (; area) = hf.mesh.faces[i]
 
     @inbounds begin
         g_n = dot(g, n)
-        Df[i] = rDf[i] * hf[i] * rho * g_n * 1e-4
+        Df[i] = rDf[i] * hf[i] * rho * g_n * area
     end
 end
 
-function remove_film_pressure_source!(U_eqn, P_hyrdf, P_surff, h, config)
+function remove_film_pressure_source!(U_eqn, P_hyrdf, P_surff, rho, h, config)
     
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -517,11 +517,11 @@ function remove_film_pressure_source!(U_eqn, P_hyrdf, P_surff, h, config)
 
     ndrange = length(bx)
     kernel! = _remove_film_pressure_source!(_setup(backend, workgroup, ndrange)...)
-    kernel!(cells, ∇P_hydr, ∇P_surf, h, bx, by, bz)
+    kernel!(cells, ∇P_hydr, ∇P_surf, rho, h, bx, by, bz)
     # # KernelAbstractions.synchronize(backend)
 end
 
-@kernel function _remove_film_pressure_source!(cells,  ∇P_hydr, ∇P_surf, h, bx, by, bz) #Extend to 3D
+@kernel function _remove_film_pressure_source!(cells,  ∇P_hydr, ∇P_surf, rho, h, bx, by, bz) #Extend to 3D
     i = @index(Global)
 
     @uniform begin
@@ -533,9 +533,9 @@ end
     @inbounds begin
         hi = _h[i]
         (; volume) = cells[i]
-        bx[i] -= -hi*(∇P_hydr_x[i] + ∇P_surf_x[i])*volume
-        by[i] -= -hi*(∇P_hydr_y[i] + ∇P_surf_y[i])*volume
-        bz[i] -= -hi*(∇P_hydr_z[i] + ∇P_surf_z[i])*volume
+        bx[i] -= hi*(∇P_hydr_x[i] + ∇P_surf_x[i])*volume/rho
+        by[i] -= hi*(∇P_hydr_y[i] + ∇P_surf_y[i])*volume/rho
+        bz[i] -= hi*(∇P_hydr_z[i] + ∇P_surf_z[i])*volume/rho
     end
 end
 
@@ -558,7 +558,7 @@ end
     end
 end
 
-function correct_film_velocity!(U, Hv, h, P_hydrf, P_surff, rD,config)
+function correct_film_velocity!(U, Hv, h, P_hydrf, P_surff, rD, rho, config)
     (; mesh) = U
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -570,10 +570,10 @@ function correct_film_velocity!(U, Hv, h, P_hydrf, P_surff, rD,config)
 
     ndrange = length(U)
     kernel! = _correct_film_velocity!(_setup(backend, workgroup, ndrange)...)
-    kernel!(U, Hv, h, rD, ∇P_hydr, ∇P_surf)
+    kernel!(U, Hv, h, rD, ∇P_hydr, ∇P_surf, rho)
 end
 
-@kernel function _correct_film_velocity!(U, Hv, h, rD, ∇P_hydr, ∇P_surf)
+@kernel function _correct_film_velocity!(U, Hv, h, rD, ∇P_hydr, ∇P_surf, rho)
     i = @index(Global)
 
     @uniform begin
@@ -588,9 +588,9 @@ end
     @inbounds begin
         rDi = _rD[i]
         hi = _h[i]
-        Ux[i] = Hvx[i] + (dPhdx[i] + dPsdx[i]) * hi * rDi
-        Uy[i] = Hvy[i] + (dPhdy[i] + dPsdy[i]) * hi * rDi
-        Uz[i] = Hvz[i] + (dPhdz[i] + dPsdz[i]) * hi * rDi
+        Ux[i] = Hvx[i] + (dPhdx[i] + dPsdx[i]) * hi * rDi/rho
+        Uy[i] = Hvy[i] + (dPhdy[i] + dPsdy[i]) * hi * rDi/rho
+        Uz[i] = Hvz[i] + (dPhdz[i] + dPsdz[i]) * hi * rDi/rho
     end
 end
 
@@ -606,8 +606,7 @@ function correct_mass_flux2!(mdotf, Df, h_eqn, config)
     n_bfaces = length(boundary_cellsID)
     n_ifaces = n_faces - n_bfaces
 
-    #ndrange = length(mdotf)
-    ndrange = n_ifaces
+    ndrange = length(mdotf)
     kernel! = _correct_mass_flux2!(_setup(backend, workgroup, ndrange)...)
     kernel!(mdotf, h, Df, mesh)
 
@@ -617,9 +616,9 @@ end
     i = @index(Global)
 
     ownerCells = mesh.faces[i].ownerCells
-    snGrad = -(h[ownerCells[2]]-h[ownerCells[1]])/mesh.faces[i].delta
-    (; normal, area) = mesh.faces[i]
-    len_me = sqrt(normal[1]^2+normal[2]^2+normal[3]^2)
+    snGrad = mesh.cell_nsign[i]*(h[ownerCells[2]]-h[ownerCells[1]])/mesh.faces[i].delta
+    (; normal) = mesh.faces[i]
+    len_me = sqrt(normal[1]^2+normal[2]^2+normal[3]^2)# probably 1
 
-    mdotf[i] -= Df[i] * len_me * area * snGrad
+    mdotf[i] -= Df[i] * len_me * snGrad
 end

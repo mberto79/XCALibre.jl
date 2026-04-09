@@ -6,7 +6,7 @@ abstract type AMGCycle end
 struct VCycle <: AMGCycle end
 struct WCycle <: AMGCycle end
 
-# ─── Smoother marker (Chebyshev polynomial smoother) ──────────────────────────
+# ─── Chebyshev polynomial smoother ────────────────────────────────────────────
 
 """
     Chebyshev(; degree=2, lo=0.3, hi=1.1)
@@ -29,7 +29,7 @@ Chebyshev(; degree::Int=2, lo=0.3, hi=1.1) = begin
     Chebyshev{F}(degree, F(lo), F(hi))
 end
 
-# ─── User-facing marker type (zero-field struct like Bicgstab, Cg, etc.) ──────
+# ─── User-facing AMG marker type ──────────────────────────────────────────────
 
 """
     AMG(; smoother, cycle, max_levels, coarsest_size, pre_sweeps, post_sweeps,
@@ -66,103 +66,125 @@ solvers = (
 )
 ```
 """
-struct AMG{S<:AbstractSmoother,C<:AMGCycle} <: AbstractLinearSolver
-    smoother::S
-    cycle::C
-    max_levels::Int
-    coarsest_size::Int
-    pre_sweeps::Int
-    post_sweeps::Int
-    strength::Float64
-    coarsening::Symbol
+struct AMG{S<:AbstractSmoother, C<:AMGCycle} <: AbstractLinearSolver
+    smoother      :: S
+    cycle         :: C
+    max_levels    :: Int
+    coarsest_size :: Int
+    pre_sweeps    :: Int
+    post_sweeps   :: Int
+    strength      :: Float64
+    coarsening    :: Symbol
 end
 
 AMG(;
-    smoother    = JacobiSmoother(2, 2/3, zeros(0)),  # dummy; user must supply domain
-    cycle       = VCycle(),
-    max_levels  = 25,
+    smoother      = JacobiSmoother(2, 2/3, zeros(0)),
+    cycle         = VCycle(),
+    max_levels    = 25,
     coarsest_size = 50,
-    pre_sweeps  = 2,
-    post_sweeps = 2,
-    strength    = 0.25,
-    coarsening  = :SA,
+    pre_sweeps    = 2,
+    post_sweeps   = 2,
+    strength      = 0.25,
+    coarsening    = :SA,
 ) = AMG(smoother, cycle, max_levels, coarsest_size, pre_sweeps, post_sweeps,
         Float64(strength), coarsening)
+
+# ─── Host-only per-level extras ───────────────────────────────────────────────
+
+"""
+    LevelExtras{Tv, CpuSpT}
+
+Host-resident mutable state for one multigrid level. Never transferred to the GPU.
+
+- `P_cpu`, `R_cpu` : CPU copies of the transfer operators (for `update!` Galerkin
+  products without a GPU→CPU round-trip). `nothing` at the coarsest level.
+- `rho`            : spectral radius estimate of D⁻¹A (for Chebyshev smoothing).
+- `lu_factor`      : dense LU factorisation (coarsest level only; `nothing` otherwise).
+- `lu_rhs`         : scratch vector for the LU back-solve (empty at non-coarsest levels).
+
+`CpuSpT` is the concrete CPU sparse matrix type, always
+`SparseMatricesCSR.SparseMatrixCSR{1, Tv, Int}` (produced by `sparsecsr`).
+
+Since `LevelExtras` has no `Adapt.adapt_structure` method, `Adapt.adapt` returns it
+unchanged — host-only state always stays on the CPU.
+"""
+mutable struct LevelExtras{Tv, CpuSpT}
+    P_cpu     :: Union{Nothing, CpuSpT}
+    R_cpu     :: Union{Nothing, CpuSpT}
+    rho       :: Tv
+    lu_factor :: Union{Nothing, LinearAlgebra.LU{Tv, Matrix{Tv}, Vector{Int}}}
+    lu_rhs    :: Vector{Tv}
+
+    LevelExtras{Tv, CpuSpT}() where {Tv, CpuSpT} =
+        new{Tv, CpuSpT}(nothing, nothing, one(Tv), nothing, Tv[])
+end
 
 # ─── Per-level storage ────────────────────────────────────────────────────────
 
 """
-    MultigridLevel
+    MultigridLevel{Tv, AType, PType, Vec, ExtrasT}
 
-Stores the system matrix, prolongation/restriction operators, and work vectors for
-one level of the AMG hierarchy. All arrays are pre-allocated during setup.
+Immutable, fully-parametric struct for one level of the AMG hierarchy.
 
-`P` and `R` are typed as `Any` so that different levels can hold different concrete
-sparse-matrix types (CPU vs GPU) without requiring re-parameterisation.
+- `A`      : system matrix (device-resident, type `AType`).
+- `P`, `R` : prolongation / restriction operators (`PType = Union{Nothing, AType}`).
+             `nothing` at the coarsest level; a concrete sparse matrix elsewhere.
+- `Dinv`   : inverse diagonal D⁻¹ (device-resident, type `Vec`).
+- `x`, `b`, `r`, `tmp` : pre-allocated work vectors (device-resident, type `Vec`).
+             The Jacobi smoother uses `r` as scratch for the correction
+             (correction-form: `x += ω Dinv r` where `r = b - Ax`), so no
+             field-swap is needed and the struct stays immutable.
+- `extras` : host-only mutable state (`ExtrasT = LevelExtras{Tv, CpuSpT}`).
+
+`Adapt.@adapt_structure` adapts all device fields (`A`, `P`, `R`, work vectors)
+to the target backend while leaving `extras` untouched — `Adapt.adapt` returns a
+`LevelExtras` unchanged since no `adapt_structure` method is defined for it.
+
+The outer constructor always fixes `PType = Union{Nothing, AType}` so that every
+level in the hierarchy shares the same concrete `MultigridLevel` type and can be
+stored in a plain `Vector{MultigridLevel{...}}` without any dynamic dispatch.
 """
-mutable struct MultigridLevel{Tv, AType, Vec<:AbstractVector{Tv}}
-    # System matrix for this level (level 1 wraps the original device matrix)
-    A        :: AType
-    # Prolongation P (fine→coarse) and restriction R = Pᵀ (coarse→fine).
-    # Typed `Any` to allow different concrete sparse types across levels / backends.
-    P        :: Any
-    R        :: Any
-    # CPU-resident copies of P and R (always SparseMatrixCSR on host).
-    # Cached here to avoid a GPU→CPU round-trip during update!; on CPU backend these
-    # are the same objects as P/R (parent() is zero-copy).
-    P_cpu    :: Any
-    R_cpu    :: Any
-    # Inverse diagonal D⁻¹ (for Jacobi and Chebyshev spectral estimates)
-    Dinv     :: Vec
-    # Work vectors – allocated once, reused every cycle (no per-cycle allocations)
-    x        :: Vec   # current iterate / correction
-    b        :: Vec   # right-hand side
-    r        :: Vec   # residual r = b - Ax
-    tmp      :: Vec   # scratch (swap buffer for Jacobi / Chebyshev)
-    # Chebyshev: estimated spectral radius of D⁻¹A
-    rho      :: Base.RefValue{Tv}
-    # Coarsest level: dense LU factorisation (CPU host)
-    lu_factor :: Union{Nothing, LinearAlgebra.LU{Tv,Matrix{Tv},Vector{Int}}}
-    lu_rhs    :: Union{Nothing, Vector{Tv}}
+struct MultigridLevel{Tv, AType, PType, Vec <: AbstractVector{Tv}, ExtrasT}
+    A      :: AType
+    P      :: PType
+    R      :: PType
+    Dinv   :: Vec
+    x      :: Vec
+    b      :: Vec
+    r      :: Vec
+    tmp    :: Vec
+    extras :: ExtrasT
 end
 
-function MultigridLevel(A, P, R, Dinv::Vec, x::Vec, b::Vec, r::Vec, tmp::Vec) where {Vec}
-    Tv = eltype(Dinv)
-    MultigridLevel{Tv, typeof(A), Vec}(
-        A, P, R, nothing, nothing, Dinv, x, b, r, tmp,
-        Ref(zero(Tv)), nothing, nothing,
-    )
+Adapt.@adapt_structure MultigridLevel
+
+# Outer constructor: fixes PType = Union{Nothing, AType} for a homogeneous hierarchy.
+function MultigridLevel(A::AType, P, R,
+                         Dinv::Vec, x::Vec, b::Vec, r::Vec, tmp::Vec,
+                         extras::ExtrasT) where {AType, Vec<:AbstractVector, ExtrasT}
+    Tv    = eltype(Vec)
+    PType = Union{Nothing, AType}
+    MultigridLevel{Tv, AType, PType, Vec, ExtrasT}(A, P, R, Dinv, x, b, r, tmp, extras)
 end
 
-# Adapt device-resident fields; P_cpu/R_cpu/lu_factor/lu_rhs stay on the host.
-function Adapt.adapt_structure(to, L::MultigridLevel{Tv}) where {Tv}
-    A    = Adapt.adapt(to, L.A)
-    P    = Adapt.adapt(to, L.P)
-    R    = Adapt.adapt(to, L.R)
-    Dinv = Adapt.adapt(to, L.Dinv)
-    x    = Adapt.adapt(to, L.x)
-    b    = Adapt.adapt(to, L.b)
-    r    = Adapt.adapt(to, L.r)
-    tmp  = Adapt.adapt(to, L.tmp)
-    MultigridLevel{Tv, typeof(A), typeof(x)}(
-        A, P, R, L.P_cpu, L.R_cpu, Dinv, x, b, r, tmp,
-        L.rho, L.lu_factor, L.lu_rhs,
-    )
-end
-
-# ─── Workspace (replaces Krylov.jl workspace) ─────────────────────────────────
+# ─── Workspace ────────────────────────────────────────────────────────────────
 
 """
-    AMGWorkspace
+    AMGWorkspace{LType, Vec, Opts}
 
-Holds the complete multigrid hierarchy and is stored in `phiEqn.solver` in place
-of a Krylov.jl workspace. Exposes a `.x` field so the existing `_copy!` kernel
-in `solve_system!` continues to work unchanged.
+Holds the complete multigrid hierarchy and is stored in `phiEqn.solver` in place of
+a Krylov.jl workspace. Exposes a `.x` field so the existing `_copy!` kernel in
+`solve_system!` continues to work unchanged.
+
+`LType` is the fully-concrete `MultigridLevel` type determined at construction time
+from the matrix and RHS vector types via `_workspace(amg, A, b)`. The `levels` field
+is therefore a fully-typed `Vector{LType}` — no `Any`, no dynamic dispatch in the
+cycle hot path.
 """
-mutable struct AMGWorkspace{Vec, Opts<:AMG}
-    levels       :: Vector{Any}   # Vector of MultigridLevel (Any avoids UnionAll issues)
-    x            :: Vec           # top-level solution (alias for levels[1].x after setup)
-    opts         :: Opts
-    setup_valid  :: Bool          # false → full setup needed on next solve
-    setup_count  :: Int           # number of times full setup ran (for diagnostics)
+mutable struct AMGWorkspace{LType, Vec, Opts<:AMG}
+    levels      :: Vector{LType}
+    x           :: Vec
+    opts        :: Opts
+    setup_valid :: Bool
+    setup_count :: Int
 end

@@ -52,7 +52,7 @@ function wall_distance!(model, walls, config)
 
     @reset phi_eqn.preconditioner = set_preconditioner(solvers.y.preconditioner, phi_eqn)
 
-    @reset phi_eqn.solver = _workspace(solvers.y.solver, _b(phi_eqn))
+    @reset phi_eqn.solver = _workspace(solvers.y.solver, _A(phi_eqn), _b(phi_eqn))
 
     TF = _get_float(mesh)
 

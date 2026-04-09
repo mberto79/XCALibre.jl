@@ -79,7 +79,7 @@ function setup_laplace_solver(
 
     @info "Pre-allocating solvers..."
 
-    @reset T_eqn.solver = _workspace(solvers.solver, _b(T_eqn))
+    @reset T_eqn.solver = _workspace(solvers.solver, _A(T_eqn), _b(T_eqn))
 
     @info "Initialising energy model..."
     energyModel = initialise(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, config)

@@ -130,7 +130,7 @@ function initialise(
     ) → eqn
 
     @reset energy_eqn.preconditioner = set_preconditioner(solvers.he.preconditioner, energy_eqn)
-    @reset energy_eqn.solver = _workspace(solvers.he.solver, _b(energy_eqn))
+    @reset energy_eqn.solver = _workspace(solvers.he.solver, _A(energy_eqn), _b(energy_eqn))
 
     init_residual = (:he, 1.0)
     state = ModelState(init_residual, false)

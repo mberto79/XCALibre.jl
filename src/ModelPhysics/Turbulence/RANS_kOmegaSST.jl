@@ -161,8 +161,8 @@ function initialise(
     @reset ω_eqn.preconditioner = set_preconditioner(solvers.omega.preconditioner, ω_eqn)
     
     # preallocating solvers
-    @reset k_eqn.solver = _workspace(solvers.k.solver, _b(k_eqn))
-    @reset ω_eqn.solver = _workspace(solvers.omega.solver, _b(ω_eqn))
+    @reset k_eqn.solver = _workspace(solvers.k.solver, _A(k_eqn), _b(k_eqn))
+    @reset ω_eqn.solver = _workspace(solvers.omega.solver, _A(ω_eqn), _b(ω_eqn))
 
     new_config = wall_distance!(model, model.wall_info, config)
 

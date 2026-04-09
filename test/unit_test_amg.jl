@@ -6,10 +6,9 @@ using KernelAbstractions
 println("=== AMG Unit Test ===")
 
 # ── Build a small 2D Poisson matrix ─────────────────────────────────────────
-# 5×5 grid interior → 25 DOF (Laplacian on uniform grid)
+# n×n interior Laplacian stencil (5-point)
 
 function build_poisson(n)
-    # n × n interior Laplacian stencil (5-point)
     N = n * n
     rows = Int[]; cols = Int[]; vals = Float64[]
     for i in 1:n, j in 1:n
@@ -46,13 +45,16 @@ amg_opts = AMG(
     coarsening   = :SA,
 )
 
-ws = _workspace(amg_opts, b)
+# Use 3-arg _workspace(amg, A, b) so AMGWorkspace gets a fully-typed levels vector
+ws = _workspace(amg_opts, A, b)
+println("AMGWorkspace type: ", typeof(ws))
 
 # Force setup
 XCALibre.Solve.amg_setup!(ws, A, backend, workgroup)
 
 println("Number of levels built: ", length(ws.levels))
 println("Coarsest level size:    ", length(ws.levels[end].b))
+println("Level type: ", eltype(ws.levels))
 
 # ── Solve A x = b ─────────────────────────────────────────────────────────────
 ws.levels[1].b .= b
@@ -80,7 +82,7 @@ println("\n✓  AMG unit test PASSED")
 
 # ── Test update! (simulate outer-iteration coefficient change) ─────────────────
 println("\n--- Testing update! ---")
-ws2 = _workspace(amg_opts, b)
+ws2 = _workspace(amg_opts, A, b)
 XCALibre.Solve.amg_setup!(ws2, A, backend, workgroup)
 n_levels_before = length(ws2.levels)
 
@@ -106,5 +108,13 @@ end
 final_res2 = norm(b - A_new * ws2.levels[1].x) / norm(b)
 @assert final_res2 < 1e-6 "AMG after update! did not converge (got $final_res2)"
 println("Post-update residual: $final_res2  ✓")
+
+# ── Verify types are concrete (no Any in hot path) ─────────────────────────────
+println("\n--- Type checks ---")
+LType = eltype(ws.levels)
+println("Level element type concrete: ", isconcretetype(LType))
+@assert isconcretetype(LType) "MultigridLevel element type must be concrete (got $LType)"
+println("AMGWorkspace.levels type:   ", typeof(ws.levels))
+@assert !(eltype(typeof(ws.levels)) === Any) "levels must NOT be Vector{Any}"
 
 println("\n=== All AMG tests PASSED ===")

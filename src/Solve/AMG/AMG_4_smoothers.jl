@@ -2,22 +2,25 @@
 # These operate on MultigridLevel objects and use the KA kernels from AMG_1_kernels.jl.
 # They are distinct from the pre-solver JacobiSmoother in Smoothers_jacobi.jl.
 
-# ─── Damped Jacobi ────────────────────────────────────────────────────────────
+# ─── Damped Jacobi (correction form) ─────────────────────────────────────────
+#
+# Classical form:  x_new[i] = ω/a_ii * (b[i] - Σ_{j≠i} a_ij x[j]) + (1-ω) x[i]
+# Equivalent to:   x += ω * D⁻¹ * r   where r = b - Ax
+#
+# The correction form avoids the two-buffer swap that classical Jacobi requires,
+# so MultigridLevel can be immutable and GPU-safe.
 
 """
     amg_smooth!(level, n_sweeps, omega, backend, workgroup)
 
-Apply `n_sweeps` of damped Jacobi smoothing on a multigrid level.
-Uses `level.tmp` as the swap buffer — zero allocation per sweep.
+Apply `n_sweeps` of damped Jacobi smoothing on a multigrid level using the
+correction form: compute `r = b - Ax`, then `x += ω Dinv r` in-place.
+Uses `level.r` as the residual scratch buffer — zero allocation per sweep.
 """
-function amg_smooth!(level::MultigridLevel, n_sweeps::Int, omega,
-                      backend, workgroup)
+function amg_smooth!(level, n_sweeps, omega, backend, workgroup)
     for _ in 1:n_sweeps
-        # x_new stored in level.tmp
-        amg_jacobi_sweep!(level.tmp, level.x, level.Dinv,
-                           level.A, level.b, omega, backend, workgroup)
-        # swap x ↔ tmp
-        level.x, level.tmp = level.tmp, level.x
+        amg_residual!(level.r, level.A, level.x, level.b, backend, workgroup)
+        amg_dinv_axpy!(level.x, level.Dinv, level.r, omega, backend, workgroup)
     end
 end
 
@@ -30,10 +33,9 @@ end
 
 Apply Chebyshev polynomial smoothing on `level` using parameters from `smoother::Chebyshev`.
 """
-function amg_smooth_chebyshev!(level::MultigridLevel, smoother::Chebyshev,
-                                 backend, workgroup)
+function amg_smooth_chebyshev!(level, smoother::Chebyshev, backend, workgroup)
     (; degree, lo, hi) = smoother
-    rho = level.rho[]
+    rho = level.extras.rho
 
     # Eigenvalue bounds
     λ_max = hi * rho
@@ -42,43 +44,27 @@ function amg_smooth_chebyshev!(level::MultigridLevel, smoother::Chebyshev,
     d = (λ_max + λ_min) / 2   # centre
     c = (λ_max - λ_min) / 2   # radius
 
-    # Chebyshev iteration (standard 3-term recurrence):
-    #   p_0 = x
-    #   r_0 = b - A x_0
-    #   p_1 = x_0 + (1/d) * r_0
-    #   ...
-    # See Notay 2010 / AMGX documentation for the exact recurrence used here.
-
-    # We use level.r for the residual and level.tmp as scratch.
+    # Chebyshev iteration (standard 3-term recurrence)
     amg_residual!(level.r, level.A, level.x, level.b, backend, workgroup)
 
     # Initial correction z_0 = (1/d) * r
     alpha = one(eltype(level.x)) / d
-    amg_axpy!(level.x, level.r, alpha, backend, workgroup)  # x += α r
+    amg_axpy!(level.x, level.r, alpha, backend, workgroup)
 
     if degree == 1
         return
     end
 
-    # Higher-degree recurrence
-    # z_{k+1} = (2/d) * z_k * rho_k - z_{k-1}  (Chebyshev recurrence on correction)
-    # We maintain the previous residual in tmp.
-    amg_copy!(level.tmp, level.r, backend, workgroup)   # tmp = r_0
+    amg_copy!(level.tmp, level.r, backend, workgroup)
 
     rho_prev = one(eltype(level.x))
     for _ in 2:degree
-        # Compute new residual r = b - A x
         amg_residual!(level.r, level.A, level.x, level.b, backend, workgroup)
 
-        rho_new = one(eltype(level.x)) / (2*d/c - rho_prev)
-        alpha_k = rho_new * rho_prev * 2 / c
-        beta_k  = -rho_new
+        rho_new   = one(eltype(level.x)) / (2*d/c - rho_prev)
+        alpha_k   = rho_new * rho_prev * 2 / c
+        beta_k    = -rho_new
 
-        # x = (1 + beta_k) * x_old_old  +  alpha_k * r  (using tmp to hold previous)
-        # Update in place: x += alpha_k*r + beta_k*(x - x_prev) would need x_prev
-        # Use: z = beta_k * z_prev + alpha_k * r  and then x += z
-        # level.tmp stores the previous z
-        # z_new = alpha_k * r + beta_k * z_prev
         amg_axpby!(level.tmp, level.r, alpha_k, beta_k, backend, workgroup)
         amg_axpy!(level.x, level.tmp, one(eltype(level.x)), backend, workgroup)
 
@@ -88,8 +74,7 @@ end
 
 # ─── Dispatch: apply smoother based on type ────────────────────────────────────
 
-function apply_level_smoother!(level::MultigridLevel, n_sweeps::Int,
-                                 opts::AMG, backend, workgroup)
+function apply_level_smoother!(level, n_sweeps::Int, opts::AMG, backend, workgroup)
     _apply_level_smoother!(level, opts.smoother, n_sweeps, backend, workgroup)
 end
 

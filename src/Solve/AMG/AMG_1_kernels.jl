@@ -153,3 +153,19 @@ function amg_jacobi_sweep!(x_new, x, Dinv, A, b, omega, backend, workgroup)
     kernel! = _amg_jacobi_sweep!(_setup(backend, workgroup, n)...)
     kernel!(x_new, x, Dinv, rowptr, colval, nzval, b, omega)
 end
+
+# ── Correction-form Jacobi update: x[i] += ω * Dinv[i] * r[i] ────────────────
+# Replaces the two-buffer swap pattern. With r = b - Ax pre-computed, this
+# is mathematically identical to damped Jacobi but requires no tmp-buffer swap
+# and works cleanly with an immutable MultigridLevel struct.
+
+@kernel function _amg_dinv_axpy!(x, Dinv, r, omega)
+    i = @index(Global)
+    @inbounds x[i] += omega * Dinv[i] * r[i]
+end
+
+function amg_dinv_axpy!(x, Dinv, r, omega, backend, workgroup)
+    n = length(x)
+    kernel! = _amg_dinv_axpy!(_setup(backend, workgroup, n)...)
+    kernel!(x, Dinv, r, omega)
+end

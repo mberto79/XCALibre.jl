@@ -144,11 +144,23 @@ All matrices are SparseMatrixCSR on CPU.
 function galerkin_product(R::SparseMatrixCSR{Bi,Tv,Ti},
                            A::SparseMatrixCSR{Bi,Tv,Ti},
                            P::SparseMatrixCSR{Bi,Tv,Ti}) where {Bi,Tv,Ti}
-    # Step 1: AP = A * P
     AP = _spgemm(A, P)
-    # Step 2: Ac = R * AP
     Ac = _spgemm(R, AP)
     return Ac
+end
+
+"""
+    galerkin_product_with_AP(R, A, P) → (Ac, AP)
+
+Same as `galerkin_product` but also returns the intermediate A*P matrix.
+Used during `amg_setup!` so AP can be pre-allocated for zero-allocation updates.
+"""
+function galerkin_product_with_AP(R::SparseMatrixCSR{Bi,Tv,Ti},
+                                   A::SparseMatrixCSR{Bi,Tv,Ti},
+                                   P::SparseMatrixCSR{Bi,Tv,Ti}) where {Bi,Tv,Ti}
+    AP = _spgemm(A, P)
+    Ac = _spgemm(R, AP)
+    return Ac, AP
 end
 
 # ── General SpGEMM for CSR matrices on CPU ─────────────────────────────────────
@@ -197,29 +209,59 @@ function _spgemm(A::SparseMatrixCSR{Bi,Tv,Ti},
     return SparseMatricesCSR.sparsecsr(row_out, col_out, val_out, m, n)
 end
 
-# ─── Numerical-only Galerkin update (reuse sparsity) ─────────────────────────
-# Used in update!() to refresh nzval arrays without recomputing sparsity.
+# ─── Zero-allocation numerical Galerkin update ────────────────────────────────
+#
+# `_spgemm_nzval!` is the allocation-free hot path for `update!()`.
+# It requires:
+#   - C pre-allocated with the correct sparsity pattern (computed at setup time)
+#   - tmp: a zero-initialised dense scratch vector of size >= size(B, 2)
+#
+# The pattern of A*B is determined solely by the patterns of A and B, both of
+# which are fixed (same mesh → same sparsity). Only the numerical values of A
+# change between outer PISO/SIMPLE iterations.
 
 """
-    update_galerkin_nzval!(Ac, R, A, P)
+    _spgemm_nzval!(C, A, B, tmps)
 
-Recompute the numerical values of Ac = R*A*P using the existing sparsity pattern
-of Ac. This is cheaper than a full galerkin_product when the pattern is unchanged.
+Compute C = A * B in-place (numerical values only), reusing C's pre-allocated
+sparsity pattern. `tmps` is an `(ncols_B × nthreads)` matrix of dense scratch space,
+pre-allocated at setup time (column-major: each thread's slice is a contiguous column).
+Rows are processed in parallel with `Threads.@threads`; each thread uses column
+`tmps[:, threadid()]` so no locking is needed.
+
+`tmps` must be zero on entry and is left zero on return. No heap allocation.
+Works correctly with `Threads.nthreads() == 1` (single-threaded path).
 """
-function update_galerkin_nzval!(Ac::SparseMatrixCSR{Bi,Tv,Ti},
-                                 R::SparseMatrixCSR,
-                                 A::SparseMatrixCSR,
-                                 P::SparseMatrixCSR) where {Bi,Tv,Ti}
-    # Rebuild from scratch (numerical only, but we recompute the full product)
-    # This is correct since the pattern is guaranteed to be identical;
-    # we just overwrite the existing nzval buffer.
-    Ac_new = galerkin_product(R, A, P)
-    # Copy nzval into existing buffer
-    length(Ac_new.nzval) == length(Ac.nzval) ||
-        error("AMG: Galerkin sparsity pattern changed during update! " *
-              "Call full setup instead.")
-    copyto!(Ac.nzval, Ac_new.nzval)
-    nothing
+function _spgemm_nzval!(C::SparseMatrixCSR{Bi,Tv,Ti},
+                         A::SparseMatrixCSR,
+                         B::SparseMatrixCSR,
+                         tmps::AbstractMatrix{Tv}) where {Bi,Tv,Ti}
+    rowptr_A = A.rowptr; colval_A = A.colval; nzval_A = A.nzval
+    rowptr_B = B.rowptr; colval_B = B.colval; nzval_B = B.nzval
+    rowptr_C = C.rowptr; colval_C = C.colval; nzval_C = C.nzval
+    m = size(A, 1)
+    # Each thread gets an independent column of tmps (contiguous, cache-friendly);
+    # writes go to disjoint ranges of nzval_C (row i owns rowptr_C[i]:rowptr_C[i+1]-1).
+    Threads.@threads for i in 1:m
+        tmp = view(tmps, :, Threads.threadid())
+        @inbounds begin
+            # Accumulate row i of A*B into thread-local scratch
+            for nzi_A in rowptr_A[i]:(rowptr_A[i+1]-1)
+                k   = colval_A[nzi_A]
+                aik = nzval_A[nzi_A]
+                for nzi_B in rowptr_B[k]:(rowptr_B[k+1]-1)
+                    tmp[colval_B[nzi_B]] += aik * nzval_B[nzi_B]
+                end
+            end
+            # Write into C using its pre-computed pattern; clear scratch in same pass
+            for nzi_C in rowptr_C[i]:(rowptr_C[i+1]-1)
+                j = colval_C[nzi_C]
+                nzval_C[nzi_C] = tmp[j]
+                tmp[j] = zero(Tv)
+            end
+        end
+    end
+    return C
 end
 
 # ─── Power iteration to estimate spectral radius ρ(D⁻¹ A) ──────────────────

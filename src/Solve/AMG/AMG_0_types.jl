@@ -111,12 +111,20 @@ unchanged — host-only state always stays on the CPU.
 mutable struct LevelExtras{Tv, CpuSpT}
     P_cpu     :: Union{Nothing, CpuSpT}
     R_cpu     :: Union{Nothing, CpuSpT}
+    AP_cpu    :: Union{Nothing, CpuSpT}  # pre-allocated A*P intermediate (zero-alloc update)
+    A_cpu     :: Union{Nothing, CpuSpT}  # CPU copy of coarse matrix for this transition
+    # tmps[:, tid] is the dense scratch for thread `tid` in _spgemm_nzval!.
+    # Dimensions: n_coarse × nthreads (column-major → each thread's slice is contiguous).
+    # Allocated at setup; zero-allocation per cycle.
+    tmps      :: Matrix{Tv}
+    lu_dense  :: Union{Nothing, Matrix{Tv}}  # pre-allocated dense matrix for coarsest LU
     rho       :: Tv
     lu_factor :: Union{Nothing, LinearAlgebra.LU{Tv, Matrix{Tv}, Vector{Int}}}
     lu_rhs    :: Vector{Tv}
 
     LevelExtras{Tv, CpuSpT}() where {Tv, CpuSpT} =
-        new{Tv, CpuSpT}(nothing, nothing, one(Tv), nothing, Tv[])
+        new{Tv, CpuSpT}(nothing, nothing, nothing, nothing,
+                         Matrix{Tv}(undef, 0, 0), nothing, one(Tv), nothing, Tv[])
 end
 
 # ─── Per-level storage ────────────────────────────────────────────────────────

@@ -8,7 +8,7 @@ mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
 backend = CUDABackend(); workgroup = 32
-backend = CPU(); workgroup = 1024; activate_multithread(backend)
+# backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
@@ -58,19 +58,20 @@ solvers = (
     ),
     p = SolverSetup(
         solver      = AMG(
-                        smoother      = JacobiSmoother(2, 2/3, zeros(0)),
+                        # smoother      = JacobiSmoother(2, 2/3, zeros(0)),
+                        smoother      = JacobiSmoother(2, 2/3, zeros(0)), # Chebyshev(),
                         cycle         = VCycle(),
-                        coarsening    = :SA,
+                        coarsening    = :RS, # :SA
                         max_levels    = 15,
-                        coarsest_size = 50,
+                        coarsest_size = 100,
                         pre_sweeps    = 2,
                         post_sweeps   = 2,
-                        strength      = 0.25,
+                        strength      = 0.00002,
                      ),
         preconditioner = Jacobi(),   # ignored by AMG; kept for API compatibility
         convergence = 1e-7,
         relax       = 1.0,
-        rtol        = 1e-3,
+        rtol        = 0.0,
         atol        = 1e-5,
         itmax       = 20,
     )
@@ -96,4 +97,4 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config)
+@time residuals = run!(model, config)

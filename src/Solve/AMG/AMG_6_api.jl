@@ -40,11 +40,20 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
     A_cpus    = [A_cpu]       # level matrices (CPU)
     P_cpus    = SparseMatricesCSR.SparseMatrixCSR{1,Tv,Int}[]  # inter-level P
     R_cpus    = SparseMatricesCSR.SparseMatrixCSR{1,Tv,Int}[]  # inter-level R
+    AP_cpus   = SparseMatricesCSR.SparseMatrixCSR{1,Tv,Int}[]  # intermediate A*P per level
     rhos      = Tv[]           # spectral radius per level
 
-    # Fine level spectral radius
+    # Spectral radius is needed only for the Chebyshev smoother and for the
+    # prolongation-smoothing damping ω_P. For JacobiSmoother we use the
+    # analytic bound ω_P = 4/3 (tight for a standard Laplacian) so we can
+    # skip the 10 power-iteration calls at setup time.
+    use_jacobi = opts.smoother isa JacobiSmoother
+    _rho_one   = one(Tv)
+
     D_fine = _extract_dinv_cpu(A_cpu)
-    push!(rhos, Tv(estimate_spectral_radius(A_cpu, D_fine)))
+    _rho_fine  = use_jacobi ? _rho_one :
+                              Tv(estimate_spectral_radius(A_cpu, D_fine))
+    push!(rhos, _rho_fine)
     _fine_diag_max = maximum(inv, D_fine; init=zero(Tv))
 
     A_cur = A_cpu
@@ -54,12 +63,18 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
 
         agg, nagg = amg_coarsen(A_cur, opts.strength, opts.coarsening)
         nagg >= n_cur  && break
-        nagg > 0.8 * n_cur && break
+        # Require at least 10% reduction per level; stop if coarsening stagnates.
+        nagg > 0.9 * n_cur && break
 
-        D_cur = _extract_dinv_cpu(A_cur)
-        ρ_cur = estimate_spectral_radius(A_cur, D_cur)
-
-        ω_P   = min(4.0 / (3.0 * max(ρ_cur, eps(Float64))), 4.0/3.0)
+        # ω_P damping: use analytic bound 4/3 for Jacobi (avoids power iteration);
+        # estimate spectral radius only when Chebyshev needs the actual value.
+        ω_P = if use_jacobi
+            4.0 / 3.0
+        else
+            D_cur = _extract_dinv_cpu(A_cur)
+            ρ_cur = estimate_spectral_radius(A_cur, D_cur)
+            min(4.0 / (3.0 * max(ρ_cur, eps(Float64))), 4.0/3.0)
+        end
 
         P_tent = build_tentative_P(n_cur, nagg, agg)
         P_cpu  = smooth_prolongation(A_cur, P_tent, ω_P)
@@ -67,7 +82,7 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
         any(!isfinite, P_cpu.nzval) && break
 
         R_cpu  = build_restriction(P_cpu)
-        Ac_cpu = galerkin_product(R_cpu, A_cur, P_cpu)
+        Ac_cpu, AP_cpu = galerkin_product_with_AP(R_cpu, A_cur, P_cpu)
 
         nc = size(Ac_cpu, 1)
         (nc == 0 || any(!isfinite, Ac_cpu.nzval)) && break
@@ -81,25 +96,40 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
             init = Tv(Inf))
         Ac_diag_min < sqrt(eps(Float64)) * _fine_diag_max && break
 
-        D_c = _extract_dinv_cpu(Ac_cpu)
-        ρ_c = estimate_spectral_radius(Ac_cpu, D_c)
+        ρ_c = use_jacobi ? _rho_one : begin
+            D_c = _extract_dinv_cpu(Ac_cpu)
+            Tv(estimate_spectral_radius(Ac_cpu, D_c))
+        end
 
         push!(P_cpus,  P_cpu)
         push!(R_cpus,  R_cpu)
+        push!(AP_cpus, AP_cpu)
         push!(A_cpus,  Ac_cpu)
-        push!(rhos,    Tv(ρ_c))
+        push!(rhos,    ρ_c)
 
         A_cur = Ac_cpu
     end
 
     n_levels = length(A_cpus)
 
+    # Diagnostic: show hierarchy sizes
+    level_sizes = [size(A_cpus[i], 1) for i in 1:n_levels]
+    @info "AMG hierarchy ($(opts.coarsening), strength=$(opts.strength)): $(level_sizes) — direct solve at coarsest: $(level_sizes[end] <= opts.coarsest_size)"
+
     # ── Phase 2: build device matrices and MultigridLevel objects ─────────────
-    # Coarsest-level LU (dense, on CPU) — only if small enough
-    n_coarsest = size(A_cpus[end], 1)
-    lu_f, lu_rhs = n_coarsest <= opts.coarsest_size ?
-                       _build_lu(A_cpus[end], Tv) :
-                       (nothing, Tv[])
+    # Coarsest-level: allocate dense matrix + LU once; reused in-place by update!()
+    n_coarsest  = size(A_cpus[end], 1)
+    lu_dense_c  = nothing
+    lu_f        = nothing
+    lu_rhs_init = Tv[]
+    if n_coarsest <= opts.coarsest_size
+        lu_dense_c = zeros(Tv, n_coarsest, n_coarsest)
+        _fill_dense_from_sparse!(lu_dense_c, A_cpus[end])
+        lu_f        = lu!(lu_dense_c)          # factors stored in lu_dense_c in-place
+        lu_rhs_init = zeros(Tv, n_coarsest)
+    end
+
+    nthreads = Threads.nthreads()
 
     # Build all levels (same LType for the whole vector → typed storage)
     levels = LType[]
@@ -117,12 +147,20 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
         amg_build_Dinv!(Dinv, A_dev, backend, workgroup)
 
         extras = LevelExtras{Tv, SparseMatricesCSR.SparseMatrixCSR{1, Tv, Int}}()
-        extras.P_cpu = (i <= length(P_cpus)) ? P_cpus[i] : nothing
-        extras.R_cpu = (i <= length(R_cpus)) ? R_cpus[i] : nothing
-        extras.rho   = rhos[i]
+        extras.P_cpu  = (i <= length(P_cpus))  ? P_cpus[i]  : nothing
+        extras.R_cpu  = (i <= length(R_cpus))  ? R_cpus[i]  : nothing
+        extras.AP_cpu = (i <= length(AP_cpus)) ? AP_cpus[i] : nothing
+        # A_cpu: CPU counterpart of ws.levels[i+1].A — updated in-place by update!()
+        extras.A_cpu  = (i <  n_levels) ? A_cpus[i + 1] : nothing
+        # tmps[:, tid]: per-thread dense scratch for _spgemm_nzval! (zero-alloc Galerkin).
+        # Column-major layout: each thread's nc-vector is a contiguous column.
+        nc_next       = (i <= length(P_cpus)) ? size(P_cpus[i], 2) : 0
+        extras.tmps   = zeros(Tv, max(nc_next, 1), nthreads)
+        extras.rho    = rhos[i]
         if i == n_levels
+            extras.lu_dense  = lu_dense_c
             extras.lu_factor = lu_f
-            extras.lu_rhs    = lu_rhs
+            extras.lu_rhs    = lu_rhs_init
         end
 
         # Construct with LType directly so PType = Union{Nothing, AType} is enforced
@@ -160,26 +198,33 @@ function update!(ws::AMGWorkspace, A_device, backend, workgroup)
     # Level 1 matrix is A_device directly (mutated in-place by the outer solver)
     amg_build_Dinv!(ws.levels[1].Dinv, ws.levels[1].A, backend, workgroup)
 
-    A_cur = _to_cpu_csr(A_device)
+    # Zero-allocation Galerkin update: reuse pre-allocated AP_cpu and A_cpu
+    # per level (set up by amg_setup!). _spgemm_nzval! uses Threads.@threads
+    # with per-thread scratch rows from ex.tmps — no allocation, no locking.
+    A_cur_cpu = _to_cpu_csr(A_device)
     for lvl in 1:(length(ws.levels) - 1)
         L  = ws.levels[lvl]
         Lc = ws.levels[lvl + 1]
+        ex = L.extras
 
-        P_cpu = L.extras.P_cpu
-        R_cpu = L.extras.R_cpu
-        Ac_new = galerkin_product(R_cpu, A_cur, P_cpu)
+        _spgemm_nzval!(ex.AP_cpu, A_cur_cpu, ex.P_cpu,  ex.tmps)
+        _spgemm_nzval!(ex.A_cpu,  ex.R_cpu,  ex.AP_cpu, ex.tmps)
 
-        _copy_nzval_to_device!(Lc.A, Ac_new.nzval, backend)
+        _copy_nzval_to_device!(Lc.A, ex.A_cpu.nzval, backend)
         amg_build_Dinv!(Lc.Dinv, Lc.A, backend, workgroup)
 
-        A_cur = Ac_new
+        A_cur_cpu = ex.A_cpu
     end
 
-    # Rebuild coarsest-level LU (only if it was built during setup)
+    # Rebuild coarsest-level LU using the pre-allocated dense buffer (no allocation)
     if !isnothing(ws.levels[end].extras.lu_factor)
-        lu_f, lu_rhs = _build_lu(A_cur, eltype(ws.x))
-        ws.levels[end].extras.lu_factor = lu_f
-        ws.levels[end].extras.lu_rhs    = lu_rhs
+        ex_c = ws.levels[end].extras
+        coarse_cpu = length(ws.levels) > 1 ?
+            ws.levels[end - 1].extras.A_cpu :
+            _to_cpu_csr(A_device)
+        fill!(ex_c.lu_dense, zero(eltype(ws.x)))
+        _fill_dense_from_sparse!(ex_c.lu_dense, coarse_cpu)
+        ex_c.lu_factor = lu!(ex_c.lu_dense)
     end
     nothing
 end
@@ -292,16 +337,16 @@ function _extract_dinv_cpu(A::SparseMatricesCSR.SparseMatrixCSR{Bi,Tv,Ti}) where
     return Dinv
 end
 
-# Build dense LU for the coarsest level; returns (lu_factor, lu_rhs).
-function _build_lu(A_cpu::SparseMatricesCSR.SparseMatrixCSR{Bi,Tv,Ti}, ::Type{Tv2}) where {Bi,Tv,Ti,Tv2}
-    n = size(A_cpu, 1)
-    Adense = zeros(Tv2, n, n)
-    for i in 1:n
-        for nzi in A_cpu.rowptr[i]:(A_cpu.rowptr[i+1]-1)
-            Adense[i, A_cpu.colval[nzi]] = Tv2(A_cpu.nzval[nzi])
+# Fill a pre-allocated dense matrix from a sparse CSR matrix (in-place, no alloc).
+function _fill_dense_from_sparse!(Adense::Matrix{Tv},
+                                   A::SparseMatricesCSR.SparseMatrixCSR) where {Tv}
+    n = size(A, 1)
+    @inbounds for i in 1:n
+        for nzi in A.rowptr[i]:(A.rowptr[i+1]-1)
+            Adense[i, A.colval[nzi]] = Tv(A.nzval[nzi])
         end
     end
-    return lu!(Adense), zeros(Tv2, n)
+    return Adense
 end
 
 # Coarse solve: dense LU if available, else extra Jacobi sweeps.

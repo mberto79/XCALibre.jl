@@ -30,26 +30,30 @@ function _coarsen_SA(A::SparseMatrixCSR, θ::Float64)
     colval = A.colval
     nzval  = A.nzval
 
-    # 1. Precompute diagonal magnitudes
-    diag = zeros(eltype(nzval), n)
+    # 1. Maximum off-diagonal magnitude per row
+    max_offd = zeros(eltype(nzval), n)
     for i in 1:n
         for nzi in rowptr[i]:(rowptr[i+1]-1)
-            if colval[nzi] == i
-                diag[i] = abs(nzval[nzi])
-                break
+            if colval[nzi] != i
+                v = abs(nzval[nzi])
+                if v > max_offd[i]
+                    max_offd[i] = v
+                end
             end
         end
     end
 
     # 2. Build strength-of-connection: edge (i,j) is strong if
-    #    |a_ij| >= θ * sqrt(|a_ii| * |a_jj|)
+    #    |a_ij| >= θ * max_{k≠i} |a_ik|
+    # This standard (min-max) criterion is appropriate for M-matrices such as
+    # the FVM pressure Laplacian, where diagonal ≫ individual off-diagonals.
     strong = [Int[] for _ in 1:n]
     for i in 1:n
-        thr = θ * sqrt(diag[i])
+        thr = θ * max_offd[i]
         for nzi in rowptr[i]:(rowptr[i+1]-1)
             j = colval[nzi]
             j == i && continue
-            if abs(nzval[nzi]) >= thr * sqrt(diag[j])
+            if abs(nzval[nzi]) >= thr
                 push!(strong[i], j)
             end
         end

@@ -58,10 +58,10 @@ solvers = (
     ),
     p = SolverSetup(
         solver      = AMG(
-                        # smoother      = JacobiSmoother(2, 2/3, zeros(0)),
-                        smoother      = JacobiSmoother(2, 2/3, zeros(0)), # Chebyshev(),
+                        smoother      = JacobiSmoother(2, 2/3, zeros(0)),
+                        # smoother      = Chebyshev(),
                         cycle         = VCycle(),
-                        coarsening    = :RS, # :SA
+                        coarsening    = :SA, # :SA :RS
                         max_levels    = 15,
                         coarsest_size = 100,
                         pre_sweeps    = 2,

@@ -89,6 +89,32 @@ AMG(;
 ) = AMG(smoother, cycle, max_levels, coarsest_size, pre_sweeps, post_sweeps,
         Float64(strength), coarsening)
 
+# ─── Galerkin plan (device-resident) ─────────────────────────────────────────
+
+"""
+    GalerkinPlan{Vi}
+
+Pre-computed index structure for the fused Galerkin product Ac = R·A·P.
+Built once at `amg_setup!` time from the CPU CSR matrices; stored on the
+target device so that `update!()` can compute all Ac nonzero values via a
+single KA kernel launch — no CPU↔device transfers needed.
+
+For each output nonzero `out` (1-based, into Ac.nzval):
+    Ac.nzval[out] = Σ_p  R.nzval[nzi_R[p]] · A.nzval[nzi_A[p]] · P.nzval[nzi_P[p]]
+where p ranges over `rowptr[out] : rowptr[out+1]-1`.
+
+`Vi` is a device-resident integer vector (`Vector{Int32}` on CPU,
+`CuVector{Int32}` on CUDA, etc.). `Adapt.@adapt_structure` moves the plan
+to the target backend alongside the rest of the level data.
+"""
+struct GalerkinPlan{Vi <: AbstractVector{Int32}}
+    rowptr :: Vi   # length = nnz(Ac) + 1; 1-based CSR row pointers into nzi_* arrays
+    nzi_R  :: Vi   # 1-based index into R.nzval for each contributing triple
+    nzi_A  :: Vi   # 1-based index into A.nzval for each contributing triple
+    nzi_P  :: Vi   # 1-based index into P.nzval for each contributing triple
+end
+Adapt.@adapt_structure GalerkinPlan
+
 # ─── Host-only per-level extras ───────────────────────────────────────────────
 
 """
@@ -109,22 +135,22 @@ Since `LevelExtras` has no `Adapt.adapt_structure` method, `Adapt.adapt` returns
 unchanged — host-only state always stays on the CPU.
 """
 mutable struct LevelExtras{Tv, CpuSpT}
-    P_cpu     :: Union{Nothing, CpuSpT}
-    R_cpu     :: Union{Nothing, CpuSpT}
-    AP_cpu    :: Union{Nothing, CpuSpT}  # pre-allocated A*P intermediate (zero-alloc update)
-    A_cpu     :: Union{Nothing, CpuSpT}  # CPU copy of coarse matrix for this transition
-    # tmps[:, tid] is the dense scratch for thread `tid` in _spgemm_nzval!.
-    # Dimensions: n_coarse × nthreads (column-major → each thread's slice is contiguous).
-    # Allocated at setup; zero-allocation per cycle.
-    tmps      :: Matrix{Tv}
-    lu_dense  :: Union{Nothing, Matrix{Tv}}  # pre-allocated dense matrix for coarsest LU
-    rho       :: Tv
-    lu_factor :: Union{Nothing, LinearAlgebra.LU{Tv, Matrix{Tv}, Vector{Int}}}
-    lu_rhs    :: Vector{Tv}
+    P_cpu         :: Union{Nothing, CpuSpT}
+    R_cpu         :: Union{Nothing, CpuSpT}
+    # CPU copy of the coarse matrix — stored only at the coarsest level so that
+    # update!() can rebuild the LU factorisation by downloading just the nzval
+    # from the device (rowptr/colval are fixed after setup).
+    A_cpu         :: Union{Nothing, CpuSpT}
+    # Device-resident plan for the fused KA Galerkin kernel (R·A·P).
+    # Built once at setup; used every update!() call with zero CPU↔device transfers.
+    galerkin_plan :: Union{Nothing, GalerkinPlan}
+    lu_dense      :: Union{Nothing, Matrix{Tv}}  # pre-allocated dense matrix for coarsest LU
+    rho           :: Tv
+    lu_factor     :: Union{Nothing, LinearAlgebra.LU{Tv, Matrix{Tv}, Vector{Int}}}
+    lu_rhs        :: Vector{Tv}
 
     LevelExtras{Tv, CpuSpT}() where {Tv, CpuSpT} =
-        new{Tv, CpuSpT}(nothing, nothing, nothing, nothing,
-                         Matrix{Tv}(undef, 0, 0), nothing, one(Tv), nothing, Tv[])
+        new{Tv, CpuSpT}(nothing, nothing, nothing, nothing, nothing, one(Tv), nothing, Tv[])
 end
 
 # ─── Per-level storage ────────────────────────────────────────────────────────

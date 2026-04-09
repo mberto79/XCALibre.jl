@@ -169,3 +169,35 @@ function amg_dinv_axpy!(x, Dinv, r, omega, backend, workgroup)
     kernel! = _amg_dinv_axpy!(_setup(backend, workgroup, n)...)
     kernel!(x, Dinv, r, omega)
 end
+
+# ── Fused Galerkin product: Ac = R · A · P (one thread per output nonzero) ────
+#
+# Each thread `out` accumulates the sum
+#   Ac.nzval[out] = Σ_p  R.nzval[nzi_R[p]] · A.nzval[nzi_A[p]] · P.nzval[nzi_P[p]]
+# for p in plan_rowptr[out] : plan_rowptr[out+1]-1.
+#
+# All arrays are device-resident: no CPU↔device transfer at update time.
+# Works on CPU (multi-threaded via KA CPU backend) and any GPU backend.
+
+@kernel function _amg_galerkin!(nzval_Ac, nzval_A, nzval_R, nzval_P,
+                                  plan_rowptr, plan_nzi_R, plan_nzi_A, plan_nzi_P)
+    out = @index(Global)
+    @inbounds begin
+        acc = zero(eltype(nzval_Ac))
+        for p in plan_rowptr[out]:(plan_rowptr[out + 1] - 1)
+            acc += nzval_R[plan_nzi_R[p]] * nzval_A[plan_nzi_A[p]] * nzval_P[plan_nzi_P[p]]
+        end
+        nzval_Ac[out] = acc
+    end
+end
+
+function amg_galerkin!(Ac, A, R, P, plan::GalerkinPlan, backend, workgroup)
+    nzval_Ac, _, _ = get_sparse_fields(Ac)
+    nzval_A,  _, _ = get_sparse_fields(A)
+    nzval_R,  _, _ = get_sparse_fields(R)
+    nzval_P,  _, _ = get_sparse_fields(P)
+    nnz_ac = length(nzval_Ac)
+    kernel! = _amg_galerkin!(_setup(backend, workgroup, nnz_ac)...)
+    kernel!(nzval_Ac, nzval_A, nzval_R, nzval_P,
+            plan.rowptr, plan.nzi_R, plan.nzi_A, plan.nzi_P)
+end

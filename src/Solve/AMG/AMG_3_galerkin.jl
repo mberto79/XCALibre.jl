@@ -264,6 +264,99 @@ function _spgemm_nzval!(C::SparseMatrixCSR{Bi,Tv,Ti},
     return C
 end
 
+# ─── Galerkin plan construction ──────────────────────────────────────────────
+
+"""
+    _build_galerkin_plan(Ac, R, A, P, backend) → GalerkinPlan
+
+Pre-compute the index structure for the fused Galerkin product Ac = R·A·P.
+For each structural nonzero `out` in Ac (1-based), collect all index triples
+(nzi_R, nzi_A, nzi_P) such that
+
+    Ac.nzval[out] += R.nzval[nzi_R] * A.nzval[nzi_A] * P.nzval[nzi_P]
+
+All input matrices must be CPU CSR with 1-based indexing and sorted column
+indices within each row. The returned `GalerkinPlan` is device-resident.
+"""
+function _build_galerkin_plan(Ac::SparseMatrixCSR, R::SparseMatrixCSR,
+                               A::SparseMatrixCSR, P::SparseMatrixCSR,
+                               backend)
+    nnz_ac   = length(Ac.nzval)
+    n_coarse = size(Ac, 1)   # = size(R, 1) = size(P, 2)
+
+    # Fast (row, col) → nzi lookup for Ac (columns are sorted by _spgemm, so binary search)
+    # Using a flat dict avoids allocating a 2D array.
+    nz_lookup = Dict{Tuple{Int,Int}, Int32}()
+    sizehint!(nz_lookup, nnz_ac)
+    for i in 1:n_coarse
+        for nzi in Ac.rowptr[i]:(Ac.rowptr[i+1]-1)
+            nz_lookup[(i, Ac.colval[nzi])] = Int32(nzi)
+        end
+    end
+
+    # Pass 1: count contributions per output nonzero
+    counts = zeros(Int32, nnz_ac)
+    for i in 1:n_coarse
+        for nzi_R in R.rowptr[i]:(R.rowptr[i+1]-1)
+            k = R.colval[nzi_R]
+            for nzi_A in A.rowptr[k]:(A.rowptr[k+1]-1)
+                l = A.colval[nzi_A]
+                for nzi_P in P.rowptr[l]:(P.rowptr[l+1]-1)
+                    j = P.colval[nzi_P]
+                    nzi_ac = get(nz_lookup, (i, j), Int32(0))
+                    nzi_ac > 0 && (counts[nzi_ac] += Int32(1))
+                end
+            end
+        end
+    end
+
+    # Pass 2: build 1-based CSR rowptr (rowptr[1]=1, rowptr[end]=total+1)
+    rowptr = ones(Int32, nnz_ac + 1)
+    for k in 1:nnz_ac
+        rowptr[k + 1] = rowptr[k] + counts[k]
+    end
+    total = Int(rowptr[end]) - 1
+
+    # Pass 3: fill contribution arrays; cur[k] = next write position for output k
+    plan_nzi_R = Vector{Int32}(undef, total)
+    plan_nzi_A = Vector{Int32}(undef, total)
+    plan_nzi_P = Vector{Int32}(undef, total)
+    cur = copy(rowptr[1:end-1])  # cur[k] starts at rowptr[k] (1-based)
+
+    for i in 1:n_coarse
+        for nzi_R in R.rowptr[i]:(R.rowptr[i+1]-1)
+            k = R.colval[nzi_R]
+            for nzi_A in A.rowptr[k]:(A.rowptr[k+1]-1)
+                l = A.colval[nzi_A]
+                for nzi_P in P.rowptr[l]:(P.rowptr[l+1]-1)
+                    j = P.colval[nzi_P]
+                    nzi_ac = get(nz_lookup, (i, j), Int32(0))
+                    if nzi_ac > 0
+                        p = cur[nzi_ac]
+                        plan_nzi_R[p] = Int32(nzi_R)
+                        plan_nzi_A[p] = Int32(nzi_A)
+                        plan_nzi_P[p] = Int32(nzi_P)
+                        cur[nzi_ac] += Int32(1)
+                    end
+                end
+            end
+        end
+    end
+
+    # Transfer plan to device using KA-allocated arrays
+    mk = (T, n) -> KernelAbstractions.zeros(backend, T, n)
+    rp_dev  = mk(Int32, nnz_ac + 1)
+    niR_dev = mk(Int32, total)
+    niA_dev = mk(Int32, total)
+    niP_dev = mk(Int32, total)
+    KernelAbstractions.copyto!(backend, rp_dev,  rowptr)
+    KernelAbstractions.copyto!(backend, niR_dev, plan_nzi_R)
+    KernelAbstractions.copyto!(backend, niA_dev, plan_nzi_A)
+    KernelAbstractions.copyto!(backend, niP_dev, plan_nzi_P)
+
+    return GalerkinPlan(rp_dev, niR_dev, niA_dev, niP_dev)
+end
+
 # ─── Power iteration to estimate spectral radius ρ(D⁻¹ A) ──────────────────
 
 """

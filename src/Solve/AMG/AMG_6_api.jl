@@ -40,7 +40,7 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
     A_cpus    = [A_cpu]       # level matrices (CPU)
     P_cpus    = SparseMatricesCSR.SparseMatrixCSR{1,Tv,Int}[]  # inter-level P
     R_cpus    = SparseMatricesCSR.SparseMatrixCSR{1,Tv,Int}[]  # inter-level R
-    AP_cpus   = SparseMatricesCSR.SparseMatrixCSR{1,Tv,Int}[]  # intermediate A*P per level
+    # AP_cpus no longer needed: the Galerkin plan encodes R·A·P directly.
     rhos      = Tv[]           # spectral radius per level
 
     # Spectral radius is needed only for the Chebyshev smoother and for the
@@ -82,7 +82,7 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
         any(!isfinite, P_cpu.nzval) && break
 
         R_cpu  = build_restriction(P_cpu)
-        Ac_cpu, AP_cpu = galerkin_product_with_AP(R_cpu, A_cur, P_cpu)
+        Ac_cpu = galerkin_product(R_cpu, A_cur, P_cpu)
 
         nc = size(Ac_cpu, 1)
         (nc == 0 || any(!isfinite, Ac_cpu.nzval)) && break
@@ -103,7 +103,6 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
 
         push!(P_cpus,  P_cpu)
         push!(R_cpus,  R_cpu)
-        push!(AP_cpus, AP_cpu)
         push!(A_cpus,  Ac_cpu)
         push!(rhos,    ρ_c)
 
@@ -116,7 +115,7 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
     level_sizes = [size(A_cpus[i], 1) for i in 1:n_levels]
     @info "AMG hierarchy ($(opts.coarsening), strength=$(opts.strength)): $(level_sizes) — direct solve at coarsest: $(level_sizes[end] <= opts.coarsest_size)"
 
-    # ── Phase 2: build device matrices and MultigridLevel objects ─────────────
+    # ── Phase 2: build device matrices, Galerkin plans, and MultigridLevel objects ─
     # Coarsest-level: allocate dense matrix + LU once; reused in-place by update!()
     n_coarsest  = size(A_cpus[end], 1)
     lu_dense_c  = nothing
@@ -125,11 +124,9 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
     if n_coarsest <= opts.coarsest_size
         lu_dense_c = zeros(Tv, n_coarsest, n_coarsest)
         _fill_dense_from_sparse!(lu_dense_c, A_cpus[end])
-        lu_f        = lu!(lu_dense_c)          # factors stored in lu_dense_c in-place
+        lu_f        = lu!(lu_dense_c)
         lu_rhs_init = zeros(Tv, n_coarsest)
     end
-
-    nthreads = Threads.nthreads()
 
     # Build all levels (same LType for the whole vector → typed storage)
     levels = LType[]
@@ -139,7 +136,6 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
         n  = size(A_cpus[i], 1)
         A_dev = (i == 1) ? A_device : _csr_to_device(A_cpus[i], backend, Tv, Ti)
 
-        # Transfer operators (only for non-coarsest levels)
         P_dev = (i <= length(P_cpus)) ? _csr_to_device(P_cpus[i], backend, Tv, Ti) : nothing
         R_dev = (i <= length(R_cpus)) ? _csr_to_device(R_cpus[i], backend, Tv, Ti) : nothing
 
@@ -147,24 +143,24 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
         amg_build_Dinv!(Dinv, A_dev, backend, workgroup)
 
         extras = LevelExtras{Tv, SparseMatricesCSR.SparseMatrixCSR{1, Tv, Int}}()
-        extras.P_cpu  = (i <= length(P_cpus))  ? P_cpus[i]  : nothing
-        extras.R_cpu  = (i <= length(R_cpus))  ? R_cpus[i]  : nothing
-        extras.AP_cpu = (i <= length(AP_cpus)) ? AP_cpus[i] : nothing
-        # A_cpu: CPU counterpart of ws.levels[i+1].A — updated in-place by update!()
-        extras.A_cpu  = (i <  n_levels) ? A_cpus[i + 1] : nothing
-        # tmps[:, tid]: per-thread dense scratch for _spgemm_nzval! (zero-alloc Galerkin).
-        # Column-major layout: each thread's nc-vector is a contiguous column.
-        nc_next       = (i <= length(P_cpus)) ? size(P_cpus[i], 2) : 0
-        extras.tmps   = zeros(Tv, max(nc_next, 1), nthreads)
+        extras.P_cpu  = (i <= length(P_cpus)) ? P_cpus[i] : nothing
+        extras.R_cpu  = (i <= length(R_cpus)) ? R_cpus[i] : nothing
         extras.rho    = rhos[i]
+
+        # Build Galerkin plan for each non-coarsest level (plan lives on device)
+        if i < n_levels
+            extras.galerkin_plan = _build_galerkin_plan(
+                A_cpus[i+1], R_cpus[i], A_cpus[i], P_cpus[i], backend)
+        end
+
+        # Coarsest level: store CPU copy of A for LU rebuild in update!()
         if i == n_levels
+            extras.A_cpu     = A_cpus[end]
             extras.lu_dense  = lu_dense_c
             extras.lu_factor = lu_f
             extras.lu_rhs    = lu_rhs_init
         end
 
-        # Construct with LType directly so PType = Union{Nothing, AType} is enforced
-        # regardless of whether P_dev is nothing or a concrete sparse matrix.
         level = LType(A_dev, P_dev, R_dev,
                       Dinv, mk_vec(n), mk_vec(n), mk_vec(n), mk_vec(n),
                       extras)
@@ -195,35 +191,29 @@ function update!(ws::AMGWorkspace, A_device, backend, workgroup)
         return
     end
 
-    # Level 1 matrix is A_device directly (mutated in-place by the outer solver)
+    # Fine-level D⁻¹ (A_device is mutated in-place by the outer solver each iteration)
     amg_build_Dinv!(ws.levels[1].Dinv, ws.levels[1].A, backend, workgroup)
 
-    # Zero-allocation Galerkin update: reuse pre-allocated AP_cpu and A_cpu
-    # per level (set up by amg_setup!). _spgemm_nzval! uses Threads.@threads
-    # with per-thread scratch rows from ex.tmps — no allocation, no locking.
-    A_cur_cpu = _to_cpu_csr(A_device)
+    # Galerkin update via KA kernel — all arrays are device-resident, zero CPU↔device
+    # transfers. The plan stored at each level encodes the (nzi_R, nzi_A, nzi_P)
+    # triples; the kernel reads the current nzval of A (which just changed) and
+    # overwrites the next level's matrix nzval with the new Galerkin product.
     for lvl in 1:(length(ws.levels) - 1)
         L  = ws.levels[lvl]
         Lc = ws.levels[lvl + 1]
-        ex = L.extras
-
-        _spgemm_nzval!(ex.AP_cpu, A_cur_cpu, ex.P_cpu,  ex.tmps)
-        _spgemm_nzval!(ex.A_cpu,  ex.R_cpu,  ex.AP_cpu, ex.tmps)
-
-        _copy_nzval_to_device!(Lc.A, ex.A_cpu.nzval, backend)
+        amg_galerkin!(Lc.A, L.A, L.R, L.P, L.extras.galerkin_plan, backend, workgroup)
         amg_build_Dinv!(Lc.Dinv, Lc.A, backend, workgroup)
-
-        A_cur_cpu = ex.A_cpu
     end
 
-    # Rebuild coarsest-level LU using the pre-allocated dense buffer (no allocation)
+    # Rebuild coarsest-level LU: download the (tiny) coarsest nzval from device,
+    # fill the pre-allocated dense buffer, and factorise in-place. The download is
+    # only ~(50²×8) bytes — negligible compared to the eliminated fine-level transfers.
     if !isnothing(ws.levels[end].extras.lu_factor)
-        ex_c = ws.levels[end].extras
-        coarse_cpu = length(ws.levels) > 1 ?
-            ws.levels[end - 1].extras.A_cpu :
-            _to_cpu_csr(A_device)
+        ex_c     = ws.levels[end].extras
+        nzval_c, _, _ = get_sparse_fields(ws.levels[end].A)
+        copyto!(ex_c.A_cpu.nzval, nzval_c)   # device → CPU (tiny)
         fill!(ex_c.lu_dense, zero(eltype(ws.x)))
-        _fill_dense_from_sparse!(ex_c.lu_dense, coarse_cpu)
+        _fill_dense_from_sparse!(ex_c.lu_dense, ex_c.A_cpu)
         ex_c.lu_factor = lu!(ex_c.lu_dense)
     end
     nothing

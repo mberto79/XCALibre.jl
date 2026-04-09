@@ -7,7 +7,7 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-backend = CUDABackend(); workgroup = 32
+backend = CUDABackend(); workgroup = 256
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)

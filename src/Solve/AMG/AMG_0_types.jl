@@ -70,6 +70,11 @@ Algebraic Multigrid linear solver for use with `SolverSetup`.
   Ruge–Stüben.
 - `update_freq` — how often the coarse-level hierarchy (Galerkin products and
   coarsest LU) is refreshed when the fine-level matrix changes (default `1`).
+- `krylov` — outer Krylov acceleration. `:cg` (default) wraps the V-cycle as a
+  preconditioner inside Preconditioned Conjugate Gradient (PCG), which is optimal
+  for the SPD pressure Laplacian: each PCG step costs one V-cycle plus two dot
+  products, but convergence is O(√κ) vs O(κ) for Richardson. Use `:none` to
+  revert to the plain Richardson (V-cycle) iteration.
 
   In a SIMPLE/PISO loop, `update!` is called once per outer iteration. With
   `update_freq = 1` (default) the full hierarchy is rebuilt every call.
@@ -118,6 +123,7 @@ struct AMG{S<:AbstractSmoother, C<:AMGCycle} <: AbstractLinearSolver
     strength      :: Float64
     coarsening    :: Symbol
     update_freq   :: Int   # refresh Galerkin hierarchy every N update! calls (1 = every call)
+    krylov        :: Symbol  # :cg → PCG outer loop; :none → plain Richardson
 end
 
 AMG(;
@@ -130,8 +136,9 @@ AMG(;
     strength      = 0.0,
     coarsening    = :SA,
     update_freq   = 1,
+    krylov        = :none,
 ) = AMG(smoother, cycle, max_levels, coarsest_size, pre_sweeps, post_sweeps,
-        Float64(strength), coarsening, update_freq)
+        Float64(strength), coarsening, update_freq, krylov)
 
 # ─── Galerkin plan (device-resident) ─────────────────────────────────────────
 
@@ -271,4 +278,10 @@ mutable struct AMGWorkspace{LType, Vec, Opts<:AMG}
     setup_valid  :: Bool
     setup_count  :: Int
     update_count :: Int   # counts update! calls; drives the lazy Galerkin refresh
+    # PCG workspace — only used when opts.krylov === :cg.
+    # x_pcg : the PCG iterate (separate from levels[1].x which the V-cycle uses as scratch).
+    # p_cg  : PCG search direction.
+    # Both are fine-level vectors allocated once in _workspace and reused each solve.
+    x_pcg        :: Vec
+    p_cg         :: Vec
 end

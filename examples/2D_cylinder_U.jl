@@ -7,8 +7,8 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-backend = CUDABackend(); workgroup = 32
-# backend = CPU(); workgroup = 1024; activate_multithread(backend)
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
@@ -41,8 +41,10 @@ BCs = assign(
                 Zerogradient(:inlet),
                 Dirichlet(:outlet, 0.0),
                 Wall(:cylinder),
-                Extrapolated(:bottom),
-                Extrapolated(:top)
+                Zerogradient(:bottom),
+                Zerogradient(:top)
+                # Extrapolated(:bottom),
+                # Extrapolated(:top)
         ]
     )
 )
@@ -54,7 +56,7 @@ solvers = (
         convergence = 1e-7,
         relax       = 1.0,
         rtol = 0.0,
-        atol = 1e-5
+        atol = 1e-6
     ),
     p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
@@ -62,7 +64,8 @@ solvers = (
         convergence = 1e-7,
         relax       = 1.0,
         rtol = 0.0,
-        atol = 1e-5
+        atol = 1e-6,
+        itmax = 1500
     )
 )
 

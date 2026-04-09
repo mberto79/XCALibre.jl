@@ -13,9 +13,10 @@ The concrete `MultigridLevel` element type is determined here so that
 function _workspace(amg::AMG, ::AT, b::AbstractVector{Tv}) where {AT, Tv}
     LType = MultigridLevel{Tv, AT, Union{Nothing, AT}, typeof(b),
                             LevelExtras{Tv, SparseMatricesCSR.SparseMatrixCSR{1, Tv, Int}}}
-    x = similar(b)
-    fill!(x, zero(Tv))
-    return AMGWorkspace(LType[], x, amg, false, 0, 0)
+    x     = similar(b); fill!(x,     zero(Tv))
+    x_pcg = similar(b); fill!(x_pcg, zero(Tv))
+    p_cg  = similar(b); fill!(p_cg,  zero(Tv))
+    return AMGWorkspace(LType[], x, amg, false, 0, 0, x_pcg, p_cg)
 end
 
 # ─── Full hierarchy setup ─────────────────────────────────────────────────────
@@ -280,6 +281,98 @@ function update!(ws::AMGWorkspace, A_device, backend, workgroup)
     nothing
 end
 
+# ─── Preconditioned Conjugate Gradient (PCG) solve ────────────────────────────
+#
+# One V-cycle is used as the preconditioner M ≈ A⁻¹.  For the SPD pressure
+# Laplacian, PCG converges as O(√κ(M⁻¹A)) iterations, whereas plain Richardson
+# (V-cycle loop) converges as O(κ).  In practice PCG with one AMG V-cycle as
+# preconditioner typically needs 2–5× fewer iterations to reach the same rtol.
+#
+# Variable layout (all fine-level, device-resident):
+#   ws.x_pcg  — the PCG iterate x  (separate from L1.x which is the V-cycle scratchpad)
+#   ws.p_cg   — PCG search direction p
+#   L1.r      — current residual r = b - A x  (maintained in-place)
+#   L1.b      — set to L1.r before each V-cycle (V-cycle RHS = current residual)
+#   L1.x      — V-cycle output z = M⁻¹r  (overwritten every preconditioner apply)
+#   L1.tmp    — holds Ap = A*p  (consumed within the same iteration, before next V-cycle)
+
+function _amg_pcg_solve!(ws::AMGWorkspace, b, values, itmax, atol, rtol,
+                           backend, workgroup)
+    L1  = ws.levels[1]
+    Tv  = eltype(ws.x_pcg)
+    x   = ws.x_pcg
+    p   = ws.p_cg
+
+    # ── Initialise x from current field ──────────────────────────────────────
+    amg_copy!(x, values, backend, workgroup)
+
+    # ── r ← b - A x ──────────────────────────────────────────────────────────
+    amg_residual!(L1.r, L1.A, x, b, backend, workgroup)
+    r0 = amg_norm(L1.r)
+    r0 = ifelse(r0 > eps(r0), r0, one(r0))
+
+    # Early exit: initial guess already satisfies tolerance (common with warm start)
+    if r0 < atol
+        amg_copy!(values, x, backend, workgroup)
+        return
+    end
+
+    # ── z ← M⁻¹ r  (one V-cycle: L1.b = r, L1.x = 0 → L1.x = z) ───────────
+    amg_copy!(L1.b, L1.r, backend, workgroup)
+    amg_zero!(L1.x, backend, workgroup)
+    run_cycle!(ws.levels, ws.opts, ws.opts.cycle, backend, workgroup)
+    # CRITICAL: vcycle! calls amg_residual!(L.r, ...) at the fine level, which
+    # overwrites L1.r with the V-cycle's internal residual (≈ 0 at cycle end).
+    # Restore the CG residual from L1.b, which the V-cycle never modifies.
+    amg_copy!(L1.r, L1.b, backend, workgroup)
+
+    # ── p ← z ;  rz = rᵀ z ───────────────────────────────────────────────────
+    amg_copy!(p, L1.x, backend, workgroup)
+    rz = dot(L1.r, p)
+
+    # ── PCG iterations ────────────────────────────────────────────────────────
+    # Convergence is checked every step (not every check_freq steps) because:
+    # 1. PCG with a good AMG preconditioner converges in very few steps; checking
+    #    every step allows immediate exit and avoids wasting V-cycles.
+    # 2. The extra norm (one global reduction) is small compared to a V-cycle and
+    #    is already grouped with the two dot-product syncs this loop requires anyway.
+    for k in 1:itmax
+
+        # Ap ← A p  (stored in L1.tmp; consumed before the next V-cycle)
+        amg_spmv!(L1.tmp, L1.A, p, backend, workgroup)
+
+        # α = (rᵀ z) / (pᵀ A p)
+        pAp   = dot(p, L1.tmp)
+        alpha = rz / pAp
+
+        # x ← x + α p  ;  r ← r − α Ap
+        amg_axpy!(x, p,      alpha,  backend, workgroup)
+        amg_axpy!(L1.r, L1.tmp, -alpha, backend, workgroup)
+
+        # Convergence check — exit before spending another V-cycle
+        res_norm = amg_norm(L1.r)
+        (res_norm < atol || res_norm / r0 < rtol) && break
+        k == itmax && break
+
+        # z ← M⁻¹ r  (V-cycle overwrites L1.r — restore CG residual from L1.b)
+        amg_copy!(L1.b, L1.r, backend, workgroup)
+        amg_zero!(L1.x, backend, workgroup)
+        run_cycle!(ws.levels, ws.opts, ws.opts.cycle, backend, workgroup)
+        amg_copy!(L1.r, L1.b, backend, workgroup)   # restore r after V-cycle
+
+        # β = (rᵀ z_new) / (rᵀ z_old) ;  z_new is in L1.x
+        rz_new = dot(L1.r, L1.x)
+        beta   = rz_new / rz
+        rz     = rz_new
+
+        # p ← z + β p
+        amg_axpby!(p, L1.x, one(Tv), beta, backend, workgroup)
+    end
+
+    # ── Copy PCG solution → field values ──────────────────────────────────────
+    amg_copy!(values, x, backend, workgroup)
+end
+
 # ─── solve_system! dispatch ────────────────────────────────────────────────────
 
 """
@@ -288,6 +381,9 @@ end
 AMG-specific override dispatched when `phiEqn.solver isa AMGWorkspace`.
 `ws.levels` is a fully-typed `Vector{LType}`, so all cycle kernel launches are
 type-stable with no boxing.
+
+Dispatches to PCG (`opts.krylov === :cg`, default) or plain Richardson
+(`opts.krylov === :none`) based on the `krylov` field of the `AMG` options.
 """
 function solve_system!(
     phiEqn::ModelEquation{T,M,E,S,P}, setup, result, component, config
@@ -304,33 +400,36 @@ function solve_system!(
     # Build or refresh hierarchy
     update!(ws, A, backend, workgroup)
 
-    L1 = ws.levels[1]   # concrete LType — fully type-stable
+    if ws.opts.krylov === :cg
+        _amg_pcg_solve!(ws, b, values, itmax, atol, rtol, backend, workgroup)
+    else
+        # ── Standalone Richardson: plain V-cycle loop ─────────────────────────
+        L1 = ws.levels[1]   # concrete LType — fully type-stable
 
-    # Initialise finest level from current field values
-    amg_copy!(L1.x, values, backend, workgroup)
-    amg_copy!(L1.b, b,      backend, workgroup)
+        amg_copy!(L1.x, values, backend, workgroup)
+        amg_copy!(L1.b, b,      backend, workgroup)
 
-    # Initial residual norm
-    amg_residual!(L1.r, L1.A, L1.x, L1.b, backend, workgroup)
-    r0 = amg_norm(L1.r)
-    r0 = ifelse(r0 > eps(r0), r0, one(r0))
+        amg_residual!(L1.r, L1.A, L1.x, L1.b, backend, workgroup)
+        r0 = amg_norm(L1.r)
+        r0 = ifelse(r0 > eps(r0), r0, one(r0))
 
-    # Multigrid cycle iterations — levels::Vector{LType} is typed, no dynamic dispatch.
-    # Residual is checked every check_freq cycles: computing a global norm forces a
-    # device synchronisation (GPU pipeline stall + full-vector reduction) so checking
-    # every cycle would dominate the runtime when cycles are cheap.
-    check_freq = 5
-    for k in 1:itmax
-        run_cycle!(ws.levels, ws.opts, ws.opts.cycle, backend, workgroup)
-        if k % check_freq == 0 || k == itmax
-            amg_residual!(L1.r, L1.A, L1.x, L1.b, backend, workgroup)
-            res_norm = amg_norm(L1.r)
-            (res_norm < atol || res_norm / r0 < rtol) && break
+        # Early exit: initial guess already satisfies tolerance.
+        if r0 >= atol
+            # Check at k=1 then every check_freq cycles: allows early exit after a
+            # single V-cycle (common when warm-started) while limiting sync overhead.
+            check_freq = 5
+            for k in 1:itmax
+                run_cycle!(ws.levels, ws.opts, ws.opts.cycle, backend, workgroup)
+                if k == 1 || k % check_freq == 0 || k == itmax
+                    amg_residual!(L1.r, L1.A, L1.x, L1.b, backend, workgroup)
+                    res_norm = amg_norm(L1.r)
+                    (res_norm < atol || res_norm / r0 < rtol) && break
+                end
+            end
         end
-    end
 
-    # Copy solution back to the field values array
-    amg_copy!(values, L1.x, backend, workgroup)
+        amg_copy!(values, L1.x, backend, workgroup)
+    end
 
     return residual(phiEqn, component, config)
 end

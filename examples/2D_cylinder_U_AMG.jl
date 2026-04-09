@@ -41,8 +41,10 @@ BCs = assign(
                 Zerogradient(:inlet),
                 Dirichlet(:outlet, 0.0),
                 Wall(:cylinder),
-                Extrapolated(:bottom),
-                Extrapolated(:top)
+                Zerogradient(:bottom),
+                Zerogradient(:top)
+                # Extrapolated(:bottom),
+                # Extrapolated(:top)
         ]
     )
 )
@@ -54,7 +56,7 @@ solvers = (
         convergence = 1e-7,
         relax       = 1.0,
         rtol = 0.0,
-        atol = 1e-5
+        atol = 1e-6
     ),
     p = SolverSetup(
         solver      = AMG(
@@ -65,15 +67,17 @@ solvers = (
                         max_levels    = 15,
                         coarsest_size = 100,
                         pre_sweeps    = 2,
-                        post_sweeps   = 2,
-                        strength      = 0.0,   # keep 0.0 for FVM pressure: all connections strong
+                        post_sweeps   = 1,
+                        strength      = 0.0,
+                        update_freq = 2,
+                        krylov = :none
                      ),
         preconditioner = Jacobi(),   # ignored by AMG; kept for API compatibility
         convergence = 1e-7,
         relax       = 1.0,
         rtol        = 0.0,
-        atol        = 1e-5,
-        itmax       = 20,
+        atol        = 1e-6,
+        itmax       = 200,
     )
 )
 

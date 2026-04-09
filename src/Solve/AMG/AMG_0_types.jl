@@ -33,7 +33,7 @@ end
 
 """
     AMG(; smoother, cycle, max_levels, coarsest_size, pre_sweeps, post_sweeps,
-          strength, coarsening)
+          strength, coarsening, update_freq)
 
 Algebraic Multigrid linear solver for use with `SolverSetup`.
 
@@ -45,18 +45,60 @@ Algebraic Multigrid linear solver for use with `SolverSetup`.
 - `coarsest_size` — stop coarsening when matrix size ≤ this threshold (default 50).
 - `pre_sweeps` — number of pre-smoothing sweeps per level (default 2).
 - `post_sweeps` — number of post-smoothing sweeps per level (default 2).
-- `strength` — strength-of-connection threshold θ for coarsening (default 0.25).
+- `strength` — strength-of-connection threshold θ for coarsening (default 0.0).
+  A connection (i,j) is kept when `|a_ij| ≥ θ · max_{k≠i} |a_ik|`. Smaller θ
+  retains more connections (denser coarse levels, slower coarsening); larger θ
+  keeps only the strongest connections (sparser coarse levels, more aggressive
+  coarsening).
+
+  **For FVM pressure (Laplacian) matrices the correct default is `θ = 0.0`.**
+  These are near-isotropic M-matrices in which every off-diagonal entry
+  contributes equally to the solution, so all connections should be treated as
+  "strong." On non-uniform meshes (e.g. wall-refined cylinder grids) cells near
+  the wall can have radial coefficients 4–16× larger than tangential ones.
+  With `θ = 0.25` the tangential connections are dropped from the strong graph,
+  near-wall cells aggregate only in the radial direction, the prolongation
+  quality is poor, and AMG fails to converge — causing the outer
+  PISO/SIMPLE loop to diverge and eventually crash.
+
+  Use a non-zero θ only for strongly anisotropic problems (e.g. aligned
+  diffusion with anisotropy ratio ≫ 4) where selective coarsening along the
+  strong direction is intentional.  For `:RS` (Ruge–Stüben) the classical
+  value θ = 0.25 is standard, but still incorrect for near-isotropic FVM
+  operators.  When in doubt, keep `strength = 0.0`.
 - `coarsening` — coarsening strategy: `:SA` Smoothed Aggregation (default) or `:RS`
   Ruge–Stüben.
+- `update_freq` — how often the coarse-level hierarchy (Galerkin products and
+  coarsest LU) is refreshed when the fine-level matrix changes (default `1`).
+
+  In a SIMPLE/PISO loop, `update!` is called once per outer iteration. With
+  `update_freq = 1` (default) the full hierarchy is rebuilt every call.
+  Setting `update_freq = N > 1` applies a **lazy refresh**: the fine-level
+  diagonal D⁻¹ is always updated (cheap and accuracy-critical for the smoother),
+  but the Galerkin products and coarsest LU are recomputed only on calls
+  1, N+1, 2N+1, … This is safe because:
+  - The outer iteration (SIMPLE/PISO) itself is an iterative correction loop,
+    so slightly stale coarse-level operators cause at most a small increase in
+    the number of AMG cycles needed per outer iteration.
+  - As the simulation approaches convergence, the matrix changes very slowly
+    and skipping intermediate refreshes has negligible accuracy impact.
+
+  Recommended values:
+  - `update_freq = 1`  — fully accurate, no approximation (default).
+  - `update_freq = 2`  — mild savings; good for transient simulations with
+    many timesteps where A changes little within a timestep.
+  - `update_freq = 3–5` — larger savings; suitable for near-converged steady
+    runs or when the outer solver uses many inner iterations per timestep.
 
 # Example
 ```julia
 solvers = (
     p = SolverSetup(
-        solver      = AMG(smoother  = JacobiSmoother(; domain=mesh, loops=2, omega=2/3),
-                          cycle     = VCycle(),
-                          coarsening = :SA,
-                          max_levels = 20),
+        solver      = AMG(smoother    = JacobiSmoother(; domain=mesh, loops=2, omega=2/3),
+                          cycle       = VCycle(),
+                          coarsening  = :SA,
+                          max_levels  = 20,
+                          update_freq = 2),   # refresh hierarchy every 2 outer iterations
         preconditioner = Jacobi(),   # ignored by AMG (self-contained); kept for API compat
         convergence = 1e-8,
         relax = 0.2,
@@ -75,6 +117,7 @@ struct AMG{S<:AbstractSmoother, C<:AMGCycle} <: AbstractLinearSolver
     post_sweeps   :: Int
     strength      :: Float64
     coarsening    :: Symbol
+    update_freq   :: Int   # refresh Galerkin hierarchy every N update! calls (1 = every call)
 end
 
 AMG(;
@@ -84,10 +127,11 @@ AMG(;
     coarsest_size = 50,
     pre_sweeps    = 2,
     post_sweeps   = 2,
-    strength      = 0.25,
+    strength      = 0.0,
     coarsening    = :SA,
+    update_freq   = 1,
 ) = AMG(smoother, cycle, max_levels, coarsest_size, pre_sweeps, post_sweeps,
-        Float64(strength), coarsening)
+        Float64(strength), coarsening, update_freq)
 
 # ─── Galerkin plan (device-resident) ─────────────────────────────────────────
 
@@ -148,9 +192,14 @@ mutable struct LevelExtras{Tv, CpuSpT}
     rho           :: Tv
     lu_factor     :: Union{Nothing, LinearAlgebra.LU{Tv, Matrix{Tv}, Vector{Int}}}
     lu_rhs        :: Vector{Tv}
+    # Device-resident nzval index of the diagonal entry per row. Built once at
+    # amg_setup!; valid for the lifetime of the hierarchy (sparsity pattern is fixed).
+    # Replaces the search loop in _amg_build_Dinv! with a direct indexed access,
+    # eliminating warp divergence on GPU.
+    diag_ptr      :: Union{Nothing, AbstractVector{Int32}}
 
     LevelExtras{Tv, CpuSpT}() where {Tv, CpuSpT} =
-        new{Tv, CpuSpT}(nothing, nothing, nothing, nothing, nothing, one(Tv), nothing, Tv[])
+        new{Tv, CpuSpT}(nothing, nothing, nothing, nothing, nothing, one(Tv), nothing, Tv[], nothing)
 end
 
 # ─── Per-level storage ────────────────────────────────────────────────────────
@@ -216,9 +265,10 @@ is therefore a fully-typed `Vector{LType}` — no `Any`, no dynamic dispatch in 
 cycle hot path.
 """
 mutable struct AMGWorkspace{LType, Vec, Opts<:AMG}
-    levels      :: Vector{LType}
-    x           :: Vec
-    opts        :: Opts
-    setup_valid :: Bool
-    setup_count :: Int
+    levels       :: Vector{LType}
+    x            :: Vec
+    opts         :: Opts
+    setup_valid  :: Bool
+    setup_count  :: Int
+    update_count :: Int   # counts update! calls; drives the lazy Galerkin refresh
 end

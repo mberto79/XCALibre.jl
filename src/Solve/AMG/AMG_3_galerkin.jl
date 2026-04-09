@@ -343,6 +343,26 @@ function _build_galerkin_plan(Ac::SparseMatrixCSR, R::SparseMatrixCSR,
         end
     end
 
+    # Sort each output-nonzero's contribution triples by nzi_A so that accesses
+    # into nzval_A are sequential within each thread's inner loop. Improves L2
+    # cache hit rate on CPU (hardware prefetcher) and GPU (reduced TLB thrash).
+    # Uses insertion sort: groups are tiny (typically 1–10 entries).
+    for out in 1:nnz_ac
+        lo = Int(rowptr[out]); hi = Int(rowptr[out+1]) - 1
+        lo >= hi && continue
+        for i in (lo+1):hi
+            key_R = plan_nzi_R[i]; key_A = plan_nzi_A[i]; key_P = plan_nzi_P[i]
+            j = i - 1
+            while j >= lo && plan_nzi_A[j] > key_A
+                plan_nzi_R[j+1] = plan_nzi_R[j]
+                plan_nzi_A[j+1] = plan_nzi_A[j]
+                plan_nzi_P[j+1] = plan_nzi_P[j]
+                j -= 1
+            end
+            plan_nzi_R[j+1] = key_R; plan_nzi_A[j+1] = key_A; plan_nzi_P[j+1] = key_P
+        end
+    end
+
     # Transfer plan to device using KA-allocated arrays
     mk = (T, n) -> KernelAbstractions.zeros(backend, T, n)
     rp_dev  = mk(Int32, nnz_ac + 1)
@@ -357,20 +377,62 @@ function _build_galerkin_plan(Ac::SparseMatrixCSR, R::SparseMatrixCSR,
     return GalerkinPlan(rp_dev, niR_dev, niA_dev, niP_dev)
 end
 
-# ─── Power iteration to estimate spectral radius ρ(D⁻¹ A) ──────────────────
+# ─── Gershgorin upper bound for ρ(D⁻¹ A) ────────────────────────────────────
+#
+# For each row i: the Gershgorin disk has centre 1 and radius Σ_{j≠i} |a_ij/a_ii|.
+# Hence ρ(D⁻¹A) ≤ max_i Σ_j |a_ij/a_ii|  (the full row sum including diagonal).
+#
+# For FVM M-matrices (pressure Laplacian, diffusion): off-diagonal row sum equals
+# the diagonal in magnitude, so the bound is exactly 2 — equal to the true ρ.
+# This makes ω_P = 4/(3·ρ) = 2/3, the classical optimal damping for these operators.
+#
+# Using this instead of power iteration is:
+#   • O(nnz) single pass — faster than niters SpMVs
+#   • deterministic — no random starting vector → hierarchy is reproducible
+#   • tight for M-matrices — not overly conservative
 
 """
-    estimate_spectral_radius(A, Dinv; niters=10) → ρ
+    _gershgorin_rho(A, Dinv) → ρ_upper
+
+Compute the Gershgorin circle upper bound on the spectral radius of D⁻¹A:
+    ρ ≤ max_i  Σ_j |a_ij| * |Dinv[i]|
+For FVM M-matrices this equals the true spectral radius (= 2 for a uniform Laplacian).
+"""
+function _gershgorin_rho(A::SparseMatrixCSR{Bi,Tv,Ti},
+                          Dinv::AbstractVector{Tv}) where {Bi,Tv,Ti}
+    n      = size(A, 1)
+    rowptr = A.rowptr; colval = A.colval; nzval = A.nzval
+    rho    = zero(Tv)
+    @inbounds for i in 1:n
+        row_sum = zero(Tv)
+        di = abs(Dinv[i])
+        for nzi in rowptr[i]:(rowptr[i+1]-1)
+            row_sum += abs(nzval[nzi]) * di
+        end
+        rho = max(rho, row_sum)
+    end
+    return rho
+end
+
+# ─── Power iteration to estimate spectral radius ρ(D⁻¹ A) ──────────────────
+#
+# Used for Chebyshev smoother eigenvalue bounds. Starts from a deterministic
+# all-ones vector (normalised), which is a good initial guess for smooth dominant
+# eigenvectors typical of Laplacian-like operators and avoids run-to-run variation.
+
+"""
+    estimate_spectral_radius(A, Dinv; niters=20) → ρ
 
 Rayleigh-quotient power iteration on CPU for the matrix D⁻¹A.
-Used to set Chebyshev and smoothed-prolongation damping parameters.
+Used to set Chebyshev smoother eigenvalue bounds.
+Starting vector is deterministic (normalised all-ones) so the hierarchy is
+reproducible across runs.
 """
 function estimate_spectral_radius(A::SparseMatrixCSR{Bi,Tv,Ti},
                                    Dinv::AbstractVector;
-                                   niters::Int=10) where {Bi,Tv,Ti}
+                                   niters::Int=20) where {Bi,Tv,Ti}
     n = size(A, 1)
-    v = rand(Tv, n)
-    v ./= norm(v)
+    v = fill(one(Tv) / sqrt(Tv(n)), n)   # deterministic: normalised all-ones
     w = similar(v)
     rho = one(Tv)
 

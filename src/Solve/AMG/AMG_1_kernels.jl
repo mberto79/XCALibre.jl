@@ -94,6 +94,7 @@ function amg_zero!(v, backend, workgroup)
 end
 
 # ── Compute inverse diagonal: Dinv[i] = 1 / A[i,i] ───────────────────────────
+# Slow fallback: searches each row for the diagonal entry (causes warp divergence on GPU).
 
 @kernel function _amg_build_Dinv!(Dinv, rowptr, colval, nzval)
     row = @index(Global)
@@ -114,6 +115,43 @@ function amg_build_Dinv!(Dinv, A, backend, workgroup)
     n = length(Dinv)
     kernel! = _amg_build_Dinv!(_setup(backend, workgroup, n)...)
     kernel!(Dinv, rowptr, colval, nzval)
+end
+
+# ── Fast inverse diagonal using pre-computed diagonal pointer ─────────────────
+# diag_ptr[row] holds the 1-based nzval index of the diagonal entry.
+# Eliminates the row-scan loop and all warp divergence — single indexed load per thread.
+
+@kernel function _amg_build_Dinv_fast!(Dinv, nzval, diag_ptr)
+    row = @index(Global)
+    @inbounds begin
+        d = nzval[diag_ptr[row]]
+        Dinv[row] = ifelse(d != zero(eltype(nzval)), one(eltype(nzval)) / d, one(eltype(nzval)))
+    end
+end
+
+function amg_build_Dinv!(Dinv, A, diag_ptr::AbstractVector{<:Integer}, backend, workgroup)
+    nzval, _, _ = get_sparse_fields(A)
+    n = length(Dinv)
+    kernel! = _amg_build_Dinv_fast!(_setup(backend, workgroup, n)...)
+    kernel!(Dinv, nzval, diag_ptr)
+end
+
+# ── Build diagonal pointer on CPU ─────────────────────────────────────────────
+# Returns a Vector{Int32} of length n where ptr[i] is the 1-based nzval index
+# of A[i,i]. Called once at amg_setup! time; the result is transferred to device.
+
+function _build_diag_ptr_cpu(A::SparseMatricesCSR.SparseMatrixCSR)
+    n   = size(A, 1)
+    ptr = zeros(Int32, n)
+    @inbounds for i in 1:n
+        for nzi in A.rowptr[i]:(A.rowptr[i+1]-1)
+            if A.colval[nzi] == i
+                ptr[i] = Int32(nzi)
+                break
+            end
+        end
+    end
+    return ptr
 end
 
 # ── Residual r = b - A*x (single pass) ────────────────────────────────────────

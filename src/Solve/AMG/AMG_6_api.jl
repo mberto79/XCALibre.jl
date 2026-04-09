@@ -15,7 +15,7 @@ function _workspace(amg::AMG, ::AT, b::AbstractVector{Tv}) where {AT, Tv}
                             LevelExtras{Tv, SparseMatricesCSR.SparseMatrixCSR{1, Tv, Int}}}
     x = similar(b)
     fill!(x, zero(Tv))
-    return AMGWorkspace(LType[], x, amg, false, 0)
+    return AMGWorkspace(LType[], x, amg, false, 0, 0)
 end
 
 # ─── Full hierarchy setup ─────────────────────────────────────────────────────
@@ -50,7 +50,9 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
     use_jacobi = opts.smoother isa JacobiSmoother
 
     D_fine    = _extract_dinv_cpu(A_cpu)
-    ρ_fine    = Tv(estimate_spectral_radius(A_cpu, D_fine))
+    # Gershgorin bound: deterministic, O(nnz), tight for FVM M-matrices.
+    # Used as the fine-level spectral radius for Chebyshev; Jacobi stores 1.0.
+    ρ_fine    = Tv(_gershgorin_rho(A_cpu, D_fine))
     _rho_fine = use_jacobi ? one(Tv) : ρ_fine
     push!(rhos, _rho_fine)
     _fine_diag_max = maximum(inv, D_fine; init=zero(Tv))
@@ -73,9 +75,11 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
         # Stop only if even the pairwise fallback couldn't reduce size ≥ 10%.
         nagg > 0.9 * n_cur && break
 
-        # Always compute ρ(D⁻¹A) for ω_P — independent of smoother choice.
+        # Gershgorin bound for ω_P: deterministic, O(nnz), tight for FVM M-matrices.
+        # Avoids the random power iteration that made ω_P (and thus the prolongation
+        # quality and hierarchy stopping criteria) non-reproducible between runs.
         D_cur = _extract_dinv_cpu(A_cur)
-        ρ_cur = estimate_spectral_radius(A_cur, D_cur)
+        ρ_cur = _gershgorin_rho(A_cur, D_cur)
         ω_P   = min(4.0 / (3.0 * max(ρ_cur, eps(Float64))), 4.0/3.0)
 
         P_tent = build_tentative_P(n_cur, nagg, agg)
@@ -99,7 +103,7 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
         Ac_diag_min < sqrt(eps(Float64)) * _fine_diag_max && break
 
         D_c = _extract_dinv_cpu(Ac_cpu)
-        ρ_c = use_jacobi ? one(Tv) : Tv(estimate_spectral_radius(Ac_cpu, D_c))
+        ρ_c = use_jacobi ? one(Tv) : Tv(_gershgorin_rho(Ac_cpu, D_c))
 
         push!(P_cpus,  P_cpu)
         push!(R_cpus,  R_cpu)
@@ -140,12 +144,20 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
         R_dev = (i <= length(R_cpus)) ? _csr_to_device(R_cpus[i], backend, Tv, Ti) : nothing
 
         Dinv = mk_vec(n)
-        amg_build_Dinv!(Dinv, A_dev, backend, workgroup)
+
+        # Build diagonal pointer: pre-compute nzval index of A[row,row] for each row.
+        # Transferred to device once; used every update!() for branch-free Dinv rebuild.
+        diag_ptr_cpu = _build_diag_ptr_cpu(A_cpus[i])
+        diag_ptr_dev = KernelAbstractions.zeros(backend, Int32, n)
+        KernelAbstractions.copyto!(backend, diag_ptr_dev, diag_ptr_cpu)
+
+        amg_build_Dinv!(Dinv, A_dev, diag_ptr_dev, backend, workgroup)
 
         extras = LevelExtras{Tv, SparseMatricesCSR.SparseMatrixCSR{1, Tv, Int}}()
         extras.P_cpu  = (i <= length(P_cpus)) ? P_cpus[i] : nothing
         extras.R_cpu  = (i <= length(R_cpus)) ? R_cpus[i] : nothing
         extras.rho    = rhos[i]
+        extras.diag_ptr = diag_ptr_dev
 
         # Build Galerkin plan for each non-coarsest level (plan lives on device)
         if i < n_levels
@@ -168,10 +180,11 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
     end
 
     # ── Commit to workspace ────────────────────────────────────────────────────
-    ws.levels       = levels
-    ws.x            = levels[1].x
-    ws.setup_valid  = true
-    ws.setup_count += 1
+    ws.levels        = levels
+    ws.x             = levels[1].x
+    ws.setup_valid   = true
+    ws.setup_count  += 1
+    ws.update_count  = 0   # reset so the first update! after setup always runs fully
     nothing
 end
 
@@ -181,9 +194,43 @@ end
     update!(ws, A_device, backend, workgroup)
 
 Refresh numerical values in the AMG hierarchy after the fine-level matrix
-`A_device` has changed (same sparsity pattern, new coefficients). Coarse
-matrices are recomputed via Galerkin products; work vectors are reused. If
-the hierarchy has not yet been built, calls `amg_setup!` instead.
+`A_device` has changed (same sparsity pattern, new coefficients). Work vectors
+are reused; no allocations. Falls back to `amg_setup!` if the hierarchy has
+not yet been built.
+
+## What is always updated (every call)
+
+- **Fine-level D⁻¹**: extracted from the current `A_device` nzval using a
+  pre-computed diagonal-position pointer (`extras.diag_ptr`). Single kernel
+  launch, no row scan, no branch divergence.
+
+## What is lazily updated (every `update_freq` calls)
+
+Controlled by `ws.opts.update_freq` (set via `AMG(; update_freq=N)`).
+
+- **Galerkin products** `Ac = R·A·P` for each coarse level: device-resident
+  kernel reads the current `A.nzval` and overwrites `Ac.nzval` using the
+  pre-built index plan. No CPU↔device transfers.
+- **Coarse D⁻¹** for each level: rebuilt from the updated `Ac.nzval`.
+- **Coarsest-level LU**: the tiny coarsest `nzval` (~50 floats) is downloaded
+  to CPU, the pre-allocated dense buffer is filled, and `lu!` is called
+  in-place.
+
+### Lazy refresh schedule
+
+`update_count` is incremented on every call and reset to 0 after `amg_setup!`.
+The lazy part runs when `(update_count - 1) % update_freq == 0`, i.e. on
+calls 1, `update_freq+1`, `2·update_freq+1`, … The first call after setup
+always runs in full regardless of `update_freq`.
+
+### Why lazy refresh is safe
+
+In SIMPLE/PISO the outer loop is itself an iterative correction: a slightly
+stale coarse correction causes the AMG to need a few more V-cycles per outer
+iteration, but the outer iteration still converges. As the solution approaches
+steady state the matrix changes very slowly, so the approximation cost becomes
+negligible. The fine-level D⁻¹ (which directly controls smoother accuracy) is
+never skipped.
 """
 function update!(ws::AMGWorkspace, A_device, backend, workgroup)
     if !ws.setup_valid || isempty(ws.levels)
@@ -191,30 +238,44 @@ function update!(ws::AMGWorkspace, A_device, backend, workgroup)
         return
     end
 
-    # Fine-level D⁻¹ (A_device is mutated in-place by the outer solver each iteration)
-    amg_build_Dinv!(ws.levels[1].Dinv, ws.levels[1].A, backend, workgroup)
+    ws.update_count += 1
+
+    # Fine-level D⁻¹ is always rebuilt: A_device coefficients change every outer
+    # iteration and the fine-level smoother needs accurate diagonal scaling.
+    # Uses the pre-computed diag_ptr for branch-free direct indexed access.
+    L1 = ws.levels[1]
+    amg_build_Dinv!(L1.Dinv, L1.A, L1.extras.diag_ptr, backend, workgroup)
+
+    # Lazy Galerkin refresh: skip coarse-level updates when update_freq > 1.
+    # The fine-level smoother remains accurate (Dinv above is always fresh).
+    # Coarse corrections become slightly stale for slowly-changing A — acceptable
+    # as a preconditioner since the outer Krylov / Richardson iteration corrects it.
+    update_freq = ws.opts.update_freq
+    (ws.update_count - 1) % update_freq != 0 && return
 
     # Galerkin update via KA kernel — all arrays are device-resident, zero CPU↔device
     # transfers. The plan stored at each level encodes the (nzi_R, nzi_A, nzi_P)
     # triples; the kernel reads the current nzval of A (which just changed) and
     # overwrites the next level's matrix nzval with the new Galerkin product.
+    # Fast diag_ptr-based Dinv follows each Galerkin kernel (no search loop).
     for lvl in 1:(length(ws.levels) - 1)
         L  = ws.levels[lvl]
         Lc = ws.levels[lvl + 1]
         amg_galerkin!(Lc.A, L.A, L.R, L.P, L.extras.galerkin_plan, backend, workgroup)
-        amg_build_Dinv!(Lc.Dinv, Lc.A, backend, workgroup)
+        amg_build_Dinv!(Lc.Dinv, Lc.A, Lc.extras.diag_ptr, backend, workgroup)
     end
 
     # Rebuild coarsest-level LU: download the (tiny) coarsest nzval from device,
     # fill the pre-allocated dense buffer, and factorise in-place. The download is
     # only ~(50²×8) bytes — negligible compared to the eliminated fine-level transfers.
+    # check=false avoids the SingularException error path (saves a branch + exception alloc).
     if !isnothing(ws.levels[end].extras.lu_factor)
         ex_c     = ws.levels[end].extras
         nzval_c, _, _ = get_sparse_fields(ws.levels[end].A)
         copyto!(ex_c.A_cpu.nzval, nzval_c)   # device → CPU (tiny)
         fill!(ex_c.lu_dense, zero(eltype(ws.x)))
         _fill_dense_from_sparse!(ex_c.lu_dense, ex_c.A_cpu)
-        ex_c.lu_factor = lu!(ex_c.lu_dense)
+        ex_c.lu_factor = lu!(ex_c.lu_dense; check=false)
     end
     nothing
 end

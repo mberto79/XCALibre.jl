@@ -66,7 +66,7 @@ solvers = (
                         coarsest_size = 100,
                         pre_sweeps    = 2,
                         post_sweeps   = 2,
-                        strength      = 0.000005,
+                        strength      = 0.0,   # keep 0.0 for FVM pressure: all connections strong
                      ),
         preconditioner = Jacobi(),   # ignored by AMG; kept for API compatibility
         convergence = 1e-7,
@@ -84,10 +84,9 @@ schemes = (
     p = Schemes(time=timeScheme, gradient=Gauss)
 )
 
-
+iterations = 10000 # 10000 10
 runtime = Runtime(
-    iterations=10000, write_interval=50, time_step=0.0025) # uncomment to save files
-    # iterations=1000, write_interval=-1, time_step=0.005) # used to run only
+    iterations=iterations, write_interval=50, time_step=0.0025)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

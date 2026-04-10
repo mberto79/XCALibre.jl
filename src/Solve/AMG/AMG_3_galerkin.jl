@@ -115,9 +115,12 @@ end
 # ─── Galerkin coarse matrix Ac = R · A · P ────────────────────────────────────
 
 """
-    galerkin_product(R, A, P) → SparseMatrixCSR
+    galerkin_product(R, A, P) → (AP, Ac)
 
 Computes Ac = R * A * P via two SpGEMM steps (R*(A*P)).
+Returns both the intermediate `AP` and the coarse matrix `Ac` so the caller
+can reuse `AP` as the pre-allocated scratch buffer for `_spgemm_nzval!` in
+later numerical updates, avoiding a redundant SpGEMM at setup time.
 All matrices are SparseMatrixCSR on CPU.
 """
 function galerkin_product(R::SparseMatrixCSR{Bi,Tv,Ti},
@@ -125,7 +128,7 @@ function galerkin_product(R::SparseMatrixCSR{Bi,Tv,Ti},
                            P::SparseMatrixCSR{Bi,Tv,Ti}) where {Bi,Tv,Ti}
     AP = _spgemm(A, P)
     Ac = _spgemm(R, AP)
-    return Ac
+    return AP, Ac
 end
 
 # ── General SpGEMM for CSR matrices on CPU (Gustavson two-pass) ───────────────

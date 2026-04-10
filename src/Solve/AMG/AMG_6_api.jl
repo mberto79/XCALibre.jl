@@ -47,6 +47,7 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
     A_cpus    = [A_cpu]       # level matrices (CPU)
     P_cpus    = SparseMatricesCSR.SparseMatrixCSR{1,Tv,Int}[]  # inter-level P
     R_cpus    = SparseMatricesCSR.SparseMatrixCSR{1,Tv,Int}[]  # inter-level R
+    AP_cpus   = SparseMatricesCSR.SparseMatrixCSR{1,Tv,Int}[]  # A*P intermediates (reused in update!)
     rhos      = Tv[]           # spectral radius per level
 
     # ω_P = 4/(3ρ) where ρ = ρ(D⁻¹A); for FVM Laplacian ρ ≈ 2 → ω_P ≈ 2/3.
@@ -88,7 +89,7 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
         any(!isfinite, P_cpu.nzval) && break
 
         R_cpu  = build_restriction(P_cpu)
-        Ac_cpu = galerkin_product(R_cpu, A_cur, P_cpu)
+        AP_cpu, Ac_cpu = galerkin_product(R_cpu, A_cur, P_cpu)
 
         nc = size(Ac_cpu, 1)
         (nc == 0 || any(!isfinite, Ac_cpu.nzval)) && break
@@ -107,6 +108,7 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
 
         push!(P_cpus,  P_cpu)
         push!(R_cpus,  R_cpu)
+        push!(AP_cpus, AP_cpu)
         push!(A_cpus,  Ac_cpu)
         push!(rhos,    ρ_c)
 
@@ -158,10 +160,11 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
         # Pre-allocate two-step SpGEMM scratch for each non-coarsest level:
         #   Step 1: T = A·P  (intermediate, same sparsity each update)
         #   Step 2: Ac = R·T (result copied to device Lc.A.nzval)
+        # AP_cpus[i] was already computed by galerkin_product in Phase 1 — reuse it
+        # to avoid a redundant symbolic+numeric SpGEMM here.
         if i < n_levels
-            AP_cpu = _spgemm(A_cpus[i], P_cpus[i])
             nc     = size(P_cpus[i], 2)
-            extras.AP_cpu   = AP_cpu
+            extras.AP_cpu   = AP_cpus[i]               # reuse from Phase 1 (no redundant SpGEMM)
             extras.Ac_cpu   = deepcopy(A_cpus[i+1])   # writable Ac scratch
             extras.A_cpu    = deepcopy(A_cpus[i])      # writable fine-A mirror for nzval download
             extras.cpu_tmps = zeros(Tv, nc, Threads.nthreads())
@@ -186,7 +189,10 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
     ws.x             = levels[1].x
     ws.setup_valid   = true
     ws.setup_count  += 1
-    ws.update_count  = 0   # reset so the first update! after setup always runs fully
+    # Set to 1 so the first update! after setup skips the Galerkin refresh:
+    # the hierarchy was just built from the current matrix, so recomputing immediately
+    # is redundant. For update_freq=1 the check (count-1)%1==0 still runs every call.
+    ws.update_count  = 1
     nothing
 end
 
@@ -220,10 +226,13 @@ Controlled by `ws.opts.update_freq` (set via `AMG(; update_freq=N)`).
 
 ### Lazy refresh schedule
 
-`update_count` is incremented on every call and reset to 0 after `amg_setup!`.
+`update_count` is incremented on every call and reset to 1 after `amg_setup!`
+(not 0), so the first `update!` after setup skips the Galerkin refresh —
+the hierarchy was just computed from the same matrix, so recomputing it
+immediately is redundant.
 The lazy part runs when `(update_count - 1) % update_freq == 0`, i.e. on
-calls 1, `update_freq+1`, `2·update_freq+1`, … The first call after setup
-always runs in full regardless of `update_freq`.
+calls 1+update_freq, 1+2·update_freq, … after setup.
+Exception: when `update_freq == 1` the condition fires every call.
 
 ### Why lazy refresh is safe
 

@@ -198,42 +198,54 @@ end
 # ─── Zero-allocation numerical Galerkin update ────────────────────────────────
 
 """
-    _spgemm_nzval!(C, A, B, tmps)
+    _spgemm_nzval!(C, A, B, tmps, col_to_local)
 
 Compute C = A * B in-place (numerical values only), reusing C's pre-allocated
-sparsity pattern. `tmps` is an `(ncols_B × nthreads)` matrix of dense scratch space,
-pre-allocated at setup time (column-major: each thread's slice is a contiguous column).
-Rows are processed in parallel with `Threads.@threads`; each thread uses column
-`tmps[:, threadid()]` so no locking is needed.
+sparsity pattern. Uses a compact accumulator strategy to keep the hot buffer in L1:
 
-`tmps` must be zero on entry and is left zero on return. No heap allocation.
-Works correctly with `Threads.nthreads() == 1` (single-threaded path).
+- `tmps`         : `(max_nnz_per_row(C) × nthreads)` Float accumulator — fits in L1 cache.
+- `col_to_local` : `(ncols_B × nthreads)` Int32 scatter map; for each row i, column j of B
+                   is mapped to a compact local slot 1..nnz_i via this array.
+
+Both arrays must be zero on entry and are left zero on return. No heap allocation.
+Works correctly with `Threads.nthreads() == 1`.
 """
 function _spgemm_nzval!(C::SparseMatrixCSR{Bi,Tv,Ti},
                          A::SparseMatrixCSR,
                          B::SparseMatrixCSR,
-                         tmps::AbstractMatrix{Tv}) where {Bi,Tv,Ti}
+                         tmps::AbstractMatrix{Tv},
+                         col_to_local::AbstractMatrix{Int32}) where {Bi,Tv,Ti}
     rowptr_A = A.rowptr; colval_A = A.colval; nzval_A = A.nzval
     rowptr_B = B.rowptr; colval_B = B.colval; nzval_B = B.nzval
     rowptr_C = C.rowptr; colval_C = C.colval; nzval_C = C.nzval
     m = size(A, 1)
-    # Each thread uses an independent tmps column; rows own disjoint nzval_C ranges — no locking.
+    # Each thread uses independent columns of tmps and col_to_local — no locking.
     Threads.@threads for i in 1:m
-        tmp = view(tmps, :, Threads.threadid())
+        tid  = Threads.threadid()
+        tmp  = view(tmps,         :, tid)
+        ctol = view(col_to_local, :, tid)
         @inbounds begin
-            # Accumulate row i of A*B into thread-local scratch
+            # Assign compact local slots for all columns of C in row i
+            c_start = rowptr_C[i]
+            c_end   = rowptr_C[i+1] - 1
+            for nzi_C in c_start:c_end
+                ctol[colval_C[nzi_C]] = Int32(nzi_C - c_start + 1)
+            end
+            # Accumulate A[i,:] × B into compact tmp (indexed via ctol)
             for nzi_A in rowptr_A[i]:(rowptr_A[i+1]-1)
                 k   = colval_A[nzi_A]
                 aik = nzval_A[nzi_A]
                 for nzi_B in rowptr_B[k]:(rowptr_B[k+1]-1)
-                    tmp[colval_B[nzi_B]] += aik * nzval_B[nzi_B]
+                    tmp[ctol[colval_B[nzi_B]]] += aik * nzval_B[nzi_B]
                 end
             end
-            # Write into C using its pre-computed pattern; clear scratch in same pass
-            for nzi_C in rowptr_C[i]:(rowptr_C[i+1]-1)
+            # Write into C and clear both tmp and ctol in one pass
+            for nzi_C in c_start:c_end
                 j = colval_C[nzi_C]
-                nzval_C[nzi_C] = tmp[j]
-                tmp[j] = zero(Tv)
+                local_slot = nzi_C - c_start + 1
+                nzval_C[nzi_C] = tmp[local_slot]
+                tmp[local_slot] = zero(Tv)
+                ctol[j] = Int32(0)
             end
         end
     end

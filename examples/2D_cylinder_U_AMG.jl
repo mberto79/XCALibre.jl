@@ -70,7 +70,7 @@ solvers = (
                         post_sweeps   = 1,
                         strength      = 0.0,
                         update_freq = 2,
-                        krylov = :none
+                        krylov = :cg
                      ),
         preconditioner = Jacobi(),   # ignored by AMG; kept for API compatibility
         convergence = 1e-7,

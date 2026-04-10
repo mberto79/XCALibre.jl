@@ -157,7 +157,11 @@ Host-resident mutable state for one multigrid level.
 - `diag_ptr`       : device-resident nzval index of `A[i,i]` per row; branch-free Dinv rebuild.
 - `AP_cpu`         : pre-allocated intermediate A*P matrix (CPU, non-coarsest levels).
 - `Ac_cpu`         : pre-allocated Ac output scratch (CPU, non-coarsest levels).
-- `cpu_tmps`       : thread-local scratch for `_spgemm_nzval!` (both A*P and R*(A*P) steps).
+- `cpu_tmps`       : compact thread-local Float accumulator for `_spgemm_nzval!`; sized
+                     `max_nnz_per_row(C) × nthreads` — fits in L1 cache.
+- `col_to_local`   : thread-local Int32 scatter map sized `ncols_B × nthreads`; maps each
+                     column j of B to the local slot in `cpu_tmps` for the current row. Set
+                     per-row and cleared after write-back; never allocated at the hot path.
 
 `CpuSpT` is always `SparseMatricesCSR.SparseMatrixCSR{1, Tv, Int}`.
 
@@ -165,21 +169,22 @@ The struct itself is never adapted to the device (`Adapt.adapt` returns it uncha
 `diag_ptr` is device-resident; all other fields live on the host.
 """
 mutable struct LevelExtras{Tv, CpuSpT}
-    P_cpu    :: Union{Nothing, CpuSpT}
-    R_cpu    :: Union{Nothing, CpuSpT}
-    A_cpu    :: Union{Nothing, CpuSpT}
-    lu_dense :: Union{Nothing, Matrix{Tv}}
-    rho      :: Tv
-    lu_factor :: Union{Nothing, LinearAlgebra.LU{Tv, Matrix{Tv}, Vector{Int}}}
-    lu_rhs   :: Vector{Tv}
-    diag_ptr :: Union{Nothing, AbstractVector{Int32}}
-    AP_cpu   :: Union{Nothing, CpuSpT}
-    Ac_cpu   :: Union{Nothing, CpuSpT}
-    cpu_tmps :: Union{Nothing, Matrix{Tv}}
+    P_cpu        :: Union{Nothing, CpuSpT}
+    R_cpu        :: Union{Nothing, CpuSpT}
+    A_cpu        :: Union{Nothing, CpuSpT}
+    lu_dense     :: Union{Nothing, Matrix{Tv}}
+    rho          :: Tv
+    lu_factor    :: Union{Nothing, LinearAlgebra.LU{Tv, Matrix{Tv}, Vector{Int}}}
+    lu_rhs       :: Vector{Tv}
+    diag_ptr     :: Union{Nothing, AbstractVector{Int32}}
+    AP_cpu       :: Union{Nothing, CpuSpT}
+    Ac_cpu       :: Union{Nothing, CpuSpT}
+    cpu_tmps     :: Union{Nothing, Matrix{Tv}}
+    col_to_local :: Union{Nothing, Matrix{Int32}}
 
     LevelExtras{Tv, CpuSpT}() where {Tv, CpuSpT} =
         new{Tv, CpuSpT}(nothing, nothing, nothing, nothing, one(Tv), nothing, Tv[], nothing,
-                        nothing, nothing, nothing)
+                        nothing, nothing, nothing, nothing)
 end
 
 # ─── Per-level storage ────────────────────────────────────────────────────────

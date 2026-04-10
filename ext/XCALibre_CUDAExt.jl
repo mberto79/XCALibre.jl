@@ -44,7 +44,7 @@ _build_opA(A::SPARSEGPU) = KP.KrylovOperator(A)
     A.nzVal, A.colVal, A.rowPtr
 end
 
-import XCALibre.Solve: _m, _n, update_preconditioner!
+import XCALibre.Solve: _m, _n, update_preconditioner!, _galerkin_update!
 
 function sparse_array_deconstructor_preconditioners(arr::SPARSEGPU)
     (; colVal, rowPtr, nzVal, dims) = arr
@@ -154,6 +154,27 @@ end
 
 import LinearAlgebra.ldiv!, LinearAlgebra.\
 export ldiv!
+
+# ─── GPU-native Galerkin update via cuSPARSE SpGEMM ─────────────────────────
+# Keeps all matrix products on-device; eliminates the CPU round-trip in the
+# default CPU fallback (_galerkin_update! in AMG_6_api.jl).
+# Falls back to the CPU path automatically for non-CUDA backends (no method match).
+
+function _galerkin_update!(L::XCALibre.Solve.MultigridLevel, Lc::XCALibre.Solve.MultigridLevel,
+                            backend::BACKEND)
+    # T = A * P on-device (cuSPARSE SpGEMM)
+    T  = L.A * L.P
+    # Ac = R * T on-device
+    Ac = L.R * T
+    # Guard: cuSPARSE may drop structural zeros on degenerate matrices, producing
+    # fewer nnz than the pre-allocated Lc.A.  For well-posed FVM M-matrices this
+    # never fires; if it does, the hierarchy must be rebuilt with amg_setup!.
+    length(Ac.nzVal) == length(Lc.A.nzVal) ||
+        error("AMG GPU SpGEMM: nnz mismatch (got $(length(Ac.nzVal)), expected $(length(Lc.A.nzVal))). " *
+              "Matrix may have structural zeros; rebuild the hierarchy.")
+    copyto!(Lc.A.nzVal, Ac.nzVal)
+    nothing
+end
 
 ldiv!(x::GPUARRAY, P::DILUprecon{M,V,VI}, b) where {M<:AbstractSparseArray,V,VI} =
 begin

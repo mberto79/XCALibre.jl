@@ -164,10 +164,19 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
         # to avoid a redundant symbolic+numeric SpGEMM here.
         if i < n_levels
             nc     = size(P_cpus[i], 2)
-            extras.AP_cpu   = AP_cpus[i]               # reuse from Phase 1 (no redundant SpGEMM)
-            extras.Ac_cpu   = deepcopy(A_cpus[i+1])   # writable Ac scratch
-            extras.A_cpu    = deepcopy(A_cpus[i])      # writable fine-A mirror for nzval download
-            extras.cpu_tmps = zeros(Tv, nc, Threads.nthreads())
+            extras.AP_cpu = AP_cpus[i]               # reuse from Phase 1 (no redundant SpGEMM)
+            extras.Ac_cpu = deepcopy(A_cpus[i+1])   # writable Ac scratch
+            extras.A_cpu  = deepcopy(A_cpus[i])      # writable fine-A mirror for nzval download
+            # Compact accumulator: tmps is max_nnz_per_row × nthreads (L1-resident).
+            # col_to_local is nc × nthreads Int32 scatter map (filled/cleared per row at runtime).
+            nrows_AP = size(AP_cpus[i], 1)
+            nrows_Ac = size(A_cpus[i+1], 1)
+            max_nnz  = max(
+                maximum(AP_cpus[i].rowptr[r+1] - AP_cpus[i].rowptr[r] for r in 1:nrows_AP; init=0),
+                maximum(A_cpus[i+1].rowptr[r+1] - A_cpus[i+1].rowptr[r] for r in 1:nrows_Ac; init=0),
+            )
+            extras.cpu_tmps     = zeros(Tv,     max_nnz, Threads.nthreads())
+            extras.col_to_local = zeros(Int32,  nc,      Threads.nthreads())
         end
 
         # Coarsest level: store CPU copy of A for LU rebuild in update!()
@@ -425,10 +434,10 @@ function _galerkin_update!(L::MultigridLevel, Lc::MultigridLevel, backend)
     # 1. Download fine A nzval: device → CPU mirror
     nzval_dev, _, _ = get_sparse_fields(L.A)
     copyto!(ex.A_cpu.nzval, nzval_dev)
-    # 2. Compute T = A*P in-place on CPU
-    _spgemm_nzval!(ex.AP_cpu, ex.A_cpu, ex.P_cpu, ex.cpu_tmps)
+    # 2. Compute T = A*P in-place on CPU (compact accumulator: tmps fits in L1)
+    _spgemm_nzval!(ex.AP_cpu, ex.A_cpu, ex.P_cpu, ex.cpu_tmps, ex.col_to_local)
     # 3. Compute Ac = R*T in-place on CPU
-    _spgemm_nzval!(ex.Ac_cpu, ex.R_cpu, ex.AP_cpu, ex.cpu_tmps)
+    _spgemm_nzval!(ex.Ac_cpu, ex.R_cpu, ex.AP_cpu, ex.cpu_tmps, ex.col_to_local)
     # 4. Upload updated Ac nzval: CPU → device
     nzval_dev_c, _, _ = get_sparse_fields(Lc.A)
     KernelAbstractions.copyto!(backend, nzval_dev_c, ex.Ac_cpu.nzval)

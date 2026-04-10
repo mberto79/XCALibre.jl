@@ -6,11 +6,17 @@ export update!
     _workspace(amg::AMG, A, b) → AMGWorkspace
 
 Build a fully-typed AMGWorkspace from the matrix `A` and RHS vector `b`.
-The concrete `MultigridLevel` element type is determined here so that
-`ws.levels` is a `Vector{LType}` — no `Any`, no dynamic dispatch in the cycle.
-`A` is not stored or copied; it is only used to infer the matrix and element types.
+
+The concrete `MultigridLevel` element type is fixed here so that `ws.levels` is
+a `Vector{LType}` — no `Any`, no dynamic dispatch in the cycle hot path.
+
+The multigrid hierarchy is **not** built here. `A` may have all-zero values at
+initialisation time (before the first equation assembly), which would cause the
+Galerkin diagonal check to break the coarsening loop after a single level.
+The hierarchy is instead built lazily on the first `update!` call, when `A`
+carries the actual assembled coefficients.
 """
-function _workspace(amg::AMG, ::AT, b::AbstractVector{Tv}) where {AT, Tv}
+function _workspace(amg::AMG, A::AT, b::AbstractVector{Tv}) where {AT, Tv}
     LType = MultigridLevel{Tv, AT, Union{Nothing, AT}, typeof(b),
                             LevelExtras{Tv, SparseMatricesCSR.SparseMatrixCSR{1, Tv, Int}}}
     x     = similar(b); fill!(x,     zero(Tv))
@@ -41,18 +47,13 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
     A_cpus    = [A_cpu]       # level matrices (CPU)
     P_cpus    = SparseMatricesCSR.SparseMatrixCSR{1,Tv,Int}[]  # inter-level P
     R_cpus    = SparseMatricesCSR.SparseMatrixCSR{1,Tv,Int}[]  # inter-level R
-    # AP_cpus no longer needed: the Galerkin plan encodes R·A·P directly.
     rhos      = Tv[]           # spectral radius per level
 
-    # ω_P damping for prolongation smoothing: must use 4/(3ρ) where ρ = ρ(D⁻¹A).
-    # For a FVM pressure Laplacian, ρ ≈ 2 → ω_P ≈ 2/3. A fixed 4/3 would overshoot
-    # (the smoothing polynomial goes negative), producing suboptimal prolongators.
-    # ρ is also stored for Chebyshev eigenvalue bounds; Jacobi stores 1.0 (unused).
+    # ω_P = 4/(3ρ) where ρ = ρ(D⁻¹A); for FVM Laplacian ρ ≈ 2 → ω_P ≈ 2/3.
     use_jacobi = opts.smoother isa JacobiSmoother
 
     D_fine    = _extract_dinv_cpu(A_cpu)
-    # Gershgorin bound: deterministic, O(nnz), tight for FVM M-matrices.
-    # Used as the fine-level spectral radius for Chebyshev; Jacobi stores 1.0.
+    # Gershgorin bound: deterministic, tight for FVM M-matrices.
     ρ_fine    = Tv(_gershgorin_rho(A_cpu, D_fine))
     _rho_fine = use_jacobi ? one(Tv) : ρ_fine
     push!(rhos, _rho_fine)
@@ -76,9 +77,7 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
         # Stop only if even the pairwise fallback couldn't reduce size ≥ 10%.
         nagg > 0.9 * n_cur && break
 
-        # Gershgorin bound for ω_P: deterministic, O(nnz), tight for FVM M-matrices.
-        # Avoids the random power iteration that made ω_P (and thus the prolongation
-        # quality and hierarchy stopping criteria) non-reproducible between runs.
+        # Gershgorin bound for ω_P: deterministic, tight for FVM M-matrices.
         D_cur = _extract_dinv_cpu(A_cur)
         ρ_cur = _gershgorin_rho(A_cur, D_cur)
         ω_P   = min(4.0 / (3.0 * max(ρ_cur, eps(Float64))), 4.0/3.0)
@@ -121,7 +120,6 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
     @info "AMG hierarchy ($(opts.coarsening), strength=$(opts.strength)): $(level_sizes) — direct solve at coarsest: $(level_sizes[end] <= opts.coarsest_size)"
 
     # ── Phase 2: build device matrices, Galerkin plans, and MultigridLevel objects ─
-    # Coarsest-level: allocate dense matrix + LU once; reused in-place by update!()
     n_coarsest  = size(A_cpus[end], 1)
     lu_dense_c  = nothing
     lu_f        = nothing
@@ -133,7 +131,6 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
         lu_rhs_init = zeros(Tv, n_coarsest)
     end
 
-    # Build all levels (same LType for the whole vector → typed storage)
     levels = LType[]
     sizehint!(levels, n_levels)
 
@@ -146,8 +143,6 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
 
         Dinv = mk_vec(n)
 
-        # Build diagonal pointer: pre-compute nzval index of A[row,row] for each row.
-        # Transferred to device once; used every update!() for branch-free Dinv rebuild.
         diag_ptr_cpu = _build_diag_ptr_cpu(A_cpus[i])
         diag_ptr_dev = KernelAbstractions.zeros(backend, Int32, n)
         KernelAbstractions.copyto!(backend, diag_ptr_dev, diag_ptr_cpu)
@@ -160,10 +155,16 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
         extras.rho    = rhos[i]
         extras.diag_ptr = diag_ptr_dev
 
-        # Build Galerkin plan for each non-coarsest level (plan lives on device)
+        # Pre-allocate two-step SpGEMM scratch for each non-coarsest level:
+        #   Step 1: T = A·P  (intermediate, same sparsity each update)
+        #   Step 2: Ac = R·T (result copied to device Lc.A.nzval)
         if i < n_levels
-            extras.galerkin_plan = _build_galerkin_plan(
-                A_cpus[i+1], R_cpus[i], A_cpus[i], P_cpus[i], backend)
+            AP_cpu = _spgemm(A_cpus[i], P_cpus[i])
+            nc     = size(P_cpus[i], 2)
+            extras.AP_cpu   = AP_cpu
+            extras.Ac_cpu   = deepcopy(A_cpus[i+1])   # writable Ac scratch
+            extras.A_cpu    = deepcopy(A_cpus[i])      # writable fine-A mirror for nzval download
+            extras.cpu_tmps = zeros(Tv, nc, Threads.nthreads())
         end
 
         # Coarsest level: store CPU copy of A for LU rebuild in update!()
@@ -234,6 +235,8 @@ negligible. The fine-level D⁻¹ (which directly controls smoother accuracy) is
 never skipped.
 """
 function update!(ws::AMGWorkspace, A_device, backend, workgroup)
+    # Build the hierarchy on the first call (A has real coefficients by then).
+    # Also handles manually-constructed workspaces without levels (e.g. in tests).
     if !ws.setup_valid || isempty(ws.levels)
         amg_setup!(ws, A_device, backend, workgroup)
         return
@@ -241,35 +244,22 @@ function update!(ws::AMGWorkspace, A_device, backend, workgroup)
 
     ws.update_count += 1
 
-    # Fine-level D⁻¹ is always rebuilt: A_device coefficients change every outer
-    # iteration and the fine-level smoother needs accurate diagonal scaling.
-    # Uses the pre-computed diag_ptr for branch-free direct indexed access.
+    # Fine-level D⁻¹ always updated; diagonal changes every outer iteration.
     L1 = ws.levels[1]
     amg_build_Dinv!(L1.Dinv, L1.A, L1.extras.diag_ptr, backend, workgroup)
 
-    # Lazy Galerkin refresh: skip coarse-level updates when update_freq > 1.
-    # The fine-level smoother remains accurate (Dinv above is always fresh).
-    # Coarse corrections become slightly stale for slowly-changing A — acceptable
-    # as a preconditioner since the outer Krylov / Richardson iteration corrects it.
+    # Lazy Galerkin refresh: coarse levels skipped when (update_count-1) % update_freq ≠ 0.
     update_freq = ws.opts.update_freq
     (ws.update_count - 1) % update_freq != 0 && return
 
-    # Galerkin update via KA kernel — all arrays are device-resident, zero CPU↔device
-    # transfers. The plan stored at each level encodes the (nzi_R, nzi_A, nzi_P)
-    # triples; the kernel reads the current nzval of A (which just changed) and
-    # overwrites the next level's matrix nzval with the new Galerkin product.
-    # Fast diag_ptr-based Dinv follows each Galerkin kernel (no search loop).
     for lvl in 1:(length(ws.levels) - 1)
         L  = ws.levels[lvl]
         Lc = ws.levels[lvl + 1]
-        amg_galerkin!(Lc.A, L.A, L.R, L.P, L.extras.galerkin_plan, backend, workgroup)
+        _galerkin_update!(L, Lc, backend)
         amg_build_Dinv!(Lc.Dinv, Lc.A, Lc.extras.diag_ptr, backend, workgroup)
     end
 
-    # Rebuild coarsest-level LU: download the (tiny) coarsest nzval from device,
-    # fill the pre-allocated dense buffer, and factorise in-place. The download is
-    # only ~(50²×8) bytes — negligible compared to the eliminated fine-level transfers.
-    # check=false avoids the SingularException error path (saves a branch + exception alloc).
+    # Refresh coarsest-level LU from updated nzval. check=false avoids exception alloc.
     if !isnothing(ws.levels[end].extras.lu_factor)
         ex_c     = ws.levels[end].extras
         nzval_c, _, _ = get_sparse_fields(ws.levels[end].A)
@@ -282,19 +272,7 @@ function update!(ws::AMGWorkspace, A_device, backend, workgroup)
 end
 
 # ─── Preconditioned Conjugate Gradient (PCG) solve ────────────────────────────
-#
-# One V-cycle is used as the preconditioner M ≈ A⁻¹.  For the SPD pressure
-# Laplacian, PCG converges as O(√κ(M⁻¹A)) iterations, whereas plain Richardson
-# (V-cycle loop) converges as O(κ).  In practice PCG with one AMG V-cycle as
-# preconditioner typically needs 2–5× fewer iterations to reach the same rtol.
-#
-# Variable layout (all fine-level, device-resident):
-#   ws.x_pcg  — the PCG iterate x  (separate from L1.x which is the V-cycle scratchpad)
-#   ws.p_cg   — PCG search direction p
-#   L1.r      — current residual r = b - A x  (maintained in-place)
-#   L1.b      — set to L1.r before each V-cycle (V-cycle RHS = current residual)
-#   L1.x      — V-cycle output z = M⁻¹r  (overwritten every preconditioner apply)
-#   L1.tmp    — holds Ap = A*p  (consumed within the same iteration, before next V-cycle)
+# One V-cycle per iteration as preconditioner M ≈ A⁻¹; O(√κ) vs O(κ) for plain Richardson.
 
 function _amg_pcg_solve!(ws::AMGWorkspace, b, values, itmax, atol, rtol,
                            backend, workgroup)
@@ -331,11 +309,6 @@ function _amg_pcg_solve!(ws::AMGWorkspace, b, values, itmax, atol, rtol,
     rz = dot(L1.r, p)
 
     # ── PCG iterations ────────────────────────────────────────────────────────
-    # Convergence is checked every step (not every check_freq steps) because:
-    # 1. PCG with a good AMG preconditioner converges in very few steps; checking
-    #    every step allows immediate exit and avoids wasting V-cycles.
-    # 2. The extra norm (one global reduction) is small compared to a V-cycle and
-    #    is already grouped with the two dot-product syncs this loop requires anyway.
     for k in 1:itmax
 
         # Ap ← A p  (stored in L1.tmp; consumed before the next V-cycle)
@@ -404,7 +377,7 @@ function solve_system!(
         _amg_pcg_solve!(ws, b, values, itmax, atol, rtol, backend, workgroup)
     else
         # ── Standalone Richardson: plain V-cycle loop ─────────────────────────
-        L1 = ws.levels[1]   # concrete LType — fully type-stable
+        L1 = ws.levels[1]
 
         amg_copy!(L1.x, values, backend, workgroup)
         amg_copy!(L1.b, b,      backend, workgroup)
@@ -415,9 +388,7 @@ function solve_system!(
 
         # Early exit: initial guess already satisfies tolerance.
         if r0 >= atol
-            # Check at k=1 then every check_freq cycles: allows early exit after a
-            # single V-cycle (common when warm-started) while limiting sync overhead.
-            check_freq = 5
+            check_freq = 5   # check at k=1 then every check_freq cycles
             for k in 1:itmax
                 run_cycle!(ws.levels, ws.opts, ws.opts.cycle, backend, workgroup)
                 if k == 1 || k % check_freq == 0 || k == itmax
@@ -432,6 +403,26 @@ function solve_system!(
     end
 
     return residual(phiEqn, component, config)
+end
+
+# ─── Two-step SpGEMM Galerkin update ─────────────────────────────────────────
+# Downloads the current fine-level A nzval, recomputes Ac = R·(A·P) on CPU via
+# two in-place SpGEMM calls, then uploads the updated Ac nzval to the device.
+# All scratch buffers (AP_cpu, Ac_cpu, cpu_tmps, A_cpu mirror) are pre-allocated
+# in amg_setup! so this path is allocation-free.
+
+function _galerkin_update!(L::MultigridLevel, Lc::MultigridLevel, backend)
+    ex = L.extras
+    # 1. Download fine A nzval: device → CPU mirror
+    nzval_dev, _, _ = get_sparse_fields(L.A)
+    copyto!(ex.A_cpu.nzval, nzval_dev)
+    # 2. Compute T = A*P in-place on CPU
+    _spgemm_nzval!(ex.AP_cpu, ex.A_cpu, ex.P_cpu, ex.cpu_tmps)
+    # 3. Compute Ac = R*T in-place on CPU
+    _spgemm_nzval!(ex.Ac_cpu, ex.R_cpu, ex.AP_cpu, ex.cpu_tmps)
+    # 4. Upload updated Ac nzval: CPU → device
+    nzval_dev_c, _, _ = get_sparse_fields(Lc.A)
+    KernelAbstractions.copyto!(backend, nzval_dev_c, ex.Ac_cpu.nzval)
 end
 
 # ─── CSR ↔ device helpers ─────────────────────────────────────────────────────
@@ -492,7 +483,6 @@ function _extract_dinv_cpu(A::SparseMatricesCSR.SparseMatrixCSR{Bi,Tv,Ti}) where
     return Dinv
 end
 
-# Fill a pre-allocated dense matrix from a sparse CSR matrix (in-place, no alloc).
 function _fill_dense_from_sparse!(Adense::Matrix{Tv},
                                    A::SparseMatricesCSR.SparseMatrixCSR) where {Tv}
     n = size(A, 1)

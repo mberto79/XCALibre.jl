@@ -118,8 +118,7 @@ function amg_build_Dinv!(Dinv, A, backend, workgroup)
 end
 
 # ── Fast inverse diagonal using pre-computed diagonal pointer ─────────────────
-# diag_ptr[row] holds the 1-based nzval index of the diagonal entry.
-# Eliminates the row-scan loop and all warp divergence — single indexed load per thread.
+# diag_ptr[row] holds the 1-based nzval index of the diagonal entry — no row scan, no warp divergence.
 
 @kernel function _amg_build_Dinv_fast!(Dinv, nzval, diag_ptr)
     row = @index(Global)
@@ -137,8 +136,7 @@ function amg_build_Dinv!(Dinv, A, diag_ptr::AbstractVector{<:Integer}, backend, 
 end
 
 # ── Build diagonal pointer on CPU ─────────────────────────────────────────────
-# Returns a Vector{Int32} of length n where ptr[i] is the 1-based nzval index
-# of A[i,i]. Called once at amg_setup! time; the result is transferred to device.
+# Returns Vector{Int32} where ptr[i] is the 1-based nzval index of A[i,i].
 
 function _build_diag_ptr_cpu(A::SparseMatricesCSR.SparseMatrixCSR)
     n   = size(A, 1)
@@ -203,9 +201,7 @@ function amg_jacobi_sweep!(x_new, x, Dinv, A, b, omega, backend, workgroup)
 end
 
 # ── Correction-form Jacobi update: x[i] += ω * Dinv[i] * r[i] ────────────────
-# Replaces the two-buffer swap pattern. With r = b - Ax pre-computed, this
-# is mathematically identical to damped Jacobi but requires no tmp-buffer swap
-# and works cleanly with an immutable MultigridLevel struct.
+# Equivalent to damped Jacobi without a tmp-buffer swap.
 
 @kernel function _amg_dinv_axpy!(x, Dinv, r, omega)
     i = @index(Global)
@@ -219,12 +215,7 @@ function amg_dinv_axpy!(x, Dinv, r, omega, backend, workgroup)
 end
 
 # ── In-place Jacobi correction: x[i] += ω · Dinv[i] · (b[i] - Ax[i]) ────────
-# Fuses the residual SpMV and diagonal scaling into a single memory pass,
-# eliminating the intermediate write and read of the residual vector.
-# This is the asynchronous (chaotic) Jacobi: threads from different warps may
-# read x values that have already been updated in the same kernel launch.
-# Convergence for diagonally-dominant M-matrices is guaranteed by the Chazan–
-# Miranker theorem and is the standard approach in GPU AMG implementations.
+# Asynchronous (chaotic) Jacobi; convergence for M-matrices guaranteed by Chazan–Miranker.
 
 @kernel function _amg_jacobi!(x, Dinv, rowptr, colval, nzval, b, omega)
     row = @index(Global)
@@ -244,34 +235,3 @@ function amg_smooth_jacobi!(x, Dinv, A, b, omega, backend, workgroup)
     kernel!(x, Dinv, rowptr, colval, nzval, b, omega)
 end
 
-# ── Fused Galerkin product: Ac = R · A · P (one thread per output nonzero) ────
-#
-# Each thread `out` accumulates the sum
-#   Ac.nzval[out] = Σ_p  R.nzval[nzi_R[p]] · A.nzval[nzi_A[p]] · P.nzval[nzi_P[p]]
-# for p in plan_rowptr[out] : plan_rowptr[out+1]-1.
-#
-# All arrays are device-resident: no CPU↔device transfer at update time.
-# Works on CPU (multi-threaded via KA CPU backend) and any GPU backend.
-
-@kernel function _amg_galerkin!(nzval_Ac, nzval_A, nzval_R, nzval_P,
-                                  plan_rowptr, plan_nzi_R, plan_nzi_A, plan_nzi_P)
-    out = @index(Global)
-    @inbounds begin
-        acc = zero(eltype(nzval_Ac))
-        for p in plan_rowptr[out]:(plan_rowptr[out + 1] - 1)
-            acc += nzval_R[plan_nzi_R[p]] * nzval_A[plan_nzi_A[p]] * nzval_P[plan_nzi_P[p]]
-        end
-        nzval_Ac[out] = acc
-    end
-end
-
-function amg_galerkin!(Ac, A, R, P, plan::GalerkinPlan, backend, workgroup)
-    nzval_Ac, _, _ = get_sparse_fields(Ac)
-    nzval_A,  _, _ = get_sparse_fields(A)
-    nzval_R,  _, _ = get_sparse_fields(R)
-    nzval_P,  _, _ = get_sparse_fields(P)
-    nnz_ac = length(nzval_Ac)
-    kernel! = _amg_galerkin!(_setup(backend, workgroup, nnz_ac)...)
-    kernel!(nzval_Ac, nzval_A, nzval_R, nzval_P,
-            plan.rowptr, plan.nzi_R, plan.nzi_A, plan.nzi_P)
-end

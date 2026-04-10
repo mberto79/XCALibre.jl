@@ -1,7 +1,7 @@
 # ─── Galerkin projection: build P, R = Pᵀ, Ac = R·A·P ────────────────────────
 # All construction is performed on CPU (setup is infrequent).
-# The numerical Galerkin pass (update!) is also on CPU for simplicity;
-# the resulting nzval arrays are transferred to the device on-demand.
+# Numerical updates (update!) reuse the pre-allocated T = A·P and Ac scratch on CPU,
+# then upload updated nzval to the device.
 
 # ─── Tentative prolongation P̂ (piecewise-constant aggregates) ─────────────────
 
@@ -30,72 +30,54 @@ function smooth_prolongation(A::SparseMatrixCSR{Bi,Tv,Ti},
                               P_tent::SparseMatrixCSR,
                               ω::Float64) where {Bi,Tv,Ti}
     n, nc = size(P_tent)
-    rowptr_A = A.rowptr
-    colval_A = A.colval
-    nzval_A  = A.nzval
+    rowptr_A = A.rowptr; colval_A = A.colval; nzval_A = A.nzval
 
     # Diagonal of A
     diag_A = zeros(Tv, n)
-    for i in 1:n
+    @inbounds for i in 1:n
         for nzi in rowptr_A[i]:(rowptr_A[i+1]-1)
-            if colval_A[nzi] == i
-                diag_A[i] = nzval_A[nzi]
-                break
-            end
+            if colval_A[nzi] == i; diag_A[i] = nzval_A[nzi]; break; end
         end
     end
 
     # P = P̂ - ω * D⁻¹ * (A * P̂)
-    # Work directly with CSR pattern of P̂
-    rowptr_P = P_tent.rowptr
-    colval_P = P_tent.colval
-    nzval_P  = P_tent.nzval
+    rowptr_P = P_tent.rowptr; colval_P = P_tent.colval; nzval_P = P_tent.nzval
 
-    # Row, col, val for smoothed P (sparse accumulator — avoids O(n*nc) scan)
-    row_out = Int[]
-    col_out = Int[]
-    val_out = Tv[]
+    # Upper bound on nnz(P): each row of A has degree d, each A[i,j] maps to one
+    # aggregate column → nnz(P) ≤ nnz(A) + n.  Pre-sizing avoids all push! resizing.
+    nnz_est = length(nzval_A) + n
+    row_out = Int[]; sizehint!(row_out, nnz_est)
+    col_out = Int[]; sizehint!(col_out, nnz_est)
+    val_out = Tv[];  sizehint!(val_out, nnz_est)
 
-    tmp  = zeros(Tv, nc)   # dense accumulator, reused across rows
-    used = Int[]            # tracks which columns were touched this row
-    for i in 1:n
+    tmp  = zeros(Tv, nc)
+    used = Int[];   sizehint!(used, 16)
+
+    @inbounds for i in 1:n
         # Collect contributions: P_i = P̂_i - ω * (1/a_ii) * (A_i · P̂)
-        # A_i · P̂ means for each column k: sum_j A[i,j] * P̂[j,k]
-        # Since P̂ has one nonzero per row: P̂[j,*] = e_{agg[j]}
-        # → (A*P̂)[i,k] = sum over j where agg[j]==k of A[i,j]
-
         for nzi_A in rowptr_A[i]:(rowptr_A[i+1]-1)
             j = colval_A[nzi_A]
-            # P̂[j, *]: find which column j maps to
             for nzi_P in rowptr_P[j]:(rowptr_P[j+1]-1)
                 k = colval_P[nzi_P]
-                if tmp[k] == zero(Tv)
-                    push!(used, k)
-                end
+                if tmp[k] == zero(Tv); push!(used, k); end
                 tmp[k] += nzval_A[nzi_A] * nzval_P[nzi_P]
             end
         end
 
         # P̂[i, *] — guard against zero diagonal to prevent Inf propagation
-        d = diag_A[i]
+        d     = diag_A[i]
         coeff = abs(d) > eps(Tv) ? ω / d : zero(Tv)
         for nzi_P in rowptr_P[i]:(rowptr_P[i+1]-1)
             k = colval_P[nzi_P]
-            if tmp[k] == zero(Tv)
-                push!(used, k)
-            end
+            if tmp[k] == zero(Tv); push!(used, k); end
             tmp[k] = nzval_P[nzi_P] - coeff * tmp[k]
         end
 
-        # Store nonzeros — only scan touched columns
         sort!(used)
         for k in used
-            v = tmp[k]
-            tmp[k] = zero(Tv)
+            v = tmp[k]; tmp[k] = zero(Tv)
             if abs(v) > eps(Tv)
-                push!(row_out, i)
-                push!(col_out, k)
-                push!(val_out, v)
+                push!(row_out, i); push!(col_out, k); push!(val_out, v)
             end
         end
         empty!(used)
@@ -110,26 +92,23 @@ end
     build_restriction(P) → SparseMatrixCSR
 
 Transpose P (n × nc) to get R (nc × n).
+Pre-allocates COO arrays to exact size (nnz(R) = nnz(P)) — no dynamic resizing.
 """
 function build_restriction(P::SparseMatrixCSR{Bi,Tv,Ti}) where {Bi,Tv,Ti}
-    n, nc = size(P)
-    rowptr_P = P.rowptr
-    colval_P = P.colval
-    nzval_P  = P.nzval
-
-    # Collect transposed entries
-    row_out = Int[]
-    col_out = Int[]
-    val_out = Tv[]
-    for i in 1:n
-        for nzi in rowptr_P[i]:(rowptr_P[i+1]-1)
-            k = colval_P[nzi]
-            push!(row_out, k)
-            push!(col_out, i)
-            push!(val_out, nzval_P[nzi])
+    n, nc    = size(P)
+    nnz_P    = length(P.nzval)
+    row_out  = Vector{Int}(undef, nnz_P)
+    col_out  = Vector{Int}(undef, nnz_P)
+    val_out  = Vector{Tv}(undef, nnz_P)
+    pos = 1
+    @inbounds for i in 1:n
+        for nzi in P.rowptr[i]:(P.rowptr[i+1]-1)
+            row_out[pos] = P.colval[nzi]
+            col_out[pos] = i
+            val_out[pos] = P.nzval[nzi]
+            pos += 1
         end
     end
-
     return SparseMatricesCSR.sparsecsr(row_out, col_out, val_out, nc, n)
 end
 
@@ -149,44 +128,50 @@ function galerkin_product(R::SparseMatrixCSR{Bi,Tv,Ti},
     return Ac
 end
 
-"""
-    galerkin_product_with_AP(R, A, P) → (Ac, AP)
-
-Same as `galerkin_product` but also returns the intermediate A*P matrix.
-Used during `amg_setup!` so AP can be pre-allocated for zero-allocation updates.
-"""
-function galerkin_product_with_AP(R::SparseMatrixCSR{Bi,Tv,Ti},
-                                   A::SparseMatrixCSR{Bi,Tv,Ti},
-                                   P::SparseMatrixCSR{Bi,Tv,Ti}) where {Bi,Tv,Ti}
-    AP = _spgemm(A, P)
-    Ac = _spgemm(R, AP)
-    return Ac, AP
-end
-
-# ── General SpGEMM for CSR matrices on CPU ─────────────────────────────────────
+# ── General SpGEMM for CSR matrices on CPU (Gustavson two-pass) ───────────────
+# Pass 1 (symbolic): count nnz per row → exact COO pre-allocation.
+# Pass 2 (numeric): dense accumulator; flag array reused as first-touch detector.
 
 function _spgemm(A::SparseMatrixCSR{Bi,Tv,Ti},
                  B::SparseMatrixCSR{Bi,Tv,Ti}) where {Bi,Tv,Ti}
-    m = size(A, 1)
-    n = size(B, 2)
+    m = size(A, 1); n = size(B, 2)
     rowptr_A = A.rowptr; colval_A = A.colval; nzval_A = A.nzval
     rowptr_B = B.rowptr; colval_B = B.colval; nzval_B = B.nzval
 
-    row_out = Int[]
-    col_out = Int[]
-    val_out = Tv[]
-
-    tmp = zeros(Tv, n)   # dense accumulator (nc is small at coarse levels)
-    used = Int[]
-
-    for i in 1:m
-        # Accumulate row i of C = A * B
+    # ── Pass 1: symbolic ─────────────────────────────────────────────────────
+    # flag[j] == i means column j already counted for row i (avoids duplicate count).
+    flag      = zeros(Int, n)
+    total_nnz = 0
+    @inbounds for i in 1:m
         for nzi_A in rowptr_A[i]:(rowptr_A[i+1]-1)
             k = colval_A[nzi_A]
-            aik = nzval_A[nzi_A]
             for nzi_B in rowptr_B[k]:(rowptr_B[k+1]-1)
                 j = colval_B[nzi_B]
-                if tmp[j] == zero(Tv)
+                if flag[j] != i
+                    flag[j] = i
+                    total_nnz += 1
+                end
+            end
+        end
+    end
+
+    # ── Pre-allocate COO output (exact size, no resizing) ────────────────────
+    row_out = Vector{Int}(undef, total_nnz)
+    col_out = Vector{Int}(undef, total_nnz)
+    val_out = Vector{Tv}(undef, total_nnz)
+
+    # ── Pass 2: numeric ──────────────────────────────────────────────────────
+    fill!(flag, 0)
+    tmp  = zeros(Tv, n)
+    used = Int[]; sizehint!(used, 64)   # per-row touched-column list
+    pos  = 1
+    @inbounds for i in 1:m
+        for nzi_A in rowptr_A[i]:(rowptr_A[i+1]-1)
+            k = colval_A[nzi_A]; aik = nzval_A[nzi_A]
+            for nzi_B in rowptr_B[k]:(rowptr_B[k+1]-1)
+                j = colval_B[nzi_B]
+                if flag[j] != i
+                    flag[j] = i
                     push!(used, j)
                 end
                 tmp[j] += aik * nzval_B[nzi_B]
@@ -198,10 +183,8 @@ function _spgemm(A::SparseMatrixCSR{Bi,Tv,Ti},
         # different sparsity pattern in update! vs setup, breaking _copy_nzval_to_device!.
         sort!(used)
         for j in used
-            push!(row_out, i)
-            push!(col_out, j)
-            push!(val_out, tmp[j])
-            tmp[j] = zero(Tv)
+            row_out[pos] = i; col_out[pos] = j; val_out[pos] = tmp[j]
+            tmp[j] = zero(Tv); pos += 1
         end
         empty!(used)
     end
@@ -210,15 +193,6 @@ function _spgemm(A::SparseMatrixCSR{Bi,Tv,Ti},
 end
 
 # ─── Zero-allocation numerical Galerkin update ────────────────────────────────
-#
-# `_spgemm_nzval!` is the allocation-free hot path for `update!()`.
-# It requires:
-#   - C pre-allocated with the correct sparsity pattern (computed at setup time)
-#   - tmp: a zero-initialised dense scratch vector of size >= size(B, 2)
-#
-# The pattern of A*B is determined solely by the patterns of A and B, both of
-# which are fixed (same mesh → same sparsity). Only the numerical values of A
-# change between outer PISO/SIMPLE iterations.
 
 """
     _spgemm_nzval!(C, A, B, tmps)
@@ -240,8 +214,7 @@ function _spgemm_nzval!(C::SparseMatrixCSR{Bi,Tv,Ti},
     rowptr_B = B.rowptr; colval_B = B.colval; nzval_B = B.nzval
     rowptr_C = C.rowptr; colval_C = C.colval; nzval_C = C.nzval
     m = size(A, 1)
-    # Each thread gets an independent column of tmps (contiguous, cache-friendly);
-    # writes go to disjoint ranges of nzval_C (row i owns rowptr_C[i]:rowptr_C[i+1]-1).
+    # Each thread uses an independent tmps column; rows own disjoint nzval_C ranges — no locking.
     Threads.@threads for i in 1:m
         tmp = view(tmps, :, Threads.threadid())
         @inbounds begin
@@ -262,119 +235,6 @@ function _spgemm_nzval!(C::SparseMatrixCSR{Bi,Tv,Ti},
         end
     end
     return C
-end
-
-# ─── Galerkin plan construction ──────────────────────────────────────────────
-
-"""
-    _build_galerkin_plan(Ac, R, A, P, backend) → GalerkinPlan
-
-Pre-compute the index structure for the fused Galerkin product Ac = R·A·P.
-For each structural nonzero `out` in Ac (1-based), collect all index triples
-(nzi_R, nzi_A, nzi_P) such that
-
-    Ac.nzval[out] += R.nzval[nzi_R] * A.nzval[nzi_A] * P.nzval[nzi_P]
-
-All input matrices must be CPU CSR with 1-based indexing and sorted column
-indices within each row. The returned `GalerkinPlan` is device-resident.
-"""
-function _build_galerkin_plan(Ac::SparseMatrixCSR, R::SparseMatrixCSR,
-                               A::SparseMatrixCSR, P::SparseMatrixCSR,
-                               backend)
-    nnz_ac   = length(Ac.nzval)
-    n_coarse = size(Ac, 1)   # = size(R, 1) = size(P, 2)
-
-    # Fast (row, col) → nzi lookup for Ac (columns are sorted by _spgemm, so binary search)
-    # Using a flat dict avoids allocating a 2D array.
-    nz_lookup = Dict{Tuple{Int,Int}, Int32}()
-    sizehint!(nz_lookup, nnz_ac)
-    for i in 1:n_coarse
-        for nzi in Ac.rowptr[i]:(Ac.rowptr[i+1]-1)
-            nz_lookup[(i, Ac.colval[nzi])] = Int32(nzi)
-        end
-    end
-
-    # Pass 1: count contributions per output nonzero
-    counts = zeros(Int32, nnz_ac)
-    for i in 1:n_coarse
-        for nzi_R in R.rowptr[i]:(R.rowptr[i+1]-1)
-            k = R.colval[nzi_R]
-            for nzi_A in A.rowptr[k]:(A.rowptr[k+1]-1)
-                l = A.colval[nzi_A]
-                for nzi_P in P.rowptr[l]:(P.rowptr[l+1]-1)
-                    j = P.colval[nzi_P]
-                    nzi_ac = get(nz_lookup, (i, j), Int32(0))
-                    nzi_ac > 0 && (counts[nzi_ac] += Int32(1))
-                end
-            end
-        end
-    end
-
-    # Pass 2: build 1-based CSR rowptr (rowptr[1]=1, rowptr[end]=total+1)
-    rowptr = ones(Int32, nnz_ac + 1)
-    for k in 1:nnz_ac
-        rowptr[k + 1] = rowptr[k] + counts[k]
-    end
-    total = Int(rowptr[end]) - 1
-
-    # Pass 3: fill contribution arrays; cur[k] = next write position for output k
-    plan_nzi_R = Vector{Int32}(undef, total)
-    plan_nzi_A = Vector{Int32}(undef, total)
-    plan_nzi_P = Vector{Int32}(undef, total)
-    cur = copy(rowptr[1:end-1])  # cur[k] starts at rowptr[k] (1-based)
-
-    for i in 1:n_coarse
-        for nzi_R in R.rowptr[i]:(R.rowptr[i+1]-1)
-            k = R.colval[nzi_R]
-            for nzi_A in A.rowptr[k]:(A.rowptr[k+1]-1)
-                l = A.colval[nzi_A]
-                for nzi_P in P.rowptr[l]:(P.rowptr[l+1]-1)
-                    j = P.colval[nzi_P]
-                    nzi_ac = get(nz_lookup, (i, j), Int32(0))
-                    if nzi_ac > 0
-                        p = cur[nzi_ac]
-                        plan_nzi_R[p] = Int32(nzi_R)
-                        plan_nzi_A[p] = Int32(nzi_A)
-                        plan_nzi_P[p] = Int32(nzi_P)
-                        cur[nzi_ac] += Int32(1)
-                    end
-                end
-            end
-        end
-    end
-
-    # Sort each output-nonzero's contribution triples by nzi_A so that accesses
-    # into nzval_A are sequential within each thread's inner loop. Improves L2
-    # cache hit rate on CPU (hardware prefetcher) and GPU (reduced TLB thrash).
-    # Uses insertion sort: groups are tiny (typically 1–10 entries).
-    for out in 1:nnz_ac
-        lo = Int(rowptr[out]); hi = Int(rowptr[out+1]) - 1
-        lo >= hi && continue
-        for i in (lo+1):hi
-            key_R = plan_nzi_R[i]; key_A = plan_nzi_A[i]; key_P = plan_nzi_P[i]
-            j = i - 1
-            while j >= lo && plan_nzi_A[j] > key_A
-                plan_nzi_R[j+1] = plan_nzi_R[j]
-                plan_nzi_A[j+1] = plan_nzi_A[j]
-                plan_nzi_P[j+1] = plan_nzi_P[j]
-                j -= 1
-            end
-            plan_nzi_R[j+1] = key_R; plan_nzi_A[j+1] = key_A; plan_nzi_P[j+1] = key_P
-        end
-    end
-
-    # Transfer plan to device using KA-allocated arrays
-    mk = (T, n) -> KernelAbstractions.zeros(backend, T, n)
-    rp_dev  = mk(Int32, nnz_ac + 1)
-    niR_dev = mk(Int32, total)
-    niA_dev = mk(Int32, total)
-    niP_dev = mk(Int32, total)
-    KernelAbstractions.copyto!(backend, rp_dev,  rowptr)
-    KernelAbstractions.copyto!(backend, niR_dev, plan_nzi_R)
-    KernelAbstractions.copyto!(backend, niA_dev, plan_nzi_A)
-    KernelAbstractions.copyto!(backend, niP_dev, plan_nzi_P)
-
-    return GalerkinPlan(rp_dev, niR_dev, niA_dev, niP_dev)
 end
 
 # ─── Gershgorin upper bound for ρ(D⁻¹ A) ────────────────────────────────────
@@ -401,7 +261,7 @@ For FVM M-matrices this equals the true spectral radius (= 2 for a uniform Lapla
 function _gershgorin_rho(A::SparseMatrixCSR{Bi,Tv,Ti},
                           Dinv::AbstractVector{Tv}) where {Bi,Tv,Ti}
     n      = size(A, 1)
-    rowptr = A.rowptr; colval = A.colval; nzval = A.nzval
+    rowptr = A.rowptr; nzval = A.nzval
     rho    = zero(Tv)
     @inbounds for i in 1:n
         row_sum = zero(Tv)

@@ -117,4 +117,13 @@ println("Level element type concrete: ", isconcretetype(LType))
 println("AMGWorkspace.levels type:   ", typeof(ws.levels))
 @assert !(eltype(typeof(ws.levels)) === Any) "levels must NOT be Vector{Any}"
 
+# ── Test lazy-build: update! on a fresh workspace (no prior amg_setup!) ───────
+println("\n--- Testing lazy hierarchy build via update! ---")
+ws3 = _workspace(amg_opts, A, b)   # _workspace no longer calls amg_setup!
+@assert isempty(ws3.levels) "Fresh workspace must have no levels before first update!"
+XCALibre.Solve.update!(ws3, A, backend, workgroup)
+@assert !isempty(ws3.levels)       "update! must build the hierarchy on first call"
+@assert length(ws3.levels) > 1     "Hierarchy must have more than 1 level (matrix has real values)"
+println("Levels after first update!: ", length(ws3.levels), "  ✓")
+
 println("\n=== All AMG tests PASSED ===")

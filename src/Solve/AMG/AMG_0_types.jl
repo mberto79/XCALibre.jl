@@ -132,81 +132,54 @@ AMG(;
     max_levels    = 25,
     coarsest_size = 50,
     pre_sweeps    = 2,
-    post_sweeps   = 2,
+    post_sweeps   = 1,
     strength      = 0.0,
-    coarsening    = :SA,
-    update_freq   = 1,
-    krylov        = :none,
+    coarsening    = :RS,
+    update_freq   = 2,
+    krylov        = :cg,
 ) = AMG(smoother, cycle, max_levels, coarsest_size, pre_sweeps, post_sweeps,
         Float64(strength), coarsening, update_freq, krylov)
-
-# ─── Galerkin plan (device-resident) ─────────────────────────────────────────
-
-"""
-    GalerkinPlan{Vi}
-
-Pre-computed index structure for the fused Galerkin product Ac = R·A·P.
-Built once at `amg_setup!` time from the CPU CSR matrices; stored on the
-target device so that `update!()` can compute all Ac nonzero values via a
-single KA kernel launch — no CPU↔device transfers needed.
-
-For each output nonzero `out` (1-based, into Ac.nzval):
-    Ac.nzval[out] = Σ_p  R.nzval[nzi_R[p]] · A.nzval[nzi_A[p]] · P.nzval[nzi_P[p]]
-where p ranges over `rowptr[out] : rowptr[out+1]-1`.
-
-`Vi` is a device-resident integer vector (`Vector{Int32}` on CPU,
-`CuVector{Int32}` on CUDA, etc.). `Adapt.@adapt_structure` moves the plan
-to the target backend alongside the rest of the level data.
-"""
-struct GalerkinPlan{Vi <: AbstractVector{Int32}}
-    rowptr :: Vi   # length = nnz(Ac) + 1; 1-based CSR row pointers into nzi_* arrays
-    nzi_R  :: Vi   # 1-based index into R.nzval for each contributing triple
-    nzi_A  :: Vi   # 1-based index into A.nzval for each contributing triple
-    nzi_P  :: Vi   # 1-based index into P.nzval for each contributing triple
-end
-Adapt.@adapt_structure GalerkinPlan
 
 # ─── Host-only per-level extras ───────────────────────────────────────────────
 
 """
     LevelExtras{Tv, CpuSpT}
 
-Host-resident mutable state for one multigrid level. Never transferred to the GPU.
+Host-resident mutable state for one multigrid level.
 
-- `P_cpu`, `R_cpu` : CPU copies of the transfer operators (for `update!` Galerkin
-  products without a GPU→CPU round-trip). `nothing` at the coarsest level.
-- `rho`            : spectral radius estimate of D⁻¹A (for Chebyshev smoothing).
-- `lu_factor`      : dense LU factorisation (coarsest level only; `nothing` otherwise).
-- `lu_rhs`         : scratch vector for the LU back-solve (empty at non-coarsest levels).
+- `P_cpu`, `R_cpu` : CPU copies of the transfer operators. `nothing` at the coarsest level.
+- `A_cpu`          : writable CPU mirror of the fine-level A (non-coarsest); coarsest-level
+                     source for LU rebuild.
+- `lu_dense`       : pre-allocated dense matrix for the coarsest-level LU (coarsest only).
+- `rho`            : Gershgorin upper bound on ρ(D⁻¹A); used for Chebyshev eigenvalue bounds.
+- `lu_factor`      : in-place LU factorisation of `lu_dense` (coarsest level only).
+- `lu_rhs`         : scratch vector for the LU back-solve (coarsest level only).
+- `diag_ptr`       : device-resident nzval index of `A[i,i]` per row; branch-free Dinv rebuild.
+- `AP_cpu`         : pre-allocated intermediate A*P matrix (CPU, non-coarsest levels).
+- `Ac_cpu`         : pre-allocated Ac output scratch (CPU, non-coarsest levels).
+- `cpu_tmps`       : thread-local scratch for `_spgemm_nzval!` (both A*P and R*(A*P) steps).
 
-`CpuSpT` is the concrete CPU sparse matrix type, always
-`SparseMatricesCSR.SparseMatrixCSR{1, Tv, Int}` (produced by `sparsecsr`).
+`CpuSpT` is always `SparseMatricesCSR.SparseMatrixCSR{1, Tv, Int}`.
 
-Since `LevelExtras` has no `Adapt.adapt_structure` method, `Adapt.adapt` returns it
-unchanged — host-only state always stays on the CPU.
+The struct itself is never adapted to the device (`Adapt.adapt` returns it unchanged).
+`diag_ptr` is device-resident; all other fields live on the host.
 """
 mutable struct LevelExtras{Tv, CpuSpT}
-    P_cpu         :: Union{Nothing, CpuSpT}
-    R_cpu         :: Union{Nothing, CpuSpT}
-    # CPU copy of the coarse matrix — stored only at the coarsest level so that
-    # update!() can rebuild the LU factorisation by downloading just the nzval
-    # from the device (rowptr/colval are fixed after setup).
-    A_cpu         :: Union{Nothing, CpuSpT}
-    # Device-resident plan for the fused KA Galerkin kernel (R·A·P).
-    # Built once at setup; used every update!() call with zero CPU↔device transfers.
-    galerkin_plan :: Union{Nothing, GalerkinPlan}
-    lu_dense      :: Union{Nothing, Matrix{Tv}}  # pre-allocated dense matrix for coarsest LU
-    rho           :: Tv
-    lu_factor     :: Union{Nothing, LinearAlgebra.LU{Tv, Matrix{Tv}, Vector{Int}}}
-    lu_rhs        :: Vector{Tv}
-    # Device-resident nzval index of the diagonal entry per row. Built once at
-    # amg_setup!; valid for the lifetime of the hierarchy (sparsity pattern is fixed).
-    # Replaces the search loop in _amg_build_Dinv! with a direct indexed access,
-    # eliminating warp divergence on GPU.
-    diag_ptr      :: Union{Nothing, AbstractVector{Int32}}
+    P_cpu    :: Union{Nothing, CpuSpT}
+    R_cpu    :: Union{Nothing, CpuSpT}
+    A_cpu    :: Union{Nothing, CpuSpT}
+    lu_dense :: Union{Nothing, Matrix{Tv}}
+    rho      :: Tv
+    lu_factor :: Union{Nothing, LinearAlgebra.LU{Tv, Matrix{Tv}, Vector{Int}}}
+    lu_rhs   :: Vector{Tv}
+    diag_ptr :: Union{Nothing, AbstractVector{Int32}}
+    AP_cpu   :: Union{Nothing, CpuSpT}
+    Ac_cpu   :: Union{Nothing, CpuSpT}
+    cpu_tmps :: Union{Nothing, Matrix{Tv}}
 
     LevelExtras{Tv, CpuSpT}() where {Tv, CpuSpT} =
-        new{Tv, CpuSpT}(nothing, nothing, nothing, nothing, nothing, one(Tv), nothing, Tv[], nothing)
+        new{Tv, CpuSpT}(nothing, nothing, nothing, nothing, one(Tv), nothing, Tv[], nothing,
+                        nothing, nothing, nothing)
 end
 
 # ─── Per-level storage ────────────────────────────────────────────────────────
@@ -221,9 +194,8 @@ Immutable, fully-parametric struct for one level of the AMG hierarchy.
              `nothing` at the coarsest level; a concrete sparse matrix elsewhere.
 - `Dinv`   : inverse diagonal D⁻¹ (device-resident, type `Vec`).
 - `x`, `b`, `r`, `tmp` : pre-allocated work vectors (device-resident, type `Vec`).
-             The Jacobi smoother uses `r` as scratch for the correction
-             (correction-form: `x += ω Dinv r` where `r = b - Ax`), so no
-             field-swap is needed and the struct stays immutable.
+             `r` holds the residual in cycle functions and the Chebyshev smoother.
+             The fused Jacobi kernel updates `x` in-place without writing to `r`.
 - `extras` : host-only mutable state (`ExtrasT = LevelExtras{Tv, CpuSpT}`).
 
 `Adapt.@adapt_structure` adapts all device fields (`A`, `P`, `R`, work vectors)
@@ -248,7 +220,6 @@ end
 
 Adapt.@adapt_structure MultigridLevel
 
-# Outer constructor: fixes PType = Union{Nothing, AType} for a homogeneous hierarchy.
 function MultigridLevel(A::AType, P, R,
                          Dinv::Vec, x::Vec, b::Vec, r::Vec, tmp::Vec,
                          extras::ExtrasT) where {AType, Vec<:AbstractVector, ExtrasT}
@@ -279,9 +250,7 @@ mutable struct AMGWorkspace{LType, Vec, Opts<:AMG}
     setup_count  :: Int
     update_count :: Int   # counts update! calls; drives the lazy Galerkin refresh
     # PCG workspace — only used when opts.krylov === :cg.
-    # x_pcg : the PCG iterate (separate from levels[1].x which the V-cycle uses as scratch).
-    # p_cg  : PCG search direction.
-    # Both are fine-level vectors allocated once in _workspace and reused each solve.
+    # x_pcg is the PCG iterate; separate from levels[1].x which the V-cycle overwrites.
     x_pcg        :: Vec
     p_cg         :: Vec
 end

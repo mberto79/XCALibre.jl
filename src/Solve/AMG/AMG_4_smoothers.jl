@@ -3,19 +3,15 @@
 # They are distinct from the pre-solver JacobiSmoother in Smoothers_jacobi.jl.
 
 # ─── Damped Jacobi (correction form) ─────────────────────────────────────────
-#
-# Classical form:  x_new[i] = ω/a_ii * (b[i] - Σ_{j≠i} a_ij x[j]) + (1-ω) x[i]
-# Equivalent to:   x += ω * D⁻¹ * r   where r = b - Ax
-#
-# The correction form avoids the two-buffer swap that classical Jacobi requires,
-# so MultigridLevel can be immutable and GPU-safe.
+# Classical:  x_new[i] = ω/a_ii*(b[i] - Σ_{j≠i} a_ij x[j]) + (1-ω)x[i]
+# Equivalent: x += ω·D⁻¹·r  (r = b - Ax); no tmp-buffer swap needed.
 
 """
     amg_smooth!(level, n_sweeps, omega, backend, workgroup)
 
-Apply `n_sweeps` of damped Jacobi smoothing on a multigrid level using the
-correction form: compute `r = b - Ax`, then `x += ω Dinv r` in-place.
-Uses `level.r` as the residual scratch buffer — zero allocation per sweep.
+Apply `n_sweeps` of damped Jacobi smoothing using the fused in-place kernel:
+`x[i] += ω * Dinv[i] * (b[i] - Ax[i])` per row. Zero allocation per sweep;
+does not write `level.r`.
 """
 function amg_smooth!(level, n_sweeps, omega, backend, workgroup)
     for _ in 1:n_sweeps

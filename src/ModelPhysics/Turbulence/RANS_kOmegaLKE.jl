@@ -95,6 +95,7 @@ end
         σkL = 0.0125,
         σω = 0.5,
         η = 0.02974 * tanh(59.79 * (Tu^1.191) + 1.65e-13)
+        n = 0.99 # Adjusts the strength of the Damping Function in %
     )
 
     # Allocate wall distance "y" and setup boundary conditions
@@ -407,7 +408,7 @@ function turbulence!(
         safe_nu = max(nu[i], 1e-15)
 
         # fv calculation
-        fv_val = 1*(1.0 - exp(-sqrt(safe_k / (safe_nu * safe_omega)) / coeffs.Cv))
+        fv_val = n*(1.0 - exp(-sqrt(safe_k / (safe_nu * safe_omega)) / coeffs.Cv))
 
         # Production with limiter
         Pk_unlimited = fv_val * (safe_k / safe_omega) * Pk[i] * gamma_val

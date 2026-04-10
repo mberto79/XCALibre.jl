@@ -25,7 +25,7 @@ k_inlet = 0.0575
 kL_inlet = 0.0115
 # kL_inlet = 1/2*(Tu*velocity[1])^2
 ω_inlet = 275
-# ω_inlet = k_inlet/(νR*nu)
+# ω_inlet = k_inlet/(νR*nu) # Omega at the Inlet
 
 
 # model = RANS{KOmegaLKE}(mesh=mesh, viscosity=nu, Tu=Tu)

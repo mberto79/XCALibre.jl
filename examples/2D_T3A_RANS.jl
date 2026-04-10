@@ -76,7 +76,7 @@ BCs = assign(
 schemes = (
     U = Schemes(divergence=Linear),
     p = Schemes(divergence=Linear),
-    h = Schemes(divergence=Linear),
+    he = Schemes(divergence=Linear),
     k = Schemes(divergence=Upwind),
     omega = Schemes(divergence=Upwind)
 )
@@ -97,7 +97,7 @@ solvers = (
         relax       = 0.3,
         rtol = 1e-1
     ),
-    h = SolverSetup(
+    he = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,

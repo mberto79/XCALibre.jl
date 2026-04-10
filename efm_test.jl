@@ -4,7 +4,7 @@ using CSV
 # using AMDGPU # Uncomment to run on AMD GPUs
 
 grids_dir = pkgdir(XCALibre, "Test_Meshes/");
-grid = "initial_efm_mesh8.unv";
+grid = "initial_efm_mesh6.unv";
 mesh_file = joinpath(grids_dir, grid);
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001);
@@ -110,7 +110,7 @@ solvers = (
         solver      = Bicgstab(), # Options: Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
         convergence = 1e-11,
-        relax       = 1.0,
+        relax       = 0.9,
         rtol = 1e-4,
         atol = 1e-5
     ),
@@ -118,7 +118,7 @@ solvers = (
         solver      = Bicgstab(), # Options: Cg(), Bicgstab(), Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
         convergence = 1e-11,
-        relax       = 0.8,
+        relax       = 0.7,
         rtol = 1e-4,
         atol = 1e-6
     )
@@ -127,7 +127,7 @@ solvers = (
 adaptive = AdaptiveTimeStepping(; 
     # keyword arguments
 
-    maxCo=0.3,
+    maxCo=0.01,
     minShrink=0.1,
     maxGrow=1.2
 )
@@ -135,14 +135,14 @@ begin
 #runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
 #runtime = Runtime(iterations=20000, time_step=1, write_interval=20000)
 #runtime = Runtime(iterations=20, time_step=Δt, write_interval=1, adaptive=adaptive); # hide
-#runtime = Runtime(iterations=20, time_step=2e-3, write_interval=1)
+#runtime = Runtime(iterations=20, time_step=2e-4, write_interval=1)
 runtime = Runtime(iterations=200, time_step=Δt, write_interval=5, adaptive=adaptive);
 #runtime = Runtime(iterations=2000, time_step=Δt, write_interval=100, adaptive=adaptive)
 #runtime = Runtime(iterations=300, time_step=Δt, write_interval=5, adaptive=adaptive)
-#runtime = Runtime(iterations=8000, time_step=Δt, write_interval=400)
+#runtime = Runtime(iterations=8000, time_step=1e-6, write_interval=100, adaptive=adaptive)
 #runtime = Runtime(iterations=100, time_step=Δt, write_interval=2, adaptive=adaptive)
 #runtime = Runtime(iterations=100000, time_step=Δt, write_interval=2000, adaptive=adaptive)
-#runtime = Runtime(iterations=500, time_step=Δt, write_interval=10)
+#runtime = Runtime(iterations=500, time_step=Δt, write_interval=10, adaptive=adaptive)
 #runtime = Runtime(iterations=4000, time_step=Δt, write_interval=20, adaptive=adaptive)
 #runtime = Runtime(iterations=15000, time_step=Δt, write_interval=250)
 #runtime = Runtime(iterations=500, time_step=Δt, write_interval=50)
@@ -165,8 +165,8 @@ initialise!(model.momentum.h, h_init)
 #        model.momentum.h.values[i] = inlet_height/10;
 #    end
 #end
-
 residuals = run!(model, config, inner_loops=5);
+
 end;
 using Plots
 plot((residuals.Ux), label="Ux")

@@ -158,14 +158,6 @@ function FilmModel(
     internal_BCs = assign(
         region=mesh,
         (
-            hU = [
-            Dirichlet(:inlet, hU_inlet),
-            Extrapolated(:outlet),
-            Extrapolated(:inlet_sides),
-            Extrapolated(:top_of_plate),
-            Extrapolated(:side_1),
-            Extrapolated(:side_2)
-            ],
             Δh = [
             Dirichlet(:inlet, 0),
             Dirichlet(:outlet, 0),
@@ -277,7 +269,7 @@ function FilmModel(
 
             div!(divPhi, phif, config)
 
-            getDf!(Df, rDf, hf, rho.values[1], G, n, config)
+            getDf!(Df, rDf, hf, G, n, config)
             
             @. prev = h.values
             rh = solve_equation!(h_eqn, h, boundaries.h, solvers.h, config, time=time)
@@ -478,22 +470,22 @@ function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iter
 end
 
 
-function getDf!(Df, rDf, hf, rho, g, n, config)
+function getDf!(Df, rDf, hf, g, n, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
     
     ndrange = length(hf)
     kernel! = _getDf!(_setup(backend, workgroup, ndrange)...)
-    kernel!(Df, rDf, hf, rho, g, n)
+    kernel!(Df, rDf, hf, g, n)
 end
 
-@kernel function _getDf!(Df, rDf, hf, rho, g, n)
+@kernel function _getDf!(Df, rDf, hf, g, n)
     i = @index(Global)
     (; area) = hf.mesh.faces[i]
 
     @inbounds begin
         g_n = dot(g, n)
-        Df[i] = rDf[i] * hf[i] * rho * g_n * area
+        Df[i] = -rDf[i] * hf[i]  * g_n * area
     end
 end
 
@@ -502,23 +494,21 @@ function remove_film_pressure_source!(U_eqn, P_hyrdf, P_surff, rho, h, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
     cells = get_phi(U_eqn).mesh.cells
-    source_sign = 1
     (; bx, by, bz) = U_eqn.equation
 
-    
     ∇P_hydr = Grad{Gauss}(P_hyrdf)
     ∇P_surf = Grad{Gauss}(P_surff)
 
     grad!(∇P_hydr, P_hyrdf, config)
     grad!(∇P_surf, P_surff, config)
 
-    ndrange = length(bx)
+    ndrange = length(h)
     kernel! = _remove_film_pressure_source!(_setup(backend, workgroup, ndrange)...)
     kernel!(cells, ∇P_hydr, ∇P_surf, rho, h, bx, by, bz)
     # # KernelAbstractions.synchronize(backend)
 end
 
-@kernel function _remove_film_pressure_source!(cells,  ∇P_hydr, ∇P_surf, rho, h, bx, by, bz) #Extend to 3D
+@kernel function _remove_film_pressure_source!(cells,  ∇P_hydr, ∇P_surf, rho, h, bx, by, bz)
     i = @index(Global)
 
     @uniform begin
@@ -598,10 +588,6 @@ function correct_mass_flux2!(mdotf, Df, h_eqn, config)
     (; backend, workgroup) = hardware
 
     h = h_eqn.model.terms[1].phi
-
-    n_faces = length(faces)
-    n_bfaces = length(boundary_cellsID)
-    n_ifaces = n_faces - n_bfaces
 
     ndrange = length(mdotf)
     kernel! = _correct_mass_flux2!(_setup(backend, workgroup, ndrange)...)

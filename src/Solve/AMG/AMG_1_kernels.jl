@@ -152,6 +152,29 @@ function _build_diag_ptr_cpu(A::SparseMatricesCSR.SparseMatrixCSR)
     return ptr
 end
 
+# ── Build l1-scaled inverse diagonal: Dinv[i] = 1 / Σ_j |a_ij| ──────────────
+# Denominator is the l1 row norm (includes diagonal). For FVM M-matrices this
+# bounds ρ(D_l1⁻¹A) ≤ 1 by construction, making Jacobi convergent with ω = 1.
+# Reference: Baker, Falgout, Kolev, Yang, SISC 2011 (hypre BoomerAMG default).
+
+@kernel function _amg_build_l1_Dinv!(Dinv, rowptr, nzval)
+    row = @index(Global)
+    @inbounds begin
+        s = zero(eltype(nzval))
+        for nzi in rowptr[row]:(rowptr[row+1] - 1)
+            s += abs(nzval[nzi])
+        end
+        Dinv[row] = ifelse(s > zero(eltype(nzval)), one(eltype(nzval)) / s, one(eltype(nzval)))
+    end
+end
+
+function amg_build_l1_Dinv!(Dinv, A, backend, workgroup)
+    nzval, _, rowptr = get_sparse_fields(A)
+    n = length(Dinv)
+    kernel! = _amg_build_l1_Dinv!(_setup(backend, workgroup, n)...)
+    kernel!(Dinv, rowptr, nzval)
+end
+
 # ── Residual r = b - A*x (single pass) ────────────────────────────────────────
 
 @kernel function _amg_residual!(r, rowptr, colval, nzval, x, b)

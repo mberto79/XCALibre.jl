@@ -1,5 +1,15 @@
 export update!
 
+# ─── Dinv build dispatch: standard (diagonal) vs l1 (row-norm) ───────────────
+# L1Jacobi requires the l1 kernel (full row sum); all other smoothers use the
+# fast diagonal-pointer path. Called at setup and every update! iteration.
+
+_amg_build_smoother_dinv!(::AbstractSmoother, Dinv, A, diag_ptr, backend, workgroup) =
+    amg_build_Dinv!(Dinv, A, diag_ptr, backend, workgroup)
+
+_amg_build_smoother_dinv!(::L1Jacobi, Dinv, A, diag_ptr, backend, workgroup) =
+    amg_build_l1_Dinv!(Dinv, A, backend, workgroup)
+
 # ─── Workspace constructor ────────────────────────────────────────────────────
 
 """
@@ -51,7 +61,7 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
     rhos      = Tv[]           # spectral radius per level
 
     # ω_P = 4/(3ρ) where ρ = ρ(D⁻¹A); for FVM Laplacian ρ ≈ 2 → ω_P ≈ 2/3.
-    use_jacobi = opts.smoother isa JacobiSmoother
+    use_jacobi = opts.smoother isa JacobiSmoother || opts.smoother isa L1Jacobi
 
     D_fine    = _extract_dinv_cpu(A_cpu)
     # Gershgorin bound: deterministic, tight for FVM M-matrices.
@@ -153,7 +163,7 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
         diag_ptr_dev = KernelAbstractions.zeros(backend, Int32, n)
         KernelAbstractions.copyto!(backend, diag_ptr_dev, diag_ptr_cpu)
 
-        amg_build_Dinv!(Dinv, A_dev, diag_ptr_dev, backend, workgroup)
+        _amg_build_smoother_dinv!(opts.smoother, Dinv, A_dev, diag_ptr_dev, backend, workgroup)
 
         extras = LevelExtras{Tv, SparseMatricesCSR.SparseMatrixCSR{1, Tv, Int}}()
         extras.P_cpu  = (i <= length(P_cpus)) ? P_cpus[i] : nothing
@@ -268,7 +278,7 @@ function update!(ws::AMGWorkspace, A_device, backend, workgroup)
 
     # Fine-level D⁻¹ always updated; diagonal changes every outer iteration.
     L1 = ws.levels[1]
-    amg_build_Dinv!(L1.Dinv, L1.A, L1.extras.diag_ptr, backend, workgroup)
+    _amg_build_smoother_dinv!(ws.opts.smoother, L1.Dinv, L1.A, L1.extras.diag_ptr, backend, workgroup)
 
     # Lazy Galerkin refresh: coarse levels skipped when (update_count-1) % update_freq ≠ 0.
     update_freq = ws.opts.update_freq
@@ -278,7 +288,7 @@ function update!(ws::AMGWorkspace, A_device, backend, workgroup)
         L  = ws.levels[lvl]
         Lc = ws.levels[lvl + 1]
         _galerkin_update!(L, Lc, backend)
-        amg_build_Dinv!(Lc.Dinv, Lc.A, Lc.extras.diag_ptr, backend, workgroup)
+        _amg_build_smoother_dinv!(ws.opts.smoother, Lc.Dinv, Lc.A, Lc.extras.diag_ptr, backend, workgroup)
     end
 
     # Refresh coarsest-level LU from updated nzval. check=false avoids exception alloc.

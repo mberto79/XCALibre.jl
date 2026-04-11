@@ -96,3 +96,8 @@ function _apply_level_smoother!(level, smoother::Chebyshev, n_sweeps::Int,
         amg_smooth_chebyshev!(level, smoother, backend, workgroup)
     end
 end
+
+function _apply_level_smoother!(level, smoother::L1Jacobi, n_sweeps::Int,
+                                  backend, workgroup)
+    amg_smooth!(level, n_sweeps, smoother.omega, backend, workgroup)
+end

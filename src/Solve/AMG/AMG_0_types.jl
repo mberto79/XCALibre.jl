@@ -1,4 +1,4 @@
-export AMG, VCycle, WCycle, Chebyshev
+export AMG, VCycle, WCycle, Chebyshev, L1Jacobi
 
 # ─── Cycle markers ────────────────────────────────────────────────────────────
 
@@ -28,6 +28,44 @@ Chebyshev(; degree::Int=2, lo=0.3, hi=1.1) = begin
     F = promote_type(typeof(lo), typeof(hi))
     Chebyshev{F}(degree, F(lo), F(hi))
 end
+
+# ─── l1-Jacobi smoother ───────────────────────────────────────────────────────
+
+"""
+    L1Jacobi(; omega=1.0)
+
+l1-Jacobi smoother for use inside an AMG hierarchy.
+
+Scales the Jacobi update by `1/||a_i||_1` (the l1 row norm, summing all
+absolute values in the row) instead of `1/a_ii`. For FVM M-matrices this
+bounds the spectral radius of `D_l1⁻¹A` to ≤ 1 by construction.
+
+# Fields
+- `omega` — relaxation factor. Default `1.0`.
+
+# When to expect improvement
+
+The benefit of l1-Jacobi is primarily in **distributed-memory** (MPI) AMG, where each
+process sees only its local sub-matrix. Missing off-processor entries make the local
+diagonal `a_ii` smaller than the true global row sum, causing standard Jacobi to diverge
+or converge slowly. The l1 norm implicitly accounts for those missing entries.
+
+**In serial / shared-memory runs on near-isotropic FVM M-matrices** (e.g. pressure
+Laplacian), the row satisfies `a_ii ≈ Σ_{j≠i}|a_ij|`, so `||a_i||_1 ≈ 2·a_ii`. With
+`omega=1.0` this halves the effective relaxation and converges *slower* than
+`JacobiSmoother(omega=2/3)`. Use `omega=4/3` to recover equivalent performance, or
+simply prefer `JacobiSmoother` for serial runs on isotropic operators.
+
+# Reference
+Baker, Falgout, Kolev, Yang — "Multigrid Smoothers for Ultraparallel Computing",
+SIAM J. Sci. Comput. 2011. This is the default smoother in hypre's BoomerAMG.
+"""
+struct L1Jacobi{F<:AbstractFloat} <: AbstractSmoother
+    omega::F
+end
+Adapt.@adapt_structure L1Jacobi
+
+L1Jacobi(; omega=1.0) = L1Jacobi{Float64}(Float64(omega))
 
 # ─── User-facing AMG marker type ──────────────────────────────────────────────
 

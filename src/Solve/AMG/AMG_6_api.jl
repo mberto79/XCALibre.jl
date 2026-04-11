@@ -78,13 +78,12 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
         # Stop only if even the pairwise fallback couldn't reduce size ≥ 10%.
         nagg > 0.9 * n_cur && break
 
-        # Gershgorin bound for ω_P: deterministic, tight for FVM M-matrices.
-        D_cur = _extract_dinv_cpu(A_cur)
-        ρ_cur = _gershgorin_rho(A_cur, D_cur)
-        ω_P   = min(4.0 / (3.0 * max(ρ_cur, eps(Float64))), 4.0/3.0)
-
+        # Unsmoothed aggregation: use P̂ directly (1 nnz per row).
+        # Prolongation smoothing inflates nnz(P) from 1 to ~stencil_width per row,
+        # multiplying op_complexity by ~3-4× with no benefit for near-isotropic FVM
+        # M-matrices (all connections equally strong, smooth error already piecewise-const).
         P_tent = build_tentative_P(n_cur, nagg, agg)
-        P_cpu  = smooth_prolongation(A_cur, P_tent, ω_P)
+        P_cpu  = P_tent
 
         any(!isfinite, P_cpu.nzval) && break
 
@@ -117,9 +116,14 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
 
     n_levels = length(A_cpus)
 
-    # Diagnostic: show hierarchy sizes
+    # Diagnostic: show hierarchy sizes and operator complexity.
+    # Operator complexity = Σ nnz(Aₗ) / nnz(A₀); target < 2.5 for 3-D meshes.
+    # Values > 2.5 indicate fat coarse levels — each V-cycle costs proportionally more.
     level_sizes = [size(A_cpus[i], 1) for i in 1:n_levels]
-    @info "AMG hierarchy ($(opts.coarsening), strength=$(opts.strength)): $(level_sizes) — direct solve at coarsest: $(level_sizes[end] <= opts.coarsest_size)"
+    nnz_fine    = length(A_cpus[1].nzval)
+    nnz_total   = sum(length(A_cpus[i].nzval) for i in 1:n_levels)
+    op_cmplx    = round(nnz_total / nnz_fine; digits=2)
+    @info "AMG hierarchy ($(opts.coarsening), strength=$(opts.strength)): $(level_sizes) — op_complexity=$(op_cmplx) — direct solve at coarsest: $(level_sizes[end] <= opts.coarsest_size)"
 
     # ── Phase 2: build device matrices, Galerkin plans, and MultigridLevel objects ─
     n_coarsest  = size(A_cpus[end], 1)

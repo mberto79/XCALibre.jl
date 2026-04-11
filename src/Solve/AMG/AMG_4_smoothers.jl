@@ -2,66 +2,78 @@
 # These operate on MultigridLevel objects and use the KA kernels from AMG_1_kernels.jl.
 # They are distinct from the pre-solver JacobiSmoother in Smoothers_jacobi.jl.
 
-# ─── Damped Jacobi (correction form) ─────────────────────────────────────────
-# Classical:  x_new[i] = ω/a_ii*(b[i] - Σ_{j≠i} a_ij x[j]) + (1-ω)x[i]
-# Equivalent: x += ω·D⁻¹·r  (r = b - Ax); no tmp-buffer swap needed.
+# ─── Damped Jacobi (synchronous, ping-pong) ───────────────────────────────────
+# Uses the two-buffer _amg_jacobi_sweep! kernel so reads and writes never race.
+# This is required for use as a PCG preconditioner: the preconditioner must be
+# a fixed linear map (chaotic in-place Jacobi is non-deterministic, breaking
+# CG's A-conjugacy). `level.tmp` is the second ping-pong buffer.
 
 """
     amg_smooth!(level, n_sweeps, omega, backend, workgroup)
 
-Apply `n_sweeps` of damped Jacobi smoothing using the fused in-place kernel:
-`x[i] += ω * Dinv[i] * (b[i] - Ax[i])` per row. Zero allocation per sweep;
-does not write `level.r`.
+Apply `n_sweeps` of synchronous damped Jacobi using ping-pong between
+`level.x` and `level.tmp`. Ensures the preconditioner is deterministic and
+symmetric — mandatory for correctness when AMG is a PCG preconditioner.
 """
 function amg_smooth!(level, n_sweeps, omega, backend, workgroup)
+    src = level.x
+    dst = level.tmp
     for _ in 1:n_sweeps
-        amg_smooth_jacobi!(level.x, level.Dinv, level.A, level.b, omega, backend, workgroup)
+        amg_jacobi_sweep!(dst, src, level.Dinv, level.A, level.b, omega, backend, workgroup)
+        src, dst = dst, src
     end
+    # After an odd number of sweeps the result ends in what started as level.tmp; copy back.
+    src !== level.x && amg_copy!(level.x, src, backend, workgroup)
 end
 
 # ─── Chebyshev polynomial smoother ────────────────────────────────────────────
-# Implements a degree-k Chebyshev iteration as in AMGX.
-# Eigenvalue window [λ_min, λ_max] estimated from ρ: λ_max ≈ hi*ρ, λ_min ≈ lo*ρ
+# Preconditioned Chebyshev targeting the operator D⁻¹A with eigenvalues in
+# [λ_min, λ_max] (bounded by Gershgorin on D⁻¹A at setup time).
+# All corrections apply D⁻¹ so the bounds and the iterated operator match.
+# References: Saad "Iterative Methods for Sparse Linear Systems" §12.1;
+#             Adams et al., "Parallel Multigrid Smoothing", §3.
 
 """
     amg_smooth_chebyshev!(level, smoother, backend, workgroup)
 
-Apply Chebyshev polynomial smoothing on `level` using parameters from `smoother::Chebyshev`.
+Apply a degree-k preconditioned Chebyshev iteration targeting D⁻¹A.
+Eigenvalue window [λ_min, λ_max] ≈ [lo·ρ, hi·ρ] where ρ = ρ(D⁻¹A).
+Corrections are scaled by D⁻¹ at every step — required for consistency with
+the eigenvalue bounds computed by `_gershgorin_rho`.
 """
 function amg_smooth_chebyshev!(level, smoother::Chebyshev, backend, workgroup)
     (; degree, lo, hi) = smoother
     rho = level.extras.rho
+    Tv  = eltype(level.x)
 
-    # Eigenvalue bounds
+    # Eigenvalue bounds for D⁻¹A
     λ_max = hi * rho
     λ_min = lo * rho
 
     d = (λ_max + λ_min) / 2   # centre
     c = (λ_max - λ_min) / 2   # radius
 
-    # Chebyshev iteration (standard 3-term recurrence)
+    # Step 0: r = b - Ax;  x += (1/d) * D⁻¹ r
     amg_residual!(level.r, level.A, level.x, level.b, backend, workgroup)
+    alpha = one(Tv) / d
+    amg_dinv_axpy!(level.x, level.Dinv, level.r, alpha, backend, workgroup)
 
-    # Initial correction z_0 = (1/d) * r
-    alpha = one(eltype(level.x)) / d
-    amg_axpy!(level.x, level.r, alpha, backend, workgroup)
+    degree == 1 && return
 
-    if degree == 1
-        return
-    end
+    # Initial direction p₀ = D⁻¹ r (stored in tmp); beta=0 clears previous tmp content.
+    amg_dinv_axpby!(level.tmp, level.Dinv, level.r, one(Tv), zero(Tv), backend, workgroup)
 
-    amg_copy!(level.tmp, level.r, backend, workgroup)
-
-    rho_prev = one(eltype(level.x))
+    rho_prev = one(Tv)
     for _ in 2:degree
         amg_residual!(level.r, level.A, level.x, level.b, backend, workgroup)
 
-        rho_new   = one(eltype(level.x)) / (2*d/c - rho_prev)
-        alpha_k   = rho_new * rho_prev * 2 / c
-        beta_k    = -rho_new
+        rho_new = one(Tv) / (2*d/c - rho_prev)
+        alpha_k = rho_new * rho_prev * 2 / c
+        beta_k  = -rho_new
 
-        amg_axpby!(level.tmp, level.r, alpha_k, beta_k, backend, workgroup)
-        amg_axpy!(level.x, level.tmp, one(eltype(level.x)), backend, workgroup)
+        # p = alpha_k * D⁻¹ r + beta_k * p_old  (3-term Chebyshev recurrence on D⁻¹A)
+        amg_dinv_axpby!(level.tmp, level.Dinv, level.r, alpha_k, beta_k, backend, workgroup)
+        amg_axpy!(level.x, level.tmp, one(Tv), backend, workgroup)
 
         rho_prev = rho_new
     end

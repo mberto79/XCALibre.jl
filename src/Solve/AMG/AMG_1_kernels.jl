@@ -214,24 +214,17 @@ function amg_dinv_axpy!(x, Dinv, r, omega, backend, workgroup)
     kernel!(x, Dinv, r, omega)
 end
 
-# ── In-place Jacobi correction: x[i] += ω · Dinv[i] · (b[i] - Ax[i]) ────────
-# Asynchronous (chaotic) Jacobi; convergence for M-matrices guaranteed by Chazan–Miranker.
+# ── D⁻¹-scaled AXPBY: y[i] = alpha * Dinv[i] * x[i] + beta * y[i] ───────────
+# Used by Chebyshev smoother direction update: p = alpha * D⁻¹r + beta * p_old.
 
-@kernel function _amg_jacobi!(x, Dinv, rowptr, colval, nzval, b, omega)
-    row = @index(Global)
-    @inbounds begin
-        acc = zero(eltype(nzval))
-        for nzi in rowptr[row]:(rowptr[row+1] - 1)
-            acc += nzval[nzi] * x[colval[nzi]]
-        end
-        x[row] += omega * Dinv[row] * (b[row] - acc)
-    end
+@kernel function _amg_dinv_axpby!(y, Dinv, x, alpha, beta)
+    i = @index(Global)
+    @inbounds y[i] = alpha * Dinv[i] * x[i] + beta * y[i]
 end
 
-function amg_smooth_jacobi!(x, Dinv, A, b, omega, backend, workgroup)
-    nzval, colval, rowptr = get_sparse_fields(A)
-    n = length(x)
-    kernel! = _amg_jacobi!(_setup(backend, workgroup, n)...)
-    kernel!(x, Dinv, rowptr, colval, nzval, b, omega)
+function amg_dinv_axpby!(y, Dinv, x, alpha, beta, backend, workgroup)
+    n = length(y)
+    kernel! = _amg_dinv_axpby!(_setup(backend, workgroup, n)...)
+    kernel!(y, Dinv, x, alpha, beta)
 end
 

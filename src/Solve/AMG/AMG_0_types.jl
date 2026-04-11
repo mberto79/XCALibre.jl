@@ -67,7 +67,10 @@ Algebraic Multigrid linear solver for use with `SolverSetup`.
   value θ = 0.25 is standard, but still incorrect for near-isotropic FVM
   operators.  When in doubt, keep `strength = 0.0`.
 - `coarsening` — coarsening strategy: `:SA` Smoothed Aggregation (default) or `:RS`
-  Ruge–Stüben.
+  Ruge–Stüben. Both use **unsmoothed (piecewise-constant) prolongation** to keep
+  operator complexity low (target < 2.0 for 3-D FVM meshes). Prolongation smoothing
+  would inflate nnz(P) from 1 to ~stencil_width per row with no benefit for
+  near-isotropic M-matrices where all connections are equally strong.
 - `update_freq` — how often the coarse-level hierarchy (Galerkin products and
   coarsest LU) is refreshed when the fine-level matrix changes (default `1`).
 - `krylov` — outer Krylov acceleration. `:cg` (default) wraps the V-cycle as a

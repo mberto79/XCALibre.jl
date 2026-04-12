@@ -195,6 +195,28 @@ function amg_residual!(r, A, x, b, backend, workgroup)
     kernel!(r, rowptr, colval, nzval, x, b)
 end
 
+# ── L1-Jacobi sweep (fused, ping-pong) ───────────────────────────────────────
+# Full row sum (diagonal included); x_new[i] = x[i] + ω · Dinv_l1[i] · r[i].
+# Correct for D_l1⁻¹ = 1/||a_i||_1; converges to the true solution of Ax=b.
+
+@kernel function _amg_l1jacobi_sweep!(x_new, x, Dinv_l1, rowptr, colval, nzval, b, omega)
+    row = @index(Global)
+    @inbounds begin
+        acc = zero(eltype(nzval))
+        for nzi in rowptr[row]:(rowptr[row+1] - 1)
+            acc += nzval[nzi] * x[colval[nzi]]   # full row including diagonal
+        end
+        x_new[row] = x[row] + omega * Dinv_l1[row] * (b[row] - acc)
+    end
+end
+
+function amg_l1jacobi_sweep!(x_new, x, Dinv_l1, A, b, omega, backend, workgroup)
+    nzval, colval, rowptr = get_sparse_fields(A)
+    n = length(x)
+    kernel! = _amg_l1jacobi_sweep!(_setup(backend, workgroup, n)...)
+    kernel!(x_new, x, Dinv_l1, rowptr, colval, nzval, b, omega)
+end
+
 # ── L2 norm (delegates to LinearAlgebra on CPU; uses dot on GPU via LA) ────────
 # Note: LinearAlgebra.norm works on GPU arrays via GPUArrays.jl/CUDA extensions.
 amg_norm(v) = norm(v)
@@ -249,5 +271,57 @@ function amg_dinv_axpby!(y, Dinv, x, alpha, beta, backend, workgroup)
     n = length(y)
     kernel! = _amg_dinv_axpby!(_setup(backend, workgroup, n)...)
     kernel!(y, Dinv, x, alpha, beta)
+end
+
+# ── GPU-resident RAP: Ac = R·A·P (one thread per coarse row) ─────────────────
+# Exploits unsmoothed aggregation: P has exactly 1 nnz per fine row, so
+# agg[j] = _colval(L.P)[j] gives the coarse aggregate of fine node j.
+# Ac rows are short (≤ 30 entries for 3D FVM), so the inner linear search
+# into Ac_colval has negligible cost and avoids any shared-memory allocation.
+# All arrays remain on-device; no PCIe transfer.
+
+@kernel function _amg_rap_row!(
+    Ac_nzval, Ac_rowptr, Ac_colval,
+    A_nzval,  A_rowptr,  A_colval,
+    R_nzval,  R_rowptr,  R_colval,
+    agg)
+    c1 = @index(Global)
+    @inbounds begin
+        ac_start = Ac_rowptr[c1]
+        ac_end   = Ac_rowptr[c1 + 1] - 1
+        # zero the output row
+        for k in ac_start:ac_end
+            Ac_nzval[k] = zero(eltype(Ac_nzval))
+        end
+        # scatter R[c1, i] * A[i, j] into Ac[c1, agg[j]]
+        for r_idx in R_rowptr[c1]:(R_rowptr[c1 + 1] - 1)
+            i   = R_colval[r_idx]
+            riv = R_nzval[r_idx]
+            for a_idx in A_rowptr[i]:(A_rowptr[i + 1] - 1)
+                j  = A_colval[a_idx]
+                c2 = agg[j]
+                v  = riv * A_nzval[a_idx]
+                for k in ac_start:ac_end
+                    if Ac_colval[k] == c2
+                        Ac_nzval[k] += v
+                        break
+                    end
+                end
+            end
+        end
+    end
+end
+
+function amg_rap_update!(Lc, L, backend, workgroup)
+    Ac_nzval, Ac_colval, Ac_rowptr = get_sparse_fields(Lc.A)
+    A_nzval,  A_colval,  A_rowptr  = get_sparse_fields(L.A)
+    R_nzval,  R_colval,  R_rowptr  = get_sparse_fields(L.R)
+    agg = _colval(L.P)   # P.colval[j] = coarse aggregate of fine node j
+    nc  = length(Lc.Dinv)
+    kernel! = _amg_rap_row!(_setup(backend, workgroup, nc)...)
+    kernel!(Ac_nzval, Ac_rowptr, Ac_colval,
+            A_nzval,  A_rowptr,  A_colval,
+            R_nzval,  R_rowptr,  R_colval,
+            agg)
 end
 

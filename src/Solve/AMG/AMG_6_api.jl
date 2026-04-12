@@ -287,7 +287,7 @@ function update!(ws::AMGWorkspace, A_device, backend, workgroup)
     for lvl in 1:(length(ws.levels) - 1)
         L  = ws.levels[lvl]
         Lc = ws.levels[lvl + 1]
-        _galerkin_update!(L, Lc, backend)
+        _galerkin_update!(L, Lc, backend, workgroup)
         _amg_build_smoother_dinv!(ws.opts.smoother, Lc.Dinv, Lc.A, Lc.extras.diag_ptr, backend, workgroup)
     end
 
@@ -437,24 +437,24 @@ function solve_system!(
     return residual(phiEqn, component, config)
 end
 
-# ─── Two-step SpGEMM Galerkin update ─────────────────────────────────────────
-# Downloads the current fine-level A nzval, recomputes Ac = R·(A·P) on CPU via
-# two in-place SpGEMM calls, then uploads the updated Ac nzval to the device.
-# All scratch buffers (AP_cpu, Ac_cpu, cpu_tmps, A_cpu mirror) are pre-allocated
-# in amg_setup! so this path is allocation-free.
+# ─── Galerkin update: Ac = R·A·P ─────────────────────────────────────────────
+# CPU path: download A.nzval, run two in-place CPU SpGEMMs, upload Ac.nzval.
+# All scratch buffers are pre-allocated in amg_setup!; no allocation here.
 
-function _galerkin_update!(L::MultigridLevel, Lc::MultigridLevel, backend)
+function _galerkin_update!(L::MultigridLevel, Lc::MultigridLevel,
+                            backend::KernelAbstractions.CPU, workgroup)
     ex = L.extras
-    # 1. Download fine A nzval: device → CPU mirror
     nzval_dev, _, _ = get_sparse_fields(L.A)
     copyto!(ex.A_cpu.nzval, nzval_dev)
-    # 2. Compute T = A*P in-place on CPU (compact accumulator: tmps fits in L1)
     _spgemm_nzval!(ex.AP_cpu, ex.A_cpu, ex.P_cpu, ex.cpu_tmps, ex.col_to_local)
-    # 3. Compute Ac = R*T in-place on CPU
     _spgemm_nzval!(ex.Ac_cpu, ex.R_cpu, ex.AP_cpu, ex.cpu_tmps, ex.col_to_local)
-    # 4. Upload updated Ac nzval: CPU → device
     nzval_dev_c, _, _ = get_sparse_fields(Lc.A)
     KernelAbstractions.copyto!(backend, nzval_dev_c, ex.Ac_cpu.nzval)
+end
+
+# GPU path: KA kernel scatters contributions entirely on-device — no PCIe transfer.
+function _galerkin_update!(L::MultigridLevel, Lc::MultigridLevel, backend, workgroup)
+    amg_rap_update!(Lc, L, backend, workgroup)
 end
 
 # ─── CSR ↔ device helpers ─────────────────────────────────────────────────────

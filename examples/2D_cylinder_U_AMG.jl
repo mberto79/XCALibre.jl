@@ -62,6 +62,7 @@ solvers = (
         solver      = AMG(
                         smoother      = JacobiSmoother(2, 2/3, zeros(0)),
                         # smoother      = Chebyshev(degree=2, lo=0.3, hi=1.1),
+                        # smoother      = L1Jacobi(omega=1),
                         cycle         = VCycle(),
                         coarsening    = :RS, # :SA :RS
                         max_levels    = 15,

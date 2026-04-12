@@ -5,7 +5,7 @@ using KernelAbstractions
 using Test
 
 import XCALibre.Solve: amg_setup!, update!, apply_level_smoother!, run_cycle!,
-                       amg_residual!, _workspace, _amg_pcg_solve!
+                       amg_residual!, _workspace, _amg_pcg_solve!, amg_rap_update!
 
 # ── Shared fixtures ────────────────────────────────────────────────────────────
 
@@ -224,6 +224,26 @@ end
                 @test rel < 1e-8
             end
         end
+    end
+
+    # ── KA RAP kernel correctness ──────────────────────────────────────────────
+    @testset "amg_rap_update! matches CPU SpGEMM reference" begin
+        ws, _, _ = _make_ws(JacobiSmoother(2, 2/3, zeros(0)))
+        @assert length(ws.levels) >= 2
+
+        L  = ws.levels[1]
+        Lc = ws.levels[2]
+
+        # amg_setup! already populated Lc.A via CPU SpGEMM — save as reference.
+        nzval_ref = copy(Array(get_sparse_fields(Lc.A)[1]))
+
+        # Zero the coarse nzval and recompute with the KA kernel on CPU.
+        Ac_nzval, _, _ = get_sparse_fields(Lc.A)
+        fill!(Ac_nzval, zero(eltype(Ac_nzval)))
+        amg_rap_update!(Lc, L, _amg_backend, _amg_workgroup)
+
+        nzval_ka = Array(get_sparse_fields(Lc.A)[1])
+        @test maximum(abs.(nzval_ka .- nzval_ref)) < sqrt(eps(Float64))
     end
 
 end # @testset "AMG unit tests"

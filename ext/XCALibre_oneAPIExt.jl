@@ -36,7 +36,7 @@ _build_opA(A::SPARSEGPU) = KP.KrylovOperator(A)
     A.nzVal, A.colVal, A.rowPtr
 end
 
-import XCALibre.Solve: _m, _n, update_preconditioner!, _galerkin_update!
+import XCALibre.Solve: _m, _n, update_preconditioner!
 
 function sparse_array_deconstructor_preconditioners(arr::SPARSEGPU)
     (; colVal, rowPtr, nzVal, dims) = arr
@@ -100,22 +100,6 @@ begin
     XCALibre.Solve.forward_substitution!(xcpu, P, bcpu)
     XCALibre.Solve.backward_substitution!(xcpu, P, xcpu)
     KernelAbstractions.copyto!(BACKEND(), x, xcpu)
-end
-
-# ─── GPU-native Galerkin update via oneMKL SpGEMM ────────────────────────────
-# Requires oneMKL sparse×sparse multiplication support (oneAPI.jl ≥ 0.3).
-# If `*` is not yet bound for oneSparseMatrixCSR, this will throw a MethodError
-# and the hierarchy should instead be rebuilt with the CPU fallback path.
-
-function _galerkin_update!(L::XCALibre.Solve.MultigridLevel, Lc::XCALibre.Solve.MultigridLevel,
-                            backend::BACKEND)
-    T  = L.A * L.P
-    Ac = L.R * T
-    length(Ac.nzVal) == length(Lc.A.nzVal) ||
-        error("AMG GPU SpGEMM: nnz mismatch (got $(length(Ac.nzVal)), expected $(length(Lc.A.nzVal))). " *
-              "Matrix may have structural zeros; rebuild the hierarchy.")
-    copyto!(Lc.A.nzVal, Ac.nzVal)
-    nothing
 end
 
 end # end module

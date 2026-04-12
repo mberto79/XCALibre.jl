@@ -60,23 +60,38 @@ function amg_smooth_chebyshev!(level, smoother::Chebyshev, backend, workgroup)
 
     degree == 1 && return
 
-    # Initial direction p₀ = D⁻¹ r (stored in tmp); beta=0 clears previous tmp content.
-    amg_dinv_axpby!(level.tmp, level.Dinv, level.r, one(Tv), zero(Tv), backend, workgroup)
+    # p₀ = step taken in step 0 = (1/d) D⁻¹ r₀  (the actual update direction, not just D⁻¹ r)
+    amg_dinv_axpby!(level.tmp, level.Dinv, level.r, alpha, zero(Tv), backend, workgroup)
 
     rho_prev = one(Tv)
     for _ in 2:degree
         amg_residual!(level.r, level.A, level.x, level.b, backend, workgroup)
 
         rho_new = one(Tv) / (2*d/c - rho_prev)
-        alpha_k = rho_new * rho_prev * 2 / c
-        beta_k  = -rho_new
+        alpha_k = rho_new * 2 / c          # ρ_k · (2/δ)
+        beta_k  = rho_new * rho_prev       # ρ_k · ρ_{k-1}  (positive)
 
-        # p = alpha_k * D⁻¹ r + beta_k * p_old  (3-term Chebyshev recurrence on D⁻¹A)
+        # p_k = alpha_k · D⁻¹ r + beta_k · p_{k-1}  (Adams et al. 2003, eq. 3)
         amg_dinv_axpby!(level.tmp, level.Dinv, level.r, alpha_k, beta_k, backend, workgroup)
         amg_axpy!(level.x, level.tmp, one(Tv), backend, workgroup)
 
         rho_prev = rho_new
     end
+end
+
+# ─── L1-Jacobi smoother (synchronous ping-pong) ───────────────────────────────
+# Uses the fused _amg_l1jacobi_sweep! kernel so the full residual is computed
+# from a snapshot of x, then x is updated — no diagonal-exclusion artefact.
+# Ping-pong ensures the preconditioner is a fixed symmetric linear map (valid for PCG).
+
+function amg_smooth_l1jacobi!(level, n_sweeps, omega, backend, workgroup)
+    src = level.x
+    dst = level.tmp
+    for _ in 1:n_sweeps
+        amg_l1jacobi_sweep!(dst, src, level.Dinv, level.A, level.b, omega, backend, workgroup)
+        src, dst = dst, src
+    end
+    src !== level.x && amg_copy!(level.x, src, backend, workgroup)
 end
 
 # ─── Dispatch: apply smoother based on type ────────────────────────────────────
@@ -99,5 +114,5 @@ end
 
 function _apply_level_smoother!(level, smoother::L1Jacobi, n_sweeps::Int,
                                   backend, workgroup)
-    amg_smooth!(level, n_sweeps, smoother.omega, backend, workgroup)
+    amg_smooth_l1jacobi!(level, n_sweeps, smoother.omega, backend, workgroup)
 end

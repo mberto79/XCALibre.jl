@@ -6,6 +6,7 @@ using Test
 
 import XCALibre.Solve: amg_setup!, update!, apply_level_smoother!, run_cycle!,
                        amg_residual!, _workspace, _amg_pcg_solve!, amg_rap_update!
+import XCALibre.ModelFramework: get_sparse_fields
 
 # ── Shared fixtures ────────────────────────────────────────────────────────────
 
@@ -56,7 +57,7 @@ end
 # return the final relative residual ‖r‖/‖b‖.
 function _smoother_converge_test(smoother; n=8, n_outer=300, strength=0.0)
     ws, b, _ = _make_ws(smoother; n=n, strength=strength)
-    L1 = ws.levels[1]
+    L1 = ws.fine_level
     L1.b .= b
     L1.x .= 0.0
 
@@ -72,13 +73,13 @@ end
 # Run the full AMG V-cycle for up to max_iter cycles; return final relative residual.
 function _amg_vcycle_converge_test(smoother; n=8, max_iter=60, strength=0.0, coarsening=:SA)
     ws, b, _ = _make_ws(smoother; n=n, strength=strength, coarsening=coarsening)
-    L1 = ws.levels[1]
+    L1 = ws.fine_level
     L1.b .= b
     L1.x .= 0.0
 
     r0 = norm(b)
     for _ in 1:max_iter
-        run_cycle!(ws.levels, ws.opts, ws.opts.cycle, _amg_backend, _amg_workgroup)
+        run_cycle!(ws, ws.opts, ws.opts.cycle, _amg_backend, _amg_workgroup)
         amg_residual!(L1.r, L1.A, L1.x, L1.b, _amg_backend, _amg_workgroup)
         norm(L1.r) / r0 < 1e-10 && break
     end
@@ -93,20 +94,21 @@ end
     # ── Hierarchy build and update ─────────────────────────────────────────────
     @testset "hierarchy build and update!" begin
         ws, b, _ = _make_ws(JacobiSmoother(2, 2/3, zeros(0)))
-        @test length(ws.levels) > 1
-        @test isconcretetype(eltype(ws.levels))
+        @test !isempty(ws.coarse_levels)
+        @test isconcretetype(typeof(ws.fine_level))
+        @test isconcretetype(eltype(ws.coarse_levels))
 
         A_new    = _build_poisson(8)
-        n_before = length(ws.levels)
+        n_before = length(ws.coarse_levels) + 1   # total levels
         update!(ws, A_new, _amg_backend, _amg_workgroup)
-        @test length(ws.levels) == n_before   # update! must not change level count
+        @test length(ws.coarse_levels) + 1 == n_before   # update! must not change level count
 
         # lazy build: fresh workspace must trigger amg_setup! on first update!
         opts2 = AMG(smoother=JacobiSmoother(2, 2/3, zeros(0)))
         ws2   = _workspace(opts2, A_new, b)
-        @test isempty(ws2.levels)
+        @test isnothing(ws2.fine_level)
         update!(ws2, A_new, _amg_backend, _amg_workgroup)
-        @test !isempty(ws2.levels)
+        @test !isnothing(ws2.fine_level)
     end
 
     # ── Damped Jacobi smoother ─────────────────────────────────────────────────
@@ -115,7 +117,7 @@ end
 
         # One sweep from zero must reduce the residual
         ws, b, _ = _make_ws(smoother)
-        L1 = ws.levels[1]; L1.b .= b; L1.x .= 0.0
+        L1 = ws.fine_level; L1.b .= b; L1.x .= 0.0
         r_before = norm(b)
         apply_level_smoother!(L1, 1, ws.opts, _amg_backend, _amg_workgroup)
         amg_residual!(L1.r, L1.A, L1.x, L1.b, _amg_backend, _amg_workgroup)
@@ -136,7 +138,7 @@ end
 
         # One application from zero must reduce the residual
         ws, b, _ = _make_ws(smoother)
-        L1 = ws.levels[1]; L1.b .= b; L1.x .= 0.0
+        L1 = ws.fine_level; L1.b .= b; L1.x .= 0.0
         r_before = norm(b)
         apply_level_smoother!(L1, 1, ws.opts, _amg_backend, _amg_workgroup)
         amg_residual!(L1.r, L1.A, L1.x, L1.b, _amg_backend, _amg_workgroup)
@@ -159,7 +161,7 @@ end
         # Verify the recurrence direction is additive (beta_k > 0 fix):
         # successive applications must strictly decrease the residual — not oscillate.
         ws2, b2, _ = _make_ws(smoother)
-        L2 = ws2.levels[1]; L2.b .= b2; L2.x .= 0.0
+        L2 = ws2.fine_level; L2.b .= b2; L2.x .= 0.0
         apply_level_smoother!(L2, 1, ws2.opts, _amg_backend, _amg_workgroup)
         amg_residual!(L2.r, L2.A, L2.x, L2.b, _amg_backend, _amg_workgroup)
         r_after1 = norm(L2.r)
@@ -175,7 +177,7 @@ end
 
         # One sweep from zero must reduce the residual
         ws, b, _ = _make_ws(smoother)
-        L1 = ws.levels[1]; L1.b .= b; L1.x .= 0.0
+        L1 = ws.fine_level; L1.b .= b; L1.x .= 0.0
         r_before = norm(b)
         apply_level_smoother!(L1, 1, ws.opts, _amg_backend, _amg_workgroup)
         amg_residual!(L1.r, L1.A, L1.x, L1.b, _amg_backend, _amg_workgroup)
@@ -229,10 +231,10 @@ end
     # ── KA RAP kernel correctness ──────────────────────────────────────────────
     @testset "amg_rap_update! matches CPU SpGEMM reference" begin
         ws, _, _ = _make_ws(JacobiSmoother(2, 2/3, zeros(0)))
-        @assert length(ws.levels) >= 2
+        @assert !isempty(ws.coarse_levels)
 
-        L  = ws.levels[1]
-        Lc = ws.levels[2]
+        L  = ws.fine_level
+        Lc = ws.coarse_levels[1]
 
         # amg_setup! already populated Lc.A via CPU SpGEMM — save as reference.
         nzval_ref = copy(Array(get_sparse_fields(Lc.A)[1]))
@@ -243,7 +245,66 @@ end
         amg_rap_update!(Lc, L, _amg_backend, _amg_workgroup)
 
         nzval_ka = Array(get_sparse_fields(Lc.A)[1])
-        @test maximum(abs.(nzval_ka .- nzval_ref)) < sqrt(eps(Float64))
+        # Float32 arithmetic in the RAP kernel; compare at Float32 precision.
+        @test maximum(abs.(nzval_ka .- nzval_ref)) < sqrt(eps(Float32))
+    end
+
+    # ── Mixed-precision type integrity ────────────────────────────────────────
+    # These tests guard against Float64 scalar contamination of Float32 coarse
+    # levels (the primary source of "no GPU speedup from mixed precision").
+    @testset "mixed-precision type integrity" begin
+        ws, b, _ = _make_ws(JacobiSmoother(2, 2/3, zeros(0)))
+
+        # Fine level must be Float64
+        @test eltype(ws.fine_level.x)    === Float64
+        @test eltype(ws.fine_level.b)    === Float64
+        @test eltype(ws.fine_level.Dinv) === Float64
+
+        # Every coarse level must be Float32 throughout
+        for lc in ws.coarse_levels
+            @test eltype(lc.x)    === Float32
+            @test eltype(lc.b)    === Float32
+            @test eltype(lc.r)    === Float32
+            @test eltype(lc.Dinv) === Float32
+            nzval_c, _, _ = get_sparse_fields(lc.A)
+            @test eltype(nzval_c) === Float32
+        end
+
+        # Fine-level boundary buffers (r_Tc, tmp_Tc) must be Float32
+        @test eltype(ws.fine_level.extras.r_Tc)   === Float32
+        @test eltype(ws.fine_level.extras.tmp_Tc) === Float32
+
+        # AMG opts must carry the configured float types
+        @test ws.opts.fine_float   === Float64
+        @test ws.opts.coarse_float === Float32
+
+        # Coarse level must stay Float32 after a V-cycle (no type widening during compute)
+        L1 = ws.fine_level; L1.b .= b; L1.x .= 0.0
+        run_cycle!(ws, ws.opts, ws.opts.cycle, _amg_backend, _amg_workgroup)
+        for lc in ws.coarse_levels
+            @test eltype(lc.x) === Float32
+        end
+
+        # Same checks hold for Chebyshev smoother (lo/hi are Float64 in the struct;
+        # they must be converted to Float32 before entering coarse-level kernels)
+        ws_cheb, b_cheb, _ = _make_ws(Chebyshev(degree=2, lo=0.3, hi=1.1))
+        for lc in ws_cheb.coarse_levels
+            @test eltype(lc.x)    === Float32
+            @test eltype(lc.Dinv) === Float32
+        end
+        L1c = ws_cheb.fine_level; L1c.b .= b_cheb; L1c.x .= 0.0
+        run_cycle!(ws_cheb, ws_cheb.opts, ws_cheb.opts.cycle, _amg_backend, _amg_workgroup)
+        for lc in ws_cheb.coarse_levels
+            @test eltype(lc.x) === Float32
+        end
+
+        # L1Jacobi: omega is stored as Float64; coarse levels must remain Float32
+        ws_l1, b_l1, _ = _make_ws(L1Jacobi(omega=1.0))
+        L1l = ws_l1.fine_level; L1l.b .= b_l1; L1l.x .= 0.0
+        run_cycle!(ws_l1, ws_l1.opts, ws_l1.opts.cycle, _amg_backend, _amg_workgroup)
+        for lc in ws_l1.coarse_levels
+            @test eltype(lc.x) === Float32
+        end
     end
 
 end # @testset "AMG unit tests"

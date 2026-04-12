@@ -21,6 +21,7 @@ end
 
 import XCALibre.ModelFramework: _nzval, _rowptr, _colval, get_sparse_fields,
                                 _build_A, _build_opA, _build_sparse_device
+import XCALibre.Solve: _tc_sparse_type, _tc_vec_type
 
 _build_A(backend::BACKEND, i, j, v, n) = begin
     A = sparse(i, j, v, n, n)
@@ -37,6 +38,10 @@ function _build_sparse_device(::BACKEND,
 end
 
 _build_opA(A::SPARSEGPU) = KP.KrylovOperator(A)
+
+# Mixed-precision type mappings for AMG hierarchy construction
+_tc_sparse_type(::Type{SPARSEGPU{Tv, Ti}}) where {Tv, Ti} = SPARSEGPU{Float32, Ti}
+_tc_vec_type(::Type{GPUARRAY{Tv, N, B}}) where {Tv, N, B} = GPUARRAY{Float32, N, B}
 @inline _nzval(A::SPARSEGPU) = A.nzVal
 @inline _rowptr(A::SPARSEGPU) = A.rowPtr
 @inline _colval(A::SPARSEGPU) = A.colVal

@@ -80,6 +80,21 @@ function amg_copy!(dst, src, backend, workgroup)
     kernel!(dst, src)
 end
 
+# ── Type-converting copy: dst[i] = convert(eltype(dst), src[i]) ───────────────
+# Handles Float64→Float32 at the fine→coarse restriction boundary and
+# Float32→Float64 at the coarse→fine prolongation boundary.
+
+@kernel function _amg_cast_copy!(dst, src)
+    i = @index(Global)
+    @inbounds dst[i] = convert(eltype(dst), src[i])
+end
+
+function amg_cast_copy!(dst, src, backend, workgroup)
+    n = length(dst)
+    kernel! = _amg_cast_copy!(_setup(backend, workgroup, n)...)
+    kernel!(dst, src)
+end
+
 # ── ZERO: v .= 0 ───────────────────────────────────────────────────────────────
 
 @kernel function _amg_zero!(v)
@@ -289,18 +304,21 @@ end
     @inbounds begin
         ac_start = Ac_rowptr[c1]
         ac_end   = Ac_rowptr[c1 + 1] - 1
+        TOut = eltype(Ac_nzval)
         # zero the output row
         for k in ac_start:ac_end
-            Ac_nzval[k] = zero(eltype(Ac_nzval))
+            Ac_nzval[k] = zero(TOut)
         end
         # scatter R[c1, i] * A[i, j] into Ac[c1, agg[j]]
+        # Cast both operands to TOut so the fine-level Float64 A does not
+        # promote the entire scatter to Float64 on the GPU.
         for r_idx in R_rowptr[c1]:(R_rowptr[c1 + 1] - 1)
             i   = R_colval[r_idx]
-            riv = R_nzval[r_idx]
+            riv = TOut(R_nzval[r_idx])
             for a_idx in A_rowptr[i]:(A_rowptr[i + 1] - 1)
                 j  = A_colval[a_idx]
                 c2 = agg[j]
-                v  = riv * A_nzval[a_idx]
+                v  = riv * TOut(A_nzval[a_idx])
                 for k in ac_start:ac_end
                     if Ac_colval[k] == c2
                         Ac_nzval[k] += v

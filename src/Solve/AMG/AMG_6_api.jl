@@ -17,22 +17,35 @@ _amg_build_smoother_dinv!(::L1Jacobi, Dinv, A, diag_ptr, backend, workgroup) =
 
 Build a fully-typed AMGWorkspace from the matrix `A` and RHS vector `b`.
 
-The concrete `MultigridLevel` element type is fixed here so that `ws.levels` is
-a `Vector{LType}` — no `Any`, no dynamic dispatch in the cycle hot path.
+Two-tier mixed-precision layout:
+- Fine level type `LFType`: Float64 for A/x/b/r/tmp/Dinv; Float32 for P/R (boundary SpMVs).
+- Coarse level type `LCType`: Float32 for all fields.
 
-The multigrid hierarchy is **not** built here. `A` may have all-zero values at
-initialisation time (before the first equation assembly), which would cause the
-Galerkin diagonal check to break the coarsening loop after a single level.
-The hierarchy is instead built lazily on the first `update!` call, when `A`
-carries the actual assembled coefficients.
+The multigrid hierarchy is **not** built here — hierarchy construction is deferred to the
+first `update!` call when `A` carries assembled coefficients.
 """
 function _workspace(amg::AMG, A::AT, b::AbstractVector{Tv}) where {AT, Tv}
-    LType = MultigridLevel{Tv, AT, Union{Nothing, AT}, typeof(b),
-                            LevelExtras{Tv, SparseMatricesCSR.SparseMatrixCSR{1, Tv, Int}}}
+    Tc        = amg.coarse_float        # user-configured coarse float type (default Float32)
+    AT_c      = _tc_sparse_type(AT)     # coarse device sparse type (Float32)
+    Vec_f     = typeof(b)
+    Vec_c     = _tc_vec_type(Vec_f)     # coarse device vector type (Float32)
+    # Verify the coarse_float setting is consistent with the GPU type mapping.
+    # _tc_sparse_type/_tc_vec_type currently only support Float32; update those methods
+    # if a different coarse_float is needed.
+    @assert eltype(Vec_c) === Tc "coarse_float=$(Tc) does not match _tc_vec_type result $(eltype(Vec_c)); add GPU type-mapping methods for the desired coarse type"
+    CpuSpT_f  = SparseMatricesCSR.SparseMatrixCSR{1, Tv, Int}
+    CpuSpT_c  = SparseMatricesCSR.SparseMatrixCSR{1, Tc, Int}
+
+    # Fine level: Float64 A; Float32 P/R; boundary buffers typed as Vec_c
+    LFType = MultigridLevel{Tv,  AT,   Union{Nothing, AT_c}, Vec_f, LevelExtras{Tv, Vec_c,  CpuSpT_f}}
+    # Coarse levels: all Float32; TcVec=Nothing (no boundary buffers needed)
+    LCType = MultigridLevel{Tc, AT_c,  Union{Nothing, AT_c}, Vec_c, LevelExtras{Tc, Nothing, CpuSpT_c}}
+
     x     = similar(b); fill!(x,     zero(Tv))
     x_pcg = similar(b); fill!(x_pcg, zero(Tv))
     p_cg  = similar(b); fill!(p_cg,  zero(Tv))
-    return AMGWorkspace(LType[], x, amg, false, 0, 0, x_pcg, p_cg)
+    return AMGWorkspace{LFType, LCType, Vec_f, typeof(amg)}(
+        nothing, LCType[], x, amg, false, 0, 0, x_pcg, p_cg)
 end
 
 # ─── Full hierarchy setup ─────────────────────────────────────────────────────
@@ -40,31 +53,35 @@ end
 """
     amg_setup!(ws, A_device, backend, workgroup)
 
-Build the complete multigrid hierarchy from `A_device`. Coarsening and all
-Galerkin products are performed on the CPU; matrices and work vectors are
-then transferred to the target device. Calling this again replaces the entire
-hierarchy.
+Build the complete mixed-precision multigrid hierarchy from `A_device`.
+
+Phase 1: CPU coarsening in Float64 (precision-safe for aggregation decisions).
+Phase 2: Upload to device — fine level in Float64 with Float32 P/R, coarse
+         levels entirely in Float32. Calling this again replaces the entire
+         hierarchy.
 """
-function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where {LType}
+function amg_setup!(ws::AMGWorkspace{LFType, LCType}, A_device, backend, workgroup) where {LFType, LCType}
     opts = ws.opts
-    Tv   = eltype(ws.x)
+    Tv   = eltype(ws.x)          # fine float type (Float64)
+    Tc   = opts.coarse_float     # coarse float type (Float32 by default)
     Ti   = eltype(_rowptr(A_device))
 
-    mk_vec(n) = KernelAbstractions.zeros(backend, Tv, n)
+    mk_vec_f(n) = KernelAbstractions.zeros(backend, Tv, n)
+    mk_vec_c(n) = KernelAbstractions.zeros(backend, Tc, n)
+    CpuSpT_f = SparseMatricesCSR.SparseMatrixCSR{1, Tv, Int}
+    CpuSpT_c = SparseMatricesCSR.SparseMatrixCSR{1, Tc, Int}
 
-    # ── Phase 1: build hierarchy on CPU ────────────────────────────────────────
+    # ── Phase 1: build hierarchy on CPU (all Float64) ─────────────────────────
     A_cpu     = _to_cpu_csr(A_device)
-    A_cpus    = [A_cpu]       # level matrices (CPU)
-    P_cpus    = SparseMatricesCSR.SparseMatrixCSR{1,Tv,Int}[]  # inter-level P
-    R_cpus    = SparseMatricesCSR.SparseMatrixCSR{1,Tv,Int}[]  # inter-level R
-    AP_cpus   = SparseMatricesCSR.SparseMatrixCSR{1,Tv,Int}[]  # A*P intermediates (reused in update!)
-    rhos      = Tv[]           # spectral radius per level
+    A_cpus    = [A_cpu]
+    P_cpus    = SparseMatricesCSR.SparseMatrixCSR{1,Tv,Int}[]
+    R_cpus    = SparseMatricesCSR.SparseMatrixCSR{1,Tv,Int}[]
+    AP_cpus   = SparseMatricesCSR.SparseMatrixCSR{1,Tv,Int}[]
+    rhos      = Tv[]
 
-    # ω_P = 4/(3ρ) where ρ = ρ(D⁻¹A); for FVM Laplacian ρ ≈ 2 → ω_P ≈ 2/3.
     use_jacobi = opts.smoother isa JacobiSmoother || opts.smoother isa L1Jacobi
 
     D_fine    = _extract_dinv_cpu(A_cpu)
-    # Gershgorin bound: deterministic, tight for FVM M-matrices.
     ρ_fine    = Tv(_gershgorin_rho(A_cpu, D_fine))
     _rho_fine = use_jacobi ? one(Tv) : ρ_fine
     push!(rhos, _rho_fine)
@@ -77,24 +94,16 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
 
         agg, nagg = amg_coarsen(A_cur, opts.strength, opts.coarsening)
         nagg >= n_cur && break
-        # If primary coarsening stagnated (< 30% reduction), fall back to
-        # pairwise aggregation which guarantees ≥ 2× reduction.
         if nagg > (n_cur * 7) ÷ 10
             agg_p, nagg_p = _coarsen_pairwise(A_cur)
             if nagg_p < nagg
                 agg, nagg = agg_p, nagg_p
             end
         end
-        # Stop only if even the pairwise fallback couldn't reduce size ≥ 10%.
         nagg > 0.9 * n_cur && break
 
-        # Unsmoothed aggregation: use P̂ directly (1 nnz per row).
-        # Prolongation smoothing inflates nnz(P) from 1 to ~stencil_width per row,
-        # multiplying op_complexity by ~3-4× with no benefit for near-isotropic FVM
-        # M-matrices (all connections equally strong, smooth error already piecewise-const).
         P_tent = build_tentative_P(n_cur, nagg, agg)
         P_cpu  = P_tent
-
         any(!isfinite, P_cpu.nzval) && break
 
         R_cpu  = build_restriction(P_cpu)
@@ -103,7 +112,6 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
         nc = size(Ac_cpu, 1)
         (nc == 0 || any(!isfinite, Ac_cpu.nzval)) && break
 
-        # Stop if coarse diagonal decays to near machine epsilon
         Ac_diag_min = minimum(
             v for i in 1:nc
               for (j, v) in zip(Ac_cpu.colval[Ac_cpu.rowptr[i]:Ac_cpu.rowptr[i+1]-1],
@@ -126,97 +134,157 @@ function amg_setup!(ws::AMGWorkspace{LType}, A_device, backend, workgroup) where
 
     n_levels = length(A_cpus)
 
-    # Diagnostic: show hierarchy sizes and operator complexity.
-    # Operator complexity = Σ nnz(Aₗ) / nnz(A₀); target < 2.5 for 3-D meshes.
-    # Values > 2.5 indicate fat coarse levels — each V-cycle costs proportionally more.
     level_sizes = [size(A_cpus[i], 1) for i in 1:n_levels]
     nnz_fine    = length(A_cpus[1].nzval)
     nnz_total   = sum(length(A_cpus[i].nzval) for i in 1:n_levels)
     op_cmplx    = round(nnz_total / nnz_fine; digits=2)
     @info "AMG hierarchy ($(opts.coarsening), strength=$(opts.strength)): $(level_sizes) — op_complexity=$(op_cmplx) — direct solve at coarsest: $(level_sizes[end] <= opts.coarsest_size)"
 
-    # ── Phase 2: build device matrices, Galerkin plans, and MultigridLevel objects ─
+    # ── Phase 2a: coarsest-level LU (Float32 unless n_levels==1) ─────────────
     n_coarsest  = size(A_cpus[end], 1)
     lu_dense_c  = nothing
     lu_f        = nothing
-    lu_rhs_init = Tv[]
+    lu_rhs_init_c = Tc[]   # Float32 rhs for coarse LU
+    lu_dense_f  = nothing  # Float64 LU only for single-level case
+    lu_f_fine   = nothing
+    lu_rhs_init_f = Tv[]
+
     if n_coarsest <= opts.coarsest_size
-        lu_dense_c = zeros(Tv, n_coarsest, n_coarsest)
-        _fill_dense_from_sparse!(lu_dense_c, A_cpus[end])
-        lu_f        = lu!(lu_dense_c)
-        lu_rhs_init = zeros(Tv, n_coarsest)
+        if n_levels == 1
+            # Fine IS the coarsest: use Float64 LU
+            lu_dense_f    = zeros(Tv, n_coarsest, n_coarsest)
+            _fill_dense_from_sparse!(lu_dense_f, A_cpus[end])
+            lu_f_fine     = lu!(lu_dense_f)
+            lu_rhs_init_f = zeros(Tv, n_coarsest)
+        else
+            # Coarsest is a Float32 coarse level
+            lu_dense_c    = zeros(Tc, n_coarsest, n_coarsest)
+            _fill_dense_from_sparse!(lu_dense_c, A_cpus[end])
+            lu_f          = lu!(lu_dense_c)
+            lu_rhs_init_c = zeros(Tc, n_coarsest)
+        end
     end
 
-    levels = LType[]
-    sizehint!(levels, n_levels)
+    # ── Phase 2b: build fine level (Float64 A, Float32 P/R) ──────────────────
+    n1 = size(A_cpus[1], 1)
 
-    for i in 1:n_levels
-        n  = size(A_cpus[i], 1)
-        A_dev = (i == 1) ? A_device : _csr_to_device(A_cpus[i], backend, Tv, Ti)
+    # Fine P/R as Float32 device matrices (bandwidth-efficient boundary SpMVs)
+    P_fine_dev = (n_levels > 1) ? _csr_to_device(P_cpus[1], backend, Tc, Ti) : nothing
+    R_fine_dev = (n_levels > 1) ? _csr_to_device(R_cpus[1], backend, Tc, Ti) : nothing
 
-        P_dev = (i <= length(P_cpus)) ? _csr_to_device(P_cpus[i], backend, Tv, Ti) : nothing
-        R_dev = (i <= length(R_cpus)) ? _csr_to_device(R_cpus[i], backend, Tv, Ti) : nothing
+    Dinv_f = mk_vec_f(n1)
+    diag_ptr_f_cpu = _build_diag_ptr_cpu(A_cpus[1])
+    diag_ptr_f_dev = KernelAbstractions.zeros(backend, Int32, n1)
+    KernelAbstractions.copyto!(backend, diag_ptr_f_dev, diag_ptr_f_cpu)
+    _amg_build_smoother_dinv!(opts.smoother, Dinv_f, A_device, diag_ptr_f_dev, backend, workgroup)
 
-        Dinv = mk_vec(n)
+    Vec_c    = _tc_vec_type(typeof(ws.x))   # same computation as in _workspace
+    extras_f = LevelExtras{Tv, Vec_c, CpuSpT_f}()
+    extras_f.rho      = rhos[1]
+    extras_f.diag_ptr = diag_ptr_f_dev
 
-        diag_ptr_cpu = _build_diag_ptr_cpu(A_cpus[i])
-        diag_ptr_dev = KernelAbstractions.zeros(backend, Int32, n)
-        KernelAbstractions.copyto!(backend, diag_ptr_dev, diag_ptr_cpu)
+    if n_levels > 1
+        # Galerkin scratch for fine level (Float64 CPU intermediates)
+        nc1 = size(P_cpus[1], 2)
+        extras_f.P_cpu  = P_cpus[1]
+        extras_f.R_cpu  = R_cpus[1]
+        extras_f.AP_cpu = AP_cpus[1]
+        extras_f.Ac_cpu = deepcopy(A_cpus[2])
+        extras_f.A_cpu  = deepcopy(A_cpus[1])
+        nrows_AP1 = size(AP_cpus[1], 1)
+        nrows_Ac1 = size(A_cpus[2], 1)
+        max_nnz1  = max(
+            maximum(AP_cpus[1].rowptr[r+1] - AP_cpus[1].rowptr[r] for r in 1:nrows_AP1; init=0),
+            maximum(A_cpus[2].rowptr[r+1]  - A_cpus[2].rowptr[r]  for r in 1:nrows_Ac1; init=0),
+        )
+        extras_f.cpu_tmps     = zeros(Tv,    max_nnz1, Threads.nthreads())
+        extras_f.col_to_local = zeros(Int32, nc1,      Threads.nthreads())
+        # Float32 boundary buffers for the fine↔coarse precision cast
+        extras_f.r_Tc   = mk_vec_c(n1)
+        extras_f.tmp_Tc = mk_vec_c(n1)
+    else
+        # Single-level: fine = coarsest; store LU in fine extras
+        extras_f.A_cpu     = A_cpus[1]
+        extras_f.lu_dense  = lu_dense_f
+        extras_f.lu_factor = lu_f_fine
+        extras_f.lu_rhs    = lu_rhs_init_f
+    end
 
-        _amg_build_smoother_dinv!(opts.smoother, Dinv, A_dev, diag_ptr_dev, backend, workgroup)
+    fine_level = LFType(A_device, P_fine_dev, R_fine_dev,
+                        Dinv_f, mk_vec_f(n1), mk_vec_f(n1), mk_vec_f(n1), mk_vec_f(n1),
+                        extras_f)
 
-        extras = LevelExtras{Tv, SparseMatricesCSR.SparseMatrixCSR{1, Tv, Int}}()
-        extras.P_cpu  = (i <= length(P_cpus)) ? P_cpus[i] : nothing
-        extras.R_cpu  = (i <= length(R_cpus)) ? R_cpus[i] : nothing
-        extras.rho    = rhos[i]
-        extras.diag_ptr = diag_ptr_dev
+    # ── Phase 2c: build coarse levels (Float32) ───────────────────────────────
+    coarse_levels = LCType[]
+    sizehint!(coarse_levels, n_levels - 1)
 
-        # Pre-allocate two-step SpGEMM scratch for each non-coarsest level:
-        #   Step 1: T = A·P  (intermediate, same sparsity each update)
-        #   Step 2: Ac = R·T (result copied to device Lc.A.nzval)
-        # AP_cpus[i] was already computed by galerkin_product in Phase 1 — reuse it
-        # to avoid a redundant symbolic+numeric SpGEMM here.
+    for i in 2:n_levels
+        n_c = size(A_cpus[i], 1)
+        A_dev_c = _csr_to_device(A_cpus[i], backend, Tc, Ti)
+
+        # P/R: Float32 device; nothing at coarsest
+        P_dev_c = (i <= length(P_cpus)) ? _csr_to_device(P_cpus[i], backend, Tc, Ti) : nothing
+        R_dev_c = (i <= length(R_cpus)) ? _csr_to_device(R_cpus[i], backend, Tc, Ti) : nothing
+
+        Dinv_c = mk_vec_c(n_c)
+        diag_ptr_c_cpu = _build_diag_ptr_cpu(A_cpus[i])
+        diag_ptr_c_dev = KernelAbstractions.zeros(backend, Int32, n_c)
+        KernelAbstractions.copyto!(backend, diag_ptr_c_dev, diag_ptr_c_cpu)
+        _amg_build_smoother_dinv!(opts.smoother, Dinv_c, A_dev_c, diag_ptr_c_dev, backend, workgroup)
+
+        extras_c = LevelExtras{Tc, Nothing, CpuSpT_c}()
+        extras_c.rho      = Tc(rhos[i])
+        extras_c.diag_ptr = diag_ptr_c_dev
+
         if i < n_levels
-            nc     = size(P_cpus[i], 2)
-            extras.AP_cpu = AP_cpus[i]               # reuse from Phase 1 (no redundant SpGEMM)
-            extras.Ac_cpu = deepcopy(A_cpus[i+1])   # writable Ac scratch
-            extras.A_cpu  = deepcopy(A_cpus[i])      # writable fine-A mirror for nzval download
-            # Compact accumulator: tmps is max_nnz_per_row × nthreads (L1-resident).
-            # col_to_local is nc × nthreads Int32 scatter map (filled/cleared per row at runtime).
-            nrows_AP = size(AP_cpus[i], 1)
-            nrows_Ac = size(A_cpus[i+1], 1)
-            max_nnz  = max(
-                maximum(AP_cpus[i].rowptr[r+1] - AP_cpus[i].rowptr[r] for r in 1:nrows_AP; init=0),
-                maximum(A_cpus[i+1].rowptr[r+1] - A_cpus[i+1].rowptr[r] for r in 1:nrows_Ac; init=0),
+            # Non-coarsest coarse level: SpGEMM scratch in Float32
+            nc_c = size(P_cpus[i], 2)
+            extras_c.P_cpu  = _to_tc_csr(P_cpus[i],         Tc)
+            extras_c.R_cpu  = _to_tc_csr(R_cpus[i],         Tc)
+            extras_c.AP_cpu = _to_tc_csr(AP_cpus[i],        Tc)
+            extras_c.Ac_cpu = _to_tc_csr(deepcopy(A_cpus[i+1]), Tc)
+            extras_c.A_cpu  = _to_tc_csr(deepcopy(A_cpus[i]),   Tc)
+            nrows_AP_c = size(AP_cpus[i], 1)
+            nrows_Ac_c = size(A_cpus[i+1], 1)
+            max_nnz_c  = max(
+                maximum(AP_cpus[i].rowptr[r+1] - AP_cpus[i].rowptr[r] for r in 1:nrows_AP_c; init=0),
+                maximum(A_cpus[i+1].rowptr[r+1] - A_cpus[i+1].rowptr[r] for r in 1:nrows_Ac_c; init=0),
             )
-            extras.cpu_tmps     = zeros(Tv,     max_nnz, Threads.nthreads())
-            extras.col_to_local = zeros(Int32,  nc,      Threads.nthreads())
+            extras_c.cpu_tmps     = zeros(Tc,    max_nnz_c, Threads.nthreads())
+            extras_c.col_to_local = zeros(Int32, nc_c,      Threads.nthreads())
+        else
+            # Coarsest coarse level: Float32 LU
+            extras_c.A_cpu     = _to_tc_csr(A_cpus[end], Tc)
+            extras_c.lu_dense  = lu_dense_c
+            extras_c.lu_factor = lu_f
+            extras_c.lu_rhs    = lu_rhs_init_c
         end
 
-        # Coarsest level: store CPU copy of A for LU rebuild in update!()
-        if i == n_levels
-            extras.A_cpu     = A_cpus[end]
-            extras.lu_dense  = lu_dense_c
-            extras.lu_factor = lu_f
-            extras.lu_rhs    = lu_rhs_init
-        end
-
-        level = LType(A_dev, P_dev, R_dev,
-                      Dinv, mk_vec(n), mk_vec(n), mk_vec(n), mk_vec(n),
-                      extras)
-        push!(levels, level)
+        level_c = LCType(A_dev_c, P_dev_c, R_dev_c,
+                         Dinv_c, mk_vec_c(n_c), mk_vec_c(n_c), mk_vec_c(n_c), mk_vec_c(n_c),
+                         extras_c)
+        push!(coarse_levels, level_c)
     end
 
     # ── Commit to workspace ────────────────────────────────────────────────────
-    ws.levels        = levels
-    ws.x             = levels[1].x
+    ws.fine_level    = fine_level
+    ws.coarse_levels = coarse_levels
+    ws.x             = fine_level.x
     ws.setup_valid   = true
     ws.setup_count  += 1
-    # Set to 1 so the first update! after setup skips the Galerkin refresh:
-    # the hierarchy was just built from the current matrix, so recomputing immediately
-    # is redundant. For update_freq=1 the check (count-1)%1==0 still runs every call.
     ws.update_count  = 1
     nothing
+end
+
+# ─── CPU CSR type-cast helper ─────────────────────────────────────────────────
+# Convert a CPU CSR matrix to a different float type (Float64→Float32).
+# Index arrays are shared (never mutated); only nzval is a new allocation.
+
+function _to_tc_csr(A::SparseMatricesCSR.SparseMatrixCSR{Bi,Tv,Ti},
+                    ::Type{Tc}) where {Bi,Tv,Ti,Tc}
+    m, n = size(A)
+    # SparseMatrixCSR only accepts {Bi}; Tv and Ti are inferred from the vectors.
+    SparseMatricesCSR.SparseMatrixCSR{Bi}(m, n, A.rowptr, A.colval, Tc.(A.nzval))
 end
 
 # ─── Numerical update (reuse hierarchy structure) ─────────────────────────────
@@ -266,10 +334,8 @@ steady state the matrix changes very slowly, so the approximation cost becomes
 negligible. The fine-level D⁻¹ (which directly controls smoother accuracy) is
 never skipped.
 """
-function update!(ws::AMGWorkspace, A_device, backend, workgroup)
-    # Build the hierarchy on the first call (A has real coefficients by then).
-    # Also handles manually-constructed workspaces without levels (e.g. in tests).
-    if !ws.setup_valid || isempty(ws.levels)
+function update!(ws::AMGWorkspace{LFType, LCType}, A_device, backend, workgroup) where {LFType, LCType}
+    if !ws.setup_valid || isnothing(ws.fine_level)
         amg_setup!(ws, A_device, backend, workgroup)
         return
     end
@@ -277,28 +343,44 @@ function update!(ws::AMGWorkspace, A_device, backend, workgroup)
     ws.update_count += 1
 
     # Fine-level D⁻¹ always updated; diagonal changes every outer iteration.
-    L1 = ws.levels[1]
-    _amg_build_smoother_dinv!(ws.opts.smoother, L1.Dinv, L1.A, L1.extras.diag_ptr, backend, workgroup)
+    fine = ws.fine_level::LFType
+    _amg_build_smoother_dinv!(ws.opts.smoother, fine.Dinv, fine.A, fine.extras.diag_ptr, backend, workgroup)
 
-    # Lazy Galerkin refresh: coarse levels skipped when (update_count-1) % update_freq ≠ 0.
+    # Lazy Galerkin refresh.
     update_freq = ws.opts.update_freq
     (ws.update_count - 1) % update_freq != 0 && return
 
-    for lvl in 1:(length(ws.levels) - 1)
-        L  = ws.levels[lvl]
-        Lc = ws.levels[lvl + 1]
-        _galerkin_update!(L, Lc, backend, workgroup)
-        _amg_build_smoother_dinv!(ws.opts.smoother, Lc.Dinv, Lc.A, Lc.extras.diag_ptr, backend, workgroup)
-    end
-
-    # Refresh coarsest-level LU from updated nzval. check=false avoids exception alloc.
-    if !isnothing(ws.levels[end].extras.lu_factor)
-        ex_c     = ws.levels[end].extras
-        nzval_c, _, _ = get_sparse_fields(ws.levels[end].A)
-        copyto!(ex_c.A_cpu.nzval, nzval_c)   # device → CPU (tiny)
-        fill!(ex_c.lu_dense, zero(eltype(ws.x)))
-        _fill_dense_from_sparse!(ex_c.lu_dense, ex_c.A_cpu)
-        ex_c.lu_factor = lu!(ex_c.lu_dense; check=false)
+    coarse = ws.coarse_levels
+    if !isempty(coarse)
+        # Fine→coarse1 Galerkin
+        _galerkin_update!(fine, coarse[1], backend, workgroup)
+        _amg_build_smoother_dinv!(ws.opts.smoother, coarse[1].Dinv, coarse[1].A,
+                                   coarse[1].extras.diag_ptr, backend, workgroup)
+        # Coarse-to-coarse Galerkin
+        for lvl in 1:(length(coarse) - 1)
+            _galerkin_update!(coarse[lvl], coarse[lvl + 1], backend, workgroup)
+            _amg_build_smoother_dinv!(ws.opts.smoother, coarse[lvl+1].Dinv, coarse[lvl+1].A,
+                                       coarse[lvl+1].extras.diag_ptr, backend, workgroup)
+        end
+        # Refresh coarsest-level (Float32) LU
+        if !isnothing(coarse[end].extras.lu_factor)
+            ex_c = coarse[end].extras
+            nzval_c, _, _ = get_sparse_fields(coarse[end].A)
+            copyto!(ex_c.A_cpu.nzval, nzval_c)   # Float32 device → Float32 CPU
+            fill!(ex_c.lu_dense, zero(eltype(ex_c.lu_dense)))
+            _fill_dense_from_sparse!(ex_c.lu_dense, ex_c.A_cpu)
+            ex_c.lu_factor = lu!(ex_c.lu_dense; check=false)
+        end
+    else
+        # Single-level: fine = coarsest — refresh Float64 LU
+        if !isnothing(fine.extras.lu_factor)
+            ex_f = fine.extras
+            nzval_f, _, _ = get_sparse_fields(fine.A)
+            copyto!(ex_f.A_cpu.nzval, nzval_f)
+            fill!(ex_f.lu_dense, zero(eltype(ex_f.lu_dense)))
+            _fill_dense_from_sparse!(ex_f.lu_dense, ex_f.A_cpu)
+            ex_f.lu_factor = lu!(ex_f.lu_dense; check=false)
+        end
     end
     nothing
 end
@@ -306,9 +388,9 @@ end
 # ─── Preconditioned Conjugate Gradient (PCG) solve ────────────────────────────
 # One V-cycle per iteration as preconditioner M ≈ A⁻¹; O(√κ) vs O(κ) for plain Richardson.
 
-function _amg_pcg_solve!(ws::AMGWorkspace, b, values, itmax, atol, rtol,
-                           backend, workgroup)
-    L1  = ws.levels[1]
+function _amg_pcg_solve!(ws::AMGWorkspace{LFType}, b, values, itmax, atol, rtol,
+                           backend, workgroup) where {LFType}
+    L1  = ws.fine_level::LFType
     Tv  = eltype(ws.x_pcg)
     x   = ws.x_pcg
     p   = ws.p_cg
@@ -330,9 +412,9 @@ function _amg_pcg_solve!(ws::AMGWorkspace, b, values, itmax, atol, rtol,
     # ── z ← M⁻¹ r  (one V-cycle: L1.b = r, L1.x = 0 → L1.x = z) ───────────
     amg_copy!(L1.b, L1.r, backend, workgroup)
     amg_zero!(L1.x, backend, workgroup)
-    run_cycle!(ws.levels, ws.opts, ws.opts.cycle, backend, workgroup)
-    # CRITICAL: vcycle! calls amg_residual!(L.r, ...) at the fine level, which
-    # overwrites L1.r with the V-cycle's internal residual (≈ 0 at cycle end).
+    run_cycle!(ws, ws.opts, ws.opts.cycle, backend, workgroup)
+    # CRITICAL: vcycle_fine! calls amg_residual! at the fine level, overwriting
+    # L1.r with the V-cycle's internal residual (≈ 0 at cycle end).
     # Restore the CG residual from L1.b, which the V-cycle never modifies.
     amg_copy!(L1.r, L1.b, backend, workgroup)
 
@@ -362,7 +444,7 @@ function _amg_pcg_solve!(ws::AMGWorkspace, b, values, itmax, atol, rtol,
         # z ← M⁻¹ r  (V-cycle overwrites L1.r — restore CG residual from L1.b)
         amg_copy!(L1.b, L1.r, backend, workgroup)
         amg_zero!(L1.x, backend, workgroup)
-        run_cycle!(ws.levels, ws.opts, ws.opts.cycle, backend, workgroup)
+        run_cycle!(ws, ws.opts, ws.opts.cycle, backend, workgroup)
         amg_copy!(L1.r, L1.b, backend, workgroup)   # restore r after V-cycle
 
         # β = (rᵀ z_new) / (rᵀ z_old) ;  z_new is in L1.x
@@ -384,8 +466,8 @@ end
     solve_system!(phiEqn, setup, result, component, config)
 
 AMG-specific override dispatched when `phiEqn.solver isa AMGWorkspace`.
-`ws.levels` is a fully-typed `Vector{LType}`, so all cycle kernel launches are
-type-stable with no boxing.
+Two-tier mixed-precision hierarchy: fine level Float64, coarse levels Float32.
+All cycle kernel launches are type-stable with no boxing.
 
 Dispatches to PCG (`opts.krylov === :cg`, default) or plain Richardson
 (`opts.krylov === :none`) based on the `krylov` field of the `AMG` options.
@@ -402,14 +484,13 @@ function solve_system!(
     A  = _A(phiEqn)
     b  = _b(phiEqn, component)
 
-    # Build or refresh hierarchy
     update!(ws, A, backend, workgroup)
 
     if ws.opts.krylov === :cg
         _amg_pcg_solve!(ws, b, values, itmax, atol, rtol, backend, workgroup)
     else
         # ── Standalone Richardson: plain V-cycle loop ─────────────────────────
-        L1 = ws.levels[1]
+        L1 = ws.fine_level
 
         amg_copy!(L1.x, values, backend, workgroup)
         amg_copy!(L1.b, b,      backend, workgroup)
@@ -418,11 +499,10 @@ function solve_system!(
         r0 = amg_norm(L1.r)
         r0 = ifelse(r0 > eps(r0), r0, one(r0))
 
-        # Early exit: initial guess already satisfies tolerance.
         if r0 >= atol
-            check_freq = 5   # check at k=1 then every check_freq cycles
+            check_freq = 5
             for k in 1:itmax
-                run_cycle!(ws.levels, ws.opts, ws.opts.cycle, backend, workgroup)
+                run_cycle!(ws, ws.opts, ws.opts.cycle, backend, workgroup)
                 if k == 1 || k % check_freq == 0 || k == itmax
                     amg_residual!(L1.r, L1.A, L1.x, L1.b, backend, workgroup)
                     res_norm = amg_norm(L1.r)
@@ -445,11 +525,13 @@ function _galerkin_update!(L::MultigridLevel, Lc::MultigridLevel,
                             backend::KernelAbstractions.CPU, workgroup)
     ex = L.extras
     nzval_dev, _, _ = get_sparse_fields(L.A)
-    copyto!(ex.A_cpu.nzval, nzval_dev)
+    copyto!(ex.A_cpu.nzval, nzval_dev)   # device → CPU (may be Float32 or Float64)
     _spgemm_nzval!(ex.AP_cpu, ex.A_cpu, ex.P_cpu, ex.cpu_tmps, ex.col_to_local)
     _spgemm_nzval!(ex.Ac_cpu, ex.R_cpu, ex.AP_cpu, ex.cpu_tmps, ex.col_to_local)
     nzval_dev_c, _, _ = get_sparse_fields(Lc.A)
-    KernelAbstractions.copyto!(backend, nzval_dev_c, ex.Ac_cpu.nzval)
+    # copyto! handles Float64→Float32 truncation at the fine→coarse1 boundary
+    # (element-wise setindex! with implicit convert) and is a direct copy otherwise.
+    copyto!(nzval_dev_c, ex.Ac_cpu.nzval)
 end
 
 # GPU path: KA kernel scatters contributions entirely on-device — no PCIe transfer.
@@ -480,7 +562,16 @@ end
 function _csr_to_device(A::SparseMatricesCSR.SparseMatrixCSR{Bi,Tv,Ti},
                          backend, ::Type{Tv2}, ::Type{Ti2}) where {Bi,Tv,Ti,Tv2,Ti2}
     if backend isa CPU
-        return SparseXCSR(A)
+        if Tv2 === Tv
+            return SparseXCSR(A)
+        else
+            # Float type conversion (e.g. Float64 → Float32 for coarse levels).
+            # SparseMatrixCSR only accepts {Bi} — Tv and Ti are inferred from the vectors.
+            m, n = size(A)
+            nzval_c = Tv2.(A.nzval)
+            A_c = SparseMatricesCSR.SparseMatrixCSR{Bi}(m, n, A.rowptr, A.colval, nzval_c)
+            return SparseXCSR(A_c)
+        end
     else
         m, n = size(A)
         rowptr = Vector{Int32}(A.rowptr)
@@ -536,6 +627,6 @@ function amg_coarse_solve!(level::MultigridLevel, backend)
     else
         # Fall back to many Jacobi sweeps when LU is too expensive
         workgroup = 1024
-        amg_smooth!(level, 50, 2/3, backend, workgroup)
+        amg_smooth!(level, 50, eltype(level.x)(2/3), backend, workgroup)
     end
 end

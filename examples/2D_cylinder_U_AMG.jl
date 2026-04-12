@@ -73,12 +73,13 @@ solvers = (
                         update_freq = 2,
                         krylov = :cg
                      ),
+        # solver = Cg(),
         preconditioner = Jacobi(),   # ignored by AMG; kept for API compatibility
         convergence = 1e-7,
         relax       = 1.0,
         rtol        = 0.0,
         atol        = 1e-6,
-        itmax       = 200,
+        itmax       = 2000,
     )
 )
 

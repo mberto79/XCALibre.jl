@@ -116,6 +116,14 @@ Algebraic Multigrid linear solver for use with `SolverSetup`.
   for the SPD pressure Laplacian: each PCG step costs one V-cycle plus two dot
   products, but convergence is O(√κ) vs O(κ) for Richardson. Use `:none` to
   revert to the plain Richardson (V-cycle) iteration.
+- `fine_float` — float type for the fine-level system matrix and work vectors
+  (default `Float64`). Must match the element type of the matrix passed to
+  `solve_system!`. Stored for documentation and future use; the actual fine-level
+  float type is currently always derived from `eltype(b)`.
+- `coarse_float` — float type for all coarse-level matrices and work vectors
+  (default `Float32`). Set to `Float32` to use half-bandwidth memory on the GPU;
+  this is the main mixed-precision knob. Changing this requires matching
+  `_tc_sparse_type`/`_tc_vec_type` methods to exist for the desired type.
 
   In a SIMPLE/PISO loop, `update!` is called once per outer iteration. With
   `update_freq = 1` (default) the full hierarchy is rebuilt every call.
@@ -165,6 +173,8 @@ struct AMG{S<:AbstractSmoother, C<:AMGCycle} <: AbstractLinearSolver
     coarsening    :: Symbol
     update_freq   :: Int   # refresh Galerkin hierarchy every N update! calls (1 = every call)
     krylov        :: Symbol  # :cg → PCG outer loop; :none → plain Richardson
+    fine_float    :: DataType   # float type for the fine level (default Float64)
+    coarse_float  :: DataType   # float type for all coarse levels (default Float32)
 end
 
 AMG(;
@@ -178,8 +188,10 @@ AMG(;
     coarsening    = :RS,
     update_freq   = 2,
     krylov        = :cg,
+    fine_float    = Float64,
+    coarse_float  = Float32,
 ) = AMG(smoother, cycle, max_levels, coarsest_size, pre_sweeps, post_sweeps,
-        Float64(strength), coarsening, update_freq, krylov)
+        Float64(strength), coarsening, update_freq, krylov, fine_float, coarse_float)
 
 # ─── Host-only per-level extras ───────────────────────────────────────────────
 
@@ -203,13 +215,26 @@ Host-resident mutable state for one multigrid level.
 - `col_to_local`   : thread-local Int32 scatter map sized `ncols_B × nthreads`; maps each
                      column j of B to the local slot in `cpu_tmps` for the current row. Set
                      per-row and cleared after write-back; never allocated at the hot path.
+- `r_Tc`           : Float32 boundary buffer; fine level only. Holds `cast(r_fine)` for
+                     the Float64→Float32 restriction step. `nothing` at coarse/single levels.
+- `tmp_Tc`         : Float32 boundary buffer; fine level only. Holds `P * x_coarse` in
+                     Float32 before casting back to Float64. `nothing` at coarse/single levels.
 
-`CpuSpT` is always `SparseMatricesCSR.SparseMatrixCSR{1, Tv, Int}`.
+`CpuSpT` is `SparseMatricesCSR.SparseMatrixCSR{1, Tv, Int}` where `Tv` matches the level's
+float type (`Float64` for the fine level, `Float32` for coarse levels).
+
+`TcVec` is the concrete device vector type for the boundary buffers:
+- Fine level: `Vector{Float32}` (CPU) or `CuArray{Float32,...}` (GPU) — the actual buffer type.
+- Coarse levels: `Nothing` — boundary buffers are unused; field type collapses to `Nothing`.
+
+Using a concrete `TcVec` parameter makes `r_Tc` and `tmp_Tc` a 2-option union
+(`Union{Nothing, TcVec}`) rather than an abstract `AbstractVector`, keeping the cycle
+hot path fully type-stable.
 
 The struct itself is never adapted to the device (`Adapt.adapt` returns it unchanged).
 `diag_ptr` is device-resident; all other fields live on the host.
 """
-mutable struct LevelExtras{Tv, CpuSpT}
+mutable struct LevelExtras{Tv, TcVec, CpuSpT}
     P_cpu        :: Union{Nothing, CpuSpT}
     R_cpu        :: Union{Nothing, CpuSpT}
     A_cpu        :: Union{Nothing, CpuSpT}
@@ -222,10 +247,13 @@ mutable struct LevelExtras{Tv, CpuSpT}
     Ac_cpu       :: Union{Nothing, CpuSpT}
     cpu_tmps     :: Union{Nothing, Matrix{Tv}}
     col_to_local :: Union{Nothing, Matrix{Int32}}
+    # Mixed-precision boundary buffers; TcVec=Nothing for coarse/single levels.
+    r_Tc         :: Union{Nothing, TcVec}
+    tmp_Tc       :: Union{Nothing, TcVec}
 
-    LevelExtras{Tv, CpuSpT}() where {Tv, CpuSpT} =
-        new{Tv, CpuSpT}(nothing, nothing, nothing, nothing, one(Tv), nothing, Tv[], nothing,
-                        nothing, nothing, nothing, nothing)
+    LevelExtras{Tv, TcVec, CpuSpT}() where {Tv, TcVec, CpuSpT} =
+        new{Tv, TcVec, CpuSpT}(nothing, nothing, nothing, nothing, one(Tv), nothing, Tv[],
+                                nothing, nothing, nothing, nothing, nothing, nothing, nothing)
 end
 
 # ─── Per-level storage ────────────────────────────────────────────────────────
@@ -274,29 +302,52 @@ function MultigridLevel(A::AType, P, R,
     MultigridLevel{Tv, AType, PType, Vec, ExtrasT}(A, P, R, Dinv, x, b, r, tmp, extras)
 end
 
+# ─── Mixed-precision sparse/vector type mapping ───────────────────────────────
+# Map a Float64 device sparse type → its Float32 equivalent.
+# The CPU case is handled here; GPU extensions add methods for their types.
+# Called at workspace construction time to determine LCType.
+
+_tc_sparse_type(::Type{SparseXCSR{Bi,Tv,Ti,N}}) where {Bi,Tv,Ti,N} = SparseXCSR{Bi,Float32,Ti,N}
+_tc_vec_type(::Type{Array{Tv,N}}) where {Tv,N} = Array{Float32,N}
+
+# Fallback: tells the user to add a method in the relevant GPU extension.
+_tc_sparse_type(::Type{AT}) where {AT} =
+    error("No Float32 sparse type mapping for $(AT). Add _tc_sparse_type in the GPU extension.")
+_tc_vec_type(::Type{VT}) where {VT} =
+    error("No Float32 vector type mapping for $(VT). Add _tc_vec_type in the GPU extension.")
+
 # ─── Workspace ────────────────────────────────────────────────────────────────
 
 """
-    AMGWorkspace{LType, Vec, Opts}
+    AMGWorkspace{LFType, LCType, Vec, Opts}
 
-Holds the complete multigrid hierarchy and is stored in `phiEqn.solver` in place of
-a Krylov.jl workspace. Exposes a `.x` field so the existing `_copy!` kernel in
-`solve_system!` continues to work unchanged.
+Holds the complete two-tier multigrid hierarchy and is stored in `phiEqn.solver` in
+place of a Krylov.jl workspace. Exposes a `.x` field so the existing `_copy!` kernel
+in `solve_system!` continues to work unchanged.
 
-`LType` is the fully-concrete `MultigridLevel` type determined at construction time
-from the matrix and RHS vector types via `_workspace(amg, A, b)`. The `levels` field
-is therefore a fully-typed `Vector{LType}` — no `Any`, no dynamic dispatch in the
-cycle hot path.
+**Two-tier layout** (mixed-precision):
+- `fine_level::Union{Nothing, LFType}` — the Float64 fine level (set by `amg_setup!`).
+- `coarse_levels::Vector{LCType}` — Float32 coarse levels; empty before setup.
+
+`LFType` and `LCType` are both fully-concrete `MultigridLevel` subtypes, determined at
+construction time in `_workspace`. `LFType` uses `Tv = Float64` and holds Float32 P/R
+operators (for the bandwidth-efficient fine→coarse boundary SpMVs). `LCType` uses
+`Tv = Float32` for all fields.
+
+This split eliminates dynamic dispatch in the cycle hot path: `vcycle_fine!` is
+specialised on the concrete `LFType` and `Vector{LCType}`, and `vcycle_coarse!`
+recurses on `Vector{LCType}` alone.
 """
-mutable struct AMGWorkspace{LType, Vec, Opts<:AMG}
-    levels       :: Vector{LType}
+mutable struct AMGWorkspace{LFType, LCType, Vec, Opts<:AMG}
+    fine_level   :: Union{Nothing, LFType}
+    coarse_levels:: Vector{LCType}
     x            :: Vec
     opts         :: Opts
     setup_valid  :: Bool
     setup_count  :: Int
     update_count :: Int   # counts update! calls; drives the lazy Galerkin refresh
     # PCG workspace — only used when opts.krylov === :cg.
-    # x_pcg is the PCG iterate; separate from levels[1].x which the V-cycle overwrites.
+    # x_pcg is the PCG iterate; separate from fine_level.x which the V-cycle overwrites.
     x_pcg        :: Vec
     p_cg         :: Vec
 end

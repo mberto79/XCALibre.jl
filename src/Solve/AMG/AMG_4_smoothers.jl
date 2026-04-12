@@ -16,10 +16,12 @@ Apply `n_sweeps` of synchronous damped Jacobi using ping-pong between
 symmetric — mandatory for correctness when AMG is a PCG preconditioner.
 """
 function amg_smooth!(level, n_sweeps, omega, backend, workgroup)
+    Tv    = eltype(level.x)
+    omega_t = Tv(omega)   # prevent Float64 scalar from promoting Float32 kernel args
     src = level.x
     dst = level.tmp
     for _ in 1:n_sweeps
-        amg_jacobi_sweep!(dst, src, level.Dinv, level.A, level.b, omega, backend, workgroup)
+        amg_jacobi_sweep!(dst, src, level.Dinv, level.A, level.b, omega_t, backend, workgroup)
         src, dst = dst, src
     end
     # After an odd number of sweeps the result ends in what started as level.tmp; copy back.
@@ -42,9 +44,14 @@ Corrections are scaled by D⁻¹ at every step — required for consistency with
 the eigenvalue bounds computed by `_gershgorin_rho`.
 """
 function amg_smooth_chebyshev!(level, smoother::Chebyshev, backend, workgroup)
-    (; degree, lo, hi) = smoother
-    rho = level.extras.rho
+    (; degree) = smoother
     Tv  = eltype(level.x)
+
+    # Convert smoother parameters to the level's float type to prevent
+    # Float64 scalar contamination when smoother was constructed with Float64 literals.
+    lo  = Tv(smoother.lo)
+    hi  = Tv(smoother.hi)
+    rho = Tv(level.extras.rho)
 
     # Eigenvalue bounds for D⁻¹A
     λ_max = hi * rho
@@ -85,10 +92,12 @@ end
 # Ping-pong ensures the preconditioner is a fixed symmetric linear map (valid for PCG).
 
 function amg_smooth_l1jacobi!(level, n_sweeps, omega, backend, workgroup)
+    Tv    = eltype(level.x)
+    omega_t = Tv(omega)   # prevent Float64 scalar from promoting Float32 kernel args
     src = level.x
     dst = level.tmp
     for _ in 1:n_sweeps
-        amg_l1jacobi_sweep!(dst, src, level.Dinv, level.A, level.b, omega, backend, workgroup)
+        amg_l1jacobi_sweep!(dst, src, level.Dinv, level.A, level.b, omega_t, backend, workgroup)
         src, dst = dst, src
     end
     src !== level.x && amg_copy!(level.x, src, backend, workgroup)

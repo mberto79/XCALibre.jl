@@ -350,11 +350,6 @@ function SIMPLE_MRF(
     (; reference_frames) = model
     (; global_mask) = reference_frames
 
-    #omega = model.reference_frames.omega
-    rotaxis = reference_frames.frames.rotaxis[1]
-    x0 = reference_frames.frames.x0[1]
-    #mask = model.reference_frames.mask
-
     dt_cpu = zeros(_get_float(mesh), 1)
     copyto!(dt_cpu, config.runtime.dt)
     
@@ -409,8 +404,8 @@ function SIMPLE_MRF(
     for iteration ∈ 1:iterations
         time = iteration
 
-        #update_mrf_sources!(omegaU, U, x0, rotaxis, omega, mask, config)
-        new_update_mrf_sources!(omegaU, U, reference_frames, config)
+        # Updates the OmegaU source term (function is defined below)
+        update_mrf_sources!(omegaU, U, reference_frames, config)
 
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
         
@@ -431,8 +426,8 @@ function SIMPLE_MRF(
         # new approach
         # flux!(mdotf, Uf, config)
 
-        #flux_mrf!(mdotf, Uf, config, x0, rotaxis, omega, mask)
-        new_flux_mrf!(mdotf, Uf, config, reference_frames)
+        # MRF approach
+        flux_mrf!(mdotf, Uf, config, reference_frames)
 
         div!(divHv, mdotf, config)
         
@@ -485,8 +480,8 @@ function SIMPLE_MRF(
             finish!(progress)
             @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
-                #save_output(model, outputWriter, iteration, time, config)
-                save_output_polar(model, outputWriter, iteration, time, config, x0, rotaxis, mask=global_mask)
+                save_output(model, outputWriter, iteration, time, config)
+                #save_output_polar(model, outputWriter, iteration, time, config, x0, rotaxis, mask=global_mask)
                 save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
             end
             break
@@ -506,8 +501,8 @@ function SIMPLE_MRF(
         runtime_postprocessing!(postprocess,iteration,iterations)
         
         if iteration%write_interval + signbit(write_interval) == 0      
-            #save_output(model, outputWriter, iteration, time, config)
-            save_output_polar(model, outputWriter, iteration, time, config, x0, rotaxis, mask=global_mask)
+            save_output(model, outputWriter, iteration, time, config)
+            #save_output_polar(model, outputWriter, iteration, time, config, x0, rotaxis, mask=global_mask)
             save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
         end
 
@@ -723,7 +718,7 @@ end
 
 # MRF functions ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-function update_mrf_sources!(omegaU, U, x0, rotaxis, omega, mask, config)
+function update_mrf_sources!(omegaU, U, reference_frames, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
     mesh = U.mesh
@@ -731,63 +726,10 @@ function update_mrf_sources!(omegaU, U, x0, rotaxis, omega, mask, config)
 
     ndrange = length(cells)
     kernel! = _update_mrf_sources!(_setup(backend, workgroup, ndrange)...)
-    kernel!(omegaU, U, x0, rotaxis, omega, mask, cells)
-end
-
-@kernel function _update_mrf_sources!(omegaU, U, x0, rotaxis, omega, mask, cells)
-    cID = @index(Global)
-
-    Omega = omega*rotaxis*mask[cID]
-    omegaU[cID] = Omega × U[cID]
-end
-
-
-function flux_mrf!(phif::FS, psif::FV, config, x0, rotaxis, omega, mask) where {FS<:FaceScalarField,FV<:FaceVectorField}
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-
-    ndrange = length(phif)
-    kernel! = _flux_mrf!(_setup(backend, workgroup, ndrange)...)
-    kernel!(phif, psif, x0, rotaxis, omega, mask)
-    # # KernelAbstractions.synchronize(backend)
-end
-
-@kernel function _flux_mrf!(phif, psif, x0, rotaxis, omega, mask)
-    i = @index(Global)
-
-    @uniform begin
-        (; mesh, values) = phif
-        (; faces) = mesh
-    end
-
-    @inbounds begin
-        (; area, normal, ownerCells) = faces[i]
-        Omega = omega*rotaxis
-        r = faces[i].centre - x0
-        Sf = area * normal
-        if mask[ownerCells[1]] == 1
-            val = 1
-        elseif mask[ownerCells[2]] == 1
-            val = 1
-        else
-            val = 0
-        end
-        values[i] = (psif[i] ⋅ Sf) - ((Omega × r ⋅ Sf)*val)
-    end
-end
-
-function new_update_mrf_sources!(omegaU, U, reference_frames, config)
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-    mesh = U.mesh
-    cells = mesh.cells 
-
-    ndrange = length(cells)
-    kernel! = _new_update_mrf_sources!(_setup(backend, workgroup, ndrange)...)
     kernel!(omegaU, U, reference_frames)
 end
 
-@kernel function _new_update_mrf_sources!(omegaU, U, reference_frames)
+@kernel function _update_mrf_sources!(omegaU, U, reference_frames)
     cID = @index(Global)
 
     (; frames, global_mask) = reference_frames
@@ -800,17 +742,17 @@ end
     end
 end
 
-function new_flux_mrf!(phif::FS, psif::FV, config, reference_frames) where {FS<:FaceScalarField,FV<:FaceVectorField}
+function flux_mrf!(phif::FS, psif::FV, config, reference_frames) where {FS<:FaceScalarField,FV<:FaceVectorField}
     (; hardware) = config
     (; backend, workgroup) = hardware
 
     ndrange = length(phif)
-    kernel! = _new_flux_mrf!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _flux_mrf!(_setup(backend, workgroup, ndrange)...)
     kernel!(phif, psif, reference_frames)
     # # KernelAbstractions.synchronize(backend)
 end
 
-@kernel function _new_flux_mrf!(phif, psif, reference_frames)
+@kernel function _flux_mrf!(phif, psif, reference_frames)
     i = @index(Global)
 
     @uniform begin

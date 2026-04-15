@@ -1,4 +1,4 @@
-export Probe
+export Probe, TXT, CSV
 
 abstract type ProbeOutput end
 struct TXT <: ProbeOutput end
@@ -7,13 +7,43 @@ struct CSV <: ProbeOutput end
     field::T
     index::I
     name::S
-    output::O = TXT()
+    output::O = CSV()
     start::Union{Real,Nothing}
     stop::Union{Real,Nothing}
     update_interval::Union{Real,Nothing}
 end
+"""
+    Probe(
+    #required arguments
+    field,
+    mesh_cpu; 
 
-function Probe(field,mesh_cpu;location::AbstractVector, name::AbstractString,output::ProbeOutput = TXT(),start::Union{Real,Nothing}=nothing,stop::Union{Real,Nothing}=nothing,update_interval::Union{Real,Nothing}=nothing)
+    #required keyword arguments
+    location::AbstractVector
+    name::AbstractString
+
+    #optional keyword arguments
+    output::ProbeOutput 
+    start::Union{Real,Nothing},
+    stop::Union{Real,Nothing},
+    update_interval::Union{Real,Nothing})
+Constructor to probe an internal field during runtime and write it out to a .csv file. Once created, should be passed to the `Configuration` object as an argument with keyword `postprocess`
+
+# Input arguments 
+- `field`, the field you want to probe, such as `model.momentum.U`
+- `mesh_cpu`, the mesh object stored on the CPU needs to be passed, this is to find the nearest cell centre to the location you want to probe 
+
+# Input Keyword arguments
+- `location`, e.g `location = [1.0, 2.0, 0.0]` and must be a vector ∈ ℝ³ even for 2D simulations
+- `name`, the name of the output file e.g `"Velocity probe at [1.0, 2.0, 3.0]"`
+
+# Optional arguments
+- `output::ProbeOutput` the format to output the probe, defaults to CSV, can only pass either `TXT()` or `CSV()`
+- `start::Union{Real,Nothing}` optional keyword which specifies the start of the probe output window, for **steady** simulations, this is in **iterations**, for **transient** simulations it is in **flow time**.   
+- `stop::Union{Real,Nothing}` optional keyword which specifies the end iteration/time of the probe output window. Default value is the last iteration/timestep. 
+- `update_interval::Union{Real,Nothing}` optional keyword which specifies how often the probe's field is output to file (default value is 1 i.e probe writes field value every iteration/timestep). 
+"""
+function Probe(field,mesh_cpu;location::AbstractVector, name::AbstractString,output::ProbeOutput = CSV(),start::Union{Real,Nothing}=nothing,stop::Union{Real,Nothing}=nothing,update_interval::Union{Real,Nothing}=nothing)
     length(location) == 3 || throw(ArgumentError("location must be a 3 element vector "))
     index, best_centre = find_nearest_cell_index(mesh_cpu,location)
     @info "Nearest cell centre located at $best_centre "

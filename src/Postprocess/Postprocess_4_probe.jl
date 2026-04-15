@@ -18,10 +18,10 @@ function Probe(field,mesh_cpu;location::AbstractVector, name::AbstractString,out
     index, best_centre = find_nearest_cell_index(mesh_cpu,location)
     @info "Nearest cell centre located at $best_centre "
 
-    return Probe(field=field, index=index,name=name,start=start,stop=stop,update_interval=update_interval)
+    return Probe(field=field, index=index,name=name,output=output,start=start,stop=stop,update_interval=update_interval)
 end
 
-function runtime_postprocessing!(prb::Probe{T,I,S},iter::Integer,n_iterations::Integer,Str,time,config) where {T<:VectorField,I,S}
+function runtime_postprocessing!(prb::Probe{T,I,S,O},iter::Integer,n_iterations::Integer,Str,time,config) where {T<:VectorField,I,S,O}
     if must_calculate(prb,iter,n_iterations)
         index = prb.index
 
@@ -32,7 +32,7 @@ function runtime_postprocessing!(prb::Probe{T,I,S},iter::Integer,n_iterations::I
     end
     return nothing
 end
-function runtime_postprocessing!(prb::Probe{T,I,S}, iter::Integer, n_iterations::Integer, time, config) where {T<:ScalarField,I,S}
+function runtime_postprocessing!(prb::Probe{T,I,S,O}, iter::Integer, n_iterations::Integer,Str, time, config) where {T<:ScalarField,I,S,O}
     if must_calculate(prb, iter, n_iterations)
         index = prb.index
 
@@ -121,7 +121,7 @@ function convert_time_to_iterations(prb::Probe, model,dt,iterations)
             update_interval = max(1, floor(Int,prb.update_interval / dt))
         end
         stop >= start || throw(ArgumentError("After conversion with dt=$dt the averaging window is empty (start = $start, stop = $stop)"))
-        return Probe(field=prb.field, index=prb.index,name=prb.name,start=start,stop=stop,update_interval=update_interval)
+        return Probe(field=prb.field, index=prb.index,name=prb.name,output=prb.output,start=start,stop=stop,update_interval=update_interval)
 
     else #for Steady runs use iterations 
         if prb.start === nothing
@@ -150,7 +150,7 @@ function convert_time_to_iterations(prb::Probe, model,dt,iterations)
 
         stop >= start || throw(ArgumentError("stop iteration needs to be ≥ start  (got start = $start, stop = $stop)"))
         stop <= iterations || throw(ArgumentError("stop ($stop) must be ≤ iterations ($iterations)"))
-        return Probe(field=prb.field, index=prb.index,name=prb.name,start=start,stop=stop,update_interval=update_interval)
+        return Probe(field=prb.field, index=prb.index,name=prb.name,output=prb.output,start=start,stop=stop,update_interval=update_interval)
 
     end
 end

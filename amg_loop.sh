@@ -15,7 +15,7 @@
 
 set -euo pipefail
 
-MAX_ITER=${MAX_ITER:-3}
+MAX_ITER=${MAX_ITER:-4}
 TARGET_RATIO=${TARGET_RATIO:-0.60}
 SMOKE=${SMOKE:-0}
 CLAUDE_MODEL=${CLAUDE_MODEL:-sonnet}
@@ -33,7 +33,6 @@ fi
 
 CLAUDE_CMD="claude --model ${CLAUDE_MODEL} \
     --allowedTools Edit,Read,Write,Bash,Grep,Glob \
-    --max-turns 40 \
     --permission-mode acceptEdits"
 
 echo "╔══════════════════════════════════════════════════════════════╗"
@@ -77,7 +76,6 @@ BENCHMARK LOG: F1-fetchCFD_Minimal/amg_loop_results.txt"
 set +e
 claude --model "${CLAUDE_MODEL}" \
     --allowedTools Edit,Read,Write,Bash,Grep,Glob \
-    --max-turns 15 \
     --permission-mode acceptEdits \
     -p "$PRE_PROMPT" \
     2>&1 | tee "$PRE_LOG"

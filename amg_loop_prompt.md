@@ -21,12 +21,11 @@ so you don't repeat closed approaches. However, the last 4 approaches may have b
 ## Your Task (execute in this order)
 
 1. Read `amg_loop_state.md` and `F1-fetchCFD_Minimal/amg_loop_results.txt` (if the file does not exist it means you are in iteration 0)
-2. Read `src/AMG_changes_and_optimisation_after_profiling.md` (closed approaches list)
-3. Identify the single highest-leverage change based on the phase breakdown in results
-4. Call `advisor()` BEFORE implementing any non-trivial algorithmic change (GPU kernels,
+2. Identify the single highest-leverage change based on the phase breakdown in results
+3. Call `advisor()` BEFORE implementing any non-trivial algorithmic change (GPU kernels,
    new data structures, coarsest-level solver changes)
-5. Make ONE targeted change
-6. Update `amg_loop_state.md`:
+4. Make ONE targeted change
+5. Update `amg_loop_state.md`:
    - Increment "Current Iteration" number
    - Record what you changed and why (1-2 lines)
    - Append a row to the History section from the LAST run (not this one)
@@ -46,7 +45,7 @@ so you don't repeat closed approaches. However, the last 4 approaches may have b
 
 When `MODE: PRE-LAUNCH STATE CHECK` appears in your prompt, follow these steps ONLY:
 
-1. Read `amg_loop_state.md` and `F1-fetchCFD_Minimal/amg_loop_results.txt`
+1. Read `amg_loop_state.md` and `F1-fetchCFD_Minimal/amg_loop_results.txt`. Follow any direct instructions given as actions, warning, notes, etc.
 2. Check `src/Solve/AMG/` and `ext/XCALibre_CUDAExt.jl` for broken/partial code from a failed previous iteration (syntax errors, half-applied changes, mismatched types)
 3. ESSENTIAL: Run smoke test to confirm all configurations run correctly, if not, fix! Don't analyse results.
 4. If broken code found: fix it and note the fix in `amg_loop_state.md` under a "Recovery" entry

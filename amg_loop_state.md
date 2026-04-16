@@ -2,6 +2,8 @@
 
 Managed by `amg_loop.sh` + headless Claude. Do not manually edit during a run.
 
+ACTION: The results from the current iteration (iteration 2) are already available. You can start this iteration by analysing the results and moving on to work on "what to try next" (below)
+
 ## Goal
 AMG runtime ratio **< 0.60x** vs Cg+Jacobi baseline (F1 1.67M cells, RANS KOmega, CUDA GPU).
 

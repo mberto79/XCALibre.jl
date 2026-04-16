@@ -10,7 +10,7 @@ function vcycle_coarse!(coarse::Vector{<:MultigridLevel}, lvl::Int,
     nc = length(coarse)
 
     if lvl == nc
-        amg_coarse_solve!(L, opts.coarse_sweeps, backend)
+        amg_coarse_solve!(L, opts.coarse_sweeps, backend, workgroup)
         return
     end
 
@@ -40,7 +40,7 @@ function vcycle_fine!(
 ) where {TcVec}
     if isempty(coarse)
         # Single-level hierarchy: fine IS the coarsest level; direct solve only.
-        amg_coarse_solve!(fine, opts.coarse_sweeps, backend)
+        amg_coarse_solve!(fine, opts.coarse_sweeps, backend, workgroup)
         return
     end
 
@@ -73,7 +73,7 @@ function wcycle_coarse!(coarse::Vector{<:MultigridLevel}, lvl::Int,
     nc = length(coarse)
 
     if lvl == nc
-        amg_coarse_solve!(L, opts.coarse_sweeps, backend)
+        amg_coarse_solve!(L, opts.coarse_sweeps, backend, workgroup)
         return
     end
 
@@ -103,7 +103,7 @@ function wcycle_fine!(
     opts::AMG, backend, workgroup
 ) where {TcVec}
     if isempty(coarse)
-        amg_coarse_solve!(fine, opts.coarse_sweeps, backend)
+        amg_coarse_solve!(fine, opts.coarse_sweeps, backend, workgroup)
         return
     end
 

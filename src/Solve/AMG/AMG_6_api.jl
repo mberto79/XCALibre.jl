@@ -215,7 +215,7 @@ function amg_setup!(ws::AMGWorkspace{LFType, LCType}, A_device, backend, workgro
     nnz_fine    = length(A_cpus[1].nzval)
     nnz_total   = sum(length(A_cpus[i].nzval) for i in 1:n_levels)
     op_cmplx    = round(nnz_total / nnz_fine; digits=2)
-    _coarsest_solve = level_sizes[end] <= opts.coarsest_size && level_sizes[end] <= _MAX_DENSE_LU_N ? "dense LU" : "Jacobi"
+    _coarsest_solve = level_sizes[end] <= opts.coarsest_size && level_sizes[end] <= opts.direct_solve_size ? "dense LU" : "Jacobi"
     @info "AMG hierarchy ($(opts.coarsening), strength=$(opts.strength)): $(level_sizes) — op_complexity=$(op_cmplx) — coarsest solve: $(_coarsest_solve)"
 
     # W-cycle on GPU: 2^(n_levels-2) coarsest-level transfers per cycle.
@@ -328,7 +328,7 @@ function amg_setup!(ws::AMGWorkspace{LFType, LCType}, A_device, backend, workgro
         else
             # Coarsest coarse level: build dense LU if small enough.
             extras_c.A_cpu = _to_tc_csr(A_cpus[end], Tc)
-            if n_coarsest <= opts.coarsest_size && n_coarsest <= _MAX_DENSE_LU_N
+            if n_coarsest <= opts.coarsest_size && n_coarsest <= opts.direct_solve_size
                 _build_coarse_lu!(extras_c, extras_c.A_cpu, backend, workgroup)
             end
         end
@@ -720,8 +720,8 @@ function _fill_dense_from_sparse!(Adense::Matrix{Tv},
     return Adense
 end
 
-# Coarse solve: dense LU if available, else Jacobi sweeps.
-function amg_coarse_solve!(level::MultigridLevel, coarse_sweeps::Int, backend)
+# Coarse solve: dense LU if available, else Jacobi sweeps on backend.
+function amg_coarse_solve!(level::MultigridLevel, coarse_sweeps::Int, backend, workgroup)
     ex = level.extras
     if !isnothing(ex.lu_factor)
         t = @elapsed begin
@@ -732,6 +732,6 @@ function amg_coarse_solve!(level::MultigridLevel, coarse_sweeps::Int, backend)
         _AMG_T_COARSE_SOLVE[] += t
         _AMG_N_COARSE_SOLVE[] += 1
     else
-        amg_smooth!(level, coarse_sweeps, eltype(level.x)(2/3), backend, 1024)
+        amg_smooth!(level, coarse_sweeps, eltype(level.x)(2/3), backend, workgroup)
     end
 end

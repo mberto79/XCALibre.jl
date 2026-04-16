@@ -43,6 +43,7 @@ Algebraic Multigrid preconditioned solver for use with `SolverSetup`.
 - `coarsening`: `:SA` (Smoothed Aggregation, default) or `:RS` (Ruge–Stüben).
 - `pre_sweeps`, `post_sweeps`: smoothing sweeps per level (default 2, 2).
 - `coarsest_size`: stop coarsening at this level size (default 50000).
+- `direct_solve_size`: coarsest-level size below which dense LU is used; above this Jacobi sweeps are used (default 20).
 - `smooth_P`: Jacobi-smooth tentative prolongation (default `true`); fewer PCG iters, higher op_complexity.
 - `strength`: off-diagonal strength threshold θ at fine level (default 0.1).
 - `trunc_P`: per-row drop threshold for P after smoothing (default 0; effective range 0.05–0.3).
@@ -51,42 +52,44 @@ Algebraic Multigrid preconditioned solver for use with `SolverSetup`.
 - `fine_float`, `coarse_float`: float precision per tier (default `Float64`, `Float32`).
 """
 struct AMG{S<:AbstractSmoother, C<:AMGCycle} <: AbstractLinearSolver
-    smoother      :: S
-    cycle         :: C
-    max_levels    :: Int
-    coarsest_size :: Int
-    pre_sweeps    :: Int
-    post_sweeps   :: Int
-    coarse_sweeps :: Int
-    strength      :: Float64
-    coarsening    :: Symbol
-    update_freq   :: Int
-    krylov        :: Symbol
-    fine_float    :: DataType
-    coarse_float  :: DataType
-    smooth_P      :: Bool
-    trunc_P       :: Float64
+    smoother          :: S
+    cycle             :: C
+    max_levels        :: Int
+    coarsest_size     :: Int
+    direct_solve_size :: Int
+    pre_sweeps        :: Int
+    post_sweeps       :: Int
+    coarse_sweeps     :: Int
+    strength          :: Float64
+    coarsening        :: Symbol
+    update_freq       :: Int
+    krylov            :: Symbol
+    fine_float        :: DataType
+    coarse_float      :: DataType
+    smooth_P          :: Bool
+    trunc_P           :: Float64
 end
 
 AMG(;
-    smoother      = JacobiSmoother(2, 2/3, zeros(0)),
-    cycle         = VCycle(),
-    max_levels    = 15,
-    coarsest_size = 50000,
-    pre_sweeps    = 2,
-    post_sweeps   = 2,
-    coarse_sweeps = 50,
-    strength      = 0.1,
-    coarsening    = :SA,
-    update_freq   = 2,
-    krylov        = :cg,
-    fine_float    = Float64,
-    coarse_float  = Float32,
-    smooth_P      = true,
-    trunc_P       = 0.0,
-) = AMG(smoother, cycle, max_levels, coarsest_size, pre_sweeps, post_sweeps, coarse_sweeps,
-        Float64(strength), coarsening, update_freq, krylov, fine_float, coarse_float,
-        smooth_P, Float64(trunc_P))
+    smoother          = JacobiSmoother(2, 2/3, zeros(0)),
+    cycle             = VCycle(),
+    max_levels        = 15,
+    coarsest_size     = 50000,
+    direct_solve_size = 20,
+    pre_sweeps        = 2,
+    post_sweeps       = 2,
+    coarse_sweeps     = 50,
+    strength          = 0.1,
+    coarsening        = :SA,
+    update_freq       = 2,
+    krylov            = :cg,
+    fine_float        = Float64,
+    coarse_float      = Float32,
+    smooth_P          = true,
+    trunc_P           = 0.0,
+) = AMG(smoother, cycle, max_levels, coarsest_size, direct_solve_size, pre_sweeps, post_sweeps,
+        coarse_sweeps, Float64(strength), coarsening, update_freq, krylov, fine_float,
+        coarse_float, smooth_P, Float64(trunc_P))
 
 # ─── Host-only per-level extras ───────────────────────────────────────────────
 

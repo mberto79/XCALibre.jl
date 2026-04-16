@@ -59,6 +59,37 @@ fi
 
 LAST_RATIO="n/a"
 
+# ── Pre-launch state check ─────────────────────────────────────────────────────
+echo "══════════════════════════════════════════════════════════════"
+echo "  Pre-launch: state check + recovery"
+echo "══════════════════════════════════════════════════════════════"
+PRE_LOG="${LOG_DIR}/pre_launch_claude.txt"
+echo "[$(date '+%H:%M:%S')] Invoking Claude for state check (model=${CLAUDE_MODEL})..."
+echo "  Log: ${PRE_LOG}"
+
+PRE_PROMPT="$(cat amg_loop_prompt.md)
+
+---
+MODE: PRE-LAUNCH STATE CHECK
+See ## Pre-launch Mode section for instructions.
+BENCHMARK LOG: F1-fetchCFD_Minimal/amg_loop_results.txt"
+
+set +e
+claude --model "${CLAUDE_MODEL}" \
+    --allowedTools Edit,Read,Write,Bash,Grep,Glob \
+    --max-turns 15 \
+    --permission-mode acceptEdits \
+    -p "$PRE_PROMPT" \
+    2>&1 | tee "$PRE_LOG"
+PRE_EXIT=${PIPESTATUS[0]}
+set -e
+
+if [ "$PRE_EXIT" -ne 0 ]; then
+    echo "WARNING: Pre-launch Claude exited with code ${PRE_EXIT}. Check ${PRE_LOG}."
+fi
+echo "[$(date '+%H:%M:%S')] Pre-launch check complete."
+echo ""
+
 for iter in $(seq 1 "$MAX_ITER"); do
     TIMESTAMP="$(date '+%Y-%m-%d %H:%M:%S')"
     echo ""

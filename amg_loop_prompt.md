@@ -42,6 +42,16 @@ so you don't repeat closed approaches. However, the last 4 approaches may have b
 - **One change per iteration** — resist the urge to make multiple changes at once
 - Follow the coding conventions in CLAUDE.md
 
+## Pre-launch Mode
+
+When `MODE: PRE-LAUNCH STATE CHECK` appears in your prompt, follow these steps ONLY:
+
+1. Read `amg_loop_state.md` and `F1-fetchCFD_Minimal/amg_loop_results.txt`
+2. Check `src/Solve/AMG/` and `ext/XCALibre_CUDAExt.jl` for broken/partial code from a failed previous iteration (syntax errors, half-applied changes, mismatched types)
+3. If broken code found: fix it and note the fix in `amg_loop_state.md` under a "Recovery" entry
+4. If state is clean: write a one-line confirmation to stdout and exit
+5. **Do NOT make new optimizations** — recovery and state validation only
+
 ## Context You Already Have
 
 CLAUDE.md is auto-loaded (full project guide). Your project memory files are also loaded.

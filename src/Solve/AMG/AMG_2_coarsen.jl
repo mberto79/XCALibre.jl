@@ -5,12 +5,7 @@
 """
     amg_coarsen(A_cpu, strength, strategy) → agg_ids
 
-Given a CSR matrix on CPU, return a `Vector{Int}` mapping each row to an aggregate
-index (1-based). Aggregates define the coarse degrees of freedom.
-
-Strategies:
-- `:SA` — Smoothed Aggregation (parallel-friendly MIS-style)
-- `:RS` — Ruge–Stüben classical AMG (strength-of-connection + C/F splitting)
+Map each fine row to an aggregate (1-based). Strategies: `:SA` (Smoothed Aggregation) or `:RS` (Ruge–Stüben).
 """
 function amg_coarsen(A::SparseMatrixCSR, strength::Float64, strategy::Symbol)
     if strategy === :SA
@@ -23,7 +18,7 @@ function amg_coarsen(A::SparseMatrixCSR, strength::Float64, strategy::Symbol)
 end
 
 # ─── Shared helper: build flat-CSR strong-connection graph ────────────────────
-# Two-pass (count then fill); strong_adj[strong_ptr[i]:strong_ptr[i+1]-1] = neighbours of i.
+# Two-pass (count → exact pre-allocation → fill).
 
 function _build_strong_csr(A::SparseMatrixCSR, θ::Float64, max_offd::AbstractVector)
     n      = size(A, 1)
@@ -112,8 +107,7 @@ function _coarsen_SA(A::SparseMatrixCSR, θ::Float64)
 end
 
 # ─── Ruge–Stüben (Classical AMG) ──────────────────────────────────────────────
-# Greedy C/F splitting by decreasing lambda (# strong dependents). One-pass sort
-# replaces the O(n²) argmax loop; lambda updates omitted (near-isotropic FVM meshes).
+# Greedy C/F splitting by decreasing lambda (# strong dependents). One-pass sort replaces O(n²) argmax.
 
 function _coarsen_RS(A::SparseMatrixCSR, θ::Float64)
     n      = size(A, 1)
@@ -184,7 +178,7 @@ function _coarsen_RS(A::SparseMatrixCSR, θ::Float64)
 end
 
 # ─── Pairwise aggregation (fallback) ─────────────────────────────────────────
-# Greedy max-weight matching; guarantees ≥ 2× coarsening. Fallback when SA/RS stagnates.
+# Greedy max-weight matching; guarantees ≥ 2× coarsening.
 
 function _coarsen_pairwise(A::SparseMatrixCSR)
     n      = size(A, 1)

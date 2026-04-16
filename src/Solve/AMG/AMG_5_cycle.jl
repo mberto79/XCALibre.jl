@@ -1,15 +1,6 @@
 # ─── Multigrid cycles ─────────────────────────────────────────────────────────
-#
-# Two-tier design: the fine level (Float64) is handled separately from the
-# coarse levels (Float32). The boundary between level 1 and level 2 requires
-# two cast kernels (Float64↔Float32); all other transitions are within Float32.
-#
-# Fine level: `vcycle_fine!` / `wcycle_fine!` — accept `fine::LFType` and
-#             `coarse::Vector{LCType}`; specialised at the concrete types.
-# Coarse levels: `vcycle_coarse!` / `wcycle_coarse!` — recurse on `Vector{LCType}`.
-#
-# Both are type-stable: every field access (level.A, level.x, …) is concrete,
-# every kernel argument is concrete — no boxing, no dynamic dispatch.
+# Two-tier design: fine level (Float64) separate from coarse (Float32) with cast kernels at boundary.
+# Both cycles are type-stable: concrete field accesses and kernel arguments (no dispatch).
 
 # ── Coarse-level V-cycle (all Float32) ────────────────────────────────────────
 
@@ -19,7 +10,7 @@ function vcycle_coarse!(coarse::Vector{<:MultigridLevel}, lvl::Int,
     nc = length(coarse)
 
     if lvl == nc
-        amg_coarse_solve!(L, backend)
+        amg_coarse_solve!(L, opts.coarse_sweeps, backend)
         return
     end
 
@@ -39,16 +30,8 @@ function vcycle_coarse!(coarse::Vector{<:MultigridLevel}, lvl::Int,
 end
 
 # ── Fine-level V-cycle entry (Float64 fine, Float32 coarse) ───────────────────
-# The two amg_cast_copy! calls are the only mixed-precision operations:
-#   fine.r (Float64) → fine.extras.r_Tc (Float32)  before restriction
-#   fine.extras.tmp_Tc (Float32) → fine.tmp (Float64) after prolongation
-#
-# fine.R and fine.P are stored as Float32 sparse matrices so that the boundary
-# SpMVs (R*r_Tc and P*x_c) run entirely in Float32, halving bandwidth at the
-# fine→coarse and coarse→fine transfer steps.
-#
-# The `TcVec` type parameter from `LevelExtras{Tv, TcVec, CpuSpT}` is used to
-# annotate r_Tc / tmp_Tc at the call site — keeps the cycle body fully type-stable.
+# Two cast kernels at fine↔coarse boundary; fine P/R stored as Float32 (bandwidth-efficient).
+# TcVec parameter keeps r_Tc/tmp_Tc type-stable at call site.
 
 function vcycle_fine!(
     fine::MultigridLevel{<:Any, <:Any, <:Any, <:Any, <:LevelExtras{<:Any, TcVec}},
@@ -57,31 +40,28 @@ function vcycle_fine!(
 ) where {TcVec}
     if isempty(coarse)
         # Single-level hierarchy: fine IS the coarsest level; direct solve only.
-        amg_coarse_solve!(fine, backend)
+        amg_coarse_solve!(fine, opts.coarse_sweeps, backend)
         return
     end
 
-    # Extract boundary buffers (safe: coarse is non-empty, so TcVec ≠ Nothing).
+    # Extract boundary buffers (safe: coarse non-empty ⟹ TcVec ≠ Nothing).
     r_Tc   = fine.extras.r_Tc::TcVec
     tmp_Tc = fine.extras.tmp_Tc::TcVec
 
     apply_level_smoother!(fine, opts.pre_sweeps, opts, backend, workgroup)
-
     amg_residual!(fine.r, fine.A, fine.x, fine.b, backend, workgroup)
 
     Lc = coarse[1]
-    # Fine→coarse boundary: cast residual Float64→Float32, then restrict.
+    # Fine→coarse: cast residual Float64→Float32, then restrict.
     amg_cast_copy!(r_Tc, fine.r, backend, workgroup)
     amg_spmv!(Lc.b, fine.R, r_Tc, backend, workgroup)
     amg_zero!(Lc.x, backend, workgroup)
-
     vcycle_coarse!(coarse, 1, opts, backend, workgroup)
 
-    # Coarse→fine boundary: prolongate in Float32, then cast back to Float64.
+    # Coarse→fine: prolongate in Float32, then cast to Float64.
     amg_spmv!(tmp_Tc, fine.P, Lc.x, backend, workgroup)
     amg_cast_copy!(fine.tmp, tmp_Tc, backend, workgroup)
     amg_axpy!(fine.x, fine.tmp, one(eltype(fine.x)), backend, workgroup)
-
     apply_level_smoother!(fine, opts.post_sweeps, opts, backend, workgroup)
 end
 
@@ -93,7 +73,7 @@ function wcycle_coarse!(coarse::Vector{<:MultigridLevel}, lvl::Int,
     nc = length(coarse)
 
     if lvl == nc
-        amg_coarse_solve!(L, backend)
+        amg_coarse_solve!(L, opts.coarse_sweeps, backend)
         return
     end
 
@@ -123,7 +103,7 @@ function wcycle_fine!(
     opts::AMG, backend, workgroup
 ) where {TcVec}
     if isempty(coarse)
-        amg_coarse_solve!(fine, backend)
+        amg_coarse_solve!(fine, opts.coarse_sweeps, backend)
         return
     end
 
@@ -145,7 +125,7 @@ function wcycle_fine!(
     amg_cast_copy!(fine.tmp, tmp_Tc, backend, workgroup)
     amg_axpy!(fine.x, fine.tmp, one(eltype(fine.x)), backend, workgroup)
 
-    # Second descent
+    # Second descent (W-cycle extra cycle).
     amg_residual!(fine.r, fine.A, fine.x, fine.b, backend, workgroup)
     amg_cast_copy!(r_Tc, fine.r, backend, workgroup)
     amg_spmv!(Lc.b, fine.R, r_Tc, backend, workgroup)
@@ -154,11 +134,10 @@ function wcycle_fine!(
     amg_spmv!(tmp_Tc, fine.P, Lc.x, backend, workgroup)
     amg_cast_copy!(fine.tmp, tmp_Tc, backend, workgroup)
     amg_axpy!(fine.x, fine.tmp, one(eltype(fine.x)), backend, workgroup)
-
     apply_level_smoother!(fine, opts.post_sweeps, opts, backend, workgroup)
 end
 
-# ── Dispatch on cycle type (takes workspace for two-tier access) ───────────────
+# ── Dispatch on cycle type (accesses workspace for two-tier types) ──────────────
 
 function run_cycle!(ws::AMGWorkspace{LFType}, opts::AMG, ::VCycle,
                      backend, workgroup) where {LFType}

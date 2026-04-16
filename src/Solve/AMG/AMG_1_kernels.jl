@@ -1,5 +1,4 @@
 # ─── Backend-agnostic sparse/vector KA kernels used by the AMG hierarchy ──────
-# All kernels follow the _setup(backend, workgroup, ndrange) idiom.
 
 # ── SpMV: y = A * x  (CSR, row-per-workitem) ──────────────────────────────────
 
@@ -80,9 +79,7 @@ function amg_copy!(dst, src, backend, workgroup)
     kernel!(dst, src)
 end
 
-# ── Type-converting copy: dst[i] = convert(eltype(dst), src[i]) ───────────────
-# Handles Float64→Float32 at the fine→coarse restriction boundary and
-# Float32→Float64 at the coarse→fine prolongation boundary.
+# ── Type-converting copy (mixed-precision boundaries: fine↔coarse) ─────────────
 
 @kernel function _amg_cast_copy!(dst, src)
     i = @index(Global)
@@ -108,8 +105,7 @@ function amg_zero!(v, backend, workgroup)
     kernel!(v)
 end
 
-# ── Compute inverse diagonal: Dinv[i] = 1 / A[i,i] ───────────────────────────
-# Slow fallback: searches each row for the diagonal entry (causes warp divergence on GPU).
+# ── Compute inverse diagonal: Dinv[i] = 1 / A[i,i] (slow: row scan, warp divergence) ────
 
 @kernel function _amg_build_Dinv!(Dinv, rowptr, colval, nzval)
     row = @index(Global)
@@ -132,8 +128,7 @@ function amg_build_Dinv!(Dinv, A, backend, workgroup)
     kernel!(Dinv, rowptr, colval, nzval)
 end
 
-# ── Fast inverse diagonal using pre-computed diagonal pointer ─────────────────
-# diag_ptr[row] holds the 1-based nzval index of the diagonal entry — no row scan, no warp divergence.
+# ── Fast inverse diagonal using pre-computed diagonal pointer (no row scan) ────
 
 @kernel function _amg_build_Dinv_fast!(Dinv, nzval, diag_ptr)
     row = @index(Global)
@@ -151,7 +146,6 @@ function amg_build_Dinv!(Dinv, A, diag_ptr::AbstractVector{<:Integer}, backend, 
 end
 
 # ── Build diagonal pointer on CPU ─────────────────────────────────────────────
-# Returns Vector{Int32} where ptr[i] is the 1-based nzval index of A[i,i].
 
 function _build_diag_ptr_cpu(A::SparseMatricesCSR.SparseMatrixCSR)
     n   = size(A, 1)
@@ -168,9 +162,7 @@ function _build_diag_ptr_cpu(A::SparseMatricesCSR.SparseMatrixCSR)
 end
 
 # ── Build l1-scaled inverse diagonal: Dinv[i] = 1 / Σ_j |a_ij| ──────────────
-# Denominator is the l1 row norm (includes diagonal). For FVM M-matrices this
-# bounds ρ(D_l1⁻¹A) ≤ 1 by construction, making Jacobi convergent with ω = 1.
-# Reference: Baker, Falgout, Kolev, Yang, SISC 2011 (hypre BoomerAMG default).
+# For FVM M-matrices: ρ(D_l1⁻¹A) ≤ 1 by construction, converges with ω=1.
 
 @kernel function _amg_build_l1_Dinv!(Dinv, rowptr, nzval)
     row = @index(Global)
@@ -210,9 +202,7 @@ function amg_residual!(r, A, x, b, backend, workgroup)
     kernel!(r, rowptr, colval, nzval, x, b)
 end
 
-# ── L1-Jacobi sweep (fused, ping-pong) ───────────────────────────────────────
-# Full row sum (diagonal included); x_new[i] = x[i] + ω · Dinv_l1[i] · r[i].
-# Correct for D_l1⁻¹ = 1/||a_i||_1; converges to the true solution of Ax=b.
+# ── L1-Jacobi sweep (fused, ping-pong); full row sum including diagonal ────────
 
 @kernel function _amg_l1jacobi_sweep!(x_new, x, Dinv_l1, rowptr, colval, nzval, b, omega)
     row = @index(Global)
@@ -232,12 +222,10 @@ function amg_l1jacobi_sweep!(x_new, x, Dinv_l1, A, b, omega, backend, workgroup)
     kernel!(x_new, x, Dinv_l1, rowptr, colval, nzval, b, omega)
 end
 
-# ── L2 norm (delegates to LinearAlgebra on CPU; uses dot on GPU via LA) ────────
-# Note: LinearAlgebra.norm works on GPU arrays via GPUArrays.jl/CUDA extensions.
+# ── L2 norm (delegates to LinearAlgebra; GPU support via extensions) ──────────
 amg_norm(v) = norm(v)
 
 # ── Jacobi sweep kernel (used by AMG internal smoothing) ──────────────────────
-# One sweep: x_new[i] = ω/a_ii * (b[i] - Σ_{j≠i} a_ij*x[j]) + (1-ω)*x[i]
 
 @kernel function _amg_jacobi_sweep!(x_new, x, Dinv, rowptr, colval, nzval, b, omega)
     row = @index(Global)
@@ -260,8 +248,7 @@ function amg_jacobi_sweep!(x_new, x, Dinv, A, b, omega, backend, workgroup)
     kernel!(x_new, x, Dinv, rowptr, colval, nzval, b, omega)
 end
 
-# ── Correction-form Jacobi update: x[i] += ω * Dinv[i] * r[i] ────────────────
-# Equivalent to damped Jacobi without a tmp-buffer swap.
+# ── Correction-form Jacobi update (damped without buffer swap) ───────────────
 
 @kernel function _amg_dinv_axpy!(x, Dinv, r, omega)
     i = @index(Global)
@@ -274,8 +261,7 @@ function amg_dinv_axpy!(x, Dinv, r, omega, backend, workgroup)
     kernel!(x, Dinv, r, omega)
 end
 
-# ── D⁻¹-scaled AXPBY: y[i] = alpha * Dinv[i] * x[i] + beta * y[i] ───────────
-# Used by Chebyshev smoother direction update: p = alpha * D⁻¹r + beta * p_old.
+# ── D⁻¹-scaled AXPBY (used by Chebyshev smoother direction update) ────────────
 
 @kernel function _amg_dinv_axpby!(y, Dinv, x, alpha, beta)
     i = @index(Global)
@@ -288,12 +274,22 @@ function amg_dinv_axpby!(y, Dinv, x, alpha, beta, backend, workgroup)
     kernel!(y, Dinv, x, alpha, beta)
 end
 
-# ── GPU-resident RAP: Ac = R·A·P (one thread per coarse row) ─────────────────
-# Exploits unsmoothed aggregation: P has exactly 1 nnz per fine row, so
-# agg[j] = _colval(L.P)[j] gives the coarse aggregate of fine node j.
-# Ac rows are short (≤ 30 entries for 3D FVM), so the inner linear search
-# into Ac_colval has negligible cost and avoids any shared-memory allocation.
-# All arrays remain on-device; no PCIe transfer.
+# ── Jacobi correction (on entry x_new holds Ax; on exit, the updated iterate) ─
+
+@kernel function _amg_jacobi_correction!(x_new, x, Dinv, b, omega)
+    i = @index(Global)
+    @inbounds x_new[i] = x[i] + omega * Dinv[i] * (b[i] - x_new[i])
+end
+
+function amg_jacobi_correction!(x_new, x, Dinv, b, omega, backend, workgroup)
+    n = length(x_new)
+    kernel! = _amg_jacobi_correction!(_setup(backend, workgroup, n)...)
+    kernel!(x_new, x, Dinv, b, omega)
+end
+
+# ── GPU-resident RAP: Ac = R·A·P (one thread per coarse row, unsmoothed P) ────
+# P has 1 nnz/row; agg[j] = colval(P)[j] = coarse aggregate of fine node j.
+# Linear search in short Ac rows; all on-device, no PCIe.
 
 @kernel function _amg_rap_row!(
     Ac_nzval, Ac_rowptr, Ac_colval,
@@ -309,9 +305,7 @@ end
         for k in ac_start:ac_end
             Ac_nzval[k] = zero(TOut)
         end
-        # scatter R[c1, i] * A[i, j] into Ac[c1, agg[j]]
-        # Cast both operands to TOut so the fine-level Float64 A does not
-        # promote the entire scatter to Float64 on the GPU.
+        # scatter R[c1, i] * A[i, j] into Ac[c1, agg[j]]; cast to TOut to avoid Float64 promotion
         for r_idx in R_rowptr[c1]:(R_rowptr[c1 + 1] - 1)
             i   = R_colval[r_idx]
             riv = TOut(R_nzval[r_idx])
@@ -341,5 +335,141 @@ function amg_rap_update!(Lc, L, backend, workgroup)
             A_nzval,  A_rowptr,  A_colval,
             R_nzval,  R_rowptr,  R_colval,
             agg)
+end
+
+# ── GPU-resident RAP for smoothed P: Ac = R·A·P (general multi-nnz P) ─────────
+# Same thread-per-coarse-row, but P can have multiple nnz/row (smoothed prolongation).
+
+@kernel function _amg_rap_row_smooth!(
+    Ac_nzval, Ac_rowptr, Ac_colval,
+    A_nzval,  A_rowptr,  A_colval,
+    R_nzval,  R_rowptr,  R_colval,
+    P_nzval,  P_rowptr,  P_colval)
+    c1 = @index(Global)
+    @inbounds begin
+        ac_start = Ac_rowptr[c1]
+        ac_end   = Ac_rowptr[c1 + 1] - 1
+        TOut = eltype(Ac_nzval)
+        for k in ac_start:ac_end
+            Ac_nzval[k] = zero(TOut)
+        end
+        for r_idx in R_rowptr[c1]:(R_rowptr[c1 + 1] - 1)
+            i   = R_colval[r_idx]
+            riv = TOut(R_nzval[r_idx])
+            for a_idx in A_rowptr[i]:(A_rowptr[i + 1] - 1)
+                j   = A_colval[a_idx]
+                aiv = riv * TOut(A_nzval[a_idx])
+                for p_idx in P_rowptr[j]:(P_rowptr[j + 1] - 1)
+                    c2 = P_colval[p_idx]
+                    v  = aiv * TOut(P_nzval[p_idx])
+                    for k in ac_start:ac_end
+                        if Ac_colval[k] == c2
+                            Ac_nzval[k] += v
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+function amg_rap_update_smooth!(Lc, L, backend, workgroup)
+    Ac_nzval, Ac_colval, Ac_rowptr = get_sparse_fields(Lc.A)
+    A_nzval,  A_colval,  A_rowptr  = get_sparse_fields(L.A)
+    R_nzval,  R_colval,  R_rowptr  = get_sparse_fields(L.R)
+    P_nzval,  P_colval,  P_rowptr  = get_sparse_fields(L.P)
+    nc  = length(Lc.Dinv)
+    kernel! = _amg_rap_row_smooth!(_setup(backend, workgroup, nc)...)
+    kernel!(Ac_nzval, Ac_rowptr, Ac_colval,
+            A_nzval,  A_rowptr,  A_colval,
+            R_nzval,  R_rowptr,  R_colval,
+            P_nzval,  P_rowptr,  P_colval)
+end
+
+# ── In-place A·P update into pre-allocated AP (one thread per fine row) ────────
+# Fixed sparsity pattern at setup; only nzval updates. Eliminates SpGEMM allocation.
+
+@kernel function _amg_ap_update!(
+    AP_nzval, AP_rowptr, AP_colval,
+    A_nzval,  A_rowptr,  A_colval,
+    P_nzval,  P_rowptr,  P_colval)
+    i = @index(Global)   # fine row
+    @inbounds begin
+        ap_start = AP_rowptr[i]
+        ap_end   = AP_rowptr[i + 1] - 1
+        TOut = eltype(AP_nzval)
+        for k in ap_start:ap_end
+            AP_nzval[k] = zero(TOut)
+        end
+        for a_idx in A_rowptr[i]:(A_rowptr[i + 1] - 1)
+            j   = A_colval[a_idx]
+            aiv = TOut(A_nzval[a_idx])
+            for p_idx in P_rowptr[j]:(P_rowptr[j + 1] - 1)
+                c2 = P_colval[p_idx]
+                v  = aiv * TOut(P_nzval[p_idx])
+                for k in ap_start:ap_end
+                    if AP_colval[k] == c2
+                        AP_nzval[k] += v
+                        break
+                    end
+                end
+            end
+        end
+    end
+end
+
+function amg_ap_update!(AP, L, backend, workgroup)
+    AP_nzval, AP_colval, AP_rowptr = get_sparse_fields(AP)
+    A_nzval,  A_colval,  A_rowptr  = get_sparse_fields(L.A)
+    P_nzval,  P_colval,  P_rowptr  = get_sparse_fields(L.P)
+    nf = length(L.Dinv)
+    kernel! = _amg_ap_update!(_setup(backend, workgroup, nf)...)
+    kernel!(AP_nzval, AP_rowptr, AP_colval,
+            A_nzval,  A_rowptr,  A_colval,
+            P_nzval,  P_rowptr,  P_colval)
+end
+
+# ── In-place R·AP update into pre-allocated Ac (one thread per coarse row) ─────
+# Second half of split RAP: scatters R[c1, i] * AP[i, c2] into Ac[c1, c2].
+
+@kernel function _amg_rp_update!(
+    Ac_nzval, Ac_rowptr, Ac_colval,
+    AP_nzval, AP_rowptr, AP_colval,
+    R_nzval,  R_rowptr,  R_colval)
+    c1 = @index(Global)   # coarse row
+    @inbounds begin
+        ac_start = Ac_rowptr[c1]
+        ac_end   = Ac_rowptr[c1 + 1] - 1
+        TOut = eltype(Ac_nzval)
+        for k in ac_start:ac_end
+            Ac_nzval[k] = zero(TOut)
+        end
+        for r_idx in R_rowptr[c1]:(R_rowptr[c1 + 1] - 1)
+            i   = R_colval[r_idx]
+            riv = TOut(R_nzval[r_idx])
+            for ap_idx in AP_rowptr[i]:(AP_rowptr[i + 1] - 1)
+                c2 = AP_colval[ap_idx]
+                v  = riv * TOut(AP_nzval[ap_idx])
+                for k in ac_start:ac_end
+                    if Ac_colval[k] == c2
+                        Ac_nzval[k] += v
+                        break
+                    end
+                end
+            end
+        end
+    end
+end
+
+function amg_rp_update!(Lc, AP, L, backend, workgroup)
+    Ac_nzval, Ac_colval, Ac_rowptr = get_sparse_fields(Lc.A)
+    AP_nzval, AP_colval, AP_rowptr = get_sparse_fields(AP)
+    R_nzval,  R_colval,  R_rowptr  = get_sparse_fields(L.R)
+    nc = length(Lc.Dinv)
+    kernel! = _amg_rp_update!(_setup(backend, workgroup, nc)...)
+    kernel!(Ac_nzval, Ac_rowptr, Ac_colval,
+            AP_nzval, AP_rowptr, AP_colval,
+            R_nzval,  R_rowptr,  R_colval)
 end
 

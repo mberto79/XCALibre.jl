@@ -3,82 +3,64 @@
 # They are distinct from the pre-solver JacobiSmoother in Smoothers_jacobi.jl.
 
 # ─── Damped Jacobi (synchronous, ping-pong) ───────────────────────────────────
-# Uses the two-buffer _amg_jacobi_sweep! kernel so reads and writes never race.
-# This is required for use as a PCG preconditioner: the preconditioner must be
-# a fixed linear map (chaotic in-place Jacobi is non-deterministic, breaking
-# CG's A-conjugacy). `level.tmp` is the second ping-pong buffer.
+# Two-buffer kernel ensures deterministic preconditioner (required for PCG A-conjugacy).
 
 """
     amg_smooth!(level, n_sweeps, omega, backend, workgroup)
 
-Apply `n_sweeps` of synchronous damped Jacobi using ping-pong between
-`level.x` and `level.tmp`. Ensures the preconditioner is deterministic and
-symmetric — mandatory for correctness when AMG is a PCG preconditioner.
+Apply n_sweeps damped Jacobi with ping-pong (deterministic, mandatory for PCG).
 """
 function amg_smooth!(level, n_sweeps, omega, backend, workgroup)
     Tv    = eltype(level.x)
-    omega_t = Tv(omega)   # prevent Float64 scalar from promoting Float32 kernel args
+    omega_t = Tv(omega)   # prevent Float64 from promoting Float32 kernel args
     src = level.x
     dst = level.tmp
     for _ in 1:n_sweeps
         amg_jacobi_sweep!(dst, src, level.Dinv, level.A, level.b, omega_t, backend, workgroup)
         src, dst = dst, src
     end
-    # After an odd number of sweeps the result ends in what started as level.tmp; copy back.
+    # After odd sweeps, result is in level.tmp; copy back to level.x.
     src !== level.x && amg_copy!(level.x, src, backend, workgroup)
 end
 
 # ─── Chebyshev polynomial smoother ────────────────────────────────────────────
-# Preconditioned Chebyshev targeting the operator D⁻¹A with eigenvalues in
-# [λ_min, λ_max] (bounded by Gershgorin on D⁻¹A at setup time).
-# All corrections apply D⁻¹ so the bounds and the iterated operator match.
-# References: Saad "Iterative Methods for Sparse Linear Systems" §12.1;
-#             Adams et al., "Parallel Multigrid Smoothing", §3.
+# Preconditioned Chebyshev for D⁻¹A with eigenvalue window [lo·ρ, hi·ρ].
+# All corrections scaled by D⁻¹ for consistency with eigenvalue bounds.
 
 """
     amg_smooth_chebyshev!(level, smoother, backend, workgroup)
 
-Apply a degree-k preconditioned Chebyshev iteration targeting D⁻¹A.
-Eigenvalue window [λ_min, λ_max] ≈ [lo·ρ, hi·ρ] where ρ = ρ(D⁻¹A).
-Corrections are scaled by D⁻¹ at every step — required for consistency with
-the eigenvalue bounds computed by `_gershgorin_rho`.
+Preconditioned Chebyshev (degree-k) for D⁻¹A. Window [lo·ρ, hi·ρ]; all steps scaled by D⁻¹.
 """
 function amg_smooth_chebyshev!(level, smoother::Chebyshev, backend, workgroup)
     (; degree) = smoother
     Tv  = eltype(level.x)
 
-    # Convert smoother parameters to the level's float type to prevent
-    # Float64 scalar contamination when smoother was constructed with Float64 literals.
+    # Convert to level float type to prevent promotion from Float64 literals.
     lo  = Tv(smoother.lo)
     hi  = Tv(smoother.hi)
     rho = Tv(level.extras.rho)
-
-    # Eigenvalue bounds for D⁻¹A
     λ_max = hi * rho
     λ_min = lo * rho
-
     d = (λ_max + λ_min) / 2   # centre
     c = (λ_max - λ_min) / 2   # radius
 
-    # Step 0: r = b - Ax;  x += (1/d) * D⁻¹ r
+    # Step 0: r = b - Ax; x += (1/d) * D⁻¹ r
     amg_residual!(level.r, level.A, level.x, level.b, backend, workgroup)
     alpha = one(Tv) / d
     amg_dinv_axpy!(level.x, level.Dinv, level.r, alpha, backend, workgroup)
 
     degree == 1 && return
-
-    # p₀ = step taken in step 0 = (1/d) D⁻¹ r₀  (the actual update direction, not just D⁻¹ r)
+    # p₀ = (1/d) D⁻¹ r₀ (actual update direction for Chebyshev recursion).
     amg_dinv_axpby!(level.tmp, level.Dinv, level.r, alpha, zero(Tv), backend, workgroup)
 
     rho_prev = one(Tv)
     for _ in 2:degree
         amg_residual!(level.r, level.A, level.x, level.b, backend, workgroup)
-
         rho_new = one(Tv) / (2*d/c - rho_prev)
-        alpha_k = rho_new * 2 / c          # ρ_k · (2/δ)
-        beta_k  = rho_new * rho_prev       # ρ_k · ρ_{k-1}  (positive)
-
-        # p_k = alpha_k · D⁻¹ r + beta_k · p_{k-1}  (Adams et al. 2003, eq. 3)
+        alpha_k = rho_new * 2 / c
+        beta_k  = rho_new * rho_prev
+        # p_k = alpha_k · D⁻¹ r + beta_k · p_{k-1}
         amg_dinv_axpby!(level.tmp, level.Dinv, level.r, alpha_k, beta_k, backend, workgroup)
         amg_axpy!(level.x, level.tmp, one(Tv), backend, workgroup)
 
@@ -87,13 +69,11 @@ function amg_smooth_chebyshev!(level, smoother::Chebyshev, backend, workgroup)
 end
 
 # ─── L1-Jacobi smoother (synchronous ping-pong) ───────────────────────────────
-# Uses the fused _amg_l1jacobi_sweep! kernel so the full residual is computed
-# from a snapshot of x, then x is updated — no diagonal-exclusion artefact.
-# Ping-pong ensures the preconditioner is a fixed symmetric linear map (valid for PCG).
+# Fused kernel: full residual from snapshot, then update. Ping-pong for deterministic PCG.
 
 function amg_smooth_l1jacobi!(level, n_sweeps, omega, backend, workgroup)
     Tv    = eltype(level.x)
-    omega_t = Tv(omega)   # prevent Float64 scalar from promoting Float32 kernel args
+    omega_t = Tv(omega)   # prevent Float64 from promoting Float32 kernel args
     src = level.x
     dst = level.tmp
     for _ in 1:n_sweeps

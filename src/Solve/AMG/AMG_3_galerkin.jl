@@ -8,7 +8,7 @@
 """
     build_tentative_P(n_fine, nagg, agg) → SparseMatrixCSR
 
-P̂[i, agg[i]] = 1.0  (one column per aggregate).
+Piecewise-constant: P̂[i, agg[i]] = 1.0.
 """
 function build_tentative_P(n_fine::Int, nagg::Int, agg::Vector{Int})
     rows = collect(1:n_fine)
@@ -22,9 +22,7 @@ end
 """
     smooth_prolongation(A, P_tent, ω) → SparseMatrixCSR
 
-Applies one step of Jacobi smoothing to the tentative prolongation:
-    P = P̂ - ω * D⁻¹ * A * P̂
-The product A*P̂ is performed column by column.
+Jacobi smoothing: P = P̂ - ω * D⁻¹ * A * P̂. Compute A*P̂ column by column.
 """
 function smooth_prolongation(A::SparseMatrixCSR{Bi,Tv,Ti},
                               P_tent::SparseMatrixCSR,
@@ -43,8 +41,7 @@ function smooth_prolongation(A::SparseMatrixCSR{Bi,Tv,Ti},
     # P = P̂ - ω * D⁻¹ * (A * P̂)
     rowptr_P = P_tent.rowptr; colval_P = P_tent.colval; nzval_P = P_tent.nzval
 
-    # Upper bound on nnz(P): each row of A has degree d, each A[i,j] maps to one
-    # aggregate column → nnz(P) ≤ nnz(A) + n.  Pre-sizing avoids all push! resizing.
+    # Upper bound on nnz(P): ≤ nnz(A) + n. Pre-size to avoid push! resizing.
     nnz_est = length(nzval_A) + n
     row_out = Int[]; sizehint!(row_out, nnz_est)
     col_out = Int[]; sizehint!(col_out, nnz_est)
@@ -54,7 +51,7 @@ function smooth_prolongation(A::SparseMatrixCSR{Bi,Tv,Ti},
     used = Int[];   sizehint!(used, 16)
 
     @inbounds for i in 1:n
-        # Collect contributions: P_i = P̂_i - ω * (1/a_ii) * (A_i · P̂)
+        # Step 1: accumulate (A * P̂)[i, k] for all columns k touched by row i of A*P̂
         for nzi_A in rowptr_A[i]:(rowptr_A[i+1]-1)
             j = colval_A[nzi_A]
             for nzi_P in rowptr_P[j]:(rowptr_P[j+1]-1)
@@ -64,13 +61,18 @@ function smooth_prolongation(A::SparseMatrixCSR{Bi,Tv,Ti},
             end
         end
 
-        # P̂[i, *] — guard against zero diagonal to prevent Inf propagation
+        # Step 2: apply -(ω/a_ii) to ALL accumulated entries (not just the agg[i] column)
         d     = diag_A[i]
         coeff = abs(d) > eps(Tv) ? ω / d : zero(Tv)
+        for k in used
+            tmp[k] = -coeff * tmp[k]
+        end
+
+        # Step 3: add P̂[i, *] back — gives P_smooth = P̂ - ω D⁻¹ A P̂
         for nzi_P in rowptr_P[i]:(rowptr_P[i+1]-1)
             k = colval_P[nzi_P]
             if tmp[k] == zero(Tv); push!(used, k); end
-            tmp[k] = nzval_P[nzi_P] - coeff * tmp[k]
+            tmp[k] += nzval_P[nzi_P]
         end
 
         sort!(used)
@@ -91,8 +93,7 @@ end
 """
     build_restriction(P) → SparseMatrixCSR
 
-Transpose P (n × nc) to get R (nc × n).
-Pre-allocates COO arrays to exact size (nnz(R) = nnz(P)) — no dynamic resizing.
+Transpose P (n × nc) → R (nc × n). Pre-allocate COO arrays to exact size.
 """
 function build_restriction(P::SparseMatrixCSR{Bi,Tv,Ti}) where {Bi,Tv,Ti}
     n, nc    = size(P)
@@ -117,11 +118,7 @@ end
 """
     galerkin_product(R, A, P) → (AP, Ac)
 
-Computes Ac = R * A * P via two SpGEMM steps (R*(A*P)).
-Returns both the intermediate `AP` and the coarse matrix `Ac` so the caller
-can reuse `AP` as the pre-allocated scratch buffer for `_spgemm_nzval!` in
-later numerical updates, avoiding a redundant SpGEMM at setup time.
-All matrices are SparseMatrixCSR on CPU.
+Compute Ac = R * A * P via two SpGEMM steps. Return AP for reuse as pre-allocated scratch in `_spgemm_nzval!`.
 """
 function galerkin_product(R::SparseMatrixCSR{Bi,Tv,Ti},
                            A::SparseMatrixCSR{Bi,Tv,Ti},
@@ -132,8 +129,7 @@ function galerkin_product(R::SparseMatrixCSR{Bi,Tv,Ti},
 end
 
 # ── General SpGEMM for CSR matrices on CPU (Gustavson two-pass) ───────────────
-# Pass 1 (symbolic): count nnz per row → exact COO pre-allocation.
-# Pass 2 (numeric): dense accumulator; flag array reused as first-touch detector.
+# Pass 1 (symbolic): count nnz. Pass 2 (numeric): dense accumulator, flag = first-touch detector.
 
 function _spgemm(A::SparseMatrixCSR{Bi,Tv,Ti},
                  B::SparseMatrixCSR{Bi,Tv,Ti}) where {Bi,Tv,Ti}
@@ -142,7 +138,7 @@ function _spgemm(A::SparseMatrixCSR{Bi,Tv,Ti},
     rowptr_B = B.rowptr; colval_B = B.colval; nzval_B = B.nzval
 
     # ── Pass 1: symbolic ─────────────────────────────────────────────────────
-    # flag[j] == i means column j already counted for row i (avoids duplicate count).
+    # flag[j] == i avoids duplicate count.
     flag      = zeros(Int, n)
     total_nnz = 0
     @inbounds for i in 1:m
@@ -181,9 +177,7 @@ function _spgemm(A::SparseMatrixCSR{Bi,Tv,Ti},
             end
         end
         # Flush accumulator — keep ALL structurally nonzero entries.
-        # Do NOT filter by eps(Tv): the same P/R are reused in update!, but A changes
-        # numerically each outer iteration. Filtering by magnitude would produce a
-        # different sparsity pattern in update! vs setup, breaking _copy_nzval_to_device!.
+        # Do NOT filter by eps: sparsity pattern must match in setup! and update!.
         sort!(used)
         for j in used
             row_out[pos] = i; col_out[pos] = j; val_out[pos] = tmp[j]
@@ -200,15 +194,9 @@ end
 """
     _spgemm_nzval!(C, A, B, tmps, col_to_local)
 
-Compute C = A * B in-place (numerical values only), reusing C's pre-allocated
-sparsity pattern. Uses a compact accumulator strategy to keep the hot buffer in L1:
-
-- `tmps`         : `(max_nnz_per_row(C) × nthreads)` Float accumulator — fits in L1 cache.
-- `col_to_local` : `(ncols_B × nthreads)` Int32 scatter map; for each row i, column j of B
-                   is mapped to a compact local slot 1..nnz_i via this array.
-
-Both arrays must be zero on entry and are left zero on return. No heap allocation.
-Works correctly with `Threads.nthreads() == 1`.
+In-place C = A * B (nzval only), reusing pre-allocated sparsity pattern.
+Compact accumulator strategy: `tmps` (max_nnz_per_row × nthreads) fits in L1.
+Both arrays zero on entry and exit; no heap allocation.
 """
 function _spgemm_nzval!(C::SparseMatrixCSR{Bi,Tv,Ti},
                          A::SparseMatrixCSR,
@@ -225,13 +213,13 @@ function _spgemm_nzval!(C::SparseMatrixCSR{Bi,Tv,Ti},
         tmp  = view(tmps,         :, tid)
         ctol = view(col_to_local, :, tid)
         @inbounds begin
-            # Assign compact local slots for all columns of C in row i
+            # Assign compact local slots for all columns of C in row i.
             c_start = rowptr_C[i]
             c_end   = rowptr_C[i+1] - 1
             for nzi_C in c_start:c_end
                 ctol[colval_C[nzi_C]] = Int32(nzi_C - c_start + 1)
             end
-            # Accumulate A[i,:] × B into compact tmp (indexed via ctol)
+            # Accumulate A[i,:] × B into compact tmp.
             for nzi_A in rowptr_A[i]:(rowptr_A[i+1]-1)
                 k   = colval_A[nzi_A]
                 aik = nzval_A[nzi_A]
@@ -239,7 +227,7 @@ function _spgemm_nzval!(C::SparseMatrixCSR{Bi,Tv,Ti},
                     tmp[ctol[colval_B[nzi_B]]] += aik * nzval_B[nzi_B]
                 end
             end
-            # Write into C and clear both tmp and ctol in one pass
+            # Write C and clear both tmp and ctol in one pass.
             for nzi_C in c_start:c_end
                 j = colval_C[nzi_C]
                 local_slot = nzi_C - c_start + 1
@@ -252,26 +240,51 @@ function _spgemm_nzval!(C::SparseMatrixCSR{Bi,Tv,Ti},
     return C
 end
 
+# ─── Per-row threshold truncation of the prolongation operator ───────────────
+
+"""
+    _truncate_P(P, τ) → SparseMatrixCSR
+
+Drop entries where `|P[i,j]| < τ × max_k |P[i,k]|` per row; keep max entry.
+τ=0 is no-op. Reduces op_complexity at cost of more PCG iterations.
+"""
+function _truncate_P(P::SparseMatricesCSR.SparseMatrixCSR{Bi,Tv,Ti},
+                     τ::Float64) where {Bi,Tv,Ti}
+    τ ≤ 0.0 && return P
+    n, nc = size(P)
+    rowptr = P.rowptr; colval = P.colval; nzval = P.nzval
+
+    nnz_est = length(nzval)
+    row_out = Int[]; sizehint!(row_out, nnz_est)
+    col_out = Int[]; sizehint!(col_out, nnz_est)
+    val_out = Tv[];  sizehint!(val_out, nnz_est)
+
+    @inbounds for i in 1:n
+        rs = rowptr[i]; re = rowptr[i+1] - 1
+        rs > re && continue
+        # Max absolute value in row i
+        row_max = zero(Tv)
+        for nzi in rs:re
+            v = abs(nzval[nzi])
+            v > row_max && (row_max = v)
+        end
+        thresh = Tv(τ) * row_max
+        for nzi in rs:re
+            abs(nzval[nzi]) >= thresh && (push!(row_out, i); push!(col_out, colval[nzi]); push!(val_out, nzval[nzi]))
+        end
+    end
+
+    return SparseMatricesCSR.sparsecsr(row_out, col_out, val_out, n, nc)
+end
+
 # ─── Gershgorin upper bound for ρ(D⁻¹ A) ────────────────────────────────────
-#
-# For each row i: the Gershgorin disk has centre 1 and radius Σ_{j≠i} |a_ij/a_ii|.
-# Hence ρ(D⁻¹A) ≤ max_i Σ_j |a_ij/a_ii|  (the full row sum including diagonal).
-#
-# For FVM M-matrices (pressure Laplacian, diffusion): off-diagonal row sum equals
-# the diagonal in magnitude, so the bound is exactly 2 — equal to the true ρ.
-# This makes ω_P = 4/(3·ρ) = 2/3, the classical optimal damping for these operators.
-#
-# Using this instead of power iteration is:
-#   • O(nnz) single pass — faster than niters SpMVs
-#   • deterministic — no random starting vector → hierarchy is reproducible
-#   • tight for M-matrices — not overly conservative
+# For FVM M-matrices: bound equals true ρ; ω_P = 2/3 is classical optimal damping.
+# O(nnz) single pass; deterministic; tight for M-matrices.
 
 """
     _gershgorin_rho(A, Dinv) → ρ_upper
 
-Compute the Gershgorin circle upper bound on the spectral radius of D⁻¹A:
-    ρ ≤ max_i  Σ_j |a_ij| * |Dinv[i]|
-For FVM M-matrices this equals the true spectral radius (= 2 for a uniform Laplacian).
+Gershgorin bound: ρ ≤ max_i Σ_j |a_ij| * |Dinv[i]|. Exact for FVM M-matrices.
 """
 function _gershgorin_rho(A::SparseMatrixCSR{Bi,Tv,Ti},
                           Dinv::AbstractVector{Tv}) where {Bi,Tv,Ti}
@@ -290,18 +303,12 @@ function _gershgorin_rho(A::SparseMatrixCSR{Bi,Tv,Ti},
 end
 
 # ─── Power iteration to estimate spectral radius ρ(D⁻¹ A) ──────────────────
-#
-# Used for Chebyshev smoother eigenvalue bounds. Starts from a deterministic
-# all-ones vector (normalised), which is a good initial guess for smooth dominant
-# eigenvectors typical of Laplacian-like operators and avoids run-to-run variation.
+# For Chebyshev eigenvalue bounds. Deterministic starting vector (normalised all-ones).
 
 """
     estimate_spectral_radius(A, Dinv; niters=20) → ρ
 
-Rayleigh-quotient power iteration on CPU for the matrix D⁻¹A.
-Used to set Chebyshev smoother eigenvalue bounds.
-Starting vector is deterministic (normalised all-ones) so the hierarchy is
-reproducible across runs.
+Power iteration for D⁻¹A on CPU (Rayleigh quotient); deterministic starting vector.
 """
 function estimate_spectral_radius(A::SparseMatrixCSR{Bi,Tv,Ti},
                                    Dinv::AbstractVector;

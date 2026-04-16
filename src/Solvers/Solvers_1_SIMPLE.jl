@@ -1,4 +1,15 @@
-export simple!
+export simple!, simple_reset_stats!
+
+# Per-equation timing accumulators — accumulated across all SIMPLE iterations; reset by simple_reset_stats!.
+const _SIMPLE_T_U    = Ref(0.0)   # U solve (solve_equation!)
+const _SIMPLE_T_P    = Ref(0.0)   # p solve (solve_equation!) — non-AMG configs only
+const _SIMPLE_T_TURB = Ref(0.0)   # turbulence! block (k + ω + aux)
+
+function simple_reset_stats!()
+    _SIMPLE_T_U[]    = 0.0
+    _SIMPLE_T_P[]    = 0.0
+    _SIMPLE_T_TURB[] = 0.0
+end
 
 """
     simple!(model_in, config; 
@@ -164,45 +175,49 @@ function SIMPLE(
     for iteration ∈ 1:iterations
         time = iteration
 
-        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
-        
+        _SIMPLE_T_U[] += @elapsed begin
+            rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
+        end
+
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rDf, rD, config)
         correct_interpolation_periodic(rDf, rD, boundaries.U, config)
         remove_pressure_source!(U_eqn, ∇p, config)
         H!(Hv, U, U_eqn, config)
-        
+
         # Interpolate faces
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, boundaries.U, time, config)
 
         # old approach
-        # div!(divHv, Uf, config) 
+        # div!(divHv, Uf, config)
 
         # new approach
         flux!(mdotf, Uf, config)
         div!(divHv, mdotf, config)
-        
+
         # Pressure calculations
         @. prev = p.values
-        rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
+        _SIMPLE_T_P[] += @elapsed begin
+            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
+        end
         explicit_relaxation!(p, prev, solvers.p.relax, config)
-        
-        grad!(∇p, pf, p, boundaries.p, time, config) 
+
+        grad!(∇p, pf, p, boundaries.p, time, config)
         limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
             # @. prev = p.values
-            discretise!(p_eqn, p, config)       
+            discretise!(p_eqn, p, config)
             apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
             # setReference!(p_eqn, pref, 1, config)
             nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
             # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
             explicit_relaxation!(p, prev, solvers.p.relax, config)
-            grad!(∇p, pf, p, boundaries.p, time, config) 
+            grad!(∇p, pf, p, boundaries.p, time, config)
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
         end
 
@@ -210,7 +225,9 @@ function SIMPLE(
         correct_mass_flux!(mdotf, p_eqn, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
-        turbulence!(turbulenceModel, model, S, prev, time, config) 
+        _SIMPLE_T_TURB[] += @elapsed begin
+            turbulence!(turbulenceModel, model, S, prev, time, config)
+        end
         update_nueff!(nueff, nu, model.turbulence, config)
 
         R_ux[iteration] = rx

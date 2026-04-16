@@ -5,11 +5,6 @@
 
 # ─── Tentative prolongation P̂ (piecewise-constant aggregates) ─────────────────
 
-"""
-    build_tentative_P(n_fine, nagg, agg) → SparseMatrixCSR
-
-Piecewise-constant: P̂[i, agg[i]] = 1.0.
-"""
 function build_tentative_P(n_fine::Int, nagg::Int, agg::Vector{Int})
     rows = collect(1:n_fine)
     cols = agg
@@ -19,11 +14,6 @@ end
 
 # ─── Smoothed prolongation P = (I - ω D⁻¹ A) P̂ ──────────────────────────────
 
-"""
-    smooth_prolongation(A, P_tent, ω) → SparseMatrixCSR
-
-Jacobi smoothing: P = P̂ - ω * D⁻¹ * A * P̂. Compute A*P̂ column by column.
-"""
 function smooth_prolongation(A::SparseMatrixCSR{Bi,Tv,Ti},
                               P_tent::SparseMatrixCSR,
                               ω::Float64) where {Bi,Tv,Ti}
@@ -90,11 +80,6 @@ end
 
 # ─── Restriction R = Pᵀ ───────────────────────────────────────────────────────
 
-"""
-    build_restriction(P) → SparseMatrixCSR
-
-Transpose P (n × nc) → R (nc × n). Pre-allocate COO arrays to exact size.
-"""
 function build_restriction(P::SparseMatrixCSR{Bi,Tv,Ti}) where {Bi,Tv,Ti}
     n, nc    = size(P)
     nnz_P    = length(P.nzval)
@@ -114,12 +99,8 @@ function build_restriction(P::SparseMatrixCSR{Bi,Tv,Ti}) where {Bi,Tv,Ti}
 end
 
 # ─── Galerkin coarse matrix Ac = R · A · P ────────────────────────────────────
+# Returns AP for reuse as pre-allocated scratch in _spgemm_nzval!.
 
-"""
-    galerkin_product(R, A, P) → (AP, Ac)
-
-Compute Ac = R * A * P via two SpGEMM steps. Return AP for reuse as pre-allocated scratch in `_spgemm_nzval!`.
-"""
 function galerkin_product(R::SparseMatrixCSR{Bi,Tv,Ti},
                            A::SparseMatrixCSR{Bi,Tv,Ti},
                            P::SparseMatrixCSR{Bi,Tv,Ti}) where {Bi,Tv,Ti}
@@ -190,14 +171,8 @@ function _spgemm(A::SparseMatrixCSR{Bi,Tv,Ti},
 end
 
 # ─── Zero-allocation numerical Galerkin update ────────────────────────────────
+# Compact accumulator (tmps: max_nnz_per_row × nthreads) stays in L1; zero on entry and exit.
 
-"""
-    _spgemm_nzval!(C, A, B, tmps, col_to_local)
-
-In-place C = A * B (nzval only), reusing pre-allocated sparsity pattern.
-Compact accumulator strategy: `tmps` (max_nnz_per_row × nthreads) fits in L1.
-Both arrays zero on entry and exit; no heap allocation.
-"""
 function _spgemm_nzval!(C::SparseMatrixCSR{Bi,Tv,Ti},
                          A::SparseMatrixCSR,
                          B::SparseMatrixCSR,
@@ -241,13 +216,8 @@ function _spgemm_nzval!(C::SparseMatrixCSR{Bi,Tv,Ti},
 end
 
 # ─── Per-row threshold truncation of the prolongation operator ───────────────
+# Drops entries where |P[i,j]| < τ × max_k|P[i,k]|; τ=0 is no-op.
 
-"""
-    _truncate_P(P, τ) → SparseMatrixCSR
-
-Drop entries where `|P[i,j]| < τ × max_k |P[i,k]|` per row; keep max entry.
-τ=0 is no-op. Reduces op_complexity at cost of more PCG iterations.
-"""
 function _truncate_P(P::SparseMatricesCSR.SparseMatrixCSR{Bi,Tv,Ti},
                      τ::Float64) where {Bi,Tv,Ti}
     τ ≤ 0.0 && return P
@@ -278,14 +248,8 @@ function _truncate_P(P::SparseMatricesCSR.SparseMatrixCSR{Bi,Tv,Ti},
 end
 
 # ─── Gershgorin upper bound for ρ(D⁻¹ A) ────────────────────────────────────
-# For FVM M-matrices: bound equals true ρ; ω_P = 2/3 is classical optimal damping.
-# O(nnz) single pass; deterministic; tight for M-matrices.
+# Tight for FVM M-matrices; ω_P = 2/3 is the classical optimal Chebyshev damping.
 
-"""
-    _gershgorin_rho(A, Dinv) → ρ_upper
-
-Gershgorin bound: ρ ≤ max_i Σ_j |a_ij| * |Dinv[i]|. Exact for FVM M-matrices.
-"""
 function _gershgorin_rho(A::SparseMatrixCSR{Bi,Tv,Ti},
                           Dinv::AbstractVector{Tv}) where {Bi,Tv,Ti}
     n      = size(A, 1)
@@ -302,14 +266,9 @@ function _gershgorin_rho(A::SparseMatrixCSR{Bi,Tv,Ti},
     return rho
 end
 
-# ─── Power iteration to estimate spectral radius ρ(D⁻¹ A) ──────────────────
-# For Chebyshev eigenvalue bounds. Deterministic starting vector (normalised all-ones).
+# ─── Power iteration to estimate ρ(D⁻¹ A) ──────────────────────────────────
+# Rayleigh-quotient iteration; deterministic normalised all-ones start.
 
-"""
-    estimate_spectral_radius(A, Dinv; niters=20) → ρ
-
-Power iteration for D⁻¹A on CPU (Rayleigh quotient); deterministic starting vector.
-"""
 function estimate_spectral_radius(A::SparseMatrixCSR{Bi,Tv,Ti},
                                    Dinv::AbstractVector;
                                    niters::Int=20) where {Bi,Tv,Ti}

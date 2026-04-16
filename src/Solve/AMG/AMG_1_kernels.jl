@@ -222,7 +222,7 @@ function amg_l1jacobi_sweep!(x_new, x, Dinv_l1, A, b, omega, backend, workgroup)
     kernel!(x_new, x, Dinv_l1, rowptr, colval, nzval, b, omega)
 end
 
-# ── L2 norm (delegates to LinearAlgebra; GPU support via extensions) ──────────
+# ── L2 norm — GPU support via extensions ──────────────────────────────────────
 amg_norm(v) = norm(v)
 
 # ── Jacobi sweep kernel (used by AMG internal smoothing) ──────────────────────

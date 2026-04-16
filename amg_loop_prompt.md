@@ -37,7 +37,7 @@ so you don't repeat closed approaches. However, the last 4 approaches may have b
 
 ## Hard Constraints
 
-- **Do NOT run full julia benchmark, only smoke test with 2 iterations if you need to check implementation changes work** — the orchestration script handles simulation
+- **Do NOT run full julia benchmark, only smoke tests with 2 iterations if you need to check implementation changes work** — the orchestration script handles simulation
 - **Do NOT modify** test files, docs, non-AMG solver files, or examples
 - **Preserve** the `BENCHMARK_*` output lines and variable names in `amg_loop_profile.jl`
 - **Keep** `amg_loop_state.md` under 150 lines (compress old detail ruthlessly)

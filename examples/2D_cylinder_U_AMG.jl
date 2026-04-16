@@ -7,8 +7,8 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-backend = CUDABackend(); workgroup = 32
-# backend = CPU(); workgroup = 1024; activate_multithread(backend)
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
@@ -60,20 +60,20 @@ solvers = (
     ),
     p = SolverSetup(
         solver      = AMG(
-                        smoother      = JacobiSmoother(2, 2/3, zeros(0)),
-                        # smoother      = Chebyshev(degree=2, lo=0.3, hi=1.1),
-                        # smoother      = L1Jacobi(omega=1),
-                        cycle         = VCycle(),
-                        coarsening    = :RS, # :SA :RS
-                        max_levels    = 15,
-                        coarsest_size = 100,
-                        pre_sweeps    = 2,
-                        post_sweeps   = 1,
-                        strength      = 0.0,
-                        update_freq = 2,
-                        krylov = :cg
+                        # smoother      = JacobiSmoother(2, 2/3, zeros(0)),
+                        # # smoother      = Chebyshev(degree=2, lo=0.3, hi=1.1),
+                        # # smoother      = L1Jacobi(omega=1),
+                        # cycle         = VCycle(),
+                        # coarsening    = :RS, # :SA :RS
+                        # max_levels    = 15,
+                        # coarsest_size = 100,
+                        # pre_sweeps    = 2,
+                        # post_sweeps   = 1,
+                        # strength      = 0.0,
+                        # update_freq = 2,
+                        # krylov = :cg
                      ),
-        # solver = Cg(),
+        solver = Cg(),
         preconditioner = Jacobi(),   # ignored by AMG; kept for API compatibility
         convergence = 1e-7,
         relax       = 1.0,

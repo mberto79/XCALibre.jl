@@ -6,7 +6,8 @@ export _AMG_T_RAP_CAST, _AMG_T_RAP_AP, _AMG_T_RAP_RAP  # RAP sub-timers (CUDA ex
 # Dense LU guard: above this coarsest-level size, fall back to 50 Jacobi sweeps.
 # Prevents O(n²) memory allocation when coarsest_size is set to a large value to
 # control hierarchy depth independently of the direct-solve threshold.
-const _MAX_DENSE_LU_N = 5000
+# const _MAX_DENSE_LU_N = 5000
+const _MAX_DENSE_LU_N = 20
 
 # Profiling accumulators; reset by amg_reset_stats!.
 const _AMG_T_UPDATE       = Ref(0.0)
@@ -24,15 +25,13 @@ const _AMG_T_RAP_CAST = Ref(0.0)
 const _AMG_T_RAP_AP   = Ref(0.0)
 const _AMG_T_RAP_RAP  = Ref(0.0)
 
-# update! phase timers — identify where the unexplained 150ms/iter overhead lives.
-# All amortised over total solve_system! calls (not just lazy-update calls).
+# update! phase sub-timers (amortised over all solve_system! calls).
 const _AMG_T_UPD_FINE_DINV  = Ref(0.0)  # fine-level Dinv rebuild (every call)
 const _AMG_T_UPD_GALERKIN   = Ref(0.0)  # all _galerkin_update! calls combined (lazy)
 const _AMG_T_UPD_COARSE_DINV= Ref(0.0)  # all coarse Dinv rebuilds (lazy)
 const _AMG_T_UPD_LU         = Ref(0.0)  # coarsest LU refresh (lazy)
 
-# Global workspace cache — allows reuse of pre-built hierarchy across run!() calls.
-# Avoids repeated amg_setup! (~7s) when re-running the same problem (e.g. benchmark warmup).
+# Global workspace cache — reuses pre-built hierarchy across run!() calls (avoids repeated amg_setup!).
 const _GLOBAL_AMG_CACHE = Ref{Any}(nothing)
 amg_clear_cache!() = (_GLOBAL_AMG_CACHE[] = nothing)
 
@@ -46,13 +45,7 @@ _amg_build_smoother_dinv!(::L1Jacobi, Dinv, A, diag_ptr, backend, workgroup) =
     amg_build_l1_Dinv!(Dinv, A, backend, workgroup)
 
 # ─── Coarse LU build/refresh (CPU default; GPU extensions override) ──────────
-# Build at setup; refresh every update_freq iterations. GPU override keeps LU on device.
 
-"""
-    _build_coarse_lu!(extras, A_cpu, backend, workgroup)
-
-Build coarse LU in extras; CPU default on host, GPU override keeps on device.
-"""
 function _build_coarse_lu!(extras::LevelExtras, A_cpu, backend, workgroup)
     Tv = typeof(extras.rho)
     n  = size(A_cpu, 1)
@@ -64,11 +57,6 @@ function _build_coarse_lu!(extras::LevelExtras, A_cpu, backend, workgroup)
     nothing
 end
 
-"""
-    _refresh_coarse_lu!(extras, A_device, backend)
-
-Refill dense matrix and recompute LU; CPU default on host, GPU override on device.
-"""
 function _refresh_coarse_lu!(extras::LevelExtras, A_device, backend)
     nzval_c, _, _ = get_sparse_fields(A_device)
     copyto!(extras.A_cpu.nzval, nzval_c)          # device sparse nzval → CPU
@@ -82,25 +70,15 @@ function _refresh_coarse_lu!(extras::LevelExtras, A_device, backend)
 end
 
 # ─── Device AP pre-allocation hook (smooth_P only) ────────────────────────────
-# CPU default: no-op. GPU override uploads AP_cpu to device (zero-allocation kernel path).
+# CPU: no-op. GPU override uploads AP_cpu to device for zero-allocation kernel path.
 
-"""
-    _build_smooth_AP_device!(extras, AP_cpu, backend)
-
-Upload pre-computed A*P to device; CPU default no-op, GPU override allocates device matrix.
-"""
 function _build_smooth_AP_device!(extras::LevelExtras, AP_cpu, backend)
-    nothing   # CPU: AP_cpu is already in extras.AP_cpu; KA kernels use it directly
+    nothing
 end
 
 # ─── Workspace constructor ────────────────────────────────────────────────────
+# Hierarchy deferred to first update! call; A may not be assembled at _workspace time.
 
-"""
-    _workspace(amg::AMG, A, b) → AMGWorkspace
-
-Build fully-typed workspace: fine (Float64 A, Float32 P/R), coarse (all Float32).
-Hierarchy construction deferred to first `update!` call (A not yet assembled).
-"""
 function _workspace(amg::AMG, A::AT, b::AbstractVector{Tv}) where {AT, Tv}
     # Return cached workspace if one exists with matching problem size and is fully built.
     cached = _GLOBAL_AMG_CACHE[]
@@ -135,12 +113,6 @@ end
 
 # ─── Full hierarchy setup ─────────────────────────────────────────────────────
 
-"""
-    amg_setup!(ws, A_device, backend, workgroup)
-
-Build complete mixed-precision hierarchy: Phase 1 (CPU coarsening Float64), Phase 2 (device upload).
-Calling again replaces entire hierarchy.
-"""
 function amg_setup!(ws::AMGWorkspace{LFType, LCType}, A_device, backend, workgroup) where {LFType, LCType}
     # Reset all diagnostics on hierarchy rebuild so timing and iteration counts stay in sync.
     _AMG_T_UPDATE[]       = 0.0
@@ -389,18 +361,6 @@ end
 
 # ─── Numerical update (reuse hierarchy structure) ─────────────────────────────
 
-"""
-    update!(ws, A_device, backend, workgroup)
-
-Refresh numerical values in AMG hierarchy (same sparsity, new coefficients).
-Falls back to `amg_setup!` if not yet built.
-
-**Always updated**: fine D⁻¹ (single kernel, no row scan).
-**Lazily updated** (every `update_freq` calls): Galerkin products, coarse D⁻¹, coarsest LU.
-
-Lazy refresh is safe: outer SIMPLE/PISO loop is itself iterative; stale coarse correction
-adds a few V-cycles per outer iteration. Fine D⁻¹ never skipped.
-"""
 function update!(ws::AMGWorkspace{LFType, LCType}, A_device, backend, workgroup) where {LFType, LCType}
     if !ws.setup_valid || isnothing(ws.fine_level)
         amg_setup!(ws, A_device, backend, workgroup)
@@ -409,8 +369,7 @@ function update!(ws::AMGWorkspace{LFType, LCType}, A_device, backend, workgroup)
 
     fine = ws.fine_level::LFType
 
-    # Sync nzvals when workspace was built for a different A object (cross-run cache reuse).
-    # Both matrices have identical sparsity; nzval copy is GPU-to-GPU and cheap.
+    # Cross-run cache reuse: identical sparsity, nzval may differ — GPU-to-GPU copy.
     if fine.A !== A_device
         copyto!(_nzval(fine.A), _nzval(A_device))
         KernelAbstractions.synchronize(backend)
@@ -418,7 +377,7 @@ function update!(ws::AMGWorkspace{LFType, LCType}, A_device, backend, workgroup)
 
     ws.update_count += 1
 
-    # Fine-level D⁻¹ always updated; diagonal changes every outer iteration.
+    # Fine D⁻¹ always refreshed; changes every outer SIMPLE/PISO iteration.
     _AMG_T_UPD_FINE_DINV[] += @elapsed begin
         _amg_build_smoother_dinv!(ws.opts.smoother, fine.Dinv, fine.A, fine.extras.diag_ptr, backend, workgroup)
         KernelAbstractions.synchronize(backend)
@@ -473,7 +432,7 @@ function update!(ws::AMGWorkspace{LFType, LCType}, A_device, backend, workgroup)
 end
 
 # ─── Preconditioned Conjugate Gradient (PCG) solve ────────────────────────────
-# One V-cycle per iteration as preconditioner; O(√κ) convergence vs O(κ) for Richardson.
+# One V/W-cycle per iteration; O(√κ) vs O(κ) for Richardson.
 
 function _amg_pcg_solve!(ws::AMGWorkspace{LFType}, b, values, itmax, atol, rtol,
                            backend, workgroup) where {LFType}
@@ -537,12 +496,6 @@ end
 
 # ─── solve_system! dispatch ────────────────────────────────────────────────────
 
-"""
-    solve_system!(phiEqn, setup, result, component, config)
-
-AMG override: two-tier mixed-precision hierarchy (fine Float64, coarse Float32).
-Type-stable cycles. Dispatches to PCG (default) or Richardson based on `krylov` option.
-"""
 function solve_system!(
     phiEqn::ModelEquation{T,M,E,S,P}, setup, result, component, config
 ) where {T, M, E, S<:AMGWorkspace, P}
@@ -624,11 +577,6 @@ function solve_system!(
     return residual(phiEqn, component, config)
 end
 
-"""
-    amg_reset_stats!(ws::AMGWorkspace)
-
-Reset accumulated iteration and solve-count diagnostics (call after warm-up phase).
-"""
 function amg_reset_stats!(ws::AMGWorkspace)
     ws._pcg_iters           = 0
     ws._solve_count         = 0
@@ -651,7 +599,6 @@ function amg_reset_stats!(ws::AMGWorkspace)
     nothing
 end
 
-# Zero-arg overload: reset global accumulators (no workspace available).
 function amg_reset_stats!()
     _AMG_T_UPDATE[]          = 0.0
     _AMG_T_SOLVE[]           = 0.0
@@ -688,10 +635,8 @@ function _galerkin_update!(L::MultigridLevel, Lc::MultigridLevel,
 end
 
 # GPU path: KA kernels scatter contributions on-device (no PCIe transfer).
-# Both smooth_P=false (1 nnz/row P) and smooth_P=true (multi-nnz P) use on-device kernels.
 function _galerkin_update!(L::MultigridLevel, Lc::MultigridLevel, backend, workgroup)
     if L.extras.smooth_P
-        # GPU: cuSPARSE SpGEMM (via CUDA override) ~6× faster than KA for large matrices.
         amg_rap_update_smooth!(Lc, L, backend, workgroup)
     else
         amg_rap_update!(Lc, L, backend, workgroup)

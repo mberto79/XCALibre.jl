@@ -3,13 +3,8 @@
 # They are distinct from the pre-solver JacobiSmoother in Smoothers_jacobi.jl.
 
 # ─── Damped Jacobi (synchronous, ping-pong) ───────────────────────────────────
-# Two-buffer kernel ensures deterministic preconditioner (required for PCG A-conjugacy).
+# Two-buffer swap ensures deterministic output — required for PCG A-conjugacy.
 
-"""
-    amg_smooth!(level, n_sweeps, omega, backend, workgroup)
-
-Apply n_sweeps damped Jacobi with ping-pong (deterministic, mandatory for PCG).
-"""
 function amg_smooth!(level, n_sweeps, omega, backend, workgroup)
     Tv    = eltype(level.x)
     omega_t = Tv(omega)   # prevent Float64 from promoting Float32 kernel args
@@ -24,14 +19,8 @@ function amg_smooth!(level, n_sweeps, omega, backend, workgroup)
 end
 
 # ─── Chebyshev polynomial smoother ────────────────────────────────────────────
-# Preconditioned Chebyshev for D⁻¹A with eigenvalue window [lo·ρ, hi·ρ].
-# All corrections scaled by D⁻¹ for consistency with eigenvalue bounds.
+# Preconditioned for D⁻¹A; eigenvalue window [lo·ρ, hi·ρ]; all corrections scaled by D⁻¹.
 
-"""
-    amg_smooth_chebyshev!(level, smoother, backend, workgroup)
-
-Preconditioned Chebyshev (degree-k) for D⁻¹A. Window [lo·ρ, hi·ρ]; all steps scaled by D⁻¹.
-"""
 function amg_smooth_chebyshev!(level, smoother::Chebyshev, backend, workgroup)
     (; degree) = smoother
     Tv  = eltype(level.x)

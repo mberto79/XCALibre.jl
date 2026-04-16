@@ -8,15 +8,6 @@ struct WCycle <: AMGCycle end
 
 # ─── Chebyshev polynomial smoother ────────────────────────────────────────────
 
-"""
-    Chebyshev(; degree=2, lo=0.3, hi=1.1)
-
-Polynomial Chebyshev smoother for use inside an AMG hierarchy.
-
-# Fields
-- `degree` — polynomial degree (number of SpMV applications per sweep).
-- `lo`, `hi` — fraction of the estimated spectral radius defining the dampening window.
-"""
 struct Chebyshev{F<:AbstractFloat} <: AbstractSmoother
     degree::Int
     lo::F
@@ -30,13 +21,8 @@ Chebyshev(; degree::Int=2, lo=0.3, hi=1.1) = begin
 end
 
 # ─── l1-Jacobi smoother ───────────────────────────────────────────────────────
+# Scales update by 1/||a_i||_1 instead of 1/a_ii; safer for anisotropic problems.
 
-"""
-    L1Jacobi(; omega=1.0)
-
-l1-Jacobi smoother: scales update by `1/||a_i||_1` instead of `1/a_ii`.
-For MPI AMG; in serial on isotropic problems, use `JacobiSmoother` instead.
-"""
 struct L1Jacobi{F<:AbstractFloat} <: AbstractSmoother
     omega::F
 end
@@ -47,25 +33,22 @@ L1Jacobi(; omega=1.0) = L1Jacobi{Float64}(Float64(omega))
 # ─── User-facing AMG marker type ──────────────────────────────────────────────
 
 """
-    AMG(; smoother, cycle, max_levels, coarsest_size, pre_sweeps, post_sweeps,
-          strength, coarsening, update_freq, krylov, fine_float, coarse_float, smooth_P, trunc_P,
-          coarse_sweeps)
+    AMG(; smoother, cycle, coarsening, pre_sweeps, post_sweeps, ...)
 
-Algebraic Multigrid solver for use with `SolverSetup`.
+Algebraic Multigrid preconditioned solver for use with `SolverSetup`.
 
-- `smoother`: `JacobiSmoother`, `Chebyshev`, or `L1Jacobi`.
-- `cycle`: `VCycle()` (default) or `WCycle()` (slower on GPU).
-- `max_levels`: max grid levels (default 25).
-- `coarsest_size`: stop coarsening below this size (default 50).
-- `pre_sweeps`, `post_sweeps`: smoothing per level (defaults 2, 1).
-- `coarse_sweeps`: Jacobi sweeps at coarsest level when no dense LU (default 50).
-- `strength`: θ at fine level only; θ=0 at coarse levels (default 0.1).
-- `coarsening`: `:RS` (Ruge–Stüben, default) or `:SA` (Smoothed Aggregation).
-- `smooth_P`: apply one Jacobi step to prolongation (default true); reduces PCG iterations at cost of op_complexity.
-- `trunc_P`: per-row drop threshold for P (default 0); effective range 0.05–0.3.
-- `update_freq`: refresh coarse hierarchy every N outer iterations (default 2). Always updates fine D⁻¹.
+# Key options
+- `smoother`: `JacobiSmoother`, `Chebyshev`, or `L1Jacobi` (default: `JacobiSmoother`).
+- `cycle`: `VCycle()` (default) or `WCycle()` (avoid on GPU — exponential coarse-level transfers).
+- `coarsening`: `:SA` (Smoothed Aggregation, default) or `:RS` (Ruge–Stüben).
+- `pre_sweeps`, `post_sweeps`: smoothing sweeps per level (default 2, 2).
+- `coarsest_size`: stop coarsening at this level size (default 50000).
+- `smooth_P`: Jacobi-smooth tentative prolongation (default `true`); fewer PCG iters, higher op_complexity.
+- `strength`: off-diagonal strength threshold θ at fine level (default 0.1).
+- `trunc_P`: per-row drop threshold for P after smoothing (default 0; effective range 0.05–0.3).
+- `update_freq`: Galerkin hierarchy refresh interval in outer iterations (default 2); fine D⁻¹ always refreshed.
 - `krylov`: `:cg` (PCG, default) or `:none` (Richardson).
-- `fine_float`, `coarse_float`: float types (default Float64, Float32).
+- `fine_float`, `coarse_float`: float precision per tier (default `Float64`, `Float32`).
 """
 struct AMG{S<:AbstractSmoother, C<:AMGCycle} <: AbstractLinearSolver
     smoother      :: S
@@ -74,27 +57,27 @@ struct AMG{S<:AbstractSmoother, C<:AMGCycle} <: AbstractLinearSolver
     coarsest_size :: Int
     pre_sweeps    :: Int
     post_sweeps   :: Int
-    coarse_sweeps :: Int   # Jacobi sweeps at coarsest level when no dense LU available
+    coarse_sweeps :: Int
     strength      :: Float64
     coarsening    :: Symbol
-    update_freq   :: Int   # refresh Galerkin hierarchy every N update! calls (1 = every call)
-    krylov        :: Symbol  # :cg → PCG outer loop; :none → plain Richardson
-    fine_float    :: DataType   # float type for the fine level (default Float64)
-    coarse_float  :: DataType   # float type for all coarse levels (default Float32)
-    smooth_P      :: Bool     # apply one Jacobi step to tentative P (SA-AMG); default true
-    trunc_P       :: Float64  # per-row drop threshold for P after smoothing (0 = disabled)
+    update_freq   :: Int
+    krylov        :: Symbol
+    fine_float    :: DataType
+    coarse_float  :: DataType
+    smooth_P      :: Bool
+    trunc_P       :: Float64
 end
 
 AMG(;
     smoother      = JacobiSmoother(2, 2/3, zeros(0)),
     cycle         = VCycle(),
-    max_levels    = 25,
-    coarsest_size = 50,
+    max_levels    = 15,
+    coarsest_size = 50000,
     pre_sweeps    = 2,
-    post_sweeps   = 1,
+    post_sweeps   = 2,
     coarse_sweeps = 50,
     strength      = 0.1,
-    coarsening    = :RS,
+    coarsening    = :SA,
     update_freq   = 2,
     krylov        = :cg,
     fine_float    = Float64,
@@ -107,18 +90,8 @@ AMG(;
 
 # ─── Host-only per-level extras ───────────────────────────────────────────────
 
-"""
-    LevelExtras{Tv, TcVec, CpuSpT}
-
-Host-resident mutable state for one multigrid level.
-- CPU transfers: `P_cpu`, `R_cpu`, `A_cpu`, `AP_cpu`, `Ac_cpu`.
-- Coarse solve: `lu_dense`, `lu_factor`, `lu_rhs` (coarsest only, n ≤ _MAX_DENSE_LU_N).
-- Smoother: `rho` (Gershgorin bound for Chebyshev), `diag_ptr` (device nzval index).
-- Galerkin scratch: `cpu_tmps`, `col_to_local` (compact L1 accumulators).
-- Mixed-precision boundary: `r_Tc`, `tmp_Tc` (Float32 buffers; fine level only).
-`TcVec` is the concrete device vector type (keeps cycle hot path type-stable).
-`diag_ptr` is device-resident; all other fields live on host.
-"""
+# diag_ptr is device-resident; lu_* only on coarsest level (n ≤ _MAX_DENSE_LU_N); r_Tc/tmp_Tc fine level only.
+# TcVec=Nothing on coarse levels (no precision-boundary buffers needed).
 mutable struct LevelExtras{Tv, TcVec, CpuSpT}
     P_cpu        :: Union{Nothing, CpuSpT}
     R_cpu        :: Union{Nothing, CpuSpT}
@@ -130,16 +103,13 @@ mutable struct LevelExtras{Tv, TcVec, CpuSpT}
     diag_ptr     :: Union{Nothing, AbstractVector{Int32}}
     AP_cpu       :: Union{Nothing, CpuSpT}
     Ac_cpu       :: Union{Nothing, CpuSpT}
-    AP_device    :: Any   # pre-allocated device A*P; nothing on CPU / unsmoothed levels
-    A_f32_nzval  :: Any   # pre-allocated Float32 nzval buffer for A cast; nothing until first use
+    AP_device    :: Any   # pre-allocated device A*P (smooth_P path only)
+    A_f32_nzval  :: Any   # Float32 nzval shadow (GPU precision-cast; nothing until first use)
     cpu_tmps     :: Union{Nothing, Matrix{Tv}}
     col_to_local :: Union{Nothing, Matrix{Int32}}
-    # Mixed-precision boundary buffers; TcVec=Nothing for coarse/single levels.
     r_Tc         :: Union{Nothing, TcVec}
     tmp_Tc       :: Union{Nothing, TcVec}
-    # true when this level's P/R use smoothed (SA-style) prolongation.
-    # The GPU RAP kernel assumes 1-nnz/row P; set this to fall back to CPU SpGEMM.
-    smooth_P     :: Bool
+    smooth_P     :: Bool  # true → GPU uses multi-nnz RAP kernel; false → 1-nnz/row fast path
 
     LevelExtras{Tv, TcVec, CpuSpT}() where {Tv, TcVec, CpuSpT} =
         new{Tv, TcVec, CpuSpT}(nothing, nothing, nothing, nothing, one(Tv), nothing, Tv[],
@@ -148,14 +118,6 @@ end
 
 # ─── Per-level storage ────────────────────────────────────────────────────────
 
-"""
-    MultigridLevel{Tv, AType, PType, Vec, ExtrasT}
-
-Immutable level container: matrix `A`, transfer ops `P`/`R` (nothing at coarsest),
-inverse diagonal `Dinv`, work vectors `x, b, r, tmp`, and host-only `extras`.
-All device fields adapt to target backend; `extras` stays on host (no adapt_structure method).
-Fully parametric — all levels in hierarchy share concrete type for dispatch-free cycles.
-"""
 struct MultigridLevel{Tv, AType, PType, Vec <: AbstractVector{Tv}, ExtrasT}
     A      :: AType
     P      :: PType
@@ -179,7 +141,7 @@ function MultigridLevel(A::AType, P, R,
 end
 
 # ─── Mixed-precision sparse/vector type mapping ───────────────────────────────
-# CPU default: Float64 → Float32 mapping. GPU extensions add device-specific methods.
+# CPU default. GPU extensions add device-specific methods.
 
 _tc_sparse_type(::Type{SparseXCSR{Bi,Tv,Ti,N}}) where {Bi,Tv,Ti,N} = SparseXCSR{Bi,Float32,Ti,N}
 _tc_vec_type(::Type{Array{Tv,N}}) where {Tv,N} = Array{Float32,N}
@@ -192,13 +154,6 @@ _tc_vec_type(::Type{VT}) where {VT} =
 
 # ─── Workspace ────────────────────────────────────────────────────────────────
 
-"""
-    AMGWorkspace{LFType, LCType, Vec, Opts}
-
-Complete mixed-precision hierarchy: fine level (Float64 A, Float32 P/R), coarse levels (Float32).
-Stored in `phiEqn.solver`; exposes `.x` for compatibility with `_copy!` kernel.
-Two-tier split eliminates dynamic dispatch in cycle hot path.
-"""
 mutable struct AMGWorkspace{LFType, LCType, Vec, Opts<:AMG}
     fine_level   :: Union{Nothing, LFType}
     coarse_levels:: Vector{LCType}
@@ -206,15 +161,12 @@ mutable struct AMGWorkspace{LFType, LCType, Vec, Opts<:AMG}
     opts         :: Opts
     setup_valid  :: Bool
     setup_count  :: Int
-    update_count :: Int   # counts update! calls; drives the lazy Galerkin refresh
-    # PCG workspace — only used when opts.krylov === :cg.
-    # x_pcg is the PCG iterate; separate from fine_level.x which the V-cycle overwrites.
-    # r_pcg is the CG residual — kept separate from fine_level.r which the V-cycle clobbers,
-    # eliminating the 2 amg_copy! calls (save + restore) per PCG iteration.
+    update_count :: Int
+    # PCG workspace (krylov === :cg only). x_pcg/r_pcg are separate from fine_level.x/r
+    # so the V-cycle cannot clobber the CG iterate or residual between iterations.
     x_pcg        :: Vec
     p_cg         :: Vec
     r_pcg        :: Vec
-    # Diagnostics: accumulated iteration count and call count (reset by user via amg_reset_stats!).
     _pcg_iters   :: Int
     _solve_count :: Int
 end

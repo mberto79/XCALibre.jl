@@ -1,12 +1,6 @@
 # ─── Setup phase: coarsening strategies ───────────────────────────────────────
-# Produces aggregate IDs (integer array mapping each fine node to an aggregate).
-# Implemented on CPU only (setup is called once; GPU arrays are gathered here).
+# CPU-only; setup is infrequent. Returns aggregate ID array (1-based, length = n_fine).
 
-"""
-    amg_coarsen(A_cpu, strength, strategy) → agg_ids
-
-Map each fine row to an aggregate (1-based). Strategies: `:SA` (Smoothed Aggregation) or `:RS` (Ruge–Stüben).
-"""
 function amg_coarsen(A::SparseMatrixCSR, strength::Float64, strategy::Symbol)
     if strategy === :SA
         return _coarsen_SA(A, strength)

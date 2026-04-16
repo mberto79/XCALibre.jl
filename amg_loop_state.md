@@ -5,45 +5,35 @@ Managed by `amg_loop.sh` + headless Claude. Do not manually edit during a run.
 ## Goal
 AMG runtime ratio **< 0.60x** vs Cg+Jacobi baseline (F1 1.67M cells, RANS KOmega, CUDA GPU).
 
-## Current Iteration: 5  (2026-04-16)
+## Current Iteration: 1
 
-## Current AMG Config
-File: `F1-fetchCFD_Minimal/amg_loop_profile.jl` — `[AMG Config]` section.
+## Change Made (Iter 1)
+Added Config 3 to benchmark: AMG with `coarse_float=Float64`, identical settings otherwise.
+Purpose: quantify actual speedup from Float32 vs Float64 coarse levels (mission asks for this comparison).
 
-```julia
-AMG(coarsening=:SA, smooth_P=true, coarsest_size=50000,
-    post_sweeps=2, coarse_sweeps=50, update_freq=2)
-```
-3L hierarchy: [1677158, 584946, 44500]. Global workspace cache + nzval sync active.
-P_RTOL=1e-4 (reverted from 5e-4 — P_RTOL tuning is a dead end).
+## Next step (Iter 2)
+Check Config 3 vs Config 2 solve times:
+- If F64 coarse >> F32 coarse (>1.5x): Float32 coarse IS the bottleneck → optimize coarse path further
+- If F64 coarse ≈ F32 coarse (<1.1x): fine-level Float64 SpMV dominates V-cycle → next step is Float32 fine smoother (use `A_f32_nzval` buffer in update! + smoother dispatch)
 
-## Latest Results
-Iter 3b (best): ratio=0.666, update=32ms/iter, solve=224ms/iter, 14.2 PCG iters.
-Iter 4 (coarse_sweeps=100): ratio=0.716 — worse (per-sweep cost > iter savings).
-Iter 5 (P_RTOL=5e-4): ratio=0.719 — worse (CG saves more from looser tol than AMG).
+WARNING: This step is sensible, however, the run failed with error: "ERROR: LoadError: AssertionError: coarse_float=Float64 does not match _tc_vec_type result Float32; add GPU type-mapping methods for the desired coarse type
+Stacktrace:
+  [1] _workspace(amg::AMG{JacobiSmoother{Int64, Float64, Vector{Float64}}, VCycle}, A::CUDA.CUSPARSE.CuSparseMatrixCSR{Float64, Int32}, b::CuArray{Float64, 1, CUDA.DeviceMemory})
+    @ XCALibre.Solve ~/Julia/XCALibre.jl/src/Solve/AMG/AMG_6_api.jl:95"
 
-## History
-| Iter | Change | Ratio | PCG iters | Notes |
-|---|---|---|---|---|
-| 0 | coarsest_size=100 → 5L LU@28 (unintended) | 0.880 | 19.5 | Step I diag guard eps() enabled deeper hierarchy |
-| 1 | coarsest_size=100→50000 to restore 3L Jacobi@44500 | 0.868 | 13.3 | ~156ms/iter inflated by amg_setup! in timed window |
-| 2 | AMG warmup: pre-build hierarchy before Config 2 timing | 0.809 | 15.7 | Warmup ran in separate workspace — amg_setup! still hit in Config 2 |
-| 3a | Global workspace cache (`_GLOBAL_AMG_CACHE`) | 0.825 | 26.4 | Cache returned but fine_level.A pointed to stale warmup matrix — wrong SpMVs |
-| 3b | + nzval sync in update! when fine.A !== A_device | **0.666** | 14.2 | update 175→32ms; solve 254→224ms; cache working correctly — **BEST** |
-
-## Final Assessment
-
-**Target 0.60 not reached.** Algorithmic floor is **~0.666** (3L SA, coarse_sweeps=50, P_RTOL=1e-4).
-
-All parameter space exhausted:
-- **Hierarchy depth**: 5L worse with cache overhead (+15ms Galerkin, +9 PCG iters)
-- **coarse_sweeps**: 50 optimal; 100 regressed (cost > savings)
-- **update_freq**: 2 optimal; 3 adds +3.5 PCG iters
-- **IC0 at coarsest**: GPU triangular solves sequential (sv2), 6-20ms/call vs 2.5-5ms for 50 Jacobi sweeps — SLOWER
-- **CPU sparse direct**: 33ms/call CHOLMOD vs 5ms GPU Jacobi at n=44504 — way worse
-- **P_RTOL loosening**: helps CG more than AMG in absolute terms; ratio flat/worsens
-
-**Path to 0.60**: requires better coarse solver — cuDSS or AMGX for on-device sparse direct at n≈44K.
+Action: Fix the error and modify the workflow/prompt to ensure you always run a smoke test following code changes to ensure the code runs. 
 
 ## STATUS
-DONE — best achieved ratio: **0.666** (iter 3b)
+Iteration 1: Measurement run — added Float64 coarse comparison to amg_loop_profile.jl
+
+## Latest Results (Iter 0 baseline)
+AMG F32-coarse: 36.12 s (722.5 ms/iter) — ratio 0.653
+Update: 32.24 ms (galerkin=30.87ms dominant), Solve: 218.85 ms, 13.8 PCG iters
+
+## History
+
+Iter: 0 (baseline)
+Change: N/A — first run
+Ratio: 0.653
+PCG iters: 13.8
+Notes: SA 3L smooth_P=true, coarse_sweeps=50, update_freq=2, coarse_float=Float32

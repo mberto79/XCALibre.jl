@@ -1,8 +1,8 @@
 # AMG Optimization Agent
 
-You are running headlessly inside the XCALibre.jl project directory. Your mission is to
-optimize the AMG preconditioner to achieve a runtime ratio **< 0.60x** vs Cg+Jacobi baseline
-on the F1 1.67M-cell RANS KOmega CUDA GPU benchmark.
+You are running headlessly inside the XCALibre.jl project directory. 
+
+Your mission is to evaluate and benchmark the implementation of the AMG solver, focus on the implementation of the mix-precision method used to evaluate coarse levels at 32 bit. We are expecting a gain of ~ 2x for the timing of the VCycle and WCycle. Compare gains vs using Float64 for the coarse level solves. Use Cg+Jacobi configuration as a baseline on the F1 1.67M-cell RANS KOmega CUDA GPU benchmark.
 
 ## Orientation
 
@@ -20,18 +20,16 @@ so you don't repeat closed approaches. However, the last 4 approaches may have b
 
 ## Your Task (execute in this order)
 
-1. Read `amg_loop_state.md` and `F1-fetchCFD_Minimal/amg_loop_results.txt`
+1. Read `amg_loop_state.md` and `F1-fetchCFD_Minimal/amg_loop_results.txt` (if the file does not exist it means you are in iteration 0)
 2. Read `src/AMG_changes_and_optimisation_after_profiling.md` (closed approaches list)
 3. Identify the single highest-leverage change based on the phase breakdown in results
 4. Call `advisor()` BEFORE implementing any non-trivial algorithmic change (GPU kernels,
    new data structures, coarsest-level solver changes)
-5. Make ONE targeted change — either:
-   - Modify AMG source in `src/Solve/AMG/` or `ext/XCALibre_CUDAExt.jl` (algorithmic), OR
-   - Adjust parameters in the `[AMG Config]` section of `F1-fetchCFD_Minimal/amg_loop_profile.jl`
+5. Make ONE targeted change
 6. Update `amg_loop_state.md`:
    - Increment "Current Iteration" number
    - Record what you changed and why (1-2 lines)
-   - Append a row to the History table with ratio from the LAST run (not this one)
+   - Append a row to the History section from the LAST run (not this one)
    - Update "What to Try Next" with your rationale for next iteration
    - If no further paths exist, write `STATUS: EXHAUSTED` (the loop will stop)
 
@@ -42,12 +40,12 @@ so you don't repeat closed approaches. However, the last 4 approaches may have b
 - **Preserve** the `BENCHMARK_*` output lines and variable names in `amg_loop_profile.jl`
 - **Keep** `amg_loop_state.md` under 150 lines (compress old detail ruthlessly)
 - **One change per iteration** — resist the urge to make multiple changes at once
-- Follow the coding conventions in CLAUDE.md (succinct comments, no narration, `!` suffix for mutating)
+- Follow the coding conventions in CLAUDE.md
 
 ## Context You Already Have
 
 CLAUDE.md is auto-loaded (full project guide). Your project memory files are also loaded.
-You do NOT need to re-read CLAUDE.md — just follow its conventions.
+You do NOT need to re-read CLAUDE.md
 
 The `advisor()` tool is available. Use it before implementing GPU kernel changes or new
 data structures — it has seen the full conversation history.

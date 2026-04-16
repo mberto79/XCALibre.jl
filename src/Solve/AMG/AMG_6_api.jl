@@ -88,11 +88,9 @@ function _workspace(amg::AMG, A::AT, b::AbstractVector{Tv}) where {AT, Tv}
     end
 
     Tc        = amg.coarse_float
-    AT_c      = _tc_sparse_type(AT)
+    AT_c      = _tc_sparse_type(AT, Tc)
     Vec_f     = typeof(b)
-    Vec_c     = _tc_vec_type(Vec_f)
-    # Verify coarse_float consistency with type-mapping methods.
-    @assert eltype(Vec_c) === Tc "coarse_float=$(Tc) does not match _tc_vec_type result $(eltype(Vec_c)); add GPU type-mapping methods for the desired coarse type"
+    Vec_c     = _tc_vec_type(Vec_f, Tc)
     CpuSpT_f  = SparseMatricesCSR.SparseMatrixCSR{1, Tv, Int}
     CpuSpT_c  = SparseMatricesCSR.SparseMatrixCSR{1, Tc, Int}
 
@@ -249,7 +247,7 @@ function amg_setup!(ws::AMGWorkspace{LFType, LCType}, A_device, backend, workgro
     KernelAbstractions.copyto!(backend, diag_ptr_f_dev, diag_ptr_f_cpu)
     _amg_build_smoother_dinv!(opts.smoother, Dinv_f, A_device, diag_ptr_f_dev, backend, workgroup)
 
-    Vec_c    = _tc_vec_type(typeof(ws.x))   # same computation as in _workspace
+    Vec_c    = _tc_vec_type(typeof(ws.x), ws.opts.coarse_float)
     extras_f = LevelExtras{Tv, Vec_c, CpuSpT_f}()
     extras_f.rho      = rhos[1]
     extras_f.diag_ptr = diag_ptr_f_dev
@@ -271,9 +269,12 @@ function amg_setup!(ws::AMGWorkspace{LFType, LCType}, A_device, backend, workgro
         )
         extras_f.cpu_tmps     = zeros(Tv,    max_nnz1, Threads.nthreads())
         extras_f.col_to_local = zeros(Int32, nc1,      Threads.nthreads())
-        # Float32 boundary buffers for the fine↔coarse precision cast
-        extras_f.r_Tc   = mk_vec_c(n1)
-        extras_f.tmp_Tc = mk_vec_c(n1)
+        # Float32 boundary buffers for the fine↔coarse precision cast + F32 smoother
+        extras_f.r_Tc        = mk_vec_c(n1)
+        extras_f.tmp_Tc      = mk_vec_c(n1)
+        extras_f.Dinv_Tc     = mk_vec_c(n1)
+        extras_f.b_Tc        = mk_vec_c(n1)
+        extras_f.A_f32_nzval = similar(_nzval(A_device), Tc)  # pre-alloc; synced every iter
     else
         # Single-level: fine = coarsest; store LU in fine extras
         extras_f.A_cpu     = A_cpus[1]
@@ -381,6 +382,12 @@ function update!(ws::AMGWorkspace{LFType, LCType}, A_device, backend, workgroup)
     _AMG_T_UPD_FINE_DINV[] += @elapsed begin
         _amg_build_smoother_dinv!(ws.opts.smoother, fine.Dinv, fine.A, fine.extras.diag_ptr, backend, workgroup)
         KernelAbstractions.synchronize(backend)
+    end
+
+    # Sync F32 smoother buffers (GPU broadcasts: ~0.1ms each; no-op when nothing).
+    let ex = fine.extras
+        !isnothing(ex.A_f32_nzval) && (ex.A_f32_nzval .= _nzval(fine.A))
+        !isnothing(ex.Dinv_Tc)     && (ex.Dinv_Tc     .= fine.Dinv)
     end
 
     # Lazy Galerkin refresh.

@@ -112,11 +112,13 @@ mutable struct LevelExtras{Tv, TcVec, CpuSpT}
     col_to_local :: Union{Nothing, Matrix{Int32}}
     r_Tc         :: Union{Nothing, TcVec}
     tmp_Tc       :: Union{Nothing, TcVec}
+    Dinv_Tc      :: Union{Nothing, TcVec}  # F32 Dinv for fine-level F32 smoother
+    b_Tc         :: Union{Nothing, TcVec}  # F32 b scratch for fine-level F32 smoother
     smooth_P     :: Bool  # true → GPU uses multi-nnz RAP kernel; false → 1-nnz/row fast path
 
     LevelExtras{Tv, TcVec, CpuSpT}() where {Tv, TcVec, CpuSpT} =
         new{Tv, TcVec, CpuSpT}(nothing, nothing, nothing, nothing, one(Tv), nothing, Tv[],
-                                nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, false)
+                                nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, false)
 end
 
 # ─── Per-level storage ────────────────────────────────────────────────────────
@@ -146,14 +148,14 @@ end
 # ─── Mixed-precision sparse/vector type mapping ───────────────────────────────
 # CPU default. GPU extensions add device-specific methods.
 
-_tc_sparse_type(::Type{SparseXCSR{Bi,Tv,Ti,N}}) where {Bi,Tv,Ti,N} = SparseXCSR{Bi,Float32,Ti,N}
-_tc_vec_type(::Type{Array{Tv,N}}) where {Tv,N} = Array{Float32,N}
+_tc_sparse_type(::Type{SparseXCSR{Bi,Tv,Ti,N}}, ::Type{Tc}) where {Bi,Tv,Ti,N,Tc} = SparseXCSR{Bi,Tc,Ti,N}
+_tc_vec_type(::Type{Array{Tv,N}}, ::Type{Tc}) where {Tv,N,Tc} = Array{Tc,N}
 
 # Fallback: tells the user to add a method in the relevant GPU extension.
-_tc_sparse_type(::Type{AT}) where {AT} =
-    error("No Float32 sparse type mapping for $(AT). Add _tc_sparse_type in the GPU extension.")
-_tc_vec_type(::Type{VT}) where {VT} =
-    error("No Float32 vector type mapping for $(VT). Add _tc_vec_type in the GPU extension.")
+_tc_sparse_type(::Type{AT}, ::Type{Tc}) where {AT,Tc} =
+    error("No coarse sparse type mapping for $(AT) → $(Tc). Add _tc_sparse_type in the GPU extension.")
+_tc_vec_type(::Type{VT}, ::Type{Tc}) where {VT,Tc} =
+    error("No coarse vector type mapping for $(VT) → $(Tc). Add _tc_vec_type in the GPU extension.")
 
 # ─── Workspace ────────────────────────────────────────────────────────────────
 

@@ -40,8 +40,8 @@ end
 _build_opA(A::SPARSEGPU) = KP.KrylovOperator(A)
 
 # Mixed-precision type mappings for AMG hierarchy construction
-_tc_sparse_type(::Type{SPARSEGPU{Tv, Ti}}) where {Tv, Ti} = SPARSEGPU{Float32, Ti}
-_tc_vec_type(::Type{GPUARRAY{Tv, N, B}}) where {Tv, N, B} = GPUARRAY{Float32, N, B}
+_tc_sparse_type(::Type{SPARSEGPU{Tv, Ti}}, ::Type{Tc}) where {Tv, Ti, Tc} = SPARSEGPU{Tc, Ti}
+_tc_vec_type(::Type{GPUARRAY{Tv, N, B}}, ::Type{Tc}) where {Tv, N, B, Tc} = GPUARRAY{Tc, N, B}
 @inline _nzval(A::SPARSEGPU) = A.nzVal
 @inline _rowptr(A::SPARSEGPU) = A.rowPtr
 @inline _colval(A::SPARSEGPU) = A.colVal
@@ -63,7 +63,8 @@ import XCALibre.Solve: amg_spmv!, amg_spmv_add!, amg_residual!,
                         _build_smooth_AP_device!,
                         LevelExtras, _fill_dense_from_sparse!,
                         _MAX_DENSE_LU_N,
-                        _AMG_T_RAP_CAST, _AMG_T_RAP_AP, _AMG_T_RAP_RAP
+                        _AMG_T_RAP_CAST, _AMG_T_RAP_AP, _AMG_T_RAP_RAP,
+                        amg_smooth_fine_f32!, amg_smooth!, amg_cast_copy!, amg_copy!
 import XCALibre.Multithread: _setup
 
 # ── GPU-resident coarse LU ────────────────────────────────────────────────────────────
@@ -157,16 +158,17 @@ function amg_rap_update_smooth!(Lc, L, ::BACKEND, workgroup)
     A  = L.A   # SPARSEGPU{T}: Float64 at fine level, Float32 at coarse levels
     ex = L.extras
 
-    # ── Sub-timer: A→Float32 cast (fine level only; coarse levels already Float32) ──
+    # ── Sub-timer: A→Tc cast (fine level only; coarse levels already Tc) ────────────
+    Tc = eltype(P.nzVal)   # coarse compute type (Float32 default, Float64 if coarse_float=Float64)
     t0 = time_ns()
-    A_f32 = if eltype(A.nzVal) === Float32
+    A_tc = if eltype(A.nzVal) === Tc
         A
     else
-        # Lazy-init pre-allocated Float32 nzVal buffer; update in-place each call.
+        # Lazy-init nzVal buffer in coarse type; update in-place each call.
         if isnothing(ex.A_f32_nzval)
-            ex.A_f32_nzval = similar(A.nzVal, Float32)
+            ex.A_f32_nzval = similar(A.nzVal, Tc)
         end
-        ex.A_f32_nzval .= A.nzVal   # GPU broadcast: Float64→Float32, no allocation
+        ex.A_f32_nzval .= A.nzVal   # GPU broadcast: downcast to Tc, no allocation
         SPARSEGPU(A.rowPtr, A.colVal, ex.A_f32_nzval, A.dims)
     end
     CUDA.synchronize()
@@ -174,7 +176,7 @@ function amg_rap_update_smooth!(Lc, L, ::BACKEND, workgroup)
 
     # ── Sub-timer: first SpGEMM A*P ───────────────────────────────────────────────
     t0 = time_ns()
-    AP = A_f32 * P    # cusparseSpGEMM: (n × n) × (n × nc)
+    AP = A_tc * P    # cusparseSpGEMM: (n × n) × (n × nc)
     CUDA.synchronize()
     _AMG_T_RAP_AP[] += (time_ns() - t0) * 1e-9
 
@@ -190,6 +192,31 @@ function amg_rap_update_smooth!(Lc, L, ::BACKEND, workgroup)
     # Eagerly return SpGEMM temporaries to CUDA pool; eliminates GC-deferred finalization pauses.
     CUDA.unsafe_free!(Ac_new.nzVal); CUDA.unsafe_free!(Ac_new.colVal); CUDA.unsafe_free!(Ac_new.rowPtr)
     CUDA.unsafe_free!(AP.nzVal);     CUDA.unsafe_free!(AP.colVal);     CUDA.unsafe_free!(AP.rowPtr)
+    nothing
+end
+
+# ── Fine-level F32 smoother (GPU) ─────────────────────────────────────────────
+# Performs Jacobi sweeps in F32 on the fine level (normally F64) to halve SpMV
+# bandwidth. x (F64) is cast to r_Tc (F32), swept, then cast back. b_Tc cast once.
+# A_f32_nzval and Dinv_Tc are kept in sync by update! each outer iteration.
+
+function amg_smooth_fine_f32!(level, n_sweeps, omega, ::BACKEND, workgroup)
+    ex = level.extras
+    (isnothing(ex.A_f32_nzval) || isnothing(ex.Dinv_Tc) || isnothing(ex.b_Tc)) &&
+        return amg_smooth!(level, n_sweeps, omega, BACKEND(), workgroup)
+    Tc = eltype(ex.r_Tc)
+    omega_t = Tc(omega)
+    # Zero-alloc F32 A wrapper (nzval synced every iter in update!).
+    A_Tc = SPARSEGPU(level.A.rowPtr, level.A.colVal, ex.A_f32_nzval, level.A.dims)
+    amg_cast_copy!(ex.r_Tc, level.x, BACKEND(), workgroup)  # x F64→F32
+    amg_cast_copy!(ex.b_Tc, level.b, BACKEND(), workgroup)  # b F64→F32
+    src = ex.r_Tc; dst = ex.tmp_Tc
+    for _ in 1:n_sweeps
+        amg_jacobi_sweep!(dst, src, ex.Dinv_Tc, A_Tc, ex.b_Tc, omega_t, BACKEND(), workgroup)
+        src, dst = dst, src
+    end
+    src !== ex.r_Tc && amg_copy!(ex.r_Tc, src, BACKEND(), workgroup)
+    amg_cast_copy!(level.x, ex.r_Tc, BACKEND(), workgroup)  # result F32→F64
     nothing
 end
 

@@ -48,7 +48,7 @@ function vcycle_fine!(
     r_Tc   = fine.extras.r_Tc::TcVec
     tmp_Tc = fine.extras.tmp_Tc::TcVec
 
-    apply_level_smoother!(fine, opts.pre_sweeps, opts, backend, workgroup)
+    _apply_fine_smoother!(fine, opts.pre_sweeps, opts, backend, workgroup)
     amg_residual!(fine.r, fine.A, fine.x, fine.b, backend, workgroup)
 
     Lc = coarse[1]
@@ -62,7 +62,7 @@ function vcycle_fine!(
     amg_spmv!(tmp_Tc, fine.P, Lc.x, backend, workgroup)
     amg_cast_copy!(fine.tmp, tmp_Tc, backend, workgroup)
     amg_axpy!(fine.x, fine.tmp, one(eltype(fine.x)), backend, workgroup)
-    apply_level_smoother!(fine, opts.post_sweeps, opts, backend, workgroup)
+    _apply_fine_smoother!(fine, opts.post_sweeps, opts, backend, workgroup)
 end
 
 # ── Coarse-level W-cycle (all Float32) ────────────────────────────────────────
@@ -110,7 +110,7 @@ function wcycle_fine!(
     r_Tc   = fine.extras.r_Tc::TcVec
     tmp_Tc = fine.extras.tmp_Tc::TcVec
 
-    apply_level_smoother!(fine, opts.pre_sweeps, opts, backend, workgroup)
+    _apply_fine_smoother!(fine, opts.pre_sweeps, opts, backend, workgroup)
 
     amg_residual!(fine.r, fine.A, fine.x, fine.b, backend, workgroup)
 
@@ -134,7 +134,7 @@ function wcycle_fine!(
     amg_spmv!(tmp_Tc, fine.P, Lc.x, backend, workgroup)
     amg_cast_copy!(fine.tmp, tmp_Tc, backend, workgroup)
     amg_axpy!(fine.x, fine.tmp, one(eltype(fine.x)), backend, workgroup)
-    apply_level_smoother!(fine, opts.post_sweeps, opts, backend, workgroup)
+    _apply_fine_smoother!(fine, opts.post_sweeps, opts, backend, workgroup)
 end
 
 # ── Dispatch on cycle type (accesses workspace for two-tier types) ──────────────

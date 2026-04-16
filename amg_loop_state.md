@@ -5,35 +5,39 @@ Managed by `amg_loop.sh` + headless Claude. Do not manually edit during a run.
 ## Goal
 AMG runtime ratio **< 0.60x** vs Cg+Jacobi baseline (F1 1.67M cells, RANS KOmega, CUDA GPU).
 
-## Current Iteration: 1
+## Current Iteration: 2
 
-## Change Made (Iter 1)
-Added Config 3 to benchmark: AMG with `coarse_float=Float64`, identical settings otherwise.
-Purpose: quantify actual speedup from Float32 vs Float64 coarse levels (mission asks for this comparison).
+## Change Made (Iter 2)
 
-## Next step (Iter 2)
-Check Config 3 vs Config 2 solve times:
-- If F64 coarse >> F32 coarse (>1.5x): Float32 coarse IS the bottleneck → optimize coarse path further
-- If F64 coarse ≈ F32 coarse (<1.1x): fine-level Float64 SpMV dominates V-cycle → next step is Float32 fine smoother (use `A_f32_nzval` buffer in update! + smoother dispatch)
+Added Config 4 to benchmark: AMG WCycle with F32 coarse (same settings as Config 2 but `cycle=WCycle()`).
+Purpose: test whether W-cycle reduces PCG iters enough (15→8-10) to offset higher per-cycle cost (~1.33×)
+and reach the 0.60 target. Config 2 (VCycle) preserved for continuity of BENCHMARK_RATIO.
 
-WARNING: This step is sensible, however, the run failed with error: "ERROR: LoadError: AssertionError: coarse_float=Float64 does not match _tc_vec_type result Float32; add GPU type-mapping methods for the desired coarse type
-Stacktrace:
-  [1] _workspace(amg::AMG{JacobiSmoother{Int64, Float64, Vector{Float64}}, VCycle}, A::CUDA.CUSPARSE.CuSparseMatrixCSR{Float64, Int32}, b::CuArray{Float64, 1, CUDA.DeviceMemory})
-    @ XCALibre.Solve ~/Julia/XCALibre.jl/src/Solve/AMG/AMG_6_api.jl:95"
+## Key Finding (Iter 1)
+F32 vs F64 coarse V-cycle solve speedup: **1.36x** (235ms vs 319ms) — fine-level F64 SpMVs dominate.
+Overall wall time speedup: 1.11x. 2x expectation not met because 1.67M-cell fine level ≫ 44K coarse level.
+Ratios: VCycle F32=0.655, F64-coarse=0.730. Fine-level work dominates the V-cycle.
 
-Action: Fix the error and modify the workflow/prompt to ensure you always run a smoke test following code changes to ensure the code runs. 
+## What to Try Next (after Iter 2 results)
+- If WCycle F32 ratio ≤ 0.60: target met — swap Config 2 to WCycle()
+- If WCycle ratio 0.61-0.63: combine WCycle with F32 fine smoother
+- If WCycle ≥ VCycle (diminishing returns with inexact coarse): skip WCycle, try F32 fine smoother instead
+  - F32 fine smoother path: add `Dinv_Tc::TcVec` + `b_Tc::TcVec` to LevelExtras fine level;
+    cast b→F32 once before sweep loop; use r_Tc/tmp_Tc as ping-pong; reconstruct A_f32 SPARSEGPU in-place
 
-## STATUS
-Iteration 1: Measurement run — added Float64 coarse comparison to amg_loop_profile.jl
+## Previous Recovery (Pre-launch Iter 2)
+Fixed `_tc_sparse_type`/`_tc_vec_type` to accept Tc type arg (was hardcoded Float32).
 
-## Latest Results (Iter 0 baseline)
-AMG F32-coarse: 36.12 s (722.5 ms/iter) — ratio 0.653
-Update: 32.24 ms (galerkin=30.87ms dominant), Solve: 218.85 ms, 13.8 PCG iters
+## Recovery (Pre-launch Iter 3)
+Fixed `amg_rap_update_smooth!`: derive `Tc = eltype(P.nzVal)` for SpGEMM (was hardcoded Float32).
+All 3 configs smoke-tested OK.
 
 ## History
 
 Iter: 0 (baseline)
-Change: N/A — first run
-Ratio: 0.653
-PCG iters: 13.8
-Notes: SA 3L smooth_P=true, coarse_sweeps=50, update_freq=2, coarse_float=Float32
+Ratio: 0.653 | Solve: 218.85ms | PCG: 13.8 | Notes: SA 3L VCycle, smooth_P, coarse_sweeps=50
+
+Iter: 1 (F64 coarse comparison added as Config 3)
+Ratio: 0.655 | Solve F32: 235ms | Solve F64: 319ms | PCG F32: 14.9 | PCG F64: 15.4
+F32 V-cycle solve speedup vs F64: 1.36x | Wall speedup: 1.11x
+Key finding: fine F64 SpMVs dominate; 2x expectation not met

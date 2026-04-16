@@ -48,9 +48,10 @@ When `MODE: PRE-LAUNCH STATE CHECK` appears in your prompt, follow these steps O
 
 1. Read `amg_loop_state.md` and `F1-fetchCFD_Minimal/amg_loop_results.txt`
 2. Check `src/Solve/AMG/` and `ext/XCALibre_CUDAExt.jl` for broken/partial code from a failed previous iteration (syntax errors, half-applied changes, mismatched types)
-3. If broken code found: fix it and note the fix in `amg_loop_state.md` under a "Recovery" entry
-4. If state is clean: write a one-line confirmation to stdout and exit
-5. **Do NOT make new optimizations** — recovery and state validation only
+3. ESSENTIAL: Run smoke test to confirm all configurations run correctly, if not, fix! Don't analyse results.
+4. If broken code found: fix it and note the fix in `amg_loop_state.md` under a "Recovery" entry
+5. If state is clean: write a one-line confirmation to stdout and exit
+6. **Do NOT make new optimizations** — recovery and state validation only
 
 ## Context You Already Have
 

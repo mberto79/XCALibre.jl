@@ -94,3 +94,18 @@ function _apply_level_smoother!(level, smoother::L1Jacobi, n_sweeps::Int,
                                   backend, workgroup)
     amg_smooth_l1jacobi!(level, n_sweeps, smoother.omega, backend, workgroup)
 end
+
+# Fine-level F32 smoother: GPU override in CUDAExt; CPU falls back to F64.
+function amg_smooth_fine_f32!(level, n_sweeps, omega, backend, workgroup)
+    amg_smooth!(level, n_sweeps, omega, backend, workgroup)
+end
+
+# Type-stable dispatch: use F32 path when Dinv_Tc is available (fine level, GPU only).
+@inline _apply_fine_smoother!(fine, n_sweeps, opts, backend, workgroup) =
+    _fine_smoother_dispatch!(fine, n_sweeps, opts, fine.extras.Dinv_Tc, backend, workgroup)
+
+_fine_smoother_dispatch!(fine, n_sweeps, opts, ::Nothing, backend, workgroup) =
+    apply_level_smoother!(fine, n_sweeps, opts, backend, workgroup)
+
+_fine_smoother_dispatch!(fine, n_sweeps, opts, _Dinv_Tc, backend, workgroup) =
+    amg_smooth_fine_f32!(fine, n_sweeps, opts.smoother.omega, backend, workgroup)

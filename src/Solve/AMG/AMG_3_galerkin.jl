@@ -253,12 +253,13 @@ end
 function _gershgorin_rho(A::SparseMatrixCSR{Bi,Tv,Ti},
                           Dinv::AbstractVector{Tv}) where {Bi,Tv,Ti}
     n      = size(A, 1)
-    rowptr = A.rowptr; nzval = A.nzval
+    rowptr = A.rowptr; colval = A.colval; nzval = A.nzval
     rho    = zero(Tv)
     @inbounds for i in 1:n
         row_sum = zero(Tv)
         di = abs(Dinv[i])
         for nzi in rowptr[i]:(rowptr[i+1]-1)
+            colval[nzi] == i && continue
             row_sum += abs(nzval[nzi]) * di
         end
         rho = max(rho, row_sum)

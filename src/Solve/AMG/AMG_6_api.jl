@@ -1,13 +1,7 @@
 export update!, _build_coarse_lu!, _refresh_coarse_lu!, _fill_dense_from_sparse!
-export _build_smooth_AP_device!, _MAX_DENSE_LU_N, amg_clear_cache!
+export _build_smooth_AP_device!, amg_clear_cache!
 export _RANS_T_K, _RANS_T_OMEGA   # accessed from RANS turbulence models for sub-timing
 export _AMG_T_RAP_CAST, _AMG_T_RAP_AP, _AMG_T_RAP_RAP  # RAP sub-timers (CUDA ext)
-
-# Dense LU guard: above this coarsest-level size, fall back to 50 Jacobi sweeps.
-# Prevents O(n²) memory allocation when coarsest_size is set to a large value to
-# control hierarchy depth independently of the direct-solve threshold.
-# const _MAX_DENSE_LU_N = 5000
-const _MAX_DENSE_LU_N = 20
 
 # Profiling accumulators; reset by amg_reset_stats!.
 const _AMG_T_UPDATE       = Ref(0.0)
@@ -406,7 +400,6 @@ function update!(ws::AMGWorkspace{LFType, LCType}, A_device, backend, workgroup)
         _AMG_T_UPD_COARSE_DINV[] += @elapsed begin
             _amg_build_smoother_dinv!(ws.opts.smoother, coarse[1].Dinv, coarse[1].A,
                                        coarse[1].extras.diag_ptr, backend, workgroup)
-            KernelAbstractions.synchronize(backend)
         end
         # Coarse-to-coarse Galerkin
         for lvl in 1:(length(coarse) - 1)
@@ -417,7 +410,6 @@ function update!(ws::AMGWorkspace{LFType, LCType}, A_device, backend, workgroup)
             _AMG_T_UPD_COARSE_DINV[] += @elapsed begin
                 _amg_build_smoother_dinv!(ws.opts.smoother, coarse[lvl+1].Dinv, coarse[lvl+1].A,
                                            coarse[lvl+1].extras.diag_ptr, backend, workgroup)
-                KernelAbstractions.synchronize(backend)
             end
         end
         # Refresh coarsest-level LU

@@ -62,10 +62,12 @@ import XCALibre.Solve: amg_spmv!, amg_spmv_add!, amg_residual!,
                         _build_coarse_lu!, _refresh_coarse_lu!,
                         _build_smooth_AP_device!,
                         LevelExtras, _fill_dense_from_sparse!,
-                        _MAX_DENSE_LU_N,
                         _AMG_T_RAP_CAST, _AMG_T_RAP_AP, _AMG_T_RAP_RAP,
-                        amg_smooth_fine_f32!, amg_smooth!, amg_cast_copy!, amg_copy!
+                        amg_smooth_fine_f32!, amg_smooth!, amg_cast_copy!, amg_copy!,
+                        amg_norm
 import XCALibre.Multithread: _setup
+
+amg_norm(v::GPUARRAY) = CUDA.norm(v)
 
 # ── GPU-resident coarse LU ────────────────────────────────────────────────────────────
 # Dense LU kept on GPU to avoid PCIe transfers during the V-cycle hot path.

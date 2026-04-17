@@ -6,4 +6,3 @@ include("AMG_4_smoothers.jl")
 include("AMG_5_cycle.jl")
 include("AMG_6_api.jl")
 
-export amg_reset_stats!

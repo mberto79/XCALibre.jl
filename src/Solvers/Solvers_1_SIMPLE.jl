@@ -1,15 +1,4 @@
-export simple!, simple_reset_stats!
-
-# Per-equation timing accumulators — accumulated across all SIMPLE iterations; reset by simple_reset_stats!.
-const _SIMPLE_T_U    = Ref(0.0)   # U solve (solve_equation!)
-const _SIMPLE_T_P    = Ref(0.0)   # p solve (solve_equation!) — non-AMG configs only
-const _SIMPLE_T_TURB = Ref(0.0)   # turbulence! block (k + ω + aux)
-
-function simple_reset_stats!()
-    _SIMPLE_T_U[]    = 0.0
-    _SIMPLE_T_P[]    = 0.0
-    _SIMPLE_T_TURB[] = 0.0
-end
+export simple!
 
 """
     simple!(model_in, config; 
@@ -175,9 +164,7 @@ function SIMPLE(
     for iteration ∈ 1:iterations
         time = iteration
 
-        _SIMPLE_T_U[] += @elapsed begin
-            rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
-        end
+        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
 
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
@@ -199,9 +186,7 @@ function SIMPLE(
 
         # Pressure calculations
         @. prev = p.values
-        _SIMPLE_T_P[] += @elapsed begin
-            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
-        end
+        rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
         explicit_relaxation!(p, prev, solvers.p.relax, config)
 
         grad!(∇p, pf, p, boundaries.p, time, config)
@@ -225,9 +210,7 @@ function SIMPLE(
         correct_mass_flux!(mdotf, p_eqn, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
-        _SIMPLE_T_TURB[] += @elapsed begin
-            turbulence!(turbulenceModel, model, S, prev, time, config)
-        end
+        turbulence!(turbulenceModel, model, S, prev, time, config)
         update_nueff!(nueff, nu, model.turbulence, config)
 
         R_ux[iteration] = rx

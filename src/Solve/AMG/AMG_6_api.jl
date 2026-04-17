@@ -1,29 +1,5 @@
 export update!, _build_coarse_lu!, _refresh_coarse_lu!, _fill_dense_from_sparse!
 export _build_smooth_AP_device!, amg_clear_cache!
-export _RANS_T_K, _RANS_T_OMEGA   # accessed from RANS turbulence models for sub-timing
-export _AMG_T_RAP_CAST, _AMG_T_RAP_AP, _AMG_T_RAP_RAP  # RAP sub-timers (CUDA ext)
-
-# Profiling accumulators; reset by amg_reset_stats!.
-const _AMG_T_UPDATE       = Ref(0.0)
-const _AMG_T_SOLVE        = Ref(0.0)
-const _AMG_T_COARSE_SOLVE = Ref(0.0)
-const _AMG_N_COARSE_SOLVE = Ref(0)
-const _AMG_N_EARLY_EXIT   = Ref(0)
-const _AMG_N_PCG_ITERS    = Ref(0)
-const _AMG_N_PCG_SOLVES   = Ref(0)
-
-# RANS and RAP sub-timers (GPU profiling).
-const _RANS_T_K     = Ref(0.0)
-const _RANS_T_OMEGA = Ref(0.0)
-const _AMG_T_RAP_CAST = Ref(0.0)
-const _AMG_T_RAP_AP   = Ref(0.0)
-const _AMG_T_RAP_RAP  = Ref(0.0)
-
-# update! phase sub-timers (amortised over all solve_system! calls).
-const _AMG_T_UPD_FINE_DINV  = Ref(0.0)  # fine-level Dinv rebuild (every call)
-const _AMG_T_UPD_GALERKIN   = Ref(0.0)  # all _galerkin_update! calls combined (lazy)
-const _AMG_T_UPD_COARSE_DINV= Ref(0.0)  # all coarse Dinv rebuilds (lazy)
-const _AMG_T_UPD_LU         = Ref(0.0)  # coarsest LU refresh (lazy)
 
 # Global workspace cache — reuses pre-built hierarchy across run!() calls (avoids repeated amg_setup!).
 const _GLOBAL_AMG_CACHE = Ref{Any}(nothing)
@@ -98,7 +74,7 @@ function _workspace(amg::AMG, A::AT, b::AbstractVector{Tv}) where {AT, Tv}
     p_cg  = similar(b); fill!(p_cg,  zero(Tv))
     r_pcg = similar(b); fill!(r_pcg, zero(Tv))
     ws = AMGWorkspace{LFType, LCType, Vec_f, typeof(amg)}(
-        nothing, LCType[], x, amg, false, 0, 0, x_pcg, p_cg, r_pcg, 0, 0)
+        nothing, LCType[], x, amg, false, 0, 0, x_pcg, p_cg, r_pcg)
     _GLOBAL_AMG_CACHE[] = ws
     return ws
 end
@@ -106,23 +82,6 @@ end
 # ─── Full hierarchy setup ─────────────────────────────────────────────────────
 
 function amg_setup!(ws::AMGWorkspace{LFType, LCType}, A_device, backend, workgroup) where {LFType, LCType}
-    # Reset all diagnostics on hierarchy rebuild so timing and iteration counts stay in sync.
-    _AMG_T_UPDATE[]       = 0.0
-    _AMG_T_SOLVE[]        = 0.0
-    _AMG_T_COARSE_SOLVE[] = 0.0
-    _AMG_N_COARSE_SOLVE[] = 0
-    _AMG_N_EARLY_EXIT[]   = 0
-    _AMG_N_PCG_ITERS[]    = 0
-    _AMG_N_PCG_SOLVES[]   = 0
-    _AMG_T_RAP_CAST[]        = 0.0
-    _AMG_T_RAP_AP[]          = 0.0
-    _AMG_T_RAP_RAP[]         = 0.0
-    _AMG_T_UPD_FINE_DINV[]   = 0.0
-    _AMG_T_UPD_GALERKIN[]    = 0.0
-    _AMG_T_UPD_COARSE_DINV[] = 0.0
-    _AMG_T_UPD_LU[]          = 0.0
-    ws._pcg_iters            = 0
-    ws._solve_count          = 0
     opts = ws.opts
     Tv   = eltype(ws.x)          # fine float type (Float64)
     Tc   = opts.coarse_float     # coarse float type (Float32 by default)
@@ -375,10 +334,8 @@ function update!(ws::AMGWorkspace{LFType, LCType}, A_device, backend, workgroup)
     ws.update_count += 1
 
     # Fine D⁻¹ always refreshed; changes every outer SIMPLE/PISO iteration.
-    _AMG_T_UPD_FINE_DINV[] += @elapsed begin
-        _amg_build_smoother_dinv!(ws.opts.smoother, fine.Dinv, fine.A, fine.extras.diag_ptr, backend, workgroup)
-        KernelAbstractions.synchronize(backend)
-    end
+    _amg_build_smoother_dinv!(ws.opts.smoother, fine.Dinv, fine.A, fine.extras.diag_ptr, backend, workgroup)
+    KernelAbstractions.synchronize(backend)
 
     # Sync F32 smoother buffers (GPU broadcasts: ~0.1ms each; no-op when nothing).
     let ex = fine.extras
@@ -393,29 +350,21 @@ function update!(ws::AMGWorkspace{LFType, LCType}, A_device, backend, workgroup)
     coarse = ws.coarse_levels
     if !isempty(coarse)
         # Fine→coarse1 Galerkin
-        _AMG_T_UPD_GALERKIN[] += @elapsed begin
-            _galerkin_update!(fine, coarse[1], backend, workgroup)
-            KernelAbstractions.synchronize(backend)
-        end
-        _AMG_T_UPD_COARSE_DINV[] += @elapsed begin
-            _amg_build_smoother_dinv!(ws.opts.smoother, coarse[1].Dinv, coarse[1].A,
-                                       coarse[1].extras.diag_ptr, backend, workgroup)
-        end
+        _galerkin_update!(fine, coarse[1], backend, workgroup)
+        KernelAbstractions.synchronize(backend)
+        _amg_build_smoother_dinv!(ws.opts.smoother, coarse[1].Dinv, coarse[1].A,
+                                   coarse[1].extras.diag_ptr, backend, workgroup)
         # Coarse-to-coarse Galerkin
         for lvl in 1:(length(coarse) - 1)
-            _AMG_T_UPD_GALERKIN[] += @elapsed begin
-                _galerkin_update!(coarse[lvl], coarse[lvl + 1], backend, workgroup)
-                KernelAbstractions.synchronize(backend)
-            end
-            _AMG_T_UPD_COARSE_DINV[] += @elapsed begin
-                _amg_build_smoother_dinv!(ws.opts.smoother, coarse[lvl+1].Dinv, coarse[lvl+1].A,
-                                           coarse[lvl+1].extras.diag_ptr, backend, workgroup)
-            end
+            _galerkin_update!(coarse[lvl], coarse[lvl + 1], backend, workgroup)
+            KernelAbstractions.synchronize(backend)
+            _amg_build_smoother_dinv!(ws.opts.smoother, coarse[lvl+1].Dinv, coarse[lvl+1].A,
+                                       coarse[lvl+1].extras.diag_ptr, backend, workgroup)
         end
         # Refresh coarsest-level LU
         let ex = coarse[end].extras
             if !isnothing(ex.lu_factor)
-                _AMG_T_UPD_LU[] += @elapsed _refresh_coarse_lu!(ex, coarse[end].A, backend)
+                _refresh_coarse_lu!(ex, coarse[end].A, backend)
             end
         end
     else
@@ -451,7 +400,6 @@ function _amg_pcg_solve!(ws::AMGWorkspace{LFType}, b, values, itmax, atol, rtol,
 
     # Early exit if initial guess already satisfies tolerance.
     if r0 < atol
-        _AMG_N_EARLY_EXIT[] += 1
         return 0
     end
 
@@ -510,114 +458,35 @@ function solve_system!(
     b  = _b(phiEqn, component)
 
     KernelAbstractions.synchronize(backend)
-    t_upd = @elapsed begin
-        update!(ws, A, backend, workgroup)
-        KernelAbstractions.synchronize(backend)
-    end
-    _AMG_T_UPDATE[] += t_upd
+    update!(ws, A, backend, workgroup)
+    KernelAbstractions.synchronize(backend)
 
-    t_slv = @elapsed begin
-        niters = if ws.opts.krylov === :cg
-            _amg_pcg_solve!(ws, b, values, itmax, atol, rtol, backend, workgroup)
-        else
-            # Richardson: plain V-cycle loop (check convergence every 5 iterations).
-            L1 = ws.fine_level
-            amg_copy!(L1.x, values, backend, workgroup)
-            amg_copy!(L1.b, b,      backend, workgroup)
-            amg_residual!(L1.r, L1.A, L1.x, L1.b, backend, workgroup)
-            r0 = amg_norm(L1.r)
-            r0 = ifelse(r0 > eps(r0), r0, one(r0))
-
-            niters_rich = 0
-            if r0 >= atol
-                check_freq = 5
-                for k in 1:itmax
-                    run_cycle!(ws, ws.opts, ws.opts.cycle, backend, workgroup)
-                    niters_rich = k
-                    if k == 1 || k % check_freq == 0 || k == itmax
-                        amg_residual!(L1.r, L1.A, L1.x, L1.b, backend, workgroup)
-                        res_norm = amg_norm(L1.r)
-                        (res_norm < atol || res_norm / r0 < rtol) && break
-                    end
+    if ws.opts.krylov === :cg
+        _amg_pcg_solve!(ws, b, values, itmax, atol, rtol, backend, workgroup)
+    else
+        # Richardson: plain V-cycle loop (check convergence every 5 iterations).
+        L1 = ws.fine_level
+        amg_copy!(L1.x, values, backend, workgroup)
+        amg_copy!(L1.b, b,      backend, workgroup)
+        amg_residual!(L1.r, L1.A, L1.x, L1.b, backend, workgroup)
+        r0 = amg_norm(L1.r)
+        r0 = ifelse(r0 > eps(r0), r0, one(r0))
+        if r0 >= atol
+            check_freq = 5
+            for k in 1:itmax
+                run_cycle!(ws, ws.opts, ws.opts.cycle, backend, workgroup)
+                if k == 1 || k % check_freq == 0 || k == itmax
+                    amg_residual!(L1.r, L1.A, L1.x, L1.b, backend, workgroup)
+                    res_norm = amg_norm(L1.r)
+                    (res_norm < atol || res_norm / r0 < rtol) && break
                 end
             end
-            amg_copy!(values, L1.x, backend, workgroup)
-            niters_rich
         end
-        KernelAbstractions.synchronize(backend)
+        amg_copy!(values, L1.x, backend, workgroup)
     end
-    _AMG_T_SOLVE[] += t_slv
-
-    # Accumulate diagnostics; print every 50 solves.
-    ws._pcg_iters   += niters
-    ws._solve_count += 1
-    if niters > 0
-        _AMG_N_PCG_ITERS[]  += niters
-        _AMG_N_PCG_SOLVES[] += 1
-    end
-    if ws._solve_count % 50 == 0
-        n_early  = _AMG_N_EARLY_EXIT[]
-        n_active = ws._solve_count - n_early
-        avg_iter = n_active > 0 ? round(ws._pcg_iters / n_active; digits=1) : 0.0
-        n        = ws._solve_count
-        upd_ms   = round(_AMG_T_UPDATE[]          / n * 1e3; digits=2)
-        slv_ms   = round(_AMG_T_SOLVE[]            / n * 1e3; digits=2)
-        coarse_μs = _AMG_N_COARSE_SOLVE[] > 0 ?
-                    round(_AMG_T_COARSE_SOLVE[] / _AMG_N_COARSE_SOLVE[] * 1e6; digits=1) : 0.0
-        fdinv_ms = round(_AMG_T_UPD_FINE_DINV[]   / n * 1e3; digits=2)
-        gal_ms   = round(_AMG_T_UPD_GALERKIN[]     / n * 1e3; digits=2)
-        cdinv_ms = round(_AMG_T_UPD_COARSE_DINV[]  / n * 1e3; digits=2)
-        lu_ms    = round(_AMG_T_UPD_LU[]           / n * 1e3; digits=2)
-        @info "AMG pressure: $(ws._solve_count) solves ($(n_early) early-exit, $(n_active) active), " *
-              "avg $(avg_iter) iter/active — update $(upd_ms) ms, solve $(slv_ms) ms, " *
-              "coarse $(coarse_μs) μs/call ($(ws.opts.krylov))\n" *
-              "  update breakdown: fine_dinv=$(fdinv_ms) ms, galerkin=$(gal_ms) ms, " *
-              "coarse_dinv=$(cdinv_ms) ms, lu=$(lu_ms) ms"
-    end
+    KernelAbstractions.synchronize(backend)
 
     return residual(phiEqn, component, config)
-end
-
-function amg_reset_stats!(ws::AMGWorkspace)
-    ws._pcg_iters           = 0
-    ws._solve_count         = 0
-    _AMG_T_UPDATE[]         = 0.0
-    _AMG_T_SOLVE[]          = 0.0
-    _AMG_T_COARSE_SOLVE[]   = 0.0
-    _AMG_N_COARSE_SOLVE[]   = 0
-    _AMG_N_EARLY_EXIT[]     = 0
-    _AMG_N_PCG_ITERS[]      = 0
-    _AMG_N_PCG_SOLVES[]     = 0
-    _RANS_T_K[]              = 0.0
-    _RANS_T_OMEGA[]          = 0.0
-    _AMG_T_RAP_CAST[]       = 0.0
-    _AMG_T_RAP_AP[]         = 0.0
-    _AMG_T_RAP_RAP[]        = 0.0
-    _AMG_T_UPD_FINE_DINV[]  = 0.0
-    _AMG_T_UPD_GALERKIN[]   = 0.0
-    _AMG_T_UPD_COARSE_DINV[]= 0.0
-    _AMG_T_UPD_LU[]         = 0.0
-    nothing
-end
-
-function amg_reset_stats!()
-    _AMG_T_UPDATE[]          = 0.0
-    _AMG_T_SOLVE[]           = 0.0
-    _AMG_T_COARSE_SOLVE[]    = 0.0
-    _AMG_N_COARSE_SOLVE[]    = 0
-    _AMG_N_EARLY_EXIT[]      = 0
-    _AMG_N_PCG_ITERS[]       = 0
-    _AMG_N_PCG_SOLVES[]      = 0
-    _RANS_T_K[]               = 0.0
-    _RANS_T_OMEGA[]           = 0.0
-    _AMG_T_RAP_CAST[]        = 0.0
-    _AMG_T_RAP_AP[]          = 0.0
-    _AMG_T_RAP_RAP[]         = 0.0
-    _AMG_T_UPD_FINE_DINV[]   = 0.0
-    _AMG_T_UPD_GALERKIN[]    = 0.0
-    _AMG_T_UPD_COARSE_DINV[] = 0.0
-    _AMG_T_UPD_LU[]          = 0.0
-    nothing
 end
 
 # ─── Galerkin update: Ac = R·A·P ─────────────────────────────────────────────
@@ -725,13 +594,9 @@ end
 function amg_coarse_solve!(level::MultigridLevel, coarse_sweeps::Int, backend, workgroup)
     ex = level.extras
     if !isnothing(ex.lu_factor)
-        t = @elapsed begin
-            copyto!(ex.lu_rhs, level.b)
-            ldiv!(ex.lu_factor, ex.lu_rhs)
-            copyto!(level.x, ex.lu_rhs)
-        end
-        _AMG_T_COARSE_SOLVE[] += t
-        _AMG_N_COARSE_SOLVE[] += 1
+        copyto!(ex.lu_rhs, level.b)
+        ldiv!(ex.lu_factor, ex.lu_rhs)
+        copyto!(level.x, ex.lu_rhs)
     else
         amg_smooth!(level, coarse_sweeps, eltype(level.x)(2/3), backend, workgroup)
     end

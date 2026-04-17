@@ -62,7 +62,6 @@ import XCALibre.Solve: amg_spmv!, amg_spmv_add!, amg_residual!,
                         _build_coarse_lu!, _refresh_coarse_lu!,
                         _build_smooth_AP_device!,
                         LevelExtras, _fill_dense_from_sparse!,
-                        _AMG_T_RAP_CAST, _AMG_T_RAP_AP, _AMG_T_RAP_RAP,
                         amg_smooth_fine_f32!, amg_smooth!, amg_cast_copy!, amg_copy!,
                         amg_norm
 import XCALibre.Multithread: _setup
@@ -160,9 +159,7 @@ function amg_rap_update_smooth!(Lc, L, ::BACKEND, workgroup)
     A  = L.A   # SPARSEGPU{T}: Float64 at fine level, Float32 at coarse levels
     ex = L.extras
 
-    # ── Sub-timer: A→Tc cast (fine level only; coarse levels already Tc) ────────────
     Tc = eltype(P.nzVal)   # coarse compute type (Float32 default, Float64 if coarse_float=Float64)
-    t0 = time_ns()
     A_tc = if eltype(A.nzVal) === Tc
         A
     else
@@ -173,20 +170,9 @@ function amg_rap_update_smooth!(Lc, L, ::BACKEND, workgroup)
         ex.A_f32_nzval .= A.nzVal   # GPU broadcast: downcast to Tc, no allocation
         SPARSEGPU(A.rowPtr, A.colVal, ex.A_f32_nzval, A.dims)
     end
-    CUDA.synchronize()
-    _AMG_T_RAP_CAST[] += (time_ns() - t0) * 1e-9
 
-    # ── Sub-timer: first SpGEMM A*P ───────────────────────────────────────────────
-    t0 = time_ns()
     AP = A_tc * P    # cusparseSpGEMM: (n × n) × (n × nc)
-    CUDA.synchronize()
-    _AMG_T_RAP_AP[] += (time_ns() - t0) * 1e-9
-
-    # ── Sub-timer: second SpGEMM R*(AP) ──────────────────────────────────────────
-    t0 = time_ns()
-    Ac_new = R * AP   # cusparseSpGEMM: (nc × n) × (n × nc)
-    CUDA.synchronize()
-    _AMG_T_RAP_RAP[] += (time_ns() - t0) * 1e-9
+    Ac_new = R * AP  # cusparseSpGEMM: (nc × n) × (n × nc)
 
     # Copy updated values into the pre-allocated Lc.A (same sparsity, same sorted order).
     copyto!(Lc.A.nzVal, Ac_new.nzVal)

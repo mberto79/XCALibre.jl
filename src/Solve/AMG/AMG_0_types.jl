@@ -172,6 +172,4 @@ mutable struct AMGWorkspace{LFType, LCType, Vec, Opts<:AMG}
     x_pcg        :: Vec
     p_cg         :: Vec
     r_pcg        :: Vec
-    _pcg_iters   :: Int
-    _solve_count :: Int
 end

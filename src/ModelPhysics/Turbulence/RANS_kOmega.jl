@@ -196,9 +196,7 @@ function turbulence!(
     implicit_relaxation_diagdom!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
     constrain_equation!(ω_eqn, boundaries.omega, model, config) # active with WFs only
     update_preconditioner!(ω_eqn.preconditioner, mesh, config)
-    _RANS_T_OMEGA[] += @elapsed begin
-        ω_res = solve_system!(ω_eqn, solvers.omega, omega, nothing, config)
-    end
+    ω_res = solve_system!(ω_eqn, solvers.omega, omega, nothing, config)
 
     # constrain_boundary!(omega, boundaries.omega, model, config) # active with WFs only
     bound!(omega, config)
@@ -211,9 +209,7 @@ function turbulence!(
     # implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
     implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
     update_preconditioner!(k_eqn.preconditioner, mesh, config)
-    _RANS_T_K[] += @elapsed begin
-        k_res = solve_system!(k_eqn, solvers.k, k, nothing, config)
-    end
+    k_res = solve_system!(k_eqn, solvers.k, k, nothing, config)
     bound!(k, config)
     # explicit_relaxation!(k, prev, solvers.k.relax, config)
 

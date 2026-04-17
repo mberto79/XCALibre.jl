@@ -269,12 +269,14 @@ function amg_setup!(ws::AMGWorkspace{LFType, LCType}, A_device, backend, workgro
         )
         extras_f.cpu_tmps     = zeros(Tv,    max_nnz1, Threads.nthreads())
         extras_f.col_to_local = zeros(Int32, nc1,      Threads.nthreads())
-        # Float32 boundary buffers for the fine↔coarse precision cast + F32 smoother
+        # F32 boundary buffers for fine↔coarse cast; Dinv_Tc/b_Tc enable F32 fine smoother when fine_float=Float32.
         extras_f.r_Tc        = mk_vec_c(n1)
         extras_f.tmp_Tc      = mk_vec_c(n1)
-        extras_f.Dinv_Tc     = mk_vec_c(n1)
-        extras_f.b_Tc        = mk_vec_c(n1)
         extras_f.A_f32_nzval = similar(_nzval(A_device), Tc)  # pre-alloc; synced every iter
+        if opts.fine_float == Float32
+            extras_f.Dinv_Tc = mk_vec_c(n1)
+            extras_f.b_Tc    = mk_vec_c(n1)
+        end
     else
         # Single-level: fine = coarsest; store LU in fine extras
         extras_f.A_cpu     = A_cpus[1]

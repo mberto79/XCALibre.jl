@@ -2,37 +2,41 @@
 
 Managed by `amg_loop.sh` + headless Claude. Do not manually edit during a run.
 
-ACTION: The results from the current iteration (iteration 2) are already available. You can start this iteration by analysing the results and moving on to work on "what to try next" (below)
 
 ## Goal
 AMG runtime ratio **< 0.60x** vs Cg+Jacobi baseline (F1 1.67M cells, RANS KOmega, CUDA GPU).
 
-## Current Iteration: 2
+## Current Iteration: 3
 
-## Change Made (Iter 2)
+## Change Made (Iter 3)
 
-Added Config 4 to benchmark: AMG WCycle with F32 coarse (same settings as Config 2 but `cycle=WCycle()`).
-Purpose: test whether W-cycle reduces PCG iters enough (15→8-10) to offset higher per-cycle cost (~1.33×)
-and reach the 0.60 target. Config 2 (VCycle) preserved for continuity of BENCHMARK_RATIO.
+Replaced failed WCycle Config 4 with `coarse_sweeps=25` (half of current 50).
+- AMG_6_api.jl: added `Dinv_Tc`/`b_Tc` allocation gated on `opts.fine_float == Float32` (harmless, needed for future)
+- F32 fine smoother was attempted first but CATASTROPHICALLY FAILED: 1000 PCG iters (diverged).
+  Root cause: F32 rounding breaks the SPD property of the AMG preconditioner — PCG requires SPD.
+  F32 fine smoother path is CLOSED.
+- coarse_sweeps=25: converges (16.5 PCG iters in smoke test vs 12.0 for cs=50).
+  Hypothesis: F32 coarse with 25 sweeps may be sufficient (old log tuned at F64).
+
+## Key Finding (Iter 2)
+WCycle catastrophically failed: 161 PCG iters, ratio 6.456. Exponential recursion cost. CLOSED.
 
 ## Key Finding (Iter 1)
-F32 vs F64 coarse V-cycle solve speedup: **1.36x** (235ms vs 319ms) — fine-level F64 SpMVs dominate.
-Overall wall time speedup: 1.11x. 2x expectation not met because 1.67M-cell fine level ≫ 44K coarse level.
-Ratios: VCycle F32=0.655, F64-coarse=0.730. Fine-level work dominates the V-cycle.
+F32 vs F64 coarse V-cycle: 1.36x solve speedup — fine F64 SpMVs dominate.
+Ratios: VCycle F32=0.655, F64-coarse=0.730.
 
-## What to Try Next (after Iter 2 results)
-- If WCycle F32 ratio ≤ 0.60: target met — swap Config 2 to WCycle()
-- If WCycle ratio 0.61-0.63: combine WCycle with F32 fine smoother
-- If WCycle ≥ VCycle (diminishing returns with inexact coarse): skip WCycle, try F32 fine smoother instead
-  - F32 fine smoother path: add `Dinv_Tc::TcVec` + `b_Tc::TcVec` to LevelExtras fine level;
-    cast b→F32 once before sweep loop; use r_Tc/tmp_Tc as ping-pong; reconstruct A_f32 SPARSEGPU in-place
+## What to Try Next (after Iter 3 results)
+- If cs=25 ratio ≤ 0.60: target met — set as new default
+- If cs=25 ratio improves over cs=50 (0.662): keep and try cs=15
+- If cs=25 ratio worse than cs=50: coarse_sweeps=50 is optimal → STATUS: EXHAUSTED
+  (cuDSS at coarsest is the only remaining path but requires major new implementation)
 
-## Previous Recovery (Pre-launch Iter 2)
-Fixed `_tc_sparse_type`/`_tc_vec_type` to accept Tc type arg (was hardcoded Float32).
-
-## Recovery (Pre-launch Iter 3)
-Fixed `amg_rap_update_smooth!`: derive `Tc = eltype(P.nzVal)` for SpGEMM (was hardcoded Float32).
-All 3 configs smoke-tested OK.
+## Closed Paths
+- WCycle: exponential GPU recursion cost (2^n_levels calls)
+- F32 fine smoother: breaks PCG SPD requirement → diverges (1000 iters)
+- F64 coarse: 1.36x slower than F32 coarse, no benefit
+- IC0 at coarsest: triangular solves sequential on GPU (from old loop)
+- CPU sparse direct (CHOLMOD): 33ms/call vs 5ms Jacobi (from old loop)
 
 ## History
 
@@ -42,4 +46,7 @@ Ratio: 0.653 | Solve: 218.85ms | PCG: 13.8 | Notes: SA 3L VCycle, smooth_P, coar
 Iter: 1 (F64 coarse comparison added as Config 3)
 Ratio: 0.655 | Solve F32: 235ms | Solve F64: 319ms | PCG F32: 14.9 | PCG F64: 15.4
 F32 V-cycle solve speedup vs F64: 1.36x | Wall speedup: 1.11x
-Key finding: fine F64 SpMVs dominate; 2x expectation not met
+
+Iter: 2 (WCycle F32 added as Config 4 — FAILED)
+Ratio VCycle: 0.662 | WCycle: 6.456 | WCycle PCG: 161 iters vs 15.8 VCycle
+WCycle closed. Config 4 replaced with coarse_sweeps=25 test.

@@ -1,8 +1,9 @@
 export Physics
-export AbstractMomentumModel
+export AbstractMomentumModel, AbstractMomentumContainer
 export Momentum
 export AbstractTimeModel
 export Transient, Steady
+export EFM, original
 
 """
     struct Physics{T,F,SO,M,Tu,E,D,BI}
@@ -89,23 +90,75 @@ Momentum model containing key momentum fields.
 ### Examples
 - `Momentum(mesh::AbstractMesh)
 """
-struct Momentum{V,S,Vf,Sf,SS} <: AbstractMomentumModel
+abstract type AbstractMomentumContainer end
+struct Momentum{T, ARG} <: AbstractMomentumContainer
+    args::ARG
+end
+
+
+@kwdef struct original{V,S,Vf,Sf,SS} <: AbstractMomentumModel
     U::V 
     p::S 
     Uf::Vf 
     pf::Sf 
     sources::SS
-end 
-Adapt.@adapt_structure Momentum 
+end
 
-
-Momentum(mesh::AbstractMesh) = begin
+original(mesh::AbstractMesh) = begin
     U = VectorField(mesh)
     p = ScalarField(mesh)
     Uf = FaceVectorField(mesh)
     pf = FaceScalarField(mesh)
-    Momentum(U, p, Uf, pf, nothing)
+    original(U, p, Uf, pf, nothing)
 end
+
+
+Adapt.@adapt_structure original 
+#@kwdef struct original{V,S,Vf,Sf,SS} <: AbstractMomentumModel
+#    U::V 
+#    p::S 
+#    Uf::Vf 
+#    pf::Sf 
+#    sources::SS
+#end 
+#Adapt.@adapt_structure original 
+
+
+#Momentum{original}(mesh::AbstractMesh) = begin
+#    U = VectorField(mesh)
+#    p = ScalarField(mesh)
+#    Uf = FaceVectorField(mesh)
+#    pf = FaceScalarField(mesh)
+#    original(U, p, Uf, pf, nothing)
+#end
+
+
+
+struct EFM{V,S,Vf,Sf,SS,C} <: AbstractMomentumModel
+    U::V
+    h::S
+    Uf::Vf
+    hf::Sf
+    sources::SS
+    coeffs::C
+end
+Adapt.@adapt_structure EFM
+
+Momentum{EFM}(;σ=0.069, h_crit=1e-10, h_floor=1e-15, β=6.0, θm = 75, ϕ=0) = begin
+    coeffs = (σ=σ, h_crit=h_crit, h_floor=h_floor, β=β, θm=θm, ϕ=ϕ)
+    ARG = typeof(coeffs)
+    Momentum{EFM, ARG}(coeffs)
+end
+
+(momentum::Momentum{EFM, ARG})(mesh::AbstractMesh) where ARG = begin
+    U = VectorField(mesh)
+    h = ScalarField(mesh)
+    Uf = FaceVectorField(mesh)
+    hf = FaceScalarField(mesh)
+    coeffs = momentum.args
+    EFM(U, h, Uf, hf, nothing, coeffs)
+end
+
 
 """
     Physics(; time, fluid, solid, turbulence, energy, domain)::Physics{T,F,SO,M,Tu,E,D,BI}
@@ -119,9 +172,11 @@ end
 - `domain` - provides the mesh to used (must be adapted to the target backend device)
 
 """
-Physics(; time, fluid=nothing, solid=nothing, turbulence=nothing, energy, domain) = begin
+Physics(;
+time, fluid=nothing, solid=nothing, turbulence=nothing, energy, domain, momentum=EFM
+) = begin
     # NOTE: this function will be changed if/when a "medium" keyword is introduced. This will get rid of this ugly if statements! 
-    momentum = Momentum(domain)
+    momentum = momentum(domain)
 
     if fluid !== nothing
         fluid = fluid(domain)

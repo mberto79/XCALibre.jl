@@ -16,5 +16,4 @@ unv_sample_meshes/*
 [0-9]*/
 !test/0_TEST_CASES/
 constant/
-CLAUDE.md
-.claudeignore
+Good_Solutions/

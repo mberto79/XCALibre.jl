@@ -290,6 +290,7 @@ function build_multiphase(phase_setups::Tuple{<:AbstractPhase, <:AbstractPhase},
     p_rghf = FaceScalarField(mesh)
     
     Multiphase(phases=phases, physics_properties=built_properties, volume_fraction=volume_fraction, alpha=alpha, alphaf=alphaf, rho=rho, rhof=rhof, nu=nu, nuf=nuf, p_rgh=p_rgh, p_rghf=p_rghf)
+end
 """
     SupersonicFlow <: AbstractCompressible
 

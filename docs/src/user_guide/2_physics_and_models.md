@@ -79,13 +79,14 @@ begin
 end
 ```
 
-From the subtype tree above, we can see that XCALibre.jl offers 2 major abstract fluid types, `AbstractIncompressible` and `AbstractCompressible`. There are 3 concrete fluid types:
+From the subtype tree above, we can see that XCALibre.jl offers 2 major abstract fluid types, `AbstractIncompressible` and `AbstractCompressible`. There are 4 concrete fluid types:
 
-- `Incompressible` - for simulations were the fluid density does not change with pressure
-- `WeaklyCompressible` - for simulation were the fluid density is allowed to change (no shockwaves)
-- `Compressible` - for simulations were discontinuities may appear (not available for general use yet)
+- `Incompressible` - for simulations where the fluid density does not change with pressure
+- `WeaklyCompressible` - for simulations where the fluid density is allowed to change (no shockwaves)
+- `Compressible` - for simulations where discontinuities may appear (not available for general use yet)
+- `SupersonicFlow` - for density-based compressible simulations, including supersonic flows with shockwaves
 
-To specify a given fluid type, the `Fluid` wrapper type is used as a general constructor which is specialised depending depending on the fluid type from the list above provided by the user. The constructors require the following inputs:
+To specify a given fluid type, the `Fluid` wrapper type is used as a general constructor which is specialised depending on the fluid type from the list above provided by the user. The constructors require the following inputs:
 
 For incompressible fluid flow
 ```julia
@@ -96,12 +97,18 @@ For compressible fluids (weak formulation)
 ```julia
 Fluid{WeaklyCompressible}(; nu, cp, gamma, Pr)
 ```
+
+For density-based compressible flow (Godunov-type explicit solver)
+```julia
+Fluid{SupersonicFlow}(; nu=1e-5, cp=1005.0, gamma=1.4, Pr=0.7)
+```
+
 where the input variables represent the following:
 
 - `nu` - kinematic viscosity
 - `rho` - fluid density
 - `gamma` - specific heat ratio
-- `Pr` - Prandlt number
+- `Pr` - Prandtl number
 - `cp` - specific heat at constant pressure
 
 For example, an incompressible fluid can be specified as follows
@@ -109,6 +116,15 @@ For example, an incompressible fluid can be specified as follows
 Physics(
     time = Steady(),
     fluid = Fluid{Incompressible}(nu=1e-5),
+    ...
+)
+```
+
+For a density-based compressible simulation (dispatches to the GODUNOV solver)
+```julia
+Physics(
+    time = Transient(),
+    fluid = Fluid{SupersonicFlow}(nu=1e-5, cp=1005.0, gamma=1.4, Pr=0.7),
     ...
 )
 ```

@@ -199,6 +199,64 @@ end
     end
 end
 
+function correct_nut_wall!(νtf, BC::NutMixingLengthWallFunction, model, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    mesh = model.domain
+    (; faces, boundary_cellsID) = mesh
+    (; fluid, momentum, turbulence) = model
+
+    facesID_range = BC.IDs_range
+    start_ID = facesID_range[1]
+
+    ndrange = length(facesID_range)
+    kernel! = _correct_nut_wall_mixing_length!(_setup(backend, workgroup, ndrange)...)
+    kernel!(νtf.values, fluid, momentum, turbulence, BC, faces, boundary_cellsID, start_ID)
+end
+
+@kernel function _correct_nut_wall_mixing_length!(
+    values, fluid, momentum, turbulence, BC::NutMixingLengthWallFunction, faces, boundary_cellsID, start_ID)
+    i = @index(Global)
+    fID = i + start_ID - 1
+
+    (; kappa, E, yPlusLam) = BC.value
+    (; nu) = fluid
+    (; U) = momentum
+    (; nut) = turbulence
+
+    cID = boundary_cellsID[fID]
+    face = faces[fID]
+    (; delta, normal) = face
+    nuc = nu[cID]
+
+    # Tangential velocity magnitude at cell centre (wall velocity = 0)
+    Ucell = U[cID]
+    U_tang = Ucell - (Ucell ⋅ normal) * normal
+    U_tang_mag = mag(U_tang)
+
+    # Newton iteration: solve U_tang_mag = (u_tau/kappa)*ln(E*u_tau*delta/nu) for u_tau
+    # Initial guess from viscous sublayer: u_tau ≈ sqrt(nu*|U_t|/delta)
+    u_tau = sqrt(nuc * U_tang_mag / delta + eltype(values)(1e-20))
+    for _ in 1:10
+        yp  = u_tau * delta / nuc
+        lv  = log(max(E * yp, eltype(values)(1.0 + 1e-4)))
+        f   = U_tang_mag * kappa - u_tau * lv
+        df  = -(lv + one(eltype(values)))
+        u_tau = max(u_tau - f / df, eltype(values)(1e-20))
+    end
+
+    yplus = u_tau * delta / nuc
+    nutw  = nut_wall(nuc, yplus, kappa, E)
+
+    if yplus > yPlusLam
+        values[fID] = nutw
+        nut[cID] = nutw
+    else
+        values[fID] = zero(eltype(values))
+    end
+end
+
 @generated constrain_equation!(eqn, fieldBCs, model, config) = begin
     BCs = fieldBCs.parameters
     func_calls = Expr[]

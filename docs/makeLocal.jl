@@ -35,7 +35,7 @@ EXAMPLES_PAGES = Any[
 
 makedocs(
     sitename = "XCALibre.jl",
-    format = Documenter.HTML(),
+    format = Documenter.HTML(size_threshold=nothing),
     # doctest = false, # only set to false when sorting out docs structure
     modules = [XCALibre],
     pages = [

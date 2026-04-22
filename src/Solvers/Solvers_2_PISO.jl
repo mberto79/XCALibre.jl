@@ -49,8 +49,11 @@ function PISO(
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
+
+    dt_cpu = zeros(_get_float(mesh), 1)
+    copyto!(dt_cpu, config.runtime.dt)
     
-    postprocess = convert_time_to_iterations(postprocess,model,dt,iterations)
+    postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)
     rDf = get_flux(p_eqn, 1)
@@ -103,7 +106,8 @@ function PISO(
 
 
     @time for iteration ∈ 1:iterations
-        time = iteration *dt
+        copyto!(dt_cpu, config.runtime.dt)
+        time += dt_cpu[1]
 
         rx, ry, rz = solve_equation!(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)
@@ -111,6 +115,7 @@ function PISO(
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rDf, rD, config)
+        correct_interpolation_periodic(rDf, rD, boundaries.U, config)
         remove_pressure_source!(U_eqn, ∇p, config)
         
         rp = 0.0
@@ -120,6 +125,7 @@ function PISO(
             # Interpolate faces
             interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
             correct_boundaries!(Uf, Hv, boundaries.U, time, config)
+
             # div!(divHv, Uf, config)
 
             # new approach
@@ -159,25 +165,23 @@ function PISO(
                 limit_gradient!(schemes.p.limiter, ∇p, p, config)
             end
 
-            # old approach - keep for now!
-            # correct_velocity!(U, Hv, ∇p, rD, config)
-            # interpolate!(Uf, U, config)
-            # correct_boundaries!(Uf, U, boundaries.U, time, config)
-            # flux!(mdotf, Uf, config) # old approach
-
             # new approach
-            correct_mass_flux(mdotf, p, rDf, config)
+            correct_mass_flux!(mdotf, p_eqn, config)
             correct_velocity!(U, Hv, ∇p, rD, config)
 
         end # corrector loop end
         
-        # correct_mass_flux(mdotf, p, rDf, config) # new approach
+        # correct_mass_flux!(mdotf, p, rDf, config) # new approach
 
     turbulence!(turbulenceModel, model, S, prev, time, config) 
     update_nueff!(nueff, nu, model.turbulence, config)
 
-    maxCourant = max_courant_number!(cellsCourant, model, config)
 
+    courant = max_courant_number!(cellsCourant, model, config)
+
+    update_dt!(config.runtime, courant)
+
+    
     R_ux[iteration] = rx
     R_uy[iteration] = ry
     R_uz[iteration] = rz
@@ -185,8 +189,9 @@ function PISO(
 
     ProgressMeter.next!(
         progress, showvalues = [
-            (:time, iteration*runtime.dt),
-            (:Courant, maxCourant),
+            (:dt, dt_cpu[1]),
+            (:time, time),
+            (:Courant, courant),
             (:Ux, R_ux[iteration]),
             (:Uy, R_uy[iteration]),
             (:Uz, R_uz[iteration]),
@@ -195,7 +200,7 @@ function PISO(
             ]
         )
 
-    runtime_postprocessing!(postprocess,iteration,iterations)
+    runtime_postprocessing!(postprocess,iteration,iterations,S,config)
     
     if iteration%write_interval + signbit(write_interval) == 0
         save_output(model, outputWriter, iteration, time, config)

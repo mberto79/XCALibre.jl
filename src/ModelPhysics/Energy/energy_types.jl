@@ -1,6 +1,4 @@
-# export AbstractEnergyModel, Energy
-export Energy
-export AbstractEnergyModel
+export AbstractEnergyModel, Energy
 export Isothermal
 
 abstract type AbstractEnergyModel end
@@ -13,21 +11,15 @@ end
 
 # Isothermal
 
-struct Isothermal{T<:AbstractScalarField} <: AbstractEnergyModel 
-    T::T
-end 
+struct Isothermal <: AbstractEnergyModel end 
 Adapt.Adapt.@adapt_structure Isothermal
 
-# Set the defualt value unless user specifies it - compatible with other solvers and energy models.
-Energy{Isothermal}(; T=300.0) = begin
-    coeffs = (T=T,)
-    ARG = typeof(coeffs)
-    Energy{Isothermal,ARG}(coeffs)
+Energy{Isothermal}() = begin
+    args = nothing
+    ARGS = typeof(args)
+    Energy{Isothermal,ARGS}(args)
 end
 
 (energy::Energy{EnergyModel, ARG})(mesh, fluid) where {EnergyModel<:Isothermal,ARG} = begin
-    T_val = energy.args.T
-    
-    T = ConstantScalar(T_val)
-    Isothermal(T)
+    nothing
 end

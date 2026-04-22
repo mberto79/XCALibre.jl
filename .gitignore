@@ -16,3 +16,7 @@ unv_sample_meshes/*
 [0-9]*/
 constant/
 DATA_FOR_DISSERTATION/*
+!test/0_TEST_CASES/
+constant/
+CLAUDE.md
+.claudeignore

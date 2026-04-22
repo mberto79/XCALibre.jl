@@ -30,7 +30,9 @@ end
 @inline scheme_source!(
     term::Operator{F,P,I,Time{Euler}}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
         volume = cell.volume
-        vol_rdt = volume/runtime.dt
+        # To DO!!!!!
+        # flux below is for current time - need to also store previous flux
+        vol_rdt = term.flux[cID]*volume/runtime.dt[1]
         
         # Increment sparse and b arrays 
         ac = vol_rdt
@@ -48,7 +50,7 @@ end
 @inline scheme_source!(
     term::Operator{F,P,I,Time{CrankNicolson}}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
         volume = cell.volume
-        vol_rdt = volume/runtime.dt
+        vol_rdt = term.flux[cID]*volume/runtime.dt[1]
         
         # Increment sparse and b arrays 
         ac = vol_rdt
@@ -65,6 +67,9 @@ end
 
     
     (; area, normal, delta, e) = face
+    Sf = ns*area*normal
+    Af = norm(Sf)
+
     ## Potential simplified form for performance, needs checking before use in release
     # dPN = cellN.centre - cell.centre
     # n = ns*normal
@@ -72,13 +77,20 @@ end
     # Ef = dPN*(one(typeof(ns))/(dPN⋅n))*area # a little faster but a few more iter
 
     # Use form below to ensure correctness, could be simplified for performance
-    Sf = ns*area*normal # original
     e = ns*e # original
     Ef = ((Sf⋅Sf)/(Sf⋅e))*e # original
     Ef_mag = norm(Ef)
     ap = term.sign*(term.flux[fID]*Ef_mag)/delta
 
+
     # ap = term.sign*(term.flux[fID]*area)/delta # Initial form used
+
+    # ap = term.sign*(term.flux[fID]*Af)/Δ # minimum correction formulation
+
+    # Test formulation using vector d instead of e to explore any stability benefits
+    # Ef = ((Sf⋅Sf)/(Sf⋅d))*d
+    # Ef_mag = norm(Ef)
+    # ap = term.sign*(term.flux[fID]*Ef_mag)/Δ
     
     # Increment sparse array
     ac = -ap
@@ -97,25 +109,15 @@ end
     term::Operator{F,P,I,Divergence{Linear}}, 
     nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
-    # Retrieve mesh centre values
-    f = face.centre
-    C = cell.centre
-    N = cellN.centre
 
-    # calculate distance vectors
-    d_fC = C - f 
-    d_fN = N - f
+    w = face.weight
+    # signbit(ns) ? w = one(w) - w : w
+    w = 0.5 + ns*(w - 0.5)
     
-    # Calculate weights using normal functions
-    weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
-    one_minus_weight = one(eltype(weight)) - weight
-
-    # Calculate required increment
+    # Calculate link coefficients
     ap = term.sign*(term.flux[fID]*ns)
-    # ac = ap*one_minus_weight
-    # an = ap*weight
-    ac = ap*weight
-    an = ap*one_minus_weight
+    ac = ap*w
+    an = ap*(one(w) - w)
     return ac, an
 end
 @inline scheme_source!(
@@ -128,7 +130,7 @@ end
     term::Operator{F,P,I,Divergence{Upwind}}, 
     nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
-    # Calculate required increment
+    # Calculate link coefficients
     ap = term.sign*(term.flux[fID]*ns)
     ac = max(ap, 0.0) 
     an = -max(-ap, 0.0)
@@ -144,25 +146,14 @@ end
     term::Operator{F,P,I,Divergence{LUST}}, 
     nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
-    # Retrieve mesh centre values
-    f = face.centre
-    C = cell.centre
-    N = cellN.centre
-
-    # calculate distance vectors
-    d_fC = C - f 
-    d_fN = N - f
     
-    # Calculate weights using normal functions
-    weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
-    one_minus_weight = one(eltype(weight)) - weight
+    w = face.weight
+    signbit(ns) ? w = one(w) - w : w
 
-    # Calculate coefficients
+    # Calculate link coefficients
     ap = term.sign*(term.flux[fID]*ns)
-    # acLinear = ap*one_minus_weight
-    # anLinear = ap*weight
-    acLinear = ap*weight 
-    anLinear = ap*one_minus_weight
+    acLinear = ap*w 
+    anLinear = ap*(one(w) - w)
     acUpwind = max(ap, 0.0) 
     anUpwind = -max(-ap, 0.0)
     ac = 0.75*acLinear + 0.25*acUpwind
@@ -179,10 +170,11 @@ end
     term::Operator{F,P,I,Divergence{BoundedUpwind}}, 
     nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
-    # Calculate required increment
-    volume = cell.volume
+    # $$\mathcal{D}_{bounded} = \sum_f \phi_f \psi_f - \psi_P \sum_f \phi_f$$
+    # phif =  max(phif, 0) - max(-phi_f, 0)$
+    # phif psif =  max(phif, 0) psi_P - max(-phi_f, 0)$ psi_N
     ap = term.sign*(term.flux[fID]*ns)
-    ac = max(ap, 0.0) - term.flux[fID]#*volume 
+    ac = max(-ap, 0.0)
     an = -max(-ap, 0.0)
     return ac, an
 end

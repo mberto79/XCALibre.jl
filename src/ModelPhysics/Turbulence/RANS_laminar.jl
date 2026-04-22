@@ -72,6 +72,9 @@ Run turbulence model transport equations.
 """
 function turbulence!(rans::LaminarModel, model::Physics{T,F,SO,M,Tu,E,D,BI}, S, prev, time,config
     ) where {T,F,SO,M,Tu<:AbstractTurbulenceModel,E,D,BI}
+    (; U, Uf, gradU) = S
+    grad!(gradU, Uf, U, config.boundaries.U, time, config)
+    limit_gradient!(config.schemes.U.limiter, gradU, U, config)
     nothing
 end
 
@@ -91,6 +94,7 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
         args = (
             ("U", model.momentum.U), 
             ("p", model.momentum.p),
+            ("rho", model.fluid.rho),
             ("T", model.energy.T)
         )
     else
@@ -102,18 +106,18 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end
 
-function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
-    ) where {T,F<:Multiphase,SO,M,Tu<:Laminar,E<:Nothing,D,BI}
+# function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
+#     ) where {T,F<:Multiphase,SO,M,Tu<:Laminar,E<:Nothing,D,BI}
 
-    args = (
-        ("U", model.momentum.U), 
-        ("p", model.momentum.p),
-        ("alpha", model.fluid.alpha),
-        ("rho", model.fluid.rho),
-        # ("p_rgh", model.fluid.p_rgh)
-    )
-    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
-end
+#     args = (
+#         ("U", model.momentum.U), 
+#         ("p", model.momentum.p),
+#         ("alpha", model.fluid.alpha),
+#         ("rho", model.fluid.rho),
+#         # ("p_rgh", model.fluid.p_rgh)
+#     )
+#     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
+# end
 
 function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
     ) where {T,F,SO,M,Tu<:Laminar,E<:Nothing,D,BI}

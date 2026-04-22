@@ -3,14 +3,8 @@ using LinearAlgebra
 using SparseArrays
 using SparseMatricesCSR
 using StaticArrays 
-using ThreadPinning
+using Statistics
 using Test
-
-# @info "Pinning Threads"
-# pinthreads(:cores)
-
-# @info "Setting BLAS threads to 1"
-# BLAS.set_num_threads(1)
 
 workgroupsize(mesh) = length(mesh.cells) ÷ Threads.nthreads()
 
@@ -55,10 +49,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         end
     end
 
-    @testset "Multiphase Functionality Test" begin
+    @testset "Adaptive time-stepping Test" begin
 
         test_files = [
-            "2d_multiphase_gravity.jl"
+            "adaptive_dt.jl"
         ]
 
         for test ∈ test_files
@@ -110,6 +104,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
             test_path = joinpath(TEST_CASES_DIR, test)
             include(test_path)
         end
+    end
+
+    @testset "Godunov Solver" begin
+        include(joinpath(TEST_CASES_DIR, "2d_godunov_supersonic_cylinder.jl"))
     end
 
     foreach(rm, filter(endswith(".vtk"), readdir(pwd(), join=true)))

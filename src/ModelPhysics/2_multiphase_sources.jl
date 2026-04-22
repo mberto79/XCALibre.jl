@@ -1,17 +1,11 @@
-export LeeModelState, DriftVelocityState, GravityState, CSF_State, ArtificialCompressionState
-export LeeModel, DriftVelocity, Gravity, CSF, ArtificialCompression
-export build_gravityModel, build_leeModel, build_driftVelocity, build_CSF_Model, build_ArtificialCompressionModel
-export AbstractPhysicsProperty
+export GravityState
+export Gravity
+export build_gravityModel
 
-export update_source
+export AbstractPhysicsProperty
 
 
 abstract type AbstractPhysicsProperty end
-
-abstract type AbstractDrag <: AbstractPhysicsProperty end
-
-
-Base.@kwdef struct Drag_SchillerNaumann <: AbstractDrag end # not actually used yet but would be nice to define drag models in the future
 
 Base.@kwdef struct Gravity{V<:AbstractVector{<:AbstractFloat}} <: AbstractPhysicsProperty
     g::V

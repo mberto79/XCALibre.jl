@@ -42,12 +42,6 @@ end
     0.0, ap*bc.value
 end
 
-@define_boundary Dirichlet Divergence{BoundedUpwind} begin
-    flux = -term.flux[fID]
-    ap = term.sign*(flux)
-    flux, ap*bc.value
-end
-
 @define_boundary Dirichlet Laplacian{Linear} VectorField begin
     J = term.flux[fID]
     (; area, delta) = face 
@@ -75,9 +69,27 @@ end
 end
 
 @define_boundary Dirichlet Divergence{BoundedUpwind} VectorField begin
-    flux = -term.flux[fID]
-    ap = term.sign*(flux)
-    flux, ap*bc.value[component.value]
+    # ap = term.sign*(term.flux[fID])
+    # ac = max(-ap, 0.0)
+    # phic = get_values(term.phi, component)[cellID]
+    # 0.0, -ap*bc.value[component.value]
+
+    ap = term.sign*(term.flux[fID])
+    ac = max(-ap, 0.0)
+    an = -max(-ap, 0.0)
+    ac, -an*bc.value[component.value]
+end
+
+@define_boundary Dirichlet Divergence{BoundedUpwind} begin
+    # ap = term.sign*(term.flux[fID])
+    # ac = max(-ap, 0.0)
+    # phic = get_values(term.phi, component)[cellID]
+    # 0.0, -ap*bc.value
+
+    ap = term.sign*(term.flux[fID])
+    ac = max(-ap, 0.0)
+    an = -max(-ap, 0.0)
+    ac, -an*bc.value
 end
 
 @define_boundary Dirichlet Si begin

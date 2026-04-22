@@ -20,7 +20,7 @@ mesh_dev = adapt(backend, mesh)
 
 velocity = [0.5, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
-nu = 1e-2
+nu = 1e-4
 Re = (0.2*velocity[1])/nu
 gamma = 1.4
 cp = 1005.0
@@ -46,24 +46,24 @@ BCs = assign(
     (
         U = [
             Dirichlet(:inlet, velocity),
-            Neumann(:outlet, 0.0),
+            Zerogradient(:outlet),
             Wall(:cylinder, noSlip),
             Symmetry(:bottom, 0.0),
             Symmetry(:top, 0.0)
         ],
         p = [
-            Neumann(:inlet, 0.0),
+            Zerogradient(:inlet),
             Dirichlet(:outlet, pressure),
             Wall(:cylinder, 0.0),
-            Neumann(:bottom, 0.0),
-            Neumann(:top, 0.0)
+            Zerogradient(:bottom),
+            Zerogradient(:top)
         ],
-        h = [
+        he = [
             FixedTemperature(:inlet, T=300.0, Enthalpy(cp=cp, Tref=288.15)),
-            Neumann(:outlet, 0.0),
+            Zerogradient(:outlet),
             FixedTemperature(:cylinder, T=330.0, Enthalpy(cp=cp, Tref=288.15)),
-            Neumann(:bottom, 0.0),
-            Neumann(:top, 0.0)
+            Zerogradient(:bottom),
+            Zerogradient(:top)
         ]
     )
 )
@@ -83,7 +83,7 @@ solvers = (
         relax       = 0.2,
         rtol = 1e-2
     ),
-    h = SolverSetup(
+    he = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
@@ -95,7 +95,7 @@ solvers = (
 schemes = (
     U = Schemes(divergence=LUST, gradient=Gauss),
     p = Schemes(divergence=LUST, gradient=Gauss),
-    h = Schemes(divergence=LUST, gradient=Gauss)
+    he = Schemes(divergence=LUST, gradient=Gauss)
 )
 
 runtime = Runtime(iterations=500, write_interval=100, time_step=1)

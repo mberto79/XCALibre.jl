@@ -19,7 +19,7 @@ kOmega model containing all kOmega field parameters.
 - 'coeffs' -- Model coefficients.
 
 """
-struct KOmegaSST{S1,S2,S3,F1,F2,F3,C1,C2,C3,Y,BC} <: AbstractRANSModel
+struct KOmegaSST{S1,S2,S3,F1,F2,F3,C1,C2,C3,Y} <: AbstractRANSModel
     k::S1
     omega::S2
     nut::S3
@@ -30,7 +30,6 @@ struct KOmegaSST{S1,S2,S3,F1,F2,F3,C1,C2,C3,Y,BC} <: AbstractRANSModel
     gamma1::C2
     gamma2::C3
     y::Y
-    wallBCs::BC
 end
 Adapt.@adapt_structure KOmegaSST
 
@@ -69,16 +68,15 @@ end
     kf = FaceScalarField(mesh)
     omegaf = FaceScalarField(mesh)
     nutf = FaceScalarField(mesh)
-    coeffs = rans.args
+    (; β⁺, α1, σk1, σk2, σω1, σω2, β1, β2, κ) = rans.args
+    coeffs = (β⁺=β⁺, α1=α1, σk1=σk1, σk2=σk2, σω1=σω1, σω2=σω2, β1=β1, β2=β2, κ=κ)
     gamma1 = (coeffs.β1/coeffs.β⁺) - coeffs.σω1*coeffs.κ^2/sqrt(coeffs.β⁺)
     gamma2 = (coeffs.β2/coeffs.β⁺) - coeffs.σω2*coeffs.κ^2/sqrt(coeffs.β⁺)
 
-    # Allocate wall distance "y" and setup boundary conditions
+    # Allocate wall distance "y"
     y = ScalarField(mesh)
-    wallBCs = rans.args.walls
-   
 
-    KOmegaSST(k, omega, nut, kf, omegaf, nutf, coeffs, gamma1, gamma2, y, wallBCs) 
+    KOmegaSST(k, omega, nut, kf, omegaf, nutf, coeffs, gamma1, gamma2, y)
 end
 
 # Model initialisation
@@ -105,7 +103,7 @@ function initialise(
     ) where {T,F,SO,M,Tu,E,D,BI}
 
     (; solvers, schemes, runtime, hardware) = config
-    (; k, omega, nut, wallBCs) = turbulence
+    (; k, omega, nut) = turbulence
     
 
     (; rho) = model.fluid
@@ -166,7 +164,7 @@ function initialise(
     @reset k_eqn.solver = _workspace(solvers.k.solver, _b(k_eqn))
     @reset ω_eqn.solver = _workspace(solvers.omega.solver, _b(ω_eqn))
 
-    new_config = wall_distance!(model, wallBCs, config)
+    new_config = wall_distance!(model, model.wall_info, config)
 
     initial_residual = ((:k, 1.0),(:omega, 1.0))
     return KOmegaSSTModel(k_eqn, ω_eqn, ModelState(initial_residual, false), β, σkf, σωf, γ, CDkω, arg1, F1, F1f, arg2, F2, Ω, ∇k, ∇ω), new_config
@@ -324,13 +322,26 @@ end
 # Specialise VTK writer
 function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
     ) where {T,F,SO,M,Tu<:KOmegaSST,E,D,BI}
-    args = (
-        ("U", model.momentum.U), 
-        ("p", model.momentum.p),
-        ("k", model.turbulence.k),
-        ("omega", model.turbulence.omega),
-        ("nut", model.turbulence.nut),
-        ("y", model.turbulence.y),
-    )
+    if typeof(model.fluid) <: AbstractCompressible
+        args = (
+            ("U", model.momentum.U),
+            ("p", model.momentum.p),
+            ("rho", model.fluid.rho),
+            ("T", model.energy.T),
+            ("k", model.turbulence.k),
+            ("omega", model.turbulence.omega),
+            ("nut", model.turbulence.nut),
+            ("y", model.turbulence.y),
+        )
+    else
+        args = (
+            ("U", model.momentum.U),
+            ("p", model.momentum.p),
+            ("k", model.turbulence.k),
+            ("omega", model.turbulence.omega),
+            ("nut", model.turbulence.nut),
+            ("y", model.turbulence.y),
+        )
+    end
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end

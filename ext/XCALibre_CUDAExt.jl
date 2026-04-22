@@ -35,7 +35,7 @@ _build_opA(A::SPARSEGPU) = KP.KrylovOperator(A)
     A.nzVal, A.colVal, A.rowPtr
 end
 
-import XCALibre.Solve: _m, _n, update_preconditioner!
+import XCALibre.Solve: _m, _n, update_preconditioner!, _amg_setup_backend, _amg_setup_matrix, _amg_needs_cpu_apply
 
 function sparse_array_deconstructor_preconditioners(arr::SPARSEGPU)
     (; colVal, rowPtr, nzVal, dims) = arr
@@ -44,6 +44,18 @@ end
 
 _m(A::SPARSEGPU) = A.dims[1]
 _n(A::SPARSEGPU) = A.dims[2]
+
+_amg_setup_backend(::BACKEND) = CPU()
+
+function _amg_setup_matrix(A::SPARSEGPU, ::CPU)
+    i, j, v = findnz(A)
+    ih = adapt(CPU(), i)
+    jh = adapt(CPU(), j)
+    vh = adapt(CPU(), v)
+    SparseXCSR(sparsecsr(ih, jh, vh, size(A, 1), size(A, 2)))
+end
+
+_amg_needs_cpu_apply(::SPARSEGPU) = true
 
 # DILU Preconditioner (hybrid implementation for now)
 
@@ -156,5 +168,3 @@ begin
 end
 
 end # end module
-
-

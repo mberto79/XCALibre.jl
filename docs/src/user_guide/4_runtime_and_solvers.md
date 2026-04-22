@@ -28,6 +28,26 @@ The last (optional) step before running the simulation is to provide an initial 
 initialise!
 ```
 
+## AMG solver
+---
+
+The `AMG` linear solver can be selected directly in `SolverSetup`. It supports `mode=:solver` for a standalone multigrid solve and `mode=:cg` for AMG-preconditioned conjugate gradient on symmetric systems such as pressure equations.
+
+```julia
+SolverSetup(
+    solver = AMG(
+        mode = :cg,
+        coarsening = SmoothAggregation(),
+        smoother = AMGChebyshev()
+    ),
+    preconditioner = Jacobi(),
+    convergence = 1e-7,
+    relax = 1.0,
+    rtol = 0.0,
+    atol = 1e-5
+)
+```
+
 ## Launching flow solvers
 ---
 

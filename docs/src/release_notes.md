@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 *  Added optional adaptive time stepping based on Courant number control (`AdaptiveTimeStepping`) [#98](@ref)
 *  Added explicit Godunov-type compressible solver (`godunov!`) for supersonic flows using Rusanov (local Lax-Friedrichs) and HLLC flux schemes with first and second order spatial reconstruction (MinMod, VanLeer, Superbee limiters) and adaptive CFL-based time stepping [#112](@ref)
+*  Added an experimental algebraic multigrid solver stack with `AMG`, `SmoothAggregation`, `RugeStuben`, `AMGJacobi`, and `AMGChebyshev`
 
 
 ### Fixed

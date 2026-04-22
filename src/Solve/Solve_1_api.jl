@@ -4,6 +4,49 @@ export solve_system!
 export solve_equation!
 export residual!
 export AdaptiveTimeStepping
+export enable_solve_history!, disable_solve_history!, reset_solve_history!, solve_history
+
+const _solve_history_enabled = Ref(false)
+const _solve_history = Any[]
+
+enable_solve_history!() = (_solve_history_enabled[] = true)
+disable_solve_history!() = (_solve_history_enabled[] = false)
+reset_solve_history!() = empty!(_solve_history)
+solve_history() = copy(_solve_history)
+
+_history_enabled() = _solve_history_enabled[]
+
+function _residual_history_arrays(residuals)
+    values = Float64[float(r) for r in residuals]
+    if isempty(values)
+        return values, values
+    end
+    scale = max(values[1], eps(Float64))
+    return values, values ./ scale
+end
+
+_component_label(::Nothing) = "scalar"
+_component_label(component) = string(nameof(typeof(component)))
+
+function _record_linear_solve!(phiEqn::ModelEquation, setup, component, iterations, itmax, residuals; status=nothing)
+    _history_enabled() || return nothing
+    residual_abs, residual_rel = _residual_history_arrays(residuals)
+    push!(_solve_history, (
+        equation_kind=string(nameof(typeof(phiEqn.type))),
+        component=_component_label(component),
+        solver=string(nameof(typeof(setup.solver))),
+        solver_mode=setup.solver isa AMG ? String(setup.solver.mode) : "krylov",
+        iterations=iterations,
+        itmax=itmax,
+        hit_itmax=iterations == itmax,
+        residual_abs=residual_abs,
+        residual_rel=residual_rel,
+        final_residual=isempty(residual_abs) ? NaN : residual_abs[end],
+        final_relative_residual=isempty(residual_rel) ? NaN : residual_rel[end],
+        status=isnothing(status) ? "" : string(status)
+    ))
+    return nothing
+end
 
 struct SolverSetup{
     F<:AbstractFloat,
@@ -285,7 +328,7 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
 
     krylov_solve!(
         solver, opA, b, values; 
-        M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon)
+        M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon), history=_history_enabled()
         )
 
     # Perform explicit step for Crank-Nicholson. Otherwise simply update field with solution
@@ -299,7 +342,17 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
     kernel! = _copy!(_setup(backend, workgroup, ndrange)...)
     kernel!(values, x)
 
-    Krylov.iteration_count(solver) == itmax && @warn "Maximum number of iterations reached!"
+    iterations = Krylov.iteration_count(solver)
+    _record_linear_solve!(
+        phiEqn,
+        setup,
+        component,
+        iterations,
+        itmax,
+        Krylov.statistics(solver).residuals;
+        status=Krylov.statistics(solver).status
+    )
+    iterations == itmax && @warn "Maximum number of iterations reached!"
 
     # println(statistics(solver).niter)
     res = residual(phiEqn, component, config)

@@ -44,3 +44,10 @@ x_test = zeros(5)
 XCALibre.Solve.apply_smoother!(s, x_test, A_csr, b, hardware)
 x_test
 @test x_check ≈ x_test atol=1e-1
+
+x_test_short = zeros(5)
+s_short = JacobiSmoother(3, 2 / 3, zeros(5))
+XCALibre.Solve.apply_smoother!(s_short, x_test_short, A_csr, b, hardware)
+r0 = norm(b - A_check * zeros(5))
+r_short = norm(b - A_check * x_test_short)
+@test r_short < r0

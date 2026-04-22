@@ -16,7 +16,7 @@ end
 function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol)
     _amg_needs_cpu_apply(A) && return _amg_cpu_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol)
     hierarchy.backend isa CPU || return _amg_cpu_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol)
-    _is_symmetric(A) || throw(ArgumentError("AMG(mode=:cg) requires a symmetric matrix"))
+    hierarchy.is_symmetric || throw(ArgumentError("AMG(mode=:cg) requires a symmetric matrix"))
     T = eltype(x)
     r = workspace.residual
     z = workspace.preconditioned
@@ -24,11 +24,14 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
     q = workspace.q
 
     _residual!(r, A, x, b)
+    _reset_residual_history!(workspace)
+    _push_residual_history!(workspace, r)
     bnorm = max(norm(b), eps(T))
     amg_apply_preconditioner!(z, hierarchy, solver, r)
     copyto!(p, z)
     rz = dot(r, z)
     rel = norm(r) / bnorm
+    initial_rel = rel
     k = 0
     while k < itmax && norm(r) > atol && rel > rtol
         k += 1
@@ -38,6 +41,7 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
             x[i] += α * p[i]
             r[i] -= α * q[i]
         end
+        _push_residual_history!(workspace, r)
         rel = norm(r) / bnorm
         if norm(r) <= atol || rel <= rtol
             break
@@ -52,5 +56,6 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
     end
     workspace.iterations = k
     workspace.last_relative_residual = rel
+    _update_cycle_factor!(hierarchy, initial_rel, rel, k, solver)
     return x
 end

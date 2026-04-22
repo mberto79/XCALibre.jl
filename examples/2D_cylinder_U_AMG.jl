@@ -57,14 +57,16 @@ solvers = (
             mode=:solver,
             coarsening=SmoothAggregation(),
             smoother=AMGJacobi(),
+            cycle=:V,
             max_levels=8,
             smoothing_steps=10,
-            max_coarse_rows=100
+            max_coarse_rows=100,
+            adaptive_rebuild_factor=1.1
         ),
         preconditioner=Jacobi(),
         convergence=1e-7,
         relax=1.0,
-        itmax=1,
+        itmax=40,
         rtol=0.0,
         atol=1e-5
     )

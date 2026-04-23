@@ -29,17 +29,18 @@ rotating_frames = RotatingFrames2D(  #  "rotating_frames = RotatingFrames3D("  f
             x1 = [0.0, 0.0, 1.0],
             x0 = [0.0, 0.0, 0.0],
             radius_inner = 0.0,
-            radius_outer = 0.4,
+            radius_outer = 0.1,
             hardware=hardware,
             mesh=mesh
         )
-    ]
+    ],
+    polar=true
 )
 
 model = Physics(
     time = Steady(),
-    fluid = Fluid{Incompressible}(nu = nu, refFrames = rotating_frames),
-    turbulence = RANS{KOmega}(),
+    fluid = Fluid{Incompressible_MRF}(nu = nu, refFrames = rotating_frames),
+    turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
 )
@@ -49,75 +50,45 @@ BCs = assign(
     (
         U = [
             RotatingWall(
-                :rotor,
+                :walls,
                 rpm=(30/pi)*rotating_frames.frames.omega[1],
                 centre=rotating_frames.frames.x0[1],
                 axis=rotating_frames.frames.rotaxis[1]
                 ),
-            Wall(:walls, [0.0, 0.0, 0.0])
+            Wall(:boundary, [0.0, 0.0, 0.0])
         ],
         p = [
-            Wall(:rotor),
+            Wall(:boundary),
             Wall(:walls)
-        ],
-        k = [
-            KWallFunction(:rotor)
-            KWallFunction(:walls)
-        ],
-        omega = [
-            OmegaWallFunction(:rotor)
-            OmegaWallFunction(:walls)
-        ],
-        nut = [
-            NutWallFunction(:rotor)
-            NutWallFunction(:walls)
         ]
     )
 )
 
 schemes = (
     U = Schemes(divergence=Upwind),
-    p = Schemes(divergence=Upwind),
-    k = Schemes(divergence=Upwind),
-    omega = Schemes(divergence=Upwind)
+    p = Schemes(divergence=Upwind)
 )
 
 solvers = (
     U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        convergence = 1e-7,
-        relax       = 0.5,
+        convergence = 1e-6,
+        relax       = 0.3,
         rtol = 1e-2,
         atol = 1e-10
     ),
     p = SolverSetup(
         solver      = Cg(), #Gmres(), #Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        convergence = 1e-7,
-        relax       = 0.5,
+        convergence = 1e-5,
+        relax       = 0.3,
         rtol = 1e-3,
-        atol = 1e-10
-    ),
-    k = SolverSetup(
-        solver      = Bicgstab(), # Bicgstab(), Gmres()
-        preconditioner = Jacobi(),
-        convergence = 5e-7,
-        relax       = 0.5,
-        rtol = 1e-2,
-        atol = 1e-10
-    ),
-    omega = SolverSetup(
-        solver      = Bicgstab(), # Bicgstab(), Gmres()
-        preconditioner = Jacobi(),
-        convergence = 1e-7,
-        relax       = 0.5,
-        rtol = 1e-2,
         atol = 1e-10
     )
 )
 
-runtime = Runtime(iterations=100, write_interval=10, time_step=1)
+runtime = Runtime(iterations=10, write_interval=1, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
@@ -134,20 +105,8 @@ initialise!(model.turbulence.nut, νt_inlet)
 residuals = run!(model, config)
 
 # Custom Output Functions
-mesh_name = get_mesh_name(mesh_file)
-velocity_name = string("velocity_",u_mag)*'_'
+mesh_name = string(get_mesh_name(mesh_file))*'_'
 omega_name = string("omega_",omega)*'_'
-script_name = string(@__FILE__)
-output_dir = mesh_name * omega_name *  "polarCoords_MRFdemo"
-pattern = "vtk"
-# pattern = "foam"
+script_name = string(@__FILE__)*'_'
+output_dir = script_name * mesh_name * omega_name *  "_MRFdemo"
 output_directory(output_dir, script_name)
-
-#using Plots
-#iterations = runtime.iterations
-#plot(yscale=:log10, ylims=(1e-8,1e-1))
-#plot!(1:iterations, residuals.Ux, label="Ux")
-#plot!(1:iterations, residuals.Uy, label="Uy")
-#plot!(1:iterations, residuals.Uz, label="Uz")
-#plot!(1:iterations, residuals.p, label="p")
-#plot!(size=(800,600))

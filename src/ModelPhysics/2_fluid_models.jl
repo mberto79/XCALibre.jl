@@ -1,6 +1,6 @@
 export AbstractFluid, AbstractIncompressible, AbstractCompressible
 export Fluid
-export Incompressible, WeaklyCompressible, Compressible
+export Incompressible, Incompressible_MRF, WeaklyCompressible, Compressible
 export Phase, Fluid, Multiphase
 export AbstractModel, AbstractEosModel, AbstractViscosityModel
 export Incompressible, WeaklyCompressible, Compressible, SupersonicFlow
@@ -98,7 +98,7 @@ end
 
 (fluid::Fluid{Incompressible_MRF, ARG})(mesh) where ARG = begin
     coeffs = fluid.args
-    (; rho, nu) = coeffs
+    (; rho, nu, refFrames) = coeffs
     nu = ConstantScalar(nu)
     nuf = nu
     rho = ConstantScalar(rho)

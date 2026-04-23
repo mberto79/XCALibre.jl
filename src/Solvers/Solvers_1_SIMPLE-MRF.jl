@@ -109,12 +109,13 @@ function SIMPLE_MRF(
     
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
-    (; nu) = model.fluid
+    (; nu, refFrames) = model.fluid
+    x0 = refFrames.frames.x0[1]
+    rotaxis = refFrames.frames.rotaxis[1]
     mesh = model.domain
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
     (; iterations, write_interval,dt) = runtime
     (; backend) = hardware
-    (; reference_frames) = model
 
     dt_cpu = zeros(_get_float(mesh), 1)
     copyto!(dt_cpu, config.runtime.dt)
@@ -171,7 +172,7 @@ function SIMPLE_MRF(
         time = iteration
 
         # Updates the OmegaU source term (function is defined below)
-        update_mrf_sources!(omegaU, U, reference_frames, config)
+        update_mrf_sources!(omegaU, U, refFrames, config)
 
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
         
@@ -187,7 +188,7 @@ function SIMPLE_MRF(
         correct_boundaries!(Uf, Hv, boundaries.U, time, config)
 
 
-        flux_mrf!(mdotf, Uf, config, reference_frames)
+        flux_mrf!(mdotf, Uf, config, refFrames)
         div!(divHv, mdotf, config)
         
         # Pressure calculations
@@ -239,8 +240,11 @@ function SIMPLE_MRF(
             finish!(progress)
             @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
-                save_output(model, outputWriter, iteration, time, config)
-                #save_output_polar(model, outputWriter, iteration, time, config, x0, rotaxis, mask=global_mask)
+                if refFrames.polar == false
+                    save_output(model, outputWriter, iteration, time, config)
+                elseif refFrames.polar == true
+                    save_output_polar(model, outputWriter, iteration, time, config, x0, rotaxis, mask=global_mask)
+                end
                 save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
             end
             break
@@ -260,8 +264,11 @@ function SIMPLE_MRF(
         runtime_postprocessing!(postprocess,iteration,iterations)
         
         if iteration%write_interval + signbit(write_interval) == 0      
-            save_output(model, outputWriter, iteration, time, config)
-            #save_output_polar(model, outputWriter, iteration, time, config, x0, rotaxis, mask=global_mask)
+            if refFrames.polar == false
+                    save_output(model, outputWriter, iteration, time, config)
+                elseif refFrames.polar == true
+                    save_output_polar(model, outputWriter, iteration, time, config, x0, rotaxis, mask=global_mask)
+                end
             save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
         end
 

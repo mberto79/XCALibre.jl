@@ -27,7 +27,8 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
     _reset_residual_history!(workspace)
     _push_residual_history!(workspace, r)
     bnorm = max(norm(b), eps(T))
-    amg_apply_preconditioner!(z, hierarchy, solver, r)
+    elapsed_s = @elapsed amg_apply_preconditioner!(z, hierarchy, solver, r)
+    _record_apply_timing!(workspace, elapsed_s)
     copyto!(p, z)
     rz = dot(r, z)
     rel = norm(r) / bnorm
@@ -46,7 +47,8 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
         if norm(r) <= atol || rel <= rtol
             break
         end
-        amg_apply_preconditioner!(z, hierarchy, solver, r)
+        elapsed_s = @elapsed amg_apply_preconditioner!(z, hierarchy, solver, r)
+        _record_apply_timing!(workspace, elapsed_s)
         rz_new = dot(r, z)
         β = rz_new / rz
         @inbounds for i in eachindex(p)

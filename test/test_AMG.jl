@@ -56,6 +56,8 @@ ws = _workspace(setup.solver, b)
 @test ws.solution !== ws.q
 ws = XCALibre.Solve.update!(ws, A, setup.solver, config)
 @test ws.hierarchy isa XCALibre.Solve.AMGHierarchy
+@test ws.timing.build_calls == 1
+@test ws.timing.last_update_action == :build
 @test length(ws.hierarchy.levels) >= 1
 @test ws.hierarchy.operator_complexity >= 1
 @test ws.hierarchy.grid_complexity >= 1
@@ -96,7 +98,12 @@ ws2 = XCALibre.Solve.update!(ws, A2, setup.solver, config)
 @test length(ws2.hierarchy.levels) == levels_before
 @test XCALibre.ModelFramework._nzval(ws2.hierarchy.levels[1].A) != finest_before
 if length(ws2.hierarchy.levels) > 1
+    @test ws2.timing.refresh_calls == 1
+    @test ws2.timing.last_update_action == :refresh
     @test XCALibre.ModelFramework._nzval(ws2.hierarchy.levels[2].A) != coarse_before
+else
+    @test ws2.timing.finest_refresh_calls == 1
+    @test ws2.timing.last_update_action == :finest_refresh
 end
 
 solver_skip_refresh = AMG(
@@ -113,6 +120,8 @@ A_small, _ = amg_test_matrix()
 XCALibre.ModelFramework._nzval(A_small) .= XCALibre.ModelFramework._nzval(A) .* 1.01
 ws_skip = XCALibre.Solve.update!(ws_skip, A_small, solver_skip_refresh, config)
 @test ws_skip.hierarchy.reuse_steps == 1
+@test ws_skip.timing.finest_refresh_calls == 1
+@test ws_skip.timing.last_update_action == :finest_refresh
 if length(ws_skip.hierarchy.levels) > 1
     @test XCALibre.ModelFramework._nzval(ws_skip.hierarchy.levels[2].A) == coarse_skip_before
 end
@@ -158,6 +167,8 @@ ws_solve = XCALibre.Solve.update!(ws_solve, A, setup.solver, config)
 XCALibre.Solve.amg_solve!(ws_solve, ws_solve.hierarchy, setup.solver, A, b, x; itmax=100, atol=1e-8, rtol=1e-8)
 @test norm(b - Array(parent(A)) * x) / norm(b) < 1e-8
 @test ws_solve.hierarchy.last_cycle_factor >= 0
+@test ws_solve.timing.apply_calls == ws_solve.iterations
+@test ws_solve.timing.apply_time_s >= 0
 @test length(ws_solve.residual_history) == ws_solve.iterations + 1
 @test ws_solve.residual_history[end] <= ws_solve.residual_history[1]
 
@@ -182,6 +193,8 @@ ws_cg = XCALibre.Solve.update!(ws_cg, A, solver_cg, config)
 x_cg = zeros(eltype(b), length(b))
 XCALibre.Solve.amg_cg_solve!(ws_cg, ws_cg.hierarchy, solver_cg, A, b, x_cg; itmax=50, atol=1e-8, rtol=1e-8)
 @test norm(b - Array(parent(A)) * x_cg) / norm(b) < 1e-8
+@test ws_cg.timing.apply_calls >= ws_cg.iterations
+@test ws_cg.timing.apply_time_s >= 0
 @test length(ws_cg.residual_history) == ws_cg.iterations + 1
 @test ws_cg.residual_history[end] <= ws_cg.residual_history[1]
 
@@ -203,9 +216,16 @@ ws_rebuild = XCALibre.Solve.update!(ws_rebuild, A, solver_rebuild, config)
 x_rebuild = zeros(eltype(b), length(b))
 XCALibre.Solve.amg_solve!(ws_rebuild, ws_rebuild.hierarchy, solver_rebuild, A, b, x_rebuild; itmax=1, atol=0.0, rtol=0.0)
 @test ws_rebuild.hierarchy.last_cycle_factor >= 0
+@test !ws_rebuild.hierarchy.force_rebuild
 old_hierarchy = ws_rebuild.hierarchy
 ws_rebuild = XCALibre.Solve.update!(ws_rebuild, A, solver_rebuild, config)
-@test ws_rebuild.hierarchy !== nothing
+@test ws_rebuild.hierarchy === old_hierarchy
+@test ws_rebuild.hierarchy.reuse_steps == 1
+XCALibre.Solve.amg_solve!(ws_rebuild, ws_rebuild.hierarchy, solver_rebuild, A, b, x_rebuild; itmax=1, atol=0.0, rtol=0.0)
+@test ws_rebuild.hierarchy.force_rebuild
+old_hierarchy = ws_rebuild.hierarchy
+ws_rebuild = XCALibre.Solve.update!(ws_rebuild, A, solver_rebuild, config)
+@test ws_rebuild.hierarchy !== old_hierarchy
 
 try
     using CUDA

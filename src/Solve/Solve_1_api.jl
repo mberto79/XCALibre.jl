@@ -28,9 +28,25 @@ end
 _component_label(::Nothing) = "scalar"
 _component_label(component) = string(nameof(typeof(component)))
 
-function _record_linear_solve!(phiEqn::ModelEquation, setup, component, iterations, itmax, residuals; status=nothing)
+function _timing_payload(; build_time_s=0.0, build_calls=0, refresh_time_s=0.0, refresh_calls=0,
+    finest_refresh_time_s=0.0, finest_refresh_calls=0, apply_time_s=0.0, apply_calls=0, last_update_action=:none)
+    return (
+        build_time_s=build_time_s,
+        build_calls=build_calls,
+        refresh_time_s=refresh_time_s,
+        refresh_calls=refresh_calls,
+        finest_refresh_time_s=finest_refresh_time_s,
+        finest_refresh_calls=finest_refresh_calls,
+        apply_time_s=apply_time_s,
+        apply_calls=apply_calls,
+        last_update_action=string(last_update_action)
+    )
+end
+
+function _record_linear_solve!(phiEqn::ModelEquation, setup, component, iterations, itmax, residuals; status=nothing, timing=nothing)
     _history_enabled() || return nothing
     residual_abs, residual_rel = _residual_history_arrays(residuals)
+    timing_data = isnothing(timing) ? _timing_payload() : timing
     push!(_solve_history, (
         equation_kind=string(nameof(typeof(phiEqn.type))),
         component=_component_label(component),
@@ -43,7 +59,16 @@ function _record_linear_solve!(phiEqn::ModelEquation, setup, component, iteratio
         residual_rel=residual_rel,
         final_residual=isempty(residual_abs) ? NaN : residual_abs[end],
         final_relative_residual=isempty(residual_rel) ? NaN : residual_rel[end],
-        status=isnothing(status) ? "" : string(status)
+        status=isnothing(status) ? "" : string(status),
+        build_time_s=timing_data.build_time_s,
+        build_calls=timing_data.build_calls,
+        refresh_time_s=timing_data.refresh_time_s,
+        refresh_calls=timing_data.refresh_calls,
+        finest_refresh_time_s=timing_data.finest_refresh_time_s,
+        finest_refresh_calls=timing_data.finest_refresh_calls,
+        apply_time_s=timing_data.apply_time_s,
+        apply_calls=timing_data.apply_calls,
+        last_update_action=timing_data.last_update_action
     ))
     return nothing
 end

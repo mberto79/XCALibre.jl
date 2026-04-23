@@ -47,7 +47,10 @@ end
 function _update_cycle_factor!(hierarchy::AMGHierarchy, initial_rel, final_rel, iterations, solver::AMG)
     if iterations > 0 && initial_rel > 0
         hierarchy.last_cycle_factor = (final_rel / initial_rel)^(1 / iterations)
-        hierarchy.force_rebuild = hierarchy.last_cycle_factor > solver.adaptive_rebuild_factor
+        # Adaptive rebuild should respond to a stale reused hierarchy, not
+        # repeatedly rebuild a hierarchy that is already fresh but still weak.
+        hierarchy.force_rebuild = hierarchy.reuse_steps > 0 &&
+            hierarchy.last_cycle_factor > solver.adaptive_rebuild_factor
     else
         hierarchy.last_cycle_factor = 0.0
         hierarchy.force_rebuild = false
@@ -65,6 +68,33 @@ function _push_residual_history!(workspace::AMGWorkspace, residual)
     return workspace
 end
 
+function _record_build_timing!(workspace::AMGWorkspace, elapsed_s; rebuilt=false)
+    workspace.timing.build_time_s += elapsed_s
+    workspace.timing.build_calls += 1
+    workspace.timing.last_update_action = rebuilt ? :rebuild : :build
+    return workspace
+end
+
+function _record_refresh_timing!(workspace::AMGWorkspace, elapsed_s)
+    workspace.timing.refresh_time_s += elapsed_s
+    workspace.timing.refresh_calls += 1
+    workspace.timing.last_update_action = :refresh
+    return workspace
+end
+
+function _record_finest_refresh_timing!(workspace::AMGWorkspace, elapsed_s)
+    workspace.timing.finest_refresh_time_s += elapsed_s
+    workspace.timing.finest_refresh_calls += 1
+    workspace.timing.last_update_action = :finest_refresh
+    return workspace
+end
+
+function _record_apply_timing!(workspace::AMGWorkspace, elapsed_s)
+    workspace.timing.apply_time_s += elapsed_s
+    workspace.timing.apply_calls += 1
+    return workspace
+end
+
 function _ensure_cpu_workspace!(hierarchy::AMGHierarchy, b, x)
     needs_init = isnothing(hierarchy.cpu_workspace) || isnothing(hierarchy.cpu_rhs) || isnothing(hierarchy.cpu_x) ||
         length(hierarchy.cpu_rhs) != length(b) || length(hierarchy.cpu_x) != length(x)
@@ -75,6 +105,7 @@ function _ensure_cpu_workspace!(hierarchy::AMGHierarchy, b, x)
         hierarchy.cpu_x = similar(xcpu)
         hierarchy.cpu_workspace = AMGWorkspace(
             hierarchy,
+            AMGTimingStats(),
             similar(bcpu),
             similar(bcpu),
             similar(bcpu),
@@ -92,6 +123,8 @@ end
 function _amg_cpu_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol)
     Acpu = hierarchy.levels[1].A
     cpu_workspace, bcpu, xcpu = _ensure_cpu_workspace!(hierarchy, b, x)
+    apply_time_before = cpu_workspace.timing.apply_time_s
+    apply_calls_before = cpu_workspace.timing.apply_calls
     copyto!(bcpu, Array(b))
     copyto!(xcpu, Array(x))
 
@@ -106,6 +139,8 @@ function _amg_cpu_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solve
     workspace.last_relative_residual = cpu_workspace.last_relative_residual
     empty!(workspace.residual_history)
     append!(workspace.residual_history, cpu_workspace.residual_history)
+    workspace.timing.apply_time_s += cpu_workspace.timing.apply_time_s - apply_time_before
+    workspace.timing.apply_calls += cpu_workspace.timing.apply_calls - apply_calls_before
     return x
 end
 
@@ -122,7 +157,8 @@ function amg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver::AM
     it = 0
     while it < itmax && norm(workspace.residual) > atol && rel > rtol
         it += 1
-        amg_apply_preconditioner!(workspace.correction, hierarchy, solver, workspace.residual)
+        elapsed_s = @elapsed amg_apply_preconditioner!(workspace.correction, hierarchy, solver, workspace.residual)
+        _record_apply_timing!(workspace, elapsed_s)
         @inbounds for i in eachindex(x)
             x[i] += workspace.correction[i]
         end

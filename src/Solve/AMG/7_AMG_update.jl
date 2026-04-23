@@ -13,12 +13,42 @@ function _sync_finest_matrix!(hierarchy::AMGHierarchy, A)
     return hierarchy
 end
 
+function _timing_snapshot(workspace::AMGWorkspace)
+    timing = workspace.timing
+    return (
+        build_time_s=timing.build_time_s,
+        build_calls=timing.build_calls,
+        refresh_time_s=timing.refresh_time_s,
+        refresh_calls=timing.refresh_calls,
+        finest_refresh_time_s=timing.finest_refresh_time_s,
+        finest_refresh_calls=timing.finest_refresh_calls,
+        apply_time_s=timing.apply_time_s,
+        apply_calls=timing.apply_calls
+    )
+end
+
+function _timing_delta(workspace::AMGWorkspace, before)
+    timing = workspace.timing
+    return _timing_payload(
+        build_time_s=timing.build_time_s - before.build_time_s,
+        build_calls=timing.build_calls - before.build_calls,
+        refresh_time_s=timing.refresh_time_s - before.refresh_time_s,
+        refresh_calls=timing.refresh_calls - before.refresh_calls,
+        finest_refresh_time_s=timing.finest_refresh_time_s - before.finest_refresh_time_s,
+        finest_refresh_calls=timing.finest_refresh_calls - before.finest_refresh_calls,
+        apply_time_s=timing.apply_time_s - before.apply_time_s,
+        apply_calls=timing.apply_calls - before.apply_calls,
+        last_update_action=workspace.timing.last_update_action
+    )
+end
+
 function update!(workspace::AMGWorkspace, A, solver::AMG, config)
     if isnothing(workspace.hierarchy)
         (; hardware) = config
         setup_backend = _amg_setup_backend(hardware.backend)
         setup_matrix = _amg_setup_matrix(A, setup_backend)
-        workspace.hierarchy = setup_hierarchy(setup_matrix, solver, setup_backend; log_diagnostics=true)
+        elapsed_s = @elapsed workspace.hierarchy = setup_hierarchy(setup_matrix, solver, setup_backend; log_diagnostics=true)
+        _record_build_timing!(workspace, elapsed_s; rebuilt=false)
         return workspace
     end
 
@@ -27,15 +57,18 @@ function update!(workspace::AMGWorkspace, A, solver::AMG, config)
         (; hardware) = config
         setup_backend = _amg_setup_backend(hardware.backend)
         setup_matrix = _amg_setup_matrix(A, setup_backend)
-        workspace.hierarchy = setup_hierarchy(setup_matrix, solver, setup_backend; log_diagnostics=false)
+        elapsed_s = @elapsed workspace.hierarchy = setup_hierarchy(setup_matrix, solver, setup_backend; log_diagnostics=false)
+        _record_build_timing!(workspace, elapsed_s; rebuilt=true)
         return workspace
     end
 
     _sync_finest_matrix!(hierarchy, A)
     if _needs_numeric_refresh(hierarchy, hierarchy.levels[1].A, solver)
-        refresh_hierarchy!(hierarchy, solver)
+        elapsed_s = @elapsed refresh_hierarchy!(hierarchy, solver)
+        _record_refresh_timing!(workspace, elapsed_s)
     else
-        refresh_finest_level!(hierarchy, solver)
+        elapsed_s = @elapsed refresh_finest_level!(hierarchy, solver)
+        _record_finest_refresh_timing!(workspace, elapsed_s)
     end
     return workspace
 end
@@ -47,6 +80,7 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, 
     workspace = phiEqn.solver
     (; hardware) = config
     values = get_values(result, component)
+    timing_before = _timing_snapshot(workspace)
     update!(workspace, A, solver, config)
     apply_smoother!(setup.smoother, values, A, b, hardware)
     x = workspace.solution
@@ -72,7 +106,8 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, 
         workspace.iterations,
         itmax,
         workspace.residual_history;
-        status=workspace.iterations == itmax ? "itmax" : "converged"
+        status=workspace.iterations == itmax ? "itmax" : "converged",
+        timing=_timing_delta(workspace, timing_before)
     )
     workspace.iterations == itmax && @warn "Maximum number of iterations reached!"
     return residual(phiEqn, component, config)

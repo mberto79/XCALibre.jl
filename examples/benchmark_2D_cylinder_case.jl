@@ -211,6 +211,24 @@ function run_case(backend_name::String, mode::String, iterations::Integer, warmu
     backend isa CUDABackend && CUDA.synchronize()
     history = solve_history()
     disable_solve_history!()
+    pressure_history = [entry for entry in history if entry.equation_kind == "ScalarModel"]
+    amg_timing = if !isempty(pressure_history) && first(pressure_history).solver == "AMG"
+        total_apply_calls = sum(entry.apply_calls for entry in pressure_history)
+        (
+            build_time_s=sum(entry.build_time_s for entry in pressure_history),
+            build_calls=sum(entry.build_calls for entry in pressure_history),
+            refresh_time_s=sum(entry.refresh_time_s for entry in pressure_history),
+            refresh_calls=sum(entry.refresh_calls for entry in pressure_history),
+            finest_refresh_time_s=sum(entry.finest_refresh_time_s for entry in pressure_history),
+            finest_refresh_calls=sum(entry.finest_refresh_calls for entry in pressure_history),
+            apply_time_s=sum(entry.apply_time_s for entry in pressure_history),
+            apply_calls=total_apply_calls,
+            avg_apply_time_s=total_apply_calls > 0 ? sum(entry.apply_time_s for entry in pressure_history) / total_apply_calls : 0.0,
+            last_update_action=last(pressure_history).last_update_action
+        )
+    else
+        nothing
+    end
 
     result = (
         backend=backend_name,
@@ -220,7 +238,8 @@ function run_case(backend_name::String, mode::String, iterations::Integer, warmu
         p_first=residuals.p[1],
         p_last=residuals.p[end],
         ux_last=residuals.Ux[end],
-        pressure_history=[entry for entry in history if entry.equation_kind == "ScalarModel"]
+        pressure_history=pressure_history,
+        amg_timing=amg_timing
     )
 
     @printf(
@@ -247,6 +266,25 @@ function run_case(backend_name::String, mode::String, iterations::Integer, warmu
             entry.residual_abs[1],
             entry.final_residual,
             entry.final_relative_residual
+        )
+    end
+
+    if !isnothing(result.amg_timing)
+        timing = result.amg_timing
+        @printf(
+            "AMG_TIMING backend=%s mode=%s build_calls=%d build_s=%.6f refresh_calls=%d refresh_s=%.6f finest_refresh_calls=%d finest_refresh_s=%.6f apply_calls=%d apply_s=%.6f avg_apply_s=%.6f last_update=%s\n",
+            result.backend,
+            result.mode,
+            timing.build_calls,
+            timing.build_time_s,
+            timing.refresh_calls,
+            timing.refresh_time_s,
+            timing.finest_refresh_calls,
+            timing.finest_refresh_time_s,
+            timing.apply_calls,
+            timing.apply_time_s,
+            timing.avg_apply_time_s,
+            timing.last_update_action
         )
     end
 

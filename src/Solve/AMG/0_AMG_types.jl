@@ -1,5 +1,5 @@
 export AMG, SmoothAggregation, RugeStuben, AMGJacobi, AMGChebyshev, AMGSymmetricGaussSeidel, AMGL1Jacobi
-export AMGWorkspace, AMGHierarchy, AMGLevel
+export AMGWorkspace, AMGHierarchy, AMGLevel, AMGTimingStats
 
 abstract type AbstractAMGCoarsening end
 abstract type AbstractAMGSmoother end
@@ -98,6 +98,19 @@ function AMG(;
 end
 Adapt.@adapt_structure AMG
 
+mutable struct AMGTimingStats
+    build_time_s::Float64
+    build_calls::Int
+    refresh_time_s::Float64
+    refresh_calls::Int
+    finest_refresh_time_s::Float64
+    finest_refresh_calls::Int
+    apply_time_s::Float64
+    apply_calls::Int
+    last_update_action::Symbol
+end
+AMGTimingStats() = AMGTimingStats(0.0, 0, 0.0, 0, 0.0, 0, 0.0, 0, :none)
+
 mutable struct AMGLevel{
     M,
     P,
@@ -149,6 +162,7 @@ Adapt.@adapt_structure AMGHierarchy
 
 mutable struct AMGWorkspace{V<:AbstractVector,T}
     hierarchy::Any
+    timing::AMGTimingStats
     solution::V
     residual::V
     correction::V
@@ -165,6 +179,7 @@ function _workspace(::AMG, b)
     x = similar(b)
     AMGWorkspace(
         nothing,
+        AMGTimingStats(),
         similar(x),
         similar(x),
         similar(x),

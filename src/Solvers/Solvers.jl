@@ -27,6 +27,7 @@ using XCALibre.IOFormats
 using XCALibre.Postprocess
 
 include("Solvers_0_functions.jl")
+include("Solvers_1_SIMPLE-MRF.jl")
 include("Solvers_1_SIMPLE.jl")
 include("Solvers_1_LAPLACE.jl")
 include("Solvers_1_CSIMPLE.jl")

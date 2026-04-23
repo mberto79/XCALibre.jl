@@ -69,6 +69,44 @@ end
 end
 
 """
+    Incompressible_MRF <: AbstractIncompressible
+
+Incompressible fluid model containing fluid field parameters for incompressible flows that utilise multiple reference frames (MRF).
+
+### Fields
+- 'nu'   -- Fluid kinematic viscosity.
+- 'rho'  -- Fluid density.
+- 'frames' -- Reference frames information.
+
+### Examples
+- `Fluid{Incompressible}(nu=0.001, rho=1.0)` - Constructor with default values.
+"""
+@kwdef struct Incompressible_MRF{S1, S2, F1, F2, RefFrames} <: AbstractIncompressible
+    nu::S1
+    rho::S2
+    nuf::F1
+    rhof::F2
+    refFrames::RefFrames
+end
+Adapt.@adapt_structure Incompressible_MRF
+
+Fluid{Incompressible_MRF}(; nu, rho=1.0, refFrames) = begin
+    coeffs = (nu=nu, rho=rho, refFrames=refFrames)
+    ARG = typeof(coeffs)
+    Fluid{Incompressible_MRF,ARG}(coeffs)
+end
+
+(fluid::Fluid{Incompressible_MRF, ARG})(mesh) where ARG = begin
+    coeffs = fluid.args
+    (; rho, nu) = coeffs
+    nu = ConstantScalar(nu)
+    nuf = nu
+    rho = ConstantScalar(rho)
+    rhof = rho
+    Incompressible_MRF(nu, rho, nuf, rhof, refFrames)
+end
+
+"""
     WeaklyCompressible <: AbstractCompressible
 
 Weakly compressible fluid model containing fluid field parameters for weakly compressible 

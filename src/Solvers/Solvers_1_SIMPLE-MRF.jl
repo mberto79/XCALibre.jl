@@ -1,4 +1,4 @@
-export simple!
+export simple_MRF!
 
 """
     simple!(model_in, config; 
@@ -25,7 +25,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 - `p` Vector of pressure residuals for each iteration.
 
 """
-function simple!(
+function simple_MRF!(
     model, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )

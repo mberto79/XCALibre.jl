@@ -110,8 +110,6 @@ function SIMPLE_MRF(
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
     (; nu, refFrames) = model.fluid
-    x0 = refFrames.frames.x0[1]
-    rotaxis = refFrames.frames.rotaxis[1]
     mesh = model.domain
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
     (; iterations, write_interval,dt) = runtime
@@ -214,7 +212,7 @@ function SIMPLE_MRF(
         end
 
         # correct mass flux and velocity
-        correct_mass_flux(mdotf, p_eqn, config)
+        correct_mass_flux!(mdotf, p_eqn, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
         turbulence!(turbulenceModel, model, S, prev, time, config) 
@@ -243,7 +241,7 @@ function SIMPLE_MRF(
                 if refFrames.polar == false
                     save_output(model, outputWriter, iteration, time, config)
                 elseif refFrames.polar == true
-                    save_output_polar(model, outputWriter, iteration, time, config, x0, rotaxis, mask=global_mask)
+                    save_output_polar(model, outputWriter, iteration, time, config, refFrames.frames.x0[1], refFrames.frames.rotaxis[1], mask=refFrames.global_mask)
                 end
                 save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
             end
@@ -260,14 +258,14 @@ function SIMPLE_MRF(
                 turbulenceModel.state.residuals...
                 ]
             )
-        
-        runtime_postprocessing!(postprocess,iteration,iterations)
+
+        runtime_postprocessing!(postprocess,iteration,iterations,S,config)
         
         if iteration%write_interval + signbit(write_interval) == 0      
             if refFrames.polar == false
                     save_output(model, outputWriter, iteration, time, config)
                 elseif refFrames.polar == true
-                    save_output_polar(model, outputWriter, iteration, time, config, x0, rotaxis, mask=global_mask)
+                    save_output_polar(model, outputWriter, iteration, time, config, refFrames.frames.x0[1], refFrames.frames.rotaxis[1], mask=refFrames.global_mask)
                 end
             save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
         end

@@ -29,12 +29,12 @@ rotating_frames = RotatingFrames2D(  #  "rotating_frames = RotatingFrames3D("  f
             x1 = [0.0, 0.0, 1.0],
             x0 = [0.0, 0.0, 0.0],
             radius_inner = 0.0,
-            radius_outer = 0.1,
+            radius_outer = 0.3,
             hardware=hardware,
             mesh=mesh
         )
     ],
-    polar=true
+    polar=true  # Primarily for dev work. Will activate an output function that returns results in polar coordinates relative to the rotation axis of hte first rotating zone. default = false
 )
 
 model = Physics(
@@ -88,7 +88,7 @@ solvers = (
     )
 )
 
-runtime = Runtime(iterations=10, write_interval=1, time_step=1)
+runtime = Runtime(iterations=200, write_interval=50, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
@@ -98,15 +98,11 @@ GC.gc()
 
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
-initialise!(model.turbulence.k, k_inlet)
-initialise!(model.turbulence.omega, ω_inlet)
-initialise!(model.turbulence.nut, νt_inlet)
 
 residuals = run!(model, config)
 
 # Custom Output Functions
-mesh_name = string(get_mesh_name(mesh_file))*'_'
-omega_name = string("omega_",omega)*'_'
-script_name = string(@__FILE__)*'_'
-output_dir = script_name * mesh_name * omega_name *  "_MRFdemo"
-output_directory(output_dir, script_name)
+# mesh_name = string(get_mesh_name(mesh_file))*'_'
+# omega_name = string("omega_",rotating_frames.frames.omega[1])*'_'
+# output_dir = mesh_name * omega_name *  "_MRFdemo"
+# output_directory(output_dir, script_name)

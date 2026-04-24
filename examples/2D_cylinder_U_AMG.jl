@@ -87,7 +87,7 @@ schemes = (
     p = Schemes(time=CrankNicolson, gradient=Gauss)
 )
 
-runtime = Runtime(iterations=100, write_interval=50, time_step=0.0025)
+runtime = Runtime(iterations=500, write_interval=50, time_step=0.0025)
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 initialise!(model.momentum.U, velocity)

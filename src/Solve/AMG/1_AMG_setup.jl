@@ -309,7 +309,14 @@ function _refresh_coarse_cpu!(coarse_cpu::AMGCPUCoarseLevel, A)
         coarse_cpu.x = similar(coarse_cpu.rhs)
     end
     try
-        lu!(coarse_cpu.lu_factor, coarse_cpu.Acsc) # reuses symbolic factor when pattern unchanged
+        F = coarse_cpu.lu_factor
+        Acsc = coarse_cpu.Acsc
+        # reuse symbolic factor when pattern unchanged; fall back to full lu on first call or rebuild
+        if !coarse_cpu.use_qr && F.m == size(Acsc, 1) && length(F.colptr) == length(Acsc.colptr) && length(F.rowval) == length(Acsc.rowval)
+            lu!(F, Acsc)
+        else
+            coarse_cpu.lu_factor = lu(Acsc)
+        end
         coarse_cpu.use_qr = false
     catch err
         if err isa LinearAlgebra.SingularException
@@ -380,6 +387,36 @@ function _sync_device_levels!(hierarchy::AMGHierarchy)
         hierarchy.levels = hierarchy.host_levels
     else
         hierarchy.levels = [adapt(hierarchy.backend, level) for level in hierarchy.host_levels]
+    end
+    return hierarchy
+end
+
+function _sync_device_finest_level!(hierarchy::AMGHierarchy)
+    hierarchy.backend isa CPU && return hierarchy
+    backend = hierarchy.backend
+    dev = hierarchy.levels[1]
+    host = hierarchy.host_levels[1]
+    _device_copyto!(backend, dev.A.nzval, host.A.nzval)
+    _device_copyto!(backend, dev.diagonal, host.diagonal)
+    _device_copyto!(backend, dev.inv_diagonal, host.inv_diagonal)
+    dev.lambda_max = host.lambda_max
+    return hierarchy
+end
+
+function _sync_device_levels_numeric!(hierarchy::AMGHierarchy)
+    hierarchy.backend isa CPU && return hierarchy
+    backend = hierarchy.backend
+    for k in eachindex(hierarchy.levels)
+        dev = hierarchy.levels[k]
+        host = hierarchy.host_levels[k]
+        if length(dev.A.nzval) != length(host.A.nzval)
+            hierarchy.levels[k] = adapt(backend, host)
+            continue
+        end
+        _device_copyto!(backend, dev.A.nzval, host.A.nzval)
+        _device_copyto!(backend, dev.diagonal, host.diagonal)
+        _device_copyto!(backend, dev.inv_diagonal, host.inv_diagonal)
+        dev.lambda_max = host.lambda_max
     end
     return hierarchy
 end
@@ -462,7 +499,6 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
         0,
         copy(_cpu_vector(_nzval(host_levels[1].A)))
     )
-    _sync_device_levels!(hierarchy)
     rows_summary = join(map(level -> string(_m(level.A)), host_levels), " -> ")
     if log_diagnostics
         @info "AMG hierarchy built" mode=solver.mode levels=length(host_levels) rows=rows_summary

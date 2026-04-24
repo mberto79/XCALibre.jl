@@ -99,13 +99,13 @@ function update!(workspace::AMGWorkspace, A, solver::AMG, config)
     if _needs_numeric_refresh(hierarchy, hierarchy.host_levels[1].A, solver)
         elapsed_s = @elapsed begin
             refresh_hierarchy!(hierarchy, solver)
-            _sync_device_levels!(hierarchy)
+            _sync_device_levels_numeric!(hierarchy)
         end
         _record_refresh_timing!(workspace, elapsed_s)
     else
         elapsed_s = @elapsed begin
             refresh_finest_level!(hierarchy, solver)
-            _sync_device_levels!(hierarchy)
+            _sync_device_finest_level!(hierarchy)
         end
         _record_finest_refresh_timing!(workspace, elapsed_s)
     end

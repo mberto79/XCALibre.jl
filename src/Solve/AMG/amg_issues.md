@@ -185,5 +185,11 @@
 3. P-CPU-2                      
 4. P-CPU-3                                                
 5. P-CPU-4
-6. P-CPU-6 — lu! in _refresh_coarse_cpu! (reuses symbolic factor)
-7. P-GPU-3 — _cpu_copyto! uses copyto! directly (no intermediate Array)
+6. P-CPU-6
+7. P-GPU-3
+8. P-GPU-1
+
+# Performance record for latest runs (cylinder AMG case for 500 iterations)
+
+CPU: 18.45 sec (2nd run) - 36.73 ms/it
+GPU: 9.81 sec (2nd run) - 19.62 ms/it  [was 11.93 s after P-GPU-3]

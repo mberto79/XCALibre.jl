@@ -40,9 +40,32 @@ solver_w = AMG(cycle=:W, adaptive_rebuild_factor=0.6)
 @test solver_w.cycle == :W
 @test solver_w.adaptive_rebuild_factor == 0.6
 
+default_sa = SmoothAggregation()
+@test default_sa.max_interp_entries == 4
+@test default_sa.interpolation_passes == 2
+@test default_sa.filter_weak_connections
+@test default_sa.strength_measure == :classical
+
 solver_refresh = AMG(coarse_refresh_interval=3, numeric_refresh_rtol=0.2)
 @test solver_refresh.coarse_refresh_interval == 3
 @test solver_refresh.numeric_refresh_rtol == 0.2
+@test solver_refresh.assume_fixed_pattern
+
+solver_pattern_checked = AMG(assume_fixed_pattern=false)
+@test !solver_pattern_checked.assume_fixed_pattern
+
+solver_sa_truncated = AMG(coarsening=SmoothAggregation(truncate_factor=0.1))
+@test solver_sa_truncated.coarsening.truncate_factor == 0.1
+@test solver_sa_truncated.coarsening.strength_measure == :classical
+@test solver_sa_truncated.coarsening.filter_weak_connections
+
+solver_sa_capped = AMG(coarsening=SmoothAggregation(max_interp_entries=2, strength_measure=:classical, filter_weak_connections=false))
+@test solver_sa_capped.coarsening.max_interp_entries == 2
+@test solver_sa_capped.coarsening.strength_measure == :classical
+@test !solver_sa_capped.coarsening.filter_weak_connections
+
+solver_rs_symmetric = AMG(coarsening=RugeStuben(strength_measure=:symmetric))
+@test solver_rs_symmetric.coarsening.strength_measure == :symmetric
 
 config = Configuration(
     solvers=(T=setup,),
@@ -67,6 +90,25 @@ if length(ws.hierarchy.levels) > 1
     @test nnz(P) > size(P, 1)
 end
 
+A_terminal_csc = spdiagm(-1 => fill(-1.0, 63), 0 => fill(2.0, 64), 1 => fill(-1.0, 63))
+iterm, jterm, vterm = findnz(A_terminal_csc)
+A_terminal = SparseXCSR(sparsecsr(iterm, jterm, vterm, 64, 64))
+solver_terminal = AMG(
+    mode=:cg,
+    coarsening=SmoothAggregation(),
+    smoother=AMGJacobi(),
+    max_coarse_rows=16,
+    min_coarse_rows=2
+)
+ws_terminal = _workspace(solver_terminal, ones(64))
+ws_terminal = XCALibre.Solve.update!(ws_terminal, A_terminal, solver_terminal, config)
+terminal_levels = ws_terminal.hierarchy.levels
+@test length(terminal_levels) >= 3
+@test size(terminal_levels[end].A, 1) <= solver_terminal.max_coarse_rows
+@test isnothing(terminal_levels[end].P)
+@test !isnothing(terminal_levels[end - 1].P)
+@test size(terminal_levels[end - 1].A, 1) > size(terminal_levels[end].A, 1)
+
 solver_rs = AMG(mode=:solver, coarsening=RugeStuben(), smoother=AMGJacobi())
 ws_rs = _workspace(solver_rs, b)
 ws_rs = XCALibre.Solve.update!(ws_rs, A, solver_rs, config)
@@ -87,6 +129,83 @@ ws_sa_candidate = XCALibre.Solve.update!(ws_sa_candidate, A, solver_sa_candidate
 if length(ws_sa_candidate.hierarchy.levels) > 1
     P_sa = Matrix(ws_sa_candidate.hierarchy.levels[1].P)
     @test maximum(abs, P_sa[:, 1]) != minimum(abs, P_sa[:, 1])
+end
+
+solver_sa_dense = AMG(
+    mode=:solver,
+    coarsening=SmoothAggregation(near_nullspace=ones(length(b)), truncate_factor=0.0),
+    smoother=AMGJacobi()
+)
+solver_sa_sparse = AMG(
+    mode=:solver,
+    coarsening=SmoothAggregation(near_nullspace=ones(length(b)), truncate_factor=0.1),
+    smoother=AMGJacobi()
+)
+ws_sa_dense = _workspace(solver_sa_dense, b)
+ws_sa_dense = XCALibre.Solve.update!(ws_sa_dense, A, solver_sa_dense, config)
+ws_sa_sparse = _workspace(solver_sa_sparse, b)
+ws_sa_sparse = XCALibre.Solve.update!(ws_sa_sparse, A, solver_sa_sparse, config)
+if length(ws_sa_dense.hierarchy.levels) > 1 && length(ws_sa_sparse.hierarchy.levels) > 1
+    P_dense = ws_sa_dense.hierarchy.levels[1].P
+    P_sparse = ws_sa_sparse.hierarchy.levels[1].P
+    @test nnz(P_sparse) <= nnz(P_dense)
+end
+agg_sparse, P_sparse_direct, coarse_candidate_sparse = XCALibre.Solve.build_prolongation(
+    A,
+    SmoothAggregation(near_nullspace=ones(length(b)), truncate_factor=0.1)
+)
+if !isnothing(P_sparse_direct)
+    @test maximum(agg_sparse) == size(P_sparse_direct, 2)
+    @test isapprox(Array(P_sparse_direct * coarse_candidate_sparse), ones(length(b)); atol=1e-10, rtol=1e-10)
+end
+
+path6_strong = [[2], [1, 3], [2, 4], [3, 5], [4, 6], [5]]
+path6_agg, path6_nagg = XCALibre.Solve._standard_aggregates(path6_strong)
+path6_sizes = sort([count(==(k), path6_agg) for k in 1:path6_nagg])
+@test path6_nagg == 3
+@test path6_sizes == [2, 2, 2]
+
+path5_strong = [[2], [1, 3], [2, 4], [3, 5], [4]]
+path5_agg, path5_nagg = XCALibre.Solve._standard_aggregates(path5_strong)
+path5_sizes = sort([count(==(k), path5_agg) for k in 1:path5_nagg])
+@test path5_nagg == 2
+@test path5_sizes == [2, 3]
+
+isolated_strong = [[2], [1], Int[]]
+isolated_agg, isolated_nagg = XCALibre.Solve._standard_aggregates(isolated_strong)
+isolated_sizes = sort([count(==(k), isolated_agg) for k in 1:isolated_nagg])
+@test isolated_nagg == 2
+@test isolated_sizes == [1, 2]
+
+A_cap_csc = spdiagm(-1 => fill(-1.0, 15), 0 => fill(2.0, 16), 1 => fill(-1.0, 15))
+icap, jcap, vcap = findnz(A_cap_csc)
+A_cap = SparseXCSR(sparsecsr(icap, jcap, vcap, 16, 16))
+agg_cap, P_cap, coarse_candidate_cap = XCALibre.Solve.build_prolongation(
+    A_cap,
+    SmoothAggregation(near_nullspace=ones(16), max_interp_entries=1)
+)
+if !isnothing(P_cap)
+    P_cap_dense = Matrix(P_cap)
+    @test maximum(sum(!iszero, P_cap_dense; dims=2)) <= 1
+    @test isapprox(Array(P_cap * coarse_candidate_cap), ones(16); atol=1e-10, rtol=1e-10)
+    @test maximum(agg_cap) == size(P_cap, 2)
+end
+
+_, P_pass1, coarse_candidate_pass1 = XCALibre.Solve.build_prolongation(
+    A_cap,
+    SmoothAggregation(near_nullspace=ones(16), interpolation_passes=1, truncate_factor=0.0, max_interp_entries=0)
+)
+_, P_pass2, coarse_candidate_pass2 = XCALibre.Solve.build_prolongation(
+    A_cap,
+    SmoothAggregation(near_nullspace=ones(16), interpolation_passes=2, truncate_factor=0.0, max_interp_entries=0)
+)
+if !isnothing(P_pass1) && !isnothing(P_pass2)
+    P_pass1_dense = Matrix(P_pass1)
+    P_pass2_dense = Matrix(P_pass2)
+    @test sum(!iszero, P_pass2_dense[1, :]) > sum(!iszero, P_pass1_dense[1, :])
+    @test nnz(P_pass2) >= nnz(P_pass1)
+    @test size(P_pass1, 2) == length(coarse_candidate_pass1)
+    @test size(P_pass2, 2) == length(coarse_candidate_pass2)
 end
 
 A2, _ = amg_test_matrix()
@@ -135,6 +254,14 @@ A_pattern = SparseXCSR(sparsecsr(
 ))
 hierarchy_before = ws2.hierarchy
 ws3 = XCALibre.Solve.update!(ws2, A_pattern, setup.solver, config)
+@test ws3.hierarchy === hierarchy_before
+@test isempty(ws3.hierarchy.rowptr_pattern)
+@test isempty(ws3.hierarchy.colval_pattern)
+
+ws_pattern = _workspace(solver_pattern_checked, b)
+ws_pattern = XCALibre.Solve.update!(ws_pattern, A, solver_pattern_checked, config)
+hierarchy_before = ws_pattern.hierarchy
+ws3 = XCALibre.Solve.update!(ws_pattern, A_pattern, solver_pattern_checked, config)
 @test ws3.hierarchy !== hierarchy_before
 @test ws3.hierarchy.rowptr_pattern == Int.(XCALibre.ModelFramework._rowptr(A_pattern))
 @test ws3.hierarchy.colval_pattern == Int.(XCALibre.ModelFramework._colval(A_pattern))
@@ -171,6 +298,8 @@ XCALibre.Solve.amg_solve!(ws_solve, ws_solve.hierarchy, setup.solver, A, b, x; i
 @test ws_solve.timing.apply_time_s >= 0
 @test length(ws_solve.residual_history) == ws_solve.iterations + 1
 @test ws_solve.residual_history[end] <= ws_solve.residual_history[1]
+@test ws_solve.converged
+@test ws_solve.last_residual_norm <= 1e-8 || ws_solve.last_relative_residual <= 1e-8
 
 solver_w_solve = AMG(
     mode=:solver,
@@ -186,7 +315,25 @@ x_w = zeros(eltype(b), length(b))
 XCALibre.Solve.amg_solve!(ws_w, ws_w.hierarchy, solver_w_solve, A, b, x_w; itmax=40, atol=1e-8, rtol=1e-8)
 @test norm(b - Array(parent(A)) * x_w) / norm(b) < 1e-8
 
+solver_exact = AMG(mode=:solver, coarsening=SmoothAggregation(), smoother=AMGJacobi())
+A_exact_csc = spdiagm(0 => [2.0, 3.0])
+iexact, jexact, vexact = findnz(A_exact_csc)
+A_exact = SparseXCSR(sparsecsr(iexact, jexact, vexact, 2, 2))
+b_exact = [4.0, 9.0]
+ws_exact = _workspace(solver_exact, b_exact)
+ws_exact = XCALibre.Solve.update!(ws_exact, A_exact, solver_exact, config)
+x_exact = zeros(eltype(b_exact), length(b_exact))
+XCALibre.Solve.amg_solve!(ws_exact, ws_exact.hierarchy, solver_exact, A_exact, b_exact, x_exact; itmax=1, atol=1e-12, rtol=1e-12)
+@test ws_exact.iterations == 1
+@test ws_exact.converged
+@test XCALibre.Solve._amg_status(ws_exact, 1) == "converged"
+@test !XCALibre.Solve._amg_hit_itmax(ws_exact, 1)
+@test x_exact ≈ [2.0, 3.0] atol=1e-12 rtol=1e-12
+
 solver_cg = AMG(mode=:cg, coarsening=SmoothAggregation(), smoother=AMGJacobi())
+ir, jr, vr = findnz(A_cap_csc)
+A_rebuild = SparseXCSR(sparsecsr(ir, jr, vr, 16, 16))
+b_rebuild = ones(16)
 ws_cg = _workspace(solver_cg, b)
 ws_cg = XCALibre.Solve.update!(ws_cg, A, solver_cg, config)
 @test ws_cg.hierarchy.is_symmetric
@@ -197,6 +344,25 @@ XCALibre.Solve.amg_cg_solve!(ws_cg, ws_cg.hierarchy, solver_cg, A, b, x_cg; itma
 @test ws_cg.timing.apply_time_s >= 0
 @test length(ws_cg.residual_history) == ws_cg.iterations + 1
 @test ws_cg.residual_history[end] <= ws_cg.residual_history[1]
+@test ws_cg.converged
+@test ws_cg.last_residual_norm <= 1e-8 || ws_cg.last_relative_residual <= 1e-8
+
+solver_cg_rebuild = AMG(
+    mode=:cg,
+    coarsening=SmoothAggregation(),
+    smoother=AMGJacobi(),
+    adaptive_rebuild_factor=-1.0,
+    max_coarse_rows=2
+)
+ws_cg_rebuild = _workspace(solver_cg_rebuild, b_rebuild)
+ws_cg_rebuild = XCALibre.Solve.update!(ws_cg_rebuild, A_rebuild, solver_cg_rebuild, config)
+old_hierarchy = ws_cg_rebuild.hierarchy
+ws_cg_rebuild = XCALibre.Solve.update!(ws_cg_rebuild, A_rebuild, solver_cg_rebuild, config)
+@test ws_cg_rebuild.hierarchy === old_hierarchy
+@test ws_cg_rebuild.hierarchy.reuse_steps == 1
+x_cg_rebuild = zeros(eltype(b_rebuild), length(b_rebuild))
+XCALibre.Solve.amg_cg_solve!(ws_cg_rebuild, ws_cg_rebuild.hierarchy, solver_cg_rebuild, A_rebuild, b_rebuild, x_cg_rebuild; itmax=1, atol=0.0, rtol=0.0)
+@test !ws_cg_rebuild.hierarchy.force_rebuild
 
 A_bad = SparseXCSR(sparsecsr([1, 1, 2], [1, 2, 2], [2.0, 1.0, 3.0], 2, 2))
 b_bad = [1.0, 1.0]
@@ -209,22 +375,24 @@ solver_rebuild = AMG(
     mode=:solver,
     coarsening=SmoothAggregation(),
     smoother=AMGJacobi(),
-    adaptive_rebuild_factor=0.0
+    adaptive_rebuild_factor=-1.0,
+    max_coarse_rows=2
 )
-ws_rebuild = _workspace(solver_rebuild, b)
-ws_rebuild = XCALibre.Solve.update!(ws_rebuild, A, solver_rebuild, config)
-x_rebuild = zeros(eltype(b), length(b))
-XCALibre.Solve.amg_solve!(ws_rebuild, ws_rebuild.hierarchy, solver_rebuild, A, b, x_rebuild; itmax=1, atol=0.0, rtol=0.0)
+ws_rebuild = _workspace(solver_rebuild, b_rebuild)
+ws_rebuild = XCALibre.Solve.update!(ws_rebuild, A_rebuild, solver_rebuild, config)
+@test length(ws_rebuild.hierarchy.levels) > 1
+x_rebuild = zeros(eltype(b_rebuild), length(b_rebuild))
+XCALibre.Solve.amg_solve!(ws_rebuild, ws_rebuild.hierarchy, solver_rebuild, A_rebuild, b_rebuild, x_rebuild; itmax=1, atol=0.0, rtol=0.0)
 @test ws_rebuild.hierarchy.last_cycle_factor >= 0
 @test !ws_rebuild.hierarchy.force_rebuild
 old_hierarchy = ws_rebuild.hierarchy
-ws_rebuild = XCALibre.Solve.update!(ws_rebuild, A, solver_rebuild, config)
+ws_rebuild = XCALibre.Solve.update!(ws_rebuild, A_rebuild, solver_rebuild, config)
 @test ws_rebuild.hierarchy === old_hierarchy
 @test ws_rebuild.hierarchy.reuse_steps == 1
-XCALibre.Solve.amg_solve!(ws_rebuild, ws_rebuild.hierarchy, solver_rebuild, A, b, x_rebuild; itmax=1, atol=0.0, rtol=0.0)
+XCALibre.Solve.amg_solve!(ws_rebuild, ws_rebuild.hierarchy, solver_rebuild, A_rebuild, b_rebuild, x_rebuild; itmax=1, atol=0.0, rtol=0.0)
 @test ws_rebuild.hierarchy.force_rebuild
 old_hierarchy = ws_rebuild.hierarchy
-ws_rebuild = XCALibre.Solve.update!(ws_rebuild, A, solver_rebuild, config)
+ws_rebuild = XCALibre.Solve.update!(ws_rebuild, A_rebuild, solver_rebuild, config)
 @test ws_rebuild.hierarchy !== old_hierarchy
 
 try

@@ -41,8 +41,10 @@ BCs = assign(
                 Zerogradient(:inlet),
                 Dirichlet(:outlet, 0.0),
                 Wall(:cylinder),
-                Extrapolated(:bottom),
-                Extrapolated(:top)
+                # Extrapolated(:bottom),
+                # Extrapolated(:top)
+                Zerogradient(:bottom),
+                Zerogradient(:top)
         ]
     )
 )

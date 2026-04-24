@@ -25,16 +25,24 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
 
     _residual!(r, A, x, b)
     _reset_residual_history!(workspace)
-    _push_residual_history!(workspace, r)
+    rnorm = norm(r)
+    _push_residual_history!(workspace, rnorm)
     bnorm = max(norm(b), eps(T))
-    elapsed_s = @elapsed amg_apply_preconditioner!(z, hierarchy, solver, r)
+    rel = rnorm / bnorm
+    initial_rel = rel
+    if _amg_converged(rnorm, rel, atol, rtol)
+        _set_amg_result!(workspace, 0, rnorm, rel, atol, rtol)
+        _update_cycle_factor!(hierarchy, initial_rel, rel, 0, solver)
+        return x
+    end
+    start_ns = time_ns()
+    amg_apply_preconditioner!(z, hierarchy, solver, r)
+    elapsed_s = _elapsed_seconds(start_ns)
     _record_apply_timing!(workspace, elapsed_s)
     copyto!(p, z)
     rz = dot(r, z)
-    rel = norm(r) / bnorm
-    initial_rel = rel
     k = 0
-    while k < itmax && norm(r) > atol && rel > rtol
+    while k < itmax && !_amg_converged(rnorm, rel, atol, rtol)
         k += 1
         mul!(q, A, p)
         α = rz / dot(p, q)
@@ -42,12 +50,15 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
             x[i] += α * p[i]
             r[i] -= α * q[i]
         end
-        _push_residual_history!(workspace, r)
-        rel = norm(r) / bnorm
-        if norm(r) <= atol || rel <= rtol
+        rnorm = norm(r)
+        _push_residual_history!(workspace, rnorm)
+        rel = rnorm / bnorm
+        if _amg_converged(rnorm, rel, atol, rtol)
             break
         end
-        elapsed_s = @elapsed amg_apply_preconditioner!(z, hierarchy, solver, r)
+        start_ns = time_ns()
+        amg_apply_preconditioner!(z, hierarchy, solver, r)
+        elapsed_s = _elapsed_seconds(start_ns)
         _record_apply_timing!(workspace, elapsed_s)
         rz_new = dot(r, z)
         β = rz_new / rz
@@ -56,8 +67,7 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
         end
         rz = rz_new
     end
-    workspace.iterations = k
-    workspace.last_relative_residual = rel
+    _set_amg_result!(workspace, k, rnorm, rel, atol, rtol)
     _update_cycle_factor!(hierarchy, initial_rel, rel, k, solver)
     return x
 end

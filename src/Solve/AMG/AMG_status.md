@@ -1,231 +1,217 @@
 # AMG Status
 
-## Summary
+This file is the compact working status for the native AMG solver.
+Detailed design/review context lives in `src/Solve/AMG/AMG_plan.md`.
 
-Stage B is implemented in the native AMG path, but the single-thread
-cylinder target is still not met. The main blocker is now clear:
-current AMG configurations do not reduce the pressure linear residual
-fast enough per unit cost to beat the baseline `Cg()+Jacobi()` solve.
+Update rules:
 
-New timing splits now make the dominant cost visible:
+- replace snapshot numbers and tables instead of appending new benchmark diaries
+- keep only durable conclusions, current blockers, and next actions
+- add at most one short line per material change in the decision log
+- keep raw benchmark dumps, residual traces, and exploratory notes out of this file
 
-- for `AMG(mode=:cg)`, most wall-clock is in AMG applies, not in
-  hierarchy maintenance
-- for `AMG(mode=:solver)`, the current adaptive rebuild path rebuilt the
-  hierarchy on every recorded pressure solve in the benchmarked run,
-  so numeric reuse was effectively absent
-- that rebuild pathology has now been traced to the trigger itself:
-  it used weak cycles from freshly built hierarchies as rebuild signals,
-  which caused repeated rebuilds even when rebuild was not helping
+Historical detail from the previous long-form status was condensed here on
+2026-04-23 so the file can stay useful during continued AMG iteration.
 
-The earlier claim that the baseline was also often limited by `itmax`
-was wrong for the current benchmark configuration and has now been
-explicitly disproved.
+## Current Snapshot
 
-## Implemented Work
+Last reviewed: 2026-04-24
 
-The following Stage B work is in place:
+Status:
 
-- `RugeStuben()` now uses a two-pass coarse/fine split and
+- Stage B feature work is largely in place in the native AMG path.
+- `SmoothAggregation()` now uses a matching-seeded standard aggregate
+  builder instead of the earlier greedy seed/fill pass.
+- `SmoothAggregation()` now defaults to sparse filtered smoothing with a
+  capped interpolation stencil (`filter_weak_connections=true`,
+  `max_interp_entries=4`) so the default AMG-CG path avoids the
+  operator-complexity blow-up seen with dense smoothed prolongation.
+- A two-pass sparse-SA interpolation variant was benchmarked as the
+  next coarse-correction improvement candidate.
+- The strongest native path on the cylinder benchmark is
+  `AMG(mode=:cg)` used as a light reusable preconditioner.
+- The single-thread CPU target is still not met:
+  `Cg()+Jacobi()` remains materially faster and reaches a lower pressure
+  residual.
+- Direct AMG (`AMG(mode=:solver)`) is not currently competitive on this
+  benchmark.
+
+Benchmark conditions for the numbers below:
+
+- warmed 5-step cylinder benchmark
+- `JULIA_NUM_THREADS=1`
+- matched linear solve tolerances with recorded linear residual history
+
+## Current Best Verified Results
+
+Measured on 2026-04-24 after benchmarking the sparse-SA pass-count
+variant:
+
+| path | elapsed_s | outer result | linear solve behavior | verdict |
+| --- | ---: | ---: | --- | --- |
+| baseline `Cg()+Jacobi()` | `2.113334` | `p_last = 1.936286e-4` | `10/10` pressure solves converged before `itmax` | current wall-clock and convergence reference |
+| sparse SA `pass1`, `max_interp_entries=4` | `6.240556` | `p_last = 1.825867e-3` | `9/10` pressure solves hit `itmax` | current sparse-SA performance baseline |
+| sparse SA `pass2`, `max_interp_entries=4` | `7.592050` | `p_last = 1.624881e-3` | `8/10` pressure solves hit `itmax` | slightly better coarse correction, but slower overall |
+| exploratory symmetric-strength SA | `11.449468` | `p_last = 1.756935e-3` | `10/10` pressure solves hit `itmax` in the recorded run | not promising; coarsening stalls and wall-clock worsens |
+
+Latest timing split:
+
+| path | build/rebuild_s | refresh_s | finest_refresh_s | apply_s |
+| --- | ---: | ---: | ---: | ---: |
+| sparse SA `pass1`, `max_interp_entries=4` | `0.742771` | `0.176105` | `0.009138` | `4.999291` |
+| sparse SA `pass2`, `max_interp_entries=4` | `1.045412` | `0.334511` | `0.009084` | `5.904578` |
+
+## Accepted Conclusions
+
+- The earlier idea that the baseline was often limited by `itmax` was
+  false for the current benchmark configuration.
+- After the rebuild-policy fix, the remaining AMG-CG gap is mostly
+  weak residual reduction per apply, not hierarchy maintenance
+  overhead.
+- Lighter `V(1,1)` AMG-CG cycles are better than the earlier heavier
+  `V(2,2)` stock path on this benchmark.
+- Dense smoothed prolongation is not viable with the new aggregate
+  builder; sparse filtering and interpolation caps need to stay in the
+  default SA path.
+- The sparse-default SA change fixes the operator-complexity blow-up,
+  but it does not materially improve residual reduction per AMG-CG
+  iteration.
+- The two-pass sparse-SA interpolation experiment is not a performance
+  win on the cylinder case: it lowers the final pressure residual and
+  reduces `itmax` hits slightly, but it also raises operator complexity
+  and apply cost enough to lose on wall-clock.
+- The remaining near-term opportunity is still coarse-correction
+  quality, but only if the added reach can be combined with stronger
+  sparsification than the current two-pass variant.
+- Symmetric-strength SA is still not a good next path on this benchmark:
+  it coarsens too slowly and loses on wall-clock.
+- Direct AMG should not be the next optimisation priority for this
+  benchmark; the better near-term path is still a cheaper AMG-CG
+  preconditioner.
+
+## Implemented Capabilities And Fixes
+
+Current native AMG work that should be treated as present baseline
+functionality:
+
+- `RugeStuben()` uses a two-pass coarse/fine split and
   operator-dependent direct interpolation.
-- `SmoothAggregation()` now supports stronger aggregation and
-  `near_nullspace=...`.
-- New smoothers were added:
+- `SmoothAggregation()` supports:
+  - `near_nullspace`
+  - `truncate_factor`
+  - `max_interp_entries`
+  - `interpolation_passes`
+  - `strength_measure`
+  - `filter_weak_connections`
+- `SmoothAggregation()` now builds aggregates with a matching-seeded
+  standard aggregation pass and only falls back to singletons for
+  unavoidable isolated leftovers.
+- The default `SmoothAggregation()` policy is now sparse:
+  - `filter_weak_connections=true`
+  - `max_interp_entries=4`
+  - `interpolation_passes=2` in code, but this is not yet the
+    recommended maintained benchmark path
+- Smoothers include:
   - `AMGSymmetricGaussSeidel()`
   - `AMGL1Jacobi()`
-- `AMG(...)` now supports `cycle=:V` and `cycle=:W`.
-- Bounded hierarchy numeric reuse is implemented through:
+  - `AMGChebyshev()`
+  - `AMGJacobi()`
+- `AMG(...)` supports `cycle=:V` and `cycle=:W`.
+- Fixed-pattern reuse is the default via
+  `assume_fixed_pattern=true`, with checked structural reuse still
+  available through `assume_fixed_pattern=false`.
+- Adaptive rebuild behavior is mode-aware:
+  - `AMG(mode=:solver)` can rebuild after weak reused AMG-cycle behavior
+  - `AMG(mode=:cg)` does not rebuild from overall Krylov convergence
+- Numeric reuse controls are implemented through:
   - `coarse_refresh_interval`
   - `numeric_refresh_rtol`
-- Hierarchy diagnostics now track:
+- Diagnostics now track:
   - operator complexity
   - grid complexity
   - effective cycle convergence factor
-- Adaptive rebuild is defensive:
-  - a weak last cycle forces rebuild on the next `update!`.
+- Instrumentation now records:
+  - matched linear residual histories
+  - hierarchy build/rebuild time
+  - hierarchy refresh time
+  - finest-only refresh time
+  - AMG apply time
+- AMG solve reporting now distinguishes a true `itmax` exit from a
+  solve that reaches tolerance on its final allowed iteration.
+- Correctness/performance fixes already landed include:
+  - CG workspace aliasing fix
+  - coarse stopping fix for `max_coarse_rows`
+  - reduced hot-path allocations
+  - hierarchy diagnostics logged only on initial build
+  - defensive rebuild only after weak reused hierarchies
 
-The following correctness/performance fixes are also in place:
+## Validation Coverage
 
-- Fixed the CG workspace aliasing bug where the solution shared storage
-  with the `q = A*p` workspace.
-- Fixed coarse stopping so coarsening stops before dropping below
-  `max_coarse_rows`.
-- Reduced avoidable hot-path allocations:
-  - `_cpu_vector(::Vector)` returns the vector directly
-  - coarse solve tries `ldiv!` before allocating `solver \ b`
-- Fixed repeated hierarchy diagnostics so they are only logged on the
-  initial hierarchy build.
-- Corrected the cylinder benchmark harness so Stage B modes no longer
-  use the stale misleading `itmax=1` setup.
-- Added linear solve history instrumentation for both Krylov and AMG
-  paths so comparisons can be made on matched linear residual behavior,
-  not only on outer CFD residuals.
-- Added AMG phase timing instrumentation for:
-  - hierarchy build / rebuild
-  - hierarchy refresh
-  - finest-level-only refresh
-  - AMG apply / iteration cost
-- Exposed the new AMG timing splits through the cylinder benchmark
-  harness using the linear solve history records.
-- Tightened adaptive rebuild so it only schedules rebuild after a weak
-  reused hierarchy, not after a weak freshly built or freshly refreshed
-  hierarchy.
+- `test/test_AMG.jl` covers:
+  - standard aggregation pairing and leftover handling
+  - reuse vs rebuild update behavior
+  - fixed-pattern semantics
+  - truncation behavior
+  - V-cycle and W-cycle operation
+  - smoother behavior
+  - AMG-CG rebuild semantics
+- The latest benchmark review validated behavior for:
+  - baseline `Cg()+Jacobi()`
+  - sparse SA `pass1`, `max_interp_entries=4`
+  - sparse SA `pass2`, `max_interp_entries=4`
+  - symmetric-strength SA
+- The current session validated the interpolation-pass plumbing and
+  updated AMG semantics through the focused AMG test slice in
+  `test/test_AMG.jl`.
 
-## Verified Findings
+## Guardrails
 
-Verified on 2026-04-23 for the warmed single-thread CPU 5-step cylinder
-run:
+- Keep `itmax` generous; do not use it to make AMG look faster.
+- Compare solver variants only at matched `atol`/`rtol` with recorded
+  linear residual histories.
+- Treat cost per useful residual reduction as the primary metric, not
+  allocations alone.
+- Do not interpret weaker Krylov convergence in `AMG(mode=:cg)` as
+  automatic proof that the hierarchy is stale; lighter preconditioners
+  can still be the right tradeoff.
+- On this benchmark, prefer cheaper V-cycle preconditioning over
+  restoring heavier cycles unless coarsening quality clearly improves.
 
-- Baseline `Cg()+Jacobi()` did not hit `itmax=1000` on any of the
-  10 recorded pressure solves.
-- Baseline pressure iteration counts ranged from `240` to `900`.
-- Baseline final linear residuals were consistently near `1e-5`.
-- `AMG(mode=:cg)` with the current SGS Stage B setup hit `itmax=40` on
-  `7/10` pressure solves.
-- `AMG(mode=:solver)` with the current SGS Stage B setup hit `itmax=40`
-  on `10/10` pressure solves.
-- `AMG(mode=:cg)` timing split on the same run was:
-  - hierarchy build / rebuild: `0.696810 s` across `3` builds
-  - hierarchy refresh: `0.254764 s` across `1` refresh
-  - finest-only refresh: `0.037893 s` across `6` refreshes
-  - AMG apply: `4.496873 s` across `344` applies
-- `AMG(mode=:solver)` timing split on the same run was:
-  - hierarchy build / rebuild: `2.249184 s` across `10` builds
-  - hierarchy refresh: `0.000000 s`
-  - finest-only refresh: `0.000000 s`
-  - AMG apply: `11.590113 s` across `400` applies
-- After tightening the rebuild trigger, the warmed single-thread direct
-  AMG cylinder run changed to:
-  - elapsed: `13.148835 s` (down from `14.140989 s` in the previous
-    instrumented run)
-  - hierarchy build / rebuild: `1.317716 s` across `5` builds
-  - hierarchy refresh: `0.000000 s`
-  - finest-only refresh: `0.005678 s` across `5` refreshes
-  - AMG apply: `11.288304 s` across `400` applies
-  - outer result unchanged for practical purposes:
-    `p_last = 1.063786e-1`
+## Next Work
 
-This is the key conclusion from the latest verification:
+- Keep AMG-CG on the reusable `V(1,1)` path as the maintained baseline.
+- Keep the sparse-default SA policy in place; do not regress to dense
+  smoothed prolongation.
+- Do not treat the current two-pass sparse-SA interpolation variant as a
+  performance improvement; benchmark says it is slower despite slightly
+  better coarse correction.
+- Recommended next step:
+  - either revert the maintained benchmark path to the one-pass sparse
+    SA variant
+  - or keep the two-pass idea only as an experimental branch and add a
+    stronger post-pass sparsification/filter so the extra reach does not
+    drive operator complexity and apply cost up
+- Candidate directions after that:
+  - filtered long-range interpolation with explicit secondary
+    sparsification and a hard row cap preserved after the long-range
+    pass
+  - coarse-level sparsification targeted at reducing `A_c` complexity
+  - HMIS/PMIS-like splitting only if sparse-SA coarse correction still
+    remains too weak after the cheaper long-range path is exhausted
+- Re-check every change against the baseline at matched wall-clock and
+  matched linear residual behavior.
+- Stage C remains necessary for backend-resident apply paths and
+  genuinely GPU-native AMG.
 
-- the remaining AMG gap is not explained by the baseline also
-  saturating its iteration cap
-- the current AMG issue is structural/algorithmic, not just benchmark
-  bookkeeping or allocation noise
-- on the current strongest AMG-CG path, apply cost dominates build /
-  refresh cost on single-thread CPU
-- on the current direct-AMG path, adaptive rebuild is so aggressive on
-  this case that hierarchy reuse is not happening in practice
-- fixing the rebuild pathology removes wasted rebuild cost, but it does
-  not materially improve direct-AMG convergence on this case
+## Compact Decision Log
 
-## Latest Measured Results
-
-Measured on 2026-04-23 with `JULIA_NUM_THREADS=1`:
-
-| mode | elapsed_s | outer pressure residual | linear solve behavior |
-| --- | ---: | ---: | --- |
-| baseline `Cg()+Jacobi()` | `2.324711` | `p_last = 1.936286e-4` | `10/10` pressure solves converged before `itmax` |
-| `AMG(mode=:cg)` + SGS, `cycle=:V`, `itmax=40` | `6.106369` | `p_last = 1.706483e-3` | `7/10` pressure solves hit `itmax` |
-| `AMG(mode=:solver)` + SGS, `cycle=:W`, `itmax=40` | `14.818648` | `p_last = 1.063786e-1` | `10/10` pressure solves hit `itmax` |
-
-Additional timing split from the latest instrumented run
-(`JULIA_NUM_THREADS=1`, warmed 5-step cylinder):
-
-| mode | build/rebuild_s | refresh_s | finest_refresh_s | apply_s |
-| --- | ---: | ---: | ---: | ---: |
-| `AMG(mode=:cg)` + SGS, `cycle=:V`, `itmax=40` | `0.696810` | `0.254764` | `0.037893` | `4.496873` |
-| `AMG(mode=:solver)` + SGS, `cycle=:W`, `itmax=40` before rebuild fix | `2.249184` | `0.000000` | `0.000000` | `11.590113` |
-| `AMG(mode=:solver)` + SGS, `cycle=:W`, `itmax=40` after rebuild fix | `1.317716` | `0.000000` | `0.005678` | `11.288304` |
-
-Interpretation:
-
-- baseline remains clearly better on single-thread CPU wall-clock
-- AMG-CG is the strongest native AMG path so far, but it is still too
-  expensive and still often iteration-limited
-- direct AMG is materially weaker on this case and is still not
-  competitive
-- AMG-CG spend is dominated by cycle/apply cost, so build-side tuning
-  alone is unlikely to close the full gap
-- the repeated direct-AMG rebuild issue was real and is now reduced, but
-  direct AMG is still dominated by apply cost and weak per-cycle
-  convergence
-
-## Solver Semantics
-
-Current stopping logic is believed to be correct:
-
-- `amg_solve!` and `amg_cg_solve!` stop when either:
-  - absolute residual is `<= atol`
-  - relative residual is `<= rtol`
-  - iteration count reaches `itmax`
-- `itmax` should be treated as a safety cap, not as a tuning knob to
-  make AMG appear faster
-- fair comparisons must use matched `atol` / `rtol` and recorded linear
-  residual histories
-
-## What Was Tested
-
-Validated in this session:
-
-- `test/test_AMG.jl`
-- linear solve history capture for both Krylov and AMG paths
-- AMG phase timing capture through the same solve history records
-- warmed single-thread cylinder benchmark runs for:
-  - baseline
-  - `AMG(mode=:cg)` Stage B SGS configuration
-  - `AMG(mode=:solver)` Stage B SGS configuration
-- adaptive rebuild semantics:
-  - weak fresh hierarchy does not force immediate rebuild
-  - weak reused hierarchy still forces rebuild on the next update
-
-Additional note:
-
-- `test/test_smoothers.jl` was not used as a clean standalone signal for
-  this session because the direct ad hoc invocation missed imports that
-  are present in the normal test harness
-
-## Mistakes To Avoid
-
-- Do not assume CG instability implies a nonsymmetric operator; inspect
-  the assembled matrix.
-- Do not reuse one workspace vector for both the solution and Krylov
-  temporaries.
-- Do not use low `itmax` values to make AMG timing look better.
-- Do not claim AMG is faster than the baseline without matched linear
-  residual histories.
-- Do not assume the bottleneck is mainly allocations without measuring;
-  the current problem is primarily cost per useful residual reduction.
-
-## Next Step
-
-The next step should focus on reducing cost per useful residual
-reduction on the single-thread CPU path, using the new instrumentation
-as the guardrail.
-
-Priority order:
-
-1. Check code for bugs or algorithm mistakes (use reputable sources only)
-2. Keep `itmax` generous so it is not the active limiter in fair
-   comparisons.
-3. Use the new split timings to target the true hot path:
-   - AMG-CG: reduce cost per apply / improve residual reduction per
-     apply
-   - direct AMG: improve residual reduction per apply; rebuild
-     frequency is no longer the main issue
-4. Split timings into:
-   - hierarchy build
-   - hierarchy refresh
-   - cycle / iteration apply cost
-5. Reduce hierarchy and cycle cost without losing too much convergence:
-   - lower operator complexity
-   - reduce interpolation density where possible
-   - avoid unnecessary coarse numeric refreshes
-6. Re-check whether each change improves achieved linear residual at
-   matched wall-clock against baseline.
-
-Longer term, Stage C is still required:
-
-- move AMG apply paths to backend-resident kernels
-- make CUDA AMG backend-resident instead of CPU-backed
-- replace repeated sparse rebuilds with symbolic-pattern reuse where
-  possible
+| date | decision / finding |
+| --- | --- |
+| 2026-04-23 | Fixed-pattern reuse became the default for the current fixed-mesh CFD use case; checked structural reuse remains available as an opt-out path. |
+| 2026-04-23 | AMG-CG rebuild decisions should not be driven by overall Krylov convergence; rebuild behavior is now mode-aware. |
+| 2026-04-23 | The lighter `V(1,1)` AMG-CG configuration replaced the older heavier Stage B path as the working baseline. |
+| 2026-04-23 | Sparse filtered SA with `max_interp_entries=4` became the default because it removes the operator-complexity blow-up while preserving the previous best AMG-CG behavior. |
+| 2026-04-24 | The two-pass sparse-SA interpolation experiment improved residual reduction slightly but lost on wall-clock because operator complexity and AMG apply cost increased too much. |
+| 2026-04-23 | Direct AMG rebuild pathology was reduced, but direct AMG still loses mainly on apply cost and weak per-cycle convergence. |
+| 2026-04-23 | SmoothAggregation switched to a matching-seeded standard aggregate builder; dense smoothed prolongation is too expensive without sparse filtering on this benchmark. |
+| 2026-04-23 | Symmetric-strength SA still coarsens too slowly on the cylinder case and is not the next performance path. |

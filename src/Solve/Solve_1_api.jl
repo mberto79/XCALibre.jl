@@ -43,7 +43,8 @@ function _timing_payload(; build_time_s=0.0, build_calls=0, refresh_time_s=0.0, 
     )
 end
 
-function _record_linear_solve!(phiEqn::ModelEquation, setup, component, iterations, itmax, residuals; status=nothing, timing=nothing)
+function _record_linear_solve!(phiEqn::ModelEquation, setup, component, iterations, itmax, residuals;
+    status=nothing, timing=nothing, hit_itmax=iterations == itmax)
     _history_enabled() || return nothing
     residual_abs, residual_rel = _residual_history_arrays(residuals)
     timing_data = isnothing(timing) ? _timing_payload() : timing
@@ -54,7 +55,7 @@ function _record_linear_solve!(phiEqn::ModelEquation, setup, component, iteratio
         solver_mode=setup.solver isa AMG ? String(setup.solver.mode) : "krylov",
         iterations=iterations,
         itmax=itmax,
-        hit_itmax=iterations == itmax,
+        hit_itmax=hit_itmax,
         residual_abs=residual_abs,
         residual_rel=residual_rel,
         final_residual=isempty(residual_abs) ? NaN : residual_abs[end],

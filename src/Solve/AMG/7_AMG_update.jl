@@ -1,6 +1,7 @@
-function _pattern_matches(hierarchy::AMGHierarchy, A)
+function _pattern_matches(hierarchy::AMGHierarchy, A, solver::AMG)
     hierarchy.nrows == _m(A) || return false
     hierarchy.nnz == length(_nzval(A)) || return false
+    solver.assume_fixed_pattern && return true
     rowptr, colval = _pattern_signature(A)
     rowptr == hierarchy.rowptr_pattern || return false
     colval == hierarchy.colval_pattern || return false
@@ -53,7 +54,7 @@ function update!(workspace::AMGWorkspace, A, solver::AMG, config)
     end
 
     hierarchy = workspace.hierarchy
-    if hierarchy.force_rebuild || !_pattern_matches(hierarchy, A)
+    if hierarchy.force_rebuild || !_pattern_matches(hierarchy, A, solver)
         (; hardware) = config
         setup_backend = _amg_setup_backend(hardware.backend)
         setup_matrix = _amg_setup_matrix(A, setup_backend)
@@ -106,9 +107,10 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, 
         workspace.iterations,
         itmax,
         workspace.residual_history;
-        status=workspace.iterations == itmax ? "itmax" : "converged",
+        status=_amg_status(workspace, itmax),
+        hit_itmax=_amg_hit_itmax(workspace, itmax),
         timing=_timing_delta(workspace, timing_before)
     )
-    workspace.iterations == itmax && @warn "Maximum number of iterations reached!"
+    _amg_hit_itmax(workspace, itmax) && @warn "Maximum number of iterations reached!"
     return residual(phiEqn, component, config)
 end

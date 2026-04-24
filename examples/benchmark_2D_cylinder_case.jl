@@ -92,10 +92,98 @@ function amg_pressure_solver(mode::String)
                 coarsening=SmoothAggregation(),
                 smoother=AMGSymmetricGaussSeidel(),
                 max_levels=8,
-                presweeps=2,
-                postsweeps=2,
+                presweeps=1,
+                postsweeps=1,
                 max_coarse_rows=100,
-                adaptive_rebuild_factor=0.9
+                adaptive_rebuild_factor=1.1
+            ),
+            preconditioner=Jacobi(),
+            convergence=1e-7,
+            relax=1.0,
+            itmax=40,
+            rtol=0.0,
+            atol=1e-5
+        )
+    elseif mode == "amg_cg_pmax4"
+        return SolverSetup(
+            solver=AMG(
+                mode=:cg,
+                cycle=:V,
+                coarsening=SmoothAggregation(max_interp_entries=4, filter_weak_connections=true),
+                smoother=AMGSymmetricGaussSeidel(),
+                max_levels=8,
+                presweeps=1,
+                postsweeps=1,
+                max_coarse_rows=100,
+                adaptive_rebuild_factor=1.1
+            ),
+            preconditioner=Jacobi(),
+            convergence=1e-7,
+            relax=1.0,
+            itmax=40,
+            rtol=0.0,
+            atol=1e-5
+        )
+    elseif mode == "amg_cg_pmax4_pass1"
+        return SolverSetup(
+            solver=AMG(
+                mode=:cg,
+                cycle=:V,
+                coarsening=SmoothAggregation(
+                    max_interp_entries=4,
+                    filter_weak_connections=true,
+                    interpolation_passes=1
+                ),
+                smoother=AMGSymmetricGaussSeidel(),
+                max_levels=8,
+                presweeps=1,
+                postsweeps=1,
+                max_coarse_rows=100,
+                adaptive_rebuild_factor=1.1
+            ),
+            preconditioner=Jacobi(),
+            convergence=1e-7,
+            relax=1.0,
+            itmax=40,
+            rtol=0.0,
+            atol=1e-5
+        )
+    elseif mode == "amg_cg_pmax4_pass2"
+        return SolverSetup(
+            solver=AMG(
+                mode=:cg,
+                cycle=:V,
+                coarsening=SmoothAggregation(
+                    max_interp_entries=4,
+                    filter_weak_connections=true,
+                    interpolation_passes=2
+                ),
+                smoother=AMGSymmetricGaussSeidel(),
+                max_levels=8,
+                presweeps=1,
+                postsweeps=1,
+                max_coarse_rows=100,
+                adaptive_rebuild_factor=1.1
+            ),
+            preconditioner=Jacobi(),
+            convergence=1e-7,
+            relax=1.0,
+            itmax=40,
+            rtol=0.0,
+            atol=1e-5
+        )
+    elseif mode == "amg_cg_pmax5"
+        return SolverSetup(
+            solver=AMG(
+                mode=:cg,
+                cycle=:V,
+                coarsening=SmoothAggregation(max_interp_entries=5, filter_weak_connections=true),
+                smoother=AMGSymmetricGaussSeidel(),
+                max_levels=8,
+                presweeps=1,
+                postsweeps=1,
+                max_coarse_rows=100,
+                adaptive_rebuild_factor=1.1
             ),
             preconditioner=Jacobi(),
             convergence=1e-7,

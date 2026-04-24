@@ -1,4 +1,4 @@
-function _strength_graph(A, threshold)
+function _classical_strength_graph(A, threshold)
     rowptr = _rowptr(A)
     colval = _colval(A)
     nzval = _nzval(A)
@@ -23,6 +23,51 @@ function _strength_graph(A, threshold)
     return strong
 end
 
+function _symmetric_strength_graph(A, threshold)
+    rowptr = _rowptr(A)
+    colval = _colval(A)
+    nzval = _nzval(A)
+    n = _m(A)
+    diag = zeros(Float64, n)
+    for i in 1:n
+        aii = 0.0
+        for p in rowptr[i]:(rowptr[i + 1] - 1)
+            if colval[p] == i
+                aii = abs(float(real(nzval[p])))
+                break
+            end
+        end
+        diag[i] = max(aii, eps(Float64))
+    end
+
+    strong = Vector{Vector{Int}}(undef, n)
+    for i in 1:n
+        strong_i = Int[]
+        for p in rowptr[i]:(rowptr[i + 1] - 1)
+            j = colval[p]
+            j == i && continue
+            limit = threshold * sqrt(diag[i] * diag[j])
+            abs(float(real(nzval[p]))) >= limit && push!(strong_i, j)
+        end
+        strong[i] = strong_i
+    end
+    return strong
+end
+
+function _strength_graph(A, coarsening::SmoothAggregation)
+    if coarsening.strength_measure == :symmetric
+        return _symmetric_strength_graph(A, coarsening.strength_threshold)
+    end
+    return _classical_strength_graph(A, coarsening.strength_threshold)
+end
+
+function _strength_graph(A, coarsening::RugeStuben)
+    if coarsening.strength_measure == :symmetric
+        return _symmetric_strength_graph(A, coarsening.strength_threshold)
+    end
+    return _classical_strength_graph(A, coarsening.strength_threshold)
+end
+
 function _coarse_graph(strong)
     n = length(strong)
     coarse = [Set{Int}() for _ in 1:n]
@@ -35,14 +80,39 @@ function _coarse_graph(strong)
     return coarse
 end
 
-function _smooth_prolongation(A, P, weight)
-    invdiag = last(_diag_inverse_and_l1(A)[1:2])
-    λmax = _estimate_lambda_max(A, invdiag, AMGJacobi())
-    α = weight / max(λmax, eps(eltype(invdiag)))
-    α <= 0 && return P
+function _filtered_smoothing_matrix(A, strong)
+    rowptr = _rowptr(A)
+    colval = _colval(A)
+    nzval = _nzval(A)
+    n = _m(A)
+    I = Int[]
+    J = Int[]
+    V = eltype(nzval)[]
+    for i in 1:n
+        strong_i = Set(strong[i])
+        diag_value = zero(eltype(nzval))
+        for p in rowptr[i]:(rowptr[i + 1] - 1)
+            j = colval[p]
+            aij = nzval[p]
+            if j == i
+                diag_value += aij
+            elseif j in strong_i
+                push!(I, i)
+                push!(J, j)
+                push!(V, aij)
+            else
+                diag_value += aij
+            end
+        end
+        push!(I, i)
+        push!(J, i)
+        push!(V, diag_value)
+    end
+    return sparse(I, J, V, n, n)
+end
 
-    Acsc = _csr_to_csc(A)
-    AP = Acsc * P
+function _smooth_prolongation_pass(smoothing_A, invdiag, P, α)
+    AP = smoothing_A * P
     rowval = rowvals(AP)
     nzval = nonzeros(AP)
     @inbounds for j in 1:size(AP, 2)
@@ -56,49 +126,193 @@ function _smooth_prolongation(A, P, weight)
     return Ps
 end
 
+function _smooth_prolongation(A, strong, P, weight; filter_weak_connections, passes)
+    smoothing_A = filter_weak_connections ? _filtered_smoothing_matrix(A, strong) : _csr_to_csc(A)
+    smoothing_wrap = _wrap_sparse(smoothing_A)
+    _, invdiag = _diag_inverse_and_l1(smoothing_wrap)
+    λmax = _estimate_lambda_max(smoothing_wrap, invdiag, AMGJacobi())
+    α = weight / max(λmax, eps(eltype(invdiag)))
+    α <= 0 && return P
+    Ps = P
+    for _ in 1:passes
+        Ps = _smooth_prolongation_pass(smoothing_A, invdiag, Ps, α)
+    end
+    return Ps
+end
+
+function _truncate_smoothed_prolongation(P, candidate, coarse_candidate, truncate_factor, max_interp_entries)
+    truncate_factor <= 0 && max_interp_entries == 0 && return P
+
+    I, J, V = findnz(P)
+    n = size(P, 1)
+    T = eltype(V)
+    row_cols = [Int[] for _ in 1:n]
+    row_vals = [T[] for _ in 1:n]
+
+    for k in eachindex(I)
+        i = I[k]
+        push!(row_cols[i], J[k])
+        push!(row_vals[i], V[k])
+    end
+
+    keep_I = Int[]
+    keep_J = Int[]
+    keep_V = T[]
+    epsT = eps(T)
+    for i in 1:n
+        cols = row_cols[i]
+        vals = row_vals[i]
+        isempty(vals) && continue
+
+        rowmax = maximum(abs, vals)
+        limit = truncate_factor * rowmax
+        keep = Int[]
+        for k in eachindex(vals)
+            if truncate_factor <= 0 || abs(vals[k]) >= limit
+                push!(keep, k)
+            end
+        end
+        if max_interp_entries > 0 && length(keep) > max_interp_entries
+            keep = sort(keep; by=k -> abs(vals[k]), rev=true)[1:max_interp_entries]
+        end
+        if isempty(keep)
+            strongest = 1
+            strongest_val = abs(vals[1])
+            for k in 2:length(vals)
+                candidate_val = abs(vals[k])
+                if candidate_val > strongest_val
+                    strongest = k
+                    strongest_val = candidate_val
+                end
+            end
+            push!(keep, strongest)
+        end
+
+        denom = zero(T)
+        for k in keep
+            denom += vals[k] * coarse_candidate[cols[k]]
+        end
+        scale = abs(denom) > epsT ? candidate[i] / denom : one(T)
+
+        for k in keep
+            push!(keep_I, i)
+            push!(keep_J, cols[k])
+            push!(keep_V, vals[k] * scale)
+        end
+    end
+
+    Pt = sparse(keep_I, keep_J, keep_V, size(P, 1), size(P, 2))
+    dropzeros!(Pt)
+    return Pt
+end
+
+function _common_neighbour_count(coarse, i, j)
+    common = 0
+    coarse_i = coarse[i]
+    for k in coarse[j]
+        k == i && continue
+        k in coarse_i && (common += 1)
+    end
+    return common
+end
+
+function _best_unaggregated_match(i, coarse, agg, weights)
+    best_j = 0
+    best_common = -1
+    best_weight = typemax(Int)
+    for j in coarse[i]
+        agg[j] == 0 || continue
+        common = _common_neighbour_count(coarse, i, j)
+        weight = weights[j]
+        if common > best_common ||
+           (common == best_common && weight < best_weight) ||
+           (common == best_common && weight == best_weight && (best_j == 0 || j < best_j))
+            best_j = j
+            best_common = common
+            best_weight = weight
+        end
+    end
+    return best_j
+end
+
+function _best_neighbouring_aggregate(i, coarse, agg, agg_sizes)
+    scores = Dict{Int, Int}()
+    for j in coarse[i]
+        agg_j = agg[j]
+        agg_j == 0 && continue
+        scores[agg_j] = get(scores, agg_j, 0) + 1
+    end
+
+    best_agg = 0
+    best_links = 0
+    best_size = typemax(Int)
+    for (agg_id, links) in scores
+        size = agg_sizes[agg_id]
+        if links > best_links ||
+           (links == best_links && size < best_size) ||
+           (links == best_links && size == best_size && (best_agg == 0 || agg_id < best_agg))
+            best_agg = agg_id
+            best_links = links
+            best_size = size
+        end
+    end
+    return best_agg
+end
+
 function _standard_aggregates(strong)
     n = length(strong)
     coarse = _coarse_graph(strong)
     weights = map(length, coarse)
-    seeds = falses(n)
     agg = zeros(Int, n)
+    agg_sizes = Int[]
+    next_id = 0
 
     order = sortperm(weights; rev=true)
     for i in order
-        seeds[i] && continue
-        any(seeds[j] for j in coarse[i]) && continue
-        seeds[i] = true
-    end
+        agg[i] == 0 || continue
+        match = _best_unaggregated_match(i, coarse, agg, weights)
+        match == 0 && continue
 
-    next_id = 0
-    for seed in eachindex(seeds)
-        seeds[seed] || continue
         next_id += 1
-        agg[seed] = next_id
-        for j in coarse[seed]
-            agg[j] == 0 && (agg[j] = next_id)
+        push!(agg_sizes, 2)
+        agg[i] = next_id
+        agg[match] = next_id
+    end
+
+    progress = true
+    while progress
+        progress = false
+        for i in order
+            agg[i] == 0 || continue
+            best_agg = _best_neighbouring_aggregate(i, coarse, agg, agg_sizes)
+            best_agg == 0 && continue
+            agg[i] = best_agg
+            agg_sizes[best_agg] += 1
+            progress = true
         end
     end
 
-    for i in 1:n
-        agg[i] != 0 && continue
-        best_agg = 0
-        best_strength = -1
-        for j in coarse[i]
-            candidate = agg[j]
-            candidate == 0 && continue
-            strength = length(intersect(coarse[i], coarse[j]))
-            if strength > best_strength
-                best_strength = strength
-                best_agg = candidate
-            end
+    for i in order
+        agg[i] == 0 || continue
+        match = _best_unaggregated_match(i, coarse, agg, weights)
+        if match != 0
+            next_id += 1
+            push!(agg_sizes, 2)
+            agg[i] = next_id
+            agg[match] = next_id
+            continue
         end
+
+        best_agg = _best_neighbouring_aggregate(i, coarse, agg, agg_sizes)
         if best_agg != 0
             agg[i] = best_agg
-        else
-            next_id += 1
-            agg[i] = next_id
+            agg_sizes[best_agg] += 1
+            continue
         end
+
+        next_id += 1
+        push!(agg_sizes, 1)
+        agg[i] = next_id
     end
 
     return agg, next_id
@@ -140,11 +354,19 @@ function build_prolongation(A, coarsening::SmoothAggregation, candidate=nothing)
     n = _m(A)
     candidate_vec = _near_nullspace_vector(A, isnothing(candidate) ? coarsening.near_nullspace : candidate)
     n <= 2 && return collect(1:n), nothing, candidate_vec
-    strong = _strength_graph(A, coarsening.strength_threshold)
+    strong = _strength_graph(A, coarsening)
     agg, nagg = _standard_aggregates(strong)
     nagg < 2 && return agg, nothing, candidate_vec
     P0, coarse_candidate = _tentative_prolongation(agg, candidate_vec)
-    P = _smooth_prolongation(A, P0, coarsening.smoother_weight)
+    P = _smooth_prolongation(
+        A,
+        strong,
+        P0,
+        coarsening.smoother_weight;
+        filter_weak_connections=coarsening.filter_weak_connections,
+        passes=coarsening.interpolation_passes
+    )
+    P = _truncate_smoothed_prolongation(P, candidate_vec, coarse_candidate, coarsening.truncate_factor, coarsening.max_interp_entries)
     return agg, P, coarse_candidate
 end
 
@@ -213,7 +435,7 @@ end
 function build_prolongation(A, coarsening::RugeStuben, candidate=nothing)
     n = _m(A)
     n <= 2 && return collect(1:n), nothing, nothing
-    strong = _strength_graph(A, coarsening.strength_threshold)
+    strong = _strength_graph(A, coarsening)
     split = _coarse_fine_split(strong)
     coarse_graph = _coarse_graph(strong)
     coarse_points = findall(==(:coarse), split)

@@ -7,16 +7,49 @@ abstract type AbstractAMGSmoother end
 struct SmoothAggregation{F<:AbstractFloat,C} <: AbstractAMGCoarsening
     strength_threshold::F
     smoother_weight::F
+    truncate_factor::F
+    max_interp_entries::Int
+    interpolation_passes::Int
+    strength_measure::Symbol
+    filter_weak_connections::Bool
     near_nullspace::C
 end
-SmoothAggregation(; strength_threshold=0.25, smoother_weight=0.67, near_nullspace=nothing) =
-    SmoothAggregation(float(strength_threshold), float(smoother_weight), near_nullspace)
+function SmoothAggregation(;
+    strength_threshold=0.25,
+    smoother_weight=0.67,
+    truncate_factor=0.0,
+    max_interp_entries=4,
+    interpolation_passes=2,
+    strength_measure=:classical,
+    filter_weak_connections=true,
+    near_nullspace=nothing
+)
+    strength_measure ∈ (:classical, :symmetric) ||
+        throw(ArgumentError("SmoothAggregation strength_measure must be :classical or :symmetric"))
+    max_interp_entries >= 0 || throw(ArgumentError("SmoothAggregation max_interp_entries must be nonnegative"))
+    interpolation_passes > 0 || throw(ArgumentError("SmoothAggregation interpolation_passes must be positive"))
+    SmoothAggregation(
+        float(strength_threshold),
+        float(smoother_weight),
+        float(truncate_factor),
+        max_interp_entries,
+        interpolation_passes,
+        strength_measure,
+        filter_weak_connections,
+        near_nullspace
+    )
+end
 Adapt.@adapt_structure SmoothAggregation
 
 struct RugeStuben{F<:AbstractFloat} <: AbstractAMGCoarsening
     strength_threshold::F
+    strength_measure::Symbol
 end
-RugeStuben(; strength_threshold=0.25) = RugeStuben(float(strength_threshold))
+function RugeStuben(; strength_threshold=0.25, strength_measure=:classical)
+    strength_measure ∈ (:classical, :symmetric) ||
+        throw(ArgumentError("RugeStuben strength_measure must be :classical or :symmetric"))
+    RugeStuben(float(strength_threshold), strength_measure)
+end
 Adapt.@adapt_structure RugeStuben
 
 struct AMGJacobi{F<:AbstractFloat} <: AbstractAMGSmoother
@@ -56,6 +89,7 @@ struct AMG{C<:AbstractAMGCoarsening,S<:AbstractAMGSmoother} <: AbstractLinearSol
     adaptive_rebuild_factor::Float64
     coarse_refresh_interval::Int
     numeric_refresh_rtol::Float64
+    assume_fixed_pattern::Bool
 end
 function AMG(;
     mode=:solver,
@@ -70,7 +104,8 @@ function AMG(;
     max_coarse_rows=256,
     adaptive_rebuild_factor=0.85,
     coarse_refresh_interval=4,
-    numeric_refresh_rtol=0.05
+    numeric_refresh_rtol=0.05,
+    assume_fixed_pattern=true
 )
     mode ∈ (:solver, :cg) || throw(ArgumentError("AMG mode must be :solver or :cg"))
     cycle ∈ (:V, :W) || throw(ArgumentError("AMG cycle must be :V or :W"))
@@ -79,6 +114,12 @@ function AMG(;
     postsweeps = isnothing(postsweeps) ? smoothing_steps : postsweeps
     presweeps > 0 || throw(ArgumentError("AMG presweeps must be positive"))
     postsweeps > 0 || throw(ArgumentError("AMG postsweeps must be positive"))
+    coarsening isa SmoothAggregation && coarsening.truncate_factor < 0 &&
+        throw(ArgumentError("SmoothAggregation truncate_factor must be nonnegative"))
+    coarsening isa SmoothAggregation && coarsening.max_interp_entries < 0 &&
+        throw(ArgumentError("SmoothAggregation max_interp_entries must be nonnegative"))
+    coarsening isa SmoothAggregation && coarsening.interpolation_passes <= 0 &&
+        throw(ArgumentError("SmoothAggregation interpolation_passes must be positive"))
     coarse_refresh_interval > 0 || throw(ArgumentError("AMG coarse_refresh_interval must be positive"))
     numeric_refresh_rtol >= 0 || throw(ArgumentError("AMG numeric_refresh_rtol must be nonnegative"))
     AMG(
@@ -93,7 +134,8 @@ function AMG(;
         max_coarse_rows,
         float(adaptive_rebuild_factor),
         coarse_refresh_interval,
-        float(numeric_refresh_rtol)
+        float(numeric_refresh_rtol),
+        assume_fixed_pattern
     )
 end
 Adapt.@adapt_structure AMG
@@ -170,7 +212,9 @@ mutable struct AMGWorkspace{V<:AbstractVector,T}
     preconditioned::V
     q::V
     iterations::Int
+    last_residual_norm::T
     last_relative_residual::T
+    converged::Bool
     residual_history::Vector{Float64}
 end
 Adapt.@adapt_structure AMGWorkspace
@@ -188,6 +232,8 @@ function _workspace(::AMG, b)
         similar(x),
         0,
         zero(eltype(x)),
+        zero(eltype(x)),
+        false,
         Float64[]
     )
 end

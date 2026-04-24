@@ -47,10 +47,16 @@ end
 function _update_cycle_factor!(hierarchy::AMGHierarchy, initial_rel, final_rel, iterations, solver::AMG)
     if iterations > 0 && initial_rel > 0
         hierarchy.last_cycle_factor = (final_rel / initial_rel)^(1 / iterations)
-        # Adaptive rebuild should respond to a stale reused hierarchy, not
-        # repeatedly rebuild a hierarchy that is already fresh but still weak.
-        hierarchy.force_rebuild = hierarchy.reuse_steps > 0 &&
-            hierarchy.last_cycle_factor > solver.adaptive_rebuild_factor
+        if solver.mode == :solver
+            # Direct AMG uses the cycle as the solver, so weak cycle factors are a
+            # reasonable stale-hierarchy signal after reuse. In AMG-CG this value
+            # reflects Krylov convergence as much as preconditioner quality, so do
+            # not drive rebuilds from it.
+            hierarchy.force_rebuild = hierarchy.reuse_steps > 0 &&
+                hierarchy.last_cycle_factor > solver.adaptive_rebuild_factor
+        else
+            hierarchy.force_rebuild = false
+        end
     else
         hierarchy.last_cycle_factor = 0.0
         hierarchy.force_rebuild = false
@@ -63,9 +69,13 @@ function _reset_residual_history!(workspace::AMGWorkspace)
     return workspace
 end
 
-function _push_residual_history!(workspace::AMGWorkspace, residual)
-    push!(workspace.residual_history, float(norm(residual)))
+function _push_residual_history!(workspace::AMGWorkspace, residual_norm::Real)
+    push!(workspace.residual_history, float(residual_norm))
     return workspace
+end
+
+function _push_residual_history!(workspace::AMGWorkspace, residual)
+    return _push_residual_history!(workspace, norm(residual))
 end
 
 function _record_build_timing!(workspace::AMGWorkspace, elapsed_s; rebuilt=false)
@@ -95,6 +105,21 @@ function _record_apply_timing!(workspace::AMGWorkspace, elapsed_s)
     return workspace
 end
 
+_elapsed_seconds(start_ns) = (time_ns() - start_ns) * 1.0e-9
+
+_amg_converged(residual_norm, rel, atol, rtol) = residual_norm <= atol || rel <= rtol
+
+function _set_amg_result!(workspace::AMGWorkspace, iterations, residual_norm, rel, atol, rtol)
+    workspace.iterations = iterations
+    workspace.last_residual_norm = residual_norm
+    workspace.last_relative_residual = rel
+    workspace.converged = _amg_converged(residual_norm, rel, atol, rtol)
+    return workspace
+end
+
+_amg_hit_itmax(workspace::AMGWorkspace, itmax) = !workspace.converged && workspace.iterations == itmax
+_amg_status(workspace::AMGWorkspace, itmax) = _amg_hit_itmax(workspace, itmax) ? "itmax" : "converged"
+
 function _ensure_cpu_workspace!(hierarchy::AMGHierarchy, b, x)
     needs_init = isnothing(hierarchy.cpu_workspace) || isnothing(hierarchy.cpu_rhs) || isnothing(hierarchy.cpu_x) ||
         length(hierarchy.cpu_rhs) != length(b) || length(hierarchy.cpu_x) != length(x)
@@ -114,6 +139,8 @@ function _ensure_cpu_workspace!(hierarchy::AMGHierarchy, b, x)
             similar(bcpu),
             0,
             zero(eltype(bcpu)),
+            zero(eltype(bcpu)),
+            false,
             Float64[]
         )
     end
@@ -136,7 +163,9 @@ function _amg_cpu_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solve
 
     copyto!(x, xcpu)
     workspace.iterations = cpu_workspace.iterations
+    workspace.last_residual_norm = cpu_workspace.last_residual_norm
     workspace.last_relative_residual = cpu_workspace.last_relative_residual
+    workspace.converged = cpu_workspace.converged
     empty!(workspace.residual_history)
     append!(workspace.residual_history, cpu_workspace.residual_history)
     workspace.timing.apply_time_s += cpu_workspace.timing.apply_time_s - apply_time_before
@@ -150,24 +179,32 @@ function amg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver::AM
     T = eltype(x)
     _residual!(workspace.residual, A, x, b)
     _reset_residual_history!(workspace)
-    _push_residual_history!(workspace, workspace.residual)
+    rnorm = norm(workspace.residual)
+    _push_residual_history!(workspace, rnorm)
     bnorm = max(norm(b), eps(T))
-    rel = norm(workspace.residual) / bnorm
+    rel = rnorm / bnorm
     initial_rel = rel
+    if _amg_converged(rnorm, rel, atol, rtol)
+        _set_amg_result!(workspace, 0, rnorm, rel, atol, rtol)
+        _update_cycle_factor!(hierarchy, initial_rel, rel, 0, solver)
+        return x
+    end
     it = 0
-    while it < itmax && norm(workspace.residual) > atol && rel > rtol
+    while it < itmax && !_amg_converged(rnorm, rel, atol, rtol)
         it += 1
-        elapsed_s = @elapsed amg_apply_preconditioner!(workspace.correction, hierarchy, solver, workspace.residual)
+        start_ns = time_ns()
+        amg_apply_preconditioner!(workspace.correction, hierarchy, solver, workspace.residual)
+        elapsed_s = _elapsed_seconds(start_ns)
         _record_apply_timing!(workspace, elapsed_s)
         @inbounds for i in eachindex(x)
             x[i] += workspace.correction[i]
         end
         _residual!(workspace.residual, A, x, b)
-        _push_residual_history!(workspace, workspace.residual)
-        rel = norm(workspace.residual) / bnorm
+        rnorm = norm(workspace.residual)
+        _push_residual_history!(workspace, rnorm)
+        rel = rnorm / bnorm
     end
-    workspace.iterations = it
-    workspace.last_relative_residual = rel
+    _set_amg_result!(workspace, it, rnorm, rel, atol, rtol)
     _update_cycle_factor!(hierarchy, initial_rel, rel, it, solver)
     return x
 end

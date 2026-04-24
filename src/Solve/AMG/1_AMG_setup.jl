@@ -253,7 +253,7 @@ function setup_hierarchy(A, solver::AMG, backend; log_diagnostics=true)
 
         coarse_rows = _m(coarse_A)
         if coarse_rows <= solver.max_coarse_rows
-            levels[end] = _allocate_level(current_A, level_id, collect(1:n), backend, solver.smoother)
+            push!(levels, _allocate_level(coarse_A, level_id + 1, collect(1:coarse_rows), backend, solver.smoother))
             break
         end
         if _should_stop_coarsening(n, coarse_rows, solver, level_id)
@@ -266,7 +266,7 @@ function setup_hierarchy(A, solver::AMG, backend; log_diagnostics=true)
     end
     last_level = levels[end]
     last_level.coarse_solver = _build_coarse_solver(last_level.A)
-    rowptr_pattern, colval_pattern = _pattern_signature(A)
+    rowptr_pattern, colval_pattern = solver.assume_fixed_pattern ? (Int[], Int[]) : _pattern_signature(A)
     is_symmetric = solver.mode == :cg ? _is_symmetric(A) : true
     operator_complexity, grid_complexity = _hierarchy_complexities(levels)
     finest_snapshot = copy(_cpu_vector(_nzval(levels[1].A)))

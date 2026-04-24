@@ -54,19 +54,29 @@ solvers = (
     ),
     p = SolverSetup(
         solver=AMG(
-            mode=:solver,
-            coarsening=SmoothAggregation(),
-            smoother=AMGJacobi(),
+            mode=:cg,
+            # coarsening = RugeStuben(),
+            coarsening=SmoothAggregation(
+                strength_threshold=0.10,
+                level_strength_thresholds=(0.10, 0.075, 0.05),
+                max_prolongation_entries=2,
+                aggressive_levels=1,
+                aggressive_passes=1,
+                coarse_drop_tolerances=(0.0, 0.01, 0.03, 0.05)
+            ),
+            smoother=AMGJacobi(omega=2/3),
             cycle=:V,
-            max_levels=8,
-            smoothing_steps=10,
-            max_coarse_rows=100,
-            adaptive_rebuild_factor=1.1
+            presweeps=3,
+            postsweeps=1,
+            max_levels=10,
+            min_coarse_rows=32,
+            max_coarse_rows=512,
+            adaptive_rebuild_factor=0.85,
         ),
         preconditioner=Jacobi(),
         convergence=1e-7,
         relax=1.0,
-        itmax=40,
+        itmax=200,
         rtol=0.0,
         atol=1e-5
     )

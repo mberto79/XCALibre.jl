@@ -20,3 +20,5 @@ constant/
 CLAUDE.md
 .claudeignore
 F1-fetchCFD_Minimal*
+*.log
+*.bin

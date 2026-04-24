@@ -1,9 +1,16 @@
 function _pattern_matches(hierarchy::AMGHierarchy, A)
     hierarchy.nrows == _m(A) || return false
     hierarchy.nnz == length(_nzval(A)) || return false
-    rowptr, colval = _pattern_signature(A)
-    rowptr == hierarchy.rowptr_pattern || return false
-    colval == hierarchy.colval_pattern || return false
+    rowptr = _cpu_vector(_rowptr(A))
+    colval = _cpu_vector(_colval(A))
+    length(rowptr) == length(hierarchy.rowptr_pattern) || return false
+    length(colval) == length(hierarchy.colval_pattern) || return false
+    @inbounds for i in eachindex(rowptr)
+        Int(rowptr[i]) == hierarchy.rowptr_pattern[i] || return false
+    end
+    @inbounds for i in eachindex(colval)
+        Int(colval[i]) == hierarchy.colval_pattern[i] || return false
+    end
     return true
 end
 
@@ -85,6 +92,7 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, 
     apply_smoother!(setup.smoother, values, A, b, hardware)
     x = workspace.solution
     copyto!(x, values)
+    _record_pressure_matrix_capture!(phiEqn, setup, component, A, b, x)
 
     if solver.mode == :solver
         amg_solve!(workspace, workspace.hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol)

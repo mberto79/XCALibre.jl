@@ -1,16 +1,17 @@
-function _coarse_solve!(level::AMGLevel, b)
-    solver = isnothing(level.coarse_solver) ? _build_coarse_solver(level.A) : level.coarse_solver
-    bcpu = _cpu_vector(b)
-    try
-        ldiv!(level.x, solver, bcpu)
-    catch
-        xc = solver \ bcpu
-        copyto!(level.x, xc)
-    end
-    return level.x
+function _coarse_solve!(x, solver::AMGCoarseSolver, b)
+    ldiv!(x, solver.factorization, b)
+    return x
 end
 
-_cycle_repetitions(solver::AMG) = solver.cycle == :W ? 2 : 1
+function _coarse_solve!(level::AMGLevel, b)
+    solver = level.coarse_solver
+    if isnothing(solver)
+        solver = _build_coarse_solver(level.A)
+        level.coarse_solver = solver
+    end
+    bcpu = _cpu_vector(b)
+    return _coarse_solve!(level.x, solver, bcpu)
+end
 
 function _cycle!(hierarchy::AMGHierarchy, solver::AMG, level_index, rhs)
     levels = hierarchy.levels
@@ -27,9 +28,7 @@ function _cycle!(hierarchy::AMGHierarchy, solver::AMG, level_index, rhs)
     coarse_level = levels[level_index + 1]
     _restrict!(coarse_level.rhs, level.R, level.rhs)
     fill!(coarse_level.x, zero(eltype(coarse_level.x)))
-    for _ in 1:_cycle_repetitions(solver)
-        _cycle!(hierarchy, solver, level_index + 1, coarse_level.rhs)
-    end
+    _cycle!(hierarchy, solver, level_index + 1, coarse_level.rhs)
 
     _prolongate_add!(level.x, level.P, coarse_level.x, level.tmp)
     _apply_level_smoother!(solver.smoother, level, rhs, solver.postsweeps)
@@ -47,8 +46,10 @@ end
 function _update_cycle_factor!(hierarchy::AMGHierarchy, initial_rel, final_rel, iterations, solver::AMG)
     if iterations > 0 && initial_rel > 0
         hierarchy.last_cycle_factor = (final_rel / initial_rel)^(1 / iterations)
-        # Adaptive rebuild should respond to a stale reused hierarchy, not
-        # repeatedly rebuild a hierarchy that is already fresh but still weak.
+        if solver.mode == :cg
+            hierarchy.force_rebuild = false
+            return hierarchy.last_cycle_factor
+        end
         hierarchy.force_rebuild = hierarchy.reuse_steps > 0 &&
             hierarchy.last_cycle_factor > solver.adaptive_rebuild_factor
     else
@@ -65,6 +66,11 @@ end
 
 function _push_residual_history!(workspace::AMGWorkspace, residual)
     push!(workspace.residual_history, float(norm(residual)))
+    return workspace
+end
+
+function _push_residual_norm_history!(workspace::AMGWorkspace, residual_norm)
+    push!(workspace.residual_history, float(residual_norm))
     return workspace
 end
 
@@ -150,12 +156,13 @@ function amg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver::AM
     T = eltype(x)
     _residual!(workspace.residual, A, x, b)
     _reset_residual_history!(workspace)
-    _push_residual_history!(workspace, workspace.residual)
     bnorm = max(norm(b), eps(T))
-    rel = norm(workspace.residual) / bnorm
+    rnorm = norm(workspace.residual)
+    _push_residual_norm_history!(workspace, rnorm)
+    rel = rnorm / bnorm
     initial_rel = rel
     it = 0
-    while it < itmax && norm(workspace.residual) > atol && rel > rtol
+    while it < itmax && rnorm > atol && rel > rtol
         it += 1
         elapsed_s = @elapsed amg_apply_preconditioner!(workspace.correction, hierarchy, solver, workspace.residual)
         _record_apply_timing!(workspace, elapsed_s)
@@ -163,8 +170,9 @@ function amg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver::AM
             x[i] += workspace.correction[i]
         end
         _residual!(workspace.residual, A, x, b)
-        _push_residual_history!(workspace, workspace.residual)
-        rel = norm(workspace.residual) / bnorm
+        rnorm = norm(workspace.residual)
+        _push_residual_norm_history!(workspace, rnorm)
+        rel = rnorm / bnorm
     end
     workspace.iterations = it
     workspace.last_relative_residual = rel

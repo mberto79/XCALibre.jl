@@ -5,16 +5,55 @@ export solve_equation!
 export residual!
 export AdaptiveTimeStepping
 export enable_solve_history!, disable_solve_history!, reset_solve_history!, solve_history
+export enable_pressure_matrix_capture!, disable_pressure_matrix_capture!, reset_pressure_matrix_captures!, pressure_matrix_captures
 
 const _solve_history_enabled = Ref(false)
 const _solve_history = Any[]
+const _pressure_matrix_capture_enabled = Ref(false)
+const _pressure_matrix_capture_limit = Ref(0)
+const _pressure_matrix_captures = Any[]
 
 enable_solve_history!() = (_solve_history_enabled[] = true)
 disable_solve_history!() = (_solve_history_enabled[] = false)
 reset_solve_history!() = empty!(_solve_history)
 solve_history() = copy(_solve_history)
 
+function enable_pressure_matrix_capture!(; limit=3)
+    limit > 0 || throw(ArgumentError("pressure matrix capture limit must be positive"))
+    _pressure_matrix_capture_limit[] = limit
+    _pressure_matrix_capture_enabled[] = true
+    return nothing
+end
+
+disable_pressure_matrix_capture!() = (_pressure_matrix_capture_enabled[] = false)
+reset_pressure_matrix_captures!() = empty!(_pressure_matrix_captures)
+pressure_matrix_captures() = copy(_pressure_matrix_captures)
+
 _history_enabled() = _solve_history_enabled[]
+_pressure_matrix_capture_enabled_now() =
+    _pressure_matrix_capture_enabled[] &&
+    length(_pressure_matrix_captures) < _pressure_matrix_capture_limit[]
+
+function _copy_probe_matrix(A)
+    I, J, V = _csr_triplets(A)
+    return SparseXCSR(sparsecsr(I, J, V, _m(A), _n(A)))
+end
+
+function _record_pressure_matrix_capture!(phiEqn::ModelEquation, setup, component, A, b, x0)
+    _pressure_matrix_capture_enabled_now() || return nothing
+    phiEqn.type isa ScalarModel || return nothing
+    setup.solver isa AMG || return nothing
+    push!(_pressure_matrix_captures, (
+        equation_kind=string(nameof(typeof(phiEqn.type))),
+        component=_component_label(component),
+        solver=string(nameof(typeof(setup.solver))),
+        solver_mode=String(setup.solver.mode),
+        A=_copy_probe_matrix(A),
+        b=copy(Array(b)),
+        x0=copy(Array(x0))
+    ))
+    return nothing
+end
 
 function _residual_history_arrays(residuals)
     values = Float64[float(r) for r in residuals]

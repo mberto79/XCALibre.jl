@@ -25,26 +25,34 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
 
     _residual!(r, A, x, b)
     _reset_residual_history!(workspace)
-    _push_residual_history!(workspace, r)
     bnorm = max(norm(b), eps(T))
+    rnorm = norm(r)
+    _push_residual_norm_history!(workspace, rnorm)
+    rel = rnorm / bnorm
+    initial_rel = rel
+    if rnorm <= atol || rel <= rtol
+        workspace.iterations = 0
+        workspace.last_relative_residual = rel
+        _update_cycle_factor!(hierarchy, initial_rel, rel, 0, solver)
+        return x
+    end
     elapsed_s = @elapsed amg_apply_preconditioner!(z, hierarchy, solver, r)
     _record_apply_timing!(workspace, elapsed_s)
     copyto!(p, z)
     rz = dot(r, z)
-    rel = norm(r) / bnorm
-    initial_rel = rel
     k = 0
-    while k < itmax && norm(r) > atol && rel > rtol
+    while k < itmax && rnorm > atol && rel > rtol
         k += 1
-        mul!(q, A, p)
+        _matvec!(q, A, p)
         α = rz / dot(p, q)
         @inbounds for i in eachindex(x)
             x[i] += α * p[i]
             r[i] -= α * q[i]
         end
-        _push_residual_history!(workspace, r)
-        rel = norm(r) / bnorm
-        if norm(r) <= atol || rel <= rtol
+        rnorm = norm(r)
+        _push_residual_norm_history!(workspace, rnorm)
+        rel = rnorm / bnorm
+        if rnorm <= atol || rel <= rtol
             break
         end
         elapsed_s = @elapsed amg_apply_preconditioner!(z, hierarchy, solver, r)

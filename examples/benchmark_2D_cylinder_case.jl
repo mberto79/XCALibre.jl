@@ -18,24 +18,20 @@ function default_benchmark_configs()
     return [
         (backend="cpu", mode="baseline", iterations=5, warmup_iterations=1),
         (backend="cpu", mode="amg_example", iterations=5, warmup_iterations=1),
-        (backend="cpu", mode="amg_cg_stageb", iterations=5, warmup_iterations=1),
+        (backend="cpu", mode="amg_complexity_controlled", iterations=5, warmup_iterations=1),
         (backend="cuda", mode="baseline", iterations=1, warmup_iterations=1),
         (backend="cuda", mode="amg_example", iterations=1, warmup_iterations=1),
     ]
 end
 
 function amg_pressure_solver(mode::String)
-    if mode == "amg" || mode == "amg_example"
+    if mode == "amg" || mode == "amg_example" || mode == "amg_omega11"
         return SolverSetup(
             solver=AMG(
-                mode=:solver,
+                mode=:cg,
                 coarsening=SmoothAggregation(),
-                smoother=AMGJacobi(),
-                cycle=:V,
-                max_levels=8,
-                smoothing_steps=10,
-                max_coarse_rows=100,
-                adaptive_rebuild_factor=1.1
+                smoother=mode == "amg_omega11" ? AMGJacobi(omega=1.1) : AMGJacobi(),
+                cycle=:V
             ),
             preconditioner=Jacobi(),
             convergence=1e-7,
@@ -44,58 +40,23 @@ function amg_pressure_solver(mode::String)
             rtol=0.0,
             atol=1e-5
         )
-    elseif mode == "amg_stageb"
-        return SolverSetup(
-            solver=AMG(
-                mode=:solver,
-                cycle=:W,
-                coarsening=SmoothAggregation(),
-                smoother=AMGSymmetricGaussSeidel(),
-                max_levels=8,
-                presweeps=2,
-                postsweeps=2,
-                max_coarse_rows=100,
-                adaptive_rebuild_factor=0.9
-            ),
-            preconditioner=Jacobi(),
-            convergence=1e-7,
-            relax=1.0,
-            itmax=40,
-            rtol=0.0,
-            atol=1e-5
-        )
-    elseif mode == "amg_stageb_jacobi"
-        return SolverSetup(
-            solver=AMG(
-                mode=:solver,
-                cycle=:W,
-                coarsening=SmoothAggregation(),
-                smoother=AMGJacobi(),
-                max_levels=8,
-                presweeps=2,
-                postsweeps=2,
-                max_coarse_rows=100,
-                adaptive_rebuild_factor=0.9
-            ),
-            preconditioner=Jacobi(),
-            convergence=1e-7,
-            relax=1.0,
-            itmax=40,
-            rtol=0.0,
-            atol=1e-5
-        )
-    elseif mode == "amg_cg_stageb"
+    elseif mode == "amg_complexity_controlled"
         return SolverSetup(
             solver=AMG(
                 mode=:cg,
                 cycle=:V,
-                coarsening=SmoothAggregation(),
-                smoother=AMGSymmetricGaussSeidel(),
-                max_levels=8,
+                coarsening=SmoothAggregation(
+                    strength_threshold=0.10,
+                    level_strength_thresholds=(0.10, 0.075, 0.05),
+                    max_prolongation_entries=2,
+                    aggressive_levels=1,
+                    aggressive_passes=1,
+                    coarse_drop_tolerances=(0.0, 0.01, 0.03, 0.05)
+                ),
+                smoother=AMGJacobi(omega=1.1),
                 presweeps=2,
                 postsweeps=2,
-                max_coarse_rows=100,
-                adaptive_rebuild_factor=0.9
+                max_coarse_rows=512
             ),
             preconditioner=Jacobi(),
             convergence=1e-7,

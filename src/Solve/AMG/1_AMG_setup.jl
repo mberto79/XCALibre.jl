@@ -1,9 +1,9 @@
 function _cpu_vector(x::AbstractVector)
-    Array(x)
+    return Array(x)
 end
 
 function _cpu_vector(x::Vector)
-    x
+    return x
 end
 
 function _pattern_signature(A)
@@ -33,15 +33,15 @@ function _update_finest_snapshot!(hierarchy::AMGHierarchy)
 end
 
 function _amg_setup_backend(backend)
-    backend
+    return backend
 end
 
 function _amg_setup_matrix(A, backend)
-    A
+    return A
 end
 
 function _amg_needs_cpu_apply(A)
-    false
+    return false
 end
 
 function _csr_triplets(A)
@@ -67,120 +67,173 @@ end
 
 function _csr_to_csc(A)
     I, J, V = _csr_triplets(A)
-    sparse(I, J, V, _m(A), _n(A))
+    return sparse(I, J, V, _m(A), _n(A))
 end
 
 function _wrap_sparse(A::SparseMatrixCSC)
     I, J, V = findnz(A)
-    SparseXCSR(sparsecsr(I, J, V, size(A, 1), size(A, 2)))
+    return SparseXCSR(sparsecsr(I, J, V, size(A, 1), size(A, 2)))
 end
 
-function _diag_inverse_and_l1(A)
+function _diag_inverse(A)
     rowptr = _rowptr(A)
     colval = _colval(A)
     nzval = _nzval(A)
     n = _m(A)
     T = eltype(nzval)
-    d = zeros(T, n)
-    dinv = zeros(T, n)
-    l1inv = zeros(T, n)
+    diag = zeros(T, n)
+    invdiag = zeros(T, n)
     for i in 1:n
         aii = one(T)
-        l1row = zero(T)
         idx = 0
         for p in rowptr[i]:(rowptr[i + 1] - 1)
-            j = colval[p]
-            if j == i
+            if colval[p] == i
                 idx = p
                 aii = nzval[p]
-            else
-                l1row += abs(nzval[p])
             end
         end
         idx == 0 && (aii = one(T))
-        d[i] = aii
-        dinv[i] = abs(aii) > eps(T) ? inv(aii) : one(T)
-        l1diag = max(abs(aii), l1row)
-        l1inv[i] = l1diag > eps(T) ? inv(l1diag) : one(T)
+        diag[i] = aii
+        invdiag[i] = abs(aii) > eps(T) ? inv(aii) : one(T)
     end
-    return d, dinv, l1inv
+    return diag, invdiag
 end
 
-function _diag_inverse_and_l1!(diag, invdiag, l1inv, A)
+function _diag_inverse!(diag, invdiag, A)
     rowptr = _rowptr(A)
     colval = _colval(A)
     nzval = _nzval(A)
     T = eltype(nzval)
     for i in eachindex(diag)
         aii = one(T)
-        l1row = zero(T)
         idx = 0
         for p in rowptr[i]:(rowptr[i + 1] - 1)
-            j = colval[p]
-            if j == i
+            if colval[p] == i
                 idx = p
                 aii = nzval[p]
-            else
-                l1row += abs(nzval[p])
             end
         end
         idx == 0 && (aii = one(T))
         diag[i] = aii
         invdiag[i] = abs(aii) > eps(T) ? inv(aii) : one(T)
-        l1diag = max(abs(aii), l1row)
-        l1inv[i] = l1diag > eps(T) ? inv(l1diag) : one(T)
     end
-    return diag, invdiag, l1inv
+    return diag, invdiag
 end
 
-function _estimate_lambda_max(A, invdiag, smoother::AbstractAMGSmoother)
+function _estimate_lambda_max(A, invdiag)
     T = eltype(invdiag)
     v = ones(T, _m(A))
     w = similar(v)
-    λ = one(T)
-    for _ in 1:(smoother isa AMGChebyshev ? max(1, smoother.power_iterations) : 3)
+    lambda = one(T)
+    for _ in 1:3
         mul!(w, A, v)
         @inbounds for i in eachindex(w)
             w[i] *= invdiag[i]
         end
-        λ = max(norm(w), eps(T))
+        lambda = max(norm(w), eps(T))
         @inbounds for i in eachindex(v)
-            v[i] = w[i] / λ
+            v[i] = w[i] / lambda
         end
     end
-    return max(λ, one(T))
+    return max(lambda, one(T))
 end
 
 function _allocate_level(A, level_id, aggregate_ids, backend, smoother)
     n = _m(A)
     T = eltype(_nzval(A))
-    diag, invdiag, l1inv = _diag_inverse_and_l1(A)
+    diag, invdiag = _diag_inverse(A)
     rhs = KernelAbstractions.zeros(backend, T, n)
     x = KernelAbstractions.zeros(backend, T, n)
     tmp = KernelAbstractions.zeros(backend, T, n)
     coarse_work = KernelAbstractions.zeros(backend, T, max(1, n))
-    λ = _estimate_lambda_max(A, invdiag, smoother)
-    return AMGLevel(A, nothing, nothing, diag, invdiag, l1inv, rhs, x, tmp, aggregate_ids, coarse_work, λ, level_id, nothing)
+    lambda = _estimate_lambda_max(A, invdiag)
+    return AMGLevel(A, nothing, nothing, diag, invdiag, rhs, x, tmp, aggregate_ids, coarse_work, lambda, level_id, nothing)
 end
 
 function _refresh_level!(level::AMGLevel, solver::AMG)
-    _diag_inverse_and_l1!(level.diagonal, level.inv_diagonal, level.l1_inv_diagonal, level.A)
-    level.lambda_max = _estimate_lambda_max(level.A, level.inv_diagonal, solver.smoother)
+    _diag_inverse!(level.diagonal, level.inv_diagonal, level.A)
+    level.lambda_max = _estimate_lambda_max(level.A, level.inv_diagonal)
     return level
 end
 
-function _regalerkin!(fine_level::AMGLevel)
+function _drop_coarse_matrix(A, tolerance)
+    tolerance <= 0 && return A
+    rowptr = _rowptr(A)
+    colval = _colval(A)
+    nzval = _nzval(A)
+    n = _m(A)
+    T = eltype(nzval)
+    row_max = zeros(T, n)
+    for i in 1:n
+        for p in rowptr[i]:(rowptr[i + 1] - 1)
+            j = colval[p]
+            j == i && continue
+            row_max[i] = max(row_max[i], abs(nzval[p]))
+        end
+    end
+
+    I = Int[]
+    J = Int[]
+    V = T[]
+    sizehint!(I, length(nzval))
+    sizehint!(J, length(nzval))
+    sizehint!(V, length(nzval))
+
+    for i in 1:n
+        diag_index = 0
+        for p in rowptr[i]:(rowptr[i + 1] - 1)
+            if colval[p] == i
+                diag_index = p
+            end
+        end
+        for p in rowptr[i]:(rowptr[i + 1] - 1)
+            j = colval[p]
+            symmetric_scale = j <= n ? max(row_max[i], row_max[j]) : row_max[i]
+            keep = j == i || abs(nzval[p]) >= tolerance * symmetric_scale
+            if keep
+                push!(I, i)
+                push!(J, j)
+                push!(V, nzval[p])
+            end
+        end
+        if diag_index == 0
+            push!(I, i)
+            push!(J, i)
+            push!(V, one(T))
+        end
+    end
+
+    dropped = sparse(I, J, V, n, _n(A))
+    dropzeros!(dropped)
+    return _wrap_sparse(dropped)
+end
+
+function _regalerkin!(fine_level::AMGLevel, solver::AMG)
     coarse_A = _wrap_sparse(fine_level.R * _csr_to_csc(fine_level.A) * fine_level.P)
+    tolerance = _coarse_drop_tolerance(solver.coarsening, fine_level.level_id + 1)
+    coarse_A = _drop_coarse_matrix(coarse_A, tolerance)
     return coarse_A
+end
+
+function _regalerkin_numeric!(coarse_A, fine_level::AMGLevel, solver::AMG)
+    updated_A = _regalerkin!(fine_level, solver)
+    if _m(coarse_A) == _m(updated_A) &&
+       _n(coarse_A) == _n(updated_A) &&
+       _rowptr(coarse_A) == _rowptr(updated_A) &&
+       _colval(coarse_A) == _colval(updated_A)
+        copyto!(_nzval(coarse_A), _nzval(updated_A))
+        return coarse_A
+    end
+    return updated_A
 end
 
 function _build_coarse_solver(A)
     Acsc = _csr_to_csc(A)
     try
-        return factorize(Acsc)
+        return AMGCoarseSolver(lu(Acsc))
     catch err
         if err isa LinearAlgebra.SingularException
-            return qr(Acsc)
+            return AMGCoarseSolver(qr(Acsc))
         end
         rethrow(err)
     end
@@ -192,7 +245,7 @@ function refresh_hierarchy!(hierarchy::AMGHierarchy, solver::AMG)
         level = levels[level_index]
         _refresh_level!(level, solver)
         coarse_level = levels[level_index + 1]
-        coarse_level.A = _regalerkin!(level)
+        coarse_level.A = _regalerkin_numeric!(coarse_level.A, level, solver)
     end
     _refresh_level!(levels[end], solver)
     levels[end].coarse_solver = _build_coarse_solver(levels[end].A)
@@ -219,7 +272,7 @@ function _needs_numeric_refresh(hierarchy::AMGHierarchy, A, solver::AMG)
 end
 
 function _should_stop_coarsening(n, coarse_rows, solver::AMG, level_id)
-    coarse_rows < 2 || coarse_rows >= n || coarse_rows <= solver.min_coarse_rows || level_id >= solver.max_levels
+    return coarse_rows < 2 || coarse_rows >= n || coarse_rows <= solver.min_coarse_rows || level_id >= solver.max_levels
 end
 
 function _hierarchy_complexities(levels)
@@ -230,34 +283,50 @@ function _hierarchy_complexities(levels)
     return float(operator_complexity), float(grid_complexity)
 end
 
+function _append_amg_level(levels, level::AMGLevel)
+    if level isa eltype(levels)
+        push!(levels, level)
+        return levels
+    end
+
+    widened_levels = AMGLevel[]
+    append!(widened_levels, levels)
+    push!(widened_levels, level)
+    return widened_levels
+end
+
 function setup_hierarchy(A, solver::AMG, backend; log_diagnostics=true)
-    levels = AMGLevel[]
+    levels = nothing
     current_A = A
-    current_candidates = solver.coarsening isa SmoothAggregation ? solver.coarsening.near_nullspace : nothing
+    current_candidates = _initial_candidates(solver.coarsening)
     level_id = 1
     while true
         n = _m(current_A)
-        aggregate_ids, P, current_candidates = build_prolongation(current_A, solver.coarsening, current_candidates)
+        aggregate_ids, P, current_candidates = build_prolongation(current_A, solver.coarsening, current_candidates, level_id)
         level = _allocate_level(current_A, level_id, aggregate_ids, backend, solver.smoother)
+        if isnothing(levels)
+            levels = typeof(level)[]
+        end
 
         if isnothing(P)
-            push!(levels, level)
+            levels = _append_amg_level(levels, level)
             break
         end
 
         R = transpose(P)
         coarse_A = _wrap_sparse(R * _csr_to_csc(current_A) * P)
-        level = AMGLevel(current_A, P, R, level.diagonal, level.inv_diagonal, level.l1_inv_diagonal, level.rhs, level.x, level.tmp,
+        coarse_A = _drop_coarse_matrix(coarse_A, _coarse_drop_tolerance(solver.coarsening, level_id + 1))
+        level = AMGLevel(current_A, P, R, level.diagonal, level.inv_diagonal, level.rhs, level.x, level.tmp,
             aggregate_ids, level.coarse_work, level.lambda_max, level.level_id, level.coarse_solver)
-        push!(levels, level)
+        levels = _append_amg_level(levels, level)
 
         coarse_rows = _m(coarse_A)
         if coarse_rows <= solver.max_coarse_rows
-            levels[end] = _allocate_level(current_A, level_id, collect(1:n), backend, solver.smoother)
+            levels = _append_amg_level(levels, _allocate_level(coarse_A, level_id + 1, collect(1:coarse_rows), backend, solver.smoother))
             break
         end
         if _should_stop_coarsening(n, coarse_rows, solver, level_id)
-            push!(levels, _allocate_level(coarse_A, level_id + 1, collect(1:coarse_rows), backend, solver.smoother))
+            levels = _append_amg_level(levels, _allocate_level(coarse_A, level_id + 1, collect(1:coarse_rows), backend, solver.smoother))
             break
         end
 
@@ -277,5 +346,5 @@ function setup_hierarchy(A, solver::AMG, backend; log_diagnostics=true)
         @info "AMG hierarchy built" mode=solver.mode levels=length(levels) rows=rows_summary
         @info "AMG hierarchy diagnostics" cycle=solver.cycle coarsening=typeof(solver.coarsening) smoother=typeof(solver.smoother) backend=typeof(backend) operator_complexity=operator_complexity grid_complexity=grid_complexity
     end
-    hierarchy
+    return hierarchy
 end

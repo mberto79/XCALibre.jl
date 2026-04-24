@@ -38,7 +38,7 @@ SolverSetup(
     solver = AMG(
         mode = :cg,
         coarsening = SmoothAggregation(),
-        smoother = AMGChebyshev()
+        smoother = AMGJacobi()
     ),
     preconditioner = Jacobi(),
     convergence = 1e-7,

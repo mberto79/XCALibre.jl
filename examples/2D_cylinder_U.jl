@@ -75,7 +75,7 @@ schemes = (
 
 
 runtime = Runtime(
-    iterations=10000, write_interval=50, time_step=0.0025) # uncomment to save files
+    iterations=500, write_interval=50, time_step=0.0025) # uncomment to save files
     # iterations=1000, write_interval=-1, time_step=0.005) # used to run only
 
 config = Configuration(

@@ -1,45 +1,48 @@
-function _coarse_solve!(x, solver::AMGCoarseSolver, b)
-    ldiv!(x, solver.factorization, b)
-    return x
+function _coarse_solve!(coarse_cpu::AMGCPUCoarseLevel, b)
+    copyto!(coarse_cpu.rhs, b)
+    if coarse_cpu.use_qr
+        ldiv!(coarse_cpu.x, coarse_cpu.qr_factor, coarse_cpu.rhs)
+    else
+        ldiv!(coarse_cpu.x, coarse_cpu.lu_factor, coarse_cpu.rhs)
+    end
+    return coarse_cpu.x
 end
 
-function _coarse_solve!(level::AMGLevel, b)
-    solver = level.coarse_solver
-    if isnothing(solver)
-        solver = _build_coarse_solver(level.A)
-        level.coarse_solver = solver
-    end
-    bcpu = _cpu_vector(b)
-    return _coarse_solve!(level.x, solver, bcpu)
+function _coarse_solve!(hierarchy::AMGHierarchy, level::AMGLevel, b)
+    coarse_cpu = hierarchy.coarse_cpu
+    _cpu_copyto!(coarse_cpu.rhs, b)
+    _coarse_solve!(coarse_cpu, coarse_cpu.rhs)
+    _device_copyto!(hierarchy.backend, level.x, coarse_cpu.x)
+    return level.x
 end
 
 function _cycle!(hierarchy::AMGHierarchy, solver::AMG, level_index, rhs)
     levels = hierarchy.levels
     level = levels[level_index]
-    fill!(level.x, zero(eltype(level.x)))
+    _fill_amg!(hierarchy, level.x, zero(eltype(level.x)))
 
     if level_index == length(levels)
-        return _coarse_solve!(level, rhs)
+        return _coarse_solve!(hierarchy, level, rhs)
     end
 
-    _apply_level_smoother!(solver.smoother, level, rhs, solver.presweeps)
-    _residual!(level.rhs, level.A, level.x, rhs)
+    _apply_level_smoother!(hierarchy, solver.smoother, level, rhs, solver.presweeps)
+    _residual!(hierarchy, level.rhs, level.A, level.x, rhs)
 
     coarse_level = levels[level_index + 1]
-    _restrict!(coarse_level.rhs, level.R, level.rhs)
-    fill!(coarse_level.x, zero(eltype(coarse_level.x)))
+    _restrict!(hierarchy, coarse_level.rhs, level.R, level.rhs)
+    _fill_amg!(hierarchy, coarse_level.x, zero(eltype(coarse_level.x)))
     _cycle!(hierarchy, solver, level_index + 1, coarse_level.rhs)
 
-    _prolongate_add!(level.x, level.P, coarse_level.x, level.tmp)
-    _apply_level_smoother!(solver.smoother, level, rhs, solver.postsweeps)
+    _prolongate_add!(hierarchy, level.x, level.P, coarse_level.x, level.tmp)
+    _apply_level_smoother!(hierarchy, solver.smoother, level, rhs, solver.postsweeps)
     return level.x
 end
 
 function amg_apply_preconditioner!(z, hierarchy::AMGHierarchy, solver::AMG, r)
     root = hierarchy.levels[1]
-    fill!(root.x, zero(eltype(root.x)))
+    _fill_amg!(hierarchy, root.x, zero(eltype(root.x)))
     _cycle!(hierarchy, solver, 1, r)
-    copyto!(z, root.x)
+    _copy_amg!(hierarchy, z, root.x)
     return z
 end
 
@@ -61,11 +64,6 @@ end
 
 function _reset_residual_history!(workspace::AMGWorkspace)
     empty!(workspace.residual_history)
-    return workspace
-end
-
-function _push_residual_history!(workspace::AMGWorkspace, residual)
-    push!(workspace.residual_history, float(norm(residual)))
     return workspace
 end
 
@@ -101,60 +99,9 @@ function _record_apply_timing!(workspace::AMGWorkspace, elapsed_s)
     return workspace
 end
 
-function _ensure_cpu_workspace!(hierarchy::AMGHierarchy, b, x)
-    needs_init = isnothing(hierarchy.cpu_workspace) || isnothing(hierarchy.cpu_rhs) || isnothing(hierarchy.cpu_x) ||
-        length(hierarchy.cpu_rhs) != length(b) || length(hierarchy.cpu_x) != length(x)
-    if needs_init
-        bcpu = Array(b)
-        xcpu = Array(x)
-        hierarchy.cpu_rhs = similar(bcpu)
-        hierarchy.cpu_x = similar(xcpu)
-        hierarchy.cpu_workspace = AMGWorkspace(
-            hierarchy,
-            AMGTimingStats(),
-            similar(bcpu),
-            similar(bcpu),
-            similar(bcpu),
-            similar(bcpu),
-            similar(bcpu),
-            similar(bcpu),
-            0,
-            zero(eltype(bcpu)),
-            Float64[]
-        )
-    end
-    return hierarchy.cpu_workspace, hierarchy.cpu_rhs, hierarchy.cpu_x
-end
-
-function _amg_cpu_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol)
-    Acpu = hierarchy.levels[1].A
-    cpu_workspace, bcpu, xcpu = _ensure_cpu_workspace!(hierarchy, b, x)
-    apply_time_before = cpu_workspace.timing.apply_time_s
-    apply_calls_before = cpu_workspace.timing.apply_calls
-    copyto!(bcpu, Array(b))
-    copyto!(xcpu, Array(x))
-
-    if solver.mode == :solver
-        amg_solve!(cpu_workspace, hierarchy, solver, Acpu, bcpu, xcpu; itmax=itmax, atol=atol, rtol=rtol)
-    else
-        amg_cg_solve!(cpu_workspace, hierarchy, solver, Acpu, bcpu, xcpu; itmax=itmax, atol=atol, rtol=rtol)
-    end
-
-    copyto!(x, xcpu)
-    workspace.iterations = cpu_workspace.iterations
-    workspace.last_relative_residual = cpu_workspace.last_relative_residual
-    empty!(workspace.residual_history)
-    append!(workspace.residual_history, cpu_workspace.residual_history)
-    workspace.timing.apply_time_s += cpu_workspace.timing.apply_time_s - apply_time_before
-    workspace.timing.apply_calls += cpu_workspace.timing.apply_calls - apply_calls_before
-    return x
-end
-
 function amg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol)
-    _amg_needs_cpu_apply(A) && return _amg_cpu_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol)
-    hierarchy.backend isa CPU || return _amg_cpu_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol)
     T = eltype(x)
-    _residual!(workspace.residual, A, x, b)
+    _residual!(hierarchy, workspace.residual, A, x, b)
     _reset_residual_history!(workspace)
     bnorm = max(norm(b), eps(T))
     rnorm = norm(workspace.residual)
@@ -164,12 +111,13 @@ function amg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver::AM
     it = 0
     while it < itmax && rnorm > atol && rel > rtol
         it += 1
-        elapsed_s = @elapsed amg_apply_preconditioner!(workspace.correction, hierarchy, solver, workspace.residual)
-        _record_apply_timing!(workspace, elapsed_s)
-        @inbounds for i in eachindex(x)
-            x[i] += workspace.correction[i]
+        elapsed_s = @elapsed begin
+            amg_apply_preconditioner!(workspace.correction, hierarchy, solver, workspace.residual)
+            KernelAbstractions.synchronize(hierarchy.backend)
         end
-        _residual!(workspace.residual, A, x, b)
+        _record_apply_timing!(workspace, elapsed_s)
+        _launch_amg_kernel!(hierarchy, _amg_add_kernel!, length(x), x, workspace.correction)
+        _residual!(hierarchy, workspace.residual, A, x, b)
         rnorm = norm(workspace.residual)
         _push_residual_norm_history!(workspace, rnorm)
         rel = rnorm / bnorm

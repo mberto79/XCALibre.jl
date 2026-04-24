@@ -5,14 +5,14 @@ abstract type AbstractAMGCoarsening end
 abstract type AbstractAMGSmoother end
 abstract type AbstractAMGWorkspace end
 
-struct SmoothAggregation{F<:AbstractFloat,C,L,D} <: AbstractAMGCoarsening
+struct SmoothAggregation{F,C,L,I,D} <: AbstractAMGCoarsening
     strength_threshold::F
     level_strength_thresholds::L
     smoother_weight::F
     near_nullspace::C
-    max_prolongation_entries::Int
-    aggressive_levels::Int
-    aggressive_passes::Int
+    max_prolongation_entries::I
+    aggressive_levels::I
+    aggressive_passes::I
     coarse_drop_tolerances::D
 end
 
@@ -31,47 +31,53 @@ function SmoothAggregation(;
     thresholds = isnothing(level_strength_thresholds) ? nothing : float.(collect(level_strength_thresholds))
     drop_tolerances = float.(collect(coarse_drop_tolerances))
     any(<(0), drop_tolerances) && throw(ArgumentError("SmoothAggregation coarse_drop_tolerances must be nonnegative"))
-    return SmoothAggregation(
+    return SmoothAggregation{
+        typeof(float(strength_threshold)),
+        typeof(near_nullspace),
+        typeof(thresholds),
+        Int,
+        typeof(drop_tolerances)
+    }(
         float(strength_threshold),
         thresholds,
         float(smoother_weight),
         near_nullspace,
-        max_prolongation_entries,
-        aggressive_levels,
-        aggressive_passes,
+        Int(max_prolongation_entries),
+        Int(aggressive_levels),
+        Int(aggressive_passes),
         drop_tolerances
     )
 end
 
 Adapt.@adapt_structure SmoothAggregation
 
-struct RugeStuben{F<:AbstractFloat} <: AbstractAMGCoarsening
+struct RugeStuben{F} <: AbstractAMGCoarsening
     strength_threshold::F
 end
 
 RugeStuben(; strength_threshold=0.05) = RugeStuben(float(strength_threshold))
 Adapt.@adapt_structure RugeStuben
 
-struct AMGJacobi{F<:AbstractFloat} <: AbstractAMGSmoother
+struct AMGJacobi{F} <: AbstractAMGSmoother
     omega::F
 end
 
 AMGJacobi(; omega=0.6667) = AMGJacobi(float(omega))
 Adapt.@adapt_structure AMGJacobi
 
-struct AMG{C<:AbstractAMGCoarsening,S<:AbstractAMGSmoother} <: AbstractLinearSolver
+struct AMG{C,S,I,F} <: AbstractLinearSolver
     mode::Symbol
     coarsening::C
     smoother::S
     cycle::Symbol
-    presweeps::Int
-    postsweeps::Int
-    max_levels::Int
-    min_coarse_rows::Int
-    max_coarse_rows::Int
-    adaptive_rebuild_factor::Float64
-    coarse_refresh_interval::Int
-    numeric_refresh_rtol::Float64
+    presweeps::I
+    postsweeps::I
+    max_levels::I
+    min_coarse_rows::I
+    max_coarse_rows::I
+    adaptive_rebuild_factor::F
+    coarse_refresh_interval::I
+    numeric_refresh_rtol::F
 end
 
 function AMG(;
@@ -106,98 +112,107 @@ function AMG(;
         coarsening,
         smoother,
         cycle,
-        presweeps,
-        postsweeps,
-        max_levels,
-        min_coarse_rows,
-        max_coarse_rows,
+        Int(presweeps),
+        Int(postsweeps),
+        Int(max_levels),
+        Int(min_coarse_rows),
+        Int(max_coarse_rows),
         float(adaptive_rebuild_factor),
-        coarse_refresh_interval,
+        Int(coarse_refresh_interval),
         float(numeric_refresh_rtol)
     )
 end
 
 Adapt.@adapt_structure AMG
 
-mutable struct AMGTimingStats
-    build_time_s::Float64
-    build_calls::Int
-    refresh_time_s::Float64
-    refresh_calls::Int
-    finest_refresh_time_s::Float64
-    finest_refresh_calls::Int
-    apply_time_s::Float64
-    apply_calls::Int
-    last_update_action::Symbol
+mutable struct AMGTimingStats{F,I,S}
+    build_time_s::F
+    build_calls::I
+    refresh_time_s::F
+    refresh_calls::I
+    finest_refresh_time_s::F
+    finest_refresh_calls::I
+    apply_time_s::F
+    apply_calls::I
+    last_update_action::S
 end
 
 AMGTimingStats() = AMGTimingStats(0.0, 0, 0.0, 0, 0.0, 0, 0.0, 0, :none)
 
-const AMGDirectFactorization{T,I} = Union{
-    SparseArrays.UMFPACK.UmfpackLU{T,I},
-    SparseArrays.SPQR.QRSparse{T,I}
-}
-
-struct AMGCoarseSolver{T,I<:Integer}
-    factorization::AMGDirectFactorization{T,I}
+struct AMGMatrixCSR{RP,CV,NZ}
+    rowptr::RP
+    colval::CV
+    nzval::NZ
+    m::Int
+    n::Int
 end
 
-const AMGTransferMatrix{T} = Union{
-    Nothing,
-    SparseMatrixCSC{T,Int},
-    Transpose{T,SparseMatrixCSC{T,Int}}
-}
+Adapt.@adapt_structure AMGMatrixCSR
 
-mutable struct AMGLevel{
-    M,
-    V1<:AbstractVector,
-    V2<:AbstractVector,
-    V3<:AbstractVector,
-    VI<:AbstractVector,
-    VC<:AbstractVector,
-    T
-}
-    A::M
-    P::AMGTransferMatrix{T}
-    R::AMGTransferMatrix{T}
-    diagonal::V1
-    inv_diagonal::V1
-    rhs::V2
-    x::V3
-    tmp::V3
+Base.size(A::AMGMatrixCSR) = (A.m, A.n)
+Base.size(A::AMGMatrixCSR, d::Integer) = d == 1 ? A.m : d == 2 ? A.n : 1
+SparseArrays.nnz(A::AMGMatrixCSR) = length(A.nzval)
+_m(A::AMGMatrixCSR) = A.m
+_n(A::AMGMatrixCSR) = A.n
+_rowptr(A::AMGMatrixCSR) = A.rowptr
+_colval(A::AMGMatrixCSR) = A.colval
+_nzval(A::AMGMatrixCSR) = A.nzval
+_rowptr(A::SparseXCSR) = parent(A).rowptr
+_colval(A::SparseXCSR) = parent(A).colval
+_nzval(A::SparseXCSR) = parent(A).nzval
+_rowptr(A::SparseMatricesCSR.SparseMatrixCSR) = A.rowptr
+_colval(A::SparseMatricesCSR.SparseMatrixCSR) = A.colval
+_nzval(A::SparseMatricesCSR.SparseMatrixCSR) = A.nzval
+
+mutable struct AMGLevel{MA,MP,MR,VD,VI,VX,T}
+    A::MA
+    P::MP
+    R::MR
+    diagonal::VD
+    inv_diagonal::VD
+    rhs::VX
+    x::VX
+    tmp::VX
     aggregate_ids::VI
-    coarse_work::VC
     lambda_max::T
     level_id::Int
-    coarse_solver::Union{Nothing,AMGCoarseSolver{T,Int}}
+    has_transfer::Bool
 end
 
 Adapt.@adapt_structure AMGLevel
 
-mutable struct AMGHierarchy{L,B,T}
-    levels::L
+mutable struct AMGCPUCoarseLevel{MA,MC,VX,LUF,QRF}
+    A::MA
+    Acsc::MC
+    rhs::VX
+    x::VX
+    lu_factor::LUF
+    qr_factor::QRF
+    use_qr::Bool
+end
+
+mutable struct AMGHierarchy{LD,LH,CC,B,RP,CP,FS}
+    levels::LD
+    host_levels::LH
+    coarse_cpu::CC
     backend::B
+    workgroup::Int
     nrows::Int
     nnz::Int
-    rowptr_pattern::Vector{Int}
-    colval_pattern::Vector{Int}
+    rowptr_pattern::RP
+    colval_pattern::CP
     is_symmetric::Bool
     operator_complexity::Float64
     grid_complexity::Float64
     last_cycle_factor::Float64
     force_rebuild::Bool
     reuse_steps::Int
-    finest_snapshot::Union{Nothing,Vector{T}}
-    cpu_workspace::Union{Nothing,AbstractAMGWorkspace}
-    cpu_rhs::Union{Nothing,Vector{T}}
-    cpu_x::Union{Nothing,Vector{T}}
+    finest_snapshot::FS
 end
 
-Adapt.@adapt_structure AMGHierarchy
-
-mutable struct AMGWorkspace{V<:AbstractVector,T} <: AbstractAMGWorkspace
-    hierarchy::Union{Nothing,AMGHierarchy}
-    timing::AMGTimingStats
+mutable struct AMGWorkspace{H,TS,V,T,RH} <: AbstractAMGWorkspace
+    hierarchy::H
+    timing::TS
     solution::V
     residual::V
     correction::V
@@ -206,15 +221,79 @@ mutable struct AMGWorkspace{V<:AbstractVector,T} <: AbstractAMGWorkspace
     q::V
     iterations::Int
     last_relative_residual::T
-    residual_history::Vector{Float64}
+    residual_history::RH
 end
 
-Adapt.@adapt_structure AMGWorkspace
+function _amg_backend_array(backend, values)
+    return adapt(backend, values)
+end
+
+function _empty_amg_matrix(backend, ::Type{T}) where {T}
+    rowptr = KernelAbstractions.zeros(backend, Int, 1)
+    colval = KernelAbstractions.zeros(backend, Int, 0)
+    nzval = KernelAbstractions.zeros(backend, T, 0)
+    return AMGMatrixCSR(rowptr, colval, nzval, 0, 0)
+end
+
+function _empty_amg_level(backend, ::Type{T}) where {T}
+    A = _empty_amg_matrix(backend, T)
+    P = _empty_amg_matrix(backend, T)
+    R = _empty_amg_matrix(backend, T)
+    diag = KernelAbstractions.zeros(backend, T, 0)
+    invdiag = KernelAbstractions.zeros(backend, T, 0)
+    rhs = KernelAbstractions.zeros(backend, T, 0)
+    x = KernelAbstractions.zeros(backend, T, 0)
+    tmp = KernelAbstractions.zeros(backend, T, 0)
+    aggregate_ids = KernelAbstractions.zeros(backend, Int, 0)
+    return AMGLevel(A, P, R, diag, invdiag, rhs, x, tmp, aggregate_ids, zero(T), 0, false)
+end
+
+function _placeholder_lu_qr(::Type{T}) where {T}
+    A = sparse([1], [1], [one(T)], 1, 1)
+    return lu(A), qr(A)
+end
+
+function _empty_cpu_coarse_level(::Type{T}) where {T}
+    lu_factor, qr_factor = _placeholder_lu_qr(T)
+    A = AMGMatrixCSR([1, 1], Int[], T[], 1, 1)
+    Acsc = sparse([1], [1], [one(T)], 1, 1)
+    rhs = zeros(T, 1)
+    x = zeros(T, 1)
+    return AMGCPUCoarseLevel(A, Acsc, rhs, x, lu_factor, qr_factor, false)
+end
+
+function _empty_hierarchy(backend, ::Type{T}) where {T}
+    host_level = _empty_amg_level(CPU(), T)
+    device_level = _empty_amg_level(backend, T)
+    host_levels = typeof(host_level)[]
+    device_levels = typeof(device_level)[]
+    coarse_cpu = _empty_cpu_coarse_level(T)
+    return AMGHierarchy(
+        device_levels,
+        host_levels,
+        coarse_cpu,
+        backend,
+        1,
+        0,
+        0,
+        Int[],
+        Int[],
+        true,
+        1.0,
+        1.0,
+        0.0,
+        false,
+        0,
+        T[]
+    )
+end
 
 function _workspace(::AMG, b)
+    T = eltype(b)
+    backend = KernelAbstractions.get_backend(b)
     x = similar(b)
     return AMGWorkspace(
-        nothing,
+        _empty_hierarchy(backend, T),
         AMGTimingStats(),
         similar(x),
         similar(x),
@@ -223,7 +302,7 @@ function _workspace(::AMG, b)
         similar(x),
         similar(x),
         0,
-        zero(eltype(x)),
+        zero(T),
         Float64[]
     )
 end

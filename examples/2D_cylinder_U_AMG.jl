@@ -6,8 +6,8 @@ grid = "cylinder_d10mm_5mm.unv"
 mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
-backend = CPU(); workgroup = 1024; activate_multithread(backend)
-# backend = CUDABackend(); workgroup = 32
+# backend = CPU(); workgroup = 1024; activate_multithread(backend)
+backend = CUDABackend(); workgroup = 32
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
@@ -87,7 +87,7 @@ schemes = (
     p = Schemes(time=CrankNicolson, gradient=Gauss)
 )
 
-runtime = Runtime(iterations=500, write_interval=50, time_step=0.0025)
+runtime = Runtime(iterations=2000, write_interval=50, time_step=0.0025)
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 initialise!(model.momentum.U, velocity)

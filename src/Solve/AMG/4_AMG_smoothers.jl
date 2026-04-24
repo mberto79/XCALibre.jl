@@ -1,28 +1,43 @@
-function _matvec!(y, A, x)
-    mul!(y, A, x)
-    return y
+@kernel function _amg_residual_kernel!(r, Ax, b)
+    i = @index(Global)
+    @inbounds r[i] = b[i] - Ax[i]
 end
 
-function _matvec!(y, A::SparseXCSR, x)
-    rowptr = _rowptr(A)
-    colval = _colval(A)
-    nzval = _nzval(A)
-    T = eltype(y)
-    for i in 1:_m(A)
-        yi = zero(T)
-        for p in rowptr[i]:(rowptr[i + 1] - 1)
-            yi += nzval[p] * x[colval[p]]
-        end
-        y[i] = yi
-    end
-    return y
+@kernel function _amg_fill_kernel!(x, value)
+    i = @index(Global)
+    @inbounds x[i] = value
 end
 
-function _residual!(r, A, x, b)
-    _matvec!(r, A, x)
-    @inbounds for i in eachindex(r)
-        r[i] = b[i] - r[i]
+@kernel function _amg_copy_kernel!(dest, src)
+    i = @index(Global)
+    @inbounds dest[i] = src[i]
+end
+
+@kernel function _amg_jacobi_step_kernel!(x_new, x_old, b, rowptr, colval, nzval, invdiag, omega)
+    i = @index(Global)
+    T = eltype(x_new)
+    sigma = zero(T)
+    @inbounds for p in rowptr[i]:(rowptr[i + 1] - 1)
+        j = colval[p]
+        j == i && continue
+        sigma += nzval[p] * x_old[j]
     end
+    @inbounds x_new[i] = (one(T) - omega) * x_old[i] + omega * invdiag[i] * (b[i] - sigma)
+end
+
+function _fill_amg!(hierarchy::AMGHierarchy, x, value)
+    _launch_amg_kernel!(hierarchy, _amg_fill_kernel!, length(x), x, value)
+    return x
+end
+
+function _copy_amg!(hierarchy::AMGHierarchy, dest, src)
+    _launch_amg_kernel!(hierarchy, _amg_copy_kernel!, length(dest), dest, src)
+    return dest
+end
+
+function _residual!(hierarchy::AMGHierarchy, r, A::AMGMatrixCSR, x, b)
+    _matvec!(hierarchy, r, A, x)
+    _launch_amg_kernel!(hierarchy, _amg_residual_kernel!, length(r), r, r, b)
     return r
 end
 
@@ -32,24 +47,23 @@ function _level_jacobi_omega(smoother::AMGJacobi, level::AMGLevel)
     return min(T(smoother.omega), T(4) / (T(3) * lambda_max))
 end
 
-function _apply_level_smoother!(smoother::AMGJacobi, level::AMGLevel, b, loops)
-    A = level.A
-    rowptr = _rowptr(A)
-    colval = _colval(A)
-    nzval = _nzval(A)
-    T = eltype(level.x)
+function _apply_level_smoother!(hierarchy::AMGHierarchy, smoother::AMGJacobi, level::AMGLevel, b, loops)
     omega = _level_jacobi_omega(smoother, level)
     for _ in 1:loops
-        for i in eachindex(level.x)
-            sigma = zero(T)
-            for p in rowptr[i]:(rowptr[i + 1] - 1)
-                j = colval[p]
-                j == i && continue
-                sigma += nzval[p] * level.x[j]
-            end
-            level.tmp[i] = (one(T) - omega) * level.x[i] + omega * level.inv_diagonal[i] * (b[i] - sigma)
-        end
-        copyto!(level.x, level.tmp)
+        _launch_amg_kernel!(
+            hierarchy,
+            _amg_jacobi_step_kernel!,
+            length(level.x),
+            level.tmp,
+            level.x,
+            b,
+            _rowptr(level.A),
+            _colval(level.A),
+            _nzval(level.A),
+            level.inv_diagonal,
+            omega
+        )
+        level.x, level.tmp = level.tmp, level.x
     end
     return level.x
 end

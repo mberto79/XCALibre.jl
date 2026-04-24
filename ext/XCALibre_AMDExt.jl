@@ -31,6 +31,9 @@ _build_opA(A::SPARSEGPU) = KP.KrylovOperator(A)
 @inline _nzval(A::SPARSEGPU) = A.nzVal
 @inline _rowptr(A::SPARSEGPU) = A.rowPtr
 @inline _colval(A::SPARSEGPU) = A.colVal
+@inline XCALibre.Solve._nzval(A::SPARSEGPU) = A.nzVal
+@inline XCALibre.Solve._rowptr(A::SPARSEGPU) = A.rowPtr
+@inline XCALibre.Solve._colval(A::SPARSEGPU) = A.colVal
 @inline get_sparse_fields(A::SPARSEGPU) = begin
     A.nzVal, A.colVal, A.rowPtr
 end
@@ -156,5 +159,4 @@ begin
 end
 
 end # end module
-
 

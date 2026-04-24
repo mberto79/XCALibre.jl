@@ -201,6 +201,10 @@ mutable struct AMGHierarchy{LD,LH,CC,B,RP,CP,FS}
     nnz::Int
     rowptr_pattern::RP
     colval_pattern::CP
+    rowptr_ref::Base.RefValue{Any}
+    colval_ref::Base.RefValue{Any}
+    pattern_hash::UInt64
+    transfer_csc::Vector{Any}
     is_symmetric::Bool
     operator_complexity::Float64
     grid_complexity::Float64
@@ -278,6 +282,10 @@ function _empty_hierarchy(backend, ::Type{T}) where {T}
         0,
         Int[],
         Int[],
+        Ref{Any}(nothing),
+        Ref{Any}(nothing),
+        UInt64(0),
+        Any[],
         true,
         1.0,
         1.0,

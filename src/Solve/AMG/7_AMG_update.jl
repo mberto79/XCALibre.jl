@@ -1,16 +1,31 @@
 function _pattern_matches(hierarchy::AMGHierarchy, A)
     hierarchy.nrows == _m(A) || return false
     hierarchy.nnz == length(_nzval(A)) || return false
-    rowptr = _cpu_vector(_rowptr(A))
-    colval = _cpu_vector(_colval(A))
+    rp = _rowptr(A)
+    cv = _colval(A)
+    # fast path: same underlying array objects as at setup
+    rp === hierarchy.rowptr_ref[] && cv === hierarchy.colval_ref[] && return true
+    rowptr = _cpu_vector(rp)
+    colval = _cpu_vector(cv)
     length(rowptr) == length(hierarchy.rowptr_pattern) || return false
     length(colval) == length(hierarchy.colval_pattern) || return false
+    # medium path: hash of the pattern
+    h = hash(colval, hash(rowptr))
+    if h == hierarchy.pattern_hash
+        hierarchy.rowptr_ref[] = rp
+        hierarchy.colval_ref[] = cv
+        return true
+    end
+    # slow path: full equality
     @inbounds for i in eachindex(rowptr)
         Int(rowptr[i]) == hierarchy.rowptr_pattern[i] || return false
     end
     @inbounds for i in eachindex(colval)
         Int(colval[i]) == hierarchy.colval_pattern[i] || return false
     end
+    hierarchy.rowptr_ref[] = rp
+    hierarchy.colval_ref[] = cv
+    hierarchy.pattern_hash = h
     return true
 end
 

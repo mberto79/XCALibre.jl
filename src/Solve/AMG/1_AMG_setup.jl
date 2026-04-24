@@ -7,7 +7,7 @@ function _cpu_vector(x::Vector)
 end
 
 function _cpu_copyto!(dest, src)
-    copyto!(dest, _cpu_vector(src))
+    copyto!(dest, src)
     return dest
 end
 
@@ -134,22 +134,44 @@ function _diag_inverse(A)
 end
 
 function _diag_inverse!(diag, invdiag, A)
-    d, di = _diag_inverse(A)
-    copyto!(diag, d)
-    copyto!(invdiag, di)
+    rowptr = _rowptr(A)
+    colval = _colval(A)
+    nzval = _nzval(A)
+    n = _m(A)
+    T = eltype(nzval)
+    @inbounds for i in 1:n
+        aii = one(T)
+        idx = 0
+        for p in rowptr[i]:(rowptr[i + 1] - 1)
+            if colval[p] == i
+                idx = p
+                aii = nzval[p]
+                break
+            end
+        end
+        idx == 0 && (aii = one(T))
+        diag[i] = aii
+        invdiag[i] = abs(aii) > eps(T) ? inv(aii) : one(T)
+    end
     return diag, invdiag
 end
 
-function _estimate_lambda_max(A, invdiag)
+function _estimate_lambda_max!(v, w, A, invdiag; iters::Int=5)
     T = eltype(invdiag)
-    v = ones(T, _m(A))
-    w = similar(v)
+    n = _m(A)
+    rowptr = _rowptr(A)
+    colval = _colval(A)
+    nzval = _nzval(A)
+    @inbounds for i in 1:n
+        v[i] = isodd(i) ? one(T) : -one(T)
+    end
+    vnorm = sqrt(T(n))
+    @inbounds for i in 1:n
+        v[i] /= vnorm
+    end
     lambda = one(T)
-    for _ in 1:3
-        rowptr = _rowptr(A)
-        colval = _colval(A)
-        nzval = _nzval(A)
-        @inbounds for i in 1:_m(A)
+    @inbounds for _ in 1:iters
+        for i in 1:n
             wi = zero(T)
             for p in rowptr[i]:(rowptr[i + 1] - 1)
                 wi += nzval[p] * v[colval[p]]
@@ -157,11 +179,18 @@ function _estimate_lambda_max(A, invdiag)
             w[i] = wi * invdiag[i]
         end
         lambda = max(norm(w), eps(T))
-        @inbounds for i in eachindex(v)
+        for i in 1:n
             v[i] = w[i] / lambda
         end
     end
     return max(lambda, one(T))
+end
+
+function _estimate_lambda_max(A, invdiag)
+    T = eltype(invdiag)
+    v = Vector{T}(undef, _m(A))
+    w = Vector{T}(undef, _m(A))
+    return _estimate_lambda_max!(v, w, A, invdiag)
 end
 
 function _empty_transfer_matrix(T)
@@ -197,7 +226,8 @@ end
 
 function _refresh_level!(level::AMGLevel, solver::AMG)
     _diag_inverse!(level.diagonal, level.inv_diagonal, level.A)
-    level.lambda_max = _estimate_lambda_max(level.A, level.inv_diagonal)
+    # reuse level.rhs / level.tmp as scratch (host-side refresh only; kernels overwrite before read)
+    level.lambda_max = _estimate_lambda_max!(level.rhs, level.tmp, level.A, level.inv_diagonal)
     return level
 end
 
@@ -253,16 +283,14 @@ function _drop_coarse_matrix(A, tolerance)
     return _amg_matrix(dropped)
 end
 
-function _regalerkin!(fine_level::AMGLevel, solver::AMG)
-    P = _csr_to_csc(fine_level.P)
-    R = _csr_to_csc(fine_level.R)
-    coarse_A = _amg_matrix(R * _csr_to_csc(fine_level.A) * P)
+function _regalerkin_cached!(fine_level::AMGLevel, P_csc, R_csc, solver::AMG)
+    coarse_A = _amg_matrix(R_csc * _csr_to_csc(fine_level.A) * P_csc)
     tolerance = _coarse_drop_tolerance(solver.coarsening, fine_level.level_id + 1)
     return _drop_coarse_matrix(coarse_A, tolerance)
 end
 
-function _regalerkin_numeric!(coarse_A, fine_level::AMGLevel, solver::AMG)
-    updated_A = _regalerkin!(fine_level, solver)
+function _regalerkin_numeric!(coarse_A, fine_level::AMGLevel, P_csc, R_csc, solver::AMG)
+    updated_A = _regalerkin_cached!(fine_level, P_csc, R_csc, solver)
     if _m(coarse_A) == _m(updated_A) &&
        _n(coarse_A) == _n(updated_A) &&
        _rowptr(coarse_A) == _rowptr(updated_A) &&
@@ -281,7 +309,7 @@ function _refresh_coarse_cpu!(coarse_cpu::AMGCPUCoarseLevel, A)
         coarse_cpu.x = similar(coarse_cpu.rhs)
     end
     try
-        coarse_cpu.lu_factor = lu(coarse_cpu.Acsc)
+        lu!(coarse_cpu.lu_factor, coarse_cpu.Acsc) # reuses symbolic factor when pattern unchanged
         coarse_cpu.use_qr = false
     catch err
         if err isa LinearAlgebra.SingularException
@@ -296,11 +324,13 @@ end
 
 function refresh_hierarchy!(hierarchy::AMGHierarchy, solver::AMG)
     levels = hierarchy.host_levels
+    transfer = hierarchy.transfer_csc
     for level_index in 1:(length(levels) - 1)
         level = levels[level_index]
         _refresh_level!(level, solver)
         coarse_level = levels[level_index + 1]
-        coarse_level.A = _regalerkin_numeric!(coarse_level.A, level, solver)
+        P_csc, R_csc = transfer[level_index]
+        coarse_level.A = _regalerkin_numeric!(coarse_level.A, level, P_csc, R_csc, solver)
     end
     _refresh_level!(levels[end], solver)
     _refresh_coarse_cpu!(hierarchy.coarse_cpu, levels[end].A)
@@ -360,6 +390,7 @@ end
 
 function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=true)
     host_levels = nothing
+    transfer_csc = Any[]
     current_A = _amg_matrix(A)
     current_candidates = _initial_candidates(solver.coarsening)
     level_id = 1
@@ -377,7 +408,8 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
             break
         end
 
-        R_csc = transpose(P_csc)
+        R_csc_lazy = transpose(P_csc)
+        R_csc = sparse(R_csc_lazy)
         coarse_A = _amg_matrix(R_csc * _csr_to_csc(current_A) * P_csc)
         coarse_A = _drop_coarse_matrix(coarse_A, _coarse_drop_tolerance(solver.coarsening, level_id + 1))
         P = _amg_matrix(P_csc)
@@ -387,6 +419,7 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
             host_levels = typeof(level)[]
         end
         push!(host_levels, level)
+        push!(transfer_csc, (P_csc, R_csc))
 
         coarse_rows = _m(coarse_A)
         if coarse_rows <= solver.max_coarse_rows || _should_stop_coarsening(_m(current_A), coarse_rows, solver, level_id)
@@ -403,6 +436,7 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
     coarse_cpu = _empty_cpu_coarse_level(T)
     _refresh_coarse_cpu!(coarse_cpu, host_levels[end].A)
     rowptr_pattern, colval_pattern = _pattern_signature(A)
+    pattern_hash = hash(colval_pattern, hash(rowptr_pattern))
     is_symmetric = solver.mode == :cg ? _is_symmetric(host_levels[1].A) : true
     operator_complexity, grid_complexity = _hierarchy_complexities(host_levels)
     device_levels = backend isa CPU ? host_levels : [adapt(backend, level) for level in host_levels]
@@ -416,6 +450,10 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
         length(_nzval(host_levels[1].A)),
         rowptr_pattern,
         colval_pattern,
+        Ref{Any}(_rowptr(A)),
+        Ref{Any}(_colval(A)),
+        pattern_hash,
+        transfer_csc,
         is_symmetric,
         operator_complexity,
         grid_complexity,

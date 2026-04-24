@@ -178,11 +178,12 @@
   backend (_amg_setup_backend(::BACKEND) = CPU()). This is known (Stage
    C). Not a small fix — mention as structural.                      
                                                                        
-  5. Suggested order                                                   
-  
-  Focus on the CPU-benchmark numbers first: P-CPU-1, P-CPU-2, P-CPU-3, 
-  P-CPU-4 together should shrink refresh cost and the small-but-growing
-   per-update overhead. C1 (λ estimation) is cheap and pays back across
-   all refreshes and all levels. P-CPU-5 is bigger surgery (flat CSR) —
-   worth doing but separately. GPU items stay pending until the CUDA
-  path is re-benchmarked.
+#  Changes already implemented
+
+1. C1             
+2. P-CPU-1     
+3. P-CPU-2                      
+4. P-CPU-3                                                
+5. P-CPU-4
+6. P-CPU-6 — lu! in _refresh_coarse_cpu! (reuses symbolic factor)
+7. P-GPU-3 — _cpu_copyto! uses copyto! directly (no intermediate Array)

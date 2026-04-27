@@ -22,11 +22,12 @@ end
 
 ## Euler
 @inline function scheme!(
-    term::Operator{F,P,I,Time{Euler}}, 
-    nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
+    term::Operator{F,P,I,Time{Euler}},
+    nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime) where {F,P,I}
 
     0.0, 0.0 # add types if this approach works
 end
+
 @inline scheme_source!(
     term::Operator{F,P,I,Time{Euler}}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
         volume = cell.volume

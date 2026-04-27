@@ -4,7 +4,7 @@ using CSV
 # using AMDGPU # Uncomment to run on AMD GPUs
 
 grids_dir = pkgdir(XCALibre, "Test_Meshes/");
-grid = "initial_efm_mesh6.unv";
+grid = "initial_efm_mesh_CD1_2.unv";
 mesh_file = joinpath(grids_dir, grid);
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001);
@@ -25,22 +25,27 @@ inlet_width = 0.510; # m
 inlet_height = 0.05; # m
 inlet_area = inlet_width*inlet_height; # m^2
 
-if isfile("Model_Input.csv")
-    test_case = 8;
-    input_parameters = CSV.File("Model_Input.csv"); #File containing the different test cases from paper "Modeling of Partially Wetting Liquid Film Using an Enhanced Thin Film Model for Aero-Engine Bearing Chamber Applications" by Kuldeep Singh et. al
+# Case 1
+#inlet_flow_rate = 1.69e-5
+#ϕ  = 5
+#θm = 75
+#σ  = 0.069
+#β  = 1
 
-    inlet_flow_rate = input_parameters.Q[test_case]; # m^3/s
-    β = input_parameters.Beta[test_case]; # empisical value from paper
-    σ = input_parameters.Sigma[test_case]
-    θm = input_parameters.Theta_m[test_case]
-    ϕ = input_parameters.Phi[test_case]
-else
-    inlet_flow_rate = 25.53e-5
-    β = 3
-    σ = 0.069
-    θm = 75
-    ϕ = 90
-end
+# Case 5
+#inlet_flow_rate = 3.76e-5
+#ϕ  = 90
+#θm = 75
+#σ  = 0.069
+#β  = 3
+
+# Case 8
+inlet_flow_rate = 25.53e-5
+ϕ = 90
+θm = 75
+σ = 0.069
+β = 3
+
 inlet_rate = inlet_flow_rate/inlet_area; # m\s
 
 inlet_velocity = inlet_rate.*[1.0, 0.0, 0.0]#.*1000;
@@ -53,9 +58,8 @@ h_crit = 1e-10;
 h_floor = 1e-15
 
 Δt = 1e-4
-Δx = 0.006
-C=inlet_rate*Δt/Δx
 end;
+
 model = Physics(
     momentum=Momentum{EFM}(;σ=σ, h_crit = h_crit, h_floor=h_floor, β=β, θm = θm, ϕ=ϕ),
     time = Transient(),
@@ -75,9 +79,6 @@ BCs = assign(
             Extrapolated(:top_of_plate),
             Extrapolated(:side_1),
             Extrapolated(:side_2),
-            #Wall(:top_of_plate, [0,0,0]),
-            #Wall(:side_1, [0,0,0]),
-            #Wall(:side_2, [0,0,0]),
         ],
         h = [
             Dirichlet(:inlet, inlet_height),
@@ -93,15 +94,11 @@ BCs = assign(
 schemes = (
     U = Schemes(
         time=Euler,
-        #divergence=Linear
-        divergence=Upwind
-        #divergence=LUST
+        #divergence=Upwind
+        divergence=LUST
         ),
     h = Schemes(
         time=Euler
-        #divergence=Linear
-        #divergence=Upwind
-        #divergence=LUST
     ),
 );
 
@@ -124,30 +121,16 @@ solvers = (
     )
 );
 
-adaptive = AdaptiveTimeStepping(; 
-    # keyword arguments
-
+adaptive = AdaptiveTimeStepping(
     maxCo=0.01,
     minShrink=0.1,
     maxGrow=1.2
 )
 begin
-#runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
-#runtime = Runtime(iterations=20000, time_step=1, write_interval=20000)
-#runtime = Runtime(iterations=20, time_step=Δt, write_interval=1, adaptive=adaptive); # hide
-#runtime = Runtime(iterations=20, time_step=2e-4, write_interval=1)
 runtime = Runtime(iterations=200, time_step=Δt, write_interval=5, adaptive=adaptive);
 #runtime = Runtime(iterations=2000, time_step=Δt, write_interval=100, adaptive=adaptive)
-#runtime = Runtime(iterations=300, time_step=Δt, write_interval=5, adaptive=adaptive)
 #runtime = Runtime(iterations=8000, time_step=1e-6, write_interval=100, adaptive=adaptive)
 #runtime = Runtime(iterations=100, time_step=Δt, write_interval=2, adaptive=adaptive)
-#runtime = Runtime(iterations=100000, time_step=Δt, write_interval=2000, adaptive=adaptive)
-#runtime = Runtime(iterations=500, time_step=Δt, write_interval=10, adaptive=adaptive)
-#runtime = Runtime(iterations=4000, time_step=Δt, write_interval=20, adaptive=adaptive)
-#runtime = Runtime(iterations=15000, time_step=Δt, write_interval=250)
-#runtime = Runtime(iterations=500, time_step=Δt, write_interval=50)
-#runtime = Runtime(iterations=3, time_step=Δt, write_interval=1);
-#runtime= Runtime(iterations=2000, time_step=Δt, write_interval=20, adaptive=adaptive)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
@@ -158,18 +141,6 @@ initialise!(model.momentum.U, [0,0,0]);
 h_init = h_floor;
 initialise!(model.momentum.h, h_init)
 
-#for i ∈ eachindex(model.momentum.h.values)
-#    if abs(model.momentum.h.mesh.cells[i].centre[2]-0.305)/2 < (0.51/4)
-#       model.momentum.U.x.values[i] = inlet_velocity[1];
-#        model.momentum.U.y.values[i] = 1;inlet_velocity[2];
-#        model.momentum.h.values[i] = inlet_height/10;
-#    end
-#end
 residuals = run!(model, config, inner_loops=5);
 
 end;
-using Plots
-plot((residuals.Ux), label="Ux")
-plot!((residuals.Uy), label="Uy")
-#plot!(residuals.Uz, label="Uz")
-plot!((residuals.h), label="h", yaxis=(:log10, [1e-18, 1e4]))

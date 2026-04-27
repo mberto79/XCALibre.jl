@@ -35,8 +35,6 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     Sm = ScalarField(mesh)
     divPhi = ScalarField(mesh)
     initialise!(Sm, 0)
-    rho_l = FaceScalarField(mesh)
-    initialise!(rho_l, rho.values)
     h∇PL = VectorField(mesh)
     Ph = VectorField(mesh)
     τθw = VectorField(mesh)
@@ -363,37 +361,17 @@ function FilmModel(
             ]
         )
 
-        runtime_postprocessing!(postprocess, iteration, iterations)
+        #runtime_postprocessing!(postprocess, iteration, iterations)
 
-        #∇h = Grad{Gauss}(h)
-        #grad!(∇h, hf, h, boundaries.h, time, config)
-        ∇h = Grad{Gauss}(hf)
-
-        grad!(∇h, hf, config)
-
-        ∇P_diff = VectorField(mesh)
-
-        
-
-        interpolate!(hf, h, config)
-        correct_boundaries!(hf, h, boundaries.h, time, config)
-        for j ∈ eachindex(hf.values)
-            #P_hydrf.values[j] = rho.values[1]*hf.values[j]*dot(n,G)
-        end
         ∇P_hydr = Grad{Gauss}(P_hydrf)
         grad!(∇P_hydr, P_hydrf, config)
         ∇P_surf = Grad{Gauss}(P_surff)
         grad!(∇P_surf, P_surff, config)
-        for i ∈ eachindex(∇h.result.x)
-            ∇P_diff.x[i] = ∇P_hydr.result.x[i]-∇h.result.x[i]*rho.values[1]*dot(G, n)
-            ∇P_diff.y[i] = ∇P_hydr.result.y[i]-∇h.result.y[i]*rho.values[1]*dot(G, n)
-            ∇P_diff.z[i] = ∇P_hydr.result.z[i]-∇h.result.z[i]*rho.values[1]*dot(G, n)
-        end
 
         if iteration % write_interval + signbit(write_interval) == 0
-            #save_output_film(model, outputWriter, iteration, time, config, w)
+            save_output_film(model, outputWriter, iteration, time, config, w)
             #save_output_film(model, outputWriter, iteration, time, config, w, Δh)
-            save_output_film(model, outputWriter, iteration, time, config, w, Δh, h∇PL, nu_h, Ph, τθw, divPhi, tempU, Hv, ∇P_hydr.result, P_hydr, ∇h.result, ∇P_diff, ∇P_surf.result)
+            #save_output_film(model, outputWriter, iteration, time, config, w, Δh, h∇PL, nu_h, Ph, τθw, divPhi, tempU, Hv, ∇P_hydr.result, P_hydr, ∇h.result, ∇P_surf.result)
             save_postprocessing(postprocess, iteration, time, mesh, outputWriter, config.boundaries)
         end
 
@@ -425,7 +403,7 @@ function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iter
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end
 
-function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config, w, Δh, h∇PL, nu_h, Ph, τθw, divPhi, tempU, Hv, ∇P_hydr, P_hydr, ∇h, ∇h_diff, ∇P_surf
+function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config, w, Δh, h∇PL, nu_h, Ph, τθw, divPhi, tempU, Hv, ∇P_hydr, P_hydr, ∇h, ∇P_surf
     ) where {T,F,SO,M,Tu,E,D,BI}
 
     mesh = w.mesh
@@ -450,7 +428,6 @@ function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iter
             ("P_hydr", P_hydr),
             ("∇P_hydr", ∇P_hydr),
             ("∇h", ∇h),
-            ("∇P_diff", ∇h_diff),
             ("∇P_surf", ∇P_surf)
         )
     

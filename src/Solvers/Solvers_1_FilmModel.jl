@@ -369,8 +369,9 @@ function FilmModel(
         grad!(∇P_surf, P_surff, config)
 
         if iteration % write_interval + signbit(write_interval) == 0
+
             save_output_film(model, outputWriter, iteration, time, config, w)
-            #save_output_film(model, outputWriter, iteration, time, config, w, Δh)
+            # More verbose output for extra details for debugging
             #save_output_film(model, outputWriter, iteration, time, config, w, Δh, h∇PL, nu_h, Ph, τθw, divPhi, tempU, Hv, ∇P_hydr.result, P_hydr, ∇h.result, ∇P_surf.result)
             save_postprocessing(postprocess, iteration, time, mesh, outputWriter, config.boundaries)
         end
@@ -433,19 +434,6 @@ function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iter
     
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end
-
-function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config, w, Δh
-    ) where {T,F,SO,M,Tu,E,D,BI}
-    args = (
-            ("U", model.momentum.U), 
-            ("h", model.momentum.h),
-            ("w", w),
-            ("Δh", Δh)
-        )
-    
-    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
-end
-
 
 function getDf!(Df, rDf, hf, g, n, config)
     (; hardware) = config

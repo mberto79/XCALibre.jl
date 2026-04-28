@@ -48,7 +48,7 @@ inlet_flow_rate = 25.53e-5
 
 inlet_rate = inlet_flow_rate/inlet_area; # m\s
 
-inlet_velocity = inlet_rate.*[1.0, 0.0, 0.0]#.*1000;
+inlet_velocity = inlet_rate.*[1.0, 0.0, 0.0];
 mu = 0.001003;
 rho_l = 998.2; # Density of water @ 43°C kg/m3
 #nu = 6.245e-7; # kinematic viscosity of water @ 43°c
@@ -94,8 +94,8 @@ BCs = assign(
 schemes = (
     U = Schemes(
         time=Euler,
-        #divergence=Upwind
-        divergence=LUST
+        divergence=Upwind
+        #divergence=LUST
         ),
     h = Schemes(
         time=Euler
@@ -127,8 +127,8 @@ adaptive = AdaptiveTimeStepping(
     maxGrow=1.2
 )
 begin
-runtime = Runtime(iterations=200, time_step=Δt, write_interval=5, adaptive=adaptive);
-#runtime = Runtime(iterations=2000, time_step=Δt, write_interval=100, adaptive=adaptive)
+#runtime = Runtime(iterations=200, time_step=Δt, write_interval=5, adaptive=adaptive);
+runtime = Runtime(iterations=2000, time_step=Δt, write_interval=100, adaptive=adaptive)
 #runtime = Runtime(iterations=8000, time_step=1e-6, write_interval=100, adaptive=adaptive)
 #runtime = Runtime(iterations=100, time_step=Δt, write_interval=2, adaptive=adaptive)
 
@@ -141,6 +141,6 @@ initialise!(model.momentum.U, [0,0,0]);
 h_init = h_floor;
 initialise!(model.momentum.h, h_init)
 
-residuals = run!(model, config, inner_loops=5);
+residuals = run!(model, config, inner_loops=10);
 
 end;

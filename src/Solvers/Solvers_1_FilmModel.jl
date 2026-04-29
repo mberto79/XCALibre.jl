@@ -46,7 +46,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     # Edit
     @info "U equation still need updating"
     U_eqn = (
-        Time{schemes.U.time}(hf, U)
+        Time{schemes.U.time}(h, U) # not hf
         + Divergence{schemes.U.divergence}(phif,U)
         + Si(nu_h, U)
         ==
@@ -98,6 +98,7 @@ function FilmModel(
     (; backend) = hardware
     
     dt_cpu = zeros(_get_float(mesh), 1)
+    limit_capillary_dt!(config.runtime, coeffs)
     copyto!(dt_cpu, config.runtime.dt)
 
     postprocess = convert_time_to_iterations(postprocess, model, dt, iterations)
@@ -180,6 +181,7 @@ function FilmModel(
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
     
+    h_old = KernelAbstractions.zeros(backend, TF, n_cells)
     prev = KernelAbstractions.zeros(backend, TF, n_cells)
 
     # Pre-allocate vectors to hold residuals
@@ -223,8 +225,10 @@ function FilmModel(
 
     grad!(∇w, wf, w, internal_BCs.w, time, config)
 
+    #= BEN: Please check. I think the division by rho is not needed here so I removed it. Can you please check if that's correct? Also this needs t obe a kernel. Although, because this is a simple loop over h.values, you can use xcal_foreach (if you want to see how it's use have a look in RANS_kOmegaLKE.jl, for example)
+    =#
     for i ∈ eachindex(h.values)
-        Ph_local = (g*sind(coeffs.ϕ)*h[i])/rho.values[1] .*plate_tangent_vector
+        Ph_local = (g*sind(coeffs.ϕ)*h[i]) .*plate_tangent_vector
         Ph.x.values[i] = Ph_local[1]
         Ph.y.values[i] = Ph_local[2]
         Ph.z.values[i] = Ph_local[3]
@@ -242,8 +246,11 @@ function FilmModel(
     #rh = 0
     rx = ry = rz = 0
     @time for iteration ∈ 1:iterations
+        limit_capillary_dt!(config.runtime, coeffs)
         copyto!(dt_cpu, config.runtime.dt)
         time += dt_cpu[1]
+
+        @. h_old = h.values # store previous h before inner loop
 
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, time=time)
         
@@ -252,7 +259,7 @@ function FilmModel(
         remove_film_pressure_source!(U_eqn, P_hydrf, P_surff, rho.values[1], h, config)
 
         
-        for j ∈ eachindex(U)
+        for j ∈ eachindex(U) # COMMENT: You can use @ tempU = U this would work on GPU
             tempU[j] = U[j]
         end
         rh = 0
@@ -270,14 +277,14 @@ function FilmModel(
             getDf!(Df, rDf, hf, G, n, config)
             
             @. prev = h.values
-            rh = solve_equation!(h_eqn, h, boundaries.h, solvers.h, config, time=time)
+            rh = solve_film_h_equation!(h_eqn, h, h_old, boundaries.h, solvers.h, config, time=time)
 
             if i == inner_loops
                 explicit_relaxation!(h, prev, 1.0, config)
             else
                 explicit_relaxation!(h, prev, solvers.h.relax, config)
-            end
-            
+            end 
+
             limit_h!(h, coeffs.h_floor, config)
             
             laplacian!(Δh, hf, h, boundaries.h, time, config, disp_warn=false)
@@ -289,7 +296,7 @@ function FilmModel(
                 P_surff.values[j] = coeffs.σ*Δhf[j]
             end
 
-            correct_film_velocity!(U, Hv, h, P_hydrf, P_surff, rD, rho.values[1],  config)
+            correct_film_velocity!(U, Hv, h, P_hydrf, P_surff, rD, rho.values[1], config)
             correct_mass_flux2!(mdotf, Df, h_eqn, config)
         end
         
@@ -347,6 +354,8 @@ function FilmModel(
         maxCourant = max_courant_number!(cellsCourant, model, config)
         courant[iteration] = maxCourant
         update_dt!(config.runtime, maxCourant)
+        limit_capillary_dt!(config.runtime, coeffs)
+        copyto!(dt_cpu, config.runtime.dt)
 
         ProgressMeter.next!(
             progress, showvalues = [
@@ -379,6 +388,16 @@ function FilmModel(
     end # end for loop
 
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, h=R_h, courant=courant)
+end
+
+function solve_film_h_equation!(
+    h_eqn, h, h_old, hBCs, solversetup, config; time=nothing
+)
+    discretise!(h_eqn, h_old, config)
+    apply_boundary_conditions!(h_eqn, hBCs, nothing, time, config)
+    setReference!(h_eqn, nothing, 1, config)
+    update_preconditioner!(h_eqn.preconditioner, h.mesh, config)
+    solve_system!(h_eqn, solversetup, h, nothing, config)
 end
 
 
@@ -510,6 +529,12 @@ end
     end
 end
 
+function limit_capillary_dt!(runtime, coeffs)
+    if coeffs.σ > 0 && coeffs.capillary_dt > 0
+        runtime.dt[1] = min(runtime.dt[1], coeffs.capillary_dt)
+    end
+end
+
 function correct_film_velocity!(U, Hv, h, P_hydrf, P_surff, rD, rho, config)
     (; mesh) = U
     (; hardware) = config
@@ -553,20 +578,43 @@ function correct_mass_flux2!(mdotf, Df, h_eqn, config)
     (; backend, workgroup) = hardware
 
     h = h_eqn.model.terms[1].phi
+    A = _A(h_eqn)
+    nzval = _nzval(A)
+    colval = _colval(A)
+    rowptr = _rowptr(A)
 
-    ndrange = length(mdotf)
+    n_faces = length(faces)
+    n_bfaces = length(boundary_cellsID)
+    n_ifaces = n_faces - n_bfaces
+
+    ndrange = n_ifaces
     kernel! = _correct_mass_flux2!(_setup(backend, workgroup, ndrange)...)
-    kernel!(mdotf, h, Df, mesh)
+    kernel!(mdotf, h, nzval, colval, rowptr, faces, cells, n_bfaces)
 
 end
 
-@kernel function _correct_mass_flux2!(mdotf, h, Df, mesh)
+@kernel function _correct_mass_flux2!(mdotf, h, nzval, colval, rowptr, faces, cells, n_bfaces)
     i = @index(Global)
+    fID = i + n_bfaces
 
-    ownerCells = mesh.faces[i].ownerCells
-    snGrad = mesh.cell_nsign[i]*(h[ownerCells[2]]-h[ownerCells[1]])/mesh.faces[i].delta
-    (; normal) = mesh.faces[i]
-    len_me = sqrt(normal[1]^2+normal[2]^2+normal[3]^2)# probably 1
-
-    mdotf[i] -= Df[i] * len_me * snGrad
+    @inbounds begin
+        face = faces[fID]
+        cID1 = face.ownerCells[1]
+        cID2 = face.ownerCells[2]
+        zID = spindex(rowptr, colval, cID1, cID2)
+        aN = nzval[zID]
+        mdotf[fID] += aN * (h[cID2] - h[cID1])
+    end
 end
+
+# @kernel function _correct_mass_flux2!(mdotf, h, Df, mesh)
+#     i = @index(Global)
+
+#     ownerCells = mesh.faces[i].ownerCells
+#     # DEFINTELY NO NEED FOR cell_nsign here! BUG!
+#     snGrad = mesh.cell_nsign[i]*(h[ownerCells[2]]-h[ownerCells[1]])/mesh.faces[i].delta
+#     (; normal) = mesh.faces[i]
+#     len_me = sqrt(normal[1]^2+normal[2]^2+normal[3]^2)# probably 1
+
+#     mdotf[i] -= Df[i] * len_me * snGrad
+# end

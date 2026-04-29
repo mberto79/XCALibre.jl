@@ -1,5 +1,5 @@
 using XCALibre
-using CSV
+# using CSV
 # using CUDA # Uncomment to run on NVIDIA GPUs
 # using AMDGPU # Uncomment to run on AMD GPUs
 
@@ -41,7 +41,7 @@ inlet_area = inlet_width*inlet_height; # m^2
 
 # Case 8
 inlet_flow_rate = 25.53e-5
-ϕ = 90
+ϕ = 89
 θm = 75
 σ = 0.069
 β = 3
@@ -75,7 +75,8 @@ BCs = assign(
         U = [
             Dirichlet(:inlet, inlet_velocity),
             Extrapolated(:outlet),
-            Wall(:inlet_sides, [0,0,0]),
+            # Wall(:inlet_sides, [0,0,0]),
+            Dirichlet(:inlet_sides, [0,0,0]),
             Extrapolated(:top_of_plate),
             Extrapolated(:side_1),
             Extrapolated(:side_2),
@@ -107,28 +108,30 @@ solvers = (
         solver      = Bicgstab(), # Options: Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
         convergence = 1e-11,
-        relax       = 0.9,
-        rtol = 1e-4,
-        atol = 1e-5
+        # relax       = 0.9,
+        relax       = 1.0,
+        rtol = 0.0,
+        atol = 1e-10
     ),
     h = SolverSetup(
         solver      = Bicgstab(), # Options: Cg(), Bicgstab(), Gmres()
         preconditioner = Jacobi(), # Options: NormDiagonal()
         convergence = 1e-11,
-        relax       = 0.7,
-        rtol = 1e-4,
-        atol = 1e-6
+        # relax       = 0.7,
+        relax       = 1.0,
+        rtol = 0.0,
+        atol = 1e-10
     )
 );
 
 adaptive = AdaptiveTimeStepping(
-    maxCo=0.01,
+    maxCo=0.1,
     minShrink=0.1,
     maxGrow=1.2
 )
 begin
 #runtime = Runtime(iterations=200, time_step=Δt, write_interval=5, adaptive=adaptive);
-runtime = Runtime(iterations=2000, time_step=Δt, write_interval=100, adaptive=adaptive)
+runtime = Runtime(iterations=40000, time_step=Δt, write_interval=100, adaptive=adaptive)
 #runtime = Runtime(iterations=8000, time_step=1e-6, write_interval=100, adaptive=adaptive)
 #runtime = Runtime(iterations=100, time_step=Δt, write_interval=2, adaptive=adaptive)
 

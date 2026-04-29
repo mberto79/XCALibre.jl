@@ -618,8 +618,9 @@ end
 
 @kernel function _correct_mass_flux2!(mdotf, h, Df, faces)
     i = @index(Global)
+    fID = i + n_bfaces
 
-    (; ownerCells, delta, area) = faces[i]
+    (; ownerCells, delta, area) = faces[fID]
 
     cID1 = ownerCells[1]
     cID2 = ownerCells[2]
@@ -628,7 +629,7 @@ end
     snGrad = (h[cID2] - h[cID1])/delta
     # len_me = sqrt(normal[1]^2+normal[2]^2+normal[3]^2)# probably 1
 
-    mdotf[i] -= Df[i]*area*snGrad
+    mdotf[fID] -= Df[fID]*area*snGrad
 end
 
 # @kernel function _correct_mass_flux2!(mdotf, h, Df, mesh)

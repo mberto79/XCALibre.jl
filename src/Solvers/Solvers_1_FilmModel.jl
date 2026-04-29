@@ -598,7 +598,7 @@ function correct_mass_flux2!(mdotf, Df, h_eqn, config)
     ndrange = n_ifaces
     kernel! = _correct_mass_flux2!(_setup(backend, workgroup, ndrange)...)
     # kernel!(mdotf, h, nzval, colval, rowptr, faces, cells, n_bfaces)
-    kernel!(mdotf, h, Df, faces)
+    kernel!(mdotf, h, Df, faces, n_bfaces)
 
 end
 
@@ -616,7 +616,7 @@ end
 #     end
 # end
 
-@kernel function _correct_mass_flux2!(mdotf, h, Df, faces)
+@kernel function _correct_mass_flux2!(mdotf, h, Df, faces, n_bfaces)
     i = @index(Global)
     fID = i + n_bfaces
 

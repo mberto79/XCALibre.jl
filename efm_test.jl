@@ -131,7 +131,7 @@ adaptive = AdaptiveTimeStepping(
 )
 begin
 #runtime = Runtime(iterations=200, time_step=Δt, write_interval=5, adaptive=adaptive);
-runtime = Runtime(iterations=40000, time_step=Δt, write_interval=100, adaptive=adaptive)
+runtime = Runtime(iterations=20000, time_step=Δt, write_interval=100, adaptive=adaptive)
 #runtime = Runtime(iterations=8000, time_step=1e-6, write_interval=100, adaptive=adaptive)
 #runtime = Runtime(iterations=100, time_step=Δt, write_interval=2, adaptive=adaptive)
 

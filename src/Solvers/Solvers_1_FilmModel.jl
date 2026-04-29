@@ -167,12 +167,20 @@ function FilmModel(
             ],
             w = [
             Dirichlet(:inlet, 1),
-            Extrapolated(:outlet),
-            Extrapolated(:inlet_sides),
-            Extrapolated(:top_of_plate),
-            Extrapolated(:side_1),
-            Extrapolated(:side_2)
+            Zerogradient(:outlet),
+            Zerogradient(:inlet_sides),
+            Zerogradient(:top_of_plate),
+            Zerogradient(:side_1),
+            Zerogradient(:side_2)
     ]
+    #         w = [
+    #         Dirichlet(:inlet, 1),
+    #         Extrapolated(:outlet),
+    #         Extrapolated(:inlet_sides),
+    #         Extrapolated(:top_of_plate),
+    #         Extrapolated(:side_1),
+    #         Extrapolated(:side_2)
+    # ]
         )
     )
 
@@ -589,22 +597,38 @@ function correct_mass_flux2!(mdotf, Df, h_eqn, config)
 
     ndrange = n_ifaces
     kernel! = _correct_mass_flux2!(_setup(backend, workgroup, ndrange)...)
-    kernel!(mdotf, h, nzval, colval, rowptr, faces, cells, n_bfaces)
+    # kernel!(mdotf, h, nzval, colval, rowptr, faces, cells, n_bfaces)
+    kernel!(mdotf, h, Df, faces)
 
 end
 
-@kernel function _correct_mass_flux2!(mdotf, h, nzval, colval, rowptr, faces, cells, n_bfaces)
-    i = @index(Global)
-    fID = i + n_bfaces
+# @kernel function _correct_mass_flux2!(mdotf, h, nzval, colval, rowptr, faces, cells, n_bfaces)
+#     i = @index(Global)
+#     fID = i + n_bfaces
 
-    @inbounds begin
-        face = faces[fID]
-        cID1 = face.ownerCells[1]
-        cID2 = face.ownerCells[2]
-        zID = spindex(rowptr, colval, cID1, cID2)
-        aN = nzval[zID]
-        mdotf[fID] += aN * (h[cID2] - h[cID1])
-    end
+#     @inbounds begin
+#         face = faces[fID]
+#         cID1 = face.ownerCells[1]
+#         cID2 = face.ownerCells[2]
+#         zID = spindex(rowptr, colval, cID1, cID2)
+#         aN = nzval[zID]
+#         mdotf[fID] += aN * (h[cID2] - h[cID1])
+#     end
+# end
+
+@kernel function _correct_mass_flux2!(mdotf, h, Df, faces)
+    i = @index(Global)
+
+    (; ownerCells, delta, area) = faces[i]
+
+    cID1 = ownerCells[1]
+    cID2 = ownerCells[2]
+    # DEFINTELY NO NEED FOR cell_nsign here! BUG!
+    # snGrad = mesh.cell_nsign[i]*(h[ownerCells[2]]-h[ownerCells[1]])/faces[i].delta
+    snGrad = (h[cID2] - h[cID1])/delta
+    # len_me = sqrt(normal[1]^2+normal[2]^2+normal[3]^2)# probably 1
+
+    mdotf[i] -= Df[i]*area*snGrad
 end
 
 # @kernel function _correct_mass_flux2!(mdotf, h, Df, mesh)

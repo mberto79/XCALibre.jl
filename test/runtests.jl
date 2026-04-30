@@ -3,6 +3,7 @@ using LinearAlgebra
 using SparseArrays
 using SparseMatricesCSR
 using StaticArrays 
+using Statistics
 using Test
 
 workgroupsize(mesh) = length(mesh.cells) ÷ Threads.nthreads()
@@ -75,6 +76,7 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
             "2d_incompressible_flatplate_KOmega_lowRe.jl",
             "2d_incompressible_flatplate_KOmega_HighRe.jl",
             "2d_incompressible_laminar_BFS.jl",
+            "2d_incompressible_laminar_rotatingFlatplate_MRF.jl",
             "2d_incompressible_transient_KOmega_BFS_lowRe.jl",
             "2d_incompressible_transient_laminar_BFS.jl",
             "2d_incompressible_transient_laminar_BFS_CrankNicolson.jl",
@@ -103,6 +105,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
             test_path = joinpath(TEST_CASES_DIR, test)
             include(test_path)
         end
+    end
+
+    @testset "Godunov Solver" begin
+        include(joinpath(TEST_CASES_DIR, "2d_godunov_supersonic_cylinder.jl"))
     end
 
     foreach(rm, filter(endswith(".vtk"), readdir(pwd(), join=true)))

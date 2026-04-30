@@ -3,13 +3,14 @@ export RotatingFrames2D
 export RotatingFrame
 
 
-struct RotatingFrames3D{Data,Mask}
+struct RotatingFrames3D{Data,Mask,Bool}
     frames::Data
     global_mask::Mask
+    polar::Bool
 end
 Adapt.@adapt_structure RotatingFrames3D
 
-RotatingFrames3D(; hardware, mesh, frames) = begin
+RotatingFrames3D(; hardware, mesh, frames, polar=false) = begin
     (; backend) = hardware
     ID = 1
     n = length(frames)
@@ -30,16 +31,17 @@ RotatingFrames3D(; hardware, mesh, frames) = begin
     end
 
     Frames = FramesData(Omega, Rotaxis, X0)
-    RotatingFrames3D(Frames, global_mask)
+    RotatingFrames3D(Frames, global_mask, polar)
 end
 
-struct RotatingFrames2D{Data,Mask}
+struct RotatingFrames2D{Data,Mask,Bool}
     frames::Data
     global_mask::Mask
+    polar::Bool
 end
 Adapt.@adapt_structure RotatingFrames2D
 
-RotatingFrames2D(; hardware, mesh, frames) = begin
+RotatingFrames2D(; hardware, mesh, frames, polar=false) = begin
     (; backend) = hardware
     ID = 1
     n = length(frames)
@@ -61,7 +63,7 @@ RotatingFrames2D(; hardware, mesh, frames) = begin
     end
 
     Frames = FramesData(Omega, Rotaxis, X0)
-    RotatingFrames2D(Frames, global_mask)
+    RotatingFrames2D(Frames, global_mask, polar)
 end
 
 struct FrameData

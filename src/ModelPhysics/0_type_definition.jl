@@ -144,8 +144,8 @@ struct EFM{V,S,Vf,Sf,SS,C} <: AbstractMomentumModel
 end
 Adapt.@adapt_structure EFM
 
-# BEN notice I added the limting capillary time step here hardcoded to test only. This needs to be done a bit nicer by overloading the `update!` function in the solver loop.
-Momentum{EFM}(;σ=0.069, h_crit=1e-10, h_floor=1e-15, β=6.0, θm = 75, ϕ=0, capillary_dt=5e-5) = begin
+# Optional manual capillary time-step cap; the film solver also computes a mesh-based capillary limit.
+Momentum{EFM}(;σ=0.069, h_crit=1e-10, h_floor=1e-15, β=6.0, θm = 75, ϕ=0, capillary_dt=Inf) = begin
     coeffs = (σ=σ, h_crit=h_crit, h_floor=h_floor, β=β, θm=θm, ϕ=ϕ, capillary_dt=capillary_dt)
     ARG = typeof(coeffs)
     Momentum{EFM, ARG}(coeffs)

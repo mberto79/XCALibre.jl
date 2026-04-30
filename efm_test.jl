@@ -26,25 +26,53 @@ inlet_height = 0.05; # m
 inlet_area = inlet_width*inlet_height; # m^2
 
 # Case 1
-#inlet_flow_rate = 1.69e-5
-#ϕ  = 5
-#θm = 75
-#σ  = 0.069
-#β  = 1
+# inlet_flow_rate = 1.69e-5
+# ϕ  = 5
+# θm = 75
+# σ  = 0.069
+# β  = 1
 
 # Case 5
-#inlet_flow_rate = 3.76e-5
-#ϕ  = 90
-#θm = 75
-#σ  = 0.069
-#β  = 3
+# inlet_flow_rate = 3.76e-5
+# ϕ  = 89
+# θm = 75
+# σ  = 0.069
+# β  = 3
 
 # Case 8
 inlet_flow_rate = 25.53e-5
 ϕ = 89
 θm = 75
-σ = 0.069
 β = 3
+
+# EFM_DT sets the requested initial time step.
+EFM_DT = parse(Float64, get(ENV, "EFM_DT", "5e-4"))
+# EFM_ITERS sets the number of solver iterations.
+EFM_ITERS = parse(Int, get(ENV, "EFM_ITERS", "20000"))
+# EFM_WRITE_INTERVAL sets output frequency; use -1 to disable writes.
+EFM_WRITE_INTERVAL = parse(Int, get(ENV, "EFM_WRITE_INTERVAL", "100"))
+# EFM_SIGMA_SCALE multiplies surface tension; use 0 to disable capillarity.
+EFM_SIGMA_SCALE = parse(Float64, get(ENV, "EFM_SIGMA_SCALE", "1"))
+# EFM_ADAPTIVE=1 enables adaptive time stepping from the limiting Courant number.
+EFM_ADAPTIVE = get(ENV, "EFM_ADAPTIVE", "0") != "0"
+# EFM_MAX_CO is the adaptive target for max ordinary/film Courant number.
+EFM_MAX_CO = parse(Float64, get(ENV, "EFM_MAX_CO", "0.1"))
+# EFM_MIN_SHRINK is the smallest adaptive dt multiplier per iteration.
+EFM_MIN_SHRINK = parse(Float64, get(ENV, "EFM_MIN_SHRINK", "0.1"))
+# EFM_MAX_GROW is the largest adaptive dt multiplier per iteration.
+EFM_MAX_GROW = parse(Float64, get(ENV, "EFM_MAX_GROW", "1.2"))
+# XCALIBRE_EFM_DEBUG=1 prints film diagnostics every iteration.
+XCALIBRE_EFM_DEBUG = get(ENV, "XCALIBRE_EFM_DEBUG", "0") != "0"
+# XCALIBRE_EFM_DEBUG_INTERVAL prints diagnostics every N iterations when N > 0.
+XCALIBRE_EFM_DEBUG_INTERVAL = parse(Int, get(ENV, "XCALIBRE_EFM_DEBUG_INTERVAL", "0"))
+# XCALIBRE_EFM_WETTING selects hard, smooth, or allwet wetting-mask probes.
+XCALIBRE_EFM_WETTING = get(ENV, "XCALIBRE_EFM_WETTING", "hard")
+# XCALIBRE_EFM_WETTING_WIDTH sets the h_crit-to-width*h_crit smoothing interval.
+XCALIBRE_EFM_WETTING_WIDTH = parse(Float64, get(ENV, "XCALIBRE_EFM_WETTING_WIDTH", "10"))
+# XCALIBRE_EFM_FLUX_CORRECTION=0 disables pressure flux correction for A/B tests.
+XCALIBRE_EFM_FLUX_CORRECTION = get(ENV, "XCALIBRE_EFM_FLUX_CORRECTION", "1") != "0"
+
+σ = 0.069 * EFM_SIGMA_SCALE
 
 inlet_rate = inlet_flow_rate/inlet_area; # m\s
 
@@ -57,7 +85,7 @@ nu = mu/rho_l;
 h_crit = 1e-10;
 h_floor = 1e-15
 
-Δt = 1e-4
+Δt = EFM_DT # 5e-5
 end;
 
 model = Physics(
@@ -75,8 +103,7 @@ BCs = assign(
         U = [
             Dirichlet(:inlet, inlet_velocity),
             Extrapolated(:outlet),
-            # Wall(:inlet_sides, [0,0,0]),
-            Dirichlet(:inlet_sides, [0,0,0]),
+            Wall(:inlet_sides, [0,0,0]),
             Extrapolated(:top_of_plate),
             Extrapolated(:side_1),
             Extrapolated(:side_2),
@@ -111,7 +138,7 @@ solvers = (
         # relax       = 0.9,
         relax       = 1.0,
         rtol = 0.0,
-        atol = 1e-10
+        atol = 1e-8
     ),
     h = SolverSetup(
         solver      = Bicgstab(), # Options: Cg(), Bicgstab(), Gmres()
@@ -120,20 +147,27 @@ solvers = (
         # relax       = 0.7,
         relax       = 1.0,
         rtol = 0.0,
-        atol = 1e-10
+        atol = 1e-8
     )
 );
 
-adaptive = AdaptiveTimeStepping(
-    maxCo=0.1,
-    minShrink=0.1,
-    maxGrow=1.2
-)
+adaptive = if EFM_ADAPTIVE
+    AdaptiveTimeStepping(
+        maxCo=EFM_MAX_CO,
+        minShrink=EFM_MIN_SHRINK,
+        maxGrow=EFM_MAX_GROW
+    )
+else
+    nothing
+end
 begin
-#runtime = Runtime(iterations=200, time_step=Δt, write_interval=5, adaptive=adaptive);
-runtime = Runtime(iterations=20000, time_step=Δt, write_interval=100, adaptive=adaptive)
-#runtime = Runtime(iterations=8000, time_step=1e-6, write_interval=100, adaptive=adaptive)
-#runtime = Runtime(iterations=100, time_step=Δt, write_interval=2, adaptive=adaptive)
+
+runtime = Runtime(
+    iterations=EFM_ITERS,
+    time_step=Δt,
+    write_interval=EFM_WRITE_INTERVAL,
+    adaptive=adaptive
+)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs);
@@ -144,6 +178,6 @@ initialise!(model.momentum.U, [0,0,0]);
 h_init = h_floor;
 initialise!(model.momentum.h, h_init)
 
-residuals = run!(model, config, inner_loops=10);
+residuals = run!(model, config, inner_loops=2);
 
 end;

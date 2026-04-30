@@ -1,7 +1,7 @@
 using XCALibre
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "rotating_flatPlate_V2.unv"
+grid = "rotating_flatPlate.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 @test typeof(mesh) <: Mesh2
@@ -9,7 +9,6 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
-
 
 nu = 1e-3
 u_mag = 0.0
@@ -20,7 +19,7 @@ rotating_frames = RotatingFrames2D(
     mesh=mesh,
     frames = [
         RotatingFrame(
-            omega = 5,
+            omega = 10,
             x1 = [0.0, 0.0, 1.0],
             x0 = [0.0, 0.0, 0.0],
             radius_inner = 0.0,
@@ -28,8 +27,8 @@ rotating_frames = RotatingFrames2D(
             hardware=hardware,
             mesh=mesh
         )
-    ]#,
-    #polar=true
+    ],
+    polar=true
 )
 
 model = Physics(
@@ -83,7 +82,7 @@ solvers = (
     )
 )
 
-runtime = Runtime(iterations=250, write_interval=250, time_step=1)
+runtime = Runtime(iterations=500, write_interval=500, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

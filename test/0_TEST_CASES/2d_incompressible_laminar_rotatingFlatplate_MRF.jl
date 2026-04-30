@@ -1,7 +1,8 @@
 using XCALibre
+using LinearAlgebra
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "rotating_flatPlate_V2.unv"
+grid = "rotating_flatPlate.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 @test typeof(mesh) <: Mesh2
@@ -9,7 +10,6 @@ mesh = UNV2D_mesh(mesh_file, scale=0.001)
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
-
 
 nu = 1e-3
 u_mag = 0.0
@@ -20,7 +20,7 @@ rotating_frames = RotatingFrames2D(
     mesh=mesh,
     frames = [
         RotatingFrame(
-            omega = 5,
+            omega = 10,
             x1 = [0.0, 0.0, 1.0],
             x0 = [0.0, 0.0, 0.0],
             radius_inner = 0.0,
@@ -28,8 +28,8 @@ rotating_frames = RotatingFrames2D(
             hardware=hardware,
             mesh=mesh
         )
-    ]#,
-    #polar=true
+    ],
+    polar=true
 )
 
 model = Physics(
@@ -83,7 +83,7 @@ solvers = (
     )
 )
 
-runtime = Runtime(iterations=250, write_interval=250, time_step=1)
+runtime = Runtime(iterations=600, write_interval=600, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
@@ -96,8 +96,30 @@ initialise!(model.momentum.p, 0.0)
 
 residuals = run!(model, config)
 
-MRFCell = 10
-inertialCell = 10000
+MRFCell = 2000 
+inertialCell = 10
 
-@test rotating_frames.global_mask[MRFCell] = 1.0
-@test rotating_frames.global_mask[inertialCell] = 0.0
+@test rotating_frames.global_mask[MRFCell] == 1.0
+@test rotating_frames.global_mask[inertialCell] == 0.0
+
+U = model.momentum.U
+mesh = U.mesh
+cells = mesh.cells
+x0 = rotating_frames.frames.x0[1]
+rotaxis=rotating_frames.frames.rotaxis[1]
+
+Up = VectorField(mesh)
+
+for i ∈ eachindex(Up.x.values)
+    r = cells[i].centre - x0
+    r_norm = r./norm(r)
+    tang = r_norm × rotaxis
+    Up.x.values[i] = U[i] ⋅ r_norm
+    Up.z.values[i] = U.z.values[i]
+    Up.y.values[i] = -(U[i] ⋅ tang)
+end
+
+maxval = maximum(Up.x.values)
+
+@test maxval < 0.5       # In a perfectly converged case, the outwards velocity should be 0 everywhere. At 600 
+                         # iterations the max should always be below 0.5 as it heads towards 0 with more iterations

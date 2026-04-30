@@ -4,11 +4,11 @@ grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "rotating_flatPlate.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
-@test typeof(mesh) <: Mesh2
 
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
+
 
 nu = 1e-3
 u_mag = 0.0
@@ -27,8 +27,8 @@ rotating_frames = RotatingFrames2D(
             hardware=hardware,
             mesh=mesh
         )
-    ],
-    polar=true
+    ]
+    #polar=true               # This can be used to inspect the MRF zone position (it is outputted in the .vtk) and for getting polar coordinates of velocity.
 )
 
 model = Physics(
@@ -94,9 +94,3 @@ initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
 residuals = run!(model, config)
-
-MRFCell = 10
-inertialCell = 10000
-
-@test rotating_frames.global_mask[MRFCell] = 1.0
-@test rotating_frames.global_mask[inertialCell] = 0.0

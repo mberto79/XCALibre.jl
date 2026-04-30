@@ -468,7 +468,7 @@ function update_wetting_fields!(w, wf, h, wBCs, h_crit, time, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(w)
-    wetting_mode = get(ENV, "XCALIBRE_EFM_WETTING", "hard")
+    wetting_mode = get(ENV, "XCALIBRE_EFM_WETTING", "smooth")
     if wetting_mode == "allwet"
         kernel! = _set_wetting_field!(_setup(backend, workgroup, ndrange)...)
         kernel!(w, one(h_crit))

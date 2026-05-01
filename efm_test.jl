@@ -22,15 +22,15 @@ mesh_dev = mesh; # use this line to run on CPU
 
 begin # Model Info
 inlet_width = 0.510; # m
-inlet_height = 0.05; # m
+inlet_height = 900e-6 # 0.05; # m
 inlet_area = inlet_width*inlet_height; # m^2
 
 # Case 1
-# inlet_flow_rate = 1.69e-5
-# ϕ  = 5
-# θm = 75
-# σ  = 0.069
-# β  = 1
+inlet_flow_rate = 1.69e-5
+ϕ  = 5
+θm = 75
+σ  = 0.069
+β  = 3
 
 # Case 5
 # inlet_flow_rate = 3.76e-5
@@ -40,13 +40,14 @@ inlet_area = inlet_width*inlet_height; # m^2
 # β  = 3
 
 # Case 8
-inlet_flow_rate = 25.53e-5
-ϕ = 89
-θm = 75
-β = 3
+# inlet_flow_rate = 25.53e-5
+# ϕ = 89
+# θm = 75
+# σ  = 0.069
+# β = 3
 
 # EFM_DT sets the requested initial time step.
-EFM_DT = parse(Float64, get(ENV, "EFM_DT", "5e-4"))
+EFM_DT = parse(Float64, get(ENV, "EFM_DT", "1e-4"))
 # EFM_ITERS sets the number of solver iterations.
 EFM_ITERS = parse(Int, get(ENV, "EFM_ITERS", "20000"))
 # EFM_WRITE_INTERVAL sets output frequency; use -1 to disable writes.
@@ -70,7 +71,7 @@ XCALIBRE_EFM_WETTING = get(ENV, "XCALIBRE_EFM_WETTING", "hard")
 # XCALIBRE_EFM_WETTING_WIDTH sets the h_crit-to-width*h_crit smoothing interval.
 XCALIBRE_EFM_WETTING_WIDTH = parse(Float64, get(ENV, "XCALIBRE_EFM_WETTING_WIDTH", "10"))
 # XCALIBRE_EFM_FLUX_CORRECTION=0 disables pressure flux correction for A/B tests.
-XCALIBRE_EFM_FLUX_CORRECTION = get(ENV, "XCALIBRE_EFM_FLUX_CORRECTION", "1") != "0"
+XCALIBRE_EFM_FLUX_CORRECTION = get(ENV, "XCALIBRE_EFM_FLUX_CORRECTION", "0") != "0"
 
 σ = 0.069 * EFM_SIGMA_SCALE
 

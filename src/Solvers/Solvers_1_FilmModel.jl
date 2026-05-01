@@ -158,9 +158,9 @@ function FilmModel(
     plate_tangent_vector = Vector{}([1,0,0])
     gravity_tangent = (g*sind(coeffs.ϕ)) .* plate_tangent_vector
    
-    u_inlet = boundaries.U[1].value
-    h_inlet = boundaries.h[1].value
-    hU_inlet = [u_inlet[1] .* h_inlet, u_inlet[2] .* h_inlet, u_inlet[3] .* h_inlet]
+    # u_inlet = boundaries.U[1].value
+    # h_inlet = boundaries.h[1].value
+    # hU_inlet = [u_inlet[1] .* h_inlet, u_inlet[2] .* h_inlet, u_inlet[3] .* h_inlet]
 
     internal_BCs = assign(
         region=mesh,

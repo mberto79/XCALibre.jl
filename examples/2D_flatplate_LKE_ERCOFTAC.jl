@@ -15,16 +15,16 @@ hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 # Turbulence Model
-velocity = [9.4,0,0]
+velocity = [5.4,0,0]
 nu = 1.497e-5
 # Re = 10*1/nu
-νR = 106.8
-Tu = 0.06
-k_inlet = 0.5850
+νR = 13.9
+Tu = 0.03
+k_inlet = 0.0575
 # k_inlet = 3/2*(Tu*velocity[1])^2
-kL_inlet = 0.1524
+kL_inlet = 0.0115
 # kL_inlet = 1/2*(Tu*velocity[1])^2
-ω_inlet = 365
+ω_inlet = 275
 # ω_inlet = k_inlet/(νR*nu) # Omega at the Inlet
 
 
@@ -102,7 +102,7 @@ BCs = assign(
 )
 
 schemes = (
-    U = Schemes(divergence=Linear, limiter=MFaceBased(mesh_dev)),
+    U = Schemes(divergence=LUST, limiter=MFaceBased(mesh_dev)),
     # U = Schemes(divergence=LUST),
     p = Schemes(divergence=LUST),
     k = Schemes(divergence=LUST),
@@ -193,8 +193,8 @@ using LaTeXStrings
 # oCf = sqrt.(OF_data[:,12].^2 + OF_data[:,13].^2)/(0.5*velocity[1]^2)
 
 # Ex_data = readdlm("T3A-_Experimental_Data.csv", ',', Float64, skipstart=1)
-# Ex_data = readdlm("T3A_Experimental_Results.csv", ',', Float64, skipstart=1)
- Ex_data = readdlm("T3B_Experimental_Data.csv", ',', Float64, skipstart=1)
+ Ex_data = readdlm("T3A_Experimental_Results.csv", ',', Float64, skipstart=1)
+# Ex_data = readdlm("T3B_Experimental_Data.csv", ',', Float64, skipstart=1)
  eRex = Ex_data[:,1]
  eCf = Ex_data[:,2]
 
@@ -223,7 +223,7 @@ plot!(Rex_corr, Cf_laminar, linestyle = :dot, color=:green, ylims=(0, 0.01), xli
 # plot!(oRex, oCf, color=:green, lw=1.5, label="OpenFOAM") # |> display
 plot!(wRex, wCf, linestyle = :dash, color=:black, lw=1.5,label="Walters' Original model") |> display
 plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="XCALibre") |> display
-scatter!(eRex, eCf, color=:green, lw=1.5, label="T3B Experimantal Data")|> display
+scatter!(eRex, eCf, color=:green, lw=1.5, label="T3A Experimantal Data")|> display
 
 # plot(; xlims=(0,1000))
 # plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

@@ -7,7 +7,39 @@ EditURL = "https://github.com/github.com/mberto79/XCALibre.jl/blob/master/CHANGE
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v0.3.1` breaking changes will be recorded here. 
 
-## Version [v0.5.2](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.5.2) - 2025-XX-XX
+## Version [v0.5.3](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.5.3) - 2026-03-05
+
+### Added
+*  Added optional adaptive time stepping based on Courant number control (`AdaptiveTimeStepping`) [#98](@ref)
+*  Added explicit Godunov-type compressible solver (`godunov!`) for supersonic flows using Rusanov (local Lax-Friedrichs) and HLLC flux schemes with first and second order spatial reconstruction (MinMod, VanLeer, Superbee limiters) and adaptive CFL-based time stepping [#112](@ref)
+
+
+### Fixed
+* Add implementation of `Periodic` boundaries to handle the implicit source term - fixes operation of models that use `Si` terms [#95](@ref)
+* Fixed implementation of implicit boundaries in [#96](@ref) which where missing atomics [#100](@ref)
+* Fixed calculation of the residuals to use the relative residual norm, norm(b - Ax)/norm(b), the numerator in this expression was calculated incorrectly previously, giving a 1/sqrt(n) relation (where n is the number of cells in the grid). whilst the operation of the solvers remains the same, user may find that convergence criteria may need to be increased (specially for larger grids)[#102](@ref)
+* UNV2: Fix calculation of cell volumes and centroid for boundary cells was incorrect and missing boundary face contributions (only for 2D UNV meshes)[#106](@ref)
+* Fixed implementation of k-omega LKE transition model and how wall distance field is calculated to ensure it is GPU compatible [#109](@ref)
+  
+### Changed
+* Improved stability of `Periodic` boundaries by making the implementation fully implicit [#96](@ref)
+* 4x speed improvement for the method `construct_periodic` [#97](@ref)
+* +50x speed improvement for the method `construct_periodic` and also more robust algorithm used [#100](@ref)
+* Implementation to correct mass flux uses matrix coefficients directly for better stability when using periodic boundary conditions [#100](@ref)
+* New method to enforce matrix symmetry of scalar model equations when the only term is a laplacian [#100](@ref)
+* Change calculation of face interpolation weights to use face normal aligned weights, this is more physical than the current method using face-based distances (in preparation for formal support for non-orthogonality correction)[#101](@ref)
+* 20x improvement loading and processing 3D UNV mesh files [#106](@ref)
+
+### Breaking
+* No breaking changes
+
+### Deprecated
+* No functions deprecated
+
+### Removed
+* No functionality has been removed
+
+## Version [v0.5.2](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.5.2) - 2025-01-16
 
 ### Added
 *  Initial support for mixed precision (UNV meshes only) [#67](@ref)
@@ -18,9 +50,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 *  High fidelity thermal conductivity models for H2 and N2 [#72](@ref)
 *  `SetFields` utility that allows to set a field to desired value within a box / circle / sphere [#73](@ref)
 *  Helmholtz Energy equation of state and supporting framework for it for H2 and N2 [#75](@ref)
-*  Time-average and RMS of Vector and Scalar fields [#78](https://github.com/github.com/mberto79/XCALibre.jl/issues/78)
+*  `FieldAverage` and `FieldRMS` of Vector and Scalar fields [#78](https://github.com/github.com/mberto79/XCALibre.jl/issues/78)
 *  Added `RotatingWall` velocity boundary condition [#81](@ref)
 *  Added `KOmegaSST` turbulence model [#82](@ref)
+*  Added capability to write out TensorFields to .vtk/vtu including Reynolds Stress Tensor [#84](@ref)
+*  Added capablity to write out TensorFields to .vtk/vtu including Reynolds Stress Tensor [#87](@ref)
+*  Extended `DirichLetFunction` to accept functions defining boundary condition for `ScalarFields` [#89](@ref)
+*  Implemented `CrankNicolson` time scheme (second order implicit-explicit) [#90](@ref)
 
 
 ### Fixed

@@ -207,7 +207,7 @@ function SIMPLE(
         end
 
         # correct mass flux and velocity
-        correct_mass_flux(mdotf, p_eqn, config)
+        correct_mass_flux!(mdotf, p_eqn, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
         turbulence!(turbulenceModel, model, S, prev, time, config) 
@@ -250,7 +250,7 @@ function SIMPLE(
                 ]
             )
         
-        runtime_postprocessing!(postprocess,iteration,iterations)
+        runtime_postprocessing!(postprocess,iteration,iterations,S,config)
         
         if iteration%write_interval + signbit(write_interval) == 0      
             save_output(model, outputWriter, iteration, time, config)
@@ -337,7 +337,7 @@ end
 
 ### TEMP LOCATION FOR PROTOTYPING
 
-function correct_mass_flux(mdotf, p_eqn, config)
+function correct_mass_flux!(mdotf, p_eqn, config)
     # sngrad = FaceScalarField(mesh)
     (; faces, cells, boundary_cellsID) = mdotf.mesh
     (; hardware) = config
@@ -354,7 +354,7 @@ function correct_mass_flux(mdotf, p_eqn, config)
     n_ifaces = n_faces - n_bfaces
 
     ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
-    kernel! = _correct_mass_flux(_setup(backend, workgroup, ndrange)...)
+    kernel! = _correct_mass_flux!(_setup(backend, workgroup, ndrange)...)
     kernel!(mdotf, p, nzval, colval, rowptr, faces, cells, n_bfaces)
     KernelAbstractions.synchronize(backend)
 
@@ -366,7 +366,7 @@ function correct_mass_flux(mdotf, p_eqn, config)
     end
 end
 
-@kernel function _correct_mass_flux(
+@kernel function _correct_mass_flux!(
     mdotf, p, nzval, colval, rowptr, faces, cells, n_bfaces)
     i = @index(Global)
     fID = i + n_bfaces

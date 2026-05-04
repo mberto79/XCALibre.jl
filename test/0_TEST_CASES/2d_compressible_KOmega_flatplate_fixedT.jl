@@ -53,14 +53,14 @@ BCs = assign(
             # Symmetry(:top)
             Extrapolated(:top)            
         ],
-        h = [
+        he = [
             FixedTemperature(:inlet, T=300.0, Enthalpy(cp=cp, Tref=288.15)),
             # Extrapolated(:outlet),
             Zerogradient(:outlet),
             FixedTemperature(:wall, T=310.0, Enthalpy(cp=cp, Tref=288.15)),
             # Extrapolated(:top)
             # Symmetry(:top)
-            Extrapolated(:top)            
+            Extrapolated(:top)
         ],
         k = [
             Dirichlet(:inlet, k_inlet),
@@ -100,7 +100,7 @@ p = SolverSetup(
     relax       = 0.2,
     rtol = 1e-2
 ),
-h = SolverSetup(
+he = SolverSetup(
     solver      = Bicgstab(), # Bicgstab(), Gmres()
     preconditioner = DILU(),
     convergence = 1e-7,
@@ -132,7 +132,7 @@ hardware = Hardware(backend=backend, workgroup=workgroup)
     schemes = (
         U = Schemes(divergence=Upwind, limiter=grad_limiter),
         p = Schemes(divergence=Upwind, limiter=grad_limiter),
-        h = Schemes(divergence=Upwind),
+        he = Schemes(divergence=Upwind),
         k = Schemes(divergence=Upwind),
         omega = Schemes(divergence=Upwind)
     )

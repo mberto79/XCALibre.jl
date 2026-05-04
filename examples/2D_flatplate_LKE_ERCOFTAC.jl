@@ -15,16 +15,16 @@ hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 # Turbulence Model
-velocity = [5.4,0,0]
+velocity = [9.4,0,0]
 nu = 1.497e-5
 # Re = 10*1/nu
-νR = 13.9
-Tu = 0.03
-k_inlet = 0.0575 
+νR = 106.8
+Tu = 0.06
+k_inlet = 0.5850
 # k_inlet = 3/2*(Tu*velocity[1])^2
-kL_inlet = 0.0115
+kL_inlet = 0.1524
 # kL_inlet = 1/2*(Tu*velocity[1])^2
-ω_inlet = 275
+ω_inlet = 365
 # ω_inlet = k_inlet/(νR*nu) # Omega at the Inlet
 
 
@@ -102,7 +102,7 @@ BCs = assign(
 )
 
 schemes = (
-    U = Schemes(divergence=LUST, limiter=MFaceBased(mesh_dev)),
+    U = Schemes(divergence=Linear, limiter=MFaceBased(mesh_dev)),
     # U = Schemes(divergence=LUST),
     p = Schemes(divergence=LUST),
     k = Schemes(divergence=LUST),
@@ -187,19 +187,20 @@ residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
 using DelimitedFiles
 using LinearAlgebra
 using Plots 
+using LaTeXStrings
 # OF_data = readdlm("flatplate_OF_wall_kOmega_lowRe.csv", ',', Float64, skipstart=1)
 # oRex = OF_data[:,7].*velocity[1]./nu[1]
 # oCf = sqrt.(OF_data[:,12].^2 + OF_data[:,13].^2)/(0.5*velocity[1]^2)
 
 # Ex_data = readdlm("T3A-_Experimental_Data.csv", ',', Float64, skipstart=1)
-Ex_data = readdlm("T3A_Experimental_Results.csv", ',', Float64, skipstart=1)
-# Ex_data = readdlm("T3B_Experimental_Data.csv", ',', Float64, skipstart=1)
+# Ex_data = readdlm("T3A_Experimental_Results.csv", ',', Float64, skipstart=1)
+ Ex_data = readdlm("T3B_Experimental_Data.csv", ',', Float64, skipstart=1)
  eRex = Ex_data[:,1]
  eCf = Ex_data[:,2]
 
-#  Walt_data = readdlm("T3A-_Walters'_Data.csv", ',', Float64, skipstart=1)
-Walt_data = readdlm("T3A_Walters'_Data.csv", ',', Float64, skipstart=1)
-#  Walt_data = readdlm("T3B_Walters'_Data.csv", ',', Float64, skipstart=1)
+# Walt_data = readdlm("T3A-_Walters'_Data.csv", ',', Float64, skipstart=1)
+ Walt_data = readdlm("T3A_Walters'_Data.csv", ',', Float64, skipstart=1)
+# Walt_data = readdlm("T3B_Walters'_Data.csv", ',', Float64, skipstart=1)
  wRex = Walt_data[:,1]
  wCf = Walt_data[:,2]
 
@@ -216,15 +217,13 @@ Rex_corr = velocity[1].*x_corr/nu
 Cf_corr = 0.0576.*(Rex_corr).^(-1/5)
 Cf_laminar = 0.664.*(Rex_corr).^(-1/2)
 
-plot(; xaxis="Rex", yaxis="Cf")
-plot!(Rex_corr, Cf_corr, color=:red, ylims=(0, 0.01), xlims=(0,6e5), label="Turbulent",lw=1.5)
-plot!(Rex_corr, Cf_laminar, color=:green, ylims=(0, 0.01), xlims=(0,6e5), label="Laminar",lw=1.5)
+plot(; xaxis= L"Re_{x} (-)", yaxis= L"C_{f} (-)")
+plot!(Rex_corr, Cf_corr, linestyle = :dot, color=:red, ylims=(0, 0.01), xlims=(0,6e5), label="Turbulent",lw=1.5)
+plot!(Rex_corr, Cf_laminar, linestyle = :dot, color=:green, ylims=(0, 0.01), xlims=(0,6e5), label="Laminar",lw=2.5)
 # plot!(oRex, oCf, color=:green, lw=1.5, label="OpenFOAM") # |> display
-scatter!(eRex, eCf, color=:green, lw=1.5, label="T3A Experimantal Data")
-plot!(wRex, wCf, color=:black, lw=1.5,label="Walters' Original model") |> display
-plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code", title="T3A Flatplate") |> display
-# plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code", title="T3A- Flatplate") |> display
-# plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code", title="T3B Flatplate") |> display
+plot!(wRex, wCf, linestyle = :dash, color=:black, lw=1.5,label="Walters' Original model") |> display
+plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="XCALibre") |> display
+scatter!(eRex, eCf, color=:green, lw=1.5, label="T3B Experimantal Data")|> display
 
 # plot(; xlims=(0,1000))
 # plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")

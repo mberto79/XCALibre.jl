@@ -2,7 +2,7 @@ using XCALibre
 # using CUDA
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "EROFATC_Plate_Example7_2.unv"
+grid = "ERCOFTAC_Plate_Example.unv"
 mesh_file = joinpath(grids_dir, grid)
 
  mesh = UNV2D_mesh(mesh_file, scale=0.001)

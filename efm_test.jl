@@ -33,7 +33,7 @@ function env_value(key, default)
     return get(ENV, key, string(default))
 end
 
-EFM_CASE = parse(Int, env_value("EFM_CASE", 1))
+EFM_CASE = parse(Int, env_value("EFM_CASE", 8))
 
 # Meredith et al. CD1 cases as reported in ASME GTP 143(4), Table 2.
 # The table heading is "Q x 10^5 (m^3/s)", so the physical flow rate is
@@ -83,10 +83,8 @@ EFM_MAX_GROW = parse(Float64, env_value("EFM_MAX_GROW", "1.2"))
 XCALIBRE_EFM_DEBUG = env_default!("XCALIBRE_EFM_DEBUG", "0") != "0"
 # XCALIBRE_EFM_DEBUG_INTERVAL prints diagnostics every N iterations when N > 0.
 XCALIBRE_EFM_DEBUG_INTERVAL = parse(Int, env_default!("XCALIBRE_EFM_DEBUG_INTERVAL", "0"))
-# XCALIBRE_EFM_WETTING selects hard, smooth, or allwet wetting-mask probes.
+# XCALIBRE_EFM_WETTING selects hard, smooth/smoothed, or allwet wetting-mask probes.
 XCALIBRE_EFM_WETTING = env_default!("XCALIBRE_EFM_WETTING", "smooth")
-# XCALIBRE_EFM_WETTING_WIDTH sets the h_crit-to-width*h_crit smoothing interval.
-XCALIBRE_EFM_WETTING_WIDTH = parse(Float64, env_default!("XCALIBRE_EFM_WETTING_WIDTH", "10"))
 mu = 0.001003; # Pa s
 rho_l = 998.2; # kg/m3
 nu = mu/rho_l;

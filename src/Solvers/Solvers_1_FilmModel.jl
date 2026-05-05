@@ -555,14 +555,13 @@ function update_wetting_fields!(w, wf, h, wBCs, h_crit, time, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(w)
-    wetting_mode = get(ENV, "XCALIBRE_EFM_WETTING", "hard")
-    if wetting_mode == "allwet"
+    wetting_mode = efm_wetting_mode()
+    if wetting_mode === :allwet
         kernel! = _set_wetting_field!(_setup(backend, workgroup, ndrange)...)
         kernel!(w, one(h_crit))
-    elseif wetting_mode == "smooth"
-        width = parse(Float64, get(ENV, "XCALIBRE_EFM_WETTING_WIDTH", "10"))
+    elseif wetting_mode === :smooth
         kernel! = _update_smooth_wetting_field!(_setup(backend, workgroup, ndrange)...)
-        kernel!(w, h, h_crit, width)
+        kernel!(w, h, h_crit)
     else
         kernel! = _update_wetting_field!(_setup(backend, workgroup, ndrange)...)
         kernel!(w, h, h_crit)
@@ -571,6 +570,26 @@ function update_wetting_fields!(w, wf, h, wBCs, h_crit, time, config)
     interpolate!(wf, w, config)
     correct_boundaries!(wf, w, wBCs, time, config)
     clamp_face_wetting!(wf, config)
+end
+
+const _efm_unknown_wetting_mode = Ref("")
+
+function efm_wetting_mode()
+    mode = lowercase(strip(get(ENV, "XCALIBRE_EFM_WETTING", "hard")))
+
+    if mode == "hard"
+        return :hard
+    elseif mode == "smooth" || mode == "smoothed"
+        return :smooth
+    elseif mode == "allwet"
+        return :allwet
+    end
+
+    if _efm_unknown_wetting_mode[] != mode
+        @warn "Unknown XCALIBRE_EFM_WETTING mode; falling back to hard" mode
+        _efm_unknown_wetting_mode[] = mode
+    end
+    return :hard
 end
 
 function set_fixed_h_boundary_cells_wet!(w, wf, hBCs, wBCs, time, config)
@@ -620,13 +639,17 @@ end
     end
 end
 
-@kernel function _update_smooth_wetting_field!(w, h, h_crit, width)
+@inline function smooth_wetting_value(h, h_crit)
+    hcrit = max(h_crit, eps(h_crit))
+    s = clamp(h / hcrit, zero(h), one(h))
+    return s * s * (3 - 2 * s)
+end
+
+@kernel function _update_smooth_wetting_field!(w, h, h_crit)
     i = @index(Global)
 
     @inbounds begin
-        h0 = h_crit
-        h1 = h_crit * width
-        w[i] = clamp((h[i] - h0) / (h1 - h0), zero(h[i]), one(h[i]))
+        w[i] = smooth_wetting_value(h[i], h_crit)
     end
 end
 

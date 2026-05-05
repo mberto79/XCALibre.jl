@@ -134,10 +134,29 @@ end
 # Specialise VTK writer
 function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
     ) where {T,F,SO,M,Tu<:Smagorinsky,E,D,BI}
-    args = (
-        ("U", model.momentum.U), 
-        ("p", model.momentum.p),
-        ("nut", model.turbulence.nut)
-    )
-    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
+    if F <: Incompressible
+        args = (
+            ("U", model.momentum.U), 
+            ("p", model.momentum.p),
+            ("nut", model.turbulence.nut)
+        )
+    elseif F <: SupersonicFlow
+        args = (
+            ("U", model.momentum.U), 
+            ("p", model.momentum.p),
+            ("nut", model.turbulence.nut),
+            ("T", model.energy.T),
+            ("rho", model.fluid.rho)
+        )
+    else
+        args = (
+            ("U", model.momentum.U), 
+            ("p", model.momentum.p),
+            ("nut", model.turbulence.nut),
+            ("he", model.energy.T),
+            ("rho", model.fluid.rho)
+        )
+
+    end
+write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end

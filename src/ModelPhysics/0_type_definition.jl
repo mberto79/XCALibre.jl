@@ -96,7 +96,7 @@ struct Momentum{T, ARG} <: AbstractMomentumContainer
 end
 
 
-@kwdef struct original{V,S,Vf,Sf,SS} <: AbstractMomentumModel
+@kwdef struct regular{V,S,Vf,Sf,SS} <: AbstractMomentumModel
     U::V 
     p::S 
     Uf::Vf 
@@ -109,28 +109,12 @@ original(mesh::AbstractMesh) = begin
     p = ScalarField(mesh)
     Uf = FaceVectorField(mesh)
     pf = FaceScalarField(mesh)
-    original(U, p, Uf, pf, nothing)
+    regular(U, p, Uf, pf, nothing)
 end
 
 
-Adapt.@adapt_structure original 
-#@kwdef struct original{V,S,Vf,Sf,SS} <: AbstractMomentumModel
-#    U::V 
-#    p::S 
-#    Uf::Vf 
-#    pf::Sf 
-#    sources::SS
-#end 
-#Adapt.@adapt_structure original 
+Adapt.@adapt_structure regular 
 
-
-#Momentum{original}(mesh::AbstractMesh) = begin
-#    U = VectorField(mesh)
-#    p = ScalarField(mesh)
-#    Uf = FaceVectorField(mesh)
-#    pf = FaceScalarField(mesh)
-#    original(U, p, Uf, pf, nothing)
-#end
 
 
 
@@ -174,7 +158,7 @@ end
 
 """
 Physics(;
-time, fluid=nothing, solid=nothing, turbulence=nothing, energy, domain, momentum=EFM
+time, fluid=nothing, solid=nothing, turbulence=nothing, energy, domain, momentum=original
 ) = begin
     # NOTE: this function will be changed if/when a "medium" keyword is introduced. This will get rid of this ugly if statements! 
     momentum = momentum(domain)

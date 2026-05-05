@@ -1,10 +1,9 @@
 using XCALibre
-# using CSV
 # using CUDA # Uncomment to run on NVIDIA GPUs
 # using AMDGPU # Uncomment to run on AMD GPUs
 
-grids_dir = pkgdir(XCALibre, "Test_Meshes/");
-grid = "initial_efm_mesh_CD1_2.unv";
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS");
+grid = "ETFM_mesh_1.unv";
 mesh_file = joinpath(grids_dir, grid);
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001);
@@ -25,22 +24,12 @@ inlet_width = 0.510; # m
 inlet_height = 0.05; # m
 inlet_area = inlet_width*inlet_height; # m^2
 
-if isfile("Model_Input.csv")
-    test_case = 8;
-    input_parameters = CSV.File("Model_Input.csv"); #File containing the different test cases from paper "Modeling of Partially Wetting Liquid Film Using an Enhanced Thin Film Model for Aero-Engine Bearing Chamber Applications" by Kuldeep Singh et. al
-
-    inlet_flow_rate = input_parameters.Q[test_case]; # m^3/s
-    β = input_parameters.Beta[test_case]; # empisical value from paper
-    σ = input_parameters.Sigma[test_case]
-    θm = input_parameters.Theta_m[test_case]
-    ϕ = input_parameters.Phi[test_case]
-else
-    inlet_flow_rate = 25.53e-5
-    β = 3
-    σ = 0.069
-    θm = 75
-    ϕ = 90
-end
+# Case 8
+inlet_flow_rate = 25.53e-5
+β = 3
+σ = 0.069
+θm = 75
+ϕ = 90
 
 # EFM_DT sets the requested initial time step.
 EFM_DT = parse(Float64, get(ENV, "EFM_DT", "5e-4"))

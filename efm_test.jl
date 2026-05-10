@@ -33,7 +33,7 @@ function env_value(key, default)
     return get(ENV, key, string(default))
 end
 
-EFM_CASE = parse(Int, env_value("EFM_CASE", 1))
+EFM_CASE = parse(Int, env_value("EFM_CASE", 5))
 
 # Meredith et al. CD1 cases as reported in ASME GTP 143(4), Table 2.
 # The table heading is "Q x 10^5 (m^3/s)", so the physical flow rate is
@@ -49,7 +49,7 @@ elseif EFM_CASE == 5
     ϕ  = 89
     θm = 75
     σ  = 0.069
-    β  = 3
+    β  = 1
 elseif EFM_CASE == 8
     inlet_flow_rate = 25.53e-5 # m^3/s
     ϕ = 89
@@ -98,6 +98,7 @@ inlet_height = (3*nu*inlet_flow_per_width/gravity_tangential)^(1/3) # m, Nusselt
 inlet_rate = inlet_flow_per_width/inlet_height # m/s
 # inlet_velocity = inlet_rate.*[1.0, 0.0, 0.0];
 inlet_velocity = inlet_rate.*[1.0, 0.0, 0.0];
+gravity_vector = (g*sind(ϕ), 0.0, -g*cosd(ϕ))
 case_reynolds = inlet_rate*inlet_height/nu
 
 # - Case 1: h = 4.8886e-4 m, U = 0.06778 m/s
@@ -113,7 +114,15 @@ end;
 @info "EFM paper case setup" case=EFM_CASE inlet_flow_rate inlet_width inlet_flow_per_width inlet_height inlet_rate case_reynolds ϕ θm σ β
 
 model = Physics(
-    momentum=Momentum{EFM}(;σ=σ, h_crit = h_crit, h_floor=h_floor, β=β, θm = θm, ϕ=ϕ),
+    momentum=Momentum{EFM}(;
+        σ=σ,
+        h_crit=h_crit,
+        h_floor=h_floor,
+        β=β,
+        θm=θm,
+        inclination=ϕ,
+        gravity=gravity_vector
+    ),
     time = Transient(),
     fluid = Fluid{Incompressible}(; nu = nu, rho = rho_l),
     turbulence = RANS{Laminar}(),
@@ -202,8 +211,8 @@ config = Configuration(
 GC.gc(true)
   
 initialise!(model.momentum.U, [0,0,0]);
-# Start from a dry plate; the paper cases inject the liquid film from the inlet.
-h_init = h_floor;
+# Start from a dry plate; h_floor is only a numerical denominator floor in the solver.
+h_init = 0.0;
 initialise!(model.momentum.h, h_init)
 
 residuals = run!(model, config, inner_loops=2);

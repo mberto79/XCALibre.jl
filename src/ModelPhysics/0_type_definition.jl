@@ -145,8 +145,27 @@ end
 Adapt.@adapt_structure EFM
 
 # Optional manual capillary time-step cap; the film solver also computes a mesh-based capillary limit.
-Momentum{EFM}(;σ=0.069, h_crit=1e-10, h_floor=1e-15, β=6.0, θm = 75, ϕ=0, capillary_dt=Inf) = begin
-    coeffs = (σ=σ, h_crit=h_crit, h_floor=h_floor, β=β, θm=θm, ϕ=ϕ, capillary_dt=capillary_dt)
+function Momentum{EFM}(;
+    σ=0.069,
+    h_crit=1e-10,
+    h_floor=1e-15,
+    β=6.0,
+    θm=75,
+    ϕ=0,
+    inclination=ϕ,
+    gravity=(0.0, 0.0, -9.81),
+    capillary_dt=Inf
+)
+    coeffs = (
+        σ=σ,
+        h_crit=h_crit,
+        h_floor=h_floor,
+        β=β,
+        θm=θm,
+        ϕ=inclination,
+        gravity=SVector{3}(gravity),
+        capillary_dt=capillary_dt
+    )
     ARG = typeof(coeffs)
     Momentum{EFM, ARG}(coeffs)
 end

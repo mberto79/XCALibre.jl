@@ -25,8 +25,10 @@ using XCALibre.Calculate
 using XCALibre.ModelPhysics
 using XCALibre.IOFormats
 using XCALibre.Postprocess
+using XCALibre.ReferenceFrames
 
 include("Solvers_0_functions.jl")
+include("Solvers_1_SIMPLE-MRF.jl")
 include("Solvers_1_SIMPLE.jl")
 include("Solvers_1_LAPLACE.jl")
 include("Solvers_1_CSIMPLE.jl")

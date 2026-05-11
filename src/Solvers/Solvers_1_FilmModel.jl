@@ -160,17 +160,14 @@ function FilmModel(
     contact_line_deltaN, contact_line_grad_cap = contact_line_regularization(mesh, TF)
     initialise_film_geometry!(surfaceNormal, gravityTangent, gNormalf, G, config)
 
+    wetting_BCs = [
+        hBC isa AbstractDirichlet ? Dirichlet(boundary.name, 1) : Zerogradient(boundary.name)
+        for (hBC, boundary) in zip(boundaries.h, mesh.boundaries)
+    ]
     internal_BCs = assign(
         region=mesh,
         (
-            w = [
-            Dirichlet(:inlet, 1),
-            Zerogradient(:outlet),
-            Zerogradient(:inlet_sides),
-            Zerogradient(:top_of_plate),
-            Zerogradient(:side_1),
-            Zerogradient(:side_2)
-    ],
+            w = wetting_BCs,
         )
     )
 
@@ -223,7 +220,7 @@ function FilmModel(
     grad!(∇w, wf, w, internal_BCs.w, time, config)
 
     update_film_force_sources!(
-        Ph, h∇PL, τθw, h, ∇PL, ∇w, gravityTangent,
+        Ph, h∇PL, τθw, U, h, ∇PL, ∇w, gravityTangent,
         coeffs, rho.values[1], config,
         contact_line_deltaN, contact_line_grad_cap
     )
@@ -247,15 +244,16 @@ function FilmModel(
         @. h_old = h.values # store previous h before inner loop
 
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, time=time)
+        project_vector_field_to_surface!(U, surfaceNormal, config)
         
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rDf, rD, config)
-        remove_film_pressure_source!(U_eqn, P_hydrf, P_surff, rho.values[1], h, config)
+        remove_film_pressure_source!(U_eqn, P_hydrf, P_surff, rho.values[1], h, surfaceNormal, config)
 
         H!(Hv, U, U_eqn, config)
         correct_film_velocity!(
             tempU, Hv, h, P_hydrf, P_surff, rD, rho.values[1],
-            config; include_hydrostatic=false, include_surface=false
+            surfaceNormal, config; include_hydrostatic=false, include_surface=false
         )
         rh = 0
         for i ∈ 1:inner_loops
@@ -263,7 +261,7 @@ function FilmModel(
 
             correct_film_velocity!(
                 tempU, Hv, h, P_hydrf, P_surff, rD, rho.values[1],
-                config; include_hydrostatic=false, include_surface=false
+                surfaceNormal, config; include_hydrostatic=false, include_surface=false
             )
             interpolate!(Uf, tempU, config)
             correct_boundaries!(Uf, tempU, boundaries.U, time, config)
@@ -302,11 +300,11 @@ function FilmModel(
 
             correct_film_velocity!(
                 U, Hv, h, P_hydrf, P_surff, rD, rho.values[1],
-                config; include_hydrostatic=true
+                surfaceNormal, config; include_hydrostatic=true
             )
             correct_film_velocity!(
                 tempU, Hv, h, P_hydrf, P_surff, rD, rho.values[1],
-                config; include_hydrostatic=false, include_surface=false
+                surfaceNormal, config; include_hydrostatic=false, include_surface=false
             )
             interpolate!(Uf, tempU, config)
             correct_boundaries!(Uf, tempU, boundaries.U, time, config)
@@ -340,7 +338,7 @@ function FilmModel(
 
         correct_film_velocity!(
             tempU, Hv, h, P_hydrf, P_surff, rD, rho.values[1],
-            config; include_hydrostatic=false, include_surface=false
+            surfaceNormal, config; include_hydrostatic=false, include_surface=false
         )
         interpolate!(Uf, tempU, config)
         correct_boundaries!(Uf, tempU, boundaries.U, time, config)
@@ -353,7 +351,7 @@ function FilmModel(
 
         grad!(∇w, wf, w, internal_BCs.w, time, config)
         update_film_force_sources!(
-            Ph, h∇PL, τθw, h, ∇PL, ∇w, gravityTangent,
+            Ph, h∇PL, τθw, U, h, ∇PL, ∇w, gravityTangent,
             coeffs, rho.values[1], config,
             contact_line_deltaN, contact_line_grad_cap
         )
@@ -465,7 +463,7 @@ end
         end
 
         nmag = sqrt(dot(n, n))
-        if nmag <= eps(nmag)
+        if nmag <= eps(one(nmag))
             n = SVector(zero(nmag), zero(nmag), one(nmag))
             nmag = one(nmag)
         end
@@ -477,14 +475,8 @@ end
 
         t = G - dot(G, n)*n
         tmag = sqrt(dot(t, t))
-        if tmag <= eps(tmag)
-            reference = ifelse(
-                abs(n[1]) < 0.9,
-                SVector(one(tmag), zero(tmag), zero(tmag)),
-                SVector(zero(tmag), one(tmag), zero(tmag))
-            )
-            t = reference - dot(reference, n)*n
-            tmag = sqrt(dot(t, t))
+        if tmag <= eps(one(tmag))
+            t = zero(G)
         end
 
         surfaceNormal[cID] = n
@@ -506,7 +498,8 @@ end
         c2 = ownerCells[2]
         n = surfaceNormal[c1]
         if fID > n_bfaces
-            n += surfaceNormal[c2]
+            n2 = surfaceNormal[c2]
+            n += ifelse(dot(n, n2) < zero(n[1]), -n2, n2)
             nmag = sqrt(dot(n, n))
             if nmag > eps(nmag)
                 n /= nmag
@@ -590,7 +583,7 @@ end
 end
 
 function update_film_force_sources!(
-    Ph, h∇PL, τθw, h, ∇PL, ∇w, gravityTangent,
+    Ph, h∇PL, τθw, U, h, ∇PL, ∇w, gravityTangent,
     coeffs, rho, config, contact_line_deltaN, contact_line_grad_cap
 )
     (; hardware) = config
@@ -599,16 +592,20 @@ function update_film_force_sources!(
     ndrange = length(h)
     kernel! = _update_film_force_sources!(_setup(backend, workgroup, ndrange)...)
     contact_line_scale = coeffs.β * coeffs.σ / rho * (1 - cosd(coeffs.θm))
+    TF = typeof(rho)
+    gravity = coeff_vector(coeffs, :gravity, SVector{3,TF}(0, 0, -9.81), TF)
+    gravity_magnitude = sqrt(dot(gravity, gravity))
     kernel!(
-        Ph, h∇PL, τθw, h, ∇PL, ∇w, gravityTangent,
+        Ph, h∇PL, τθw, U, h, ∇PL, ∇w, gravityTangent,
         contact_line_scale, rho, contact_line_deltaN, contact_line_grad_cap,
-        coeffs.h_crit
+        coeffs.h_crit, coeffs.σ, gravity_magnitude
     )
 end
 
 @kernel function _update_film_force_sources!(
-    Ph, h∇PL, τθw, h, ∇PL, ∇w, gravityTangent,
-    contact_line_scale, rho, contact_line_deltaN, contact_line_grad_cap, h_crit
+    Ph, h∇PL, τθw, U, h, ∇PL, ∇w, gravityTangent,
+    contact_line_scale, rho, contact_line_deltaN, contact_line_grad_cap, h_crit,
+    σ, gravity_magnitude
 )
     i = @index(Global)
 
@@ -619,10 +616,32 @@ end
         bounded_mag_grad_w = min(mag_grad_w, contact_line_grad_cap)
         normal_scale = bounded_mag_grad_w / (mag_grad_w + contact_line_deltaN)
         film_weight = hi / (hi + h_crit)
+        ui = U[i]
+        gt = gravityTangent[i]
+        gt_mag = sqrt(dot(gt, gt))
+
+        # ∇w points from dry to wet film. On near-vertical, low-We side lines the
+        # static contact-angle source is only active while the line advances into
+        # dry substrate; shallow plates and inertial regions retain the full model.
+        normal_gravity_fraction = ifelse(
+            gravity_magnitude > eps(gravity_magnitude),
+            sqrt(max(gravity_magnitude^2 - gt_mag^2, zero(gravity_magnitude))) / gravity_magnitude,
+            one(gravity_magnitude)
+        )
+        weber = rho * max(hi, h_crit) * dot(ui, ui) / max(σ, eps(σ))
+        normal_velocity = ifelse(
+            mag_grad_w > contact_line_deltaN,
+            dot(ui, grad_w) / (mag_grad_w + contact_line_deltaN),
+            zero(hi)
+        )
+        advancing_scale = ifelse(normal_velocity < zero(normal_velocity), one(hi), zero(hi))
+        inertial_scale = ifelse(weber > one(weber), one(weber), zero(weber))
+        contact_line_activity = max(normal_gravity_fraction, inertial_scale, advancing_scale)
 
         Ph[i] = hi * gravityTangent[i]
         h∇PL[i] = hi * ∇PL.result[i] / rho
-        τθw[i] = film_weight * contact_line_scale * normal_scale * grad_w
+        # τθw[i] = film_weight * contact_line_activity * contact_line_scale * normal_scale * grad_w
+        τθw[i] = film_weight * contact_line_scale * grad_w
     end
 end
 
@@ -1059,7 +1078,7 @@ end
     end
 end
 
-function remove_film_pressure_source!(U_eqn, P_hyrdf, P_surff, rho, h, config)
+function remove_film_pressure_source!(U_eqn, P_hyrdf, P_surff, rho, h, surfaceNormal, config)
     
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -1074,16 +1093,19 @@ function remove_film_pressure_source!(U_eqn, P_hyrdf, P_surff, rho, h, config)
 
     ndrange = length(h)
     kernel! = _remove_film_pressure_source!(_setup(backend, workgroup, ndrange)...)
-    kernel!(cells, ∇P_hydr, ∇P_surf, rho, h, bx, by, bz)
+    kernel!(cells, ∇P_hydr, ∇P_surf, rho, h, surfaceNormal, bx, by, bz)
     # # KernelAbstractions.synchronize(backend)
 end
 
-@kernel function _remove_film_pressure_source!(cells,  ∇P_hydr, ∇P_surf, rho, h, bx, by, bz)
+@kernel function _remove_film_pressure_source!(cells,  ∇P_hydr, ∇P_surf, rho, h, surfaceNormal, bx, by, bz)
     i = @index(Global)
 
     @inbounds begin
         (; volume) = cells[i]
-        source = h[i] * (∇P_hydr.result[i] + ∇P_surf.result[i]) * volume / rho
+        n = surfaceNormal[i]
+        gradp = ∇P_hydr.result[i] + ∇P_surf.result[i]
+        gradp -= dot(gradp, n) * n
+        source = h[i] * gradp * volume / rho
         bx[i] -= source[1]
         by[i] -= source[2]
         bz[i] -= source[3]
@@ -1168,11 +1190,11 @@ function limit_capillary_dt!(runtime::Runtime, min_capillary_dt, coeffs)
 end
 
 function correct_film_velocity!(
-    U, Hv, h, P_hydrf, P_surff, rD, rho, config;
+    U, Hv, h, P_hydrf, P_surff, rD, rho, surfaceNormal, config;
     include_hydrostatic=true, include_surface=true
 )
     if !include_hydrostatic && !include_surface
-        copy_vector_field!(U, Hv, config)
+        copy_projected_vector_field!(U, Hv, surfaceNormal, config)
         return nothing
     end
 
@@ -1188,34 +1210,58 @@ function correct_film_velocity!(
     kernel! = _correct_film_velocity!(_setup(backend, workgroup, ndrange)...)
     hydrostatic_scale = include_hydrostatic ? one(rho) : zero(rho)
     surface_scale = include_surface ? one(rho) : zero(rho)
-    kernel!(U, Hv, h, rD, ∇P_hydr, ∇P_surf, rho, hydrostatic_scale, surface_scale)
+    kernel!(U, Hv, h, rD, ∇P_hydr, ∇P_surf, surfaceNormal, rho, hydrostatic_scale, surface_scale)
 end
 
-function copy_vector_field!(dest, src, config)
+function copy_projected_vector_field!(dest, src, surfaceNormal, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
     ndrange = length(dest)
-    kernel! = _copy_vector_field!(_setup(backend, workgroup, ndrange)...)
-    kernel!(dest, src)
+    kernel! = _copy_projected_vector_field!(_setup(backend, workgroup, ndrange)...)
+    kernel!(dest, src, surfaceNormal)
 end
 
-@kernel function _copy_vector_field!(dest, src)
+function project_vector_field_to_surface!(field, surfaceNormal, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    ndrange = length(field)
+    kernel! = _project_vector_field_to_surface!(_setup(backend, workgroup, ndrange)...)
+    kernel!(field, surfaceNormal)
+end
+
+@kernel function _project_vector_field_to_surface!(field, surfaceNormal)
     i = @index(Global)
 
     @inbounds begin
-        dest[i] = src[i]
+        n = surfaceNormal[i]
+        value = field[i]
+        field[i] = value - dot(value, n) * n
+    end
+end
+
+@kernel function _copy_projected_vector_field!(dest, src, surfaceNormal)
+    i = @index(Global)
+
+    @inbounds begin
+        n = surfaceNormal[i]
+        value = src[i]
+        dest[i] = value - dot(value, n) * n
     end
 end
 
 @kernel function _correct_film_velocity!(
-    U, Hv, h, rD, ∇P_hydr, ∇P_surf, rho, hydrostatic_scale, surface_scale
+    U, Hv, h, rD, ∇P_hydr, ∇P_surf, surfaceNormal, rho, hydrostatic_scale, surface_scale
 )
     i = @index(Global)
 
     @inbounds begin
+        n = surfaceNormal[i]
         pressure_gradient = hydrostatic_scale*∇P_hydr.result[i] + surface_scale*∇P_surf.result[i]
-        U[i] = Hv[i] + pressure_gradient * h[i] * rD[i] / rho
+        pressure_gradient -= dot(pressure_gradient, n) * n
+        value = Hv[i] + pressure_gradient * h[i] * rD[i] / rho
+        U[i] = value - dot(value, n) * n
     end
 end
 
@@ -1307,7 +1353,7 @@ end
 
     cID1 = ownerCells[1]
     cID2 = ownerCells[2]
-    snGrad = (h[cID2] - h[cID1])/delta
+    snGrad = (h[cID2] - h[cID1]) / delta
 
     phif[fID] -= Df[fID]*area*snGrad
 end
@@ -1329,7 +1375,7 @@ end
     phif, h, Df, faces, boundary_cellsID, IDs_range, value
 )
     i = @index(Global)
-    fID = IDs_range[i]
+        fID = IDs_range[i]
 
     @inbounds begin
         cID = boundary_cellsID[fID]

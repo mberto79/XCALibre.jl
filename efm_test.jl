@@ -46,13 +46,13 @@ if EFM_CASE == 1
     β  = 1
 elseif EFM_CASE == 5
     inlet_flow_rate = 3.76e-5 # m^3/s
-    ϕ  = 89
+    ϕ  = 90
     θm = 75
     σ  = 0.069
     β  = 1
 elseif EFM_CASE == 8
     inlet_flow_rate = 25.53e-5 # m^3/s
-    ϕ = 89
+    ϕ = 90
     θm = 75
     σ  = 0.069
     # GTP Fig. 4 validates case 8 with β = 1; Table 3 later gives β = 3 as the optimized value.

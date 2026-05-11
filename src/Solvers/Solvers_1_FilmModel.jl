@@ -114,7 +114,7 @@ function FilmModel(
     phif_U = get_flux(U_eqn, 2)
     phif = FaceScalarField(mesh)
     # Parabolic velocity profile correction (Meredith Eq 2 Dv): ∫u² dy = (6/5) h ū²
-    profile_factor = 6/5
+    profile_factor = TF(6) / TF(5)
     nu_h = get_flux(U_eqn, 3)
 
     h∇PL = get_source(U_eqn, 1)
@@ -139,6 +139,8 @@ function FilmModel(
     P_hydrf = FaceScalarField(mesh)
     P_surf = ScalarField(mesh)
     P_surff = FaceScalarField(mesh)
+    ∇P_hydr = Grad{Gauss}(P_hydrf)
+    ∇P_surf = Grad{Gauss}(P_surff)
 
     tempU = VectorField(mesh)
     Δh = ScalarField(mesh)
@@ -172,6 +174,7 @@ function FilmModel(
     )
 
     # Pre-allocate auxiliary variables
+    wetting_mode = efm_wetting_mode()
     h_old = KernelAbstractions.zeros(backend, TF, n_cells)
     prev = KernelAbstractions.zeros(backend, TF, n_cells)
 
@@ -189,11 +192,11 @@ function FilmModel(
 
     bound_h_nonnegative!(h, config)
 
-    update_wetting_fields!(w, wf, h, internal_BCs.w, coeffs.h_crit, time, config)
+    update_wetting_fields!(w, wf, h, internal_BCs.w, coeffs.h_crit, wetting_mode, time, config)
     update_capillary_face_wetting!(wcf, w, wf, config)
     
     #@info "need to readd Pg term - Coupling term for other phase"
-    Pg = 0# Test Pg term set to zero, as the gradient is found this value doesn't matter
+    Pg = zero(TF) # Test Pg term set to zero, as the gradient is found this value doesn't matter
     update_film_pressure_fields!(
         Δh, ∇hf, hf, Δhf, P_hydrf, P_surf, P_surff, h,
         boundaries.h, rho.values[1],
@@ -202,9 +205,8 @@ function FilmModel(
 
     update_film_fluxes!(
         phif, filmVelocityFlux, mdotf, Uf, U, hf, w, wf,
-        boundaries.U, boundaries.h, time, config
+        boundaries.U, boundaries.h, time, config, phif_U, profile_factor
     )
-    scale_face_flux!(phif_U, phif, profile_factor, config)
     update_capillary_dt!(
         config.runtime, capillaryDtFaces, mesh, hf, wf, rho.values[1], coeffs, config
     )
@@ -228,7 +230,7 @@ function FilmModel(
             
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
     #rh = 0
-    rx = ry = rz = 0
+    rx = ry = rz = zero(TF)
     last_flux_correction_max = zero(TF)
     @time for iteration ∈ 1:iterations
         min_capillary_dt = update_capillary_dt!(
@@ -245,26 +247,25 @@ function FilmModel(
         
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rDf, rD, config)
-        remove_film_pressure_source!(U_eqn, P_hydrf, P_surff, rho.values[1], h, surfaceNormal, config)
+        remove_film_pressure_source!(U_eqn, ∇P_hydr, ∇P_surf, P_hydrf, P_surff, rho.values[1], h, surfaceNormal, config)
 
         H!(Hv, U, U_eqn, config)
         correct_film_velocity!(
             tempU, Hv, h, P_hydrf, P_surff, rD, rho.values[1],
             surfaceNormal, config; include_hydrostatic=false, include_surface=false
         )
-        rh = 0
+        rh = zero(TF)
         for i ∈ 1:inner_loops
             H!(Hv, tempU, U_eqn, config)
 
             correct_film_velocity!(
-                tempU, Hv, h, P_hydrf, P_surff, rD, rho.values[1],
+                tempU, Hv, h, ∇P_hydr, ∇P_surf, P_hydrf, P_surff, rD, rho.values[1],
                 surfaceNormal, config; include_hydrostatic=false, include_surface=false
             )
             update_film_fluxes!(
                 phif, filmVelocityFlux, mdotf, Uf, tempU, hf, w, wf,
-                boundaries.U, boundaries.h, time, config
+                boundaries.U, boundaries.h, time, config, phif_U, profile_factor
             )
-            scale_face_flux!(phif_U, phif, profile_factor, config)
 
             getDf!(Df, rDf, hf, wcf, gNormalf, config)
             update_film_surface_flux!(
@@ -283,7 +284,7 @@ function FilmModel(
             end 
 
             bound_h_nonnegative!(h, config)
-            update_wetting_fields!(w, wf, h, internal_BCs.w, coeffs.h_crit, time, config)
+            update_wetting_fields!(w, wf, h, internal_BCs.w, coeffs.h_crit, wetting_mode, time, config)
             update_capillary_face_wetting!(wcf, w, wf, config)
 
             update_film_pressure_fields!(
@@ -294,18 +295,17 @@ function FilmModel(
             getDf!(Df, rDf, hf, wcf, gNormalf, config)
 
             correct_film_velocity!(
-                U, Hv, h, P_hydrf, P_surff, rD, rho.values[1],
+                U, Hv, h, ∇P_hydr, ∇P_surf, P_hydrf, P_surff, rD, rho.values[1],
                 surfaceNormal, config; include_hydrostatic=true
             )
             correct_film_velocity!(
-                tempU, Hv, h, P_hydrf, P_surff, rD, rho.values[1],
+                tempU, Hv, h, ∇P_hydr, ∇P_surf, P_hydrf, P_surff, rD, rho.values[1],
                 surfaceNormal, config; include_hydrostatic=false, include_surface=false
             )
             update_film_fluxes!(
                 phif, filmVelocityFlux, mdotf, Uf, tempU, hf, w, wf,
-                boundaries.U, boundaries.h, time, config
+                boundaries.U, boundaries.h, time, config, phif_U, profile_factor
             )
-            scale_face_flux!(phif_U, phif, profile_factor, config)
             update_film_surface_flux!(
                 filmSurfaceFlux, rDf, hf, wf, w, filmVelocityFlux, boundaries.h,
                 P_surf, P_surff, rho.values[1], config
@@ -321,13 +321,13 @@ function FilmModel(
 
         grad!(∇PL, PLf, config)
 
-        update_wetting_fields!(w, wf, h, internal_BCs.w, coeffs.h_crit, time, config)
+        update_wetting_fields!(w, wf, h, internal_BCs.w, coeffs.h_crit, wetting_mode, time, config)
         update_capillary_face_wetting!(wcf, w, wf, config)
 
         apply_wetting_to_velocity!(U, w, config)
 
         correct_film_velocity!(
-            tempU, Hv, h, P_hydrf, P_surff, rD, rho.values[1],
+            tempU, Hv, h, ∇P_hydr, ∇P_surf, P_hydrf, P_surff, rD, rho.values[1],
             surfaceNormal, config; include_hydrostatic=false, include_surface=false
         )
         update_film_fluxes!(
@@ -562,6 +562,18 @@ function update_film_fluxes!(
     apply_film_flux!(phif, filmVelocityFlux, hf, config)
 end
 
+function update_film_fluxes!(
+    phif, filmVelocityFlux, mdotf, Uf, U, hf, w, wf, UBCs, hBCs, time, config,
+    scaledFlux, scale
+)
+    interpolate!(Uf, U, config)
+    correct_boundaries!(Uf, U, UBCs, time, config)
+    flux!(mdotf, Uf, config)
+    apply_film_boundary_flux_policy!(mdotf, hBCs, config)
+    apply_wetted_velocity_flux!(filmVelocityFlux, mdotf, w, wf, config)
+    apply_film_flux!(phif, scaledFlux, filmVelocityFlux, hf, scale, config)
+end
+
 function scale_face_flux!(scaledFlux, flux, scale, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -645,11 +657,14 @@ end
 end
 
 function update_wetting_fields!(w, wf, h, wBCs, h_crit, time, config)
+    update_wetting_fields!(w, wf, h, wBCs, h_crit, efm_wetting_mode(), time, config)
+end
+
+function update_wetting_fields!(w, wf, h, wBCs, h_crit, wetting_mode, time, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
     ndrange = length(w)
-    wetting_mode = efm_wetting_mode()
     if wetting_mode === :allwet
         kernel! = _set_wetting_field!(_setup(backend, workgroup, ndrange)...)
         kernel!(w, one(h_crit))
@@ -823,11 +838,30 @@ function apply_film_flux!(phif, filmVelocityFlux, hf, config)
     kernel!(phif, filmVelocityFlux, hf)
 end
 
+function apply_film_flux!(phif, scaledFlux, filmVelocityFlux, hf, scale, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    ndrange = length(phif)
+    kernel! = _apply_film_flux!(_setup(backend, workgroup, ndrange)...)
+    kernel!(phif, scaledFlux, filmVelocityFlux, hf, scale)
+end
+
 @kernel function _apply_film_flux!(phif, filmVelocityFlux, hf)
     fID = @index(Global)
 
     @inbounds begin
         phif[fID] = filmVelocityFlux[fID] * hf[fID]
+    end
+end
+
+@kernel function _apply_film_flux!(phif, scaledFlux, filmVelocityFlux, hf, scale)
+    fID = @index(Global)
+
+    @inbounds begin
+        flux = filmVelocityFlux[fID] * hf[fID]
+        phif[fID] = flux
+        scaledFlux[fID] = scale * flux
     end
 end
 
@@ -894,7 +928,6 @@ function update_film_surface_flux!(
     filmSurfaceFlux, rDf, hf, wf, w, filmVelocityFlux, hBCs,
     P_surf, P_surff, rho, config
 )
-    zero_face_flux!(filmSurfaceFlux, config)
     correct_film_surface_flux!(filmSurfaceFlux, rDf, hf, wf, P_surf, P_surff, rho, config)
     apply_donor_wetting_to_flux!(filmSurfaceFlux, w, wf, config)
     limit_dirichlet_correction_flux!(filmSurfaceFlux, filmVelocityFlux, hBCs, config)
@@ -1019,7 +1052,8 @@ end
         cID1 = ownerCells[1]
         cID2 = ownerCells[2]
         snGradP = (P_surf[cID2] - P_surf[cID1]) / delta
-        phif[fID] += rDf[fID] * hf[fID]^2 * wf[fID] * area * snGradP / rho
+        hfi = hf[fID]
+        phif[fID] = rDf[fID] * hfi * hfi * wf[fID] * area * snGradP / rho
     end
 end
 
@@ -1032,21 +1066,26 @@ end
         cID = boundary_cellsID[fID]
         (; delta, area) = faces[fID]
         snGradP = (P_surff[fID] - P_surf[cID]) / delta
-        phif[fID] += rDf[fID] * hf[fID]^2 * wf[fID] * area * snGradP / rho
+        hfi = hf[fID]
+        phif[fID] = rDf[fID] * hfi * hfi * wf[fID] * area * snGradP / rho
     end
 end
 
-function remove_film_pressure_source!(U_eqn, P_hyrdf, P_surff, rho, h, surfaceNormal, config)
-    
+function remove_film_pressure_source!(U_eqn, P_hydrf, P_surff, rho, h, surfaceNormal, config)
+    ∇P_hydr = Grad{Gauss}(P_hydrf)
+    ∇P_surf = Grad{Gauss}(P_surff)
+    remove_film_pressure_source!(
+        U_eqn, ∇P_hydr, ∇P_surf, P_hydrf, P_surff, rho, h, surfaceNormal, config
+    )
+end
+
+function remove_film_pressure_source!(U_eqn, ∇P_hydr, ∇P_surf, P_hydrf, P_surff, rho, h, surfaceNormal, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
     cells = get_phi(U_eqn).mesh.cells
     (; bx, by, bz) = U_eqn.equation
 
-    ∇P_hydr = Grad{Gauss}(P_hyrdf)
-    ∇P_surf = Grad{Gauss}(P_surff)
-
-    grad!(∇P_hydr, P_hyrdf, config)
+    grad!(∇P_hydr, P_hydrf, config)
     grad!(∇P_surf, P_surff, config)
 
     ndrange = length(h)
@@ -1168,13 +1207,32 @@ function correct_film_velocity!(
         return nothing
     end
 
+    ∇P_hydr = Grad{Gauss}(P_hydrf)
+    ∇P_surf = Grad{Gauss}(P_surff)
+    correct_film_velocity!(
+        U, Hv, h, ∇P_hydr, ∇P_surf, P_hydrf, P_surff, rD, rho, surfaceNormal, config;
+        include_hydrostatic=include_hydrostatic, include_surface=include_surface
+    )
+end
+
+function correct_film_velocity!(
+    U, Hv, h, ∇P_hydr, ∇P_surf, P_hydrf, P_surff, rD, rho, surfaceNormal, config;
+    include_hydrostatic=true, include_surface=true
+)
+    if !include_hydrostatic && !include_surface
+        copy_projected_vector_field!(U, Hv, surfaceNormal, config)
+        return nothing
+    end
+
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    ∇P_hydr = Grad{Gauss}(P_hydrf)
-    grad!(∇P_hydr, P_hydrf, config)
-    ∇P_surf = Grad{Gauss}(P_surff)
-    grad!(∇P_surf, P_surff, config)
+    if include_hydrostatic
+        grad!(∇P_hydr, P_hydrf, config)
+    end
+    if include_surface
+        grad!(∇P_surf, P_surff, config)
+    end
 
     ndrange = length(U)
     kernel! = _correct_film_velocity!(_setup(backend, workgroup, ndrange)...)
@@ -1244,19 +1302,20 @@ function correct_film_flux2!(phif, filmSurfaceFlux, Df, h_eqn, w, wf, hBCs, time
     h = h_eqn.model.terms[1].phi
     convection_term = h_eqn.model.terms[2]
 
-    n_faces = length(faces)
     n_bfaces = length(boundary_cellsID)
-    n_ifaces = n_faces - n_bfaces
+    n_ifaces = length(faces) - n_bfaces
 
     apply_film_convection_flux!(phif, convection_term, h, config)
 
-    ndrange = n_faces
-    kernel! = _add_face_flux!(_setup(backend, workgroup, ndrange)...)
-    kernel!(phif, filmSurfaceFlux)
+    if n_bfaces > 0
+        kernel! = _add_face_flux!(_setup(backend, workgroup, n_bfaces)...)
+        kernel!(phif, filmSurfaceFlux)
+    end
 
-    ndrange = n_ifaces
-    kernel! = _correct_film_flux2!(_setup(backend, workgroup, ndrange)...)
-    kernel!(phif, h, Df, faces, n_bfaces)
+    if n_ifaces > 0
+        kernel! = _correct_film_flux2!(_setup(backend, workgroup, n_ifaces)...)
+        kernel!(phif, filmSurfaceFlux, h, Df, faces, n_bfaces)
+    end
 
     for hBC in hBCs
         correct_film_flux_boundary!(phif, h, Df, hBC, time, config)
@@ -1279,6 +1338,8 @@ function apply_film_convection_flux!(phif, convection_term, h, config)
 
     n_bfaces = length(boundary_cellsID)
     n_ifaces = length(faces) - n_bfaces
+
+    n_ifaces == 0 && return nothing
 
     kernel! = _apply_film_convection_flux!(_setup(backend, workgroup, n_ifaces)...)
     kernel!(phif, convection_term.flux, h, faces, n_bfaces, film_convection_mode(convection_term))
@@ -1315,17 +1376,19 @@ end
     end
 end
 
-@kernel function _correct_film_flux2!(phif, h, Df, faces, n_bfaces)
+@kernel function _correct_film_flux2!(phif, filmSurfaceFlux, h, Df, faces, n_bfaces)
     i = @index(Global)
     fID = i + n_bfaces
 
-    (; ownerCells, delta, area) = faces[fID]
+    @inbounds begin
+        (; ownerCells, delta, area) = faces[fID]
 
-    cID1 = ownerCells[1]
-    cID2 = ownerCells[2]
-    snGrad = (h[cID2] - h[cID1]) / delta
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        snGrad = (h[cID2] - h[cID1]) / delta
 
-    phif[fID] -= Df[fID]*area*snGrad
+        phif[fID] += filmSurfaceFlux[fID] - Df[fID]*area*snGrad
+    end
 end
 
 correct_film_flux_boundary!(phif, h, Df, hBC, time, config) = nothing

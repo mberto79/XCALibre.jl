@@ -33,7 +33,7 @@ function env_value(key, default)
     return get(ENV, key, string(default))
 end
 
-EFM_CASE = parse(Int, env_value("EFM_CASE", 1))
+EFM_CASE = parse(Int, env_value("EFM_CASE", 5))
 
 # Meredith et al. CD1 cases as reported in ASME GTP 143(4), Table 2.
 # The table heading is "Q x 10^5 (m^3/s)", so the physical flow rate is

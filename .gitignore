@@ -14,6 +14,8 @@ unv_sample_meshes/*
 *.csv
 !NIST_*.csv
 [0-9]*/
+constant/
+DATA_FOR_DISSERTATION/*
 !test/0_TEST_CASES/
 constant/
 CLAUDE.md

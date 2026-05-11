@@ -1,4 +1,4 @@
-export simple!
+export simple_MRF!
 
 """
     simple!(model_in, config; 
@@ -25,24 +25,23 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 - `p` Vector of pressure residuals for each iteration.
 
 """
-function simple!(
+function simple_MRF!(
     model, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
 
-    residuals = setup_incompressible_solvers(
-        SIMPLE, model, config; 
+    residuals = setup_incompressible_solvers_MRF(
+        SIMPLE_MRF, model, config; 
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops
-        )
+    )
 
     return residuals
 end
 
-# Setup for all incompressible algorithms
-function setup_incompressible_solvers(
+function setup_incompressible_solvers_MRF(
     solver_variant, model, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     ) 
@@ -62,6 +61,7 @@ function setup_incompressible_solvers(
     initialise!(rDf, 1.0)
     nueff = FaceScalarField(mesh)
     divHv = ScalarField(mesh)
+    omegaU = VectorField(mesh)
 
     @info "Defining models..."
 
@@ -71,6 +71,7 @@ function setup_incompressible_solvers(
         - Laplacian{schemes.U.laplacian}(nueff, U) 
         == 
         - Source(∇p.result)
+        - Source(omegaU)
     ) → VectorEquation(U, boundaries.U)
 
     p_eqn = (
@@ -100,14 +101,15 @@ function setup_incompressible_solvers(
     return residuals
 end # end function
 
-function SIMPLE(
+
+function SIMPLE_MRF(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
     
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
-    (; nu) = model.fluid
+    (; nu, refFrames) = model.fluid
     mesh = model.domain
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
     (; iterations, write_interval,dt) = runtime
@@ -119,6 +121,7 @@ function SIMPLE(
     postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)
+    omegaU = get_source(U_eqn, 2)
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
 
@@ -155,14 +158,19 @@ function SIMPLE(
 
     update_nueff!(nueff, nu, model.turbulence, config)
 
-    @info "Starting SIMPLE loops..."
+    @info "Starting SIMPLE_MRF loops..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
+
+
     for iteration ∈ 1:iterations
         time = iteration
+
+        # Updates the OmegaU source term (function is defined below)
+        update_mrf_sources!(omegaU, U, refFrames, config)
 
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
         
@@ -177,11 +185,8 @@ function SIMPLE(
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, boundaries.U, time, config)
 
-        # old approach
-        # div!(divHv, Uf, config) 
 
-        # new approach
-        flux!(mdotf, Uf, config)
+        flux_mrf!(mdotf, Uf, config, refFrames)
         div!(divHv, mdotf, config)
         
         # Pressure calculations
@@ -233,7 +238,11 @@ function SIMPLE(
             finish!(progress)
             @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
-                save_output(model, outputWriter, iteration, time, config)
+                if refFrames.polar == false
+                    save_output(model, outputWriter, iteration, time, config)
+                elseif refFrames.polar == true
+                    save_output_polar(model, outputWriter, iteration, time, config, refFrames.frames.x0[1], refFrames.frames.rotaxis[1], mask=refFrames.global_mask)
+                end
                 save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
             end
             break
@@ -249,11 +258,15 @@ function SIMPLE(
                 turbulenceModel.state.residuals...
                 ]
             )
-        
+
         runtime_postprocessing!(postprocess,iteration,iterations,S,time,config)
         
         if iteration%write_interval + signbit(write_interval) == 0      
-            save_output(model, outputWriter, iteration, time, config)
+            if refFrames.polar == false
+                    save_output(model, outputWriter, iteration, time, config)
+                elseif refFrames.polar == true
+                    save_output_polar(model, outputWriter, iteration, time, config, refFrames.frames.x0[1], refFrames.frames.rotaxis[1], mask=refFrames.global_mask)
+                end
             save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
         end
 
@@ -262,207 +275,67 @@ function SIMPLE(
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end
 
-### TEMP LOCATION FOR PROTOTYPING
+# MRF functions
 
-function nonorthogonal_face_correction(eqn, grad, flux, config)
-    mesh = grad.mesh
-    (; faces, cells, boundary_cellsID) = mesh
-
+function update_mrf_sources!(omegaU, U, reference_frames, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
+    mesh = U.mesh
+    cells = mesh.cells 
 
-    (; b) = eqn.equation
-    
-    n_faces = length(faces)
-    n_bfaces = length(boundary_cellsID)
-    n_ifaces = n_faces - n_bfaces
-
-    ndrange = n_ifaces
-    kernel! = _nonorthogonal_face_correction(_setup(backend, workgroup, ndrange)...)
-    kernel!(b, grad, flux, faces, cells, n_bfaces)
+    ndrange = length(cells)
+    kernel! = _update_mrf_sources!(_setup(backend, workgroup, ndrange)...)
+    kernel!(omegaU, U, reference_frames)
 end
 
-@kernel function _nonorthogonal_face_correction(b, grad, flux, faces, cells, n_bfaces)
-    i = @index(Global)
-    fID = i + n_bfaces
-    face = faces[fID]
-    (; ownerCells, area, normal, e, delta) = face
-    cID1 = ownerCells[1]
-    cID2 = ownerCells[2]
-    cell1 = cells[cID1]
-    cell2 = cells[cID2]
+@kernel function _update_mrf_sources!(omegaU, U, reference_frames)
+    cID = @index(Global)
 
-    xf = face.centre
-    xC = cell1.centre
-    xN = cell2.centre
-    
-    # Calculate weights using normal functions
-    # weight = norm(xf - xC)/norm(xN - xC)
-    # weight = norm(xf - xN)/norm(xN - xC)
+    (; frames, global_mask) = reference_frames
+    (; omega, rotaxis) = frames
 
-    dPN = cell2.centre - cell1.centre
-
-    (; values) = grad.field
-    weight, df = correction_weight(cells, faces, fID)
-    # weight = face.weight
-    gradi = weight*grad[cID1] + (1.0 - weight)*grad[cID2]
-    gradf = gradi + ((values[cID2] - values[cID1])/delta - (gradi⋅e))*e
-    # gradf = gradi
-
-    Sf = area*normal
-    # Ef = ((Sf⋅Sf)/(Sf⋅e))*e # original
-    Ef = dPN*(norm(normal)^2/(dPN⋅normal))*area
-    T_hat = Sf - Ef # original
-    faceCorrection = flux[fID]*gradf⋅T_hat
-
-    Atomix.@atomic b[cID1] += faceCorrection
-    Atomix.@atomic b[cID2] -= faceCorrection 
-      
-end
-
-function correction_weight(cells, faces, fi)
-    (; ownerCells, centre) = faces[fi]
-    cID1 = ownerCells[1]
-    cID2 = ownerCells[2]
-    c1 = cells[cID1].centre
-    c2 = cells[cID2].centre
-    c1_f = centre - c1
-    c1_c2 = c2 - c1
-    q = (c1_f⋅c1_c2)/(c1_c2⋅c1_c2)
-    f_prime = c1 - q*(c1 - c2)
-    w = norm(c2 - f_prime)/norm(c2 - c1)
-    df = centre - f_prime
-    return w, df
-end
-
-### TEMP LOCATION FOR PROTOTYPING
-
-function correct_mass_flux!(mdotf, p_eqn, config)
-    # sngrad = FaceScalarField(mesh)
-    (; faces, cells, boundary_cellsID) = mdotf.mesh
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-
-    p = p_eqn.model.terms[1].phi
-    A = _A(p_eqn)
-    nzval = _nzval(A)
-    colval = _colval(A)
-    rowptr = _rowptr(A)
-
-    n_faces = length(faces)
-    n_bfaces = length(boundary_cellsID)
-    n_ifaces = n_faces - n_bfaces
-
-    ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
-    kernel! = _correct_mass_flux!(_setup(backend, workgroup, ndrange)...)
-    kernel!(mdotf, p, nzval, colval, rowptr, faces, cells, n_bfaces)
-    KernelAbstractions.synchronize(backend)
-
-    BCs = config.boundaries[1] # assume periodics always defined by user (extract first)
-    for BC ∈ BCs
-        correct_mass_periodic(
-            BC, mdotf, p, nzval, colval, rowptr, cells, faces, backend, workgroup)
-        KernelAbstractions.synchronize(backend)
+    if global_mask[cID] != 0
+        frameID = Int(global_mask[cID])
+        Omega = omega[frameID]*rotaxis[frameID]
+        omegaU[cID] = Omega × U[cID]
     end
 end
 
-@kernel function _correct_mass_flux!(
-    mdotf, p, nzval, colval, rowptr, faces, cells, n_bfaces)
-    i = @index(Global)
-    fID = i + n_bfaces
-
-    @inbounds begin 
-        face = faces[fID]
-        (; area, normal, ownerCells, delta) = face 
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        p1 = p[cID1]
-        p2 = p[cID2]
-        # need to get aN from sparse system
-        zID = spindex(rowptr, colval, cID1, cID2)
-        aN = nzval[zID]
-        mdotf[fID] += aN*(p2 - p1) # positive because pressure eqn has negative sign
-    end
-end
-
-### Correct mass flux at periodic boundaries
-
-correct_mass_periodic(arg...) = nothing
-
-function correct_mass_periodic(
-    BC::PeriodicParent, mdotf, p, nzval, colval, rowptr, cells, faces, backend, workgroup)
-    (; IDs_range, value) = BC
-    (; face_map) = value
-    ndrange = length(IDs_range)
-    kernel! = _correct_mass_periodic(_setup(backend, workgroup, ndrange)...)
-    kernel!(mdotf, p, nzval, colval, rowptr, cells, faces, IDs_range, face_map)
-end
-
-@kernel function _correct_mass_periodic(
-    mdotf, p, nzval, colval, rowptr, cells, faces, IDs_range, face_map)
-    i = @index(Global)
-    fID = IDs_range[i]
-    pfID = face_map[i]
-
-    face = faces[fID]
-    pface = faces[pfID]
-    cID1 = face.ownerCells[1]
-    cID2 = pface.ownerCells[1]
-
-    p1 = p[cID1]
-    p2 = p[cID2]
-    # need to get aN from sparse system
-    zID = spindex(rowptr, colval, cID1, cID2)
-    aN = nzval[zID]
-    correction = aN*(p2 - p1)
-    mdotf[fID] += correction
-    mdotf[pfID] = -mdotf[fID] 
-    
-end
-
-### Correct interpolation at periodic boundaries
-
-function correct_interpolation_periodic(phif, phi, BCs, config)
+function flux_mrf!(phif::FS, psif::FV, config, reference_frames) where {FS<:FaceScalarField,FV<:FaceVectorField}
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    for BC ∈ BCs
-        _correct_interpolation_periodic_dispatch(BC, phif, phi, backend, workgroup)
-        KernelAbstractions.synchronize(backend)
+    ndrange = length(phif)
+    kernel! = _flux_mrf!(_setup(backend, workgroup, ndrange)...)
+    kernel!(phif, psif, reference_frames)
+    # # KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _flux_mrf!(phif, psif, reference_frames)
+    i = @index(Global)
+
+    @uniform begin
+        (; mesh, values) = phif
+        (; faces) = mesh
+        (; frames, global_mask) = reference_frames
+        (; omega, rotaxis, x0) = frames
     end
 
-end
-
-_correct_interpolation_periodic_dispatch(arg...) = nothing
-
-function _correct_interpolation_periodic_dispatch(
-    BC::PeriodicParent, phif, phi, backend, workgroup)
-    mesh = phif.mesh
-    (; cells, faces) = mesh
-    (; IDs_range, value) = BC
-    (; face_map, transform) = value
-    ndrange = length(IDs_range)
-    kernel! = _correct_interpolation_periodic(_setup(backend, workgroup, ndrange)...)
-    kernel!(phif, phi, cells, faces, IDs_range, face_map, transform)
-end
-
-@kernel function _correct_interpolation_periodic(phif, phi, cells, faces, IDs_range, face_map, transform)
-    i = @index(Global)
-    fID = IDs_range[i]
-    pfID = face_map[i]
-
-    face = faces[fID]
-    pface = faces[pfID]
-    cID = face.ownerCells[1]
-    pcID = pface.ownerCells[1]
-
-    phi1 = phi[cID]
-    phi2 = phi[pcID]
-
-    w = pface.delta/(face.delta + pface.delta)
-    one_w = one(w) - w
-
-    phifi =  w*phi1 + one_w*phi2
-    phif[fID] = phifi
-    phif[pfID] = phifi
+    @inbounds begin
+        (; area, normal, ownerCells) = faces[i]
+        Sf = area * normal
+        if global_mask[ownerCells[1]] != 0
+            frameID = Int(global_mask[ownerCells[1]])
+            Omega = omega[frameID]*rotaxis[frameID]
+            r = faces[i].centre - x0[frameID]
+            values[i] = (psif[i] ⋅ Sf) - ((Omega × r ⋅ Sf))
+        elseif global_mask[ownerCells[2]] != 0
+            frameID = Int(global_mask[ownerCells[2]])
+            Omega = omega[frameID]*rotaxis[frameID]
+            r = faces[i].centre - x0[frameID]
+            values[i] = (psif[i] ⋅ Sf) - ((Omega × r ⋅ Sf))
+        else
+            values[i] = (psif[i] ⋅ Sf)
+        end
+    end
 end

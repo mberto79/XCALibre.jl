@@ -46,6 +46,17 @@ The Q-criterion can be obtained using the constructor `Qcriterion`, which has to
 ```@docs; canonical=false
 Qcriterion
 ```
+## Example: Put a probe at a location in the compuational domain and output to file
+To create a probe, before creating the `Configuration` object, create an instance of `Probe`.
+```@docs; canonical=false
+Probe
+```
+For example to probe velocity at location `[1.0, 2.0, 3.0]`:
+```julia
+postprocess = Probe(model.momentum.U, mesh; location=[1.0, 2.0, 3.0], name="velocity probe at [1,2,3]")
+config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs, postprocess=postprocess)
+```
+
 ### Example: Post-process multiple fields 
 To post-process multiple fields as a time, a vector of objects can be passed instead e.g. 
 ```julia

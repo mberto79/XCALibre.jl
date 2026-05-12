@@ -2,7 +2,6 @@ Manifest.toml
 test/Manifest.toml
 docs/build/*
 docs/Manifest
-.vscode/*
 data/mesh.jld2
 data/fields.jld2
 results.vtk
@@ -25,6 +24,6 @@ F1-fetchCFD_Minimal*
 *.log
 *.bin
 .codex
-.agents/*
-.claude/* 
-.vscode/*
+.agents
+.claude
+.vscode

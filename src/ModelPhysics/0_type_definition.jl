@@ -144,6 +144,28 @@ struct EFM{V,S,Vf,Sf,SS,C} <: AbstractMomentumModel
 end
 Adapt.@adapt_structure EFM
 
+function _efm_wetting_mode(::Val{mode}) where mode
+    _efm_wetting_mode(mode)
+end
+
+function _efm_wetting_mode(mode::Symbol)
+    _efm_wetting_mode(String(mode))
+end
+
+function _efm_wetting_mode(mode::AbstractString)
+    normalized = lowercase(strip(mode))
+
+    if normalized == "hard"
+        return Val(:hard)
+    elseif normalized == "smooth" || normalized == "smoothed"
+        return Val(:smooth)
+    elseif normalized == "allwet"
+        return Val(:allwet)
+    end
+
+    throw(ArgumentError("wetting_mode must be \"hard\", \"smooth\", \"smoothed\", or \"allwet\"; got $(repr(mode))"))
+end
+
 # Optional manual capillary time-step cap; the film solver also computes a mesh-based capillary limit.
 function Momentum{EFM}(;
     σ=0.069,
@@ -154,7 +176,8 @@ function Momentum{EFM}(;
     ϕ=0,
     inclination=ϕ,
     gravity=(0.0, 0.0, -9.81),
-    capillary_dt=Inf
+    capillary_dt=Inf,
+    wetting_mode="hard"
 )
     coeffs = (
         σ=σ,
@@ -164,7 +187,8 @@ function Momentum{EFM}(;
         θm=θm,
         ϕ=inclination,
         gravity=SVector{3}(gravity),
-        capillary_dt=capillary_dt
+        capillary_dt=capillary_dt,
+        wetting_mode=_efm_wetting_mode(wetting_mode)
     )
     ARG = typeof(coeffs)
     Momentum{EFM, ARG}(coeffs)

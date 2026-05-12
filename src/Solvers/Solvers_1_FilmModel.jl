@@ -104,8 +104,6 @@ function FilmModel(
     
     TF = _get_float(mesh)
     n_cells = length(mesh.cells)
-    debug_interval = parse(Int, get(ENV, "XCALIBRE_EFM_DEBUG_INTERVAL", "0"))
-    debug_enabled = debug_interval > 0 || get(ENV, "XCALIBRE_EFM_DEBUG", "0") != "0"
     capillaryDtFaces = KernelAbstractions.zeros(backend, TF, length(mesh.faces))
 
     dt_cpu = zeros(TF, 1)
@@ -174,7 +172,11 @@ function FilmModel(
     )
 
     # Pre-allocate auxiliary variables
-    wetting_mode = efm_wetting_mode()
+    wetting_mode = if hasproperty(coeffs, :wetting_mode)
+        efm_wetting_mode(coeffs.wetting_mode)
+    else
+        efm_wetting_mode()
+    end
     h_old = KernelAbstractions.zeros(backend, TF, n_cells)
     prev = KernelAbstractions.zeros(backend, TF, n_cells)
 
@@ -231,7 +233,6 @@ function FilmModel(
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
     #rh = 0
     rx = ry = rz = zero(TF)
-    last_flux_correction_max = zero(TF)
     @time for iteration ∈ 1:iterations
         min_capillary_dt = update_capillary_dt!(
             config.runtime, capillaryDtFaces, mesh, hf, wf, rho.values[1], coeffs, config
@@ -310,9 +311,6 @@ function FilmModel(
                 filmSurfaceFlux, rDf, hf, wf, w, filmVelocityFlux, boundaries.h,
                 P_surf, P_surff, rho.values[1], config
             )
-            if debug_enabled && (debug_interval <= 0 || iteration == 1 || iteration % debug_interval == 0)
-                last_flux_correction_max = max_film_flux_correction(Df, h, config)
-            end
             correct_film_flux2!(phif, filmSurfaceFlux, Df, h_eqn, w, wf, boundaries.h, time, config)
         end
 
@@ -383,15 +381,6 @@ function FilmModel(
         )
 
         #runtime_postprocessing!(postprocess, iteration, iterations)
-
-        if debug_enabled && (debug_interval <= 0 || iteration == 1 || iteration % debug_interval == 0)
-            ∇P_surf = Grad{Gauss}(P_surff)
-            grad!(∇P_surf, P_surff, config)
-            print_film_diagnostics!(
-                iteration, time, step_dt, h, U, phif, hf, coeffs.h_crit, w, wf,
-                P_surff, ∇P_surf.result, last_flux_correction_max, boundaries.h, config
-            )
-        end
 
         if iteration % write_interval + signbit(write_interval) == 0
 
@@ -664,11 +653,12 @@ function update_wetting_fields!(w, wf, h, wBCs, h_crit, wetting_mode, time, conf
     (; hardware) = config
     (; backend, workgroup) = hardware
 
+    wetting_mode = efm_wetting_mode(wetting_mode)
     ndrange = length(w)
-    if wetting_mode === :allwet
+    if wetting_mode === Val(:allwet)
         kernel! = _set_wetting_field!(_setup(backend, workgroup, ndrange)...)
         kernel!(w, one(h_crit))
-    elseif wetting_mode === :smooth
+    elseif wetting_mode === Val(:smooth)
         kernel! = _update_smooth_wetting_field!(_setup(backend, workgroup, ndrange)...)
         kernel!(w, h, h_crit)
     else
@@ -681,24 +671,26 @@ function update_wetting_fields!(w, wf, h, wBCs, h_crit, wetting_mode, time, conf
     clamp_face_wetting!(wf, config)
 end
 
-const _efm_unknown_wetting_mode = Ref("")
+function efm_wetting_mode(::Val{mode}) where mode
+    efm_wetting_mode(mode)
+end
 
-function efm_wetting_mode()
-    mode = lowercase(strip(get(ENV, "XCALIBRE_EFM_WETTING", "hard")))
+function efm_wetting_mode(mode::Symbol)
+    efm_wetting_mode(String(mode))
+end
 
-    if mode == "hard"
-        return :hard
-    elseif mode == "smooth" || mode == "smoothed"
-        return :smooth
-    elseif mode == "allwet"
-        return :allwet
+function efm_wetting_mode(mode::AbstractString="smooth")
+    normalized = lowercase(strip(mode))
+
+    if normalized == "hard"
+        return Val(:hard)
+    elseif normalized == "smooth" || normalized == "smoothed"
+        return Val(:smooth)
+    elseif normalized == "allwet"
+        return Val(:allwet)
     end
 
-    if _efm_unknown_wetting_mode[] != mode
-        @warn "Unknown XCALIBRE_EFM_WETTING mode; falling back to hard" mode
-        _efm_unknown_wetting_mode[] = mode
-    end
-    return :hard
+    throw(ArgumentError("wetting_mode must be \"hard\", \"smooth\", \"smoothed\", or \"allwet\"; got $(repr(mode))"))
 end
 
 @kernel function _set_wetting_field!(w, value)
@@ -1418,23 +1410,6 @@ end
     end
 end
 
-function max_film_flux_correction(Df, h, config)
-    (; mesh) = Df
-    (; faces, boundary_cellsID) = mesh
-    Df_values = _cpu_values(Df.values)
-    h_values = _cpu_values(h.values)
-    n_bfaces = length(boundary_cellsID)
-    max_correction = zero(eltype(Df_values))
-    for fID in (n_bfaces + 1):length(faces)
-        (; ownerCells, delta, area) = faces[fID]
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        snGrad = (h_values[cID2] - h_values[cID1]) / delta
-        max_correction = max(max_correction, abs(Df_values[fID] * area * snGrad))
-    end
-    return max_correction
-end
-
 function max_film_courant_number!(cellsFilmCourant, phif, hf, h_crit, config)
     (; mesh) = phif
     (; hardware, runtime) = config
@@ -1463,93 +1438,4 @@ end
         end
         cellsFilmCourant[cID] = runtime.dt[1] * flux_sum / cells[cID].volume
     end
-end
-
-function _cpu_values(values)
-    cpu = zeros(eltype(values), length(values))
-    copyto!(cpu, values)
-    return cpu
-end
-
-function _max_vector_magnitude_cpu(U)
-    ux = _cpu_values(U.x.values)
-    uy = _cpu_values(U.y.values)
-    uz = _cpu_values(U.z.values)
-    max_u = zero(eltype(ux))
-    sum_u = zero(eltype(ux))
-    for i in eachindex(ux)
-        mag = sqrt(ux[i]^2 + uy[i]^2 + uz[i]^2)
-        max_u = max(max_u, mag)
-        sum_u += mag
-    end
-    return max_u, sum_u / length(ux)
-end
-
-function _max_film_courant_cpu(phif, hf, h_crit, dt)
-    (; mesh) = phif
-    (; cells, cell_faces) = mesh
-    phif_values = _cpu_values(phif.values)
-    hf_values = _cpu_values(hf.values)
-    max_film_co = zero(eltype(phif_values))
-    for cID in eachindex(cells)
-        flux_sum = zero(eltype(phif_values))
-        for i in cells[cID].faces_range
-            fID = cell_faces[i]
-            h_scale = max(abs(hf_values[fID]), h_crit)
-            flux_sum += abs(phif_values[fID]) / h_scale
-        end
-        max_film_co = max(max_film_co, dt * flux_sum / cells[cID].volume)
-    end
-    return max_film_co
-end
-
-function print_film_diagnostics!(
-    iteration, time, dt, h, U, phif, hf, h_crit, w, wf, P_surff, ∇P_surf,
-    flux_correction_abs_max, hBCs, config
-)
-    h_values = _cpu_values(h.values)
-    w_values = _cpu_values(w.values)
-    wf_values = _cpu_values(wf.values)
-    ps_values = _cpu_values(P_surff.values)
-    max_u, mean_u = _max_vector_magnitude_cpu(U)
-    max_film_co = _max_film_courant_cpu(phif, hf, h_crit, dt)
-    max_grad_ps, mean_grad_ps = _max_vector_magnitude_cpu(∇P_surf)
-    film_mass = _film_mass_cpu(h, h_values)
-    boundary_inflow, boundary_outflow, non_dirichlet_inflow = _boundary_flux_budget_cpu(phif, hBCs)
-
-    wet_cells = count(>(0), w_values)
-    partial_faces = count(x -> x > 0 && x < 1, wf_values)
-    @info "EFM diagnostics" iteration time dt h_min=minimum(h_values) h_max=maximum(h_values) h_mean=sum(h_values)/length(h_values) film_mass boundary_inflow boundary_outflow non_dirichlet_inflow U_max=max_u U_mean=mean_u film_Co_max=max_film_co wet_cells wet_fraction=wet_cells/length(w_values) wf_min=minimum(wf_values) wf_max=maximum(wf_values) wf_partial_fraction=partial_faces/length(wf_values) Psurf_abs_max=maximum(abs, ps_values) gradPsurf_abs_max=max_grad_ps gradPsurf_abs_mean=mean_grad_ps flux_correction_abs_max
-end
-
-function _film_mass_cpu(h, h_values)
-    mass = zero(eltype(h_values))
-    for cID in eachindex(h.mesh.cells)
-        mass += h_values[cID] * h.mesh.cells[cID].volume
-    end
-    return mass
-end
-
-function _boundary_flux_budget_cpu(phif, hBCs)
-    phif_values = _cpu_values(phif.values)
-    inflow = zero(eltype(phif_values))
-    outflow = zero(eltype(phif_values))
-    non_dirichlet_inflow = zero(eltype(phif_values))
-
-    for hBC in hBCs
-        is_dirichlet = hBC isa AbstractDirichlet
-        for fID in hBC.IDs_range
-            flux = phif_values[fID]
-            if flux < zero(flux)
-                inflow -= flux
-                if !is_dirichlet
-                    non_dirichlet_inflow -= flux
-                end
-            else
-                outflow += flux
-            end
-        end
-    end
-
-    return inflow, outflow, non_dirichlet_inflow
 end

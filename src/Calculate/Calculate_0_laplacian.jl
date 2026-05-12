@@ -1,59 +1,64 @@
-export laplacian!
+export laplacian!, surface_gradient!
 
-# Warning Laplacian Solver Only Works For Orthogonal Grids
-function laplacian!(phi_out, phif_in ,phi_in, BCs, time, config; disp_warn=true)
-    if disp_warn
-        @warn "laplacian function currently does not support non-orthogonal or non grid meshes - This Should Be Fixed"
+function surface_gradient!(gradf, phif, phi, BCs, time, config)
+    interpolate!(phif, phi, config)
+    correct_boundaries!(phif, phi, BCs, time, config)
+
+    mesh = phi.mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    ndrange = length(mesh.faces)
+    n_bfaces = length(mesh.boundary_cellsID)
+    kernel! = _surface_gradient!(_setup(backend, workgroup, ndrange)...)
+    kernel!(gradf, phif, phi, mesh.faces, mesh.boundary_cellsID, n_bfaces)
+end
+
+@kernel function _surface_gradient!(gradf, phif, phi, faces, boundary_cellsID, n_bfaces)
+    fID = @index(Global)
+
+    @uniform begin
+        gx, gy, gz = gradf.x, gradf.y, gradf.z
     end
+
+    @inbounds begin
+        face = faces[fID]
+        (; ownerCells, normal, delta) = face
+        snGrad = if fID <= n_bfaces
+            (phif[fID] - phi[boundary_cellsID[fID]]) / delta
+        else
+            (phi[ownerCells[2]] - phi[ownerCells[1]]) / delta
+        end
+
+        gx[fID] = snGrad * normal[1]
+        gy[fID] = snGrad * normal[2]
+        gz[fID] = snGrad * normal[3]
+    end
+end
+
+function laplacian!(phi_out, phif_in ,phi_in, BCs, time, config; disp_warn=true)
     interpolate!(phif_in, phi_in, config)
     correct_boundaries!(phif_in, phi_in, BCs, time, config)
     mesh = phi_out.mesh
 
-    
-    vec_field = VectorField(mesh)
-    initialise!(vec_field, [0,0,0])
-    for (i,boundary) ∈ enumerate(mesh.boundaries)
-        (; IDs_range) = boundary
-        bcellID = mesh.boundary_cellsID[IDs_range]
-        for i ∈ eachindex(IDs_range)
-            fcentre = mesh.faces[IDs_range[i]].centre
-            ccentre = mesh.cells[bcellID[i]].centre
-            Δpos = 2 .*(fcentre.-ccentre)
-            if abs(Δpos[1]) > 1e-10
-                vec_field.x.values[bcellID[i]] += 2*abs(mesh.faces[IDs_range[i]].normal[1])*(phif_in[IDs_range[i]]-phi_in[bcellID[i]])/abs2(Δpos[1])
-            end
-            if abs(Δpos[2]) > 1e-10
-                vec_field.y.values[bcellID[i]] += 2*abs(mesh.faces[IDs_range[i]].normal[2])*(phif_in[IDs_range[i]]-phi_in[bcellID[i]])/abs2(Δpos[2])
-            end
-            if abs(Δpos[3]) > 1e-10
-                vec_field.z.values[bcellID[i]] += 2*abs(mesh.faces[IDs_range[i]].normal[3])*(phif_in[IDs_range[i]]-phi_in[bcellID[i]])/abs2(Δpos[3])
-            end
-            #println("$(fcentre), $(ccentre), $(Δpos), $(phif_in[IDs_range[i]]), $(phi_in[bcellID[i]]), $(vec_field.x.values[bcellID[i]])")
-        end
+    fill!(phi_out.values, zero(eltype(phi_out.values)))
+
+    n_bfaces = length(mesh.boundary_cellsID)
+
+    for fID ∈ 1:n_bfaces
+        face = mesh.faces[fID]
+        cID = mesh.boundary_cellsID[fID]
+        flux = face.area * (phif_in[fID] - phi_in[cID]) / face.delta
+        phi_out[cID] += flux / mesh.cells[cID].volume
     end
-    for i ∈ eachindex(mesh.cells)
-        (; faces_range, centre) = mesh.cells[i]
-        main_centre = centre
 
-        for fID ∈ mesh.cell_faces[faces_range]
-            (; normal, ownerCells, delta) = mesh.faces[fID]
-            for cellID ∈ ownerCells
-                (; centre) = mesh.cells[cellID]
-                Δpos = centre.-main_centre
-
-                if abs(Δpos[1]) > 1e-10
-                    vec_field.x[i] += abs(mesh.faces[fID].normal[1])*(phi_in[cellID]-phi_in[i])/abs2(Δpos[1])
-                end
-                if abs(Δpos[2]) > 1e-10
-                    vec_field.y[i] += abs(mesh.faces[fID].normal[2])*(phi_in[cellID]-phi_in[i])/abs2(Δpos[2])
-                end
-                if abs(Δpos[3]) > 1e-10
-                    vec_field.z[i] += abs(mesh.faces[fID].normal[3])*(phi_in[cellID]-phi_in[i])/abs2(Δpos[3])
-                end
-            end
-        end
-
+    for fID ∈ (n_bfaces + 1):length(mesh.faces)
+        face = mesh.faces[fID]
+        cID1 = face.ownerCells[1]
+        cID2 = face.ownerCells[2]
+        flux = face.area * (phi_in[cID2] - phi_in[cID1]) / face.delta
+        phi_out[cID1] += flux / mesh.cells[cID1].volume
+        phi_out[cID2] -= flux / mesh.cells[cID2].volume
     end
-    @. phi_out.values = vec_field.x.values + vec_field.y.values + vec_field.z.values
 
 end

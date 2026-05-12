@@ -134,20 +134,6 @@ begin
     return residuals
 end
 
-#run!(
-#    model::Physics{T,F,M,Tu,E,D,BI}, config; 
-#    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
-#    ) where{T<:Transient,F<:Incompressible,M<:EFM,Tu,E,D,BI} = 
-#begin
-#    residuals=nothing
-#
-#    residuals=filmModel!(
-#        model,config,
-#        output=output
-#    )
-#    return residuals
-#end
-
 # Incompressible solver (steady) with multiple reference frames (MRF)
 """
     run!(

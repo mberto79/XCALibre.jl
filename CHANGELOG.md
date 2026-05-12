@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 *  Added optional adaptive time stepping based on Courant number control (`AdaptiveTimeStepping`) [#98](@ref)
 * Added runtime calculation of Q-criterion [#107]
 *  Added explicit Godunov-type compressible solver (`godunov!`) for supersonic flows using Rusanov (local Lax-Friedrichs) and HLLC flux schemes with first and second order spatial reconstruction (MinMod, VanLeer, Superbee limiters) and adaptive CFL-based time stepping [#112](@ref)
+*  Added experimental incompressible steady MFR solver [#114](@ref)
+*  Added runtime probe extraction [#115](@ref)
+*  Added initialisation logic for new Multiphase solver user-level API [#117](@ref)
 
 
 ### Fixed

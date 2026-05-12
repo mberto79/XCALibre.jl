@@ -25,14 +25,17 @@ using XCALibre.Calculate
 using XCALibre.ModelPhysics
 using XCALibre.IOFormats
 using XCALibre.Postprocess
+using XCALibre.ReferenceFrames
 
 include("Solvers_0_functions.jl")
+include("Solvers_1_SIMPLE-MRF.jl")
 include("Solvers_1_SIMPLE.jl")
 include("Solvers_1_LAPLACE.jl")
 include("Solvers_1_CSIMPLE.jl")
 include("Solvers_2_PISO.jl")
 include("Solvers_2_CPISO.jl")
 include("Solvers_4_Godunov.jl")
+include("Solvers_5_Multiphase.jl")
 include("Solvers_3_solver_dispatch.jl")
 include("Solvers_1_FilmModel.jl")
 

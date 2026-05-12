@@ -25,3 +25,6 @@ F1-fetchCFD_Minimal*
 *.log
 *.bin
 .codex
+.agents/*
+.claude/* 
+.vscode/*

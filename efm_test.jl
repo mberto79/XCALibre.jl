@@ -21,7 +21,7 @@ mesh_dev = adapt(backend, mesh)
 begin # Model Info
 inlet_width = 0.510; # m
 
-EFM_CASE = 5
+EFM_CASE = 1
 
 # Meredith et al. CD1 cases as reported in ASME GTP 143(4), Table 2.
 # The table heading is "Q x 10^5 (m^3/s)", so the physical flow rate is

@@ -181,9 +181,7 @@ function FilmModel(
     prev = KernelAbstractions.zeros(backend, TF, n_cells)
 
     # Pre-allocate vectors to hold residuals
-    R_ux = zeros(TF, iterations)
-    R_uy = zeros(TF, iterations)
-    R_uz = zeros(TF, iterations)
+    R_u = zeros(TF, iterations)
     R_h = zeros(TF, iterations)
     courant = zeros(TF, iterations)
     cellsCourant = KernelAbstractions.zeros(backend, TF, n_cells)
@@ -341,40 +339,24 @@ function FilmModel(
             coeffs, rho.values[1], config
         )
 
-        R_ux[iteration] = rx
-        R_uy[iteration] = ry
-        R_uz[iteration] = rz
+        R_u[iteration] = max(rx, ry, rz)
         R_h[iteration] = rh
 
         maxCourant = max_courant_number!(cellsCourant, model, config)
         maxFilmCourant = max_film_courant_number!(cellsFilmCourant, phif, hf, coeffs.h_crit, config)
         limitingCourant = max(maxCourant, maxFilmCourant)
-        maxCourantDt = courant_dt_limit(maxCourant, step_dt, config.runtime)
-        maxFilmCourantDt = courant_dt_limit(maxFilmCourant, step_dt, config.runtime)
         courant[iteration] = limitingCourant
         update_dt!(config.runtime, limitingCourant)
-        min_capillary_dt = update_capillary_dt!(
+        update_capillary_dt!(
             config.runtime, capillaryDtFaces, mesh, hf, wf, rho.values[1], coeffs, config
         )
-        maxStableDt = min(maxCourantDt, maxFilmCourantDt, min_capillary_dt)
-        copyto!(dt_cpu, config.runtime.dt)
-        next_dt = dt_cpu[1]
 
         ProgressMeter.next!(
             progress, showvalues = [
-                (:dt, step_dt),
-                (Symbol("next dt"), next_dt),
-                (Symbol("max dt (Courant)"), maxCourantDt),
-                (Symbol("max dt (Film Courant)"), maxFilmCourantDt),
-                (Symbol("max dt (capillary)"), min_capillary_dt),
-                (Symbol("max dt (stable)"), maxStableDt),
                 (:time, time),
-                (:Courant, maxCourant),
-                (Symbol("Film Courant"), maxFilmCourant),
-                (Symbol("Limiting Courant"), limitingCourant),
-                (:Ux, R_ux[iteration]),
-                (:Uy, R_uy[iteration]),
-                (:Uz, R_uz[iteration]),
+                (:dt, step_dt),
+                (:Co, limitingCourant),
+                (:U, R_u[iteration]),
                 (:h, R_h[iteration]),
                 #turbulenceModel.state.residuals...
             ]
@@ -390,7 +372,7 @@ function FilmModel(
 
     end # end for loop
 
-    return (Ux=R_ux, Uy=R_uy, Uz=R_uz, h=R_h, courant=courant)
+    return (U=R_u, h=R_h, courant=courant)
 end
 
 function coeff_vector(coeffs, name::Symbol, default::SVector{3,TF}, ::Type{TF}) where TF
@@ -1130,14 +1112,6 @@ function update_capillary_dt!(runtime, capillaryDtFaces, mesh, hf, wf, rho, coef
     return min_capillary_dt
 end
 
-function courant_dt_limit(courant, dt, runtime)
-    target = courant_target(runtime)
-    return courant > 0 ? dt * target / courant : oftype(dt, Inf)
-end
-
-courant_target(runtime::Runtime{<:Any,<:Any,<:Any,Nothing}) = one(eltype(runtime.dt))
-courant_target(runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}) = runtime.adaptive.maxCo
-
 function capillary_time_step!(capillaryDtFaces, mesh, hf, wf, rho, σ, h_crit, config)
     if σ <= 0
         return oftype(rho, Inf)
@@ -1157,10 +1131,10 @@ end
     i = @index(Global)
 
     @inbounds begin
-        # Shallow-water capillary wave CFL: Δt < Δx/c, c = sqrt(σ k h / ρ) for k = 2π/Δx
+        # Shallow-film capillary CFL from ω² = (σ h / ρ) k⁴, with k = 2π / Δx.
         if i > n_bfaces && wf[i] > zero(wf[i]) && hf[i] > h_crit
             dx = mesh.faces[i].delta
-            capillaryDtFaces[i] = sqrt(rho * dx^3 / (2 * pi * σ * max(hf[i], h_crit)))
+            capillaryDtFaces[i] = sqrt(rho * dx^4 / (4 * pi^2 * σ * max(hf[i], h_crit)))
         else
             capillaryDtFaces[i] = oftype(hf[i], Inf)
         end

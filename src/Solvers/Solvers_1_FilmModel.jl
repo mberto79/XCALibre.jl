@@ -26,7 +26,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     mesh = model.domain
     
 
-    @info "Pre-allocating fields..."
+    @info "Pre-allocating fields"
     phif_U = FaceScalarField(mesh)
     filmVelocityFlux = FaceScalarField(mesh)
     nu_h = ScalarField(mesh)
@@ -39,7 +39,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     Df = FaceScalarField(mesh)
     
 
-    @info "Defining models.."
+    @info "Defining models"
     h_divergence = schemes.h.divergence === Linear ? LUST : schemes.h.divergence
     if schemes.h.divergence === Linear
         @info "Using LUST for film h convection; pure Linear h convection is not checkerboard-safe for this solver"
@@ -80,7 +80,7 @@ function setup_FilmModel_Solver(solver_variant, model, config;
     @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()))
     @reset h_eqn.solver = _workspace(solvers.h.solver, _b(h_eqn))
 
-    @info "No turbulence model for now"
+    @info "Initialising turbulence model"
     #p_eqn = (Time{schemes.h.time}(rho_l,h)==Source(Sm)) → ScalarEquation(h, boundaries.h)
     #turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 

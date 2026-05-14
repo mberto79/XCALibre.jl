@@ -1,8 +1,9 @@
 export Physics
-export AbstractMomentumModel
+export AbstractMomentumModel, AbstractMomentumContainer
 export Momentum
 export AbstractTimeModel
 export Transient, Steady
+export EFM, original
 
 """
     struct Physics{T,F,SO,M,Tu,E,D,BI}
@@ -89,23 +90,96 @@ Momentum model containing key momentum fields.
 ### Examples
 - `Momentum(mesh::AbstractMesh)
 """
-struct Momentum{V,S,Vf,Sf,SS} <: AbstractMomentumModel
+abstract type AbstractMomentumContainer end
+struct Momentum{T, ARG} <: AbstractMomentumContainer
+    args::ARG
+end
+
+
+@kwdef struct regular{V,S,Vf,Sf,SS} <: AbstractMomentumModel
     U::V 
     p::S 
     Uf::Vf 
     pf::Sf 
     sources::SS
-end 
-Adapt.@adapt_structure Momentum 
+end
 
-
-Momentum(mesh::AbstractMesh) = begin
+original(mesh::AbstractMesh) = begin
     U = VectorField(mesh)
     p = ScalarField(mesh)
     Uf = FaceVectorField(mesh)
     pf = FaceScalarField(mesh)
-    Momentum(U, p, Uf, pf, nothing)
+    regular(U, p, Uf, pf, nothing)
 end
+Adapt.@adapt_structure regular 
+
+
+
+struct EFM{V,S,Vf,Sf,SS,C} <: AbstractMomentumModel
+    U::V
+    h::S
+    Uf::Vf
+    hf::Sf
+    sources::SS
+    coeffs::C
+end
+Adapt.@adapt_structure EFM
+
+function _efm_wetting_mode(::Val{mode}) where mode
+    _efm_wetting_mode(mode)
+end
+
+function _efm_wetting_mode(mode::Symbol)
+    _efm_wetting_mode(String(mode))
+end
+
+function _efm_wetting_mode(mode::AbstractString)
+    normalized = lowercase(strip(mode))
+
+    if normalized == "hard"
+        return Val(:hard)
+    elseif normalized == "smooth" || normalized == "smoothed"
+        return Val(:smooth)
+    elseif normalized == "allwet"
+        return Val(:allwet)
+    end
+
+    throw(ArgumentError("wetting_mode must be \"hard\", \"smooth\", \"smoothed\", or \"allwet\"; got $(repr(mode))"))
+end
+
+function Momentum{EFM}(;
+    σ,
+    h_crit=1e-10,
+    h_floor=1e-15,
+    β,
+    θm,
+    gravity,
+    capillary_dt=Inf,
+    wetting_mode="hard"
+)
+    coeffs = (
+        σ=σ,
+        h_crit=h_crit,
+        h_floor=h_floor,
+        β=β,
+        θm=θm,
+        gravity=SVector{3}(gravity),
+        capillary_dt=capillary_dt,
+        wetting_mode=_efm_wetting_mode(wetting_mode)
+    )
+    ARG = typeof(coeffs)
+    Momentum{EFM, ARG}(coeffs)
+end
+
+(momentum::Momentum{EFM, ARG})(mesh::AbstractMesh) where ARG = begin
+    U = VectorField(mesh)
+    h = ScalarField(mesh)
+    Uf = FaceVectorField(mesh)
+    hf = FaceScalarField(mesh)
+    coeffs = momentum.args
+    EFM(U, h, Uf, hf, nothing, coeffs)
+end
+
 
 """
     Physics(; time, fluid, solid, turbulence, energy, domain)::Physics{T,F,SO,M,Tu,E,D,BI}
@@ -119,9 +193,11 @@ end
 - `domain` - provides the mesh to used (must be adapted to the target backend device)
 
 """
-Physics(; time, fluid=nothing, solid=nothing, turbulence=nothing, energy, domain) = begin
+Physics(;
+time, fluid=nothing, solid=nothing, turbulence=nothing, energy, domain, momentum=original
+) = begin
     # NOTE: this function will be changed if/when a "medium" keyword is introduced. This will get rid of this ugly if statements! 
-    momentum = Momentum(domain)
+    momentum = momentum(domain)
 
     if fluid !== nothing
         fluid = fluid(domain)

@@ -308,7 +308,7 @@ function FilmModel(
                 filmSurfaceFlux, rDf, hf, wf, w, filmVelocityFlux, boundaries.h,
                 P_surf, P_surff, rho.values[1], config
             )
-            correct_film_flux2!(phif, filmSurfaceFlux, Df, h_eqn, w, wf, boundaries.h, time, config)
+            correct_film_flux2!(phif, filmSurfaceFlux, Df, h_eqn, hf, w, wf, boundaries.h, time, config)
         end
 
         update_film_viscous_source!(nu_h, nu, h, coeffs.h_floor, config)
@@ -750,6 +750,18 @@ end
 
 apply_film_boundary_flux_policy!(faceFlux, hBC::AbstractDirichlet, config) = nothing
 
+apply_film_boundary_flux_policy!(faceFlux, hBC::Neumann, config) =
+    error("Neumann h BC is not implemented for the film solver; use Dirichlet, Extrapolated, Zerogradient, Wall, or Symmetry.")
+
+function apply_film_boundary_flux_policy!(faceFlux, hBC::Union{Wall,Symmetry}, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    ndrange = length(hBC.IDs_range)
+    kernel! = _apply_film_noflux_boundary_flux_policy!(_setup(backend, workgroup, ndrange)...)
+    kernel!(faceFlux, hBC.IDs_range)
+end
+
 function apply_film_boundary_flux_policy!(faceFlux, hBC, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -757,6 +769,15 @@ function apply_film_boundary_flux_policy!(faceFlux, hBC, config)
     ndrange = length(hBC.IDs_range)
     kernel! = _apply_film_outflow_boundary_flux_policy!(_setup(backend, workgroup, ndrange)...)
     kernel!(faceFlux, hBC.IDs_range)
+end
+
+@kernel function _apply_film_noflux_boundary_flux_policy!(faceFlux, IDs_range)
+    i = @index(Global)
+    fID = IDs_range[i]
+
+    @inbounds begin
+        faceFlux[fID] = zero(faceFlux[fID])
+    end
 end
 
 @kernel function _apply_film_outflow_boundary_flux_policy!(faceFlux, IDs_range)
@@ -1254,7 +1275,7 @@ end
     end
 end
 
-function correct_film_flux2!(phif, filmSurfaceFlux, Df, h_eqn, w, wf, hBCs, time, config)
+function correct_film_flux2!(phif, filmSurfaceFlux, Df, h_eqn, hf, w, wf, hBCs, time, config)
     (; mesh) = phif
     (; faces, boundary_cellsID) = mesh
     (; hardware) = config
@@ -1279,7 +1300,7 @@ function correct_film_flux2!(phif, filmSurfaceFlux, Df, h_eqn, w, wf, hBCs, time
     end
 
     for hBC in hBCs
-        correct_film_flux_boundary!(phif, h, Df, hBC, time, config)
+        correct_film_flux_boundary!(phif, hf, h, Df, hBC, time, config)
     end
 
     apply_donor_wetting_to_flux!(phif, w, wf, config)
@@ -1352,9 +1373,9 @@ end
     end
 end
 
-correct_film_flux_boundary!(phif, h, Df, hBC, time, config) = nothing
+correct_film_flux_boundary!(phif, hf, h, Df, hBC, time, config) = nothing
 
-function correct_film_flux_boundary!(phif, h, Df, hBC::Dirichlet, time, config)
+function correct_film_flux_boundary!(phif, hf, h, Df, hBC::AbstractDirichlet, time, config)
     (; mesh) = phif
     (; faces, boundary_cellsID) = mesh
     (; hardware) = config
@@ -1362,19 +1383,19 @@ function correct_film_flux_boundary!(phif, h, Df, hBC::Dirichlet, time, config)
 
     ndrange = length(hBC.IDs_range)
     kernel! = _correct_film_flux_dirichlet_boundary!(_setup(backend, workgroup, ndrange)...)
-    kernel!(phif, h, Df, faces, boundary_cellsID, hBC.IDs_range, hBC.value)
+    kernel!(phif, hf, h, Df, faces, boundary_cellsID, hBC.IDs_range)
 end
 
 @kernel function _correct_film_flux_dirichlet_boundary!(
-    phif, h, Df, faces, boundary_cellsID, IDs_range, value
+    phif, hf, h, Df, faces, boundary_cellsID, IDs_range
 )
     i = @index(Global)
-        fID = IDs_range[i]
+    fID = IDs_range[i]
 
     @inbounds begin
         cID = boundary_cellsID[fID]
         (; area, delta) = faces[fID]
-        snGrad = (value - h[cID]) / delta
+        snGrad = (hf[fID] - h[cID]) / delta
         phif[fID] -= Df[fID] * area * snGrad
     end
 end

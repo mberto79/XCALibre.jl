@@ -148,11 +148,11 @@ function _efm_wetting_mode(mode::AbstractString)
 end
 
 function Momentum{EFM}(;
-    σ=0.069,
+    σ,
     h_crit=1e-10,
     h_floor=1e-15,
-    β=6.0,
-    θm=75,
+    β,
+    θm,
     gravity,
     capillary_dt=Inf,
     wetting_mode="hard"

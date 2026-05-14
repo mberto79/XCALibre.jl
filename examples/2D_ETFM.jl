@@ -21,7 +21,7 @@ mesh_dev = adapt(backend, mesh)
 begin # Model Info
 inlet_width = 0.510; # m
 
-EFM_CASE = 8
+EFM_CASE = 5
 
 # Meredith et al. CD1 cases as reported in ASME GTP 143(4), Table 2.
 # The table heading is "Q x 10^5 (m^3/s)", so the physical flow rate is
@@ -82,13 +82,9 @@ end;
 model = Physics(
     momentum=Momentum{EFM}(;
         σ=σ,
-        h_crit=h_crit,
-        h_floor=h_floor,
         β=β,
         θm=θm,
-        inclination=ϕ,
         gravity=gravity_vector,
-        wetting_mode="hard"
     ),
     time = Transient(),
     fluid = Fluid{Incompressible}(; nu = nu, rho = rho_l),

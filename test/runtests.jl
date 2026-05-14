@@ -12,104 +12,104 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
 
 @testset verbose = true "Functionality tests" begin
 
-    # @testset "Mesh conversion" begin
-    #     include("test_mesh_conversion.jl")
-    # end
+    @testset "Mesh conversion" begin
+        include("test_mesh_conversion.jl")
+    end
 
-    # @testset "Smoothers" begin
-    #     include("test_smoothers.jl")
-    # end
+    @testset "Smoothers" begin
+        include("test_smoothers.jl")
+    end
 
-    # @testset "DILU" begin
-    #     include("test_DILU.jl")
-    # end
+    @testset "DILU" begin
+        include("test_DILU.jl")
+    end
 
-    # @testset "Laplace Unit Test" begin
-    #     include("unit_test_laplace.jl")
-    # end
+    @testset "Laplace Unit Test" begin
+        include("unit_test_laplace.jl")
+    end
 
-    # @testset "setFields Function Unit Test" begin
-    #     include("unit_test_setFields.jl")
-    # end
+    @testset "setFields Function Unit Test" begin
+        include("unit_test_setFields.jl")
+    end
 
-    # @testset "Fluid Properties Unit Test" begin
-    #     include("unit_test_fluidProperties.jl")
-    # end
+    @testset "Fluid Properties Unit Test" begin
+        include("unit_test_fluidProperties.jl")
+    end
 
-    # @testset "Laplace Functionality Test" begin
+    @testset "Laplace Functionality Test" begin
 
-    #     test_files = [
-    #         "2d_laplace_steady.jl",
-    #         "2d_laplace_unsteady.jl"
-    #     ]
+        test_files = [
+            "2d_laplace_steady.jl",
+            "2d_laplace_unsteady.jl"
+        ]
 
-    #     for test ∈ test_files
-    #         test_path = joinpath(TEST_CASES_DIR, test)
-    #         include(test_path)
-    #     end
-    # end
+        for test ∈ test_files
+            test_path = joinpath(TEST_CASES_DIR, test)
+            include(test_path)
+        end
+    end
 
-    # @testset "Adaptive time-stepping Test" begin
+    @testset "Adaptive time-stepping Test" begin
 
-    #     test_files = [
-    #         "adaptive_dt.jl"
-    #     ]
+        test_files = [
+            "adaptive_dt.jl"
+        ]
 
-    #     for test ∈ test_files
-    #         test_path = joinpath(TEST_CASES_DIR, test)
-    #         include(test_path)
-    #     end
-    # end
+        for test ∈ test_files
+            test_path = joinpath(TEST_CASES_DIR, test)
+            include(test_path)
+        end
+    end
 
-    # @testset "Post-processing unit Test" begin
-    #     include("unit_test_field_average.jl")
-    #     include("unit_test_field_rms.jl")
-    #     include("unit_test_reynolds_stress.jl")
-    #     include("unit_test_post-process_transient.jl")
-    #     include("unit_test_post-process_steady.jl")
-    # end
+    @testset "Post-processing unit Test" begin
+        include("unit_test_field_average.jl")
+        include("unit_test_field_rms.jl")
+        include("unit_test_reynolds_stress.jl")
+        include("unit_test_post-process_transient.jl")
+        include("unit_test_post-process_steady.jl")
+    end
 
 
-    # @testset "Incompressible" begin
+    @testset "Incompressible" begin
 
-    #     test_files = [
-    #         "2d_incompressible_flatplate_KOmega_lowRe.jl",
-    #         "2d_incompressible_flatplate_KOmega_HighRe.jl",
-    #         "2d_incompressible_laminar_BFS.jl",
-    #         "2d_incompressible_laminar_rotatingFlatplate_MRF.jl",
-    #         "2d_incompressible_transient_KOmega_BFS_lowRe.jl",
-    #         "2d_incompressible_transient_laminar_BFS.jl",
-    #         "2d_incompressible_transient_laminar_BFS_CrankNicolson.jl",
-    #         "2d_incompressible_transient_cylinder_oscillating.jl",
-    #         "3d_incompressible_laminar_BFS.jl",
-    #         "3d_incompressible_laminar_cascade_periodic.jl",
-    #         "2d_incompressible_pitzdaily_KEquation.jl",
-    #         "2d_incompressible_pitzdaily_Smagorinsky.jl",
-    #         "2d_taylor_couette_laminar.jl"
-    #     ]
+        test_files = [
+            "2d_incompressible_flatplate_KOmega_lowRe.jl",
+            "2d_incompressible_flatplate_KOmega_HighRe.jl",
+            "2d_incompressible_laminar_BFS.jl",
+            "2d_incompressible_laminar_rotatingFlatplate_MRF.jl",
+            "2d_incompressible_transient_KOmega_BFS_lowRe.jl",
+            "2d_incompressible_transient_laminar_BFS.jl",
+            "2d_incompressible_transient_laminar_BFS_CrankNicolson.jl",
+            "2d_incompressible_transient_cylinder_oscillating.jl",
+            "3d_incompressible_laminar_BFS.jl",
+            "3d_incompressible_laminar_cascade_periodic.jl",
+            "2d_incompressible_pitzdaily_KEquation.jl",
+            "2d_incompressible_pitzdaily_Smagorinsky.jl",
+            "2d_taylor_couette_laminar.jl"
+        ]
 
-    #     for test ∈ test_files
-    #         test_path = joinpath(TEST_CASES_DIR, test)
-    #         include(test_path)
-    #     end
-    # end
+        for test ∈ test_files
+            test_path = joinpath(TEST_CASES_DIR, test)
+            include(test_path)
+        end
+    end
 
-    # @testset "Compressible" begin
-    #     test_files = [
-    #         "2d_compressible_KOmega_flatplate_fixedT.jl",
-    #         "2d_compressible_laminar_flatplate_fixedT.jl",
-    #         "2d_compressible_transient_laminar_heated_cylinder.jl"
-    #     ]
+    @testset "Compressible" begin
+        test_files = [
+            "2d_compressible_KOmega_flatplate_fixedT.jl",
+            "2d_compressible_laminar_flatplate_fixedT.jl",
+            "2d_compressible_transient_laminar_heated_cylinder.jl"
+        ]
 
-    #     for test ∈ test_files
-    #         test_path = joinpath(TEST_CASES_DIR, test)
-    #         include(test_path)
-    #     end
-    # end
+        for test ∈ test_files
+            test_path = joinpath(TEST_CASES_DIR, test)
+            include(test_path)
+        end
+    end
 
-    # @testset "Godunov Solver" begin
-    #     include(joinpath(TEST_CASES_DIR, "2d_godunov_supersonic_cylinder.jl"))
-    # end
+    @testset "Godunov Solver" begin
+        include(joinpath(TEST_CASES_DIR, "2d_godunov_supersonic_cylinder.jl"))
+    end
 
     @testset "Thin Film Solver" begin
         include(joinpath(TEST_CASES_DIR, "2d_EFM.jl"))

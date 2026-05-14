@@ -219,13 +219,6 @@ begin
         output=output,
         inner_loops=inner_loops
     )
-        residuals = piso!(
-            model, config, 
-            output=output,
-            pref=pref, 
-            ncorrectors=ncorrectors, 
-            inner_loops=inner_loops
-        )
     return residuals
 end
 

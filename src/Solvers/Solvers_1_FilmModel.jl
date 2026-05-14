@@ -5,7 +5,6 @@ function filmModel!(
     output=VTK(),#, pref=nothing, ncorrectors=
     inner_loops=2
 )
-    #print("Using film model\n")
     residuals = setup_FilmModel_Solver(
         FilmModel, model, config,
         output=output,
@@ -127,7 +126,7 @@ function FilmModel(
 
     @info "Allocating working memory"
 
-    G = coeff_vector(coeffs, :gravity, SVector{3,TF}(0, 0, -9.81), TF)
+    G = coeffs.gravity
 
     # Define aux fields
     mdotf = FaceScalarField(mesh)
@@ -224,7 +223,7 @@ function FilmModel(
         coeffs, rho.values[1], config
     )
 
-    @info "Starting loops"
+    @info "Starting EFM loops"
     
     progress = Progress(iterations; dt=1.0, showspeed=true)
             
@@ -366,18 +365,13 @@ function FilmModel(
 
         if iteration % write_interval + signbit(write_interval) == 0
 
-            save_output_film(model, outputWriter, iteration, time, config, w)
+            save_output(model, outputWriter, iteration, time, config, w)
             save_postprocessing(postprocess, iteration, time, mesh, outputWriter, config.boundaries)
         end
 
     end # end for loop
 
     return (U=R_u, h=R_h, courant=courant)
-end
-
-function coeff_vector(coeffs, name::Symbol, default::SVector{3,TF}, ::Type{TF}) where TF
-    value = hasproperty(coeffs, name) ? getproperty(coeffs, name) : default
-    return SVector{3,TF}(value)
 end
 
 function initialise_film_geometry!(surfaceNormal, gravityTangent, gNormalf, G, config)
@@ -452,7 +446,7 @@ end
 
     @inbounds begin
         ownerCells = faces[fID].ownerCells
-        c1 = ifelse(fID <= n_bfaces, boundary_cellsID[fID], ownerCells[1])
+        c1 = fID <= n_bfaces ? boundary_cellsID[fID] : ownerCells[1]
         c2 = ownerCells[2]
         n = surfaceNormal[c1]
         if fID > n_bfaces
@@ -850,8 +844,9 @@ function solve_film_h_equation!(
 end
 
 
-function save_output_film(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config, w
-    ) where {T,F,SO,M,Tu,E,D,BI}
+function ModelPhysics.save_output(
+    model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config, w
+    ) where {T,F,SO,M<:EFM,Tu,E,D,BI}
     args = (
             ("U", model.momentum.U), 
             ("h", model.momentum.h),

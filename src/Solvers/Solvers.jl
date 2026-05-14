@@ -27,6 +27,8 @@ using XCALibre.IOFormats
 using XCALibre.Postprocess
 using XCALibre.ReferenceFrames
 
+import XCALibre.ModelPhysics as ModelPhysics
+
 include("Solvers_0_functions.jl")
 include("Solvers_1_SIMPLE-MRF.jl")
 include("Solvers_1_SIMPLE.jl")

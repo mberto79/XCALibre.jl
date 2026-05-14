@@ -111,10 +111,7 @@ original(mesh::AbstractMesh) = begin
     pf = FaceScalarField(mesh)
     regular(U, p, Uf, pf, nothing)
 end
-
-
 Adapt.@adapt_structure regular 
-
 
 
 
@@ -150,16 +147,13 @@ function _efm_wetting_mode(mode::AbstractString)
     throw(ArgumentError("wetting_mode must be \"hard\", \"smooth\", \"smoothed\", or \"allwet\"; got $(repr(mode))"))
 end
 
-# Optional manual capillary time-step cap; the film solver also computes a mesh-based capillary limit.
 function Momentum{EFM}(;
     σ=0.069,
     h_crit=1e-10,
     h_floor=1e-15,
     β=6.0,
     θm=75,
-    ϕ=0,
-    inclination=ϕ,
-    gravity=(0.0, 0.0, -9.81),
+    gravity,
     capillary_dt=Inf,
     wetting_mode="hard"
 )
@@ -169,7 +163,6 @@ function Momentum{EFM}(;
         h_floor=h_floor,
         β=β,
         θm=θm,
-        ϕ=inclination,
         gravity=SVector{3}(gravity),
         capillary_dt=capillary_dt,
         wetting_mode=_efm_wetting_mode(wetting_mode)

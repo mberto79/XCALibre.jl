@@ -19,55 +19,56 @@ hardware = Hardware(backend=backend, workgroup=workgroup);
 mesh_dev = adapt(backend, mesh)
 
 begin # Model Info
-inlet_width = 0.510; # m
-
-EFM_CASE = 8
-
 # Meredith et al. CD1 cases as reported in ASME GTP 143(4), Table 2.
 # The table heading is "Q x 10^5 (m^3/s)", so the physical flow rate is
 # table_Q * 1e-5 m^3/s. This scaling reproduces the reported Reynolds numbers.
-if EFM_CASE == 1
-    inlet_flow_rate = 1.69e-5 # m^3/s
-    ϕ  = 5
-    θm = 75
-    σ  = 0.069
-    β  = 1
-elseif EFM_CASE == 5
-    inlet_flow_rate = 3.76e-5 # m^3/s
-    ϕ  = 90
-    θm = 75
-    σ  = 0.069
-    β  = 1
-elseif EFM_CASE == 8
-    inlet_flow_rate = 25.53e-5 # m^3/s
-    ϕ = 90
-    θm = 75
-    σ  = 0.069
-    β = 1
-else
-    error("Unsupported EFM_CASE=$(EFM_CASE). Supported cases are 1, 5, and 8.")
+function select_case(EFM_CASE)
+    if EFM_CASE == 1
+        inlet_flow_rate = 1.69e-5 # m^3/s
+        ϕ  = 5
+        θm = 75
+        σ  = 0.069
+        β  = 1
+    elseif EFM_CASE == 5
+        inlet_flow_rate = 3.76e-5 # m^3/s
+        ϕ  = 90
+        θm = 75
+        σ  = 0.069
+        β  = 1
+    elseif EFM_CASE == 8
+        inlet_flow_rate = 25.53e-5 # m^3/s
+        ϕ = 90
+        θm = 75
+        σ  = 0.069
+        β = 1
+    else
+        error("Unsupported EFM_CASE=$(EFM_CASE). Supported cases are 1, 5, and 8.")
+    end
+
+    return inlet_flow_rate, ϕ, θm, σ, β
 end
 
+EFM_CASE = 8
 EFM_DT = 1e-4
-EFM_ITERS = 50000
-EFM_WRITE_INTERVAL = 100
-EFM_SIGMA_SCALE = 1.0
+EFM_ITERS = 200
+EFM_WRITE_INTERVAL = -1
 EFM_ADAPTIVE = true
 EFM_MAX_CO = 0.1
 EFM_MIN_SHRINK = 0.1
 EFM_MAX_GROW = 1.2
+inlet_width = 0.510; # m
 mu = 0.001003; # Pa s
 rho_l = 998.2; # kg/m3
 nu = mu/rho_l;
 
-σ *= EFM_SIGMA_SCALE
+inlet_flow_rate, ϕ, θm, σ, β = select_case(EFM_CASE)
 
 g = 9.81
 inlet_flow_per_width = inlet_flow_rate/inlet_width # m^2/s
 gravity_tangential = g*sind(ϕ)
 inlet_height = (3*nu*inlet_flow_per_width/gravity_tangential)^(1/3) # m, Nusselt estimate
 inlet_rate = inlet_flow_per_width/inlet_height # m/s
-inlet_velocity = inlet_rate.*[1.0, 0.0, 0.0];
+U_inlet = inlet_rate.*[1.0, 0.0, 0.0];
 gravity_vector = (g*sind(ϕ), 0.0, -g*cosd(ϕ))
 case_reynolds = inlet_rate*inlet_height/nu
 
@@ -82,13 +83,9 @@ end;
 model = Physics(
     momentum=Momentum{EFM}(;
         σ=σ,
-        h_crit=h_crit,
-        h_floor=h_floor,
         β=β,
         θm=θm,
-        inclination=ϕ,
         gravity=gravity_vector,
-        wetting_mode="hard"
     ),
     time = Transient(),
     fluid = Fluid{Incompressible}(; nu = nu, rho = rho_l),
@@ -101,7 +98,7 @@ BCs = assign(
     region=mesh_dev,
     (
         U = [
-            Dirichlet(:inlet, inlet_velocity),
+            Dirichlet(:inlet, U_inlet),
             # Extrapolated(:inlet),
             Extrapolated(:outlet),
             Wall(:inlet_sides, [0,0,0]),
@@ -177,3 +174,6 @@ h_init = 0.0;
 initialise!(model.momentum.h, h_init)
 
 residuals = run!(model, config, inner_loops=2);
+
+@test mean(model.momentum.h.values) ≈ 1.75e-5 atol = 1e-7
+@test mean(model.momentum.U.x.values) ≈ 0.0527 atol = 1e-4

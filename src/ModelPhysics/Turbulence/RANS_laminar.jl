@@ -95,6 +95,7 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
             ("U", model.momentum.U), 
             ("p", model.momentum.p),
             ("rho", model.fluid.rho),
+            ("nu", model.fluid.nu.nu),
             ("T", model.energy.T)
         )
     else

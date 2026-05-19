@@ -22,4 +22,4 @@ end
 
 (energy::Energy{EnergyModel, ARG})(mesh, fluid) where {EnergyModel<:Isothermal,ARG} = begin
     nothing
-end
+end 

@@ -124,10 +124,10 @@ Weakly compressible fluid model containing fluid field parameters for weakly com
 - `Fluid{WeaklyCompressible}(; nu=1E-5, cp=1005.0, gamma=1.4, Pr=0.7)` - Constructor with 
 default values.
 """
-struct WeaklyCompressible{S1, S2, F1, F2, T} <: AbstractCompressible
+struct WeaklyCompressible{S1, S2, F2, T} <: AbstractCompressible
     nu::S1
     rho::S2
-    nuf::F1
+    # nuf::F1
     rhof::F2
     cp::T
     gamma::T
@@ -149,12 +149,20 @@ end
     gamma = ConstantScalar(gamma)
     Pr = ConstantScalar(Pr)
     R = ConstantScalar(cp.values*(1.0 - (1.0/gamma.values)))
+    nu = nu(mesh)
+    # if nu isa AbstractViscosityModel
+    #     nu_model = nu
+    #     nu = ScalarField(mesh)
+    #     nuf = FaceScalarField(mesh)
+    # else
+    #     nu_model = ConstantViscosity(nu)
+    #     nu = ConstantScalar(nu)
+    #     nuf = nu
+    # end
 
-    nu = ConstantScalar(nu)
     rho = ScalarField(mesh)
-    nuf = nu
     rhof = FaceScalarField(mesh)
-    WeaklyCompressible(nu, rho, nuf, rhof, cp, gamma, Pr, R)
+    WeaklyCompressible(nu, rho, rhof, cp, gamma, Pr, R)
 end
 
 """

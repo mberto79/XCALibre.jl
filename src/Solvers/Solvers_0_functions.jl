@@ -1,6 +1,30 @@
-export flux!, update_nueff!, inverse_diagonal!, remove_pressure_source!, H!, correct_velocity!
+export flux!, update_nu!, update_nueff!, inverse_diagonal!, remove_pressure_source!, H!, correct_velocity!
 
 ## UPDATE VISCOSITY
+
+function update_nu!(nu::SutherlandViscosity, physics, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    ndrange = length(nu.nu)
+    kernel! = update_nu_sutherland!(_setup(backend, workgroup, ndrange)...)
+    kernel!(nu.nu, nu, physics)
+end
+
+@kernel function update_nu_sutherland!(nu, nu_model, physics)
+    i = @index(Global)
+
+    @uniform begin
+        rho_field = physics.fluid.rho
+        T_field = physics.energy.T
+    end
+
+    @inbounds begin
+        nu[i] = nu_model.coeffs.mu_ref * (T_field[i] / nu_model.coeffs.T_ref)^(3/2) * (nu_model.coeffs.T_ref + nu_model.coeffs.S) / (T_field[i] + nu_model.coeffs.S) / rho_field[i]
+    end
+end
+
+## UPDATE EFFECTIVE VISCOSITY
 
 function update_nueff!(nueff, nu, turb_model, config)
     (; mesh) = nueff

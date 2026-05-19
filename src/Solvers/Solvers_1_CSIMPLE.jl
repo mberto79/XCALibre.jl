@@ -125,7 +125,7 @@ function CSIMPLE(
     
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
-    (; nu, nuf, rho, rhof) = model.fluid
+    (; nu, rho, rhof) = model.fluid
 
     mesh = model.domain
     p_model = p_eqn.model
@@ -192,7 +192,8 @@ function CSIMPLE(
     @. rho.values = Psi.values * p.values
     @. rhof.values = Psif.values * pf.values
     flux!(mdotf, Uf, rhof, config)
-    update_nueff!(nueff, nu, model.turbulence, config)
+    update_nu!(nu,  model, config)
+    update_nueff!(nueff, nu.nuf, model.turbulence, config)
     @. mueff.values = nueff.values * rhof.values
 
 
@@ -305,8 +306,10 @@ function CSIMPLE(
         correct_velocity!(U, Hv, ∇p, rD, config)
         
         # Perform turbulence calculations and update eddy viscosity
-        turbulence!(turbulenceModel, model, S, prev, time, config) 
-        update_nueff!(nueff, nu, model.turbulence, config)
+        turbulence!(turbulenceModel, model, S, prev, time, config)
+        update_nu!(nu, model, config)
+        interpolate!(nu.nuf, nu.nu, config)
+        update_nueff!(nueff, nu.nuf, model.turbulence, config)
 
         if typeof(model.fluid) <: WeaklyCompressible
             rhorelax = solvers.p.relax
@@ -319,6 +322,8 @@ function CSIMPLE(
 
         # update dynamic viscosity
         @. mueff.values = rhof.values*nueff.values
+
+
 
         # stor residuals and check for convergence
         R_ux[iteration] = rx

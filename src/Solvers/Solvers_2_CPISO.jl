@@ -206,7 +206,9 @@ function CPISO(
 
     limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
-    update_nueff!(nueff, nu, model.turbulence, config)
+    update_nu!(nu, model, config)
+    interpolate!(nu.nuf, nu.nu, config)
+    update_nueff!(nueff, nu.nuf, model.turbulence, config)
     @. mueff.values = rhof.values*nueff.values
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
@@ -328,7 +330,9 @@ function CPISO(
 
         # Turbulence outside corrector loop
         turbulence!(turbulenceModel, model, S, prev, time, config)
-        update_nueff!(nueff, nu, model.turbulence, config)
+        update_nu!(nu, model, config)
+        interpolate!(nu.nuf, nu.nu, config)
+        update_nueff!(nueff, nu.nuf, model.turbulence, config)
         @. mueff.values = rhof.values*nueff.values
 
         

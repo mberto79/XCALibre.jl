@@ -111,6 +111,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include(joinpath(TEST_CASES_DIR, "2d_godunov_supersonic_cylinder.jl"))
     end
 
+    @testset "Thin Film Solver" begin
+        include(joinpath(TEST_CASES_DIR, "2d_EFM.jl"))
+    end
+
     foreach(rm, filter(endswith(".vtk"), readdir(pwd(), join=true)))
     foreach(rm, filter(endswith(".vtu"), readdir(pwd(), join=true)))
     foreach(x->rm(x, recursive=true), filter(contains("0."), readdir(pwd(), join=true)))

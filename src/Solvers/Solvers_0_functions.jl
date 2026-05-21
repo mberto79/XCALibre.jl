@@ -8,14 +8,14 @@ function update_nueff!(nueff, nu, turb_model, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(nueff)
-    if typeof(turb_model) <: Laminar
-        kernel! = update_nueff_laminar!(_setup(backend, workgroup, ndrange)...)
-        kernel!(nu, nueff)
-    else
-        (; nutf) = turb_model
-        kernel! = update_nueff_turbulent!(_setup(backend, workgroup, ndrange)...)
-        kernel!(nu, nutf, nueff)
-    end
+    #if typeof(turb_model) <: Laminar
+    kernel! = update_nueff_laminar!(_setup(backend, workgroup, ndrange)...)
+    kernel!(nu, nueff)
+    #else
+        #(; nutf) = turb_model
+        #kernel! = update_nueff_turbulent!(_setup(backend, workgroup, ndrange)...)
+        #kernel!(nu, nutf, nueff)
+    #end
 
 end
 

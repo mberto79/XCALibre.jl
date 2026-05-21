@@ -129,11 +129,3 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
 end
 
 
-function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
-    ) where {T,F<:Nothing,SO,M,Tu<:Nothing,E<:Conduction,D,BI}
-    
-    args = (
-        ("T", model.energy.T),
-    )
-    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
-end

@@ -31,7 +31,7 @@ Pr = 0.7
 model = Physics(
     time = Steady(),
     fluid = Fluid{WeaklyCompressible}(
-        nu = Viscosity{SutherlandViscosity}(mu_ref=1.8e-5, T_ref=288.15, S=110.4),
+        nu = nu,# nu = Viscosity{SutherlandViscosity}(mu_ref=1.8e-5, T_ref=288.15, S=110.4),
         cp = cp,
         gamma = gamma,
         Pr = Pr

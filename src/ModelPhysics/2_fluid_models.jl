@@ -141,7 +141,7 @@ Fluid{WeaklyCompressible}(; nu, cp, gamma, Pr) = begin
     ARG = typeof(coeffs)
     Fluid{WeaklyCompressible,ARG}(coeffs)
 end
-
+# initialise_fluid(...) # this is the refactoring needed not now!
 (fluid::Fluid{WeaklyCompressible, ARG})(mesh) where ARG = begin
     coeffs = fluid.args
     (; nu, cp, gamma, Pr) = coeffs
@@ -149,17 +149,7 @@ end
     gamma = ConstantScalar(gamma)
     Pr = ConstantScalar(Pr)
     R = ConstantScalar(cp.values*(1.0 - (1.0/gamma.values)))
-    nu = nu(mesh)
-    # if nu isa AbstractViscosityModel
-    #     nu_model = nu
-    #     nu = ScalarField(mesh)
-    #     nuf = FaceScalarField(mesh)
-    # else
-    #     nu_model = ConstantViscosity(nu)
-    #     nu = ConstantScalar(nu)
-    #     nuf = nu
-    # end
-
+    nu = initialise_viscosity(nu, mesh)
     rho = ScalarField(mesh)
     rhof = FaceScalarField(mesh)
     WeaklyCompressible(nu, rho, rhof, cp, gamma, Pr, R)

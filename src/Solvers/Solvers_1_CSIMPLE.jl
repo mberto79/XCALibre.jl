@@ -192,7 +192,7 @@ function CSIMPLE(
     @. rho.values = Psi.values * p.values
     @. rhof.values = Psif.values * pf.values
     flux!(mdotf, Uf, rhof, config)
-    update_nu!(nu,  model, config)
+    update_viscosity!(model.fluid, model.energy, config)
     update_nueff!(nueff, nu.nuf, model.turbulence, config)
     @. mueff.values = nueff.values * rhof.values
 
@@ -307,8 +307,7 @@ function CSIMPLE(
         
         # Perform turbulence calculations and update eddy viscosity
         turbulence!(turbulenceModel, model, S, prev, time, config)
-        update_nu!(nu, model, config)
-        interpolate!(nu.nuf, nu.nu, config)
+        update_viscosity!(model.fluid, model.energy, config)
         update_nueff!(nueff, nu.nuf, model.turbulence, config)
 
         if typeof(model.fluid) <: WeaklyCompressible

@@ -331,7 +331,6 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
             ("k", model.turbulence.k),
             ("omega", model.turbulence.omega),
             ("nut", model.turbulence.nut),
-            ("nu", model.fluid.nu.nu),
             ("y", model.turbulence.y),
         )
     else

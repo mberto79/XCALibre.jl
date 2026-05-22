@@ -1,10 +1,10 @@
 export Viscosity, ConstantViscosity, SutherlandViscosity
 export initialise_viscosity, update_viscosity!
 
+# Generic Viscosity struct to hold viscosity model arguments
 struct Viscosity{T,ARG}
     args::ARG
 end
-
 
 
 function update_viscosity!(fluid, energy, config)
@@ -27,8 +27,8 @@ end
 # CONSTANT VISCOSITY
 
 struct ConstantViscosity{S,FS} <: AbstractViscosityModel
-    nu::S
-    nuf::FS
+    nu::S  # Kinematic viscosity as a scalar field
+    nuf::FS  # Face kinematic viscosity as a scalar field
 end
 Adapt.@adapt_structure ConstantViscosity
 
@@ -38,6 +38,12 @@ Viscosity{ConstantViscosity}(; nu) = begin
     Viscosity{ConstantViscosity,ARG}(coeffs)
 end
 
+# Function to initialize constant viscosity model from a ConstatViscosity input
+# Arguments:
+# - nu: Kinematic viscosity as ConstantViscosity model
+# - mesh: Computational mesh
+# Returns:
+# - Initialized ConstantViscosity object with scalar fields
 initialise_viscosity(nu::ConstantViscosity, mesh) = begin
     backend = _get_backend(mesh)
     float_type = _get_float(mesh)
@@ -47,6 +53,12 @@ initialise_viscosity(nu::ConstantViscosity, mesh) = begin
     ConstantViscosity(nu, nuf)
 end
 
+# Function to initialize constant viscosity model from a Float64 value
+# Arguments:
+# - nu: Kinematic viscosity as Float64
+# - mesh: Computational mesh
+# Returns:
+# - Initialized ConstantViscosity object with scalar fields
 initialise_viscosity(nu::Float64, mesh) = begin
     backend = _get_backend(mesh)
     float_type = _get_float(mesh)
@@ -65,10 +77,12 @@ end
 # SUTHERLAND VISCOSITY
 
 struct SutherlandViscosity{S,FS,C} <: AbstractViscosityModel
-    nu::S
-    nuf::FS
-    coeffs::C
-end 
+    nu::S  # Kinematic viscosity as a scalar field
+    nuf::FS  # Face kinematic viscosity as a scalar field
+    coeffs::C  # Coefficients for the Sutherland model
+end
+
+# Adapt structure for GPU compatibility
 Adapt.@adapt_structure SutherlandViscosity
 
 Viscosity{SutherlandViscosity}(; mu_ref, T_ref, S) = begin
@@ -82,7 +96,6 @@ initialise_viscosity(nu::Viscosity{SutherlandViscosity}, mesh) = begin
     float_type = _get_float(mesh)
     n_cells = length(mesh.cells)
     coeffs = nu.args
-    print(nu)
     nu = ScalarField(mesh)
     nuf = FaceScalarField(mesh)
     SutherlandViscosity(nu, nuf, coeffs)

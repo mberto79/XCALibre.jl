@@ -173,7 +173,6 @@ Compressible fluid model containing fluid field parameters for compressible flow
 @kwdef struct Compressible{S1, S2, F1, F2, T} <: AbstractCompressible
     nu::S1
     rho::S2
-    nuf::F1
     rhof::F2
     cp::T
     gamma::T
@@ -195,12 +194,10 @@ end
     gamma = ConstantScalar(gamma)
     Pr = ConstantScalar(Pr)
     R = ConstantScalar(cp.values*(1.0 - (1.0/gamma.values)))
-
-    nu = ConstantScalar(nu)
+    nu = initialise_viscosity(nu, mesh)
     rho = ScalarField(mesh)
-    nuf = nu
     rhof = FaceScalarField(mesh)
-    Compressible(nu, rho, nuf, rhof, cp, gamma, Pr, R)
+    Compressible(nu, rho, rhof, cp, gamma, Pr, R)
 end
 
 

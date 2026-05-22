@@ -9,26 +9,23 @@ end
 
 function update_viscosity!(fluid, energy, config)
     update_viscosity_cell!(fluid, energy, config)
-    update_viscosity_face!(fluid.nu, config)
+    update_viscosity_face!(fluid, fluid.visc_model, config)
 end
 
 function update_viscosity_cell!(fluid, energy, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
-
-    (; nu) = fluid.nu
+    (; nu, visc_model) = fluid
 
     ndrange = length(nu)
     kernal! = _update_viscosity_cell!(_setup(backend, workgroup, ndrange)...)
-    kernal!(nu, fluid.nu, fluid, energy, config)
+    kernal!(nu, visc_model, fluid, energy, config)
 end
 
 
 # CONSTANT VISCOSITY
 
-struct ConstantViscosity{S,FS} <: AbstractViscosityModel
-    nu::S  # Kinematic viscosity as a scalar field
-    nuf::FS  # Face kinematic viscosity as a scalar field
+struct ConstantViscosity{} <: AbstractViscosityModel
 end
 Adapt.@adapt_structure ConstantViscosity
 
@@ -50,7 +47,7 @@ initialise_viscosity(nu::ConstantViscosity, mesh) = begin
     n_cells = length(mesh.cells)
     nu = ConstantScalar(nu.args.nu)
     nuf = nu
-    ConstantViscosity(nu, nuf)
+    return nu, nuf, ConstantViscosity()
 end
 
 # Function to initialize constant viscosity model from a Float64 value
@@ -65,20 +62,18 @@ initialise_viscosity(nu::Float64, mesh) = begin
     n_cells = length(mesh.cells)
     nu = ConstantScalar(nu)
     nuf = nu
-    ConstantViscosity(nu, nuf)
+    return nu, nuf, ConstantViscosity()
 end
 
 @kernel function _update_viscosity_cell!(nu, visc::ConstantViscosity, fluid, energy, config)
 end
 
-function update_viscosity_face!(nu::ConstantViscosity, config)
+function update_viscosity_face!(fluid, visc_model::ConstantViscosity, config)
 end
 
 # SUTHERLAND VISCOSITY
 
-struct SutherlandViscosity{S,FS,C} <: AbstractViscosityModel
-    nu::S  # Kinematic viscosity as a scalar field
-    nuf::FS  # Face kinematic viscosity as a scalar field
+struct SutherlandViscosity{C} <: AbstractViscosityModel
     coeffs::C  # Coefficients for the Sutherland model
 end
 
@@ -98,10 +93,10 @@ initialise_viscosity(nu::Viscosity{SutherlandViscosity}, mesh) = begin
     coeffs = nu.args
     nu = ScalarField(mesh)
     nuf = FaceScalarField(mesh)
-    SutherlandViscosity(nu, nuf, coeffs)
+    return nu, nuf, SutherlandViscosity(coeffs)
 end
 
-@kernel function _update_viscosity_cell!(nu, visc::SutherlandViscosity, fluid, energy, config)
+@kernel function _update_viscosity_cell!(nu, visc_model, fluid, energy, config)
     i = @index(Global)
 
     @uniform begin
@@ -110,10 +105,10 @@ end
     end
 
     @inbounds begin
-        nu[i] = visc.coeffs.mu_ref * (T_field[i] / visc.coeffs.T_ref)^(3/2) * (visc.coeffs.T_ref + visc.coeffs.S) / (T_field[i] + visc.coeffs.S) / rho_field[i]
+        nu[i] = visc_model.coeffs.mu_ref * (T_field[i] / visc_model.coeffs.T_ref)^(3/2) * (visc_model.coeffs.T_ref + visc_model.coeffs.S) / (T_field[i] + visc_model.coeffs.S) / rho_field[i]
     end
 end
 
-function update_viscosity_face!(nu::SutherlandViscosity, config)
-    interpolate!(nu.nuf, nu.nu, config)
+function update_viscosity_face!(fluid, visc_model::SutherlandViscosity, config)
+    interpolate!(fluid.nuf, fluid.nu, config)
 end

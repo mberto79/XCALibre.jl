@@ -28,10 +28,14 @@ temp = 300.0
 pressure = 100000
 Pr = 0.7
 
+mu_ref = 1.8e-5
+T_ref = 288.15
+S = 110.4
+
 model = Physics(
     time = Steady(),
     fluid = Fluid{WeaklyCompressible}(
-        nu = nu,
+        nu = Viscosity{SutherlandViscosity}(mu_ref=mu_ref, T_ref=T_ref, S=S),
         gamma = gamma,
         Pr = Pr
         ),

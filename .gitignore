@@ -2,7 +2,6 @@ Manifest.toml
 test/Manifest.toml
 docs/build/*
 docs/Manifest
-.vscode/*
 data/mesh.jld2
 data/fields.jld2
 results.vtk
@@ -12,10 +11,12 @@ unv_sample_meshes/*
 *.pb.gz
 *.foam
 *.csv
+*.unv
 !NIST_*.csv
 [0-9]*/
 constant/
 !test/0_TEST_CASES/
+*.txt
 constant/
 CLAUDE.md
 .claudeignore
@@ -30,3 +31,11 @@ test/HeatFlux
 test/prep_heatflux.jl
 test/HeatFlux_1MPa.jl
 test/HeatFlux.jl
+
+F1-fetchCFD_Minimal*
+*.log
+*.bin
+.codex
+.agents
+.claude
+.vscode

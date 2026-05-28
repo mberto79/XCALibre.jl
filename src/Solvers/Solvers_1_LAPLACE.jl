@@ -161,7 +161,7 @@ function LAPLACE(
                 ]
             )
 
-        runtime_postprocessing!(postprocess,iteration,iterations,nothing,config)
+        runtime_postprocessing!(postprocess,iteration,iterations,nothing,time,config)
         if iteration%write_interval + signbit(write_interval) == 0      
             save_output(model, outputWriter, iteration, time, config)
             save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
@@ -170,4 +170,13 @@ function LAPLACE(
     end # end for loop
     
     return (T=R_T)
+end
+
+function ModelPhysics.save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
+    ) where {T,F,SO,M,Tu,E<:Conduction,D,BI}
+    
+    args = (
+        ("T", model.energy.T),
+    )
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end

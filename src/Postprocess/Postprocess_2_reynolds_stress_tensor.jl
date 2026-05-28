@@ -39,7 +39,7 @@ function ReynoldsStress(field; name::String =  "Reynolds_Stress", start::Union{R
     return  ReynoldsStress(field=field, name=name, rs=rs, mean=mean, mean_sq=mean_sq, start=start, stop=stop, update_interval=update_interval)
 end
 
-function runtime_postprocessing!(RS::ReynoldsStress{T,T2,S},iter::Integer,n_iterations::Integer,Str,config) where {T<:VectorField,T2<:SymmetricTensorField,S}
+function runtime_postprocessing!(RS::ReynoldsStress{T,T2,S},iter::Integer,n_iterations::Integer,Str,time,config) where {T<:VectorField,T2<:SymmetricTensorField,S}
     if must_calculate(RS,iter,n_iterations)
         current_field = RS.field
         n = div(iter - RS.start,RS.update_interval) + 1

@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 *  Added runtime probe extraction [#115](@ref)
 *  Added initialisation logic for new Multiphase solver user-level API [#117](@ref)
 *  New Eulerian Thin Film model solver (2D only) [#120](@ref)
+*  Added `setField_Expression!` to `SetFields` utility to initialise function-based fields. [#124](@ref)
+*  Added VanLeer, upwind, and gradient interpolation schemes for scalar and vector face fields [#124](@ref)
+
 
 
 ### Fixed

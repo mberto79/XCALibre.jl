@@ -60,11 +60,9 @@ end
     # 2. Flow entering (ap < 0): Explicit Upwind Boundary evaluation
     su_entering = -min(ap, 0.0) * vp_c
     
-    # Total explicit source
     su = su_entering + su_leaving
-    
+
     ac, su
-    0.0, -ap*get_values(term.phi, component)[cellID]
 end
 
 # @define_boundary Slip Divergence{Upwind} ScalarField begin

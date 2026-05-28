@@ -191,8 +191,7 @@ function energy!(
     @. K.values = 0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)
     @. Kf.values = 0.5*(Uf.x.values^2 + Uf.y.values^2 + Uf.z.values^2)
 
-    # interpolate_upwind!(Kf, K, mdotf, config) # only do internal faces
-    interpolate!(Kf, K, config) # only do internal faces
+    interpolate_upwind!(Kf, K, mdotf, config)
     @. Kf.values *= mdotf.values
     div!(divK, Kf, config)
 
@@ -207,7 +206,7 @@ function energy!(
         @. S_he.values = -S_he.values
     end
 
-    viscous_dissipation!(Phi, mueff_cell.values, gradU, config)
+    viscous_dissipation!(Phi, mueff_cell.values, gradU, boundaries.U, config)
 
     # Set up and solve energy equation
     discretise!(energy_eqn, he, config)
@@ -349,7 +348,7 @@ function energy_clamp!(
 end
 
 
-function viscous_dissipation!(Phi::ScalarField, mueff_cell, gradU, config)
+function viscous_dissipation!(Phi::ScalarField, mueff_cell, gradU, U_BCs, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
@@ -358,6 +357,30 @@ function viscous_dissipation!(Phi::ScalarField, mueff_cell, gradU, config)
 
     kernel! = _viscous_dissipation!(_setup(backend, workgroup, n_cells)...)
     kernel!(Phi.values, mueff_cell, gradU.result)
+    KernelAbstractions.synchronize(backend)
+
+    for BC ∈ U_BCs
+        zero_viscous_dissipation!(BC, Phi, mesh, backend, workgroup)
+    end
+end
+
+zero_viscous_dissipation!(BC, Phi, mesh, backend, workgroup) = nothing
+
+function zero_viscous_dissipation!(
+    BC::Union{Slip,Symmetry}, Phi, mesh, backend, workgroup)
+    (; IDs_range) = BC
+    ndrange = length(IDs_range)
+    ndrange == 0 && return nothing
+    kernel! = _zero_viscous_dissipation!(_setup(backend, workgroup, ndrange)...)
+    kernel!(Phi.values, mesh.boundary_cellsID, IDs_range)
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _zero_viscous_dissipation!(Phi, boundary_cellsID, IDs_range)
+    i = @index(Global)
+    fID = IDs_range[i]
+    cID = boundary_cellsID[fID]
+    Phi[cID] = 0
 end
 
 @kernel function _viscous_dissipation!(Phi, mueff, gradU)
@@ -391,42 +414,21 @@ end
     S[i] = p[i] * divU
 end
 
-# function interpolate_upwind!(phif::FaceScalarField, phi::ScalarField, mdotf::FaceScalarField, config)
-#     vals = phi.values
-#     fvals = phif.values
-#     flux = mdotf.values
+function interpolate_upwind!(phif::FaceScalarField, phi::ScalarField, mdotf::FaceScalarField, config)
+    mesh = phif.mesh
+    nbfaces = length(mesh.boundary_cellsID)
+    internal_faces_count = length(mesh.faces) - nbfaces
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    kernel! = interpolate_upwind_Scalar!(_setup(backend, workgroup, internal_faces_count)...)
+    kernel!(phif.values, phi.values, mdotf.values, mesh.faces, nbfaces)
+end
 
-#     mesh = phif.mesh
-#     (; cells, faces) = mesh
-
-#     nbfaces = length(mesh.boundary_cellsID)
-#     internal_faces_count = length(faces) - nbfaces
-
-#     (; hardware) = config
-#     (; backend, workgroup) = hardware
-
-#     kernel! = interpolate_upwind_Scalar!(_setup(backend, workgroup, internal_faces_count)...)
-#     kernel!(fvals, vals, flux, cells, faces, nbfaces)
-# end
-
-# @kernel function interpolate_upwind_Scalar!(fvals, vals, flux, cells, faces, nbfaces)
-#     t = @index(Global)
-#     i = t + nbfaces
-
-#     @inbounds begin
-#         face = faces[i]
-#         (; ownerCells) = face
-
-#         owner1 = ownerCells[1]
-#         owner2 = ownerCells[2]
-
-#         phi1 = vals[owner1]
-#         phi2 = vals[owner2]
-
-#         if flux[i] >= 0.0
-#             fvals[i] = phi1
-#         else
-#             fvals[i] = phi2
-#         end
-#     end
-# end
+@kernel function interpolate_upwind_Scalar!(fvals, vals, flux, faces, nbfaces)
+    t = @index(Global)
+    i = t + nbfaces
+    @inbounds begin
+        (; ownerCells) = faces[i]
+        fvals[i] = flux[i] >= 0.0 ? vals[ownerCells[1]] : vals[ownerCells[2]]
+    end
+end

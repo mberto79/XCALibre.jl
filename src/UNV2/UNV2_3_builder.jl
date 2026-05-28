@@ -36,6 +36,7 @@ function UNV2D_mesh(meshFile; scale=1, integer_type=Int64, float_type=Float64)
     # mesh = Mesh.FullMesh(nodes, faces, cells, boundaries)
 
     mesh = update_mesh_format(mesh, integer_type, float_type)
+    Mesh.validate_single_precision_mesh(mesh; source="UNV2D_mesh")
     end
     println("Done! Execution time: ", @sprintf "%.6f" stats.time)
     println("Mesh ready!")
@@ -94,15 +95,15 @@ end
 
 # GENERATION FUNCTIONS
 
-function generate_nodes(first_element, elements, points::Vector{Point{TF}}) where TF
-   nodes = Node{Int64, TF}[]
+function generate_nodes(first_element, elements::Vector{Element{TI}}, points::Vector{Point{TF}}) where {TI, TF}
+   nodes = Node{TI, TF}[]
    @inbounds for i ∈ 1:length(points)
        point = points[i].xyz
-       push!(nodes, Node(point))
+       push!(nodes, Node(point, TI[]))
    end
-   cellID = 0 # counter for cells
+   cellID = zero(TI) # counter for cells
    @inbounds for i ∈ first_element:length(elements) 
-           cellID += 1
+           cellID += one(TI)
            @inbounds for nodeID ∈ elements[i].vertices
                push!(nodes[nodeID].neighbourCells, cellID)
            end

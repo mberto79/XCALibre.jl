@@ -61,9 +61,9 @@ function internal_face_properties!(mesh::Mesh2{I,F}) where {I,F}
         
         # Calculate normal and check direction (from owner1 to owner2)
         unit_tangent = tangent/area
-        normal = unit_tangent × UnitVectors().k
+        normal = unit_tangent × SVector{3, F}(0, 0, 1)
         if C1C2⋅normal < zero(F)
-            normal = -1.0*normal
+            normal = -normal
         end
 
         # Calculate delta and interpolation weight
@@ -94,7 +94,7 @@ function boundary_face_properties!(mesh::Mesh2{I,F}) where {I,F}
             tangent = p2 - p1
             area = norm(tangent)
             unit_tangent = tangent/area
-            normal = unit_tangent × UnitVectors().k
+            normal = unit_tangent × SVector{3, F}(0, 0, 1)
 
             # perform normal direction check
             F1 = face.centre
@@ -102,7 +102,7 @@ function boundary_face_properties!(mesh::Mesh2{I,F}) where {I,F}
             C1F1 = F1 - C1 # distance vector from face centre to cell1 
 
             if C1F1⋅normal < zero(F)
-                normal = -1.0*normal
+                normal = -normal
             end
 
             # calculate weight, delta and e 
@@ -176,7 +176,7 @@ function cell_properties!(mesh::Mesh2{I,F}) where {I,F}
         
         # --- C. Update the Cell Array ---
         cell = @set cell.centre = true_centre
-        cell = @set cell.volume = 0.5 * volume
+        cell = @set cell.volume = F(0.5) * volume
         cells[celli] = cell
     end
 end

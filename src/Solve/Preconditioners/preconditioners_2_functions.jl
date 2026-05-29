@@ -58,7 +58,7 @@ end
         idx_next = rowptr[i+1]
         column_vals = @view nzval[idx_start:(idx_next-1)] 
         norm = norm_static(column_vals)
-        storage[i] = 1/norm
+        storage[i] = one(norm)/norm
     # end
 end
 
@@ -88,7 +88,8 @@ end
 
     @inbounds begin
         idx_diagonal = spindex(rowptr, colval, i, i)
-        storage[i] = 1/abs(nzval[idx_diagonal])
+        diagonal = abs(nzval[idx_diagonal])
+        storage[i] = one(diagonal)/diagonal
     end
 end
 

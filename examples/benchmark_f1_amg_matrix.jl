@@ -82,6 +82,8 @@ function bench_system(system; backend, workgroup, solver=AMG(), itmax=200, atol=
         coarse_cpu_solve_s=hierarchy.coarse_cpu_solve_time_s,
         coarse_x_copy_s=hierarchy.coarse_x_copy_time_s,
         coarse_solve_calls=hierarchy.coarse_solve_calls,
+        coarse_device_solve_s=hierarchy.coarse_device_solve_time_s,
+        coarse_device_solve_calls=hierarchy.coarse_device_solve_calls,
         iterations=workspace.iterations,
         final_relative=workspace.last_relative_residual
     )
@@ -89,7 +91,7 @@ end
 
 function print_result(system_id, phase, result)
     @printf(
-        "F1_AMG_MATRIX phase=%s system=%d rows=%s iterations=%d final_relative=%.6e build_s=%.6e solve_s=%.6e refresh_s=%.6e apply_s=%.6e apply_calls=%d coarse_rhs_copy_s=%.6e coarse_cpu_solve_s=%.6e coarse_x_copy_s=%.6e coarse_solve_calls=%d refresh_calls=%d finest_refresh_calls=%d operator_complexity=%.6f grid_complexity=%.6f\n",
+        "F1_AMG_MATRIX phase=%s system=%d rows=%s iterations=%d final_relative=%.6e build_s=%.6e solve_s=%.6e refresh_s=%.6e apply_s=%.6e apply_calls=%d coarse_rhs_copy_s=%.6e coarse_cpu_solve_s=%.6e coarse_x_copy_s=%.6e coarse_solve_calls=%d coarse_device_solve_s=%.6e coarse_device_solve_calls=%d refresh_calls=%d finest_refresh_calls=%d operator_complexity=%.6f grid_complexity=%.6f\n",
         phase,
         system_id,
         result.rows,
@@ -104,6 +106,8 @@ function print_result(system_id, phase, result)
         result.coarse_cpu_solve_s,
         result.coarse_x_copy_s,
         result.coarse_solve_calls,
+        result.coarse_device_solve_s,
+        result.coarse_device_solve_calls,
         result.refresh_calls,
         result.finest_refresh_calls,
         result.operator_complexity,

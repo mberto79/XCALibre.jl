@@ -230,6 +230,7 @@ function _allocate_level(A, P, R, level_id, aggregate_ids, backend, smoother)
     x = KernelAbstractions.zeros(backend, T, n)
     tmp = KernelAbstractions.zeros(backend, T, n)
     direction = KernelAbstractions.zeros(backend, T, n)
+    coarse_tmp = KernelAbstractions.zeros(backend, T, n)
     lambda = _estimate_lambda_max(A, invdiag)
     has_transfer = _m(P) > 0 && _n(P) > 0 && length(_nzval(P)) > 0
     aggregate = _amg_backend_array(backend, aggregate_ids)
@@ -245,6 +246,7 @@ function _allocate_level(A, P, R, level_id, aggregate_ids, backend, smoother)
         x,
         tmp,
         direction,
+        coarse_tmp,
         aggregate,
         lambda,
         level_id,
@@ -561,8 +563,15 @@ function _hierarchy_level_summary(levels)
     return join(lines, "\n")
 end
 
-function _coarse_solve_name(backend, coarse_cpu::AMGCPUCoarseLevel, A)
+function _coarse_solve_name(backend, solver::AMG, coarse_cpu::AMGCPUCoarseLevel, A, is_symmetric::Bool)
     !(backend isa CPU) && _is_diagonal_matrix(A) && return "device_diagonal"
+    if !(backend isa CPU) &&
+       lowercase(get(ENV, "XCALIBRE_AMG_DEVICE_COARSE_SOLVE", "")) == "cg" &&
+       solver.mode isa Cg &&
+       is_symmetric &&
+       _m(A) == _n(A)
+        return "device_cg_experimental"
+    end
     return coarse_cpu.use_qr ? "sparse_qr" : "sparse_lu"
 end
 
@@ -691,17 +700,20 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
         0.0,
         0.0,
         0,
+        0.0,
+        0,
         operator_complexity,
         grid_complexity,
         0.0
     )
     rows_summary = join(map(level -> string(_m(level.A)), host_levels), " -> ")
     if log_diagnostics
-        coarse_solver = _coarse_solve_name(backend, coarse_cpu, host_levels[end].A)
+        coarse_solver = _coarse_solve_name(backend, solver, coarse_cpu, host_levels[end].A, is_symmetric)
+        coarse_host_transfer = !(backend isa CPU) && coarse_solver in ("sparse_lu", "sparse_qr")
         @info "AMG hierarchy built" mode=_amg_mode_name(solver.mode) levels=length(host_levels) rows=rows_summary
         @info "AMG hierarchy levels\n$(_hierarchy_level_summary(host_levels))"
         @info "AMG hierarchy diagnostics" cycle=solver.cycle coarsening=typeof(solver.coarsening) smoother=typeof(solver.smoother) backend=typeof(backend) operator_complexity=operator_complexity grid_complexity=grid_complexity
-        @info "AMG coarse solve" rows=_m(host_levels[end].A) nnz=length(_nzval(host_levels[end].A)) solver=coarse_solver device_transfer=!(backend isa CPU)
+        @info "AMG coarse solve" rows=_m(host_levels[end].A) nnz=length(_nzval(host_levels[end].A)) solver=coarse_solver device_transfer=coarse_host_transfer
     end
     return hierarchy
 end

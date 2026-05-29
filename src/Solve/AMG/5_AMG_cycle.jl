@@ -41,6 +41,73 @@ function _coarse_solve_on_device!(hierarchy::AMGHierarchy, level::AMGLevel, b)
     return level.x
 end
 
+function _amg_device_coarse_solve_mode()
+    return lowercase(get(ENV, "XCALIBRE_AMG_DEVICE_COARSE_SOLVE", ""))
+end
+
+function _amg_device_coarse_cg_maxiter(n)
+    value = get(ENV, "XCALIBRE_AMG_DEVICE_COARSE_MAXITER", "")
+    isempty(value) && return min(max(n, 8), 32)
+    return max(1, parse(Int, value))
+end
+
+function _amg_device_coarse_cg_rtol(::Type{T}) where {T}
+    value = get(ENV, "XCALIBRE_AMG_DEVICE_COARSE_RTOL", "")
+    isempty(value) && return sqrt(eps(T))
+    return T(parse(Float64, value))
+end
+
+function _use_device_coarse_cg(hierarchy::AMGHierarchy, solver::AMG, level::AMGLevel)
+    hierarchy.backend isa CPU && return false
+    _amg_device_coarse_solve_mode() == "cg" || return false
+    hierarchy.is_symmetric || return false
+    _m(level.A) == _n(level.A) || return false
+    return true
+end
+
+function _coarse_solve_on_device_cg!(hierarchy::AMGHierarchy, level::AMGLevel, b)
+    T = eltype(level.x)
+    x = level.x
+    r = level.tmp
+    p = level.direction
+    Ap = level.coarse_tmp
+    _fill_amg!(hierarchy, x, zero(T))
+    _copy_amg!(hierarchy, r, b)
+    _copy_amg!(hierarchy, p, r)
+
+    rr = dot(r, r)
+    rr0 = rr
+    tol2 = max(_amg_device_coarse_cg_rtol(T)^2 * rr0, eps(T))
+    maxiter = _amg_device_coarse_cg_maxiter(length(x))
+    iter = 0
+    while iter < maxiter && rr > tol2
+        iter += 1
+        _matvec!(hierarchy, Ap, level.A, p)
+        pAp = dot(p, Ap)
+        if !isfinite(pAp) || pAp <= eps(T)
+            break
+        end
+        alpha = rr / pAp
+        if !isfinite(alpha)
+            break
+        end
+        _cg_step_amg!(hierarchy, x, r, p, Ap, alpha)
+        rr_new = dot(r, r)
+        if !isfinite(rr_new)
+            break
+        elseif rr_new <= tol2
+            break
+        end
+        beta = rr_new / rr
+        if !isfinite(beta)
+            break
+        end
+        _xpay_amg!(hierarchy, p, r, beta)
+        rr = rr_new
+    end
+    return x
+end
+
 function _coarse_solve!(coarse_cpu::AMGCPUCoarseLevel, b)
     b === coarse_cpu.rhs || copyto!(coarse_cpu.rhs, b)
     if coarse_cpu.use_qr
@@ -59,9 +126,23 @@ function _record_coarse_solve_timing!(hierarchy::AMGHierarchy, rhs_copy_s, cpu_s
     return hierarchy
 end
 
+function _record_coarse_device_solve_timing!(hierarchy::AMGHierarchy, device_solve_s)
+    hierarchy.coarse_device_solve_time_s += device_solve_s
+    hierarchy.coarse_device_solve_calls += 1
+    return hierarchy
+end
+
 function _coarse_solve!(hierarchy::AMGHierarchy, solver::AMG, level::AMGLevel, b)
     if !(hierarchy.backend isa CPU) && _is_diagonal_matrix(hierarchy.host_levels[end].A)
         return _coarse_solve_on_device!(hierarchy, level, b)
+    end
+    if _use_device_coarse_cg(hierarchy, solver, level)
+        device_solve_s = @elapsed begin
+            _coarse_solve_on_device_cg!(hierarchy, level, b)
+            KernelAbstractions.synchronize(hierarchy.backend)
+        end
+        _record_coarse_device_solve_timing!(hierarchy, device_solve_s)
+        return level.x
     end
     coarse_cpu = hierarchy.coarse_cpu
     rhs_copy_s = @elapsed _cpu_copyto!(coarse_cpu.rhs, b)

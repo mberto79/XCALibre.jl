@@ -287,6 +287,7 @@ mutable struct AMGLevel{MA,MP,MR,VD,VI,VX,T}
     x::VX
     tmp::VX
     direction::VX
+    coarse_tmp::VX
     aggregate_ids::VI
     lambda_max::T
     level_id::Int
@@ -326,6 +327,8 @@ mutable struct AMGHierarchy{LD,LH,CC,B,RP,CP}
     coarse_cpu_solve_time_s::Float64
     coarse_x_copy_time_s::Float64
     coarse_solve_calls::Int
+    coarse_device_solve_time_s::Float64
+    coarse_device_solve_calls::Int
     operator_complexity::Float64
     grid_complexity::Float64
     last_cycle_factor::Float64
@@ -367,8 +370,9 @@ function _empty_amg_level(backend, ::Type{T}) where {T}
     x = KernelAbstractions.zeros(backend, T, 0)
     tmp = KernelAbstractions.zeros(backend, T, 0)
     direction = KernelAbstractions.zeros(backend, T, 0)
+    coarse_tmp = KernelAbstractions.zeros(backend, T, 0)
     aggregate_ids = KernelAbstractions.zeros(backend, Int, 0)
-    return AMGLevel(A, P, R, diag, invdiag, diag_index, rhs, x, tmp, direction, aggregate_ids, zero(T), 0, false)
+    return AMGLevel(A, P, R, diag, invdiag, diag_index, rhs, x, tmp, direction, coarse_tmp, aggregate_ids, zero(T), 0, false)
 end
 
 function _placeholder_lu_qr(::Type{T}) where {T}
@@ -410,6 +414,8 @@ function _empty_hierarchy(backend, ::Type{T}) where {T}
         true,
         0.0,
         0.0,
+        0.0,
+        0,
         0.0,
         0,
         1.0,

@@ -12,14 +12,14 @@ function calculate_cell_centres!(mesh)
     (; nodes, cells, cell_nodes) = mesh
     TF = eltype(nodes[1].coords)
     for (cID, cell) ∈ enumerate(cells)
-        sum = SVector{3}(zeros(TF, 3))
+        sum = SVector{3, TF}(0, 0, 0)
         nodesID_range = cell.nodes_range
         nodesID = @view cell_nodes[nodesID_range]
         for nID ∈ nodesID
             sum += nodes[nID].coords
         end
         centre = sum/length(nodesID)
-        @reset cell.centre = centre 
+        @reset cell.centre = centre
         cells[cID] = cell
     end
     return mesh
@@ -30,14 +30,14 @@ function calculate_face_centres!(mesh)
 
     TF = eltype(nodes[1].coords)
     for (fID, face) ∈ enumerate(faces)
-        sum = SVector{3}(zeros(TF, 3))
+        sum = SVector{3, TF}(0, 0, 0)
         nodesID_range = face.nodes_range
         nodesID = @view face_nodes[nodesID_range]
         for nID ∈ nodesID
             sum += nodes[nID].coords
         end
         centre = sum/length(nodesID)
-        @reset face.centre = centre 
+        @reset face.centre = centre
         faces[fID] = face
     end
     return mesh
@@ -49,7 +49,6 @@ function calculate_face_properties!(mesh)
     n_faces = length(mesh.faces)
 
     TF = _get_float(mesh)
-    TI = _get_int(mesh)
 
     # loop over boundary faces
     for fID ∈ 1:n_bfaces
@@ -60,20 +59,20 @@ function calculate_face_properties!(mesh)
         node2 = nodes[nIDs[2]]
 
         F1 = face.centre
-        C1 = cells[ownerCells[1]].centre 
+        C1 = cells[ownerCells[1]].centre
 
         fc_n1 = node1.coords - F1
         fc_n2 = node2.coords - F1
-        C1F1 = F1 - C1 # distance vector from face centre to cell1 
+        C1F1 = F1 - C1 # distance vector from face centre to cell1
 
         normal_vec = fc_n1 × fc_n2
         normal = normal_vec/norm(normal_vec)
         if C1F1 ⋅ normal < 0
-            normal *= -one(TI)
+            normal = -normal
         end
         @reset face.normal = normal
 
-        # calculate weight, delta and e 
+        # calculate weight, delta and e
         weight, delta, e = Mesh.weight_delta_e(C1F1, normal)
         @reset face.delta = delta
         @reset face.e = e
@@ -89,18 +88,18 @@ function calculate_face_properties!(mesh)
         (; ownerCells) = face
         node1 = nodes[nIDs[1]]
         node2 = nodes[nIDs[2]]
-    
-        F1 = face.centre
-        C1 = cells[ownerCells[1]].centre 
-        C2 = cells[ownerCells[2]].centre 
 
-        C1F1 = F1 - C1 # distance vector from face centre to cell1 
+        F1 = face.centre
+        C1 = cells[ownerCells[1]].centre
+        C2 = cells[ownerCells[2]].centre
+
+        C1F1 = F1 - C1 # distance vector from face centre to cell1
         C2F1 = F1 - C2 # distance vector from face centre to cell2
         C1C2 = C2 - C1 # distance vector from cell1 to cell2
 
         # area-weighted face normal
-        sumArea = 0.0
-        sumNormals = SVector{3}(0.0,0.0,0.0)
+        sumArea = zero(TF)
+        sumNormals = SVector{3, TF}(0, 0, 0)
         nodeIDs = [nIDs..., nIDs[1]]
         for nodei ∈ eachindex(face.nodes_range)
             node1 = nodes[nodeIDs[nodei]]
@@ -108,16 +107,16 @@ function calculate_face_properties!(mesh)
             edge = node2.coords - node1.coords
             areaSwepti = edge × (face.centre - node1.coords)
             normi = norm(areaSwepti)
-            areai = 0.5*normi
-            normali = areaSwepti/normi 
-            sumNormals += areai*normali 
+            areai = TF(0.5)*normi
+            normali = areaSwepti/normi
+            sumNormals += areai*normali
             sumArea += areai
         end
         normal = sumNormals/sumArea
 
         # check normal points out of cell and correct otherwise
         if C1C2 ⋅ normal < 0
-            normal *= -one(TI)
+            normal = -normal
         end
         @reset face.normal = normal
 
@@ -126,17 +125,16 @@ function calculate_face_properties!(mesh)
         @reset face.delta = delta
         @reset face.e = e
         @reset face.weight = weight
-        
+
         faces[fID] = face
     end
     return mesh
 end
 
 function calculate_face_areas!(mesh)
-    (; nodes, faces, face_nodes) = mesh 
+    (; nodes, faces, face_nodes) = mesh
 
     TF = _get_float(mesh)
-    TI = _get_int(mesh)
 
     for (fID, face) = enumerate(faces)
         nIDs = face_nodes[face.nodes_range]
@@ -151,10 +149,10 @@ function calculate_face_areas!(mesh)
 
             n1_n2 = n2 - n1
             n1_f = f - n1
-            ec = (n1 + n2)/TI(2) # edge centre
+            ec = (n1 + n2)/TF(2) # edge centre
             xf = ec - f
             normal_plane = n1_f × n1_n2
-            normal_vec = normal_plane × n1_n2 
+            normal_vec = normal_plane × n1_n2
             edgeNormal = normal_vec/norm(normal_vec)
             edgeArea = norm(n1_n2)
             sum += xf⋅edgeNormal*edgeArea
@@ -169,7 +167,6 @@ function calculate_cell_volumes!(mesh)
     (; faces, cells, cell_faces, cell_nsign, boundaries, boundary_cellsID) = mesh
 
     TF = _get_float(mesh)
-    TI = _get_int(mesh)
 
     oneThird = TF(1/3)
 
@@ -191,7 +188,7 @@ function calculate_cell_volumes!(mesh)
         cells[cID] = cell
     end
 
-    # add contribution from boundary faces 
+    # add contribution from boundary faces
     for boundary ∈ boundaries
         IDs_range = boundary.IDs_range
         cIDs = @view boundary_cellsID[IDs_range]

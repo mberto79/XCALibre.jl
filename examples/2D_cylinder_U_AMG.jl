@@ -6,8 +6,8 @@ grid = "cylinder_d10mm_5mm.unv"
 mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
-# backend = CPU(); workgroup = 1024; activate_multithread(backend)
-backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = 1024; activate_multithread(backend)
+# backend = CUDABackend(); workgroup = 32
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
@@ -54,29 +54,18 @@ solvers = (
     ),
     p = SolverSetup(
         solver=AMG(
-            mode=:cg,
-            # coarsening = RugeStuben(),
-            coarsening=SmoothAggregation(
-                strength_threshold=0.10,
-                level_strength_thresholds=(0.10, 0.075, 0.05),
-                max_prolongation_entries=2,
-                aggressive_levels=1,
-                aggressive_passes=1,
-                coarse_drop_tolerances=(0.0, 0.01, 0.03, 0.05)
-            ),
+            mode=Cg(),
             smoother=AMGJacobi(omega=2/3),
-            cycle=:V,
-            presweeps=3,
-            postsweeps=1,
-            max_levels=10,
-            min_coarse_rows=32,
-            max_coarse_rows=512,
-            adaptive_rebuild_factor=0.85,
+            coarsening=RugeStuben(strength_threshold=0.001),
+            pre_sweeps=2,
+            post_sweeps=2,
+            cycle=VCycle()
         ),
+        # solver = Cg(),
         preconditioner=Jacobi(),
         convergence=1e-7,
         relax=1.0,
-        itmax=200,
+        itmax=1000,
         rtol=0.0,
         atol=1e-5
     )

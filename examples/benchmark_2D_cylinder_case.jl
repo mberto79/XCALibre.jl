@@ -17,46 +17,46 @@ end
 function default_benchmark_configs()
     return [
         (backend="cpu", mode="baseline", iterations=5, warmup_iterations=1),
-        (backend="cpu", mode="amg_example", iterations=5, warmup_iterations=1),
-        (backend="cpu", mode="amg_complexity_controlled", iterations=5, warmup_iterations=1),
+        (backend="cpu", mode="amg_default_cg", iterations=5, warmup_iterations=1),
+        (backend="cpu", mode="amg_solve", iterations=5, warmup_iterations=1),
         (backend="cuda", mode="baseline", iterations=1, warmup_iterations=1),
-        (backend="cuda", mode="amg_example", iterations=1, warmup_iterations=1),
+        (backend="cuda", mode="amg_default_cg", iterations=1, warmup_iterations=1),
     ]
 end
 
 function amg_pressure_solver(mode::String)
-    if mode == "amg" || mode == "amg_example" || mode == "amg_omega11"
+    if mode == "amg" || mode == "amg_example" || mode == "amg_default_cg"
         return SolverSetup(
             solver=AMG(
-                mode=:cg,
-                coarsening=SmoothAggregation(),
-                smoother=mode == "amg_omega11" ? AMGJacobi(omega=1.1) : AMGJacobi(),
-                cycle=:V
+                mode=Cg(),
+                coarsening=SmoothAggregation(
+                    strength_threshold=0.10,
+                    interpolation=:smoothed
+                ),
+                smoother=AMGJacobi(omega=2/3),
+                pre_sweeps=2,
+                post_sweeps=2,
+                cycle=VCycle()
             ),
             preconditioner=Jacobi(),
             convergence=1e-7,
             relax=1.0,
-            itmax=40,
+            itmax=200,
             rtol=0.0,
             atol=1e-5
         )
-    elseif mode == "amg_complexity_controlled"
+    elseif mode == "amg_solve"
         return SolverSetup(
             solver=AMG(
-                mode=:cg,
-                cycle=:V,
+                mode=AMGSolver(),
                 coarsening=SmoothAggregation(
                     strength_threshold=0.10,
-                    level_strength_thresholds=(0.10, 0.075, 0.05),
-                    max_prolongation_entries=2,
-                    aggressive_levels=1,
-                    aggressive_passes=1,
-                    coarse_drop_tolerances=(0.0, 0.01, 0.03, 0.05)
+                    interpolation=:smoothed
                 ),
-                smoother=AMGJacobi(omega=1.1),
-                presweeps=2,
-                postsweeps=2,
-                max_coarse_rows=512
+                smoother=AMGJacobi(),
+                pre_sweeps=1,
+                post_sweeps=1,
+                cycle=VCycle()
             ),
             preconditioner=Jacobi(),
             convergence=1e-7,
@@ -168,8 +168,10 @@ function run_case(backend_name::String, mode::String, iterations::Integer, warmu
     reset_solve_history!()
     model, config = make_case(backend, workgroup, mode, iterations)
     residuals = nothing
-    elapsed = @elapsed residuals = run!(model, config)
-    backend isa CUDABackend && CUDA.synchronize()
+    elapsed = @elapsed begin
+        residuals = run!(model, config)
+        backend isa CUDABackend && CUDA.synchronize()
+    end
     history = solve_history()
     disable_solve_history!()
     pressure_history = [entry for entry in history if entry.equation_kind == "ScalarModel"]
@@ -256,6 +258,23 @@ function run_benchmarks(configs)
     results = NamedTuple[]
     for cfg in configs
         push!(results, run_case(cfg.backend, cfg.mode, cfg.iterations, cfg.warmup_iterations))
+    end
+    for backend in unique(result.backend for result in results)
+        baseline = findfirst(result -> result.backend == backend && result.mode == "baseline", results)
+        isnothing(baseline) && continue
+        for result in results
+            result.backend == backend || continue
+            startswith(result.mode, "amg") || continue
+            speedup = results[baseline].elapsed_s / result.elapsed_s
+            in_target = 1.5 <= speedup <= 2.5
+            @printf(
+                "SPEEDUP backend=%s mode=%s speedup=%.3f target=%s\n",
+                backend,
+                result.mode,
+                speedup,
+                string(in_target)
+            )
+        end
     end
     return results
 end

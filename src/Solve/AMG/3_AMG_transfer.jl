@@ -16,7 +16,6 @@ function _launch_amg_kernel!(hierarchy::AMGHierarchy, kernel, ndrange, args...)
     ndrange <= 0 && return nothing
     kernel! = kernel(_setup(hierarchy.backend, hierarchy.workgroup, ndrange)...)
     kernel!(args...)
-    KernelAbstractions.synchronize(hierarchy.backend)
     return nothing
 end
 

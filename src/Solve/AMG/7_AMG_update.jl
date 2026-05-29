@@ -85,7 +85,7 @@ function update!(workspace::AMGWorkspace, A, solver::AMG, config)
         return workspace
     end
 
-    if hierarchy.force_rebuild || !_pattern_matches(hierarchy, A)
+    if !_pattern_matches(hierarchy, A)
         setup_backend = _amg_setup_backend(hardware.backend)
         setup_matrix = _amg_setup_matrix(A, setup_backend)
         elapsed_s = @elapsed begin
@@ -96,19 +96,11 @@ function update!(workspace::AMGWorkspace, A, solver::AMG, config)
     end
 
     _sync_finest_matrix!(hierarchy, A)
-    if _needs_numeric_refresh(hierarchy, hierarchy.host_levels[1].A, solver)
-        elapsed_s = @elapsed begin
-            refresh_hierarchy!(hierarchy, solver)
-            _sync_device_levels_numeric!(hierarchy)
-        end
-        _record_refresh_timing!(workspace, elapsed_s)
-    else
-        elapsed_s = @elapsed begin
-            refresh_finest_level!(hierarchy, solver)
-            _sync_device_finest_level!(hierarchy)
-        end
-        _record_finest_refresh_timing!(workspace, elapsed_s)
+    elapsed_s = @elapsed begin
+        refresh_hierarchy!(hierarchy, solver)
+        _sync_device_levels_numeric!(hierarchy)
     end
+    _record_refresh_timing!(workspace, elapsed_s)
     return workspace
 end
 
@@ -126,11 +118,7 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, 
     _record_pressure_matrix_capture!(phiEqn, setup, component, A, b, x)
 
     fine_A = workspace.hierarchy.levels[1].A
-    if solver.mode == :solver
-        amg_solve!(workspace, workspace.hierarchy, solver, fine_A, b, x; itmax=itmax, atol=atol, rtol=rtol)
-    else
-        amg_cg_solve!(workspace, workspace.hierarchy, solver, fine_A, b, x; itmax=itmax, atol=atol, rtol=rtol)
-    end
+    _amg_solve_mode!(workspace, workspace.hierarchy, solver, solver.mode, fine_A, b, x; itmax=itmax, atol=atol, rtol=rtol)
 
     if typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson}
         xcal_foreach(x, config) do i
@@ -151,4 +139,12 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, 
     )
     workspace.iterations == itmax && @warn "Maximum number of iterations reached!"
     return residual(phiEqn, component, config)
+end
+
+function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::AMGSolver, A, b, x; itmax, atol, rtol)
+    return amg_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol)
+end
+
+function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::Cg, A, b, x; itmax, atol, rtol)
+    return amg_cg_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol)
 end

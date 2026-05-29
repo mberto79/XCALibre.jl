@@ -542,7 +542,9 @@ function build_prolongation(A, coarsening::SmoothAggregation, candidate=nothing,
     end
     nagg < 2 && return agg, nothing, candidate_vec
     P0, coarse_candidate = _tentative_prolongation(agg, candidate_vec)
-    P = _smooth_prolongation(A, P0, coarsening.smoother_weight)
+    P = coarsening.interpolation == :smoothed ?
+        _smooth_prolongation(A, P0, coarsening.smoother_weight) :
+        P0
     P = _truncate_prolongation(P, coarsening.max_prolongation_entries)
     return agg, P, coarse_candidate
 end

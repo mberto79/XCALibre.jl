@@ -25,6 +25,11 @@ end
     @inbounds x_new[i] = (one(T) - omega) * x_old[i] + omega * invdiag[i] * (b[i] - sigma)
 end
 
+@kernel function _amg_weighted_diagonal_correction_kernel!(x, residual, invdiag, omega)
+    i = @index(Global)
+    @inbounds x[i] += omega * invdiag[i] * residual[i]
+end
+
 function _fill_amg!(hierarchy::AMGHierarchy, x, value)
     _launch_amg_kernel!(hierarchy, _amg_fill_kernel!, length(x), x, value)
     return x
@@ -64,6 +69,35 @@ function _apply_level_smoother!(hierarchy::AMGHierarchy, smoother::AMGJacobi, le
             omega
         )
         level.x, level.tmp = level.tmp, level.x
+    end
+    return level.x
+end
+
+function _chebyshev_weight(smoother::AMGChebyshev, level::AMGLevel, degree_index)
+    T = eltype(level.x)
+    lambda_max = max(T(smoother.lambda_scale) * T(level.lambda_max), one(T))
+    lambda_min = lambda_max / T(smoother.eig_ratio)
+    center = (lambda_max + lambda_min) / T(2)
+    radius = (lambda_max - lambda_min) / T(2)
+    angle = (T(2 * degree_index - 1) * T(pi)) / T(2 * smoother.degree)
+    return inv(center - radius * cos(angle))
+end
+
+function _apply_level_smoother!(hierarchy::AMGHierarchy, smoother::AMGChebyshev, level::AMGLevel, b, loops)
+    for _ in 1:loops
+        for k in 1:smoother.degree
+            _residual!(hierarchy, level.tmp, level.A, level.x, b)
+            omega = _chebyshev_weight(smoother, level, k)
+            _launch_amg_kernel!(
+                hierarchy,
+                _amg_weighted_diagonal_correction_kernel!,
+                length(level.x),
+                level.x,
+                level.tmp,
+                level.inv_diagonal,
+                omega
+            )
+        end
     end
     return level.x
 end

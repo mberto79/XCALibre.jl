@@ -23,11 +23,11 @@ Use solver-level configuration, not preconditioner-level configuration:
 ```julia
 p = SolverSetup(
     solver = AMG(
-        mode = :cg,                 # :solver or :cg
+        mode = Cg(),                # AMGSolver() or Cg()
         coarsening = SmoothAggregation(),
         smoother = AMGChebyshev(),
-        presweeps = 1,
-        postsweeps = 1,
+        pre_sweeps = 1,
+        post_sweeps = 1,
         max_levels = 10,
         min_coarse_rows = 32,
         max_coarse_rows = 256
@@ -40,8 +40,8 @@ p = SolverSetup(
 )
 ```
 Behavior:
-- `mode=:solver` runs an AMG V-cycle as the main solver with early exit from `atol`/`rtol`.
-- `mode=:cg` runs CG with AMG V-cycle as the preconditioner; only valid for symmetric matrices.
+- `mode=AMGSolver()` runs an AMG V-cycle as the main solver with early exit from `atol`/`rtol`.
+- `mode=Cg()` runs CG with AMG V-cycle as the preconditioner; only valid for symmetric matrices.
 - Existing Krylov solvers remain unchanged.
 - `preconditioner` stays mandatory in `SolverSetup` for compatibility, but AMG code ignores it and uses its own hierarchy/smoother stack.
 
@@ -113,7 +113,7 @@ Deferred from v1:
 
 ### Example, Docs, And Validation Surface
 Add:
-- one focused AMG example derived from [examples/2D_cylinder_U.jl](/home/humberto/Julia/XCALibre.jl/examples/2D_cylinder_U.jl) with pressure using `AMG(mode=:cg, coarsening=SmoothAggregation(), smoother=AMGChebyshev())`;
+- one focused AMG example derived from [examples/2D_cylinder_U.jl](/home/humberto/Julia/XCALibre.jl/examples/2D_cylinder_U.jl) with pressure using `AMG(mode=Cg(), coarsening=SmoothAggregation(), smoother=AMGChebyshev())`;
 - user-guide updates for the new solver options;
 - release note entry.
 
@@ -128,7 +128,7 @@ Add automated tests in the existing suite for:
 - Pure AMG solve: converges on a manufactured 2D Laplace system and respects `atol` / `rtol` early exit.
 - AMG-CG solve: converges on the same SPD system and matches or improves iteration count versus plain `Cg()`+`Jacobi()`.
 - Coarsening coverage: one test for `SmoothAggregation()`, one for `RugeStuben()`.
-- Failure mode: `AMG(mode=:cg)` throws a clear error if the caller uses it on a matrix marked or detected as nonsymmetric.
+- Failure mode: `AMG(mode=Cg())` throws a clear error if the caller uses it on a matrix marked or detected as nonsymmetric.
 - End-to-end example: add a reduced-iteration cylinder regression derived from `2D_cylinder_U.jl` and require it to run without errors on CPU; add a CUDA-gated version for environments with CUDA.
 
 Acceptance for implementation:

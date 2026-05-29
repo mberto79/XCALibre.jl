@@ -47,7 +47,7 @@ function _record_pressure_matrix_capture!(phiEqn::ModelEquation, setup, componen
         equation_kind=string(nameof(typeof(phiEqn.type))),
         component=_component_label(component),
         solver=string(nameof(typeof(setup.solver))),
-        solver_mode=String(setup.solver.mode),
+        solver_mode=_amg_mode_name(setup.solver.mode),
         A=_copy_probe_matrix(A),
         b=copy(Array(b)),
         x0=copy(Array(x0))
@@ -90,7 +90,7 @@ function _record_linear_solve!(phiEqn::ModelEquation, setup, component, iteratio
         equation_kind=string(nameof(typeof(phiEqn.type))),
         component=_component_label(component),
         solver=string(nameof(typeof(setup.solver))),
-        solver_mode=setup.solver isa AMG ? String(setup.solver.mode) : "krylov",
+        solver_mode=setup.solver isa AMG ? _amg_mode_name(setup.solver.mode) : "krylov",
         iterations=iterations,
         itmax=itmax,
         hit_itmax=iterations == itmax,

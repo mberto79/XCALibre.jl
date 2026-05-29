@@ -4,13 +4,13 @@ include("benchmark_2D_cylinder_case.jl")
 # Running several entries here amortizes package compilation and method compilation costs.
 benchmark_configs = [
     (backend="cpu", mode="baseline", iterations=5, warmup_iterations=1),
-    (backend="cpu", mode="amg_example", iterations=5, warmup_iterations=1),
+    (backend="cpu", mode="amg_default_cg", iterations=5, warmup_iterations=1),
 ]
 
 if CUDA.functional()
     append!(benchmark_configs, [
         (backend="cuda", mode="baseline", iterations=1, warmup_iterations=1),
-        (backend="cuda", mode="amg_example", iterations=1, warmup_iterations=1),
+        (backend="cuda", mode="amg_default_cg", iterations=1, warmup_iterations=1),
     ])
 end
 

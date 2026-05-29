@@ -9,11 +9,11 @@ fast enough per unit cost to beat the baseline `Cg()+Jacobi()` solve.
 
 New timing splits now make the dominant cost visible:
 
-- for `AMG(mode=:cg)`, most wall-clock is in AMG applies, not in
+- for AMG-CG mode, most wall-clock is in AMG applies, not in
   hierarchy maintenance
-- for `AMG(mode=:solver)`, the current adaptive rebuild path rebuilt the
-  hierarchy on every recorded pressure solve in the benchmarked run,
-  so numeric reuse was effectively absent
+- for direct AMG mode, the old adaptive rebuild path rebuilt the hierarchy
+  on every recorded pressure solve in the benchmarked run, so numeric reuse
+  was effectively absent
 - that rebuild pathology has now been traced to the trigger itself:
   it used weak cycles from freshly built hierarchies as rebuild signals,
   which caused repeated rebuilds even when rebuild was not helping
@@ -33,10 +33,9 @@ The following Stage B work is in place:
 - New smoothers were added:
   - `AMGSymmetricGaussSeidel()`
   - `AMGL1Jacobi()`
-- `AMG(...)` now supports `cycle=:V` and `cycle=:W`.
-- Bounded hierarchy numeric reuse is implemented through:
-  - `coarse_refresh_interval`
-  - `numeric_refresh_rtol`
+- `AMG(...)` now supports `cycle=VCycle()`.
+- Bounded hierarchy numeric reuse knobs have been removed; the hierarchy is
+  rebuilt on pattern change and otherwise refreshed numerically.
 - Hierarchy diagnostics now track:
   - operator complexity
   - grid complexity
@@ -80,16 +79,16 @@ run:
   10 recorded pressure solves.
 - Baseline pressure iteration counts ranged from `240` to `900`.
 - Baseline final linear residuals were consistently near `1e-5`.
-- `AMG(mode=:cg)` with the current SGS Stage B setup hit `itmax=40` on
+- AMG-CG mode with the current SGS Stage B setup hit `itmax=40` on
   `7/10` pressure solves.
-- `AMG(mode=:solver)` with the current SGS Stage B setup hit `itmax=40`
+- Direct AMG mode with the current SGS Stage B setup hit `itmax=40`
   on `10/10` pressure solves.
-- `AMG(mode=:cg)` timing split on the same run was:
+- AMG-CG timing split on the same run was:
   - hierarchy build / rebuild: `0.696810 s` across `3` builds
   - hierarchy refresh: `0.254764 s` across `1` refresh
   - finest-only refresh: `0.037893 s` across `6` refreshes
   - AMG apply: `4.496873 s` across `344` applies
-- `AMG(mode=:solver)` timing split on the same run was:
+- Direct AMG timing split on the same run was:
   - hierarchy build / rebuild: `2.249184 s` across `10` builds
   - hierarchy refresh: `0.000000 s`
   - finest-only refresh: `0.000000 s`
@@ -125,17 +124,17 @@ Measured on 2026-04-23 with `JULIA_NUM_THREADS=1`:
 | mode | elapsed_s | outer pressure residual | linear solve behavior |
 | --- | ---: | ---: | --- |
 | baseline `Cg()+Jacobi()` | `2.324711` | `p_last = 1.936286e-4` | `10/10` pressure solves converged before `itmax` |
-| `AMG(mode=:cg)` + SGS, `cycle=:V`, `itmax=40` | `6.106369` | `p_last = 1.706483e-3` | `7/10` pressure solves hit `itmax` |
-| `AMG(mode=:solver)` + SGS, `cycle=:W`, `itmax=40` | `14.818648` | `p_last = 1.063786e-1` | `10/10` pressure solves hit `itmax` |
+| AMG-CG + SGS, `cycle=VCycle()`, `itmax=40` | `6.106369` | `p_last = 1.706483e-3` | `7/10` pressure solves hit `itmax` |
+| direct AMG + SGS, W-cycle prototype, `itmax=40` | `14.818648` | `p_last = 1.063786e-1` | `10/10` pressure solves hit `itmax` |
 
 Additional timing split from the latest instrumented run
 (`JULIA_NUM_THREADS=1`, warmed 5-step cylinder):
 
 | mode | build/rebuild_s | refresh_s | finest_refresh_s | apply_s |
 | --- | ---: | ---: | ---: | ---: |
-| `AMG(mode=:cg)` + SGS, `cycle=:V`, `itmax=40` | `0.696810` | `0.254764` | `0.037893` | `4.496873` |
-| `AMG(mode=:solver)` + SGS, `cycle=:W`, `itmax=40` before rebuild fix | `2.249184` | `0.000000` | `0.000000` | `11.590113` |
-| `AMG(mode=:solver)` + SGS, `cycle=:W`, `itmax=40` after rebuild fix | `1.317716` | `0.000000` | `0.005678` | `11.288304` |
+| AMG-CG + SGS, `cycle=VCycle()`, `itmax=40` | `0.696810` | `0.254764` | `0.037893` | `4.496873` |
+| direct AMG + SGS, W-cycle prototype, `itmax=40` before rebuild fix | `2.249184` | `0.000000` | `0.000000` | `11.590113` |
+| direct AMG + SGS, W-cycle prototype, `itmax=40` after rebuild fix | `1.317716` | `0.000000` | `0.005678` | `11.288304` |
 
 Interpretation:
 
@@ -172,8 +171,8 @@ Validated in this session:
 - AMG phase timing capture through the same solve history records
 - warmed single-thread cylinder benchmark runs for:
   - baseline
-  - `AMG(mode=:cg)` Stage B SGS configuration
-  - `AMG(mode=:solver)` Stage B SGS configuration
+  - AMG-CG Stage B SGS configuration
+  - direct AMG Stage B SGS configuration
 - adaptive rebuild semantics:
   - weak fresh hierarchy does not force immediate rebuild
   - weak reused hierarchy still forces rebuild on the next update

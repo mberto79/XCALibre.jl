@@ -60,8 +60,8 @@ function make_cylinder_probe_case(iterations::Integer)
         ),
         p = SolverSetup(
             solver=AMG(
-                mode=:cg,
-                cycle=:V,
+                mode=Cg(),
+                cycle=VCycle(),
                 coarsening=SmoothAggregation(),
                 smoother=AMGJacobi()
             ),
@@ -174,8 +174,8 @@ function probe_configs(profile::String)
             strength_threshold=strength,
             smoother_weight=smoother_weight,
             jacobi_omega=omega,
-            presweeps=sweeps[1],
-            postsweeps=sweeps[2],
+            pre_sweeps=sweeps[1],
+            post_sweeps=sweeps[2],
             max_coarse_rows=max_coarse_rows,
             max_prolongation_entries=max_entries,
             level_strength_thresholds=profile == "complexity_controlled" ? (strength, max(0.04, strength * 0.75), max(0.02, strength * 0.5)) : nothing,
@@ -199,10 +199,10 @@ function first_coarse_rows(hierarchy)
     return length(hierarchy.levels) >= 2 ? size(hierarchy.levels[2].A, 1) : size(hierarchy.levels[1].A, 1)
 end
 
-function make_probe_solver(cfg; coarse_refresh_interval=typemax(Int), numeric_refresh_rtol=Inf)
+function make_probe_solver(cfg)
     return AMG(
-        mode=:cg,
-        cycle=:V,
+        mode=Cg(),
+        cycle=VCycle(),
         coarsening=SmoothAggregation(
             strength_threshold=cfg.strength_threshold,
             level_strength_thresholds=cfg_value(cfg, :level_strength_thresholds, nothing),
@@ -213,11 +213,9 @@ function make_probe_solver(cfg; coarse_refresh_interval=typemax(Int), numeric_re
             coarse_drop_tolerances=cfg_value(cfg, :coarse_drop_tolerances, ())
         ),
         smoother=AMGJacobi(omega=cfg.jacobi_omega),
-        presweeps=cfg.presweeps,
-        postsweeps=cfg.postsweeps,
-        max_coarse_rows=cfg.max_coarse_rows,
-        coarse_refresh_interval=coarse_refresh_interval,
-        numeric_refresh_rtol=numeric_refresh_rtol
+        pre_sweeps=cfg.pre_sweeps,
+        post_sweeps=cfg.post_sweeps,
+        max_coarse_rows=cfg.max_coarse_rows
     )
 end
 
@@ -294,16 +292,7 @@ end
 
 function reuse_policies(profile::String)
     if profile in ("reuse", "near_default", "smoke", "full")
-        return [
-            (name="finest_only", coarse_refresh_interval=typemax(Int), numeric_refresh_rtol=Inf),
-            (name="full_every_system", coarse_refresh_interval=typemax(Int), numeric_refresh_rtol=0.0),
-            (name="full_every_2_systems", coarse_refresh_interval=1, numeric_refresh_rtol=Inf),
-            (name="full_every_3_systems", coarse_refresh_interval=2, numeric_refresh_rtol=Inf),
-            (name="rtol_0p01", coarse_refresh_interval=typemax(Int), numeric_refresh_rtol=0.01),
-            (name="rtol_0p03", coarse_refresh_interval=typemax(Int), numeric_refresh_rtol=0.03),
-            (name="rtol_0p05", coarse_refresh_interval=typemax(Int), numeric_refresh_rtol=0.05),
-            (name="rtol_0p10", coarse_refresh_interval=typemax(Int), numeric_refresh_rtol=0.10)
-        ]
+        return [(name="standard",)]
     end
     throw(ArgumentError("unknown replay policy profile: $profile"))
 end
@@ -313,8 +302,8 @@ function default_replay_config()
         strength_threshold=0.16,
         smoother_weight=1.0,
         jacobi_omega=1.1,
-        presweeps=2,
-        postsweeps=2,
+        pre_sweeps=2,
+        post_sweeps=2,
         max_coarse_rows=512,
         max_prolongation_entries=4,
         level_strength_thresholds=nothing,
@@ -455,11 +444,7 @@ function vcycle_reduction_factor!(workspace, hierarchy, solver, A, b, x0)
 end
 
 function run_reuse_policy(systems, cfg, policy; itmax=40, atol=1e-5, rtol=0.0)
-    solver = make_probe_solver(
-        cfg;
-        coarse_refresh_interval=policy.coarse_refresh_interval,
-        numeric_refresh_rtol=policy.numeric_refresh_rtol
-    )
+    solver = make_probe_solver(cfg)
     b0 = copy(first(systems).b)
     workspace = XCALibre.Solve._workspace(solver, b0)
     config = (hardware=Hardware(backend=CPU(), workgroup=1024),)
@@ -622,12 +607,10 @@ function print_replay_rankings(rows; top_n=8)
             result = row.result
             policy = result.policy
             @printf(
-                "TOP_REPLAY metric=%s rank=%d policy=%s coarse_interval=%s numeric_rtol=%s final_relative=%.6e max_relative=%.6e mean_relative=%.6e solve_s=%.6e avg_vcycle_s=%.6e build_s=%.6e refresh_s=%.6e refreshes=%d finest_refreshes=%d operator_complexity=%.6f composite=%.6f rows=%s residuals=%s vcycle_factors=%s dotpq_min=%.6e dotpq_max=%.6e rz_min=%.6e rz_max=%.6e nonpositive_dotpq=%s nonpositive_rz=%s nearzero_dotpq=%s nearzero_rz=%s max_drift=%.6e\n",
+                "TOP_REPLAY metric=%s rank=%d policy=%s final_relative=%.6e max_relative=%.6e mean_relative=%.6e solve_s=%.6e avg_vcycle_s=%.6e build_s=%.6e refresh_s=%.6e refreshes=%d finest_refreshes=%d operator_complexity=%.6f composite=%.6f rows=%s residuals=%s vcycle_factors=%s dotpq_min=%.6e dotpq_max=%.6e rz_min=%.6e rz_max=%.6e nonpositive_dotpq=%s nonpositive_rz=%s nearzero_dotpq=%s nearzero_rz=%s max_drift=%.6e\n",
                 string(metric),
                 rank,
                 policy.name,
-                policy.coarse_refresh_interval == typemax(Int) ? "Inf" : string(policy.coarse_refresh_interval),
-                isinf(policy.numeric_refresh_rtol) ? "Inf" : @sprintf("%.3f", policy.numeric_refresh_rtol),
                 result.final_relative_residual,
                 result.max_relative_residual,
                 result.mean_relative_residual,
@@ -664,10 +647,8 @@ function run_reuse_replay(systems, policies)
         result = run_reuse_policy(systems, cfg, policy)
         push!(rows, (policy_id=policy_id, result=result))
         @printf(
-            "PROBE_REPLAY policy=%s coarse_interval=%s numeric_rtol=%s systems=%d final_relative=%.6e max_relative=%.6e mean_relative=%.6e solve_s=%.6e avg_vcycle_s=%.6e build_s=%.6e refresh_s=%.6e refreshes=%d finest_refreshes=%d operator_complexity=%.6f grid_complexity=%.6f composite_pending rows=%s residuals=%s vcycle_factors=%s dotpq_min=%.6e dotpq_max=%.6e rz_min=%.6e rz_max=%.6e nonpositive_dotpq=%s nonpositive_rz=%s nearzero_dotpq=%s nearzero_rz=%s max_drift=%.6e\n",
+            "PROBE_REPLAY policy=%s systems=%d final_relative=%.6e max_relative=%.6e mean_relative=%.6e solve_s=%.6e avg_vcycle_s=%.6e build_s=%.6e refresh_s=%.6e refreshes=%d finest_refreshes=%d operator_complexity=%.6f grid_complexity=%.6f composite_pending rows=%s residuals=%s vcycle_factors=%s dotpq_min=%.6e dotpq_max=%.6e rz_min=%.6e rz_max=%.6e nonpositive_dotpq=%s nonpositive_rz=%s nearzero_dotpq=%s nearzero_rz=%s max_drift=%.6e\n",
             policy.name,
-            policy.coarse_refresh_interval == typemax(Int) ? "Inf" : string(policy.coarse_refresh_interval),
-            isinf(policy.numeric_refresh_rtol) ? "Inf" : @sprintf("%.3f", policy.numeric_refresh_rtol),
             result.systems,
             result.final_relative_residual,
             result.max_relative_residual,
@@ -799,8 +780,8 @@ function print_probe_rankings(rows; top_n=8)
                 cfg.strength_threshold,
                 cfg.smoother_weight,
                 cfg.jacobi_omega,
-                cfg.presweeps,
-                cfg.postsweeps,
+                cfg.pre_sweeps,
+                cfg.post_sweeps,
                 cfg.max_coarse_rows,
                 cfg.max_prolongation_entries,
                 result.final_relative_residual,
@@ -875,8 +856,8 @@ function print_config_rankings(rows; top_n=12)
                 cfg.strength_threshold,
                 cfg.smoother_weight,
                 cfg.jacobi_omega,
-                cfg.presweeps,
-                cfg.postsweeps,
+                cfg.pre_sweeps,
+                cfg.post_sweeps,
                 cfg.max_coarse_rows,
                 cfg.max_prolongation_entries,
                 row.final_relative_residual,
@@ -917,8 +898,8 @@ function run_probe_sweep(systems, configs)
                 cfg.strength_threshold,
                 cfg.smoother_weight,
                 cfg.jacobi_omega,
-                cfg.presweeps,
-                cfg.postsweeps,
+                cfg.pre_sweeps,
+                cfg.post_sweeps,
                 cfg.max_coarse_rows,
                 cfg.max_prolongation_entries,
                 result.iterations,
@@ -963,8 +944,8 @@ function run_history_sweep(systems, configs)
                 cfg.strength_threshold,
                 cfg.smoother_weight,
                 cfg.jacobi_omega,
-                cfg.presweeps,
-                cfg.postsweeps,
+                cfg.pre_sweeps,
+                cfg.post_sweeps,
                 cfg.max_coarse_rows,
                 cfg.max_prolongation_entries,
                 result.iterations,
@@ -992,8 +973,8 @@ function run_history_sweep(systems, configs)
                 rank,
                 row.system_id,
                 row.config_id,
-                cfg.presweeps,
-                cfg.postsweeps,
+                cfg.pre_sweeps,
+                cfg.post_sweeps,
                 cfg.max_coarse_rows,
                 result.final_relative_residual,
                 result.solve_time_s,

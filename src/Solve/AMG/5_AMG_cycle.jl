@@ -16,7 +16,7 @@ function _coarse_solve!(hierarchy::AMGHierarchy, level::AMGLevel, b)
     return level.x
 end
 
-function _cycle!(hierarchy::AMGHierarchy, solver::AMG, level_index, rhs)
+function _cycle!(hierarchy::AMGHierarchy, cycle::VCycle, solver::AMG, level_index, rhs)
     levels = hierarchy.levels
     level = levels[level_index]
     _fill_amg!(hierarchy, level.x, zero(eltype(level.x)))
@@ -25,23 +25,23 @@ function _cycle!(hierarchy::AMGHierarchy, solver::AMG, level_index, rhs)
         return _coarse_solve!(hierarchy, level, rhs)
     end
 
-    _apply_level_smoother!(hierarchy, solver.smoother, level, rhs, solver.presweeps)
+    _apply_level_smoother!(hierarchy, solver.smoother, level, rhs, solver.pre_sweeps)
     _residual!(hierarchy, level.rhs, level.A, level.x, rhs)
 
     coarse_level = levels[level_index + 1]
     _restrict!(hierarchy, coarse_level.rhs, level.R, level.rhs)
     _fill_amg!(hierarchy, coarse_level.x, zero(eltype(coarse_level.x)))
-    _cycle!(hierarchy, solver, level_index + 1, coarse_level.rhs)
+    _cycle!(hierarchy, cycle, solver, level_index + 1, coarse_level.rhs)
 
     _prolongate_add!(hierarchy, level.x, level.P, coarse_level.x, level.tmp)
-    _apply_level_smoother!(hierarchy, solver.smoother, level, rhs, solver.postsweeps)
+    _apply_level_smoother!(hierarchy, solver.smoother, level, rhs, solver.post_sweeps)
     return level.x
 end
 
 function amg_apply_preconditioner!(z, hierarchy::AMGHierarchy, solver::AMG, r)
     root = hierarchy.levels[1]
     _fill_amg!(hierarchy, root.x, zero(eltype(root.x)))
-    _cycle!(hierarchy, solver, 1, r)
+    _cycle!(hierarchy, solver.cycle, solver, 1, r)
     _copy_amg!(hierarchy, z, root.x)
     return z
 end
@@ -49,15 +49,8 @@ end
 function _update_cycle_factor!(hierarchy::AMGHierarchy, initial_rel, final_rel, iterations, solver::AMG)
     if iterations > 0 && initial_rel > 0
         hierarchy.last_cycle_factor = (final_rel / initial_rel)^(1 / iterations)
-        if solver.mode == :cg
-            hierarchy.force_rebuild = false
-            return hierarchy.last_cycle_factor
-        end
-        hierarchy.force_rebuild = hierarchy.reuse_steps > 0 &&
-            hierarchy.last_cycle_factor > solver.adaptive_rebuild_factor
     else
         hierarchy.last_cycle_factor = 0.0
-        hierarchy.force_rebuild = false
     end
     return hierarchy.last_cycle_factor
 end

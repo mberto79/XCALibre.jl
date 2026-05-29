@@ -32,7 +32,7 @@ function _is_symmetric(A; atol=1e-10)
 end
 
 function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol)
-    hierarchy.is_symmetric || throw(ArgumentError("AMG(mode=:cg) requires a symmetric matrix"))
+    hierarchy.is_symmetric || throw(ArgumentError("AMG(mode=Cg()) requires a symmetric matrix"))
     T = eltype(x)
     r = workspace.residual
     z = workspace.preconditioned

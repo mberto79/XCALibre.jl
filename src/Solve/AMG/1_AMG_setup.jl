@@ -25,28 +25,6 @@ function _pattern_signature(A)
     return Int.(_cpu_vector(_rowptr(A))), Int.(_cpu_vector(_colval(A)))
 end
 
-function _numeric_refresh_ratio(snapshot, A)
-    current = _nzval(A)
-    length(snapshot) == length(current) || return Inf
-    max_delta = 0.0
-    max_scale = 0.0
-    @inbounds for i in eachindex(current)
-        ai = current[i]
-        scale = max(abs(snapshot[i]), abs(ai))
-        delta = abs(ai - snapshot[i])
-        max_delta = max(max_delta, delta)
-        max_scale = max(max_scale, scale)
-    end
-    max_scale <= eps(Float64) && return max_delta > 0 ? Inf : 0.0
-    return max_delta / max_scale
-end
-
-function _update_finest_snapshot!(hierarchy::AMGHierarchy)
-    hierarchy.finest_snapshot = copy(_cpu_vector(_nzval(hierarchy.host_levels[1].A)))
-    hierarchy.reuse_steps = 0
-    return hierarchy
-end
-
 function _amg_setup_backend(backend)
     return backend
 end
@@ -344,23 +322,12 @@ function refresh_hierarchy!(hierarchy::AMGHierarchy, solver::AMG)
     hierarchy.nnz = length(_nzval(levels[1].A))
     hierarchy.nrows = _m(levels[1].A)
     hierarchy.operator_complexity, hierarchy.grid_complexity = _hierarchy_complexities(levels)
-    hierarchy.force_rebuild = false
-    _update_finest_snapshot!(hierarchy)
     return hierarchy
 end
 
 function refresh_finest_level!(hierarchy::AMGHierarchy, solver::AMG)
     _refresh_level!(hierarchy.host_levels[1], solver)
-    hierarchy.force_rebuild = false
-    hierarchy.reuse_steps += 1
     return hierarchy
-end
-
-function _needs_numeric_refresh(hierarchy::AMGHierarchy, A, solver::AMG)
-    length(hierarchy.host_levels) <= 1 && return false
-    hierarchy.reuse_steps >= solver.coarse_refresh_interval && return true
-    isempty(hierarchy.finest_snapshot) && return true
-    return _numeric_refresh_ratio(hierarchy.finest_snapshot, A) > solver.numeric_refresh_rtol
 end
 
 function _should_stop_coarsening(n, coarse_rows, solver::AMG, level_id)
@@ -474,7 +441,7 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
     _refresh_coarse_cpu!(coarse_cpu, host_levels[end].A)
     rowptr_pattern, colval_pattern = _pattern_signature(A)
     pattern_hash = hash(colval_pattern, hash(rowptr_pattern))
-    is_symmetric = solver.mode == :cg ? _is_symmetric(host_levels[1].A) : true
+    is_symmetric = solver.mode isa Cg ? _is_symmetric(host_levels[1].A) : true
     operator_complexity, grid_complexity = _hierarchy_complexities(host_levels)
     device_levels = backend isa CPU ? host_levels : [adapt(backend, level) for level in host_levels]
     hierarchy = AMGHierarchy(
@@ -494,14 +461,11 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
         is_symmetric,
         operator_complexity,
         grid_complexity,
-        0.0,
-        false,
-        0,
-        copy(_cpu_vector(_nzval(host_levels[1].A)))
+        0.0
     )
     rows_summary = join(map(level -> string(_m(level.A)), host_levels), " -> ")
     if log_diagnostics
-        @info "AMG hierarchy built" mode=solver.mode levels=length(host_levels) rows=rows_summary
+        @info "AMG hierarchy built" mode=_amg_mode_name(solver.mode) levels=length(host_levels) rows=rows_summary
         @info "AMG hierarchy diagnostics" cycle=solver.cycle coarsening=typeof(solver.coarsening) smoother=typeof(solver.smoother) backend=typeof(backend) operator_complexity=operator_complexity grid_complexity=grid_complexity
     end
     return hierarchy

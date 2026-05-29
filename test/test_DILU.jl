@@ -38,3 +38,10 @@ XCALibre.Solve.backward_substitution!(xDILU, P.storage, yDILU)
 xLDIV = zeros(n)
 XCALibre.Solve.ldiv!(xLDIV, P.storage, b)
 @test xLDIV ≈ x
+
+Acsr32 = sparsecsr([1, 2], [1, 2], Float32[2, 3], 2, 2)
+P_jacobi = XCALibre.Solve.Preconditioner{Jacobi}(Acsr32)
+P_norm_diagonal = XCALibre.Solve.Preconditioner{NormDiagonal}(Acsr32)
+
+@test eltype(P_jacobi.storage) === Float32
+@test eltype(P_norm_diagonal.storage) === Float32

@@ -74,8 +74,9 @@ end
 
 @define_boundary Wall Divergence{BoundedUpwind} ScalarField begin
     ap = term.sign*(term.flux[fID])
-    ac = max(-ap, 0.0)
-    an = -max(-ap, 0.0)
+    z = zero(ap)
+    ac = max(-ap, z)
+    an = -max(-ap, z)
     ac, -an*bc.value
 end
 

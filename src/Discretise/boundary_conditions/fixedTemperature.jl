@@ -119,8 +119,9 @@ end
     # 0.0, -ap*h
     
     ap = term.sign*(term.flux[fID])
-    ac = max(-ap, 0.0)
-    an = -max(-ap, 0.0)
+    z = zero(ap)
+    ac = max(-ap, z)
+    an = -max(-ap, z)
     h = energy_model(T)
     ac, -an*h
 end
@@ -134,4 +135,3 @@ end
     h = energy_model(T)
     ap, ap*h
 end
-

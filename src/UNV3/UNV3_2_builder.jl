@@ -39,6 +39,7 @@ function UNV3D_mesh(unv_mesh; scale=1.0, integer_type=Int64, float_type=Float64)
     t_build = @elapsed begin
         mesh = _build_UNV3D_mesh_core(points, efaces, cells_UNV, boundaryElements, integer_type, float_type)
     end
+    Mesh.validate_single_precision_mesh(mesh; source="UNV3D_mesh")
     
     @info "Mesh constructed in $(round(t_build, digits=3)) seconds."
     @info "Mesh entities: $(length(mesh.nodes)) nodes | $(length(mesh.faces)) faces | $(length(mesh.cells)) cells."

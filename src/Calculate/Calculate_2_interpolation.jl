@@ -189,7 +189,7 @@ function interpolate!(
         grad2 = grad(cID2)
         # get weight for current scheme
         w, df = weight(get_scheme(grad), cells, faces, fID)
-        one_minus_weight = 1.0 - w
+        one_minus_weight = one(w) - w
         # calculate interpolated value
         grad_ave = w*grad1 + one_minus_weight*grad2
         # correct interpolation
@@ -199,4 +199,3 @@ function interpolate!(
         z[fID] = grad_corr[3]
     end
 end
-

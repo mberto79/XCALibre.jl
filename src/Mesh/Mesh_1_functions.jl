@@ -4,6 +4,7 @@ export bounding_box
 export boundary_info, boundary_map
 export total_boundary_faces, boundary_index
 export norm_static
+export validate_single_precision_mesh
 # export x, y, z # access cell centres
 # export xf, yf, zf # access face centres
 
@@ -132,6 +133,56 @@ function boundary_index(boundaries::Vector{Boundary{S, UR}}, name::S) where {S<:
             return index 
         end
     end
+end
+
+function validate_single_precision_mesh(mesh::AbstractMesh; source="mesh conversion")
+    _get_float(mesh) === Float32 || return mesh
+
+    bad_cells = _count_invalid_positive(c.volume for c in mesh.cells)
+    bad_areas = _count_invalid_positive(f.area for f in mesh.faces)
+    bad_deltas = _count_invalid_positive(f.delta for f in mesh.faces)
+    bad_weights = count(f -> !isfinite(f.weight), mesh.faces)
+
+    max_coord = 0.0
+    for node in mesh.nodes
+        for coord in node.coords
+            max_coord = max(max_coord, abs(Float64(coord)))
+        end
+    end
+
+    min_delta = Inf
+    for face in mesh.faces
+        delta = Float64(face.delta)
+        if isfinite(delta) && delta > 0
+            min_delta = min(min_delta, delta)
+        end
+    end
+
+    spacing = Float64(eps(Float32)) * max(max_coord, 1.0)
+    underresolved = min_delta <= 16 * spacing
+
+    if bad_cells == 0 && bad_areas == 0 && bad_deltas == 0 && bad_weights == 0 && !underresolved
+        return mesh
+    end
+
+    msg = """
+    Single-precision mesh validation failed during $source.
+
+    The converted Float32 mesh contains geometry that is not reliable enough for single-precision solving:
+    - invalid cell volumes: $bad_cells
+    - invalid face areas: $bad_areas
+    - invalid face deltas: $bad_deltas
+    - non-finite interpolation weights: $bad_weights
+    - minimum positive face delta: $min_delta
+    - estimated Float32 coordinate spacing: $spacing
+
+    Use `float_type=Float64` for this mesh, or provide a mesh whose smallest geometric length scales are well above Float32 coordinate spacing.
+    """
+    throw(ArgumentError(msg))
+end
+
+function _count_invalid_positive(values)
+    count(v -> !isfinite(v) || v <= zero(v), values)
 end
 
 # function x(mesh::Mesh2{I,F}) where {I,F}

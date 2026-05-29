@@ -63,9 +63,10 @@ end
 (fluid::Fluid{Incompressible, ARG})(mesh) where ARG = begin
     coeffs = fluid.args
     (; rho, nu) = coeffs
-    nu = ConstantScalar(nu)
+    scalar = ScalarFloat(mesh)
+    nu = ConstantScalar(scalar(nu))
     nuf = nu
-    rho = ConstantScalar(rho)
+    rho = ConstantScalar(scalar(rho))
     rhof = rho
     Incompressible(nu, rho, nuf, rhof)
 end
@@ -101,9 +102,10 @@ end
 (fluid::Fluid{Incompressible_MRF, ARG})(mesh) where ARG = begin
     coeffs = fluid.args
     (; rho, nu, refFrames) = coeffs
-    nu = ConstantScalar(nu)
+    scalar = ScalarFloat(mesh)
+    nu = ConstantScalar(scalar(nu))
     nuf = nu
-    rho = ConstantScalar(rho)
+    rho = ConstantScalar(scalar(rho))
     rhof = rho
     Incompressible_MRF(nu, rho, nuf, rhof, refFrames)
 end

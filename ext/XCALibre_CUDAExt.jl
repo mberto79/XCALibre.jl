@@ -168,4 +168,60 @@ begin
     KernelAbstractions.copyto!(BACKEND(), x, xcpu)
 end
 
+# AMG: cuSPARSE-backed finest-level operators
+
+import XCALibre.Solve: _matvec!, _residual!, _prolongate_add!, _amg_jacobi!,
+    _amg_finalize_device_levels, _level_jacobi_omega, _launch_amg_kernel!,
+    _amg_weighted_diagonal_correction_kernel!, AMGHierarchy, AMGLevel, AMGMatrixCSR, AMGJacobi
+
+# Wrap a device AMGMatrixCSR as CuSparseMatrixCSR, sharing nzVal so numeric refresh updates the operator
+function _amg_csr_to_cusparse(A::AMGMatrixCSR)
+    nzval = XCALibre.Solve._nzval(A)
+    rowPtr = CuArray{Cint}(XCALibre.Solve._rowptr(A))
+    colVal = CuArray{Cint}(XCALibre.Solve._colval(A))
+    return SPARSEGPU{eltype(nzval)}(rowPtr, colVal, nzval, (_m(A), _n(A)))
+end
+
+# Replace finest-level operators with cuSPARSE versions; coarse levels keep the scalar-CSR kernels
+function _amg_finalize_device_levels(::BACKEND, levels)
+    isempty(levels) && return levels
+    new_levels = Vector{Any}(undef, length(levels))
+    copyto!(new_levels, levels)
+    lvl = levels[1]
+    A = _amg_csr_to_cusparse(lvl.A)
+    P = lvl.has_transfer ? _amg_csr_to_cusparse(lvl.P) : lvl.P
+    R = lvl.has_transfer ? _amg_csr_to_cusparse(lvl.R) : lvl.R
+    new_levels[1] = AMGLevel(
+        A, P, R, lvl.diagonal, lvl.inv_diagonal, lvl.diagonal_index,
+        lvl.rhs, lvl.x, lvl.tmp, lvl.direction, lvl.coarse_tmp, lvl.aggregate_ids,
+        lvl.lambda_max, lvl.level_id, lvl.has_transfer
+    )
+    return new_levels
+end
+
+_matvec!(hierarchy::AMGHierarchy, y, A::SPARSEGPU, x) = (mul!(y, A, x); y)
+
+function _residual!(hierarchy::AMGHierarchy, r, A::SPARSEGPU, x, b)
+    T = eltype(r)
+    copyto!(r, b)
+    mul!(r, A, x, -one(T), one(T))  # r = b - A*x
+    return r
+end
+
+_prolongate_add!(hierarchy::AMGHierarchy, x, P::SPARSEGPU, coarse_x, tmp) =
+    (mul!(x, P, coarse_x, one(eltype(x)), one(eltype(x))); x)  # x += P*coarse_x
+
+# Weighted Jacobi via cuSPARSE residual + diagonal correction (equivalent to the fused CSR sweep)
+function _amg_jacobi!(hierarchy::AMGHierarchy, smoother::AMGJacobi, level::AMGLevel, A::SPARSEGPU, b, loops)
+    omega = _level_jacobi_omega(smoother, level)
+    for _ in 1:loops
+        _residual!(hierarchy, level.tmp, A, level.x, b)
+        _launch_amg_kernel!(
+            hierarchy, _amg_weighted_diagonal_correction_kernel!,
+            length(level.x), level.x, level.tmp, level.inv_diagonal, omega
+        )
+    end
+    return level.x
+end
+
 end # end module

@@ -42,6 +42,18 @@ end
     @inbounds x[i] += omega * invdiag[i] * residual[i]
 end
 
+# Extract diagonal and its inverse from CSR nzval using precomputed diagonal_index (device-resident refresh)
+@kernel function _amg_extract_diagonal_kernel!(diagonal, inv_diagonal, nzval, diagonal_index)
+    i = @index(Global)
+    T = eltype(diagonal)
+    @inbounds begin
+        idx = diagonal_index[i]
+        aii = idx == 0 ? one(T) : nzval[idx]
+        diagonal[i] = aii
+        inv_diagonal[i] = abs(aii) > eps(T) ? inv(aii) : one(T)
+    end
+end
+
 @kernel function _amg_chebyshev_first_step_kernel!(x, direction, residual, invdiag, alpha)
     i = @index(Global)
     @inbounds begin
@@ -102,6 +114,11 @@ function _apply_level_smoother!(backend, hierarchy::AMGHierarchy, smoother::Abst
 end
 
 function _apply_level_smoother_impl!(hierarchy::AMGHierarchy, smoother::AMGJacobi, level::AMGLevel, b, loops)
+    return _amg_jacobi!(hierarchy, smoother, level, level.A, b, loops)
+end
+
+# Fused weighted-Jacobi sweep over CSR matrix (default path; dispatch on matrix type allows cuSPARSE override)
+function _amg_jacobi!(hierarchy::AMGHierarchy, smoother::AMGJacobi, level::AMGLevel, A::AMGMatrixCSR, b, loops)
     omega = _level_jacobi_omega(smoother, level)
     for _ in 1:loops
         _launch_amg_kernel!(
@@ -111,9 +128,9 @@ function _apply_level_smoother_impl!(hierarchy::AMGHierarchy, smoother::AMGJacob
             level.tmp,
             level.x,
             b,
-            _rowptr(level.A),
-            _colval(level.A),
-            _nzval(level.A),
+            _rowptr(A),
+            _colval(A),
+            _nzval(A),
             level.inv_diagonal,
             level.diagonal_index,
             omega

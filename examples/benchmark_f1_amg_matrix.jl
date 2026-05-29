@@ -2,6 +2,8 @@ using XCALibre
 using Adapt
 using CUDA
 using LinearAlgebra
+using SparseArrays
+using Krylov
 using Printf
 using Serialization
 
@@ -89,6 +91,26 @@ function bench_system(system; backend, workgroup, solver=AMG(), itmax=200, atol=
     )
 end
 
+function bench_baseline(system; backend, itmax=1000, atol=1e-15, rtol=1e-2)
+    string(nameof(typeof(backend))) == "CUDABackend" || return nothing
+    i, j, v = XCALibre.Solve._csr_triplets(system.A)
+    n = size(system.A, 1)
+    Acsc = sparse(i, j, v, n, n)
+    A = CUDA.CUSPARSE.CuSparseMatrixCSR(Acsc)
+    b = adapt(backend, copy(system.b))
+    dvec = collect(diag(Acsc))
+    invdiag = adapt(backend, eltype(dvec)[d != 0 ? inv(d) : one(eltype(dvec)) for d in dvec])
+    M = Diagonal(invdiag)
+    Krylov.cg(A, b; M=M, ldiv=false, itmax=itmax, atol=atol, rtol=rtol)  # warm
+    CUDA.synchronize()
+    local stats
+    solve_s = @elapsed begin
+        _, stats = Krylov.cg(A, b; M=M, ldiv=false, itmax=itmax, atol=atol, rtol=rtol)
+        CUDA.synchronize()
+    end
+    return (solve_s=solve_s, iterations=stats.niter)
+end
+
 function print_result(system_id, phase, result)
     @printf(
         "F1_AMG_MATRIX phase=%s system=%d rows=%s iterations=%d final_relative=%.6e build_s=%.6e solve_s=%.6e refresh_s=%.6e apply_s=%.6e apply_calls=%d coarse_rhs_copy_s=%.6e coarse_cpu_solve_s=%.6e coarse_x_copy_s=%.6e coarse_solve_calls=%d coarse_device_solve_s=%.6e coarse_device_solve_calls=%d refresh_calls=%d finest_refresh_calls=%d operator_complexity=%.6f grid_complexity=%.6f\n",
@@ -128,10 +150,20 @@ function main(args)
     for (system_id, system) in enumerate(Iterators.take(systems, samples))
         cold_result = bench_system(system; backend, workgroup, solver)
         print_result(system_id, "cold", cold_result)
+        local last_warmed = cold_result
         for run in 1:warmed_runs
             phase = warmed_runs == 1 ? "warmed" : "warmed_$run"
-            warmed_result = bench_system(system; backend, workgroup, solver)
-            print_result(system_id, phase, warmed_result)
+            last_warmed = bench_system(system; backend, workgroup, solver)
+            print_result(system_id, phase, last_warmed)
+        end
+        baseline = bench_baseline(system; backend)
+        if baseline !== nothing
+            @printf(
+                "F1_AMG_BASELINE system=%d cg_jacobi_solve_s=%.6e cg_jacobi_iterations=%d amg_solve_s=%.6e amg_iterations=%d speedup=%.3f\n",
+                system_id, baseline.solve_s, baseline.iterations,
+                last_warmed.solve_s, last_warmed.iterations,
+                baseline.solve_s / last_warmed.solve_s
+            )
         end
     end
     return nothing

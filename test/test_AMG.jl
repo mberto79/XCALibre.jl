@@ -404,7 +404,7 @@ try
         x_gpu = KernelAbstractions.zeros(backend_gpu, eltype(b), length(b))
         ws_gpu = _workspace(setup.solver, b_gpu)
         ws_gpu = XCALibre.Solve.update!(ws_gpu, A_gpu, setup.solver, config_gpu)
-        @test ws_gpu.hierarchy.levels[1].A.nzval isa CuArray
+        @test XCALibre.Solve._nzval(ws_gpu.hierarchy.levels[1].A) isa CuArray
         @test ws_gpu.hierarchy.coarse_cpu.rhs isa Vector
 
         i2, j2, v2 = findnz(parent(A2))

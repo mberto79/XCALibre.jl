@@ -394,7 +394,8 @@ function _empty_hierarchy(backend, ::Type{T}) where {T}
     host_level = _empty_amg_level(CPU(), T)
     device_level = _empty_amg_level(backend, T)
     host_levels = typeof(host_level)[]
-    device_levels = typeof(device_level)[]
+    # GPU levels are heterogeneously typed (finest may be CuSparseMatrixCSR); use Any on device backends
+    device_levels = backend isa CPU ? typeof(device_level)[] : Vector{Any}()
     coarse_cpu = _empty_cpu_coarse_level(T)
     return AMGHierarchy(
         device_levels,

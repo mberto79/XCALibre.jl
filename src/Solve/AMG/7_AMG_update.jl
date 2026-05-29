@@ -35,6 +35,24 @@ function _sync_finest_matrix!(hierarchy::AMGHierarchy, A)
     return hierarchy
 end
 
+# Device-resident finest-level refresh: copy nzval device-to-device, recompute diag on device,
+# reuse lambda_max from build. Avoids the full nzval D->H/H->D round-trip and host power iteration.
+function _refresh_finest_level_device!(hierarchy::AMGHierarchy, A)
+    backend = hierarchy.backend
+    dev = hierarchy.levels[1]
+    _device_copyto!(backend, _nzval(dev.A), _nzval(A))
+    _launch_amg_kernel!(
+        hierarchy,
+        _amg_extract_diagonal_kernel!,
+        length(dev.diagonal),
+        dev.diagonal,
+        dev.inv_diagonal,
+        _nzval(dev.A),
+        dev.diagonal_index
+    )
+    return hierarchy
+end
+
 function _sync_workspace_hierarchy!(workspace::AMGWorkspace, hierarchy)
     workspace.hierarchy = hierarchy
     return workspace
@@ -99,9 +117,12 @@ function update!(workspace::AMGWorkspace, A, solver::AMG, config)
     refresh_coarse = (numeric_updates + 1) % solver.coarse_refresh_interval == 0
     if !refresh_coarse
         elapsed_s = @elapsed begin
-            _sync_finest_matrix!(hierarchy, A)
-            refresh_finest_level!(hierarchy, solver)
-            _sync_device_finest_level!(hierarchy)
+            if hierarchy.backend isa CPU
+                _sync_finest_matrix!(hierarchy, A)
+                refresh_finest_level!(hierarchy, solver)
+            else
+                _refresh_finest_level_device!(hierarchy, A)
+            end
         end
         _record_finest_refresh_timing!(workspace, elapsed_s)
         return workspace

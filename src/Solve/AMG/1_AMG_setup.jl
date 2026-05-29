@@ -582,11 +582,16 @@ function _amg_workgroup(backend, workgroup, ndrange)
     return Int(workgroup)
 end
 
+# Hook to specialise device level storage (e.g. wrap finest operators as CuSparseMatrixCSR for cuSPARSE SpMV).
+# Default is a no-op; backend extensions may return a new levels container.
+_amg_finalize_device_levels(backend, levels) = levels
+
 function _sync_device_levels!(hierarchy::AMGHierarchy)
     if hierarchy.backend isa CPU
         hierarchy.levels = hierarchy.host_levels
     else
-        hierarchy.levels = [adapt(hierarchy.backend, level) for level in hierarchy.host_levels]
+        device_levels = [adapt(hierarchy.backend, level) for level in hierarchy.host_levels]
+        hierarchy.levels = _amg_finalize_device_levels(hierarchy.backend, device_levels)
     end
     return hierarchy
 end
@@ -609,11 +614,11 @@ function _sync_device_levels_numeric!(hierarchy::AMGHierarchy)
     for k in eachindex(hierarchy.levels)
         dev = hierarchy.levels[k]
         host = hierarchy.host_levels[k]
-        if k > 1 || length(dev.A.nzval) != length(host.A.nzval)
+        if k > 1 || length(_nzval(dev.A)) != length(host.A.nzval)
             hierarchy.levels[k] = adapt(backend, host)
             continue
         end
-        _device_copyto!(backend, dev.A.nzval, host.A.nzval)
+        _device_copyto!(backend, _nzval(dev.A), host.A.nzval)
         _device_copyto!(backend, dev.diagonal, host.diagonal)
         _device_copyto!(backend, dev.inv_diagonal, host.inv_diagonal)
         dev.lambda_max = host.lambda_max
@@ -679,7 +684,8 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
     pattern_hash = hash(colval_pattern, hash(rowptr_pattern))
     is_symmetric = solver.mode isa Cg ? _is_symmetric(host_levels[1].A) : true
     operator_complexity, grid_complexity = _hierarchy_complexities(host_levels)
-    device_levels = backend isa CPU ? host_levels : [adapt(backend, level) for level in host_levels]
+    device_levels = backend isa CPU ? host_levels : Any[adapt(backend, level) for level in host_levels]
+    device_levels = backend isa CPU ? device_levels : _amg_finalize_device_levels(backend, device_levels)
     hierarchy = AMGHierarchy(
         device_levels,
         host_levels,

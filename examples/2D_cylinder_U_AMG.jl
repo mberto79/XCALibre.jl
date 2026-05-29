@@ -50,7 +50,7 @@ solvers = (
         convergence=1e-7,
         relax=1.0,
         rtol=0.0,
-        atol=1e-5
+        atol=1e-6
     ),
     p = SolverSetup(
         solver=AMG(),
@@ -60,7 +60,7 @@ solvers = (
         relax=1.0,
         itmax=1000,
         rtol=0.0,
-        atol=1e-5
+        atol=1e-6
     )
 )
 
@@ -69,7 +69,7 @@ schemes = (
     p = Schemes(time=CrankNicolson, gradient=Gauss)
 )
 
-runtime = Runtime(iterations=500, write_interval=50, time_step=0.0025)
+runtime = Runtime(iterations=1000, write_interval=50, time_step=0.0025)
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
 initialise!(model.momentum.U, velocity)

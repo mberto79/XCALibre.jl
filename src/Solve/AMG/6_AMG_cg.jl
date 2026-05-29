@@ -16,6 +16,16 @@ end
     end
 end
 
+function _xpay_amg!(hierarchy::AMGHierarchy, y, x, beta)
+    _launch_amg_kernel!(hierarchy, _amg_xpay_kernel!, length(y), y, x, beta)
+    return y
+end
+
+function _cg_step_amg!(hierarchy::AMGHierarchy, x, r, p, q, alpha)
+    _launch_amg_kernel!(hierarchy, _amg_cg_step_kernel!, length(x), x, r, p, q, alpha)
+    return x
+end
+
 function _is_symmetric(A; atol=1e-10)
     rowptr = _rowptr(A)
     colval = _colval(A)
@@ -60,16 +70,33 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
     _record_apply_timing!(workspace, elapsed_s)
     _copy_amg!(hierarchy, p, z)
     rz = dot(r, z)
+    if !isfinite(rz) || rz <= eps(T)
+        workspace.iterations = 0
+        workspace.last_relative_residual = rel
+        _update_cycle_factor!(hierarchy, initial_rel, rel, 0, solver)
+        return x
+    end
     k = 0
     while k < itmax && rnorm > atol && rel > rtol
         k += 1
         _matvec!(hierarchy, q, A, p)
-        α = rz / dot(p, q)
-        _launch_amg_kernel!(hierarchy, _amg_cg_step_kernel!, length(x), x, r, p, q, α)
+        pq = dot(p, q)
+        if !isfinite(pq) || pq <= eps(T)
+            k -= 1
+            break
+        end
+        α = rz / pq
+        if !isfinite(α)
+            k -= 1
+            break
+        end
+        _cg_step_amg!(hierarchy, x, r, p, q, α)
         rnorm = norm(r)
         _push_residual_norm_history!(workspace, rnorm)
         rel = rnorm / bnorm
-        if rnorm <= atol || rel <= rtol
+        if !isfinite(rnorm) || !isfinite(rel)
+            break
+        elseif rnorm <= atol || rel <= rtol
             break
         end
         elapsed_s = @elapsed begin
@@ -78,8 +105,14 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
         end
         _record_apply_timing!(workspace, elapsed_s)
         rz_new = dot(r, z)
+        if !isfinite(rz_new) || rz_new <= eps(T)
+            break
+        end
         β = rz_new / rz
-        _launch_amg_kernel!(hierarchy, _amg_xpay_kernel!, length(p), p, z, β)
+        if !isfinite(β)
+            break
+        end
+        _xpay_amg!(hierarchy, p, z, β)
         rz = rz_new
     end
     workspace.iterations = k

@@ -35,8 +35,9 @@ _pressure_matrix_capture_enabled_now() =
     length(_pressure_matrix_captures) < _pressure_matrix_capture_limit[]
 
 function _copy_probe_matrix(A)
-    I, J, V = _csr_triplets(A)
-    return SparseXCSR(sparsecsr(I, J, V, _m(A), _n(A)))
+    A_cpu = _amg_setup_matrix(A, CPU())
+    I, J, V = _csr_triplets(A_cpu)
+    return SparseXCSR(sparsecsr(I, J, V, _m(A_cpu), _n(A_cpu)))
 end
 
 function _record_pressure_matrix_capture!(phiEqn::ModelEquation, setup, component, A, b, x0)

@@ -95,8 +95,20 @@ function update!(workspace::AMGWorkspace, A, solver::AMG, config)
         return workspace
     end
 
-    _sync_finest_matrix!(hierarchy, A)
+    numeric_updates = workspace.timing.refresh_calls + workspace.timing.finest_refresh_calls
+    refresh_coarse = (numeric_updates + 1) % solver.coarse_refresh_interval == 0
+    if !refresh_coarse
+        elapsed_s = @elapsed begin
+            _sync_finest_matrix!(hierarchy, A)
+            refresh_finest_level!(hierarchy, solver)
+            _sync_device_finest_level!(hierarchy)
+        end
+        _record_finest_refresh_timing!(workspace, elapsed_s)
+        return workspace
+    end
+
     elapsed_s = @elapsed begin
+        _sync_finest_matrix!(hierarchy, A)
         refresh_hierarchy!(hierarchy, solver)
         _sync_device_levels_numeric!(hierarchy)
     end
@@ -127,6 +139,10 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, 
     end
 
     copyto!(values, x)
+    final_abs = isempty(workspace.residual_history) ? Inf : workspace.residual_history[end]
+    converged = isfinite(workspace.last_relative_residual) &&
+        (workspace.last_relative_residual <= rtol || final_abs <= atol)
+    status = converged ? "converged" : workspace.iterations == itmax ? "itmax" : "breakdown"
     _record_linear_solve!(
         phiEqn,
         setup,
@@ -134,10 +150,11 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, 
         workspace.iterations,
         itmax,
         workspace.residual_history;
-        status=workspace.iterations == itmax ? "itmax" : "converged",
+        status=status,
         timing=_timing_delta(workspace, timing_before)
     )
     workspace.iterations == itmax && @warn "Maximum number of iterations reached!"
+    (!converged && workspace.iterations != itmax) && @warn "AMG solver stopped before convergence" status=status relative_residual=workspace.last_relative_residual
     return residual(phiEqn, component, config)
 end
 

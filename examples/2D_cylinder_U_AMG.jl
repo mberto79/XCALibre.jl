@@ -53,15 +53,8 @@ solvers = (
         atol=1e-5
     ),
     p = SolverSetup(
-        solver=AMG(
-            mode=Cg(),
-            smoother=AMGJacobi(omega=2/3),
-            coarsening=RugeStuben(strength_threshold=0.001),
-            pre_sweeps=2,
-            post_sweeps=2,
-            cycle=VCycle()
-        ),
-        # solver = Cg(),
+        solver=AMG(),
+        # solver=Cg(),
         preconditioner=Jacobi(),
         convergence=1e-7,
         relax=1.0,

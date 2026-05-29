@@ -13,21 +13,49 @@ end
     @inbounds dest[i] = src[i]
 end
 
-@kernel function _amg_jacobi_step_kernel!(x_new, x_old, b, rowptr, colval, nzval, invdiag, omega)
+@kernel function _amg_jacobi_step_kernel!(x_new, x_old, b, rowptr, colval, nzval, invdiag, diagonal_index, omega)
     i = @index(Global)
     T = eltype(x_new)
     sigma = zero(T)
-    @inbounds for p in rowptr[i]:(rowptr[i + 1] - 1)
-        j = colval[p]
-        j == i && continue
-        sigma += nzval[p] * x_old[j]
+    @inbounds begin
+        row_start = rowptr[i]
+        row_stop = rowptr[i + 1] - 1
+        diagp = diagonal_index[i]
+        if diagp == 0
+            for p in row_start:row_stop
+                sigma += nzval[p] * x_old[colval[p]]
+            end
+        else
+            for p in row_start:(diagp - 1)
+                sigma += nzval[p] * x_old[colval[p]]
+            end
+            for p in (diagp + 1):row_stop
+                sigma += nzval[p] * x_old[colval[p]]
+            end
+        end
+        x_new[i] = (one(T) - omega) * x_old[i] + omega * invdiag[i] * (b[i] - sigma)
     end
-    @inbounds x_new[i] = (one(T) - omega) * x_old[i] + omega * invdiag[i] * (b[i] - sigma)
 end
 
 @kernel function _amg_weighted_diagonal_correction_kernel!(x, residual, invdiag, omega)
     i = @index(Global)
     @inbounds x[i] += omega * invdiag[i] * residual[i]
+end
+
+@kernel function _amg_chebyshev_first_step_kernel!(x, direction, residual, invdiag, alpha)
+    i = @index(Global)
+    @inbounds begin
+        direction[i] = invdiag[i] * residual[i]
+        x[i] += alpha * direction[i]
+    end
+end
+
+@kernel function _amg_chebyshev_step_kernel!(x, direction, residual, invdiag, alpha, beta)
+    i = @index(Global)
+    @inbounds begin
+        direction[i] = invdiag[i] * residual[i] + beta * direction[i]
+        x[i] += alpha * direction[i]
+    end
 end
 
 function _fill_amg!(hierarchy::AMGHierarchy, x, value)
@@ -41,8 +69,7 @@ function _copy_amg!(hierarchy::AMGHierarchy, dest, src)
 end
 
 function _residual!(hierarchy::AMGHierarchy, r, A::AMGMatrixCSR, x, b)
-    _matvec!(hierarchy, r, A, x)
-    _launch_amg_kernel!(hierarchy, _amg_residual_kernel!, length(r), r, r, b)
+    _launch_amg_kernel!(hierarchy, _amg_csr_residual_kernel!, _m(A), r, _rowptr(A), _colval(A), _nzval(A), x, b)
     return r
 end
 
@@ -52,7 +79,29 @@ function _level_jacobi_omega(smoother::AMGJacobi, level::AMGLevel)
     return min(T(smoother.omega), T(4) / (T(3) * lambda_max))
 end
 
-function _apply_level_smoother!(hierarchy::AMGHierarchy, smoother::AMGJacobi, level::AMGLevel, b, loops)
+function _apply_level_smoother!(hierarchy::AMGHierarchy, smoother::AbstractAMGSmoother, level::AMGLevel, b, loops)
+    return _apply_level_smoother!(hierarchy.backend, hierarchy, smoother, level, b, loops)
+end
+
+function _apply_level_smoother!(::CPU, hierarchy::AMGHierarchy, smoother::AbstractAMGGPUSmoother, level::AMGLevel, b, loops)
+    return _apply_level_smoother_impl!(hierarchy, smoother, level, b, loops)
+end
+
+function _apply_level_smoother!(::CPU, hierarchy::AMGHierarchy, smoother::AbstractAMGCPUSmoother, level::AMGLevel, b, loops)
+    return _apply_level_smoother_impl!(hierarchy, smoother, level, b, loops)
+end
+
+function _apply_level_smoother!(backend, hierarchy::AMGHierarchy, smoother::AbstractAMGGPUSmoother, level::AMGLevel, b, loops)
+    _validate_amg_smoother_backend(backend, smoother)
+    return _apply_level_smoother_impl!(hierarchy, smoother, level, b, loops)
+end
+
+function _apply_level_smoother!(backend, hierarchy::AMGHierarchy, smoother::AbstractAMGCPUSmoother, level::AMGLevel, b, loops)
+    _validate_amg_smoother_backend(backend, smoother)
+    return _apply_level_smoother_impl!(hierarchy, smoother, level, b, loops)
+end
+
+function _apply_level_smoother_impl!(hierarchy::AMGHierarchy, smoother::AMGJacobi, level::AMGLevel, b, loops)
     omega = _level_jacobi_omega(smoother, level)
     for _ in 1:loops
         _launch_amg_kernel!(
@@ -66,6 +115,7 @@ function _apply_level_smoother!(hierarchy::AMGHierarchy, smoother::AMGJacobi, le
             _colval(level.A),
             _nzval(level.A),
             level.inv_diagonal,
+            level.diagonal_index,
             omega
         )
         level.x, level.tmp = level.tmp, level.x
@@ -73,31 +123,118 @@ function _apply_level_smoother!(hierarchy::AMGHierarchy, smoother::AMGJacobi, le
     return level.x
 end
 
-function _chebyshev_weight(smoother::AMGChebyshev, level::AMGLevel, degree_index)
+function _chebyshev_bounds(smoother::AMGChebyshev, level::AMGLevel)
     T = eltype(level.x)
     lambda_max = max(T(smoother.lambda_scale) * T(level.lambda_max), one(T))
     lambda_min = lambda_max / T(smoother.eig_ratio)
     center = (lambda_max + lambda_min) / T(2)
     radius = (lambda_max - lambda_min) / T(2)
-    angle = (T(2 * degree_index - 1) * T(pi)) / T(2 * smoother.degree)
-    return inv(center - radius * cos(angle))
+    return center, radius
 end
 
-function _apply_level_smoother!(hierarchy::AMGHierarchy, smoother::AMGChebyshev, level::AMGLevel, b, loops)
+function _apply_level_smoother_impl!(hierarchy::AMGHierarchy, smoother::AMGChebyshev, level::AMGLevel, b, loops)
+    T = eltype(level.x)
     for _ in 1:loops
-        for k in 1:smoother.degree
+        center, radius = _chebyshev_bounds(smoother, level)
+        alpha = inv(center)
+        _residual!(hierarchy, level.tmp, level.A, level.x, b)
+        _launch_amg_kernel!(
+            hierarchy,
+            _amg_chebyshev_first_step_kernel!,
+            length(level.x),
+            level.x,
+            level.direction,
+            level.tmp,
+            level.inv_diagonal,
+            alpha
+        )
+        for k in 2:smoother.degree
+            beta = (T(0.5) * radius * alpha)^2
+            alpha = inv(center - beta / alpha)
             _residual!(hierarchy, level.tmp, level.A, level.x, b)
-            omega = _chebyshev_weight(smoother, level, k)
             _launch_amg_kernel!(
                 hierarchy,
-                _amg_weighted_diagonal_correction_kernel!,
+                _amg_chebyshev_step_kernel!,
                 length(level.x),
                 level.x,
+                level.direction,
                 level.tmp,
                 level.inv_diagonal,
-                omega
+                alpha,
+                beta
             )
         end
+    end
+    return level.x
+end
+
+function _amg_forward_sweep!(x, A::AMGMatrixCSR, b, diagonal, omega)
+    rowptr = _rowptr(A)
+    colval = _colval(A)
+    nzval = _nzval(A)
+    T = eltype(x)
+    @inbounds for i in 1:_m(A)
+        sigma = zero(T)
+        aii = diagonal[i]
+        for p in rowptr[i]:(rowptr[i + 1] - 1)
+            j = colval[p]
+            j == i && continue
+            sigma += nzval[p] * x[j]
+        end
+        if !iszero(aii)
+            gs_value = (b[i] - sigma) / aii
+            x[i] = (one(T) - omega) * x[i] + omega * gs_value
+        end
+    end
+    return x
+end
+
+function _amg_backward_sweep!(x, A::AMGMatrixCSR, b, diagonal, omega)
+    rowptr = _rowptr(A)
+    colval = _colval(A)
+    nzval = _nzval(A)
+    T = eltype(x)
+    @inbounds for i in _m(A):-1:1
+        sigma = zero(T)
+        aii = diagonal[i]
+        for p in rowptr[i]:(rowptr[i + 1] - 1)
+            j = colval[p]
+            j == i && continue
+            sigma += nzval[p] * x[j]
+        end
+        if !iszero(aii)
+            gs_value = (b[i] - sigma) / aii
+            x[i] = (one(T) - omega) * x[i] + omega * gs_value
+        end
+    end
+    return x
+end
+
+function _apply_sweep!(::AMGForwardSweep, x, A::AMGMatrixCSR, b, diagonal, omega)
+    return _amg_forward_sweep!(x, A, b, diagonal, omega)
+end
+
+function _apply_sweep!(::AMGBackwardSweep, x, A::AMGMatrixCSR, b, diagonal, omega)
+    return _amg_backward_sweep!(x, A, b, diagonal, omega)
+end
+
+function _apply_sweep!(::AMGSymmetricSweep, x, A::AMGMatrixCSR, b, diagonal, omega)
+    _amg_forward_sweep!(x, A, b, diagonal, omega)
+    _amg_backward_sweep!(x, A, b, diagonal, omega)
+    return x
+end
+
+function _apply_level_smoother_impl!(hierarchy::AMGHierarchy, smoother::AMGGaussSeidel, level::AMGLevel, b, loops)
+    for _ in 1:(loops * smoother.iterations)
+        _apply_sweep!(smoother.sweep, level.x, level.A, b, level.diagonal, one(eltype(level.x)))
+    end
+    return level.x
+end
+
+function _apply_level_smoother_impl!(hierarchy::AMGHierarchy, smoother::AMGSOR, level::AMGLevel, b, loops)
+    omega = eltype(level.x)(smoother.omega)
+    for _ in 1:(loops * smoother.iterations)
+        _apply_sweep!(smoother.sweep, level.x, level.A, b, level.diagonal, omega)
     end
     return level.x
 end

@@ -1,16 +1,28 @@
 export AMG, AMGSolver, VCycle, SmoothAggregation, RugeStuben, AMGJacobi, AMGChebyshev
+export AMGGaussSeidel, AMGSOR, AMGSymmetricSweep, AMGForwardSweep, AMGBackwardSweep
+export AbstractAMGCPUSmoother, AbstractAMGGPUSmoother
 export AMGWorkspace, AMGHierarchy, AMGLevel, AMGTimingStats
 
 abstract type AbstractAMGMode end
 abstract type AbstractAMGCoarsening end
 abstract type AbstractAMGSmoother end
+abstract type AbstractAMGCPUSmoother <: AbstractAMGSmoother end
+abstract type AbstractAMGGPUSmoother <: AbstractAMGSmoother end
+abstract type AbstractAMGSweep end
 abstract type AbstractAMGCycle end
 abstract type AbstractAMGWorkspace end
 
 struct AMGSolver <: AbstractAMGMode end
 struct VCycle <: AbstractAMGCycle end
+struct AMGSymmetricSweep <: AbstractAMGSweep end
+struct AMGForwardSweep <: AbstractAMGSweep end
+struct AMGBackwardSweep <: AbstractAMGSweep end
 
-struct SmoothAggregation{F,C,L,I,D,S} <: AbstractAMGCoarsening
+Adapt.@adapt_structure AMGSymmetricSweep
+Adapt.@adapt_structure AMGForwardSweep
+Adapt.@adapt_structure AMGBackwardSweep
+
+struct SmoothAggregation{F,C,L,I,D,S,W} <: AbstractAMGCoarsening
     strength_threshold::F
     level_strength_thresholds::L
     smoother_weight::F
@@ -20,6 +32,7 @@ struct SmoothAggregation{F,C,L,I,D,S} <: AbstractAMGCoarsening
     aggressive_passes::I
     coarse_drop_tolerances::D
     interpolation::S
+    prolongation_weighting::W
 end
 
 function SmoothAggregation(;
@@ -31,12 +44,15 @@ function SmoothAggregation(;
     aggressive_levels=1,
     aggressive_passes=1,
     coarse_drop_tolerances=(0.0, 0.01, 0.03, 0.05),
-    interpolation=:smoothed
+    interpolation=:smoothed,
+    prolongation_weighting=:local
 )
     aggressive_levels >= 0 || throw(ArgumentError("SmoothAggregation aggressive_levels must be nonnegative"))
     aggressive_passes > 0 || throw(ArgumentError("SmoothAggregation aggressive_passes must be positive"))
     interpolation in (:smoothed, :unsmoothed, :direct) ||
         throw(ArgumentError("SmoothAggregation interpolation must be :smoothed, :unsmoothed, or :direct"))
+    prolongation_weighting in (:spectral, :local) ||
+        throw(ArgumentError("SmoothAggregation prolongation_weighting must be :spectral or :local"))
     thresholds = isnothing(level_strength_thresholds) ? nothing : float.(collect(level_strength_thresholds))
     drop_tolerances = float.(collect(coarse_drop_tolerances))
     any(<(0), drop_tolerances) && throw(ArgumentError("SmoothAggregation coarse_drop_tolerances must be nonnegative"))
@@ -46,7 +62,8 @@ function SmoothAggregation(;
         typeof(thresholds),
         Int,
         typeof(drop_tolerances),
-        typeof(interpolation)
+        typeof(interpolation),
+        typeof(prolongation_weighting)
     }(
         float(strength_threshold),
         thresholds,
@@ -56,7 +73,8 @@ function SmoothAggregation(;
         Int(aggressive_levels),
         Int(aggressive_passes),
         drop_tolerances,
-        interpolation
+        interpolation,
+        prolongation_weighting
     )
 end
 
@@ -69,20 +87,20 @@ end
 RugeStuben(; strength_threshold=0.05) = RugeStuben(float(strength_threshold))
 Adapt.@adapt_structure RugeStuben
 
-struct AMGJacobi{F} <: AbstractAMGSmoother
+struct AMGJacobi{F} <: AbstractAMGGPUSmoother
     omega::F
 end
 
 AMGJacobi(; omega=0.6667) = AMGJacobi(float(omega))
 Adapt.@adapt_structure AMGJacobi
 
-struct AMGChebyshev{F,I} <: AbstractAMGSmoother
+struct AMGChebyshev{F,I} <: AbstractAMGGPUSmoother
     degree::I
     eig_ratio::F
     lambda_scale::F
 end
 
-function AMGChebyshev(; degree=2, eig_ratio=30.0, lambda_scale=1.1)
+function AMGChebyshev(; degree=3, eig_ratio=10.0, lambda_scale=1.1)
     degree > 0 || throw(ArgumentError("AMGChebyshev degree must be positive"))
     eig_ratio > 1 || throw(ArgumentError("AMGChebyshev eig_ratio must be greater than one"))
     lambda_scale > 0 || throw(ArgumentError("AMGChebyshev lambda_scale must be positive"))
@@ -90,6 +108,37 @@ function AMGChebyshev(; degree=2, eig_ratio=30.0, lambda_scale=1.1)
 end
 
 Adapt.@adapt_structure AMGChebyshev
+
+struct AMGGaussSeidel{SW,I} <: AbstractAMGCPUSmoother
+    sweep::SW
+    iterations::I
+end
+
+function AMGGaussSeidel(; sweep=AMGSymmetricSweep(), iterations=1)
+    sweep isa AbstractAMGSweep || throw(ArgumentError("AMGGaussSeidel sweep must be AMGSymmetricSweep(), AMGForwardSweep(), or AMGBackwardSweep()"))
+    iterations > 0 || throw(ArgumentError("AMGGaussSeidel iterations must be positive"))
+    return AMGGaussSeidel(sweep, Int(iterations))
+end
+
+AMGGaussSeidel(sweep::AbstractAMGSweep; iterations=1) = AMGGaussSeidel(; sweep, iterations)
+Adapt.@adapt_structure AMGGaussSeidel
+
+struct AMGSOR{SW,F,I} <: AbstractAMGCPUSmoother
+    sweep::SW
+    omega::F
+    iterations::I
+end
+
+function AMGSOR(; omega=1.0, sweep=AMGSymmetricSweep(), iterations=1)
+    sweep isa AbstractAMGSweep || throw(ArgumentError("AMGSOR sweep must be AMGSymmetricSweep(), AMGForwardSweep(), or AMGBackwardSweep()"))
+    omega > 0 || throw(ArgumentError("AMGSOR omega must be positive"))
+    iterations > 0 || throw(ArgumentError("AMGSOR iterations must be positive"))
+    return AMGSOR(sweep, float(omega), Int(iterations))
+end
+
+AMGSOR(omega; sweep=AMGSymmetricSweep(), iterations=1) = AMGSOR(; omega, sweep, iterations)
+AMGSOR(omega, sweep::AbstractAMGSweep; iterations=1) = AMGSOR(; omega, sweep, iterations)
+Adapt.@adapt_structure AMGSOR
 
 struct AMG{M,C,S,Y,I} <: AbstractLinearSolver
     mode::M
@@ -101,6 +150,7 @@ struct AMG{M,C,S,Y,I} <: AbstractLinearSolver
     max_levels::I
     min_coarse_rows::I
     max_coarse_rows::I
+    coarse_refresh_interval::I
 end
 
 _amg_mode(mode::AMGSolver) = mode
@@ -118,9 +168,29 @@ _amg_coarsening(coarsening::Union{SmoothAggregation,RugeStuben}) = coarsening
 _amg_coarsening(coarsening) =
     throw(ArgumentError("AMG coarsening must be SmoothAggregation(...) or RugeStuben(...)"))
 
-_amg_smoother(smoother::Union{AMGJacobi,AMGChebyshev}) = smoother
+_amg_smoother(smoother::Union{AMGJacobi,AMGChebyshev,AMGGaussSeidel,AMGSOR}) = smoother
 _amg_smoother(smoother) =
-    throw(ArgumentError("AMG smoother must be AMGJacobi(...) or AMGChebyshev(...)"))
+    throw(ArgumentError("AMG smoother must be AMGJacobi(...), AMGChebyshev(...), AMGGaussSeidel(...), or AMGSOR(...)"))
+
+_amg_smoother_name(T) = string(nameof(T))
+_amg_supported_smoother_types() = (AMGJacobi, AMGChebyshev, AMGGaussSeidel, AMGSOR)
+
+function _amg_gpu_smoother_names()
+    names = sort(_amg_smoother_name.(T for T in _amg_supported_smoother_types() if T <: AbstractAMGGPUSmoother))
+    return join(names, ", ")
+end
+
+_validate_amg_smoother_backend(::CPU, smoother::AbstractAMGSmoother) = smoother
+_validate_amg_smoother_backend(::CPU, smoother::AbstractAMGGPUSmoother) = smoother
+_validate_amg_smoother_backend(::CPU, smoother::AbstractAMGCPUSmoother) = smoother
+_validate_amg_smoother_backend(backend, smoother::AbstractAMGGPUSmoother) = smoother
+
+function _validate_amg_smoother_backend(backend, smoother::AbstractAMGCPUSmoother)
+    throw(ArgumentError(
+        "$(nameof(typeof(smoother))) is a sequential CPU AMG smoother and cannot be used with $(nameof(typeof(backend)))(). " *
+        "GPU-capable AMG smoothers are: $(_amg_gpu_smoother_names())."
+    ))
+end
 
 function AMG(;
     mode=Cg(),
@@ -131,17 +201,19 @@ function AMG(;
     post_sweeps=nothing,
     max_levels=10,
     min_coarse_rows=32,
-    max_coarse_rows=512
+    max_coarse_rows=4096,
+    coarse_refresh_interval=20
 )
     mode = _amg_mode(mode)
     coarsening = _amg_coarsening(coarsening)
     smoother = _amg_smoother(smoother)
     cycle = _amg_cycle(cycle)
-    default_sweeps = smoother isa AMGChebyshev ? 1 : (mode isa Cg ? 2 : 1)
+    default_sweeps = smoother isa Union{AMGChebyshev,AMGGaussSeidel,AMGSOR} ? 1 : (mode isa Cg ? 2 : 1)
     pre_sweeps = isnothing(pre_sweeps) ? default_sweeps : pre_sweeps
     post_sweeps = isnothing(post_sweeps) ? default_sweeps : post_sweeps
     pre_sweeps > 0 || throw(ArgumentError("AMG pre_sweeps must be positive"))
     post_sweeps > 0 || throw(ArgumentError("AMG post_sweeps must be positive"))
+    coarse_refresh_interval > 0 || throw(ArgumentError("AMG coarse_refresh_interval must be positive"))
     return AMG(
         mode,
         coarsening,
@@ -151,7 +223,8 @@ function AMG(;
         Int(post_sweeps),
         Int(max_levels),
         Int(min_coarse_rows),
-        Int(max_coarse_rows)
+        Int(max_coarse_rows),
+        Int(coarse_refresh_interval)
     )
 end
 
@@ -196,15 +269,24 @@ _rowptr(A::SparseMatricesCSR.SparseMatrixCSR) = A.rowptr
 _colval(A::SparseMatricesCSR.SparseMatrixCSR) = A.colval
 _nzval(A::SparseMatricesCSR.SparseMatrixCSR) = A.nzval
 
+struct AMGGalerkinCache{I,W}
+    # Fixed-pattern RAP contributions: coarse_A[target] += weight * fine_A[fine_index].
+    targets::Vector{I}
+    fine_indices::Vector{I}
+    weights::Vector{W}
+end
+
 mutable struct AMGLevel{MA,MP,MR,VD,VI,VX,T}
     A::MA
     P::MP
     R::MR
     diagonal::VD
     inv_diagonal::VD
+    diagonal_index::VI
     rhs::VX
     x::VX
     tmp::VX
+    direction::VX
     aggregate_ids::VI
     lambda_max::T
     level_id::Int
@@ -213,9 +295,10 @@ end
 
 Adapt.@adapt_structure AMGLevel
 
-mutable struct AMGCPUCoarseLevel{MA,MC,VX,LUF,QRF}
+mutable struct AMGCPUCoarseLevel{MA,MC,MI,VX,LUF,QRF}
     A::MA
     Acsc::MC
+    csc_nzval_index::MI
     rhs::VX
     x::VX
     lu_factor::LUF
@@ -237,7 +320,12 @@ mutable struct AMGHierarchy{LD,LH,CC,B,RP,CP}
     colval_ref::Base.RefValue{Any}
     pattern_hash::UInt64
     transfer_csc::Vector{Any}
+    galerkin_caches::Vector{Any}
     is_symmetric::Bool
+    coarse_rhs_copy_time_s::Float64
+    coarse_cpu_solve_time_s::Float64
+    coarse_x_copy_time_s::Float64
+    coarse_solve_calls::Int
     operator_complexity::Float64
     grid_complexity::Float64
     last_cycle_factor::Float64
@@ -274,11 +362,13 @@ function _empty_amg_level(backend, ::Type{T}) where {T}
     R = _empty_amg_matrix(backend, T)
     diag = KernelAbstractions.zeros(backend, T, 0)
     invdiag = KernelAbstractions.zeros(backend, T, 0)
+    diag_index = KernelAbstractions.zeros(backend, Int, 0)
     rhs = KernelAbstractions.zeros(backend, T, 0)
     x = KernelAbstractions.zeros(backend, T, 0)
     tmp = KernelAbstractions.zeros(backend, T, 0)
+    direction = KernelAbstractions.zeros(backend, T, 0)
     aggregate_ids = KernelAbstractions.zeros(backend, Int, 0)
-    return AMGLevel(A, P, R, diag, invdiag, rhs, x, tmp, aggregate_ids, zero(T), 0, false)
+    return AMGLevel(A, P, R, diag, invdiag, diag_index, rhs, x, tmp, direction, aggregate_ids, zero(T), 0, false)
 end
 
 function _placeholder_lu_qr(::Type{T}) where {T}
@@ -290,9 +380,10 @@ function _empty_cpu_coarse_level(::Type{T}) where {T}
     lu_factor, qr_factor = _placeholder_lu_qr(T)
     A = AMGMatrixCSR([1, 1], Int[], T[], 1, 1)
     Acsc = sparse([1], [1], [one(T)], 1, 1)
+    csc_nzval_index = Int[]
     rhs = zeros(T, 1)
     x = zeros(T, 1)
-    return AMGCPUCoarseLevel(A, Acsc, rhs, x, lu_factor, qr_factor, false)
+    return AMGCPUCoarseLevel(A, Acsc, csc_nzval_index, rhs, x, lu_factor, qr_factor, false)
 end
 
 function _empty_hierarchy(backend, ::Type{T}) where {T}
@@ -315,7 +406,12 @@ function _empty_hierarchy(backend, ::Type{T}) where {T}
         Ref{Any}(nothing),
         UInt64(0),
         Any[],
+        Any[],
         true,
+        0.0,
+        0.0,
+        0.0,
+        0,
         1.0,
         1.0,
         0.0

@@ -44,7 +44,9 @@ solver_jacobi_default = AMG()
 @test solver_jacobi_default.coarsening.aggressive_passes == 1
 @test solver_jacobi_default.coarsening.coarse_drop_tolerances == [0.0, 0.01, 0.03, 0.05]
 @test solver_jacobi_default.coarsening.interpolation == :smoothed
-@test solver_jacobi_default.max_coarse_rows == 512
+@test solver_jacobi_default.coarsening.prolongation_weighting == :local
+@test solver_jacobi_default.max_coarse_rows == 4096
+@test solver_jacobi_default.coarse_refresh_interval == 20
 
 solver_rs_default = AMG(coarsening=RugeStuben(), smoother=AMGJacobi())
 @test solver_rs_default.coarsening.strength_threshold == 0.05
@@ -62,8 +64,35 @@ solver_type_api = AMG(
 @test solver_type_api.coarsening.strength_threshold == 0.12
 @test solver_type_api.coarsening.interpolation == :direct
 @test solver_type_api.smoother isa AMGChebyshev
+@test solver_type_api.smoother.degree == 3
+@test solver_type_api.smoother.eig_ratio == 10.0
 @test solver_type_api.pre_sweeps == 1
 @test solver_type_api.post_sweeps == 2
+@test AMGJacobi <: XCALibre.Solve.AbstractAMGGPUSmoother
+@test AMGChebyshev <: XCALibre.Solve.AbstractAMGGPUSmoother
+@test AMGGaussSeidel <: XCALibre.Solve.AbstractAMGCPUSmoother
+@test AMGSOR <: XCALibre.Solve.AbstractAMGCPUSmoother
+@test occursin("AMGJacobi", XCALibre.Solve._amg_gpu_smoother_names())
+@test occursin("AMGChebyshev", XCALibre.Solve._amg_gpu_smoother_names())
+
+solver_gs_default = AMG(mode=Cg(), smoother=AMGGaussSeidel())
+@test solver_gs_default.smoother.sweep isa AMGSymmetricSweep
+@test solver_gs_default.smoother.iterations == 1
+@test solver_gs_default.pre_sweeps == 1
+@test solver_gs_default.post_sweeps == 1
+
+solver_gs_forward = AMG(smoother=AMGGaussSeidel(AMGForwardSweep(), iterations=2))
+@test solver_gs_forward.smoother.sweep isa AMGForwardSweep
+@test solver_gs_forward.smoother.iterations == 2
+
+solver_sor_default = AMG(smoother=AMGSOR(1.1, AMGBackwardSweep()))
+@test solver_sor_default.smoother.sweep isa AMGBackwardSweep
+@test solver_sor_default.smoother.omega == 1.1
+@test solver_sor_default.pre_sweeps == 1
+@test solver_sor_default.post_sweeps == 1
+
+@test_throws ArgumentError AMGGaussSeidel(iterations=0)
+@test_throws ArgumentError AMGSOR(0.0)
 
 controlled_sa = SmoothAggregation(
     level_strength_thresholds=[0.05, 0.12],
@@ -129,6 +158,23 @@ ws_controlled_sa = XCALibre.Solve.update!(ws_controlled_sa, A, solver_controlled
 @test ws_controlled_sa.hierarchy isa XCALibre.Solve.AMGHierarchy
 @test ws_controlled_sa.hierarchy.operator_complexity >= 1
 
+A_isolated = SparseXCSR(sparsecsr(collect(1:12), collect(1:12), ones(12), 12, 12))
+b_isolated = ones(12)
+isolated_coarsening = SmoothAggregation(interpolation=:unsmoothed, aggressive_levels=0)
+_, P_isolated, _ = XCALibre.Solve.build_prolongation(A_isolated, isolated_coarsening)
+@test size(P_isolated, 2) == 12
+solver_isolated_sa = AMG(coarsening=isolated_coarsening, smoother=AMGJacobi(), max_coarse_rows=4)
+ws_isolated_sa = _workspace(solver_isolated_sa, b_isolated)
+ws_isolated_sa = XCALibre.Solve.update!(ws_isolated_sa, A_isolated, solver_isolated_sa, config)
+@test size(ws_isolated_sa.hierarchy.levels[end].A, 1) == 12
+_, P_isolated_rs, _ = XCALibre.Solve.build_prolongation(A_isolated, RugeStuben())
+@test size(P_isolated_rs, 2) == 12
+solver_isolated_rs = AMG(coarsening=RugeStuben(), smoother=AMGJacobi(), max_coarse_rows=4)
+ws_isolated_rs = _workspace(solver_isolated_rs, b_isolated)
+ws_isolated_rs = XCALibre.Solve.update!(ws_isolated_rs, A_isolated, solver_isolated_rs, config)
+@test size(ws_isolated_rs.hierarchy.levels[end].A, 1) == 12
+@test XCALibre.Solve._is_diagonal_matrix(ws_isolated_sa.hierarchy.levels[end].A)
+
 solver_rs = AMG(coarsening=RugeStuben(strength_threshold=0.2), smoother=AMGJacobi(), max_coarse_rows=2)
 ws_rs = _workspace(solver_rs, b)
 ws_rs = XCALibre.Solve.update!(ws_rs, A, solver_rs, config)
@@ -191,12 +237,39 @@ coarse_object_before = length(ws.hierarchy.levels) > 1 ? ws.hierarchy.levels[2].
 ws2 = XCALibre.Solve.update!(ws, A2, setup.solver, config)
 @test length(ws2.hierarchy.levels) == levels_before
 @test XCALibre.Solve._nzval(ws2.hierarchy.levels[1].A) != finest_before
-@test ws2.timing.refresh_calls == 1
-@test ws2.timing.last_update_action == :refresh
+@test ws2.timing.refresh_calls == 0
+@test ws2.timing.finest_refresh_calls == 1
+@test ws2.timing.last_update_action == :finest_refresh
 if length(ws2.hierarchy.levels) > 1
     @test ws2.hierarchy.levels[2].A === coarse_object_before
-    @test XCALibre.Solve._nzval(ws2.hierarchy.levels[2].A) != coarse_before
+    @test XCALibre.Solve._nzval(ws2.hierarchy.levels[2].A) == coarse_before
 end
+
+solver_refresh = AMG(mode=AMGSolver(), coarsening=SmoothAggregation(), smoother=AMGJacobi(), coarse_refresh_interval=1)
+ws_refresh = _workspace(solver_refresh, b)
+ws_refresh = XCALibre.Solve.update!(ws_refresh, A, solver_refresh, config)
+coarse_refresh_before = length(ws_refresh.hierarchy.levels) > 1 ? copy(XCALibre.Solve._nzval(ws_refresh.hierarchy.levels[2].A)) : nothing
+coarse_acsc_before = ws_refresh.hierarchy.coarse_cpu.Acsc
+coarse_acsc_colptr_before = ws_refresh.hierarchy.coarse_cpu.Acsc.colptr
+coarse_acsc_rowval_before = ws_refresh.hierarchy.coarse_cpu.Acsc.rowval
+ws_refresh = XCALibre.Solve.update!(ws_refresh, A2, solver_refresh, config)
+@test ws_refresh.timing.refresh_calls == 1
+@test ws_refresh.timing.last_update_action == :refresh
+if length(ws_refresh.hierarchy.levels) > 1
+    @test XCALibre.Solve._nzval(ws_refresh.hierarchy.levels[2].A) != coarse_refresh_before
+    @test ws_refresh.hierarchy.coarse_cpu.Acsc === coarse_acsc_before
+    @test ws_refresh.hierarchy.coarse_cpu.Acsc.colptr === coarse_acsc_colptr_before
+    @test ws_refresh.hierarchy.coarse_cpu.Acsc.rowval === coarse_acsc_rowval_before
+    @test Matrix(ws_refresh.hierarchy.coarse_cpu.Acsc) ≈ Matrix(ws_refresh.hierarchy.coarse_cpu.A)
+end
+
+A_singular_coarse_csc = sparse([1, 1, 2, 2], [1, 2, 1, 2], [1.0, 1.0, 2.0, 2.0], 2, 2)
+A_singular_coarse = XCALibre.Solve._amg_matrix(A_singular_coarse_csc)
+coarse_singular = XCALibre.Solve._empty_cpu_coarse_level(Float64)
+XCALibre.Solve._refresh_coarse_cpu!(coarse_singular, A_singular_coarse)
+@test coarse_singular.use_qr
+coarse_singular_solution = XCALibre.Solve._coarse_solve!(coarse_singular, [2.0, 4.0])
+@test A_singular_coarse_csc * coarse_singular_solution ≈ [2.0, 4.0]
 
 A_pattern = SparseXCSR(sparsecsr(
     [1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5],
@@ -217,6 +290,30 @@ fill!(ws.hierarchy.levels[1].x, 0)
 XCALibre.Solve._apply_level_smoother!(ws.hierarchy, AMGJacobi(), ws.hierarchy.levels[1], b, 3)
 rj = norm(b - Array(parent(A)) * ws.hierarchy.levels[1].x)
 @test rj < r0
+
+solver_chebyshev_smooth = AMG(mode=AMGSolver(), coarsening=SmoothAggregation(), smoother=AMGChebyshev(), max_coarse_rows=2)
+ws_chebyshev_smooth = _workspace(solver_chebyshev_smooth, b)
+ws_chebyshev_smooth = XCALibre.Solve.update!(ws_chebyshev_smooth, A, solver_chebyshev_smooth, config)
+fill!(ws_chebyshev_smooth.hierarchy.levels[1].x, 0)
+XCALibre.Solve._apply_level_smoother!(
+    ws_chebyshev_smooth.hierarchy,
+    solver_chebyshev_smooth.smoother,
+    ws_chebyshev_smooth.hierarchy.levels[1],
+    b,
+    1
+)
+rc = norm(b - Array(parent(A)) * ws_chebyshev_smooth.hierarchy.levels[1].x)
+@test rc < rj
+
+for smoother in (AMGGaussSeidel(), AMGGaussSeidel(AMGForwardSweep()), AMGGaussSeidel(AMGBackwardSweep()), AMGSOR(1.0), AMGSOR(1.1, AMGForwardSweep()))
+    solver_sweep = AMG(mode=AMGSolver(), coarsening=SmoothAggregation(), smoother=smoother, max_coarse_rows=2)
+    ws_sweep = _workspace(solver_sweep, b)
+    ws_sweep = XCALibre.Solve.update!(ws_sweep, A, solver_sweep, config)
+    fill!(ws_sweep.hierarchy.levels[1].x, 0)
+    XCALibre.Solve._apply_level_smoother!(ws_sweep.hierarchy, smoother, ws_sweep.hierarchy.levels[1], b, 1)
+    rs = norm(b - Array(parent(A)) * ws_sweep.hierarchy.levels[1].x)
+    @test rs < r0
+end
 
 x = zeros(eltype(b), length(b))
 ws_solve = _workspace(setup.solver, b)
@@ -324,6 +421,36 @@ try
         x_cg_gpu = KernelAbstractions.zeros(backend_gpu, eltype(b), length(b))
         XCALibre.Solve.amg_cg_solve!(ws_cg_gpu, ws_cg_gpu.hierarchy, solver_cg_gpu, ws_cg_gpu.hierarchy.levels[1].A, b_gpu, x_cg_gpu; itmax=20, atol=1e-8, rtol=1e-8)
         @test norm(Array(b_gpu) - Array(parent(A)) * Array(x_cg_gpu)) / norm(Array(b_gpu)) < 1e-6
+
+        solver_chebyshev_gpu = AMG(mode=Cg(), coarsening=SmoothAggregation(), smoother=AMGChebyshev())
+        ws_chebyshev_gpu = _workspace(solver_chebyshev_gpu, b_gpu)
+        ws_chebyshev_gpu = XCALibre.Solve.update!(ws_chebyshev_gpu, A_gpu, solver_chebyshev_gpu, config_gpu)
+        x_chebyshev_gpu = KernelAbstractions.zeros(backend_gpu, eltype(b), length(b))
+        XCALibre.Solve.amg_cg_solve!(
+            ws_chebyshev_gpu,
+            ws_chebyshev_gpu.hierarchy,
+            solver_chebyshev_gpu,
+            ws_chebyshev_gpu.hierarchy.levels[1].A,
+            b_gpu,
+            x_chebyshev_gpu;
+            itmax=20,
+            atol=1e-8,
+            rtol=1e-8
+        )
+        @test norm(Array(b_gpu) - Array(parent(A)) * Array(x_chebyshev_gpu)) / norm(Array(b_gpu)) < 1e-6
+
+        solver_gs_gpu = AMG(mode=Cg(), coarsening=SmoothAggregation(), smoother=AMGGaussSeidel())
+        err = try
+            XCALibre.Solve.setup_hierarchy(A_gpu, solver_gs_gpu, backend_gpu; log_diagnostics=false)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError
+        message = sprint(showerror, err)
+        @test occursin("sequential CPU AMG smoother", message)
+        @test occursin("AMGJacobi", message)
+        @test occursin("AMGChebyshev", message)
     end
 catch err
     @info "Skipping CUDA AMG test" exception=(err, catch_backtrace())

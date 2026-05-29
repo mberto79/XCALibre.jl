@@ -157,7 +157,23 @@ function _aggressive_aggregates(agg, strong, nagg, passes)
     return current_agg, current_nagg
 end
 
-function _smooth_prolongation(A, P, weight)
+function _row_abs_sum_inverse(A)
+    rowptr = _rowptr(A)
+    nzval = _nzval(A)
+    n = _m(A)
+    T = eltype(nzval)
+    invsum = zeros(T, n)
+    @inbounds for i in 1:n
+        rowsum = zero(T)
+        for p in rowptr[i]:(rowptr[i + 1] - 1)
+            rowsum += abs(nzval[p])
+        end
+        invsum[i] = rowsum > eps(T) ? inv(rowsum) : one(T)
+    end
+    return invsum
+end
+
+function _smooth_prolongation(A, P, weight, ::Val{:spectral})
     _, invdiag = _diag_inverse(A)
     lambda_max = _estimate_lambda_max(A, invdiag)
     alpha = weight / max(lambda_max, eps(eltype(invdiag)))
@@ -170,6 +186,24 @@ function _smooth_prolongation(A, P, weight)
     @inbounds for j in 1:size(AP, 2)
         for p in nzrange(AP, j)
             nzval[p] *= alpha * invdiag[rowval[p]]
+        end
+    end
+
+    Ps = P - AP
+    dropzeros!(Ps)
+    return Ps
+end
+
+function _smooth_prolongation(A, P, weight, ::Val{:local})
+    weight <= 0 && return P
+    invsum = _row_abs_sum_inverse(A)
+    Acsc = _csr_to_csc(A)
+    AP = Acsc * P
+    rowval = rowvals(AP)
+    nzval = nonzeros(AP)
+    @inbounds for j in 1:size(AP, 2)
+        for p in nzrange(AP, j)
+            nzval[p] *= weight * invsum[rowval[p]]
         end
     end
 
@@ -543,7 +577,7 @@ function build_prolongation(A, coarsening::SmoothAggregation, candidate=nothing,
     nagg < 2 && return agg, nothing, candidate_vec
     P0, coarse_candidate = _tentative_prolongation(agg, candidate_vec)
     P = coarsening.interpolation == :smoothed ?
-        _smooth_prolongation(A, P0, coarsening.smoother_weight) :
+        _smooth_prolongation(A, P0, coarsening.smoother_weight, Val(coarsening.prolongation_weighting)) :
         P0
     P = _truncate_prolongation(P, coarsening.max_prolongation_entries)
     return agg, P, coarse_candidate

@@ -134,6 +134,35 @@ function _diag_inverse!(diag, invdiag, A)
     return diag, invdiag
 end
 
+function _diag_index(A)
+    rowptr = _rowptr(A)
+    colval = _colval(A)
+    n = _m(A)
+    diag_index = zeros(Int, n)
+    @inbounds for i in 1:n
+        for p in rowptr[i]:(rowptr[i + 1] - 1)
+            if colval[p] == i
+                diag_index[i] = p
+                break
+            end
+        end
+    end
+    return diag_index
+end
+
+function _diag_inverse!(diag, invdiag, A, diag_index)
+    nzval = _nzval(A)
+    n = _m(A)
+    T = eltype(nzval)
+    @inbounds for i in 1:n
+        idx = diag_index[i]
+        aii = idx == 0 ? one(T) : nzval[idx]
+        diag[i] = aii
+        invdiag[i] = abs(aii) > eps(T) ? inv(aii) : one(T)
+    end
+    return diag, invdiag
+end
+
 function _estimate_lambda_max!(v, w, A, invdiag; iters::Int=5)
     T = eltype(invdiag)
     n = _m(A)
@@ -161,7 +190,24 @@ function _estimate_lambda_max!(v, w, A, invdiag; iters::Int=5)
             v[i] = w[i] / lambda
         end
     end
-    return max(lambda, one(T))
+    return max(lambda, _scaled_gershgorin_bound(A, invdiag), one(T))
+end
+
+function _scaled_gershgorin_bound(A, invdiag)
+    rowptr = _rowptr(A)
+    nzval = _nzval(A)
+    n = _m(A)
+    T = eltype(invdiag)
+    bound = one(T)
+    @inbounds for i in 1:n
+        row_sum = zero(T)
+        dinv = abs(invdiag[i])
+        for p in rowptr[i]:(rowptr[i + 1] - 1)
+            row_sum += abs(nzval[p]) * dinv
+        end
+        bound = max(bound, row_sum)
+    end
+    return bound
 end
 
 function _estimate_lambda_max(A, invdiag)
@@ -179,9 +225,11 @@ function _allocate_level(A, P, R, level_id, aggregate_ids, backend, smoother)
     n = _m(A)
     T = eltype(_nzval(A))
     diag, invdiag = _diag_inverse(A)
+    diag_index = _diag_index(A)
     rhs = KernelAbstractions.zeros(backend, T, n)
     x = KernelAbstractions.zeros(backend, T, n)
     tmp = KernelAbstractions.zeros(backend, T, n)
+    direction = KernelAbstractions.zeros(backend, T, n)
     lambda = _estimate_lambda_max(A, invdiag)
     has_transfer = _m(P) > 0 && _n(P) > 0 && length(_nzval(P)) > 0
     aggregate = _amg_backend_array(backend, aggregate_ids)
@@ -192,9 +240,11 @@ function _allocate_level(A, P, R, level_id, aggregate_ids, backend, smoother)
         is_cpu ? R : adapt(backend, R),
         _amg_backend_array(backend, diag),
         _amg_backend_array(backend, invdiag),
+        _amg_backend_array(backend, diag_index),
         rhs,
         x,
         tmp,
+        direction,
         aggregate,
         lambda,
         level_id,
@@ -203,7 +253,7 @@ function _allocate_level(A, P, R, level_id, aggregate_ids, backend, smoother)
 end
 
 function _refresh_level!(level::AMGLevel, solver::AMG)
-    _diag_inverse!(level.diagonal, level.inv_diagonal, level.A)
+    _diag_inverse!(level.diagonal, level.inv_diagonal, level.A, level.diagonal_index)
     # reuse level.rhs / level.tmp as scratch (host-side refresh only; kernels overwrite before read)
     level.lambda_max = _estimate_lambda_max!(level.rhs, level.tmp, level.A, level.inv_diagonal)
     return level
@@ -267,6 +317,90 @@ function _regalerkin_cached!(fine_level::AMGLevel, P_csc, R_csc, solver::AMG)
     return _drop_coarse_matrix(coarse_A, tolerance)
 end
 
+@inline function _csr_find_index(rowptr, colval, row::Integer, col::Integer)
+    lo = rowptr[row]
+    hi = rowptr[row + 1] - 1
+    @inbounds while lo <= hi
+        mid = (lo + hi) >>> 1
+        value = colval[mid]
+        if value == col
+            return mid
+        elseif value < col
+            lo = mid + 1
+        else
+            hi = mid - 1
+        end
+    end
+    return 0
+end
+
+function _galerkin_index_type(max_index::Integer)
+    return max_index <= typemax(Int32) ? Int32 : Int
+end
+
+function _build_galerkin_cache(fine_A, P, coarse_A)
+    index_type = _galerkin_index_type(max(length(_nzval(fine_A)), length(_nzval(coarse_A))))
+    return _build_galerkin_cache(index_type, fine_A, P, coarse_A)
+end
+
+function _build_galerkin_cache(::Type{I}, fine_A, P, coarse_A) where {I<:Integer}
+    Arowptr = _rowptr(fine_A)
+    Acolval = _colval(fine_A)
+    Prowptr = _rowptr(P)
+    Pcolval = _colval(P)
+    Pnzval = _nzval(P)
+    Crowptr = _rowptr(coarse_A)
+    Ccolval = _colval(coarse_A)
+    n = _m(fine_A)
+    T = promote_type(eltype(_nzval(fine_A)), eltype(Pnzval))
+
+    targets = I[]
+    fine_indices = I[]
+    weights = T[]
+    sizehint!(targets, min(4 * length(_nzval(fine_A)), typemax(Int32)))
+    sizehint!(fine_indices, min(4 * length(_nzval(fine_A)), typemax(Int32)))
+    sizehint!(weights, min(4 * length(_nzval(fine_A)), typemax(Int32)))
+
+    @inbounds for i in 1:n
+        pi_start = Prowptr[i]
+        pi_stop = Prowptr[i + 1] - 1
+        pi_start <= pi_stop || continue
+        for ap in Arowptr[i]:(Arowptr[i + 1] - 1)
+            j = Acolval[ap]
+            1 <= j <= n || continue
+            pj_start = Prowptr[j]
+            pj_stop = Prowptr[j + 1] - 1
+            pj_start <= pj_stop || continue
+            for rp in pi_start:pi_stop
+                ci = Pcolval[rp]
+                wi = Pnzval[rp]
+                for pp in pj_start:pj_stop
+                    cj = Pcolval[pp]
+                    target = _csr_find_index(Crowptr, Ccolval, ci, cj)
+                    target == 0 && continue
+                    push!(targets, I(target))
+                    push!(fine_indices, I(ap))
+                    push!(weights, T(wi * Pnzval[pp]))
+                end
+            end
+        end
+    end
+    return AMGGalerkinCache(targets, fine_indices, weights)
+end
+
+function _regalerkin_numeric!(coarse_A, fine_level::AMGLevel, cache::AMGGalerkinCache, solver::AMG)
+    coarse_nzval = _nzval(coarse_A)
+    fine_nzval = _nzval(fine_level.A)
+    fill!(coarse_nzval, zero(eltype(coarse_nzval)))
+    targets = cache.targets
+    fine_indices = cache.fine_indices
+    weights = cache.weights
+    @inbounds for k in eachindex(targets)
+        coarse_nzval[Int(targets[k])] += weights[k] * fine_nzval[Int(fine_indices[k])]
+    end
+    return coarse_A
+end
+
 function _regalerkin_numeric!(coarse_A, fine_level::AMGLevel, P_csc, R_csc, solver::AMG)
     updated_A = _regalerkin_cached!(fine_level, P_csc, R_csc, solver)
     if _m(coarse_A) == _m(updated_A) &&
@@ -279,19 +413,90 @@ function _regalerkin_numeric!(coarse_A, fine_level::AMGLevel, P_csc, R_csc, solv
     return updated_A
 end
 
-function _refresh_coarse_cpu!(coarse_cpu::AMGCPUCoarseLevel, A)
+function _csr_pattern_matches(A, B)
+    _m(A) == _m(B) || return false
+    _n(A) == _n(B) || return false
+    length(_nzval(A)) == length(_nzval(B)) || return false
+    _rowptr(A) == _rowptr(B) || return false
+    _colval(A) == _colval(B) || return false
+    return true
+end
+
+@inline function _csc_find_index(colptr, rowval, row::Integer, col::Integer)
+    lo = colptr[col]
+    hi = colptr[col + 1] - 1
+    @inbounds while lo <= hi
+        mid = (lo + hi) >>> 1
+        value = rowval[mid]
+        if value == row
+            return mid
+        elseif value < row
+            lo = mid + 1
+        else
+            hi = mid - 1
+        end
+    end
+    return 0
+end
+
+function _build_csr_to_csc_nzval_index(A, Acsc::SparseMatrixCSC)
+    rowptr = _rowptr(A)
+    colval = _colval(A)
+    index = Vector{Int}(undef, length(_nzval(A)))
+    @inbounds for row in 1:_m(A)
+        for p in rowptr[row]:(rowptr[row + 1] - 1)
+            q = _csc_find_index(Acsc.colptr, Acsc.rowval, row, colval[p])
+            q == 0 && return Int[]
+            index[p] = q
+        end
+    end
+    return index
+end
+
+function _update_csc_nzval_from_csr!(Acsc::SparseMatrixCSC, A, csc_nzval_index)
+    nzval = _nzval(A)
+    length(csc_nzval_index) == length(nzval) || return false
+    length(Acsc.nzval) >= length(nzval) || return false
+    @inbounds for p in eachindex(nzval)
+        Acsc.nzval[csc_nzval_index[p]] = nzval[p]
+    end
+    return true
+end
+
+function _refresh_coarse_csc!(coarse_cpu::AMGCPUCoarseLevel, A)
+    pattern_matches =
+        _csr_pattern_matches(coarse_cpu.A, A) &&
+        size(coarse_cpu.Acsc, 1) == _m(A) &&
+        size(coarse_cpu.Acsc, 2) == _n(A) &&
+        length(coarse_cpu.csc_nzval_index) == length(_nzval(A))
+
+    if pattern_matches && _update_csc_nzval_from_csr!(coarse_cpu.Acsc, A, coarse_cpu.csc_nzval_index)
+        coarse_cpu.A = A
+        return coarse_cpu.Acsc
+    end
+
     coarse_cpu.A = A
     coarse_cpu.Acsc = _csr_to_csc(A)
+    coarse_cpu.csc_nzval_index = _build_csr_to_csc_nzval_index(A, coarse_cpu.Acsc)
+    return coarse_cpu.Acsc
+end
+
+function _refresh_coarse_cpu!(coarse_cpu::AMGCPUCoarseLevel, A)
+    Acsc = _refresh_coarse_csc!(coarse_cpu, A)
     if length(coarse_cpu.rhs) != _m(A)
         coarse_cpu.rhs = zeros(eltype(_nzval(A)), _m(A))
         coarse_cpu.x = similar(coarse_cpu.rhs)
     end
     try
         F = coarse_cpu.lu_factor
-        Acsc = coarse_cpu.Acsc
-        # reuse symbolic factor when pattern unchanged; fall back to full lu on first call or rebuild
+        # reuse symbolic factor when pattern unchanged; fall back to full lu if SuiteSparse rejects reuse
         if !coarse_cpu.use_qr && F.m == size(Acsc, 1) && length(F.colptr) == length(Acsc.colptr) && length(F.rowval) == length(Acsc.rowval)
-            lu!(F, Acsc)
+            try
+                lu!(F, Acsc)
+            catch err
+                err isa ArgumentError || rethrow(err)
+                coarse_cpu.lu_factor = lu(Acsc)
+            end
         else
             coarse_cpu.lu_factor = lu(Acsc)
         end
@@ -310,12 +515,17 @@ end
 function refresh_hierarchy!(hierarchy::AMGHierarchy, solver::AMG)
     levels = hierarchy.host_levels
     transfer = hierarchy.transfer_csc
+    caches = hierarchy.galerkin_caches
     for level_index in 1:(length(levels) - 1)
         level = levels[level_index]
         _refresh_level!(level, solver)
         coarse_level = levels[level_index + 1]
-        P_csc, R_csc = transfer[level_index]
-        coarse_level.A = _regalerkin_numeric!(coarse_level.A, level, P_csc, R_csc, solver)
+        if level_index <= length(caches) && caches[level_index] isa AMGGalerkinCache
+            coarse_level.A = _regalerkin_numeric!(coarse_level.A, level, caches[level_index], solver)
+        else
+            P_csc, R_csc = transfer[level_index]
+            coarse_level.A = _regalerkin_numeric!(coarse_level.A, level, P_csc, R_csc, solver)
+        end
     end
     _refresh_level!(levels[end], solver)
     _refresh_coarse_cpu!(hierarchy.coarse_cpu, levels[end].A)
@@ -331,7 +541,8 @@ function refresh_finest_level!(hierarchy::AMGHierarchy, solver::AMG)
 end
 
 function _should_stop_coarsening(n, coarse_rows, solver::AMG, level_id)
-    return coarse_rows < 2 || coarse_rows >= n || coarse_rows <= solver.min_coarse_rows || level_id >= solver.max_levels
+    poor_reduction = coarse_rows > solver.max_coarse_rows && coarse_rows >= 0.85 * n
+    return coarse_rows < 2 || coarse_rows >= n || coarse_rows <= solver.min_coarse_rows || poor_reduction || level_id >= solver.max_levels
 end
 
 function _hierarchy_complexities(levels)
@@ -340,6 +551,19 @@ function _hierarchy_complexities(levels)
     grid_complexity = sum(_m(level.A) for level in levels) / fine_rows
     operator_complexity = sum(length(_nzval(level.A)) for level in levels) / fine_nnz
     return float(operator_complexity), float(grid_complexity)
+end
+
+function _hierarchy_level_summary(levels)
+    lines = ["level rows nnz"]
+    for (level_index, level) in pairs(levels)
+        push!(lines, string(level_index, " ", _m(level.A), " ", length(_nzval(level.A))))
+    end
+    return join(lines, "\n")
+end
+
+function _coarse_solve_name(backend, coarse_cpu::AMGCPUCoarseLevel, A)
+    !(backend isa CPU) && _is_diagonal_matrix(A) && return "device_diagonal"
+    return coarse_cpu.use_qr ? "sparse_qr" : "sparse_lu"
 end
 
 function _amg_workgroup(backend, workgroup, ndrange)
@@ -376,7 +600,7 @@ function _sync_device_levels_numeric!(hierarchy::AMGHierarchy)
     for k in eachindex(hierarchy.levels)
         dev = hierarchy.levels[k]
         host = hierarchy.host_levels[k]
-        if length(dev.A.nzval) != length(host.A.nzval)
+        if k > 1 || length(dev.A.nzval) != length(host.A.nzval)
             hierarchy.levels[k] = adapt(backend, host)
             continue
         end
@@ -393,8 +617,10 @@ function setup_hierarchy(A, solver::AMG, backend; log_diagnostics=true)
 end
 
 function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=true)
+    _validate_amg_smoother_backend(backend, solver.smoother)
     host_levels = nothing
     transfer_csc = Any[]
+    galerkin_caches = Any[]
     current_A = _amg_matrix(A)
     current_candidates = _initial_candidates(solver.coarsening)
     level_id = 1
@@ -418,6 +644,7 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
         coarse_A = _drop_coarse_matrix(coarse_A, _coarse_drop_tolerance(solver.coarsening, level_id + 1))
         P = _amg_matrix(P_csc)
         R = _amg_matrix(R_csc)
+        push!(galerkin_caches, _build_galerkin_cache(current_A, P, coarse_A))
         level = _allocate_level(current_A, P, R, level_id, aggregate_ids, CPU(), solver.smoother)
         if isnothing(host_levels)
             host_levels = typeof(level)[]
@@ -458,15 +685,23 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
         Ref{Any}(_colval(A)),
         pattern_hash,
         transfer_csc,
+        galerkin_caches,
         is_symmetric,
+        0.0,
+        0.0,
+        0.0,
+        0,
         operator_complexity,
         grid_complexity,
         0.0
     )
     rows_summary = join(map(level -> string(_m(level.A)), host_levels), " -> ")
     if log_diagnostics
+        coarse_solver = _coarse_solve_name(backend, coarse_cpu, host_levels[end].A)
         @info "AMG hierarchy built" mode=_amg_mode_name(solver.mode) levels=length(host_levels) rows=rows_summary
+        @info "AMG hierarchy levels\n$(_hierarchy_level_summary(host_levels))"
         @info "AMG hierarchy diagnostics" cycle=solver.cycle coarsening=typeof(solver.coarsening) smoother=typeof(solver.smoother) backend=typeof(backend) operator_complexity=operator_complexity grid_complexity=grid_complexity
+        @info "AMG coarse solve" rows=_m(host_levels[end].A) nnz=length(_nzval(host_levels[end].A)) solver=coarse_solver device_transfer=!(backend isa CPU)
     end
     return hierarchy
 end

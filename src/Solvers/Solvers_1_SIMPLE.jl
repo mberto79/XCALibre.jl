@@ -207,7 +207,7 @@ function SIMPLE(
         end
 
         # correct mass flux and velocity
-        correct_mass_flux!(mdotf, p_eqn, config)
+        correct_mass_flux!(mdotf, p_eqn, config; time=time)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
         turbulence!(turbulenceModel, model, S, prev, time, config) 
@@ -337,7 +337,7 @@ end
 
 ### TEMP LOCATION FOR PROTOTYPING
 
-function correct_mass_flux!(mdotf, p_eqn, config)
+function correct_mass_flux!(mdotf, p_eqn, config; time=nothing)
     # sngrad = FaceScalarField(mesh)
     (; faces, cells, boundary_cellsID) = mdotf.mesh
     (; hardware) = config
@@ -358,12 +358,14 @@ function correct_mass_flux!(mdotf, p_eqn, config)
     kernel!(mdotf, p, nzval, colval, rowptr, faces, cells, n_bfaces)
     KernelAbstractions.synchronize(backend)
 
-    BCs = config.boundaries[1] # assume periodics always defined by user (extract first)
+    BCs = config.boundaries.p
     for BC ∈ BCs
         correct_mass_periodic(
             BC, mdotf, p, nzval, colval, rowptr, cells, faces, backend, workgroup)
         KernelAbstractions.synchronize(backend)
     end
+
+    correct_boundary_mass_flux!(mdotf, p_eqn, BCs, time, config)
 end
 
 @kernel function _correct_mass_flux!(
@@ -465,4 +467,91 @@ end
     phifi =  w*phi1 + one_w*phi2
     phif[fID] = phifi
     phif[pfID] = phifi
+end
+
+### Correct mass flux at pressure boundaries
+
+function correct_boundary_mass_flux!(mdotf, p_eqn, BCs, time, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    pterm = p_eqn.model.terms[1]
+    p = pterm.phi
+    pflux = pterm.flux
+    psign = pterm.sign
+
+    (; faces, boundary_cellsID) = mdotf.mesh
+    ndrange = length(boundary_cellsID)
+    kernel! = _correct_boundary_mass_flux!(_setup(backend, workgroup, ndrange)...)
+    kernel!(BCs, mdotf, p, pflux, psign, faces, boundary_cellsID, time)
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _correct_boundary_mass_flux!(
+    BCs, mdotf, p, pflux, psign, faces, boundary_cellsID, time)
+    fID = @index(Global)
+
+    @inbounds begin
+        correct_boundary_mass_flux_dispatch!(
+            BCs, mdotf, p, pflux, psign, faces, boundary_cellsID, time, fID)
+    end
+end
+
+@generated function correct_boundary_mass_flux_dispatch!(
+    BCs, mdotf, p, pflux, psign, faces, boundary_cellsID, time, fID)
+
+    calls = Expr(:block)
+    for bci ∈ 1:length(BCs.parameters)
+        push!(calls.args, quote
+            BC = BCs[$bci]
+            (; start, stop) = BC.IDs_range
+            if start <= fID <= stop
+                i = fID - start + 1
+                correct_boundary_mass_flux_bc!(
+                    BC, mdotf, p, pflux, psign, faces, boundary_cellsID, time, i, fID)
+                return nothing
+            end
+        end)
+    end
+
+    return calls
+end
+
+@inline correct_boundary_mass_flux_bc!(
+    BC, mdotf, p, pflux, psign, faces, boundary_cellsID, time, i, fID) = nothing
+
+@inline function correct_boundary_mass_flux_bc!(
+    BC::Dirichlet, mdotf, p, pflux, psign, faces, boundary_cellsID, time, i, fID)
+    @inbounds begin
+        face = faces[fID]
+        cID = boundary_cellsID[fID]
+        (; area, delta) = face
+        flux = pflux[fID] * area / delta
+        ap = psign * (-flux)
+        mdotf[fID] += ap * (p[cID] - BC.value)
+    end
+    nothing
+end
+
+@inline function correct_boundary_mass_flux_bc!(
+    BC::DirichletFunction, mdotf, p, pflux, psign, faces, boundary_cellsID, time, i, fID)
+    @inbounds begin
+        face = faces[fID]
+        cID = boundary_cellsID[fID]
+        (; area, delta, centre) = face
+        flux = pflux[fID] * area / delta
+        ap = psign * (-flux)
+        value = BC.value(centre, time, i)
+        mdotf[fID] += ap * (p[cID] - value)
+    end
+    nothing
+end
+
+@inline function correct_boundary_mass_flux_bc!(
+    BC::Neumann, mdotf, p, pflux, psign, faces, boundary_cellsID, time, i, fID)
+    @inbounds begin
+        face = faces[fID]
+        mdotf[fID] -= pflux[fID] * face.area * BC.value
+    end
+    nothing
 end

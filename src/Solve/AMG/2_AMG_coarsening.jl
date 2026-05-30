@@ -1,29 +1,32 @@
-function _strength_graph(A, threshold)
+function _sa_strength_graph(A, threshold)
     rowptr = _rowptr(A)
     colval = _colval(A)
     nzval = _nzval(A)
     n = _m(A)
-    strong = Vector{Vector{Int}}(undef, n)
-    for i in 1:n
-        max_offdiag = zero(eltype(nzval))
+    T = eltype(nzval)
+    diag = zeros(T, n)
+    @inbounds for i in 1:n
         for p in rowptr[i]:(rowptr[i + 1] - 1)
-            j = colval[p]
-            j == i && continue
-            max_offdiag = max(max_offdiag, abs(nzval[p]))
+            colval[p] == i && (diag[i] += nzval[p])
         end
-        limit = threshold * max_offdiag
+    end
+
+    strong = Vector{Vector{Int}}(undef, n)
+    θ2 = threshold * threshold
+    @inbounds for i in 1:n
         count = 0
+        limit_i = θ2 * abs(diag[i])
         for p in rowptr[i]:(rowptr[i + 1] - 1)
             j = colval[p]
             j == i && continue
-            abs(nzval[p]) >= limit && (count += 1)
+            abs2(nzval[p]) >= limit_i * abs(diag[j]) && (count += 1)
         end
         strong_i = Vector{Int}(undef, count)
         k = 1
         for p in rowptr[i]:(rowptr[i + 1] - 1)
             j = colval[p]
             j == i && continue
-            if abs(nzval[p]) >= limit
+            if abs2(nzval[p]) >= limit_i * abs(diag[j])
                 strong_i[k] = j
                 k += 1
             end
@@ -105,241 +108,132 @@ function _coarse_graph(strong)
     return coarse
 end
 
-function _level_strength_threshold(coarsening::SmoothAggregation, level_id)
-    thresholds = coarsening.level_strength_thresholds
-    isnothing(thresholds) && return coarsening.strength_threshold
-    isempty(thresholds) && return coarsening.strength_threshold
-    return thresholds[min(level_id, length(thresholds))]
-end
-
-_level_strength_threshold(coarsening::RugeStuben, level_id) = coarsening.strength_threshold
 _initial_candidates(coarsening::SmoothAggregation) = coarsening.near_nullspace
 _initial_candidates(::AbstractAMGCoarsening) = nothing
 
-function _coarse_drop_tolerance(coarsening::SmoothAggregation, coarse_level_id)
-    tolerances = coarsening.coarse_drop_tolerances
-    isempty(tolerances) && return 0.0
-    return tolerances[min(coarse_level_id, length(tolerances))]
-end
-
-_coarse_drop_tolerance(::AbstractAMGCoarsening, coarse_level_id) = 0.0
-
-function _aggregate_adjacency(agg, strong, nagg)
-    adjacency = [Int[] for _ in 1:nagg]
-    for i in eachindex(strong)
-        ai = agg[i]
-        for j in strong[i]
-            aj = agg[j]
-            ai == aj && continue
-            push!(adjacency[ai], aj)
-            push!(adjacency[aj], ai)
-        end
-    end
-    for neighbors in adjacency
-        sort!(neighbors)
-        unique!(neighbors)
-    end
-    return adjacency
-end
-
-function _aggressive_aggregates(agg, strong, nagg, passes)
-    passes <= 0 && return agg, nagg
-    current_agg = agg
-    current_nagg = nagg
-    for _ in 1:passes
-        current_nagg <= 2 && break
-        aggregate_graph = _aggregate_adjacency(current_agg, strong, current_nagg)
-        merged_agg, merged_nagg = _standard_aggregates(aggregate_graph)
-        merged_nagg >= current_nagg && break
-        current_agg = [merged_agg[id] for id in current_agg]
-        current_nagg = merged_nagg
-    end
-    return current_agg, current_nagg
-end
-
-function _row_abs_sum_inverse(A)
+# Filtered SA matrix: keep strong off-diagonals, lump weak ones onto the diagonal (Vanek)
+function _sa_filtered_matrix(A, strong)
     rowptr = _rowptr(A)
+    colval = _colval(A)
     nzval = _nzval(A)
     n = _m(A)
     T = eltype(nzval)
-    invsum = zeros(T, n)
+    marker = zeros(Int, n)
+    I = Int[]
+    J = Int[]
+    V = T[]
+    sizehint!(I, length(nzval))
+    sizehint!(J, length(nzval))
+    sizehint!(V, length(nzval))
     @inbounds for i in 1:n
-        rowsum = zero(T)
+        for j in strong[i]
+            marker[j] = i
+        end
+        dii = zero(T)
+        lump = zero(T)
         for p in rowptr[i]:(rowptr[i + 1] - 1)
-            rowsum += abs(nzval[p])
-        end
-        invsum[i] = rowsum > eps(T) ? inv(rowsum) : one(T)
-    end
-    return invsum
-end
-
-function _smooth_prolongation(A, P, weight, ::Val{:spectral})
-    _, invdiag = _diag_inverse(A)
-    lambda_max = _estimate_lambda_max(A, invdiag)
-    alpha = weight / max(lambda_max, eps(eltype(invdiag)))
-    alpha <= 0 && return P
-
-    Acsc = _csr_to_csc(A)
-    AP = Acsc * P
-    rowval = rowvals(AP)
-    nzval = nonzeros(AP)
-    @inbounds for j in 1:size(AP, 2)
-        for p in nzrange(AP, j)
-            nzval[p] *= alpha * invdiag[rowval[p]]
-        end
-    end
-
-    Ps = P - AP
-    dropzeros!(Ps)
-    return Ps
-end
-
-function _smooth_prolongation(A, P, weight, ::Val{:local})
-    weight <= 0 && return P
-    invsum = _row_abs_sum_inverse(A)
-    Acsc = _csr_to_csc(A)
-    AP = Acsc * P
-    rowval = rowvals(AP)
-    nzval = nonzeros(AP)
-    @inbounds for j in 1:size(AP, 2)
-        for p in nzrange(AP, j)
-            nzval[p] *= weight * invsum[rowval[p]]
-        end
-    end
-
-    Ps = P - AP
-    dropzeros!(Ps)
-    return Ps
-end
-
-function _truncate_prolongation(P, max_entries::Integer)
-    max_entries <= 0 && return P
-    I, J, V = findnz(P)
-    n = size(P, 1)
-    nnzP = length(V)
-    keep = falses(nnzP)
-    nnzP == 0 && return P
-
-    row_counts = zeros(Int, n)
-    row_slots = fill(0, n, max_entries)
-    row_magnitudes = fill(zero(eltype(V)), n, max_entries)
-    @inbounds for k in eachindex(I)
-        row = I[k]
-        row_counts[row] += 1
-        magnitude = abs(V[k])
-        insert_at = 0
-        for slot in 1:max_entries
-            if row_slots[row, slot] == 0 || magnitude > row_magnitudes[row, slot]
-                insert_at = slot
-                break
+            j = colval[p]
+            aij = nzval[p]
+            if j == i
+                dii += aij
+            elseif marker[j] == i
+                push!(I, i); push!(J, j); push!(V, aij)
+            else
+                lump += aij # weak connection lumped to diagonal
             end
         end
-        insert_at == 0 && continue
-        for slot in max_entries:-1:(insert_at + 1)
-            row_slots[row, slot] = row_slots[row, slot - 1]
-            row_magnitudes[row, slot] = row_magnitudes[row, slot - 1]
-        end
-        row_slots[row, insert_at] = k
-        row_magnitudes[row, insert_at] = magnitude
+        push!(I, i); push!(J, i); push!(V, dii + lump)
     end
+    return sparse(I, J, V, n, n)
+end
 
-    kept_nnz = 0
-    @inbounds for row in 1:n
-        kept_nnz += min(row_counts[row], max_entries)
-        for slot in 1:max_entries
-            k = row_slots[row, slot]
-            k == 0 && break
-            keep[k] = true
-        end
+# Spectral radius of D⁻¹Af via power iteration from a high-frequency seed
+function _spectral_radius_DinvA(DinvA, ::Type{T}) where {T}
+    n = size(DinvA, 1)
+    v = T[isodd(i) ? one(T) : -one(T) for i in 1:n]
+    rho = one(T)
+    for _ in 1:15
+        w = DinvA * v
+        nw = norm(w)
+        nv = norm(v)
+        rho = nw / max(nv, eps(T))
+        nw <= eps(T) && break
+        v = w ./ nw
     end
+    return rho
+end
 
-    original_row_sum = zeros(eltype(V), n)
-    truncated_row_sum = zeros(eltype(V), n)
-    @inbounds for k in eachindex(V)
-        original_row_sum[I[k]] += V[k]
-        keep[k] && (truncated_row_sum[I[k]] += V[k])
-    end
-
-    It = Int[]
-    Jt = Int[]
-    Vt = eltype(V)[]
-    sizehint!(It, kept_nnz)
-    sizehint!(Jt, kept_nnz)
-    sizehint!(Vt, kept_nnz)
-    @inbounds for k in eachindex(V)
-        keep[k] || continue
-        scale = abs(truncated_row_sum[I[k]]) > eps(eltype(V)) ? original_row_sum[I[k]] / truncated_row_sum[I[k]] : one(eltype(V))
-        push!(It, I[k])
-        push!(Jt, J[k])
-        push!(Vt, V[k] * scale)
-    end
-    Pt = sparse(It, Jt, Vt, size(P, 1), size(P, 2))
-    dropzeros!(Pt)
-    return Pt
+# Standard Jacobi prolongation smoother: P = (I - (weight/ρ) D⁻¹Af) P₀
+function _smooth_prolongation(A, P, strong, weight)
+    weight <= 0 && return P
+    Af = _sa_filtered_matrix(A, strong)
+    T = eltype(nonzeros(Af))
+    d = diag(Af)
+    Dinv = T[abs(d[i]) > eps(T) ? one(T) / d[i] : zero(T) for i in eachindex(d)]
+    DinvA = Diagonal(Dinv) * Af
+    rho = T(11//10) * _spectral_radius_DinvA(DinvA, T) # margin: power iteration approaches ρ from below
+    omega = T(weight) / max(rho, eps(T))
+    Ps = P - omega * (DinvA * P)
+    dropzeros!(Ps)
+    return Ps
 end
 
 function _standard_aggregates(strong)
     n = length(strong)
-    coarse = _coarse_graph(strong)
-    weights = map(length, coarse)
-    seeds = falses(n)
-    agg = zeros(Int, n)
+    x = zeros(Int, n)
+    next_aggregate = 1
 
-    order = sortperm(weights; rev=true)
-    for i in order
-        seeds[i] && continue
-        has_seed_neighbor = false
-        for j in coarse[i]
-            if seeds[j]
-                has_seed_neighbor = true
+    for i in 1:n
+        x[i] != 0 && continue
+        has_neighbors = false
+        has_agg_neighbors = false
+        for row in strong[i]
+            row == i && continue
+            has_neighbors = true
+            if x[row] != 0
+                has_agg_neighbors = true
                 break
             end
         end
-        has_seed_neighbor && continue
-        seeds[i] = true
-    end
-
-    next_id = 0
-    for seed in eachindex(seeds)
-        seeds[seed] || continue
-        next_id += 1
-        agg[seed] = next_id
-        for j in coarse[seed]
-            agg[j] == 0 && (agg[j] = next_id)
+        if !has_neighbors
+            x[i] = -n
+        elseif !has_agg_neighbors
+            x[i] = next_aggregate
+            for row in strong[i]
+                x[row] = next_aggregate
+            end
+            next_aggregate += 1
         end
     end
 
-    marker = zeros(Int, n)
-    stamp = 0
     for i in 1:n
-        agg[i] != 0 && continue
-        best_agg = 0
-        best_strength = -1
-        stamp += 1
-        for k in coarse[i]
-            marker[k] = stamp
-        end
-        for j in coarse[i]
-            candidate = agg[j]
-            candidate == 0 && continue
-            strength = 0
-            for k in coarse[j]
-                marker[k] == stamp && (strength += 1)
+        x[i] != 0 && continue
+        for row in strong[i]
+            if x[row] > 0
+                x[i] = -x[row]
+                break
             end
-            if strength > best_strength
-                best_strength = strength
-                best_agg = candidate
-            end
-        end
-        if best_agg != 0
-            agg[i] = best_agg
-        else
-            next_id += 1
-            agg[i] = next_id
         end
     end
 
-    return agg, next_id
+    next_aggregate -= 1
+    agg = zeros(Int, n)
+    for i in 1:n
+        xi = x[i]
+        if xi > 0
+            agg[i] = xi
+        elseif xi < 0 && xi != -n
+            agg[i] = -xi
+        else
+            next_aggregate += 1
+            agg[i] = next_aggregate
+            for row in strong[i]
+                x[row] == 0 && (x[row] = next_aggregate)
+            end
+        end
+    end
+
+    return agg, next_aggregate
 end
 
 function _strong_row_sets(strong)
@@ -569,24 +463,94 @@ function build_prolongation(A, coarsening::SmoothAggregation, candidate=nothing,
     n = _m(A)
     candidate_vec = _near_nullspace_vector(A, isnothing(candidate) ? coarsening.near_nullspace : candidate)
     n <= 2 && return collect(1:n), nothing, candidate_vec
-    strong = _strength_graph(A, _level_strength_threshold(coarsening, level_id))
+    strong = _sa_strength_graph(A, coarsening.strength_threshold)
     agg, nagg = _standard_aggregates(strong)
-    if level_id <= coarsening.aggressive_levels
-        agg, nagg = _aggressive_aggregates(agg, strong, nagg, coarsening.aggressive_passes)
-    end
-    nagg < 2 && return agg, nothing, candidate_vec
+    nagg < 1 && return agg, nothing, candidate_vec
     P0, coarse_candidate = _tentative_prolongation(agg, candidate_vec)
-    P = coarsening.interpolation == :smoothed ?
-        _smooth_prolongation(A, P0, coarsening.smoother_weight, Val(coarsening.prolongation_weighting)) :
-        P0
-    P = _truncate_prolongation(P, coarsening.max_prolongation_entries)
+    P = _smooth_prolongation(A, P0, strong, coarsening.smoother_weight)
     return agg, P, coarse_candidate
 end
 
-function build_prolongation(A, coarsening::RugeStuben, candidate=nothing, level_id=1)
+# Greedy pairwise agglomeration weighted by |a_ij| (OpenFOAM faceAreaPair); merge_levels passes
+function _geometric_aggregates(A, merge_levels::Int)
+    rowptr = _rowptr(A)
+    colval = _colval(A)
+    nzval = _nzval(A)
+    n = _m(A)
+    T = eltype(nzval)
+    agg = collect(1:n)
+    ncl = n
+    for _ in 1:merge_levels
+        cnt = zeros(Int, ncl)
+        @inbounds for i in 1:n
+            cnt[agg[i]] += 1
+        end
+        off = cumsum(vcat(1, cnt)) # cluster->cells offsets
+        cells = Vector{Int}(undef, n)
+        pos = copy(off)
+        @inbounds for i in 1:n
+            c = agg[i]
+            cells[pos[c]] = i
+            pos[c] += 1
+        end
+        merged = fill(false, ncl)
+        newlab = zeros(Int, ncl)
+        nnew = 0
+        acc = zeros(T, ncl)
+        stamp = zeros(Int, ncl)
+        order = sortperm(cnt) # pair smallest clusters first
+        @inbounds for c in order
+            merged[c] && continue
+            bestc = 0
+            bestw = zero(T)
+            for t in off[c]:(off[c + 1] - 1)
+                i = cells[t]
+                for p in rowptr[i]:(rowptr[i + 1] - 1)
+                    j = colval[p]
+                    cj = agg[j]
+                    cj == c && continue
+                    if stamp[cj] != c
+                        stamp[cj] = c
+                        acc[cj] = zero(T)
+                    end
+                    acc[cj] += abs(nzval[p])
+                    if !merged[cj] && acc[cj] > bestw
+                        bestw = acc[cj]
+                        bestc = cj
+                    end
+                end
+            end
+            nnew += 1
+            newlab[c] = nnew
+            merged[c] = true
+            if bestc != 0
+                newlab[bestc] = nnew
+                merged[bestc] = true
+            end
+        end
+        @inbounds for i in 1:n
+            agg[i] = newlab[agg[i]]
+        end
+        ncl = nnew
+    end
+    return agg, ncl
+end
+
+# Geometric uses unsmoothed piecewise-constant injection P (OpenFOAM additive correction); coarse op via RAP
+function build_prolongation(A, coarsening::Geometric, _candidate=nothing, _level_id=1)
+    n = _m(A)
+    candidate_vec = _near_nullspace_vector(A, nothing)
+    n <= 2 && return collect(1:n), nothing, candidate_vec
+    agg, nagg = _geometric_aggregates(A, coarsening.merge_levels)
+    nagg < 1 && return agg, nothing, candidate_vec
+    P0, coarse_candidate = _tentative_prolongation(agg, candidate_vec)
+    return agg, P0, coarse_candidate
+end
+
+function build_prolongation(A, coarsening::RugeStuben, _candidate=nothing, _level_id=1)
     n = _m(A)
     n <= 2 && return collect(1:n), nothing, nothing
-    strong = _rs_strength_graph(A, _level_strength_threshold(coarsening, level_id))
+    strong = _rs_strength_graph(A, coarsening.strength_threshold)
     splitting = _rs_coarse_fine_split(strong)
     P = _rs_direct_interpolation(A, strong, splitting)
     isnothing(P) && return splitting, nothing, nothing

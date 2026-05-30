@@ -30,8 +30,7 @@ function amg_pressure_solver(mode::String)
             solver=AMG(
                 mode=Cg(),
                 coarsening=SmoothAggregation(
-                    strength_threshold=0.10,
-                    interpolation=:smoothed
+                    strength_threshold=0.10
                 ),
                 smoother=AMGJacobi(omega=2/3),
                 pre_sweeps=2,
@@ -50,8 +49,7 @@ function amg_pressure_solver(mode::String)
             solver=AMG(
                 mode=AMGSolver(),
                 coarsening=SmoothAggregation(
-                    strength_threshold=0.10,
-                    interpolation=:smoothed
+                    strength_threshold=0.10
                 ),
                 smoother=AMGJacobi(),
                 pre_sweeps=1,

@@ -53,7 +53,10 @@ solvers = (
         atol=1e-6
     ),
     p = SolverSetup(
-        solver=AMG(),
+        solver=AMG(
+            # coarsening = RugeStuben()
+            coarsening = SmoothAggregation(strength_threshold=0.4)
+        ),
         # solver=Cg(),
         preconditioner=Jacobi(),
         convergence=1e-7,

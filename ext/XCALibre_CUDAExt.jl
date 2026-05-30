@@ -168,11 +168,13 @@ begin
     KernelAbstractions.copyto!(BACKEND(), x, xcpu)
 end
 
-# AMG: cuSPARSE-backed finest-level operators
+# AMG: cuSPARSE-backed finest-level operators and device RAP plans
 
 import XCALibre.Solve: _matvec!, _residual!, _prolongate_add!, _amg_jacobi!,
-    _amg_finalize_device_levels, _level_jacobi_omega, _launch_amg_kernel!,
-    _amg_weighted_diagonal_correction_kernel!, AMGHierarchy, AMGLevel, AMGMatrixCSR, AMGJacobi
+    _amg_finalize_device_levels, _amg_finalize_transfer_plans, _refresh_coarse_level!,
+    _level_jacobi_omega, _launch_amg_kernel!,
+    _amg_weighted_diagonal_correction_kernel!, AMGHierarchy, AMGLevel, AMGMatrixCSR, AMGJacobi,
+    AMGRAPPlanCPU
 
 # Wrap a device AMGMatrixCSR as CuSparseMatrixCSR, sharing nzVal so numeric refresh updates the operator
 function _amg_csr_to_cusparse(A::AMGMatrixCSR)
@@ -222,6 +224,75 @@ function _amg_jacobi!(hierarchy::AMGHierarchy, smoother::AMGJacobi, level::AMGLe
         )
     end
     return level.x
+end
+
+
+# Device RAP plan. Keep the CPU plan as a correctness fallback until SpGEMMreuse is
+# reintroduced with a verified numeric refresh path.
+mutable struct AMGRAPPlanCUDA{T}
+    cpu_plan::AMGRAPPlanCPU
+    R_dev::SPARSEGPU{T}
+    A_dev::SPARSEGPU{T}
+    P_dev::SPARSEGPU{T}
+end
+
+function _cuda_rap_pattern_matches_host(C::SPARSEGPU, A_host)
+    Int.(Array(C.rowPtr)) == XCALibre.Solve._rowptr(A_host) || return false
+    Int.(Array(C.colVal)) == XCALibre.Solve._colval(A_host) || return false
+    return true
+end
+
+function _build_rap_plan_cuda(
+    cpu_plan::AMGRAPPlanCPU,
+    R_dev::SPARSEGPU{T},
+    A_dev::SPARSEGPU{T},
+    P_dev::SPARSEGPU{T},
+    coarse_A_host
+) where T
+    rap = (R_dev * A_dev) * P_dev
+    CUDA.synchronize()
+    _cuda_rap_pattern_matches_host(rap, coarse_A_host) ||
+        error("CUDA RAP pattern differs from host Galerkin pattern")
+    return AMGRAPPlanCUDA{T}(cpu_plan, R_dev, A_dev, P_dev)
+end
+
+# Convert CPU plans to CUDA device plans for all levels that have a transfer matrix.
+function _amg_finalize_transfer_plans(::BACKEND, transfer_csc, host_levels, device_levels)
+    isempty(transfer_csc) && return transfer_csc
+    new_plans = Vector{Any}(undef, length(transfer_csc))
+    for i in eachindex(transfer_csc)
+        plan = transfer_csc[i]
+        if plan isa AMGRAPPlanCPU && i < length(device_levels)
+            dev = device_levels[i]
+            R_dev = dev.R isa SPARSEGPU ? dev.R : nothing
+            P_dev = dev.P isa SPARSEGPU ? dev.P : nothing
+            A_dev = dev.A isa SPARSEGPU ? dev.A : nothing
+            if !isnothing(R_dev) && !isnothing(P_dev) && !isnothing(A_dev)
+                try
+                    new_plans[i] = _build_rap_plan_cuda(plan, R_dev, A_dev, P_dev, host_levels[i + 1].A)
+                    continue
+                catch
+                    # Fall back to CPU plan if CUDA plan fails (e.g. incompatible types)
+                end
+            end
+        end
+        new_plans[i] = plan
+    end
+    return new_plans
+end
+
+# Dispatch refresh for CUDA plan: plain on-device RAP, then sync coarse nzval to host.
+function _refresh_coarse_level!(coarse_A_host, fine_level::AMGLevel, plan::AMGRAPPlanCUDA{T}) where T
+    try
+        coarse_A_dev = (plan.R_dev * plan.A_dev) * plan.P_dev
+        CUDA.synchronize()
+        if _cuda_rap_pattern_matches_host(coarse_A_dev, coarse_A_host)
+            copyto!(coarse_A_host.nzval, Array(coarse_A_dev.nzVal))
+            return coarse_A_host
+        end
+    catch
+    end
+    return XCALibre.Solve._refresh_coarse_level!(coarse_A_host, fine_level, plan.cpu_plan)
 end
 
 end # end module

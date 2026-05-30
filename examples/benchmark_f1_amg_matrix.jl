@@ -142,7 +142,7 @@ function main(args)
     backend_name = get(args, 2, "cuda")
     samples = length(args) >= 3 ? parse(Int, args[3]) : 1
     max_coarse_rows = length(args) >= 4 ? parse(Int, args[4]) : 4096
-    coarse_refresh_interval = length(args) >= 5 ? parse(Int, args[5]) : 20
+    coarse_refresh_interval = length(args) >= 5 ? parse(Int, args[5]) : 1
     warmed_runs = length(args) >= 6 ? parse(Int, args[6]) : 1
     solver = AMG(max_coarse_rows=max_coarse_rows, coarse_refresh_interval=coarse_refresh_interval)
     backend, workgroup = maybe_cuda_backend(backend_name)

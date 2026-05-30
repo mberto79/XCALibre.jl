@@ -129,66 +129,51 @@ function probe_configs(profile::String)
         jacobi_omegas = (1.1,)
         sweep_pairs = ((2, 2),)
         coarse_rows = (512,)
-        truncations = (2, 3, 4, 5, 6)
     elseif profile == "cycle_budget"
         strengths = (0.16,)
         smoother_weights = (1.0,)
         jacobi_omegas = (1.1,)
         sweep_pairs = ((1, 1), (2, 2), (3, 3), (4, 4))
         coarse_rows = (128, 256, 512, 1024, 2048)
-        truncations = (4,)
     elseif profile == "jacobi_damping"
         strengths = (0.16,)
         smoother_weights = (1.0,)
         jacobi_omegas = (0.45, 0.55, 0.60, 2 / 3, 0.75, 0.85, 1.0)
         sweep_pairs = ((2, 2),)
         coarse_rows = (512,)
-        truncations = (4,)
     elseif profile == "jacobi_high"
         strengths = (0.16,)
         smoother_weights = (1.0,)
         jacobi_omegas = (0.90, 1.0, 1.10, 1.20, 4 / 3)
         sweep_pairs = ((2, 2),)
         coarse_rows = (512,)
-        truncations = (4,)
     elseif profile == "complexity_controlled"
         strengths = (0.10, 0.14, 0.18)
         smoother_weights = (0.8, 1.0)
         jacobi_omegas = (0.8, 1.1)
         sweep_pairs = ((1, 1), (2, 2))
         coarse_rows = (128, 256, 512)
-        truncations = (2, 3, 4)
     else
         strengths = (0.12, 0.18, 0.25)
         smoother_weights = (0.7, 1.0)
         jacobi_omegas = (2 / 3, 1.1)
         sweep_pairs = ((1, 1), (2, 2))
         coarse_rows = (128, 512)
-        truncations = (0, 4)
     end
 
     configs = NamedTuple[]
     for strength in strengths, smoother_weight in smoother_weights, omega in jacobi_omegas,
-        sweeps in sweep_pairs, max_coarse_rows in coarse_rows, max_entries in truncations
+        sweeps in sweep_pairs, max_coarse_rows in coarse_rows
         push!(configs, (
             strength_threshold=strength,
             smoother_weight=smoother_weight,
             jacobi_omega=omega,
             pre_sweeps=sweeps[1],
             post_sweeps=sweeps[2],
-            max_coarse_rows=max_coarse_rows,
-            max_prolongation_entries=max_entries,
-            level_strength_thresholds=profile == "complexity_controlled" ? (strength, max(0.04, strength * 0.75), max(0.02, strength * 0.5)) : nothing,
-            aggressive_levels=profile == "complexity_controlled" ? 1 : 0,
-            aggressive_passes=1,
-            coarse_drop_tolerances=profile == "complexity_controlled" ? (0.0, 0.01, 0.03, 0.05) : ()
+            max_coarse_rows=max_coarse_rows
         ))
     end
     return configs
-end
-
-function cfg_value(cfg, key::Symbol, default)
-    return key in keys(cfg) ? getproperty(cfg, key) : default
 end
 
 function level_rows(hierarchy)
@@ -205,12 +190,7 @@ function make_probe_solver(cfg)
         cycle=VCycle(),
         coarsening=SmoothAggregation(
             strength_threshold=cfg.strength_threshold,
-            level_strength_thresholds=cfg_value(cfg, :level_strength_thresholds, nothing),
-            smoother_weight=cfg.smoother_weight,
-            max_prolongation_entries=cfg.max_prolongation_entries,
-            aggressive_levels=cfg_value(cfg, :aggressive_levels, 0),
-            aggressive_passes=cfg_value(cfg, :aggressive_passes, 1),
-            coarse_drop_tolerances=cfg_value(cfg, :coarse_drop_tolerances, ())
+            smoother_weight=cfg.smoother_weight
         ),
         smoother=AMGJacobi(omega=cfg.jacobi_omega),
         pre_sweeps=cfg.pre_sweeps,
@@ -304,12 +284,7 @@ function default_replay_config()
         jacobi_omega=1.1,
         pre_sweeps=2,
         post_sweeps=2,
-        max_coarse_rows=512,
-        max_prolongation_entries=4,
-        level_strength_thresholds=nothing,
-        aggressive_levels=0,
-        aggressive_passes=1,
-        coarse_drop_tolerances=()
+        max_coarse_rows=512
     )
 end
 
@@ -772,7 +747,7 @@ function print_probe_rankings(rows; top_n=8)
             cfg = row.cfg
             result = row.result
             @printf(
-                "TOP metric=%s rank=%d system=%d config=%d strength=%.3f sa_weight=%.3f jacobi_omega=%.3f sweeps=%d/%d max_coarse_rows=%d max_p_entries=%d final_relative=%.6e vcycle_factor=%.6e solve_s=%.6e avg_vcycle_s=%.6e operator_complexity=%.6f grid_complexity=%.6f first_coarse_rows=%d composite=%.6f rows=%s\n",
+                "TOP metric=%s rank=%d system=%d config=%d strength=%.3f sa_weight=%.3f jacobi_omega=%.3f sweeps=%d/%d max_coarse_rows=%d final_relative=%.6e vcycle_factor=%.6e solve_s=%.6e avg_vcycle_s=%.6e operator_complexity=%.6f grid_complexity=%.6f first_coarse_rows=%d composite=%.6f rows=%s\n",
                 string(metric),
                 rank,
                 row.system_id,
@@ -783,7 +758,6 @@ function print_probe_rankings(rows; top_n=8)
                 cfg.pre_sweeps,
                 cfg.post_sweeps,
                 cfg.max_coarse_rows,
-                cfg.max_prolongation_entries,
                 result.final_relative_residual,
                 result.vcycle_factor,
                 result.solve_time_s,
@@ -848,7 +822,7 @@ function print_config_rankings(rows; top_n=12)
         for (rank, row) in enumerate(Iterators.take(sorted, top_n))
             cfg = row.cfg
             @printf(
-                "TOP_CONFIG metric=%s rank=%d config=%d systems=%d strength=%.3f sa_weight=%.3f jacobi_omega=%.3f sweeps=%d/%d max_coarse_rows=%d max_p_entries=%d final_relative=%.6e max_relative=%.6e mean_relative=%.6e mean_vcycle_factor=%.6e max_vcycle_factor=%.6e solve_s=%.6e avg_vcycle_s=%.6e operator_complexity=%.6f grid_complexity=%.6f first_coarse_rows=%d composite=%.6f residuals=%s vcycle_factors=%s rows=%s\n",
+                "TOP_CONFIG metric=%s rank=%d config=%d systems=%d strength=%.3f sa_weight=%.3f jacobi_omega=%.3f sweeps=%d/%d max_coarse_rows=%d final_relative=%.6e max_relative=%.6e mean_relative=%.6e mean_vcycle_factor=%.6e max_vcycle_factor=%.6e solve_s=%.6e avg_vcycle_s=%.6e operator_complexity=%.6f grid_complexity=%.6f first_coarse_rows=%d composite=%.6f residuals=%s vcycle_factors=%s rows=%s\n",
                 string(metric),
                 rank,
                 row.config_id,
@@ -859,7 +833,6 @@ function print_config_rankings(rows; top_n=12)
                 cfg.pre_sweeps,
                 cfg.post_sweeps,
                 cfg.max_coarse_rows,
-                cfg.max_prolongation_entries,
                 row.final_relative_residual,
                 row.max_relative_residual,
                 row.mean_relative_residual,
@@ -892,7 +865,7 @@ function run_probe_sweep(systems, configs)
                 result=result
             ))
             @printf(
-                "PROBE system=%d config=%d strength=%.3f sa_weight=%.3f jacobi_omega=%.3f sweeps=%d/%d max_coarse_rows=%d max_p_entries=%d iterations=%d apply_calls=%d vcycle_factor=%.6e avg_vcycle_s=%.6e solve_s=%.6e operator_complexity=%.6f grid_complexity=%.6f first_coarse_rows=%d final_residual=%.6e final_relative=%.6e rows=%s\n",
+                "PROBE system=%d config=%d strength=%.3f sa_weight=%.3f jacobi_omega=%.3f sweeps=%d/%d max_coarse_rows=%d iterations=%d apply_calls=%d vcycle_factor=%.6e avg_vcycle_s=%.6e solve_s=%.6e operator_complexity=%.6f grid_complexity=%.6f first_coarse_rows=%d final_residual=%.6e final_relative=%.6e rows=%s\n",
                 system_id,
                 config_id,
                 cfg.strength_threshold,
@@ -901,7 +874,6 @@ function run_probe_sweep(systems, configs)
                 cfg.pre_sweeps,
                 cfg.post_sweeps,
                 cfg.max_coarse_rows,
-                cfg.max_prolongation_entries,
                 result.iterations,
                 result.apply_calls,
                 result.vcycle_factor,
@@ -938,7 +910,7 @@ function run_history_sweep(systems, configs)
                 result=result
             ))
             @printf(
-                "HISTORY system=%d config=%d strength=%.3f sa_weight=%.3f jacobi_omega=%.3f sweeps=%d/%d max_coarse_rows=%d max_p_entries=%d iterations=%d apply_calls=%d final_relative=%.6e solve_s=%.6e avg_vcycle_s=%.6e operator_complexity=%.6f grid_complexity=%.6f rows=%s rel_history=%s\n",
+                "HISTORY system=%d config=%d strength=%.3f sa_weight=%.3f jacobi_omega=%.3f sweeps=%d/%d max_coarse_rows=%d iterations=%d apply_calls=%d final_relative=%.6e solve_s=%.6e avg_vcycle_s=%.6e operator_complexity=%.6f grid_complexity=%.6f rows=%s rel_history=%s\n",
                 system_id,
                 config_id,
                 cfg.strength_threshold,
@@ -947,7 +919,6 @@ function run_history_sweep(systems, configs)
                 cfg.pre_sweeps,
                 cfg.post_sweeps,
                 cfg.max_coarse_rows,
-                cfg.max_prolongation_entries,
                 result.iterations,
                 result.apply_calls,
                 result.final_relative_residual,

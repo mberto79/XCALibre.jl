@@ -1,3 +1,7 @@
+# Galerkin cache entries scale as K^2 * nnz (K = max P entries per row).
+# Beyond this nnz, the cache exceeds ~100 MB and causes OOM on large meshes.
+const _GALERKIN_CACHE_MAX_NNZ = 400_000
+
 function _cpu_vector(x::AbstractVector)
     return Array(x)
 end
@@ -261,62 +265,8 @@ function _refresh_level!(level::AMGLevel, solver::AMG)
     return level
 end
 
-function _drop_coarse_matrix(A, tolerance)
-    tolerance <= 0 && return A
-    rowptr = _rowptr(A)
-    colval = _colval(A)
-    nzval = _nzval(A)
-    n = _m(A)
-    T = eltype(nzval)
-    row_max = zeros(T, n)
-    for i in 1:n
-        for p in rowptr[i]:(rowptr[i + 1] - 1)
-            j = colval[p]
-            j == i && continue
-            row_max[i] = max(row_max[i], abs(nzval[p]))
-        end
-    end
-
-    I = Int[]
-    J = Int[]
-    V = T[]
-    sizehint!(I, length(nzval))
-    sizehint!(J, length(nzval))
-    sizehint!(V, length(nzval))
-
-    for i in 1:n
-        diag_index = 0
-        for p in rowptr[i]:(rowptr[i + 1] - 1)
-            if colval[p] == i
-                diag_index = p
-            end
-        end
-        for p in rowptr[i]:(rowptr[i + 1] - 1)
-            j = colval[p]
-            symmetric_scale = j <= n ? max(row_max[i], row_max[j]) : row_max[i]
-            keep = j == i || abs(nzval[p]) >= tolerance * symmetric_scale
-            if keep
-                push!(I, i)
-                push!(J, j)
-                push!(V, nzval[p])
-            end
-        end
-        if diag_index == 0
-            push!(I, i)
-            push!(J, i)
-            push!(V, one(T))
-        end
-    end
-
-    dropped = sparse(I, J, V, n, _n(A))
-    dropzeros!(dropped)
-    return _amg_matrix(dropped)
-end
-
-function _regalerkin_cached!(fine_level::AMGLevel, P_csc, R_csc, solver::AMG)
-    coarse_A = _amg_matrix(R_csc * _csr_to_csc(fine_level.A) * P_csc)
-    tolerance = _coarse_drop_tolerance(solver.coarsening, fine_level.level_id + 1)
-    return _drop_coarse_matrix(coarse_A, tolerance)
+function _regalerkin_cached!(fine_level::AMGLevel, P_csc, R_csc)
+    return _amg_matrix(R_csc * _csr_to_csc(fine_level.A) * P_csc)
 end
 
 @inline function _csr_find_index(rowptr, colval, row::Integer, col::Integer)
@@ -359,9 +309,10 @@ function _build_galerkin_cache(::Type{I}, fine_A, P, coarse_A) where {I<:Integer
     targets = I[]
     fine_indices = I[]
     weights = T[]
-    sizehint!(targets, min(4 * length(_nzval(fine_A)), typemax(Int32)))
-    sizehint!(fine_indices, min(4 * length(_nzval(fine_A)), typemax(Int32)))
-    sizehint!(weights, min(4 * length(_nzval(fine_A)), typemax(Int32)))
+    n_hint = min(20 * length(_nzval(fine_A)), 10_000_000)
+    sizehint!(targets, n_hint)
+    sizehint!(fine_indices, n_hint)
+    sizehint!(weights, n_hint)
 
     @inbounds for i in 1:n
         pi_start = Prowptr[i]
@@ -390,7 +341,7 @@ function _build_galerkin_cache(::Type{I}, fine_A, P, coarse_A) where {I<:Integer
     return AMGGalerkinCache(targets, fine_indices, weights)
 end
 
-function _regalerkin_numeric!(coarse_A, fine_level::AMGLevel, cache::AMGGalerkinCache, solver::AMG)
+function _regalerkin_numeric!(coarse_A, fine_level::AMGLevel, cache::AMGGalerkinCache)
     coarse_nzval = _nzval(coarse_A)
     fine_nzval = _nzval(fine_level.A)
     fill!(coarse_nzval, zero(eltype(coarse_nzval)))
@@ -403,8 +354,8 @@ function _regalerkin_numeric!(coarse_A, fine_level::AMGLevel, cache::AMGGalerkin
     return coarse_A
 end
 
-function _regalerkin_numeric!(coarse_A, fine_level::AMGLevel, P_csc, R_csc, solver::AMG)
-    updated_A = _regalerkin_cached!(fine_level, P_csc, R_csc, solver)
+function _regalerkin_numeric!(coarse_A, fine_level::AMGLevel, P_csc, R_csc)
+    updated_A = _regalerkin_cached!(fine_level, P_csc, R_csc)
     if _m(coarse_A) == _m(updated_A) &&
        _n(coarse_A) == _n(updated_A) &&
        _rowptr(coarse_A) == _rowptr(updated_A) &&
@@ -414,6 +365,121 @@ function _regalerkin_numeric!(coarse_A, fine_level::AMGLevel, P_csc, R_csc, solv
     end
     return updated_A
 end
+
+# SYMBOLIC/NUMERIC SPLIT RAP (PETSc/Ginkgo-style, no allocation on refresh)
+
+function _build_ra_pattern(R, A)
+    I = Int32
+    R_rowptr = _rowptr(R); R_colval = _colval(R)
+    A_rowptr = _rowptr(A); A_colval = _colval(A)
+    n_coarse = _m(R); n_fine = _m(A)
+    marker = zeros(Int, n_fine)
+
+    nnz_per_row = zeros(Int, n_coarse)
+    @inbounds for r in 1:n_coarse
+        for rp in R_rowptr[r]:(R_rowptr[r+1]-1)
+            i = Int(R_colval[rp])
+            for ap in A_rowptr[i]:(A_rowptr[i+1]-1)
+                j = Int(A_colval[ap])
+                if marker[j] != r
+                    marker[j] = r
+                    nnz_per_row[r] += 1
+                end
+            end
+        end
+    end
+
+    ra_rowptr = Vector{Int}(undef, n_coarse + 1)
+    ra_rowptr[1] = 1
+    for r in 1:n_coarse
+        ra_rowptr[r+1] = ra_rowptr[r] + nnz_per_row[r]
+    end
+    total_nnz = ra_rowptr[n_coarse+1] - 1
+    ra_colval = Vector{I}(undef, total_nnz)
+
+    fill!(marker, 0)
+    pos = copy(ra_rowptr[1:n_coarse])
+    @inbounds for r in 1:n_coarse
+        for rp in R_rowptr[r]:(R_rowptr[r+1]-1)
+            i = Int(R_colval[rp])
+            for ap in A_rowptr[i]:(A_rowptr[i+1]-1)
+                j = Int(A_colval[ap])
+                if marker[j] != r
+                    marker[j] = r
+                    ra_colval[pos[r]] = I(j)
+                    pos[r] += 1
+                end
+            end
+        end
+        lo = ra_rowptr[r]; hi = ra_rowptr[r+1] - 1
+        lo < hi && sort!(@view ra_colval[lo:hi])
+    end
+    return ra_rowptr, ra_colval
+end
+
+function _build_rap_plan_cpu(R, A, P)
+    T = eltype(_nzval(A))
+    n_fine = _m(A)
+    n_coarse_out = _n(P)
+    ra_rowptr, ra_colval = _build_ra_pattern(R, A)
+    ra_nzval      = zeros(T, length(ra_colval))
+    workspace_ra  = zeros(T, n_fine)
+    workspace_rap = zeros(T, n_coarse_out)
+    flag_ra  = zeros(Int, n_fine)
+    flag_rap = zeros(Int, n_coarse_out)
+    return AMGRAPPlanCPU(ra_rowptr, ra_colval, ra_nzval,
+                         workspace_ra, workspace_rap, flag_ra, flag_rap)
+end
+
+# SPA-based refresh: O(nnz(A)×K) with O(1) scatter — no binary search.
+function _refresh_rap_numeric!(coarse_A, fine_level::AMGLevel, plan::AMGRAPPlanCPU)
+    R = fine_level.R; A = fine_level.A; P = fine_level.P
+    R_rowptr = _rowptr(R); R_colval = _colval(R); R_nzval = _nzval(R)
+    A_rowptr = _rowptr(A); A_colval = _colval(A); A_nzval = _nzval(A)
+    P_rowptr = _rowptr(P); P_colval = _colval(P); P_nzval = _nzval(P)
+    C_rowptr = _rowptr(coarse_A); C_colval = _colval(coarse_A); C_nzval = _nzval(coarse_A)
+    ra_rowptr = plan.ra_rowptr; ra_colval = plan.ra_colval; ra_nzval = plan.ra_nzval
+    wra = plan.workspace_ra; wrap = plan.workspace_rap
+    fra = plan.flag_ra;      frap = plan.flag_rap
+    n_coarse = length(ra_rowptr) - 1
+
+    # Pass 1: fill ra_nzval using SPA over fine columns
+    @inbounds for r in 1:n_coarse
+        for rp in R_rowptr[r]:(R_rowptr[r+1]-1)
+            i = Int(R_colval[rp]); Rri = R_nzval[rp]
+            for ap in A_rowptr[i]:(A_rowptr[i+1]-1)
+                j = Int(A_colval[ap])
+                fra[j] != r && (fra[j] = r; wra[j] = zero(eltype(wra)))
+                wra[j] += Rri * A_nzval[ap]
+            end
+        end
+        for p in ra_rowptr[r]:(ra_rowptr[r+1]-1)
+            j = Int(ra_colval[p])
+            ra_nzval[p] = fra[j] == r ? wra[j] : zero(eltype(ra_nzval))
+        end
+    end
+
+    # Pass 2: fill coarse_A using ra_nzval and SPA over coarse columns
+    @inbounds for r in 1:n_coarse
+        for rp in ra_rowptr[r]:(ra_rowptr[r+1]-1)
+            j = Int(ra_colval[rp]); RAij = ra_nzval[rp]
+            iszero(RAij) && continue
+            for pp in P_rowptr[j]:(P_rowptr[j+1]-1)
+                c = Int(P_colval[pp])
+                frap[c] != r && (frap[c] = r; wrap[c] = zero(eltype(wrap)))
+                wrap[c] += RAij * P_nzval[pp]
+            end
+        end
+        for p in C_rowptr[r]:(C_rowptr[r+1]-1)
+            c = Int(C_colval[p])
+            C_nzval[p] = frap[c] == r ? wrap[c] : zero(eltype(C_nzval))
+        end
+    end
+    return coarse_A
+end
+
+# Hook: backend extensions override to build device-resident plans (e.g. cuSPARSE SpGEMMreuse)
+_amg_finalize_transfer_plans(_backend, transfer_csc, _host_levels, _device_levels) = transfer_csc
 
 function _csr_pattern_matches(A, B)
     _m(A) == _m(B) || return false
@@ -517,17 +583,12 @@ end
 function refresh_hierarchy!(hierarchy::AMGHierarchy, solver::AMG)
     levels = hierarchy.host_levels
     transfer = hierarchy.transfer_csc
-    caches = hierarchy.galerkin_caches
     for level_index in 1:(length(levels) - 1)
         level = levels[level_index]
         _refresh_level!(level, solver)
         coarse_level = levels[level_index + 1]
-        if level_index <= length(caches) && caches[level_index] isa AMGGalerkinCache
-            coarse_level.A = _regalerkin_numeric!(coarse_level.A, level, caches[level_index], solver)
-        else
-            P_csc, R_csc = transfer[level_index]
-            coarse_level.A = _regalerkin_numeric!(coarse_level.A, level, P_csc, R_csc, solver)
-        end
+        xfer = level_index <= length(transfer) ? transfer[level_index] : nothing
+        isnothing(xfer) || _refresh_coarse_level!(coarse_level.A, level, xfer)
     end
     _refresh_level!(levels[end], solver)
     _refresh_coarse_cpu!(hierarchy.coarse_cpu, levels[end].A)
@@ -535,6 +596,18 @@ function refresh_hierarchy!(hierarchy::AMGHierarchy, solver::AMG)
     hierarchy.nrows = _m(levels[1].A)
     hierarchy.operator_complexity, hierarchy.grid_complexity = _hierarchy_complexities(levels)
     return hierarchy
+end
+
+# CPU/default path: symbolic/numeric split, no allocation
+function _refresh_coarse_level!(coarse_A, fine_level::AMGLevel, plan::AMGRAPPlanCPU)
+    _refresh_rap_numeric!(coarse_A, fine_level, plan)
+end
+
+# Legacy fallback (kept for any non-plan entries; should not occur after setup)
+function _refresh_coarse_level!(coarse_A, fine_level::AMGLevel, xfer::Tuple)
+    P_csc, R_csc = xfer
+    result = _regalerkin_numeric!(coarse_A, fine_level, P_csc, R_csc)
+    coarse_A === result || copyto!(_nzval(coarse_A), _nzval(result))
 end
 
 function refresh_finest_level!(hierarchy::AMGHierarchy, solver::AMG)
@@ -614,7 +687,9 @@ function _sync_device_levels_numeric!(hierarchy::AMGHierarchy)
     for k in eachindex(hierarchy.levels)
         dev = hierarchy.levels[k]
         host = hierarchy.host_levels[k]
-        if k > 1 || length(_nzval(dev.A)) != length(host.A.nzval)
+        # Pattern is guaranteed fixed by AMGRAPPlanCPU; sync only values, not structure.
+        # For k==1 (finest): A may be a CuSparseMatrixCSR wrapping the same nzval — check size.
+        if length(_nzval(dev.A)) != length(host.A.nzval)
             hierarchy.levels[k] = adapt(backend, host)
             continue
         end
@@ -654,17 +729,22 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
 
         R_csc_lazy = transpose(P_csc)
         R_csc = sparse(R_csc_lazy)
+        log_diagnostics && @info "AMG build: level=$level_id fine rows=$(_m(current_A)) nnz=$(length(_nzval(current_A)))"
         coarse_A = _amg_matrix(R_csc * _csr_to_csc(current_A) * P_csc)
-        coarse_A = _drop_coarse_matrix(coarse_A, _coarse_drop_tolerance(solver.coarsening, level_id + 1))
+        log_diagnostics && @info "AMG build: level=$level_id coarse rows=$(_m(coarse_A)) nnz=$(length(_nzval(coarse_A)))"
         P = _amg_matrix(P_csc)
         R = _amg_matrix(R_csc)
-        push!(galerkin_caches, _build_galerkin_cache(current_A, P, coarse_A))
+        plan = _build_rap_plan_cpu(R, current_A, P)
+        log_diagnostics && @info "AMG build: level=$level_id RA nnz=$(length(plan.ra_colval))"
+        push!(galerkin_caches, nothing)
+        P_csc = nothing; R_csc = nothing  # CSC matrices no longer needed
+        push!(transfer_csc, plan)
+        GC.gc(false)
         level = _allocate_level(current_A, P, R, level_id, aggregate_ids, CPU(), solver.smoother)
         if isnothing(host_levels)
             host_levels = typeof(level)[]
         end
         push!(host_levels, level)
-        push!(transfer_csc, (P_csc, R_csc))
 
         coarse_rows = _m(coarse_A)
         if coarse_rows <= solver.max_coarse_rows || _should_stop_coarsening(_m(current_A), coarse_rows, solver, level_id)
@@ -686,6 +766,8 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
     operator_complexity, grid_complexity = _hierarchy_complexities(host_levels)
     device_levels = backend isa CPU ? host_levels : Any[adapt(backend, level) for level in host_levels]
     device_levels = backend isa CPU ? device_levels : _amg_finalize_device_levels(backend, device_levels)
+    # Allow backend extensions to replace CPU plans with device-resident plans (e.g. cuSPARSE)
+    transfer_csc = _amg_finalize_transfer_plans(backend, transfer_csc, host_levels, device_levels)
     hierarchy = AMGHierarchy(
         device_levels,
         host_levels,

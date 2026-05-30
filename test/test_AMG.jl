@@ -36,24 +36,19 @@ solver_jacobi_default = AMG()
 @test solver_jacobi_default.mode isa Cg
 @test solver_jacobi_default.pre_sweeps == 2
 @test solver_jacobi_default.post_sweeps == 2
-@test solver_jacobi_default.smoother.omega == 0.6667
-@test solver_jacobi_default.coarsening.strength_threshold == 0.10
-@test solver_jacobi_default.coarsening.level_strength_thresholds == [0.10, 0.075, 0.05]
-@test solver_jacobi_default.coarsening.max_prolongation_entries == 2
-@test solver_jacobi_default.coarsening.aggressive_levels == 1
-@test solver_jacobi_default.coarsening.aggressive_passes == 1
-@test solver_jacobi_default.coarsening.coarse_drop_tolerances == [0.0, 0.01, 0.03, 0.05]
-@test solver_jacobi_default.coarsening.interpolation == :smoothed
-@test solver_jacobi_default.coarsening.prolongation_weighting == :local
+@test solver_jacobi_default.smoother.omega == 4/3
+@test solver_jacobi_default.coarsening.strength_threshold == 0.0
+@test solver_jacobi_default.coarsening.smoother_weight == 4/3
 @test solver_jacobi_default.max_coarse_rows == 4096
-@test solver_jacobi_default.coarse_refresh_interval == 20
+@test solver_jacobi_default.coarse_refresh_interval == 1
 
 solver_rs_default = AMG(coarsening=RugeStuben(), smoother=AMGJacobi())
-@test solver_rs_default.coarsening.strength_threshold == 0.05
+@test solver_rs_default.coarsening.strength_threshold == 0.25
+@test solver_rs_default.smoother.omega == 4/3
 
 solver_type_api = AMG(
     mode=Cg(),
-    coarsening=SmoothAggregation(strength_threshold=0.12, interpolation=:direct),
+    coarsening=SmoothAggregation(strength_threshold=0.12),
     smoother=AMGChebyshev(),
     cycle=VCycle(),
     pre_sweeps=1,
@@ -62,7 +57,6 @@ solver_type_api = AMG(
 @test solver_type_api.mode isa Cg
 @test solver_type_api.cycle isa VCycle
 @test solver_type_api.coarsening.strength_threshold == 0.12
-@test solver_type_api.coarsening.interpolation == :direct
 @test solver_type_api.smoother isa AMGChebyshev
 @test solver_type_api.smoother.degree == 3
 @test solver_type_api.smoother.eig_ratio == 10.0
@@ -94,16 +88,8 @@ solver_sor_default = AMG(smoother=AMGSOR(1.1, AMGBackwardSweep()))
 @test_throws ArgumentError AMGGaussSeidel(iterations=0)
 @test_throws ArgumentError AMGSOR(0.0)
 
-controlled_sa = SmoothAggregation(
-    level_strength_thresholds=[0.05, 0.12],
-    aggressive_levels=1,
-    aggressive_passes=1,
-    coarse_drop_tolerances=[0.0, 0.01, 0.05]
-)
-@test XCALibre.Solve._level_strength_threshold(controlled_sa, 1) == 0.05
-@test XCALibre.Solve._level_strength_threshold(controlled_sa, 3) == 0.12
-@test controlled_sa.aggressive_levels == 1
-@test controlled_sa.coarse_drop_tolerances == [0.0, 0.01, 0.05]
+controlled_sa = SmoothAggregation(strength_threshold=0.05)
+@test controlled_sa.strength_threshold == 0.05
 
 solver_cg_jacobi_default = AMG(mode=Cg(), smoother=AMGJacobi())
 @test solver_cg_jacobi_default.pre_sweeps == 2
@@ -127,6 +113,9 @@ solver_explicit_sweeps = AMG(pre_sweeps=2, post_sweeps=3)
 @test_throws MethodError AMG(; (; Symbol("pre" * "sweeps") => 1)...)
 @test_throws MethodError AMG(; (; Symbol("connection_" * "strength") => 0.1)...)
 @test_throws MethodError AMG(; (; Symbol("smoother_" * "omega") => 0.8)...)
+@test_throws MethodError SmoothAggregation(max_prolongation_entries=1)
+@test_throws MethodError SmoothAggregation(aggressive_levels=1)
+@test_throws MethodError SmoothAggregation(interpolation=:unsmoothed)
 
 config = Configuration(
     solvers=(T=setup,),
@@ -136,22 +125,6 @@ config = Configuration(
     boundaries=(T=(),)
 )
 
-solver_truncated_sa = AMG(coarsening=SmoothAggregation(max_prolongation_entries=1), smoother=AMGJacobi())
-ws_truncated_sa = _workspace(solver_truncated_sa, b)
-ws_truncated_sa = XCALibre.Solve.update!(ws_truncated_sa, A, solver_truncated_sa, config)
-if length(ws_truncated_sa.hierarchy.levels) > 1
-    I_trunc, _, _ = findnz(ws_truncated_sa.hierarchy.levels[1].P)
-    @test maximum(count(==(row), I_trunc) for row in unique(I_trunc)) <= 1
-end
-
-solver_unsmoothed_sa = AMG(coarsening=SmoothAggregation(interpolation=:unsmoothed), smoother=AMGJacobi())
-ws_unsmoothed_sa = _workspace(solver_unsmoothed_sa, b)
-ws_unsmoothed_sa = XCALibre.Solve.update!(ws_unsmoothed_sa, A, solver_unsmoothed_sa, config)
-@test ws_unsmoothed_sa.hierarchy isa XCALibre.Solve.AMGHierarchy
-if length(ws_unsmoothed_sa.hierarchy.levels) > 1
-    @test nnz(ws_unsmoothed_sa.hierarchy.levels[1].P) == size(ws_unsmoothed_sa.hierarchy.levels[1].P, 1)
-end
-
 solver_controlled_sa = AMG(coarsening=controlled_sa, smoother=AMGJacobi(), max_coarse_rows=2)
 ws_controlled_sa = _workspace(solver_controlled_sa, b)
 ws_controlled_sa = XCALibre.Solve.update!(ws_controlled_sa, A, solver_controlled_sa, config)
@@ -160,7 +133,7 @@ ws_controlled_sa = XCALibre.Solve.update!(ws_controlled_sa, A, solver_controlled
 
 A_isolated = SparseXCSR(sparsecsr(collect(1:12), collect(1:12), ones(12), 12, 12))
 b_isolated = ones(12)
-isolated_coarsening = SmoothAggregation(interpolation=:unsmoothed, aggressive_levels=0)
+isolated_coarsening = SmoothAggregation()
 _, P_isolated, _ = XCALibre.Solve.build_prolongation(A_isolated, isolated_coarsening)
 @test size(P_isolated, 2) == 12
 solver_isolated_sa = AMG(coarsening=isolated_coarsening, smoother=AMGJacobi(), max_coarse_rows=4)
@@ -205,7 +178,7 @@ level_for_omega.lambda_max = lambda_max_before
 if length(ws.hierarchy.levels) > 1
     P = ws.hierarchy.levels[1].P
     @test P !== nothing
-    @test nnz(P) > size(P, 1)
+    @test nnz(P) >= size(P, 1)
     @test size(ws.hierarchy.levels[end].A, 1) < size(ws.hierarchy.levels[1].A, 1)
 end
 
@@ -237,12 +210,12 @@ coarse_object_before = length(ws.hierarchy.levels) > 1 ? ws.hierarchy.levels[2].
 ws2 = XCALibre.Solve.update!(ws, A2, setup.solver, config)
 @test length(ws2.hierarchy.levels) == levels_before
 @test XCALibre.Solve._nzval(ws2.hierarchy.levels[1].A) != finest_before
-@test ws2.timing.refresh_calls == 0
-@test ws2.timing.finest_refresh_calls == 1
-@test ws2.timing.last_update_action == :finest_refresh
+@test ws2.timing.refresh_calls == 1
+@test ws2.timing.finest_refresh_calls == 0
+@test ws2.timing.last_update_action == :refresh
 if length(ws2.hierarchy.levels) > 1
     @test ws2.hierarchy.levels[2].A === coarse_object_before
-    @test XCALibre.Solve._nzval(ws2.hierarchy.levels[2].A) == coarse_before
+    @test XCALibre.Solve._nzval(ws2.hierarchy.levels[2].A) != coarse_before
 end
 
 solver_refresh = AMG(mode=AMGSolver(), coarsening=SmoothAggregation(), smoother=AMGJacobi(), coarse_refresh_interval=1)
@@ -361,6 +334,18 @@ ws_rs_solve = XCALibre.Solve.update!(ws_rs_solve, A, solver_rs, config)
 XCALibre.Solve.amg_solve!(ws_rs_solve, ws_rs_solve.hierarchy, solver_rs, ws_rs_solve.hierarchy.levels[1].A, b, x_rs; itmax=100, atol=1e-8, rtol=1e-8)
 @test norm(b - Array(parent(A)) * x_rs) / norm(b) < 1e-8
 @test ws_rs_solve.timing.apply_calls == ws_rs_solve.iterations
+
+# Geometric (OpenFOAM-style) agglomeration
+@test Geometric().merge_levels == 1
+@test Geometric(merge_levels=2).merge_levels == 2
+@test_throws ArgumentError Geometric(merge_levels=0)
+solver_geo = AMG(mode=Cg(), coarsening=Geometric(), smoother=AMGJacobi())
+@test solver_geo.coarsening isa Geometric
+x_geo = zeros(eltype(b), length(b))
+ws_geo = _workspace(solver_geo, b)
+ws_geo = XCALibre.Solve.update!(ws_geo, A, solver_geo, config)
+XCALibre.Solve.amg_cg_solve!(ws_geo, ws_geo.hierarchy, solver_geo, ws_geo.hierarchy.levels[1].A, b, x_geo; itmax=100, atol=1e-8, rtol=1e-8)
+@test norm(b - Array(parent(A)) * x_geo) / norm(b) < 1e-8
 
 A_bad = SparseXCSR(sparsecsr([1, 1, 2], [1, 2, 2], [2.0, 1.0, 3.0], 2, 2))
 b_bad = [1.0, 1.0]

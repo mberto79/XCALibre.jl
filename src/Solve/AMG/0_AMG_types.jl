@@ -1,7 +1,7 @@
-export AMG, AMGSolver, VCycle, SmoothAggregation, RugeStuben, AMGJacobi, AMGChebyshev
+export AMG, AMGSolver, VCycle, SmoothAggregation, RugeStuben, Geometric, AMGJacobi, AMGChebyshev
 export AMGGaussSeidel, AMGSOR, AMGSymmetricSweep, AMGForwardSweep, AMGBackwardSweep
 export AbstractAMGCPUSmoother, AbstractAMGGPUSmoother
-export AMGWorkspace, AMGHierarchy, AMGLevel, AMGTimingStats
+export AMGWorkspace, AMGHierarchy, AMGLevel, AMGTimingStats, AMGRAPPlanCPU
 
 abstract type AbstractAMGMode end
 abstract type AbstractAMGCoarsening end
@@ -22,59 +22,21 @@ Adapt.@adapt_structure AMGSymmetricSweep
 Adapt.@adapt_structure AMGForwardSweep
 Adapt.@adapt_structure AMGBackwardSweep
 
-struct SmoothAggregation{F,C,L,I,D,S,W} <: AbstractAMGCoarsening
+struct SmoothAggregation{F,C} <: AbstractAMGCoarsening
     strength_threshold::F
-    level_strength_thresholds::L
     smoother_weight::F
     near_nullspace::C
-    max_prolongation_entries::I
-    aggressive_levels::I
-    aggressive_passes::I
-    coarse_drop_tolerances::D
-    interpolation::S
-    prolongation_weighting::W
 end
 
 function SmoothAggregation(;
-    strength_threshold=0.10,
-    level_strength_thresholds=(0.10, 0.075, 0.05),
-    smoother_weight=1.0,
+    strength_threshold=0.0,
+    smoother_weight=4/3,
     near_nullspace=nothing,
-    max_prolongation_entries=2,
-    aggressive_levels=1,
-    aggressive_passes=1,
-    coarse_drop_tolerances=(0.0, 0.01, 0.03, 0.05),
-    interpolation=:smoothed,
-    prolongation_weighting=:local
 )
-    aggressive_levels >= 0 || throw(ArgumentError("SmoothAggregation aggressive_levels must be nonnegative"))
-    aggressive_passes > 0 || throw(ArgumentError("SmoothAggregation aggressive_passes must be positive"))
-    interpolation in (:smoothed, :unsmoothed, :direct) ||
-        throw(ArgumentError("SmoothAggregation interpolation must be :smoothed, :unsmoothed, or :direct"))
-    prolongation_weighting in (:spectral, :local) ||
-        throw(ArgumentError("SmoothAggregation prolongation_weighting must be :spectral or :local"))
-    thresholds = isnothing(level_strength_thresholds) ? nothing : float.(collect(level_strength_thresholds))
-    drop_tolerances = float.(collect(coarse_drop_tolerances))
-    any(<(0), drop_tolerances) && throw(ArgumentError("SmoothAggregation coarse_drop_tolerances must be nonnegative"))
-    return SmoothAggregation{
-        typeof(float(strength_threshold)),
-        typeof(near_nullspace),
-        typeof(thresholds),
-        Int,
-        typeof(drop_tolerances),
-        typeof(interpolation),
-        typeof(prolongation_weighting)
-    }(
+    return SmoothAggregation{typeof(float(strength_threshold)), typeof(near_nullspace)}(
         float(strength_threshold),
-        thresholds,
         float(smoother_weight),
-        near_nullspace,
-        Int(max_prolongation_entries),
-        Int(aggressive_levels),
-        Int(aggressive_passes),
-        drop_tolerances,
-        interpolation,
-        prolongation_weighting
+        near_nullspace
     )
 end
 
@@ -84,14 +46,36 @@ struct RugeStuben{F} <: AbstractAMGCoarsening
     strength_threshold::F
 end
 
-RugeStuben(; strength_threshold=0.05) = RugeStuben(float(strength_threshold))
+RugeStuben(; strength_threshold=0.25) = RugeStuben(float(strength_threshold))
 Adapt.@adapt_structure RugeStuben
+
+"""
+    Geometric(; merge_levels=1)
+
+OpenFOAM-style geometric agglomeration (`faceAreaPair`): cells are merged pairwise into
+coarse clusters by greatest face weight, using `|a_ij|` as the face weight (proportional to
+face-area/delta in FVM). `merge_levels` sets the number of pairwise passes per coarse level,
+giving cluster size ~`2^merge_levels`. Prolongation is unsmoothed piecewise-constant injection
+(additive correction); coarse operators are formed algebraically by Galerkin RAP.
+"""
+struct Geometric{I} <: AbstractAMGCoarsening
+    merge_levels::I
+end
+
+function Geometric(; merge_levels=1)
+    merge_levels > 0 || throw(ArgumentError("Geometric merge_levels must be positive"))
+    return Geometric(Int(merge_levels))
+end
+
+Adapt.@adapt_structure Geometric
 
 struct AMGJacobi{F} <: AbstractAMGGPUSmoother
     omega::F
 end
 
-AMGJacobi(; omega=0.6667) = AMGJacobi(float(omega))
+# Default omega=4/3: optimal weight for lambda_max-scaled Jacobi targeting upper-half
+# spectrum [lmax/2, lmax]; omega_eff = (4/3)/lambda_max. Evidence: see amg_findings.md.
+AMGJacobi(; omega=4/3) = AMGJacobi(float(omega))
 Adapt.@adapt_structure AMGJacobi
 
 struct AMGChebyshev{F,I} <: AbstractAMGGPUSmoother
@@ -164,9 +148,9 @@ _amg_mode_name(mode) = string(nameof(typeof(mode)))
 _amg_cycle(cycle::VCycle) = cycle
 _amg_cycle(cycle) = throw(ArgumentError("AMG only supports cycle=VCycle()"))
 
-_amg_coarsening(coarsening::Union{SmoothAggregation,RugeStuben}) = coarsening
+_amg_coarsening(coarsening::Union{SmoothAggregation,RugeStuben,Geometric}) = coarsening
 _amg_coarsening(coarsening) =
-    throw(ArgumentError("AMG coarsening must be SmoothAggregation(...) or RugeStuben(...)"))
+    throw(ArgumentError("AMG coarsening must be SmoothAggregation(...), RugeStuben(...), or Geometric(...)"))
 
 _amg_smoother(smoother::Union{AMGJacobi,AMGChebyshev,AMGGaussSeidel,AMGSOR}) = smoother
 _amg_smoother(smoother) =
@@ -202,7 +186,7 @@ function AMG(;
     max_levels=10,
     min_coarse_rows=32,
     max_coarse_rows=4096,
-    coarse_refresh_interval=20
+    coarse_refresh_interval=1
 )
     mode = _amg_mode(mode)
     coarsening = _amg_coarsening(coarsening)
@@ -270,10 +254,24 @@ _colval(A::SparseMatricesCSR.SparseMatrixCSR) = A.colval
 _nzval(A::SparseMatricesCSR.SparseMatrixCSR) = A.nzval
 
 struct AMGGalerkinCache{I,W}
-    # Fixed-pattern RAP contributions: coarse_A[target] += weight * fine_A[fine_index].
     targets::Vector{I}
     fine_indices::Vector{I}
     weights::Vector{W}
+end
+
+# Symbolic/numeric split RAP plan (PETSc/Ginkgo style).
+# Stores the intermediate R×A sparsity pattern and a pre-allocated value buffer.
+# Refresh is pattern-free: fill ra_nzval, then scatter into coarse_A.nzval — no allocation.
+# Backend extensions replace this with device-resident plans (e.g. AMGRAPPlanCUDA).
+struct AMGRAPPlanCPU{I, T}
+    ra_rowptr::Vector{Int}  # R×A row pointers
+    ra_colval::Vector{I}    # R×A column indices (sorted per row)
+    ra_nzval::Vector{T}     # R×A values (mutable buffer)
+    # SPA (Sparse Pointer Array) workspaces for O(1) scatter — avoids binary search on refresh
+    workspace_ra::Vector{T}  # dense, size = n_fine
+    workspace_rap::Vector{T} # dense, size = n_coarse_out
+    flag_ra::Vector{Int}     # stamp array; flag_ra[j]==r means workspace_ra[j] set for row r
+    flag_rap::Vector{Int}    # same for RAP accumulation
 end
 
 mutable struct AMGLevel{MA,MP,MR,VD,VI,VX,T}

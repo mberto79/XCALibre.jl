@@ -130,6 +130,7 @@ function update!(workspace::AMGWorkspace, A, solver::AMG, config)
 
     elapsed_s = @elapsed begin
         _sync_finest_matrix!(hierarchy, A)
+        hierarchy.backend isa CPU || _refresh_finest_level_device!(hierarchy, A)
         refresh_hierarchy!(hierarchy, solver)
         _sync_device_levels_numeric!(hierarchy)
     end

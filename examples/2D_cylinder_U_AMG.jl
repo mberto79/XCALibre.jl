@@ -7,7 +7,7 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
-# backend = CUDABackend(); workgroup = 32
+backend = CUDABackend(); workgroup = 32
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
@@ -54,8 +54,9 @@ solvers = (
     ),
     p = SolverSetup(
         solver=AMG(
+            coarsening = Geometric(merge_levels=2)
             # coarsening = RugeStuben()
-            coarsening = SmoothAggregation(strength_threshold=0.4)
+            # coarsening = SmoothAggregation()
         ),
         # solver=Cg(),
         preconditioner=Jacobi(),

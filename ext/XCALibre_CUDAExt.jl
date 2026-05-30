@@ -174,7 +174,8 @@ import XCALibre.Solve: _matvec!, _residual!, _prolongate_add!, _amg_jacobi!,
     _amg_finalize_device_levels, _amg_finalize_transfer_plans, _refresh_coarse_level!,
     _level_jacobi_omega, _launch_amg_kernel!,
     _amg_weighted_diagonal_correction_kernel!, AMGHierarchy, AMGLevel, AMGMatrixCSR, AMGJacobi,
-    AMGRAPPlanCPU
+    AMGRAPPlanCPU, _refresh_coarse_operators!, _refresh_level_device!, _refresh_coarse_cpu!,
+    refresh_hierarchy!, _sync_device_levels_numeric!, _nzval
 
 # Wrap a device AMGMatrixCSR as CuSparseMatrixCSR, sharing nzVal so numeric refresh updates the operator
 function _amg_csr_to_cusparse(A::AMGMatrixCSR)
@@ -184,20 +185,21 @@ function _amg_csr_to_cusparse(A::AMGMatrixCSR)
     return SPARSEGPU{eltype(nzval)}(rowPtr, colVal, nzval, (_m(A), _n(A)))
 end
 
-# Replace finest-level operators with cuSPARSE versions; coarse levels keep the scalar-CSR kernels
+# Wrap every level's operators as cuSPARSE: cuSPARSE SpMV on apply and device-resident RAP on
+# refresh. Shares nzVal so device-to-device numeric refresh updates the operators in place.
 function _amg_finalize_device_levels(::BACKEND, levels)
     isempty(levels) && return levels
     new_levels = Vector{Any}(undef, length(levels))
-    copyto!(new_levels, levels)
-    lvl = levels[1]
-    A = _amg_csr_to_cusparse(lvl.A)
-    P = lvl.has_transfer ? _amg_csr_to_cusparse(lvl.P) : lvl.P
-    R = lvl.has_transfer ? _amg_csr_to_cusparse(lvl.R) : lvl.R
-    new_levels[1] = AMGLevel(
-        A, P, R, lvl.diagonal, lvl.inv_diagonal, lvl.diagonal_index,
-        lvl.rhs, lvl.x, lvl.tmp, lvl.direction, lvl.coarse_tmp, lvl.aggregate_ids,
-        lvl.lambda_max, lvl.level_id, lvl.has_transfer
-    )
+    for (k, lvl) in enumerate(levels)
+        A = _amg_csr_to_cusparse(lvl.A)
+        P = lvl.has_transfer ? _amg_csr_to_cusparse(lvl.P) : lvl.P
+        R = lvl.has_transfer ? _amg_csr_to_cusparse(lvl.R) : lvl.R
+        new_levels[k] = AMGLevel(
+            A, P, R, lvl.diagonal, lvl.inv_diagonal, lvl.diagonal_index,
+            lvl.rhs, lvl.x, lvl.tmp, lvl.direction, lvl.coarse_tmp, lvl.aggregate_ids,
+            lvl.lambda_max, lvl.level_id, lvl.has_transfer
+        )
+    end
     return new_levels
 end
 
@@ -293,6 +295,52 @@ function _refresh_coarse_level!(coarse_A_host, fine_level::AMGLevel, plan::AMGRA
     catch
     end
     return XCALibre.Solve._refresh_coarse_level!(coarse_A_host, fine_level, plan.cpu_plan)
+end
+
+# Device-resident coarse-operator refresh: Galerkin RAP, diag and lambda_max all on the GPU.
+# Avoids host RAP (CPU fallback for coarse levels) and host power iteration. Same math.
+
+# Overwrite target.nzVal with (R*A)*P in place (pattern verified == target at setup; guard on nnz).
+function _device_rap_into!(target::SPARSEGPU, R::SPARSEGPU, A::SPARSEGPU, P::SPARSEGPU)
+    rap = (R * A) * P
+    length(rap.nzVal) == length(target.nzVal) ||
+        error("device RAP nnz $(length(rap.nzVal)) != target $(length(target.nzVal))")
+    copyto!(target.nzVal, rap.nzVal)
+    return target
+end
+
+# Device-resident path used only when every transfer plan was CUDA-verified at setup (so the
+# device RAP column ordering provably matches the host pattern that diagonal_index indexes).
+_all_cuda_rap_plans(hierarchy) =
+    !isempty(hierarchy.transfer_csc) && all(p -> p isa AMGRAPPlanCUDA, hierarchy.transfer_csc)
+
+function _device_coarse_refresh!(hierarchy::AMGHierarchy, solver)
+    levels = hierarchy.levels
+    L = length(levels)
+    # Level 1 (finest) diag + lambda_max already refreshed before this call. Walk down the
+    # hierarchy: each level's A holds new values once the previous level's RAP has run.
+    for k in 1:(L - 1)
+        k > 1 && _refresh_level_device!(hierarchy, levels[k])
+        _device_rap_into!(levels[k + 1].A, levels[k].R, levels[k].A, levels[k].P)
+    end
+    # Coarsest level is solved by direct LU on host: D->H its (tiny) nzval and refactor.
+    host_coarse = hierarchy.host_levels[end].A
+    copyto!(host_coarse.nzval, Array(_nzval(levels[end].A)))
+    _refresh_coarse_cpu!(hierarchy.coarse_cpu, host_coarse)
+    return hierarchy
+end
+
+function _refresh_coarse_operators!(::BACKEND, hierarchy::AMGHierarchy, solver::XCALibre.Solve.AMG)
+    _all_cuda_rap_plans(hierarchy) && return _device_coarse_refresh!(hierarchy, solver)
+    # Fallback (mixed CUDA/CPU plans, i.e. a device RAP pattern failed to verify at setup).
+    # WARNING: refresh_hierarchy! routes CUDA-plan levels through _refresh_coarse_level!(::AMGRAPPlanCUDA),
+    # which reads plan.A_dev — stale during this host-ordered refresh — so coarse operators on those
+    # levels lag one update. Not exercised on validated cases (all plans verify CUDA). If reached, a
+    # full rebuild is safer than this refresh; surfaced rather than silently producing stale operators.
+    @warn "AMG: mixed RAP plan types; coarse refresh may use stale device operators — prefer a rebuild" maxlog=1
+    refresh_hierarchy!(hierarchy, solver)
+    _sync_device_levels_numeric!(hierarchy)
+    return hierarchy
 end
 
 end # end module

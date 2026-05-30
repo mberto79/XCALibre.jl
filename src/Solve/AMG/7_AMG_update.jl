@@ -129,10 +129,17 @@ function update!(workspace::AMGWorkspace, A, solver::AMG, config)
     end
 
     elapsed_s = @elapsed begin
-        _sync_finest_matrix!(hierarchy, A)
-        hierarchy.backend isa CPU || _refresh_finest_level_device!(hierarchy, A)
-        refresh_hierarchy!(hierarchy, solver)
-        _sync_device_levels_numeric!(hierarchy)
+        if hierarchy.backend isa CPU
+            _sync_finest_matrix!(hierarchy, A)
+            refresh_hierarchy!(hierarchy, solver)
+        else
+            # Finest level refreshed entirely on device: nzval D2D + device diag + device lambda_max.
+            # No D->H copy of the finest nzval, no host power iteration, no H->D recopy of level 1.
+            _refresh_finest_level_device!(hierarchy, A)
+            _refresh_finest_lambda_device!(hierarchy)
+            # Coarse operators: device-resident RAP on CUDA, host RAP + sync on other backends.
+            _refresh_coarse_operators!(hierarchy, solver)
+        end
     end
     _record_refresh_timing!(workspace, elapsed_s)
     return workspace

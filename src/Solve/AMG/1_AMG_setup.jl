@@ -265,6 +265,61 @@ function _refresh_level!(level::AMGLevel, solver::AMG)
     return level
 end
 
+# Device-resident lambda_max for any level: power iteration via the dispatched (cuSPARSE on
+# CUDA) SpMV, avoiding the host SpMVs in _estimate_lambda_max!. Same math as _refresh_level!.
+# Reuses level scratch (rhs/tmp/direction), overwritten before read by the solve cycle.
+function _refresh_lambda_device!(hierarchy::AMGHierarchy, level::AMGLevel; iters::Int=5)
+    A = level.A
+    invdiag = level.inv_diagonal
+    T = eltype(invdiag)
+    n = _m(A)
+    v = level.rhs
+    w = level.tmp
+    invn = one(T) / sqrt(T(n))
+    _launch_amg_kernel!(hierarchy, _amg_powiter_seed_kernel!, n, v, invn)
+    lambda = one(T)
+    for _ in 1:iters
+        _matvec!(hierarchy, w, A, v)
+        _launch_amg_kernel!(hierarchy, _amg_powiter_scale_kernel!, n, w, invdiag)
+        lambda = max(norm(w), eps(T))
+        _launch_amg_kernel!(hierarchy, _amg_powiter_normalize_kernel!, n, v, w, lambda)
+    end
+    bound = level.direction
+    _launch_amg_kernel!(hierarchy, _amg_gershgorin_kernel!, n, bound, _rowptr(A), _colval(A), _nzval(A), invdiag)
+    level.lambda_max = max(lambda, maximum(bound), one(T))
+    return level
+end
+
+_refresh_finest_lambda_device!(hierarchy::AMGHierarchy) =
+    (_refresh_lambda_device!(hierarchy, hierarchy.levels[1]); hierarchy)
+
+# Device-resident diagonal + inverse extraction from CSR nzval (uses precomputed diagonal_index).
+function _refresh_diag_device!(hierarchy::AMGHierarchy, level::AMGLevel)
+    _launch_amg_kernel!(
+        hierarchy, _amg_extract_diagonal_kernel!, length(level.diagonal),
+        level.diagonal, level.inv_diagonal, _nzval(level.A), level.diagonal_index
+    )
+    return level
+end
+
+# Full device-resident refresh of a single level (diag + lambda_max). A must already hold new values.
+function _refresh_level_device!(hierarchy::AMGHierarchy, level::AMGLevel)
+    _refresh_diag_device!(hierarchy, level)
+    _refresh_lambda_device!(hierarchy, level)
+    return level
+end
+
+# Coarse-operator refresh hook, dispatched on backend. Default (CPU / non-CUDA device):
+# host Galerkin RAP + numeric sync to device. CUDA extension overrides with a device-resident RAP.
+_refresh_coarse_operators!(hierarchy::AMGHierarchy, solver::AMG) =
+    _refresh_coarse_operators!(hierarchy.backend, hierarchy, solver)
+
+function _refresh_coarse_operators!(::Any, hierarchy::AMGHierarchy, solver::AMG)
+    refresh_hierarchy!(hierarchy, solver)
+    _sync_device_levels_numeric!(hierarchy)
+    return hierarchy
+end
+
 function _regalerkin_cached!(fine_level::AMGLevel, P_csc, R_csc)
     return _amg_matrix(R_csc * _csr_to_csc(fine_level.A) * P_csc)
 end
@@ -583,9 +638,12 @@ end
 function refresh_hierarchy!(hierarchy::AMGHierarchy, solver::AMG)
     levels = hierarchy.host_levels
     transfer = hierarchy.transfer_csc
+    # On device backends the finest level is refreshed on-device (diag + lambda_max);
+    # skip its host recompute. Coarse levels still refresh on host.
+    skip_finest_host = !(hierarchy.backend isa CPU)
     for level_index in 1:(length(levels) - 1)
         level = levels[level_index]
-        _refresh_level!(level, solver)
+        (skip_finest_host && level_index == 1) || _refresh_level!(level, solver)
         coarse_level = levels[level_index + 1]
         xfer = level_index <= length(transfer) ? transfer[level_index] : nothing
         isnothing(xfer) || _refresh_coarse_level!(coarse_level.A, level, xfer)
@@ -685,10 +743,11 @@ function _sync_device_levels_numeric!(hierarchy::AMGHierarchy)
     hierarchy.backend isa CPU && return hierarchy
     backend = hierarchy.backend
     for k in eachindex(hierarchy.levels)
+        # Finest level (k==1) is already refreshed on-device; host level 1 is intentionally stale.
+        k == 1 && continue
         dev = hierarchy.levels[k]
         host = hierarchy.host_levels[k]
         # Pattern is guaranteed fixed by AMGRAPPlanCPU; sync only values, not structure.
-        # For k==1 (finest): A may be a CuSparseMatrixCSR wrapping the same nzval — check size.
         if length(_nzval(dev.A)) != length(host.A.nzval)
             hierarchy.levels[k] = adapt(backend, host)
             continue

@@ -54,6 +54,33 @@ end
     end
 end
 
+# Device power-iteration kernels for finest-level lambda_max (mirrors _estimate_lambda_max!)
+@kernel function _amg_powiter_seed_kernel!(v, invn)
+    i = @index(Global)
+    T = eltype(v)
+    @inbounds v[i] = (isodd(i) ? one(T) : -one(T)) * invn
+end
+
+@kernel function _amg_powiter_scale_kernel!(w, invdiag)
+    i = @index(Global)
+    @inbounds w[i] *= invdiag[i]
+end
+
+@kernel function _amg_powiter_normalize_kernel!(v, w, lambda)
+    i = @index(Global)
+    @inbounds v[i] = w[i] / lambda
+end
+
+@kernel function _amg_gershgorin_kernel!(bound, rowptr, colval, nzval, invdiag)
+    i = @index(Global)
+    T = eltype(bound)
+    acc = zero(T)
+    @inbounds for p in rowptr[i]:(rowptr[i + 1] - 1)
+        acc += abs(nzval[p])
+    end
+    @inbounds bound[i] = acc * abs(invdiag[i])
+end
+
 @kernel function _amg_chebyshev_first_step_kernel!(x, direction, residual, invdiag, alpha)
     i = @index(Global)
     @inbounds begin

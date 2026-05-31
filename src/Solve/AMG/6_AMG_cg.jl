@@ -41,6 +41,10 @@ function _is_symmetric(A; atol=1e-10)
     return true
 end
 
+# Krylov-exact stopping threshold: converge when ‖r‖ <= atol + rtol*‖r0‖ (‖r0‖ = initial,
+# warm-started residual). Matches Krylov.jl so swapping Cg()<->AMG keeps tuned tolerances valid.
+_amg_eps(::Type{T}, atol, rtol, r0norm) where {T} = T(atol) + T(rtol) * r0norm
+
 function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol)
     hierarchy.is_symmetric || throw(ArgumentError("AMG(mode=Cg()) requires a symmetric matrix"))
     T = eltype(x)
@@ -49,15 +53,18 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
     p = workspace.search
     q = workspace.q
 
+    bnorm = max(norm(b), eps(T))
+
     _residual!(hierarchy, r, A, x, b)
     _reset_residual_history!(workspace)
-    bnorm = max(norm(b), eps(T))
     rnorm = norm(r)
     _push_residual_norm_history!(workspace, rnorm)
+    ε = _amg_eps(T, atol, rtol, rnorm)
     rel = rnorm / bnorm
     initial_rel = rel
-    if rnorm <= atol || rel <= rtol
+    if rnorm <= ε
         workspace.iterations = 0
+        workspace.converged = true
         workspace.last_relative_residual = rel
         _update_cycle_factor!(hierarchy, initial_rel, rel, 0, solver)
         return x
@@ -70,18 +77,26 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
     _record_apply_timing!(workspace, elapsed_s)
     _copy_amg!(hierarchy, p, z)
     rz = dot(r, z)
-    if !isfinite(rz) || rz <= eps(T)
+    # Breakdown guards test for loss of positive-definiteness (<=0) or non-finite values, NOT an
+    # absolute eps floor: pq~‖r‖² and rz~‖r‖², so an eps(T) floor false-trips for small ‖b‖ (the
+    # absolute residual at the relative target is tiny). isfinite(α)/isfinite(β) catch real blowups.
+    if !isfinite(rz) || rz <= zero(T)
         workspace.iterations = 0
+        workspace.converged = false
         workspace.last_relative_residual = rel
         _update_cycle_factor!(hierarchy, initial_rel, rel, 0, solver)
         return x
     end
+    # Stall guard: a tiny ‖r0‖ can make ε unreachable; stop once the residual stops improving.
+    best_rnorm = rnorm
+    stall = 0
+    stall_limit = 20
     k = 0
-    while k < itmax && rnorm > atol && rel > rtol
+    while k < itmax
         k += 1
         _matvec!(hierarchy, q, A, p)
         pq = dot(p, q)
-        if !isfinite(pq) || pq <= eps(T)
+        if !isfinite(pq) || pq <= zero(T)
             k -= 1
             break
         end
@@ -96,8 +111,15 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
         rel = rnorm / bnorm
         if !isfinite(rnorm) || !isfinite(rel)
             break
-        elseif rnorm <= atol || rel <= rtol
-            break
+        end
+        # Trust the CG recurrence (Krylov.jl does too); AMG's low iter count keeps it tight.
+        rnorm <= ε && break
+        if rnorm < best_rnorm * (one(T) - T(1e-4))
+            best_rnorm = rnorm
+            stall = 0
+        else
+            stall += 1
+            stall >= stall_limit && break
         end
         elapsed_s = @elapsed begin
             amg_apply_preconditioner!(z, hierarchy, solver, r)
@@ -105,7 +127,7 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
         end
         _record_apply_timing!(workspace, elapsed_s)
         rz_new = dot(r, z)
-        if !isfinite(rz_new) || rz_new <= eps(T)
+        if !isfinite(rz_new) || rz_new <= zero(T)
             break
         end
         β = rz_new / rz
@@ -116,6 +138,7 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
         rz = rz_new
     end
     workspace.iterations = k
+    workspace.converged = rnorm <= ε
     workspace.last_relative_residual = rel
     _update_cycle_factor!(hierarchy, initial_rel, rel, k, solver)
     return x

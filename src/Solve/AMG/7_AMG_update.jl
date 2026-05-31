@@ -168,9 +168,7 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, 
     end
 
     copyto!(values, x)
-    final_abs = isempty(workspace.residual_history) ? Inf : workspace.residual_history[end]
-    converged = isfinite(workspace.last_relative_residual) &&
-        (workspace.last_relative_residual <= rtol || final_abs <= atol)
+    converged = workspace.converged
     status = converged ? "converged" : workspace.iterations == itmax ? "itmax" : "breakdown"
     _record_linear_solve!(
         phiEqn,

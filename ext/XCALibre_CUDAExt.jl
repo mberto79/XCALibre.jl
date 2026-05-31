@@ -175,7 +175,7 @@ import XCALibre.Solve: _matvec!, _residual!, _prolongate_add!, _amg_jacobi!,
     _level_jacobi_omega, _launch_amg_kernel!,
     _amg_weighted_diagonal_correction_kernel!, AMGHierarchy, AMGLevel, AMGMatrixCSR, AMGJacobi,
     AMGRAPPlanCPU, _refresh_coarse_operators!, _refresh_level_device!, _refresh_coarse_cpu!,
-    refresh_hierarchy!, _sync_device_levels_numeric!, _nzval
+    refresh_hierarchy!, _sync_device_levels_numeric!
 
 # Wrap a device AMGMatrixCSR as CuSparseMatrixCSR, sharing nzVal so numeric refresh updates the operator
 function _amg_csr_to_cusparse(A::AMGMatrixCSR)

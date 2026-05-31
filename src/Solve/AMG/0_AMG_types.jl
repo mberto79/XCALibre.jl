@@ -342,6 +342,7 @@ mutable struct AMGWorkspace{H,TS,V,T,RH} <: AbstractAMGWorkspace
     preconditioned::V
     q::V
     iterations::Int
+    converged::Bool
     last_relative_residual::T
     residual_history::RH
 end
@@ -437,6 +438,7 @@ function _workspace(::AMG, b)
         similar(x),
         similar(x),
         0,
+        false,
         zero(T),
         Float64[]
     )

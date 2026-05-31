@@ -54,16 +54,16 @@ solvers = (
     ),
     p = SolverSetup(
         solver=AMG(
-            coarsening = Geometric(merge_levels=2)
+            # coarsening = Geometric(merge_levels=2)
             # coarsening = RugeStuben()
-            # coarsening = SmoothAggregation()
+            coarsening = SmoothAggregation()
         ),
         # solver=Cg(),
         preconditioner=Jacobi(),
         convergence=1e-7,
         relax=1.0,
         itmax=1000,
-        rtol=0.0,
+        rtol=1e-4,
         atol=1e-6
     )
 )

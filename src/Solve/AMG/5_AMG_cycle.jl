@@ -84,7 +84,7 @@ function _coarse_solve_on_device_cg!(hierarchy::AMGHierarchy, level::AMGLevel, b
         iter += 1
         _matvec!(hierarchy, Ap, level.A, p)
         pAp = dot(p, Ap)
-        if !isfinite(pAp) || pAp <= eps(T)
+        if !isfinite(pAp) || pAp <= zero(T)
             break
         end
         alpha = rr / pAp
@@ -228,15 +228,20 @@ end
 
 function amg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol)
     T = eltype(x)
+    bnorm = max(norm(b), eps(T))
     _residual!(hierarchy, workspace.residual, A, x, b)
     _reset_residual_history!(workspace)
-    bnorm = max(norm(b), eps(T))
     rnorm = norm(workspace.residual)
     _push_residual_norm_history!(workspace, rnorm)
+    ε = _amg_eps(T, atol, rtol, rnorm)
     rel = rnorm / bnorm
     initial_rel = rel
+    # Stall guard: a tiny ‖r0‖ can make ε unreachable; stop if the residual stops improving.
+    best_rnorm = rnorm
+    stall = 0
+    stall_limit = 20
     it = 0
-    while it < itmax && rnorm > atol && rel > rtol
+    while it < itmax && rnorm > ε
         it += 1
         elapsed_s = @elapsed begin
             amg_apply_preconditioner!(workspace.correction, hierarchy, solver, workspace.residual)
@@ -248,8 +253,16 @@ function amg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver::AM
         rnorm = norm(workspace.residual)
         _push_residual_norm_history!(workspace, rnorm)
         rel = rnorm / bnorm
+        if rnorm < best_rnorm * (one(T) - T(1e-4))
+            best_rnorm = rnorm
+            stall = 0
+        else
+            stall += 1
+            stall >= stall_limit && break
+        end
     end
     workspace.iterations = it
+    workspace.converged = rnorm <= ε
     workspace.last_relative_residual = rel
     _update_cycle_factor!(hierarchy, initial_rel, rel, it, solver)
     return x

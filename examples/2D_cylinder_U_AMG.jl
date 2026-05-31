@@ -7,7 +7,7 @@ mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
-backend = CUDABackend(); workgroup = 32
+# backend = CUDABackend(); workgroup = 32
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
@@ -54,8 +54,19 @@ solvers = (
     ),
     p = SolverSetup(
         solver=AMG(
+            mode = AMGSolver(),  # standalone V-cycle (GAMG-style); scale_correction gives it
+            #                     # GAMG-like iteration counts. Use SA/RS, not Geometric.
+            # mode = Cg(),          # AMG-preconditioned CG (default; fastest single-device)
+            # scale_correction = true  # default: GAMG energy-min coarse-correction scaling. Applies
+            #                          # to AMGSolver only (gated; would break PCG's fixed-SPD prec).
+            # coarse_solve = OnDevice(max_rows=512)  # default: coarsest solved on device (no host
+            #                                        # round-trip) up to max_rows, else host LU
+            # coarse_solve = CPU()                   # force coarsest solve on host (LU/QR)
             # coarsening = Geometric(merge_levels=2)
             # coarsening = RugeStuben()
+            # coarsening = SmoothAggregation(strength_threshold=0.05)  # opt-in: fewer iters on
+            #                          # anisotropic (boundary-layer) pressure matrices; denser
+            #                          # hierarchy (small wall-clock cost on warm-started solves)
             coarsening = SmoothAggregation()
         ),
         # solver=Cg(),
@@ -63,7 +74,8 @@ solvers = (
         convergence=1e-7,
         relax=1.0,
         itmax=1000,
-        rtol=1e-4,
+        # rtol=1e-4,
+        rtol=0.0,
         atol=1e-6
     )
 )

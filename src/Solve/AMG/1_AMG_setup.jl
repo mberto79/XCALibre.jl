@@ -311,8 +311,11 @@ end
 
 # Coarse-operator refresh hook, dispatched on backend. Default (CPU / non-CUDA device):
 # host Galerkin RAP + numeric sync to device. CUDA extension overrides with a device-resident RAP.
-_refresh_coarse_operators!(hierarchy::AMGHierarchy, solver::AMG) =
+function _refresh_coarse_operators!(hierarchy::AMGHierarchy, solver::AMG)
     _refresh_coarse_operators!(hierarchy.backend, hierarchy, solver)
+    _build_coarse_inverse!(hierarchy, solver.coarse_solve)  # refresh device coarse solver
+    return hierarchy
+end
 
 function _refresh_coarse_operators!(::Any, hierarchy::AMGHierarchy, solver::AMG)
     refresh_hierarchy!(hierarchy, solver)
@@ -851,8 +854,10 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
         0,
         operator_complexity,
         grid_complexity,
-        0.0
+        0.0,
+        Ref{Any}(nothing)
     )
+    _build_coarse_inverse!(hierarchy, solver.coarse_solve)
     rows_summary = join(map(level -> string(_m(level.A)), host_levels), " -> ")
     if log_diagnostics
         coarse_solver = _coarse_solve_name(backend, solver, coarse_cpu, host_levels[end].A, is_symmetric)

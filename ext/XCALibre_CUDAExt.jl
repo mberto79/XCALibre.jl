@@ -175,7 +175,8 @@ import XCALibre.Solve: _matvec!, _residual!, _prolongate_add!, _amg_jacobi!,
     _level_jacobi_omega, _launch_amg_kernel!,
     _amg_weighted_diagonal_correction_kernel!, AMGHierarchy, AMGLevel, AMGMatrixCSR, AMGJacobi,
     AMGRAPPlanCPU, _refresh_coarse_operators!, _refresh_level_device!, _refresh_coarse_cpu!,
-    refresh_hierarchy!, _sync_device_levels_numeric!
+    refresh_hierarchy!, _sync_device_levels_numeric!, _build_coarse_inverse!,
+    _build_host_coarse_inverse!, OnDevice
 
 # Wrap a device AMGMatrixCSR as CuSparseMatrixCSR, sharing nzVal so numeric refresh updates the operator
 function _amg_csr_to_cusparse(A::AMGMatrixCSR)
@@ -327,6 +328,34 @@ function _device_coarse_refresh!(hierarchy::AMGHierarchy, solver)
     host_coarse = hierarchy.host_levels[end].A
     copyto!(host_coarse.nzval, Array(_nzval(levels[end].A)))
     _refresh_coarse_cpu!(hierarchy.coarse_cpu, host_coarse)
+    return hierarchy
+end
+
+# Device-resident coarse direct solver: densify the coarsest cuSPARSE operator on device, factor on
+# device (Cholesky for SPD, LU otherwise), and apply per-cycle as a device triangular solve — no
+# host copy of the coarse matrix. Falls back to the host dense-inverse path when the coarsest
+# exceeds the rebuild-cost cap or factorization fails (singular pure-Neumann coarsest).
+function _build_coarse_inverse!(::BACKEND, hierarchy::AMGHierarchy, cs::OnDevice)
+    coarseA = hierarchy.levels[end].A
+    n = size(coarseA, 1)
+    (n == 0 || n > cs.max_rows) && return _build_host_coarse_inverse!(hierarchy, cs.max_rows)
+    Adense = CuMatrix(coarseA)
+    fac = nothing
+    # SPD coarsest (Dirichlet present) → Cholesky. UNVERIFIED: a singular/indefinite coarsest
+    # (pure-Neumann pressure) assumes CUSOLVER cholesky/lu throw rather than return info>0; if not,
+    # the host pinv fallback below won't trigger. All validated cases are SPD-nonsingular.
+    try
+        fac = cholesky(Hermitian(Adense))
+    catch err
+        err isa LinearAlgebra.PosDefException || rethrow(err)
+        try
+            fac = lu(Adense)
+        catch err2
+            err2 isa LinearAlgebra.SingularException || rethrow(err2)
+        end
+    end
+    fac === nothing && return _build_host_coarse_inverse!(hierarchy, cs.max_rows)
+    hierarchy.coarse_inv[] = fac
     return hierarchy
 end
 

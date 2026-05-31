@@ -42,6 +42,19 @@ end
     @inbounds x[i] += omega * invdiag[i] * residual[i]
 end
 
+# x += a * y (scaled coarse-grid correction) — reuses _amg_axpy_kernel! from 6_AMG_cg.jl
+function _amg_axpy!(hierarchy::AMGHierarchy, x, a, y)
+    _launch_amg_kernel!(hierarchy, _amg_axpy_kernel!, length(x), x, a, y)
+    return x
+end
+
+# GAMG energy-minimising scale for the coarse correction c: sf = (r·c)/(c·Ac), guarded for SPD
+function _amg_scale_factor(num::T, den::T) where {T}
+    (isfinite(num) && isfinite(den) && den > eps(T)) || return one(T)
+    sf = num / den
+    return isfinite(sf) ? sf : one(T)
+end
+
 # Extract diagonal and its inverse from CSR nzval using precomputed diagonal_index (device-resident refresh)
 @kernel function _amg_extract_diagonal_kernel!(diagonal, inv_diagonal, nzval, diagonal_index)
     i = @index(Global)

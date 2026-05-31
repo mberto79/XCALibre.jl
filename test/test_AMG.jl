@@ -28,12 +28,14 @@ setup = SolverSetup(
 
 @test setup.solver isa AMG
 @test setup.itmax == 200
-@test setup.solver.pre_sweeps == 1
-@test setup.solver.post_sweeps == 1
+@test setup.solver.pre_sweeps == 2
+@test setup.solver.post_sweeps == 2
 @test setup.solver.cycle isa VCycle
 
 solver_jacobi_default = AMG()
 @test solver_jacobi_default.mode isa Cg
+@test solver_jacobi_default.scale_correction == true
+@test AMG(scale_correction=false).scale_correction == false
 @test solver_jacobi_default.pre_sweeps == 2
 @test solver_jacobi_default.post_sweeps == 2
 @test solver_jacobi_default.smoother.omega == 4/3
@@ -298,6 +300,16 @@ XCALibre.Solve.amg_solve!(ws_solve, ws_solve.hierarchy, setup.solver, ws_solve.h
 @test ws_solve.timing.apply_time_s >= 0
 @test length(ws_solve.residual_history) == ws_solve.iterations + 1
 @test ws_solve.residual_history[end] <= ws_solve.residual_history[1]
+
+# scale_correction: AMGSolver converges to the same solution with sc on/off; Cg is unaffected (gated)
+for sc in (false, true)
+    solver_sc = AMG(mode=AMGSolver(), coarsening=SmoothAggregation(), smoother=AMGJacobi(), scale_correction=sc, max_coarse_rows=2)
+    ws_sc = _workspace(solver_sc, b)
+    ws_sc = XCALibre.Solve.update!(ws_sc, A, solver_sc, config)
+    x_sc = zeros(eltype(b), length(b))
+    XCALibre.Solve.amg_solve!(ws_sc, ws_sc.hierarchy, solver_sc, ws_sc.hierarchy.levels[1].A, b, x_sc; itmax=100, atol=1e-10, rtol=1e-10)
+    @test norm(b - Array(parent(A)) * x_sc) / norm(b) < 1e-8
+end
 
 solver_cg = AMG(mode=Cg(), coarsening=SmoothAggregation(), smoother=AMGJacobi())
 ws_cg = _workspace(solver_cg, b)

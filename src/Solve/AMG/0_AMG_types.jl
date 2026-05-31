@@ -1,6 +1,6 @@
 export AMG, AMGSolver, VCycle, SmoothAggregation, RugeStuben, Geometric, AMGJacobi, AMGChebyshev
 export AMGGaussSeidel, AMGSOR, AMGSymmetricSweep, AMGForwardSweep, AMGBackwardSweep
-export AbstractAMGCPUSmoother, AbstractAMGGPUSmoother
+export AbstractAMGCPUSmoother, AbstractAMGGPUSmoother, OnDevice, OnHost
 export AMGWorkspace, AMGHierarchy, AMGLevel, AMGTimingStats, AMGRAPPlanCPU
 
 abstract type AbstractAMGMode end
@@ -10,10 +10,42 @@ abstract type AbstractAMGCPUSmoother <: AbstractAMGSmoother end
 abstract type AbstractAMGGPUSmoother <: AbstractAMGSmoother end
 abstract type AbstractAMGSweep end
 abstract type AbstractAMGCycle end
+abstract type AbstractAMGCoarseSolve end
 abstract type AbstractAMGWorkspace end
 
 struct AMGSolver <: AbstractAMGMode end
 struct VCycle <: AbstractAMGCycle end
+
+"""
+    OnHost()
+
+Solve the coarsest level on the host (sparse LU/QR). On a GPU backend the per-cycle coarse solve
+copies the rhs to host and the solution back — fastest single-device for a largish coarsest.
+"""
+struct OnHost <: AbstractAMGCoarseSolve end
+
+"""
+    OnDevice(; max_rows=512)
+
+Solve the coarsest level on the device (no host round-trip): a device-resident factorization
+(Cholesky/LU on CUDA; generic backends use a device dense inverse + GEMV fallback). Eliminates a
+per-cycle fine→coarse host sync/transfer (the win at MPI/multi-GPU scale). The factor is rebuilt
+each coarse refresh (~n^3), so coarsest levels larger than `max_rows` fall back to `OnHost` —
+`max_rows=512` is a conservative no-regression default (well-coarsened 3D reaches a tiny coarsest).
+On a CPU backend this is equivalent to `OnHost`.
+"""
+struct OnDevice{I} <: AbstractAMGCoarseSolve
+    max_rows::I
+end
+
+OnDevice(; max_rows=512) = OnDevice(Int(max_rows))
+Adapt.@adapt_structure OnDevice
+Adapt.@adapt_structure OnHost
+
+_amg_coarse_solve(cs::AbstractAMGCoarseSolve) = cs
+_amg_coarse_solve(::CPU) = OnHost()  # convenience: coarse_solve=CPU() means host solve
+_amg_coarse_solve(cs) =
+    throw(ArgumentError("AMG coarse_solve must be OnDevice(...), OnHost(), or CPU()"))
 struct AMGSymmetricSweep <: AbstractAMGSweep end
 struct AMGForwardSweep <: AbstractAMGSweep end
 struct AMGBackwardSweep <: AbstractAMGSweep end
@@ -124,11 +156,13 @@ AMGSOR(omega; sweep=AMGSymmetricSweep(), iterations=1) = AMGSOR(; omega, sweep, 
 AMGSOR(omega, sweep::AbstractAMGSweep; iterations=1) = AMGSOR(; omega, sweep, iterations)
 Adapt.@adapt_structure AMGSOR
 
-struct AMG{M,C,S,Y,I} <: AbstractLinearSolver
+struct AMG{M,C,S,Y,CS,I} <: AbstractLinearSolver
     mode::M
     coarsening::C
     smoother::S
     cycle::Y
+    coarse_solve::CS
+    scale_correction::Bool
     pre_sweeps::I
     post_sweeps::I
     max_levels::I
@@ -181,6 +215,8 @@ function AMG(;
     coarsening=SmoothAggregation(),
     smoother=AMGJacobi(),
     cycle=VCycle(),
+    coarse_solve=OnDevice(),
+    scale_correction=true,
     pre_sweeps=nothing,
     post_sweeps=nothing,
     max_levels=10,
@@ -192,7 +228,11 @@ function AMG(;
     coarsening = _amg_coarsening(coarsening)
     smoother = _amg_smoother(smoother)
     cycle = _amg_cycle(cycle)
-    default_sweeps = smoother isa Union{AMGChebyshev,AMGGaussSeidel,AMGSOR} ? 1 : (mode isa Cg ? 2 : 1)
+    coarse_solve = _amg_coarse_solve(coarse_solve)
+    # Jacobi defaults to V(2,2): the standalone AMGSolver V-cycle has no Krylov acceleration, so
+    # extra cheap smoothing cuts cycle count (fewer coarse-grid sync points); on GPU per-cycle
+    # launch/sync overhead makes V(2,2) clearly faster than V(1,1). Cg unchanged (was already 2).
+    default_sweeps = smoother isa Union{AMGChebyshev,AMGGaussSeidel,AMGSOR} ? 1 : 2
     pre_sweeps = isnothing(pre_sweeps) ? default_sweeps : pre_sweeps
     post_sweeps = isnothing(post_sweeps) ? default_sweeps : post_sweeps
     pre_sweeps > 0 || throw(ArgumentError("AMG pre_sweeps must be positive"))
@@ -203,6 +243,8 @@ function AMG(;
         coarsening,
         smoother,
         cycle,
+        coarse_solve,
+        Bool(scale_correction),
         Int(pre_sweeps),
         Int(post_sweeps),
         Int(max_levels),
@@ -330,6 +372,7 @@ mutable struct AMGHierarchy{LD,LH,CC,B,RP,CP}
     operator_complexity::Float64
     grid_complexity::Float64
     last_cycle_factor::Float64
+    coarse_inv::Base.RefValue{Any}  # device dense inverse of coarsest A (GPU); nothing on CPU/oversized
 end
 
 mutable struct AMGWorkspace{H,TS,V,T,RH} <: AbstractAMGWorkspace
@@ -420,7 +463,8 @@ function _empty_hierarchy(backend, ::Type{T}) where {T}
         0,
         1.0,
         1.0,
-        0.0
+        0.0,
+        Ref{Any}(nothing)
     )
 end
 

@@ -132,7 +132,58 @@ function _record_coarse_device_solve_timing!(hierarchy::AMGHierarchy, device_sol
     return hierarchy
 end
 
+# Apply the precomputed device-resident coarse direct solver — both branches stay on device:
+#  - a factorization (device Cholesky/LU, CUDA ext): triangular solve (potrs/getrs)
+#  - a dense inverse (generic non-CUDA GPU fallback): GEMV
+_apply_coarse_direct!(x, F::Factorization, b) = (copyto!(x, b); ldiv!(F, x); x)
+_apply_coarse_direct!(x, M::AbstractMatrix, b) = (mul!(x, M, b); x)
+
+# Build the device-resident coarse direct solver per the solver's `coarse_solve` strategy, so the
+# per-cycle coarse solve has no host round-trip. Dispatch:
+#  - OnHost / CPU backend → coarse_inv[]=nothing, solved by the host LU/QR round-trip path.
+#  - OnDevice on a device backend → backend-dispatched build: CUDA ext factors on device; generic
+#    backends use the host dense inverse adapted to device + on-device GEMV (backend-agnostic).
+_build_coarse_inverse!(hierarchy::AMGHierarchy, ::OnHost) = (hierarchy.coarse_inv[] = nothing; hierarchy)
+
+function _build_coarse_inverse!(hierarchy::AMGHierarchy, cs::OnDevice)
+    hierarchy.backend isa CPU && return (hierarchy.coarse_inv[] = nothing; hierarchy)
+    return _build_coarse_inverse!(hierarchy.backend, hierarchy, cs)
+end
+
+# Generic non-CUDA device backend: host dense inverse (pinv when singular, via use_qr) adapted to
+# device, applied per-cycle as on-device GEMV. Needs no vendor direct solver.
+_build_coarse_inverse!(::Any, hierarchy::AMGHierarchy, cs::OnDevice) =
+    _build_host_coarse_inverse!(hierarchy, cs.max_rows)
+
+function _build_host_coarse_inverse!(hierarchy::AMGHierarchy, max_rows)
+    coarse_cpu = hierarchy.coarse_cpu
+    Acsc = coarse_cpu.Acsc
+    n = size(Acsc, 1)
+    if n == 0 || n > max_rows
+        hierarchy.coarse_inv[] = nothing
+        return hierarchy
+    end
+    Adense = Matrix(Acsc)
+    Minv = if coarse_cpu.use_qr
+        pinv(Adense)
+    else
+        try
+            inv(Adense)
+        catch err
+            err isa LinearAlgebra.SingularException || rethrow(err)
+            pinv(Adense)
+        end
+    end
+    hierarchy.coarse_inv[] = adapt(hierarchy.backend, Minv)
+    return hierarchy
+end
+
 function _coarse_solve!(hierarchy::AMGHierarchy, solver::AMG, level::AMGLevel, b)
+    coarse_inv = hierarchy.coarse_inv[]
+    if !(hierarchy.backend isa CPU) && coarse_inv !== nothing
+        _apply_coarse_direct!(level.x, coarse_inv, b)  # on-device, no host round-trip
+        return level.x
+    end
     if !(hierarchy.backend isa CPU) && _is_diagonal_matrix(hierarchy.host_levels[end].A)
         return _coarse_solve_on_device!(hierarchy, level, b)
     end
@@ -168,8 +219,28 @@ function _cycle!(hierarchy::AMGHierarchy, cycle::VCycle, solver::AMG, level_inde
     _restrict!(hierarchy, coarse_level.rhs, level.R, level.rhs)
     _cycle!(hierarchy, cycle, solver, level_index + 1, coarse_level.rhs)
 
-    _prolongate_add!(hierarchy, level.x, level.P, coarse_level.x, level.tmp)
+    _apply_coarse_correction!(hierarchy, solver, level, coarse_level)
     _apply_level_smoother!(hierarchy, solver.smoother, level, rhs, solver.post_sweeps)
+    return level.x
+end
+
+# Add the prolongated coarse correction. GAMG scale_correction: scale c=P·xc by the
+# energy-minimising sf=(r·c)/(c·Ac) (r=level.rhs, the post-presmoothing residual). Falls back to
+# plain additive prolongation when disabled. tmp/direction are scratch (overwritten by post-smoother).
+# Gated to AMGSolver: a residual-dependent sf makes the preconditioner nonlinear, which breaks the
+# fixed-SPD-preconditioner assumption (Fletcher-Reeves β) of amg_cg_solve!.
+function _apply_coarse_correction!(hierarchy::AMGHierarchy, solver::AMG, level::AMGLevel, coarse_level::AMGLevel)
+    if !(solver.scale_correction && solver.mode isa AMGSolver)
+        _prolongate_add!(hierarchy, level.x, level.P, coarse_level.x, level.tmp)
+        return level.x
+    end
+    c = level.tmp
+    Ac = level.direction
+    _matvec!(hierarchy, c, level.P, coarse_level.x)
+    _matvec!(hierarchy, Ac, level.A, c)
+    T = eltype(level.x)
+    sf = _amg_scale_factor(T(dot(level.rhs, c)), T(dot(c, Ac)))
+    _amg_axpy!(hierarchy, level.x, sf, c)
     return level.x
 end
 

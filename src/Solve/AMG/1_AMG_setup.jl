@@ -77,6 +77,12 @@ function _csr_to_csc(A)
     return sparse(I, J, V, _m(A), _n(A))
 end
 
+# CSR -> CSC converting nzval to TC (host coarse direct solve runs in Float64; SuiteSparse-only).
+function _csr_to_csc_as(A, ::Type{TC}) where {TC}
+    I, J, V = _csr_triplets(A)
+    return sparse(I, J, convert(Vector{TC}, V), _m(A), _n(A))
+end
+
 SparseArrays.findnz(A::AMGMatrixCSR) = _csr_triplets(A)
 Base.Matrix(A::AMGMatrixCSR) = Matrix(_csr_to_csc(A))
 
@@ -639,7 +645,7 @@ function _refresh_coarse_csc!(coarse_cpu::AMGCPUCoarseLevel, A)
     end
 
     coarse_cpu.A = A
-    coarse_cpu.Acsc = _csr_to_csc(A)
+    coarse_cpu.Acsc = _csr_to_csc_as(A, _coarse_direct_eltype(eltype(_nzval(A))))
     coarse_cpu.csc_nzval_index = _build_csr_to_csc_nzval_index(A, coarse_cpu.Acsc)
     return coarse_cpu.Acsc
 end
@@ -647,7 +653,7 @@ end
 function _refresh_coarse_cpu!(coarse_cpu::AMGCPUCoarseLevel, A)
     Acsc = _refresh_coarse_csc!(coarse_cpu, A)
     if length(coarse_cpu.rhs) != _m(A)
-        coarse_cpu.rhs = zeros(eltype(_nzval(A)), _m(A))
+        coarse_cpu.rhs = zeros(_coarse_direct_eltype(eltype(_nzval(A))), _m(A))
         coarse_cpu.x = similar(coarse_cpu.rhs)
     end
     try
@@ -888,7 +894,7 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
     # Mixed precision: the cycle hierarchy (device_levels) is stored at TS while host_levels stay
     # at the working precision T (coarse LU, RAP pattern, fallback). On CPU we can no longer alias
     # host_levels when TS!=T — build a separate TS copy. cuSPARSE wraps the TS operators on GPU.
-    TS = _amg_storage(solver.coarse_storage)
+    TS = _effective_storage(T, _amg_storage(solver.coarse_storage))
     storage_levels = TS === T ? host_levels : [_level_to_storage(level, TS) for level in host_levels]
     device_levels = backend isa CPU ? storage_levels : Any[adapt(backend, level) for level in storage_levels]
     device_levels = backend isa CPU ? device_levels : _amg_finalize_device_levels(backend, device_levels)

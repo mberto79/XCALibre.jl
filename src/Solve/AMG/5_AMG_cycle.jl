@@ -247,7 +247,10 @@ function _build_host_coarse_inverse!(hierarchy::AMGHierarchy, max_rows)
             pinv(Adense)
         end
     end
-    hierarchy.coarse_inv[] = adapt(hierarchy.backend, Minv)
+    # Acsc/Minv are Float64 (host direct solve); store at the cycle storage type so the on-device
+    # GEMV matches the TS coarse vector (e.g. Float32 hierarchy).
+    TS = eltype(_nzval(hierarchy.levels[end].A))
+    hierarchy.coarse_inv[] = adapt(hierarchy.backend, TS === eltype(Minv) ? Minv : TS.(Minv))
     return hierarchy
 end
 

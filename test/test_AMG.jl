@@ -383,6 +383,76 @@ XCALibre.Solve.amg_solve!(
 )
 @test norm(b_bad - Array(parent(A_bad)) * x_bad) / norm(b_bad) < 1e-8
 
+# NEW SECTION: mixed precision (coarse_storage=Float32) — API, type-stability, FP32 storage with
+# FP64 outer correction reaches the FP64 tolerance and matches FP64 iteration count.
+@test AMG(coarse_storage=Float32).coarse_storage === Float32
+@test AMG().coarse_storage === Float64
+@test_throws ArgumentError AMG(coarse_storage=Int)
+for mode in (Cg(), AMGSolver())
+    sref = AMG(mode=mode, coarsening=SmoothAggregation(), smoother=AMGJacobi())
+    s32  = AMG(mode=mode, coarsening=SmoothAggregation(), smoother=AMGJacobi(), coarse_storage=Float32)
+    runamg(s) = begin
+        w = _workspace(s, b); w = XCALibre.Solve.update!(w, A, s, config)
+        mixed = XCALibre.Solve._amg_mixed_precision(w.hierarchy)
+        outer = mixed ? A : w.hierarchy.levels[1].A
+        x = zeros(eltype(b), length(b))
+        XCALibre.Solve._amg_solve_mode!(w, w.hierarchy, s, s.mode, outer, b, x; itmax=200, atol=1e-8, rtol=1e-8)
+        (it=w.iterations, res=norm(b - Array(parent(A)) * x) / norm(b),
+         store=eltype(XCALibre.Solve._nzval(w.hierarchy.levels[1].A)), mixed=mixed)
+    end
+    rref = runamg(sref); r32 = runamg(s32)
+    @test rref.store === Float64 && !rref.mixed
+    @test r32.store === Float32 && r32.mixed          # FP32 hierarchy actually built
+    @test r32.res < 1e-8                              # FP64 outer correction reaches FP64 tol
+    # Cg = fixed SPD preconditioner → exact iteration parity. AMGSolver = FP64 IR around an FP32
+    # cycle → may differ by a few at tight tol (both converge); allow a small band.
+    if mode isa Cg
+        @test r32.it == rref.it
+    else
+        @test abs(r32.it - rref.it) <= max(2, rref.it ÷ 5)
+    end
+end
+
+# FP32 REFRESH path (production: coarse_refresh_interval=1 re-runs update! every solve). Refresh with a
+# changed matrix (same pattern) and confirm the FP32 hierarchy + FP64 outer still converge — exercises
+# CPU _sync_storage_levels! and the FP64->FP32 coarse-operator sync that single-solve tests never hit.
+let s = AMG(mode=Cg(), coarsening=SmoothAggregation(), smoother=AMGJacobi(), coarse_storage=Float32)
+    w = _workspace(s, b); w = XCALibre.Solve.update!(w, A, s, config)
+    A2 = deepcopy(A); XCALibre.Solve._nzval(A2) .*= 1.07   # same pattern → refresh (not rebuild)
+    w = XCALibre.Solve.update!(w, A2, s, config)
+    @test w.timing.refresh_calls + w.timing.finest_refresh_calls >= 1   # took a refresh path
+    x = zeros(eltype(b), length(b))
+    XCALibre.Solve._amg_solve_mode!(w, w.hierarchy, s, s.mode, A2, b, x; itmax=200, atol=1e-8, rtol=1e-8)
+    @test norm(b - Array(parent(A2)) * x) / norm(b) < 1e-7   # FP32-refreshed operators stay correct
+end
+
+# NEW SECTION: Float32-valued mesh regression (single precision Int32+Float32, mixed Int64+Float32).
+# SuiteSparse (CHOLMOD/UMFPACK/SPQR) factorizes only Float64, so a Float32 coarsest used to crash the
+# host coarse direct solve at workspace creation regardless of coarse_storage. The coarse direct solve
+# now runs in Float64; the rest of the hierarchy stays at the (Float32) working precision. Also asserts
+# coarse_storage is clamped to <= working precision (no silent Float64 upcast on a Float32 mesh).
+function amg_test_matrix_i32(::Type{T}) where {T}
+    i = Int32[1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5]
+    j = Int32[1, 2, 1, 2, 3, 2, 3, 4, 3, 4, 5, 4, 5]
+    v = T[300, -100, -100, 200, -100, -100, 200, -100, -100, 200, -100, -100, 300]
+    return SparseXCSR(sparsecsr(i, j, v, 5, 5)), T[200 * 500, 0, 0, 0, 200 * 100]
+end
+for makeA in (amg_test_matrix, amg_test_matrix_i32)
+    Af, bf = makeA(Float32)
+    @test eltype(XCALibre.Solve._nzval(Af)) === Float32
+    for storage in (Float32, Float64), mode in (Cg(), AMGSolver())
+        s = AMG(mode=mode, coarsening=SmoothAggregation(), smoother=AMGJacobi(), coarse_storage=storage)
+        w = _workspace(s, bf)                                   # used to crash here (placeholder lu)
+        w = XCALibre.Solve.update!(w, Af, s, config)            # full hierarchy build
+        @test eltype(XCALibre.Solve._nzval(w.hierarchy.levels[1].A)) === Float32   # storage clamped
+        @test !XCALibre.Solve._amg_mixed_precision(w.hierarchy)                    # no upcast
+        @test eltype(w.hierarchy.coarse_cpu.Acsc) === Float64                      # Float64 direct solve
+        x = zeros(Float32, length(bf))
+        XCALibre.Solve._amg_solve_mode!(w, w.hierarchy, s, s.mode, w.hierarchy.levels[1].A, bf, x; itmax=200, atol=1f-6, rtol=1f-6)
+        @test norm(bf - Array(parent(Af)) * x) / norm(bf) < 1e-4   # Float32 working-precision floor
+    end
+end
+
 try
     using CUDA
     if CUDA.functional()
@@ -418,6 +488,24 @@ try
         x_cg_gpu = KernelAbstractions.zeros(backend_gpu, eltype(b), length(b))
         XCALibre.Solve.amg_cg_solve!(ws_cg_gpu, ws_cg_gpu.hierarchy, solver_cg_gpu, ws_cg_gpu.hierarchy.levels[1].A, b_gpu, x_cg_gpu; itmax=20, atol=1e-8, rtol=1e-8)
         @test norm(Array(b_gpu) - Array(parent(A)) * Array(x_cg_gpu)) / norm(Array(b_gpu)) < 1e-6
+
+        # mixed precision on device: FP32 cuSPARSE hierarchy + FP64 outer (raw A) reaches FP64 tol
+        for mode_gpu in (Cg(), AMGSolver())
+            s32g = AMG(mode=mode_gpu, coarsening=SmoothAggregation(), smoother=AMGJacobi(), coarse_storage=Float32)
+            w32g = _workspace(s32g, b_gpu)
+            w32g = XCALibre.Solve.update!(w32g, A_gpu, s32g, config_gpu)
+            @test XCALibre.Solve._amg_mixed_precision(w32g.hierarchy)
+            @test XCALibre.Solve._nzval(w32g.hierarchy.levels[1].A) isa CuArray{Float32}
+            x32g = KernelAbstractions.zeros(backend_gpu, eltype(b), length(b))
+            XCALibre.Solve._amg_solve_mode!(w32g, w32g.hierarchy, s32g, s32g.mode, A_gpu, b_gpu, x32g; itmax=50, atol=1e-8, rtol=1e-8)
+            @test norm(Array(b_gpu) - Array(parent(A)) * Array(x32g)) / norm(Array(b_gpu)) < 1e-6
+            # FP32 device refresh (production path): re-run update! with the changed A2_gpu, then solve.
+            # Exercises _device_copyto! FP64->FP32 broadcast + device FP32 RAP + mixed coarse rebuild.
+            w32g = XCALibre.Solve.update!(w32g, A2_gpu, s32g, config_gpu)
+            x32g2 = KernelAbstractions.zeros(backend_gpu, eltype(b), length(b))
+            XCALibre.Solve._amg_solve_mode!(w32g, w32g.hierarchy, s32g, s32g.mode, A2_gpu, b_gpu, x32g2; itmax=50, atol=1e-8, rtol=1e-8)
+            @test norm(Array(b_gpu) - Array(parent(A2)) * Array(x32g2)) / norm(Array(b_gpu)) < 1e-6
+        end
 
         solver_chebyshev_gpu = AMG(mode=Cg(), coarsening=SmoothAggregation(), smoother=AMGChebyshev())
         ws_chebyshev_gpu = _workspace(solver_chebyshev_gpu, b_gpu)

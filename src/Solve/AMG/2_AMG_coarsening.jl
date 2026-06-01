@@ -266,17 +266,12 @@ function _rs_coarse_fine_split(strong)
     influence = [length(strong[i]) + length(incoming[i]) for i in 1:n]
     splitting = fill(-1, n) # -1 undecided, 0 F, 1 C
 
-    while true
-        seed = 0
-        best_weight = -1
-        for i in 1:n
-            splitting[i] == -1 || continue
-            if influence[i] > best_weight
-                best_weight = influence[i]
-                seed = i
-            end
-        end
-        seed == 0 && break
+    # influence is static, so the classic "pick max-influence undecided node, mark neighbours F"
+    # loop is a single descending-by-influence pass instead of an O(n) rescan per C-point (O(n^2)
+    # -> O(n log n)). sortperm is stable, so influence ties resolve in ascending index — identical
+    # selection to the old strict-`>` ascending scan.
+    @inbounds for seed in sortperm(influence; rev=true)
+        splitting[seed] == -1 || continue
         splitting[seed] = 1
         for j in strong[seed]
             splitting[j] == -1 && (splitting[j] = 0)

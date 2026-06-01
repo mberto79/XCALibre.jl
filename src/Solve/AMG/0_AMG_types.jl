@@ -254,6 +254,18 @@ _amg_storage(::Type{Float64}) = Float64
 _amg_storage(::Type{Float32}) = Float32
 _amg_storage(s) = throw(ArgumentError("AMG coarse_storage must be Float32 or Float64"))
 
+# Effective cycle storage = min precision of (working T, requested TS). Storing the hierarchy at
+# HIGHER precision than the working/system matrix wastes memory with no accuracy gain (e.g. Float32
+# mesh + default coarse_storage=Float64 would otherwise upcast the whole hierarchy). Clamping keeps
+# a Float32 mesh in Float32 regardless of coarse_storage; Float64 mesh + Float32 storage = mixed.
+_effective_storage(::Type{T}, ::Type{TS}) where {T,TS} = sizeof(TS) >= sizeof(T) ? T : TS
+
+# SuiteSparse (CHOLMOD/UMFPACK/SPQR) sparse factorizations support only Float64/ComplexF64, so the
+# host coarsest DIRECT solve always runs in Float64. The coarsest level is tiny (<= max_coarse_rows),
+# so this is cheap and numerically robust; rhs/solution are converted at the precision boundary.
+_coarse_direct_eltype(::Type{Float32}) = Float64
+_coarse_direct_eltype(::Type{T}) where {T} = T
+
 _amg_mode(mode::AMGSolver) = mode
 _amg_mode(mode::Cg) = mode
 _amg_mode(mode) = throw(ArgumentError("AMG mode must be AMGSolver() or Cg()"))
@@ -512,12 +524,15 @@ function _placeholder_lu_qr(::Type{T}) where {T}
 end
 
 function _empty_cpu_coarse_level(::Type{T}) where {T}
-    lu_factor, qr_factor = _placeholder_lu_qr(T)
+    # A holds the working-precision (T) coarsest CSR for pattern caching / nzval sync; the direct
+    # factor (Acsc/lu/qr/rhs/x) runs at TC=Float64 because SuiteSparse rejects Float32 (see above).
+    TC = _coarse_direct_eltype(T)
+    lu_factor, qr_factor = _placeholder_lu_qr(TC)
     A = AMGMatrixCSR([1, 1], Int[], T[], 1, 1)
-    Acsc = sparse([1], [1], [one(T)], 1, 1)
+    Acsc = sparse([1], [1], [one(TC)], 1, 1)
     csc_nzval_index = Int[]
-    rhs = zeros(T, 1)
-    x = zeros(T, 1)
+    rhs = zeros(TC, 1)
+    x = zeros(TC, 1)
     return AMGCPUCoarseLevel(A, Acsc, csc_nzval_index, rhs, x, lu_factor, qr_factor, false)
 end
 
@@ -562,7 +577,7 @@ end
 
 function _workspace(solver::AMG, b)
     T = eltype(b)
-    TS = _amg_storage(solver.coarse_storage)
+    TS = _effective_storage(T, _amg_storage(solver.coarse_storage))
     backend = KernelAbstractions.get_backend(b)
     x = similar(b)
     return AMGWorkspace(

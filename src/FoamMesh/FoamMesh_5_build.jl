@@ -24,6 +24,7 @@ function FOAM3D_mesh(mesh_file; scale=1, integer_type=Int64, float_type=Float64)
     connectivity = connect_mesh(foamdata, integer_type, float_type)
     mesh = generate_mesh(foamdata, connectivity, integer_type, float_type)
     mesh = compute_geometry!(mesh)
+    Mesh.validate_single_precision_mesh(mesh; source="FOAM3D_mesh")
 
     return mesh
     # return foamdata

@@ -147,7 +147,9 @@ end
         c2 = ownerCells[2]
 
         # Interpolate calculation
-        phif[i] = 0.5*(phi[c1] + phi[c2])
+        phi1 = phi[c1]
+        half = typeof(phi1)(0.5)
+        phif[i] = half*(phi1 + phi[c2])
     end
 end
 
@@ -174,7 +176,6 @@ end
     @uniform begin
         # Extract individual value vectors from vector field
         (; x, y, z) = psif
-        weight = 0.5
     end
 
     @inbounds begin
@@ -186,6 +187,7 @@ end
         # Set values to interpolate between
         psi1 = psi[c1]
         psi2 = psi[c2]
+        weight = typeof(psi1[1])(0.5)
         midpoint = weight*(psi1 + psi2)
 
         # Interpolate calculation
@@ -205,22 +207,19 @@ function correct_interpolation!(grad, phif, phi, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    # Retrieve user-selected float type
-    F = _get_float(mesh)
-    
-    # Set initial weight
-    weight = 0.5
+    # Set initial weight using the field storage type.
+    weight = eltype(phif)(0.5)
 
     # Launch correct interpolation kernel
     ndrange = length(faces) - nbfaces
     kernel! = correct_interpolation_kernel!(_setup(backend, workgroup, ndrange)...)
-    kernel!(faces, cells, nbfaces, phi, F, weight, grad, phif)
+    kernel!(faces, cells, nbfaces, phi, weight, grad, phif)
     # # KernelAbstractions.synchronize(backend)
 end
 
 # Correct interpolation kernel definition
 
-@kernel inbounds=true function correct_interpolation_kernel!(faces, cells, nbfaces, phi, F, weight, grad, phif::Field) where {Field}
+@kernel inbounds=true function correct_interpolation_kernel!(faces, cells, nbfaces, phi, weight, grad, phif::Field) where {Field}
     i = @index(Global)
     i += nbfaces # Set i such that it does not index boundary faces
 

@@ -49,22 +49,24 @@ end
     nc = normal[component.value]
     vc_c = vc[component.value]
     vp_c = vp[component.value]
+    z = zero(ap)
+    one_minus_nc2 = one(nc) - nc^2
     
     # 1. Flow leaving (ap > 0): Implicit tensorial split
     # Diagonal is scaled by (1 - n^2) to strictly strip the normal contribution.
-    ac = max(ap, 0.0) * (1.0 - nc^2)
+    ac = max(ap, z) * one_minus_nc2
     
     # The remainder of the slip vector (cross-components) goes to deferred correction
-    su_leaving = -max(ap, 0.0) * (vp_c - vc_c * (1.0 - nc^2))
+    su_leaving = -max(ap, z) * (vp_c - vc_c * one_minus_nc2)
     
     # 2. Flow entering (ap < 0): Explicit Upwind Boundary evaluation
-    su_entering = -min(ap, 0.0) * vp_c
+    su_entering = -min(ap, z) * vp_c
     
     # Total explicit source
     su = su_entering + su_leaving
     
     ac, su
-    0.0, -ap*get_values(term.phi, component)[cellID]
+    zero(ap), -ap*get_values(term.phi, component)[cellID]
 end
 
 # @define_boundary Slip Divergence{Upwind} ScalarField begin
@@ -80,8 +82,9 @@ end
 @define_boundary Slip Divergence{Upwind} ScalarField begin
     flux = term.flux[fID]
     ap = term.sign*(flux)
-    ac = max(ap, 0.0)
-    su = -min(ap, 0.0) * get_values(term.phi, component)[cellID]
+    z = zero(ap)
+    ac = max(ap, z)
+    su = -min(ap, z) * get_values(term.phi, component)[cellID]
     ac, su
 end
 
@@ -134,7 +137,7 @@ end
     # Bounded form: ϕ_b(v_{f,i} - v_{P,i}) = -ϕ_b·n_i²·v_{P,i} + cross terms
     # Only inflow contributes safely to diagonal
     
-    F_upwind = max(-ap, 0.0)           # |ϕ_b| on inflow, 0 on outflow
+    F_upwind = max(-ap, zero(ap))      # |ϕ_b| on inflow, 0 on outflow
     
     # Implicit: diagonal coefficient from same-component
     ac = F_upwind * nc^2
@@ -159,16 +162,18 @@ end
 @define_boundary Slip Divergence{Linear} ScalarField begin
     flux = term.flux[fID]
     ap = term.sign*(flux)
-    ac = max(ap, 0.0)
-    su = -min(ap, 0.0) * get_values(term.phi, component)[cellID]
+    z = zero(ap)
+    ac = max(ap, z)
+    su = -min(ap, z) * get_values(term.phi, component)[cellID]
     ac, su
 end
 
 @define_boundary Slip Divergence{LUST} ScalarField begin
     flux = term.flux[fID]
     ap = term.sign*(flux)
-    ac = max(ap, 0.0)
-    su = -min(ap, 0.0) * get_values(term.phi, component)[cellID]
+    z = zero(ap)
+    ac = max(ap, z)
+    su = -min(ap, z) * get_values(term.phi, component)[cellID]
     ac, su
 end
 
@@ -186,13 +191,15 @@ end
     nc = normal[component.value]
     vc_c = vc[component.value]
     vp_c = vp[component.value]
+    z = zero(ap)
+    one_minus_nc2 = one(nc) - nc^2
     
     # Outflow (ap > 0): implicit same-component, defer cross terms
-    ac = max(ap, 0.0) * (1.0 - nc^2)
-    su_leaving = -max(ap, 0.0) * (vp_c - vc_c * (1.0 - nc^2))
+    ac = max(ap, z) * one_minus_nc2
+    su_leaving = -max(ap, z) * (vp_c - vc_c * one_minus_nc2)
     
     # Inflow (ap < 0): defer everything to source
-    su_entering = -min(ap, 0.0) * vp_c
+    su_entering = -min(ap, z) * vp_c
     
     ac, su_entering + su_leaving
 end
@@ -210,10 +217,12 @@ end
     nc = normal[component.value]
     vc_c = vc[component.value]
     vp_c = vp[component.value]
+    z = zero(ap)
+    one_minus_nc2 = one(nc) - nc^2
     
-    ac = max(ap, 0.0) * (1.0 - nc^2)
-    su_leaving = -max(ap, 0.0) * (vp_c - vc_c * (1.0 - nc^2))
-    su_entering = -min(ap, 0.0) * vp_c
+    ac = max(ap, z) * one_minus_nc2
+    su_leaving = -max(ap, z) * (vp_c - vc_c * one_minus_nc2)
+    su_entering = -min(ap, z) * vp_c
     
     ac, su_entering + su_leaving
 end

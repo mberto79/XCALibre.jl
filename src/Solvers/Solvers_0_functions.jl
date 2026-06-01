@@ -8,14 +8,14 @@ function update_nueff!(nueff, nu, turb_model, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(nueff)
-    #if typeof(turb_model) <: Laminar
-    kernel! = update_nueff_laminar!(_setup(backend, workgroup, ndrange)...)
-    kernel!(nu, nueff)
-    #else
-        #(; nutf) = turb_model
-        #kernel! = update_nueff_turbulent!(_setup(backend, workgroup, ndrange)...)
-        #kernel!(nu, nutf, nueff)
-    #end
+    if typeof(turb_model) <: Laminar
+        kernel! = update_nueff_laminar!(_setup(backend, workgroup, ndrange)...)
+        kernel!(nu, nueff)
+    else
+        (; nutf) = turb_model
+        kernel! = update_nueff_turbulent!(_setup(backend, workgroup, ndrange)...)
+        kernel!(nu, nutf, nueff)
+    end
 
 end
 
@@ -241,7 +241,7 @@ end
         sumy -= D*Uy[i]
         sumz -= D*Uz[i]
 
-        rD = 1.0/D
+        rD = one(D)/D
         Hx[i] = (bx[i] - sumx)*rD
         Hy[i] = (by[i] - sumy)*rD
         Hz[i] = (bz[i] - sumz)*rD
@@ -270,7 +270,7 @@ end
     dt = runtime.dt[1]
     umag = norm(U[i])
     volume = cells[i].volume
-    dx = volume^0.333333
+    dx = volume^(one(volume)/typeof(volume)(3))
     cellsCourant[i] = umag * dt / dx
 end
 
@@ -280,7 +280,7 @@ end
     dt = runtime.dt[1]
     umag = norm(U[i])
     volume = cells[i].volume
-    dx = volume^0.5
+    dx = sqrt(volume)
     cellsCourant[i] = umag * dt / dx
 end
 
@@ -290,7 +290,7 @@ update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,Nothing}, courant) = nothing
 function update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}, courant)
     (; maxCo, maxGrow, minShrink) = runtime.adaptive
 
-    courant_factor = maxCo / (courant + eps())
+    courant_factor = maxCo / (courant + eps(courant))
     new_dt_factor = clamp(courant_factor, minShrink, maxGrow)
     runtime.dt .= runtime.dt .* new_dt_factor
 end

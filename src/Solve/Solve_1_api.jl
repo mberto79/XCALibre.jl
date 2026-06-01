@@ -359,7 +359,7 @@ end
     @inbounds begin
         nIndex = spindex(rowptr, colval, i, i)
         nzval[nIndex] /= alpha
-        b[i] += (1.0 - alpha)*nzval[nIndex]*field[i]
+        b[i] += (one(alpha) - alpha)*nzval[nIndex]*field[i]
     end
 end
 

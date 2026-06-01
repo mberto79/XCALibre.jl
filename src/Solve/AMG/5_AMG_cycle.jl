@@ -138,6 +138,55 @@ end
 _apply_coarse_direct!(x, F::Factorization, b) = (copyto!(x, b); ldiv!(F, x); x)
 _apply_coarse_direct!(x, M::AbstractMatrix, b) = (mul!(x, M, b); x)
 
+# NEW SECTION: device Krylov coarse solve (OnDeviceKrylov) — Cg/Bicgstab + Jacobi on the truncated
+# coarsest level, in-place via a reused Krylov.jl workspace (no host round-trip, no per-cycle alloc).
+
+# Thin operator over the coarsest CSR matvec kernel: only mul!/size/eltype needed by Krylov.
+struct _AMGCoarseOp{RP,CV,NZ,B}
+    rowptr::RP
+    colval::CV
+    nzval::NZ
+    m::Int
+    n::Int
+    backend::B
+    workgroup::Int
+end
+
+Base.size(A::_AMGCoarseOp) = (A.m, A.n)
+Base.size(A::_AMGCoarseOp, d::Integer) = d == 1 ? A.m : d == 2 ? A.n : 1
+Base.eltype(::_AMGCoarseOp{RP,CV,NZ}) where {RP,CV,NZ} = eltype(NZ)
+
+function LinearAlgebra.mul!(y, A::_AMGCoarseOp, x)
+    _launch_amg_kernel!(A.backend, A.workgroup, _amg_csr_matvec_kernel!, A.m, y, A.rowptr, A.colval, A.nzval, x)
+    return y
+end
+
+mutable struct AMGKrylovCoarse{WS,OP,M,F,I,NZ}
+    workspace::WS
+    op::OP
+    M::M             # Jacobi preconditioner Diagonal(inv_diag); applied as mul! (ldiv=false)
+    rtol::F
+    atol::F
+    itmax::I
+    nzval::NZ        # identity tag: reuse the workspace until the coarsest array is replaced
+    total_iters::Int # instrumentation: summed inner iterations across cycles
+    calls::Int
+end
+
+# Auto-pick Cg for a symmetric coarsest (P'AP with R=P'), Bicgstab otherwise; user override honoured.
+_amg_krylov_solver_for(cs::OnDeviceKrylov, A) =
+    cs.solver === nothing ? (_is_symmetric(A) ? Cg() : Bicgstab()) : cs.solver
+_amg_krylov_coarse_solver(cs::OnDeviceKrylov, hierarchy) =
+    _amg_krylov_solver_for(cs, hierarchy.host_levels[end].A)
+
+function _apply_coarse_direct!(x, kb::AMGKrylovCoarse, b)
+    krylov_solve!(kb.workspace, kb.op, b; M=kb.M, ldiv=false, atol=kb.atol, rtol=kb.rtol, itmax=kb.itmax)
+    copyto!(x, Krylov.solution(kb.workspace))
+    kb.total_iters += Krylov.iteration_count(kb.workspace)
+    kb.calls += 1
+    return x
+end
+
 # Build the device-resident coarse direct solver per the solver's `coarse_solve` strategy, so the
 # per-cycle coarse solve has no host round-trip. Dispatch:
 #  - OnHost / CPU backend → coarse_inv[]=nothing, solved by the host LU/QR round-trip path.
@@ -175,6 +224,81 @@ function _build_host_coarse_inverse!(hierarchy::AMGHierarchy, max_rows)
         end
     end
     hierarchy.coarse_inv[] = adapt(hierarchy.backend, Minv)
+    return hierarchy
+end
+
+# Build (or reuse) the device Krylov coarse solver. Stored in coarse_inv[] (an AMGKrylovCoarse),
+# so the existing _coarse_solve!/_apply_coarse_direct! routing applies it on device. Called every
+# coarse refresh: refresh the coarsest Jacobi inv_diag in place; reuse the workspace while the
+# coarsest CSR array is unchanged (numeric refresh updates values in place), rebuild on a hierarchy
+# rebuild (array replaced / size change). CPU backend keeps coarse_inv[]=nothing → host LU path.
+function _build_coarse_inverse!(hierarchy::AMGHierarchy, cs::OnDeviceKrylov)
+    if hierarchy.backend isa CPU
+        hierarchy.coarse_inv[] = nothing
+        return hierarchy
+    end
+    level = hierarchy.levels[end]
+    n = _m(level.A)
+    if n == 0
+        hierarchy.coarse_inv[] = nothing
+        return hierarchy
+    end
+    _refresh_diag_device!(hierarchy, level)
+    existing = hierarchy.coarse_inv[]
+    if existing isa AMGKrylovCoarse && existing.nzval === _nzval(level.A)
+        return hierarchy
+    end
+    solver_choice = _amg_krylov_coarse_solver(cs, hierarchy)
+    op = _AMGCoarseOp(_rowptr(level.A), _colval(level.A), _nzval(level.A), n, n, hierarchy.backend, hierarchy.workgroup)
+    ws = _workspace(solver_choice, level.rhs)
+    hierarchy.coarse_inv[] = AMGKrylovCoarse(ws, op, Diagonal(level.inv_diagonal), cs.rtol, cs.atol, cs.itmax, _nzval(level.A), 0, 0)
+    return hierarchy
+end
+
+# NEW SECTION: device fixed-sweep smoother coarse solve (OnDeviceJacobi / OnDeviceChebyshev) —
+# N Jacobi sweeps or a degree-d Chebyshev polynomial on the coarsest level, x init 0. A fixed-sweep
+# smoother is a constant linear operator p(A_c)·b, so it is valid as an outer-CG preconditioner
+# (both modes). Reuses the existing level smoother kernels; no host round-trip, no per-cycle alloc.
+mutable struct AMGSmootherCoarse{S,H,NZ}
+    smoother::S      # AMGJacobi or AMGChebyshev applied to the coarsest level
+    loops::Int       # Jacobi sweeps; Chebyshev uses its degree internally (loops=1)
+    hierarchy::H
+    nzval::NZ        # identity tag: reuse the bundle until the coarsest array is replaced
+    calls::Int
+end
+
+_coarse_smoother(cs::OnDeviceJacobi) = (AMGJacobi(omega=cs.omega), Int(cs.iterations))
+_coarse_smoother(cs::OnDeviceChebyshev) =
+    (AMGChebyshev(degree=cs.degree, eig_ratio=cs.eig_ratio, lambda_scale=cs.lambda_scale), 1)
+
+function _apply_coarse_direct!(x, sc::AMGSmootherCoarse, b)
+    level = sc.hierarchy.levels[end]
+    _fill_amg!(sc.hierarchy, level.x, zero(eltype(level.x)))  # x init 0 → fixed linear operator
+    _apply_level_smoother_impl!(sc.hierarchy, sc.smoother, level, b, sc.loops)
+    sc.calls += 1
+    return level.x
+end
+
+# Build/reuse the device fixed-sweep coarse solver. Stored in coarse_inv[] so the existing
+# _coarse_solve!/_apply_coarse_direct! routing applies it on device. Refreshes the coarsest diag +
+# lambda_max each coarse refresh (Chebyshev needs eig bounds); reuses the bundle while the coarsest
+# array is unchanged. CPU backend keeps coarse_inv[]=nothing → host LU path.
+function _build_coarse_inverse!(hierarchy::AMGHierarchy, cs::Union{OnDeviceJacobi,OnDeviceChebyshev})
+    if hierarchy.backend isa CPU
+        hierarchy.coarse_inv[] = nothing
+        return hierarchy
+    end
+    level = hierarchy.levels[end]
+    n = _m(level.A)
+    if n == 0
+        hierarchy.coarse_inv[] = nothing
+        return hierarchy
+    end
+    _refresh_level_device!(hierarchy, level)  # coarsest diag + lambda_max on device
+    existing = hierarchy.coarse_inv[]
+    existing isa AMGSmootherCoarse && existing.nzval === _nzval(level.A) && return hierarchy
+    smoother, loops = _coarse_smoother(cs)
+    hierarchy.coarse_inv[] = AMGSmootherCoarse(smoother, loops, hierarchy, _nzval(level.A), 0)
     return hierarchy
 end
 

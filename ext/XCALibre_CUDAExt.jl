@@ -176,7 +176,7 @@ import XCALibre.Solve: _matvec!, _residual!, _prolongate_add!, _amg_jacobi!,
     _amg_weighted_diagonal_correction_kernel!, AMGHierarchy, AMGLevel, AMGMatrixCSR, AMGJacobi,
     AMGRAPPlanCPU, _refresh_coarse_operators!, _refresh_level_device!, _refresh_coarse_cpu!,
     refresh_hierarchy!, _sync_device_levels_numeric!, _build_coarse_inverse!,
-    _build_host_coarse_inverse!, OnDevice
+    _build_host_coarse_inverse!, OnDevice, OnDeviceKrylov, OnDeviceJacobi, OnDeviceChebyshev
 
 # Wrap a device AMGMatrixCSR as CuSparseMatrixCSR, sharing nzVal so numeric refresh updates the operator
 function _amg_csr_to_cusparse(A::AMGMatrixCSR)
@@ -324,10 +324,15 @@ function _device_coarse_refresh!(hierarchy::AMGHierarchy, solver)
         k > 1 && _refresh_level_device!(hierarchy, levels[k])
         _device_rap_into!(levels[k + 1].A, levels[k].R, levels[k].A, levels[k].P)
     end
-    # Coarsest level is solved by direct LU on host: D->H its (tiny) nzval and refactor.
-    host_coarse = hierarchy.host_levels[end].A
-    copyto!(host_coarse.nzval, Array(_nzval(levels[end].A)))
-    _refresh_coarse_cpu!(hierarchy.coarse_cpu, host_coarse)
+    # On-device coarse solvers (Krylov / fixed-sweep Jacobi / Chebyshev) solve the (large) coarsest
+    # on device; skip the costly D->H + host refactor. Their coarsest diag/lambda are refreshed by
+    # _build_coarse_inverse! after this call.
+    if !(solver.coarse_solve isa Union{OnDeviceKrylov,OnDeviceJacobi,OnDeviceChebyshev})
+        # Coarsest level is solved by direct LU on host: D->H its (tiny) nzval and refactor.
+        host_coarse = hierarchy.host_levels[end].A
+        copyto!(host_coarse.nzval, Array(_nzval(levels[end].A)))
+        _refresh_coarse_cpu!(hierarchy.coarse_cpu, host_coarse)
+    end
     return hierarchy
 end
 

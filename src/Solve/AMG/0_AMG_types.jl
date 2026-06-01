@@ -1,6 +1,7 @@
 export AMG, AMGSolver, VCycle, SmoothAggregation, RugeStuben, Geometric, AMGJacobi, AMGChebyshev
 export AMGGaussSeidel, AMGSOR, AMGSymmetricSweep, AMGForwardSweep, AMGBackwardSweep
-export AbstractAMGCPUSmoother, AbstractAMGGPUSmoother, OnDevice, OnHost
+export AbstractAMGCPUSmoother, AbstractAMGGPUSmoother, OnDevice, OnHost, OnDeviceKrylov
+export OnDeviceJacobi, OnDeviceChebyshev
 export AMGWorkspace, AMGHierarchy, AMGLevel, AMGTimingStats, AMGRAPPlanCPU
 
 abstract type AbstractAMGMode end
@@ -42,10 +43,84 @@ OnDevice(; max_rows=512) = OnDevice(Int(max_rows))
 Adapt.@adapt_structure OnDevice
 Adapt.@adapt_structure OnHost
 
+"""
+    OnDeviceKrylov(; solver=nothing, rtol=1e-2, atol=0.0, itmax=50)
+
+GPU strategy: truncate the hierarchy at a LARGE coarsest level (set `max_coarse_rows` high, e.g.
+4000-8000) so every level has enough work for good GPU occupancy, then solve that coarsest level
+with an in-place Krylov solver (Cg/Bicgstab) + Jacobi preconditioner — the configuration GPUs
+parallelise best. Reuses XCALibre's Krylov.jl infrastructure (no host round-trip, no extra alloc).
+`solver=nothing` auto-picks Cg (symmetric coarsest) or Bicgstab. GATED to `mode=AMGSolver()`: an
+inner Krylov solve is nonlinear in b, which breaks PCG's fixed-SPD-preconditioner assumption. On a
+CPU backend this is equivalent to `OnHost`.
+"""
+struct OnDeviceKrylov{S,F,I} <: AbstractAMGCoarseSolve
+    solver::S
+    rtol::F
+    atol::F
+    itmax::I
+end
+
+OnDeviceKrylov(; solver=nothing, rtol=1e-2, atol=0.0, itmax=50) =
+    OnDeviceKrylov(_amg_krylov_solver(solver), float(rtol), float(atol), Int(itmax))
+Adapt.@adapt_structure OnDeviceKrylov
+
+_amg_krylov_solver(::Nothing) = nothing
+_amg_krylov_solver(s::Union{Cg,Bicgstab}) = s
+_amg_krylov_solver(s) =
+    throw(ArgumentError("OnDeviceKrylov solver must be Cg(), Bicgstab(), or nothing (auto)"))
+
+"""
+    OnDeviceJacobi(; omega=4/3, iterations=10)
+
+GPU coarse solve: apply a FIXED number of weighted-Jacobi sweeps (x init 0) to the truncated,
+large coarsest level instead of a direct factor. A fixed-sweep Jacobi is a constant linear operator
+`p(A_c)·b`, so — unlike [`OnDeviceKrylov`](@ref) — it is valid as an outer-CG preconditioner: allowed
+in BOTH `mode=Cg()` and `mode=AMGSolver()`. Fully on device (no host round-trip), removing the coarse
+host sync point at MPI/multi-GPU scale. Cheaper per cycle than a direct solve but only approximate, so
+outer iterations may rise; best when the coarsest is large and well-conditioned (huge coarsening
+ratio). On a CPU backend this is equivalent to `OnHost`.
+"""
+struct OnDeviceJacobi{F,I} <: AbstractAMGCoarseSolve
+    omega::F
+    iterations::I
+end
+
+function OnDeviceJacobi(; omega=4/3, iterations=10)
+    iterations > 0 || throw(ArgumentError("OnDeviceJacobi iterations must be positive"))
+    return OnDeviceJacobi(float(omega), Int(iterations))
+end
+Adapt.@adapt_structure OnDeviceJacobi
+
+"""
+    OnDeviceChebyshev(; degree=10, eig_ratio=10.0, lambda_scale=1.1)
+
+GPU coarse solve: apply a FIXED-degree Chebyshev polynomial smoother (x init 0) to the coarsest
+level. Like [`OnDeviceJacobi`](@ref) it is a constant linear operator (b-independent), so valid in
+BOTH `mode=Cg()` and `mode=AMGSolver()`; fully on device. Chebyshev targets the spectrum
+`[lambda_max/eig_ratio, lambda_max]` (lambda_max estimated per level; `lambda_scale` inflates the
+upper bound), giving faster coarse error reduction per matvec than Jacobi at equal cost. On a CPU
+backend this is equivalent to `OnHost`.
+"""
+struct OnDeviceChebyshev{I,F} <: AbstractAMGCoarseSolve
+    degree::I
+    eig_ratio::F
+    lambda_scale::F
+end
+
+function OnDeviceChebyshev(; degree=10, eig_ratio=10.0, lambda_scale=1.1)
+    degree > 0 || throw(ArgumentError("OnDeviceChebyshev degree must be positive"))
+    eig_ratio > 1 || throw(ArgumentError("OnDeviceChebyshev eig_ratio must be greater than one"))
+    lambda_scale > 0 || throw(ArgumentError("OnDeviceChebyshev lambda_scale must be positive"))
+    return OnDeviceChebyshev(Int(degree), float(eig_ratio), float(lambda_scale))
+end
+Adapt.@adapt_structure OnDeviceChebyshev
+
 _amg_coarse_solve(cs::AbstractAMGCoarseSolve) = cs
 _amg_coarse_solve(::CPU) = OnHost()  # convenience: coarse_solve=CPU() means host solve
+_amg_coarse_solve(::KernelAbstractions.GPU) = OnDeviceKrylov()  # coarse_solve=CUDABackend()
 _amg_coarse_solve(cs) =
-    throw(ArgumentError("AMG coarse_solve must be OnDevice(...), OnHost(), or CPU()"))
+    throw(ArgumentError("AMG coarse_solve must be OnDevice(...), OnDeviceJacobi(...), OnDeviceChebyshev(...), OnDeviceKrylov(...), OnHost(), CPU(), or a GPU backend"))
 struct AMGSymmetricSweep <: AbstractAMGSweep end
 struct AMGForwardSweep <: AbstractAMGSweep end
 struct AMGBackwardSweep <: AbstractAMGSweep end
@@ -229,6 +304,9 @@ function AMG(;
     smoother = _amg_smoother(smoother)
     cycle = _amg_cycle(cycle)
     coarse_solve = _amg_coarse_solve(coarse_solve)
+    if coarse_solve isa OnDeviceKrylov && mode isa Cg
+        throw(ArgumentError("coarse_solve=OnDeviceKrylov requires mode=AMGSolver() (an inner Krylov coarse solve is nonlinear and breaks AMG-preconditioned CG)"))
+    end
     # Jacobi defaults to V(2,2): the standalone AMGSolver V-cycle has no Krylov acceleration, so
     # extra cheap smoothing cuts cycle count (fewer coarse-grid sync points); on GPU per-cycle
     # launch/sync overhead makes V(2,2) clearly faster than V(1,1). Cg unchanged (was already 2).

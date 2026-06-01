@@ -30,9 +30,12 @@ end
     @inbounds x[i] += y[i]
 end
 
-function _launch_amg_kernel!(hierarchy::AMGHierarchy, kernel, ndrange, args...)
+_launch_amg_kernel!(hierarchy::AMGHierarchy, kernel, ndrange, args...) =
+    _launch_amg_kernel!(hierarchy.backend, hierarchy.workgroup, kernel, ndrange, args...)
+
+function _launch_amg_kernel!(backend, workgroup::Integer, kernel, ndrange, args...)
     ndrange <= 0 && return nothing
-    kernel! = kernel(_setup(hierarchy.backend, hierarchy.workgroup, ndrange)...)
+    kernel! = kernel(_setup(backend, workgroup, ndrange)...)
     kernel!(args...)
     return nothing
 end

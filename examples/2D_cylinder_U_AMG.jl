@@ -6,8 +6,8 @@ grid = "cylinder_d10mm_5mm.unv"
 mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
-backend = CPU(); workgroup = 1024; activate_multithread(backend)
-# backend = CUDABackend(); workgroup = 32
+# backend = CPU(); workgroup = 1024; activate_multithread(backend)
+backend = CUDABackend(); workgroup = 32
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
@@ -54,7 +54,10 @@ solvers = (
     ),
     p = SolverSetup(
         solver=AMG(
-            mode = AMGSolver(),  # standalone V-cycle (GAMG-style); scale_correction gives it
+            # mode = AMGSolver(),  
+            mode = Cg(),  
+            pre_sweeps=10,
+            post_sweeps=10,
             #                     # GAMG-like iteration counts. Use SA/RS, not Geometric.
             # mode = Cg(),          # AMG-preconditioned CG (default; fastest single-device)
             # scale_correction = true  # default: GAMG energy-min coarse-correction scaling. Applies
@@ -62,12 +65,21 @@ solvers = (
             # coarse_solve = OnDevice(max_rows=512)  # default: coarsest solved on device (no host
             #                                        # round-trip) up to max_rows, else host LU
             # coarse_solve = CPU()                   # force coarsest solve on host (LU/QR)
-            # coarsening = Geometric(merge_levels=2)
+            # coarse_solve = OnDeviceKrylov(), 
+            coarse_solve = OnDeviceJacobi(iterations=30), 
+            max_coarse_rows=20000,  
+
+            #   truncate to a large, well-conditioned coarsest + solve it on-device with Cg/Bicgstab
+            #   +Jacobi (no host-LU sync point). LARGE 3D wins: F1 1.68M -> 2.5x vs Cg+Jacobi baseline,
+            #   1.5x vs same-mode OnDevice. Small/mildly-coarsened cases (this cylinder) LOSE — Jacobi-
+            #   CG on the coarsest needs many iters. Set max_coarse_rows high enough to truncate at a
+            #   sizeable coarsest. See src/Solve/AMG/AMG_OnDeviceKrylov_findings.md.
+            # coarsening = Geometric(merge_levels=1)
             # coarsening = RugeStuben()
-            # coarsening = SmoothAggregation(strength_threshold=0.05)  # opt-in: fewer iters on
+            coarsening = SmoothAggregation(strength_threshold=0.05)  # opt-in: fewer iters on
             #                          # anisotropic (boundary-layer) pressure matrices; denser
             #                          # hierarchy (small wall-clock cost on warm-started solves)
-            coarsening = SmoothAggregation()
+            # coarsening = SmoothAggregation()
         ),
         # solver=Cg(),
         preconditioner=Jacobi(),

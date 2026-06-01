@@ -698,6 +698,13 @@ function _hierarchy_level_summary(levels)
 end
 
 function _coarse_solve_name(backend, solver::AMG, coarse_cpu::AMGCPUCoarseLevel, A, is_symmetric::Bool)
+    if !(backend isa CPU) && solver.coarse_solve isa OnDeviceKrylov
+        return "device_krylov_" * lowercase(string(nameof(typeof(_amg_krylov_solver_for(solver.coarse_solve, A)))))
+    end
+    !(backend isa CPU) && solver.coarse_solve isa OnDeviceJacobi &&
+        return "device_jacobi_$(solver.coarse_solve.iterations)"
+    !(backend isa CPU) && solver.coarse_solve isa OnDeviceChebyshev &&
+        return "device_chebyshev_$(solver.coarse_solve.degree)"
     !(backend isa CPU) && _is_diagonal_matrix(A) && return "device_diagonal"
     if !(backend isa CPU) &&
        lowercase(get(ENV, "XCALIBRE_AMG_DEVICE_COARSE_SOLVE", "")) == "cg" &&

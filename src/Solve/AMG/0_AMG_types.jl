@@ -244,7 +244,15 @@ struct AMG{M,C,S,Y,CS,I} <: AbstractLinearSolver
     min_coarse_rows::I
     max_coarse_rows::I
     coarse_refresh_interval::I
+    coarse_storage::DataType
 end
+
+# Storage precision of the multigrid hierarchy. Float32 stores every level's operators/transfers/
+# work vectors (incl. finest cycle copy) in single precision — halves SpMV/smoother/RAP bandwidth —
+# while the outer Krylov/defect-correction stays Float64 (system matrix + solution). Both modes.
+_amg_storage(::Type{Float64}) = Float64
+_amg_storage(::Type{Float32}) = Float32
+_amg_storage(s) = throw(ArgumentError("AMG coarse_storage must be Float32 or Float64"))
 
 _amg_mode(mode::AMGSolver) = mode
 _amg_mode(mode::Cg) = mode
@@ -297,7 +305,8 @@ function AMG(;
     max_levels=10,
     min_coarse_rows=32,
     max_coarse_rows=4096,
-    coarse_refresh_interval=1
+    coarse_refresh_interval=1,
+    coarse_storage=Float64
 )
     mode = _amg_mode(mode)
     coarsening = _amg_coarsening(coarsening)
@@ -328,7 +337,8 @@ function AMG(;
         Int(max_levels),
         Int(min_coarse_rows),
         Int(max_coarse_rows),
-        Int(coarse_refresh_interval)
+        Int(coarse_refresh_interval),
+        _amg_storage(coarse_storage)
     )
 end
 
@@ -451,6 +461,7 @@ mutable struct AMGHierarchy{LD,LH,CC,B,RP,CP}
     grid_complexity::Float64
     last_cycle_factor::Float64
     coarse_inv::Base.RefValue{Any}  # device dense inverse of coarsest A (GPU); nothing on CPU/oversized
+    cycle_input::Base.RefValue{Any}  # mixed precision: TS-typed finest rhs buffer; nothing when TS==TW
 end
 
 mutable struct AMGWorkspace{H,TS,V,T,RH} <: AbstractAMGWorkspace
@@ -510,9 +521,11 @@ function _empty_cpu_coarse_level(::Type{T}) where {T}
     return AMGCPUCoarseLevel(A, Acsc, csc_nzval_index, rhs, x, lu_factor, qr_factor, false)
 end
 
-function _empty_hierarchy(backend, ::Type{T}) where {T}
+function _empty_hierarchy(backend, ::Type{T}, ::Type{TS}=T) where {T,TS}
     host_level = _empty_amg_level(CPU(), T)
-    device_level = _empty_amg_level(backend, T)
+    # Mixed precision: device (cycle) levels are stored at TS; the empty must match setup_hierarchy's
+    # concrete type so the workspace.hierarchy reassignment after build type-checks.
+    device_level = _empty_amg_level(backend, TS)
     host_levels = typeof(host_level)[]
     # GPU levels are heterogeneously typed (finest may be CuSparseMatrixCSR); use Any on device backends
     device_levels = backend isa CPU ? typeof(device_level)[] : Vector{Any}()
@@ -542,16 +555,18 @@ function _empty_hierarchy(backend, ::Type{T}) where {T}
         1.0,
         1.0,
         0.0,
+        Ref{Any}(nothing),
         Ref{Any}(nothing)
     )
 end
 
-function _workspace(::AMG, b)
+function _workspace(solver::AMG, b)
     T = eltype(b)
+    TS = _amg_storage(solver.coarse_storage)
     backend = KernelAbstractions.get_backend(b)
     x = similar(b)
     return AMGWorkspace(
-        _empty_hierarchy(backend, T),
+        _empty_hierarchy(backend, T, TS),
         AMGTimingStats(),
         similar(x),
         similar(x),

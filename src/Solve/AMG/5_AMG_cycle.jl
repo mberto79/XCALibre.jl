@@ -196,7 +196,31 @@ _build_coarse_inverse!(hierarchy::AMGHierarchy, ::OnHost) = (hierarchy.coarse_in
 
 function _build_coarse_inverse!(hierarchy::AMGHierarchy, cs::OnDevice)
     hierarchy.backend isa CPU && return (hierarchy.coarse_inv[] = nothing; hierarchy)
+    # Mixed precision: build a device-resident dense inverse of the coarsest level. The inverse is
+    # computed in FP64 from the host coarsest (accurate factor, no FP32 pivot fragility) but stored
+    # in TS for an on-device TS GEMV — keeping the coarse solve fully on device (no per-cycle host
+    # sync) while the convergence reflects only the FP32 cycle-SpMV.
+    _amg_mixed_precision(hierarchy) && return _build_mixed_coarse_inverse!(hierarchy, cs.max_rows)
     return _build_coarse_inverse!(hierarchy.backend, hierarchy, cs)
+end
+
+function _build_mixed_coarse_inverse!(hierarchy::AMGHierarchy, max_rows)
+    Acsc = hierarchy.coarse_cpu.Acsc
+    n = size(Acsc, 1)
+    if n == 0 || n > max_rows
+        hierarchy.coarse_inv[] = nothing  # oversized → host LU round-trip
+        return hierarchy
+    end
+    Adense = Matrix(Acsc)
+    Minv = try
+        inv(Adense)
+    catch err
+        err isa LinearAlgebra.SingularException || rethrow(err)
+        pinv(Adense)
+    end
+    TS = eltype(_nzval(hierarchy.levels[end].A))
+    hierarchy.coarse_inv[] = adapt(hierarchy.backend, TS.(Minv))  # TS device dense inverse → GEMV
+    return hierarchy
 end
 
 # Generic non-CUDA device backend: host dense inverse (pinv when singular, via use_qr) adapted to
@@ -368,9 +392,18 @@ function _apply_coarse_correction!(hierarchy::AMGHierarchy, solver::AMG, level::
     return level.x
 end
 
+# Mixed precision boundary: the working-precision residual r enters the TS cycle hierarchy, the
+# TS finest correction root.x leaves as the working-precision z. Both copies are single-assignment
+# (no type instability). When TS==TW (default) cycle_input is nothing → r passes through unchanged.
+_amg_cycle_input(hierarchy::AMGHierarchy, r) =
+    hierarchy.cycle_input[] === nothing ? r : _copy_amg!(hierarchy, hierarchy.cycle_input[], r)
+
+_amg_mixed_precision(hierarchy::AMGHierarchy) = hierarchy.cycle_input[] !== nothing
+
 function amg_apply_preconditioner!(z, hierarchy::AMGHierarchy, solver::AMG, r)
     root = hierarchy.levels[1]
-    _cycle!(hierarchy, solver.cycle, solver, 1, r)
+    rin = _amg_cycle_input(hierarchy, r)
+    _cycle!(hierarchy, solver.cycle, solver, 1, rin)
     _copy_amg!(hierarchy, z, root.x)
     return z
 end

@@ -74,6 +74,11 @@ solvers = (
             #   1.5x vs same-mode OnDevice. Small/mildly-coarsened cases (this cylinder) LOSE — Jacobi-
             #   CG on the coarsest needs many iters. Set max_coarse_rows high enough to truncate at a
             #   sizeable coarsest. See src/Solve/AMG/AMG_OnDeviceKrylov_findings.md.
+            # coarse_storage = Float32  # store the hierarchy in single precision (outer Krylov stays
+            #   Float64, so iteration count + final residual are UNCHANGED). Halves V-cycle SpMV/
+            #   smoother/RAP bandwidth. GPU-only win, scales with size: F1 1.68M pressure solve 1.77x
+            #   (Cg) / 1.75x (AMGSolver) faster at identical iters. Valid in both modes. See
+            #   src/Solve/AMG/AMG_mixed_precision_findings.md.
             # coarsening = Geometric(merge_levels=1)
             # coarsening = RugeStuben()
             coarsening = SmoothAggregation(strength_threshold=0.05)  # opt-in: fewer iters on

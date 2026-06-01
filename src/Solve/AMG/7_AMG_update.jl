@@ -109,7 +109,7 @@ function update!(workspace::AMGWorkspace, A, solver::AMG, config)
         elapsed_s = @elapsed begin
             workspace.hierarchy = setup_hierarchy(setup_matrix, solver, hardware.backend, hardware.workgroup; log_diagnostics=false)
         end
-        _record_build_timing!(workspace, elapsed_s; rebuilt=true)
+        # _record_build_timing!(workspace, elapsed_s; rebuilt=true)
         return workspace
     end
 
@@ -120,11 +120,12 @@ function update!(workspace::AMGWorkspace, A, solver::AMG, config)
             if hierarchy.backend isa CPU
                 _sync_finest_matrix!(hierarchy, A)
                 refresh_finest_level!(hierarchy, solver)
+                _amg_mixed_precision(hierarchy) && _sync_storage_levels!(hierarchy)
             else
                 _refresh_finest_level_device!(hierarchy, A)
             end
         end
-        _record_finest_refresh_timing!(workspace, elapsed_s)
+        # _record_finest_refresh_timing!(workspace, elapsed_s)
         return workspace
     end
 
@@ -132,6 +133,7 @@ function update!(workspace::AMGWorkspace, A, solver::AMG, config)
         if hierarchy.backend isa CPU
             _sync_finest_matrix!(hierarchy, A)
             refresh_hierarchy!(hierarchy, solver)
+            _amg_mixed_precision(hierarchy) && _sync_storage_levels!(hierarchy)
         else
             # Finest level refreshed entirely on device: nzval D2D + device diag + device lambda_max.
             # No D->H copy of the finest nzval, no host power iteration, no H->D recopy of level 1.
@@ -141,7 +143,7 @@ function update!(workspace::AMGWorkspace, A, solver::AMG, config)
             _refresh_coarse_operators!(hierarchy, solver)
         end
     end
-    _record_refresh_timing!(workspace, elapsed_s)
+    # _record_refresh_timing!(workspace, elapsed_s)
     return workspace
 end
 
@@ -156,10 +158,13 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, 
     apply_smoother!(setup.smoother, values, A, b, config.hardware)
     x = workspace.solution
     copyto!(x, values)
-    _record_pressure_matrix_capture!(phiEqn, setup, component, A, b, x)
+    # _record_pressure_matrix_capture!(phiEqn, setup, component, A, b, x)
 
-    fine_A = workspace.hierarchy.levels[1].A
-    _amg_solve_mode!(workspace, workspace.hierarchy, solver, solver.mode, fine_A, b, x; itmax=itmax, atol=atol, rtol=rtol)
+    # Outer Krylov/defect-correction runs at working precision. Default (TS==TW): the finest
+    # hierarchy operator (unchanged). Mixed precision: the FP32 finest cannot carry the outer
+    # residual, so use the raw FP64 system matrix A (its _matvec!/_residual! are backend-dispatched).
+    outer_A = _amg_mixed_precision(workspace.hierarchy) ? A : workspace.hierarchy.levels[1].A
+    _amg_solve_mode!(workspace, workspace.hierarchy, solver, solver.mode, outer_A, b, x; itmax=itmax, atol=atol, rtol=rtol)
 
     if typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson}
         xcal_foreach(x, config) do i
@@ -170,18 +175,19 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, 
     copyto!(values, x)
     converged = workspace.converged
     status = converged ? "converged" : workspace.iterations == itmax ? "itmax" : "breakdown"
-    _record_linear_solve!(
-        phiEqn,
-        setup,
-        component,
-        workspace.iterations,
-        itmax,
-        workspace.residual_history;
-        status=status,
-        timing=_timing_delta(workspace, timing_before)
-    )
+    # println(workspace.iterations)
+    # _record_linear_solve!(
+    #     phiEqn,
+    #     setup,
+    #     component,
+    #     workspace.iterations,
+    #     itmax,
+    #     workspace.residual_history;
+    #     status=status,
+    #     timing=_timing_delta(workspace, timing_before)
+    # )
     workspace.iterations == itmax && @warn "Maximum number of iterations reached!"
-    (!converged && workspace.iterations != itmax) && @warn "AMG solver stopped before convergence" status=status relative_residual=workspace.last_relative_residual
+  
     return residual(phiEqn, component, config)
 end
 

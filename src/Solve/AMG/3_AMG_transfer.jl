@@ -50,6 +50,18 @@ function _matvec!(hierarchy::AMGHierarchy, y, A::AMGMatrixCSR, x)
     return y
 end
 
+# Outer-operator matvec/residual on the raw working-precision system matrix (mixed precision, CPU
+# backend). GPU's SPARSEGPU has its own cuSPARSE methods in the backend extension.
+function _matvec!(hierarchy::AMGHierarchy, y, A::SparseXCSR, x)
+    _launch_amg_kernel!(hierarchy, _amg_csr_matvec_kernel!, _m(A), y, _rowptr(A), _colval(A), _nzval(A), x)
+    return y
+end
+
+function _residual!(hierarchy::AMGHierarchy, r, A::SparseXCSR, x, b)
+    _launch_amg_kernel!(hierarchy, _amg_csr_residual_kernel!, _m(A), r, _rowptr(A), _colval(A), _nzval(A), x, b)
+    return r
+end
+
 function _restrict!(hierarchy::AMGHierarchy, coarse_rhs, R, residual)
     _matvec!(hierarchy, coarse_rhs, R, residual)
     return coarse_rhs

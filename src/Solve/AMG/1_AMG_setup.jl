@@ -11,7 +11,11 @@ function _cpu_vector(x::Vector)
 end
 
 function _cpu_copyto!(dest, src)
-    copyto!(dest, src)
+    if eltype(dest) === eltype(src)
+        copyto!(dest, src)
+    else
+        copyto!(dest, eltype(dest).(Array(src)))  # device→host + precision convert (mixed coarse solve)
+    end
     return dest
 end
 
@@ -21,7 +25,13 @@ function _device_copyto!(backend::CPU, dest, src)
 end
 
 function _device_copyto!(backend, dest, src)
-    KernelAbstractions.copyto!(backend, dest, src)
+    if eltype(dest) === eltype(src)
+        KernelAbstractions.copyto!(backend, dest, src)
+    elseif KernelAbstractions.get_backend(src) === backend
+        dest .= src  # device→device converting copy (mixed precision refresh)
+    else
+        KernelAbstractions.copyto!(backend, dest, adapt(backend, convert.(eltype(dest), src)))
+    end
     return dest
 end
 
@@ -255,6 +265,33 @@ function _allocate_level(A, P, R, level_id, aggregate_ids, backend, smoother)
         lambda,
         level_id,
         has_transfer
+    )
+end
+
+# Mixed precision: rebuild a CPU host level (working precision T) at storage precision TS.
+# Operators/transfers/work-vectors → TS; integer index arrays (colval, diagonal_index,
+# aggregate_ids) kept. Runs on the CPU host levels before adapt-to-device.
+_amg_matrix_storage(A::AMGMatrixCSR, ::Type{TS}) where {TS} =
+    AMGMatrixCSR(A.rowptr, A.colval, convert(Vector{TS}, A.nzval), A.m, A.n)
+
+function _level_to_storage(level::AMGLevel, ::Type{TS}) where {TS}
+    TS === eltype(_nzval(level.A)) && return level
+    return AMGLevel(
+        _amg_matrix_storage(level.A, TS),
+        _amg_matrix_storage(level.P, TS),
+        _amg_matrix_storage(level.R, TS),
+        convert(Vector{TS}, level.diagonal),
+        convert(Vector{TS}, level.inv_diagonal),
+        level.diagonal_index,
+        convert(Vector{TS}, level.rhs),
+        convert(Vector{TS}, level.x),
+        convert(Vector{TS}, level.tmp),
+        convert(Vector{TS}, level.direction),
+        convert(Vector{TS}, level.coarse_tmp),
+        level.aggregate_ids,
+        TS(level.lambda_max),
+        level.level_id,
+        level.has_transfer
     )
 end
 
@@ -727,6 +764,21 @@ end
 # Default is a no-op; backend extensions may return a new levels container.
 _amg_finalize_device_levels(backend, levels) = levels
 
+# CPU mixed precision: device_levels is a separate TS copy of host_levels (working precision),
+# so a host refresh must be copied into it (operators/diag/lambda). GPU keeps the cycle hierarchy
+# in sync on-device (no host levels involved), so this is CPU-only.
+function _sync_storage_levels!(hierarchy::AMGHierarchy)
+    for k in eachindex(hierarchy.levels)
+        dev = hierarchy.levels[k]
+        host = hierarchy.host_levels[k]
+        copyto!(_nzval(dev.A), _nzval(host.A))
+        copyto!(dev.diagonal, host.diagonal)
+        copyto!(dev.inv_diagonal, host.inv_diagonal)
+        dev.lambda_max = eltype(dev.diagonal)(host.lambda_max)
+    end
+    return hierarchy
+end
+
 function _sync_device_levels!(hierarchy::AMGHierarchy)
     if hierarchy.backend isa CPU
         hierarchy.levels = hierarchy.host_levels
@@ -833,8 +885,14 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
     pattern_hash = hash(colval_pattern, hash(rowptr_pattern))
     is_symmetric = solver.mode isa Cg ? _is_symmetric(host_levels[1].A) : true
     operator_complexity, grid_complexity = _hierarchy_complexities(host_levels)
-    device_levels = backend isa CPU ? host_levels : Any[adapt(backend, level) for level in host_levels]
+    # Mixed precision: the cycle hierarchy (device_levels) is stored at TS while host_levels stay
+    # at the working precision T (coarse LU, RAP pattern, fallback). On CPU we can no longer alias
+    # host_levels when TS!=T — build a separate TS copy. cuSPARSE wraps the TS operators on GPU.
+    TS = _amg_storage(solver.coarse_storage)
+    storage_levels = TS === T ? host_levels : [_level_to_storage(level, TS) for level in host_levels]
+    device_levels = backend isa CPU ? storage_levels : Any[adapt(backend, level) for level in storage_levels]
     device_levels = backend isa CPU ? device_levels : _amg_finalize_device_levels(backend, device_levels)
+    cycle_input = TS === T ? nothing : KernelAbstractions.zeros(backend, TS, _m(host_levels[1].A))
     # Allow backend extensions to replace CPU plans with device-resident plans (e.g. cuSPARSE)
     transfer_csc = _amg_finalize_transfer_plans(backend, transfer_csc, host_levels, device_levels)
     hierarchy = AMGHierarchy(
@@ -862,7 +920,8 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
         operator_complexity,
         grid_complexity,
         0.0,
-        Ref{Any}(nothing)
+        Ref{Any}(nothing),
+        Ref{Any}(cycle_input)
     )
     _build_coarse_inverse!(hierarchy, solver.coarse_solve)
     rows_summary = join(map(level -> string(_m(level.A)), host_levels), " -> ")

@@ -58,7 +58,7 @@ function generate_faces(foamdata, connectivity, TI, TF)
     for (fID, face) ∈ enumerate(faces)
         OFace = orderedFaces[fID]
         @reset face.nodes_range = face_nodes_range[fID]
-        @reset face.ownerCells = SVector{2}(TI[OFace.owner, OFace.neighbour])
+        @reset face.ownerCells = SVector(OFace.owner, OFace.neighbour)
         faces[fID] = face
     end
 

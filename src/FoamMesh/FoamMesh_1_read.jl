@@ -93,138 +93,87 @@ function read_boundary(file_path, TI, TF)
     end
     return boundaries
 end
+# advance pos past non-digit bytes, then parse one non-negative integer
+@inline function _next_uint(bytes::Vector{UInt8}, pos::Int, len::Int)
+    while pos <= len && (bytes[pos] < 0x30 || bytes[pos] > 0x39)
+        pos += 1
+    end
+    v = 0
+    while pos <= len && bytes[pos] >= 0x30 && bytes[pos] <= 0x39
+        v = 10v + (bytes[pos] - 0x30)
+        pos += 1
+    end
+    return v, pos
+end
+
+# skip n newlines in bytes, return pos just after the nth newline
+@inline function _skip_lines(bytes::AbstractVector{UInt8}, n::Int, len::Int)
+    pos = 1
+    skipped = 0
+    while pos <= len && skipped < n
+        if bytes[pos] == UInt8('\n')
+            skipped += 1
+        end
+        pos += 1
+    end
+    return pos
+end
 
 function read_faces(file_path, TI, TF)
-    # Version 3
-
-    # Find line number with the entry giving total number of faces
+    # find count line (skips FoamFile header safely)
     startLine = 0
-    for (n, line) ∈ enumerate(eachline(file_path)) 
+    nfaces = 0
+    for (n, line) ∈ enumerate(eachline(file_path))
         line_content = tryparse(Int64, line)
         if line_content !== nothing
             startLine = n
+            nfaces = TI(line_content)
             println("Number of faces to read: $line_content (from line: $startLine)")
             break
         end
     end
-
-    # Read file contents skipping header information (using startLine from above)
-    io = IOBuffer()
-    for (n, line) ∈ enumerate(eachline(file_path)) 
-        if n >= startLine
-            println(io, line)
-        end
-    end
-
-    file_data = String(take!(io)) # Convert IOBuffer to String
-    delimiters = ['(',' ', ')', '\n']
-    data_split = split(file_data, delimiters, keepempty=false)
-    data = tryparse.(Int64, data_split)
-    dataClean = filter(!isnothing, data)
-    nfaces = dataClean[1]
     println("Number of faces to read: $nfaces (after cleaning file)")
-    face_nodes = [TI[] for _ ∈ 1:nfaces]
 
-    sizeIndex = 2 # counter to provide index where number of nodes data is stored
-    for facei ∈ eachindex(face_nodes)
-        nnodes = dataClean[sizeIndex]
-        faceNodes = zeros(TI, nnodes)
+    face_nodes = [TI[] for _ ∈ 1:nfaces]
+    bytes = read(file_path)
+    len = length(bytes)
+    pos = _skip_lines(bytes, startLine, len) # land just after count line
+
+    for facei ∈ 1:nfaces
+        nnodes, pos = _next_uint(bytes, pos, len) # per-face node count (no +1)
+        faceNodes = Vector{TI}(undef, nnodes)
         for i ∈ 1:nnodes
-            faceNodes[i] = dataClean[sizeIndex + i] .+ one(TI)
+            nid, pos = _next_uint(bytes, pos, len)
+            faceNodes[i] = TI(nid) + one(TI) # +1 shift
         end
-        sizeIndex += nnodes + 1
         face_nodes[facei] = faceNodes
     end
 
-    
-    # Version 2
-    # delimiters = ['(',' ', ')', '\n']
-
-    # file_data = read(file_path, String)
-    # data_split = split(file_data, delimiters, keepempty=false)
-    # data = tryparse.(Int64, data_split)
-    # dataClean = filter(!isnothing, data)
-    # nfaces = dataClean[2]
-    # println("number of faces is ", nfaces)
-    # face_nodes = [TI[] for _ ∈ 1:nfaces]
-
-    # sizeIndex = 3
-    # for facei ∈ eachindex(face_nodes)
-    #     nnodes = dataClean[sizeIndex]
-    #     faceNodes = zeros(TI, nnodes)
-    #     for i ∈ 1:nnodes
-    #         faceNodes[i] = dataClean[sizeIndex + i] .+ one(TI)
-    #     end
-    #     sizeIndex += nnodes + 1
-    #     face_nodes[facei] = faceNodes
-    # end
-
-    # OLD VERSION
-
-    # delimiters = ['(',' ', ')']
-
-    # # find the total number of faces and line to start reading data from
-    # nfaces = 0
-    # readfrom = 0
-    # for (n, line) ∈ enumerate(eachline(file_path))
-    #     if isnothing(tryparse(TI, line))
-    #         continue
-    #     else 
-    #         nfaces = parse(TI, line)
-    #         readfrom = n + 1
-    #         println("number of faces is ", nfaces)
-    #         break
-    #     end
-    # end
-
-    # # face_nodes = Vector{TI}[]
-    # face_nodes = [TI[] for _ ∈ 1:nfaces]
-    # fcounter = 0
-    # for (n, line) ∈ enumerate(eachline(file_path)) 
-    #     if line == ")"
-    #         break 
-    #     elseif n > readfrom
-    #         fcounter += 1
-    #         sline = split(line, delimiters, keepempty=false)
-    #         nodesIDs = parse.(TI, sline[2:end]) .+ one(TI) # make 1-indexed
-    #         face_nodes[fcounter] = nodesIDs
-    #     end
-    # end
-
-    
     return face_nodes
 end
 
 function read_neighbour(file_path, TI, TF)
     nfaces = 0
-    readfrom = 0
+    startLine = 0
     for (n, line) ∈ enumerate(eachline(file_path))
         if isnothing(tryparse(TI, line))
             continue
-        else 
+        else
             nfaces = parse(TI, line)
-            readfrom = n + 1
+            startLine = n
             println("number of neighbours/owners is ", nfaces)
             break
         end
     end
 
-    face_neighbour_cell = zeros(TI, nfaces)
+    face_neighbour_cell = Vector{TI}(undef, nfaces)
+    bytes = read(file_path)
+    len = length(bytes)
+    pos = _skip_lines(bytes, startLine, len)
 
-    fcounter = 0
-    for (n, line) ∈ enumerate(eachline(file_path)) 
-        if line == ")"
-            break 
-        elseif n > readfrom
-            # fcounter += 1
-            line_data = split(line, keepempty=false)
-            # face_neighbour_cell[fcounter] = parse(TI, p[1]) + one(TI) # make 1-indexed
-            for data ∈ line_data 
-                fcounter += 1
-                cellID = parse(TI, data) + one(TI) # make 1-indexed
-                face_neighbour_cell[fcounter] = cellID 
-            end
-        end
+    for i ∈ 1:nfaces
+        v, pos = _next_uint(bytes, pos, len)
+        face_neighbour_cell[i] = TI(v) + one(TI) # +1 shift
     end
     return face_neighbour_cell
 end
@@ -234,31 +183,41 @@ function read_owner(file_path, TI, TF)
 end
 
 function read_points(file_path, scale, TI, TF)
-    delimiters = ['(',' ', ')']
     npoints = 0
-    readfrom = 0
+    startLine = 0
     for (n, line) ∈ enumerate(eachline(file_path))
         if isnothing(tryparse(TI, line))
             continue
-        else 
+        else
             npoints = parse(TI, line)
-            readfrom = n + 1
+            startLine = n
             println("number of points is ", npoints)
             break
         end
     end
 
-    zvec = zeros(TF,3)
+    # read as String for SubString/parse compatibility (bit-identical floats)
+    file_str = read(file_path, String)
+    bytes = codeunits(file_str) # byte view for scanning
+    len = length(bytes)
+    pos = _skip_lines(bytes, startLine, len)
+
+    zvec = zeros(TF, 3)
     points = [SVector{3}(zvec) for _ ∈ 1:npoints]
-    pcounter = 0
-    for (n, line) ∈ enumerate(eachline(file_path)) 
-        if line == ")"
-            break 
-        elseif n > readfrom
-            pcounter += 1
-            p = split(line, delimiters, keepempty=false)
-            points[pcounter] = @inbounds SVector{3}(scale*parse.(TF, p))
+    for pi ∈ 1:npoints
+        # skip to point '(' then collect 3 separator-delimited float tokens
+        while pos <= len && bytes[pos] != UInt8('('); pos += 1; end
+        pos += 1 # skip '('
+        comp = MVector{3,TF}(undef)
+        for ci ∈ 1:3
+            # skip separators: '(' ')' space tab newline cr all delimit tokens
+            while pos <= len && (bytes[pos] == UInt8('(') || bytes[pos] == UInt8(')') || bytes[pos] == UInt8(' ') || bytes[pos] == UInt8('\t') || bytes[pos] == UInt8('\n') || bytes[pos] == UInt8('\r')); pos += 1; end
+            lo = pos
+            # advance to next separator
+            while pos <= len && bytes[pos] != UInt8('(') && bytes[pos] != UInt8(')') && bytes[pos] != UInt8(' ') && bytes[pos] != UInt8('\t') && bytes[pos] != UInt8('\n') && bytes[pos] != UInt8('\r'); pos += 1; end
+            comp[ci] = scale * parse(TF, SubString(file_str, lo, pos - 1))
         end
+        points[pi] = SVector{3}(comp)
     end
     return points
 end

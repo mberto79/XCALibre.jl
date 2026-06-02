@@ -38,9 +38,9 @@ function calculate_face_centres!(mesh)
 end
 
 # Sub-triangle (fan) face geometry: returns unit normal, area and area-weighted centroid.
-# The normal follows the stored node winding (OpenFOAM: owner->neighbour for internal faces,
-# outward for boundary faces), so no geometric re-orientation is needed. Polyhedral faces need
-# not be planar; degenerate sub-triangles are skipped to avoid NaNs.
+# area_vec = Σ (pᵢ-apex)×(pᵢ₊₁-apex)/2 is independent of apex for a closed loop, so the simple
+# node-average apex is fine. normal*area == area_vec keeps cell volumes exact via the divergence
+# theorem. Polyhedral faces need not be planar; degenerate sub-triangles are skipped to avoid NaNs.
 function _face_geometry(nodes, nIDs, apex::SVector{3, TF}) where {TF}
     area_vec = SVector{3, TF}(0, 0, 0)
     centre_sum = SVector{3, TF}(0, 0, 0)
@@ -60,7 +60,7 @@ function _face_geometry(nodes, nIDs, apex::SVector{3, TF}) where {TF}
     mag = norm(area_vec)
     normal = mag > zero(TF) ? area_vec/mag : SVector{3, TF}(0, 0, 0)
     centre = sum_area > zero(TF) ? centre_sum/sum_area : apex
-    return normal, mag, centre  # |area_vec| keeps normal*area == area vector (exact volumes)
+    return normal, mag, centre
 end
 
 function calculate_face_properties!(mesh)

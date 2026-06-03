@@ -2,7 +2,7 @@ export AMG, AMGSolver, VCycle, SmoothAggregation, RugeStuben, Geometric, AMGJaco
 export AMGGaussSeidel, AMGSOR, AMGSymmetricSweep, AMGForwardSweep, AMGBackwardSweep
 export AbstractAMGCPUSmoother, AbstractAMGGPUSmoother, OnDevice, OnHost, OnDeviceKrylov
 export OnDeviceJacobi, OnDeviceChebyshev
-export AMGWorkspace, AMGHierarchy, AMGLevel, AMGTimingStats, AMGRAPPlanCPU
+export AMGWorkspace, AMGHierarchy, AMGLevel, AMGRAPPlanCPU
 
 abstract type AbstractAMGMode end
 abstract type AbstractAMGCoarsening end
@@ -176,12 +176,20 @@ end
 
 Adapt.@adapt_structure Geometric
 
+"""
+    AMGJacobi(; omega=4/3)
+
+Weighted-Jacobi AMG smoother. `omega` is a **lambda_max-scaled** coefficient: the effective
+relaxation factor applied each sweep is `ω_eff = omega / lambda_max`, where `lambda_max` is
+the spectral radius of `D⁻¹A` at that level. The default `omega=4/3` gives `ω_eff ≈ 2/3`
+for Poisson-like operators (where `lambda_max ≈ 2`), which damps the upper half of the
+spectrum optimally. Valid scaled range: `(0, 2)` — values ≥ 2 are clamped for SPD stability.
+Note: unlike [`AMGSOR`](@ref), `omega` here is NOT a direct relaxation factor.
+"""
 struct AMGJacobi{F} <: AbstractAMGGPUSmoother
     omega::F
 end
 
-# Default omega=4/3: optimal weight for lambda_max-scaled Jacobi targeting upper-half
-# spectrum [lmax/2, lmax]; omega_eff = (4/3)/lambda_max. Evidence: see amg_findings.md.
 AMGJacobi(; omega=4/3) = AMGJacobi(float(omega))
 Adapt.@adapt_structure AMGJacobi
 
@@ -200,6 +208,14 @@ end
 
 Adapt.@adapt_structure AMGChebyshev
 
+"""
+    AMGGaussSeidel(; sweep=AMGSymmetricSweep(), iterations=1)
+
+Gauss-Seidel AMG smoother (CPU only). `sweep` selects the traversal order:
+`AMGSymmetricSweep()` (forward + backward), `AMGForwardSweep()`, or `AMGBackwardSweep()`.
+`iterations` sets the number of sweeps per smoother call. `omega` is fixed at 1 (no
+relaxation); use [`AMGSOR`](@ref) for a tunable direct relaxation factor.
+"""
 struct AMGGaussSeidel{SW,I} <: AbstractAMGCPUSmoother
     sweep::SW
     iterations::I
@@ -214,6 +230,14 @@ end
 AMGGaussSeidel(sweep::AbstractAMGSweep; iterations=1) = AMGGaussSeidel(; sweep, iterations)
 Adapt.@adapt_structure AMGGaussSeidel
 
+"""
+    AMGSOR(; omega=1.0, sweep=AMGSymmetricSweep(), iterations=1)
+
+Successive Over-Relaxation AMG smoother (CPU only). `omega` is the **direct** relaxation
+factor applied each sweep: `x_new = (1-omega)*x_old + omega*(D\\(b - L*x))`. Stable range
+`(0, 2)`; `omega=1` recovers Gauss-Seidel. Unlike [`AMGJacobi`](@ref), `omega` is NOT
+scaled by `lambda_max` — it is used as-is.
+"""
 struct AMGSOR{SW,F,I} <: AbstractAMGCPUSmoother
     sweep::SW
     omega::F
@@ -356,20 +380,6 @@ end
 
 Adapt.@adapt_structure AMG
 
-mutable struct AMGTimingStats{F,I,S}
-    build_time_s::F
-    build_calls::I
-    refresh_time_s::F
-    refresh_calls::I
-    finest_refresh_time_s::F
-    finest_refresh_calls::I
-    apply_time_s::F
-    apply_calls::I
-    last_update_action::S
-end
-
-AMGTimingStats() = AMGTimingStats(0.0, 0, 0.0, 0, 0.0, 0, 0.0, 0, :none)
-
 struct AMGMatrixCSR{RP,CV,NZ}
     rowptr::RP
     colval::CV
@@ -463,12 +473,6 @@ mutable struct AMGHierarchy{LD,LH,CC,B,RP,CP}
     transfer_csc::Vector{Any}
     galerkin_caches::Vector{Any}
     is_symmetric::Bool
-    coarse_rhs_copy_time_s::Float64
-    coarse_cpu_solve_time_s::Float64
-    coarse_x_copy_time_s::Float64
-    coarse_solve_calls::Int
-    coarse_device_solve_time_s::Float64
-    coarse_device_solve_calls::Int
     operator_complexity::Float64
     grid_complexity::Float64
     last_cycle_factor::Float64
@@ -476,9 +480,9 @@ mutable struct AMGHierarchy{LD,LH,CC,B,RP,CP}
     cycle_input::Base.RefValue{Any}  # mixed precision: TS-typed finest rhs buffer; nothing when TS==TW
 end
 
-mutable struct AMGWorkspace{H,TS,V,T,RH} <: AbstractAMGWorkspace
+mutable struct AMGWorkspace{H,V,T,RH} <: AbstractAMGWorkspace
     hierarchy::H
-    timing::TS
+    refresh_count::Int
     solution::V
     residual::V
     correction::V
@@ -561,12 +565,6 @@ function _empty_hierarchy(backend, ::Type{T}, ::Type{TS}=T) where {T,TS}
         Any[],
         Any[],
         true,
-        0.0,
-        0.0,
-        0.0,
-        0,
-        0.0,
-        0,
         1.0,
         1.0,
         0.0,
@@ -582,7 +580,7 @@ function _workspace(solver::AMG, b)
     x = similar(b)
     return AMGWorkspace(
         _empty_hierarchy(backend, T, TS),
-        AMGTimingStats(),
+        0,
         similar(x),
         similar(x),
         similar(x),

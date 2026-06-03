@@ -159,22 +159,30 @@ ws_rs = XCALibre.Solve.update!(ws_rs, A, solver_rs, config)
 ws = _workspace(setup.solver, b)
 @test ws.solution !== ws.q
 ws = XCALibre.Solve.update!(ws, A, setup.solver, config)
+hierarchy_build = ws.hierarchy  # captured to verify later refreshes reuse (not rebuild) this object
 @test ws.hierarchy isa XCALibre.Solve.AMGHierarchy
 @test all(isconcretetype, fieldtypes(typeof(ws)))
 @test all(isconcretetype, fieldtypes(typeof(ws.hierarchy)))
 @test all(isconcretetype, fieldtypes(typeof(ws.hierarchy.levels[1])))
-@test ws.timing.build_calls == 1
-@test ws.timing.last_update_action == :build
+@test ws.refresh_count == 0  # initial build is not a refresh
 @test length(ws.hierarchy.levels) >= 1
 @test ws.hierarchy.operator_complexity >= 1
 @test ws.hierarchy.grid_complexity >= 1
 
 level_for_omega = ws.hierarchy.levels[1]
 lambda_max_before = level_for_omega.lambda_max
+# omega is lambda_max-scaled: ω_eff = omega/lambda_max (monotonic in omega)
 level_for_omega.lambda_max = 4.0
-@test XCALibre.Solve._level_jacobi_omega(AMGJacobi(omega=2 / 3), level_for_omega) ≈ 1 / 3
+@test XCALibre.Solve._level_jacobi_omega(AMGJacobi(omega=2 / 3), level_for_omega) ≈ (2 / 3) / 4
 level_for_omega.lambda_max = 1.2
-@test XCALibre.Solve._level_jacobi_omega(AMGJacobi(omega=2 / 3), level_for_omega) ≈ 2 / 3
+@test XCALibre.Solve._level_jacobi_omega(AMGJacobi(omega=2 / 3), level_for_omega) ≈ (2 / 3) / 1.2
+# default omega=4/3 unchanged from the previous cap formula: 4/(3*lambda_max)
+level_for_omega.lambda_max = 2.0
+@test XCALibre.Solve._level_jacobi_omega(AMGJacobi(), level_for_omega) ≈ 4 / (3 * 2.0)
+@test XCALibre.Solve._level_jacobi_omega(AMGJacobi(), level_for_omega) ≈ 2 / 3
+# clamp keeps ω_eff < 2/lambda_max for SPD stability
+level_for_omega.lambda_max = 1.0
+@test XCALibre.Solve._level_jacobi_omega(AMGJacobi(omega=5.0), level_for_omega) < 2.0
 level_for_omega.lambda_max = lambda_max_before
 
 if length(ws.hierarchy.levels) > 1
@@ -212,10 +220,10 @@ coarse_object_before = length(ws.hierarchy.levels) > 1 ? ws.hierarchy.levels[2].
 ws2 = XCALibre.Solve.update!(ws, A2, setup.solver, config)
 @test length(ws2.hierarchy.levels) == levels_before
 @test XCALibre.Solve._nzval(ws2.hierarchy.levels[1].A) != finest_before
-@test ws2.timing.refresh_calls == 1
-@test ws2.timing.finest_refresh_calls == 0
-@test ws2.timing.last_update_action == :refresh
+@test ws2.refresh_count == 1  # same pattern, changed values: a refresh
+@test ws2.hierarchy === hierarchy_build  # refreshed in place, not rebuilt
 if length(ws2.hierarchy.levels) > 1
+    # coarse_refresh_interval=1 (default): full refresh updates coarse operators in place
     @test ws2.hierarchy.levels[2].A === coarse_object_before
     @test XCALibre.Solve._nzval(ws2.hierarchy.levels[2].A) != coarse_before
 end
@@ -227,15 +235,34 @@ coarse_refresh_before = length(ws_refresh.hierarchy.levels) > 1 ? copy(XCALibre.
 coarse_acsc_before = ws_refresh.hierarchy.coarse_cpu.Acsc
 coarse_acsc_colptr_before = ws_refresh.hierarchy.coarse_cpu.Acsc.colptr
 coarse_acsc_rowval_before = ws_refresh.hierarchy.coarse_cpu.Acsc.rowval
+hierarchy_refresh_before = ws_refresh.hierarchy
 ws_refresh = XCALibre.Solve.update!(ws_refresh, A2, solver_refresh, config)
-@test ws_refresh.timing.refresh_calls == 1
-@test ws_refresh.timing.last_update_action == :refresh
+@test ws_refresh.refresh_count == 1
+@test ws_refresh.hierarchy === hierarchy_refresh_before  # refreshed in place, not rebuilt
 if length(ws_refresh.hierarchy.levels) > 1
     @test XCALibre.Solve._nzval(ws_refresh.hierarchy.levels[2].A) != coarse_refresh_before
     @test ws_refresh.hierarchy.coarse_cpu.Acsc === coarse_acsc_before
     @test ws_refresh.hierarchy.coarse_cpu.Acsc.colptr === coarse_acsc_colptr_before
     @test ws_refresh.hierarchy.coarse_cpu.Acsc.rowval === coarse_acsc_rowval_before
     @test Matrix(ws_refresh.hierarchy.coarse_cpu.Acsc) ≈ Matrix(ws_refresh.hierarchy.coarse_cpu.A)
+end
+
+# coarse_refresh_interval>1: refresh_count drives the finest-only vs full-coarse-refresh decision.
+# Counter increments every update!; coarse operators only refresh on the interval-th call.
+let solver_iv = AMG(mode=AMGSolver(), coarsening=SmoothAggregation(), smoother=AMGJacobi(), coarse_refresh_interval=2)
+    ws_iv = _workspace(solver_iv, b)
+    ws_iv = XCALibre.Solve.update!(ws_iv, A, solver_iv, config)
+    @test ws_iv.refresh_count == 0
+    if length(ws_iv.hierarchy.levels) > 1
+        coarse_iv0 = copy(XCALibre.Solve._nzval(ws_iv.hierarchy.levels[2].A))
+        A_iv = deepcopy(A); XCALibre.Solve._nzval(A_iv) .*= 1.05
+        ws_iv = XCALibre.Solve.update!(ws_iv, A_iv, solver_iv, config)  # call 1: finest-only
+        @test ws_iv.refresh_count == 1
+        @test XCALibre.Solve._nzval(ws_iv.hierarchy.levels[2].A) == coarse_iv0  # coarse not yet refreshed
+        ws_iv = XCALibre.Solve.update!(ws_iv, A_iv, solver_iv, config)  # call 2: full refresh
+        @test ws_iv.refresh_count == 2
+        @test XCALibre.Solve._nzval(ws_iv.hierarchy.levels[2].A) != coarse_iv0  # coarse refreshed on interval
+    end
 end
 
 A_singular_coarse_csc = sparse([1, 1, 2, 2], [1, 2, 1, 2], [1.0, 1.0, 2.0, 2.0], 2, 2)
@@ -296,8 +323,7 @@ ws_solve = XCALibre.Solve.update!(ws_solve, A, setup.solver, config)
 XCALibre.Solve.amg_solve!(ws_solve, ws_solve.hierarchy, setup.solver, ws_solve.hierarchy.levels[1].A, b, x; itmax=100, atol=1e-8, rtol=1e-8)
 @test norm(b - Array(parent(A)) * x) / norm(b) < 1e-8
 @test ws_solve.hierarchy.last_cycle_factor >= 0
-@test ws_solve.timing.apply_calls == ws_solve.iterations
-@test ws_solve.timing.apply_time_s >= 0
+@test ws_solve.iterations > 0
 @test length(ws_solve.residual_history) == ws_solve.iterations + 1
 @test ws_solve.residual_history[end] <= ws_solve.residual_history[1]
 
@@ -318,8 +344,7 @@ ws_cg = XCALibre.Solve.update!(ws_cg, A, solver_cg, config)
 x_cg = zeros(eltype(b), length(b))
 XCALibre.Solve.amg_cg_solve!(ws_cg, ws_cg.hierarchy, solver_cg, ws_cg.hierarchy.levels[1].A, b, x_cg; itmax=50, atol=1e-8, rtol=1e-8)
 @test norm(b - Array(parent(A)) * x_cg) / norm(b) < 1e-8
-@test ws_cg.timing.apply_calls >= ws_cg.iterations
-@test ws_cg.timing.apply_time_s >= 0
+@test ws_cg.iterations > 0
 @test length(ws_cg.residual_history) == ws_cg.iterations + 1
 @test ws_cg.residual_history[end] <= ws_cg.residual_history[1]
 
@@ -345,7 +370,7 @@ ws_rs_solve = _workspace(solver_rs, b)
 ws_rs_solve = XCALibre.Solve.update!(ws_rs_solve, A, solver_rs, config)
 XCALibre.Solve.amg_solve!(ws_rs_solve, ws_rs_solve.hierarchy, solver_rs, ws_rs_solve.hierarchy.levels[1].A, b, x_rs; itmax=100, atol=1e-8, rtol=1e-8)
 @test norm(b - Array(parent(A)) * x_rs) / norm(b) < 1e-8
-@test ws_rs_solve.timing.apply_calls == ws_rs_solve.iterations
+@test ws_rs_solve.iterations > 0
 
 # Geometric (OpenFOAM-style) agglomeration
 @test Geometric().merge_levels == 1
@@ -418,9 +443,11 @@ end
 # CPU _sync_storage_levels! and the FP64->FP32 coarse-operator sync that single-solve tests never hit.
 let s = AMG(mode=Cg(), coarsening=SmoothAggregation(), smoother=AMGJacobi(), coarse_storage=Float32)
     w = _workspace(s, b); w = XCALibre.Solve.update!(w, A, s, config)
+    h_before = w.hierarchy
     A2 = deepcopy(A); XCALibre.Solve._nzval(A2) .*= 1.07   # same pattern → refresh (not rebuild)
     w = XCALibre.Solve.update!(w, A2, s, config)
-    @test w.timing.refresh_calls + w.timing.finest_refresh_calls >= 1   # took a refresh path
+    @test w.refresh_count >= 1            # took a refresh path
+    @test w.hierarchy === h_before        # refreshed in place, not rebuilt
     x = zeros(eltype(b), length(b))
     XCALibre.Solve._amg_solve_mode!(w, w.hierarchy, s, s.mode, A2, b, x; itmax=200, atol=1e-8, rtol=1e-8)
     @test norm(b - Array(parent(A2)) * x) / norm(b) < 1e-7   # FP32-refreshed operators stay correct

@@ -128,7 +128,8 @@ end
 function _level_jacobi_omega(smoother::AMGJacobi, level::AMGLevel)
     T = eltype(level.x)
     lambda_max = max(T(level.lambda_max), one(T))
-    return min(T(smoother.omega), T(4) / (T(3) * lambda_max))
+    # omega is lambda_max-scaled: ω_eff = omega/lambda_max; clamp below 2/lambda_max for SPD stability
+    return min(T(smoother.omega), T(2) - eps(T)) / lambda_max
 end
 
 function _apply_level_smoother!(hierarchy::AMGHierarchy, smoother::AbstractAMGSmoother, level::AMGLevel, b, loops)

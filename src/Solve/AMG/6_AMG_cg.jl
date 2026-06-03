@@ -70,11 +70,8 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
         return x
     end
 
-    elapsed_s = @elapsed begin
-        amg_apply_preconditioner!(z, hierarchy, solver, r)
-        KernelAbstractions.synchronize(hierarchy.backend)
-    end
-    _record_apply_timing!(workspace, elapsed_s)
+    amg_apply_preconditioner!(z, hierarchy, solver, r)
+    KernelAbstractions.synchronize(hierarchy.backend)
     _copy_amg!(hierarchy, p, z)
     rz = dot(r, z)
     # Breakdown guards test for loss of positive-definiteness (<=0) or non-finite values, NOT an
@@ -121,11 +118,8 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
             stall += 1
             stall >= stall_limit && break
         end
-        elapsed_s = @elapsed begin
-            amg_apply_preconditioner!(z, hierarchy, solver, r)
-            KernelAbstractions.synchronize(hierarchy.backend)
-        end
-        _record_apply_timing!(workspace, elapsed_s)
+        amg_apply_preconditioner!(z, hierarchy, solver, r)
+        KernelAbstractions.synchronize(hierarchy.backend)
         rz_new = dot(r, z)
         if !isfinite(rz_new) || rz_new <= zero(T)
             break

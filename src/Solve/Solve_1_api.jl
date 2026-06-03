@@ -4,114 +4,6 @@ export solve_system!
 export solve_equation!
 export residual!
 export AdaptiveTimeStepping
-export enable_solve_history!, disable_solve_history!, reset_solve_history!, solve_history
-export enable_pressure_matrix_capture!, disable_pressure_matrix_capture!, reset_pressure_matrix_captures!, pressure_matrix_captures
-
-const _solve_history_enabled = Ref(false)
-const _solve_history = Any[]
-const _pressure_matrix_capture_enabled = Ref(false)
-const _pressure_matrix_capture_limit = Ref(0)
-const _pressure_matrix_captures = Any[]
-
-enable_solve_history!() = (_solve_history_enabled[] = true)
-disable_solve_history!() = (_solve_history_enabled[] = false)
-reset_solve_history!() = empty!(_solve_history)
-solve_history() = copy(_solve_history)
-
-function enable_pressure_matrix_capture!(; limit=3)
-    limit > 0 || throw(ArgumentError("pressure matrix capture limit must be positive"))
-    _pressure_matrix_capture_limit[] = limit
-    _pressure_matrix_capture_enabled[] = true
-    return nothing
-end
-
-disable_pressure_matrix_capture!() = (_pressure_matrix_capture_enabled[] = false)
-reset_pressure_matrix_captures!() = empty!(_pressure_matrix_captures)
-pressure_matrix_captures() = copy(_pressure_matrix_captures)
-
-_history_enabled() = _solve_history_enabled[]
-_pressure_matrix_capture_enabled_now() =
-    _pressure_matrix_capture_enabled[] &&
-    length(_pressure_matrix_captures) < _pressure_matrix_capture_limit[]
-
-function _copy_probe_matrix(A)
-    A_cpu = _amg_setup_matrix(A, CPU())
-    I, J, V = _csr_triplets(A_cpu)
-    return SparseXCSR(sparsecsr(I, J, V, _m(A_cpu), _n(A_cpu)))
-end
-
-function _record_pressure_matrix_capture!(phiEqn::ModelEquation, setup, component, A, b, x0)
-    _pressure_matrix_capture_enabled_now() || return nothing
-    phiEqn.type isa ScalarModel || return nothing
-    setup.solver isa AMG || return nothing
-    push!(_pressure_matrix_captures, (
-        equation_kind=string(nameof(typeof(phiEqn.type))),
-        component=_component_label(component),
-        solver=string(nameof(typeof(setup.solver))),
-        solver_mode=_amg_mode_name(setup.solver.mode),
-        A=_copy_probe_matrix(A),
-        b=copy(Array(b)),
-        x0=copy(Array(x0))
-    ))
-    return nothing
-end
-
-function _residual_history_arrays(residuals)
-    values = Float64[float(r) for r in residuals]
-    if isempty(values)
-        return values, values
-    end
-    scale = max(values[1], eps(Float64))
-    return values, values ./ scale
-end
-
-_component_label(::Nothing) = "scalar"
-_component_label(component) = string(nameof(typeof(component)))
-
-function _timing_payload(; build_time_s=0.0, build_calls=0, refresh_time_s=0.0, refresh_calls=0,
-    finest_refresh_time_s=0.0, finest_refresh_calls=0, apply_time_s=0.0, apply_calls=0, last_update_action=:none)
-    return (
-        build_time_s=build_time_s,
-        build_calls=build_calls,
-        refresh_time_s=refresh_time_s,
-        refresh_calls=refresh_calls,
-        finest_refresh_time_s=finest_refresh_time_s,
-        finest_refresh_calls=finest_refresh_calls,
-        apply_time_s=apply_time_s,
-        apply_calls=apply_calls,
-        last_update_action=string(last_update_action)
-    )
-end
-
-function _record_linear_solve!(phiEqn::ModelEquation, setup, component, iterations, itmax, residuals; status=nothing, timing=nothing)
-    _history_enabled() || return nothing
-    residual_abs, residual_rel = _residual_history_arrays(residuals)
-    timing_data = isnothing(timing) ? _timing_payload() : timing
-    push!(_solve_history, (
-        equation_kind=string(nameof(typeof(phiEqn.type))),
-        component=_component_label(component),
-        solver=string(nameof(typeof(setup.solver))),
-        solver_mode=setup.solver isa AMG ? _amg_mode_name(setup.solver.mode) : "krylov",
-        iterations=iterations,
-        itmax=itmax,
-        hit_itmax=iterations == itmax,
-        residual_abs=residual_abs,
-        residual_rel=residual_rel,
-        final_residual=isempty(residual_abs) ? NaN : residual_abs[end],
-        final_relative_residual=isempty(residual_rel) ? NaN : residual_rel[end],
-        status=isnothing(status) ? "" : string(status),
-        build_time_s=timing_data.build_time_s,
-        build_calls=timing_data.build_calls,
-        refresh_time_s=timing_data.refresh_time_s,
-        refresh_calls=timing_data.refresh_calls,
-        finest_refresh_time_s=timing_data.finest_refresh_time_s,
-        finest_refresh_calls=timing_data.finest_refresh_calls,
-        apply_time_s=timing_data.apply_time_s,
-        apply_calls=timing_data.apply_calls,
-        last_update_action=timing_data.last_update_action
-    ))
-    return nothing
-end
 
 struct SolverSetup{
     F<:AbstractFloat,
@@ -393,7 +285,7 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
 
     krylov_solve!(
         solver, opA, b, values; 
-        M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon), history=_history_enabled()
+        M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon), history=false
         )
 
     # Perform explicit step for Crank-Nicholson. Otherwise simply update field with solution
@@ -408,18 +300,8 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
     kernel!(values, x)
 
     iterations = Krylov.iteration_count(solver)
-    _record_linear_solve!(
-        phiEqn,
-        setup,
-        component,
-        iterations,
-        itmax,
-        Krylov.statistics(solver).residuals;
-        status=Krylov.statistics(solver).status
-    )
     iterations == itmax && @warn "Maximum number of iterations reached!"
 
-    # println(statistics(solver).niter)
     res = residual(phiEqn, component, config)
     return res
 end

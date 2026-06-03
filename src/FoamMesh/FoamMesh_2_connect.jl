@@ -22,15 +22,14 @@ function connect_mesh(foamdata, TI, TF)
 end
 
 function connect_cell_faces(foamdata, TI, TF)
-    (;n_cells, n_ifaces, n_bfaces, faces) = foamdata
+    (;n_cells, n_ifaces, n_bfaces, face_owner, face_neighbour) = foamdata
 
     # CSR two-pass fill: byte-identical to push!-then-flatten ordering
     # Pass 1: degree count per cell
     count = zeros(TI, n_cells)
     for fi ∈ 1:n_ifaces
-        face = faces[fi]
-        count[face.owner] += one(TI)
-        count[face.neighbour] += one(TI)
+        count[face_owner[fi]] += one(TI)
+        count[face_neighbour[fi]] += one(TI)
     end
 
     # build offsets and access ranges
@@ -49,9 +48,8 @@ function connect_cell_faces(foamdata, TI, TF)
     # Pass 2: fill in increasing-fi order, owner before neighbour per face
     cursor = copy(offset)
     for fi ∈ 1:n_ifaces
-        face = faces[fi]
-        ownerID = face.owner
-        neighbourID = face.neighbour
+        ownerID = face_owner[fi]
+        neighbourID = face_neighbour[fi]
         fID = fi + n_bfaces # fID is shifted to accommodate boundary faces
 
         cursor[ownerID] += one(TI)
@@ -71,15 +69,15 @@ function connect_cell_faces(foamdata, TI, TF)
 end
 
 function connect_cell_nodes(foamdata, TI, TF)
-    (; n_cells, faces) = foamdata
+    (; n_cells, face_nodes, face_nodes_range, face_owner, face_neighbour) = foamdata
     n_points = length(foamdata.points)
 
     # Pass 1: raw count (boundary faces: owner==neighbour → each node counted twice)
     rcount = zeros(TI, n_cells)
-    for face ∈ faces
-        nn = length(face.nodesID)
-        rcount[face.owner] += TI(nn)
-        rcount[face.neighbour] += TI(nn)
+    for fi ∈ eachindex(face_owner)
+        nn = length(face_nodes_range[fi])
+        rcount[face_owner[fi]] += TI(nn)
+        rcount[face_neighbour[fi]] += TI(nn)
     end
 
     # raw offsets
@@ -92,15 +90,17 @@ function connect_cell_nodes(foamdata, TI, TF)
     rcur = copy(roff)
 
     # Pass 2: fill raw (owner role then neighbour role per face, global face order)
-    for face ∈ faces
-        nodes = face.nodesID
-        o = face.owner
-        for nid ∈ nodes
+    for fi ∈ eachindex(face_owner)
+        rng = face_nodes_range[fi]
+        o = face_owner[fi]
+        for k ∈ rng
+            nid = face_nodes[k]
             rcur[o] += one(TI)
             raw[rcur[o]] = nid
         end
-        nb = face.neighbour
-        for nid ∈ nodes
+        nb = face_neighbour[fi]
+        for k ∈ rng
+            nid = face_nodes[k]
             rcur[nb] += one(TI)
             raw[rcur[nb]] = nid
         end
@@ -146,13 +146,12 @@ function connect_cell_nodes(foamdata, TI, TF)
 end
 
 function connect_face_nodes(foamdata, TI, TF)
-    (; n_ifaces, n_faces, faces) = foamdata
+    (; n_ifaces, n_faces) = foamdata
+    src_face_nodes = foamdata.face_nodes
+    src_face_nodes_range = foamdata.face_nodes_range
 
-    nFaceNodes = 0 # number of nodes to store
-    for face ∈ faces
-        nFaceNodes += length(face.nodesID)
-    end
-    
+    nFaceNodes = length(src_face_nodes) # number of nodes to store
+
     face_nodes = zeros(TI, nFaceNodes)
     face_nodes_range = UnitRange{TI}[0:0 for _ ∈ 1:n_faces]
 
@@ -163,34 +162,32 @@ function connect_face_nodes(foamdata, TI, TF)
     fID = zero(TI) # actual face ID to use
     for bfacei ∈ (n_ifaces + 1):n_faces # careful: use bfacei to index foam faces
         fID += one(TI)
-        face = faces[bfacei]
-        nodesID = face.nodesID
+        src_rng = src_face_nodes_range[bfacei]
         # assign access range
-        n_nodes = length(nodesID)
+        n_nodes = length(src_rng)
         endIndex = startIndex + n_nodes - one(TI)
         face_nodes_range[fID] = UnitRange{TI}(startIndex, endIndex)
         startIndex += n_nodes
         # assign actual node IDs values to long array
-        for nID ∈ nodesID
+        for k ∈ src_rng
             nodei += 1
-            face_nodes[nodei] = nID
+            face_nodes[nodei] = src_face_nodes[k]
         end
     end
 
     # now assign internal faces nodesIDs
     for bfacei ∈ 1:n_ifaces # careful: use bfacei to index foam faces
         fID += one(TI)
-        face = faces[bfacei]
-        nodesID = face.nodesID
+        src_rng = src_face_nodes_range[bfacei]
         # assign access range
-        n_nodes = length(nodesID)
+        n_nodes = length(src_rng)
         endIndex = startIndex + n_nodes - one(TI)
         face_nodes_range[fID] = UnitRange{TI}(startIndex, endIndex)
         startIndex += n_nodes
         # assign actual node IDs values to long array
-        for nID ∈ face.nodesID
+        for k ∈ src_rng
             nodei += 1
-            face_nodes[nodei] = nID
+            face_nodes[nodei] = src_face_nodes[k]
         end
     end
 

@@ -45,20 +45,18 @@ end
 
 function generate_faces(foamdata, connectivity, TI, TF)
     (; n_faces, n_bfaces, n_ifaces) = foamdata
-    OF_faces = foamdata.faces
-    orderedFaces = similar(OF_faces)
-    orderedFaces[1:n_bfaces] = OF_faces[(n_ifaces+1):end] # move boundary faces to start
-    orderedFaces[n_bfaces+1:end] = OF_faces[1:(n_ifaces)] # shift internal faces to end
-    (; face_nodes_range) = connectivity # these are correctly ordered
+    face_owner = foamdata.face_owner
+    face_neighbour = foamdata.face_neighbour
+    (; face_nodes_range) = connectivity # reordered (boundary-first), mesh order
 
     dummy_face = Mesh.Face3D(TI, TF)
     faceType = typeof(dummy_face)
     faces = Vector{faceType}(undef, n_faces)
 
     for (fID, face) ∈ enumerate(faces)
-        OFace = orderedFaces[fID]
+        src = fID <= n_bfaces ? (n_ifaces + fID) : (fID - n_bfaces) # foam-order source index
         @reset face.nodes_range = face_nodes_range[fID]
-        @reset face.ownerCells = SVector(OFace.owner, OFace.neighbour)
+        @reset face.ownerCells = SVector(face_owner[src], face_neighbour[src])
         faces[fID] = face
     end
 

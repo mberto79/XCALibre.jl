@@ -13,38 +13,33 @@ function read_FOAM3D(file_path, scale, integer, float)
     foamdata.points = read_points(points_file, scale, integer, float)
     foamdata.boundaries = read_boundary(boundary_file, integer, float)
 
-    face_nodes = read_faces(faces_file, integer, float)
+    face_nodes, face_nodes_range = read_faces(faces_file, integer, float)
     face_neighbours = read_neighbour(neighbour_file, integer, float)
     face_owners = read_owner(owner_file, integer, float)
 
-    assign_faces!(foamdata, face_nodes, face_neighbours, face_owners, integer)
+    assign_faces!(foamdata, face_nodes, face_nodes_range, face_neighbours, face_owners, integer)
 
     return foamdata
 end
 
-function assign_faces!(foamdata, face_nodes, face_neighbours, face_owners, TI)
+function assign_faces!(foamdata, face_nodes, face_nodes_range, face_neighbours, face_owners, TI)
     foamdata.n_faces = n_faces = length(face_owners)
     foamdata.n_ifaces = n_ifaces = length(face_neighbours)
-    foamdata.n_bfaces = n_bfaces = foamdata.n_faces - foamdata.n_ifaces
+    foamdata.n_bfaces = n_faces - n_ifaces
     foamdata.n_cells = max(maximum(face_owners), maximum(face_neighbours))
 
-    foamdata.faces = [Face(TI, length(nodesID)) for nodesID ∈ face_nodes]
+    foamdata.face_nodes = face_nodes
+    foamdata.face_nodes_range = face_nodes_range
+    foamdata.face_owner = face_owners
 
-    # p1 = one(eltype(face_owners))
-
-    for (nIDs, oID, nID, face) ∈ zip(face_nodes, face_owners, face_neighbours, foamdata.faces)
-        face.nodesID = nIDs
-        face.owner = oID
-        face.neighbour = nID
+    face_neighbour = Vector{TI}(undef, n_faces)
+    for fi ∈ 1:n_ifaces
+        face_neighbour[fi] = face_neighbours[fi]
     end
-
-    for fID ∈ (n_ifaces + 1):n_faces
-        face = foamdata.faces[fID]
-        face.nodesID = face_nodes[fID]
-        face.owner = face_owners[fID]
-        face.neighbour = face_owners[fID]
+    for fi ∈ (n_ifaces + 1):n_faces
+        face_neighbour[fi] = face_owners[fi] # boundary: neighbour == owner
     end
-    
+    foamdata.face_neighbour = face_neighbour
 end
 
 function read_boundary(file_path, TI, TF)
@@ -134,22 +129,26 @@ function read_faces(file_path, TI, TF)
     end
     println("Number of faces to read: $nfaces (after cleaning file)")
 
-    face_nodes = [TI[] for _ ∈ 1:nfaces]
     bytes = read(file_path)
     len = length(bytes)
     pos = _skip_lines(bytes, startLine, len) # land just after count line
 
+    face_nodes = Vector{TI}(undef, 0)
+    sizehint!(face_nodes, 4 * Int(nfaces))
+    face_nodes_range = Vector{UnitRange{TI}}(undef, nfaces)
+    startIdx = one(TI)
     for facei ∈ 1:nfaces
-        nnodes, pos = _next_uint(bytes, pos, len) # per-face node count (no +1)
-        faceNodes = Vector{TI}(undef, nnodes)
+        nnodes, pos = _next_uint(bytes, pos, len) # per-face node count
         for i ∈ 1:nnodes
             nid, pos = _next_uint(bytes, pos, len)
-            faceNodes[i] = TI(nid) + one(TI) # +1 shift
+            push!(face_nodes, TI(nid) + one(TI)) # +1 shift
         end
-        face_nodes[facei] = faceNodes
+        endIdx = startIdx + TI(nnodes) - one(TI)
+        face_nodes_range[facei] = UnitRange{TI}(startIdx, endIdx)
+        startIdx = endIdx + one(TI)
     end
 
-    return face_nodes
+    return face_nodes, face_nodes_range
 end
 
 function read_neighbour(file_path, TI, TF)

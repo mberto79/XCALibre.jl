@@ -19,9 +19,15 @@ Read and convert 2D UNV mesh file into XCALibre.jl
 
 """
 function UNV2D_mesh(meshFile; scale=1, integer_type=Int64, float_type=Float64)
+    return _UNV2D_mesh(meshFile, scale, integer_type, float_type)
+end
+
+# Type-parameter barrier keeps the build type-stable for non-default integer/float types.
+function _UNV2D_mesh(meshFile, scale, ::Type{TI}, ::Type{TF}) where {TI<:Integer, TF<:AbstractFloat}
     stats = @timed begin
     println("Loading mesh...")
-    points, elements, boundaryElements = read_UNV2(meshFile, integer_type, float_type);
+    # geometry is always built in Float64; conversion to float_type happens after a cheap check
+    points, elements, boundaryElements = read_UNV2(meshFile, TI, Float64);
     println("File read successfully")
     if scale != one(typeof(scale))
         scalePoints!(points, scale)
@@ -33,10 +39,9 @@ function UNV2D_mesh(meshFile; scale=1, integer_type=Int64, float_type=Float64)
     connect!(cells, faces, nodes, boundaries, bfaces)
     mesh = Mesh2(cells, faces, boundaries, nodes)
     process_geometry!(mesh)
-    # mesh = Mesh.FullMesh(nodes, faces, cells, boundaries)
 
-    mesh = update_mesh_format(mesh, integer_type, float_type)
-    Mesh.validate_single_precision_mesh(mesh; source="UNV2D_mesh")
+    mesh = update_mesh_format(mesh, TI, Float64)
+    mesh = Mesh.convert_mesh_float(mesh, TF)
     end
     println("Done! Execution time: ", @sprintf "%.6f" stats.time)
     println("Mesh ready!")

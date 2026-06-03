@@ -4,6 +4,7 @@ export bounding_box
 export boundary_info, boundary_map
 export total_boundary_faces, boundary_index
 export norm_static
+export convert_mesh_float
 export validate_single_precision_mesh
 # export x, y, z # access cell centres
 # export xf, yf, zf # access face centres
@@ -18,10 +19,25 @@ _get_backend(mesh) = get_backend(mesh.cells)
 # C1C2 = distance vector from cell1 to cell2
 weight_delta_e(C1F1, C2F1, C1C2, normal) = begin
     # weight = norm(C2F1)/(norm(C1F1) + norm(C2F1)) # face-distance based
-    wi = (C1F1⋅normal)/(C1C2⋅normal)
-    weight = one(wi) - wi # normal aligned interpolation weight
+    projection = C1C2⋅normal
+    if isfinite(projection) && abs(projection) > eps(projection)
+        wi = (C1F1⋅normal)/projection
+        weight = one(wi) - wi # normal aligned interpolation weight
+    else
+        d1 = norm(C1F1)
+        d2 = norm(C2F1)
+        dsum = d1 + d2
+        weight = dsum > zero(dsum) ? d2/dsum : oftype(dsum, 0.5)
+    end
     delta = norm(C1C2)
-    e = C1C2/delta
+    if delta > zero(delta)
+        e = C1C2/delta
+    else
+        delta = norm(C1F1) + norm(C2F1) # fallback when cell centres coincide (degenerate cell)
+        e = normal
+    end
+    delta = max(delta, eps(one(delta))) # keep delta > 0 for degenerate faces (area is 0 there)
+    weight = clamp(weight, zero(weight), one(weight)) # keep interpolation weight physical on skewed cells
     return weight, delta, e
 end
 
@@ -29,7 +45,8 @@ end
 weight_delta_e(C1F1, normal) = begin
     weight = one(eltype(C1F1))
     delta = norm(C1F1)
-    e = C1F1/delta
+    e = delta > zero(delta) ? C1F1/delta : normal
+    delta = max(delta, eps(one(delta))) # keep delta > 0 for degenerate faces (area is 0 there)
     return weight, delta, e
 end
 
@@ -135,50 +152,64 @@ function boundary_index(boundaries::Vector{Boundary{S, UR}}, name::S) where {S<:
     end
 end
 
-function validate_single_precision_mesh(mesh::AbstractMesh; source="mesh conversion")
-    _get_float(mesh) === Float32 || return mesh
+# Convert mesh to float type TF, but only after a cheap representability check.
+# Falls back to the original mesh (with a warning) if narrowing would be unsafe.
+function convert_mesh_float(mesh::AbstractMesh, ::Type{TF}) where {TF<:AbstractFloat}
+    _get_float(mesh) === TF && return mesh
+    if TF === Float32 && !float32_representable(mesh)
+        @warn "Mesh geometry is not reliably representable in Float32; keeping $(_get_float(mesh)) mesh."
+        return mesh
+    end
+    return _rebuild_mesh_float(mesh, TF)
+end
 
-    bad_cells = _count_invalid_positive(c.volume for c in mesh.cells)
-    bad_areas = _count_invalid_positive(f.area for f in mesh.faces)
-    bad_deltas = _count_invalid_positive(f.delta for f in mesh.faces)
-    bad_weights = count(f -> !isfinite(f.weight), mesh.faces)
+function _rebuild_mesh_float(mesh::Mesh3, ::Type{TF}) where {TF<:AbstractFloat}
+    nodes = [Node(SVector{3,TF}(n.coords), n.cells_range) for n in mesh.nodes]
+    cells = [Cell(SVector{3,TF}(c.centre), TF(c.volume), c.nodes_range, c.faces_range) for c in mesh.cells]
+    faces = [Face3D(f.nodes_range, f.ownerCells, SVector{3,TF}(f.centre), SVector{3,TF}(f.normal),
+                    SVector{3,TF}(f.e), TF(f.area), TF(f.delta), TF(f.weight)) for f in mesh.faces]
+    Mesh3(cells, mesh.cell_nodes, mesh.cell_faces, mesh.cell_neighbours, mesh.cell_nsign,
+          faces, mesh.face_nodes, mesh.boundaries, nodes, mesh.node_cells,
+          SVector{3,TF}(mesh.get_float), mesh.get_int, mesh.boundary_cellsID)
+end
+
+function _rebuild_mesh_float(mesh::Mesh2, ::Type{TF}) where {TF<:AbstractFloat}
+    nodes = [Node(SVector{3,TF}(n.coords), n.cells_range) for n in mesh.nodes]
+    cells = [Cell(SVector{3,TF}(c.centre), TF(c.volume), c.nodes_range, c.faces_range) for c in mesh.cells]
+    faces = [Face2D(f.nodes_range, f.ownerCells, SVector{3,TF}(f.centre), SVector{3,TF}(f.normal),
+                    SVector{3,TF}(f.e), TF(f.area), TF(f.delta), TF(f.weight)) for f in mesh.faces]
+    Mesh2(cells, mesh.cell_nodes, mesh.cell_faces, mesh.cell_neighbours, mesh.cell_nsign,
+          faces, mesh.face_nodes, mesh.boundaries, nodes, mesh.node_cells,
+          SVector{3,TF}(mesh.get_float), mesh.get_int, mesh.boundary_cellsID)
+end
+
+# Cheap check: volumes/areas/deltas/weights finite & positive and length scales above Float32 spacing.
+function float32_representable(mesh::AbstractMesh)
+    _count_invalid_positive(c.volume for c in mesh.cells) == 0 || return false
+    _count_invalid_positive(f.area for f in mesh.faces) == 0 || return false
+    _count_invalid_positive(f.delta for f in mesh.faces) == 0 || return false
+    count(f -> !isfinite(f.weight), mesh.faces) == 0 || return false
 
     max_coord = 0.0
-    for node in mesh.nodes
-        for coord in node.coords
-            max_coord = max(max_coord, abs(Float64(coord)))
-        end
+    for node in mesh.nodes, coord in node.coords
+        max_coord = max(max_coord, abs(Float64(coord)))
     end
-
     min_delta = Inf
     for face in mesh.faces
         delta = Float64(face.delta)
-        if isfinite(delta) && delta > 0
-            min_delta = min(min_delta, delta)
-        end
+        isfinite(delta) && delta > 0 && (min_delta = min(min_delta, delta))
     end
-
     spacing = Float64(eps(Float32)) * max(max_coord, 1.0)
-    underresolved = min_delta <= 16 * spacing
+    return min_delta > 16 * spacing
+end
 
-    if bad_cells == 0 && bad_areas == 0 && bad_deltas == 0 && bad_weights == 0 && !underresolved
-        return mesh
-    end
-
-    msg = """
-    Single-precision mesh validation failed during $source.
-
-    The converted Float32 mesh contains geometry that is not reliable enough for single-precision solving:
-    - invalid cell volumes: $bad_cells
-    - invalid face areas: $bad_areas
-    - invalid face deltas: $bad_deltas
-    - non-finite interpolation weights: $bad_weights
-    - minimum positive face delta: $min_delta
-    - estimated Float32 coordinate spacing: $spacing
-
-    Use `float_type=Float64` for this mesh, or provide a mesh whose smallest geometric length scales are well above Float32 coordinate spacing.
-    """
-    throw(ArgumentError(msg))
+# Used by the loaders/tests to reject a Float32 mesh that is not safely representable.
+function validate_single_precision_mesh(mesh::AbstractMesh; source="mesh conversion")
+    _get_float(mesh) === Float32 || return mesh
+    float32_representable(mesh) && return mesh
+    throw(ArgumentError("Single-precision mesh validation failed during $source: " *
+        "the Float32 mesh geometry is not reliable (non-positive volumes/areas/deltas, " *
+        "non-finite weights, or length scales below Float32 spacing). Use float_type=Float64."))
 end
 
 function _count_invalid_positive(values)

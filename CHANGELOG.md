@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * New method to enforce matrix symmetry of scalar model equations when the only term is a laplacian [#100](@ref)
 * Change calculation of face interpolation weights to use face normal aligned weights, this is more physical than the current method using face-based distances (in preparation for formal support for non-orthogonality correction)[#101](@ref)
 * 20x improvement loading and processing 3D UNV mesh files [#106](@ref)
+* Updated discretisation, boundary condition, turbulence, solver, and preconditioner paths to avoid unintended `Float64` promotion on `Float32` meshes [#125](@ref)
+* FOAM reader has been updated for robustness and speed (~4x faster) [#126](@ref)
 
 ### Breaking
 * No breaking changes

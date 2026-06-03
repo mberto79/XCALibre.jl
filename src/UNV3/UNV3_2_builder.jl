@@ -25,21 +25,27 @@ Constructs a `Mesh3` object from a Universal (UNV) file format.
 - `Mesh3`: A fully constructed 3D mesh object containing nodes, cells, faces, boundaries, and populated geometric properties.
 """
 function UNV3D_mesh(unv_mesh; scale=1.0, integer_type=Int64, float_type=Float64)
+    return _UNV3D_mesh(unv_mesh, scale, integer_type, float_type)
+end
+
+# Type-parameter barrier keeps the build type-stable for non-default integer/float types.
+function _UNV3D_mesh(unv_mesh, scale, ::Type{TI}, ::Type{TF}) where {TI<:Integer, TF<:AbstractFloat}
     local points, efaces, cells_UNV, boundaryElements
-    
+    # geometry is always built in Float64; conversion to float_type happens after a cheap check
     t_parse = @elapsed begin
-        points, efaces, cells_UNV, boundaryElements = read_UNV3( 
-            unv_mesh; scale=scale, integer=integer_type, float=float_type)
+        points, efaces, cells_UNV, boundaryElements = read_UNV3(
+            unv_mesh; scale=scale, integer=TI, float=Float64)
     end
     @info "UNV file parsed in $(round(t_parse, digits=3)) seconds."
-    
+
     @info "Generating mesh connectivity and geometry..."
     local mesh
-    
+
     t_build = @elapsed begin
-        mesh = _build_UNV3D_mesh_core(points, efaces, cells_UNV, boundaryElements, integer_type, float_type)
+        mesh = _build_UNV3D_mesh_core(points, efaces, cells_UNV, boundaryElements, TI, Float64)
     end
-    
+    mesh = Mesh.convert_mesh_float(mesh, TF)
+
     @info "Mesh constructed in $(round(t_build, digits=3)) seconds."
     @info "Mesh entities: $(length(mesh.nodes)) nodes | $(length(mesh.faces)) faces | $(length(mesh.cells)) cells."
     

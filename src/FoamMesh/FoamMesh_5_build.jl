@@ -18,7 +18,6 @@ Read and convert 3D OpenFOAM mesh file into XCALibre.jl. Note that, at present, 
 - `float_type` - select interger type to use in the mesh (Float32 may be useful on GPU runs) 
 
 """
-# Geometry is always built in Float64; conversion to float_type happens after a cheap check.
 function FOAM3D_mesh(mesh_file; scale=1, integer_type=Int64, float_type=Float64)
     foamdata = read_FOAM3D(mesh_file, scale, integer_type, Float64)
     connectivity = connect_mesh(foamdata, integer_type, Float64)

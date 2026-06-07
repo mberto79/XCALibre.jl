@@ -1,0 +1,121 @@
+{
+  "_note": "Implementation-phase benchmark oracle. NEVER delete entries. Read by key (use _index).",
+  "_index": {
+    "hardware": "GPU/CPU specs + poisson3d/F1 sizes",
+    "phase0_baseline": "CPU+GPU baseline iters/timing n=32/48/64",
+    "phase4_sellp": "SELL-P vs cuSPARSE verdict + variance survey",
+    "per_level_op_bytes_F1": "F1 op memory breakdown by type",
+    "phase5a": "5a fused 2grid mechanics relerr",
+    "phase5b_result1": "5b 2-grid V-cycle relerr + convergence",
+    "phase5b_optionB": "full-hierarchy MF V-cycle relerr + iter parity + VRAM",
+    "phase5b_optionC": "top-k matfree Galerkin relerr + VRAM + cycle-time penalty",
+    "phase7_G1_refresh": "G1 frozen-sparsity refresh relerr + speedup vs rebuild",
+    "phase7_G2_zeroalloc": "G2 zero-alloc coarse relerr + alloc measurements",
+    "phase7_G3_gate": "G3 fused top-zone gate results (REJECTED precond mode)",
+    "phase5d_seam_live": "5d seam correctness + VRAM regression",
+    "scale_correction_port": "sc relerr + decisive spike F1",
+    "item4_footprint_oncalc": "on-paper footprint path A vs Option C",
+    "item4_lean_refresh_landed": "lean refresh relerr + VRAM + refresh timing",
+    "gate_flip_landed": "opt-in gate: 3 validation gates",
+    "phase6_cylinder_cfd": "cylinder CFD gf vs ref 50-iter timing",
+    "phase6_F1_cfd_3way": "F1 3-way bench gf/ref/baseline",
+    "oom_flip_levers_F1": "VRAM lever summary"
+  },
+  "hardware": {
+    "gpu": "RTX 4070 Laptop 8188 MiB", "host_gb": 14, "gpu_peak_gbps": 256,
+    "poisson3d_sizes": {"32": 32768, "48": 110592, "64": 262144}, "f1": "1.68M cells"
+  },
+  "phase0_baseline": {
+    "cols": "[setup_s, solve_s, percycle_s, iters, relres]",
+    "cpu_8thread": {"32": [0.100,0.0357,0.00170,21,"5.79e-9"], "48": [0.204,0.115,0.00478,24,"5.05e-9"], "64": [0.304,0.280,0.0122,23,"6.67e-9"]},
+    "cuda": {"32": [0.045,0.0253,0.00121,21,"5.79e-9"], "48": [0.228,0.0511,0.00213,24,"5.05e-9"], "64": [0.414,0.0816,0.00355,23,"6.67e-9"]},
+    "gpu_vs_cpu_speedup": "1.4x/2.2x/3.4x (n=32/48/64)"
+  },
+  "phase4_sellp": {
+    "variance_cv_all_lt_0p1": true,
+    "spmv_gbps": {"cuSPARSE_p80": [237,"93%"], "SELLP_p80": 220, "cuSPARSE_F1": [230,"90%"], "SELLP_F1": 221},
+    "verdict": "REJECT: cuSPARSE 5-8% faster on near-uniform FVM rows"
+  },
+  "per_level_op_bytes_F1": {"A_MB": 303.7, "P_MB": 57.9, "R_MB": 57.9, "coarse_Al_MB": 194.5, "total_MB": 419.5},
+  "phase5a": {"relerr": "<=5e-16 poisson+F1 CPU+GPU", "caveat": "mechanics only; sqrt(w) cancels in 1x1 solve"},
+  "phase5b_result1": {
+    "relerr": "~3-8e-16 CPU+GPU poisson+F1",
+    "convergence": "1e-8 in 23-31 iters factor ~0.45-0.56",
+    "vram_F1_erased_MB": 40.25
+  },
+  "phase5b_optionB": {
+    "relerr": "~3-7e-16 CPU+GPU poisson ml=1/2/3 + F1 1.8e-16",
+    "iter_parity_gf_vs_ref_sc_off": ["24/25","30/30","43/43","31/31","63/64","65/67"],
+    "vram_net_F1_MB": {"ml1": 56, "ml2": 46, "ml3": 43},
+    "parity_caveat": "vs sc=OFF; default sc=ON materially better (n=48: 28 vs 63-67)"
+  },
+  "phase5b_optionC": {
+    "relerr": "~5e-16 CPU+GPU + F1 k=1 8.9e-17",
+    "convergence_iters_n32_k012": [42,43,42],
+    "vram_F1_ml1_MB": {"k1": 81.4, "k2": 132.5},
+    "cycle_time_ms": {"k0": 11.45, "k1": [15.68,"+37%"], "k2": [19.86,"+73%"]}
+  },
+  "phase7_G1_refresh": {
+    "relerr": {"poisson_cpu_gpu": "~3e-16..1.2e-15", "F1_ml2": 4.13e-16},
+    "omega_relerr": {"poisson": "~e-16", "F1": 1.5e-16},
+    "converge_refreshed_eq_fresh": "poisson 7=7, F1 8 iters",
+    "refresh_vs_rebuild_ms": {"p48_ml2": [7.07,67.3,"9.5x"], "p64_ml2": [12.0,163.0,"13.6x"], "F1_ml2": [56.5,2351.8,"41.6x"]}
+  },
+  "phase7_G2_zeroalloc": {
+    "relerr": {"cpu": 4.35e-16, "gpu": 5.74e-16, "F1": 2.07e-16},
+    "per_cycle_bytes_constant": {"p16_cpu": 65568, "p16_gpu": 51664, "F1_gpu_lu": 85104},
+    "coarse_no_n_scaling_bytes": {"n64": 288, "n2048": 160},
+    "caveat": "F1 always host-LU (coarse_n=2739>512); GEMV only for small/poisson"
+  },
+  "phase7_G3_gate": {
+    "poisson_ml2_iters_depth0vs1": {"p16": [14,38,2.71], "p32": [19,53,2.79]},
+    "F1_ml2": {"depth0": [122,"converged"], "depth1": [">=200","DIVERGED rel=46.8"]},
+    "verdict": "DEAD in preconditioner mode. Keep B/C. G6 gate for FAS mode."
+  },
+  "phase5d_seam_live": {
+    "cg_F1": {"gf": [156,0.890], "ref": [161,0.894]},
+    "vram_F1_MB": {"ref": 681, "gf": 892, "delta": "+211 REGRESSION"},
+    "why": "G1 plan 374MB (per-nonzero) > P/R it replaces (per-row). P/R erasure saves 143MB; plan costs 374MB."
+  },
+  "scale_correction_port": {
+    "oracle_relerr": {"cpu": 7.75e-16, "gpu": 4.69e-16},
+    "amgsolver_poisson": {"n32_gf": [20,0.393], "n32_ref": [21,0.405]},
+    "decisive_F1": {
+      "cg_gf": [156,0.890], "cg_ref": [161,0.894],
+      "amgsolver_sc_on": {"gf": [334,0.947], "ref": [262,0.933]},
+      "amgsolver_sc_off_gf": [false, 300, 0.985, "9.95e-3"]
+    }
+  },
+  "item4_footprint_oncalc": {
+    "pathA_abc_MB": 551, "pathA_win_vs_ref_MB": 130, "pathA_cycle_penalty": "NONE",
+    "pathB_optionC_k1_MB": 770, "pathB_k2_MB": 690,
+    "verdict": "pathA dominates for goal; pathB = separate cycle-costly VRAM lever"
+  },
+  "item4_lean_refresh_landed": {
+    "relerr": {"cpu_ml123": ["2.73e-16","8.20e-16","8.46e-16"], "gpu_ml123": ["2.73e-16","1.23e-15","1.09e-15"], "F1": 4.79e-16},
+    "vram_F1_MB": {"plan_old": 374, "plan_new": 0.4, "gf_total": 518, "ref_total": 681, "delta": -163},
+    "host_ram_added_MB": 97.6,
+    "refresh_ms_F1": {"lean_wallclock": 105.9, "G1_stored": 56.5, "full_rebuild": 2351.8}
+  },
+  "gate_flip_landed": {
+    "gate1_cg_F1": {"gf": [156,0.890], "ref": [161,0.894]},
+    "gate2_vram_MB": {"gf": 518.7, "ref": 681.4, "delta": -162.7},
+    "gate3_suite": {"passed": 189, "failed": 0}
+  },
+  "phase6_cylinder_cfd": {
+    "50iters_s": {"gf": 3.317, "ref": 2.916, "gf_slower_pct": 14},
+    "stability": "stable 50 steps; p residual drifts ~6% (eps accumulation, valid)"
+  },
+  "phase6_F1_cfd_3way": {
+    "cols": "[total_s, s_per_it, peak_MB]",
+    "gf":       [146.85, 0.979, 3510],
+    "ref":      [74.31,  0.495, 4438],
+    "baseline": [69.54,  0.464, 4116],
+    "gf_vs_ref": {"time_ratio": "~2x SLOWER", "vram_delta_MB": -928}
+  },
+  "oom_flip_levers_F1": {
+    "B_matrixfree_PR_MB": 56,
+    "coarse_storage_F32_MB": 65,
+    "optionC_topk": "194MB coarse-A_l target, +37/73% cycle time at k=1/2"
+  }
+}

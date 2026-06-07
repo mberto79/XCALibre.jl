@@ -1,0 +1,19 @@
+{
+  "_desc": "Implementation phase final state. Archive only — perf phase has its own tracker.",
+  "updated": "2026-06-07",
+  "phases_all_done_except": ["G6 (FAS gate, user opt-in)"],
+  "gate": {
+    "_greenfield_implemented": true,
+    "fuse_levels_default": 0,
+    "requires": "fuse_levels>0 && GPU && Geometric && AMGJacobi"
+  },
+  "tests": {"suite_pass": 189, "fail": 0, "date": "2026-06-07"},
+  "cg_parity_F1": {"gf_iters": 156, "ref_iters": 161, "gf_factor": 0.890},
+  "amgsolver_gap": "F1 gf 334 vs ref 262 (direction gap, open, not blocking)",
+  "vram_F1_ml1_MC4096": {"gf_MB": 518, "ref_MB": 681, "delta_MB": -163},
+  "cfd_F1_ml2_mc100_F32": {
+    "gf_s_per_it": 0.979, "ref_s_per_it": 0.495,
+    "gf_VRAM_MB": 3510, "ref_VRAM_MB": 4438
+  },
+  "open": ["profile 2x perf gap", "G6 FAS gate", "Option-C-with-refresh", "default-ON"]
+}

@@ -64,6 +64,12 @@ function update!(workspace::AMGWorkspace, A, solver::AMG, config)
     hierarchy.backend = hardware.backend
     hierarchy.workgroup = _amg_workgroup(hardware.backend, hardware.workgroup, max(_m(A), 1))
 
+    # Greenfield GPU pipeline owns its own build/refresh (no materialized hierarchy): branch before
+    # the reference setup so the VRAM-saving matrix-free path is not double-built.
+    if _use_greenfield_amg(solver, hardware.backend)
+        return _greenfield_update!(workspace, A, solver, hardware)
+    end
+
     if isempty(hierarchy.host_levels)
         setup_backend = _amg_setup_backend(hardware.backend)
         setup_matrix = _amg_setup_matrix(A, setup_backend)
@@ -122,7 +128,8 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, 
     # Outer Krylov/defect-correction runs at working precision. Default (TS==TW): the finest
     # hierarchy operator (unchanged). Mixed precision: the FP32 finest cannot carry the outer
     # residual, so use the raw FP64 system matrix A (its _matvec!/_residual! are backend-dispatched).
-    outer_A = _amg_mixed_precision(workspace.hierarchy) ? A : workspace.hierarchy.levels[1].A
+    outer_A = (_greenfield_active(workspace.hierarchy) || _amg_mixed_precision(workspace.hierarchy)) ?
+              A : workspace.hierarchy.levels[1].A
     _amg_solve_mode!(workspace, workspace.hierarchy, solver, solver.mode, outer_A, b, x; itmax=itmax, atol=atol, rtol=rtol)
 
     if typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson}

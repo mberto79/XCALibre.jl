@@ -921,7 +921,8 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
         grid_complexity,
         0.0,
         Ref{Any}(nothing),
-        Ref{Any}(cycle_input)
+        Ref{Any}(cycle_input),
+        Ref{Any}(nothing)
     )
     _build_coarse_inverse!(hierarchy, solver.coarse_solve)
     rows_summary = join(map(level -> string(_m(level.A)), host_levels), " -> ")

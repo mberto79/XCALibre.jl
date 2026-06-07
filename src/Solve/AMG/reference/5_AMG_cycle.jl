@@ -386,6 +386,8 @@ _amg_cycle_input(hierarchy::AMGHierarchy, r) =
 _amg_mixed_precision(hierarchy::AMGHierarchy) = hierarchy.cycle_input[] !== nothing
 
 function amg_apply_preconditioner!(z, hierarchy::AMGHierarchy, solver::AMG, r)
+    gf = hierarchy.greenfield[]
+    gf === nothing || return _greenfield_apply_preconditioner!(z, gf, hierarchy, r)
     root = hierarchy.levels[1]
     rin = _amg_cycle_input(hierarchy, r)
     _cycle!(hierarchy, solver.cycle, solver, 1, rin)

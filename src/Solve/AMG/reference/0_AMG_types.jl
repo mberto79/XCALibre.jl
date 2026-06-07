@@ -268,6 +268,7 @@ struct AMG{M,C,S,Y,CS,I} <: AbstractLinearSolver
     min_coarse_rows::I
     max_coarse_rows::I
     coarse_refresh_interval::I
+    fuse_levels::I
     coarse_storage::DataType
 end
 
@@ -342,6 +343,7 @@ function AMG(;
     min_coarse_rows=32,
     max_coarse_rows=4096,
     coarse_refresh_interval=1,
+    fuse_levels=0,
     coarse_storage=Float64
 )
     mode = _amg_mode(mode)
@@ -361,6 +363,10 @@ function AMG(;
     pre_sweeps > 0 || throw(ArgumentError("AMG pre_sweeps must be positive"))
     post_sweeps > 0 || throw(ArgumentError("AMG post_sweeps must be positive"))
     coarse_refresh_interval > 0 || throw(ArgumentError("AMG coarse_refresh_interval must be positive"))
+    # fuse_levels: opt-in to the matrix-free greenfield GPU path (>0 on a GPU backend with Geometric
+    # +AMGJacobi). Default 0 = reference materialised V-cycle. The path is implemented but experimental
+    # (saves VRAM, see device/); flip on per-solver, not by default. Negative is invalid.
+    fuse_levels >= 0 || throw(ArgumentError("AMG fuse_levels must be non-negative (0 disables the fused GPU path)"))
     return AMG(
         mode,
         coarsening,
@@ -374,6 +380,7 @@ function AMG(;
         Int(min_coarse_rows),
         Int(max_coarse_rows),
         Int(coarse_refresh_interval),
+        Int(fuse_levels),
         _amg_storage(coarse_storage)
     )
 end
@@ -478,6 +485,7 @@ mutable struct AMGHierarchy{LD,LH,CC,B,RP,CP}
     last_cycle_factor::Float64
     coarse_inv::Base.RefValue{Any}  # device dense inverse of coarsest A (GPU); nothing on CPU/oversized
     cycle_input::Base.RefValue{Any}  # mixed precision: TS-typed finest rhs buffer; nothing when TS==TW
+    greenfield::Base.RefValue{Any}  # greenfield GPU pipeline state (MFGreenfield); nothing on the reference path
 end
 
 mutable struct AMGWorkspace{H,V,T,RH} <: AbstractAMGWorkspace
@@ -568,6 +576,7 @@ function _empty_hierarchy(backend, ::Type{T}, ::Type{TS}=T) where {T,TS}
         1.0,
         1.0,
         0.0,
+        Ref{Any}(nothing),
         Ref{Any}(nothing),
         Ref{Any}(nothing)
     )

@@ -80,6 +80,13 @@ solvers = (
             #   (Cg) / 1.75x (AMGSolver) faster at identical iters. Valid in both modes. See
             #   src/Solve/AMG/AMG_mixed_precision_findings.md.
             # coarsening = Geometric(merge_levels=1)
+            # fuse_levels = 1  # opt-in: matrix-free greenfield GPU V-cycle (GPU + Geometric +
+            #   AMGJacobi only; default 0 = off). Erases the P/R transfer operators (formed on the
+            #   fly) and refreshes coarse operators in-place on device each timestep, cutting the
+            #   hierarchy footprint ~24% at iteration-parity (F1 1.68M: 518 vs 681 MB, Cg 156 vs 161
+            #   iters). EXPERIMENTAL. WIN is VRAM on large 3D GPU transients near the memory ceiling;
+            #   small/medium cases are ~10-15% SLOWER with no VRAM relief (refresh + matrix-free
+            #   recompute overhead) -> leave at 0 unless VRAM-bound.
             # coarsening = RugeStuben()
             coarsening = SmoothAggregation(strength_threshold=0.05)  # opt-in: fewer iters on
             #                          # anisotropic (boundary-layer) pressure matrices; denser

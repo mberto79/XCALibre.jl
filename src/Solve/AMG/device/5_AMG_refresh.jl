@@ -43,7 +43,7 @@
                     hi = mid - 1
                 end
             end
-            Atomix.@atomic dst_nz[p] += swi * inv_sqrt_w[gj] * src_nzval[s]
+            Atomix.@atomic dst_nz[p] += T(swi * inv_sqrt_w[gj] * src_nzval[s])  # cast: src/dst precision may differ (split precision)
         end
     end
 end
@@ -86,9 +86,8 @@ end
 # transfer factors + target sparsity (_amg_rap_scatter_recompute_kernel!). The finest stream gathers
 # the incoming (host) values straight into a reusable HOST buffer (one H->D copy into A_perm_1), so no
 # device value buffer is stored either. Only the coarsest operator stays device-resident.
-mutable struct MFRefreshPlan{HI, HT, MA, HCS, VT}
-    finest_value_map::HI      # host: A_perm_1 nz slot -> incoming Am nz slot
-    finest_host::HT           # host buffer: A_perm_1 values gathered at the cycle precision (frozen len)
+mutable struct MFRefreshPlan{DI, MA, HCS, VT}
+    finest_value_map::DI      # device: A_perm_1 nz slot -> incoming A2 nz slot (Int32, gather index)
     coarsest_csr::MA          # device coarsest operator (natural order, frozen pattern)
     coarsest_host::HCS        # host coarsest CSR (frozen pattern) for D->H + lu refactor
     omega_nominal::VT         # 1-elt device buffer holding the nominal omega cap (scalar, kept as field)
@@ -134,9 +133,8 @@ function build_mf_refresh_plan(handle)
                                 dev(copy(_nzval(coarsest))), _m(coarsest), _n(coarsest))
     coarsest_host = AMGMatrixCSR(copy(_rowptr(coarsest)), copy(_colval(coarsest)),
                                  copy(_nzval(coarsest)), _m(coarsest), _n(coarsest))
-    finest_host = zeros(T, length(handle.pvms[1]))
-    return MFRefreshPlan(copy(handle.pvms[1]), finest_host,
-                         coarsest_csr, coarsest_host, dev(T[st.omega_nominal]))
+    return MFRefreshPlan(dev(handle.pvms[1]), coarsest_csr, coarsest_host,
+                         dev(T[st.omega_nominal]))
 end
 
 # Device power iteration for λ_max(D⁻¹A) on a frozen operator, reusing level scratch (x/tmp/r/rhs).
@@ -168,22 +166,29 @@ end
 # (device, recomputed) -> per-level invdiag + omega (device) -> coarsest LU refactor. No re-aggregation,
 # no host RAP, no realloc. Lean: no per-nonzero scatter maps, no device value buffer (see MFRefreshPlan).
 function refresh_mf_ml!(st::MFMLState, plan::MFRefreshPlan, A2; omega_nominal=nothing)
-    bk = st.backend; wg = 256; M = length(st.levels); T = eltype(plan.finest_host)
+    bk = st.backend; wg = 256; M = length(st.levels)
+    finest_nz = _nzval(st.levels[1].A); T = eltype(finest_nz)
+    TC = eltype(st.coarse_rhs)  # coarse-level (>=2) + coarsest storage type (split precision)
     omega_cap = omega_nominal === nothing ? st.omega_nominal : T(omega_nominal)
-    # finest: gather the incoming (host) values into A_perm_1 order on host, one H->D copy (no device
-    # value buffer, no device gather kernel — the H->D traffic is identical to staging then gathering)
-    nz2 = _nzval(_amg_matrix(A2)); fvm = plan.finest_value_map; hb = plan.finest_host
-    @inbounds for k in eachindex(hb)
-        hb[k] = T(nz2[fvm[k]])
-    end
-    copyto!(_nzval(st.levels[1].A), hb)
+    # finest: device gather of A2's values into A_perm_1 order (frozen permutation). The CFD system
+    # matrix is already device-resident, so one gather kernel replaces the old D->H + host gather +
+    # H->D round-trip. adapt is a no-op on a device A2 (zero copy); only a host A2 (validation driver)
+    # pays one H->D. _amg_gather_kernel! converts precision in the assignment (finest is F64 == A2 F64).
+    fvm = plan.finest_value_map
+    # A device-resident A2 (production CFD) is gathered in place — genuinely zero-copy. Only a host Array
+    # (the mf_ml_refresh_error validation driver) pays one H->D. Guard on Base Array so no CUDA dep here.
+    nz = _nzval(A2)
+    src_nz = (bk isa CPU || !(nz isa Array)) ? nz : Adapt.adapt(bk, nz)
+    # one-time directive telemetry: confirms the gather source is a native GPU array under production CFD.
+    bk isa CPU || @info "AMG gf refresh: finest gather source" type=typeof(src_nz) eltype=eltype(src_nz) zero_copy=(src_nz === nz) maxlog=1
+    _launch_amg_kernel!(bk, wg, _amg_gather_kernel!, length(fvm), finest_nz, src_nz, fvm)
     # cascade coarse operators: zero target, scatter-add from the (already refreshed) fine level,
     # recomputing dst+scale in-kernel from resident transfer factors (one thread per source row)
     for l in 1:M
         lv = st.levels[l]; src = lv.A
         tgt = l < M ? st.levels[l + 1].A : plan.coarsest_csr
         dst_nz = _nzval(tgt)
-        _fill_device!(bk, dst_nz, zero(T))
+        _fill_device!(bk, dst_nz, zero(eltype(dst_nz)))
         _launch_amg_kernel!(bk, wg, _amg_rap_scatter_recompute_kernel!, lv.n, dst_nz,
                             _rowptr(src), _colval(src), _nzval(src),
                             lv.row_macro, lv.coarse_pos, lv.inv_sqrt_w,
@@ -195,7 +200,7 @@ function refresh_mf_ml!(st::MFMLState, plan::MFRefreshPlan, A2; omega_nominal=no
         _launch_amg_kernel!(bk, wg, _amg_invdiag_kernel!, lv.n, lv.invdiag, _nzval(lv.A), lv.diag_index)
         KernelAbstractions.synchronize(bk)
         lambda = _lambda_max_device!(lv, bk, wg)
-        lv.omega = min(omega_cap, T(2) - eps(T)) / lambda
+        lv.omega = min(omega_cap, T(2) - eps(T)) / T(lambda)  # cap in T; coarse lambda is at level precision
     end
     # coarsest: D->H the refreshed coarsest operator into the frozen host pattern, refresh whichever
     # coarse mechanism is active (device dense inverse for GEMV, else refactor host LU)
@@ -204,7 +209,7 @@ function refresh_mf_ml!(st::MFMLState, plan::MFRefreshPlan, A2; omega_nominal=no
     coarse_csc = _csr_to_csc(plan.coarsest_host)
     st.coarse_fac = lu(coarse_csc)
     st.coarse_inv === nothing ||
-        (st.coarse_inv = _build_coarse_dense_inv(coarse_csc, bk, T, st.coarse_max_rows))
+        (st.coarse_inv = _build_coarse_dense_inv(coarse_csc, bk, TC, st.coarse_max_rows))
     return st
 end
 
@@ -236,9 +241,9 @@ end
 # arithmetic AND that the frozen pattern is adequate for changed values. Returns the worst relative
 # nzval error across every level + the coarsest, plus a separate omega relerr (λ_max drift).
 function mf_ml_refresh_error(A1, A2, merge_levels::Integer, backend; pre::Int=2, post::Int=2,
-                             omega_nominal=4/3, max_coarse::Integer=64)
+                             omega_nominal=4/3, max_coarse::Integer=64, coarse_storage=nothing)
     h1 = _build_mf_ml(A1, merge_levels, backend; pre=pre, post=post, omega_nominal=omega_nominal,
-                      max_coarse=max_coarse, fused_top=0)
+                      max_coarse=max_coarse, fused_top=0, coarse_storage=coarse_storage)
     plan = build_mf_refresh_plan(h1)
     refresh_mf_ml!(h1.st, plan, A2; omega_nominal=omega_nominal)
     ops, lam = _frozen_rap_oracle(h1, A2); T = h1.T; M = length(h1.st.levels)
@@ -253,4 +258,32 @@ function mf_ml_refresh_error(A1, A2, merge_levels::Integer, backend; pre::Int=2,
     cg = Array(_nzval(plan.coarsest_csr)); cr = _nzval(ops[end])
     relerr = max(relerr, maximum(abs.(cg .- cr)) / max(maximum(abs.(cr)), eps(T)))
     return (relerr=relerr, omega_relerr=omega_relerr, levels=M + 1, n=h1.st.n)
+end
+
+# Deployment check (advisor #4): operator-match alone does not prove a REFRESHED mixed-prec state
+# converges. Build on A1 -> refresh to A2 -> drive the stationary MF V-cycle on A2 and report iters.
+# Mirrors mf_ml_convergence but on the refreshed state (st.levels[1].A holds A2's permuted finest).
+function mf_ml_refresh_convergence(A1, A2, merge_levels::Integer, backend; pre::Int=2, post::Int=2,
+                                   itmax::Int=200, rtol=1e-8, omega_nominal=4/3, max_coarse::Integer=64,
+                                   coarse_storage=nothing)
+    h1 = _build_mf_ml(A1, merge_levels, backend; pre=pre, post=post, omega_nominal=omega_nominal,
+                      max_coarse=max_coarse, fused_top=0, coarse_storage=coarse_storage)
+    plan = build_mf_refresh_plan(h1)
+    refresh_mf_ml!(h1.st, plan, A2; omega_nominal=omega_nominal)
+    st = h1.st; T = h1.T; n = st.n; bk = backend; wg = 256
+    Afine = st.levels[1].A; rp, cv, nz = _rowptr(Afine), _colval(Afine), _nzval(Afine)
+    dev(v) = bk isa CPU ? copy(v) : Adapt.adapt(bk, v)
+    b = dev(rand(T, n)); x = dev(zeros(T, n)); res = dev(zeros(T, n))
+    _launch_amg_kernel!(bk, wg, _amg_csr_residual_kernel!, n, res, rp, cv, nz, x, b)
+    KernelAbstractions.synchronize(bk)
+    r0 = norm(Array(res)); rn = r0; it = 0
+    while it < itmax && rn > rtol * r0
+        it += 1
+        dx = mf_ml_cycle(st, res)
+        _launch_amg_kernel!(bk, wg, _amg_add_kernel!, n, x, dx)
+        _launch_amg_kernel!(bk, wg, _amg_csr_residual_kernel!, n, res, rp, cv, nz, x, b)
+        KernelAbstractions.synchronize(bk)
+        rn = norm(Array(res))
+    end
+    return (converged=(rn <= rtol * r0), iters=it, final_rel=rn / r0, n=n, levels=length(st.levels) + 1)
 end

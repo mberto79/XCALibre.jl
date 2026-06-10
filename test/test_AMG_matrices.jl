@@ -232,6 +232,15 @@ end
         @test res.omega_relerr < 1e-10
         @test res.levels >= 2
     end
+    # split precision (finest F64 / coarse F32): refresh must reproduce the F64 build to coarse-F32
+    # accuracy and stay iteration-equivalent. (GPU-only atomic type mismatch is guarded in test_AMG.jl.)
+    for ml in (1, 2)
+        rm = XCALibre.Solve.mf_ml_refresh_error(A1, A2, ml, CPU(); max_coarse=64, coarse_storage=Float32)
+        @test rm.relerr < 1e-5
+        c64 = XCALibre.Solve.mf_ml_refresh_convergence(A1, A2, ml, CPU(); max_coarse=64, coarse_storage=Float64)
+        c32 = XCALibre.Solve.mf_ml_refresh_convergence(A1, A2, ml, CPU(); max_coarse=64, coarse_storage=Float32)
+        @test c32.converged && c32.iters <= c64.iters + 1
+    end
 end
 
 @testset "mf zero-alloc coarse solve (G2)" begin

@@ -74,21 +74,21 @@ end
 # Build the greenfield state ONCE (or on a sparsity change) from the static mesh operator.
 function _greenfield_build!(workspace::AMGWorkspace, A, solver::AMG, hardware)
     backend = hardware.backend
-    setup_matrix = _amg_setup_matrix(A, _amg_setup_backend(backend))  # host CSR
+    setup_matrix = _amg_setup_matrix(A, _amg_setup_backend(backend))  # host CSR at finest precision T
     T = eltype(_nzval(_amg_matrix(setup_matrix)))
-    TS = _effective_storage(T, _amg_storage(solver.coarse_storage))
-    sm = _amg_matrix_storage(setup_matrix, TS)
+    TS = _effective_storage(T, _amg_storage(solver.coarse_storage))  # coarse-level (>=2) storage type
     merge_levels = solver.coarsening.merge_levels
     fused_top = _greenfield_guard(solver)  # transient path supports Option B only -> clamps to 0
-    handle = _build_mf_ml(sm, merge_levels, backend; pre=solver.pre_sweeps, post=solver.post_sweeps,
+    handle = _build_mf_ml(setup_matrix, merge_levels, backend; pre=solver.pre_sweeps, post=solver.post_sweeps,
                           omega_nominal=_greenfield_omega(solver.smoother),
                           max_coarse=solver.max_coarse_rows, fused_top=fused_top,
                           coarse_max_rows=_greenfield_coarse_max_rows(solver.coarse_solve),
-                          scale_correction=(solver.scale_correction && solver.mode isa AMGSolver))
+                          scale_correction=(solver.scale_correction && solver.mode isa AMGSolver),
+                          coarse_storage=TS)
     plan = build_mf_refresh_plan(handle)
     st = handle.st
     dev(v) = backend isa CPU ? copy(v) : Adapt.adapt(backend, v)
-    gf = MFGreenfield(st, plan, dev(st.cell_perm), dev(zeros(TS, st.n)),
+    gf = MFGreenfield(st, plan, dev(st.cell_perm), dev(zeros(T, st.n)),
                       _m(_amg_matrix(setup_matrix)), length(_nzval(_amg_matrix(setup_matrix))))
     workspace.hierarchy.greenfield[] = gf
     return workspace
@@ -98,8 +98,11 @@ end
 # the coarse Galerkin operators + smoother data, all on device (device/5).
 function _greenfield_refresh!(workspace::AMGWorkspace, A, solver::AMG, hardware)
     gf = workspace.hierarchy.greenfield[]
-    setup_matrix = _amg_setup_matrix(A, _amg_setup_backend(hardware.backend))
-    refresh_mf_ml!(gf.st, gf.plan, setup_matrix; omega_nominal=_greenfield_omega(solver.smoother))
+    # Pass the live system matrix straight in: refresh gathers finest values on device via _nzval(A) in the
+    # frozen fvm order, coarse cascade uses frozen device operators. Routing through _amg_setup_matrix(A,CPU)
+    # forces a full D->H copy of every nonzero (~310ms/outer-iter on F1) since the GPU matrix is a bare
+    # CuSparseMatrixCSR — that defeats the P7 device gather and is the matrix-free CFD per-iter deficit.
+    refresh_mf_ml!(gf.st, gf.plan, A; omega_nominal=_greenfield_omega(solver.smoother))
     return workspace
 end
 
@@ -133,12 +136,15 @@ end
 # forced on (e.g. _greenfield_implemented()=true) so the greenfield solver routes matrix-free.
 function greenfield_solve_spike(A, b, backend; mode=Cg(), merge_levels=1, fuse_levels=1,
                                 coarse_storage=Float64, itmax=200, rtol=1e-8, atol=1e-8,
-                                workgroup=64, scale_correction=true)
+                                workgroup=64, scale_correction=true, n_update=1)
     config = (hardware=(backend=backend, workgroup=workgroup),)
 
+    # n_update>1 exercises the transient path: update! #1 builds, #2.. refresh (frozen sparsity, restream
+    # A0 + cascade coarse operators). Isolates whether the per-timestep refresh degrades cycle quality
+    # (iters) vs the static isolated build, for both gf and ref on the SAME device system.
     run_one = (solver) -> begin
         ws = _workspace(solver, b)
-        update!(ws, A, solver, config)
+        for _ in 1:n_update; update!(ws, A, solver, config); end
         x = similar(b); fill!(x, 0)
         _amg_solve_mode!(ws, ws.hierarchy, solver, solver.mode, A, b, x; itmax=itmax, atol=atol, rtol=rtol)
         (iters=ws.iterations, converged=ws.converged, relres=ws.last_relative_residual,

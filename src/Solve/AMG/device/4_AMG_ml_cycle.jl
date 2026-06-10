@@ -156,10 +156,15 @@ end
 
 # Build the device-resident multilevel matrix-free state (and return the host hierarchy + per-level
 # omega/invdiag so an independent oracle can be built from the SAME operators).
+# coarse_storage (default = finest T) sets the precision of levels 2..M + coarsest buffers; level 1
+# (A_0, the "fused matrix-free" finest part) is ALWAYS built at the finest type T. Operators are built
+# in T (accurate host RAP) then each level's device arrays are downcast to its target type.
 function _build_mf_ml(A, merge_levels::Integer, backend; pre::Int=2, post::Int=2,
                       omega_nominal=4/3, max_coarse::Integer=64, fused_top::Integer=0,
-                      coarse_max_rows::Integer=512, scale_correction::Bool=false)
+                      coarse_max_rows::Integer=512, scale_correction::Bool=false,
+                      coarse_storage=nothing)
     Am = _amg_matrix(A); T = eltype(_nzval(Am))
+    TC = coarse_storage === nothing ? T : coarse_storage  # levels >=2 + coarsest storage type
     operators, Ps, aggs = _mf_ml_hierarchy(Am, merge_levels, max_coarse)
     L = length(operators); M = L - 1
     M >= 1 || error("matrix too small to coarsen at max_coarse=$max_coarse")
@@ -190,26 +195,27 @@ function _build_mf_ml(A, merge_levels::Integer, backend; pre::Int=2, post::Int=2
     empty_csr(n) = AMGMatrixCSR(dev(Int32[]), dev(Int32[]), dev(T[]), n, n)
     levels = MFLevel[]
     for l in 1:M
+        Tl = l == 1 ? T : TC                                  # finest stays T; coarse levels at TC
         Ap = A_perms[l]; n = _m(Ap); nc = maximum(aggs[l])
-        inv_sqrt_w, row_macro = _mf_transfer_factors(aos[l], nc, n, T)
+        inv_sqrt_w, row_macro = _mf_transfer_factors(aos[l], nc, n, Tl)
         coarse_pos = l < M ? copy(cpis[l + 1]) : Int32.(1:nc)  # coarsest child is natural order
         _, invdiag_perm = _diag_inverse(Ap)
         is_mf = 2 <= l <= fused_top + 1                        # apply A_l matrix-free -> don't store it
         Adev = is_mf ? empty_csr(n) :
-               AMGMatrixCSR(dev(_rowptr(Ap)), dev(_colval(Ap)), dev(_nzval(Ap)), n, n)
+               AMGMatrixCSR(dev(_rowptr(Ap)), dev(_colval(Ap)), dev(Tl.(_nzval(Ap))), n, n)
         diag_index_perm = is_mf ? dev(Int[]) : dev(_diag_index(Ap))
-        sc = scale_correction && !is_mf ? dev(zeros(T, n)) : dev(T[])  # Ac scratch only where used
-        push!(levels, MFLevel(Adev, dev(invdiag_perm), diag_index_perm, omegas[l],
+        sc = scale_correction && !is_mf ? dev(zeros(Tl, n)) : dev(Tl[])  # Ac scratch only where used
+        push!(levels, MFLevel(Adev, dev(Tl.(invdiag_perm)), diag_index_perm, Tl(omegas[l]),
                               dev(aos[l]), dev(inv_sqrt_w), dev(coarse_pos), dev(row_macro),
-                              n, nc, dev(zeros(T, n)), dev(zeros(T, n)), dev(zeros(T, n)), dev(zeros(T, n)), sc))
+                              n, nc, dev(zeros(Tl, n)), dev(zeros(Tl, n)), dev(zeros(Tl, n)), dev(zeros(Tl, n)), sc))
     end
 
     coarse_n = _m(operators[L])
     coarse_csc = _csr_to_csc(operators[L])
     coarse_fac = lu(coarse_csc)
-    coarse_inv = _build_coarse_dense_inv(coarse_csc, backend, T, coarse_max_rows)
-    rhs_h, x_h, rhs_hT, x_hT = _coarse_host_buffers(coarse_fac, T, coarse_n)
-    st = MFMLState(levels, coarse_fac, coarse_n, dev(zeros(T, coarse_n)), dev(zeros(T, coarse_n)),
+    coarse_inv = _build_coarse_dense_inv(coarse_csc, backend, TC, coarse_max_rows)
+    rhs_h, x_h, rhs_hT, x_hT = _coarse_host_buffers(coarse_fac, TC, coarse_n)
+    st = MFMLState(levels, coarse_fac, coarse_n, dev(zeros(TC, coarse_n)), dev(zeros(TC, coarse_n)),
                    coarse_inv, rhs_h, x_h, rhs_hT, x_hT,
                    Vector{Int32}(cps[1]), _m(Am), pre, post, T(omega_nominal), backend, fused_top,
                    Int(coarse_max_rows), scale_correction)

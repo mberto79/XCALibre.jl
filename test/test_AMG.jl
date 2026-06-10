@@ -534,6 +534,35 @@ try
             @test norm(Array(b_gpu) - Array(parent(A2)) * Array(x32g2)) / norm(Array(b_gpu)) < 1e-6
         end
 
+        # greenfield matrix-free split-precision device REFRESH (device/5). The coarse RAP scatter does a
+        # GPU atomic add across the precision boundary (F64 finest -> F32 coarse); guard the type match and
+        # that a refreshed mixed-prec state converges as well as the F64 build (coarse F32 = zero iter cost).
+        # Needs a matrix large enough to coarsen at max_coarse=64, so build a 2D Poisson here (A is 5x5).
+        let nx = 40
+            np = nx*nx; ip = Int[]; jp = Int[]; vp = Float64[]
+            pid(i,j) = (j-1)*nx + i
+            for j in 1:nx, i in 1:nx
+                k = pid(i,j); d = 0.0
+                for (di,dj) in ((1,0),(-1,0),(0,1),(0,-1))
+                    (1 <= i+di <= nx && 1 <= j+dj <= nx) || continue
+                    push!(ip,k); push!(jp,pid(i+di,j+dj)); push!(vp,-1.0); d += 1.0
+                end
+                push!(ip,k); push!(jp,k); push!(vp,d)
+            end
+            g1 = SparseXCSR(sparsecsr(ip, jp, vp, np, np))
+            g2 = deepcopy(g1)
+            let rp = XCALibre.Solve._rowptr(g2), cv = XCALibre.Solve._colval(g2), nz = XCALibre.Solve._nzval(g2)
+                for r in 1:XCALibre.Solve._m(g2), p in rp[r]:(rp[r+1]-1)
+                    nz[p] *= (cv[p] == r ? 1.25 : 0.85)
+                end
+            end
+            rm = XCALibre.Solve.mf_ml_refresh_error(g1, g2, 1, backend_gpu; max_coarse=64, coarse_storage=Float32)
+            @test rm.relerr < 1e-5
+            cg64 = XCALibre.Solve.mf_ml_refresh_convergence(g1, g2, 1, backend_gpu; max_coarse=64, coarse_storage=Float64)
+            cg32 = XCALibre.Solve.mf_ml_refresh_convergence(g1, g2, 1, backend_gpu; max_coarse=64, coarse_storage=Float32)
+            @test cg32.converged && cg32.iters <= cg64.iters + 1
+        end
+
         solver_chebyshev_gpu = AMG(mode=Cg(), coarsening=SmoothAggregation(), smoother=AMGChebyshev())
         ws_chebyshev_gpu = _workspace(solver_chebyshev_gpu, b_gpu)
         ws_chebyshev_gpu = XCALibre.Solve.update!(ws_chebyshev_gpu, A_gpu, solver_chebyshev_gpu, config_gpu)

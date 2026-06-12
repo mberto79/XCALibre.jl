@@ -189,8 +189,6 @@ function _build_mf_ml(A, merge_levels::Integer, backend; pre::Int=2, post::Int=2
     end
 
     fused_top = clamp(Int(fused_top), 0, M - 1)  # level 1 (fine A_0) is never matrix-free
-    (fused_top == 0 || !scale_correction) ||
-        error("scale_correction unsupported with fused_top>0 (matrix-free coarse levels); deferred to Option-C-with-refresh")
     dev(v) = backend isa CPU ? copy(v) : Adapt.adapt(backend, v)
     empty_csr(n) = AMGMatrixCSR(dev(Int32[]), dev(Int32[]), dev(T[]), n, n)
     levels = MFLevel[]
@@ -204,7 +202,7 @@ function _build_mf_ml(A, merge_levels::Integer, backend; pre::Int=2, post::Int=2
         Adev = is_mf ? empty_csr(n) :
                AMGMatrixCSR(dev(_rowptr(Ap)), dev(_colval(Ap)), dev(Tl.(_nzval(Ap))), n, n)
         diag_index_perm = is_mf ? dev(Int[]) : dev(_diag_index(Ap))
-        sc = scale_correction && !is_mf ? dev(zeros(Tl, n)) : dev(Tl[])  # Ac scratch only where used
+        sc = scale_correction ? dev(zeros(Tl, n)) : dev(Tl[])  # Ac scratch (matfree levels too)
         push!(levels, MFLevel(Adev, dev(Tl.(invdiag_perm)), diag_index_perm, Tl(omegas[l]),
                               dev(aos[l]), dev(inv_sqrt_w), dev(coarse_pos), dev(row_macro),
                               n, nc, dev(zeros(Tl, n)), dev(zeros(Tl, n)), dev(zeros(Tl, n)), dev(zeros(Tl, n)), sc))
@@ -276,17 +274,26 @@ function _mf_smooth_matfree!(st::MFMLState, l::Int, rhs, k::Int, cy, cz, bk, wg)
     return lv.x
 end
 
-# GAMG scale_correction up-sweep (materialized levels only; fused_top==0 enforced at build). Replaces
-# plain x += P·xc with the energy-minimising x += sf·c, sf=(r_l·c)/(c·Ac), r_l the post-pre-smoothing
-# residual recomputed fresh (lv.x still holds the pre-smoothed iterate). c->lv.tmp, Ac->lv.sc, r_l->lv.r.
-function _mf_coarse_correction_scaled!(lv::MFLevel, child_x, bk, wg)
+# GAMG scale_correction up-sweep. Replaces plain x += P·xc with the energy-minimising x += sf·c,
+# sf=(r_l·c)/(c·Ac). r_l = lv.r, the down-sweep post-pre-smoothing residual (still valid: lv.x is
+# untouched between the down-sweep residual and this call), so no residual recompute is paid.
+# Matrix-free levels get Ac via the Galerkin chain (_mf_apply_operator!, one fine SpMV).
+function _mf_coarse_correction_scaled!(st::MFMLState, l::Int, child_x, cy, cz, bk, wg)
+    lv = st.levels[l]
     T = eltype(lv.x)
     c = lv.tmp
     _launch_amg_kernel!(bk, wg, _amg_mf_prolong_set_kernel!, lv.n, c, child_x,
                         lv.row_macro, lv.inv_sqrt_w, lv.coarse_pos)
-    rp, cv, nz = _rowptr(lv.A), _colval(lv.A), _nzval(lv.A)
-    _launch_amg_kernel!(bk, wg, _amg_csr_matvec_kernel!, lv.n, lv.sc, rp, cv, nz, c)              # Ac
-    _launch_amg_kernel!(bk, wg, _amg_csr_residual_kernel!, lv.n, lv.r, rp, cv, nz, lv.x, lv.rhs)  # r_l
+    if _mf_is_matfree(st, l)
+        _mf_apply_operator!(lv.sc, st, l, c, cy, cz, bk, wg)                                      # Ac
+    else
+        rp, cv, nz = _rowptr(lv.A), _colval(lv.A), _nzval(lv.A)
+        _launch_amg_kernel!(bk, wg, _amg_csr_matvec_kernel!, lv.n, lv.sc, rp, cv, nz, c)          # Ac
+        # level 1's lv.r aliases the matfree chain scratch cz; with fused levels above it is stale by
+        # the time the up-sweep reaches l=1, so recompute (cz is free here: deeper levels are done)
+        l == 1 && st.fused_top > 0 &&
+            _launch_amg_kernel!(bk, wg, _amg_csr_residual_kernel!, lv.n, lv.r, rp, cv, nz, lv.x, lv.rhs)
+    end
     sf = _amg_scale_factor(T(dot(lv.r, c)), T(dot(c, lv.sc)))
     _launch_amg_kernel!(bk, wg, _amg_axpy_kernel!, lv.n, lv.x, sf, c)
     return lv.x
@@ -323,15 +330,20 @@ function mf_ml_cycle(st::MFMLState, rhs_dev)
         lv = st.levels[l]
         child_x = l < M ? st.levels[l + 1].x : st.coarse_x
         if st.scale_correction
-            _mf_coarse_correction_scaled!(lv, child_x, bk, wg)
+            _mf_coarse_correction_scaled!(st, l, child_x, cy, cz, bk, wg)
         else
             _launch_amg_kernel!(bk, wg, _amg_mf_prolong_pos_kernel!, lv.n, lv.x, child_x,
                                 lv.row_macro, lv.inv_sqrt_w, lv.coarse_pos)
         end
+        # Coarse levels post-smooth against lv.r (the pre-smoothing residual), matching the reference
+        # _cycle! rhs aliasing (level.rhs is overwritten by _residual! at levels >= 2). Empirically a
+        # stronger cycle: F1 standalone 151 -> 121 iters, == reference; Cg iters unchanged (89 == 89).
+        post_rhs = l == 1 ? lv.rhs : lv.r
         if _mf_is_matfree(st, l)
-            _mf_smooth_matfree!(st, l, lv.rhs, st.post, cy, cz, bk, wg)
+            copyto!(lv.tmp, post_rhs)  # _mf_smooth_matfree! uses lv.r as scratch; avoid aliasing
+            _mf_smooth_matfree!(st, l, lv.tmp, st.post, cy, cz, bk, wg)
         else
-            _mf_smooth!(lv, lv.rhs, st.post, bk, wg)
+            _mf_smooth!(lv, post_rhs, st.post, bk, wg)
         end
     end
     KernelAbstractions.synchronize(bk)
@@ -359,17 +371,18 @@ function _host_ml_vcycle(operators, Ps, omegas, invdiags, coarse_solve, b, pre, 
     for l in M:-1:1
         Al = operators[l]
         x = xs[l]; tmp = similar(x)
+        r_pre = rhss[l] .- _host_csr_matvec(Al, x)           # x still holds the pre-smoothed iterate
         c = Ps[l] * xs[l + 1]
         if scale_correction
             Ac = _host_csr_matvec(Al, c)
-            r_l = rhss[l] .- _host_csr_matvec(Al, x)         # x still holds the pre-smoothed iterate
-            sf = _amg_scale_factor(T(dot(r_l, c)), T(dot(c, Ac)))
+            sf = _amg_scale_factor(T(dot(r_pre, c)), T(dot(c, Ac)))
             x .+= sf .* c
         else
             x .+= c
         end
+        post_rhs = l == 1 ? rhss[l] : r_pre                  # mirror mf_ml_cycle / reference aliasing
         for _ in 1:post
-            _host_jacobi_sweep!(tmp, x, rhss[l], Al, invdiags[l], omegas[l]); x, tmp = tmp, x
+            _host_jacobi_sweep!(tmp, x, post_rhs, Al, invdiags[l], omegas[l]); x, tmp = tmp, x
         end
         xs[l] = x
     end

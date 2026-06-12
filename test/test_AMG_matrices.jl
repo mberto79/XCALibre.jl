@@ -198,9 +198,16 @@ end
     on  = XCALibre.Solve.mf_ml_convergence(Ac, 2, CPU(); scale_correction=true,  itmax=80)
     @test on.converged
     @test on.iters <= off.iters
-    # fused_top>0 with sc is unsupported (matrix-free coarse levels) -> must error loudly
-    @test_throws ErrorException XCALibre.Solve._build_mf_ml(A, 2, CPU(); max_coarse=64,
-                                                            fused_top=1, scale_correction=true)
+    # fused_top>0 with sc: Ac comes from the matrix-free Galerkin chain -> must equal the
+    # materialized sc cycle exactly (same operator, same sf)
+    for k in (1, 2)
+        hk = XCALibre.Solve._build_mf_ml(A, 2, CPU(); max_coarse=64, fused_top=k, scale_correction=true)
+        h0 = XCALibre.Solve._build_mf_ml(A, 2, CPU(); max_coarse=64, fused_top=0, scale_correction=true)
+        bsc = rand(size(A, 1))
+        xk = Array(XCALibre.Solve.mf_ml_cycle(hk.st, copy(bsc)))
+        x0 = Array(XCALibre.Solve.mf_ml_cycle(h0.st, copy(bsc)))
+        @test maximum(abs.(xk .- x0)) / maximum(abs.(x0)) < 1e-12
+    end
 end
 
 @testset "mf top-k matrix-free Galerkin (5b-C)" begin

@@ -327,7 +327,7 @@ XCALibre.Solve.amg_solve!(ws_solve, ws_solve.hierarchy, setup.solver, ws_solve.h
 @test length(ws_solve.residual_history) == ws_solve.iterations + 1
 @test ws_solve.residual_history[end] <= ws_solve.residual_history[1]
 
-# scale_correction: AMGSolver converges to the same solution with sc on/off; Cg is unaffected (gated)
+# scale_correction: AMGSolver converges to the same solution with sc on/off; Cg uses flexible PR+ β when sc is on
 for sc in (false, true)
     solver_sc = AMG(mode=AMGSolver(), coarsening=SmoothAggregation(), smoother=AMGJacobi(), scale_correction=sc, max_coarse_rows=2)
     ws_sc = _workspace(solver_sc, b)

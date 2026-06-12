@@ -53,20 +53,14 @@ end
 
 # NEW SECTION: G5 guard (activation-time)
 
-# The greenfield matrix-free path is opt-in and has two edges the user should know, surfaced once at
-# activation. (1) VRAM/RAM: with the Item 4 lean refresh (device/5) Option B now SAVES VRAM (~-163MB on
-# F1 1.68M vs reference) but moves ~97MB to host RAM and pays a slightly slower per-timestep refresh.
-# (2) fuse_levels>1 (matrix-free coarse levels, Option C) has no device refresh yet, so the transient
-# path runs Option B (fused_top=0) regardless; warn and clamp. No fused single-launch kernel exists (G3
-# rejected in the preconditioner regime) so there is no register/occupancy pressure to estimate — the
-# SOTA "stop at 2-3 fused levels" rule is moot here.
-# Returns the effective fused_top for the transient path (clamped to 0 = Option B).
+# The greenfield matrix-free path is opt-in; surface its edges once at activation. fuse_levels>1
+# (matrix-free coarse levels, Option C) is now refreshable on the transient path via the composed-map
+# device refresh (device/5), so the clamp is gone: fused_top = fuse_levels-1 (level 1 never fused;
+# _build_mf_ml clamps to the hierarchy depth). NOTE Option C trades cycle time for VRAM: every fused-
+# level operator apply costs one fine SpMV through the Galerkin chain.
 function _greenfield_guard(solver::AMG)
-    if solver.fuse_levels > 1
-        @warn "AMG greenfield: fuse_levels>1 (matrix-free coarse levels / Option C) not yet supported on the transient path; running Option B (fused_top=0)." fuse_levels=solver.fuse_levels maxlog=1
-    end
-    @warn "AMG greenfield matrix-free path is EXPERIMENTAL (opt-in, not default). With the Item 4 lean refresh it now SAVES VRAM (~-163MB on F1 1.68M vs reference) at the cost of ~97MB extra host RAM and a slightly slower per-timestep refresh." maxlog=1
-    return 0
+    @warn "AMG greenfield matrix-free path is EXPERIMENTAL (opt-in, not default). It SAVES VRAM (~-163MB on F1 1.68M vs reference at fuse_levels=1; more with fuse_levels>1) at the cost of extra host RAM and, for fuse_levels>1, slower cycles (fused operator applies route through the finest SpMV)." maxlog=1
+    return max(Int(solver.fuse_levels) - 1, 0)
 end
 
 # NEW SECTION: build / refresh
@@ -83,7 +77,7 @@ function _greenfield_build!(workspace::AMGWorkspace, A, solver::AMG, hardware)
                           omega_nominal=_greenfield_omega(solver.smoother),
                           max_coarse=solver.max_coarse_rows, fused_top=fused_top,
                           coarse_max_rows=_greenfield_coarse_max_rows(solver.coarse_solve),
-                          scale_correction=(solver.scale_correction && solver.mode isa AMGSolver),
+                          scale_correction=solver.scale_correction,  # Cg mode uses the flexible PR+ β
                           coarse_storage=TS)
     plan = build_mf_refresh_plan(handle)
     st = handle.st
@@ -95,14 +89,15 @@ function _greenfield_build!(workspace::AMGWorkspace, A, solver::AMG, hardware)
 end
 
 # Per-timestep numeric refresh: frozen aggregation/permutation/sparsity, restream A0 values + cascade
-# the coarse Galerkin operators + smoother data, all on device (device/5).
-function _greenfield_refresh!(workspace::AMGWorkspace, A, solver::AMG, hardware)
+# the coarse Galerkin operators + smoother data, all on device (device/5). coarse=false = light
+# refresh (finest values + invdiag only), used on coarse_refresh_interval off-iterations.
+function _greenfield_refresh!(workspace::AMGWorkspace, A, solver::AMG, hardware; coarse::Bool=true)
     gf = workspace.hierarchy.greenfield[]
     # Pass the live system matrix straight in: refresh gathers finest values on device via _nzval(A) in the
     # frozen fvm order, coarse cascade uses frozen device operators. Routing through _amg_setup_matrix(A,CPU)
     # forces a full D->H copy of every nonzero (~310ms/outer-iter on F1) since the GPU matrix is a bare
     # CuSparseMatrixCSR — that defeats the P7 device gather and is the matrix-free CFD per-iter deficit.
-    refresh_mf_ml!(gf.st, gf.plan, A; omega_nominal=_greenfield_omega(solver.smoother))
+    refresh_mf_ml!(gf.st, gf.plan, A; omega_nominal=_greenfield_omega(solver.smoother), coarse=coarse)
     return workspace
 end
 
@@ -111,7 +106,10 @@ function _greenfield_update!(workspace::AMGWorkspace, A, solver::AMG, hardware)
     if gf === nothing || gf.nrows != _m(A) || gf.nnz != length(_nzval(A))
         return _greenfield_build!(workspace, A, solver, hardware)
     end
-    _greenfield_refresh!(workspace, A, solver, hardware)
+    # mirror the reference coarse_refresh_interval semantics (7_AMG_update.jl): every k-th numeric
+    # update does the full coarse refresh, the rest restream the finest level only
+    refresh_coarse = (workspace.refresh_count + 1) % solver.coarse_refresh_interval == 0
+    _greenfield_refresh!(workspace, A, solver, hardware; coarse=refresh_coarse)
     workspace.refresh_count += 1
     return workspace
 end

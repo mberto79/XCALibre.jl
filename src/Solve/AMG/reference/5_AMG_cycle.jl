@@ -360,10 +360,10 @@ end
 # Add the prolongated coarse correction. GAMG scale_correction: scale c=P·xc by the
 # energy-minimising sf=(r·c)/(c·Ac) (r=level.rhs, the post-presmoothing residual). Falls back to
 # plain additive prolongation when disabled. tmp/direction are scratch (overwritten by post-smoother).
-# Gated to AMGSolver: a residual-dependent sf makes the preconditioner nonlinear, which breaks the
-# fixed-SPD-preconditioner assumption (Fletcher-Reeves β) of amg_cg_solve!.
+# In Cg mode the residual-dependent sf makes the preconditioner nonlinear; amg_cg_solve! switches to
+# the flexible Polak-Ribiere+ β when sc is on, so sc is now allowed in BOTH modes (F1: 89->45 iters).
 function _apply_coarse_correction!(hierarchy::AMGHierarchy, solver::AMG, level::AMGLevel, coarse_level::AMGLevel)
-    if !(solver.scale_correction && solver.mode isa AMGSolver)
+    if !solver.scale_correction
         _prolongate_add!(hierarchy, level.x, level.P, coarse_level.x, level.tmp)
         return level.x
     end

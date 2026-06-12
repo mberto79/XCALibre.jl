@@ -45,6 +45,10 @@ end
 # warm-started residual). Matches Krylov.jl so swapping Cg()<->AMG keeps tuned tolerances valid.
 _amg_eps(::Type{T}, atol, rtol, r0norm) where {T} = T(atol) + T(rtol) * r0norm
 
+# scale_correction makes M nonlinear (residual-dependent sf), so the FR β assumption fails; use the
+# flexible Polak-Ribiere+ β instead. Costs one buffer copy + one dot per iteration, only when sc is on.
+_amg_cg_flexible(solver::AMG) = solver.scale_correction
+
 function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol)
     hierarchy.is_symmetric || throw(ArgumentError("AMG(mode=Cg()) requires a symmetric matrix"))
     T = eltype(x)
@@ -52,6 +56,8 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
     z = workspace.preconditioned
     p = workspace.search
     q = workspace.q
+    flex = _amg_cg_flexible(solver)
+    r_prev = workspace.correction  # unused by the Cg mode otherwise; holds r_k for the PR+ β
 
     bnorm = max(norm(b), eps(T))
 
@@ -102,6 +108,7 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
             k -= 1
             break
         end
+        flex && _copy_amg!(hierarchy, r_prev, r)
         _cg_step_amg!(hierarchy, x, r, p, q, α)
         rnorm = norm(r)
         _push_residual_norm_history!(workspace, rnorm)
@@ -124,7 +131,7 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
         if !isfinite(rz_new) || rz_new <= zero(T)
             break
         end
-        β = rz_new / rz
+        β = flex ? max(zero(T), (rz_new - dot(z, r_prev)) / rz) : rz_new / rz
         if !isfinite(β)
             break
         end

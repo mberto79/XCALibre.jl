@@ -66,6 +66,100 @@ end
     @inbounds v[i] = isodd(i) ? one(T) : -one(T)
 end
 
+# NEW SECTION: composed-map kernels (fused/matrix-free levels have no stored A_l to cascade through)
+
+# One aggregation hop in place: comp_dst (current-level row position) -> next level position, comp_s
+# accumulates the 1/sqrt(w) chain. Init comp_dst[i]=i, comp_s[i]=1 then hop per level: the composed
+# P_1...P_k keeps ONE nonzero per fine row with row-dependent weight comp_s[i].
+@kernel function _amg_compose_hop_kernel!(comp_dst, comp_s, @Const(row_macro), @Const(coarse_pos),
+                                          @Const(inv_sqrt_w))
+    i = @index(Global)
+    @inbounds begin
+        g = Int(row_macro[Int(comp_dst[i])])
+        comp_dst[i] = coarse_pos[g]
+        comp_s[i] *= inv_sqrt_w[g]
+    end
+end
+
+@kernel function _amg_compose_init_kernel!(comp_dst, comp_s)
+    i = @index(Global)
+    @inbounds begin
+        comp_dst[i] = i
+        comp_s[i] = one(eltype(comp_s))
+    end
+end
+
+# Composed RAP scatter: like _amg_rap_scatter_recompute_kernel! but with per-fine-row dst/scale maps,
+# skipping the fused (un-materialized) levels: A_tgt[I,J] = Σ s_i·s_j·A0[i,j]. One thread per fine row.
+@kernel function _amg_rap_scatter_composed_kernel!(dst_nz, @Const(src_rowptr), @Const(src_colval),
+                                                   @Const(src_nzval), @Const(comp_dst), @Const(comp_s),
+                                                   @Const(tgt_rowptr), @Const(tgt_colval))
+    i = @index(Global)
+    T = eltype(dst_nz)
+    @inbounds begin
+        I = Int(comp_dst[i]); si = comp_s[i]
+        tlo = Int(tgt_rowptr[I]); thi = Int(tgt_rowptr[I + 1]) - 1
+        for s in src_rowptr[i]:(src_rowptr[i + 1] - 1)
+            j = Int(src_colval[s]); J = Int(comp_dst[j])
+            lo = tlo; hi = thi; p = tlo
+            while lo <= hi
+                mid = (lo + hi) >> 1; cv = Int(tgt_colval[mid])
+                if cv == J
+                    p = mid; break
+                elseif cv < J
+                    lo = mid + 1
+                else
+                    hi = mid - 1
+                end
+            end
+            Atomix.@atomic dst_nz[p] += T(si * comp_s[j] * src_nzval[s])  # cast: split precision
+        end
+    end
+end
+
+# Diagonal of the un-materialized fused operator: d[I] = Σ_{dst(i)=dst(j)=I} s_i·s_j·A0[i,j].
+@kernel function _amg_diag_scatter_composed_kernel!(d, @Const(src_rowptr), @Const(src_colval),
+                                                    @Const(src_nzval), @Const(comp_dst), @Const(comp_s))
+    i = @index(Global)
+    T = eltype(d)
+    @inbounds begin
+        I = Int(comp_dst[i]); si = comp_s[i]
+        for s in src_rowptr[i]:(src_rowptr[i + 1] - 1)
+            j = Int(src_colval[s])
+            Int(comp_dst[j]) == I || continue
+            Atomix.@atomic d[I] += T(si * comp_s[j] * src_nzval[s])
+        end
+    end
+end
+
+# Gershgorin row-sum bound for the un-materialized fused operator, CROSS-aggregate terms only:
+# rs[I] = Σ_{dst(j)≠I} |s_i·s_j·A0[i,j]|. Within-aggregate terms all land on the diagonal slot, whose
+# EXACT assembled value the caller adds (|d_I|), so the bound |d_I| + rs[I] >= Σ_J|A_l[I,J]| is exact
+# for M-matrix operators (same-signed off-diagonal contributions, e.g. FVM pressure) and safe otherwise.
+@kernel function _amg_absrowsum_scatter_composed_kernel!(rs, @Const(src_rowptr), @Const(src_colval),
+                                                         @Const(src_nzval), @Const(comp_dst), @Const(comp_s))
+    i = @index(Global)
+    T = eltype(rs)
+    @inbounds begin
+        I = Int(comp_dst[i]); si = comp_s[i]
+        for s in src_rowptr[i]:(src_rowptr[i + 1] - 1)
+            j = Int(src_colval[s])
+            Int(comp_dst[j]) == I && continue
+            Atomix.@atomic rs[I] += T(abs(si * comp_s[j] * src_nzval[s]))
+        end
+    end
+end
+
+# d holds the assembled diagonal; invert in place with the reference unit/eps guards.
+@kernel function _amg_invert_diag_kernel!(d)
+    i = @index(Global)
+    T = eltype(d)
+    @inbounds begin
+        aii = d[i]
+        d[i] = abs(aii) > eps(T) ? inv(aii) : one(T)
+    end
+end
+
 # Gershgorin row bound out[i] = (Σ_p |nz[p]|)·|invdiag[i]| (scaled Gershgorin floor for ω safety).
 @kernel function _amg_abs_rowsum_kernel!(out, @Const(rowptr), @Const(colval), @Const(nzval), @Const(invdiag))
     i = @index(Global)
@@ -91,6 +185,10 @@ mutable struct MFRefreshPlan{DI, MA, HCS, VT}
     coarsest_csr::MA          # device coarsest operator (natural order, frozen pattern)
     coarsest_host::HCS        # host coarsest CSR (frozen pattern) for D->H + lu refactor
     omega_nominal::VT         # 1-elt device buffer holding the nominal omega cap (scalar, kept as field)
+    comp_dst::Any             # device Int32 n_fine: composed row map for fused-level scatters (empty if fused_top==0)
+    comp_s::Any               # device T n_fine: composed 1/sqrt(w) chain weights (empty if fused_top==0)
+    eig::Vector{Any}          # per-level persistent power-iteration eigenvector (lambda warm-start)
+    eig_warm::Vector{Bool}    # eig[l] holds a converged previous eigenvector (false until first refresh)
 end
 
 # Assert the frozen coarse pattern is TOTAL for a transfer level (host): every fine nonzero (i,j) maps
@@ -116,10 +214,11 @@ end
 # finest stream + coarsest operator — the per-level scatter maps are recomputed on device each refresh.
 function build_mf_refresh_plan(handle)
     st = handle.st; T = handle.T; bk = st.backend; M = handle.M
-    st.fused_top == 0 || error("G1 refresh requires fused_top=0 (all coarse levels materialized)")
     dev(v) = bk isa CPU ? copy(v) : Adapt.adapt(bk, v)
     A_perms = handle.A_perms; operators = handle.operators; cpis = handle.cpis; aos = handle.aos
 
+    # per-level pattern totality also guarantees the composed (fused-skip) scatter is total: the image
+    # of each hop is contained in the next level's frozen pattern by induction.
     for l in 1:M
         n = _m(A_perms[l]); nc = maximum(handle.aggs[l])
         _, row_macro = _mf_transfer_factors(aos[l], nc, n, T)
@@ -133,21 +232,29 @@ function build_mf_refresh_plan(handle)
                                 dev(copy(_nzval(coarsest))), _m(coarsest), _n(coarsest))
     coarsest_host = AMGMatrixCSR(copy(_rowptr(coarsest)), copy(_colval(coarsest)),
                                  copy(_nzval(coarsest)), _m(coarsest), _n(coarsest))
+    n1 = st.levels[1].n
+    comp_dst = st.fused_top > 0 ? dev(zeros(Int32, n1)) : dev(Int32[])
+    comp_s = st.fused_top > 0 ? dev(zeros(T, n1)) : dev(T[])
+    eig = Any[dev(zeros(eltype(lv.invdiag), lv.n)) for lv in st.levels]
     return MFRefreshPlan(dev(handle.pvms[1]), coarsest_csr, coarsest_host,
-                         dev(T[st.omega_nominal]))
+                         dev(T[st.omega_nominal]), comp_dst, comp_s, eig, fill(false, M))
 end
 
-# Device power iteration for λ_max(D⁻¹A) on a frozen operator, reusing level scratch (x/tmp/r/rhs).
+# Device power iteration for λ_max(D⁻¹A) on a frozen operator, reusing level scratch (tmp/r/rhs).
 # Same math as reference _estimate_lambda_max but seed-agnostic (returns the dominant eigenvalue);
 # the Gershgorin floor is permutation-invariant so we do NOT chase the build's natural-order value.
-function _lambda_max_device!(lv::MFLevel, bk, wg; iters::Int=5)
+# v is the persistent plan eigenvector: warm=true seeds from the previous refresh's eigenvector and
+# needs far fewer iterations (the operator drifts slowly between outer iterations).
+function _lambda_max_device!(lv::MFLevel, v, warm::Bool, bk, wg; iters::Int=5, warm_iters::Int=2)
     A = lv.A; rp, cv, nz = _rowptr(A), _colval(A), _nzval(A); T = eltype(lv.invdiag)
-    v = lv.x; wraw = lv.tmp; w = lv.r; gb = lv.rhs; n = lv.n
-    _launch_amg_kernel!(bk, wg, _amg_seed_kernel!, n, v)
-    KernelAbstractions.synchronize(bk)
-    v ./= sqrt(T(n))
+    wraw = lv.tmp; w = lv.r; gb = lv.rhs; n = lv.n
+    if !warm
+        _launch_amg_kernel!(bk, wg, _amg_seed_kernel!, n, v)
+        KernelAbstractions.synchronize(bk)
+        v ./= sqrt(T(n))
+    end
     lambda = one(T)
-    for _ in 1:iters
+    for _ in 1:(warm ? warm_iters : iters)
         _launch_amg_kernel!(bk, wg, _amg_csr_matvec_kernel!, n, wraw, rp, cv, nz, v)
         KernelAbstractions.synchronize(bk)
         w .= wraw .* lv.invdiag
@@ -159,13 +266,41 @@ function _lambda_max_device!(lv::MFLevel, bk, wg; iters::Int=5)
     return max(lambda, T(maximum(gb)), one(T))
 end
 
+# λ_max(D⁻¹A_l) for a fused (un-materialized) level: A_l·v via the exact Galerkin chain. The
+# Gershgorin floor uses the composed |·| row-sum bound already staged in lv.rhs by the caller.
+function _lambda_max_matfree!(st::MFMLState, l::Int, v, warm::Bool, bk, wg; iters::Int=5, warm_iters::Int=2)
+    lv = st.levels[l]; T = eltype(lv.invdiag)
+    cy = st.levels[1].tmp; cz = st.levels[1].r
+    wraw = lv.tmp; w = lv.r; n = lv.n
+    if !warm
+        _launch_amg_kernel!(bk, wg, _amg_seed_kernel!, n, v)
+        KernelAbstractions.synchronize(bk)
+        v ./= sqrt(T(n))
+    end
+    lambda = one(T)
+    for _ in 1:(warm ? warm_iters : iters)
+        _mf_apply_operator!(wraw, st, l, v, cy, cz, bk, wg)
+        KernelAbstractions.synchronize(bk)
+        w .= wraw .* lv.invdiag
+        lambda = max(T(norm(w)), eps(T))
+        v .= w ./ lambda
+    end
+    lv.rhs .= lv.rhs .* abs.(lv.invdiag)  # rhs holds the composed abs row-sum bound
+    KernelAbstractions.synchronize(bk)
+    return max(lambda, T(maximum(lv.rhs)), one(T))
+end
+
 # NEW SECTION: the refresh entry point
 
 # Refresh ALL numeric data of a built MFMLState from a new operator A2 (SAME sparsity as the original
 # fine A) with frozen structure: finest values (host gather + one H->D) -> cascaded coarse RAP scatter
 # (device, recomputed) -> per-level invdiag + omega (device) -> coarsest LU refactor. No re-aggregation,
 # no host RAP, no realloc. Lean: no per-nonzero scatter maps, no device value buffer (see MFRefreshPlan).
-function refresh_mf_ml!(st::MFMLState, plan::MFRefreshPlan, A2; omega_nominal=nothing)
+# coarse=false is the light per-timestep refresh (mirrors the reference coarse_refresh_interval
+# off-iteration): finest values + finest invdiag only; the coarse cascade, smoother lambdas and the
+# coarsest factorization stay frozen until the next full refresh. Preconditioner-only staleness —
+# the outer Krylov reads the live A, so correctness is unaffected.
+function refresh_mf_ml!(st::MFMLState, plan::MFRefreshPlan, A2; omega_nominal=nothing, coarse::Bool=true)
     bk = st.backend; wg = 256; M = length(st.levels)
     finest_nz = _nzval(st.levels[1].A); T = eltype(finest_nz)
     TC = eltype(st.coarse_rhs)  # coarse-level (>=2) + coarsest storage type (split precision)
@@ -182,9 +317,49 @@ function refresh_mf_ml!(st::MFMLState, plan::MFRefreshPlan, A2; omega_nominal=no
     # one-time directive telemetry: confirms the gather source is a native GPU array under production CFD.
     bk isa CPU || @info "AMG gf refresh: finest gather source" type=typeof(src_nz) eltype=eltype(src_nz) zero_copy=(src_nz === nz) maxlog=1
     _launch_amg_kernel!(bk, wg, _amg_gather_kernel!, length(fvm), finest_nz, src_nz, fvm)
-    # cascade coarse operators: zero target, scatter-add from the (already refreshed) fine level,
-    # recomputing dst+scale in-kernel from resident transfer factors (one thread per source row)
-    for l in 1:M
+    if !coarse
+        lvf = st.levels[1]
+        _launch_amg_kernel!(bk, wg, _amg_invdiag_kernel!, lvf.n, lvf.invdiag, _nzval(lvf.A), lvf.diag_index)
+        KernelAbstractions.synchronize(bk)
+        return st
+    end
+    ft = st.fused_top
+    lv1 = st.levels[1]; A1 = lv1.A
+    if ft > 0
+        # fused (un-materialized) levels: walk the composed maps down the block, refreshing each
+        # level's invdiag (diagonal scatter) + omega (matrix-free power iteration), then deliver the
+        # values of the first materialized operator below the block in ONE composed scatter from A_0.
+        _launch_amg_kernel!(bk, wg, _amg_compose_init_kernel!, lv1.n, plan.comp_dst, plan.comp_s)
+        _launch_amg_kernel!(bk, wg, _amg_compose_hop_kernel!, lv1.n, plan.comp_dst, plan.comp_s,
+                            lv1.row_macro, lv1.coarse_pos, lv1.inv_sqrt_w)
+        for l in 2:(ft + 1)
+            lv = st.levels[l]
+            _fill_device!(bk, lv.invdiag, zero(eltype(lv.invdiag)))
+            _fill_device!(bk, lv.rhs, zero(eltype(lv.rhs)))
+            _launch_amg_kernel!(bk, wg, _amg_diag_scatter_composed_kernel!, lv1.n, lv.invdiag,
+                                _rowptr(A1), _colval(A1), _nzval(A1), plan.comp_dst, plan.comp_s)
+            _launch_amg_kernel!(bk, wg, _amg_absrowsum_scatter_composed_kernel!, lv1.n, lv.rhs,
+                                _rowptr(A1), _colval(A1), _nzval(A1), plan.comp_dst, plan.comp_s)
+            KernelAbstractions.synchronize(bk)
+            lv.rhs .+= abs.(lv.invdiag)  # invdiag still holds the raw assembled diagonal here
+            _launch_amg_kernel!(bk, wg, _amg_invert_diag_kernel!, lv.n, lv.invdiag)
+            KernelAbstractions.synchronize(bk)
+            lambda = _lambda_max_matfree!(st, l, plan.eig[l], plan.eig_warm[l], bk, wg)
+            lv.omega = min(omega_cap, T(2) - eps(T)) / T(lambda)
+            plan.eig_warm[l] = true
+            _launch_amg_kernel!(bk, wg, _amg_compose_hop_kernel!, lv1.n, plan.comp_dst, plan.comp_s,
+                                lv.row_macro, lv.coarse_pos, lv.inv_sqrt_w)
+        end
+        tgt = ft + 2 <= M ? st.levels[ft + 2].A : plan.coarsest_csr
+        dst_nz = _nzval(tgt)
+        _fill_device!(bk, dst_nz, zero(eltype(dst_nz)))
+        _launch_amg_kernel!(bk, wg, _amg_rap_scatter_composed_kernel!, lv1.n, dst_nz,
+                            _rowptr(A1), _colval(A1), _nzval(A1), plan.comp_dst, plan.comp_s,
+                            _rowptr(tgt), _colval(tgt))
+    end
+    # cascade the materialized coarse operators: zero target, scatter-add from the (already refreshed)
+    # fine level, recomputing dst+scale in-kernel from resident transfer factors (1 thread/source row)
+    for l in (ft == 0 ? 1 : ft + 2):M
         lv = st.levels[l]; src = lv.A
         tgt = l < M ? st.levels[l + 1].A : plan.coarsest_csr
         dst_nz = _nzval(tgt)
@@ -194,13 +369,16 @@ function refresh_mf_ml!(st::MFMLState, plan::MFRefreshPlan, A2; omega_nominal=no
                             lv.row_macro, lv.coarse_pos, lv.inv_sqrt_w,
                             _rowptr(tgt), _colval(tgt))
     end
-    # per-level smoother data: invdiag from frozen diag_index, omega from device power iteration
+    # materialized-level smoother data: invdiag from frozen diag_index, omega from warm-started power
+    # iteration on the persistent plan eigenvector (fused levels were refreshed in the block above)
     for l in 1:M
+        _mf_is_matfree(st, l) && continue
         lv = st.levels[l]
         _launch_amg_kernel!(bk, wg, _amg_invdiag_kernel!, lv.n, lv.invdiag, _nzval(lv.A), lv.diag_index)
         KernelAbstractions.synchronize(bk)
-        lambda = _lambda_max_device!(lv, bk, wg)
+        lambda = _lambda_max_device!(lv, plan.eig[l], plan.eig_warm[l], bk, wg)
         lv.omega = min(omega_cap, T(2) - eps(T)) / T(lambda)  # cap in T; coarse lambda is at level precision
+        plan.eig_warm[l] = true
     end
     # coarsest: D->H the refreshed coarsest operator into the frozen host pattern, refresh whichever
     # coarse mechanism is active (device dense inverse for GEMV, else refactor host LU)
@@ -241,19 +419,28 @@ end
 # arithmetic AND that the frozen pattern is adequate for changed values. Returns the worst relative
 # nzval error across every level + the coarsest, plus a separate omega relerr (λ_max drift).
 function mf_ml_refresh_error(A1, A2, merge_levels::Integer, backend; pre::Int=2, post::Int=2,
-                             omega_nominal=4/3, max_coarse::Integer=64, coarse_storage=nothing)
+                             omega_nominal=4/3, max_coarse::Integer=64, coarse_storage=nothing,
+                             fused_top::Integer=0)
     h1 = _build_mf_ml(A1, merge_levels, backend; pre=pre, post=post, omega_nominal=omega_nominal,
-                      max_coarse=max_coarse, fused_top=0, coarse_storage=coarse_storage)
+                      max_coarse=max_coarse, fused_top=fused_top, coarse_storage=coarse_storage)
     plan = build_mf_refresh_plan(h1)
     refresh_mf_ml!(h1.st, plan, A2; omega_nominal=omega_nominal)
     ops, lam = _frozen_rap_oracle(h1, A2); T = h1.T; M = length(h1.st.levels)
     relerr = 0.0; omega_relerr = 0.0
     for l in 1:M
-        got = Array(_nzval(h1.st.levels[l].A)); ref = _nzval(ops[l])
-        length(got) == length(ref) || error("refresh/oracle pattern mismatch at level $l")
-        relerr = max(relerr, maximum(abs.(got .- ref)) / max(maximum(abs.(ref)), eps(T)))
+        lv = h1.st.levels[l]
+        if _mf_is_matfree(h1.st, l)
+            # no stored values at a fused level: validate the refreshed invdiag against the oracle diag
+            _, invd_ref = _diag_inverse(ops[l])
+            got_d = Array(lv.invdiag)
+            relerr = max(relerr, maximum(abs.(got_d .- invd_ref)) / max(maximum(abs.(invd_ref)), eps(T)))
+        else
+            got = Array(_nzval(lv.A)); ref = _nzval(ops[l])
+            length(got) == length(ref) || error("refresh/oracle pattern mismatch at level $l")
+            relerr = max(relerr, maximum(abs.(got .- ref)) / max(maximum(abs.(ref)), eps(T)))
+        end
         om_ref = min(T(omega_nominal), T(2) - eps(T)) / T(lam[l])
-        omega_relerr = max(omega_relerr, abs(h1.st.levels[l].omega - om_ref) / max(abs(om_ref), eps(T)))
+        omega_relerr = max(omega_relerr, abs(lv.omega - om_ref) / max(abs(om_ref), eps(T)))
     end
     cg = Array(_nzval(plan.coarsest_csr)); cr = _nzval(ops[end])
     relerr = max(relerr, maximum(abs.(cg .- cr)) / max(maximum(abs.(cr)), eps(T)))
@@ -265,9 +452,9 @@ end
 # Mirrors mf_ml_convergence but on the refreshed state (st.levels[1].A holds A2's permuted finest).
 function mf_ml_refresh_convergence(A1, A2, merge_levels::Integer, backend; pre::Int=2, post::Int=2,
                                    itmax::Int=200, rtol=1e-8, omega_nominal=4/3, max_coarse::Integer=64,
-                                   coarse_storage=nothing)
+                                   coarse_storage=nothing, fused_top::Integer=0)
     h1 = _build_mf_ml(A1, merge_levels, backend; pre=pre, post=post, omega_nominal=omega_nominal,
-                      max_coarse=max_coarse, fused_top=0, coarse_storage=coarse_storage)
+                      max_coarse=max_coarse, fused_top=fused_top, coarse_storage=coarse_storage)
     plan = build_mf_refresh_plan(h1)
     refresh_mf_ml!(h1.st, plan, A2; omega_nominal=omega_nominal)
     st = h1.st; T = h1.T; n = st.n; bk = backend; wg = 256

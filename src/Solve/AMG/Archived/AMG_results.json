@@ -1,0 +1,5 @@
+{
+  "_desc": "Performance phase results. Implementation benchmark oracle in Implementation/arch_results.json.",
+  "_note": "Create AMG_perf_results.json at perf session start (see AMG_next_prompt.md).",
+  "_index": {}
+}

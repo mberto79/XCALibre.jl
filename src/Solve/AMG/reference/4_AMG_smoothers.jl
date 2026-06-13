@@ -13,27 +13,19 @@ end
     @inbounds dest[i] = src[i]
 end
 
-@kernel function _amg_jacobi_step_kernel!(x_new, x_old, b, rowptr, colval, nzval, invdiag, diagonal_index, omega)
+# Residual form x_old + ω·D⁻¹(b − A·x_old): the full-row sum cancels down to the residual, so the
+# update preserves x's bits near the fixed point. The diagonal-excluded form (1−ω)x + ω·D⁻¹(b−σ)
+# recombines two large independently-rounded terms, injecting ~ulp(|x|) noise per sweep — floors
+# Float32 cycle quality and breaks outer CG (F1 1.68M: stall at 2.4e-4 vs convergence at 1e-4).
+@kernel function _amg_jacobi_step_kernel!(x_new, x_old, b, rowptr, colval, nzval, invdiag, omega)
     i = @index(Global)
     T = eltype(x_new)
     sigma = zero(T)
     @inbounds begin
-        row_start = rowptr[i]
-        row_stop = rowptr[i + 1] - 1
-        diagp = diagonal_index[i]
-        if diagp == 0
-            for p in row_start:row_stop
-                sigma += nzval[p] * x_old[colval[p]]
-            end
-        else
-            for p in row_start:(diagp - 1)
-                sigma += nzval[p] * x_old[colval[p]]
-            end
-            for p in (diagp + 1):row_stop
-                sigma += nzval[p] * x_old[colval[p]]
-            end
+        for p in rowptr[i]:(rowptr[i + 1] - 1)
+            sigma += nzval[p] * x_old[colval[p]]
         end
-        x_new[i] = (one(T) - omega) * x_old[i] + omega * invdiag[i] * (b[i] - sigma)
+        x_new[i] = x_old[i] + omega * invdiag[i] * (b[i] - sigma)
     end
 end
 
@@ -173,7 +165,6 @@ function _amg_jacobi!(hierarchy::AMGHierarchy, smoother::AMGJacobi, level::AMGLe
             _colval(A),
             _nzval(A),
             level.inv_diagonal,
-            level.diagonal_index,
             omega
         )
         level.x, level.tmp = level.tmp, level.x

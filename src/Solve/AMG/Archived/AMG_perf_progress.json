@@ -1,0 +1,108 @@
+{
+ "_index": {
+  "P1": "profile 2x gap + assess directives",
+  "P2": "scale_correction in Cg gate",
+  "P3": "FIXED: split precision finest F64 / coarse F32",
+  "P5": "hierarchy depth (Geometric ml) + dense-coarse branch / OOM",
+  "P6": "regression localized to REFRESH (not cycle); lean-refresh fix -30%",
+  "P7": "FIXED: device finest gather closes refresh gap (gf<=ref); directive#1 RAP-map REFUTED",
+  "P8": "FIXED: ~1.5x CFD deficit ELIMINATED - hidden D->H setup-matrix in refresh seam; gf now wall-time parity/faster + VRAM win; ml3 divergence resolved",
+  "P9": "FIXED Lever A: ref post-smooth rhs aliasing replicated; gf standalone 121==ref",
+  "P10": "DONE Lever C: sc-in-Cg via flexible PR+ beta; 89->45 it; default-on both paths",
+  "P11": "DONE Levers B+D: fused-level device refresh (composed maps) + warm-start lambda",
+  "P12": "DONE: AMG beats PCG+Jacobi (CFD -2.7pct matched quality; static 2.3-3.2x); gf coarse_refresh_interval added",
+  "P13": "FIXED: F32 finest cycle quality - Jacobi kernel residual form"
+ },
+ "tasks": [
+  {
+   "id": "P1",
+   "desc": "Profile 2x CFD gap; localize bucket; assess 4 user directives",
+   "done": true,
+   "note": "DONE. Gap = iteration count (gf 273 vs ref 167 PCG, 1.63x) x per-cycle 1.15x = 1.88x. Refresh 7% (not it). All 4 directives miss the real lever. See perf_findings/results."
+  },
+  {
+   "id": "P2",
+   "desc": "Enable scale_correction in Cg/preconditioner mode (273->219)",
+   "done": false,
+   "note": "DEFERRED 06-08. Clean 2x2 FR-PCG: ref 167/126, gf 273/219 (nosc/sc). PREMISE CORRECTED: ref's 167 is NO-SC, not sc (old note wrong). sc is a SEPARATE additive ~25% lever for BOTH, does NOT close the gf/ref direction gap (1.63x->1.74x). Converged under FR on F1 but unguarded sc-in-Cg unsafe in general (FR fixed-SPD-M, cg:363); safe enable needs flexible CG + changes reference gate too. Recommend P3 first (gets gf to ref default with no CG-path risk); revisit P2 as separate proposal."
+  },
+  {
+   "id": "P3",
+   "desc": "Close gf/ref gap -> FIXED via split precision (finest F64, coarse F32)",
+   "done": true,
+   "note": "RESOLVED 06-08. Implemented gf split precision in _build_mf_ml: finest A0 ALWAYS F64, coarse levels(>=2)+coarsest = coarse_storage (kwarg). 64-cell sweep (results.mixedprec_*): gf_f32m iters == gf_f64 in EVERY cell -> mixed = full F64 cycle quality. F1 Cg gf_f32m 124 vs gf_f64 124 vs ref 128 (gf BEATS ref). DEFICIT WAS finest-level F32 arithmetic; coarse F32 costs zero iters. gf_f32m also FASTER than gf_f64 (less data) + retains coarse-level VRAM win. Diagnosis confirmed: F32 deficit localized to finest. Cg=>sc OFF both (design). AMGSolver standalone gf>ref iters = SEPARATE item (not precision). Test suite passes. STILL TODO: verify causal control (gf-all-F32 reproduces deficit under same harness) + quantify mixed-vs-F32 VRAM (finest A0 doubles); refresh path device/5 mixed-prec untested (build-only benchmark)."
+  },
+  {
+   "id": "P3r",
+   "desc": "mixed-prec device/5 REFRESH (transient path) - the P3 deployment gap",
+   "done": true,
+   "note": "RESOLVED 06-08. ONLY real bug GPU-only: coarse RAP scatter atomic crossed F64->F32 (no CUDA mixed atomic_add method). FIX cast product to eltype(dst_nz) (no-op uniform). +hygiene: coarse_inv at TC, fill at dst eltype. Validated on CUDA (CPU alone = false pass, Atomix promotes silently): mixed relerr 3.4e-7, F64 4.4e-16; refresh-then-converge mixed iters==F64 (6==6, deep 9-level 5==5). New drivers: mf_ml_refresh_error+coarse_storage, mf_ml_refresh_convergence. Tests CPU(matrices G1)+GPU(test_AMG.jl). Mixed-prec gf now CFD-deployable on transient path. See perf_findings P3 FOLLOW-UP, results.mixedprec_refresh."
+  },
+  {
+   "id": "P4",
+   "desc": "gf F32 asymmetry = SAME bug as P3 (merged)",
+   "done": false,
+   "note": "MERGED into P3. The 'F32 AMGSolver floor' and the CG-mode gap are both the F32 cycle asymmetry. One bug, one fix."
+  },
+  {
+   "id": "P5",
+   "desc": "Hierarchy depth + dense-coarse + matrix-free-vs-materialized regression",
+   "done": true,
+   "note": "DONE 06-08 (results.P5_*). (1) user dense-coarse-OOM hypothesis RESOLVED - deploy cfg coarsest 990>512 -> host-LU, NO dense; crash was HOST RAM (14GB, 2 mesh procs + VSCode). (2) STRUCTURAL: gf LOCKED to Geometric; ml1=15 levels vs SA=4; ml2=7 ml3=5. ml3<ml2 in CFD (shallower faster). (3) REAL CFD (F64, single proc, 50 iters): matrix-free(fuse1) REGRESSES ~1.5x WALL-TIME vs materialized(fuse0) at identical coarsening. Contradicts isolated-solve REPL number (excluded per-timestep refresh). Plain Cg+Jacobi cheapest. MECHANISM NOT ISOLATED (no inner-iter counts; ml3 Ux diverges 45% -> matrix-free cycle not numerically identical). gf value = VRAM (3-3.8x), not speed. NEXT ITEM: inner-iter counts (standalone update!->solve, ws.iterations; device matrix via CuSparseMatrixCSR ctor NOT adapt) to separate kernel-overhead vs weaker-cycle; then NVTX refresh-vs-cycle split."
+  },
+  {
+   "id": "P6",
+   "desc": "Isolate the 1.5x regression mechanism + address directive (freeze coeffs in inner loop)",
+   "done": true,
+   "note": "DONE 06-08 (results.P6_regression_localized). Directive premise REFUTED by measurement: inner cycle already reads only frozen lv.A/invdiag/omega + precomputed Int32 transfer arrays (no assembly, no geometric/index recompute) -> #1/#2 already enforced; #1/#2's kernel-tiling no-ops or reverse VRAM win (see perf_findings directive assessment). Standalone build->refresh->solve (greenfield_solve_spike +n_update kwarg, ws.iterations + CUDA.@elapsed): gf per-cycle == ref (8.45 vs 8.68 ms), iters gf 88/79 == ref 89/80 at rtol=1e-6, refresh does NOT degrade iters. The whole regression = REFRESH (gf 205 vs ref 30ms). FIX device/5:176 nz2=_cpu_vector(_nzval(A2)) (values-only D->H, pattern frozen) -> 205->143ms -30%, iters unchanged, oracle relerr 1e-16. SCOPE: reduced not eliminated; -60ms/iter ml2 transfers to CFD; iter-parity is tight-tol only. OPEN: ml3 45% Ux divergence (loose-tol cycle behavior / ml3 refresh bug); remaining refresh 143 vs 30 distributed (RAP cascade ~80, copies, lambda, coarse LU)."
+  },
+  {
+   "id": "P7",
+   "desc": "Close remaining refresh gap; assess directive#1 (RAP-map caching) + #2 (lambda lag)",
+   "done": true,
+   "note": "DONE 06-08 (results.P7_finest_device_gather). ROOT: P6's remaining 143 vs 30 was MOSTLY the finest host round-trip (D->H _cpu_vector(A2) + host gather loop + H->D ~47ms) on a system matrix ALREADY device-resident (_amg_setup_matrix=identity). FIX: finest_value_map -> device CuArray Int32; gather on device via EXISTING _amg_gather_kernel! (adapt(bk,_nzval(A2)) zero-copy on device A2, one H->D only for host A2 validation driver); dropped finest_host + struct field. RESULT same-harness F1 ml2 mc4096 F64: gf refresh 26.4/30.6 vs ref 30.1/35.7 (min/med) -> gf <= ref, refresh REGRESSION CLOSED. DIRECTIVE#1 REFUTED: RAP cascade=3.18ms not ~80 (80 lumped finest H->D); caching per-nonzero maps (52-104MB VRAM, phase5d) for a 3ms cascade = pointless, NOT done. DIRECTIVE#2 (lambda) DEFERRED: smoother 13.2ms now largest but gf<=ref total -> past-parity tuning; warm-start power-iter = correctness-neutral lever if needed. Correctness F1 device oracle 4.75e-16, both AMG test files pass. SCOPE: refresh component only; NOT end-to-end CFD parity; ml3 divergence still separate."
+  },
+  {
+   "id": "P8",
+   "desc": "End-to-end CFD wall-time: find + fix the ~1.5x matrix-free deficit (directive#2)",
+   "done": true,
+   "note": "DONE 06-08 (results.deficit_2_rootcause, findings P8). DEFICIT ELIMINATED. iters DON'T drift (gf==ref at loose 1e-2 AND tight 1e-6, ml2+ml3) -> directive#2 'iters drift' REFUTED; gf SOLVE faster than ref. Whole gap = refresh gf 342 vs ref 27ms. ROOT: _greenfield_refresh! routed A through _amg_setup_matrix(A, _amg_setup_backend(backend)); _amg_setup_backend(CUDABackend)=CPU (NOT identity - P7 note WRONG) so _amg_setup_matrix(CuSparseMatrixCSR,CPU)=full D->H of 8.5M nnz=310ms/iter. refresh_mf_ml! itself=27ms (P7 right). Live GPU matrix=bare CuSparseMatrixCSR (.nzVal); SparseXCSR host-only; bin e.A=SparseXCSR is serialized host copy NOT live type. Proof: adapt identity on device CuArray => real-CFD zero_copy=false => A2 host => D->H ran. FIX device/7: pass live A straight to refresh_mf_ml! (device-direct _nzval gather, frozen fvm order); BUILD keeps _amg_setup_matrix. POST-FIX CFD ITERS=50 zero_copy=true: gf ml2 1.205->0.8545 (ref 0.8291); gf ml3 1.113->0.7463 (ref 0.7506, FASTER). NET matrix-free = wall-time parity/faster + 3-3.8x VRAM win. #3a ml3 45% Ux divergence RESOLVED (was pre-P7 host round-trip). LESSON: device matrix-free paths must NOT reuse reference setup helpers (route through host by design)."
+  },
+  {
+   "id": "bench",
+   "desc": "AMGSolver ref vs gf-OptB + OptB-vs-C cycle/VRAM (user req)",
+   "done": true,
+   "note": "DONE see perf_results P1/P2. gf VRAM 3.1-3.8x less; iters 1.6x F1 (algo); throughput parity F64; fuse=2 poor tradeoff."
+  },
+  {
+   "id": "P9",
+   "desc": "Lever A: AMGSolver standalone gf>ref iters (147vs115)",
+   "done": true,
+   "note": "DONE 06-10 (results.P9_cycle_mismatch_fix). Root cause: reference _cycle! ALIASES level.rhs at levels>=2 (incoming rhs array == coarse_level.rhs gets overwritten by _residual!), so ref post-smooths coarse levels against the PRE-SMOOTHING RESIDUAL, not the textbook restricted rhs. Empirically stronger. gf did textbook (oracle-validated) -> weaker standalone. FIX device/4: post_rhs = l==1 ? lv.rhs : lv.r in mf_ml_cycle + same in _host_ml_vcycle (oracle lockstep); matfree post-smooth copies to lv.tmp (lv.r is its scratch). gf standalone 151->121 == ref 121; Cg 89==89 unchanged; oracle 6e-16."
+  },
+  {
+   "id": "P10",
+   "desc": "Lever C: scale_correction in Cg via flexible CG",
+   "done": true,
+   "note": "DONE 06-10 (results.P10_sc_in_cg_fcg). amg_cg_solve! gains flexible PR+ beta (beta=max(0,(rz_new-dot(z,r_prev))/rz), r_prev=workspace.correction, only when solver.scale_correction). Gates opened: reference/5 _apply_coarse_correction! + device/7 build (sc any mode). device/4 sc reuses down-sweep lv.r (no residual recompute; level-1 recompute only when fused_top>0 since lv.r aliases cz). F1 static: gf 89->45 it (0.913->0.442s), ref 89->45; loose 1e-2: 30->15. sc DEFAULT-ON in Cg now (user-facing behavior change, directive-authorized). FR-beta also tolerated sc on F1 (45 it) but PR+ kept for nonlinear-M safety."
+  },
+  {
+   "id": "P11",
+   "desc": "Levers B+D: fused-levels device refresh + warm-start lambda",
+   "done": true,
+   "note": "DONE 06-10 (results.P11_fused_refresh_warmstart). REFRESH: composed per-fine-row maps (comp_dst/comp_s, 2 reused device buffers ~20MB F1) hop through fused levels; diag scatter -> exact fused invdiag; Gershgorin = exact diag + cross-aggregate abs-sum (naive abs-sum inflated omega 20-40pct); lambda via _mf_apply_operator! power iter; one composed RAP scatter delivers first materialized level below block. Guard unclamped: fused_top=fuse_levels-1. WARM-START: persistent plan.eig per level, warm=2 power iters vs cold=5; refresh 27->20-24ms. MFRefreshPlan struct grew (REPL restart). Oracle 4e-16 all fused_top; conv 9==9; F1 GPU fuse1/2/3 all 45 it. TRADEOFF: fuse2/3 solve 1.5-1.9x SLOWER (each fused apply=1 fine SpMV), VRAM only -33MB beyond fuse1 -> fuse1 stays the deploy config."
+  },
+  {
+   "id": "P12",
+   "desc": "Beat PCG+Jacobi (directive headline)",
+   "done": true,
+   "note": "DONE 06-11 (results.P12_*). Static: AMG sc 3.2x tight / 2.3x loose vs PCG+Jacobi. CFD 50-iter same-run: gf ml3 interval4 rtolp1e-1 0.6349 vs jacobi 0.6522 (-2.7pct, matched p/Ux quality); rtolp1e-2 +4.4pct with 3.6x deeper p. Enabler stack: sc-in-Cg FCG (P10) + warm lambda (P11) + NEW gf coarse_refresh_interval support (light finest-only refresh on off-iterations, mirrors reference 7_AMG_update semantics; validated CPU light/full/oracle). CAVEAT: loose-tol margins within ~2-4pct run variance -> claim parity-to-faster; decisive at tight tol + transient. Tests 213+194 all pass."
+  },
+  {
+   "id": "P13",
+   "desc": "F32 finest cycle deficit (p3_root_cause)",
+   "done": true,
+   "note": "DONE 06-12. Root cause = diag-excluded fused Jacobi form; fix = residual form x+w*Dinv*(b-Ax) in _amg_jacobi_step_kernel! (+_host_jacobi_sweep!, device/3 launches). gf F32 31==ref 31; F64 45==45; ref-CPU-F32 also fixed; 7.32ms/cycle; tests 213+194. See findings P13, results.P13."
+  }
+ ]
+}

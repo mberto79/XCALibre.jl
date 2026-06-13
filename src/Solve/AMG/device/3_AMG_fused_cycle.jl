@@ -33,16 +33,15 @@ end
 # NEW SECTION: host independent oracle (sparse reference P0/R, plain loops) — validates the kernel
 # path AND the 1/sqrt(w) consistency across restrict, prolong, and the RAP-built Ac.
 
-# Weighted-Jacobi sweep matching _amg_jacobi_step_kernel! (skip diagonal in the off-row sum).
+# Weighted-Jacobi sweep matching _amg_jacobi_step_kernel! (residual form, full-row sum).
 function _host_jacobi_sweep!(xnew, xold, b, A, invdiag, omega)
     rp = _rowptr(A); cv = _colval(A); nz = _nzval(A); T = eltype(xnew)
     @inbounds for i in 1:_m(A)
         sigma = zero(T)
         for p in rp[i]:(rp[i + 1] - 1)
-            j = cv[p]; j == i && continue
-            sigma += nz[p] * xold[j]
+            sigma += nz[p] * xold[cv[p]]
         end
-        xnew[i] = (one(T) - omega) * xold[i] + omega * invdiag[i] * (b[i] - sigma)
+        xnew[i] = xold[i] + omega * invdiag[i] * (b[i] - sigma)
     end
     return xnew
 end
@@ -124,7 +123,7 @@ function mf_2grid_cycle(st::MF2GridState, rhs_dev)
     _fill_device!(bk, st.x, zero(T))
     xcur, xtmp = st.x, st.tmp
     for _ in 1:st.pre
-        _launch_amg_kernel!(bk, wg, _amg_jacobi_step_kernel!, n, xtmp, xcur, rhs_dev, rp, cv, nz, st.invdiag, st.diag_index, st.omega)
+        _launch_amg_kernel!(bk, wg, _amg_jacobi_step_kernel!, n, xtmp, xcur, rhs_dev, rp, cv, nz, st.invdiag, st.omega)
         xcur, xtmp = xtmp, xcur
     end
     _launch_amg_kernel!(bk, wg, _amg_csr_residual_kernel!, n, st.r, rp, cv, nz, xcur, rhs_dev)
@@ -134,7 +133,7 @@ function mf_2grid_cycle(st::MF2GridState, rhs_dev)
     xcd = bk isa CPU ? T.(xc_h) : Adapt.adapt(bk, T.(xc_h))
     _launch_amg_kernel!(bk, wg, _amg_mf_prolong_kernel!, n, xcur, xcd, st.row_macro, st.inv_sqrt_w)
     for _ in 1:st.post
-        _launch_amg_kernel!(bk, wg, _amg_jacobi_step_kernel!, n, xtmp, xcur, rhs_dev, rp, cv, nz, st.invdiag, st.diag_index, st.omega)
+        _launch_amg_kernel!(bk, wg, _amg_jacobi_step_kernel!, n, xtmp, xcur, rhs_dev, rp, cv, nz, st.invdiag, st.omega)
         xcur, xtmp = xtmp, xcur
     end
     KernelAbstractions.synchronize(bk)

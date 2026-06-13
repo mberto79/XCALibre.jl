@@ -1,0 +1,14 @@
+{
+ "_index": {
+  "U1": "mechanical move/rename, no logic change (Sonnet-delegable)",
+  "U2": "dispatch unification + MatrixFreeHierarchy struct merge",
+  "U3": "delete spikes, consolidate validation, comment cleanup (Sonnet-delegable)",
+  "U4": "new tests T1-T3 + full acceptance + record results"
+ },
+ "tasks": [
+  {"id": "U1", "desc": "Move to new layout + rename table + AMG.jl includes + test symbols", "done": false, "note": ""},
+  {"id": "U2", "desc": "amg_hierarchy_kind, workspace-kind selection, absorb MFGreenfield, delete gate+Ref", "done": false, "note": ""},
+  {"id": "U3", "desc": "Delete device/0,2,3,6 + macro-layout leftovers; 10_AMG_validation.jl; comment policy", "done": false, "note": ""},
+  {"id": "U4", "desc": "Tests T1(F32 512^2), T2(CPU ignores fl), T3(GPU fl0==fl1); acceptance vs baseline", "done": false, "note": ""}
+ ]
+}

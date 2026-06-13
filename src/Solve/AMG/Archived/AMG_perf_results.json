@@ -1,0 +1,779 @@
+{
+ "_index": {
+  "config": "F1 pressure ml=2 mc=100 F32, RTX4070; all numbers from REPL isolation (not CFD wall clock)",
+  "bucket_split": "per-outer-iter cost split cycle vs refresh",
+  "cycle_gf_vs_ref": "per-cycle gf vs reference apply",
+  "spmv_gf_vs_cusparse": "finest SpMV kernel vs cuSPARSE mul!",
+  "per_level_jacobi_us": "single Jacobi sweep per level (launch floor ~7us)",
+  "precond_quality_pcg": "PCG iters to rtol=1e-6 with each preconditioner (THE gap)",
+  "scale_correction_2x2_frpcg": "CORRECTED 2x2 ref/gf x sc/nosc under shared FR-PCG; ref 167 is NO-SC",
+  "mixedprec_refresh": "device/5 split-precision refresh validated on CUDA+CPU (A1 build -> refresh A2)",
+  "P5_hierarchy_depth_F1": "gf Geometric depth (15/7/5 lvls ml1/2/3) vs production SA (4 lvls); structural gap, never measured vs SA",
+  "P5_dense_coarse_branch": "dense-coarse trigger rule + user OOM hypothesis resolved (host RAM, not dense)",
+  "P5_matfree_vs_materialized_CFD": "REAL CFD: matrix-free regresses ~1.5x vs materialized (refresh+cycle overhead); contradicts isolated-solve REPL number",
+  "P6_regression_localized": "F1 1.68M F64 standalone build->refresh->solve: regression is the REFRESH not the cycle; iters gf==ref; lean-refresh fix -30%",
+  "P7_finest_device_gather": "device finest gather (reuse _amg_gather_kernel!, fvm on device) replaces D->H+host-gather+H->D round-trip; refresh gap to reference CLOSED (gf<=ref same harness); directive#1 RAP-map caching REFUTED (cascade 3.18ms not 80)",
+  "P7_CFD_bench": "post-P7 real F1 SIMPLE CFD wall-time (ITERS=50) ref/gf ml2/ml3 + plain Cg; CuArray gather telemetry confirmed; ml3 divergence RESOLVED by device gather",
+  "P9_cycle_mismatch_fix": "Lever A: post-smooth rhs aliasing; gf standalone 151->121==ref; Cg 89==89",
+  "P10_sc_in_cg_fcg": "Lever C: sc-in-Cg + flexible PR+ beta; F1 static 89->45 it, loose 30->15",
+  "P11_fused_refresh_warmstart": "Levers B+D: composed-map fused refresh (oracle 4e-16) + warm lambda; fuse speed tradeoff",
+  "P12_vs_pcg_jacobi_static": "Static F1 pressure: AMG sc 3.2x (tight) / ~2.3x (loose) faster than PCG+Jacobi",
+  "P12_CFD_50it": "F1 SIMPLE 50-iter: jacobi 0.635 vs gf ml3 sc 0.707 s/it (+11%) BUT p_end 3.3x deeper; tol sweep pending",
+  "P12_CFD_tol_sweep": "Equal-quality sweep: gf rtolp1e-1 0.6612 vs same-run jacobi 0.6588 = PARITY; mc4096 +7% with 4.9x deeper p",
+  "P12_CFD_interval": "FINAL: gf i4 rtolp1e-1 0.6349 vs same-run jacobi 0.6522 = AMG 2.7% FASTER at matched quality",
+  "P13_f32_jacobi_form": "F32 fix: residual-form Jacobi; F1 all-F32/F64/mixed/CPU numbers"
+ },
+ "P7_CFD_bench": {
+  "config": "F1 CRMHL 1.68M, real SIMPLE CFD, 50 iters, F64 both, Geometric, mc1024, pre/post=5, mode=Cg, rtolp=1e-2. s/it = full outer-iter wall (CUDA.sync). Post-P7 device-gather refresh. RTX4070, single julia proc (14GB host).",
+  "s_per_it": {
+   "ref_ml2": 0.8237,
+   "gf_ml2": 1.2047,
+   "ref_ml3": 0.7504,
+   "gf_ml3": 1.1133,
+   "plain_cg": 0.6476
+  },
+  "matfree_regression_outer": {
+   "ml2": 1.46,
+   "ml3": 1.48
+  },
+  "residuals_end50": {
+   "p": {
+    "ref_ml2": 0.0008461,
+    "gf_ml2": 0.0008528,
+    "ref_ml3": 0.0008498,
+    "gf_ml3": 0.0007909
+   },
+   "Ux": {
+    "ref_ml2": 0.002987,
+    "gf_ml2": 0.003039,
+    "ref_ml3": 0.003599,
+    "gf_ml3": 0.00285
+   }
+  },
+  "gather_telemetry": "refresh @info fired type=CuArray{Float64,1,CUDA.DeviceMemory} under production CFD -> on-device gather confirmed, no D->H->D. directive#1 isa-CuArray assertion SATISFIED.",
+  "ml3_divergence_RESOLVED": "prior P5 record gf ml3 Ux=3.97e-3 vs ref 2.74e-3 (~45% off, pre-P7). NOW gf ml3 Ux=2.850e-3 < ref ml3 3.599e-3; p_end matches. gf==ref at BOTH ml2 and ml3. The device-gather refresh (P7) fixed it; the old divergence was the pre-P7 host round-trip path (stale/misaligned cascade values). #3a indexing/weight-bug hunt is MOOT.",
+  "deficit_2": "gf 1.46-1.48x slower/outer-iter > 1.15x per-cycle SpMV gap. ROOT CAUSE FOUND (see deficit_2_rootcause).",
+  "when_helps": "VRAM-bound (gf 3-3.8x less). when_not: wall-time when VRAM not the limit (gf ~1.5x slower/outer-iter). plain Cg+Jacobi cheapest/outer-iter (0.648)."
+ },
+ "deficit_2_rootcause": {
+  "config": "F1 bin pressure system (n=1.68M, nnz=8.54M, F64) loaded to device via MF._build_A -> CuSparseMatrixCSR. REPL decomposition, CUDA.@elapsed min-of-5.",
+  "iters_no_drift": "greenfield_solve_spike Cg F64: ml2 loose(1e-2) gf29/ref30, tight(1e-6) gf88/ref89; ml3 loose gf26/ref26, tight gf79/ref80. gf==ref at BOTH tols -> directive#2 'iters drift at loose tol' hypothesis REFUTED. gap is per-wall-time, not iters.",
+  "decomp_ml2_loose_ms": {
+   "gf_refresh": 342.6,
+   "gf_solve": 371.7,
+   "ref_refresh": 27.4,
+   "ref_solve": 426.7,
+   "note": "gf SOLVE is FASTER than ref (371<427); the ENTIRE deficit is gf refresh 342.6 vs ref 27.4 = 12.5x, paid once/outer-iter. +315ms ~= bench s/it gap +380ms."
+  },
+  "isolation": {
+   "refresh_mf_ml_direct_ms": 27.3,
+   "update_full_ms": 350.5,
+   "amg_setup_matrix_ms": 310.5,
+   "refresh_on_device_A_direct_ms": 19.9,
+   "note": "the 310ms is _amg_setup_matrix(A, _amg_setup_backend(backend)). _amg_setup_backend(CUDABackend)=CPU (NOT identity - prior note wrong). _amg_setup_matrix(CuSparseMatrixCSR, CPU) = full D->H of all nnz = 310ms. refresh_mf_ml! ITSELF is 27ms (P7 was right); the integration wrapper added the D->H P7 never measured."
+  },
+  "live_type_proof": "(1) adapt(backend, device_CuArray) === it (adapt IS identity on device) -> real-CFD telemetry zero_copy=false can ONLY mean _nzval(A2) was a host Array -> A2 host -> D->H happened. (2) CuSparseMatrixCSR stores .nzVal (capital); SparseXCSR._nzval reads lowercase .nzval from host SparseMatrixCSR -> SparseXCSR is HOST-ONLY; live GPU matrix is bare CuSparseMatrixCSR -> hits the D->H _amg_setup_matrix method. Bin e.A=SparseXCSR is just the serialized (host-landed) copy, NOT evidence of live device type.",
+  "FIX": "device/7 _greenfield_refresh!: pass live A straight to refresh_mf_ml! (drop _amg_setup_matrix(A,CPU)). refresh gathers _nzval(A) device-direct in frozen fvm order; device/5 guard adapts only a host A (validation driver). VALIDATED: refresh_mf_ml!(st,plan,A_d device) = 19.9ms, solve converges 75it relres 9.8e-7 (fvm order matches device nzVal). _greenfield_build! KEEPS _amg_setup_matrix (host aggregation needs it, one-time).",
+  "CONFIRMED_post_fix_bench": "ITERS=50 rerun, zero_copy=true telemetry (device-direct gather). gf ml2 1.205->0.8545 s/it (vs ref 0.8291 = 1.03x, was 1.46x); gf ml3 1.113->0.7463 (vs ref 0.7506 = 0.99x, gf now FASTER, was 1.48x). gf residuals consistent (gf ml2 p_end 6.5e-4 beats ref 8.7e-4), no divergence. NET: matrix-free gf is now WALL-TIME PARITY (ml2 +3%) / slightly faster (ml3) vs materialized AND keeps the 3-3.8x VRAM win. The ~1.5x CFD deficit is ELIMINATED."
+ },
+ "P7_finest_device_gather": {
+  "config": "F1 1.68M F64, RTX4070, ml2 mc4096, isolated build->refresh (CUDA.@elapsed), DEVICE-resident A2 (zero-copy gather, the real CFD path)",
+  "refresh_ms_gf": "26.36 min / 30.64 median / 35.04 max",
+  "refresh_ms_ref_same_harness": "30.13 min / 35.74 median / 38.38 max -> gf refresh <= ref refresh; the refresh REGRESSION is CLOSED (was the whole gf-vs-ref gap per P6)",
+  "breakdown_gf_ms": "finest 0.94 (was ~47 = D->H 25 + host gather ~17.5 + H->D ~5), cascade(RAP scatter) 3.18, smoother(invdiag+lambda power-iter) 13.19, coarse(D->H+csr2csc+LU+denseinv) 12.41",
+  "fix": "device/5: finest_value_map moved to device (CuArray Int32); refresh uses _amg_gather_kernel!(finest_nz, adapt(bk,_nzval(A2)), fvm). adapt is zero-copy on device A2 (CFD), one H->D only for host A2 (validation driver). Dropped finest_host buffer + struct field.",
+  "correctness": "F1 device-A2 refresh vs frozen-RAP oracle relerr 4.75e-16; CPU mf_ml_refresh_error 4.9e-16; GPU mixed-prec test relerr 4.87e-7 + refresh-converge iters 6==6. Both AMG test files pass.",
+  "directive1_refuted": "RAP scatter cascade is 3.18ms NOT the documented ~80ms (the 80 lumped the finest H->D copy). Storing per-nonzero RAP maps (~52-104MB VRAM, phase5d regression) to optimize a 3ms cascade is unwarranted -> directive#1 NOT implemented.",
+  "scope": "REFRESH COMPONENT only (isolated, convergence-independent -> transfers to CFD). Does NOT prove end-to-end CFD wall-time parity (per-cycle + loose-tol convergence + ml3 divergence still separate). Numbers at mc4096; deploy mc1024 (fix helps regardless, gather is O(nnz) independent of coarsest).",
+  "remaining_refresh": "smoother 13.2 (lambda power-iter, largest single component) + coarse 12.4. gf already <= ref total -> further work is past-parity tuning (deferred per hard rule). lambda warm-start = correctness-neutral lever if ever needed.",
+  "when_helps": "transient CFD per-timestep refresh with device-resident system matrix (always true in GPU CFD). when_not: host A2 (validation only) pays one H->D, still far cheaper than old host gather loop."
+ },
+ "P6_regression_localized": {
+  "config": "F1 1.68M F64, RTX4070, standalone update->refresh->update->solve (greenfield_solve_spike n_update, ws.iterations + CUDA.@elapsed); mc4096 -> coarsest 2739 host-LU",
+  "iters_ml2": "gf 88 (build) == 88 (refresh) ; ref 89 -> refresh does NOT degrade iters; gf == ref (slightly better)",
+  "iters_ml3": "gf 79 (build) == 79 (refresh) ; ref 80 -> same conclusion",
+  "per_cycle_ms": "gf 8.45 (ml2)/7.35 (ml3) vs ref 8.68/7.58 -> gf cycle is NOT slower (slightly faster); inner loop is frozen, zero assembly",
+  "refresh_ms_before": "gf 205 (steady) vs ref 30 -> the ENTIRE regression bucket is the per-timestep refresh, NOT the cycle",
+  "refresh_breakdown_before": "_amg_matrix(A2) 147 (72%, redundant rowptr/colval D->H+Int) ; values D->H 22 ; host gather 17.5 ; lambda all-lvls 12.4 ; coarsest LU 11.4 ; remainder ~80 = RAP scatter cascade + H->D finest copy",
+  "fix": "device/5 refresh_mf_ml!: nz2 = _cpu_vector(_nzval(A2)) instead of _nzval(_amg_matrix(A2)) -> values-only D->H; pattern already frozen in finest_value_map",
+  "refresh_ms_after": "205 -> 143 (-30%); iters unchanged gf 88/79; oracle relerr ~1e-16 (mf_ml_refresh_error, <1e-12 invariant)",
+  "remaining_gap": "143 vs ref 30: distributed (RAP cascade ~80, values copy 22, gather 17.5, lambda 12.4, coarse LU 11.4); each modest, needs deeper changes",
+  "supersedes": "OLD finding 'refresh 56ms = 7%' (perf_findings Ruled-OUT) was a DIFFERENT config (mc100/F32) and/or excluded host extraction; in real F1 F64 mc4096 the refresh DOMINATES the gf-vs-ref gap",
+  "when_helps": "transient CFD (per-timestep refresh); when_not: static/isolated solve unaffected; does NOT touch cycle or reverse VRAM win"
+ },
+ "mixedprec_refresh": {
+  "cuda_relerr_f64": 4.4e-16,
+  "cuda_relerr_mixed": 3.4e-07,
+  "cuda_iters_f64": 6,
+  "cuda_iters_mixed": 6,
+  "deep_n14400_levels9_relerr_mixed": 9.7e-07,
+  "deep_iters_f64": 5,
+  "deep_iters_mixed": 5,
+  "caveat": "poisson 1600/14400, GEMV coarse branch; mixed relerr = F32 coarse precision (~1e-6); mixed iters == F64 iters (coarse F32 = zero iter cost) through the refreshed transient path"
+ },
+ "bucket_split": {
+  "cycles_156_ms": 731.7,
+  "refresh_ms": 56.4,
+  "cycle_share_pct": 92.8,
+  "caveat": "refresh is per-outer-iter and only ~7%; directive#1 targets this bucket"
+ },
+ "cycle_gf_vs_ref": {
+  "ref_ms": 4.026,
+  "gf_ms": 4.618,
+  "ratio": 1.15,
+  "caveat": "per-cycle nearly equal; explains <20% of CFD 2x gap"
+ },
+ "spmv_gf_vs_cusparse": {
+  "ours_us": 347.0,
+  "cusparse_us": 301.8,
+  "ratio": 1.15,
+  "nnz": 8541020,
+  "caveat": "our hand CSR SpMV already competitive; not the bottleneck"
+ },
+ "per_level_jacobi_us": {
+  "L1_1677158": 483.8,
+  "L2_478806": 211.1,
+  "L3_133754": 56.4,
+  "L4_36611": 19.8,
+  "L5_9954": 7.4,
+  "L6_2748": 7.3,
+  "L7_759": 7.3,
+  "L8_211": 7.7,
+  "caveat": "cycle cost = L1(51%)+L2(22%) real compute; launch-bound tail L5-8 ~3% -> CUDA graphs/fusion won't help"
+ },
+ "precond_quality_pcg": {
+  "gf_no_sc": 273,
+  "gf_scale_corr": 219,
+  "ref": 167,
+  "caveat": "THE dominant lever. gf weaker preconditioner. 1.63x iters (no sc) x 1.15x cycle = 1.88x ~ observed 2x"
+ },
+ "scale_correction_2x2_frpcg": {
+  "ref_nosc": 167,
+  "ref_sc": 126,
+  "gf_nosc": 273,
+  "gf_sc": 219,
+  "caveat": "CORRECTED 2025-06-08: clean 2x2, ONE shared Fletcher-Reeves PCG, sc set at BUILD via mode=AMGSolver. Prior note 'ref uses sc in Cg' was FALSE: ref production Cg = 167 is NO-SC (sc gated off in Cg for BOTH by design, FR nonlinear-M concern, cycle:366/integration:87). Findings: (1) direction gap is sc-INDEPENDENT: gf/ref = 273/167=1.63x no-sc, 219/126=1.74x sc -> sc does NOT close it (P3 orthogonal). (2) sc helps BOTH ~25% and DID NOT break FR on F1 (all converged), but that's 1 matrix; theoretical nonlinear-M risk stands. (3) P3 alone takes gf-no-sc 273->~167 = ref production default, zero CG-path risk. P2(sc) = separate additive lever for BOTH, needs flexible-CG/changes shared CG gate."
+ },
+ "coarse_solve_precision": {
+  "gf_gemv_F32": 273,
+  "gf_hostLU_F64": 273,
+  "caveat": "coarse solve precision NOT the cause; ruled out"
+ },
+ "direction_gap": {
+  "gf_sc_vs_ref_iters": [
+   219,
+   167
+  ],
+  "norm_ratio": 18.1,
+  "cos_sim": 0.9963,
+  "caveat": "SUPERSEDED by p3_root_cause below. The 'direction gap' framing (algorithmic, precision-indep) was from AMGSolver STATIONARY mode, NOT the CG-preconditioner path the CFD uses. Real cause = F32 cycle asymmetry."
+ },
+ "p3_root_cause_F32_asymmetry": {
+  "iters_CGmode_frpcg": {
+   "F32": {
+    "gf": 273,
+    "ref": 167
+   },
+   "F64": {
+    "gf": 90,
+    "ref": 99
+   }
+  },
+  "precond_asymmetry": {
+   "F32": {
+    "gf": 0.0016,
+    "ref": 6.9e-08
+   },
+   "F64": {
+    "gf": 3.4e-16,
+    "ref": 1.2e-16
+   }
+  },
+  "flexcg_mixedprec_FALSIFIES_asym": {
+   "config": "F64 outer + F32 cycle (CFD path)",
+   "gf_FR": 273,
+   "gf_FLEX_PolakRibiere": 284,
+   "ref_FR": 99,
+   "ref_FLEX": 99,
+   "note": "DECISIVE: flexible CG does NOT recover gf (273->284) while ref control unchanged (99) -> asymmetry-breaks-CG REFUTED; outer-loop fix dead; it's an F32 cycle QUALITY deficit. Also: F64-outer helps ref 167->99 but gf stuck 273."
+  },
+  "linearity_additivity_err": {
+   "F32": {
+    "gf": 8.7e-08,
+    "ref": 8.2e-08
+   },
+   "F64": {
+    "gf": 1.5e-16,
+    "ref": 1.4e-16
+   },
+   "note": "gf M is EQUALLY linear/consistent as ref - not a nonlinear/inconsistent operator; just a worse F32 approximation"
+  },
+  "iters_to_tol_F32": {
+   "tols": [
+    0.01,
+    0.001,
+    0.0001,
+    1e-05,
+    1e-06,
+    1e-07
+   ],
+   "gf": [
+    32,
+    70,
+    167,
+    234,
+    274,
+    372
+   ],
+   "ref": [
+    34,
+    51,
+    69,
+    153,
+    168,
+    186
+   ]
+  },
+  "stationary_richardson_F32_floor": {
+   "gf_relres": 0.00043,
+   "ref_relres": 2.2e-05,
+   "note": "20x; secondary symptom = old AMGSolver F32 floor"
+  },
+  "per_apply_F32_err_vs_own_F64": {
+   "gf": 0.036,
+   "ref": 0.033,
+   "ratio": 1.08,
+   "note": "SIMILAR magnitude - gf's error is asymmetric, not bigger"
+  },
+  "per_cycle_reldiff_vs_ref": {
+   "F32": 0.13,
+   "F64": 0.129,
+   "note": "benign 13% in BOTH precisions (two valid cycles)"
+  },
+  "ruled_out": {
+   "coarse_solve": "gf host-LU-F64 -> iters STILL 273, asym IDENTICAL 0.0015659 (old note right)",
+   "transfer_adjoint_ALL_levels_F32": "all ~1e-7 (max 1.2e-6) - NOT the source",
+   "operator_symmetry": "gf==ref identical (L1 0, L2 7.9e-9, L3 1.3e-8)",
+   "omega": "match 4e-8",
+   "operators": "gf==ref Frobenius reldiff 0.0, nnz identical all levels"
+  },
+  "caveat": "DIAGNOSIS 2025-06-08 (evidence-bounded): the production 2x CG gap (gf 273 vs ref 99-167) is an F32-CYCLE QUALITY DEFICIT in gf's matrix-free V-cycle, NOT algorithmic, NOT a CG-symmetry artifact. F32-ONLY: F64 gf 90~ref 99 (gf even better). Asymmetry (1.6e-3) and the 20x stationary floor are SYMPTOMS of gf's worse F32 cycle, not the fixable cause: flexible CG FALSIFIES asymmetry-breaks-CG (gf 273->284, no recovery; ref control 99 unchanged). gf M is equally linear/consistent (8.5e-8) with similar per-apply random-vector error (1.08x), but evidently worse on the low-freq modes AMG relies on. OUTER-LOOP FIX DEAD. Closing it needs higher-fidelity F32 cycle arithmetic (F64-accumulate reductions) = research, source still unlocated (ruled out coarse/transfer-adjoint-all-levels/operators/omega/linearity). DEPLOYABLE TODAY: gf in F64 is quality-equivalent to ref WITH the 3-3.8x VRAM win. Corrects two prior misdiagnoses this session (algorithmic direction gap; asymmetry root cause)."
+ },
+ "_index_P_bench": "AMGSolver-mode solve ref(fuse0) vs gf-OptB(fuse1) + OptB-vs-C cycle. Geometric ml=2, AMGJacobi, pre/post=5, mc=128",
+ "P1_solve_F32_rtol1e6": {
+  "F1_ref": {
+   "iters": 276,
+   "conv": false,
+   "relres": 2.53e-05,
+   "solve_ms": 2605,
+   "ms_per_it": 9.44,
+   "VRAM_MB": 608
+  },
+  "F1_gf": {
+   "iters": 300,
+   "conv": false,
+   "relres": 0.0015,
+   "solve_ms": 3477,
+   "ms_per_it": 11.6,
+   "VRAM_MB": 160
+  },
+  "caveat": "F32 AMGSolver FLOORS (no convergence): ref 2.5e-5, gf 1.5e-3 (60x worse) = separate F32 accumulation issue. gf 1.23x/it, VRAM 3.8x less"
+ },
+ "P1_solve_F64_rtol1e6": {
+  "poisson64_ref": {
+   "iters": 17,
+   "conv": true,
+   "ms_per_it": 4.09,
+   "VRAM_MB": 96
+  },
+  "poisson64_gf": {
+   "iters": 17,
+   "conv": true,
+   "ms_per_it": 2.81,
+   "VRAM_MB": "~0 (noisy)"
+  },
+  "F1_ref": {
+   "iters": 61,
+   "conv": true,
+   "relres": 3.93e-07,
+   "solve_ms": 1115,
+   "ms_per_it": 18.28,
+   "VRAM_MB": 800
+  },
+  "F1_gf": {
+   "iters": 98,
+   "conv": true,
+   "relres": 6.9e-07,
+   "solve_ms": 1797,
+   "ms_per_it": 18.33,
+   "VRAM_MB": 256
+  },
+  "caveat": "DECISIVE: poisson gf==ref iters (V-cycle SOUND, structured). F1 gf 98 vs 61 = 1.61x ALGORITHMIC (F64, precision-indep; matches Cg 273/167). ms/it parity. VRAM 3.1x less. VRAM deltas noisy (caching alloc)"
+ },
+ "P2_optB_vs_C_cycle_scoff": {
+  "F1": {
+   "cycleB_ms": 9.12,
+   "cycleC_ms": 12.33,
+   "C_over_B": 1.35,
+   "optC_VRAM_erased_MB": 30.3
+  },
+  "poisson64": {
+   "cycleB_ms": 0.99,
+   "cycleC_ms": 1.24,
+   "C_over_B": 1.26,
+   "optC_VRAM_erased_MB": 3.7
+  },
+  "caveat": "fuse=2 (Option C) = 1.26-1.35x slower cycle to erase only 3.7-30MB more (coarse A_2). Poor tradeoff at these sizes. Also blocked with scale_correction (AMGSolver mode)"
+ },
+ "_index_mixedprec": "P3 FIX: gf split precision finest(A0)=F64 always, coarse levels(>=2)+coarsest=coarse_storage. 64-cell sweep (poisson64+F1 x ml{1,2} x mc{124,1024} x {Cg,AMGSolver} x {ref_f32,ref_f64,gf_f32m,gf_f64}). pre/post=5,sc=true. Full log AMG_mixedprec_sweep.txt. Warm solve ms (build excluded)",
+ "mixedprec_F1_Cg_iters": {
+  "_cols": "ml/mc -> [ref_f32, ref_f64, gf_f32m, gf_f64]",
+  "ml1_mc124": [
+   128,
+   128,
+   124,
+   124
+  ],
+  "ml1_mc1024": [
+   128,
+   128,
+   124,
+   124
+  ],
+  "ml2_mc124": [
+   99,
+   99,
+   90,
+   90
+  ],
+  "ml2_mc1024": [
+   93,
+   93,
+   89,
+   89
+  ],
+  "caveat": "DECISIVE P3 RESOLUTION: gf_f32m iters == gf_f64 iters in EVERY cell (mixed = full F64 cycle quality); gf BEATS ref in every Cg cell. The old all-F32 gf 273 deficit lived in FINEST-level F32 arithmetic; finest=F64 removes it, coarse F32 costs ZERO iters. ref_f32==ref_f64 (ref cycle precision-insensitive on F1 Cg). Cg => scale_correction OFF both (by design)."
+ },
+ "mixedprec_F1_Cg_ms": {
+  "_cols": "ml/mc -> [ref_f32, ref_f64, gf_f32m, gf_f64] warm solve ms",
+  "ml1_mc124": [
+   1017,
+   1624,
+   3099,
+   3787
+  ],
+  "ml1_mc1024": [
+   1020,
+   1585,
+   1287,
+   1511
+  ],
+  "ml2_mc124": [
+   519,
+   856,
+   699,
+   741
+  ],
+  "ml2_mc1024": [
+   490,
+   800,
+   659,
+   719
+  ],
+  "caveat": "gf_f32m FASTER than gf_f64 (F32 coarse = less data movement). gf_f32m beats ref_f64 in wall time at mc1024 (1287<1585, 659<800). mc124 ml1 gf slow (3099ms, deep hierarchy host coarse-solve cost) -> mc1024 strongly preferred for gf. ref_f32 fastest per-iter but lower quality option."
+ },
+ "mixedprec_F1_AMGSolver_iters": {
+  "_cols": "ml/mc -> [ref_f32, ref_f64, gf_f32m, gf_f64]",
+  "ml1_mc124": [
+   156,
+   154,
+   202,
+   206
+  ],
+  "ml1_mc1024": [
+   154,
+   154,
+   210,
+   196
+  ],
+  "ml2_mc124": [
+   110,
+   95,
+   159,
+   147
+  ],
+  "ml2_mc1024": [
+   254,
+   115,
+   147,
+   143
+  ],
+  "caveat": "AMGSolver standalone (no Krylov): gf takes MORE iters than ref (SEPARATE gf standalone-solver deficit, matches old P1 F64 98vs61; NOT precision - gf_f32m~gf_f64). sc ON here (AMGSolver). ref_f32 can be unstable (ml2_mc1024 254 vs ref_f64 115); gf_f32m 147 there = more stable than ref_f32. Cg is the CFD-relevant path; AMGSolver gf gap is its own item."
+ },
+ "mixedprec_poisson64_control": {
+  "note": "structured control: gf_f32m==gf_f64 in ALL cells; gf~ref within 1-4 iters both modes. No precision deficit either impl (structured V-cycle sound). Confirms F1 deficit was matrix-specific, fix is general."
+ },
+ "mixedprec_causal_control": {
+  "config": "F1, F64-outer PCG (barebones, no sc), same gf cycle as preconditioner, ml1 mc1024 pre/post=5",
+  "gf_allF64": {
+   "finest_coarse": "F64/F64",
+   "it": 96
+  },
+  "gf_mixed": {
+   "finest_coarse": "F64/F32",
+   "it": 96,
+   "relres": 8.79e-07
+  },
+  "gf_allF32": {
+   "finest_coarse": "F32/F32",
+   "it": 400,
+   "relres": 3.94e-06,
+   "converged": false
+  },
+  "caveat": "AIRTIGHT P3 PROOF (same harness, only precision differs): all-F32 finest = 400 iters NO convergence (the deficit, = old 273/floor); finest-F64 + coarse-F32 = 96 == all-F64 96. Deficit is ENTIRELY finest-level F32 arithmetic; coarse-level precision IRRELEVANT to iters. barebones PCG gives 96 (vs production 124) - outer-loop detail, relative result is the point. VRAM: gf_mixed 348MB vs gf_f64 449MB (1.29x less, coarse F32 retained); all-F32 ~281MB (mixed costs +67MB for F64 finest A0, keeps bulk coarse win)."
+ },
+ "_index_P5": "P5 hierarchy-depth/coarse-branch (CPU probe, backend-indep). F1 pressure 1.68M/8.5Mnnz. coarsest size + level count per coarsening, dense-coarse branch trigger",
+ "P5_hierarchy_depth_F1": {
+  "SA_default": {
+   "levels": 4,
+   "sizes": [
+    1677158,
+    222612,
+    4815,
+    60
+   ],
+   "ratio_per_lvl": "~7.5x"
+  },
+  "Geometric_ml1": {
+   "levels": 15,
+   "coarsest": 990,
+   "ratio_per_lvl": "~1.7x"
+  },
+  "Geometric_ml2": {
+   "levels": 7,
+   "coarsest": 763,
+   "ratio_per_lvl": "~3.4x"
+  },
+  "Geometric_ml3": {
+   "levels": 5,
+   "sizes": [
+    1677158,
+    252508,
+    36207,
+    5151,
+    748
+   ],
+   "ratio_per_lvl": "~6.6x"
+  },
+  "caveat": "STRUCTURAL gf-vs-production gap. gf LOCKED to Geometric (device/0:19); production CFD ref uses SmoothAggregation=4 levels. Geometric ml1 (used in ALL prior gf-vs-ref validation incl 124-vs-128) = 15 levels = ~4x more per-cycle launches than SA. Geometric ml3 ~= SA depth (5 vs 4). Existing mixedprec data corroborates: gf ml2 89it/659ms vs gf ml1 124it/1287ms (~2x). ALL prior 'ref' = Geometric-materialized (matched coarsening), NEVER production SA. gf-Geometric vs production-SA-Cg in real CFD = UNMEASURED = the real deploy question."
+ },
+ "P5_dense_coarse_branch": {
+  "trigger_rule": "coarsest_n <= OnDevice.max_rows (default 512) -> Matrix(coarse)+inv built (device/4:100-110), REBUILT every refresh (device/5:208)",
+  "deploy_cfg_ml1_mc1024": {
+   "coarsest": 990,
+   "dense_built": false,
+   "branch": "host-LU per V-cycle"
+  },
+  "ml1_mc512": {
+   "coarsest": 498,
+   "dense_built": true,
+   "size_MB": "~2 (498^2 F64)",
+   "levels": 21
+  },
+  "caveat": "User dense-coarse-OOM hypothesis RESOLVED: NOT the crash cause. Deploy cfg coarsest 990>512 -> host-LU, no dense. Dense branch only at coarsest<=512 (needs ml1 mc<=~512, 21 levels) and is tiny/cheap there. REAL footgun (advisor): if OnDevice(max_rows) set high enough to capture a LARGE coarsest, device/5:208 re-densifies+re-inverts EVERY timestep refresh = O(n^3)+dense alloc. Default max_rows=512 caps it cheap. Crash was HOST RAM OOM (14GB total, 2x 963MB mesh procs + VSCode), not GPU/dense."
+ },
+ "P5_matfree_vs_materialized_CFD": {
+  "config": "F1 CRMHL 1.68M, real SIMPLE CFD, 50 iters, F64 both, Geometric, mc1024, pre/post=5, mode=Cg. s/it = FULL outer-iter wall (incl identical U/k/omega/assembly + build amortized). pressure-solve-only regression is LARGER than the s/it ratio.",
+  "s_per_it": {
+   "ref_ml2_fuse0": 0.842,
+   "gf_ml2_fuse1": 1.256,
+   "ref_ml3_fuse0": 0.738,
+   "gf_ml3_fuse1": 1.168,
+   "plain_cg_jacobi": 0.644
+  },
+  "matfree_regression_outer": {
+   "ml2": 1.49,
+   "ml3": 1.58
+  },
+  "residuals_end50": {
+   "p": {
+    "ref_ml2": 0.000867,
+    "gf_ml2": 0.000708,
+    "ref_ml3": 0.00089,
+    "gf_ml3": 0.000888
+   },
+   "Ux": {
+    "ref_ml2": 0.00312,
+    "gf_ml2": 0.00315,
+    "ref_ml3": 0.00274,
+    "gf_ml3": 0.00397
+   }
+  },
+  "caveat": "ESTABLISHED: matrix-free (greenfield, fuse=1) REGRESSES ~1.5x in WALL-TIME vs materialized (fuse=0) in the REAL CFD at identical coarsening+precision. MECHANISM NOT ISOLATED: no inner-iter counts this session (solve_history removed) -> cannot separate 'slower kernels, same iters' from 'more inner iters / weaker matrix-free cycle'. ml2 outer trajectories match (Ux 1%) but ml3 DIVERGES (gf Ux 3.97e-3 vs ref 2.74e-3, ~45%) -> the matrix-free cycle is NOT numerically identical to materialized at ml3; 'pure overhead' is NOT proven. CONTRADICTS prior REPL 'gf beats ref' (1287<1585) = STATIC isolated solve, EXCLUDING per-timestep REFRESH the CFD pays every outer iter. ml3<ml2 both (shallower=faster). Plain Cg+Jacobi cheapest/outer-iter (0.644). WHEN gf HELPS: VRAM-bound (3-3.8x less). WHEN gf HURTS: wall-time when VRAM not the limit. NEXT: get inner-iter counts (standalone update!->solve loop, ws.iterations; build device matrix via CuSparseMatrixCSR ctor NOT adapt) BEFORE any NVTX cycle/refresh split."
+ },
+ "P9_cycle_mismatch_fix": {
+  "where": "device/4 mf_ml_cycle + _host_ml_vcycle: coarse-level post-smooth rhs = pre-smoothing residual lv.r (l>=2), lv.rhs at l==1",
+  "root_cause": "reference _cycle! aliases level.rhs: _residual! overwrites the incoming rhs array at levels>=2, so ref post-smooths vs the residual; gf did textbook original-rhs -> weaker standalone cycle",
+  "F1_ml2_F64_AMGSolver_sc_rtol1e-6": {
+   "gf_before": 151,
+   "gf_after": 121,
+   "ref": 121
+  },
+  "F1_ml2_F64_Cg_nosc": {
+   "gf_after": 89,
+   "ref": 89
+  },
+  "oracle_relerr": "6e-16 (sc and nosc, CPU poisson 40x40)",
+  "caveat": "one-cycle outputs gf-vs-ref differed 13% maxrel pre-fix (cos 0.9992); now algorithms match exactly"
+ },
+ "P10_sc_in_cg_fcg": {
+  "where": "reference/6 amg_cg_solve! (_amg_cg_flexible: PR+ beta, r_prev=workspace.correction) + reference/5 gate + device/7 gate + device/4 sc reuses down-sweep lv.r (saves 1 finest SpMV/cycle)",
+  "F1_static_rtol1e-6_F64_ml2": {
+   "gf_nosc": [
+    89,
+    0.913
+   ],
+   "gf_sc": [
+    45,
+    0.442
+   ],
+   "ref_sc": [
+    45,
+    0.536
+   ],
+   "fr_sc_gf": [
+    45,
+    0.493
+   ]
+  },
+  "F1_static_rtol1e-2": {
+   "gf_nosc": [
+    30,
+    0.268
+   ],
+   "gf_sc": [
+    15,
+    0.192
+   ]
+  },
+  "note": "sc default=true now ACTIVE in Cg for ref AND gf; FR beta also converged on F1 but PR+ kept (nonlinear-M safety, ~0 cost)",
+  "when_helps": "any Cg-mode AMG solve (halved iters on F1); when_not: per-cycle +1 finest SpMV (Ac) - if a matrix ever shows sc<2x iter win the cycle cost could net-lose; sc can be disabled per-solver"
+ },
+ "P11_fused_refresh_warmstart": {
+  "where": "device/5: composed-map kernels (compose hop/init, rap/diag/absrowsum scatters), MFRefreshPlan +comp_dst/comp_s/eig/eig_warm; _lambda_max_device! warm (2 it) vs cold (5 it); _lambda_max_matfree! for fused levels; device/7 guard unclamped (fused_top=fuse_levels-1)",
+  "cpu_poisson_oracle": {
+   "fused0": [
+    4e-16,
+    3.6e-16
+   ],
+   "fused1": [
+    4e-16,
+    3.6e-16
+   ],
+   "fused2": [
+    2.3e-16,
+    2.5e-16
+   ],
+   "note": "relerr(values/invdiag), omega_relerr; refresh-convergence 9==9 it fused0 vs fused2; warm omega drift 0.0"
+  },
+  "gershgorin_fused": "exact diagonal + cross-aggregate abs-sum: exact bound for M-matrices, safe overestimate otherwise (naive abs-sum was 20-40 pct omega error)",
+  "F1_ml2_F64_Cg_sc_static": {
+   "jacobi_solve_s": null,
+   "ref_fuse0": [
+    45,
+    1.074
+   ],
+   "gf_fuse1": [
+    45,
+    0.443,
+    503
+   ],
+   "gf_fuse2": [
+    45,
+    0.657,
+    470
+   ],
+   "gf_fuse3": [
+    45,
+    0.86,
+    470
+   ],
+   "fmt": "[iters, solve_s, vram_mb_used]"
+  },
+  "refresh_ms_F1_ml2": {
+   "fuse1_warm": [
+    20.1,
+    23.8
+   ],
+   "fuse2_warm": [
+    23.0,
+    23.3
+   ],
+   "fuse3_warm": [
+    26.1,
+    31.1
+   ],
+   "pre_warmstart_baseline": 27
+  },
+  "when_helps": "fuse>1: only under extreme VRAM pressure (saves ~33MB beyond fuse1 on F1, costs 1.5-1.9x solve time); warm lambda: every transient refresh (~5-7ms/outer-iter)",
+  "when_not": "fuse>1 never for wall time (each fused-level apply = 1 fine SpMV through Galerkin chain); directive latency premise REFUTED by measurement"
+ },
+ "P12_vs_pcg_jacobi_static": {
+  "system": "F1 1.68M pressure bin, CuSparseMatrixCSR F64, cuSPARSE-SpMV PCG+diag-Jacobi proxy",
+  "tight_rtol1e-6": {
+   "pcg_jacobi": [
+    1078,
+    1.436
+   ],
+   "gf_amg_sc": [
+    45,
+    0.443
+   ]
+  },
+  "loose_rtol1e-2": {
+   "pcg_jacobi": [
+    378,
+    0.49
+   ],
+   "gf_amg_sc": [
+    15,
+    0.192
+   ]
+  },
+  "caveat": "static cold-start solve; CFD warm-start loose-tol behavior measured separately (f1_amg_vs_jacobi.jl)"
+ },
+ "P12_CFD_50it": {
+  "setup": "f1_amg_vs_jacobi.jl, F64, rtolp=1e-2 all, relax p 0.3, zero_copy=true confirmed",
+  "s_per_it": {
+   "jacobi": 0.6352,
+   "gf_ml3_V22": 0.7067,
+   "gf_ml2_V22": 0.7441,
+   "gf_ml3_V55": 0.7171,
+   "ref_ml3_V22": 0.6998
+  },
+  "p_end": {
+   "jacobi": 0.002368,
+   "gf_ml3_V22": 0.0007135,
+   "gf_ml2_V22": 0.0007007,
+   "gf_ml3_V55": 0.0005007,
+   "ref_ml3_V22": 0.0006549
+  },
+  "Ux_end": {
+   "jacobi": 0.002697,
+   "gf_ml3_V22": 0.00327,
+   "ref_ml3_V22": 0.004394
+  },
+  "vs_P8": "gf ml3 0.7463->0.7067 (sc+warm-start), ref ml3 0.7506->0.6998; gf==ref parity holds",
+  "note": "equal-rtolp comparison over-solves AMG: p residual 3.3x deeper than jacobi at same outer count -> tol sweep (rtolp 1e-1/3e-2) = equal-quality comparison"
+ },
+ "P12_CFD_tol_sweep": {
+  "setup": "f1_amg_tol_sweep.jl ITERS=50; same-run jacobi control 0.6588 (run variance vs round1 0.6352 ~4%)",
+  "s_per_it": {
+   "jacobi_ctrl": 0.6588,
+   "gf_ml3_rtolp1e-1": 0.6612,
+   "gf_ml3_rtolp3e-2": 0.7031,
+   "gf_ml3_mc4096_1e-2": 0.7033
+  },
+  "p_end": {
+   "jacobi_ctrl": 0.002029,
+   "gf_ml3_rtolp1e-1": 0.007952,
+   "gf_ml3_rtolp3e-2": 0.001028,
+   "gf_ml3_mc4096_1e-2": 0.0004183
+  },
+  "Ux_end": {
+   "jacobi_ctrl": 0.002902,
+   "gf_ml3_rtolp1e-1": 0.002844,
+   "gf_ml3_mc4096_1e-2": 0.002768
+  },
+  "verdict": "gf rtolp1e-1 parity (+0.4%) with EQUAL Ux progress; gf mc4096 +6.8% buys 4.9x deeper p + better Ux. Residual deficit ~= refresh (~20ms) -> coarse_refresh_interval round (P12_CFD_interval)"
+ },
+ "P12_CFD_interval": {
+  "setup": "f1_amg_interval.jl ITERS=50, gf coarse_refresh_interval support added (light finest-only refresh off-iterations)",
+  "s_per_it": {
+   "jacobi_ctrl": 0.6522,
+   "gf_ml3_i4_rtolp1e-1": 0.6349,
+   "gf_ml3_i4_rtolp1e-2": 0.6809,
+   "gf_ml3_i1_rtolp1e-1": 0.6476
+  },
+  "p_end": {
+   "jacobi_ctrl": 0.002508,
+   "gf_ml3_i4_rtolp1e-1": 0.003315,
+   "gf_ml3_i4_rtolp1e-2": 0.0006898,
+   "gf_ml3_i1_rtolp1e-1": 0.002977
+  },
+  "Ux_end": {
+   "jacobi_ctrl": 0.0031,
+   "gf_ml3_i4_rtolp1e-1": 0.002937,
+   "gf_ml3_i4_rtolp1e-2": 0.003734,
+   "gf_ml3_i1_rtolp1e-1": 0.002811
+  },
+  "verdict": "gf BEATS jacobi -2.7pct at matched quality (p/Ux comparable); i1 also faster (-0.7pct). +4.4pct buys 3.6x deeper p. MARGINS WITHIN ~2-4pct run variance: honest claim = parity-to-faster loose-tol steady; DECISIVE at tight tol (3.2x static) / transient.",
+  "tests": "test_AMG.jl 213/213 (GPU incl), test_AMG_matrices.jl 194/194 (sc+fused guard test replaced with equivalence test)"
+ },
+ "P13_f32_jacobi_form": {
+  "config": "F1 1.68M ml2 mc4096 sc-on Cg rtol(F32)=1e-4 rtol(F64)=1e-6",
+  "before_fix": {
+   "gf_gpu_f32": {
+    "iters": 106,
+    "conv": false,
+    "rel_true": 0.000266
+   },
+   "ref_gpu_f32": {
+    "iters": 31,
+    "conv": true,
+    "rel_true": 0.000106
+   },
+   "ref_cpu_f32": {
+    "iters": 106,
+    "conv": false,
+    "rel_true": 0.00024
+   },
+   "gf_gpu_f32_nosc": {
+    "iters": 98,
+    "rel_true": 0.000746
+   },
+   "ref_cpu_f32_nosc": {
+    "iters": 98,
+    "rel_true": 0.000746
+   }
+  },
+  "after_fix": {
+   "gf_gpu_f32": {
+    "iters": 31,
+    "conv": true,
+    "rel_true": 0.0001069
+   },
+   "ref_gpu_f32": {
+    "iters": 31,
+    "conv": true,
+    "rel_true": 0.0001067
+   },
+   "ref_cpu_f32": {
+    "iters": 31,
+    "conv": true,
+    "rel_true": 0.0001066
+   },
+   "gf_f64": {
+    "iters": 45
+   },
+   "ref_f64": {
+    "iters": 45
+   },
+   "gf_mixed_f32coarse": {
+    "iters": 48
+   },
+   "ref_mixed": {
+    "iters": 51
+   },
+   "percycle_ms_f64_ml2_mc4096": 7.32,
+   "tests": "213+194 pass"
+  },
+  "regression_test_anchor": {
+   "problem": "512x512 poisson all-F32 CPU Cg ml2 mc1024 rtol 1e-5",
+   "iters": 17,
+   "rel": 3.7e-06,
+   "assert": "conv && iters<=40"
+  },
+  "caveat": "small-problem repro not achievable; F1-scale only. GS/SOR sweeps unchanged."
+ }
+}

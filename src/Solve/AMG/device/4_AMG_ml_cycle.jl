@@ -228,7 +228,7 @@ function _mf_smooth!(lv::MFLevel, rhs, k::Int, bk, wg)
     src, dst = lv.x, lv.tmp
     for _ in 1:k
         _launch_amg_kernel!(bk, wg, _amg_jacobi_step_kernel!, lv.n, dst, src, rhs, rp, cv, nz,
-                            lv.invdiag, lv.diag_index, lv.omega)
+                            lv.invdiag, lv.omega)
         src, dst = dst, src
     end
     src === lv.x || copyto!(lv.x, src)

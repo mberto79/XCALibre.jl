@@ -1,0 +1,4 @@
+{
+  "_desc": "Performance phase tracker. Implementation archived to Implementation/arch_progress.json.",
+  "_note": "Create AMG_perf_progress.json at perf session start (see AMG_next_prompt.md)."
+}

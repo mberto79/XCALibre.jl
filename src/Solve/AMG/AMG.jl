@@ -1,6 +1,5 @@
-# reference/ = current production AMG impl (CPU track + existing GPU path), kept intact as
-# the benchmark/regression oracle. device/ = new greenfield GPU pipeline (Decision 0),
-# inert until Phase 5d. See AMG_plan.md.
+# reference/ = materialised AMG (CPU + GPU default). device/ = opt-in matrix-free GPU path
+# (fuse_levels>=1). Unification of the two in progress: see AMG_integration_plan.md.
 include("reference/0_AMG_types.jl")
 include("reference/1_AMG_setup.jl")
 include("reference/2_AMG_coarsening.jl")

@@ -20,7 +20,8 @@ function wall_distance!(model, walls, config)
         elseif typeof(boundary) <: Empty
             push!(BCs, Empty(boundary_name))
         else
-            push!(BCs, Extrapolated(boundary_name))
+            # push!(BCs, Extrapolated(boundary_name))
+            push!(BCs, Zerogradient(boundary_name))
         end
     
     end

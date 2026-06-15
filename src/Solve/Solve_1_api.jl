@@ -75,7 +75,49 @@ SolverSetup(;
         SolverSetup{float_type,I,S1,S2,PT}(
             solver, smoother,preconditioner, convergence, relax, limit,itmax, atol,rtol)
 
-struct Runtime{I<:Integer,F<:AbstractFloat}
+struct AdaptiveTimeStepping{F<:AbstractFloat}
+    maxCo::F
+    maxAlphaCo::F
+    minShrink::F
+    maxGrow::F
+end
+Adapt.@adapt_structure AdaptiveTimeStepping
+
+"""
+    AdaptiveTimeStepping(; 
+        # keyword arguments
+
+        maxCo=0.75,
+        maxAlphaCo=0.5,
+        minShrink=0.1,
+        maxGrow=1.2
+    )
+
+Constructs an `AdaptiveTimeStepping` object used to control automatic time-step adjustment
+based on the Courant number.
+
+This struct is passed optionally to `Runtime` and enables adaptive time stepping in transient
+simulations. If not provided, a fixed time step is used.
+
+# Input arguments
+
+- `maxCo::AbstractFloat`: target maximum Courant number. The time step will be adjusted
+  such that the computed Courant number approaches this value.
+- `maxAlphaCo::AbstractFloat`: target maximum Alpha Courant number. The time step will be adjusted
+  such that the computed Courant number approaches this value.
+- `minShrink::AbstractFloat`: lower bound on the multiplicative factor applied to the
+  current time step. Prevents excessively large reductions in a single update.
+- `maxGrow::AbstractFloat`: upper bound on the multiplicative factor applied to the
+  current time step. Prevents excessive time-step growth.
+"""
+AdaptiveTimeStepping(;
+    maxCo=0.75,
+    maxAlphaCo=0.5,
+    minShrink=0.1,
+    maxGrow=1.2
+) = AdaptiveTimeStepping(float(maxCo), float(maxAlphaCo), float(minShrink), float(maxGrow))
+
+struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AdaptiveTimeStepping}}
     iterations::I
     dt::F
     write_interval::I
@@ -158,10 +200,10 @@ end
 
 
 function solve_equation!(
-    eqn::ModelEquation{T,M,E,S,P}, phi, phiBCs, solversetup, config; time=nothing, ref=nothing, irelax=nothing
+    eqn::ModelEquation{T,M,E,S,P}, phi, phiBCs, solversetup, config; rho_prev=nothing, time=nothing, ref=nothing, irelax=nothing
     ) where {T<:ScalarModel,M,E,S,P}
 
-    discretise!(eqn, phi, config)       
+    discretise!(eqn, phi, config, rho_prev)       
     apply_boundary_conditions!(eqn, phiBCs, nothing, time, config)
     setReference!(eqn, ref, 1, config)
     if !isnothing(irelax)
@@ -174,12 +216,12 @@ function solve_equation!(
 end
 
 function solve_equation!(
-    psiEqn::ModelEquation{T,M,E,S,P}, psi, psiBCs, solversetup, xdir, ydir, zdir, config; time=nothing
+    psiEqn::ModelEquation{T,M,E,S,P}, psi, psiBCs, solversetup, xdir, ydir, zdir, config; rho_prev=nothing, time=nothing
     ) where {T<:VectorModel,M,E,S,P}
 
     mesh = psi.mesh
 
-    discretise!(psiEqn, psi, config)
+    discretise!(psiEqn, psi, config, rho_prev)
     update_equation!(psiEqn, config)
 
     apply_boundary_conditions!(psiEqn, psiBCs, xdir, time, config)

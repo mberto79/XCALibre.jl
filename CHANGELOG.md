@@ -3,6 +3,109 @@
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v0.3.1` breaking changes will be recorded here. 
 
+## Version [v0.5.3] - 2026-03-05
+
+### Added
+*  Added optional adaptive time stepping based on Courant number control (`AdaptiveTimeStepping`) [#98](@ref)
+* Added runtime calculation of Q-criterion [#107]
+*  Added explicit Godunov-type compressible solver (`godunov!`) for supersonic flows using Rusanov (local Lax-Friedrichs) and HLLC flux schemes with first and second order spatial reconstruction (MinMod, VanLeer, Superbee limiters) and adaptive CFL-based time stepping [#112](@ref)
+*  Added experimental incompressible steady MFR solver [#114](@ref)
+*  Added runtime probe extraction [#115](@ref)
+*  Added initialisation logic for new Multiphase solver user-level API [#117](@ref)
+*  New Eulerian Thin Film model solver (2D only) [#120](@ref)
+*  Added `setField_Expression!` to `SetFields` utility to initialise function-based fields. [#124](@ref)
+*  Added VanLeer, upwind, and gradient interpolation schemes for scalar and vector face fields [#124](@ref)
+*  Added multiphase solver (VOF model only) with two supporting functionality tests [#127](@ref)
+
+
+### Fixed
+* Add implementation of `Periodic` boundaries to handle the implicit source term - fixes operation of models that use `Si` terms [#95](@ref)
+* Fixed implementation of implicit boundaries in [#96](@ref) which where missing atomics [#100](@ref)
+* Fixed calculation of the residuals to use the relative residual norm, norm(b - Ax)/norm(b), the numerator in this expression was calculated incorrectly previously, giving a 1/sqrt(n) relation (where n is the number of cells in the grid). whilst the operation of the solvers remains the same, user may find that convergence criteria may need to be increased (specially for larger grids)[#102](@ref)
+* UNV2: Fix calculation of cell volumes and centroid for boundary cells was incorrect and missing boundary face contributions (only for 2D UNV meshes)[#106](@ref)
+* Fixed implementation of k-omega LKE transition model and how wall distance field is calculated to ensure it is GPU compatible [#109](@ref)
+  
+### Changed
+* Improved stability of `Periodic` boundaries by making the implementation fully implicit [#96](@ref)
+* 4x speed improvement for the method `construct_periodic` [#97](@ref)
+* +50x speed improvement for the method `construct_periodic` and also more robust algorithm used [#100](@ref)
+* Implementation to correct mass flux uses matrix coefficients directly for better stability when using periodic boundary conditions [#100](@ref)
+* New method to enforce matrix symmetry of scalar model equations when the only term is a laplacian [#100](@ref)
+* Change calculation of face interpolation weights to use face normal aligned weights, this is more physical than the current method using face-based distances (in preparation for formal support for non-orthogonality correction)[#101](@ref)
+* 20x improvement loading and processing 3D UNV mesh files [#106](@ref)
+
+### Breaking
+* No breaking changes
+
+### Deprecated
+* No functions deprecated
+
+### Removed
+* No functionality has been removed
+
+## Version [v0.5.2] - 2025-01-16
+
+### Added
+*  Initial support for mixed precision (UNV meshes only) [#67](@ref)
+*  New solver for simulating conduction in solids [#65](@ref)
+*  New LES turbulent kinetic energy one equation model (`KEquation`) [#71](@ref)
+*  Surface tension model for fluids [#72](@ref)
+*  High fidelity viscosity models for H2 and N2 [#72](@ref)
+*  High fidelity thermal conductivity models for H2 and N2 [#72](@ref)
+*  `SetFields` utility that allows to set a field to desired value within a box / circle / sphere [#73](@ref)
+*  Helmholtz Energy equation of state and supporting framework for it for H2 and N2 [#75](@ref)
+*  `FieldAverage` and `FieldRMS` of Vector and Scalar fields [#78]
+*  Added `RotatingWall` velocity boundary condition [#81](@ref)
+*  Added `KOmegaSST` turbulence model [#82](@ref)
+*  Added capability to write out TensorFields to .vtk/vtu including Reynolds Stress Tensor [#84](@ref)
+*  Added capablity to write out TensorFields to .vtk/vtu including Reynolds Stress Tensor [#87](@ref)
+*  Extended `DirichLetFunction` to accept functions defining boundary condition for `ScalarFields` [#89](@ref)
+*  Implemented `CrankNicolson` time scheme (second order implicit-explicit) [#90](@ref)
+
+
+### Fixed
+* The `UNV3D_mesh` reader has been updated to ensure that the ordering of face nodes is determined in a more robust manner. This resolves some issues when loading a `UNV` mesh that is later used to store simulation results in the `OpenFOAM` format [#64](@ref)
+* In the construction of a `Physics` object, the `boundary_map` function returned a `boundary_info` struct which was incorrectly using an abstract type `Integer`. This resulted in a failure to convert a `Physics` object to the cpu and back to the gpu [#67](@ref)
+* Fixed calculation of interpolation weights for 2D UNV grids [#68](@ref)
+* Added method for boundary interpolation when using `LUST` and `DirichletFunction`[#68](@ref)
+* Fixed `boundary_interpolation` for `DirichletFunction` when a function is passed [#79](@ref)
+  
+### Changed
+* The constructors for `ScalarField` and `FaceScalarField` now include a `store_mesh` keyword argument to request a reference of the mesh to be stored (default) or not (setting `store_mesh=false`). This can be used to not include references to the mesh for each field in `VectorFields` and `TensorFields`. This has improved compile times and decreased simulation times (particularly on the GPU - perhaps due to freeing registers used to carry unnecessary type information) [#69](@ref)
+* Internally, the calculation of interpolation weights and other geometric properties are calculated using the same function (defined in the `Mesh` module) [#69](@ref)
+* The default discretisation for laplacian terms uses the over-relaxed formulation by default. This will have no effect on orthogonal grids, but tends to be more robust in complex geometries at the expense of accuracy, which can be recovered by adding additional orthogonal correction loops (using the key word argument `ncorrectors` in the `run!` function) [#73](@ref)
+* Cleaned code for all solvers and improved stability of incompressible solver by removing the update of the mass flow based on the velocity field from the previous iteration. The mass flow is now corrected directly from the latest pressure solution [#76](@ref)
+
+### Breaking
+* No breaking changes
+
+### Deprecated
+* No functions deprecated
+
+### Removed
+* No functionality has been removed
+
+## Version [v0.5.1] - 2025-07-03
+
+### Added
+*  New `Empty` boundary condition allowing 2D simulations with OpenFOAM 2D-compatible grids[#63](@ref)
+*  Tests for the `Smagorinsky` LES model have been included [#63](@ref)
+
+### Fixed
+* No fixes included
+  
+### Changed
+* Transient simulation results for `VTK` and `VTU` files use the format `time_<iteration>` [#63](@ref)
+
+### Breaking
+* No breaking changes
+
+### Deprecated
+* No functions deprecated
+
+### Removed
+* No functionality has been removed
+
 ## Version [v0.5.0] - 2025-06-28
 
 ### Added

@@ -54,6 +54,26 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         end
     end
 
+    @testset "Godunov Solver" begin
+        include(joinpath(TEST_CASES_DIR, "2d_godunov_supersonic_cylinder.jl"))
+    end
+
+    @testset "Multiphase Solver" begin
+        test_files = [
+            "2d_multiphase_gravity.jl",
+            "2d_multiphase_hydrostatic.jl"
+        ]
+
+        for test ∈ test_files
+            test_path = joinpath(TEST_CASES_DIR, test)
+            include(test_path)
+        end
+    end
+
+    @testset "Thin Film Solver" begin
+        include(joinpath(TEST_CASES_DIR, "2d_EFM.jl"))
+    end
+
     foreach(rm, filter(endswith(".vtk"), readdir(pwd(), join=true)))
     foreach(rm, filter(endswith(".vtu"), readdir(pwd(), join=true)))
 

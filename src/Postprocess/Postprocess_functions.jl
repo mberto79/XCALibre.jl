@@ -3,85 +3,119 @@ export pressure_force, viscous_force
 export stress_tensor, wall_shear_stress
 
 """
-    pressure_force(patch::Symbol, p::ScalarField, rho)
+    pressure_force(patch::Symbol, model, config)
 
-Function to calculate the pressure force acting on a given patch/boundary.
+Calculate the pressure force vector `[Fx, Fy, Fz]` acting on a given patch/boundary.
 
 # Input arguments
 
 - `patch::Symbol` name of the boundary of interest (as a `Symbol`)
-- `p::ScalarField` pressure field
-- `rho` density. Set to 1 for incompressible solvers
+- `model` `Physics` object defining the simulation
+- `config` `Configuration` object (provides the hardware backend)
 """
-pressure_force(patch::Symbol, p::ScalarField, rho) = begin
-    mesh = p.mesh
-    ID = boundary_index(mesh.boundaries, patch)
-    @info "calculating pressure forces on patch: $patch at index $ID"
-    boundary = mesh.boundaries[ID]
-    (; IDs_range) = boundary
-    x = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
-    y = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
-    z = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
-    snflux = FaceVectorField(x,y,z, mesh)
-    surface_flux!(snflux, p, IDs_range)
-    sumx, sumy, sumz = 0.0, 0.0, 0.0, 0.0
-    for i ∈ eachindex(snflux.x)
-        sumx += snflux.x[i]
-        sumy += snflux.y[i]
-        sumz += snflux.z[i]
-    end
-    Fp = rho.*[sumx, sumy, sumz]
-    print("\n Pressure force: (", Fp[1], " ", Fp[2], " ", Fp[3], ")\n")
+function pressure_force(patch::Symbol, model, config)
+    mesh = model.domain
+    p = model.momentum.p
+    TF = _get_float(mesh)
+    # incompressible p is kinematic (p/ρ) so scale by reference density; compressible p is absolute
+    rhoref = model.fluid isa AbstractIncompressible ? model.fluid.rho : ConstantScalar(one(TF))
+    (; backend, workgroup) = config.hardware
+
+    ID = boundary_index(model.boundary_info, patch)
+    @info "calculating pressure force on patch: $patch at index $ID"
+    IDs_range = get_boundaries(mesh.boundaries)[ID].IDs_range
+    (; faces, boundary_cellsID) = mesh
+
+    n = length(IDs_range)
+    fx = KernelAbstractions.zeros(backend, TF, n)
+    fy = KernelAbstractions.zeros(backend, TF, n)
+    fz = KernelAbstractions.zeros(backend, TF, n)
+
+    kernel! = _pressure_force!(_setup(backend, workgroup, n)...)
+    kernel!(fx, fy, fz, p, rhoref, faces, boundary_cellsID, IDs_range)
+    KernelAbstractions.synchronize(backend)
+
+    Fp = TF[sum(fx), sum(fy), sum(fz)]
+    @info "Pressure force on $patch: ($(Fp[1]), $(Fp[2]), $(Fp[3]))"
     return Fp
 end
 
-"""
-    viscous_force(patch::Symbol, U::VectorField, rho, ν, νt, config)
+@kernel function _pressure_force!(fx, fy, fz, p, rhoref, faces, boundary_cellsID, IDs_range)
+    i = @index(Global)
+    @inbounds begin
+        fID = IDs_range[i]
+        cID = boundary_cellsID[fID]
+        (; area, normal) = faces[fID]
+        flux = rhoref[cID]*p[cID]*(area*normal)
+        fx[i] = flux[1]
+        fy[i] = flux[2]
+        fz[i] = flux[3]
+    end
+end
 
-Function to calculate the pressure force acting on a given patch/boundary.
+"""
+    viscous_force(patch::Symbol, model, config)
+
+Calculate the viscous force vector `[Fx, Fy, Fz]` acting on a given patch/boundary.
 
 # Input arguments
 
 - `patch::Symbol` name of the boundary of interest (as a `Symbol`)
-- `U::VectorField` velocity field
-- `rho` density. Set to 1 for incompressible solvers
-- `ν` laminar viscosity of the fluid
-- `νt` eddy viscosity from turbulence models. Pass ConstantScalar(0) for laminar flows
-- `config` need to pass `Configuration` object as this contains the boundary conditions
+- `model` `Physics` object defining the simulation
+- `config` `Configuration` object (provides boundary conditions and hardware backend)
 """
-viscous_force(patch::Symbol, U::VectorField, rho, ν, νt, config) = begin
-    mesh = U.mesh
-    UBCs = config.boundaries.U
-    (; faces, boundaries, boundary_cellsID) = mesh
-    nboundaries = length(boundaries)
-    ID = boundary_index(boundaries, patch)
-    @info "calculating viscous forces on patch: $patch at index $ID"
-    boundary = mesh.boundaries[ID]
-    # (; facesID, cellsID) = boundary
-    (; IDs_range) = boundary
-    x = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
-    y = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
-    z = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
-    snGrad = FaceVectorField(x,y,z, mesh)
-    for i ∈ 1:nboundaries
-        if ID == UBCs[i].ID
-        surface_normal_gradient!(snGrad, U, UBCs[i].value, IDs_range)
-        
-        end
-    end
-    sumx, sumy, sumz = 0.0, 0.0, 0.0, 0.0
-    for i ∈ eachindex(snGrad)
+function viscous_force(patch::Symbol, model, config)
+    mesh = model.domain
+    U = model.momentum.U
+    nu = model.fluid.nu
+    rho = model.fluid.rho
+    TF = _get_float(mesh)
+    nut = model.turbulence isa Laminar ? ConstantScalar(zero(TF)) : model.turbulence.nut
+    (; backend, workgroup) = config.hardware
+
+    ID = boundary_index(model.boundary_info, patch)
+    @info "calculating viscous force on patch: $patch at index $ID"
+    Uw = _patch_bc_value(config.boundaries.U, ID) # wall velocity from the U boundary condition
+    IDs_range = get_boundaries(mesh.boundaries)[ID].IDs_range
+    (; faces, boundary_cellsID) = mesh
+
+    n = length(IDs_range)
+    fx = KernelAbstractions.zeros(backend, TF, n)
+    fy = KernelAbstractions.zeros(backend, TF, n)
+    fz = KernelAbstractions.zeros(backend, TF, n)
+
+    kernel! = _viscous_force!(_setup(backend, workgroup, n)...)
+    kernel!(fx, fy, fz, U, Uw, nu, nut, rho, faces, boundary_cellsID, IDs_range)
+    KernelAbstractions.synchronize(backend)
+
+    Fv = TF[sum(fx), sum(fy), sum(fz)]
+    @info "Viscous force on $patch: ($(Fv[1]), $(Fv[2]), $(Fv[3]))"
+    return Fv
+end
+
+@kernel function _viscous_force!(
+    fx, fy, fz, U, Uw, nu, nut, rho, faces, boundary_cellsID, IDs_range)
+    i = @index(Global)
+    @inbounds begin
         fID = IDs_range[i]
         cID = boundary_cellsID[fID]
-        face = faces[fID]
-        area = face.area
-        sumx += snGrad.x[i]*area*(ν + νt[cID]) # this may need using νtf? (wall funcs)
-        sumy += snGrad.y[i]*area*(ν + νt[cID])
-        sumz += snGrad.z[i]*area*(ν + νt[cID])
+        (; area, normal, delta) = faces[fID]
+        Udiff = U[cID] - Uw
+        Up = Udiff - (Udiff⋅normal)*normal # parallel velocity difference
+        snGrad = Up/delta
+        coeff = rho[cID]*area*(nu[cID] + nut[cID]) # this may need using νtf? (wall funcs)
+        fx[i] = snGrad[1]*coeff
+        fy[i] = snGrad[2]*coeff
+        fz[i] = snGrad[3]*coeff
     end
-    Fv = rho.*[sumx, sumy, sumz]
-    print("\n Viscous force: (", Fv[1], " ", Fv[2], " ", Fv[3], ")\n")
-    return Fv
+end
+
+# Host-side lookup of the BC value matching a boundary ID (BCs is a heterogeneous tuple)
+_patch_bc_value(BCs, ID) = begin
+    for bc ∈ BCs
+        bc.ID == ID && return bc.value
+    end
+    error("No boundary condition found for boundary index $ID")
 end
 
 """

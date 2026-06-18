@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * 20x improvement loading and processing 3D UNV mesh files [#106](@ref)
 * Updated discretisation, boundary condition, turbulence, solver, and preconditioner paths to avoid unintended `Float64` promotion on `Float32` meshes [#125](@ref)
 * FOAM reader has been updated for robustness and speed (~4x faster) [#126](@ref)
+* Rewrote `pressure_force` and `viscous_force` as backend-agnostic (CPU/GPU) kernels, changed their signature to `(patch, model, config)`, and corrected the pressure force to scale by reference density only for incompressible (kinematic pressure) flows [#129](@ref)
 
 ### Breaking
 * No breaking changes

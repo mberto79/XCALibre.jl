@@ -142,12 +142,12 @@ function boundary_index(
     end
 end
 
-function boundary_index(boundaries::Vector{Boundary{S, UR}}, name::S) where {S<:Symbol,UR}
-    # bci = zero(TI)
-    for index ∈ eachindex(boundaries)
-        # bci += 1
-        if boundaries[index].name == name
-            return index 
+# Accept boundaries on any backend; Symbols force a host-side search, so copy to CPU first
+function boundary_index(boundaries::AbstractArray{<:Boundary}, name::Symbol)
+    bs = get_boundaries(boundaries)
+    for index ∈ eachindex(bs)
+        if bs[index].name == name
+            return index
         end
     end
 end

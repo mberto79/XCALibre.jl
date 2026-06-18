@@ -92,6 +92,9 @@ function wall_distance!(model, walls, config)
     normal_distance!(y, phi, phiGrad, config)
     # y.values .= phi.values
 
+    phi_eqn = phi = phif = phiGrad = prev = nothing
+    GC.gc()
+
     new_config
 end
 

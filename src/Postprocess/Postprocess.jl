@@ -5,6 +5,7 @@ using StaticArrays
 using LinearAlgebra
 using SparseMatricesCSR
 using GPUArrays
+using KernelAbstractions
 # using ThreadedSparseCSR
 
 using Adapt

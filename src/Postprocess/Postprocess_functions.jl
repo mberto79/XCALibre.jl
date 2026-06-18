@@ -70,7 +70,7 @@ function viscous_force(patch::Symbol, model, config)
     nu = model.fluid.nu
     rho = model.fluid.rho
     TF = _get_float(mesh)
-    nut = model.turbulence isa Laminar ? ConstantScalar(zero(TF)) : model.turbulence.nut
+    nut = model.turbulence isa Laminar ? ConstantScalar(zero(TF)) : model.turbulence.nutf # wall-face nut (wall funcs)
     (; backend, workgroup) = config.hardware
 
     ID = boundary_index(model.boundary_info, patch)
@@ -99,11 +99,12 @@ end
     @inbounds begin
         fID = IDs_range[i]
         cID = boundary_cellsID[fID]
-        (; area, normal, delta) = faces[fID]
+        (; area, normal, delta, e) = faces[fID]
         Udiff = U[cID] - Uw
         Up = Udiff - (Udiff⋅normal)*normal # parallel velocity difference
-        snGrad = Up/delta
-        coeff = rho[cID]*area*(nu[cID] + nut[cID]) # this may need using νtf? (wall funcs)
+        dperp = delta*(e⋅normal) # wall-normal distance (projection of cell-to-face vector)
+        snGrad = Up/dperp
+        coeff = rho[cID]*area*(nu[cID] + nut[fID]) # nut is wall-face value νtf (wall funcs)
         fx[i] = snGrad[1]*coeff
         fy[i] = snGrad[2]*coeff
         fz[i] = snGrad[3]*coeff
@@ -195,7 +196,7 @@ wall_shear_stress(patch::Symbol, model,config)  = begin
     # Line below needs to change to do selection based on nut BC
     turbulence = model.turbulence
     UBCs = config.boundaries.U
-    typeof(turbulence) <: Laminar ? nut = ConstantScalar(0.0) : nut = model.turbulence.nut
+    typeof(turbulence) <: Laminar ? nut = ConstantScalar(0.0) : nut = model.turbulence.nutf # wall-face νtf
     mesh = model.domain
     (; nu) = model.fluid
     (; U) = model.momentum
@@ -223,8 +224,7 @@ wall_shear_stress(patch::Symbol, model,config)  = begin
         fID = IDs_range[i]
         cID = boundary_cellsID[fID]
         face = faces[fID]
-        nueff = nu[cID]  + nut[cID]
-        tauw.x[i] *= nueff # this may need using νtf? (wall funcs)
+        nueff = nu[cID]  + nut[fID] # nut is wall-face value νtf (wall funcs)
         tauw.y[i] *= nueff
         tauw.z[i] *= nueff
         pos[i] = face.centre

@@ -146,41 +146,35 @@ function boundary_average(patch::Symbol, field, fieldBCs, config; time=0)
     return ave
 end
 
-"""
-    wall_shear_stress(patch::Symbol, model,config)
-
-Function to calculate the wall shear stress acting on a given patch/boundary.
-
-# Input arguments
-
-- `patch::Symbol` name of the boundary of interest (as a `Symbol`)
-- `model` instance of `Physics` object needs to be passed 
-- `config` need to pass `Configuration` object as this contains the boundary conditions
-"""
-wall_shear_stress(patch::Symbol, model,config)  = begin
+########### Must update
+wall_shear_stress(patch::Symbol, model, config)  = begin
     # Line below needs to change to do selection based on nut BC
     turbulence = model.turbulence
     UBCs = config.boundaries.U
     typeof(turbulence) <: Laminar ? nut = ConstantScalar(0.0) : nut = model.turbulence.nut
     mesh = model.domain
     (; nu) = model.fluid
-    (; U) = model.momentum
+    (; U, Uf) = model.momentum
     (; boundaries, boundary_cellsID, faces) = mesh
     ID = boundary_index(boundaries, patch)
     boundary = boundaries[ID]
     (; IDs_range) = boundary
+
     @info "calculating viscous forces on patch: $patch at index $ID"
+    # Setting up Scalar and Vector Fields
     x = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
     y = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
     z = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
     tauw = FaceVectorField(x,y,z, mesh)
-    Uw = zero(_get_float(mesh))
-    for i ∈ 1:length(UBCs)
-        if ID == UBCs[i].ID
-            Uw = UBCs[i].value
-            surface_normal_gradient!(tauw, U, UBCs[i].value, IDs_range)
-        end
+    
+    # Iterate through face IDs of the boundary and calcualte surface friction
+    
+    for i ∈ IDs_range
+        Uw = Uf[i]
+        surface_normal_gradient!(tauw, U, Uw, IDs_range)
     end
+    
+    # surface_normal_gradient2!(tauw,U,IDs_range,config)
 
     pos = fill(SVector{3,Float64}(0,0,0), length(IDs_range))
     for i ∈ eachindex(tauw)

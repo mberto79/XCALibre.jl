@@ -94,7 +94,8 @@ end
         σd = 0.125,
         σkL = 0.0125,
         σω = 0.5,
-        η = 0.02974 * tanh(59.79 * (Tu^1.191) + 1.65e-13)
+        η = 0.02974 * tanh(59.79 * (Tu^1.191) + 1.65e-13),
+        n = 1 # Adjusts the strength of the Damping Function in %
     )
 
     # Allocate wall distance "y" and setup boundary conditions
@@ -341,10 +342,10 @@ function turbulence!(
         ReLambda_val = ReLambda[i]
 
         # Reynolds numbers
-        ReUpsilon = sqrt(sqrt(2.0 * nu_i^2 * kl_i / (y_i^2))) * y_i / nu_i
+        ReUpsilon = sqrt(sqrt(2.0 * (nu_i^2) * kl_i / (y_i^2))) * y_i / nu_i
 
         # nutL1 for ReL calculation
-        nutL1 = η * kl_i * sqrt(S2_val) * ReUpsilon^(-1.30) * ReLambda_val^0.5 / max(S2_val, (normU_i/y_i)^2)
+        nutL1 = η * kl_i * sqrt(S2_val) * ReUpsilon^(-1.30) * (ReLambda_val^0.5) / max(S2_val, (normU_i/y_i)^2)
 
         # Intermittency trigger gamma
         ReL = min(kl_i / max(min(nu_i, nutL1), 1e-15) / max(Omega_val, 1e-15), 5000.0)
@@ -407,7 +408,7 @@ function turbulence!(
         safe_nu = max(nu[i], 1e-15)
 
         # fv calculation
-        fv_val = 1.0 - exp(-sqrt(safe_k / (safe_nu * safe_omega)) / coeffs.Cv)
+        fv_val = coeffs.n*(1.0 - exp(-sqrt(safe_k / (safe_nu * safe_omega)) / coeffs.Cv))
 
         # Production with limiter
         Pk_unlimited = fv_val * (safe_k / safe_omega) * Pk[i] * gamma_val
@@ -446,7 +447,7 @@ function turbulence!(
         
         # Calculate nutL
         ReLambda_val = ReLambda[i]
-        ReUpsilon = sqrt(sqrt(2.0 * nu_i^2 * kl_i / (y_i^2))) * y_i / nu_i
+        ReUpsilon = sqrt(sqrt(2.0 * (nu_i^2) * kl_i / (y_i^2))) * y_i / nu_i
         PkL_val = sqrt(S2_val) * η * kl_i * ReUpsilon^(-1.30) * ReLambda_val^0.5
         nuL_val = PkL_val / max(S2_val, (normU_i/y_i)^2)
         nuL[i] = nuL_val

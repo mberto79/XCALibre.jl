@@ -2,7 +2,7 @@ using XCALibre
 # using CUDA
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "ERCOFTAC_Plate_Example.unv"
+grid = "Aerospatiale-A_Airfoil.unv"
 mesh_file = joinpath(grids_dir, grid)
 
  mesh = UNV2D_mesh(mesh_file, scale=0.001)
@@ -15,16 +15,18 @@ hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 # Turbulence Model
-velocity = [5.4,0,0]
+Freestream_Velocity = 49.7
+AoA = 13.3 # In degrees
+velocity = [(Freestream_Velocity*cosd(AoA)),(Freestream_Velocity*sind(AoA)),0] # Adjusts the Velocity to match angle of attack of object
 nu = 1.497e-5
 # Re = 10*1/nu
 νR = 13.9
-Tu = 0.03
-k_inlet = 0.0575
+Tu = 0.002
+k_inlet = 0.01482 
 # k_inlet = 3/2*(Tu*velocity[1])^2
-kL_inlet = 0.0115
+kL_inlet = 0.00494
 # kL_inlet = 1/2*(Tu*velocity[1])^2
-ω_inlet = 275
+ω_inlet = 0.00148
 # ω_inlet = k_inlet/(νR*nu) # Omega at the Inlet
 
 
@@ -33,7 +35,7 @@ kL_inlet = 0.0115
 model = Physics(
     time = Steady(),
     fluid = Fluid{Incompressible}(nu = nu),
-    turbulence = RANS{KOmegaLKE}(Tu = 0.01, walls=(:Wall,)),
+    turbulence = RANS{KOmegaLKE}(Tu = 0.01, walls=(:Upper_Surface, :Lower_Surface)),
     # turbulence = RANS{KOmega}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
@@ -45,58 +47,56 @@ BCs = assign(
         U = [
             Dirichlet(:Inlet, velocity),
             Zerogradient(:Outlet),
-            Wall(:Wall, [0.0, 0.0, 0.0]),
-            Extrapolated(:Freestream),
-            Extrapolated(:Freestream_Sym),
-            # Zerogradient(:top)
-            Symmetry(:Sym)
+            Wall(:Upper_Surface, [0.0, 0.0, 0.0]),
+            Wall(:Lower_Surface, [0.0, 0.0, 0.0]),
+            Extrapolated(:Upper_Freestream),
+            Extrapolated(:Lower_Freestream)
+
         ],
         p = [
             Zerogradient(:Inlet),
             Dirichlet(:Outlet, 0.0),
-            Wall(:Wall),
-            Extrapolated(:Freestream),
-            Extrapolated(:Freestream_Sym),
-            # Zerogradient(:top)
-            Symmetry(:Sym)
+            Wall(:Upper_Surface),
+            Wall(:Lower_Surface),
+            Extrapolated(:Upper_Freestream),
+            Extrapolated(:Lower_Freestream)
+
         ],
         k = [
             Dirichlet(:Inlet, k_inlet),
             Zerogradient(:Outlet),
-            Dirichlet(:Wall, 0.0),
-            # KWallFunction(:Wall),
-            Extrapolated(:Freestream),
-            Extrapolated(:Freestream_Sym),
-            # Zerogradient(:top)
-            Symmetry(:Sym)
+            Dirichlet(:Upper_Surface, 0.0),
+            Dirichlet(:Lower_Surface, 0.0),
+            Extrapolated(:Upper_Freestream),
+            Extrapolated(:Lower_Freestream)
+
         ],
         kl = [
             Dirichlet(:Inlet, kL_inlet),
             Zerogradient(:Outlet),
-            Dirichlet(:Wall, 0.0),
-            Extrapolated(:Freestream),
-            Extrapolated(:Freestream_Sym),
-            # Zerogradient(:top)
-            Symmetry(:Sym)
+            Dirichlet(:Upper_Surface, 0.0),
+            Dirichlet(:Lower_Surface, 0.0),
+            Extrapolated(:Upper_Freestream),
+            Extrapolated(:Lower_Freestream)
+
         ],
         omega = [
             Dirichlet(:Inlet, ω_inlet),
             Zerogradient(:Outlet),
-            OmegaWallFunction(:Wall),
-            Extrapolated(:Freestream),
-            Extrapolated(:Freestream_Sym),
-            # Zerogradient(:top)
-            Symmetry(:Sym)
+            OmegaWallFunction(:Upper_Surface),
+            OmegaWallFunction(:Lower_Surface),
+            Extrapolated(:Upper_Freestream),
+            Extrapolated(:Lower_Freestream)
+
         ],
         nut = [
             Dirichlet(:Inlet, k_inlet/ω_inlet),
             Extrapolated(:Outlet),
-            Dirichlet(:Wall, 0.0),  
-            # NutWallFunction(:Wall),  
-            Extrapolated(:Freestream),
-            Extrapolated(:Freestream_Sym),
-            # Zerogradient(:top)
-            Symmetry(:Sym)
+            Dirichlet(:Upper_Surface, 0.0),  
+            Dirichlet(:Lower_Surface, 0.0),    
+            Extrapolated(:Upper_Freestream),
+            Extrapolated(:Lower_Freestream)
+
         ]
     )
 )
@@ -121,14 +121,14 @@ solvers = (
         rtol = 1e-2,
     ),
     p = SolverSetup(
-        solver      = Cg(), # Bicgstab(), Gmres(), Cg()
+        solver      =  Bicgstab(), # Gmres(), Cg()
         preconditioner = Jacobi(),
-        convergence = 3e-6,
+        convergence = 3e-5,
         relax       = 0.2,
         rtol = 1e-3,
     ),
     y = SolverSetup(
-        solver      = Cg(), # Bicgstab(), Gmres()
+        solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-6,
         rtol = 1e-3,
@@ -144,21 +144,21 @@ solvers = (
     k = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        convergence = 4e-6,
+        convergence = 3e-5,
         relax       = 0.3,
         rtol = 1e-2,
     ),
     omega = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        convergence = 3e-6,
+        convergence = 3e-5,
         relax       = 0.3,
         rtol = 1e-2,
     )
 )
 
 runtime = Runtime(
-    iterations=3000, write_interval=100, time_step=1)
+    iterations=10000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
@@ -187,45 +187,45 @@ residuals = run!(model, config); #, pref=0.0) # 9.39k allocs
 using DelimitedFiles
 using LinearAlgebra
 using Plots 
-using LaTeXStrings
 # OF_data = readdlm("flatplate_OF_wall_kOmega_lowRe.csv", ',', Float64, skipstart=1)
 # oRex = OF_data[:,7].*velocity[1]./nu[1]
 # oCf = sqrt.(OF_data[:,12].^2 + OF_data[:,13].^2)/(0.5*velocity[1]^2)
 
 # Ex_data = readdlm("T3A-_Experimental_Data.csv", ',', Float64, skipstart=1)
- Ex_data = readdlm("T3A_Experimental_Results.csv", ',', Float64, skipstart=1)
+Ex_data = readdlm("Aerospatiale_A_Experimental_Results.csv", ',', Float64, skipstart=1)
 # Ex_data = readdlm("T3B_Experimental_Data.csv", ',', Float64, skipstart=1)
- eRex = Ex_data[:,1]
+ es_over_C = Ex_data[:,1]
  eCf = Ex_data[:,2]
 
-# Walt_data = readdlm("T3A-_Walters'_Data.csv", ',', Float64, skipstart=1)
- Walt_data = readdlm("T3A_Walters'_Data.csv", ',', Float64, skipstart=1)
-# Walt_data = readdlm("T3B_Walters'_Data.csv", ',', Float64, skipstart=1)
- wRex = Walt_data[:,1]
+#  Walt_data = readdlm("T3A-_Walters'_Data.csv", ',', Float64, skipstart=1)
+Walt_data = readdlm("Aerospatiale_A_Walters'_Data.csv", ',', Float64, skipstart=1)
+#  Walt_data = readdlm("T3B_Walters'_Data.csv", ',', Float64, skipstart=1)
+ ws_over_C = Walt_data[:,1]
  wCf = Walt_data[:,2]
 
  # model_cpu = adapt(CPU(), model)
 
-tauw, pos = wall_shear_stress(:Wall, model, config)
+tauw, pos = wall_shear_stress(:Upper_Surface, model, config)
 tauMag = [norm(tauw[i]) for i ∈ eachindex(tauw)]
 # tauMag = [tauw.x[i] for i ∈ eachindex(tauw)]
 x = [pos[i][1] for i ∈ eachindex(pos)]
-Rex = velocity[1].*x./nu
+# Rex = velocity[1].*x./nu
+s_over_C = x.*10
 
 x_corr = [0:0.0002:2;]
 Rex_corr = velocity[1].*x_corr/nu
 Cf_corr = 0.0576.*(Rex_corr).^(-1/5)
 Cf_laminar = 0.664.*(Rex_corr).^(-1/2)
 
-plot(; xaxis= L"Re_{x} (-)", yaxis= L"C_{f} (-)")
-plot!(Rex_corr, Cf_corr, linestyle = :dot, color=:red, ylims=(0, 0.01), xlims=(0,6e5), label="Turbulent",lw=1.5)
-plot!(Rex_corr, Cf_laminar, linestyle = :dot, color=:green, ylims=(0, 0.01), xlims=(0,6e5), label="Laminar",lw=2.5)
+plot(; xaxis="s/C", yaxis="Cf")
 # plot!(oRex, oCf, color=:green, lw=1.5, label="OpenFOAM") # |> display
-plot!(wRex, wCf, linestyle = :dash, color=:black, lw=1.5,label="Walters' Original model") |> display
-plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="XCALibre") |> display
-scatter!(eRex, eCf, color=:green, lw=1.5, label="T3A Experimantal Data")|> display
+scatter!(es_over_C, eCf, color=:green, lw=1.5, label="Aerospatiale-A Experimantal Data")
+plot!(ws_over_C, wCf, color=:black, lw=1.5,label="Walters' Original model") 
+plot!(s_over_C,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="XCALibre", title="Aerospatiale-A Airfoil") |> display
+
 
 # plot(; xlims=(0,1000))
 # plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
 # plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
 # plot!(1:length(Rp), Rp, yscale=:log10, label="p") |> display
+

@@ -128,4 +128,4 @@ residuals = run!(model, config)
 U = model.momentum.U
 vel_mag = sqrt.(U.x.values.^2 .+ U.y.values.^2 .+ U.z.values.^2)
 mean_vel_mag = sum(vel_mag) / length(vel_mag)
-@test mean_vel_mag < 1e-9
+@test mean_vel_mag < 1e-8

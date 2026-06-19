@@ -69,7 +69,15 @@ end
 @define_boundary Wall Divergence{BoundedUpwind} VectorField begin
     flux = term.flux[fID]
     ap = term.sign*(flux)
-    -flux, 0.0
+    0.0, 0.0
+end
+
+@define_boundary Wall Divergence{BoundedUpwind} ScalarField begin
+    ap = term.sign*(term.flux[fID])
+    z = zero(ap)
+    ac = max(-ap, z)
+    an = -max(-ap, z)
+    ac, -an*bc.value
 end
 
 # Scalar implementations for divergence operator
@@ -101,4 +109,12 @@ end
     # phi = term.phi 
     # values = get_values(phi, component)
     # 0.0, -ap*values[cellID] # try this
+end
+
+# @define_boundary Symmetry Divergence{BoundedUpwind} begin
+#     0.0, 0.0
+# end
+
+@define_boundary Wall Si begin
+    0.0, 0.0
 end

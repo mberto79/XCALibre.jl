@@ -21,7 +21,7 @@ function geometry!(mesh::Mesh2)
     internal_face_properties!(mesh)
     boundary_face_properties!(mesh)
     cell_properties!(mesh)
-    correct_boundary_cell_volumes!(mesh)
+    # correct_boundary_cell_volumes!(mesh)
     nothing
 end
 
@@ -51,25 +51,23 @@ function internal_face_properties!(mesh::Mesh2{I,F}) where {I,F}
         area = norm(tangent)
 
         # Ownercell-based calculations
-        c1 = cells[ownerCells[1]].centre
-        c2 = cells[ownerCells[2]].centre
-        cf = face.centre
-        d_1f = cf - c1 # distance vector from cell1 to face centre
-        d_f2 = c2 - cf # distance vector from face centre to cell2
-        d_12 = c2 - c1 # distance vector from cell1 to cell2
+        F1 = face.centre
+        C1 = cells[ownerCells[1]].centre 
+        C2 = cells[ownerCells[2]].centre 
 
+        C1F1 = F1 - C1 # distance vector from face centre to cell1 
+        C2F1 = F1 - C2 # distance vector from face centre to cell2
+        C1C2 = C2 - C1 # distance vector from cell1 to cell2
+        
         # Calculate normal and check direction (from owner1 to owner2)
         unit_tangent = tangent/area
-        normal = unit_tangent × UnitVectors().k
-        if d_12⋅normal < zero(F)
-            normal = -1.0*normal
+        normal = unit_tangent × SVector{3, F}(0, 0, 1)
+        if C1C2⋅normal < zero(F)
+            normal = -normal
         end
 
         # Calculate delta and interpolation weight
-        delta = norm(d_12) 
-        e = d_12/delta
-        weight = abs((d_1f⋅normal)/(d_1f⋅normal + d_f2⋅normal)) 
-        # weight = norm(d_f2)/norm(d_12)
+        weight, delta, e = Mesh.weight_delta_e(C1F1, C2F1, C1C2, normal)
 
         # Assign values to face
         face = @set face.area = area
@@ -96,102 +94,167 @@ function boundary_face_properties!(mesh::Mesh2{I,F}) where {I,F}
             tangent = p2 - p1
             area = norm(tangent)
             unit_tangent = tangent/area
-            normal = unit_tangent × UnitVectors().k
+            normal = unit_tangent × SVector{3, F}(0, 0, 1)
 
             # perform normal direction check
-            cf = face.centre
-            cc = cells[ownerCells[1]].centre
-            d_cf = cf - cc # distance vector from cell to face centre
-            if d_cf⋅normal < zero(F)
-                normal = -1.0*normal
+            F1 = face.centre
+            C1 = cells[ownerCells[1]].centre 
+            C1F1 = F1 - C1 # distance vector from face centre to cell1 
+
+            if C1F1⋅normal < zero(F)
+                normal = -normal
             end
-            # delta = abs(d_cf⋅normal) # face-normal distance
-            delta = norm(d_cf) # exact distance
-            e = d_cf/delta
+
+            # calculate weight, delta and e 
+            weight, delta, e = Mesh.weight_delta_e(C1F1, normal)
 
             # assign values to face
             face = @set face.area = area
             face = @set face.normal = normal
             face = @set face.delta = delta
             face = @set face.e = e
-            face = @set face.weight = one(F)
+            face = @set face.weight = weight
             faces[ID] = face
         end
     end
 end
 
 function cell_properties!(mesh::Mesh2{I,F}) where {I,F}
-    (; nodes, faces, cells) = mesh
-    for celli ∈ eachindex(cells)
-        cell = cells[celli]
-        (; centre, nsign, facesID) = cell
-        volume = zero(F)
+    (; boundaries, nodes, faces, cells) = mesh
 
-        # Correct cell centre (using area weighted face centres to estimate centroid)
-        cellSurfaceArea = 0.0
-        sumCentres = SVector{3}(0.0,0.0,0.0)
-        for i ∈ eachindex(facesID)
-            fID = facesID[i]
-            face = faces[fID]
-            sumCentres += face.centre*face.area 
-            cellSurfaceArea += face.area
-        end
-        cells[celli] = @set cell.centre = sumCentres/cellSurfaceArea
-
-
-
-        # loop over faces: check normals and calculate volume
-        for i ∈ eachindex(facesID)
-            ID = facesID[i]
-            face = faces[ID]
-            fcentre = face.centre
-            fnormal = face.normal
-            farea = face.area
-            d_cf = fcentre - centre # x_f : face location from cell centre
-            fnsign = zero(I)
-            if d_cf⋅fnormal > zero(F) # normal direction check
-                fnsign = one(I)
-            else
-                fnsign = -one(I)
-            end
-            push!(nsign, fnsign)
-            volume += (d_cf ⋅ fnormal*fnsign)*farea
-            cells[celli] = @set cell.volume = 0.5*volume
-        end
-    end
-end
-
-function correct_boundary_cell_volumes!(mesh::Mesh2{I,F}) where {I,F}
-    (; boundaries, faces, cells) = mesh
+    # 1. Gather ALL faces (internal + boundary) for every cell
+    # This prevents corner cells from "forgetting" their second boundary face!
+    all_cell_faces = [copy(c.facesID) for c in cells] 
+    
     for boundary ∈ boundaries
         (; cellsID, facesID) = boundary
-
         for i ∈ eachindex(cellsID)
             cID = cellsID[i]
-            cell = cells[cID]
-
-            # Correct volumes for boundary cells
-            centre = cell.centre
-            face = faces[facesID[i]]
-            fcentre = face.centre
-            fnormal = face.normal
-            farea = face.area
-            d_cf = fcentre - centre
-            volume = cell.volume + 0.5*(d_cf ⋅ fnormal)*farea
-            cells[cID] = @set cell.volume = volume
-
-            # Correct cell centroid calculation for boundary cells
-            cellSurfaceArea = 0.0
-            sumCentres = SVector{3}(0.0,0.0,0.0)
-            for fID ∈ cell.facesID
-                face = faces[fID]
-                sumCentres += face.centre*face.area 
-                cellSurfaceArea += face.area
-            end
-            bface = faces[facesID[i]]
-            sumCentres += bface.centre*bface.area 
-            cellSurfaceArea += bface.area
-            cells[cID] = @set cell.centre = sumCentres/cellSurfaceArea
+            fID = facesID[i]
+            push!(all_cell_faces[cID], fID)
         end
     end
+
+    # 2. Calculate geometrically perfect properties in a single pass
+    for celli ∈ eachindex(cells)
+        cell = cells[celli]
+        my_faces = all_cell_faces[celli]
+        
+        # --- A. Calculate True Centroid ---
+        cellSurfaceArea = zero(F)
+        sumCentres = SVector{3, F}(0.0, 0.0, 0.0)
+        
+        for fID ∈ my_faces
+            face = faces[fID]
+            sumCentres += face.centre * face.area 
+            cellSurfaceArea += face.area
+        end
+        true_centre = sumCentres / cellSurfaceArea
+        
+        # --- B. Calculate True Volume & Internal Normal Signs ---
+        volume = zero(F)
+        empty!(cell.nsign) # Clear out any old data if this is re-run
+        
+        for fID ∈ my_faces
+            face = faces[fID]
+            
+            # Use the FIXED true_centre for every single face!
+            d_cf = face.centre - true_centre 
+            
+            # Determine outward normal direction
+            fnsign = (d_cf ⋅ face.normal > zero(F)) ? one(I) : -one(I)
+            
+            # Only push to the cell's nsign array if it's an internal face
+            # (Preserves XCALibre's internal face loop logic)
+            if fID ∈ cell.facesID
+                push!(cell.nsign, fnsign)
+            end
+            
+            # Accumulate the volume (0.5 * base * height for 2D pyramids)
+            volume += (d_cf ⋅ face.normal * fnsign) * face.area
+        end
+        
+        # --- C. Update the Cell Array ---
+        cell = @set cell.centre = true_centre
+        cell = @set cell.volume = F(0.5) * volume
+        cells[celli] = cell
+    end
 end
+
+# function cell_properties!(mesh::Mesh2{I,F}) where {I,F}
+#     (; nodes, faces, cells) = mesh
+#     for celli ∈ eachindex(cells)
+#         cell = cells[celli]
+#         (; centre, nsign, facesID) = cell
+#         volume = zero(F)
+
+#         # Correct cell centre (using area weighted face centres to estimate centroid)
+#         cellSurfaceArea = 0.0
+#         sumCentres = SVector{3}(0.0,0.0,0.0)
+#         for i ∈ eachindex(facesID)
+#             fID = facesID[i]
+#             face = faces[fID]
+#             sumCentres += face.centre*face.area 
+#             cellSurfaceArea += face.area
+#         end
+#         cells[celli] = @set cell.centre = sumCentres/cellSurfaceArea
+
+
+
+#         # loop over faces: check normals and calculate volume
+#         for i ∈ eachindex(facesID)
+#             ID = facesID[i]
+#             face = faces[ID]
+#             fcentre = face.centre
+#             fnormal = face.normal
+#             farea = face.area
+#             d_cf = fcentre - centre # x_f : face location from cell centre
+#             fnsign = zero(I)
+#             if d_cf⋅fnormal > zero(F) # normal direction check
+#                 fnsign = one(I)
+#             else
+#                 fnsign = -one(I)
+#             end
+#             push!(nsign, fnsign)
+#             volume += (d_cf ⋅ fnormal*fnsign)*farea
+#             cells[celli] = @set cell.volume = 0.5*volume
+#         end
+#     end
+# end
+
+# function correct_boundary_cell_volumes!(mesh::Mesh2{I,F}) where {I,F}
+#     (; boundaries, faces, cells) = mesh
+#     for boundary ∈ boundaries
+#         (; cellsID, facesID) = boundary
+
+#         for i ∈ eachindex(cellsID)
+#             cID = cellsID[i]
+#             cell = cells[cID]
+
+#             # Correct volumes for boundary cells
+#             centre = cell.centre
+#             face = faces[facesID[i]]
+#             fcentre = face.centre
+#             fnormal = face.normal
+#             farea = face.area
+#             d_cf = fcentre - centre
+#             volume = cell.volume + 0.5*(d_cf ⋅ fnormal)*farea
+#             # volume = cell.volume
+#             cells[cID] = @set cell.volume = volume
+#             println(cells[cID].volume," ", 0.5*(d_cf ⋅ fnormal)*farea)
+
+#             # Correct cell centroid calculation for boundary cells
+#             cellSurfaceArea = 0.0
+#             sumCentres = SVector{3}(0.0,0.0,0.0)
+#             for fID ∈ cell.facesID
+#                 face = faces[fID]
+#                 sumCentres += face.centre*face.area 
+#                 cellSurfaceArea += face.area
+#             end
+#             bface = faces[facesID[i]]
+#             sumCentres += bface.centre*bface.area 
+#             cellSurfaceArea += bface.area
+#             cells[cID] = @set cell.centre = sumCentres/cellSurfaceArea
+#         end
+#     end
+# end

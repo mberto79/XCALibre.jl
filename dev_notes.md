@@ -89,7 +89,7 @@
 - [x] Enable threading
 - [x] Enable GPU computation
 - [x] Move turbulence RANS to GPU
-- [ ] Move compressible implementation to the GPU
+- [x] Move compressible implementation to the GPU
 - [x] Implement AMG prototype solver (serial)
 - [ ] Implement AMG solver (KernelAbstraction.jl)
 

@@ -30,7 +30,7 @@ mutable struct BoundaryElement{S<:String,I<:Integer,VI<:AbstractArray{I}}
     index::I
     facesID::VI # these are nodes IDs - should probably just call them that
 end
-BoundaryElement(z::TI) where TI<:Integer = BoundaryElement("default", 0, TI[])
+BoundaryElement(z::TI) where TI<:Integer = BoundaryElement("default", TI(0), TI[])
 
 #Not used.
 # mutable struct Element{I<:Integer,VI<:AbstractArray{I}}

@@ -53,6 +53,22 @@ Grad{S}(psi::VectorField) where S = begin
     Grad{S,F,R,I,M}(psi, tgrad, one(I), false, mesh)
 end
 
+# Grad outer constructor for face scalar field definition
+Grad{S}(phi::FaceScalarField) where S= begin
+    # Retrieve mesh and define grad as vector field
+    mesh = phi.mesh
+    grad = VectorField(mesh)
+
+    # Retrieve user-selected types
+    F = typeof(phi)
+    R = typeof(grad)
+    I = _get_int(mesh)
+    M = typeof(mesh)
+
+    # Construct Grad
+    Grad{S,F,R,I,M}(phi, grad, one(I), false, mesh)
+end
+
 Base.getindex(grad::Grad{S,F,R,I,M}, i::Integer) where {S,F,R<:VectorField,I,M} = begin
     @inbounds SVector{3}(
         grad.result.x[i], 
@@ -131,7 +147,9 @@ end
         c2 = ownerCells[2]
 
         # Interpolate calculation
-        phif[i] = 0.5*(phi[c1] + phi[c2])
+        phi1 = phi[c1]
+        half = typeof(phi1)(0.5)
+        phif[i] = half*(phi1 + phi[c2])
     end
 end
 
@@ -158,7 +176,6 @@ end
     @uniform begin
         # Extract individual value vectors from vector field
         (; x, y, z) = psif
-        weight = 0.5
     end
 
     @inbounds begin
@@ -170,6 +187,7 @@ end
         # Set values to interpolate between
         psi1 = psi[c1]
         psi2 = psi[c2]
+        weight = typeof(psi1[1])(0.5)
         midpoint = weight*(psi1 + psi2)
 
         # Interpolate calculation
@@ -189,22 +207,19 @@ function correct_interpolation!(grad, phif, phi, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    # Retrieve user-selected float type
-    F = _get_float(mesh)
-    
-    # Set initial weight
-    weight = 0.5
+    # Set initial weight using the field storage type.
+    weight = eltype(phif)(0.5)
 
     # Launch correct interpolation kernel
     ndrange = length(faces) - nbfaces
     kernel! = correct_interpolation_kernel!(_setup(backend, workgroup, ndrange)...)
-    kernel!(faces, cells, nbfaces, phi, F, weight, grad, phif)
+    kernel!(faces, cells, nbfaces, phi, weight, grad, phif)
     # # KernelAbstractions.synchronize(backend)
 end
 
 # Correct interpolation kernel definition
 
-@kernel inbounds=true function correct_interpolation_kernel!(faces, cells, nbfaces, phi, F, weight, grad, phif::Field) where {Field}
+@kernel inbounds=true function correct_interpolation_kernel!(faces, cells, nbfaces, phi, weight, grad, phif::Field) where {Field}
     i = @index(Global)
     i += nbfaces # Set i such that it does not index boundary faces
 
@@ -255,4 +270,13 @@ function grad!(grad::Grad{Midpoint,F,R,I,M}, phif, phi, BCs, time, config) where
         correct_interpolation!(grad, phif, phi, config)
         green_gauss!(grad, phif, config)
     end
+end
+
+# This is a gradient method that does not take BCs as arguments (implicitly assuming the the gradient at boundaries is 0)
+function grad!(grad::Grad{Gauss,F,R,I,M}, phif, phi, time, config) where {F,R<:VectorField,I,M}
+    green_gauss!(grad, phif, config)
+end
+
+function grad!(grad::Grad{Gauss,F,R,I,M}, phif, config) where {F,R<:VectorField,I,M}
+    green_gauss!(grad, phif, config)
 end

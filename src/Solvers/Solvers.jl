@@ -8,6 +8,7 @@ using Krylov
 using LinearOperators
 using ProgressMeter
 using KernelAbstractions
+import AcceleratedKernels as AK
 using Atomix
 using Adapt
 
@@ -23,12 +24,21 @@ using XCALibre.Solve
 using XCALibre.Calculate
 using XCALibre.ModelPhysics
 using XCALibre.IOFormats
+using XCALibre.Postprocess
+using XCALibre.ReferenceFrames
+
+import XCALibre.ModelPhysics as ModelPhysics
 
 include("Solvers_0_functions.jl")
+include("Solvers_1_SIMPLE-MRF.jl")
 include("Solvers_1_SIMPLE.jl")
+include("Solvers_1_LAPLACE.jl")
 include("Solvers_1_CSIMPLE.jl")
 include("Solvers_2_PISO.jl")
 include("Solvers_2_CPISO.jl")
+include("Solvers_4_Godunov.jl")
+include("Solvers_5_Multiphase.jl")
 include("Solvers_3_solver_dispatch.jl")
+include("Solvers_1_FilmModel.jl")
 
 end

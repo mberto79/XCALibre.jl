@@ -47,7 +47,7 @@ Preconditioner{NormDiagonal}(A::AbstractSparseArray{F,I}) where {F,I} = begin
     backend = get_backend(A)
     m, n = size(A)
     m == n || throw("Matrix not square")
-    S = _convert_array!(zeros(m), backend)
+    S = _convert_array!(zeros(F, m), backend)
     P = opDiagonal(S)
     Preconditioner{NormDiagonal,typeof(A),typeof(P),typeof(S)}(A,P,S)
 end
@@ -56,7 +56,7 @@ Preconditioner{Jacobi}(A::AbstractSparseArray{F,I}) where {F,I} = begin
     backend = get_backend(A)
     m, n = size(A)
     m == n || throw("Matrix not square")
-    S = _convert_array!(zeros(m), backend)
+    S = _convert_array!(zeros(F, m), backend)
     P = opDiagonal(S)
     Preconditioner{Jacobi,typeof(A),typeof(P),typeof(S)}(A,P,S)
 end

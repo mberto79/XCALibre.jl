@@ -153,14 +153,16 @@ function initialise_writer(format::VTK, mesh::Mesh3)
 end
 
 
-function write_results(iteration::TI, mesh, meshData::VTKWriter3D, BCs, args...) where TI
+function write_results(
+    iteration::TI, time, mesh, meshData::VTKWriter3D, BCs, args...; suffix="") where TI
     name = ""
-    if TI <: Integer
+    if iteration == time
         name = @sprintf "iteration_%i" iteration
     else
-        name = @sprintf "time_%.8f" iteration
+        # name = @sprintf "time_%.8f" iteration
+        name = @sprintf "time_%i" iteration
     end
-    filename=name*".vtu"
+    filename=name*suffix*".vtu"
 
     # Define backend and variables
     backend = _get_backend(mesh)
@@ -191,9 +193,26 @@ function write_results(iteration::TI, mesh, meshData::VTKWriter3D, BCs, args...)
                     println(io, x_cpu[i]," ",y_cpu[i] ," ",z_cpu[i] )
                 end
                 write(io,"     </DataArray>\n")
+            elseif field_type <: AbstractTensorField
+                write(io,"     <DataArray type=\"$(F32)\" Name=\"$(label)\" format=\"$(format)\" NumberOfComponents=\"9\">\n")
+                xx_cpu = get_data(field.xx.values, backend)
+                xy_cpu = get_data(field.xy.values, backend)
+                xz_cpu = get_data(field.xz.values, backend)
+                yx_cpu = get_data(field.yx.values, backend)
+                yy_cpu = get_data(field.yy.values, backend)
+                yz_cpu = get_data(field.yz.values, backend)
+                zx_cpu = get_data(field.zx.values, backend)
+                zy_cpu = get_data(field.zy.values, backend)
+                zz_cpu = get_data(field.zz.values, backend)
+                for i ∈ eachindex(xx_cpu)
+                    println(io, xx_cpu[i], " ", xy_cpu[i], " ", xz_cpu[i])
+                    println(io, yx_cpu[i], " ", yy_cpu[i], " ", yz_cpu[i])
+                    println(io, zx_cpu[i], " ", zy_cpu[i], " ", zz_cpu[i])
+                end
+                write(io,"     </DataArray>\n")
             else
                 throw("""
-                Input data should be a ScalarField or VectorField e.g. ("U", U)
+                Input data should be a ScalarField, VectorField or TensorField e.g. ("U", U)
                 """)
             end
         end

@@ -10,15 +10,17 @@ grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "bfs_unv_tet_10mm.unv"
 mesh_file = joinpath(grids_dir, grid)
 
-mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_5mm.unv"
+# mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_5mm.unv"
 # mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_4mm.unv"
 # mesh_file = "bfs_unv_tet_5mm.unv"
 
 # mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
-# mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
-mesh = UNV3D_mesh(mesh_file, scale=0.001)
+mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
+# mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
+@time mesh = UNV3D_mesh(mesh_file, scale=0.001) # 31 sec
+# @time mesh = UNV3D_mesh(mesh_file, scale=0.001, float_type=Float32)
 
-backend = CUDABackend(); workgroup = 32
+# backend = CUDABackend(); workgroup = 32
 # backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
@@ -60,6 +62,7 @@ BCs = assign(
 
 solvers = (
     U = SolverSetup(
+        # float_type = Float32,
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), # Jacobi # ILU0GPU
         # smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
@@ -68,12 +71,13 @@ solvers = (
         rtol = 0.1
     ),
     p = SolverSetup(
+        # float_type = Float32,
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), #NormDiagonal(), IC0GPU, Jacobi
         # smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
         convergence = 1e-7,
         relax       = 0.2,
-        rtol = 0.1,
+        rtol = 0.01,
         itmax = 1000
     )
 )
@@ -100,7 +104,7 @@ residuals = run!(model, config)
 
 # Now get timing information
 
-runtime = Runtime(iterations=500, write_interval=100, time_step=1)
+runtime = Runtime(iterations=100, write_interval=100, time_step=1)
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
@@ -109,8 +113,16 @@ GC.gc(false)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-@time residuals = run!(model, config, output=OpenFOAM(), ncorrectors=0)
+# @time residuals = run!(model, config, output=OpenFOAM(), ncorrectors=0)
+@time residuals = run!(model, config, output=VTK(), ncorrectors=0)
 
+# model_cpu = adapt(CPU(), model)
+
+# model_gpu = adapt(CUDABackend(), model_cpu)
+
+
+# mesh_cpu = adapt(CPU(), mesh_dev)
+# mesh_gpu = adapt(CUDABackend(), mesh_cpu)
 # using Plots
 # iterations = runtime.iterations
 # plot(yscale=:log10, ylims=(1e-7,1e-1))

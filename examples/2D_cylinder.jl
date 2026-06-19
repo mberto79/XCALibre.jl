@@ -76,7 +76,7 @@ schemes = (
 )
 
 # runtime = Runtime(iterations=20, write_interval=10, time_step=1) # for proto
-runtime = Runtime(iterations=500, write_interval=100, time_step=1)
+runtime = Runtime(iterations=1000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

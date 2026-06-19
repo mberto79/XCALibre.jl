@@ -48,7 +48,7 @@ function magnitude!(magS::ScalarField, S, config)
 end
 
 # @kernel function _magnitude!(magS::ScalarField, S::AbstractVectorField)
-@kernel function _magnitude!(magS::ScalarField, S)
+@kernel function _magnitude!(magS::AbstractScalarField, S)
     i = @index(Global)
     @uniform values = magS.values
     
@@ -66,14 +66,15 @@ end
 end
 
 function magnitude2!(
-    magS::ScalarField, S::AbstractTensorField, config; scale_factor=1.0
+    magS, S, config; scale_factor=1.0
     )
     (; hardware) = config
     (; backend, workgroup) = hardware
 
+    scale = eltype(magS)(scale_factor)
     ndrange = length(magS)
     kernel! = _magnitude2!(_setup(backend, workgroup, ndrange)...)
-    kernel!(magS, S, scale_factor)
+    kernel!(magS, S, scale)
     # KernelAbstractions.synchronize(backend)
 end
 
@@ -85,7 +86,7 @@ end
     @uniform values = magS.values
 
     @inbounds begin
-        sum = 0.0
+        sum = zero(eltype(values))
         Sjk = S[i]
         for j ∈ 1:3
             for k ∈ 1:3
@@ -94,5 +95,46 @@ end
             end
         end
         magS.values[i] = sum*scale_factor
+    end
+end
+
+@kernel function _magnitude2!(
+    magS::AbstractScalarField, S::AbstractVectorField, scale_factor
+    )
+    i = @index(Global)
+
+    @uniform values = magS.values
+
+    @inbounds begin
+        # sum = 0.0
+        Si = S[i]
+        # for j ∈ 1:3
+        #     for k ∈ 1:3
+                # sum +=   Sjk[j,k]*Sjk[j,k]
+                res =   Si⋅Si
+        #     end
+        # end
+        magS.values[i] = res*scale_factor
+    end
+end
+
+function square!(psi2, psi, config; scale_factor=1.0)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    scale = eltype(psi2)(scale_factor)
+    kernel! = _square!(backend, workgroup)
+    kernel!(psi2, psi, scale, ndrange = length(psi2))
+    nothing
+end
+
+@kernel function _square!(
+    psi2::AbstractTensorField, psi::AbstractVectorField, scale_factor
+    )
+    i = @index(Global)
+
+    @inbounds begin
+        vi = psi[i]
+        psi2[i] = vi*vi'
     end
 end

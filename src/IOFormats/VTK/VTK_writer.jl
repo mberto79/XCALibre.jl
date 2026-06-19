@@ -3,14 +3,16 @@ export copy_to_cpu
 
 initialise_writer(format::VTK, mesh::Mesh2) = VTKWriter2D(nothing, nothing)
 
-function write_results(iteration::TI, mesh, meshData::VTKWriter2D, BCs, args...) where TI
+function write_results(
+    iteration::TI, time, mesh, meshData::VTKWriter2D, BCs, args...; suffix="") where TI
     name = ""
-    if TI <: Integer
+    if iteration == time
         name = @sprintf "iteration_%i" iteration
     else
-        name = @sprintf "time_%.8f" iteration
+        # name = @sprintf "time_%.8f" iteration
+        name = @sprintf "time_%i" iteration
     end
-    filename = name*".vtk"
+    filename = name*suffix*".vtk"
 
     # UxNodes = FVM.NodeScalarField(Ux)
     # UyNodes = FVM.NodeScalarField(Uy)
@@ -92,9 +94,19 @@ function write_results(iteration::TI, mesh, meshData::VTKWriter2D, BCs, args...)
                 for i ∈ eachindex(x_cpu)
                     println(io, x_cpu[i]," ",y_cpu[i] ," ",z_cpu[i] )
                 end
+            elseif field_type <: AbstractTensorField
+                write(io, "TENSORS $(label) double\n")
+                xx_cpu, xy_cpu, xz_cpu = copy_to_cpu(field.xx.values, field.xy.values, field.xz.values, backend)
+                yx_cpu, yy_cpu, yz_cpu = copy_to_cpu(field.yx.values, field.yy.values, field.yz.values, backend)
+                zx_cpu, zy_cpu, zz_cpu = copy_to_cpu(field.zx.values, field.zy.values, field.zz.values, backend)
+                for i ∈ eachindex(xx_cpu)
+                    println(io, xx_cpu[i], " ", xy_cpu[i], " ", xz_cpu[i])
+                    println(io, yx_cpu[i], " ", yy_cpu[i], " ", yz_cpu[i])
+                    println(io, zx_cpu[i], " ", zy_cpu[i], " ", zz_cpu[i])
+                end
             else
                 throw("""
-                Input data should be a ScalarField or VectorField e.g. ("U", U)
+                Input data should be a ScalarField, VectorField or TensorField e.g. ("U", U)
                 """)
             end
         end

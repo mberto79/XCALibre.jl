@@ -1,5 +1,5 @@
 export apply_boundary_conditions!
-export get_boundaries
+
 
 
 apply_boundary_conditions!(eqn, BCs, component, time, config) = begin
@@ -77,20 +77,6 @@ end
 
 update_user_boundary!(
     BC::AbstractBoundary, faces, cells, facesID_range, time, config) = nothing
-
-# Function to prevent redundant CPU copy
-
-function get_boundaries(boundaries::Array)
-    return boundaries
-end
-
-# Function to copy from GPU to CPU
-function get_boundaries(boundaries::AbstractGPUArray)
-    # Copy boundaries to CPU
-    boundaries_cpu = Array{eltype(boundaries)}(undef, length(boundaries))
-    copyto!(boundaries_cpu, boundaries)
-    return boundaries_cpu
-end
 
 # Apply boundary conditions kernel definition
 # Experimental implementation 
@@ -184,8 +170,9 @@ end
 
 # Apply generated function definition
 @generated function apply!(
-    model::Model{TN,SN,T,S}, BC, terms, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
-    ) where {TN,SN,T,S}
+    model::Model{TN,SN,T,S}, BC, terms, colval, rowptr, nzval::AbstractArray{F},
+    cellID, zcellID, cell, face, fID, i, component, time
+    ) where {TN,SN,T,S,F}
 
     # Definition of main assignment loop (one per patch)
     func_calls = Expr[]
@@ -195,14 +182,15 @@ end
                 terms[$t], 
                 colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
                 )
-            AP += ap
-            BP += bp
+            AP += F(ap)
+            BP += F(bp)
         end
         push!(func_calls, call)
     end
     quote
-        AP = 0.0
-        BP = 0.0
+        z = zero(F)
+        AP = z
+        BP = z
         $(func_calls...)
         return AP, BP
     end
@@ -228,4 +216,3 @@ end
         return BC_indices
     end
 end
-

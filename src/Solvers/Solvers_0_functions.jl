@@ -241,7 +241,7 @@ end
         sumy -= D*Uy[i]
         sumz -= D*Uz[i]
 
-        rD = 1.0/D
+        rD = one(D)/D
         Hx[i] = (bx[i] - sumx)*rD
         Hy[i] = (by[i] - sumy)*rD
         Hz[i] = (bz[i] - sumz)*rD
@@ -267,19 +267,30 @@ end
 @kernel function _max_courant_number!(cellsCourant, U, runtime, mesh::Mesh3)
     i = @index(Global)
     @uniform cells = mesh.cells
-    dt = runtime.dt
+    dt = runtime.dt[1]
     umag = norm(U[i])
     volume = cells[i].volume
-    dx = volume^0.333333
+    dx = volume^(one(volume)/typeof(volume)(3))
     cellsCourant[i] = umag * dt / dx
 end
 
 @kernel function _max_courant_number!(cellsCourant, U, runtime, mesh::Mesh2)
     i = @index(Global)
     @uniform cells = mesh.cells
-    dt = runtime.dt
+    dt = runtime.dt[1]
     umag = norm(U[i])
     volume = cells[i].volume
-    dx = volume^0.5
+    dx = sqrt(volume)
     cellsCourant[i] = umag * dt / dx
+end
+
+
+update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,Nothing}, courant) = nothing
+
+function update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}, courant)
+    (; maxCo, maxGrow, minShrink) = runtime.adaptive
+
+    courant_factor = maxCo / (courant + eps(courant))
+    new_dt_factor = clamp(courant_factor, minShrink, maxGrow)
+    runtime.dt .= runtime.dt .* new_dt_factor
 end

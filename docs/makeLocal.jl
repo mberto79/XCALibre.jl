@@ -28,12 +28,14 @@ EXAMPLES_PAGES = Any[
     "02_2d-incompressible-transient-cylinder.md",
     "03_2d-constant-temperature-flat-plate.md",
     "04_2d-inflow-using-Flux.md",
-    "05_2d-aerofoil-inflow-optimisation.md"
+    "05_2d-aerofoil-inflow-optimisation.md",
+    "06_2d-laplace-solver.md",
+    "07_2d-bump-komegaSST.md"
 ]
 
 makedocs(
     sitename = "XCALibre.jl",
-    format = Documenter.HTML(),
+    format = Documenter.HTML(size_threshold=nothing),
     # doctest = false, # only set to false when sorting out docs structure
     modules = [XCALibre],
     pages = [

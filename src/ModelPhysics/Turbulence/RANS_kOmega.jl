@@ -53,14 +53,21 @@ end
     kf = FaceScalarField(mesh)
     omegaf = FaceScalarField(mesh)
     nutf = FaceScalarField(mesh)
-    coeffs = rans.args
+    scalar = ScalarFloat(mesh)
+    coeffs = (
+        β⁺=scalar(rans.args.β⁺),
+        α1=scalar(rans.args.α1),
+        β1=scalar(rans.args.β1),
+        σk=scalar(rans.args.σk),
+        σω=scalar(rans.args.σω),
+    )
     KOmega(k, omega, nut, kf, omegaf, nutf, coeffs)
 end
 
 # Model initialisation
 """
-    initialise(turbulence::KOmega, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
-    ) where {T,F,M,Tu,E,D,BI}
+    initialise(turbulence::KOmega, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
+    ) where {T,F,SO,M,Tu,E,D,BI}
 
 Initialisation of turbulent transport equations.
 
@@ -82,8 +89,8 @@ Initialisation of turbulent transport equations.
 
 """
 function initialise(
-    turbulence::KOmega, model::Physics{T,F,M,Tu,E,D,BI}, mdotf, peqn, config
-    ) where {T,F,M,Tu,E,D,BI}
+    turbulence::KOmega, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
+    ) where {T,F,SO,M,Tu,E,D,BI}
 
     (; k, omega, nut) = turbulence
     (; rho) = model.fluid
@@ -129,13 +136,15 @@ function initialise(
     @reset ω_eqn.solver = _workspace(solvers.omega.solver, _b(ω_eqn))
 
     initial_residual = ((:k, 1.0),(:omega, 1.0))
-    return KOmegaModel(turbulence, k_eqn, ω_eqn, ModelState(initial_residual, false))
+    return KOmegaModel(
+        turbulence, k_eqn, ω_eqn, ModelState(initial_residual, false)
+        ), config
 end
 
 # Model solver call (implementation)
 """
-    turbulence!(rans::KOmegaModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
-    ) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
+    turbulence!(rans::KOmegaModel, model::Physics{T,F,SO,M,Tu,E,D,BI}, S, prev, time, config
+    ) where {T,F,SO,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
 Run turbulence model transport equations.
 
@@ -150,8 +159,8 @@ Run turbulence model transport equations.
 
 """
 function turbulence!(
-    rans::KOmegaModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
-    ) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
+    rans::KOmegaModel, model::Physics{T,F,SO,M,Tu,E,D,BI}, S, prev, time, config
+    ) where {T,F,SO,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
     mesh = model.domain
     
@@ -223,12 +232,13 @@ function turbulence!(
 end
 
 # Specialise VTK writer
-function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration, config
-    ) where {T,F,M,Tu<:KOmega,E,D,BI}
+function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
+    ) where {T,F,SO,M,Tu<:KOmega,E,D,BI}
     if typeof(model.fluid)<:AbstractCompressible
         args = (
             ("U", model.momentum.U), 
             ("p", model.momentum.p),
+            ("rho", model.fluid.rho),
             ("T", model.energy.T),
             ("k", model.turbulence.k),
             ("omega", model.turbulence.omega),
@@ -243,5 +253,5 @@ function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration, c
             ("nut", model.turbulence.nut)
         )
     end
-    write_results(iteration, model.domain, outputWriter, config.boundaries, args...)
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end

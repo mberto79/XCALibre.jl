@@ -46,10 +46,14 @@ function PISO(
     (; U, p, Uf, pf) = model.momentum
     (; nu) = model.fluid
     mesh = model.domain
-    (; solvers, schemes, runtime, hardware, boundaries) = config
+    (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
+
+    dt_cpu = zeros(_get_float(mesh), 1)
+    copyto!(dt_cpu, config.runtime.dt)
     
+    postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)
     rDf = get_flux(p_eqn, 1)
@@ -82,7 +86,7 @@ function PISO(
     R_uy = ones(TF, iterations)
     R_uz = ones(TF, iterations)
     R_p = ones(TF, iterations)
-    cellsCourant =adapt(backend, zeros(TF, length(mesh.cells)))
+    cellsCourant = KernelAbstractions.zeros(backend, TF, n_cells)
     
     # Initial calculations
     time = zero(TF) # assuming time=0
@@ -100,8 +104,10 @@ function PISO(
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
+
     @time for iteration ∈ 1:iterations
-        time = iteration *dt
+        copyto!(dt_cpu, config.runtime.dt)
+        time += dt_cpu[1]
 
         rx, ry, rz = solve_equation!(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)
@@ -109,6 +115,7 @@ function PISO(
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rDf, rD, config)
+        correct_interpolation_periodic(rDf, rD, boundaries.U, config)
         remove_pressure_source!(U_eqn, ∇p, config)
         
         rp = 0.0
@@ -118,6 +125,7 @@ function PISO(
             # Interpolate faces
             interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
             correct_boundaries!(Uf, Hv, boundaries.U, time, config)
+
             # div!(divHv, Uf, config)
 
             # new approach
@@ -125,7 +133,10 @@ function PISO(
             div!(divHv, mdotf, config)
             
             # Pressure calculations (previous implementation)
-            @. prev = p.values
+            # @. prev = p.values
+            xcal_foreach(prev, config) do i 
+                prev[i] = p[i]
+            end
             rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref, time=time)
             if i == inner_loops
                 explicit_relaxation!(p, prev, 1.0, config)
@@ -154,31 +165,23 @@ function PISO(
                 limit_gradient!(schemes.p.limiter, ∇p, p, config)
             end
 
-            # old approach - keep for now!
-            # correct_velocity!(U, Hv, ∇p, rD, config)
-            # interpolate!(Uf, U, config)
-            # correct_boundaries!(Uf, U, boundaries.U, time, config)
-            # flux!(mdotf, Uf, config) # old approach
-
             # new approach
-            interpolate!(Uf, U, config) # velocity from momentum equation
-            correct_boundaries!(Uf, U, boundaries.U, time, config)
-            flux!(mdotf, Uf, config)
-            correct_mass_flux(mdotf, p, rDf, config)
+            correct_mass_flux!(mdotf, p_eqn, config)
             correct_velocity!(U, Hv, ∇p, rD, config)
 
         end # corrector loop end
         
-        # correct_mass_flux(mdotf, p, rDf, config) # new approach
+        # correct_mass_flux!(mdotf, p, rDf, config) # new approach
 
     turbulence!(turbulenceModel, model, S, prev, time, config) 
     update_nueff!(nueff, nu, model.turbulence, config)
 
-    # if typeof(mesh) <: Mesh3
-    #     residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
-    # end
-    maxCourant = max_courant_number!(cellsCourant, model, config)
 
+    courant = max_courant_number!(cellsCourant, model, config)
+
+    update_dt!(config.runtime, courant)
+
+    
     R_ux[iteration] = rx
     R_uy[iteration] = ry
     R_uz[iteration] = rz
@@ -186,8 +189,9 @@ function PISO(
 
     ProgressMeter.next!(
         progress, showvalues = [
-            (:time, iteration*runtime.dt),
-            (:Courant, maxCourant),
+            (:dt, dt_cpu[1]),
+            (:time, time),
+            (:Courant, courant),
             (:Ux, R_ux[iteration]),
             (:Uy, R_uy[iteration]),
             (:Uz, R_uz[iteration]),
@@ -196,12 +200,13 @@ function PISO(
             ]
         )
 
+    runtime_postprocessing!(postprocess,iteration,iterations,S,time,config)
+    
     if iteration%write_interval + signbit(write_interval) == 0
-        # save_output(model, outputWriter, time, config)
-        save_output(model, outputWriter, iteration, config)
+        save_output(model, outputWriter, iteration, time, config)
+        save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
     end
 
     end # end for loop
-
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end

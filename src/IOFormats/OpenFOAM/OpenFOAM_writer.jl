@@ -4,7 +4,7 @@ initialise_writer(format::OpenFOAM, mesh::Mesh3) = begin
     touch("XCALibre.foam")
     default_dir = "constant/polyMesh"
 
-    if !isdir(default_dir)
+    # if !isdir(default_dir)
         @info "Writing mesh to constant/polyMesh..."
         # Create constant directory and mesh files
         polyMeshDir = mkpath(default_dir)
@@ -45,7 +45,9 @@ initialise_writer(format::OpenFOAM, mesh::Mesh3) = begin
             println(io, "(")
             for nodei ∈ eachindex(nodes)
                 coords = nodes[nodei].coords
-                println(io, "($(coords[1]) $(coords[2]) $(coords[3]))")
+                coords_str = @sprintf "(%g %g %g)" coords[1] coords[2] coords[3]
+                println(io, coords_str)
+                # println(io, "($(coords[1]) $(coords[2]) $(coords[3]))")
             end
             println(io, ")")
         end
@@ -177,9 +179,9 @@ initialise_writer(format::OpenFOAM, mesh::Mesh3) = begin
             end
             println(io, ")")
         end
-    else
-        @info "Mesh file already exsists in constant/polyMesh..."
-    end
+    # else
+    #     @info "Mesh file already exsists in constant/polyMesh..."
+    # end
 
     # return dummy structure for dispatch
     FOAMWriter(nothing, nothing)
@@ -189,12 +191,13 @@ initialise_writer(format::OpenFOAM, mesh) = error("
 The OpenFOAM format can only be used for 3D simulations. Use `output=VTK()` instead.
 ")
 
-function write_results(iteration::TI, mesh, meshData::FOAMWriter, BCs, args...) where TI
+function write_results(
+    iteration::TI, time, mesh, meshData::FOAMWriter, BCs, args...; suffix=nothing) where TI
     timedir = ""
-    if TI <: Integer
+    if iteration == time
         timedir = @sprintf "%i" iteration
     else
-        timedir = @sprintf "%.8f" iteration
+        timedir = @sprintf "%.8f" time
     end
 
     timedirpath = mkpath(timedir)
@@ -231,7 +234,11 @@ function write_results(iteration::TI, mesh, meshData::FOAMWriter, BCs, args...) 
 
                 println(io, "boundaryField")
                 println(io, "{")
-                fieldBCs = getproperty(BCs, Symbol(label))
+                if suffix === nothing 
+                    fieldBCs = getproperty(BCs, Symbol(label))
+                elseif suffix == ""
+                    fieldBCs = getproperty(BCs, :p)
+                end
                 for BC ∈ fieldBCs
                     println(io, "\t", boundaries_cpu[BC.ID].name)
                     println(io, _foam_boundary_entry(BC))
@@ -262,7 +269,11 @@ function write_results(iteration::TI, mesh, meshData::FOAMWriter, BCs, args...) 
 
                 println(io, "boundaryField")
                 println(io, "{")
-                fieldBCs = getproperty(BCs, Symbol(label))
+                if suffix === nothing 
+                    fieldBCs = getproperty(BCs, Symbol(label))
+                elseif suffix == ""
+                    fieldBCs = getproperty(BCs, :U)
+                end
                 for BC ∈ fieldBCs
                     println(io, "\t", boundaries_cpu[BC.ID].name)
                     println(io, _foam_boundary_entry(BC))
@@ -334,6 +345,14 @@ _foam_boundary_entry(BC::Wall{ID,Value}) where {ID,Value<:SVector} =  begin
     \t{
     \t\ttype fixedValue;
     \t\tvalue uniform ($ux $uy $uz);
+    \t}
+    """
+end
+
+_foam_boundary_entry(BC::Empty) =  begin
+    """
+    \t{
+    \t\ttype empty;
     \t}
     """
 end

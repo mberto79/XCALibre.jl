@@ -23,9 +23,14 @@ model = Physics(
     time = Steady(),
     fluid = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{KOmega}(),
+    # turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
     )
+
+# top_boundary = Symmetry(:top)
+top_boundary = Extrapolated(:top)
+# top_boundary = Zerogradient(:top)
 
 BCs = assign(
     region = mesh_dev,
@@ -34,77 +39,80 @@ BCs = assign(
             Dirichlet(:inlet, velocity),
             Zerogradient(:outlet),
             Wall(:wall, [0.0, 0.0, 0.0]),
-            # Extrapolated(:top)
-            Symmetry(:top)
+            top_boundary
         ],
         p = [
             Zerogradient(:inlet),
             Dirichlet(:outlet, 0.0),
             Wall(:wall, 0.0),
-            # Extrapolated(:top)
-            Symmetry(:top)
+            Extrapolated(:top)
+            # Zerogradient(:top)
         ],
         k = [
             Dirichlet(:inlet, k_inlet),
             Zerogradient(:outlet),
             KWallFunction(:wall),
-            # Extrapolated(:top)
-            Symmetry(:top)
+            top_boundary
         ],
         omega = [
             Dirichlet(:inlet, ω_inlet),
             Zerogradient(:outlet),
             OmegaWallFunction(:wall),
-            # Extrapolated(:top)
-            Symmetry(:top)
+            top_boundary
         ],
         nut = [
             Dirichlet(:inlet, k_inlet/ω_inlet),
             Extrapolated(:outlet),
             NutWallFunction(:wall),
-            # Extrapolated(:top)
-            Symmetry(:top)
+            top_boundary
         ]
     )
 )
 
-divergence = Linear # Linear, Upwind, LUST
+divergence = LUST # Linear, Upwind, LUST
+gradient = Gauss
 schemes = (
-    U = Schemes(divergence=divergence, gradient=Midpoint),
-    p = Schemes(divergence=divergence, gradient=Midpoint),
-    k = Schemes(divergence=divergence, gradient=Midpoint),
-    omega = Schemes(divergence=divergence, gradient=Midpoint)
+    U = Schemes(divergence=divergence, gradient=gradient),
+    p = Schemes(divergence=divergence, gradient=gradient),
+    k = Schemes(divergence=divergence, gradient=gradient),
+    omega = Schemes(divergence=divergence, gradient=gradient)
 )
 
-
+convergence = 1e-8
+rtol = 0.1
+rtol_p = 0.01
 solvers = (
     U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
-        convergence = 1e-7,
+        convergence = convergence,
         relax       = 0.8,
+        rtol = rtol
     ),
     p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
-        convergence = 1e-7,
+        convergence = convergence,
         relax       = 0.2,
+        rtol = rtol_p
     ),
     k = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
-        convergence = 1e-7,
-        relax       = 0.7,
+        convergence = convergence,
+        relax       = 0.8,
+        rtol = rtol
     ),
     omega = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
-        convergence = 1e-7,
-        relax       = 0.7,
+        convergence = convergence,
+        relax       = 0.8,
+        rtol = rtol
     )
 )
 
-runtime = Runtime(iterations=500, write_interval=100, time_step=1)
+runtime = Runtime(iterations=2000, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

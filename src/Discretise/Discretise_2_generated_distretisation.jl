@@ -197,7 +197,9 @@ return_quote(x, t) = :(nothing)
 end
 
 # Scheme source generated function definition
-@generated function _scheme_source!(model::Model{TN,SN,T,S}, terms::TERMS, cell, cID, cIndex, prev, runtime, rho_prev) where {TN,SN,T,S,TERMS}
+@generated function _scheme_source!(
+    model::Model{TN,SN,T,S}, terms::TERMS, cell::Cell{F}, cID, cIndex, prev, runtime, rho_prev
+    ) where {TN,SN,T,S,TERMS,F}
     # Allocate expression array to store scheme_source function
     out = Expr(:block)
     

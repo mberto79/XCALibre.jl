@@ -1,4 +1,4 @@
-export SolverSetup, Runtime, Schemes
+export SolverSetup, Runtime, Schemes, AdaptiveTimeStepping
 export explicit_relaxation!, implicit_relaxation!, implicit_relaxation_diagdom!, setReference!
 export solve_system!
 export solve_equation!

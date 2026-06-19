@@ -3,7 +3,6 @@ export explicit_relaxation!, implicit_relaxation!, implicit_relaxation_diagdom!,
 export solve_system!
 export solve_equation!
 export residual!
-export AdaptiveTimeStepping
 
 struct SolverSetup{
     F<:AbstractFloat,
@@ -74,13 +73,7 @@ SolverSetup(;
         rtol=1e-1 |> float_type
         ) where{S1,S2,PT,I} = 
         SolverSetup{float_type,I,S1,S2,PT}(
-            solver, smoother,preconditioner, 
-            float_type(convergence), 
-            float_type(relax), 
-            limit,
-            itmax, 
-            float_type(atol),
-            float_type(rtol))
+            solver, smoother,preconditioner, convergence, relax, limit,itmax, atol,rtol)
 
 struct AdaptiveTimeStepping{F<:AbstractFloat}
     maxCo::F
@@ -129,45 +122,6 @@ struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothi
     dt::F
     write_interval::I
 end
-Adapt.@adapt_structure AdaptiveTimeStepping
-
-"""
-    AdaptiveTimeStepping(; 
-        # keyword arguments
-
-        maxCo=0.75,
-        minShrink=0.1,
-        maxGrow=1.2
-    )
-
-Constructs an `AdaptiveTimeStepping` object used to control automatic time-step adjustment
-based on the Courant number.
-
-This struct is passed optionally to `Runtime` and enables adaptive time stepping in transient
-simulations. If not provided, a fixed time step is used.
-
-# Input arguments
-
-- `maxCo::AbstractFloat`: target maximum Courant number. The time step will be adjusted
-  such that the computed Courant number approaches this value.
-- `minShrink::AbstractFloat`: lower bound on the multiplicative factor applied to the
-  current time step. Prevents excessively large reductions in a single update.
-- `maxGrow::AbstractFloat`: upper bound on the multiplicative factor applied to the
-  current time step. Prevents excessive time-step growth.
-"""
-AdaptiveTimeStepping(;
-    maxCo=0.75,
-    minShrink=0.1,
-    maxGrow=1.2
-) = AdaptiveTimeStepping(float(maxCo), float(minShrink), float(maxGrow))
-
-struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AdaptiveTimeStepping}}
-    iterations::I
-    dt::V
-    write_interval::I
-    adaptive::A
-end
-Adapt.@adapt_structure Runtime
 
 """
     Runtime(; 
@@ -175,8 +129,7 @@ Adapt.@adapt_structure Runtime
 
             iterations::I, 
             write_interval::I, 
-            time_step::N,
-            adaptive::A
+            time_step::N
         ) where {I<:Integer,N<:Number} = begin
         
         # returned Runtime struct
@@ -184,8 +137,7 @@ Adapt.@adapt_structure Runtime
             (
                 iterations=iterations, 
                 dt=time_step, 
-                write_interval=write_interval,
-                adaptive=adaptive
+                write_interval=write_interval
             )
     end
 
@@ -196,7 +148,6 @@ This is a convenience function to set the top-level runtime information. The inp
 - `iterations::Integer`: specifies the number of iterations in a simulation run.
 - `write_interval::Integer`: defines how often simulation results are written to file (on the current working directory). The interval is currently based on number of iterations. Set to `-1` to run without writing results to file.
 - `time_step::AbstractFloat`: the time step to use in the simulation. Notice that for steady solvers this is simply a counter and it is recommended to simply use `1`.
-- `adaptive::Union{Nothing, AdaptiveTimeStepping}`: optionally enables adaptive time stepping. Pass an `AdaptiveTimeStepping` object to automatically adjust `dt` based on the Courant number during transient simulations. Defaults to `nothing`, meaning a fixed time step is used.
 
 # Example
 
@@ -204,13 +155,8 @@ This is a convenience function to set the top-level runtime information. The inp
 runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
 ```
 """
-Runtime(; iterations::I,
-          write_interval::I,
-          time_step::N,
-          adaptive=nothing) where {I<:Integer,N<:Number} = begin
-
-    val = float(time_step)
-    Runtime(iterations, [val], write_interval, adaptive)
+Runtime(; iterations::I, write_interval::I, time_step::N) where {I<:Integer,N<:Number} = begin
+    Runtime(iterations, float(time_step), write_interval)
 end
 
 # Set schemes function definition with default set variables
@@ -259,9 +205,6 @@ function solve_equation!(
 
     discretise!(eqn, phi, config, rho_prev)       
     apply_boundary_conditions!(eqn, phiBCs, nothing, time, config)
-    if length(eqn.model.terms) == 1 && typeof(eqn.model.terms[1]) <: Laplacian
-        make_symmetric!(eqn, config) # added this to test stability of periodic boundaries
-    end
     setReference!(eqn, ref, 1, config)
     if !isnothing(irelax)
         implicit_relaxation!(eqn, phi.values, irelax, nothing, config)
@@ -280,7 +223,7 @@ function solve_equation!(
 
     discretise!(psiEqn, psi, config, rho_prev)
     update_equation!(psiEqn, config)
-    
+
     apply_boundary_conditions!(psiEqn, psiBCs, xdir, time, config)
     # implicit_relaxation!(psiEqn, psi.x.values, solversetup.relax, xdir, config)
     implicit_relaxation_diagdom!(psiEqn, psi.x.values, solversetup.relax, xdir, config)
@@ -295,7 +238,7 @@ function solve_equation!(
     resy = solve_system!(psiEqn, solversetup, psi.y, ydir, config)
     
     # Z velocity calculations (3D Mesh only)
-    resz = zero(_get_float(mesh))
+    resz = one(_get_float(mesh))
     if typeof(mesh) <: Mesh3
         update_equation!(psiEqn, config)
         apply_boundary_conditions!(psiEqn, psiBCs, zdir, time, config)
@@ -307,7 +250,7 @@ function solve_equation!(
     return resx, resy, resz
 end
 
-function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
+function solve_system!(phiEqn::ModelEquation, setup, result, component, config) # ; opP, solver
 
     (; itmax, atol, rtol) = setup
     precon = phiEqn.preconditioner
@@ -315,11 +258,12 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
     solver = phiEqn.solver
     (; x) = solver
     
-    (; hardware, runtime) = config
+    (; hardware) = config
     (; backend, workgroup) = hardware
     (; values, mesh) = result
     
     A = _A(phiEqn)
+    # opA = phiEqn.equation.opA
     opA = A
     b = _b(phiEqn, component)
 
@@ -329,21 +273,17 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
         solver, opA, b, values; 
         M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon)
         )
+    # KernelAbstractions.synchronize(backend)
 
-    # Perform explicit step for Crank-Nicholson. Otherwise simply update field with solution
-    if typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson}
-        xcal_foreach(x, config) do i 
-            x[i] = 2*x[i] - values[i]
-        end
-    end
+    Krylov.iteration_count(solver) == itmax && @warn "Maximum number of iteration reached!"
 
+    # println(statistics(solver).niter)
+    
     ndrange = length(values)
     kernel! = _copy!(_setup(backend, workgroup, ndrange)...)
     kernel!(values, x)
+    # KernelAbstractions.synchronize(backend)
 
-    Krylov.iteration_count(solver) == itmax && @warn "Maximum number of iterations reached!"
-
-    # println(statistics(solver).niter)
     res = residual(phiEqn, component, config)
     return res
 end
@@ -401,7 +341,7 @@ end
     @inbounds begin
         nIndex = spindex(rowptr, colval, i, i)
         nzval[nIndex] /= alpha
-        b[i] += (one(alpha) - alpha)*nzval[nIndex]*field[i]
+        b[i] += (1.0 - alpha)*nzval[nIndex]*field[i]
     end
 end
 
@@ -496,44 +436,9 @@ function residual(eqn, component, config)
 
     # Previous definition
     Fx .= A * values
-    xcal_foreach(R, config) do i 
-            @inbounds R[i] = (b[i] - Fx[i])^2
-    end
+    @inbounds @. R = (b - Fx)^2
     normb = norm(b)
-    denominator = ifelse(normb > eps(normb), normb, one(normb))
-    Residual = sqrt(sum(R)) / denominator
+    denominator = ifelse(normb>0,normb, 1)
+    Residual = sqrt(mean(R)) / denominator
     return Residual
-end
-
-function make_symmetric!(eqn, config)
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-    (; b, A) = eqn.equation
-    mesh = get_phi(eqn).mesh
-    (; faces) = mesh
-    nzval = _nzval(A)
-    colval = _colval(A)
-    rowptr = _rowptr(A)
-
-    nbfaces = mesh.boundary_cellsID |> length
-    ndrange = length(faces) - nbfaces
-    kernel! = _make_symmetric!(_setup(backend, workgroup, ndrange)...)
-    kernel!(colval, rowptr, nzval, faces, nbfaces)
-end
-
-@kernel function _make_symmetric!(colval, rowptr, nzval, faces, nbfaces)
-    i = @index(Global)
-    fID = i + nbfaces
-
-    face = faces[fID]
-    (; ownerCells) = face 
-    cID1 = ownerCells[1]
-    cID2 = ownerCells[2]
-
-    cIndex1 = spindex(rowptr, colval, cID1, cID2)
-    cIndex2 = spindex(rowptr, colval, cID2, cID1)
-
-    Apn = nzval[cIndex1]
-    nzval[cIndex2] = Apn
-
 end

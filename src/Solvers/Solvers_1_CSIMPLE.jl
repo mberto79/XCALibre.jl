@@ -221,7 +221,7 @@ function CSIMPLE(
 
         # Set up and solve momentum equations
         rx, ry, rz = solve_equation!(
-            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config
+            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; rho_prev=rho
             )
 
         # Solve energy equation and update thermo properties

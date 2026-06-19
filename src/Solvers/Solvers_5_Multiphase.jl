@@ -350,7 +350,7 @@ function MULTIPHASE(
             grad!(∇p_rgh, p_rghf, p_rgh, boundaries.p_rgh, time, config)
             limit_gradient!(schemes.p_rgh.limiter, ∇p_rgh, p_rgh, config)
 
-            correct_mass_flux!(mdotf, p_eqn, config)
+            correct_mass_flux_mp!(mdotf, p_eqn, config)
 
             pressure_grad!(p_rgh, ∇p_rghf_deconstructed, phi_gf, rDf, config)
             reconstruct!(∇p_rghf_reconstructed, ∇p_rghf_deconstructed, config)
@@ -1198,4 +1198,36 @@ end
     snGrad_a   = (alpha[c2] - alpha[c1]) / delta
 
     face_buf[i] = area * (snGrad_p + ghf[i] * snGrad_rho - sigma * kappaf[i] * snGrad_a)
+end
+
+
+function correct_mass_flux_mp!(mdotf, p_eqn, config; time=nothing)
+    # sngrad = FaceScalarField(mesh)
+    (; faces, cells, boundary_cellsID) = mdotf.mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    p = p_eqn.model.terms[1].phi
+    A = _A(p_eqn)
+    nzval = _nzval(A)
+    colval = _colval(A)
+    rowptr = _rowptr(A)
+
+    n_faces = length(faces)
+    n_bfaces = length(boundary_cellsID)
+    n_ifaces = n_faces - n_bfaces
+
+    ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
+    kernel! = _correct_mass_flux!(_setup(backend, workgroup, ndrange)...)
+    kernel!(mdotf, p, nzval, colval, rowptr, faces, cells, n_bfaces)
+    KernelAbstractions.synchronize(backend)
+
+    BCs = config.boundaries.p_rgh # this line had to be changed from ".p"
+    for BC ∈ BCs
+        correct_mass_periodic(
+            BC, mdotf, p, nzval, colval, rowptr, cells, faces, backend, workgroup)
+        KernelAbstractions.synchronize(backend)
+    end
+
+    correct_boundary_mass_flux!(mdotf, p_eqn, BCs, time, config)
 end

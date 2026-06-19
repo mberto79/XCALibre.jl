@@ -126,43 +126,6 @@ AdaptiveTimeStepping(;
 
 struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AdaptiveTimeStepping}}
     iterations::I
-    dt::F
-    write_interval::I
-end
-Adapt.@adapt_structure AdaptiveTimeStepping
-
-"""
-    AdaptiveTimeStepping(; 
-        # keyword arguments
-
-        maxCo=0.75,
-        minShrink=0.1,
-        maxGrow=1.2
-    )
-
-Constructs an `AdaptiveTimeStepping` object used to control automatic time-step adjustment
-based on the Courant number.
-
-This struct is passed optionally to `Runtime` and enables adaptive time stepping in transient
-simulations. If not provided, a fixed time step is used.
-
-# Input arguments
-
-- `maxCo::AbstractFloat`: target maximum Courant number. The time step will be adjusted
-  such that the computed Courant number approaches this value.
-- `minShrink::AbstractFloat`: lower bound on the multiplicative factor applied to the
-  current time step. Prevents excessively large reductions in a single update.
-- `maxGrow::AbstractFloat`: upper bound on the multiplicative factor applied to the
-  current time step. Prevents excessive time-step growth.
-"""
-AdaptiveTimeStepping(;
-    maxCo=0.75,
-    minShrink=0.1,
-    maxGrow=1.2
-) = AdaptiveTimeStepping(float(maxCo), float(minShrink), float(maxGrow))
-
-struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AdaptiveTimeStepping}}
-    iterations::I
     dt::V
     write_interval::I
     adaptive::A
@@ -254,10 +217,10 @@ end
 
 
 function solve_equation!(
-    eqn::ModelEquation{T,M,E,S,P}, phi, phiBCs, solversetup, config; rho_prev=nothing, time=nothing, ref=nothing, irelax=nothing
+    eqn::ModelEquation{T,M,E,S,P}, phi, phiBCs, solversetup, config; rho_prev=ConstantScalar(1.0), time=nothing, ref=nothing, irelax=nothing
     ) where {T<:ScalarModel,M,E,S,P}
 
-    discretise!(eqn, phi, config, rho_prev)       
+    discretise!(eqn, phi, config, rho_prev)  
     apply_boundary_conditions!(eqn, phiBCs, nothing, time, config)
     if length(eqn.model.terms) == 1 && typeof(eqn.model.terms[1]) <: Laplacian
         make_symmetric!(eqn, config) # added this to test stability of periodic boundaries
@@ -273,7 +236,7 @@ function solve_equation!(
 end
 
 function solve_equation!(
-    psiEqn::ModelEquation{T,M,E,S,P}, psi, psiBCs, solversetup, xdir, ydir, zdir, config; rho_prev=nothing, time=nothing
+    psiEqn::ModelEquation{T,M,E,S,P}, psi, psiBCs, solversetup, xdir, ydir, zdir, config; rho_prev=ConstantScalar(1.0), time=nothing
     ) where {T<:VectorModel,M,E,S,P}
 
     mesh = psi.mesh

@@ -236,7 +236,7 @@ function CPISO(
         @. model.energy.prevP = p.values
 
         # Set up and solve momentum equations
-        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
+        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; rho_prev=rho)
 
         # Energy after correctors so dp/dt = (p_corrected - prevP)/dt ≠ 0
         energy!(energyModel, model, mdotf, ∇p, gradU, mueff, time, dt_cpu[1], config)

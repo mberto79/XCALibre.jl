@@ -1,7 +1,7 @@
 export discretise!, update_equation!
 
 function discretise!(
-    eqn::ModelEquation{T,M,E,S,P}, prev, config, rho_prev) where {T<:VectorModel,M,E,S,P}
+    eqn::ModelEquation{T,M,E,S,P}, prev, config, rho_prev=ConstantScalar(1.0)) where {T<:VectorModel,M,E,S,P}
     (; hardware, runtime) = config
     (; backend, workgroup) = hardware
 
@@ -87,7 +87,7 @@ end
 end
 
 function discretise!(
-    eqn::ModelEquation{T,M,E,S,P}, prev, config, rho_prev) where {T<:ScalarModel,M,E,S,P}
+    eqn::ModelEquation{T,M,E,S,P}, prev, config, rho_prev=ConstantScalar(1.0)) where {T<:ScalarModel,M,E,S,P}
 
     (; hardware, runtime) = config
     (; backend, workgroup) = hardware
@@ -197,7 +197,7 @@ return_quote(x, t) = :(nothing)
 end
 
 # Scheme source generated function definition
-@generated function _scheme_source!(model::Model{TN,SN,T,S}, terms::TERMS, cell, cID, cIndex, prev, runtime, rho_prev) where {TN,SN,T,S,TERMS}
+@generated function _scheme_source!(model::Model{TN,SN,T,S}, terms::TERMS, cell::Cell{F}, cID, cIndex, prev, runtime, rho_prev) where {TN,SN,T,S,TERMS,F}
     # Allocate expression array to store scheme_source function
     out = Expr(:block)
     

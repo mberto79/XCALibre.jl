@@ -216,7 +216,7 @@ function energy!(
     end
 
     # Set up and solve energy equation
-    discretise!(energy_eqn, he, config; rho_prev=ConstantScalar(1.0))
+    discretise!(energy_eqn, he, config)
 
     apply_boundary_conditions!(energy_eqn, boundaries.he, nothing, time, config)
     implicit_relaxation_diagdom!(energy_eqn, he.values, solvers.he.relax, nothing, config)

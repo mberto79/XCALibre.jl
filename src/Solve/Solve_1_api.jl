@@ -206,7 +206,7 @@ end
 
 
 function solve_equation!(
-    eqn::ModelEquation{T,M,E,S,P}, phi, phiBCs, solversetup, config; rho_prev=nothing, time=nothing, ref=nothing, irelax=nothing
+    eqn::ModelEquation{T,M,E,S,P}, phi, phiBCs, solversetup, config; rho_prev=ConstantScalar(1.0), time=nothing, ref=nothing, irelax=nothing
     ) where {T<:ScalarModel,M,E,S,P}
 
     discretise!(eqn, phi, config, rho_prev)       
@@ -222,7 +222,7 @@ function solve_equation!(
 end
 
 function solve_equation!(
-    psiEqn::ModelEquation{T,M,E,S,P}, psi, psiBCs, solversetup, xdir, ydir, zdir, config; rho_prev=nothing, time=nothing
+    psiEqn::ModelEquation{T,M,E,S,P}, psi, psiBCs, solversetup, xdir, ydir, zdir, config; rho_prev=ConstantScalar(1.0), time=nothing
     ) where {T<:VectorModel,M,E,S,P}
 
     mesh = psi.mesh

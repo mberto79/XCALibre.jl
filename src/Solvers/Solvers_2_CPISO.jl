@@ -235,8 +235,11 @@ function CPISO(
         @. model.energy.prevRhoK = rho.values*0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)
         @. model.energy.prevP = p.values
 
-        # Set up and solve momentum equations
-        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
+        # Set up and solve momentum equations.
+        # Pass rho_prev=rho so the transient time term uses the current
+        # density as the previous-step coefficient (matches the legacy
+        # lagged-coefficient form for compressible flow).
+        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; rho_prev=rho)
 
         # Energy after correctors so dp/dt = (p_corrected - prevP)/dt ≠ 0
         energy!(energyModel, model, mdotf, ∇p, gradU, mueff, time, dt_cpu[1], config)

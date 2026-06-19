@@ -219,9 +219,12 @@ function CSIMPLE(
         @. model.energy.prevRhoK = rho.values*0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)
         @. model.energy.prevP = p.values
 
-        # Set up and solve momentum equations
+        # Set up and solve momentum equations.
+        # Pass rho_prev=rho so the transient time term uses the current
+        # density as the previous-step coefficient (matches the legacy
+        # lagged-coefficient form for compressible flow).
         rx, ry, rz = solve_equation!(
-            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config
+            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; rho_prev=rho
             )
 
         # Solve energy equation and update thermo properties

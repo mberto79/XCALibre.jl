@@ -119,8 +119,9 @@ AdaptiveTimeStepping(;
 
 struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AdaptiveTimeStepping}}
     iterations::I
-    dt::F
+    dt::V
     write_interval::I
+    adaptive::A
 end
 
 """
@@ -155,8 +156,13 @@ This is a convenience function to set the top-level runtime information. The inp
 runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
 ```
 """
-Runtime(; iterations::I, write_interval::I, time_step::N) where {I<:Integer,N<:Number} = begin
-    Runtime(iterations, float(time_step), write_interval)
+Runtime(; iterations::I,
+          write_interval::I,
+          time_step::N,
+          adaptive=nothing) where {I<:Integer,N<:Number} = begin
+
+    val = float(time_step)
+    Runtime(iterations, [val], write_interval, adaptive)
 end
 
 # Set schemes function definition with default set variables

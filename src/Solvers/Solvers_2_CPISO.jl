@@ -128,7 +128,7 @@ function CPISO(
 
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
-    (; rho, rhof, nu) = model.fluid
+    (; rho, rhof, nu, nuf) = model.fluid
     mesh = model.domain
     p_model = p_eqn.model
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
@@ -206,7 +206,8 @@ function CPISO(
 
     limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
-    update_nueff!(nueff, nu, model.turbulence, config)
+    update_viscosity!(model.fluid, model.energy, config)
+    update_nueff!(nueff, nuf, model.turbulence, config)
     @. mueff.values = rhof.values*nueff.values
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
@@ -328,7 +329,8 @@ function CPISO(
 
         # Turbulence outside corrector loop
         turbulence!(turbulenceModel, model, S, prev, time, config)
-        update_nueff!(nueff, nu, model.turbulence, config)
+        update_viscosity!(model.fluid, model.energy, config)
+        update_nueff!(nueff, nuf, model.turbulence, config)
         @. mueff.values = rhof.values*nueff.values
 
         

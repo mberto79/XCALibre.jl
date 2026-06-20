@@ -17,7 +17,7 @@ cIndex - Index of the cell based on sparse matrix. Use to index "nzval_array"
     z, z
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Time{SteadyState}}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
+    term::Operator{F,P,I,Time{SteadyState}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P,I} = begin
     z = zero(cell.volume)
     z, z
 end

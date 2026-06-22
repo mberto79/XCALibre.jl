@@ -206,8 +206,8 @@ end
         for t in 1:TN
             function_call_scheme_source = quote
                 ac, b = scheme_source!(terms[$t], cell, cID, cIndex, prev, runtime, rho_prev)
-                AC += ac
-                B += b
+                AC += F(ac)
+                B += F(b)
             end
             push!(out.args, function_call_scheme_source)
         end
@@ -226,10 +226,10 @@ end
                 ac, bx = scheme_source!(terms[$t], cell, cID, cIndex, prev.x, runtime, rho_prev)
                 ac, by = scheme_source!(terms[$t], cell, cID, cIndex, prev.y, runtime, rho_prev)
                 ac, bz = scheme_source!(terms[$t], cell, cID, cIndex, prev.z, runtime, rho_prev)
-                AC += ac # assuming ac's for all directions are equal
-                BX += bx
-                BY += by
-                BZ += bz
+                AC += F(ac) # assuming ac's for all directions are equal
+                BX += F(bx)
+                BY += F(by)
+                BZ += F(bz)
             end
             push!(out.args, function_call_scheme_source)
         end

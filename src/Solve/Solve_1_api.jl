@@ -216,6 +216,7 @@ The `Schemes` struct is used at the top-level API to help users define discretis
 end
 
 
+# eqn.model.terms[1].flux implies that the time term must always be defined first when constructing an equation.
 function solve_equation!(
     eqn::ModelEquation{T,M,E,S,P}, phi, phiBCs, solversetup, config; rho_prev=eqn.model.terms[1].flux, time=nothing, ref=nothing, irelax=nothing
     ) where {T<:ScalarModel,M,E,S,P}
@@ -235,6 +236,7 @@ function solve_equation!(
     return res
 end
 
+# psiEqn.model.terms[1].flux implies that the time term must always be defined first when constructing an equation.
 function solve_equation!(
     psiEqn::ModelEquation{T,M,E,S,P}, psi, psiBCs, solversetup, xdir, ydir, zdir, config; rho_prev=psiEqn.model.terms[1].flux, time=nothing
     ) where {T<:VectorModel,M,E,S,P}

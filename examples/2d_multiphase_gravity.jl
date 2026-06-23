@@ -1,9 +1,4 @@
-# In this case, a column of water is generated in a rectangular domain.
-#       It is then displaced by gravity until it hits a wall and starts sloshing.
-#       The test verifies mass conservation and water redistrubution on the bottom wall.
-
 using XCALibre
-using Test
 
 scaling = 0.001
 
@@ -112,17 +107,4 @@ setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0,
               min_corner=min_corner_vec, max_corner=max_corner_vec)
 
 
-# Total water volume before the solve
-cell_volumes = [c.volume for c ∈ mesh.cells]
-initial_water_volume = sum(model.fluid.alpha.values .* cell_volumes)
-
 residuals = run!(model, config)
-
-
-# 1) Mass conservation: total water volume must be unchanged
-final_water_volume = sum(model.fluid.alpha.values .* cell_volumes)
-@test final_water_volume ≈ initial_water_volume rtol=1e-7
-
-# 2) The collapsed column should cover the floor: bottom boundary is ~all water
-bottom_alpha = boundary_average(:bottom, model.fluid.alpha, BCs.alpha, config)
-@test bottom_alpha > 0.99

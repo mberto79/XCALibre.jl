@@ -449,6 +449,18 @@ function residual(eqn, component, config)
     (; A, R, Fx) = eqn.equation
     b = _b(eqn, component)
     values = get_values(get_phi(eqn), component)
+    (; backend, workgroup) = config.hardware
+
+    rowptr = _rowptr(A)
+    colval = _colval(A)
+    nzval = _nzval(A)
+    ndrange = length(values)
+    kernel! = _scaled_residual!(_setup(backend, workgroup, ndrange)...)
+    kernel!(R, Fx, rowptr, colval, nzval, values, b)
+
+    denominator = sum(Fx)
+    denominator = ifelse(denominator > eps(denominator), denominator, one(denominator))
+    Residual = sum(R) / denominator
 
     # # Openfoam's residual definition (not optimised)
     # Fx .= A*values
@@ -460,14 +472,35 @@ function residual(eqn, component, config)
     # Residual = T1/(T2 + T3)
 
     # Previous definition
-    Fx .= A * values
-    xcal_foreach(R, config) do i 
-            @inbounds R[i] = (b[i] - Fx[i])^2
-    end
-    normb = norm(b)
-    denominator = ifelse(normb > eps(normb), normb, one(normb))
-    Residual = sqrt(sum(R)) / denominator
+    # Fx .= A * values
+    # xcal_foreach(R, config) do i
+    #         @inbounds R[i] = (b[i] - Fx[i])^2
+    # end
+    # normb = norm(b)
+    # denominator = ifelse(normb > eps(normb), normb, one(normb))
+    # Residual = sqrt(sum(R)) / denominator
     return Residual
+end
+
+@kernel function _scaled_residual!(R, Fx, @Const(rowptr), @Const(colval), @Const(nzval), @Const(values), @Const(b))
+    i = @index(Global)
+    Ax = zero(eltype(R))
+    Dx = zero(eltype(R))
+    xi = values[i]
+
+    @inbounds for nzi ∈ rowptr[i]:(rowptr[i + 1] - 1)
+        Aij = nzval[nzi]
+        j = colval[nzi]
+        Ax += Aij * values[j]
+        if j == i
+            Dx = Aij * xi
+        end
+    end
+
+    @inbounds begin
+        R[i] = abs(b[i] - Ax)
+        Fx[i] = abs(Dx)
+    end
 end
 
 function make_symmetric!(eqn, config)

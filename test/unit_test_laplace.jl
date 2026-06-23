@@ -128,3 +128,16 @@ expected_b_vector = [100.0, 100.0, 120.0, 0.0, 0.0, 20.0, 0.0, 0.0, 20.0]
 
 @test solution_A_matrix ≈ expected_A_matrix atol=0.1
 @test solution_b_vector ≈ expected_b_vector
+
+R = zeros(2)
+Dx = zeros(2)
+rowptr = [1, 3, 5]
+colval = [1, 2, 1, 2]
+nzval = [4.0, -1.0, 2.0, 3.0]
+x = [1.0, 2.0]
+b = [3.0, 7.0]
+kernel! = XCALibre.Solve._scaled_residual!(CPU(), 2)
+kernel!(R, Dx, rowptr, colval, nzval, x, b; ndrange=2)
+KernelAbstractions.synchronize(CPU())
+
+@test R == [1.0, 1.0] && Dx == [4.0, 6.0] && sum(R) / sum(Dx) ≈ 0.2

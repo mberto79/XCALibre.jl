@@ -461,6 +461,7 @@ function update_mixture_properties!(model, alpha_fluxf, mdotf, rhoPhi, nueff, mu
     blend_mixture_nu!(nu,  alpha,  rho,  mu1_val, mu2_val)
     blend_mixture_nu!(nuf, alphaf, rhof, mu1_val, mu2_val)
 
+    update_nueff!(nueff, nuf, model.turbulence, config)
     @. mueff.values  = rhof.values * nueff.values
     @. rhoPhi.values = alpha_fluxf.values * (rho1_val - rho2_val) +
                         mdotf.values * rho2_val ### comment

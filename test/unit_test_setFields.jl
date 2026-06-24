@@ -107,3 +107,18 @@ sphere_test_modified_cells_amount = setField_Sphere3D!(mesh=mesh, field=model.mo
 
 
 @test sphere_test_modified_cells_amount ≈ sphere_test_expected_cells_amount
+
+## Minimal tests for new initialise! features
+
+# Function-based initialisation (new overload)
+initialise!(model.momentum.p, (x, y, z) -> sin(x) + cos(y))
+@test model.momentum.p[10] ≈ sin(mesh.cells[10].centre[1]) + cos(mesh.cells[10].centre[2])
+
+# FaceScalarField number initialisation (new overload)
+fs = FaceScalarField(mesh)
+initialise!(fs, 3.14)
+@test fs[1] ≈ 3.14
+
+# VectorField with function (new overload)
+initialise!(model.momentum.U, (x, y, z) -> [x, y, 0.0])
+@test model.momentum.U.x[5] ≈ mesh.cells[5].centre[1]

@@ -118,7 +118,7 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
     @testset "Multiphase Solver" begin
         test_files = [
             "2d_multiphase_gravity.jl",
-            "2d_multiphase_hydrostatic.jl"
+            "2d_multiphase_hydrostatic.jl",
             "2d_multiphase_mixture.jl"
         ]
 

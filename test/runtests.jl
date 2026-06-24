@@ -24,6 +24,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("test_DILU.jl")
     end
 
+    @testset "Mixture Multiphase Unit Test" begin
+        include("unit_test_laplace.jl")
+    end
+
     @testset "Laplace Unit Test" begin
         include("unit_test_laplace.jl")
     end
@@ -115,6 +119,7 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         test_files = [
             "2d_multiphase_gravity.jl",
             "2d_multiphase_hydrostatic.jl"
+            "2d_multiphase_mixture.jl"
         ]
 
         for test ∈ test_files

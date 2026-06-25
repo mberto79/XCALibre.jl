@@ -16,8 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 *  Added `setField_Expression!` to `SetFields` utility to initialise function-based fields. [#124](@ref)
 *  Added VanLeer, upwind, and gradient interpolation schemes for scalar and vector face fields [#124](@ref)
 *  Added multiphase solver (VOF model only) with two supporting functionality tests. [#132](@ref)
-
-
+*  GPU-upgraded `setField_Box!`, `setField_Circle2D!`, `setField_Sphere3D!`, and `setField_Expression!` to use `KernelAbstractions` kernels, making them backend-agnostic (CPU and GPU). API is unchanged.
+*  Added `volume_integral`, `weighted_volume_integral`, `volume_average`, and `total_volume` functions to the `Calculate` module for backend-agnostic volume integration over scalar and vector fields.
 
 ### Fixed
 * Add implementation of `Periodic` boundaries to handle the implicit source term - fixes operation of models that use `Si` terms [#95](@ref)

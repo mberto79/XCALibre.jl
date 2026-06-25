@@ -16,8 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 *  Added `setField_Expression!` to `SetFields` utility to initialise function-based fields. [#124](@ref)
 *  Added VanLeer, upwind, and gradient interpolation schemes for scalar and vector face fields [#124](@ref)
 *  Added multiphase solver (VOF model only) with two supporting functionality tests. [#132](@ref)
-
-
+*  Extended `initialise!` API with function-based overloads for `ScalarField` and `VectorField`, implemented as GPU-compatible `KernelAbstractions` kernels, and added `FaceScalarField`/`FaceVectorField` overloads for constant-value initialisation.
 
 ### Fixed
 * Add implementation of `Periodic` boundaries to handle the implicit source term - fixes operation of models that use `Si` terms [#95](@ref)

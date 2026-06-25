@@ -6,6 +6,7 @@ using Accessors
 using Adapt
 using Atomix
 using KernelAbstractions
+import KernelAbstractions as KA
 using GPUArrays
 
 using LinearAlgebra

@@ -118,16 +118,11 @@ function _coarse_solve!(coarse_cpu::AMGCPUCoarseLevel, b)
     return coarse_cpu.x
 end
 
-# Apply the precomputed device-resident coarse direct solver — both branches stay on device:
-#  - a factorization (device Cholesky/LU, CUDA ext): triangular solve (potrs/getrs)
-#  - a dense inverse (generic non-CUDA GPU fallback): GEMV
 _apply_coarse_direct!(x, F::Factorization, b) = (copyto!(x, b); ldiv!(F, x); x)
 _apply_coarse_direct!(x, M::AbstractMatrix, b) = (mul!(x, M, b); x)
 
-# NEW SECTION: device Krylov coarse solve (OnDeviceKrylov) — Cg/Bicgstab + Jacobi on the truncated
-# coarsest level, in-place via a reused Krylov.jl workspace (no host round-trip, no per-cycle alloc).
+# NEW SECTION
 
-# Thin operator over the coarsest CSR matvec kernel: only mul!/size/eltype needed by Krylov.
 struct _AMGCoarseOp{RP,CV,NZ,B}
     rowptr::RP
     colval::CV
@@ -150,16 +145,15 @@ end
 mutable struct AMGKrylovCoarse{WS,OP,M,F,I,NZ}
     workspace::WS
     op::OP
-    M::M             # Jacobi preconditioner Diagonal(inv_diag); applied as mul! (ldiv=false)
+    M::M
     rtol::F
     atol::F
     itmax::I
-    nzval::NZ        # identity tag: reuse the workspace until the coarsest array is replaced
-    total_iters::Int # instrumentation: summed inner iterations across cycles
+    nzval::NZ
+    total_iters::Int
     calls::Int
 end
 
-# Auto-pick Cg for a symmetric coarsest (P'AP with R=P'), Bicgstab otherwise; user override honoured.
 _amg_krylov_solver_for(cs::OnDeviceKrylov, A) =
     cs.solver === nothing ? (_is_symmetric(A) ? Cg() : Bicgstab()) : cs.solver
 _amg_krylov_coarse_solver(cs::OnDeviceKrylov, hierarchy) =
@@ -173,19 +167,11 @@ function _apply_coarse_direct!(x, kb::AMGKrylovCoarse, b)
     return x
 end
 
-# Build the device-resident coarse direct solver per the solver's `coarse_solve` strategy, so the
-# per-cycle coarse solve has no host round-trip. Dispatch:
-#  - OnHost / CPU backend → coarse_inv[]=nothing, solved by the host LU/QR round-trip path.
-#  - OnDevice on a device backend → backend-dispatched build: CUDA ext factors on device; generic
-#    backends use the host dense inverse adapted to device + on-device GEMV (backend-agnostic).
 _build_coarse_inverse!(hierarchy::AMGHierarchy, ::OnHost) = (hierarchy.coarse_inv[] = nothing; hierarchy)
 
 function _build_coarse_inverse!(hierarchy::AMGHierarchy, cs::OnDevice)
     hierarchy.backend isa CPU && return (hierarchy.coarse_inv[] = nothing; hierarchy)
-    # Mixed precision: build a device-resident dense inverse of the coarsest level. The inverse is
-    # computed in FP64 from the host coarsest (accurate factor, no FP32 pivot fragility) but stored
-    # in TS for an on-device TS GEMV — keeping the coarse solve fully on device (no per-cycle host
-    # sync) while the convergence reflects only the FP32 cycle-SpMV.
+    # Mixed: inverse computed in FP64 (no FP32 pivot fragility) but stored at TS for device GEMV
     _amg_mixed_precision(hierarchy) && return _build_mixed_coarse_inverse!(hierarchy, cs.max_rows)
     return _build_coarse_inverse!(hierarchy.backend, hierarchy, cs)
 end
@@ -194,7 +180,7 @@ function _build_mixed_coarse_inverse!(hierarchy::AMGHierarchy, max_rows)
     Acsc = hierarchy.coarse_cpu.Acsc
     n = size(Acsc, 1)
     if n == 0 || n > max_rows
-        hierarchy.coarse_inv[] = nothing  # oversized → host LU round-trip
+        hierarchy.coarse_inv[] = nothing
         return hierarchy
     end
     Adense = Matrix(Acsc)
@@ -205,12 +191,10 @@ function _build_mixed_coarse_inverse!(hierarchy::AMGHierarchy, max_rows)
         pinv(Adense)
     end
     TS = eltype(_nzval(hierarchy.levels[end].A))
-    hierarchy.coarse_inv[] = adapt(hierarchy.backend, TS.(Minv))  # TS device dense inverse → GEMV
+    hierarchy.coarse_inv[] = adapt(hierarchy.backend, TS.(Minv))
     return hierarchy
 end
 
-# Generic non-CUDA device backend: host dense inverse (pinv when singular, via use_qr) adapted to
-# device, applied per-cycle as on-device GEMV. Needs no vendor direct solver.
 _build_coarse_inverse!(::Any, hierarchy::AMGHierarchy, cs::OnDevice) =
     _build_host_coarse_inverse!(hierarchy, cs.max_rows)
 
@@ -233,18 +217,12 @@ function _build_host_coarse_inverse!(hierarchy::AMGHierarchy, max_rows)
             pinv(Adense)
         end
     end
-    # Acsc/Minv are Float64 (host direct solve); store at the cycle storage type so the on-device
-    # GEMV matches the TS coarse vector (e.g. Float32 hierarchy).
+    # Store at TS so on-device GEMV matches the cycle storage type
     TS = eltype(_nzval(hierarchy.levels[end].A))
     hierarchy.coarse_inv[] = adapt(hierarchy.backend, TS === eltype(Minv) ? Minv : TS.(Minv))
     return hierarchy
 end
 
-# Build (or reuse) the device Krylov coarse solver. Stored in coarse_inv[] (an AMGKrylovCoarse),
-# so the existing _coarse_solve!/_apply_coarse_direct! routing applies it on device. Called every
-# coarse refresh: refresh the coarsest Jacobi inv_diag in place; reuse the workspace while the
-# coarsest CSR array is unchanged (numeric refresh updates values in place), rebuild on a hierarchy
-# rebuild (array replaced / size change). CPU backend keeps coarse_inv[]=nothing → host LU path.
 function _build_coarse_inverse!(hierarchy::AMGHierarchy, cs::OnDeviceKrylov)
     if hierarchy.backend isa CPU
         hierarchy.coarse_inv[] = nothing
@@ -268,15 +246,13 @@ function _build_coarse_inverse!(hierarchy::AMGHierarchy, cs::OnDeviceKrylov)
     return hierarchy
 end
 
-# NEW SECTION: device fixed-sweep smoother coarse solve (OnDeviceJacobi / OnDeviceChebyshev) —
-# N Jacobi sweeps or a degree-d Chebyshev polynomial on the coarsest level, x init 0. A fixed-sweep
-# smoother is a constant linear operator p(A_c)·b, so it is valid as an outer-CG preconditioner
-# (both modes). Reuses the existing level smoother kernels; no host round-trip, no per-cycle alloc.
+# NEW SECTION
+
 mutable struct AMGSmootherCoarse{S,H,NZ}
-    smoother::S      # AMGJacobi or AMGChebyshev applied to the coarsest level
-    loops::Int       # Jacobi sweeps; Chebyshev uses its degree internally (loops=1)
+    smoother::S
+    loops::Int
     hierarchy::H
-    nzval::NZ        # identity tag: reuse the bundle until the coarsest array is replaced
+    nzval::NZ
     calls::Int
 end
 
@@ -286,16 +262,12 @@ _coarse_smoother(cs::OnDeviceChebyshev) =
 
 function _apply_coarse_direct!(x, sc::AMGSmootherCoarse, b)
     level = sc.hierarchy.levels[end]
-    _fill_amg!(sc.hierarchy, level.x, zero(eltype(level.x)))  # x init 0 → fixed linear operator
+    _fill_amg!(sc.hierarchy, level.x, zero(eltype(level.x)))  # x init 0 => residual-form smoother is a fixed linear operator
     _apply_level_smoother_impl!(sc.hierarchy, sc.smoother, level, b, sc.loops)
     sc.calls += 1
     return level.x
 end
 
-# Build/reuse the device fixed-sweep coarse solver. Stored in coarse_inv[] so the existing
-# _coarse_solve!/_apply_coarse_direct! routing applies it on device. Refreshes the coarsest diag +
-# lambda_max each coarse refresh (Chebyshev needs eig bounds); reuses the bundle while the coarsest
-# array is unchanged. CPU backend keeps coarse_inv[]=nothing → host LU path.
 function _build_coarse_inverse!(hierarchy::AMGHierarchy, cs::Union{OnDeviceJacobi,OnDeviceChebyshev})
     if hierarchy.backend isa CPU
         hierarchy.coarse_inv[] = nothing
@@ -307,7 +279,7 @@ function _build_coarse_inverse!(hierarchy::AMGHierarchy, cs::Union{OnDeviceJacob
         hierarchy.coarse_inv[] = nothing
         return hierarchy
     end
-    _refresh_level_device!(hierarchy, level)  # coarsest diag + lambda_max on device
+    _refresh_level_device!(hierarchy, level)
     existing = hierarchy.coarse_inv[]
     existing isa AMGSmootherCoarse && existing.nzval === _nzval(level.A) && return hierarchy
     smoother, loops = _coarse_smoother(cs)
@@ -318,7 +290,7 @@ end
 function _coarse_solve!(hierarchy::AMGHierarchy, solver::AMG, level::AMGLevel, b)
     coarse_inv = hierarchy.coarse_inv[]
     if !(hierarchy.backend isa CPU) && coarse_inv !== nothing
-        _apply_coarse_direct!(level.x, coarse_inv, b)  # on-device, no host round-trip
+        _apply_coarse_direct!(level.x, coarse_inv, b)
         return level.x
     end
     if !(hierarchy.backend isa CPU) && _is_diagonal_matrix(hierarchy.host_levels[end].A)
@@ -357,11 +329,7 @@ function _cycle!(hierarchy::AMGHierarchy, cycle::VCycle, solver::AMG, level_inde
     return level.x
 end
 
-# Add the prolongated coarse correction. GAMG scale_correction: scale c=P·xc by the
-# energy-minimising sf=(r·c)/(c·Ac) (r=level.rhs, the post-presmoothing residual). Falls back to
-# plain additive prolongation when disabled. tmp/direction are scratch (overwritten by post-smoother).
-# In Cg mode the residual-dependent sf makes the preconditioner nonlinear; amg_cg_solve! switches to
-# the flexible Polak-Ribiere+ β when sc is on, so sc is now allowed in BOTH modes (F1: 89->45 iters).
+# scale_correction makes preconditioner nonlinear; amg_cg_solve! uses flexible PR+ beta to handle it
 function _apply_coarse_correction!(hierarchy::AMGHierarchy, solver::AMG, level::AMGLevel, coarse_level::AMGLevel)
     if !solver.scale_correction
         _prolongate_add!(hierarchy, level.x, level.P, coarse_level.x, level.tmp)
@@ -377,17 +345,12 @@ function _apply_coarse_correction!(hierarchy::AMGHierarchy, solver::AMG, level::
     return level.x
 end
 
-# Mixed precision boundary: the working-precision residual r enters the TS cycle hierarchy, the
-# TS finest correction root.x leaves as the working-precision z. Both copies are single-assignment
-# (no type instability). When TS==TW (default) cycle_input is nothing → r passes through unchanged.
 _amg_cycle_input(hierarchy::AMGHierarchy, r) =
     hierarchy.cycle_input[] === nothing ? r : _copy_amg!(hierarchy, hierarchy.cycle_input[], r)
 
 _amg_mixed_precision(hierarchy::AMGHierarchy) = hierarchy.cycle_input[] !== nothing
 
 function amg_apply_preconditioner!(z, hierarchy::AMGHierarchy, solver::AMG, r)
-    gf = hierarchy.greenfield[]
-    gf === nothing || return _greenfield_apply_preconditioner!(z, gf, hierarchy, r)
     root = hierarchy.levels[1]
     rin = _amg_cycle_input(hierarchy, r)
     _cycle!(hierarchy, solver.cycle, solver, 1, rin)
@@ -395,7 +358,7 @@ function amg_apply_preconditioner!(z, hierarchy::AMGHierarchy, solver::AMG, r)
     return z
 end
 
-function _update_cycle_factor!(hierarchy::AMGHierarchy, initial_rel, final_rel, iterations, solver::AMG)
+function _update_cycle_factor!(hierarchy::AbstractAMGHierarchy, initial_rel, final_rel, iterations, solver::AMG)
     if iterations > 0 && initial_rel > 0
         hierarchy.last_cycle_factor = (final_rel / initial_rel)^(1 / iterations)
     else
@@ -414,7 +377,7 @@ function _push_residual_norm_history!(workspace::AMGWorkspace, residual_norm)
     return workspace
 end
 
-function amg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol)
+function amg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol)
     T = eltype(x)
     bnorm = max(norm(b), eps(T))
     _residual!(hierarchy, workspace.residual, A, x, b)
@@ -424,7 +387,6 @@ function amg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver::AM
     ε = _amg_eps(T, atol, rtol, rnorm)
     rel = rnorm / bnorm
     initial_rel = rel
-    # Stall guard: a tiny ‖r0‖ can make ε unreachable; stop if the residual stops improving.
     best_rnorm = rnorm
     stall = 0
     stall_limit = 20

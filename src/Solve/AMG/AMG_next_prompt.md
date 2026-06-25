@@ -6,6 +6,7 @@
   to results.json only, maintain "_index", read target entries not whole files).
 - CFD/profile scripts: run_in_background=true, redirect ALL output to file, read compact summary only.
 - Smoke-test scripts at 1-2 iters before full runs. Inline edits; no subagents for local file work.
+- DO NOT COMMIT. STAGE ONLY
 
 ## Files (this round)
 AMG_integration_plan.md       — THE plan (layout, renames, dispatch, tests, gates). Read fully once.
@@ -26,12 +27,14 @@ Project.toml/Manifest.toml before staging. S = XCALibre.Solve. F1 fixture + harn
 Struct change -> REPL RESTART. MCP run-julia-code returns final value only. ONE Julia process (14GB box).
 
 ## NEXT SESSION FOCUS
-Start U1 (mechanical move/rename per plan). P13 (F32 finest quality) FIXED 06-12: Jacobi kernels are
-now residual-form x + w*Dinv*(b-Ax) — fused diag-excluded form injected ulp(|x|) noise/sweep, stalled
-all-F32 CG (gf-GPU AND ref-CPU); ref-GPU was immune via cuSPARSE ext override. Validated: all-F32 F1
-gf 31==ref 31; F64 45==45; 7.32ms/cycle; tests 213+194. NO open correctness items.
-Uncommitted: the P13 kernel edits (reference/4, device/3, device/4) — commit first (without
-Project.toml/Manifest), then begin U1. Confirm with user: fl>=1 (not fl>1) triggers matrix-free.
+U1-U4 + messaging + acceptance + comment sweep ALL DONE. ALL staged, NOT committed (stage-only holds).
+06-25: F1 acceptance re-run with USER-EDITED case settings (ml3/mc124/pre3post3/F32coarse/F64sys) -> mf==ref
+16 iters, trueres 8.25e-4, PASS (results.json U4_accept). Comment sweep of files 0-6/8/9 done (Sonnet,
+-307/+76, comment-only, precompile OK); 4 over-cut precision/invariant gotchas restored by hand (findings
+## Acceptance + comment sweep). U4 tests: T1/T2 in test_AMG_matrices, T3 in test_AMG CUDA block, gate green.
+REMAINING: only (1) COMMIT when user approves (currently stage-only). Optionally re-run CPU test files after
+the comment sweep if extra-cautious (sweep was comment-only + precompile OK, so unlikely needed).
+GATE: both test files (0 fail) + F1 CUDA harness (results.json U3_gate 45/45, 31/31; U4_accept 16/16 case-settings).
 
 ## Hard rules
 - Refactor = behavior-preserving; the 9 plan invariants are non-negotiable.

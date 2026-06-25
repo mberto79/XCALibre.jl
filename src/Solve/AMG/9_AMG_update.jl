@@ -3,20 +3,17 @@ function _pattern_matches(hierarchy::AMGHierarchy, A)
     hierarchy.nnz == length(_nzval(A)) || return false
     rp = _rowptr(A)
     cv = _colval(A)
-    # fast path: same underlying array objects as at setup
     rp === hierarchy.rowptr_ref[] && cv === hierarchy.colval_ref[] && return true
     rowptr = _cpu_vector(rp)
     colval = _cpu_vector(cv)
     length(rowptr) == length(hierarchy.rowptr_pattern) || return false
     length(colval) == length(hierarchy.colval_pattern) || return false
-    # medium path: hash of the pattern
     h = hash(colval, hash(rowptr))
     if h == hierarchy.pattern_hash
         hierarchy.rowptr_ref[] = rp
         hierarchy.colval_ref[] = cv
         return true
     end
-    # slow path: full equality
     @inbounds for i in eachindex(rowptr)
         Int(rowptr[i]) == hierarchy.rowptr_pattern[i] || return false
     end
@@ -35,8 +32,6 @@ function _sync_finest_matrix!(hierarchy::AMGHierarchy, A)
     return hierarchy
 end
 
-# Device-resident finest-level refresh: copy nzval device-to-device, recompute diag on device,
-# reuse lambda_max from build. Avoids the full nzval D->H/H->D round-trip and host power iteration.
 function _refresh_finest_level_device!(hierarchy::AMGHierarchy, A)
     backend = hierarchy.backend
     dev = hierarchy.levels[1]
@@ -63,13 +58,10 @@ function update!(workspace::AMGWorkspace, A, solver::AMG, config)
     hierarchy = workspace.hierarchy
     hierarchy.backend = hardware.backend
     hierarchy.workgroup = _amg_workgroup(hardware.backend, hardware.workgroup, max(_m(A), 1))
+    return _amg_update!(hierarchy, workspace, A, solver, hardware)
+end
 
-    # Greenfield GPU pipeline owns its own build/refresh (no materialized hierarchy): branch before
-    # the reference setup so the VRAM-saving matrix-free path is not double-built.
-    if _use_greenfield_amg(solver, hardware.backend)
-        return _greenfield_update!(workspace, A, solver, hardware)
-    end
-
+function _amg_update!(hierarchy::AMGHierarchy, workspace::AMGWorkspace, A, solver::AMG, hardware)
     if isempty(hierarchy.host_levels)
         setup_backend = _amg_setup_backend(hardware.backend)
         setup_matrix = _amg_setup_matrix(A, setup_backend)
@@ -103,11 +95,8 @@ function update!(workspace::AMGWorkspace, A, solver::AMG, config)
         refresh_hierarchy!(hierarchy, solver)
         _amg_mixed_precision(hierarchy) && _sync_storage_levels!(hierarchy)
     else
-        # Finest level refreshed entirely on device: nzval D2D + device diag + device lambda_max.
-        # No D->H copy of the finest nzval, no host power iteration, no H->D recopy of level 1.
         _refresh_finest_level_device!(hierarchy, A)
         _refresh_finest_lambda_device!(hierarchy)
-        # Coarse operators: device-resident RAP on CUDA, host RAP + sync on other backends.
         _refresh_coarse_operators!(hierarchy, solver)
     end
     workspace.refresh_count += 1
@@ -125,11 +114,7 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, 
     x = workspace.solution
     copyto!(x, values)
 
-    # Outer Krylov/defect-correction runs at working precision. Default (TS==TW): the finest
-    # hierarchy operator (unchanged). Mixed precision: the FP32 finest cannot carry the outer
-    # residual, so use the raw FP64 system matrix A (its _matvec!/_residual! are backend-dispatched).
-    outer_A = (_greenfield_active(workspace.hierarchy) || _amg_mixed_precision(workspace.hierarchy)) ?
-              A : workspace.hierarchy.levels[1].A
+    outer_A = outer_operator(workspace.hierarchy, A)
     _amg_solve_mode!(workspace, workspace.hierarchy, solver, solver.mode, outer_A, b, x; itmax=itmax, atol=atol, rtol=rtol)
 
     if typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson}
@@ -149,4 +134,70 @@ end
 
 function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::Cg, A, b, x; itmax, atol, rtol)
     return amg_cg_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol)
+end
+
+# Mixed precision / matrix-free: FP32 finest cannot carry the outer residual, so use raw system matrix
+outer_operator(hierarchy::AMGHierarchy, A) = _amg_mixed_precision(hierarchy) ? A : hierarchy.levels[1].A
+outer_operator(::MatrixFreeHierarchy, A) = A
+
+# NEW SECTION
+
+@kernel function _amg_gather_kernel!(out, @Const(src), @Const(perm))
+    k = @index(Global)
+    @inbounds out[k] = src[perm[k]]
+end
+
+@kernel function _amg_scatter_kernel!(out, @Const(src), @Const(perm))
+    k = @index(Global)
+    @inbounds out[perm[k]] = src[k]
+end
+
+_matrix_free_coarse_max_rows(cs::OnDevice) = cs.max_rows
+_matrix_free_coarse_max_rows(::Any) = 512
+
+_matrix_free_omega(s::AMGJacobi) = s.omega
+_matrix_free_omega(::Any) = 4 / 3
+
+# NEW SECTION
+
+function _build_matrix_free_workspace!(workspace::AMGWorkspace, A, solver::AMG, hardware)
+    backend = hardware.backend
+    setup_matrix = _amg_setup_matrix(A, _amg_setup_backend(backend))  # host CSR at finest precision T
+    T = eltype(_nzval(_amg_matrix(setup_matrix)))
+    TS = _effective_storage(T, _amg_storage(solver.coarse_storage))
+    fused_top = max(Int(solver.fuse_levels) - 1, 0)
+    handle = build_matrix_free_hierarchy(setup_matrix, solver.coarsening.merge_levels, backend;
+                          pre=solver.pre_sweeps, post=solver.post_sweeps,
+                          omega_nominal=_matrix_free_omega(solver.smoother),
+                          max_coarse=solver.max_coarse_rows, fused_top=fused_top,
+                          coarse_max_rows=_matrix_free_coarse_max_rows(solver.coarse_solve),
+                          scale_correction=solver.scale_correction,
+                          coarse_storage=TS)
+    st = handle.st
+    st.refresh_plan[] = build_refresh_plan(handle)
+    st.workgroup = workspace.hierarchy.workgroup
+    _amg_log_hierarchy(solver, backend, vcat([lv.n for lv in st.levels], st.coarse_n); matrix_free=true)
+    workspace.hierarchy = st
+    return workspace
+end
+
+function _amg_update!(hierarchy::MatrixFreeHierarchy, workspace::AMGWorkspace, A, solver::AMG, hardware)
+    if isempty(hierarchy.levels) || hierarchy.nrows != _m(A) || hierarchy.nnz != length(_nzval(A))
+        return _build_matrix_free_workspace!(workspace, A, solver, hardware)
+    end
+    refresh_coarse = (workspace.refresh_count + 1) % solver.coarse_refresh_interval == 0
+    refresh_matrix_free_hierarchy!(hierarchy, hierarchy.refresh_plan[], A;
+                                   omega_nominal=_matrix_free_omega(solver.smoother), coarse=refresh_coarse)
+    workspace.refresh_count += 1
+    return workspace
+end
+
+# NEW SECTION
+
+function amg_apply_preconditioner!(z, hierarchy::MatrixFreeHierarchy, solver::AMG, r)
+    bk = hierarchy.backend; wg = hierarchy.workgroup; n = hierarchy.nrows
+    _launch_amg_kernel!(bk, wg, _amg_gather_kernel!, n, hierarchy.residual_permuted, r, hierarchy.cell_perm_device)
+    x_perm = matrix_free_cycle!(hierarchy, hierarchy.residual_permuted)  # synchronizes before returning
+    _launch_amg_kernel!(bk, wg, _amg_scatter_kernel!, n, z, x_perm, hierarchy.cell_perm_device)
+    return z
 end

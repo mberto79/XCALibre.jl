@@ -111,7 +111,6 @@ end
 _initial_candidates(coarsening::SmoothAggregation) = coarsening.near_nullspace
 _initial_candidates(::AbstractAMGCoarsening) = nothing
 
-# Filtered SA matrix: keep strong off-diagonals, lump weak ones onto the diagonal (Vanek)
 function _sa_filtered_matrix(A, strong)
     rowptr = _rowptr(A)
     colval = _colval(A)
@@ -139,7 +138,7 @@ function _sa_filtered_matrix(A, strong)
             elseif marker[j] == i
                 push!(I, i); push!(J, j); push!(V, aij)
             else
-                lump += aij # weak connection lumped to diagonal
+                lump += aij
             end
         end
         push!(I, i); push!(J, i); push!(V, dii + lump)
@@ -147,7 +146,6 @@ function _sa_filtered_matrix(A, strong)
     return sparse(I, J, V, n, n)
 end
 
-# Spectral radius of D⁻¹Af via power iteration from a high-frequency seed
 function _spectral_radius_DinvA(DinvA, ::Type{T}) where {T}
     n = size(DinvA, 1)
     v = T[isodd(i) ? one(T) : -one(T) for i in 1:n]
@@ -163,7 +161,6 @@ function _spectral_radius_DinvA(DinvA, ::Type{T}) where {T}
     return rho
 end
 
-# Standard Jacobi prolongation smoother: P = (I - (weight/ρ) D⁻¹Af) P₀
 function _smooth_prolongation(A, P, strong, weight)
     weight <= 0 && return P
     Af = _sa_filtered_matrix(A, strong)
@@ -171,7 +168,7 @@ function _smooth_prolongation(A, P, strong, weight)
     d = diag(Af)
     Dinv = T[abs(d[i]) > eps(T) ? one(T) / d[i] : zero(T) for i in eachindex(d)]
     DinvA = Diagonal(Dinv) * Af
-    rho = T(11//10) * _spectral_radius_DinvA(DinvA, T) # margin: power iteration approaches ρ from below
+    rho = T(11//10) * _spectral_radius_DinvA(DinvA, T) # margin: power iteration approaches rho from below
     omega = T(weight) / max(rho, eps(T))
     Ps = P - omega * (DinvA * P)
     dropzeros!(Ps)
@@ -264,12 +261,7 @@ function _rs_coarse_fine_split(strong)
     n == 0 && return Int[]
     incoming = _strong_transpose(strong)
     influence = [length(strong[i]) + length(incoming[i]) for i in 1:n]
-    splitting = fill(-1, n) # -1 undecided, 0 F, 1 C
-
-    # influence is static, so the classic "pick max-influence undecided node, mark neighbours F"
-    # loop is a single descending-by-influence pass instead of an O(n) rescan per C-point (O(n^2)
-    # -> O(n log n)). sortperm is stable, so influence ties resolve in ascending index — identical
-    # selection to the old strict-`>` ascending scan.
+    splitting = fill(-1, n)
     @inbounds for seed in sortperm(influence; rev=true)
         splitting[seed] == -1 || continue
         splitting[seed] = 1
@@ -466,7 +458,6 @@ function build_prolongation(A, coarsening::SmoothAggregation, candidate=nothing,
     return agg, P, coarse_candidate
 end
 
-# Greedy pairwise agglomeration weighted by |a_ij| (OpenFOAM faceAreaPair); merge_levels passes
 function _geometric_aggregates(A, merge_levels::Int)
     rowptr = _rowptr(A)
     colval = _colval(A)
@@ -493,7 +484,7 @@ function _geometric_aggregates(A, merge_levels::Int)
         nnew = 0
         acc = zeros(T, ncl)
         stamp = zeros(Int, ncl)
-        order = sortperm(cnt) # pair smallest clusters first
+        order = sortperm(cnt)
         @inbounds for c in order
             merged[c] && continue
             bestc = 0
@@ -531,7 +522,6 @@ function _geometric_aggregates(A, merge_levels::Int)
     return agg, ncl
 end
 
-# Geometric uses unsmoothed piecewise-constant injection P (OpenFOAM additive correction); coarse op via RAP
 function build_prolongation(A, coarsening::Geometric, _candidate=nothing, _level_id=1)
     n = _m(A)
     candidate_vec = _near_nullspace_vector(A, nothing)

@@ -135,40 +135,11 @@ end
     @test ws_reg.iterations <= 2 * recorded_ani1d + 20
 end
 
-# Greenfield macro-aggregate layout (Phase 3): permutation + value-map reproduce the operator
-@testset "macro_layout" begin
-    A, _ = poisson2d(12)
-    for ml in (1, 2, 3)
-        lay = XCALibre.Solve.build_macro_layout(A, ml)
-        @test lay.n_macro >= 1
-        @test lay.agg_offsets[1] == 1
-        @test lay.agg_offsets[end] == size(A, 1) + 1
-        @test length(XCALibre.Solve._nzval(lay.A_perm)) == nnz(parent(A))
-        @test XCALibre.Solve.macro_layout_spmv_error(A, lay) < 1e-12
-    end
-end
-
-@testset "fused index types" begin
+@testset "amg index type" begin
     S = XCALibre.Solve
     @test S._amg_index_type(100) == Int32
     @test S._amg_index_type(typemax(Int32)) == Int32
     @test S._amg_index_type(Int64(typemax(Int32)) + 1) == Int64
-    @test S._amg_local_index_type(64) == UInt8
-    @test S._amg_local_index_type(255) == UInt8
-    @test S._amg_local_index_type(256) == UInt16
-    @test S._amg_fused_workgroup(5) == 8
-    @test S._amg_fused_workgroup(16) == 16
-end
-
-@testset "fused 2grid correction" begin
-    # Independent oracle (reference build_prolongation P0 + sparse RAP + diagonal coarse solve) must
-    # match the fused matrix-free kernel — validates in-aggregate coeffs + transfer composition.
-    A, _ = poisson2d(16)
-    for ml in (1, 2, 3)
-        res = XCALibre.Solve.fused_2grid_oracle_error(A, ml, CPU())
-        @test res.agg_match
-        @test res.relerr < 1e-12
-    end
 end
 
 @testset "mf multilevel cycle (5b-B)" begin
@@ -176,7 +147,7 @@ end
     # oracle built from reference sparse P_l/A_l, across multiple coarsening depths.
     A, _ = poisson2d(24)
     for ml in (1, 2, 3), (pre, post) in ((2, 2), (1, 1), (0, 2))
-        res = XCALibre.Solve.mf_ml_cycle_spike(A, ml, CPU(); pre=pre, post=post, max_coarse=64)
+        res = XCALibre.Solve.validate_matrix_free_cycle(A, ml, CPU(); pre=pre, post=post, max_coarse=64)
         @test res.relerr < 1e-12
         @test res.levels >= 2
         @test res.vram_saved_bytes > 0
@@ -189,23 +160,23 @@ end
     # (2) materially improve the stationary V-cycle (sc on converges where plain-additive stalls).
     A, _ = poisson2d(24)
     for ml in (1, 2, 3), (pre, post) in ((2, 2), (1, 1))
-        res = XCALibre.Solve.mf_ml_cycle_spike(A, ml, CPU(); pre=pre, post=post, max_coarse=64,
+        res = XCALibre.Solve.validate_matrix_free_cycle(A, ml, CPU(); pre=pre, post=post, max_coarse=64,
                                                scale_correction=true)
         @test res.relerr < 1e-12
     end
     Ac, _ = poisson2d(40)
-    off = XCALibre.Solve.mf_ml_convergence(Ac, 2, CPU(); scale_correction=false, itmax=80)
-    on  = XCALibre.Solve.mf_ml_convergence(Ac, 2, CPU(); scale_correction=true,  itmax=80)
+    off = XCALibre.Solve.validate_matrix_free_convergence(Ac, 2, CPU(); scale_correction=false, itmax=80)
+    on  = XCALibre.Solve.validate_matrix_free_convergence(Ac, 2, CPU(); scale_correction=true,  itmax=80)
     @test on.converged
     @test on.iters <= off.iters
     # fused_top>0 with sc: Ac comes from the matrix-free Galerkin chain -> must equal the
     # materialized sc cycle exactly (same operator, same sf)
     for k in (1, 2)
-        hk = XCALibre.Solve._build_mf_ml(A, 2, CPU(); max_coarse=64, fused_top=k, scale_correction=true)
-        h0 = XCALibre.Solve._build_mf_ml(A, 2, CPU(); max_coarse=64, fused_top=0, scale_correction=true)
+        hk = XCALibre.Solve.build_matrix_free_hierarchy(A, 2, CPU(); max_coarse=64, fused_top=k, scale_correction=true)
+        h0 = XCALibre.Solve.build_matrix_free_hierarchy(A, 2, CPU(); max_coarse=64, fused_top=0, scale_correction=true)
         bsc = rand(size(A, 1))
-        xk = Array(XCALibre.Solve.mf_ml_cycle(hk.st, copy(bsc)))
-        x0 = Array(XCALibre.Solve.mf_ml_cycle(h0.st, copy(bsc)))
+        xk = Array(XCALibre.Solve.matrix_free_cycle!(hk.st, copy(bsc)))
+        x0 = Array(XCALibre.Solve.matrix_free_cycle!(h0.st, copy(bsc)))
         @test maximum(abs.(xk .- x0)) / maximum(abs.(x0)) < 1e-12
     end
 end
@@ -215,7 +186,7 @@ end
     # materialized cycle EXACTLY (same operator), validating the prolong/restrict chain composition.
     A, _ = poisson2d(24)
     for ml in (2, 3), k in (1, 2)
-        res = XCALibre.Solve.mf_ml_topk_error(A, ml, CPU(), k; pre=2, post=2, max_coarse=64)
+        res = XCALibre.Solve.validate_fused_operator(A, ml, CPU(), k; pre=2, post=2, max_coarse=64)
         @test res.relerr < 1e-12
         @test res.fused_top >= 1
         @test res.vram_erased_bytes > 0
@@ -234,7 +205,7 @@ end
         end
     end
     for ml in (1, 2, 3)
-        res = XCALibre.Solve.mf_ml_refresh_error(A1, A2, ml, CPU(); max_coarse=64)
+        res = XCALibre.Solve.validate_refresh(A1, A2, ml, CPU(); max_coarse=64)
         @test res.relerr < 1e-12
         @test res.omega_relerr < 1e-10
         @test res.levels >= 2
@@ -242,10 +213,10 @@ end
     # split precision (finest F64 / coarse F32): refresh must reproduce the F64 build to coarse-F32
     # accuracy and stay iteration-equivalent. (GPU-only atomic type mismatch is guarded in test_AMG.jl.)
     for ml in (1, 2)
-        rm = XCALibre.Solve.mf_ml_refresh_error(A1, A2, ml, CPU(); max_coarse=64, coarse_storage=Float32)
+        rm = XCALibre.Solve.validate_refresh(A1, A2, ml, CPU(); max_coarse=64, coarse_storage=Float32)
         @test rm.relerr < 1e-5
-        c64 = XCALibre.Solve.mf_ml_refresh_convergence(A1, A2, ml, CPU(); max_coarse=64, coarse_storage=Float64)
-        c32 = XCALibre.Solve.mf_ml_refresh_convergence(A1, A2, ml, CPU(); max_coarse=64, coarse_storage=Float32)
+        c64 = XCALibre.Solve.validate_refresh_convergence(A1, A2, ml, CPU(); max_coarse=64, coarse_storage=Float64)
+        c32 = XCALibre.Solve.validate_refresh_convergence(A1, A2, ml, CPU(); max_coarse=64, coarse_storage=Float32)
         @test c32.converged && c32.iters <= c64.iters + 1
     end
 end
@@ -256,35 +227,53 @@ end
     # LU (large coarse). Per-cycle alloc must be constant; correctness preserved to ~eps either way.
     A, _ = poisson2d(24)
     for cmr in (512, 0)  # 512 -> GEMV branch (coarse_n=64<=512); 0 -> host-LU branch
-        al = XCALibre.Solve.mf_ml_cycle_allocs(A, 2, CPU(); max_coarse=64, coarse_max_rows=cmr)
+        al = XCALibre.Solve.measure_cycle_allocations(A, 2, CPU(); max_coarse=64, coarse_max_rows=cmr)
         @test al.constant
         @test al.branch == (cmr == 0 ? :host_lu : :gemv)
-        sp = XCALibre.Solve.mf_ml_cycle_spike(A, 2, CPU(); max_coarse=64, coarse_max_rows=cmr)
+        sp = XCALibre.Solve.validate_matrix_free_cycle(A, 2, CPU(); max_coarse=64, coarse_max_rows=cmr)
         @test sp.relerr < 1e-12
     end
 end
 
-@testset "g3 block-smoother gate (G3)" begin
-    # A single-launch fused top-zone kernel has no cross-workgroup sync, so for a preconditioner cycle
-    # (x init 0, written only at exit) off-aggregate reads stay 0 in both smooths -> the fused smoother
-    # is exactly aggregate-block-Jacobi. This gate measured the CG-iteration penalty on CPU and KILLED
-    # the kernel (2.6-2.8x iters on poisson, divergence on F1). The test locks the finding: the
-    # materialized baseline (depth 0) converges and block-smoothing the top zone always costs iters.
-    A, _ = poisson2d(20)
-    res = XCALibre.Solve.g3_block_smoother_gate(A, 2; max_coarse=64, max_depth=2)
-    @test res.ratios[1] == 1.0
-    @test res.finals[1] < 1e-6
-    @test all(res.ratios[2:end] .> 1.0)
+@testset "T1 F32 512^2 regression (P13 residual-form lock)" begin
+    # All-F32 CPU Poisson, Cg + Geometric + coarse_storage=F32. The residual-form Jacobi kernel (P13)
+    # is what keeps the F32 cycle stable; a non-residual form blows up / stalls. Anchor: 17 it, rel 3.7e-6
+    # (the solver's recurrence residual). The TRUE residual floors at ~4e-3 = eps_f32 * cond(512^2 Poisson),
+    # so we assert on the reported convergence, not a recomputed true residual.
+    Ad, _ = poisson2d(512)
+    i, j, v = findnz(parent(Ad)); n = size(Ad, 1)
+    Af = SparseXCSR(sparsecsr(i, j, Float32.(v), n, n))
+    bf = ones(Float32, n)
+    s = AMG(mode=Cg(), coarsening=Geometric(merge_levels=2), smoother=AMGJacobi(),
+            coarse_storage=Float32, max_coarse_rows=1024)
+    ws = _workspace(s, bf)
+    ws = XCALibre.Solve.update!(ws, Af, s, _config)
+    @test eltype(XCALibre.Solve._nzval(ws.hierarchy.levels[1].A)) === Float32
+    x = zeros(Float32, n)
+    XCALibre.Solve._amg_solve_mode!(ws, ws.hierarchy, s, s.mode,
+        ws.hierarchy.levels[1].A, bf, x; itmax=100, atol=0f0, rtol=1f-5)
+    @test ws.converged
+    @test ws.iterations <= 40
+    @test ws.last_relative_residual <= 1e-5
 end
 
-@testset "fused 2grid cycle (5b)" begin
-    # Matrix-free 2-grid V-cycle (Jacobi pre/post + agg restrict/prolong + coupled RAP coarse solve)
-    # must match the independent host oracle built from reference sparse P0/R — validates 1/sqrt(w)
-    # consistency across restrict, prolong, and the materialized coarse operator.
-    A, _ = poisson2d(20)
-    for ml in (1, 2, 3), (pre, post) in ((1, 1), (2, 1), (0, 2))
-        res = XCALibre.Solve.fused_2grid_cycle_spike(A, ml, CPU(); pre=pre, post=post)
-        @test res.relerr < 1e-12
-        @test res.vram_saved_bytes > 0
+@testset "T2 CPU ignores fuse_levels" begin
+    # fuse_levels only triggers matrix-free on GPU. On CPU it must be silently ignored: same hierarchy
+    # kind (materialised) and BIT-IDENTICAL iteration count for fl=0 vs fl=3.
+    A, b = poisson2d(64)
+    runfl(fl) = begin
+        s = AMG(mode=Cg(), coarsening=Geometric(merge_levels=2), smoother=AMGJacobi(),
+                max_coarse_rows=256, fuse_levels=fl)
+        ws = _workspace(s, b)
+        ws = XCALibre.Solve.update!(ws, A, s, _config)
+        x = zeros(eltype(b), length(b))
+        XCALibre.Solve._amg_solve_mode!(ws, ws.hierarchy, s, s.mode,
+            ws.hierarchy.levels[1].A, b, x; itmax=200, atol=1e-8, rtol=1e-8)
+        ws
     end
+    ws0 = runfl(0); ws3 = runfl(3)
+    @test ws0.hierarchy isa XCALibre.Solve.AMGHierarchy
+    @test ws3.hierarchy isa XCALibre.Solve.AMGHierarchy
+    @test ws3.iterations == ws0.iterations
 end
+

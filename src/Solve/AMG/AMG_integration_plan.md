@@ -5,8 +5,6 @@ GOAL: one AMG module, two hierarchy kinds selected by dispatch. Trigger = fuse_l
 - fl>=1 on GPU (+ Geometric + AMGJacobi, else fallback to materialised with @warn maxlog=1)
   -> matrix-free hierarchy; fused_top = fl-1 (fl=1 = Option B, fl>=2 also fuses coarse operators).
 - CPU: fl ignored entirely (matrix-free would be slower on CPU). Silent, per directive.
-- NOTE user wording said "fl>1 -> matrix-free"; implemented as fl>=1 to keep the fuse_levels=1
-  deploy config. Confirm with user if fl=1 was meant to be materialised.
 
 NON-GOALS: no algorithm changes, no tuning. This is a refactor: behavior-preserving, measured.
 

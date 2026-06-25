@@ -13,10 +13,7 @@ end
     @inbounds dest[i] = src[i]
 end
 
-# Residual form x_old + ω·D⁻¹(b − A·x_old): the full-row sum cancels down to the residual, so the
-# update preserves x's bits near the fixed point. The diagonal-excluded form (1−ω)x + ω·D⁻¹(b−σ)
-# recombines two large independently-rounded terms, injecting ~ulp(|x|) noise per sweep — floors
-# Float32 cycle quality and breaks outer CG (F1 1.68M: stall at 2.4e-4 vs convergence at 1e-4).
+# Residual form preserves bits near the fixed point; diagonal-excluded form injects Float32 noise
 @kernel function _amg_jacobi_step_kernel!(x_new, x_old, b, rowptr, colval, nzval, invdiag, omega)
     i = @index(Global)
     T = eltype(x_new)
@@ -34,20 +31,17 @@ end
     @inbounds x[i] += omega * invdiag[i] * residual[i]
 end
 
-# x += a * y (scaled coarse-grid correction) — reuses _amg_axpy_kernel! from 6_AMG_cg.jl
 function _amg_axpy!(hierarchy::AMGHierarchy, x, a, y)
     _launch_amg_kernel!(hierarchy, _amg_axpy_kernel!, length(x), x, a, y)
     return x
 end
 
-# GAMG energy-minimising scale for the coarse correction c: sf = (r·c)/(c·Ac), guarded for SPD
 function _amg_scale_factor(num::T, den::T) where {T}
     (isfinite(num) && isfinite(den) && den > eps(T)) || return one(T)
     sf = num / den
     return isfinite(sf) ? sf : one(T)
 end
 
-# Extract diagonal and its inverse from CSR nzval using precomputed diagonal_index (device-resident refresh)
 @kernel function _amg_extract_diagonal_kernel!(diagonal, inv_diagonal, nzval, diagonal_index)
     i = @index(Global)
     T = eltype(diagonal)
@@ -59,7 +53,6 @@ end
     end
 end
 
-# Device power-iteration kernels for finest-level lambda_max (mirrors _estimate_lambda_max!)
 @kernel function _amg_powiter_seed_kernel!(v, invn)
     i = @index(Global)
     T = eltype(v)
@@ -107,7 +100,7 @@ function _fill_amg!(hierarchy::AMGHierarchy, x, value)
     return x
 end
 
-function _copy_amg!(hierarchy::AMGHierarchy, dest, src)
+function _copy_amg!(hierarchy::AbstractAMGHierarchy, dest, src)
     _launch_amg_kernel!(hierarchy, _amg_copy_kernel!, length(dest), dest, src)
     return dest
 end
@@ -120,7 +113,7 @@ end
 function _level_jacobi_omega(smoother::AMGJacobi, level::AMGLevel)
     T = eltype(level.x)
     lambda_max = max(T(level.lambda_max), one(T))
-    # omega is lambda_max-scaled: ω_eff = omega/lambda_max; clamp below 2/lambda_max for SPD stability
+    # omega is lambda_max-scaled; clamp below 2/lambda_max for SPD stability
     return min(T(smoother.omega), T(2) - eps(T)) / lambda_max
 end
 
@@ -150,7 +143,6 @@ function _apply_level_smoother_impl!(hierarchy::AMGHierarchy, smoother::AMGJacob
     return _amg_jacobi!(hierarchy, smoother, level, level.A, b, loops)
 end
 
-# Fused weighted-Jacobi sweep over CSR matrix (default path; dispatch on matrix type allows cuSPARSE override)
 function _amg_jacobi!(hierarchy::AMGHierarchy, smoother::AMGJacobi, level::AMGLevel, A::AMGMatrixCSR, b, loops)
     omega = _level_jacobi_omega(smoother, level)
     for _ in 1:loops

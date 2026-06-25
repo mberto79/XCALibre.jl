@@ -1,5 +1,4 @@
-# Galerkin cache entries scale as K^2 * nnz (K = max P entries per row).
-# Beyond this nnz, the cache exceeds ~100 MB and causes OOM on large meshes.
+# OOM guard: cache exceeds ~100 MB beyond this nnz on large meshes
 const _GALERKIN_CACHE_MAX_NNZ = 400_000
 
 function _cpu_vector(x::AbstractVector)
@@ -14,7 +13,7 @@ function _cpu_copyto!(dest, src)
     if eltype(dest) === eltype(src)
         copyto!(dest, src)
     else
-        copyto!(dest, eltype(dest).(Array(src)))  # device→host + precision convert (mixed coarse solve)
+        copyto!(dest, eltype(dest).(Array(src)))
     end
     return dest
 end
@@ -28,7 +27,7 @@ function _device_copyto!(backend, dest, src)
     if eltype(dest) === eltype(src)
         KernelAbstractions.copyto!(backend, dest, src)
     elseif KernelAbstractions.get_backend(src) === backend
-        dest .= src  # device→device converting copy (mixed precision refresh)
+        dest .= src
     else
         KernelAbstractions.copyto!(backend, dest, adapt(backend, convert.(eltype(dest), src)))
     end
@@ -77,7 +76,7 @@ function _csr_to_csc(A)
     return sparse(I, J, V, _m(A), _n(A))
 end
 
-# CSR -> CSC converting nzval to TC (host coarse direct solve runs in Float64; SuiteSparse-only).
+# SuiteSparse requires Float64; convert nzval to TC at the CSR->CSC boundary
 function _csr_to_csc_as(A, ::Type{TC}) where {TC}
     I, J, V = _csr_triplets(A)
     return sparse(I, J, convert(Vector{TC}, V), _m(A), _n(A))
@@ -274,9 +273,6 @@ function _allocate_level(A, P, R, level_id, aggregate_ids, backend, smoother)
     )
 end
 
-# Mixed precision: rebuild a CPU host level (working precision T) at storage precision TS.
-# Operators/transfers/work-vectors → TS; integer index arrays (colval, diagonal_index,
-# aggregate_ids) kept. Runs on the CPU host levels before adapt-to-device.
 _amg_matrix_storage(A::AMGMatrixCSR, ::Type{TS}) where {TS} =
     AMGMatrixCSR(A.rowptr, A.colval, convert(Vector{TS}, A.nzval), A.m, A.n)
 
@@ -303,14 +299,10 @@ end
 
 function _refresh_level!(level::AMGLevel, solver::AMG)
     _diag_inverse!(level.diagonal, level.inv_diagonal, level.A, level.diagonal_index)
-    # reuse level.rhs / level.tmp as scratch (host-side refresh only; kernels overwrite before read)
     level.lambda_max = _estimate_lambda_max!(level.rhs, level.tmp, level.A, level.inv_diagonal)
     return level
 end
 
-# Device-resident lambda_max for any level: power iteration via the dispatched (cuSPARSE on
-# CUDA) SpMV, avoiding the host SpMVs in _estimate_lambda_max!. Same math as _refresh_level!.
-# Reuses level scratch (rhs/tmp/direction), overwritten before read by the solve cycle.
 function _refresh_lambda_device!(hierarchy::AMGHierarchy, level::AMGLevel; iters::Int=5)
     A = level.A
     invdiag = level.inv_diagonal
@@ -336,7 +328,6 @@ end
 _refresh_finest_lambda_device!(hierarchy::AMGHierarchy) =
     (_refresh_lambda_device!(hierarchy, hierarchy.levels[1]); hierarchy)
 
-# Device-resident diagonal + inverse extraction from CSR nzval (uses precomputed diagonal_index).
 function _refresh_diag_device!(hierarchy::AMGHierarchy, level::AMGLevel)
     _launch_amg_kernel!(
         hierarchy, _amg_extract_diagonal_kernel!, length(level.diagonal),
@@ -345,15 +336,12 @@ function _refresh_diag_device!(hierarchy::AMGHierarchy, level::AMGLevel)
     return level
 end
 
-# Full device-resident refresh of a single level (diag + lambda_max). A must already hold new values.
 function _refresh_level_device!(hierarchy::AMGHierarchy, level::AMGLevel)
     _refresh_diag_device!(hierarchy, level)
     _refresh_lambda_device!(hierarchy, level)
     return level
 end
 
-# Coarse-operator refresh hook, dispatched on backend. Default (CPU / non-CUDA device):
-# host Galerkin RAP + numeric sync to device. CUDA extension overrides with a device-resident RAP.
 function _refresh_coarse_operators!(hierarchy::AMGHierarchy, solver::AMG)
     _refresh_coarse_operators!(hierarchy.backend, hierarchy, solver)
     _build_coarse_inverse!(hierarchy, solver.coarse_solve)  # refresh device coarse solver
@@ -467,8 +455,6 @@ function _regalerkin_numeric!(coarse_A, fine_level::AMGLevel, P_csc, R_csc)
     return updated_A
 end
 
-# SYMBOLIC/NUMERIC SPLIT RAP (PETSc/Ginkgo-style, no allocation on refresh)
-
 function _build_ra_pattern(R, A)
     I = Int32
     R_rowptr = _rowptr(R); R_colval = _colval(R)
@@ -532,7 +518,6 @@ function _build_rap_plan_cpu(R, A, P)
                          workspace_ra, workspace_rap, flag_ra, flag_rap)
 end
 
-# SPA-based refresh: O(nnz(A)×K) with O(1) scatter — no binary search.
 function _refresh_rap_numeric!(coarse_A, fine_level::AMGLevel, plan::AMGRAPPlanCPU)
     R = fine_level.R; A = fine_level.A; P = fine_level.P
     R_rowptr = _rowptr(R); R_colval = _colval(R); R_nzval = _nzval(R)
@@ -544,7 +529,6 @@ function _refresh_rap_numeric!(coarse_A, fine_level::AMGLevel, plan::AMGRAPPlanC
     fra = plan.flag_ra;      frap = plan.flag_rap
     n_coarse = length(ra_rowptr) - 1
 
-    # Pass 1: fill ra_nzval using SPA over fine columns
     @inbounds for r in 1:n_coarse
         for rp in R_rowptr[r]:(R_rowptr[r+1]-1)
             i = Int(R_colval[rp]); Rri = R_nzval[rp]
@@ -560,7 +544,6 @@ function _refresh_rap_numeric!(coarse_A, fine_level::AMGLevel, plan::AMGRAPPlanC
         end
     end
 
-    # Pass 2: fill coarse_A using ra_nzval and SPA over coarse columns
     @inbounds for r in 1:n_coarse
         for rp in ra_rowptr[r]:(ra_rowptr[r+1]-1)
             j = Int(ra_colval[rp]); RAij = ra_nzval[rp]
@@ -579,7 +562,6 @@ function _refresh_rap_numeric!(coarse_A, fine_level::AMGLevel, plan::AMGRAPPlanC
     return coarse_A
 end
 
-# Hook: backend extensions override to build device-resident plans (e.g. cuSPARSE SpGEMMreuse)
 _amg_finalize_transfer_plans(_backend, transfer_csc, _host_levels, _device_levels) = transfer_csc
 
 function _csr_pattern_matches(A, B)
@@ -658,7 +640,6 @@ function _refresh_coarse_cpu!(coarse_cpu::AMGCPUCoarseLevel, A)
     end
     try
         F = coarse_cpu.lu_factor
-        # reuse symbolic factor when pattern unchanged; fall back to full lu if SuiteSparse rejects reuse
         if !coarse_cpu.use_qr && F.m == size(Acsc, 1) && length(F.colptr) == length(Acsc.colptr) && length(F.rowval) == length(Acsc.rowval)
             try
                 lu!(F, Acsc)
@@ -684,8 +665,7 @@ end
 function refresh_hierarchy!(hierarchy::AMGHierarchy, solver::AMG)
     levels = hierarchy.host_levels
     transfer = hierarchy.transfer_csc
-    # On device backends the finest level is refreshed on-device (diag + lambda_max);
-    # skip its host recompute. Coarse levels still refresh on host.
+    # On device backends the finest level is refreshed on-device; skip host recompute
     skip_finest_host = !(hierarchy.backend isa CPU)
     for level_index in 1:(length(levels) - 1)
         level = levels[level_index]
@@ -702,12 +682,10 @@ function refresh_hierarchy!(hierarchy::AMGHierarchy, solver::AMG)
     return hierarchy
 end
 
-# CPU/default path: symbolic/numeric split, no allocation
 function _refresh_coarse_level!(coarse_A, fine_level::AMGLevel, plan::AMGRAPPlanCPU)
     _refresh_rap_numeric!(coarse_A, fine_level, plan)
 end
 
-# Legacy fallback (kept for any non-plan entries; should not occur after setup)
 function _refresh_coarse_level!(coarse_A, fine_level::AMGLevel, xfer::Tuple)
     P_csc, R_csc = xfer
     result = _regalerkin_numeric!(coarse_A, fine_level, P_csc, R_csc)
@@ -732,31 +710,11 @@ function _hierarchy_complexities(levels)
     return float(operator_complexity), float(grid_complexity)
 end
 
-function _hierarchy_level_summary(levels)
-    lines = ["level rows nnz"]
-    for (level_index, level) in pairs(levels)
-        push!(lines, string(level_index, " ", _m(level.A), " ", length(_nzval(level.A))))
-    end
-    return join(lines, "\n")
-end
-
-function _coarse_solve_name(backend, solver::AMG, coarse_cpu::AMGCPUCoarseLevel, A, is_symmetric::Bool)
-    if !(backend isa CPU) && solver.coarse_solve isa OnDeviceKrylov
-        return "device_krylov_" * lowercase(string(nameof(typeof(_amg_krylov_solver_for(solver.coarse_solve, A)))))
-    end
-    !(backend isa CPU) && solver.coarse_solve isa OnDeviceJacobi &&
-        return "device_jacobi_$(solver.coarse_solve.iterations)"
-    !(backend isa CPU) && solver.coarse_solve isa OnDeviceChebyshev &&
-        return "device_chebyshev_$(solver.coarse_solve.degree)"
-    !(backend isa CPU) && _is_diagonal_matrix(A) && return "device_diagonal"
-    if !(backend isa CPU) &&
-       lowercase(get(ENV, "XCALIBRE_AMG_DEVICE_COARSE_SOLVE", "")) == "cg" &&
-       solver.mode isa Cg &&
-       is_symmetric &&
-       _m(A) == _n(A)
-        return "device_cg_experimental"
-    end
-    return coarse_cpu.use_qr ? "sparse_qr" : "sparse_lu"
+function _amg_log_hierarchy(solver::AMG, backend, rows; matrix_free::Bool=false)
+    cs = solver.coarsening
+    coarsening = cs isa Geometric ? "Geometric(merge_levels=$(cs.merge_levels))" : string(nameof(typeof(cs)))
+    path = matrix_free ? "matrix-free (fuse_levels=$(solver.fuse_levels))" : "materialised"
+    @info "AMG hierarchy" mode=_amg_mode_name(solver.mode) coarsening=coarsening smoother=_amg_smoother_name(typeof(solver.smoother)) backend=nameof(typeof(backend)) path=path levels=length(rows) rows=join(rows, " -> ")
 end
 
 function _amg_workgroup(backend, workgroup, ndrange)
@@ -766,13 +724,8 @@ function _amg_workgroup(backend, workgroup, ndrange)
     return Int(workgroup)
 end
 
-# Hook to specialise device level storage (e.g. wrap finest operators as CuSparseMatrixCSR for cuSPARSE SpMV).
-# Default is a no-op; backend extensions may return a new levels container.
 _amg_finalize_device_levels(backend, levels) = levels
 
-# CPU mixed precision: device_levels is a separate TS copy of host_levels (working precision),
-# so a host refresh must be copied into it (operators/diag/lambda). GPU keeps the cycle hierarchy
-# in sync on-device (no host levels involved), so this is CPU-only.
 function _sync_storage_levels!(hierarchy::AMGHierarchy)
     for k in eachindex(hierarchy.levels)
         dev = hierarchy.levels[k]
@@ -811,11 +764,10 @@ function _sync_device_levels_numeric!(hierarchy::AMGHierarchy)
     hierarchy.backend isa CPU && return hierarchy
     backend = hierarchy.backend
     for k in eachindex(hierarchy.levels)
-        # Finest level (k==1) is already refreshed on-device; host level 1 is intentionally stale.
+        # Finest level already refreshed on-device; host level 1 is intentionally stale
         k == 1 && continue
         dev = hierarchy.levels[k]
         host = hierarchy.host_levels[k]
-        # Pattern is guaranteed fixed by AMGRAPPlanCPU; sync only values, not structure.
         if length(_nzval(dev.A)) != length(host.A.nzval)
             hierarchy.levels[k] = adapt(backend, host)
             continue
@@ -856,13 +808,10 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
 
         R_csc_lazy = transpose(P_csc)
         R_csc = sparse(R_csc_lazy)
-        log_diagnostics && @info "AMG build: level=$level_id fine rows=$(_m(current_A)) nnz=$(length(_nzval(current_A)))"
         coarse_A = _amg_matrix(R_csc * _csr_to_csc(current_A) * P_csc)
-        log_diagnostics && @info "AMG build: level=$level_id coarse rows=$(_m(coarse_A)) nnz=$(length(_nzval(coarse_A)))"
         P = _amg_matrix(P_csc)
         R = _amg_matrix(R_csc)
         plan = _build_rap_plan_cpu(R, current_A, P)
-        log_diagnostics && @info "AMG build: level=$level_id RA nnz=$(length(plan.ra_colval))"
         push!(galerkin_caches, nothing)
         P_csc = nothing; R_csc = nothing  # CSC matrices no longer needed
         push!(transfer_csc, plan)
@@ -891,15 +840,11 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
     pattern_hash = hash(colval_pattern, hash(rowptr_pattern))
     is_symmetric = solver.mode isa Cg ? _is_symmetric(host_levels[1].A) : true
     operator_complexity, grid_complexity = _hierarchy_complexities(host_levels)
-    # Mixed precision: the cycle hierarchy (device_levels) is stored at TS while host_levels stay
-    # at the working precision T (coarse LU, RAP pattern, fallback). On CPU we can no longer alias
-    # host_levels when TS!=T — build a separate TS copy. cuSPARSE wraps the TS operators on GPU.
     TS = _effective_storage(T, _amg_storage(solver.coarse_storage))
     storage_levels = TS === T ? host_levels : [_level_to_storage(level, TS) for level in host_levels]
     device_levels = backend isa CPU ? storage_levels : Any[adapt(backend, level) for level in storage_levels]
     device_levels = backend isa CPU ? device_levels : _amg_finalize_device_levels(backend, device_levels)
     cycle_input = TS === T ? nothing : KernelAbstractions.zeros(backend, TS, _m(host_levels[1].A))
-    # Allow backend extensions to replace CPU plans with device-resident plans (e.g. cuSPARSE)
     transfer_csc = _amg_finalize_transfer_plans(backend, transfer_csc, host_levels, device_levels)
     hierarchy = AMGHierarchy(
         device_levels,
@@ -921,18 +866,9 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
         grid_complexity,
         0.0,
         Ref{Any}(nothing),
-        Ref{Any}(cycle_input),
-        Ref{Any}(nothing)
+        Ref{Any}(cycle_input)
     )
     _build_coarse_inverse!(hierarchy, solver.coarse_solve)
-    rows_summary = join(map(level -> string(_m(level.A)), host_levels), " -> ")
-    if log_diagnostics
-        coarse_solver = _coarse_solve_name(backend, solver, coarse_cpu, host_levels[end].A, is_symmetric)
-        coarse_host_transfer = !(backend isa CPU) && coarse_solver in ("sparse_lu", "sparse_qr")
-        @info "AMG hierarchy built" mode=_amg_mode_name(solver.mode) levels=length(host_levels) rows=rows_summary
-        @info "AMG hierarchy levels\n$(_hierarchy_level_summary(host_levels))"
-        @info "AMG hierarchy diagnostics" cycle=solver.cycle coarsening=typeof(solver.coarsening) smoother=typeof(solver.smoother) backend=typeof(backend) operator_complexity=operator_complexity grid_complexity=grid_complexity
-        @info "AMG coarse solve" rows=_m(host_levels[end].A) nnz=length(_nzval(host_levels[end].A)) solver=coarse_solver device_transfer=coarse_host_transfer
-    end
+    log_diagnostics && _amg_log_hierarchy(solver, backend, map(level -> _m(level.A), host_levels))
     return hierarchy
 end

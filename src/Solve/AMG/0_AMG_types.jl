@@ -13,6 +13,10 @@ abstract type AbstractAMGSweep end
 abstract type AbstractAMGCycle end
 abstract type AbstractAMGCoarseSolve end
 abstract type AbstractAMGWorkspace end
+abstract type AbstractAMGHierarchy end
+
+struct MaterialisedAMG end
+struct MatrixFreeAMG end
 
 struct AMGSolver <: AbstractAMGMode end
 struct VCycle <: AbstractAMGCycle end
@@ -272,22 +276,14 @@ struct AMG{M,C,S,Y,CS,I} <: AbstractLinearSolver
     coarse_storage::DataType
 end
 
-# Storage precision of the multigrid hierarchy. Float32 stores every level's operators/transfers/
-# work vectors (incl. finest cycle copy) in single precision — halves SpMV/smoother/RAP bandwidth —
-# while the outer Krylov/defect-correction stays Float64 (system matrix + solution). Both modes.
 _amg_storage(::Type{Float64}) = Float64
 _amg_storage(::Type{Float32}) = Float32
 _amg_storage(s) = throw(ArgumentError("AMG coarse_storage must be Float32 or Float64"))
 
-# Effective cycle storage = min precision of (working T, requested TS). Storing the hierarchy at
-# HIGHER precision than the working/system matrix wastes memory with no accuracy gain (e.g. Float32
-# mesh + default coarse_storage=Float64 would otherwise upcast the whole hierarchy). Clamping keeps
-# a Float32 mesh in Float32 regardless of coarse_storage; Float64 mesh + Float32 storage = mixed.
+# Clamp to min(T,TS): storing hierarchy at higher precision than working matrix wastes memory
 _effective_storage(::Type{T}, ::Type{TS}) where {T,TS} = sizeof(TS) >= sizeof(T) ? T : TS
 
-# SuiteSparse (CHOLMOD/UMFPACK/SPQR) sparse factorizations support only Float64/ComplexF64, so the
-# host coarsest DIRECT solve always runs in Float64. The coarsest level is tiny (<= max_coarse_rows),
-# so this is cheap and numerically robust; rhs/solution are converted at the precision boundary.
+# SuiteSparse rejects Float32 sparse factorizations; coarsest direct solve always runs Float64
 _coarse_direct_eltype(::Type{Float32}) = Float64
 _coarse_direct_eltype(::Type{T}) where {T} = T
 
@@ -354,18 +350,13 @@ function AMG(;
     if coarse_solve isa OnDeviceKrylov && mode isa Cg
         throw(ArgumentError("coarse_solve=OnDeviceKrylov requires mode=AMGSolver() (an inner Krylov coarse solve is nonlinear and breaks AMG-preconditioned CG)"))
     end
-    # Jacobi defaults to V(2,2): the standalone AMGSolver V-cycle has no Krylov acceleration, so
-    # extra cheap smoothing cuts cycle count (fewer coarse-grid sync points); on GPU per-cycle
-    # launch/sync overhead makes V(2,2) clearly faster than V(1,1). Cg unchanged (was already 2).
+    # Jacobi defaults to V(2,2): standalone V-cycle needs extra smoothing; GPU launch overhead favours it
     default_sweeps = smoother isa Union{AMGChebyshev,AMGGaussSeidel,AMGSOR} ? 1 : 2
     pre_sweeps = isnothing(pre_sweeps) ? default_sweeps : pre_sweeps
     post_sweeps = isnothing(post_sweeps) ? default_sweeps : post_sweeps
     pre_sweeps > 0 || throw(ArgumentError("AMG pre_sweeps must be positive"))
     post_sweeps > 0 || throw(ArgumentError("AMG post_sweeps must be positive"))
     coarse_refresh_interval > 0 || throw(ArgumentError("AMG coarse_refresh_interval must be positive"))
-    # fuse_levels: opt-in to the matrix-free greenfield GPU path (>0 on a GPU backend with Geometric
-    # +AMGJacobi). Default 0 = reference materialised V-cycle. The path is implemented but experimental
-    # (saves VRAM, see device/); flip on per-solver, not by default. Negative is invalid.
     fuse_levels >= 0 || throw(ArgumentError("AMG fuse_levels must be non-negative (0 disables the fused GPU path)"))
     return AMG(
         mode,
@@ -418,19 +409,14 @@ struct AMGGalerkinCache{I,W}
     weights::Vector{W}
 end
 
-# Symbolic/numeric split RAP plan (PETSc/Ginkgo style).
-# Stores the intermediate R×A sparsity pattern and a pre-allocated value buffer.
-# Refresh is pattern-free: fill ra_nzval, then scatter into coarse_A.nzval — no allocation.
-# Backend extensions replace this with device-resident plans (e.g. AMGRAPPlanCUDA).
 struct AMGRAPPlanCPU{I, T}
-    ra_rowptr::Vector{Int}  # R×A row pointers
-    ra_colval::Vector{I}    # R×A column indices (sorted per row)
-    ra_nzval::Vector{T}     # R×A values (mutable buffer)
-    # SPA (Sparse Pointer Array) workspaces for O(1) scatter — avoids binary search on refresh
-    workspace_ra::Vector{T}  # dense, size = n_fine
-    workspace_rap::Vector{T} # dense, size = n_coarse_out
-    flag_ra::Vector{Int}     # stamp array; flag_ra[j]==r means workspace_ra[j] set for row r
-    flag_rap::Vector{Int}    # same for RAP accumulation
+    ra_rowptr::Vector{Int}
+    ra_colval::Vector{I}
+    ra_nzval::Vector{T}
+    workspace_ra::Vector{T}
+    workspace_rap::Vector{T}
+    flag_ra::Vector{Int}
+    flag_rap::Vector{Int}
 end
 
 mutable struct AMGLevel{MA,MP,MR,VD,VI,VX,T}
@@ -464,7 +450,7 @@ mutable struct AMGCPUCoarseLevel{MA,MC,MI,VX,LUF,QRF}
     use_qr::Bool
 end
 
-mutable struct AMGHierarchy{LD,LH,CC,B,RP,CP}
+mutable struct AMGHierarchy{LD,LH,CC,B,RP,CP} <: AbstractAMGHierarchy
     levels::LD
     host_levels::LH
     coarse_cpu::CC
@@ -483,9 +469,8 @@ mutable struct AMGHierarchy{LD,LH,CC,B,RP,CP}
     operator_complexity::Float64
     grid_complexity::Float64
     last_cycle_factor::Float64
-    coarse_inv::Base.RefValue{Any}  # device dense inverse of coarsest A (GPU); nothing on CPU/oversized
-    cycle_input::Base.RefValue{Any}  # mixed precision: TS-typed finest rhs buffer; nothing when TS==TW
-    greenfield::Base.RefValue{Any}  # greenfield GPU pipeline state (MFGreenfield); nothing on the reference path
+    coarse_inv::Base.RefValue{Any}
+    cycle_input::Base.RefValue{Any}
 end
 
 mutable struct AMGWorkspace{H,V,T,RH} <: AbstractAMGWorkspace
@@ -536,8 +521,6 @@ function _placeholder_lu_qr(::Type{T}) where {T}
 end
 
 function _empty_cpu_coarse_level(::Type{T}) where {T}
-    # A holds the working-precision (T) coarsest CSR for pattern caching / nzval sync; the direct
-    # factor (Acsc/lu/qr/rhs/x) runs at TC=Float64 because SuiteSparse rejects Float32 (see above).
     TC = _coarse_direct_eltype(T)
     lu_factor, qr_factor = _placeholder_lu_qr(TC)
     A = AMGMatrixCSR([1, 1], Int[], T[], 1, 1)
@@ -550,11 +533,10 @@ end
 
 function _empty_hierarchy(backend, ::Type{T}, ::Type{TS}=T) where {T,TS}
     host_level = _empty_amg_level(CPU(), T)
-    # Mixed precision: device (cycle) levels are stored at TS; the empty must match setup_hierarchy's
-    # concrete type so the workspace.hierarchy reassignment after build type-checks.
+    # Device level at TS so workspace.hierarchy reassignment after build type-checks
     device_level = _empty_amg_level(backend, TS)
     host_levels = typeof(host_level)[]
-    # GPU levels are heterogeneously typed (finest may be CuSparseMatrixCSR); use Any on device backends
+    # GPU levels are heterogeneously typed (finest may be CuSparseMatrixCSR)
     device_levels = backend isa CPU ? typeof(device_level)[] : Vector{Any}()
     coarse_cpu = _empty_cpu_coarse_level(T)
     return AMGHierarchy(
@@ -577,10 +559,18 @@ function _empty_hierarchy(backend, ::Type{T}, ::Type{TS}=T) where {T,TS}
         1.0,
         0.0,
         Ref{Any}(nothing),
-        Ref{Any}(nothing),
         Ref{Any}(nothing)
     )
 end
+
+# Matrix-free gated to GPU + Geometric + AMGJacobi (only config the fused 1nz/row cycle supports)
+amg_hierarchy_kind(::AMG, ::CPU) = MaterialisedAMG()
+amg_hierarchy_kind(solver::AMG, ::KernelAbstractions.GPU) =
+    (solver.fuse_levels >= 1 && solver.coarsening isa Geometric && solver.smoother isa AMGJacobi) ?
+        MatrixFreeAMG() : MaterialisedAMG()
+
+_amg_empty_hierarchy(::MaterialisedAMG, backend, ::Type{T}, ::Type{TS}) where {T,TS} =
+    _empty_hierarchy(backend, T, TS)
 
 function _workspace(solver::AMG, b)
     T = eltype(b)
@@ -588,7 +578,7 @@ function _workspace(solver::AMG, b)
     backend = KernelAbstractions.get_backend(b)
     x = similar(b)
     return AMGWorkspace(
-        _empty_hierarchy(backend, T, TS),
+        _amg_empty_hierarchy(amg_hierarchy_kind(solver, backend), backend, T, TS),
         0,
         similar(x),
         similar(x),

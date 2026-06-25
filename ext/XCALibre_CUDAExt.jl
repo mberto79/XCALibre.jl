@@ -173,7 +173,7 @@ end
 import XCALibre.Solve: _matvec!, _residual!, _prolongate_add!, _amg_jacobi!,
     _amg_finalize_device_levels, _amg_finalize_transfer_plans, _refresh_coarse_level!,
     _level_jacobi_omega, _launch_amg_kernel!,
-    _amg_weighted_diagonal_correction_kernel!, AMGHierarchy, AMGLevel, AMGMatrixCSR, AMGJacobi,
+    _amg_weighted_diagonal_correction_kernel!, AMGHierarchy, AbstractAMGHierarchy, AMGLevel, AMGMatrixCSR, AMGJacobi,
     AMGRAPPlanCPU, _refresh_coarse_operators!, _refresh_level_device!, _refresh_coarse_cpu!,
     refresh_hierarchy!, _sync_device_levels_numeric!, _build_coarse_inverse!,
     _build_host_coarse_inverse!, OnDevice, OnDeviceKrylov, OnDeviceJacobi, OnDeviceChebyshev
@@ -204,9 +204,9 @@ function _amg_finalize_device_levels(::BACKEND, levels)
     return new_levels
 end
 
-_matvec!(hierarchy::AMGHierarchy, y, A::SPARSEGPU, x) = (mul!(y, A, x); y)
+_matvec!(hierarchy::AbstractAMGHierarchy, y, A::SPARSEGPU, x) = (mul!(y, A, x); y)
 
-function _residual!(hierarchy::AMGHierarchy, r, A::SPARSEGPU, x, b)
+function _residual!(hierarchy::AbstractAMGHierarchy, r, A::SPARSEGPU, x, b)
     T = eltype(r)
     copyto!(r, b)
     mul!(r, A, x, -one(T), one(T))  # r = b - A*x

@@ -1,7 +1,36 @@
 {
  "_index": {
   "baseline": "pre-unification oracle numbers (06-12, post-P13 Jacobi fix) - NEVER delete",
-  "harness": "REPL snippet to reproduce the baseline"
+  "harness": "REPL snippet to reproduce the baseline",
+  "U2_gate": "post-unification F1 CUDA gate: mf path via MatrixFreeHierarchy == reference",
+  "U3_gate": "post-deletion/consolidation gate: same numbers as U2, lower CPU test count (spike tests removed)",
+  "U4_gate": "new tests T1/T2/T3 added; both files pass with CUDA functional",
+  "U4_accept": "F1 static replay with CASE-FILE settings (ml3/mc124/pre3post3/F32coarse/F64sys); mf==ref"
+ },
+ "U4_accept": {
+  "settings": "Cg+Geometric(ml3) AMGJacobi pre3/post3 mc124 F32coarse F64sys rtol1e-3",
+  "ref_fl0": {"iters": 16, "mf": false, "trueres": "8.25e-4"},
+  "mf_fl1": {"iters": 16, "mf": true, "trueres": "8.25e-4"},
+  "levels": 6, "rows": "1677158->252508->36207->5151->748->108",
+  "note": "user edited case AMG_setup (was ml2/mc4096); re-run with new settings, mf==ref iters+trueres, both converge"
+ },
+ "U4_gate": {
+  "added": {"T1_P13_f32_512sq": 4, "T2_cpu_ignores_fl": 3, "T3_gpu_fl_equivalence_cuda_gated": 6},
+  "both_files": {"fail": 0, "error": 0},
+  "T1_512sq_f32_geo_ml2_mc1024": {"iters": 17, "recurrence_rel": "3.7e-6", "true_res_floor_f64": "4.4e-3"},
+  "T3_screened_poisson_48sq_geo_ml1_mc128": {"fl0_iters": 7, "fl1_iters": 7, "fl2_iters": 7, "fl0_vs_fl1_sol_rel": "1.7e-16", "fl2_trueres": "2.48e-9"},
+  "note": "T1 asserts solver-reported convergence (true F32 residual floors at eps_f32*cond ~4e-3, not a bug). T3 needs strictly diag-dominant matrix (pure graph-Laplacian diverges under omega=4/3 Jacobi+Geometric)."
+ },
+ "U3_gate": {
+  "cpu_tests": {"test_AMG+test_AMG_matrices_combined": 360, "fail": 0, "error": 0, "was_with_spikes": 407},
+  "F1_F64_ml2_mc4096_rtol1e-6": {"ref_iters": 45, "mf_iters": 45, "mf_routed": true},
+  "F1_allF32_ml2_mc4096_rtol1e-4": {"ref_iters": 31, "mf_iters": 31, "mf_routed": true},
+  "note": "via compare_amg_paths (now in 10_AMG_validation.jl); precompile clean after device/ deleted"
+ },
+ "U2_gate": {
+  "F1_F64_ml2_mc4096_rtol1e-6": {"ref_iters": 45, "mf_iters": 45, "ref_trueres": 9.69e-7, "mf_trueres": 9.69e-7},
+  "F1_allF32_ml2_mc4096_rtol1e-4": {"ref_iters": 31, "mf_iters": 31, "ref_trueres": 1.073e-4, "mf_trueres": 1.069e-4},
+  "note": "both converged, mf_routed via MatrixFreeHierarchy (ws.hierarchy isa MatrixFreeHierarchy)==true; matches baseline 45/45 + 31/31"
  },
  "baseline": {
   "F1_static_F64_ml2_mc4096_rtol1e-6_sc": {"gf_iters": 45, "ref_iters": 45},
@@ -17,7 +46,7 @@
   "setup": "Pkg.activate(repo); Pkg.add(\"CUDA\") LOCAL ONLY; using XCALibre,CUDA,Adapt,Serialization,SparseArrays,LinearAlgebra; S=XCALibre.Solve; e=open(deserialize,\"/home/humberto/casesXCALibre/F1-fetchCFD_Minimal/f1_pressure_systems.bin\")[1]",
   "device_A": "I,J,V=findnz(parent(e.A)); A=XCALibre.ModelFramework._build_A(CUDABackend(),I,J,V,n); b=adapt(bk,e.b); F32: cast V and b",
   "run": "solver=AMG(mode=Cg(),coarsening=Geometric(merge_levels=2),smoother=AMGJacobi(),fuse_levels=fl,coarse_storage=TS,max_coarse_rows=4096); ws=S._workspace(solver,b); S.update!(ws,A,solver,(hardware=(backend=bk,workgroup=64),)); x=similar(b); fill!(x,0); S._amg_solve_mode!(ws,ws.hierarchy,solver,solver.mode,A,b,x;itmax=400,atol=0.0,rtol=rtol); ws.iterations",
-  "true_residual": "norm(e.b .- S._host_csr_matvec(S._amg_matrix(e.A), Float64.(Array(x))))/norm(e.b)",
-  "percycle": "h=S._build_mf_ml(S._amg_matrix(e.A),2,bk;max_coarse=4096); CUDA.@elapsed 20x S.mf_ml_cycle(h.st,rhs) (names change in U1)"
+  "true_residual": "norm(e.b .- S.host_csr_matvec(S._amg_matrix(e.A), Float64.(Array(x))))/norm(e.b)",
+  "percycle": "h=S.build_matrix_free_hierarchy(S._amg_matrix(e.A),2,bk;max_coarse=4096); CUDA.@elapsed 20x S.matrix_free_cycle!(h.st,rhs) (U2: mf path = S._workspace with fuse_levels>=1)"
  }
 }

@@ -556,11 +556,48 @@ try
                     nz[p] *= (cv[p] == r ? 1.25 : 0.85)
                 end
             end
-            rm = XCALibre.Solve.mf_ml_refresh_error(g1, g2, 1, backend_gpu; max_coarse=64, coarse_storage=Float32)
+            rm = XCALibre.Solve.validate_refresh(g1, g2, 1, backend_gpu; max_coarse=64, coarse_storage=Float32)
             @test rm.relerr < 1e-5
-            cg64 = XCALibre.Solve.mf_ml_refresh_convergence(g1, g2, 1, backend_gpu; max_coarse=64, coarse_storage=Float64)
-            cg32 = XCALibre.Solve.mf_ml_refresh_convergence(g1, g2, 1, backend_gpu; max_coarse=64, coarse_storage=Float32)
+            cg64 = XCALibre.Solve.validate_refresh_convergence(g1, g2, 1, backend_gpu; max_coarse=64, coarse_storage=Float64)
+            cg32 = XCALibre.Solve.validate_refresh_convergence(g1, g2, 1, backend_gpu; max_coarse=64, coarse_storage=Float32)
             @test cg32.converged && cg32.iters <= cg64.iters + 1
+        end
+
+        # T3: GPU fuse_levels equivalence. fl=0 (materialised) vs fl=1 (matrix-free) on the same F64
+        # device system must agree in iters (+-1) and solution (rel < 1e-8); fl=2 (fused coarse) converges.
+        # Screened Poisson (diag = neighbors + 1): strictly diagonally dominant so the omega=4/3 Jacobi
+        # smoother is stable (the pure Poisson diag==sum|offdiag| makes the Geometric AMG cycle diverge).
+        let nx = 48
+            np = nx*nx; ip = Int[]; jp = Int[]; vp = Float64[]
+            pid(i, j) = (j-1)*nx + i
+            for j in 1:nx, i in 1:nx
+                k = pid(i, j); d = 0.0
+                for (di, dj) in ((1,0),(-1,0),(0,1),(0,-1))
+                    (1 <= i+di <= nx && 1 <= j+dj <= nx) || continue
+                    push!(ip, k); push!(jp, pid(i+di, j+dj)); push!(vp, -1.0); d += 1.0
+                end
+                push!(ip, k); push!(jp, k); push!(vp, d + 1.0)
+            end
+            A_t3 = XCALibre.ModelFramework._build_A(backend_gpu, ip, jp, vp, np)
+            b_t3 = adapt(backend_gpu, ones(np))
+            Ah_t3 = sparse(ip, jp, vp, np, np)
+            run_fl(fl) = begin
+                s = AMG(mode=Cg(), coarsening=Geometric(merge_levels=1), smoother=AMGJacobi(),
+                        max_coarse_rows=128, fuse_levels=fl)
+                ws = _workspace(s, b_t3)
+                ws = XCALibre.Solve.update!(ws, A_t3, s, config_gpu)
+                x = KernelAbstractions.zeros(backend_gpu, Float64, np)
+                XCALibre.Solve._amg_solve_mode!(ws, ws.hierarchy, s, s.mode, A_t3, b_t3, x; itmax=200, atol=0.0, rtol=1e-8)
+                (iters=ws.iterations, x=Array(x), mf=ws.hierarchy isa XCALibre.Solve.MatrixFreeHierarchy)
+            end
+            r0 = run_fl(0); r1 = run_fl(1)
+            @test !r0.mf                                   # fl=0 -> materialised
+            @test r1.mf                                    # fl=1 -> matrix-free
+            @test abs(r1.iters - r0.iters) <= 1
+            @test norm(r1.x - r0.x) / norm(r0.x) < 1e-8
+            r2 = run_fl(2)
+            @test r2.mf
+            @test norm(ones(np) - Ah_t3 * r2.x) / sqrt(np) < 1e-6
         end
 
         solver_chebyshev_gpu = AMG(mode=Cg(), coarsening=SmoothAggregation(), smoother=AMGChebyshev())

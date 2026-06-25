@@ -30,7 +30,7 @@ end
     @inbounds x[i] += y[i]
 end
 
-_launch_amg_kernel!(hierarchy::AMGHierarchy, kernel, ndrange, args...) =
+_launch_amg_kernel!(hierarchy::AbstractAMGHierarchy, kernel, ndrange, args...) =
     _launch_amg_kernel!(hierarchy.backend, hierarchy.workgroup, kernel, ndrange, args...)
 
 function _launch_amg_kernel!(backend, workgroup::Integer, kernel, ndrange, args...)
@@ -40,7 +40,7 @@ function _launch_amg_kernel!(backend, workgroup::Integer, kernel, ndrange, args.
     return nothing
 end
 
-function _add_amg!(hierarchy::AMGHierarchy, x, y)
+function _add_amg!(hierarchy::AbstractAMGHierarchy, x, y)
     _launch_amg_kernel!(hierarchy, _amg_add_kernel!, length(x), x, y)
     return x
 end
@@ -50,8 +50,6 @@ function _matvec!(hierarchy::AMGHierarchy, y, A::AMGMatrixCSR, x)
     return y
 end
 
-# Outer-operator matvec/residual on the raw working-precision system matrix (mixed precision, CPU
-# backend). GPU's SPARSEGPU has its own cuSPARSE methods in the backend extension.
 function _matvec!(hierarchy::AMGHierarchy, y, A::SparseXCSR, x)
     _launch_amg_kernel!(hierarchy, _amg_csr_matvec_kernel!, _m(A), y, _rowptr(A), _colval(A), _nzval(A), x)
     return y

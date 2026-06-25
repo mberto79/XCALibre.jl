@@ -16,12 +16,12 @@ end
     end
 end
 
-function _xpay_amg!(hierarchy::AMGHierarchy, y, x, beta)
+function _xpay_amg!(hierarchy::AbstractAMGHierarchy, y, x, beta)
     _launch_amg_kernel!(hierarchy, _amg_xpay_kernel!, length(y), y, x, beta)
     return y
 end
 
-function _cg_step_amg!(hierarchy::AMGHierarchy, x, r, p, q, alpha)
+function _cg_step_amg!(hierarchy::AbstractAMGHierarchy, x, r, p, q, alpha)
     _launch_amg_kernel!(hierarchy, _amg_cg_step_kernel!, length(x), x, r, p, q, alpha)
     return x
 end
@@ -41,15 +41,13 @@ function _is_symmetric(A; atol=1e-10)
     return true
 end
 
-# Krylov-exact stopping threshold: converge when ‖r‖ <= atol + rtol*‖r0‖ (‖r0‖ = initial,
-# warm-started residual). Matches Krylov.jl so swapping Cg()<->AMG keeps tuned tolerances valid.
+# Matches Krylov.jl stopping threshold so swapping Cg()<->AMG keeps tuned tolerances valid
 _amg_eps(::Type{T}, atol, rtol, r0norm) where {T} = T(atol) + T(rtol) * r0norm
 
-# scale_correction makes M nonlinear (residual-dependent sf), so the FR β assumption fails; use the
-# flexible Polak-Ribiere+ β instead. Costs one buffer copy + one dot per iteration, only when sc is on.
+# scale_correction makes M nonlinear; flexible PR+ beta avoids the FR beta assumption
 _amg_cg_flexible(solver::AMG) = solver.scale_correction
 
-function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol)
+function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol)
     hierarchy.is_symmetric || throw(ArgumentError("AMG(mode=Cg()) requires a symmetric matrix"))
     T = eltype(x)
     r = workspace.residual
@@ -57,7 +55,7 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
     p = workspace.search
     q = workspace.q
     flex = _amg_cg_flexible(solver)
-    r_prev = workspace.correction  # unused by the Cg mode otherwise; holds r_k for the PR+ β
+    r_prev = workspace.correction
 
     bnorm = max(norm(b), eps(T))
 
@@ -80,9 +78,7 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
     KernelAbstractions.synchronize(hierarchy.backend)
     _copy_amg!(hierarchy, p, z)
     rz = dot(r, z)
-    # Breakdown guards test for loss of positive-definiteness (<=0) or non-finite values, NOT an
-    # absolute eps floor: pq~‖r‖² and rz~‖r‖², so an eps(T) floor false-trips for small ‖b‖ (the
-    # absolute residual at the relative target is tiny). isfinite(α)/isfinite(β) catch real blowups.
+    # No eps(T) floor: pq/rz ~ ||r||^2, so eps floor false-trips for small ||b||
     if !isfinite(rz) || rz <= zero(T)
         workspace.iterations = 0
         workspace.converged = false
@@ -90,7 +86,6 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
         _update_cycle_factor!(hierarchy, initial_rel, rel, 0, solver)
         return x
     end
-    # Stall guard: a tiny ‖r0‖ can make ε unreachable; stop once the residual stops improving.
     best_rnorm = rnorm
     stall = 0
     stall_limit = 20
@@ -116,7 +111,6 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AMGHierarchy, solver:
         if !isfinite(rnorm) || !isfinite(rel)
             break
         end
-        # Trust the CG recurrence (Krylov.jl does too); AMG's low iter count keeps it tight.
         rnorm <= ε && break
         if rnorm < best_rnorm * (one(T) - T(1e-4))
             best_rnorm = rnorm

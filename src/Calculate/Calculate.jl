@@ -31,5 +31,6 @@ include("Calculate_2_interpolation.jl")
 include("Calculate_3_orthogonality_correction.jl")
 include("Calculate_4_wall_distance.jl")
 include("Calculate_5_surface_normal_gradient.jl")
+include("Calculate_6_integrals.jl")
 
 end

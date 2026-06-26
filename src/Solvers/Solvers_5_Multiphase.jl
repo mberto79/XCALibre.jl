@@ -487,6 +487,7 @@ function alpha_compression_flux!(::VOF, phirf, ∇alphaf, ∇alpha, mdotf, C_alp
 end
 alpha_compression_flux!(::Mixture, phirf, ∇alphaf, ∇alpha, mdotf, C_alpha, config) = nothing
 
+# This needs to be generalised as part of a more comprehensive high-order scheme implementation
 high_order_alpha_flux!(::VOF, phiHf, mdotf, alphaf_HO, alphaf_upwind, phirf, Urdotf) =
     @. phiHf.values = mdotf.values * alphaf_HO.values +
                         phirf.values * alphaf_HO.values * (1.0 - alphaf_HO.values)
@@ -496,7 +497,7 @@ high_order_alpha_flux!(::Mixture, phiHf, mdotf, alphaf_HO, alphaf_upwind, phirf,
                         Urdotf.values * alphaf_upwind.values * (1.0 - alphaf_upwind.values)
 
 
-
+# This needs to be turned into a fused kernel for performance
 function update_mixture_properties!(model, alpha_fluxf, mdotf, rhoPhi, nueff, mueff,
                                     rho1_val, rho2_val, mu1_val, mu2_val, config)
     (; rho, rhof, nu, nuf, alpha, alphaf) = model.fluid

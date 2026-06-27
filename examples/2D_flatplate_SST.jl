@@ -32,7 +32,7 @@ k_inlet = 1.08e-3 #3/2*(Tu*velocity[1])^2
 model = Physics(
     time = Steady(),
     fluid = Fluid{Incompressible}(nu = nu),
-    turbulence = RANS{KOmegaSST}(walls=(:wall,)),
+    turbulence = RANS{KOmegaSST}(walls=(:topWall, :bottomWall)),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
     )

@@ -30,7 +30,7 @@ Re = velocity[1]*0.1/nu
 model = Physics(
     time = Steady(),
     fluid = Fluid{Incompressible}(nu = nu),
-    turbulence = RANS{KOmegaSST}(walls=(:wall,)),
+    turbulence = RANS{KOmegaSST}(walls=(:wall, :top)),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
     )

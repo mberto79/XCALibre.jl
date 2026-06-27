@@ -18,9 +18,8 @@ end
 multiphase_extras(::VOF, mesh) = ()
 
 function multiphase_extras(::Mixture, mesh)
-    slip_momentum_term = FaceTensorField(mesh)
     div_slip_momentum = VectorField(mesh)
-    return (slip_momentum_term, div_slip_momentum)
+    return (div_slip_momentum,)
 end
 
 function setup_multiphase_solvers(
@@ -123,7 +122,7 @@ function setup_multiphase_solvers(
 
     elseif typeof(mp_model) <: Mixture
 
-        div_slip_momentum = extra_models[2]
+        div_slip_momentum = extra_models[1]
 
         U_eqn = (
             Time{schemes.U.time}(rho, U)
@@ -231,18 +230,19 @@ function MULTIPHASE(
     ∇alphaf = FaceVectorField(mesh)
 
     if typeof(mp_model) <: Mixture
-        slip_momentum_term, div_slip_momentum = extra_models
+        div_slip_momentum, = extra_models
         Sc_t     = 0.7
+        C_alpha  = 0.0
         g_vec    = model.fluid.physics_properties.gravity.g
         diameter = mp_model.diameter
         tau_d    = (rho2_val * diameter^2) / (18.0 * mu1_val + eps())
-        tau_d_field = ScalarField(mesh); initialise!(tau_d_field, tau_d)
+        tau_d_field = ConstantScalar(tau_d)
+        # Assumes constant values for now
 
         U_prev = VectorField(mesh)
         DUmDt  = VectorField(mesh)
         Ur     = VectorField(mesh)
         Urf    = FaceVectorField(mesh)
-        Urdotf = FaceScalarField(mesh)
         ∇U     = Grad{schemes.U.gradient}(U)
     end
 
@@ -250,12 +250,17 @@ function MULTIPHASE(
         sigma   = mp_model.sigma
         C_alpha = mp_model.cAlpha
 
-        phirf          = FaceScalarField(mesh)
         nhatf_prep     = FaceVectorField(mesh)
         kappa          = ScalarField(mesh)
         kappaf         = FaceScalarField(mesh)
         grad_alpha_mag = ScalarField(mesh)
+    else
+        sigma  = zero(TF)
+        kappaf = ConstantScalar(zero(TF))
     end
+
+    phirf    = FaceScalarField(mesh)
+    Urdotf   = FaceScalarField(mesh)
 
     Hv       = VectorField(mesh)
     rD       = ScalarField(mesh)
@@ -291,9 +296,32 @@ function MULTIPHASE(
 
         @. rho_prev.values = rho.values
 
+        if typeof(mp_model) <: Mixture
+            @. U_prev.x.values = U.x.values
+            @. U_prev.y.values = U.y.values
+            @. U_prev.z.values = U.z.values
+
+            grad!(∇U, Uf, U, boundaries.U, time, config)
+        end
+
+        if typeof(mp_model) <: Mixture
+            grad!(∇alpha, alphaf, alpha, boundaries.alpha, time, config)
+            limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
+
+            compute_DUmDt!(DUmDt, U, U_prev, ∇U, dt_cpu[1], config)
+            compute_Ur!(Ur, alpha, rho, g_vec, DUmDt,
+                        phases[main].rho, phases[secondary].rho, phases[main].mu,
+                        diameter, tau_d_field, config)
+            turbulent_dispersion!(Ur, alpha, ∇alpha, model.turbulence, Sc_t, config)
+            
+            interpolate_vanleer!(Urf, Ur, mdotf, config)
+            zero_wall_drift_velocity!(Urf, config)
+            face_dot_Sf!(Urdotf, Urf, config)
+        end
+
         # Bounded alpha eqn. transport via MULES
         advance_alpha!(model, mp_model, ∇alpha, ∇alphaf, mdotf,
-                       alpha_prev, alphaf_upwind, alphaf_HO, phirf, phiLf, phiHf, phiAf,
+                       alpha_prev, alphaf_upwind, alphaf_HO, phirf, Urdotf, phiLf, phiHf, phiAf,
                        alpha_fluxf, div_alpha, div_mdotf,
                        Pplus, Pminus, Qplus, Qminus, Rplus, Rminus,
                        alphaMaxLocal, alphaMinLocal, C_alpha, dt_cpu[1], time, config)
@@ -307,6 +335,11 @@ function MULTIPHASE(
         if typeof(mp_model) <: VOF
             update_curvature!(model, ∇alpha, ∇alphaf, nhatf_prep, kappa, kappaf,
                               grad_alpha_mag, time, config)
+        end
+        
+        # Drift flux divergence (Mixture only)
+        if typeof(mp_model) <: Mixture
+            div_slip_outer!(div_slip_momentum, alphaf, rhof, rho1f, rho2f, Urf, config)
         end
 
         well_balanced_pressure_grad!(
@@ -403,7 +436,7 @@ end
 
 
 function advance_alpha!(model, mp_model, ∇alpha, ∇alphaf, mdotf,
-                        alpha_prev, alphaf_upwind, alphaf_HO, phirf, phiLf, phiHf, phiAf,
+                        alpha_prev, alphaf_upwind, alphaf_HO, phirf, Urdotf, phiLf, phiHf, phiAf,
                         alpha_fluxf, div_alpha, div_mdotf,
                         Pplus, Pminus, Qplus, Qminus, Rplus, Rminus,
                         alphaMaxLocal, alphaMinLocal, C_alpha, dt, time, config)
@@ -416,10 +449,7 @@ function advance_alpha!(model, mp_model, ∇alpha, ∇alphaf, mdotf,
     grad!(∇alpha, alphaf, alpha, boundaries.alpha, time, config)
     limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
 
-    if typeof(mp_model) <: VOF
-        interpolate!(∇alphaf, ∇alpha.result, config)
-        compression_flux!(phirf, ∇alphaf, mdotf, C_alpha, config)
-    end
+    alpha_compression_flux!(mp_model, phirf, ∇alphaf, ∇alpha, mdotf, C_alpha, config)
 
     interpolate_upwind!(alphaf_upwind, alpha, mdotf, config)
     correct_boundaries!(alphaf_upwind, alpha, boundaries.alpha, time, config)
@@ -427,9 +457,9 @@ function advance_alpha!(model, mp_model, ∇alpha, ∇alphaf, mdotf,
     correct_boundaries!(alphaf_HO, alpha, boundaries.alpha, time, config)
 
     @. phiLf.values = mdotf.values * alphaf_upwind.values
-    @. phiHf.values = mdotf.values * alphaf_HO.values +
-                        phirf.values * alphaf_HO.values *
-                        (1.0 - alphaf_HO.values)
+
+    high_order_alpha_flux!(mp_model, phiHf, mdotf, alphaf_HO, alphaf_upwind, phirf, Urdotf)
+
     @. phiAf.values = phiHf.values - phiLf.values
 
     zero_boundary_faces!(phiAf, config)
@@ -451,11 +481,27 @@ function advance_alpha!(model, mp_model, ∇alpha, ∇alphaf, mdotf,
     return nothing
 end
 
+function alpha_compression_flux!(::VOF, phirf, ∇alphaf, ∇alpha, mdotf, C_alpha, config)
+    interpolate!(∇alphaf, ∇alpha.result, config)
+    compression_flux!(phirf, ∇alphaf, mdotf, C_alpha, config)
+end
+alpha_compression_flux!(::Mixture, phirf, ∇alphaf, ∇alpha, mdotf, C_alpha, config) = nothing
+
+# This needs to be generalised as part of a more comprehensive high-order scheme implementation
+high_order_alpha_flux!(::VOF, phiHf, mdotf, alphaf_HO, alphaf_upwind, phirf, Urdotf) =
+    @. phiHf.values = mdotf.values * alphaf_HO.values +
+                        phirf.values * alphaf_HO.values * (1.0 - alphaf_HO.values)
+
+high_order_alpha_flux!(::Mixture, phiHf, mdotf, alphaf_HO, alphaf_upwind, phirf, Urdotf) =
+    @. phiHf.values = mdotf.values * alphaf_HO.values -
+                        Urdotf.values * alphaf_upwind.values * (1.0 - alphaf_upwind.values)
 
 
+# This needs to be turned into a fused kernel for performance
 function update_mixture_properties!(model, alpha_fluxf, mdotf, rhoPhi, nueff, mueff,
                                     rho1_val, rho2_val, mu1_val, mu2_val, config)
     (; rho, rhof, nu, nuf, alpha, alphaf) = model.fluid
+
     blend_properties!(rho,  alpha,  rho1_val, rho2_val)
     blend_properties!(rhof, alphaf, rho1_val, rho2_val)
     blend_mixture_nu!(nu,  alpha,  rho,  mu1_val, mu2_val)
@@ -463,10 +509,16 @@ function update_mixture_properties!(model, alpha_fluxf, mdotf, rhoPhi, nueff, mu
 
     update_nueff!(nueff, nuf, model.turbulence, config)
     @. mueff.values  = rhof.values * nueff.values
-    @. rhoPhi.values = alpha_fluxf.values * (rho1_val - rho2_val) +
-                        mdotf.values * rho2_val ### comment
+
+    blend_rhoPhi!(model.fluid.model, rhoPhi, alpha_fluxf, mdotf, rhof, rho1_val, rho2_val)
     return nothing
 end
+
+blend_rhoPhi!(::Mixture, rhoPhi, alpha_fluxf, mdotf, rhof, rho1_val, rho2_val) =
+    @. rhoPhi.values = mdotf.values * rhof.values
+
+blend_rhoPhi!(::VOF, rhoPhi, alpha_fluxf, mdotf, rhof, rho1_val, rho2_val) =
+    @. rhoPhi.values = alpha_fluxf.values * (rho1_val - rho2_val) + mdotf.values * rho2_val
 
 
 
@@ -780,6 +832,28 @@ end
 @kernel inbounds=true function _mmp_zero_boundary_faces!(phif)
     i = @index(Global)
     phif[i] = zero(eltype(phif.values))
+end
+
+
+# Zero the drift velocity on boundary faces so no slip flux through walls
+function zero_wall_drift_velocity!(Urf, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    nbfaces = length(Urf.mesh.boundary_cellsID)
+
+    if nbfaces > 0
+        ndrange = nbfaces
+        kernel! = _zero_wall_drift_velocity!(_setup(backend, workgroup, ndrange)...)
+        kernel!(Urf)
+    end
+end
+@kernel inbounds=true function _zero_wall_drift_velocity!(Urf)
+    i = @index(Global)
+    TF = eltype(Urf.x)
+    Urf.x[i] = zero(TF)
+    Urf.y[i] = zero(TF)
+    Urf.z[i] = zero(TF)
 end
 
 
@@ -1231,4 +1305,213 @@ function correct_mass_flux_mp!(mdotf, p_eqn, config; time=nothing)
     end
 
     correct_boundary_mass_flux!(mdotf, p_eqn, BCs, time, config)
+end
+
+
+
+
+function compute_DUmDt!(DUmDt, U, U_prev, gradU, dt, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    ndrange = length(DUmDt)
+    kernel! = _compute_DUmDt!(_setup(backend, workgroup, ndrange)...)
+    kernel!(DUmDt, U, U_prev, gradU.result, dt)
+end
+
+@kernel inbounds=true function _compute_DUmDt!(DUmDt, U, U_prev, gradU_result, dt)
+    i = @index(Global)
+    TF = eltype(U.x)
+
+    dUdt = (U[i] - U_prev[i]) / dt
+
+    ux = U.x[i]
+    uy = U.y[i]
+    uz = U.z[i]
+
+    dudx = gradU_result.xx[i]
+    dudy = gradU_result.xy[i]
+    dudz = gradU_result.xz[i]
+
+    dvdx = gradU_result.yx[i]
+    dvdy = gradU_result.yy[i]
+    dvdz = gradU_result.yz[i]
+
+    dwdx = gradU_result.zx[i]
+    dwdy = gradU_result.zy[i]
+    dwdz = gradU_result.zz[i]
+
+    conv_x = ux*dudx + uy*dudy + uz*dudz
+    conv_y = ux*dvdx + uy*dvdy + uz*dvdz
+    conv_z = ux*dwdx + uy*dwdy + uz*dwdz
+
+    DUmDt[i] = dUdt + @SVector [conv_x, conv_y, conv_z]
+end
+
+function compute_Ur!(Ur, alpha, rho, g, DUmDt, rho1, rho2, mu1, d, tau_d, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    ndrange = length(Ur)
+    kernel! = _compute_Ur!(_setup(backend, workgroup, ndrange)...)
+    kernel!(Ur, alpha, rho, g, DUmDt, rho1, rho2, mu1, d, tau_d)
+end
+
+@kernel inbounds=true function _compute_Ur!(Ur, alpha, rho, g, DUmDt, rho1, rho2, mu1, d, tau_d)
+    i = @index(Global)
+    TF = eltype(rho.values)
+
+    rho_m = rho[i]
+    rho_c = rho1[i]
+    rho_d = rho2[i]
+    mu_c  = mu1[i]
+    tau   = tau_d[i]
+
+    Ur_mag = norm(Ur[i])
+    Re_p   = rho_c * Ur_mag * d / (mu_c + eps(TF))
+
+    f_drag = ifelse(
+        Re_p < TF(1000),
+        one(TF) + TF(0.15) * Re_p^TF(0.687),
+        TF(0.0183) * Re_p
+    )
+    f_drag = max(f_drag, one(TF))
+
+    a_eff    = g - DUmDt[i]
+    buoyancy = (rho_d - rho_m) / (rho_d + eps(TF))
+
+    U_dm = (tau / (f_drag + eps(TF))) * buoyancy * a_eff
+
+    alpha_c = max(alpha[i], TF(1e-3))
+    Ur[i] = U_dm / alpha_c
+end
+
+turbulent_dispersion!(Ur, alpha, ∇alpha, turbulence::Laminar, Sc_t, config) = nothing
+
+function turbulent_dispersion!(Ur, alpha, ∇alpha, turbulence, Sc_t, config)
+
+    if !hasproperty(turbulence, :nut)
+        return nothing
+    end
+
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    nut = turbulence.nut
+
+    ndrange = length(Ur)
+    kernel! = _turbulent_dispersion!(_setup(backend, workgroup, ndrange)...)
+    kernel!(Ur, alpha, ∇alpha.result, nut, Sc_t)
+end
+
+@kernel inbounds=true function _turbulent_dispersion!(Ur, alpha, gradA, nut, Sc_t)
+    i = @index(Global)
+    TF = eltype(alpha.values)
+
+    alpha_c = alpha[i]
+    alpha_c_safe = max(alpha_c, TF(1e-3))
+    alpha_d_safe = max(one(TF) - alpha_c, TF(1e-3))
+
+    D_t   = nut[i] / TF(Sc_t)
+    denom = alpha_c_safe * alpha_d_safe + eps(TF)
+    coef  = D_t / denom
+
+    gx = gradA.x[i]
+    gy = gradA.y[i]
+    gz = gradA.z[i]
+
+    Ur[i] = Ur[i] + @SVector [coef*gx, coef*gy, coef*gz]
+end
+
+function face_dot_Sf!(phidotf, phif, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    mesh  = phidotf.mesh
+    faces = mesh.faces
+
+    ndrange = length(faces)
+    kernel! = _face_dot_Sf!(_setup(backend, workgroup, ndrange)...)
+    kernel!(phidotf, phif, faces)
+end
+
+@kernel inbounds=true function _face_dot_Sf!(phidotf, phif, faces)
+    i = @index(Global)
+    (; area, normal) = faces[i]
+    phidotf[i] = area * (phif.x[i]*normal[1] + phif.y[i]*normal[2] + phif.z[i]*normal[3])
+end
+
+
+@inline function _slip_coeff(alphaf, rhof, rho1f, rho2f, i, TF)
+    af = alphaf[i]
+    (af * (one(TF) - af) * (rho1f[i] + rho2f[i])) / (rhof[i] + eps(TF))
+end
+
+function div_slip_outer!(vector::VectorField, alphaf, rhof, rho1f, rho2f, Urf, config)
+    mesh = vector.mesh
+    (; cells, cell_nsign, cell_faces, faces) = mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    ndrange = length(cells)
+    kernel! = div_slip_outer_kernel!(_setup(backend, workgroup, ndrange)...)
+    kernel!(cells, cell_faces, cell_nsign, faces, vector, alphaf, rhof, rho1f, rho2f, Urf)
+
+    nbfaces = length(mesh.boundary_cellsID)
+    ndrange = nbfaces
+    kernel! = div_slip_outer_boundary_kernel!(_setup(backend, workgroup, ndrange)...)
+    kernel!(faces, cells, vector, alphaf, rhof, rho1f, rho2f, Urf)
+end
+
+@kernel inbounds=true function div_slip_outer_kernel!(cells::AbstractArray{Cell{TF,SV,UR}}, cell_faces, cell_nsign, faces, vector, alphaf, rhof, rho1f, rho2f, Urf) where {TF,SV,UR}
+    i = @index(Global)
+
+    @inbounds begin
+        (; volume, faces_range) = cells[i]
+
+        reduction_x = zero(TF)
+        reduction_y = zero(TF)
+        reduction_z = zero(TF)
+
+        for fi ∈ faces_range
+            fID = cell_faces[fi]
+            nsign = cell_nsign[fi]
+            (; area, normal) = faces[fID]
+
+            ux = Urf.x[fID]
+            uy = Urf.y[fID]
+            uz = Urf.z[fID]
+
+            coeff = _slip_coeff(alphaf, rhof, rho1f, rho2f, fID, TF)
+            w = coeff * (ux*normal[1] + uy*normal[2] + uz*normal[3]) * area * nsign
+
+            reduction_x += w * ux
+            reduction_y += w * uy
+            reduction_z += w * uz
+        end
+
+        vector.x[i] = reduction_x / volume
+        vector.y[i] = reduction_y / volume
+        vector.z[i] = reduction_z / volume
+    end
+end
+
+@kernel function div_slip_outer_boundary_kernel!(faces, cells, vector, alphaf, rhof, rho1f, rho2f, Urf)
+    i = @index(Global)
+
+    @inbounds begin
+        TF = eltype(Urf.x)
+        cID = faces[i].ownerCells[1]
+        volume = cells[cID].volume
+        (; area, normal) = faces[i]
+
+        ux = Urf.x[i]
+        uy = Urf.y[i]
+        uz = Urf.z[i]
+
+        coeff = _slip_coeff(alphaf, rhof, rho1f, rho2f, i, TF)
+        w = coeff * (ux*normal[1] + uy*normal[2] + uz*normal[3]) * area / volume
+
+        Atomix.@atomic vector.x.values[cID] += w * ux
+        Atomix.@atomic vector.y.values[cID] += w * uy
+        Atomix.@atomic vector.z.values[cID] += w * uz
+    end
 end

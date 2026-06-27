@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 *  Added `setField_Expression!` to `SetFields` utility to initialise function-based fields. [#124](@ref)
 *  Added VanLeer, upwind, and gradient interpolation schemes for scalar and vector face fields [#124](@ref)
 *  Added multiphase solver (VOF model only) with two supporting functionality tests. [#132](@ref)
+*  Added mixture model inside multiphase solver with supporting unit and functionality tests. [#136](@ref)
 
 
 

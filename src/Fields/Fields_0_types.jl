@@ -372,6 +372,9 @@ Note: in most cases the fields to be modified are stored within a physics model 
 initialise!(mymodel.momentum.U, [2.5, 0, 0])
 initialise!(mymodel.momentum.p, 1.25)
 ```
+
+
+`initialise!` also accepts a functions arguments and initialises a field by evaluating the function at each cell centre. The function should have the signature `f(x, y, z)` and it must return either a scalar or an SVector type (requirement to work on GPUs)
 """
 function initialise!(field, value) # dummy function for documentation
     throw("Arguments provided for field are not of type ScalarField nor VectorField")
@@ -409,12 +412,6 @@ function initialise!(v::FaceVectorField, value::AbstractVector)
     nothing
 end
 
-"""
-    initialise!(field, func::Function)
-
-Initialises a field by evaluating the function at each cell centre.
-The function should have the signature `f(x, y, z)`.
-"""
 function initialise!(s::ScalarField, func::Func) where Func<:Function
     backend = KA.get_backend(s)
     ndrange = length(s)
@@ -447,7 +444,6 @@ end
     @uniform cells = v.mesh.cells
     @inbounds begin
         c = cells[i].centre
-        val = func(c[1], c[2], c[3])
-        v[i] = SVector(val[1], val[2], val[3])
+        v[i] = func(c[1], c[2], c[3]) # func must return an SVector
     end
 end

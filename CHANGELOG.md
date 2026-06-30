@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 *  Added `setField_Expression!` to `SetFields` utility to initialise function-based fields. [#124](@ref)
 *  Added VanLeer, upwind, and gradient interpolation schemes for scalar and vector face fields [#124](@ref)
 *  Added multiphase solver (VOF model only) with two supporting functionality tests. [#132](@ref)
+*  Added mixture model inside multiphase solver with supporting unit and functionality tests. [#136](@ref)
 *  Extended `initialise!` API with function-based overloads for `ScalarField` and `VectorField`, implemented as GPU-compatible `KernelAbstractions` kernels, and added `FaceScalarField`/`FaceVectorField` overloads for constant-value initialisation.
 
 ### Fixed
@@ -82,6 +83,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Internally, the calculation of interpolation weights and other geometric properties are calculated using the same function (defined in the `Mesh` module) [#69](@ref)
 * The default discretisation for laplacian terms uses the over-relaxed formulation by default. This will have no effect on orthogonal grids, but tends to be more robust in complex geometries at the expense of accuracy, which can be recovered by adding additional orthogonal correction loops (using the key word argument `ncorrectors` in the `run!` function) [#73](@ref)
 * Cleaned code for all solvers and improved stability of incompressible solver by removing the update of the mass flow based on the velocity field from the previous iteration. The mass flow is now corrected directly from the latest pressure solution [#76](@ref)
+* Improved calculation of wall distance for turbulence models to prevent negative square roots resulting in DomainErrors [#139](@ref)
+
 
 ### Breaking
 * No breaking changes

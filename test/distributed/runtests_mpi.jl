@@ -1,0 +1,19 @@
+# MPI test harness: runs each distributed test file under mpiexec at several rank counts.
+# Usage: julia --project test/distributed/runtests_mpi.jl [testfile...] (default: test_halo.jl)
+using MPI, Test
+
+files = isempty(ARGS) ? ["test_halo.jl"] : ARGS
+dir = @__DIR__
+project = dirname(Base.active_project())
+julia = Base.julia_cmd()
+
+# precompile serially first (MPI precompile race)
+run(`$julia --project=$project --startup-file=no -e "using XCALibre, MPI, Test"`)
+
+@testset "mpi $file n=$n" for file ∈ files, n ∈ (2, 4)
+    cmd = `$(MPI.mpiexec()) -n $n $julia --project=$project --startup-file=no $(joinpath(dir, file))`
+    out = IOBuffer()
+    ok = success(pipeline(cmd; stdout=out, stderr=out))
+    ok || print(String(take!(out)))
+    @test ok
+end

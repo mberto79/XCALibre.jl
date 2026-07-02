@@ -1,0 +1,105 @@
+module XCALibrePETScExt
+
+using XCALibre, MPI, PETSc
+using PETSc: LibPETSc
+using XCALibre.Distribute
+import XCALibre.Distribute: PETScSolver, passemble!, psolve!, psolve_transpose!
+import XCALibre.ModelFramework: _A, _b, _rowptr, _colval, _nzval
+import XCALibre.Mesh: _get_float
+
+# NEW SECTION: KSP/PC mapping (curated; anything else via petsc_options passthrough)
+
+_ksp_type(::Cg) = "cg"
+_ksp_type(::Bicgstab) = "bcgs"
+_ksp_type(::Gmres) = "gmres"
+_ksp_type(s) = error("no PETSc mapping for solver $(typeof(s)); use petsc_options=\"-ksp_type ...\"")
+_pc_type(::Jacobi) = "jacobi"
+_pc_type(p) = error("no PETSc mapping for preconditioner $(typeof(p)); use petsc_options=\"-pc_type ...\"")
+
+# NEW SECTION: solver type
+
+struct XPETScSolver{PL,TM,TV,TK,TF} <: Distribute.AbstractDistributedSolver
+    petsclib::PL
+    A::TM
+    b::TV
+    x::TV
+    ksp::TK
+    n_owned::Int
+    nnz_owned::Int
+    vals::Vector{TF}   # host staging: owned-row nzval slice
+    bhost::Vector{TF}
+    xhost::Vector{TF}
+end
+
+function PETScSolver(eqn, dmesh::DistributedMesh, setup;
+        comm=MPI.COMM_WORLD, petsc_options="")
+    part = dmesh.partition
+    TF = _get_float(dmesh)
+    petsclib = PETSc.getlib(; PetscScalar=TF, PetscInt=Int64)
+    PETSc.initialize(petsclib)
+    PI = petsclib.PetscInt
+    A = _A(eqn)
+    rowptr, colval = Vector(_rowptr(A)), Vector(_colval(A))
+    n = part.n_owned
+    N = MPI.Allreduce(n, +, comm)
+    # owned rows are the contiguous CSR prefix; ghost rows are garbage and never shipped
+    nnz_owned = Int(rowptr[n+1]) - 1
+    i0 = PI[rowptr[i] - 1 for i ∈ 1:n+1]
+    l2g = part.local_to_global
+    j0 = PI[l2g[colval[k]] - 1 for k ∈ 1:nnz_owned]
+    vals = Vector{TF}(undef, nnz_owned)
+    copyto!(vals, view(_nzval(A), 1:nnz_owned))
+    Amat = LibPETSc.MatCreateMPIAIJWithArrays(petsclib, comm,
+        PI(n), PI(n), PI(N), PI(N), i0, j0, vals)
+    x, b = LibPETSc.MatCreateVecs(petsclib, Amat)
+    curated = (; ksp_type=_ksp_type(setup.solver), pc_type=_pc_type(setup.preconditioner))
+    raw = isempty(petsc_options) ? (;) : PETSc.parse_options(String.(split(petsc_options)))
+    ksp = PETSc.KSP(Amat; merge(curated, raw)...)
+    LibPETSc.KSPSetTolerances(petsclib, ksp, TF(setup.rtol), TF(setup.atol),
+        TF(-2), PI(setup.itmax)) # -2 = PETSC_DEFAULT (dtol)
+    LibPETSc.KSPSetInitialGuessNonzero(petsclib, ksp, LibPETSc.PETSC_TRUE)
+    XPETScSolver(petsclib, Amat, b, x, ksp, n, nnz_owned, vals,
+        Vector{TF}(undef, n), Vector{TF}(undef, n))
+end
+
+# NEW SECTION: assembly and solve
+
+function passemble!(s::XPETScSolver, eqn, partition; component=nothing)
+    copyto!(s.vals, view(_nzval(_A(eqn)), 1:s.nnz_owned))
+    LibPETSc.MatUpdateMPIAIJWithArray(s.petsclib, s.A, s.vals)
+    copyto!(s.bhost, view(_b(eqn, component), 1:s.n_owned))
+    PETSc.withlocalarray!(s.b; read=false, write=true) do arr
+        copyto!(arr, s.bhost)
+    end
+    s
+end
+
+_copy_owned_in!(s, x) = begin
+    copyto!(s.xhost, view(x, 1:s.n_owned))
+    PETSc.withlocalarray!(s.x; read=false, write=true) do arr
+        copyto!(arr, s.xhost)
+    end
+end
+
+_copy_owned_out!(s, x) = begin
+    PETSc.withlocalarray!(s.x; read=true, write=false) do arr
+        copyto!(s.xhost, arr)
+    end
+    copyto!(view(x, 1:s.n_owned), s.xhost)
+end
+
+function psolve!(s::XPETScSolver, x::AbstractVector)
+    _copy_owned_in!(s, x)
+    PETSc.solve!(s.x, s.ksp, s.b)
+    _copy_owned_out!(s, x)
+    x
+end
+
+function psolve_transpose!(s::XPETScSolver, x::AbstractVector)
+    _copy_owned_in!(s, x)
+    LibPETSc.KSPSolveTranspose(s.petsclib, s.ksp, s.b, s.x)
+    _copy_owned_out!(s, x)
+    x
+end
+
+end # module

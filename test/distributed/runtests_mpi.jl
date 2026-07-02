@@ -7,10 +7,10 @@ dir = @__DIR__
 project = dirname(Base.active_project())
 julia = Base.julia_cmd()
 
-# precompile serially first (MPI precompile race)
-run(`$julia --project=$project --startup-file=no -e "using XCALibre, MPI, Test"`)
+# precompile serially first (MPI precompile race); PETSc only if in the environment
+run(`$julia --project=$project --startup-file=no -e "using XCALibre, MPI, Test; try using PETSc catch end"`)
 
-@testset "mpi $file n=$n" for file ∈ files, n ∈ (2, 4)
+@testset "mpi $file n=$n" for file ∈ files, n ∈ (1, 2, 4)
     cmd = `$(MPI.mpiexec()) -n $n $julia --project=$project --startup-file=no $(joinpath(dir, file))`
     out = IOBuffer()
     ok = success(pipeline(cmd; stdout=out, stderr=out))

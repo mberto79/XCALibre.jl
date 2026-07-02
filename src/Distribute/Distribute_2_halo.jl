@@ -30,14 +30,18 @@ end
 
 function HaloExchange(dmesh::DistributedMesh, width::Integer, backend; comm=MPI.COMM_WORLD)
     TF = _get_float(dmesh)
+    TI = _get_int(dmesh)
     procs = dmesh.procs
     cuda_aware = backend isa KernelAbstractions.CPU || MPI.has_cuda()
-    send_idx = [_on_backend(backend, pp.send_cells) for pp ∈ procs]
-    recv_idx = [_on_backend(backend, pp.recv_ghosts) for pp ∈ procs]
-    send_bufs = [KernelAbstractions.allocate(backend, TF, width*length(pp.send_cells)) for pp ∈ procs]
-    recv_bufs = [KernelAbstractions.allocate(backend, TF, width*length(pp.recv_ghosts)) for pp ∈ procs]
-    host_send = [Vector{TF}(undef, cuda_aware ? 0 : width*length(pp.send_cells)) for pp ∈ procs]
-    host_recv = [Vector{TF}(undef, cuda_aware ? 0 : width*length(pp.recv_ghosts)) for pp ∈ procs]
+    # concrete element types so empty procs (n=1) still infer the struct parameters
+    IdxT = typeof(KernelAbstractions.allocate(backend, TI, 0))
+    BufT = typeof(KernelAbstractions.allocate(backend, TF, 0))
+    send_idx = IdxT[_on_backend(backend, pp.send_cells) for pp ∈ procs]
+    recv_idx = IdxT[_on_backend(backend, pp.recv_ghosts) for pp ∈ procs]
+    send_bufs = BufT[KernelAbstractions.allocate(backend, TF, width*length(pp.send_cells)) for pp ∈ procs]
+    recv_bufs = BufT[KernelAbstractions.allocate(backend, TF, width*length(pp.recv_ghosts)) for pp ∈ procs]
+    host_send = Vector{TF}[Vector{TF}(undef, cuda_aware ? 0 : width*length(pp.send_cells)) for pp ∈ procs]
+    host_recv = Vector{TF}[Vector{TF}(undef, cuda_aware ? 0 : width*length(pp.recv_ghosts)) for pp ∈ procs]
     HaloExchange(comm, Int[pp.neighbour for pp ∈ procs], send_idx, recv_idx,
         send_bufs, recv_bufs, host_send, host_recv,
         [MPI.Request() for _ ∈ procs], [MPI.Request() for _ ∈ procs],

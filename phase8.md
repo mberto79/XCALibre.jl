@@ -24,8 +24,14 @@ Umbrella: `distributed_plan_detailed.md` Phase 8. Four independent workstreams; 
   identical solutions.
 
 ## 4. I/O + docs
-- Proper `.pvtu` writer (and OpenFOAM decomposed-case writer if cheap);
-  `gather(field, dmesh)` utility → rank-0 global field in ORIGINAL cell ordering
+- Parallel OpenFOAM decomposed-case writer (NO `.pvtu`/VTK route — user decision 2026-07-03):
+  one `processor<rank>/` folder per rank, each rank writes its own mesh + fields
+  independently (matches OpenFOAM's decomposePar layout, so ParaView/reconstructPar work).
+  Main addition over the serial OpenFOAM writer: emit `procBoundary<rank>to<neighbour>`
+  patches (type `processor`, `myProcNo`/`neighbProcNo`, owned side of each ProcessorPatch)
+  in each rank's `constant/polyMesh/boundary`; check OpenFOAM's implementation online for
+  the exact entry format. Ghost cells are NOT written (owned cells/faces only).
+- `gather(field, dmesh)` utility → rank-0 global field in ORIGINAL cell ordering
   (via `orig_cells`) for postprocessing.
 - Docs pages: workflow (§2.2 umbrella), cluster setup (MPIPreferences system binary,
   CUDA-aware env), CI notes, limitations (laminar-only v1, no cross-partition periodics,

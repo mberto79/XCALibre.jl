@@ -31,7 +31,8 @@ Overloads on existing generics, dispatched on `DistributedEqn`:
 - `prun!(model, config; petsc_options="", kwargs...)` dispatch skeleton mirroring
   `run!` in `Solvers_3_solver_dispatch.jl` (keys on model); errors with an instructive
   message when no solver extension is loaded or `model.domain` is not a `DistributedMesh`.
-- Per-rank VTK: rank-suffixed files + rank-0 `.pvtu` master (minimal; polish Phase 8).
+- ~~Per-rank VTK + `.pvtu`~~ output DEFERRED to Phase 8 as parallel OpenFOAM writer
+  (per-rank `processor<N>/` folders + processor boundary patches; user decision 2026-07-03).
 
 ## Tests (`test/distributed/test_laplace.jl`, n = 1, 2, 4, 8)
 - 3D box diffusion: per-cell solution vs serial `laplace!` gathered via `orig_cells`,
@@ -41,4 +42,5 @@ Overloads on existing generics, dispatched on `DistributedEqn`:
 
 ## Exit criteria
 Identical converged fields for n=1,2,4,8; n=1 matches serial `laplace!` exactly
-(within solver tolerance). `.pvtu` opens in ParaView with correct global field.
+(within solver tolerance). Output criteria moved to Phase 8 (OpenFOAM decomposed case
+loads in ParaView with correct global field).

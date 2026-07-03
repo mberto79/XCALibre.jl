@@ -6,16 +6,16 @@ export psimple!, ppiso!
 Distributed steady incompressible SIMPLE solver: `simple!` on a `DistributedMesh` with
 PETSc distributed solves. Laminar turbulence only in v1. Output deferred to Phase 8.
 """
-psimple!(model, config; petsc_options="", pref=nothing, ncorrectors=0, inner_loops=0, kwargs...) =
-    psetup_incompressible_solvers(PSIMPLE, model, config; petsc_options, pref, ncorrectors, inner_loops)
+psimple!(model, config; petsc_options="", solve_on=nothing, pref=nothing, ncorrectors=0, inner_loops=0, kwargs...) =
+    psetup_incompressible_solvers(PSIMPLE, model, config; petsc_options, solve_on, pref, ncorrectors, inner_loops)
 
 """
     ppiso!(model, config; petsc_options="", pref=nothing, ncorrectors=0, inner_loops=2)
 
 Distributed transient incompressible PISO solver (`piso!` counterpart of [`psimple!`](@ref)).
 """
-ppiso!(model, config; petsc_options="", pref=nothing, ncorrectors=0, inner_loops=2, kwargs...) =
-    psetup_incompressible_solvers(PPISO, model, config; petsc_options, pref, ncorrectors, inner_loops)
+ppiso!(model, config; petsc_options="", solve_on=nothing, pref=nothing, ncorrectors=0, inner_loops=2, kwargs...) =
+    psetup_incompressible_solvers(PPISO, model, config; petsc_options, solve_on, pref, ncorrectors, inner_loops)
 
 prun!(model::Physics{T,F,SO,M,Tu,E,D,BI}, config; petsc_options="", kwargs...
     ) where {T<:Steady,F<:Incompressible,SO,M,Tu,E,D<:DistributedMesh,BI} =
@@ -28,7 +28,8 @@ prun!(model::Physics{T,F,SO,M,Tu,E,D,BI}, config; petsc_options="", kwargs...
 # NEW SECTION: setup (mirrors setup_incompressible_solvers; PETSc PC owns preconditioning)
 
 function psetup_incompressible_solvers(
-    solver_variant, model, config; petsc_options="", pref=nothing, ncorrectors=0, inner_loops=0)
+    solver_variant, model, config; petsc_options="", solve_on=nothing,
+    pref=nothing, ncorrectors=0, inner_loops=0)
     (; solvers, schemes, hardware, boundaries) = config
     (; U, p) = model.momentum
     dmesh = model.domain
@@ -59,10 +60,10 @@ function psetup_incompressible_solvers(
 
     (; backend) = hardware
     U_deqn = DistributedEqn(U_eqn,
-        PETScSolver(U_eqn, dmesh, solvers.U; petsc_options),
+        PETScSolver(U_eqn, dmesh, solvers.U; petsc_options, solve_on),
         dmesh.partition, HaloExchange(dmesh, 1, backend))
     p_deqn = DistributedEqn(p_eqn,
-        PETScSolver(p_eqn, dmesh, solvers.p; petsc_options),
+        PETScSolver(p_eqn, dmesh, solvers.p; petsc_options, solve_on),
         dmesh.partition, HaloExchange(dmesh, 1, backend))
 
     solver_variant(model, turbulenceModel, ∇p, U_deqn, p_deqn, config;

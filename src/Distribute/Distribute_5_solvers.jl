@@ -123,7 +123,7 @@ Distributed steady/transient Laplace (conduction) solver: `laplace!` on a
 `DistributedMesh` with a PETSc distributed solve. Returns `(T=R_T,)` with the global
 residual history (identical on every rank). Result output is deferred to Phase 8.
 """
-function plaplace!(model, config; petsc_options="", kwargs...)
+function plaplace!(model, config; petsc_options="", solve_on=nothing, kwargs...)
     (; solvers, schemes, runtime, hardware, boundaries) = config
     (; iterations, dt) = runtime
     (; backend, workgroup) = hardware
@@ -143,7 +143,7 @@ function plaplace!(model, config; petsc_options="", kwargs...)
 
     deqn = DistributedEqn(
         T_eqn,
-        PETScSolver(T_eqn, dmesh, solvers; petsc_options),
+        PETScSolver(T_eqn, dmesh, solvers; petsc_options, solve_on),
         dmesh.partition,
         HaloExchange(dmesh, 1, backend))
 

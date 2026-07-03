@@ -28,11 +28,12 @@ _on_backend(backend, v) = begin
     d
 end
 
-function HaloExchange(dmesh::DistributedMesh, width::Integer, backend; comm=MPI.COMM_WORLD)
+# cuda_aware=false forces host staging on a GPU backend (path comparison / non-aware MPI)
+function HaloExchange(dmesh::DistributedMesh, width::Integer, backend; comm=MPI.COMM_WORLD,
+        cuda_aware::Bool = backend isa KernelAbstractions.CPU || MPI.has_cuda())
     TF = _get_float(dmesh)
     TI = _get_int(dmesh)
     procs = dmesh.procs
-    cuda_aware = backend isa KernelAbstractions.CPU || MPI.has_cuda()
     # concrete element types so empty procs (n=1) still infer the struct parameters
     IdxT = typeof(KernelAbstractions.allocate(backend, TI, 0))
     BufT = typeof(KernelAbstractions.allocate(backend, TF, 0))

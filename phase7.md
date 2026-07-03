@@ -1,31 +1,47 @@
-# Phase 7 — AD / adjoint boundary (High)
+# Phase 7 — GPU-native distributed validation, parallel I/O, Float32 (High)
 
-Umbrella: `distributed_plan_detailed.md` Phase 7; `distributed_plan.md` §7 (AD strategy).
-Local kernels stay AD-differentiable; MPI + linear solve get custom rules. No
-differentiation through PETSc internals.
+Reprioritised 2026-07-03: this phase makes the distributed functionality *usable*
+(GPU path proven natively, results writable, F32 available). AD moved to Phase 8 as an
+optional add-on. Order: 1 → 2 → 3.
 
-## Deliverables
-1. `ChainRulesCore.rrule` for `halo_exchange!`: pullback = `halo_exchange_adjoint!`
-   (ghost cotangents summed into owning cells via `unpack_add!`; kernels exist since
-   Phase 2). Copy-semantics wrapper as in `distributed_plan.md` §5.
-2. `psolve_transpose!` in the PETSc extension via `KSPSolveTranspose`; `rrule` for the
-   distributed solve: `b̄ = solve(Aᵀ, x̄)`; `Ā = -b̄ ⊗ x` restricted to the local sparsity
-   (lazy — only materialise entries present in the CSR pattern).
-3. `rrule`s for `pnorm`/`pdot`/`pmean`: pullback broadcasts the (identical-on-all-ranks)
-   seed to local contributions — no communication needed in the pullback beyond what the
-   primal already established.
-4. ChainRulesCore becomes a dep of `Distribute` (tiny, no weight concern).
+## 1. GPU-native validation (local machine)
+Phase 6 validated the GPU field path only via `solve_on=CPU()` host staging — a stopgap,
+NOT a supported/endorsed configuration. This deliverable retires it as the tested path.
 
-## Tests (`test/distributed/test_adjoint.jl`, n = 2, 4)
-- Adjoint identity `⟨v̄, Hx⟩ == ⟨Hᵀv̄, x⟩` to 1e-12 (random x, v̄; repeated).
-- Gradient of a scalar loss on a small distributed diffusion case w.r.t. b and to matrix
-  entries vs serial reverse-mode AD reference, 1e-6; identical across rank counts.
-- FD spot-check on 1–2 design variables of a drag-like functional on the partitioned
-  cavity vs serial AD gradient.
+- Prereqs (user toolchain, see `dev/gpu_native_setup.md`): system CUDA-aware MPI
+  (`MPI.has_cuda() == true`) + system PETSc built `--with-cuda` against that MPI
+  (`PetscHasExternalPackage(petsclib, "cuda") == true`), wired into `dev/petscenv` via
+  MPIPreferences + `JULIA_PETSC_LIBRARY`.
+- Verify the lab-deferred Phase 6 code paths on the local RTX 4070 (ranks share 1 GPU —
+  correctness only, not scaling):
+  - `mpiaijcusparse` MatConvert path (written, unverified): device solves end-to-end.
+  - CUDA-aware halo exchange (auto path with `MPI.has_cuda()==true`) vs forced
+    `cuda_aware=false` staging — results identical.
+- Update `test/distributed/test_gpu.jl`: when PETSc has CUDA, run the cavity gate
+  natively (no `solve_on`); keep the hard-error section conditional (auto-skips).
+- Fix whatever the native path shakes out (Vec types, value-update path after MatConvert,
+  option handling).
 
-## Risks
-- Enzyme/KA version pinning (known Julia 1.11 `setindex!` regressions) — pin tested
-  versions in the test project; hand-written `rrule` fallback for any kernel that fails.
+## 2. Parallel I/O (OpenFOAM decomposed-case writer)
+- The`.pvtu`/VTK route should now be implemented only after "offline partitioning" in phase 8 — user decision 2026-07-03 modified manually directly in this sentence. You will prioritiese one `processor<rank>/` folder per
+  rank, each rank writes its own mesh + fields independently (matches OpenFOAM's
+  decomposePar layout, so ParaView/reconstructPar work).
+- Main addition over the serial OpenFOAM writer: emit `procBoundary<rank>to<neighbour>`
+  patches (type `processor`, `myProcNo`/`neighbProcNo`, owned side of each
+  ProcessorPatch) in each rank's `constant/polyMesh/boundary`; check OpenFOAM's exact
+  entry format online. Ghost cells/faces are NOT written (owned only).
+- Wire into psimple!/ppiso! via `write_interval` (currently ignored in the loops).
+- `gather(field, dmesh)` utility → rank-0 global field in ORIGINAL cell ordering
+  (via `orig_cells`) for postprocessing.
+- Test: write a partitioned case, reconstructPar (or field-level compare vs serial
+  writer output through orig ids).
+
+## 3. Float32
+- All `Distribute` types are TF-generic by construction (Phases 1–2); activate the PETSc
+  Float32 petsclib keyed on `_get_float(mesh)`.
+- Test: cavity in F32 vs F64 to loose tolerance; halo exchange bitwise-consistent in F32.
+- Mixed precision (F32 fields + F64 coarse solve) noted as future work (see AMG memory).
 
 ## Exit criteria
-All identities/gradients green at n=2,4; gradients rank-count independent.
+Native GPU cavity gate green n=1,2 (no solve_on), CUDA-aware halo == staged halo;
+decomposed case opens in ParaView / reconstructs; F32 cavity green.

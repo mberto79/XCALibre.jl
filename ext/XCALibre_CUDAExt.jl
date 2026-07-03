@@ -19,6 +19,19 @@ function XCALibre.Mesh._convert_array!(arr, backend::BACKEND)
     return adapt(GPUARRAY, arr) # using GPUARRAY
 end
 
+# NEW SECTION: distributed meshes (Phase 6)
+
+import XCALibre.Distribute
+import XCALibre.Distribute: DistributedMesh
+
+# kernels get the wrapped device mesh: host partition/procs metadata is not isbits and
+# no kernel reads it (HaloExchange/PETSc hold their own device copies)
+Adapt.adapt_structure(to::CUDA.KernelAdaptor, dm::DistributedMesh) =
+    Adapt.adapt(to, getfield(dm, :mesh))
+
+Distribute.bind_device!(::BACKEND, rank::Integer) =
+    (CUDA.device!(rank % length(CUDA.devices())); nothing)
+
 import XCALibre.ModelFramework: _nzval, _rowptr, _colval, get_sparse_fields, 
                                 _build_A, _build_opA
 

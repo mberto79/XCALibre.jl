@@ -3,6 +3,7 @@ module Distribute
 using SparseArrays, StaticArrays, Accessors, LinearAlgebra
 using MPI, Metis
 using KernelAbstractions, Atomix
+import Adapt
 using XCALibre.Mesh
 using XCALibre.Fields
 using XCALibre.Multithread

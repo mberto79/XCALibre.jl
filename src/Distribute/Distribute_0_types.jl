@@ -1,5 +1,6 @@
 export Partition, ProcessorPatch, DistributedMesh
 export AbstractDistributedSolver
+export bind_device!
 
 # implemented by solver backends (PETSc/HYPRE extensions) from Phase 3
 abstract type AbstractDistributedSolver end
@@ -57,6 +58,27 @@ Base.getproperty(dm::DistributedMesh, s::Symbol) =
     s in _DM_FIELDS ? getfield(dm, s) : getproperty(getfield(dm, :mesh), s)
 Base.propertynames(dm::DistributedMesh) =
     (_DM_FIELDS..., propertynames(getfield(dm, :mesh))...)
+
+# NEW SECTION: GPU adaptation (Phase 6)
+
+Adapt.@adapt_structure Partition
+Adapt.@adapt_structure ProcessorPatch
+
+# metadata stays on host: kernels never read it and HaloExchange/PETSc make their own
+# device copies; only the wrapped mesh moves, so getproperty forwarding keeps working
+Adapt.adapt_structure(to, dm::DistributedMesh) = DistributedMesh(
+    Adapt.adapt(to, getfield(dm, :mesh)), getfield(dm, :partition),
+    getfield(dm, :procs), getfield(dm, :orig_cells), getfield(dm, :orig_faces))
+
+"""
+    bind_device!(backend, rank)
+
+Bind this MPI rank to GPU `rank % ndevices` (one rank per device). No-op on CPU. Call
+before `adapt(backend, dmesh)` or building fields/`HaloExchange` on a GPU backend.
+"""
+bind_device!(::KernelAbstractions.CPU, rank::Integer) = nothing
+bind_device!(backend, rank::Integer) =
+    error("bind_device!: no GPU extension loaded for $(typeof(backend)) — e.g. `using CUDA`")
 
 Base.show(io::IO, dm::DistributedMesh) = begin
     p = getfield(dm, :partition)

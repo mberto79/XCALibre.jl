@@ -20,7 +20,7 @@ cavity_bcs(mesh) = assign(region=mesh, (
     p = [Zerogradient(:inlet), Zerogradient(:outlet),
          Zerogradient(:top), Zerogradient(:bottom)]))
 
-function incompressible_case(mesh, bcs; iterations, time=Steady(), time_step=1)
+function incompressible_case(mesh, bcs; iterations, time=Steady(), time_step=1, backend=CPU())
     model = Physics(
         time = time,
         fluid = Fluid{Incompressible}(nu=1e-3),
@@ -36,7 +36,7 @@ function incompressible_case(mesh, bcs; iterations, time=Steady(), time_step=1)
                p=Schemes())
     runtime = Runtime(iterations=iterations, time_step=time_step, write_interval=-1)
     config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime,
-        hardware=Hardware(backend=CPU(), workgroup=64), boundaries=bcs(mesh))
+        hardware=Hardware(backend=backend, workgroup=64), boundaries=bcs(mesh))
     initialise!(model.momentum.U, [0.0, 0.0, 0.0])
     initialise!(model.momentum.p, 0.0)
     model, config
@@ -46,8 +46,10 @@ end
 function field_errors(dm, model_d, Us_x, Us_y, ps)
     n = dm.partition.n_owned
     orig = dm.orig_cells
-    dux = maximum(abs.(model_d.momentum.U.x.values[1:n] .- Us_x[orig[1:n]]); init=0.0)
-    duy = maximum(abs.(model_d.momentum.U.y.values[1:n] .- Us_y[orig[1:n]]); init=0.0)
-    dp = maximum(abs.(model_d.momentum.p.values[1:n] .- ps[orig[1:n]]); init=0.0)
+    ux, uy = Array(model_d.momentum.U.x.values), Array(model_d.momentum.U.y.values)
+    pv = Array(model_d.momentum.p.values)
+    dux = maximum(abs.(ux[1:n] .- Us_x[orig[1:n]]); init=0.0)
+    duy = maximum(abs.(uy[1:n] .- Us_y[orig[1:n]]); init=0.0)
+    dp = maximum(abs.(pv[1:n] .- ps[orig[1:n]]); init=0.0)
     dux, duy, dp
 end

@@ -2,6 +2,7 @@ module XCALibrePETScExt
 
 using XCALibre, MPI, PETSc
 using PETSc: LibPETSc
+import KernelAbstractions
 using XCALibre.Distribute
 import XCALibre.Distribute: PETScSolver, passemble!, psolve!, psolve_transpose!
 import XCALibre.ModelFramework: _A, _b, _rowptr, _colval, _nzval
@@ -31,14 +32,24 @@ struct XPETScSolver{PL,TM,TV,TK,TF} <: Distribute.AbstractDistributedSolver
     xhost::Vector{TF}
 end
 
+_petsc_has_cuda(petsclib) =
+    LibPETSc.PetscHasExternalPackage(petsclib, Vector{Int8}(codeunits("cuda\0")))
+
 function PETScSolver(eqn, dmesh::DistributedMesh, setup;
-        comm=MPI.COMM_WORLD, petsc_options="")
+        comm=MPI.COMM_WORLD, petsc_options="", solve_on=nothing)
     part = dmesh.partition
     TF = _get_float(dmesh)
     petsclib = PETSc.getlib(; PetscScalar=TF, PetscInt=Int64)
     PETSc.initialize(petsclib)
     PI = petsclib.PetscInt
     A = _A(eqn)
+    # device fields + host PETSc = hard error unless solves are explicitly opted onto host
+    device_solve = !(_nzval(A) isa Array) && !(solve_on isa KernelAbstractions.CPU)
+    device_solve && !_petsc_has_cuda(petsclib) && error(
+        "PETScSolver: fields live on the GPU but this PETSc build has no CUDA support. " *
+        "Fixes: MPIPreferences.use_system_binary() + a CUDA-enabled system PETSc " *
+        "(JULIA_PETSC_LIBRARY), or opt into host-side solves with solve_on=CPU() " *
+        "(A/b copied to host each solve).")
     rowptr, colval = Vector(_rowptr(A)), Vector(_colval(A))
     n = part.n_owned
     N = MPI.Allreduce(n, +, comm)
@@ -51,6 +62,13 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
     copyto!(vals, view(_nzval(A), 1:nnz_owned))
     Amat = LibPETSc.MatCreateMPIAIJWithArrays(petsclib, comm,
         PI(n), PI(n), PI(N), PI(N), i0, j0, vals)
+    if device_solve
+        # cuSPARSE mat/vecs (lab-unverified: PETSc_jll has no CUDA; locally validated
+        # path is solve_on=CPU()); values still updated via MatUpdateMPIAIJWithArray
+        mt = "mpiaijcusparse"
+        GC.@preserve mt LibPETSc.MatConvert(petsclib, Amat, Cstring(pointer(mt)),
+            LibPETSc.MAT_INPLACE_MATRIX, Amat)
+    end
     x, b = LibPETSc.MatCreateVecs(petsclib, Amat)
     curated = (; ksp_type=_ksp_type(setup.solver), pc_type=_pc_type(setup.preconditioner))
     raw = isempty(petsc_options) ? (;) : PETSc.parse_options(String.(split(petsc_options)))

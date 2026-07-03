@@ -21,10 +21,63 @@ function Solve.solve_equation!(
     eqn = deqn.eqn
     discretise!(eqn, phi, config, rho_prev=eqn.model.terms[1].flux)
     apply_boundary_conditions!(eqn, phiBCs, nothing, time, config)
+    _is_pure_laplacian(eqn) && pmake_symmetric!(eqn, config)
     setReference!(deqn, ref, 1, config)
     isnothing(irelax) || implicit_relaxation!(eqn, phi.values, irelax, nothing, config)
     # preconditioner update skipped: the PETSc PC owns preconditioning
     solve_system!(deqn, solversetup, phi, nothing, config)
+end
+
+# mirrors serial VectorModel solve; each component sync happens inside solve_system!
+function Solve.solve_equation!(
+    deqn::DistributedEqn, psi, psiBCs, solversetup, xdir::XDir, ydir::YDir, zdir::ZDir, config;
+    time=nothing)
+    eqn = deqn.eqn
+    discretise!(eqn, psi, config, rho_prev=eqn.model.terms[1].flux)
+    update_equation!(eqn, config)
+    apply_boundary_conditions!(eqn, psiBCs, xdir, time, config)
+    implicit_relaxation_diagdom!(eqn, psi.x.values, solversetup.relax, xdir, config)
+    resx = solve_system!(deqn, solversetup, psi.x, xdir, config)
+
+    update_equation!(eqn, config)
+    apply_boundary_conditions!(eqn, psiBCs, ydir, time, config)
+    implicit_relaxation_diagdom!(eqn, psi.y.values, solversetup.relax, ydir, config)
+    resy = solve_system!(deqn, solversetup, psi.y, ydir, config)
+
+    resz = zero(_get_float(psi.mesh))
+    if psi.mesh.mesh isa Mesh3
+        update_equation!(eqn, config)
+        apply_boundary_conditions!(eqn, psiBCs, zdir, time, config)
+        implicit_relaxation_diagdom!(eqn, psi.z.values, solversetup.relax, zdir, config)
+        resz = solve_system!(deqn, solversetup, psi.z, zdir, config)
+    end
+    return resx, resy, resz
+end
+
+_is_pure_laplacian(eqn) = length(eqn.model.terms) == 1 && eqn.model.terms[1] isa Laplacian
+
+# serial make_symmetric! reads A[owner1, owner2]; on a partition the smaller local id is
+# always the trustworthy row (owned block precedes ghosts, ghost rows are garbage)
+function pmake_symmetric!(eqn, config)
+    (; backend, workgroup) = config.hardware
+    A = _A(eqn)
+    mesh = get_phi(eqn).mesh
+    (; faces) = mesh
+    nbfaces = length(mesh.boundary_cellsID)
+    ndrange = length(faces) - nbfaces
+    kernel! = _pmake_symmetric!(_setup(backend, workgroup, ndrange)...)
+    kernel!(_colval(A), _rowptr(A), _nzval(A), faces, nbfaces)
+end
+
+@kernel function _pmake_symmetric!(colval, rowptr, nzval, faces, nbfaces)
+    i = @index(Global)
+    fID = i + nbfaces
+    (; ownerCells) = faces[fID]
+    c1 = min(ownerCells[1], ownerCells[2])
+    c2 = max(ownerCells[1], ownerCells[2])
+    i1 = spindex(rowptr, colval, c1, c2)
+    i2 = spindex(rowptr, colval, c2, c1)
+    @inbounds nzval[i2] = nzval[i1]
 end
 
 function Solve.solve_system!(deqn::DistributedEqn, setup, result, component, config)

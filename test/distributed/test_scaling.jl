@@ -9,6 +9,29 @@ if get(ENV, "XCAL_SCALING_WORKER", "") == "1"
     MPI.Init()
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
+    case = get(ENV, "XCAL_SCALING_CASE", "laplace")
+
+    if case == "psimple"
+        # fixed-work SIMPLE: t(21 iters) - t(1 iter) cancels setup + first-iter JIT
+        include(joinpath(@__DIR__, "psimple_case.jl"))
+        gmesh = rank == 0 ? UNV2D_mesh(
+            joinpath(pkgdir(XCALibre, "examples/0_GRIDS"), "backwardFacingStep_2mm.unv"),
+            scale=0.001) : nothing
+        ncells = MPI.bcast(rank == 0 ? length(gmesh.cells) : 0, comm; root=0)
+        dm = distribute(gmesh; comm=comm)
+        run_iters(k) = begin
+            model, config = incompressible_case(dm, bfs_bcs; iterations=k)
+            MPI.Barrier(comm)
+            t0 = MPI.Wtime()
+            prun!(model, config)
+            MPI.Barrier(comm)
+            MPI.Wtime() - t0
+        end
+        run_iters(1); run_iters(1) # warmup
+        ts = [run_iters(21) - run_iters(1) for _ ∈ 1:3]
+        t = sort(ts)[2]
+        rank == 0 && println("SCALING nranks=$(MPI.Comm_size(comm)) ncells=$ncells t_solve=$t")
+    else
     include(joinpath(@__DIR__, "laplace_case.jl"))
 
     gmesh = rank == 0 ? fine2d_mesh() : nothing
@@ -34,6 +57,7 @@ if get(ENV, "XCAL_SCALING_WORKER", "") == "1"
     end
     t = sort(ts)[reps ÷ 2 + 1]
     rank == 0 && println("SCALING nranks=$(MPI.Comm_size(comm)) ncells=$ncells t_solve=$t")
+    end
 else
     ranks = isempty(ARGS) ? [1, 2, 4, 8] : parse.(Int, ARGS)
     julia = Base.julia_cmd()

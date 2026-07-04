@@ -6,16 +6,16 @@ export psimple!, ppiso!
 Distributed steady incompressible SIMPLE solver: `simple!` on a `DistributedMesh` with
 PETSc distributed solves. Laminar turbulence only in v1. Output deferred to Phase 8.
 """
-psimple!(model, config; petsc_options="", solve_on=nothing, pref=nothing, ncorrectors=0, inner_loops=0, kwargs...) =
-    psetup_incompressible_solvers(PSIMPLE, model, config; petsc_options, solve_on, pref, ncorrectors, inner_loops)
+psimple!(model, config; petsc_options="", solve_on=nothing, output=nothing, pref=nothing, ncorrectors=0, inner_loops=0, kwargs...) =
+    psetup_incompressible_solvers(PSIMPLE, model, config; petsc_options, solve_on, output, pref, ncorrectors, inner_loops)
 
 """
     ppiso!(model, config; petsc_options="", pref=nothing, ncorrectors=0, inner_loops=2)
 
 Distributed transient incompressible PISO solver (`piso!` counterpart of [`psimple!`](@ref)).
 """
-ppiso!(model, config; petsc_options="", solve_on=nothing, pref=nothing, ncorrectors=0, inner_loops=2, kwargs...) =
-    psetup_incompressible_solvers(PPISO, model, config; petsc_options, solve_on, pref, ncorrectors, inner_loops)
+ppiso!(model, config; petsc_options="", solve_on=nothing, output=nothing, pref=nothing, ncorrectors=0, inner_loops=2, kwargs...) =
+    psetup_incompressible_solvers(PPISO, model, config; petsc_options, solve_on, output, pref, ncorrectors, inner_loops)
 
 prun!(model::Physics{T,F,SO,M,Tu,E,D,BI}, config; petsc_options="", kwargs...
     ) where {T<:Steady,F<:Incompressible,SO,M,Tu,E,D<:DistributedMesh,BI} =
@@ -29,7 +29,7 @@ prun!(model::Physics{T,F,SO,M,Tu,E,D,BI}, config; petsc_options="", kwargs...
 
 function psetup_incompressible_solvers(
     solver_variant, model, config; petsc_options="", solve_on=nothing,
-    pref=nothing, ncorrectors=0, inner_loops=0)
+    output=nothing, pref=nothing, ncorrectors=0, inner_loops=0)
     (; solvers, schemes, hardware, boundaries) = config
     (; U, p) = model.momentum
     dmesh = model.domain
@@ -67,7 +67,7 @@ function psetup_incompressible_solvers(
         dmesh.partition, HaloExchange(dmesh, 1, backend))
 
     solver_variant(model, turbulenceModel, ∇p, U_deqn, p_deqn, config;
-        pref, ncorrectors, inner_loops)
+        output, pref, ncorrectors, inner_loops)
 end
 
 _check_no_periodic(BCs) = begin
@@ -79,12 +79,12 @@ end
 # NEW SECTION: PSIMPLE loop (serial SIMPLE + halo syncs; see phase5.md sync map)
 
 function PSIMPLE(model, turbulenceModel, ∇p, U_deqn, p_deqn, config;
-    pref=nothing, ncorrectors=0, inner_loops=0)
+    output=nothing, pref=nothing, ncorrectors=0, inner_loops=0)
     (; U, p, Uf, pf) = model.momentum
     (; nu) = model.fluid
     dmesh = model.domain
     (; solvers, schemes, boundaries) = config
-    (; iterations) = config.runtime
+    (; iterations, write_interval) = config.runtime
     (; backend, workgroup) = config.hardware
     rank = dmesh.partition.rank
 
@@ -124,6 +124,8 @@ function PSIMPLE(model, turbulenceModel, ∇p, U_deqn, p_deqn, config;
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
     is3d = dmesh.mesh isa Mesh3
+
+    outputWriter = pinit_writer(output, dmesh)
 
     for iteration ∈ 1:iterations
         time = iteration
@@ -174,6 +176,8 @@ function PSIMPLE(model, turbulenceModel, ∇p, U_deqn, p_deqn, config;
         R_uz[iteration] = rz
         R_p[iteration] = rp
 
+        pmaybe_write_results(outputWriter, iteration, time, write_interval, model, dmesh, boundaries)
+
         Uz_convergence = is3d ? rz <= solvers.U.convergence : true
         if (rx <= solvers.U.convergence && ry <= solvers.U.convergence &&
             Uz_convergence && rp <= solvers.p.convergence &&
@@ -188,12 +192,12 @@ end
 # NEW SECTION: PPISO loop (serial PISO + halo syncs)
 
 function PPISO(model, turbulenceModel, ∇p, U_deqn, p_deqn, config;
-    pref=nothing, ncorrectors=0, inner_loops=2)
+    output=nothing, pref=nothing, ncorrectors=0, inner_loops=2)
     (; U, p, Uf, pf) = model.momentum
     (; nu) = model.fluid
     dmesh = model.domain
     (; solvers, schemes, boundaries) = config
-    (; iterations) = config.runtime
+    (; iterations, write_interval) = config.runtime
     (; backend, workgroup) = config.hardware
 
     U_eqn, p_eqn = U_deqn.eqn, p_deqn.eqn
@@ -234,6 +238,8 @@ function PPISO(model, turbulenceModel, ∇p, U_deqn, p_deqn, config;
     update_nueff!(nueff, nu, model.turbulence, config)
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
+
+    outputWriter = pinit_writer(output, dmesh)
 
     for iteration ∈ 1:iterations
         copyto!(dt_cpu, config.runtime.dt)
@@ -293,6 +299,8 @@ function PPISO(model, turbulenceModel, ∇p, U_deqn, p_deqn, config;
         R_uy[iteration] = ry
         R_uz[iteration] = rz
         R_p[iteration] = rp
+
+        pmaybe_write_results(outputWriter, iteration, time, write_interval, model, dmesh, boundaries)
     end
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end

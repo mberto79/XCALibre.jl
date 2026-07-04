@@ -35,11 +35,19 @@ end
 _petsc_has_cuda(petsclib) =
     LibPETSc.PetscHasExternalPackage(petsclib, Vector{Int8}(codeunits("cuda\0")))
 
+# system PETSc builds may be Int32-indexed; select by scalar, keep the lib's PetscInt
+function _petsclib(TF)
+    i = findfirst(l -> l.PetscScalar == TF, PETSc.petsclibs)
+    i === nothing && error("no PETSc library with PetscScalar=$TF (available: " *
+        join(("$(l.PetscScalar)/$(l.PetscInt)" for l ∈ PETSc.petsclibs), ", ") * ")")
+    PETSc.petsclibs[i]
+end
+
 function PETScSolver(eqn, dmesh::DistributedMesh, setup;
         comm=MPI.COMM_WORLD, petsc_options="", solve_on=nothing)
     part = dmesh.partition
     TF = _get_float(dmesh)
-    petsclib = PETSc.getlib(; PetscScalar=TF, PetscInt=Int64)
+    petsclib = _petsclib(TF)
     PETSc.initialize(petsclib)
     PI = petsclib.PetscInt
     A = _A(eqn)
@@ -63,11 +71,14 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
     Amat = LibPETSc.MatCreateMPIAIJWithArrays(petsclib, comm,
         PI(n), PI(n), PI(N), PI(N), i0, j0, vals)
     if device_solve
-        # cuSPARSE mat/vecs (lab-unverified: PETSc_jll has no CUDA; locally validated
-        # path is solve_on=CPU()); values still updated via MatUpdateMPIAIJWithArray
+        # cuSPARSE mat/vecs; values still updated via MatUpdateMPIAIJWithArray
         mt = "mpiaijcusparse"
+        # ponytail: LibPETSc.MatConvert nulls M.ptr and drops the converted handle;
+        # MAT_INPLACE_MATRIX keeps the same C Mat (MatHeaderReplace), so restore it.
+        orig = Amat.ptr
         GC.@preserve mt LibPETSc.MatConvert(petsclib, Amat, Cstring(pointer(mt)),
             LibPETSc.MAT_INPLACE_MATRIX, Amat)
+        Amat.ptr = orig
     end
     x, b = LibPETSc.MatCreateVecs(petsclib, Amat)
     curated = (; ksp_type=_ksp_type(setup.solver), pc_type=_pc_type(setup.preconditioner))

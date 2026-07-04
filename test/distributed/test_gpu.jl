@@ -1,6 +1,7 @@
-# Phase 6 GPU gate (local-only, not CI): cavity psimple! on CUDABackend vs serial CPU,
-# ranks sharing local GPUs via bind_device!. PETSc_jll has no CUDA, so PETSc solves opt
-# into solve_on=CPU(); the no-solve_on call must hard-error (no silent fallback).
+# Phase 6/7 GPU gate (local-only, not CI): cavity psimple! on CUDABackend vs serial CPU,
+# ranks sharing local GPUs via bind_device!. With a CUDA PETSc (system build) the solve
+# runs natively (mpiaijcusparse); without it, solves opt into solve_on=CPU() and the
+# no-solve_on call must hard-error (no silent fallback).
 using XCALibre, PETSc, MPI, Test, CUDA
 using PETSc: LibPETSc
 
@@ -9,6 +10,11 @@ CUDA.functional() || (println("SKIP test_gpu: CUDA not functional"); exit(0))
 MPI.Init()
 comm = MPI.COMM_WORLD
 rank = MPI.Comm_rank(comm)
+
+petsclib = PETSc.petsclibs[findfirst(l -> l.PetscScalar == Float64, PETSc.petsclibs)]
+PETSc.initialize(petsclib)
+petsc_cuda = LibPETSc.PetscHasExternalPackage(petsclib, Vector{Int8}(codeunits("cuda\0")))
+rank == 0 && println("PETSc CUDA: $petsc_cuda → solve path: $(petsc_cuda ? "native device" : "solve_on=CPU() stopgap")")
 
 include(joinpath(@__DIR__, "psimple_case.jl"))
 
@@ -30,7 +36,7 @@ Us_x, Us_y, ps = MPI.bcast(ref, comm; root=0)
 dm = distribute(gmesh; comm=comm)
 dm_dev = adapt(backend, dm)
 model, config = incompressible_case(dm_dev, cavity_bcs; iterations, backend)
-residuals = prun!(model, config; pref=0.0, solve_on=CPU())
+residuals = prun!(model, config; pref=0.0, solve_on=(petsc_cuda ? nothing : CPU()))
 
 dux, duy, dp = field_errors(dm_dev, model, Us_x, Us_y, ps)
 n = dm.partition.n_owned
@@ -66,9 +72,6 @@ end
 
 # NEW SECTION: no-silent-fallback error path
 
-petsclib = PETSc.getlib(; PetscScalar=Float64, PetscInt=Int64)
-PETSc.initialize(petsclib)
-petsc_cuda = LibPETSc.PetscHasExternalPackage(petsclib, Vector{Int8}(codeunits("cuda\0")))
 if !petsc_cuda
     @testset "GPU fields + non-CUDA PETSc errors (rank $rank)" begin
         err = try (prun!(model, config; pref=0.0); nothing) catch e e end

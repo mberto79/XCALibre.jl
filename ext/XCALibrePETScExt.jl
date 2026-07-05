@@ -15,6 +15,7 @@ _ksp_type(::Bicgstab) = "bcgs"
 _ksp_type(::Gmres) = "gmres"
 _ksp_type(s) = error("no PETSc mapping for solver $(typeof(s)); use petsc_options=\"-ksp_type ...\"")
 _pc_type(::Jacobi) = "jacobi"
+_pc_type(::BoomerAMG) = "hypre" # PCHYPRE defaults to boomeramg; no transpose apply (SPD only)
 _pc_type(p) = error("no PETSc mapping for preconditioner $(typeof(p)); use petsc_options=\"-pc_type ...\"")
 
 # NEW SECTION: solver type
@@ -89,7 +90,14 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
     x, b = LibPETSc.MatCreateVecs(petsclib, Amat)
     curated = (; ksp_type=_ksp_type(setup.solver), pc_type=_pc_type(setup.preconditioner))
     raw = isempty(petsc_options) ? (;) : PETSc.parse_options(String.(split(petsc_options)))
-    ksp = PETSc.KSP(Amat; merge(curated, raw)...)
+    opts = merge(curated, raw)
+    # catches BoomerAMG and any "-pc_type hypre"/"-pc_hypre_type ..." passthrough
+    if any(v -> occursin("hypre", string(v)), values(opts)) && !_petsc_has_pkg(petsclib, "hypre")
+        error("PETScSolver: hypre requested but this PETSc build has no hypre support. " *
+            "Rebuild PETSc with --download-hypre (see build_cuda_ucx_openmpi_petsc.sh) " *
+            "or pick another preconditioner.")
+    end
+    ksp = PETSc.KSP(Amat; opts...)
     LibPETSc.KSPSetTolerances(petsclib, ksp, TF(setup.rtol), TF(setup.atol),
         TF(-2), PI(setup.itmax)) # -2 = PETSC_DEFAULT (dtol)
     LibPETSc.KSPSetInitialGuessNonzero(petsclib, ksp, LibPETSc.PETSC_TRUE)

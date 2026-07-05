@@ -20,7 +20,8 @@ cavity_bcs(mesh) = assign(region=mesh, (
     p = [Zerogradient(:inlet), Zerogradient(:outlet),
          Zerogradient(:top), Zerogradient(:bottom)]))
 
-function incompressible_case(mesh, bcs; iterations, time=Steady(), time_step=1, backend=CPU())
+function incompressible_case(mesh, bcs; iterations, time=Steady(), time_step=1, backend=CPU(),
+        p_precon=Jacobi())
     model = Physics(
         time = time,
         fluid = Fluid{Incompressible}(nu=1e-3),
@@ -30,7 +31,7 @@ function incompressible_case(mesh, bcs; iterations, time=Steady(), time_step=1, 
     solvers = (
         U = SolverSetup(solver=Bicgstab(), preconditioner=Jacobi(),
             convergence=1e-15, relax=0.8, rtol=1e-8, atol=1e-12, itmax=2000),
-        p = SolverSetup(solver=Cg(), preconditioner=Jacobi(),
+        p = SolverSetup(solver=Cg(), preconditioner=p_precon,
             convergence=1e-15, relax=0.2, rtol=1e-8, atol=1e-12, itmax=2000))
     schemes = (U=Schemes(divergence=Linear, time=(time isa Steady ? SteadyState : Euler)),
                p=Schemes())

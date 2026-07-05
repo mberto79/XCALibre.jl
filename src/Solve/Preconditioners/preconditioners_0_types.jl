@@ -2,6 +2,7 @@
 export Preconditioner, PreconditionerType
 export Jacobi, NormDiagonal #, ILU0 # , LDL
 export DILU, DILUprecon
+export BoomerAMG
 export IC0GPU, ILU0GPU
 
 abstract type PreconditionerType end
@@ -23,6 +24,15 @@ Adapt.@adapt_structure Jacobi
 struct DILU <: LDIVPreconditioner end
 Adapt.@adapt_structure DILU
 
+"""
+    BoomerAMG <: PreconditionerType
+
+HYPRE BoomerAMG via PETSc (`-pc_type hypre`). Distributed meshes only; requires a PETSc
+build configured with `--download-hypre`. No transpose solve (use on SPD systems, e.g.
+pressure). Recommended pressure preconditioner for distributed runs.
+"""
+struct BoomerAMG <: PreconditionerType end
+
 struct IC0GPU <: MULPreconditioner end
 Adapt.@adapt_structure IC0GPU
 
@@ -42,6 +52,9 @@ function Adapt.adapt_structure(to, itp::Preconditioner{T,M,Pr,S}) where {T,M,Pr,
 end
 
 is_ldiv(precon::Preconditioner{T,M,P,S}) where {T,M,P,S} = T <: LDIVPreconditioner
+
+Preconditioner{BoomerAMG}(A) = error(
+    "BoomerAMG runs through PETSc on distributed meshes only; use Jacobi/DILU/etc for serial runs")
 
 Preconditioner{NormDiagonal}(A::AbstractSparseArray{F,I}) where {F,I} = begin
     backend = get_backend(A)

@@ -49,6 +49,7 @@ function limit_gradient!(method::FaceBased, ∇F, F::AbstractField, config)
     kernel! = _update_gradient!(_setup(backend, workgroup, ndrange)...)
     kernel!(∇F, limiter)
 
+    sync!(∇F.result, F.mesh, config) # ghost limiter values are wrong (partial face lists)
     nothing
 end
 

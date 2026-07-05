@@ -56,7 +56,6 @@ function setup_incompressible_solvers(
 
     (; U, p, Uf, pf) = model.momentum
     mesh = model.domain
-    assert_distributable(mesh, boundaries) # rejects periodic BCs on a DistributedMesh
 
     @info "Pre-allocating fields..."
 

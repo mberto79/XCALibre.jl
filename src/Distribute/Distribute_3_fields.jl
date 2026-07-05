@@ -58,6 +58,8 @@ end
     halo_exchange!(x, hc.w3, backend, workgroup)
     nothing
 end
+# tensor (and other) ghosts are never consumed off-rank — mirrors grad!'s tensor path
+@inline sync!(x, dm::DistributedMesh, config) = nothing
 
 # ghost centres are verbatim copies, so delegation alone leaves ghosts consistent
 initialise!(df::DistributedField, value) = initialise!(df.field, value)

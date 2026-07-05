@@ -1,4 +1,5 @@
 export build_dual_graph, partition_cells, extract_subdomain, decompose, distribute
+export partition_mesh
 
 # NEW SECTION: partitioning
 
@@ -15,10 +16,47 @@ function build_dual_graph(mesh)
     sparse(I, J, ones(Int, length(I)), n, n)
 end
 
-function partition_cells(mesh, nparts::Integer)
+function partition_cells(mesh, nparts::Integer; cell_pairs=Tuple{Int,Int}[])
     n = length(mesh.cells)
     nparts == 1 && return ones(Int, n)
-    parts = Int.(Metis.partition(build_dual_graph(mesh), nparts; alg=:KWAY))
+    parts = if isempty(cell_pairs)
+        Int.(Metis.partition(build_dual_graph(mesh), nparts; alg=:KWAY))
+    else
+        # contract periodic cell pairs so matched cells share a rank: periodic coupling
+        # stays rank-local and the serial periodic kernels run unchanged (no periodic halo)
+        root = collect(1:n)
+        function find(x)
+            while root[x] != x
+                root[x] = root[root[x]]
+                x = root[x]
+            end
+            x
+        end
+        for (a, b) ∈ cell_pairs
+            ra, rb = find(a), find(b)
+            ra == rb || (root[ra] = rb)
+        end
+        super = zeros(Int, n)
+        ns = 0
+        for c ∈ 1:n
+            r = find(c)
+            super[r] == 0 && (super[r] = (ns += 1))
+            super[c] = super[r]
+        end
+        I = Int[]; J = Int[]
+        for face ∈ mesh.faces
+            o1, o2 = face.ownerCells
+            s1, s2 = super[o1], super[o2]
+            if o1 != o2 && s1 != s2
+                push!(I, s1); push!(J, s2)
+                push!(I, s2); push!(J, s1)
+            end
+        end
+        g = sparse(I, J, ones(Int, length(I)), ns, ns)
+        # ponytail: unweighted super-vertices — merged-pair imbalance is O(surface/volume)
+        sparts = Int.(Metis.partition(g, nparts; alg=:KWAY))
+        sparts[super]
+    end
     counts = [count(==(r), parts) for r ∈ 1:nparts]
     cut = count(mesh.faces) do f
         o1, o2 = f.ownerCells
@@ -188,25 +226,46 @@ end
 
 # NEW SECTION: entry points
 
+# owner-cell pairs of matched periodic faces (drives colocation in partition_cells)
+function periodic_cell_pairs(mesh, patch_pairs)
+    (; faces, boundaries) = mesh
+    pairs = Tuple{Int,Int}[]
+    for (p1, p2) ∈ patch_pairs
+        parent, _ = construct_periodic(mesh, CPU(), p1, p2)
+        ids1 = boundaries[boundary_index(boundaries, p1)].IDs_range
+        for (fID1, fID2) ∈ zip(ids1, parent.value.face_map)
+            push!(pairs, (Int(faces[fID1].ownerCells[1]), Int(faces[fID2].ownerCells[1])))
+        end
+    end
+    pairs
+end
+
 # single-process decomposition (testing, offline tooling)
-function decompose(mesh, nparts::Integer)
-    parts = partition_cells(mesh, nparts)
+function decompose(mesh, nparts::Integer; periodic_patches=())
+    parts = partition_cells(mesh, nparts;
+        cell_pairs=periodic_cell_pairs(mesh, periodic_patches))
     [extract_subdomain(mesh, parts, r) for r ∈ 1:nparts]
 end
 
 """
-    distribute(mesh; comm=MPI.COMM_WORLD)
+    distribute(mesh; comm=MPI.COMM_WORLD, periodic_patches=())
 
 Online mesh distribution: rank 0 partitions `mesh` (Metis k-way) and scatters one
 `DistributedMesh` per rank; other ranks may pass `nothing` as `mesh`.
+
+`periodic_patches` takes patch-name pairs, e.g. `[(:top, :bottom)]`, for meshes with
+periodic boundaries: matched owner cells are contracted in the partition graph so each
+periodic pair lands on one rank, and `construct_periodic` on the `DistributedMesh` then
+works per rank exactly as in serial.
 """
-function distribute(mesh; comm=MPI.COMM_WORLD)
+function distribute(mesh; comm=MPI.COMM_WORLD, periodic_patches=())
     MPI.Initialized() || MPI.Init()
     nranks = MPI.Comm_size(comm)
     rank = MPI.Comm_rank(comm)
     nranks == 1 && return extract_subdomain(mesh, partition_cells(mesh, 1), 1)
     if rank == 0
-        parts = partition_cells(mesh, nranks)
+        parts = partition_cells(mesh, nranks;
+            cell_pairs=periodic_cell_pairs(mesh, periodic_patches))
         for q ∈ 1:nranks-1
             MPI.send(extract_subdomain(mesh, parts, q + 1), comm; dest=q, tag=0)
         end
@@ -214,4 +273,36 @@ function distribute(mesh; comm=MPI.COMM_WORLD)
     else
         MPI.recv(comm; source=0, tag=0)
     end
+end
+
+# NEW SECTION: offline partitioning
+
+"""
+    partition_mesh(mesh, nparts; dir, periodic_patches=())
+
+Offline decomposition: partition `mesh` into `nparts` rank-local meshes and write one
+`rank_<r>.jls` per rank into `dir`. Load with `distribute(dir; comm)`. Files use Julia
+serialization — regenerate after Julia or XCALibre upgrades.
+"""
+function partition_mesh(mesh, nparts::Integer; dir, periodic_patches=())
+    mkpath(dir)
+    for (r, dm) ∈ enumerate(decompose(mesh, nparts; periodic_patches))
+        serialize(joinpath(dir, "rank_$(r-1).jls"), dm)
+    end
+    dir
+end
+
+"""
+    distribute(dir::AbstractString; comm=MPI.COMM_WORLD)
+
+Load an offline decomposition written by [`partition_mesh`](@ref): each rank reads only
+its own `rank_<rank>.jls` from `dir` (no rank-0 memory bottleneck).
+"""
+function distribute(dir::AbstractString; comm=MPI.COMM_WORLD)
+    MPI.Initialized() || MPI.Init()
+    dm = deserialize(joinpath(dir, "rank_$(MPI.Comm_rank(comm)).jls"))
+    p = getfield(dm, :partition)
+    p.nranks == MPI.Comm_size(comm) || error(
+        "offline decomposition in $dir has $(p.nranks) parts; comm has $(MPI.Comm_size(comm)) ranks")
+    dm
 end

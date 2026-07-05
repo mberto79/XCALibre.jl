@@ -108,6 +108,18 @@ function construct_periodic(mesh, backend, patch1::Symbol, patch2::Symbol; tol=1
     length(global_ids2) == nfaces || error(
         "Periodic mismatch: Patch $patch1 has $(length(global_ids1)) faces, but $patch2 has $(length(global_ids2))")
 
+    # empty patch pair (distributed rank owning no periodic faces) → no-op BCs
+    if nfaces == 0
+        F = _get_float(mesh)
+        transform = LinearTransform(SVector{3,F}(0, 0, 0))
+        values1 = PeriodicValue(
+            patchID=idx2, transform=transform, face_map=Int64[], isparent=true)
+        values2 = PeriodicValue(
+            patchID=idx1, transform=transform, face_map=Int64[], isparent=false)
+        return (adapt(backend, PeriodicParent(patch1, values1)),
+                adapt(backend, Periodic(patch2, values2)))
+    end
+
     # Extract Centers
     centers1 = [faces[id].centre for id in global_ids1]
     centers2 = [faces[id].centre for id in global_ids2]

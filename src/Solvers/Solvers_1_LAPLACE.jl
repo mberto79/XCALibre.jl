@@ -62,7 +62,6 @@ function setup_laplace_solver(
     (; k, kf, cp, rho, rhocp, rDf) = model.solid
 
     mesh = model.domain
-    assert_distributable(mesh, boundaries) # rejects periodic BCs on a DistributedMesh
 
 
     source_field = ScalarField(mesh) #0.0 field

@@ -110,12 +110,3 @@ Solve.is_report_rank(dm::DistributedMesh) = getfield(dm, :partition).rank == 0
 Solvers.global_max(v, ::DistributedMesh) = MPI.Allreduce(v, max, MPI.COMM_WORLD)
 # courant kernel dispatches on Mesh2/Mesh3 geometry — unwrap the DistributedMesh
 Solvers._base_mesh(dm::DistributedMesh) = getfield(dm, :mesh)
-
-# cross-partition periodic BCs are not supported: halo maps carry no periodic adjacency.
-# assert_distributable seam is a serial no-op; here it rejects periodic BCs on any field.
-_has_periodic(BCs) = any(BC isa PeriodicParent || BC isa Periodic for BC ∈ BCs)
-function Solve.assert_distributable(::DistributedMesh, boundaries)
-    any(_has_periodic, boundaries) &&
-        error("distributed runs do not support periodic boundaries (no cross-partition periodic halo)")
-    nothing
-end

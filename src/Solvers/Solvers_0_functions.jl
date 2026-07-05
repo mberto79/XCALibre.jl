@@ -131,8 +131,7 @@ function correct_velocity!(U, Hv, ∇p, rD, config)
     ndrange = length(U)
     kernel! = _correct_velocity!(_setup(backend, workgroup, ndrange)...)
     kernel!(U, Hv, ∇p, rD)
-    # # KernelAbstractions.synchronize(backend)
-    sync!(U, U.mesh, config) # self-syncing seam (no-op serial)
+    # no sync!: ghost U is already consistent (Hv/∇p/rD ghosts synced, kernel is pointwise)
 end
 
 @kernel function _correct_velocity!(U, Hv, ∇p, rD)

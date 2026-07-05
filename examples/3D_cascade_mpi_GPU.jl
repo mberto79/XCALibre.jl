@@ -1,7 +1,7 @@
 # Distributed (MPI) + GPU version of 3D_cascade_periodic.jl, exercising the decomposed
 # OpenFOAM writer (processor<rank>/ dirs; open XCALibre.foam in ParaView).
-# NOTE: distributed v1 rejects periodic BCs (cross-partition periodic pairs are phase 8
-# work), so :top/:bottom use Symmetry here instead of construct_periodic.
+# Periodic :top/:bottom: distribute(periodic_patches=...) colocates matched cell pairs
+# per rank, then construct_periodic on the DistributedMesh works exactly as in serial.
 # Needs an env with XCALibre, PETSc, MPI, CUDA and a CUDA-enabled MPI/PETSc stack
 # (locally: `source dev/local_stack.sh`; without a CUDA PETSc pass solve_on=CPU()).
 # Run over 2 ranks with:
@@ -19,11 +19,12 @@ mesh = if rank == 0
 else
     nothing
 end
-mesh_dist = distribute(mesh; comm=comm)
+mesh_dist = distribute(mesh; comm=comm, periodic_patches=[(:top, :bottom)])
 
 backend = CUDABackend(); workgroup = 32
 bind_device!(backend, rank) # ranks pick/share the local GPU(s)
 hardware = Hardware(backend=backend, workgroup=workgroup)
+periodic = construct_periodic(mesh_dist, backend, :top, :bottom)
 mesh_dev = adapt(backend, mesh_dist)
 
 velocity = [0.25, 0.0, 0.0]
@@ -45,15 +46,15 @@ BCs = assign(
             Dirichlet(:inlet, velocity),
             Zerogradient(:outlet),
             Wall(:plate, noSlip),
-            Symmetry(:top), Symmetry(:bottom),
-            Symmetry(:side1), Symmetry(:side2)
+            Symmetry(:side1), Symmetry(:side2),
+            periodic...
         ],
         p = [
             Zerogradient(:inlet),
             Dirichlet(:outlet, 0.0),
             Wall(:plate),
-            Symmetry(:top), Symmetry(:bottom),
-            Symmetry(:side1), Symmetry(:side2)
+            Symmetry(:side1), Symmetry(:side2),
+            periodic...
         ]
     )
 )

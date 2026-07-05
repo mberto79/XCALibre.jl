@@ -4,7 +4,6 @@ export solve_system!
 export sync!
 export wrap_eqn
 export unwrap_eqn
-export assert_distributable
 export is_distributed_mesh
 export is_report_rank
 export solve_equation!
@@ -522,8 +521,6 @@ wrap_eqn(eqn, mesh, setup, config; kwargs...) = eqn
 # raw eqn but solve through the wrapper. Serial identity; Distribute unwraps DistributedEqn.
 @inline unwrap_eqn(eqn) = eqn
 
-# config-guard seam: serial accepts anything; Distribute rejects unsupported cases (periodic BCs)
-assert_distributable(mesh, boundaries) = nothing
 
 # mesh-kind predicate: Distribute overrides for DistributedMesh. mesh is concrete in bodies so
 # calls constant-fold — used to skip Krylov precond/workspace setup and rank-0-only reporting.

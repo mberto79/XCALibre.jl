@@ -23,7 +23,7 @@ if get(ENV, "XCAL_SCALING_WORKER", "") == "1"
             model, config = incompressible_case(dm, bfs_bcs; iterations=k)
             MPI.Barrier(comm)
             t0 = MPI.Wtime()
-            prun!(model, config)
+            run!(model, config)
             MPI.Barrier(comm)
             MPI.Wtime() - t0
         end

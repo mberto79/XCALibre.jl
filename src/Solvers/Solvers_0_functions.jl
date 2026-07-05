@@ -103,6 +103,7 @@ function inverse_diagonal!(rD::S, eqn, config) where {S<:ScalarField}
     kernel! = _inverse_diagonal!(_setup(backend, workgroup, ndrange)...)
     kernel!(rD, nzval, colval, rowptr)
     # # KernelAbstractions.synchronize(backend)
+    sync!(rD, rD.mesh, config) # self-syncing seam (no-op serial)
 end
 
 @kernel function _inverse_diagonal!(rD, nzval, colval, rowptr)
@@ -131,6 +132,7 @@ function correct_velocity!(U, Hv, ∇p, rD, config)
     kernel! = _correct_velocity!(_setup(backend, workgroup, ndrange)...)
     kernel!(U, Hv, ∇p, rD)
     # # KernelAbstractions.synchronize(backend)
+    sync!(U, U.mesh, config) # self-syncing seam (no-op serial)
 end
 
 @kernel function _correct_velocity!(U, Hv, ∇p, rD)
@@ -195,6 +197,7 @@ function H!(Hv, U::VF, U_eqn, config) where {VF<:VectorField} # Extend to 3D!
     kernel!(cells, cell_neighbours,
         nzval, rowptr, colval, bx, by, bz, U, Hv)
     # # KernelAbstractions.synchronize(backend)
+    sync!(Hv, Hv.mesh, config) # self-syncing seam (no-op serial)
 end
 
 # Pressure correction kernel
@@ -250,6 +253,11 @@ end
 
 ## COURANT NUMBER
 
+# global_max seam (S5): serial = identity, Distribute = MPI.Allreduce(max). _base_mesh unwraps
+# a DistributedMesh so the Mesh2/Mesh3 courant kernel still dispatches on the concrete geometry.
+global_max(v, mesh) = v
+_base_mesh(mesh) = mesh
+
 max_courant_number!(cellsCourant, model, config) = begin
     (; U) = model.momentum
     (; mesh) = U
@@ -259,9 +267,9 @@ max_courant_number!(cellsCourant, model, config) = begin
 
     ndrange = length(cellsCourant)
     kernel! = _max_courant_number!(_setup(backend, workgroup, ndrange)...)
-    kernel!(cellsCourant, U, runtime, mesh)
+    kernel!(cellsCourant, U, runtime, _base_mesh(mesh))
     # # KernelAbstractions.synchronize(backend)
-    return maximum(cellsCourant)
+    return global_max(maximum(cellsCourant), mesh)
 end
 
 @kernel function _max_courant_number!(cellsCourant, U, runtime, mesh::Mesh3)

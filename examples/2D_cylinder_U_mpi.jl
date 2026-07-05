@@ -90,7 +90,7 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = prun!(model, config)
+residuals = run!(model, config)
 
 rank == 0 && println("done: final residuals Ux=", residuals.Ux[end],
     " Uy=", residuals.Uy[end], " p=", residuals.p[end])

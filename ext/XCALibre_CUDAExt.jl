@@ -32,6 +32,8 @@ Adapt.adapt_structure(to::CUDA.KernelAdaptor, dm::DistributedMesh) =
 Distribute.bind_device!(::BACKEND, rank::Integer) =
     (CUDA.device!(rank % length(CUDA.devices())); nothing)
 
+Distribute.petsc_device_info(::CuArray) = (pkg="cuda", mat="mpiaijcusparse")
+
 import XCALibre.ModelFramework: _nzval, _rowptr, _colval, get_sparse_fields, 
                                 _build_A, _build_opA
 

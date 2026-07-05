@@ -32,14 +32,18 @@ struct XPETScSolver{PL,TM,TV,TK,TF} <: Distribute.AbstractDistributedSolver
     xhost::Vector{TF}
 end
 
-_petsc_has_cuda(petsclib) =
-    LibPETSc.PetscHasExternalPackage(petsclib, Vector{Int8}(codeunits("cuda\0")))
+_petsc_has_pkg(petsclib, pkg) =
+    LibPETSc.PetscHasExternalPackage(petsclib, Vector{Int8}(codeunits(pkg * "\0")))
 
-# system PETSc builds may be Int32-indexed; select by scalar, keep the lib's PetscInt
+# system PETSc builds may be Int32-indexed; select by scalar, keep the lib's PetscInt.
+# NB runtime set_petsclib can NOT work here: LibPETSc wrappers are @for_petsc-generated at
+# precompile time for the preference-configured lib(s) only — other precisions need their
+# own project env with library_path/PetscScalar prefs (e.g. dev/petscenv_f32).
 function _petsclib(TF)
     i = findfirst(l -> l.PetscScalar == TF, PETSc.petsclibs)
     i === nothing && error("no PETSc library with PetscScalar=$TF (available: " *
-        join(("$(l.PetscScalar)/$(l.PetscInt)" for l ∈ PETSc.petsclibs), ", ") * ")")
+        join(("$(l.PetscScalar)/$(l.PetscInt)" for l ∈ PETSc.petsclibs), ", ") *
+        "); run in an env whose PETSc preference points at a $TF build")
     PETSc.petsclibs[i]
 end
 
@@ -53,9 +57,11 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
     A = _A(eqn)
     # device fields + host PETSc = hard error unless solves are explicitly opted onto host
     device_solve = !(_nzval(A) isa Array) && !(solve_on isa KernelAbstractions.CPU)
-    device_solve && !_petsc_has_cuda(petsclib) && error(
-        "PETScSolver: fields live on the GPU but this PETSc build has no CUDA support. " *
-        "Fixes: MPIPreferences.use_system_binary() + a CUDA-enabled system PETSc " *
+    # backend ext declares its PETSc pairing (cuda/mpiaijcusparse, hip/mpiaijhipsparse)
+    dev = device_solve ? Distribute.petsc_device_info(_nzval(A)) : nothing
+    device_solve && !_petsc_has_pkg(petsclib, dev.pkg) && error(
+        "PETScSolver: fields live on the GPU but this PETSc build has no $(dev.pkg) support. " *
+        "Fixes: MPIPreferences.use_system_binary() + a $(dev.pkg)-enabled system PETSc " *
         "(JULIA_PETSC_LIBRARY), or opt into host-side solves with solve_on=CPU() " *
         "(A/b copied to host each solve).")
     rowptr, colval = Vector(_rowptr(A)), Vector(_colval(A))
@@ -71,8 +77,8 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
     Amat = LibPETSc.MatCreateMPIAIJWithArrays(petsclib, comm,
         PI(n), PI(n), PI(N), PI(N), i0, j0, vals)
     if device_solve
-        # cuSPARSE mat/vecs; values still updated via MatUpdateMPIAIJWithArray
-        mt = "mpiaijcusparse"
+        # device-sparse mat/vecs; values still updated via MatUpdateMPIAIJWithArray
+        mt = dev.mat
         # ponytail: LibPETSc.MatConvert nulls M.ptr and drops the converted handle;
         # MAT_INPLACE_MATRIX keeps the same C Mat (MatHeaderReplace), so restore it.
         orig = Amat.ptr

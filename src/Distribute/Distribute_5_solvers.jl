@@ -1,4 +1,4 @@
-export DistributedEqn, plaplace!, prun!
+export DistributedEqn
 
 """
     DistributedEqn(eqn, solver, partition, halo)
@@ -16,12 +16,23 @@ end
 
 _comm(deqn::DistributedEqn) = deqn.halo.comm
 
+# seam methods (S2): below-API distributed layer. wrap_eqn builds the DistributedEqn; the
+# solver body assembles/discretises the raw eqn (unwrap_eqn) but solves through the wrapper.
+Solve.unwrap_eqn(deqn::DistributedEqn) = deqn.eqn
+
+function Solve.wrap_eqn(eqn, dmesh::DistributedMesh, setup, config;
+        petsc_options="", solve_on=nothing)
+    (; backend) = config.hardware
+    DistributedEqn(eqn, PETScSolver(eqn, dmesh, setup; petsc_options, solve_on),
+        getfield(dmesh, :partition), HaloExchange(dmesh, 1, backend))
+end
+
 function Solve.solve_equation!(
     deqn::DistributedEqn, phi, phiBCs, solversetup, config; time=nothing, ref=nothing, irelax=nothing)
     eqn = deqn.eqn
     discretise!(eqn, phi, config, rho_prev=eqn.model.terms[1].flux)
     apply_boundary_conditions!(eqn, phiBCs, nothing, time, config)
-    _is_pure_laplacian(eqn) && pmake_symmetric!(eqn, config)
+    _is_pure_laplacian(eqn) && make_symmetric!(eqn, config)
     setReference!(deqn, ref, 1, config)
     isnothing(irelax) || implicit_relaxation!(eqn, phi.values, irelax, nothing, config)
     # preconditioner update skipped: the PETSc PC owns preconditioning
@@ -55,30 +66,6 @@ function Solve.solve_equation!(
 end
 
 _is_pure_laplacian(eqn) = length(eqn.model.terms) == 1 && eqn.model.terms[1] isa Laplacian
-
-# serial make_symmetric! reads A[owner1, owner2]; on a partition the smaller local id is
-# always the trustworthy row (owned block precedes ghosts, ghost rows are garbage)
-function pmake_symmetric!(eqn, config)
-    (; backend, workgroup) = config.hardware
-    A = _A(eqn)
-    mesh = get_phi(eqn).mesh
-    (; faces) = mesh
-    nbfaces = length(mesh.boundary_cellsID)
-    ndrange = length(faces) - nbfaces
-    kernel! = _pmake_symmetric!(_setup(backend, workgroup, ndrange)...)
-    kernel!(_colval(A), _rowptr(A), _nzval(A), faces, nbfaces)
-end
-
-@kernel function _pmake_symmetric!(colval, rowptr, nzval, faces, nbfaces)
-    i = @index(Global)
-    fID = i + nbfaces
-    (; ownerCells) = faces[fID]
-    c1 = min(ownerCells[1], ownerCells[2])
-    c2 = max(ownerCells[1], ownerCells[2])
-    i1 = spindex(rowptr, colval, c1, c2)
-    i2 = spindex(rowptr, colval, c2, c1)
-    @inbounds nzval[i2] = nzval[i1]
-end
 
 function Solve.solve_system!(deqn::DistributedEqn, setup, result, component, config)
     (; backend, workgroup) = config.hardware
@@ -114,72 +101,21 @@ function Solve.setReference!(deqn::DistributedEqn, pRef, cellID, config)
     nothing
 end
 
-# NEW SECTION: distributed LAPLACE
+# NEW SECTION: reduction + mesh seams (extend the serial identities from Solvers)
 
-"""
-    plaplace!(model, config; petsc_options="")
+Solve.is_distributed_mesh(::DistributedMesh) = true
+Solve.is_report_rank(dm::DistributedMesh) = getfield(dm, :partition).rank == 0
 
-Distributed steady/transient Laplace (conduction) solver: `laplace!` on a
-`DistributedMesh` with a PETSc distributed solve. Returns `(T=R_T,)` with the global
-residual history (identical on every rank). Result output is deferred to Phase 8.
-"""
-function plaplace!(model, config; petsc_options="", solve_on=nothing, kwargs...)
-    (; solvers, schemes, runtime, hardware, boundaries) = config
-    (; iterations, dt) = runtime
-    (; backend, workgroup) = hardware
-    (; T) = model.energy
-    (; k, kf, cp, rho, rhocp, rDf) = model.solid
-    dmesh = model.domain
-    dmesh isa DistributedMesh || error("plaplace! requires model.domain::DistributedMesh — build it with distribute(mesh)")
+# global_max seam (S5): Courant dt must be identical on every rank
+Solvers.global_max(v, ::DistributedMesh) = MPI.Allreduce(v, max, MPI.COMM_WORLD)
+# courant kernel dispatches on Mesh2/Mesh3 geometry — unwrap the DistributedMesh
+Solvers._base_mesh(dm::DistributedMesh) = getfield(dm, :mesh)
 
-    T_eqn = (
-        Time{schemes.time}(rhocp, T)
-        - Laplacian{schemes.laplacian}(rDf, T)
-        ==
-        - Source(ScalarField(dmesh))
-    ) → ScalarEquation(T, boundaries.T)
-
-    initialise(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, config)
-
-    deqn = DistributedEqn(
-        T_eqn,
-        PETScSolver(T_eqn, dmesh, solvers; petsc_options, solve_on),
-        dmesh.partition,
-        HaloExchange(dmesh, 1, backend))
-
-    TF = _get_float(dmesh)
-    R_T = ones(TF, iterations)
-    dt_cpu = zeros(TF, 1)
-    copyto!(dt_cpu, dt)
-
-    halo_exchange!(T, deqn.halo, backend, workgroup)
-    for iteration ∈ 1:iterations
-        time = iteration * dt_cpu[1]
-        rt = solve_equation!(deqn, T, boundaries.T, solvers, config; time=time)
-        if model.solid isa NonUniform
-            energy!(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, config)
-        end
-        R_T[iteration] = rt
-        if rt <= solvers.convergence && model.time isa Steady
-            deqn.partition.rank == 0 && @info "Simulation converged in $iteration iterations!"
-            break
-        end
-    end
-    return (T=R_T,)
+# cross-partition periodic BCs are not supported: halo maps carry no periodic adjacency.
+# assert_distributable seam is a serial no-op; here it rejects periodic BCs on any field.
+_has_periodic(BCs) = any(BC isa PeriodicParent || BC isa Periodic for BC ∈ BCs)
+function Solve.assert_distributable(::DistributedMesh, boundaries)
+    any(_has_periodic, boundaries) &&
+        error("distributed runs do not support periodic boundaries (no cross-partition periodic halo)")
+    nothing
 end
-
-"""
-    prun!(model, config; petsc_options="", kwargs...)
-
-Distributed counterpart of `run!`: dispatches on the `Physics` model to the matching
-distributed solver. Requires `model.domain::DistributedMesh` and a distributed solver
-extension (e.g. `using PETSc`).
-"""
-prun!(model::Physics{T,F,SO,M,Tu,E,D,BI}, config;
-    petsc_options="", kwargs...
-    ) where {T,F,SO,M,Tu,E<:Conduction,D<:DistributedMesh,BI} =
-    plaplace!(model, config; petsc_options, kwargs...)
-
-prun!(model, config; kwargs...) =
-    error("prun!: no distributed solver for this Physics yet (Phase 4 supports Conduction/Laplace); " *
-        "model.domain must be a DistributedMesh built with distribute(mesh)")

@@ -106,6 +106,7 @@ function grad!(grad::Grad{Gauss,F,R,I,M}, phif, phi, BCs, time, config) where {F
     interpolate!(phif, phi, config)
     correct_boundaries!(phif, phi, BCs, time, config)
     green_gauss!(grad, phif, config)
+    sync!(grad.result, grad.result.mesh, config) # self-syncing seam (no-op serial)
 end
 
 # Tensor field function definition

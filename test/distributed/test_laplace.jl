@@ -22,7 +22,7 @@ Tserial, Rserial = MPI.bcast(ref, comm; root=0)
 
 dm = distribute(gmesh; comm=comm)
 model, config = laplace_case(dm, box_bcs)
-residuals = prun!(model, config)
+residuals = run!(model, config)
 
 n = dm.partition.n_owned
 nloc = n + dm.partition.n_ghost

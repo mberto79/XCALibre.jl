@@ -23,7 +23,7 @@ function run_case(name, build_mesh, bcs, iterations; pref=nothing)
 
     dm = distribute(gmesh; comm=comm)
     model, config = incompressible_case(dm, bcs; iterations)
-    residuals = prun!(model, config; pref=pref)
+    residuals = run!(model, config; pref=pref)
 
     dux, duy, dp = field_errors(dm, model, Us_x, Us_y, ps)
     n = dm.partition.n_owned

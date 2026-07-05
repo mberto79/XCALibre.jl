@@ -210,18 +210,11 @@ function initialise_writer(format::OpenFOAM, dmesh::DistributedMesh)
     PFOAMWriter(dir, ni)
 end
 
-# NEW SECTION: solver-loop wiring (write_interval)
+# NEW SECTION: writer dispatch (unified: solver bodies call initialise_writer/save_output)
 
-pinit_writer(::Nothing, dmesh) = nothing
-pinit_writer(output, dmesh) = initialise_writer(output, dmesh)
-
-# v1 is laminar-only: write U and p directly (extend when turbulence/energy land)
-function pmaybe_write_results(w, iteration, time, write_interval, model, dmesh, boundaries)
-    w === nothing && return nothing
-    iteration % write_interval + signbit(write_interval) == 0 || return nothing
-    write_results(iteration, time, dmesh, w, boundaries,
-        ("U", model.momentum.U), ("p", model.momentum.p))
-end
+# VTK has no decomposed writer; distributed runs use OpenFOAM() or write_interval=-1.
+# nothing writer => the solver body's `outputWriter === nothing || save_output(...)` skips.
+initialise_writer(::VTK, ::DistributedMesh) = nothing
 
 # NEW SECTION: field output
 

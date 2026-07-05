@@ -181,7 +181,9 @@ function extract_subdomain(mesh, parts, part::Integer)
         push!(procs, ProcessorPatch(q - 1, pfaces, sort!(collect(send)), recv_ghosts))
     end
 
-    DistributedMesh(lmesh, partition, procs, TI.(local_cells), TI.(local_faces))
+    # halo caches are lazily built on first sync! (per rank/backend) so a DistributedMesh can be
+    # MPI.send-ed intact and adapted to a GPU backend without shipping rank-local MPI state
+    DistributedMesh(lmesh, partition, procs, TI.(local_cells), TI.(local_faces), HaloCache())
 end
 
 # NEW SECTION: entry points

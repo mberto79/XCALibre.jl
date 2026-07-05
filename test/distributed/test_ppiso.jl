@@ -25,7 +25,7 @@ Us_x, Us_y, ps = MPI.bcast(ref, comm; root=0)
 dm = distribute(gmesh; comm=comm)
 model, config = incompressible_case(dm, cavity_bcs;
     iterations=nsteps, time=Transient(), time_step=dt)
-residuals = prun!(model, config; pref=0.0)
+residuals = run!(model, config; pref=0.0)
 
 dux, duy, dp = field_errors(dm, model, Us_x, Us_y, ps)
 n = dm.partition.n_owned

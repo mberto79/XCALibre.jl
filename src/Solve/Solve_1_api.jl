@@ -1,6 +1,12 @@
 export SolverSetup, Runtime, Schemes
 export explicit_relaxation!, implicit_relaxation!, implicit_relaxation_diagdom!, setReference!
 export solve_system!
+export sync!
+export wrap_eqn
+export unwrap_eqn
+export assert_distributable
+export is_distributed_mesh
+export is_report_rank
 export solve_equation!
 export residual!
 export AdaptiveTimeStepping
@@ -329,6 +335,7 @@ function explicit_relaxation!(phi, phi0, alpha, config)
     kernel! = explicit_relaxation_kernel!(_setup(backend, workgroup, ndrange)...)
     kernel!(phi, phi0, alpha)
     # KernelAbstractions.synchronize(backend)
+    sync!(phi, phi.mesh, config) # self-syncing seam (no-op serial)
 end
 
 @kernel function explicit_relaxation_kernel!(phi, phi0, alpha)
@@ -503,6 +510,28 @@ end
     end
 end
 
+# halo-exchange seam: DistributedMesh method lives in Distribute; serial is a free no-op
+@inline sync!(x, mesh::Union{Mesh2,Mesh3}, config) = nothing
+
+# linear-solve seam (S2): setup wraps each eqn so the body calls generic solve_equation!/
+# solve_system!. Serial = identity; Distribute overrides for DistributedMesh (DistributedEqn +
+# PETScSolver). Extra kwargs (petsc_options/solve_on) are ignored serially.
+wrap_eqn(eqn, mesh, setup, config; kwargs...) = eqn
+
+# raw ModelEquation behind a (possibly wrapped) eqn: solver bodies assemble/discretise on the
+# raw eqn but solve through the wrapper. Serial identity; Distribute unwraps DistributedEqn.
+@inline unwrap_eqn(eqn) = eqn
+
+# config-guard seam: serial accepts anything; Distribute rejects unsupported cases (periodic BCs)
+assert_distributable(mesh, boundaries) = nothing
+
+# mesh-kind predicate: Distribute overrides for DistributedMesh. mesh is concrete in bodies so
+# calls constant-fold — used to skip Krylov precond/workspace setup and rank-0-only reporting.
+@inline is_distributed_mesh(mesh) = false
+
+# true where solver progress/@info should print: always serial, only rank 0 when distributed
+@inline is_report_rank(mesh) = true
+
 function make_symmetric!(eqn, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -524,9 +553,11 @@ end
     fID = i + nbfaces
 
     face = faces[fID]
-    (; ownerCells) = face 
-    cID1 = ownerCells[1]
-    cID2 = ownerCells[2]
+    (; ownerCells) = face
+    # canonical row = min owner: on partitioned meshes owner1 may be a ghost whose CSR
+    # row is garbage; coeff is symmetric so serial value is unchanged
+    cID1 = min(ownerCells[1], ownerCells[2])
+    cID2 = max(ownerCells[1], ownerCells[2])
 
     cIndex1 = spindex(rowptr, colval, cID1, cID2)
     cIndex2 = spindex(rowptr, colval, cID2, cID1)

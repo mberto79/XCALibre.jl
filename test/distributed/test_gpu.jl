@@ -36,7 +36,7 @@ Us_x, Us_y, ps = MPI.bcast(ref, comm; root=0)
 dm = distribute(gmesh; comm=comm)
 dm_dev = adapt(backend, dm)
 model, config = incompressible_case(dm_dev, cavity_bcs; iterations, backend)
-residuals = prun!(model, config; pref=0.0, solve_on=(petsc_cuda ? nothing : CPU()))
+residuals = run!(model, config; pref=0.0, solve_on=(petsc_cuda ? nothing : CPU()))
 
 dux, duy, dp = field_errors(dm_dev, model, Us_x, Us_y, ps)
 n = dm.partition.n_owned
@@ -74,7 +74,7 @@ end
 
 if !petsc_cuda
     @testset "GPU fields + non-CUDA PETSc errors (rank $rank)" begin
-        err = try (prun!(model, config; pref=0.0); nothing) catch e e end
+        err = try (run!(model, config; pref=0.0); nothing) catch e e end
         @test err isa ErrorException
         @test occursin("solve_on=CPU()", err.msg)
     end

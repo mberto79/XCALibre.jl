@@ -71,7 +71,7 @@ tmp = MPI.bcast(rank == 0 ? mktempdir() : nothing, comm; root=0)
 cd(tmp)
 MPI.Barrier(comm)
 
-prun!(model, config; output=OpenFOAM())
+run!(model, config; output=OpenFOAM())
 
 n = dm.partition.n_owned
 iterdir = "processor$rank/$iterations"

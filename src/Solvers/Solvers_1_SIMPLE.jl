@@ -26,16 +26,18 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 
 """
 function simple!(
-    model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    model, config;
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
+    petsc_options="", solve_on=nothing
     )
 
     residuals = setup_incompressible_solvers(
-        SIMPLE, model, config; 
+        SIMPLE, model, config;
         output=output,
-        pref=pref, 
-        ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        pref=pref,
+        ncorrectors=ncorrectors,
+        inner_loops=inner_loops,
+        petsc_options=petsc_options, solve_on=solve_on
         )
 
     return residuals
@@ -43,9 +45,10 @@ end
 
 # Setup for all incompressible algorithms
 function setup_incompressible_solvers(
-    solver_variant, model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
-    ) 
+    solver_variant, model, config;
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
+    petsc_options="", solve_on=nothing
+    )
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
 
@@ -53,9 +56,10 @@ function setup_incompressible_solvers(
 
     (; U, p, Uf, pf) = model.momentum
     mesh = model.domain
+    assert_distributable(mesh, boundaries) # rejects periodic BCs on a DistributedMesh
 
     @info "Pre-allocating fields..."
-    
+
     ∇p = Grad{schemes.p.gradient}(p)
     mdotf = FaceScalarField(mesh)
     rDf = FaceScalarField(mesh)
@@ -67,9 +71,9 @@ function setup_incompressible_solvers(
 
     U_eqn = (
         Time{schemes.U.time}(U)
-        + Divergence{schemes.U.divergence}(mdotf, U) 
-        - Laplacian{schemes.U.laplacian}(nueff, U) 
-        == 
+        + Divergence{schemes.U.divergence}(mdotf, U)
+        - Laplacian{schemes.U.laplacian}(nueff, U)
+        ==
         - Source(∇p.result)
     ) → VectorEquation(U, boundaries.U)
 
@@ -77,24 +81,30 @@ function setup_incompressible_solvers(
         - Laplacian{schemes.p.laplacian}(rDf, p) == - Source(divHv)
     ) → ScalarEquation(p, boundaries.p)
 
-    @info "Initialising preconditioners..."
+    # distributed solves use PETSc PCs; Krylov preconditioner/workspace setup is serial-only.
+    # mesh is concrete here so the branch is resolved at compile time (zero serial cost).
+    if !is_distributed_mesh(mesh)
+        @info "Initialising preconditioners..."
+        @reset U_eqn.preconditioner = set_preconditioner(solvers.U.preconditioner, U_eqn)
+        @reset p_eqn.preconditioner = set_preconditioner(solvers.p.preconditioner, p_eqn)
 
-    @reset U_eqn.preconditioner = set_preconditioner(solvers.U.preconditioner, U_eqn)
-    @reset p_eqn.preconditioner = set_preconditioner(solvers.p.preconditioner, p_eqn)
-
-    @info "Pre-allocating solvers..."
-
-    @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()))
-    @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn))
+        @info "Pre-allocating solvers..."
+        @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()))
+        @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn))
+    end
 
     @info "Initialising turbulence model..."
     turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
+    # wrap eqns for the linear-solve seam: identity serial, DistributedEqn on a DistributedMesh
+    U_eqn = wrap_eqn(U_eqn, mesh, solvers.U, config; petsc_options, solve_on)
+    p_eqn = wrap_eqn(p_eqn, mesh, solvers.p, config; petsc_options, solve_on)
+
     residuals  = solver_variant(
-        model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
+        model, turbulenceModel, ∇p, U_eqn, p_eqn, config;
         output=output,
-        pref=pref, 
-        ncorrectors=ncorrectors, 
+        pref=pref,
+        ncorrectors=ncorrectors,
         inner_loops=inner_loops)
 
     return residuals
@@ -113,9 +123,16 @@ function SIMPLE(
     (; iterations, write_interval,dt) = runtime
     (; backend) = hardware
 
+    # wrapped eqns solve through the seam (serial identity / DistributedEqn); the raw eqns
+    # are assembled/discretised in-place below. distributed skips ProgressMeter/postprocess.
+    U_deqn, p_deqn = U_eqn, p_eqn
+    U_eqn, p_eqn = unwrap_eqn(U_eqn), unwrap_eqn(p_eqn)
+    distributed = is_distributed_mesh(mesh)
+    is3d = _base_mesh(mesh) isa Mesh3
+
     dt_cpu = zeros(_get_float(mesh), 1)
     copyto!(dt_cpu, config.runtime.dt)
-    
+
     postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)
@@ -123,10 +140,10 @@ function SIMPLE(
     divHv = get_source(p_eqn, 1)
 
     outputWriter = initialise_writer(output, model.domain)
-    
+
     @info "Allocating working memory..."
 
-    # Define aux fields 
+    # Define aux fields
     gradU = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
     S = StrainRate(gradU, gradUT, U, Uf)
@@ -137,17 +154,18 @@ function SIMPLE(
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
-    prev = KernelAbstractions.zeros(backend, TF, n_cells) 
+    prev = KernelAbstractions.zeros(backend, TF, n_cells)
 
-    # Pre-allocate vectors to hold residuals 
+    # Pre-allocate vectors to hold residuals
     R_ux = zeros(TF, iterations)
     R_uy = zeros(TF, iterations)
     R_uz = zeros(TF, iterations)
     R_p = zeros(TF, iterations)
-    
+
     # Initial calculations
     time = zero(TF) # assuming time=0
-    interpolate!(Uf, U, config)   
+    sync!(U, mesh, config); sync!(p, mesh, config) # prime ghosts (no-op serial)
+    interpolate!(Uf, U, config)
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
     grad!(∇p, pf, p, boundaries.p, time, config)
@@ -157,52 +175,52 @@ function SIMPLE(
 
     @info "Starting SIMPLE loops..."
 
-    progress = Progress(iterations; dt=1.0, showspeed=true)
+    progress = distributed ? nothing : Progress(iterations; dt=1.0, showspeed=true)
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
     for iteration ∈ 1:iterations
         time = iteration
 
-        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
-        
+        rx, ry, rz = solve_equation!(U_deqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
+
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rDf, rD, config)
         correct_interpolation_periodic(rDf, rD, boundaries.U, config)
         remove_pressure_source!(U_eqn, ∇p, config)
         H!(Hv, U, U_eqn, config)
-        
+
         # Interpolate faces
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, boundaries.U, time, config)
 
         # old approach
-        # div!(divHv, Uf, config) 
+        # div!(divHv, Uf, config)
 
         # new approach
         flux!(mdotf, Uf, config)
         div!(divHv, mdotf, config)
-        
+
         # Pressure calculations
         @. prev = p.values
-        rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
+        rp = solve_equation!(p_deqn, p, boundaries.p, solvers.p, config; ref=pref)
         explicit_relaxation!(p, prev, solvers.p.relax, config)
-        
-        grad!(∇p, pf, p, boundaries.p, time, config) 
+
+        grad!(∇p, pf, p, boundaries.p, time, config)
         limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
             # @. prev = p.values
-            discretise!(p_eqn, p, config)       
+            discretise!(p_eqn, p, config)
             apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
-            # setReference!(p_eqn, pref, 1, config)
+            # setReference!(p_deqn, pref, 1, config)
             nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
             # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-            rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
+            rp = solve_system!(p_deqn, solvers.p, p, nothing, config)
             explicit_relaxation!(p, prev, solvers.p.relax, config)
-            grad!(∇p, pf, p, boundaries.p, time, config) 
+            grad!(∇p, pf, p, boundaries.p, time, config)
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
         end
 
@@ -210,7 +228,7 @@ function SIMPLE(
         correct_mass_flux!(mdotf, p_eqn, config; time=time)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
-        turbulence!(turbulenceModel, model, S, prev, time, config) 
+        turbulence!(turbulenceModel, model, S, prev, time, config)
         update_nueff!(nueff, nu, model.turbulence, config)
 
         R_ux[iteration] = rx
@@ -218,28 +236,27 @@ function SIMPLE(
         R_uz[iteration] = rz
         R_p[iteration] = rp
 
-        Uz_convergence = true
-        if typeof(mesh) <: Mesh3
-            Uz_convergence = rz <= solvers.U.convergence
-        end
+        Uz_convergence = is3d ? rz <= solvers.U.convergence : true
 
-        if (R_ux[iteration] <= solvers.U.convergence && 
-            R_uy[iteration] <= solvers.U.convergence && 
+        if (R_ux[iteration] <= solvers.U.convergence &&
+            R_uy[iteration] <= solvers.U.convergence &&
             Uz_convergence &&
             R_p[iteration] <= solvers.p.convergence &&
             turbulenceModel.state.converged)
 
-            progress.n = iteration
-            finish!(progress)
-            @info "Simulation converged in $iteration iterations!"
+            if !distributed
+                progress.n = iteration
+                finish!(progress)
+            end
+            is_report_rank(mesh) && @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
-                save_output(model, outputWriter, iteration, time, config)
-                save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
+                outputWriter === nothing || save_output(model, outputWriter, iteration, time, config)
+                distributed || save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
             end
             break
         end
 
-        ProgressMeter.next!(
+        distributed || ProgressMeter.next!(
             progress, showvalues = [
                 (:iter,iteration),
                 (:Ux, R_ux[iteration]),
@@ -249,16 +266,16 @@ function SIMPLE(
                 turbulenceModel.state.residuals...
                 ]
             )
-        
-        runtime_postprocessing!(postprocess,iteration,iterations,S,time,config)
-        
-        if iteration%write_interval + signbit(write_interval) == 0      
-            save_output(model, outputWriter, iteration, time, config)
-            save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
+
+        distributed || runtime_postprocessing!(postprocess,iteration,iterations,S,time,config)
+
+        if iteration%write_interval + signbit(write_interval) == 0
+            outputWriter === nothing || save_output(model, outputWriter, iteration, time, config)
+            distributed || save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
         end
 
     end # end for loop
-    
+
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end
 
@@ -380,8 +397,9 @@ end
         cID2 = ownerCells[2]
         p1 = p[cID1]
         p2 = p[cID2]
-        # need to get aN from sparse system
-        zID = spindex(rowptr, colval, cID1, cID2)
+        # aN from min-owner canonical row: on partitioned meshes owner1 may be a ghost
+        # whose CSR row is garbage; coeff symmetric so serial value unchanged
+        zID = spindex(rowptr, colval, min(cID1, cID2), max(cID1, cID2))
         aN = nzval[zID]
         mdotf[fID] += aN*(p2 - p1) # positive because pressure eqn has negative sign
     end

@@ -29,16 +29,18 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 
 """
 function laplace!(
-    model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    model, config;
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
+    petsc_options="", solve_on=nothing
     )
 
     residuals = setup_laplace_solver(
         LAPLACE, model, config;
         output=output,
-        pref=pref, 
-        ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        pref=pref,
+        ncorrectors=ncorrectors,
+        inner_loops=inner_loops,
+        petsc_options=petsc_options, solve_on=solve_on
         )
 
     return residuals
@@ -46,9 +48,10 @@ end
 
 
 function setup_laplace_solver(
-    solver_variant, model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
-    ) 
+    solver_variant, model, config;
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
+    petsc_options="", solve_on=nothing
+    )
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
     (; iterations, write_interval, dt) = runtime
@@ -57,12 +60,13 @@ function setup_laplace_solver(
     (; T, Tf) = model.energy
 
     (; k, kf, cp, rho, rhocp, rDf) = model.solid
-    
-    mesh = model.domain
 
-    
+    mesh = model.domain
+    assert_distributable(mesh, boundaries) # rejects periodic BCs on a DistributedMesh
+
+
     source_field = ScalarField(mesh) #0.0 field
-   
+
 
     @info "Defining models..."
     T_eqn = (
@@ -72,17 +76,20 @@ function setup_laplace_solver(
         - Source(source_field)
     ) → ScalarEquation(T, boundaries.T)
 
+    # Krylov preconditioner/workspace are serial-only (distributed uses PETSc PCs)
+    if !is_distributed_mesh(mesh)
+        @info "Initialising preconditioners..."
+        @reset T_eqn.preconditioner = set_preconditioner(solvers.preconditioner, T_eqn)
 
-    @info "Initialising preconditioners..."
-
-    @reset T_eqn.preconditioner = set_preconditioner(solvers.preconditioner, T_eqn)
-
-    @info "Pre-allocating solvers..."
-
-    @reset T_eqn.solver = _workspace(solvers.solver, _b(T_eqn))
+        @info "Pre-allocating solvers..."
+        @reset T_eqn.solver = _workspace(solvers.solver, _b(T_eqn))
+    end
 
     @info "Initialising energy model..."
     energyModel = initialise(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, config)
+
+    # wrap for the linear-solve seam (identity serial / DistributedEqn on a DistributedMesh)
+    T_eqn = wrap_eqn(T_eqn, mesh, solvers, config; petsc_options, solve_on)
 
 
     # The part that was previously inside the solver
@@ -125,18 +132,21 @@ function LAPLACE(
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
 
+    distributed = is_distributed_mesh(mesh)
+
     dt_cpu = zeros(_get_float(mesh), 1)
     copyto!(dt_cpu, config.runtime.dt)
 
     postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
     @info "Starting LAPLACE loops..."
-    progress = Progress(iterations; dt=1.0, showspeed=true)
+    progress = distributed ? nothing : Progress(iterations; dt=1.0, showspeed=true)
 
-    @time for iteration ∈ 1:iterations
+    sync!(T, mesh, config) # prime ghosts (no-op serial)
+    for iteration ∈ 1:iterations
         time = iteration *dt
 
         rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config; time=time)
-        
+
         if typeof(model.solid) <: NonUniform
             energy!(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, config)
         end
@@ -144,32 +154,34 @@ function LAPLACE(
         R_T[iteration] = rt
 
         if (R_T[iteration] <= solvers.convergence) && (typeof(model.time) <: Steady)
-            progress.n = iteration
-            finish!(progress)
-            @info "Simulation converged in $iteration iterations!"
-            if !signbit(write_interval) 
-                save_output(model, outputWriter, iteration, time, config)
+            if !distributed
+                progress.n = iteration
+                finish!(progress)
             end
-            
+            is_report_rank(mesh) && @info "Simulation converged in $iteration iterations!"
+            if !signbit(write_interval)
+                outputWriter === nothing || save_output(model, outputWriter, iteration, time, config)
+            end
+
             break
         end
 
-        ProgressMeter.next!(
+        distributed || ProgressMeter.next!(
             progress, showvalues = [
                 (:time, iteration*dt_cpu[1]),
                 (:T_residual, R_T[iteration])
                 ]
             )
 
-        runtime_postprocessing!(postprocess,iteration,iterations,nothing,time,config)
-        if iteration%write_interval + signbit(write_interval) == 0      
-            save_output(model, outputWriter, iteration, time, config)
-            save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
+        distributed || runtime_postprocessing!(postprocess,iteration,iterations,nothing,time,config)
+        if iteration%write_interval + signbit(write_interval) == 0
+            outputWriter === nothing || save_output(model, outputWriter, iteration, time, config)
+            distributed || save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
         end
 
     end # end for loop
-    
-    return (T=R_T)
+
+    return (T=R_T,)
 end
 
 function ModelPhysics.save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config

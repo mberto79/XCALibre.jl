@@ -90,16 +90,18 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 - `T`   - (Vector?) of temperature residuals for each iteration.
 """
 run!(
-    model::Physics{T,F,SO,M,Tu,E,D,BI}, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
-    ) where{T,F,SO,M,Tu,E<:Conduction,D,BI} = 
+    model::Physics{T,F,SO,M,Tu,E,D,BI}, config;
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
+    petsc_options="", solve_on=nothing
+    ) where{T,F,SO,M,Tu,E<:Conduction,D,BI} =
 begin
     residuals = laplace!(
-        model, config, 
+        model, config,
         output=output,
-        pref=pref, 
-        ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        pref=pref,
+        ncorrectors=ncorrectors,
+        inner_loops=inner_loops,
+        petsc_options=petsc_options, solve_on=solve_on
         )
     return residuals
 end
@@ -134,17 +136,19 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 - `p`   - Vector of pressure residuals for each iteration.
 """
 run!(
-    model::Physics{T,F,M,Tu,E,D,BI}, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
-    ) where{T<:Steady,F<:Incompressible,M,Tu,E,D,BI} = 
+    model::Physics{T,F,M,Tu,E,D,BI}, config;
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
+    petsc_options="", solve_on=nothing
+    ) where{T<:Steady,F<:Incompressible,M,Tu,E,D,BI} =
 begin
     residuals=nothing
     residuals = simple!(
-        model, config, 
+        model, config,
         output=output,
-        pref=pref, 
-        ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        pref=pref,
+        ncorrectors=ncorrectors,
+        inner_loops=inner_loops,
+        petsc_options=petsc_options, solve_on=solve_on
     )
 
     return residuals
@@ -239,16 +243,18 @@ begin
 end
 
 run!(
-    model::Physics{T,F,S,M,Tu,E,D,BI}, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
-    ) where{T<:Transient,F<:Incompressible,S,M,Tu,E,D,BI} = 
+    model::Physics{T,F,S,M,Tu,E,D,BI}, config;
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2,
+    petsc_options="", solve_on=nothing
+    ) where{T<:Transient,F<:Incompressible,S,M,Tu,E,D,BI} =
 begin
     residuals = piso!(
-        model, config, 
+        model, config,
         output=output,
-        pref=pref, 
-        ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        pref=pref,
+        ncorrectors=ncorrectors,
+        inner_loops=inner_loops,
+        petsc_options=petsc_options, solve_on=solve_on
     )
     return residuals
 end

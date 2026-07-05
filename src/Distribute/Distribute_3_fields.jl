@@ -1,6 +1,8 @@
 export DistributedScalarField, DistributedVectorField
 export sync!, pnorm, pdot, pmean
 
+import XCALibre.Solve: sync!
+
 """
     DistributedScalarField(dmesh, backend; comm=MPI.COMM_WORLD)
 
@@ -35,6 +37,25 @@ Halo-exchange the wrapped field's ghost entries.
 sync!(df::DistributedField, config) = begin
     (; backend, workgroup) = config.hardware
     halo_exchange!(df.field, df.halo, backend, workgroup)
+    nothing
+end
+
+# self-syncing seam (S1): solver primitives call sync!(field, mesh, config); serial is a
+# no-op (Solve), distributed fills ghosts via a width-keyed cache lazily built on dm. Width by
+# field type (scalar=1, vector=3). The cache is filled on first call (during solver priming),
+# so per-iteration calls only pay the exchange; halo_exchange! stays a fast function barrier.
+@inline function sync!(x::AbstractScalarField, dm::DistributedMesh, config)
+    (; backend, workgroup) = config.hardware
+    hc = getfield(dm, :halos)
+    hc.w1 === nothing && (hc.w1 = HaloExchange(dm, 1, backend))
+    halo_exchange!(x, hc.w1, backend, workgroup)
+    nothing
+end
+@inline function sync!(x::AbstractVectorField, dm::DistributedMesh, config)
+    (; backend, workgroup) = config.hardware
+    hc = getfield(dm, :halos)
+    hc.w3 === nothing && (hc.w3 = HaloExchange(dm, 3, backend))
+    halo_exchange!(x, hc.w3, backend, workgroup)
     nothing
 end
 

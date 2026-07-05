@@ -19,6 +19,21 @@ function XCALibre.Mesh._convert_array!(arr, backend::BACKEND)
     return adapt(GPUARRAY, arr) # using GPUARRAY
 end
 
+# NEW SECTION: distributed meshes (mirrors XCALibre_CUDAExt; NOT lab-verified, no AMD hardware)
+
+import XCALibre.Distribute
+import XCALibre.Distribute: DistributedMesh
+
+# kernels get the wrapped device mesh: host partition/procs metadata is not isbits and
+# no kernel reads it (HaloExchange/PETSc hold their own device copies)
+Adapt.adapt_structure(to::AMDGPU.Runtime.Adaptor, dm::DistributedMesh) =
+    Adapt.adapt(to, getfield(dm, :mesh))
+
+Distribute.bind_device!(::BACKEND, rank::Integer) =
+    (AMDGPU.device_id!(rank % length(AMDGPU.devices()) + 1); nothing) # device_id! is 1-based
+
+Distribute.petsc_device_info(::ROCArray) = (pkg="hip", mat="mpiaijhipsparse")
+
 import XCALibre.ModelFramework: _nzval, _rowptr, _colval, get_sparse_fields, 
                                 _build_A, _build_opA
 

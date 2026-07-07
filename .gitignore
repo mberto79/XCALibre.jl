@@ -15,6 +15,7 @@ dev/
 *.vtu
 *.pb.gz
 *.foam
+processor*/
 
 !NIST_*.csv
 *.txt

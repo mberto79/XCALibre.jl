@@ -15,13 +15,17 @@ mesh_file = joinpath(grids_dir, grid)
 # mesh_file = "bfs_unv_tet_5mm.unv"
 
 # mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
-mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
+# mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
 # mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
-@time mesh = UNV3D_mesh(mesh_file, scale=0.001) # 31 sec
+# @time mesh = UNV3D_mesh(mesh_file, scale=0.001) # 31 sec
 # @time mesh = UNV3D_mesh(mesh_file, scale=0.001, float_type=Float32)
+grids_dir = "/home/humberto/Desktop/BFS_GRIDS"
+mesh = UNV3D_mesh(joinpath(grids_dir, "bfs_unv_tet_4mm.unv"), scale=0.001)
 
 # backend = CUDABackend(); workgroup = 32
 # backend = CPU(); workgroup = 1024; activate_multithread(backend)
+backend = CPU(); workgroup = AutoTune()
+activate_multithread(backend)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
@@ -100,7 +104,7 @@ GC.gc(false)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config)
+residuals = run!(model, config, output=OpenFOAM())
 
 # Now get timing information
 
@@ -114,7 +118,7 @@ initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
 # @time residuals = run!(model, config, output=OpenFOAM(), ncorrectors=0)
-@time residuals = run!(model, config, output=VTK(), ncorrectors=0)
+@time residuals = run!(model, config, output=OpenFOAM(), ncorrectors=0)
 
 # model_cpu = adapt(CPU(), model)
 

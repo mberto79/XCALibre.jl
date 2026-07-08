@@ -37,9 +37,14 @@ function wall_distance!(model, walls, config; iterations=1000)
     # @reset phi_eqn.preconditioner = set_preconditioner(
     #     solvers.y.preconditioner, phi_eqn, wallBCs.y, config)
 
-    @reset phi_eqn.preconditioner = set_preconditioner(solvers.y.preconditioner, phi_eqn)
-
-    @reset phi_eqn.solver = _workspace(solvers.y.solver, _b(phi_eqn))
+    # Krylov preconditioner/workspace are serial-only (distributed solves through PETSc PCs)
+    if !is_distributed_mesh(mesh)
+        @reset phi_eqn.preconditioner = set_preconditioner(solvers.y.preconditioner, phi_eqn)
+        @reset phi_eqn.solver = _workspace(solvers.y.solver, _b(phi_eqn))
+    end
+    distributed = is_distributed_mesh(mesh)
+    phi_deqn = wrap_eqn(phi_eqn, mesh, solvers.y, config; label="y")
+    phi_eqn = unwrap_eqn(phi_deqn)
 
     TF = _get_float(mesh)
 
@@ -59,9 +64,9 @@ function wall_distance!(model, walls, config; iterations=1000)
         # apply_boundary_conditions!(phi_eqn, wallBCs.y, nothing, 0.0, config)
         apply_boundary_conditions!(phi_eqn, boundaries.y, nothing, 0.0, config)
 
-        update_preconditioner!(phi_eqn.preconditioner, mesh, config)
+        distributed || update_preconditioner!(phi_eqn.preconditioner, mesh, config)
         # implicit_relaxation!(phi_eqn, phi.values, solvers.y.relax, nothing, config)
-        phi_res = solve_system!(phi_eqn, solvers.y, phi, nothing, config)
+        phi_res = solve_system!(phi_deqn, solvers.y, phi, nothing, config)
         explicit_relaxation!(phi, prev, solvers.y.relax, config)
 
         if phi_res < solvers.y.convergence 
@@ -72,6 +77,8 @@ function wall_distance!(model, walls, config; iterations=1000)
         end
     end
     
+    # explicit_relaxation! overwrote ghost phi after the last solve synced it
+    sync!(phi, mesh, config)
     # grad!(phiGrad, phif, phi, wallBCs.y, zero(TF), config) # assuming time=0
     grad!(phiGrad, phif, phi, boundaries.y, zero(TF), config) # assuming time=0
     normal_distance!(y, phi, phiGrad, config)

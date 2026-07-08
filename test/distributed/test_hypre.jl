@@ -39,7 +39,9 @@ else
     Us_x, Us_y, ps = MPI.bcast(ref, comm; root=0)
 
     dm = distribute(gmesh; comm=comm)
-    model, config = incompressible_case(dm, cavity_bcs; iterations, p_precon=BoomerAMG())
+    # tuned form exercises the curated kwarg -> -pc_hypre_boomeramg_strong_threshold expansion
+    model, config = incompressible_case(dm, cavity_bcs; iterations,
+        p_precon=BoomerAMG(strong_threshold=0.7))
     residuals = run!(model, config; pref=0.0)
 
     dux, duy, dp = field_errors(dm, model, Us_x, Us_y, ps)

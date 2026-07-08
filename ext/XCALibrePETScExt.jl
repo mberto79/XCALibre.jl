@@ -18,6 +18,11 @@ _pc_type(::Jacobi) = "jacobi"
 _pc_type(::BoomerAMG) = "hypre" # PCHYPRE defaults to boomeramg; no transpose apply (SPD only)
 _pc_type(p) = error("no PETSc mapping for preconditioner $(typeof(p)); use petsc_options=\"-pc_type ...\"")
 
+# curated PC kwargs -> PETSc options; each BoomerAMG kwarg k=v becomes -pc_hypre_boomeramg_<k> v
+_pc_options(p) = (;)
+_pc_options(p::BoomerAMG) =
+    NamedTuple(Symbol("pc_hypre_boomeramg_$k") => v for (k, v) ∈ pairs(p.opts))
+
 # NEW SECTION: solver type
 
 struct XPETScSolver{PL,TM,TV,TK,TF} <: Distribute.AbstractDistributedSolver
@@ -88,7 +93,8 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
         Amat.ptr = orig
     end
     x, b = LibPETSc.MatCreateVecs(petsclib, Amat)
-    curated = (; ksp_type=_ksp_type(setup.solver), pc_type=_pc_type(setup.preconditioner))
+    curated = merge((; ksp_type=_ksp_type(setup.solver), pc_type=_pc_type(setup.preconditioner)),
+        _pc_options(setup.preconditioner))
     raw = isempty(petsc_options) ? (;) : PETSc.parse_options(String.(split(petsc_options)))
     opts = merge(curated, raw)
     # catches BoomerAMG and any "-pc_type hypre"/"-pc_hypre_type ..." passthrough
@@ -104,8 +110,10 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
     LibPETSc.KSPSetTolerances(petsclib, ksp, TF(rtol), TF(atol),
         TF(-2), PI(setup.itmax)) # -2 = PETSC_DEFAULT (dtol)
     LibPETSc.KSPSetInitialGuessNonzero(petsclib, ksp, LibPETSc.PETSC_TRUE)
+    extra = Base.structdiff(opts, (ksp_type=nothing, pc_type=nothing))
     MPI.Comm_rank(comm) == 0 && @info "PETSc solve [$label]: KSP=$(opts.ksp_type) " *
-        "PC=$(opts.pc_type) atol=$(TF(atol)) rtol=$(TF(rtol)) itmax=$(setup.itmax)"
+        "PC=$(opts.pc_type) atol=$(TF(atol)) rtol=$(TF(rtol)) itmax=$(setup.itmax)" *
+        (isempty(extra) ? "" : " " * join(("$k=$v" for (k, v) ∈ pairs(extra)), " "))
     XPETScSolver(petsclib, Amat, b, x, ksp, n, nnz_owned, vals,
         Vector{TF}(undef, n), Vector{TF}(undef, n))
 end

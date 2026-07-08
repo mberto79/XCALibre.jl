@@ -53,7 +53,8 @@ On a distributed mesh the solves go through PETSc. The `SolverSetup` fields map 
 follows:
 
 - `solver`: `Cg()` → `cg`, `Bicgstab()` → `bcgs`, `Gmres()` → `gmres` (PETSc `KSP` type).
-- `preconditioner`: `Jacobi()` → `jacobi`, `BoomerAMG()` → `hypre` (PETSc `PC` type).
+- `preconditioner`: `Jacobi()` → `jacobi`, `BoomerAMG()` → `hypre`, `GAMG()` → `gamg` (PETSc
+  `PC` type).
 - `atol`, `rtol`, `itmax`: passed to PETSc `KSPSetTolerances` (absolute/relative residual
   tolerance and maximum iterations). These are the live convergence controls.
 - `convergence`: used **only** as the PETSc absolute tolerance when both `atol` and `rtol` are
@@ -70,30 +71,96 @@ Any solver or preconditioner not in the curated list, or any extra PETSc option,
 through as a raw options string via the `petsc_options` keyword of `run!`, e.g.
 `run!(model, config; petsc_options="-ksp_monitor -pc_type gamg")`.
 
-## BoomerAMG for pressure
+## Algebraic multigrid for pressure (BoomerAMG and GAMG)
 
-For distributed runs the pressure Poisson solve typically converges far better with algebraic
-multigrid than with Jacobi. Use HYPRE BoomerAMG as the pressure preconditioner (requires the
-`--download-hypre` PETSc build):
+The pressure Poisson solve dominates incompressible runs, and its condition number worsens as
+the mesh grows, so Jacobi-preconditioned CG needs more iterations at larger sizes. Algebraic
+multigrid (AMG) builds a hierarchy of coarser problems and converges the pressure in a roughly constant number of
+Krylov iterations independent of size. XCALibre exposes two AMG preconditioners, both SPD-only
+(no transpose apply) and distributed-only (they error on a serial mesh):
+
+- `BoomerAMG()` — HYPRE BoomerAMG (`-pc_type hypre`). Requires a PETSc build configured with
+  `--download-hypre`.
+- `GAMG()` — PETSc's native aggregation AMG (`-pc_type gamg`). No extra build flags; always
+  available with PETSc.
 
 ```julia
-p = SolverSetup(solver = Cg(), preconditioner = BoomerAMG(), atol = 1e-6, rtol = 0.0, ...)
+p = SolverSetup(solver = Cg(), preconditioner = BoomerAMG(), rtol = 0.01, itmax = 1000, ...)
+# or, needing no hypre build:
+p = SolverSetup(solver = Cg(), preconditioner = GAMG(), rtol = 0.01, itmax = 1000, ...)
 ```
 
-BoomerAMG is tuned with keyword arguments — each `k = v` becomes the PETSc option
-`-pc_hypre_boomeramg_<k> v`:
+### When AMG helps
+
+AMG carries a per-solve overhead (building/refreshing the hierarchy plus applying a V-cycle)
+that Jacobi does not, so on small partitions it can be *slower* than Jacobi. The benefit grows
+with problem size. On a tetrahedral backward-facing-step benchmark (8 ranks, per-iteration wall
+time):
+
+| cells | CG+Jacobi | CG+GAMG | CG+BoomerAMG |
+|------:|----------:|--------:|-------------:|
+| 0.5M  | 393 ms    | 464 ms  | 465 ms       |
+| 2.7M  | 2194 ms   | 2117 ms | 2089 ms      |
+
+Jacobi scales super-linearly while AMG scales sub-linearly, so AMG overtakes Jacobi around ~1M
+cells and its lead widens beyond. AMG also drives the pressure residual far deeper per outer
+iteration (6–8× here), which can cut the number of outer SIMPLE iterations needed to reach a
+steady state (a further gain not visible in the per-iteration figure above). Rule of thumb: use
+Jacobi for small/medium cases, AMG for large ones (especially when the pressure solve dominates).
+
+### Rebuilding vs reusing the hierarchy
+
+In SIMPLE the pressure matrix keeps a **fixed sparsity pattern** (no mesh refinement) but its
+coefficients change slightly each outer iteration. Rebuilding the whole AMG hierarchy on every
+solve is expensive, so both preconditioners avoid it — differently:
+
+- `BoomerAMG(reuse = N)` freezes the hierarchy and rebuilds it only every `N` solves (default
+  `10`; `reuse = 1` rebuilds every solve). HYPRE cannot partially reuse a hierarchy, so this
+  all-or-nothing freeze is the only option; the frozen hierarchy remains a good preconditioner
+  in cases where the matrix changes gently between rebuilds.
+- `GAMG()` sets `reuse_interpolation = true` by default: it builds the aggregation and
+  interpolation operators once and recomputes only the (cheap) coarse operators and smoothers
+  each solve, so the hierarchy stays numerically current at a fraction of a full setup. This is
+  valid precisely because the sparsity pattern never changes. `GAMG(reuse = N)` can additionally
+  freeze the whole preconditioner for `N` solves if wanted (default `1`).
+
+### Tuning keywords
+
+Each keyword `k = v` is forwarded to PETSc and overrides a default.
+
+**BoomerAMG** → `-pc_hypre_boomeramg_<k> v`. Defaults are tuned for 3D (`strong_threshold = 0.7`,
+`coarsen_type = "HMIS"`, `interp_type = "ext+i"`, `agg_nl = 1`, `agg_num_paths = 2`) — HYPRE's own
+defaults are 2D-oriented and build an over-complex, memory-heavy hierarchy in 3D. Common knobs:
+
+- `strong_threshold` — strength-of-connection threshold; 0.5–0.7 for 3D.
+- `coarsen_type` — coarsening algorithm: `"HMIS"`, `"PMIS"`, `"Falgout"`, ...
+- `interp_type` — interpolation: `"ext+i"`, `"classical"`, ...
+- `agg_nl` — number of aggressive-coarsening levels (lower operator complexity and memory).
+- `relax_type_all` — smoother, e.g. `"SOR/Jacobi"`, `"Chebyshev"`, `"l1scaled-Jacobi"`.
+- `grid_sweeps_all` — smoother sweeps per level.
 
 ```julia
-BoomerAMG(strong_threshold = 0.7, coarsen_type = "HMIS")
+BoomerAMG(strong_threshold = 0.6, coarsen_type = "PMIS", relax_type_all = "Chebyshev", reuse = 20)
 ```
 
-See PETSc's `-pc_hypre_boomeramg_*` options for the full list; anything not needed as a keyword
-can still be supplied through `petsc_options`. `BoomerAMG` is SPD-only (no transpose apply) and
-is distributed-only — it errors if used on a serial mesh.
+**GAMG** → `-pc_gamg_<k> v`. Common knobs:
+
+- `threshold` — aggregation strength threshold (e.g. `0.01`–`0.05`).
+- `agg_nsmooths` — prolongator smoothing steps; `0` = unsmoothed aggregation (cheaper, often good
+  for Poisson).
+- `reuse_interpolation` — reuse aggregation/interpolation across solves (default `true` here).
+- `coarse_eq_limit` — size at which the coarsest level is solved directly.
+
+```julia
+GAMG(threshold = 0.02, agg_nsmooths = 0)
+```
+
+See PETSc's `-pc_hypre_boomeramg_*` and `-pc_gamg_*` option lists for the full set; anything not
+exposed as a keyword can still be supplied through the `petsc_options` keyword of `run!`.
 
 !!! note
-    Do not set BoomerAMG as a default preconditioner in shared scripts: a PETSc build without
-    hypre will error at solver construction.
+    Do not hard-code `BoomerAMG` as a default in shared scripts: a PETSc build without hypre
+    errors at solver construction. `GAMG` needs no special build and is a safe default AMG.
 
 ## Terminal output
 

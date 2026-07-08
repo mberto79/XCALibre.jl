@@ -16,18 +16,13 @@ julia --project=dev/petscenv -e 'using MPI; run(`$(MPI.mpiexec()) -n 4 --bind-to
 =#
 using XCALibre, PETSc, MPI
 
-MPI.Init()
 comm = MPI.COMM_WORLD
-rank = MPI.Comm_rank(comm)
 
-# rank 0 reads the global mesh; distribute partitions and scatters it
-mesh = if rank == 0
+# rank 0 reads the global mesh; distribute partitions and scatters it (read only on root)
+mesh_dist = distribute(comm=comm) do
     grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
     UNV2D_mesh(joinpath(grids_dir, "cylinder_d10mm_5mm.unv"), scale=0.001)
-else
-    nothing
 end
-mesh_dist = distribute(mesh; comm=comm)
 
 backend = CPU(); workgroup = 64
 hardware = Hardware(backend=backend, workgroup=workgroup)
@@ -105,5 +100,5 @@ initialise!(model.momentum.p, 0.0)
 
 residuals = run!(model, config)
 
-rank == 0 && println("done: final residuals Ux=", residuals.Ux[end],
+MPI.Comm_rank(comm) == 0 && println("done: final residuals Ux=", residuals.Ux[end],
     " Uy=", residuals.Uy[end], " p=", residuals.p[end])

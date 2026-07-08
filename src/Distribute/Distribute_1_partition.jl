@@ -275,6 +275,22 @@ function distribute(mesh; comm=MPI.COMM_WORLD, periodic_patches=())
     end
 end
 
+"""
+    distribute(reader::Function; comm=MPI.COMM_WORLD, periodic_patches=())
+
+Root-only read + online distribution: rank 0 calls `reader()` to build the global mesh, other
+ranks skip it. Lets a script read a mesh under MPI without a manual `rank == 0` guard, e.g.
+
+    mesh = distribute(comm=comm) do
+        UNV2D_mesh(path, scale=0.001)
+    end
+"""
+function distribute(reader::Function; comm=MPI.COMM_WORLD, periodic_patches=())
+    MPI.Initialized() || MPI.Init()
+    mesh = MPI.Comm_rank(comm) == 0 ? reader() : nothing
+    distribute(mesh; comm, periodic_patches)
+end
+
 # NEW SECTION: offline partitioning
 
 """

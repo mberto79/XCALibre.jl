@@ -3,6 +3,7 @@ module Distribute
 using SparseArrays, StaticArrays, Accessors, LinearAlgebra, Serialization
 using MPI, Metis
 using Printf
+using Logging
 using KernelAbstractions, Atomix
 import Adapt
 using XCALibre.Mesh

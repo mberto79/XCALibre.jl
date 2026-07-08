@@ -258,8 +258,16 @@ periodic boundaries: matched owner cells are contracted in the partition graph s
 periodic pair lands on one rank, and `construct_periodic` on the `DistributedMesh` then
 works per rank exactly as in serial.
 """
+# non-root ranks: silence @info/@debug, keep @warn/@error so crashes still surface from any rank
+function quiet_nonroot!(comm)
+    (MPI.Comm_size(comm) > 1 && MPI.Comm_rank(comm) != 0) &&
+        global_logger(ConsoleLogger(stderr, Logging.Warn))
+    nothing
+end
+
 function distribute(mesh; comm=MPI.COMM_WORLD, periodic_patches=())
     MPI.Initialized() || MPI.Init()
+    quiet_nonroot!(comm)
     nranks = MPI.Comm_size(comm)
     rank = MPI.Comm_rank(comm)
     nranks == 1 && return extract_subdomain(mesh, partition_cells(mesh, 1), 1)
@@ -316,6 +324,7 @@ its own `rank_<rank>.jls` from `dir` (no rank-0 memory bottleneck).
 """
 function distribute(dir::AbstractString; comm=MPI.COMM_WORLD)
     MPI.Initialized() || MPI.Init()
+    quiet_nonroot!(comm)
     dm = deserialize(joinpath(dir, "rank_$(MPI.Comm_rank(comm)).jls"))
     p = getfield(dm, :partition)
     p.nranks == MPI.Comm_size(comm) || error(

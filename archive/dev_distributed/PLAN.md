@@ -1,0 +1,18 @@
+# Distribute module (MPI multi-node/multi-GPU)
+- goal: distributed XCALibre via new src/Distribute module; serial files untouched; minimal overloads (§2.6 of distributed_plan_detailed.md)
+- phase plans: dev/plans/phase0.md..phase8.md (authoritative per-phase specs)
+- invariants: local-serial principle (plain Mesh3 per rank, owned-then-ghost); processor faces = interior faces; send/recv lists sorted by orig gid; ghost rows never shipped/reduced; no silent CPU fallback; geometry copied verbatim
+- perf gate (every phase from 4 on): new hot-path fns get alloc budget (~2x measured) + @inferred in test_perf.jl; scaling check test_scaling.jl (finer 2d mesh, speedup at max ranks); numbers in STATE, blown budget = fix not raise
+- phases:
+  - [~] 0 scaffolding (module+deps done in 1; PETSc ext + harness done in 3; CI remains)
+  - [x] 1 partitioning + local mesh — gate: test/distributed/test_partition.jl (single-process, nparts 1/2/4)
+  - [x] 2 halo exchange + fields — gate: test_halo.jl under mpiexec n=2,4 (harness runtests_mpi.jl done)
+  - [x] 3 PETSc assembly/SpMV — gate: test_assembly.jl n=1,2,4 (ext/XCALibrePETScExt.jl; needs --project=dev/petscenv)
+  - [x] 4 plaplace! + prun! — gates green n=1,2,4,8 (test_laplace + test_perf + test_scaling); output → phase 8 (parallel OpenFOAM writer, NO pvtu; user decision)
+  - [x] 5 psimple!/ppiso! — gates green n=1,2,4,8 (test_psimple + test_ppiso + perf; fields match serial ~1e-8)
+  - [x] 6 multi-GPU (local only) — GPU cavity gate green n=1,2 (solve_on=CPU); lab-deferred: cusparse mat path, CUDA-aware MPI, multi-GPU scaling
+  - [x] 7 GPU-native validation → I/O → F32 — all gated 2026-07-04 (native mpiaijcusparse solve; decomposed OF writer; F32 via dev/petscenv_f32 + petsc-f32 build, n=2,4 green)
+  - [ ] 8 (reordered 2026-07-04, spec in phase8.md + dev/arch_review.md): 1 solver unification (delete p-twins; seams sync!/wrap_eqn/min-max fold; then cross-partition periodics) → 2 offline partitioning → 3 HYPRE → 4 AD → 5 docs
+    - [x] 8.3 HYPRE DONE (2026-07-05): PETSc-bundled (--download-hypre), no HYPRE.jl dep; BoomerAMG precon type; guards tested; full-solve gate pending PETSc rebuild
+    - [x] 8.1.A-E unification DONE (2026-07-04): p-twins/prun!/Distribute_6 deleted; seams sync!/wrap_eqn/global_max/writer; KOmega distributed. Gates: serial 811/811; MPI laplace/psimple/ppiso/turbulence/perf/io n=1,2,4; GPU n=1,2. Pending: F32+scaling reruns; periodics follow-on; SST/LKE/LES not wired
+- AMD parity rule (all GPU work): mirror CUDA-ext features in ext/XCALibre_AMDExt.jl (KernelAdaptor adapt, bind_device!, petsc_device_info); parse-check only, flag lab-unverified

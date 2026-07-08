@@ -1,0 +1,5 @@
+- 2026-07-05 hypre via PETSc --download-hypre, NOT HYPRE.jl — why: zero new deps, PCHYPRE covers F32+CUDA
+- 2026-07-05 dropped linear_backend kwarg — why: hypre is a PC, not a second backend
+- 2026-07-05 BoomerAMG not pressure default — why: breaks non-hypre builds; recommend in docs
+- 2026-07-05 F32 hypre: -Wno-implicit-function-declaration workaround, not upstream pin — why: ParaSails dcopy_ unfixed on hypre master; ParaSails unused (BoomerAMG only), wrong-in-F32 acceptable
+- 2026-07-05 build JOBS=6 + --with-make-np on this box — why: 14GB RAM, -j32 OOM-killed

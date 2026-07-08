@@ -1,0 +1,13 @@
+{
+  "hypre_cavity_n2_dux": 2.3006885563336965e-8,
+  "hypre_cavity_n2_duy": 1.740504675107335e-8,
+  "hypre_cavity_n2_dp": 6.143853648055142e-9,
+  "hypre_gate_n1_walltime_s": 28.1,
+  "hypre_gate_n2_walltime_s": 34.1,
+  "hypre_gate_n4_walltime_s": 40.3,
+  "psimple_gate_n1_walltime_s": 38.4,
+  "psimple_gate_n2_walltime_s": 46.9,
+  "psimple_gate_n4_walltime_s": 54.7,
+  "f32_gate_n2_walltime_s": 34.5,
+  "f32_gate_n4_walltime_s": 40.1
+}

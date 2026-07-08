@@ -21,9 +21,9 @@ _comm(deqn::DistributedEqn) = deqn.halo.comm
 Solve.unwrap_eqn(deqn::DistributedEqn) = deqn.eqn
 
 function Solve.wrap_eqn(eqn, dmesh::DistributedMesh, setup, config;
-        petsc_options="", solve_on=nothing)
+        petsc_options="", solve_on=nothing, label="")
     (; backend) = config.hardware
-    DistributedEqn(eqn, PETScSolver(eqn, dmesh, setup; petsc_options, solve_on),
+    DistributedEqn(eqn, PETScSolver(eqn, dmesh, setup; petsc_options, solve_on, label),
         getfield(dmesh, :partition), HaloExchange(dmesh, 1, backend))
 end
 

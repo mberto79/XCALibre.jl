@@ -49,7 +49,7 @@ function _petsclib(TF)
 end
 
 function PETScSolver(eqn, dmesh::DistributedMesh, setup;
-        comm=MPI.COMM_WORLD, petsc_options="", solve_on=nothing)
+        comm=MPI.COMM_WORLD, petsc_options="", solve_on=nothing, label="")
     part = dmesh.partition
     TF = _get_float(dmesh)
     petsclib = _petsclib(TF)
@@ -98,9 +98,14 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
             "or pick another preconditioner.")
     end
     ksp = PETSc.KSP(Amat; opts...)
-    LibPETSc.KSPSetTolerances(petsclib, ksp, TF(setup.rtol), TF(setup.atol),
+    # atol/rtol/itmax are the live PETSc knobs; setting both tols to 0 defers to `convergence`
+    atol, rtol = setup.atol, setup.rtol
+    (iszero(atol) && iszero(rtol)) && (atol = setup.convergence)
+    LibPETSc.KSPSetTolerances(petsclib, ksp, TF(rtol), TF(atol),
         TF(-2), PI(setup.itmax)) # -2 = PETSC_DEFAULT (dtol)
     LibPETSc.KSPSetInitialGuessNonzero(petsclib, ksp, LibPETSc.PETSC_TRUE)
+    MPI.Comm_rank(comm) == 0 && @info "PETSc solve [$label]: KSP=$(opts.ksp_type) " *
+        "PC=$(opts.pc_type) atol=$(TF(atol)) rtol=$(TF(rtol)) itmax=$(setup.itmax)"
     XPETScSolver(petsclib, Amat, b, x, ksp, n, nnz_owned, vals,
         Vector{TF}(undef, n), Vector{TF}(undef, n))
 end

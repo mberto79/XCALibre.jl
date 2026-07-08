@@ -88,7 +88,7 @@ function setup_laplace_solver(
     energyModel = initialise(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, config)
 
     # wrap for the linear-solve seam (identity serial / DistributedEqn on a DistributedMesh)
-    T_eqn = wrap_eqn(T_eqn, mesh, solvers, config; petsc_options, solve_on)
+    T_eqn = wrap_eqn(T_eqn, mesh, solvers, config; petsc_options, solve_on, label="T")
 
 
     # The part that was previously inside the solver

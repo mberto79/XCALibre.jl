@@ -96,8 +96,8 @@ function setup_incompressible_solvers(
     turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     # wrap eqns for the linear-solve seam: identity serial, DistributedEqn on a DistributedMesh
-    U_eqn = wrap_eqn(U_eqn, mesh, solvers.U, config; petsc_options, solve_on)
-    p_eqn = wrap_eqn(p_eqn, mesh, solvers.p, config; petsc_options, solve_on)
+    U_eqn = wrap_eqn(U_eqn, mesh, solvers.U, config; petsc_options, solve_on, label="U")
+    p_eqn = wrap_eqn(p_eqn, mesh, solvers.p, config; petsc_options, solve_on, label="p")
 
     residuals  = solver_variant(
         model, turbulenceModel, ∇p, U_eqn, p_eqn, config;

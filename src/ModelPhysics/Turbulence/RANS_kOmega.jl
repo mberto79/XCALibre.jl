@@ -134,8 +134,8 @@ function initialise(
 
     # wrap transported-scalar eqns for the distributed solve seam (identity serial). This is
     # the single hook that makes any turbulence model distributed-capable.
-    k_eqn = wrap_eqn(k_eqn, mesh, solvers.k, config)
-    ω_eqn = wrap_eqn(ω_eqn, mesh, solvers.omega, config)
+    k_eqn = wrap_eqn(k_eqn, mesh, solvers.k, config; label="k")
+    ω_eqn = wrap_eqn(ω_eqn, mesh, solvers.omega, config; label="omega")
 
     initial_residual = ((:k, 1.0),(:omega, 1.0))
     return KOmegaModel(

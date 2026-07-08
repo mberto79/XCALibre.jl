@@ -16,6 +16,10 @@ julia --project=dev/petscenv -e 'using MPI; run(`$(MPI.mpiexec()) -n 4 --bind-to
 =#
 using XCALibre, PETSc, MPI
 
+# CUDA-configured PETSc (built for hypre/BoomerAMG) errors at init unless GPU-aware MPI is
+# confirmed. This is a CPU run, so skip the check. Must be set before PetscInitialize.
+get!(ENV, "PETSC_OPTIONS", "-use_gpu_aware_mpi 0")
+
 MPI.Init()
 comm = MPI.COMM_WORLD
 rank = MPI.Comm_rank(comm)
@@ -80,7 +84,8 @@ solvers = (
     ),
     p = SolverSetup(
         solver      = Cg(),
-        preconditioner = Jacobi(),
+        # preconditioner = Jacobi(),
+        preconditioner = BoomerAMG(),
         convergence = 1e-7,
         relax       = 0.2,
         rtol = 0.01,

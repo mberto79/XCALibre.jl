@@ -16,12 +16,19 @@ _ksp_type(::Gmres) = "gmres"
 _ksp_type(s) = error("no PETSc mapping for solver $(typeof(s)); use petsc_options=\"-ksp_type ...\"")
 _pc_type(::Jacobi) = "jacobi"
 _pc_type(::BoomerAMG) = "hypre" # PCHYPRE defaults to boomeramg; no transpose apply (SPD only)
+_pc_type(::GAMG) = "gamg" # PETSc native aggregation AMG (SPD only)
 _pc_type(p) = error("no PETSc mapping for preconditioner $(typeof(p)); use petsc_options=\"-pc_type ...\"")
 
-# curated PC kwargs -> PETSc options; each BoomerAMG kwarg k=v becomes -pc_hypre_boomeramg_<k> v
+# curated PC kwargs -> PETSc options; each kwarg k=v becomes -pc_<prefix>_<k> v
 _pc_options(p) = (;)
 _pc_options(p::BoomerAMG) =
     NamedTuple(Symbol("pc_hypre_boomeramg_$k") => v for (k, v) ∈ pairs(p.opts))
+_pc_options(p::GAMG) =
+    NamedTuple(Symbol("pc_gamg_$k") => v for (k, v) ∈ pairs(p.opts))
+
+# PCs that manage their own hierarchy across solves carry a `reuse` count (freeze every N solves)
+_pc_reuse(p) = 1
+_pc_reuse(p::Union{BoomerAMG,GAMG}) = p.reuse
 
 # NEW SECTION: solver type
 
@@ -36,6 +43,8 @@ struct XPETScSolver{PL,TM,TV,TK,TF} <: Distribute.AbstractDistributedSolver
     vals::Vector{TF}   # host staging: owned-row nzval slice
     bhost::Vector{TF}
     xhost::Vector{TF}
+    setup_every::Int   # rebuild the PC every N solves (1 = every solve, PETSc default)
+    nsolve::Base.RefValue{Int}
 end
 
 _petsc_has_pkg(petsclib, pkg) =
@@ -114,8 +123,9 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
     MPI.Comm_rank(comm) == 0 && @info "PETSc solve [$label]: KSP=$(opts.ksp_type) " *
         "PC=$(opts.pc_type) atol=$(TF(atol)) rtol=$(TF(rtol)) itmax=$(setup.itmax)" *
         (isempty(extra) ? "" : " " * join(("$k=$v" for (k, v) ∈ pairs(extra)), " "))
+    setup_every = _pc_reuse(setup.preconditioner)
     XPETScSolver(petsclib, Amat, b, x, ksp, n, nnz_owned, vals,
-        Vector{TF}(undef, n), Vector{TF}(undef, n))
+        Vector{TF}(undef, n), Vector{TF}(undef, n), setup_every, Ref(0))
 end
 
 # NEW SECTION: assembly and solve
@@ -144,7 +154,17 @@ _copy_owned_out!(s, x) = begin
     copyto!(view(x, 1:s.n_owned), s.xhost)
 end
 
+# rebuild the PC every `setup_every` solves; reuse the (cheap-to-apply) hierarchy in between.
+# Krylov still uses the updated matrix, so it converges to the current system's solution.
+function _maybe_reuse_pc!(s::XPETScSolver)
+    s.setup_every <= 1 && return
+    n = s.nsolve[]; s.nsolve[] = n + 1
+    flag = (n % s.setup_every == 0) ? LibPETSc.PETSC_FALSE : LibPETSc.PETSC_TRUE
+    LibPETSc.KSPSetReusePreconditioner(s.petsclib, s.ksp, flag)
+end
+
 function psolve!(s::XPETScSolver, x::AbstractVector)
+    _maybe_reuse_pc!(s)
     _copy_owned_in!(s, x)
     PETSc.solve!(s.x, s.ksp, s.b)
     _copy_owned_out!(s, x)

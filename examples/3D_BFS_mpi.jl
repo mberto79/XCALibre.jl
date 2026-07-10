@@ -23,18 +23,24 @@ get!(ENV, "PETSC_OPTIONS", "-use_gpu_aware_mpi 0")
 MPI.Init()
 comm = MPI.COMM_WORLD
 rank = MPI.Comm_rank(comm)
+nranks = MPI.Comm_size(comm)
 
 # rank 0 reads the global mesh; distribute partitions and scatters it
-mesh = if rank == 0
+partdir = if rank == 0
     grids_dir = "/home/humberto/Desktop/BFS_GRIDS"
-    UNV3D_mesh(joinpath(grids_dir, "bfs_unv_tet_5mm.unv"), scale=0.001)
+    mesh = UNV3D_mesh(joinpath(grids_dir, "bfs_unv_tet_5mm.unv"), scale=0.001)
+    
+    partdir = joinpath(pwd(), "parts")
+    partition_mesh(mesh, nranks; dir=partdir)
+    partdir
 
     # grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
     # UNV3D_mesh(joinpath(grids_dir, "bfs_unv_tet_10mm.unv"), scale=0.001)
 else
     nothing
 end
-mesh_dist = distribute(mesh; comm=comm)
+# mesh_dist = distribute(mesh; comm=comm)
+mesh_dist = distribute(partdir; comm=comm)
 
 backend = CPU(); workgroup = AutoTune()
 activate_multithread(backend)
@@ -85,7 +91,8 @@ solvers = (
     p = SolverSetup(
         solver      = Cg(),
         # preconditioner = Jacobi(),
-        preconditioner = BoomerAMG(),
+        # preconditioner = BoomerAMG(),
+        preconditioner = GAMG(),
         convergence = 1e-7,
         relax       = 0.2,
         rtol = 0.01,
@@ -100,7 +107,7 @@ schemes = (
     p = Schemes(time=SteadyState, gradient=gradScheme)
 )
 
-runtime = Runtime(iterations=500, write_interval=500, time_step=1)
+runtime = Runtime(iterations=100, write_interval=100, time_step=1)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

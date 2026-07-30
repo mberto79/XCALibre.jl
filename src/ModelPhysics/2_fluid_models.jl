@@ -3,7 +3,9 @@ export Fluid
 export Incompressible, Incompressible_MRF, WeaklyCompressible, Compressible
 export Phase, Fluid, Multiphase
 export AbstractModel, AbstractEosModel, AbstractViscosityModel
+export AbstractConductivityModel, AbstractHeatCapacityModel, AbstractExpansivityModel
 export AbstractMultiphaseModel, VOF, Mixture
+export update_phase_property!
 export Incompressible, WeaklyCompressible, Compressible, SupersonicFlow
 
 abstract type AbstractFluid end
@@ -15,6 +17,9 @@ abstract type AbstractPhase <: AbstractMultiphase end
 abstract type AbstractModel end
 abstract type AbstractEosModel <: AbstractModel end
 abstract type AbstractViscosityModel <: AbstractModel end
+abstract type AbstractConductivityModel <: AbstractModel end
+abstract type AbstractHeatCapacityModel <: AbstractModel end
+abstract type AbstractExpansivityModel <: AbstractModel end
 abstract type AbstractMultiphaseModel end
 
 
@@ -212,23 +217,48 @@ end
 Configuration structure for a single fluid phase.
 
 ### Fields
-- `rho` -- Density model (Equation of State) for the phase.
-- `mu`  -- Viscosity model for the phase.
+- `rho`  -- Density model (Equation of State) for the phase.
+- `mu`   -- Viscosity model for the phase.
+- `k`    -- Thermal conductivity model (optional, `nothing` if not provided).
+- `cp`   -- Specific heat capacity model (optional, `nothing` if not provided).
+- `beta` -- Thermal expansivity model (optional, `nothing` if not provided).
+
+Any property given as a plain `AbstractFloat` is promoted to the corresponding
+constant model (e.g. `k=0.1` becomes `ConstK(0.1)`).
+
+The thermal properties are only required by energy-aware solvers. They default
+to `nothing` so that a phase which is missing a property needed by the selected
+energy model fails loudly rather than silently defaulting to zero.
+
+### Examples
+- `Phase(rho=1000.0, mu=1.0e-3)` - isothermal use.
+- `Phase(rho=70.8, mu=13.2e-6, k=0.1, cp=9660.0, beta=0.0164)` - with energy.
 """
-struct Phase{E<:AbstractEosModel, V<:AbstractViscosityModel} <: AbstractPhase
+struct Phase{E<:AbstractEosModel, V<:AbstractViscosityModel, K, C, B} <: AbstractPhase
     rho::E
     mu::V
+    k::K
+    cp::C
+    beta::B
 end
 
-function Phase(; rho, mu) # Covers all combinations e.g. mu=1.8e-5 or mu=SutherlandModel() etc
-    rho_model = rho isa AbstractFloat ? ConstEos(rho) : rho
-    mu_model = mu  isa AbstractFloat ? ConstMu(mu) : mu
-    return Phase(rho_model, mu_model)
+# Covers all combinations e.g. mu=1.8e-5 or mu=SutherlandModel() etc
+function Phase(; rho, mu, k=nothing, cp=nothing, beta=nothing)
+    rho_model  = rho  isa AbstractFloat ? ConstEos(rho)   : rho
+    mu_model   = mu   isa AbstractFloat ? ConstMu(mu)     : mu
+    k_model    = k    isa AbstractFloat ? ConstK(k)       : k
+    cp_model   = cp   isa AbstractFloat ? ConstCp(cp)     : cp
+    beta_model = beta isa AbstractFloat ? ConstBeta(beta) : beta
+    return Phase(rho_model, mu_model, k_model, cp_model, beta_model)
 end
 
-@kwdef struct PhaseState{E<:AbstractEosModel, V<:AbstractViscosityModel, S1,S2,S3,S4,S5} <: AbstractPhase
+@kwdef struct PhaseState{E<:AbstractEosModel, V<:AbstractViscosityModel, K, C, B,
+                         S1,S2,S3,S4,S5} <: AbstractPhase
     rho_model::E
     mu_model::V
+    k_model::K
+    cp_model::C
+    beta_model::B
 
     rho::S1
     mu::S2
@@ -238,24 +268,38 @@ end
 end
 Adapt.@adapt_structure PhaseState
 
+# `_phase_property_field` decides the storage for each property (ConstantScalar
+# for constant models, ScalarField for variable ones, `nothing` when the
+# property was not supplied). Its methods live in 2_thermophysical_models.jl
+# alongside the concrete property models, which are included after this file.
 
 function build_phase(phase_setup::Phase, mesh)
-    rho   = phase_setup.rho isa ConstEos ? ConstantScalar(phase_setup.rho.rho) : ScalarField(mesh)
-    mu    = phase_setup.mu  isa ConstMu ? ConstantScalar(phase_setup.mu.mu) : ScalarField(mesh)
-    k     = ScalarField(mesh)
-    cp    = ScalarField(mesh)
-    beta  = ScalarField(mesh)
-
     return PhaseState(
-        rho_model = phase_setup.rho,
-        mu_model = phase_setup.mu,
-        rho=rho,
-        mu=mu,
-        k=k,
-        cp=cp,
-        beta=beta
+        rho_model  = phase_setup.rho,
+        mu_model   = phase_setup.mu,
+        k_model    = phase_setup.k,
+        cp_model   = phase_setup.cp,
+        beta_model = phase_setup.beta,
+
+        rho  = _phase_property_field(phase_setup.rho,  mesh),
+        mu   = _phase_property_field(phase_setup.mu,   mesh),
+        k    = _phase_property_field(phase_setup.k,    mesh),
+        cp   = _phase_property_field(phase_setup.cp,   mesh),
+        beta = _phase_property_field(phase_setup.beta, mesh),
     )
 end
+
+"""
+    update_phase_property!(field, model, p, T, config)
+
+Recompute a single per-cell phase property at the given absolute pressure and
+temperature. Constant models and unsupplied (`nothing`) properties fall through
+to this no-op, so it is safe to call unconditionally each time step.
+
+Variable-property methods are defined alongside their models, e.g.
+`update_phase_property!(field, ::IdealGas, ...)` in 2_thermophysical_models.jl.
+"""
+update_phase_property!(field, model, p, T, config) = nothing
 
 """
     VOF(; sigma=0.0, cAlpha=1.0) <: AbstractMultiphaseModel

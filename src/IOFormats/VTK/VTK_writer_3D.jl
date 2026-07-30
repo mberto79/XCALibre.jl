@@ -30,7 +30,8 @@ function initialise_writer(format::VTK, mesh::Mesh3)
     version="1.0"
     format="ascii"
     byte_order="LittleEndian"
-    F32="Float64"
+    # Node coordinates are Float64; must match what is written below.
+    FLOAT="Float64"
     I64="Int64"
     poly=42
     x=0
@@ -45,7 +46,7 @@ function initialise_writer(format::VTK, mesh::Mesh3)
       <UnstructuredGrid>
        <Piece NumberOfPoints="$(nPoints)" NumberOfCells="$(nCells)">
         <Points>
-         <DataArray type="$(F32)" NumberOfComponents="3" format="$(format)">
+         <DataArray type="$(FLOAT)" NumberOfComponents="3" format="$(format)">
     """)
 
     for i=1:nPoints
@@ -167,7 +168,12 @@ function write_results(
     # Define backend and variables
     backend = _get_backend(mesh)
     format = "ascii"
-    F32 = "Float32"
+
+    # Field values are written with full Float64 precision (`println` on a
+    # Float64 emits up to 17 significant digits), so the DataArray MUST be
+    # declared Float64. Declaring Float32 while writing Float64 text made
+    # ParaView crash on load.
+    FLOAT = "Float64"
 
     open(filename,"w") do io
 
@@ -178,14 +184,14 @@ function write_results(
             field = arg[2]
             field_type=typeof(field)
             if field_type <: ScalarField
-                write(io,"     <DataArray type=\"$(F32)\" Name=\"$(label)\" format=\"$(format)\">\n")
+                write(io,"     <DataArray type=\"$(FLOAT)\" Name=\"$(label)\" format=\"$(format)\">\n")
                 values_cpu = get_data(field.values, backend)
                 for value ∈ values_cpu
                     println(io,value)
                 end
                 write(io,"     </DataArray>\n")
             elseif field_type <: VectorField
-                write(io,"     <DataArray type=\"$(F32)\" Name=\"$(label)\" format=\"$(format)\" NumberOfComponents=\"3\">\n")
+                write(io,"     <DataArray type=\"$(FLOAT)\" Name=\"$(label)\" format=\"$(format)\" NumberOfComponents=\"3\">\n")
                 x_cpu = get_data(field.x.values, backend)
                 y_cpu = get_data(field.y.values, backend)
                 z_cpu = get_data(field.z.values, backend)
@@ -194,7 +200,7 @@ function write_results(
                 end
                 write(io,"     </DataArray>\n")
             elseif field_type <: AbstractTensorField
-                write(io,"     <DataArray type=\"$(F32)\" Name=\"$(label)\" format=\"$(format)\" NumberOfComponents=\"9\">\n")
+                write(io,"     <DataArray type=\"$(FLOAT)\" Name=\"$(label)\" format=\"$(format)\" NumberOfComponents=\"9\">\n")
                 xx_cpu = get_data(field.xx.values, backend)
                 xy_cpu = get_data(field.xy.values, backend)
                 xz_cpu = get_data(field.xz.values, backend)

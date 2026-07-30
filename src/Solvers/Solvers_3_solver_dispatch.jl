@@ -50,6 +50,11 @@ run!(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=3
     ) where{T,F<:Multiphase,SO,M,Tu,E,D,BI} =
 begin
+    # This method dispatches on the fluid alone, so without this check an
+    # unsupported energy model would be accepted by the `Physics` constructor
+    # and then silently ignored by the multiphase solver.
+    _assert_supported_multiphase_energy(model.energy)
+
     residuals = multiphase!(
         model, config,
         output=output,
@@ -59,6 +64,16 @@ begin
         )
     return residuals
 end
+
+# `Energy{Isothermal}` builds to `nothing`.
+_assert_supported_multiphase_energy(::Nothing) = nothing
+_assert_supported_multiphase_energy(::TwoPhaseTemperature) = nothing
+_assert_supported_multiphase_energy(energy) = throw(ArgumentError(
+    """`$(typeof(energy).name.wrapper)` is not supported by the multiphase solver. \
+Use `Energy{Isothermal}()` or `Energy{TwoPhaseTemperature}(Tref=...)`.
+
+`SensibleEnthalpy` and `InternalEnergy` are single-phase models: they read \
+`model.fluid.cp`, `.R` and `.gamma`, which `Multiphase` does not define."""))
 
 # Laplace solver (steady)
 """

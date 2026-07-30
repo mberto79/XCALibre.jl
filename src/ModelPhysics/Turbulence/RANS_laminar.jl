@@ -102,24 +102,24 @@ function turbulence!(
     nothing
 end
 
-# Specialise VTK writer
-function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
-    ) where {T,F,SO,M,Tu<:Laminar,E,D,BI}
-    if typeof(model.fluid)<:AbstractCompressible
-        args = (
-            ("U", model.momentum.U), 
-            ("p", model.momentum.p),
-            ("rho", model.fluid.rho),
-            ("T", model.energy.T)
-        )
-    else
-        args = (
-            ("U", model.momentum.U), 
-            ("p", model.momentum.p)
-        )
-    end
-    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
-end
+# # Specialise VTK writer
+# function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
+#     ) where {T,F,SO,M,Tu<:Laminar,E,D,BI}
+#     if typeof(model.fluid)<:AbstractCompressible
+#         args = (
+#             ("U", model.momentum.U), 
+#             ("p", model.momentum.p),
+#             ("rho", model.fluid.rho),
+#             ("T", model.energy.T)
+#         )
+#     else
+#         args = (
+#             ("U", model.momentum.U), 
+#             ("p", model.momentum.p)
+#         )
+#     end
+#     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
+# end
 
 function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
     ) where {T,F<:Multiphase,SO,M,Tu<:Laminar,E<:Nothing,D,BI}
@@ -143,4 +143,17 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end
 
+# Specialise VTK writer
+function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
+    ) where {T,F<:Multiphase,SO,M,Tu<:Laminar,E<:TwoPhaseTemperature,D,BI}
+    args = (
+        ("U", model.momentum.U), 
+        ("p", model.momentum.p),
+        ("alpha", model.fluid.alpha),
+        ("rho", model.fluid.rho),
+        ("p_rgh", model.fluid.p_rgh),
+        ("T", model.energy.T)
+    )
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
+end
 

@@ -49,6 +49,31 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_fluidProperties.jl")
     end
 
+    @testset "Phase Properties Unit Test" begin
+        include("unit_test_phase_properties.jl")
+    end
+
+    # Skips cleanly unless examples/0_GRIDS/ksite_wedge/constant/polyMesh exists
+    @testset "K-Site Wedge Mesh Unit Test" begin
+        include("unit_test_ksite_wedge_mesh.jl")
+    end
+
+    @testset "Two-Phase Energy Unit Test" begin
+        include("unit_test_twophase_energy.jl")
+    end
+
+    @testset "Fixed Heat Flux BC Unit Test" begin
+        include("unit_test_fixed_heat_flux.jl")
+    end
+
+    @testset "Compressible Ullage Unit Test" begin
+        include("unit_test_compressible_ullage.jl")
+    end
+
+    @testset "Phase Change Models Unit Test" begin
+        include("unit_test_phase_change.jl")
+    end
+
     @testset "Laplace Functionality Test" begin
 
         test_files = [

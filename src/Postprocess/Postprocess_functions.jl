@@ -1,6 +1,69 @@
 export boundary_average
 export pressure_force, viscous_force
 export stress_tensor, wall_shear_stress
+export ullage_average, liquid_volume, boil_off_rate
+
+"""
+    ullage_average(field, alpha; threshold=0.5)
+
+Volume-weighted average of `field` over the vapour (ullage) region, taken as the
+cells where `alpha < threshold`.
+
+`alpha` is the tracked-phase (liquid) volume fraction, so the ullage is where it
+is small. Used for the primary validation metric in cryogenic tank
+self-pressurisation studies, where the reported tank pressure is the ullage
+average.
+
+Returns `NaN` if no cell is below the threshold, so an empty ullage is visible
+rather than silently reported as zero.
+"""
+function ullage_average(field, alpha; threshold=0.5)
+    cells = alpha.mesh.cells
+    num = zero(eltype(field.values))
+    den = zero(eltype(field.values))
+    @inbounds for i in eachindex(cells)
+        if alpha.values[i] < threshold
+            v = cells[i].volume
+            num += field.values[i]*v
+            den += v
+        end
+    end
+    return den > 0 ? num/den : convert(eltype(field.values), NaN)
+end
+
+"""
+    liquid_volume(alpha)
+
+Total volume of the tracked (liquid) phase, `sum(alpha*V)`.
+"""
+function liquid_volume(alpha)
+    cells = alpha.mesh.cells
+    total = zero(eltype(alpha.values))
+    @inbounds for i in eachindex(cells)
+        total += alpha.values[i]*cells[i].volume
+    end
+    return total
+end
+
+"""
+    boil_off_rate(mdot)
+
+Net boil-off rate [kg/s], the volume integral of the volumetric phase change rate
+`mdot` [kg/m^3/s]. Positive means net evaporation.
+
+This is how Fernandes et al. report boil-off (Sec. 4): a volume integral of the
+mass source over the whole domain. Note the local rate is not single-signed —
+regions of the interface may condense while others evaporate — so this is a NET
+figure.
+"""
+function boil_off_rate(mdot)
+    cells = mdot.mesh.cells
+    total = zero(eltype(mdot.values))
+    @inbounds for i in eachindex(cells)
+        total += mdot.values[i]*cells[i].volume
+    end
+    return total
+end
 
 """
     pressure_force(patch::Symbol, model, config)

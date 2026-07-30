@@ -19,6 +19,7 @@ include("energy_types.jl")
 
 # Energy models
 include("he_energy.jl")
+include("multiphase_energy.jl")
 include("Conduction.jl")
 
 # Property Models

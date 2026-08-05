@@ -166,6 +166,8 @@ T_table = (19.0, 40.0)
 # not usable across the paper's pressure sweep.
 saturation = build_saturation_curve(H2(), p=p_table, T=(19.0, 33.0), np=201, nT=201)
 
+saturation = ConstantSaturation(saturation, p_sat)
+
 T_sat = saturation_temperature(saturation, p_sat)
 h_fg = latent_heat(saturation, p_sat, 0.0)
 sigma_lv = calculate_surface_tension(H2(), T_sat)
@@ -339,9 +341,15 @@ model = Physics(
         # for the slip velocity; 0.5 mm is the order the RPI departure diameter
         # predicts for hydrogen at this pressure, and it should be revisited
         # alongside `TolubinskyKostanchuk`'s coefficients.
-        model = Mixture(diameter = 0.5e-3),
-        alpha_transport = :implicit,
+        # `alpha_transport` is a keyword of `Mixture`, NOT of `Fluid{Multiphase}`.
+        # Placed on the fluid it lands in `physics_properties`, is never read, and
+        # the model silently keeps its `:mules` default - the giveaway being an
+        # alpha residual of exactly zero, since explicit MULES does no linear
+        # solve and there is no residual to report.
+        model = Mixture(diameter = 1e-9, alpha_transport = :implicit),
+        dispersion_Sc = 0.9,     # turbulent Schmidt number
         p_abs_limit = (0.3e6, 1.2e6),   # [Pa] absolute
+        rD_ref_density = lh2_sat.rho,   # 56.747 kg/m³
 
         # Phase 1 (tracked, alpha = 1) is the liquid: constant properties at the
         # saturation state. Phase 2 is the vapour: Peng-Robinson density and
@@ -496,6 +504,31 @@ model = Physics(
         sigma       = sigma_lv,
         p_operating = p_sat,
 
+        # --- buoyancy formulation: REFERENCE density, not local --------------
+        # Selects the reference form of the buoyancy face flux in `phi_gf!`,
+        #
+        #     rDf*(rhof - rho_ref)*gn*area          instead of
+        #     -ghf*snGrad(rho)*rDf                  (the default, rho_ref = nothing)
+        #
+        # The default form DIFFERENTIATES the mixture density. Once boiling makes
+        # alpha - and therefore rho_m - carry any odd-even content, `snGrad`
+        # amplifies it by 1/delta, which for the 34 um wall cells is ~3e4. That
+        # contaminated flux is added straight to `mdotf`, drives div(u), hence p,
+        # hence alpha: a closed loop that sustains a static checkerboard.
+        #
+        # The reference form uses `rhof` LINEARLY, so a checkerboard passes
+        # through at amplitude instead of being multiplied by 3e4.
+        #
+        # This is also what STAR-CCM+ does - it solves a piezometric pressure
+        # with a user-set reference density for exactly this reason.
+        #
+        # TRADE-OFF: the local form is well balanced BY CONSTRUCTION across a
+        # sharp interface, and switching to the reference form regressed the VOF
+        # hydrostatic test from <1e-7 to 7.4e-5. That does not apply here - this
+        # is a dispersed bubbly flow at alpha ~ 0.998 with no sharp interface -
+        # but a stratified tank case should keep the default.
+        rho_ref = lh2_sat.rho,
+
         gravity = gravity
     ),
     turbulence = RANS{KOmegaSST}(walls=(:pipeWall, :wallUnheated)),
@@ -578,10 +611,12 @@ BCs = assign(
 # -----------------------------------------------------------------------------
 schemes = (
     U     = Schemes(time=Euler, divergence=Upwind, laplacian=Linear),
+    alpha = Schemes(time=Euler, divergence=Upwind, laplacian=Linear),
     p     = Schemes(time=Euler, divergence=Upwind, gradient=Gauss,    laplacian=Linear),
     p_rgh = Schemes(time=Euler, divergence=Upwind, gradient=Gauss,    laplacian=Linear),
     T     = Schemes(time=Euler, divergence=Upwind, gradient=Gauss,    laplacian=Linear),
     omega = Schemes(time=Euler, divergence=Upwind, gradient=Gauss,    laplacian=Linear),
+    k = Schemes(time=Euler, divergence=Upwind, gradient=Gauss,    laplacian=Linear),
     y     = Schemes(gradient=Midpoint),
 )
 
@@ -591,8 +626,7 @@ solvers = (
         convergence=1e-7, relax=1, rtol=1e-2, atol=1e-10),
     p_rgh = SolverSetup(
         solver=AMG(), preconditioner=DILU(),
-        convergence=1e-7, relax=1, rtol=1e-3, atol=1e-12, itmax=1000,
-        limit=(-10000.0, 10000.0)),
+        convergence=1e-7, relax=0.9, rtol=1e-3, atol=1e-12, itmax=1000),
     alpha = SolverSetup(
         solver=Bicgstab(), preconditioner=DILU(),
         convergence=1e-7, relax=1, rtol=1e-2, atol=1e-10),
@@ -617,7 +651,7 @@ solvers = (
 # Run to steady state. The residence time is L_total/U ~ 0.06 s for this
 # geometry, so a few hundred flow-throughs is ample for the thermal field and
 # the wall vapour generation to settle.
-dt = 2.0e-6
+dt = 2.0e-5
 n_flow_throughs = 2
 L_total = L_heated + 10*D
 iterations = round(Int, n_flow_throughs*(L_total/U_inlet_mag)/dt)
@@ -626,7 +660,7 @@ runtime = Runtime(
     iterations = iterations,
     time_step = dt,
     write_interval = 100,#round(Int, iterations/50),
-    adaptive = AdaptiveTimeStepping(maxCo=5.0, maxAlphaCo=2.5)
+    adaptive = AdaptiveTimeStepping(maxCo=0.5, maxAlphaCo=0.25)
 )
 
 config = Configuration(

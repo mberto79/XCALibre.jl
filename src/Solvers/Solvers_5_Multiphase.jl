@@ -147,6 +147,47 @@ together.
 multiphase_expansion_relax(fluid) = get(fluid.physics_properties, :expansion_relax, 1.0)
 
 """
+    multiphase_dispersion_Sc(fluid) -> Float64 or nothing
+
+Turbulent Schmidt number for TURBULENT DISPERSION of the volume fraction, from
+the optional `dispersion_Sc` keyword of `Fluid{Multiphase}`. `nothing` (default)
+switches the term off, preserving existing behaviour.
+
+Adds `- div(D_t grad(alpha))` to the volume-fraction equation with
+`D_t = nu_t/Sc_t`, the standard bubbly-flow closure (Lopez de Bertodano; Burns
+et al.), present in both STAR-CCM+ and Fluent for Eulerian and mixture models.
+
+### Why the alpha equation needs it
+
+Without this term the volume-fraction equation is PURE ADVECTION,
+
+    d(alpha)/dt + div(alpha*u) = S
+
+with no Laplacian anywhere. Upwind supplies numerical diffusion only ALONG the
+flow, so in a developed pipe - where the radial velocity is essentially zero -
+there is nothing at all smoothing `alpha` in the wall-normal direction: no
+physical diffusion, no numerical diffusion. Any radial flux noise imprints
+directly onto `alpha` and stays there. Measured on the LH2 pipe: a radial
+cell-to-cell oscillation of 0.36 (normalised) persisted with an upwind implicit
+scheme, a smooth source, no drift flux and a clean pressure field, because
+nothing in the equation could damp it.
+
+That absence is also unphysical. Vapour generated at a heated wall has no
+mechanism to move into the bulk except mean convection, when in reality
+turbulent eddies disperse it down the concentration gradient. So this is missing
+physics rather than added dissipation.
+
+`Sc_t` around 0.9 is the usual choice; smaller disperses more strongly.
+"""
+function multiphase_dispersion_Sc(fluid)
+    Sc = get(fluid.physics_properties, :dispersion_Sc, nothing)
+    Sc === nothing && return nothing
+    (Sc isa Real && Sc > 0) || throw(ArgumentError(
+        "`dispersion_Sc` must be a positive turbulent Schmidt number, got $Sc"))
+    return float(Sc)
+end
+
+"""
     multiphase_pressure_form(fluid) -> Symbol
 
 Which conservation statement the pressure equation enforces, from the optional
@@ -426,6 +467,56 @@ absolute_pressure!(p_abs, p_rgh, rho, ::Nothing, gh, p_operating, config) =
 function absolute_pressure!(p_abs, p_rgh, rho, rho_ref, gh, p_operating, config)
     @. p_abs.values = p_rgh.values + rho_ref*gh.values + p_operating
     return nothing
+end
+
+"""
+    multiphase_rD_ref_density(fluid) -> Float64 or nothing
+
+Reference density for the momentum diagonal used by the PRESSURE equation, from
+the optional `rD_ref_density` keyword of `Fluid{Multiphase}`. `nothing` (default)
+uses the local mixture density, i.e. existing behaviour.
+
+### The loop this breaks
+
+`rD = 1/a_P` and `a_P` contains the mixture density, so
+
+    alpha -> rho_m -> a_P -> rD -> rDf -> Laplacian coefficient -> p -> flux -> alpha
+
+closes. A checkerboard in `alpha` becomes a checkerboard in `rho_m` BY
+CONSTRUCTION (`rho_m` is linear in `alpha`), and once it reaches the Laplacian's
+COEFFICIENT the checkerboarded pressure is the operator's genuine solution - not
+a mode it failed to damp. That is why neither implicit alpha transport, a larger
+time step, nor any Rhie-Chow damping removes it: all three act on the operator or
+the time integration, while the mode enters through the coefficient. It is also
+why temporal under-relaxation cannot help - a static checkerboard is a FIXED
+POINT of the loop, and blending against the previous step converges to the same
+fixed point.
+
+Freezing the density in `rD` removes the `alpha` dependence and opens the loop.
+
+### The approximation, and when it is small
+
+`a_P = rho*V/dt + (convective and diffusive contributions)`. Where the transient
+term dominates - the usual case at small `dt` - `rD ~ dt/(rho*V)`, so scaling by
+`rho/rho_ref` recovers the reference-density diagonal to leading order. It is
+EXACT only in that limit; with strong convection some `alpha` dependence remains.
+
+The physical density is untouched everywhere it matters: buoyancy, `rhoPhi`,
+momentum inertia and the energy equation all still use the true mixture value.
+Only the pressure equation's coefficient is frozen - so this changes the PATH to
+the solution, not the solution itself, in the same sense as a preconditioner.
+
+Choose `rho_ref` near the working mixture density (the liquid value for a
+bubbly flow at high `alpha`). At `alpha ~ 0.998` with LH2/GH2, `rho_m` spans
+56.75 to 56.65 - a 0.2% variation - so the approximation is tight and the loop
+is fully opened.
+"""
+function multiphase_rD_ref_density(fluid)
+    rho_ref = get(fluid.physics_properties, :rD_ref_density, nothing)
+    rho_ref === nothing && return nothing
+    (rho_ref isa Real && rho_ref > 0) || throw(ArgumentError(
+        "`rD_ref_density` must be a positive density [kg/m^3], got $rho_ref"))
+    return float(rho_ref)
 end
 
 """
@@ -1141,6 +1232,7 @@ function MULTIPHASE(
     # Reference density for the p_rgh split - see `multiphase_rho_ref`.
     rho_ref = multiphase_rho_ref(model.fluid, phases, main)
     p_abs_limit = multiphase_p_abs_limit(model.fluid)
+    rD_ref_density = multiphase_rD_ref_density(model.fluid)
     g_vector = model.fluid.physics_properties.gravity.g
     p_abs = ScalarField(mesh)
     initialise!(p_abs, p_operating)
@@ -1309,8 +1401,15 @@ function MULTIPHASE(
         # enters the alpha EQUATION rather than being applied afterwards.
         mdot_lagged = ScalarField(mesh)
         implicit_alpha = implicit_alpha_transport(mp_model)
+
+        # Turbulent dispersion coefficient D_t = nu_t/Sc_t on faces. The term is
+        # ALWAYS assembled so the equation keeps a fixed shape; when dispersion
+        # is off the field stays zero and the Laplacian contributes nothing.
+        dispersion_Sc = multiphase_dispersion_Sc(model.fluid)
+        Dtf = FaceScalarField(mesh)
+
         alpha_eqn   = implicit_alpha ?
-            build_alpha_equation(model, mdotf, S_alpha, config) : nothing
+            build_alpha_equation(model, mdotf, Dtf, S_alpha, config) : nothing
     end
 
     if typeof(mp_model) <: VOF
@@ -1393,6 +1492,13 @@ function MULTIPHASE(
         # Bounded alpha eqn. transport via MULES
         ralpha = zero(TF)
         if typeof(mp_model) <: Mixture && implicit_alpha
+            # Turbulent dispersion coefficient for this step: D_t = nu_t/Sc_t on
+            # faces. Left at zero when `dispersion_Sc` is unset, in which case the
+            # Laplacian term is present but contributes nothing.
+            if dispersion_Sc !== nothing
+                interpolate!(Dtf, model.turbulence.nut, config)
+                @. Dtf.values /= dispersion_Sc
+            end
             @. alpha_prev.values = alpha.values
             ralpha = advance_alpha_implicit!(
                 alpha_eqn, model, ∇alpha, ∇alphaf, mdotf, Urdotf,
@@ -1594,6 +1700,16 @@ function MULTIPHASE(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; rho_prev=rho_prev, time=time)
 
         inverse_diagonal!(rD, U_eqn, config)
+
+        # Freeze the density in the pressure equation's diagonal - see
+        # `multiphase_rD_ref_density`. To leading order a_P ~ rho*V/dt, so
+        # scaling rD by rho/rho_ref gives the reference-density diagonal and
+        # removes alpha from the Laplacian coefficient, opening the
+        # alpha -> rho_m -> rD -> p -> flux -> alpha loop.
+        if rD_ref_density !== nothing
+            @. rD.values *= rho.values/rD_ref_density
+        end
+
         interpolate!(rDf, rD, config)
         # Mass form: the pressure equation's Laplacian coefficient is rho_f*rDf.
         # `rhof` was refreshed by `update_mixture_properties!` above.
@@ -1784,7 +1900,7 @@ so the system is *more* dominant when `div(u) > 0` — the boiling case. It can
 degrade under net compression, so the solution is clamped to `[0, 1]` afterwards
 as a backstop and the clamp activity is worth monitoring.
 """
-function build_alpha_equation(model, mdotf, S_alpha, config)
+function build_alpha_equation(model, mdotf, Dtf, S_alpha, config)
     (; alpha) = model.fluid
     (; solvers, schemes, boundaries) = config
 
@@ -1803,6 +1919,7 @@ Add one, e.g.
     alpha_eqn = (
         Time{schemes.alpha.time}(ConstantScalar(one(TF)), alpha)
         + Divergence{schemes.alpha.divergence}(mdotf, alpha)
+        - Laplacian{schemes.alpha.laplacian}(Dtf, alpha)
         ==
         Source(S_alpha)
     ) → ScalarEquation(alpha, boundaries.alpha)

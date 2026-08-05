@@ -1,4 +1,12 @@
-# LH2 tank self-pressurisation — implementation plan
+# LH2 — implementation plan
+
+> **See also:** [`dev_notes_LH2_pipe_boiling.md`](dev_notes_LH2_pipe_boiling.md) for the
+> forced-convection heated-pipe work (Tatsumoto et al. 2014): real-fluid property
+> tables, RPI wall boiling, and the O-grid pipe mesh. That work reuses this
+> solver path and uncovered a limitation in it — the compressible pressure
+> equation is sealed-domain only — which is recorded there.
+
+## LH2 tank self-pressurisation
 
 Companion to `dev_notes_LH2_tanks.md` (gap analysis) and
 `test/0_TEST_CASES/3d_LH2_ksite_selfpressurisation.jl` (target case).

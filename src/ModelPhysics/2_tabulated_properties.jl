@@ -1,6 +1,6 @@
-export PropertyGrid, PropertyTable, table_lookup
+﻿export PropertyGrid, PropertyTable, table_lookup
 export TabulatedEos, TabulatedMu, TabulatedK, TabulatedCp, TabulatedBeta
-export SaturationCurve
+export SaturationCurve, ConstantSaturation
 export specific_gas_constant, latent_heat
 export saturation_range, check_saturation_range
 
@@ -22,7 +22,7 @@ Construction is **keyword-only** on purpose. The stored layout
 `(p_min, dp, np, T_min, dT, nT)` has the same arity and argument types as the
 natural `(p_min, p_max, np, T_min, T_max, nT)` spelling, so a positional outer
 constructor is shadowed by the compiler-generated one and `p_max` is silently
-taken as the spacing — a mistake that produces a plausible-looking table
+taken as the spacing â€” a mistake that produces a plausible-looking table
 covering entirely the wrong range.
 """
 struct PropertyGrid{F<:AbstractFloat, I<:Integer}
@@ -58,7 +58,7 @@ grid_T_max(g::PropertyGrid) = g.T_min + g.dT*(g.nT - 1)
 
 A single tabulated property on a [`PropertyGrid`](@ref). `values` is `nT x np`,
 i.e. temperature varies down a column, which makes the two nodes bracketing `T`
-adjacent in memory — the inner axis of every lookup.
+adjacent in memory â€” the inner axis of every lookup.
 
 Queries outside the grid are **clamped** to the boundary value rather than
 extrapolated. A Helmholtz EOS extrapolated beyond its tabulated range produces
@@ -120,7 +120,7 @@ Real-fluid equation of state supplied as pre-computed tables of density and
 isothermal compressibility over a (p, T) grid.
 
 This is the non-ideal alternative to [`IdealGas`](@ref) for cases where
-`rho = p/(R*T)` is not defensible — notably hydrogen at a pressure that is a
+`rho = p/(R*T)` is not defensible â€” notably hydrogen at a pressure that is a
 substantial fraction of its critical pressure (1.2964 MPa), where the vapour
 density departs from ideal by tens of percent.
 
@@ -193,7 +193,7 @@ Adapt.@adapt_structure TabulatedBeta
 phase_compressibility(eos::TabulatedEos, p_abs, T) = table_lookup(eos.psi, p_abs, T)
 
 # `beta` is looked up per cell and passed in by the caller, so the real-fluid
-# case is the plain definition `beta*T` — the same as `ConstEos`. Only
+# case is the plain definition `beta*T` â€” the same as `ConstEos`. Only
 # `IdealGas` is special (beta = 1/T exactly, so the product is one).
 phase_betaT(::TabulatedEos, beta, T) = beta*T
 
@@ -386,3 +386,72 @@ the two consistent.
 @inline latent_heat(::AbstractSaturationModel, p, L_ref) = L_ref
 @inline latent_heat(sat::SaturationCurve, p, L_ref) =
     _lookup_1d(sat.h_fg, p, sat.p_min, sat.dp, sat.np)
+
+"""
+    ConstantSaturation(; T_sat, p_sat, h_fg)
+    ConstantSaturation(curve::SaturationCurve, p_ref)
+
+Saturation state frozen at a single pressure: `T_sat`, `h_fg` and `p_sat` no
+longer depend on the local pressure.
+
+### Why this exists
+
+`SaturationCurve` evaluates `T_sat` from the LOCAL absolute pressure, which
+couples the boiling model to the pressure solution. In a nearly isobaric case
+that coupling is worthless physically and dangerous numerically:
+
+  * the true variation is tiny - for the LH2 pipe, a 600 Pa pressure drop with
+    `dT_sat/dp ~ 8.5e-6 K/Pa` moves `T_sat` by **0.005 K**, against a wall
+    superheat of ~2 K;
+  * but it closes a feedback loop. The phase-change volume source perturbs the
+    pressure; `T_sat` follows it down; the liquid then appears superheated by
+    several kelvin; and `N_a ~ dT_sup^1.805` turns that into an evaporation rate
+    the wall cannot supply, which feeds the volume source again. Measured on the
+    LH2 pipe: `p_rgh` reached -450 kPa against a 0.7 MPa operating pressure and
+    `p_abs` left the saturation table entirely, versus a range of 12-666 Pa with
+    the volume source disabled.
+
+Freezing `T_sat` breaks that loop at its amplifying step for an approximation
+error of 0.005 K. `saturation_temperature` cannot then collapse, the spurious
+superheat cannot form, and the source stays bounded by the physics.
+
+**Use the curve instead** wherever the pressure genuinely sets the saturation
+state - a self-pressurising tank, a large pressure drop, a blowdown. There the
+coupling is the answer, not a nuisance.
+
+### Fields
+- `T_sat` [K], `p_sat` [Pa], `h_fg` [J/kg], all constant.
+
+### Example
+```julia
+curve = build_saturation_curve(H2(), p=(0.25e6, 1.25e6), T=(19.0, 33.0))
+sat   = ConstantSaturation(curve, 0.7e6)     # frozen at the operating point
+```
+"""
+struct ConstantSaturation{F<:AbstractFloat} <: AbstractSaturationModel
+    T_sat::F
+    p_sat::F
+    h_fg::F
+end
+Adapt.@adapt_structure ConstantSaturation
+
+ConstantSaturation(; T_sat, p_sat, h_fg) =
+    ConstantSaturation(float(T_sat), float(p_sat), float(h_fg))
+
+function ConstantSaturation(curve::SaturationCurve, p_ref)
+    lo, hi = saturation_range(curve)
+    lo <= p_ref <= hi || throw(ArgumentError(
+        """`p_ref` = $(p_ref/1e6) MPa lies outside the curve's range \
+$(lo/1e6) - $(hi/1e6) MPa, so the frozen state would be taken from a clamped \
+edge value rather than a real evaluation."""))
+    return ConstantSaturation(saturation_temperature(curve, p_ref), float(p_ref),
+                              latent_heat(curve, p_ref, zero(p_ref)))
+end
+
+@inline saturation_temperature(s::ConstantSaturation, p) = s.T_sat
+@inline saturation_pressure(s::ConstantSaturation, T) = s.p_sat
+@inline latent_heat(s::ConstantSaturation, p, L_ref) = s.h_fg
+
+# No tabulated pressure range, so nothing for `check_saturation_range` to police:
+# a frozen state is valid at any pressure by construction.
+saturation_range(::ConstantSaturation) = nothing

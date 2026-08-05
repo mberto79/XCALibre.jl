@@ -345,3 +345,20 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
     end
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end
+
+# Specialise VTK writer
+function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
+    ) where {T,F<:Multiphase,SO,M,Tu<:KOmegaSST,E<:TwoPhaseTemperature,D,BI}
+    args = (
+        ("U", model.momentum.U), 
+        ("p", model.momentum.p),
+        ("alpha", model.fluid.alpha),
+        ("rho", model.fluid.rho),
+        ("p_rgh", model.fluid.p_rgh),
+        ("T", model.energy.T),
+        ("k", model.turbulence.k),
+        ("omega", model.turbulence.omega),
+        ("nut", model.turbulence.nut)
+    )
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
+end

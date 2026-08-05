@@ -207,8 +207,8 @@ end
 
 
 
-function EOS_wrapper_N2(fluid::HelmholtzEnergyFluid, T::F, pressure::F) where F <: AbstractFloat
-    constants = HelmholtzFluidConstants(
+function helmholtz_constants(::N2, ::Type{F}=Float64) where F <: AbstractFloat
+    return HelmholtzFluidConstants(
         F(126.192),     # T_c
         F(11.1839e3),   # rho_c, multiplied by e3 for convenience
         F(8.314472),    # R_univ
@@ -272,7 +272,7 @@ function EOS_wrapper_N2(fluid::HelmholtzEnergyFluid, T::F, pressure::F) where F 
         F(12.528e3), # p_triple
         F(5.0)       # Fluid dependent density guess multiplier to get liquid function
     )
-
-    EOS_wrapper(fluid, T, pressure, constants)
-
 end
+
+EOS_wrapper_N2(fluid::N2, T::F, pressure::F) where F <: AbstractFloat =
+    EOS_wrapper(fluid, T, pressure, helmholtz_constants(fluid, F))

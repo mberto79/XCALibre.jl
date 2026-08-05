@@ -74,6 +74,28 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_phase_change.jl")
     end
 
+    @testset "Phase Change Relaxation Unit Test" begin
+        include("unit_test_phase_change_relaxation.jl")
+    end
+
+    @testset "Tabulated Real-Fluid Properties Unit Test" begin
+        include("unit_test_property_tables.jl")
+    end
+
+    @testset "Peng-Robinson EOS Unit Test" begin
+        include("unit_test_peng_robinson.jl")
+    end
+
+    @testset "RPI Wall Boiling Unit Test" begin
+        include("unit_test_wall_boiling.jl")
+    end
+
+    # Skips itself when the mesh has not been built (blockMesh output is not in
+    # version control).
+    @testset "LH2 Pipe Sector Mesh Unit Test" begin
+        include("unit_test_lh2_pipe_sector_mesh.jl")
+    end
+
     @testset "Laplace Functionality Test" begin
 
         test_files = [

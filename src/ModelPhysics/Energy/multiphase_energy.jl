@@ -31,10 +31,23 @@ interface (an inconsistency there shows up as interface temperature drift).
 - `keff`       -- Mixture (+turbulent) conductivity FaceScalarField.
 - `rho_cp_phi` -- Advecting flux for the temperature equation FaceScalarField.
 - `S_T`        -- Volumetric energy source ScalarField (phase change latent heat).
-- `coeffs`     -- Model coefficients (`Tref`).
+- `coeffs`     -- Model coefficients (`Tref`, `Pr_t`).
+
+### Turbulence
+
+When the turbulence model supplies an eddy viscosity, the effective conductivity
+picks up
+
+    keff += (rho*cp)_f * nu_t / Pr_t
+
+with `(rho*cp)_f` built from the same face blend as the rest of the equation.
+`Pr_t` defaults to 0.85. A two-phase turbulent Prandtl number is not a settled
+quantity, so it is exposed rather than buried; the laminar case is recovered
+exactly when `nu_t = 0`.
 
 ### Example
-    energy = Energy{TwoPhaseTemperature}(Tref=20.43)
+    energy = Energy{TwoPhaseTemperature}(Tref=20.43)              # laminar or turbulent
+    energy = Energy{TwoPhaseTemperature}(Tref=26.0, Pr_t=0.9)
 """
 struct TwoPhaseTemperature{S,FS,C} <: AbstractEnergyModel
     T::S
@@ -42,13 +55,14 @@ struct TwoPhaseTemperature{S,FS,C} <: AbstractEnergyModel
     rho_cp_prev::S
     keff::FS
     rho_cp_phi::FS
+    rho_cp_imbalance::S
     S_T::S
     coeffs::C
 end
 Adapt.@adapt_structure TwoPhaseTemperature
 
-Energy{TwoPhaseTemperature}(; Tref) = begin
-    coeffs = (Tref=Tref,)
+Energy{TwoPhaseTemperature}(; Tref, Pr_t=0.85) = begin
+    coeffs = (Tref=Tref, Pr_t=Pr_t)
     ARG = typeof(coeffs)
     Energy{TwoPhaseTemperature,ARG}(coeffs)
 end
@@ -61,6 +75,7 @@ end
         ScalarField(mesh),      # rho_cp_prev
         FaceScalarField(mesh),  # keff
         FaceScalarField(mesh),  # rho_cp_phi
+        ScalarField(mesh),      # rho_cp_imbalance
         ScalarField(mesh),      # S_T
         energy.args
     )
@@ -72,7 +87,7 @@ end
 Build the temperature transport equation and its solver workspace.
 """
 function initialise(energy::TwoPhaseTemperature, model, mdotf, config)
-    (; T, keff, rho_cp, rho_cp_prev, rho_cp_phi, S_T) = energy
+    (; T, keff, rho_cp, rho_cp_prev, rho_cp_phi, rho_cp_imbalance, S_T) = energy
     (; solvers, schemes, boundaries) = config
 
     _assert_phase_thermal_properties(model.fluid.phases)
@@ -87,6 +102,7 @@ function initialise(energy::TwoPhaseTemperature, model, mdotf, config)
         Time{schemes.T.time}(rho_cp, T)
         + Divergence{schemes.T.divergence}(rho_cp_phi, T)
         - Laplacian{schemes.T.laplacian}(keff, T)
+        - Si(rho_cp_imbalance, T)
         ==
         Source(S_T)
     ) → ScalarEquation(T, boundaries.T)
@@ -107,38 +123,45 @@ function _assert_phase_thermal_properties(phases)
 Add it to the corresponding `Phase(...)`, e.g. `Phase(rho=..., mu=..., k=..., cp=...)`."""))
         end
 
-        # `cp` and `k` are also read at FACES, where only a ConstantScalar
-        # indexes correctly (a cell ScalarField would run out of bounds). Density
-        # is exempt: the solver maintains per-phase face density fields for it.
-        # Refuse a variable cp/k model rather than fail inside a kernel.
+        # `cp` and `k` are read at FACES as well as at cells. A `ConstantScalar`
+        # indexes correctly either way; a variable model stores a CELL field,
+        # which must never be indexed by face ID. The solver therefore maintains
+        # per-phase FACE fields for cp and k exactly as it already does for rho,
+        # and those are what the face kernels are given.
         #
-        # Fernandes et al. use temperature-dependent cp and k from NIST, so
-        # supporting those is a known future extension: it needs per-phase face
-        # fields for cp and k, mirroring what the solver already does for rho.
+        # What remains unsupported is a model type the solver cannot refresh,
+        # i.e. one with no `update_phase_property!` method - that would silently
+        # leave the field at zero.
         for (name, model_name) in ((:cp, :cp_model), (:k, :k_model))
             m = getfield(phase, model_name)
-            m isa Union{ConstCp,ConstK} || throw(ArgumentError(
-                """Phase $i has a variable `$name` model ($(typeof(m).name.wrapper)), which \
-`Energy{TwoPhaseTemperature}` does not support yet - only the density may vary. \
-Pass a constant, e.g. `$name = <value>`."""))
+            m isa Union{ConstCp,ConstK,TabulatedCp,TabulatedK} || throw(ArgumentError(
+                """Phase $i has an unsupported `$name` model ($(typeof(m).name.wrapper)). \
+`Energy{TwoPhaseTemperature}` accepts a constant (`$name = <value>`) or a tabulated \
+model from `RealFluid(...)`."""))
         end
     end
     return nothing
 end
 
 """
-    energy!(energyModel, model, alpha_fluxf, mdotf, nueff, time, dt, config)
+    energy!(energyModel, model, alpha_fluxf, mdotf, phase_faces, nueff,
+            dpdt, mdot_pc, L, time, dt, config)
 
 Advance the two-phase temperature equation by one time step.
 
 `alpha_fluxf` is the limited volume-fraction face flux produced by
 `advance_alpha!`; it is reused here so the energy advection matches the mass
 advection exactly at the interface.
+
+`phase_faces` is the bundle of per-phase FACE property fields maintained by the
+solver (`rho1f`, `cp1f`, `k1f`, ... ). Passing them as one named tuple rather
+than as a growing list of positional arguments keeps this signature stable as
+more properties are allowed to vary.
 """
 function energy!(energyModel::EnergyEquationModel{E,S}, model, alpha_fluxf, mdotf,
-                 rho1f, rho2f, nueff, dpdt, mdot_pc, L, time, dt, config) where {E,S}
+                 phase_faces, nueff, dpdt, mdot_pc, L, time, dt, config) where {E,S}
     (; energy_eqn, state) = energyModel
-    (; T, rho_cp, rho_cp_prev, keff, rho_cp_phi, S_T) = model.energy
+    (; T, rho_cp, rho_cp_prev, keff, rho_cp_phi, rho_cp_imbalance, S_T) = model.energy
     (; alpha, alphaf, phases) = model.fluid
     (; solvers, boundaries) = config
 
@@ -154,14 +177,16 @@ function energy!(energyModel::EnergyEquationModel{E,S}, model, alpha_fluxf, mdot
     update_pressure_work!(S_T, alpha, phases, T, dpdt, config)
     add_latent_heat!(S_T, mdot_pc, L, config)
 
-    # `rho1f`/`rho2f` are the per-phase FACE densities maintained by the solver.
-    # They are required rather than indexing `phase.rho` directly, because a
-    # variable-EOS phase stores a CELL field and indexing it by face ID is out of
-    # bounds. They correspond to phases[1] and phases[2] because the tracked
-    # phase index (`volume_fraction`) is always 1.
+    # `phase_faces` holds the per-phase FACE properties maintained by the solver.
+    # They are required rather than indexing `phase.rho` (or `.cp`, `.k`)
+    # directly, because a variable-property phase stores a CELL field and
+    # indexing it by face ID is out of bounds. Entry 1/2 correspond to phases[1]
+    # and phases[2] because the tracked phase index (`volume_fraction`) is
+    # always 1.
     update_two_phase_energy_coeffs!(
         rho_cp, keff, rho_cp_phi, alpha, alphaf, alpha_fluxf, mdotf,
-        phases[1], phases[2], rho1f, rho2f, model.turbulence, nueff, config)
+        phases[1], phases[2], phase_faces, model.turbulence,
+        nueff, model.fluid.nuf, model.energy.coeffs.Pr_t, model.fluid.model, config)
 
     # The time term MUST use the previous-time rho_cp, giving the conservative
     # form  (rho_cp^n T^n - rho_cp^{n-1} T^{n-1})/dt  to pair with the
@@ -175,6 +200,31 @@ function energy!(energyModel::EnergyEquationModel{E,S}, model, alpha_fluxf, mdot
     # here: an adiabatic uniform-T field on the K-Site wedge drifted 7.9 K in
     # five 1 ms steps before this was fixed. The momentum equation already
     # passes its `rho_prev` explicitly for the same reason.
+    # DISCRETE rho_cp BALANCE CORRECTION.
+    #
+    # The conservative pair above is equivalent to rho_cp*DT/Dt ONLY when
+    #
+    #     (rho_cp^n - rho_cp^{n-1})/dt + div(rho_cp_phi) = 0
+    #
+    # holds discretely. Phase change breaks it two ways: it creates volume, so
+    # the pressure equation deliberately imposes div(u) != 0, and it changes the
+    # composition, so rho_cp itself has a source that the flux does not carry.
+    #
+    # Whatever remains is multiplied by T in the divergence term - and T here is
+    # ABSOLUTE, ~29 K, so the residue is scaled by 29 rather than by any
+    # temperature DIFFERENCE. Measured on the LH2 pipe: a volume source of
+    # S_v ~ 19 /s gives a spurious -T*S_v ~ -550 K/s, which over 3e-4 s of
+    # simulated time is -0.165 K. The observed near-wall cooling was -0.198 K
+    # under 1e4 W/m2 of heating.
+    #
+    # Rather than derive the correct rho_cp source and hope it is complete, the
+    # imbalance is MEASURED and cancelled: `- Si(imbalance, T)` removes exactly
+    # the term that should not be there, whatever produced it. It vanishes
+    # identically when the balance does hold, so single-phase and no-phase-change
+    # cases are unaffected.
+    div!(rho_cp_imbalance, rho_cp_phi, config)
+    @. rho_cp_imbalance.values += (rho_cp.values - rho_cp_prev.values)/dt
+
     discretise!(energy_eqn, T, config, rho_prev=rho_cp_prev)
     apply_boundary_conditions!(energy_eqn, boundaries.T, nothing, time, config)
     implicit_relaxation_diagdom!(energy_eqn, T.values, solvers.T.relax, nothing, config)
@@ -195,27 +245,31 @@ end
 
 Rebuild the volume-fraction-blended coefficients of the temperature equation.
 
-Per-phase properties are indexed as `phase.rho[i]`, which works uniformly for
-both `ConstantScalar` (index-independent) and `ScalarField` storage, so this is
-already correct once variable-density phases land in step 5.
+Cell-centred properties are indexed as `phase.rho[i]`, which works uniformly for
+`ConstantScalar` (index-independent) and `ScalarField` storage. Face-centred
+properties come from `phase_faces`, never from the cell fields.
 """
 function update_two_phase_energy_coeffs!(
     rho_cp, keff, rho_cp_phi, alpha, alphaf, alpha_fluxf, mdotf,
-    phase_l, phase_v, rho1f, rho2f, turbulence, nueff, config)
+    phase_l, phase_v, phase_faces, turbulence, nueff, nuf, Pr_t, mp_model, config)
 
     (; hardware) = config
     (; backend, workgroup) = hardware
 
     blend_rho_cp!(rho_cp, alpha, phase_l, phase_v, config)
 
-    # Face-centred: densities MUST come from the face fields (see `energy!`).
+    # Face-centred: every property MUST come from the face fields (see `energy!`).
+    # The turbulent conductivity is folded in here rather than in a second pass
+    # because this kernel already has the face rho*cp the eddy term needs.
+    nut_scale = turbulent_conductivity_scale(turbulence, Pr_t)
+
     ndrange = length(alphaf)
     kernel! = _blend_energy_faces!(_setup(backend, workgroup, ndrange)...)
     kernel!(keff, rho_cp_phi, alphaf, alpha_fluxf, mdotf,
-            rho1f, phase_l.cp, phase_l.k,
-            rho2f, phase_v.cp, phase_v.k)
+            phase_faces.rho1f, phase_faces.cp1f, phase_faces.k1f,
+            phase_faces.rho2f, phase_faces.cp2f, phase_faces.k2f,
+            nueff, nuf, nut_scale, mp_model)
 
-    add_turbulent_conductivity!(keff, turbulence, nueff, rho_cp, config)
     return nothing
 end
 
@@ -247,10 +301,11 @@ function update_pressure_work!(S_T, alpha, phases, T, dpdt, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    # beta is resolved to a plain number here (0 when the phase has none) so the
-    # kernel never sees a `nothing`.
-    beta_l = _phase_beta_value(phases[1])
-    beta_v = _phase_beta_value(phases[2])
+    # beta is resolved to an indexable field here (a ConstantScalar(0) when the
+    # phase has none) so the kernel never sees a `nothing` and reads the same way
+    # for constant and tabulated expansivity alike.
+    beta_l = _phase_beta_field(phases[1])
+    beta_v = _phase_beta_field(phases[2])
 
     ndrange = length(S_T)
     kernel! = _update_pressure_work!(_setup(backend, workgroup, ndrange)...)
@@ -284,7 +339,7 @@ end
     TF = eltype(S_T.values)
     a = alpha[i]
     t = T[i]
-    betaT = a*phase_betaT(eos_l, beta_l, t) + (one(TF) - a)*phase_betaT(eos_v, beta_v, t)
+    betaT = a*phase_betaT(eos_l, beta_l[i], t) + (one(TF) - a)*phase_betaT(eos_v, beta_v[i], t)
     S_T[i] = betaT*dpdt[i]
 end
 
@@ -314,46 +369,80 @@ end
     rho_cp[i] = a*rho_l[i]*cp_l[i] + (one(TF) - a)*rho_v[i]*cp_v[i]
 end
 
+"""
+    energy_face_flux(mp_model, alpha_fluxf, mdotf, rcp_l, rcp_v, rho_cp_f)
+
+Advecting flux of the temperature equation, `rho*cp*phi`, built to match the
+mass flux `rhoPhi` of the SAME multiphase model - see `blend_rhoPhi!`.
+
+The two must agree. If the energy equation advects with a different flux from
+the one carrying mass, the mismatch appears as a spurious source scaled by
+`(rho*cp)_l - (rho*cp)_v`, which for LH2/GH2 is ~1.2e6 against the momentum
+equation's `rho_l - rho_v` of ~48 - four orders of magnitude more damaging.
+
+- `VOF`: the limited volume-fraction flux carries `(rho*cp)_l` and the remainder
+  carries `(rho*cp)_v`, mirroring `blend_rhoPhi!(::VOF, ...)`.
+- `Mixture`: the mass flux is simply `mdotf*rhof`, with the drift flux entering
+  the momentum equation separately as `div_slip_momentum`. The energy flux must
+  therefore be `mdotf*(rho*cp)_f` and must NOT pick up the drift term that
+  `alpha_fluxf` carries.
+
+The distinction is invisible while `alpha = 1` everywhere, because then
+`alpha_fluxf == mdotf` and both forms coincide. It only bites once a second
+phase appears - i.e. exactly when wall boiling starts producing vapour.
+"""
+@inline energy_face_flux(::VOF, alpha_fluxf_i, mdotf_i, rcp_l, rcp_v, rho_cp_f) =
+    alpha_fluxf_i*(rcp_l - rcp_v) + mdotf_i*rcp_v
+
+@inline energy_face_flux(::Mixture, alpha_fluxf_i, mdotf_i, rcp_l, rcp_v, rho_cp_f) =
+    mdotf_i*rho_cp_f
+
 @kernel inbounds=true function _blend_energy_faces!(
-    keff, rho_cp_phi, alphaf, alpha_fluxf, mdotf, rho_l, cp_l, k_l, rho_v, cp_v, k_v)
+    keff, rho_cp_phi, alphaf, alpha_fluxf, mdotf,
+    rho_l, cp_l, k_l, rho_v, cp_v, k_v, nueff, nuf, nut_scale, mp_model)
     i = @index(Global)
     TF = eltype(keff.values)
     af = alphaf[i]
 
-    keff[i] = af*k_l[i] + (one(TF) - af)*k_v[i]
-
-    # Mirrors `blend_rhoPhi!` for VOF: the volumetric flux of the tracked phase
-    # carries (rho*cp)_l and the remainder carries (rho*cp)_v, so energy and
-    # mass advection use the same limited alpha flux.
     rcp_l = rho_l[i]*cp_l[i]
     rcp_v = rho_v[i]*cp_v[i]
-    rho_cp_phi[i] = alpha_fluxf[i]*(rcp_l - rcp_v) + mdotf[i]*rcp_v
+    rho_cp_f = af*rcp_l + (one(TF) - af)*rcp_v
+
+    # Molecular part, then the eddy part. `nueff - nuf` is the eddy viscosity:
+    # the solver builds `nueff` as the mixture laminar viscosity plus `nut`, so
+    # the difference recovers `nut` without needing the turbulence model's own
+    # field interpolated to faces. `max(..., 0)` guards the laminar case, where
+    # the two are the same field and round-off could give a small negative.
+    nut = max(nueff[i] - nuf[i], zero(TF))
+    keff[i] = af*k_l[i] + (one(TF) - af)*k_v[i] + rho_cp_f*nut*nut_scale
+
+    # Must match the mass flux of the SAME multiphase model - see
+    # `energy_face_flux`. Getting this wrong is invisible while alpha = 1 and
+    # catastrophic as soon as a second phase appears.
+    rho_cp_phi[i] = energy_face_flux(mp_model, alpha_fluxf[i], mdotf[i],
+                                     rcp_l, rcp_v, rho_cp_f)
 end
 
-# Turbulent contribution to the effective conductivity.
-#
-# Dispatch cannot be on `::Laminar` here: `ModelPhysics.jl` includes `Energy`
-# before `Turbulence`, so the type does not exist yet at definition time. A
-# runtime property check serves the same purpose.
-#
-# A turbulent closure is deliberately NOT implemented. Adding rho*cp*nut/Pr_t
-# needs rho*cp interpolated to faces, and more importantly a two-phase
-# turbulent Prandtl number that has not been validated here. Fernandes et al.
-# (Sec. 3.2) run these cases laminar, reporting that laminar reproduces the
-# pressure rise and vapour stratification better than the usual RANS closures.
-# Refusing loudly beats silently applying an unvalidated formula.
-function add_turbulent_conductivity!(keff, turbulence, nueff, rho_cp, config)
-    hasproperty(turbulence, :nut) || return nothing
-    # `Laminar` does carry a `nut`, but as a `ConstantScalar` (see
-    # RANS_laminar.jl), whereas an actual closure allocates a `ScalarField`.
-    # That distinction is usable here; the `Laminar` type itself is not, for the
-    # include-order reason above.
-    turbulence.nut isa ConstantScalar && return nothing
-    throw(ArgumentError(
-        """`Energy{TwoPhaseTemperature}` currently supports laminar flow only, but the \
-turbulence model provides `nut`. Use `RANS{Laminar}()`, or implement the turbulent \
-conductivity in `add_turbulent_conductivity!` (src/ModelPhysics/Energy/multiphase_energy.jl).
+"""
+    turbulent_conductivity_scale(turbulence, Pr_t) -> 1/Pr_t or 0
 
-The reference cases for this solver path (Fernandes et al. 2026, K-Site/MHTB) are run \
-laminar by design."""))
+The factor multiplying `(rho*cp)_f * nu_t` in the effective conductivity, i.e.
+`1/Pr_t` for a turbulent closure and exactly zero for a laminar one.
+
+Returning zero rather than skipping the term keeps `_blend_energy_faces!` a
+single branch-free kernel that is used unchanged either way.
+
+Dispatch cannot be on `::Laminar`: `ModelPhysics.jl` includes `Energy` before
+`Turbulence`, so that type does not exist yet at definition time. The property
+check below serves the same purpose - `Laminar` does carry a `nut`, but as a
+`ConstantScalar` (see RANS_laminar.jl), whereas a real closure allocates a
+`ScalarField`.
+"""
+function turbulent_conductivity_scale(turbulence, Pr_t)
+    hasproperty(turbulence, :nut) || return 0.0
+    turbulence.nut isa ConstantScalar && return 0.0
+    Pr_t > 0 || throw(ArgumentError(
+        "`Pr_t` must be positive, got $Pr_t. Set it on the energy model, e.g. \
+`Energy{TwoPhaseTemperature}(Tref=..., Pr_t=0.85)`."))
+    return 1.0/Pr_t
 end

@@ -4,8 +4,8 @@ export Incompressible, Incompressible_MRF, WeaklyCompressible, Compressible
 export Phase, Fluid, Multiphase
 export AbstractModel, AbstractEosModel, AbstractViscosityModel
 export AbstractConductivityModel, AbstractHeatCapacityModel, AbstractExpansivityModel
-export AbstractMultiphaseModel, VOF, Mixture
-export update_phase_property!
+export AbstractMultiphaseModel, VOF, Mixture, implicit_alpha_transport
+export update_phase_property!, update_phase_properties!
 export Incompressible, WeaklyCompressible, Compressible, SupersonicFlow
 
 abstract type AbstractFluid end
@@ -274,12 +274,19 @@ Adapt.@adapt_structure PhaseState
 # alongside the concrete property models, which are included after this file.
 
 function build_phase(phase_setup::Phase, mesh)
+    # Property models are read INSIDE kernels (e.g. `phase_compressibility` is
+    # called on `phase.rho_model` per cell), so any array a model carries - the
+    # lookup tables of the `Tabulated*` models - has to live on the same backend
+    # as the mesh. The `Const*` models hold no arrays and pass through unchanged.
+    backend = _get_backend(mesh)
+    to_device(m) = adapt(backend, m)
+
     return PhaseState(
-        rho_model  = phase_setup.rho,
-        mu_model   = phase_setup.mu,
-        k_model    = phase_setup.k,
-        cp_model   = phase_setup.cp,
-        beta_model = phase_setup.beta,
+        rho_model  = to_device(phase_setup.rho),
+        mu_model   = to_device(phase_setup.mu),
+        k_model    = to_device(phase_setup.k),
+        cp_model   = to_device(phase_setup.cp),
+        beta_model = to_device(phase_setup.beta),
 
         rho  = _phase_property_field(phase_setup.rho,  mesh),
         mu   = _phase_property_field(phase_setup.mu,   mesh),
@@ -287,6 +294,26 @@ function build_phase(phase_setup::Phase, mesh)
         cp   = _phase_property_field(phase_setup.cp,   mesh),
         beta = _phase_property_field(phase_setup.beta, mesh),
     )
+end
+
+"""
+    update_phase_properties!(phase, p_abs, T, config)
+
+Refresh every variable property of a phase at the current absolute pressure and
+temperature: density, viscosity, conductivity, heat capacity and expansivity.
+
+Each call dispatches on that property's model, so constant models and properties
+that were never supplied (`nothing`) fall through to the no-op
+[`update_phase_property!`](@ref). Safe - and intended - to call unconditionally
+every time step.
+"""
+function update_phase_properties!(phase, p_abs, T, config)
+    update_phase_property!(phase.rho,  phase.rho_model,  p_abs, T, config)
+    update_phase_property!(phase.mu,   phase.mu_model,   p_abs, T, config)
+    update_phase_property!(phase.k,    phase.k_model,    p_abs, T, config)
+    update_phase_property!(phase.cp,   phase.cp_model,   p_abs, T, config)
+    update_phase_property!(phase.beta, phase.beta_model, p_abs, T, config)
+    return nothing
 end
 
 """
@@ -317,17 +344,44 @@ end
 Adapt.@adapt_structure VOF
 
 """
-    Mixture(; diameter=1.0e-3) <: AbstractMultiphaseModel
+    Mixture(; diameter=1.0e-3, alpha_transport=:mules) <: AbstractMultiphaseModel
 
 Manninen drift-flux mixture-model settings.
 
 ### Fields
 - `diameter` -- Dispersed-phase particle/bubble diameter [m].
+- `alpha_transport` -- How the volume fraction is advanced, `:mules` (default)
+  or `:implicit`.
+
+### `alpha_transport`
+
+`:mules` is the explicit flux-corrected update shared with `VOF`. It is bounded
+by construction, but the limiter's boundedness argument fixes the update form to
+the advective rearrangement, which is exact only when `div(u) = 0`. That makes
+the compressibility and phase-change terms awkward to include correctly, and it
+imposes an alpha-Courant time step limit.
+
+`:implicit` solves a conservative transport equation as a linear system instead,
+using `solvers.alpha`. Sources enter the matrix rather than being applied
+afterwards, and the Courant limit disappears. Boundedness is enforced by a clamp
+rather than guaranteed.
+
+!!! warning "Measured worse on the LH2 pipe case"
+    `:implicit` is the more defensible formulation on paper, but on the
+    forced-convection boiling case it made the discrete vapour mass balance
+    *worse* (residual 3-30x the phase change rate against ~1x for `:mules`), and
+    `max|U|` and the near-wall cooling both degraded. The default is therefore
+    unchanged. See `dev_notes_LH2_pipe_boiling.md` before selecting it.
 """
-@kwdef struct Mixture{T1} <: AbstractMultiphaseModel
+@kwdef struct Mixture{T1,S} <: AbstractMultiphaseModel
     diameter::T1 = 1.0e-3
+    alpha_transport::S = :mules
 end
 Adapt.@adapt_structure Mixture
+
+"""True when the mixture model advances the volume fraction implicitly."""
+implicit_alpha_transport(m::Mixture) = m.alpha_transport === :implicit
+implicit_alpha_transport(m) = false
 
 """
     Multiphase <: AbstractMultiphase

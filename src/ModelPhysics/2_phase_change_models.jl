@@ -114,10 +114,17 @@ recommended.
 
 Parametric values used in the paper: 1e-3 (baseline), 1e-4, 1e-5.
 """
-struct Schrage{T<:AbstractFloat} <: AbstractPhaseChangeModel
+struct Schrage{T<:AbstractFloat,R} <: AbstractPhaseChangeModel
     sigma::T
+    R::R
 end
-Schrage(; sigma=1.0e-3) = Schrage(float(sigma))
+
+# `R` is an OPTIONAL override for the vapour specific gas constant [J/kg/K],
+# used only when the vapour equation of state cannot supply one (`ConstEos`).
+# The kinetic prefactor sqrt(1/(2 pi R_sp T_sat)) is a property of the SUBSTANCE,
+# not of the equation of state, so a constant-density vapour has a perfectly
+# well-defined value for it - there is simply nowhere on `ConstEos` to keep it.
+Schrage(; sigma=1.0e-3, R=nothing) = Schrage(float(sigma), R === nothing ? nothing : float(R))
 
 """
     ModifiedEnergyJump(; h)
@@ -168,10 +175,17 @@ reproducing the paper.
 
 Parametric values used in the paper: 1e-6 (baseline), 1e-7, 1e-8.
 """
-struct Lee{T<:AbstractFloat} <: AbstractPhaseChangeModel
+struct Lee{T<:AbstractFloat,R} <: AbstractPhaseChangeModel
     sigma::T
+    R::R
 end
-Lee(; sigma=1.0e-6) = Lee(float(sigma))
+
+# `R` is an OPTIONAL override for the vapour specific gas constant [J/kg/K],
+# used only when the vapour equation of state cannot supply one (`ConstEos`).
+# The kinetic prefactor sqrt(1/(2 pi R_sp T_sat)) is a property of the SUBSTANCE,
+# not of the equation of state, so a constant-density vapour has a perfectly
+# well-defined value for it - there is simply nowhere on `ConstEos` to keep it.
+Lee(; sigma=1.0e-6, R=nothing) = Lee(float(sigma), R === nothing ? nothing : float(R))
 
 
 # =============================================================================

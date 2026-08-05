@@ -207,8 +207,19 @@ end
 
 ### NORMAL HYDROGEN
 
-function EOS_wrapper_H2(fluid::H2, T::F, pressure::F) where F <: AbstractFloat
-    constants = HelmholtzFluidConstants(
+"""
+    helmholtz_constants(fluid, ::Type{F}=Float64) -> HelmholtzFluidConstants
+
+The fixed coefficient set of a fluid's Helmholtz equation of state.
+
+Separated from `EOS_wrapper_*` so the constants can be built **once** and reused.
+The wrappers previously constructed this struct - about twenty heap-allocated
+vectors - on every single call, which makes per-cell evaluation impossibly
+expensive. Anything that evaluates the EOS in bulk (see
+`build_property_table`) should hoist this out of its loop.
+"""
+function helmholtz_constants(::H2, ::Type{F}=Float64) where F <: AbstractFloat
+    return HelmholtzFluidConstants(
         F(33.145), # T_c (K)
         F(15.508e3), # rho_c (mol/m^3)
         F(8.314472), # R_univ (J/mol K)
@@ -260,18 +271,15 @@ function EOS_wrapper_H2(fluid::H2, T::F, pressure::F) where F <: AbstractFloat
         F(7360.0), # p_triple (Pa)
         F(2.5) # Fluid dependent density guess multiplier to get liquid function
     )
-
-    EOS_wrapper(fluid, T, pressure, constants)
-    
 end
 
 
 
 ### PARAHYDROGEN
 
-function EOS_wrapper_H2(fluid::H2_para, T::F, pressure::F) where F <: AbstractFloat
+function helmholtz_constants(::H2_para, ::Type{F}=Float64) where F <: AbstractFloat
 
-    constants = HelmholtzFluidConstants(
+    return HelmholtzFluidConstants(
         F(32.938),      # T_c
         F(15.538e3),    # rho_c, multiplied by e3 for convenience
         F(8.314472),    # R_univ
@@ -315,7 +323,7 @@ function EOS_wrapper_H2(fluid::H2_para, T::F, pressure::F) where F <: AbstractFl
         F(7042.0),  # p_triple
         F(2.5)      # Fluid dependent density guess multiplier to get liquid function
     )
-
-    EOS_wrapper(fluid, T, pressure, constants)
-    
 end
+
+EOS_wrapper_H2(fluid::Union{H2,H2_para}, T::F, pressure::F) where F <: AbstractFloat =
+    EOS_wrapper(fluid, T, pressure, helmholtz_constants(fluid, F))

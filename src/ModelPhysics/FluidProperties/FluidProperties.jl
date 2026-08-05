@@ -31,3 +31,8 @@ include("Viscosity/high_fidelity_mu_N2.jl")
 include("surface_tension.jl")
 
 include("HighFidelity_Closure.jl")
+
+# Builds the kernel-safe property tables consumed by `TabulatedEos` and friends.
+# Must come last: it needs the EOS, viscosity, conductivity and saturation
+# routines above, as well as the model types from `2_tabulated_properties.jl`.
+include("property_tables.jl")

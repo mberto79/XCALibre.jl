@@ -1,4 +1,5 @@
 export multiphase!
+export relax_source!
 
 function multiphase!(
     model, config;
@@ -44,6 +45,254 @@ multiphase_saturation(fluid) = get(fluid.physics_properties, :saturation, Antoin
 """Latent heat of vaporisation `h_fg` [J/kg]."""
 multiphase_h_fg(fluid) = get(fluid.physics_properties, :h_fg, 0.0)
 
+
+"""
+    multiphase_rho_ref(fluid, phases, main)
+
+Reference density for the `p_rgh` split, from the optional `rho_ref` keyword of
+`Fluid{Multiphase}`. Defaults to the tracked (continuous) phase's density.
+
+### Why a reference density rather than the local one
+
+`p_rgh` splits the pressure into a dynamic part and a hydrostatic part. Which
+density that hydrostatic part uses changes the numerics substantially:
+
+    p_rgh = p - rho(x) g.h   ->  momentum source  -grad(p_rgh) - g.h grad(rho)
+    p_rgh = p - rho_ref g.h  ->  momentum source  -grad(p_rgh) + (rho - rho_ref) g
+
+Both are exact. But the first expresses buoyancy as a GRADIENT of density
+multiplied by `g.h`, so it is divided by the cell size and scaled by the domain
+height; the second is a body force proportional to the density excess and
+involves no gradient at all.
+
+On the LH2 pipe with wall boiling - `alpha` departing from 1 by only ~1e-3 across
+a 34 um wall cell, `g.h` up to 3.04 - the two evaluate to:
+
+    g.h grad(rho)      ~ 4283 N/m^3   (about 8x gravity itself)
+    (rho - rho_ref) g  ~    0.47 N/m^3
+
+a factor of ~9000. The first manufactures a large spurious force from a small
+density gradient across a thin cell; the second does not. This is also what
+section 5.4 of dev_notes_LH2_implementation_plan.md warned about - that the
+buoyancy kernels are well balanced by construction only while `rho` is piecewise
+constant.
+
+Choose `rho_ref` as the phase that occupies most of the domain, so that
+`(rho - rho_ref)` is near zero there: the liquid for a mostly-liquid pipe (the
+default), the vapour for a large ullage.
+"""
+multiphase_rho_ref(fluid, phases, main) = get(fluid.physics_properties, :rho_ref, nothing)
+
+"""Optional `wall_boiling = RPI(...)`, the wall nucleate boiling model."""
+multiphase_wall_boiling(fluid) = get(fluid.physics_properties, :wall_boiling, nothing)
+
+"""
+Under-relaxation factor for the BULK interfacial phase change rate, from the
+optional `phase_change_relax` keyword of `Fluid{Multiphase}`. Defaults to 1
+(no relaxation), which reproduces the unrelaxed behaviour exactly.
+"""
+multiphase_phase_change_relax(fluid) = get(fluid.physics_properties, :phase_change_relax, 1.0)
+
+"""
+Under-relaxation factor for `dp/dt`, the driver of the energy equation's
+pressure-work source `S_T = beta*T*Dp/Dt`, from the optional
+`pressure_work_relax` keyword of `Fluid{Multiphase}`.
+
+**Defaults to 0.5, i.e. relaxation is ON.** Set to `1.0` to disable it.
+
+Unlike the phase-change factors this is damped by default, because `Dp/Dt` is the
+one source whose *raw* value is routinely dominated by numerics rather than
+physics. A segregated pressure solve establishes a flow's pressure field in a
+single step, whereas the physical transient it represents propagates
+acoustically over many steps. For a heated pipe at `dt = 2e-6` s the first solve
+creates ~618 Pa of frictional drop in one step, against an acoustic transit time
+of ~7e-4 s - so the raw `Dp/Dt` is some two orders of magnitude too large. With
+`beta*T ~ 1.6` even a 1 Pa adjustment per step gives `S_T ~ 8e5` W/m^3.
+
+Because [`relax_source!`](@ref) blends rather than scales, the converged value is
+unchanged: at steady state the relaxed and unrelaxed sources are identical, and a
+slowly-varying `Dp/Dt` (a self-pressurising tank, say) is reproduced to within
+`(1-relax)^n` after `n` steps - about 0.1% after ten steps at the default.
+
+The precedent is direct: STAR-CCM+ blends its slip body force 50/50 between the
+old and new value (Mixture Multiphase user guide, Eq. 2923) for the same reason.
+"""
+multiphase_pressure_work_relax(fluid) =
+    get(fluid.physics_properties, :pressure_work_relax, 0.5)
+
+"""
+Under-relaxation factor for the WALL nucleate boiling rate, from the optional
+`wall_boiling_relax` keyword of `Fluid{Multiphase}`. Defaults to 1.
+
+Kept separate from `phase_change_relax` because the two sources are stiff for
+different reasons and at different places: the bulk model responds to
+`(T - T_sat)` throughout the interface region, while the wall model responds to
+the wall superheat through `N_a ~ dT_sup^1.805`, which is far steeper. Damping
+one usually does not call for damping the other by the same amount.
+"""
+multiphase_wall_boiling_relax(fluid) = get(fluid.physics_properties, :wall_boiling_relax, 1.0)
+
+"""
+Under-relaxation factor for the pressure equation's THERMAL EXPANSION source
+`beta*DT/Dt`, from the optional `expansion_relax` keyword of
+`Fluid{Multiphase}`. Defaults to 1 (no relaxation).
+
+Applied to the thermal part only, before the phase-change volume creation is
+summed in, so setting it to zero suppresses thermo-acoustic coupling **without**
+removing the volume that boiling actually creates.
+
+See [`multiphase_pressure_work_relax`](@ref) for why these two are usually set
+together.
+"""
+multiphase_expansion_relax(fluid) = get(fluid.physics_properties, :expansion_relax, 1.0)
+
+"""
+    multiphase_pressure_form(fluid) -> Symbol
+
+Which conservation statement the pressure equation enforces, from the optional
+`pressure_form` keyword of `Fluid{Multiphase}`.
+
+Applies to compressible AND constant-density runs. A mixture of two
+incompressible phases still has a varying density wherever `alpha` varies, so
+`div(u) = 0` does not imply mass conservation and the two forms differ.
+
+- `:volume` (default) — the low-Mach VOLUME constraint,
+
+      psi*dp/dt - div(rDf grad p_rgh) = -div(u*) + expansion
+
+  i.e. the pressure correction makes the VOLUMETRIC flux satisfy the dilatation
+  budget. This is the historical XCALibre form and what OpenFOAM's
+  `compressibleInterFoam` does.
+
+- `:mass` — the MASS constraint `d(rho_m)/dt + div(rho_m u) = 0`, which is the
+  same equation multiplied through by `rho_m`, with `u.grad(rho_m)` absorbed
+  because `Drho_m/Dt + rho_m div(u) = 0` carries it:
+
+      drho_m/dp*dp/dt - div(rho_f rDf grad p_rgh) = -div(rho_f u*) + rho_m*expansion
+
+  This is the STAR-CCM+ mixture form. Every term picks up the density of the
+  quantity it belongs to — that is the check that the conversion is right.
+
+**Why it can matter.** Momentum and energy convect with `rhoPhi`, a MASS flux,
+but under `:volume` nothing ever enforces `div(rho u) = -drho/dt`; the pressure
+correction only constrains the volumetric flux. Where density varies by ~57x
+(LH2/GH2) the two are far apart, and the discrete mass residual is then O(1) —
+see `dev_notes_LH2_pipe_boiling.md`. `:mass` closes that gap directly and, as a
+side effect, weights each cell's equation by its density, which conditions the
+system better across an interface.
+
+With constant density the two forms differ only by a uniform scale factor, so
+they agree to solver tolerance. **Opt-in**, so existing cases are untouched.
+"""
+function multiphase_pressure_form(fluid)
+    form = get(fluid.physics_properties, :pressure_form, :volume)
+    form in (:volume, :mass) || throw(ArgumentError(
+        "`pressure_form` must be :volume or :mass, got :$form"))
+    return form
+end
+
+"""
+    _validate_relax(name, value) -> Float64
+
+Check an under-relaxation factor lies in `[0, 1]`.
+
+Zero is allowed and means the source is switched **off**: `relax_source!` blends
+against a `prev` field that starts at zero, so `relax = 0` leaves it at zero for
+the whole run. That makes "disable this term" and "damp this term" one keyword
+rather than two.
+"""
+function _validate_relax(name, value)
+    (value isa Real && 0 <= value <= 1) || throw(ArgumentError(
+        "`$name` must be in [0, 1], got $value. 1 means no relaxation, 0 disables the term."))
+    return float(value)
+end
+
+"""
+    relax_source!(field, prev, relax, config)
+
+Under-relax a source term in TIME:
+
+    field = (1 - relax)*prev + relax*field
+
+then store the result in `prev` for the next step. `relax = 1` is a no-op beyond
+the copy.
+
+**Blending, not scaling.** Multiplying the rate by a factor would be the obvious
+reading of "under-relaxation", but it is wrong here: it would permanently
+evaporate less mass than the model asks for, biasing the vapour generation and
+hence the mass balance. Blending against the previous step damps how fast the
+source can *change* while leaving its converged value untouched — at steady state
+`field == prev`, so the relaxed and unrelaxed answers coincide.
+
+That distinction is what makes this safe to use as a stability aid rather than a
+silent modification of the physics.
+"""
+function relax_source!(field, prev, relax, config)
+    if relax >= 1
+        @. prev.values = field.values
+        return nothing
+    end
+    @. field.values = (1 - relax)*prev.values + relax*field.values
+    @. prev.values = field.values
+    return nothing
+end
+
+"""
+Surface tension [N/m], from the optional `sigma` keyword of `Fluid{Multiphase}`.
+
+Distinct from `VOF(sigma=...)`, which is the interface-capturing surface tension
+force. This one is a *material property* read by the wall boiling sub-models that
+need it, and it is therefore meaningful for the `Mixture` model too, which has no
+surface tension force of its own.
+"""
+multiphase_sigma(fluid) = get(fluid.physics_properties, :sigma, 0.0)
+
+"""Gravitational acceleration magnitude, for the bubble departure correlations."""
+multiphase_g_magnitude(fluid) = norm(fluid.physics_properties.gravity.g)
+
+"""
+    validate_wall_boiling_setup(fluid, phases, wall_boiling)
+
+Check that a wall boiling model has what it needs. Same intent as
+[`validate_phase_change_setup`](@ref): fail at setup, naming what is missing,
+rather than producing a silently zero source.
+"""
+validate_wall_boiling_setup(fluid, phases, ::Nothing) = nothing
+
+function validate_wall_boiling_setup(fluid, phases, wb::AbstractWallBoilingModel)
+    multiphase_h_fg(fluid) > 0 || throw(ArgumentError(
+        """`wall_boiling` needs the latent heat. Pass it to the fluid, e.g.
+
+    Fluid{Multiphase}(..., h_fg = 446.0e3)
+
+The evaporative flux is converted to a vapour mass source by dividing by it, and
+the energy equation removes that same latent heat again; zero makes both
+meaningless."""))
+
+    # Vapour created at the wall has to go somewhere, but it no longer needs a
+    # compressible phase to get there: the net volume change travels through the
+    # `expansion` source, which both branches of the pressure equation now carry.
+    # Same reasoning as the bulk phase-change models above.
+
+    # Two of the optional sub-models divide by, or take the square root of, the
+    # surface tension. Zero is the default and is harmless for the models that
+    # do not use it, so this only complains when it actually matters.
+    needs_sigma = wb isa RPI &&
+        (wb.site_density isa HibikiIshii ||
+         wb.departure_diameter isa KocamustafaogullariIshii)
+
+    if needs_sigma && multiphase_sigma(fluid) <= 0
+        throw(ArgumentError(
+            """The selected wall boiling sub-models need the surface tension, but `sigma` \
+is $(multiphase_sigma(fluid)). Pass it to the fluid, e.g.
+
+    Fluid{Multiphase}(..., sigma = 1.9e-3)
+
+(`LemmertChawla` + `TolubinskyKostanchuk`, the defaults, do not need it.)"""))
+    end
+    return nothing
+end
+
 """
     validate_phase_change_setup(fluid, phases, secondary)
 
@@ -61,25 +310,44 @@ function validate_phase_change_setup(fluid, phases, secondary)
 
 Every model divides by or multiplies by L; zero makes the source meaningless."""))
 
-    # The volume created or destroyed by phase change enters through the pressure
-    # equation, which only carries those source terms when the mixture is
-    # compressible. Rather than build a second, untested path, require it.
-    is_compressible_multiphase(phases) || throw(ArgumentError(
-        """`phase_change` currently requires a compressible phase, because the net \
-volume change (mdot*(1/rho_v - 1/rho_l)) is applied through the pressure equation's \
-compressibility path. Give the vapour an equation of state, e.g. \
-`Phase(rho = IdealGas(M=2.01588e-3), ...)`."""))
+    # A compressible phase is NO LONGER REQUIRED. The volume created by phase
+    # change, mdot*(1/rho_v - 1/rho_l), is carried by the `expansion` source,
+    # which both branches of the pressure equation now include. Two phases of
+    # different density exchange volume when one becomes the other whether or not
+    # either is compressible.
+    #
+    # Constant-density phase change is a genuinely useful configuration rather
+    # than just a convenience: it is the only way to separate "alpha varies
+    # across a density ratio" from "the vapour is compressible" when diagnosing a
+    # two-phase pressure failure.
 
     # Schrage and Lee carry a kinetic-theory prefactor sqrt(1/(2 pi R_sp T_sat)).
+    # `R_sp` is a property of the substance, not of the equation of state, so any
+    # EOS that knows its own specific gas constant can supply it - `IdealGas`
+    # from its defining constant, `TabulatedEos` from the molar mass of the fluid
+    # it was tabulated from. This is what allows a real-fluid vapour to be used
+    # with the Lee model, which the ideal-gas-only check previously forbade.
     if pc isa Union{Schrage,Lee}
         eos = phases[secondary].rho_model
-        eos isa IdealGas || throw(ArgumentError(
+        # Prefer the EOS's own value; fall back to one supplied on the model.
+        # `R_sp` is a property of the SUBSTANCE, not of the equation of state, so
+        # a constant-density vapour has a perfectly well-defined specific gas
+        # constant even though `ConstEos` has nowhere to store it. Requiring a
+        # compressible EOS just to obtain a physical constant would rule out the
+        # constant-density control for no reason.
+        R_sp = something(specific_gas_constant(eos), pc.R, Some(nothing))
+        R_sp === nothing && throw(ArgumentError(
             """`$(typeof(pc).name.wrapper)` needs the vapour specific gas constant for its \
-kinetic prefactor, but the vapour equation of state is $(typeof(eos).name.wrapper). \
-Use `IdealGas(M=...)` or `IdealGas(R=...)` for the vapour phase.
+kinetic prefactor, but the vapour equation of state is $(typeof(eos).name.wrapper), \
+which does not carry one.
+
+Either give the vapour an EOS that does - `IdealGas(M=...)`, `IdealGas(R=...)`, or a \
+tabulated `RealFluid(...)` - or pass the constant directly to the model:
+
+    $(typeof(pc).name.wrapper)(..., R = 4124.5)     # [J/kg/K], = R_universal/M
 
 (`ModifiedEnergyJump` does not need it and works with any vapour EOS.)"""))
-        return eos.R
+        return R_sp
     end
     return 0.0
 end
@@ -94,46 +362,119 @@ phase_density_ref(rho::ConstantScalar) = rho.values
 phase_density_ref(rho) = sum(rho.values)/length(rho.values)
 
 """
-    seed_phase_densities!(model, p_operating, config)
+    seed_phase_properties!(model, p_operating, config)
 
-Fill the density field of every variable-EOS phase from a uniform absolute
+Fill every variable property field of every phase from a uniform absolute
 pressure `p_operating` and the current temperature field, before the first
-property blend. Without this a variable-EOS phase starts at zero density.
+property blend.
+
+Without this a variable property starts at zero, which for density propagates an
+`Inf` straight into the `mu/rho` blend, and for `cp` makes the energy equation's
+time term singular on the first step.
 """
-function seed_phase_densities!(model, p_operating, config)
+function seed_phase_properties!(model, p_operating, config)
     mesh = model.domain
     p_abs = ScalarField(mesh)
     initialise!(p_abs, p_operating)
     T = model.energy.T
     for phase in model.fluid.phases
-        update_phase_property!(phase.rho, phase.rho_model, p_abs, T, config)
+        update_phase_properties!(phase, p_abs, T, config)
     end
     return nothing
 end
 
 """
-    update_phase_densities!(model, p_abs, config)
+    update_phase_state!(model, p_abs, config)
 
-Recompute the per-cell density of every variable-EOS phase at the current
-absolute pressure and temperature. A no-op for constant-density phases.
+Recompute the per-cell variable properties (density, viscosity, conductivity,
+heat capacity, expansivity) of every phase at the current absolute pressure and
+temperature. A no-op for properties held constant.
 """
-function update_phase_densities!(model, p_abs, config)
+function update_phase_state!(model, p_abs, config)
     T = model.energy.T
     for phase in model.fluid.phases
-        update_phase_property!(phase.rho, phase.rho_model, p_abs, T, config)
+        update_phase_properties!(phase, p_abs, T, config)
     end
     return nothing
 end
 
 """
-    absolute_pressure!(p_abs, p_rgh, rho, gh, p_operating, config)
+    has_variable_properties(phases) -> Bool
+
+True when any phase has a property that must be refreshed each step - i.e. any
+model that is not one of the `Const*` family. Used to decide whether the
+property-update pass is needed at all, so the all-constant case keeps exactly
+the work it did before.
+"""
+function has_variable_properties(phases)
+    is_const(m) = m === nothing || m isa Union{ConstEos,ConstMu,ConstK,ConstCp,ConstBeta}
+    return any(phases) do ph
+        !(is_const(ph.rho_model) && is_const(ph.mu_model) && is_const(ph.k_model) &&
+          is_const(ph.cp_model) && is_const(ph.beta_model))
+    end
+end
+
+"""
+    absolute_pressure!(p_abs, p_rgh, rho, rho_ref, gh, p_operating, config)
 
 `p_abs = p_rgh + rho*gh + p_operating`, the pressure a phase equation of state
 must be evaluated at.
 """
-function absolute_pressure!(p_abs, p_rgh, rho, gh, p_operating, config)
-    @. p_abs.values = p_rgh.values + rho.values*gh.values + p_operating
+absolute_pressure!(p_abs, p_rgh, rho, ::Nothing, gh, p_operating, config) =
+    (@. p_abs.values = p_rgh.values + rho.values*gh.values + p_operating; nothing)
+
+function absolute_pressure!(p_abs, p_rgh, rho, rho_ref, gh, p_operating, config)
+    @. p_abs.values = p_rgh.values + rho_ref*gh.values + p_operating
     return nothing
+end
+
+"""
+    multiphase_p_abs_limit(fluid) -> Tuple or nothing
+
+Bounds `(p_min, p_max)` for the ABSOLUTE pressure, from the optional
+`p_abs_limit` keyword of `Fluid{Multiphase}`. `nothing` (default) leaves it
+unbounded.
+
+`p_abs` is what every property lookup and the saturation curve are evaluated at,
+and those CLAMP silently at their table edges - a kernel cannot throw. So an
+excursion in `p_abs` does not announce itself, it quietly returns edge values:
+at 0.7 MPa operating with a curve starting at 0.25 MPa, a cell that dips below
+gets `T_sat = 23.86 K` instead of 29.15 K, and saturated liquid then looks 5 K
+superheated.
+
+Bounding `p_abs` explicitly is preferable to letting the tables do it implicitly,
+because it is visible, deliberate and REPORTED - see `clamp_absolute_pressure!`.
+
+Note this is NOT `solvers.p_rgh.limit`, which the multiphase solver does not read.
+"""
+function multiphase_p_abs_limit(fluid)
+    lim = get(fluid.physics_properties, :p_abs_limit, nothing)
+    lim === nothing && return nothing
+    (lim isa Tuple && length(lim) == 2 && lim[1] < lim[2]) || throw(ArgumentError(
+        "`p_abs_limit` must be a (p_min, p_max) tuple with p_min < p_max, got $lim"))
+    return (float(lim[1]), float(lim[2]))
+end
+
+"""
+    clamp_absolute_pressure!(p_abs, limit, iteration) -> Int
+
+Clamp `p_abs` into `limit`, returning how many cells were affected.
+
+The count is the point. A silent clamp is what made the saturation-curve
+excursion invisible for so long, so this one reports itself the first time it
+bites and then every 100 iterations - enough to notice, not enough to spam.
+"""
+clamp_absolute_pressure!(p_abs, ::Nothing, iteration) = 0
+
+function clamp_absolute_pressure!(p_abs, limit, iteration)
+    lo, hi = limit
+    n = count(v -> v < lo || v > hi, p_abs.values)
+    n == 0 && return 0
+    clamp!(p_abs.values, lo, hi)
+    if n == 1 || iteration % 100 == 0
+        @warn "Absolute pressure clamped" iteration cells=n limit=limit
+    end
+    return n
 end
 
 """
@@ -220,9 +561,24 @@ This matters only when the pressure equation carries a time term; the
 incompressible path keeps using `solve_equation!` unchanged.
 """
 function solve_pressure_compressible!(
-    p_eqn, p_rgh, p_rgh_start, BCs, solversetup, config; ref=nothing, time=nothing)
+    p_eqn, p_rgh, p_rgh_start, BCs, solversetup, config;
+    ref=nothing, time=nothing, sealed=true)
 
-    discretise!(p_eqn, p_rgh_start, config)
+    # `sealed` selects which field the Time term differences against.
+    #
+    # SEALED (no boundary fixes the pressure level): freeze at the step start, or
+    # each PISO corrector adds another full psi*dp/dt increment and the pressure
+    # rise scales with `inner_loops` instead of converging.
+    #
+    # FLOW-THROUGH (a Dirichlet on p_rgh pins the level): use the solved field,
+    # as `solve_equation!` and CPISO both do. Here the outlet already fixes the
+    # pressure, so freezing does NOT stabilise anything - it holds the reference
+    # away from the value the boundary is imposing, and the difference between
+    # them enters every corrector as a source that never relaxes. That is the
+    # "stiff spurious source" the `p_ref` docstring in `property_tables.jl`
+    # describes, and it is why `p_ref` locking (psi = 0) appeared to be the only
+    # way to make such a case run.
+    discretise!(p_eqn, sealed ? p_rgh_start : p_rgh, config)
     apply_boundary_conditions!(p_eqn, BCs, nothing, time, config)
     setReference!(p_eqn, ref, 1, config)
     update_preconditioner!(p_eqn.preconditioner, p_rgh.mesh, config)
@@ -247,8 +603,9 @@ function update_expansion!(expansion, alpha, phases, T, T_prev, dt, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    beta_l = _phase_beta_value(phases[1])
-    beta_v = _phase_beta_value(phases[2])
+    # Indexable rather than scalar, so a tabulated expansivity varies per cell.
+    beta_l = _phase_beta_field(phases[1])
+    beta_v = _phase_beta_field(phases[2])
 
     ndrange = length(expansion)
     kernel! = _update_expansion!(_setup(backend, workgroup, ndrange)...)
@@ -263,53 +620,131 @@ end
     TF = eltype(expansion.values)
     a = alpha[i]
     t = T[i]
-    betaT = a*phase_betaT(eos_l, beta_l, t) + (one(TF) - a)*phase_betaT(eos_v, beta_v, t)
+    betaT = a*phase_betaT(eos_l, beta_l[i], t) + (one(TF) - a)*phase_betaT(eos_v, beta_v[i], t)
     dTdt = (t - T_prev[i])/dt
     expansion[i] = betaT*dTdt/t
 end
 
 """
-    update_psi!(psi, alpha, phases, p_abs, T, config)
+    update_psi!(psi, alpha, phases, p_abs, T, config; mass_form=false)
 
-Pressure-equation compressibility coefficient
+Pressure-equation compressibility coefficient.
+
+Volume form (`mass_form = false`):
 
     psi = sum_i alpha_i * (1/rho_i) * (d rho_i/dp)
 
+Mass form (`mass_form = true`), the derivative of the MIXTURE density:
+
+    drho_m/dp = sum_i alpha_i * (d rho_i/dp) = sum_i alpha_i * rho_i * psi_i
+
 evaluated per cell, with `alpha_1 = alpha` (the tracked phase) and
-`alpha_2 = 1 - alpha`. For an incompressible liquid plus an ideal-gas vapour this
-reduces to `psi = (1 - alpha)/p_abs`.
+`alpha_2 = 1 - alpha`. For an incompressible liquid plus an ideal-gas vapour the
+volume form reduces to `psi = (1 - alpha)/p_abs`.
+
+Note the mass coefficient is `sum_i alpha_i rho_i psi_i` and **not**
+`rho_m * sum_i alpha_i psi_i`: the scale-by-`rho_m` reading of the mass form is
+exact for the fluxes and sources, but the time term's coefficient is a genuine
+derivative and each phase must be weighted by its own density. The two coincide
+when one phase dominates and differ by ~2x at `alpha = 0.5` for LH2/GH2.
 """
-function update_psi!(psi, alpha, phases, p_abs, T, config)
+function update_psi!(psi, alpha, phases, p_abs, T, config; mass_form=false)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
     ndrange = length(psi)
     kernel! = _update_psi!(_setup(backend, workgroup, ndrange)...)
-    kernel!(psi, alpha, p_abs, T, phases[1].rho_model, phases[2].rho_model)
+    kernel!(psi, alpha, p_abs, T, phases[1].rho_model, phases[2].rho_model,
+            phases[1].rho, phases[2].rho, Val(mass_form))
     return nothing
 end
 
-@kernel inbounds=true function _update_psi!(psi, alpha, p_abs, T, eos1, eos2)
+@kernel inbounds=true function _update_psi!(
+    psi, alpha, p_abs, T, eos1, eos2, rho1, rho2, mass_form)
     i = @index(Global)
     TF = eltype(psi.values)
     a = alpha[i]
     p = p_abs[i]
     t = T[i]
-    psi[i] = a*phase_compressibility(eos1, p, t) +
-             (one(TF) - a)*phase_compressibility(eos2, p, t)
+    # `Val` so the branch is resolved at compile time and the kernel stays
+    # GPU-safe (no runtime divergence, no boxed Bool).
+    w1, w2 = _psi_weights(mass_form, rho1[i], rho2[i], TF)
+    psi[i] = a*w1*phase_compressibility(eos1, p, t) +
+             (one(TF) - a)*w2*phase_compressibility(eos2, p, t)
 end
 
-"""
-    phase_density_faces!(rhof_phase, rho_phase, config)
+@inline _psi_weights(::Val{false}, r1, r2, ::Type{TF}) where {TF} = (one(TF), one(TF))
+@inline _psi_weights(::Val{true}, r1, r2, ::Type{TF}) where {TF} = (r1, r2)
 
-Face values of a single phase's density. A `ConstantScalar` is index-independent
+"""
+    phase_property_faces!(prop_f, prop_cell, config)
+
+Face values of a single phase's property. A `ConstantScalar` is index-independent
 so the face field is simply filled; a cell `ScalarField` must be interpolated,
 because indexing a cell-sized array by face ID would be wrong.
+
+Used for density, viscosity, conductivity and heat capacity alike — every
+property the face kernels read.
 """
-phase_density_faces!(rhof_phase, rho_phase::ConstantScalar, config) =
-    initialise!(rhof_phase, rho_phase.values)
-phase_density_faces!(rhof_phase, rho_phase, config) =
-    interpolate!(rhof_phase, rho_phase, config)
+phase_property_faces!(prop_f, prop_cell::ConstantScalar, config) =
+    initialise!(prop_f, prop_cell.values)
+phase_property_faces!(prop_f, prop_cell, config) =
+    interpolate!(prop_f, prop_cell, config)
+
+# Retained name for the density-specific call sites.
+const phase_density_faces! = phase_property_faces!
+
+"""
+    PhaseFaceProperties(mesh, phases)
+
+Per-phase FACE property fields (`rho1f`, `cp1f`, `k1f`, `mu1f` and the phase-2
+counterparts), refreshed each step by `update_mixture_properties!`.
+
+They exist because a variable property is stored as a CELL field, and the face
+kernels — the mixture blends, the energy equation's `keff` and `rho_cp_phi` —
+index by face ID. Interpolating once per step into these fields is both correct
+and cheaper than interpolating at each use.
+
+Constant properties are filled rather than interpolated, so an all-constant case
+carries the same values it always did.
+"""
+struct PhaseFaceProperties{F}
+    rho1f::F; rho2f::F
+    cp1f::F;  cp2f::F
+    k1f::F;   k2f::F
+    mu1f::F;  mu2f::F
+end
+Adapt.@adapt_structure PhaseFaceProperties
+
+PhaseFaceProperties(mesh) = PhaseFaceProperties(
+    FaceScalarField(mesh), FaceScalarField(mesh),
+    FaceScalarField(mesh), FaceScalarField(mesh),
+    FaceScalarField(mesh), FaceScalarField(mesh),
+    FaceScalarField(mesh), FaceScalarField(mesh))
+
+"""
+    update_phase_face_properties!(pf, phase_1, phase_2, config)
+
+Refresh every per-phase face field from the corresponding cell field.
+
+`cp` and `k` may be `nothing` when the energy model does not need them (an
+isothermal run); those are skipped rather than defaulted, so a missing property
+stays missing instead of silently becoming zero.
+"""
+function update_phase_face_properties!(pf::PhaseFaceProperties, phase_1, phase_2, config)
+    phase_property_faces!(pf.rho1f, phase_1.rho, config)
+    phase_property_faces!(pf.rho2f, phase_2.rho, config)
+
+    phase_1.mu === nothing || phase_property_faces!(pf.mu1f, phase_1.mu, config)
+    phase_2.mu === nothing || phase_property_faces!(pf.mu2f, phase_2.mu, config)
+
+    phase_1.cp === nothing || phase_property_faces!(pf.cp1f, phase_1.cp, config)
+    phase_2.cp === nothing || phase_property_faces!(pf.cp2f, phase_2.cp, config)
+
+    phase_1.k === nothing || phase_property_faces!(pf.k1f, phase_1.k, config)
+    phase_2.k === nothing || phase_property_faces!(pf.k2f, phase_2.k, config)
+    return nothing
+end
 
 multiphase_extras(::VOF, mesh) = ()
 
@@ -392,10 +827,14 @@ function setup_multiphase_solvers(
 
     @info "Computing fluid properties..."
 
-    # Seed any variable-EOS phase before the first blend: its density field is
+    # Seed any variable property before the first blend: the fields are
     # allocated as zeros, which would otherwise propagate a zero density (and an
-    # Inf in the mu/rho blend below).
-    if is_compressible_multiphase(phases)
+    # Inf in the mu/rho blend below) or a zero cp (a singular energy time term).
+    #
+    # Seeding is driven by `has_variable_properties`, not by compressibility
+    # alone: a phase may have a constant density but a tabulated viscosity or
+    # heat capacity, and those need seeding just as much.
+    if has_variable_properties(phases) || is_compressible_multiphase(phases)
         p_op = multiphase_p_operating(model.fluid)
         p_op > 0 || throw(ArgumentError(
             """A phase with a variable equation of state needs an absolute pressure datum, \
@@ -410,20 +849,21 @@ An ideal gas evaluated at zero absolute pressure has zero density."""))
 energy model is $(model.energy === nothing ? "Energy{Isothermal}" : typeof(model.energy).name.wrapper). \
 Use `Energy{TwoPhaseTemperature}(Tref=...)`."""))
 
-        seed_phase_densities!(model, p_op, config)
+        seed_phase_properties!(model, p_op, config)
     end
 
-    # Representative scalar densities for the INITIAL blend only; the first
+    # Representative scalar properties for the INITIAL blend only; the first
     # solver iteration replaces these with per-cell/per-face values in
     # `update_mixture_properties!`. For a ConstantScalar this is exactly the old
-    # `rho[1]`, so the incompressible path is unchanged.
+    # `rho[1]`/`mu[1]`, so the incompressible path is unchanged.
     rho1_0 = phase_density_ref(phases[main].rho)
     rho2_0 = phase_density_ref(phases[secondary].rho)
+    mu1_0 = phase_density_ref(phases[main].mu)
+    mu2_0 = phase_density_ref(phases[secondary].mu)
 
     blend_properties!(rho, alpha, rho1_0, rho2_0)
     blend_properties!(rhof, alphaf, rho1_0, rho2_0)
-    blend_properties!(nuf, alphaf, phases[main].mu[1] / rho1_0,
-                                   phases[secondary].mu[1] / rho2_0)
+    blend_properties!(nuf, alphaf, mu1_0/rho1_0, mu2_0/rho2_0)
     @. mueff.values = rhof.values * nueff.values
 
     gh = model.fluid.physics_properties.gravity.gh
@@ -473,6 +913,15 @@ Use `Energy{TwoPhaseTemperature}(Tref=...)`."""))
     expansion = ScalarField(mesh)
     compressible = is_compressible_multiphase(phases)
 
+    # Face flux of the compressibility coefficient, `psi_f * (u_f . S_f)`. This
+    # is the coefficient of the IMPLICIT pressure-convection term that completes
+    # the material derivative - see the p_eqn comment below. Built from the same
+    # `psi` the Time term uses, so the two halves of Dp/Dt cannot disagree:
+    # under `:volume` that is sum_i alpha_i psi_i, and under `:mass` it is
+    # d(rho_m)/dp, and in each case `psi_f*(u.S)*p` carries exactly the units of
+    # the flux the equation is written in.
+    pconv = FaceScalarField(mesh)
+
     if compressible
         # sum_i alpha_i/rho_i * Drho_i/Dt balances div(u), giving
         #     psi * dp/dt - div(rDf grad(p_rgh)) = -div(Hv flux)
@@ -486,21 +935,59 @@ Use `Energy{TwoPhaseTemperature}(Tref=...)`."""))
         # Full low-Mach constraint:
         #     div(u) + psi*Dp/Dt - sum_i alpha_i*beta_i*DT/Dt = 0
         # With u = Hv - rD*grad(p_rgh) this becomes
-        #     psi*dp/dt - div(rDf grad p_rgh) = -div(Hv) + expansion
+        #     psi*Dp/Dt - div(rDf grad p_rgh) = -div(Hv) + expansion
+        #
+        # NOTE THE MATERIAL DERIVATIVE. Dp/Dt = dp/dt + u.grad(p), and for a long
+        # time only the dp/dt half was implemented - the `Divergence(pconv,...)`
+        # term below is the other half. Dropping it does not merely lose accuracy:
+        # it removes the IMPLICIT coupling between pressure and the flow that
+        # carries it, so the acoustic mode is left to be resolved explicitly
+        # through the PISO correctors. In a sealed tank that costs nothing (u ~ 0,
+        # so u.grad(p) ~ 0, which is why every tank regression passed). In a
+        # flow-through domain at 5.33 m/s with a compressible phase it is the
+        # difference between an unconditionally stable pressure equation and one
+        # that explodes as soon as the second phase appears - measured at 1e21 Pa
+        # from 0.6% vapour.
+        #
+        # This mirrors what `Solvers_2_CPISO.jl` has always done for the
+        # single-phase compressible solver, which carries exactly this term.
         # Omitting `expansion` leaves nothing to drive the pressure: heating the
         # ullage would then have no effect on tank pressure at all.
+        #
+        # The SAME assembled equation serves both the volume and the mass form
+        # (see `multiphase_pressure_form`) — only what the solver loop writes
+        # into the four coefficient/source arrays differs:
+        #
+        #   term        :volume            :mass
+        #   Time flux   sum_i a_i psi_i    sum_i a_i rho_i psi_i  (= drho_m/dp)
+        #   Lapl. flux  rDf                rho_f*rDf
+        #   divHv       div(u*)            div(rho_f u*)
+        #   expansion   [1/s]              rho_m*[1/s]            [kg/m3/s]
         p_eqn = (
             Time{schemes.p_rgh.time}(psi, p_rgh)
             - Laplacian{schemes.p.laplacian}(rDf, p_rgh)
+            + Divergence{schemes.p_rgh.divergence}(pconv, p_rgh)
             ==
             - Source(divHv)
             + Source(expansion)
         ) → ScalarEquation(p_rgh, boundaries.p_rgh)
     else
+        # `expansion` is carried here too, even though an incompressible mixture
+        # has no psi and no thermal-expansion path. Phase change still creates
+        # volume - mdot*(1/rho_v - 1/rho_l) is non-zero whenever the two phases
+        # differ in density, compressible or not - and that volume has to go
+        # somewhere. Without this source the constraint would be div(u) = 0,
+        # which silently discards it.
+        #
+        # This also makes a CONSTANT-DENSITY two-phase flow with phase change a
+        # usable configuration, which is the control that isolates "alpha varies
+        # across a density ratio" from "the vapour is compressible" - the two
+        # were previously impossible to separate.
         p_eqn = (
             - Laplacian{schemes.p.laplacian}(rDf, p_rgh)
             ==
             - Source(divHv)
+            + Source(expansion)
         ) → ScalarEquation(p_rgh, boundaries.p_rgh)
     end
 
@@ -544,11 +1031,11 @@ initialise_multiphase_energy(::Nothing, model, mdotf, config) = nothing
 initialise_multiphase_energy(energy::TwoPhaseTemperature, model, mdotf, config) =
     initialise(energy, model, mdotf, config)
 
-multiphase_energy!(::Nothing, model, alpha_fluxf, mdotf, rho1f, rho2f, nueff,
+multiphase_energy!(::Nothing, model, alpha_fluxf, mdotf, phase_faces, nueff,
                    dpdt, mdot_pc, L, time, dt, config) = nothing
-multiphase_energy!(energyModel, model, alpha_fluxf, mdotf, rho1f, rho2f, nueff,
+multiphase_energy!(energyModel, model, alpha_fluxf, mdotf, phase_faces, nueff,
                    dpdt, mdot_pc, L, time, dt, config) =
-    energy!(energyModel, model, alpha_fluxf, mdotf, rho1f, rho2f, nueff,
+    energy!(energyModel, model, alpha_fluxf, mdotf, phase_faces, nueff,
             dpdt, mdot_pc, L, time, dt, config)
 
 energy_residuals(::Nothing) = ()
@@ -596,19 +1083,118 @@ function MULTIPHASE(
     # Time term (see `setup_multiphase_solvers`), which shifts the Laplacian
     # flux from index 1 to index 2.
     compressible = is_compressible_multiphase(phases)
-    rDf = get_flux(p_eqn, compressible ? 2 : 1)
+    p_flux = get_flux(p_eqn, compressible ? 2 : 1)
     psi = compressible ? get_flux(p_eqn, 1) : nothing
 
+    # Volume or mass form of the pressure equation - see `multiphase_pressure_form`.
+    # NOT gated on `compressible`. That gate conflated "a phase has an equation
+    # of state" with "the mixture density varies", which are different things: at
+    # CONSTANT per-phase densities, rho_m = alpha*rho_l + (1-alpha)*rho_v still
+    # varies wherever alpha does, so the volumetric and mass fluxes are not
+    # proportional and mass conservation is not implied by div(u) = 0. For
+    # LH2/GH2 at 0.7 MPa the ratio is 6.4, so the two fluxes differ by that much
+    # across the interface.
+    #
+    # Phase change makes this concrete: it puts a volume source into the pressure
+    # equation, which imposes div(u) != 0 while energy and momentum convect with
+    # `rhoPhi`. The incompressible branch carries that source too (see the p_eqn
+    # construction), so it needs the mass form for exactly the same reason the
+    # compressible branch does.
+    #
+    # Nothing else here has to change: the Time term and `pconv` exist only on the
+    # compressible branch, and both are correctly absent from the mass form when
+    # d(rho_m)/dp = 0 - a mixture of incompressible phases has no compressibility
+    # to carry, only a composition dependence, which travels through the flux and
+    # the expansion source.
+    mass_form = multiphase_pressure_form(model.fluid) === :mass
+
+    # Does any boundary FIX the pressure level? A `Dirichlet` on p_rgh (an outlet,
+    # typically) pins it; a domain with only zero-gradient and wall conditions is
+    # sealed and the level is set by the compressibility term alone.
+    #
+    # This is the same distinction `pref` is validated against a few lines below,
+    # and it selects the Time term's reference in
+    # `solve_pressure_compressible!` - the two situations genuinely need
+    # different treatment and neither choice is right for both.
+    sealed_pressure = !any(bc -> bc isa Dirichlet, boundaries.p_rgh)
+    if compressible
+        @info "Compressible pressure level: " *
+              (sealed_pressure ? "SEALED (set by the compressibility term)" :
+                                 "FIXED by a Dirichlet boundary")
+    end
+
+    # In the VOLUME form the Laplacian coefficient IS `rDf`, so `rD` is
+    # interpolated straight into the equation's flux array. In the MASS form the
+    # coefficient is `rho_f*rDf`, so `rDf` needs storage of its own: the velocity
+    # correction and the buoyancy flux both still want the plain `rDf`, because
+    # the momentum equation is unchanged by how the pressure equation is scaled.
+    rDf = mass_form ? FaceScalarField(mesh) : p_flux
+    mass_form && initialise!(rDf, 1.0)
+
+    # Flux of the implicit pressure-convection term, retrieved from the equation
+    # itself (term 3, after Time and Laplacian) so the array the solver fills is
+    # the same one the discretisation reads. `psif` is loop-local working storage.
+    pconv = compressible ? get_flux(p_eqn, 3) : nothing
+    psif = FaceScalarField(mesh)
+
     p_operating = multiphase_p_operating(model.fluid)
+    # Reference density for the p_rgh split - see `multiphase_rho_ref`.
+    rho_ref = multiphase_rho_ref(model.fluid, phases, main)
+    p_abs_limit = multiphase_p_abs_limit(model.fluid)
+    g_vector = model.fluid.physics_properties.gravity.g
     p_abs = ScalarField(mesh)
     initialise!(p_abs, p_operating)
 
     # For the pressure-work source of the energy equation. `dpdt` stays `nothing`
     # for an all-incompressible mixture, which zeroes that source exactly.
-    p_abs_prev = ScalarField(mesh); initialise!(p_abs_prev, p_operating)
+    #
+    # `p_abs_prev` MUST be seeded from the actual initial absolute pressure, not
+    # from the uniform `p_operating` datum. `absolute_pressure!` includes the
+    # hydrostatic term `rho*gh` (and any non-zero initial `p_rgh`), so seeding a
+    # uniform value makes the FIRST step see
+    #
+    #     dp/dt = (rho*gh + p_rgh_0)/dt
+    #
+    # which is the entire hydrostatic head divided by one time step - a purely
+    # numerical transient that nothing physical produced. It then enters the
+    # energy equation as `S_T = beta*T*dp/dt` and, through the temperature it
+    # creates, the pressure equation's `expansion` source.
+    #
+    # The resulting temperature error `beta*T*rho*gh/(rho*cp)` is independent of
+    # `dt`, so it does not vanish by refining the time step. On a slow, sealed
+    # tank it damps out; on a stiff through-flow case it does not.
+    p_abs_prev = ScalarField(mesh)
+    absolute_pressure!(p_abs, p_rgh, rho, rho_ref, gh, p_operating, config)
+    clamp_absolute_pressure!(p_abs, p_abs_limit, 0)
+    @. p_abs_prev.values = p_abs.values
+
+    # Under-relaxation of dp/dt. ON by default - see
+    # `multiphase_pressure_work_relax` for why this source in particular is
+    # damped out of the box while the phase-change ones are not.
+    relax_pressure_work = _validate_relax(:pressure_work_relax,
+                                          multiphase_pressure_work_relax(model.fluid))
+    dpdt_prev = compressible ? ScalarField(mesh) : nothing
+
+    # Thermal-expansion source of the pressure equation. Together with the
+    # pressure work above this forms an explicitly-evaluated THERMO-ACOUSTIC
+    # loop, and neither term can be damped usefully on its own:
+    #
+    #   dT -> expansion = beta*dT/dt -> dp -> dp/dt -> S_T = beta*T*dp/dt -> dT
+    #
+    # Each traversal divides by dt twice, so treating it explicitly imposes an
+    # acoustic CFL limit, dt < dx/c with c = 1/sqrt(rho*psi). For a mesh with
+    # 34 um wall cells in liquid hydrogen (c ~ 420 m/s) that is dt < 8e-8 s.
+    # A sealed tank never excites it - dp/dt there is order 1 Pa/s - but a
+    # through-flow case with a startup pressure transient does.
+    #
+    # Both terms vanish at steady state, so setting either to zero costs nothing
+    # for a steady-state case while removing the loop entirely.
+    relax_expansion = _validate_relax(:expansion_relax,
+                                      multiphase_expansion_relax(model.fluid))
+    expansion_prev = compressible ? ScalarField(mesh) : nothing
     dpdt = compressible ? ScalarField(mesh) : nothing
     T_prev = ScalarField(mesh)
-    expansion = compressible ? get_source(p_eqn, 2) : nothing
+    expansion = get_source(p_eqn, 2)
     # Time-step-start pressure, held fixed across the PISO correctors so the
     # compressibility term advances once per step (see
     # `solve_pressure_compressible!`).
@@ -620,10 +1206,41 @@ function MULTIPHASE(
     h_fg         = multiphase_h_fg(model.fluid)
     R_vapour     = validate_phase_change_setup(model.fluid, phases, secondary)
 
+    # --- wall nucleate boiling ----------------------------------------------
+    # A second, independent source of vapour: the bulk models above act on the
+    # liquid/vapour interface, this one on the heated wall. Both write into the
+    # same `mdot_pc`, so either can be used alone or the two together.
+    wall_boiling = multiphase_wall_boiling(model.fluid)
+    validate_wall_boiling_setup(model.fluid, phases, wall_boiling)
+    wallBoiling = initialise_wall_boiling(wall_boiling, model, config)
+    sigma_material = multiphase_sigma(model.fluid)
+    g_magnitude = multiphase_g_magnitude(model.fluid)
+
     # Volumetric phase change rate [kg/m^3/s], positive for evaporation, and the
-    # interfacial area density |grad(alpha)| it is built from.
-    mdot_pc = phase_change === nothing ? nothing : ScalarField(mesh)
+    # interfacial area density |grad(alpha)| it is built from. Allocated when
+    # EITHER mechanism is active, since they share the field.
+    any_phase_change = phase_change !== nothing || wallBoiling !== nothing
+    mdot_pc = any_phase_change ? ScalarField(mesh) : nothing
     gradAlphaMag_pc = phase_change === nothing ? nothing : ScalarField(mesh)
+
+    # Independent temporal under-relaxation of the two vapour sources. Both are
+    # stiff, but for different reasons, so they get separate factors: the bulk
+    # models respond to (T - T_sat) across the interface, the wall model to the
+    # wall superheat through N_a ~ dT_sup^1.805, which is far steeper.
+    #
+    # `relax_source!` BLENDS against the previous step rather than scaling the
+    # rate, so the converged answer is unchanged - see its docstring.
+    relax_bulk = _validate_relax(:phase_change_relax,
+                                 multiphase_phase_change_relax(model.fluid))
+    relax_wall = _validate_relax(:wall_boiling_relax,
+                                 multiphase_wall_boiling_relax(model.fluid))
+
+    mdot_bulk_prev = phase_change === nothing ? nothing : ScalarField(mesh)
+    mdot_wall_prev = wallBoiling === nothing ? nothing : ScalarField(mesh)
+
+    if relax_bulk < 1 || relax_wall < 1
+        @info "Phase change under-relaxation" bulk=relax_bulk wall=relax_wall
+    end
 
     divHv = get_source(p_eqn, 1)
     nueff = FaceScalarField(mesh)
@@ -640,25 +1257,30 @@ function MULTIPHASE(
     ∇p_rghf_reconstructed = VectorField(mesh)
     pressure_force_face   = FaceScalarField(mesh)
 
-    # Viscosity is still taken as a constant per phase. `blend_mixture_nu!`
-    # consumes scalars, and no variable-viscosity model is wired into the
-    # multiphase path, so refuse one rather than silently using mu(t=0).
+    # Viscosity may be constant or tabulated. What it may NOT be is a model the
+    # solver has no way to refresh, since that would leave the field at its
+    # seeded value for the whole run without any indication.
     for (i, phase) in enumerate(phases)
-        phase.mu_model isa ConstMu || throw(ArgumentError(
-            """Phase $i has a variable viscosity model ($(typeof(phase.mu_model).name.wrapper)), \
-which the multiphase solver does not support yet - only the density may vary. \
-Use `mu = <value>` (a `ConstMu`)."""))
+        phase.mu_model isa Union{ConstMu,TabulatedMu} || throw(ArgumentError(
+            """Phase $i has an unsupported viscosity model \
+($(typeof(phase.mu_model).name.wrapper)) for the multiphase solver. Use a constant \
+(`mu = <value>`) or a tabulated model from `RealFluid(...)`."""))
     end
 
+    variable_properties = has_variable_properties(phases)
+
+    # Representative scalars, used only where a single number is genuinely
+    # wanted (the drift-flux relaxation time below) and for the initial fill of
+    # the face fields.
     rho1_val = phase_density_ref(phases[main].rho)
     rho2_val = phase_density_ref(phases[secondary].rho)
-    mu1_val  = phases[main].mu[1]
-    mu2_val  = phases[secondary].mu[1]
+    mu1_val  = phase_density_ref(phases[main].mu)
+    mu2_val  = phase_density_ref(phases[secondary].mu)
 
-    # Per-phase face densities, refreshed each step by
-    # `update_mixture_properties!` (a no-op refill for constant phases).
-    rho1f = FaceScalarField(mesh); initialise!(rho1f, rho1_val)
-    rho2f = FaceScalarField(mesh); initialise!(rho2f, rho2_val)
+    # Per-phase face properties (density, viscosity, cp, k), refreshed each step
+    # by `update_mixture_properties!` (a no-op refill for constant phases).
+    phase_faces = PhaseFaceProperties(mesh)
+    update_phase_face_properties!(phase_faces, phases[main], phases[secondary], config)
 
     ∇alpha  = Grad{schemes.alpha.gradient}(alpha)
     ∇alphaf = FaceVectorField(mesh)
@@ -678,6 +1300,17 @@ Use `mu = <value>` (a `ConstMu`)."""))
         Ur     = VectorField(mesh)
         Urf    = FaceVectorField(mesh)
         ∇U     = Grad{schemes.U.gradient}(U)
+
+        # Implicit volume-fraction transport. See `build_alpha_equation` for why
+        # the Mixture path leaves MULES behind and the VOF path does not.
+        S_alpha     = ScalarField(mesh)
+        drift_flux  = FaceScalarField(mesh)
+        # Phase change rate carried over from the previous step, so the sink
+        # enters the alpha EQUATION rather than being applied afterwards.
+        mdot_lagged = ScalarField(mesh)
+        implicit_alpha = implicit_alpha_transport(mp_model)
+        alpha_eqn   = implicit_alpha ?
+            build_alpha_equation(model, mdotf, S_alpha, config) : nothing
     end
 
     if typeof(mp_model) <: VOF
@@ -758,69 +1391,186 @@ Use `mu = <value>` (a `ConstMu`)."""))
         end
 
         # Bounded alpha eqn. transport via MULES
-        advance_alpha!(model, mp_model, ∇alpha, ∇alphaf, mdotf,
-                       alpha_prev, alphaf_upwind, alphaf_HO, phirf, Urdotf, phiLf, phiHf, phiAf,
-                       alpha_fluxf, div_alpha, div_mdotf,
-                       Pplus, Pminus, Qplus, Qminus, Rplus, Rminus,
-                       alphaMaxLocal, alphaMinLocal, C_alpha, dt_cpu[1], time, config)
         ralpha = zero(TF)
+        if typeof(mp_model) <: Mixture && implicit_alpha
+            @. alpha_prev.values = alpha.values
+            ralpha = advance_alpha_implicit!(
+                alpha_eqn, model, ∇alpha, ∇alphaf, mdotf, Urdotf,
+                S_alpha, drift_flux, mdot_lagged, phases[main].rho,
+                dt_cpu[1], time, config)
+            # The limited alpha flux is still needed by the energy equation and
+            # `blend_rhoPhi!`; rebuild it from the solved field so the two stay
+            # consistent with the transport that actually happened.
+            @. alpha_fluxf.values = mdotf.values*alphaf.values
+        else
+            advance_alpha!(model, mp_model, ∇alpha, ∇alphaf, mdotf,
+                           alpha_prev, alphaf_upwind, alphaf_HO, phirf, Urdotf, phiLf, phiHf, phiAf,
+                           alpha_fluxf, div_alpha, div_mdotf,
+                           Pplus, Pminus, Qplus, Qminus, Rplus, Rminus,
+                           alphaMaxLocal, alphaMinLocal, C_alpha, dt_cpu[1], time,
+                           compressible, config)
+        end
 
-        # Interfacial phase change. Evaluated from the alpha field just advanced,
-        # using |grad(alpha)| as the interfacial area density (paper Eq. 6). The
-        # rate feeds three sources: the alpha sink here, the volume creation in
-        # the pressure equation, and the latent heat in the energy equation.
-        if phase_change !== nothing
-            cell_grad_magnitude!(gradAlphaMag_pc, ∇alpha, config)
-            absolute_pressure!(p_abs, p_rgh, rho, gh, p_operating, config)
+        # Vapour generation. Two independent mechanisms write into `mdot_pc`:
+        #
+        #   1. bulk interfacial phase change, evaluated from the alpha field just
+        #      advanced, using |grad(alpha)| as the interfacial area density;
+        #   2. wall nucleate boiling, evaluated on the heated wall faces.
+        #
+        # The combined rate then feeds three sources: the alpha sink here, the
+        # volume creation in the pressure equation, and the latent heat in the
+        # energy equation. Sharing one field is what lets either mechanism be
+        # used alone, or both together, with no further branching downstream.
+        if mdot_pc !== nothing
+            absolute_pressure!(p_abs, p_rgh, rho, rho_ref, gh, p_operating, config)
+            clamp_absolute_pressure!(p_abs, p_abs_limit, iteration)
+
+            # Checked HERE, immediately before anything consults the saturation
+            # curve. `saturation_temperature` clamps at the table edge because it
+            # is a kernel function and cannot throw, so a pressure excursion
+            # would otherwise pass silently into `T_sat` - and a wrong `T_sat`
+            # makes saturated liquid look superheated, which an RPI site density
+            # (~dT_sup^1.805) turns into an evaporation rate the wall cannot
+            # supply. That failure is invisible from every field the solver
+            # writes, so it has to be caught at the point of use.
+            check_saturation_range(saturation, p_abs)
+
+            # `phase_change_rate!` zeroes the field when the model is `nothing`,
+            # which is exactly what the wall-boiling-only case needs.
+            if phase_change !== nothing
+                cell_grad_magnitude!(gradAlphaMag_pc, ∇alpha, config)
+            end
             phase_change_rate!(
                 mdot_pc, phase_change, alpha, gradAlphaMag_pc, model.energy.T, p_abs,
                 phases[main].rho, phases[secondary].rho,
                 saturation, h_fg, R_vapour, config)
 
-            apply_phase_change_alpha!(alpha, mdot_pc, phases[main].rho,
-                                      dt_cpu[1], config)
+            # Relax the BULK rate while `mdot_pc` still holds it alone, i.e.
+            # before the wall contribution is summed in. Relaxing afterwards
+            # would apply the bulk factor to both sources.
+            mdot_bulk_prev === nothing ||
+                relax_source!(mdot_pc, mdot_bulk_prev, relax_bulk, config)
+
+            # Wall boiling can be held off until the base flow is established -
+            # see `wall_boiling_active`. Before `start_iteration` the rate field
+            # is ZEROED rather than left untouched, so no stale source survives
+            # into the alpha equation, the pressure equation or the energy sink.
+            wb_on = wallBoiling === nothing ? false :
+                    wall_boiling_active(wallBoiling.model, iteration)
+            if wb_on
+                wall_boiling_source!(wallBoiling, model, p_abs, saturation, h_fg,
+                                     g_magnitude, sigma_material, dt_cpu[1], config)
+                relax_source!(wallBoiling.mdot_wall, mdot_wall_prev, relax_wall, config)
+            elseif wallBoiling !== nothing
+                fill!(wallBoiling.mdot_wall.values,
+                      zero(eltype(wallBoiling.mdot_wall.values)))
+            end
+            add_wall_boiling_rate!(
+                mdot_pc, wallBoiling === nothing ? nothing : wallBoiling.mdot_wall, config)
+
+            # VOF keeps the after-the-fact application (with its documented
+            # limitation). Mixture instead carries the rate forward so it enters
+            # the alpha EQUATION on the next step - the whole point of the
+            # implicit path, and what removes the MULES ordering constraint.
+            if typeof(mp_model) <: Mixture && implicit_alpha
+                @. mdot_lagged.values = mdot_pc.values
+            else
+                apply_phase_change_alpha!(alpha, mdot_pc, phases[main].rho,
+                                          dt_cpu[1], config)
+            end
             # alpha has moved, so refresh its face values before the blend below
             interpolate_vanleer!(alphaf, alpha, ∇alpha, mdotf, config)
             correct_boundaries!(alphaf, alpha, boundaries.alpha, time, config)
         end
 
-        # Compressible phases: refresh the absolute pressure, then the per-cell
-        # phase densities and the pressure-equation compressibility coefficient.
-        # T lags by one step here (the energy equation runs below), which is a
-        # first-order coupling consistent with the rest of the segregated loop.
+        # Variable properties: refresh the absolute pressure first, then every
+        # per-cell phase property, then the pressure-equation compressibility
+        # coefficient. T lags by one step here (the energy equation runs below),
+        # which is a first-order coupling consistent with the rest of the
+        # segregated loop.
+        if variable_properties && !compressible
+            # A phase with constant density but tabulated cp/k/mu still needs its
+            # properties refreshed; without a compressible phase there is no
+            # `p_abs` update above to do it.
+            absolute_pressure!(p_abs, p_rgh, rho, rho_ref, gh, p_operating, config)
+            clamp_absolute_pressure!(p_abs, p_abs_limit, iteration)
+            update_phase_state!(model, p_abs, config)
+        end
+
         if compressible
-            absolute_pressure!(p_abs, p_rgh, rho, gh, p_operating, config)
+            absolute_pressure!(p_abs, p_rgh, rho, rho_ref, gh, p_operating, config)
+            clamp_absolute_pressure!(p_abs, p_abs_limit, iteration)
             # dp/dt over the PREVIOUS step, used for the energy equation's
             # pressure work. One term of the pressure/temperature coupling has to
             # lag in a segregated loop; the expansion driver below is the one kept
             # current, since it is what actually sets the pressurisation rate.
             @. dpdt.values = (p_abs.values - p_abs_prev.values)/dt_cpu[1]
             @. p_abs_prev.values = p_abs.values
+
+            # Damp how fast dp/dt may CHANGE, without altering its converged
+            # value (`relax_source!` blends against the previous step). A no-op
+            # when `pressure_work_relax = 1.0`.
+            relax_source!(dpdt, dpdt_prev, relax_pressure_work, config)
             @. T_prev.values = model.energy.T.values
             @. p_rgh_start.values = p_rgh.values
 
-            update_phase_densities!(model, p_abs, config)
-            update_psi!(psi, alpha, phases, p_abs, model.energy.T, config)
+            update_phase_state!(model, p_abs, config)
+            update_psi!(psi, alpha, phases, p_abs, model.energy.T, config;
+                        mass_form=mass_form)
         end
 
         # Mixture property update from the new alpha
         update_mixture_properties!(model, alpha_fluxf, mdotf, rhoPhi, nueff, mueff,
-                                   rho1f, rho2f, mu1_val, mu2_val, config)
+                                   phase_faces, config)
 
         # Two-phase energy transport, BEFORE the pressure solve so the expansion
         # driver below sees this step's dT/dt. Reuses the limited `alpha_fluxf`
         # from advance_alpha! so energy and mass advection agree at the
         # interface. No-op when the energy model is Isothermal.
-        multiphase_energy!(energyModel, model, alpha_fluxf, mdotf, rho1f, rho2f, nueff,
+        multiphase_energy!(energyModel, model, alpha_fluxf, mdotf, phase_faces, nueff,
                            dpdt, mdot_pc, h_fg, time, dt_cpu[1], config)
 
         if compressible
             update_expansion!(expansion, alpha, phases, model.energy.T, T_prev,
                               dt_cpu[1], config)
-            # Net volume created by phase change. Added after `update_expansion!`
-            # because that call overwrites the field.
+
+            # Relax the THERMAL part only, while `expansion` still holds it
+            # alone. Doing it after the phase-change volume below would damp the
+            # vapour that boiling actually creates, which is not the intent -
+            # that source is physical and must survive at any relaxation.
+            relax_source!(expansion, expansion_prev, relax_expansion, config)
+        else
+            # No EOS, so no thermal-expansion term to compute - but `expansion`
+            # is still the pressure equation's source and must be reset, since
+            # `update_expansion!` (which normally overwrites it) did not run.
+            @. expansion.values = 0
+        end
+
+        begin
+            # Net volume created by phase change. OUTSIDE the compressibility
+            # branch: two phases of different density exchange volume when one
+            # becomes the other whether or not either is compressible, and the
+            # incompressible pressure equation now carries this source too.
+            #
+            # Added after `update_expansion!` because that call overwrites the
+            # field, and after `relax_source!` because this source is physical
+            # and must survive at any relaxation setting.
             add_phase_change_volume!(expansion, mdot_pc,
                                      phases[main].rho, phases[secondary].rho, config)
+
+            # MASS FORM: both sources are volume production rates [1/s]; the mass
+            # equation wants mass production rates [kg/m3/s], so each scales by
+            # the mixture density. For the phase-change term this is exactly the
+            # STAR-CCM+ source,
+            #
+            #     b_cell = mdot_lv*(rho_m/rho_v - rho_m/rho_l)*V_cell
+            #
+            # Unlike the psi coefficient above, `rho_m` (not the per-phase
+            # density) is correct here: these terms come from scaling the volume
+            # constraint through by the mixture density, not from differentiating
+            # rho_m. The volume created is shared by the mixture occupying the
+            # cell, so it is the mixture's inertia that resists it.
+            mass_form && @. expansion.values *= rho.values
         end
 
         # Interface curvature for surface tension (VOF only)
@@ -831,12 +1581,13 @@ Use `mu = <value>` (a `ConstMu`)."""))
         
         # Drift flux divergence (Mixture only)
         if typeof(mp_model) <: Mixture
-            div_slip_outer!(div_slip_momentum, alphaf, rhof, rho1f, rho2f, Urf, config)
+            div_slip_outer!(div_slip_momentum, alphaf, rhof,
+                            phase_faces.rho1f, phase_faces.rho2f, Urf, config)
         end
 
         well_balanced_pressure_grad!(
             ∇p_rgh.result, pressure_force_face,
-            p_rgh, rho, ghf, mesh, config, reconstruct_ws;
+            p_rgh, rho, rhof, ghf, g_vector, rho_ref, mesh, config, reconstruct_ws;
             sigma=sigma, kappaf=kappaf, alpha=alpha)
 
         rx, ry, rz = solve_equation!(
@@ -844,6 +1595,9 @@ Use `mu = <value>` (a `ConstMu`)."""))
 
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rDf, rD, config)
+        # Mass form: the pressure equation's Laplacian coefficient is rho_f*rDf.
+        # `rhof` was refreshed by `update_mixture_properties!` above.
+        mass_form && @. p_flux.values = rhof.values * rDf.values
 
         remove_pressure_source!(U_eqn, ∇p_rgh, config)
 
@@ -856,7 +1610,7 @@ Use `mu = <value>` (a `ConstMu`)."""))
 
             flux!(mdotf, Uf, config)
 
-            phi_gf!(phi_gf, rho, ghf, rDf, model, config)
+            phi_gf!(phi_gf, rho, rhof, ghf, g_vector, rho_ref, rDf, model, config)
 
             if typeof(mp_model) <: VOF
                 surface_tension_flux!(rDf, sigma, kappaf, alpha, phi_gf, config)
@@ -866,13 +1620,46 @@ Use `mu = <value>` (a `ConstMu`)."""))
 
             @. mdotf.values += phi_gf.values
 
+            # MASS FORM: switch `mdotf` from a volumetric to a mass flux for the
+            # duration of the pressure solve, and switch it back afterwards.
+            #
+            # This scaling is what keeps the correction consistent. The
+            # correction `correct_mass_flux_mp!` reads off the assembled matrix
+            # is built from the Laplacian coefficient, which is now `rho_f*rDf` —
+            # so it is a MASS flux correction. Adding it to a volumetric `mdotf`
+            # would be wrong by a factor of ~57 for LH2/GH2. Scaling the field
+            # instead of the correction also means the shared SIMPLE kernel needs
+            # no change, and the boundary correction (which SETS rather than adds
+            # on some patches) lands on the right quantity either way.
+            #
+            # Everything downstream of the unscaling — the alpha equation,
+            # `alpha_fluxf`, the Courant numbers — still sees a volumetric flux.
+            mass_form && @. mdotf.values *= rhof.values
+
+            # IMPLICIT PRESSURE CONVECTION - the second half of psi*Dp/Dt.
+            #
+            # `Divergence(pconv, p_rgh)` in the equation carries div(psi*u*p)
+            # implicitly, so the matching EXPLICIT part must come off the
+            # right-hand side or the term is counted twice. Same split as
+            # `Solvers_2_CPISO.jl`: subtract it here, add it back after the solve
+            # at the NEW pressure, which is what makes the corrected flux
+            # consistent with the equation that produced it.
+            if compressible
+                interpolate!(psif, psi, config)
+                flux!(pconv, Uf, config)
+                @. pconv.values *= psif.values
+                interpolate!(p_rghf, p_rgh, config)
+                correct_boundaries!(p_rghf, p_rgh, boundaries.p_rgh, time, config)
+                @. mdotf.values -= pconv.values*p_rghf.values
+            end
+
             div!(divHv, mdotf, config)
 
             @. prev = p_rgh.values
             rp = if compressible
                 solve_pressure_compressible!(
                     p_eqn, p_rgh, p_rgh_start, boundaries.p_rgh, solvers.p_rgh,
-                    config; ref=pref, time=time)
+                    config; ref=pref, time=time, sealed=sealed_pressure)
             else
                 solve_equation!(p_eqn, p_rgh, boundaries.p_rgh, solvers.p_rgh,
                                 config; ref=pref, time=time)
@@ -881,8 +1668,20 @@ Use `mu = <value>` (a `ConstMu`)."""))
             grad!(∇p_rgh, p_rghf, p_rgh, boundaries.p_rgh, time, config)
             limit_gradient!(schemes.p_rgh.limiter, ∇p_rgh, p_rgh, config)
 
+            # Restore the explicitly-removed pressure convection, at the NEW
+            # pressure (`p_rghf` was refreshed by `grad!` above). Before
+            # `correct_mass_flux_mp!`, as CPISO does, so the matrix correction is
+            # applied to the complete flux.
+            compressible && @. mdotf.values += pconv.values*p_rghf.values
+
             correct_mass_flux_mp!(mdotf, p_eqn, config)
 
+            # Back to a volumetric flux (see the scaling above).
+            mass_form && @. mdotf.values /= rhof.values
+
+            # `rDf` here is the plain 1/a_P interpolation in both forms: the
+            # velocity correction is -rD*grad(p_rgh) regardless of how the
+            # pressure equation itself was scaled.
             pressure_grad!(p_rgh, ∇p_rghf_deconstructed, phi_gf, rDf, config)
             reconstruct!(∇p_rghf_reconstructed, ∇p_rghf_deconstructed, config, reconstruct_ws)
 
@@ -891,7 +1690,7 @@ Use `mu = <value>` (a `ConstMu`)."""))
 
         # `p` carries the operating datum so it is the absolute pressure for a
         # compressible run, and unchanged (gauge) when p_operating is zero.
-        @. p.values = p_rgh.values + (rho.values * gh.values) + p_operating
+        @. p.values = p_rgh.values + ((rho_ref === nothing ? rho.values : rho_ref) .* gh.values) + p_operating
 
         turbulence!(turbulenceModel, model, S, prev, time, config)
         update_nueff!(nueff, nuf, model.turbulence, config)
@@ -928,6 +1727,10 @@ Use `mu = <value>` (a `ConstMu`)."""))
         if iteration % write_interval + signbit(write_interval) == 0
             save_output(model, outputWriter, iteration, time, config)
             save_postprocessing(postprocess, iteration, time, mesh, outputWriter, config.boundaries)
+            # Heated wall patches as a separate SURFACE file: the RPI partition
+            # lives on boundary faces and has no cell-centred counterpart.
+            # A no-op when wall boiling is not active.
+            write_wall_boiling_surface(wallBoiling, mesh, iteration, time)
         end
     end
 
@@ -938,11 +1741,177 @@ end
 
 
 
+"""
+    build_alpha_equation(model, mdotf, S_alpha, config)
+
+Assemble the IMPLICIT volume-fraction transport equation used by the `Mixture`
+model,
+
+    d(alpha)/dt + div(alpha*u) = S_alpha
+
+in conservative form, solved as a linear system rather than by the explicit
+MULES flux-corrected update.
+
+### Why implicit here, and only for `Mixture`
+
+MULES exists to keep a **VOF interface** sharp, and the price it pays is that
+the update form is fixed: the limiter guarantees boundedness only for the
+advective rearrangement `d(alpha)/dt + u.grad(alpha)`, which is exact solely
+when `div(u) = 0`. For a compressible mixture that is false — with wall boiling
+`div(u)` reaches ~84 1/s — and the compressibility and phase-change terms cannot
+be added without entering the limiter's bounds calculation first. Attempting the
+correction outside the limiter makes the solution worse, not better (measured:
+vapour mass residual rose from ~1x to 15-60x `mdot`).
+
+A drift-flux mixture has no interface to keep sharp — `alpha` is smooth by
+construction and `cAlpha` is already zero for this model — so nothing is lost by
+dropping MULES here, and three things are gained:
+
+  - every source term goes into the matrix, so there is no ordering constraint;
+  - the alpha-Courant limit disappears, which is the dominant cost in a case
+    needing O(1e5-1e6) steps;
+  - a stiff source (wall boiling) is damped by implicit treatment rather than
+    amplified.
+
+The `VOF` path keeps MULES untouched, so the interface-capturing cases are
+unaffected.
+
+### Boundedness
+
+Weaker than MULES, which is bounded by construction. With `Upwind` the
+convection operator gives diagonal dominance `V/dt + sum(flux) = V/dt + div(u)*V`,
+so the system is *more* dominant when `div(u) > 0` — the boiling case. It can
+degrade under net compression, so the solution is clamped to `[0, 1]` afterwards
+as a backstop and the clamp activity is worth monitoring.
+"""
+function build_alpha_equation(model, mdotf, S_alpha, config)
+    (; alpha) = model.fluid
+    (; solvers, schemes, boundaries) = config
+
+    hasproperty(solvers, :alpha) || throw(ArgumentError(
+        """The `Mixture` multiphase model now solves an implicit volume-fraction \
+equation and needs a solver for it, but `solvers` has no `alpha` entry.
+
+Add one, e.g.
+
+    alpha = SolverSetup(solver=Bicgstab(), preconditioner=Jacobi(),
+                        convergence=1e-7, relax=1.0, rtol=1e-2, atol=1e-10)
+
+(Note this entry was previously accepted and silently ignored.)"""))
+
+    TF = _get_float(model.domain)
+    alpha_eqn = (
+        Time{schemes.alpha.time}(ConstantScalar(one(TF)), alpha)
+        + Divergence{schemes.alpha.divergence}(mdotf, alpha)
+        ==
+        Source(S_alpha)
+    ) → ScalarEquation(alpha, boundaries.alpha)
+
+    @reset alpha_eqn.preconditioner = set_preconditioner(solvers.alpha.preconditioner, alpha_eqn)
+    @reset alpha_eqn.solver = _workspace(solvers.alpha.solver, _b(alpha_eqn))
+    return alpha_eqn
+end
+
+"""
+    advance_alpha_implicit!(alpha_eqn, model, ∇alpha, ∇alphaf, mdotf, Urdotf,
+                            S_alpha, drift_flux, mdot_lagged, dt, time, config)
+
+Advance the volume fraction by solving [`build_alpha_equation`](@ref).
+
+The source carries everything the conservative liquid volume equation needs:
+
+    S_alpha = -Gamma/rho_l  +  div(Urdotf * alpha*(1-alpha))
+
+the first term being phase change, the second the drift flux written as a
+deferred correction (it is non-linear in `alpha`, so it cannot be implicit).
+
+`Gamma` is **lagged by one step**: the phase change rate is evaluated after this
+call in the solver loop, because the bulk models need the freshly advected
+`alpha` for their interfacial area. A one-step lag is consistent with the rest of
+the segregated loop, and - the point of the exercise - the source now enters the
+EQUATION rather than being applied to `alpha` after the fact.
+
+The liquid compressibility term `-(alpha/rho_l) Drho_l/Dt` is **not** included.
+It is identically zero for a constant-density liquid, which is the configuration
+this path was built for; for a tabulated liquid it is a real omission and is
+recorded as such rather than approximated.
+"""
+function advance_alpha_implicit!(alpha_eqn, model, ∇alpha, ∇alphaf, mdotf, Urdotf,
+                                 S_alpha, drift_flux, mdot_lagged, rho_l, dt, time, config)
+    (; alpha, alphaf) = model.fluid
+    (; solvers, schemes, boundaries) = config
+    mesh = model.domain
+
+    grad!(∇alpha, alphaf, alpha, boundaries.alpha, time, config)
+    limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
+
+    # Drift flux, explicit: Urdotf * alpha*(1-alpha), upwinded in alpha to match
+    # what the MULES path used.
+    build_drift_flux!(drift_flux, Urdotf, alpha, mdotf, boundaries, time, config)
+    div!(S_alpha, drift_flux, config)
+
+    # ...plus the (lagged) phase change sink. Sign: positive `mdot` is
+    # evaporation, which destroys liquid.
+    add_alpha_phase_change!(S_alpha, mdot_lagged, rho_l, config)
+
+    discretise!(alpha_eqn, alpha, config)
+    apply_boundary_conditions!(alpha_eqn, boundaries.alpha, nothing, time, config)
+    implicit_relaxation_diagdom!(alpha_eqn, alpha.values, solvers.alpha.relax, nothing, config)
+    update_preconditioner!(alpha_eqn.preconditioner, mesh, config)
+    residual = solve_system!(alpha_eqn, solvers.alpha, alpha, nothing, config)
+
+    # Backstop only - see the boundedness note in `build_alpha_equation`.
+    clamp!(alpha.values, zero(eltype(alpha.values)), one(eltype(alpha.values)))
+
+    interpolate_vanleer!(alphaf, alpha, ∇alpha, mdotf, config)
+    correct_boundaries!(alphaf, alpha, boundaries.alpha, time, config)
+    return residual
+end
+
+"""Face flux of the drift term, `Urdotf * alpha_up*(1 - alpha_up)`."""
+function build_drift_flux!(drift_flux, Urdotf, alpha, mdotf, boundaries, time, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    alphaf_up = drift_flux    # reuse as scratch for the upwind interpolation
+    interpolate_upwind!(alphaf_up, alpha, mdotf, config)
+    correct_boundaries!(alphaf_up, alpha, boundaries.alpha, time, config)
+
+    ndrange = length(drift_flux)
+    kernel! = _drift_flux!(_setup(backend, workgroup, ndrange)...)
+    kernel!(drift_flux, Urdotf)
+    return nothing
+end
+
+@kernel inbounds=true function _drift_flux!(drift_flux, Urdotf)
+    i = @index(Global)
+    TF = eltype(drift_flux.values)
+    af = drift_flux[i]                       # holds alphaf_upwind on entry
+    drift_flux[i] = Urdotf[i]*af*(one(TF) - af)
+end
+
+add_alpha_phase_change!(S_alpha, ::Nothing, rho_l, config) = nothing
+
+function add_alpha_phase_change!(S_alpha, mdot, rho_l, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    ndrange = length(S_alpha)
+    kernel! = _add_alpha_phase_change!(_setup(backend, workgroup, ndrange)...)
+    kernel!(S_alpha, mdot, rho_l)
+    return nothing
+end
+
+@kernel inbounds=true function _add_alpha_phase_change!(S_alpha, mdot, rho_l)
+    i = @index(Global)
+    S_alpha[i] -= mdot[i]/rho_l[i]
+end
+
+
 function advance_alpha!(model, mp_model, ∇alpha, ∇alphaf, mdotf,
                         alpha_prev, alphaf_upwind, alphaf_HO, phirf, Urdotf, phiLf, phiHf, phiAf,
                         alpha_fluxf, div_alpha, div_mdotf,
                         Pplus, Pminus, Qplus, Qminus, Rplus, Rminus,
-                        alphaMaxLocal, alphaMinLocal, C_alpha, dt, time, config)
+                        alphaMaxLocal, alphaMinLocal, C_alpha, dt, time, compressible, config)
     (; alpha, alphaf) = model.fluid
     (; schemes, boundaries) = config
     mesh = model.domain
@@ -976,6 +1945,58 @@ function advance_alpha!(model, mp_model, ∇alpha, ∇alphaf, mdotf,
     @. alpha_fluxf.values = phiLf.values + phiAf.values
     div!(div_alpha, alpha_fluxf, config)
     div!(div_mdotf, mdotf, config)
+
+    # Volume fraction update.
+    #
+    # The exact liquid volume equation, from dividing liquid mass conservation
+    # by rho_l, is CONSERVATIVE:
+    #
+    #     d(alpha)/dt + div(alpha*u) = -Gamma/rho_l - (alpha/rho_l) Drho_l/Dt
+    #
+    # Subtracting `alpha*div(u)` turns it into the advective form
+    # `d(alpha)/dt + u.grad(alpha) = ...`, which is what the `- alpha*div_mdotf`
+    # term below does. That rearrangement is exact ONLY when `div(u) = 0`, and it
+    # is the standard MULES formulation because in an incompressible run the term
+    # is inert and removes the effect of any discrete continuity error.
+    #
+    # For a COMPRESSIBLE mixture `div(u)` is not zero - it carries the
+    # compressibility, thermal expansion and, above all, the volume created by
+    # phase change. With wall boiling on the LH2 pipe it reaches ~84 1/s in the
+    # near-wall cells, against a physical phase-change sink `Gamma/rho_l` of
+    # ~32 1/s: the rearrangement term is several times LARGER than the source it
+    # sits next to, and with the wrong sign for alpha.
+    #
+    # Measured consequence before this fix: the discrete vapour mass balance
+    #
+    #     d((1-alpha) rho_v)/dt + div((1-alpha) rho_v u) - mdot
+    #
+    # had a residual of ~100% of `mdot`. Because the energy equation's latent
+    # heat sink `S_T = -mdot*h_fg` is only correct when that balance holds, the
+    # error appeared as a spurious energy source of 2-7e8 W/m^3 against a wall
+    # input of 8.8e8 W/m^3 - i.e. 23-80% of the applied heat flux.
+    #
+    # ATTEMPTED AND REVERTED: simply dropping the `- alpha*div_mdotf` term on the
+    # compressible path (i.e. using the conservative form directly) makes things
+    # markedly WORSE, not better:
+    #
+    #                       vapour mass residual   alpha_min   max|U|
+    #     advective (this)   ~1.0 x mdot            0.997       6.2
+    #     conservative       15-60 x mdot           0.933      16.7
+    #
+    # The reason is that MULES limits the antidiffusive flux to keep alpha
+    # bounded ASSUMING this update form. Change the form and the limiter no
+    # longer guarantees boundedness, so alpha overshoots and the balance gets
+    # worse rather than better.
+    #
+    # The correct fix is therefore NOT a one-line change here. The missing terms
+    #
+    #     -(alpha/rho_l) Drho_l/Dt  -  alpha*div(u)
+    #
+    # have to enter BEFORE `mules_limit!` computes its bounds, so that
+    # boundedness is guaranteed by construction - which is precisely the
+    # restructure that `apply_phase_change_alpha!` already flags as necessary
+    # for vigorous boiling. The two are the same piece of work and cannot be
+    # done independently.
     @. alpha.values = alpha_prev.values -
         dt * (div_alpha.values - alpha_prev.values * div_mdotf.values)
 
@@ -1007,30 +2028,31 @@ high_order_alpha_flux!(::Mixture, phiHf, mdotf, alphaf_HO, alphaf_upwind, phirf,
 # so for constant-density phases this produces exactly the same arithmetic as the
 # previous `rho[1]` form.
 function update_mixture_properties!(model, alpha_fluxf, mdotf, rhoPhi, nueff, mueff,
-                                    rho1f_phase, rho2f_phase, mu1_val, mu2_val, config)
+                                    phase_faces, config)
     (; rho, rhof, nu, nuf, alpha, alphaf, phases) = model.fluid
     main = model.fluid.volume_fraction
     secondary = 3 - main
 
-    rho1 = phases[main].rho
-    rho2 = phases[secondary].rho
+    phase_1 = phases[main]
+    phase_2 = phases[secondary]
 
-    # Face values of each phase density. Required because a variable-EOS phase
-    # stores a CELL field, which must not be indexed by face ID.
-    phase_density_faces!(rho1f_phase, rho1, config)
-    phase_density_faces!(rho2f_phase, rho2, config)
+    # Face values of every per-phase property. Required because a variable
+    # property stores a CELL field, which must not be indexed by face ID.
+    update_phase_face_properties!(phase_faces, phase_1, phase_2, config)
 
-    blend_indexed!(rho,  alpha,  rho1,        rho2,        config)
-    blend_indexed!(rhof, alphaf, rho1f_phase, rho2f_phase, config)
+    blend_indexed!(rho,  alpha,  phase_1.rho,       phase_2.rho,       config)
+    blend_indexed!(rhof, alphaf, phase_faces.rho1f, phase_faces.rho2f, config)
 
-    blend_mixture_nu!(nu,  alpha,  rho,  mu1_val, mu2_val)
-    blend_mixture_nu!(nuf, alphaf, rhof, mu1_val, mu2_val)
+    # The dynamic viscosities are indexed rather than passed as scalars, so a
+    # tabulated viscosity varies per cell and per face.
+    blend_mixture_nu!(nu,  alpha,  rho,  phase_1.mu,       phase_2.mu,       config)
+    blend_mixture_nu!(nuf, alphaf, rhof, phase_faces.mu1f, phase_faces.mu2f, config)
 
     update_nueff!(nueff, nuf, model.turbulence, config)
     @. mueff.values  = rhof.values * nueff.values
 
     blend_rhoPhi!(model.fluid.model, rhoPhi, alpha_fluxf, mdotf, rhof,
-                  rho1f_phase, rho2f_phase)
+                  phase_faces.rho1f, phase_faces.rho2f)
     return nothing
 end
 
@@ -1095,15 +2117,31 @@ function blend_properties!(property_field, alpha_field, property_0, property_1)
 end
 
 """
-    blend_mixture_nu!(nu_field, alpha_field, rho_field, mu_0, mu_1)
+    blend_mixture_nu!(nu_field, alpha_field, rho_field, mu_0, mu_1, config)
 
-Mixture kinematic viscosity built from dynamic viscosity field:
+Mixture kinematic viscosity built from the per-phase dynamic viscosities:
 
     nu = (mu_0 * alpha + mu_1 * (1 - alpha)) / rho_blend
+
+`mu_0`/`mu_1` are indexed, so they may be `ConstantScalar` (index-independent)
+or fields — the cell/face distinction is the caller's responsibility, exactly as
+for the density blend.
 """
-function blend_mixture_nu!(nu_field, alpha_field, rho_field, mu_0, mu_1)
-    @. nu_field.values = (mu_0 * alpha_field.values + mu_1 * (1.0 - alpha_field.values)) / rho_field.values
-    nothing
+function blend_mixture_nu!(nu_field, alpha_field, rho_field, mu_0, mu_1, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    ndrange = length(nu_field)
+    kernel! = _blend_mixture_nu!(_setup(backend, workgroup, ndrange)...)
+    kernel!(nu_field, alpha_field, rho_field, mu_0, mu_1)
+    return nothing
+end
+
+@kernel inbounds=true function _blend_mixture_nu!(nu_field, alpha_field, rho_field, mu_0, mu_1)
+    i = @index(Global)
+    TF = eltype(nu_field.values)
+    a = alpha_field[i]
+    nu_field[i] = (a*mu_0[i] + (one(TF) - a)*mu_1[i])/rho_field[i]
 end
 
 
@@ -1151,7 +2189,7 @@ end
 
 
 """
-    phi_gf!(phi_gf, rho, ghf, rDf, model, config)
+    phi_gf!(phi_gf, rho, rhof, ghf, g_vector, rho_ref, rDf, model, config)
 
 Builds the gravity (buoyancy) contribution to the face mass flux. On each
 face computes
@@ -1162,30 +2200,41 @@ It is summed into `mdotf` before the pressure solve and reconstructed to
 a cell vector (`phi_g`) for the velocity correction. A face with 
 no density jump (single-phase region) contributes zero.
 """
-function phi_gf!(phi_gf, rho, ghf, rDf, model, config)
-    (; faces, cells, boundary_cellsID) = model.domain
+function phi_gf!(phi_gf, rho, rhof, ghf, g, rho_ref, rDf, model, config)
+    (; faces) = model.domain
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    n_bfaces = length(boundary_cellsID)
-
     ndrange = length(faces)
-    kernel! = _phi_gf!(_setup(backend, workgroup, ndrange)...)
-    kernel!(phi_gf, rho, ghf, rDf, faces, cells, n_bfaces)
+    if rho_ref === nothing
+        kernel! = _phi_gf_local!(_setup(backend, workgroup, ndrange)...)
+        kernel!(phi_gf, rho, ghf, rDf, faces)
+    else
+        kernel! = _phi_gf!(_setup(backend, workgroup, ndrange)...)
+        kernel!(phi_gf, rhof, g, rho_ref, rDf, faces)
+    end
 end
-@kernel function _phi_gf!(phi_gf, rho, ghf, rDf, faces, cells, n_bfaces)
+
+# Local-density buoyancy: -g.h snGrad(rho). Exactly well balanced across a SHARP
+# interface, because snGrad(rho) is the same discrete difference as
+# snGrad(p_rgh) and the two cancel term by term. That is why it remains the
+# default and why the VOF hydrostatic cases hold to 1e-8 with it.
+@kernel function _phi_gf_local!(phi_gf, rho, ghf, rDf, faces)
     fID = @index(Global)
     @inbounds begin
-        face = faces[fID]
-        (; area, normal, ownerCells, delta) = face
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        rho1 = rho[cID1]
-        rho2 = rho[cID2]
-
-        face_grad = area * (rho2 - rho1) / delta
-
-        phi_gf[fID] = -ghf[fID] * face_grad * rDf[fID]
+        (; area, ownerCells, delta) = faces[fID]
+        face_grad = area*(rho[ownerCells[2]] - rho[ownerCells[1]])/delta
+        phi_gf[fID] = -ghf[fID]*face_grad*rDf[fID]
+    end
+end
+@kernel function _phi_gf!(phi_gf, rhof, g, rho_ref, rDf, faces)
+    fID = @index(Global)
+    @inbounds begin
+        (; area, normal) = faces[fID]
+        gn = g[1]*normal[1] + g[2]*normal[2] + g[3]*normal[3]
+        # Buoyancy as a BODY FORCE proportional to the density excess over the
+        # reference, not as a gradient of density. See `multiphase_rho_ref`.
+        phi_gf[fID] = rDf[fID]*(rhof[fID] - rho_ref)*gn*area
     end
 end
 
@@ -1895,7 +2944,7 @@ Overrides `grad_field.values` with a face-snGrad reconstruction of the predictor
 *Important for stability.
 """
 function well_balanced_pressure_grad!(
-    grad_field, face_buf, p_rgh, rho, ghf, mesh, config, reconstruct_ws;
+    grad_field, face_buf, p_rgh, rho, rhof, ghf, g, rho_ref, mesh, config, reconstruct_ws;
     sigma=zero(eltype(p_rgh.values)),
     kappaf, alpha,
 )
@@ -1904,26 +2953,46 @@ function well_balanced_pressure_grad!(
     faces = mesh.faces
 
     ndrange = length(faces)
-    kernel! = _well_balanced_pressure_face!(_setup(backend, workgroup, ndrange)...)
-    kernel!(face_buf, p_rgh, rho, alpha, ghf, kappaf, sigma, faces)
+    if rho_ref === nothing
+        kernel! = _well_balanced_pressure_face_local!(_setup(backend, workgroup, ndrange)...)
+        kernel!(face_buf, p_rgh, rho, alpha, ghf, kappaf, sigma, faces)
+    else
+        kernel! = _well_balanced_pressure_face!(_setup(backend, workgroup, ndrange)...)
+        kernel!(face_buf, p_rgh, rhof, alpha, g, rho_ref, kappaf, sigma, faces)
+    end
 
     reconstruct!(grad_field, face_buf, config, reconstruct_ws)
 end
 
-@kernel inbounds=true function _well_balanced_pressure_face!(
+@kernel inbounds=true function _well_balanced_pressure_face_local!(
     face_buf, p_rgh, rho, alpha, ghf, kappaf, sigma, faces
 )
     i = @index(Global)
-    face = faces[i]
-    (; area, ownerCells, delta) = face
-    c1 = ownerCells[1]
-    c2 = ownerCells[2]
-
+    (; area, ownerCells, delta) = faces[i]
+    c1 = ownerCells[1]; c2 = ownerCells[2]
     snGrad_p   = (p_rgh[c2] - p_rgh[c1]) / delta
     snGrad_rho = (rho[c2]   - rho[c1])   / delta
     snGrad_a   = (alpha[c2] - alpha[c1]) / delta
-
     face_buf[i] = area * (snGrad_p + ghf[i] * snGrad_rho - sigma * kappaf[i] * snGrad_a)
+end
+
+@kernel inbounds=true function _well_balanced_pressure_face!(
+    face_buf, p_rgh, rhof, alpha, g, rho_ref, kappaf, sigma, faces
+)
+    i = @index(Global)
+    face = faces[i]
+    (; area, normal, ownerCells, delta) = face
+    c1 = ownerCells[1]
+    c2 = ownerCells[2]
+
+    snGrad_p = (p_rgh[c2] - p_rgh[c1]) / delta
+    snGrad_a = (alpha[c2] - alpha[c1]) / delta
+    gn = g[1]*normal[1] + g[2]*normal[2] + g[3]*normal[3]
+
+    # Momentum source is -(grad p_rgh) + (rho - rho_ref) g + surface tension.
+    # The buoyancy term no longer involves snGrad(rho), which is what removed
+    # the amplification by gh/delta.
+    face_buf[i] = area * (snGrad_p - (rhof[i] - rho_ref)*gn - sigma*kappaf[i]*snGrad_a)
 end
 
 

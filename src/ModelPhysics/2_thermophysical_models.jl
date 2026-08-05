@@ -1,7 +1,7 @@
 export HelmholtzEnergy, HelmholtzEnergyFluid, H2, H2_para, N2
 export ConstEos, ConstMu, ConstK, ConstCp, ConstBeta
 export IdealGas
-export phase_compressibility, phase_betaT, _phase_beta_value, R_UNIVERSAL
+export phase_compressibility, phase_betaT, _phase_beta_value, _phase_beta_field, R_UNIVERSAL
 
 
 abstract type HelmholtzEnergyFluid end
@@ -167,8 +167,25 @@ phase_betaT(::ConstEos, beta, T) = beta*T
 
 The phase's expansivity as a plain number, zero when none was supplied. Resolving
 `nothing` here keeps it out of kernels.
+
+Only valid for a constant expansivity; use [`_phase_beta_field`](@ref) where the
+value may vary per cell.
 """
 _phase_beta_value(phase) = phase.beta === nothing ? 0.0 : phase.beta[1]
+
+"""
+    _phase_beta_field(phase)
+
+The phase's expansivity as something a kernel can index per cell: the stored
+field when there is one, and a `ConstantScalar(0)` when the phase has no
+expansivity model at all.
+
+Substituting a `ConstantScalar` for `nothing` is what lets the kernels index
+uniformly - `beta[i]` is then correct whether the model is constant, tabulated,
+or absent - without any of them having to test for `nothing`.
+"""
+_phase_beta_field(phase) =
+    phase.beta === nothing ? ConstantScalar(0.0) : phase.beta
 
 # Per-cell property update for a variable EOS. The generic no-op lives in
 # 2_fluid_models.jl; this method must be here because `IdealGas` is defined in

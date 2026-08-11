@@ -115,7 +115,11 @@ using Test
 #      1.1          31.9
 #
 CASE = :D6_L250
-p_sat = 0.7e6            # [Pa]
+# 0.4 MPa / 5.53 m/s is the condition the digitised curve in
+# `data/tatsumoto2014_D6_L250_0.4MPa_5.53ms.csv` was measured at. CASE, p_sat and
+# U_inlet_mag must move together - a curve from a different geometry, pressure or
+# velocity is not comparable.
+p_sat = 0.4e6            # [Pa]   -> T_sat ~ 26.0 K
 U_inlet_mag = 5.33       # [m/s]   paper Figs. 3-4 span 1.5 - 11.6 m/s
 
 # Wall heat flux. Fig. 3(a)/4(a) put the developed nucleate boiling regime for
@@ -123,7 +127,7 @@ U_inlet_mag = 5.33       # [m/s]   paper Figs. 3-4 span 1.5 - 11.6 m/s
 # this velocity (Fig. 5b). 3e4 W/m^2 sits comfortably inside nucleate boiling,
 # which is the regime this model is valid in - RPI says nothing about the
 # post-DNB film boiling branch.
-WALL_HEAT_FLUX = 3e4   # [W/m^2]
+WALL_HEAT_FLUX = 6e4   # [W/m^2]
 
 D, L_heated = if CASE === :D4_L100
     4.0e-3, 100.0e-3
@@ -233,7 +237,7 @@ sigma_lv = calculate_surface_tension(H2(), T_sat)
 # properties.
 gh2_sat = phase_properties_at(H2(), p_sat, T_sat, branch=:vapour)
 
-VAPOUR_EOS = :const
+VAPOUR_EOS = :pr
 
 gh2_eos = if VAPOUR_EOS === :const
     gh2_sat.rho
@@ -346,7 +350,7 @@ model = Physics(
         # the model silently keeps its `:mules` default - the giveaway being an
         # alpha residual of exactly zero, since explicit MULES does no linear
         # solve and there is no residual to report.
-        model = Mixture(diameter = 1e-9, alpha_transport = :implicit),
+        model = Mixture(diameter = 0.5e-3, alpha_transport = :implicit),
         dispersion_Sc = 0.9,     # turbulent Schmidt number
         p_abs_limit = (0.3e6, 1.2e6),   # [Pa] absolute
         rD_ref_density = lh2_sat.rho,   # 56.747 kg/m³
@@ -415,10 +419,25 @@ model = Physics(
         # velocity, so engaging RPI while k, omega and U are still at their
         # uniform initial values feeds N_a ~ dT_sup^1.805 a wall temperature
         # derived from a flow that does not yet exist. Zero engages immediately.
+        # `friction_velocity` selects how u_tau - and hence h_c, and hence the
+        # convective share of the partition - is obtained:
+        #
+        #   :k       u_tau = Cmu^0.25*sqrt(k)   assumes LOCAL EQUILIBRIUM in the
+        #                                       near-wall cell (the default)
+        #   :loglaw  Newton solve of the log law from the VELOCITY, the same
+        #                                       equation the momentum wall
+        #                                       treatment uses
+        #
+        # At equilibrium the two agree exactly. Away from it `:k` is LOW: with
+        # near-wall k still at its inlet value here, it under-predicts u_tau by
+        # 23%, and `h_c = rho*cp*u_tau/T+` is linear in u_tau, so q_conv is short
+        # by the same factor and the partition makes up the difference through
+        # evaporation - inflating the wall superheat.
         wall_boiling = RPI(
             patches = (:pipeWall,),
-            site_density = LemmertChawla(),
+            site_density = LemmertChawla(m = 210.0, n = 1.805),
             departure_diameter = TolubinskyKostanchuk(),
+            friction_velocity = :loglaw,
             start_iteration = 0),
 
         # --- source under-relaxation ----------------------------------------
@@ -610,13 +629,13 @@ BCs = assign(
 # Numerics
 # -----------------------------------------------------------------------------
 schemes = (
-    U     = Schemes(time=Euler, divergence=Upwind, laplacian=Linear),
+    U     = Schemes(time=Euler, divergence=LUST, laplacian=Linear),
     alpha = Schemes(time=Euler, divergence=Upwind, laplacian=Linear),
     p     = Schemes(time=Euler, divergence=Upwind, gradient=Gauss,    laplacian=Linear),
     p_rgh = Schemes(time=Euler, divergence=Upwind, gradient=Gauss,    laplacian=Linear),
     T     = Schemes(time=Euler, divergence=Upwind, gradient=Gauss,    laplacian=Linear),
-    omega = Schemes(time=Euler, divergence=Upwind, gradient=Gauss,    laplacian=Linear),
-    k = Schemes(time=Euler, divergence=Upwind, gradient=Gauss,    laplacian=Linear),
+    omega = Schemes(time=Euler, divergence=LUST, gradient=Gauss,    laplacian=Linear),
+    k = Schemes(time=Euler, divergence=LUST, gradient=Gauss,    laplacian=Linear),
     y     = Schemes(gradient=Midpoint),
 )
 
@@ -678,6 +697,13 @@ initialise!(model.turbulence.nut, nut_inlet)
 # -----------------------------------------------------------------------------
 # Run
 # -----------------------------------------------------------------------------
+# `3d_LH2_pipe_boiling_curve.jl` includes this file purely for the setup - mesh,
+# fluid, models, schemes, solvers - and then drives its own heat-flux staircase.
+# It sets this flag first so everything above is built and nothing below runs.
+if @isdefined(BOILING_CURVE_SETUP_ONLY)
+    @info "Setup only: skipping the single-point run (BOILING_CURVE_SETUP_ONLY is set)"
+else
+
 residuals = run!(model, config, inner_loops=5)
 
 # -----------------------------------------------------------------------------
@@ -742,3 +768,5 @@ end
 #
 # The measured data are not in the repository; they would have to be digitised
 # from the paper's figures.                                          # TO OBTAIN
+
+end  # BOILING_CURVE_SETUP_ONLY

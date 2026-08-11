@@ -252,25 +252,60 @@ wb_make_state(; T_w, T_l = WB_T_SAT) = BoilingState(
         @test T_w ≈ T_l + q_small/h_c
         @test T_w < WB_T_SAT
 
+        # ONSET FLUX: the flux pure convection can carry with the wall exactly at
+        # saturation. Below it there is no boiling; above it there must be.
+        #
+        # Test fluxes are expressed as multiples of this rather than as absolute
+        # numbers. They were absolute (1e4, 3e4, 1e5) and went stale when
+        # `single_phase_htc` was corrected: `h_c` rose 3.3x, the onset flux rose
+        # with it, and 1e4 W/m^2 stopped being a boiling condition at all - so
+        # `T_w > T_sat` failed for the entirely correct reason that the wall was
+        # no longer boiling.
+        q_onset = h_c*(WB_T_SAT - T_l)
+
         # Above onset the three components must sum to the imposed flux. This is
         # the whole point of the inversion.
-        for q_w in (1.0e4, 3.0e4, 1.0e5)
+        for mult in (1.5, 3.0, 8.0)
+            q_w = mult*q_onset
             T_w, part = solve_wall_temperature(rpi, s, q_w, h_c)
             total = part.q_c + part.q_q + part.q_e
             @test total ≈ q_w rtol=1e-6
             @test T_w > WB_T_SAT              # boiling implies wall superheat
         end
 
+        # REGRESSION: closure must hold where `A_b` is large.
+        #
+        # `T_l + q_w/h_c` is NOT a valid upper bracket once bubbles cover an
+        # appreciable share of the wall, because `q_conv = h_c*dT*(1 - A_b)` is
+        # then well short of `q_w` at that temperature. Bisection used to saturate
+        # at the top of the bracket and return a partition summing to `q_w*(1-A_b)`
+        # - silently, with the wall temperature simply too low. `solve_wall_temperature`
+        # now expands the bound until the partition actually reaches `q_w`.
+        for mult in (15.0, 40.0)
+            q_w = mult*q_onset
+            T_w, part = solve_wall_temperature(rpi, s, q_w, h_c)
+            @test (part.q_c + part.q_q + part.q_e) ≈ q_w rtol=1e-6
+            @test part.A_b > 0.1              # the regime the bracket bug lived in
+        end
+
         # Monotonic in the imposed flux.
-        Tw_lo, _ = solve_wall_temperature(rpi, s, 1.0e4, h_c)
-        Tw_hi, _ = solve_wall_temperature(rpi, s, 1.0e5, h_c)
+        Tw_lo, _ = solve_wall_temperature(rpi, s, 1.5*q_onset, h_c)
+        Tw_hi, _ = solve_wall_temperature(rpi, s, 8.0*q_onset, h_c)
         @test Tw_hi > Tw_lo
 
-        # Boiling holds the wall far below where pure convection would put it -
-        # the physical effect the model exists to capture.
-        q_w = 1.0e5
-        Tw_boil, _ = solve_wall_temperature(rpi, s, q_w, h_c)
+        # Boiling holds the wall below where pure convection would put it - the
+        # physical effect the model exists to capture.
+        #
+        # Only true while `A_b` is modest. Once bubbles blanket the wall,
+        # `q_conv = h_c*dT*(1 - A_b)` is SUPPRESSED and the wall can end up hotter
+        # than pure convection would leave it - which is the dryout regime, where
+        # RPI is not valid anyway. This is therefore checked at a few multiples of
+        # onset (nucleate boiling), not at an arbitrary large flux: the previous
+        # 1e5 W/m^2 landed past that crossover once `h_c` was corrected.
+        q_w = 3.0*q_onset
+        Tw_boil, part_boil = solve_wall_temperature(rpi, s, q_w, h_c)
         @test Tw_boil < T_l + q_w/h_c
+        @test part_boil.A_b < 0.5             # confirms we are still in nucleate boiling
 
         # Zero and negative flux must not blow up.
         Tw0, _ = solve_wall_temperature(rpi, s, 0.0, h_c)

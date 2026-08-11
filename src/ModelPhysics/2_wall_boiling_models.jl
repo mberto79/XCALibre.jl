@@ -461,6 +461,7 @@ struct RPI{S,D,Fr,A,P,F<:AbstractFloat} <: AbstractWallBoilingModel
     wall_capacity::F
     n_iterations::Int
     start_iteration::Int
+    friction_velocity::Symbol
 end
 Adapt.@adapt_structure RPI
 
@@ -474,7 +475,8 @@ function RPI(;
     alpha_min = 0.1,
     wall_capacity = 0.0,
     n_iterations = 40,
-    start_iteration = 0)
+    start_iteration = 0,
+    friction_velocity = :k)
 
     patches_tuple = patches isa Symbol ? (patches,) : Tuple(patches)
     isempty(patches_tuple) && throw(ArgumentError(
@@ -488,9 +490,22 @@ function RPI(;
     start_iteration >= 0 || throw(ArgumentError(
         "`start_iteration` must be non-negative, got $start_iteration."))
 
+    # `:k`      u_tau = Cmu^0.25*sqrt(k)   - assumes LOCAL EQUILIBRIUM in the
+    #                                        near-wall cell. Existing default.
+    # `:loglaw` Newton solve of the log law from the VELOCITY - the same equation
+    #                                        the momentum wall treatment uses, and
+    #                                        valid whether or not k has settled.
+    #
+    # `h_c = rho*cp*u_tau/T+` is linear in u_tau, so this choice scales the
+    # convective share of the RPI partition directly. A boiling wall disturbs the
+    # near-wall balance that `:k` assumes, which is why `:loglaw` may do better
+    # there - see `_u_tau_loglaw!`.
+    friction_velocity in (:k, :loglaw) || throw(ArgumentError(
+        "`friction_velocity` must be :k or :loglaw, got :$friction_velocity"))
+
     return RPI(site_density, departure_diameter, departure_frequency, influence_area,
                patches_tuple, float(Pr_t), float(alpha_min), float(wall_capacity),
-               n_iterations, start_iteration)
+               n_iterations, start_iteration, friction_velocity)
 end
 
 wall_boiling_patches(model::RPI) = model.patches
@@ -603,6 +618,33 @@ no boiling and it is returned directly.
 
     lo = s.T_sat
     hi = T_w_conv
+
+    # EXPAND the upper bound until the partition there actually reaches `q_w`.
+    #
+    # `T_w_conv = T_l + q_w/h_c` is NOT a guaranteed bound, contrary to the
+    # argument that adding non-negative boiling terms can only lower the
+    # superheat. It ignores `A_b`: at that temperature
+    #
+    #     q_conv = h_c*dT*(1 - A_b) = q_w*(1 - A_b)  <  q_w
+    #
+    # so unless quenching and evaporation cover the `A_b` deficit, the root lies
+    # ABOVE the bracket and bisection saturates at the top, returning a partition
+    # that does not sum to `q_w`. The failure is silent - the wall temperature
+    # simply comes out too low.
+    #
+    # It went unnoticed while `single_phase_htc` returned a `T+` that was ~3x too
+    # large: the resulting small `h_c` put the bracket top far above `T_sat`,
+    # where `q_evap ~ dT_sup^n` is enormous and always covered the shortfall.
+    # Correcting `T+` moved the top close to `T_l` and exposed it.
+    #
+    # Doubling the superheat 8 times covers 256x, far beyond any physical root.
+    # Written with a ternary rather than a `break` so the iteration count is
+    # fixed and the kernel stays branch-free.
+    for _ in 1:8
+        p_hi = wall_heat_partition(rpi, _at_wall_temperature(s, hi), h_c)
+        short = (p_hi.q_c + p_hi.q_q + p_hi.q_e) < q_w
+        hi = short ? s.T_l + 2*(hi - s.T_l) : hi
+    end
 
     for _ in 1:rpi.n_iterations
         mid = (lo + hi)/2
@@ -736,7 +778,25 @@ clear of the buffer layer.
     P = F(9.24)*(ratio^F(0.75) - one(F))*(one(F) + F(0.28)*exp(-F(0.007)*ratio))
     T_plus_log = Pr_t*(log(E*yp)/kappa) + P
 
-    T_plus = max(T_plus_lam, T_plus_log)
+    # MINIMUM, not maximum. T+ is a thermal RESISTANCE: in the viscous sublayer
+    # only conduction acts, giving T+ = Pr*y+, and in the log layer turbulent
+    # mixing opens a second transport path that REDUCES the resistance. So the
+    # physical T+ is always the smaller of the two branches:
+    #
+    #   below the crossing   T_plus_lam < T_plus_log   -> laminar is physical
+    #   above the crossing   T_plus_lam > T_plus_log   -> log is physical
+    #
+    # `min` therefore selects correctly in both regimes without solving for the
+    # crossing point, which is what this trick is for.
+    #
+    # This was `max`, which picks the WRONG branch in both. At y+ = 40 with
+    # Pr = 1.72 it returned T+ = 68.8 (laminar) instead of 20.6 (log), making
+    # `h_c = rho*cp*u_tau/T+` a factor of 3.3 too SMALL - so the RPI convective
+    # share was starved and the partition made up the difference through
+    # evaporation, inflating the wall superheat. Measured h_conv of
+    # 3692-5388 W/m^2/K against a Dittus-Boelter estimate of ~10,200 is that
+    # factor almost exactly.
+    T_plus = min(T_plus_lam, T_plus_log)
     T_plus <= zero(F) && return zero(F)
 
     return rho*cp*u_tau/T_plus

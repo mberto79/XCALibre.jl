@@ -119,10 +119,7 @@ const dev_length_factor = 10.0   # unheated inlet length, in tube diameters
 # it from 0.55R to 0.275R.
 const core_frac         = 0.725
 const n_core            = 6      # cells across the core block, each direction
-const n_outer           = 2      # cells across the OUTER ring (the wall layer)
-# `n_inner` is COMPUTED, not chosen - see `cells_for_geometric`. Set an integer
-# here to override the automatic count.
-const n_inner_override  = nothing
+const n_radial          = 9      # cells from core edge to wall
 const n_axial_per_D     = 4.0    # axial cells per tube diameter
 
 # ============================================================================
@@ -246,98 +243,18 @@ t_ring > 0 || error("""
 core_frac = $core_frac leaves no room for the outer ring: it must be < 1.
 Values around 0.4-0.5 give the best cell quality.""")
 
-# ============================================================================
-#  THREE-LAYER CROSS SECTION
-# ============================================================================
-#
-#   core square  ->  INNER ring  ->  OUTER ring  ->  pipe wall
-#
-#  OUTER ring: bounded by two concentric ARCS (r_m and R), so it is a true
-#  annulus - uniform thickness, uniform cell height, no grading. Its cells are
-#  the wall cells, and since it is `n_outer` cells of equal size the wall cell
-#  height is EXACTLY t_outer/n_outer everywhere. That is what makes y+ a single
-#  number rather than a range.
-#
-#  INNER ring: absorbs the square-to-circle transition. Its inner boundary is
-#  the core's STRAIGHT edges (corners at radius r_c) and its outer boundary is
-#  the arc at r_m, so its thickness varies - but it never touches the wall, so
-#  that variation costs nothing.
-#
-#  Sizing is inverted from the old scheme: rather than solving a grading to hit
-#  a target wall cell, the outer ring is BUILT at the target thickness and the
-#  inner ring is graded to meet it.
-const t_outer = n_outer*h_wall_target       # uniform cells => exact wall height
-const r_m = R - t_outer                     # core/outer interface radius
+# With ARCS on the core boundary the outer block is a true ANNULUS: both its
+# inner and outer edges are circles, so every radial edge runs exactly from r_i
+# to R and the thickness is the same everywhere. One grading therefore gives ONE
+# wall cell height around the whole circumference - the near-wall layer follows
+# the pipe curvature exactly.
+const t_min  = t_ring
+const t_max  = t_ring
+const t_axis = t_ring   # retained names; with a uniform ring they all coincide
+const t_diag = t_ring
+const t_mean = t_ring
 
-r_m > r_c || error("""
-The outer ring (t_outer = $(round(t_outer*1e6, digits=2)) um over $n_outer cells)
-reaches inside the core corner radius r_c = $(round(r_c*1e3, digits=4)) mm.
-Reduce `core_frac`, `n_outer`, or `wall_cell_scale`.""")
-
-# Inner ring thickness: exact at the block corners, larger mid-chord where the
-# core's straight edge sags inward. Graded so its OUTERMOST cell matches the
-# outer ring's uniform cell, avoiding a size jump at r_m.
-const t_inner_min = r_m - r_c
-const t_inner_max = r_m - r_c*cosd(22.5)
-const t_inner_mean = (t_inner_min + t_inner_max)/2
-
-"""
-    cells_for_geometric(thickness, h_first, h_last) -> Int
-
-Number of cells a geometric distribution needs to span `thickness` while
-starting at `h_first` and ending at `h_last`.
-
-Closed form rather than a search. For `n` cells with per-cell ratio `r`,
-
-    h_last = h_first*r^(n-1)              and     thickness = h_first*(r^n - 1)/(r - 1)
-
-Eliminating `n` between the two collapses the sum to `(r*h_last - h_first)/(r - 1)`,
-so
-
-    r = (thickness - h_first)/(thickness - h_last)
-    n = 1 + ln(h_last/h_first)/ln(r)
-
-rounded to an integer (at least 2). The grading is then RE-SOLVED for that
-integer count, so `h_last` is hit exactly and `h_first` lands close to the
-request - the rounding error goes into the first cell, where a small mismatch is
-harmless, rather than into the wall cell, where it is not.
-
-### Why size it this way
-
-The inner ring bridges two blocks whose cell sizes are already fixed: the core's
-uniform cell on one side and the outer ring's wall cell on the other. Choosing
-`n_inner` by hand leaves a size jump at whichever interface the grading does not
-happen to match. Solving for it makes both interfaces smooth by construction.
-"""
-function cells_for_geometric(thickness, h_first, h_last)
-    (h_first > 0 && h_last > 0) || error("cell sizes must be positive")
-    thickness > max(h_first, h_last) || error("""
-thickness $(thickness) cannot hold cells of $(h_first) and $(h_last).""")
-    # Uniform request: no geometric progression to solve.
-    isapprox(h_first, h_last; rtol=1e-6) && return max(2, round(Int, thickness/h_first))
-    r = (thickness - h_first)/(thickness - h_last)
-    (r > 0 && !isapprox(r, 1; rtol=1e-12)) || return max(2, round(Int, thickness/h_first))
-    return max(2, round(Int, 1 + log(h_last/h_first)/log(r)))
-end
-
-# Core cell size along the axis: the core block spans 0 -> r_c in `n_core` cells.
-const h_core = r_c/n_core
-
-const n_inner = n_inner_override === nothing ?
-    cells_for_geometric(t_inner_mean, h_core, h_wall_target) : n_inner_override
-const n_radial = n_inner + n_outer
-
-const inner_grading = grading_for_last_cell(t_inner_mean, n_inner, h_wall_target)
-
-# What the first inner-ring cell actually came out as, for the report: the
-# rounding of `n_inner` lands here rather than in the wall cell.
-const h_inner_first = h_wall_target/inner_grading
-
-# Retained names used by the reporting block below.
-const t_axis = t_outer
-const t_diag = t_outer
-const t_mean = t_outer
-const radial_grading = inner_grading
+const radial_grading = grading_for_last_cell(t_mean, n_radial, h_wall_target)
 
 """
 Actual wall cell height in a block of the given radial thickness, i.e. the
@@ -351,10 +268,8 @@ function wall_cell_height(thickness, n, grading)
     return thickness*(r - 1)*r^(n - 1)/(r^n - 1)
 end
 
-# The outer ring is uniform, so the wall cell height is the same everywhere and
-# these two limits coincide by construction rather than by luck.
-const h_wall_axis = t_outer/n_outer
-const h_wall_diag = t_outer/n_outer
+const h_wall_axis = wall_cell_height(t_axis, n_radial, radial_grading)
+const h_wall_diag = wall_cell_height(t_diag, n_radial, radial_grading)
 const yplus_axis = (h_wall_axis/2)*u_tau/nu_l
 const yplus_diag = (h_wall_diag/2)*u_tau/nu_l
 
@@ -364,25 +279,14 @@ const yplus_diag = (h_wall_diag/2)*u_tau/nu_l
 const c45 = R/sqrt(2)
 
 # Cross-section vertices, counter-clockwise per block when viewed from +z.
-const m45 = r_m/sqrt(2)
-const k45 = r_c/sqrt(2)
-
-# Three concentric rings of vertices. Every vertex in a ring is at the SAME
-# radius, which is what lets the outer ring be a true annulus.
 const xy = [
-    (0.0,  0.0),    #  0  v0  centreline
-    # --- core corners, radius r_c. STRAIGHT edges between them.
-    (r_c,  0.0),    #  1  v1   0 deg
-    (k45,  k45),    #  2  v2  45 deg
-    (0.0,  r_c),    #  3  v3  90 deg
-    # --- inner/outer ring interface, radius r_m. ARC edges between them.
-    (r_m,  0.0),    #  4  v4   0 deg
-    (m45,  m45),    #  5  v5  45 deg
-    (0.0,  r_m),    #  6  v6  90 deg
-    # --- pipe wall, radius R. ARC edges between them.
-    (R,    0.0),    #  7  v7   0 deg
-    (c45,  c45),    #  8  v8  45 deg
-    (0.0,  R),      #  9  v9  90 deg
+    (0.0,  0.0),    # 0  v0  centreline
+    (r_i,  0.0),    # 1  v1  core/ring interface, on the x axis   |v1| = r_i
+    (r_c,  r_c),    # 2  v2  core corner, r_c = r_i/sqrt(2)  ->   |v2| = r_i
+    (0.0,  r_i),    # 3  v3  core/ring interface, on the y axis   |v3| = r_i
+    (R,    0.0),    # 4  v4  wall at 0 deg
+    (c45,  c45),    # 5  v5  wall at 45 deg
+    (0.0,  R),      # 6  v6  wall at 90 deg
 ]
 
 const n_xy = length(xy)
@@ -398,23 +302,14 @@ const n_axial_heat = max(4, round(Int, n_axial_per_D*L_heated/D))
 
 # Block definitions in the cross-section: (bottom-face vertex order, nx, ny, grading)
 # `grading` is the simpleGrading triple applied to the block's (x1, x2, z) axes.
-# FIVE blocks: one core, two inner-ring, two outer-ring. The EAST/NORTH pair in
-# each ring is the usual butterfly split; the vertex order follows the existing
-# convention exactly (EAST: axis 1 radial; NORTH: axis 1 azimuthal, axis 2
-# radial), so only the vertex indices change between the two rings.
 const blocks_xy = [
     # CORE: uniform, no wall in sight
-    ((0, 1, 2, 3), n_core,  n_core,  (1.0, 1.0)),
-
-    # INNER ring, r_c -> r_m. Graded so its outermost cell matches the outer
-    # ring's uniform cell size, leaving no jump at the interface.
-    ((1, 4, 5, 2), n_inner, n_core,  (inner_grading, 1.0)),   # EAST
-    ((3, 2, 5, 6), n_core,  n_inner, (1.0, inner_grading)),   # NORTH
-
-    # OUTER ring, r_m -> R. UNIFORM: two concentric arcs, no grading, so every
-    # wall cell is exactly t_outer/n_outer high.
-    ((4, 7, 8, 5), n_outer, n_core,  (1.0, 1.0)),             # EAST
-    ((6, 5, 8, 9), n_core,  n_outer, (1.0, 1.0)),             # NORTH
+    ((0, 1, 2, 3), n_core,   n_core,   (1.0, 1.0)),
+    # EAST: local axis 1 runs v1 -> v4, i.e. radially outwards. Graded.
+    ((1, 4, 5, 2), n_radial, n_core,   (radial_grading, 1.0)),
+    # NORTH: local axis 1 runs v3 -> v2 (azimuthal), axis 2 runs v2 -> v5
+    #        (radially outwards). Graded on axis 2.
+    ((3, 2, 5, 6), n_core,   n_radial, (1.0, radial_grading)),
 ]
 
 # ============================================================================
@@ -505,12 +400,8 @@ vertices
             # chord sags inward by (1 - cos(22.5 deg)) = 7.6% of r_i, making the
             # ring thicker mid-edge and the wall cell height vary with it - 20%
             # on this geometry, which no `simpleGrading` can remove.
-            # Arcs on BOTH boundaries of the outer ring - r_m (v4-v5-v6) and
-            # R (v7-v8-v9) - which is what makes it a true annulus. The core's
-            # own edges (v1-v2-v3) are deliberately left STRAIGHT; the inner ring
-            # absorbs that square-to-circle transition.
-            for (a, b, mid_deg, rad) in ((7, 8, 22.5, R),   (8, 9, 67.5, R),
-                                         (4, 5, 22.5, r_m), (5, 6, 67.5, r_m))
+            for (a, b, mid_deg, rad) in ((4, 5, 22.5, R), (5, 6, 67.5, R),
+                                         (1, 2, 22.5, r_i), (2, 3, 67.5, r_i))
                 mx = rad*cosd(mid_deg)
                 my = rad*sind(mid_deg)
                 @printf(io, "    arc %d %d (%.10g %.10g %.10g)\n",
@@ -538,7 +429,7 @@ vertices
             println(io, "    }")
         end
 
-        # Inlet: bottom faces of all five cross-section blocks, at z = 0.
+        # Inlet: bottom faces of all three cross-section blocks, at z = 0.
         inlet_faces = [reverse([vertex_id(v, 0) for v in verts])
                        for (verts, _, _, _) in blocks_xy]
         emit_patch("inlet", "patch", inlet_faces)
@@ -550,23 +441,18 @@ vertices
         emit_patch("outlet", "patch", outlet_faces)
 
         # Unheated wall (development section) and heated wall, split by axial
-        # block. The wall is now the OUTER ring's outer arc: EAST face v7->v8,
-        # NORTH face v8->v9.
+        # block. Both are the outer arc: EAST face v4->v5, NORTH face v5->v6.
         emit_patch("wallUnheated", "wall",
-                   [side_face(7, 8, 1), side_face(8, 9, 1)])
+                   [side_face(4, 5, 1), side_face(5, 6, 1)])
         emit_patch("pipeWall", "wall",
-                   [side_face(7, 8, 2), side_face(8, 9, 2)])
+                   [side_face(4, 5, 2), side_face(5, 6, 2)])
 
-        # Symmetry plane y = 0 (the x-z plane), running outwards from the axis:
-        # CORE v0->v1, INNER v1->v4, OUTER v4->v7.
-        sym_y = vcat([[side_face(0, 1, iz), side_face(1, 4, iz),
-                       side_face(4, 7, iz)] for iz in 1:2]...)
+        # Symmetry plane y = 0 (the x-z plane): CORE edge v0->v1, EAST edge v1->v4.
+        sym_y = vcat([[side_face(0, 1, iz), side_face(1, 4, iz)] for iz in 1:2]...)
         emit_patch("symmetryY", "symmetry", sym_y)
 
-        # Symmetry plane x = 0 (the y-z plane), running inwards to the axis:
-        # OUTER v9->v6, INNER v6->v3, CORE v3->v0.
-        sym_x = vcat([[side_face(3, 0, iz), side_face(6, 3, iz),
-                       side_face(9, 6, iz)] for iz in 1:2]...)
+        # Symmetry plane x = 0 (the y-z plane): CORE edge v3->v0, NORTH edge v6->v3.
+        sym_x = vcat([[side_face(3, 0, iz), side_face(6, 3, iz)] for iz in 1:2]...)
         emit_patch("symmetryX", "symmetry", sym_x)
 
         println(io, ");\n\nmergePatchPairs\n(\n);\n")
@@ -631,10 +517,7 @@ println("""
    target y+         : $y_plus_target
    wall cell height  : $(round(h_wall_diag*1e6, digits=2)) - $(round(h_wall_axis*1e6, digits=2)) um
    achieved y+       : $(round(yplus_diag, digits=1)) - $(round(yplus_axis, digits=1))
-   radial grading    : $(round(radial_grading, digits=5))  (inner ring, last/first)
-   cell size match   : core $(round(h_core*1e6, digits=2)) um -> inner-ring first cell $(round(h_inner_first*1e6, digits=2)) um  (ratio $(round(h_inner_first/h_core, digits=3)))
-                       inner-ring last cell $(round(h_wall_target*1e6, digits=2)) um -> wall cell $(round(t_outer/n_outer*1e6, digits=2)) um  (ratio $(round((t_outer/n_outer)/h_wall_target, digits=3)))
-   inner/outer cells : $(n_inner) + $(n_outer)
+   radial grading    : $(round(radial_grading, digits=5))  (last/first, < 1 = refine to wall)
 
  Mesh
    core block        : $n_core x $n_core

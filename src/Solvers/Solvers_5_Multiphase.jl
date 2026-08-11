@@ -1847,6 +1847,10 @@ function MULTIPHASE(
             # lives on boundary faces and has no cell-centred counterpart.
             # A no-op when wall boiling is not active.
             write_wall_boiling_surface(wallBoiling, mesh, iteration, time)
+            # Area-averaged RPI partition to the log: the boiling curve in one
+            # line, and `closure`/`evap_frac` flag a bad wall-temperature solve
+            # without having to open the surface file.
+            report_wall_boiling(wallBoiling, mesh; iteration=iteration)
         end
     end
 

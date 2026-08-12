@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Added mixture model inside multiphase solver with supporting unit and functionality tests. [#136](@ref)
 * Extended `initialise!` API with function-based overloads for `ScalarField` and `VectorField`[#135](@ref)
 * Pressure-based compressible solvers have been extended to include `SensibleEnthalpy` and `InternalEnergy` formulations. The solver now correctly handles `Compressible` fluids, activating the transonic correction that allows shock capturing for moderate high-speed applications, typically in the range 0.8 < M < 2 [#145](@ref)
+* Added `Robin` boundary condition supporting mixed (`a·φ + b·∇φ·n = value`) constraints, with `Adapt` support for GPU transfer and implementations for `Laplacian{Linear}`, all `Divergence` schemes, and `Si`/`Time` terms.
 
 ### Fixed
 * Add implementation of `Periodic` boundaries to handle the implicit source term - fixes operation of models that use `Si` terms [#95](@ref)

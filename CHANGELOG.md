@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Added mixture model inside multiphase solver with supporting unit and functionality tests. [#136](@ref)
 * Extended `initialise!` API with function-based overloads for `ScalarField` and `VectorField`[#135](@ref)
 * Pressure-based compressible solvers have been extended to include `SensibleEnthalpy` and `InternalEnergy` formulations. The solver now correctly handles `Compressible` fluids, activating the transonic correction that allows shock capturing for moderate high-speed applications, typically in the range 0.8 < M < 2 [#145](@ref)
+* GPU-upgraded `setField_Box!`, `setField_Circle2D!`, `setField_Sphere3D!`, and `setField_Expression!` to use `KernelAbstractions` kernels, making them backend-agnostic (CPU and GPU). API is unchanged.
+* Added `volume_integral`, `weighted_volume_integral`, `volume_average`, and `total_volume` functions to the `Calculate` module for backend-agnostic volume integration over scalar and vector fields.
 
 ### Fixed
 * Add implementation of `Periodic` boundaries to handle the implicit source term - fixes operation of models that use `Si` terms [#95](@ref)

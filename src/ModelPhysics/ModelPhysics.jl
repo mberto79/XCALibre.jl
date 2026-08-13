@@ -29,6 +29,7 @@ include("2_phase_change_models.jl")
 # supertype from the phase change file, so it follows both.
 include("2_tabulated_properties.jl")
 include("2_wall_boiling_models.jl")
+include("2_film_boiling_models.jl")
 include("2_viscosity_models.jl")
 include("3_physics_API.jl")
 

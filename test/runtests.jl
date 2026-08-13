@@ -90,6 +90,14 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_wall_boiling.jl")
     end
 
+    @testset "Film Boiling Unit Test" begin
+        include("unit_test_film_boiling.jl")
+    end
+
+    @testset "Drift Flux Dispersion Unit Test" begin
+        include("unit_test_drift_dispersion.jl")
+    end
+
     # Skips itself when the mesh has not been built (blockMesh output is not in
     # version control).
     @testset "LH2 Pipe Sector Mesh Unit Test" begin

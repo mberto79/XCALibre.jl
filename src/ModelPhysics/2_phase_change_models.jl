@@ -2,6 +2,8 @@ export AbstractPhaseChangeModel, AbstractSaturationModel
 export Lee, Schrage, ModifiedEnergyJump
 export Antoine, saturation_pressure, saturation_temperature
 export phase_change_rate!
+export AbstractInterfacialArea, ResolvedInterface, DispersedBubbles
+export interfacial_area_density
 
 """
     AbstractPhaseChangeModel
@@ -192,43 +194,145 @@ Lee(; sigma=1.0e-6, R=nothing) = Lee(float(sigma), R === nothing ? nothing : flo
 #  Rate evaluation
 # =============================================================================
 
+# =============================================================================
+#  Interfacial area density
+# =============================================================================
+
 """
-    phase_change_rate!(mdot, pc, alpha, gradAlphaMag, T, p_abs,
+    AbstractInterfacialArea
+
+How the interfacial area per unit volume `a_i` [1/m] is closed. The phase change
+models return a mass flux PER UNIT INTERFACE AREA, so `a_i` is what converts
+that into the volumetric rate the equations need:
+
+    mdot = mdot''(model) * a_i
+
+The right closure depends on whether the interface is RESOLVED or DISPERSED, and
+getting it wrong is not a small error - see [`ResolvedInterface`](@ref).
+"""
+abstract type AbstractInterfacialArea end
+
+"""
+    interfacial_area_density(model, alpha, gradAlphaMag) -> a_i [1/m]
+"""
+function interfacial_area_density end
+
+"""
+    ResolvedInterface()
+
+`a_i = |grad(alpha)|`. The VOF closure, and correct there: for an interface
+smeared over a couple of cells, integrating `|grad(alpha)|` through the interface
+region recovers its area exactly.
+
+### Do not use it for a dispersed flow
+
+`|grad(alpha)|` is not an area density in any general sense - it is a statement
+that all the interface is at the place where `alpha` changes. In a dispersed
+bubbly mixture there is no resolved interface, `alpha` varies smoothly, and the
+cell-to-cell variation the gradient measures is NUMERICAL rather than physical.
+
+That makes it a feedback path with a checkerboard eigenmode: a 2*dx oscillation
+in `alpha` is precisely the field that MAXIMISES `|grad(alpha)|` for a given
+amplitude, so the phase change source is largest exactly where the solution is
+least physical, and grows as the oscillation grows. Measured on the LH2 pipe at
+0.4 MPa with 86 um wall cells: the physical dispersed value is 24 1/m, while a
+checkerboard of amplitude 0.1 gives 1165 1/m - a factor of 49, and one that
+increases with the noise it is responding to.
+
+It is also wrong in sign of behaviour at the boundaries of the flow: it is
+LARGEST at a pure-liquid cell adjacent to a bubbly one, where there is least
+interface, and zero in a uniformly bubbly region, where there is most.
+"""
+struct ResolvedInterface <: AbstractInterfacialArea end
+Adapt.@adapt_structure ResolvedInterface
+
+@inline interfacial_area_density(::ResolvedInterface, alpha, gradAlphaMag) =
+    gradAlphaMag
+
+"""
+    DispersedBubbles(; diameter)
+
+`a_i = 6 alpha_d (1 - alpha_d) / d`, the interfacial area density of a dispersed
+phase of spherical inclusions of diameter `d` at volume fraction `alpha_d`.
+
+The strict result for spheres is `6 alpha_d/d`; the extra `(1 - alpha_d)` makes
+the expression symmetric under phase inversion so it vanishes at BOTH limits
+rather than growing without bound as the dispersed phase takes over. It is the
+form mixture models normally carry, and being symmetric it does not matter which
+phase `alpha` tracks.
+
+### Why this and not `|grad(alpha)|`
+
+It is bounded, smooth, and a purely LOCAL algebraic function of `alpha` - there
+is no gradient in it, so it cannot amplify a cell-to-cell oscillation the way
+[`ResolvedInterface`](@ref) does.
+
+It is also the CONSISTENT choice for a drift-flux mixture. That model already
+closes the slip velocity through a per-bubble force balance with
+`tau_d = rho_d d^2/(18 mu_c)`, i.e. it has already committed to a bubble
+diameter. Using `|grad(alpha)|` for mass transfer while using `d` for momentum
+makes the two closures describe different dispersed phases. Passing the same `d`
+to both removes that inconsistency and introduces no new free parameter.
+"""
+struct DispersedBubbles{F<:AbstractFloat} <: AbstractInterfacialArea
+    diameter::F
+end
+function DispersedBubbles(; diameter)
+    diameter > 0 || throw(ArgumentError(
+        "`diameter` must be a positive bubble diameter [m], got $diameter"))
+    return DispersedBubbles(float(diameter))
+end
+Adapt.@adapt_structure DispersedBubbles
+
+@inline function interfacial_area_density(
+    model::DispersedBubbles, alpha::F, gradAlphaMag) where F
+    a = clamp(alpha, zero(F), one(F))
+    return 6*a*(one(F) - a)/F(model.diameter)
+end
+
+# =============================================================================
+#  Rate evaluation
+# =============================================================================
+
+"""
+    phase_change_rate!(mdot, pc, area, alpha, gradAlphaMag, T, p_abs,
                        rho_l, rho_v, sat, L, R_sp, config)
 
 Fill `mdot` with the **volumetric** phase change rate [kg/m^3/s], positive for
 evaporation:
 
-    mdot = mdot''(model) * |grad(alpha)|
+    mdot = mdot''(model) * a_i(area, alpha, |grad(alpha)|)
 
-`pc === nothing` zeroes the field, which is the no-phase-change case.
+`pc === nothing` zeroes the field, which is the no-phase-change case. `area`
+selects the interfacial area closure - see [`AbstractInterfacialArea`](@ref).
 """
-function phase_change_rate!(mdot, ::Nothing, alpha, gradAlphaMag, T, p_abs,
+function phase_change_rate!(mdot, ::Nothing, area, alpha, gradAlphaMag, T, p_abs,
                             rho_l, rho_v, sat, L, R_sp, config)
     fill!(mdot.values, zero(eltype(mdot.values)))
     return nothing
 end
 
-function phase_change_rate!(mdot, pc::AbstractPhaseChangeModel, alpha, gradAlphaMag,
-                            T, p_abs, rho_l, rho_v, sat, L, R_sp, config)
+function phase_change_rate!(mdot, pc::AbstractPhaseChangeModel, area, alpha,
+                            gradAlphaMag, T, p_abs, rho_l, rho_v, sat, L, R_sp,
+                            config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
     ndrange = length(mdot)
     kernel! = _phase_change_rate!(_setup(backend, workgroup, ndrange)...)
-    kernel!(mdot, pc, alpha, gradAlphaMag, T, p_abs, rho_l, rho_v, sat, L, R_sp)
+    kernel!(mdot, pc, area, alpha, gradAlphaMag, T, p_abs, rho_l, rho_v, sat, L, R_sp)
     return nothing
 end
 
 @kernel inbounds=true function _phase_change_rate!(
-    mdot, pc, alpha, gradAlphaMag, T, p_abs, rho_l, rho_v, sat, L, R_sp)
+    mdot, pc, area, alpha, gradAlphaMag, T, p_abs, rho_l, rho_v, sat, L, R_sp)
     i = @index(Global)
     t = T[i]
     p = p_abs[i]
     T_sat = saturation_temperature(sat, p)
     flux = interfacial_mass_flux(pc, alpha[i], t, p, T_sat,
                                  rho_l[i], rho_v[i], sat, L, R_sp)
-    mdot[i] = flux*gradAlphaMag[i]
+    mdot[i] = flux*interfacial_area_density(area, alpha[i], gradAlphaMag[i])
 end
 
 """

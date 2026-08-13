@@ -43,9 +43,10 @@ using Printf
 #
 # Geometric spacing gives even coverage on the log-log axes a boiling curve is
 # normally plotted on.
-const Q_SCHEDULE = [4e3, 6e3, 8e3, 1.0e4, 1.5e4, 2.2e4]   # [W/m^2]
+# const Q_SCHEDULE = [4e3, 6e3, 8e3, 1.0e4, 1.5e4, 2.2e4]   # [W/m^2]
+const Q_SCHEDULE = [3.5e4, 5.0e4, 6.4e4, 7.0e4, 8.0e4, 1.0e5]   # [W/m^2]
 
-const FLOW_THROUGHS_INIT = 2      # settling at Q_SCHEDULE[1], discarded
+const FLOW_THROUGHS_INIT = 1      # settling at Q_SCHEDULE[1], discarded
 const FLOW_THROUGHS_PER_STEP = 1  # at each level, including the first
 
 # -----------------------------------------------------------------------------
@@ -61,7 +62,7 @@ include(joinpath(@__DIR__, "3d_LH2_pipe_forced_convection.jl"))
 # -----------------------------------------------------------------------------
 # Timing
 # -----------------------------------------------------------------------------
-const DT = 2.0e-5
+const DT = 5.0e-6
 const T_FLOW_THROUGH = L_total/U_inlet_mag
 const STEPS_PER_FT = round(Int, T_FLOW_THROUGH/DT)
 

@@ -25,7 +25,11 @@ const PIPE_POLYMESH = joinpath(PIPE_GRID_DIR, "constant", "polyMesh")
 const PIPE_D = 6.0e-3
 const PIPE_L_HEATED = 250.0e-3
 const PIPE_L_DEV = 10.0*PIPE_D
-const PIPE_L_TOTAL = PIPE_L_DEV + PIPE_L_HEATED
+# Unheated exit run between the end of the heated wall and the outlet plane, so
+# the outflow boundary does not sit inside the vapour source region. Must match
+# `exit_length_factor` in the generator; 0.0 for the original two-block mesh.
+const PIPE_L_EXIT = 10.0*PIPE_D
+const PIPE_L_TOTAL = PIPE_L_DEV + PIPE_L_HEATED + PIPE_L_EXIT
 const PIPE_R = PIPE_D/2
 
 # Flow conditions the generator sized the near-wall cell for.
@@ -109,7 +113,11 @@ end
     @info "heated wall area" patch_area(:pipeWall) A_heated
     @test isapprox(patch_area(:pipeWall), A_heated, rtol=0.01)
 
-    A_unheated = 0.25*2pi*PIPE_R*PIPE_L_DEV
+    # `wallUnheated` carries BOTH unheated runs - the inlet development section
+    # and the exit run. Only the middle block is heated. If the exit run were
+    # accidentally left on `pipeWall` the heated area would be too large and the
+    # applied power with it, so this is the check that catches that.
+    A_unheated = 0.25*2pi*PIPE_R*(PIPE_L_DEV + PIPE_L_EXIT)
     @test isapprox(patch_area(:wallUnheated), A_unheated, rtol=0.01)
 
     # Symmetry planes are rectangles PIPE_R x PIPE_L_TOTAL.

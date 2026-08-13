@@ -169,6 +169,57 @@ wb_make_state(; T_w, T_l = WB_T_SAT) = BoilingState(
         @test a_sub < a_sat
     end
 
+    @testset "Influence area saturation: clamp versus exponential" begin
+        s = wb_make_state(T_w = WB_T_SAT + 2.0)
+
+        @test DelValleKenning().saturation === Val(:clamp)          # unchanged default
+        @test ConstantInfluenceArea().saturation === Val(:clamp)
+        @test_throws ArgumentError DelValleKenning(saturation = :nonsense)
+        @test_throws ArgumentError ConstantInfluenceArea(saturation = :nonsense)
+
+        for (clamped, smooth) in (
+                (DelValleKenning(), DelValleKenning(saturation = :exponential)),
+                (ConstantInfluenceArea(), ConstantInfluenceArea(saturation = :exponential)))
+
+            # Both agree in the dilute limit, where overlap cannot matter.
+            @test bubble_influence_fraction(clamped, s, 1.0, 0.6e-3) ≈
+                  bubble_influence_fraction(smooth,  s, 1.0, 0.6e-3) rtol = 1e-6
+
+            # Both stay a fraction, and both vanish with no sites.
+            @test bubble_influence_fraction(smooth, s, 0.0, 0.6e-3) == 0.0
+            @test 0.0 <= bubble_influence_fraction(smooth, s, 1e9, 0.6e-3) <= 1.0
+
+            # THE POINT: at a coverage the clamp has already flattened at, the
+            # exponential form is still strictly below 1, so
+            # q_conv = h_c*dT*(1 - A_b) survives and keeps responding to the wall
+            # temperature. Under the clamp it is identically zero from here on.
+            #
+            # N_a = 1e7 puts the raw coverage past 1 for both `K = 4.8`
+            # (Del Valle-Kenning) and `K = 2` (the constant model), so the clamp
+            # has certainly bound. Far beyond it `1 - exp(-x)` does round to
+            # exactly 1 in Float64 (around x ~ 40), which is a floating point
+            # limit rather than a modelling one and is not a regime any case
+            # reaches: on the LH2 calibration A_b tops out at 0.835 at CHF.
+            @test bubble_influence_fraction(clamped, s, 1e7, 0.6e-3) == 1.0
+            @test bubble_influence_fraction(smooth,  s, 1e7, 0.6e-3) < 1.0
+
+            # Strictly increasing across that whole range, including where the
+            # clamp has flattened. This is what removes the slope discontinuity
+            # in the boiling curve: on the LH2 calibration the clamped model
+            # jumps from d(ln q)/d(ln dT) = 7.9 to 18.1 between 36 and 38 kW/m^2.
+            Ns = 10 .^ range(3, 7, length = 40)
+            as = [bubble_influence_fraction(smooth, s, N, 0.6e-3) for N in Ns]
+            @test issorted(as)
+            @test allunique(as)
+            @test all(<(1.0), as)
+
+            # The clamp, by contrast, is constant over the upper part of that
+            # range - which is exactly the lost sensitivity.
+            ac = [bubble_influence_fraction(clamped, s, N, 0.6e-3) for N in Ns]
+            @test !allunique(ac)
+        end
+    end
+
     @testset "Single-phase heat transfer coefficient" begin
         u_tau = 0.23
         h = single_phase_htc(40.0, u_tau, WB_RHO_L, WB_CP_L, WB_MU_L, WB_K_L, 0.85)

@@ -124,10 +124,99 @@ U_inlet_mag = 5.33       # [m/s]   paper Figs. 3-4 span 1.5 - 11.6 m/s
 
 # Wall heat flux. Fig. 3(a)/4(a) put the developed nucleate boiling regime for
 # this geometry between roughly 1e4 and 1e5 W/m^2, with DNB near 6e4 W/m^2 at
-# this velocity (Fig. 5b). 3e4 W/m^2 sits comfortably inside nucleate boiling,
-# which is the regime this model is valid in - RPI says nothing about the
-# post-DNB film boiling branch.
-WALL_HEAT_FLUX = 6e4   # [W/m^2]
+# this velocity (Fig. 5b), and the digitised curve ends at 64 kW/m^2.
+#
+# 6.6e4 is JUST ABOVE that - deliberately. The excess over CHF is what drives the
+# excursion, so a small excess gives the gentlest traverse; going far above adds
+# violence without adding information. Anything at or below 6.4e4 stays on the
+# nucleate branch and never departs.
+WALL_HEAT_FLUX = 6.6e4   # [W/m^2]
+
+# -----------------------------------------------------------------------------
+# FILM_BOILING - carry the wall through DNB onto the film branch
+# -----------------------------------------------------------------------------
+#   false - RPI only. Valid up to CHF and silent beyond it: the model has no
+#           departure criterion, so it will keep predicting nucleate boiling at
+#           any flux it is given. Use for anything inside the nucleate range.
+#   true  - blends RPI into a vapour-film closure across the transition, giving
+#           one continuous q_w(T_w) through DNB. REQUIRED above ~6e4 W/m^2 here.
+#
+# Preview where the correlations put DNB, before running any CFD, with
+#   julia --project=. test/0_TEST_CASES/dnb_film_boiling_preview.jl
+#
+# WHAT DRIVES THE TRANSITION. This case uses `VoidTransition`, not the superheat
+# blend. The difference is what each needs to know:
+#
+#   SuperheatTransition  blends between the superheat at which RPI delivers
+#                        `q_CHF` and the Leidenfrost superheat. Needs a CHF
+#                        VALUE. Fine here, where 64 kW/m^2 was measured, but not
+#                        available for a geometry or fluid with no data - and the
+#                        property-only options are poor: at this operating point
+#                        Zuber gives 97 kW/m^2 (+52%) and BubbleCrowding 36
+#                        (-43%) against the measured 64. They bracket it; neither
+#                        is usable alone. A tube-level flow correlation
+#                        (Katto & Ohno, Shah) is the right predictive route, fed
+#                        in through `FixedCriticalHeatFlux`.
+#
+#   VoidTransition       blends on NEAR-WALL VAPOUR FRACTION, so departure
+#                        emerges from the solution instead of being located by a
+#                        correlation - vapour accumulates until liquid can no
+#                        longer reach the wall. No CHF value needed, and it
+#                        predicts WHERE departure starts, which a flux criterion
+#                        cannot since the flux is imposed uniformly.
+#
+# `chf = Zuber()` is still present below but now only CAPS the nucleate branch -
+# `q_evap ~ dT_sup^n` outruns any linear blend otherwise. A cap is a bound rather
+# than a prediction, so Zuber being a poor CHF estimate does not matter for it.
+FILM_BOILING = true
+
+# -----------------------------------------------------------------------------
+# SITE_DENSITY_FIT - trading fit accuracy against numerical stiffness
+# -----------------------------------------------------------------------------
+# `N_a = (m*dT_sup)^n`. The measured branch above the knee is nearly VERTICAL, so
+# a power law can only chase it with a large `n` - and `n` IS the stiffness of
+# the whole wall closure, because q_evap ~ dT_sup^n is what the partition leans
+# on once bubbles cover the wall. That makes the exponent a direct trade between
+# how well the curve is reproduced and how violently the vapour source responds
+# to cell-to-cell noise in the near-wall temperature.
+#
+# `m` and `n` are NOT independent: N_a = (m*dT_sup)^n means `m` only sets the
+# amplitude, through m^n, while `n` sets the slope. Changing `n` alone would
+# shift the whole curve, so each `m` below is REFITTED at its `n` by grid search
+# against `data/tatsumoto2014_D6_L250_0.4MPa_5.53ms.csv`, with the exponential
+# influence area in use. Measured trade:
+#
+#   fit      n      m      peak stiffness   RMS(log dT)      dT_sup at CHF
+#                          d(ln q)/d(ln dT)  q > 20 kW/m^2   (measured 1.642 K)
+#   :n21   21.17  1.085        16.6           0.0537            1.692  (+3.0%)
+#   :n15   15.0   1.362        11.7           0.0664            1.731  (+5.4%)
+#   :n12   12.0   1.653         9.3           0.0772            1.766  (+7.6%)
+#   :n10   10.0   2.006         7.7           0.0877            1.803  (+9.8%)
+#   :n8     8.0   2.691         6.2           0.1025            1.852 (+12.8%)
+#   :n6     6.0   4.364         4.6           0.1269            1.947 (+18.6%)
+#
+# The RMS column is over q > 20 kW/m^2 only. Across the FULL curve every entry
+# sits near 0.31, because all of them are ~22% low at 15 kW/m^2 - the low-flux
+# window cannot be fitted by ANY of these. That is a limitation of the power-law
+# form, not of a particular exponent, and it is why the whole-curve residual is
+# useless for choosing between them.
+#
+# HOW TO USE THIS. Do not tune - BISECT. Run `:n6` first, purely as a diagnostic:
+# its stiffness is under a third of `:n21`. If the case is stable there, the
+# exponent really is driving the instability and `:n12`/`:n10` is the operating
+# compromise. If `:n6` still breaks up, the exponent is NOT the cause, and
+# lowering it further costs accuracy for nothing.
+SITE_DENSITY_FIT = :n10
+
+SITE_DENSITY = (
+    n21 = LemmertChawla(m = 1.085, n = 21.17),
+    n15 = LemmertChawla(m = 1.362, n = 15.0),
+    n12 = LemmertChawla(m = 1.653, n = 12.0),
+    n10 = LemmertChawla(m = 2.006, n = 10.0),
+    n8  = LemmertChawla(m = 2.691, n =  8.0),
+    n6  = LemmertChawla(m = 4.364, n =  6.0),
+    n = LemmertChawla()
+)[SITE_DENSITY_FIT]
 
 D, L_heated = if CASE === :D4_L100
     4.0e-3, 100.0e-3
@@ -163,12 +252,12 @@ mesh_dev = adapt(backend, mesh)
 # and hydrostatic drop, temperature spans the inlet liquid to the superheated
 # wall. `table_range_report` at the end checks whether the run stayed inside it.
 p_table = (0.25e6, 1.25e6)
-T_table = (19.0, 40.0)
+T_table = (19.0, 120.0)
 
 # Saturation from the same EOS rather than an Antoine fit: h_fg falls by more
 # than half between 0.4 MPa and the critical point, so a constant latent heat is
 # not usable across the paper's pressure sweep.
-saturation = build_saturation_curve(H2(), p=p_table, T=(19.0, 33.0), np=201, nT=201)
+saturation = build_saturation_curve(H2(), p=p_table, T=(19.0, 120.0), np=201, nT=201)
 
 saturation = ConstantSaturation(saturation, p_sat)
 
@@ -395,8 +484,8 @@ model = Physics(
         # kinetic prefactor. An EOS that carries one supplies it; a constant
         # density cannot, so pass it explicitly:
         #   phase_change = Lee(sigma = 1e-6, R = 4124.5),   # [J/kg/K]
-        phase_change = nothing,
-
+        # phase_change = nothing,
+        phase_change = Lee(sigma = 1e-6, R = 4124.5),
         # --- wall nucleate boiling -------------------------------------------
         # Kurul & Podowski heat flux partitioning, q_w = q_conv + q_quench + q_evap,
         # inverted for the wall temperature since this case prescribes the FLUX.
@@ -435,11 +524,142 @@ model = Physics(
         # evaporation - inflating the wall superheat.
         wall_boiling = RPI(
             patches = (:pipeWall,),
-            site_density = LemmertChawla(m = 210.0, n = 1.805),
-            departure_diameter = TolubinskyKostanchuk(),
-            friction_velocity = :loglaw,
-            start_iteration = 0),
 
+            # --- departure diameter: FRITZ value for LH2, not the water fit ---
+            #   d_ref = 0.0208*theta_deg*sqrt(sigma/(g*(rho_l - rho_v)))
+            # gives 1110 um at 0.4 MPa against the shipped 600 um water value.
+            # It enters q_evap CUBED, so this alone is a ~6x change in
+            # evaporation per site. Physically derived rather than fitted, which
+            # is why it goes in ahead of the site density.
+            departure_diameter = TolubinskyKostanchuk(d_ref = 1.110e-3,
+                                                      d_max = 4.44e-3),
+
+            # --- site density: PROVISIONAL, from the HIGH-flux window only ----
+            # `calibrate_rpi_highflux.jl` fits 21-59 kW/m^2 to RMS(log dT) = 0.056
+            # and is well determined (6 of 4900 grid points within 10%). The
+            # LOW-flux window could not be fitted at all - see the caveat block
+            # below - so this pair is calibrated where the case actually runs,
+            # not across the whole curve.
+            #
+            # n = 21 is extreme. The measured branch above the knee is nearly
+            # VERTICAL (local exponent 15.3), and a power law can only chase that
+            # with a large exponent. It is a fitting artefact, not a physical
+            # site density - do not quote it as one. It is also stiff, which is
+            # part of why the transient wall below matters.
+            # SITE_DENSITY_FIT (set at the top of the file) selects from the
+            # (n, m) Pareto front below. `m` is REFITTED at each `n` by grid
+            # search against the digitised curve - the two are not independent,
+            # since N_a = (m*dT_sup)^n means `m` only sets the amplitude through
+            # m^n while `n` sets the slope, so changing `n` alone would just move
+            # the whole curve.
+            site_density = SITE_DENSITY,
+
+            # --- influence area: SMOOTH saturation, not the hard clamp --------
+            # The classical form is A_b = min(1, K*N_a*pi*D_d^2/4). With the
+            # n = 21.17 site density above, that cap BINDS between 36 and
+            # 38 kW/m^2 on this case, and the moment it does,
+            #
+            #     q_conv = h_c*(T_w - T_l)*(1 - A_b) = 0
+            #
+            # identically, and stays zero at every higher flux. That removes the
+            # only term in the partition that responds smoothly and linearly to
+            # the local liquid temperature, leaving the entire wall flux to
+            # q_evap ~ dT_sup^21. Measured consequence: the local slope
+            # d(ln q)/d(ln dT_sup) jumps from 7.9 to 18.1 across that step, and
+            # each wall cell's vapour source becomes an almost vertical function
+            # of its own superheat with nothing coupling it to its neighbours.
+            #
+            # `:exponential` uses A_b = 1 - exp(-x) instead - the Poisson void
+            # probability for influence zones placed at random, which is what
+            # nucleation cavities actually are. The linear form is the special
+            # case that assumes they tile without overlapping.
+            #
+            # It is not a fitting change: over the measured curve the RMS(log dT)
+            # residual moves from 0.31122 to 0.31117 and the predicted superheat
+            # at CHF from 1.666 to 1.662 K. What changes is that q_conv decays
+            # smoothly to 6% at CHF instead of switching off at 38 kW/m^2, and
+            # the slope discontinuity disappears.
+            influence_area = DelValleKenning(saturation = :exponential),
+
+            # NOTE: with the hard clamp, everything h_c depends on - the log-law
+            # friction velocity below, the T+ branch selection - has NO effect
+            # above 38 kW/m^2, because q_conv is zero there. The smooth form is
+            # what makes the setting below matter across the whole range.
+            friction_velocity = :loglaw,
+
+            # --- transient wall: REQUIRED for anything approaching DNB --------
+            # C = rho_w*cp_w*thickness [J/m^2/K]. Non-zero switches the solve
+            # from the algebraic inversion to a lumped wall energy balance,
+            #
+            #     C dT_w/dt = q_gen - [q_conv + q_quench + q_evap]
+            #
+            # The algebraic form CANNOT represent DNB even in principle: past CHF
+            # the boiling curve is non-monotone, so a prescribed flux has up to
+            # THREE roots and bisection picks one arbitrarily. A transient wall
+            # inverts nothing - it follows the trajectory, and the excursion at
+            # departure falls out. It also damps the n = 21 stiffness above.
+            #
+            # The heater from the paper: SS308, 0.5 mm wall.
+            #
+            #   C = rho_w*cp_w*t = 8070 * 6.0 * 0.5e-3 = 24.21 J/m^2/K
+            #
+            # `cp_w = 6 J/kg/K` is the CRYOGENIC value at ~26 K, not the ~500
+            # J/kg/K a room-temperature table gives - metal specific heat follows
+            # the Debye T^3 law and collapses by roughly two orders of magnitude
+            # on the way down. Using a handbook value here would make the wall
+            # ~80x more sluggish than it is.
+            #
+            # Time constant: tau = C/h_total ~ 24.21/14000 ~ 1.7 ms. At
+            # dt = 2e-6 s that is ~850 steps per time constant, so the wall
+            # transient is well resolved; against a 58 ms flow-through it is
+            # fast, so the wall is quasi-steady on the flow timescale while still
+            # being able to follow an excursion at departure.
+            wall_capacity = 24.21,
+
+            # --- post-CHF: DNB and the film boiling branch -------------------
+            # Blends the RPI partition into a vapour-film closure between the
+            # CHF superheat and the Leidenfrost superheat, so `q_w(T_w)` is one
+            # continuous curve through departure. See the FILM_BOILING note at
+            # the top of the file, and `dnb_film_boiling_preview.jl` for the
+            # numbers this produces at the present operating point.
+            #
+            # `minimum_film` takes the SMALLER of the two closures, and that
+            # matters here rather than being defensive: Berenson returns a
+            # minimum film boiling superheat of 67 K for hydrogen, which puts the
+            # wall past the 33.1 K critical temperature - a state the liquid
+            # cannot occupy. The homogeneous nucleation bound (0.9*T_crit) gives
+            # 3.75 K and is what actually binds. Berenson is a pool-boiling
+            # correlation whose scales come from water-like fluids; hydrogen's
+            # low critical point leaves it no room.
+            #
+            # `ForcedConvectionFilm` is the correct branch at this velocity, not
+            # a convenience: the Bromley free-convection form applies below
+            # ~sqrt(g*D) = 0.24 m/s, and this case runs at 5.33 m/s.
+            # Honours the FILM_BOILING switch at the top of the file. It was
+            # briefly ignored here, which made `FILM_BOILING = false` a no-op and
+            # any control run using it worthless.
+            # NO `chf` - the void driver does not need one. It located nothing
+            # here (the transition is set by alpha_v) and only capped the
+            # nucleate branch, which a void blend does not require: at fixed
+            # alpha_v the wall flux is monotone in T_w, so the wall solve has a
+            # unique root, and (1 - w) removes the nucleate term once alpha_v
+            # passes alpha_2.
+            #
+            # It was also actively harmful. `Zuber` reads `rho_v`, which is 0.0
+            # until the solver's first property update, so it returned q_CHF = 0,
+            # the cap became min(1, 0/q_RPI) = 0, and the ENTIRE partition was
+            # multiplied by zero at every wall temperature. The wall balance
+            # collapsed to C dT_w/dt = q_gen and ran away to NaN in 12 steps.
+            film_boiling = FILM_BOILING ? FilmBoiling(
+                minimum_film = (Berenson(), HomogeneousNucleation(T_crit = 33.145)),
+                htc = ForcedConvectionFilm(),
+                transition = VoidTransition(
+                    measure = NearWallCell(),#BubblyLayerAverage(cap = 0.6e-3),
+                    alpha_1 = 0.1, alpha_2 = 0.95
+                    ),
+            ) : nothing,
+            start_iteration = 0
+        ),
         # --- source under-relaxation ----------------------------------------
         # Independent temporal damping of the two vapour sources. Both are
         # stiff, for different reasons: the bulk models respond to (T - T_sat)
@@ -629,13 +849,13 @@ BCs = assign(
 # Numerics
 # -----------------------------------------------------------------------------
 schemes = (
-    U     = Schemes(time=Euler, divergence=LUST, laplacian=Linear),
+    U     = Schemes(time=Euler, divergence=Upwind, laplacian=Linear),
     alpha = Schemes(time=Euler, divergence=Upwind, laplacian=Linear),
     p     = Schemes(time=Euler, divergence=Upwind, gradient=Gauss,    laplacian=Linear),
     p_rgh = Schemes(time=Euler, divergence=Upwind, gradient=Gauss,    laplacian=Linear),
     T     = Schemes(time=Euler, divergence=Upwind, gradient=Gauss,    laplacian=Linear),
-    omega = Schemes(time=Euler, divergence=LUST, gradient=Gauss,    laplacian=Linear),
-    k = Schemes(time=Euler, divergence=LUST, gradient=Gauss,    laplacian=Linear),
+    omega = Schemes(time=Euler, divergence=Upwind, gradient=Gauss,    laplacian=Linear),
+    k = Schemes(time=Euler, divergence=Upwind, gradient=Gauss,    laplacian=Linear),
     y     = Schemes(gradient=Midpoint),
 )
 
@@ -648,7 +868,7 @@ solvers = (
         convergence=1e-7, relax=0.9, rtol=1e-3, atol=1e-12, itmax=1000),
     alpha = SolverSetup(
         solver=Bicgstab(), preconditioner=DILU(),
-        convergence=1e-7, relax=1, rtol=1e-2, atol=1e-10),
+        convergence=1e-7, relax=0.9, rtol=1e-2, atol=1e-10),
     T = SolverSetup(
         solver=Bicgstab(), preconditioner=DILU(),
         convergence=1e-7, relax=1, rtol=1e-2, atol=1e-10,
@@ -670,16 +890,38 @@ solvers = (
 # Run to steady state. The residence time is L_total/U ~ 0.06 s for this
 # geometry, so a few hundred flow-throughs is ample for the thermal field and
 # the wall vapour generation to settle.
-dt = 2.0e-5
-n_flow_throughs = 2
-L_total = L_heated + 10*D
+dt = 2e-6#1.0e-5
+
+# THREE flow-throughs, not one, and the reason is specific to a VOID-driven
+# transition. The criterion fires on near-wall vapour fraction, and that field
+# does not exist until the flow has carried vapour the length of the plate - the
+# wall boiling dumps measured earlier showed the plate average settling at about
+# ONE flow-through. So departure cannot even be assessed until then, and the
+# excursion itself needs room after it: the wall time constant is ~2 ms and the
+# DNB traverse ~10-20 ms, against a 69 ms flow-through.
+#
+# One flow-through would show the void still developing and no departure, which
+# is indistinguishable from a criterion that never fires.
+n_flow_throughs = 3
+
+# 20 D of UNHEATED pipe, not 10: `dev_length_factor = 10` upstream AND
+# `exit_length_factor = 10` downstream. This was still counting the inlet
+# development only, which made `iterations` 16% short of the requested flow-
+# throughs - see `make_lh2_pipe_sector.jl`.
+L_total = L_heated + 20*D
 iterations = round(Int, n_flow_throughs*(L_total/U_inlet_mag)/dt)
+
+# runtime = Runtime(
+#     iterations = iterations,
+#     time_step = dt,
+#     write_interval = 100,#round(Int, iterations/50),
+#     adaptive = AdaptiveTimeStepping(maxCo=0.5, maxAlphaCo=0.25)
+# )
 
 runtime = Runtime(
     iterations = iterations,
     time_step = dt,
-    write_interval = 100,#round(Int, iterations/50),
-    adaptive = AdaptiveTimeStepping(maxCo=0.5, maxAlphaCo=0.25)
+    write_interval = 100,#round(Int, iterations/50)
 )
 
 config = Configuration(

@@ -272,3 +272,81 @@ end
     # constant-density vapour trips the compressibility requirement first
     @test occursin("compressible", err.msg) || occursin("IdealGas", err.msg)
 end
+
+# =============================================================================
+#  Interfacial area density
+# =============================================================================
+#
+#  The phase change models return a mass flux PER UNIT INTERFACE AREA, so the
+#  closure that turns it into a volumetric rate decides how the source responds
+#  to the shape of the `alpha` field - not merely its magnitude.
+# =============================================================================
+
+@testset "Interfacial area density" begin
+    D_B = 0.5e-3                # dispersed bubble diameter [m]
+    dispersed = DispersedBubbles(diameter = D_B)
+    resolved  = ResolvedInterface()
+
+    @testset "resolved interface is unchanged" begin
+        # VOF behaviour must be bit-identical - this is the pre-existing path.
+        for gm in (0.0, 1.0, 1234.0, 1e9)
+            @test interfacial_area_density(resolved, 0.5, gm) == gm
+        end
+    end
+
+    @testset "dispersed closure is 6 a(1-a)/d" begin
+        for a in (0.1, 0.5, 0.9, 0.998)
+            @test interfacial_area_density(dispersed, a, 999.0) ≈ 6*a*(1 - a)/D_B
+        end
+
+        # Symmetric under phase inversion, so it does not matter which phase
+        # `alpha` tracks.
+        @test interfacial_area_density(dispersed, 0.3, 0.0) ≈
+              interfacial_area_density(dispersed, 0.7, 0.0)
+
+        # Zero where there is no dispersed phase to have an interface with.
+        @test interfacial_area_density(dispersed, 0.0, 1e9) == 0.0
+        @test interfacial_area_density(dispersed, 1.0, 1e9) == 0.0
+
+        # Bounded by the value at alpha = 0.5, unlike |grad alpha|.
+        peak = 6*0.25/D_B
+        for a in range(0.0, 1.0, length = 51)
+            @test interfacial_area_density(dispersed, a, 1e9) <= peak + 1e-9
+        end
+
+        @test_throws ArgumentError DispersedBubbles(diameter = 0.0)
+        @test_throws ArgumentError DispersedBubbles(diameter = -1.0)
+    end
+
+    @testset "dispersed closure cannot amplify a checkerboard" begin
+        # THE POINT OF THE CHANGE. A 2*dx oscillation in `alpha` is the field
+        # that MAXIMISES |grad alpha| for a given amplitude, so with the resolved
+        # closure the phase change source grows with exactly the noise it should
+        # be indifferent to - a feedback loop with a checkerboard eigenmode.
+        #
+        # Values are the LH2 pipe: 86 um wall cells, alpha_liquid ~ 0.998.
+        h_cell = 8.585e-5
+        a_bulk = 0.998
+
+        base = interfacial_area_density(dispersed, a_bulk, 0.0)
+        for amplitude in (0.0, 0.01, 0.05, 0.1)
+            gm = amplitude/h_cell               # |grad alpha| of that oscillation
+            @test interfacial_area_density(dispersed, a_bulk, gm) == base
+            # ... while the resolved closure tracks it one-for-one.
+            @test interfacial_area_density(resolved, a_bulk, gm) == gm
+        end
+
+        # Quantify the gap that motivated the change: at amplitude 0.1 the
+        # resolved closure is ~49x the physical dispersed value.
+        gm_cb = 0.1/h_cell
+        @test interfacial_area_density(resolved, a_bulk, gm_cb)/base > 40
+
+        # And the resolved closure is LARGEST next to pure liquid, where there is
+        # least interface, and zero in a uniformly bubbly region, where there is
+        # most. The dispersed closure has neither pathology.
+        @test interfacial_area_density(resolved, 1.0, gm_cb) > 0
+        @test interfacial_area_density(dispersed, 1.0, gm_cb) == 0.0
+        @test interfacial_area_density(dispersed, 0.9, 0.0) > 0
+    end
+end
+

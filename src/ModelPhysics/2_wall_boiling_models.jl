@@ -74,25 +74,38 @@ struct BoilingState{F<:AbstractFloat}
     sigma::F
     h_fg::F
     g::F
+    cp_v::F
+    k_v::F
+    mu_v::F
 end
 Adapt.@adapt_structure BoilingState
 
 """
-    BoilingState(; T_w, T_l, T_sat, rho_l, rho_v, cp_l, k_l, mu_l, sigma, h_fg, g)
+    BoilingState(; T_w, T_l, T_sat, rho_l, rho_v, cp_l, k_l, mu_l, sigma, h_fg, g,
+                   cp_v=0, k_v=0, mu_v=0)
 
 Convenience constructor deriving `dT_sup` and `dT_sub` from the temperatures.
+
+The vapour transport properties default to zero because nucleate boiling never
+uses them - RPI only needs `rho_v`, through `q_e`. They are required by the film
+boiling models (see [`FilmBoiling`](@ref)), which transport heat *through* the
+vapour rather than into it, and those models return zero if they are left unset
+rather than silently using liquid values.
 """
-function BoilingState(; T_w, T_l, T_sat, rho_l, rho_v, cp_l, k_l, mu_l, sigma, h_fg, g)
+function BoilingState(; T_w, T_l, T_sat, rho_l, rho_v, cp_l, k_l, mu_l, sigma, h_fg, g,
+                        cp_v = 0, k_v = 0, mu_v = 0)
     F = promote_type(typeof(float(T_w)), typeof(float(rho_l)))
     return BoilingState{F}(
         F(T_w), F(T_l), F(T_sat), F(T_w - T_sat), F(T_sat - T_l),
-        F(rho_l), F(rho_v), F(cp_l), F(k_l), F(mu_l), F(sigma), F(h_fg), F(g))
+        F(rho_l), F(rho_v), F(cp_l), F(k_l), F(mu_l), F(sigma), F(h_fg), F(g),
+        F(cp_v), F(k_v), F(mu_v))
 end
 
 """Same state at a different wall temperature. Used by the wall-temperature solve."""
 @inline _at_wall_temperature(s::BoilingState{F}, T_w) where F = BoilingState{F}(
     T_w, s.T_l, s.T_sat, T_w - s.T_sat, s.dT_sub,
-    s.rho_l, s.rho_v, s.cp_l, s.k_l, s.mu_l, s.sigma, s.h_fg, s.g)
+    s.rho_l, s.rho_v, s.cp_l, s.k_l, s.mu_l, s.sigma, s.h_fg, s.g,
+    s.cp_v, s.k_v, s.mu_v)
 
 
 # =============================================================================
@@ -340,50 +353,107 @@ area over which quenching replaces single-phase convection. Always in [0, 1].
 function bubble_influence_fraction end
 
 """
-    DelValleKenning(; K_ref=4.8, dT_ref=80.0)
+    _saturate_area(x, saturation) -> A_b in [0, 1)
+
+How the raw coverage `x = K N_a pi D_d^2/4` is limited to a physical area
+fraction. Dispatched on `Val` so the branch resolves at compile time and the
+kernel stays branch-free.
+
+### `Val(:clamp)` - `A_b = min(1, x)`
+
+The classical Kurul & Podowski form. It assumes bubble influence zones TILE the
+wall without overlapping, so coverage grows linearly until the wall is full.
+
+It has a serious consequence that is not obvious from the formula. Once the clamp
+binds, `dA_b/dT_w` is exactly zero and
+
+    q_conv = h_c (T_w - T_l) (1 - A_b) = 0
+
+*identically*, and stays zero for every higher flux. The partition loses the one
+term that responds smoothly and linearly to the local liquid temperature, and the
+whole wall flux is left to `q_evap ~ dT_sup^n`. Measured on the LH2 pipe with the
+calibrated `n = 21.17`, the clamp binds between 36 and 38 kW/m^2 and the local
+slope `d(ln q)/d(ln dT_sup)` jumps discontinuously from 7.9 to 18.1 there.
+
+### `Val(:exponential)` - `A_b = 1 - exp(-x)`
+
+Poisson void probability: if influence zones of expected total coverage `x` are
+placed at RANDOM on the wall, the fraction left uncovered is `exp(-x)`. Bubbles
+nucleate at cavities that are not arranged to tile neatly, so overlap is the
+expected behaviour and the linear form is the special case, not this one.
+
+`A_b` then approaches unity asymptotically and never reaches a clamp, so
+`q_conv` decays smoothly instead of switching off. On the same LH2 case it
+retains 6% of the flux at CHF, the slope discontinuity disappears (the sequence
+runs 7.0, 9.0, 9.9, 10.7, 11.4, 13.0, 14.3, 16.1, 16.6) and the peak stiffness
+drops from 19.3 to 16.7. The predicted superheat at CHF moves by 0.2%, so an
+existing calibration transfers essentially unchanged.
+
+Prefer `:exponential` for anything approaching CHF. `:clamp` remains the default
+only so that existing results do not move silently.
+"""
+@inline _saturate_area(x::F, ::Val{:clamp}) where F = clamp(x, zero(F), one(F))
+@inline _saturate_area(x::F, ::Val{:exponential}) where F = -expm1(-max(x, zero(F)))
+
+function _check_saturation(saturation)
+    saturation in (:clamp, :exponential) || throw(ArgumentError(
+        "`saturation` must be :clamp or :exponential, got :$saturation"))
+    return Val(saturation)
+end
+
+"""
+    DelValleKenning(; K_ref=4.8, dT_ref=80.0, saturation=:clamp)
 
 Del Valle & Kenning (1985) influence area,
 
-    A_b = min(1, K * N_a * pi * D_d^2 / 4),   K = K_ref * exp(-dT_sub/dT_ref)
+    A_b = saturate(K * N_a * pi * D_d^2 / 4),   K = K_ref * exp(-dT_sub/dT_ref)
 
 The influence area is larger than the bubble footprint (`K > 1`) because the
 disturbance extends beyond the bubble itself, and it shrinks with subcooling.
 
-Capping at unity is essential, not cosmetic: with `N_a ~ dT_sup^1.8` the
-uncapped expression exceeds one at quite moderate superheat, at which point the
+Limiting `A_b` to unity is essential, not cosmetic: with `N_a ~ dT_sup^n` the
+raw expression exceeds one at quite moderate superheat, at which point the
 convective term would go negative and the partition would stop making sense.
+
+HOW it is limited matters as much as that it is - see [`_saturate_area`](@ref).
+`:clamp` reproduces the classical model and switches `q_conv` off abruptly;
+`:exponential` accounts for overlap between influence zones and does not.
 """
-struct DelValleKenning{F<:AbstractFloat} <: AbstractInfluenceArea
+struct DelValleKenning{F<:AbstractFloat,S} <: AbstractInfluenceArea
     K_ref::F
     dT_ref::F
+    saturation::Val{S}
 end
-DelValleKenning(; K_ref=4.8, dT_ref=80.0) = DelValleKenning(float(K_ref), float(dT_ref))
+DelValleKenning(; K_ref=4.8, dT_ref=80.0, saturation=:clamp) =
+    DelValleKenning(float(K_ref), float(dT_ref), _check_saturation(saturation))
 Adapt.@adapt_structure DelValleKenning
 
 @inline function bubble_influence_fraction(
     model::DelValleKenning, s::BoilingState{F}, N_a, D_d) where F
     K = F(model.K_ref)*exp(-max(s.dT_sub, zero(F))/F(model.dT_ref))
-    return clamp(K*N_a*F(pi)*D_d^2/4, zero(F), one(F))
+    return _saturate_area(K*N_a*F(pi)*D_d^2/4, model.saturation)
 end
 
 """
-    ConstantInfluenceArea(; K=2.0)
+    ConstantInfluenceArea(; K=2.0, saturation=:clamp)
 
-Fixed influence factor, `A_b = min(1, K * N_a * pi * D_d^2/4)`.
+Fixed influence factor, `A_b = saturate(K * N_a * pi * D_d^2/4)`.
 
 `K = 2` is the original RPI value (Kurul & Podowski). Useful as a control when
 assessing how much of a result comes from the subcooling dependence in
-[`DelValleKenning`](@ref).
+[`DelValleKenning`](@ref). See [`_saturate_area`](@ref) for `saturation`.
 """
-struct ConstantInfluenceArea{F<:AbstractFloat} <: AbstractInfluenceArea
+struct ConstantInfluenceArea{F<:AbstractFloat,S} <: AbstractInfluenceArea
     K::F
+    saturation::Val{S}
 end
-ConstantInfluenceArea(; K=2.0) = ConstantInfluenceArea(float(K))
+ConstantInfluenceArea(; K=2.0, saturation=:clamp) =
+    ConstantInfluenceArea(float(K), _check_saturation(saturation))
 Adapt.@adapt_structure ConstantInfluenceArea
 
 @inline bubble_influence_fraction(
     model::ConstantInfluenceArea, s::BoilingState{F}, N_a, D_d) where F =
-    clamp(F(model.K)*N_a*F(pi)*D_d^2/4, zero(F), one(F))
+    _saturate_area(F(model.K)*N_a*F(pi)*D_d^2/4, model.saturation)
 
 
 # =============================================================================
@@ -450,12 +520,13 @@ wall_boiling = RPI(
 )
 ```
 """
-struct RPI{S,D,Fr,A,P,F<:AbstractFloat} <: AbstractWallBoilingModel
+struct RPI{S,D,Fr,A,P,B,F<:AbstractFloat} <: AbstractWallBoilingModel
     site_density::S
     departure_diameter::D
     departure_frequency::Fr
     influence_area::A
     patches::P
+    film_boiling::B
     Pr_t::F
     alpha_min::F
     wall_capacity::F
@@ -471,6 +542,7 @@ function RPI(;
     departure_frequency = Cole(),
     influence_area = DelValleKenning(),
     patches,
+    film_boiling = nothing,
     Pr_t = 0.85,
     alpha_min = 0.1,
     wall_capacity = 0.0,
@@ -503,9 +575,27 @@ function RPI(;
     friction_velocity in (:k, :loglaw) || throw(ArgumentError(
         "`friction_velocity` must be :k or :loglaw, got :$friction_velocity"))
 
+    # Past CHF the wall flux DECREASES with wall temperature, so the flux-
+    # controlled inversion `solve_wall_temperature` is solving a non-monotone
+    # equation with up to three roots and no way to tell which is physical. The
+    # transient wall balance has no such ambiguity because it integrates along
+    # the curve rather than inverting it - so film boiling is only offered with
+    # a wall capacity, and the check is here rather than in a docstring because
+    # the failure mode otherwise is a plausible-looking wrong answer.
+    if film_boiling !== nothing && !(wall_capacity > 0)
+        throw(ArgumentError(
+            "`film_boiling` requires `wall_capacity > 0`.\n" *
+            "Past CHF the boiling curve turns over, so `q_w(T_w)` is non-monotone and\n" *
+            "inverting it at prescribed flux has up to three roots - bisection would\n" *
+            "return one of them silently. The transient wall balance follows the curve\n" *
+            "instead. Set `wall_capacity = rho_w*cp_w*thickness` [J/m^2/K]; note that\n" *
+            "`cp` for metals collapses as T^3 at cryogenic temperature, so a handbook\n" *
+            "room-temperature value will make the wall far too sluggish."))
+    end
+
     return RPI(site_density, departure_diameter, departure_frequency, influence_area,
-               patches_tuple, float(Pr_t), float(alpha_min), float(wall_capacity),
-               n_iterations, start_iteration, friction_velocity)
+               patches_tuple, film_boiling, float(Pr_t), float(alpha_min),
+               float(wall_capacity), n_iterations, start_iteration, friction_velocity)
 end
 
 wall_boiling_patches(model::RPI) = model.patches
@@ -577,6 +667,103 @@ the same routine can be used on both sides of onset.
 
     return (q_c=q_c, q_q=q_q, q_e=q_e, A_b=A_b, N_a=N_a, D_d=D_d, f=f)
 end
+
+"""
+    wall_heat_partition(rpi, state, h_c, film_closure)
+        -> (q_c, q_q, q_e, q_f, w, A_b, N_a, D_d, f)
+
+The partition blended with a film boiling branch. `film_closure` is a
+[`FilmClosure`](@ref) built once per face by [`film_closure`](@ref), or `nothing`
+for pure nucleate boiling.
+
+The blended flux is
+
+    q_w = (1 - w) min(q_c + q_q + q_e, q_CHF) + w h_f max(dT_sup, dT_min)
+
+and the components are reported already scaled, so summing them always gives the
+wall flux whichever branch the wall is on. With `film_closure === nothing`,
+`w = 0`, the cap is inactive and `q_f = 0`, making the result identical to the
+three-argument form.
+
+### Why the nucleate branch is CAPPED and not merely de-weighted
+
+`(1 - w)(q_c + q_q + q_e)` alone does not work, and the failure is dramatic.
+`N_a ~ dT_sup^n` with `n` calibrated at 21.17 for LH2 means the evaporative term
+grows by more than five orders of magnitude across a transition only 2 K wide. A
+linear weight cannot suppress that: instead of turning over, the curve spikes to
+`10^7 kW/m^2` in the middle of the transition and then collapses. Every
+downstream quantity - the vapour source, the latent sink, the wall temperature -
+follows it.
+
+Capping the nucleate contribution at `q_CHF` fixes this without another tuning
+constant, because it is simply what CHF MEANS: nucleate boiling cannot deliver
+more than the critical heat flux, so extrapolating a site-density power law past
+the point where the wall stops being liquid-wetted is meaningless. The cap
+engages exactly where `w` starts to rise - `dT_lo` is by construction the
+superheat at which `q_RPI = q_CHF` - so the two act together and the result is
+continuous.
+
+Above the transition the film term uses `max(dT_sup, dT_min)`, which equals
+`h_f dT_min` at the top of the blend and `h_f dT_sup` beyond it. That is what
+makes the join to the film branch continuous rather than a step.
+"""
+@inline function wall_heat_partition(
+    rpi::RPI, s::BoilingState{F}, h_c, fc, alpha_v = zero(F)) where F
+
+    p = wall_heat_partition(rpi, s, h_c)
+    w = film_boiling_fraction(fc, s.dT_sup, alpha_v)
+
+    # `cap` is 1 below CHF and falls as `1/q_RPI` above it, so the nucleate
+    # contribution saturates rather than following the power law upward. Written
+    # as a multiplicative factor so it stays branch-free for the GPU kernel.
+    keep = (one(F) - w)*_nucleate_cap(fc, p.q_c + p.q_q + p.q_e)
+    q_f = _film_flux(fc, s, w)
+
+    return (q_c = keep*p.q_c, q_q = keep*p.q_q, q_e = keep*p.q_e, q_f = q_f, w = w,
+            A_b = p.A_b, N_a = p.N_a, D_d = p.D_d, f = p.f)
+end
+
+@inline _nucleate_cap(::Nothing, q_rpi::F) where F = one(F)
+
+# A cap is only meaningful for a POSITIVE, FINITE critical heat flux. Anything
+# else means the CHF closure could not be evaluated - a property not yet
+# initialised, a fluid outside the correlation's range - and the correct response
+# is to leave the nucleate branch alone rather than to scale it.
+#
+# This is defence in depth behind the guards in the closures themselves, and it
+# matters because the failure is silent and total: `cap = 0` zeroes the whole
+# partition at every wall temperature, so the wall energy balance reduces to
+# `C dT_w/dt = q_gen` and the temperature runs away until the bracket overflows.
+# A cap that cannot be computed must never be mistaken for a cap of zero.
+@inline function _nucleate_cap(fc, q_rpi::F) where F
+    q_chf = F(fc.q_chf)
+    (q_chf > zero(F) && isfinite(q_chf)) || return one(F)
+    return min(one(F), q_chf/max(q_rpi, eps(F)))
+end
+
+@inline _film_flux(::Nothing, s::BoilingState{F}, w) where F = zero(F)
+
+# The `max(dT_sup, dT_min)` exists ONLY to make the superheat blend join the film
+# branch continuously at the top of its interval - it is meaningless for a
+# void-driven blend, where `dT_hi` plays no part in locating the transition. So
+# dispatch on the driver rather than applying it unconditionally.
+#
+# It also has to be dispatched for safety: when the CHF closure cannot be
+# evaluated, `dT_hi` is not finite, and `w*h_f*max(dT_sup, Inf)` evaluates to
+# `0*Inf = NaN` even where `w` is exactly zero and the film branch is doing
+# nothing at all.
+@inline _film_flux(fc, s::BoilingState{F}, w) where F =
+    w*fc.h_f*_film_dT(fc.model.transition, s.dT_sup, F(fc.dT_hi))
+
+# `_film_dT` dispatches on the transition drivers, which are defined in
+# `2_film_boiling_models.jl` - included after this file - so its methods live
+# there.
+
+"""Sum of a partition, whichever form produced it."""
+@inline _partition_total(p::NamedTuple{(:q_c,:q_q,:q_e,:A_b,:N_a,:D_d,:f)}) =
+    p.q_c + p.q_q + p.q_e
+@inline _partition_total(p::NamedTuple{(:q_c,:q_q,:q_e,:q_f,:w,:A_b,:N_a,:D_d,:f)}) =
+    p.q_c + p.q_q + p.q_e + p.q_f
 
 """
     solve_wall_temperature(rpi, state, q_w, h_c) -> (T_w, partition)
@@ -709,26 +896,34 @@ time level:
 and keeps the previous behaviour unchanged.
 """
 @inline function solve_wall_temperature_transient(
-    rpi::RPI, s::BoilingState{F}, q_gen, h_c, T_w_prev, dt) where F
+    rpi::RPI, s::BoilingState{F}, q_gen, h_c, T_w_prev, dt, fc = nothing,
+    alpha_v = zero(F)) where F
 
     C = F(rpi.wall_capacity)
     # No inertia, or no usable previous state (first step): fall back to the
     # steady inversion, which is also what seeds `T_w_prev`.
     (C <= zero(F) || !(T_w_prev > zero(F))) &&
-        return solve_wall_temperature(rpi, s, q_gen, h_c)
+        return _steady_fallback(rpi, s, q_gen, h_c, fc, alpha_v)
 
     Cdt = C/F(dt)
 
     # f increases with T_w. Lower bound: the coldest state in play, where Q -> 0
     # and the storage term is at its most negative. Upper bound: the temperature
     # the wall would reach on storage alone with Q = 0, which cannot be exceeded.
+    #
+    # Monotonicity of `f` survives the film boiling blend even though the flux
+    # term does NOT: through the transition `Q(T_w)` falls, but the storage term
+    # `Cdt*(T_w - T_w_prev)` rises, and for the timestep to resolve the wall time
+    # constant at all `Cdt` must dominate the slope of the boiling curve. That is
+    # the same condition needed for the integration to be meaningful, so where
+    # bisection would be ill-posed the timestep is already too large to trust.
     lo = min(s.T_l, s.T_sat, T_w_prev)
     hi = max(T_w_prev + q_gen/Cdt, lo) + max(q_gen/max(h_c, eps(F)), zero(F))
 
     for _ in 1:rpi.n_iterations
         mid = (lo + hi)/2
-        p = wall_heat_partition(rpi, _at_wall_temperature(s, mid), h_c)
-        f = Cdt*(mid - T_w_prev) + (p.q_c + p.q_q + p.q_e) - q_gen
+        p = wall_heat_partition(rpi, _at_wall_temperature(s, mid), h_c, fc, alpha_v)
+        f = Cdt*(mid - T_w_prev) + _partition_total(p) - q_gen
         if f < zero(F)
             lo = mid
         else
@@ -737,7 +932,18 @@ and keeps the previous behaviour unchanged.
     end
 
     T_w = (lo + hi)/2
-    return (T_w, wall_heat_partition(rpi, _at_wall_temperature(s, T_w), h_c))
+    return (T_w,
+            wall_heat_partition(rpi, _at_wall_temperature(s, T_w), h_c, fc, alpha_v))
+end
+
+# First step, before `T_w_prev` exists. Seeded from the NUCLEATE inversion even
+# when film boiling is enabled: it is well posed, and it starts the wall on the
+# low branch, which is where a heated tube physically starts. The transient solve
+# then carries it up through DNB if the flux warrants.
+@inline function _steady_fallback(rpi, s, q_gen, h_c, fc, alpha_v)
+    T_w, _ = solve_wall_temperature(rpi, s, q_gen, h_c)
+    return (T_w,
+            wall_heat_partition(rpi, _at_wall_temperature(s, T_w), h_c, fc, alpha_v))
 end
 
 """

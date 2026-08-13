@@ -41,7 +41,7 @@ state: nothing reads them back. They exist because the partition is the whole
 substance of the model, and a run that cannot show how the wall flux was split
 cannot be assessed.
 """
-struct WallBoilingState{M,B,S,F}
+struct WallBoilingState{M,B,S,F,L}
     model::M
     patch_BCs::B
     mdot_wall::S
@@ -56,7 +56,43 @@ struct WallBoilingState{M,B,S,F}
     mdot_area::F
     T_liquid::F
     h_conv::F
+    q_film::F
+    w_film::F
+    alpha_wall::F
+    D_departure::F
+    layer::L
 end
+
+"""
+    BubblyLayerStencil
+
+Precomputed association between each heated wall face and the cells lying within
+the bubbly layer in front of it, so the layer-averaged void fraction of
+[`BubblyLayerAverage`](@ref) can be assembled with a contiguous per-face sum.
+
+Built ONCE at setup - the mesh does not move - and stored flat rather than as a
+vector of vectors so the runtime pass stays GPU friendly.
+
+- `cells`  cell IDs, grouped by face
+- `dist`   wall-normal distance of each cell centre [m], parallel to `cells`
+- `vol`    cell volume [m^3], parallel to `cells`
+- `range`  `(first, last)` index into the three arrays above, per face
+- `faceID` the wall face each range belongs to
+
+`dist` is carried per cell rather than filtered at build time because the layer
+thickness `L = min(D_d, cap)` depends on the LOCAL departure diameter, which
+changes every step. The stencil is therefore built out to `cap` and the runtime
+sum selects `dist < L` from it.
+"""
+struct BubblyLayerStencil{VI,VF}
+    cells::VI
+    dist::VF
+    vol::VF
+    range_lo::VI
+    range_hi::VI
+    faceID::VI
+end
+Adapt.@adapt_structure BubblyLayerStencil
 
 """
     initialise_wall_boiling(wall_boiling, model, config)
@@ -128,6 +164,19 @@ different - and currently unimplemented - coupling.)"""))
         # either one outside the kernel gets the time level wrong.
         FaceScalarField(mesh),  # T_liquid   [K]  near-wall liquid temperature
         FaceScalarField(mesh),  # h_conv     [W/m^2/K]
+        # Film boiling branch. `w_film` is the diagnostic that matters: it says
+        # where on the boiling curve each face sits, and a run that is nowhere
+        # near DNB should show it identically zero.
+        FaceScalarField(mesh),  # q_film     [W/m^2]
+        FaceScalarField(mesh),  # w_film     [-]
+        FaceScalarField(mesh),  # alpha_wall [-]  vapour fraction the transition saw
+        # Departure diameter per face, which sets the bubbly layer thickness.
+        # Written by the partition pass and read by the layer average.
+        FaceScalarField(mesh),  # D_departure [m]
+        # Bubbly-layer stencil, built only when a `BubblyLayerAverage` measure is
+        # in use. `nothing` otherwise, so a case that does not need it pays
+        # neither the setup search nor the memory.
+        build_bubbly_layer_stencil(wb, patch_BCs, mesh),
     )
 end
 
@@ -154,6 +203,99 @@ resulting vapour generation into `wbs.mdot_wall` [kg/m^3/s].
 Returns the field, or `nothing` when wall boiling is not active.
 """
 wall_boiling_source!(::Nothing, model, p_abs, sat, h_fg, g_mag, sigma, dt, config) = nothing
+
+"""
+    build_bubbly_layer_stencil(rpi, patch_BCs, mesh) -> BubblyLayerStencil or nothing
+
+Associate each heated wall face with the cells in front of it, out to the
+`BubblyLayerAverage` cap. Returns `nothing` unless a measure that needs it is in
+use, so a case that does not want it pays neither the setup search nor the
+memory.
+
+### Method
+
+The wall-normal distance from a face to a cell is the projection of the centre
+offset onto the face's inward normal. A cell joins a face's layer when
+
+    0 < d_normal < cap        and        |offset - d_normal*n| < r_face
+
+with `r_face` the face's own radius, from its area. The second condition keeps
+the layer a COLUMN in front of the face rather than a hemisphere around it -
+without it a cell would be claimed by every face within `cap` and the average
+would smear ALONG the wall as well as away from it, which is the opposite of
+what a near-wall measure should do.
+
+Cells that satisfy both for several faces go to the nearest, so each contributes
+its volume exactly once and the result stays a true volume average.
+
+### Cost
+
+Setup only. The mesh does not move, so it is never rebuilt, and the runtime pass
+is a contiguous per-face sum.
+"""
+build_bubbly_layer_stencil(::Nothing, patch_BCs, mesh) = nothing
+
+function build_bubbly_layer_stencil(rpi::RPI, patch_BCs, mesh)
+    fb = rpi.film_boiling
+    (fb === nothing || !needs_layer_average(fb)) && return nothing
+    cap = fb.transition.measure.cap
+
+    faces = Array(mesh.faces)
+    cells = Array(mesh.cells)
+
+    fIDs = Int[]
+    for BC in patch_BCs
+        append!(fIDs, collect(BC.IDs_range))
+    end
+    isempty(fIDs) && return nothing
+
+    TF = typeof(cells[1].volume)
+
+    # Stored boundary normals point OUT of the domain, so the fluid side is -n.
+    fc = [faces[f].centre for f in fIDs]
+    fn = [-faces[f].normal for f in fIDs]
+    fr = [sqrt(faces[f].area/pi) for f in fIDs]
+
+    best_face = zeros(Int, length(cells))
+    best_d    = fill(TF(Inf), length(cells))
+    for i in eachindex(fIDs), cID in eachindex(cells)
+        off = cells[cID].centre - fc[i]
+        dn  = off ⋅ fn[i]
+        (dn > 0 && dn < cap) || continue
+        dtan = sqrt(max(off ⋅ off - dn*dn, zero(TF)))
+        dtan < fr[i] || continue
+        if dn < best_d[cID]
+            best_d[cID] = dn
+            best_face[cID] = i
+        end
+    end
+
+    cellsv = Int[]; distv = TF[]; volv = TF[]
+    lo = Int[]; hi = Int[]
+    for i in eachindex(fIDs)
+        push!(lo, length(cellsv) + 1)
+        for cID in eachindex(cells)
+            best_face[cID] == i || continue
+            push!(cellsv, cID)
+            push!(distv, best_d[cID])
+            push!(volv, cells[cID].volume)
+        end
+        push!(hi, length(cellsv))
+    end
+
+    n_empty = count(i -> hi[i] < lo[i], eachindex(fIDs))
+    n_empty == 0 || @warn """`BubblyLayerAverage` found no cells in front of \
+$n_empty of $(length(fIDs)) wall faces. Those faces fall back to the wall-cell \
+value, so the criterion is mesh dependent there. Usually means `cap` is below \
+the first cell height."""
+
+    @info("Bubbly layer stencil built",
+          faces = length(fIDs), cap_mm = cap*1e3,
+          cells = length(cellsv),
+          mean_cells_per_face = round(length(cellsv)/length(fIDs), digits = 1))
+
+    return BubblyLayerStencil(cellsv, distv, volv, lo, hi, copy(fIDs))
+end
 
 function wall_boiling_source!(
     wbs::WallBoilingState, model, p_abs, sat, h_fg, g_mag, sigma, dt, config)
@@ -188,20 +330,75 @@ function wall_boiling_source!(
         kernel!(
             wbs.mdot_wall, wbs.u_tau, wbs.T_wall, wbs.q_evap, wbs.q_quench, wbs.q_conv,
             wbs.dT_sup, wbs.y_plus, wbs.A_b, wbs.mdot_area, wbs.T_liquid, wbs.h_conv,
+            wbs.q_film, wbs.w_film, wbs.alpha_wall, wbs.D_departure,
             wbs.model, BC.value, dt, faces, cells, boundary_cellsID, start_ID,
             model.fluid.alpha, model.energy.T, p_abs,
             phase_l.rho, phase_l.cp, phase_l.k, phase_l.mu,
-            phase_v.rho, sat, h_fg, g_mag, sigma)
+            phase_v.rho, phase_v.cp, phase_v.k, phase_v.mu,
+            sat, h_fg, g_mag, sigma)
     end
 
+    # Layer-averaged void, if the transition wants it. Done AFTER the partition
+    # pass because it needs `D_d`, which the pass writes - so the average used at
+    # step n is built from the departure diameter of step n-1. That lag is
+    # harmless: `D_d` varies smoothly and the alternative is an inner iteration
+    # for a quantity that only sets a blend width.
+    update_layer_void!(wbs, model.fluid.alpha, config)
+
     return wbs.mdot_wall
+end
+
+"""
+    update_layer_void!(wbs, alpha, config)
+
+Fill `alpha_wall` with the volume-averaged vapour fraction over the bubbly layer
+in front of each heated wall face. No-op when the transition uses the wall-cell
+value, in which case the kernel reads `alpha` directly.
+"""
+update_layer_void!(wbs, alpha, config) =
+    _update_layer_void!(wbs, wbs.layer, alpha, config)
+
+_update_layer_void!(wbs, ::Nothing, alpha, config) = nothing
+
+function _update_layer_void!(wbs, layer::BubblyLayerStencil, alpha, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    ndrange = length(layer.faceID)
+    kernel! = _layer_void_kernel!(_setup(backend, workgroup, ndrange)...)
+    kernel!(wbs.alpha_wall, layer.cells, layer.dist, layer.vol,
+            layer.range_lo, layer.range_hi, layer.faceID,
+            alpha, wbs.D_departure)
+end
+
+@kernel inbounds=true function _layer_void_kernel!(
+    alpha_wall, cellsv, distv, volv, lo, hi, faceID, alpha, D_dep)
+    i = @index(Global)
+    fID = faceID[i]
+    TF = eltype(alpha_wall.values)
+
+    # Layer thickness for THIS face: the local departure diameter, already
+    # bounded by `cap` when the stencil was built.
+    L = D_dep[fID]
+
+    num = zero(TF); den = zero(TF)
+    for k in lo[i]:hi[i]
+        distv[k] < L || continue
+        v = volv[k]
+        num += v*(one(TF) - alpha[cellsv[k]])   # vapour fraction
+        den += v
+    end
+    # No cells inside the layer (cap below the first cell height): fall back to
+    # the wall cell, which is what `NearWallCell` would have given.
+    alpha_wall[fID] = den > zero(TF) ? num/den : alpha_wall[fID]
 end
 
 @kernel inbounds=true function _wall_boiling_source!(
     mdot_wall, u_tau_f, T_wall, q_evap, q_quench, q_conv,
     dT_sup_f, y_plus_f, A_b_f, mdot_area_f, T_liquid_f, h_conv_f,
+    q_film_f, w_film_f, alpha_wall_f, D_dep_f,
     rpi, q_w, dt, faces, cells, boundary_cellsID, start_ID,
-    alpha, T, p_abs, rho_l_f, cp_l_f, k_l_f, mu_l_f, rho_v_f, sat, h_fg, g_mag, sigma)
+    alpha, T, p_abs, rho_l_f, cp_l_f, k_l_f, mu_l_f,
+    rho_v_f, cp_v_f, k_v_f, mu_v_f, sat, h_fg, g_mag, sigma)
 
     i = @index(Global)
     fID = i + start_ID - 1
@@ -234,22 +431,52 @@ end
 
     state = BoilingState{TF}(
         T_l, T_l, T_sat, T_l - T_sat, T_sat - T_l,
-        rho_l, rho_v, cp_l, k_l, mu_l, TF(sigma), TF(h_fg), TF(g_mag))
+        rho_l, rho_v, cp_l, k_l, mu_l, TF(sigma), TF(h_fg), TF(g_mag),
+        cp_v_f[cID], k_v_f[cID], mu_v_f[cID])
+
+    # Resolve the post-CHF blend for this face: the CHF superheat, the minimum
+    # film boiling superheat and the film heat transfer coefficient. Done ONCE
+    # here rather than inside the wall temperature iteration, since none of the
+    # three depends on `T_w`. `nothing` when no film boiling model is attached,
+    # in which case every film term below compiles out.
+    fc = film_closure(rpi, rpi.film_boiling, state, h_c, y_plus, u_tau)
+
+    # Vapour fraction the transition sees. `NearWallCell` reads the wall cell
+    # directly; `BubblyLayerAverage` uses the layer average assembled after the
+    # previous pass, which is already sitting in `alpha_wall_f`. Selecting here
+    # rather than in the blend keeps the choice out of the bisection loop.
+    alpha_v = wall_void_fraction(rpi.film_boiling, alpha[cID], alpha_wall_f[fID])
 
     # Transient wall energy balance when the model carries a wall capacity;
     # identical to the steady inversion when it does not. `T_wall` holds the
     # PREVIOUS step's value on entry and is overwritten below.
     T_w, part = solve_wall_temperature_transient(
-        rpi, state, TF(q_w), h_c, T_wall[fID], TF(dt))
+        rpi, state, TF(q_w), h_c, T_wall[fID], TF(dt), fc, alpha_v)
 
     # Ramp the source out as the near-wall liquid disappears: RPI has no
     # validity once the wall is not liquid-wetted (see the `RPI` docstring).
     factor = wall_boiling_liquid_factor(rpi, alpha[cID])
 
+    # Evaporative flux driving vapour generation. In the transition and film
+    # regimes the heat crossing the vapour film evaporates liquid at the film
+    # interface, so `q_f` belongs here alongside the nucleation term `q_e`.
+    #
+    # Both are ramped out together by `factor` as the near-wall liquid runs out.
+    # That is deliberate: once the wall cell holds no liquid there is nothing
+    # there to evaporate, and the interface has moved away from the wall. The
+    # wall flux then enters the vapour as SENSIBLE heat through the unchanged
+    # `FixedHeatFlux` condition, superheating the film, and evaporation at the
+    # film-liquid interface becomes the job of the bulk interfacial phase change
+    # model rather than of a wall closure. Fully established film boiling
+    # therefore requires that model to be active - a case run with wall boiling
+    # as the only phase change source will heat the film without ever consuming
+    # the latent heat.
+    q_evaporative = part.q_e + part.q_f
+
     # W/m^2 over the face -> kg/m^3/s in the owner cell. The same `h_fg` used
     # here is the one the energy equation's latent heat sink uses, so the energy
-    # removed from the liquid is exactly `q_e * area`.
-    mdot_cell = factor*part.q_e*area/(TF(h_fg)*volume)
+    # removed from the liquid is exactly `q_evaporative * area`.
+    mdot_cell = factor*q_evaporative*area/(TF(h_fg)*volume)
 
     # A cell can own more than one wall face (a corner cell, or a boundary layer
     # cell on a curved wall), so the accumulation must be atomic.
@@ -259,6 +486,15 @@ end
     q_evap[fID] = factor*part.q_e
     q_quench[fID] = part.q_q
     q_conv[fID] = part.q_c
+    q_film_f[fID] = factor*part.q_f
+    w_film_f[fID] = part.w
+    # Layer thickness for the NEXT pass's average, bounded by `cap`. Zero when
+    # the measure does not use a layer, in which case nothing reads it.
+    D_dep_f[fID] = void_layer_thickness_for(rpi.film_boiling, part.D_d)
+    # `NearWallCell` records what it used, so the field means the same thing in
+    # the output whichever measure is active.
+    alpha_wall_f[fID] =
+        recorded_void_fraction(rpi.film_boiling, alpha[cID], alpha_wall_f[fID])
 
     # Diagnostics. The flux partition IS the model, so a run that cannot show
     # how the wall flux was split cannot be assessed - and `dT_sup` in
@@ -266,7 +502,7 @@ end
     dT_sup_f[fID] = T_w - T_sat
     y_plus_f[fID] = y_plus
     A_b_f[fID] = part.A_b
-    mdot_area_f[fID] = factor*part.q_e/TF(h_fg)      # kg/m^2/s at the wall
+    mdot_area_f[fID] = factor*q_evaporative/TF(h_fg)  # kg/m^2/s at the wall
 end
 
 """
@@ -419,6 +655,8 @@ Fields written:
 | `T_wall` | K | wall temperature from the inverted partition |
 | `dT_sup` | K | wall superheat, `T_wall - T_sat` |
 | `q_conv`, `q_quench`, `q_evap` | W/m^2 | the three RPI components |
+| `q_film` | W/m^2 | the film boiling component, zero without [`FilmBoiling`](@ref) |
+| `w_film` | - | film boiling blend weight: 0 nucleate, 1 fully blanketed |
 | `q_total` | W/m^2 | their sum - should equal the imposed flux |
 | `evap_fraction` | - | `q_evap/q_total`, the share generating vapour |
 | `mdot_area` | kg/m^2/s | evaporative mass flux at the wall |
@@ -427,6 +665,10 @@ Fields written:
 
 `q_total` is worth checking first: it must reproduce the `FixedHeatFlux` value,
 and any departure means the wall temperature solve did not converge.
+
+`w_film` is the one to look at on a case near departure - it localises DNB on the
+surface, and a run intended to stay in nucleate boiling should show it
+identically zero.
 """
 
 function write_wall_boiling_surface(
@@ -463,6 +705,7 @@ function write_wall_boiling_surface(
     q_evap = get_face(:q_evap); A_b = get_face(:A_b)
     y_plus = get_face(:y_plus); u_tau = get_face(:u_tau)
     mdot_area = get_face(:mdot_area)
+    q_film = get_face(:q_film); w_film = get_face(:w_film)
 
     filename = "$(prefix)_$(iteration).vtu"
     open(filename, "w") do io
@@ -505,7 +748,7 @@ function write_wall_boiling_surface(
    </Cells>
    <CellData>""")
 
-        q_total = [q_conv[f] + q_quench[f] + q_evap[f] for f in fIDs]
+        q_total = [q_conv[f] + q_quench[f] + q_evap[f] + q_film[f] for f in fIDs]
         evap_frac = [q_total[i] > 0 ? q_evap[f]/q_total[i] : 0.0
                      for (i, f) in enumerate(fIDs)]
 
@@ -515,6 +758,8 @@ function write_wall_boiling_surface(
             ("q_conv",        [q_conv[f] for f in fIDs]),
             ("q_quench",      [q_quench[f] for f in fIDs]),
             ("q_evap",        [q_evap[f] for f in fIDs]),
+            ("q_film",        [q_film[f] for f in fIDs]),
+            ("w_film",        [w_film[f] for f in fIDs]),
             ("q_total",       q_total),
             ("evap_fraction", evap_frac),
             ("mdot_area",     [mdot_area[f] for f in fIDs]),
@@ -596,9 +841,11 @@ function wall_boiling_report(wbs::WallBoilingState, mesh)
     qq  = Array(wbs.q_quench.values);  qe  = Array(wbs.q_evap.values)
     Ab  = Array(wbs.A_b.values);       md  = Array(wbs.mdot_area.values)
     yp  = Array(wbs.y_plus.values);    hc  = Array(wbs.h_conv.values)
+    qf  = Array(wbs.q_film.values);    wf  = Array(wbs.w_film.values)
 
     A = 0.0
-    acc = zeros(10)          # T_w, T_l, dT_sup, q_c, q_q, q_e, A_b, mdot, y+, h_c
+    # T_w, T_l, dT_sup, q_c, q_q, q_e, A_b, mdot, y+, h_c, q_f, w_film
+    acc = zeros(12)
     q_applied = 0.0
     for BC in wbs.patch_BCs
         for f in BC.IDs_range
@@ -606,16 +853,17 @@ function wall_boiling_report(wbs::WallBoilingState, mesh)
             A += a
             q_applied += BC.value*a
             acc .+= a .* (T_w[f], T_l[f], dTs[f], qc[f], qq[f], qe[f],
-                          Ab[f], md[f], yp[f], hc[f])
+                          Ab[f], md[f], yp[f], hc[f], qf[f], wf[f])
         end
     end
     A <= 0 && return nothing
     acc ./= A
     q_applied /= A
-    q_total = acc[4] + acc[5] + acc[6]
+    q_total = acc[4] + acc[5] + acc[6] + acc[11]
 
     return (area=A, T_wall=acc[1], T_liquid=acc[2], dT_sup=acc[3],
-            q_conv=acc[4], q_quench=acc[5], q_evap=acc[6],
+            q_conv=acc[4], q_quench=acc[5], q_evap=acc[6], q_film=acc[11],
+            w_film=acc[12],
             q_total=q_total, q_applied=q_applied,
             closure=q_total/max(abs(q_applied), eps()),
             evap_frac=q_evap_frac(acc[6], q_total),
@@ -655,6 +903,7 @@ function report_wall_boiling(wbs::WallBoilingState, mesh; iteration=nothing)
         "$(lbl)wall boiling (area-averaged)",
         T_wall = r.T_wall, dT_sup = r.dT_sup,
         q_conv = r.q_conv, q_quench = r.q_quench, q_evap = r.q_evap,
+        q_film = r.q_film, w_film = r.w_film,
         q_applied = r.q_applied, closure = r.closure, evap_frac = r.evap_frac,
         mdot_area = r.mdot_area, y_plus = r.y_plus,
     )

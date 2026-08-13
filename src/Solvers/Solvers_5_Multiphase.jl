@@ -87,6 +87,34 @@ multiphase_rho_ref(fluid, phases, main) = get(fluid.physics_properties, :rho_ref
 multiphase_wall_boiling(fluid) = get(fluid.physics_properties, :wall_boiling, nothing)
 
 """
+    multiphase_interfacial_area(fluid, mp_model) -> AbstractInterfacialArea
+
+Interfacial area closure for the BULK phase change source, from the optional
+`interfacial_area` keyword of `Fluid{Multiphase}`.
+
+The default is taken from the multiphase model, which is the only setting that
+is self-consistent:
+
+- `VOF`     -> [`ResolvedInterface`](@ref), `a_i = |grad(alpha)|`. The interface
+               is tracked, so its area is where `alpha` changes.
+- `Mixture` -> [`DispersedBubbles`](@ref) at the model's own `diameter`. Drift
+               flux has no resolved interface; it has bubbles, and it has already
+               committed to their size in the slip closure
+               (`tau_d = rho_d d^2/(18 mu_c)`). Closing mass transfer with the
+               same `d` keeps the two consistent and adds no free parameter.
+
+Override only to reproduce the previous behaviour or to A/B the two closures -
+`interfacial_area = ResolvedInterface()` on a `Mixture` restores the VOF form,
+including its checkerboard feedback (see [`ResolvedInterface`](@ref)).
+"""
+function multiphase_interfacial_area(fluid, mp_model)
+    area = get(fluid.physics_properties, :interfacial_area, nothing)
+    area === nothing || return area
+    return mp_model isa Mixture ?
+        DispersedBubbles(diameter = mp_model.diameter) : ResolvedInterface()
+end
+
+"""
 Under-relaxation factor for the BULK interfacial phase change rate, from the
 optional `phase_change_relax` keyword of `Fluid{Multiphase}`. Defaults to 1
 (no relaxation), which reproduces the unrelaxed behaviour exactly.
@@ -1298,6 +1326,14 @@ function MULTIPHASE(
     h_fg         = multiphase_h_fg(model.fluid)
     R_vapour     = validate_phase_change_setup(model.fluid, phases, secondary)
 
+    # How the interfacial mass flux becomes a volumetric rate. Defaulted from the
+    # multiphase model rather than fixed, because the two models have genuinely
+    # different interfaces - see `multiphase_interfacial_area`.
+    interfacial_area = multiphase_interfacial_area(model.fluid, mp_model)
+    if phase_change !== nothing
+        @info "Bulk phase change interfacial area" closure=typeof(interfacial_area).name.wrapper
+    end
+
     # --- wall nucleate boiling ----------------------------------------------
     # A second, independent source of vapour: the bulk models above act on the
     # liquid/vapour interface, this one on the heated wall. Both write into the
@@ -1391,6 +1427,11 @@ function MULTIPHASE(
         DUmDt  = VectorField(mesh)
         Ur     = VectorField(mesh)
         Urf    = FaceVectorField(mesh)
+        # Face slip velocity for the MOMENTUM diffusion stress, built from the
+        # force-balance drift velocity ALONE. Kept separate from `Urf` because
+        # `Urf` may additionally carry turbulent dispersion, which must not reach
+        # the momentum equation - see the note at `turbulent_dispersion!` below.
+        Urf_slip = FaceVectorField(mesh)
         ∇U     = Grad{schemes.U.gradient}(U)
 
         # Implicit volume-fraction transport. See `build_alpha_equation` for why
@@ -1410,6 +1451,26 @@ function MULTIPHASE(
 
         alpha_eqn   = implicit_alpha ?
             build_alpha_equation(model, mdotf, Dtf, S_alpha, config) : nothing
+
+        # WHERE turbulent dispersion is applied. Two routes exist and they model
+        # the SAME physics, so exactly one must be active:
+        #
+        #   Laplacian route  -div(D_t grad(alpha)) in the alpha equation. Needs
+        #                    the implicit transport, and is the better of the two
+        #                    - it is a diffusion term discretised as one.
+        #   drift-flux route dispersion folded into `Ur` and carried by the drift
+        #                    flux. The only option on the MULES path, and it
+        #                    carries the hardcoded `Sc_t` above rather than the
+        #                    user's `dispersion_Sc`.
+        #
+        # Running both double-counts dispersion (with two different Schmidt
+        # numbers), which is what happened when the Laplacian was added alongside
+        # the pre-existing drift-flux route.
+        dispersion_in_Ur = !(implicit_alpha && dispersion_Sc !== nothing)
+        if dispersion_Sc !== nothing
+            @info "Turbulent dispersion of alpha" route=(dispersion_in_Ur ?
+                "drift flux (Sc_t = $Sc_t)" : "Laplacian (Sc_t = $dispersion_Sc)")
+        end
     end
 
     if typeof(mp_model) <: VOF
@@ -1482,8 +1543,40 @@ function MULTIPHASE(
             compute_Ur!(Ur, alpha, rho, g_vec, DUmDt,
                         phases[main].rho, phases[secondary].rho, phases[main].mu,
                         diameter, tau_d_field, config)
-            turbulent_dispersion!(Ur, alpha, ∇alpha, model.turbulence, Sc_t, config)
-            
+
+            # MOMENTUM slip stress uses the force-balance drift velocity only.
+            # Snapshot it to faces BEFORE any dispersion is added.
+            #
+            # `div_slip_outer!` forms  alpha*(1-alpha)*(rho1+rho2)/rho_m * Ur (x) Ur,
+            # which is derived from the MEAN slip between the phases. Turbulent
+            # dispersion is not a mean slip - it closes the fluctuation
+            # correlation <alpha' u'>, i.e. a DIFFUSIVE flux - so feeding it into
+            # that stress and squaring it is a category error, and an expensive
+            # one. Substituting the dispersion velocity D_t*grad(alpha)/(a(1-a))
+            # into the stress gives
+            #
+            #     D_t^2 * |grad(alpha)|^2 / (alpha*(1 - alpha))
+            #
+            # which is QUADRATIC in the volume-fraction gradient - so a
+            # cell-to-cell oscillation, the field that maximises that gradient,
+            # is its preferred mode - and divided by alpha*(1 - alpha), which is
+            # 0.002 in a nearly pure liquid: a 500x amplification exactly where
+            # the flow is least two-phase. Measured on the LH2 pipe at
+            # alpha_l = 0.998, a 1% oscillation across a 43 um wall cell
+            # generates a spurious relative velocity of 0.33 m/s, LARGER than the
+            # physical buoyant slip, and it then enters the momentum equation
+            # squared.
+            interpolate_vanleer!(Urf_slip, Ur, mdotf, config)
+            zero_wall_drift_velocity!(Urf_slip, config)
+
+            # VOLUME FRACTION drift flux. Turbulent dispersion belongs here and
+            # only here - but only when the alpha equation is not ALREADY
+            # carrying it as an explicit Laplacian, or it would be counted twice
+            # (and with two different Schmidt numbers, the hardcoded `Sc_t` here
+            # and the user's `dispersion_Sc`).
+            dispersion_in_Ur || turbulent_dispersion!(
+                Ur, alpha, ∇alpha, model.turbulence, Sc_t, config)
+
             interpolate_vanleer!(Urf, Ur, mdotf, config)
             zero_wall_drift_velocity!(Urf, config)
             face_dot_Sf!(Urdotf, Urf, config)
@@ -1543,11 +1636,15 @@ function MULTIPHASE(
 
             # `phase_change_rate!` zeroes the field when the model is `nothing`,
             # which is exactly what the wall-boiling-only case needs.
-            if phase_change !== nothing
+            # `|grad(alpha)|` is only needed by `ResolvedInterface`; the
+            # dispersed closure is algebraic in `alpha` alone. Guarding it makes
+            # that independence explicit as well as saving the gradient pass.
+            if phase_change !== nothing && interfacial_area isa ResolvedInterface
                 cell_grad_magnitude!(gradAlphaMag_pc, ∇alpha, config)
             end
             phase_change_rate!(
-                mdot_pc, phase_change, alpha, gradAlphaMag_pc, model.energy.T, p_abs,
+                mdot_pc, phase_change, interfacial_area, alpha, gradAlphaMag_pc,
+                model.energy.T, p_abs,
                 phases[main].rho, phases[secondary].rho,
                 saturation, h_fg, R_vapour, config)
 
@@ -1685,10 +1782,11 @@ function MULTIPHASE(
                               grad_alpha_mag, time, config)
         end
         
-        # Drift flux divergence (Mixture only)
+        # Drift flux divergence (Mixture only). `Urf_slip`, NOT `Urf`: the
+        # momentum stress takes the force-balance slip alone.
         if typeof(mp_model) <: Mixture
             div_slip_outer!(div_slip_momentum, alphaf, rhof,
-                            phase_faces.rho1f, phase_faces.rho2f, Urf, config)
+                            phase_faces.rho1f, phase_faces.rho2f, Urf_slip, config)
         end
 
         well_balanced_pressure_grad!(

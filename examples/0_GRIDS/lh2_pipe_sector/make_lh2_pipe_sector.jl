@@ -114,6 +114,34 @@ const y_plus_target = 40.0   # midpoint of the 30-50 band
 # Mesh controls
 # ----------------------------------------------------------------------------
 const dev_length_factor = 10.0   # unheated inlet length, in tube diameters
+
+# Unheated EXIT length, in tube diameters, between the end of the heated wall and
+# the outlet plane.
+#
+# WHY IT EXISTS. Without it the heated wall runs right up to the outlet, which
+# puts an outflow boundary INSIDE an active source region. Both `Zerogradient`
+# and `Extrapolated` assert `d(alpha)/dn = 0` at the outlet, and that is
+# maximally false there: vapour is still being generated in the last cell, so
+# `alpha` is accumulating at roughly 4.5e-3 per cell pass at 40 kW/m^2, i.e. an
+# axial gradient of order 3 1/m rather than zero. The corner cell is then the one
+# place in the domain where a source is applied AND the field is forced flat, and
+# it shows up as a step change in `alpha` across the last cell row - measured on
+# this case.
+#
+# 10 D, raised from 3 D. At 3 D a converged ~4.3% excess in `u_tau` sat over the
+# last ~3 cells of the heated wall (9 mm, about 1.5 D), with everything else -
+# q_conv peaking, q_evap dropping, T_wall below trend - following mechanically
+# from it. Two candidates produce a perturbation on that length scale: the
+# elliptic pressure response to volumetric expansion STOPPING at the end of the
+# plate, which is physical and would persist; or the outlet still being felt
+# upstream, which would mean 3 D was simply not enough. Lengthening the run
+# separates them - if the excess is unchanged it is the source step.
+#
+# The cost is small: the exit block is uniform and unheated, so it adds cells but
+# no stiffness, and the flow there is single-phase convection.
+#
+# 0.0 reproduces the original two-block mesh exactly, outlet plane and all.
+const exit_length_factor = 10.0
 # Radius of the core/ring interface as a fraction of R. The outer ring is then
 # (1 - core_frac)*R thick, so RAISING this THINS the ring: 0.45 -> 0.725 halves
 # it from 0.55R to 0.275R.
@@ -123,14 +151,42 @@ const n_outer           = 2      # cells across the OUTER ring (the wall layer)
 # `n_inner` is COMPUTED, not chosen - see `cells_for_geometric`. Set an integer
 # here to override the automatic count.
 const n_inner_override  = nothing
-const n_axial_per_D     = 4.0    # axial cells per tube diameter
+# Axial cells per tube diameter.
+#
+#   4.0  production. dz = 1.5 mm, ~44,700 cells for D6_L250.
+#   2.0  interim, for rapid turnaround. dz = 3.0 mm, ~22,400 cells.
+#
+# WHAT HALVING IT ACTUALLY BUYS. The cell count halves, so the cost PER STEP
+# halves - but the NUMBER of steps does not change, because that is set by the
+# flow-through time and `dt`, not by the mesh. One flow-through is
+# L_total/U = 328 mm / 5.33 m/s = 61.5 ms, i.e. ~30,750 steps at dt = 2e-6 s
+# either way. So expect ~2x, not more.
+#
+# `dt` is not the limit you might expect either: at dz = 1.5 mm the convective
+# CFL is only U*dt/dz = 0.007, so the time step is set by the stiffness of the
+# wall closure and the compressible pressure path, not by the mesh. Coarsening
+# axially therefore does NOT license a larger `dt` on CFL grounds.
+#
+# WHAT IT COSTS, given what is currently being debugged. The wall-tangential
+# Laplacian coupling is A/d with A = h_wall*ds and d = dz, so DOUBLING dz HALVES
+# the axial coupling and doubles the normal-to-tangential anisotropy - already
+# ~305:1 at dz = 1.5 mm with an 86 um wall cell, and worse again now that
+# `wall_cell_scale` is back to 1.0. An axial odd-even mode is damped less on this
+# mesh, not more. Working against that, upwind differencing supplies more
+# numerical diffusion per cell at larger dz, which damps the same mode.
+#
+# The two effects push opposite ways, so an interim mesh is fine for turnaround
+# but is NOT a clean control for checkerboarding: a result that changes between
+# 2.0 and 4.0 says something about the mesh, not about the physics.
+const n_axial_per_D     = 2.0
 
 # ============================================================================
 # Derived geometry
 # ============================================================================
 const R = D/2
 const L_dev = dev_length_factor*D
-const L_total = L_dev + L_heated
+const L_exit = exit_length_factor*D
+const L_total = L_dev + L_heated + L_exit
 
 # Radius of the CORE/RING interface. The core's outer boundary is an ARC at this
 # radius (see the `edges` section), not a straight-edged square, so the outer
@@ -230,7 +286,24 @@ const u_tau, Re_bulk, f_darcy = friction_velocity(U_bulk, D, rho_l, mu_l)
 # moving the first cell closer to the bubble scale. 2.5 takes 34 um -> 85 um and
 # y+ ~40 -> ~100, which leaves the log-law wall functions valid (they want
 # y+ > 30) while reducing the forcing by the same factor.
-const wall_cell_scale = 2.0
+#
+# BACK TO 1.0. The scaling was a mitigation for the checkerboard described above,
+# and it cost the thing the whole mesh is designed around: at 2.0 the achieved y+
+# was ~80, outside the 30-50 band the thermal wall function is meshed for, and
+# `unit_test_lh2_pipe_sector_mesh.jl` failed on exactly that.
+#
+# The mitigation is no longer what is holding the checkerboard down. The seed was
+# traced to the BULK phase change closure using `|grad(alpha)|` as its
+# interfacial area density - a VOF quantity, maximised by a 2*dx oscillation, so
+# the source grew with the noise it was responding to. That is now closed
+# properly with `DispersedBubbles` (see `2_phase_change_models.jl`), which is
+# algebraic in `alpha` and cannot amplify a gradient at all.
+#
+# Note what returning to 1.0 does cost, so it can be recognised if it bites:
+# halving the wall cell DOUBLES the volumetric wall source (A/V = 1/h) and
+# roughly doubles the normal-to-tangential coupling anisotropy. If a wall-tangent
+# odd-even mode reappears, that is the first thing to put back.
+const wall_cell_scale = 1.0
 
 const h_wall_target = wall_cell_scale*first_cell_height(y_plus_target, u_tau, nu_l)
 
@@ -387,14 +460,30 @@ const xy = [
 
 const n_xy = length(xy)
 
-# Two z levels: the mesh is a single axial stack, split into an unheated and a
-# heated block so the wall patch can be split too.
-const z_levels = [0.0, L_dev, L_total]
+# The mesh is a single axial stack split into blocks so the wall patch can be
+# split with it: development (unheated), heated, and - when `exit_length_factor`
+# is non-zero - an unheated exit run. With no exit length this collapses to the
+# original two-block stack and the z levels are unchanged.
+const z_levels = L_exit > 0 ?
+    [0.0, L_dev, L_dev + L_heated, L_total] :
+    [0.0, L_dev, L_total]
 
 vertex_id(ixy, iz) = iz*n_xy + ixy
 
 const n_axial_dev = max(3, round(Int, n_axial_per_D*L_dev/D))
 const n_axial_heat = max(4, round(Int, n_axial_per_D*L_heated/D))
+const n_axial_exit = L_exit > 0 ? max(3, round(Int, n_axial_per_D*L_exit/D)) : 0
+
+# (cells, label) per axial block, in order. Drives the block emission, the wall
+# patch split and the symmetry patches, so they cannot drift apart.
+const axial_blocks = L_exit > 0 ?
+    [(n_axial_dev, "development (unheated)"),
+     (n_axial_heat, "heated section"),
+     (n_axial_exit, "exit run (unheated)")] :
+    [(n_axial_dev, "development (unheated)"),
+     (n_axial_heat, "heated section")]
+
+const n_axial_total = sum(first, axial_blocks)
 
 # Block definitions in the cross-section: (bottom-face vertex order, nx, ny, grading)
 # `grading` is the simpleGrading triple applied to the block's (x1, x2, z) axes.
@@ -439,10 +528,11 @@ function write_blockmeshdict(path)
 //   inner diameter  : $(D*1e3) mm
 //   heated length   : $(L_heated*1e3) mm   (L/D = $(round(L_heated/D, digits=1)))
 //   development     : $(round(L_dev*1e3, digits=2)) mm  ($(dev_length_factor) D, unheated)
+//   exit run        : $(round(L_exit*1e3, digits=2)) mm  ($(exit_length_factor) D, unheated)
 //   Re              : $(round(Int, Re_bulk))
 //   target y+       : $y_plus_target
 //   achieved y+     : $(round(yplus_diag, digits=1)) - $(round(yplus_axis, digits=1))
-//   cells           : $(( n_core^2 + 2*n_core*n_radial )*(n_axial_dev + n_axial_heat))
+//   cells           : $(( n_core^2 + 2*n_core*n_radial )*n_axial_total)
 
 FoamFile
 {
@@ -467,8 +557,7 @@ vertices
 
         println(io, ");\n\nblocks\n(")
 
-        for (iz, n_axial) in enumerate((n_axial_dev, n_axial_heat))
-            label = iz == 1 ? "development (unheated)" : "heated section"
+        for (iz, (n_axial, label)) in enumerate(axial_blocks)
             println(io, "    // --- $label ---")
             for (verts, n1, n2, (g1, g2)) in blocks_xy
                 bot = [vertex_id(v, iz - 1) for v in verts]
@@ -549,24 +638,30 @@ vertices
                         for (verts, _, _, _) in blocks_xy]
         emit_patch("outlet", "patch", outlet_faces)
 
-        # Unheated wall (development section) and heated wall, split by axial
-        # block. The wall is now the OUTER ring's outer arc: EAST face v7->v8,
-        # NORTH face v8->v9.
+        # Unheated wall and heated wall, split by axial block. The wall is the
+        # OUTER ring's outer arc: EAST face v7->v8, NORTH face v8->v9.
+        #
+        # Block 1 is the inlet development run and block 3, when present, the
+        # exit run - BOTH are unheated, so both go on `wallUnheated`. Only block
+        # 2 carries the `FixedHeatFlux` in the case file. Getting this wrong
+        # would heat the exit section and defeat the point of having one.
+        unheated_iz = L_exit > 0 ? (1, 3) : (1,)
         emit_patch("wallUnheated", "wall",
-                   [side_face(7, 8, 1), side_face(8, 9, 1)])
+                   vcat([[side_face(7, 8, iz), side_face(8, 9, iz)]
+                         for iz in unheated_iz]...))
         emit_patch("pipeWall", "wall",
                    [side_face(7, 8, 2), side_face(8, 9, 2)])
 
         # Symmetry plane y = 0 (the x-z plane), running outwards from the axis:
         # CORE v0->v1, INNER v1->v4, OUTER v4->v7.
         sym_y = vcat([[side_face(0, 1, iz), side_face(1, 4, iz),
-                       side_face(4, 7, iz)] for iz in 1:2]...)
+                       side_face(4, 7, iz)] for iz in 1:length(axial_blocks)]...)
         emit_patch("symmetryY", "symmetry", sym_y)
 
         # Symmetry plane x = 0 (the y-z plane), running inwards to the axis:
         # OUTER v9->v6, INNER v6->v3, CORE v3->v0.
         sym_x = vcat([[side_face(3, 0, iz), side_face(6, 3, iz),
-                       side_face(9, 6, iz)] for iz in 1:2]...)
+                       side_face(9, 6, iz)] for iz in 1:length(axial_blocks)]...)
         emit_patch("symmetryX", "symmetry", sym_x)
 
         println(io, ");\n\nmergePatchPairs\n(\n);\n")
@@ -608,7 +703,7 @@ write_blockmeshdict(joinpath(here, "system", "blockMeshDict"))
 write_controldict(joinpath(here, "system", "controlDict"))
 
 const n_cells_xy = n_core^2 + 2*n_core*n_radial
-const n_cells = n_cells_xy*(n_axial_dev + n_axial_heat)
+const n_cells = n_cells_xy*n_axial_total
 
 println("""
 =============================================================================
@@ -618,6 +713,7 @@ println("""
  Inner diameter D    : $(D*1e3) mm
  Heated length  L    : $(L_heated*1e3) mm     (L/D = $(round(L_heated/D, digits=2)))
  Development length  : $(round(L_dev*1e3, digits=2)) mm  ($dev_length_factor D, unheated)
+ Exit run            : $(round(L_exit*1e3, digits=2)) mm  ($exit_length_factor D, unheated)
  Total length        : $(round(L_total*1e3, digits=2)) mm
 
  Flow conditions used for near-wall sizing
@@ -639,7 +735,7 @@ println("""
  Mesh
    core block        : $n_core x $n_core
    radial cells      : $n_radial
-   axial cells       : $n_axial_dev (dev) + $n_axial_heat (heated)
+   axial cells       : $(join(["$n ($label)" for (n, label) in axial_blocks], " + "))
    total cells       : $n_cells
 
  Written:

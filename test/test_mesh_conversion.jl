@@ -88,6 +88,27 @@ outputTest_FOAM3D = String(take!(msg))
     end
 end
 
+@testset "boundary assignment requires each patch exactly once" begin
+    valid = assign(
+        region=mesh,
+        (T=[Dirichlet(:walls, 0.0), Dirichlet(:top, 1.0)],),
+    )
+    @test getproperty.(valid.T, :ID) == (1, 2)
+
+    duplicate_error = try
+        assign(
+            region=mesh,
+            (T=[Dirichlet(:walls, 0.0), Dirichlet(:walls, 1.0)],),
+        )
+        nothing
+    catch error
+        error
+    end
+    @test duplicate_error isa ArgumentError
+    @test contains(sprint(showerror, duplicate_error), "missing top")
+    @test contains(sprint(showerror, duplicate_error), "assigned more than once walls")
+end
+
 # Test 3D UNV and FOAM meshes are equal
 @test outputTest_UNV3D == outputTest_FOAM3D
 

@@ -192,27 +192,26 @@ function SIMPLE_MRF(
         # Pressure calculations
         @. prev = p.values
         rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
-        explicit_relaxation!(p, prev, solvers.p.relax, config)
-        
-        grad!(∇p, pf, p, boundaries.p, time, config) 
-        limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
-            # @. prev = p.values
+            grad!(∇p, pf, p, boundaries.p, time, config)
+            limit_gradient!(schemes.p.limiter, ∇p, p, config)
             discretise!(p_eqn, p, config)       
             apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
             # setReference!(p_eqn, pref, 1, config)
             nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
             # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
-            explicit_relaxation!(p, prev, solvers.p.relax, config)
-            grad!(∇p, pf, p, boundaries.p, time, config) 
-            limit_gradient!(schemes.p.limiter, ∇p, p, config)
         end
 
-        # correct mass flux and velocity
+        # Preserve the full pressure correction in the face flux; pressure
+        # relaxation applies only to the cell velocity correction.
         correct_mass_flux!(mdotf, p_eqn, config)
+
+        explicit_relaxation!(p, prev, solvers.p.relax, config)
+        grad!(∇p, pf, p, boundaries.p, time, config)
+        limit_gradient!(schemes.p.limiter, ∇p, p, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
         turbulence!(turbulenceModel, model, S, prev, time, config) 

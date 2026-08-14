@@ -20,6 +20,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("test_physical_boundary_conditions.jl")
     end
 
+    @testset "Wall-function aggregation" begin
+        include("test_wall_function_aggregation.jl")
+    end
+
     @testset "Smoothers" begin
         include("test_smoothers.jl")
     end

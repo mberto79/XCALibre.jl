@@ -383,7 +383,8 @@ function MULTIPHASE(
             grad!(∇p_rgh, p_rghf, p_rgh, boundaries.p_rgh, time, config)
             limit_gradient!(schemes.p_rgh.limiter, ∇p_rgh, p_rgh, config)
 
-            correct_mass_flux_mp!(mdotf, p_eqn, config)
+            correct_mass_flux_mp!(
+                mdotf, p_eqn, config; previous=prev, time=time)
 
             pressure_grad!(p_rgh, ∇p_rghf_deconstructed, phi_gf, rDf, config)
             reconstruct!(∇p_rghf_reconstructed, ∇p_rghf_deconstructed, config)
@@ -1276,7 +1277,7 @@ end
 end
 
 
-function correct_mass_flux_mp!(mdotf, p_eqn, config; time=nothing)
+function correct_mass_flux_mp!(mdotf, p_eqn, config; previous, time=nothing)
     # sngrad = FaceScalarField(mesh)
     (; faces, cells, boundary_cellsID) = mdotf.mesh
     (; hardware) = config
@@ -1297,14 +1298,15 @@ function correct_mass_flux_mp!(mdotf, p_eqn, config; time=nothing)
     kernel!(mdotf, p, nzval, colval, rowptr, faces, cells, n_bfaces)
     KernelAbstractions.synchronize(backend)
 
-    BCs = config.boundaries.p_rgh # this line had to be changed from ".p"
-    for BC ∈ BCs
+    p_BCs = config.boundaries.p_rgh # this line had to be changed from ".p"
+    for BC ∈ p_BCs
         correct_mass_periodic(
             BC, mdotf, p, nzval, colval, rowptr, cells, faces, backend, workgroup)
         KernelAbstractions.synchronize(backend)
     end
 
-    correct_boundary_mass_flux!(mdotf, p_eqn, BCs, time, config)
+    correct_boundary_mass_flux!(
+        mdotf, p_eqn, p_BCs, config.boundaries.U, previous, time, config)
 end
 
 

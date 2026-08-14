@@ -138,6 +138,7 @@ function SIMPLE(
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
     prev = KernelAbstractions.zeros(backend, TF, n_cells) 
+    p_boundary_reference = similar(prev)
 
     # Pre-allocate vectors to hold residuals 
     R_ux = zeros(TF, iterations)
@@ -186,13 +187,15 @@ function SIMPLE(
         
         # Pressure calculations
         @. prev = p.values
+        @. p_boundary_reference = p.values
         rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
 
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
             grad!(∇p, pf, p, boundaries.p, time, config)
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
-            discretise!(p_eqn, p, config)       
+            @. p_boundary_reference = p.values
+            discretise!(p_eqn, p, config)
             apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
             # setReference!(p_eqn, pref, 1, config)
             nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
@@ -203,7 +206,9 @@ function SIMPLE(
         # Flux correction must use the unrelaxed pressure solution so that the
         # pressure equation removes the full predicted continuity error. Pressure
         # relaxation is only for the momentum/velocity correction (OpenFOAM SIMPLE).
-        correct_mass_flux!(mdotf, p_eqn, config; time=time)
+        correct_mass_flux!(
+            mdotf, p_eqn, config;
+            previous=p_boundary_reference, time=time)
 
         explicit_relaxation!(p, prev, solvers.p.relax, config)
         grad!(∇p, pf, p, boundaries.p, time, config)
@@ -337,7 +342,7 @@ end
 
 ### TEMP LOCATION FOR PROTOTYPING
 
-function correct_mass_flux!(mdotf, p_eqn, config; time=nothing)
+function correct_mass_flux!(mdotf, p_eqn, config; previous, time=nothing)
     # sngrad = FaceScalarField(mesh)
     (; faces, cells, boundary_cellsID) = mdotf.mesh
     (; hardware) = config
@@ -358,14 +363,15 @@ function correct_mass_flux!(mdotf, p_eqn, config; time=nothing)
     kernel!(mdotf, p, nzval, colval, rowptr, faces, cells, n_bfaces)
     KernelAbstractions.synchronize(backend)
 
-    BCs = config.boundaries.p
-    for BC ∈ BCs
+    p_BCs = config.boundaries.p
+    for BC ∈ p_BCs
         correct_mass_periodic(
             BC, mdotf, p, nzval, colval, rowptr, cells, faces, backend, workgroup)
         KernelAbstractions.synchronize(backend)
     end
 
-    correct_boundary_mass_flux!(mdotf, p_eqn, BCs, time, config)
+    correct_boundary_mass_flux!(
+        mdotf, p_eqn, p_BCs, config.boundaries.U, previous, time, config)
 end
 
 @kernel function _correct_mass_flux!(
@@ -482,7 +488,8 @@ end
     error("correct_mass_flux!: no Laplacian term found in the pressure equation")
 end
 
-function correct_boundary_mass_flux!(mdotf, p_eqn, BCs, time, config)
+function correct_boundary_mass_flux!(
+    mdotf, p_eqn, p_BCs, U_BCs, previous, time, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
@@ -495,32 +502,38 @@ function correct_boundary_mass_flux!(mdotf, p_eqn, BCs, time, config)
     (; faces, boundary_cellsID) = mdotf.mesh
     ndrange = length(boundary_cellsID)
     kernel! = _correct_boundary_mass_flux!(_setup(backend, workgroup, ndrange)...)
-    kernel!(BCs, mdotf, p, pflux, psign, faces, boundary_cellsID, time)
+    kernel!(
+        p_BCs, U_BCs, mdotf, p, previous, pflux, psign,
+        faces, boundary_cellsID, time)
     KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _correct_boundary_mass_flux!(
-    BCs, mdotf, p, pflux, psign, faces, boundary_cellsID, time)
+    p_BCs, U_BCs, mdotf, p, previous, pflux, psign,
+    faces, boundary_cellsID, time)
     fID = @index(Global)
 
     @inbounds begin
         correct_boundary_mass_flux_dispatch!(
-            BCs, mdotf, p, pflux, psign, faces, boundary_cellsID, time, fID)
+            p_BCs, U_BCs, mdotf, p, previous, pflux, psign,
+            faces, boundary_cellsID, time, fID)
     end
 end
 
 @generated function correct_boundary_mass_flux_dispatch!(
-    BCs, mdotf, p, pflux, psign, faces, boundary_cellsID, time, fID)
+    p_BCs, U_BCs, mdotf, p, previous, pflux, psign,
+    faces, boundary_cellsID, time, fID)
 
     calls = Expr(:block)
-    for bci ∈ 1:length(BCs.parameters)
+    for bci ∈ 1:length(p_BCs.parameters)
         push!(calls.args, quote
-            BC = BCs[$bci]
+            BC = p_BCs[$bci]
             (; start, stop) = BC.IDs_range
             if start <= fID <= stop
                 i = fID - start + 1
                 correct_boundary_mass_flux_bc!(
-                    BC, mdotf, p, pflux, psign, faces, boundary_cellsID, time, i, fID)
+                    BC, U_BCs, mdotf, p, previous, pflux, psign, faces,
+                    boundary_cellsID, time, i, fID)
                 return nothing
             end
         end)
@@ -530,10 +543,12 @@ end
 end
 
 @inline correct_boundary_mass_flux_bc!(
-    BC, mdotf, p, pflux, psign, faces, boundary_cellsID, time, i, fID) = nothing
+    BC, U_BCs, mdotf, p, previous, pflux, psign, faces,
+    boundary_cellsID, time, i, fID) = nothing
 
 @inline function correct_boundary_mass_flux_bc!(
-    BC::Dirichlet, mdotf, p, pflux, psign, faces, boundary_cellsID, time, i, fID)
+    BC::Dirichlet, U_BCs, mdotf, p, previous, pflux, psign, faces,
+    boundary_cellsID, time, i, fID)
     @inbounds begin
         face = faces[fID]
         cID = boundary_cellsID[fID]
@@ -546,7 +561,8 @@ end
 end
 
 @inline function correct_boundary_mass_flux_bc!(
-    BC::DirichletFunction, mdotf, p, pflux, psign, faces, boundary_cellsID, time, i, fID)
+    BC::DirichletFunction, U_BCs, mdotf, p, previous, pflux, psign, faces,
+    boundary_cellsID, time, i, fID)
     @inbounds begin
         face = faces[fID]
         cID = boundary_cellsID[fID]
@@ -560,10 +576,57 @@ end
 end
 
 @inline function correct_boundary_mass_flux_bc!(
-    BC::Neumann, mdotf, p, pflux, psign, faces, boundary_cellsID, time, i, fID)
+    BC::Neumann, U_BCs, mdotf, p, previous, pflux, psign, faces,
+    boundary_cellsID, time, i, fID)
     @inbounds begin
         face = faces[fID]
         mdotf[fID] -= pflux[fID] * face.area * BC.value
+    end
+    nothing
+end
+
+@inline function correct_boundary_mass_flux_bc!(
+    BC::Extrapolated, U_BCs, mdotf, p, previous, pflux, psign, faces,
+    boundary_cellsID, time, i, fID)
+    correct_extrapolated_mass_flux_dispatch!(
+        U_BCs, BC.ID, mdotf, p, previous, pflux, psign, faces,
+        boundary_cellsID, fID)
+end
+
+# Only pressure-adjustable velocity patches receive the deferred flux correction.
+@generated function correct_extrapolated_mass_flux_dispatch!(
+    U_BCs, patch_ID, mdotf, p, previous, pflux, psign, faces,
+    boundary_cellsID, fID)
+
+    calls = Expr(:block)
+    for bci ∈ 1:length(U_BCs.parameters)
+        push!(calls.args, quote
+            U_BC = U_BCs[$bci]
+            if U_BC.ID == patch_ID
+                correct_extrapolated_mass_flux_bc!(
+                    U_BC, mdotf, p, previous, pflux, psign,
+                    faces, boundary_cellsID, fID)
+                return nothing
+            end
+        end)
+    end
+    push!(calls.args, :(return nothing))
+    return calls
+end
+
+@inline correct_extrapolated_mass_flux_bc!(
+    U_BC, mdotf, p, previous, pflux, psign, faces,
+    boundary_cellsID, fID) = nothing
+
+@inline function correct_extrapolated_mass_flux_bc!(
+    U_BC::AbstractNeumann, mdotf, p, previous, pflux, psign, faces,
+    boundary_cellsID, fID)
+    @inbounds begin
+        face = faces[fID]
+        cID = boundary_cellsID[fID]
+        flux = pflux[fID] * face.area / face.delta
+        ap = psign * (-flux)
+        mdotf[fID] += ap * (p[cID] - previous[cID])
     end
     nothing
 end

@@ -75,7 +75,8 @@ end
 # Bounded = upwind boundary with -Sp(div phi): subtract ap from the diagonal
 @define_boundary RotatingWall Divergence{BoundedUpwind} VectorField begin
     ap = term.sign*(term.flux[fID])
-    -ap, 0.0
+    vb = bc.value(face)
+    -ap, -ap*vb[component.value]
 end
 
 # # Scalar implementations for divergence operator

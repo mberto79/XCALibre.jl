@@ -140,7 +140,7 @@ end
     @inbounds begin
         (; kappa, cmu, E, yPlusLam) = BC.value
         (; nu) = fluid
-        (; U) = momentum
+        (; U, Uf) = momentum
         (; k) = turbulence
 
         cID = boundary_cellsID[fID]
@@ -151,7 +151,7 @@ end
         dUdy = u_star/(kappa*delta)
         yplus = y_plus(k[cID], nuc, delta, cmu)
         nutw = nut_wall(nuc, yplus, kappa, E)
-        Uw = zero(U[cID])
+        Uw = Uf[fID]
         mag_grad_U = mag(sngrad(U[cID], Uw, delta, normal))
         production = ifelse(
             yplus > yPlusLam,

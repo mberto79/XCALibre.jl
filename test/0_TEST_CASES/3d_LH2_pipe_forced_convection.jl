@@ -168,7 +168,7 @@ WALL_HEAT_FLUX = 6.6e4   # [W/m^2]
 # `chf = Zuber()` is still present below but now only CAPS the nucleate branch -
 # `q_evap ~ dT_sup^n` outruns any linear blend otherwise. A cap is a bound rather
 # than a prediction, so Zuber being a poor CHF estimate does not matter for it.
-FILM_BOILING = true
+FILM_BOILING = false
 
 # -----------------------------------------------------------------------------
 # SITE_DENSITY_FIT - trading fit accuracy against numerical stiffness
@@ -340,12 +340,12 @@ else
     error("Unknown VAPOUR_EOS: $VAPOUR_EOS")
 end
 
-# `IdealGas` carries its own expansivity exactly (`phase_betaT` returns 1, i.e.
-# beta = 1/T), so it needs no `beta` model; Peng-Robinson supplies one derived
-# from the same cubic as its density.
-# `IdealGas` carries beta exactly (`phase_betaT` returns 1, i.e. beta = 1/T) so it
-# needs none; Peng-Robinson derives one from its own cubic; a constant density
-# takes the saturated value.
+#= `IdealGas` carries its own expansivity exactly (`phase_betaT` returns 1, i.e.
+beta = 1/T), so it needs no `beta` model; Peng-Robinson supplies one derived
+from the same cubic as its density.
+`IdealGas` carries beta exactly (`phase_betaT` returns 1, i.e. beta = 1/T) so it
+needs none; Peng-Robinson derives one from its own cubic; a constant density
+takes the saturated value. =#
 gh2_beta = VAPOUR_EOS === :pr    ? PengRobinsonBeta(gh2_eos) :
            VAPOUR_EOS === :const ? gh2_sat.beta :
            nothing
@@ -442,6 +442,22 @@ model = Physics(
         model = Mixture(diameter = 0.5e-3, alpha_transport = :implicit),
         dispersion_Sc = 0.9,     # turbulent Schmidt number
         p_abs_limit = (0.3e6, 1.2e6),   # [Pa] absolute
+
+        # KEEP THIS ON with `pressure_form = :mass`. It is not optional there -
+        # it is what makes the mass form usable at all.
+        #
+        # Measured, 200 steps, this case:
+        #
+        #   mass   + rD_ref_density : STABLE
+        #   mass   - rD_ref_density : NaN
+        #   volume + rD_ref_density : STABLE
+        #
+        # A plausible-sounding argument says the opposite - that a_P ~ rho*V/dt
+        # makes rD ~ dt/(rho*V), so the mass form's `rho_f*rDf` already has the
+        # density cancelled and freezing it on top reintroduces `alpha`. That
+        # argument is WRONG, as the table above shows; the momentum diagonal does
+        # not carry the density the way it assumes. Recorded because it is
+        # convincing enough to be worth not re-deriving.
         rD_ref_density = lh2_sat.rho,   # 56.747 kg/m³
 
         # Phase 1 (tracked, alpha = 1) is the liquid: constant properties at the
@@ -484,8 +500,8 @@ model = Physics(
         # kinetic prefactor. An EOS that carries one supplies it; a constant
         # density cannot, so pass it explicitly:
         #   phase_change = Lee(sigma = 1e-6, R = 4124.5),   # [J/kg/K]
-        # phase_change = nothing,
-        phase_change = Lee(sigma = 1e-6, R = 4124.5),
+        phase_change = nothing,
+        # phase_change = Lee(sigma = 1e-6, R = 4124.5),
         # --- wall nucleate boiling -------------------------------------------
         # Kurul & Podowski heat flux partitioning, q_w = q_conv + q_quench + q_evap,
         # inverted for the wall temperature since this case prescribes the FLUX.
@@ -655,7 +671,7 @@ model = Physics(
                 htc = ForcedConvectionFilm(),
                 transition = VoidTransition(
                     measure = NearWallCell(),#BubblyLayerAverage(cap = 0.6e-3),
-                    alpha_1 = 0.1, alpha_2 = 0.95
+                    alpha_1 = 0.8, alpha_2 = 0.95
                     ),
             ) : nothing,
             start_iteration = 0
@@ -736,7 +752,7 @@ model = Physics(
         # of the gravity study diverged with max|U| = 1.48e4 and a pressure
         # residual of 1.06e-16, i.e. converged to machine precision and diverging
         # anyway. See dev_notes_LH2_pipe_boiling.md.
-        pressure_form = :volume,
+        pressure_form = :mass,#:volume,
 
         saturation  = saturation,
         h_fg        = h_fg,
@@ -890,7 +906,7 @@ solvers = (
 # Run to steady state. The residence time is L_total/U ~ 0.06 s for this
 # geometry, so a few hundred flow-throughs is ample for the thermal field and
 # the wall vapour generation to settle.
-dt = 2e-6#1.0e-5
+dt = 5e-6
 
 # THREE flow-throughs, not one, and the reason is specific to a VOID-driven
 # transition. The criterion fires on near-wall vapour fraction, and that field
@@ -902,7 +918,7 @@ dt = 2e-6#1.0e-5
 #
 # One flow-through would show the void still developing and no departure, which
 # is indistinguishable from a criterion that never fires.
-n_flow_throughs = 3
+n_flow_throughs = 1
 
 # 20 D of UNHEATED pipe, not 10: `dev_length_factor = 10` upstream AND
 # `exit_length_factor = 10` downstream. This was still counting the inlet

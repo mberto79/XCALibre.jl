@@ -144,7 +144,7 @@ model from `RealFluid(...)`."""))
 end
 
 """
-    energy!(energyModel, model, alpha_fluxf, mdotf, phase_faces, nueff,
+    energy!(energyModel, model, alpha_fluxf, mdotf, phi_drift, phase_faces, nueff,
             dpdt, mdot_pc, L, time, dt, config)
 
 Advance the two-phase temperature equation by one time step.
@@ -153,13 +153,18 @@ Advance the two-phase temperature equation by one time step.
 `advance_alpha!`; it is reused here so the energy advection matches the mass
 advection exactly at the interface.
 
+`phi_drift` is the volumetric drift flux `alpha*(1-alpha)*(Ur . Sf)` (zero for
+`VOF`), which carries the enthalpy the two phases transport relative to the
+mixture — see `energy_face_flux`.
+
 `phase_faces` is the bundle of per-phase FACE property fields maintained by the
 solver (`rho1f`, `cp1f`, `k1f`, ... ). Passing them as one named tuple rather
 than as a growing list of positional arguments keeps this signature stable as
 more properties are allowed to vary.
 """
 function energy!(energyModel::EnergyEquationModel{E,S}, model, alpha_fluxf, mdotf,
-                 phase_faces, nueff, dpdt, mdot_pc, L, time, dt, config) where {E,S}
+                 phi_drift, phase_faces, nueff, dpdt, mdot_pc, L, time, dt,
+                 config) where {E,S}
     (; energy_eqn, state) = energyModel
     (; T, rho_cp, rho_cp_prev, keff, rho_cp_phi, rho_cp_imbalance, S_T) = model.energy
     (; alpha, alphaf, phases) = model.fluid
@@ -184,7 +189,7 @@ function energy!(energyModel::EnergyEquationModel{E,S}, model, alpha_fluxf, mdot
     # and phases[2] because the tracked phase index (`volume_fraction`) is
     # always 1.
     update_two_phase_energy_coeffs!(
-        rho_cp, keff, rho_cp_phi, alpha, alphaf, alpha_fluxf, mdotf,
+        rho_cp, keff, rho_cp_phi, alpha, alphaf, alpha_fluxf, mdotf, phi_drift,
         phases[1], phases[2], phase_faces, model.turbulence,
         nueff, model.fluid.nuf, model.energy.coeffs.Pr_t, model.fluid.model, config)
 
@@ -250,7 +255,7 @@ Cell-centred properties are indexed as `phase.rho[i]`, which works uniformly for
 properties come from `phase_faces`, never from the cell fields.
 """
 function update_two_phase_energy_coeffs!(
-    rho_cp, keff, rho_cp_phi, alpha, alphaf, alpha_fluxf, mdotf,
+    rho_cp, keff, rho_cp_phi, alpha, alphaf, alpha_fluxf, mdotf, phi_drift,
     phase_l, phase_v, phase_faces, turbulence, nueff, nuf, Pr_t, mp_model, config)
 
     (; hardware) = config
@@ -265,7 +270,7 @@ function update_two_phase_energy_coeffs!(
 
     ndrange = length(alphaf)
     kernel! = _blend_energy_faces!(_setup(backend, workgroup, ndrange)...)
-    kernel!(keff, rho_cp_phi, alphaf, alpha_fluxf, mdotf,
+    kernel!(keff, rho_cp_phi, alphaf, alpha_fluxf, mdotf, phi_drift,
             phase_faces.rho1f, phase_faces.cp1f, phase_faces.k1f,
             phase_faces.rho2f, phase_faces.cp2f, phase_faces.k2f,
             nueff, nuf, nut_scale, mp_model)
@@ -370,7 +375,7 @@ end
 end
 
 """
-    energy_face_flux(mp_model, alpha_fluxf, mdotf, rcp_l, rcp_v, rho_cp_f)
+    energy_face_flux(mp_model, alpha_fluxf, mdotf, phi_drift, rcp_l, rcp_v, rho_cp_f)
 
 Advecting flux of the temperature equation, `rho*cp*phi`, built to match the
 mass flux `rhoPhi` of the SAME multiphase model - see `blend_rhoPhi!`.
@@ -382,23 +387,53 @@ equation's `rho_l - rho_v` of ~48 - four orders of magnitude more damaging.
 
 - `VOF`: the limited volume-fraction flux carries `(rho*cp)_l` and the remainder
   carries `(rho*cp)_v`, mirroring `blend_rhoPhi!(::VOF, ...)`.
-- `Mixture`: the mass flux is simply `mdotf*rhof`, with the drift flux entering
-  the momentum equation separately as `div_slip_momentum`. The energy flux must
-  therefore be `mdotf*(rho*cp)_f` and must NOT pick up the drift term that
-  `alpha_fluxf` carries.
+- `Mixture`: `mdotf*(rho*cp)_f`, plus the SLIP ENTHALPY FLUX below. It must not
+  instead pick up the drift term that `alpha_fluxf` carries, which is the same
+  transport with the wrong coefficient.
 
 The distinction is invisible while `alpha = 1` everywhere, because then
 `alpha_fluxf == mdotf` and both forms coincide. It only bites once a second
 phase appears - i.e. exactly when wall boiling starts producing vapour.
+
+## Slip enthalpy flux (`Mixture`)
+
+The phases convect their own enthalpy at their own velocity, so the exact energy
+flux is `sum_i alpha_i*rho_i*cp_i*T*u_i`. Splitting each `u_i` about the
+volume-averaged `u_j` that this solver transports with, and using
+
+    u_1 - u_j = -(1 - alpha)*u_r,      u_2 - u_j = +alpha*u_r
+
+gives
+
+    sum_i alpha_i*rho_i*cp_i*T*u_i
+        = (rho*cp)_m*T*u_j  +  T*alpha*(1-alpha)*[(rho*cp)_2 - (rho*cp)_1]*u_r
+
+The first term is the existing `mdotf*(rho*cp)_f`; the second is `phi_drift`
+scaled by the difference of the phase heat capacities per unit volume. Rising
+vapour carries its own thermal capacity with it, and without this term that
+transport is simply absent.
+
+Adding it to `rho_cp_phi` rather than as a separate source is deliberate: the
+divergence of whatever `rho_cp_phi` holds is measured and cancelled by
+`rho_cp_imbalance`, so the drift contributes the convective transport of `T`
+without also injecting a spurious `T*div(drift flux)`.
+
+**Sensible heat only.** `H_i = cp_i*T` here, with no per-phase reference
+enthalpy, so the latent heat the vapour carries with it is NOT transported by
+this term - it enters where the phase change happens, through `add_latent_heat!`.
+That is consistent with solving a temperature equation rather than an enthalpy
+equation, but it does mean drift transports sensible heat only.
 """
-@inline energy_face_flux(::VOF, alpha_fluxf_i, mdotf_i, rcp_l, rcp_v, rho_cp_f) =
+@inline energy_face_flux(::VOF, alpha_fluxf_i, mdotf_i, phi_drift_i,
+                         rcp_l, rcp_v, rho_cp_f) =
     alpha_fluxf_i*(rcp_l - rcp_v) + mdotf_i*rcp_v
 
-@inline energy_face_flux(::Mixture, alpha_fluxf_i, mdotf_i, rcp_l, rcp_v, rho_cp_f) =
-    mdotf_i*rho_cp_f
+@inline energy_face_flux(::Mixture, alpha_fluxf_i, mdotf_i, phi_drift_i,
+                         rcp_l, rcp_v, rho_cp_f) =
+    mdotf_i*rho_cp_f + phi_drift_i*(rcp_v - rcp_l)
 
 @kernel inbounds=true function _blend_energy_faces!(
-    keff, rho_cp_phi, alphaf, alpha_fluxf, mdotf,
+    keff, rho_cp_phi, alphaf, alpha_fluxf, mdotf, phi_drift,
     rho_l, cp_l, k_l, rho_v, cp_v, k_v, nueff, nuf, nut_scale, mp_model)
     i = @index(Global)
     TF = eltype(keff.values)
@@ -420,7 +455,7 @@ phase appears - i.e. exactly when wall boiling starts producing vapour.
     # `energy_face_flux`. Getting this wrong is invisible while alpha = 1 and
     # catastrophic as soon as a second phase appears.
     rho_cp_phi[i] = energy_face_flux(mp_model, alpha_fluxf[i], mdotf[i],
-                                     rcp_l, rcp_v, rho_cp_f)
+                                     phi_drift[i], rcp_l, rcp_v, rho_cp_f)
 end
 
 """

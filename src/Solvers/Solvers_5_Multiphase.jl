@@ -233,14 +233,28 @@ incompressible phases still has a varying density wherever `alpha` varies, so
   budget. This is the historical XCALibre form and what OpenFOAM's
   `compressibleInterFoam` does.
 
-- `:mass` — the MASS constraint `d(rho_m)/dt + div(rho_m u) = 0`, which is the
-  same equation multiplied through by `rho_m`, with `u.grad(rho_m)` absorbed
-  because `Drho_m/Dt + rho_m div(u) = 0` carries it:
+- `:mass` — the MASS constraint `d(rho_m)/dt + div(rho_m u) = 0`:
 
-      drho_m/dp*dp/dt - div(rho_f rDf grad p_rgh) = -div(rho_f u*) + rho_m*expansion
+      drho_m/dp*dp/dt - div(rho_f rDf grad p_rgh) = -div(rho_f u*) + expansion_m
 
-  This is the STAR-CCM+ mixture form. Every term picks up the density of the
-  quantity it belongs to — that is the check that the conversion is right.
+  Note this is **not** the volume equation multiplied through by `rho_m`. The
+  discretisation puts the density inside the divergence, and
+  `div(rho_m u) != rho_m div(u)`, so the two forms are genuinely different
+  equations rather than one rescaled. Every source is instead rebuilt in mass
+  units from `rho_m = sum_i alpha_i*rho_i` directly, weighting each phase by its
+  OWN density:
+
+      thermal        sum_i alpha_i*rho_i*beta_i*DT/Dt
+      phase change   mdot*(1 - rho_v/rho_l)
+
+  plus, for a `Mixture`, the drift divergence
+
+      div[alpha*(1-alpha)*(rho_1 - rho_2)*u_r]
+
+  which is what separates the volume-averaged velocity this solver corrects from
+  the mass-averaged one the mixture mass equation is written for — see
+  `add_drift_mass_divergence!`, and the note above `_update_expansion!` for the
+  derivation and for the velocity question that settles it.
 
 **Why it can matter.** Momentum and energy convect with `rhoPhi`, a MASS flux,
 but under `:volume` nothing ever enforces `div(rho u) = -drho/dt`; the pressure
@@ -548,6 +562,48 @@ function multiphase_rD_ref_density(fluid)
 end
 
 """
+    multiphase_mass_mobility_ref(fluid) -> Float64 or nothing
+
+Reference density for the MASS form's Laplacian coefficient, from the optional
+`mass_mobility_ref` keyword of `Fluid{Multiphase}`. `nothing` (default) uses the
+local face density, i.e. existing behaviour.
+
+### Why the mass form needs its own version of this
+
+`pressure_form = :mass` introduces TWO new paths from `alpha` into the pressure
+equation that the volume form does not have, because `rho_f` is linear in
+`alpha`:
+
+    (1) the Laplacian coefficient   rho_f*rDf
+    (2) the right-hand side         div(rho_f u*)
+
+[`multiphase_rD_ref_density`](@ref) reaches neither - it freezes `rD`, a third
+path. That is why it helps the mass form without curing it.
+
+(2) cannot be touched: it IS the mass flux, and altering it alters what is
+conserved. (1) can, because it is a MOBILITY. The converged solution does not
+depend on it provided the operator and the flux correction carry the same
+coefficient - and they do, since `correct_mass_flux_mp!` builds its correction
+from the assembled matrix. Freezing it changes the path to the solution, not the
+solution, in the same sense as a preconditioner.
+
+### Choosing it
+
+A density near the working mixture value - the liquid density for a bubbly flow
+at high `alpha`. The approximation is looser than `rD_ref_density`'s: where
+`alpha` falls to 0.4, `rho_f` spans roughly 25-63 kg/m^3 for LH2/GH2, so a frozen
+mobility is a factor of ~2.5 out at the extreme. That costs convergence rate in
+the pressure solve, not accuracy.
+"""
+function multiphase_mass_mobility_ref(fluid)
+    rho_ref = get(fluid.physics_properties, :mass_mobility_ref, nothing)
+    rho_ref === nothing && return nothing
+    (rho_ref isa Real && rho_ref > 0) || throw(ArgumentError(
+        "`mass_mobility_ref` must be a positive density [kg/m^3], got $rho_ref"))
+    return float(rho_ref)
+end
+
+"""
     multiphase_p_abs_limit(fluid) -> Tuple or nothing
 
 Bounds `(p_min, p_max)` for the ABSOLUTE pressure, from the optional
@@ -597,9 +653,11 @@ function clamp_absolute_pressure!(p_abs, limit, iteration)
 end
 
 """
-    add_phase_change_volume!(expansion, mdot, rho_l, rho_v, config)
+    add_phase_change_volume!(expansion, mdot, rho_l, rho_v, config; mass_form=false)
 
-Add the net volume creation of phase change to the pressure-equation source:
+Add the phase-change contribution to the pressure-equation source.
+
+Volume form (`mass_form = false`), the net volume created [1/s]:
 
     expansion += mdot*(1/rho_v - 1/rho_l)
 
@@ -607,24 +665,81 @@ Evaporating liquid into a much lighter vapour creates volume, which in a rigid
 sealed tank raises the pressure. `1/rho_v >> 1/rho_l` for LH2/GH2 (about 58x at
 20 K), so this term dominates the phase-change contribution to pressurisation.
 
+Mass form (`mass_form = true`), the mass release rate [kg/m3/s]:
+
+    expansion += mdot*(1 - rho_v/rho_l)
+
+which is `-d(rho_m)/dt` restricted to the alpha change that phase change drives.
+It is NOT the volume source scaled by `rho_m` - see the note above
+`_update_expansion!` for why the two differ by a factor of about 12 here, and
+which velocity settles it.
+
 `mdot === nothing` adds nothing.
 """
-add_phase_change_volume!(expansion, ::Nothing, rho_l, rho_v, config) = nothing
+add_phase_change_volume!(expansion, ::Nothing, rho_l, rho_v, config; mass_form=false) =
+    nothing
 
-function add_phase_change_volume!(expansion, mdot, rho_l, rho_v, config)
+function add_phase_change_volume!(expansion, mdot, rho_l, rho_v, config;
+                                  mass_form=false)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
     ndrange = length(expansion)
     kernel! = _add_phase_change_volume!(_setup(backend, workgroup, ndrange)...)
-    kernel!(expansion, mdot, rho_l, rho_v)
+    kernel!(expansion, mdot, rho_l, rho_v, Val(mass_form))
     return nothing
 end
 
-@kernel inbounds=true function _add_phase_change_volume!(expansion, mdot, rho_l, rho_v)
+@kernel inbounds=true function _add_phase_change_volume!(
+    expansion, mdot, rho_l, rho_v, mass_form)
     i = @index(Global)
     TF = eltype(expansion.values)
-    expansion[i] += mdot[i]*(one(TF)/rho_v[i] - one(TF)/rho_l[i])
+    expansion[i] += _phase_change_source(mass_form, mdot[i], rho_l[i], rho_v[i], TF)
+end
+
+@inline _phase_change_source(::Val{false}, m, rl, rv, ::Type{TF}) where {TF} =
+    m*(one(TF)/rv - one(TF)/rl)
+@inline _phase_change_source(::Val{true}, m, rl, rv, ::Type{TF}) where {TF} =
+    m*(one(TF) - rv/rl)
+
+"""
+    add_drift_mass_divergence!(expansion, phi_drift, phi_drift_w, div_drift,
+                               rho1f, rho2f, config)
+
+Drift-flux term of the MASS-form pressure equation:
+
+    expansion += div[ alpha*(1 - alpha)*(rho_1 - rho_2)*u_r ]
+
+**Why it exists.** This solver corrects the VOLUME-averaged velocity `u_j` (see
+the note above `_update_expansion!`), but mixture mass conservation is written
+for the MASS-averaged `u_m`. The two differ by exactly the drift flux:
+
+    rho_m*u_j = rho_m*u_m + alpha*(1 - alpha)*(rho_1 - rho_2)*u_r
+
+so `div(rho_m*u_j) = -d(rho_m)/dt + div[alpha*(1-alpha)*(rho_1-rho_2)*u_r]`.
+Without this term the mass form constrains `div(rho_m*u_j)` to `-d(rho_m)/dt`,
+which is the mixture mass equation for the WRONG velocity. It vanishes
+identically when `rho_1 == rho_2` (no drift) or `alpha` is 0 or 1 (single
+phase), which is why it goes unnoticed until a second phase actually appears.
+
+The volume form needs nothing equivalent: its constraint is on `u_j` directly.
+
+`phi_drift` is the volumetric drift flux `alpha_up*(1-alpha_up)*(Ur . Sf)` built
+by `build_drift_flux!` from `Urdotf` — the SAME face drift flux the alpha
+equation transports with, including turbulent dispersion when `dispersion_in_Ur`
+puts it there, and upwinded in `alpha` for the same reason. If the pressure
+equation and the alpha equation disagreed about where the drift moves phase, the
+difference would reappear as the imbalance this term exists to remove.
+
+`phi_drift_w` is scratch; `phi_drift` itself is left intact for the energy
+equation, which scales the same flux by `(rho*cp)_2 - (rho*cp)_1`.
+"""
+function add_drift_mass_divergence!(expansion, phi_drift, phi_drift_w, div_drift,
+                                    rho1f, rho2f, config)
+    @. phi_drift_w.values = phi_drift.values*(rho1f.values - rho2f.values)
+    div!(div_drift, phi_drift_w, config)
+    @. expansion.values += div_drift.values
+    return nothing
 end
 
 """
@@ -705,20 +820,33 @@ function solve_pressure_compressible!(
 end
 
 """
-    update_expansion!(expansion, alpha, phases, T, T_prev, dt, config)
+    update_expansion!(expansion, alpha, phases, T, T_prev, dt, config; mass_form=false)
 
-Thermal-expansion source of the pressure equation,
+Thermal-expansion source of the pressure equation.
+
+Volume form (`mass_form = false`), a volume production rate [1/s]:
 
     expansion = sum_i alpha_i * beta_i * DT/Dt
 
+Mass form (`mass_form = true`), a mass production rate [kg/m3/s]:
+
+    expansion = sum_i alpha_i * rho_i * beta_i * DT/Dt
+
 with `beta_i` the thermal expansivity of each phase (exactly `1/T` for an ideal
 gas). Reuses `phase_betaT`, dividing by `T` to recover `beta` itself.
+
+As with `update_psi!`, the mass form weights each phase by ITS OWN density and is
+**not** `rho_m * sum_i alpha_i*beta_i`: the term comes from differentiating
+`rho_m = sum_i alpha_i*rho_i`, so the density sits inside the sum. The two agree
+wherever one phase dominates and differ most in the vapour-rich cells, which for
+a boiling case are exactly the cells at the wall.
 
 This is the driver of self-pressurisation: heat raises `T`, the gas tries to
 expand, and a rigid sealed volume converts that into a pressure rise. `DT/Dt` is
 taken from the temperature solve just completed.
 """
-function update_expansion!(expansion, alpha, phases, T, T_prev, dt, config)
+function update_expansion!(expansion, alpha, phases, T, T_prev, dt, config;
+                           mass_form=false)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
@@ -729,17 +857,55 @@ function update_expansion!(expansion, alpha, phases, T, T_prev, dt, config)
     ndrange = length(expansion)
     kernel! = _update_expansion!(_setup(backend, workgroup, ndrange)...)
     kernel!(expansion, alpha, T, T_prev, dt,
-            phases[1].rho_model, phases[2].rho_model, beta_l, beta_v)
+            phases[1].rho_model, phases[2].rho_model, beta_l, beta_v,
+            phases[1].rho, phases[2].rho, Val(mass_form))
     return nothing
 end
 
+# WHICH VELOCITY THE PRESSURE EQUATION CORRECTS - settled, and it decides the
+# weighting used above and in `add_phase_change_volume!`.
+#
+# `U` here is the VOLUME-averaged mixture velocity `u_j = sum_i alpha_i*u_i`, not
+# the mass-averaged `u_m`. The alpha equation is what pins this down: the exact
+# liquid volume flux `alpha*u_1` decomposes as
+#
+#     alpha*u_j - alpha*(1-alpha)*u_r          (volume averaged)
+#     alpha*u_m - alpha*(1-alpha)*(rho_2/rho_m)*u_r    (mass averaged)
+#
+# and `high_order_alpha_flux!(::Mixture, ...)` carries the drift term with NO
+# density weight, which is the `u_j` form. `compute_Ur!` agrees independently:
+# it divides the drift velocity by the continuous-phase VOLUME fraction, which is
+# the `u_j` inversion. Both read the same `mdotf` that the pressure solve
+# corrects, so there is only one velocity to identify.
+#
+# Consequence. The VOLUME constraint is the exactly correct one for this `U`, and
+# its phase-change source `Gamma*(1/rho_v - 1/rho_l)` is right as written. The
+# MASS form is a different equation, not the volume constraint scaled through:
+# `div(rho_m*u_j) != rho_m*div(u_j)`, because the discretisation puts `rho_m`
+# inside the divergence. The exact statement is
+#
+#     div(rho_m*u_j) = -d(rho_m)/dt + div[alpha*(1-alpha)*(rho_1-rho_2)*u_r]
+#
+# whose phase-change part is `Gamma*(1 - rho_v/rho_l)` (about 0.92*Gamma for
+# LH2/GH2 at 0.4 MPa), against the `rho_m*Gamma*(1/rho_v - 1/rho_l)` this code
+# used to apply - roughly 11.4*Gamma, too large by a factor of ~12. The
+# STAR-CCM+ source that factor was taken from is the VOLUME constraint, correct
+# in its own frame, applied to a divergence it does not govern.
+#
+# The thermal term follows the same rule and is now weighted per phase, matching
+# `update_psi!`. The drift divergence is carried by `add_drift_mass_divergence!`.
+
 @kernel inbounds=true function _update_expansion!(
-    expansion, alpha, T, T_prev, dt, eos_l, eos_v, beta_l, beta_v)
+    expansion, alpha, T, T_prev, dt, eos_l, eos_v, beta_l, beta_v,
+    rho_l, rho_v, mass_form)
     i = @index(Global)
     TF = eltype(expansion.values)
     a = alpha[i]
     t = T[i]
-    betaT = a*phase_betaT(eos_l, beta_l[i], t) + (one(TF) - a)*phase_betaT(eos_v, beta_v[i], t)
+    # `Val` so the branch resolves at compile time and the kernel stays GPU-safe.
+    w1, w2 = _mass_weights(mass_form, rho_l[i], rho_v[i], TF)
+    betaT = a*w1*phase_betaT(eos_l, beta_l[i], t) +
+            (one(TF) - a)*w2*phase_betaT(eos_v, beta_v[i], t)
     dTdt = (t - T_prev[i])/dt
     expansion[i] = betaT*dTdt/t
 end
@@ -787,13 +953,16 @@ end
     t = T[i]
     # `Val` so the branch is resolved at compile time and the kernel stays
     # GPU-safe (no runtime divergence, no boxed Bool).
-    w1, w2 = _psi_weights(mass_form, rho1[i], rho2[i], TF)
+    w1, w2 = _mass_weights(mass_form, rho1[i], rho2[i], TF)
     psi[i] = a*w1*phase_compressibility(eos1, p, t) +
              (one(TF) - a)*w2*phase_compressibility(eos2, p, t)
 end
 
-@inline _psi_weights(::Val{false}, r1, r2, ::Type{TF}) where {TF} = (one(TF), one(TF))
-@inline _psi_weights(::Val{true}, r1, r2, ::Type{TF}) where {TF} = (r1, r2)
+# Per-phase weights that turn a volume-form coefficient into a mass-form one.
+# Shared by `_update_psi!` and `_update_expansion!`: both are derivatives of
+# `rho_m = sum_i alpha_i*rho_i`, so both weight each phase by its OWN density.
+@inline _mass_weights(::Val{false}, r1, r2, ::Type{TF}) where {TF} = (one(TF), one(TF))
+@inline _mass_weights(::Val{true}, r1, r2, ::Type{TF}) where {TF} = (r1, r2)
 
 """
     phase_property_faces!(prop_f, prop_cell, config)
@@ -1081,7 +1250,10 @@ Use `Energy{TwoPhaseTemperature}(Tref=...)`."""))
         #   Time flux   sum_i a_i psi_i    sum_i a_i rho_i psi_i  (= drho_m/dp)
         #   Lapl. flux  rDf                rho_f*rDf
         #   divHv       div(u*)            div(rho_f u*)
-        #   expansion   [1/s]              rho_m*[1/s]            [kg/m3/s]
+        #   expansion   [1/s]              [kg/m3/s], rebuilt per phase
+        #
+        # The expansion source is REBUILT in mass units, not rescaled - see
+        # `multiphase_pressure_form` and the note above `_update_expansion!`.
         p_eqn = (
             Time{schemes.p_rgh.time}(psi, p_rgh)
             - Laplacian{schemes.p.laplacian}(rDf, p_rgh)
@@ -1150,11 +1322,11 @@ initialise_multiphase_energy(::Nothing, model, mdotf, config) = nothing
 initialise_multiphase_energy(energy::TwoPhaseTemperature, model, mdotf, config) =
     initialise(energy, model, mdotf, config)
 
-multiphase_energy!(::Nothing, model, alpha_fluxf, mdotf, phase_faces, nueff,
+multiphase_energy!(::Nothing, model, alpha_fluxf, mdotf, phi_drift, phase_faces, nueff,
                    dpdt, mdot_pc, L, time, dt, config) = nothing
-multiphase_energy!(energyModel, model, alpha_fluxf, mdotf, phase_faces, nueff,
+multiphase_energy!(energyModel, model, alpha_fluxf, mdotf, phi_drift, phase_faces, nueff,
                    dpdt, mdot_pc, L, time, dt, config) =
-    energy!(energyModel, model, alpha_fluxf, mdotf, phase_faces, nueff,
+    energy!(energyModel, model, alpha_fluxf, mdotf, phi_drift, phase_faces, nueff,
             dpdt, mdot_pc, L, time, dt, config)
 
 energy_residuals(::Nothing) = ()
@@ -1250,6 +1422,7 @@ function MULTIPHASE(
     rDf = mass_form ? FaceScalarField(mesh) : p_flux
     mass_form && initialise!(rDf, 1.0)
 
+
     # Flux of the implicit pressure-convection term, retrieved from the equation
     # itself (term 3, after Time and Laplacian) so the array the solver fills is
     # the same one the discretisation reads. `psif` is loop-local working storage.
@@ -1261,6 +1434,24 @@ function MULTIPHASE(
     rho_ref = multiphase_rho_ref(model.fluid, phases, main)
     p_abs_limit = multiphase_p_abs_limit(model.fluid)
     rD_ref_density = multiphase_rD_ref_density(model.fluid)
+    mass_mobility_ref = multiphase_mass_mobility_ref(model.fluid)
+    if mass_mobility_ref !== nothing && !mass_form
+        @warn """`mass_mobility_ref` only affects `pressure_form = :mass` - it freezes the \
+mass form's Laplacian coefficient `rho_f*rDf`, which the volume form does not have. \
+Ignored here.""" pressure_form=:volume
+    end
+
+    # NOTE for anyone tempted to reason about `rD_ref_density` and the mass form
+    # from the algebra: the two are COMPLEMENTARY, not redundant. Measured on the
+    # LH2 pipe over 200 steps, `pressure_form = :mass` is stable WITH
+    # `rD_ref_density` and goes NaN without it, while the volume form is stable
+    # either way.
+    #
+    # The tempting argument - a_P ~ rho*V/dt, so rD ~ dt/(rho*V), so the mass
+    # form's `rho_f*rDf` already has the density cancelled and freezing it merely
+    # puts `alpha` back - is wrong. The momentum diagonal does not scale with the
+    # density the way that assumes. Recorded here because the argument is
+    # convincing enough to be worth not re-deriving.
     g_vector = model.fluid.physics_properties.gravity.g
     p_abs = ScalarField(mesh)
     initialise!(p_abs, p_operating)
@@ -1489,6 +1680,17 @@ function MULTIPHASE(
     phirf    = FaceScalarField(mesh)
     Urdotf   = FaceScalarField(mesh)
 
+    # VOLUMETRIC drift flux `alpha_up*(1 - alpha_up)*(Ur . Sf)`, rebuilt once per
+    # outer iteration AFTER the alpha solve so it describes the state the rest of
+    # the step acts on (`drift_flux` above is the alpha equation's own copy, built
+    # from the pre-solve alpha). Two consumers scale it by different property
+    # differences: the mass-form pressure source by `rho_1 - rho_2`, and the
+    # energy equation by `(rho*cp)_2 - (rho*cp)_1`. Left at zero for VOF, where
+    # there is no drift and both consumers ignore it.
+    phi_drift   = FaceScalarField(mesh)
+    phi_drift_w = FaceScalarField(mesh)   # scratch for the scaled copy
+    div_drift   = ScalarField(mesh)
+
     Hv       = VectorField(mesh)
     rD       = ScalarField(mesh)
     rho_prev = ScalarField(mesh)
@@ -1547,7 +1749,7 @@ function MULTIPHASE(
             # MOMENTUM slip stress uses the force-balance drift velocity only.
             # Snapshot it to faces BEFORE any dispersion is added.
             #
-            # `div_slip_outer!` forms  alpha*(1-alpha)*(rho1+rho2)/rho_m * Ur (x) Ur,
+            # `div_slip_outer!` forms  alpha*(1-alpha)*rho1*rho2/rho_m * Ur (x) Ur,
             # which is derived from the MEAN slip between the phases. Turbulent
             # dispersion is not a mean slip - it closes the fluctuation
             # correlation <alpha' u'>, i.e. a DIFFUSIVE flux - so feeding it into
@@ -1608,6 +1810,13 @@ function MULTIPHASE(
                            Pplus, Pminus, Qplus, Qminus, Rplus, Rminus,
                            alphaMaxLocal, alphaMinLocal, C_alpha, dt_cpu[1], time,
                            compressible, config)
+        end
+
+        # Post-solve drift flux, shared by the energy equation and the mass-form
+        # pressure source. Built once here, from the alpha that has just been
+        # solved, so both consumers see the same transport.
+        if typeof(mp_model) <: Mixture
+            build_drift_flux!(phi_drift, Urdotf, alpha, mdotf, boundaries, time, config)
         end
 
         # Vapour generation. Two independent mechanisms write into `mdot_pc`:
@@ -1730,12 +1939,13 @@ function MULTIPHASE(
         # driver below sees this step's dT/dt. Reuses the limited `alpha_fluxf`
         # from advance_alpha! so energy and mass advection agree at the
         # interface. No-op when the energy model is Isothermal.
-        multiphase_energy!(energyModel, model, alpha_fluxf, mdotf, phase_faces, nueff,
+        multiphase_energy!(energyModel, model, alpha_fluxf, mdotf, phi_drift,
+                           phase_faces, nueff,
                            dpdt, mdot_pc, h_fg, time, dt_cpu[1], config)
 
         if compressible
             update_expansion!(expansion, alpha, phases, model.energy.T, T_prev,
-                              dt_cpu[1], config)
+                              dt_cpu[1], config; mass_form=mass_form)
 
             # Relax the THERMAL part only, while `expansion` still holds it
             # alone. Doing it after the phase-change volume below would damp the
@@ -1750,30 +1960,36 @@ function MULTIPHASE(
         end
 
         begin
-            # Net volume created by phase change. OUTSIDE the compressibility
-            # branch: two phases of different density exchange volume when one
-            # becomes the other whether or not either is compressible, and the
-            # incompressible pressure equation now carries this source too.
+            # Phase-change contribution to the pressure source: net volume
+            # created under the volume form, net mass released under the mass
+            # form. OUTSIDE the compressibility branch: two phases of different
+            # density exchange volume when one becomes the other whether or not
+            # either is compressible, and the incompressible pressure equation
+            # now carries this source too.
             #
             # Added after `update_expansion!` because that call overwrites the
             # field, and after `relax_source!` because this source is physical
             # and must survive at any relaxation setting.
+            #
+            # Both terms are built directly in the units the chosen form wants,
+            # rather than as a volume rate scaled by rho_m afterwards: they are
+            # derivatives of rho_m = sum_i alpha_i*rho_i, so the density belongs
+            # INSIDE the sum, per phase. See the note above `_update_expansion!`
+            # for the derivation, and for why the earlier `expansion *= rho_m`
+            # overstated the phase-change source by a factor of about 12.
             add_phase_change_volume!(expansion, mdot_pc,
-                                     phases[main].rho, phases[secondary].rho, config)
+                                     phases[main].rho, phases[secondary].rho, config;
+                                     mass_form=mass_form)
 
-            # MASS FORM: both sources are volume production rates [1/s]; the mass
-            # equation wants mass production rates [kg/m3/s], so each scales by
-            # the mixture density. For the phase-change term this is exactly the
-            # STAR-CCM+ source,
-            #
-            #     b_cell = mdot_lv*(rho_m/rho_v - rho_m/rho_l)*V_cell
-            #
-            # Unlike the psi coefficient above, `rho_m` (not the per-phase
-            # density) is correct here: these terms come from scaling the volume
-            # constraint through by the mixture density, not from differentiating
-            # rho_m. The volume created is shared by the mixture occupying the
-            # cell, so it is the mixture's inertia that resists it.
-            mass_form && @. expansion.values *= rho.values
+            # MASS FORM, Mixture only: the drift flux, which is the whole
+            # difference between the velocity this solver corrects and the one
+            # mixture mass conservation is written for. See
+            # `add_drift_mass_divergence!`. The volume form needs no counterpart.
+            if mass_form && typeof(mp_model) <: Mixture
+                add_drift_mass_divergence!(
+                    expansion, phi_drift, phi_drift_w, div_drift,
+                    phase_faces.rho1f, phase_faces.rho2f, config)
+            end
         end
 
         # Interface curvature for surface tension (VOF only)
@@ -1811,7 +2027,23 @@ function MULTIPHASE(
         interpolate!(rDf, rD, config)
         # Mass form: the pressure equation's Laplacian coefficient is rho_f*rDf.
         # `rhof` was refreshed by `update_mixture_properties!` above.
-        mass_form && @. p_flux.values = rhof.values * rDf.values
+        # Mass form: the Laplacian coefficient is `rho_f*rDf`, with `rhof`
+        # refreshed by `update_mixture_properties!` above - unless the mobility
+        # has been frozen, in which case the reference density stands in for
+        # `rho_f` and one of the mass form's two extra alpha paths into the
+        # pressure equation is closed. See `multiphase_mass_mobility_ref`.
+        #
+        # Conservation is unaffected either way: `correct_mass_flux_mp!` builds
+        # its correction from the assembled matrix, so operator and correction
+        # carry the SAME coefficient whichever is used, and the corrected flux
+        # satisfies the discrete continuity statement exactly.
+        if mass_form
+            if mass_mobility_ref === nothing
+                @. p_flux.values = rhof.values * rDf.values
+            else
+                @. p_flux.values = mass_mobility_ref * rDf.values
+            end
+        end
 
         remove_pressure_source!(U_eqn, ∇p_rgh, config)
 
@@ -3379,9 +3611,24 @@ end
 end
 
 
+# Coefficient of the drift (slip) stress `sum_i alpha_i*rho_i*v_d,i (x) v_d,i`,
+# with `v_d,i = u_i - u_m` the diffusion velocity of each phase. Substituting
+#
+#     u_1 - u_m = -(1-alpha)*rho_2/rho_m * u_r
+#     u_2 - u_m = +alpha*rho_1/rho_m * u_r
+#
+# and summing gives
+#
+#     alpha*(1-alpha)*rho_1*rho_2/rho_m^2 * [(1-alpha)*rho_2 + alpha*rho_1]
+#   = alpha*(1-alpha)*rho_1*rho_2/rho_m
+#
+# because the bracket is exactly `rho_m`. The PRODUCT of the phase densities,
+# not their sum: for LH2/GH2 at 0.4 MPa that is 304.7 against 67.8, so the sum
+# form understated this stress by about 4.5x. `u_r` is `Ur`, the mean slip
+# `u_2 - u_1`, which is what `compute_Ur!` returns.
 @inline function _slip_coeff(alphaf, rhof, rho1f, rho2f, i, TF)
     af = alphaf[i]
-    (af * (one(TF) - af) * (rho1f[i] + rho2f[i])) / (rhof[i] + eps(TF))
+    (af * (one(TF) - af) * rho1f[i] * rho2f[i]) / (rhof[i] + eps(TF))
 end
 
 function div_slip_outer!(vector::VectorField, alphaf, rhof, rho1f, rho2f, Urf, config)

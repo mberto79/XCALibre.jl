@@ -68,9 +68,14 @@ end
     ac, su
 end
 
-# Impermeable wall: face value = cell value, so div (+ap) and bounding (-ap) cancel
+# Scalars cancel exactly. For vectors, the projected face value leaves the normal
+# component from div(phi,U) - Sp(div(phi),U).
 @define_boundary Slip Divergence{BoundedUpwind} VectorField begin
-    0.0, 0.0
+    (; normal) = face
+    ap = term.sign*term.flux[fID]
+    vc = term.phi[cellID]
+    vn = (vc⋅normal)*normal
+    0.0, ap*vn[component.value]
 end
 
 @define_boundary Slip Divergence{BoundedUpwind} ScalarField begin

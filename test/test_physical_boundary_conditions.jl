@@ -52,6 +52,73 @@
     Uf = FaceVectorField(mesh)
     XCALibre.Discretise.boundary_interpolation!(slip, Uf, U, mesh.boundary_cellsID, 0.0, fID)
     actual_normal = original.normal
-    @test Uf[fID] ≈ U[cID] - (U[cID]⋅actual_normal)*actual_normal
-    @test Uf[fID]⋅actual_normal ≈ 0.0 atol=10eps(Float64)
+    @test Uf[fID] ≈ U[cID] - dot(U[cID], actual_normal)*actual_normal
+    @test dot(Uf[fID], actual_normal) ≈ 0.0 atol=10eps(Float64)
+
+    XCALibre.Discretise.boundary_interpolation!(symmetry, Uf, U, mesh.boundary_cellsID, 0.0, fID)
+    @test Uf[fID] ≈ U[cID] - dot(U[cID], actual_normal)*actual_normal
+    @test dot(Uf[fID], actual_normal) ≈ 0.0 atol=10eps(Float64)
+
+    phi = ScalarField(mesh)
+    initialise!(phi, 7.0)
+    phif = FaceScalarField(mesh)
+    XCALibre.Discretise.boundary_interpolation!(
+        symmetry, phif, phi, mesh.boundary_cellsID, 0.0, fID)
+    @test phif[fID] == phi[cID]
+
+    mdot = FaceScalarField(mesh)
+    for scheme in (Linear, Upwind, LUST, BoundedUpwind), flux in (-3.0, 3.0)
+        mdot[fID] = flux
+        vector_term = Divergence{scheme}(mdot, U)
+        scalar_term = Divergence{scheme}(mdot, phi)
+
+        for component in (XDir(), YDir(), ZDir())
+            vector_arguments = (
+                vector_term,
+                empty_indices,
+                empty_indices,
+                empty_values,
+                cID,
+                cID,
+                mesh.cells[cID],
+                face,
+                fID,
+                1,
+                component,
+                0.0,
+            )
+            symmetry_coefficients = symmetry(vector_arguments...)
+            @test symmetry_coefficients == slip(vector_arguments...)
+
+            ac, su = symmetry_coefficients
+            vc = U[cID]
+            vp = vc - dot(vc, normal)*normal
+            ap = flux
+            expected_residual = scheme === BoundedUpwind ?
+                ap*(vp[component.value] - vc[component.value]) :
+                ap*vp[component.value]
+            @test ac*vc[component.value] - su ≈ expected_residual
+        end
+
+
+        scalar_arguments = (
+            scalar_term,
+            empty_indices,
+            empty_indices,
+            empty_values,
+            cID,
+            cID,
+            mesh.cells[cID],
+            face,
+            fID,
+            1,
+            nothing,
+            0.0,
+        )
+        scalar_coefficients = symmetry(scalar_arguments...)
+        @test scalar_coefficients == slip(scalar_arguments...)
+        ac, su = scalar_coefficients
+        expected_residual = scheme === BoundedUpwind ? 0.0 : flux*phi[cID]
+        @test ac*phi[cID] - su ≈ expected_residual
+    end
 end

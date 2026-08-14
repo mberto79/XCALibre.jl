@@ -56,6 +56,38 @@ outputTest_FOAM3D = String(take!(msg))
 
 @test outputTest_FOAM3D == "3D Mesh with:\n-> 125 cells\n-> 450 faces\n-> 216 nodes\n"
 
+@testset "OpenFOAM boundary groups are ignored" begin
+    boundaries = XCALibre.FoamMesh.read_boundary(
+        joinpath(test_grids_dir, "OF_cavity_hex", "polyMesh", "boundary"),
+        Int32,
+        Float64,
+    )
+    @test getproperty.(boundaries, :name) == [:walls, :top]
+    @test getproperty.(boundaries, :nFaces) == Int32[125, 25]
+    @test getproperty.(boundaries, :startFace) == Int32[301, 426]
+
+    mktempdir() do directory
+        malformed = joinpath(directory, "boundary")
+        write(malformed, """
+        FoamFile { version 2.0; class polyBoundaryMesh; object boundary; }
+        2
+        (
+            onlyPatch
+            {
+                type patch;
+                nFaces 1;
+                startFace 0;
+            }
+        )
+        """)
+        @test_throws ArgumentError XCALibre.FoamMesh.read_boundary(
+            malformed,
+            Int32,
+            Float64,
+        )
+    end
+end
+
 # Test 3D UNV and FOAM meshes are equal
 @test outputTest_UNV3D == outputTest_FOAM3D
 

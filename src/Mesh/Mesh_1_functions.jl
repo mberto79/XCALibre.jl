@@ -6,6 +6,7 @@ export total_boundary_faces, boundary_index
 export norm_static
 export convert_mesh_float
 export validate_single_precision_mesh
+export compute_3d_geometry!, face_geometry
 # export x, y, z # access cell centres
 # export xf, yf, zf # access face centres
 
@@ -48,6 +49,140 @@ weight_delta_e(C1F1, normal) = begin
     e = delta > zero(delta) ? C1F1/delta : normal
     delta = max(delta, eps(one(delta))) # keep delta > 0 for degenerate faces (area is 0 there)
     return weight, delta, e
+end
+
+function face_geometry(nodes, node_ids, apex::SVector{3, TF}) where {TF<:AbstractFloat}
+    area_vector = SVector{3, TF}(0, 0, 0)
+    n_nodes = length(node_ids)
+    @inbounds for index in 1:n_nodes
+        next_index = index == n_nodes ? 1 : index + 1
+        point = nodes[node_ids[index]].coords
+        next_point = nodes[node_ids[next_index]].coords
+        area_vector += ((point - apex) × (next_point - apex))/TF(2)
+    end
+
+    area = norm(area_vector)
+    normal = area > zero(TF) ? area_vector/area : SVector{3, TF}(0, 0, 0)
+    centre_sum = SVector{3, TF}(0, 0, 0)
+    projected_area = zero(TF)
+    @inbounds for index in 1:n_nodes
+        next_index = index == n_nodes ? 1 : index + 1
+        point = nodes[node_ids[index]].coords
+        next_point = nodes[node_ids[next_index]].coords
+        triangle_vector = ((point - apex) × (next_point - apex))/TF(2)
+        weight = triangle_vector ⋅ normal
+        projected_area += weight
+        centre_sum += weight*(apex + point + next_point)/TF(3)
+    end
+    centre = projected_area > floatmin(TF) ? centre_sum/projected_area : apex
+    return normal, area, centre
+end
+
+function compute_3d_geometry!(mesh::Mesh3)
+    (; cells, faces, face_nodes, nodes, boundary_cellsID) = mesh
+    TF = _get_float(mesh)
+    n_cells = length(cells)
+    n_boundary_faces = length(boundary_cellsID)
+
+    for (face_id, face) in enumerate(faces)
+        node_ids = @view face_nodes[face.nodes_range]
+        apex = sum(nodes[node_id].coords for node_id in node_ids)/TF(length(node_ids))
+        normal, area, centre = face_geometry(nodes, node_ids, apex)
+        faces[face_id] = Face3D(
+            face.nodes_range, face.ownerCells, centre, normal, face.e,
+            area, face.delta, face.weight,
+        )
+    end
+
+    centre_estimates = fill(SVector{3, TF}(0, 0, 0), n_cells)
+    n_cell_faces = zeros(_get_int(mesh), n_cells)
+    for face in faces
+        owner = face.ownerCells[1]
+        centre_estimates[owner] += face.centre
+        n_cell_faces[owner] += one(eltype(n_cell_faces))
+    end
+    for face_id in (n_boundary_faces + 1):length(faces)
+        face = faces[face_id]
+        neighbour = face.ownerCells[2]
+        centre_estimates[neighbour] += face.centre
+        n_cell_faces[neighbour] += one(eltype(n_cell_faces))
+    end
+    for cell_id in eachindex(cells)
+        centre_estimates[cell_id] /= TF(n_cell_faces[cell_id])
+    end
+
+    for (face_id, face) in enumerate(faces)
+        owner = face.ownerCells[1]
+        direction = face_id <= n_boundary_faces ?
+            face.centre - centre_estimates[owner] :
+            centre_estimates[face.ownerCells[2]] - centre_estimates[owner]
+        direction ⋅ face.normal >= zero(TF) && continue
+        reverse!(@view face_nodes[face.nodes_range])
+        faces[face_id] = Face3D(
+            face.nodes_range, face.ownerCells, face.centre, -face.normal, face.e,
+            face.area, face.delta, face.weight,
+        )
+    end
+
+    centre_sums = fill(SVector{3, TF}(0, 0, 0), n_cells)
+    triple_volumes = zeros(TF, n_cells)
+    max_areas = zeros(TF, n_cells)
+    for face in faces
+        owner = face.ownerCells[1]
+        area_vector = face.area*face.normal
+        triple_volume = area_vector ⋅ (face.centre - centre_estimates[owner])
+        pyramid_centre = TF(3/4)*face.centre + TF(1/4)*centre_estimates[owner]
+        centre_sums[owner] += triple_volume*pyramid_centre
+        triple_volumes[owner] += triple_volume
+        max_areas[owner] = max(max_areas[owner], face.area)
+    end
+    for face_id in (n_boundary_faces + 1):length(faces)
+        face = faces[face_id]
+        neighbour = face.ownerCells[2]
+        area_vector = face.area*face.normal
+        triple_volume = area_vector ⋅ (centre_estimates[neighbour] - face.centre)
+        pyramid_centre = TF(3/4)*face.centre + TF(1/4)*centre_estimates[neighbour]
+        centre_sums[neighbour] += triple_volume*pyramid_centre
+        triple_volumes[neighbour] += triple_volume
+        max_areas[neighbour] = max(max_areas[neighbour], face.area)
+    end
+
+    fixed = 0
+    for (cell_id, cell) in enumerate(cells)
+        triple_volume = triple_volumes[cell_id]
+        centre = abs(triple_volume) > floatmin(TF) ?
+            centre_sums[cell_id]/triple_volume : centre_estimates[cell_id]
+        volume = triple_volume/TF(3)
+        if !(isfinite(volume) && volume > zero(TF))
+            estimate = max_areas[cell_id]^TF(1.5)*TF(1e-3)
+            volume = max(isfinite(volume) ? abs(volume) : zero(TF), estimate)
+            fixed += 1
+        end
+        cells[cell_id] = Cell(centre, volume, cell.nodes_range, cell.faces_range)
+    end
+    fixed > 0 && @warn "compute_3d_geometry!: $fixed cell(s) had non-positive volume (degenerate/sliver cells); replaced with positive estimates."
+
+    for (face_id, face) in enumerate(faces)
+        owner_centre = cells[face.ownerCells[1]].centre
+        if face_id <= n_boundary_faces
+            weight, delta, direction = weight_delta_e(
+                face.centre - owner_centre, face.normal,
+            )
+        else
+            neighbour_centre = cells[face.ownerCells[2]].centre
+            weight, delta, direction = weight_delta_e(
+                face.centre - owner_centre,
+                face.centre - neighbour_centre,
+                neighbour_centre - owner_centre,
+                face.normal,
+            )
+        end
+        faces[face_id] = Face3D(
+            face.nodes_range, face.ownerCells, face.centre, face.normal, direction,
+            face.area, delta, weight,
+        )
+    end
+    return mesh
 end
 
 function _convert_array!(arr, backend::CPU)

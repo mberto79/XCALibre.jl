@@ -4,6 +4,12 @@ initialise_writer(format::OpenFOAM, mesh::Mesh3) = begin
     touch("XCALibre.foam")
     default_dir = "constant/polyMesh"
 
+    mesh_files = ("points", "faces", "owner", "neighbour", "boundary")
+    if all(name -> isfile(joinpath(default_dir, name)), mesh_files)
+        @info "Preserving existing mesh in constant/polyMesh."
+        return FOAMWriter(nothing, nothing)
+    end
+
     # if !isdir(default_dir)
         @info "Writing mesh to constant/polyMesh..."
         # Create constant directory and mesh files
@@ -45,9 +51,9 @@ initialise_writer(format::OpenFOAM, mesh::Mesh3) = begin
             println(io, "(")
             for nodei ∈ eachindex(nodes)
                 coords = nodes[nodei].coords
-                coords_str = @sprintf "(%g %g %g)" coords[1] coords[2] coords[3]
-                println(io, coords_str)
-                # println(io, "($(coords[1]) $(coords[2]) $(coords[3]))")
+                # Julia's shortest round-trippable representation preserves the
+                # input mesh precision. `%g` only retained six significant digits.
+                println(io, "($(coords[1]) $(coords[2]) $(coords[3]))")
             end
             println(io, ")")
         end
@@ -356,4 +362,3 @@ _foam_boundary_entry(BC::Empty) =  begin
     \t}
     """
 end
-

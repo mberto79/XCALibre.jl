@@ -14,7 +14,7 @@ Face Ordered Tracking: The exact 3D spatial node ordering of faces provided by t
 
 2. Geometric Assumptions and Calculations
 
-True Geometric Centroids: Face Centroids are computed as area-weighted true geometric centers by sub-triangulating the face around an estimated arithmetic center. Cell Centroids are computed as volume-weighted true geometric centers by summing the centroids of the divergence pyramids formed by the cell's boundary faces and an estimated apex.
+True Geometric Centroids: UNV and OpenFOAM meshes use the same geometry pipeline. Face centroids use projected-area weights, and cell centroids use OpenFOAM-compatible volume-weighted face pyramids.
 
 Face Area and Normals: Computed by summing the cross products of consecutive edge sub-triangles.
 

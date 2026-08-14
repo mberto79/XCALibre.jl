@@ -75,10 +75,7 @@ function _build_UNV3D_mesh_core(points, efaces, cells_UNV, boundaryElements, ::T
         total_faces, n_points, n_cells, I, F
     )
 
-    # 2-Stage Geometry Pipeline
-    calculate_centres!(mesh, I, F)            # Stage 1: Estimated arithmetic means
-    calculate_face_properties!(mesh, I, F)    # Stage 2A: True area-weighted face centroids
-    calculate_area_and_volume!(mesh, I, F)    # Stage 2B: True volume-weighted cell centroids
+    Mesh.compute_3d_geometry!(mesh)
 
     return mesh
 end

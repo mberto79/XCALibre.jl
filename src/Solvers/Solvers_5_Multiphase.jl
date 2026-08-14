@@ -719,59 +719,36 @@ face-normal scalar field `psif`. Required for discretisation consistency.
 """
 function reconstruct!(phi::VectorField, psif::FaceScalarField, config)
     mesh = phi.mesh
-    (; cells, cell_nsign, cell_faces, faces) = mesh
+    (; cells, cell_faces, faces) = mesh
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    F = _get_float(mesh)
+    TF = _get_float(mesh)
     ndrange = length(cells)
+    moments = KernelAbstractions.zeros(backend, TF, 9, ndrange)
+
+    kernel! = _reconstruct_internal_moments!(_setup(backend, workgroup, ndrange)...)
+    kernel!(cells, cell_faces, faces, psif, moments)
+    KernelAbstractions.synchronize(backend)
+
+    n_boundary_faces = length(mesh.boundary_cellsID)
+    if n_boundary_faces > 0
+        kernel! = _reconstruct_boundary_moments!(
+            _setup(backend, workgroup, n_boundary_faces)...)
+        kernel!(faces, psif, moments)
+        KernelAbstractions.synchronize(backend)
+    end
 
     if typeof(mesh) <: Mesh2
         kernel! = _reconstruct_operation_2D!(_setup(backend, workgroup, ndrange)...)
     else
         kernel! = _reconstruct_operation_3D!(_setup(backend, workgroup, ndrange)...)
     end
-    kernel!(cells, F, cell_faces, cell_nsign, faces, phi, psif)
+    kernel!(phi, moments)
 end
 
-@kernel function _reconstruct_operation_2D!(
-    cells::AbstractArray{Cell{TF,SV,UR}}, F, cell_faces, cell_nsign, faces, phi, psif
-) where {TF,SV,UR}
-    i = @index(Global)
-    @inbounds begin
-        (; faces_range) = cells[i]
-
-        m11 = zero(TF); m12 = zero(TF); m22 = zero(TF)
-        b1  = zero(TF); b2  = zero(TF)
-
-        for fi ∈ faces_range
-            fID = cell_faces[fi]
-            (; area, normal) = faces[fID]
-            nx = normal[1]; ny = normal[2]
-
-            m11 += area * nx * nx
-            m12 += area * nx * ny
-            m22 += area * ny * ny
-
-            ssf = psif[fID]
-            b1 += nx * ssf
-            b2 += ny * ssf
-        end
-
-        det = m11*m22 - m12*m12
-
-        is_invertible = abs(det) > eps(TF)
-        invdet = is_invertible ? one(TF)/det : zero(TF)
-
-        ux = ( m22*b1 - m12*b2) * invdet
-        uy = (-m12*b1 + m11*b2) * invdet
-
-        phi[i] = @SVector [ux, uy, zero(TF)]
-    end
-end
-
-@kernel function _reconstruct_operation_3D!(
-    cells::AbstractArray{Cell{TF,SV,UR}}, F, cell_faces, cell_nsign, faces, phi, psif
+@kernel function _reconstruct_internal_moments!(
+    cells::AbstractArray{Cell{TF,SV,UR}}, cell_faces, faces, psif, moments
 ) where {TF,SV,UR}
     i = @index(Global)
     @inbounds begin
@@ -800,13 +777,67 @@ end
             b3 += nz * ssf
         end
 
+        moments[1, i] = m11; moments[2, i] = m12; moments[3, i] = m13
+        moments[4, i] = m22; moments[5, i] = m23; moments[6, i] = m33
+        moments[7, i] = b1; moments[8, i] = b2; moments[9, i] = b3
+    end
+end
+
+@kernel function _reconstruct_boundary_moments!(faces, psif, moments)
+    fID = @index(Global)
+    @inbounds begin
+        face = faces[fID]
+        cID = face.ownerCells[1]
+        (; area, normal) = face
+        nx = normal[1]; ny = normal[2]; nz = normal[3]
+        ssf = psif[fID]
+
+        Atomix.@atomic moments[1, cID] += area * nx * nx
+        Atomix.@atomic moments[2, cID] += area * nx * ny
+        Atomix.@atomic moments[3, cID] += area * nx * nz
+        Atomix.@atomic moments[4, cID] += area * ny * ny
+        Atomix.@atomic moments[5, cID] += area * ny * nz
+        Atomix.@atomic moments[6, cID] += area * nz * nz
+        Atomix.@atomic moments[7, cID] += nx * ssf
+        Atomix.@atomic moments[8, cID] += ny * ssf
+        Atomix.@atomic moments[9, cID] += nz * ssf
+    end
+end
+
+@kernel function _reconstruct_operation_2D!(phi, moments)
+    i = @index(Global)
+    @inbounds begin
+        TF = eltype(moments)
+        m11 = moments[1, i]; m12 = moments[2, i]; m22 = moments[4, i]
+        b1 = moments[7, i]; b2 = moments[8, i]
+
+        det = m11*m22 - m12*m12
+        scale = max(abs(m11), abs(m22))
+        is_invertible = scale > zero(TF) && abs(det) > eps(TF)*scale^2
+        invdet = is_invertible ? one(TF)/det : zero(TF)
+
+        ux = ( m22*b1 - m12*b2) * invdet
+        uy = (-m12*b1 + m11*b2) * invdet
+
+        phi[i] = @SVector [ux, uy, zero(TF)]
+    end
+end
+
+@kernel function _reconstruct_operation_3D!(phi, moments)
+    i = @index(Global)
+    @inbounds begin
+        TF = eltype(moments)
+        m11 = moments[1, i]; m12 = moments[2, i]; m13 = moments[3, i]
+        m22 = moments[4, i]; m23 = moments[5, i]; m33 = moments[6, i]
+        b1 = moments[7, i]; b2 = moments[8, i]; b3 = moments[9, i]
+
         A11 = m22*m33 - m23*m23
         A12 = m13*m23 - m12*m33
         A13 = m12*m23 - m13*m22
 
         det = m11*A11 + m12*A12 + m13*A13
-
-        is_invertible = abs(det) > eps(TF)
+        scale = max(abs(m11), abs(m22), abs(m33))
+        is_invertible = scale > zero(TF) && abs(det) > eps(TF)*scale^3
         invdet = is_invertible ? one(TF)/det : zero(TF)
 
         ux = (A11*b1 + A12*b2 + A13*b3) * invdet

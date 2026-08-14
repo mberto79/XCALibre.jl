@@ -141,6 +141,7 @@ function SIMPLE_MRF(
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
     prev = KernelAbstractions.zeros(backend, TF, n_cells) 
+    p_boundary_reference = similar(prev)
 
     # Pre-allocate vectors to hold residuals 
     R_ux = zeros(TF, iterations)
@@ -191,13 +192,15 @@ function SIMPLE_MRF(
         
         # Pressure calculations
         @. prev = p.values
+        @. p_boundary_reference = p.values
         rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
 
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
             grad!(∇p, pf, p, boundaries.p, time, config)
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
-            discretise!(p_eqn, p, config)       
+            @. p_boundary_reference = p.values
+            discretise!(p_eqn, p, config)
             apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
             # setReference!(p_eqn, pref, 1, config)
             nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
@@ -207,7 +210,9 @@ function SIMPLE_MRF(
 
         # Preserve the full pressure correction in the face flux; pressure
         # relaxation applies only to the cell velocity correction.
-        correct_mass_flux!(mdotf, p_eqn, config)
+        correct_mass_flux!(
+            mdotf, p_eqn, config;
+            previous=p_boundary_reference, time=time)
 
         explicit_relaxation!(p, prev, solvers.p.relax, config)
         grad!(∇p, pf, p, boundaries.p, time, config)

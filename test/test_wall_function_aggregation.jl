@@ -5,7 +5,7 @@
     )
     model = Physics(
         time=Steady(),
-        fluid=Fluid{Incompressible}(nu=1.5e-5),
+        fluid=Fluid{Incompressible}(nu=1.0e-7),
         turbulence=RANS{KOmega}(),
         energy=Energy{Isothermal}(),
         domain=mesh,
@@ -22,8 +22,15 @@
     )
 
     initialise!(model.momentum.U, [2.0, 3.0, 4.0])
+    initialise!(model.momentum.Uf, [0.0, 0.0, 0.0])
     initialise!(model.turbulence.k, 0.5)
     initialise!(model.turbulence.nut, 0.05)
+
+    moving_bc = BCs.k[2]
+    for fID in moving_bc.IDs_range
+        cID = mesh.boundary_cellsID[fID]
+        model.momentum.Uf[fID] = model.momentum.U[cID]
+    end
 
     n_cells = length(mesh.cells)
     expected_production = zeros(n_cells)
@@ -40,13 +47,17 @@
             nu = model.fluid.nu[cID]
             k = model.turbulence.k[cID]
             U = model.momentum.U[cID]
+            Uw = model.momentum.Uf[fID]
 
             (; kappa, cmu, E, yPlusLam) = k_bc.value
             yplus = XCALibre.ModelPhysics.y_plus(k, nu, delta, cmu)
             nutw = XCALibre.ModelPhysics.nut_wall(nu, yplus, kappa, E)
             u_star = cmu^0.25*sqrt(k)
             dUdy = u_star/(kappa*delta)
-            tangential_speed = norm(U - (U⋅normal)*normal)
+            relative_velocity = U - Uw
+            tangential_speed = norm(
+                relative_velocity - (relative_velocity⋅normal)*normal,
+            )
             production = yplus > yPlusLam ?
                 (nu + nutw)*tangential_speed/delta*dUdy : zero(nu)
 
@@ -82,6 +93,12 @@
         config,
     )
     @test production.values[wall_cells] ≈ expected_production[wall_cells]
+
+    stationary_cells = Set(mesh.boundary_cellsID[fID] for fID in BCs.k[1].IDs_range)
+    moving_cells = Set(mesh.boundary_cellsID[fID] for fID in moving_bc.IDs_range)
+    moving_only_cells = collect(setdiff(moving_cells, stationary_cells))
+    @test !isempty(moving_only_cells)
+    @test all(iszero, production.values[moving_only_cells])
 
     first_result = copy(production.values)
     initialise!(production, -1.0)

@@ -41,7 +41,7 @@ BCs = assign(
             Wall(:top, [0.0, 0.0, 0.0])
         ],
         p = [
-            Extrapolated(:outlet),
+            Extrapolated(:inlet),
             Dirichlet(:outlet, 0.0),
             Wall(:wall),
             Wall(:top)

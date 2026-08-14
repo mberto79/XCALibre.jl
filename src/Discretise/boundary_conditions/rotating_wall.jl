@@ -48,19 +48,12 @@ RotatingWall(name::Symbol; centre, axis, rpm) = begin
 end
 
 @define_boundary RotatingWall Laplacian{Linear} VectorField begin
-    (; area, delta, normal) = face 
-    phi = term.phi 
+    (; area, delta) = face
     J = term.flux[fID]
     flux = J*area/delta
     ap = term.sign[1]*(-flux)
-    
-    vb = bc.value(face) # call functor stored in "value"
-    vc = phi[cellID]
-    vc_n = (vc⋅normal)*normal
-    vb_n = (vb⋅normal)*normal
-    vb_p = (vb - vb_n) # parallel component of given boundary vector
-   
-    ap, ap*(vb_p[component.value] + vc_n[component.value])
+    vb = bc.value(face)
+    ap, ap*vb[component.value]
 end
 
 @define_boundary RotatingWall Laplacian{Linear} ScalarField begin

@@ -67,8 +67,8 @@ boundaries = assign(
             Dirichlet(:inlet, p_inf),
             Zerogradient(:outlet),
             Wall(:cylinder),
-            Zerogradient(:top),
-            Zerogradient(:bottom)
+            Slip(:top),
+            Slip(:bottom)
         ],
         he = [
             FixedTemperature(:inlet, T=T_inf, Enthalpy(cp=cp, Tref=Tref)),
@@ -76,54 +76,54 @@ boundaries = assign(
             Zerogradient(:outlet),
             FixedTemperature(:cylinder, T=T_inf, Enthalpy(cp=cp, Tref=Tref)),
             # FixedTemperature(:cylinder, T=T_inf, IEnergy(cv=cv, Tref=Tref)),
-            Zerogradient(:top),
-            Zerogradient(:bottom)
+            Slip(:top),
+            Slip(:bottom)
         ],
         k = [
             Dirichlet(:inlet, k_inlet),
             Zerogradient(:outlet),
             KWallFunction(:cylinder),
-            Zerogradient(:top),
-            Zerogradient(:bottom)
+            Slip(:top),
+            Slip(:bottom)
         ],
         omega = [
             Dirichlet(:inlet, ω_inlet),
             Zerogradient(:outlet),
             OmegaWallFunction(:cylinder),
-            Zerogradient(:top),
-            Zerogradient(:bottom)
+            Slip(:top),
+            Slip(:bottom)
         ],
         nut = [
-            Dirichlet(:inlet, νt_inlet),
+            Extrapolated(:inlet, νt_inlet),
             Extrapolated(:outlet),
             NutWallFunction(:cylinder),
-            Zerogradient(:top),
-            Zerogradient(:bottom)
+            Slip(:top),
+            Slip(:bottom)
         ]
     )
 )
 time = SteadyState # Euler
 
-relax_p = time() isa SteadyState ? 0.3 : 1.00
-relax_U = time() isa SteadyState ? 0.7 : 1.00
+relax_p = time() isa SteadyState ? 0.4 : 1.00
+relax_U = time() isa SteadyState ? 0.6 : 1.00
 convergence = 1e-8
 solvers = (
     U = SolverSetup(
-        solver=Bicgstab(), preconditioner=Jacobi(), convergence=convergence, relax=relax_U, rtol=1e-2
+        solver=Bicgstab(), preconditioner=Jacobi(), convergence=convergence, relax=relax_U, rtol=1e-1
         ),
     p = SolverSetup(
         solver=Bicgstab(), preconditioner=Jacobi(), convergence=convergence, relax=relax_p, 
-        limit=(0.02*p_inf, 50*p_inf), rtol=1e-2
+        limit=(0.02*p_inf, 50*p_inf), rtol=1e-1
         ),
     he = SolverSetup(
         solver=Bicgstab(), preconditioner=Jacobi(), convergence=convergence, relax=relax_p,
-        limit=(50.0, 6000.0), rtol=1e-2
+        limit=(50.0, 6000.0), rtol=1e-1
         ),
     k = SolverSetup(
-        solver=Bicgstab(), preconditioner=Jacobi(), convergence=convergence, relax=0.6, rtol=1e-2
+        solver=Bicgstab(), preconditioner=Jacobi(), convergence=convergence, relax=0.6, rtol=1e-1
         ),
     omega = SolverSetup(
-        solver=Bicgstab(), preconditioner=Jacobi(), convergence=convergence, relax=0.6, rtol=1e-2
+        solver=Bicgstab(), preconditioner=Jacobi(), convergence=convergence, relax=0.6, rtol=1e-1
         )
 )
 

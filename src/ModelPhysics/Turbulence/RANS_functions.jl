@@ -114,11 +114,9 @@ end
 
     (; kappa, beta1, cmu, B, E, yPlusLam) = BC.value
     (; nu, rho) = fluid
-    (; U) = momentum
+    (; U, Uf) = momentum
     (; k, nut) = turbulence
 
-    Uw = SVector{3}(0.0,0.0,0.0)
-    # Uw = boundaries.U[BC.ID].value
     cID = boundary_cellsID[fID]
     face = faces[fID]
     nuc = nu[cID]
@@ -127,6 +125,7 @@ end
     dUdy = uStar/(kappa*delta)
     yplus = y_plus(k[cID], nuc, delta, cmu)
     nutw = nut_wall(nuc, yplus, kappa, E)
+    Uw = Uf[fID]
     mag_grad_U = mag(sngrad(U[cID], Uw, delta, normal))
     if yplus > yPlusLam
         values[cID] = rho[cID]*(nu[cID] + nutw)*mag_grad_U*dUdy

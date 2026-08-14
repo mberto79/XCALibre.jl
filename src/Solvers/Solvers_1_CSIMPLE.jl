@@ -176,6 +176,7 @@ function CSIMPLE(
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
     prev = KernelAbstractions.zeros(backend, TF, n_cells) 
+    p_boundary_reference = similar(prev)
 
     # Pre-allocate vectors to hold residuals 
     R_ux = ones(TF, iterations)
@@ -265,12 +266,26 @@ function CSIMPLE(
         # Pressure calculations
         rp = 0.0
         @. prev = p.values
+        @. p_boundary_reference = p.values
         if typeof(model.fluid) <: Compressible
             rp = solve_equation!(
                 p_eqn, p, boundaries.p, solvers.p, config; 
-                ref=nothing, irelax=solvers.p.relax) # perform implicit relaxation
+                ref=nothing)
         elseif typeof(model.fluid) <: WeaklyCompressible
             rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing)
+        end
+
+        # non-orthogonal correction
+        for i ∈ 1:ncorrectors
+            grad!(∇p, pf, p, boundaries.p, time, config)
+            limit_gradient!(schemes.p.limiter, ∇p, p, config)
+            @. p_boundary_reference = p.values
+            discretise!(p_eqn, p, config)
+            apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
+            setReference!(p_eqn, pref, 1, config)
+            nonorthogonal_face_correction(p_eqn, ∇p, rhorDf, config)
+            update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+            rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
         end
 
         if !isnothing(solvers.p.limit)
@@ -278,36 +293,19 @@ function CSIMPLE(
             clamp!(p.values, pmin, pmax)
         end
 
-        if typeof(model.fluid) <: WeaklyCompressible
-            explicit_relaxation!(p, prev, solvers.p.relax, config)
-        end
+        # Correct pressure-dependent fluxes before under-relaxing cell pressure.
         grad!(∇p, pf, p, boundaries.p, time, config)
         limit_gradient!(schemes.p.limiter, ∇p, p, config)
-
-        # non-orthogonal correction
-        for i ∈ 1:ncorrectors
-            discretise!(p_eqn, p, config)
-            apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
-            setReference!(p_eqn, pref, 1, config)
-            nonorthogonal_face_correction(p_eqn, ∇p, rhorDf, config)
-            update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-            rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
-            if typeof(model.fluid) <: WeaklyCompressible
-                explicit_relaxation!(p, prev, solvers.p.relax, config)
-            end
-
-            grad!(∇p, pf, p, boundaries.p, time, config)
-            project_grad_tangent!(∇p, boundaries.U, config)
-            limit_gradient!(schemes.p.limiter, ∇p, p, config)
-        end
-
-        # Correct mass flux and cell velocity
-
         if typeof(model.fluid) <: Compressible
             @. mdotf.values += pconv.values*(pf.values)
         end
-        correct_mass_flux!(mdotf, p_eqn, config)
+        correct_mass_flux!(
+            mdotf, p_eqn, config;
+            previous=p_boundary_reference, time=time)
 
+        explicit_relaxation!(p, prev, solvers.p.relax, config)
+        grad!(∇p, pf, p, boundaries.p, time, config)
+        limit_gradient!(schemes.p.limiter, ∇p, p, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
         # interpolate!(Uf, U, config) # Careful: reusing Uf for interpolation
         # correct_boundaries!(Uf, U, boundaries.U, time, config)

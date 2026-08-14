@@ -184,7 +184,7 @@ function CPISO(
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
     prev = KernelAbstractions.zeros(backend, TF, n_cells)
-    prevP = KernelAbstractions.zeros(backend, TF, n_cells)
+    p_boundary_reference = similar(prev)
     prevRhoK = KernelAbstractions.zeros(backend, TF, n_cells)
 
     # Pre-allocate vectors to hold residuals
@@ -278,30 +278,20 @@ function CPISO(
 
             # Pressure calculations
             @. prev = p.values
+            @. p_boundary_reference = p.values
             rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing)
-
-            # Use relaxation=1.0 on last corrector (like incompressible PISO)
-            if i == inner_loops
-                explicit_relaxation!(p, prev, 1.0, config)
-            else
-                explicit_relaxation!(p, prev, solvers.p.relax, config)
-            end
-
-            # Gradient
-            grad!(∇p, pf, p, boundaries.p, time, config)
-            limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
             # non-orthogonal correction
             for j ∈ 1:ncorrectors
+                grad!(∇p, pf, p, boundaries.p, time, config)
+                limit_gradient!(schemes.p.limiter, ∇p, p, config)
+                @. p_boundary_reference = p.values
                 discretise!(p_eqn, p, config)
                 apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
                 setReference!(p_eqn, pref, 1, config)
                 nonorthogonal_face_correction(p_eqn, ∇p, rhorDf, config)
                 update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
                 rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
-                explicit_relaxation!(p, prev, solvers.p.relax, config)
-                grad!(∇p, pf, p, boundaries.p, time, config)
-                limit_gradient!(schemes.p.limiter, ∇p, p, config)
             end
 
             if !isnothing(solvers.p.limit)
@@ -309,10 +299,21 @@ function CPISO(
                 clamp!(p.values, pmin, pmax)
             end
 
+            # All pressure-dependent fluxes use the unrelaxed pressure solution.
+            grad!(∇p, pf, p, boundaries.p, time, config)
+            limit_gradient!(schemes.p.limiter, ∇p, p, config)
+
             if typeof(model.fluid) <: Compressible
                 @. mdotf.values += pconv.values*pf.values
             end
-            correct_mass_flux!(mdotf, p_eqn, config)
+            correct_mass_flux!(
+                mdotf, p_eqn, config;
+                previous=p_boundary_reference, time=time)
+
+            pressure_relaxation = i == inner_loops ? one(solvers.p.relax) : solvers.p.relax
+            explicit_relaxation!(p, prev, pressure_relaxation, config)
+            grad!(∇p, pf, p, boundaries.p, time, config)
+            limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
             # TO-DO: this needs to be exposed to users eventually
             @. rho.values = max.(Psi.values * p.values, 0.001)

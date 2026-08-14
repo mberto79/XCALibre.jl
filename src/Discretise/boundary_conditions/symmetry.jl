@@ -1,18 +1,21 @@
 export Symmetry
 
 """
-    Symmetry <: AbstractBoundary
+    Symmetry <: AbstractPhysicalConstraint
 
-Symmetry boundary condition vector and scalar fields. Notice that for scalar fields, this boundary condition applies an explicit zero gradient condition. In some rare cases, the use of an `Extrapolated` condition for scalars may be beneficial (to assign a semi-implicit zero gradient condition)
+Symmetry boundary condition for vector and scalar fields. Scalars use an explicit
+zero-normal-gradient condition. Vectors remove the face-normal component while
+retaining both tangential components.
 
 # Input
-- `ID` Name of the boundary given as a symbol (e.g. :freestream). Internally it gets replaced with the boundary index ID
+- `ID` is the boundary name (for example, `:freestream`). It is replaced by the
+  boundary index during boundary assignment.
 
 # Example
     Symmetry(:freestream)
 """
 struct Symmetry{I,V,R<:UnitRange} <: AbstractPhysicalConstraint
-    ID::I 
+    ID::I
     value::V
     IDs_range::R
 end
@@ -21,124 +24,106 @@ Adapt.@adapt_structure Symmetry
 Symmetry(patch::Symbol) = Symmetry(patch, 0)
 
 @define_boundary Symmetry Laplacian{Linear} VectorField begin
-    (; area, delta, normal) = face 
-    phi = term.phi 
+    (; area, delta, normal) = face
     J = term.flux[fID]
-    # flux = 2.0*J*area/delta # previous
     flux = J*area/delta
     ap = term.sign[1]*(-flux)
 
-    vc = phi[cellID]
-    vn = (vc⋅normal)*normal
-    vp = vc - vn
+    vc = term.phi[cellID]
+    vp = vc - (vc⋅normal)*normal
     ap, ap*vp[component.value]
-
-    # ac, an = _symmetry_normal_stress(component, vc, flux, normal)
-    # ac, an
 end
-
-# _symmetry_normal_stress(component::XDir, vc, flux, n) = begin
-#     ac = flux*n[1]^2
-#     an = -flux*n[1]*(vc[2]*n[2] + vc[3]*n[3])
-#     ac, an
-# end 
-
-# _symmetry_normal_stress(component::YDir, vc, flux, n) = begin
-#     ac = flux*n[2]^2
-#     an = -flux*n[2]*(vc[1]*n[1] + vc[3]*n[3])
-#     ac, an
-# end 
-
-# _symmetry_normal_stress(component::ZDir, vc, flux, n) = begin
-#     ac = flux*n[3]^2
-#     an = -flux*n[3]*(vc[1]*n[1] + vc[2]*n[2])
-#     ac, an
-# end 
 
 @define_boundary Symmetry Laplacian{Linear} ScalarField begin
-    # For now this is hard-coded as zero-gradient. To-do extension to any input gradient
-    phi = term.phi 
-    values = get_values(phi, component)
-    J = term.flux[fID]
-    (; area, delta) = face 
-    flux = -J*area/delta
-    ap = term.sign*(flux)
-    # ap, ap*values[cellID] # original
-    0.0, 0.0 # go for this!
+    0.0, 0.0
 end
 
-# To-do: Add scalar variants of Wall BC in next version (currently using Neumann)
-
+# A scalar symmetry face has the owner-cell value. Treat an unexpected incoming
+# face flux explicitly; the normal flux is subsequently projected to zero.
 @define_boundary Symmetry Divergence{Linear} ScalarField begin
-    flux = term.flux[fID]
-    ap = term.sign*(flux) 
-    ap, 0.0 # original
+    ap = term.sign*term.flux[fID]
+    z = zero(ap)
+    max(ap, z), -min(ap, z)*get_values(term.phi, component)[cellID]
 end
 
 @define_boundary Symmetry Divergence{Upwind} ScalarField begin
-    flux = term.flux[fID]
-    ap = term.sign*(flux) 
-    ap, 0.0 # original
+    ap = term.sign*term.flux[fID]
+    z = zero(ap)
+    max(ap, z), -min(ap, z)*get_values(term.phi, component)[cellID]
 end
 
 @define_boundary Symmetry Divergence{LUST} ScalarField begin
-    flux = term.flux[fID]
-    ap = term.sign*(flux) 
-    ap, 0.0 # original
+    ap = term.sign*term.flux[fID]
+    z = zero(ap)
+    max(ap, z), -min(ap, z)*get_values(term.phi, component)[cellID]
 end
 
+# Split the projected face value vc - (vc⋅n)n into an implicit same-component
+# contribution on outflow and explicit cross-component/inflow contributions.
 @define_boundary Symmetry Divergence{Linear} VectorField begin
-    # 0.0, 0.0
+    (; normal) = face
+    ap = term.sign*term.flux[fID]
+    vc = term.phi[cellID]
+    vp = vc - (vc⋅normal)*normal
 
-    (; normal) = face 
-    phi = term.phi
-    flux = term.flux[fID]
-    ap = term.sign*(flux) 
-    vc = phi[cellID]
-    vn = (vc⋅normal)*normal
-    # vp = vc - vn
-    ap, ap*vn[component.value]
-    # 0.0, ap*(vc[component.value] - vn[component.value])
+    nc = normal[component.value]
+    vc_c = vc[component.value]
+    vp_c = vp[component.value]
+    z = zero(ap)
+    one_minus_nc2 = one(nc) - nc^2
+
+    ac = max(ap, z)*one_minus_nc2
+    su_leaving = -max(ap, z)*(vp_c - vc_c*one_minus_nc2)
+    su_entering = -min(ap, z)*vp_c
+    ac, su_entering + su_leaving
 end
 
 @define_boundary Symmetry Divergence{Upwind} VectorField begin
-    # 0.0, 0.0
+    (; normal) = face
+    ap = term.sign*term.flux[fID]
+    vc = term.phi[cellID]
+    vp = vc - (vc⋅normal)*normal
 
-    (; normal) = face 
-    phi = term.phi
-    flux = term.flux[fID]
-    ap = term.sign*(flux) 
-    vc = phi[cellID]
-    vn = (vc⋅normal)*normal
-    # vp = vc - vn
-    ap, ap*vn[component.value]
-    # 0.0, ap*(vc[component.value] - vn[component.value])
+    nc = normal[component.value]
+    vc_c = vc[component.value]
+    vp_c = vp[component.value]
+    z = zero(ap)
+    one_minus_nc2 = one(nc) - nc^2
+
+    ac = max(ap, z)*one_minus_nc2
+    su_leaving = -max(ap, z)*(vp_c - vc_c*one_minus_nc2)
+    su_entering = -min(ap, z)*vp_c
+    ac, su_entering + su_leaving
 end
 
 @define_boundary Symmetry Divergence{LUST} VectorField begin
-    # 0.0, 0.0
+    (; normal) = face
+    ap = term.sign*term.flux[fID]
+    vc = term.phi[cellID]
+    vp = vc - (vc⋅normal)*normal
 
-    (; normal) = face 
-    phi = term.phi
-    flux = term.flux[fID]
-    ap = term.sign*(flux) 
-    vc = phi[cellID]
-    vn = (vc⋅normal)*normal
-    # vp = vc - vn
-    ap, ap*vn[component.value]
-    # 0.0, ap*(vc[component.value] - vn[component.value])
+    nc = normal[component.value]
+    vc_c = vc[component.value]
+    vp_c = vp[component.value]
+    z = zero(ap)
+    one_minus_nc2 = one(nc) - nc^2
+
+    ac = max(ap, z)*one_minus_nc2
+    su_leaving = -max(ap, z)*(vp_c - vc_c*one_minus_nc2)
+    su_entering = -min(ap, z)*vp_c
+    ac, su_entering + su_leaving
 end
 
-# Bounded = upwind boundary with -Sp(div phi): subtract ap from the diagonal
+# Scalars cancel exactly. A vector leaves the difference between its tangential
+# face projection and its owner-cell value.
 @define_boundary Symmetry Divergence{BoundedUpwind} ScalarField begin
     0.0, 0.0
 end
 
 @define_boundary Symmetry Divergence{BoundedUpwind} VectorField begin
     (; normal) = face
-    phi = term.phi
-    ap = term.sign*(term.flux[fID])
-    vc = phi[cellID]
+    ap = term.sign*term.flux[fID]
+    vc = term.phi[cellID]
     vn = (vc⋅normal)*normal
     0.0, ap*vn[component.value]
 end

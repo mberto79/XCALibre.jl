@@ -298,7 +298,8 @@ the first cell height."""
 end
 
 function wall_boiling_source!(
-    wbs::WallBoilingState, model, p_abs, sat, h_fg, g_mag, sigma, dt, config)
+    wbs::WallBoilingState, model, p_abs, sat, h_fg, g_mag, sigma, dt, config;
+    alpha_liq = model.fluid.alpha)
 
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -306,11 +307,17 @@ function wall_boiling_source!(
     mesh = model.domain
     (; faces, cells, boundary_cellsID) = mesh
 
+    # LIQUID/VAPOUR, not tracked/other. Every RPI closure here is written in terms
+    # of the liquid carrier and the vapour it generates, so these roles are
+    # physical and must not follow whichever phase `alpha` happens to track - see
+    # `multiphase_liquid_phase`. For the same reason the kernels below read
+    # `alpha_liq`, the LIQUID fraction, which the caller supplies (it is
+    # `model.fluid.alpha` itself only when `alpha` tracks the liquid).
     phases = model.fluid.phases
-    main = model.fluid.volume_fraction
-    secondary = 3 - main
-    phase_l = phases[main]
-    phase_v = phases[secondary]
+    liq = multiphase_liquid_phase(model.fluid)
+    vap = 3 - liq
+    phase_l = phases[liq]
+    phase_v = phases[vap]
 
     fill!(wbs.mdot_wall.values, zero(eltype(wbs.mdot_wall.values)))
 
@@ -332,7 +339,7 @@ function wall_boiling_source!(
             wbs.dT_sup, wbs.y_plus, wbs.A_b, wbs.mdot_area, wbs.T_liquid, wbs.h_conv,
             wbs.q_film, wbs.w_film, wbs.alpha_wall, wbs.D_departure,
             wbs.model, BC.value, dt, faces, cells, boundary_cellsID, start_ID,
-            model.fluid.alpha, model.energy.T, p_abs,
+            alpha_liq, model.energy.T, p_abs,
             phase_l.rho, phase_l.cp, phase_l.k, phase_l.mu,
             phase_v.rho, phase_v.cp, phase_v.k, phase_v.mu,
             sat, h_fg, g_mag, sigma)
@@ -343,7 +350,7 @@ function wall_boiling_source!(
     # step n is built from the departure diameter of step n-1. That lag is
     # harmless: `D_d` varies smoothly and the alternative is an inner iteration
     # for a quantity that only sets a blend width.
-    update_layer_void!(wbs, model.fluid.alpha, config)
+    update_layer_void!(wbs, alpha_liq, config)
 
     return wbs.mdot_wall
 end

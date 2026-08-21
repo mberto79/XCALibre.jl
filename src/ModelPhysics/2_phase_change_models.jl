@@ -154,40 +154,85 @@ end
 ModifiedEnergyJump(; h) = ModifiedEnergyJump(float(h))
 
 """
-    Lee(; sigma=1.0e-6)
+    Lee(; r)
 
-Lee (1980) relaxation model (Fernandes et al. Eqs. 11–12):
+Lee (1980) relaxation model, in the standard volumetric form:
 
-    mdot'' = beta*alpha_l*rho_l*(T - T_sat)/T_sat     for T > T_sat  (evaporation)
-    mdot'' = beta*alpha_v*rho_v*(T - T_sat)/T_sat     for T < T_sat  (condensation)
+    mdot = r*alpha_l*rho_l*(T - T_sat)/T_sat     for T > T_sat  (evaporation)
+    mdot = r*alpha_v*rho_v*(T - T_sat)/T_sat     for T < T_sat  (condensation)
 
-Rather than prescribing the relaxation parameter `beta` directly (the usual
-commercial implementation), it is derived from an accommodation coefficient so
-that Lee and [`Schrage`](@ref) can be compared on the same footing:
-
-    beta = sigma * sqrt(1/(2*pi*R_sp*T_sat)) * L*rho_l/(rho_l - rho_v)
+`r` is the relaxation coefficient [1/s], prescribed directly, and the SAME value
+is used for both branches. `mdot` is a volumetric mass source [kg/m^3/s].
 
 Note the sign convention: `(T - T_sat)/T_sat` carries the sign in both branches,
-so only the `alpha*rho` weighting switches phase.
+so only the `alpha*rho` weighting switches phase. The branches are not symmetric
+even at a single `r`: their ratio is `(alpha_l*rho_l)/(alpha_v*rho_v)`, which for
+LH2/GH2 at 0.4 MPa and 10% void is about 117, so condensation is far slower than
+evaporation at equal departure from saturation. That is the model, not a defect.
 
-The paper finds this the least accurate of the three (up to 11 % MAPE) and
-reports `sigma = 1e-6` giving non-physical, diverging boil-off. That behaviour is
-a property of the model, not a defect to fix — reproducing it is part of
-reproducing the paper.
+# `alpha_l` and `alpha_v` mean the LIQUID and VAPOUR fractions
 
-Parametric values used in the paper: 1e-6 (baseline), 1e-7, 1e-8.
+Not the tracked fraction. The two coincide only when `alpha` happens to track the
+liquid; when it tracks the vapour - which is what `multiphase_liquid_phase`
+recommends, and what the LH2 pipe case does - they are swapped. The caller is
+responsible for passing the LIQUID fraction, and `phase_change_rate!` does.
+
+Getting this wrong is not a small error: measured on rung 3.1, the identical
+physical state gave a relaxation time of 25.0 s against 4.02 s, a factor of 6.2.
+
+# No interfacial area factor
+
+`Schrage` and `ModifiedEnergyJump` return a mass flux PER UNIT INTERFACE AREA and
+are multiplied by `a_i` to become volumetric. Lee's `r` is already volumetric, so
+it is not - see [`uses_interfacial_area`](@ref). Multiplying it by `a_i` would
+make the effective coefficient proportional to `alpha*(1 - alpha)`, so it would
+vanish in a nearly pure cell regardless of superheat, and `r` would no longer be
+the coefficient any published Lee calibration refers to.
+
+# Choosing `r`
+
+There is no universal value; it is a numerical relaxation rate, and the usual
+guidance is to make it large enough that the interface stays near saturation
+without making the source stiff. Commercial defaults are O(0.1-100) 1/s. The
+verification statement is that as `r` grows the solution must converge onto the
+thermally-limited (Stefan) answer - see rung 3.2 of the validation plan.
 """
-struct Lee{T<:AbstractFloat,R} <: AbstractPhaseChangeModel
-    sigma::T
-    R::R
+struct Lee{T<:AbstractFloat} <: AbstractPhaseChangeModel
+    r::T
 end
 
-# `R` is an OPTIONAL override for the vapour specific gas constant [J/kg/K],
-# used only when the vapour equation of state cannot supply one (`ConstEos`).
-# The kinetic prefactor sqrt(1/(2 pi R_sp T_sat)) is a property of the SUBSTANCE,
-# not of the equation of state, so a constant-density vapour has a perfectly
-# well-defined value for it - there is simply nowhere on `ConstEos` to keep it.
-Lee(; sigma=1.0e-6, R=nothing) = Lee(float(sigma), R === nothing ? nothing : float(R))
+function Lee(; r=nothing, sigma=nothing, R=nothing)
+    sigma === nothing || throw(ArgumentError(
+        """`Lee(sigma = ...)` has been removed.
+
+`sigma` was an accommodation coefficient from which the relaxation parameter was
+DERIVED, as
+
+    beta = sigma*sqrt(1/(2*pi*R_sp*T_sat))*L*rho_l/(rho_l - rho_v)
+
+so that Lee and `Schrage` could be driven from the same knob. It is not the `r`
+of the published Lee model, it carried different units, and it was additionally
+scaled by the interfacial area density.
+
+Pass the relaxation coefficient directly instead:
+
+    Lee(r = 100.0)      # [1/s]
+
+There is no exact conversion: the old form was area-scaled and state-dependent.
+As a rough guide at alpha = 0.9 for LH2/GH2 at 0.4 MPa with d = 1 mm, the old
+`sigma = 1e-6` corresponded to an effective r of about 0.29 1/s."""))
+    R === nothing || throw(ArgumentError(
+        """`Lee(R = ...)` has been removed along with `sigma`.
+
+`R` supplied the vapour specific gas constant for the kinetic prefactor
+`sqrt(1/(2*pi*R_sp*T_sat))`. The prescribed-coefficient form has no kinetic
+prefactor, so it needs no gas constant and works with any equation of state,
+including `ConstEos`."""))
+    r === nothing && throw(ArgumentError(
+        "`Lee` needs its relaxation coefficient: `Lee(r = 100.0)`  # [1/s]"))
+    r > 0 || throw(ArgumentError("`Lee` needs a positive `r` [1/s], got $r"))
+    return Lee(float(r))
+end
 
 
 # =============================================================================
@@ -320,20 +365,50 @@ function phase_change_rate!(mdot, pc::AbstractPhaseChangeModel, area, alpha,
 
     ndrange = length(mdot)
     kernel! = _phase_change_rate!(_setup(backend, workgroup, ndrange)...)
-    kernel!(mdot, pc, area, alpha, gradAlphaMag, T, p_abs, rho_l, rho_v, sat, L, R_sp)
+    kernel!(mdot, pc, area, alpha, gradAlphaMag, T, p_abs, rho_l, rho_v, sat, L, R_sp,
+            Val(uses_interfacial_area(pc)))
     return nothing
 end
 
+"""
+    uses_interfacial_area(model) -> Bool
+
+Whether the model returns a mass flux PER UNIT INTERFACE AREA [kg/m^2/s], which
+must then be multiplied by `a_i` [1/m] to become the volumetric source the
+equations want.
+
+`Schrage` and `ModifiedEnergyJump` do: the first is a kinetic-theory flux across
+an interface, the second is `h*(T - T_sat)/L` with `h` in W/m^2/K. Both are
+meaningless without an interface area.
+
+`Lee` does NOT. Its `r` is already a volumetric relaxation rate [1/s], so
+multiplying by `a_i` would make the effective coefficient proportional to
+`alpha*(1 - alpha)` - vanishing in a nearly pure cell whatever the superheat -
+and `r` would no longer be the quantity any published Lee calibration refers to.
+"""
+uses_interfacial_area(::AbstractPhaseChangeModel) = true
+uses_interfacial_area(::Lee) = false
+
 @kernel inbounds=true function _phase_change_rate!(
-    mdot, pc, area, alpha, gradAlphaMag, T, p_abs, rho_l, rho_v, sat, L, R_sp)
+    mdot, pc, area, alpha_l, gradAlphaMag, T, p_abs, rho_l, rho_v, sat, L, R_sp,
+    area_scaled)
     i = @index(Global)
     t = T[i]
     p = p_abs[i]
+    a_l = alpha_l[i]
     T_sat = saturation_temperature(sat, p)
-    flux = interfacial_mass_flux(pc, alpha[i], t, p, T_sat,
+    flux = interfacial_mass_flux(pc, a_l, t, p, T_sat,
                                  rho_l[i], rho_v[i], sat, L, R_sp)
-    mdot[i] = flux*interfacial_area_density(area, alpha[i], gradAlphaMag[i])
+    # `Val` so the branch resolves at compile time and the kernel stays GPU-safe.
+    mdot[i] = _scale_by_area(area_scaled, flux, area, a_l, gradAlphaMag[i])
 end
+
+# `a_i = 6*a*(1 - a)/d` is symmetric under `a -> 1 - a`, so the dispersed closure
+# does not care which phase the fraction measures. `ResolvedInterface` reads
+# |grad(alpha)|, which is likewise unchanged by the swap.
+@inline _scale_by_area(::Val{true}, flux, area, a, g) =
+    flux*interfacial_area_density(area, a, g)
+@inline _scale_by_area(::Val{false}, flux, area, a, g) = flux
 
 """
     _kinetic_prefactor(T_sat, R_sp)
@@ -361,13 +436,10 @@ end
 end
 
 @inline function interfacial_mass_flux(
-    pc::Lee, alpha, T, p, T_sat, rho_l, rho_v, sat, L, R_sp)
-    # beta from the accommodation coefficient (paper Eq. 12)
-    drho = rho_l - rho_v
-    beta = pc.sigma*_kinetic_prefactor(T_sat, R_sp)*L*rho_l/drho
-
+    pc::Lee, alpha_l, T, p, T_sat, rho_l, rho_v, sat, L, R_sp)
+    # `alpha_l` is the LIQUID fraction, not the tracked one - see the docstring.
     # (T - T_sat)/T_sat carries the sign; only the alpha*rho weighting switches.
     driving = (T - T_sat)/T_sat
-    weight = T > T_sat ? alpha*rho_l : (one(alpha) - alpha)*rho_v
-    return beta*weight*driving
+    weight = T > T_sat ? alpha_l*rho_l : (one(alpha_l) - alpha_l)*rho_v
+    return pc.r*weight*driving
 end

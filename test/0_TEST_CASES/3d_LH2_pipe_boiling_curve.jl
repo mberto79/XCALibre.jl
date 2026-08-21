@@ -44,7 +44,19 @@ using Printf
 # Geometric spacing gives even coverage on the log-log axes a boiling curve is
 # normally plotted on.
 # const Q_SCHEDULE = [4e3, 6e3, 8e3, 1.0e4, 1.5e4, 2.2e4]   # [W/m^2]
-const Q_SCHEDULE = [3.5e4, 5.0e4, 6.4e4, 7.0e4, 8.0e4, 1.0e5]   # [W/m^2]
+# const Q_SCHEDULE = [3.5e4, 5.0e4, 6.4e4, 7.0e4, 8.0e4, 1.0e5]   # [W/m^2]
+# FILM-BOILING LADDER. Extends past the 3e4 ceiling that RPI-only reached: 4e4
+# was the first level to fail without a departure criterion, so the levels above
+# it are exactly what `FILM_BOILING = true` is being added to reach. 6.4e4 is the
+# MEASURED CHF for this case, so 5e4/6.4e4 straddle departure and 7e4 sits past
+# it on the film branch.
+#
+# Re-verifying 1e4-3e4 is deliberate, not padding: the blend must leave the
+# already-validated nucleate branch UNCHANGED. If those three move, `alpha_1` is
+# too low and is eating into nucleate boiling - that check is the whole point of
+# running them again.
+# const Q_SCHEDULE = [5.0e3, 1.0e4, 2.0e4, 3.0e4, 4.0e4, 5.0e4, 6.4e4, 7.0e4]   # [W/m^2]
+const Q_SCHEDULE = [5.0e3, 1.0e4, 2.0e4, 3.0e4]   # RPI-only ceiling (pre-film)
 
 const FLOW_THROUGHS_INIT = 1      # settling at Q_SCHEDULE[1], discarded
 const FLOW_THROUGHS_PER_STEP = 1  # at each level, including the first
@@ -62,7 +74,7 @@ include(joinpath(@__DIR__, "3d_LH2_pipe_forced_convection.jl"))
 # -----------------------------------------------------------------------------
 # Timing
 # -----------------------------------------------------------------------------
-const DT = 5.0e-6
+const DT = 2.0e-5
 const T_FLOW_THROUGH = L_total/U_inlet_mag
 const STEPS_PER_FT = round(Int, T_FLOW_THROUGH/DT)
 
@@ -89,7 +101,7 @@ function boundaries_at(q_w)
         p_rgh = [Zerogradient(:inlet), Dirichlet(:outlet, 0.0),
                  Zerogradient(:pipeWall), Zerogradient(:wallUnheated),
                  Symmetry(:symmetryX), Symmetry(:symmetryY)],
-        alpha = [Dirichlet(:inlet, 1.0), Zerogradient(:outlet),
+        alpha = [Dirichlet(:inlet, 0.0), Zerogradient(:outlet),
                  Zerogradient(:pipeWall), Zerogradient(:wallUnheated),
                  Symmetry(:symmetryX), Symmetry(:symmetryY)],
         T = [Dirichlet(:inlet, T_inlet), Zerogradient(:outlet),
@@ -107,11 +119,39 @@ function boundaries_at(q_w)
     ))
 end
 
-function config_at(q_w, n_steps; write_interval)
+# ADAPTIVE TIME STEPPING, keyed on the ALPHA Courant number.
+#
+# Measured 2026-08-19 on the single-point case, cold start, 60 steps at DT = 2e-5,
+# sweeping only the wall flux:
+#
+#   q_w = 10 kW/m^2   Courant 0.29     AlphaCourant 0      p_rgh 3.5e-11  healthy
+#   q_w = 20 kW/m^2   Courant 11.8     AlphaCourant 4.19   p_rgh 1.0e-9   marginal
+#
+# Note WHICH number goes bad. At 20 kW/m^2 the pressure residual is still 1e-9 -
+# the pressure solve is fine - while the ALPHA Courant number is 4.19, i.e. over
+# four times its stability limit. `alpha_transport = :mules` is an EXPLICIT
+# flux-corrected update, so it carries a hard Courant condition that nothing else
+# in the solver does, and vapour only appears in quantity once the flux is high
+# enough to boil. That is why the sweep survives initialisation and the first
+# level (10 kW/m^2, essentially no vapour) and then loses the second.
+#
+# A fixed DT cannot serve both: small enough for the boiling levels wastes most of
+# its time on the single-phase ones. `maxAlphaCo = 0.25` lets the step follow the
+# vapour, and `maxCo` is set loose because the pressure path is demonstrably not
+# the constraint here.
+const ADAPTIVE = AdaptiveTimeStepping(
+    maxCo      = 0.5,     # not the binding constraint - see above
+    maxAlphaCo = 0.25,    # MULES stability; this is the one that bites
+    minShrink  = 0.1,
+    maxGrow    = 1.1)     # rise slowly: a level that has just settled should not
+                          # be kicked by a sudden step increase
+
+function config_at(q_w, n_steps; write_interval, adaptive = ADAPTIVE)
     return Configuration(
         solvers = solvers, schemes = schemes,
         runtime = Runtime(iterations = n_steps, time_step = DT,
-                          write_interval = write_interval),
+                          write_interval = write_interval,
+                          adaptive = adaptive),
         hardware = hardware, boundaries = boundaries_at(q_w))
 end
 
@@ -120,7 +160,7 @@ end
 # -----------------------------------------------------------------------------
 initialise!(model.momentum.U, velocity)
 initialise!(model.fluid.p_rgh, 0.0)
-initialise!(model.fluid.alpha, 1.0)
+initialise!(model.fluid.alpha, 0.0)
 initialise!(model.energy.T, T_inlet)
 initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, omega_inlet)
@@ -131,7 +171,7 @@ initialise!(model.turbulence.nut, nut_inlet)
 # =============================================================================
 @info "=== INITIALISATION: $(FLOW_THROUGHS_INIT) flow-throughs at $(Q_SCHEDULE[1]/1e3) kW/m^2 ==="
 run!(model, config_at(Q_SCHEDULE[1], FLOW_THROUGHS_INIT*STEPS_PER_FT;
-                      write_interval = STEPS_PER_FT), inner_loops = 5)
+                      write_interval = FLOW_THROUGHS_INIT*STEPS_PER_FT), inner_loops = 5)
 
 # =============================================================================
 # Stage 2: the staircase
@@ -165,7 +205,7 @@ for (i, q_w) in enumerate(Q_SCHEDULE)
         push!(RESULTS, (q_w = q_w, dT_sup = r.dT_sup, T_wall = r.T_wall,
                         q_conv = r.q_conv, q_quench = r.q_quench, q_evap = r.q_evap,
                         closure = r.closure, evap_frac = r.evap_frac,
-                        alpha_min = minimum(a)))
+                        alpha_max = maximum(a), alpha_min = minimum(a)))
     end
 
     @info(
@@ -173,6 +213,13 @@ for (i, q_w) in enumerate(Q_SCHEDULE)
         q_w = q_w,
         T_max = maximum(T), T_min = minimum(T),
         dT_max_vs_Tsat = maximum(T) - T_sat,
+        # ALPHA_MAX IS THE ONE TO WATCH. `liquid_phase = 2` in the setup file, so
+        # `alpha` is the VOID fraction: `alpha = 0` is pure liquid, `alpha = 1` is
+        # pure vapour. `alpha_min` is therefore ~0 in any run that has liquid
+        # anywhere, which is every run, and says nothing about whether the wall is
+        # boiling. `alpha_max` is the peak void - i.e. whether vapour is being
+        # generated at all, and how much.
+        alpha_max = maximum(a),
         alpha_min = minimum(a),
         finite = all(isfinite, T) && all(isfinite, a),
     )
@@ -187,11 +234,18 @@ open(RESULTS_CSV, "w") do io
     println(io, "# XCALibre RPI boiling curve")
     println(io, "# CASE=$CASE  p_sat=$(p_sat/1e6) MPa  U=$U_inlet_mag m/s  T_sat=$(round(T_sat, digits=4)) K")
     println(io, "# dt=$DT  flow-throughs per level=$FLOW_THROUGHS_PER_STEP")
-    println(io, "q_w,dT_sup,T_wall,q_conv,q_quench,q_evap,closure,evap_frac,alpha_min")
+    println(io, "q_w,dT_sup,T_wall,q_conv,q_quench,q_evap,closure,evap_frac,alpha_max,alpha_min")
     for r in RESULTS
-        @printf(io, "%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g\n",
+        # TEN values for TEN headers, and `alpha_max` BEFORE `alpha_min` to match.
+        # This previously wrote nine values ending in `r.alpha_min`, so the column
+        # labelled `alpha_max` actually held `alpha_min` and `alpha_max` was never
+        # written at all - i.e. the CSV reported the one void diagnostic the note
+        # above says "says nothing about whether the wall is boiling", and dropped
+        # the one it calls THE ONE TO WATCH. Symptom: an `alpha_max` column full of
+        # ~1e-64 while the real peak void at q_w = 1e4 is 6.1e-2.
+        @printf(io, "%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g\n",
                 r.q_w, r.dT_sup, r.T_wall, r.q_conv, r.q_quench, r.q_evap,
-                r.closure, r.evap_frac, r.alpha_min)
+                r.closure, r.evap_frac, r.alpha_max, r.alpha_min)
     end
 end
 @info "simulated curve written" RESULTS_CSV n_levels=length(RESULTS)

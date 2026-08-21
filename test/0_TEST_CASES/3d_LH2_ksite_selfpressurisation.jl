@@ -62,7 +62,7 @@ elseif PHASE_CHANGE_MODEL === :lee
     # coefficient rather than prescribed directly, so that Lee and Schrage can
     # be compared on the same footing:
     #   beta = sigma * sqrt(M/(2 pi R T_sat)) * L rho_l/(rho_l - rho_v)
-    Lee(sigma=1.0e-6)
+    Lee(r=100.0)
 else
     error("Unknown PHASE_CHANGE_MODEL: $PHASE_CHANGE_MODEL")
 end

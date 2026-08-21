@@ -95,7 +95,10 @@ function initialise(energy::TwoPhaseTemperature, model, mdotf, config)
     # Seed rho_cp from the initial alpha so the first time step has a valid
     # previous-time coefficient (see the conservative form note in `energy!`).
     (; alpha, phases) = model.fluid
-    blend_rho_cp!(rho_cp, alpha, phases[1], phases[2], config)
+    # Ordered (TRACKED, OTHER): these kernels pair entry 1 with `alpha`, so the
+    # tracked phase must come first whichever phase that is.
+    main = model.fluid.volume_fraction
+    blend_rho_cp!(rho_cp, alpha, phases[main], phases[3 - main], config)
     @. rho_cp_prev.values = rho_cp.values
 
     energy_eqn = (
@@ -153,9 +156,10 @@ Advance the two-phase temperature equation by one time step.
 `advance_alpha!`; it is reused here so the energy advection matches the mass
 advection exactly at the interface.
 
-`phi_drift` is the volumetric drift flux `alpha*(1-alpha)*(Ur . Sf)` (zero for
-`VOF`), which carries the enthalpy the two phases transport relative to the
-mixture — see `energy_face_flux`.
+`phi_drift` is the diffusion-velocity flux
+`alpha*(1-alpha)*(rho_2/rho_m)*(Ur . Sf)` (zero for `VOF`), which carries the
+enthalpy the two phases transport relative to the mass-averaged mixture velocity
+— see `energy_face_flux`.
 
 `phase_faces` is the bundle of per-phase FACE property fields maintained by the
 solver (`rho1f`, `cp1f`, `k1f`, ... ). Passing them as one named tuple rather
@@ -170,6 +174,10 @@ function energy!(energyModel::EnergyEquationModel{E,S}, model, alpha_fluxf, mdot
     (; alpha, alphaf, phases) = model.fluid
     (; solvers, boundaries) = config
 
+    # Ordered (TRACKED, OTHER) wherever a kernel pairs a phase with `alpha`.
+    main = model.fluid.volume_fraction
+    tracked_phases = (phases[main], phases[3 - main])
+
     mesh = model.domain
 
     # Snapshot the previous-time coefficient BEFORE it is recomputed below.
@@ -179,18 +187,18 @@ function energy!(energyModel::EnergyEquationModel{E,S}, model, alpha_fluxf, mdot
     # Volumetric energy sources: pressure work (zero when `dpdt === nothing`, i.e.
     # an all-incompressible mixture) and latent heat (zero when `mdot_pc ===
     # nothing`, i.e. no phase change).
-    update_pressure_work!(S_T, alpha, phases, T, dpdt, config)
+    update_pressure_work!(S_T, alpha, tracked_phases, T, dpdt, config)
     add_latent_heat!(S_T, mdot_pc, L, config)
 
     # `phase_faces` holds the per-phase FACE properties maintained by the solver.
     # They are required rather than indexing `phase.rho` (or `.cp`, `.k`)
     # directly, because a variable-property phase stores a CELL field and
     # indexing it by face ID is out of bounds. Entry 1/2 correspond to phases[1]
-    # and phases[2] because the tracked phase index (`volume_fraction`) is
-    # always 1.
+    # and phases[2] AFTER reordering by `volume_fraction` below - entry 1 is
+    # always the TRACKED phase, which need not be the liquid.
     update_two_phase_energy_coeffs!(
         rho_cp, keff, rho_cp_phi, alpha, alphaf, alpha_fluxf, mdotf, phi_drift,
-        phases[1], phases[2], phase_faces, model.turbulence,
+        phases[main], phases[3 - main], phase_faces, model.turbulence,
         nueff, model.fluid.nuf, model.energy.coeffs.Pr_t, model.fluid.model, config)
 
     # The time term MUST use the previous-time rho_cp, giving the conservative
@@ -309,7 +317,7 @@ function update_pressure_work!(S_T, alpha, phases, T, dpdt, config)
     # beta is resolved to an indexable field here (a ConstantScalar(0) when the
     # phase has none) so the kernel never sees a `nothing` and reads the same way
     # for constant and tabulated expansivity alike.
-    beta_l = _phase_beta_field(phases[1])
+    beta_l = _phase_beta_field(phases[1])   # (tracked, other) - see callers
     beta_v = _phase_beta_field(phases[2])
 
     ndrange = length(S_T)
@@ -375,7 +383,8 @@ end
 end
 
 """
-    energy_face_flux(mp_model, alpha_fluxf, mdotf, phi_drift, rcp_l, rcp_v, rho_cp_f)
+    energy_face_flux(mp_model, alpha_fluxf, mdotf, phi_drift, rcp_l, rcp_v,
+                     rho_cp_f, drift_cp)
 
 Advecting flux of the temperature equation, `rho*cp*phi`, built to match the
 mass flux `rhoPhi` of the SAME multiphase model - see `blend_rhoPhi!`.
@@ -399,19 +408,25 @@ phase appears - i.e. exactly when wall boiling starts producing vapour.
 
 The phases convect their own enthalpy at their own velocity, so the exact energy
 flux is `sum_i alpha_i*rho_i*cp_i*T*u_i`. Splitting each `u_i` about the
-volume-averaged `u_j` that this solver transports with, and using
+MASS-averaged `u_m` that this solver transports with, and using
 
-    u_1 - u_j = -(1 - alpha)*u_r,      u_2 - u_j = +alpha*u_r
+    u_1 - u_m = -(1-alpha)*(rho_2/rho_m)*u_r,   u_2 - u_m = +alpha*(rho_1/rho_m)*u_r
 
 gives
 
     sum_i alpha_i*rho_i*cp_i*T*u_i
-        = (rho*cp)_m*T*u_j  +  T*alpha*(1-alpha)*[(rho*cp)_2 - (rho*cp)_1]*u_r
+        = (rho*cp)_m*T*u_m  +  T*alpha*(1-alpha)*(rho_1*rho_2/rho_m)*(cp_2 - cp_1)*u_r
 
-The first term is the existing `mdotf*(rho*cp)_f`; the second is `phi_drift`
-scaled by the difference of the phase heat capacities per unit volume. Rising
-vapour carries its own thermal capacity with it, and without this term that
-transport is simply absent.
+The first term is the existing `mdotf*(rho*cp)_f`. The second is `phi_drift` —
+which already carries `alpha*(1-alpha)*(rho_2/rho_m)*u_r` — scaled by the
+remaining `rho_1*(cp_2 - cp_1)`. Rising vapour carries its own thermal capacity
+with it, and without this term that transport is simply absent.
+
+Note the coefficient is the difference of the SPECIFIC heat capacities times
+`rho_1*rho_2/rho_m`, and **not** the difference of the volumetric `rho*cp`. The
+latter is the volume-averaged (`u_j`) form, and the two are nothing alike: at
+alpha = 0.9 they are +11,730 and -558,830 — opposite in sign and 48x apart,
+because `(rho*cp)_2 - (rho*cp)_1` is dominated by the liquid term `rho_1*cp_1`.
 
 Adding it to `rho_cp_phi` rather than as a separate source is deliberate: the
 divergence of whatever `rho_cp_phi` holds is measured and cancelled by
@@ -425,12 +440,12 @@ That is consistent with solving a temperature equation rather than an enthalpy
 equation, but it does mean drift transports sensible heat only.
 """
 @inline energy_face_flux(::VOF, alpha_fluxf_i, mdotf_i, phi_drift_i,
-                         rcp_l, rcp_v, rho_cp_f) =
+                         rcp_l, rcp_v, rho_cp_f, drift_cp) =
     alpha_fluxf_i*(rcp_l - rcp_v) + mdotf_i*rcp_v
 
 @inline energy_face_flux(::Mixture, alpha_fluxf_i, mdotf_i, phi_drift_i,
-                         rcp_l, rcp_v, rho_cp_f) =
-    mdotf_i*rho_cp_f + phi_drift_i*(rcp_v - rcp_l)
+                         rcp_l, rcp_v, rho_cp_f, drift_cp) =
+    mdotf_i*rho_cp_f + phi_drift_i*drift_cp
 
 @kernel inbounds=true function _blend_energy_faces!(
     keff, rho_cp_phi, alphaf, alpha_fluxf, mdotf, phi_drift,
@@ -454,8 +469,11 @@ equation, but it does mean drift transports sensible heat only.
     # Must match the mass flux of the SAME multiphase model - see
     # `energy_face_flux`. Getting this wrong is invisible while alpha = 1 and
     # catastrophic as soon as a second phase appears.
+    # Slip enthalpy coefficient: `phi_drift` already carries
+    # `alpha*(1-alpha)*(rho_2/rho_m)*u_r`, so what remains is `rho_1*(cp_2-cp_1)`.
+    drift_cp = rho_l[i]*(cp_v[i] - cp_l[i])
     rho_cp_phi[i] = energy_face_flux(mp_model, alpha_fluxf[i], mdotf[i],
-                                     phi_drift[i], rcp_l, rcp_v, rho_cp_f)
+                                     phi_drift[i], rcp_l, rcp_v, rho_cp_f, drift_cp)
 end
 
 """

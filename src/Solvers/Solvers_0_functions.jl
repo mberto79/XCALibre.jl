@@ -264,24 +264,62 @@ max_courant_number!(cellsCourant, model, config) = begin
     return maximum(cellsCourant)
 end
 
+# DIRECTIONAL, not isotropic.
+#
+# This previously used `dx = volume^(1/3)` (or `sqrt(volume)` in 2D) - a single
+# isotropic length for the whole cell. That is only the cell's size when the cell
+# is roughly cubic, and it silently flatters anisotropic meshes: on the LH2 pipe's
+# near-wall cells (aspect ratio ~44:1, volume 5.01e-11 m^3, total face area
+# 1.43e-06 m^2) it gives `dx = 369 um` against a true wall-normal spacing of
+# ~35 um, so the reported Courant number was 10.6x too SMALL.
+#
+# That matters twice over. Adaptive stepping keyed on `maxCo` was letting the step
+# grow ~10x beyond what the mesh supports, and the ordinary Courant number
+# disagreed with the ALPHA Courant number - which is already flux-based - by the
+# same factor, making the pair impossible to interpret together.
+#
+# The standard definition instead sums the flux through the faces,
+#
+#     Co = 0.5*dt*sum_f |U . n_f| A_f / V
+#
+# which is exact for uniform flow through a cuboid (only the two faces normal to
+# the flow contribute, giving `u*dt/h` on the spacing in the FLOW direction) and
+# degrades gracefully on skewed cells. Same convention as the alpha Courant, so
+# the two are now directly comparable.
 @kernel function _max_courant_number!(cellsCourant, U, runtime, mesh::Mesh3)
     i = @index(Global)
     @uniform cells = mesh.cells
+    @uniform cell_faces = mesh.cell_faces
+    @uniform faces = mesh.faces
     dt = runtime.dt[1]
-    umag = norm(U[i])
-    volume = cells[i].volume
-    dx = volume^(one(volume)/typeof(volume)(3))
-    cellsCourant[i] = umag * dt / dx
+    Ui = U[i]
+    cell = cells[i]
+    volume = cell.volume
+    flux = zero(volume)
+    @inbounds for k in cell.faces_range
+        face = faces[cell_faces[k]]
+        n = face.normal
+        flux += abs(Ui[1]*n[1] + Ui[2]*n[2] + Ui[3]*n[3])*face.area
+    end
+    cellsCourant[i] = 0.5 * dt * flux / volume
 end
 
 @kernel function _max_courant_number!(cellsCourant, U, runtime, mesh::Mesh2)
     i = @index(Global)
     @uniform cells = mesh.cells
+    @uniform cell_faces = mesh.cell_faces
+    @uniform faces = mesh.faces
     dt = runtime.dt[1]
-    umag = norm(U[i])
-    volume = cells[i].volume
-    dx = sqrt(volume)
-    cellsCourant[i] = umag * dt / dx
+    Ui = U[i]
+    cell = cells[i]
+    volume = cell.volume
+    flux = zero(volume)
+    @inbounds for k in cell.faces_range
+        face = faces[cell_faces[k]]
+        n = face.normal
+        flux += abs(Ui[1]*n[1] + Ui[2]*n[2] + Ui[3]*n[3])*face.area
+    end
+    cellsCourant[i] = 0.5 * dt * flux / volume
 end
 
 ## ALPHA COURANT NUMBER

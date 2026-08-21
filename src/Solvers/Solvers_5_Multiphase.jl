@@ -149,6 +149,58 @@ multiphase_pressure_work_relax(fluid) =
     get(fluid.physics_properties, :pressure_work_relax, 0.5)
 
 """
+Filter TIME CONSTANT [s] for `dp/dt`, from the optional `pressure_work_tau`
+keyword of `Fluid{Multiphase}`. `nothing` (the default) keeps the plain per-step
+blend of [`multiphase_pressure_work_relax`](@ref).
+
+**Why a time constant rather than a per-step factor.** `relax_source!` blends
+against the PREVIOUS STEP, so a fixed factor `r` is a first-order filter whose
+time constant is `~dt/r` - it smooths over one or two STEPS whatever `dt` is.
+That is the wrong scaling twice over:
+
+  * the quantity being filtered is `(p - p_prev)/dt`, so a pressure noise floor
+    `eps` enters as `eps/dt` and GROWS as `dt` is refined;
+  * the filter's reach in physical time is `~dt/r` and SHRINKS as `dt` is
+    refined.
+
+Both move the wrong way together, so refining `dt` destabilises the run - the
+opposite of what a time-step study is supposed to show. MEASURED on
+`3d_LH2_pipe_forced_convection` at `q_w = 1e4`, one continuous `run!`:
+
+    dt = 2e-5, r = 0.5    DIVERGED at 11.0 ms
+    dt = 1e-5, r = 0.5    DIVERGED at  7.5 ms   <- half the dt, EARLIER failure
+    dt = 1e-5, term OFF   clean to 12.0 ms      <- past both
+
+with the ENERGY residual leading the collapse by ~20 steps while `alpha_max` was
+still 3e-3 and `max|U|` still within 1% of bulk.
+
+Setting `tau` replaces `r` with `dt/(tau + dt)`, a first-order low-pass of FIXED
+time constant `tau`, so the damping no longer depends on `dt`. The physically
+motivated choice is the acoustic transit time of the domain - the time scale
+over which the segregated solve's one-step pressure jump would really propagate
+(see [`multiphase_pressure_work_relax`](@ref) for that argument, which this
+implements properly).
+
+Blending, not scaling: at steady state `field == prev`, so `tau` changes how fast
+`dp/dt` may move, never its converged value.
+"""
+multiphase_pressure_work_tau(fluid) =
+    get(fluid.physics_properties, :pressure_work_tau, nothing)
+
+"""
+    pressure_work_relax_factor(relax, tau, dt) -> Float64
+
+Per-step blend factor for `dp/dt`: `relax` when `tau` is `nothing`, otherwise the
+fixed-time-constant equivalent `dt/(tau + dt)`. See
+[`multiphase_pressure_work_tau`](@ref).
+"""
+pressure_work_relax_factor(relax, ::Nothing, dt) = relax
+function pressure_work_relax_factor(relax, tau, dt)
+    tau > 0 || throw(ArgumentError("`pressure_work_tau` must be positive, got $tau"))
+    return dt/(tau + dt)
+end
+
+"""
 Under-relaxation factor for the WALL nucleate boiling rate, from the optional
 `wall_boiling_relax` keyword of `Fluid{Multiphase}`. Defaults to 1.
 
@@ -173,6 +225,137 @@ See [`multiphase_pressure_work_relax`](@ref) for why these two are usually set
 together.
 """
 multiphase_expansion_relax(fluid) = get(fluid.physics_properties, :expansion_relax, 1.0)
+
+"""
+    multiphase_thermo_acoustic(fluid) -> Symbol
+
+How the pressure/temperature coupling is treated, from the optional
+`thermo_acoustic` keyword of `Fluid{Multiphase}`. `:implicit` (default) or
+`:explicit` (the historical behaviour).
+
+# The loop, and why treating it explicitly fails
+
+Two terms connect the energy and pressure equations:
+
+    energy:    S_T       = beta*T*dp/dt          (pressure work)
+    pressure:  expansion = beta*dT/dt            (thermal expansion)
+
+Evaluated explicitly they form a closed cycle,
+
+    dT -> expansion -> dp -> dp/dt -> S_T -> dT
+
+which is unstable. Measured on rung 2.5 (plane Poiseuille, laminar, adiabatic, no
+gravity, started from the exact solution): the incompressible control reproduces
+`dp/dx` to 0.6 %, and the identical compressible case DIVERGES. Setting either
+`pressure_work_relax` or `expansion_relax` to exactly zero - cutting either arrow
+- restores stability, which is the signature of a loop rather than of one bad
+term.
+
+Note the instability gets WORSE as `dt` falls (diverges at 0.1x and 0.7x the
+acoustic limit `dx/c`, stable and accurate at 2.8x and 13.9x), so it is not an
+acoustic CFL condition and cannot be cured by refining the time step.
+
+# What `:implicit` does
+
+The cycle is not a modelling choice, it is thermodynamics being computed by
+iteration. Substituting the pressure-work temperature response back into the
+expansion source,
+
+    expansion = beta*(dT/dt)_other + (beta^2*T/(rho*cp))*dp/dt
+
+and moving the second part to the left-hand side leaves the time coefficient
+
+    psi_s = psi_T - beta^2*T/(rho*cp)
+
+which is the exact thermodynamic identity relating the ISOTHERMAL and ISENTROPIC
+compressibilities. For an ideal gas `psi_T = 1/p` becomes `psi_s = 1/(gamma*p)`,
+i.e. `1/(rho*c^2)` - the coefficient that carries the acoustic wave speed, which
+is what the pressure equation needed all along.
+
+So the explicit loop was the solver recovering the isentropic response by
+iterating on the isothermal one. `:implicit` supplies it directly, and the
+`expansion` source drops exactly the increment that `S_T` produced.
+
+# It does not change converged answers
+
+Both terms vanish at steady state, and the transient is corrected rather than
+suppressed. Checked analytically on the sealed rigid tank, where the explicit
+loop already gives the right answer: heating at `Q` per unit volume,
+
+    explicit:  rho*cv*dT/dt = Q  and  dp/dt = R*Q/cv        (via psi_T)
+    implicit:  dp/dt = beta*Q/(rho*cp*psi_s) = R*Q/cv       (via psi_s)
+
+identical, which is why the validated K-Site pressurisation rate is unaffected.
+"""
+function multiphase_thermo_acoustic(fluid)
+    mode = get(fluid.physics_properties, :thermo_acoustic, :implicit)
+    mode in (:implicit, :explicit) || throw(ArgumentError(
+        "`thermo_acoustic` must be :implicit or :explicit, got $mode"))
+    return mode
+end
+
+"""
+    multiphase_liquid_phase(fluid) -> Int
+
+Index of the LIQUID phase, from the optional `liquid_phase` keyword of
+`Fluid{Multiphase}`. Defaults to 1.
+
+### Why this is separate from `volume_fraction`
+
+`volume_fraction` says which phase the transported `alpha` MEASURES.
+`liquid_phase` says which phase is physically the liquid. Those are different
+questions, and conflating them is only harmless while `alpha` happens to track
+the liquid.
+
+They must be allowed to differ because the volume fraction should track the
+DILUTE phase. `alpha` and the mixture mass are the two things this solver
+conserves; whichever phase is not tracked is recovered by subtraction, and that
+subtraction is amplified by roughly `rho_m/rho_tracked` times
+`(tracked fraction)/(inferred fraction)`. For LH2/GH2 at 3% void that is ~450 if
+the liquid is tracked and ~1 if the vapour is - see `build_alpha_equation`. Every
+Eulerian dispersed-phase solver (Fluent, STAR-CCM+, `driftFluxFoam`) therefore
+transports the DISPERSED fraction and infers the continuous one.
+
+Terms that depend on which phase is which - the phase-change sink, its sign, the
+drift weighting and sign, `compute_Ur!`'s continuous/dispersed roles, and all of
+wall boiling - use this. Terms that only need "tracked" and "other" use
+`volume_fraction` and `3 - volume_fraction`.
+"""
+multiphase_liquid_phase(fluid) = get(fluid.physics_properties, :liquid_phase, 1)
+
+"""
+    multiphase_drift_body_relax(fluid) -> Float64
+
+Weight of the PREVIOUS step's body force in the semi-implicit drift blend,
+
+    b^n = w*b^{n-1} + (1 - w)*(b_ext + b_int)
+
+from the optional `drift_body_relax` keyword of `Fluid{Multiphase}`. `0.0` is the
+fully explicit body force; `1.0` freezes it at the previous step.
+
+**Defaults to `1.0`, NOT to STAR-CCM+'s 0.5.** Measured on the LH2 pipe at
+1e4 W/m2, dt = 2e-5:
+
+    relax = 0.5   DIVERGED
+    relax = 0.9   36.8% vapour retained, +0.81% mass drift
+    relax = 1.0   37.1% retained, +0.81%   (= the pre-`U_prev`-fix baseline)
+
+`U_prev` used to be refreshed immediately before `compute_DUmDt!`, making the
+transient half of `Du_m/Dt` identically zero. Fixing that restored a term worth
+~500 m/s2 per 0.01 m/s of per-step velocity change at this timestep, and STAR's
+0.5 does not damp it enough here. At `1.0` the term is fully suppressed and the
+solver reproduces its previous behaviour exactly; `0.9` admits 10% of it and
+changes almost nothing, which says the term is only tolerable where it is inert.
+Treat any value below 0.9 as unvalidated.
+
+`b_ext = g` (plus rotational terms, absent here) and `b_int = -Du_m/Dt`. Since
+the slip is `v_ps = -c_d*b`, damping `b` damps the slip directly. At steady state
+`b^n = b^{n-1}`, so this alters the transient path only and leaves the converged
+solution unchanged.
+"""
+multiphase_drift_body_relax(fluid) =
+    haskey(ENV, "DRIFT_BODY_RELAX") ? parse(Float64, ENV["DRIFT_BODY_RELAX"]) :
+        get(fluid.physics_properties, :drift_body_relax, 1.0)
 
 """
     multiphase_dispersion_Sc(fluid) -> Float64 or nothing
@@ -247,14 +430,9 @@ incompressible phases still has a varying density wherever `alpha` varies, so
       thermal        sum_i alpha_i*rho_i*beta_i*DT/Dt
       phase change   mdot*(1 - rho_v/rho_l)
 
-  plus, for a `Mixture`, the drift divergence
-
-      div[alpha*(1-alpha)*(rho_1 - rho_2)*u_r]
-
-  which is what separates the volume-averaged velocity this solver corrects from
-  the mass-averaged one the mixture mass equation is written for — see
-  `add_drift_mass_divergence!`, and the note above `_update_expansion!` for the
-  derivation and for the velocity question that settles it.
+  There is NO drift term: `U` is the mass-averaged `u_m` (see the scaling note at
+  `Urdotf`), for which `d(rho_m)/dt + div(rho_m*u_m) = 0` holds exactly. A drift
+  divergence belongs here only under the volume-averaged convention.
 
 **Why it can matter.** Momentum and energy convect with `rhoPhi`, a MASS flux,
 but under `:volume` nothing ever enforces `div(rho u) = -drho/dt`; the pressure
@@ -267,6 +445,29 @@ system better across an interface.
 With constant density the two forms differ only by a uniform scale factor, so
 they agree to solver tolerance. **Opt-in**, so existing cases are untouched.
 """
+# DEFAULT REMAINS `:volume`, deliberately, despite `:mass` being measurably more
+# accurate on every case with an exact answer:
+#
+#   * the isentropic correction of `multiphase_thermo_acoustic` is EXACT under the
+#     mass form, where `psi = drho_m/dp` is a genuine derivative, and only
+#     approximate under the volume form's per-phase weighting. On the sealed-tank
+#     acceptance test (`dp/dt = R*Q/(V*cv)`) that is -0.013% against +1.27%.
+#   * vapour mass drift over 200 steps of the same case falls by a factor of 1670.
+#   * `Mixture` convects momentum, energy and alpha with a MASS flux, so the mass
+#     form is the consistent constraint for it.
+#
+# WHY IT IS NOT THE DEFAULT. The mass form scales the Laplacian coefficient by
+# `rho_f`, and the resulting pressure matrix is NOT symmetric. `Cg()` is therefore
+# invalid for it, and `Cg()` is what the existing multiphase cases use for `p_rgh`
+# - switching the default made `2d_multiphase_gravity` and
+# `2d_multiphase_hydrostatic` fail immediately with "the linear operator A or the
+# preconditioner M is not symmetric positive definite".
+#
+# Promoting `:mass` to the default therefore means changing every case's pressure
+# solver to `Bicgstab()` at the same time, which is a separate decision from this
+# one. Until then it stays opt-in:
+#
+#     Fluid{Multiphase}(..., pressure_form = :mass)   # requires Bicgstab for p_rgh
 function multiphase_pressure_form(fluid)
     form = get(fluid.physics_properties, :pressure_form, :volume)
     form in (:volume, :mass) || throw(ArgumentError(
@@ -410,7 +611,7 @@ Every model divides by or multiplies by L; zero makes the source meaningless."""
     # from its defining constant, `TabulatedEos` from the molar mass of the fluid
     # it was tabulated from. This is what allows a real-fluid vapour to be used
     # with the Lee model, which the ideal-gas-only check previously forbade.
-    if pc isa Union{Schrage,Lee}
+    if pc isa Schrage
         eos = phases[secondary].rho_model
         # Prefer the EOS's own value; fall back to one supplied on the model.
         # `R_sp` is a property of the SUBSTANCE, not of the equation of state, so
@@ -702,45 +903,18 @@ end
 @inline _phase_change_source(::Val{true}, m, rl, rv, ::Type{TF}) where {TF} =
     m*(one(TF) - rv/rl)
 
-"""
-    add_drift_mass_divergence!(expansion, phi_drift, phi_drift_w, div_drift,
-                               rho1f, rho2f, config)
-
-Drift-flux term of the MASS-form pressure equation:
-
-    expansion += div[ alpha*(1 - alpha)*(rho_1 - rho_2)*u_r ]
-
-**Why it exists.** This solver corrects the VOLUME-averaged velocity `u_j` (see
-the note above `_update_expansion!`), but mixture mass conservation is written
-for the MASS-averaged `u_m`. The two differ by exactly the drift flux:
-
-    rho_m*u_j = rho_m*u_m + alpha*(1 - alpha)*(rho_1 - rho_2)*u_r
-
-so `div(rho_m*u_j) = -d(rho_m)/dt + div[alpha*(1-alpha)*(rho_1-rho_2)*u_r]`.
-Without this term the mass form constrains `div(rho_m*u_j)` to `-d(rho_m)/dt`,
-which is the mixture mass equation for the WRONG velocity. It vanishes
-identically when `rho_1 == rho_2` (no drift) or `alpha` is 0 or 1 (single
-phase), which is why it goes unnoticed until a second phase actually appears.
-
-The volume form needs nothing equivalent: its constraint is on `u_j` directly.
-
-`phi_drift` is the volumetric drift flux `alpha_up*(1-alpha_up)*(Ur . Sf)` built
-by `build_drift_flux!` from `Urdotf` — the SAME face drift flux the alpha
-equation transports with, including turbulent dispersion when `dispersion_in_Ur`
-puts it there, and upwinded in `alpha` for the same reason. If the pressure
-equation and the alpha equation disagreed about where the drift moves phase, the
-difference would reappear as the imbalance this term exists to remove.
-
-`phi_drift_w` is scratch; `phi_drift` itself is left intact for the energy
-equation, which scales the same flux by `(rho*cp)_2 - (rho*cp)_1`.
-"""
-function add_drift_mass_divergence!(expansion, phi_drift, phi_drift_w, div_drift,
-                                    rho1f, rho2f, config)
-    @. phi_drift_w.values = phi_drift.values*(rho1f.values - rho2f.values)
-    div!(div_drift, phi_drift_w, config)
-    @. expansion.values += div_drift.values
-    return nothing
-end
+# TRIED AND REVERTED: `expansion -= div[(rho_1-rho_2)*drift_flux]`, derived by
+# expanding both sides and keeping the drift part of `-(rho_1-rho_2)*d(alpha)/dt`
+# that survives the `div(alpha*u_m)` cancellation. It is arguably correct but was
+# MEASURED as ~1000x too small to matter (domain-averaged ~0.06 kg/m3/s against
+# the ~62 kg/m3/s needed to explain the observed mass drift), and changed the
+# mixture mass error not at all: +6.86% with and without.
+#
+# It is also a deviation from STAR-CCM+, whose mixture continuity is simply
+# `d(rho_m)/dt + div(rho_m*v_m) = 0` with `d(rho_m)/dt` evaluated as a full
+# discrete derivative. Terms like this one exist only because this solver
+# RECONSTRUCTS `d(rho_m)/dt` from modelled parts (psi + thermal + Gamma) instead
+# of measuring it. The decomposition is the deviation, not the coefficient.
 
 """
     apply_phase_change_alpha!(alpha, mdot, rho_l, dt, config)
@@ -759,22 +933,47 @@ phase-change volume rate is minute for these cases (boil-off over hours, so
 That assumption breaks down for vigorous boiling, where the limiter would need
 to account for the source properly.
 """
-apply_phase_change_alpha!(alpha, ::Nothing, rho_l, dt, config) = nothing
+apply_phase_change_alpha!(alpha, ::Nothing, rho_tracked, dt, config; sign=-1.0) = nothing
 
-function apply_phase_change_alpha!(alpha, mdot, rho_l, dt, config)
+function apply_phase_change_alpha!(alpha, mdot, rho_tracked, dt, config; sign=-1.0)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
     ndrange = length(alpha)
     kernel! = _apply_phase_change_alpha!(_setup(backend, workgroup, ndrange)...)
-    kernel!(alpha, mdot, rho_l, dt)
+    kernel!(alpha, mdot, rho_tracked, dt, sign)
     return nothing
 end
 
-@kernel inbounds=true function _apply_phase_change_alpha!(alpha, mdot, rho_l, dt)
+# `rho_tracked`/`sign` as in `add_alpha_phase_change!`: evaporation destroys the
+# tracked phase when it is the liquid and creates it when it is the vapour.
+# KNOWN ISSUE, VOF / SHARP-INTERFACE ONLY - not investigated, deferred deliberately.
+#
+# `unit_test_phase_change.jl` runs all three rate models on the same VOF box, the
+# same alpha transport and the same sink, changing only the rate model:
+#
+#     ModifiedEnergyJump   5.3e-8      Schrage   9.2e-5      Lee   2.7e-2
+#
+# Lee drifts ~300x more than the others. The suspected mechanism is the `clamp`
+# below. `Schrage` and `ModifiedEnergyJump` are multiplied by the interfacial area
+# density `a_i`, which vanishes in a pure cell, so they generate nothing where
+# there is no interface. Lee's `r` is volumetric and does NOT vanish - a pure
+# liquid cell with superheat evaporates at `r*rho_l*dT/T_sat` with no interface
+# present - and the clamp then silently discards whatever it removes.
+#
+# This does NOT affect `Mixture`. Measured on rung 3.1 (dispersed, uniform alpha):
+# `alpha` runs 0.900 -> 0.892 and never approaches a bound, so the clamp never
+# fires and the mass budget closes to ~4%. The failure needs pure cells and a
+# resolved interface, i.e. the VOF path.
+#
+# If this is picked up: the clamp is the wrong instrument for a bounded update. A
+# limiter that redistributes the rejected source, or a rate that is switched off
+# where the receiving phase cannot accept it, would both conserve. See
+# `test/unit_test_phase_change.jl` for the standing `@test_broken`.
+@kernel inbounds=true function _apply_phase_change_alpha!(alpha, mdot, rho_tracked, dt, sign)
     i = @index(Global)
     TF = eltype(alpha.values)
-    a = alpha[i] - dt*mdot[i]/rho_l[i]
+    a = alpha[i] + TF(sign)*dt*mdot[i]/rho_tracked[i]
     alpha[i] = clamp(a, zero(TF), one(TF))
 end
 
@@ -846,7 +1045,7 @@ expand, and a rigid sealed volume converts that into a pressure rise. `DT/Dt` is
 taken from the temperature solve just completed.
 """
 function update_expansion!(expansion, alpha, phases, T, T_prev, dt, config;
-                           mass_form=false)
+                           mass_form=false, S_T=nothing, rho_cp=nothing)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
@@ -855,45 +1054,57 @@ function update_expansion!(expansion, alpha, phases, T, T_prev, dt, config;
     beta_v = _phase_beta_field(phases[2])
 
     ndrange = length(expansion)
-    kernel! = _update_expansion!(_setup(backend, workgroup, ndrange)...)
-    kernel!(expansion, alpha, T, T_prev, dt,
-            phases[1].rho_model, phases[2].rho_model, beta_l, beta_v,
-            phases[1].rho, phases[2].rho, Val(mass_form))
+    if S_T === nothing || rho_cp === nothing
+        kernel! = _update_expansion!(_setup(backend, workgroup, ndrange)...)
+        kernel!(expansion, alpha, T, T_prev, dt,
+                phases[1].rho_model, phases[2].rho_model, beta_l, beta_v,
+                phases[1].rho, phases[2].rho, Val(mass_form))
+    else
+        # Implicit thermo-acoustic coupling: remove from the expansion driver
+        # exactly the temperature increment the pressure-work source produced,
+        # because `update_psi!` has taken that part onto the left-hand side.
+        # Subtracting the SOURCE the energy equation was actually given - rather
+        # than a modelled estimate of its effect - is what makes the two halves
+        # cancel to the solver's own discretisation rather than to theory.
+        kernel! = _update_expansion_implicit!(_setup(backend, workgroup, ndrange)...)
+        kernel!(expansion, alpha, T, T_prev, dt,
+                phases[1].rho_model, phases[2].rho_model, beta_l, beta_v,
+                phases[1].rho, phases[2].rho, S_T, rho_cp, Val(mass_form))
+    end
     return nothing
 end
 
-# WHICH VELOCITY THE PRESSURE EQUATION CORRECTS - settled, and it decides the
-# weighting used above and in `add_phase_change_volume!`.
+# WHICH VELOCITY THE PRESSURE EQUATION CORRECTS - it decides the weighting used
+# above and in `add_phase_change_volume!`.
 #
-# `U` here is the VOLUME-averaged mixture velocity `u_j = sum_i alpha_i*u_i`, not
-# the mass-averaged `u_m`. The alpha equation is what pins this down: the exact
-# liquid volume flux `alpha*u_1` decomposes as
+# `U` is the MASS-averaged mixture velocity `u_m`, matching STAR-CCM+, which uses
+# it for volume-fraction convection, momentum, energy and continuity alike -
+# everything except the slip terms. The alpha equation is where this is enforced:
+# the exact liquid volume flux `alpha*u_1` decomposes as
 #
-#     alpha*u_j - alpha*(1-alpha)*u_r          (volume averaged)
-#     alpha*u_m - alpha*(1-alpha)*(rho_2/rho_m)*u_r    (mass averaged)
+#     alpha*u_j - alpha*(1-alpha)*u_r                   (volume averaged)
+#     alpha*u_m - alpha*(1-alpha)*(rho_2/rho_m)*u_r     (mass averaged)
 #
-# and `high_order_alpha_flux!(::Mixture, ...)` carries the drift term with NO
-# density weight, which is the `u_j` form. `compute_Ur!` agrees independently:
-# it divides the drift velocity by the continuous-phase VOLUME fraction, which is
-# the `u_j` inversion. Both read the same `mdotf` that the pressure solve
-# corrects, so there is only one velocity to identify.
+# and the `rho_2/rho_m` weight is applied to `Urdotf` in the solver loop - see the
+# scaling note there, which is the single point that fixes the convention for
+# every consumer.
 #
-# Consequence. The VOLUME constraint is the exactly correct one for this `U`, and
-# its phase-change source `Gamma*(1/rho_v - 1/rho_l)` is right as written. The
-# MASS form is a different equation, not the volume constraint scaled through:
-# `div(rho_m*u_j) != rho_m*div(u_j)`, because the discretisation puts `rho_m`
-# inside the divergence. The exact statement is
+# Consequence for THIS source. Mixture continuity
 #
-#     div(rho_m*u_j) = -d(rho_m)/dt + div[alpha*(1-alpha)*(rho_1-rho_2)*u_r]
+#     d(rho_m)/dt + div(rho_m*u_m) = 0
 #
-# whose phase-change part is `Gamma*(1 - rho_v/rho_l)` (about 0.92*Gamma for
-# LH2/GH2 at 0.4 MPa), against the `rho_m*Gamma*(1/rho_v - 1/rho_l)` this code
-# used to apply - roughly 11.4*Gamma, too large by a factor of ~12. The
-# STAR-CCM+ source that factor was taken from is the VOLUME constraint, correct
-# in its own frame, applied to a divergence it does not govern.
+# is exact, so the pressure source is `-d(rho_m)/dt` and nothing else. Its
+# phase-change part is `Gamma*(1 - rho_v/rho_l)` (about 0.92*Gamma for LH2/GH2 at
+# 0.4 MPa), against the `rho_m*Gamma*(1/rho_v - 1/rho_l)` this code used to apply
+# - roughly 11.4*Gamma, too large by a factor of ~12. The STAR-CCM+ source that
+# factor was taken from is the VOLUME constraint, correct in its own frame,
+# applied to a divergence it does not govern.
 #
-# The thermal term follows the same rule and is now weighted per phase, matching
-# `update_psi!`. The drift divergence is carried by `add_drift_mass_divergence!`.
+# The thermal term follows the same rule and is weighted per phase, matching
+# `update_psi!`. The `:volume` form remains available and keeps its own
+# `Gamma*(1/rho_v - 1/rho_l)`, which is correct for the volume constraint - but
+# note it is then constraining a velocity the rest of the solver no longer
+# transports, so `:mass` is the consistent choice for a `Mixture`.
 
 @kernel inbounds=true function _update_expansion!(
     expansion, alpha, T, T_prev, dt, eos_l, eos_v, beta_l, beta_v,
@@ -907,6 +1118,25 @@ end
     betaT = a*w1*phase_betaT(eos_l, beta_l[i], t) +
             (one(TF) - a)*w2*phase_betaT(eos_v, beta_v[i], t)
     dTdt = (t - T_prev[i])/dt
+    expansion[i] = betaT*dTdt/t
+end
+
+@kernel inbounds=true function _update_expansion_implicit!(
+    expansion, alpha, T, T_prev, dt, eos_l, eos_v, beta_l, beta_v,
+    rho_l, rho_v, S_T, rho_cp, mass_form)
+    i = @index(Global)
+    TF = eltype(expansion.values)
+    a = alpha[i]
+    t = T[i]
+    w1, w2 = _mass_weights(mass_form, rho_l[i], rho_v[i], TF)
+    betaT = a*w1*phase_betaT(eos_l, beta_l[i], t) +
+            (one(TF) - a)*w2*phase_betaT(eos_v, beta_v[i], t)
+    rc = rho_cp[i]
+    # The pressure-work part of dT/dt, to first order in the segregated loop.
+    # Higher-order differences (what advection and diffusion did with it inside
+    # the implicit energy solve) stay in `expansion`, where they belong.
+    dTdt_pw = rc > zero(TF) ? S_T[i]/rc : zero(TF)
+    dTdt = (t - T_prev[i])/dt - dTdt_pw
     expansion[i] = betaT*dTdt/t
 end
 
@@ -933,19 +1163,33 @@ exact for the fluxes and sources, but the time term's coefficient is a genuine
 derivative and each phase must be weighted by its own density. The two coincide
 when one phase dominates and differ by ~2x at `alpha = 0.5` for LH2/GH2.
 """
-function update_psi!(psi, alpha, phases, p_abs, T, config; mass_form=false)
+function update_psi!(psi, alpha, phases, p_abs, T, config; mass_form=false,
+                     rho_cp=nothing)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
     ndrange = length(psi)
-    kernel! = _update_psi!(_setup(backend, workgroup, ndrange)...)
-    kernel!(psi, alpha, p_abs, T, phases[1].rho_model, phases[2].rho_model,
-            phases[1].rho, phases[2].rho, Val(mass_form))
+    # Host-side so the kernels stay GPU-safe: `ALPHA_PSI_COUPLING=0` scales the
+    # void-response term out. See `_alpha_psi_response`.
+    TF = eltype(psi.values)
+    acoup = get(ENV, "ALPHA_PSI_COUPLING", "1") == "0" ? zero(TF) : one(TF)
+    if rho_cp === nothing
+        kernel! = _update_psi!(_setup(backend, workgroup, ndrange)...)
+        kernel!(psi, alpha, p_abs, T, phases[1].rho_model, phases[2].rho_model,
+                phases[1].rho, phases[2].rho, Val(mass_form), acoup)
+    else
+        # Isentropic coefficient: see `multiphase_thermo_acoustic`.
+        kernel! = _update_psi_isentropic!(_setup(backend, workgroup, ndrange)...)
+        kernel!(psi, alpha, p_abs, T, phases[1].rho_model, phases[2].rho_model,
+                phases[1].rho, phases[2].rho,
+                _phase_beta_field(phases[1]), _phase_beta_field(phases[2]),
+                rho_cp, Val(mass_form), acoup)
+    end
     return nothing
 end
 
 @kernel inbounds=true function _update_psi!(
-    psi, alpha, p_abs, T, eos1, eos2, rho1, rho2, mass_form)
+    psi, alpha, p_abs, T, eos1, eos2, rho1, rho2, mass_form, acoup)
     i = @index(Global)
     TF = eltype(psi.values)
     a = alpha[i]
@@ -954,8 +1198,66 @@ end
     # `Val` so the branch is resolved at compile time and the kernel stays
     # GPU-safe (no runtime divergence, no boxed Bool).
     w1, w2 = _mass_weights(mass_form, rho1[i], rho2[i], TF)
-    psi[i] = a*w1*phase_compressibility(eos1, p, t) +
-             (one(TF) - a)*w2*phase_compressibility(eos2, p, t)
+    psi1 = phase_compressibility(eos1, p, t)
+    psi[i] = a*w1*psi1 +
+             (one(TF) - a)*w2*phase_compressibility(eos2, p, t) +
+             # Void response - see `_alpha_psi_response`. Zero in the volume form.
+             acoup*_alpha_psi_response(mass_form, a, psi1, rho1[i], rho2[i], TF)
+end
+
+# Isentropic form:  psi_s = psi_T - beta_exp*beta_pw*T/(rho*cp).
+#
+# The two `betaT` factors are NOT the same quantity and must not be merged. The
+# expansion source carries the weights of the chosen pressure form (mass or
+# volume); the energy equation's pressure-work source is always volume weighted,
+# because it is a volumetric source in W/m^3 regardless of how the pressure
+# equation was scaled. Using one for both is correct only when `mass_form` is
+# false, and silently wrong by a factor of rho when it is not.
+@kernel inbounds=true function _update_psi_isentropic!(
+    psi, alpha, p_abs, T, eos1, eos2, rho1, rho2, beta1, beta2, rho_cp, mass_form,
+    acoup)
+    i = @index(Global)
+    TF = eltype(psi.values)
+    a = alpha[i]
+    p = p_abs[i]
+    t = T[i]
+    w1, w2 = _mass_weights(mass_form, rho1[i], rho2[i], TF)
+
+    psi1 = phase_compressibility(eos1, p, t)
+    # The void response is an ISOTHERMAL contribution - the alpha equation's
+    # source uses `phase_compressibility`, not an isentropic coefficient - so it
+    # belongs in `kappa_T`, before the isentropic correction below.
+    kappa_T = a*w1*psi1 +
+              (one(TF) - a)*w2*phase_compressibility(eos2, p, t) +
+              acoup*_alpha_psi_response(mass_form, a, psi1, rho1[i], rho2[i], TF)
+
+    bT1 = phase_betaT(eos1, beta1[i], t)
+    bT2 = phase_betaT(eos2, beta2[i], t)
+    bT_exp = a*w1*bT1 + (one(TF) - a)*w2*bT2          # as `update_expansion!` forms it
+    bT_pw  = a*bT1    + (one(TF) - a)*bT2             # as the energy source forms it
+
+    rc = rho_cp[i]
+    corr = (rc > zero(TF) && t > zero(TF)) ? bT_exp*bT_pw/(t*rc) : zero(TF)
+
+    # FLOOR. `kappa_s/kappa_T = 1/gamma`, so the floor sets the largest `gamma`
+    # that can be represented. It is NOT a safety margin against a small error -
+    # it is load-bearing, and its value is set by measurement (rung 2.7):
+    #
+    #   ON branch, saturated H2 over 0.3-1.25 MPa, the correction reaches
+    #     liquid  0.59 (gamma = 2.4);  vapour  0.907 (gamma = 10.7) at 1.01 MPa,
+    #     32.5 K - near-critical, where cp genuinely diverges and a large gamma is
+    #     PHYSICAL. An earlier floor of 0.1 would have clipped exactly that state.
+    #
+    #   OFF branch - the metastable continuation and saturation-line fallback that
+    #     the mixture blend evaluates in every cell for the absent phase - it
+    #     reaches 9.6 (liquid) and 11.2 (vapour). There the three tables are not
+    #     derivatives of a common rho and the correction is meaningless; without a
+    #     floor `psi` would go NEGATIVE and the pressure equation would be
+    #     ill-posed in cells that contain none of that phase.
+    #
+    # 0.01 admits gamma up to 100, comfortably past any physical state, while
+    # still catching the off-branch case by an order of magnitude.
+    psi[i] = max(kappa_T - corr, TF(0.01)*kappa_T)
 end
 
 # Per-phase weights that turn a volume-form coefficient into a mass-form one.
@@ -963,6 +1265,51 @@ end
 # `rho_m = sum_i alpha_i*rho_i`, so both weight each phase by its OWN density.
 @inline _mass_weights(::Val{false}, r1, r2, ::Type{TF}) where {TF} = (one(TF), one(TF))
 @inline _mass_weights(::Val{true}, r1, r2, ::Type{TF}) where {TF} = (r1, r2)
+
+"""
+Void-response part of `drho_m/dp`, the term that closes the ALPHA-ACOUSTIC loop.
+
+`rho_m = alpha*rho_t + (1 - alpha)*rho_o` depends on pressure through the phase
+densities AND through `alpha` itself:
+
+    drho_m/dp = alpha*drho_t/dp + (1-alpha)*drho_o/dp + (rho_t - rho_o)*dalpha/dp
+                |____________ what `_mass_weights` gives ___________|  |__ this __|
+
+The alpha equation supplies the last derivative: its compressibility source is
+`dalpha/dt = -alpha*psi_t*dp/dt` (see `add_alpha_compressibility!`), so
+`dalpha/dp = -alpha*psi_t` and the term is `alpha*psi_t*(rho_o - rho_t)`.
+
+WHY IT MATTERS. Without it these two terms form a closed EXPLICIT cycle under
+`pressure_form = :mass`,
+
+    alpha -> add_alpha_density_rate! -> p -> dp/dt -> add_alpha_compressibility! -> alpha
+
+with nothing damping it, because alpha is solved once per step outside the
+pressure loop. Exactly the shape of the thermo-acoustic loop that
+`multiphase_thermo_acoustic` closes, and with the same fingerprint: MEASURED on
+`3d_LH2_pipe_forced_convection` at `q_w = 1e4`, cutting EITHER arrow restores
+stability while the full cycle diverges at 31.0 ms -
+
+    ALPHA_COMPRESSIBILITY=0  (cuts p -> alpha)   full 69.4 ms flow-through, converged
+    ALPHA_DENSITY_RATE=0     (cuts alpha -> p)   past the 31.0 ms failure, healthy
+    both active, explicit                        DIVERGED at 31.0 ms
+
+which is the signature of a LOOP, not of one bad term. Making the alpha side
+implicit on its own does NOT help - tried, and it diverged at the identical step,
+because a negative linear coefficient on the diagonal amplifies by
+`1/(1 - |X|dt)` rather than `1 + |X|dt`, i.e. worse than explicit.
+
+The term is also real physics rather than a stabiliser: it is what makes a bubbly
+mixture far more compressible than either phase (Wood's equation), and for
+LH2/GH2 it is ~`(rho_l - rho_v)/rho_v ~ 13x` the frozen-alpha coefficient, so
+omitting it overstates the mixture sound speed badly at even a few percent void.
+
+`ALPHA_PSI_COUPLING=0` disables it for A/B testing.
+"""
+@inline _alpha_psi_response(::Val{false}, a, psi1, r1, r2, ::Type{TF}) where {TF} =
+    zero(TF)
+@inline _alpha_psi_response(::Val{true}, a, psi1, r1, r2, ::Type{TF}) where {TF} =
+    a*psi1*(r2 - r1)
 
 """
     phase_property_faces!(prop_f, prop_cell, config)
@@ -1148,6 +1495,20 @@ Use `Energy{TwoPhaseTemperature}(Tref=...)`."""))
     rho2_0 = phase_density_ref(phases[secondary].rho)
     mu1_0 = phase_density_ref(phases[main].mu)
     mu2_0 = phase_density_ref(phases[secondary].mu)
+
+    # A variable-EOS phase's density field is zero until `seed_phase_properties!`
+    # fills it, and `phase_density_ref` averages the field - so an unseeded phase
+    # gives 0 here and `mu/rho` becomes Inf. Blended against a zero volume
+    # fraction that is `0*Inf = NaN`, which poisons `nuf` and `mueff` before the
+    # first solve. Harmless while the tracked phase was a ConstantScalar liquid;
+    # fatal as soon as it is the compressible vapour.
+    (isfinite(rho1_0) && rho1_0 > 0) || throw(ErrorException(
+        """Phase $(main) (the phase tracked by `alpha`) has no usable reference density \
+($(rho1_0)). Its property fields are still unseeded at this point, which means \
+`seed_phase_properties!` has not run for it - check that `p_operating` is set and that \
+the phase has a supported equation of state."""))
+    (isfinite(rho2_0) && rho2_0 > 0) || throw(ErrorException(
+        "Phase $(secondary) has no usable reference density ($(rho2_0)); see above."))
 
     blend_properties!(rho, alpha, rho1_0, rho2_0)
     blend_properties!(rhof, alphaf, rho1_0, rho2_0)
@@ -1355,8 +1716,25 @@ function MULTIPHASE(
     mesh      = model.domain
     mp_model  = model.fluid.model
     phases    = model.fluid.phases
+    # TRACKED / OTHER: which phase `alpha` measures. Use these wherever the term
+    # only needs "the phase alpha counts" and "the one it does not".
     main      = model.fluid.volume_fraction
     secondary = 3 - main
+    # LIQUID / VAPOUR: a physics fact, independent of what `alpha` tracks. Use
+    # these wherever the term genuinely cares which phase is which - phase
+    # change, the drift's continuous/dispersed roles, wall boiling. See
+    # `multiphase_liquid_phase`.
+    liq       = multiphase_liquid_phase(model.fluid)
+    vap       = 3 - liq
+    tracked_is_liquid = (main == liq)
+    # Sign of the phase-change source in the alpha equation, and of the drift
+    # weighting. Evaporation DESTROYS the tracked phase when it is the liquid and
+    # CREATES it when it is the vapour; the tracked phase drifts backwards
+    # relative to the mixture when it is the liquid and forwards when it is the
+    # vapour. Both flip together, and both are +1 in the historical liquid-tracked
+    # configuration.
+    pc_sign    = tracked_is_liquid ? -1.0 : 1.0
+    drift_sign = tracked_is_liquid ? 1.0 : -1.0
 
     TF      = _get_float(mesh)
     TI      = _get_int(mesh)
@@ -1484,6 +1862,10 @@ Ignored here.""" pressure_form=:volume
     # damped out of the box while the phase-change ones are not.
     relax_pressure_work = _validate_relax(:pressure_work_relax,
                                           multiphase_pressure_work_relax(model.fluid))
+    # `pressure_work_tau`, when set, replaces the per-step factor above with a
+    # fixed-time-constant filter - see `multiphase_pressure_work_tau` for why a
+    # per-step factor makes dt refinement DESTABILISING here.
+    pressure_work_tau = multiphase_pressure_work_tau(model.fluid)
     dpdt_prev = compressible ? ScalarField(mesh) : nothing
 
     # Thermal-expansion source of the pressure equation. Together with the
@@ -1500,11 +1882,31 @@ Ignored here.""" pressure_form=:volume
     #
     # Both terms vanish at steady state, so setting either to zero costs nothing
     # for a steady-state case while removing the loop entirely.
+    # Implicit thermo-acoustic coupling. Needs BOTH `S_T` and `rho_cp`, so it is
+    # available only with an energy equation - a compressible isothermal mixture
+    # has no pressure/temperature loop to close in the first place.
+    thermo_acoustic = multiphase_thermo_acoustic(model.fluid)
+    ta_S_T    = (thermo_acoustic === :implicit && hasproperty(model.energy, :S_T)) ?
+                model.energy.S_T : nothing
+    ta_rho_cp = (thermo_acoustic === :implicit && hasproperty(model.energy, :rho_cp)) ?
+                model.energy.rho_cp : nothing
+    ta_implicit = !(ta_S_T === nothing || ta_rho_cp === nothing)
+
     relax_expansion = _validate_relax(:expansion_relax,
                                       multiphase_expansion_relax(model.fluid))
     expansion_prev = compressible ? ScalarField(mesh) : nothing
     dpdt = compressible ? ScalarField(mesh) : nothing
+    # SEEDED from the current temperature, not left at zero. `T_prev` is only
+    # assigned inside the time loop AFTER the alpha solve, so on iteration 1 it
+    # would otherwise be zero and `(T - T_prev)/dt` would be ~1e6 K/s. That is
+    # harmless from a cold start, where `alpha = 0` multiplies it away, and fatal
+    # on a RESTART from a field with vapour already present - the first step then
+    # sees a spurious source of order `alpha*beta*T/dt` in
+    # `add_alpha_compressibility!`. Same reasoning as `p_abs_prev` above.
     T_prev = ScalarField(mesh)
+    if model.energy !== nothing && hasproperty(model.energy, :T)
+        @. T_prev.values = model.energy.T.values
+    end
     expansion = get_source(p_eqn, 2)
     # Time-step-start pressure, held fixed across the PISO correctors so the
     # compressibility term advances once per step (see
@@ -1515,7 +1917,7 @@ Ignored here.""" pressure_form=:volume
     phase_change = multiphase_phase_change(model.fluid)
     saturation   = multiphase_saturation(model.fluid)
     h_fg         = multiphase_h_fg(model.fluid)
-    R_vapour     = validate_phase_change_setup(model.fluid, phases, secondary)
+    R_vapour     = validate_phase_change_setup(model.fluid, phases, vap)
 
     # How the interfacial mass flux becomes a volumetric rate. Defaulted from the
     # multiphase model rather than fixed, because the two models have genuinely
@@ -1610,12 +2012,27 @@ Ignored here.""" pressure_form=:volume
         C_alpha  = 0.0
         g_vec    = model.fluid.physics_properties.gravity.g
         diameter = mp_model.diameter
-        tau_d    = (rho2_val * diameter^2) / (18.0 * mu1_val + eps())
+        # Particle relaxation time, `rho_dispersed*d^2/(18*mu_continuous)`.
+        # LIQUID/VAPOUR, not tracked/other: the dispersed phase is the vapour and
+        # the carrier is the liquid, whichever one `alpha` happens to measure.
+        # Indexing this by `main`/`secondary` is only correct while the liquid is
+        # tracked; flipped, it picks up the liquid DENSITY over the vapour
+        # VISCOSITY and overstates `tau_d` - and hence `Ur` - by
+        # `(rho_l/rho_v)*(mu_l/mu_v)`, about 100x for LH2/GH2.
+        tau_d    = (phase_density_ref(phases[vap].rho) * diameter^2) /
+                   (18.0 * phase_density_ref(phases[liq].mu) + eps())
         tau_d_field = ConstantScalar(tau_d)
         # Assumes constant values for now
 
         U_prev = VectorField(mesh)
         DUmDt  = VectorField(mesh)
+        # Previous step's body force, for the semi-implicit blend at the
+        # `compute_DUmDt!` call site. STAR-CCM+ uses 0.5; `drift_body_relax`
+        # exposes it because the right amount of damping depends on how far the
+        # slip closure is being pushed outside its quasi-steady validity
+        # (`tau_d*|grad u| ~ 880` near the wall here, against the << 1 it assumes).
+        DUmDt_prev = VectorField(mesh)
+        b_relax = multiphase_drift_body_relax(model.fluid)
         Ur     = VectorField(mesh)
         Urf    = FaceVectorField(mesh)
         # Face slip velocity for the MOMENTUM diffusion stress, built from the
@@ -1629,6 +2046,12 @@ Ignored here.""" pressure_form=:volume
         # the Mixture path leaves MULES behind and the VOF path does not.
         S_alpha     = ScalarField(mesh)
         drift_flux  = FaceScalarField(mesh)
+        # IMPLICIT drift: face coefficient of `Divergence(drift_phi, alpha)`,
+        # holding `-(1 - alpha_up)*Urdotf`. The drift flux is `alpha*(1-alpha)*V`,
+        # nonlinear in `alpha`; lagging one factor and keeping the other implicit
+        # is the standard Picard linearisation and puts the term on the DIAGONAL
+        # instead of leaving it an explicit source with its own stability limit.
+        drift_phi   = FaceScalarField(mesh)
         # Phase change rate carried over from the previous step, so the sink
         # enters the alpha EQUATION rather than being applied afterwards.
         mdot_lagged = ScalarField(mesh)
@@ -1641,7 +2064,7 @@ Ignored here.""" pressure_form=:volume
         Dtf = FaceScalarField(mesh)
 
         alpha_eqn   = implicit_alpha ?
-            build_alpha_equation(model, mdotf, Dtf, S_alpha, config) : nothing
+            build_alpha_equation(model, mdotf, Dtf, drift_phi, S_alpha, config) : nothing
 
         # WHERE turbulent dispersion is applied. Two routes exist and they model
         # the SAME physics, so exactly one must be active:
@@ -1680,15 +2103,31 @@ Ignored here.""" pressure_form=:volume
     phirf    = FaceScalarField(mesh)
     Urdotf   = FaceScalarField(mesh)
 
-    # VOLUMETRIC drift flux `alpha_up*(1 - alpha_up)*(Ur . Sf)`, rebuilt once per
-    # outer iteration AFTER the alpha solve so it describes the state the rest of
-    # the step acts on (`drift_flux` above is the alpha equation's own copy, built
-    # from the pre-solve alpha). Two consumers scale it by different property
-    # differences: the mass-form pressure source by `rho_1 - rho_2`, and the
-    # energy equation by `(rho*cp)_2 - (rho*cp)_1`. Left at zero for VOF, where
-    # there is no drift and both consumers ignore it.
+    # Diffusion-velocity flux `alpha_up*(1 - alpha_up)*(rho_2/rho_m)*(Ur . Sf)`,
+    # rebuilt once per outer iteration AFTER the alpha solve so it describes the
+    # state the rest of the step acts on (`drift_flux` above is the alpha
+    # equation's own copy, built from the pre-solve alpha). Consumed by the
+    # energy equation, which scales it by `rho_1*(cp_2 - cp_1)`. Left at zero for
+    # VOF, where there is no drift and the consumer ignores it.
     phi_drift   = FaceScalarField(mesh)
-    phi_drift_w = FaceScalarField(mesh)   # scratch for the scaled copy
+
+    # CONSISTENT FLUX DENSITY. `rhof` is blended from the van Leer `alphaf` and is
+    # right for buoyancy and the momentum stress, but it must NOT be what turns
+    # `mdotf` into a mass flux: the alpha equation convects with `Upwind` face
+    # values, so a van Leer density makes the mixture mass flux and the liquid
+    # volume flux inconsistent. The void fraction is recovered from the RATIO of
+    # those two fluxes and is amplified by ~rho_l/rho_v divided by the void, so
+    # that inconsistency is what destroys vapour - see `build_alpha_equation`.
+    #
+    # `rhof_flux` is the same blend built from the face alpha the alpha equation
+    # actually transported with, and is used ONLY where a mass flux is formed.
+    alphaf_flux = FaceScalarField(mesh)
+    rhof_flux   = FaceScalarField(mesh)
+    # LIQUID fraction for the wall-boiling closures. Aliases `alpha` itself when
+    # `alpha` tracks the liquid, so the liquid-tracked configuration allocates
+    # nothing extra and copies nothing.
+    alpha_liq   = tracked_is_liquid ? model.fluid.alpha : ScalarField(mesh)
+    phi_drift_w = FaceScalarField(mesh)   # scratch: drift flux scaled by drho
     div_drift   = ScalarField(mesh)
 
     Hv       = VectorField(mesh)
@@ -1724,16 +2163,20 @@ Ignored here.""" pressure_form=:volume
 
     @time for iteration ∈ 1:iterations
 
+        note_solver_iteration!(iteration)  # tags G1 records with the time step
+
         copyto!(dt_cpu, config.runtime.dt)
         time += dt_cpu[1]
 
         @. rho_prev.values = rho.values
 
         if typeof(mp_model) <: Mixture
-            @. U_prev.x.values = U.x.values
-            @. U_prev.y.values = U.y.values
-            @. U_prev.z.values = U.z.values
-
+            # NOTE: `U_prev` is deliberately NOT refreshed here. It is snapshotted
+            # AFTER `compute_DUmDt!` below, so that on entry it still holds the
+            # velocity from the step BEFORE. Refreshing it here made
+            # `U - U_prev` identically zero, which killed the transient half of
+            # `Du_m/Dt` entirely - measured as `|dU/dt| med = 0, p99 = 0`, with
+            # all of the ~850 m/s2 coming from the convective half alone.
             grad!(∇U, Uf, U, boundaries.U, time, config)
         end
 
@@ -1742,9 +2185,42 @@ Ignored here.""" pressure_form=:volume
             limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
 
             compute_DUmDt!(DUmDt, U, U_prev, ∇U, dt_cpu[1], config)
+
+            # `U_prev` snapshotted HERE, after use, so it carries the velocity of
+            # the step before into the NEXT call - see the note above.
+            @. U_prev.x.values = U.x.values
+            @. U_prev.y.values = U.y.values
+            @. U_prev.z.values = U.z.values
+
+            # SEMI-IMPLICIT BODY FORCE (STAR-CCM+ Eqn 2923):
+            #
+            #     b^n = 0.5*b^{n-1} + 0.5*(b_ext + b_int)
+            #
+            # with `b_ext = g` (no rotating frame here) and `b_int = -Du_m/Dt`.
+            # Since `g` is constant, blending `b` is identical to blending
+            # `Du_m/Dt`, which is what this does.
+            #
+            # The slip is `v_ps = -c_d*b`, so an undamped `b` puts its full
+            # transient excursion straight into `Ur`: measured `|Du_m/Dt|` p99
+            # ~850 m/s2 (~87 g) drove `Ur` p99 to 3 m/s against a physical
+            # terminal slip of 0.096 m/s. At steady state `b^n = b^{n-1}` and the
+            # blend is exact, so this damps the transient path WITHOUT changing
+            # the converged answer.
+            @. DUmDt.x.values = b_relax*DUmDt_prev.x.values + (1 - b_relax)*DUmDt.x.values
+            @. DUmDt.y.values = b_relax*DUmDt_prev.y.values + (1 - b_relax)*DUmDt.y.values
+            @. DUmDt.z.values = b_relax*DUmDt_prev.z.values + (1 - b_relax)*DUmDt.z.values
+            @. DUmDt_prev.x.values = DUmDt.x.values
+            @. DUmDt_prev.y.values = DUmDt.y.values
+            @. DUmDt_prev.z.values = DUmDt.z.values
+
+            # LIQUID/VAPOUR, not tracked/other: this closure is a force balance on
+            # a dispersed particle in a continuous carrier, so the roles are
+            # physical. `tracked_is_liquid` tells the kernel whether `alpha` is
+            # already the continuous fraction or its complement.
             compute_Ur!(Ur, alpha, rho, g_vec, DUmDt,
-                        phases[main].rho, phases[secondary].rho, phases[main].mu,
-                        diameter, tau_d_field, config)
+                        phases[liq].rho, phases[vap].rho, phases[liq].mu,
+                        diameter, tau_d_field, config;
+                        tracked_is_liquid=tracked_is_liquid)
 
             # MOMENTUM slip stress uses the force-balance drift velocity only.
             # Snapshot it to faces BEFORE any dispersion is added.
@@ -1776,12 +2252,70 @@ Ignored here.""" pressure_form=:volume
             # carrying it as an explicit Laplacian, or it would be counted twice
             # (and with two different Schmidt numbers, the hardcoded `Sc_t` here
             # and the user's `dispersion_Sc`).
-            dispersion_in_Ur || turbulent_dispersion!(
-                Ur, alpha, ∇alpha, model.turbulence, Sc_t, config)
+            # `&&`, not `||`. With `||` this ran precisely when the LAPLACIAN
+            # route was selected, so both routes were active at once - the
+            # double-counting the comment above exists to prevent. Benign while
+            # `alpha` tracked the liquid (it only added extra smoothing) and fatal
+            # once it tracks the vapour, because the sign below inverts.
+            dispersion_in_Ur && turbulent_dispersion!(
+                Ur, alpha, ∇alpha, model.turbulence, Sc_t, config;
+                grad_sign=drift_sign)
 
             interpolate_vanleer!(Urf, Ur, mdotf, config)
             zero_wall_drift_velocity!(Urf, config)
             face_dot_Sf!(Urdotf, Urf, config)
+
+            # MASS-AVERAGED CONVENTION. `U` is the mass-averaged mixture velocity
+            # `u_m`, as in STAR-CCM+: it convects the volume fraction, the
+            # momentum and the energy, and it is what mixture continuity is
+            # written for. Everything except the slip terms uses it.
+            #
+            # The volume fraction equation therefore needs the DIFFUSION velocity
+            # of the tracked phase, `u_1 - u_m`, not the slip `u_r = u_2 - u_1`:
+            #
+            #     alpha*u_1 = alpha*u_m - alpha*(1-alpha)*(rho_2/rho_m)*u_r
+            #
+            # against `alpha*u_j - alpha*(1-alpha)*u_r` for the volume-averaged
+            # velocity. The consumers below already supply `alpha*(1-alpha)`, so
+            # the missing piece is exactly `rho_2/rho_m` — about 0.085 for LH2/GH2
+            # at 0.4 MPa, i.e. the unscaled flux transports the phases nearly 12x
+            # too fast relative to the mixture.
+            #
+            # Scaled HERE, once, so both the implicit (`build_drift_flux!`) and
+            # explicit (`high_order_alpha_flux!`) paths inherit it, along with
+            # `phi_drift` which the energy equation builds from the same field.
+            # After this line `Urdotf` is the slip flux weighted by
+            # `rho_other/rho_m`, NOT the bare `Ur . Sf`. The momentum slip stress
+            # is unaffected: it reads `Urf_slip` directly and needs the true slip.
+            #
+            # `rho2f` is the OTHER phase's face density (it tracks `secondary`),
+            # so the WEIGHT is already generic. Only the SIGN depends on which
+            # phase `alpha` measures: writing the tracked-phase flux as
+            #
+            #     alpha_t*u_t = alpha_t*u_m + alpha_t*(1-alpha_t)*(rho_other/rho_m)*(u_t - u_other)
+            #
+            # and noting `Ur` is `u_dispersed - u_continuous`, the bracket is
+            # `-Ur` when the liquid is tracked and `+Ur` when the vapour is. The
+            # consumers all subtract this flux, hence `drift_sign`.
+            @. Urdotf.values *= drift_sign*phase_faces.rho2f.values/rhof.values
+
+            # `DRIFT_OFF=1` zeroes the alpha-equation drift for A/B testing. Under
+            # vapour tracking this term is weighted `rho_l/rho_m` rather than
+            # `rho_v/rho_m` - about 13x stronger - and it is explicit, so it is a
+            # candidate limiter at void that a smaller dt would not obviously fix.
+            get(ENV, "DRIFT_OFF", "") == "1" && fill!(Urdotf.values, 0)
+
+            # The drift term dominates the mixture mass-conservation error. Measured
+            # on the LH2 pipe at 6.6e4 W/m2, 1000 steps, inlet -> outlet drift in
+            # the mixture mass flux:
+            #
+            #     drift ON   +6.85%
+            #     drift OFF  +0.67%
+            #
+            # It moves `alpha` relative to the mixture, which moves `rho_m`, and the
+            # pressure equation's source does not account for that change - see the
+            # imbalance note in the expansion assembly. Why this matters far more
+            # than 7% suggests is explained at `build_alpha_equation`.
         end
 
         # Bounded alpha eqn. transport via MULES
@@ -1797,8 +2331,11 @@ Ignored here.""" pressure_form=:volume
             @. alpha_prev.values = alpha.values
             ralpha = advance_alpha_implicit!(
                 alpha_eqn, model, ∇alpha, ∇alphaf, mdotf, Urdotf,
-                S_alpha, drift_flux, mdot_lagged, phases[main].rho,
-                dt_cpu[1], time, config)
+                S_alpha, drift_phi, drift_flux, mdot_lagged, phases[main].rho,
+                dt_cpu[1], time, config; pc_sign=pc_sign,
+                p_abs=p_abs, T_prev=T_prev, dpdt=dpdt,
+                eos_tracked=phases[main].rho_model,
+                beta_tracked=_phase_beta_field(phases[main]))
             # The limited alpha flux is still needed by the energy equation and
             # `blend_rhoPhi!`; rebuild it from the solved field so the two stay
             # consistent with the transport that actually happened.
@@ -1851,10 +2388,21 @@ Ignored here.""" pressure_form=:volume
             if phase_change !== nothing && interfacial_area isa ResolvedInterface
                 cell_grad_magnitude!(gradAlphaMag_pc, ∇alpha, config)
             end
+            # `alpha_liq`, NOT the tracked `alpha`. Every bulk rate model weights
+            # by the LIQUID fraction for evaporation and the VAPOUR fraction for
+            # condensation; the two coincide only while `alpha` happens to track
+            # the liquid, which is the default and is NOT what
+            # `multiphase_liquid_phase` recommends (track the DILUTE phase). Wall
+            # boiling already used `alpha_liq`; this did not, and rung 3.1
+            # measured the consequence as a factor of 6.2 in the relaxation time
+            # for one and the same physical state.
+            # When the liquid IS tracked, `alpha_liq` is the same object as
+            # `alpha` (see its allocation), so there is nothing to fill.
+            tracked_is_liquid || @. alpha_liq.values = 1 - alpha.values
             phase_change_rate!(
-                mdot_pc, phase_change, interfacial_area, alpha, gradAlphaMag_pc,
+                mdot_pc, phase_change, interfacial_area, alpha_liq, gradAlphaMag_pc,
                 model.energy.T, p_abs,
-                phases[main].rho, phases[secondary].rho,
+                phases[liq].rho, phases[vap].rho,
                 saturation, h_fg, R_vapour, config)
 
             # Relax the BULK rate while `mdot_pc` still holds it alone, i.e.
@@ -1870,8 +2418,15 @@ Ignored here.""" pressure_form=:volume
             wb_on = wallBoiling === nothing ? false :
                     wall_boiling_active(wallBoiling.model, iteration)
             if wb_on
+                # Every RPI closure is written in terms of the LIQUID fraction,
+                # so hand it that explicitly rather than `alpha`, which may be
+                # tracking the vapour.
+                if !tracked_is_liquid
+                    @. alpha_liq.values = 1 - alpha.values
+                end
                 wall_boiling_source!(wallBoiling, model, p_abs, saturation, h_fg,
-                                     g_magnitude, sigma_material, dt_cpu[1], config)
+                                     g_magnitude, sigma_material, dt_cpu[1], config;
+                                     alpha_liq = alpha_liq)
                 relax_source!(wallBoiling.mdot_wall, mdot_wall_prev, relax_wall, config)
             elseif wallBoiling !== nothing
                 fill!(wallBoiling.mdot_wall.values,
@@ -1879,6 +2434,7 @@ Ignored here.""" pressure_form=:volume
             end
             add_wall_boiling_rate!(
                 mdot_pc, wallBoiling === nothing ? nothing : wallBoiling.mdot_wall, config)
+
 
             # VOF keeps the after-the-fact application (with its documented
             # limitation). Mixture instead carries the rate forward so it enters
@@ -1888,7 +2444,7 @@ Ignored here.""" pressure_form=:volume
                 @. mdot_lagged.values = mdot_pc.values
             else
                 apply_phase_change_alpha!(alpha, mdot_pc, phases[main].rho,
-                                          dt_cpu[1], config)
+                                          dt_cpu[1], config; sign=pc_sign)
             end
             # alpha has moved, so refresh its face values before the blend below
             interpolate_vanleer!(alphaf, alpha, ∇alpha, mdotf, config)
@@ -1922,18 +2478,30 @@ Ignored here.""" pressure_form=:volume
             # Damp how fast dp/dt may CHANGE, without altering its converged
             # value (`relax_source!` blends against the previous step). A no-op
             # when `pressure_work_relax = 1.0`.
-            relax_source!(dpdt, dpdt_prev, relax_pressure_work, config)
+            #
+            # The factor is recomputed here rather than hoisted because under
+            # `pressure_work_tau` it depends on `dt`, which adaptive time
+            # stepping changes between steps.
+            relax_source!(dpdt, dpdt_prev,
+                          pressure_work_relax_factor(relax_pressure_work,
+                                                     pressure_work_tau,
+                                                     dt_cpu[1]),
+                          config)
             @. T_prev.values = model.energy.T.values
             @. p_rgh_start.values = p_rgh.values
 
             update_phase_state!(model, p_abs, config)
-            update_psi!(psi, alpha, phases, p_abs, model.energy.T, config;
-                        mass_form=mass_form)
+            # Ordered (TRACKED, OTHER): these kernels pair entry 1 with `alpha`
+            # and entry 2 with `1 - alpha`, so they need the tracked phase first
+            # regardless of which phase that is.
+            update_psi!(psi, alpha, (phases[main], phases[secondary]), p_abs,
+                        model.energy.T, config; mass_form=mass_form,
+                        rho_cp = ta_implicit ? ta_rho_cp : nothing)
         end
 
         # Mixture property update from the new alpha
         update_mixture_properties!(model, alpha_fluxf, mdotf, rhoPhi, nueff, mueff,
-                                   phase_faces, config)
+                                   phase_faces, alphaf_flux, rhof_flux, time, config)
 
         # Two-phase energy transport, BEFORE the pressure solve so the expansion
         # driver below sees this step's dT/dt. Reuses the limited `alpha_fluxf`
@@ -1943,9 +2511,30 @@ Ignored here.""" pressure_form=:volume
                            phase_faces, nueff,
                            dpdt, mdot_pc, h_fg, time, dt_cpu[1], config)
 
+        # MASS FORM: measured `d(rho_m)/dt`, the STAR-CCM+ formulation.
+        #
+        # Mixture continuity is `d(rho_m)/dt + div(rho_m*u_m) = 0`, so the source
+        # is `-d(rho_m)/dt` and nothing else. Rather than RECONSTRUCT that
+        # derivative from modelled parts (psi + thermal + Gamma) and hope they sum
+        # to it - which they measurably do not, see the note below - evaluate it
+        # directly from the density field. `rho_prev` is snapshotted at the top of
+        # the step and `rho` has just been rebuilt from the solved `alpha`, so this
+        # is the exact discrete derivative including phase change, thermal
+        # expansion and compressibility together.
+        #
+        # The implicit pressure half is supplied by `Time(psi, p_rgh)`. Its
+        # reference is the field `solve_pressure_compressible!` differences
+        # against: the CURRENT `p_rgh` on a flow-through case (giving
+        # `psi*(p_new - p_cur)/dt`, the correct Newton linearisation about the
+        # state at which `rho_m` was evaluated), or `p_rgh_start` when sealed - in
+        # which case the pressure change already inside the measured derivative
+        # must be added back, which is what the `psi` term here does.
         if compressible
-            update_expansion!(expansion, alpha, phases, model.energy.T, T_prev,
-                              dt_cpu[1], config; mass_form=mass_form)
+            update_expansion!(expansion, alpha, (phases[main], phases[secondary]),
+                              model.energy.T, T_prev, dt_cpu[1], config;
+                              mass_form=mass_form,
+                              S_T    = ta_implicit ? ta_S_T : nothing,
+                              rho_cp = ta_implicit ? ta_rho_cp : nothing)
 
             # Relax the THERMAL part only, while `expansion` still holds it
             # alone. Doing it after the phase-change volume below would damp the
@@ -1977,19 +2566,109 @@ Ignored here.""" pressure_form=:volume
             # INSIDE the sum, per phase. See the note above `_update_expansion!`
             # for the derivation, and for why the earlier `expansion *= rho_m`
             # overstated the phase-change source by a factor of about 12.
-            add_phase_change_volume!(expansion, mdot_pc,
-                                     phases[main].rho, phases[secondary].rho, config;
-                                     mass_form=mass_form)
-
-            # MASS FORM, Mixture only: the drift flux, which is the whole
-            # difference between the velocity this solver corrects and the one
-            # mixture mass conservation is written for. See
-            # `add_drift_mass_divergence!`. The volume form needs no counterpart.
-            if mass_form && typeof(mp_model) <: Mixture
-                add_drift_mass_divergence!(
-                    expansion, phi_drift, phi_drift_w, div_drift,
-                    phase_faces.rho1f, phase_faces.rho2f, config)
+            # VOLUME FORM ONLY.
+            #
+            # The mass-form source is `-d(rho_m)/dt`, whose alpha-driven part is
+            # `-(rho_1 - rho_2)*d(alpha)/dt` — the FULL derivative. An earlier
+            # version put only the PHASE-CHANGE half of `d(alpha)/dt` here, giving
+            # `+Gamma*(1 - rho_v/rho_l)`, on the assumption that the transport half
+            # would cancel against `div(rho_m*u)` on the left. It does not: at
+            # steady state the two halves of `d(alpha)/dt` cancel against EACH
+            # OTHER, so the correct source is zero and that term is a mass source
+            # that never switches off.
+            #
+            # Check it on the simplest case - homogeneous, constant densities,
+            # steady, 1D:
+            #
+            #     d(alpha*u)/dz     = -Gamma/rho_1
+            #     d((1-alpha)*u)/dz = +Gamma/rho_2
+            #     d(rho_m*u)/dz     = -Gamma + Gamma = 0
+            #
+            # Mixture mass flux is exactly conserved, so the source must vanish.
+            # Measured on the LH2 pipe the spurious term was ~60 kg/m3/s against
+            # the ~62 kg/m3/s needed to explain a +6.86% mass-flux drift.
+            #
+            # TRIED AND REJECTED: replacing the whole source with the measured
+            # `-(rho - rho_prev)/dt`, which is the correct statement and what
+            # STAR-CCM+ does. It diverges - unrelaxed by step 100, and still at
+            # `expansion_relax = 0.5` - because alpha is solved once per step
+            # OUTSIDE the pressure loop, making that source purely explicit with
+            # nothing to damp it. What remains here is the thermal part alone,
+            # which is exact at steady state (both parts vanish) and approximate
+            # in a transient.
+            if mass_form
+                # ALPHA-DRIVEN part of `-d(rho_m)/dt`, measured from the alpha
+                # equation's own change over this step:
+                #
+                #     rho_m = alpha*rho_t + (1-alpha)*rho_o
+                #     -d(rho_m)/dt|_alpha = -(rho_t - rho_o)*(alpha - alpha_prev)/dt
+                #
+                # This is the term the `Gamma*(1 - rho_v/rho_l)` version was an
+                # approximation to. Using the MEASURED d(alpha)/dt rather than
+                # only its phase-change half makes it vanish at steady state, as
+                # mixture mass conservation requires, while still carrying the
+                # transient - where boiling changes `rho_m` by ~2.5e4 kg/m3/s and
+                # omitting it leaves the pressure equation enforcing
+                # `div(rho_m*u) = 0` against a collapsing density.
+                # `ALPHA_DENSITY_RATE=0` disables this for A/B testing. Explicit,
+                # of the form `(alpha - alpha_prev)/dt`, so it does NOT shrink
+                # with the timestep - a candidate limiter that a smaller dt would
+                # not fix.
+                get(ENV, "ALPHA_DENSITY_RATE", "1") == "0" ||
+                    add_alpha_density_rate!(expansion, alpha, alpha_prev,
+                                            phases[main].rho, phases[secondary].rho,
+                                            dt_cpu[1], config)
+            else
+                add_phase_change_volume!(
+                    expansion, mdot_pc,
+                    phases[liq].rho, phases[vap].rho, config; mass_form=false)
             end
+
+
+            # MEASURED, UNRESOLVED: the source assembled above does not match the
+            # discrete `d(rho_m)/dt` it is meant to represent. Consistency with
+            # mixture continuity requires
+            #
+            #     expansion = psi*dp/dt - d(rho_m)/dt
+            #
+            # Instrumented on the LH2 pipe at 6.6e4 W/m2 (250 steps, dt = 5e-6),
+            # comparing the two per cell [kg/m3/s]:
+            #
+            #     it    |d(rho_m)/dt| p99   |expansion| p99   residual p99
+            #     50          105000              851           104000
+            #     100         220000             2730           219000
+            #     250           4770             2630             2040
+            #
+            # The residual should equal `psi*dp/dt`, order 70 here. It is 2040.
+            #
+            # Cause is structural rather than a wrong coefficient: `rho_m` changes
+            # because `alpha` changes, and `d(alpha)/dt` has a phase-change part
+            # AND a transport part. Only the phase-change part is passed as a
+            # source; the transport part is supposed to cancel against
+            # `div(rho_f*u_f)` on the left. That cancellation is exact in the
+            # continuous equations - it reduces to `div(u_j) = Gamma*(1/rho_v -
+            # 1/rho_l)` - but the alpha equation and the pressure equation use
+            # different schemes and different face interpolations, so discretely
+            # it only approximately holds, and the residue is a spurious mass
+            # source large enough to dominate the pressure field.
+            #
+            # TRIED AND REJECTED: replacing the modelled source with the measured
+            # `-(rho - rho_prev)/dt`, by analogy with `rho_cp_imbalance` in the
+            # energy equation. It diverges (NaN by step 100). The analogy fails
+            # because `rho_cp_imbalance` enters as `-Si(imbalance, T)`, IMPLICIT
+            # in the solved variable and therefore damping, whereas a measured
+            # mass source is purely explicit: density change -> pressure ->
+            # velocity -> alpha -> larger density change, with nothing to damp it.
+            #
+            # A workable fix likely has to make the alpha flux and the pressure
+            # equation's `div(rho_f*u_f)` share one face interpolation, so the
+            # cancellation is exact by construction rather than restored after the
+            # fact.
+
+            # MEASURED: the spurious divergence this imbalance produces tracks
+            # Gamma - about -0.8 /s through the heated section, falling away after
+            # it. That is an order of magnitude too small, and in the wrong place,
+            # to explain vapour being lost downstream of a heated plate.
         end
 
         # Interface curvature for surface tension (VOF only)
@@ -2039,7 +2718,11 @@ Ignored here.""" pressure_form=:volume
         # satisfies the discrete continuity statement exactly.
         if mass_form
             if mass_mobility_ref === nothing
-                @. p_flux.values = rhof.values * rDf.values
+                # `rhof_flux` again: the corrected flux is
+                # `rho_f*u*_f - (rho_f*rDf)*grad(p)`, so both halves must carry
+                # the SAME face density or the correction reintroduces exactly
+                # the inconsistency this is removing.
+                @. p_flux.values = rhof_flux.values * rDf.values
             else
                 @. p_flux.values = mass_mobility_ref * rDf.values
             end
@@ -2080,7 +2763,10 @@ Ignored here.""" pressure_form=:volume
             #
             # Everything downstream of the unscaling — the alpha equation,
             # `alpha_fluxf`, the Courant numbers — still sees a volumetric flux.
-            mass_form && @. mdotf.values *= rhof.values
+            # `rhof_flux`, NOT `rhof`: the face density here must be the one that
+            # makes this mass flux consistent with the alpha equation's liquid
+            # volume flux. See `consistent_flux_density!`.
+            mass_form && @. mdotf.values *= rhof_flux.values
 
             # IMPLICIT PRESSURE CONVECTION - the second half of psi*Dp/Dt.
             #
@@ -2123,7 +2809,7 @@ Ignored here.""" pressure_form=:volume
             correct_mass_flux_mp!(mdotf, p_eqn, config)
 
             # Back to a volumetric flux (see the scaling above).
-            mass_form && @. mdotf.values /= rhof.values
+            mass_form && @. mdotf.values /= rhof_flux.values
 
             # `rDf` here is the plain 1/a_P interpolation in both forms: the
             # velocity correction is -rD*grad(p_rgh) regardless of how the
@@ -2233,8 +2919,41 @@ convection operator gives diagonal dominance `V/dt + sum(flux) = V/dt + div(u)*V
 so the system is *more* dominant when `div(u) > 0` — the boiling case. It can
 degrade under net compression, so the solution is clamped to `[0, 1]` afterwards
 as a backstop and the clamp activity is worth monitoring.
+
+## Why void fraction is ill-conditioned at low void
+
+At steady state this equation conserves the LIQUID volume flux, `alpha*u*A`,
+while the pressure equation conserves the MIXTURE mass flux, `rho_m*u*A`. Two
+equations, two unknowns (`alpha`, `u`) — but they become nearly parallel as
+`rho_v/rho_l -> 0`. Dividing them,
+
+    R = (rho_m*u*A)/(alpha*u*A) = rho_l + rho_v*(1/alpha - 1)
+
+so `alpha` is recovered from how far `R` sits above `rho_l`, and
+
+    d(alpha)/dR = -alpha^2/rho_v
+
+With `rho_l/rho_v ~ 13` for LH2/GH2, a **1% error in R** produces:
+
+    void = 0.03  ->  412% error in void
+    void = 0.10  ->  107%
+    void = 0.30  ->   22%
+    void = 0.50  ->    7%
+
+Measured on the LH2 pipe: the mixture mass flux drifts +6.85% inlet to outlet
+(+0.67% with drift disabled), against a vapour mass fraction of only ~0.24% at
+3% void. The conservation error is larger than the quantity being resolved, and
+the vapour is destroyed — void decayed from 0.23 to 0.05 downstream of the heated
+plate with no condensation model present.
+
+**Consequence.** Any inconsistency between this equation's discrete face flux and
+the one the pressure equation uses is amplified by roughly `rho_l/rho_v` divided
+by the void fraction. Getting void right at low void therefore requires the two
+to share a face interpolation so the flux ratio is consistent to machine
+precision, not merely to solver tolerance. This is the same root cause as the
+imbalance recorded in the expansion assembly.
 """
-function build_alpha_equation(model, mdotf, Dtf, S_alpha, config)
+function build_alpha_equation(model, mdotf, Dtf, drift_phi, S_alpha, config)
     (; alpha) = model.fluid
     (; solvers, schemes, boundaries) = config
 
@@ -2253,6 +2972,13 @@ Add one, e.g.
     alpha_eqn = (
         Time{schemes.alpha.time}(ConstantScalar(one(TF)), alpha)
         + Divergence{schemes.alpha.divergence}(mdotf, alpha)
+        # IMPLICIT drift. `drift_phi = -(1 - alpha_up)*Urdotf`, so this is
+        # `-div(alpha*(1-alpha)*Urdotf)` - the same term that used to sit in
+        # `S_alpha` as `+div(drift_flux)`, moved onto the diagonal. Under vapour
+        # tracking the drift is weighted `rho_l/rho_m` rather than `rho_v/rho_m`,
+        # about 13x stronger, and as an explicit source it set the stability
+        # limit: 2e4 diverged with it on and ran with it off.
+        + Divergence{schemes.alpha.divergence}(drift_phi, alpha)
         - Laplacian{schemes.alpha.laplacian}(Dtf, alpha)
         ==
         Source(S_alpha)
@@ -2288,7 +3014,11 @@ this path was built for; for a tabulated liquid it is a real omission and is
 recorded as such rather than approximated.
 """
 function advance_alpha_implicit!(alpha_eqn, model, ∇alpha, ∇alphaf, mdotf, Urdotf,
-                                 S_alpha, drift_flux, mdot_lagged, rho_l, dt, time, config)
+                                 S_alpha, drift_phi, drift_flux, mdot_lagged,
+                                 rho_tracked, dt,
+                                 time, config; pc_sign=-1.0,
+                                 p_abs=nothing, T_prev=nothing, dpdt=nothing,
+                                 eos_tracked=nothing, beta_tracked=nothing)
     (; alpha, alphaf) = model.fluid
     (; solvers, schemes, boundaries) = config
     mesh = model.domain
@@ -2296,14 +3026,44 @@ function advance_alpha_implicit!(alpha_eqn, model, ∇alpha, ∇alphaf, mdotf, U
     grad!(∇alpha, alphaf, alpha, boundaries.alpha, time, config)
     limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
 
-    # Drift flux, explicit: Urdotf * alpha*(1-alpha), upwinded in alpha to match
-    # what the MULES path used.
-    build_drift_flux!(drift_flux, Urdotf, alpha, mdotf, boundaries, time, config)
-    div!(S_alpha, drift_flux, config)
+    # DRIFT TREATMENT. Two routes for the same term, `div[alpha*(1-alpha)*Urdotf]`:
+    #
+    #   EXPLICIT (default): built as a flux and its divergence added to `S_alpha`.
+    #     Original behaviour. Cheap per step, but the term carries its own
+    #     stability limit - it diverged at 2e4 under vapour tracking, where the
+    #     drift weight is `rho_l/rho_m` rather than `rho_v/rho_m`, ~13x larger.
+    #
+    #   IMPLICIT (`DRIFT_IMPLICIT=1`): Picard linearisation, `(1-alpha)` lagged
+    #     and `alpha` kept implicit, so the term lands on the matrix diagonal via
+    #     `Divergence(drift_phi, alpha)`. Stable, but measured ~3x the per-step
+    #     cost at 2e4 - a 1500-step run had not finished in 80 minutes.
+    #
+    # These are ORTHOGONAL to the semi-implicit body force (`drift_body_relax`),
+    # which damps `Ur` itself rather than changing how the term is discretised.
+    # Damping the magnitude at source is the cheaper fix if it suffices.
+    fill!(S_alpha.values, zero(eltype(S_alpha.values)))
+    if get(ENV, "DRIFT_IMPLICIT", "") == "1"
+        build_drift_phi!(drift_phi, Urdotf, alpha, mdotf, boundaries, time, config)
+    else
+        fill!(drift_phi.values, zero(eltype(drift_phi.values)))
+        build_drift_flux!(drift_flux, Urdotf, alpha, mdotf, boundaries, time, config)
+        div!(S_alpha, drift_flux, config)
+    end
 
-    # ...plus the (lagged) phase change sink. Sign: positive `mdot` is
-    # evaporation, which destroys liquid.
-    add_alpha_phase_change!(S_alpha, mdot_lagged, rho_l, config)
+    # ...plus the (lagged) phase change source. Positive `mdot` is evaporation,
+    # which DESTROYS the tracked phase if it is the liquid and CREATES it if it
+    # is the vapour - hence `pc_sign`, and `rho_tracked` rather than `rho_l`.
+    add_alpha_phase_change!(S_alpha, mdot_lagged, rho_tracked, config; sign=pc_sign)
+
+    # ...plus the tracked phase's own compressibility, `-(alpha/rho) Drho/Dt`.
+    # Zero for a constant-density phase, and a real source once `alpha` tracks a
+    # compressible one - see `add_alpha_compressibility!`.
+    # `ALPHA_COMPRESSIBILITY=0` disables this for A/B testing. It is derived and
+    # belongs in the equation, but it scales with `alpha` and has never been
+    # exercised at meaningful void, so it is worth being able to isolate.
+    get(ENV, "ALPHA_COMPRESSIBILITY", "1") == "0" ||
+        add_alpha_compressibility!(S_alpha, alpha, p_abs, model.energy.T, T_prev,
+                                   dpdt, eos_tracked, beta_tracked, dt, config)
 
     discretise!(alpha_eqn, alpha, config)
     apply_boundary_conditions!(alpha_eqn, boundaries.alpha, nothing, time, config)
@@ -2312,11 +3072,36 @@ function advance_alpha_implicit!(alpha_eqn, model, ∇alpha, ∇alphaf, mdotf, U
     residual = solve_system!(alpha_eqn, solvers.alpha, alpha, nothing, config)
 
     # Backstop only - see the boundedness note in `build_alpha_equation`.
+    # Measured on the LH2 pipe: this fires on thousands of cells per step but the
+    # magnitude is round-off (sum of the overshoots ~1e-8 in alpha, i.e. ~1e-17 kg
+    # of vapour), and `alpha < 0` never occurs. It is not a vapour sink.
     clamp!(alpha.values, zero(eltype(alpha.values)), one(eltype(alpha.values)))
 
     interpolate_vanleer!(alphaf, alpha, ∇alpha, mdotf, config)
     correct_boundaries!(alphaf, alpha, boundaries.alpha, time, config)
     return residual
+end
+
+"""
+    build_drift_phi!(drift_phi, Urdotf, alpha, mdotf, boundaries, time, config)
+
+Face coefficient for the IMPLICIT drift term, `-(1 - alpha_up)*Urdotf`.
+
+The drift flux is `alpha*(1-alpha)*Urdotf`, nonlinear in `alpha`. Lagging the
+`(1 - alpha)` factor at its upwind value and leaving the remaining `alpha`
+implicit is the standard Picard linearisation, so `Divergence(drift_phi, alpha)`
+contributes to the MATRIX rather than to the source. The sign is folded in here
+so the term reads `+ Divergence(drift_phi, alpha)` on the left, reproducing the
+`- div(alpha*(1-alpha)*Urdotf)` the explicit form had.
+
+Upwind to match `schemes.alpha.divergence`.
+"""
+function build_drift_phi!(drift_phi, Urdotf, alpha, mdotf, boundaries, time, config)
+    interpolate_upwind!(drift_phi, alpha, mdotf, config)   # holds alpha_up
+    correct_boundaries!(drift_phi, alpha, boundaries.alpha, time, config)
+    TF = eltype(drift_phi.values)
+    @. drift_phi.values = -(one(TF) - drift_phi.values)*Urdotf.values
+    return nothing
 end
 
 """Face flux of the drift term, `Urdotf * alpha_up*(1 - alpha_up)`."""
@@ -2343,18 +3128,112 @@ end
 
 add_alpha_phase_change!(S_alpha, ::Nothing, rho_l, config) = nothing
 
-function add_alpha_phase_change!(S_alpha, mdot, rho_l, config)
+function add_alpha_phase_change!(S_alpha, mdot, rho_tracked, config; sign=-1.0)
     (; hardware) = config
     (; backend, workgroup) = hardware
     ndrange = length(S_alpha)
     kernel! = _add_alpha_phase_change!(_setup(backend, workgroup, ndrange)...)
-    kernel!(S_alpha, mdot, rho_l)
+    kernel!(S_alpha, mdot, rho_tracked, sign)
     return nothing
 end
 
-@kernel inbounds=true function _add_alpha_phase_change!(S_alpha, mdot, rho_l)
+# `rho_tracked` is the density of whichever phase `alpha` measures, and `sign` is
+# -1 when that is the liquid (evaporation destroys it) or +1 when it is the
+# vapour (evaporation creates it). Both must flip together.
+@kernel inbounds=true function _add_alpha_phase_change!(S_alpha, mdot, rho_tracked, sign)
     i = @index(Global)
-    S_alpha[i] -= mdot[i]/rho_l[i]
+    TF = eltype(S_alpha.values)
+    S_alpha[i] += TF(sign)*mdot[i]/rho_tracked[i]
+end
+
+"""
+    add_alpha_compressibility!(S_alpha, alpha, p_abs, T, T_prev, dpdt, eos, beta,
+                               dt, config)
+
+STAR-CCM+'s compressibility term of the volume-fraction equation,
+
+    S_alpha -= (alpha/rho) * Drho/Dt
+
+for the TRACKED phase. Starting from that phase's mass conservation,
+
+    d(alpha*rho)/dt + div(alpha*rho*u) = +/- Gamma
+
+and expanding the product gives
+
+    d(alpha)/dt + div(alpha*u) = +/- Gamma/rho - (alpha/rho)*Drho/Dt
+
+so the term is not optional - it is what makes the VOLUME equation equivalent to
+the phase MASS equation when the phase density varies.
+
+Evaluated from the equation of state rather than by differencing `rho`:
+
+    (1/rho)*Drho/Dt = psi*Dp/Dt - beta*DT/Dt
+
+with `psi = (1/rho)(d rho/dp)` and `beta = -(1/rho)(d rho/dT)`, the same closures
+the pressure equation uses, so the two cannot disagree about the phase's
+compressibility.
+
+**Why this only matters now.** It is identically zero for a `ConstEos` phase, so
+while `alpha` tracked the constant-density liquid the term genuinely did not
+exist and its omission was exact. Tracking the vapour, whose density follows
+Peng-Robinson, it is a real source: omitting it makes the volume equation
+inconsistent with vapour mass conservation exactly where the vapour expands.
+"""
+add_alpha_compressibility!(S_alpha, alpha, p_abs, T, T_prev, ::Nothing, eos, beta,
+                           dt, config) = nothing
+
+function add_alpha_compressibility!(S_alpha, alpha, p_abs, T, T_prev, dpdt, eos, beta,
+                                    dt, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    ndrange = length(S_alpha)
+    kernel! = _add_alpha_compressibility!(_setup(backend, workgroup, ndrange)...)
+    kernel!(S_alpha, alpha, p_abs, T, T_prev, dpdt, eos, beta, dt)
+    return nothing
+end
+
+@kernel inbounds=true function _add_alpha_compressibility!(
+    S_alpha, alpha, p_abs, T, T_prev, dpdt, eos, beta, dt)
+    i = @index(Global)
+    TF = eltype(S_alpha.values)
+    a = alpha[i]
+    p = p_abs[i]
+    t = T[i]
+    psi_t  = phase_compressibility(eos, p, t)          # (1/rho) d(rho)/dp
+    beta_t = phase_betaT(eos, beta[i], t)/t            # -(1/rho) d(rho)/dT
+    dTdt   = (t - T_prev[i])/dt
+    S_alpha[i] -= a*(psi_t*dpdt[i] - beta_t*dTdt)
+end
+
+
+
+"""
+    add_alpha_density_rate!(expansion, alpha, alpha_prev, rho_t, rho_o, dt, config)
+
+Alpha-driven part of the mass-form pressure source, `-d(rho_m)/dt|_alpha`:
+
+    expansion -= (rho_t - rho_o)*(alpha - alpha_prev)/dt
+
+with `rho_t`/`rho_o` the TRACKED and OTHER phase densities. Measured from the
+alpha equation's own step change, so it carries the full `d(alpha)/dt` - both
+phase change AND transport - and therefore vanishes at steady state, which is
+what mixture mass conservation requires. An earlier version carried only the
+phase-change half, as `Gamma*(1 - rho_v/rho_l)`, which does not vanish and acted
+as a mass source that never switched off.
+"""
+function add_alpha_density_rate!(expansion, alpha, alpha_prev, rho_t, rho_o, dt, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    ndrange = length(expansion)
+    kernel! = _add_alpha_density_rate!(_setup(backend, workgroup, ndrange)...)
+    kernel!(expansion, alpha, alpha_prev, rho_t, rho_o, dt)
+    return nothing
+end
+
+@kernel inbounds=true function _add_alpha_density_rate!(expansion, alpha, alpha_prev,
+                                                       rho_t, rho_o, dt)
+    i = @index(Global)
+    expansion[i] -= (rho_t[i] - rho_o[i])*(alpha[i] - alpha_prev[i])/dt
 end
 
 
@@ -2479,7 +3358,7 @@ high_order_alpha_flux!(::Mixture, phiHf, mdotf, alphaf_HO, alphaf_upwind, phirf,
 # so for constant-density phases this produces exactly the same arithmetic as the
 # previous `rho[1]` form.
 function update_mixture_properties!(model, alpha_fluxf, mdotf, rhoPhi, nueff, mueff,
-                                    phase_faces, config)
+                                    phase_faces, alphaf_flux, rhof_flux, time, config)
     (; rho, rhof, nu, nuf, alpha, alphaf, phases) = model.fluid
     main = model.fluid.volume_fraction
     secondary = 3 - main
@@ -2494,6 +3373,15 @@ function update_mixture_properties!(model, alpha_fluxf, mdotf, rhoPhi, nueff, mu
     blend_indexed!(rho,  alpha,  phase_1.rho,       phase_2.rho,       config)
     blend_indexed!(rhof, alphaf, phase_faces.rho1f, phase_faces.rho2f, config)
 
+    # FLUX density: same blend, but from the face alpha the alpha equation
+    # convects with (`schemes.alpha.divergence`, Upwind) rather than the van Leer
+    # `alphaf`. Used only where a mass flux is formed - see the note where
+    # `rhof_flux` is allocated, and the conditioning argument in
+    # `build_alpha_equation`. `rhof` itself is unchanged, so buoyancy, the
+    # momentum stress and `mueff` keep their higher-order face density.
+    consistent_flux_density!(model.fluid.model, alphaf_flux, rhof_flux, alpha, alphaf,
+                             mdotf, rhof, phase_faces, time, config)
+
     # The dynamic viscosities are indexed rather than passed as scalars, so a
     # tabulated viscosity varies per cell and per face.
     blend_mixture_nu!(nu,  alpha,  rho,  phase_1.mu,       phase_2.mu,       config)
@@ -2502,8 +3390,45 @@ function update_mixture_properties!(model, alpha_fluxf, mdotf, rhoPhi, nueff, mu
     update_nueff!(nueff, nuf, model.turbulence, config)
     @. mueff.values  = rhof.values * nueff.values
 
-    blend_rhoPhi!(model.fluid.model, rhoPhi, alpha_fluxf, mdotf, rhof,
+    blend_rhoPhi!(model.fluid.model, rhoPhi, alpha_fluxf, mdotf, rhof_flux,
                   phase_faces.rho1f, phase_faces.rho2f)
+    return nothing
+end
+
+"""
+    consistent_flux_density!(mp_model, alphaf_flux, rhof_flux, alpha, alphaf,
+                             mdotf, rhof, phase_faces, time, config)
+
+Face density used wherever a MASS flux is formed from the volumetric `mdotf`.
+
+For a `Mixture` this is blended from an upwind face `alpha`, matching the
+`Upwind` divergence of the alpha equation, so that
+
+    (mixture mass flux) / (liquid volume flux)
+
+is consistent by construction. The void fraction is recovered from exactly that
+ratio and is amplified by ~`rho_l/rho_v` divided by the void, so a first- versus
+second-order mismatch in the face `alpha` is enough to destroy the vapour
+entirely at low void — see `build_alpha_equation`.
+
+`VOF` keeps `rhof`: its mass flux is already built from the limited
+`alpha_fluxf` by `blend_rhoPhi!`, so it is consistent by a different route.
+
+**Partial.** The alpha equation's flux also carries the drift and dispersion
+terms, which this does not yet subtract. Matching the interpolation removes the
+first-order part of the mismatch; the remainder is a correction of order
+`drift_flux/mdotf`.
+"""
+consistent_flux_density!(::VOF, alphaf_flux, rhof_flux, alpha, alphaf, mdotf, rhof,
+                         phase_faces, time, config) =
+    (@. rhof_flux.values = rhof.values; nothing)
+
+function consistent_flux_density!(::Mixture, alphaf_flux, rhof_flux, alpha, alphaf,
+                                  mdotf, rhof, phase_faces, time, config)
+    interpolate_upwind!(alphaf_flux, alpha, mdotf, config)
+    correct_boundaries!(alphaf_flux, alpha, config.boundaries.alpha, time, config)
+    blend_indexed!(rhof_flux, alphaf_flux,
+                   phase_faces.rho1f, phase_faces.rho2f, config)
     return nothing
 end
 
@@ -3519,16 +4444,68 @@ end
     DUmDt[i] = dUdt + @SVector [conv_x, conv_y, conv_z]
 end
 
-function compute_Ur!(Ur, alpha, rho, g, DUmDt, rho1, rho2, mu1, d, tau_d, config)
+"""
+Number of bisection steps used to close the drag law in [`compute_Ur!`](@ref).
+Fixed rather than tolerance-based so the kernel is branch-free and GPU-safe; the
+bracket halves each step, so 30 gives ~1e-9 of the bracket width.
+"""
+const UR_BISECT_STEPS = 30
+
+# Schiller-Naumann drag factor at a given particle Reynolds number.
+@inline function _drag_factor(Re_p::TF) where TF
+    f = ifelse(Re_p < TF(1000),
+               one(TF) + TF(0.15)*Re_p^TF(0.687),
+               TF(0.0183)*Re_p)
+    return max(f, one(TF))
+end
+
+function compute_Ur!(Ur, alpha, rho, g, DUmDt, rho1, rho2, mu1, d, tau_d, config;
+                     tracked_is_liquid=true, bisect_steps=UR_BISECT_STEPS)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
     ndrange = length(Ur)
     kernel! = _compute_Ur!(_setup(backend, workgroup, ndrange)...)
-    kernel!(Ur, alpha, rho, g, DUmDt, rho1, rho2, mu1, d, tau_d)
+    # `Val` so the branch resolves at compile time and the kernel stays GPU-safe.
+    kernel!(Ur, alpha, rho, g, DUmDt, rho1, rho2, mu1, d, tau_d,
+            Val(tracked_is_liquid), bisect_steps)
 end
 
-@kernel inbounds=true function _compute_Ur!(Ur, alpha, rho, g, DUmDt, rho1, rho2, mu1, d, tau_d)
+# THE DRAG LAW IS SOLVED, NOT LAGGED.
+#
+# `Ur` satisfies an IMPLICIT relation: the drag factor depends on the particle
+# Reynolds number, which depends on `Ur` itself. This previously evaluated
+# `f_drag` from the PREVIOUS step's `Ur` and accepted the result.
+#
+# That does not converge. In the high-Re branch `f_drag ~ Re_p ~ |Ur|`, so the
+# lagged update is `u <- K/u`, which is a 2-CYCLE: it flips either side of the
+# root every step and never settles. Measured for LH2/GH2 at 0.4 MPa with the
+# 1 mm `Mixture` diameter, starting from rest:
+#
+#   3.58, 0.0077, 1.07, 0.026, 0.562, 0.049, 0.382, 0.072, 0.301, 0.091 ...
+#
+# against a true root of 0.166 m/s. So the drift velocity was oscillating by a
+# factor of ~3 every step, not merely wrong on the first one.
+#
+# Worse at the moment vapour first appears. The drift terms are gated by alpha -
+# `div_slip_outer!` and `Urdotf` both carry `alpha*(1 - alpha)` - so they are
+# EXACTLY ZERO until alpha becomes non-zero, and then switch on at full strength
+# carrying the first iterate. That first iterate is the Stokes limit (`f_drag = 1`
+# because the previous `Ur` was 0): 3.58 m/s against a 5.53 m/s bulk, in a 56 um
+# wall cell. The resulting alpha Courant number is ~5, and MULES is an explicit
+# update with a hard Courant limit.
+#
+# SOLVED INSTEAD. With `A = (tau/alpha_c)*buoyancy*a_eff` the Stokes-limit drift,
+# the drag-corrected magnitude `s = |Ur|` is the root of
+#
+#     s*f_drag(B*s) = |A|,      B = rho_c*d/mu_c
+#
+# `s*f_drag` is monotonically increasing from zero and `f_drag >= 1`, so the root
+# is unique and bracketed by `[0, |A|]` - guaranteed, with no starting guess and
+# no possibility of divergence. Bisection on that bracket is branch-free and
+# needs no convergence test, which is what keeps the kernel GPU-safe.
+@kernel inbounds=true function _compute_Ur!(Ur, alpha, rho, g, DUmDt, rho1, rho2, mu1,
+                                            d, tau_d, tracked_is_liquid, bisect_steps)
     i = @index(Global)
     TF = eltype(rho.values)
 
@@ -3538,28 +4515,48 @@ end
     mu_c  = mu1[i]
     tau   = tau_d[i]
 
-    Ur_mag = norm(Ur[i])
-    Re_p   = rho_c * Ur_mag * d / (mu_c + eps(TF))
-
-    f_drag = ifelse(
-        Re_p < TF(1000),
-        one(TF) + TF(0.15) * Re_p^TF(0.687),
-        TF(0.0183) * Re_p
-    )
-    f_drag = max(f_drag, one(TF))
-
     a_eff    = g - DUmDt[i]
     buoyancy = (rho_d - rho_m) / (rho_d + eps(TF))
 
-    U_dm = (tau / (f_drag + eps(TF))) * buoyancy * a_eff
+    # CONTINUOUS-phase fraction, which is `alpha` itself only when `alpha` tracks
+    # the liquid. When it tracks the vapour the continuous fraction is `1 - alpha`.
+    alpha_c = max(_continuous_fraction(tracked_is_liquid, alpha[i], TF), TF(1e-3))
 
-    alpha_c = max(alpha[i], TF(1e-3))
-    Ur[i] = U_dm / alpha_c
+    A     = (tau/alpha_c)*buoyancy*a_eff       # Stokes limit, i.e. f_drag = 1
+    A_mag = norm(A)
+    B     = rho_c*d/(mu_c + eps(TF))           # Re_p = B*|Ur|
+
+    lo = zero(TF)
+    hi = A_mag                                  # f_drag >= 1, so the root is <= |A|
+    for _ in 1:bisect_steps
+        mid  = TF(0.5)*(lo + hi)
+        over = mid*_drag_factor(B*mid) - A_mag > zero(TF)
+        hi   = ifelse(over, mid, hi)
+        lo   = ifelse(over, lo, mid)
+    end
+    s = TF(0.5)*(lo + hi)
+
+    # Direction of the Stokes limit, magnitude from the drag balance.
+    scale = ifelse(A_mag > eps(TF), s/A_mag, zero(TF))
+    Ur[i] = A*scale
 end
 
-turbulent_dispersion!(Ur, alpha, ∇alpha, turbulence::Laminar, Sc_t, config) = nothing
+@inline _continuous_fraction(::Val{true}, a, ::Type{TF}) where {TF} = a
+@inline _continuous_fraction(::Val{false}, a, ::Type{TF}) where {TF} = one(TF) - a
 
-function turbulent_dispersion!(Ur, alpha, ∇alpha, turbulence, Sc_t, config)
+turbulent_dispersion!(Ur, alpha, ∇alpha, turbulence::Laminar, Sc_t, config;
+                      grad_sign=1.0) = nothing
+
+# `grad_sign` carries the tracked-phase convention. The model is
+#
+#     Ur += -(D_t/(alpha_c*alpha_d)) * grad(alpha_DISPERSED)
+#
+# and `alpha` is the dispersed fraction only when it tracks the vapour, so the
+# gradient term changes sign with the convention. The `alpha_c*alpha_d`
+# denominator is symmetric and needs no change. Getting this backwards turns a
+# diffusive term into an ANTI-diffusive one, which is unconditionally unstable.
+function turbulent_dispersion!(Ur, alpha, ∇alpha, turbulence, Sc_t, config;
+                               grad_sign=1.0)
 
     if !hasproperty(turbulence, :nut)
         return nothing
@@ -3571,20 +4568,22 @@ function turbulent_dispersion!(Ur, alpha, ∇alpha, turbulence, Sc_t, config)
 
     ndrange = length(Ur)
     kernel! = _turbulent_dispersion!(_setup(backend, workgroup, ndrange)...)
-    kernel!(Ur, alpha, ∇alpha.result, nut, Sc_t)
+    kernel!(Ur, alpha, ∇alpha.result, nut, Sc_t, grad_sign)
 end
 
-@kernel inbounds=true function _turbulent_dispersion!(Ur, alpha, gradA, nut, Sc_t)
+@kernel inbounds=true function _turbulent_dispersion!(Ur, alpha, gradA, nut, Sc_t, grad_sign)
     i = @index(Global)
     TF = eltype(alpha.values)
 
-    alpha_c = alpha[i]
-    alpha_c_safe = max(alpha_c, TF(1e-3))
-    alpha_d_safe = max(one(TF) - alpha_c, TF(1e-3))
+    # `alpha*(1 - alpha)` is symmetric, so the denominator is the same whichever
+    # phase `alpha` measures. Only the gradient term carries the convention.
+    a = alpha[i]
+    a_safe     = max(a, TF(1e-3))
+    a_oth_safe = max(one(TF) - a, TF(1e-3))
 
     D_t   = nut[i] / TF(Sc_t)
-    denom = alpha_c_safe * alpha_d_safe + eps(TF)
-    coef  = D_t / denom
+    denom = a_safe * a_oth_safe + eps(TF)
+    coef  = TF(grad_sign) * D_t / denom
 
     gx = gradA.x[i]
     gy = gradA.y[i]

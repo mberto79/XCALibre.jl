@@ -306,7 +306,11 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
     kernel!(values, x)
 
     iterations = Krylov.iteration_count(solver)
-    iterations == itmax && @warn "Maximum number of iterations reached!"
+    iterations >= itmax && @warn "Maximum number of iterations reached!" maxlog=10
+
+    # Gate G1. Must precede `residual()`: both borrow the equation's R/Fx scratch
+    # arrays, and this ordering leaves `residual()`'s own values intact.
+    record_linear_solve!(phiEqn, setup, component, config, iterations)
 
     res = residual(phiEqn, component, config)
     return res

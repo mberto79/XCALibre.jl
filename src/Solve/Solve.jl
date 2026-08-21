@@ -3,6 +3,7 @@ module Solve
 using Adapt
 using Krylov
 using Statistics
+using Printf
 using SparseArrays
 using LinearOperators
 # using LDLFactorizations
@@ -29,6 +30,7 @@ include("Preconditioners/Preconditioners.jl")
 include("Smoothers/Smoothers.jl")
 include("Solve_1_Krylov_solvers.jl")
 include("Solve_1_api.jl")
+include("Solve_2_monitor.jl")
 include("AMG/AMG.jl")
 
 end

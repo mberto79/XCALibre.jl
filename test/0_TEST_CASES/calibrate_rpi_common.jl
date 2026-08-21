@@ -43,7 +43,7 @@ const H_C    = single_phase_htc(Y_PLUS, U_TAU, LIQ.rho, LIQ.cp, LIQ.mu, LIQ.k, P
 
 # Fritz departure diameter for THIS fluid. theta is in DEGREES - the 0.0208
 # coefficient expects degrees, a trap that has already caused one bug here.
-const THETA_DEG = 41.37
+const THETA_DEG = 4.0   # LH2 measured; see calibrate_rpi_lh2.jl
 const D_FRITZ = 0.0208*THETA_DEG*sqrt(SIGMA/(9.81*(LIQ.rho - VAP.rho)))
 
 """

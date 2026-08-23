@@ -34,6 +34,43 @@ using XCALibre
 using Printf
 
 # -----------------------------------------------------------------------------
+# DRIFT TREATMENT - diagnostic toggle
+# -----------------------------------------------------------------------------
+# The drift term div[alpha*(1-alpha)*Urdotf] is EXPLICIT by default: built as a
+# flux and its divergence added to S_alpha. Cheap, but it carries its own
+# stability limit and was recorded as diverging at 2e4 under vapour tracking.
+#
+# WHY TEST IT NOW. The drift diameter was raised 12.5 -> 429 um to fix vapour
+# piling up at the wall, which multiplied Ur by 373x - so an explicitly treated
+# source with a known stability limit just got 373x stronger. The oscillation
+# shows up at alpha ~ 0.5-0.7, which is exactly where alpha*(1-alpha) is maximal
+# and the explicit source is therefore largest.
+#
+# Setting this routes the term through the Picard linearisation onto the matrix
+# diagonal instead. If the oscillation clears, the cause is explicit-treatment
+# stability, not the drift physics.
+#
+# COST: the solver notes record ~3x the per-step cost, and "a 1500-step run had
+# not finished in 80 minutes" at 2e4. Budget accordingly, and consider dropping
+# Q_SCHEDULE to the single level being diagnosed.
+#
+# `ENV` is read at runtime inside `advance_alpha_implicit!`, so setting it here -
+# before the include and before any `run!` - is sufficient.
+# RESULT of that diagnostic: the drift DISCRETISATION is not the cause. Levels
+# 5e3/1e4/2e4 came out BIT-IDENTICAL to the explicit run (both converge to the
+# same steady state, as two consistent discretisations of one term must), and at
+# 3e4 the implicit form was slightly WORSE - alpha_max 0.6915 -> 1.0. So it is
+# back off: it costs ~3x per step and buys nothing.
+const DRIFT_IMPLICIT = false
+if DRIFT_IMPLICIT
+    ENV["DRIFT_IMPLICIT"] = "1"
+    @info "DRIFT: implicit (Picard, on the diagonal) - diagnostic run"
+else
+    delete!(ENV, "DRIFT_IMPLICIT")
+    @info "DRIFT: explicit (default)"
+end
+
+# -----------------------------------------------------------------------------
 # Heat flux schedule
 # -----------------------------------------------------------------------------
 # The paper's developed nucleate boiling regime for D6_L250 spans roughly

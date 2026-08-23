@@ -231,8 +231,15 @@ departure(d_ref) = DEPARTURE_MODEL === :ki ?
     KocamustafaogullariIshii(theta_deg = THETA_DEG) :
     TolubinskyKostanchuk(d_ref = d_ref, d_max = 4*d_ref)
 
+# WHICH WALL PARTITION the fit is built against. MUST match the CFD case, or the
+# fit and the solver disagree about what they are inverting: under :mmp `q_conv`
+# is no longer weighted by (1 - A_b), so the SAME wall temperature delivers ~1.8x
+# the flux and the inversion returns a lower T_w. A fit made under one and run
+# under the other under-predicts superheat for a purely bookkeeping reason.
+PARTITION = :mmp           # :kurul_podowski | :mmp
+
 function predict(m, n; d_ref = D_FRITZ)
-    rpi = RPI(patches = (:w,),
+    rpi = RPI(patches = (:w,), partition = PARTITION,
               site_density = LemmertChawla(m = m, n = n),
               departure_diameter = departure(d_ref))
     out = similar(q_EXP)
@@ -240,7 +247,12 @@ function predict(m, n; d_ref = D_FRITZ)
         s = BoilingState(T_w = T_sat, T_l = T_sat, T_sat = T_sat,
                          rho_l = LIQ.rho, rho_v = VAP.rho, cp_l = LIQ.cp,
                          k_l = LIQ.k, mu_l = LIQ.mu, sigma = sigma,
-                         h_fg = h_fg, g = 9.81)
+                         h_fg = h_fg, g = 9.81,
+                         # Fully wetted: the calibration data is the NUCLEATE
+                         # branch, where the wall is liquid-covered, so K_dry = 0
+                         # and only the q_conv weighting differs between
+                         # partitions. Explicit rather than relying on the default.
+                         alpha_l = 1.0)
         T_w, _ = solve_wall_temperature(rpi, s, q, h_c)
         out[i] = T_w - T_sat
     end

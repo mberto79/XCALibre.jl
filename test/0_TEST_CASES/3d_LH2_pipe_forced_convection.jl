@@ -368,7 +368,7 @@ PRESSURE_SOLVER = PRESSURE_FORM === :mass ?
 # so changing one without refitting the other changes the evaporative term by
 # orders of magnitude. Each entry below names the departure model it was fitted
 # with; do not mix them.
-SITE_DENSITY_FIT = :lh2_t4
+SITE_DENSITY_FIT = :lh2_t4_mmp
 
 SITE_DENSITY = (
     # Whole-branch fit with h_c = 7045 W/m^2/K taken from the data. RMS(log dT)
@@ -470,6 +470,22 @@ SITE_DENSITY = (
     # measured (6.176/3.0). That consistency is a check on the fit, not a
     # coincidence.
     lh2_t4 = LemmertChawla(m = 6.176, n = 7.798),
+
+    # PAIRED WITH `partition = :mmp`. Refitted because the partition changes what
+    # is being inverted: with q_conv no longer weighted by (1 - A_b) the same wall
+    # temperature delivers ~1.8x the flux, so a :kurul_podowski fit run under :mmp
+    # under-predicts superheat for a bookkeeping reason, not a physical one.
+    #
+    #   partition          m       n       RMS(log dT)
+    #   :kurul_podowski    6.176   7.798   0.0670
+    #   :mmp               3.615   9.945   0.0767
+    #
+    # The 0D fit mildly PREFERS Kurul-Podowski - but it evaluates a fully wetted
+    # wall (alpha_l = 1, K_dry = 0) at every point, so it cannot see the regime
+    # :mmp exists to fix, where A_b -> 1 drives q_c to zero and the wall loses its
+    # convective path entirely. The accuracy cost is on the branch we can measure;
+    # the benefit is in the one we cannot.
+    lh2_t4_mmp = LemmertChawla(m = 3.615, n = 9.945),
 
     # The older Pareto front, fitted with the Petukhov h_c over q > 20 kW/m^2
     # only. Retained for the stiffness bisection described above - `n` is the
@@ -739,7 +755,100 @@ model = Physics(
         # from one source rather than hard-coded independently - that is exactly
         # how they drifted apart here.
         model = Mixture(diameter = 4.2936e-4, alpha_transport = :implicit),
-        dispersion_Sc = 0.9,     # turbulent Schmidt number
+        # TURBULENT DISPERSION - the ROUTE matters more than the coefficient.
+        #
+        # MEASURED at q_w = 3e4 on the Laplacian route, Sc_t = 0.9: the vapour
+        # INVENTORY is right - domain-mean void 0.1680 against 0.1685 from thermal
+        # equilibrium, 0.3% - but the DISTRIBUTION is not. alpha_max = 1.0 with 23%
+        # of cells above 0.3, because radial spreading across the 3 mm pipe takes
+        # ~1.02 s against a 69 ms residence: 15x too slow. Buoyancy drift cannot
+        # help - gravity is along the tube axis, so that drift is purely AXIAL and
+        # has no radial component at all.
+        #
+        # Sc_t = 0.09 did fix it (smooth, uniform exit void) but is 10x below any
+        # physical turbulent Schmidt number - evidence the ROUTE was wrong, not the
+        # coefficient.
+        #
+        # The drift-flux route carries a 1/(alpha_c*alpha_d) denominator the plain
+        # Laplacian does not, so it disperses far more strongly where the void is
+        # SMALL - the edge of the vapour region, which is where spreading is
+        # needed. `:auto` picks the Laplacian here because the transport is
+        # implicit; `:drift_flux` forces the other route. EXACTLY ONE is ever
+        # active - `Dtf` is left at zero on the drift-flux route so the equation's
+        # Laplacian contributes nothing.
+        #
+        # NOT lift. Tomiyama C_L changes sign at Eo_d ~ 4, i.e. d = 2.58 mm for
+        # LH2; these bubbles are 107-429 um, 24x smaller, so C_L is POSITIVE and
+        # lift would push vapour TOWARD the wall - the wrong way. Wall lubrication
+        # (Antal/Tomiyama/Frank) is the force that pushes off the wall, and is the
+        # next thing to add if this is not enough.
+        dispersion_Sc = 0.7,              # physical range is 0.7-1.0
+        # :laplacian, NOT :drift_flux. The drift-flux route was tried and it
+        # CHECKERBOARDS alpha in the wall-normal direction, for a structural
+        # reason: it forms `Ur += (D_t/(alpha*(1-alpha)))*grad(alpha)` at CELL
+        # CENTRES, interpolates to faces, and the drift flux then multiplies by
+        # `alpha_f*(1-alpha_f)`. Those factors CANCEL, so the net face flux is
+        # just `-D_t*grad(alpha).Sf` - the SAME physical term the Laplacian
+        # carries, but assembled from a cell-centred gradient on a wide stencil
+        # that is blind to odd-even oscillation. Same defect as computing a
+        # pressure gradient without Rhie-Chow: it can advect a sawtooth but not
+        # damp one.
+        #
+        # So the 1/(alpha_c*alpha_d) denominator is NOT an enhancement - it exists
+        # to undo the alpha*(1-alpha) the drift flux applies. Both routes are the
+        # same physics at the same Sc_t; only the Laplacian discretises diffusion
+        # AS diffusion.
+        #
+        # CONSEQUENCE: dispersion at a physical Sc_t cannot fix the wall-normal
+        # transport deficit by either route - Sc_t = 0.09 only worked by brute
+        # force. The missing mechanism is a separate lateral FORCE, and lift is
+        # the wrong one (positive C_L at these bubble sizes pushes vapour TOWARD
+        # the wall). Wall lubrication is the candidate:
+        #
+        #   Antal cutoff  ~1.41d = 148 um  = 2.7 cells
+        #   Frank range   ~10d   = 1073 um = 19 cells = 36% of pipe radius
+        #   U_normal at first cell centre = 0.033 m/s, against 0.0094 m/s needed
+        #     to clear the wall cell within its 5.9 ms fill time
+        dispersion_route = :laplacian,    # :auto | :laplacian | :drift_flux
+
+        # WALL LUBRICATION - the lateral force the model was missing.
+        #
+        # Nothing else moves vapour off the wall here. Buoyancy drift is AXIAL
+        # (gravity is along the tube), turbulent dispersion at a physical Sc_t is
+        # ~15x too slow to cross the 3 mm radius in the 69 ms residence, and lift
+        # is the WRONG SIGN at these bubble sizes - Tomiyama C_L changes sign at
+        # Eo_d ~ 4, i.e. d ~ 2.58 mm in LH2, and D_d here is 107 um, so lift would
+        # push vapour TOWARD the wall.
+        #
+        # Wall lubrication is orientation-independent (wall normal and
+        # wall-PARALLEL relative velocity, no gravity) and points the right way.
+        # It also feeds on the axial drift that could not help directly:
+        # F ~ |U_r,par|^2, and |U_r,par| IS that axial drift, 0.0412 m/s here.
+        #
+        # MEASURED coefficients on this mesh (d = 107.3 um, |U_r,par| = 0.0412):
+        #
+        #   y [um]   y/d    C_w Antal   U_wl Antal    needed
+        #    27.8    0.26        4286     0.0331      0.0094   <- 3.5x margin
+        #    55.7    0.52        1647     0.0127      0.0094
+        #   111.4    1.04       327.7     0.0025
+        #   200.0    1.86           0          0               <- cut off
+        #
+        # where "needed" is the velocity to clear the wall cell within its 5.9 ms
+        # fill time at q_w = 3e4.
+        #
+        # `Antal` is SHORT RANGE (2.7 cells) and that is the intent, not a
+        # limitation: the job is to stop the wall cell saturating at alpha = 1,
+        # not to flatten the profile - bubbly upflow genuinely IS wall peaked, and
+        # the experiment only says the wall does not dry out below CHF.
+        #
+        # ESCALATION if the peak still reaches too far: `Frank(Cwc = 10.0)`,
+        # ~19 cells / 36% of the radius, and 3x stronger at the first cell.
+        # OFF for this test - control against the Antal run.
+        #   nothing        no lateral wall force (default)
+        #   Antal()        short range, ~1.38*d_b cutoff
+        #   Antal(Cw2=0.110)  cutoff pulled in to ~1.0*d_b
+        #   Frank(Cwc=10.0)   long range, ~10*d_b
+        wall_lubrication = nothing,   # was Antal()
         p_abs_limit = (0.1e6, 1.2e6),   # [Pa] absolute
 
         # KEEP THIS ON with `pressure_form = :mass`. It is not optional there -
@@ -1118,7 +1227,33 @@ model = Physics(
                     alpha_1 = 0.6, alpha_2 = 0.85
                     ),
             ) : nothing,
-            start_iteration = 0
+            start_iteration = 0,
+
+            # WALL HEAT PARTITION - :kurul_podowski (default) or :mmp
+            #
+            # :mmp replicates STAR-CCM+'s Mixture Multiphase wall boiling,
+            # User Guide Eqn (2944):
+            #
+            #     q_w = q_conv + (q_evap + q_quench)(1 - K_dry)
+            #
+            # Two changes from Kurul-Podowski:
+            #
+            #   1. q_conv uses MIXTURE properties and is NOT weighted by (1 - A_b).
+            #      STAR: "there [are] convection contributions from vapor and
+            #      liquid, always the mixture in contact with the wall".
+            #   2. K_dry (= 1 - wall_boiling_liquid_factor) scales q_evap and
+            #      q_quench but NOT q_conv, and sits INSIDE the wall-temperature
+            #      inversion, so dryout RAISES T_w as STAR describes.
+            #
+            # WHY: under Kurul-Podowski q_c uses LIQUID properties however dry the
+            # wall gets, and A_b -> 1 squeezes it to ZERO - measured at exactly 0.0
+            # at dT_sup = 1.52 K with this (m, n), matching q_conv collapsing
+            # 4980 -> 1883 across the ladder. The wall then has no valid convective
+            # path and the flux is dumped through FixedHeatFlux as sensible heat.
+            # Under :mmp convection degrades continuously into vapour convection
+            # instead, which is the mechanism the near-wall void cap has been
+            # missing.
+            partition = :mmp
         ),
         # --- source under-relaxation ----------------------------------------
         # Independent temporal damping of the two vapour sources. Both are

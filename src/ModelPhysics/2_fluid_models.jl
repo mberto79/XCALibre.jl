@@ -1,5 +1,7 @@
 export AbstractFluid, AbstractIncompressible, AbstractCompressible
 export Fluid
+export AbstractWallLubrication, Antal, Frank, wall_lubrication_coefficient
+export AbstractLift, TomiyamaLift, ConstantLift, lift_coefficient
 export Incompressible, Incompressible_MRF, WeaklyCompressible, Compressible
 export Phase, Fluid, Multiphase
 export AbstractModel, AbstractEosModel, AbstractViscosityModel
@@ -378,6 +380,225 @@ rather than guaranteed.
     alpha_transport::S = :mules
 end
 Adapt.@adapt_structure Mixture
+
+# =============================================================================
+#  Wall lubrication force
+# =============================================================================
+
+"""
+    AbstractWallLubrication
+
+Lateral force pushing dispersed bubbles AWAY from a wall.
+
+### Why it is needed
+
+A bubble approaching a wall must drain the liquid film between the two, and that
+drainage resists - a lubrication effect. The resulting force is short range and
+repulsive, and it is what stops the near-wall void fraction pinning at 1 in
+bubbly wall flows.
+
+It is ORIENTATION INDEPENDENT: it depends on the wall normal and on the
+wall-PARALLEL relative velocity, not on gravity. That matters for a vertical pipe,
+where buoyancy drift is purely axial and therefore cannot move vapour off the
+wall at all.
+
+### Why not lift instead
+
+The lift force is the other lateral mechanism, but its sign is set by bubble
+size. Tomiyama's `C_L` changes sign at `Eo_d ~ 4`, i.e. `d ~ 2.58 mm` in LH2 at
+0.4 MPa. Departure diameters here are 107-429 um, some 24x smaller, so `C_L` is
+POSITIVE and lift drives bubbles TOWARD the wall - it would deepen the wall peak
+rather than relieve it. That is also why real bubbly upflow is wall peaked.
+
+The general form is
+
+    F_WL = C_w * rho_c * alpha_d * |U_r,parallel|^2 * n_wall        [N/m^3]
+
+with `C_w` [1/m] supplied by the concrete model.
+"""
+abstract type AbstractWallLubrication end
+
+"""
+    Antal(; Cw1 = -0.104, Cw2 = 0.147)
+
+Antal, Lahey & Flaherty (1991):
+
+    C_w = max(0, (Cw1 - 0.06*|U_r,par|)/d_b + Cw2/y)
+
+Grows as `1/y` towards the wall and cuts off at `y = -Cw2*d/Cw1 ~ 1.41*d_b`.
+
+SHORT RANGE by construction - about 2.7 cells on the LH2 pipe's near-wall mesh.
+That is the intent rather than a limitation: the job is to stop the wall cell
+saturating, not to flatten the profile, and bubbly upflow genuinely is wall
+peaked. MEASURED for that case (d = 107 um, |U_r,par| = 0.0412 m/s): the balance
+against Stokes drag gives a wall-normal velocity of 0.033 m/s at the first cell
+centre against the 0.0094 m/s needed to clear the cell within its 5.9 ms fill
+time - a 3.5x margin, falling to break-even by the second cell.
+"""
+struct Antal{F} <: AbstractWallLubrication
+    Cw1::F
+    Cw2::F
+end
+Antal(; Cw1 = -0.104, Cw2 = 0.147) = Antal(float(Cw1), float(Cw2))
+Adapt.@adapt_structure Antal
+
+"""
+    Frank(; Cwd = 6.8, Cwc = 10.0, p = 1.7, Cw3 = 1.0)
+
+Frank et al. (2008) generalisation, with a LONGER and tunable range:
+
+    C_w = Cw3 * max(0, 1 - y/(Cwc*d_b)) / (Cwd * d_b * (y/d_b)^p)
+
+Cuts off at `y = Cwc*d_b`, i.e. ~10 bubble diameters by default - about 19 cells,
+or 36% of the pipe radius, on the LH2 pipe. Use when the void needs spreading
+further than [`Antal`](@ref) reaches; `Cwc` is the knob for that range.
+"""
+struct Frank{F} <: AbstractWallLubrication
+    Cwd::F
+    Cwc::F
+    p::F
+    Cw3::F
+end
+Frank(; Cwd = 6.8, Cwc = 10.0, p = 1.7, Cw3 = 1.0) =
+    Frank(float(Cwd), float(Cwc), float(p), float(Cw3))
+Adapt.@adapt_structure Frank
+
+"""
+    wall_lubrication_coefficient(model, d_b, y, Ur_par) -> C_w  [1/m]
+
+`C_w` in `F_WL = C_w rho_c alpha_d |U_r,par|^2 n_wall`. Zero beyond the model's
+range, so the force switches itself off away from walls.
+"""
+# WALL DISTANCE IS FLOORED AT THE BUBBLE RADIUS, and this is load bearing.
+#
+# Both correlations carry a `1/y`-type singularity, and both are derived for a
+# sphere standing OFF the wall by `y`. Below `y = d_b/2` the bubble centre would
+# be closer to the wall than its own radius - it would intersect the wall - so
+# the premise fails and the coefficient diverges for a purely geometric reason.
+# Worse, it diverges WITH MESH REFINEMENT: halve the first cell and the force on
+# it doubles, which makes the whole model resolution dependent.
+#
+# MEASURED on the LH2 pipe (d_b = 107.3 um, first cell centre y = 27.85 um, so
+# y/d = 0.26 - already inside the bubble):
+#
+#   y used        y/d    C_w [1/m]   U_wl [m/s]
+#   27.85 um     0.26         4286      0.0331    <- unfloored, over-empties
+#   53.67 um     0.50         1747      0.0135    <- floored at d_b/2
+#  107.3  um     1.00          378      0.0029    <- too weak
+#
+# against 0.0094 m/s needed to clear the wall cell within its fill time. Without
+# the floor the first cell was emptied to alpha = 0.030 against 0.099 in the next
+# cell out, with 54% azimuthal scatter and some cells clamped at exactly zero -
+# i.e. the `clamp!(alpha, 0, 1)` firing and destroying vapour mass.
+@inline _wl_y(d_b::F, y) where F = max(y, F(0.5)*d_b)
+
+@inline function wall_lubrication_coefficient(m::Antal, d_b::F, y, Ur_par) where F
+    y <= zero(F) && return zero(F)
+    ye = _wl_y(d_b, y)
+    Cw1 = F(m.Cw1) - F(0.06)*Ur_par
+    return max(zero(F), Cw1/d_b + F(m.Cw2)/ye)
+end
+
+@inline function wall_lubrication_coefficient(m::Frank, d_b::F, y, Ur_par) where F
+    y <= zero(F) && return zero(F)
+    ycut = F(m.Cwc)*d_b
+    y >= ycut && return zero(F)
+    ye = _wl_y(d_b, y)
+    return F(m.Cw3)*(one(F) - ye/ycut)/(F(m.Cwd)*d_b*(ye/d_b)^F(m.p))
+end
+
+@inline wall_lubrication_coefficient(::Nothing, d_b::F, y, Ur_par) where F = zero(F)
+
+# =============================================================================
+#  Lift force
+# =============================================================================
+
+"""
+    AbstractLift
+
+Lateral force on a dispersed bubble in a SHEARED continuous phase,
+
+    F_L = -C_L * rho_c * alpha_d * (U_r x curl(U_c))            [N/m^3]
+
+Orientation independent: it is set by the local vorticity, not by gravity.
+
+### Sign, and why it matters here
+
+`C_L > 0` drives bubbles toward the wall in upflow; `C_L < 0` drives them toward
+the core. Tomiyama's correlation changes sign at `Eo_d ~ 4`, which in LH2 at
+0.4 MPa is `d ~ 2.58 mm`. Departure diameters on the pipe case are 107-429 um -
+some 24x smaller - so `C_L ~ +0.29` and lift acts TOWARD the wall.
+
+That is not a reason to leave it out. It is the physical counterpart of
+[`AbstractWallLubrication`](@ref), which acts away from the wall, and the two
+together set the void profile of bubbly pipe flow: wall-peaked, but not
+saturated. With lubrication alone the near-wall layer is over-evacuated wherever
+no evaporative source refills it - MEASURED downstream of the heater on the LH2
+pipe, void 0.085 at the wall against a 0.273 peak 300 um out, a 3.2x depletion
+where the real profile is wall PEAKED.
+"""
+abstract type AbstractLift end
+
+"""
+    TomiyamaLift(; C_max = 0.288, C_deformed = -0.27)
+
+Tomiyama et al. (2002), through the modified Eotvos number of the DEFORMED
+bubble:
+
+    Eo   = g*drho*d^2/sigma
+    d_H  = d*(1 + 0.163*Eo^0.757)^(1/3)
+    Eo_d = g*drho*d_H^2/sigma
+    f(E) = 0.00105E^3 - 0.0159E^2 - 0.0204E + 0.474
+
+    C_L = min(C_max*tanh(0.121*Re_p), f(Eo_d))   Eo_d < 4
+        = f(Eo_d)                                4 <= Eo_d <= 10
+        = C_deformed                             Eo_d > 10
+
+Small, near-spherical bubbles get `C_L > 0` (toward the wall); large deformed
+ones get `C_L < 0` (toward the core). `d_H` is what makes that switch depend on
+DEFORMATION rather than raw size.
+"""
+struct TomiyamaLift{F} <: AbstractLift
+    C_max::F
+    C_deformed::F
+end
+TomiyamaLift(; C_max = 0.288, C_deformed = -0.27) =
+    TomiyamaLift(float(C_max), float(C_deformed))
+Adapt.@adapt_structure TomiyamaLift
+
+"""
+    ConstantLift(; C_L)
+
+Fixed lift coefficient. For isolating the SIGN and MAGNITUDE of the lift response
+without the Tomiyama correlation's size dependence in the way - set `C_L = 0` to
+disable lift while keeping the code path, or a negative value to force
+core-peaking irrespective of bubble size.
+"""
+struct ConstantLift{F} <: AbstractLift
+    C_L::F
+end
+ConstantLift(; C_L) = ConstantLift(float(C_L))
+Adapt.@adapt_structure ConstantLift
+
+"""
+    lift_coefficient(model, d_b, drho, sigma, g, Re_p) -> C_L
+
+Sign convention: POSITIVE drives the dispersed phase toward the wall in upflow.
+"""
+@inline lift_coefficient(m::ConstantLift, d_b::F, drho, sigma, g, Re_p) where F =
+    F(m.C_L)
+
+@inline function lift_coefficient(m::TomiyamaLift, d_b::F, drho, sigma, g, Re_p) where F
+    (sigma <= zero(F) || drho <= zero(F)) && return zero(F)
+    Eo   = g*drho*d_b*d_b/sigma
+    d_H  = d_b*cbrt(one(F) + F(0.163)*Eo^F(0.757))
+    Eo_d = g*drho*d_H*d_H/sigma
+    fE   = F(0.00105)*Eo_d^3 - F(0.0159)*Eo_d^2 - F(0.0204)*Eo_d + F(0.474)
+    return Eo_d < F(4)  ? min(F(m.C_max)*tanh(F(0.121)*Re_p), fE) :
+           Eo_d <= F(10) ? fE : F(m.C_deformed)
+end
+
+@inline lift_coefficient(::Nothing, d_b::F, drho, sigma, g, Re_p) where F = zero(F)
 
 """True when the mixture model advances the volume fraction implicitly."""
 implicit_alpha_transport(m::Mixture) = m.alpha_transport === :implicit

@@ -77,6 +77,10 @@ struct BoilingState{F<:AbstractFloat}
     cp_v::F
     k_v::F
     mu_v::F
+    # LIQUID volume fraction of the wall cell. Defaults to 1 (fully wetted), which
+    # reproduces the classical Kurul-Podowski partition exactly. Only the
+    # STAR-CCM+ style :mmp partition reads it - see wall_heat_partition.
+    alpha_l::F
 end
 Adapt.@adapt_structure BoilingState
 
@@ -93,19 +97,19 @@ vapour rather than into it, and those models return zero if they are left unset
 rather than silently using liquid values.
 """
 function BoilingState(; T_w, T_l, T_sat, rho_l, rho_v, cp_l, k_l, mu_l, sigma, h_fg, g,
-                        cp_v = 0, k_v = 0, mu_v = 0)
+                        cp_v = 0, k_v = 0, mu_v = 0, alpha_l = 1)
     F = promote_type(typeof(float(T_w)), typeof(float(rho_l)))
     return BoilingState{F}(
         F(T_w), F(T_l), F(T_sat), F(T_w - T_sat), F(T_sat - T_l),
         F(rho_l), F(rho_v), F(cp_l), F(k_l), F(mu_l), F(sigma), F(h_fg), F(g),
-        F(cp_v), F(k_v), F(mu_v))
+        F(cp_v), F(k_v), F(mu_v), F(alpha_l))
 end
 
 """Same state at a different wall temperature. Used by the wall-temperature solve."""
 @inline _at_wall_temperature(s::BoilingState{F}, T_w) where F = BoilingState{F}(
     T_w, s.T_l, s.T_sat, T_w - s.T_sat, s.dT_sub,
     s.rho_l, s.rho_v, s.cp_l, s.k_l, s.mu_l, s.sigma, s.h_fg, s.g,
-    s.cp_v, s.k_v, s.mu_v)
+    s.cp_v, s.k_v, s.mu_v, s.alpha_l)
 
 
 # =============================================================================
@@ -533,6 +537,7 @@ struct RPI{S,D,Fr,A,P,B,F<:AbstractFloat} <: AbstractWallBoilingModel
     n_iterations::Int
     start_iteration::Int
     friction_velocity::Symbol
+    partition::Symbol
 end
 Adapt.@adapt_structure RPI
 
@@ -548,7 +553,8 @@ function RPI(;
     wall_capacity = 0.0,
     n_iterations = 40,
     start_iteration = 0,
-    friction_velocity = :k)
+    friction_velocity = :k,
+    partition = :kurul_podowski)
 
     patches_tuple = patches isa Symbol ? (patches,) : Tuple(patches)
     isempty(patches_tuple) && throw(ArgumentError(
@@ -572,6 +578,10 @@ function RPI(;
     # convective share of the RPI partition directly. A boiling wall disturbs the
     # near-wall balance that `:k` assumes, which is why `:loglaw` may do better
     # there - see `_u_tau_loglaw!`.
+    # WHICH PARTITION. See `wall_heat_partition`.
+    partition in (:kurul_podowski, :mmp) || throw(ArgumentError(
+        "`partition` must be :kurul_podowski or :mmp, got :$partition"))
+
     friction_velocity in (:k, :loglaw) || throw(ArgumentError(
         "`friction_velocity` must be :k or :loglaw, got :$friction_velocity"))
 
@@ -595,7 +605,8 @@ function RPI(;
 
     return RPI(site_density, departure_diameter, departure_frequency, influence_area,
                patches_tuple, film_boiling, float(Pr_t), float(alpha_min),
-               float(wall_capacity), n_iterations, start_iteration, friction_velocity)
+               float(wall_capacity), n_iterations, start_iteration, friction_velocity,
+               partition)
 end
 
 wall_boiling_patches(model::RPI) = model.patches
@@ -651,21 +662,62 @@ the same routine can be used on both sides of onset.
     f = bubble_departure_frequency(rpi.departure_frequency, s, D_d)
     A_b = bubble_influence_fraction(rpi.influence_area, s, N_a, D_d)
 
-    q_c = h_c*dT_wl*(one(F) - A_b)
-
-    # Quenching: Mikic & Rohsenow transient conduction over the waiting time
-    # t_w = 0.8/f. Writing it as sqrt(t_w * k rho cp) keeps the group in terms
-    # of the thermal effusivity and avoids dividing by the diffusivity.
-    q_q = if f > zero(F)
+    # Quenching kernel, before any area or dryout weighting. Mikic & Rohsenow
+    # transient conduction over the waiting time t_w = 0.8/f; writing it as
+    # sqrt(t_w * k rho cp) keeps the group in terms of the thermal effusivity and
+    # avoids dividing by the diffusivity.
+    q_q_raw = if f > zero(F)
         t_w = F(0.8)/f
-        2*f*sqrt(t_w*s.k_l*s.rho_l*s.cp_l/F(pi))*dT_wl*A_b
+        2*f*sqrt(t_w*s.k_l*s.rho_l*s.cp_l/F(pi))*dT_wl
     else
         zero(F)
     end
+    q_e_raw = N_a*f*(F(pi)/6)*D_d^3*s.rho_v*s.h_fg
 
-    q_e = N_a*f*(F(pi)/6)*D_d^3*s.rho_v*s.h_fg
+    q_c, q_q, q_e = _partition_weights(
+        Val(rpi.partition === :mmp), rpi, s, h_c, dT_wl, A_b, q_q_raw, q_e_raw)
 
     return (q_c=q_c, q_q=q_q, q_e=q_e, A_b=A_b, N_a=N_a, D_d=D_d, f=f)
+end
+
+# KURUL & PODOWSKI (default). Convection over the un-influenced wall, quenching
+# over the bubble-influenced part, evaporation unweighted:
+#
+#     q_w = h_c dT (1 - A_b) + q_quench A_b + q_evap
+#
+@inline _partition_weights(::Val{false}, rpi, s::BoilingState{F}, h_c, dT_wl,
+                           A_b, q_q_raw, q_e_raw) where F =
+    (h_c*dT_wl*(one(F) - A_b), q_q_raw*A_b, q_e_raw)
+
+# STAR-CCM+ MIXTURE MULTIPHASE (`partition = :mmp`), User Guide Eqn (2944):
+#
+#     q_w = q_conv + (q_evap + q_quench)(1 - K_dry)
+#
+# TWO differences from Kurul-Podowski, both deliberate:
+#
+#   1. `q_conv` is NOT area-weighted by `A_b`. STAR-CCM+ treats it as the MIXTURE
+#      convection of whatever is in contact with the wall - "there [are]
+#      convection contributions from vapor and liquid, always the mixture in
+#      contact with the wall" - handled by the energy model rather than split off
+#      a liquid-wetted fraction. The caller supplies a MIXTURE `h_c` to match.
+#
+#   2. `K_dry`, the wall dryout area fraction, multiplies `q_evap` AND
+#      `q_quench` but NOT `q_conv`. Here `K_dry = 1 - wall_boiling_liquid_factor`,
+#      reusing the existing ramp so the two formulations share one threshold.
+#
+# WHY IT MATTERS HERE. Under Kurul-Podowski `q_c` keeps using LIQUID properties
+# however dry the wall gets, and the vapour source is cut separately AFTER the
+# wall temperature solve - so at high void the wall has no valid convective path
+# and the flux is dumped through the boundary condition as sensible heat. Under
+# `:mmp` the convective term degrades continuously into vapour convection and,
+# because `(1 - K_dry)` sits INSIDE the inversion, dryout RAISES the wall
+# temperature, which is the physical effect STAR-CCM+ describes: "vapor heat
+# transfer removes some fraction of the wall heat flux and causes an increase in
+# wall temperature".
+@inline function _partition_weights(::Val{true}, rpi, s::BoilingState{F}, h_c,
+                                    dT_wl, A_b, q_q_raw, q_e_raw) where F
+    one_minus_Kdry = wall_boiling_liquid_factor(rpi, s.alpha_l)
+    return (h_c*dT_wl, q_q_raw*A_b*one_minus_Kdry, q_e_raw*one_minus_Kdry)
 end
 
 """

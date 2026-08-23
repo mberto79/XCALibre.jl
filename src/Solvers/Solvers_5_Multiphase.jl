@@ -399,6 +399,42 @@ function multiphase_dispersion_Sc(fluid)
 end
 
 """
+    multiphase_dispersion_route(fluid) -> Symbol
+
+WHICH of the two turbulent-dispersion routes to use, from the optional
+`dispersion_route` keyword of `Fluid{Multiphase}`.
+
+- `:auto` (default) - Laplacian when the implicit alpha transport is active,
+  drift flux otherwise. The historical behaviour.
+- `:laplacian`  - force `-div(D_t grad(alpha))` in the alpha equation.
+- `:drift_flux` - force dispersion into `Ur`, i.e.
+
+      Ur += -(D_t/(alpha_c*alpha_d)) * grad(alpha_dispersed)
+
+  available with the IMPLICIT transport too, which `:auto` does not allow.
+
+**Why the routes are not equivalent.** They model the same physics but not with
+the same strength: the drift-flux form carries a `1/(alpha_c*alpha_d)`
+denominator, so it disperses far more strongly where the void fraction is SMALL -
+at the edge of the vapour region, which is exactly where spreading is needed. The
+plain Laplacian has no such factor.
+
+That matters here. MEASURED on the LH2 pipe at q_w = 3e4, Laplacian route with
+Sc_t = 0.9: the vapour INVENTORY is right (domain-mean void 0.168 against 0.169
+from thermal equilibrium, 0.3%) but its DISTRIBUTION is not - alpha_max = 1.0
+with 23% of cells above 0.3, because radial spreading across the 3 mm pipe takes
+~1.02 s against a 69 ms residence, i.e. 15x too slow. Buoyancy drift cannot help:
+gravity is along the tube axis here, so that drift is purely AXIAL. Dropping
+Sc_t to 0.09 fixed it, which is 10x below anything physical - evidence that the
+route, not the coefficient, is what was wrong.
+
+EXACTLY ONE route is ever active; running both double-counts dispersion.
+"""
+multiphase_dispersion_route(fluid) =
+    get(fluid.physics_properties, :dispersion_route, :auto)
+
+
+"""
     multiphase_pressure_form(fluid) -> Symbol
 
 Which conservation statement the pressure equation enforces, from the optional
@@ -2080,10 +2116,29 @@ Ignored here.""" pressure_form=:volume
         # Running both double-counts dispersion (with two different Schmidt
         # numbers), which is what happened when the Laplacian was added alongside
         # the pre-existing drift-flux route.
-        dispersion_in_Ur = !(implicit_alpha && dispersion_Sc !== nothing)
+        # WALL LUBRICATION. Built once - the mesh does not move. The range is
+        # taken generously (the largest cutoff either model uses) so switching
+        # model or coefficients does not need a rebuild; cells outside the active
+        # model's own range simply get C_w = 0 at runtime.
+        lift_model = multiphase_lift(model.fluid)
+        wall_lub = multiphase_wall_lubrication(model.fluid)
+        wall_lub_geom = build_wall_lubrication_geometry(
+            wall_lub, boundaries.U, mesh, _get_float(mesh)(12*diameter))
+        wall_lub === nothing || wall_lub_geom !== nothing || @warn "`wall_lubrication` is set but no `Wall` velocity boundary conditions were found; the force is inactive."
+
+        dispersion_route = multiphase_dispersion_route(model.fluid)
+        dispersion_route in (:auto, :laplacian, :drift_flux) || throw(ArgumentError(
+            "`dispersion_route` must be :auto, :laplacian or :drift_flux, got :$dispersion_route"))
+        dispersion_route === :laplacian && !implicit_alpha && throw(ArgumentError(
+            "`dispersion_route = :laplacian` needs `alpha_transport = :implicit`; the MULES path has no implicit Laplacian to put it in."))
+        dispersion_in_Ur =
+            dispersion_route === :drift_flux ? true :
+            dispersion_route === :laplacian  ? false :
+            !(implicit_alpha && dispersion_Sc !== nothing)
         if dispersion_Sc !== nothing
             @info "Turbulent dispersion of alpha" route=(dispersion_in_Ur ?
-                "drift flux (Sc_t = $Sc_t)" : "Laplacian (Sc_t = $dispersion_Sc)")
+                "drift flux (Sc_t = $(dispersion_Sc === nothing ? Sc_t : dispersion_Sc))" :
+                "Laplacian (Sc_t = $dispersion_Sc)") route_selected=dispersion_route
         end
     end
 
@@ -2222,6 +2277,22 @@ Ignored here.""" pressure_form=:volume
                         diameter, tau_d_field, config;
                         tracked_is_liquid=tracked_is_liquid)
 
+            # WALL LUBRICATION. After the buoyancy balance, because it feeds on
+            # the wall-PARALLEL part of that drift; before the momentum slip
+            # snapshot, because it IS a mean slip (unlike turbulent dispersion)
+            # and so belongs in the slip stress.
+            wall_lubrication!(Ur, wall_lub_geom, wall_lub, alpha,
+                              phases[liq].rho, phases[liq].mu, diameter, config)
+
+            # LIFT. Uses `∇U`, refreshed a few lines above - NOT the turbulence
+            # model's `S.gradU`, which `turbulence!` only updates at the END of
+            # the step and would therefore be one step stale here.
+            #
+            # After wall lubrication so it sees the full lateral slip, and before
+            # the momentum slip snapshot because lift is a MEAN slip.
+            lift!(Ur, lift_model, ∇U, phases[liq].rho, phases[vap].rho,
+                  phases[liq].mu, sigma_material, g_magnitude, diameter, config)
+
             # MOMENTUM slip stress uses the force-balance drift velocity only.
             # Snapshot it to faces BEFORE any dispersion is added.
             #
@@ -2258,7 +2329,8 @@ Ignored here.""" pressure_form=:volume
             # `alpha` tracked the liquid (it only added extra smoothing) and fatal
             # once it tracks the vapour, because the sign below inverts.
             dispersion_in_Ur && turbulent_dispersion!(
-                Ur, alpha, ∇alpha, model.turbulence, Sc_t, config;
+                Ur, alpha, ∇alpha, model.turbulence,
+                dispersion_Sc === nothing ? Sc_t : dispersion_Sc, config;
                 grad_sign=drift_sign)
 
             interpolate_vanleer!(Urf, Ur, mdotf, config)
@@ -2324,7 +2396,10 @@ Ignored here.""" pressure_form=:volume
             # Turbulent dispersion coefficient for this step: D_t = nu_t/Sc_t on
             # faces. Left at zero when `dispersion_Sc` is unset, in which case the
             # Laplacian term is present but contributes nothing.
-            if dispersion_Sc !== nothing
+            # `!dispersion_in_Ur`: leaving Dtf at zero is what keeps EXACTLY ONE
+            # route active. Populating it while dispersion is also folded into
+            # `Ur` double-counts the term, with two different Schmidt numbers.
+            if dispersion_Sc !== nothing && !dispersion_in_Ur
                 interpolate!(Dtf, model.turbulence.nut, config)
                 @. Dtf.values /= dispersion_Sc
             end
@@ -4699,4 +4774,247 @@ end
         Atomix.@atomic vector.y.values[cID] += w * uy
         Atomix.@atomic vector.z.values[cID] += w * uz
     end
+end
+# =============================================================================
+#  Wall lubrication
+# =============================================================================
+
+"""
+    multiphase_wall_lubrication(fluid) -> AbstractWallLubrication or nothing
+
+Wall lubrication model, from the optional `wall_lubrication` keyword of
+`Fluid{Multiphase}`. `nothing` (default) leaves the force out entirely.
+
+See [`AbstractWallLubrication`](@ref) for what it does and why lift is NOT the
+right lateral force at these bubble sizes.
+"""
+multiphase_wall_lubrication(fluid) =
+    get(fluid.physics_properties, :wall_lubrication, nothing)
+
+"""
+    WallLubricationGeometry
+
+Precomputed near-wall geometry: for every cell within a wall lubrication model's
+range, its wall distance and the unit normal pointing INTO the fluid.
+
+Setup only - the mesh does not move, so this is built once. Cells outside every
+model's range are simply absent, which is what makes the runtime pass cheap.
+
+`build_wall_lubrication_geometry` searches geometrically rather than solving a
+wall-distance PDE: the range is a few bubble diameters, so only a thin band of
+cells qualifies and an exact search over wall faces is both cheaper and sharper
+than a field solve.
+"""
+struct WallLubricationGeometry{VI,VF,VV}
+    cells::VI       # cell IDs within range
+    dist::VF        # wall-normal distance to the nearest wall face [m]
+    normal::VV      # unit normal INTO the fluid
+end
+
+build_wall_lubrication_geometry(::Nothing, U_BCs, mesh, range) = nothing
+
+function build_wall_lubrication_geometry(model, U_BCs, mesh, range)
+    faces = Array(mesh.faces)
+    cells = Array(mesh.cells)
+
+    # EVERY wall, not just the heated ones. Wall lubrication is a hydrodynamic
+    # force between a bubble and a solid surface - whether that surface is heated
+    # is irrelevant to it. Taking the patch list from the RPI model (as this
+    # first did) silently left the UNHEATED wall with no lateral force at all, so
+    # vapour convected downstream past the heater had nothing pushing it off that
+    # wall and piled up against it.
+    #
+    # Detected from the VELOCITY boundary conditions rather than by name, so
+    # symmetry planes, inlets and outlets are excluded automatically and no patch
+    # list has to be maintained by hand.
+    fIDs = Int[]
+    for BC in U_BCs
+        (BC isa Wall || BC isa RotatingWall) || continue
+        append!(fIDs, collect(BC.IDs_range))
+    end
+    isempty(fIDs) && return nothing
+
+    TF = typeof(cells[1].volume)
+    fc = [faces[f].centre for f in fIDs]
+    # Stored boundary normals point OUT of the domain, so the fluid side is -n.
+    fn = [-faces[f].normal for f in fIDs]
+
+    best_d = fill(TF(Inf), length(cells))
+    best_n = fill(fn[1], length(cells))
+    for i in eachindex(fIDs), cID in eachindex(cells)
+        off = cells[cID].centre - fc[i]
+        dn  = off ⋅ fn[i]
+        (dn > 0 && dn < range) || continue
+        if dn < best_d[cID]
+            best_d[cID] = dn
+            best_n[cID] = fn[i]
+        end
+    end
+
+    keep = findall(d -> d < TF(Inf), best_d)
+    isempty(keep) && return nothing
+    @info("Wall lubrication geometry built",
+          model = typeof(model).name.wrapper,
+          range_mm = range*1e3, cells = length(keep),
+          nearest_um = round(minimum(best_d[keep])*1e6, digits=2))
+    return WallLubricationGeometry(keep, best_d[keep], best_n[keep])
+end
+
+"""
+    wall_lubrication!(Ur, geom, model, alpha, rho_c, mu_c, d_b, config)
+
+Add the wall-normal drift produced by the wall lubrication force to `Ur`.
+
+The force density is `F = C_w rho_c alpha_d |U_r,par|^2 n`, and balancing it
+against Stokes drag on the same dispersed phase, `alpha_d*(18 mu_c/d^2)*f_drag*U`,
+gives
+
+    U_wl = C_w rho_c |U_r,par|^2 d^2 / (18 mu_c f_drag)
+
+with `alpha_d` cancelling. `f_drag` is solved by the same bisection
+`compute_Ur!` uses, so the two forces are treated consistently rather than one
+being left in the Stokes limit.
+
+`|U_r,par|` is taken from the CURRENT `Ur` - the buoyancy drift already written
+by `compute_Ur!` - with its wall-normal component removed. On a vertical pipe
+that is essentially the whole of it, which is the point: the axial drift that
+cannot move vapour off the wall is exactly what powers the force that can.
+"""
+# THREE no-op methods, not two. With `wall_lubrication = nothing` BOTH `geom`
+# and `model` are `nothing`, and the two single-`Nothing` methods are then
+# ambiguous - Julia cannot pick between them and the solver dies with a
+# MethodError on the OFF path, which is the one path that has to be bulletproof.
+# The doubly-typed method resolves it.
+wall_lubrication!(Ur, ::Nothing, ::Nothing, alpha, rho_c, mu_c, d_b, config) = nothing
+wall_lubrication!(Ur, ::Nothing, model, alpha, rho_c, mu_c, d_b, config) = nothing
+wall_lubrication!(Ur, geom, ::Nothing, alpha, rho_c, mu_c, d_b, config) = nothing
+
+function wall_lubrication!(Ur, geom::WallLubricationGeometry, model, alpha,
+                           rho_c, mu_c, d_b, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    ndrange = length(geom.cells)
+    kernel! = _wall_lubrication!(_setup(backend, workgroup, ndrange)...)
+    kernel!(Ur, geom.cells, geom.dist, geom.normal, model, rho_c, mu_c,
+            eltype(Ur.x.values)(d_b), UR_BISECT_STEPS)
+    return nothing
+end
+
+@kernel inbounds=true function _wall_lubrication!(Ur, cellsv, distv, normalv, model,
+                                                  rho_c_f, mu_c_f, d_b, bisect_steps)
+    k = @index(Global)
+    TF = eltype(Ur.x.values)
+    i = cellsv[k]
+    y = distv[k]
+    n = normalv[k]
+
+    u = Ur[i]
+    # Wall-PARALLEL part of the existing (buoyancy) drift.
+    u_par = u - (u ⋅ n)*n
+    Up = norm(u_par)
+
+    rho_c = rho_c_f[i]
+    mu_c  = mu_c_f[i]
+    C_w = wall_lubrication_coefficient(model, d_b, y, Up)
+
+    # Stokes-limit wall-normal velocity, then corrected for drag by the same
+    # bisection `compute_Ur!` uses. Written branchlessly - KernelAbstractions
+    # does not permit an early `return`, and a fixed iteration count keeps the
+    # kernel free of divergence on a GPU.
+    A_mag = max(C_w, zero(TF))*rho_c*Up*Up*d_b*d_b/(TF(18)*mu_c + eps(TF))
+    B = rho_c*d_b/(mu_c + eps(TF))
+    lo = zero(TF); hi = A_mag
+    for _ in 1:bisect_steps
+        mid  = TF(0.5)*(lo + hi)
+        over = mid*_drag_factor(B*mid) - A_mag > zero(TF)
+        hi = ifelse(over, mid, hi); lo = ifelse(over, lo, mid)
+    end
+    s = TF(0.5)*(lo + hi)
+    ok = (Up > eps(TF)) & (C_w > zero(TF))
+    Ur[i] = u + ifelse(ok, s, zero(TF))*n
+end
+
+# =============================================================================
+#  Lift force
+# =============================================================================
+
+"""
+    multiphase_lift(fluid) -> AbstractLift or nothing
+
+Lift model, from the optional `lift` keyword of `Fluid{Multiphase}`. `nothing`
+(default) leaves the force out.
+
+See [`AbstractLift`](@ref) for the sign convention and for why it is the
+counterpart of, not an alternative to, wall lubrication.
+"""
+multiphase_lift(fluid) = get(fluid.physics_properties, :lift, nothing)
+
+"""
+    lift!(Ur, model, gradU, rho_c, rho_d, mu_c, sigma, g_mag, d_b, config)
+
+Add the lift-driven drift to `Ur`.
+
+The force is `F_L = -C_L rho_c alpha_d (U_r x curl(U))`, and balancing it against
+drag on the same dispersed phase, `alpha_d*(18 mu_c/d^2)*f_drag*U`, gives a
+velocity along `-C_L*(U_r x curl(U))` with `alpha_d` cancelling - the same
+construction [`wall_lubrication!`](@ref) uses, and with the same bisection for
+`f_drag` so the three lateral forces are treated consistently.
+
+`U_r` is read from the CURRENT `Ur`, i.e. after buoyancy and wall lubrication.
+`curl(U)` is formed from the mixture velocity gradient; for a dispersed phase in
+a dilute mixture that is the continuous-phase shear to leading order.
+"""
+lift!(Ur, ::Nothing, gradU, rho_c, rho_d, mu_c, sigma, g_mag, d_b, config) = nothing
+
+function lift!(Ur, model, gradU, rho_c, rho_d, mu_c, sigma, g_mag, d_b, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    ndrange = length(Ur)
+    TF = eltype(Ur.x.values)
+    kernel! = _lift!(_setup(backend, workgroup, ndrange)...)
+    kernel!(Ur, gradU.result, model, rho_c, rho_d, mu_c, TF(sigma), TF(g_mag),
+            TF(d_b), UR_BISECT_STEPS)
+    return nothing
+end
+
+@kernel inbounds=true function _lift!(Ur, gradU_result, model, rho_c_f, rho_d_f,
+                                      mu_c_f, sigma, g_mag, d_b, bisect_steps)
+    i = @index(Global)
+    TF = eltype(Ur.x.values)
+
+    u = Ur[i]
+    # curl(U). `gradU_result.xy` is d(u_x)/dy - component FIRST, direction
+    # SECOND - so the components are (zy-yz, xz-zx, yx-xy). Getting this
+    # transposed flips the lift direction, which is why it is spelled out.
+    wx = gradU_result.zy[i] - gradU_result.yz[i]
+    wy = gradU_result.xz[i] - gradU_result.zx[i]
+    wz = gradU_result.yx[i] - gradU_result.xy[i]
+
+    ux = u[1]; uy = u[2]; uz = u[3]
+    cx = uy*wz - uz*wy
+    cy = uz*wx - ux*wz
+    cz = ux*wy - uy*wx
+
+    rho_c = rho_c_f[i]
+    rho_d = rho_d_f[i]
+    mu_c  = mu_c_f[i]
+    Umag  = sqrt(ux*ux + uy*uy + uz*uz)
+    Re_p  = rho_c*Umag*d_b/(mu_c + eps(TF))
+    C_L   = lift_coefficient(model, d_b, max(rho_c - rho_d, zero(TF)), sigma, g_mag, Re_p)
+
+    # Stokes-limit lift velocity, signed by C_L: the force is -C_L*(u x w).
+    k = -C_L*rho_c*d_b*d_b/(TF(18)*mu_c + eps(TF))
+    ax = k*cx; ay = k*cy; az = k*cz
+    A_mag = sqrt(ax*ax + ay*ay + az*az)
+
+    B = rho_c*d_b/(mu_c + eps(TF))
+    lo = zero(TF); hi = A_mag
+    for _ in 1:bisect_steps
+        mid  = TF(0.5)*(lo + hi)
+        over = mid*_drag_factor(B*mid) - A_mag > zero(TF)
+        hi = ifelse(over, mid, hi); lo = ifelse(over, lo, mid)
+    end
+    s = TF(0.5)*(lo + hi)
+    scale = ifelse(A_mag > eps(TF), s/A_mag, zero(TF))
+    Ur[i] = u + @SVector [ax*scale, ay*scale, az*scale]
 end

@@ -431,7 +431,36 @@ end
     nu_l = mu_l/rho_l
     y_plus = u_tau*delta/max(nu_l, eps(TF))
 
-    h_c = single_phase_htc(y_plus, u_tau, rho_l, cp_l, mu_l, k_l, TF(rpi.Pr_t))
+    # CONVECTIVE COEFFICIENT. Which fluid the wall sees depends on the partition:
+    #
+    #   :kurul_podowski  LIQUID properties. The classical assumption is that only
+    #                    liquid touches the wall, and `q_c` is then taken over the
+    #                    un-influenced fraction `(1 - A_b)`.
+    #
+    #   :mmp             MIXTURE properties, per STAR-CCM+: "there [are] convection
+    #                    contributions from vapor and liquid, always the mixture in
+    #                    contact with the wall". Volume-weighted k and mu, and a
+    #                    MASS-weighted cp, because cp multiplies rho in
+    #                    `h_c = rho cp u_tau/T+` and the product must be the
+    #                    mixture's volumetric heat capacity.
+    #
+    # `y_plus` stays on the LIQUID viscosity in both cases: it is the same wall
+    # distance the momentum treatment used, and rescaling it is the film model's
+    # job (see `ForcedConvectionFilm`).
+    a_l = alpha[cID]
+    a_v = one(TF) - a_l
+    mmp = rpi.partition === :mmp
+    rho_m = mmp ? a_l*rho_l + a_v*rho_v : rho_l
+    k_m   = mmp ? a_l*k_l   + a_v*k_v_f[cID]  : k_l
+    mu_m  = mmp ? a_l*mu_l  + a_v*mu_v_f[cID] : mu_l
+    cp_m  = if mmp
+        rc = a_l*rho_l*cp_l + a_v*rho_v*cp_v_f[cID]
+        rho_m > zero(TF) ? rc/rho_m : cp_l
+    else
+        cp_l
+    end
+
+    h_c = single_phase_htc(y_plus, u_tau, rho_m, cp_m, mu_m, k_m, TF(rpi.Pr_t))
 
     T_liquid_f[fID] = T_l
     h_conv_f[fID] = h_c
@@ -439,7 +468,7 @@ end
     state = BoilingState{TF}(
         T_l, T_l, T_sat, T_l - T_sat, T_sat - T_l,
         rho_l, rho_v, cp_l, k_l, mu_l, TF(sigma), TF(h_fg), TF(g_mag),
-        cp_v_f[cID], k_v_f[cID], mu_v_f[cID])
+        cp_v_f[cID], k_v_f[cID], mu_v_f[cID], a_l)
 
     # Resolve the post-CHF blend for this face: the CHF superheat, the minimum
     # film boiling superheat and the film heat transfer coefficient. Done ONCE
@@ -462,7 +491,15 @@ end
 
     # Ramp the source out as the near-wall liquid disappears: RPI has no
     # validity once the wall is not liquid-wetted (see the `RPI` docstring).
-    factor = wall_boiling_liquid_factor(rpi, alpha[cID])
+    #
+    # UNDER `:mmp` THIS IS ALREADY DONE. `_partition_weights` applies
+    # `(1 - K_dry)` to `q_e` and `q_q` INSIDE the wall-temperature inversion, so
+    # applying it again here would square it - and, more importantly, the whole
+    # point of the `:mmp` form is that dryout feeds back on `T_w`, which only
+    # happens if the weighting is inside the solve. So the post-hoc factor is
+    # unity there.
+    factor = rpi.partition === :mmp ?
+        one(TF) : wall_boiling_liquid_factor(rpi, alpha[cID])
 
     # Evaporative flux driving vapour generation. In the transition and film
     # regimes the heat crossing the vapour film evaporates liquid at the film

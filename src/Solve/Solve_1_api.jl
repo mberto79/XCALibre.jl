@@ -5,15 +5,8 @@ export solve_equation!
 export AdaptiveTimeStepping
 export linearUpwindV_correction!, bounded_convection_correction!, bounded_convection_correction_scalar!
 
-# linearUpwindV deferred correction (opt-in, gradU=nothing is a no-op):
-# adds the explicit second-order correction mdot_f*(x_f - x_C)*gradPhi_C on
-# top of the implicit first-order-upwind matrix already built by
-# discretise!/Divergence{Upwind}, matching OpenFOAM's `linearUpwindV` scheme
-# (deferred-correction form: implicit upwind for stability + explicit
-# gradient-based correction for second-order accuracy). C is the upwind
-# cell for each internal face. Must run after discretise! (so b holds the
-# fresh per-iteration source) and before apply_boundary_conditions! (whose
-# per-component b entries are additive on top of this, per component).
+# linearUpwindV deferred correction (opt-in, gradU=nothing is a no-op).
+# Run after discretise!, before apply_boundary_conditions!.
 function linearUpwindV_correction!(psiEqn, mdotf, gradU, config)
     mesh = mdotf.mesh
     (; faces, cells, boundary_cellsID) = mesh
@@ -31,29 +24,16 @@ function linearUpwindV_correction!(psiEqn, mdotf, gradU, config)
     kernel!(bx, by, bz, mdotf, gradU, cells, faces, n_bfaces)
 end
 
-# OpenFOAM's "bounded" convection-scheme modifier (always paired with
-# linearUpwindV/upwind in incompressible fvSchemes): subtracts the local net
-# face-flux imbalance (fvc::surfaceIntegrate(phi), i.e. how far mdotf is
-# from being exactly divergence-free at this point in the SIMPLE iteration)
-# from the matrix diagonal -- fvm::Sp(surfaceIntegrate(phi), vf), applied
-# with a minus sign: `fvmDiv(phi,vf) - Sp(surfaceIntegrate(phi), vf)`.
-# fvm::Sp(coeff, vf) contributes `V*coeff` to the diagonal, and
-# surfaceIntegrate is already volume-normalised, so the net contribution to
-# the (un-normalised) matrix diagonal is simply `-netFlux[cell]`, where
-# netFlux is the raw (non-volume-divided) sum of signed face fluxes -- no
-# volume math needed. This stabilises the momentum equation exactly where
-# mass conservation hasn't yet converged (e.g. near a still-oscillating
-# defective mesh cell), independent of which convection scheme is used.
+# Bounded convection modifier: subtracts the local net face-flux
+# imbalance from the matrix diagonal.
 function bounded_convection_correction!(psiEqn, mdotf, config)
     mesh = mdotf.mesh
     (; cells, cell_nsign, cell_faces, faces, boundary_cellsID) = mesh
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    # Must target the PRISTINE matrix (A0/nzval0), not the working copy A --
-    # update_equation! (called right after this, for each x/y/z component)
-    # does nzval .= nzval0, which would silently wipe a correction applied
-    # to the working copy before this function even runs once.
+    # Must target A0/nzval0, not working copy A -- update_equation! (called
+    # right after, per x/y/z component) does nzval .= nzval0, wiping A.
     A = _A0(psiEqn)
     nzval = _nzval(A)
     colval = _colval(A)
@@ -69,11 +49,8 @@ function bounded_convection_correction!(psiEqn, mdotf, config)
     kernel2!(nzval, colval, rowptr, faces, mdotf)
 end
 
-# Scalar-equation variant (k, omega, ...): unlike the momentum equation,
-# scalar transport equations here have no per-component reset cycle (no
-# _A0/update_equation! duality -- solved once per outer iteration, not
-# segregated into x/y/z), so the correction can target the working matrix
-# directly. Same "bounded" formula as the vector version.
+# Scalar-equation variant (k, omega): no per-component A0 reset cycle,
+# so this targets the working matrix directly. Same formula as above.
 function bounded_convection_correction_scalar!(psiEqn, mdotf, config)
     mesh = mdotf.mesh
     (; cells, cell_nsign, cell_faces, faces, boundary_cellsID) = mesh
@@ -107,10 +84,8 @@ end
             netFlux += mvals[fID]*nsign
         end
         cIndex = spindex(rowptr, colval, i, i)
-        # Sign verified empirically against OpenFOAM: -Sp(surfaceIntegrate(phi), vf)
-        # subtracts from the diagonal in OpenFOAM's convention, which corresponds
-        # to *adding* netFlux here given this codebase's matrix-assembly sign
-        # convention (opposite of the naive derivation from the formula alone).
+        # Sign verified empirically: adding netFlux here matches this
+        # codebase's matrix-assembly convention.
         Atomix.@atomic nzval[cIndex] += netFlux
     end
 end

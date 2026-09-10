@@ -29,15 +29,8 @@ Wall(name::Symbol) = Wall(name, 0)
     flux = J*area/delta
     ap = term.sign[1]*(-flux)
 
-    # Static no-slip (or fixed-translation) wall: the *entire* prescribed
-    # velocity applies, including the wall-normal component -- unlike
-    # RotatingWall, there is no geometric ambiguity here to defer to the
-    # cell's own value for. (The previous normal/tangential decomposition
-    # here was a carry-over from RotatingWall's formula, where it is
-    # legitimate: a rotating wall's prescribed value is only reliably known
-    # to be tangential to the rotation, so its normal component is deferred
-    # to vc_n there. That rationale doesn't apply to a static wall's fully
-    # prescribed value.)
+    # Static wall: the entire prescribed velocity applies, including the
+    # normal component -- unlike RotatingWall, which defers it to vc_n.
     vb = bc.value # boundary value
 
     ap, ap*vb[component.value]

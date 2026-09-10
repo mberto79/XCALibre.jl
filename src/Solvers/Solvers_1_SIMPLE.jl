@@ -75,7 +75,7 @@ function setup_incompressible_solvers(
     @info "Defining models..."
 
     U_eqn = if stresscorrection
-        @info "stresscorrection=true enabled: U_eqn carries the explicit deviatoric transpose-stress source +div(nueff*dev2(grad(U)^T)), matching OpenFOAM's divDevReff for incompressible turbulent flow (sign verified analytically from linearViscousStress.C's divDevRhoReff and confirmed empirically on motorBike: flipping it worsens both Cd and Cl)."
+        @info "stresscorrection=true enabled: U_eqn carries the explicit deviatoric transpose-stress source +div(nueff*dev2(grad(U)^T))."
         mueffgradUt = VectorField(mesh)
         (
             Time{schemes.U.time}(U)
@@ -138,7 +138,7 @@ function SIMPLE(
         @info "SIMPLEC (consistent=true) enabled: pressure-velocity coupling uses the off-diagonal-corrected coefficient rAtU = V/(A_ii - sum|off-diag|)."
     end
     if linearupwind
-        @info "linearUpwindV (linearupwind=true) enabled: U convection uses implicit Upwind + explicit deferred gradient correction, matching OpenFOAM's `linearUpwindV` scheme."
+        @info "linearUpwindV (linearupwind=true) enabled: U convection uses implicit Upwind + explicit deferred gradient correction."
     end
 
     # Extract model variables and configuration
@@ -158,9 +158,8 @@ function SIMPLE(
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
 
-    # stresscorrection: mugradUTx/y/z and divmugradUTx/y/z are only used to
-    # rebuild mueffgradUt each iteration (mirrors CSIMPLE's explicit
-    # deviatoric shear-stress term); left unallocated when disabled.
+    # mugradUTx/y/z rebuild mueffgradUt each iteration (mirrors CSIMPLE's
+    # explicit deviatoric shear-stress term); unallocated when disabled.
     mueffgradUt = stresscorrection ? get_source(U_eqn, 2) : nothing
     mugradUTx = stresscorrection ? FaceScalarField(mesh) : nothing
     mugradUTy = stresscorrection ? FaceScalarField(mesh) : nothing
@@ -297,16 +296,8 @@ function SIMPLE(
 
         turbulence!(turbulenceModel, model, S, prev, time, config; boundedturb=boundedturb, wallfn_v2=wallfn_v2, wallfn_binomial=wallfn_binomial)
         if linearupwind
-            # OpenFOAM's actual scheme is `linearUpwindV grad(U)` with
-            # `grad(U)  cellLimited Gauss linear 1;` -- the extrapolation
-            # gradient is limited, not raw. Confirmed by ablation: the
-            # bounded (mass-imbalance) correction alone is stable for 350+
-            # iterations, but the raw/unlimited gradient extrapolation in
-            # linearUpwindV_correction! diverges on its own, locking onto
-            # one persistent cell -- exactly what an unbounded linear
-            # extrapolation would do near a poor-quality cell. Limiting
-            # gradU the same way OpenFOAM does is the fix, not a flux/TVD
-            # limiter on the correction itself.
+            # Limits the extrapolation gradient -- the raw/unlimited
+            # gradient diverges on its own (confirmed).
             limit_gradient!(CellBased(), gradU, U, config)
         end
         update_nueff!(nueff, nu, model.turbulence, config)

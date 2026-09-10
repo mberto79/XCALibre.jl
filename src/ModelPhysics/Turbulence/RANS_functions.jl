@@ -64,25 +64,14 @@ nut_wall(nu, yplus, kappa, E::T) where T = begin
     max(nu*(yplus*kappa/log(max(E*yplus, 1.0 + 1e-4)) - 1.0), zero(T))
 end
 
-# OpenFOAM's actual nutkWallFunction::calcNut() (STEPWISE blending, the
-# default) has no "-1" term in the log-law branch, and returns nu (not 0)
-# in the viscous sublayer -- nutVis[facei] = turbModel.nu(patchi), used
-# directly as nutw there, not as a correction subtracted from the log-law
-# value. Gated behind `fixed` for backward compatibility.
+# No "-1" term in the log-law branch; returns nu (not 0) in the
+# viscous sublayer. Gated behind `fixed`.
 nut_wall_v2(nu, yplus, kappa, E::T, yPlusLam) where T = begin
     yplus > yPlusLam ? nu*yplus*kappa/log(max(E*yplus, 1.0 + 1e-4)) : nu
 end
 
-# Confirmed by direct instrumentation of OpenFOAM's own compiled source
-# (added debug prints to nutkWallFunction/omegaWallFunctionFvPatchScalarField
-# and rebuilt libturbulenceModels.so) that this specific OpenFOAM build's
-# ACTUAL default wall-function blending is `binomial` with n=2, not the
-# `stepwise` (hard if/else on y+) blending assumed everywhere else in this
-# file and used by nut_wall/nut_wall_v2/ω_vis/ω_log's y+ switch above. The
-# binomial blend combines both the viscous and log-law estimates smoothly:
-# nutw = (nutVis^n + nutLog^n)^(1/n), omega0 = (omegaVis^n + omegaLog^n)^(1/n).
-# This was the actual root cause of the persistent near-wall k/omega
-# over-prediction chased throughout this investigation.
+# Binomial blend (n=2) combines viscous and log-law estimates smoothly,
+# instead of the stepwise y+ switch used above.
 nut_wall_binomial(nu, yplus, kappa, E::T; n=2.0) where T = begin
     nutVis = nu
     nutLog = nu*yplus*kappa/log(max(E*yplus, 1.0 + 1e-4))
@@ -168,22 +157,13 @@ end
     # mag_grad_U = mag(gradU[cID]*normal)
 
     if wallfn_binomial || fixed
-        # Production uses the *lagged* wall nut value (nutf, last set by
-        # correct_eddy_viscosity! at the end of the *previous* iteration),
-        # not a fresh recomputation. Confirmed by direct instrumentation:
-        # OpenFOAM's nutkWallFunction::calcNut() only runs at the very end
-        # of kOmegaSSTBase::correct() (after k and omega are both solved),
-        # so omegaWallFunction's G calculation -- which runs first, via
-        # turbModel.nut(patchi) -- always sees the stale value from before
-        # this iteration's nut update. Restricted to the wallfn_v2/binomial
-        # paths to avoid silently changing the legacy default's behaviour.
+        # Uses the lagged wall nut value (nutf, from the previous
+        # iteration's correct_eddy_viscosity!).
         nutw = nutf[fID]
     end
 
     if wallfn_binomial
-        # OpenFOAM's binomial blend computes G unconditionally (no y+ gate)
-        # once blender_ != STEPWISE -- confirmed by direct instrumentation
-        # of omegaWallFunctionFvPatchScalarField::calculate().
+        # Binomial blend computes G unconditionally (no y+ gate).
         contribution = (nu[cID] + nutw)*mag_grad_U*dUdy
         if fixed
             w = one(eltype(wallCount))/wallCount[cID]
@@ -192,11 +172,8 @@ end
             values[cID] = contribution
         end
     elseif fixed
-        # OpenFOAM (omegaWallFunctionFvPatchScalarField::calculate) sums
-        # G contributions from every wall-function face touching a cell,
-        # each weighted 1/(number of such faces) -- corner/edge cells on
-        # motorBike's ~90 adjacent body patches otherwise only see the
-        # last-processed face's contribution.
+        # Sums G from every wall-function face touching a cell, weighted
+        # 1/count -- avoids corner cells only seeing the last-processed face.
         contribution = yplus > yPlusLam ? (nu[cID] + nutw)*mag_grad_U*dUdy : zero(eltype(values))
         w = one(eltype(wallCount))/wallCount[cID]
         Atomix.@atomic values[cID] += w*contribution
@@ -210,10 +187,8 @@ end
     end
 end
 
-# --- Wall function v2 shared infrastructure: count wall-function faces per
-# cell (so contributions from cells touching multiple wall patches can be
-# averaged instead of the last one silently winning), gated behind
-# XCALIBRE_WALLFN_V2=1 for backward compatibility. ---
+# wallfn_v2: count wall-function faces per cell so multi-patch cells
+# average contributions instead of the last one silently winning.
 
 count_wallfn_cell!(countField, P, BC, model, config) = nothing
 
@@ -392,18 +367,11 @@ end
         push!(finalize_calls, :(finalize_omega_wall!(omega0, wallCount, eqn, fieldBCs[$i], model, config)))
     end
     quote
-    # binomial blending needs the same per-cell weighted-accumulation
-    # pipeline as wallfn_v2 (OpenFOAM always routes through
-    # calculateTurbulenceFields/calculate() regardless of blender type) --
-    # it just uses a different per-face formula (omega_binomial instead of
-    # the stepwise yplus>yPlusLam switch), threaded via wallfn_binomial.
+    # binomial blending reuses wallfn_v2's per-cell weighted-accumulation
+    # pipeline, just with a different per-face formula.
     if wallfn_v2 || wallfn_binomial
-        # OpenFOAM's omegaWallFunctionFvPatchScalarField::calculate sums
-        # weighted contributions from every wall-function face touching a
-        # cell (weight = 1/count) before constraining the equation once
-        # per cell -- otherwise corner/edge cells (common on motorBike's
-        # ~90 adjacent body patches) only see whichever face is processed
-        # last.
+        # Sums weighted contributions (weight=1/count) per cell before
+        # constraining once -- avoids corner cells seeing only the last face.
         mesh = model.domain
         (; hardware) = config
         TF = _get_float(mesh)
@@ -503,12 +471,8 @@ end
     end
 end
 
-# --- Wall function v2 for OmegaWallFunction: count -> weighted accumulate
-# -> finalize (constrain matrix once per cell using the fully-accumulated
-# value), matching OpenFOAM's cornerWeights_ = 1/(wall faces touching that
-# cell), summed rather than overwritten. Three separate passes over all
-# OmegaWallFunction patches because the matrix constraint must only be
-# applied once all patches' contributions have been accumulated.
+# wallfn_v2 for OmegaWallFunction: count -> weighted accumulate ->
+# finalize, three passes since the constraint needs all patches summed first.
 
 count_wallfn_omega_cell!(countField, BC, model, config) = nothing
 

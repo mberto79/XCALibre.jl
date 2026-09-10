@@ -290,10 +290,8 @@ function turbulence!(
     # prev .= omega.values
     discretise!(ω_eqn, omega, config)
     if boundedturb
-        # OpenFOAM's actual scheme is `turbulence bounded Gauss upwind;`
-        # applied to div(phi,k) and div(phi,omega) too, not just U -- same
-        # mass-imbalance diagonal correction as bounded_convection_correction!,
-        # scalar-equation variant (no per-component reset cycle here).
+        # Bounded convection correction applied to div(phi,omega) too --
+        # same mass-imbalance diagonal correction as bounded_convection_correction!.
         bounded_convection_correction_scalar!(ω_eqn, get_flux(ω_eqn, 2), config)
     end
     apply_boundary_conditions!(ω_eqn, boundaries.omega, nothing, time, config)
@@ -307,12 +305,7 @@ function turbulence!(
     bound!(omega, config)
     # explicit_relaxation!(omega, prev, solvers.omega.relax, config)
 
-    # Recompute the k-equation's dissipation coefficient using the just-solved
-    # omega, not the stale pre-solve value it was built with above. OpenFOAM's
-    # kOmegaSSTBase::correct() computes epsilonByk = betaStar*omega_ *inside*
-    # the k-equation block, which textually/temporally follows solve(omegaEqn)
-    # -- i.e. it always uses the current iteration's fresh omega for k's sink
-    # term, not the previous iteration's.
+    # Uses the just-solved omega, not the stale pre-solve value.
     @. Dkf.values = rho.values*coeffs.β⁺*omega.values
 
     # Solve k equation

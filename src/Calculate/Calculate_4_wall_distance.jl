@@ -84,21 +84,8 @@ function wall_distance!(model, walls, config; iterations=1000)
     new_config
 end
 
-# Geometric wall distance (meshwave=true opt-in), approximating OpenFOAM's
-# wallDist{method meshWave;} (the reference case's actual setting) via
-# Bellman-Ford relaxation over the cell-adjacency graph: seed wall-adjacent
-# cells with distance to their wall face centre, then repeatedly relax
-# neighbouring cells' distances through internal faces until convergence.
-# XCALibre's default wall_distance! instead solves a Poisson/Spalding PDE,
-# which was found (by direct comparison against this function) to disagree
-# with the geometric distance by ~22% on average in near-wall cells -- and
-# y feeds directly into the kOmegaSST F1/F2 blending, eddy-viscosity limiter
-# and wall functions, so that mismatch propagates throughout the closure.
-# The relaxation itself is plain sequential host-side loops (a one-off
-# pre-processing step, not per-iteration, so this isn't performance-critical)
-# -- mesh.cells/faces/boundaries/boundary_cellsID are pulled to the host with
-# Array(...)/get_boundaries(...) first since they live in device memory under
-# a GPU backend and scalar-indexing a CuArray directly errors.
+# Geometric wall distance (meshwave=true) via Bellman-Ford relaxation --
+# differs from the default Poisson solve by ~22% near walls.
 function wall_distance_meshwave!(model, walls, config; max_sweeps=100)
     @info "Calculating wall distance (geometric relaxation, meshWave-style)..."
 
@@ -106,9 +93,8 @@ function wall_distance_meshwave!(model, walls, config; max_sweeps=100)
     (; y) = model.turbulence
     (; schemes, solvers, runtime, hardware, postprocess) = config
 
-    # attach y's boundary conditions to config.boundaries, matching
-    # wall_distance!'s convention -- needed downstream (e.g. by the output
-    # writer, which expects config.boundaries.y to exist)
+    # Matches wall_distance!'s convention -- output writer expects
+    # config.boundaries.y to exist.
     BCs = wall_distance_BCs(mesh, walls, config)
     wallBCs = assign(region=mesh, (y = [BCs...],))
     updated_boundaries = (; config.boundaries..., y = wallBCs.y)

@@ -62,7 +62,7 @@ Initialisation of turbulent transport equations.
 
 """
 function initialise(
-    turbulence::Laminar, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
+    turbulence::Laminar, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config; kwargs...
     ) where {T,F,SO,M,Tu,E,D,BI}
     state = ModelState((), true) # stores residual and convergence information
     return LaminarModel(state), config
@@ -85,7 +85,7 @@ Run turbulence model transport equations.
               hardware structures set.
 
 """
-function turbulence!(rans::LaminarModel, model::Physics{T,F,SO,M,Tu,E,D,BI}, S, prev, time,config
+function turbulence!(rans::LaminarModel, model::Physics{T,F,SO,M,Tu,E,D,BI}, S, prev, time,config; kwargs...
     ) where {T,F,SO,M,Tu<:AbstractTurbulenceModel,E,D,BI}
     (; U, Uf, gradU) = S
     grad!(gradU, Uf, U, config.boundaries.U, time, config)
@@ -94,7 +94,7 @@ function turbulence!(rans::LaminarModel, model::Physics{T,F,SO,M,Tu,E,D,BI}, S, 
 end
 
 function turbulence!(
-    rans::LaminarModel, model::Physics{T,F,SO,M,Tu,E,D,BI}, S, prev, time, config
+    rans::LaminarModel, model::Physics{T,F,SO,M,Tu,E,D,BI}, S, prev, time, config; kwargs...
     ) where {T,F<:AbstractCompressible,SO,M,Tu<:AbstractTurbulenceModel,E,D,BI}
     (; U, Uf, gradU) = S
     grad!(gradU, Uf, U, config.boundaries.U, time, config)

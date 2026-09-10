@@ -3,6 +3,153 @@ export explicit_relaxation!, implicit_relaxation!, implicit_relaxation_diagdom!,
 export solve_system!
 export solve_equation!
 export AdaptiveTimeStepping
+export linearUpwindV_correction!, bounded_convection_correction!, bounded_convection_correction_scalar!
+
+# linearUpwindV deferred correction (opt-in, gradU=nothing is a no-op):
+# adds the explicit second-order correction mdot_f*(x_f - x_C)*gradPhi_C on
+# top of the implicit first-order-upwind matrix already built by
+# discretise!/Divergence{Upwind}, matching OpenFOAM's `linearUpwindV` scheme
+# (deferred-correction form: implicit upwind for stability + explicit
+# gradient-based correction for second-order accuracy). C is the upwind
+# cell for each internal face. Must run after discretise! (so b holds the
+# fresh per-iteration source) and before apply_boundary_conditions! (whose
+# per-component b entries are additive on top of this, per component).
+function linearUpwindV_correction!(psiEqn, mdotf, gradU, config)
+    mesh = mdotf.mesh
+    (; faces, cells, boundary_cellsID) = mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    n_faces = length(faces)
+    n_bfaces = length(boundary_cellsID)
+    n_ifaces = n_faces - n_bfaces
+
+    (; bx, by, bz) = psiEqn.equation
+
+    ndrange = n_ifaces
+    kernel! = _linearUpwindV_correction!(_setup(backend, workgroup, ndrange)...)
+    kernel!(bx, by, bz, mdotf, gradU, cells, faces, n_bfaces)
+end
+
+# OpenFOAM's "bounded" convection-scheme modifier (always paired with
+# linearUpwindV/upwind in incompressible fvSchemes): subtracts the local net
+# face-flux imbalance (fvc::surfaceIntegrate(phi), i.e. how far mdotf is
+# from being exactly divergence-free at this point in the SIMPLE iteration)
+# from the matrix diagonal -- fvm::Sp(surfaceIntegrate(phi), vf), applied
+# with a minus sign: `fvmDiv(phi,vf) - Sp(surfaceIntegrate(phi), vf)`.
+# fvm::Sp(coeff, vf) contributes `V*coeff` to the diagonal, and
+# surfaceIntegrate is already volume-normalised, so the net contribution to
+# the (un-normalised) matrix diagonal is simply `-netFlux[cell]`, where
+# netFlux is the raw (non-volume-divided) sum of signed face fluxes -- no
+# volume math needed. This stabilises the momentum equation exactly where
+# mass conservation hasn't yet converged (e.g. near a still-oscillating
+# defective mesh cell), independent of which convection scheme is used.
+function bounded_convection_correction!(psiEqn, mdotf, config)
+    mesh = mdotf.mesh
+    (; cells, cell_nsign, cell_faces, faces, boundary_cellsID) = mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    # Must target the PRISTINE matrix (A0/nzval0), not the working copy A --
+    # update_equation! (called right after this, for each x/y/z component)
+    # does nzval .= nzval0, which would silently wipe a correction applied
+    # to the working copy before this function even runs once.
+    A = _A0(psiEqn)
+    nzval = _nzval(A)
+    colval = _colval(A)
+    rowptr = _rowptr(A)
+
+    ndrange = length(cells)
+    kernel! = _bounded_convection_correction_internal!(_setup(backend, workgroup, ndrange)...)
+    kernel!(nzval, colval, rowptr, cell_faces, cell_nsign, mdotf, cells)
+
+    nbfaces = length(boundary_cellsID)
+    ndrange2 = nbfaces
+    kernel2! = _bounded_convection_correction_boundary!(_setup(backend, workgroup, ndrange2)...)
+    kernel2!(nzval, colval, rowptr, faces, mdotf)
+end
+
+# Scalar-equation variant (k, omega, ...): unlike the momentum equation,
+# scalar transport equations here have no per-component reset cycle (no
+# _A0/update_equation! duality -- solved once per outer iteration, not
+# segregated into x/y/z), so the correction can target the working matrix
+# directly. Same "bounded" formula as the vector version.
+function bounded_convection_correction_scalar!(psiEqn, mdotf, config)
+    mesh = mdotf.mesh
+    (; cells, cell_nsign, cell_faces, faces, boundary_cellsID) = mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    A = _A(psiEqn)
+    nzval = _nzval(A)
+    colval = _colval(A)
+    rowptr = _rowptr(A)
+
+    ndrange = length(cells)
+    kernel! = _bounded_convection_correction_internal!(_setup(backend, workgroup, ndrange)...)
+    kernel!(nzval, colval, rowptr, cell_faces, cell_nsign, mdotf, cells)
+
+    nbfaces = length(boundary_cellsID)
+    ndrange2 = nbfaces
+    kernel2! = _bounded_convection_correction_boundary!(_setup(backend, workgroup, ndrange2)...)
+    kernel2!(nzval, colval, rowptr, faces, mdotf)
+end
+
+@kernel function _bounded_convection_correction_internal!(nzval, colval, rowptr, cell_faces, cell_nsign, mdotf, cells)
+    i = @index(Global)
+    @uniform mvals = mdotf.values
+    @inbounds begin
+        (; faces_range) = cells[i]
+        netFlux = zero(eltype(mvals))
+        for fi ∈ faces_range
+            fID = cell_faces[fi]
+            nsign = cell_nsign[fi]
+            netFlux += mvals[fID]*nsign
+        end
+        cIndex = spindex(rowptr, colval, i, i)
+        # Sign verified empirically against OpenFOAM: -Sp(surfaceIntegrate(phi), vf)
+        # subtracts from the diagonal in OpenFOAM's convention, which corresponds
+        # to *adding* netFlux here given this codebase's matrix-assembly sign
+        # convention (opposite of the naive derivation from the formula alone).
+        Atomix.@atomic nzval[cIndex] += netFlux
+    end
+end
+
+@kernel function _bounded_convection_correction_boundary!(nzval, colval, rowptr, faces, mdotf)
+    i = @index(Global)
+    @uniform mvals = mdotf.values
+    @inbounds begin
+        cID = faces[i].ownerCells[1]
+        cIndex = spindex(rowptr, colval, cID, cID)
+        Atomix.@atomic nzval[cIndex] += mvals[i]
+    end
+end
+
+@kernel function _linearUpwindV_correction!(bx, by, bz, mdotf, gradU, cells, faces, n_bfaces)
+    i = @index(Global)
+    @uniform mvals = mdotf.values
+    @inbounds begin
+        fID = i + n_bfaces
+        face = faces[fID]
+        (; centre, ownerCells) = face
+        cID1 = ownerCells[1] # owner
+        cID2 = ownerCells[2] # neighbour
+        mdot = mvals[fID]
+
+        upC = signbit(mdot) ? cID2 : cID1
+        d = centre - cells[upC].centre
+        dU = gradU[upC] * d # linear extrapolation from the upwind cell to the face
+
+        corr = mdot * dU
+
+        Atomix.@atomic bx[cID1] -= corr[1]
+        Atomix.@atomic by[cID1] -= corr[2]
+        Atomix.@atomic bz[cID1] -= corr[3]
+        Atomix.@atomic bx[cID2] += corr[1]
+        Atomix.@atomic by[cID2] += corr[2]
+        Atomix.@atomic bz[cID2] += corr[3]
+    end
+end
 
 struct SolverSetup{
     F<:AbstractFloat,
@@ -237,12 +384,16 @@ end
 
 # psiEqn.model.terms[1].flux implies that the time term must always be defined first when constructing an equation.
 function solve_equation!(
-    psiEqn::ModelEquation{T,M,E,S,P}, psi, psiBCs, solversetup, xdir, ydir, zdir, config; rho_prev=psiEqn.model.terms[1].flux, time=nothing
+    psiEqn::ModelEquation{T,M,E,S,P}, psi, psiBCs, solversetup, xdir, ydir, zdir, config; rho_prev=psiEqn.model.terms[1].flux, time=nothing, gradU=nothing, mdotf=nothing
     ) where {T<:VectorModel,M,E,S,P}
 
     mesh = psi.mesh
 
     discretise!(psiEqn, psi, config, rho_prev=rho_prev)
+    if !isnothing(gradU)
+        linearUpwindV_correction!(psiEqn, mdotf, gradU, config)
+        bounded_convection_correction!(psiEqn, mdotf, config)
+    end
     update_equation!(psiEqn, config)
     
     apply_boundary_conditions!(psiEqn, psiBCs, xdir, time, config)

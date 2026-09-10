@@ -24,20 +24,23 @@ Adapt.@adapt_structure Wall
 Wall(name::Symbol) = Wall(name, 0)
 
 @define_boundary Wall Laplacian{Linear} VectorField begin
-    (; area, delta, normal) = face 
-    phi = term.phi 
+    (; area, delta) = face
     J = term.flux[fID]
     flux = J*area/delta
     ap = term.sign[1]*(-flux)
-    
-    # vb = SVector{3}(0.0,0.0,0.0) # do not hard-code in next version
+
+    # Static no-slip (or fixed-translation) wall: the *entire* prescribed
+    # velocity applies, including the wall-normal component -- unlike
+    # RotatingWall, there is no geometric ambiguity here to defer to the
+    # cell's own value for. (The previous normal/tangential decomposition
+    # here was a carry-over from RotatingWall's formula, where it is
+    # legitimate: a rotating wall's prescribed value is only reliably known
+    # to be tangential to the rotation, so its normal component is deferred
+    # to vc_n there. That rationale doesn't apply to a static wall's fully
+    # prescribed value.)
     vb = bc.value # boundary value
-    vc = phi[cellID]
-    vc_n = (vc⋅normal)*normal
-    vb_n = (vb⋅normal)*normal
-    vb_p = (vb - vb_n) # parallel component of given boundary vector
-   
-    ap, ap*(vb_p[component.value] + vc_n[component.value])
+
+    ap, ap*vb[component.value]
 end
 
 @define_boundary Wall Laplacian{Linear} ScalarField begin

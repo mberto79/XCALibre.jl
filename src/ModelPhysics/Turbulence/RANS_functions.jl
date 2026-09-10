@@ -64,28 +64,62 @@ nut_wall(nu, yplus, kappa, E::T) where T = begin
     max(nu*(yplus*kappa/log(max(E*yplus, 1.0 + 1e-4)) - 1.0), zero(T))
 end
 
-@generated correct_production!(P, fieldBCs, model, gradU, config) = begin
+# OpenFOAM's actual nutkWallFunction::calcNut() (STEPWISE blending, the
+# default) has no "-1" term in the log-law branch, and returns nu (not 0)
+# in the viscous sublayer -- nutVis[facei] = turbModel.nu(patchi), used
+# directly as nutw there, not as a correction subtracted from the log-law
+# value. Gated behind `fixed` for backward compatibility.
+nut_wall_v2(nu, yplus, kappa, E::T, yPlusLam) where T = begin
+    yplus > yPlusLam ? nu*yplus*kappa/log(max(E*yplus, 1.0 + 1e-4)) : nu
+end
+
+# Confirmed by direct instrumentation of OpenFOAM's own compiled source
+# (added debug prints to nutkWallFunction/omegaWallFunctionFvPatchScalarField
+# and rebuilt libturbulenceModels.so) that this specific OpenFOAM build's
+# ACTUAL default wall-function blending is `binomial` with n=2, not the
+# `stepwise` (hard if/else on y+) blending assumed everywhere else in this
+# file and used by nut_wall/nut_wall_v2/ω_vis/ω_log's y+ switch above. The
+# binomial blend combines both the viscous and log-law estimates smoothly:
+# nutw = (nutVis^n + nutLog^n)^(1/n), omega0 = (omegaVis^n + omegaLog^n)^(1/n).
+# This was the actual root cause of the persistent near-wall k/omega
+# over-prediction chased throughout this investigation.
+nut_wall_binomial(nu, yplus, kappa, E::T; n=2.0) where T = begin
+    nutVis = nu
+    nutLog = nu*yplus*kappa/log(max(E*yplus, 1.0 + 1e-4))
+    (nutVis^n + nutLog^n)^(1/n)
+end
+
+omega_binomial(omegaVis, omegaLog; n=2.0) = (omegaVis^n + omegaLog^n)^(1/n)
+
+@generated correct_production!(P, fieldBCs, model, gradU, config, wallfn_v2=false, wallfn_binomial=false) = begin
     BCs = fieldBCs.parameters
     func_calls = Expr[]
     for i ∈ eachindex(BCs)
         call = quote
-            set_production!(P, fieldBCs[$i], model, gradU, config)
+            set_production!(P, fieldBCs[$i], model, gradU, config, wallCount, wallfn_binomial)
         end
         push!(func_calls, call)
     end
     quote
+    wallCount = nothing
+    if wallfn_v2
+        mesh = model.domain
+        (; hardware) = config
+        wallCount = KernelAbstractions.zeros(hardware.backend, _get_float(mesh), length(mesh.cells))
+        count_all_wallfn_cells!(wallCount, P, fieldBCs, model, config)
+    end
     $(func_calls...)
     nothing
-    end 
+    end
 end
 
-set_production!(P, BC, model, gradU, config) = nothing
+set_production!(P, BC, model, gradU, config, wallCount=nothing, wallfn_binomial=false) = nothing
 
-function set_production!(P, BC::KWallFunction, model, gradU, config)
+function set_production!(P, BC::KWallFunction, model, gradU, config, wallCount=nothing, wallfn_binomial=false)
     # backend = _get_backend(mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware
-    
+
     # Deconstruct mesh to required fields
     mesh = model.domain
     (; faces, boundary_cellsID, boundaries) = mesh
@@ -99,23 +133,27 @@ function set_production!(P, BC::KWallFunction, model, gradU, config)
     facesID_range = BC.IDs_range
     start_ID = facesID_range[1]
 
+    fixed = !isnothing(wallCount)
+
     # Execute apply boundary conditions kernel
     ndrange = length(facesID_range)
     kernel! = _set_production!(_setup(backend, workgroup, ndrange)...)
     kernel!(
-        P.values, BC, fluid, momentum, turbulence, faces, boundary_cellsID, start_ID, gradU
+        P.values, BC, fluid, momentum, turbulence, faces, boundary_cellsID, start_ID, gradU,
+        wallCount, fixed, wallfn_binomial
     )
 end
 
 @kernel function _set_production!(
-    values, BC::KWallFunction, fluid, momentum, turbulence, faces, boundary_cellsID, start_ID, gradU)
+    values, BC::KWallFunction, fluid, momentum, turbulence, faces, boundary_cellsID, start_ID, gradU,
+    wallCount, fixed, wallfn_binomial)
     i = @index(Global)
     fID = i + start_ID - 1 # Redefine thread index to become face ID
 
     (; kappa, beta1, cmu, B, E, yPlusLam) = BC.value
     (; nu) = fluid
     (; U) = momentum
-    (; k, nut) = turbulence
+    (; k, nut, nutf) = turbulence
 
     Uw = SVector{3}(0.0,0.0,0.0)
     # Uw = boundaries.U[BC.ID].value
@@ -126,36 +164,113 @@ end
     uStar = cmu^0.25*sqrt(k[cID])
     dUdy = uStar/(kappa*delta)
     yplus = y_plus(k[cID], nuc, delta, cmu)
-    nutw = nut_wall(nuc, yplus, kappa, E)
     mag_grad_U = mag(sngrad(U[cID], Uw, delta, normal))
     # mag_grad_U = mag(gradU[cID]*normal)
-    if yplus > yPlusLam
-        values[cID] = (nu[cID] + nutw)*mag_grad_U*dUdy 
+
+    if wallfn_binomial || fixed
+        # Production uses the *lagged* wall nut value (nutf, last set by
+        # correct_eddy_viscosity! at the end of the *previous* iteration),
+        # not a fresh recomputation. Confirmed by direct instrumentation:
+        # OpenFOAM's nutkWallFunction::calcNut() only runs at the very end
+        # of kOmegaSSTBase::correct() (after k and omega are both solved),
+        # so omegaWallFunction's G calculation -- which runs first, via
+        # turbModel.nut(patchi) -- always sees the stale value from before
+        # this iteration's nut update. Restricted to the wallfn_v2/binomial
+        # paths to avoid silently changing the legacy default's behaviour.
+        nutw = nutf[fID]
+    end
+
+    if wallfn_binomial
+        # OpenFOAM's binomial blend computes G unconditionally (no y+ gate)
+        # once blender_ != STEPWISE -- confirmed by direct instrumentation
+        # of omegaWallFunctionFvPatchScalarField::calculate().
+        contribution = (nu[cID] + nutw)*mag_grad_U*dUdy
+        if fixed
+            w = one(eltype(wallCount))/wallCount[cID]
+            Atomix.@atomic values[cID] += w*contribution
+        else
+            values[cID] = contribution
+        end
+    elseif fixed
+        # OpenFOAM (omegaWallFunctionFvPatchScalarField::calculate) sums
+        # G contributions from every wall-function face touching a cell,
+        # each weighted 1/(number of such faces) -- corner/edge cells on
+        # motorBike's ~90 adjacent body patches otherwise only see the
+        # last-processed face's contribution.
+        contribution = yplus > yPlusLam ? (nu[cID] + nutw)*mag_grad_U*dUdy : zero(eltype(values))
+        w = one(eltype(wallCount))/wallCount[cID]
+        Atomix.@atomic values[cID] += w*contribution
     else
-        values[cID] = 0.0
+        nutw = nut_wall(nuc, yplus, kappa, E)
+        if yplus > yPlusLam
+            values[cID] = (nu[cID] + nutw)*mag_grad_U*dUdy
+        else
+            values[cID] = 0.0
+        end
     end
 end
 
-@generated function correct_eddy_viscosity!(νtf, nutBCs, model, config)
+# --- Wall function v2 shared infrastructure: count wall-function faces per
+# cell (so contributions from cells touching multiple wall patches can be
+# averaged instead of the last one silently winning), gated behind
+# XCALIBRE_WALLFN_V2=1 for backward compatibility. ---
+
+count_wallfn_cell!(countField, P, BC, model, config) = nothing
+
+function count_wallfn_cell!(countField, P, BC::KWallFunction, model, config)
+    mesh = model.domain
+    (; boundary_cellsID) = mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    facesID_range = BC.IDs_range
+    start_ID = facesID_range[1]
+    ndrange = length(facesID_range)
+    kernel! = _count_wallfn_cell!(_setup(backend, workgroup, ndrange)...)
+    kernel!(countField, P.values, boundary_cellsID, start_ID)
+end
+
+@kernel function _count_wallfn_cell!(countField, Pvalues, boundary_cellsID, start_ID)
+    i = @index(Global)
+    @inbounds begin
+        fID = i + start_ID - 1
+        cID = boundary_cellsID[fID]
+        Atomix.@atomic countField[cID] += one(eltype(countField))
+        Pvalues[cID] = zero(eltype(Pvalues)) # idempotent reset before accumulation
+    end
+end
+
+@generated function count_all_wallfn_cells!(countField, P, fieldBCs, model, config)
+    BCs = fieldBCs.parameters
+    calls = Expr[]
+    for i ∈ eachindex(BCs)
+        push!(calls, :(count_wallfn_cell!(countField, P, fieldBCs[$i], model, config)))
+    end
+    quote
+        $(calls...)
+        nothing
+    end
+end
+
+@generated function correct_eddy_viscosity!(νtf, nutBCs, model, config, wallfn_v2=false, wallfn_binomial=false)
     unpacked_BCs = []
     for i ∈ 1:length(nutBCs.parameters)
         unpack = quote
-            correct_nut_wall!(νtf, nutBCs[$i], model, config)
+            correct_nut_wall!(νtf, nutBCs[$i], model, config, wallfn_v2, wallfn_binomial)
         end
         push!(unpacked_BCs, unpack)
     end
     quote
-    $(unpacked_BCs...) 
+    $(unpacked_BCs...)
     end
 end
 
-correct_nut_wall!(nutf, BC, model, config) = nothing
+correct_nut_wall!(nutf, BC, model, config, wallfn_v2=false, wallfn_binomial=false) = nothing
 
-function correct_nut_wall!(νtf, BC::NutWallFunction, model, config)
+function correct_nut_wall!(νtf, BC::NutWallFunction, model, config, wallfn_v2=false, wallfn_binomial=false)
     # backend = _get_backend(mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware
-    
+
     # Deconstruct mesh to required fields
     mesh = model.domain
     (; faces, boundary_cellsID, boundaries) = mesh
@@ -170,20 +285,21 @@ function correct_nut_wall!(νtf, BC::NutWallFunction, model, config)
     start_ID = facesID_range[1]
 
     # Execute apply boundary conditions kernel
+    fixed = wallfn_v2
     ndrange=length(facesID_range)
     kernel! = _correct_nut_wall!(_setup(backend, workgroup, ndrange)...)
-    kernel!(νtf.values, fluid, turbulence, BC, faces, boundary_cellsID, start_ID)
+    kernel!(νtf.values, fluid, turbulence, BC, faces, boundary_cellsID, start_ID, fixed, wallfn_binomial)
 end
 
 @kernel function _correct_nut_wall!(
-    values, fluid, turbulence, BC::NutWallFunction, faces, boundary_cellsID, start_ID)
+    values, fluid, turbulence, BC::NutWallFunction, faces, boundary_cellsID, start_ID, fixed, wallfn_binomial)
     i = @index(Global)
     fID = i + start_ID - 1 # Redefine thread index to become face ID
 
     (; kappa, beta1, cmu, B, E, yPlusLam) = BC.value
     (; nu) = fluid
     (; k) = turbulence
-    
+
     cID = boundary_cellsID[fID]
     face = faces[fID]
     # nuf = nu[fID]
@@ -191,15 +307,21 @@ end
     # yplus = y_plus(k[cID], nuf, delta, cmu)
     nuc = nu[cID]
     yplus = y_plus(k[cID], nuc, delta, cmu)
-    nutw = nut_wall(nuc, yplus, kappa, E)
-    if yplus > yPlusLam
-        values[fID] = nutw
+    if wallfn_binomial
+        values[fID] = nut_wall_binomial(nuc, yplus, kappa, E)
+    elseif fixed
+        values[fID] = nut_wall_v2(nuc, yplus, kappa, E, yPlusLam)
     else
-        values[fID] = 0.0
+        nutw = nut_wall(nuc, yplus, kappa, E)
+        if yplus > yPlusLam
+            values[fID] = nutw
+        else
+            values[fID] = 0.0
+        end
     end
 end
 
-function correct_nut_wall!(νtf, BC::NutMixingLengthWallFunction, model, config)
+function correct_nut_wall!(νtf, BC::NutMixingLengthWallFunction, model, config, wallfn_v2=false, wallfn_binomial=false)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
@@ -257,19 +379,45 @@ end
     end
 end
 
-@generated constrain_equation!(eqn, fieldBCs, model, config) = begin
+@generated constrain_equation!(eqn, fieldBCs, model, config, wallfn_v2=false, wallfn_binomial=false) = begin
     BCs = fieldBCs.parameters
-    func_calls = Expr[]
+    old_calls = Expr[]
+    count_calls = Expr[]
+    accum_calls = Expr[]
+    finalize_calls = Expr[]
     for i ∈ eachindex(BCs)
-        call = quote
-            constrain!(eqn, fieldBCs[$i], model, config)
-        end
-        push!(func_calls, call)
+        push!(old_calls, :(constrain!(eqn, fieldBCs[$i], model, config)))
+        push!(count_calls, :(count_wallfn_omega_cell!(wallCount, fieldBCs[$i], model, config)))
+        push!(accum_calls, :(accumulate_omega_wall!(omega0, wallCount, fieldBCs[$i], model, config, wallfn_binomial)))
+        push!(finalize_calls, :(finalize_omega_wall!(omega0, wallCount, eqn, fieldBCs[$i], model, config)))
     end
     quote
-    $(func_calls...)
+    # binomial blending needs the same per-cell weighted-accumulation
+    # pipeline as wallfn_v2 (OpenFOAM always routes through
+    # calculateTurbulenceFields/calculate() regardless of blender type) --
+    # it just uses a different per-face formula (omega_binomial instead of
+    # the stepwise yplus>yPlusLam switch), threaded via wallfn_binomial.
+    if wallfn_v2 || wallfn_binomial
+        # OpenFOAM's omegaWallFunctionFvPatchScalarField::calculate sums
+        # weighted contributions from every wall-function face touching a
+        # cell (weight = 1/count) before constraining the equation once
+        # per cell -- otherwise corner/edge cells (common on motorBike's
+        # ~90 adjacent body patches) only see whichever face is processed
+        # last.
+        mesh = model.domain
+        (; hardware) = config
+        TF = _get_float(mesh)
+        n_cells = length(mesh.cells)
+        wallCount = KernelAbstractions.zeros(hardware.backend, TF, n_cells)
+        omega0 = ScalarField(mesh)
+        $(count_calls...)
+        $(accum_calls...)
+        $(finalize_calls...)
+    else
+        $(old_calls...)
+    end
     nothing
-    end 
+    end
 end
 
 constrain!(eqn, BC, model, config) = nothing
@@ -352,6 +500,112 @@ end
         cIndex = spindex(rowptr, colval, cID, cID)
         nzval[cIndex] = one(eltype(nzval))
         b[cID] = ωc
+    end
+end
+
+# --- Wall function v2 for OmegaWallFunction: count -> weighted accumulate
+# -> finalize (constrain matrix once per cell using the fully-accumulated
+# value), matching OpenFOAM's cornerWeights_ = 1/(wall faces touching that
+# cell), summed rather than overwritten. Three separate passes over all
+# OmegaWallFunction patches because the matrix constraint must only be
+# applied once all patches' contributions have been accumulated.
+
+count_wallfn_omega_cell!(countField, BC, model, config) = nothing
+
+function count_wallfn_omega_cell!(countField, BC::OmegaWallFunction, model, config)
+    mesh = model.domain
+    (; boundary_cellsID) = mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    facesID_range = BC.IDs_range
+    start_ID = facesID_range[1]
+    ndrange = length(facesID_range)
+    kernel! = _count_wallfn_omega_cell!(_setup(backend, workgroup, ndrange)...)
+    kernel!(countField, boundary_cellsID, start_ID)
+end
+
+@kernel function _count_wallfn_omega_cell!(countField, boundary_cellsID, start_ID)
+    i = @index(Global)
+    @inbounds begin
+        fID = i + start_ID - 1
+        cID = boundary_cellsID[fID]
+        Atomix.@atomic countField[cID] += one(eltype(countField))
+    end
+end
+
+accumulate_omega_wall!(omega0, countField, BC, model, config, wallfn_binomial=false) = nothing
+
+function accumulate_omega_wall!(omega0, countField, BC::OmegaWallFunction, model, config, wallfn_binomial=false)
+    mesh = model.domain
+    (; faces, boundary_cellsID) = mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    fluid = model.fluid
+    turbulence = model.turbulence
+    facesID_range = BC.IDs_range
+    start_ID = facesID_range[1]
+    ndrange = length(facesID_range)
+    kernel! = _accumulate_omega_wall!(_setup(backend, workgroup, ndrange)...)
+    kernel!(omega0.values, countField, turbulence, fluid, BC, faces, boundary_cellsID, start_ID, wallfn_binomial)
+end
+
+@kernel function _accumulate_omega_wall!(
+    omega0vals, countField, turbulence, fluid, BC::OmegaWallFunction, faces, boundary_cellsID, start_ID, wallfn_binomial)
+    i = @index(Global)
+    fID = i + start_ID - 1
+    @uniform begin
+        nu = fluid.nu
+        k = turbulence.k
+        (; kappa, beta1, cmu, B, E, yPlusLam) = BC.value
+    end
+    @inbounds begin
+        cID = boundary_cellsID[fID]
+        face = faces[fID]
+        y = face.delta
+        ωvis = ω_vis(nu[cID], y, beta1)
+        ωlog = ω_log(k[cID], y, cmu, kappa)
+        ωc = if wallfn_binomial
+            omega_binomial(ωvis, ωlog)
+        else
+            yplus = y_plus(k[cID], nu[cID], y, cmu)
+            yplus > yPlusLam ? ωlog : ωvis
+        end
+        w = one(eltype(countField))/countField[cID]
+        Atomix.@atomic omega0vals[cID] += w*ωc
+    end
+end
+
+finalize_omega_wall!(omega0, countField, eqn, BC, model, config) = nothing
+
+function finalize_omega_wall!(omega0, countField, eqn, BC::OmegaWallFunction, model, config)
+    mesh = model.domain
+    (; boundary_cellsID) = mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    A = _A(eqn)
+    b = _b(eqn, nothing)
+    colval = _colval(A)
+    rowptr = _rowptr(A)
+    nzval = _nzval(A)
+    facesID_range = BC.IDs_range
+    start_ID = facesID_range[1]
+    ndrange = length(facesID_range)
+    kernel! = _finalize_omega_wall!(_setup(backend, workgroup, ndrange)...)
+    kernel!(omega0.values, boundary_cellsID, start_ID, colval, rowptr, nzval, b)
+end
+
+@kernel function _finalize_omega_wall!(omega0vals, boundary_cellsID, start_ID, colval, rowptr, nzval, b)
+    i = @index(Global)
+    @inbounds begin
+        fID = i + start_ID - 1
+        cID = boundary_cellsID[fID]
+        z = zero(eltype(nzval))
+        for nzi ∈ rowptr[cID]:(rowptr[cID+1] - 1)
+            nzval[nzi] = z
+        end
+        cIndex = spindex(rowptr, colval, cID, cID)
+        nzval[cIndex] = one(eltype(nzval))
+        b[cID] = omega0vals[cID]
     end
 end
 

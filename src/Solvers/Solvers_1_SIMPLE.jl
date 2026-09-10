@@ -26,16 +26,17 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 
 """
 function simple!(
-    model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    model, config;
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, consistent=false
     )
 
     residuals = setup_incompressible_solvers(
-        SIMPLE, model, config; 
+        SIMPLE, model, config;
         output=output,
-        pref=pref, 
-        ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        pref=pref,
+        ncorrectors=ncorrectors,
+        inner_loops=inner_loops,
+        consistent=consistent
         )
 
     return residuals
@@ -43,9 +44,9 @@ end
 
 # Setup for all incompressible algorithms
 function setup_incompressible_solvers(
-    solver_variant, model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
-    ) 
+    solver_variant, model, config;
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, consistent=false
+    )
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
 
@@ -91,20 +92,25 @@ function setup_incompressible_solvers(
     turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals  = solver_variant(
-        model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
+        model, turbulenceModel, ∇p, U_eqn, p_eqn, config;
         output=output,
-        pref=pref, 
-        ncorrectors=ncorrectors, 
-        inner_loops=inner_loops)
+        pref=pref,
+        ncorrectors=ncorrectors,
+        inner_loops=inner_loops,
+        consistent=consistent)
 
     return residuals
 end # end function
 
 function SIMPLE(
-    model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    model, turbulenceModel, ∇p, U_eqn, p_eqn, config;
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, consistent=false
     )
-    
+
+    if consistent
+        @info "SIMPLEC (consistent=true) enabled: pressure-velocity coupling uses the off-diagonal-corrected coefficient rAtU = V/(A_ii - sum|off-diag|)."
+    end
+
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
     (; nu) = model.fluid
@@ -134,6 +140,8 @@ function SIMPLE(
     n_cells = length(mesh.cells)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
+    sumOff = ScalarField(mesh) # SIMPLEC: sum of |off-diagonal| momentum coefficients per cell
+    rAtU = ScalarField(mesh)   # SIMPLEC: V/(A_ii - sumOff), replaces rD when consistent=true
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
@@ -165,23 +173,43 @@ function SIMPLE(
         time = iteration
 
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
-        
+
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
-        interpolate!(rDf, rD, config)
-        correct_interpolation_periodic(rDf, rD, boundaries.U, config)
+
+        # SIMPLEC: rAtU = V/(A_ii - sum|off-diag|) -- more robust than
+        # rD on sliver/skewed-weight cells.
+        pCoeff = rD
+        if consistent
+            sum_offdiag!(sumOff, U_eqn, config)
+            compute_rAtU!(rAtU, rD, sumOff, config)
+            pCoeff = rAtU
+        end
+
+        interpolate!(rDf, pCoeff, config)
+        correct_interpolation_periodic(rDf, pCoeff, boundaries.U, config)
         remove_pressure_source!(U_eqn, ∇p, config)
         H!(Hv, U, U_eqn, config)
-        
-        # Interpolate faces
+
+        # Uses the uncorrected Hv, computed before the consistent-branch
+        # correction below.
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, boundaries.U, time, config)
 
         # old approach
-        # div!(divHv, Uf, config) 
+        # div!(divHv, Uf, config)
 
         # new approach
         flux!(mdotf, Uf, config)
+
+        if consistent
+            # SIMPLEC face-flux correction using an snGrad(p)-based term.
+            simplec_flux_correction!(mdotf, rD, rAtU, p, config)
+
+            # Corrects the cell field only, for correct_velocity! below.
+            simplec_correct_Hv!(Hv, rD, rAtU, ∇p, config)
+        end
+
         div!(divHv, mdotf, config)
         
         # Pressure calculations
@@ -208,9 +236,9 @@ function SIMPLE(
 
         # correct mass flux and velocity
         correct_mass_flux!(mdotf, p_eqn, config; time=time)
-        correct_velocity!(U, Hv, ∇p, rD, config)
+        correct_velocity!(U, Hv, ∇p, pCoeff, config)
 
-        turbulence!(turbulenceModel, model, S, prev, time, config) 
+        turbulence!(turbulenceModel, model, S, prev, time, config)
         update_nueff!(nueff, nu, model.turbulence, config)
 
         R_ux[iteration] = rx
@@ -260,6 +288,138 @@ function SIMPLE(
     end # end for loop
     
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
+end
+
+### SIMPLEC support functions (consistent=true) ###
+
+# sumOff[i] = sum of |off-diagonal| coefficients in row i.
+function sum_offdiag!(sumOff::S, eqn, config) where {S<:ScalarField}
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    A = _A(eqn)
+    nzval = _nzval(A)
+    colval = _colval(A)
+    rowptr = _rowptr(A)
+
+    ndrange = length(sumOff)
+    kernel! = _sum_offdiag!(_setup(backend, workgroup, ndrange)...)
+    kernel!(sumOff, nzval, colval, rowptr)
+end
+
+@kernel function _sum_offdiag!(sumOff, nzval, colval, rowptr)
+    i = @index(Global)
+    @uniform values = sumOff.values
+    @inbounds begin
+        cIndex = spindex(rowptr, colval, i, i)
+        start_index = rowptr[i]
+        end_index = rowptr[i+1] - 1
+        s = zero(eltype(nzval))
+        for nzi ∈ start_index:end_index
+            if nzi != cIndex
+                s -= nzval[nzi]
+            end
+        end
+        values[i] = s
+    end
+end
+
+# rAtU[i] = V[i] / (A_ii - sumOff[i]), the SIMPLEC coefficient replacing
+# rD[i] = V[i]/A_ii (A_ii recovered from rD to avoid a second lookup).
+function compute_rAtU!(rAtU::S, rD::S, sumOff::S, config) where {S<:ScalarField}
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    cells = rAtU.mesh.cells
+
+    ndrange = length(rAtU)
+    kernel! = _compute_rAtU!(_setup(backend, workgroup, ndrange)...)
+    kernel!(rAtU, rD, sumOff, cells)
+end
+
+@kernel function _compute_rAtU!(rAtU, rD, sumOff, cells)
+    i = @index(Global)
+    @uniform begin
+        rAtUvals = rAtU.values
+        rDvals = rD.values
+        sumOffvals = sumOff.values
+    end
+    @inbounds begin
+        (; volume) = cells[i]
+        Aii = volume / rDvals[i]
+        denom = Aii - sumOffvals[i]
+        rAtUvals[i] = volume / denom
+    end
+end
+
+# HbyA -= (rAU - rAtU)*grad(p), using the still-previous-iteration
+# pressure gradient.
+function simplec_correct_Hv!(Hv, rD, rAtU, ∇p, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    ndrange = length(rD)
+    kernel! = _simplec_correct_Hv!(_setup(backend, workgroup, ndrange)...)
+    kernel!(Hv, rD, rAtU, ∇p)
+end
+
+@kernel function _simplec_correct_Hv!(Hv, rD, rAtU, ∇p)
+    i = @index(Global)
+    @uniform begin
+        Hx, Hy, Hz = Hv.x, Hv.y, Hv.z
+        dpdx, dpdy, dpdz = ∇p.result.x, ∇p.result.y, ∇p.result.z
+        rDvals = rD.values
+        rAtUvals = rAtU.values
+    end
+    @inbounds begin
+        delta = rDvals[i] - rAtUvals[i]
+        Hx[i] -= delta * dpdx[i]
+        Hy[i] -= delta * dpdy[i]
+        Hz[i] -= delta * dpdz[i]
+    end
+end
+
+# SIMPLEC face-flux correction: mdotf += interpolate(rAtU - rD) *
+# snGrad(p) * magSf.
+function simplec_flux_correction!(mdotf, rD, rAtU, p, config)
+    mesh = mdotf.mesh
+    (; faces, cells, boundary_cellsID) = mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    n_faces = length(faces)
+    n_bfaces = length(boundary_cellsID)
+    n_ifaces = n_faces - n_bfaces
+
+    ndrange = n_ifaces
+    kernel! = _simplec_flux_correction!(_setup(backend, workgroup, ndrange)...)
+    kernel!(mdotf, rD, rAtU, p, faces, cells, n_bfaces)
+end
+
+@kernel function _simplec_flux_correction!(mdotf, rD, rAtU, p, faces, cells, n_bfaces)
+    i = @index(Global)
+    @uniform begin
+        mvals = mdotf.values
+        pvals = p.values
+        rDvals = rD.values
+        rAtUvals = rAtU.values
+    end
+    @inbounds begin
+        fID = i + n_bfaces
+        face = faces[fID]
+        (; ownerCells, area, normal, weight) = face
+        cID1 = ownerCells[1] # owner
+        cID2 = ownerCells[2] # neighbour
+
+        # Same orthogonal-part geometric factor the Laplacian(p) scheme uses;
+        # norm(dPN) already cancels against delta -- don't divide again.
+        dPN = cells[cID2].centre - cells[cID1].centre
+        Ef_mag_over_delta = (norm(normal)^2/(dPN⋅normal))*area
+
+        # Same owner-side interpolation weight used elsewhere for rDf.
+        rDf = weight*rDvals[cID1] + (one(weight) - weight)*rDvals[cID2]
+        rAtUf = weight*rAtUvals[cID1] + (one(weight) - weight)*rAtUvals[cID2]
+
+        Atomix.@atomic mvals[fID] += (rAtUf - rDf)*(pvals[cID2] - pvals[cID1])*Ef_mag_over_delta
+    end
 end
 
 ### TEMP LOCATION FOR PROTOTYPING

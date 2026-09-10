@@ -108,7 +108,7 @@ function SIMPLE(
     )
 
     if consistent
-        @info "SIMPLEC (consistent=true) enabled: pressure-velocity coupling uses the off-diagonal-corrected coefficient rAtU = V/(A_ii - sum|off-diag|), matching OpenFOAM's `simple.consistent()` path in pEqn.H."
+        @info "SIMPLEC (consistent=true) enabled: pressure-velocity coupling uses the off-diagonal-corrected coefficient rAtU = V/(A_ii - sum|off-diag|)."
     end
 
     # Extract model variables and configuration
@@ -177,8 +177,8 @@ function SIMPLE(
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
 
-        # SIMPLEC: rAtU = V/(A_ii - sum|off-diag|), matching OpenFOAM's
-        # pEqn.H -- more robust than rD on sliver/skewed-weight cells.
+        # SIMPLEC: rAtU = V/(A_ii - sum|off-diag|) -- more robust than
+        # rD on sliver/skewed-weight cells.
         pCoeff = rD
         if consistent
             sum_offdiag!(sumOff, U_eqn, config)
@@ -191,8 +191,8 @@ function SIMPLE(
         remove_pressure_source!(U_eqn, ∇p, config)
         H!(Hv, U, U_eqn, config)
 
-        # Uses the uncorrected Hv, matching OpenFOAM's phiHbyA = fvc::flux(HbyA)
-        # (computed before the consistent-branch correction, below).
+        # Uses the uncorrected Hv, computed before the consistent-branch
+        # correction below.
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, boundaries.U, time, config)
 
@@ -203,8 +203,7 @@ function SIMPLE(
         flux!(mdotf, Uf, config)
 
         if consistent
-            # SIMPLEC face-flux correction, matching OpenFOAM's
-            # phiHbyA += fvc::interpolate(rAtU()-rAU)*fvc::snGrad(p)*magSf.
+            # SIMPLEC face-flux correction using an snGrad(p)-based term.
             simplec_flux_correction!(mdotf, rD, rAtU, p, config)
 
             # Corrects the cell field only, for correct_velocity! below.
@@ -293,8 +292,7 @@ end
 
 ### SIMPLEC support functions (consistent=true) ###
 
-# sumOff[i] = sum of |off-diagonal| coefficients in row i, matching
-# OpenFOAM's lduMatrix::H1().
+# sumOff[i] = sum of |off-diagonal| coefficients in row i.
 function sum_offdiag!(sumOff::S, eqn, config) where {S<:ScalarField}
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -353,8 +351,8 @@ end
     end
 end
 
-# HbyA -= (rAU - rAtU)*grad(p), OpenFOAM pEqn.H's SIMPLEC correction
-# to HbyA (uses the still-previous-iteration pressure gradient).
+# HbyA -= (rAU - rAtU)*grad(p), using the still-previous-iteration
+# pressure gradient.
 function simplec_correct_Hv!(Hv, rD, rAtU, ∇p, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -379,8 +377,8 @@ end
     end
 end
 
-# mdotf += interpolate(rAtU - rD) * snGrad(p) * magSf, matching OpenFOAM's
-# `phiHbyA += fvc::interpolate(rAtU()-rAU)*fvc::snGrad(p)*mesh.magSf();`.
+# SIMPLEC face-flux correction: mdotf += interpolate(rAtU - rD) *
+# snGrad(p) * magSf.
 function simplec_flux_correction!(mdotf, rD, rAtU, p, config)
     mesh = mdotf.mesh
     (; faces, cells, boundary_cellsID) = mesh

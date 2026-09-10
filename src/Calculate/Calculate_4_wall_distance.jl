@@ -1,4 +1,5 @@
 export wall_distance!
+export wall_distance_meshwave!
 # export residual!
 
 function wall_distance!(model, walls, config; iterations=1000)
@@ -81,6 +82,76 @@ function wall_distance!(model, walls, config; iterations=1000)
     GC.gc()
 
     new_config
+end
+
+# Geometric wall distance (meshwave=true) via Bellman-Ford relaxation --
+# differs from the default Poisson solve by ~22% near walls.
+function wall_distance_meshwave!(model, walls, config; max_sweeps=100)
+    @info "Calculating wall distance (geometric relaxation, meshWave-style)..."
+
+    mesh = model.domain
+    (; y) = model.turbulence
+    (; schemes, solvers, runtime, hardware, postprocess) = config
+
+    # Matches wall_distance!'s convention -- output writer expects
+    # config.boundaries.y to exist.
+    BCs = wall_distance_BCs(mesh, walls, config)
+    wallBCs = assign(region=mesh, (y = [BCs...],))
+    updated_boundaries = (; config.boundaries..., y = wallBCs.y)
+    config = Configuration(
+        schemes=schemes, solvers=solvers, runtime=runtime,
+        hardware=hardware, postprocess=postprocess, boundaries=updated_boundaries
+        )
+
+    wall_names = collect(Symbol.(walls))
+
+    cells_cpu = Array(mesh.cells)
+    faces_cpu = Array(mesh.faces)
+    boundaries_cpu = get_boundaries(mesh.boundaries)
+    boundary_cellsID_cpu = Array(mesh.boundary_cellsID)
+
+    n_cells = length(cells_cpu)
+    yvals = fill(Inf, n_cells)
+
+    for b ∈ boundaries_cpu
+        if b.name ∈ wall_names
+            for fID ∈ b.IDs_range
+                cID = boundary_cellsID_cpu[fID]
+                face = faces_cpu[fID]
+                d = norm(cells_cpu[cID].centre - face.centre)
+                yvals[cID] = min(yvals[cID], d)
+            end
+        end
+    end
+
+    n_bfaces = length(boundary_cellsID_cpu)
+    n_faces = length(faces_cpu)
+
+    changed = true
+    sweep = 0
+    while changed && sweep < max_sweeps
+        changed = false
+        sweep += 1
+        for fID ∈ (n_bfaces+1):n_faces
+            face = faces_cpu[fID]
+            c1, c2 = face.ownerCells[1], face.ownerCells[2]
+            d = norm(cells_cpu[c1].centre - cells_cpu[c2].centre)
+            cand1 = yvals[c2] + d
+            if cand1 < yvals[c1]
+                yvals[c1] = cand1
+                changed = true
+            end
+            cand2 = yvals[c1] + d
+            if cand2 < yvals[c2]
+                yvals[c2] = cand2
+                changed = true
+            end
+        end
+    end
+
+    @info "Geometric wall distance converged in $sweep sweeps"
+    copyto!(y.values, yvals)
+    config
 end
 
 function normal_distance!(y, phi, phiGrad, config)

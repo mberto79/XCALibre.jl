@@ -143,7 +143,7 @@ Initialisation of turbulent transport equations.
 
 """
 function initialise(
-    turbulence::KOmegaLKE, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
+    turbulence::KOmegaLKE, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config; kwargs...
     ) where {T,F,SO,M,Tu,E,D,BI}
 
     @info "Initialising k-ω LKE model..."
@@ -277,7 +277,7 @@ Run turbulence model transport equations.
 
 """
 function turbulence!(
-    rans::KOmegaLKEModel, model::Physics{T,F,SO,M,Turb,E,D,BI}, S, prev, time, config
+    rans::KOmegaLKEModel, model::Physics{T,F,SO,M,Turb,E,D,BI}, S, prev, time, config; kwargs...
     ) where {T,F,SO,M,Turb<:AbstractTurbulenceModel,E,D,BI}
     mesh = model.domain
     (; momentum) = model

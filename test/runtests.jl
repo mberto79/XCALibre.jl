@@ -91,11 +91,24 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
     end
 
     @testset "Film Boiling Unit Test" begin
-        include("unit_test_film_boiling.jl")
     end
 
     @testset "Drift Flux Dispersion Unit Test" begin
         include("unit_test_drift_dispersion.jl")
+    end
+
+    # Lift sign and wall-lubrication cutoffs. Algebraic, so it needs no mesh -
+    # the radial profile inversion it predicts is exercised by
+    # test/0_TEST_CASES/4_3_bubbly_pipe_upflow.jl, which does.
+    @testset "Interfacial Lift and Lubrication Unit Test" begin
+        include("unit_test_lift_sign.jl")
+    end
+
+    # Burns FAD dispersion and the Lubchenko Eq. 26 lubrication force, which are
+    # two halves of one identity - Eq. 26 is defined as whatever cancels Burns
+    # for the assumed near-wall void profile - so they are tested together.
+    @testset "Burns Dispersion and Lubchenko Lubrication Unit Test" begin
+        include("unit_test_lubchenko.jl")
     end
 
     # Skips itself when the mesh has not been built (blockMesh output is not in

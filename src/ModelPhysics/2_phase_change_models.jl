@@ -3,7 +3,31 @@ export Lee, Schrage, ModifiedEnergyJump
 export Antoine, saturation_pressure, saturation_temperature
 export phase_change_rate!
 export AbstractInterfacialArea, ResolvedInterface, DispersedBubbles
-export interfacial_area_density
+export interfacial_area_density, AIAD, aiad_weights
+export LAST_UR
+
+"""
+    LAST_UR[]
+
+The slip velocity field `Ur` from the most recent multiphase step, or `nothing`.
+
+DIAGNOSTIC ONLY - nothing in the solver reads it back. It exists because `Ur` is
+local to the multiphase solver while `save_output` lives here, so there is
+otherwise no way to get the slip into the output for inspection.
+
+Why it is needed: on the LH2 pipe the near-wall void refuses to rise past ~0.5
+even with wall evaporation running at full rate (`K_dry = 0`), so vapour is being
+REMOVED as fast as it is made. Which term does the removing - drift, lift, wall
+lubrication, turbulent dispersion - cannot be told apart from `alpha` and `U`
+alone, because lift and wall lubrication both act by modifying `Ur`. Writing `Ur`
+makes the near-wall vapour budget measurable instead of inferred.
+
+Set once per step by the multiphase solver; read by `save_output`. Follows the
+same stash pattern as `LAST_WALL_REPORT`, in the opposite direction, because
+`ModelPhysics` is loaded BEFORE `Solvers`.
+"""
+const LAST_UR = Ref{Any}(nothing)
+
 
 """
     AbstractPhaseChangeModel
@@ -334,6 +358,92 @@ Adapt.@adapt_structure DispersedBubbles
     a = clamp(alpha, zero(F), one(F))
     return 6*a*(one(F) - a)/F(model.diameter)
 end
+
+"""
+    AIAD(; d_bubble, d_droplet, alpha_bubbly=0.3, alpha_droplet=0.3, sharpness=70.0)
+
+Algebraic Interfacial Area Density (Hoehne & Vallee, 2010). Blends THREE
+morphologies on the local volume fraction instead of committing to one:
+
+    f_B  = 1/(1 + exp(s*(alpha_g - alpha_bubbly)))     gas dispersed in liquid
+    f_D  = 1/(1 + exp(s*(alpha_l - alpha_droplet)))    liquid dispersed in gas
+    f_FS = 1 - f_B - f_D                               resolved free surface
+
+    a_i  = f_B*6*alpha_g/d_bubble + f_FS*|grad(alpha)| + f_D*6*alpha_l/d_droplet
+
+### Why blend at all
+
+`DispersedBubbles` assumes gas inclusions in liquid at every void fraction, and
+`ResolvedInterface` assumes a resolved interface everywhere. Neither survives a
+flow that starts bubbly at the inlet and reaches 35-45% void by CHF: the first
+has no notion of the liquid becoming dispersed, the second no notion of there
+being no interface to resolve.
+
+### CONVENTION - this model is NOT symmetric
+
+`interfacial_area_density` is called with the LIQUID fraction, and the two
+existing closures do not care because `6a(1-a)/d` and `|grad(alpha)|` are both
+unchanged by `a -> 1-a`. AIAD is different - which phase is dispersed is the
+whole point - so it reads its argument as `alpha_l` and forms
+`alpha_g = 1 - alpha_l`. Passing the gas fraction instead inverts the morphology
+map.
+
+### WARNING - the free-surface branch reintroduces a gradient feedback
+
+`f_FS*|grad(alpha)|` is active only in the mid-void band (roughly
+0.3 < alpha_g < 0.7), but inside it the objection under `ResolvedInterface`
+applies in full: a 2*dx checkerboard is the field that MAXIMISES
+`|grad(alpha)|`, so the phase-change source is largest exactly where the solution
+is least physical. Measured on this case, a checkerboard of amplitude 0.1 gave
+1165 1/m against a physical dispersed value of 24 1/m. The blend confines that to
+the band where a resolved interface is genuinely the right picture; it does not
+remove it. Watch the mid-void region for the same signature.
+
+`sharpness = 70` and the 0.3 limits are the published values.
+"""
+struct AIAD{F<:AbstractFloat} <: AbstractInterfacialArea
+    d_bubble::F
+    d_droplet::F
+    alpha_bubbly::F
+    alpha_droplet::F
+    sharpness::F
+end
+function AIAD(; d_bubble, d_droplet, alpha_bubbly = 0.3, alpha_droplet = 0.3,
+                sharpness = 70.0)
+    d_bubble > 0 || throw(ArgumentError("`d_bubble` must be positive, got $d_bubble"))
+    d_droplet > 0 || throw(ArgumentError("`d_droplet` must be positive, got $d_droplet"))
+    0 < alpha_bubbly < 1 || throw(ArgumentError(
+        "`alpha_bubbly` must be in (0,1), got $alpha_bubbly"))
+    0 < alpha_droplet < 1 || throw(ArgumentError(
+        "`alpha_droplet` must be in (0,1), got $alpha_droplet"))
+    sharpness > 0 || throw(ArgumentError("`sharpness` must be positive, got $sharpness"))
+    return AIAD(float(d_bubble), float(d_droplet), float(alpha_bubbly),
+                float(alpha_droplet), float(sharpness))
+end
+Adapt.@adapt_structure AIAD
+
+"""
+    aiad_weights(model, alpha_l) -> (f_bubble, f_freesurface, f_droplet)
+
+Morphology weights, summing to 1. `f_FS` is the remainder, floored at zero - which
+only binds if the two limits are set close enough for the sigmoids to overlap.
+"""
+@inline function aiad_weights(m::AIAD, alpha_l::F) where F
+    a_l = clamp(alpha_l, zero(F), one(F))
+    a_g = one(F) - a_l
+    fB = one(F)/(one(F) + exp(F(m.sharpness)*(a_g - F(m.alpha_bubbly))))
+    fD = one(F)/(one(F) + exp(F(m.sharpness)*(a_l - F(m.alpha_droplet))))
+    fFS = max(zero(F), one(F) - fB - fD)
+    return (fB, fFS, fD)
+end
+
+@inline function interfacial_area_density(m::AIAD, alpha_l::F, gradAlphaMag) where F
+    a_l = clamp(alpha_l, zero(F), one(F))
+    a_g = one(F) - a_l
+    fB, fFS, fD = aiad_weights(m, a_l)
+    return fB*6*a_g/F(m.d_bubble) + fFS*gradAlphaMag + fD*6*a_l/F(m.d_droplet)
+end
+
 
 # =============================================================================
 #  Rate evaluation

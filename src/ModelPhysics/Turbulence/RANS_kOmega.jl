@@ -236,7 +236,7 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
     ) where {T,F,SO,M,Tu<:KOmega,E,D,BI}
     if typeof(model.fluid)<:AbstractCompressible
         args = (
-            ("U", model.momentum.U), 
+            ("U", model.momentum.U),
             ("p", model.momentum.p),
             ("rho", model.fluid.rho),
             ("T", model.energy.T),
@@ -246,12 +246,66 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
         )
     else
         args = (
-            ("U", model.momentum.U), 
+            ("U", model.momentum.U),
             ("p", model.momentum.p),
             ("k", model.turbulence.k),
             ("omega", model.turbulence.omega),
             ("nut", model.turbulence.nut)
         )
+    end
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
+end
+
+# =============================================================================
+#  Multiphase output
+# =============================================================================
+#
+#  The generic method above writes a SINGLE-PHASE field set. A `Mixture` case run
+#  on `KOmega` would fall through to it and silently lose `alpha` - which IS the
+#  answer in an adiabatic bubbly flow - along with `p_rgh` and the slip velocity
+#  `Ur`, the only field in which lift and wall lubrication are visible at all.
+#
+#  These mirror the two `KOmegaSST` methods exactly. Both are needed because the
+#  temperature-carrying and isothermal cases differ only by the `T` entry, and a
+#  single method cannot cover both without `model.energy` being `nothing` in one
+#  of them.
+
+function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
+    ) where {T,F<:Multiphase,SO,M,Tu<:KOmega,E<:TwoPhaseTemperature,D,BI}
+    args = (
+        ("U", model.momentum.U),
+        ("p", model.momentum.p),
+        ("alpha", model.fluid.alpha),
+        ("rho", model.fluid.rho),
+        ("p_rgh", model.fluid.p_rgh),
+        ("T", model.energy.T),
+        ("k", model.turbulence.k),
+        ("omega", model.turbulence.omega),
+        ("nut", model.turbulence.nut)
+    )
+    ur = LAST_UR[]
+    if ur !== nothing
+        args = (args..., ("Ur", ur))
+    end
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
+end
+
+# ISOTHERMAL multiphase (`Energy{Isothermal}`, i.e. `model.energy === nothing`).
+function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
+    ) where {T,F<:Multiphase,SO,M,Tu<:KOmega,E<:Nothing,D,BI}
+    args = (
+        ("U", model.momentum.U),
+        ("p", model.momentum.p),
+        ("alpha", model.fluid.alpha),
+        ("rho", model.fluid.rho),
+        ("p_rgh", model.fluid.p_rgh),
+        ("k", model.turbulence.k),
+        ("omega", model.turbulence.omega),
+        ("nut", model.turbulence.nut)
+    )
+    ur = LAST_UR[]
+    if ur !== nothing
+        args = (args..., ("Ur", ur))
     end
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end

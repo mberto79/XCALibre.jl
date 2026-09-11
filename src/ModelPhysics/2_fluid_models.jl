@@ -1,7 +1,9 @@
 export AbstractFluid, AbstractIncompressible, AbstractCompressible
 export Fluid
-export AbstractWallLubrication, Antal, Frank, wall_lubrication_coefficient
-export AbstractLift, TomiyamaLift, ConstantLift, lift_coefficient
+export AbstractWallLubrication, Antal, Frank, LubchenkoWL
+export wall_lubrication_coefficient, wl_td_shape, fad_factor
+export AbstractLift, TomiyamaLift, ConstantLift, ShaverPodowski
+export lift_coefficient, lift_wall_damping
 export Incompressible, Incompressible_MRF, WeaklyCompressible, Compressible
 export Phase, Fluid, Multiphase
 export AbstractModel, AbstractEosModel, AbstractViscosityModel
@@ -509,6 +511,132 @@ end
 
 @inline wall_lubrication_coefficient(::Nothing, d_b::F, y, Ur_par) where F = zero(F)
 
+"""
+    fad_factor(alpha, floor) -> [-]
+
+`1/(1 - alpha)`, the void-fraction amplification carried by the Favre-averaged
+drag dispersion of Burns et al. (2004), floored so it stays bounded.
+
+Burns' force is
+
+    F_TD = -(3/4)(C_D/d_b) alpha |U_r| (mu_t/Sc_t) (1/alpha + 1/(1-alpha)) grad(alpha)
+
+and `alpha*(1/alpha + 1/(1-alpha))` collapses to exactly `1/(1-alpha)`, so this
+single factor is the whole difference between Burns and plain Fickian diffusion
+of `alpha`. It is 1.11 at `alpha = 0.1` and 50 at `alpha = 0.98`: negligible in
+dilute bubbly flow - which is why the Fickian form survives so long in practice,
+and why Lubchenko et al. note the Imperial College model "has the same limit for
+low void fraction" - and dominant once the wall layer fills.
+
+`floor` bounds `1 - alpha` from below. This is a VALIDITY limit, not a numerical
+fudge: Burns is derived for a dispersed phase, and the paper is explicit that its
+assumptions "breakdown for further increases in void fraction where the flow
+regime transitions from bubbly to slug/churn flow". A floor of 0.2 caps the
+amplification at 5 and freezes it beyond `alpha = 0.8`, well past the bubbly
+regime the correlation was fitted in.
+"""
+@inline fad_factor(alpha::F, floor) where F =
+    one(F)/max(one(F) - alpha, F(floor))
+
+"""
+    LubchenkoWL(; y_floor = 0.05)
+
+Wall lubrication as a REGULARIZATION OF TURBULENT DISPERSION rather than a
+separate force. Lubchenko, Magolan, Sugrue & Baglietto (2018), Int. J.
+Multiphase Flow 98:36-44, doi 10.1016/j.ijmultiphaseflow.2017.09.003, Eq. 26.
+
+### The idea
+
+DNS (Lu & Tryggvason 2013) and measurement (Hassan 2014) both show bubbles in
+CONTACT with the wall - there is no lubricating liquid film, and therefore no
+macroscopic force pushing bubbles away from it. What the Eulerian average sees
+instead is GEOMETRY: a bubble whose centroid sits one radius off the wall
+contributes a cross-sectional area
+
+    A = pi*(R_b^2 - (R_b - y)^2)
+
+so the averaged void fraction rises parabolically from zero at the wall to a
+peak at `y = R_b`,
+
+    alpha = alpha_max*(1 - (1 - y/R_b)^2)                                  (20)
+
+Differentiating and eliminating `alpha_max` with (20) itself gives a purely LOCAL
+gradient, with no reference to the peak value:
+
+    grad(alpha) = alpha*(1/y)*(d_b - 2y)/(d_b - y)                         (27)
+
+The lubrication force is then whatever exactly cancels turbulent dispersion when
+`grad(alpha)` takes that shape, `F_TD + F_WLTD = 0`, which with Burns gives
+Eq. 26. `wl_td_shape` is the `(1/y)*(d_b - 2y)/(d_b - y)` factor.
+
+### Why this one and not Antal or Frank
+
+Lubchenko et al. Fig. 1 sets out what the usual combinations do, and this
+codebase has reproduced two of them on the adiabatic air-water pipe:
+
+  * lift + dispersion + Antal - "strong repulsion pushes all gas out of the
+    first few computational cells and results in an unphysical peak of void
+    fraction 1-3 bubble diameters from the wall". MEASURED here at
+    r/R = 0.833/0.917/1.000: `alpha` = 0.105, 0.013, 0.245.
+  * lift + dispersion - "significant overprediction of void fraction at the
+    wall due to dominance of velocity gradients in near-wall region".
+
+Both are documented behaviour of the closures, not discretisation defects. The
+Antal lineage also needs re-tuning per flow condition, whereas Eq. 26 "does not
+require the use of limiters nor tunable coefficients".
+
+### Two properties that matter here
+
+1. It "does not depend on the void fraction gradient" - `grad(alpha)` has been
+   replaced by an analytic function of `y` and `d_b`. The odd-even mode this
+   case has been fighting lives in exactly that gradient.
+2. It is self-deactivating on coarse meshes: the force is identically zero
+   beyond `y = d_b/2`, so a first cell thicker than a bubble simply switches it
+   off, and the mesh study in the paper (0.32 mm to 1.5 mm wall cells) is flat.
+
+### Required companion
+
+Eq. 26 is derived ON TOP OF the Shaver & Podowski lift damping - it supplies the
+peak that damping alone flattens, and is not a correction to undamped lift. Use
+it with [`ShaverPodowski`](@ref); the solver warns if lift is left undamped.
+
+### `y_floor`
+
+The force goes as `alpha/y` as `y -> 0`, and that divergence is DELIBERATE: it
+"guarantees a strong repulsive force that automatically enforces the asymptotic
+limit that void fraction goes to zero at the wall". `y_floor` bounds `y/d_b`
+from below purely so an extremely fine first cell cannot produce an unbounded
+drift velocity. Note this is the OPPOSITE of `_wl_y`, which floors `y` at
+`d_b/2` for Antal and Frank: that floor would erase this model entirely, since
+`y < d_b/2` is its ONLY active range.
+"""
+struct LubchenkoWL{F} <: AbstractWallLubrication
+    y_floor::F
+end
+LubchenkoWL(; y_floor = 0.05) = LubchenkoWL(float(y_floor))
+Adapt.@adapt_structure LubchenkoWL
+
+"""
+    wl_td_shape(model, d_b, y) -> [1/m]
+
+The `(1/y)*(d_b - 2y)/(d_b - y)` factor of Lubchenko Eq. 27 - the void-fraction
+gradient the near-wall bubble layer must have, expressed without reference to
+`grad(alpha)`. Zero for `y >= d_b/2`, where the assumed profile peaks and the
+model switches itself off.
+"""
+@inline function wl_td_shape(m::LubchenkoWL, d_b::F, y) where F
+    d_b <= zero(F) && return zero(F)
+    y >= F(0.5)*d_b && return zero(F)
+    ye = max(y, F(m.y_floor)*d_b)
+    return (d_b - 2*ye)/(ye*(d_b - ye))
+end
+@inline wl_td_shape(::Any, d_b::F, y) where F = zero(F)
+
+wall_lubrication_coefficient(::LubchenkoWL, d_b, y, Ur_par) = throw(ArgumentError(
+    "`LubchenkoWL` is not a `C_w`-type model: its force is a regularization of " *
+    "turbulent dispersion, not `C_w rho alpha |U_r,par|^2 n`, and it carries no " *
+    "wall lubrication coefficient. Use `wl_td_shape`."))
+
 # =============================================================================
 #  Lift force
 # =============================================================================
@@ -599,6 +727,81 @@ Sign convention: POSITIVE drives the dispersed phase toward the wall in upflow.
 end
 
 @inline lift_coefficient(::Nothing, d_b::F, drho, sigma, g, Re_p) where F = zero(F)
+
+"""
+    ShaverPodowski(; inner = ConstantLift(C_L = 0.025))
+
+Near-wall damping of the lift force, Shaver & Podowski (2015), as used by
+Lubchenko et al. (2018), Int. J. Multiphase Flow 98:36-44, doi
+10.1016/j.ijmultiphaseflow.2017.09.003:
+
+    C_L = 0                                            y/D_b < 0.5
+    C_L = C_L0*(3*(2y/D_b - 1)^2 - 2*(2y/D_b - 1)^3)    0.5 < y/D_b < 1
+    C_L = C_L0                                          y/D_b > 1
+
+so lift vanishes within half a bubble diameter of the wall and ramps smoothly to
+its nominal value at one diameter. `inner` supplies `C_L0`.
+
+### Why it is needed
+
+Lift is largest exactly at the wall, because that is where the liquid velocity
+gradient is largest - so the uncorrected force drives an unbounded gas spike in
+the wall-layer cells. Lubchenko et al. Fig. 1 catalogues what the usual
+combinations then do:
+
+  * lift + turbulent dispersion: large over-prediction of void at the wall,
+    "due to dominance of velocity gradients in near-wall region";
+  * lift + dispersion + Antal wall lubrication: "strong repulsion pushes all gas
+    out of the first few computational cells and results in an unphysical peak
+    of void fraction 1-3 bubble diameters from the wall";
+  * lift DAMPED + dispersion: correct bulk, flat near-wall profile.
+
+MEASURED here, adiabatic air-water pipe (D = 38.1 mm, j_l = 0.753, j_g = 0.112,
+d_b = 3 mm) with undamped Tomiyama lift and Antal lubrication - the second case
+above, reproduced verbatim:
+
+    r/R     0.833   0.917   1.000
+    alpha   0.105   0.013   0.245     <- depleted cell, peak displaced outward
+
+with `dUz/dr` running 0.3 -> 64 -> 125 /s across those same cells. On this mesh
+the wall-cell centre sits at y/D_b = 0.25, so this damping sets `C_L` to exactly
+zero there.
+
+### On the coefficient
+
+Lubchenko et al. pair this with a CONSTANT `C_L0 = 0.025`, an order of magnitude
+below Tomiyama's small-bubble ceiling of 0.288, citing Baglietto & Christon
+(2013). `ConstantLift` has no low-slip cutoff, so if that proves twitchy,
+`TomiyamaLift(C_max = 0.025)` gives the same ceiling while retaining the
+`tanh(0.121*Re_p)` roll-off.
+"""
+struct ShaverPodowski{L<:AbstractLift} <: AbstractLift
+    inner::L
+end
+ShaverPodowski(; inner = ConstantLift(C_L = 0.025)) = ShaverPodowski(inner)
+Adapt.@adapt_structure ShaverPodowski
+
+@inline lift_coefficient(m::ShaverPodowski, d_b::F, drho, sigma, g, Re_p) where F =
+    lift_coefficient(m.inner, d_b, drho, sigma, g, Re_p)
+
+"""
+    lift_wall_damping(model, y, d_b) -> [-]
+
+Multiplier on `C_L` as a function of wall distance. Unity for every lift model
+except [`ShaverPodowski`](@ref), so the damping is opt-in and costs nothing when
+it is not requested.
+"""
+@inline lift_wall_damping(::Any, y::F, d_b) where F = one(F)
+@inline lift_wall_damping(::Nothing, y::F, d_b) where F = one(F)
+
+@inline function lift_wall_damping(::ShaverPodowski, y::F, d_b) where F
+    d_b <= zero(F) && return one(F)
+    r = y/F(d_b)
+    r <= F(0.5) && return zero(F)
+    r >= one(F) && return one(F)
+    t = 2*r - one(F)                      # 0 -> 1 across the ramp
+    return F(3)*t*t - F(2)*t*t*t          # smoothstep, C1 at both ends
+end
 
 """True when the mixture model advances the volume fraction implicitly."""
 implicit_alpha_transport(m::Mixture) = m.alpha_transport === :implicit

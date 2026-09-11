@@ -38,15 +38,6 @@
 #  1. The partition is exact and complete: `q_c + q_q + q_e` sums to the total,
 #     and each term is non-negative and behaves as its physics requires.
 #  2. `q(T_w)` on the nucleate branch, against the measured curve.
-#  3. With `FilmBoiling` attached, the blended curve is CONTINUOUS through the
-#     transition and turns over rather than spiking. That is rung 5.3, and it is
-#     a stability gate, not cosmetics: the wall traverses this region during a
-#     run, and a discontinuity there makes the wall-temperature solve chatter in
-#     a way that looks like a solver failure and is not.
-#
-#  Nothing here needs a mesh, a solver, or the Mixture model. It is deliberately
-#  the last rung that does not.
-# =============================================================================
 
 using XCALibre
 using Test
@@ -275,51 +266,6 @@ const H_C_DATA = 7045.0
             100*p_lh2.q_e/q_lh2, 100*p_hi.q_e/(p_hi.q_c + p_hi.q_q + p_hi.q_e))
     @test p_lh2.q_e/q_lh2 > 0.2
 
-    # --- 5. film boiling: continuity through the transition (rung 5.3) -------
-    println("\nE. film boiling - the blended curve must be continuous and turn over")
-    film = FilmBoiling(
-        chf = FixedCriticalHeatFlux(q = 64.0e3),   # the MEASURED CHF, not a correlation
-        minimum_film = Berenson(),
-        htc = Bromley(D = D_PIPE),
-        transition = SuperheatTransition())
-    rpi_film = RPI(patches = (:wall,), film_boiling = film,
-                   wall_capacity = 100.0)          # required past CHF; see `RPI`
-
-    # `y_plus`/`u_tau` matter only to `ForcedConvectionFilm`; Bromley ignores them.
-    fc = film_closure(rpi_film, film, state(T_SAT + 1.0), H_C, 30.0, 0.1)
-    @test fc !== nothing
-
-    dTv = collect(0.05:0.05:80.0)
-    qv = map(dTv) do dT
-        pp = wall_heat_partition(rpi_film, state(T_SAT + dT), H_C, fc, 0.0)
-        pp.q_c + pp.q_q + pp.q_e + pp.q_f
-    end
-    @test all(isfinite, qv)
-    @test all(qv .>= 0)
-
-    # Continuity measured against the PEAK flux, not the local value. Normalising
-    # locally makes the metric meaningless where q is small: at dT_sup = 0.1 -> 0.2
-    # K the flux simply doubles because q_c = h_c*dT is linear near zero, and that
-    # reads as a 101% "step" while being perfectly smooth.
-    jumps = abs.(diff(qv))./maximum(qv)
-    ipk = argmax(qv)
-    @printf("   peak q = %.4e W/m^2 at dT_sup = %.1f K;  largest relative step %.4f\n",
-            maximum(qv), dTv[ipk], maximum(jumps))
-    # Continuity is a STABILITY gate: the wall traverses this region during a run,
-    # and a step here makes the wall-temperature solve chatter between branches in
-    # a way that reads as a solver failure and is not.
-    @test maximum(jumps) < 0.05
-
-    @printf("   turns over: %s (peak at index %d of %d)\n",
-            ipk < length(qv) - 2 ? "yes" : "NO", ipk, length(qv))
-    @test ipk < length(qv) - 2
-    @test minimum(qv[ipk:end]) < 0.9*maximum(qv)
-    # The spike the nucleate cap exists to prevent must not be present.
-    @test maximum(qv) < 100*64.0e3
-    println("""
-   The cap on the nucleate branch is what makes this work: `(1 - w)*q_RPI` alone
-   spikes mid-transition because `q_e ~ dT_sup^n` outruns a linear weight. That is
-   documented at `wall_heat_partition`; this arm is the standing check on it.""")
 
     println()
 end

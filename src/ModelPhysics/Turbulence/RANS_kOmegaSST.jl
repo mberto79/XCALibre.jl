@@ -360,5 +360,40 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
         ("omega", model.turbulence.omega),
         ("nut", model.turbulence.nut)
     )
+    # Slip velocity, when the multiphase solver has stashed one. Diagnostic: the
+    # near-wall vapour budget cannot be closed without it, because lift and wall
+    # lubrication act THROUGH `Ur` and are invisible in `alpha` and `U` alone.
+    ur = LAST_UR[]
+    if ur !== nothing
+        args = (args..., ("Ur", ur))
+    end
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
+end
+
+# ISOTHERMAL multiphase. The method above is constrained to
+# `E<:TwoPhaseTemperature`, so an adiabatic Mixture case (`Energy{Isothermal}`,
+# i.e. `model.energy === nothing`) falls through to the generic `KOmegaSST`
+# method and silently writes a SINGLE-PHASE field set - no `alpha`, no `Ur`.
+# That is not a cosmetic loss: `alpha` is the answer in an adiabatic bubbly
+# flow, and `Ur` is the only place lift and wall lubrication are visible.
+#
+# Identical to the method above less the temperature field.
+function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
+    ) where {T,F<:Multiphase,SO,M,Tu<:KOmegaSST,E<:Nothing,D,BI}
+    args = (
+        ("U", model.momentum.U),
+        ("p", model.momentum.p),
+        ("alpha", model.fluid.alpha),
+        ("rho", model.fluid.rho),
+        ("p_rgh", model.fluid.p_rgh),
+        ("k", model.turbulence.k),
+        ("omega", model.turbulence.omega),
+        ("nut", model.turbulence.nut),
+        ("y", model.turbulence.y)
+    )
+    ur = LAST_UR[]
+    if ur !== nothing
+        args = (args..., ("Ur", ur))
+    end
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end

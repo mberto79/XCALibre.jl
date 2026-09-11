@@ -80,8 +80,52 @@ constant.
 Choose `rho_ref` as the phase that occupies most of the domain, so that
 `(rho - rho_ref)` is near zero there: the liquid for a mostly-liquid pipe (the
 default), the vapour for a large ullage.
+
+### The default is now actually applied
+
+This accessor previously returned `nothing` when the keyword was unset, which
+selected the FIRST split above - the one this docstring exists to warn about -
+silently, in every multiphase case that did not set `rho_ref` by hand.
+
+MEASURED on the adiabatic air-water pipe, where `alpha` swings from 0.075 in the
+core to 0.179 in the wall band and the measurement plane sits 1.37 m up:
+
+    g.h                  13.46 m2/s2
+    grad(rho) radial    -36430 kg/m4
+    g.h*grad(rho)        4.90e+05 N/m3     <- spurious, 56x gravity
+    rho*g                8.83e+03 N/m3
+    (rho - rho_ref)*g    9.63e+02 N/m3     <- with rho_ref = 998.2
+
+and because the spurious term scales with `h` it grows along the pipe:
+3.4e3 N/m^3 at z/D = 0.25, 1.4e5 at z/D = 10, 4.9e5 at z/D = 36. A developed 1/7
+velocity profile imposed at the inlet was intact in the first cell and a plug by
+z/D = 10, with `dp_rgh/dz` differing by 1000 Pa/m between the core and the wall
+band as `p_rgh` absorbed a body force that should not have been there. Every
+downstream symptom - no shear, no `k` production, `nu_t` an order of magnitude
+short, and a void profile that would not spread - followed from that.
+
+The default is the LIQUID phase, per the guidance above, and it is taken from
+`liquid_phase` rather than from `main`: `main` is the phase `alpha` TRACKS, which
+for a bubbly flow is the dispersed GAS, so defaulting to it would pick 1.2 kg/m^3
+and make the split worse than useless.
+
+Only a constant-density phase yields a reference; a phase with a real equation of
+state has no single value, so that case still returns `nothing` - but loudly.
 """
-multiphase_rho_ref(fluid, phases, main) = get(fluid.physics_properties, :rho_ref, nothing)
+function multiphase_rho_ref(fluid, phases, main)
+    r = get(fluid.physics_properties, :rho_ref, nothing)
+    r === nothing || return r
+    liq = multiphase_liquid_phase(fluid)
+    rho_model = phases[liq].rho
+    if rho_model isa ConstEos
+        return rho_model.rho
+    end
+    @warn """`rho_ref` is unset and phase $liq has a non-constant equation of state, so no \
+reference density can be derived. The `p_rgh = p - rho(x) g.h` split will be used, whose \
+buoyancy source is `-g.h grad(rho)` - proportional to the domain height and to a DENSITY \
+GRADIENT rather than a density excess. Set `rho_ref` explicitly (see `multiphase_rho_ref`).""" phase=liq eos=typeof(rho_model).name.wrapper
+    return nothing
+end
 
 """Optional `wall_boiling = RPI(...)`, the wall nucleate boiling model."""
 multiphase_wall_boiling(fluid) = get(fluid.physics_properties, :wall_boiling, nothing)
@@ -433,6 +477,23 @@ EXACTLY ONE route is ever active; running both double-counts dispersion.
 multiphase_dispersion_route(fluid) =
     get(fluid.physics_properties, :dispersion_route, :auto)
 
+"""
+    multiphase_dispersion_alpha_floor(fluid) -> Real
+
+Floor on `1 - alpha` in the Favre-averaged drag factor - see [`fad_factor`](@ref).
+Set with the optional `dispersion_alpha_floor` keyword of `Fluid{Multiphase}`;
+default 0.2, which caps the amplification at 5.
+
+Shared by the Laplacian dispersion route and [`LubchenkoWL`](@ref) so the two
+cannot disagree about where the Burns derivation stops being valid.
+"""
+function multiphase_dispersion_alpha_floor(fluid)
+    f = get(fluid.physics_properties, :dispersion_alpha_floor, 0.2)
+    (f isa Real && 0 < f <= 1) || throw(ArgumentError(
+        "`dispersion_alpha_floor` must be in (0, 1], got $f"))
+    return float(f)
+end
+
 
 """
     multiphase_pressure_form(fluid) -> Symbol
@@ -749,6 +810,284 @@ function absolute_pressure!(p_abs, p_rgh, rho, rho_ref, gh, p_operating, config)
 end
 
 """
+    _audit_correction_flux!(phi_corr, phi_drift, phi_disp, rho1f, rho2f, config)
+
+The face flux `rhoPhi` is MISSING relative to the mass flux the alpha equation
+actually transports with, namely `-(rho1 - rho2)*(phi_drift + phi_disp)`.
+See `_mass_audit` for the derivation. Diagnostic only.
+"""
+function _audit_correction_flux!(phi_corr, phi_drift, phi_disp, rho1f, rho2f, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    ndrange = length(phi_corr)
+    kernel! = _audit_corr!(_setup(backend, workgroup, ndrange)...)
+    kernel!(phi_corr, phi_drift, phi_disp, rho1f, rho2f)
+    return nothing
+end
+
+@kernel inbounds=true function _audit_corr!(phi_corr, phi_drift, phi_disp, rho1f, rho2f)
+    i = @index(Global)
+    # `rho1f`/`rho2f` are indexed rather than broadcast so a `ConstantScalar`
+    # phase density works unchanged.
+    drho = rho1f[i] - rho2f[i]
+    phi_corr[i] = -drho*(phi_drift[i] + phi_disp[i])
+end
+
+"""
+    _mass_audit(iteration, rho, rho_prev, expansion, dt)
+
+p99 magnitudes of the two sides of the mixture-continuity consistency relation,
+
+    expansion = psi*dp/dt - d(rho_m)/dt
+
+reported per cell in kg/m^3/s. `residual` is what is left over and should be of
+order `psi*dp/dt`; anything much larger is a spurious mass source. See the
+"MEASURED, UNRESOLVED" note at the expansion assembly for the original table and
+why the cause is thought to be structural (the alpha equation and the pressure
+equation using different face interpolations, so a cancellation that is exact
+continuously only approximately holds discretely).
+"""
+function _mass_audit(iteration, rho, rho_prev, rhoPhi, dt, mesh, wallBoiling, h_fg,
+                     phi_drift, Dtf, grad_alpha, grad_alphaf, phase_faces, phi_corr,
+                     expansion, expansion_thermal, mdotf, alpha, alpha_prev,
+                     alphaf_flux, S_alpha, rho_t, rho_o, config)
+    # MIXTURE CONTINUITY:  d(rho)/dt + div(rho*u) = 0
+    #
+    # `div!` includes the boundary-face pass, so inflow and outflow are counted
+    # and the volume integral of `err` is the NET mass created or destroyed in
+    # the domain - zero for a conservative scheme.
+    #
+    # NOTE this deliberately does NOT use `expansion`. In the VOLUME form that
+    # array is a volumetric source in 1/s, while `d(rho)/dt` is kg/m^3/s; adding
+    # them is off by a factor of rho (~50 here). The `expansion = psi*dp/dt -
+    # d(rho_m)/dt` relation quoted in the note at the expansion assembly is the
+    # MASS form's, where `add_phase_change_volume!` fills the array with
+    # `mdot*(1 - rho_v/rho_l)` instead. Comparing against `div(rhoPhi)` is form-
+    # independent and is what the "rel = 1.0" measurement in the dev notes means.
+    divrhophi = ScalarField(mesh)
+    div!(divrhophi, rhoPhi, config)
+
+    # THE MISSING FLUX. `rhoPhi = mdotf*rhof_flux` carries only the CONVECTIVE
+    # part of the alpha transport. The alpha equation also moves the tracked
+    # phase by drift and by turbulent dispersion,
+    #
+    #   d(alpha)/dt + div(mdotf*alpha) + div(drift_phi*alpha)
+    #                                  - div(Dt*grad(alpha)) = S_alpha
+    #
+    # and with `drift_phi = -(1 - alpha_up)*Urdotf` the second term is exactly
+    # `-div(phi_drift)`. So the tracked-phase volumetric flux is
+    #
+    #   Phi_1 = mdotf*alphaf_flux - phi_drift - Dt*grad(alpha).Sf
+    #
+    # Since `rho_m = rho2 + alpha*(rho1 - rho2)`, the mixture MASS flux is
+    #
+    #   mdotf*rhof_flux + (rho1 - rho2)*(-phi_drift - Dt*grad(alpha).Sf)
+    #
+    # i.e. `rhoPhi` plus `phi_corr`. This is the "**Partial.**" caveat in
+    # `consistent_flux_density!` made quantitative: matching the interpolation
+    # fixed the convective mismatch, these two terms were never included. The
+    # comment at the `DRIFT_OFF` switch already measured drift as dominant
+    # (inlet->outlet mass flux +6.85% on, +0.67% off).
+    # PREMISE CHECK. Everything below assumes the pressure equation actually
+    # delivered `div(u) = expansion`. That is what the equation is written to do,
+    # but it only holds to the tolerance the pressure solve reached. If
+    # `vol_resid` is not small compared with `expansion` itself, the volume
+    # balance is not being met and the mass deficit is a symptom of an
+    # unconverged pressure solve rather than a missing source term.
+    divu = ScalarField(mesh)
+    div!(divu, mdotf, config)
+
+    # ALPHA BUDGET. The tracked-phase volumetric flux the alpha equation
+    # actually used (convection + drift + dispersion). If the alpha equation
+    # conserves its own source then
+    #
+    #     d(alpha)/dt integral + boundary flux = S_alpha integral
+    #
+    # and `alpha_resid` is zero. A NON-zero residual means alpha is being
+    # created or destroyed outside its own transport - clipping at the
+    # boundedness limits being the obvious candidate, which would explain both
+    # the volume-source deficit and the near-wall void ceiling as one fault.
+    phi_alpha = FaceScalarField(mesh)
+    divalpha = ScalarField(mesh)
+
+    divcorr = ScalarField(mesh)
+    phi_disp = FaceScalarField(mesh)
+    # `Dtf` is zero unless `dispersion_Sc` is set with `dispersion_in_Ur=false`;
+    # when dispersion is folded into `Ur` instead it is already inside
+    # `phi_drift`, so exactly one of the two paths contributes either way.
+    # `grad_alphaf` is safe to overwrite: it is recomputed before every use and
+    # is unused entirely on the `Mixture` path.
+    interpolate!(grad_alphaf, grad_alpha.result, config)
+    flux!(phi_disp, grad_alphaf, Dtf, config)
+    _audit_correction_flux!(phi_corr, phi_drift, phi_disp,
+                            phase_faces.rho1f, phase_faces.rho2f, config)
+    div!(divcorr, phi_corr, config)
+
+    @. phi_alpha.values =
+        mdotf.values*alphaf_flux.values - phi_drift.values - phi_disp.values
+    div!(divalpha, phi_alpha, config)
+
+    r  = Array(rho.values); rp = Array(rho_prev.values)
+    dv = Array(divrhophi.values)
+    dc = Array(divcorr.values)
+    cells = Array(mesh.cells)
+    n = length(r)
+    err = similar(r); errc = similar(r)
+    net = 0.0; absnet = 0.0; mass = 0.0
+    netc = 0.0; absnetc = 0.0; dmdt = 0.0
+    expansion_int = 0.0; deficit_int = 0.0; drift_source = 0.0
+    exp_arr = Array(expansion.values)
+    du = Array(divu.values); vres = similar(r); vres_int = 0.0
+    eth = Array(expansion_thermal.values)
+    av = Array(alpha.values); avp = Array(alpha_prev.values)
+    da = Array(divalpha.values); sa = Array(S_alpha.values)
+    exp_thermal_int = 0.0; alpha_resid = 0.0; alpha_src_int = 0.0
+    alpha_dadt = 0.0
+    # PHASE-DENSITY RATE. Split the measured d(rho_m)/dt into the part the alpha
+    # change accounts for and the remainder, which must come from the phase
+    # densities themselves responding to T and p:
+    #
+    #   d(rho_m)/dt = (rho_t - rho_o)*d(alpha)/dt  +  [alpha*d(rho_t)/dt + ...]
+    #                 \_____ alpha part _______/      \___ dens_rate ______/
+    #
+    # `dens_rate_source` is the volume source that remainder implies, `-1/rho`
+    # times it, and is what `expansion`'s THERMAL term plus `psi*dp/dt` together
+    # ought to equal. Compare against `expansion_thermal_m3_s`: a mismatch there
+    # is a source the pressure equation is imposing that the density field does
+    # not support, which is spurious mass by construction.
+    dens_rate = 0.0; dens_rate_source = 0.0
+    @inbounds for i in 1:n
+        v = cells[i].volume
+        err[i]  = (r[i] - rp[i])/dt + dv[i]
+        errc[i] = err[i] + dc[i]
+        net     += err[i]*v
+        absnet  += abs(err[i])*v
+        netc    += errc[i]*v
+        absnetc += abs(errc[i])*v
+        mass    += r[i]*v
+        dmdt    += (r[i] - rp[i])/dt*v
+        # VOLUME-SOURCE DEFICIT. Under `pressure_form = :volume` the pressure
+        # equation enforces `div(u) = expansion` exactly, so the outlet volume
+        # flux is correct BY CONSTRUCTION and every inconsistency lands in the
+        # mass balance. Dividing the corrected mass residual by rho converts it
+        # into the volume source that WOULD have made mass balance:
+        #
+        #     errc = d(rho)/dt + div(rho*u) + div(J)      [kg/m^3/s]
+        #     required extra expansion = -errc/rho        [1/s]
+        #
+        # `drift_source` is that same integral built from the drift/dispersion
+        # part ALONE, so `drift_share_of_deficit` is the number that decides
+        # whether adding `-div(J)/rho` to `expansion` can close the gap or is a
+        # rounding error on a source that is wrong for another reason.
+        expansion_int += exp_arr[i]*v
+        deficit_int   += -errc[i]/r[i]*v
+        drift_source  += -dc[i]/r[i]*v
+        vres[i]        = du[i] - exp_arr[i]
+        vres_int      += vres[i]*v
+        exp_thermal_int += eth[i]*v
+        alpha_dadt    += (av[i] - avp[i])/dt*v
+        alpha_src_int += sa[i]*v
+        alpha_resid   += ((av[i] - avp[i])/dt + da[i] - sa[i])*v
+        dr = (r[i] - rp[i])/dt - (rho_t[i] - rho_o[i])*(av[i] - avp[i])/dt
+        dens_rate        += dr*v
+        dens_rate_source += -dr/r[i]*v
+    end
+
+    # WHERE `net` CAN COME FROM. A flux correction cannot explain `net`, because
+    # the volume integral of any divergence is a boundary integral:
+    #
+    #     net = d/dt(integral of rho) + (net mass flux out of the boundary)
+    #         = dmdt + bflux
+    #
+    # `bflux` is recovered exactly, with no assumption about face normals, as
+    # `net - dmdt`. The per-patch sum below is the breakdown of that same
+    # number and DOES assume outward boundary normals, so `bflux_patch_sum` is
+    # printed as a cross-check: if it disagrees with `bflux_kg_s` then `div!`
+    # treats boundary faces differently from a raw sum and the split, not the
+    # solver, is what is wrong.
+    #
+    #   dmdt ~ net, bflux ~ 0  -> mass accumulates with no flux: a SOURCE error
+    #                             (the volume form's expansion inconsistent with
+    #                             d(rho_m)/dt), and the flux is exonerated.
+    #   bflux ~ net, dmdt ~ 0  -> inflow /= outflow: a BOUNDARY or pressure
+    #                             equation error, interior sources are fine.
+    bflux = net - dmdt
+    rphi = Array(rhoPhi.values)
+
+    patch_flux = Tuple((b.name, sum(f -> rphi[f], b.IDs_range; init=0.0))
+                       for b in Array(mesh.boundaries))
+    bflux_patch_sum = sum(last, patch_flux; init=0.0)
+    p99(v) = (w = sort!(abs.(v)); w[max(1, round(Int, 0.99*length(w)))])
+    gen = _wall_vapour_rate(wallBoiling, mesh, h_fg)
+
+    @info("mass audit", iteration,
+          err_p99 = p99(err),                      # local imbalance, kg/m^3/s
+          net_kg_s = net,                          # NET mass created/destroyed
+          domain_mass_kg = mass,
+          # The two ratios that decide whether this matters:
+          #   net/gen  - imbalance against the vapour the wall is making
+          #   net/mass - fractional loss per second of everything in the domain
+          net_over_wall_gen = gen > 0 ? net/gen : NaN,
+          frac_per_s = mass > 0 ? net/mass : NaN,
+          # near 1 = one-signed error that integrates; near 0 = cancels locally
+          cancellation = absnet > 0 ? abs(net)/absnet : NaN,
+          wall_gen_kg_s = gen,
+          # CORRECTED balance: the same residual with the drift and dispersion
+          # mass fluxes included. If these are the whole story, `net_corrected`
+          # collapses toward the no-phase-change control (~1e-9) and
+          # `explained_frac` approaches 1.
+          err_p99_corrected = p99(errc),
+          net_corrected_kg_s = netc,
+          net_corrected_over_wall_gen = gen > 0 ? netc/gen : NaN,
+          cancellation_corrected = absnetc > 0 ? abs(netc)/absnetc : NaN,
+          explained_frac = abs(net) > 0 ? 1 - abs(netc)/abs(net) : NaN,
+          # The bisection that decides source-vs-boundary - see the note above.
+          dmdt_kg_s = dmdt,
+          bflux_kg_s = bflux,
+          dmdt_share = abs(net) > 0 ? dmdt/net : NaN,
+          bflux_patch_sum = bflux_patch_sum,
+          patch_flux = patch_flux,
+          # Volume-source bisection - see the note in the accumulation loop.
+          expansion_int_m3_s = expansion_int,
+          deficit_int_m3_s = deficit_int,
+          deficit_rel = expansion_int != 0 ? deficit_int/expansion_int : NaN,
+          drift_source_m3_s = drift_source,
+          drift_share_of_deficit = deficit_int != 0 ? drift_source/deficit_int : NaN,
+          # Premise check - see the note above `divu`. Small => the pressure
+          # equation met the volume balance and the deficit above is real.
+          vol_resid_p99 = p99(vres),
+          vol_resid_int_m3_s = vres_int,
+          vol_resid_rel = expansion_int != 0 ? vres_int/expansion_int : NaN,
+          # WHICH PART of `expansion` carries the 39% excess.
+          expansion_thermal_m3_s = exp_thermal_int,
+          expansion_pc_m3_s = expansion_int - exp_thermal_int,
+          # Does the alpha equation conserve its own source? See note above.
+          alpha_dadt_m3_s = alpha_dadt,
+          alpha_src_int_m3_s = alpha_src_int,
+          alpha_resid_m3_s = alpha_resid,
+          alpha_resid_rel = alpha_src_int != 0 ? alpha_resid/alpha_src_int : NaN,
+          # Does the density field support the thermal source? See note above.
+          dens_rate_kg_s = dens_rate,
+          dens_rate_source_m3_s = dens_rate_source,
+          thermal_minus_dens_m3_s = exp_thermal_int - dens_rate_source,
+          thermal_mismatch_share = deficit_int != 0 ?
+              (exp_thermal_int - dens_rate_source)/(-deficit_int) : NaN)
+    return nothing
+end
+
+"""Vapour mass generated at the heated wall, kg/s, for scaling the mass audit."""
+_wall_vapour_rate(::Nothing, mesh, h_fg) = 0.0
+function _wall_vapour_rate(wbs, mesh, h_fg)
+    faces = Array(mesh.faces)
+    qe = Array(wbs.q_evap.values)
+    tot = 0.0
+    for BC in wbs.patch_BCs, f in BC.IDs_range
+        tot += qe[f]*faces[f].area
+    end
+    return tot/h_fg
+end
+
+"""
     multiphase_rD_ref_density(fluid) -> Float64 or nothing
 
 Reference density for the momentum diagonal used by the PRESSURE equation, from
@@ -1061,7 +1400,7 @@ Thermal-expansion source of the pressure equation.
 
 Volume form (`mass_form = false`), a volume production rate [1/s]:
 
-    expansion = sum_i alpha_i * beta_i * DT/Dt
+    expansion = sum_i alpha_i * rho_i * beta_i * DT/Dt / rho_m
 
 Mass form (`mass_form = true`), a mass production rate [kg/m3/s]:
 
@@ -1150,7 +1489,8 @@ end
     a = alpha[i]
     t = T[i]
     # `Val` so the branch resolves at compile time and the kernel stays GPU-safe.
-    w1, w2 = _mass_weights(mass_form, rho_l[i], rho_v[i], TF)
+    rm = a*rho_l[i] + (one(TF) - a)*rho_v[i]
+    w1, w2 = _mass_weights(mass_form, rho_l[i], rho_v[i], rm, TF)
     betaT = a*w1*phase_betaT(eos_l, beta_l[i], t) +
             (one(TF) - a)*w2*phase_betaT(eos_v, beta_v[i], t)
     dTdt = (t - T_prev[i])/dt
@@ -1164,7 +1504,8 @@ end
     TF = eltype(expansion.values)
     a = alpha[i]
     t = T[i]
-    w1, w2 = _mass_weights(mass_form, rho_l[i], rho_v[i], TF)
+    rm = a*rho_l[i] + (one(TF) - a)*rho_v[i]
+    w1, w2 = _mass_weights(mass_form, rho_l[i], rho_v[i], rm, TF)
     betaT = a*w1*phase_betaT(eos_l, beta_l[i], t) +
             (one(TF) - a)*w2*phase_betaT(eos_v, beta_v[i], t)
     rc = rho_cp[i]
@@ -1233,7 +1574,8 @@ end
     t = T[i]
     # `Val` so the branch is resolved at compile time and the kernel stays
     # GPU-safe (no runtime divergence, no boxed Bool).
-    w1, w2 = _mass_weights(mass_form, rho1[i], rho2[i], TF)
+    rm = a*rho1[i] + (one(TF) - a)*rho2[i]
+    w1, w2 = _mass_weights(mass_form, rho1[i], rho2[i], rm, TF)
     psi1 = phase_compressibility(eos1, p, t)
     psi[i] = a*w1*psi1 +
              (one(TF) - a)*w2*phase_compressibility(eos2, p, t) +
@@ -1257,7 +1599,8 @@ end
     a = alpha[i]
     p = p_abs[i]
     t = T[i]
-    w1, w2 = _mass_weights(mass_form, rho1[i], rho2[i], TF)
+    rm = a*rho1[i] + (one(TF) - a)*rho2[i]
+    w1, w2 = _mass_weights(mass_form, rho1[i], rho2[i], rm, TF)
 
     psi1 = phase_compressibility(eos1, p, t)
     # The void response is an ISOTHERMAL contribution - the alpha equation's
@@ -1299,8 +1642,27 @@ end
 # Per-phase weights that turn a volume-form coefficient into a mass-form one.
 # Shared by `_update_psi!` and `_update_expansion!`: both are derivatives of
 # `rho_m = sum_i alpha_i*rho_i`, so both weight each phase by its OWN density.
-@inline _mass_weights(::Val{false}, r1, r2, ::Type{TF}) where {TF} = (one(TF), one(TF))
-@inline _mass_weights(::Val{true}, r1, r2, ::Type{TF}) where {TF} = (r1, r2)
+# Per-phase weights for the pressure equation's two coefficients (`expansion` and
+# `psi`). Both are derivatives of `rho_m = sum_i alpha_i*rho_i`, so the phase
+# density belongs INSIDE the sum - the same argument the phase-change source
+# already follows.
+#
+#   MASS form   [kg/m^3/s, kg/m^3/Pa]:  sum_i alpha_i * rho_i * X_i
+#   VOLUME form [1/s,      1/Pa]:       sum_i alpha_i * rho_i * X_i / rho_m
+#
+# where `X_i` is the per-phase coefficient in its NORMALISED form - `beta_i` from
+# `phase_betaT`, and `(1/rho_i)(drho_i/dp)` from `phase_compressibility`. The
+# volume form is exactly the mass form divided by `rho_m`, which is the defining
+# relationship between the two pressure-equation forms.
+#
+# CORRECTED 2026-08-27: the volume form previously used weights of 1, i.e.
+# `sum_i alpha_i*X_i`, dropping both the `rho_i` and the `1/rho_m`. That is right
+# for a single phase (the factors cancel) and too large by `rho_i/rho_m` for a
+# mixture - about 11.5x for LH2 vapour in liquid-dominated cells. Measured on the
+# LH2 pipe it made the thermal source ~500x larger than the density change it
+# represents, creating volume the density field never accounted for.
+@inline _mass_weights(::Val{false}, r1, r2, rm, ::Type{TF}) where {TF} = (r1/rm, r2/rm)
+@inline _mass_weights(::Val{true}, r1, r2, rm, ::Type{TF}) where {TF} = (r1, r2)
 
 """
 Void-response part of `drho_m/dp`, the term that closes the ALPHA-ACOUSTIC loop.
@@ -1690,7 +2052,44 @@ the phase has a supported equation of state."""))
     @reset p_eqn.solver = _workspace(solvers.p_rgh.solver, _b(p_eqn))
 
     @info "Initialising turbulence model..."
-    turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
+    # `rhoPhi`, NOT `mdotf`. The turbulence transport equations are assembled in
+    # CONSERVATIVE form and every other term in them carries the density:
+    #
+    #     Time(rho, k) + Divergence(<flux>, k) - Laplacian(mueffk, k) + Si(Dkf, k) == Source(Pk)
+    #        rho            <- this one          rhof*(nuf+sk*nutf)    rho*bstar*w    rho*nut*S^2
+    #
+    # so the convective flux must be the MASS flux `rhoPhi = mdotf*rhof`, which
+    # is exactly what this solver's momentum equation uses. Handing it the
+    # VOLUMETRIC flux `mdotf` leaves convection short by a factor of rho - about
+    # 900 for a water-air mixture - so it cannot replenish `k` against a
+    # dissipation sink that carries the full density.
+    #
+    # MEASURED before the change, first core cell against the value its inlet
+    # boundary prescribes, converged (0.303 / 0.294 / 0.295 at iterations
+    # 500 / 750 / 1000):
+    #
+    #                 prescribed    cell 1    ratio
+    #     k            3.235e-03   9.92e-04   0.307
+    #     omega        40.58       13.78      0.340
+    #     nut/nu       79.4        71.8       0.904
+    #
+    # `k` and `omega` collapse together with `nut` preserved - the local
+    # source/sink structure is intact and only the supply is missing. The steady
+    # per-unit-volume budget makes it explicit: convection with `mdotf` gives
+    # phi/dz = 45.5 against a sink rho*bstar*omega = 1116, predicting
+    # k_1 = 0.039*k_bc; with the mass flux it is rho*U/dz = 40974 and
+    # k_1 = 0.973*k_bc.
+    #
+    # WHY IT SURVIVED THIS LONG. Every other solver (SIMPLE, CSIMPLE, CPISO, MRF)
+    # convects MOMENTUM with `mdotf` too, so passing `mdotf` here is
+    # self-consistent for them. This solver is the only one that moved momentum
+    # to `rhoPhi` (see the `U_eqn` assembly above) without moving the turbulence
+    # hand-off with it - and `Fluid{Incompressible}` defaults to `rho = 1.0`, so
+    # no single-phase case in the repo can tell the two apart.
+    #
+    # `rhoPhi` is filled before the time loop and refreshed in place each step,
+    # so the reference the equation holds stays live.
+    turbulenceModel, config = initialise(model.turbulence, model, rhoPhi, p_eqn, config)
 
     @info "Initialising energy model..."
     energyModel = initialise_multiphase_energy(model.energy, model, mdotf, config)
@@ -1867,6 +2266,7 @@ Ignored here.""" pressure_form=:volume
     # density the way that assumes. Recorded here because the argument is
     # convincing enough to be worth not re-deriving.
     g_vector = model.fluid.physics_properties.gravity.g
+
     p_abs = ScalarField(mesh)
     initialise!(p_abs, p_operating)
 
@@ -2070,6 +2470,10 @@ Ignored here.""" pressure_form=:volume
         DUmDt_prev = VectorField(mesh)
         b_relax = multiphase_drift_body_relax(model.fluid)
         Ur     = VectorField(mesh)
+        # Slip as the DRAG BALANCE leaves it, before any lateral closure adds to
+        # it. `lift!` reads this rather than the accumulated `Ur` - see the note
+        # at the lift call.
+        Ur_drag = VectorField(mesh)
         Urf    = FaceVectorField(mesh)
         # Face slip velocity for the MOMENTUM diffusion stress, built from the
         # force-balance drift velocity ALONE. Kept separate from `Urf` because
@@ -2098,6 +2502,9 @@ Ignored here.""" pressure_form=:volume
         # is off the field stays zero and the Laplacian contributes nothing.
         dispersion_Sc = multiphase_dispersion_Sc(model.fluid)
         Dtf = FaceScalarField(mesh)
+        # Cell-centred D_t before interpolation. Needed because the Burns
+        # factor is a function of the CELL value of alpha.
+        Dt_cell = ScalarField(mesh)
 
         alpha_eqn   = implicit_alpha ?
             build_alpha_equation(model, mdotf, Dtf, drift_phi, S_alpha, config) : nothing
@@ -2125,6 +2532,22 @@ Ignored here.""" pressure_form=:volume
         wall_lub_geom = build_wall_lubrication_geometry(
             wall_lub, boundaries.U, mesh, _get_float(mesh)(12*diameter))
         wall_lub === nothing || wall_lub_geom !== nothing || @warn "`wall_lubrication` is set but no `Wall` velocity boundary conditions were found; the force is inactive."
+        lift_damp = build_lift_damping(lift_model, boundaries.U, mesh, diameter)
+        # Faces on which the phases may NOT slip relative to one another. Built
+        # once; see `build_drift_zero_faces` for why outflows are excluded.
+        drift_zero_faces = build_drift_zero_faces(boundaries.U, mesh)
+        @info("Drift velocity zeroed on boundary faces",
+              faces = length(drift_zero_faces),
+              of_total = length(mesh.boundary_cellsID),
+              outflow_faces_left_open =
+                  length(mesh.boundary_cellsID) - length(drift_zero_faces))
+        dispersion_alpha_floor = multiphase_dispersion_alpha_floor(model.fluid)
+        # Eq. 26 supplies the void PEAK that lift damping alone flattens; it is
+        # not a correction to undamped lift, and pairing it with the raw force
+        # reintroduces the wall spike it exists to shape.
+        if wall_lub isa LubchenkoWL && !(lift_model isa ShaverPodowski)
+            @warn "`LubchenkoWL` is derived on top of the Shaver & Podowski lift correction; without `ShaverPodowski` lift is undamped at the wall and the model is being used outside its derivation." lift = typeof(lift_model).name.wrapper
+        end
 
         dispersion_route = multiphase_dispersion_route(model.fluid)
         dispersion_route in (:auto, :laplacian, :drift_flux) || throw(ArgumentError(
@@ -2182,7 +2605,10 @@ Ignored here.""" pressure_form=:volume
     # `alpha` tracks the liquid, so the liquid-tracked configuration allocates
     # nothing extra and copies nothing.
     alpha_liq   = tracked_is_liquid ? model.fluid.alpha : ScalarField(mesh)
+    expansion_thermal = ScalarField(mesh)  # snapshot: expansion BEFORE the
+                                           # phase-change source, for the audit
     phi_drift_w = FaceScalarField(mesh)   # scratch: drift flux scaled by drho
+                                          # (used by the mass audit correction)
     div_drift   = ScalarField(mesh)
 
     Hv       = VectorField(mesh)
@@ -2272,26 +2698,69 @@ Ignored here.""" pressure_form=:volume
             # a dispersed particle in a continuous carrier, so the roles are
             # physical. `tracked_is_liquid` tells the kernel whether `alpha` is
             # already the continuous fraction or its complement.
-            compute_Ur!(Ur, alpha, rho, g_vec, DUmDt,
-                        phases[liq].rho, phases[vap].rho, phases[liq].mu,
-                        diameter, tau_d_field, config;
-                        tracked_is_liquid=tracked_is_liquid)
+            # AIAD replaces the fixed bubble closure with a morphology-blended
+            # one. Anything else keeps the single-morphology path, bit-for-bit.
+            if interfacial_area isa AIAD
+                compute_Ur_aiad!(Ur, alpha, rho, g_vec, DUmDt,
+                                 phases[liq].rho, phases[vap].rho,
+                                 phases[liq].mu, phases[vap].mu,
+                                 interfacial_area, tracked_is_liquid, config)
+            else
+                compute_Ur!(Ur, alpha, rho, g_vec, DUmDt,
+                            phases[liq].rho, phases[vap].rho, phases[liq].mu,
+                            diameter, tau_d_field, config;
+                            tracked_is_liquid=tracked_is_liquid)
+            end
+
+            # Snapshot the drag-balance slip before any lateral closure modifies
+            # it. Both lift and wall lubrication are closures ON that slip, so
+            # both must see the same one.
+            @. Ur_drag.x.values = Ur.x.values
+            @. Ur_drag.y.values = Ur.y.values
+            @. Ur_drag.z.values = Ur.z.values
 
             # WALL LUBRICATION. After the buoyancy balance, because it feeds on
             # the wall-PARALLEL part of that drift; before the momentum slip
             # snapshot, because it IS a mean slip (unlike turbulent dispersion)
             # and so belongs in the slip stress.
             wall_lubrication!(Ur, wall_lub_geom, wall_lub, alpha,
-                              phases[liq].rho, phases[liq].mu, diameter, config)
+                              phases[liq].rho, phases[liq].mu, diameter,
+                              model.turbulence,
+                              dispersion_Sc === nothing ? Sc_t : dispersion_Sc,
+                              dispersion_alpha_floor, config)
 
             # LIFT. Uses `∇U`, refreshed a few lines above - NOT the turbulence
             # model's `S.gradU`, which `turbulence!` only updates at the END of
             # the step and would therefore be one step stale here.
             #
-            # After wall lubrication so it sees the full lateral slip, and before
-            # the momentum slip snapshot because lift is a MEAN slip.
-            lift!(Ur, lift_model, ∇U, phases[liq].rho, phases[vap].rho,
-                  phases[liq].mu, sigma_material, g_magnitude, diameter, config)
+            # SLIP SOURCE: `Ur_drag`, not the accumulated `Ur`.
+            #
+            # Tomiyama's C_L was fitted for a bubble rising at its slip velocity
+            # in a shear field. Wall lubrication is a separate closure on that
+            # same slip, so feeding its migration velocity back into the lift
+            # argument makes each force depend on the other and closes a loop:
+            #
+            #     alpha -> lubrication velocity -> Ur -> lift -> Ur_radial -> alpha
+            #
+            # Standard Eulerian practice evaluates every non-drag closure from
+            # the drag-balance slip and SUMS them, rather than applying them
+            # sequentially with each seeing the last.
+            #
+            # MEASURED, adiabatic air-water pipe (D = 38.1 mm, j_l = 0.753,
+            # j_g = 0.112, d_b = 3 mm). Radial `alpha` in the core, with
+            # lubrication on and lift reading the accumulated slip:
+            #
+            #     0.117  0.129  0.097  0.152  0.067      <- odd-even
+            #
+            # and with lubrication disabled, which broke the same loop:
+            #
+            #     0.120  0.119  0.119  0.117  0.121      <- flat
+            #
+            # The lift velocity is still ADDED to the accumulated `Ur`; only the
+            # slip it is computed FROM changes.
+            lift!(Ur, Ur_drag, lift_model, ∇U, lift_damp, phases[liq].rho,
+                  phases[vap].rho, phases[liq].mu, sigma_material, g_magnitude,
+                  diameter, config)
 
             # MOMENTUM slip stress uses the force-balance drift velocity only.
             # Snapshot it to faces BEFORE any dispersion is added.
@@ -2316,7 +2785,7 @@ Ignored here.""" pressure_form=:volume
             # physical buoyant slip, and it then enters the momentum equation
             # squared.
             interpolate_vanleer!(Urf_slip, Ur, mdotf, config)
-            zero_wall_drift_velocity!(Urf_slip, config)
+            zero_boundary_drift_velocity!(Urf_slip, drift_zero_faces, config)
 
             # VOLUME FRACTION drift flux. Turbulent dispersion belongs here and
             # only here - but only when the alpha equation is not ALREADY
@@ -2334,7 +2803,7 @@ Ignored here.""" pressure_form=:volume
                 grad_sign=drift_sign)
 
             interpolate_vanleer!(Urf, Ur, mdotf, config)
-            zero_wall_drift_velocity!(Urf, config)
+            zero_boundary_drift_velocity!(Urf, drift_zero_faces, config)
             face_dot_Sf!(Urdotf, Urf, config)
 
             # MASS-AVERAGED CONVENTION. `U` is the mass-averaged mixture velocity
@@ -2400,8 +2869,35 @@ Ignored here.""" pressure_form=:volume
             # route active. Populating it while dispersion is also folded into
             # `Ur` double-counts the term, with two different Schmidt numbers.
             if dispersion_Sc !== nothing && !dispersion_in_Ur
-                interpolate!(Dtf, model.turbulence.nut, config)
-                @. Dtf.values /= dispersion_Sc
+                # BURNS et al. (2004) Favre-averaged drag, as an effective
+                # diffusivity. Their force (Lubchenko et al. 2018 Eq. 7) is
+                #
+                #   F_TD = -(3/4)(C_D/d_b) a |U_r| (mu_t/Sc)(1/a + 1/(1-a)) grad(a)
+                #
+                # and balancing it against the drag on the SAME dispersed phase,
+                # (3/4)(C_D/d_b) a rho_c |U_r| v, makes C_D and |U_r| cancel
+                # identically - they are the same drag - leaving
+                #
+                #   a*v = -(nu_t/Sc)*grad(a)/(1 - a)
+                #
+                # So Burns is our Fickian term times `1/(1-a)`, and NOTHING else:
+                # no extra dependence on drag or slip survives the balance. That
+                # is the whole point of the Favre averaging.
+                #
+                # The missing factor is why the two dispersion routes were not
+                # equivalent. `:drift_flux` carries `1/(a(1-a))` and therefore
+                # already IS Burns; `:laplacian` carried only `D_t` and so was
+                # the low-void limit - 11% light at a = 0.1, a factor of 50 light
+                # at a = 0.98. Lubchenko et al. make the same observation of the
+                # Imperial College model, which "has the same limit for low void
+                # fraction".
+                #
+                # NOTE the floors still differ between routes: `:drift_flux`
+                # clamps at 1e-3 (amplification up to 1000), this one at
+                # `dispersion_alpha_floor`. Above a ~ 0.8 the two diverge.
+                @. Dt_cell.values = model.turbulence.nut.values *
+                    fad_factor(alpha.values, dispersion_alpha_floor)/dispersion_Sc
+                interpolate!(Dtf, Dt_cell, config)
             end
             @. alpha_prev.values = alpha.values
             ralpha = advance_alpha_implicit!(
@@ -2501,7 +2997,12 @@ Ignored here.""" pressure_form=:volume
                 end
                 wall_boiling_source!(wallBoiling, model, p_abs, saturation, h_fg,
                                      g_magnitude, sigma_material, dt_cpu[1], config;
-                                     alpha_liq = alpha_liq)
+                                     alpha_liq = alpha_liq,
+                                     # For the Eqn-2112 bubbly layer void. `∇alpha`
+                                     # is the gradient of the TRACKED fraction, so
+                                     # the sign flips when that is the liquid.
+                                     grad_alpha_v = ∇alpha.result,
+                                     void_sign = tracked_is_liquid ? -1.0 : 1.0)
                 relax_source!(wallBoiling.mdot_wall, mdot_wall_prev, relax_wall, config)
             elseif wallBoiling !== nothing
                 fill!(wallBoiling.mdot_wall.values,
@@ -2622,6 +3123,12 @@ Ignored here.""" pressure_form=:volume
             # `update_expansion!` (which normally overwrites it) did not run.
             @. expansion.values = 0
         end
+
+        # THERMAL-ONLY SNAPSHOT for the mass audit. Taken here, between the
+        # thermal assembly (with its relaxation already applied) and the
+        # phase-change source below, so the audit can split `expansion` into its
+        # two contributions without re-deriving either. One copy per step.
+        @. expansion_thermal.values = expansion.values
 
         begin
             # Phase-change contribution to the pressure source: net volume
@@ -2932,6 +3439,34 @@ Ignored here.""" pressure_form=:volume
         runtime_postprocessing!(postprocess,iteration,iterations,S,time,config)
 
         if iteration % write_interval + signbit(write_interval) == 0
+            # MASS AUDIT (XCALIBRE_MASS_AUDIT=1). Reproduces the instrumentation
+            # behind the "MEASURED, UNRESOLVED" note above, on the CURRENT setup.
+            #
+            # Mixture continuity requires  expansion = psi*dp/dt - d(rho_m)/dt,
+            # so the residual below should be `psi*dp/dt` (order 70 on this case)
+            # and nothing larger. `rho_prev` is snapshotted at the top of the
+            # step, so the rate is a true per-step difference.
+            #
+            # Diagnostic only, off by default, no effect on the solution.
+            if get(ENV, "XCALIBRE_MASS_AUDIT", "0") == "1"
+                _mass_audit(iteration, rho, rho_prev, rhoPhi, dt_cpu[1],
+                            mesh, wallBoiling, h_fg,
+                            phi_drift, Dtf, ∇alpha, ∇alphaf, phase_faces,
+                            phi_drift_w, expansion, expansion_thermal, mdotf,
+                            alpha, alpha_prev, alphaf_flux, S_alpha,
+                            phases[main].rho, phases[secondary].rho, config)
+            end
+            # Stash the slip for the writer - see `LAST_UR`. Set here, at the
+            # write point, so it is the same step the other fields come from.
+            #
+            # GUARDED: `Ur` is allocated only on the `Mixture` path (the
+            # `typeof(mp_model) <: Mixture` block above), so an unguarded
+            # assignment throws `UndefVarError: Ur` on every VOF case - which is
+            # the whole of `2d_multiphase_gravity`, `_hydrostatic` and
+            # `_mixture` in the test suite. `@isdefined` is used rather than a
+            # type check so the guard cannot drift out of step with wherever
+            # `Ur` happens to be allocated.
+            LAST_UR[] = @isdefined(Ur) ? Ur : nothing
             save_output(model, outputWriter, iteration, time, config)
             save_postprocessing(postprocess, iteration, time, mesh, outputWriter, config.boundaries)
             # Heated wall patches as a separate SURFACE file: the RPI partition
@@ -3136,9 +3671,15 @@ function advance_alpha_implicit!(alpha_eqn, model, ∇alpha, ∇alphaf, mdotf, U
     # `ALPHA_COMPRESSIBILITY=0` disables this for A/B testing. It is derived and
     # belongs in the equation, but it scales with `alpha` and has never been
     # exercised at meaningful void, so it is worth being able to isolate.
-    get(ENV, "ALPHA_COMPRESSIBILITY", "1") == "0" ||
+    # ISOTHERMAL GUARD. `model.energy` is `nothing` under `Energy{Isothermal}`,
+    # and `model.energy.T` is evaluated as an ARGUMENT - before dispatch - so it
+    # throws whatever the callee would have done with a constant-density phase.
+    # Without a temperature field there is no thermal density response to close
+    # this term with, so skipping it is correct rather than merely expedient.
+    if model.energy !== nothing && get(ENV, "ALPHA_COMPRESSIBILITY", "1") != "0"
         add_alpha_compressibility!(S_alpha, alpha, p_abs, model.energy.T, T_prev,
                                    dpdt, eos_tracked, beta_tracked, dt, config)
+    end
 
     discretise!(alpha_eqn, alpha, config)
     apply_boundary_conditions!(alpha_eqn, boundaries.alpha, nothing, time, config)
@@ -3179,7 +3720,39 @@ function build_drift_phi!(drift_phi, Urdotf, alpha, mdotf, boundaries, time, con
     return nothing
 end
 
-"""Face flux of the drift term, `Urdotf * alpha_up*(1 - alpha_up)`."""
+"""
+Face flux of the drift term, `Urdotf * alpha_up*(1 - alpha_up)`.
+
+`alpha_up` is upwinded on `mdotf`, NOT on `Urdotf`.
+
+### TRIED AND REJECTED (2026-09-07): upwinding on `Urdotf`
+
+The argument for it is that `Urdotf` is the flux this term transports with, so
+it should set the donor - and that where `mdotf` vanishes, as it does on a
+RADIAL face in developed pipe flow, `sign(mdotf)` is decided by round-off while
+the drift flux there is at its largest.
+
+That argument is wrong in practice, and the experiment is unambiguous. On the
+adiabatic air-water pipe (D = 38.1 mm, j_l = 0.753, j_g = 0.112, d_b = 3 mm,
+drift Courant 0.26), switching the donor to `Urdotf` made the radial odd-even
+mode WORSE, not better, and diverged the momentum field with it:
+
+                            mdotf (this code)   Urdotf (rejected)
+    |U| max                     2.42 m/s            63.40 m/s
+    |Ur| max                    0.87                 3.29
+    cells at alpha = 0          1.5%                 8.9%
+    radial sign changes         7 of 14              6 of 6
+
+The likely reason: the convective term `Divergence{Upwind}(mdotf, alpha)` takes
+its donor from `mdotf`, so upwinding the drift on `mdotf` too gives BOTH parts
+of the tracked-phase flux a single consistent donor cell. Splitting the donor
+between the two terms breaks that, and the resulting inconsistency is worse than
+the round-off sensitivity it was meant to cure.
+
+The radial odd-even mode is real and is still unexplained - `DRIFT_OFF=1`
+removes it, so it does originate in this term - but the donor choice is not the
+cause.
+"""
 function build_drift_flux!(drift_flux, Urdotf, alpha, mdotf, boundaries, time, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -3986,21 +4559,87 @@ end
 end
 
 
-# Zero the drift velocity on boundary faces so no slip flux through walls
-function zero_wall_drift_velocity!(Urf, config)
+"""
+    build_drift_zero_faces(U_BCs, mesh) -> Vector{Int}
+
+Boundary faces on which the face drift velocity must be zeroed, built once from
+the VELOCITY boundary conditions - the mesh does not move, so the classification
+is fixed.
+
+### Which patches, and why
+
+`Urf` is the RELATIVE velocity between the phases, so zeroing it on a face means
+"no relative phase flux here". That is required at some boundaries and wrong at
+others, and the distinction is not the same as for the mixture flux:
+
+  * `AbstractPhysicalConstraint` - `Wall`, `RotatingWall`, `Symmetry`, `Empty`.
+    ZEROED. A wall is solid, so neither phase crosses it. A symmetry plane is a
+    mirror, so EVERY normal flux across it must vanish, the relative one
+    included - a leak there would be gas crossing the plane while its mirror
+    image crosses the other way, i.e. gas created or destroyed at the boundary.
+  * `AbstractDirichlet` - fixed-velocity inlets. ZEROED, because a Dirichlet
+    inlet is specified HOMOGENEOUSLY: with `alpha_in = j_g/j` and `U = j`, the
+    convective term `alpha*U` already delivers exactly `j_g`, and adding drift
+    on top would over-deliver gas. Revisit this if per-phase inlet velocities
+    are ever supported.
+  * `AbstractNeumann` - `Zerogradient`, `Extrapolated`, `Neumann`. NOT zeroed.
+    These are outflows, and gas must be free to leave at the GAS velocity.
+  * `AbstractPeriodic` - NOT zeroed. A periodic face is an interior face in
+    disguise; drift has to pass through it.
+
+### The bug this fixes
+
+Every boundary face was zeroed, walls and outlets alike. Gas then arrived in the
+last cell at `U + Ur` but left at `U` alone, and accumulated until the raised
+`alpha` balanced the deficit.
+
+MEASURED, adiabatic air-water pipe, outlet cell layer against its neighbour:
+
+    alpha    0.1288  ->  0.1708      +32.6%
+
+identical at iteration 1000 and 2500, i.e. stationary rather than transient. A
+steady balance needs `alpha_out/alpha_up = 1 + Ur/U`, so +32.6% implies
+`Ur = 0.282 m/s` - a plausible slip for the 2.7 mm bubble of that case, which is
+what identifies the mechanism.
+"""
+function build_drift_zero_faces(U_BCs, mesh)
+    fIDs = Int[]
+    for BC in U_BCs
+        (BC isa AbstractPhysicalConstraint || BC isa AbstractDirichlet) || continue
+        append!(fIDs, collect(BC.IDs_range))
+    end
+    sort!(fIDs)
+    # Boundary faces occupy the FIRST `nbfaces` entries of the face array, so a
+    # patch range outside that would silently zero an INTERIOR face and stop the
+    # phases slipping in the middle of the domain.
+    nb = length(mesh.boundary_cellsID)
+    (isempty(fIDs) || (first(fIDs) >= 1 && last(fIDs) <= nb)) || throw(ArgumentError(
+        "velocity boundary patch ranges fall outside the 1:$nb boundary faces"))
+    return fIDs
+end
+
+"""
+    zero_boundary_drift_velocity!(Urf, fIDs, config)
+
+Zero the face drift velocity on the faces selected by
+[`build_drift_zero_faces`](@ref) - walls, symmetry planes and fixed-velocity
+inlets, but NOT outflows.
+"""
+zero_boundary_drift_velocity!(Urf, ::Nothing, config) = nothing
+
+function zero_boundary_drift_velocity!(Urf, fIDs, config)
+    isempty(fIDs) && return nothing
     (; hardware) = config
     (; backend, workgroup) = hardware
-
-    nbfaces = length(Urf.mesh.boundary_cellsID)
-
-    if nbfaces > 0
-        ndrange = nbfaces
-        kernel! = _zero_wall_drift_velocity!(_setup(backend, workgroup, ndrange)...)
-        kernel!(Urf)
-    end
+    ndrange = length(fIDs)
+    kernel! = _zero_boundary_drift_velocity!(_setup(backend, workgroup, ndrange)...)
+    kernel!(Urf, fIDs)
+    return nothing
 end
-@kernel inbounds=true function _zero_wall_drift_velocity!(Urf)
-    i = @index(Global)
+
+@kernel inbounds=true function _zero_boundary_drift_velocity!(Urf, fIDs)
+    k = @index(Global)
+    i = fIDs[k]
     TF = eltype(Urf.x)
     Urf.x[i] = zero(TF)
     Urf.y[i] = zero(TF)
@@ -4579,6 +5218,38 @@ end
 # is unique and bracketed by `[0, |A|]` - guaranteed, with no starting guess and
 # no possibility of divergence. Bisection on that bracket is branch-free and
 # needs no convergence test, which is what keeps the kernel GPU-safe.
+"""
+    _slip_branch(a_eff, rho_m, rho_d, rho_c, mu_c, alpha_c, d, tau, bisect_steps)
+
+Manninen slip for ONE morphology: dispersed phase of density `rho_d` and
+diameter `d` carried in a continuum of density `rho_c` and viscosity `mu_c`.
+Returns `u_dispersed - u_continuous`.
+
+Factored out of `_compute_Ur!` so the AIAD kernel can evaluate the BUBBLE and
+DROPLET branches with the same code and different roles. The algebra is
+unchanged; `_compute_Ur!` still calls it with the bubble roles and reproduces
+its previous result exactly.
+"""
+@inline function _slip_branch(a_eff, rho_m::TF, rho_d, rho_c, mu_c, alpha_c, d, tau,
+                              bisect_steps) where TF
+    buoyancy = (rho_d - rho_m) / (rho_d + eps(TF))
+    ac = max(alpha_c, TF(1e-3))
+    A     = (tau/ac)*buoyancy*a_eff
+    A_mag = norm(A)
+    B     = rho_c*d/(mu_c + eps(TF))
+
+    lo = zero(TF); hi = A_mag
+    for _ in 1:bisect_steps
+        mid  = TF(0.5)*(lo + hi)
+        over = mid*_drag_factor(B*mid) - A_mag > zero(TF)
+        hi   = ifelse(over, mid, hi)
+        lo   = ifelse(over, lo, mid)
+    end
+    sroot = TF(0.5)*(lo + hi)
+    scale = ifelse(A_mag > eps(TF), sroot/A_mag, zero(TF))
+    return A*scale
+end
+
 @kernel inbounds=true function _compute_Ur!(Ur, alpha, rho, g, DUmDt, rho1, rho2, mu1,
                                             d, tau_d, tracked_is_liquid, bisect_steps)
     i = @index(Global)
@@ -4590,30 +5261,147 @@ end
     mu_c  = mu1[i]
     tau   = tau_d[i]
 
-    a_eff    = g - DUmDt[i]
-    buoyancy = (rho_d - rho_m) / (rho_d + eps(TF))
+    a_eff = g - DUmDt[i]
 
     # CONTINUOUS-phase fraction, which is `alpha` itself only when `alpha` tracks
     # the liquid. When it tracks the vapour the continuous fraction is `1 - alpha`.
-    alpha_c = max(_continuous_fraction(tracked_is_liquid, alpha[i], TF), TF(1e-3))
+    alpha_c = _continuous_fraction(tracked_is_liquid, alpha[i], TF)
 
-    A     = (tau/alpha_c)*buoyancy*a_eff       # Stokes limit, i.e. f_drag = 1
-    A_mag = norm(A)
-    B     = rho_c*d/(mu_c + eps(TF))           # Re_p = B*|Ur|
+    Ur[i] = _slip_branch(a_eff, rho_m, rho_d, rho_c, mu_c, alpha_c, d, tau, bisect_steps)
+end
 
-    lo = zero(TF)
-    hi = A_mag                                  # f_drag >= 1, so the root is <= |A|
+
+"""
+    compute_Ur_aiad!(Ur, alpha, rho, g, DUmDt, rho_l, rho_v, mu_l, mu_v, aiad,
+                     tracked_is_liquid, config)
+
+Morphology-blended slip velocity. Replaces the single fixed bubble closure with
+a weighted sum over the three AIAD regimes.
+
+### The problem it solves
+
+`_compute_Ur!` treats the vapour as bubbles of ONE fixed diameter dispersed in
+CONTINUOUS liquid at every void fraction, because `_continuous_fraction` is
+dispatched on a compile-time `Val` and `tau_d` is a setup-time constant. Above
+about 0.6 void that is not a description of anything: there is no liquid
+continuum left to carry bubbles.
+
+Measured consequence on the LH2 pipe - five runs across 5e4-7e4 W/m^2, two
+dryout ramps and with/without wall filtering all lost the solution as the
+near-wall void crossed ~0.64, within a few hundred steps of each other, while
+the wall source was demonstrably not responsible (`K_dry` had already suppressed
+77% of evaporation in one case). 0.64 is the random close-packing limit for
+spheres, which is where a dispersed-bubble drag law stops having a referent.
+
+### What is blended: the DRAG COEFFICIENT, not the velocity
+
+STAR-CCM+ Eqn (1965) - "the blended method calculates the intermediate regime
+drag by blending the drags of the dispersed regime on either side":
+
+    A_d,ir = alpha_p*A_d,fr + alpha_s*A_d,sr
+
+so within the intermediate regime the LINEARISED DRAG is the phase-fraction-
+weighted sum of the two dispersed drags. Outside it the sigmoids select the pure
+branch. This is not interchangeable with blending the two slip VELOCITIES:
+`Ur ~ 1/A_d`, so a weighted sum of drags is a weighted HARMONIC combination of
+velocities, and the two differ most exactly in the intermediate regime.
+
+Because the resistance is assembled before the solve, there is ONE bisection, on
+
+    R(s)*s = |F|,     R = fB*R_b + fD*R_d + fFS*(alpha_l*R_b + alpha_v*R_d)
+
+with `R_b = 18 mu_l f_drag(Re_b)/d_b^2` and `R_d = 18 mu_v f_drag(Re_d)/d_d^2`.
+Each `f_drag` is non-decreasing in `s`, so `R(s)*s` is monotone and bisection is
+unconditional. At `alpha_l -> 1` this reduces to `R_b` exactly, reproducing the
+single-morphology closure with `alpha_c = 1`.
+
+### Driver and sign
+
+The driver `F = (rho_v - rho_m)*a_eff` is the vapour's buoyancy against the
+mixture and does NOT depend on morphology - only the resistance does. `Ur` comes
+out parallel to `F`, which is the vapour-relative convention the drift flux,
+momentum slip stress, lift and wall lubrication all assume.
+
+Each branch keeps the HINDERING factor of the single-morphology closure -
+`R_b` carries `alpha_l`, `R_d` carries `alpha_v` - so resistance falls as that
+branch's continuous phase vanishes. That is what makes `alpha_l -> 1` reduce to
+the validated bubbly closure exactly. It is a separate effect from the
+phase-fraction blend, and omitting it starves the vapour transport.
+"""
+function compute_Ur_aiad!(Ur, alpha, rho, g, DUmDt, rho_l, rho_v, mu_l, mu_v,
+                          aiad, tracked_is_liquid, config;
+                          bisect_steps=UR_BISECT_STEPS)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    ndrange = length(Ur)
+    kernel! = _compute_Ur_aiad!(_setup(backend, workgroup, ndrange)...)
+    # `Val` so the tracked-phase branch resolves at compile time, matching
+    # `compute_Ur!` and keeping the kernel GPU-safe.
+    kernel!(Ur, alpha, rho, g, DUmDt, rho_l, rho_v, mu_l, mu_v, aiad,
+            Val(tracked_is_liquid), bisect_steps)
+    KernelAbstractions.synchronize(backend)
+    return Ur
+end
+
+@kernel inbounds=true function _compute_Ur_aiad!(Ur, alpha, rho, g, DUmDt,
+                                                 rho_l_f, rho_v_f, mu_l_f, mu_v_f,
+                                                 aiad, tracked_is_liquid, bisect_steps)
+    i = @index(Global)
+    TF = eltype(rho.values)
+
+    rho_m = rho[i]
+    rl = rho_l_f[i]; rv = rho_v_f[i]
+    ml = mu_l_f[i];  mv = mu_v_f[i]
+
+    a_l = clamp(_continuous_fraction(tracked_is_liquid, alpha[i], TF), zero(TF), one(TF))
+    a_v = one(TF) - a_l
+    fB, fFS, fD = aiad_weights(aiad, a_l)
+
+    db = TF(aiad.d_bubble)
+    dd = TF(aiad.d_droplet)
+
+    # DRIVER: buoyancy of the vapour against the mixture, per unit volume of
+    # dispersed phase. Independent of morphology - only the RESISTANCE changes.
+    a_eff = g - DUmDt[i]
+    F     = (rv - rho_m)*a_eff
+    F_mag = norm(F)
+
+    # Solve  R(s)*s = |F|  for s = |Ur|, with R the blended linearised drag.
+    # Both branch coefficients rise with s (f_drag is non-decreasing), so R(s)*s
+    # is monotone and bisection is unconditional. Bracket: R >= R(0) > 0, and
+    # f_drag >= 1, so s <= |F|/R(0).
+    # HINDERED drag coefficients. The `alpha_c` factor is NOT decoration: the
+    # single-morphology closure carries `R = 18*mu_c*f_drag*alpha_c/d^2`, so
+    # resistance FALLS as the continuous phase vanishes and slip rises. Dropping
+    # it (as a first cut of this kernel did) leaves slip at `alpha_c` times the
+    # correct value - 35% of it at alpha_l = 0.35 - which starves the vapour
+    # transport and made the LH2 pipe run away at step 1250 instead of 1750.
+    # The phase-fraction weighting below does NOT stand in for this term.
+    Rb0 = TF(18)*ml*a_l/(db*db)
+    Rd0 = TF(18)*mv*a_v/(dd*dd)
+    R0  = fB*Rb0 + fD*Rd0 + fFS*(a_l*Rb0 + a_v*Rd0)
+    # `R0` vanishes only if both phase fractions do, which is impossible; the
+    # floor keeps the bracket finite regardless.
+    hi  = F_mag/max(R0, eps(TF))
+    lo  = zero(TF)
     for _ in 1:bisect_steps
-        mid  = TF(0.5)*(lo + hi)
-        over = mid*_drag_factor(B*mid) - A_mag > zero(TF)
-        hi   = ifelse(over, mid, hi)
-        lo   = ifelse(over, lo, mid)
+        mid = TF(0.5)*(lo + hi)
+        # Per-regime linearised drag at this slip. Re uses the CONTINUOUS phase
+        # of that regime: liquid carries bubbles, vapour carries droplets.
+        Rb = Rb0*_drag_factor(rl*db*mid/(ml + eps(TF)))
+        Rd = Rd0*_drag_factor(rv*dd*mid/(mv + eps(TF)))
+        # STAR-CCM+ Eqn (1965): in the INTERMEDIATE regime the drag is the
+        # phase-fraction-weighted sum of the two dispersed drags either side of
+        # it. Outside that regime the sigmoids select the pure branch.
+        R   = fB*Rb + fD*Rd + fFS*(a_l*Rb + a_v*Rd)
+        over = R*mid - F_mag > zero(TF)
+        hi  = ifelse(over, mid, hi)
+        lo  = ifelse(over, lo, mid)
     end
-    s = TF(0.5)*(lo + hi)
+    sroot = TF(0.5)*(lo + hi)
 
-    # Direction of the Stokes limit, magnitude from the drag balance.
-    scale = ifelse(A_mag > eps(TF), s/A_mag, zero(TF))
-    Ur[i] = A*scale
+    scale = ifelse(F_mag > eps(TF), sroot/F_mag, zero(TF))
+    Ur[i] = F*scale
 end
 
 @inline _continuous_fraction(::Val{true}, a, ::Type{TF}) where {TF} = a
@@ -4811,9 +5599,9 @@ struct WallLubricationGeometry{VI,VF,VV}
     normal::VV      # unit normal INTO the fluid
 end
 
-build_wall_lubrication_geometry(::Nothing, U_BCs, mesh, range) = nothing
+build_wall_lubrication_geometry(::Nothing, U_BCs, mesh, range; label = "Wall lubrication") = nothing
 
-function build_wall_lubrication_geometry(model, U_BCs, mesh, range)
+function build_wall_lubrication_geometry(model, U_BCs, mesh, range; label = "Wall lubrication")
     faces = Array(mesh.faces)
     cells = Array(mesh.cells)
 
@@ -4853,7 +5641,10 @@ function build_wall_lubrication_geometry(model, U_BCs, mesh, range)
 
     keep = findall(d -> d < TF(Inf), best_d)
     isempty(keep) && return nothing
-    @info("Wall lubrication geometry built",
+    # `label` only names the caller in the log - `build_lift_damping` reuses
+    # this same nearest-wall search, and a message claiming wall lubrication was
+    # built when it is switched off is worse than no message.
+    @info("$label geometry built",
           model = typeof(model).name.wrapper,
           range_mm = range*1e3, cells = length(keep),
           nearest_um = round(minimum(best_d[keep])*1e6, digits=2))
@@ -4885,12 +5676,12 @@ cannot move vapour off the wall is exactly what powers the force that can.
 # ambiguous - Julia cannot pick between them and the solver dies with a
 # MethodError on the OFF path, which is the one path that has to be bulletproof.
 # The doubly-typed method resolves it.
-wall_lubrication!(Ur, ::Nothing, ::Nothing, alpha, rho_c, mu_c, d_b, config) = nothing
-wall_lubrication!(Ur, ::Nothing, model, alpha, rho_c, mu_c, d_b, config) = nothing
-wall_lubrication!(Ur, geom, ::Nothing, alpha, rho_c, mu_c, d_b, config) = nothing
+wall_lubrication!(Ur, ::Nothing, ::Nothing, alpha, rho_c, mu_c, d_b, turb, Sc_t, a_floor, config) = nothing
+wall_lubrication!(Ur, ::Nothing, model, alpha, rho_c, mu_c, d_b, turb, Sc_t, a_floor, config) = nothing
+wall_lubrication!(Ur, geom, ::Nothing, alpha, rho_c, mu_c, d_b, turb, Sc_t, a_floor, config) = nothing
 
 function wall_lubrication!(Ur, geom::WallLubricationGeometry, model, alpha,
-                           rho_c, mu_c, d_b, config)
+                           rho_c, mu_c, d_b, turb, Sc_t, a_floor, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
     ndrange = length(geom.cells)
@@ -4898,6 +5689,57 @@ function wall_lubrication!(Ur, geom::WallLubricationGeometry, model, alpha,
     kernel!(Ur, geom.cells, geom.dist, geom.normal, model, rho_c, mu_c,
             eltype(Ur.x.values)(d_b), UR_BISECT_STEPS)
     return nothing
+end
+
+"""
+    wall_lubrication!(Ur, geom, ::LubchenkoWL, alpha, rho_c, mu_c, d_b, turb, Sc_t, a_floor, config)
+
+Lubchenko et al. (2018) Eq. 26, as a wall-normal drift velocity.
+
+### Why there is no drag bisection here
+
+Eq. 26 is `-F_TD` with `grad(alpha)` replaced by the analytic near-wall profile,
+so it inherits the Burns `(3/4)(C_D/d_b)|U_r|` prefactor. Balancing it against
+the drag on the same dispersed phase, `(3/4)(C_D/d_b) alpha rho_c |U_r| v`,
+cancels `C_D`, `|U_r|` AND `alpha` exactly:
+
+    v = (nu_t/Sc_t) * (1/(1 - alpha)) * (1/y)*(d_b - 2y)/(d_b - y)   [m/s]
+
+and the cancellation holds for ANY drag law, because it is the same `C_D` on
+both sides. Antal, Frank and lift all need the `_drag_factor` bisection because
+their forces do NOT share drag's prefactor; running one here would break an
+identity rather than improve on it.
+
+Only `nu_t` and `alpha` are read, so this method needs the turbulence model that
+the `C_w`-type method does not - hence the wider signature on all of them.
+"""
+function wall_lubrication!(Ur, geom::WallLubricationGeometry, model::LubchenkoWL,
+                           alpha, rho_c, mu_c, d_b, turb, Sc_t, a_floor, config)
+    hasproperty(turb, :nut) || return nothing
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    TF = eltype(Ur.x.values)
+    ndrange = length(geom.cells)
+    kernel! = _wall_lubrication_td!(_setup(backend, workgroup, ndrange)...)
+    kernel!(Ur, geom.cells, geom.dist, geom.normal, model, alpha, turb.nut,
+            TF(Sc_t), TF(a_floor), TF(d_b))
+    return nothing
+end
+
+@kernel inbounds=true function _wall_lubrication_td!(Ur, cellsv, distv, normalv, model,
+                                                     alpha, nut_f, Sc_t, a_floor, d_b)
+    k = @index(Global)
+    TF = eltype(Ur.x.values)
+    i = cellsv[k]
+    y = distv[k]
+    n = normalv[k]
+
+    # `wl_td_shape` is zero for y >= d_b/2, so cells outside the bubble layer
+    # contribute nothing and the model deactivates itself on a coarse mesh
+    # without any branch here.
+    D_t = nut_f[i]/Sc_t
+    v   = D_t*fad_factor(alpha[i], a_floor)*wl_td_shape(model, d_b, y)
+    Ur[i] = Ur[i] + v*n
 end
 
 @kernel inbounds=true function _wall_lubrication!(Ur, cellsv, distv, normalv, model,
@@ -4950,7 +5792,7 @@ counterpart of, not an alternative to, wall lubrication.
 multiphase_lift(fluid) = get(fluid.physics_properties, :lift, nothing)
 
 """
-    lift!(Ur, model, gradU, rho_c, rho_d, mu_c, sigma, g_mag, d_b, config)
+    lift!(Ur, Ur_src, model, gradU, rho_c, rho_d, mu_c, sigma, g_mag, d_b, config)
 
 Add the lift-driven drift to `Ur`.
 
@@ -4964,25 +5806,76 @@ construction [`wall_lubrication!`](@ref) uses, and with the same bisection for
 `curl(U)` is formed from the mixture velocity gradient; for a dispersed phase in
 a dilute mixture that is the continuous-phase shear to leading order.
 """
-lift!(Ur, ::Nothing, gradU, rho_c, rho_d, mu_c, sigma, g_mag, d_b, config) = nothing
+lift!(Ur, Ur_src, ::Nothing, gradU, damp, rho_c, rho_d, mu_c, sigma, g_mag, d_b, config) = nothing
 
-function lift!(Ur, model, gradU, rho_c, rho_d, mu_c, sigma, g_mag, d_b, config)
+function lift!(Ur, Ur_src, model, gradU, damp, rho_c, rho_d, mu_c, sigma, g_mag, d_b, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
     ndrange = length(Ur)
     TF = eltype(Ur.x.values)
     kernel! = _lift!(_setup(backend, workgroup, ndrange)...)
-    kernel!(Ur, gradU.result, model, rho_c, rho_d, mu_c, TF(sigma), TF(g_mag),
-            TF(d_b), UR_BISECT_STEPS)
+    kernel!(Ur, Ur_src, gradU.result, damp, model, rho_c, rho_d, mu_c, TF(sigma),
+            TF(g_mag), TF(d_b), UR_BISECT_STEPS)
     return nothing
 end
 
-@kernel inbounds=true function _lift!(Ur, gradU_result, model, rho_c_f, rho_d_f,
-                                      mu_c_f, sigma, g_mag, d_b, bisect_steps)
+"""
+    build_lift_damping(model, U_BCs, mesh, d_b) -> ScalarField or nothing
+
+Per-cell multiplier on `C_L`, built ONCE - the mesh does not move and `d_b` is
+constant, so the Shaver & Podowski shape function is a fixed field.
+
+Unity everywhere except within one bubble diameter of a `Wall`, and returned as
+a full field rather than a wall-cell list so [`_lift!`](@ref) needs no branch and
+stays a single pass over all cells. For every lift model except
+[`ShaverPodowski`](@ref) the field is uniformly 1 and costs one multiply.
+
+Wall distance comes from [`build_wall_lubrication_geometry`](@ref) with the range
+set to `d_b`, which is exactly where the damping reaches unity - so no cell
+outside that list can be affected. A cell within reach of two walls takes the
+STRONGER damping (`min`), since lift must vanish next to either.
+"""
+build_lift_damping(::Nothing, U_BCs, mesh, d_b) = nothing
+
+function build_lift_damping(model, U_BCs, mesh, d_b)
+    damp = ScalarField(mesh)
+    TF   = eltype(damp.values)
+    host = ones(TF, length(damp.values))
+
+    # Discriminator: any model without a near-wall correction returns 1 AT the
+    # wall, so there is nothing to build and no geometry pass to pay for.
+    if lift_wall_damping(model, zero(TF), TF(d_b)) != one(TF)
+        geom = build_wall_lubrication_geometry(model, U_BCs, mesh, TF(d_b);
+                                               label = "Lift damping")
+        if geom === nothing
+            @warn "`ShaverPodowski` lift damping is requested but no `Wall` velocity boundary conditions were found; lift is undamped."
+        else
+            cells = Array(geom.cells)
+            dist  = Array(geom.dist)
+            for n in eachindex(cells)
+                cID = cells[n]
+                host[cID] = min(host[cID], lift_wall_damping(model, TF(dist[n]), TF(d_b)))
+            end
+            @info("Shaver-Podowski lift damping built",
+                  d_b_mm = d_b*1e3,
+                  cells_damped = count(<(one(TF)), host),
+                  cells_zeroed = count(iszero, host),
+                  min_y_over_db = round(minimum(dist)/d_b, digits = 3))
+        end
+    end
+    copyto!(damp.values, host)
+    return damp
+end
+
+@kernel inbounds=true function _lift!(Ur, Ur_src, gradU_result, damp, model, rho_c_f,
+                                      rho_d_f, mu_c_f, sigma, g_mag, d_b, bisect_steps)
     i = @index(Global)
     TF = eltype(Ur.x.values)
 
-    u = Ur[i]
+    # The SLIP the lift correlation is evaluated at: drag balance only. `Ur`
+    # itself may already carry a wall-lubrication contribution, which is a
+    # different closure on the same slip and must not feed back into this one.
+    u = Ur_src[i]
     # curl(U). `gradU_result.xy` is d(u_x)/dy - component FIRST, direction
     # SECOND - so the components are (zy-yz, xz-zx, yx-xy). Getting this
     # transposed flips the lift direction, which is why it is spelled out.
@@ -5001,6 +5894,12 @@ end
     Umag  = sqrt(ux*ux + uy*uy + uz*uz)
     Re_p  = rho_c*Umag*d_b/(mu_c + eps(TF))
     C_L   = lift_coefficient(model, d_b, max(rho_c - rho_d, zero(TF)), sigma, g_mag, Re_p)
+    # NEAR-WALL DAMPING. Lift is LARGEST at the wall, because that is where the
+    # liquid shear is largest, so the raw force drives an unbounded gas spike in
+    # the wall-layer cells. `damp` is 0 within half a bubble diameter and ramps
+    # to 1 at one diameter - see [`build_lift_damping`](@ref) - and is uniformly
+    # 1 unless the lift model asks for it.
+    C_L   = C_L*damp[i]
 
     # Stokes-limit lift velocity, signed by C_L: the force is -C_L*(u x w).
     k = -C_L*rho_c*d_b*d_b/(TF(18)*mu_c + eps(TF))
@@ -5016,5 +5915,6 @@ end
     end
     s = TF(0.5)*(lo + hi)
     scale = ifelse(A_mag > eps(TF), s/A_mag, zero(TF))
-    Ur[i] = u + @SVector [ax*scale, ay*scale, az*scale]
+    # Added to the ACCUMULATED slip, so lubrication and lift sum as they should.
+    Ur[i] = Ur[i] + @SVector [ax*scale, ay*scale, az*scale]
 end

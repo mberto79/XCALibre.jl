@@ -1,7 +1,11 @@
 export AbstractWallBoilingModel, RPI, wall_boiling_active
-export AbstractNucleationSiteDensity, LemmertChawla, HibikiIshii
-export AbstractDepartureDiameter, TolubinskyKostanchuk, KocamustafaogullariIshii
-export AbstractDepartureFrequency, Cole
+export AbstractBubblyLayer, WallCellLayer, DiameterLayer, YPlusLayer, WallSurface
+export PlayHysteresis, play_update
+export MassBalanceLayer, mass_balance_void
+export bubbly_layer_void, bubbly_layer_thickness, dryout_snap_void
+export AbstractNucleationSiteDensity, LemmertChawla, HibikiIshii, Kirichenco
+export AbstractDepartureDiameter, TolubinskyKostanchuk, KocamustafaogullariIshii, Du
+export AbstractDepartureFrequency, Cole, BaldGrowth
 export AbstractInfluenceArea, DelValleKenning, ConstantInfluenceArea
 export BoilingState
 export nucleation_site_density, bubble_departure_diameter
@@ -92,7 +96,7 @@ Convenience constructor deriving `dT_sup` and `dT_sub` from the temperatures.
 
 The vapour transport properties default to zero because nucleate boiling never
 uses them - RPI only needs `rho_v`, through `q_e`. They are required by the film
-boiling models (see [`FilmBoiling`](@ref)), which transport heat *through* the
+boiling models, which transport heat *through* the
 vapour rather than into it, and those models return zero if they are left unset
 rather than silently using liquid values.
 """
@@ -110,6 +114,260 @@ end
     T_w, s.T_l, s.T_sat, T_w - s.T_sat, s.dT_sub,
     s.rho_l, s.rho_v, s.cp_l, s.k_l, s.mu_l, s.sigma, s.h_fg, s.g,
     s.cp_v, s.k_v, s.mu_v, s.alpha_l)
+
+
+# =============================================================================
+#  Bubbly layer thickness, for the dryout criterion
+# =============================================================================
+
+"""
+    AbstractBubblyLayer
+
+How the bubbly layer thickness `delta` is set for the wall dryout criterion.
+
+STAR-CCM+ offers three (User Guide, Wall Dryout): the wall cell width, a fixed
+number of bubble departure diameters, or a fixed y+ in the VAPOUR turbulence
+scales. All three are here.
+
+The layer matters because `K_dry` should respond to the vapour fraction over the
+bubbly layer, `alpha_delta`, not to whatever value happens to sit at the first
+cell centre - which is a mesh artefact. See [`bubbly_layer_void`](@ref).
+"""
+abstract type AbstractBubblyLayer end
+
+"""
+    WallCellLayer()
+
+`delta` = the wall cell thickness. Cheapest, and the honest choice when the mesh
+is already sized on the bubble scale - but it makes the criterion mesh dependent
+by construction, which is the thing the layer average exists to avoid.
+"""
+struct WallCellLayer <: AbstractBubblyLayer end
+Adapt.@adapt_structure WallCellLayer
+
+"""
+    DiameterLayer(; n = 1.0)
+
+`delta = n*D_d`, a fixed number of bubble departure diameters. Ties the layer to
+the physical scale that sets it, and is the option to prefer when `D_d` is
+trustworthy.
+"""
+struct DiameterLayer{F<:AbstractFloat} <: AbstractBubblyLayer
+    n::F
+end
+DiameterLayer(; n = 1.0) = DiameterLayer(float(n))
+Adapt.@adapt_structure DiameterLayer
+
+"""
+    YPlusLayer(; y_plus = 250.0)
+
+`delta = y_plus * nu_v/u_tau`, a fixed y+ in the VAPOUR turbulence scales.
+Independent of both the mesh and the departure diameter, which is what
+recommends it when neither is reliable.
+"""
+struct YPlusLayer{F<:AbstractFloat} <: AbstractBubblyLayer
+    y_plus::F
+end
+YPlusLayer(; y_plus = 250.0) = YPlusLayer(float(y_plus))
+Adapt.@adapt_structure YPlusLayer
+
+"""
+    WallSurface()
+
+Evaluate the void AT THE WALL (`y = 0`) rather than averaged over a layer:
+
+    alpha_delta = alpha(y_c) - alpha'(y_c)*y_c
+
+Not one of STAR-CCM+'s three, and it is not a layer average at all - it is the
+zero-thickness limit of the same expansion. Three reasons it belongs here:
+
+  * `K_dry` is defined as the fraction of WALL AREA not wetted by liquid. That is
+    a property of the surface, so the void that decides it arguably belongs at
+    the surface rather than 54 um out in the flow.
+
+  * It is the SHORTEST extrapolation on offer. The one-term Taylor expansion is
+    only credible over a short distance, and `y_c` (27.9 um on the LH2 pipe) is
+    less than `DiameterLayer(n=1)`'s +25.8 um offset and far less than
+    `DiameterLayer(n=5.5)`'s +267 um.
+
+  * Its SIGN depends on the profile, which is the point. STAR's guidance to use
+    5.5 departure diameters assumes the void RISES away from the wall to a bubbly
+    layer peak, so a thicker layer captures more of it. Measured on the LH2 pipe
+    the profile does the opposite - 0.626 at 0-56 um decaying monotonically to
+    0.454 at 600-900 um, `alpha' = -894 /m` - so a thicker layer averages in more
+    BULK and dilutes the criterion. At n = 5.5 the increment is -0.239, which
+    puts `K_dry` at zero for every flux in the ladder. `WallSurface()` moves the
+    other way, +0.025.
+
+Measured on the LH2 pipe at 1.2e5: `alpha_delta` 0.696 -> ~0.744, `K_dry`
+0.48 -> ~0.66 on a 0.5-0.9 ramp. A real gain, but note it is NOT on its own
+enough to reach `K_dry = 1`, which is what a wall temperature excursion needs
+when `N_a ~ dT_sup^9.945`.
+"""
+struct WallSurface <: AbstractBubblyLayer end
+Adapt.@adapt_structure WallSurface
+
+"""
+    MassBalanceLayer(; c_vp = 0.25, inner = 5, relax = 1.0)
+
+Bubbly-layer void from a MASS BALANCE rather than from a gradient extrapolation:
+
+    alpha_bl = alpha_cell + q_E / (rho_v * h_fg * v'),     v' = c_vp*sqrt(k)
+
+The vapour generated at the wall, expressed as a velocity `q_E/(rho_v h_fg)`, is
+balanced against the turbulent fluctuating velocity `v'` that pushes it out of
+the bubbly layer into the core. The ratio is the void the sub-grid layer must
+carry above the resolved cell value.
+
+### Why this and not a layer average
+
+Every finite-thickness layer, and the `WallSurface` limit, reads the RESOLVED
+void field. On a wall-function mesh that field cannot show a blanket: with a
+55.8 um first cell, a dry film of 16-23 um averages to a cell value of only
+~0.64, and reaching 0.9 would need the film to fill 80% of the cell. So a
+threshold on the resolved void has to sit within ~0.02 of a peak that is not
+predictable in advance - measured on the LH2 pipe, a threshold set at 0.645 from
+a projected peak of 0.662 never fired, because the peak was actually 0.624.
+
+The mass balance does not have that problem. It adds a SUB-GRID excess from a
+flux balance, so the mesh does not have to resolve the film. On the same LH2 data
+it gives 0.806 at the measured CHF of 6.4e4 and 0.849 at 7e4 - a clean crossing
+of Weisman & Pei's geometric limit of 0.82, with nothing fitted.
+
+### The inner iteration
+
+`q_E` is produced by the partition that `alpha_bl` feeds (`alpha_bl -> a_l ->
+h_c` and `K_dry` -> solve -> `q_E`), so the two are CIRCULAR. This is resolved by
+a fixed-point iteration inside the wall solve rather than by lagging `q_E` a
+step: lagging `alpha_delta` is a known failure mode on this case, having driven
+the `alpha -> h_c -> T_wall -> evaporation` loop to NaN in 60 steps.
+
+The map is contracting in the normal case - raising `alpha_bl` raises `K_dry`,
+which cuts `q_E`, which lowers `alpha_bl` - so a handful of iterations suffice.
+`relax` under-relaxes it for the case where the wall is near full dryout, where
+`q_e ~ dT_sup^n` makes the response very stiff.
+
+`inner` is a FIXED count so the kernel stays branch-free.
+"""
+struct MassBalanceLayer{F<:AbstractFloat} <: AbstractBubblyLayer
+    c_vp::F
+    inner::Int
+    relax::F
+    alpha_min_bl::F
+end
+function MassBalanceLayer(; c_vp = 0.25, inner = 5, relax = 1.0, alpha_min_bl = 0.01)
+    c_vp > 0 || throw(ArgumentError("`c_vp` must be positive, got $c_vp"))
+    inner >= 1 || throw(ArgumentError("`inner` must be at least 1, got $inner"))
+    0 < relax <= 1 || throw(ArgumentError("`relax` must be in (0, 1], got $relax"))
+    0 <= alpha_min_bl < 1 || throw(ArgumentError(
+        "`alpha_min_bl` must be in [0, 1), got $alpha_min_bl"))
+    return MassBalanceLayer(float(c_vp), inner, float(relax), float(alpha_min_bl))
+end
+Adapt.@adapt_structure MassBalanceLayer
+
+@inline bubbly_layer_thickness(::Nothing, y_c::F, D_d, nu_v, u_tau) where F = zero(F)
+@inline bubbly_layer_thickness(::WallCellLayer, y_c::F, D_d, nu_v, u_tau) where F =
+    2*y_c                                   # cell centre sits at half the width
+@inline bubbly_layer_thickness(m::DiameterLayer, y_c::F, D_d, nu_v, u_tau) where F =
+    F(m.n)*D_d
+@inline bubbly_layer_thickness(m::YPlusLayer, y_c::F, D_d, nu_v, u_tau) where F =
+    F(m.y_plus)*nu_v/max(u_tau, eps(F))
+# `WallSurface` has no layer: the evaluation point is y = 0, not delta/2. The
+# thickness is reported as zero and `bubbly_layer_void` dispatches on the TYPE
+# rather than reading it - see the note there about why zero cannot simply be
+# passed through the generic path.
+@inline bubbly_layer_thickness(::WallSurface, y_c::F, D_d, nu_v, u_tau) where F = zero(F)
+# `MassBalanceLayer` has no geometric layer at all - the sub-grid excess comes
+# from a flux balance, not from a thickness. Reported as zero; the kernel
+# dispatches on the type.
+@inline bubbly_layer_thickness(::MassBalanceLayer, y_c::F, D_d, nu_v, u_tau) where F = zero(F)
+
+"""
+    bubbly_layer_void(layer, alpha_v_cell, dadn, y_c, D_d, nu_v, u_tau) -> alpha_delta
+
+Vapour fraction averaged over the bubbly layer, by the one-term expansion of
+STAR-CCM+ User Guide Eqn (2112):
+
+    alpha_delta = (1/delta) * int_0^delta [alpha(y_c) + alpha'(y_c)*(y - y_c)] dy
+                = alpha(y_c) + alpha'(y_c)*(delta/2 - y_c)
+
+`dadn` is the WALL-NORMAL derivative of the vapour fraction at the cell centre,
+i.e. `grad(alpha_v) . n` with `n` pointing INTO the fluid.
+
+### Why an expansion rather than a cell average
+
+Averaging the cells that fall inside the layer fails whenever the layer is
+THINNER than the first cell - no cell qualifies, and the average is undefined.
+That is not hypothetical: with `KocamustafaogullariIshii` at the measured 4 deg
+contact angle, `D_d = 12.5 um` against a first cell centre of 27.9 um, so a
+stencil-based layer average silently returned zero and the criterion could never
+fire.
+
+The expansion has no such failure mode. When `delta/2 < y_c` it extrapolates
+INWARD, toward the wall, which is exactly the right thing to do when the layer is
+finer than the mesh - and it needs no cells inside the layer at all.
+
+The result is clamped to [0,1]: it is a linear extrapolation, so nothing stops it
+overshooting on a steep profile.
+"""
+@inline function bubbly_layer_void(layer, alpha_v_cell::F, dadn, y_c, D_d,
+                                   nu_v, u_tau) where F
+    delta = bubbly_layer_thickness(layer, y_c, D_d, nu_v, u_tau)
+    delta <= zero(F) && return clamp(alpha_v_cell, zero(F), one(F))
+    return clamp(alpha_v_cell + dadn*(F(0.5)*delta - y_c), zero(F), one(F))
+end
+
+# `WallSurface` needs its own method rather than a zero `delta`, because the
+# generic path treats `delta <= 0` as "no layer information" and returns the raw
+# cell value. Here zero thickness is MEANINGFUL - it is the wall itself - so the
+# expansion is evaluated at `y = 0`:
+#
+#     alpha(0) = alpha(y_c) + alpha'(y_c)*(0 - y_c)
+#
+# Note the sign: with `alpha'` NEGATIVE (void decaying away from the wall, which
+# is what the LH2 pipe does) this INCREASES the result, whereas every
+# finite-thickness layer decreases it.
+@inline bubbly_layer_void(::WallSurface, alpha_v_cell::F, dadn, y_c, D_d,
+                          nu_v, u_tau) where F =
+    clamp(alpha_v_cell - dadn*y_c, zero(F), one(F))
+
+# `MassBalanceLayer` needs `q_E`, which this signature does not carry. The
+# pre-pass therefore seeds it with the raw cell value and the inner iteration in
+# the wall kernel does the real work - see `mass_balance_void`.
+@inline bubbly_layer_void(::MassBalanceLayer, alpha_v_cell::F, dadn, y_c, D_d,
+                          nu_v, u_tau) where F =
+    clamp(alpha_v_cell, zero(F), one(F))
+
+"""
+    mass_balance_void(m, alpha_v_cell, q_E, rho_v, h_fg, k_turb)
+
+`alpha_cell + q_E/(rho_v*h_fg*c_vp*sqrt(k))`, clamped to [0,1].
+
+`k_turb` is the turbulent kinetic energy in the wall cell. A floor is applied to
+`v'` so a laminar or unseeded cell cannot divide by zero - there the balance is
+meaningless and the cell value is the right answer.
+"""
+@inline function mass_balance_void(m::MassBalanceLayer, alpha_v_cell::F, q_E,
+                                   rho_v, h_fg, k_turb) where F
+    # NO BUBBLY LAYER, NO BALANCE. The expression balances vapour generated at
+    # the wall against turbulent transport OUT OF an existing bubbly layer, so it
+    # is meaningless before one exists.
+    #
+    # Applying it anyway latches the model dry and diverges. At cold start
+    # `alpha_v_cell ~ 0` and `k` is small, so the increment is enormous and
+    # `alpha_bl` clamps to 1; that sets `K_dry = 1`, which zeroes `q_E`, so no
+    # vapour is ever generated and `alpha_v_cell` stays 0 - while the wall must
+    # carry the full flux through vapour-property convection alone. Measured: the
+    # velocity field reached Courant 9.7e132 by step 88.
+    #
+    # `alpha_min_bl` is the same 0.01 the alpha-Courant gate uses for "this cell
+    # contains an interface".
+    alpha_v_cell > F(m.alpha_min_bl) || return clamp(alpha_v_cell, zero(F), one(F))
+    vp = F(m.c_vp)*sqrt(max(k_turb, zero(F)))
+    den = rho_v*h_fg*vp
+    den > eps(F) || return clamp(alpha_v_cell, zero(F), one(F))
+    return clamp(alpha_v_cell + max(q_E, zero(F))/den, zero(F), one(F))
+end
 
 
 # =============================================================================
@@ -223,6 +481,68 @@ Adapt.@adapt_structure HibikiIshii
 end
 
 
+"""
+    Kirichenco(; N=1.0e-7, m=2.0, N_max=1.0e12)
+
+Kirichenko, Dolgoy & Levchenko (1976) nucleation site density for CRYOGENIC
+fluids,
+
+    N_a = N * ( rho_v * h_fg * dT_sup / (sigma * T_sat) )^m
+
+with the bracketed group carrying units of 1/m, so `m = 2` is dimensionally
+consistent.
+
+### Why it belongs here
+
+Every other site-density correlation in this file was fitted to water
+([`LemmertChawla`](@ref), [`HibikiIshii`](@ref)) or to room-temperature
+organics. This one was fitted to cryogens, and Kuang et al. (2021), Int. J.
+Hydrogen Energy 46:19617, adopt it specifically for liquid hydrogen after
+finding water correlations unusable - their contrast model built on
+Kocamustafaogullari-Ishii site density gave a mean absolute error of 52.5%
+against 8.94% for this one.
+
+### Coefficients
+
+The original gives two branches on reduced pressure:
+
+    p/p_cr >= 0.04 :  N = 1.0e-7,   m = 2      (the defaults)
+    p/p_cr <  0.04 :  N = 6.25e-6,  m = 3
+
+For hydrogen `p_cr = 1.2964 MPa`, so a 0.4 MPa case is at `p/p_cr = 0.31` and
+takes the default branch. Pass `N=6.25e-6, m=3.0` below 52 kPa.
+
+### What to expect relative to `LemmertChawla`
+
+The superheat exponent is **2**, against the 1.805 of the unmodified
+Lemmert-Chawla and the much steeper exponents that fitting `LemmertChawla` to a
+cryogen tends to produce. So `N_a` responds far more gently to `dT_sup`, which
+removes the extreme sensitivity that a near-tenth-power law creates in the
+wall-temperature solve.
+
+Sample value for LH2 at 0.4 MPa (`rho_v = 4.84`, `h_fg = 393.5 kJ/kg`,
+`sigma = 9.49e-4 N/m`, `T_sat = 26.08 K`) at `dT_sup = 1.75 K`: the group is
+1.35e8 /m and `N_a ~ 1.8e9 /m^2`. That is high by water standards and is meant
+to be - hydrogen nucleates at superheats of order 0.1 K, and CHF is reached
+near 3 K.
+"""
+struct Kirichenco{F<:AbstractFloat} <: AbstractNucleationSiteDensity
+    N::F
+    m::F
+    N_max::F
+end
+Kirichenco(; N=1.0e-7, m=2.0, N_max=1.0e12) = Kirichenco(float(N), float(m), float(N_max))
+Adapt.@adapt_structure Kirichenco
+
+@inline function nucleation_site_density(model::Kirichenco, s::BoilingState{F}) where F
+    s.dT_sup <= zero(F) && return zero(F)
+    (s.sigma <= zero(F) || s.T_sat <= zero(F) || s.rho_v <= zero(F)) && return zero(F)
+    group = s.rho_v*s.h_fg*s.dT_sup/(s.sigma*s.T_sat)
+    group <= zero(F) && return zero(F)
+    return min(F(model.N)*group^F(model.m), F(model.N_max))
+end
+
+
 # =============================================================================
 #  Bubble departure diameter
 # =============================================================================
@@ -304,6 +624,84 @@ Adapt.@adapt_structure KocamustafaogullariIshii
 end
 
 
+"""
+    Du(; G, C=1.5705e7, d_min=1.0e-8, d_max=1.4e-2)
+
+Du, Zhao & Bo (2018) departure diameter, as adopted for hydrogen by Kuang et al.
+(2021),
+
+    d_b/L_c = C * rho*^-0.319 * Ja^0.123 * Pr^-1.939 * Re_b^-0.751
+
+    L_c = rho_l*nu_l^2/sigma      rho* = rho_v/rho_l
+    Ja  = cp_l*dT_sup/h_fg        Re_b = G*d_b/mu_l
+
+`G` is the MASS FLUX [kg/m^2/s] and has no default - `BoilingState` does not
+carry one, and the correlation cannot be evaluated without it. For a fixed-inlet
+case use `rho_l*U_inlet`.
+
+### Why it is worth having
+
+Every other departure model here reduces to a buoyancy-surface-tension balance
+through `sqrt(sigma/(g*(rho_l - rho_v)))`, which is the POOL boiling mechanism.
+In flow boiling the shear-induced lift detaches bubbles earlier, so departure
+diameters are smaller and fall with flow rate. This correlation carries that
+dependence explicitly through `Re_b`, which is why Kuang et al. selected it over
+Unal and over Kocamustafaogullari-Ishii.
+
+### Implicit form
+
+`Re_b` contains `d_b`, so the correlation is implicit. With the exponent -0.751
+it inverts in closed form and no iteration is needed:
+
+    d_b^1.751 = L_c * C * rho*^-0.319 * Ja^0.123 * Pr^-1.939 * (G/mu_l)^-0.751
+
+### On the coefficient
+
+The published leading coefficient is written `10^7.196` = 1.5705e7, which is
+what `C` defaults to. Reading it instead as the literal 107.196 gives departure
+diameters near 0.4 um for water, three orders below anything measured, whereas
+10^7.196 gives 0.36 mm for water at 10 K superheat and 500 kg/m^2/s - correct to
+within the scatter of the data it was fitted to. The exponent SIGNS were
+likewise reconstructed on physical grounds (departure shrinks with flow rate and
+with density ratio, grows with superheat). Both are worth confirming against the
+original before this model is used for a published number.
+
+Sample value for the LH2 pipe (0.4 MPa, `G = 335 kg/m^2/s`, `dT_sup = 1.75 K`):
+`L_c = 1.31 nm` and `d_b ~ 47 um`, against 107 um from the departure model
+currently in use - and below the ~74 um turbulent-breakup limit at the first
+cell, which the larger value exceeds.
+"""
+struct Du{F<:AbstractFloat} <: AbstractDepartureDiameter
+    G::F
+    C::F
+    d_min::F
+    d_max::F
+end
+Du(; G, C=1.5705e7, d_min=1.0e-8, d_max=1.4e-2) =
+    Du(float(G), float(C), float(d_min), float(d_max))
+Adapt.@adapt_structure Du
+
+@inline function bubble_departure_diameter(model::Du, s::BoilingState{F}) where F
+    s.dT_sup <= zero(F) && return F(model.d_min)
+    (s.sigma <= zero(F) || s.rho_l <= zero(F) || s.rho_v <= zero(F) ||
+     s.mu_l <= zero(F) || s.k_l <= zero(F) || s.h_fg <= zero(F) ||
+     model.G <= zero(F)) && return F(model.d_min)
+
+    nu_l = s.mu_l/s.rho_l
+    L_c  = s.rho_l*nu_l*nu_l/s.sigma
+    rho_star = s.rho_v/s.rho_l
+    Ja = s.cp_l*s.dT_sup/s.h_fg
+    Pr = s.mu_l*s.cp_l/s.k_l
+    (L_c <= zero(F) || Ja <= zero(F) || Pr <= zero(F)) && return F(model.d_min)
+
+    A = L_c*F(model.C)*rho_star^F(-0.319)*Ja^F(0.123)*Pr^F(-1.939)*
+        (F(model.G)/s.mu_l)^F(-0.751)
+    A <= zero(F) && return F(model.d_min)
+    d = A^(one(F)/F(1.751))
+    return clamp(d, F(model.d_min), F(model.d_max))
+end
+
+
 # =============================================================================
 #  Bubble departure frequency
 # =============================================================================
@@ -340,6 +738,81 @@ Adapt.@adapt_structure Cole
     drho = s.rho_l - s.rho_v
     (drho <= zero(F) || D_d <= zero(F)) && return zero(F)
     f = sqrt(4*s.g*drho/(3*F(model.C_d)*s.rho_l*D_d))
+    return min(f, F(model.f_max))
+end
+
+
+"""
+    BaldGrowth(; C_w=0.0, f_max=1.0e4)
+
+Departure frequency from the bubble GROWTH TIME, using the growth law Bald
+(1976) validated for liquid hydrogen and liquid helium,
+
+    D_d = 4*sqrt(3/pi) * B * sqrt(a_l*tau_g)
+
+    B   = rho_l*cp_l*dT_sup / ( rho_v*(h_fg + (cp_l - cp_v)*dT_sup) )
+    a_l = k_l/(rho_l*cp_l)                          liquid thermal diffusivity
+
+Inverted for the growth time and combined with the waiting time through the
+usual `tau_w = C_w/f` closure (Kuang et al. 2021, Eq. 16), `f = 1/(tau_w +
+tau_g)` collapses to a closed form with no iteration:
+
+    f = (1 - C_w) * 16*(3/pi) * B^2 * a_l / D_d^2
+
+### Why prefer it to `Cole` for hydrogen
+
+[`Cole`](@ref) divides a bubble's terminal RISE velocity by its diameter, so it
+is a pool-boiling buoyancy balance and carries no thermal information at all.
+Bald's constant was measured on liquid hydrogen and liquid helium specifically,
+and the frequency it gives is set by how fast the bubble can grow on the
+superheat available - which is the mechanism that actually limits departure in
+saturated flow boiling. Kuang et al. found `Cole` "tends to underestimate the
+frequency", and their contrast model built on it gave a mean absolute error of
+52.5% against 8.94% for the growth-time route.
+
+On the LH2 pipe at `dT_sup = 1.75 K` and `D_d = 47.7 um`: `B = 1.045`,
+`a_l = 8.62e-8 m^2/s`, `tau_g = 1.58 ms`, `f = 633 Hz`, against 503 Hz from
+`Cole` - about 26% higher, same order.
+
+### On `C_w`
+
+`C_w` is the fraction of the bubble cycle spent WAITING rather than growing.
+The physical route to it is Han & Griffith, which needs the critical cavity
+radius `r_c` - a surface property that is rarely known. The default of zero
+takes the saturated-flow-boiling limit, which is what Kuang et al. measure:
+they report `C_w < 0.1` throughout, and correspondingly find quenching
+contributes under 3% of the wall flux. Set it non-zero only with a value you
+can defend; it scales `f` linearly and therefore scales `q_evap` linearly.
+
+`cp_v` enters the sensible-heat correction to `h_fg`. `BoilingState` defaults it
+to zero, which overstates that correction by a few percent; the solver
+populates it from the vapour phase, so this only matters when constructing a
+state by hand.
+"""
+struct BaldGrowth{F<:AbstractFloat} <: AbstractDepartureFrequency
+    C_w::F
+    f_max::F
+end
+BaldGrowth(; C_w=0.0, f_max=1.0e4) = BaldGrowth(float(C_w), float(f_max))
+Adapt.@adapt_structure BaldGrowth
+
+@inline function bubble_departure_frequency(model::BaldGrowth, s::BoilingState{F}, D_d) where F
+    (D_d <= zero(F) || s.dT_sup <= zero(F)) && return zero(F)
+    (s.rho_v <= zero(F) || s.rho_l <= zero(F) || s.cp_l <= zero(F) ||
+     s.k_l <= zero(F)) && return zero(F)
+    C_w = F(model.C_w)
+    C_w >= one(F) && return zero(F)
+
+    # Effective latent heat: the bubble must also supply the sensible heat that
+    # the displaced liquid carried. Denominator is positive whenever h_fg is.
+    h_eff = s.h_fg + (s.cp_l - s.cp_v)*s.dT_sup
+    h_eff <= zero(F) && return zero(F)
+
+    B = s.rho_l*s.cp_l*s.dT_sup/(s.rho_v*h_eff)
+    a_l = s.k_l/(s.rho_l*s.cp_l)
+
+    # (4*sqrt(3/pi))^2 = 16*3/pi
+    f = (one(F) - C_w)*F(16)*F(3)/F(pi)*B*B*a_l/(D_d*D_d)
     return min(f, F(model.f_max))
 end
 
@@ -524,15 +997,24 @@ wall_boiling = RPI(
 )
 ```
 """
-struct RPI{S,D,Fr,A,P,B,F<:AbstractFloat} <: AbstractWallBoilingModel
+struct RPI{S,D,Fr,A,P,BL,H,F<:AbstractFloat} <: AbstractWallBoilingModel
     site_density::S
     departure_diameter::D
     departure_frequency::Fr
     influence_area::A
     patches::P
-    film_boiling::B
     Pr_t::F
     alpha_min::F
+    dryout_start::F
+    dryout_end::F
+    bubbly_layer::BL
+    dryout_smoothing::Int
+    dryout_smoothing_weight::F
+    dryout_filter::Symbol
+    dryout_relaxation::F
+    dryout_shape::Symbol
+    dryout_snap::F
+    hysteresis::H
     wall_capacity::F
     n_iterations::Int
     start_iteration::Int
@@ -547,9 +1029,18 @@ function RPI(;
     departure_frequency = Cole(),
     influence_area = DelValleKenning(),
     patches,
-    film_boiling = nothing,
     Pr_t = 0.85,
     alpha_min = 0.1,
+    dryout_start = nothing,
+    dryout_end = nothing,
+    bubbly_layer = nothing,
+    dryout_smoothing = 0,
+    dryout_smoothing_weight = 0.5,
+    dryout_filter = :median,
+    dryout_relaxation = 1.0,
+    dryout_shape = :smoothstep,
+    dryout_snap = 1.0,
+    hysteresis = nothing,
     wall_capacity = 0.0,
     n_iterations = 40,
     start_iteration = 0,
@@ -578,6 +1069,100 @@ function RPI(;
     # convective share of the RPI partition directly. A boiling wall disturbs the
     # near-wall balance that `:k` assumes, which is why `:loglaw` may do better
     # there - see `_u_tau_loglaw!`.
+    # DRYOUT RAMP. `nothing` reproduces the legacy behaviour exactly: a LINEAR
+    # ramp derived from `alpha_min`, over void `1-2*alpha_min` to `1-alpha_min`
+    # (0.8 to 0.9 at the default). Supplying BOTH gives a SMOOTHSTEP over an
+    # explicit void interval - see `wall_boiling_liquid_factor`.
+    (dryout_start === nothing) == (dryout_end === nothing) || throw(ArgumentError(
+        "`dryout_start` and `dryout_end` must be given together, or neither"))
+    ds = dryout_start === nothing ? -one(float(alpha_min)) : float(dryout_start)
+    de = dryout_end   === nothing ? -one(float(alpha_min)) : float(dryout_end)
+    dryout_shape in (:smoothstep, :step) || throw(ArgumentError(
+        "`dryout_shape` must be :smoothstep or :step, got :$dryout_shape"))
+
+    # `dryout_snap` is the K_dry above which the ramp completes at once. 1 is the
+    # plain smoothstep - see `_dryout_shape`.
+    0 < dryout_snap <= 1 || throw(ArgumentError(
+        "`dryout_snap` must be in (0, 1], got $dryout_snap"))
+
+    if dryout_start !== nothing
+        if dryout_shape === :step
+            # `:step` switches at `dryout_start` and never reads `dryout_end`, so
+            # the two may coincide - and `dryout_end = dryout_start` is the
+            # natural way to write "no ramp".
+            0 <= ds <= 1 || throw(ArgumentError(
+                "need 0 <= dryout_start <= 1, got $ds"))
+            de >= ds || throw(ArgumentError(
+                "`dryout_end` must not be below `dryout_start`, got $de and $ds"))
+        else
+            0 <= ds < de <= 1 || throw(ArgumentError(
+                "need 0 <= dryout_start < dryout_end <= 1, got $ds and $de"))
+        end
+    end
+
+    # WALL-TANGENTIAL SMOOTHING of the bubbly-layer void before it reaches the
+    # dryout ramp. Every other coupling in this model is wall-NORMAL: one
+    # independent bisection per face, one normal extrapolation per face, and a
+    # pointwise `K_dry`. Nothing ties a face to the ones beside it, so a steep
+    # closure lets neighbours settle on different branches - which has shown up
+    # as azimuthal void scatter, isolated fully-dry faces, and a jagged `K_dry`
+    # front. See `build_wall_face_graph`. Zero passes disables it entirely.
+    dryout_smoothing >= 0 || throw(ArgumentError(
+        "`dryout_smoothing` must be non-negative, got $dryout_smoothing"))
+    0 < dryout_smoothing_weight <= 1 || throw(ArgumentError(
+        "`dryout_smoothing_weight` must be in (0, 1], got $dryout_smoothing_weight"))
+
+    # WHICH FILTER. `:median` is the default and the one to use.
+    #
+    # `:laplacian` averages a face toward its neighbours, which is a PEAK KILLER -
+    # and a localised dry patch IS a peak. Measured on the LH2 pipe: at the step
+    # where the void ran away, two Laplacian passes suppressed the `alpha_delta`
+    # peak by 0.35 (raw 1.00 -> 0.65) while leaving the mean unchanged to 0.03%,
+    # halving `K_dry` (0.594 -> 0.277) exactly when dryout needed to fire. In
+    # quiet states the same filter changed the peak by 0.002, which is why it
+    # looked harmless in every check that did not span a runaway.
+    #
+    # `:median` removes ISOLATED face-to-face outliers - the odd-even mode that
+    # motivated smoothing in the first place - while preserving a coherent front,
+    # because it returns an actual neighbour value rather than an average. A
+    # single dry face among wet neighbours is removed; a dry FRONT is not.
+    #
+    # `:laplacian` is kept only so the earlier behaviour can be reproduced.
+    dryout_filter in (:median, :laplacian) || throw(ArgumentError(
+        "`dryout_filter` must be :median or :laplacian, got :$dryout_filter"))
+
+    # TEMPORAL RELAXATION of alpha_delta - the gain limiter on the dryout loop.
+    #
+    #     alpha_delta <- (1-r)*alpha_delta_prev + r*alpha_delta_new
+    #
+    # `K_dry` closes a NEGATIVE feedback loop (more void -> more dryout -> less
+    # evaporation -> less void). Self-correcting at low gain, but it OSCILLATES
+    # once the loop gain exceeds 1 with a step of delay - and the gain is large.
+    # `K_dry = smoothstep((a - ds)/(de - ds))` has slope `6b(1-b)/(de-ds)`,
+    # peaking at `1.5/(de-ds)`: that is 3.0 for the usual 0.5..1.0 ramp, reached
+    # at a = 0.75. Against `q_evap + q_quench ~ 5.6e4 W/m^2` that is 1.7e5 W/m^2
+    # per unit void, so a 0.1 wobble swings a quarter of the applied flux.
+    #
+    # Measured on the LH2 pipe at 7e4: the wall balance held to 0.03% of applied
+    # for 1500 steps with alpha_delta at 0.58 (gain 1.7), then lost it entirely -
+    # q_total spanning 3% to 211% of applied - within the 500 steps it took
+    # alpha_delta to sweep through 0.75, where the gain peaks.
+    #
+    # `r` multiplies the high-frequency loop gain directly, so `r < (de-ds)/1.5`
+    # brings it under unity. It does NOT change the converged answer: at steady
+    # state new == prev and the blend is the identity.
+    #
+    # NOT the same as lagging the field, which was tried and diverged. A lag
+    # substitutes an older value - pure phase shift, no gain reduction - and phase
+    # is what destabilises this loop. Relaxation ATTENUATES instead.
+    #
+    # `r = 1` is no relaxation and reproduces the previous behaviour exactly.
+    0 < dryout_relaxation <= 1 || throw(ArgumentError(
+        "`dryout_relaxation` must be in (0, 1], got $dryout_relaxation"))
+
+    # `:step` switches at `dryout_start` and ignores `dryout_end` - see
+    # `_dryout_shape` for why the ramp is inert under a flux-controlled wall.
+
     # WHICH PARTITION. See `wall_heat_partition`.
     partition in (:kurul_podowski, :mmp) || throw(ArgumentError(
         "`partition` must be :kurul_podowski or :mmp, got :$partition"))
@@ -585,26 +1170,13 @@ function RPI(;
     friction_velocity in (:k, :loglaw) || throw(ArgumentError(
         "`friction_velocity` must be :k or :loglaw, got :$friction_velocity"))
 
-    # Past CHF the wall flux DECREASES with wall temperature, so the flux-
-    # controlled inversion `solve_wall_temperature` is solving a non-monotone
-    # equation with up to three roots and no way to tell which is physical. The
-    # transient wall balance has no such ambiguity because it integrates along
-    # the curve rather than inverting it - so film boiling is only offered with
-    # a wall capacity, and the check is here rather than in a docstring because
-    # the failure mode otherwise is a plausible-looking wrong answer.
-    if film_boiling !== nothing && !(wall_capacity > 0)
-        throw(ArgumentError(
-            "`film_boiling` requires `wall_capacity > 0`.\n" *
-            "Past CHF the boiling curve turns over, so `q_w(T_w)` is non-monotone and\n" *
-            "inverting it at prescribed flux has up to three roots - bisection would\n" *
-            "return one of them silently. The transient wall balance follows the curve\n" *
-            "instead. Set `wall_capacity = rho_w*cp_w*thickness` [J/m^2/K]; note that\n" *
-            "`cp` for metals collapses as T^3 at cryogenic temperature, so a handbook\n" *
-            "room-temperature value will make the wall far too sluggish."))
-    end
 
     return RPI(site_density, departure_diameter, departure_frequency, influence_area,
-               patches_tuple, film_boiling, float(Pr_t), float(alpha_min),
+               patches_tuple, float(Pr_t), float(alpha_min),
+               ds, de, bubbly_layer, dryout_smoothing,
+               float(dryout_smoothing_weight), dryout_filter,
+               float(dryout_relaxation), dryout_shape, float(dryout_snap),
+               hysteresis,
                float(wall_capacity), n_iterations, start_iteration, friction_velocity,
                partition)
 end
@@ -720,102 +1292,9 @@ end
     return (h_c*dT_wl, q_q_raw*A_b*one_minus_Kdry, q_e_raw*one_minus_Kdry)
 end
 
-"""
-    wall_heat_partition(rpi, state, h_c, film_closure)
-        -> (q_c, q_q, q_e, q_f, w, A_b, N_a, D_d, f)
-
-The partition blended with a film boiling branch. `film_closure` is a
-[`FilmClosure`](@ref) built once per face by [`film_closure`](@ref), or `nothing`
-for pure nucleate boiling.
-
-The blended flux is
-
-    q_w = (1 - w) min(q_c + q_q + q_e, q_CHF) + w h_f max(dT_sup, dT_min)
-
-and the components are reported already scaled, so summing them always gives the
-wall flux whichever branch the wall is on. With `film_closure === nothing`,
-`w = 0`, the cap is inactive and `q_f = 0`, making the result identical to the
-three-argument form.
-
-### Why the nucleate branch is CAPPED and not merely de-weighted
-
-`(1 - w)(q_c + q_q + q_e)` alone does not work, and the failure is dramatic.
-`N_a ~ dT_sup^n` with `n` calibrated at 21.17 for LH2 means the evaporative term
-grows by more than five orders of magnitude across a transition only 2 K wide. A
-linear weight cannot suppress that: instead of turning over, the curve spikes to
-`10^7 kW/m^2` in the middle of the transition and then collapses. Every
-downstream quantity - the vapour source, the latent sink, the wall temperature -
-follows it.
-
-Capping the nucleate contribution at `q_CHF` fixes this without another tuning
-constant, because it is simply what CHF MEANS: nucleate boiling cannot deliver
-more than the critical heat flux, so extrapolating a site-density power law past
-the point where the wall stops being liquid-wetted is meaningless. The cap
-engages exactly where `w` starts to rise - `dT_lo` is by construction the
-superheat at which `q_RPI = q_CHF` - so the two act together and the result is
-continuous.
-
-Above the transition the film term uses `max(dT_sup, dT_min)`, which equals
-`h_f dT_min` at the top of the blend and `h_f dT_sup` beyond it. That is what
-makes the join to the film branch continuous rather than a step.
-"""
-@inline function wall_heat_partition(
-    rpi::RPI, s::BoilingState{F}, h_c, fc, alpha_v = zero(F)) where F
-
-    p = wall_heat_partition(rpi, s, h_c)
-    w = film_boiling_fraction(fc, s.dT_sup, alpha_v)
-
-    # `cap` is 1 below CHF and falls as `1/q_RPI` above it, so the nucleate
-    # contribution saturates rather than following the power law upward. Written
-    # as a multiplicative factor so it stays branch-free for the GPU kernel.
-    keep = (one(F) - w)*_nucleate_cap(fc, p.q_c + p.q_q + p.q_e)
-    q_f = _film_flux(fc, s, w)
-
-    return (q_c = keep*p.q_c, q_q = keep*p.q_q, q_e = keep*p.q_e, q_f = q_f, w = w,
-            A_b = p.A_b, N_a = p.N_a, D_d = p.D_d, f = p.f)
-end
-
-@inline _nucleate_cap(::Nothing, q_rpi::F) where F = one(F)
-
-# A cap is only meaningful for a POSITIVE, FINITE critical heat flux. Anything
-# else means the CHF closure could not be evaluated - a property not yet
-# initialised, a fluid outside the correlation's range - and the correct response
-# is to leave the nucleate branch alone rather than to scale it.
-#
-# This is defence in depth behind the guards in the closures themselves, and it
-# matters because the failure is silent and total: `cap = 0` zeroes the whole
-# partition at every wall temperature, so the wall energy balance reduces to
-# `C dT_w/dt = q_gen` and the temperature runs away until the bracket overflows.
-# A cap that cannot be computed must never be mistaken for a cap of zero.
-@inline function _nucleate_cap(fc, q_rpi::F) where F
-    q_chf = F(fc.q_chf)
-    (q_chf > zero(F) && isfinite(q_chf)) || return one(F)
-    return min(one(F), q_chf/max(q_rpi, eps(F)))
-end
-
-@inline _film_flux(::Nothing, s::BoilingState{F}, w) where F = zero(F)
-
-# The `max(dT_sup, dT_min)` exists ONLY to make the superheat blend join the film
-# branch continuously at the top of its interval - it is meaningless for a
-# void-driven blend, where `dT_hi` plays no part in locating the transition. So
-# dispatch on the driver rather than applying it unconditionally.
-#
-# It also has to be dispatched for safety: when the CHF closure cannot be
-# evaluated, `dT_hi` is not finite, and `w*h_f*max(dT_sup, Inf)` evaluates to
-# `0*Inf = NaN` even where `w` is exactly zero and the film branch is doing
-# nothing at all.
-@inline _film_flux(fc, s::BoilingState{F}, w) where F =
-    w*fc.h_f*_film_dT(fc.model.transition, s.dT_sup, F(fc.dT_hi))
-
-# `_film_dT` dispatches on the transition drivers, which are defined in
-# `2_film_boiling_models.jl` - included after this file - so its methods live
-# there.
-
 """Sum of a partition, whichever form produced it."""
 @inline _partition_total(p::NamedTuple{(:q_c,:q_q,:q_e,:A_b,:N_a,:D_d,:f)}) =
     p.q_c + p.q_q + p.q_e
-@inline _partition_total(p::NamedTuple{(:q_c,:q_q,:q_e,:q_f,:w,:A_b,:N_a,:D_d,:f)}) =
-    p.q_c + p.q_q + p.q_e + p.q_f
 
 """
     solve_wall_temperature(rpi, state, q_w, h_c) -> (T_w, partition)
@@ -948,14 +1427,13 @@ time level:
 and keeps the previous behaviour unchanged.
 """
 @inline function solve_wall_temperature_transient(
-    rpi::RPI, s::BoilingState{F}, q_gen, h_c, T_w_prev, dt, fc = nothing,
-    alpha_v = zero(F)) where F
+    rpi::RPI, s::BoilingState{F}, q_gen, h_c, T_w_prev, dt) where F
 
     C = F(rpi.wall_capacity)
     # No inertia, or no usable previous state (first step): fall back to the
     # steady inversion, which is also what seeds `T_w_prev`.
     (C <= zero(F) || !(T_w_prev > zero(F))) &&
-        return _steady_fallback(rpi, s, q_gen, h_c, fc, alpha_v)
+        return _steady_fallback(rpi, s, q_gen, h_c)
 
     Cdt = C/F(dt)
 
@@ -963,18 +1441,15 @@ and keeps the previous behaviour unchanged.
     # and the storage term is at its most negative. Upper bound: the temperature
     # the wall would reach on storage alone with Q = 0, which cannot be exceeded.
     #
-    # Monotonicity of `f` survives the film boiling blend even though the flux
-    # term does NOT: through the transition `Q(T_w)` falls, but the storage term
-    # `Cdt*(T_w - T_w_prev)` rises, and for the timestep to resolve the wall time
-    # constant at all `Cdt` must dominate the slope of the boiling curve. That is
-    # the same condition needed for the integration to be meaningful, so where
-    # bisection would be ill-posed the timestep is already too large to trust.
+    # `f` is monotone in `T_w`: every partition term rises with wall temperature
+    # and the storage term `Cdt*(T_w - T_w_prev)` rises with it, so bisection is
+    # unconditional.
     lo = min(s.T_l, s.T_sat, T_w_prev)
     hi = max(T_w_prev + q_gen/Cdt, lo) + max(q_gen/max(h_c, eps(F)), zero(F))
 
     for _ in 1:rpi.n_iterations
         mid = (lo + hi)/2
-        p = wall_heat_partition(rpi, _at_wall_temperature(s, mid), h_c, fc, alpha_v)
+        p = wall_heat_partition(rpi, _at_wall_temperature(s, mid), h_c)
         f = Cdt*(mid - T_w_prev) + _partition_total(p) - q_gen
         if f < zero(F)
             lo = mid
@@ -984,18 +1459,15 @@ and keeps the previous behaviour unchanged.
     end
 
     T_w = (lo + hi)/2
-    return (T_w,
-            wall_heat_partition(rpi, _at_wall_temperature(s, T_w), h_c, fc, alpha_v))
+    return (T_w, wall_heat_partition(rpi, _at_wall_temperature(s, T_w), h_c))
 end
 
-# First step, before `T_w_prev` exists. Seeded from the NUCLEATE inversion even
-# when film boiling is enabled: it is well posed, and it starts the wall on the
-# low branch, which is where a heated tube physically starts. The transient solve
-# then carries it up through DNB if the flux warrants.
-@inline function _steady_fallback(rpi, s, q_gen, h_c, fc, alpha_v)
+# First step, before `T_w_prev` exists. Seeded from the steady inversion, which
+# is well posed and starts the wall on the low branch - where a heated tube
+# physically starts.
+@inline function _steady_fallback(rpi, s, q_gen, h_c)
     T_w, _ = solve_wall_temperature(rpi, s, q_gen, h_c)
-    return (T_w,
-            wall_heat_partition(rpi, _at_wall_temperature(s, T_w), h_c, fc, alpha_v))
+    return (T_w, wall_heat_partition(rpi, _at_wall_temperature(s, T_w), h_c))
 end
 
 """
@@ -1067,7 +1539,181 @@ Smooth cut-off applied to the wall vapour generation rate as the near-wall
 liquid runs out. Unity above `2*alpha_min`, zero below `alpha_min`, linear
 between. See the dryout note in the [`RPI`](@ref) docstring.
 """
+# Cubic smoothstep, C1 at both ends. Lived in `2_film_boiling_models.jl` until
+# the film branch was removed; `wall_boiling_liquid_factor` is now its only
+# caller, so it belongs here. NOTE this is called from inside an `@inline`, so a
+# missing definition compiles cleanly and only fails when dryout first evaluates.
+@inline _smoothstep(x::F) where F =
+    (y = clamp(x, zero(F), one(F)); y*y*(3 - 2*y))
+
+"""
+    _dryout_shape(shape, void, ds, de) -> K_dry
+
+`:smoothstep` ramps over `ds..de`; `:step` switches at `ds` and ignores `de`.
+
+### Why `:step` is the better default for a FLUX-CONTROLLED wall
+
+The ramp region does no work and costs stability, and both halves of that are
+measured rather than argued.
+
+NO WORK. Under `FixedHeatFlux` the wall temperature is free, and the solve finds
+`T_w` such that the partition sums to the applied flux. `K_dry` is a CONSTANT
+during that solve, so suppressing `q_e` by `(1 - K_dry)` merely makes `T_w` rise
+until `q_e_raw ~ dT_sup^n` regenerates it. With `n = 9.945` the compensation is
+the tenth root: measured at a fixed `h_c` and `q_w = 7e4`,
+
+    K_dry     dT_sup    q_e_raw     q_e = raw*(1-K_dry)
+    0.0        1.825    5.06e4      5.06e4
+    0.9        2.319    5.49e5      5.49e4     <- HIGHER than no dryout
+    0.9999     4.528    4.25e8      4.25e4
+    1.0       11.544    -           0          <- the only value that does anything
+
+Four orders of magnitude of suppression cost 2.7 K of superheat. Every value
+below 1 is indistinguishable from zero dryout.
+
+COSTS STABILITY. `K_dry` closes a negative feedback loop (void up, dryout up,
+evaporation down, void down) whose gain is `dK_dry/d(void)` - which is nonzero
+ONLY in the ramp. Measured: a 0.5-0.9 ramp (peak gain 3.75) was stable but capped
+`K_dry` at 0.48; narrowing to 0.5-0.645 (gain 10.3) clamped the void LOWER, at
+0.62, and made it chatter. The ramp is the entire source of that trade.
+
+`:step` has zero gain everywhere except at the switch, reaches `K_dry = 1` the
+moment the criterion is met rather than at the top of a ramp the void may never
+climb, and leaves the nucleate branch untouched - because partial dryout was
+never doing anything there either.
+
+Pair it with [`PlayHysteresis`](@ref) to get a two-threshold relay: switching at
+`ds + r` on the way up and `ds - r` on the way down.
+"""
+@inline function _dryout_shape(::Val{:smoothstep}, void::F, ds, de, snap) where F
+    k = _smoothstep((void - ds)/(de - ds))
+    # SNAP. Above `snap` the ramp completes immediately instead of asymptoting.
+    #
+    # This is what makes a ramp usable at all under a flux-controlled wall. The
+    # excursion needs `K_dry` EXACTLY 1 - `0.9999` still leaves the wall on the
+    # nucleate branch - and a smoothstep only reaches 1 when the void reaches
+    # `dryout_end`, which on this mesh it may never do. The snap moves the point
+    # of full dryout to a void the solution can actually attain, while keeping
+    # the gradual approach below it.
+    #
+    # `snap = 1` is the plain smoothstep: `k >= 1` only where `k` is already 1.
+    return ifelse(k >= snap, one(F), k)
+end
+@inline _dryout_shape(::Val{:step}, void::F, ds, de, snap) where F =
+    ifelse(void >= ds, one(F), zero(F))
+@inline _dryout_shape(shape::Symbol, void::F, ds, de, snap) where F =
+    _dryout_shape(Val(shape), void, ds, de, snap)
+
+"""
+    dryout_snap_void(rpi) -> void at which K_dry snaps to 1
+
+The void fraction where a `:smoothstep` ramp with `dryout_snap` completes. Useful
+for checking the snap lands somewhere the solution actually reaches - solve
+`smoothstep(b) = snap` for `b`, then `void = ds + b*(de - ds)`.
+"""
+function dryout_snap_void(rpi::RPI)
+    ds, de, snap = rpi.dryout_start, rpi.dryout_end, rpi.dryout_snap
+    ds >= 0 || return NaN
+    rpi.dryout_shape === :step && return ds
+    lo, hi = 0.0, 1.0
+    for _ in 1:60
+        mid = 0.5*(lo + hi)
+        _smoothstep(mid) < snap ? (lo = mid) : (hi = mid)
+    end
+    return ds + 0.5*(lo + hi)*(de - ds)
+end
+
+"""
+    PlayHysteresis(; r)
+
+Rate-independent hysteresis on the dryout criterion, via the PLAY (backlash)
+operator - the building block of Prandtl-Ishlinskii hysteresis.
+
+A per-face shadow state `xi` follows the void with a dead zone of half-width `r`:
+
+    xi <- clamp(xi_prev, alpha - r, alpha + r)
+    K_dry = smoothstep((xi - dryout_start)/(dryout_end - dryout_start))
+
+so `K_dry` runs along the ramp shifted RIGHT by `r` while the void rises, and
+LEFT by `r` while it falls. Two branches from one ramp - no second set of
+thresholds to calibrate.
+
+### Why an operator rather than a latch
+
+  * RATE-INDEPENDENT: the result depends on the PATH of `alpha`, not on how fast
+    it moved, so it does not change with the time step. That is the defining
+    property of physical hysteresis.
+  * LIPSCHITZ CONTINUOUS, unlike a relay. `K_dry` never steps, so the vapour
+    source `mdot` never steps either - no temporal softening is needed.
+  * ORDER-PRESERVING: it cannot manufacture oscillation of its own.
+
+### What it fixes
+
+`K_dry` closes a negative feedback loop - void up, dryout up, evaporation down,
+void down - and that ONE loop causes two symptoms: it clamps the void, and above
+a gain it oscillates. Measured on the LH2 pipe: a 0.5-0.9 ramp (gain 3.75) was
+stable but capped `K_dry` at 0.48, while 0.5-0.645 (gain 10.3) reached higher
+`K_dry` but clamped the void LOWER, at 0.62, and chattered. The knob that
+sharpens the trigger is the same one that puts the target out of reach.
+
+Inside the play band `dK_dry/dalpha` is EXACTLY ZERO, so an oscillation of
+amplitude below `2r` produces no change in `K_dry` at all - the loop is opened,
+not merely damped - while the ramp stays as steep as it was. `r` therefore does
+not trade against sharpness, which is what separates this from widening the ramp.
+
+### Choosing r
+
+    2r > the numerical chatter amplitude   (measured alpha_delta face-to-face
+                                            scatter here: 0.008 to 0.077)
+    2r < the physical hysteresis width     (void at DNB minus void at rewetting)
+
+`r = 0.05` satisfies both on this case.
+
+### Chilldown
+
+Path dependence is built in. Seed `xi` high (dry) with a hot wall and the
+operator tracks DOWN the upper branch as the void falls, rewetting at a lower
+void than the one that dried it. Walk the flux up instead and it traverses the
+lower branch. Same operator, same parameter, both directions.
+"""
+struct PlayHysteresis{F<:AbstractFloat}
+    r::F
+end
+function PlayHysteresis(; r)
+    r > 0 || throw(ArgumentError("`r` must be positive, got $r"))
+    r < 0.5 || throw(ArgumentError(
+        "`r` must be well below 0.5, got $r - the play band is 2r wide and would " *
+        "span the whole void range"))
+    return PlayHysteresis(float(r))
+end
+Adapt.@adapt_structure PlayHysteresis
+
+"""
+    play_update(::Nothing, xi, alpha) -> alpha
+    play_update(h::PlayHysteresis, xi, alpha) -> xi_new
+
+One step of the play operator. With no hysteresis model the state is simply the
+input, so every caller can apply it unconditionally.
+"""
+@inline play_update(::Nothing, xi, alpha) = alpha
+@inline play_update(h::PlayHysteresis, xi::F, alpha) where F =
+    clamp(xi, alpha - F(h.r), alpha + F(h.r))
+
 @inline function wall_boiling_liquid_factor(rpi::RPI, alpha_l::F) where F
+    ds = F(rpi.dryout_start)
+    if ds >= zero(F)
+        # EXPLICIT VOID INTERVAL, smoothstep - the same shape `VoidTransition`
+        # uses for `w_film`, so the dryout ramp and the film blend stop being two
+        # differently-shaped descriptions of one transition. With the film branch
+        # OFF this IS the transition, which is the STAR-CCM+ MMP arrangement:
+        # dryout removes the nucleate terms and mixture convection carries the
+        # wall from there.
+        de = F(rpi.dryout_end)
+        void = one(F) - clamp(alpha_l, zero(F), one(F))
+        return one(F) - _dryout_shape(rpi.dryout_shape, void, ds, de,
+                                      F(rpi.dryout_snap))
+    end
+    # LEGACY: linear in the LIQUID fraction between `alpha_min` and `2*alpha_min`.
     lo = F(rpi.alpha_min)
     hi = 2*lo
     return clamp((alpha_l - lo)/(hi - lo + eps(F)), zero(F), one(F))

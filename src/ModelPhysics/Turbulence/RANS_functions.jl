@@ -49,6 +49,43 @@ end
 
 ω_log(k, y, cmu, kappa) = sqrt(k)/(cmu^0.25*kappa*y)
 
+"""
+    ω_blend(ωvis, ωlog) = sqrt(ωvis^2 + ωlog^2)
+
+Menter's blend of the viscous-sublayer and log-layer wall values for `omega`,
+replacing a hard `y+ > yPlusLam` switch between the two branches.
+
+### Why blending rather than switching
+
+The branch was selected on a y+ built from `k` itself,
+
+    y+ = cmu^0.25*y*sqrt(k)/nu
+
+so a transient dip in `k` moves the wall treatment into the viscous branch, and
+on that branch the `k` production was set to ZERO - which prevents `k` from ever
+recovering. The eddy viscosity needed to rebuild the velocity profile and the
+velocity profile needed to generate `k` each depend on the other, so the state
+is self-sustaining once entered.
+
+MEASURED, adiabatic air-water pipe, wall cell at z/D = 20 with the void-driven
+buoyancy that triggers it (lift on, `alpha` reaching 0.18 in the first cell):
+
+    iteration     250      500      750     1000     1250     1500     1750
+    k          1.4e-04  2.2e-05  6.2e-06  2.4e-06  1.2e-06  6.5e-07  4.0e-07
+    omega        140.3    140.2    140.2    140.2    140.2    140.2    140.2
+
+`k` falls four orders of magnitude while `omega` does not move a digit, because
+it is pinned at exactly `ω_vis = 6nu/(beta1 y^2) = 139.2`. The velocity profile
+goes with it - the wall cell accelerates from a seeded 0.668 m/s to the bulk
+0.867 m/s - and `nut/nu` reaches 0.00 against the 14.8 that y+ = 36 calls for.
+The same case with lift off never dips below the threshold and is unaffected,
+which is why this had not been seen before.
+
+The blend costs nothing at equilibrium: at y+ = 36 it gives 528 against the pure
+log value of 509, the standard Menter result.
+"""
+ω_blend(ωvis::T, ωlog) where T = sqrt(ωvis*ωvis + ωlog*ωlog)
+
 y_plus(k, nu, y, cmu) = cmu^0.25*y*sqrt(k)/nu
 
 sngrad(Ui, Uw, delta, normal) = begin
@@ -113,7 +150,7 @@ end
     fID = i + start_ID - 1 # Redefine thread index to become face ID
 
     (; kappa, beta1, cmu, B, E, yPlusLam) = BC.value
-    (; nu) = fluid
+    (; nu, rho) = fluid
     (; U) = momentum
     (; k, nut) = turbulence
 
@@ -129,11 +166,50 @@ end
     nutw = nut_wall(nuc, yplus, kappa, E)
     mag_grad_U = mag(sngrad(U[cID], Uw, delta, normal))
     # mag_grad_U = mag(gradU[cID]*normal)
-    if yplus > yPlusLam
-        values[cID] = (nu[cID] + nutw)*mag_grad_U*dUdy 
-    else
-        values[cID] = 0.0
-    end
+    # NO y+ BRANCH. `nut_wall` is already exactly zero for y+ <= yPlusLam -
+    # `yPlusLam` is DEFINED as the root of `y+*kappa/log(E*y+) - 1`, so the
+    # cutoff is built into `nutw` and a branch around it is redundant for the
+    # eddy-viscosity part.
+    #
+    # What the branch actually did was zero the MOLECULAR part as well, and
+    # that is the latch described at `ω_blend`: with production identically
+    # zero, `k` can only decay, and nothing can return the wall layer to the
+    # log branch. Keeping the molecular term leaves production continuous and
+    # lets a depressed wall layer climb back out - at the collapsed state
+    # measured on the bubbly pipe (k = 1e-6, omega = 139) it gives
+    #
+    #     P = nu*|grad(U)|*dUdy = 2.0e-3   against   beta*k*omega = 1.25e-5
+    #
+    # i.e. production exceeding dissipation by 160x, so recovery is immediate
+    # rather than impossible.
+    #
+    # DENSITY WEIGHTING. The k equation is assembled in CONSERVATIVE form,
+    #
+    #     Time(rho, k) + Divergence(mdotf, k) - Laplacian(mueffk, k) + Si(Dkf, k) == Source(Pk)
+    #
+    # with every other term carrying rho - `Pk = rho*nut*S^2`, `Dkf = rho*beta*omega`,
+    # `mueffk = rhof*(nuf + sigma_k*nutf)`. This override REPLACES `Pk` in the
+    # wall cell, so it must be density-weighted too or the wall cell alone gets a
+    # kinematic production against a density-weighted sink.
+    #
+    # This was invisible for years because `Fluid{Incompressible}` defaults to
+    # `rho = 1.0`, so every single-phase validation case in the repo runs at unit
+    # density and the factor cannot be seen. It bites as soon as a real density
+    # appears - a multiphase mixture at rho ~ 900, or any compressible case.
+    #
+    # MEASURED, adiabatic air-water pipe (rho_m = 900), wall cell at z/D = 20 in
+    # the converged state with all lateral forces off:
+    #
+    #     production without rho    0.0371       P/sink = 0.0043
+    #     sink  rho*beta*omega*k    8.65
+    #     production with rho       33.4         P/sink = 3.9
+    #
+    # i.e. local production was 0.4% of the local sink, leaving the wall cell
+    # sustained only by diffusion from its neighbour. `k` then converges far
+    # below equilibrium - 5.4e-4 against 7.6e-3 - which parks `y+(k)` at 9.7,
+    # just under `yPlusLam = 11.53`, so the wall functions never reach their log
+    # branch and `nut/nu` sits at 0.33 where y+ = 36 calls for ~15.
+    values[cID] = rho[cID]*(nu[cID] + nutw)*mag_grad_U*dUdy
 end
 
 @generated function correct_eddy_viscosity!(νtf, nutBCs, model, config)
@@ -192,11 +268,10 @@ end
     nuc = nu[cID]
     yplus = y_plus(k[cID], nuc, delta, cmu)
     nutw = nut_wall(nuc, yplus, kappa, E)
-    if yplus > yPlusLam
-        values[fID] = nutw
-    else
-        values[fID] = 0.0
-    end
+    # Redundant branch removed: `nut_wall` returns exactly zero for
+    # y+ <= yPlusLam by construction, so this is a no-op change kept only so
+    # the three wall functions read consistently. See `ω_blend`.
+    values[fID] = nutw
 end
 
 function correct_nut_wall!(νtf, BC::NutMixingLengthWallFunction, model, config)
@@ -326,13 +401,9 @@ end
         y = face.delta
         ωvis = ω_vis(nu[cID], y, beta1)
         ωlog = ω_log(k[cID], y, cmu, kappa)
-        yplus = y_plus(k[cID], nu[cID], y, cmu) 
-
-        if yplus > yPlusLam 
-            ωc = ωlog
-        else
-            ωc = ωvis
-        end
+        # Menter blend rather than a y+ switch - see `ω_blend` for the failure
+        # this fixes and the measured evidence.
+        ωc = ω_blend(ωvis, ωlog)
         # Line below is weird but worked
         # b[cID] = A[cID,cID]*ωc
 

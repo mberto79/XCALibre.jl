@@ -622,8 +622,82 @@ multiphase solver cases all pass.
 
 ## Mass-form pressure equation (`pressure_form = :mass`)
 
-**Status: implemented, opt-in, verified on the sealed-ullage regression.
-NOT yet run on the pipe case.**
+**Status: implemented and opt-in, but DO NOT USE ON THE PIPE CASE. Superseded by
+the finding immediately below - `:volume` is the only form that runs the boiling
+ladder. Verified on the sealed-ullage regression only.**
+
+### VERDICT (2026-08-26): use `:volume` on the pipe. `:mass` is unusable here.
+
+`:mass` was run on the pipe and it does not work, for a reason that is not about
+the linear solver and cannot be tuned away.
+
+**Symptom.** Every ladder configuration lost the solution as near-wall void
+crossed ~0.70. The failure was invariant: it survived changes to the dryout ramp
+position AND width, both AIAD regime thresholds, `d_bubble` over 4x, wall
+lubrication on/off, the wall-side median filter, momentum buoyancy on/off,
+pressure-solver tolerance (1e-4 -> 1e-6), and the time step (1e-5 and 5e-6 broke
+at the SAME PHYSICAL TIME, which rules out temporal resolution outright).
+
+**Signature.** Three independent measurements, all pointing the same way:
+
+| measurement | healthy | at failure |
+|---|---|---|
+| p_rgh azimuthal error / alpha azimuthal error | 0.07 (p_rgh 10x smoother) | 1.11 |
+| alphaCourant / Courant | 2.0 (the definitional ratio) | >> 2 |
+| p_rgh residual | 1e-9 | 1e-7, at the convergence criterion |
+
+The sector has symmetry planes, so ANY azimuthal variation is numerical error by
+construction - that is what makes the first row unambiguous. `rho` inherited
+`alpha`'s normalised error to four significant figures at every step (it is an
+algebraic function of `alpha`), while `p_rgh` broke its 10x smoothing advantage.
+So the pressure field acquired its own error rather than inheriting it.
+
+The `alphaCourant`/`Courant` divergence is the clearest tell. `Courant` uses the
+CELL-CENTRE velocity; `alphaCourant` sums the ABSOLUTE FACE FLUXES. Face fluxes
+that alternate in sign cancel in the cell mean, so `Courant` cannot see them and
+`alphaCourant` can. Their ratio is therefore a direct checkerboard indicator, and
+it is free - both arrays are already computed every step.
+
+**Cause.** Already documented at `multiphase_rD_ref_density`:
+
+    alpha -> rho_m -> a_P -> rD -> rDf -> Laplacian COEFFICIENT -> p -> flux -> alpha
+
+Because `alpha` reaches the pressure operator's COEFFICIENT, a checkerboard in
+`alpha` makes the checkerboarded pressure the operator's genuine solution - not a
+mode the discretisation failed to damp. That is precisely why no solver setting,
+time step or Rhie-Chow consideration touches it, and why the solver converges to
+1e-8 on a visibly rough field.
+
+`:mass` adds TWO further `alpha` -> pressure paths that `:volume` does not have,
+and ONE OF THEM CANNOT BE CLOSED: `div(rho_f u*)` IS the mass flux, so altering
+it alters what is conserved. `rD_ref_density` and `mass_mobility_ref` close the
+other paths and were both ON throughout - they help without curing it, exactly as
+their own docstrings say.
+
+Their calibration is also wrong for this case. The guidance is written for
+`alpha ~ 0.998` where `rho_m` varies 0.2%. The pipe runs to 70% void, where
+`rho_m ~ 21.8` against a frozen reference of 56.747 - the coefficient is 2.6x
+off, not 0.2%.
+
+**Result with `:volume`.** Full ladder 5e3 -> 1.2e5 in one run, fixed dt, no
+adaptive stepping, smooth fields, `closure = 1` at EVERY level, and 8.0% mean
+error against Tatsumoto on the nucleate branch. Three independent checks agree:
+flux closure, the boiling-curve comparison, and vapour inventory (alpha_max 0.673
+at 1e5 against 0.685 from the saturated-inlet energy balance).
+
+**Do not judge `:mass` by the accuracy argument below.** The dp/dt and vapour-mass
+-drift figures were measured on a SEALED TANK, where mass conservation drift
+accumulates. The pipe is a through-flow at fixed outlet pressure and mass simply
+leaves the domain, so that advantage largely does not apply here.
+
+**Solver note.** With `:volume` the matrix is symmetric again, but do not fall
+through to a bare `AMG()` - that is `mode = Cg(), smoother = AMGJacobi()`, and
+Jacobi needs far more V-cycles. Measured SLOWER than the tuned
+`AMG(mode = Bicgstab(), smoother = AMGGaussSeidel(sweep = AMGForwardSweep()))`.
+BiCGStab is valid on a symmetric matrix and, making no symmetry assumption, can
+use the cheaper FORWARD sweep; Cg would require the symmetric (2x work) sweep.
+
+### Why the mass form was written (retained for context)
 
 ### Why
 

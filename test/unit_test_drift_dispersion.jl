@@ -128,3 +128,95 @@ using Test
         @test disp_stress/stress(0.998) > 10
     end
 end
+
+# =============================================================================
+#  Which boundaries may the phases slip across?
+# =============================================================================
+#
+#  `Urf` is the RELATIVE velocity between the phases, so zeroing it on a face
+#  means "no relative phase flux here". That is not the same question as for the
+#  mixture flux, and getting it wrong is quiet:
+#
+#    * zero it at an OUTFLOW and gas arrives in the last cell at U + Ur but
+#      leaves at U, so it accumulates until the raised alpha closes the balance;
+#    * fail to zero it at a SYMMETRY plane and gas crosses the mirror while its
+#      image crosses the other way, i.e. gas appears or vanishes at the boundary.
+#
+#  MEASURED before the fix, adiabatic air-water pipe, outlet cell layer against
+#  its neighbour: alpha 0.1288 -> 0.1708, +32.6%, and identical at iteration 1000
+#  and 2500 - stationary, not transient. A steady balance needs
+#  alpha_out/alpha_up = 1 + Ur/U, so +32.6% implies Ur = 0.282 m/s, a plausible
+#  slip for that case's 2.7 mm bubble. That arithmetic is what identified the
+#  mechanism, and it is why the test below is about TYPES rather than values.
+# =============================================================================
+
+@testset "Boundary faces the drift velocity is zeroed on" begin
+    using XCALibre.Solvers: build_drift_zero_faces
+
+    struct MockMesh{V}; boundary_cellsID::V; end
+    noSlip = [0.0, 0.0, 0.0]
+    mesh = MockMesh(collect(1:70))
+
+    inlet  = Dirichlet(:inlet, [0.0, 0.0, 0.753], 1:10)
+    outlet = Zerogradient(:outlet, 0, 11:20)
+    wall   = Wall(:wall, noSlip, 21:30)
+    symX   = Symmetry(:symX, 0, 31:40)
+    symY   = Symmetry(:symY, 0, 41:50)
+    extrap = Extrapolated(:far, 0, 51:60)
+    neum   = Neumann(:n, 0.0, 61:70)
+
+    @testset "walls, symmetry and inlets are zeroed" begin
+        f = Set(build_drift_zero_faces((inlet, outlet, wall, symX, symY), mesh))
+        @test all(in(f), 1:10)      # inlet: specified homogeneously, alpha*U is j_g
+        @test all(in(f), 21:30)     # wall: solid, neither phase crosses
+        @test all(in(f), 31:50)     # symmetry: mirror, every normal flux vanishes
+    end
+
+    @testset "outflows are NOT zeroed" begin
+        # The bug. Gas must be free to leave at the GAS velocity.
+        f = Set(build_drift_zero_faces((inlet, outlet, wall, symX, symY), mesh))
+        @test !any(in(f), 11:20)
+        # Every Neumann-family patch behaves the same way, not just Zerogradient.
+        for bc in (outlet, extrap, neum)
+            g = Set(build_drift_zero_faces((wall, bc), mesh))
+            @test !any(in(g), bc.IDs_range)
+            @test all(in(g), 21:30)
+        end
+    end
+
+    @testset "symmetry is the largest group and must not be dropped" begin
+        # The quarter-pipe case has 2640 symmetry faces against 240 wall faces:
+        # a leak there would corrupt the void field along the whole domain, not
+        # just in a boundary layer. Guarding against a "walls only" reading of
+        # the fix.
+        f = build_drift_zero_faces((symX, symY), mesh)
+        @test length(f) == 20
+        @test f == collect(31:50)
+    end
+
+    @testset "classification is by type, not by patch name" begin
+        # A patch called :outlet that is declared as a Wall must still be zeroed,
+        # and one called :wall declared Zerogradient must not be - names are not
+        # load bearing anywhere else in the solver either.
+        odd_wall = Wall(:outlet, noSlip, 11:20)
+        odd_out  = Zerogradient(:wall, 0, 21:30)
+        f = Set(build_drift_zero_faces((odd_wall, odd_out), mesh))
+        @test all(in(f), 11:20)
+        @test !any(in(f), 21:30)
+    end
+
+    @testset "result is sorted, unique and inside the boundary range" begin
+        f = build_drift_zero_faces((inlet, outlet, wall, symX, symY), mesh)
+        @test issorted(f)
+        @test length(unique(f)) == length(f)
+        @test all(1 .<= f .<= length(mesh.boundary_cellsID))
+        # An interior face would stop the phases slipping mid-domain, so a patch
+        # range outside the boundary block is an error rather than a warning.
+        @test_throws ArgumentError build_drift_zero_faces((Wall(:w, noSlip, 65:80),), mesh)
+    end
+
+    @testset "no eligible patches gives an empty list, not an error" begin
+        @test isempty(build_drift_zero_faces((outlet,), mesh))
+        @test isempty(build_drift_zero_faces((), mesh))
+    end
+end

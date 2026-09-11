@@ -41,7 +41,7 @@ state: nothing reads them back. They exist because the partition is the whole
 substance of the model, and a run that cannot show how the wall flux was split
 cannot be assessed.
 """
-struct WallBoilingState{M,B,S,F,L}
+struct WallBoilingState{M,B,S,F,G}
     model::M
     patch_BCs::B
     mdot_wall::S
@@ -56,43 +56,12 @@ struct WallBoilingState{M,B,S,F,L}
     mdot_area::F
     T_liquid::F
     h_conv::F
-    q_film::F
-    w_film::F
-    alpha_wall::F
     D_departure::F
-    layer::L
+    K_dry::F
+    alpha_delta::F
+    alpha_delta_raw::F
+    face_graph::G
 end
-
-"""
-    BubblyLayerStencil
-
-Precomputed association between each heated wall face and the cells lying within
-the bubbly layer in front of it, so the layer-averaged void fraction of
-[`BubblyLayerAverage`](@ref) can be assembled with a contiguous per-face sum.
-
-Built ONCE at setup - the mesh does not move - and stored flat rather than as a
-vector of vectors so the runtime pass stays GPU friendly.
-
-- `cells`  cell IDs, grouped by face
-- `dist`   wall-normal distance of each cell centre [m], parallel to `cells`
-- `vol`    cell volume [m^3], parallel to `cells`
-- `range`  `(first, last)` index into the three arrays above, per face
-- `faceID` the wall face each range belongs to
-
-`dist` is carried per cell rather than filtered at build time because the layer
-thickness `L = min(D_d, cap)` depends on the LOCAL departure diameter, which
-changes every step. The stencil is therefore built out to `cap` and the runtime
-sum selects `dist < L` from it.
-"""
-struct BubblyLayerStencil{VI,VF}
-    cells::VI
-    dist::VF
-    vol::VF
-    range_lo::VI
-    range_hi::VI
-    faceID::VI
-end
-Adapt.@adapt_structure BubblyLayerStencil
 
 """
     initialise_wall_boiling(wall_boiling, model, config)
@@ -164,19 +133,19 @@ different - and currently unimplemented - coupling.)"""))
         # either one outside the kernel gets the time level wrong.
         FaceScalarField(mesh),  # T_liquid   [K]  near-wall liquid temperature
         FaceScalarField(mesh),  # h_conv     [W/m^2/K]
-        # Film boiling branch. `w_film` is the diagnostic that matters: it says
-        # where on the boiling curve each face sits, and a run that is nowhere
-        # near DNB should show it identically zero.
-        FaceScalarField(mesh),  # q_film     [W/m^2]
-        FaceScalarField(mesh),  # w_film     [-]
-        FaceScalarField(mesh),  # alpha_wall [-]  vapour fraction the transition saw
-        # Departure diameter per face, which sets the bubbly layer thickness.
-        # Written by the partition pass and read by the layer average.
+        # Departure diameter per face, which sets the bubbly-layer thickness
+        # used by the Eqn (2112) expansion. Written by the partition pass and
+        # read by the alpha_delta pass on the NEXT step.
         FaceScalarField(mesh),  # D_departure [m]
+        FaceScalarField(mesh),  # K_dry       [-]  wall dryout area fraction
+        FaceScalarField(mesh),  # alpha_delta [-]  bubbly-layer void it used
+        FaceScalarField(mesh),  # alpha_delta_raw [-]  before tangential smoothing
         # Bubbly-layer stencil, built only when a `BubblyLayerAverage` measure is
         # in use. `nothing` otherwise, so a case that does not need it pays
         # neither the setup search nor the memory.
-        build_bubbly_layer_stencil(wb, patch_BCs, mesh),
+        # Face-to-face adjacency ON the patch, for wall-TANGENTIAL smoothing of
+        # the dryout criterion. `nothing` unless `dryout_smoothing > 0`.
+        build_wall_face_graph(wb, patch_BCs, mesh),
     )
 end
 
@@ -205,43 +174,46 @@ Returns the field, or `nothing` when wall boiling is not active.
 wall_boiling_source!(::Nothing, model, p_abs, sat, h_fg, g_mag, sigma, dt, config) = nothing
 
 """
-    build_bubbly_layer_stencil(rpi, patch_BCs, mesh) -> BubblyLayerStencil or nothing
+    WallFaceGraph
 
-Associate each heated wall face with the cells in front of it, out to the
-`BubblyLayerAverage` cap. Returns `nothing` unless a measure that needs it is in
-use, so a case that does not want it pays neither the setup search nor the
-memory.
+Face-to-face adjacency ON the heated patch: which wall faces share an edge with
+which. Setup only - the mesh does not move.
 
-### Method
+### Why the wall closure needs this
 
-The wall-normal distance from a face to a cell is the projection of the centre
-offset onto the face's inward normal. A cell joins a face's layer when
+Every other coupling in the wall model is wall-NORMAL. `T_wall` is solved by an
+independent bisection per face, `alpha_delta` extrapolates along the wall normal,
+and `K_dry` is a pointwise function of it. Nothing whatsoever ties a face to its
+neighbours ALONG the surface.
 
-    0 < d_normal < cap        and        |offset - d_normal*n| < r_face
+That missing tangential coupling has produced the same symptom three times on the
+LH2 pipe: 54% azimuthal scatter in the first-cell void at fixed z and r; seven
+isolated faces at full dryout sitting beside neighbours at zero; and a jagged
+`K_dry` front. A steep closure on a per-face field with no lateral communication
+lets neighbouring faces settle on different branches, and nothing pulls them back.
 
-with `r_face` the face's own radius, from its area. The second condition keeps
-the layer a COLUMN in front of the face rather than a hemisphere around it -
-without it a cell would be claimed by every face within `cap` and the average
-would smear ALONG the wall as well as away from it, which is the opposite of
-what a near-wall measure should do.
+Averaging over a wall-normal layer does NOT help - a layer average and the
+Eqn (2112) expansion both smooth in the direction the jaggedness is not in.
 
-Cells that satisfy both for several faces go to the nearest, so each contributes
-its volume exactly once and the result stays a true volume average.
+### Edge adjacency, not distance
 
-### Cost
-
-Setup only. The mesh does not move, so it is never rebuilt, and the runtime pass
-is a contiguous per-face sum.
+Two faces are neighbours when they share at least TWO nodes, i.e. an edge. That
+is exact, needs no length scale, and cannot accidentally connect across a gap the
+way a centre-distance criterion can on a curved or graded surface.
 """
-build_bubbly_layer_stencil(::Nothing, patch_BCs, mesh) = nothing
+struct WallFaceGraph{VI}
+    nbr::VI         # flattened neighbour list, local face indices
+    lo::VI
+    hi::VI
+    faceID::VI      # global face ID for each local index
+end
 
-function build_bubbly_layer_stencil(rpi::RPI, patch_BCs, mesh)
-    fb = rpi.film_boiling
-    (fb === nothing || !needs_layer_average(fb)) && return nothing
-    cap = fb.transition.measure.cap
+build_wall_face_graph(::Nothing, patch_BCs, mesh) = nothing
 
+function build_wall_face_graph(rpi::RPI, patch_BCs, mesh)
+    rpi.dryout_smoothing > 0 || return nothing
     faces = Array(mesh.faces)
-    cells = Array(mesh.cells)
+    face_nodes = Array(mesh.face_nodes)
 
     fIDs = Int[]
     for BC in patch_BCs
@@ -249,57 +221,118 @@ function build_bubbly_layer_stencil(rpi::RPI, patch_BCs, mesh)
     end
     isempty(fIDs) && return nothing
 
-    TF = typeof(cells[1].volume)
-
-    # Stored boundary normals point OUT of the domain, so the fluid side is -n.
-    fc = [faces[f].centre for f in fIDs]
-    fn = [-faces[f].normal for f in fIDs]
-    fr = [sqrt(faces[f].area/pi) for f in fIDs]
-
-    best_face = zeros(Int, length(cells))
-    best_d    = fill(TF(Inf), length(cells))
-    for i in eachindex(fIDs), cID in eachindex(cells)
-        off = cells[cID].centre - fc[i]
-        dn  = off ⋅ fn[i]
-        (dn > 0 && dn < cap) || continue
-        dtan = sqrt(max(off ⋅ off - dn*dn, zero(TF)))
-        dtan < fr[i] || continue
-        if dn < best_d[cID]
-            best_d[cID] = dn
-            best_face[cID] = i
+    # node -> local faces touching it
+    touching = Dict{Int,Vector{Int}}()
+    for (li, fID) in enumerate(fIDs)
+        for nID in face_nodes[faces[fID].nodes_range]
+            push!(get!(touching, nID, Int[]), li)
         end
     end
 
-    cellsv = Int[]; distv = TF[]; volv = TF[]
-    lo = Int[]; hi = Int[]
-    for i in eachindex(fIDs)
-        push!(lo, length(cellsv) + 1)
-        for cID in eachindex(cells)
-            best_face[cID] == i || continue
-            push!(cellsv, cID)
-            push!(distv, best_d[cID])
-            push!(volv, cells[cID].volume)
+    nbr = Int[]; lo = Int[]; hi = Int[]
+    shared = Dict{Int,Int}()
+    for li in eachindex(fIDs)
+        empty!(shared)
+        for nID in face_nodes[faces[fIDs[li]].nodes_range]
+            for lj in touching[nID]
+                lj == li && continue
+                shared[lj] = get(shared, lj, 0) + 1
+            end
         end
-        push!(hi, length(cellsv))
+        push!(lo, length(nbr) + 1)
+        for (lj, count) in shared
+            count >= 2 && push!(nbr, lj)      # >= 2 shared nodes == shares an edge
+        end
+        push!(hi, length(nbr))
     end
 
-    n_empty = count(i -> hi[i] < lo[i], eachindex(fIDs))
-    n_empty == 0 || @warn """`BubblyLayerAverage` found no cells in front of \
-$n_empty of $(length(fIDs)) wall faces. Those faces fall back to the wall-cell \
-value, so the criterion is mesh dependent there. Usually means `cap` is below \
-the first cell height."""
-
-    @info("Bubbly layer stencil built",
-          faces = length(fIDs), cap_mm = cap*1e3,
-          cells = length(cellsv),
-          mean_cells_per_face = round(length(cellsv)/length(fIDs), digits = 1))
-
-    return BubblyLayerStencil(cellsv, distv, volv, lo, hi, copy(fIDs))
+    @info("Wall face graph built", faces = length(fIDs),
+          mean_neighbours = round(length(nbr)/length(fIDs), digits=2),
+          passes = rpi.dryout_smoothing)
+    return WallFaceGraph(nbr, lo, hi, copy(fIDs))
 end
+
+"""
+    smooth_wall_face_field!(dst, src, graph, passes, weight)
+
+`passes` Laplacian smoothing sweeps over the wall face graph,
+
+    a_i <- (1 - w)*a_i + w*mean(a_j over edge neighbours)
+
+which damps the odd-even face-to-face mode while leaving the smooth variation
+along the heater essentially untouched. `dst` and `src` are face fields; a face
+with no neighbours is copied through unchanged.
+"""
+smooth_wall_face_field!(dst, src, ::Nothing, passes, weight, relax, kind, hyst) = nothing
+
+function smooth_wall_face_field!(dst, src, g::WallFaceGraph, passes, weight, relax,
+                                 kind::Symbol = :median, hyst = nothing)
+    n = length(g.faceID)
+    T = eltype(dst.values)
+    w = T(weight)
+
+    # Gathered onto the host and written back in one shot. The sweep is an
+    # irregular gather over a face graph of ~1e3 entries - far too small to be
+    # worth a device kernel, and elementwise indexing of a device array would be
+    # a scalar-indexing error rather than merely slow.
+    srcv = Array(src.values)
+    dstv = Array(dst.values)
+    buf = Vector{T}(undef, n)
+    cur = Vector{T}(undef, n)
+    @inbounds for li in 1:n
+        cur[li] = srcv[g.faceID[li]]
+    end
+    stencil = Vector{T}(undef, 16)   # face + neighbours; 3.81 typical, 16 is ample
+    @inbounds for _ in 1:passes
+        for li in 1:n
+            lo, hi = g.lo[li], g.hi[li]
+            if hi < lo
+                buf[li] = cur[li]          # isolated face: nothing to combine with
+            elseif kind === :median
+                # MEDIAN of {self} U {neighbours}. Removes a lone outlier face
+                # while leaving a coherent front intact, because the result is an
+                # actual neighbour value, not an average - see `dryout_filter`.
+                m = 1
+                stencil[1] = cur[li]
+                for k in lo:hi
+                    m += 1
+                    m > length(stencil) && break
+                    stencil[m] = cur[g.nbr[k]]
+                end
+                sort!(view(stencil, 1:m))
+                buf[li] = isodd(m) ? stencil[(m + 1) >> 1] :
+                          T(0.5)*(stencil[m >> 1] + stencil[(m >> 1) + 1])
+            else
+                acc = zero(T)
+                for k in lo:hi
+                    acc += cur[g.nbr[k]]
+                end
+                buf[li] = (one(T) - w)*cur[li] + w*acc/(hi - lo + 1)
+            end
+        end
+        copyto!(cur, buf)
+    end
+    # Blend into the PREVIOUS value rather than overwriting it. `relax = 1` is a
+    # plain overwrite; below 1 this is a first-order low-pass in time, which is
+    # what limits the dryout loop gain - see `dryout_relaxation` on `RPI`.
+    # Relaxation, then the PLAY OPERATOR against the previous state. `dstv[f]`
+    # carries `xi` from the last step, so no extra field is needed - the raw
+    # instantaneous value lives in `src`, the played state in `dst`. With
+    # `hyst = nothing` `play_update` is the identity and this is a plain write.
+    r = T(relax)
+    @inbounds for li in 1:n
+        f = g.faceID[li]
+        target = (one(T) - r)*dstv[f] + r*cur[li]
+        dstv[f] = play_update(hyst, dstv[f], target)
+    end
+    copyto!(dst.values, dstv)
+    return nothing
+end
+
 
 function wall_boiling_source!(
     wbs::WallBoilingState, model, p_abs, sat, h_fg, g_mag, sigma, dt, config;
-    alpha_liq = model.fluid.alpha)
+    alpha_liq = model.fluid.alpha, grad_alpha_v = nothing, void_sign = 1.0)
 
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -333,15 +366,45 @@ function wall_boiling_source!(
             start_ID, ndrange, phase_l, config;
             method = wbs.model.friction_velocity)
 
+        # Bubbly-layer void next, also in its own pass, so the tangential
+        # smoothing below can see the whole patch before the partition reads it.
+        vkernel! = _bubbly_layer_void!(_setup(backend, workgroup, ndrange)...)
+        vkernel!(wbs.alpha_delta_raw, wbs.u_tau, wbs.D_departure, grad_alpha_v,
+                 void_sign, wbs.model, faces, boundary_cellsID, start_ID,
+                 alpha_liq, phase_v.rho, phase_v.mu)
+        KernelAbstractions.synchronize(backend)
+
+        # WALL-TANGENTIAL SMOOTHING. Every other coupling in this closure is
+        # wall-NORMAL, so nothing tied a face to the ones beside it - see
+        # `build_wall_face_graph`. A no-op when `dryout_smoothing = 0`, in which
+        # case the raw field is copied straight through.
+        # TEMPORAL RELAXATION applies on BOTH paths, so it is usable with the
+        # tangential smoothing off. The two are independent: smoothing damps the
+        # face-to-face (spatial) mode, relaxation damps the step-to-step
+        # (temporal) one that drives the dryout feedback unstable.
+        relax = wbs.model.dryout_relaxation
+        hyst  = wbs.model.hysteresis
+        if wbs.face_graph === nothing
+            relax_wall_face_field!(wbs.alpha_delta, wbs.alpha_delta_raw,
+                                   wbs.patch_BCs, relax, hyst)
+        else
+            smooth_wall_face_field!(wbs.alpha_delta, wbs.alpha_delta_raw,
+                                    wbs.face_graph, wbs.model.dryout_smoothing,
+                                    wbs.model.dryout_smoothing_weight, relax,
+                                    wbs.model.dryout_filter, hyst)
+        end
+
         kernel! = _wall_boiling_source!(_setup(backend, workgroup, ndrange)...)
         kernel!(
             wbs.mdot_wall, wbs.u_tau, wbs.T_wall, wbs.q_evap, wbs.q_quench, wbs.q_conv,
             wbs.dT_sup, wbs.y_plus, wbs.A_b, wbs.mdot_area, wbs.T_liquid, wbs.h_conv,
-            wbs.q_film, wbs.w_film, wbs.alpha_wall, wbs.D_departure,
+            wbs.D_departure,
+            wbs.K_dry, wbs.alpha_delta, wbs.alpha_delta_raw, grad_alpha_v, void_sign,
             wbs.model, BC.value, dt, faces, cells, boundary_cellsID, start_ID,
             alpha_liq, model.energy.T, p_abs,
             phase_l.rho, phase_l.cp, phase_l.k, phase_l.mu,
             phase_v.rho, phase_v.cp, phase_v.k, phase_v.mu,
+            turbulent_ke(model.turbulence),
             sat, h_fg, g_mag, sigma)
     end
 
@@ -350,69 +413,224 @@ function wall_boiling_source!(
     # step n is built from the departure diameter of step n-1. That lag is
     # harmless: `D_d` varies smoothly and the alternative is an inner iteration
     # for a quantity that only sets a blend width.
-    update_layer_void!(wbs, alpha_liq, config)
 
     return wbs.mdot_wall
 end
 
 """
-    update_layer_void!(wbs, alpha, config)
+    relax_wall_face_field!(dst, src, patch_BCs, relax)
 
-Fill `alpha_wall` with the volume-averaged vapour fraction over the bubbly layer
-in front of each heated wall face. No-op when the transition uses the wall-cell
-value, in which case the kernel reads `alpha` directly.
+`dst <- (1-relax)*dst + relax*src` over the heated patches. The no-smoothing
+path: `relax = 1` is a plain copy, below 1 a first-order low-pass in time.
 """
-update_layer_void!(wbs, alpha, config) =
-    _update_layer_void!(wbs, wbs.layer, alpha, config)
-
-_update_layer_void!(wbs, ::Nothing, alpha, config) = nothing
-
-function _update_layer_void!(wbs, layer::BubblyLayerStencil, alpha, config)
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-    ndrange = length(layer.faceID)
-    kernel! = _layer_void_kernel!(_setup(backend, workgroup, ndrange)...)
-    kernel!(wbs.alpha_wall, layer.cells, layer.dist, layer.vol,
-            layer.range_lo, layer.range_hi, layer.faceID,
-            alpha, wbs.D_departure)
+function relax_wall_face_field!(dst, src, patch_BCs, relax, hyst = nothing)
+    T = eltype(dst.values)
+    r = T(relax)
+    if r == one(T) && hyst === nothing
+        copyto!(dst.values, src.values)
+        return nothing
+    end
+    d = Array(dst.values); v = Array(src.values)
+    for BC in patch_BCs, f in BC.IDs_range
+        @inbounds begin
+            target = (one(T) - r)*d[f] + r*v[f]
+            d[f] = play_update(hyst, d[f], target)
+        end
+    end
+    copyto!(dst.values, d)
+    return nothing
 end
 
-@kernel inbounds=true function _layer_void_kernel!(
-    alpha_wall, cellsv, distv, volv, lo, hi, faceID, alpha, D_dep)
+"""
+    update_bubbly_layer_void!(wbs, alpha, grad_alpha_v, void_sign, phase_v,
+                              facesID_range, config)
+
+Fill `alpha_delta` - the vapour fraction over the bubbly layer that the dryout
+criterion tests - for every face of one heated patch, then apply the optional
+wall-tangential smoothing.
+
+### Why this is a separate pass
+
+It was originally computed inline in the partition kernel, which is fine as long
+as nothing needs to look sideways. Smoothing does: a work item sees one face, and
+a Laplacian sweep needs the whole patch. Splitting the pass keeps the value at the
+CURRENT step while still allowing the sweep between the two.
+
+Reading the previous step's field instead - the cheap alternative, and the one
+tried first - is NOT viable. `alpha_delta` sets the mixture properties behind
+`h_c` under the `:mmp` partition, so it sits inside the closed loop
+
+    alpha_delta -> rho_m, k_m, mu_m, cp_m -> h_c -> T_wall -> q_evap -> alpha
+
+and lagging a term inside that loop by a step took the LH2 pipe to NaN in 60
+steps. The same split is already used for `u_tau`, for the same structural
+reason.
+
+`D_dep_f` remains from the previous pass; that lag is real but benign, and
+predates this - it only sets the layer THICKNESS, not the void inside it.
+"""
+@kernel inbounds=true function _bubbly_layer_void!(
+    alpha_delta_raw_f, u_tau_f, D_dep_f, grad_alpha_v, void_sign, rpi,
+    faces, boundary_cellsID, start_ID, alpha, rho_v_f, mu_v_f)
+
     i = @index(Global)
-    fID = faceID[i]
-    TF = eltype(alpha_wall.values)
+    fID = i + start_ID - 1
+    cID = boundary_cellsID[fID]
+    face = faces[fID]
+    (; delta, normal) = face
+    TF = eltype(alpha_delta_raw_f.values)
 
-    # Layer thickness for THIS face: the local departure diameter, already
-    # bounded by `cap` when the stencil was built.
-    L = D_dep[fID]
-
-    num = zero(TF); den = zero(TF)
-    for k in lo[i]:hi[i]
-        distv[k] < L || continue
-        v = volv[k]
-        num += v*(one(TF) - alpha[cellsv[k]])   # vapour fraction
-        den += v
+    # VAPOUR FRACTION OVER THE BUBBLY LAYER, for the dryout criterion.
+    #
+    # STAR-CCM+ User Guide Eqn (2112) - a ONE-TERM expansion about the wall cell
+    # centre rather than an average over the cells inside the layer:
+    #
+    #     alpha_delta = alpha(y_c) + alpha'(y_c)*(delta/2 - y_c)
+    #
+    # The expansion is what makes this robust. A stencil average is undefined
+    # whenever the layer is THINNER than the first cell - no cell qualifies - and
+    # that is not hypothetical: with K-I at the measured 4 deg contact angle,
+    # D_d = 12.5 um against a first cell centre of 27.9 um, so the stencil version
+    # silently returned zero and the criterion could never fire. The expansion
+    # simply extrapolates INWARD when delta/2 < y_c.
+    #
+    # `void_sign` carries the tracking convention: `grad_alpha_v` is the gradient
+    # of whichever fraction `alpha` measures, so it needs negating when that is
+    # the liquid.
+    a_v_cell = one(TF) - alpha[cID]
+    dadn = if grad_alpha_v === nothing
+        zero(TF)
+    else
+        g = grad_alpha_v[cID]
+        # `normal` points OUT of the domain on a boundary face, so the fluid-side
+        # (into-the-flow) direction is -n.
+        TF(void_sign)*(-(g[1]*normal[1] + g[2]*normal[2] + g[3]*normal[3]))
     end
-    # No cells inside the layer (cap below the first cell height): fall back to
-    # the wall cell, which is what `NearWallCell` would have given.
-    alpha_wall[fID] = den > zero(TF) ? num/den : alpha_wall[fID]
+    nu_v_local = mu_v_f[cID]/max(rho_v_f[cID], eps(TF))
+
+    alpha_delta_raw_f[fID] = bubbly_layer_void(
+        rpi.bubbly_layer, a_v_cell, dadn, delta, D_dep_f[fID], nu_v_local,
+        u_tau_f[fID])
+end
+
+"""
+    turbulent_ke(turbulence) -> field or ConstantScalar
+
+Turbulent kinetic energy for [`MassBalanceLayer`](@ref)'s fluctuating velocity
+`v' = c_vp*sqrt(k)`. A model that does not carry `k` returns a zero constant,
+which `mass_balance_void` reads as "no turbulent transport information" and falls
+back to the cell value rather than dividing by zero.
+"""
+turbulent_ke(t) = hasproperty(t, :k) ? t.k : ConstantScalar(0.0)
+
+"""
+    _wall_mixture_htc(rpi, a_l, y_plus, u_tau, rho_l, rho_v, cp_l, cp_v, k_l, k_v,
+                      mu_l, mu_v, Pr_t)
+
+Convective coefficient the wall sees at liquid fraction `a_l`.
+
+Under `:mmp` the wall is in contact with the MIXTURE, so `k` and `mu` are
+volume-weighted and `cp` is MASS-weighted - `cp` multiplies `rho` in
+`h_c = rho cp u_tau/T+`, and the product must be the mixture's volumetric heat
+capacity. Under `:kurul_podowski` the wall sees liquid only.
+"""
+@inline function _wall_mixture_htc(rpi, a_l::TF, y_plus, u_tau, rho_l, rho_v,
+                                   cp_l, cp_v, k_l, k_v, mu_l, mu_v, Pr_t) where TF
+    a_v = one(TF) - a_l
+    mmp = rpi.partition === :mmp
+    rho_m = mmp ? a_l*rho_l + a_v*rho_v : rho_l
+    k_m   = mmp ? a_l*k_l   + a_v*k_v   : k_l
+    mu_m  = mmp ? a_l*mu_l  + a_v*mu_v  : mu_l
+    cp_m  = if mmp
+        rc = a_l*rho_l*cp_l + a_v*rho_v*cp_v
+        rho_m > zero(TF) ? rc/rho_m : cp_l
+    else
+        cp_l
+    end
+    return single_phase_htc(y_plus, u_tau, rho_m, cp_m, mu_m, k_m, Pr_t)
+end
+
+"""
+    _wall_solve_coupled(layer, rpi, a_delta_in, a_v_cell, ...) -> (a_delta, h_c, T_w, part)
+
+Wall temperature and heat partition at a self-consistent bubbly-layer void.
+
+For every layer EXCEPT [`MassBalanceLayer`](@ref) this is a single pass at the
+`alpha_delta` the pre-pass computed - identical to the previous behaviour.
+
+For `MassBalanceLayer` the void and the partition are mutually dependent
+(`alpha_bl -> h_c, K_dry -> solve -> q_E -> alpha_bl`), so it is closed here by a
+fixed-point iteration with a FIXED count, which keeps the kernel branch-free.
+The map is contracting in the normal case because the feedback is negative:
+raising `alpha_bl` raises `K_dry`, which cuts `q_E`, which lowers `alpha_bl`.
+"""
+@inline function _wall_solve_coupled(::AbstractBubblyLayer, rpi, a_delta_in::TF,
+        a_v_cell, y_plus, u_tau, k_turb, T_l, T_sat, rho_l, rho_v, cp_l, k_l,
+        mu_l, cp_v, k_v, mu_v, sigma, h_fg, g_mag, q_w, T_w_prev, dt) where TF
+    a_l = one(TF) - a_delta_in
+    h_c = _wall_mixture_htc(rpi, a_l, y_plus, u_tau, rho_l, rho_v, cp_l, cp_v,
+                            k_l, k_v, mu_l, mu_v, TF(rpi.Pr_t))
+    st = BoilingState{TF}(T_l, T_l, T_sat, T_l - T_sat, T_sat - T_l,
+        rho_l, rho_v, cp_l, k_l, mu_l, sigma, h_fg, g_mag, cp_v, k_v, mu_v, a_l)
+    T_w, part = solve_wall_temperature_transient(rpi, st, q_w, h_c, T_w_prev, dt)
+    return (a_delta_in, h_c, T_w, part)
+end
+
+@inline function _wall_solve_coupled(m::MassBalanceLayer, rpi, a_delta_in::TF,
+        a_v_cell, y_plus, u_tau, k_turb, T_l, T_sat, rho_l, rho_v, cp_l, k_l,
+        mu_l, cp_v, k_v, mu_v, sigma, h_fg, g_mag, q_w, T_w_prev, dt) where TF
+    # Seed from the previous step's converged value, which is a far better guess
+    # than the cell value once the layer is established.
+    a_bl = clamp(a_delta_in, a_v_cell, one(TF))
+    r = TF(m.relax)
+    h_c = zero(TF); T_w = T_w_prev
+    part = wall_heat_partition(rpi, BoilingState{TF}(T_l, T_l, T_sat, zero(TF),
+        zero(TF), rho_l, rho_v, cp_l, k_l, mu_l, sigma, h_fg, g_mag,
+        cp_v, k_v, mu_v, one(TF)), one(TF))
+    # `inner` update passes, then ONE FINAL SOLVE at the converged value.
+    #
+    # The final solve is not optional. Without it the returned `part` is the one
+    # computed at the PREVIOUS iterate while `a_bl` has already been updated, so
+    # the pair is inconsistent whenever the iteration has not fully converged -
+    # and near the dryout cliff it oscillates. Measured symptom: the solve ran at
+    # a high `a_bl` (K_dry = 1, so q_e = 0), that zero drove the update back to
+    # the bare cell value, and the mismatched pair was written out as
+    # `alpha_delta = 0.35` alongside `q_evap = 0`, which is impossible for a
+    # single consistent state.
+    for _ in 1:m.inner
+        a_l = one(TF) - a_bl
+        h_c = _wall_mixture_htc(rpi, a_l, y_plus, u_tau, rho_l, rho_v, cp_l, cp_v,
+                                k_l, k_v, mu_l, mu_v, TF(rpi.Pr_t))
+        st = BoilingState{TF}(T_l, T_l, T_sat, T_l - T_sat, T_sat - T_l,
+            rho_l, rho_v, cp_l, k_l, mu_l, sigma, h_fg, g_mag, cp_v, k_v, mu_v, a_l)
+        _, p_it = solve_wall_temperature_transient(rpi, st, q_w, h_c, T_w_prev, dt)
+        target = mass_balance_void(m, a_v_cell, p_it.q_e, rho_v, h_fg, k_turb)
+        a_bl = (one(TF) - r)*a_bl + r*target
+    end
+    a_l = one(TF) - a_bl
+    h_c = _wall_mixture_htc(rpi, a_l, y_plus, u_tau, rho_l, rho_v, cp_l, cp_v,
+                            k_l, k_v, mu_l, mu_v, TF(rpi.Pr_t))
+    st = BoilingState{TF}(T_l, T_l, T_sat, T_l - T_sat, T_sat - T_l,
+        rho_l, rho_v, cp_l, k_l, mu_l, sigma, h_fg, g_mag, cp_v, k_v, mu_v, a_l)
+    T_w, part = solve_wall_temperature_transient(rpi, st, q_w, h_c, T_w_prev, dt)
+    return (a_bl, h_c, T_w, part)
 end
 
 @kernel inbounds=true function _wall_boiling_source!(
     mdot_wall, u_tau_f, T_wall, q_evap, q_quench, q_conv,
     dT_sup_f, y_plus_f, A_b_f, mdot_area_f, T_liquid_f, h_conv_f,
-    q_film_f, w_film_f, alpha_wall_f, D_dep_f,
+    D_dep_f,
+    K_dry_f, alpha_delta_f, alpha_delta_raw_f, grad_alpha_v, void_sign,
     rpi, q_w, dt, faces, cells, boundary_cellsID, start_ID,
     alpha, T, p_abs, rho_l_f, cp_l_f, k_l_f, mu_l_f,
-    rho_v_f, cp_v_f, k_v_f, mu_v_f, sat, h_fg, g_mag, sigma)
+    rho_v_f, cp_v_f, k_v_f, mu_v_f, k_turb_f, sat, h_fg, g_mag, sigma)
 
     i = @index(Global)
     fID = i + start_ID - 1
     cID = boundary_cellsID[fID]
 
     face = faces[fID]
-    (; area, delta) = face
+    (; area, delta, normal) = face
     volume = cells[cID].volume
 
     TF = eltype(mdot_wall.values)
@@ -447,47 +665,53 @@ end
     # `y_plus` stays on the LIQUID viscosity in both cases: it is the same wall
     # distance the momentum treatment used, and rescaling it is the film model's
     # job (see `ForcedConvectionFilm`).
-    a_l = alpha[cID]
-    a_v = one(TF) - a_l
-    mmp = rpi.partition === :mmp
-    rho_m = mmp ? a_l*rho_l + a_v*rho_v : rho_l
-    k_m   = mmp ? a_l*k_l   + a_v*k_v_f[cID]  : k_l
-    mu_m  = mmp ? a_l*mu_l  + a_v*mu_v_f[cID] : mu_l
-    cp_m  = if mmp
-        rc = a_l*rho_l*cp_l + a_v*rho_v*cp_v_f[cID]
-        rho_m > zero(TF) ? rc/rho_m : cp_l
-    else
-        cp_l
-    end
+    # VAPOUR FRACTION OVER THE BUBBLY LAYER, for the dryout criterion.
+    #
+    # STAR-CCM+ User Guide Eqn (2112) - a ONE-TERM expansion about the wall cell
+    # centre rather than an average over the cells inside the layer:
+    #
+    #     alpha_delta = alpha(y_c) + alpha'(y_c)*(delta/2 - y_c)
+    #
+    # The expansion is what makes this robust. A stencil average is undefined
+    # whenever the layer is THINNER than the first cell - no cell qualifies - and
+    # that is not hypothetical: with K-I at the measured 4 deg contact angle,
+    # D_d = 12.5 um against a first cell centre of 27.9 um, so the stencil version
+    # silently returned zero and the criterion could never fire. The expansion
+    # simply extrapolates INWARD when delta/2 < y_c.
+    #
+    # `void_sign` carries the tracking convention: `grad_alpha_v` is the gradient
+    # of whichever fraction `alpha` measures, so it needs negating when that is
+    # the liquid.
+    # `alpha_delta` is prepared by `update_bubbly_layer_void!` in its OWN pass
+    # ahead of this one, for the same reason `u_tau` is: the optional tangential
+    # smoothing needs every face's value at once, and a work item here sees only
+    # its own. It is still the CURRENT step's value - the separate pass exists to
+    # allow the smoothing, not to introduce a lag.
+    #
+    # It must not be recomputed inline. An earlier attempt read the PREVIOUS
+    # step's field instead of splitting the pass, and the resulting lag drove the
+    # alpha_delta -> mixture properties -> h_c -> T_wall -> evaporation -> alpha
+    # loop to NaN inside 60 steps. Same-step is not an optimisation here.
+    # COUPLED SOLVE. `a_delta` sets the mixture properties behind `h_c` AND
+    # `K_dry`, so the wall solve depends on it; with `MassBalanceLayer` the
+    # reverse is also true, since `alpha_bl` depends on the `q_E` the solve
+    # produces. `_wall_solve_coupled` closes that loop by fixed-point iteration
+    # rather than by lagging a step - see `MassBalanceLayer`. Every other layer
+    # takes the single-pass branch and is unaffected.
+    a_delta_in = alpha_delta_f[fID]
+    a_delta, h_c, T_w, part = _wall_solve_coupled(
+        rpi.bubbly_layer, rpi, a_delta_in, one(TF) - alpha[cID],
+        y_plus, u_tau, k_turb_f[cID],
+        T_l, T_sat, rho_l, rho_v, cp_l, k_l, mu_l,
+        cp_v_f[cID], k_v_f[cID], mu_v_f[cID],
+        TF(sigma), TF(h_fg), TF(g_mag), TF(q_w), T_wall[fID], TF(dt))
+    a_l = one(TF) - a_delta
 
-    h_c = single_phase_htc(y_plus, u_tau, rho_m, cp_m, mu_m, k_m, TF(rpi.Pr_t))
-
+    # Record what the coupled solve settled on, so the dryout ramp, the output
+    # and the next step all see the same value.
+    alpha_delta_f[fID] = a_delta
     T_liquid_f[fID] = T_l
     h_conv_f[fID] = h_c
-
-    state = BoilingState{TF}(
-        T_l, T_l, T_sat, T_l - T_sat, T_sat - T_l,
-        rho_l, rho_v, cp_l, k_l, mu_l, TF(sigma), TF(h_fg), TF(g_mag),
-        cp_v_f[cID], k_v_f[cID], mu_v_f[cID], a_l)
-
-    # Resolve the post-CHF blend for this face: the CHF superheat, the minimum
-    # film boiling superheat and the film heat transfer coefficient. Done ONCE
-    # here rather than inside the wall temperature iteration, since none of the
-    # three depends on `T_w`. `nothing` when no film boiling model is attached,
-    # in which case every film term below compiles out.
-    fc = film_closure(rpi, rpi.film_boiling, state, h_c, y_plus, u_tau)
-
-    # Vapour fraction the transition sees. `NearWallCell` reads the wall cell
-    # directly; `BubblyLayerAverage` uses the layer average assembled after the
-    # previous pass, which is already sitting in `alpha_wall_f`. Selecting here
-    # rather than in the blend keeps the choice out of the bisection loop.
-    alpha_v = wall_void_fraction(rpi.film_boiling, alpha[cID], alpha_wall_f[fID])
-
-    # Transient wall energy balance when the model carries a wall capacity;
-    # identical to the steady inversion when it does not. `T_wall` holds the
-    # PREVIOUS step's value on entry and is overwritten below.
-    T_w, part = solve_wall_temperature_transient(
-        rpi, state, TF(q_w), h_c, T_wall[fID], TF(dt), fc, alpha_v)
 
     # Ramp the source out as the near-wall liquid disappears: RPI has no
     # validity once the wall is not liquid-wetted (see the `RPI` docstring).
@@ -501,21 +725,15 @@ end
     factor = rpi.partition === :mmp ?
         one(TF) : wall_boiling_liquid_factor(rpi, alpha[cID])
 
-    # Evaporative flux driving vapour generation. In the transition and film
-    # regimes the heat crossing the vapour film evaporates liquid at the film
-    # interface, so `q_f` belongs here alongside the nucleation term `q_e`.
-    #
-    # Both are ramped out together by `factor` as the near-wall liquid runs out.
-    # That is deliberate: once the wall cell holds no liquid there is nothing
-    # there to evaporate, and the interface has moved away from the wall. The
-    # wall flux then enters the vapour as SENSIBLE heat through the unchanged
-    # `FixedHeatFlux` condition, superheating the film, and evaporation at the
-    # film-liquid interface becomes the job of the bulk interfacial phase change
-    # model rather than of a wall closure. Fully established film boiling
-    # therefore requires that model to be active - a case run with wall boiling
-    # as the only phase change source will heat the film without ever consuming
-    # the latent heat.
-    q_evaporative = part.q_e + part.q_f
+    # Evaporative flux driving vapour generation, ramped out by `factor` as the
+    # near-wall liquid runs out: once the wall cell holds no liquid there is
+    # nothing there to evaporate. Past that point the wall flux enters the vapour
+    # as SENSIBLE heat through the unchanged `FixedHeatFlux` condition, and
+    # evaporation becomes the job of the BULK interfacial phase change model
+    # rather than of a wall closure - so a case relying on wall boiling as its
+    # only phase change source will superheat the near-wall vapour without ever
+    # consuming the latent heat.
+    q_evaporative = part.q_e
 
     # W/m^2 over the face -> kg/m^3/s in the owner cell. The same `h_fg` used
     # here is the one the energy equation's latent heat sink uses, so the energy
@@ -530,15 +748,10 @@ end
     q_evap[fID] = factor*part.q_e
     q_quench[fID] = part.q_q
     q_conv[fID] = part.q_c
-    q_film_f[fID] = factor*part.q_f
-    w_film_f[fID] = part.w
-    # Layer thickness for the NEXT pass's average, bounded by `cap`. Zero when
-    # the measure does not use a layer, in which case nothing reads it.
-    D_dep_f[fID] = void_layer_thickness_for(rpi.film_boiling, part.D_d)
-    # `NearWallCell` records what it used, so the field means the same thing in
-    # the output whichever measure is active.
-    alpha_wall_f[fID] =
-        recorded_void_fraction(rpi.film_boiling, alpha[cID], alpha_wall_f[fID])
+    # `1 - K_dry` is what multiplies q_evap/q_quench in the :mmp partition.
+    K_dry_f[fID] = one(TF) - wall_boiling_liquid_factor(rpi, a_l)
+    # Departure diameter for the NEXT pass's bubbly-layer thickness (Eqn 2112).
+    D_dep_f[fID] = part.D_d
 
     # Diagnostics. The flux partition IS the model, so a run that cannot show
     # how the wall flux was split cannot be assessed - and `dT_sup` in
@@ -699,8 +912,6 @@ Fields written:
 | `T_wall` | K | wall temperature from the inverted partition |
 | `dT_sup` | K | wall superheat, `T_wall - T_sat` |
 | `q_conv`, `q_quench`, `q_evap` | W/m^2 | the three RPI components |
-| `q_film` | W/m^2 | the film boiling component, zero without [`FilmBoiling`](@ref) |
-| `w_film` | - | film boiling blend weight: 0 nucleate, 1 fully blanketed |
 | `q_total` | W/m^2 | their sum - should equal the imposed flux |
 | `evap_fraction` | - | `q_evap/q_total`, the share generating vapour |
 | `mdot_area` | kg/m^2/s | evaporative mass flux at the wall |
@@ -710,8 +921,8 @@ Fields written:
 `q_total` is worth checking first: it must reproduce the `FixedHeatFlux` value,
 and any departure means the wall temperature solve did not converge.
 
-`w_film` is the one to look at on a case near departure - it localises DNB on the
-surface, and a run intended to stay in nucleate boiling should show it
+`K_dry` is the one to look at on a case near departure - it localises dryout on
+the surface, and a run intended to stay in nucleate boiling should show it
 identically zero.
 """
 
@@ -749,7 +960,8 @@ function write_wall_boiling_surface(
     q_evap = get_face(:q_evap); A_b = get_face(:A_b)
     y_plus = get_face(:y_plus); u_tau = get_face(:u_tau)
     mdot_area = get_face(:mdot_area)
-    q_film = get_face(:q_film); w_film = get_face(:w_film)
+    K_dry = get_face(:K_dry); alpha_delta = get_face(:alpha_delta)
+    alpha_delta_raw = get_face(:alpha_delta_raw)
 
     filename = "$(prefix)_$(iteration).vtu"
     open(filename, "w") do io
@@ -792,7 +1004,7 @@ function write_wall_boiling_surface(
    </Cells>
    <CellData>""")
 
-        q_total = [q_conv[f] + q_quench[f] + q_evap[f] + q_film[f] for f in fIDs]
+        q_total = [q_conv[f] + q_quench[f] + q_evap[f] for f in fIDs]
         evap_frac = [q_total[i] > 0 ? q_evap[f]/q_total[i] : 0.0
                      for (i, f) in enumerate(fIDs)]
 
@@ -802,8 +1014,11 @@ function write_wall_boiling_surface(
             ("q_conv",        [q_conv[f] for f in fIDs]),
             ("q_quench",      [q_quench[f] for f in fIDs]),
             ("q_evap",        [q_evap[f] for f in fIDs]),
-            ("q_film",        [q_film[f] for f in fIDs]),
-            ("w_film",        [w_film[f] for f in fIDs]),
+            ("K_dry",         [K_dry[f] for f in fIDs]),
+            ("alpha_delta",   [alpha_delta[f] for f in fIDs]),
+            # Pre-smoothing value alongside the smoothed one, so the effect of
+            # `dryout_smoothing` is visible rather than inferred.
+            ("alpha_delta_raw", [alpha_delta_raw[f] for f in fIDs]),
             ("q_total",       q_total),
             ("evap_fraction", evap_frac),
             ("mdot_area",     [mdot_area[f] for f in fIDs]),
@@ -863,9 +1078,25 @@ finest.
 
 ### The two numbers to read first
 
-- **`closure = q_total/q_applied`** must be 1. The partition is constructed to
-  sum to the applied flux, so anything else means the wall temperature solve did
-  not converge.
+- **`closure = q_total/q_applied`** means DIFFERENT things on the two wall
+  solves, and reading it the wrong way wastes a lot of time.
+
+  With `wall_capacity = 0` the steady inversion `solve_wall_temperature` forces
+  the partition to sum to the applied flux, so closure must be 1 and anything
+  else means the solve did not converge.
+
+  With `wall_capacity > 0` the TRANSIENT balance is solved instead, and it is
+  `(C/dt)*(T_w - T_w_prev) + q_total = q_applied`. So
+
+      closure = 1 - C*(dT_w/dt)/q_applied
+
+  and closure BELOW 1 is the expected signature of a wall that is still heating
+  up - the deficit is the energy going into wall inertia rather than the fluid.
+  It is a physical rate, not a numerical residual, and is largely INDEPENDENT of
+  the time step (halving dt roughly halves `dT_w` per step too). Read the deficit
+  as a map of how far each face is from thermal equilibrium. It should decay on
+  the wall time constant, roughly `C/(q_applied/dT_sup)`; if it persists far
+  beyond that, the flow conditions are still evolving, not the wall.
 - **`evap_frac = q_evap/q_total`** is the evaporative share. Above 1 is
   impossible - it would mean evaporation removing more than the wall supplies -
   and indicates `q_conv`/`q_quench` have gone negative, which happens when the
@@ -885,11 +1116,10 @@ function wall_boiling_report(wbs::WallBoilingState, mesh)
     qq  = Array(wbs.q_quench.values);  qe  = Array(wbs.q_evap.values)
     Ab  = Array(wbs.A_b.values);       md  = Array(wbs.mdot_area.values)
     yp  = Array(wbs.y_plus.values);    hc  = Array(wbs.h_conv.values)
-    qf  = Array(wbs.q_film.values);    wf  = Array(wbs.w_film.values)
 
     A = 0.0
-    # T_w, T_l, dT_sup, q_c, q_q, q_e, A_b, mdot, y+, h_c, q_f, w_film
-    acc = zeros(12)
+    # T_w, T_l, dT_sup, q_c, q_q, q_e, A_b, mdot, y+, h_c
+    acc = zeros(10)
     q_applied = 0.0
     for BC in wbs.patch_BCs
         for f in BC.IDs_range
@@ -897,17 +1127,16 @@ function wall_boiling_report(wbs::WallBoilingState, mesh)
             A += a
             q_applied += BC.value*a
             acc .+= a .* (T_w[f], T_l[f], dTs[f], qc[f], qq[f], qe[f],
-                          Ab[f], md[f], yp[f], hc[f], qf[f], wf[f])
+                          Ab[f], md[f], yp[f], hc[f])
         end
     end
     A <= 0 && return nothing
     acc ./= A
     q_applied /= A
-    q_total = acc[4] + acc[5] + acc[6] + acc[11]
+    q_total = acc[4] + acc[5] + acc[6]
 
     return (area=A, T_wall=acc[1], T_liquid=acc[2], dT_sup=acc[3],
-            q_conv=acc[4], q_quench=acc[5], q_evap=acc[6], q_film=acc[11],
-            w_film=acc[12],
+            q_conv=acc[4], q_quench=acc[5], q_evap=acc[6],
             q_total=q_total, q_applied=q_applied,
             closure=q_total/max(abs(q_applied), eps()),
             evap_frac=q_evap_frac(acc[6], q_total),
@@ -947,7 +1176,6 @@ function report_wall_boiling(wbs::WallBoilingState, mesh; iteration=nothing)
         "$(lbl)wall boiling (area-averaged)",
         T_wall = r.T_wall, dT_sup = r.dT_sup,
         q_conv = r.q_conv, q_quench = r.q_quench, q_evap = r.q_evap,
-        q_film = r.q_film, w_film = r.w_film,
         q_applied = r.q_applied, closure = r.closure, evap_frac = r.evap_frac,
         mdot_area = r.mdot_area, y_plus = r.y_plus,
     )

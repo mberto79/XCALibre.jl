@@ -93,7 +93,18 @@ end
 # too low and is eating into nucleate boiling - that check is the whole point of
 # running them again.
 # const Q_SCHEDULE = [5.0e3, 1.0e4, 2.0e4, 3.0e4, 4.0e4, 5.0e4, 6.4e4, 7.0e4]   # [W/m^2]
-const Q_SCHEDULE = [5.0e3, 1.0e4, 2.0e4, 3.0e4]   # RPI-only ceiling (pre-film)
+# THROUGH CHF. The measured departure is 64 kW/m^2, so the ladder has to reach
+# past it for the void-driven transition to be TESTED rather than assumed. 4e4
+# and 5e4 are the approach, 6.4e4 straddles the measurement, 7e4 sits beyond it.
+#
+# The 1e4-3e4 levels are retained as the control: they are the validated nucleate
+# branch, and with alpha_1 = 0.8 the blend should not touch them at all. If they
+# move, the transition is firing early and the void field is the thing to look
+# at - not the threshold.
+# const Q_SCHEDULE = [5.0e3, 1.0e4, 2.0e4, 3.0e4, 4.0e4, 5.0e4, 6.4e4, 7.0e4]
+# const Q_SCHEDULE = [5.0e3, 1.0e4, 2.0e4, 3.0e4, 4.0e4, 5.0e4, 6.4e4, 7.0e4, 8.0e4, 1.0e5, 1.2e5, 1.5e5, 2.0e5]
+const Q_SCHEDULE = [8.0e4, 1.0e5, 1.2e5, 1.5e5]
+# const Q_SCHEDULE = [7.0e4]
 
 const FLOW_THROUGHS_INIT = 1      # settling at Q_SCHEDULE[1], discarded
 const FLOW_THROUGHS_PER_STEP = 1  # at each level, including the first
@@ -111,12 +122,16 @@ include(joinpath(@__DIR__, "3d_LH2_pipe_forced_convection.jl"))
 # -----------------------------------------------------------------------------
 # Timing
 # -----------------------------------------------------------------------------
-const DT = 2.0e-5
+# FIXED step. `STEPS_PER_FT` below is derived from DT, so halving it preserves
+# the simulated duration in flow-throughs and simply doubles the step count -
+# the sweep costs ~2x the wall-clock of the 2e-5 runs for the same physics.
+const DT = 2e-5
 const T_FLOW_THROUGH = L_total/U_inlet_mag
 const STEPS_PER_FT = round(Int, T_FLOW_THROUGH/DT)
 
 @info """Boiling curve schedule
     flow-through time : $(round(T_FLOW_THROUGH*1e3, digits=2)) ms  ($(STEPS_PER_FT) steps at dt = $DT s)
+    time stepping     : $(ADAPTIVE_DT ? "adaptive" : "FIXED at $DT s")
     initialisation    : $(FLOW_THROUGHS_INIT) FT at $(Q_SCHEDULE[1]/1e3) kW/m^2
     levels            : $(length(Q_SCHEDULE))  ($(join(round.(Q_SCHEDULE./1e3, digits=1), ", ")) kW/m^2)
     total steps       : $((FLOW_THROUGHS_INIT + FLOW_THROUGHS_PER_STEP*length(Q_SCHEDULE))*STEPS_PER_FT)"""
@@ -176,14 +191,53 @@ end
 # its time on the single-phase ones. `maxAlphaCo = 0.25` lets the step follow the
 # vapour, and `maxCo` is set loose because the pressure path is demonstrably not
 # the constraint here.
-const ADAPTIVE = AdaptiveTimeStepping(
-    maxCo      = 0.5,     # not the binding constraint - see above
-    maxAlphaCo = 0.25,    # MULES stability; this is the one that bites
-    minShrink  = 0.1,
-    maxGrow    = 1.1)     # rise slowly: a level that has just settled should not
-                          # be kicked by a sudden step increase
+# ADAPTIVE STEPPING: OFF.
+#
+# The controller in `update_dt!` is DEADBEAT - it multiplies dt by exactly
+# `target/current` with no damping and no deadband - and it is driven by
+# `maximum(cellsAlphaCourant)`, a single-cell max gated by the DISCONTINUOUS
+# switch `nearInterface(alpha) = 0.01 < alpha < 0.99`. A cell flips from
+# contributing nothing to contributing its full value the instant it crosses
+# alpha = 0.01, so in a boiling run with an advancing front the signal is noisy
+# by construction and a unity-gain controller chasing it oscillates. The
+# asymmetry makes it worse: `minShrink = 0.1` allows a 10x cut in ONE step while
+# `maxGrow = 1.1` needs ~24 steps to climb back, which is the sawtooth signature.
+#
+# A fixed step removes that entirely and makes runs comparable to each other,
+# which matters more here than step-size economy: the boiling curve is a set of
+# points that have to be read against one another.
+#
+# Set `ADAPTIVE_DT = true` to restore the controller below.
+const ADAPTIVE_DT = false
 
-function config_at(q_w, n_steps; write_interval, adaptive = ADAPTIVE)
+# RATCHET, not a controller. `maxGrow = 1.0` is the whole trick: `update_dt!`
+# forms `clamp(target/current, minShrink, maxGrow)`, so capping growth at exactly
+# 1.0 means dt can only ever be CUT, never grown back.
+#
+# That removes the limit cycle at its source. The sawtooth came from the chase -
+# grow 10%, breach, cut, regrow - and a ratchet cannot chase because there is no
+# grow phase. What survives is the part that was doing real work: cutting dt when
+# the Courant limit is genuinely breached.
+#
+# `maxAlphaCo = 0.2` sits deliberately BELOW the 0.25 MULES limit so the cut
+# happens before the breach rather than after it.
+#
+# `minShrink = 0.5` is much gentler than the old 0.1. Under a ratchet a cut is
+# permanent for the rest of the level, so a single noisy spike must not be able
+# to pin dt three decades down. Halving per step still compounds fast when the
+# breaches are real (8x in three steps).
+#
+# COST: dt never recovers within a level, so a hard transient early on makes the
+# rest of that level slow. Each level restarts from DT, so it cannot accumulate
+# across the ladder.
+const ADAPTIVE = AdaptiveTimeStepping(
+    maxCo      = 0.4,
+    maxAlphaCo = 0.2,     # below the 0.25 MULES limit, so it cuts BEFORE breach
+    minShrink  = 0.5,     # gentle: a cut is permanent under a ratchet
+    maxGrow    = 1.0)     # <- RATCHET: cuts only, never grows
+
+function config_at(q_w, n_steps; write_interval,
+                   adaptive = ADAPTIVE_DT ? ADAPTIVE : nothing)
     return Configuration(
         solvers = solvers, schemes = schemes,
         runtime = Runtime(iterations = n_steps, time_step = DT,
@@ -208,7 +262,7 @@ initialise!(model.turbulence.nut, nut_inlet)
 # =============================================================================
 @info "=== INITIALISATION: $(FLOW_THROUGHS_INIT) flow-throughs at $(Q_SCHEDULE[1]/1e3) kW/m^2 ==="
 run!(model, config_at(Q_SCHEDULE[1], FLOW_THROUGHS_INIT*STEPS_PER_FT;
-                      write_interval = FLOW_THROUGHS_INIT*STEPS_PER_FT), inner_loops = 5)
+                      write_interval = 500), inner_loops = 5)
 
 # =============================================================================
 # Stage 2: the staircase
@@ -227,6 +281,31 @@ const WRITE_EVERY = max(1, STEPS_PER_FT ÷ 4)
 # available immediately after `run!` is the end-of-level state.
 const RESULTS = NamedTuple[]
 
+# CSV written INCREMENTALLY - header here, one row appended per completed level.
+#
+# WHY: the write used to sit AFTER the level loop, so a failure at any level
+# discarded every level that had already succeeded. That happened - a ladder
+# reached 6.4e4, the measured CHF and the whole point of the run, then threw on
+# initialising 7e4, leaving a stale 4-level CSV on disk.
+const RESULTS_CSV = joinpath(@__DIR__, "data", "boiling_curve_simulated.csv")
+
+write_curve_header() = open(RESULTS_CSV, "w") do io
+    println(io, "# XCALibre RPI boiling curve")
+    println(io, "# CASE=$CASE  p_sat=$(p_sat/1e6) MPa  U=$U_inlet_mag m/s  T_sat=$(round(T_sat, digits=4)) K")
+    println(io, "# dt=$DT  flow-throughs per level=$FLOW_THROUGHS_PER_STEP")
+    println(io, "q_w,dT_sup,T_wall,q_conv,q_quench,q_evap,closure,evap_frac,alpha_max,alpha_min")
+end
+
+append_curve_row(r) = open(RESULTS_CSV, "a") do io
+    @printf(io, "%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g
+",
+            r.q_w, r.dT_sup, r.T_wall, r.q_conv, r.q_quench, r.q_evap,
+            r.closure, r.evap_frac, r.alpha_max, r.alpha_min)
+end
+
+write_curve_header()
+
+
 for (i, q_w) in enumerate(Q_SCHEDULE)
     @info "=== LEVEL $i/$(length(Q_SCHEDULE)): q_w = $(q_w/1e3) kW/m^2 ==="
     run!(model, config_at(q_w, FLOW_THROUGHS_PER_STEP*STEPS_PER_FT;
@@ -243,6 +322,7 @@ for (i, q_w) in enumerate(Q_SCHEDULE)
                         q_conv = r.q_conv, q_quench = r.q_quench, q_evap = r.q_evap,
                         closure = r.closure, evap_frac = r.evap_frac,
                         alpha_max = maximum(a), alpha_min = minimum(a)))
+        append_curve_row(RESULTS[end])   # flush NOW, not at the end of the ladder
     end
 
     @info(
@@ -265,26 +345,8 @@ end
 # -----------------------------------------------------------------------------
 # Write the simulated curve next to the experimental one
 # -----------------------------------------------------------------------------
-const RESULTS_CSV = joinpath(@__DIR__, "data", "boiling_curve_simulated.csv")
+# (rows were written incrementally as each level completed)
 
-open(RESULTS_CSV, "w") do io
-    println(io, "# XCALibre RPI boiling curve")
-    println(io, "# CASE=$CASE  p_sat=$(p_sat/1e6) MPa  U=$U_inlet_mag m/s  T_sat=$(round(T_sat, digits=4)) K")
-    println(io, "# dt=$DT  flow-throughs per level=$FLOW_THROUGHS_PER_STEP")
-    println(io, "q_w,dT_sup,T_wall,q_conv,q_quench,q_evap,closure,evap_frac,alpha_max,alpha_min")
-    for r in RESULTS
-        # TEN values for TEN headers, and `alpha_max` BEFORE `alpha_min` to match.
-        # This previously wrote nine values ending in `r.alpha_min`, so the column
-        # labelled `alpha_max` actually held `alpha_min` and `alpha_max` was never
-        # written at all - i.e. the CSV reported the one void diagnostic the note
-        # above says "says nothing about whether the wall is boiling", and dropped
-        # the one it calls THE ONE TO WATCH. Symptom: an `alpha_max` column full of
-        # ~1e-64 while the real peak void at q_w = 1e4 is 6.1e-2.
-        @printf(io, "%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g\n",
-                r.q_w, r.dT_sup, r.T_wall, r.q_conv, r.q_quench, r.q_evap,
-                r.closure, r.evap_frac, r.alpha_max, r.alpha_min)
-    end
-end
 @info "simulated curve written" RESULTS_CSV n_levels=length(RESULTS)
 
 # =============================================================================

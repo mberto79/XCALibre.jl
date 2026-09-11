@@ -138,6 +138,10 @@ function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::AMGSolver, A, b, 
     return amg_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol)
 end
 
+function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::Bicgstab, A, b, x; itmax, atol, rtol)
+    return amg_bicgstab_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol)
+end
+
 function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::Cg, A, b, x; itmax, atol, rtol)
     return amg_cg_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol)
 end

@@ -368,11 +368,53 @@ DirichletFunction(name, func)
 ### `AbstractNeumann` conditions
 
 ```julia
-Extrapolated(name, value)
+Extrapolated(name)
 ```
 
 - `name` is a symbol providing the boundary name
-- `value` is a scalar defining the gradient normal to the boundary
+
+Assigns a zero-gradient condition semi-implicitly, using the cell-centre unknown
+together with the cell-centre value from the previous iteration.
+
+```julia
+Zerogradient(name)
+```
+
+- `name` is a symbol providing the boundary name
+
+Also assigns a zero-gradient condition, but explicitly: the gradient is set on
+the boundary faces directly. `Extrapolated` and `Zerogradient` therefore impose
+the same physical condition through different numerical routes.
+
+```julia
+FixedHeatFlux(name, value)
+```
+
+- `name` is a symbol providing the boundary name
+- `value` is the wall heat flux in W/m^2, **positive into the domain**
+
+Prescribes a wall heat flux on an energy field, for example
+
+```julia
+h = [
+    FixedHeatFlux(:heatedWall, 40_000.0),
+    Zerogradient(:outlet)
+]
+```
+
+The condition replaces the whole diffusive face term with the known flux, so it
+carries no dependence on the diffusion coefficient. That makes it valid for any
+of the energy formulations without modification: the energy equation is
+assembled as `- Laplacian(keff, he)` with `keff` scaled to whichever variable is
+being solved (`k/cp` for `SensibleEnthalpy`, `k/cv` for `InternalEnergy`), so
+the specific heat cancels and the prescribed value is the heat flux in W/m^2 in
+every case. Setting `value = 0` reduces exactly to `Zerogradient`.
+
+Note that prescribing the flux is not the same as resolving the wall
+temperature: on a wall-function mesh the near-wall thermal resistance is
+modelled rather than resolved, so a wall temperature recovered from the first
+cell inherits that treatment. Use `FixedTemperature` instead when the wall
+temperature is the quantity being imposed and the flux should follow.
 
 ### `AbstractPhysicalConstraint` conditions
 

@@ -40,9 +40,6 @@ struct FixedHeatFlux{I,V,R<:UnitRange} <: AbstractNeumann
 end
 Adapt.@adapt_structure FixedHeatFlux
 
-# The two-argument form `FixedHeatFlux(:tankWall, 3.5)` comes from the generic
-# `(::Type{T})(name::Symbol, value) where T<:AbstractBoundary` constructor in
-# Discretise_4_assign_boundaries.jl; `assign` then fills in `IDs_range`.
 
 
 @define_boundary FixedHeatFlux Laplacian{Linear} begin

@@ -209,65 +209,77 @@ function _apply_level_smoother_impl!(hierarchy::AMGHierarchy, smoother::AMGCheby
     return level.x
 end
 
-function _amg_forward_sweep!(x, A::AMGMatrixCSR, b, diagonal, omega)
+function _amg_forward_sweep!(x, A::AMGMatrixCSR, b, diagonal, didx, omega)
     rowptr = _rowptr(A)
     colval = _colval(A)
     nzval = _nzval(A)
+    
     T = eltype(x)
     @inbounds for i in 1:_m(A)
-        sigma = zero(T)
         aii = diagonal[i]
-        for p in rowptr[i]:(rowptr[i + 1] - 1)
-            j = colval[p]
-            j == i && continue
-            sigma += nzval[p] * x[j]
+        iszero(aii) && continue
+        sigma = zero(T)
+        d = didx[i]
+        # Split at the stored diagonal position rather than testing `j == i` on
+        # every non-zero. The index is already built at setup for the diagonal
+        # extraction, so this costs nothing and takes a branch out of the
+        # innermost loop of a SERIAL sweep.
+        for p in rowptr[i]:(d - 1)
+            sigma += nzval[p] * x[colval[p]]
         end
-        if !iszero(aii)
-            gs_value = (b[i] - sigma) / aii
-            x[i] = (one(T) - omega) * x[i] + omega * gs_value
+        for p in (d + 1):(rowptr[i + 1] - 1)
+            sigma += nzval[p] * x[colval[p]]
         end
+        gs_value = (b[i] - sigma) / aii
+        x[i] = (one(T) - omega) * x[i] + omega * gs_value
     end
     return x
 end
 
-function _amg_backward_sweep!(x, A::AMGMatrixCSR, b, diagonal, omega)
+function _amg_backward_sweep!(x, A::AMGMatrixCSR, b, diagonal, didx, omega)
     rowptr = _rowptr(A)
     colval = _colval(A)
     nzval = _nzval(A)
+    
     T = eltype(x)
     @inbounds for i in _m(A):-1:1
-        sigma = zero(T)
         aii = diagonal[i]
-        for p in rowptr[i]:(rowptr[i + 1] - 1)
-            j = colval[p]
-            j == i && continue
-            sigma += nzval[p] * x[j]
+        iszero(aii) && continue
+        sigma = zero(T)
+        d = didx[i]
+        # Split at the stored diagonal position rather than testing `j == i` on
+        # every non-zero. The index is already built at setup for the diagonal
+        # extraction, so this costs nothing and takes a branch out of the
+        # innermost loop of a SERIAL sweep.
+        for p in rowptr[i]:(d - 1)
+            sigma += nzval[p] * x[colval[p]]
         end
-        if !iszero(aii)
-            gs_value = (b[i] - sigma) / aii
-            x[i] = (one(T) - omega) * x[i] + omega * gs_value
+        for p in (d + 1):(rowptr[i + 1] - 1)
+            sigma += nzval[p] * x[colval[p]]
         end
+        gs_value = (b[i] - sigma) / aii
+        x[i] = (one(T) - omega) * x[i] + omega * gs_value
     end
     return x
 end
 
-function _apply_sweep!(::AMGForwardSweep, x, A::AMGMatrixCSR, b, diagonal, omega)
-    return _amg_forward_sweep!(x, A, b, diagonal, omega)
+function _apply_sweep!(::AMGForwardSweep, x, A::AMGMatrixCSR, b, diagonal, didx, omega)
+    return _amg_forward_sweep!(x, A, b, diagonal, didx, omega)
 end
 
-function _apply_sweep!(::AMGBackwardSweep, x, A::AMGMatrixCSR, b, diagonal, omega)
-    return _amg_backward_sweep!(x, A, b, diagonal, omega)
+function _apply_sweep!(::AMGBackwardSweep, x, A::AMGMatrixCSR, b, diagonal, didx, omega)
+    return _amg_backward_sweep!(x, A, b, diagonal, didx, omega)
 end
 
-function _apply_sweep!(::AMGSymmetricSweep, x, A::AMGMatrixCSR, b, diagonal, omega)
-    _amg_forward_sweep!(x, A, b, diagonal, omega)
-    _amg_backward_sweep!(x, A, b, diagonal, omega)
+function _apply_sweep!(::AMGSymmetricSweep, x, A::AMGMatrixCSR, b, diagonal, didx, omega)
+    _amg_forward_sweep!(x, A, b, diagonal, didx, omega)
+    _amg_backward_sweep!(x, A, b, diagonal, didx, omega)
     return x
 end
 
 function _apply_level_smoother_impl!(hierarchy::AMGHierarchy, smoother::AMGGaussSeidel, level::AMGLevel, b, loops)
     for _ in 1:(loops * smoother.iterations)
-        _apply_sweep!(smoother.sweep, level.x, level.A, b, level.diagonal, one(eltype(level.x)))
+        _apply_sweep!(smoother.sweep, level.x, level.A, b, level.diagonal, level.diagonal_index, one(eltype(level.x)))
     end
     return level.x
 end
@@ -275,7 +287,7 @@ end
 function _apply_level_smoother_impl!(hierarchy::AMGHierarchy, smoother::AMGSOR, level::AMGLevel, b, loops)
     omega = eltype(level.x)(smoother.omega)
     for _ in 1:(loops * smoother.iterations)
-        _apply_sweep!(smoother.sweep, level.x, level.A, b, level.diagonal, omega)
+        _apply_sweep!(smoother.sweep, level.x, level.A, b, level.diagonal, level.diagonal_index, omega)
     end
     return level.x
 end

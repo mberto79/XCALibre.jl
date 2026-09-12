@@ -26,19 +26,110 @@ function _cg_step_amg!(hierarchy::AbstractAMGHierarchy, x, r, p, q, alpha)
     return x
 end
 
-function _is_symmetric(A; atol=1e-10)
-    rowptr = _rowptr(A)
-    colval = _colval(A)
-    nzval = _nzval(A)
-    for i in 1:_m(A)
+"""
+    _is_symmetric(A; rtol=1e-9, atol=1e-14) -> Bool
+
+Symmetry test for the `Cg()` gate, measured RELATIVE to the local matrix scale.
+
+### Why not an absolute tolerance
+
+It was `abs(A[i,j] - A[j,i]) <= 1e-10`, which is dimensionally meaningless: the
+entries of a pressure matrix scale with the compressibility, the time step and
+the cell size, so the SAME physical problem passes or fails depending on the
+units and the operating point.
+
+That is not hypothetical. On the LH2 pipe under `pressure_form = :mass`, the
+asymmetry comes from `Divergence(pconv, p_rgh)` - the implicit pressure
+convection, which is upwinded and therefore genuinely non-symmetric - and scales
+as `psi*|U.Sf|`. With the void-response term, `psi = alpha*psi_v*rho_l` is LINEAR
+in void, so:
+
+    alpha=0.31, |U|=6      |dA| ~ 3.3e-11    passed
+    alpha=0.50, |U|=6      |dA| ~ 5.3e-11    passed
+    alpha=1.00, |U|=35     |dA| ~ 6.1e-10    FAILED
+
+A boiling-curve ladder therefore ran seven heat-flux levels and then threw on
+building the eighth, purely because the carried-over state had hotter cells in
+it. Meanwhile the matrix diagonal is order 1e4, so that 6e-10 is ~1e-14
+RELATIVE - the matrix is symmetric to fourteen digits and `Cg` was entirely
+appropriate for it.
+
+### What this measures instead
+
+    abs(A[i,j] - A[j,i]) <= atol + rtol*max(abs(A[i,i]), abs(A[j,j]))
+
+Scale invariant, so it means the same thing at any operating point. `rtol = 1e-9`
+is far above the round-off level a genuinely symmetric assembly produces and far
+below the O(0.1-1) relative asymmetry a convection-dominated matrix would show,
+so a matrix `Cg` cannot handle is still rejected.
+"""
+function _is_symmetric(A; rtol=1e-9, atol=1e-10)
+    rowptr = _rowptr(A); colval = _colval(A); nzval = _nzval(A)
+    n = _m(A)
+    T = real(eltype(nzval))
+    dg = zeros(T, n)
+    for i in 1:n
+        d = spindex(rowptr, colval, i, i)
+        dg[i] = d == 0 ? zero(T) : abs(nzval[d])
+    end
+    for i in 1:n
         for p in rowptr[i]:(rowptr[i + 1] - 1)
             j = colval[p]
             q = spindex(rowptr, colval, j, i)
             q == 0 && return false
-            abs(nzval[p] - nzval[q]) <= atol || return false
+            # `max`, NOT `+`: the relative term ADDS tolerance for a
+            # large-scaled matrix but must never REMOVE any. A first attempt used
+            # `atol + rtol*scale` with atol = 1e-14, which is far TIGHTER than the
+            # original absolute 1e-10 whenever the diagonal is small - and it
+            # promptly failed a case that had previously passed, at a LOWER heat
+            # flux than the one it was meant to fix.
+            tol = max(atol, rtol*max(dg[i], dg[j]))
+            abs(nzval[p] - nzval[q]) <= tol || return false
         end
     end
     return true
+end
+
+"""
+    symmetry_report(A) -> NamedTuple
+
+Worst asymmetry in `A`, absolute and relative to the local diagonal, with the
+entry it occurred at and the diagonal magnitudes there.
+
+Exists because `AMG(mode=Cg())` used to fail with a bare "not symmetric" throw,
+which says nothing about whether the matrix is badly asymmetric or merely
+scaled such that a fixed threshold bites. Those need opposite responses.
+"""
+function symmetry_report(A)
+    rowptr = _rowptr(A); colval = _colval(A); nzval = _nzval(A)
+    n = _m(A)
+    T = real(eltype(nzval))
+    dg = zeros(T, n)
+    for i in 1:n
+        d = spindex(rowptr, colval, i, i)
+        dg[i] = d == 0 ? zero(T) : abs(nzval[d])
+    end
+    worst_abs = zero(T); worst_rel = zero(T); wi = 0; wj = 0; missing_pairs = 0
+    for i in 1:n
+        for p in rowptr[i]:(rowptr[i + 1] - 1)
+            j = colval[p]
+            q = spindex(rowptr, colval, j, i)
+            if q == 0
+                missing_pairs += 1
+                continue
+            end
+            d = abs(nzval[p] - nzval[q])
+            sc = max(dg[i], dg[j])
+            r = sc > 0 ? d/sc : (d > 0 ? T(Inf) : zero(T))
+            if r > worst_rel
+                worst_rel = r; worst_abs = d; wi = i; wj = j
+            end
+        end
+    end
+    return (worst_abs = worst_abs, worst_rel = worst_rel, i = wi, j = wj,
+            diag_i = wi == 0 ? zero(T) : dg[wi], diag_j = wj == 0 ? zero(T) : dg[wj],
+            diag_max = isempty(dg) ? zero(T) : maximum(dg),
+            structurally_missing = missing_pairs)
 end
 
 # Matches Krylov.jl stopping threshold so swapping Cg()<->AMG keeps tuned tolerances valid
@@ -48,7 +139,25 @@ _amg_eps(::Type{T}, atol, rtol, r0norm) where {T} = T(atol) + T(rtol) * r0norm
 _amg_cg_flexible(solver::AMG) = solver.scale_correction
 
 function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol)
-    hierarchy.is_symmetric || throw(ArgumentError("AMG(mode=Cg()) requires a symmetric matrix"))
+    if !hierarchy.is_symmetric
+        r = symmetry_report(A)
+        throw(ArgumentError(string(
+            "AMG(mode=Cg()) requires a symmetric matrix.
+",
+            "  worst |A[i,j]-A[j,i]| = ", r.worst_abs, "  at (", r.i, ",", r.j, ")
+",
+            "  relative to local diagonal = ", r.worst_rel,
+            "   (diag there ", r.diag_i, " / ", r.diag_j, ", max diag ", r.diag_max, ")
+",
+            "  structurally missing transpose entries = ", r.structurally_missing, "
+
+",
+            "A relative value near machine precision means the matrix IS symmetric and the
+",
+            "test scale is wrong. A relative value of order 0.1-1 means it is genuinely
+",
+            "non-symmetric - use AMG(mode=AMGSolver()) or Bicgstab() instead.")))
+    end
     T = eltype(x)
     r = workspace.residual
     z = workspace.preconditioned

@@ -289,10 +289,12 @@ _coarse_direct_eltype(::Type{T}) where {T} = T
 
 _amg_mode(mode::AMGSolver) = mode
 _amg_mode(mode::Cg) = mode
-_amg_mode(mode) = throw(ArgumentError("AMG mode must be AMGSolver() or Cg()"))
+_amg_mode(mode::Bicgstab) = mode
+_amg_mode(mode) = throw(ArgumentError("AMG mode must be AMGSolver(), Cg() or Bicgstab()"))
 
 _amg_mode_name(::AMGSolver) = "solve"
 _amg_mode_name(::Cg) = "cg"
+_amg_mode_name(::Bicgstab) = "bicgstab"
 _amg_mode_name(mode) = string(nameof(typeof(mode)))
 
 _amg_cycle(cycle::VCycle) = cycle
@@ -482,6 +484,17 @@ mutable struct AMGWorkspace{H,V,T,RH} <: AbstractAMGWorkspace
     search::V
     preconditioned::V
     q::V
+    # BiCGStab only: the fixed shadow residual and the second matvec target.
+    # CG reuses `residual`/`search`/`preconditioned`/`q`/`correction`, but the
+    # two-sided recurrence needs `r_hat` held fixed for the whole solve and a
+    # separate `t = A*M^-1*s`, so neither can alias.
+    shadow::V
+    t::V
+    # `svec` is BiCGStab's intermediate residual. It CANNOT alias `solution`:
+    # `solve_system!` sets `x = workspace.solution` and solves in place, so
+    # writing scratch there destroys the solution mid-iteration. CG never touches
+    # `solution`, which is why the collision only appeared with BiCGStab.
+    svec::V
     iterations::Int
     converged::Bool
     last_relative_residual::T
@@ -586,6 +599,9 @@ function _workspace(solver::AMG, b)
         similar(x),
         similar(x),
         similar(x),
+        similar(x),   # shadow (BiCGStab)
+        similar(x),   # t      (BiCGStab)
+        similar(x),   # svec   (BiCGStab)
         0,
         false,
         zero(T),

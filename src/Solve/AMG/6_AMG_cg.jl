@@ -31,37 +31,6 @@ end
 
 Symmetry test for the `Cg()` gate, measured RELATIVE to the local matrix scale.
 
-### Why not an absolute tolerance
-
-It was `abs(A[i,j] - A[j,i]) <= 1e-10`, which is dimensionally meaningless: the
-entries of a pressure matrix scale with the compressibility, the time step and
-the cell size, so the SAME physical problem passes or fails depending on the
-units and the operating point.
-
-That is not hypothetical. On the LH2 pipe under `pressure_form = :mass`, the
-asymmetry comes from `Divergence(pconv, p_rgh)` - the implicit pressure
-convection, which is upwinded and therefore genuinely non-symmetric - and scales
-as `psi*|U.Sf|`. With the void-response term, `psi = alpha*psi_v*rho_l` is LINEAR
-in void, so:
-
-    alpha=0.31, |U|=6      |dA| ~ 3.3e-11    passed
-    alpha=0.50, |U|=6      |dA| ~ 5.3e-11    passed
-    alpha=1.00, |U|=35     |dA| ~ 6.1e-10    FAILED
-
-A boiling-curve ladder therefore ran seven heat-flux levels and then threw on
-building the eighth, purely because the carried-over state had hotter cells in
-it. Meanwhile the matrix diagonal is order 1e4, so that 6e-10 is ~1e-14
-RELATIVE - the matrix is symmetric to fourteen digits and `Cg` was entirely
-appropriate for it.
-
-### What this measures instead
-
-    abs(A[i,j] - A[j,i]) <= atol + rtol*max(abs(A[i,i]), abs(A[j,j]))
-
-Scale invariant, so it means the same thing at any operating point. `rtol = 1e-9`
-is far above the round-off level a genuinely symmetric assembly produces and far
-below the O(0.1-1) relative asymmetry a convection-dominated matrix would show,
-so a matrix `Cg` cannot handle is still rejected.
 """
 function _is_symmetric(A; rtol=1e-9, atol=1e-10)
     rowptr = _rowptr(A); colval = _colval(A); nzval = _nzval(A)

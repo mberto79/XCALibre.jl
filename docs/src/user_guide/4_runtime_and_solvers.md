@@ -48,6 +48,22 @@ SolverSetup(
 )
 ```
 
+For non-symmetric systems, users should use `mode=bicgstab` for AMG-preconditioned Biconjugate Gradient Stabilized method.
+
+```julia
+SolverSetup(
+    solver = AMG(
+        mode = Bicgstab(),
+        smoother = AMGGaussSeidel(sweep = AMGForwardSweep())
+        ),
+    preconditioner=DILU(),
+    convergence = 1e-7,
+    relax = 1.0,
+    rtol = 0.0,
+    atol = 1e-5     
+)
+```
+
 ## Launching flow solvers
 ---
 

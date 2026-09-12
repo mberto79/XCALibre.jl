@@ -126,11 +126,6 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, 
     copyto!(values, x)
     workspace.iterations >= itmax && @warn "Maximum number of iterations reached!" maxlog=10
 
-    # Gate G1 - see `record_linear_solve!`. AMG's default `itmax` is 200, well
-    # below what a stretched near-wall pressure system needs, and it fails the
-    # same way Jacobi does while looking identical from the outside.
-    record_linear_solve!(phiEqn, setup, component, config, workspace.iterations)
-
     return residual(phiEqn, component, config)
 end
 

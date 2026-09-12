@@ -1,4 +1,3 @@
-const BICG_REASON = Ref(:none)
 # =============================================================================
 #  AMG-preconditioned BiCGStab
 # =============================================================================
@@ -7,13 +6,7 @@ const BICG_REASON = Ref(:none)
 #
 #  `AMG` previously offered two modes, and neither suits a NON-SYMMETRIC matrix:
 #
-#    Cg()          Krylov accelerated, but requires symmetry. Used on the LH2
-#                  pipe under `pressure_form = :mass` for months and it did
-#                  converge - but that matrix is 9.5% asymmetric relative to its
-#                  diagonal (measured), so it was never valid. It passed the old
-#                  ABSOLUTE 1e-10 symmetry test only because the matrix itself is
-#                  small (diagonal ~1e-7), and threw as soon as rising void grew
-#                  `psi` enough.
+#    Cg()          Krylov accelerated, but requires symmetry.
 #
 #    AMGSolver()   valid for any matrix, but a plain fixed-point iteration: apply
 #                  the V-cycle, add the correction, recompute the residual. NO
@@ -21,19 +14,11 @@ const BICG_REASON = Ref(:none)
 #                  ~5x the cost of Cg-mode on the same problem.
 #
 #  The asymmetry is `Divergence(pconv, p_rgh)`, the implicit pressure convection.
-#  It is upwinded and therefore non-symmetric by construction, and it scales as
-#  `psi*|U.Sf|` - so it GROWS with void fraction and cannot be tuned away.
 #
 #  BiCGStab is the standard answer: a short-recurrence Krylov method that makes no
 #  symmetry assumption, driven by the SAME V-cycle preconditioner. It recovers the
 #  acceleration `AMGSolver()` lacks while staying valid for the operator that is
 #  actually assembled.
-#
-#  COST PER ITERATION. Two preconditioner applications and two matvecs, against
-#  one of each for CG - so roughly 2x a CG iteration, but the iteration COUNT does
-#  not blow up the way an unaccelerated fixed-point iteration does. The comparison
-#  that matters is against `AMGSolver()`, not against a CG that was never entitled
-#  to run on this matrix.
 # =============================================================================
 
 @kernel function _amg_bicg_p_kernel!(p, r, v, beta, omega)
@@ -90,8 +75,7 @@ but changes the Krylov space mid-solve, which interacts badly with a nonlinear
 (scale-corrected) preconditioner.
 
 There is also a stall guard matching [`amg_cg_solve!`](@ref): 20 iterations
-without a 1e-4 relative improvement ends the solve. A stalled solve that reports
-success has cost this project weeks before - see `record_linear_solve!`.
+without a 1e-4 relative improvement ends the solve.
 """
 function amg_bicgstab_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy,
                              solver::AMG, A, b, x; itmax, atol, rtol)
@@ -221,14 +205,14 @@ function amg_bicgstab_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHier
         if !isfinite(rnorm) || !isfinite(rel)
             break
         end
-        if rnorm <= eps_target; reason = :converged; break; end
+        if rnorm <= eps_target; break; end
 
         if rnorm < best_rnorm * (one(T) - T(1e-4))
             best_rnorm = rnorm
             stall = 0
         else
             stall += 1
-            if stall >= stall_limit; reason = :stall; break; end
+            if stall >= stall_limit; break; end
         end
         rho = rho_new
     end

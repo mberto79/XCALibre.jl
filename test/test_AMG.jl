@@ -408,6 +408,124 @@ XCALibre.Solve.amg_solve!(
 )
 @test norm(b_bad - Array(parent(A_bad)) * x_bad) / norm(b_bad) < 1e-8
 
+# =============================================================================
+#  BiCGStab mode - the non-symmetric Krylov path
+# =============================================================================
+#
+#  `Cg()` throws on a non-symmetric matrix (asserted above) and `AMGSolver()`
+#  accepts one but is an unaccelerated fixed-point iteration. `Bicgstab()` is the
+#  mode that is both VALID for a non-symmetric operator and Krylov accelerated,
+#  so these pin the three things that distinguish it.
+#
+#  `A_bad` is reused deliberately: it is the same matrix the `Cg()` rejection is
+#  asserted on a few lines above, so the pair of tests reads as one statement -
+#  this operator is refused by one mode and solved by the other.
+
+# --- 1. the mode constructs and is accepted by the validator -----------------
+@test AMG(mode=Bicgstab()).mode isa Bicgstab
+@test XCALibre.Solve._amg_mode_name(Bicgstab()) == "bicgstab"
+
+# --- 2. workspace aliasing ---------------------------------------------------
+#  BiCGStab's two-sided recurrence needs three vectors CG does not, and none may
+#  alias. `svec` in particular must not be `solution`: `solve_system!` solves in
+#  place with `x = workspace.solution`, so using it as scratch overwrites the
+#  answer mid-iteration. That collision is invisible in CG, which never touches
+#  `solution`, so nothing else in this file would catch a regression.
+solver_bicg = AMG(mode=Bicgstab(), coarsening=SmoothAggregation(),
+                  smoother=AMGJacobi(), max_coarse_rows=2)
+ws_bicg = _workspace(solver_bicg, b_bad)
+ws_bicg = XCALibre.Solve.update!(ws_bicg, A_bad, solver_bicg, config)
+
+@test ws_bicg.svec !== ws_bicg.solution
+@test ws_bicg.shadow !== ws_bicg.residual
+@test ws_bicg.t !== ws_bicg.q
+@test length(ws_bicg.svec) == length(b_bad)
+@test length(ws_bicg.shadow) == length(b_bad)
+@test length(ws_bicg.t) == length(b_bad)
+
+# --- 3. it SOLVES the matrix `Cg()` refuses ----------------------------------
+#  `is_symmetric` is computed ONLY for `Cg()` - `1_AMG_setup.jl` hardcodes it
+#  `true` for every other mode, because the flag gates CG's validity check rather
+#  than describing the matrix. So the SAME matrix reports differently depending
+#  on the mode, and the pair below says so explicitly.
+@test ws_bicg.hierarchy.is_symmetric      # Bicgstab: not checked, hardcoded true
+@test !ws_bad.hierarchy.is_symmetric      # Cg on the same A_bad: actually checked
+x_bicg = zeros(eltype(b_bad), length(b_bad))
+XCALibre.Solve.amg_bicgstab_solve!(
+    ws_bicg, ws_bicg.hierarchy, solver_bicg, ws_bicg.hierarchy.levels[1].A,
+    b_bad, x_bicg; itmax=50, atol=1e-10, rtol=1e-10)
+@test norm(b_bad - Array(parent(A_bad)) * x_bicg) / norm(b_bad) < 1e-8
+@test ws_bicg.converged
+@test x_bicg ≈ Array(parent(A_bad)) \ b_bad rtol=1e-6
+
+# --- 4. the solution vector survives the solve -------------------------------
+#  The observable form of the `svec` aliasing bug: solving in place through
+#  `workspace.solution` must leave the converged answer there, not scratch.
+ws_alias = _workspace(solver_bicg, b_bad)
+ws_alias = XCALibre.Solve.update!(ws_alias, A_bad, solver_bicg, config)
+copyto!(ws_alias.solution, zeros(eltype(b_bad), length(b_bad)))
+XCALibre.Solve.amg_bicgstab_solve!(
+    ws_alias, ws_alias.hierarchy, solver_bicg, ws_alias.hierarchy.levels[1].A,
+    b_bad, ws_alias.solution; itmax=50, atol=1e-10, rtol=1e-10)
+@test norm(b_bad - Array(parent(A_bad)) * Array(ws_alias.solution)) / norm(b_bad) < 1e-8
+
+# --- 5. early exit when the initial guess is already converged ---------------
+#  Guards the `rnorm <= eps_target` branch before the loop, which sets
+#  `iterations = 0` and returns without a single preconditioner application.
+ws_exact = _workspace(solver_bicg, b_bad)
+ws_exact = XCALibre.Solve.update!(ws_exact, A_bad, solver_bicg, config)
+x_exact = Array(parent(A_bad)) \ b_bad
+XCALibre.Solve.amg_bicgstab_solve!(
+    ws_exact, ws_exact.hierarchy, solver_bicg, ws_exact.hierarchy.levels[1].A,
+    b_bad, copy(x_exact); itmax=50, atol=1e-8, rtol=1e-8)
+@test ws_exact.iterations == 0
+@test ws_exact.converged
+
+# --- 6. it also solves a SYMMETRIC system ------------------------------------
+#  Bicgstab is valid for any matrix, so selecting it must not cost accuracy on
+#  the symmetric problem the rest of this file uses.
+solver_bicg_sym = AMG(mode=Bicgstab(), coarsening=SmoothAggregation(), smoother=AMGJacobi())
+ws_bicg_sym = _workspace(solver_bicg_sym, b)
+ws_bicg_sym = XCALibre.Solve.update!(ws_bicg_sym, A, solver_bicg_sym, config)
+x_bicg_sym = zeros(eltype(b), length(b))
+XCALibre.Solve.amg_bicgstab_solve!(
+    ws_bicg_sym, ws_bicg_sym.hierarchy, solver_bicg_sym,
+    ws_bicg_sym.hierarchy.levels[1].A, b, x_bicg_sym; itmax=100, atol=1e-10, rtol=1e-10)
+@test norm(b - Array(parent(A)) * x_bicg_sym) / norm(b) < 1e-8
+
+# --- 7. every Gauss-Seidel sweep direction works with it ---------------------
+#  `AMGGaussSeidel` sweeps were reworked to split each row at the STORED diagonal
+#  index instead of testing `j == i` per non-zero. That touches the innermost
+#  loop of all three directions, and a wrong split silently drops or
+#  double-counts the diagonal - which still converges, just to the wrong answer.
+#  The forward sweep is the combination used on the LH2 pipe.
+for sweep in (AMGForwardSweep(), AMGBackwardSweep(), AMGSymmetricSweep())
+    solver_gs = AMG(mode=Bicgstab(), smoother=AMGGaussSeidel(sweep=sweep))
+    ws_gs = _workspace(solver_gs, b)
+    ws_gs = XCALibre.Solve.update!(ws_gs, A, solver_gs, config)
+    x_gs = zeros(eltype(b), length(b))
+    XCALibre.Solve.amg_bicgstab_solve!(
+        ws_gs, ws_gs.hierarchy, solver_gs, ws_gs.hierarchy.levels[1].A,
+        b, x_gs; itmax=100, atol=1e-10, rtol=1e-10)
+    @test norm(b - Array(parent(A)) * x_gs) / norm(b) < 1e-8
+end
+
+# --- 8. a zero diagonal row is skipped, not divided by ------------------------
+#  The rewritten sweeps guard with `iszero(aii) && continue` where the previous
+#  form wrapped the update in `if !iszero(aii)`. Same intent, different control
+#  flow - this pins that a singular row still yields a finite result rather than
+#  NaN propagating through the hierarchy.
+A_zerodiag = SparseXCSR(sparsecsr([1, 1, 2, 2], [1, 2, 1, 2], [0.0, 1.0, 1.0, 2.0], 2, 2))
+b_zerodiag = [1.0, 1.0]
+solver_zd = AMG(mode=Bicgstab(), smoother=AMGGaussSeidel(sweep=AMGForwardSweep()), max_coarse_rows=2)
+ws_zd = _workspace(solver_zd, b_zerodiag)
+ws_zd = XCALibre.Solve.update!(ws_zd, A_zerodiag, solver_zd, config)
+x_zd = zeros(eltype(b_zerodiag), length(b_zerodiag))
+XCALibre.Solve.amg_bicgstab_solve!(
+    ws_zd, ws_zd.hierarchy, solver_zd, ws_zd.hierarchy.levels[1].A,
+    b_zerodiag, x_zd; itmax=20, atol=1e-8, rtol=1e-8)
+@test all(isfinite, Array(x_zd))
+
 # NEW SECTION: mixed precision (coarse_storage=Float32) — API, type-stability, FP32 storage with
 # FP64 outer correction reaches the FP64 tolerance and matches FP64 iteration count.
 @test AMG(coarse_storage=Float32).coarse_storage === Float32

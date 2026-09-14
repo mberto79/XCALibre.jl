@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 * Added FixedHeatFlux boundary condition [#149]
-* Added AMG-preconditioned stabilized biconjugate gradient for solving non-symmetric equations/ [#150]
+* Added AMG-preconditioned stabilized biconjugate gradient for solving non-symmetric equations [#150]
+
+### Fixed
+* Fixed missing density term in set_production! needed for cases with non-unity density [#151]
 
 
 ## Version [v0.6.0] - 2026-07-17

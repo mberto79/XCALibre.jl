@@ -73,9 +73,6 @@ is a genuine improvement on the incoming `x`, and the solve reports the iteratio
 count it actually reached. Restarting with a fresh shadow is the textbook remedy
 but changes the Krylov space mid-solve, which interacts badly with a nonlinear
 (scale-corrected) preconditioner.
-
-There is also a stall guard matching [`amg_cg_solve!`](@ref): 20 iterations
-without a 1e-4 relative improvement ends the solve.
 """
 function amg_bicgstab_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy,
                              solver::AMG, A, b, x; itmax, atol, rtol)

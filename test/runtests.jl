@@ -41,6 +41,13 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_wall_distance.jl")
     end
 
+    # KWallFunction production must be density-weighted. Called directly because
+    # every wall-function solver case in CI runs at rho = 1, where the missing
+    # factor cannot be seen.
+    @testset "Wall Function Production Density Unit Test" begin
+        include("unit_test_wall_production_density.jl")
+    end
+
     # @testset "setFields Function Unit Test" begin
     #     include("unit_test_setFields.jl")
     # end

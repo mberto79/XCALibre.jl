@@ -48,7 +48,7 @@ SolverSetup(
 )
 ```
 
-For non-symmetric systems, users should use `mode=bicgstab` for AMG-preconditioned Biconjugate Gradient Stabilized method.
+For non-symmetric systems, users should use `mode=bicgstab` for AMG-preconditioned stabilized biconjugate gradient such as pressure equations in compressible flow.
 
 ```julia
 SolverSetup(

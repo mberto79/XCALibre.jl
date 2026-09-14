@@ -39,7 +39,7 @@ unmodified_cell_value_expected = 0.0
 box_test_expected_cells_amount = 4
 
 initialise!(model.momentum.p, 0.0)
-box_test_modified_cells_amount = setField_Box!(mesh=mesh, field=model.momentum.p, value=1.0, min_corner=[950.0, 950.0, 0.0], max_corner=[1000.0, 1000.0, 0.0])
+box_test_modified_cells_amount = setField_Box!(mesh=mesh, field=model.momentum.p, value=1.0, min_corner=[950.0, 950.0, 0.0], max_corner=[1000.0, 1000.0, 0.0], hardware=hardware)
 
 box_test_random_modified_cell_value = model.momentum.p[1]
 box_test_random_unmodified_cell_value = model.momentum.p[100]
@@ -71,13 +71,13 @@ circle_test2_expected_cells_amount = 3
 circle_test3_expected_cells_amount = 4
 
 initialise!(model.momentum.p, 0.0)
-circle_test1_modified_cells_amount = setField_Circle2D!(mesh=mesh, field=model.momentum.p, value=1.0, centre=[1050.0,1050.0], radius=100.0)
+circle_test1_modified_cells_amount = setField_Circle2D!(mesh=mesh, field=model.momentum.p, value=1.0, centre=[1050.0,1050.0], radius=100.0, hardware=hardware)
 
 initialise!(model.momentum.p, 0.0)
-circle_test2_modified_cells_amount = setField_Circle2D!(mesh=mesh, field=model.momentum.p, value=1.0, centre=[1050.0,1050.0], radius=115.0)
+circle_test2_modified_cells_amount = setField_Circle2D!(mesh=mesh, field=model.momentum.p, value=1.0, centre=[1050.0,1050.0], radius=115.0, hardware=hardware)
 
 initialise!(model.momentum.p, 0.0)
-circle_test3_modified_cells_amount = setField_Circle2D!(mesh=mesh, field=model.momentum.p, value=1.0, centre=[1050.0,1050.0], radius=125.0)
+circle_test3_modified_cells_amount = setField_Circle2D!(mesh=mesh, field=model.momentum.p, value=1.0, centre=[1050.0,1050.0], radius=125.0, hardware=hardware)
 
 @test circle_test1_modified_cells_amount ≈ circle_test1_expected_cells_amount
 @test circle_test2_modified_cells_amount ≈ circle_test2_expected_cells_amount
@@ -103,7 +103,7 @@ circle_test3_modified_cells_amount = setField_Circle2D!(mesh=mesh, field=model.m
 sphere_test_expected_cells_amount = 3
 
 initialise!(model.momentum.p, 0.0)
-sphere_test_modified_cells_amount = setField_Sphere3D!(mesh=mesh, field=model.momentum.p, value=1.0, centre=[1050.0,1050.0,100.0], radius=150.0)
+sphere_test_modified_cells_amount = setField_Sphere3D!(mesh=mesh, field=model.momentum.p, value=1.0, centre=[1050.0,1050.0,100.0], radius=150.0, hardware=hardware)
 
 
 @test sphere_test_modified_cells_amount ≈ sphere_test_expected_cells_amount

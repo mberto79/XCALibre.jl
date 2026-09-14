@@ -7,7 +7,6 @@ using SparseMatricesCSR
 # using ThreadedSparseCSR
 
 using Adapt
-using Atomix
 using KernelAbstractions
 import KernelAbstractions as KA
 using XCALibre.Multithread

@@ -67,8 +67,8 @@ boundaries = assign(
             Dirichlet(:inlet, p_inf),
             Zerogradient(:outlet),
             Wall(:cylinder),
-            Zerogradient(:top),
-            Zerogradient(:bottom)
+            Slip(:top),
+            Slip(:bottom)
         ],
         he = [
             FixedTemperature(:inlet, T=T_inf, Enthalpy(cp=cp, Tref=Tref)),
@@ -76,29 +76,29 @@ boundaries = assign(
             Zerogradient(:outlet),
             FixedTemperature(:cylinder, T=T_inf, Enthalpy(cp=cp, Tref=Tref)),
             # FixedTemperature(:cylinder, T=T_inf, IEnergy(cv=cv, Tref=Tref)),
-            Zerogradient(:top),
-            Zerogradient(:bottom)
+            Slip(:top),
+            Slip(:bottom)
         ],
         k = [
             Dirichlet(:inlet, k_inlet),
             Zerogradient(:outlet),
             KWallFunction(:cylinder),
-            Zerogradient(:top),
-            Zerogradient(:bottom)
+            Slip(:top),
+            Slip(:bottom)
         ],
         omega = [
             Dirichlet(:inlet, ω_inlet),
             Zerogradient(:outlet),
             OmegaWallFunction(:cylinder),
-            Zerogradient(:top),
-            Zerogradient(:bottom)
+            Slip(:top),
+            Slip(:bottom)
         ],
         nut = [
-            Dirichlet(:inlet, νt_inlet),
+            Extrapolated(:inlet, νt_inlet),
             Extrapolated(:outlet),
             NutWallFunction(:cylinder),
-            Zerogradient(:top),
-            Zerogradient(:bottom)
+            Slip(:top),
+            Slip(:bottom)
         ]
     )
 )

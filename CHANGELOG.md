@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 * Fixed `wall_shear_stress` to apply the effective viscosity (`nueff`) scaling to the x-component of the shear stress vector - previously only the y and z components were scaled [#152](@ref)
+* Fixed `reconstruct!` omitting boundary faces when rebuilding a cell vector from a face-normal flux. The accumulation looped over `cell_faces`, which holds internal faces only, so boundary cells solved a least-squares system missing their boundary contributions and returned an incorrect vector [#155](@ref)
 
 ### Changed
 * No functionality changes

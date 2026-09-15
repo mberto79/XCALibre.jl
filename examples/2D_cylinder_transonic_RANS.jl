@@ -94,7 +94,7 @@ boundaries = assign(
             Slip(:bottom)
         ],
         nut = [
-            Extrapolated(:inlet, νt_inlet),
+            Dirichlet(:inlet, νt_inlet),
             Extrapolated(:outlet),
             NutWallFunction(:cylinder),
             Slip(:top),

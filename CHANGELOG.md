@@ -10,9 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 * Fixed `wall_shear_stress` to apply the effective viscosity (`nueff`) scaling to the x-component of the shear stress vector - previously only the y and z components were scaled [#152](@ref)
+* Fixed `Wall` and `RotatingWall` diffusion imposing only the tangential part of the boundary velocity together with the cell's own normal component, which let the wall-normal velocity float instead of being held at the prescribed value. Both now impose the full boundary velocity, matching `Dirichlet` [#156](@ref)
+* Fixed `Slip` contributing nothing to vector diffusion. No `Laplacian{Linear}` method was defined for vector fields, so the unqualified method returned zero coefficients for a slip patch. `Slip` now projects onto the face tangent plane and matches `Symmetry` coefficient for coefficient, and gains the missing `Si` method [#156](@ref)
+* Fixed `Slip` `Divergence{BoundedUpwind}` dropping the face-normal component for vector fields [#156](@ref)
 
 ### Changed
-* No functionality changes
+* `2D_compression_corner.jl` and `2D_cylinder_transonic_RANS.jl` now use `Slip` on patches that are physically symmetry planes or inviscid walls, replacing `Zerogradient` [#156](@ref)
 
 ### Breaking
 * No breaking changes

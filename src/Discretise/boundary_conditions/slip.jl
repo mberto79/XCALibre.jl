@@ -1,16 +1,20 @@
 export Slip
 
 """
-    Slip <: AbstractDirichlet
+    Slip <: AbstractPhysicalConstraint
 
-Slip boundary condition model for no-slip  or moving walls (linear motion). It should be applied to the velocity vector, and in most cases, its scalar variant should be applied to scalars.
+Slip boundary condition for vector and scalar fields. Vectors keep both
+tangential components and have the face-normal component removed, so the patch
+is impermeable but exerts no tangential shear. Scalars use an explicit
+zero-normal-gradient condition. Use `Wall` instead when the patch should apply
+no-slip.
 
-# Inputs
-- `ID` represents the name of the boundary given as a symbol (e.g. :inlet). Internally it gets replaced with the boundary index ID
-- `value` should be given as a vector for the velocity e.g. [10,0,0]. For scalar fields such as the pressure the value entry can be omitted or set to zero explicitly.
+# Input
+- `ID` is the boundary name (for example, `:plate`). It is replaced by the
+  boundary index during boundary assignment.
 
-# Examples
-    Slip(:plate) # slip wall condition
+# Example
+    Slip(:plate)
 """
 struct Slip{I,V,R<:UnitRange} <: AbstractPhysicalConstraint
     ID::I 

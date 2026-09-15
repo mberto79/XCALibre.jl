@@ -13,12 +13,15 @@
 #  Hasan (1992).
 #
 # -----------------------------------------------------------------------------
-#  !!! THIS CASE DOES NOT RUN YET !!!
+#  Status
 # -----------------------------------------------------------------------------
-#  Written against the *proposed* API so the user interface can be reviewed
-#  before the solver work lands. See dev_notes_LH2_implementation_plan.md.
-#  Still missing: two-phase energy equation (step 3), fixed-heat-flux BC
-#  (step 4), compressible ullage (step 5), phase change models (step 6).
+#  Runs end to end: the two-phase energy equation, `FixedHeatFlux`, the
+#  compressible ideal-gas ullage and the phase change models are all in place.
+#  Known deviations from the paper, each marked where it occurs below:
+#    - isothermal start instead of the measured initial profile   # TO OBTAIN
+#    - heat flux applied to the fluid, not through a conjugate wall # SIMPLIFICATION
+#    - 17.5 hr at dt = 0.01 s is ~6.3M steps, impractical with explicit MULES
+#  and no digitised experimental p(t) trace to compute the paper's MAPE against.
 # =============================================================================
 
 using XCALibre
@@ -48,7 +51,7 @@ p_operating = 103.0e3       # [Pa] initial tank pressure (paper Table 3)
 # (max 3.0% MAPE); MeJ matches it when h is tuned (~10 W/m^2/K for this tank);
 # Lee is worst (up to 11% MAPE) and diverges at sigma = 1e-6.
 #
-PHASE_CHANGE_MODEL = :lee
+PHASE_CHANGE_MODEL = :schrage
 
 phase_change = if PHASE_CHANGE_MODEL === :schrage
     # Paper Eq. (14), near-equilibrium form:
@@ -58,10 +61,12 @@ elseif PHASE_CHANGE_MODEL === :mej
     # Paper Eq. (9):  mdot" = h (T - T_sat) / L
     ModifiedEnergyJump(h=1.0)
 elseif PHASE_CHANGE_MODEL === :lee
-    # Paper Eqs. (11)-(12). Note beta is derived from the accommodation
-    # coefficient rather than prescribed directly, so that Lee and Schrage can
-    # be compared on the same footing:
-    #   beta = sigma * sqrt(M/(2 pi R T_sat)) * L rho_l/(rho_l - rho_v)
+    # NOT the paper's parametrisation. The paper (Eqs. 11-12) derives its Lee
+    # coefficient from an accommodation coefficient,
+    #   beta = sigma * sqrt(M/(2 pi R T_sat)) * L rho_l/(rho_l - rho_v),
+    # so the table's sigma = 1e-6 / 1e-7 / 1e-8 are not values of `r`.
+    # XCALibre's `Lee` takes `r` directly as a volumetric relaxation rate [1/s];
+    # `r = 100` is a numerical choice, not a value from the paper.
     Lee(r=100.0)
 else
     error("Unknown PHASE_CHANGE_MODEL: $PHASE_CHANGE_MODEL")
@@ -155,6 +160,15 @@ model = Physics(
         h_fg = 446.0e3,             # [J/kg] latent heat (from EOS when available)
         p_operating = p_operating,
 
+        # Local-density `p_rgh` split (the interFoam form), chosen EXPLICITLY.
+        # This is a sharp VOF interface at a ~58:1 density ratio, where grad(rho)
+        # is a clean jump that the face-flux buoyancy term balances; a reference
+        # density would instead impose a body force (rho - rho_ref)*g that jumps
+        # by ~670 N/m^3 across the interface. It is also the split this case has
+        # always run with. Setting it explicitly also silences the "rho_ref is
+        # unset" warning - see `multiphase_rho_ref`.
+        rho_ref = nothing,
+
         gravity = gravity
     ),
     turbulence = RANS{Laminar}(),          # paper Sec. 3.2
@@ -236,12 +250,11 @@ solvers = (
 # 2nd-order implicit scheme and 5 inner iterations; XCALibre's alpha transport
 # is explicit MULES and Courant limited, so this is the run-length problem
 # flagged in the implementation plan.
-dt = 0.01
+dt = 0.005
 runtime = Runtime(
     iterations = round(Int, DURATION/dt),
     time_step  = dt,
-    write_interval = round(Int, 600/dt),      # every 10 min of physical time
-    adaptive = AdaptiveTimeStepping(maxCo=0.5, maxAlphaCo=0.25)
+    write_interval = round(Int, 600/dt)
 )
 
 config = Configuration(

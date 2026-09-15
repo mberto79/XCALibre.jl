@@ -50,7 +50,9 @@ multiphase_h_fg(fluid) = get(fluid.physics_properties, :h_fg, 0.0)
     multiphase_rho_ref(fluid, phases, main)
 
 Reference density for the `p_rgh` split, from the optional `rho_ref` keyword of
-`Fluid{Multiphase}`. Defaults to the tracked (continuous) phase's density.
+`Fluid{Multiphase}`. When the keyword is absent: a `Mixture` model defaults to the
+LIQUID phase density (if that phase has a constant EOS); a `VOF` model defaults to
+`nothing`, i.e. the local-density split.
 
 ### Why a reference density rather than the local one
 
@@ -111,19 +113,42 @@ and make the split worse than useless.
 
 Only a constant-density phase yields a reference; a phase with a real equation of
 state has no single value, so that case still returns `nothing` - but loudly.
+
+### Why the default depends on the model
+
+The problem this default exists for is a MIXTURE one: a small, smooth density
+gradient smeared across thin cells, where `g.h grad(rho)` manufactures a large
+spurious force. A VOF interface is the opposite case - `grad(rho)` is a clean jump
+that the interFoam-style face-flux buoyancy term balances well - so VOF keeps the
+local split unless `rho_ref` is given.
+
+### The EOS is read from `rho_model`
+
+Inside the solver `phases` holds `PhaseState` objects, whose `.rho` is the density
+FIELD (a `ConstantScalar` for a constant phase) and whose `.rho_model` is the EOS.
+An earlier version tested `.rho isa ConstEos`, which is never true there, so the
+default silently never applied and every case without `rho_ref` got a warning
+claiming a non-constant EOS.
+
+### Choosing the local split deliberately
+
+Pass `rho_ref = nothing` to select `p_rgh = p - rho(x) g.h` on purpose. That is the
+interFoam form and the natural choice for a SHARP VOF interface, where `grad(rho)`
+is a clean jump at the interface rather than a small gradient smeared across thin
+cells. An explicit `nothing` is honoured silently; only an ABSENT keyword falls
+through to the default above.
 """
 function multiphase_rho_ref(fluid, phases, main)
-    r = get(fluid.physics_properties, :rho_ref, nothing)
-    r === nothing || return r
+    props = fluid.physics_properties
+    # `haskey`, not `get(..., nothing)`: an explicit `rho_ref = nothing` is a
+    # deliberate choice of the local split and must not trigger the default.
+    haskey(props, :rho_ref) && return props[:rho_ref]
+    # VOF keeps the local split - see the docstring.
+    fluid.model isa Mixture || return nothing
     liq = multiphase_liquid_phase(fluid)
-    rho_model = phases[liq].rho
-    if rho_model isa ConstEos
-        return rho_model.rho
-    end
-    @warn """`rho_ref` is unset and phase $liq has a non-constant equation of state, so no \
-reference density can be derived. The `p_rgh = p - rho(x) g.h` split will be used, whose \
-buoyancy source is `-g.h grad(rho)` - proportional to the domain height and to a DENSITY \
-GRADIENT rather than a density excess. Set `rho_ref` explicitly (see `multiphase_rho_ref`).""" phase=liq eos=typeof(rho_model).name.wrapper
+    eos = phases[liq].rho_model
+    eos isa ConstEos && return eos.rho
+    @warn """`rho_ref` is unset on a Mixture model and phase $liq has a non-constant equation of state, so no reference density can be derived. The `p_rgh = p - rho(x) g.h` split will be used, whose buoyancy source is `-g.h grad(rho)` - proportional to the domain height and to a DENSITY GRADIENT rather than a density excess. Set `rho_ref` explicitly, or `rho_ref = nothing` to choose that split deliberately (see `multiphase_rho_ref`).""" phase=liq eos=typeof(eos).name.wrapper
     return nothing
 end
 
